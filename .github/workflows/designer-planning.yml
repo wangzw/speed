@@ -11,9 +11,10 @@
 #   - 权限：contents: read + issues: write + pull-requests: write（不需要代码写权限，
 #     用默认 GITHUB_TOKEN 即可——Designer 不 push 代码，不受「必须用独立 PAT」那条约束）
 #
-# 认证/模型配置走环境变量（ANTHROPIC_AUTH_TOKEN 等），不用 claude-code-action 的
-# anthropic_api_key input——这样同一套配置也能兼容自建的 Anthropic 兼容网关
-# （ANTHROPIC_BASE_URL 指向自建网关时）。ANTHROPIC_BASE_URL/ANTHROPIC_MODEL/
+# 认证/模型配置走环境变量（ANTHROPIC_AUTH_TOKEN 等）+ anthropic_api_key input 双管齐下：
+# ANTHROPIC_AUTH_TOKEN/ANTHROPIC_BASE_URL 走 env:，是真正发给 CLI 子进程的认证（兼容自建
+# Anthropic 兼容网关）；anthropic_api_key input 只是塞同一个 secret 值给 claude-code-action
+# 自己的前置校验用（它不认识 ANTHROPIC_AUTH_TOKEN，见该步骤内联注释）。ANTHROPIC_BASE_URL/ANTHROPIC_MODEL/
 # CLAUDE_CODE_EFFORT_LEVEL 用 repo/org variables（vars），不是 secret，因为不是敏感信息；
 # 只有 ANTHROPIC_AUTH_TOKEN 是 secret。anthropics/claude-code-action 的具体 inputs 以其
 # 当前版本文档为准（https://github.com/anthropics/claude-code-action），接入真实环境时核对。
@@ -57,6 +58,14 @@ jobs:
             # 换取 App 安装 token 的路径——目标仓库通常没有安装该 App，走这条路径会在启动阶段就以
             # "Claude Code is not installed on this repository" 401 失败。Designer 只需要默认
             # GITHUB_TOKEN 的权限（见上方注释），显式传入即可绕开 App 依赖。
+          anthropic_api_key: ${{ secrets.ANTHROPIC_AUTH_TOKEN }} # 仅用于满足 claude-code-action 自身
+            # 的 validateEnvironmentVariables() 前置校验（它只认 ANTHROPIC_API_KEY /
+            # CLAUDE_CODE_OAUTH_TOKEN / 联邦身份，完全不认识 ANTHROPIC_AUTH_TOKEN，没有这个 input
+            # 会在启动阶段就报 "Environment variable validation failed" 而失败）。真正生效发给
+            # Claude Code CLI 子进程的认证仍然是上面 env: 里的 ANTHROPIC_AUTH_TOKEN（配合
+            # ANTHROPIC_BASE_URL 指向自建网关）——action 内部把整个 process.env 透传给 CLI 子进程，
+            # 按 Anthropic SDK 惯例 ANTHROPIC_AUTH_TOKEN 存在时优先于 ANTHROPIC_API_KEY，
+            # 走 Authorization: Bearer 而不是 x-api-key，所以这里传同一个值不会导致认证方式错乱。
           prompt: |
             /coding-flow designer issue_number=${{ inputs.issue_number }} phase=${{ inputs.phase }}
         # 具体执行流程（拉取上下文 → 生成/迭代 plan → Workflow 工具做对抗性审查 →
