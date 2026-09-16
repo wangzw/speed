@@ -1,0 +1,62 @@
+# 用途：Scheduler 通过 `gh workflow run` 派发，渲染看板并发布到 gh-pages 分支。
+#
+# 这是确定性脚本任务，不涉及 agent 推理，不需要 anthropics/claude-code-action。
+# `.claude/skills/coding-flow/templates/dashboard/` 由 `init` 时一次性拷贝进本仓库、
+# 提交入库（见 ../../SKILL.md「Skill 封装与复用」），所以这里 checkout 一下就自然有
+# render.py 和模板，不需要额外从别处拉取。
+#
+# 参考规范：../../SKILL.md「看板：调度状态可视化」、../../references/scheduler.md「看板发布」
+
+name: coding-flow dashboard-render
+on:
+  workflow_dispatch:
+
+jobs:
+  render:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5 # 见 ../../references/scheduler.md「轮询节奏」的超时阈值表
+    permissions:
+      contents: write
+      issues: read
+    env:
+      GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Render dashboard
+        run: |
+          set -euo pipefail
+          mkdir -p /tmp/coding-flow-dashboard
+          python3 .claude/skills/coding-flow/templates/dashboard/render.py \
+            .claude/skills/coding-flow/templates/dashboard/index.html.template \
+            /tmp/coding-flow-dashboard/index.html
+
+      - name: Publish to gh-pages
+        run: |
+          set -euo pipefail
+          git fetch origin gh-pages 2>/dev/null || true
+
+          if git show-ref --verify --quiet refs/remotes/origin/gh-pages; then
+            git worktree add gh-pages-worktree origin/gh-pages
+          else
+            git worktree add --detach gh-pages-worktree
+            (cd gh-pages-worktree && git checkout --orphan gh-pages && git rm -rf . >/dev/null 2>&1 || true)
+          fi
+
+          cp /tmp/coding-flow-dashboard/index.html gh-pages-worktree/index.html
+          cd gh-pages-worktree
+
+          if git diff --quiet -- index.html 2>/dev/null; then
+            echo "看板内容无变化，跳过推送"
+            exit 0
+          fi
+
+          git add index.html
+          git -c user.name="coding-flow-bot" -c user.email="coding-flow-bot@users.noreply.github.com" \
+            commit -m "chore(coding-flow): update dashboard"
+
+          # gh-pages 内容完全由这个脚本派生（不是需要保留历史意图的人工产物），
+          # 两次渲染撞车时没有"合并"的意义——谁的内容更新就该谁生效。普通 push
+          # 失败（远端在这期间被另一次运行推进了）时直接 --force 覆盖，不重试合并。
+          git push origin HEAD:gh-pages || git push origin HEAD:gh-pages --force

@@ -1,0 +1,35 @@
+# coding-flow Issue 状态机的 label 定义清单。
+# 由 `coding-flow init` 读取本文件，对每一项执行等价于：
+#   gh label create "<name>" --color "<color>" --description "<description>" --force
+# `--force` 是为了幂等：重复跑 init 不会因为 label 已存在而报错。
+#
+# 参考规范：../SKILL.md 中「Issue 状态机」章节。两组 label 各自互斥：
+#   阶段 label：phase:design / phase:planning / phase:implementation / phase:audit
+#   控制状态 label（缺省 = 正常运行中）：status:awaiting-human / status:blocked
+#
+# color 是不带 # 前缀的十六进制值（gh CLI 和 GitHub REST API 的约定）。
+
+labels:
+  - name: "phase:design"
+    color: "5319E7"
+    description: "设计阶段：初始交互式设计，或规划/实施中途退回的设计决策"
+
+  - name: "phase:planning"
+    color: "1D76DB"
+    description: "规划阶段：Designer 把设计文档转成实施 plan 并对抗性审查"
+
+  - name: "phase:implementation"
+    color: "FBCA04"
+    description: "实施阶段：Coder 依据 plan 实施、内置对抗性审查、收敛后合并"
+
+  - name: "phase:audit"
+    color: "0E8A16"
+    description: "审计阶段：Reviewer 的独立事后审计结果 Issue，短生命周期或转 phase:planning 继续存活"
+
+  - name: "status:awaiting-human"
+    color: "D93F0B"
+    description: "等待人类：当前阶段内部审查发现自己权限内无法处理的问题，已上报，等待人类回复 + /continue"
+
+  - name: "status:blocked"
+    color: "6A737D"
+    description: "等待依赖：阻塞于另一个主题 Issue（blocked_by），依赖 Issue 关闭后自动解除"

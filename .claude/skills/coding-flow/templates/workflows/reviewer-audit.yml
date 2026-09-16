@@ -1,0 +1,53 @@
+# 用途：Scheduler 派发（合并触发或人类指定范围触发），运行 Reviewer 的独立事后审计。
+#
+# 用官方 anthropics/claude-code-action 运行 Claude Code，不自己装 CLI/维护认证逻辑。
+# `.claude/skills/coding-flow/` 由 `init` 时一次性拷贝进本仓库、提交入库（见 ../../SKILL.md
+# 「Skill 封装与复用」），所以这里 checkout 一下就自然带有 skill 内容。
+#
+# 参考规范：../../SKILL.md「角色分发」、../../references/reviewer.md
+#   - 权限：contents: read + issues: write + pull-requests: write（不需要代码写权限，
+#     用默认 GITHUB_TOKEN 即可——Reviewer 不 push 代码）
+#   - 无条件新开审计结果 Issue（phase:audit）；发现本主体问题则该 Issue 转 phase:planning 继续存活；
+#     发现跨主体问题则另开 Issue 并建 blocked_by；仅有跨主体问题时审计结果 Issue 关联后即关闭；
+#     已关闭 Issue 一律不重新打开——以上全部逻辑由 Reviewer 角色自己的 Workflow 脚本处理，
+#     本 job 只负责把它启动起来
+#
+# 认证/模型配置走环境变量（ANTHROPIC_AUTH_TOKEN 等），不用 claude-code-action 的
+# anthropic_api_key input——这样同一套配置也能兼容自建的 Anthropic 兼容网关
+# （ANTHROPIC_BASE_URL 指向自建网关时）。ANTHROPIC_BASE_URL/ANTHROPIC_MODEL/
+# CLAUDE_CODE_EFFORT_LEVEL 用 repo/org variables（vars），不是 secret；只有
+# ANTHROPIC_AUTH_TOKEN 是 secret。anthropics/claude-code-action 的具体 inputs 以其
+# 当前版本文档为准（https://github.com/anthropics/claude-code-action），接入真实环境时核对。
+
+name: coding-flow reviewer-audit
+run-name: "coding-flow reviewer ${{ inputs.scope }}"
+on:
+  workflow_dispatch:
+    inputs:
+      scope:
+        description: "审计范围：合并触发时是刚合并的主题 Issue 编号；人类主动触发时是人类描述的范围"
+        required: true
+        type: string
+
+jobs:
+  audit:
+    runs-on: ubuntu-latest
+    timeout-minutes: 240 # 见 ../../references/scheduler.md「轮询节奏」的超时阈值表
+    permissions:
+      contents: read
+      issues: write
+      pull-requests: write
+    env:
+      ANTHROPIC_AUTH_TOKEN: ${{ secrets.ANTHROPIC_AUTH_TOKEN }}
+      ANTHROPIC_BASE_URL: ${{ vars.ANTHROPIC_BASE_URL }}
+      ANTHROPIC_MODEL: ${{ vars.ANTHROPIC_MODEL }}
+      CLAUDE_CODE_EFFORT_LEVEL: ${{ vars.CLAUDE_CODE_EFFORT_LEVEL }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Run Reviewer (audit mode)
+        uses: anthropics/claude-code-action@v1
+        with:
+          prompt: |
+            /coding-flow reviewer scope=${{ inputs.scope }}

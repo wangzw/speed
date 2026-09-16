@@ -1,0 +1,59 @@
+# 用途：Scheduler 通过 `gh workflow run` 派发，运行 Designer 的规划模式
+#（从设计文档生成/迭代 plan，内置对抗性审查；也承担 phase:design 中途状态的自主处理/
+#  等人类恢复后继续，见 ../../references/scheduler.md「Phase → Workflow 映射」）。
+#
+# 用官方 anthropics/claude-code-action 运行 Claude Code，不自己装 CLI/维护认证逻辑。
+# `.claude/skills/coding-flow/` 由 `init` 时一次性拷贝进本仓库、提交入库（见 ../../SKILL.md
+# 「Skill 封装与复用」），所以这里 checkout 一下就自然带有 skill 内容，不需要额外的 setup 步骤。
+#
+# 参考规范：../../SKILL.md「凭证与权限」、../../references/designer.md
+#   - 统一用 workflow_dispatch，由 Scheduler 显式派发
+#   - 权限：contents: read + issues: write + pull-requests: write（不需要代码写权限，
+#     用默认 GITHUB_TOKEN 即可——Designer 不 push 代码，不受「必须用独立 PAT」那条约束）
+#
+# 认证/模型配置走环境变量（ANTHROPIC_AUTH_TOKEN 等），不用 claude-code-action 的
+# anthropic_api_key input——这样同一套配置也能兼容自建的 Anthropic 兼容网关
+# （ANTHROPIC_BASE_URL 指向自建网关时）。ANTHROPIC_BASE_URL/ANTHROPIC_MODEL/
+# CLAUDE_CODE_EFFORT_LEVEL 用 repo/org variables（vars），不是 secret，因为不是敏感信息；
+# 只有 ANTHROPIC_AUTH_TOKEN 是 secret。anthropics/claude-code-action 的具体 inputs 以其
+# 当前版本文档为准（https://github.com/anthropics/claude-code-action），接入真实环境时核对。
+
+name: coding-flow designer-planning
+run-name: "coding-flow designer issue-${{ inputs.issue_number }} ${{ inputs.phase }}"
+on:
+  workflow_dispatch:
+    inputs:
+      issue_number:
+        description: "主题 Issue 编号"
+        required: true
+        type: string
+      phase:
+        description: "当前 phase（phase:planning 或 phase:design 中途状态）"
+        required: true
+        type: string
+
+jobs:
+  plan:
+    runs-on: ubuntu-latest
+    timeout-minutes: 180 # 见 ../../references/scheduler.md「轮询节奏」的超时阈值表
+    permissions:
+      contents: read
+      issues: write
+      pull-requests: write
+    env:
+      ANTHROPIC_AUTH_TOKEN: ${{ secrets.ANTHROPIC_AUTH_TOKEN }}
+      ANTHROPIC_BASE_URL: ${{ vars.ANTHROPIC_BASE_URL }}
+      ANTHROPIC_MODEL: ${{ vars.ANTHROPIC_MODEL }}
+      CLAUDE_CODE_EFFORT_LEVEL: ${{ vars.CLAUDE_CODE_EFFORT_LEVEL }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Run Designer (planning mode)
+        uses: anthropics/claude-code-action@v1
+        with:
+          prompt: |
+            /coding-flow designer issue_number=${{ inputs.issue_number }} phase=${{ inputs.phase }}
+        # 具体执行流程（拉取上下文 → 生成/迭代 plan → Workflow 工具做对抗性审查 →
+        # 收敛判定 → 写回 plan + 结构化评论）见 ../../references/designer.md「执行流程：规划」，
+        # 全部由 Designer 角色在这次调用内部完成，本 job 不额外拆步骤。
