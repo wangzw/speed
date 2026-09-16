@@ -8,8 +8,9 @@ coding-flow `init` 的实现（对应 SKILL.md「角色分发」表里的 `init`
      不是运行时动态引用；后续想同步 coding-flow 的更新，重新跑一次 init 即可，幂等覆盖）。
   2. 用 templates/labels.yml 创建 phase:*/status:* label（`gh label create --force`，幂等）。
   3. 把 templates/workflows/*.yml 拷贝到 <target>/.github/workflows/。
-  4. 创建/确保 gh-pages 分支存在（orphan + 占位 index.html）。
-  5. 通过 `gh api` 启用 GitHub Pages，指向 gh-pages 分支根目录。
+  4. 创建/确保 gh-pages 分支存在（orphan + 占位 index.html）——**仅当目标仓库还没有
+     配置 Pages 时才做**；已经配置过 Pages（不管指向哪个分支）一律跳过，绝不覆盖。
+  5. 通过 `gh api` 启用 GitHub Pages，指向 gh-pages 分支根目录——同样只在 Pages 未配置时做。
   6. 打印后续需要人工完成的事项（配置 secret、按需设置分支保护规则）。
 
 **必须在本机执行**（需要仓库 admin 权限的 `gh` 身份），不能塞进 GitHub Actions 里跑——
@@ -19,7 +20,7 @@ coding-flow `init` 的实现（对应 SKILL.md「角色分发」表里的 `init`
 labels.yml 的解析是按其固定的三行一组格式做简单文本解析，不是通用 YAML 解析器。
 
 用法：
-    python3 scripts/init.py [--target TARGET_DIR]
+    python3 scripts/init.py [--target TARGET_DIR] [--dry-run]
 默认 --target 是当前工作目录（假定就是目标项目的 git 仓库根目录）。
 """
 

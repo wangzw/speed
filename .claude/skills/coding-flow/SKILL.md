@@ -42,6 +42,16 @@ description: 基于 GitHub 的人在回路多 Agent 软件开发协作系统。�
 | `coder` | Coder | Action（Scheduler 派发） | [references/coder.md](references/coder.md) |
 | `reviewer` | Reviewer | Action（Scheduler 派发或人类指定范围触发） | [references/reviewer.md](references/reviewer.md) |
 
+**`args` 的具体格式**：第一个词是角色名（上表最左列），后面跟空格分隔的 `key=value` 参数，值本身不需要引号。角色 workflow 模板里调用的格式是这样（见 `templates/workflows/*.yml`）：
+
+```
+/coding-flow designer issue_number=42 phase=phase:planning
+/coding-flow coder issue_number=42 phase=phase:implementation branch=fix/issue-42-foo
+/coding-flow reviewer scope=issue:42
+```
+
+各角色具体要读哪些 `key`，见对应 `references/*.md` 的「执行流程」——`issue_number`/`phase`/`branch`/`scope` 分别对应各自 workflow 的 `workflow_dispatch` input，一一对应，不做额外的名字转换。
+
 **对抗性审查不是独立角色/独立入口**，而是 Designer（针对设计文档、plan）、Coder（针对代码）各自流程内部的一个环节——每个角色审查的对象和标准不同，具体标准写在各自的 reference 文件里，不抽公共模块。能力范围内可修复的当场修复重审，修复不了则上报 Scheduler，本轮运行结束，Issue 进入等待人类状态。
 
 **两层审查的区别**：Coder 内置的对抗性审查是**合并前门禁**，收敛是合并进 main 的前提条件（合并动作由 Coder 自己执行）；Reviewer 是**合并后独立事后审计**，此时原 Issue 已关闭（关闭即任务完结的历史记录，不再重新打开），发现的问题一律新开 Issue——同主题的新 Issue 引用原 Issue（延续关系，如 "continues #N"），跨主题的新 Issue 与原 Issue 建 `blocked_by` 依赖。门禁具体要不要包含测试/lint 等 CI 项是目标项目自身分支保护规则的事，本 skill 不硬编码，只保证自己负责的对抗性审查已收敛。
@@ -193,7 +203,7 @@ flowchart TD
 - **发布方式**：GitHub Pages，用独立的 `gh-pages` 分支承载生成的静态 HTML，不占 main、不走 PR/审查流程——看板是纯衍生展示物，由 `dashboard-render` workflow 直接 commit + push。
 - **内容**：汇总所有打开主题 Issue 的 phase、status、`blocked_by` 依赖链、最新结构化评论摘要、`status:awaiting-human` 时具体等待回答的问题。
 - **本地副本**：`dashboard-render` workflow 跑完后，Scheduler 从 `gh-pages` 分支拉取刚发布的内容镜像一份到本机 `.claude/dashboard/index.html`（不纳入版本控制）——这一步只是把已发布内容同步到本地文件系统，不是重新渲染。
-- **`init` 新增的集成设施**：创建/确保 `gh-pages` 分支存在（orphan 分支 + 初始占位 `index.html`）；通过 `gh api repos/{owner}/{repo}/pages` 启用 GitHub Pages 指向 `gh-pages` 分支根目录。
+- **`init` 新增的集成设施**：先只读检查目标仓库是否已经配置 Pages——**已配置则整个看板发布集成设施都跳过，不做任何改动**（即使 Pages 当前指向别的分支/别的用途，也不覆盖；这是一条硬规则，看板是锦上添花的功能，不能以覆盖用户已有配置为代价）；未配置才创建 `gh-pages` 分支（orphan 分支 + 初始占位 `index.html`）并通过 `gh api repos/{owner}/{repo}/pages` 启用 GitHub Pages 指向它。
 
 ## 凭证与权限
 
@@ -225,10 +235,17 @@ flowchart TD
 │   ├── status-comment.md            # 结构化评论里"人类可读叙述"部分的骨架
 │   └── dashboard/
 │       ├── index.html.template     # 看板静态骨架，render.py 渲染时套用
-│       └── render.py               # 看板渲染脚本（纯标准库 + gh CLI，无额外依赖）
-└── scripts/
-    └── init.py                     # `init` 入口的实际实现：拷贝 skill 目录、落地 labels/workflow/看板集成设施
+│       ├── render.py               # 看板渲染脚本（纯标准库 + gh CLI，无额外依赖）
+│       └── publish.sh              # 发布渲染结果到 gh-pages 分支（独立脚本，便于测试）
+├── scripts/
+│   └── init.py                     # `init` 入口的实际实现：拷贝 skill 目录、落地 labels/workflow/看板集成设施
+│                                    #   （支持 --dry-run 预演，不做任何实际改动）
+└── tests/
+    ├── test_init.py                 # init.py 的回归测试（标准库 unittest）
+    └── test_dashboard_template.py   # 看板模板的回归测试
 ```
+
+运行测试：`python3 -m unittest discover -s .claude/skills/coding-flow/tests`
 
 ## 状态
 

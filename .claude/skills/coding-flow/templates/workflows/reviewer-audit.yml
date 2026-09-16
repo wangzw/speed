@@ -37,6 +37,7 @@ jobs:
       contents: read
       issues: write
       pull-requests: write
+      id-token: write # anthropics/claude-code-action 用 OIDC 换取短期 token，缺这个权限会在启动阶段就失败
     env:
       ANTHROPIC_AUTH_TOKEN: ${{ secrets.ANTHROPIC_AUTH_TOKEN }}
       ANTHROPIC_BASE_URL: ${{ vars.ANTHROPIC_BASE_URL }}
