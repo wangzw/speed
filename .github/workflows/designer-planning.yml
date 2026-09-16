@@ -53,6 +53,10 @@ jobs:
       - name: Run Designer (planning mode)
         uses: anthropics/claude-code-action@v1
         with:
+          github_token: ${{ github.token }} # 显式传入，避免 action 默认走 Claude GitHub App 的 OIDC
+            # 换取 App 安装 token 的路径——目标仓库通常没有安装该 App，走这条路径会在启动阶段就以
+            # "Claude Code is not installed on this repository" 401 失败。Designer 只需要默认
+            # GITHUB_TOKEN 的权限（见上方注释），显式传入即可绕开 App 依赖。
           prompt: |
             /coding-flow designer issue_number=${{ inputs.issue_number }} phase=${{ inputs.phase }}
         # 具体执行流程（拉取上下文 → 生成/迭代 plan → Workflow 工具做对抗性审查 →
