@@ -39,7 +39,11 @@ const (
 	conflictResponse = `docker: Error response from daemon: Conflict. The container name "/speed-pgtest" is already in use by container "5b8f0c2a91d4".`
 	// missingObjectResponse is what inspect answers in the window.
 	missingObjectResponse = `Error: No such object: speed-pgtest`
-	// missingContainerResponse is what start answers in the window.
+	// missingContainerResponse is what start answers in the window. A docker
+	// that words it differently no longer answers with this — measured on
+	// docker 28, which puts the same words behind "Error response from
+	// daemon:" — and the real-docker check then counts no start-side window at
+	// all. The cases below are unaffected: the stand-in answers what this says.
 	missingContainerResponse = `Error: No such container: speed-pgtest`
 	// conflictStatus and failureStatus are the exit statuses that come with
 	// them: docker's own for a refused create, and the CLI's for a command

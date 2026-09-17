@@ -187,6 +187,14 @@ func (r peerRun) skipExplanation() string {
 	return "no reason in its output, which ended with: " + strings.Join(lines, " / ")
 }
 
+// peerAcquired reports whether a peer's output is one that holds a database:
+// the harness reads this off the line the peer prints once Acquire returns, and
+// a case that runs a peer reads it there too, so that a change to how the
+// outcome is read is a change in one place.
+func peerAcquired(stdout string) bool {
+	return strings.Contains(stdout, coldstartAcquiredMarker)
+}
+
 // skipReason reads the reason out of a peer's output when a skipped case left
 // one there. The case prints it as a log line just ahead of the summary line
 // that names the skip, indented as far as that log line is.
@@ -449,6 +457,7 @@ func TestColdstartChild(t *testing.T) {
 // turn the skip it is looking for into a failure.
 func TestAColdstartPeerThatSkipsLeavesNoMarker(t *testing.T) {
 	stub := newDockerStub(t)
+	skipIfStray(t)
 	ctx, cancel := context.WithTimeout(context.Background(), coldstartRendezvousTimeout)
 	defer cancel()
 	cmd := exec.CommandContext(ctx, os.Args[0], "-test.v", "-test.run=^TestColdstartChild$")
@@ -465,7 +474,7 @@ func TestAColdstartPeerThatSkipsLeavesNoMarker(t *testing.T) {
 			"skips:\nstdout:\n%s\nstderr:\n%s", err, stdout.String(), stderr.String())
 	}
 
-	if strings.Contains(stdout.String(), coldstartAcquiredMarker) {
+	if peerAcquired(stdout.String()) {
 		t.Errorf("the peer left the marker behind although its acquisition skipped, so a round would "+
 			"count it as a peer that came up on the container:\n%s", stdout.String())
 	}
@@ -592,7 +601,7 @@ func runPeer(peerBinary, shimDir, rendezvous, role string) peerRun {
 	run := peerRun{role: role}
 	err := cmd.Run()
 	run.stdout, run.stderr = stdout.String(), stderr.String()
-	run.acquired = strings.Contains(run.stdout, coldstartAcquiredMarker)
+	run.acquired = peerAcquired(run.stdout)
 	var exit *exec.ExitError
 	switch {
 	case err == nil:
@@ -919,9 +928,6 @@ func TestPeerEnvironmentCarriesTheDaemonAlong(t *testing.T) {
 			env := peerEnvironment("/shim", "/rendezvous", "peer-3", c.host)
 			if got, want := strings.Join(env, "\n"), strings.Join(c.want, "\n"); got != want {
 				t.Errorf("the peer's environment is:\n%s\nwant:\n%s", got, want)
-			}
-			if shim := "PATH=/shim" + list; !strings.HasPrefix(env[0], shim) {
-				t.Errorf("the peer's PATH is %q, want it to begin with its own shim, %q", env[0], shim)
 			}
 		})
 	}
