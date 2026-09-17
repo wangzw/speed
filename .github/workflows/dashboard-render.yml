@@ -1,12 +1,19 @@
-# 用途：Scheduler 通过 `gh workflow run` 派发，渲染看板并发布到 gh-pages 分支。
+# 用途：Scheduler 通过 `gh workflow run` 派发，渲染看板并作为 workflow run 的 artifact
+# 保留（不发布到任何公开地址，见下方「为什么不用 GitHub Pages」）。
 #
 # 这是确定性脚本任务，不涉及 agent 推理，不需要 anthropics/claude-code-action。
 # 引用 coding-flow 自己发布的 composite action（仓库根目录的 action.yml，`mode: dashboard`），
-# render.py/publish.sh 在每次运行时直接从那个 action 的 checkout 里跑，不 vendor 进本仓库，
+# render.py 在每次运行时直接从那个 action 的 checkout 里跑，不 vendor 进本仓库，
 # action 引用固定写死指向本项目发布地址。
 #
-# 参考规范：../../SKILL.md「看板：调度状态可视化」、../../references/scheduler.md「看板发布」
-
+# 为什么不用 GitHub Pages（真实事故+决策）：对严肃项目而言，一个仓库的 GitHub Pages
+# 名额被占用（用于项目自身文档站点等）是大概率事件，不是边缘情况——真实端到端联调就
+# 撞上过这种情况（build_type=workflow 的既有 Pages 部署，push gh-pages 分支完全不会被
+# 服务）。与其为"是否已被占用"维护一整套检测/守卫逻辑（曾经短暂做过），不如干脆放弃
+# 对外发布，看板只作为这次 run 的 artifact 产出，由人类/Scheduler 按需下载查看
+# （见 ../../SKILL.md「看板：调度状态可视化」、../../references/scheduler.md「看板发布」）。
+#
+# 不需要 contents: write——不再写任何分支。
 name: coding-flow dashboard-render
 on:
   workflow_dispatch:
@@ -16,7 +23,7 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 5 # 见 ../../references/scheduler.md「轮询节奏」的超时阈值表
     permissions:
-      contents: write
+      contents: read
       issues: read
     env:
       GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
@@ -24,7 +31,7 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
 
-      - name: Render and publish dashboard
+      - name: Render dashboard
         uses: vislake/coding-flows@main
         with:
           mode: dashboard
