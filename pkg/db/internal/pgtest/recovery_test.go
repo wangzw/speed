@@ -277,6 +277,7 @@ func TestConflictRecoveryFailsWithinItsBoundCarryingTheLastWords(t *testing.T) {
 	if err == nil {
 		t.Fatal("the container was reported as up although every look at it failed")
 	}
+	t.Logf("the failure this reports reads: %v", err)
 	for _, want := range []string{conflictResponse, missingObjectResponse} {
 		if !strings.Contains(err.Error(), want) {
 			t.Errorf("the failure does not carry %q, so a log of it says nothing about what went "+
@@ -314,6 +315,7 @@ func TestConflictRecoveryReportsCreateAndStartTogether(t *testing.T) {
 	if err == nil {
 		t.Fatal("the container was reported as up although it was never started")
 	}
+	t.Logf("the failure this reports reads: %v", err)
 	for _, want := range []string{conflictResponse, missingContainerResponse} {
 		if !strings.Contains(err.Error(), want) {
 			t.Errorf("the failure does not carry %q:\n%v", want, err)

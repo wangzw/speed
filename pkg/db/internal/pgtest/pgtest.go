@@ -174,11 +174,25 @@ func startServer() (string, error) {
 // The create path tolerates losing the race with another test binary starting
 // at the same moment: docker refuses the duplicate name, and the container that
 // won is the one both processes go on to use.
+//
+// Losing that race does not end with the refusal. docker takes the name before
+// the container can be looked at, so the process that lost spends a window
+// being told there is no such object — measured at 100–200ms on a cold image,
+// and wider on a machine under load — and only then finds the winner's
+// container. The wait below is that window, and the container it ends on is the
+// winner's: a losing process never creates one of its own.
 func ensureContainer() error {
 	if state, err := inspectRunning(); err == nil {
 		if state == "true" {
 			return nil
 		}
+		// The container is there and not running: whoever created it did not
+		// start it, or died between the two. This is not the race — the object
+		// is there to be looked at, so this process is in nobody's window —
+		// and a start that fails here is reported now rather than waited on.
+		// Retrying it would hold a stopped container that will not come back,
+		// which is a lasting failure, for as long as the wait lasts, and every
+		// test binary on the machine goes through here.
 		if err := startContainer(); err != nil {
 			return fmt.Errorf("starting the existing %s container: %w", containerName, err)
 		}
@@ -188,15 +202,63 @@ func ensureContainer() error {
 	if createErr == nil {
 		return nil
 	}
-	if state, err := inspectRunning(); err == nil {
-		if state == "true" {
+	return awaitContainer(createErr)
+}
+
+// awaitContainer waits for the container another process is creating to appear
+// and run, and reports what docker said along the way when it never does.
+//
+// Only inspect and start are repeated. A create is not tried again on purpose:
+// the name on this machine belongs to whoever holds it, so a losing process
+// gains nothing by asking for it twice, and the container it has to end up on
+// is the one that won. A create refused for any other reason — a daemon that is
+// down, an image that cannot be pulled — ends the same way the window does:
+// within the bound, carrying docker's last word.
+func awaitContainer(createErr error) error {
+	deadline := time.Now().Add(recoveryBound)
+	var (
+		state      string
+		inspectErr error
+		startErr   error
+	)
+	for {
+		state, inspectErr = inspectRunning()
+		switch {
+		case inspectErr == nil && state == "true":
 			return nil
+		case inspectErr == nil:
+			// The container is there and not running yet: the winner is
+			// between creating it and starting it, or died in between. A start
+			// refused in the window is as transient as the missing object is,
+			// and the round after it decides rather than this one.
+			startErr = startContainer()
 		}
-		if err := startContainer(); err == nil {
-			return nil
+		if time.Now().After(deadline) {
+			return recoveryFailure(createErr, startErr, state, inspectErr)
 		}
+		time.Sleep(recoveryInterval)
 	}
-	return fmt.Errorf("creating the %s container from %s: %w", containerName, image, createErr)
+}
+
+// recoveryFailure is a create that was never made good: the refusal itself, and
+// the last word from each call the wait made after it.
+//
+// All of it is carried because of what this race cost while it was undiagnosed.
+// The failures CI saw said only that the container had not been created; the
+// look that failed last, which is the one thing that says where the wait
+// stopped, was made and then thrown away by the recovery that made it.
+func recoveryFailure(createErr, startErr error, state string, inspectErr error) error {
+	failure := fmt.Errorf("creating the %s container from %s: %w", containerName, image, createErr)
+	if inspectErr != nil {
+		failure = fmt.Errorf("%w; after %s the container was still not there: %w", failure, recoveryBound, inspectErr)
+	} else {
+		failure = fmt.Errorf("%w; after %s the container was still not running, and the last look at it read %q",
+			failure, recoveryBound, state)
+	}
+	if startErr != nil {
+		failure = fmt.Errorf("%w; and the last start of it failed: %w", failure, startErr)
+	}
+	return failure
 }
 
 // inspectRunning reports whether the shared container is running, and fails
