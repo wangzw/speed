@@ -70,6 +70,20 @@ const (
 	statementTimeout = 30 * time.Second
 )
 
+// The pace of the wait that follows a create lost to another test binary, as
+// variables rather than constants so that a case can shrink them: the give-up
+// path cannot be a case at all if reaching it costs the production bound.
+//
+// The bound is generous against what the race looks like — the window in which
+// a losing creator cannot yet see the winner's container measured 100–200ms on
+// a cold image locally, and a loaded CI machine is slower and wider than that —
+// while staying bounded, so that a daemon that is genuinely broken ends in a
+// failure carrying what docker said rather than in a hang.
+var (
+	recoveryBound    = 30 * time.Second
+	recoveryInterval = 150 * time.Millisecond
+)
+
 // databaseCounter numbers the databases this process creates, so two calls in
 // the same test binary cannot collide on one name.
 var databaseCounter atomic.Int64
