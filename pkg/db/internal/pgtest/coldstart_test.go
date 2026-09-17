@@ -129,16 +129,21 @@ type dockerCall struct {
 
 // timeline is a peer's calls in one line: each subcommand with the status it
 // left with, how long after the call before it it started, and how long it took.
+// The first call of a peer has no call before it and carries only its own
+// duration.
 func (r peerRun) timeline() string {
 	var line strings.Builder
 	var previous float64
 	for index, call := range r.calls {
 		if index > 0 {
 			line.WriteString("; ")
+			fmt.Fprintf(&line, "%s(exit %d, after %s, took %s)", call.sub, call.status,
+				time.Duration((call.started-previous)*float64(time.Second)).Round(time.Millisecond),
+				time.Duration((call.finished-call.started)*float64(time.Second)).Round(time.Millisecond))
+		} else {
+			fmt.Fprintf(&line, "%s(exit %d, took %s)", call.sub, call.status,
+				time.Duration((call.finished-call.started)*float64(time.Second)).Round(time.Millisecond))
 		}
-		fmt.Fprintf(&line, "%s(exit %d, after %s, took %s)", call.sub, call.status,
-			time.Duration((call.started-previous)*float64(time.Second)).Round(time.Millisecond),
-			time.Duration((call.finished-call.started)*float64(time.Second)).Round(time.Millisecond))
 		previous = call.finished
 	}
 	return line.String()
@@ -151,10 +156,16 @@ func (r peerRun) timeline() string {
 // yet answers the same thing as a look inside the window, and every peer makes
 // that first look; an answer that comes after this peer's own refused create is
 // the window, an answer before it is the empty machine the round started on.
+//
+// The answer has to come from a look or a start, which are the two calls a
+// recovery makes. A non-zero status from anything else is a failure of this
+// peer for some other reason, and counting it as the window would have a round
+// claim coverage it never had.
 func (r peerRun) hitWindow() bool {
 	conflicted := false
 	for _, call := range r.calls {
-		if conflicted && call.status != 0 {
+		recovered := call.sub == "inspect" || call.sub == "start"
+		if conflicted && recovered && call.status != 0 {
 			return true
 		}
 		if call.sub == "run" && call.status == conflictStatus && strings.Contains(call.stderr, "Conflict") {

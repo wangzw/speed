@@ -163,36 +163,38 @@ func succeeded(out string) string { return "ok:" + out }
 // what it wrote to standard error.
 func failed(status int, message string) string { return fmt.Sprintf("fail:%d:%s", status, message) }
 
-// withRecoveryPace shrinks the wait that follows a lost create for the length
-// of one case, so that the case can reach the end of it and assert what is
-// reported there. The production values are put back when the case ends.
-func withRecoveryPace(t *testing.T, bound, interval time.Duration) {
+// underRecoveryWait runs ensureContainer with the wait that follows a lost
+// create shrunk to the given bound and interval — so that a case can reach the
+// end of it and assert what is reported there — and fails the case when the
+// call has not come back within limit.
+//
+// The waiting is what makes the bound a thing a case has to check at all: a
+// recovery that keeps waiting is the failure mode this whole check is about, a
+// daemon that is down has to end in a reported failure rather than in a test
+// run that never finishes, and a case that simply waited for it would take the
+// suite's own timeout to say so.
+//
+// The pace is put back when the call is back, and not before: a call that never
+// comes back is still reading it, and writing it underneath that call would be
+// a race — in the one case where the case is failing anyway, which is exactly
+// the kind of noise that makes a real failure hard to read. The production
+// values stay replaced for the rest of the run in that case, which is what the
+// suite is left holding when an implementation hangs.
+func underRecoveryWait(t *testing.T, bound, interval, limit time.Duration) (time.Duration, error) {
 	t.Helper()
 	previousBound, previousInterval := recoveryBound, recoveryInterval
 	recoveryBound, recoveryInterval = bound, interval
-	t.Cleanup(func() {
-		recoveryBound, recoveryInterval = previousBound, previousInterval
-	})
-}
 
-// callWithin runs ensureContainer and fails the case when it has not come back
-// within limit.
-//
-// A recovery that keeps waiting is the failure mode this whole check is about
-// — a daemon that is down has to end in a reported failure, not in a test run
-// that never finishes — and a case that waits for it would take the suite's own
-// timeout to say so.
-func callWithin(t *testing.T, limit time.Duration) (time.Duration, error) {
-	t.Helper()
 	started := time.Now()
 	done := make(chan error, 1)
 	go func() { done <- ensureContainer() }()
 	select {
 	case err := <-done:
+		recoveryBound, recoveryInterval = previousBound, previousInterval
 		return time.Since(started), err
 	case <-time.After(limit):
 		t.Fatalf("bringing the container up has not come back within %s, and a create that cannot be "+
-			"recovered has to end in a failure within the wait it was given (%s)", limit, recoveryBound)
+			"recovered has to end in a failure within the wait it was given (%s)", limit, bound)
 		return 0, nil
 	}
 }
@@ -209,7 +211,6 @@ func callWithin(t *testing.T, limit time.Duration) (time.Duration, error) {
 // case pass without the code being fixed at all.
 func TestConflictRecoveryReusesTheWinningContainer(t *testing.T) {
 	stub := newDockerStub(t)
-	withRecoveryPace(t, time.Minute, time.Millisecond)
 	stub.answers(t, "inspect",
 		failed(failureStatus, missingObjectResponse),
 		failed(failureStatus, missingObjectResponse),
@@ -217,7 +218,7 @@ func TestConflictRecoveryReusesTheWinningContainer(t *testing.T) {
 	)
 	stub.answers(t, "run", failed(conflictStatus, conflictResponse))
 
-	_, err := callWithin(t, 10*time.Second)
+	_, err := underRecoveryWait(t, time.Minute, time.Millisecond, 10*time.Second)
 	if err != nil {
 		t.Fatalf("the container was reported as never coming up although the binary that created it "+
 			"left one behind for this one to reuse: %v", err)
@@ -239,7 +240,6 @@ func TestConflictRecoveryReusesTheWinningContainer(t *testing.T) {
 // and the binary uses it.
 func TestConflictRecoveryRetriesAStartThatFailedInTheWindow(t *testing.T) {
 	stub := newDockerStub(t)
-	withRecoveryPace(t, time.Minute, time.Millisecond)
 	stub.answers(t, "inspect",
 		failed(failureStatus, missingObjectResponse),
 		succeeded("false"),
@@ -248,7 +248,7 @@ func TestConflictRecoveryRetriesAStartThatFailedInTheWindow(t *testing.T) {
 	stub.answers(t, "run", failed(conflictStatus, conflictResponse))
 	stub.answers(t, "start", failed(failureStatus, missingContainerResponse))
 
-	_, err := callWithin(t, 10*time.Second)
+	_, err := underRecoveryWait(t, time.Minute, time.Millisecond, 10*time.Second)
 	if err != nil {
 		t.Fatalf("the container was reported as never coming up although it was there to be started: %v", err)
 	}
@@ -269,11 +269,11 @@ func TestConflictRecoveryRetriesAStartThatFailedInTheWindow(t *testing.T) {
 // which is the one thing that says where it stopped.
 func TestConflictRecoveryFailsWithinItsBoundCarryingTheLastWords(t *testing.T) {
 	stub := newDockerStub(t)
-	withRecoveryPace(t, 200*time.Millisecond, time.Millisecond)
 	stub.answers(t, "inspect", failed(failureStatus, missingObjectResponse))
 	stub.answers(t, "run", failed(conflictStatus, conflictResponse))
 
-	took, err := callWithin(t, 10*time.Second)
+	bound := 200 * time.Millisecond
+	took, err := underRecoveryWait(t, bound, time.Millisecond, 10*time.Second)
 	if err == nil {
 		t.Fatal("the container was reported as up although every look at it failed")
 	}
@@ -290,7 +290,7 @@ func TestConflictRecoveryFailsWithinItsBoundCarryingTheLastWords(t *testing.T) {
 	}
 	if took > time.Minute {
 		t.Errorf("the failure took %s, and the wait it was given was %s: it has to end when that "+
-			"wait ends", took, recoveryBound)
+			"wait ends", took, bound)
 	}
 }
 
@@ -303,7 +303,6 @@ func TestConflictRecoveryFailsWithinItsBoundCarryingTheLastWords(t *testing.T) {
 // happened first and the start is where the wait actually stopped.
 func TestConflictRecoveryReportsCreateAndStartTogether(t *testing.T) {
 	stub := newDockerStub(t)
-	withRecoveryPace(t, 200*time.Millisecond, time.Millisecond)
 	stub.answers(t, "inspect",
 		failed(failureStatus, missingObjectResponse),
 		succeeded("false"),
@@ -311,7 +310,8 @@ func TestConflictRecoveryReportsCreateAndStartTogether(t *testing.T) {
 	stub.answers(t, "run", failed(conflictStatus, conflictResponse))
 	stub.answers(t, "start", failed(failureStatus, missingContainerResponse))
 
-	took, err := callWithin(t, 10*time.Second)
+	bound := 200 * time.Millisecond
+	took, err := underRecoveryWait(t, bound, time.Millisecond, 10*time.Second)
 	if err == nil {
 		t.Fatal("the container was reported as up although it was never started")
 	}
@@ -322,7 +322,7 @@ func TestConflictRecoveryReportsCreateAndStartTogether(t *testing.T) {
 		}
 	}
 	if took > time.Minute {
-		t.Errorf("the failure took %s, and the wait it was given was %s", took, recoveryBound)
+		t.Errorf("the failure took %s, and the wait it was given was %s", took, bound)
 	}
 }
 
@@ -335,14 +335,10 @@ func TestConflictRecoveryReportsCreateAndStartTogether(t *testing.T) {
 // as the wait lasts, and four of this module's packages go through here.
 func TestExistingContainerStartFailureIsReportedAtOnce(t *testing.T) {
 	stub := newDockerStub(t)
-	// The wait is set far beyond what the case allows the call: if this path
-	// ever picks up the recovery's retries, the case fails on the time rather
-	// than on a number of calls that a loaded machine could vary.
-	withRecoveryPace(t, time.Hour, time.Millisecond)
 	stub.answers(t, "inspect", succeeded("false"))
 	stub.answers(t, "start", failed(failureStatus, missingContainerResponse))
 
-	_, err := callWithin(t, 10*time.Second)
+	_, err := underRecoveryWait(t, time.Hour, time.Millisecond, 10*time.Second)
 	if err == nil {
 		t.Fatal("a container that exists and will not start was reported as up")
 	}
