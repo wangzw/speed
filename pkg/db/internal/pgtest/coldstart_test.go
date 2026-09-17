@@ -297,6 +297,14 @@ func (r peerRun) timeline() string {
 // that hiccuped says something else — and counting one as the window would have
 // a round claim coverage it never had, which is the same defect as counting a
 // failure from some other call.
+//
+// The two answers are the ones taken from the capture on the issue, and a
+// docker CLI that words either of them differently has that half of this never
+// match, the round reported as one that did not reach the window. Measured on
+// docker 28: a start that finds no container says "No such container" behind
+// "Error response from daemon:" rather than after a bare "Error:". That is the
+// safe direction — an answer this does not recognize costs the round a coverage
+// claim it cannot show, and never makes one.
 func (r peerRun) hitWindow() bool {
 	conflicted := false
 	for _, call := range r.calls {
@@ -419,6 +427,56 @@ func TestColdstartChild(t *testing.T) {
 	// A peer whose acquisition skipped leaves no marker, and that absence is
 	// all the harness needs to tell the two apart.
 	fmt.Fprintln(os.Stdout, coldstartAcquiredMarker)
+}
+
+// TestAColdstartPeerThatSkipsLeavesNoMarker covers the end of the marker
+// protocol the harness reads: a peer left without a database says nothing that
+// could be taken for one.
+//
+// The classification cases feed the marker in as an input; this one puts it
+// there, by running a real peer against a stand-in that cannot answer docker
+// info, which is what an unreachable daemon looks like to Acquire. What has to
+// come back is a peer that exited cleanly, printed no marker, and left its
+// reason in its output. A marker printed by a peer that never got a database is
+// what lets a round count a skip as one that came up, which is the defect the
+// marker was added for.
+//
+// The peer is this test binary, re-run; the harness builds a separate one so
+// that it can point it at a checkout of the code before a fix, and what this
+// case is about is the binary under test. Its environment is built here rather
+// than through peerEnvironment, with one peer at the rendezvous: the count is
+// not what this is checking, and the CI flag the harness carries over would
+// turn the skip it is looking for into a failure.
+func TestAColdstartPeerThatSkipsLeavesNoMarker(t *testing.T) {
+	stub := newDockerStub(t)
+	ctx, cancel := context.WithTimeout(context.Background(), coldstartRendezvousTimeout)
+	defer cancel()
+	cmd := exec.CommandContext(ctx, os.Args[0], "-test.v", "-test.run=^TestColdstartChild$")
+	cmd.Env = []string{
+		"PATH=" + stub.dir,
+		coldstartChildEnv + "=peer-0",
+		coldstartRendezvousEnv + "=" + t.TempDir(),
+		coldstartPeersEnv + "=1",
+	}
+	var stdout, stderr strings.Builder
+	cmd.Stdout, cmd.Stderr = &stdout, &stderr
+	if err := cmd.Run(); err != nil {
+		t.Fatalf("the peer came back with %v, and an acquisition that cannot reach the daemon "+
+			"skips:\nstdout:\n%s\nstderr:\n%s", err, stdout.String(), stderr.String())
+	}
+
+	if strings.Contains(stdout.String(), coldstartAcquiredMarker) {
+		t.Errorf("the peer left the marker behind although its acquisition skipped, so a round would "+
+			"count it as a peer that came up on the container:\n%s", stdout.String())
+	}
+	if reason := skipReason(stdout.String()); reason == "" {
+		t.Errorf("the peer skipped without a reason its output can be read for, so a round reporting "+
+			"the skip has nothing to say about it:\n%s", stdout.String())
+	}
+	if calls := stub.calls(t); len(calls) == 0 || calls[0] != "info" {
+		t.Errorf("the stand-in was asked for %v, and the first thing a peer does with an unreachable "+
+			"daemon is ask docker about it: what this peer skipped on was not docker", calls)
+	}
 }
 
 // meetPeers blocks until every peer has reached this point, so that they go for
@@ -862,7 +920,7 @@ func TestPeerEnvironmentCarriesTheDaemonAlong(t *testing.T) {
 			if got, want := strings.Join(env, "\n"), strings.Join(c.want, "\n"); got != want {
 				t.Errorf("the peer's environment is:\n%s\nwant:\n%s", got, want)
 			}
-			if shim := "PATH=/shim" + list; env[0] != c.want[0] || !strings.HasPrefix(env[0], shim) {
+			if shim := "PATH=/shim" + list; !strings.HasPrefix(env[0], shim) {
 				t.Errorf("the peer's PATH is %q, want it to begin with its own shim, %q", env[0], shim)
 			}
 		})
