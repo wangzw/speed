@@ -163,6 +163,16 @@ func succeeded(out string) string { return "ok:" + out }
 // what it wrote to standard error.
 func failed(status int, message string) string { return fmt.Sprintf("fail:%d:%s", status, message) }
 
+// abandoned records that a case ended with the call it was timing still
+// running, and left the pace it had injected in place for the cases after it.
+//
+// A call that outlives its case is one whose implementation ignored the bound
+// it was given: it is never coming back, and it reads the pace on every round
+// it makes. The cases after this one therefore run with the abandoned case's
+// pace instead of their own — a run that is failing either way — because what
+// they must not do is write to a variable a live call is still reading.
+var abandoned bool
+
 // underRecoveryWait runs ensureContainer with the wait that follows a lost
 // create shrunk to the given bound and interval — so that a case can reach the
 // end of it and assert what is reported there — and fails the case when the
@@ -176,23 +186,31 @@ func failed(status int, message string) string { return fmt.Sprintf("fail:%d:%s"
 //
 // The pace is put back when the call is back, and not before: a call that never
 // comes back is still reading it, and writing it underneath that call would be
-// a race — in the one case where the case is failing anyway, which is exactly
-// the kind of noise that makes a real failure hard to read. The production
-// values stay replaced for the rest of the run in that case, which is what the
-// suite is left holding when an implementation hangs.
+// a race. Which is why a case that gives up on the call sets abandoned below
+// rather than leaving the next case to write those variables again — the report
+// that would produce lands on top of a failure that is already saying what went
+// wrong, and a race report that has to be explained away is worse than the pace
+// a failing run carries on with.
 func underRecoveryWait(t *testing.T, bound, interval, limit time.Duration) (time.Duration, error) {
 	t.Helper()
-	previousBound, previousInterval := recoveryBound, recoveryInterval
-	recoveryBound, recoveryInterval = bound, interval
+	var restore func()
+	if !abandoned {
+		previousBound, previousInterval := recoveryBound, recoveryInterval
+		recoveryBound, recoveryInterval = bound, interval
+		restore = func() { recoveryBound, recoveryInterval = previousBound, previousInterval }
+	}
 
 	started := time.Now()
 	done := make(chan error, 1)
 	go func() { done <- ensureContainer() }()
 	select {
 	case err := <-done:
-		recoveryBound, recoveryInterval = previousBound, previousInterval
+		if restore != nil {
+			restore()
+		}
 		return time.Since(started), err
 	case <-time.After(limit):
+		abandoned = true
 		t.Fatalf("bringing the container up has not come back within %s, and a create that cannot be "+
 			"recovered has to end in a failure within the wait it was given (%s)", limit, bound)
 		return 0, nil
