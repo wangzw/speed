@@ -116,11 +116,32 @@ type peerRun struct {
 	startErr error
 }
 
-// dockerCall is one recorded docker invocation.
+// dockerCall is one recorded docker invocation, with the moments it started and
+// finished: how long a peer took over a call, and how long it took to make the
+// next one, is what says whether it looked inside the window or after it.
 type dockerCall struct {
-	sub    string
-	status int
-	stderr string
+	sub      string
+	status   int
+	stderr   string
+	started  float64
+	finished float64
+}
+
+// timeline is a peer's calls in one line: each subcommand with the status it
+// left with, how long after the call before it it started, and how long it took.
+func (r peerRun) timeline() string {
+	var line strings.Builder
+	var previous float64
+	for index, call := range r.calls {
+		if index > 0 {
+			line.WriteString("; ")
+		}
+		fmt.Fprintf(&line, "%s(exit %d, after %s, took %s)", call.sub, call.status,
+			time.Duration((call.started-previous)*float64(time.Second)).Round(time.Millisecond),
+			time.Duration((call.finished-call.started)*float64(time.Second)).Round(time.Millisecond))
+		previous = call.finished
+	}
+	return line.String()
 }
 
 // hitWindow reports whether this peer lost the create race and then, by its own
@@ -176,7 +197,7 @@ func TestColdStartConcurrency(t *testing.T) {
 				t.Errorf("round %d: %s came up on nothing after the container was created for it:\nstdout:\n%s\nstderr:\n%s",
 					round, run.role, run.stdout, run.stderr)
 			}
-			t.Logf("round %d: %s exited %d after %d docker calls", round, run.role, run.exit, len(run.calls))
+			t.Logf("round %d: %s exited %d: %s", round, run.role, run.exit, run.timeline())
 		}
 		if len(reached) > 0 {
 			windowRounds++
@@ -389,6 +410,13 @@ func readCalls(path string) []dockerCall {
 				}
 			case strings.HasPrefix(line, "stderr: "):
 				call.stderr = strings.TrimPrefix(line, "stderr: ")
+			case strings.HasPrefix(line, "from: "):
+				from, to, found := strings.Cut(strings.TrimPrefix(line, "from: "), " to: ")
+				if !found {
+					continue
+				}
+				call.started, _ = strconv.ParseFloat(from, 64)
+				call.finished, _ = strconv.ParseFloat(to, 64)
 			}
 		}
 		calls = append(calls, call)
