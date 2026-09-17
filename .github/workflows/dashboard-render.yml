@@ -35,3 +35,8 @@ jobs:
         uses: vislake/coding-flows@main
         with:
           mode: dashboard
+          # CODING_FLOW_PAT 对应的登录名，供看板判断"这条评论是不是系统自己发的"——不传的话
+          # Coder（走 PAT 身份）发的结构化评论会被误判成不可信，看板摘要列会显示过期状态
+          # （真实事故，见 SKILL.md「安全：不可信内容与提示词注入」「凭证与权限」）。
+          # 在仓库/组织级配置一次：gh variable set CODING_FLOW_PAT_LOGIN --body <PAT 对应的用户名>
+          trusted_comment_logins: ${{ vars.CODING_FLOW_PAT_LOGIN }}

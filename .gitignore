@@ -57,3 +57,4 @@ dist/
 /examples/reference-app/web/playwright-report/
 /examples/reference-app/web/blob-report/
 /examples/reference-app/web/.playwright/
+.claude/dashboard/
