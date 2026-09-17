@@ -68,6 +68,16 @@ const (
 	// coldstartRendezvousTimeout bounds the wait for the last peer, so that a
 	// peer which never started fails the round instead of hanging it.
 	coldstartRendezvousTimeout = 2 * time.Minute
+	// coldstartAcquiredMarker is the line a peer prints once Acquire has handed
+	// it a database. It is what tells a peer that came up from one whose
+	// acquisition skipped: both leave an exit status of 0, and the skip —
+	// docker unreachable, whatever the reason — is exactly the outcome a round
+	// must not count as a peer that reached the container.
+	coldstartAcquiredMarker = "pgtest-coldstart: acquired"
+	// coldstartSkipTailLines is how much of a peer's output a report carries
+	// when the peer skipped and its output holds no reason: enough for the last
+	// thing it said, not enough to paste a test log into a round's summary.
+	coldstartSkipTailLines = 5
 )
 
 // coldstartShimScript is the docker each peer finds first on its PATH.
@@ -108,12 +118,135 @@ const shimRealDocker = "REAL_DOCKER"
 
 // peerRun is what one peer did in one round.
 type peerRun struct {
-	role     string
-	exit     int
+	role string
+	exit int
+	// acquired is the marker the peer printed once Acquire handed it a
+	// database: the one thing in this account that tells a peer which came up
+	// from a peer whose acquisition skipped, since their exit statuses agree.
+	acquired bool
 	stdout   string
 	stderr   string
 	calls    []dockerCall
 	startErr error
+}
+
+// peerOutcome is what one peer's run came to.
+type peerOutcome int
+
+const (
+	// peerConverged is a peer that acquired a database: it exited cleanly and
+	// left the marker behind saying so.
+	peerConverged peerOutcome = iota
+	// peerSkipped is a peer whose acquisition skipped: the same clean exit
+	// status, and no marker. A peer that cannot reach the daemon never enters
+	// the race at all, and a harness reading only the status would report it as
+	// a peer that came up on the container.
+	peerSkipped
+	// peerFailed is a peer that did not come up and said so with its exit
+	// status. Under CI a skip arrives here instead: Acquire fails rather than
+	// skips there.
+	peerFailed
+)
+
+// String names the outcome the way a round's output refers to it.
+func (o peerOutcome) String() string {
+	switch o {
+	case peerConverged:
+		return "came up on the container"
+	case peerSkipped:
+		return "skipped"
+	case peerFailed:
+		return "failed"
+	}
+	return fmt.Sprintf("peerOutcome(%d)", int(o))
+}
+
+// outcome is what this peer's run came to.
+func (r peerRun) outcome() peerOutcome {
+	switch {
+	case r.exit != 0:
+		return peerFailed
+	case r.acquired:
+		return peerConverged
+	default:
+		return peerSkipped
+	}
+}
+
+// skipExplanation is what a peer's output says about a run that neither
+// acquired nor failed: the reason a skipped case printed, or, where there is
+// none, the tail of what the peer did print.
+func (r peerRun) skipExplanation() string {
+	if reason := skipReason(r.stdout); reason != "" {
+		return reason
+	}
+	lines := strings.Split(strings.TrimSpace(r.stdout+"\n"+r.stderr), "\n")
+	if len(lines) > coldstartSkipTailLines {
+		lines = lines[len(lines)-coldstartSkipTailLines:]
+	}
+	return "no reason in its output, which ended with: " + strings.Join(lines, " / ")
+}
+
+// skipReason reads the reason out of a peer's output when a skipped case left
+// one there. The case prints it as a log line just ahead of the summary line
+// that names the skip, indented as far as that log line is.
+func skipReason(stdout string) string {
+	lines := strings.Split(stdout, "\n")
+	for index, line := range lines {
+		if !strings.HasPrefix(line, "--- SKIP:") {
+			continue
+		}
+		var reason []string
+		for index--; index >= 0; index-- {
+			if !strings.HasPrefix(lines[index], "    ") {
+				break
+			}
+			reason = append([]string{strings.TrimSpace(lines[index])}, reason...)
+		}
+		return strings.Join(reason, " ")
+	}
+	return ""
+}
+
+// roundSummary is one round of peers classified and counted.
+type roundSummary struct {
+	converged int
+	skipped   int
+	failed    int
+	// reached holds the roles that lost the create race and were then told by
+	// their own calls that the container was not there.
+	reached []string
+}
+
+// summarizeRound classifies the peers of one round and adds them up.
+func summarizeRound(runs []peerRun) roundSummary {
+	var summary roundSummary
+	for _, run := range runs {
+		switch run.outcome() {
+		case peerConverged:
+			summary.converged++
+		case peerSkipped:
+			summary.skipped++
+		case peerFailed:
+			summary.failed++
+		}
+		if run.hitWindow() {
+			summary.reached = append(summary.reached, run.role)
+		}
+	}
+	return summary
+}
+
+// coversWindow is whether this round is one that says anything about the
+// window: a peer reached it, and no peer's outcome is anything but coming up.
+//
+// A round with a skipped peer is not one. A peer that skipped was never in the
+// race, and counting the round anyway would put the summary's "every peer in
+// them came up on the one container" behind a round it is not true of. A round
+// with a failed peer is not one either, for the plainer reason that the run
+// reports it as a failure.
+func (s roundSummary) coversWindow() bool {
+	return len(s.reached) > 0 && s.skipped == 0 && s.failed == 0
 }
 
 // dockerCall is one recorded docker invocation, with the moments it started and
@@ -192,27 +325,35 @@ func TestColdStartConcurrency(t *testing.T) {
 	peerBinary := buildPeerBinary(t)
 	root := t.TempDir()
 
-	var rounds, windowRounds, failures int
+	var rounds, windowRounds, failures, skips int
+	var skipped []string
 	for round := 1; round <= coldstartRounds && windowRounds < coldstartWindows; round++ {
 		rounds = round
 		coldStart(t, dockerPath, round)
 		runs := runPeers(t, peerBinary, dockerPath, root, round)
+		summary := summarizeRound(runs)
 
-		var reached []string
 		for _, run := range runs {
-			if run.hitWindow() {
-				reached = append(reached, run.role)
-			}
-			if run.exit != 0 {
+			switch run.outcome() {
+			case peerFailed:
 				failures++
 				t.Errorf("round %d: %s came up on nothing after the container was created for it:\nstdout:\n%s\nstderr:\n%s",
 					round, run.role, run.stdout, run.stderr)
+			case peerSkipped:
+				skips++
+				skipped = append(skipped, fmt.Sprintf("round %d %s: %s", round, run.role, run.skipExplanation()))
 			}
 			t.Logf("round %d: %s exited %d: %s", round, run.role, run.exit, run.timeline())
 		}
-		if len(reached) > 0 {
+		switch {
+		case summary.coversWindow():
 			windowRounds++
-			t.Logf("round %d: the window was reached by %s", round, strings.Join(reached, ", "))
+			t.Logf("round %d: the window was reached by %s, and every peer in it came up on the one container",
+				round, strings.Join(summary.reached, ", "))
+		case len(summary.reached) > 0 && summary.skipped > 0:
+			t.Logf("round %d: the window was reached by %s, but %d of the %d peers skipped instead of "+
+				"racing, so the round is not one that covered it", round, strings.Join(summary.reached, ", "),
+				summary.skipped, len(runs))
 		}
 		// A round that failed is not one to repeat: the next round starts from
 		// the same place and the code has not changed. Stopping here also
@@ -222,6 +363,10 @@ func TestColdStartConcurrency(t *testing.T) {
 		}
 	}
 
+	if skips > 0 {
+		t.Logf("%d of the %d peers that ran skipped and are counted as neither coming up nor failing: %s",
+			skips, rounds*coldstartPeers, strings.Join(skipped, "; "))
+	}
 	switch {
 	case failures > 0:
 		t.Errorf("%d of the peers in these %d rounds could not reach the container, and a create that "+
@@ -244,8 +389,10 @@ func TestColdStartConcurrency(t *testing.T) {
 // does.
 //
 // It does that one thing so that a peer's exit status is the outcome of one
-// acquisition and nothing else — which is what makes "this peer converged" a
-// thing a round can read, and a failure of it a thing the round can report.
+// acquisition and nothing else — which is what makes a failure of it a thing
+// the round can report. What the status cannot say is whether the acquisition
+// happened at all: a skip leaves the same clean status behind, so a peer also
+// says in its own words when it holds a database.
 func TestColdstartChild(t *testing.T) {
 	role := os.Getenv(coldstartChildEnv)
 	if role == "" {
@@ -260,6 +407,11 @@ func TestColdstartChild(t *testing.T) {
 		t.Fatal(err)
 	}
 	Acquire(t)
+	// On standard output, not through the test log: the harness reads this from
+	// outside, and a case that passed has its log captured rather than printed.
+	// A peer whose acquisition skipped leaves no marker, and that absence is
+	// all the harness needs to tell the two apart.
+	fmt.Fprintln(os.Stdout, coldstartAcquiredMarker)
 }
 
 // meetPeers blocks until every peer has reached this point, so that they go for
@@ -360,29 +512,22 @@ func plantShim(t *testing.T, dockerPath, root, role string, round int) string {
 
 // runPeer starts one peer as a separate process and collects what it did.
 //
-// The environment is built rather than inherited, so that nothing on the
-// machine running the check can change what a peer sees: PATH begins with that
-// peer's own shim, and everything below it — the CI flag included, which
-// decides whether a peer may skip instead of failing — is passed on as it is.
+// The environment comes from peerEnvironment rather than being inherited, so
+// that nothing on the machine running the check can change what a peer sees.
+// The case runs verbosely because the reason a skip gives is a log line, and a
+// skip is an outcome the round has to be able to report.
 func runPeer(peerBinary, shimDir, rendezvous, role string) peerRun {
 	ctx, cancel := context.WithTimeout(context.Background(), coldstartRoundLimit)
 	defer cancel()
-	cmd := exec.CommandContext(ctx, peerBinary, "-test.run=^TestColdstartChild$")
-	cmd.Env = []string{
-		"PATH=" + shimDir + string(os.PathListSeparator) + os.Getenv("PATH"),
-		coldstartChildEnv + "=" + role,
-		coldstartRendezvousEnv + "=" + rendezvous,
-		coldstartPeersEnv + "=" + strconv.Itoa(coldstartPeers),
-	}
-	if value, present := os.LookupEnv("CI"); present {
-		cmd.Env = append(cmd.Env, "CI="+value)
-	}
+	cmd := exec.CommandContext(ctx, peerBinary, "-test.v", "-test.run=^TestColdstartChild$")
+	cmd.Env = peerEnvironment(shimDir, rendezvous, role, os.Environ())
 	var stdout, stderr strings.Builder
 	cmd.Stdout, cmd.Stderr = &stdout, &stderr
 
 	run := peerRun{role: role}
 	err := cmd.Run()
 	run.stdout, run.stderr = stdout.String(), stderr.String()
+	run.acquired = strings.Contains(run.stdout, coldstartAcquiredMarker)
 	var exit *exec.ExitError
 	switch {
 	case err == nil:
@@ -393,6 +538,48 @@ func runPeer(peerBinary, shimDir, rendezvous, role string) peerRun {
 	}
 	run.calls = readCalls(filepath.Join(shimDir, "calls.log"))
 	return run
+}
+
+// peerEnvironment assembles the environment one peer runs with out of the
+// environment the harness itself runs in.
+//
+// It is built rather than inherited, so that nothing on the machine can change
+// what a peer sees: PATH begins with that peer's own shim, and the names below
+// are the whole of what is carried over. What is carried is what a peer needs
+// to reach the same daemon the harness reaches — a machine can keep its docker
+// socket, its client configuration and its home anywhere, and a peer that
+// cannot reach the daemon skips out of the race rather than running it, which
+// is one outcome a round must never cover up. The CI flag is carried for the
+// reason it always was: it decides whether a peer may skip at all.
+func peerEnvironment(shimDir, rendezvous, role string, host []string) []string {
+	path, _ := hostEnvironment(host, "PATH")
+	env := []string{
+		"PATH=" + shimDir + string(os.PathListSeparator) + path,
+		coldstartChildEnv + "=" + role,
+		coldstartRendezvousEnv + "=" + rendezvous,
+		coldstartPeersEnv + "=" + strconv.Itoa(coldstartPeers),
+	}
+	// Carried when the harness has them and absent when it does not: a peer
+	// handed an empty HOME or DOCKER_HOST reads it as one set to nothing, which
+	// is not the machine the harness is running on.
+	for _, name := range []string{"CI", "HOME", "DOCKER_HOST", "DOCKER_CONFIG", "DOCKER_CONTEXT"} {
+		if value, present := hostEnvironment(host, name); present {
+			env = append(env, name+"="+value)
+		}
+	}
+	return env
+}
+
+// hostEnvironment reads one name out of an environment list, and says whether
+// it is there at all: a name set to nothing and a name that is not set are not
+// the same thing to the code that reads it.
+func hostEnvironment(host []string, name string) (string, bool) {
+	for _, entry := range host {
+		if value, found := strings.CutPrefix(entry, name+"="); found {
+			return value, true
+		}
+	}
+	return "", false
 }
 
 // readCalls reads one peer's log of what docker was asked. A peer that got as
@@ -452,4 +639,152 @@ func buildPeerBinary(t *testing.T) string {
 		t.Fatalf("building the peer binary out of this package failed: %v\n%s", err, body)
 	}
 	return out
+}
+
+// TestPeerOutcomeTellsASkipFromComingUp holds the one thing the harness could
+// not tell apart: a peer whose acquisition skipped leaves the same exit status
+// behind as a peer that came up.
+//
+// A run that reads the status alone counts every peer whose docker was
+// unreachable as one that reached the container — eight of eight, on the
+// strength of a status that nothing had qualified.
+func TestPeerOutcomeTellsASkipFromComingUp(t *testing.T) {
+	for _, c := range []struct {
+		name string
+		run  peerRun
+		want peerOutcome
+	}{
+		{"a peer that holds a database", peerRun{exit: 0, acquired: true}, peerConverged},
+		{"a peer whose acquisition skipped", peerRun{exit: 0}, peerSkipped},
+		{"a peer that came up on nothing", peerRun{exit: 1}, peerFailed},
+		{"a peer that failed after acquiring", peerRun{exit: 1, acquired: true}, peerFailed},
+	} {
+		t.Run(c.name, func(t *testing.T) {
+			if got := c.run.outcome(); got != c.want {
+				t.Errorf("the peer's outcome is %s, want %s", got, c.want)
+			}
+		})
+	}
+}
+
+// TestSkipReasonReadsWhatASkippedPeerSaid holds the reading of a peer's output
+// to the shapes it comes in: a skip that printed its reason — the reason is a
+// log line, and it is printed ahead of the summary line — and a peer that left
+// none, whose account is the tail of what it printed.
+func TestSkipReasonReadsWhatASkippedPeerSaid(t *testing.T) {
+	// One peer run on a machine whose daemon the shim answered as unreachable,
+	// with CI unset: exit 0, no marker, and this.
+	stdout := "=== RUN   TestColdstartChild\n" +
+		"    coldstart_test.go:409: the docker daemon is not reachable, so the PostgreSQL cases cannot " +
+		"run: docker info --format {{.ServerVersion}}: exit status 1: Cannot connect to the Docker " +
+		"daemon at unix:///var/run/docker.sock\n" +
+		"--- SKIP: TestColdstartChild (0.00s)\nPASS\n"
+	want := "coldstart_test.go:409: the docker daemon is not reachable, so the PostgreSQL cases cannot " +
+		"run: docker info --format {{.ServerVersion}}: exit status 1: Cannot connect to the Docker " +
+		"daemon at unix:///var/run/docker.sock"
+	if got := skipReason(stdout); got != want {
+		t.Errorf("the skip reason reads:\n%s\nwant:\n%s", got, want)
+	}
+	if got := skipReason("=== RUN   TestColdstartChild\n--- SKIP: TestColdstartChild (0.00s)\nPASS\n"); got != "" {
+		t.Errorf("a skip that printed no reason of its own reads as %q, want nothing", got)
+	}
+
+	run := peerRun{stdout: "one\ntwo\nthree\nfour\nfive\nsix\nseven\n"}
+	wantTail := "no reason in its output, which ended with: three / four / five / six / seven"
+	if got := run.skipExplanation(); got != wantTail {
+		t.Errorf("a peer whose output holds no reason explains itself as:\n%s\nwant:\n%s", got, wantTail)
+	}
+}
+
+// TestARoundWithASkippedPeerCoversNothing pins what a skip does to a round: the
+// round may have reached the window, and it is still not one the summary may
+// claim.
+//
+// The state this rules out is the mixed round — some peers skipping while
+// others lose the create race. Counting that round made it one that covered the
+// window, with a summary saying every peer in it came up on the one container,
+// of a round in which some peers never asked for one.
+func TestARoundWithASkippedPeerCoversNothing(t *testing.T) {
+	windowReached := peerRun{role: "peer-0", acquired: true, calls: []dockerCall{
+		{sub: "run", status: conflictStatus, stderr: conflictResponse},
+		{sub: "inspect", status: failureStatus, stderr: missingObjectResponse},
+	}}
+	cameUp := peerRun{role: "peer-1", acquired: true}
+	skipped := peerRun{role: "peer-2"}
+	failed := peerRun{role: "peer-3", exit: 1}
+
+	for _, c := range []struct {
+		name string
+		runs []peerRun
+		want bool
+	}{
+		{"every peer came up, one of them through the window", []peerRun{windowReached, cameUp}, true},
+		{"a peer skipped", []peerRun{windowReached, skipped}, false},
+		{"a peer failed", []peerRun{windowReached, failed}, false},
+		{"no peer reached the window", []peerRun{cameUp, cameUp}, false},
+	} {
+		t.Run(c.name, func(t *testing.T) {
+			if got := summarizeRound(c.runs).coversWindow(); got != c.want {
+				t.Errorf("the round covers the window: %v, want %v", got, c.want)
+			}
+		})
+	}
+
+	summary := summarizeRound([]peerRun{windowReached, cameUp, skipped})
+	if summary.converged != 2 || summary.skipped != 1 || summary.failed != 0 {
+		t.Errorf("the round added up to %d coming up, %d skipping and %d failing, want 2, 1 and 0",
+			summary.converged, summary.skipped, summary.failed)
+	}
+	if len(summary.reached) != 1 || summary.reached[0] != "peer-0" {
+		t.Errorf("the round has %v reach the window, want peer-0 alone", summary.reached)
+	}
+}
+
+// TestPeerEnvironmentCarriesTheDaemonAlong holds the environment a peer is
+// built to what it needs to reach the same daemon the harness reaches.
+//
+// The asymmetry this rules out is one no round can see for itself: the harness
+// reaching a daemon through its own environment and its peers not reaching it
+// through theirs, so that every peer skips a race it was started for.
+func TestPeerEnvironmentCarriesTheDaemonAlong(t *testing.T) {
+	list := string(os.PathListSeparator)
+	for _, c := range []struct {
+		name string
+		host []string
+		want []string
+	}{
+		{
+			name: "a machine that keeps its docker behind its environment",
+			host: []string{"PATH=/usr/bin:/bin", "HOME=/home/tester", "DOCKER_HOST=tcp://127.0.0.1:2375", "CI=true"},
+			want: []string{
+				"PATH=/shim" + list + "/usr/bin:/bin",
+				coldstartChildEnv + "=peer-3",
+				coldstartRendezvousEnv + "=/rendezvous",
+				coldstartPeersEnv + "=" + strconv.Itoa(coldstartPeers),
+				"CI=true",
+				"HOME=/home/tester",
+				"DOCKER_HOST=tcp://127.0.0.1:2375",
+			},
+		},
+		{
+			name: "a machine that keeps none of it",
+			host: []string{"PATH=/usr/bin"},
+			want: []string{
+				"PATH=/shim" + list + "/usr/bin",
+				coldstartChildEnv + "=peer-3",
+				coldstartRendezvousEnv + "=/rendezvous",
+				coldstartPeersEnv + "=" + strconv.Itoa(coldstartPeers),
+			},
+		},
+	} {
+		t.Run(c.name, func(t *testing.T) {
+			env := peerEnvironment("/shim", "/rendezvous", "peer-3", c.host)
+			if got, want := strings.Join(env, "\n"), strings.Join(c.want, "\n"); got != want {
+				t.Errorf("the peer's environment is:\n%s\nwant:\n%s", got, want)
+			}
+			if shim := "PATH=/shim" + list; env[0] != c.want[0] || !strings.HasPrefix(env[0], shim) {
+				t.Errorf("the peer's PATH is %q, want it to begin with its own shim, %q", env[0], shim)
+			}
+		})
+	}
 }
