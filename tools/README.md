@@ -22,6 +22,7 @@ Each script also runs on its own:
 ```
 python3 tools/check_toolchain.py
 python3 tools/check_markdown_examples.py
+python3 tools/check_workflow_refs.py
 python3 tools/scan_cjk.py
 ```
 
@@ -51,6 +52,21 @@ fragment, and is syntax-checked under several wrappings instead of being
 forced into a padded full program. The script's own docstring carries the
 scope rules and the escape hatch for a fragment that genuinely cannot
 parse.
+
+`check_workflow_refs.py` — fails when a coding-flow template copy under
+`.github/workflows/` carries a relative path segment (a `.` or `..`
+immediately followed by `/`). The templates are byte-copies of files that
+live inside the upstream skill directory, where their
+`../../SKILL.md`-style references resolve; copied into a consuming
+repository the same text points into a different tree, so a relative
+reference in a copy always dangles. Guarded files are the ones carrying
+a `uses: vislake/coding-flows@...` line — the call to the composite
+action upstream publishes — so this repository's own workflows may keep
+using repository-relative paths, and a fifth template lands under the
+gate with nothing to maintain here. Exit codes: 0 clean (every guarded
+file reported by name), 1 a relative reference found, 2 infrastructure
+error (no `.github/workflows/` directory, no guarded file to check, or a
+file that cannot be read).
 
 `scan_cjk.py` — reports CJK characters outside the paths it carves
 out, which is how the language rule stated in the root `CLAUDE.md` gets
