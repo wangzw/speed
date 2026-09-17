@@ -313,18 +313,48 @@ exit 1
 // It is made beside the test's temporary files rather than inside one: a
 // t.TempDir is removed when its case ends, and the call this stands in front of
 // is still asking PATH for docker after that. The directory outlives every case
-// on purpose and is never removed — it is one directory per test binary, made
-// only by a case that actually gave up on a call.
+// on purpose — it is one directory per test binary, made the first time a case
+// gives up on a call — and it stops there: TestMain removes it when the binary
+// is on its way out, past which there is no call left to keep off the real
+// docker and a directory nobody will look at again.
 var swallowStubDir = sync.OnceValues(func() (string, error) {
 	dir, err := os.MkdirTemp("", "pgtest-swallow-")
 	if err != nil {
 		return "", fmt.Errorf("making the directory of the stand-in for abandoned calls: %w", err)
 	}
+	// Recorded the moment it exists, ahead of the stand-in being planted in
+	// it: a directory whose docker could not be written is still one TestMain
+	// has to remove.
+	swallowStubPlanted = dir
 	if err := os.WriteFile(filepath.Join(dir, "docker"), []byte(swallowStubScript), 0o755); err != nil {
 		return "", fmt.Errorf("planting the stand-in for abandoned calls: %w", err)
 	}
 	return dir, nil
 })
+
+// swallowStubPlanted is the directory swallowStubDir made, for TestMain to
+// remove. It stays empty in a run where no case gave up on a call, which is
+// what says there is nothing to remove — asking swallowStubDir instead would
+// make the directory it is being asked about.
+var swallowStubPlanted string
+
+// TestMain is where the stand-in for calls a case gave up on is cleaned up.
+//
+// The run is the first moment it may go: the directory keeps calls that are
+// still making rounds off the real docker, and a call a case gave up on is
+// still asking PATH for docker when its case ends — so nothing inside a case
+// can remove it, and nothing past the run has a use for it.
+//
+// The exit status is the run's own, which is the whole of what a test binary
+// reports: leaving with anything else would make this package's cases unable to
+// fail, and no case here could say so.
+func TestMain(m *testing.M) {
+	code := m.Run()
+	if swallowStubPlanted != "" {
+		_ = os.RemoveAll(swallowStubPlanted)
+	}
+	os.Exit(code)
+}
 
 // abandoned records that a case gave up on a call that is still running, and
 // that what the stand-ins this package plants record from here on is no longer
@@ -658,4 +688,83 @@ func TestAnAbandonedCallIsCutOffFromTheRealDocker(t *testing.T) {
 	// making rounds and taking the answers they are built on.
 	os.Setenv("PATH", previous)
 	abandoned = wasAbandoned
+}
+
+// TestTheSwallowStandInIsGoneWhenTheRunEnds covers the other end of the
+// stand-in for calls a case gave up on: the directory that keeps such calls off
+// the real docker has to outlive every case — the call is still asking PATH for
+// docker when its case ends — and it has to stop at the run.
+//
+// Watching that takes a child process. The removal happens after every case has
+// ended, when the test binary is on its way out, so nothing in this process can
+// be observed doing it: only a process that has actually exited can be looked
+// at from the outside, and this case re-executes the test binary for one.
+//
+// The child runs the case that gives up on a call, which is what makes the
+// directory at all, and it is held to having passed it and exited cleanly: a
+// case that never got as far as the swallow stand-in would leave the directory
+// absent for reasons that say nothing about this. The temporary directory
+// underneath the child is one of its own, so what is looked at afterwards is
+// nothing else's leftovers.
+//
+// The second child is the guard on how the first one exits. A test binary exits
+// with the status its run gave it, and one that always exited 0 would leave
+// every case in this package unable to report a failure — with no other check
+// anywhere having a way to notice. So a child running a case that fails at once
+// has to come back with that failure in its status, which a child killed by its
+// own bound — what a case that hung instead of failing looks like — has not.
+// -test.run keeps either child from starting children of its own.
+func TestTheSwallowStandInIsGoneWhenTheRunEnds(t *testing.T) {
+	// A child is a whole test binary, and the case the first one runs waits out
+	// a recovery bound of its own before it can end.
+	const childLimit = 2 * time.Minute
+	tmp := t.TempDir()
+	ctx, cancel := context.WithTimeout(context.Background(), childLimit)
+	defer cancel()
+
+	cmd := exec.CommandContext(ctx, os.Args[0], "-test.v", "-test.run=^TestAnAbandonedCallIsCutOffFromTheRealDocker$")
+	cmd.Env = []string{"TMPDIR=" + tmp}
+	var stdout, stderr strings.Builder
+	cmd.Stdout, cmd.Stderr = &stdout, &stderr
+	if err := cmd.Run(); err != nil {
+		t.Fatalf("the child that gives up on a call came back with %v:\nstdout:\n%s\nstderr:\n%s",
+			err, stdout.String(), stderr.String())
+	}
+	if !strings.Contains(stdout.String(), "--- PASS: TestAnAbandonedCallIsCutOffFromTheRealDocker") {
+		t.Fatalf("the child did not pass the case that gives up on a call, so the stand-in this is "+
+			"about was never made:\nstdout:\n%s\nstderr:\n%s", stdout.String(), stderr.String())
+	}
+	entries, err := os.ReadDir(tmp)
+	if err != nil {
+		t.Fatalf("reading the temporary directory the child ran in: %v", err)
+	}
+	var left []string
+	for _, entry := range entries {
+		if strings.HasPrefix(entry.Name(), "pgtest-swallow-") {
+			left = append(left, entry.Name())
+		}
+	}
+	if len(left) > 0 {
+		t.Errorf("the child ended and left %v behind: the stand-in for calls a case gave up on is "+
+			"made to outlive its case, and not the run", left)
+	}
+
+	// The second child fails at once: a peer environment that names the peer
+	// without saying how many peers there are.
+	cmd = exec.CommandContext(ctx, os.Args[0], "-test.run=^TestColdstartChild$")
+	cmd.Env = []string{"TMPDIR=" + tmp, coldstartChildEnv + "=peer-0"}
+	var childOut, childErr strings.Builder
+	cmd.Stdout, cmd.Stderr = &childOut, &childErr
+	err = cmd.Run()
+	if err == nil {
+		// So that the report below says what came back rather than nothing.
+		err = errors.New("exit status 0")
+	}
+	var exit *exec.ExitError
+	if !errors.As(err, &exit) || exit.ExitCode() <= 0 {
+		t.Fatalf("the child running a case that fails at once came back with %v, and a test binary "+
+			"whose cases can fail leaves the failure in its exit status — one that exits 0 whatever "+
+			"happened, or is killed before it can say anything, is one whose cases cannot report "+
+			"anything:\nstdout:\n%s\nstderr:\n%s", err, childOut.String(), childErr.String())
+	}
 }
