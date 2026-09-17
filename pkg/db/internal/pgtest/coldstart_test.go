@@ -291,15 +291,22 @@ func (r peerRun) timeline() string {
 // the window, an answer before it is the empty machine the round started on.
 //
 // The answer has to come from a look or a start, which are the two calls a
-// recovery makes. A non-zero status from anything else is a failure of this
-// peer for some other reason, and counting it as the window would have a round
-// claim coverage it never had.
+// recovery makes, and it has to be the answer that call is given in the window:
+// a failed look says there is no such object, a failed start says there is no
+// such container. A non-zero status on its own is not the window — a daemon
+// that hiccuped says something else — and counting one as the window would have
+// a round claim coverage it never had, which is the same defect as counting a
+// failure from some other call.
 func (r peerRun) hitWindow() bool {
 	conflicted := false
 	for _, call := range r.calls {
-		recovered := call.sub == "inspect" || call.sub == "start"
-		if conflicted && recovered && call.status != 0 {
-			return true
+		if conflicted {
+			switch {
+			case call.sub == "inspect" && call.status != 0 && strings.Contains(call.stderr, missingObjectResponse):
+				return true
+			case call.sub == "start" && call.status != 0 && strings.Contains(call.stderr, missingContainerResponse):
+				return true
+			}
 		}
 		if call.sub == "run" && call.status == conflictStatus && strings.Contains(call.stderr, "Conflict") {
 			conflicted = true
@@ -639,6 +646,79 @@ func buildPeerBinary(t *testing.T) string {
 		t.Fatalf("building the peer binary out of this package failed: %v\n%s", err, body)
 	}
 	return out
+}
+
+// TestHitWindowAsksForTheWindowsOwnAnswers holds the coverage claim to what
+// the window actually says: the two messages docker answers a look and a start
+// with while the name is taken and the object is not there yet.
+//
+// A non-zero status on its own is not the window. A daemon that hiccuped, a
+// start that failed for a reason of its own — counting either as the window
+// lets a round record coverage it never had, and the conclusion that the
+// deterministic cases replay real answers is then behind a round where nothing
+// raced at all. The answers are paired with the calls they belong to, since
+// each is what its own subcommand is answered with in the window.
+func TestHitWindowAsksForTheWindowsOwnAnswers(t *testing.T) {
+	conflict := dockerCall{sub: "run", status: conflictStatus, stderr: conflictResponse}
+	for _, c := range []struct {
+		name  string
+		calls []dockerCall
+		want  bool
+	}{
+		{
+			"a look the window answers",
+			[]dockerCall{conflict, {sub: "inspect", status: failureStatus, stderr: missingObjectResponse}},
+			true,
+		},
+		{
+			"a start the window answers",
+			[]dockerCall{conflict, {sub: "start", status: failureStatus, stderr: missingContainerResponse}},
+			true,
+		},
+		{
+			"a daemon that hiccuped on a look",
+			[]dockerCall{conflict, {
+				sub: "inspect", status: failureStatus,
+				stderr: "Cannot connect to the Docker daemon at unix:///var/run/docker.sock. Is the docker daemon running?",
+			}},
+			false,
+		},
+		{
+			"a daemon that hiccuped on a start",
+			[]dockerCall{conflict, {
+				sub: "start", status: failureStatus,
+				stderr: `docker: Error response from daemon: OCI runtime create failed: exec: "docker-entrypoint.sh": executable file not found in $PATH`,
+			}},
+			false,
+		},
+		{
+			"a look answered with the start's answer",
+			[]dockerCall{conflict, {sub: "inspect", status: failureStatus, stderr: missingContainerResponse}},
+			false,
+		},
+		{
+			"the window's answer before this peer lost the race",
+			[]dockerCall{{sub: "inspect", status: failureStatus, stderr: missingObjectResponse}, conflict},
+			false,
+		},
+		{
+			"a failure from a call the recovery does not make",
+			[]dockerCall{conflict, {sub: "port", status: failureStatus, stderr: missingObjectResponse}},
+			false,
+		},
+		{
+			"a peer that never lost the race",
+			[]dockerCall{{sub: "inspect", status: failureStatus, stderr: missingObjectResponse}},
+			false,
+		},
+	} {
+		t.Run(c.name, func(t *testing.T) {
+			run := peerRun{calls: c.calls}
+			if got := run.hitWindow(); got != c.want {
+				t.Errorf("the peer is counted as having reached the window: %v, want %v", got, c.want)
+			}
+		})
+	}
 }
 
 // TestPeerOutcomeTellsASkipFromComingUp holds the one thing the harness could
