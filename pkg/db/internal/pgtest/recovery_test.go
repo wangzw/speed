@@ -126,21 +126,27 @@ func newDockerStub(t *testing.T) *dockerStub {
 	if err := os.WriteFile(filepath.Join(dir, "docker"), []byte(dockerStubScript), 0o755); err != nil {
 		t.Fatalf("planting the docker stand-in: %v", err)
 	}
-	// Planted now rather than when it is first needed: the call this is for is
-	// already running by then, and the cleanup that faces it has no *testing.T
-	// to report a failure to.
-	swallow, err := swallowStubDir()
-	if err != nil {
-		t.Fatalf("planting the stand-in for calls that outlive their case: %v", err)
-	}
 	previous := os.Getenv("PATH")
 	os.Setenv("PATH", dir)
 	t.Cleanup(func() {
-		if abandoned {
-			os.Setenv("PATH", swallow)
+		if !abandoned {
+			os.Setenv("PATH", previous)
 			return
 		}
-		os.Setenv("PATH", previous)
+		// Planted here and not before, because this is the only moment it is
+		// needed: on every other path the directory would be made for a call
+		// that never comes, left behind in the machine's temporary files. A
+		// failure here cannot fail the case the usual way — a t.Fatal in a
+		// cleanup would leave the remaining cleanups unrun — so it is reported
+		// and PATH is left where it is, which points at a directory about to be
+		// removed and so at no docker at all, the real one included.
+		swallow, err := swallowStubDir()
+		if err != nil {
+			t.Errorf("a call has outlived this case and the stand-in that keeps it away from the real "+
+				"docker could not be planted: %v", err)
+			return
+		}
+		os.Setenv("PATH", swallow)
 	})
 	return &dockerStub{dir: dir}
 }
@@ -188,20 +194,30 @@ func succeeded(out string) string { return "ok:" + out }
 func failed(status int, message string) string { return fmt.Sprintf("fail:%d:%s", status, message) }
 
 // swallowStubScript is docker as a call that outlived its case is left seeing
-// it: it takes every call and answers nothing. Nothing comes up, which is no
-// longer this run's problem — the call is on its own until its own bound ends
-// it — and, what this stands there for, nothing reaches the real docker.
+// it: it takes every call and fails it, saying what it is. Nothing it is asked
+// can come up, so the call is left to whatever its own bound does about it —
+// and, what this stands there for, nothing reaches the real docker.
+//
+// It fails rather than succeeding with nothing to say because of who else can
+// meet it. A case that uses the real container asks docker whether the daemon
+// is reachable first, and a stand-in that answered that question with a clean
+// exit and no output would send it on to fail further down over a port that
+// reads as empty — a report about a daemon the machine has and is not
+// reachable only through this. The failure names this stand-in, so that case
+// reports what actually happened.
 const swallowStubScript = `#!/bin/sh
-exit 0
+echo "the stand-in for a call that outlived its test case: the real docker is deliberately not reachable through this" >&2
+exit 1
 `
 
 // swallowStubDir reports the directory of the stand-in that swallows calls a
-// case has given up on, planting it the first time it is asked.
+// case has given up on, planting it the first time one is given up on.
 //
 // It is made beside the test's temporary files rather than inside one: a
 // t.TempDir is removed when its case ends, and the call this stands in front of
 // is still asking PATH for docker after that. The directory outlives every case
-// on purpose and is never removed.
+// on purpose and is never removed — it is one directory per test binary, made
+// only by a case that actually gave up on a call.
 var swallowStubDir = sync.OnceValues(func() (string, error) {
 	dir, err := os.MkdirTemp("", "pgtest-swallow-")
 	if err != nil {
@@ -487,6 +503,7 @@ func TestExistingContainerStartFailureIsReportedAtOnce(t *testing.T) {
 // is the half of this that is easy to get wrong.
 func TestAnAbandonedCallIsCutOffFromTheRealDocker(t *testing.T) {
 	previous := os.Getenv("PATH")
+	wasAbandoned := abandoned
 	var outlived <-chan error
 	t.Run("a case that gives up on a call", func(t *testing.T) {
 		stub := newDockerStub(t)
@@ -494,8 +511,11 @@ func TestAnAbandonedCallIsCutOffFromTheRealDocker(t *testing.T) {
 		stub.answers(t, "inspect", failed(failureStatus, missingObjectResponse))
 		stub.answers(t, "run", failed(conflictStatus, conflictResponse))
 
+		// The interval is this call's own; the case only needs its bound to be
+		// longer than the guard, so there is no reason for it to make a docker
+		// invocation every millisecond while it waits the bound out.
 		const bound, limit = 2 * time.Second, 100 * time.Millisecond
-		run := driveRecovery(bound, time.Millisecond, limit)
+		run := driveRecovery(bound, 20*time.Millisecond, limit)
 		if run.outlived == nil {
 			t.Fatalf("the call came back within the %s guard although the bound it was given was %s",
 				limit, bound)
@@ -534,6 +554,11 @@ func TestAnAbandonedCallIsCutOffFromTheRealDocker(t *testing.T) {
 			"as it is: with that call still asking for docker, putting PATH back is the one thing " +
 			"that must not happen")
 	}
+	// What this puts back is what it found, and only that. A flag an earlier
+	// case set belongs to a call that case gave up on, which this one knows
+	// nothing about and has not waited for: clearing it here would re-arm the
+	// call-sequence assertions of the cases that follow, on top of a call still
+	// making rounds and taking the answers they are built on.
 	os.Setenv("PATH", previous)
-	abandoned = false
+	abandoned = wasAbandoned
 }
