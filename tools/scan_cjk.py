@@ -1,11 +1,11 @@
 #!/usr/bin/env python3
 """Repo-wide CJK scanner for the repository Language Rule.
 
-The root CLAUDE.md is the authority for which trees are written in
+The root CLAUDE.md is the authority for which paths are written in
 Chinese. This script reports CJK characters found anywhere outside the
-subtrees it carves out below, so the two have to be read together: a
-tree CLAUDE.md declares Chinese is only exempt here once it is in the
-carve-out list.
+paths it carves out below, so the two have to be read together: a path
+CLAUDE.md declares Chinese is only exempt here once it is in the
+carve-out lists.
 
 Scan semantics, mirroring go/ratelimit/unittest/no_cjk_characters_test.go (the module-level
 precedent):
@@ -23,9 +23,17 @@ precedent):
 * Non-text files (any NUL byte in the first 8 KiB, or undecodable bytes)
   are skipped, never reported.
 
-Carve-outs (a whole subtree is exempt):
+Carve-outs (the whole path is exempt: the subtree, or for a file entry
+the one file):
 
   docs/internal/          Chinese by rule; never scanned
+  docs/design/            Chinese by rule; never scanned
+  docs/adr/               Chinese by rule; never scanned
+  docs/glossary.md        Chinese by rule; a single file carve-out, never
+                          scanned -- matched by that exact path, so a
+                          glossary.md anywhere else (src/glossary.md, a
+                          docs/ subdirectory) is scanned like any other
+                          file
   docs/site/              public documentation site (English-first, zh-CN
                           by need); never scanned
   resource directories    i18n resource directories, judged by CONTENT
@@ -112,11 +120,21 @@ LOCALE_FILE_PREFIXES = ("zh-CN.", "en-US.")
 # machines (GoLand writes Chinese UI strings into .idea/, for instance).
 NON_SCANNED_DIR_NAMES = frozenset({".git", ".idea", ".vscode", "node_modules", "vendor"})
 
-# docs/internal/** and the docs/site/** subtree are exempt wholesale. The
+# The trees CLAUDE.md's Language Rule declares Chinese (docs/internal,
+# docs/design, docs/adr) plus the public documentation site
+# (docs/site, English-first, zh-CN by need) are exempt wholesale. The
 # entries are repo-relative directory paths whose whole subtree is skipped;
 # their common ancestor ("docs") itself is still descended into so the
 # pruning happens at the right level.
-CARVED_SUBTREES = frozenset({"docs/internal", "docs/site"})
+CARVED_SUBTREES = frozenset({"docs/internal", "docs/design", "docs/adr", "docs/site"})
+
+# Single files exempt wholesale, the file-level counterpart of
+# CARVED_SUBTREES: docs/glossary.md is Chinese by the same Language Rule,
+# which names that one file rather than a tree. Matched by exact
+# repo-relative path, never by basename -- a glossary.md anywhere else
+# (src/glossary.md, a docs/ subdirectory) stays scanned like any other
+# file.
+CARVED_FILES = frozenset({"docs/glossary.md"})
 
 # Directories never scanned that must be matched by exact repo-relative
 # path rather than basename: .claude/worktrees/ holds this repository's
@@ -389,6 +407,11 @@ def scan_go(text: str) -> list[Hit]:
     return hits
 
 
+def _rel_posix(path: str, root: str) -> str:
+    """Repo-relative path with "/" separators, matching the carve-out lists."""
+    return os.path.relpath(path, root).replace(os.sep, "/")
+
+
 def _pruned_dirnames(dirnames: list[str], rel_dir: str) -> list[str]:
     """Return the subdirectories worth descending into."""
     kept: list[str] = []
@@ -429,7 +452,7 @@ def scan_root(root: str) -> int:
     n_text = 0
     n_skipped = 0
     for dirpath, dirnames, filenames in os.walk(root):
-        rel_dir = os.path.relpath(dirpath, root)
+        rel_dir = _rel_posix(dirpath, root)
         if _is_resource_dir(filenames):
             # A locale resource directory: its own files are the zh-CN /
             # en-US pair members (or content beside them), and everything
@@ -441,7 +464,9 @@ def scan_root(root: str) -> int:
             if filename == ".git":  # worktree pointer file, not a checkout
                 continue
             full_path = os.path.join(dirpath, filename)
-            rel_path = os.path.relpath(full_path, root)
+            rel_path = _rel_posix(full_path, root)
+            if rel_path in CARVED_FILES:
+                continue
             try:
                 with open(full_path, "rb") as fh:
                     data = fh.read()
@@ -474,7 +499,7 @@ def scan_root(root: str) -> int:
     if hits:
         print(
             f"{len(hits)} CJK violation(s) across {len(hit_files)} file(s); "
-            f"outside the carved subtrees this repository is English (the "
+            f"outside the carved-out paths this repository is English (the "
             f"root CLAUDE.md states the rule) -- paraphrase in English, or "
             f"cite the Chinese document's path instead of quoting it"
         )
@@ -491,7 +516,9 @@ def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(
         description=(
             "Scan a repository tree for CJK characters outside the carved-out "
-            "docs/internal/, docs/site/ and locale resource directories "
+            "paths -- docs/internal/, docs/design/, docs/adr/, the "
+            "docs/glossary.md file and docs/site/, plus locale resource "
+            "directories "
             "(a directory holding a zh-CN.* or en-US.* file -- judged by "
             "content, never by directory name), which the root CLAUDE.md's "
             "Language Rule requires to be English. Go files are "

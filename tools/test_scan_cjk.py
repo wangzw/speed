@@ -30,6 +30,14 @@ reported while a directory merely NAMED worktrees/ and the rest of
 (test_repository_worktree_subtree_is_pruned,
 test_claude_skills_tree_is_still_scanned,
 test_worktrees_named_dir_outside_claude_is_still_scanned).
+The paths the root CLAUDE.md's Language Rule declares Chinese --
+docs/design/**, docs/adr/** and the docs/glossary.md file -- join
+docs/internal/ as carve-outs, matched by exact path rather than by
+prefix or basename (test_claude_md_chinese_trees_are_exempt,
+test_near_miss_paths_of_chinese_trees_stay_scanned,
+test_glossary_file_carve_out_is_path_exact), and the carve-out list
+growing must not turn the scan into an always-pass
+(test_undeclared_paths_are_still_reported).
 
 Fixture text below is spelled with \\u escapes so this test file itself
 stays ASCII: tools/ are scanned as full text by the very scanner under
@@ -58,6 +66,7 @@ _ZH_COMMENT = '\u4e2d\u6587\u6ce8\u91ca'  # a plain Chinese comment
 _ZH_PROSE = '\u540e\u4e00\u6bb5\u6ce8\u91ca'  # a later, separate comment
 _ZH_README = 'bilingual catalogs \u4e2d\u6587\u8bf4\u660e\n'  # README prose
 _ZH_INTERNAL = '\u5185\u90e8\u8bbe\u8ba1\u6587\u6863\n'  # docs/internal doc text
+_ZH_DESIGN = '\u8bbe\u8ba1\u8bf4\u660e\u6587\u5b57\n'  # Chinese-tree doc text
 
 
 class ScanRootTests(unittest.TestCase):
@@ -189,6 +198,53 @@ class ScanRootTests(unittest.TestCase):
             "src/worktrees/zh.md": _ZH_README,
         }
         self.assertEqual(self._scan(files), 1)
+
+    def test_claude_md_chinese_trees_are_exempt(self):
+        # The root CLAUDE.md's Language Rule declares docs/design/**,
+        # docs/adr/** and docs/glossary.md Chinese, so Chinese text in
+        # each stays exempt -- the same authority docs/internal/ is
+        # carved out under. Fails before those paths join the carve-out
+        # list: the doc text is then scanned as a plain text file and
+        # flagged.
+        for rel in (
+            "docs/design/design-x.md",
+            "docs/adr/adr-x.md",
+            "docs/glossary.md",
+        ):
+            with self.subTest(rel=rel):
+                self.assertEqual(self._scan({rel: _ZH_DESIGN}), 0)
+
+    def test_near_miss_paths_of_chinese_trees_stay_scanned(self):
+        # The carve-outs match exact paths, never prefixes or basenames:
+        # a docs/design-notes/ tree, a docs/design.md FILE, and a
+        # glossary.md outside docs/ are all ordinary content, so their
+        # Chinese text stays a violation however closely their names
+        # resemble a carved-out path. This holds before and after the
+        # carve-out list grows.
+        for rel in (
+            "docs/design-notes/zh.md",
+            "docs/design.md",
+            "src/glossary.md",
+        ):
+            with self.subTest(rel=rel):
+                self.assertEqual(self._scan({rel: _ZH_DESIGN}), 1)
+
+    def test_undeclared_paths_are_still_reported(self):
+        # A path the Language Rule does not declare Chinese -- here
+        # pkg/**, the English Go source tree -- must stay a violation:
+        # the carve-out list growing must not turn the scan into an
+        # always-pass.
+        self.assertEqual(
+            self._scan({"pkg/new/README.md": _ZH_DESIGN}), 1
+        )
+
+    def test_glossary_file_carve_out_is_path_exact(self):
+        # docs/glossary.md is a single-file carve-out, not a directory
+        # one: the rule names that one file, so a glossary.md elsewhere
+        # under docs/ -- including a subdirectory -- stays scanned.
+        self.assertEqual(
+            self._scan({"docs/sub/glossary.md": _ZH_DESIGN}), 1
+        )
 
 
 if __name__ == "__main__":

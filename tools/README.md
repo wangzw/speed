@@ -52,9 +52,9 @@ forced into a padded full program. The script's own docstring carries the
 scope rules and the escape hatch for a fragment that genuinely cannot
 parse.
 
-`scan_cjk.py` — reports CJK characters outside the subtrees it carves
+`scan_cjk.py` — reports CJK characters outside the paths it carves
 out, which is how the language rule stated in the root `CLAUDE.md` gets
-checked. The two lists are read together: a tree `CLAUDE.md` declares
+checked. The two lists are read together: a path `CLAUDE.md` declares
 Chinese is only exempt once it is carved out here. Go files are checked
 in their comments only, through a lexer that honours string and rune
 context; other text files are checked whole. The script's docstring
