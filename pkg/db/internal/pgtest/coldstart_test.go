@@ -306,11 +306,12 @@ func (r peerRun) timeline() string {
 // a round claim coverage it never had, which is the same defect as counting a
 // failure from some other call.
 //
-// The two answers are the ones taken from the capture on the issue, and a
-// docker CLI that words either of them differently has that half of this never
-// match, the round reported as one that did not reach the window. Measured on
-// docker 28: a start that finds no container says "No such container" behind
-// "Error response from daemon:" rather than after a bare "Error:". That is the
+// The words are matched by containment, and what each is matched against is
+// only the part of that answer which says what is wrong; the machine's own
+// docker is held to them by
+// TestWhatDockerSaysAboutAMissingContainerIsWhatTheWindowAsksFor. A docker CLI
+// that words either of them differently still has that half of this never
+// match, the round reported as one that did not reach the window. That is the
 // safe direction — an answer this does not recognize costs the round a coverage
 // claim it cannot show, and never makes one.
 func (r peerRun) hitWindow() bool {

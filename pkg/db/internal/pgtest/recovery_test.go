@@ -1,6 +1,8 @@
 package pgtest
 
 import (
+	"context"
+	"errors"
 	"fmt"
 	"os"
 	"os/exec"
@@ -33,24 +35,115 @@ import (
 // are answered with the same two responses both before the container exists and
 // in the window after the name is taken, which is why the recovery cannot tell
 // the two apart by what they say and waits for the container instead.
+//
+// What is kept of each is only the part that says what is wrong. The match is
+// containment (see hitWindow), and around that part sit a prefix that moves
+// between docker versions and this package's own container name — neither is
+// docker's to keep stable. Both answers are measured, on docker 28.0.4: an
+// inspect of a name that is not there answers "Error: No such object: <name>",
+// and a start answers "Error response from daemon: No such container: <name>"
+// ahead of "Error: failed to start containers: <name>". The words are held to
+// the machine's own docker by
+// TestWhatDockerSaysAboutAMissingContainerIsWhatTheWindowAsksFor, so a docker
+// that words them differently fails there rather than quietly costing the
+// window one of its halves.
 const (
 	// conflictResponse is the refusal of a second container under the shared
 	// name. docker leaves 125 for it.
 	conflictResponse = `docker: Error response from daemon: Conflict. The container name "/speed-pgtest" is already in use by container "5b8f0c2a91d4".`
-	// missingObjectResponse is what inspect answers in the window.
-	missingObjectResponse = `Error: No such object: speed-pgtest`
-	// missingContainerResponse is what start answers in the window. A docker
-	// that words it differently no longer answers with this — measured on
-	// docker 28, which puts the same words behind "Error response from
-	// daemon:" — and the real-docker check then counts no start-side window at
-	// all. The cases below are unaffected: the stand-in answers what this says.
-	missingContainerResponse = `Error: No such container: speed-pgtest`
+	// missingObjectResponse is the words inspect answers a name that is not
+	// there with, in the window and before it alike.
+	missingObjectResponse = `No such object`
+	// missingContainerResponse is the words start answers a name that is not
+	// there with.
+	missingContainerResponse = `No such container`
 	// conflictStatus and failureStatus are the exit statuses that come with
 	// them: docker's own for a refused create, and the CLI's for a command
 	// that could not be carried out.
 	conflictStatus = 125
 	failureStatus  = 1
 )
+
+// TestWhatDockerSaysAboutAMissingContainerIsWhatTheWindowAsksFor holds the two
+// replayed answers to the machine's own docker.
+//
+// The window cases replay what docker answered during the race, and this is the
+// case that says the answers are docker's own words: a stand-in can only repeat
+// what it was told, so nothing inside a replay can check the material it is made
+// of. That is why it is here, beside the constants, and not with the cold-start
+// harness in coldstart_test.go — the harness is about the race, this is about
+// the words the race is replayed with.
+//
+// It makes the two calls a recovery makes — the look and the start — against a
+// name that cannot be there, behind the harness's own shim, so that each answer
+// is read back the way a peer's log holds it: the exit status docker left with,
+// and the first line of standard error. What has to come out is a peer whose
+// create was refused and was then told by that call that the container was not
+// there — the window as hitWindow counts it, on this machine's docker.
+func TestWhatDockerSaysAboutAMissingContainerIsWhatTheWindowAsksFor(t *testing.T) {
+	if reason := Skip(); reason != "" {
+		if _, underCI := os.LookupEnv("CI"); underCI {
+			t.Fatalf("CI is set, so a skip here would leave the words the window cases replay unheld to "+
+				"a real docker: %s", reason)
+		}
+		t.Skip(reason)
+	}
+	dockerPath, err := exec.LookPath("docker")
+	if err != nil {
+		t.Fatalf("this case drives the machine's own docker, which is not on PATH: %v", err)
+	}
+	if dockerPath, err = filepath.Abs(dockerPath); err != nil {
+		t.Fatalf("resolving the docker to run: %v", err)
+	}
+	// Beside the shared name and not the shared name itself: what this needs is
+	// a name that is not there, and the shared container may well be up.
+	name := containerName + "-wording-guard"
+
+	for _, c := range []struct {
+		call     string
+		args     []string
+		constant string
+		words    string
+	}{
+		{
+			"inspect",
+			[]string{"inspect", "--format", "{{.State.Running}}", name},
+			"missingObjectResponse", missingObjectResponse,
+		},
+		{"start", []string{"start", name}, "missingContainerResponse", missingContainerResponse},
+	} {
+		t.Run(c.call, func(t *testing.T) {
+			shim := plantShim(t, dockerPath, t.TempDir(), "wording-guard", 0)
+			ctx, cancel := context.WithTimeout(context.Background(), dockerTimeout)
+			defer cancel()
+			err := exec.CommandContext(ctx, filepath.Join(shim, "docker"), c.args...).Run()
+			if err == nil {
+				t.Fatalf("docker %s answered cleanly although the name is not there, so there is no "+
+					"answer to read: is %s a container on this machine?", strings.Join(c.args, " "), name)
+			}
+			var exit *exec.ExitError
+			if !errors.As(err, &exit) {
+				t.Fatalf("running docker %s behind the shim: %v", strings.Join(c.args, " "), err)
+			}
+			recorded := readCalls(filepath.Join(shim, "calls.log"))
+			if len(recorded) != 1 {
+				t.Fatalf("the shim recorded %d calls for the one it ran — a call with nothing recorded "+
+					"never reached docker or was cut off before it could: %v", len(recorded), recorded)
+			}
+			run := peerRun{calls: []dockerCall{
+				{sub: "run", status: conflictStatus, stderr: conflictResponse},
+				recorded[0],
+			}}
+			if !run.hitWindow() {
+				t.Errorf("docker %s against a name that is not there left exit %d and %q, and a peer told "+
+					"that is not counted as one that reached the window, whose %s half asks for %q: bring "+
+					"the constant to the words this docker answers with, since the answers the window cases "+
+					"replay are the real ones only as long as this holds",
+					strings.Join(c.args, " "), recorded[0].status, recorded[0].stderr, c.constant, c.words)
+			}
+		})
+	}
+}
 
 // dockerStubScript is the stand-in this file plants on PATH. It is a shell
 // script rather than a program because it has to carry the name docker has:
