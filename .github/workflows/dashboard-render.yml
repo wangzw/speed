@@ -11,7 +11,7 @@
 # 撞上过这种情况（build_type=workflow 的既有 Pages 部署，push gh-pages 分支完全不会被
 # 服务）。与其为"是否已被占用"维护一整套检测/守卫逻辑（曾经短暂做过），不如干脆放弃
 # 对外发布，看板只作为这次 run 的 artifact 产出，由人类/Scheduler 按需下载查看
-# （见 ../../SKILL.md「看板：调度状态可视化」、../../references/scheduler.md「看板发布」）。
+# （见 https://github.com/vislake/coding-flows/blob/main/.claude/skills/coding-flow/SKILL.md「看板：调度状态可视化」、https://github.com/vislake/coding-flows/blob/main/.claude/skills/coding-flow/references/scheduler.md「看板发布」）。
 #
 # 不需要 contents: write——不再写任何分支。
 name: coding-flow dashboard-render
@@ -21,7 +21,7 @@ on:
 jobs:
   render:
     runs-on: ubuntu-latest
-    timeout-minutes: 5 # 见 ../../references/scheduler.md「轮询节奏」的超时阈值表
+    timeout-minutes: 5 # 见 https://github.com/vislake/coding-flows/blob/main/.claude/skills/coding-flow/references/scheduler.md「轮询节奏」的超时阈值表
     permissions:
       contents: read
       issues: read
