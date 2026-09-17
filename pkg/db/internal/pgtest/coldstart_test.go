@@ -517,9 +517,11 @@ func TestColdstartChild(t *testing.T) {
 	}
 	Acquire(t)
 	// On standard output, not through the test log: the harness reads this from
-	// outside, and a case that passed has its log captured rather than printed.
-	// A peer whose acquisition skipped leaves no marker, and that absence is
-	// all the harness needs to tell the two apart.
+	// outside the process, and the marker reaches it however verbosely the peer
+	// was run. The -test.v the harness passes is for the skip reasons, and under
+	// it a passing case's log is printed too — a marker that went to the log
+	// would be tied to that. A peer whose acquisition skipped leaves no marker,
+	// and that absence is all the harness needs to tell the two apart.
 	fmt.Fprintln(os.Stdout, coldstartAcquiredMarker)
 }
 
