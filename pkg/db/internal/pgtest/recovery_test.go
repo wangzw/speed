@@ -298,6 +298,27 @@ func underRecoveryWait(t *testing.T, bound, interval, limit time.Duration) (time
 	return run.took, run.err
 }
 
+// requireEndedWithinItsBound fails the case when a failure that was given a
+// bound took longer to arrive than that bound allows for.
+//
+// What it catches is an implementation that does not read its own bound — one
+// that checks the deadline only every so often, or not at all. The case's own
+// guard cannot say that: the guard is what ends a case whose call never comes
+// back, and it is set far wider than the bound on purpose. The slack is for
+// this goroutine's scheduling and the stand-in's own invocations; a second is
+// orders of magnitude more than those take, and orders of magnitude less than
+// what an implementation deaf to its bound would add — the assertion this
+// replaces gave the failure a whole minute, which nothing that fails within
+// the guard's ten can ever reach, so it could not fail at all.
+func requireEndedWithinItsBound(t *testing.T, took, bound time.Duration) {
+	t.Helper()
+	const slack = time.Second
+	if took > bound+slack {
+		t.Errorf("the failure took %s, and the wait it was given was %s: it has to end when that wait "+
+			"ends", took, bound)
+	}
+}
+
 // TestConflictRecoveryReusesTheWinningContainer is the case the race is about:
 // another test binary created the container and this one was refused the name,
 // so the container this one goes on to use is the one that won.
@@ -390,10 +411,7 @@ func TestConflictRecoveryFailsWithinItsBoundCarryingTheLastWords(t *testing.T) {
 		t.Errorf("docker inspect ran %d times, so the recovery did not look again after a failed "+
 			"look: %v", looks, err)
 	}
-	if took > time.Minute {
-		t.Errorf("the failure took %s, and the wait it was given was %s: it has to end when that "+
-			"wait ends", took, bound)
-	}
+	requireEndedWithinItsBound(t, took, bound)
 }
 
 // TestConflictRecoveryReportsCreateAndStartTogether covers the end of the
@@ -424,9 +442,7 @@ func TestConflictRecoveryReportsCreateAndStartTogether(t *testing.T) {
 			t.Errorf("the failure does not carry %q:\n%v", want, err)
 		}
 	}
-	if took > time.Minute {
-		t.Errorf("the failure took %s, and the wait it was given was %s", took, bound)
-	}
+	requireEndedWithinItsBound(t, took, bound)
 }
 
 // TestExistingContainerStartFailureIsReportedAtOnce pins the path that is not
