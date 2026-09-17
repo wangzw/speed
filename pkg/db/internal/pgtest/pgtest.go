@@ -70,16 +70,21 @@ const (
 	statementTimeout = 30 * time.Second
 )
 
-// The pace of the wait that follows a create lost to another test binary, as
-// variables rather than constants so that a case can shrink them: the give-up
-// path cannot be a case at all if reaching it costs the production bound.
+// The pace of the wait that follows a create lost to another test binary: how
+// long it lasts, and how often it looks while it does.
 //
 // The bound is generous against what the race looks like — the window in which
 // a losing creator cannot yet see the winner's container measured 100–200ms on
 // a cold image locally, and a loaded CI machine is slower and wider than that —
 // while staying bounded, so that a daemon that is genuinely broken ends in a
 // failure carrying what docker said rather than in a hang.
-var (
+//
+// These are the production values, and the production path is their only
+// reader. A case drives the same code with a pace of its own, through the
+// parameters of ensureContainerWithin: reaching the give-up path cannot cost
+// the production bound, and a call a case has given up on must not be left
+// reading package state that a later case can change underneath it.
+const (
 	recoveryBound    = 30 * time.Second
 	recoveryInterval = 150 * time.Millisecond
 )
@@ -181,7 +186,22 @@ func startServer() (string, error) {
 // and wider on a machine under load — and only then finds the winner's
 // container. The wait below is that window, and the container it ends on is the
 // winner's: a losing process never creates one of its own.
-func ensureContainer() error {
+func ensureContainer() error { return ensureContainerWithin(recoveryBound, recoveryInterval) }
+
+// ensureContainerWithin is ensureContainer with the pace of that wait taken as
+// parameters, covering the path entire: the look before the create, the refused
+// create, and the wait that follows it.
+//
+// The pace is a parameter and not package state a case can write, because a
+// case that gives up on a call has to be able to walk away from it: a call
+// still running reads the pace on every round it makes, and what it reads must
+// not be something a later case changes underneath it. The seam covers the
+// whole path for the same reason the cases assert on call sequences — what a
+// case drives has to be the sequence from the first look to the container
+// coming up, and a seam around the wait alone would leave the create outside
+// it, along with the container that is there and stopped, which never reaches
+// the wait at all.
+func ensureContainerWithin(bound, interval time.Duration) error {
 	if state, err := inspectRunning(); err == nil {
 		if state == "true" {
 			return nil
@@ -202,11 +222,12 @@ func ensureContainer() error {
 	if createErr == nil {
 		return nil
 	}
-	return awaitContainer(createErr)
+	return awaitContainerWithin(bound, interval, createErr)
 }
 
-// awaitContainer waits for the container another process is creating to appear
-// and run, and reports what docker said along the way when it never does.
+// awaitContainerWithin waits for the container another process is creating to
+// appear and run, looking every interval until the bound is up, and reports
+// what docker said along the way when it never does.
 //
 // Only inspect and start are repeated. A create is not tried again on purpose:
 // the name on this machine belongs to whoever holds it, so a losing process
@@ -214,8 +235,8 @@ func ensureContainer() error {
 // is the one that won. A create refused for any other reason — a daemon that is
 // down, an image that cannot be pulled — ends the same way the window does:
 // within the bound, carrying docker's last word.
-func awaitContainer(createErr error) error {
-	deadline := time.Now().Add(recoveryBound)
+func awaitContainerWithin(bound, interval time.Duration, createErr error) error {
+	deadline := time.Now().Add(bound)
 	var (
 		state      string
 		inspectErr error
@@ -234,9 +255,9 @@ func awaitContainer(createErr error) error {
 			startErr = startContainer()
 		}
 		if time.Now().After(deadline) {
-			return recoveryFailure(createErr, startErr, state, inspectErr)
+			return recoveryFailure(bound, createErr, startErr, state, inspectErr)
 		}
-		time.Sleep(recoveryInterval)
+		time.Sleep(interval)
 	}
 }
 
@@ -247,13 +268,13 @@ func awaitContainer(createErr error) error {
 // The failures CI saw said only that the container had not been created; the
 // look that failed last, which is the one thing that says where the wait
 // stopped, was made and then thrown away by the recovery that made it.
-func recoveryFailure(createErr, startErr error, state string, inspectErr error) error {
+func recoveryFailure(bound time.Duration, createErr, startErr error, state string, inspectErr error) error {
 	failure := fmt.Errorf("creating the %s container from %s: %w", containerName, image, createErr)
 	if inspectErr != nil {
-		failure = fmt.Errorf("%w; after %s the container was still not there: %w", failure, recoveryBound, inspectErr)
+		failure = fmt.Errorf("%w; after %s the container was still not there: %w", failure, bound, inspectErr)
 	} else {
 		failure = fmt.Errorf("%w; after %s the container was still not running, and the last look at it read %q",
-			failure, recoveryBound, state)
+			failure, bound, state)
 	}
 	if startErr != nil {
 		failure = fmt.Errorf("%w; and the last start of it failed: %w", failure, startErr)

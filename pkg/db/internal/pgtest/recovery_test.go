@@ -3,8 +3,10 @@ package pgtest
 import (
 	"fmt"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"strings"
+	"sync"
 	"testing"
 	"time"
 )
@@ -109,15 +111,37 @@ type dockerStub struct {
 // newDockerStub plants the stand-in in a directory of its own and points PATH
 // at that directory alone.
 //
-// The environment is set for the case and restored when it ends, so the cases
-// in this package that do use the real container are unaffected by any of this.
+// PATH goes back to what it was when the case ends, so the cases in this
+// package that do use the real container are unaffected by any of this — with
+// one exception. A case that gave up on a call leaves PATH on the stand-in that
+// swallows calls instead, because that call is still reading PATH on every
+// round it makes, and what it must not find there is the machine's own docker.
+// The restoring is done here, in a cleanup of its own, rather than through
+// t.Setenv for exactly that reason: t.Setenv puts the old PATH back
+// unconditionally, and this is the one case in which putting it back is the
+// wrong thing to do.
 func newDockerStub(t *testing.T) *dockerStub {
 	t.Helper()
 	dir := t.TempDir()
 	if err := os.WriteFile(filepath.Join(dir, "docker"), []byte(dockerStubScript), 0o755); err != nil {
 		t.Fatalf("planting the docker stand-in: %v", err)
 	}
-	t.Setenv("PATH", dir)
+	// Planted now rather than when it is first needed: the call this is for is
+	// already running by then, and the cleanup that faces it has no *testing.T
+	// to report a failure to.
+	swallow, err := swallowStubDir()
+	if err != nil {
+		t.Fatalf("planting the stand-in for calls that outlive their case: %v", err)
+	}
+	previous := os.Getenv("PATH")
+	os.Setenv("PATH", dir)
+	t.Cleanup(func() {
+		if abandoned {
+			os.Setenv("PATH", swallow)
+			return
+		}
+		os.Setenv("PATH", previous)
+	})
 	return &dockerStub{dir: dir}
 }
 
@@ -163,19 +187,100 @@ func succeeded(out string) string { return "ok:" + out }
 // what it wrote to standard error.
 func failed(status int, message string) string { return fmt.Sprintf("fail:%d:%s", status, message) }
 
-// abandoned records that a case ended with the call it was timing still
-// running, and left the pace it had injected in place for the cases after it.
+// swallowStubScript is docker as a call that outlived its case is left seeing
+// it: it takes every call and answers nothing. Nothing comes up, which is no
+// longer this run's problem — the call is on its own until its own bound ends
+// it — and, what this stands there for, nothing reaches the real docker.
+const swallowStubScript = `#!/bin/sh
+exit 0
+`
+
+// swallowStubDir reports the directory of the stand-in that swallows calls a
+// case has given up on, planting it the first time it is asked.
+//
+// It is made beside the test's temporary files rather than inside one: a
+// t.TempDir is removed when its case ends, and the call this stands in front of
+// is still asking PATH for docker after that. The directory outlives every case
+// on purpose and is never removed.
+var swallowStubDir = sync.OnceValues(func() (string, error) {
+	dir, err := os.MkdirTemp("", "pgtest-swallow-")
+	if err != nil {
+		return "", fmt.Errorf("making the directory of the stand-in for abandoned calls: %w", err)
+	}
+	if err := os.WriteFile(filepath.Join(dir, "docker"), []byte(swallowStubScript), 0o755); err != nil {
+		return "", fmt.Errorf("planting the stand-in for abandoned calls: %w", err)
+	}
+	return dir, nil
+})
+
+// abandoned records that a case gave up on a call that is still running, and
+// that what the stand-ins this package plants record from here on is no longer
+// any one case's own calls.
 //
 // A call that outlives its case is one whose implementation ignored the bound
-// it was given: it is never coming back, and it reads the pace on every round
-// it makes. The cases after this one therefore run with the abandoned case's
-// pace instead of their own — a run that is failing either way — because what
-// they must not do is write to a variable a live call is still reading.
+// it was given: it is not coming back when the case needed it to, and every
+// round it makes asks PATH for docker. The case's own stand-in goes away with
+// the case, so PATH is left on the stand-in that swallows calls (see
+// newDockerStub), which keeps those rounds off the machine's real docker; but
+// the cases that run next plant stand-ins of their own, and once one is up the
+// abandoned call's rounds land in that too — advancing its counts and taking
+// answers meant for the case. From then on a stand-in is no longer evidence of
+// what one case asked docker, and a case that asserted on it would report a
+// defect that is not there.
 var abandoned bool
 
-// underRecoveryWait runs ensureContainer with the wait that follows a lost
-// create shrunk to the given bound and interval — so that a case can reach the
-// end of it and assert what is reported there — and fails the case when the
+// strayEvidence reports why a case cannot trust what its stand-in recorded, or
+// an empty string when the record is its own.
+func strayEvidence() string {
+	if !abandoned {
+		return ""
+	}
+	return "a call an earlier case gave up on is still running, and its rounds are landing in this " +
+		"case's stand-in: the calls recorded here are not all its own, and nothing can be concluded " +
+		"from them"
+}
+
+// skipIfStray skips the case when what its stand-in records is not its own.
+func skipIfStray(t *testing.T) {
+	t.Helper()
+	if reason := strayEvidence(); reason != "" {
+		t.Skip(reason)
+	}
+}
+
+// recoveryRun is what driving one ensureContainerWithin left behind: how long
+// it took and what it ended on when it came back, or, when the case's guard
+// gave up first, the channel the still-running call's result will arrive on.
+type recoveryRun struct {
+	took     time.Duration
+	err      error
+	outlived <-chan error
+}
+
+// driveRecovery runs ensureContainerWithin at the given pace and waits for it
+// for up to limit.
+//
+// Nothing here waits past that limit. The call is what a case is timing, and a
+// call that has not come back by then is one that ignored the bound it was
+// given — the failure this whole file is about — which owes the case nothing,
+// not even a return. The guard gives up where it stands: the call is recorded
+// as one that has outlived its case (see abandoned), and whoever asked is
+// handed the channel its result will arrive on, for a case that wants to wait
+// for it on its own terms.
+func driveRecovery(bound, interval, limit time.Duration) recoveryRun {
+	started := time.Now()
+	done := make(chan error, 1)
+	go func() { done <- ensureContainerWithin(bound, interval) }()
+	select {
+	case err := <-done:
+		return recoveryRun{took: time.Since(started), err: err}
+	case <-time.After(limit):
+		abandoned = true
+		return recoveryRun{outlived: done}
+	}
+}
+
+// underRecoveryWait is driveRecovery for a case: it fails the case when the
 // call has not come back within limit.
 //
 // The waiting is what makes the bound a thing a case has to check at all: a
@@ -183,38 +288,14 @@ var abandoned bool
 // daemon that is down has to end in a reported failure rather than in a test
 // run that never finishes, and a case that simply waited for it would take the
 // suite's own timeout to say so.
-//
-// The pace is put back when the call is back, and not before: a call that never
-// comes back is still reading it, and writing it underneath that call would be
-// a race. Which is why a case that gives up on the call sets abandoned below
-// rather than leaving the next case to write those variables again — the report
-// that would produce lands on top of a failure that is already saying what went
-// wrong, and a race report that has to be explained away is worse than the pace
-// a failing run carries on with.
 func underRecoveryWait(t *testing.T, bound, interval, limit time.Duration) (time.Duration, error) {
 	t.Helper()
-	var restore func()
-	if !abandoned {
-		previousBound, previousInterval := recoveryBound, recoveryInterval
-		recoveryBound, recoveryInterval = bound, interval
-		restore = func() { recoveryBound, recoveryInterval = previousBound, previousInterval }
-	}
-
-	started := time.Now()
-	done := make(chan error, 1)
-	go func() { done <- ensureContainer() }()
-	select {
-	case err := <-done:
-		if restore != nil {
-			restore()
-		}
-		return time.Since(started), err
-	case <-time.After(limit):
-		abandoned = true
+	run := driveRecovery(bound, interval, limit)
+	if run.outlived != nil {
 		t.Fatalf("bringing the container up has not come back within %s, and a create that cannot be "+
 			"recovered has to end in a failure within the wait it was given (%s)", limit, bound)
-		return 0, nil
 	}
+	return run.took, run.err
 }
 
 // TestConflictRecoveryReusesTheWinningContainer is the case the race is about:
@@ -229,6 +310,7 @@ func underRecoveryWait(t *testing.T, bound, interval, limit time.Duration) (time
 // case pass without the code being fixed at all.
 func TestConflictRecoveryReusesTheWinningContainer(t *testing.T) {
 	stub := newDockerStub(t)
+	skipIfStray(t)
 	stub.answers(t, "inspect",
 		failed(failureStatus, missingObjectResponse),
 		failed(failureStatus, missingObjectResponse),
@@ -258,6 +340,7 @@ func TestConflictRecoveryReusesTheWinningContainer(t *testing.T) {
 // and the binary uses it.
 func TestConflictRecoveryRetriesAStartThatFailedInTheWindow(t *testing.T) {
 	stub := newDockerStub(t)
+	skipIfStray(t)
 	stub.answers(t, "inspect",
 		failed(failureStatus, missingObjectResponse),
 		succeeded("false"),
@@ -287,6 +370,7 @@ func TestConflictRecoveryRetriesAStartThatFailedInTheWindow(t *testing.T) {
 // which is the one thing that says where it stopped.
 func TestConflictRecoveryFailsWithinItsBoundCarryingTheLastWords(t *testing.T) {
 	stub := newDockerStub(t)
+	skipIfStray(t)
 	stub.answers(t, "inspect", failed(failureStatus, missingObjectResponse))
 	stub.answers(t, "run", failed(conflictStatus, conflictResponse))
 
@@ -321,6 +405,7 @@ func TestConflictRecoveryFailsWithinItsBoundCarryingTheLastWords(t *testing.T) {
 // happened first and the start is where the wait actually stopped.
 func TestConflictRecoveryReportsCreateAndStartTogether(t *testing.T) {
 	stub := newDockerStub(t)
+	skipIfStray(t)
 	stub.answers(t, "inspect",
 		failed(failureStatus, missingObjectResponse),
 		succeeded("false"),
@@ -353,6 +438,7 @@ func TestConflictRecoveryReportsCreateAndStartTogether(t *testing.T) {
 // as the wait lasts, and four of this module's packages go through here.
 func TestExistingContainerStartFailureIsReportedAtOnce(t *testing.T) {
 	stub := newDockerStub(t)
+	skipIfStray(t)
 	stub.answers(t, "inspect", succeeded("false"))
 	stub.answers(t, "start", failed(failureStatus, missingContainerResponse))
 
@@ -367,4 +453,71 @@ func TestExistingContainerStartFailureIsReportedAtOnce(t *testing.T) {
 		t.Errorf("the docker calls were %q, want %q: nothing here is waiting on another process, so a "+
 			"start that fails is reported rather than retried", got, want)
 	}
+}
+
+// TestAnAbandonedCallIsCutOffFromTheRealDocker covers what has to happen when a
+// case gives up on a call: the call is still running, and the one place it must
+// not be able to reach from then on is the machine's own docker.
+//
+// The call it gives up on is one that honors its bound — a few seconds where
+// the guard's limit is a fraction of one — which is what makes the case
+// deterministic at both ends: the guard gives up long before the call would
+// come back, and the call then ends by itself, after which the machine is put
+// back the way it was found.
+//
+// The look is taken after the case that gave up has ended and its cleanup has
+// run, and that is the point of taking it from out here: a PATH that a case
+// only holds while it runs would look exactly the same from inside it, and that
+// is the half of this that is easy to get wrong.
+func TestAnAbandonedCallIsCutOffFromTheRealDocker(t *testing.T) {
+	previous := os.Getenv("PATH")
+	var outlived <-chan error
+	t.Run("a case that gives up on a call", func(t *testing.T) {
+		stub := newDockerStub(t)
+		// Every look fails, so nothing the call asks will end it early.
+		stub.answers(t, "inspect", failed(failureStatus, missingObjectResponse))
+		stub.answers(t, "run", failed(conflictStatus, conflictResponse))
+
+		const bound, limit = 2 * time.Second, 100 * time.Millisecond
+		run := driveRecovery(bound, time.Millisecond, limit)
+		if run.outlived == nil {
+			t.Fatalf("the call came back within the %s guard although the bound it was given was %s",
+				limit, bound)
+		}
+		outlived = run.outlived
+	})
+	if outlived == nil {
+		t.Fatal("the case above never gave up on a call, so there is nothing to look at here")
+	}
+
+	swallow, err := swallowStubDir()
+	if err != nil {
+		t.Fatalf("resolving the stand-in for abandoned calls: %v", err)
+	}
+	if got, err := exec.LookPath("docker"); err != nil || got != filepath.Join(swallow, "docker") {
+		t.Errorf("docker resolves to %q (%v) once the case that gave up has ended and its cleanup has "+
+			"run, while the call it abandoned is still asking PATH for docker on every round it makes; "+
+			"want the stand-in that swallows calls, %q — where that call lands must not be the "+
+			"machine's own docker", got, err, filepath.Join(swallow, "docker"))
+	}
+	if reason := strayEvidence(); reason == "" {
+		t.Error("a case that gave up on a call leaves the cases after it nothing to go on: they would " +
+			"assert on calls that are not their own and report a defect that is not there")
+	}
+
+	// The call was given a bound it honors, so it ends on its own; this waits
+	// for that return rather than guessing at how long it takes. The patience
+	// is generous on purpose — the rounds are docker invocations, and a loaded
+	// machine stretches them. Nothing is put back on the way out: a call that
+	// is somehow still out there is precisely what the stand-in and the flag
+	// are for, and putting PATH back would point it at the real docker.
+	select {
+	case <-outlived:
+	case <-time.After(30 * time.Second):
+		t.Fatal("the call has not come back well past the bound it was given, so the machine is left " +
+			"as it is: with that call still asking for docker, putting PATH back is the one thing " +
+			"that must not happen")
+	}
+	os.Setenv("PATH", previous)
+	abandoned = false
 }
