@@ -53,7 +53,7 @@ const (
 	// window is reached with some regularity.
 	coldstartPeers = 8
 	// coldstartRounds bounds the rounds one run may take, and coldstartWindows
-	// is how many of them have to have reached the window before it stops
+	// is how many of them have to have covered the window before it stops
 	// early. The window was reached in a third of the rounds when the race was
 	// reproduced, so twenty rounds are far past enough — and reaching the limit
 	// without it is reported as that, not as a pass.
@@ -257,6 +257,84 @@ func (s roundSummary) coversWindow() bool {
 	return len(s.reached) > 0 && s.skipped == 0 && s.failed == 0
 }
 
+// runTotals is one run of the check added up, and what its conclusion is drawn
+// from: how many rounds were run, how many of them had a peer reach the window,
+// how many the run may claim as covered — a round covers the window when a peer
+// reached it and none of the round's peers skipped or failed — and how many
+// peers never came up at all.
+//
+// The two counts are apart because they are apart in fact: a round can be one
+// that reached the window and still not be one the run may claim, and the
+// summary that said the one while holding the other was claiming coverage
+// behind rounds it was not true of.
+type runTotals struct {
+	rounds   int
+	reached  int
+	covered  int
+	failures int
+}
+
+// conclusionKind is which of the four things a run has to say about itself.
+type conclusionKind int
+
+const (
+	// conclusionFailed: a peer could not reach the container, which the run
+	// reports as a failure however much of the window it saw.
+	conclusionFailed conclusionKind = iota
+	// conclusionNeverReached: no round had a peer reach the window, so the run
+	// covers nothing about the recovery.
+	conclusionNeverReached
+	// conclusionReachedNotCovered: rounds reached the window, and none of them
+	// is one the run may claim — peers skipped instead of racing.
+	conclusionReachedNotCovered
+	// conclusionCovered: rounds covered the window, and every peer in them came
+	// up on the one container.
+	conclusionCovered
+)
+
+// conclusion is what a run has to say, and which of the four things it is: the
+// harness reads the kind to decide how the run reports it — an error, a skip or
+// a log line — and hands the sentence over as it stands.
+type conclusion struct {
+	kind     conclusionKind
+	sentence string
+}
+
+// conclusion draws the run's conclusion from its totals.
+//
+// It is a function of the totals and nothing else, here rather than at the
+// harness's closing switch, so that what a state concludes — and every word of
+// how it says it — is a thing a case can hold from outside: the counts and the
+// sentences went out of step once already, with the covered rounds counted and
+// the sentence about reaching, and nothing in a harness that builds its
+// sentences as it goes could say so.
+func (totals runTotals) conclusion() conclusion {
+	switch {
+	case totals.failures > 0:
+		return conclusion{conclusionFailed, fmt.Sprintf(
+			"%d of the peers in these %d rounds could not reach the container, and a create that cannot "+
+				"be recovered has to end in a reported failure rather than in a peer without a database",
+			totals.failures, totals.rounds)}
+	case totals.reached == 0:
+		return conclusion{conclusionNeverReached, fmt.Sprintf(
+			"none of the %d rounds reached the window: no peer lost the create race and was then told by "+
+				"its own calls that the container was not there, so this run covers nothing about the "+
+				"recovery. The deterministic cases are the gate; this check says the answers they replay "+
+				"are the real ones, and it did not get to say it", totals.rounds)}
+	case totals.covered == 0:
+		return conclusion{conclusionReachedNotCovered, fmt.Sprintf(
+			"the window was reached in %d of the %d rounds, but no round covered it: the rounds that "+
+				"reached it had peers skip instead of racing, and a round counts as covered only when "+
+				"all of its peers came up on the one container. The deterministic cases are the gate; "+
+				"this check says the answers they replay are the real ones, and it did not get to say it",
+			totals.reached, totals.rounds)}
+	default:
+		return conclusion{conclusionCovered, fmt.Sprintf(
+			"%d of %d rounds covered the window, and every peer in them came up on the one container",
+			totals.covered, totals.rounds)}
+	}
+}
+
 // dockerCall is one recorded docker invocation, with the moments it started and
 // finished: how long a peer took over a call, and how long it took to make the
 // next one, is what says whether it looked inside the window or after it.
@@ -349,13 +427,16 @@ func TestColdStartConcurrency(t *testing.T) {
 	peerBinary := buildPeerBinary(t)
 	root := t.TempDir()
 
-	var rounds, windowRounds, failures, skips int
+	var rounds, reachedRounds, coveredRounds, failures, skips int
 	var skipped []string
-	for round := 1; round <= coldstartRounds && windowRounds < coldstartWindows; round++ {
+	for round := 1; round <= coldstartRounds && coveredRounds < coldstartWindows; round++ {
 		rounds = round
 		coldStart(t, dockerPath, round)
 		runs := runPeers(t, peerBinary, dockerPath, root, round)
 		summary := summarizeRound(runs)
+		if len(summary.reached) > 0 {
+			reachedRounds++
+		}
 
 		for _, run := range runs {
 			switch run.outcome() {
@@ -371,7 +452,7 @@ func TestColdStartConcurrency(t *testing.T) {
 		}
 		switch {
 		case summary.coversWindow():
-			windowRounds++
+			coveredRounds++
 			t.Logf("round %d: the window was reached by %s, and every peer in it came up on the one container",
 				round, strings.Join(summary.reached, ", "))
 		case len(summary.reached) > 0 && summary.skipped > 0:
@@ -391,19 +472,23 @@ func TestColdStartConcurrency(t *testing.T) {
 		t.Logf("%d of the %d peers that ran skipped and are counted as neither coming up nor failing: %s",
 			skips, rounds*coldstartPeers, strings.Join(skipped, "; "))
 	}
-	switch {
-	case failures > 0:
-		t.Errorf("%d of the peers in these %d rounds could not reach the container, and a create that "+
-			"cannot be recovered has to end in a reported failure rather than in a peer without a "+
-			"database", failures, rounds)
-	case windowRounds == 0:
-		t.Skipf("none of the %d rounds reached the window: no peer lost the create race and was then "+
-			"told by its own calls that the container was not there, so this run covers nothing about "+
-			"the recovery. The deterministic cases are the gate; this check says the answers they replay "+
-			"are the real ones, and it did not get to say it", rounds)
-	default:
-		t.Logf("%d of %d rounds reached the window, and every peer in them came up on the one container",
-			windowRounds, rounds)
+	// The run ends on the conclusion its totals draw, and says exactly what
+	// that conclusion says: the sentences are the conclusion's, handed over as
+	// they stand, so that what a state says about itself is held by the cases
+	// around this one rather than by the shape of this switch.
+	verdict := runTotals{
+		rounds:   rounds,
+		reached:  reachedRounds,
+		covered:  coveredRounds,
+		failures: failures,
+	}.conclusion()
+	switch verdict.kind {
+	case conclusionFailed:
+		t.Error(verdict.sentence)
+	case conclusionNeverReached, conclusionReachedNotCovered:
+		t.Skip(verdict.sentence)
+	case conclusionCovered:
+		t.Log(verdict.sentence)
 	}
 }
 
@@ -885,6 +970,84 @@ func TestARoundWithASkippedPeerCoversNothing(t *testing.T) {
 	}
 	if len(summary.reached) != 1 || summary.reached[0] != "peer-0" {
 		t.Errorf("the round has %v reach the window, want peer-0 alone", summary.reached)
+	}
+}
+
+// TestEachConclusionSaysWhatItsCountIs holds the run's closing sentence to the
+// count it is about, in each of the four states a run can end in.
+//
+// The defect this rules out is one of wording, and one a harness that writes
+// its sentences as it goes cannot see for itself: the rounds a run counts are
+// the ones that covered the window, the sentence said "reached", and a log of a
+// mixed round — peers reaching the window, peers skipping — ended on "none of
+// the rounds reached the window" a few lines under the lines saying otherwise.
+// Both halves are pinned here: which state a set of totals falls into, and
+// every word each state says about itself.
+func TestEachConclusionSaysWhatItsCountIs(t *testing.T) {
+	said := make(map[string]string)
+	for _, c := range []struct {
+		name   string
+		totals runTotals
+		want   conclusionKind
+		// says has to appear in the sentence, and silent must not: the claims
+		// the state is and is not allowed to make about what it counted.
+		says   []string
+		silent []string
+	}{
+		{
+			name:   "a peer that could not reach the container",
+			totals: runTotals{rounds: 20, reached: 20, covered: 19, failures: 2},
+			want:   conclusionFailed,
+			says:   []string{"2 of the peers", "these 20 rounds", "reported failure"},
+		},
+		{
+			name:   "no round reached the window",
+			totals: runTotals{rounds: 20},
+			want:   conclusionNeverReached,
+			says:   []string{"none of the 20 rounds reached the window"},
+			silent: []string{"covered"},
+		},
+		{
+			// The mixed round as the audit of the race saw it: the window
+			// reached in every round, and in each of them a peer that skipped
+			// instead of racing.
+			name:   "rounds reached the window and none of them covered it",
+			totals: runTotals{rounds: 20, reached: 20},
+			want:   conclusionReachedNotCovered,
+			says:   []string{"reached in 20 of the 20 rounds", "no round covered it", "skip"},
+			silent: []string{"none of the 20 rounds reached", "every peer in them came up"},
+		},
+		{
+			name:   "rounds covered the window",
+			totals: runTotals{rounds: 20, reached: 20, covered: 3},
+			want:   conclusionCovered,
+			says:   []string{"3 of 20 rounds covered the window", "every peer in them came up"},
+			silent: []string{"reached"},
+		},
+	} {
+		t.Run(c.name, func(t *testing.T) {
+			got := c.totals.conclusion()
+			if got.kind != c.want {
+				t.Errorf("the conclusion of %+v is kind %d, want %d", c.totals, got.kind, c.want)
+			}
+			for _, want := range c.says {
+				if !strings.Contains(got.sentence, want) {
+					t.Errorf("the conclusion of %+v reads:\n%s\nand it has to say %q",
+						c.totals, got.sentence, want)
+				}
+			}
+			for _, unwanted := range c.silent {
+				if strings.Contains(got.sentence, unwanted) {
+					t.Errorf("the conclusion of %+v reads:\n%s\nand it must not say %q",
+						c.totals, got.sentence, unwanted)
+				}
+			}
+			if other, seen := said[got.sentence]; seen {
+				t.Errorf("the conclusion of %+v says exactly what %s says, and the states are told "+
+					"apart by what they say:\n%s", c.totals, other, got.sentence)
+			}
+			said[got.sentence] = c.name
+		})
 	}
 }
 
