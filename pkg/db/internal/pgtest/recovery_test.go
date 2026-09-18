@@ -9,6 +9,7 @@ import (
 	"os/exec"
 	"path/filepath"
 	"runtime"
+	"slices"
 	"strings"
 	"sync"
 	"testing"
@@ -908,6 +909,15 @@ func TestTheRunsStatusSurvivesTheChangeTheGuardIsFor(t *testing.T) {
 	runCtx, cancelRun := context.WithTimeout(context.Background(), mutantLimit)
 	defer cancelRun()
 	run := exec.CommandContext(runCtx, mutant, "-test.run=^TestTheSwallowStandInIsGoneWhenTheRunEnds$")
+	// The mutant's temporary files are put under this case's. The guard in there
+	// ends by leaving directly — the mutant working as it should — and a process
+	// that leaves directly takes none of its cleanup with it, so what it leaves
+	// would collect in the machine's temporary directory on every run of this
+	// suite. TMPDIR is replaced rather than added to, so that the entry this case
+	// hands the mutant is the only one it can read.
+	run.Env = append(slices.DeleteFunc(os.Environ(), func(kv string) bool {
+		return strings.HasPrefix(kv, "TMPDIR=")
+	}), "TMPDIR="+t.TempDir())
 	var stdout, stderr strings.Builder
 	run.Stdout, run.Stderr = &stdout, &stderr
 	err = run.Run()
