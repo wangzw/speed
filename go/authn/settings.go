@@ -117,9 +117,9 @@ func durationSetting(ctx context.Context, reader SettingsReader, key string, fal
 // rule as durationSetting, and narrows what it resolves to int. min/max
 // bound the envelope this read accepts, which is the caller's own span and
 // not necessarily the key's declared schema range: a value outside it is
-// logged and the fallback stays. A value inside the envelope but outside
-// int's range on a 32-bit platform is the fourth arm, falling back the same
-// way.
+// logged and the fallback stays. A value inside the envelope that does not
+// fit an int on every supported platform falls back the same way, so the
+// read's answer never depends on the platform's int width.
 func intSetting(ctx context.Context, reader SettingsReader, key string, fallback int, min, max int64) int {
 	if reader == nil {
 		return fallback
@@ -136,13 +136,13 @@ func intSetting(ctx context.Context, reader SettingsReader, key string, fallback
 		return fallback
 	default:
 		// int is 32 bits on some of the platforms this library supports,
-		// so the narrowing needs a guard, and the guard has to compare
-		// against constants: a bound passed to a helper as a parameter is
-		// not a shape the integer-conversion analysis treats as a bound.
+		// so the narrowing needs a guard, and the guard compares against
+		// constants because that is the only shape the CodeQL
+		// go/incorrect-integer-conversion query treats as a bound.
 		if n >= math.MinInt32 && n <= math.MaxInt32 {
 			return int(n)
 		}
-		observability.FromContext(ctx).Warn("dynamic configuration resolved a value no int can represent; using the construction-time value", "key", key, "value", n)
+		observability.FromContext(ctx).Warn("dynamic configuration resolved a value that does not fit an int on every supported platform; using the construction-time value", "key", key, "value", n)
 		return fallback
 	}
 }
@@ -180,9 +180,11 @@ func (s *Service) trustedProviderList(ctx context.Context) []string {
 // A pair that is incoherent -- minimum above maximum, or either bound below
 // one -- is logged and the construction-time policy applies as a whole,
 // because a half-applied policy would refuse every password instead of
-// protecting them. A bound outside int's range on a 32-bit platform takes
-// the same whole-policy fallback: truncated, it would look plausible enough
-// to pass the coherence check and be applied silently.
+// protecting them. A bound that does not fit an int on every supported
+// platform ends the resolution there with the same whole-policy fallback,
+// without reading the other bound: on a 32-bit platform it would truncate
+// into a length plausible enough to pass the coherence check and be
+// applied silently.
 func (s *Service) passwordPolicyFor(ctx context.Context) PasswordPolicy {
 	if s.settings == nil {
 		return s.policy
@@ -192,12 +194,13 @@ func (s *Service) passwordPolicyFor(ctx context.Context) PasswordPolicy {
 	if minErr != nil {
 		observability.FromContext(ctx).Warn("dynamic configuration read failed; using the construction-time value", "key", ConfigKeyPasswordMinLength, "error", minErr)
 	} else if ok {
-		// Constants, as in intSetting: the integer-conversion analysis
-		// recognises no other shape as a bound.
+		// Constants, as in intSetting: the CodeQL
+		// go/incorrect-integer-conversion query recognises no other shape
+		// as a bound.
 		if minN >= math.MinInt32 && minN <= math.MaxInt32 {
 			policy.MinLength = int(minN)
 		} else {
-			observability.FromContext(ctx).Warn("dynamic password policy resolved a bound no int can represent; keeping the construction-time policy", "key", ConfigKeyPasswordMinLength, "value", minN)
+			observability.FromContext(ctx).Warn("dynamic password policy resolved a bound that does not fit an int on every supported platform; keeping the construction-time policy", "key", ConfigKeyPasswordMinLength, "value", minN)
 			return s.policy
 		}
 	}
@@ -209,7 +212,7 @@ func (s *Service) passwordPolicyFor(ctx context.Context) PasswordPolicy {
 		if maxN >= math.MinInt32 && maxN <= math.MaxInt32 {
 			policy.MaxLength = int(maxN)
 		} else {
-			observability.FromContext(ctx).Warn("dynamic password policy resolved a bound no int can represent; keeping the construction-time policy", "key", ConfigKeyPasswordMaxLength, "value", maxN)
+			observability.FromContext(ctx).Warn("dynamic password policy resolved a bound that does not fit an int on every supported platform; keeping the construction-time policy", "key", ConfigKeyPasswordMaxLength, "value", maxN)
 			return s.policy
 		}
 	}
