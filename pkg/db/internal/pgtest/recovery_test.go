@@ -347,6 +347,14 @@ var swallowStubPlanted string
 // still asking PATH for docker when its case ends — so nothing inside a case
 // can remove it, and nothing past the run has a use for it.
 //
+// The directory stops at the run and not at every way a run can end: one that
+// dies before m.Run returns — its own test-timeout panic, SIGKILL, OOM — never
+// reaches the removal and leaves the directory behind. That is the boundary
+// testing.TempDir's cleanup has too, and this one stays there on purpose: of
+// the ways a run can end, only SIGINT and SIGTERM could be caught, and a signal
+// handler would be out of proportion to what is left — a few hundred bytes
+// under the machine's temporary directory that nothing will look at again.
+//
 // The exit status is the run's own, which is the whole of what a test binary
 // reports: leaving with anything else would make this package's cases unable to
 // fail. That is what TestTheSwallowStandInIsGoneWhenTheRunEnds holds, and what
