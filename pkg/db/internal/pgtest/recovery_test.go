@@ -870,8 +870,8 @@ func TestTheRunsStatusSurvivesTheChangeTheGuardIsFor(t *testing.T) {
 		if n := strings.Count(string(source), line.text); n != 1 {
 			t.Fatalf("%s, which the mutant is built around in TestMain, appears %d times in %s "+
 				"where exactly one is expected: TestMain's shape has moved, and this case has to be "+
-				"updated to the new one — left as it is, the mutant below would be no mutant at all "+
-				"and this case would pass or fail for a reason other than the guard",
+				"updated to the new one — the mutant below is the change this case is about only in "+
+				"the shape it was written for",
 				line.what, n, filepath.Base(thisFile))
 		}
 	}
