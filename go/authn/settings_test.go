@@ -179,13 +179,20 @@ func TestPasswordPolicyFor_UnrepresentableBounds(t *testing.T) {
 	if got := svc.passwordPolicyFor(ctx); got.MinLength != svc.policy.MinLength || got.MaxLength != svc.policy.MaxLength {
 		t.Fatalf("unrepresentable bounds = %+v; want the construction-time policy %+v", got, svc.policy)
 	}
+
+	// The maximum's own guard, with the minimum representable: the
+	// minimum's refusal must not be what pins the pair's outcome.
+	reader.ints[ConfigKeyPasswordMinLength] = 16
+	if got := svc.passwordPolicyFor(ctx); got.MinLength != svc.policy.MinLength || got.MaxLength != svc.policy.MaxLength {
+		t.Fatalf("unrepresentable max = %+v; want the construction-time policy %+v", got, svc.policy)
+	}
 }
 
 // TestSMSCodeMaxAttemptsFor_RowsOutsideTheAcceptedRange pins the range arm
 // every intSetting read shares: a row outside the accepted envelope --
-// including one no int can represent, which is what keeps the narrowing
-// total -- keeps the construction-time budget, and an in-range row is
-// returned as read.
+// including one no int can hold, which this call site's 1..1000 envelope
+// refuses before any narrowing sees it -- keeps the construction-time
+// budget, and an in-range row is returned as read.
 func TestSMSCodeMaxAttemptsFor_RowsOutsideTheAcceptedRange(t *testing.T) {
 	ctx := context.Background()
 	svc := &Service{smsCodeMaxAttempts: 5}
