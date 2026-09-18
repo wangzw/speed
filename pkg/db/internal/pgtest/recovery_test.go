@@ -347,7 +347,10 @@ var swallowStubPlanted string
 //
 // The exit status is the run's own, which is the whole of what a test binary
 // reports: leaving with anything else would make this package's cases unable to
-// fail, and no case here could say so.
+// fail. That is what TestTheSwallowStandInIsGoneWhenTheRunEnds holds, and what
+// it finds it reports by leaving directly instead of through this function's
+// status — deliberately, since a status decided here is exactly what such a
+// change would swallow.
 func TestMain(m *testing.M) {
 	code := m.Run()
 	if swallowStubPlanted != "" {
@@ -762,9 +765,16 @@ func TestTheSwallowStandInIsGoneWhenTheRunEnds(t *testing.T) {
 	}
 	var exit *exec.ExitError
 	if !errors.As(err, &exit) || exit.ExitCode() <= 0 {
-		t.Fatalf("the child running a case that fails at once came back with %v, and a test binary "+
+		// Reported on standard error and out of the process directly, not
+		// through t.Fatalf: a t.Fatalf hands the failure to m.Run's exit status,
+		// which is precisely the channel the change this guards against — a
+		// TestMain leaving with a status of its own — swallows. Leaving here
+		// goes through no part of TestMain, whatever it does with the status,
+		// and is the only report in this package that does not.
+		fmt.Fprintf(os.Stderr, "the child running a case that fails at once came back with %v, and a test binary "+
 			"whose cases can fail leaves the failure in its exit status — one that exits 0 whatever "+
 			"happened, or is killed before it can say anything, is one whose cases cannot report "+
-			"anything:\nstdout:\n%s\nstderr:\n%s", err, childOut.String(), childErr.String())
+			"anything:\nstdout:\n%s\nstderr:\n%s\n", err, childOut.String(), childErr.String())
+		os.Exit(1)
 	}
 }
