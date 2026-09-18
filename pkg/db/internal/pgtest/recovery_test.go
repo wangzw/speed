@@ -782,7 +782,11 @@ func TestTheSwallowStandInIsGoneWhenTheRunEnds(t *testing.T) {
 		// which is precisely the channel the change this guards against — a
 		// TestMain leaving with a status of its own — swallows. Leaving here
 		// goes through no part of TestMain, whatever it does with the status,
-		// and is the only report in this package that does not.
+		// and is the only report in this package that does not. A process that
+		// leaves directly skips its own cleanup as well, so this case's
+		// temporary directory stays where the machine put it — a residue of a
+		// run that has already failed, beside the stand-in TestMain would have
+		// removed.
 		fmt.Fprintf(os.Stderr, "the child running a case that fails at once came back with %v, and a test binary "+
 			"whose cases can fail leaves the failure in its exit status — one that exits 0 whatever "+
 			"happened, or is killed before it can say anything, is one whose cases cannot report "+
@@ -801,8 +805,8 @@ func TestTheSwallowStandInIsGoneWhenTheRunEnds(t *testing.T) {
 // A case inside the run cannot see that: whether this binary's failures would
 // leave is not a thing it can be asked while it is running. A binary built from
 // the changed source can be asked, so that is what this case does — it rewrites
-// TestMain's two lines in a copy of this file and gives the copy to the build
-// in place of the original, with the build's own -overlay, which leaves the
+// TestMain's exit in a copy of this file and gives the copy to the build in
+// place of the original, with the build's own -overlay, which leaves the
 // checkout untouched.
 //
 // The mutant is then asked to run the guard. The guard's second child fails at
@@ -819,12 +823,12 @@ func TestTheSwallowStandInIsGoneWhenTheRunEnds(t *testing.T) {
 // The copy is the whole file, this case's own source included, so the two lines
 // are written here in pieces that never join: joined, they would be in the copy
 // twice — once in TestMain and once in this case's source — and the count
-// below, which is what says the rewrite has a line to land on, would be
-// counting this case's own text as much as TestMain's. What is checked is the
-// file the copy is made from: each piece, joined, has to appear exactly once,
-// and a file where it does not is a failure that says the shape has moved and
-// what to update. A mutant that was never mutated, passing for some other
-// reason, is what that check is for.
+// below, which is what says the shape is still the one the rewrite was built
+// on, would be counting this case's own text as much as TestMain's. What is
+// checked is the file the copy is made from: each piece, joined, has to appear
+// exactly once, and a file where it does not is a failure that says the shape
+// has moved and what to update. A mutant that was never mutated, passing for
+// some other reason, is what that check is for.
 //
 // The words looked for on the mutant's standard error are the guard's own
 // diagnostic, and the coupling is deliberate: that the diagnostic keeps
@@ -854,8 +858,9 @@ func TestTheRunsStatusSurvivesTheChangeTheGuardIsFor(t *testing.T) {
 		t.Fatalf("reading %s, the source of the mutant: %v", thisFile, err)
 	}
 
-	// The two lines the change rewrites, in pieces that never join in this
-	// case's source, and what each is, for the report when it is not there.
+	// The two lines of TestMain's shape this case is built around, in pieces
+	// that never join in this case's source, and what each is, for the report
+	// when it is not there.
 	runLine := "code := m." + "Run()"
 	exitLine := "os.Exit(" + "code)"
 	for _, line := range []struct{ text, what string }{
@@ -863,15 +868,19 @@ func TestTheRunsStatusSurvivesTheChangeTheGuardIsFor(t *testing.T) {
 		{exitLine, "the line handing that status to the exit"},
 	} {
 		if n := strings.Count(string(source), line.text); n != 1 {
-			t.Fatalf("%s, which the mutant rewrites in TestMain, appears %d times in %s where "+
-				"exactly one is expected: TestMain's shape has moved, and this case has to be updated "+
-				"to rewrite the new one — left as it is, the mutant below would be no mutant at all "+
+			t.Fatalf("%s, which the mutant is built around in TestMain, appears %d times in %s "+
+				"where exactly one is expected: TestMain's shape has moved, and this case has to be "+
+				"updated to the new one — left as it is, the mutant below would be no mutant at all "+
 				"and this case would pass or fail for a reason other than the guard",
 				line.what, n, filepath.Base(thisFile))
 		}
 	}
-	mutated := strings.Replace(string(source), runLine, "m."+"Run()", 1)
-	mutated = strings.Replace(mutated, exitLine, "os.Exit(0)", 1)
+	// Only the exit is rewritten: dropping the status and leaving 0 is the change
+	// the guard is for, and the discard that goes with it keeps the status used
+	// in a TestMain whose only use of it was the exit — so a TestMain that reads
+	// the status somewhere else as well still builds, and this case stays about
+	// the guard rather than about a shape its own mutant broke.
+	mutated := strings.Replace(string(source), exitLine, "_ = code\n\tos.Exit(0)", 1)
 
 	dir := t.TempDir()
 	mutantSource := filepath.Join(dir, "recovery_test.go")
