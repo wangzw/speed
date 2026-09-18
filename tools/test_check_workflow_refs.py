@@ -68,8 +68,8 @@ jobs:
       - uses: vislake/coding-flows@main
 """
 
-# The single-dot form of the same criterion: in a copy, a
-# repository-root-relative path is as dangling as a skill-relative one.
+# The single-dot form of the same criterion: the gate does not judge
+# which path a relative segment names, so `./` is a hit as well.
 DOT_SLASH = """\
 name: coding-flow designer
 on:
@@ -161,14 +161,31 @@ class WorkflowRefsGateTests(unittest.TestCase):
         self.assertIn("1 relative reference(s)", err)
 
     def test_single_dot_relative_reference_exits_1(self) -> None:
-        # The criterion covers `./` as well as `../` (the plan's definition
-        # of a relative path segment): any relative reference in a copy
-        # dangles, whichever path it names.
+        # The criterion covers `./` as well as `../` (its own definition
+        # of a relative path segment): the gate does not judge which path
+        # a relative segment names, so `./` is a hit too.
         write_workflows(self.root, {"designer.yml": DOT_SLASH})
         code, out, _ = self._run()
         self.assertEqual(code, 1)
         self.assertIn(".github/workflows/designer.yml:8", out)
         self.assertIn("./scripts/plan.sh", out)
+
+    def test_ellipsis_is_not_a_relative_segment(self) -> None:
+        # The criterion is a relative path *segment*: a `.` or `..` that
+        # begins one. A longer dot run (`.../`, as in a prose ellipsis or
+        # a URL) is not a hit. The real two-level reference on the next
+        # line still is, so this pins a narrowed criterion rather than a
+        # switched-off one.
+        text = HISTORICAL.replace(
+            "# see ../../SKILL.md for the shared rules",
+            "# see https://example.com/.../SKILL.md for the rules\n"
+            "# see ../../SKILL.md for the shared rules",
+        )
+        write_workflows(self.root, {"designer.yml": text})
+        code, out, _ = self._run()
+        self.assertEqual(code, 1)
+        self.assertIn(".github/workflows/designer.yml:3", out)
+        self.assertNotIn("designer.yml:2", out)
 
     def test_repository_owned_workflow_may_use_relative_paths(self) -> None:
         # The exemption is copy identity, not directory: this repository's
@@ -179,6 +196,34 @@ class WorkflowRefsGateTests(unittest.TestCase):
         code, out, _ = self._run()
         self.assertEqual(code, 0)
         self.assertNotIn("ci.yml", out)
+
+    def test_quoted_uses_line_is_still_guarded(self) -> None:
+        # The marker line's YAML value may be quoted; the file is the
+        # same copy either way, and the guard must not fall off it --
+        # which would shrink the guard set without failing.
+        files = {}
+        for name, quote in (("double.yml", '"'), ("single.yml", "'")):
+            files[name] = HISTORICAL.replace(
+                "uses: vislake/coding-flows@main",
+                f"uses: {quote}vislake/coding-flows@main{quote}",
+            )
+        write_workflows(self.root, files)
+        code, out, err = self._run()
+        self.assertEqual(code, 1, err)
+        for name in files:
+            self.assertIn(f".github/workflows/{name}:2", out)
+
+    def test_clean_quoted_uses_line_is_reported_by_name(self) -> None:
+        # A clean quoted copy is checked and named like any other, not
+        # silently dropped from the guard set.
+        text = GUARDED.replace(
+            "uses: vislake/coding-flows@main",
+            'uses: "vislake/coding-flows@main"',
+        )
+        write_workflows(self.root, {"designer.yml": text})
+        code, out, err = self._run()
+        self.assertEqual(code, 0, err)
+        self.assertIn(".github/workflows/designer.yml", out)
 
     def test_no_guarded_file_exits_2(self) -> None:
         # A directory that exists but holds no copy is "nothing checked",
@@ -192,6 +237,39 @@ class WorkflowRefsGateTests(unittest.TestCase):
         code, err = self._run_expect_exit()
         self.assertEqual(code, 2)
         self.assertIn(".github/workflows", err)
+
+    def test_non_yaml_entries_are_skipped_without_reading(self) -> None:
+        # GitHub reads workflow files only from `*.yml`/`*.yaml` directly
+        # under this directory, and every upstream template is a .yml:
+        # another kind of entry is not a copy's shape, and reading it
+        # would let a stray non-UTF-8 file fail the gate with exit 2.
+        # Both extensions are guarded, so both are named here.
+        write_workflows(self.root, {"designer.yml": GUARDED, "coder.yaml": GUARDED})
+        junk = self.root / ".github" / "workflows" / "notes.txt"
+        junk.write_bytes(b"\xff\xfe not utf-8\n")
+        code, out, err = self._run()
+        self.assertEqual(code, 0, err)
+        self.assertIn(".github/workflows/coder.yaml", out)
+        self.assertNotIn("notes.txt", out)
+
+    def test_non_yaml_only_directory_is_still_nothing_checked(self) -> None:
+        # Skipping non-YAML entries must not turn "nothing to check"
+        # into a pass.
+        write_workflows(self.root, {"notes.txt": "not a workflow\n"})
+        code, err = self._run_expect_exit()
+        self.assertEqual(code, 2)
+        self.assertIn("no guarded file found", err)
+
+    def test_subdirectory_is_skipped(self) -> None:
+        # GitHub reads workflow files directly under this directory only,
+        # so a subdirectory is not a copy's shape. This one is named like
+        # a workflow, so it passes the extension filter and is still not
+        # a file to read.
+        write_workflows(self.root, {"designer.yml": GUARDED})
+        (self.root / ".github" / "workflows" / "nested.yml").mkdir()
+        code, out, err = self._run()
+        self.assertEqual(code, 0, err)
+        self.assertNotIn("nested.yml", out)
 
     @unittest.skipUnless(
         hasattr(os, "geteuid") and os.geteuid() != 0,
