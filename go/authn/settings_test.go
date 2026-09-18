@@ -160,6 +160,27 @@ func TestPasswordPolicyFor_CoherenceGuard(t *testing.T) {
 	}
 }
 
+// TestPasswordPolicyFor_UnrepresentableBounds pins the second refusal arm: a
+// bound outside the range an int can represent keeps the whole
+// construction-time policy. On a 32-bit platform the narrowing would
+// truncate such a bound into a plausible-looking length that passes the
+// coherence check, so the refusal cannot be left to that check.
+func TestPasswordPolicyFor_UnrepresentableBounds(t *testing.T) {
+	ctx := context.Background()
+	svc := &Service{policy: PasswordPolicy{MinLength: 12, MaxLength: 128}}
+
+	reader := newFakeSettings()
+	svc.settings = reader
+	reader.set[ConfigKeyPasswordMinLength] = true
+	reader.ints[ConfigKeyPasswordMinLength] = 1<<32 + 100
+	reader.set[ConfigKeyPasswordMaxLength] = true
+	reader.ints[ConfigKeyPasswordMaxLength] = 1<<32 + 200
+
+	if got := svc.passwordPolicyFor(ctx); got.MinLength != svc.policy.MinLength || got.MaxLength != svc.policy.MaxLength {
+		t.Fatalf("unrepresentable bounds = %+v; want the construction-time policy %+v", got, svc.policy)
+	}
+}
+
 // TestSMSCodeMaxAttemptsFor_RowsOutsideTheAcceptedRange pins the range arm
 // every intSetting read shares: a row outside the accepted envelope --
 // including one no int can represent, which is what keeps the narrowing

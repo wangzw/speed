@@ -177,10 +177,12 @@ func (s *Service) trustedProviderList(ctx context.Context) []string {
 // passwordPolicyFor resolves the password policy every new password is
 // validated against. Both length bounds are read per validation; each falls
 // back to the construction-time policy (WithPasswordPolicy) independently.
-// A pair that is incoherent -- minimum above maximum, either length below
-// the schema's own floors -- is logged and the construction-time policy
-// applies as a whole, because a half-applied policy would refuse every
-// password instead of protecting them.
+// A pair that is incoherent -- minimum above maximum, or either bound below
+// one -- is logged and the construction-time policy applies as a whole,
+// because a half-applied policy would refuse every password instead of
+// protecting them. A bound outside int's range on a 32-bit platform takes
+// the same whole-policy fallback: truncated, it would look plausible enough
+// to pass the coherence check and be applied silently.
 func (s *Service) passwordPolicyFor(ctx context.Context) PasswordPolicy {
 	if s.settings == nil {
 		return s.policy
@@ -190,13 +192,26 @@ func (s *Service) passwordPolicyFor(ctx context.Context) PasswordPolicy {
 	if minErr != nil {
 		observability.FromContext(ctx).Warn("dynamic configuration read failed; using the construction-time value", "key", ConfigKeyPasswordMinLength, "error", minErr)
 	} else if ok {
-		policy.MinLength = int(minN)
+		// Constants, as in intSetting: the integer-conversion analysis
+		// recognises no other shape as a bound.
+		if minN >= math.MinInt32 && minN <= math.MaxInt32 {
+			policy.MinLength = int(minN)
+		} else {
+			observability.FromContext(ctx).Warn("dynamic password policy resolved a bound no int can represent; keeping the construction-time policy", "key", ConfigKeyPasswordMinLength, "value", minN)
+			return s.policy
+		}
 	}
 	maxN, ok, maxErr := s.settings.Int(ctx, ConfigKeyPasswordMaxLength)
 	if maxErr != nil {
 		observability.FromContext(ctx).Warn("dynamic configuration read failed; using the construction-time value", "key", ConfigKeyPasswordMaxLength, "error", maxErr)
 	} else if ok {
-		policy.MaxLength = int(maxN)
+		// The same constant-comparison guard as the minimum above.
+		if maxN >= math.MinInt32 && maxN <= math.MaxInt32 {
+			policy.MaxLength = int(maxN)
+		} else {
+			observability.FromContext(ctx).Warn("dynamic password policy resolved a bound no int can represent; keeping the construction-time policy", "key", ConfigKeyPasswordMaxLength, "value", maxN)
+			return s.policy
+		}
 	}
 	if policy.MinLength < 1 || policy.MaxLength < 1 || policy.MinLength > policy.MaxLength {
 		observability.FromContext(ctx).Warn("resolved password policy is incoherent; keeping the construction-time policy", "min_length", policy.MinLength, "max_length", policy.MaxLength)
