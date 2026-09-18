@@ -981,12 +981,20 @@ func TestTheRunsStatusSurvivesTheChangeTheGuardIsFor(t *testing.T) {
 // that was cut off; read as that, a hunt is sent after a swallowed status that
 // was never there.
 //
-// The killed run is a real child, killed by itself, because the form cannot be
-// handed to the report any other way: a ProcessState a case makes up reports 0,
-// not the -1 a signal leaves, and nothing exported can stand in for it. The
-// kill goes through an absolute path because cases in this package move PATH
-// around on purpose (see TestAnAbandonedCallIsCutOffFromTheRealDocker): a name
-// looked up through it would reach the stand-in, or nothing at all.
+// The killed run is a real child, killed by itself. The form can be handed
+// over made up — a zero *exec.ExitError holds up to errors.As and reports the
+// -1 a signal leaves, which is all the check below asks — but the report and
+// the check would both be the worse for it. The report embeds the error
+// through %v (see mutantReport), and a made-up value reads <nil> where a real
+// kill reads signal: killed: the report would carry words no real killed run
+// ever produces. The check below is what says the form that came back is the
+// killed one, and over a value this case made up itself it would say so with
+// no signal termination ever having happened. The real child is kept for what
+// the report and the check can then be trusted to say, not because the form
+// cannot be had any other way. The kill goes through an absolute path because
+// cases in this package move PATH around on purpose (see
+// TestAnAbandonedCallIsCutOffFromTheRealDocker): a name looked up through it
+// would reach the stand-in, or nothing at all.
 func TestTheReportForAKilledMutantSaysTheBoundFired(t *testing.T) {
 	cmd := exec.Command("/bin/sh", "-c", "kill -KILL $$")
 	var stdout, stderr strings.Builder
