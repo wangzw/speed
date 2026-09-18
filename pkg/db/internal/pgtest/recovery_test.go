@@ -2,11 +2,13 @@ package pgtest
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"os"
 	"os/exec"
 	"path/filepath"
+	"runtime"
 	"strings"
 	"sync"
 	"testing"
@@ -776,5 +778,144 @@ func TestTheSwallowStandInIsGoneWhenTheRunEnds(t *testing.T) {
 			"happened, or is killed before it can say anything, is one whose cases cannot report "+
 			"anything:\nstdout:\n%s\nstderr:\n%s\n", err, childOut.String(), childErr.String())
 		os.Exit(1)
+	}
+}
+
+// TestTheRunsStatusSurvivesTheChangeTheGuardIsFor is the case that notices a
+// guard which has stopped guarding. TestTheSwallowStandInIsGoneWhenTheRunEnds
+// holds a test binary to leaving a failed case in its exit status, and the
+// change it is there for is TestMain taking the status into hands of its own —
+// with that in place the guard itself, and every other case in this package,
+// goes quiet without anything failing.
+//
+// A case inside the run cannot see that: whether this binary's failures would
+// leave is not a thing it can be asked while it is running. A binary built from
+// the changed source can be asked, so that is what this case does — it rewrites
+// TestMain's two lines in a copy of this file and gives the copy to the build
+// in place of the original, with the build's own -overlay, which leaves the
+// checkout untouched.
+//
+// The mutant is then asked to run the guard. The guard's second child fails at
+// once, and in the mutant that child is built from the same changed source, so
+// its failure goes through the mutant's own TestMain and is swallowed — which
+// is the change — and the guard reaches its report. Fixed, the report leaves
+// directly: the mutant's exit status is non-zero and the diagnostic is on its
+// standard error. In the source the guard was fixed from — t.Fatalf — the
+// report goes into the same swallowed status, and the mutant leaves 0 with the
+// diagnostic on standard output instead. Those two things are how the runs are
+// told apart, and they are what makes this case red before the fix and green
+// after.
+//
+// The copy is the whole file, this case's own source included, so the two lines
+// are written here in pieces that never join: a literal would be found in this
+// case's source rather than in TestMain, and the rewrite would land on the
+// wrong one — or claim a line was there when it had moved. What is checked is
+// the file the copy is made from: each piece, joined, has to appear exactly
+// once, and a file where it does not is a failure that says the shape has moved
+// and what to update. A mutant that was never mutated, passing for some other
+// reason, is what that check is for.
+//
+// The words looked for on the mutant's standard error are the guard's own
+// diagnostic, and the coupling is deliberate: that the diagnostic keeps
+// reaching the outside world is the whole of what the guard is for, so
+// rewording it should bring this case along rather than be absorbed by a weaker
+// check like "standard error is not empty", which could not say what it read.
+func TestTheRunsStatusSurvivesTheChangeTheGuardIsFor(t *testing.T) {
+	// The toolchain is found without PATH: cases in this package move PATH
+	// around on purpose (see TestAnAbandonedCallIsCutOffFromTheRealDocker), and
+	// the build below is not a thing to look up through whatever PATH holds at
+	// this point. A toolchain that cannot be found fails this case; it is not a
+	// reason to skip it.
+	goTool := filepath.Join(runtime.GOROOT(), "bin", "go")
+	if _, err := os.Stat(goTool); err != nil {
+		t.Fatalf("the go this binary was built with is expected at %s and is not there (%v): the "+
+			"mutant is built with it, and a build that cannot be started is this case's own failure",
+			goTool, err)
+	}
+	_, thisFile, _, ok := runtime.Caller(0)
+	if !ok || !filepath.IsAbs(thisFile) {
+		t.Fatalf("this case cannot name the source it rewrites: the file it sits in was reported as "+
+			"%q, which is not an absolute path to a file", thisFile)
+	}
+	pkgDir := filepath.Dir(thisFile)
+	source, err := os.ReadFile(thisFile)
+	if err != nil {
+		t.Fatalf("reading %s, the source of the mutant: %v", thisFile, err)
+	}
+
+	// The two lines the change rewrites, in pieces that never join in this
+	// file's text, and what each is, for the report when it is not there.
+	runLine := "code := m." + "Run()"
+	exitLine := "os.Exit(" + "code)"
+	for _, line := range []struct{ text, what string }{
+		{runLine, "the line taking the run's status into a variable"},
+		{exitLine, "the line handing that status to the exit"},
+	} {
+		if n := strings.Count(string(source), line.text); n != 1 {
+			t.Fatalf("%s, which the mutant rewrites in TestMain, appears %d times in %s where "+
+				"exactly one is expected: TestMain's shape has moved, and this case has to be updated "+
+				"to rewrite the new one — left as it is, the mutant below would be no mutant at all "+
+				"and this case would pass or fail for a reason other than the guard",
+				line.what, n, filepath.Base(thisFile))
+		}
+	}
+	mutated := strings.Replace(string(source), runLine, "m."+"Run()", 1)
+	mutated = strings.Replace(mutated, exitLine, "os.Exit(0)", 1)
+
+	dir := t.TempDir()
+	mutantSource := filepath.Join(dir, "recovery_test.go")
+	if err := os.WriteFile(mutantSource, []byte(mutated), 0o644); err != nil {
+		t.Fatalf("writing the source of the mutant to %s: %v", mutantSource, err)
+	}
+	overlay, err := json.Marshal(map[string]map[string]string{"Replace": {thisFile: mutantSource}})
+	if err != nil {
+		t.Fatalf("encoding the overlay that puts %s in place of %s for the build: %v",
+			mutantSource, thisFile, err)
+	}
+	overlayPath := filepath.Join(dir, "overlay.json")
+	if err := os.WriteFile(overlayPath, overlay, 0o644); err != nil {
+		t.Fatalf("writing the overlay to %s: %v", overlayPath, err)
+	}
+
+	// One bound for each of the two steps below, so that neither a build nor a
+	// run that hangs can hold this case open. Both are seconds against it.
+	const mutantLimit = 3 * time.Minute
+	buildCtx, cancelBuild := context.WithTimeout(context.Background(), mutantLimit)
+	defer cancelBuild()
+	mutant := filepath.Join(dir, "mutant.test")
+	build := exec.CommandContext(buildCtx, goTool, "test", "-c", "-overlay="+overlayPath, "-o", mutant, ".")
+	build.Dir = pkgDir
+	var buildOut, buildErr strings.Builder
+	build.Stdout, build.Stderr = &buildOut, &buildErr
+	if err := build.Run(); err != nil {
+		t.Fatalf("building the mutant came back with %v, which says nothing about the guard: a build "+
+			"that does not come out is this case's own failure and not the mutant being caught:\n"+
+			"stdout:\n%s\nstderr:\n%s", err, buildOut.String(), buildErr.String())
+	}
+
+	// Run directly rather than through go test: go test merges the binary's
+	// standard error into its own output, and which stream the diagnostic is on
+	// is half of what this case is about. -test.run keeps the mutant off this
+	// case, which is in the same binary and would build a mutant of its own.
+	runCtx, cancelRun := context.WithTimeout(context.Background(), mutantLimit)
+	defer cancelRun()
+	run := exec.CommandContext(runCtx, mutant, "-test.run=^TestTheSwallowStandInIsGoneWhenTheRunEnds$")
+	var stdout, stderr strings.Builder
+	run.Stdout, run.Stderr = &stdout, &stderr
+	err = run.Run()
+	var exit *exec.ExitError
+	if err == nil || !errors.As(err, &exit) || exit.ExitCode() <= 0 {
+		t.Fatalf("the mutant ran the guard and came back with %v. The guard has to notice a TestMain "+
+			"leaving with a status of its own and reach the outside world doing it, so a mutant "+
+			"leaving 0 is a guard whose report stayed inside it — or a mutant that was never built "+
+			"from the changed source:\nstdout:\n%s\nstderr:\n%s",
+			err, stdout.String(), stderr.String())
+	}
+	const diagnostic = "leaves the failure in its exit status"
+	if !strings.Contains(stderr.String(), diagnostic) {
+		t.Fatalf("the mutant left with %v, but its standard error does not carry the guard's "+
+			"diagnostic (%q): what the guard finds has to be readable from outside the run, which is "+
+			"what leaving with it in the exit status is for:\nstdout:\n%s\nstderr:\n%s",
+			err, diagnostic, stdout.String(), stderr.String())
 	}
 }
