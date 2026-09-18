@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"go/build"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -836,9 +837,9 @@ func TestTheRunsStatusSurvivesTheChangeTheGuardIsFor(t *testing.T) {
 	// the build below is not a thing to look up through whatever PATH holds at
 	// this point. A toolchain that cannot be found fails this case; it is not a
 	// reason to skip it.
-	goTool := filepath.Join(runtime.GOROOT(), "bin", "go")
+	goTool := filepath.Join(build.Default.GOROOT, "bin", "go")
 	if _, err := os.Stat(goTool); err != nil {
-		t.Fatalf("the go this binary was built with is expected at %s and is not there (%v): the "+
+		t.Fatalf("the go toolchain of this build is expected at %s and is not there (%v): the "+
 			"mutant is built with it, and a build that cannot be started is this case's own failure",
 			goTool, err)
 	}
@@ -874,7 +875,8 @@ func TestTheRunsStatusSurvivesTheChangeTheGuardIsFor(t *testing.T) {
 
 	dir := t.TempDir()
 	mutantSource := filepath.Join(dir, "recovery_test.go")
-	if err := os.WriteFile(mutantSource, []byte(mutated), 0o644); err != nil {
+	err = os.WriteFile(mutantSource, []byte(mutated), 0o644)
+	if err != nil {
 		t.Fatalf("writing the source of the mutant to %s: %v", mutantSource, err)
 	}
 	overlay, err := json.Marshal(map[string]map[string]string{"Replace": {thisFile: mutantSource}})
@@ -883,7 +885,8 @@ func TestTheRunsStatusSurvivesTheChangeTheGuardIsFor(t *testing.T) {
 			mutantSource, thisFile, err)
 	}
 	overlayPath := filepath.Join(dir, "overlay.json")
-	if err := os.WriteFile(overlayPath, overlay, 0o644); err != nil {
+	err = os.WriteFile(overlayPath, overlay, 0o644)
+	if err != nil {
 		t.Fatalf("writing the overlay to %s: %v", overlayPath, err)
 	}
 
@@ -897,7 +900,8 @@ func TestTheRunsStatusSurvivesTheChangeTheGuardIsFor(t *testing.T) {
 	build.Dir = pkgDir
 	var buildOut, buildErr strings.Builder
 	build.Stdout, build.Stderr = &buildOut, &buildErr
-	if err := build.Run(); err != nil {
+	err = build.Run()
+	if err != nil {
 		t.Fatalf("building the mutant came back with %v, which says nothing about the guard: a build "+
 			"that does not come out is this case's own failure and not the mutant being caught:\n"+
 			"stdout:\n%s\nstderr:\n%s", err, buildOut.String(), buildErr.String())
