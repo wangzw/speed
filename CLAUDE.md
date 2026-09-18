@@ -81,4 +81,4 @@ toolchain they need comes from `mise install`, which reads `.mise.toml`.
 | `docs/adr` | Why it is that way: one decision per file, alternatives included. |
 | `docs/glossary.md` | The shared vocabulary. A term used in a design document means what this file says it means. |
 | `<module>/AGENTS.md` | The module's own contract: its boundaries and how to run it. |
-| `.claude/skills/` | For work under `pkg/` and `examples/`: `document-standards` before writing under the documentation paths, `development-workflow` for how a task travels from statement to merge, `commit-convention` for the commit message. |
+| `.claude/skills/` | For work under `pkg/` and `examples/`: `document-standards` before writing under the documentation paths, `commit-convention` for the commit message. |
