@@ -795,6 +795,26 @@ func TestTheSwallowStandInIsGoneWhenTheRunEnds(t *testing.T) {
 	}
 }
 
+// mutantReport is what this case says about a mutant that came back in a form
+// the guard cannot have left behind. Two forms reach it: a run that left 0,
+// with the diagnostic swallowed — the change this case is about — and a run
+// killed before it can say anything, which is this case's own bound having
+// fired and says nothing about the guard either way. One report names both, as
+// the guard's own report does: a report that named only the first would send a
+// killed run looking for a swallowed status, which is the defect it cannot be.
+//
+// The report is handed over whole by the caller and never as a format string:
+// it carries text taken from the run, and a % in that text would be read as a
+// verb and mangled — the guard's diagnostic being exactly the text in question.
+func mutantReport(err error, stdout, stderr string) string {
+	return fmt.Sprintf("the mutant ran the guard and came back with %v. The guard has to notice a "+
+		"TestMain leaving with a status of its own and reach the outside world doing it, so a "+
+		"mutant leaving 0 is a guard whose report stayed inside it — or a mutant that was never "+
+		"built from the changed source — and one killed before it can say anything is this case's "+
+		"own bound having fired, which says nothing about the guard:\nstdout:\n%s\nstderr:\n%s",
+		err, stdout, stderr)
+}
+
 // TestTheRunsStatusSurvivesTheChangeTheGuardIsFor is the case that notices a
 // guard which has stopped guarding. TestTheSwallowStandInIsGoneWhenTheRunEnds
 // holds a test binary to leaving a failed case in its exit status, and the
@@ -941,11 +961,7 @@ func TestTheRunsStatusSurvivesTheChangeTheGuardIsFor(t *testing.T) {
 	}
 	var exit *exec.ExitError
 	if !errors.As(err, &exit) || exit.ExitCode() <= 0 {
-		t.Fatalf("the mutant ran the guard and came back with %v. The guard has to notice a TestMain "+
-			"leaving with a status of its own and reach the outside world doing it, so a mutant "+
-			"leaving 0 is a guard whose report stayed inside it — or a mutant that was never built "+
-			"from the changed source:\nstdout:\n%s\nstderr:\n%s",
-			err, stdout.String(), stderr.String())
+		t.Fatal(mutantReport(err, stdout.String(), stderr.String()))
 	}
 	const diagnostic = "leaves the failure in its exit status"
 	if !strings.Contains(stderr.String(), diagnostic) {
@@ -953,5 +969,50 @@ func TestTheRunsStatusSurvivesTheChangeTheGuardIsFor(t *testing.T) {
 			"diagnostic (%q): what the guard finds has to be readable from outside the run, which is "+
 			"what leaving with it in the exit status is for:\nstdout:\n%s\nstderr:\n%s",
 			err, diagnostic, stdout.String(), stderr.String())
+	}
+}
+
+// TestTheReportForAKilledMutantSaysTheBoundFired is the case that keeps the
+// report above saying the right thing about the third way a run can come back:
+// killed before it can say anything, which is this case's own bound having
+// fired while the mutant hung. That form reaches the same report as a run that
+// left 0, and the words for the run that left 0 — a guard whose report stayed
+// inside, or a mutant built from the wrong source — say nothing about a run
+// that was cut off; read as that, a hunt is sent after a swallowed status that
+// was never there.
+//
+// The killed run is a real child, killed by itself, because the form cannot be
+// handed to the report any other way: a ProcessState a case makes up reports 0,
+// not the -1 a signal leaves, and nothing exported can stand in for it. The
+// kill goes through an absolute path because cases in this package move PATH
+// around on purpose (see TestAnAbandonedCallIsCutOffFromTheRealDocker): a name
+// looked up through it would reach the stand-in, or nothing at all.
+func TestTheReportForAKilledMutantSaysTheBoundFired(t *testing.T) {
+	cmd := exec.Command("/bin/sh", "-c", "kill -KILL $$")
+	var stdout, stderr strings.Builder
+	cmd.Stdout, cmd.Stderr = &stdout, &stderr
+	err := cmd.Run()
+	var exit *exec.ExitError
+	if !errors.As(err, &exit) || exit.ExitCode() != -1 {
+		t.Fatalf("the child that kills itself came back with %v (%T), which is not the form this "+
+			"case is about: only a process cut off by a signal is, and a child that ended any other "+
+			"way is this case's own failure and not the report's", err, err)
+	}
+
+	report := mutantReport(err, stdout.String(), stderr.String())
+	if !strings.Contains(report, "this case's own bound having fired") {
+		t.Errorf("the report for a run killed before it could say anything does not put it to this "+
+			"case's own bound: a killed run is one that hung until the bound cut it off, and nothing "+
+			"the guard did or did not do reaches the report through it:\n%s", report)
+	}
+
+	// The other form keeps both of its explanations: they are what says the
+	// guard's report stayed inside, and this case is the only one that has them.
+	left := mutantReport(errors.New("exit status 0"), "", "")
+	for _, explanation := range []string{"stayed inside it", "never built from the changed source"} {
+		if !strings.Contains(left, explanation) {
+			t.Errorf("the report for a run that left 0 no longer carries %q, which is how a mutant "+
+				"swallowing the guard is told:\n%s", explanation, left)
+		}
 	}
 }
