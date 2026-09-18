@@ -723,11 +723,11 @@ func TestAnAbandonedCallIsCutOffFromTheRealDocker(t *testing.T) {
 //
 // The second child is the guard on how the first one exits. A test binary exits
 // with the status its run gave it, and one that always exited 0 would leave
-// every case in this package unable to report a failure — with no other check
-// anywhere having a way to notice. So a child running a case that fails at once
-// has to come back with that failure in its status, which a child killed by its
-// own bound — what a case that hung instead of failing looks like — has not.
-// -test.run keeps either child from starting children of its own.
+// every case in this package unable to report a failure — the change this child
+// is a check for. So a child running a case that fails at once has to come
+// back with that failure in its status, which a child killed by its own bound —
+// what a case that hung instead of failing looks like — has not. -test.run
+// keeps either child from starting children of its own.
 func TestTheSwallowStandInIsGoneWhenTheRunEnds(t *testing.T) {
 	// A child is a whole test binary, and the case the first one runs waits out
 	// a recovery bound of its own before it can end.
@@ -816,12 +816,13 @@ func TestTheSwallowStandInIsGoneWhenTheRunEnds(t *testing.T) {
 // after.
 //
 // The copy is the whole file, this case's own source included, so the two lines
-// are written here in pieces that never join: a literal would be found in this
-// case's source rather than in TestMain, and the rewrite would land on the
-// wrong one — or claim a line was there when it had moved. What is checked is
-// the file the copy is made from: each piece, joined, has to appear exactly
-// once, and a file where it does not is a failure that says the shape has moved
-// and what to update. A mutant that was never mutated, passing for some other
+// are written here in pieces that never join: joined, they would be in the copy
+// twice — once in TestMain and once in this case's source — and the count
+// below, which is what says the rewrite has a line to land on, would be
+// counting this case's own text as much as TestMain's. What is checked is the
+// file the copy is made from: each piece, joined, has to appear exactly once,
+// and a file where it does not is a failure that says the shape has moved and
+// what to update. A mutant that was never mutated, passing for some other
 // reason, is what that check is for.
 //
 // The words looked for on the mutant's standard error are the guard's own
@@ -853,7 +854,7 @@ func TestTheRunsStatusSurvivesTheChangeTheGuardIsFor(t *testing.T) {
 	}
 
 	// The two lines the change rewrites, in pieces that never join in this
-	// file's text, and what each is, for the report when it is not there.
+	// case's source, and what each is, for the report when it is not there.
 	runLine := "code := m." + "Run()"
 	exitLine := "os.Exit(" + "code)"
 	for _, line := range []struct{ text, what string }{
