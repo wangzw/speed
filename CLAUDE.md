@@ -50,6 +50,8 @@ toolchain they need comes from `mise install`, which reads `.mise.toml`.
 | `.claude/skills/` | How the work is done. Each handbook's own description says what it covers; the ones that apply here are at the bottom of this file. |
 | `go/`, `web/`, `examples/reference-app`, `docs/internal/`, `docs/site/` | An earlier implementation and its documentation. Nothing `make check` runs builds or checks them: every leg of it is scoped to the modules `go.work` lists. |
 
+**`go/` and `docs/internal/` are legacy and out of scope by default.** They belong to the earlier implementation this repository is superseding — do not read, edit or reason about them for ordinary work here, and do not extend the language rule, the boundaries below, or `docs/design`/`docs/adr` authority to them. A task explicitly scoped to `go/` follows `backend-coding-standards` instead of this file; one scoped to `docs/internal/` follows whatever that legacy tree's own convention is, not `document-standards`. `web/` and `examples/reference-app` are the same earlier implementation but keep their own skill (`frontend-coding-standards`) rather than being called out again here.
+
 ## Boundaries
 
 - **New code goes under `pkg/`; a program that assembles modules goes
