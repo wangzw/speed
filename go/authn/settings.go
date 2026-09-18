@@ -42,6 +42,7 @@ package authn
 
 import (
 	"context"
+	"math"
 	"strings"
 	"time"
 
@@ -113,10 +114,13 @@ func durationSetting(ctx context.Context, reader SettingsReader, key string, fal
 }
 
 // intSetting resolves key through the wired reader, with the same fallback
-// rule as durationSetting. min/max bound the accepted value: a resolved
-// value outside the key's declared schema range is logged and the fallback
-// stays (defense in depth -- the config schema already refuses such writes).
-func intSetting(ctx context.Context, reader SettingsReader, key string, fallback, min, max int64) int64 {
+// rule as durationSetting, and narrows what it resolves to int. min/max
+// bound the envelope this read accepts, which is the caller's own span and
+// not necessarily the key's declared schema range: a value outside it is
+// logged and the fallback stays. A value inside the envelope but outside
+// int's range on a 32-bit platform is the fourth arm, falling back the same
+// way.
+func intSetting(ctx context.Context, reader SettingsReader, key string, fallback int, min, max int64) int {
 	if reader == nil {
 		return fallback
 	}
@@ -128,10 +132,18 @@ func intSetting(ctx context.Context, reader SettingsReader, key string, fallback
 	case !ok:
 		return fallback
 	case n < min || n > max:
-		observability.FromContext(ctx).Warn("dynamic configuration resolved a value outside the schema range; using the construction-time value", "key", key, "value", n)
+		observability.FromContext(ctx).Warn("dynamic configuration resolved a value outside the accepted range; using the construction-time value", "key", key, "value", n)
 		return fallback
 	default:
-		return n
+		// int is 32 bits on some of the platforms this library supports,
+		// so the narrowing needs a guard, and the guard has to compare
+		// against constants: a bound passed to a helper as a parameter is
+		// not a shape the integer-conversion analysis treats as a bound.
+		if n >= math.MinInt32 && n <= math.MaxInt32 {
+			return int(n)
+		}
+		observability.FromContext(ctx).Warn("dynamic configuration resolved a value no int can represent; using the construction-time value", "key", key, "value", n)
+		return fallback
 	}
 }
 
@@ -208,7 +220,7 @@ func (s *Service) smsCodeTTLFor(ctx context.Context) time.Duration {
 }
 
 func (s *Service) smsCodeMaxAttemptsFor(ctx context.Context) int {
-	return int(intSetting(ctx, s.settings, ConfigKeySMSCodeMaxAttempts, int64(s.smsCodeMaxAttempts), 1, 1000))
+	return intSetting(ctx, s.settings, ConfigKeySMSCodeMaxAttempts, s.smsCodeMaxAttempts, 1, 1000)
 }
 
 // channelCredentialKeys maps a shipped channel to its declared

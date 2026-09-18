@@ -160,6 +160,32 @@ func TestPasswordPolicyFor_CoherenceGuard(t *testing.T) {
 	}
 }
 
+// TestSMSCodeMaxAttemptsFor_RowsOutsideTheAcceptedRange pins the range arm
+// every intSetting read shares: a row outside the accepted envelope --
+// including one no int can represent, which is what keeps the narrowing
+// total -- keeps the construction-time budget, and an in-range row is
+// returned as read.
+func TestSMSCodeMaxAttemptsFor_RowsOutsideTheAcceptedRange(t *testing.T) {
+	ctx := context.Background()
+	svc := &Service{smsCodeMaxAttempts: 5}
+
+	reader := newFakeSettings()
+	svc.settings = reader
+	reader.set[ConfigKeySMSCodeMaxAttempts] = true
+
+	for _, row := range []int64{0, 5000, 1 << 32} {
+		reader.ints[ConfigKeySMSCodeMaxAttempts] = row
+		if got := svc.smsCodeMaxAttemptsFor(ctx); got != svc.smsCodeMaxAttempts {
+			t.Errorf("row %d = %d; want the construction-time budget %d", row, got, svc.smsCodeMaxAttempts)
+		}
+	}
+
+	reader.ints[ConfigKeySMSCodeMaxAttempts] = 7
+	if got := svc.smsCodeMaxAttemptsFor(ctx); got != 7 {
+		t.Errorf("in-range row = %d; want 7", got)
+	}
+}
+
 // TestProviderCredentialsFor_Arms pins the credential resolution: both keys
 // must carry explicit non-empty rows for the pair to win; unset, half-set or
 // failed reads report "no override" so the provider keeps its own pair.
