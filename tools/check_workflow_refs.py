@@ -5,8 +5,10 @@ The coding-flow workflow templates are byte-for-byte copies of files that
 live inside the upstream skill directory (vislake/coding-flows,
 .claude/skills/coding-flow/templates/workflows/), re-synced from there.
 References among the skill's own files are written against the directory
-they sit in -- `../../SKILL.md`, `../../references/scheduler.md` -- so a
-sync can bring that shape back into a copy at any time. Copying a
+they sit in. The two-level forms of that shape the workflow templates
+once carried -- `../../SKILL.md`, `../../references/scheduler.md` -- are
+gone now, though they were the defect this gate was built for; a sync
+can still bring one back into a copy at any time. Copying a
 template into a repository's .github/workflows/ changes the base
 directory entirely: such a reference no longer resolves inside the skill
 but against the repository root, a different tree that may hold a
