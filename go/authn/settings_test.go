@@ -3,6 +3,7 @@ package authn
 import (
 	"context"
 	"errors"
+	"math"
 	"testing"
 	"time"
 )
@@ -160,9 +161,9 @@ func TestPasswordPolicyFor_CoherenceGuard(t *testing.T) {
 	}
 }
 
-// TestPasswordPolicyFor_UnrepresentableBounds pins the second refusal arm: a
-// bound outside the range an int can represent keeps the whole
-// construction-time policy. On a 32-bit platform the narrowing would
+// TestPasswordPolicyFor_UnrepresentableBounds pins the refusal of a bound
+// that does not fit an int on every supported platform: the whole
+// construction-time policy stays. On a 32-bit platform the narrowing would
 // truncate such a bound into a plausible-looking length that passes the
 // coherence check, so the refusal cannot be left to that check.
 func TestPasswordPolicyFor_UnrepresentableBounds(t *testing.T) {
@@ -185,6 +186,31 @@ func TestPasswordPolicyFor_UnrepresentableBounds(t *testing.T) {
 	reader.ints[ConfigKeyPasswordMinLength] = 16
 	if got := svc.passwordPolicyFor(ctx); got.MinLength != svc.policy.MinLength || got.MaxLength != svc.policy.MaxLength {
 		t.Fatalf("unrepresentable max = %+v; want the construction-time policy %+v", got, svc.policy)
+	}
+
+	// And the minimum's own guard, against a maximum it would stay
+	// coherent with after a 32-bit truncation (100 against 1024): there
+	// the coherence check below could not catch the narrowed bound.
+	reader.ints[ConfigKeyPasswordMinLength] = 1<<32 + 100
+	reader.ints[ConfigKeyPasswordMaxLength] = 1024
+	if got := svc.passwordPolicyFor(ctx); got.MinLength != svc.policy.MinLength || got.MaxLength != svc.policy.MaxLength {
+		t.Fatalf("unrepresentable min = %+v; want the construction-time policy %+v", got, svc.policy)
+	}
+}
+
+// TestIntSetting_UnrepresentableValueFallsBack pins the arm that keeps the
+// narrowing total on every platform: a row inside the read's envelope but
+// bigger than an int holds on a 32-bit one keeps the fallback. The envelope
+// here is deliberately wide -- the SMS budget's own envelope refuses such a
+// row a step earlier.
+func TestIntSetting_UnrepresentableValueFallsBack(t *testing.T) {
+	ctx := context.Background()
+	reader := newFakeSettings()
+	reader.set[ConfigKeySMSCodeMaxAttempts] = true
+	reader.ints[ConfigKeySMSCodeMaxAttempts] = 1 << 40
+
+	if got := intSetting(ctx, reader, ConfigKeySMSCodeMaxAttempts, 5, 1, math.MaxInt64); got != 5 {
+		t.Fatalf("unrepresentable row = %d; want the fallback 5", got)
 	}
 }
 
