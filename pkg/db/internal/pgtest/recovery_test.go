@@ -921,8 +921,12 @@ func TestTheRunsStatusSurvivesTheChangeTheGuardIsFor(t *testing.T) {
 	var stdout, stderr strings.Builder
 	run.Stdout, run.Stderr = &stdout, &stderr
 	err = run.Run()
+	if err == nil {
+		// So that the report below says what came back rather than nothing.
+		err = errors.New("exit status 0")
+	}
 	var exit *exec.ExitError
-	if err == nil || !errors.As(err, &exit) || exit.ExitCode() <= 0 {
+	if !errors.As(err, &exit) || exit.ExitCode() <= 0 {
 		t.Fatalf("the mutant ran the guard and came back with %v. The guard has to notice a TestMain "+
 			"leaving with a status of its own and reach the outside world doing it, so a mutant "+
 			"leaving 0 is a guard whose report stayed inside it — or a mutant that was never built "+
