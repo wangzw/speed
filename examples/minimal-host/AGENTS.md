@@ -25,9 +25,17 @@ that takes the capability up without naming either.
 
 ## Boundaries
 
-- **The host contributes its identity as a resource on a module it
-  registers**, not as an argument of the driver. A change that grows the
-  driver's signature to carry host input is the shape to reject.
+- **Some boundaries below state the settled design, not what the code does
+  today.** The design documents' implementation-status tables say which. Moving the code toward them is the intended direction;
+  reasserting the shape they replaced is not.
+
+- **The host contributes its standing declarations as resources on a module
+  it registers**, not as arguments of the driver. Host identity goes that
+  way. What one run is asked to do — the participating set, the drive depth,
+  the `ctx` — is a parameter of the drive instead: it describes that run
+  rather than the registry, and a registry carrying it as a resource could
+  not drive a second command. A change that grows the driver's signature to
+  carry a standing declaration is still the shape to reject.
 - **An example stays an example.** Nothing here is imported by a released
   module, and nothing here is a place to put code the modules should
   carry: if a host would have to write it again, it belongs in a module.
