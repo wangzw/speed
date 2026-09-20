@@ -20,9 +20,17 @@ change here must not cross, and how to run it.
 
 ## Boundaries
 
+- **Some boundaries below state the settled design, not what the code does
+  today.** The implementation-status table in this module's design document
+  says which. Moving the code toward them is the intended direction;
+  reasserting the shape they replaced is not.
+
 - **No third-party dependency, ever.** Every module imports this one, so a
   dependency added here lands in every host's dependency list. The
-  standard library is the whole budget.
+  standard library is the whole budget. The command tree, and everything
+  needed to parse a command line, live in `pkg/config`: this package
+  receives a participating set as a list of names and knows nothing about
+  commands.
 - **No knowledge of any capability, and no interpretation of any
   resource.** Both travel through the registry as opaque values; the
   module that defines a type is the one that reads it back. A `switch` on
@@ -32,8 +40,10 @@ change here must not cross, and how to run it.
   interprets.** Outward metadata a mechanism elsewhere consumes is a
   resource, not a new field.
 - **Registrations and the driver are single-goroutine.** Descriptors are
-  written before `Run` and read-only after it; stages are strictly ordered
-  and callbacks within a stage run one at a time.
+  written before the first drive and read-only after it; stages are
+  strictly ordered and callbacks within a stage run one at a time. How far
+  a drive advances is a parameter of that drive; the order of the stages it
+  does advance through is not.
 
 ## Shape of a module
 
