@@ -411,10 +411,10 @@ stateDiagram-v2
 
 | 能力 | 状态 | 代码 |
 |---|---|---|
-| 登记面与写入闸门 | 未实现 | — |
-| 中间件排序与链组装 | 未实现 | — |
-| 监听端的绑定与两拍停机 | 未实现 | — |
-| 请求上下文的建立 | 未实现 | — |
-| `Spec` 资源、形状校验与查询 | 未实现 | — |
-| 请求处理工具 | 未实现 | — |
-| 标准库路由引擎子包 | 未实现 | — |
+| 登记面与写入闸门 | 已实现 | `pkg/http/surface.go` `Router`、`Endpoint`、`Middleware`、`pkg/http/router.go` `(*router).open`、`(*router).seal`、`(*router).write` |
+| 中间件排序与链组装 | 已实现 | `pkg/http/order.go` `orderLayers`、`pkg/http/assemble.go` `(*endpoint).assemble`、`reportUnlanded` |
+| 监听端的绑定与两拍停机 | 已实现 | `pkg/http/listener.go` `(*listener).start`、`(*listener).stop`、`(*listener).close` |
+| 请求上下文的建立 | 已实现 | `pkg/http/assemble.go` `(*endpoint).base` |
+| `Spec` 资源、形状校验与查询 | 已实现 | `pkg/http/surface.go` `Spec`、`pkg/http/spec.go` `validateSpecs`、`validateSpec` |
+| 请求处理工具 | 已实现 | `pkg/http/decode.go` `Decode`、`pkg/http/respond.go` `WriteJSON`、`StatusFor` |
+| 标准库路由引擎子包 | 已实现 | `pkg/http/stdmux/stdmux.go` `Module` |
