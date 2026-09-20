@@ -7,12 +7,14 @@ import (
 	"strings"
 )
 
-// Resolve returns the instance of the one module that delivers a capability.
+// Resolve returns the instance of the one source that delivers a capability.
 //
 // The matching domain is the set of modules that declared the capability in
-// Provides. A product that happens to implement a capability its module never
-// declared is invisible here: the declaration is the sole authority, so
-// assembly-time validation and run-time lookup face the same set.
+// Provides, together with the products the host supplied. A product that
+// happens to implement a capability its module never declared is invisible
+// here: the declaration is the sole authority, so assembly-time validation
+// and run-time lookup face the same set. A supplied product comes from no
+// module and states the capability it stands for as it is handed in.
 //
 // Nothing to take up is ErrMissingProvider, which is also how an optional
 // dependency reads its own absence. More than one constructed provider is
@@ -28,13 +30,22 @@ func (r *Registry) Resolve(t Token) (any, error) {
 	r.mu.RLock()
 	defer r.mu.RUnlock()
 
+	// A supplied product and a declaring module cannot both hold the same
+	// capability: Supply and Register reject that pair where it is made.
+	// The two sources therefore never mix, and there is no second
+	// ambiguity rule to state.
+	if instance, ok := r.supplied[ct]; ok {
+		return instance, nil
+	}
+
 	declarers := r.declarersLocked(ct)
 	constructed := r.constructedAmongLocked(declarers)
 	switch len(constructed) {
 	case 1:
 		return r.instances[constructed[0]], nil
 	case 0:
-		return nil, missingProviderError(ct, declarers, r.enablement, "", "")
+		included, left := r.splitByParticipationLocked(declarers)
+		return nil, missingProviderError(ct, included, left, r.enablement, "", "")
 	default:
 		return nil, fmt.Errorf("%w: capability %s is delivered by %s, and a single-valued "+
 			"lookup cannot choose between them. Take them up together with ResolveAll, or "+
@@ -48,6 +59,11 @@ func (r *Registry) Resolve(t Token) (any, error) {
 // module-name order. The matching domain is the same as Resolve's. No provider
 // is an empty slice, not an error.
 //
+// A capability held by a supplied product yields that one product. Name order
+// says nothing about it and does not have to: the two kinds of source cannot
+// hold the same capability, so a supplied product is never ordered against a
+// module's.
+//
 // The instances do not carry module names: routing by name needs a name that
 // is a domain concept, and the capability interface itself is where that
 // belongs.
@@ -56,6 +72,10 @@ func (r *Registry) ResolveAll(t Token) []any {
 
 	r.mu.RLock()
 	defer r.mu.RUnlock()
+
+	if instance, ok := r.supplied[ct]; ok {
+		return []any{instance}
+	}
 
 	names := r.constructedAmongLocked(r.declarersLocked(ct))
 	out := make([]any, 0, len(names))
@@ -96,6 +116,12 @@ func (r *Registry) Resources(t Token) []Resource[any] {
 // with the reason resolution gave. It reports false for a name that was never
 // registered, and for any name before resolution has run.
 //
+// A registered module this drive left out of its participating set reports
+// StateDisabled with that as the reason. It never took a stance, and it is
+// not running, which is what a caller filtering by enablement is asking
+// about: a mechanism that collects declarations across the registry drops
+// the ones belonging to modules this command did not include.
+//
 // Startup diagnostics are written to os.Stderr and the host cannot redirect
 // them, since handing in a sink would need either a Run parameter or a
 // package-level setter. This query is how a host feeds the same information
@@ -106,8 +132,37 @@ func (r *Registry) Enablement(name string) (Enablement, bool) {
 	if r.enablement == nil {
 		return Enablement{}, false
 	}
-	e, ok := r.enablement[name]
-	return e, ok
+	if e, ok := r.enablement[name]; ok {
+		return e, true
+	}
+	if _, registered := r.mods[name]; registered {
+		return Enablement{State: StateDisabled, Reason: notIncludedReason}, true
+	}
+	return Enablement{}, false
+}
+
+// notIncludedReason is the verdict on a registered module this drive left
+// out. It stays out of the startup diagnostics: those exist to catch an
+// enabled set smaller than expected, and a module the host did not include is
+// the host's own writing rather than a surprise.
+const notIncludedReason = "not included in this command"
+
+// splitByParticipationLocked divides declaring modules into the ones this
+// drive included and the ones it left out. The enablement map holds exactly
+// the participating set, so before resolution has run there is no such
+// division to make and every declarer counts as included.
+func (r *Registry) splitByParticipationLocked(declarers []string) (included, left []string) {
+	if r.enablement == nil {
+		return declarers, nil
+	}
+	for _, name := range declarers {
+		if _, ok := r.enablement[name]; ok {
+			included = append(included, name)
+			continue
+		}
+		left = append(left, name)
+	}
+	return included, left
 }
 
 // matchesResourceType decides whether a declared resource satisfies the queried

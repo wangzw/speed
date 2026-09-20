@@ -303,10 +303,18 @@ func applyOne(session *gorm.DB, m migration) error {
 // collectMigrations turns the declared resources into the list to apply, in the
 // order to apply it.
 //
-// Modules that resolution left out are skipped: their tables are not created.
-// An enabled module's migration may still reference one of those tables, and
+// Two kinds of module are skipped, and one enablement query covers both. A
+// module resolution stood down is disabled, and a module this command never
+// took in is reported disabled too, with not being included as its reason: a
+// registered module outside the participating set never took a stance, so its
+// tables belong to a run other than this one. Either way its tables are not
+// created. An enabled module's migration may still reference one of them, and
 // that shows up here as a migration that will not apply — nothing reads the
 // statements, so it cannot be caught at declaration time.
+//
+// The order is separate from all of that. It comes from dependencyRank over
+// every registered module, participating or not, so that the sequence a set of
+// migrations is applied in is the same whichever command applies them.
 func collectMigrations(reg *core.Registry, dialect Dialect) ([]migration, error) {
 	rank := dependencyRank(reg)
 

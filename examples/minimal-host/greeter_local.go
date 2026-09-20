@@ -56,7 +56,6 @@ func localGreeterModule() core.Module {
 					Origins:     config.OriginPrimary | config.OriginEnv | config.OriginFlag,
 					FlagName:    "salutation",
 					Placeholder: "WORD",
-					Group:       greeterGroup,
 					Description: "the word the built-in greeter opens with",
 				},
 			},

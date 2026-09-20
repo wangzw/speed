@@ -140,25 +140,35 @@ func TestLoggerRequirementIsOptional(t *testing.T) {
 	}
 }
 
-// TestConfigIsUndeclaredAndStillRequired pins the one dependency no descriptor
-// states. config is implicit for every module and is therefore absent from
-// Requires, which does not make it optional: the endpoints are read from it and
-// there is nothing to serve without them. A Prepare that swallowed the missing
-// provider, or fell back to an empty endpoint set, would let a host that forgot
-// the config module start up and stand down for "no endpoint configured",
-// naming a configuration key instead of the module that has to deliver the
-// reader.
-func TestConfigIsUndeclaredAndStillRequired(t *testing.T) {
+// TestTheReaderIsUndeclaredAndStillRequired pins the one thing this module
+// takes up without declaring. The configuration reader is handed to the
+// registry before the first module is constructed, so there is nothing to
+// order this module against and a Requires entry for it would name a
+// capability no module delivers.
+//
+// Undeclared is not optional. The endpoints are read through the reader and
+// there is nothing to serve without them, so a Prepare reaching a registry
+// that was handed none fails and says so. One that swallowed the absence, or
+// fell back to an empty endpoint set, would let such a host start up and stand
+// down for "no endpoint configured", naming a configuration key instead of the
+// reader nobody handed in.
+//
+// Neither half shows itself at run time: a missing declaration and a
+// superfluous one both behave exactly like the right one in an assembly that
+// has a reader. The descriptor and a Prepare over an empty registry are the
+// only places either can be caught.
+func TestTheReaderIsUndeclaredAndStillRequired(t *testing.T) {
 	m := testModule()
 	for i, req := range m.Requires {
 		if reflect.TypeOf(req.Token) == reflect.TypeFor[*config.Reader]() {
-			t.Errorf("Requires[%d] declares config, which every module depends on implicitly", i)
+			t.Errorf("Requires[%d] declares the configuration reader, which is in the registry "+
+				"before construction begins and is delivered by no module", i)
 		}
 	}
 
 	_, err := m.Prepare(context.Background(), core.New())
 	if !errors.Is(err, core.ErrMissingProvider) {
-		t.Fatalf("Prepare against a registry that has no config module: %v", err)
+		t.Fatalf("Prepare against a registry that was handed no reader: %v", err)
 	}
 	mustContain(t, err.Error(), "configuration", "what the startup is missing")
 }

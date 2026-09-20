@@ -203,6 +203,45 @@ func TestDisabledModuleMigrationsAreNotApplied(t *testing.T) {
 	})
 }
 
+// TestAnUnincludedModuleMigrationsAreNotApplied pins the other half of the
+// filter: the participating set of the command that drives the run.
+//
+// A registered module a command did not take in never took a stance, and the
+// registry reports it disabled for that reason, so the collection drops it
+// through the same query a stood-down module goes through. Nothing in this
+// package holds that — it is a property of the registry — and without a case
+// on it the day it stops holding is the day a command applies the migrations
+// of a module it was written not to assemble.
+//
+// What is observed is the database rather than the length of the collected
+// list: a run that applied the outsider's file would leave its table and its
+// record row behind, and neither is there.
+func TestAnUnincludedModuleMigrationsAreNotApplied(t *testing.T) {
+	forEachDialect(t, func(t *testing.T, dialect Dialect, handle *gorm.DB) {
+		outsider := declaring("outsider", migrationSet(dialect, map[string]string{
+			"0001_create_outsider.sql": `CREATE TABLE outsider_rows (id INTEGER NOT NULL, PRIMARY KEY (id))`,
+		}))
+		catalog := declaring("catalog", migrationSet(dialect, map[string]string{
+			"0001_create_widgets.sql": createWidgets,
+		}))
+
+		if err := driveWith(t, handle, dialect, []string{"catalog"}, outsider, catalog); err != nil {
+			t.Fatalf("startup: %v", err)
+		}
+		if hasTable(t, handle, "outsider_rows") {
+			t.Error("the migration of a module this command did not take in was applied")
+		}
+		for _, row := range recordedMigrations(t, handle) {
+			if row.Module == "outsider" {
+				t.Errorf("the record table holds %+v, and this command did not take that module in", row)
+			}
+		}
+		if !hasTable(t, handle, "widgets") {
+			t.Error("an included module's table was not created, so the filter caught too much")
+		}
+	})
+}
+
 // TestOnlyCurrentDialectSubdirectoryIsRead pins that a declaration covering
 // several engines contributes only the running one's files. The subdirectories
 // that are not the running dialect hold statements no engine accepts, so
@@ -734,8 +773,20 @@ func TestFailingToTakeTheMutexIsErrMigrationFailed(t *testing.T) {
 // startupWith drives the real lifecycle over the given modules, with a stand-in
 // for the database module applying the migrations in its Migrate stage. It is
 // how a case reaches a module's enablement verdict, which only exists after
-// resolution has run.
+// resolution has run. Every registered module takes part.
 func startupWith(t *testing.T, handle *gorm.DB, dialect Dialect, modules ...core.Module) error {
+	t.Helper()
+	return driveWith(t, handle, dialect, nil, modules...)
+}
+
+// driveWith is startupWith with a say in which modules the drive takes in.
+//
+// included names them, beside the two fixtures below, which are always in it;
+// a nil list takes every registered module in. The distinction is what a case
+// about the participating set needs and nothing else does: a command that
+// leaves a registered module out is the shape a drive has, and there is no way
+// to reach it through a drive that includes everything.
+func driveWith(t *testing.T, handle *gorm.DB, dialect Dialect, included []string, modules ...core.Module) error {
 	t.Helper()
 	reg := registryOf(modules...)
 	reg.Register(core.Module{
@@ -750,10 +801,21 @@ func startupWith(t *testing.T, handle *gorm.DB, dialect Dialect, modules ...core
 		Serve: func(context.Context, *core.Registry, any) error { close(served); return nil },
 	})
 
+	var participants []string
+	if included == nil {
+		for _, m := range reg.Modules() {
+			participants = append(participants, m.Name)
+		}
+	} else {
+		participants = append([]string{"db.fixture", "startup.probe"}, included...)
+	}
+
 	ctx, cancel := context.WithCancel(t.Context())
 	defer cancel()
 	done := make(chan error, 1)
-	go func() { done <- reg.Run(ctx) }()
+	go func() {
+		done <- reg.Drive(ctx, core.Drive{Depth: core.StageServe, Participants: participants})
+	}()
 
 	select {
 	case err := <-done:

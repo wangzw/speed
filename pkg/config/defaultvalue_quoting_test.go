@@ -6,6 +6,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"reflect"
 	"runtime"
 	"strconv"
 	"strings"
@@ -67,30 +68,44 @@ func shellWord(t *testing.T, rendered string) string {
 	return words[0]
 }
 
-// textFormManifest declares a single item whose leaf carries its own text form.
+// labelLoader collects a single item whose leaf carries its own text form.
 // The census below rides this shape rather than a plain string because it is
 // the shape the rule is about: what the column prints is whatever the type
 // wrote, and the decision to quote it can only be read off that text.
-func textFormManifest(t *testing.T, value string) *manifest {
+func labelLoader(t *testing.T, value string) *loader {
 	t.Helper()
 	type labelOnly struct{ Label helpLabel }
 	defaults := labelOnly{Label: helpLabel{name: value}}
-	return collect(t, declaring("greeter", Schema{
+	return loadOver(t, declaring("greeter", Schema{
 		Namespace: "greeter",
 		Mounts:    []Mount{{Value: &defaults}},
 		Items:     map[string]Item{"label": {Origins: OriginFlag, FlagName: "label"}},
 	}))
 }
 
-// defaultOf picks the rendered default of one argument out of a help output.
-func defaultOf(t *testing.T, out, argument string) string {
+// labelDefault renders the default of that single item.
+func labelDefault(t *testing.T, value string) string {
 	t.Helper()
-	line := helpLineFor(t, out, argument)
-	rendered, ok := renderedDefault(line)
-	if !ok {
-		t.Fatalf("%s renders as %q, which carries no default at all", argument, line)
+	l := labelLoader(t, value)
+	return formatDefault(corpusItem(t, l, "label"))
+}
+
+// typedBack writes one rendered default onto a command line and reads back the
+// value that arrives in the item's own type. It is the second half of the
+// criterion: the shell decides what word the program receives, and this
+// decides what that word converts to.
+func typedBack(t *testing.T, name, typed string) (any, *manifestItem) {
+	t.Helper()
+	l := defaultsCorpusLoader(t)
+	item := corpusItem(t, l, name)
+	if err := giveFlags(t, l, []string{"greeter"}, "--"+name+"="+typed); err != nil {
+		t.Fatalf("--%s does not take %q back: %v", name, typed, err)
 	}
-	return rendered
+	out := reflect.New(item.typ).Elem()
+	if err := decodeInto(item.path, l.v.Get(item.path), out); err != nil {
+		t.Fatalf("--%s does not take %q back: %v", name, typed, err)
+	}
+	return out.Interface(), item
 }
 
 // TestHelpQuotesATextFormCarryingASpace pins the case the whole rule exists
@@ -99,7 +114,7 @@ func defaultOf(t *testing.T, out, argument string) string {
 // is printed bare, and the reader copying the line back hands the program two
 // arguments instead of one value.
 func TestHelpQuotesATextFormCarryingASpace(t *testing.T) {
-	rendered := defaultOf(t, renderedHelp(t, defaultsCorpusManifest(t)), "--label")
+	rendered := corpusDefault(t, "label")
 	if rendered != `'west wing'` {
 		t.Fatalf("the text form renders as %s, and its text holds a space, so it is quoted", rendered)
 	}
@@ -114,33 +129,17 @@ func TestHelpQuotesATextFormCarryingASpace(t *testing.T) {
 // The shell is the real one, so the step the rendering has to survive - word
 // splitting and the expansions - is performed rather than imagined.
 func TestHelpDefaultsRoundTripThroughARealShell(t *testing.T) {
-	m := defaultsCorpusManifest(t)
-	out := renderedHelp(t, m)
-	for _, item := range m.items {
+	for _, item := range defaultsCorpusLoader(t).m.items {
 		name := item.item.FlagName
 		t.Run(name, func(t *testing.T) {
 			if reason, skipped := notTypedBack[name]; skipped {
 				t.Skipf("--%s stays out of the round trip: %s", name, reason)
 			}
-			line := helpLineFor(t, out, "--"+name)
-			rendered, ok := renderedDefault(line)
-			if !ok {
-				t.Skipf("--%s renders as %q, and a marker is not a value", name, line)
-			}
-			typed := shellWord(t, rendered)
-			p, err := parseFlags(m, []string{"--" + name + "=" + typed})
-			if err != nil {
-				t.Fatalf("--%s renders %s, and the command line does not take it back: %v",
-					name, rendered, err)
-			}
-			d := newData(m)
-			if err := d.applyFlags(m, p); err != nil {
-				t.Fatalf("--%s renders %s, and the command line does not take it back: %v",
-					name, rendered, err)
-			}
-			if got := d.values[item.path].value; !sameDefault(got, item.def) {
+			rendered := corpusDefault(t, name)
+			got, declared := typedBack(t, name, shellWord(t, rendered))
+			if !sameDefault(got, declared.def) {
 				t.Fatalf("--%s renders %s, which reads back as %#v while the default is %#v",
-					name, rendered, got, item.def)
+					name, rendered, got, declared.def)
 			}
 		})
 	}
@@ -148,10 +147,8 @@ func TestHelpDefaultsRoundTripThroughARealShell(t *testing.T) {
 
 // TestHelpQuotedDefaultSurvivesEveryASCIIByte is the criterion put one byte at
 // a time: every byte a default can carry is rendered, and what the shell hands
-// the program is that same text. The check goes through the rendering rather
-// than through the quoting function directly, so it says something about the
-// output the reader sees, and each byte is judged on its own: rendered in one
-// batch, a byte the old rule left bare turns the whole command into a syntax
+// the program is that same text. Each byte is judged on its own: rendered in
+// one batch, a byte the rule left bare turns the whole command into a syntax
 // error and the report names no byte at all.
 //
 // A byte with no printable form is held to the other half of the rule: there
@@ -162,7 +159,7 @@ func TestHelpQuotedDefaultSurvivesEveryASCIIByte(t *testing.T) {
 	for b := 0; b < 0x80; b++ {
 		value := "a" + string(rune(b)) + "b"
 		t.Run(fmt.Sprintf("0x%02x", b), func(t *testing.T) {
-			rendered := defaultOf(t, renderedHelp(t, textFormManifest(t, value)), "--label")
+			rendered := labelDefault(t, value)
 			if !strconv.IsPrint(rune(b)) {
 				if want := strconv.Quote(value); rendered != want {
 					t.Fatalf("the default carrying byte 0x%02x renders as %s, and a byte with "+
@@ -183,7 +180,6 @@ func TestHelpQuotedDefaultSurvivesEveryASCIIByte(t *testing.T) {
 // default carrying a newline may not break its line; and an escape character
 // reaching the terminal raw is read by the terminal rather than by the reader.
 func TestHelpEscapesADefaultCarryingAControlCharacter(t *testing.T) {
-	plain := renderedHelp(t, textFormManifest(t, "plain"))
 	for _, tc := range []struct {
 		name  string
 		value string
@@ -192,13 +188,14 @@ func TestHelpEscapesADefaultCarryingAControlCharacter(t *testing.T) {
 		{name: "escape", value: "a\x1bb"},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
-			out := renderedHelp(t, textFormManifest(t, tc.value))
-			if got, want := strings.Count(out, "\n"), strings.Count(plain, "\n"); got != want {
-				t.Fatalf("the help output runs to %d lines where a plain default takes %d:\n%s",
-					got, want, out)
+			rendered := labelDefault(t, tc.value)
+			if strings.Contains(rendered, "\n") {
+				t.Fatalf("the default renders as %q, and a value that breaks its line takes "+
+					"the layout with it", rendered)
 			}
-			if strings.ContainsFunc(out, func(r rune) bool { return r != '\n' && !strconv.IsPrint(r) }) {
-				t.Fatalf("the help output carries a raw control character into the terminal:\n%q", out)
+			if strings.ContainsFunc(rendered, func(r rune) bool { return !strconv.IsPrint(r) }) {
+				t.Fatalf("the default renders as %q, carrying a raw control character into "+
+					"the terminal", rendered)
 			}
 		})
 	}
@@ -208,7 +205,7 @@ func TestHelpEscapesADefaultCarryingAControlCharacter(t *testing.T) {
 // Nothing is special inside single quotes, the quote itself included, so a
 // value carrying one leaves the quotes and comes back into them.
 func TestHelpQuotesEmbeddedSingleQuotes(t *testing.T) {
-	rendered := defaultOf(t, renderedHelp(t, defaultsCorpusManifest(t)), "--quoted")
+	rendered := corpusDefault(t, "quoted")
 	if rendered != `'it'\''s'` {
 		t.Fatalf("the default carrying a quote renders as %s, and the quote is closed, "+
 			"escaped and reopened", rendered)
@@ -222,7 +219,6 @@ func TestHelpQuotesEmbeddedSingleQuotes(t *testing.T) {
 // whose text a command line takes as it stands is rendered as it stands:
 // quoting it would be a pair of characters the reader has to know to drop.
 func TestHelpLeavesAPlainDefaultUnquoted(t *testing.T) {
-	out := renderedHelp(t, defaultsCorpusManifest(t))
 	for name, want := range map[string]string{
 		"text":   "Hello",
 		"hosts":  "a,b",
@@ -233,7 +229,7 @@ func TestHelpLeavesAPlainDefaultUnquoted(t *testing.T) {
 		"moment": "2026-09-13T10:00:00Z",
 		"share":  "50%",
 	} {
-		if got := defaultOf(t, out, "--"+name); got != want {
+		if got := corpusDefault(t, name); got != want {
 			t.Errorf("--%s renders %s, and its text needs no quotes, so it renders as %s",
 				name, got, want)
 		}
@@ -241,40 +237,99 @@ func TestHelpLeavesAPlainDefaultUnquoted(t *testing.T) {
 }
 
 // TestHelpQuotesAnEmptyDefault pins the one value quoted for being unreadable
-// rather than unsafe: (default: ) leaves the reader unable to tell an empty
-// default from a column that failed to print.
+// rather than unsafe: an empty column leaves the reader unable to tell an
+// empty default from one that failed to print.
+//
+// The list is held to the same rule, and is pinned on the line the reader
+// actually sees. A list holding nothing is not the zero of its type once the
+// module wrote it - the zero is the list nobody wrote, and that one is
+// omitted before any rendering happens - so this is the shape an empty list
+// reaches the column in.
 func TestHelpQuotesAnEmptyDefault(t *testing.T) {
-	if got := defaultOf(t, renderedHelp(t, textFormManifest(t, "")), "--label"); got != `''` {
+	if got := labelDefault(t, ""); got != `''` {
 		t.Errorf("an empty default renders as %q, and an empty value is shown as ''", got)
 	}
-	if got := defaultOf(t, renderedHelp(t, defaultsCorpusManifest(t)), "--no-hosts"); got != `''` {
-		t.Errorf("an empty list renders as %q, and an empty value is shown as ''", got)
+	defaults := struct{ Hosts []string }{Hosts: []string{}}
+	l := loadOver(t, declaring("greeter", Schema{
+		Namespace: "greeter",
+		Mounts:    []Mount{{Value: &defaults}},
+		Items:     map[string]Item{"hosts": {Origins: OriginFlag, FlagName: "hosts"}},
+	}))
+	if got := flagDefaultString(corpusItem(t, l, "hosts")); got != `''` {
+		t.Errorf("the empty list hands over %q, and an empty value is shown as ''", got)
+	}
+	if usage := helpFlags(t, l, "greeter").FlagUsages(); !strings.Contains(usage, "(default '')") {
+		t.Errorf("the help line reads %q, and an empty value is shown as ''",
+			strings.TrimSpace(usage))
+	}
+}
+
+// TestHelpQuotesAListDefaultItsTextNeedsQuotingFor pins that the flat form of
+// a list is held to the criterion the whole column rests on: the reader
+// copies the value off the help line onto a command line and the program
+// receives that same text. An element carrying a space arrives as two
+// arguments without the quotes, so what the reader typed back is not the list
+// that was printed.
+func TestHelpQuotesAListDefaultItsTextNeedsQuotingFor(t *testing.T) {
+	defaults := struct{ Hosts []string }{Hosts: []string{"a b", "c'd"}}
+	l := loadOver(t, declaring("greeter", Schema{
+		Namespace: "greeter",
+		Mounts:    []Mount{{Value: &defaults}},
+		Items: map[string]Item{"hosts": {
+			Origins: OriginFlag, FlagName: "hosts", Placeholder: "HOST",
+		}},
+	}))
+	fs := helpFlags(t, l, "greeter")
+	rendered := fs.Lookup("hosts").DefValue
+	if rendered != `'a b,c'\''d'` {
+		t.Fatalf("the list default is handed over as %s, and its text asks for %s",
+			rendered, `'a b,c'\''d'`)
+	}
+	if !strings.Contains(fs.FlagUsages(), "(default "+rendered+")") {
+		t.Fatalf("the help line reads %q, and the default it prints is %s",
+			strings.TrimSpace(fs.FlagUsages()), rendered)
+	}
+	if got := shellWord(t, rendered); got != "a b,c'd" {
+		t.Fatalf("the rendered list default %s reaches the program as %q, and the flat form "+
+			"of the declared list is %q", rendered, got, "a b,c'd")
+	}
+	if err := fs.Parse([]string{"--hosts=" + shellWord(t, rendered)}); err != nil {
+		t.Fatalf("--hosts does not take its own rendered default back: %v", err)
+	}
+	out := reflect.New(corpusItem(t, l, "hosts").typ).Elem()
+	if err := decodeInto("greeter.hosts", l.v.Get("greeter.hosts"), out); err != nil {
+		t.Fatalf("--hosts does not take its own rendered default back: %v", err)
+	}
+	if !sameDefault(out.Interface(), defaults.Hosts) {
+		t.Fatalf("the rendered list default reads back as %#v while the default is %#v",
+			out.Interface(), defaults.Hosts)
 	}
 }
 
 // TestHelpLeavesALeadingDashDefaultBare pins that a negative number is not
 // quoted for opening with a dash. Quotes would change nothing about it: the
 // shell removes them and the program still receives a word starting with a
-// dash. The parser reads it as a value either way, in both spellings of the
-// argument, which is what makes the bare rendering true.
+// dash, and the parser reads it as a value either way.
 func TestHelpLeavesALeadingDashDefaultBare(t *testing.T) {
-	m := defaultsCorpusManifest(t)
-	rendered := defaultOf(t, renderedHelp(t, m), "--offset")
+	rendered := corpusDefault(t, "offset")
 	if rendered != "-42" {
 		t.Fatalf("the negative default renders as %s, and its text needs no quotes", rendered)
 	}
-	typed := shellWord(t, rendered)
-	for _, args := range [][]string{{"--offset=" + typed}, {"--offset", typed}} {
-		p, err := parseFlags(m, args)
-		if err != nil {
-			t.Fatalf("the command line %q does not take the rendered default back: %v", args, err)
-		}
-		d := newData(m)
-		if err := d.applyFlags(m, p); err != nil {
-			t.Fatalf("the command line %q does not take the rendered default back: %v", args, err)
-		}
-		if got := d.values["greeter.offset"].value; got != -42 {
-			t.Fatalf("the command line %q reads the rendered default back as %#v", args, got)
-		}
+	got, _ := typedBack(t, "offset", shellWord(t, rendered))
+	if got != -42 {
+		t.Fatalf("the command line reads the rendered default back as %#v", got)
 	}
+}
+
+// notTypedBack names the arguments the round trip leaves out, with the reason
+// each one is left out. A skip is written down rather than silently passed
+// over, so the set of shapes that cannot be typed back stays visible.
+var notTypedBack = map[string]string{
+	"share": "the type reads itself from text and writes none, so the column " +
+		"carries Go's own form rather than a value the parser takes back",
+	"control": "its text carries a tab, and a command line has no single-line " +
+		"literal standing for one, so the column renders an escaped form meant " +
+		"to be read rather than copied",
+	"missing": "its value stands for being unset, so there is no default to type back",
+	"secret":  "a sensitive default is never handed to the command line at all",
 }

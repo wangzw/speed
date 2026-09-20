@@ -2,8 +2,11 @@ package config
 
 import (
 	"errors"
+	"io"
 	"strings"
 	"testing"
+
+	"github.com/spf13/pflag"
 
 	"github.com/vislake/speed/pkg/core"
 )
@@ -30,6 +33,49 @@ func collect(t *testing.T, modules ...core.Module) *manifest {
 		t.Fatalf("collecting the manifest failed: %v", err)
 	}
 	return m
+}
+
+// loadOver collects the declarations of the modules into a loader, its
+// diagnostics discarded. Every case that needs values rather than the
+// manifest alone goes through it.
+func loadOver(t *testing.T, modules ...core.Module) *loader {
+	t.Helper()
+	reg := core.New()
+	for _, m := range modules {
+		reg.Register(m)
+	}
+	l, err := NewLoader(reg, io.Discard)
+	if err != nil {
+		t.Fatalf("collecting the declarations failed: %v", err)
+	}
+	return l
+}
+
+// givePrimary puts a parsed primary source into a loader, checked the way
+// ReadPrimary checks it and without a transport to go through.
+func givePrimary(t *testing.T, l *loader, content map[string]any) error {
+	t.Helper()
+	if err := validatePrimary(l.m, content); err != nil {
+		return err
+	}
+	return l.v.MergeConfigMap(content)
+}
+
+// giveFlags registers the arguments of the named modules on a flag set and
+// parses a command line against them. Binding is what makes the command-line
+// layer reachable at all: an item no level registered has no argument, and
+// the layer answers for none of its values.
+func giveFlags(t *testing.T, l *loader, participants []string, args ...string) error {
+	t.Helper()
+	fs := pflag.NewFlagSet("test", pflag.ContinueOnError)
+	fs.SetOutput(io.Discard)
+	if err := l.BindLayer(fs, participants); err != nil {
+		return err
+	}
+	if err := fs.Parse(args); err != nil {
+		return l.ClassifyParseError(err)
+	}
+	return nil
 }
 
 // collectRejects collects a manifest that is expected to be refused as a
@@ -194,12 +240,30 @@ func TestReservedFlagConfig(t *testing.T) {
 }
 
 func TestReservedFlagHelp(t *testing.T) {
-	collectRejects(t, []string{"alpha", "help"},
+	err := collectRejects(t, []string{"alpha", "help"},
 		declaring("alpha", Schema{
 			Namespace: "a", Mounts: []Mount{{Value: &addrCarrier{}}},
 			Items: map[string]Item{"addr": {Origins: OriginFlag, FlagName: "help"}},
 		}),
 	)
+	if !strings.Contains(err.Error(), "command-line library provides it") {
+		t.Fatalf("the rejection reads %q, and --help is the library's rather than this module's", err)
+	}
+}
+
+// TestReservedShortHelpFlag pins the short name the command-line library puts
+// on every command. It is judged before the duplicate check, so the module
+// that declares it is the one named however many others follow.
+func TestReservedShortHelpFlag(t *testing.T) {
+	err := collectRejects(t, []string{"alpha", "h"},
+		declaring("alpha", Schema{
+			Namespace: "a", Mounts: []Mount{{Value: &addrCarrier{}}},
+			Items: map[string]Item{"addr": {Origins: OriginFlag, FlagName: "addr", FlagShort: "h"}},
+		}),
+	)
+	if !strings.Contains(err.Error(), "command-line library provides it") {
+		t.Fatalf("the rejection reads %q, and -h is the library's rather than this module's", err)
+	}
 }
 
 func TestReservedEnvConfig(t *testing.T) {

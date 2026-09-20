@@ -52,15 +52,21 @@ func TestTheSQLiteModuleDeliversTheCapability(t *testing.T) {
 		probe.module(),
 	)
 
-	// The loader reads os.Args unconditionally and a test binary always
-	// carries arguments of its own, so they are taken away for the run. The
-	// cases here therefore do not run in parallel.
+	// The command line is the process's and a test binary always carries
+	// arguments of its own, so they are taken away while the tree reads them.
+	// The cases here therefore do not run in parallel.
 	previous := os.Args
 	os.Args = []string{"sqlite.test"}
 
+	// One command taking every registered module in and driving the whole
+	// lifecycle, which is the tree a host with a single command writes.
+	app := config.NewApp(reg)
+	app.Root().IncludeAll()
+	app.Root().Do(core.StageServe, nil)
+
 	ctx, cancel := context.WithCancel(context.Background())
 	done := make(chan error, 1)
-	go func() { done <- reg.Run(ctx) }()
+	go func() { done <- app.Execute(ctx) }()
 
 	var instance db.Database
 	select {
@@ -103,27 +109,19 @@ func TestTheSQLiteModuleDeliversTheCapability(t *testing.T) {
 // it observes belongs to the loader — the manifest accepts exactly the keys the
 // module declares, and an undeclared one is refused there. A stand-in reader
 // handing back a struct the test wrote would agree with any declaration at all.
+//
+// It is the loading step on its own, with no lifecycle driven to reach it. The
+// command line is given as empty and the prefix is one no machine carries
+// variables under, so body is the whole of what a case configures and the
+// primary source is the only place an undeclared key can come from.
 func load(t *testing.T, body string, modules ...core.Module) (config.Reader, error) {
 	t.Helper()
-	reg := assembly(t, body, modules...)
-
-	previous := os.Args
-	os.Args = []string{"sqlite.test"}
-	defer func() { os.Args = previous }()
-
-	instance, err := config.Module().New(t.Context(), reg)
-	if err != nil {
-		return nil, err
-	}
-	reader, ok := instance.(config.Reader)
-	if !ok {
-		t.Fatalf("the config module produced %T, want a config.Reader", instance)
-	}
-	return reader, nil
+	return config.Load(t.Context(), assembly(t, body, modules...), nil)
 }
 
-// assembly builds the registry a case runs on: the configuration loader, the
-// host identity that locates its primary source, and the modules the case adds.
+// assembly builds the registry a case runs on: the transports the primary
+// source arrives through, the host identity that locates it, and the modules
+// the case adds.
 func assembly(t *testing.T, body string, modules ...core.Module) *core.Registry {
 	t.Helper()
 	locator := filepath.Join(t.TempDir(), "config.json")
@@ -132,7 +130,6 @@ func assembly(t *testing.T, body string, modules ...core.Module) *core.Registry 
 	}
 
 	reg := core.New()
-	reg.Register(config.Module())
 	reg.Register(jsonformat.Module())
 	reg.Register(filesource.Module())
 	reg.Register(core.Module{

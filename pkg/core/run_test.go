@@ -15,7 +15,7 @@ import (
 	"github.com/vislake/speed/pkg/core"
 )
 
-// Reader stands in for the capability the config module delivers.
+// Reader stands in for the configuration reading face a host supplies.
 type Reader interface{ Value(key string) string }
 
 type reader struct{}
@@ -99,15 +99,29 @@ func (p *probe) module(name string) core.Module {
 	}
 }
 
-// configModule builds a module under the one name the registry recognises.
-func (p *probe) configModule() core.Module {
-	m := p.module("config")
-	m.Provides = []core.Provision{{Token: (*Reader)(nil), Exclusive: true}}
-	m.New = func(context.Context, *core.Registry) (any, error) {
-		p.record("new config")
-		return reader{}, nil
-	}
-	return m
+// probeReader is a configuration reader a host builds itself and hands in
+// with Supply. It carries the shutdown shape a module's product is driven
+// through, so a drive that reached a supplied product leaves a record.
+// Nothing in core calls either one: a supplied product is released by the
+// party that supplied it.
+type probeReader struct{ p *probe }
+
+func (r probeReader) Value(key string) string { return "value:" + key }
+
+func (r probeReader) Stop(context.Context) error {
+	r.p.record("stop supplied")
+	return nil
+}
+
+func (r probeReader) Close() error {
+	r.p.record("close supplied")
+	return nil
+}
+
+// supplyReader hands the reader in the way a host does: built before the
+// drive begins, under the capability it stands for, and not a module.
+func (p *probe) supplyReader(reg *core.Registry) {
+	reg.Supply((*Reader)(nil), probeReader{p: p})
 }
 
 func register(reg *core.Registry, mods ...core.Module) {
@@ -159,6 +173,55 @@ func runToFailure(t *testing.T, reg *core.Registry) error {
 		return err
 	case <-time.After(5 * time.Second):
 		t.Fatal("Run blocked where a startup failure was expected")
+		return nil
+	}
+}
+
+// driveUntilServed drives a registry that is expected to stay up, waits for
+// every named event, then cancels and returns what Drive returned.
+func driveUntilServed(t *testing.T, reg *core.Registry, p *probe, d core.Drive, events ...string) error {
+	t.Helper()
+	ctx, cancel := context.WithCancel(t.Context())
+	defer cancel()
+	done := make(chan error, 1)
+	go func() { done <- reg.Drive(ctx, d) }()
+
+	for _, event := range events {
+		p.waitFor(t, event)
+	}
+	select {
+	case err := <-done:
+		t.Fatalf("Drive returned %v before the context was cancelled", err)
+	default:
+	}
+
+	cancel()
+	select {
+	case err := <-done:
+		return err
+	case <-time.After(5 * time.Second):
+		t.Fatal("Drive did not return after the context was cancelled")
+		return nil
+	}
+}
+
+// driveToEnd drives a registry that is expected to come back on its own and
+// fails the test if it does not.
+//
+// The judgement is a deadline rather than an awaited event, because what is
+// being pinned is that nothing blocks: an implementation that does block has
+// no event to offer, and waiting for one would hang the suite instead of
+// failing it. The context is never cancelled here, so a drive that comes back
+// did so because it ran out of work.
+func driveToEnd(t *testing.T, reg *core.Registry, d core.Drive) error {
+	t.Helper()
+	done := make(chan error, 1)
+	go func() { done <- reg.Drive(t.Context(), d) }()
+	select {
+	case err := <-done:
+		return err
+	case <-time.After(5 * time.Second):
+		t.Fatal("the drive blocked where it had nothing left to do")
 		return nil
 	}
 }
@@ -368,22 +431,26 @@ func TestRollbackCoversAllConstructedInstances(t *testing.T) {
 	}
 }
 
-func TestDependencyFailureClosesConfigModule(t *testing.T) {
+// TestDependencyFailureConstructsNothing pins that resolution is the
+// preliminary to construction rather than a step inside it: an unmet
+// requirement stops the drive with no instance in existence, so there is
+// nothing for the rollback to reach.
+func TestDependencyFailureConstructsNothing(t *testing.T) {
 	p := &probe{}
 	reg := core.New()
+	p.supplyReader(reg)
 	consumer := p.module("consumer")
 	consumer.Requires = []core.Requirement{{Token: (*Cache)(nil)}}
-	register(reg, p.configModule(), consumer)
+	register(reg, p.module("bystander"), consumer)
 
 	err := runToFailure(t, reg)
 	if !errors.Is(err, core.ErrMissingProvider) {
 		t.Fatalf("Run returned %v, want ErrMissingProvider", err)
 	}
-	if !p.has("close config") {
-		t.Fatalf("the config module was not closed; recorded %v", p.snapshot())
-	}
-	if p.has("new consumer") {
-		t.Fatalf("a business module was constructed after dependency resolution failed: %v", p.snapshot())
+	for _, event := range p.snapshot() {
+		if strings.HasPrefix(event, "new ") {
+			t.Fatalf("a module was constructed after dependency resolution failed: %v", p.snapshot())
+		}
 	}
 }
 
@@ -398,7 +465,7 @@ func TestMissingProviderNamesTheRequiringModuleAndItsSite(t *testing.T) {
 	reg := core.New()
 	consumer := p.module("consumer")
 	consumer.Requires = []core.Requirement{{Token: (*Cache)(nil)}}
-	register(reg, p.configModule(), consumer)
+	register(reg, consumer)
 
 	err := runToFailure(t, reg)
 	if !errors.Is(err, core.ErrMissingProvider) {
@@ -413,7 +480,10 @@ func TestMissingProviderNamesTheRequiringModuleAndItsSite(t *testing.T) {
 	}
 }
 
-func TestPrepareErrorAbortsAndClosesConfig(t *testing.T) {
+// TestPrepareErrorAbortsBeforeConstruction pins that a stance that cannot be
+// stated terminates the drive where it stands. No product exists yet, so the
+// other participants are left unbuilt rather than built and torn down.
+func TestPrepareErrorAbortsBeforeConstruction(t *testing.T) {
 	p := &probe{}
 	reg := core.New()
 	failure := errors.New("cannot read my configuration")
@@ -421,14 +491,14 @@ func TestPrepareErrorAbortsAndClosesConfig(t *testing.T) {
 	m.Prepare = func(context.Context, *core.Registry) (core.Enablement, error) {
 		return core.Enablement{}, failure
 	}
-	register(reg, p.configModule(), m)
+	register(reg, m, p.module("bystander"))
 
 	err := runToFailure(t, reg)
 	if !errors.Is(err, failure) {
 		t.Fatalf("Run returned %v, want the Prepare failure", err)
 	}
-	if !p.has("close config") {
-		t.Fatalf("the config module was not closed; recorded %v", p.snapshot())
+	if p.has("new bystander") {
+		t.Fatalf("a module was constructed after a Prepare failure; recorded %v", p.snapshot())
 	}
 }
 
@@ -453,11 +523,13 @@ func TestUndeliveredCapability(t *testing.T) {
 	}
 }
 
-// TestConfigConstructedBeforeOtherPrepares pins the bootstrap: every module
-// reads its own configuration while stating whether it is enabled.
-func TestConfigConstructedBeforeOtherPrepares(t *testing.T) {
+// TestSuppliedProductIsAvailableInPrepare pins the bootstrap: the host hands
+// the configuration reader in before the drive, so every module reads its own
+// configuration while stating whether it is enabled.
+func TestSuppliedProductIsAvailableInPrepare(t *testing.T) {
 	p := &probe{}
 	reg := core.New()
+	p.supplyReader(reg)
 	m := p.module("dependent")
 	m.Prepare = func(_ context.Context, r *core.Registry) (core.Enablement, error) {
 		cfg, err := core.Resolve[Reader](r)
@@ -468,67 +540,58 @@ func TestConfigConstructedBeforeOtherPrepares(t *testing.T) {
 		p.record("prepare dependent read %s", cfg.Value("key"))
 		return core.Enablement{}, nil
 	}
-	register(reg, p.configModule(), m)
+	register(reg, m)
 
 	if err := runUntilServed(t, reg, p, "serve dependent"); err != nil {
 		t.Fatalf("Run returned %v", err)
 	}
 	if !p.has("prepare dependent read value:key") {
-		t.Fatalf("the config instance was not available in Prepare; recorded %v", p.snapshot())
-	}
-	if p.indexOf(t, "new config") > p.indexOf(t, "prepare dependent read value:key") {
-		t.Fatalf("the config module was constructed after another module's Prepare: %v", p.snapshot())
+		t.Fatalf("the supplied reader was not available in Prepare; recorded %v", p.snapshot())
 	}
 }
 
-func TestConfigSkippedInNewPhase(t *testing.T) {
+// TestSuppliedProductIsNotRolledBack pins that a drive releases what it
+// constructed and nothing else. The reader was built by the host and is the
+// host's to release; the product carries the shutdown shape so that a drive
+// which reached it would say so.
+func TestSuppliedProductIsNotRolledBack(t *testing.T) {
 	p := &probe{}
 	reg := core.New()
-	register(reg, p.configModule(), p.module("other"))
-
-	if err := runUntilServed(t, reg, p, "serve other"); err != nil {
-		t.Fatalf("Run returned %v", err)
-	}
-	count := 0
-	for _, event := range p.snapshot() {
-		if event == "new config" {
-			count++
-		}
-	}
-	if count != 1 {
-		t.Fatalf("the config module was constructed %d times, want once: %v", count, p.snapshot())
-	}
-}
-
-// TestConfigClosesLast pins that configuration stays readable all the way
-// through the shutdown.
-func TestConfigClosesLast(t *testing.T) {
-	p := &probe{}
-	reg := core.New()
-	register(reg, p.configModule(), p.module("aaa"), p.module("zzz"))
+	p.supplyReader(reg)
+	register(reg, p.module("aaa"), p.module("zzz"))
 
 	if err := runUntilServed(t, reg, p, "serve aaa", "serve zzz"); err != nil {
 		t.Fatalf("Run returned %v", err)
 	}
 	events := p.snapshot()
-	if events[len(events)-1] != "close config" {
-		t.Fatalf("the last event is %q, want close config: %v", events[len(events)-1], events)
+	for _, unwanted := range []string{"stop supplied", "close supplied"} {
+		if slices.Contains(events, unwanted) {
+			t.Fatalf("the rollback reached the supplied product: %v", events)
+		}
+	}
+	if events[len(events)-1] != "close aaa" {
+		t.Fatalf("the last event is %q, want the reverse-order close of the first module: %v",
+			events[len(events)-1], events)
 	}
 }
 
-// TestNoConfigModuleStillRuns pins the config module as the answer to the
-// startup cycle rather than a precondition of assembly.
-func TestNoConfigModuleStillRuns(t *testing.T) {
+// TestRegistryWithNothingSuppliedStillRuns pins that supplying is not a
+// precondition of assembly: a registry that holds a small group of modules and
+// nothing else drives as usual.
+func TestRegistryWithNothingSuppliedStillRuns(t *testing.T) {
 	p := &probe{}
 	reg := core.New()
 	register(reg, p.module("alone"))
 
 	if err := runUntilServed(t, reg, p, "serve alone"); err != nil {
-		t.Fatalf("Run returned %v, want a registry without a config module to run", err)
+		t.Fatalf("Run returned %v, want a registry with nothing supplied to run", err)
 	}
 }
 
-func TestNoConfigModuleYieldsMissingProviderOnReader(t *testing.T) {
+// TestNothingSuppliedYieldsMissingProviderOnReader pins that a missed supply
+// surfaces as a named failure rather than as a quietly absent piece of
+// functionality.
+func TestNothingSuppliedYieldsMissingProviderOnReader(t *testing.T) {
 	p := &probe{}
 	reg := core.New()
 	m := p.module("needs-config")
@@ -581,28 +644,34 @@ func TestModuleWithoutNewGetsNilInstance(t *testing.T) {
 	}
 }
 
-// TestPrepareSeesOnlyConfigInstance pins that business instances do not exist
-// yet while stances are being taken.
-func TestPrepareSeesOnlyConfigInstance(t *testing.T) {
+// TestPrepareSeesNoModuleProductButSeesSuppliedOnes pins the two halves of
+// what a stance can reach: no module's product exists yet, while a supplied
+// product was there before the drive began.
+func TestPrepareSeesNoModuleProductButSeesSuppliedOnes(t *testing.T) {
 	p := &probe{}
 	reg := core.New()
+	p.supplyReader(reg)
 	provider := p.module("provider")
 	provider.Provides = []core.Provision{{Token: (*Cache)(nil)}}
 	consumer := p.module("consumer")
 	consumer.Prepare = func(_ context.Context, r *core.Registry) (core.Enablement, error) {
-		_, err := core.Resolve[Cache](r)
-		if !errors.Is(err, core.ErrMissingProvider) {
-			t.Errorf("taking up a business capability in Prepare returned %v, want ErrMissingProvider", err)
+		if _, err := core.Resolve[Cache](r); !errors.Is(err, core.ErrMissingProvider) {
+			t.Errorf("taking up a module's capability in Prepare returned %v, want ErrMissingProvider", err)
 		}
-		p.record("prepare consumer saw missing provider")
+		cfg, err := core.Resolve[Reader](r)
+		if err != nil {
+			t.Errorf("taking up the supplied reader in Prepare returned %v", err)
+			return core.Enablement{}, nil
+		}
+		p.record("prepare consumer read %s", cfg.Value("key"))
 		return core.Enablement{}, nil
 	}
-	register(reg, p.configModule(), provider, consumer)
+	register(reg, provider, consumer)
 
 	if err := runUntilServed(t, reg, p, "serve consumer"); err != nil {
 		t.Fatalf("Run returned %v", err)
 	}
-	if !p.has("prepare consumer saw missing provider") {
+	if !p.has("prepare consumer read value:key") {
 		t.Fatalf("the consumer's Prepare did not run; recorded %v", p.snapshot())
 	}
 }

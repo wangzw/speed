@@ -4,14 +4,18 @@
 // it.
 //
 // A child process is what the cases need rather than a preference, for the
-// reason the log host states: the configuration loader reads os.Args[1:]
-// unconditionally, and a test binary is always handed arguments of its own,
-// which the loader rejects as a malformed command line. A real assembly
-// therefore cannot be started inside a test binary. Running the host as a
-// process is also what makes the concurrency case possible at all: the failure
-// the migration mutex exists to prevent happens between replicas of one
-// deployment, and replicas are processes, so two goroutines in one test binary
-// could never reach it.
+// reason the log host states: a command tree reads the process's own
+// os.Args[1:], and nothing outside the package that owns it can hand it
+// anything else, while a test binary is always given arguments the tree
+// rejects as a malformed command line. A real assembly therefore cannot be
+// started inside a test binary. Running the host as a process is also what
+// makes the concurrency case possible at all: the failure the migration mutex
+// exists to prevent happens between replicas of one deployment, and replicas
+// are processes, so two goroutines in one test binary could never reach it.
+//
+// The tree has two commands. The root drives the whole lifecycle, which is
+// what every scenario but one runs as, and `migrate` stops at the migration
+// stage, which is the one shape a depth shallower than serving has here.
 //
 // Two constraints follow from the same direction. The scenario is chosen by an
 // environment variable that does not start with this host's prefix: a variable
@@ -27,14 +31,17 @@ import (
 	"fmt"
 	"os"
 
+	"github.com/vislake/speed/pkg/config"
 	"github.com/vislake/speed/pkg/core"
+	"github.com/vislake/speed/pkg/db/postgres"
+	"github.com/vislake/speed/pkg/db/sqlite"
 
 	// The transports and the format the cases' configuration documents arrive
-	// through, and both implementations, so that a run may name either engine.
+	// through. Both implementations are imported above rather than here: the
+	// migrate command names them, so the name each one registers under is
+	// read from the subpackage that holds it.
 	_ "github.com/vislake/speed/pkg/config/format/json"
 	_ "github.com/vislake/speed/pkg/config/source/file"
-	_ "github.com/vislake/speed/pkg/db/postgres"
-	_ "github.com/vislake/speed/pkg/db/sqlite"
 )
 
 // The markers a case looks for when the run is expected to fail. errors.Is does
@@ -66,14 +73,35 @@ func run() int {
 	defer cancel()
 	finish = cancel
 
-	if err := core.ProcessRegistry.Run(ctx); err != nil {
+	app := config.NewApp(core.ProcessRegistry)
+
+	// The root takes every available module in and drives the whole
+	// lifecycle. Every scenario but one is written as `dbhost --config=...`
+	// with no subcommand, so the root has to be a command a run can select;
+	// and the set is every available module rather than a list, because a
+	// scenario's modules include ones registered by packages this file only
+	// imports for their side effects.
+	app.Root().IncludeAll()
+	app.Root().Do(core.StageServe, nil)
+
+	// migrate is the command with a depth of its own: it takes in the two
+	// engines and the module that declares the migration set, drives as far
+	// as applying them, and returns. The stages past the migration one do not
+	// run, so nothing this assembly could serve on is ever opened.
+	migrate := app.Root().Sub("migrate")
+	migrate.Include(postgres.ModuleName, sqlite.ModuleName, probeModuleName)
+	migrate.Do(core.StageMigrate, nil)
+
+	if err := app.Execute(ctx); err != nil {
 		switch {
 		case errors.Is(err, core.ErrExclusiveViolated):
 			say(exclusiveViolatedMarker)
 		case errors.Is(err, core.ErrMissingProvider):
 			say(missingProviderMarker)
 		}
-		fmt.Fprintln(os.Stderr, err)
+		// The error itself is already on standard error: the command-line
+		// library prints what a run failed on, and the tree prints what
+		// failed before the library took over.
 		return 1
 	}
 	return 0

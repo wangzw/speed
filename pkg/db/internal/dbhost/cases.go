@@ -37,6 +37,10 @@ const (
 	// caseNoEngineConfigured gives neither of them a locator, while a
 	// dependant requires the capability.
 	caseNoEngineConfigured = "no-engine-configured"
+	// caseMigrateSubcommand runs the migrate command, whose depth is the
+	// migration stage: the migrations are applied and nothing past them
+	// runs.
+	caseMigrateSubcommand = "migrate-subcommand"
 )
 
 // The variables that drive the concurrency scenario, and the paths they carry.
@@ -79,6 +83,25 @@ const (
 // nothing else.
 const roundTripMarker = "dbhost: round-trip ok"
 
+// The two markers the migrate scenario is read by.
+const (
+	// recordedMarker opens the line reporting one row of the migration
+	// record table, the module and the file following it.
+	recordedMarker = "dbhost: recorded"
+	// servedMarker is written when the run reached the serving stage. The
+	// migrate command's depth is the migration stage, so the marker's
+	// absence is what says the depth held: a run that went all the way to
+	// serving applies the same migrations and leaves with the same status,
+	// and nothing else about it differs.
+	servedMarker = "dbhost: served"
+)
+
+// recordTableName is the table the database module records applied migrations
+// in. The module keeps the name to itself, so the scenario that reads the
+// table back spells it here; the two are held together by the case, which
+// fails on a report that carries no rows.
+const recordTableName = "db_migrations"
+
 // appliersTable is where the migration records the application_name of the
 // session that executed it.
 const appliersTable = "dbhost_appliers"
@@ -92,10 +115,11 @@ const (
 )
 
 // migrationFiles carries the migration set this host declares. The embedded
-// directory holds one subdirectory per dialect, which is the shape the Migrations
-// resource asks for: the file below sits under postgres/, named by the dialect
-// rather than by any constant this file could read, so a run configured on the
-// other engine finds no subdirectory for it and declares no migrations at all.
+// directory holds one subdirectory per dialect, which is the shape the
+// Migrations resource asks for: each file sits under the directory named after
+// the engine it is written for, named by the dialect rather than by any
+// constant this file could read, so a run configured on an engine with no
+// subdirectory here declares no migrations at all.
 //
 //go:embed migrations
 var migrationFiles embed.FS
@@ -103,10 +127,10 @@ var migrationFiles embed.FS
 // declaredMigrations is the declaration this host hands the database module.
 //
 // The declaration is unconditional and the dialect decides what it contributes:
-// the concurrency scenario runs on PostgreSQL and reads the file above, while a
-// scenario configured on another engine finds no subdirectory for it and
-// declares zero migrations for that engine — which is how a module states that
-// it does not support an engine, and is not a failure.
+// a run reads the subdirectory named after the engine it was configured on, and
+// a run on an engine with no subdirectory here declares zero migrations for it
+// — which is how a module states that it does not support an engine, and is not
+// a failure.
 //
 // The subdirectory is reached rather than spelled into the resource because the
 // module reads the set relative to its own root: an FS whose top level is this
@@ -161,10 +185,36 @@ func probeMigrate(_ context.Context, _ *core.Registry, instance any) error {
 	if !ok || p == nil {
 		return nil
 	}
-	if scenario() != caseFirstMigration {
-		return nil
+	switch scenario() {
+	case caseFirstMigration:
+		return p.reportWhoApplied()
+	case caseMigrateSubcommand:
+		return p.reportRecordedMigrations()
 	}
-	return p.reportWhoApplied()
+	return nil
+}
+
+// reportRecordedMigrations prints what the migration record table holds, one
+// line per row.
+//
+// It is the migrate command's whole observation of what that command did. A
+// dependant's Migrate runs after the one that applied them, so the table is
+// complete here, and naming the module and the file of each row is what lets
+// the case say this host's own declaration was applied rather than that some
+// migration or other ran.
+func (p *probe) reportRecordedMigrations() error {
+	var rows []struct {
+		Module string
+		File   string
+	}
+	query := `SELECT module, file FROM ` + recordTableName + ` ORDER BY module, file`
+	if err := p.capability.DB().Raw(query).Scan(&rows).Error; err != nil {
+		return fmt.Errorf("reading the migration record table: %w", err)
+	}
+	for _, row := range rows {
+		say(recordedMarker + "\t" + row.Module + "\t" + row.File)
+	}
+	return nil
 }
 
 // joinReplicas meets the other replica at the rendezvous and marks the moment

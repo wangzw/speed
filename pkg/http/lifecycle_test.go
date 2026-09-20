@@ -71,7 +71,7 @@ func TestServeDoesNotBlockRun(t *testing.T) {
 		},
 	}
 
-	a := startAssembly(t, stubConfigModule(oneEndpoint("public")), testModule(), after.module())
+	a := startAssembly(t, oneEndpoint("public"), testModule(), after.module())
 	waitFor(t, served, "the Serve callback of the module that requires the Router")
 
 	mu.Lock()
@@ -166,7 +166,7 @@ func TestStopDoesNotMakeLaterModulesWait(t *testing.T) {
 	// before it releases the gate does not sit out the default of half a
 	// minute in its cleanup.
 	a := startAssembly(t,
-		stubConfigModule(endpointsAt(2*time.Second, "public")),
+		endpointsAt(2*time.Second, "public"),
 		testModule(), later.module(), registrar.module())
 	// Registered after the assembly and therefore run before its cleanup:
 	// the cleanup waits for Run, and Run cannot finish while a request is
@@ -269,7 +269,7 @@ func TestRegistrationOutsideInitPanicsInAssembly(t *testing.T) {
 		},
 	}
 
-	a := startAssembly(t, stubConfigModule(oneEndpoint("public")), testModule(), outside.module())
+	a := startAssembly(t, oneEndpoint("public"), testModule(), outside.module())
 	if err := a.stop(t); err != nil {
 		t.Fatalf("the assembly failed instead of carrying on past the two recovered "+
 			"registrations: %v", err)
@@ -328,7 +328,7 @@ func TestBindFailureRollsBackBoundEndpoints(t *testing.T) {
 		"a": {Address: "127.0.0.1:0"},
 		"b": {Address: taken.Addr().String()},
 	}}
-	a := startAssembly(t, stubConfigModule(cfg), testModule(), watch.module())
+	a := startAssembly(t, cfg, testModule(), watch.module())
 
 	// stop rather than wait: a startup that fails comes back on its own, so
 	// the cancellation changes nothing here, while an implementation that
@@ -403,7 +403,7 @@ func TestCloseAggregatesPerEndpointDrainFailures(t *testing.T) {
 	}
 
 	a := startAssembly(t,
-		stubConfigModule(endpointsAt(100*time.Millisecond, "a", "b")),
+		endpointsAt(100*time.Millisecond, "a", "b"),
 		testModule(), hold.module())
 	waitFor(t, serving, "both endpoints to bind")
 
@@ -461,7 +461,7 @@ func TestMiddlewareCycleFailsARealAssembly(t *testing.T) {
 		}),
 	}
 
-	a := startAssembly(t, stubConfigModule(oneEndpoint("public")),
+	a := startAssembly(t, oneEndpoint("public"),
 		testModule(), first.module(), second.module())
 
 	// stop rather than wait, for the reason given in the bind failure test:
@@ -545,7 +545,7 @@ func TestConstraintLandsOnItsProviderInARealAssembly(t *testing.T) {
 		},
 	}
 
-	a := startAssembly(t, stubConfigModule(oneEndpoint("public")),
+	a := startAssembly(t, oneEndpoint("public"),
 		testModule(), provider.module(), constrained.module())
 	waitFor(t, serving, "the endpoint to bind")
 

@@ -7,11 +7,14 @@ import (
 	"github.com/vislake/speed/pkg/core"
 )
 
-// The names this module keeps for itself. A declaration that took one of them
-// would silently hijack the config locator or the help output.
+// The names a declaration may not take. --config is this module's own, and
+// --help and -h come from the command-line library, which puts them on every
+// command; a declaration taking any of them would silently hijack the config
+// locator or the help output.
 const (
 	locatorFlag      = "config"
 	helpFlag         = "help"
+	helpShort        = "h"
 	locatorEnvSuffix = "_CONFIG"
 )
 
@@ -157,9 +160,13 @@ func pathIntersects(first *manifestItem, firstPath string, second *manifestItem,
 func (m *manifest) checkFlagNames(item *manifestItem) error {
 	switch item.item.FlagName {
 	case "":
-	case locatorFlag, helpFlag:
+	case locatorFlag:
 		return fmt.Errorf("%w: module %q declares %q as the command-line name of %q, which this "+
-			"module reserves for the config locator and the help output. Choose another name",
+			"module keeps for the config locator. Choose another name",
+			ErrConfigConflict, item.module, item.item.FlagName, item.path)
+	case helpFlag:
+		return fmt.Errorf("%w: module %q declares %q as the command-line name of %q, and the "+
+			"command-line library provides it on every command. Choose another name",
 			ErrConfigConflict, item.module, item.item.FlagName, item.path)
 	default:
 		if other, taken := m.byFlag[item.item.FlagName]; taken {
@@ -170,6 +177,15 @@ func (m *manifest) checkFlagNames(item *manifestItem) error {
 	}
 	if item.item.FlagShort == "" {
 		return nil
+	}
+	// The reserved short name is judged before the duplicate is. Judging it
+	// second would let the first module to declare -h through and report the
+	// second, naming a different party on each run.
+	if item.item.FlagShort == helpShort {
+		return fmt.Errorf("%w: module %q declares %q as the command-line short name of %q, and "+
+			"the command-line library provides it on every command as the short name of --%s. "+
+			"Choose another short name",
+			ErrConfigConflict, item.module, item.item.FlagShort, item.path, helpFlag)
 	}
 	if other, taken := m.byShort[item.item.FlagShort]; taken {
 		return fmt.Errorf("%w: modules %q and %q both declare the command-line short name %q, for "+

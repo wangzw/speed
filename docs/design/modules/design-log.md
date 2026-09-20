@@ -11,7 +11,7 @@
 - 提供 logger 与 `context.Context` 之间的存取，供产生关联字段的模块绑定自己的字段（[ADR-log-context-2026-09-13](../../adr/adr-log-context-2026-09-13.md)）。
 - 提供进程根 logger：没有上下文可取时用它，固定走带脱敏的引导链写标准输出。
 
-全部内容位于根包，没有子包：格式与目的地都只用标准库，没有需要隔离的第三方依赖。
+全部内容位于根包，没有子包：格式与目的地都只用标准库，本模块没有需要隔离到子包的第三方实现。
 
 ### 非职责
 
@@ -63,6 +63,14 @@ type Span struct {
 ```
 
 本模块排他地交付 `(*Logger)(nil)`。`Named` 返回的 logger 带 `ModuleAttrKey` 这个属性（值为模块名），其处理链是共享的。模块在 `New` 中取得它并长期持有，用于没有请求上下文的日志。
+
+模块名导出为常量：
+
+```go
+const ModuleName = "log"
+```
+
+命令树按名纳入模块，宿主在命令树里写 `log.ModuleName`（见 [config](design-config.md)）。名字由登记它的包给出，改名因而经编译器到达每一个纳入点；散在宿主里的字面量则在改名之后照样编译，把本模块留在那条命令之外。配置命名空间的取值同为 `log` 却是另一个常量，模块名改了配置段不跟着搬。
 
 `Named` 绑定的属性键与脱敏命中后留下的替换文本都导出为常量：
 
@@ -189,7 +197,11 @@ func Default() *slog.Logger
 
 `pkg/log` 依赖 `pkg/core`（注册、功能交付）与 `pkg/config`（声明并读取自己的配置）。
 
-不含第三方依赖：处理链、脱敏、上下文存取、配置解读、文本与 JSON 编码、滚动与清理，全部在 `log/slog`、`context`、`io`、`os` 这些标准库范围内完成。
+本模块自身不引入第三方依赖：处理链、脱敏、上下文存取、配置解读、文本与 JSON 编码、滚动与清理，全部在 `log/slog`、`context`、`io`、`os` 这些标准库范围内完成。
+
+取用配置则承受 `pkg/config` 的解析工具依赖：cobra、viper、pflag 与 mapstructure 经 `pkg/config` 进入本模块的传递闭包，凡 import 本模块的宿主都带上它们，这是 [ADR-config-parsing-2026-09-20](../../adr/adr-config-parsing-2026-09-20.md) 记下的代价。
+
+依赖扫描因而按"自身不新增"判定：预算是标准库、本仓库的模块与 `pkg/config` 的当前闭包，越出预算的包才是本模块自己引入的（`pkg/log/deps_test.go` `TestLogAddsNoThirdPartyDependency`）。预算取 `pkg/config` 的实测闭包而不是一份库名清单，那一侧换掉某个间接依赖不牵动本条判定。
 
 依赖方向自上而下收敛于 `core`，本模块不 import 任何产生关联字段的模块，上下文存取正是为此存在。
 
@@ -616,3 +628,4 @@ log:
 | 写入失败上报 | 已实现 | `pkg/log/writer.go` `destWriter`、`pkg/log/prune.go` `notePruneFailure` |
 | 哨兵错误 | 已实现 | `pkg/log/errors.go` |
 | 可观察字面量 | 已实现 | `pkg/log/module.go` `ModuleAttrKey`、`pkg/log/rules.go` `MaskedText` |
+| 模块名常量与按名纳入 | 已实现 | `pkg/log/module.go` `ModuleName` |

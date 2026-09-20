@@ -306,6 +306,41 @@ func TestNoDSNDisablesAndDependantGetsMissingProvider(t *testing.T) {
 	}
 }
 
+// The case about a command whose depth is not the serving stage.
+
+// TestTheMigrateCommandStopsAtTheMigrationStage is the end-to-end form of a
+// command that drives part of the lifecycle: `dbhost migrate` applies the
+// migrations and returns, where the root command of the same binary would go
+// on to serve.
+//
+// Two observations, because either on its own is met by the wrong
+// implementation. The record table says the migrations were applied — a
+// command that stopped short of the migration stage would leave it empty — and
+// the absent serving marker says the run went no further. A depth of the
+// serving stage applies exactly the same migrations, and the probe would then
+// cancel the run from its own Serve, so the exit status is 0 either way and
+// says nothing at all.
+//
+// It runs on SQLite, which needs no container: the depth belongs to the
+// command tree rather than to an engine, and a case gated on docker would be
+// unobserved wherever docker is absent.
+func TestTheMigrateCommandStopsAtTheMigrationStage(t *testing.T) {
+	locator := writeConfig(t, dbConfig{DB: dbSection{SQLite: &engineSection{
+		DSN: filepath.Join(t.TempDir(), "dbhost.sqlite"),
+	}}})
+	got := runHost(t, caseMigrateSubcommand, "migrate", "--config="+locator)
+	requireSuccess(t, got)
+
+	applied := recordedMarker + "\t" + probeModuleName + "\t0001_widgets.sql"
+	if n := countOccurrences(got.stdout, applied); n != 1 {
+		t.Errorf("the record table reports the declared migration %d times, want 1:\n%s", n, got.stdout)
+	}
+	if strings.Contains(got.stdout, servedMarker) {
+		t.Errorf("the run reached the serving stage, so the migrate command drove past the depth it "+
+			"declares:\n%s", got.stdout)
+	}
+}
+
 // The concurrency cases: two replicas of one deployment starting at once
 // against an empty database.
 

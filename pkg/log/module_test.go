@@ -16,9 +16,9 @@ import (
 )
 
 // stubReader is a config.Reader that hands back a Config the test wrote. The
-// real reader is built by config's own New, which reads os.Args unconditionally
-// and refuses the arguments go test passes to a test binary, so the callbacks
-// are driven through the interface instead.
+// real reader comes from a run of the command tree, which reads the process's
+// own arguments and refuses the ones go test passes to a test binary, so the
+// callbacks are driven through the interface instead.
 type stubReader struct {
 	cfg  Config
 	err  error
@@ -121,15 +121,19 @@ func TestPrepareFailsWhenTheReaderFails(t *testing.T) {
 	}
 }
 
-// TestMissingConfigReaderFailsPrepare pins that a registry without a config
-// module stops the startup. The level is a configured value, and falling back
-// to a default here would hide an assembly that cannot read any configuration
-// at all.
-func TestMissingConfigReaderFailsPrepare(t *testing.T) {
+// TestNoSuppliedReaderFailsPrepare pins that a registry nobody supplied a
+// reader to stops the startup. The level is a configured value, and falling
+// back to a default here would hide an assembly that cannot read any
+// configuration at all.
+//
+// A bare registry is the whole of the setup: the reader is a supplied product,
+// so there is nothing to leave out but the supplying.
+func TestNoSuppliedReaderFailsPrepare(t *testing.T) {
 	keepBootstrapLevel(t)
 	m := Module()
 	if _, err := m.Prepare(context.Background(), core.New()); !errors.Is(err, core.ErrMissingProvider) {
-		t.Fatalf("Prepare on a registry without config gave %v, want core.ErrMissingProvider", err)
+		t.Fatalf("Prepare on a registry nobody supplied a reader to gave %v, "+
+			"want core.ErrMissingProvider", err)
 	}
 }
 
@@ -153,8 +157,9 @@ func TestDescriptorDeclaresExclusiveLoggerAndSchema(t *testing.T) {
 			"be settled by taking one of them rather than by failing the startup")
 	}
 	if len(m.Requires) != 0 {
-		t.Errorf("the descriptor requires %v; config is an implicit dependency of every module "+
-			"and this module needs nothing else at construction time", m.Requires)
+		t.Errorf("the descriptor requires %v; the reader is a supplied product that is in the "+
+			"registry before the drive begins, and this module needs nothing else at "+
+			"construction time", m.Requires)
 	}
 	if len(m.Resources) != 1 {
 		t.Fatalf("the descriptor declares %d resources, want the config schema alone", len(m.Resources))
@@ -326,11 +331,12 @@ func TestNewRejectsAConfigurationDefect(t *testing.T) {
 	}
 }
 
-// TestMissingConfigReaderFailsNew pins the same stance New's sibling takes: no
-// configuration module means no configuration, and this module says so rather
-// than assembling something the host did not ask for.
-func TestMissingConfigReaderFailsNew(t *testing.T) {
+// TestNoSuppliedReaderFailsNew pins the same stance New's sibling takes: a
+// registry nobody supplied a reader to has no configuration, and this module
+// says so rather than assembling something the host did not ask for.
+func TestNoSuppliedReaderFailsNew(t *testing.T) {
 	if _, err := Module().New(context.Background(), core.New()); !errors.Is(err, core.ErrMissingProvider) {
-		t.Fatalf("New on a registry without config gave %v, want core.ErrMissingProvider", err)
+		t.Fatalf("New on a registry nobody supplied a reader to gave %v, "+
+			"want core.ErrMissingProvider", err)
 	}
 }

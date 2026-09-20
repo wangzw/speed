@@ -251,21 +251,17 @@ func testSettings(name string) endpointSettings {
 // dependency order leaves open is its own implementation choice, so no fixture
 // here and no test built on one may read an order out of module names.
 
-// stubConfigModule is the module named config, the one name the registry
-// recognises: it is constructed ahead of every stance and is an implicit
-// dependency of everyone.
+// supplyConfig hands the registry the reader the assembly reads its endpoints
+// through, the way a host does: a supplied product, in place before the first
+// module is constructed and answering every lookup for the capability.
 //
-// The real module's New reads os.Args unconditionally and refuses the
-// arguments go test passes a test binary, so an assembly is handed this one
-// and reads back the endpoints the test wrote.
-func stubConfigModule(cfg moduleConfig) core.Module {
-	return core.Module{
-		Name:     "config",
-		Provides: []core.Provision{{Token: (*config.Reader)(nil)}},
-		New: func(context.Context, *core.Registry) (any, error) {
-			return &stubReader{cfg: cfg}, nil
-		},
-	}
+// It is not a module, and it cannot be one here: the capability is supplied,
+// so a registered module declaring it in Provides would be a second answer to
+// the same lookup. What it hands back is the configuration the test wrote,
+// which is what a real load over the arguments go test passes a test binary
+// could not produce.
+func supplyConfig(reg *core.Registry, cfg moduleConfig) {
+	reg.Supply((*config.Reader)(nil), &stubReader{cfg: cfg})
 }
 
 // stubLogger delivers the Logger capability over a logger the test holds. A
@@ -422,12 +418,17 @@ type assembly struct {
 	err      error
 }
 
-// startAssembly registers the modules, starts Run and hands back the handle.
+// startAssembly supplies the reader over cfg, registers the modules, starts
+// Run and hands back the handle. The reader goes in first, which is the order
+// a host works in: it is there before anything is registered and long before
+// the drive begins.
+//
 // The run is ended and waited for whatever the test does, so a failing
 // assertion leaves no registry serving for the rest of the binary.
-func startAssembly(t *testing.T, modules ...core.Module) *assembly {
+func startAssembly(t *testing.T, cfg moduleConfig, modules ...core.Module) *assembly {
 	t.Helper()
 	reg := core.New()
+	supplyConfig(reg, cfg)
 	for _, m := range modules {
 		reg.Register(m)
 	}

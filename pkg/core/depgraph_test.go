@@ -2,6 +2,7 @@ package core
 
 import (
 	"errors"
+	"reflect"
 	"slices"
 	"strings"
 	"testing"
@@ -25,7 +26,7 @@ func allEnabled(mods ...Module) map[string]Enablement {
 
 func mustPlan(t *testing.T, mods ...Module) []string {
 	t.Helper()
-	order, err := planConstruction(mods, mods, allEnabled(mods...), nil)
+	order, err := planConstruction(mods, mods, nil, allEnabled(mods...), nil, nil)
 	if err != nil {
 		t.Fatalf("planning failed: %v", err)
 	}
@@ -44,7 +45,7 @@ func indexOf(t *testing.T, order []string, name string) int {
 func TestMissingProviderNoDeclarer(t *testing.T) {
 	consumer := Module{Name: "consumer", Requires: needs((*cacheCap)(nil))}
 
-	_, err := planConstruction([]Module{consumer}, []Module{consumer}, allEnabled(consumer), nil)
+	_, err := planConstruction([]Module{consumer}, []Module{consumer}, nil, allEnabled(consumer), nil, nil)
 	if !errors.Is(err, ErrMissingProvider) {
 		t.Fatalf("planning returned %v, want ErrMissingProvider", err)
 	}
@@ -67,7 +68,7 @@ func TestMissingProviderTextCarriesDisableReason(t *testing.T) {
 		"provider": {State: StateDisabled, Reason: "no connection address configured"},
 	}
 
-	_, err := planConstruction([]Module{consumer}, []Module{consumer, provider}, final, nil)
+	_, err := planConstruction([]Module{consumer}, []Module{consumer, provider}, nil, final, nil, nil)
 	if !errors.Is(err, ErrMissingProvider) {
 		t.Fatalf("planning returned %v, want ErrMissingProvider", err)
 	}
@@ -86,7 +87,7 @@ func TestMissingProviderTextCarriesDisableReason(t *testing.T) {
 func TestMissingProviderNamesTheRequiringModule(t *testing.T) {
 	consumer := Module{Name: "consumer", Requires: needs((*cacheCap)(nil))}
 
-	_, err := planConstruction([]Module{consumer}, []Module{consumer}, allEnabled(consumer), nil)
+	_, err := planConstruction([]Module{consumer}, []Module{consumer}, nil, allEnabled(consumer), nil, nil)
 	if !errors.Is(err, ErrMissingProvider) {
 		t.Fatalf("planning returned %v, want ErrMissingProvider", err)
 	}
@@ -102,7 +103,7 @@ func TestOptionalMissingIsNotAnError(t *testing.T) {
 		Requires: []Requirement{{Token: (*cacheCap)(nil), Optional: true}},
 	}
 
-	order, err := planConstruction([]Module{consumer}, []Module{consumer}, allEnabled(consumer), nil)
+	order, err := planConstruction([]Module{consumer}, []Module{consumer}, nil, allEnabled(consumer), nil, nil)
 	if err != nil {
 		t.Fatalf("an absent optional dependency failed the planning: %v", err)
 	}
@@ -128,7 +129,7 @@ func TestCycleDetectedNamingModules(t *testing.T) {
 	a := Module{Name: "a", Requires: needs((*storeCap)(nil)), Provides: provides((*cacheCap)(nil))}
 	b := Module{Name: "b", Requires: needs((*cacheCap)(nil)), Provides: provides((*storeCap)(nil))}
 
-	_, err := planConstruction([]Module{a, b}, []Module{a, b}, allEnabled(a, b), nil)
+	_, err := planConstruction([]Module{a, b}, []Module{a, b}, nil, allEnabled(a, b), nil, nil)
 	if !errors.Is(err, ErrDependencyCycle) {
 		t.Fatalf("planning returned %v, want ErrDependencyCycle", err)
 	}
@@ -149,7 +150,7 @@ func TestSelfCycle(t *testing.T) {
 		Provides: provides((*cacheCap)(nil)),
 	}
 
-	_, err := planConstruction([]Module{m}, []Module{m}, allEnabled(m), nil)
+	_, err := planConstruction([]Module{m}, []Module{m}, nil, allEnabled(m), nil, nil)
 	if !errors.Is(err, ErrDependencyCycle) {
 		t.Fatalf("planning returned %v, want ErrDependencyCycle", err)
 	}
@@ -170,21 +171,7 @@ func TestConsumerFollowsAllProviders(t *testing.T) {
 	}
 }
 
-// TestConfigModuleOrdersFirst pins the implicit dependency: nobody declares
-// it, and everyone is constructed after it.
-func TestConfigModuleOrdersFirst(t *testing.T) {
-	cfg := Module{Name: configModuleName, Provides: provides((*readerCap)(nil))}
-	a := Module{Name: "aaa", Provides: provides((*cacheCap)(nil))}
-	b := Module{Name: "bbb", Requires: needs((*cacheCap)(nil))}
-
-	order := mustPlan(t, a, b, cfg)
-	if order[0] != configModuleName {
-		t.Fatalf("order is %v, want config first", order)
-	}
-}
-
 func TestOrderStableAcrossRegistrationOrders(t *testing.T) {
-	cfg := Module{Name: configModuleName}
 	a := Module{Name: "alpha", Provides: provides((*cacheCap)(nil))}
 	b := Module{Name: "bravo", Requires: needs((*cacheCap)(nil)), Provides: provides((*storeCap)(nil))}
 	c := Module{Name: "charlie", Requires: needs((*storeCap)(nil))}
@@ -192,11 +179,11 @@ func TestOrderStableAcrossRegistrationOrders(t *testing.T) {
 	// broken by name and must not follow registration order.
 	d := Module{Name: "delta", Requires: needs((*cacheCap)(nil))}
 
-	want := mustPlan(t, cfg, a, b, c, d)
+	want := mustPlan(t, a, b, c, d)
 	for _, permuted := range [][]Module{
-		{d, c, b, a, cfg},
-		{b, cfg, d, a, c},
-		{c, a, cfg, d, b},
+		{d, c, b, a},
+		{b, d, a, c},
+		{c, a, d, b},
 	} {
 		got := mustPlan(t, permuted...)
 		if !slices.Equal(got, want) {
@@ -204,8 +191,57 @@ func TestOrderStableAcrossRegistrationOrders(t *testing.T) {
 		}
 	}
 	// Each step takes the smallest name among those whose dependencies are
-	// already placed, so delta lands after charlie became ready.
-	if !slices.Equal(want, []string{configModuleName, "alpha", "bravo", "charlie", "delta"}) {
+	// already placed: alpha alone starts ready, placing it readies bravo and
+	// delta, and bravo wins that tie by name and readies charlie, which then
+	// wins against delta.
+	if !slices.Equal(want, []string{"alpha", "bravo", "charlie", "delta"}) {
 		t.Fatalf("order is %v, want ties broken by name at each step", want)
+	}
+}
+
+// TestSuppliedCapabilityMeetsARequirementWithoutAnEdge pins that a supplied
+// product satisfies a requirement and orders nothing: it exists before the
+// first construction, and an edge would point at a node the graph has no
+// entry for.
+func TestSuppliedCapabilityMeetsARequirementWithoutAnEdge(t *testing.T) {
+	consumer := Module{Name: "consumer", Requires: needs((*readerCap)(nil))}
+	supplied := map[reflect.Type]bool{
+		capabilityType((*readerCap)(nil), "test"): true,
+	}
+
+	order, err := planConstruction([]Module{consumer}, []Module{consumer}, nil,
+		allEnabled(consumer), nil, supplied)
+	if err != nil {
+		t.Fatalf("a requirement a supplied product meets failed the planning: %v", err)
+	}
+	if !slices.Equal(order, []string{"consumer"}) {
+		t.Fatalf("order is %v, want just the consumer", order)
+	}
+}
+
+// TestMissingProviderNamesAModuleThisCommandLeftOut pins the fourth cause
+// apart from the other three. A provider outside the participating set is
+// neither disabled nor ordered late, so reporting it as either gives an
+// instruction that changes nothing; the fix is to include it.
+func TestMissingProviderNamesAModuleThisCommandLeftOut(t *testing.T) {
+	consumer := Module{Name: "consumer", Requires: needs((*cacheCap)(nil))}
+	provider := Module{Name: "left-out", Provides: provides((*cacheCap)(nil))}
+
+	_, err := planConstruction([]Module{consumer}, []Module{consumer}, []Module{provider},
+		allEnabled(consumer), nil, nil)
+	if !errors.Is(err, ErrMissingProvider) {
+		t.Fatalf("planning returned %v, want ErrMissingProvider", err)
+	}
+	if !strings.Contains(err.Error(), "left-out") {
+		t.Errorf("error %q does not name the provider this command left out", err)
+	}
+	if !strings.Contains(err.Error(), "Include") {
+		t.Errorf("error %q does not point at the fix, which is to include that module", err)
+	}
+	for _, wrong := range []string{"constructed later", "is not enabled"} {
+		if strings.Contains(err.Error(), wrong) {
+			t.Errorf("error %q reports the module as %q, which is an instruction that "+
+				"changes nothing: it is not in this command at all", err, wrong)
+		}
 	}
 }

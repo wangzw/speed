@@ -34,13 +34,9 @@ must not cross, and how to run it.
 
 ## Boundaries
 
-- **Some boundaries below state the settled design, not what the code does
-  today.** The implementation-status table in this module's design document
-  says which. Moving the code toward them is the intended direction;
-  reasserting the shape they replaced is not.
-
 - **The root package imports no dialect driver.** Its third-party surface is
-  GORM and GORM's own closure, no more, so a host that imports this package
+  GORM and GORM's own closure, plus what reading configuration through
+  `pkg/config` brings with it, and no more, so a host that imports this package
   carries no engine but the one it deploys on. Nothing enforces that at compile
   time — an implementation subpackage and the root package are one module, so
   both drivers are in one dependency list — and `TestRootPackageImportsNoDriver`

@@ -31,9 +31,15 @@ import (
 //
 // Three packages are depended on. core carries the capability tokens, the
 // declared resources and the instance lookups; config is where the endpoints
-// are read from, an implicit dependency of every module that no descriptor
-// declares; log supplies the token of the optional dependency below and the
+// are read from, over a reader the host hands the registry before the drive
+// begins; log supplies the token of the optional dependency below and the
 // context accessors the base layer injects through.
+//
+// That reader is not delivered by a module. It is in the registry before the
+// first module is constructed, so it is taken up with a lookup and declared in
+// no Requires: there is nothing to order this module against. Its absence is
+// still a startup failure — the endpoints are read through it and there is
+// nothing to serve without them.
 //
 // The dependency on Logger is declared optional, and that declaration is a
 // statement of contract rather than a branch a host reaches. This package
@@ -59,7 +65,8 @@ func Module(name string, newEngine func() Engine) core.Module {
 			reader, err := core.Resolve[config.Reader](reg)
 			if err != nil {
 				return core.Enablement{}, fmt.Errorf("http: the listening endpoints are read "+
-					"from configuration, and no module delivers it: %w", err)
+					"from configuration, and no reader was handed to the registry "+
+					"before the assembly began: %w", err)
 			}
 			return prepare(reader, core.Resources[Spec](reg))
 		},
@@ -68,7 +75,8 @@ func Module(name string, newEngine func() Engine) core.Module {
 			reader, err := core.Resolve[config.Reader](reg)
 			if err != nil {
 				return nil, fmt.Errorf("http: the listening endpoints are read from "+
-					"configuration, and no module delivers it: %w", err)
+					"configuration, and no reader was handed to the registry before "+
+					"the assembly began: %w", err)
 			}
 			injected, err := requestLogger(reg, name)
 			if err != nil {
@@ -89,6 +97,16 @@ func Module(name string, newEngine func() Engine) core.Module {
 		// ahead of this module all lie outside Init. This module migrates
 		// nothing and has no service of its own to start, so the two slots
 		// have no other use.
+		//
+		// Whether either slot runs is the depth of the drive to decide,
+		// and the two are tied by nothing. A drive shallower than Migrate
+		// runs neither and reaches no Init: both sides of the window are
+		// absent together and the result is consistent. A drive that stops
+		// exactly at Migrate opens the gate with nobody to seal it, and it
+		// stays open for the rest of the process; that run has no Init, no
+		// registration and no traffic. The way round it is for such a
+		// command not to take this module in — applying migrations needs no
+		// entry point.
 		Migrate: func(_ context.Context, _ *core.Registry, instance any) error {
 			if r, ok := productOf(instance); ok {
 				r.open()

@@ -3,15 +3,21 @@
 //
 // A module declares the input items it accepts as a Schema resource. config
 // walks the registry, merges every declaration into one manifest, derives the
-// environment variable names and assembles the command line from it, reads the
-// primary source the config locator points at, applies the environment and
-// command-line layers over it, and hands each module its own values back
-// through Reader.
+// environment variable names and the command-line arguments from it, reads
+// the primary source the config locator points at, and hands each module its
+// own values back through Reader.
 //
-// The root package carries the declarations, the manifest and the layers, and
-// defines the Source and Format extension points. Concrete transports and
-// formats live in subpackages, so their third-party dependencies stay out of
-// the hosts that do not import them.
+// The parsing itself is delegated: the command line and the command tree to
+// pflag and cobra, the primary source, the environment and the layering to
+// viper, the conversion into a module's own types to mapstructure. What this
+// package holds them to is the manifest, the constraints the design puts on
+// top of them, and the two facts none of them keeps: which layer gave a value,
+// and which variables under the host's prefix nobody reads.
+//
+// The root package carries the declarations, the manifest and the command
+// tree, and defines the Source and Format extension points. Concrete
+// transports and formats live in subpackages, so their third-party
+// dependencies stay out of the hosts that do not import them.
 package config
 
 // Schema is the resource type a module declares to state which input items it
@@ -95,8 +101,6 @@ type Item struct {
 	EnvName string
 	// Placeholder is the value placeholder in the help output.
 	Placeholder string
-	// Group is the section the help output lists this item under.
-	Group string
 	// Description explains the item in the help output. It is mandatory for
 	// a sensitive item, whose default is not echoed: without it the reader
 	// has nothing to go on.

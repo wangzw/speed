@@ -74,9 +74,11 @@ func writeConfig(t *testing.T, body string) string {
 // reader handing back a struct the test wrote would agree with any declaration
 // at all.
 //
-// The loader reads os.Args unconditionally and a test binary always carries
-// arguments of its own, so the arguments are taken away for the call. The
-// cases that use it therefore do not run in parallel.
+// It is the loading step on its own, which is what these cases want: the
+// values, with no lifecycle driven to get at them. The command line is given
+// as empty and the prefix is one no machine carries variables under, so the
+// locator is the host identity's default and nothing outside the case reaches
+// the values.
 func readerOver(t *testing.T, body string, modules ...core.Module) (config.Reader, error) {
 	t.Helper()
 	locator := writeConfig(t, body)
@@ -92,19 +94,7 @@ func readerOver(t *testing.T, body string, modules ...core.Module) (config.Reade
 		reg.Register(m)
 	}
 
-	previous := os.Args
-	os.Args = []string{"db.test"}
-	defer func() { os.Args = previous }()
-
-	instance, err := config.Module().New(t.Context(), reg)
-	if err != nil {
-		return nil, err
-	}
-	reader, ok := instance.(config.Reader)
-	if !ok {
-		t.Fatalf("the config module produced %T, want a config.Reader", instance)
-	}
-	return reader, nil
+	return config.Load(t.Context(), reg, nil)
 }
 
 // readerFor builds the reader for one implementation and fails the test if the
@@ -168,10 +158,10 @@ func TestConfiguredPoolParametersOverrideTheDefaults(t *testing.T) {
 // a slow database.
 //
 // The refusal comes from the type of the field, so this is an observation
-// about the declaration: written as a count of seconds, the value below is
-// accepted and means something else. It lands while the configuration is
-// being loaded rather than when this module decodes, which is the earliest the
-// host could be told.
+// about the declaration: declared as a count of seconds, the value below would
+// be accepted and mean something else. It lands where this module reads its
+// own section, which in an assembly is Prepare, so the value is refused before
+// anything is built on it.
 func TestDurationItemsRejectBareNumber(t *testing.T) {
 	for _, c := range []struct {
 		item string
@@ -181,7 +171,8 @@ func TestDurationItemsRejectBareNumber(t *testing.T) {
 		{MigrationLockTimeoutKey, `{"db":{"postgres":{"dsn":"x","migration-lock-timeout":300}}}`},
 	} {
 		t.Run(c.item, func(t *testing.T) {
-			_, err := readerOver(t, c.body, NewModule(specWithMutex()))
+			spec := specWithMutex()
+			_, err := spec.read(readerFor(t, spec, c.body))
 			if !errors.Is(err, config.ErrTypeMismatch) {
 				t.Fatalf("a bare number for %s gave %v, want config.ErrTypeMismatch", c.item, err)
 			}
@@ -236,9 +227,6 @@ func TestEveryDeclaredItemIsDescribed(t *testing.T) {
 		for key, item := range schema.Items {
 			if item.Description == "" {
 				t.Errorf("%s.%s is declared without a description", schema.Namespace, key)
-			}
-			if item.Group == "" {
-				t.Errorf("%s.%s is declared without a help group", schema.Namespace, key)
 			}
 		}
 	}

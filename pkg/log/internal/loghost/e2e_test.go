@@ -21,9 +21,9 @@ import (
 // what a real assembly does: which destination a record reached, what the
 // startup wrote to standard error, and the exit status a second provider of
 // the capability produces. None of the three exists inside a test binary, and
-// a real assembly cannot be started in one at all — the configuration loader
-// reads os.Args[1:], which go test has already filled with arguments of its
-// own.
+// a real assembly cannot be started in one at all — the command tree takes the
+// process's own arguments, which go test has already filled with arguments of
+// its own, and the way to put another list in their place is not exported.
 
 // hostBinary is the compiled host every case runs. It is built once, in
 // TestMain, because building it is by far the slowest thing here.

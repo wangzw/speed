@@ -3,6 +3,7 @@ package main
 import (
 	"testing"
 
+	"github.com/vislake/speed/pkg/config"
 	"github.com/vislake/speed/pkg/core"
 	"github.com/vislake/speed/pkg/log"
 )
@@ -29,6 +30,55 @@ func TestEveryModuleThatLogsDeclaresTheLoggingDependency(t *testing.T) {
 				"on the %T capability, so nothing orders logging around it",
 				module.Name, (*log.Logger)(nil))
 		}
+	}
+}
+
+// The opposite assertion of the one above, and the two do not contradict each
+// other: a logger is the product of a module, so a module that takes one has
+// to say so and be ordered around the module that makes it, while the reading
+// surface is a product the host supplies before the first construction and
+// there is no module to be ordered around.
+//
+// Declaring it would not be a harmless extra line. Nothing in the registry
+// delivers the reading capability, so a Requires naming it is a requirement
+// with no provider, and the run fails at startup. This case catches the line
+// where it is written rather than leaving it to the first run of whichever
+// host imported the module.
+func TestNoModuleDeclaresTheConfigReaderRequirement(t *testing.T) {
+	for _, module := range []core.Module{
+		appModule(), localGreeterModule(), remoteGreeterModule(), hostModule(),
+	} {
+		if requiresCapability(module, (*config.Reader)(nil)) {
+			t.Errorf("module %q declares a requirement on the %T capability, which no module "+
+				"delivers: the reading surface is supplied by the host before the first "+
+				"module is constructed", module.Name, (*config.Reader)(nil))
+		}
+	}
+}
+
+// The host module delivers no capability, which is what keeps "no command
+// names it" and "no command outside serve takes it in" the same statement: a
+// module is taken into a command by being named there or by providing what a
+// named module requires, and a module that provides nothing can only arrive
+// the first way. serve is the exception and arrives neither way — it takes in
+// every available module, and the ones carrying resources alone are available
+// too.
+//
+// This is asserted here because a run shows nothing of it. The module has no
+// New and contributes no argument, so a command that took it in and one that
+// did not would produce the same output, and the e2e case that reads the
+// identity under greet would go on passing while no longer testing that a
+// command which does not take the module in still reads it.
+func TestTheHostModuleProvidesNothingThatCouldPullItIntoACommand(t *testing.T) {
+	module := hostModule()
+	if len(module.Provides) != 0 {
+		t.Errorf("module %q declares %d provision(s); a module that delivers a capability is "+
+			"taken into every command that requires it, named there or not",
+			module.Name, len(module.Provides))
+	}
+	if module.New != nil {
+		t.Errorf("module %q constructs something; it carries declarations that precede all "+
+			"configuration and has nothing to build", module.Name)
 	}
 }
 

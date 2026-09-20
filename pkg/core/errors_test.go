@@ -3,7 +3,7 @@ package core
 import "testing"
 
 // TestSentinelSetMatchesDesignTable pins the sentinel set to the design's
-// error table: six errors, each distinct, each reachable by name.
+// error table: one entry per row, each distinct, each reachable by name.
 func TestSentinelSetMatchesDesignTable(t *testing.T) {
 	sentinels := map[string]error{
 		"ErrMissingProvider":       ErrMissingProvider,
@@ -12,9 +12,10 @@ func TestSentinelSetMatchesDesignTable(t *testing.T) {
 		"ErrMissingReason":         ErrMissingReason,
 		"ErrDependencyCycle":       ErrDependencyCycle,
 		"ErrUndeliveredCapability": ErrUndeliveredCapability,
+		"ErrUnknownParticipant":    ErrUnknownParticipant,
 	}
-	if len(sentinels) != 6 {
-		t.Fatalf("the design table lists 6 sentinels, the test pins %d", len(sentinels))
+	if len(sentinels) != 7 {
+		t.Fatalf("the design table lists 7 sentinels, the test pins %d", len(sentinels))
 	}
 	seen := make(map[string]string, len(sentinels))
 	for name, err := range sentinels {

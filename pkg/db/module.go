@@ -66,6 +66,11 @@ type Spec struct {
 // deterministically on the first run of any host that imports it, and leaves a
 // host nothing to handle. It is the treatment core gives an illegal token, for
 // the same reason.
+//
+// The reading face the callbacks take up is absent from Requires, and that is
+// the rule rather than an omission: it is a product the host hands into the
+// registry before assembly begins, so it exists before the first module is
+// constructed and there is no provider to be ordered against.
 func NewModule(spec Spec) core.Module {
 	spec.check()
 	return core.Module{
@@ -137,12 +142,13 @@ func (s Spec) check() {
 }
 
 // reader takes up the configuration. what names the thing being read, so a
-// host that assembled no config module is told which of this module's
-// decisions it broke rather than that something was unavailable.
+// host that handed in no reading face is told which of this module's decisions
+// it broke rather than that something was unavailable.
 func (s Spec) reader(reg *core.Registry, what string) (config.Reader, error) {
 	reader, err := core.Resolve[config.Reader](reg)
 	if err != nil {
-		return nil, fmt.Errorf("%s: %s is read from configuration, and no module delivers it: %w",
+		return nil, fmt.Errorf("%s: %s is read from configuration, and the host handed no "+
+			"reading face into the registry before assembly began: %w",
 			s.ModuleName, what, err)
 	}
 	return reader, nil

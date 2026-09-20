@@ -165,18 +165,6 @@ func TestResolutionIndependentOfRegistrationOrder(t *testing.T) {
 	}
 }
 
-// TestConfigModuleCountsAsEnabledDuringResolution pins that the config module
-// takes part like any explicitly enabled provider: a second provider of what
-// it delivers stands down rather than surfacing at lookup time.
-func TestConfigModuleCountsAsEnabledDuringResolution(t *testing.T) {
-	final := mustResolve(t,
-		stated(configModuleName, StateEnabled, "", exclusive((*readerCap)(nil))),
-		stated("second-reader", StateAuto, "", exclusive((*readerCap)(nil))),
-	)
-	assertEnabled(t, final, configModuleName)
-	assertDisabled(t, final, "second-reader", "already has an explicitly enabled provider")
-}
-
 func TestModuleWithoutProvisionsOnlyUsesOwnState(t *testing.T) {
 	final := mustResolve(t,
 		stated("plain", StateAuto, ""),

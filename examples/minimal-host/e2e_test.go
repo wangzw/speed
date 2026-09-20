@@ -488,61 +488,243 @@ func requireAbsent(t *testing.T, stream, text, what string) {
 	}
 }
 
-// Demonstration one: the help output describes the command line the assembled
-// modules declared, and asking for it is not a failure.
+// requireFailedRun asserts that a run failed, and that standard error says
+// what over exactly once.
+//
+// Once is half of what this asserts. The command-line library reports the
+// failure it rejected a run over, and a host that also printed the error it
+// was handed back would put the same line on the stream twice — a defect
+// neither the exit status nor the presence of the text would show.
+func requireFailedRun(t *testing.T, got outcome, mustSay string) {
+	t.Helper()
+	if got.code == 0 {
+		t.Errorf("the run left with status 0 and should have failed\nstdout:\n%s\nstderr:\n%s",
+			got.stdout, got.stderr)
+	}
+	if n := strings.Count(got.stderr, mustSay); n != 1 {
+		t.Errorf("stderr names %q %d times, want exactly once:\n%s", mustSay, n, got.stderr)
+	}
+}
+
+// Demonstration one: every command has its own help, the command-line library
+// renders it out of what that command assembles, and the library is what
+// answers — the exit status of a run that asked for help is its verdict, and
+// so is the rejection of a word that is no command at all.
 
 func TestHelpExitsZeroAndListsFlags(t *testing.T) {
-	got := runToCompletion(t, nil, "--help")
+	got := runToCompletion(t, nil, "serve", "--help")
 
 	if got.code != 0 {
-		t.Errorf("asking for help left with status %d, and it is not a failure", got.code)
+		t.Errorf("asking for help left with status %d, and it is the library that answers it",
+			got.code)
 	}
-	requireContains(t, got.stdout, greeterGroup+":", "the help output")
+	// The placeholder each module declared, in place of the type name the
+	// command-line library would otherwise print after the argument.
 	requireContains(t, got.stdout, "--salutation WORD", "the help output")
 	requireContains(t, got.stdout, "--remote-addr HOST:PORT", "the help output")
-	// The remote address is required, so the help output asks for it instead
-	// of offering a default nobody can rely on.
-	requireContains(t, got.stdout, "(required)", "the help output")
 	requireContains(t, got.stdout, "the word the built-in greeter opens with", "the help output")
-	// The default is a word a command line takes as it stands, so it is
-	// rendered as it stands: what gets quoted is decided by the text, not by
-	// the type of the field it came from.
-	requireContains(t, got.stdout, "(default: "+localDefaults.Salutation+")", "the help output")
-	requireContains(t, got.stdout, "--config LOCATOR", "the help output")
-	// The logging module is assembled into this host like any other, so its
-	// own items are in the same help output under its own group.
-	requireContains(t, got.stdout, "Logging:", "the help output")
+	// A required argument says so. It hands over no default, so the column
+	// that tells an argument the run needs from one it can do without is
+	// empty for it, and the mark is what is left to read the difference off.
+	requireContains(t, got.stdout, "the address of the greeting service (required)",
+		"the help output")
+	// The default reaches the reader through the usage text. The argument's
+	// own default is left empty, so that an argument nobody wrote does not
+	// shadow the value the config source gave, and the text is where the
+	// reader is told what the value would have been.
+	requireContains(t, got.stdout, "(default "+localDefaults.Salutation+")", "the help output")
+	// The logging module is assembled into this command like any other, so
+	// its own items are in the same help output.
 	requireContains(t, got.stdout, "--log-level LEVEL", "the help output")
-	// Nothing was read: the help output does not depend on a config source
-	// being reachable, so a locator pointing nowhere changes nothing.
+	// The reserved argument is registered on the root, so every command
+	// inherits it rather than declaring it again. Its placeholder is this
+	// module's own, like every other argument's: the name of the Go type
+	// the library holds the value in would be the one line here that names
+	// a type rather than a value.
+	requireContains(t, got.stdout, "--config LOCATOR", "the help output")
+	requireAbsent(t, got.stdout, "--config string", "the help output")
 	if got.stderr != "" {
 		t.Errorf("asking for help wrote to stderr:\n%s", got.stderr)
 	}
 }
 
 func TestHelpHidesSensitiveDefault(t *testing.T) {
-	got := runToCompletion(t, nil, "--help")
+	got := runToCompletion(t, nil, "serve", "--help")
 
 	requireContains(t, got.stdout, "--remote-token TOKEN", "the help output")
 	requireContains(t, got.stdout, "the credential the greeting service authenticates with",
 		"the help output")
+	// The only evidence that a sensitive item's default is kept away from
+	// the command-line library rather than merely left out of one rendering:
+	// the library prints the default it was given, so a default it was given
+	// would be here.
 	requireAbsent(t, got.stdout, remoteDefaults.Token, "the help output")
 }
 
 func TestHelpIsAnsweredBeforeAnUnreachableSourceIsRead(t *testing.T) {
-	got := runToCompletion(t, nil, "--config=file:///nowhere/minimal-host.yaml", "--help")
+	got := runToCompletion(t, nil, "--config=file:///nowhere/minimal-host.yaml", "serve", "--help")
 
+	// The source is never opened: the library answers the request for help
+	// and no command runs, so the step that would have read it is not
+	// reached. A locator pointing nowhere fails any run that gets that far,
+	// which is what makes the status here worth asserting.
 	if got.code != 0 {
 		t.Errorf("asking for help left with status %d although the source is unreachable", got.code)
 	}
 	requireContains(t, got.stdout, "--salutation WORD", "the help output")
 }
 
-// Demonstration two: the primary config source and the environment reach the
+func TestEachCommandHelpListsOnlyItsOwnParticipants(t *testing.T) {
+	root := runToCompletion(t, nil, "--help")
+
+	// The root does nothing itself, so the program's name alone answers
+	// with the list of what can be written after it.
+	for _, command := range [...]string{"serve", "greet", "version"} {
+		requireContains(t, root.stdout, command, "the root help output")
+	}
+	requireContains(t, root.stdout, "--config LOCATOR", "the root help output")
+	// The root takes in no module, so no module's arguments are on it.
+	requireAbsent(t, root.stdout, "--salutation", "the root help output")
+	requireAbsent(t, root.stdout, "--log-level", "the root help output")
+
+	// version assembles nothing, so it offers nothing beyond what the root
+	// hands down.
+	version := runToCompletion(t, nil, "version", "--help")
+	for _, flag := range [...]string{"--salutation", "--remote-addr", "--log-level"} {
+		requireAbsent(t, version.stdout, flag, "the version help output")
+	}
+
+	greet := runToCompletion(t, nil, "greet", "--help")
+	requireContains(t, greet.stdout, "--salutation WORD", "the greet help output")
+	requireContains(t, greet.stdout, "--remote-addr HOST:PORT", "the greet help output")
+	// greet names the two greeters and never names logging. Logging is on
+	// this command because both of them require it, and this argument is the
+	// outward sign of it: taking a module in took in the provider of what
+	// that module requires, and no line of the host says so.
+	requireContains(t, greet.stdout, "--log-level LEVEL", "the greet help output")
+}
+
+func TestUnknownSubcommandIsReportedByTheLibrary(t *testing.T) {
+	got := runToCompletion(t, nil, "migrate")
+
+	// A word that selects no command is the library's to reject, and this
+	// host adds no error of its own for it.
+	requireFailedRun(t, got, "migrate")
+}
+
+// Demonstration two: the command decides which modules the run assembles, how
+// far the lifecycle advances, and what comes in with what the command named.
+
+func TestVersionAssemblesNothing(t *testing.T) {
+	got := runToCompletion(t, nil, "version")
+
+	if got.code != 0 {
+		t.Errorf("printing the version left with status %d\nstderr:\n%s", got.code, got.stderr)
+	}
+	requireContains(t, got.stdout, hostVersion, "stdout")
+	// An empty participating set read as "everything" would assemble the
+	// whole host here, and the modules would narrate it: an endpoint, a
+	// readiness record, a stop and a close for each of them. What tells
+	// those from the version line itself is the module attribute, which
+	// every record a module writes carries and nothing the host writes
+	// outside a module does.
+	for _, rec := range textRecords(got.stdout) {
+		if rec[log.ModuleAttrKey] != "" {
+			t.Errorf("version assembled module %q, and it takes in none:\n%s",
+				rec[log.ModuleAttrKey], rec)
+		}
+	}
+	// Nothing was prepared either, so no module had a stance to report.
+	if got.stderr != "" {
+		t.Errorf("printing the version wrote to stderr:\n%s", got.stderr)
+	}
+}
+
+func TestFlagOutsideTheParticipatingSetIsRejected(t *testing.T) {
+	got := runToCompletion(t, nil, "version", "--remote-addr=x:1")
+
+	requireFailedRun(t, got, "remote-addr")
+
+	// The control. Without it an implementation that registered every
+	// argument on every command and one that registered none at all would
+	// both satisfy the half above: what is asserted is that the command
+	// line follows the participating set, not that this argument is
+	// unwelcome everywhere.
+	ok := runUntilReady(t, nil, "serve", "--remote-addr=cli:7000")
+	if ok.code != 0 {
+		t.Errorf("the same argument on a command that does take the module in left with "+
+			"status %d\nstderr:\n%s", ok.code, ok.stderr)
+	}
+	requireRecord(t, textRecords(ok.stdout), "stdout", endpointMsg, endpointAttrKey, "cli:7000")
+}
+
+func TestSourceKeysOutsideTheParticipatingSetAreNotUnknown(t *testing.T) {
+	// The source configures both greeters, and version takes neither of
+	// them in. An unknown key is judged against every declaration there is
+	// rather than against the command's own set: judging it against the set
+	// would make this same file unknown-ridden under every command that
+	// does not assemble all of it, which is one config file per command.
+	got := runToCompletion(t, nil, "--config="+locator(t, "remote.yaml"), "version")
+
+	if got.code != 0 {
+		t.Errorf("a source carrying the keys of modules this command does not assemble left "+
+			"it with status %d\nstderr:\n%s", got.code, got.stderr)
+	}
+	requireContains(t, got.stdout, hostVersion, "stdout")
+}
+
+// The host module carries the environment variable prefix, and greet does not
+// name it: greet names the two greeters, and neither of them requires it. The
+// prefix reaches the run all the same, because collection runs over every
+// registered module before any command is looked at.
+//
+// serve cannot show this. Taking in every available module takes the host
+// module in too, so a collection scoped to the participating set would look
+// identical under serve and lose the prefix only under greet — and every other
+// case that sets a MINIHOST variable runs serve.
+func TestHostIdentityReachesACommandThatDoesNotNameTheHostModule(t *testing.T) {
+	env := []string{"MINIHOST_GREETER__LOCAL__SALUTATION=from-env"}
+	got := runToCompletion(t, env, "greet")
+
+	if got.code != 0 {
+		t.Errorf("greeting left with status %d\nstderr:\n%s", got.code, got.stderr)
+	}
+	requireContains(t, got.stdout, "from-env, world", "stdout")
+	// The control on the same run: without the prefix the variable names no
+	// item, the declared default stands, and the greeting would read this
+	// way instead.
+	requireAbsent(t, got.stdout, localDefaults.Salutation+", world", "stdout")
+}
+
+func TestGreetStopsAtConstructionAndStillReleases(t *testing.T) {
+	got := runToCompletion(t, nil, "greet")
+
+	if got.code != 0 {
+		t.Errorf("greeting left with status %d\nstderr:\n%s", got.code, got.stderr)
+	}
+	requireContains(t, got.stdout, localDefaults.Salutation+", world", "stdout")
+
+	recs := textRecords(got.stdout)
+	// Two reasons hold for the absence of these two records, and both are
+	// the property: the drive stops at construction, so Start and Serve
+	// never run, and the application module is not in this command's set
+	// either. The depth is what is under test here — the set has the
+	// version case to itself — and a greet that later took the application
+	// module in would leave this half proving the depth alone.
+	requireNoRecord(t, recs, "stdout", endpointMsg)
+	requireNoRecord(t, recs, "stdout", readyMsg)
+	// What was constructed is released all the same. One advance in and one
+	// advance out, whatever depth it reached: a shallow drive is not a way
+	// to leak what it built, and the host has no second call to remember.
+	requireRecord(t, recs, "stdout", stopMsg, log.ModuleAttrKey, localModuleName)
+	requireRecord(t, recs, "stdout", closeMsg, log.ModuleAttrKey, localModuleName)
+}
+
+// Demonstration three: the primary config source and the environment reach the
 // same input item, and the environment wins.
 
 func TestPrimarySourceValueTakesEffect(t *testing.T) {
-	got := runUntilReady(t, nil, "--config="+locator(t, "local.yaml"))
+	got := runUntilReady(t, nil, "--config="+locator(t, "local.yaml"), "serve")
 
 	if got.code != 0 {
 		t.Errorf("the host left with status %d\nstderr:\n%s", got.code, got.stderr)
@@ -552,9 +734,23 @@ func TestPrimarySourceValueTakesEffect(t *testing.T) {
 	requireRecord(t, recs, "stdout", endpointMsg, endpointAttrKey, "local")
 }
 
+func TestLocatorAfterTheSubcommandIsTheSameRun(t *testing.T) {
+	got := runUntilReady(t, nil, "serve", "--config="+locator(t, "local.yaml"))
+
+	if got.code != 0 {
+		t.Errorf("the host left with status %d\nstderr:\n%s", got.code, got.stderr)
+	}
+	// The reserved argument is registered on the root, so every command
+	// inherits it rather than declaring one of its own. Written after the
+	// command it names the same argument as written before it, and the case
+	// above reads the same source the other way round.
+	requireRecord(t, textRecords(got.stdout), "stdout", greetingMsg, greetingAttrKey,
+		"from-file, world")
+}
+
 func TestFileThenEnvOverride(t *testing.T) {
 	env := []string{"MINIHOST_GREETER__REMOTE__ADDR=from-env:9999"}
-	got := runUntilReady(t, env, "--config="+locator(t, "remote.yaml"))
+	got := runUntilReady(t, env, "--config="+locator(t, "remote.yaml"), "serve")
 
 	if got.code != 0 {
 		t.Errorf("the host left with status %d\nstderr:\n%s", got.code, got.stderr)
@@ -565,7 +761,7 @@ func TestFileThenEnvOverride(t *testing.T) {
 
 func TestLocatorFromEnvVar(t *testing.T) {
 	env := []string{"MINIHOST_CONFIG=" + locator(t, "remote.yaml")}
-	got := runUntilReady(t, env)
+	got := runUntilReady(t, env, "serve")
 
 	if got.code != 0 {
 		t.Errorf("the host left with status %d\nstderr:\n%s", got.code, got.stderr)
@@ -575,7 +771,7 @@ func TestLocatorFromEnvVar(t *testing.T) {
 
 func TestUnknownPrefixedEnvIsDiagnosedNotFatal(t *testing.T) {
 	env := []string{"MINIHOST_SERVICE_HOST=10.0.0.1"}
-	got := runUntilReady(t, env)
+	got := runUntilReady(t, env, "serve")
 
 	if got.code != 0 {
 		t.Errorf("a variable under the prefix that no item reads left the host with status %d",
@@ -585,11 +781,11 @@ func TestUnknownPrefixedEnvIsDiagnosedNotFatal(t *testing.T) {
 	requireContains(t, got.stderr, "MINIHOST_SERVICE_HOST", "the startup diagnostics")
 }
 
-// Demonstration three: two providers of one capability, and the built-in one
+// Demonstration four: two providers of one capability, and the built-in one
 // stands down as soon as the other is configured.
 
 func TestLocalRunsWhenRemoteUnconfigured(t *testing.T) {
-	got := runUntilReady(t, nil)
+	got := runUntilReady(t, nil, "serve")
 
 	if got.code != 0 {
 		t.Errorf("the host left with status %d\nstderr:\n%s", got.code, got.stderr)
@@ -604,7 +800,7 @@ func TestLocalRunsWhenRemoteUnconfigured(t *testing.T) {
 }
 
 func TestRemoteWinsAndLocalStandsDown(t *testing.T) {
-	got := runUntilReady(t, nil, "--remote-addr=cli:7000")
+	got := runUntilReady(t, nil, "serve", "--remote-addr=cli:7000")
 
 	if got.code != 0 {
 		t.Errorf("the host left with status %d\nstderr:\n%s", got.code, got.stderr)
@@ -619,11 +815,11 @@ func TestRemoteWinsAndLocalStandsDown(t *testing.T) {
 		"the startup diagnostics")
 }
 
-// Demonstration four: cancelling the context stops and closes every module in
+// Demonstration five: cancelling the context stops and closes every module in
 // reverse dependency order.
 
 func TestSigintTriggersReverseOrderShutdown(t *testing.T) {
-	got := runUntilReady(t, nil)
+	got := runUntilReady(t, nil, "serve")
 
 	if got.code != 0 {
 		t.Errorf("an interrupt is the ordinary way to stop, and the host left with status %d",
@@ -652,11 +848,11 @@ func TestSigintTriggersReverseOrderShutdown(t *testing.T) {
 	}
 }
 
-// Demonstration five: a record says which module wrote it, and the dependency
+// Demonstration six: a record says which module wrote it, and the dependency
 // on logging orders the run around the module that declared it.
 
 func TestRecordsCarryTheWritingModule(t *testing.T) {
-	got := runUntilReady(t, nil)
+	got := runUntilReady(t, nil, "serve")
 
 	if got.code != 0 {
 		t.Errorf("the host left with status %d\nstderr:\n%s", got.code, got.stderr)
@@ -675,7 +871,7 @@ func TestRecordsCarryTheWritingModule(t *testing.T) {
 
 func TestDependantCloseRecordStillReachesTheFile(t *testing.T) {
 	source, logFile := loggingConfig(t, false)
-	got := runUntilReadyInFile(t, nil, logFile, "--config="+source)
+	got := runUntilReadyInFile(t, nil, logFile, "--config="+source, "serve")
 
 	if got.code != 0 {
 		t.Errorf("the host left with status %d\nstderr:\n%s", got.code, got.stderr)
@@ -699,7 +895,7 @@ func TestDependantCloseRecordStillReachesTheFile(t *testing.T) {
 
 func TestModuleRecordDuringNewReachesTheConfiguredFile(t *testing.T) {
 	source, logFile := loggingConfig(t, false)
-	got := runUntilReadyInFile(t, nil, logFile, "--config="+source, "--remote-addr=cli:7000")
+	got := runUntilReadyInFile(t, nil, logFile, "--config="+source, "serve", "--remote-addr=cli:7000")
 
 	if got.code != 0 {
 		t.Errorf("the host left with status %d\nstderr:\n%s", got.code, got.stderr)
@@ -712,12 +908,12 @@ func TestModuleRecordDuringNewReachesTheConfiguredFile(t *testing.T) {
 	requireNoRecord(t, textRecords(got.stdout), "stdout", configuredMsg)
 }
 
-// Demonstration six: the logger travels on the context, injected where the
+// Demonstration seven: the logger travels on the context, injected where the
 // context is created.
 
 func TestContextPathCarriesTheInjectedLogger(t *testing.T) {
 	source, logFile := loggingConfig(t, false)
-	got := runUntilReadyInFile(t, nil, logFile, "--config="+source)
+	got := runUntilReadyInFile(t, nil, logFile, "--config="+source, "serve")
 
 	if got.code != 0 {
 		t.Errorf("the host left with status %d\nstderr:\n%s", got.code, got.stderr)
@@ -737,11 +933,11 @@ func TestContextPathCarriesTheInjectedLogger(t *testing.T) {
 	requireNoRecord(t, textRecords(got.stdout), "stdout", greetingMsg)
 }
 
-// Demonstration seven: the configuration decides where records go, and the
+// Demonstration eight: the configuration decides where records go, and the
 // process default logger is not part of that.
 
 func TestDefaultOutputIsTextOnStdout(t *testing.T) {
-	got := runUntilReady(t, nil)
+	got := runUntilReady(t, nil, "serve")
 
 	if got.code != 0 {
 		t.Errorf("the host left with status %d\nstderr:\n%s", got.code, got.stderr)
@@ -761,7 +957,7 @@ func TestDefaultOutputIsTextOnStdout(t *testing.T) {
 
 func TestConfiguredOutputTakesRecordsOffStdout(t *testing.T) {
 	source, logFile := loggingConfig(t, false)
-	got := runUntilReadyInFile(t, nil, logFile, "--config="+source)
+	got := runUntilReadyInFile(t, nil, logFile, "--config="+source, "serve")
 
 	if got.code != 0 {
 		t.Errorf("the host left with status %d\nstderr:\n%s", got.code, got.stderr)
@@ -772,22 +968,24 @@ func TestConfiguredOutputTakesRecordsOffStdout(t *testing.T) {
 	requireRecord(t, inFile, "the log file", stopMsg, log.ModuleAttrKey, appModuleName)
 	requireNoRecord(t, onStdout, "stdout", readyMsg, log.ModuleAttrKey, appModuleName)
 	requireNoRecord(t, onStdout, "stdout", stopMsg, log.ModuleAttrKey, appModuleName)
-	// main is not a module and writes through the process default logger,
-	// which goes to standard output whatever the configuration says. That is
-	// the whole point of the split: a record turning up here rather than in
-	// the file is how a path that never had a logger injected is spotted.
+	// The closing record is the host's own, written from the action the
+	// serving command arrived at rather than by a module, so it goes
+	// through the process default logger. That one writes to standard
+	// output whatever the configuration says, which is the whole point of
+	// the split: a record turning up here rather than in the file is how a
+	// path that never had a logger injected is spotted.
 	requireRecord(t, onStdout, "stdout", stoppedMsg)
 	requireNoRecord(t, inFile, "the log file", stoppedMsg)
 }
 
-// Demonstration eight: redaction masks the keys a module registered, in every
+// Demonstration nine: redaction masks the keys a module registered, in every
 // destination at once.
 
 func TestConfiguredCredentialNeverReachesAnyDestination(t *testing.T) {
 	const credential = "e2e-credential-7f3c9a21"
 
 	source, logFile := loggingConfig(t, true)
-	got := runUntilReady(t, nil, "--config="+source,
+	got := runUntilReady(t, nil, "--config="+source, "serve",
 		"--remote-addr=cli:7000", "--remote-token="+credential)
 
 	if got.code != 0 {

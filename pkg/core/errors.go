@@ -25,4 +25,7 @@ var (
 	// ErrUndeliveredCapability reports a module whose product does not
 	// implement a capability it declared in Provides.
 	ErrUndeliveredCapability = errors.New("core: module did not deliver a declared capability")
+	// ErrUnknownParticipant reports a name in a drive's participating set
+	// that no module registered under.
+	ErrUnknownParticipant = errors.New("core: participating set names a module that is not registered")
 )

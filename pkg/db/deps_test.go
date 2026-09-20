@@ -28,10 +28,18 @@ const repoPrefix = "github.com/vislake/speed/"
 // makes is not what a host pays for. Moving one of those imports into a
 // non-test file is the mistake this catches, and it is caught here.
 //
-// The budget is the standard library, this repository's modules, and GORM's own
-// closure. Anything else came in through this package, and a driver is the shape
-// that matters: it is the dependency a host would carry whichever engine it
-// picked.
+// The budget is the standard library, this repository's modules, GORM's own
+// closure, and the closure of pkg/config. The last of those is what reading
+// configuration costs: this package takes its values up through pkg/config,
+// and pkg/config parses the command line and the config sources with
+// third-party libraries, which ADR-config-parsing-2026-09-20 records as the
+// price of that delegation. It is written as that package's current closure
+// rather than as a list of library names, so a parsing library swapped for
+// another there does not have to be spelled out again here.
+//
+// Anything outside the budget came in through this package, and a driver is
+// the shape that matters: it is the dependency a host would carry whichever
+// engine it picked.
 func TestRootPackageImportsNoDriver(t *testing.T) {
 	root := dependenciesOf(t, ".")
 	// The positive control. This package wraps GORM, so a listing that lost
@@ -43,15 +51,18 @@ func TestRootPackageImportsNoDriver(t *testing.T) {
 	}
 
 	withinBudget := dependenciesOf(t, "gorm.io/gorm")
+	for pkg := range dependenciesOf(t, repoPrefix+"pkg/config") {
+		withinBudget[pkg] = true
+	}
 	for pkg := range root {
 		switch {
 		case stdlibPackage(pkg), strings.HasPrefix(pkg, repoPrefix), withinBudget[pkg]:
 			continue
 		}
 		t.Errorf("the root package depends on %s. Wrapping GORM costs gorm.io/gorm and its own "+
-			"closure, and nothing besides: a dialect driver belongs to the implementation subpackage "+
-			"that binds it, so that a host compiling this package carries no engine but the one it "+
-			"deploys on", pkg)
+			"closure, reading configuration costs pkg/config and its own, and nothing besides: a "+
+			"dialect driver belongs to the implementation subpackage that binds it, so that a host "+
+			"compiling this package carries no engine but the one it deploys on", pkg)
 	}
 }
 

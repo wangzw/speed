@@ -513,9 +513,9 @@ func TestStringListMayDeclareEnvAndFlag(t *testing.T) {
 }
 
 // TestMultiCharShortNameIsASchemaDefect pins the declaration half of the short
-// name rule. The parser reads -ab as one name because short names do not
-// cluster, so a two-character short name is an argument the help output would
-// advertise and the parser would always refuse.
+// name rule. The command-line syntax reads -ab as the two short names a and b
+// written together, so a two-character short name is an argument the help
+// output would advertise and the parser could never match as one.
 func TestMultiCharShortNameIsASchemaDefect(t *testing.T) {
 	type carrier struct {
 		Addr string

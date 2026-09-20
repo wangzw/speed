@@ -5,8 +5,10 @@ handler chain the configuration assembles, the redaction layer every record
 passes through, and the storage of a logger in a context.
 
 Everything lives in the root package, because the built-in formats and
-destinations use the standard library alone: there is no third-party
-dependency to isolate in a subpackage. `internal/loghost` is not part of the
+destinations use the standard library alone: this module binds no third-party
+implementation a subpackage would have to isolate. What its dependency list
+carries beyond the standard library arrived through `pkg/config`, which parses
+the command line and the config sources. `internal/loghost` is not part of the
 product — it is the child-process host this module's end-to-end cases drive.
 
 ## Where the authority is
@@ -49,6 +51,15 @@ change here must not cross, and how to run it.
   derived handler that reaches the downstream without it is the shape to
   reject. One record is judged once, ahead of the fan-out, so every
   destination and format gets the same judgement.
+
+- **This module's name is the exported constant `ModuleName`, and it is what
+  a host writes to take the module into a command** (`pkg/log/module.go`). A
+  command takes modules in by name, so the value is part of the assembly
+  surface: changing it changes every host's command tree, and spelling it as
+  a literal at an inclusion site goes on compiling after a rename while
+  leaving the module out of that command. It is not the configuration
+  namespace, which happens to read the same and is its own constant in
+  `pkg/log/config.go`.
 
 - **The attribute key a `Named` logger binds and the text a masked value
   leaves in its place are exported constants — `ModuleAttrKey` and

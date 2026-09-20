@@ -23,9 +23,6 @@ const configPath = configNamespace
 // disabled stance names it, so the reader is told which key to write.
 const endpointsItem = "endpoints"
 
-// configGroup is the section the help output lists this module's items under.
-const configGroup = "HTTP"
-
 // moduleConfig is the set of input items this module accepts. It is not
 // exported: the surface carries net/http's types and this package's own, and a
 // configuration struct on it would make a host's file shape part of the API.
@@ -113,7 +110,6 @@ func schema() config.Schema {
 		Items: map[string]config.Item{
 			endpointsItem: {
 				Origins:     config.OriginPrimary,
-				Group:       configGroup,
 				Description: "the listening endpoints, each with its own address, timeouts and body limit",
 			},
 		},

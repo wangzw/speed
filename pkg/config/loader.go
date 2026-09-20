@@ -1,9 +1,10 @@
 package config
 
 import (
-	"context"
-	"fmt"
 	"io"
+
+	"github.com/spf13/pflag"
+	"github.com/spf13/viper"
 
 	"github.com/vislake/speed/pkg/core"
 )
@@ -13,85 +14,87 @@ import (
 // host cannot redirect, so each line leads with the party that produced it.
 const diagnosticPrefix = "config: "
 
-// loader runs the load of one registry. The command line, the environment and
-// the two streams are fields rather than reads of the process, so a test
-// drives a whole load without touching global state.
+// loader carries one run's load from the first declaration to the reader.
+//
+// It is staged rather than done in one call because the command tree descends
+// one level at a time: which arguments exist on a level depends on which
+// modules that level takes in, and which level comes next is the answer the
+// previous one parsed. Collection is not staged: it happens once, over every
+// registered module, before any level is looked at.
 type loader struct {
-	reg     *core.Registry
-	args    []string
-	environ []string
-	stdout  io.Writer
+	reg *core.Registry
+	m   *manifest
+	t   *transports
+	// v is the layering tool holding the defaults, the primary source, the
+	// environment and the command line.
+	v *viper.Viper
+	// bound is the argument each item was registered as, by path. It is the
+	// command-line leg of the question which layer gave a value, and it
+	// fills up as the command tree descends.
+	bound map[string]*pflag.Flag
+	// readPrimary records that the primary source has been read, so that a
+	// second read is caught rather than merged on top of the first.
+	readPrimary bool
+	// primary is what the primary config source wrote, before the layering
+	// tool folded its keys. A container leaf is read back from here: its
+	// inner keys are the user's own data and are not in the manifest, so
+	// folding them changes the configuration rather than normalising a name.
+	primary map[string]any
 	stderr  io.Writer
 }
 
-// load produces the config data of a run and the reader over it.
+// NewLoader collects the declarations of a registry and lays the base layer.
 //
-// Collection comes before reading: without the whole manifest there is no way
-// to tell an unknown key from a misspelled one, and no way to know which
-// arguments the command line consists of. The layers then go on in order,
-// each overriding the one below it, and any of them may be absent, including
-// the primary config source.
-func (l *loader) load(ctx context.Context) (Reader, error) {
-	m, err := newManifest(l.reg)
+// Collection comes before everything and covers every registered module,
+// whichever command this run selects: without the whole manifest there is no
+// way to tell an unknown key from a misspelled one, and no way to know which
+// environment variable names are claimed.
+func NewLoader(reg *core.Registry, stderr io.Writer) (*loader, error) {
+	m, err := newManifest(reg)
 	if err != nil {
 		return nil, err
 	}
-	t, err := collectTransports(l.reg)
+	t, err := collectTransports(reg)
 	if err != nil {
 		return nil, err
 	}
-
-	flags, err := parseFlags(m, l.args)
-	if err != nil {
+	l := &loader{
+		reg:    reg,
+		m:      m,
+		t:      t,
+		v:      viper.New(),
+		bound:  make(map[string]*pflag.Flag),
+		stderr: stderr,
+	}
+	l.seedDefaults()
+	if err := l.bindEnv(); err != nil {
 		return nil, err
 	}
-	// Help is answered before the primary source is read, so the output does
-	// not depend on any external source being reachable. Rendering returns
-	// rather than exits: core is called by the host and does not call it, and
-	// leaving through the door would skip the host's own cleanup.
-	if flags.help {
-		// A write that fails does not change the outcome: help was asked for
-		// and has been answered either way. The usual failure is a pipe the
-		// other end closed early, as `--help | head` does, and that is
-		// ordinary use rather than a startup that went wrong.
-		_ = renderHelp(l.stdout, m)
-		return nil, ErrHelpRequested
-	}
-
-	environ := environMap(l.environ)
-	d := newData(m)
-	if locator := locate(m, environ, flags); locator != "" {
-		content, readErr := t.read(ctx, locator)
-		if readErr != nil {
-			return nil, readErr
-		}
-		if applyErr := d.applyPrimary(m, content); applyErr != nil {
-			return nil, applyErr
-		}
-	}
-
-	unclaimed, err := d.applyEnv(m, l.environ)
-	if err != nil {
-		return nil, err
-	}
-	l.reportUnclaimed(m, unclaimed)
-
-	if err := d.applyFlags(m, flags); err != nil {
-		return nil, err
-	}
-	return &reader{manifest: m, data: d}, nil
+	return l, nil
 }
 
-// reportUnclaimed lists the variables under the host's prefix that no input
-// item reads. They are a diagnostic and not a failure: the process environment
-// is not the host's alone, and an orchestrator injecting a variable of its own
-// must not be able to stop the process.
-func (l *loader) reportUnclaimed(m *manifest, names []string) {
-	for _, name := range names {
-		//nolint:errcheck // l.stderr is the diagnostic sink itself: a failed
-		// write has nowhere to be reported, and this line is explicitly not a
-		// failure condition -- see the doc comment above.
-		fmt.Fprintf(l.stderr, "%senvironment variable %s is set under the %q prefix and no input "+
-			"item reads it, so it is ignored\n", diagnosticPrefix, name, m.host.Prefix)
+// seedDefaults lays the base layer: every declared leaf takes the current
+// value of its field in the carrier struct. Decode reads from the layering
+// tool alone and never goes back to the prototype, which is how a caller
+// passing a zero struct still gets the declared defaults.
+func (l *loader) seedDefaults() {
+	for _, item := range l.m.items {
+		l.v.SetDefault(item.path, item.def)
 	}
 }
+
+// Manifest is the collected declarations, which is what the command tree
+// reads to decide the arguments of a level.
+func (l *loader) Manifest() *manifest { return l.m }
+
+// Host is the declared host identity, zero when no module declared one.
+func (l *loader) Host() HostIdentity { return l.m.host }
+
+// Reader hands out the values of this run.
+//
+// The command line leg of the question which layer gave a value rests on
+// BindLayer having been called for every level of the selected command path.
+// Handing out a reader before that would make the leg answer no for every
+// item, and a required item given on the command line would be reported as
+// missing.
+func (l *loader) Reader() Reader { return &reader{l: l} }

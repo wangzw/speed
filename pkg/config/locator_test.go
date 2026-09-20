@@ -89,18 +89,18 @@ func TestLocatorPrecedence(t *testing.T) {
 	m, _ := locatorSetup(t, HostIdentity{Prefix: "MYAPP", DefaultLocator: "file:///default.yaml"},
 		defaultSource(), defaultFormat())
 	env := map[string]string{"MYAPP_CONFIG": "file:///from-env.yaml"}
-	flags := &parsedFlags{locator: "file:///from-flag.yaml", hasLocator: true}
+	const fromFlag = "file:///from-flag.yaml"
 
-	if got := locate(m, nil, &parsedFlags{}); got != "file:///default.yaml" {
+	if got := locate(m, nil, "", false); got != "file:///default.yaml" {
 		t.Fatalf("with nothing else given the locator is %q, want the host's default", got)
 	}
-	if got := locate(m, env, &parsedFlags{}); got != "file:///from-env.yaml" {
+	if got := locate(m, env, "", false); got != "file:///from-env.yaml" {
 		t.Fatalf("with the environment given the locator is %q, want the variable's value", got)
 	}
-	if got := locate(m, env, flags); got != "file:///from-flag.yaml" {
+	if got := locate(m, env, fromFlag, true); got != "file:///from-flag.yaml" {
 		t.Fatalf("with all three given the locator is %q, want the command line's value", got)
 	}
-	if got := locate(m, nil, flags); got != "file:///from-flag.yaml" {
+	if got := locate(m, nil, fromFlag, true); got != "file:///from-flag.yaml" {
 		t.Fatalf("with the command line given the locator is %q, want its value", got)
 	}
 }
@@ -110,7 +110,7 @@ func TestLocatorPrecedence(t *testing.T) {
 // configuration, not by the config source.
 func TestAbsentLocatorIsLegal(t *testing.T) {
 	m, _ := locatorSetup(t, HostIdentity{Prefix: "MYAPP"}, defaultSource(), defaultFormat())
-	if got := locate(m, nil, &parsedFlags{}); got != "" {
+	if got := locate(m, nil, "", false); got != "" {
 		t.Fatalf("with nothing given the locator is %q, want none at all", got)
 	}
 }
@@ -122,7 +122,7 @@ func TestNoPrefixDisablesEnvLocator(t *testing.T) {
 	m, _ := locatorSetup(t, HostIdentity{DefaultLocator: "file:///default.yaml"},
 		defaultSource(), defaultFormat())
 	env := map[string]string{"_CONFIG": "file:///from-env.yaml", "CONFIG": "file:///from-env.yaml"}
-	if got := locate(m, env, &parsedFlags{}); got != "file:///default.yaml" {
+	if got := locate(m, env, "", false); got != "file:///default.yaml" {
 		t.Fatalf("with no prefix the locator is %q, want the host's default: no variable name "+
 			"can be derived", got)
 	}

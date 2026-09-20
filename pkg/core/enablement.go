@@ -7,10 +7,9 @@ import (
 	"strings"
 )
 
-// stance pairs a descriptor with the enablement its Prepare stated. The config
-// module enters resolution with StateEnabled: it was constructed before any
-// stance was taken, and without it no other module could read its
-// configuration.
+// stance pairs a descriptor with the enablement its Prepare stated. Only the
+// modules this drive includes take a stance, so resolution runs over the
+// participating set and the enabled set is a subset of it.
 type stance struct {
 	module Module
 	state  Enablement

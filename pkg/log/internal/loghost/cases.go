@@ -12,8 +12,8 @@ import (
 )
 
 // scenarioEnv names the scenario to run. It is read from the environment
-// rather than from a positional argument because the configuration loader
-// rejects positional arguments, and it stays outside the host's own prefix so
+// rather than from a positional argument because no command of the tree
+// accepts positional arguments, and it stays outside the host's own prefix so
 // that it is not reported as an input item nobody reads.
 const scenarioEnv = "SPEED_LOG_E2E_CASE"
 

@@ -143,11 +143,11 @@ func (h *host) finish(t *testing.T) {
 // startHost assembles a real host around one implementation and runs it until
 // the database capability has been delivered.
 //
-// Everything about it is real: the configuration loader over a JSON primary
-// source, the registry, the lifecycle driver, and the probe above. Going
-// through all of it is the point — what these cases observe is the contract a
-// dependant meets, and a callback called in isolation would not show whether
-// the stages were wired to each other at all.
+// Everything about it is real: the command tree, the configuration loader over
+// a JSON primary source, the registry, the lifecycle driver, and the probe
+// above. Going through all of it is the point — what these cases observe is
+// the contract a dependant meets, and a callback called in isolation would not
+// show whether the stages were wired to each other at all.
 //
 // A host that could not start reports the error the run returned, which is what
 // a process would print and exit on. A host that started is finished by the
@@ -164,7 +164,6 @@ func startHost(t *testing.T, spec db.Spec, body string, extra ...core.Module) (*
 	}
 
 	reg := core.New()
-	reg.Register(config.Module())
 	reg.Register(jsonformat.Module())
 	reg.Register(filesource.Module())
 	reg.Register(core.Module{
@@ -178,15 +177,23 @@ func startHost(t *testing.T, spec db.Spec, body string, extra ...core.Module) (*
 	p := newProbe()
 	reg.Register(p.module())
 
-	// The loader reads os.Args unconditionally and a test binary carries
-	// arguments of its own, so they are taken away for the call. The cases
+	// The command line is the process's, and a test binary carries arguments
+	// of its own, so they are taken away while the tree reads them. The cases
 	// here therefore do not run in parallel.
 	previous := os.Args
 	os.Args = []string{"db.test"}
 
+	// One command that takes every registered module in and drives the whole
+	// lifecycle, which is the tree a host with a single command writes. Naming
+	// the modules one by one would leave whatever a case registered in extra
+	// out of the run.
+	app := config.NewApp(reg)
+	app.Root().IncludeAll()
+	app.Root().Do(core.StageServe, nil)
+
 	ctx, cancel := context.WithCancel(context.Background())
 	done := make(chan error, 1)
-	go func() { done <- reg.Run(ctx) }()
+	go func() { done <- app.Execute(ctx) }()
 
 	h := &host{migrated: p.migrated, gate: p.gate, cancel: cancel, done: done}
 	select {

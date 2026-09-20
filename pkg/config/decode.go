@@ -4,14 +4,14 @@ import (
 	"fmt"
 	"reflect"
 	"slices"
+	"strings"
 )
 
-// reader hands each module the values it declared. It holds the manifest and
-// the config data of one run and nothing else: configuration is a snapshot
-// taken at startup, so there is nothing to refresh and nothing to guard.
+// reader hands each module the values it declared. It holds the load of one
+// run and nothing else: configuration is a snapshot taken at startup, so there
+// is nothing to refresh and nothing to guard.
 type reader struct {
-	manifest *manifest
-	data     *data
+	l *loader
 }
 
 var _ Reader = (*reader)(nil)
@@ -130,20 +130,80 @@ func (r *reader) descend(v reflect.Value, key string, chain []reflect.Type, f re
 
 // leaf writes one value into the target field and enforces the required rule
 // on it.
+//
+// Every leaf is read on its own rather than the whole path being decoded in
+// one go. The layering tool answers a request for a section with the topmost
+// layer that holds one, whole, and does not merge the layers below it: a
+// primary source giving cache.addr would knock cache.ttl back to its zero
+// value, which is the opposite of the leaf-wise overriding the design states.
 func (r *reader) leaf(path string, fv reflect.Value) error {
-	if item, declared := r.manifest.byPath[path]; declared && item.item.Required && !r.data.given(path) {
+	item, declared := r.l.m.byPath[path]
+	if declared && item.item.Required && !r.l.given(item) {
 		return fmt.Errorf("%w: %q is required and neither the primary config source, the "+
 			"environment nor the command line gave it a value. The default in the carrier struct "+
 			"does not count: a value nobody gave and a value that happens to be the zero one "+
 			"would otherwise be the same thing",
 			ErrMissingRequired, path)
 	}
-	held, present := r.data.values[path]
-	if !present || !fv.CanSet() {
+	// A leaf whose declared value stands for being unset, and that no source
+	// gave one, keeps what the caller put in the target. Its default is not in
+	// the layering tool either, so the tool would otherwise answer with the
+	// rendered default of its command-line argument.
+	if declared && !r.l.given(item) && meansUnset(reflect.ValueOf(item.def)) {
 		return nil
 	}
-	if err := assign(fv, held.value); err != nil {
-		return fmt.Errorf("%w: %q takes %s, and %w", ErrTypeMismatch, path, typeName(fv.Type()), err)
+	// A container leaf is read back from what the source wrote rather than
+	// from the layering tool, whose keys have been folded to lower case. Its
+	// inner keys are the user's own data: folding them rewrites the
+	// configuration instead of normalising a name this module owns. Only the
+	// primary source gives a container, so there is no layer above this one
+	// to consult.
+	// A value the source wrote as nothing is not a value it gave: every other
+	// leaf reaches the same conclusion by the nil below, and a container
+	// answering differently would make the meaning of an empty key depend on
+	// the type behind it.
+	if declared && item.kind == kindContainer {
+		if given, found := primaryValue(r.l.primary, path); found && given != nil {
+			if !fv.CanSet() {
+				return nil
+			}
+			return decodeInto(path, given, fv)
+		}
 	}
-	return nil
+	raw := r.l.v.Get(path)
+	if raw == nil || !fv.CanSet() {
+		return nil
+	}
+	return decodeInto(path, raw, fv)
+}
+
+// primaryValue walks the untouched primary source to one path.
+//
+// A source may write a path flat, as one key holding the dots, or nested, or
+// any mixture of the two: the whole remaining path is tried as a key of this
+// section before the first segment is descended into. Reaching the value only
+// one of those ways would leave the other reading from the folded tree, and
+// the same document would then mean two things depending on how it was
+// written.
+func primaryValue(tree map[string]any, path string) (any, bool) {
+	if tree == nil {
+		return nil, false
+	}
+	if value, present := tree[path]; present {
+		// The copy is what keeps the promise decodeInto makes: a holder that
+		// writes into a container it was given must not reach another
+		// holder, nor this tree, which every later read comes from. A value
+		// whose target type is any arrives as the node itself, so handing
+		// out the node would hand out the tree.
+		return clonedTree(value), true
+	}
+	head, rest, nested := strings.Cut(path, ".")
+	if !nested {
+		return nil, false
+	}
+	section, isSection := tree[head].(map[string]any)
+	if !isSection {
+		return nil, false
+	}
+	return primaryValue(section, rest)
 }

@@ -1,8 +1,8 @@
 // Package stdmux is the entry point module with the standard library's
 // ServeMux as its routing engine.
 //
-// It is the zero-dependency implementation of the seam the parent package
-// defines: ServeMux matches on method, path and wildcards and has explicit
+// It fills the seam the parent package defines without binding a routing
+// library: ServeMux matches on method, path and wildcards and has explicit
 // precedence rules, so a host that wants routing without a routing library
 // imports this package and gets an entry point assembled from its
 // configuration. A host that needs what ServeMux does not do — route groups, a
@@ -25,12 +25,17 @@ import (
 	speedhttp "github.com/vislake/speed/pkg/http"
 )
 
-// moduleName is this module's name in the registry: the release unit's name
+// ModuleName is this module's name in the registry: the release unit's name
 // plus this subpackage's, which is the form the design gives an implementation
 // subpackage. A diagnostic line naming it therefore says both which entry point
 // it is about and which engine is behind it, and two entry point
 // implementations in one process are two distinct registrations rather than a
 // duplicate name at init time.
+//
+// It is also the name a host writes to take this module into a command of its
+// tree, and that is why it is exported: a command takes a module in by name,
+// and a literal spread over a host's commands is one a rename leaves behind
+// with nothing to catch it.
 //
 // The configuration namespace is a different thing and stays "http". Input
 // items hang from the namespace a schema declares and the module name takes no
@@ -40,7 +45,7 @@ import (
 // seldom being where a second entry point is caught: two of them declare the
 // same input items, and the manifest config collects fails over that before
 // resolution is reached.
-const moduleName = "http.stdmux"
+const ModuleName = "http.stdmux"
 
 // init registers this module with the process registry, so a host that imports
 // this package has its entry point assembled from its configuration.
@@ -48,7 +53,7 @@ func init() { core.ProcessRegistry.Register(Module()) }
 
 // Module is this module's descriptor, exported for the registries that do not
 // inherit the process-level registrations.
-func Module() core.Module { return speedhttp.Module(moduleName, newEngine) }
+func Module() core.Module { return speedhttp.Module(ModuleName, newEngine) }
 
 // engine is this subpackage's routing engine: the standard library's
 // multiplexer, plus the attribution the parent's mounting point asks of the

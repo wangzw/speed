@@ -11,8 +11,10 @@ import (
 	"unicode/utf8"
 )
 
-// leafKind is how a leaf takes a value, which decides which origins can give
-// it one and whether it is overridden as a whole.
+// leafKind is how a leaf takes a value. It decides which origins can give it
+// one, which form it takes on the command line, whether the flat
+// comma-separated list form applies to it, and whether it is overridden as a
+// whole.
 type leafKind uint8
 
 const (
@@ -204,9 +206,16 @@ func (e *expander) leaf(key string, fv reflect.Value, ft reflect.Type) error {
 	}
 	if utf8.RuneCountInString(item.FlagShort) > 1 {
 		return fmt.Errorf("%w: module %q gives %q the command-line short name %q, and a short "+
-			"name is a single character. Short names do not cluster, so the parser reads -%s as "+
-			"one name rather than as several, and no declaration would ever match it",
+			"name is a single character. The command-line syntax reads -%s as that many names "+
+			"written together, so no declaration would ever match it as one",
 			ErrInvalidSchema, e.module, key, item.FlagShort, item.FlagShort)
+	}
+	if magicValueTypes[item.Placeholder] {
+		return fmt.Errorf("%w: module %q gives %q the placeholder %q, which is one of the type "+
+			"names the layering tool reads a command-line value by. It would convert the text "+
+			"itself under that name and swallow whatever failed to convert. Choose another "+
+			"placeholder",
+			ErrInvalidSchema, e.module, key, item.Placeholder)
 	}
 	if origins.has(OriginFlag) && item.FlagName == "" {
 		return fmt.Errorf("%w: module %q gives %q the command line as an origin but no FlagName. "+
@@ -359,6 +368,11 @@ func camelToKebab(name string) string {
 // Double underscores separate levels and single ones belong to key names,
 // which is unambiguous only because a key segment cannot contain an
 // underscore of its own.
+//
+// This is the only place a variable name is built. Each item is bound to the
+// layering tool under the finished name, so the tool neither joins a prefix
+// nor rewrites a name of its own; its rewriting works on the whole name after
+// the prefix is on, which would reach into a pinned name as well.
 func deriveEnvName(prefix, path string) string {
 	segments := strings.Split(path, ".")
 	for i, segment := range segments {
@@ -415,13 +429,15 @@ func classify(t reflect.Type) leafKind {
 	return kindScalar
 }
 
-// booleanLeaf reports whether a leaf takes its value the way a boolean does:
-// the argument may be written without one, and the word after it is never read
-// as its value. The pointer is looked through, because a scalar pointer is a
-// leaf of its own and *bool is the shape a module uses when "nobody set it"
-// has to be told from "set to false". Reading the next word for one of those
-// would swallow whatever follows the argument, and the help output would
-// advertise a value the parser refuses to take.
+// booleanLeaf reports whether a leaf takes its value the way a boolean does.
+// It decides the value an argument written without one means, which is what
+// keeps the word after the argument from being read as its value, and it
+// decides that the item shows no placeholder. The POSIX reading of the two is
+// the command-line library's; what this answers is which leaves it applies to.
+//
+// The pointer is looked through, because a scalar pointer is a leaf of its own
+// and *bool is the shape a module uses when "nobody set it" has to be told
+// from "set to false".
 func booleanLeaf(t reflect.Type) bool {
 	for t.Kind() == reflect.Pointer {
 		t = t.Elem()

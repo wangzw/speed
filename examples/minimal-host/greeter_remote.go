@@ -10,13 +10,11 @@ import (
 	"github.com/vislake/speed/pkg/log"
 )
 
-// The two greeter modules share a namespace and keep their paths disjoint,
-// which is what lets the configuration of one capability's implementations sit
-// together under greeter.
-const (
-	greeterNamespace = "greeter"
-	greeterGroup     = "Greeter"
-)
+// greeterNamespace is where both greeter modules mount their input items. The
+// two share it and keep their paths disjoint, which is what lets the
+// configuration of one capability's implementations sit together under
+// greeter.
+const greeterNamespace = "greeter"
 
 // remoteModuleName is the alternative implementation's module name.
 const remoteModuleName = "greeter.remote"
@@ -83,7 +81,6 @@ func remoteGreeterModule() core.Module {
 					Origins:     config.OriginPrimary | config.OriginEnv | config.OriginFlag,
 					FlagName:    "remote-addr",
 					Placeholder: "HOST:PORT",
-					Group:       greeterGroup,
 					Description: "the address of the greeting service",
 					Required:    true,
 				},
@@ -91,7 +88,6 @@ func remoteGreeterModule() core.Module {
 					Origins:     config.OriginPrimary | config.OriginEnv | config.OriginFlag,
 					FlagName:    "remote-token",
 					Placeholder: "TOKEN",
-					Group:       greeterGroup,
 					Description: "the credential the greeting service authenticates with",
 					Sensitive:   true,
 				},

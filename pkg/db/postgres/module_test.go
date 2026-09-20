@@ -242,7 +242,6 @@ func runAssembly(t *testing.T, dsn string) (db.Database, error) {
 	}
 
 	reg := core.New()
-	reg.Register(config.Module())
 	reg.Register(jsonformat.Module())
 	reg.Register(filesource.Module())
 	reg.Register(core.Module{
@@ -253,15 +252,21 @@ func runAssembly(t *testing.T, dsn string) (db.Database, error) {
 	d := &dependant{delivered: make(chan db.Database, 1), migrated: make(chan struct{})}
 	reg.Register(d.module())
 
-	// The loader reads os.Args unconditionally and a test binary carries
-	// arguments of its own, so they are taken away for the call. The cases
+	// The command line is the process's and a test binary carries arguments
+	// of its own, so they are taken away while the tree reads them. The cases
 	// here therefore do not run in parallel.
 	previous := os.Args
 	os.Args = []string{"postgres.test"}
 
+	// One command taking every registered module in and driving the whole
+	// lifecycle, which is the tree a host with a single command writes.
+	app := config.NewApp(reg)
+	app.Root().IncludeAll()
+	app.Root().Do(core.StageServe, nil)
+
 	ctx, cancel := context.WithCancel(context.Background())
 	done := make(chan error, 1)
-	go func() { done <- reg.Run(ctx) }()
+	go func() { done <- app.Execute(ctx) }()
 
 	var instance db.Database
 	select {

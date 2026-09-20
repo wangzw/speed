@@ -103,11 +103,6 @@ const (
 	defaultConnMaxLifetime = 30 * time.Minute
 )
 
-// configGroup is the section the help output lists these items under. Every
-// implementation uses it, so a host comparing the engines it could run on sees
-// their items side by side rather than in two sections that look unrelated.
-const configGroup = "Database"
-
 // defaults returns the carrier this implementation's items are declared with,
 // filled with the values an absent key takes.
 //
@@ -140,32 +135,26 @@ func (s Spec) schema() config.Schema {
 	items := map[string]config.Item{
 		dsnKey: {
 			Sensitive: true,
-			Group:     configGroup,
 			Description: "the locator of the database to connect to, in the form this engine's " +
 				"own driver reads; leaving it out runs the assembly without this engine",
 		},
 		maxOpenConnsKey: {
-			Group:       configGroup,
 			Description: "the largest number of connections the pool opens",
 		},
 		maxIdleConnsKey: {
-			Group:       configGroup,
 			Description: "how many idle connections the pool keeps open",
 		},
 		connMaxLifetimeKey: {
-			Group: configGroup,
 			Description: "how long one connection is reused before it is replaced, written with " +
 				"a unit, such as 30m",
 		},
 		encryptionKeyKey: {
 			Sensitive: true,
-			Group:     configGroup,
 			Description: "the root key the field encryption and blind index subkeys are derived " +
 				"from; without it every encrypted field fails on use rather than at startup",
 		},
 		encryptionRetiredKeysKey: {
 			Sensitive: true,
-			Group:     configGroup,
 			Description: "root keys that are no longer written with and still decrypt what they " +
 				"wrote, given as a list",
 		},
@@ -173,7 +162,6 @@ func (s Spec) schema() config.Schema {
 	if s.NewMigrationLock != nil {
 		mount = config.Mount{Value: &proto}
 		items[MigrationLockTimeoutKey] = config.Item{
-			Group: configGroup,
 			Description: "how long to wait for another replica to finish applying migrations " +
 				"before giving up, written with a unit, such as 5m",
 		}

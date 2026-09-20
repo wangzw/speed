@@ -22,11 +22,6 @@ change here must not cross, and how to run it.
 
 ## Boundaries
 
-- **Some boundaries below state the settled design, not what the code does
-  today.** The implementation-status table in this module's design document
-  says which. Moving the code toward them is the intended direction;
-  reasserting the shape they replaced is not.
-
 - **The root package carries the parsing tools, and nothing else
   third-party.** Command-line parsing, the command tree, layering and type
   conversion are delegated, and those imports sit here because the manifest

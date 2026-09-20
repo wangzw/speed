@@ -1,6 +1,7 @@
 // Package core carries the module mechanism: the module descriptor, the
 // registry that holds registrations and instances, the queries modules use to
-// reach each other, and the lifecycle driver that advances the fixed stages.
+// reach each other, and the lifecycle driver that advances the fixed stages
+// as far as the drive asks and then releases what it built.
 //
 // core interprets no resource and knows no capability. It has no third-party
 // dependency, because every module imports it and its dependencies would land
@@ -25,10 +26,10 @@ type Token = any
 // The named fields are limited to what the registry itself interprets. Every
 // other piece of outward metadata travels as a resource.
 type Module struct {
-	// Name identifies the module and is unique within the process. The name
-	// "config" is the one name the registry recognises: that module is
-	// constructed first, during Prepare, and is an implicit dependency of
-	// every other module.
+	// Name identifies the module and is unique within the process. It is
+	// the module's identity: a command takes modules in by name, so the
+	// package that registers a module exports its name as a constant for
+	// the host to write down. The registry recognises no name of its own.
 	Name string
 	// Requires declares construction-time dependencies on capabilities. The
 	// graph they form must be acyclic.
@@ -41,9 +42,10 @@ type Module struct {
 	Resources []any
 
 	// Prepare states whether the module is enabled for this run, judging by
-	// its own configuration. The stage runs for every registered module
-	// except config, and guarantees no order within itself: only the config
-	// instance exists at this point.
+	// its own configuration. The stage runs for the modules this drive
+	// includes and guarantees no order within itself: no module's product
+	// exists at this point, and the only thing to take up is what the host
+	// supplied before the drive began.
 	Prepare func(ctx context.Context, reg *Registry) (Enablement, error)
 	// New constructs the module's product. It runs in dependency order. A
 	// module without this callback takes part in the later stages with a nil

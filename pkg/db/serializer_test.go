@@ -320,7 +320,6 @@ func startedRun(t *testing.T, body string, modules ...core.Module) error {
 	locator := writeConfig(t, body)
 
 	reg := core.New()
-	reg.Register(config.Module())
 	reg.Register(jsonformat.Module())
 	reg.Register(filesource.Module())
 	reg.Register(core.Module{
@@ -344,16 +343,22 @@ func startedRun(t *testing.T, body string, modules ...core.Module) error {
 		},
 	})
 
-	// The loader reads os.Args unconditionally and a test binary carries
-	// arguments of its own, so they are taken away for the call.
+	// The command line is the process's and a test binary carries arguments
+	// of its own, so they are taken away while the tree reads them.
 	previous := os.Args
 	os.Args = []string{"db.test"}
 	defer func() { os.Args = previous }()
 
+	// One command taking every registered module in, which is the tree the
+	// modules a case handed in have to be assembled by.
+	app := config.NewApp(reg)
+	app.Root().IncludeAll()
+	app.Root().Do(core.StageServe, nil)
+
 	ctx, cancel := context.WithCancel(t.Context())
 	defer cancel()
 	done := make(chan error, 1)
-	go func() { done <- reg.Run(ctx) }()
+	go func() { done <- app.Execute(ctx) }()
 	select {
 	case err := <-done:
 		return err

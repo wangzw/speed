@@ -47,13 +47,21 @@ func probeModule() core.Module {
 		New:       probeNew,
 		Migrate:   probeMigrate,
 		// The scenario is the whole of this host's work, so ending it ends the
-		// run: Run shuts every module down in order, releases the connection
-		// pool with the module that holds it, and returns nil.
+		// run: the drive shuts every module down in order, releases the
+		// connection pool with the module that holds it, and returns nil.
 		//
 		// Serve must not block, and this does not: cancelling is what this
 		// module has left to do, and the driver advances through the stage
 		// while the shutdown it starts is on its way.
+		//
+		// Reaching this stage at all is what one scenario asserts the absence
+		// of, and the marker is written for that scenario alone: a run under
+		// the migrate command stops at the migration stage, and a run that
+		// went further leaves with the same status and the same record table.
 		Serve: func(context.Context, *core.Registry, any) error {
+			if scenario() == caseMigrateSubcommand {
+				say(servedMarker)
+			}
 			finish()
 			return nil
 		},

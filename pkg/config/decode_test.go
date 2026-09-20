@@ -6,6 +6,8 @@ import (
 	"strings"
 	"testing"
 	"time"
+
+	"github.com/vislake/speed/pkg/core"
 )
 
 type decodeOptions struct {
@@ -13,10 +15,13 @@ type decodeOptions struct {
 	TTL  time.Duration
 }
 
-func newReader(t *testing.T, m *manifest) (*reader, *data) {
+// readerOver builds the loader of a run and the reader over it. Nothing is
+// given to any layer, so what a case adds afterwards is the whole of what the
+// defaults are covered by.
+func readerOver(t *testing.T, modules ...core.Module) (*reader, *loader) {
 	t.Helper()
-	d := newData(m)
-	return &reader{manifest: m, data: d}, d
+	l := loadOver(t, modules...)
+	return l.Reader().(*reader), l
 }
 
 // TestDecodeYieldsDefaultsIntoZeroStruct pins that the defaults travel through
@@ -24,8 +29,7 @@ func newReader(t *testing.T, m *manifest) (*reader, *data) {
 // what the module declared.
 func TestDecodeYieldsDefaultsIntoZeroStruct(t *testing.T) {
 	defaults := decodeOptions{Addr: "localhost:6379", TTL: 5 * time.Minute}
-	m := collect(t, declaring("cache", Schema{Namespace: "cache", Mounts: []Mount{{Value: &defaults}}}))
-	r, _ := newReader(t, m)
+	r, _ := readerOver(t, declaring("cache", Schema{Namespace: "cache", Mounts: []Mount{{Value: &defaults}}}))
 
 	var opts decodeOptions
 	if err := r.Decode("cache", &opts); err != nil {
@@ -41,8 +45,7 @@ func TestDecodeYieldsDefaultsIntoZeroStruct(t *testing.T) {
 // decodes, or two registries sharing one prototype would see each other.
 func TestDecodeDoesNotConsultMountPrototype(t *testing.T) {
 	defaults := decodeOptions{Addr: "localhost:6379"}
-	m := collect(t, declaring("cache", Schema{Namespace: "cache", Mounts: []Mount{{Value: &defaults}}}))
-	r, _ := newReader(t, m)
+	r, _ := readerOver(t, declaring("cache", Schema{Namespace: "cache", Mounts: []Mount{{Value: &defaults}}}))
 
 	defaults.Addr = "changed-after-collection"
 	var opts decodeOptions
@@ -62,14 +65,12 @@ func TestPrototypeSharedAcrossRegistriesIsIsolated(t *testing.T) {
 	defaults := decodeOptions{Addr: "localhost:6379"}
 	declaration := declaring("cache", Schema{Namespace: "cache", Mounts: []Mount{{Value: &defaults}}})
 
-	first := collect(t, declaration)
-	firstReader, firstData := newReader(t, first)
-	if err := firstData.applyPrimary(first, map[string]any{"cache": map[string]any{"addr": "one:1"}}); err != nil {
+	firstReader, first := readerOver(t, declaration)
+	if err := givePrimary(t, first, map[string]any{"cache": map[string]any{"addr": "one:1"}}); err != nil {
 		t.Fatalf("applying the primary source failed: %v", err)
 	}
 
-	second := collect(t, declaration)
-	secondReader, _ := newReader(t, second)
+	secondReader, _ := readerOver(t, declaration)
 
 	var a, b decodeOptions
 	if err := firstReader.Decode("cache", &a); err != nil {
@@ -92,8 +93,7 @@ func TestPrototypeSharedAcrossRegistriesIsIsolated(t *testing.T) {
 // it, so this only happens when a caller decodes something it never declared.
 func TestDecodeUnknownPathLeavesTargetUntouched(t *testing.T) {
 	defaults := decodeOptions{Addr: "localhost:6379"}
-	m := collect(t, declaring("cache", Schema{Namespace: "cache", Mounts: []Mount{{Value: &defaults}}}))
-	r, _ := newReader(t, m)
+	r, _ := readerOver(t, declaring("cache", Schema{Namespace: "cache", Mounts: []Mount{{Value: &defaults}}}))
 
 	opts := decodeOptions{Addr: "put here by the caller", TTL: time.Second}
 	if err := r.Decode("nowhere", &opts); err != nil {
@@ -110,10 +110,10 @@ type requiredOptions struct {
 }
 
 // requiredSetup declares one required item and one ordinary one.
-func requiredSetup(t *testing.T) *manifest {
+func requiredSetup(t *testing.T) (*reader, *loader) {
 	t.Helper()
 	defaults := requiredOptions{Addr: "unset-but-not-empty"}
-	return collect(t,
+	return readerOver(t,
 		identifying("host", HostIdentity{Prefix: "MYAPP"}),
 		declaring("remote", Schema{
 			Namespace: "remote",
@@ -126,8 +126,7 @@ func requiredSetup(t *testing.T) *manifest {
 }
 
 func TestRequiredMissingAcrossThreeLayers(t *testing.T) {
-	m := requiredSetup(t)
-	r, _ := newReader(t, m)
+	r, _ := requiredSetup(t)
 
 	var opts requiredOptions
 	err := r.Decode("remote", &opts)
@@ -144,9 +143,8 @@ func TestRequiredMissingAcrossThreeLayers(t *testing.T) {
 // a required item and one that took the zero value the same thing. The
 // declared default here is deliberately not empty.
 func TestDefaultLayerDoesNotSatisfyRequired(t *testing.T) {
-	m := requiredSetup(t)
-	r, d := newReader(t, m)
-	if got := d.values["remote.addr"].value; got != "unset-but-not-empty" {
+	r, l := requiredSetup(t)
+	if got := l.v.Get("remote.addr"); got != "unset-but-not-empty" {
 		t.Fatalf("the base layer holds %#v, and this case needs a non-zero default", got)
 	}
 	var opts requiredOptions
@@ -156,31 +154,24 @@ func TestDefaultLayerDoesNotSatisfyRequired(t *testing.T) {
 }
 
 func TestRequiredSatisfiedByOneLayerAlone(t *testing.T) {
-	for name, give := range map[string]func(*testing.T, *manifest, *data){
-		"the primary source": func(t *testing.T, m *manifest, d *data) {
-			if err := d.applyPrimary(m, map[string]any{"remote": map[string]any{"addr": "a:1"}}); err != nil {
+	for name, give := range map[string]func(*testing.T, *loader){
+		"the primary source": func(t *testing.T, l *loader) {
+			if err := givePrimary(t, l, map[string]any{"remote": map[string]any{"addr": "a:1"}}); err != nil {
 				t.Fatalf("applying the primary source failed: %v", err)
 			}
 		},
-		"the environment": func(t *testing.T, m *manifest, d *data) {
-			if _, err := d.applyEnv(m, []string{"MYAPP_REMOTE__ADDR=a:1"}); err != nil {
-				t.Fatalf("applying the environment failed: %v", err)
-			}
+		"the environment": func(t *testing.T, l *loader) {
+			t.Setenv("MYAPP_REMOTE__ADDR", "a:1")
 		},
-		"the command line": func(t *testing.T, m *manifest, d *data) {
-			p, err := parseFlags(m, []string{"--remote-addr=a:1"})
-			if err != nil {
+		"the command line": func(t *testing.T, l *loader) {
+			if err := giveFlags(t, l, []string{"remote"}, "--remote-addr=a:1"); err != nil {
 				t.Fatalf("parsing the command line failed: %v", err)
-			}
-			if err := d.applyFlags(m, p); err != nil {
-				t.Fatalf("applying the command line failed: %v", err)
 			}
 		},
 	} {
 		t.Run(name, func(t *testing.T) {
-			m := requiredSetup(t)
-			r, d := newReader(t, m)
-			give(t, m, d)
+			r, l := requiredSetup(t)
+			give(t, l)
 
 			var opts requiredOptions
 			if err := r.Decode("remote", &opts); err != nil {
@@ -199,7 +190,7 @@ func TestRequiredSatisfiedByOneLayerAlone(t *testing.T) {
 // stance that lets a default implementation stand down.
 func TestRequiredNotCheckedGlobally(t *testing.T) {
 	otherDefaults := requiredOptions{}
-	m := collect(t,
+	r, _ := readerOver(t,
 		identifying("host", HostIdentity{Prefix: "MYAPP"}),
 		declaring("remote", Schema{
 			Namespace: "remote",
@@ -208,7 +199,6 @@ func TestRequiredNotCheckedGlobally(t *testing.T) {
 		}),
 		declaring("local", Schema{Namespace: "local", Mounts: []Mount{{Value: &otherDefaults}}}),
 	)
-	r, _ := newReader(t, m)
 
 	var opts requiredOptions
 	if err := r.Decode("local", &opts); err != nil {
@@ -228,11 +218,10 @@ type portOnly struct {
 // the target rather than over the manifest, which is what lets two modules
 // share a namespace as long as their paths stay disjoint.
 func TestDecodeIgnoresOtherModulesKeysInSameNamespace(t *testing.T) {
-	m := collect(t,
+	r, _ := readerOver(t,
 		declaring("first", Schema{Namespace: "shared", Mounts: []Mount{{Value: &addrOnly{Addr: "a:1"}}}}),
 		declaring("second", Schema{Namespace: "shared", Mounts: []Mount{{Value: &portOnly{Port: 9}}}}),
 	)
-	r, _ := newReader(t, m)
 
 	var mine addrOnly
 	if err := r.Decode("shared", &mine); err != nil {
@@ -262,14 +251,11 @@ func TestDecodeWritesEveryLayer(t *testing.T) {
 		Redis nested
 	}
 	defaults := carrier{Addr: "localhost:6379", Redis: nested{PoolSize: 10}}
-	m := collect(t,
+	t.Setenv("MYAPP_CACHE__REDIS__POOL_SIZE", "42")
+	r, _ := readerOver(t,
 		identifying("host", HostIdentity{Prefix: "MYAPP"}),
 		declaring("cache", Schema{Namespace: "cache", Mounts: []Mount{{Value: &defaults}}}),
 	)
-	r, d := newReader(t, m)
-	if _, err := d.applyEnv(m, []string{"MYAPP_CACHE__REDIS__POOL_SIZE=42"}); err != nil {
-		t.Fatalf("applying the environment failed: %v", err)
-	}
 
 	var opts carrier
 	if err := r.Decode("cache", &opts); err != nil {
@@ -288,8 +274,7 @@ func TestDecodeWritesEveryLayer(t *testing.T) {
 // not in anyone's configuration, so there is no run in which the same call
 // site works; a host handed an error here could only re-raise it.
 func TestDecodeNeedsAPointerToStruct(t *testing.T) {
-	m := collect(t, declaring("cache", Schema{Namespace: "cache", Mounts: []Mount{{Value: &decodeOptions{}}}}))
-	r, _ := newReader(t, m)
+	r, _ := readerOver(t, declaring("cache", Schema{Namespace: "cache", Mounts: []Mount{{Value: &decodeOptions{}}}}))
 
 	for name, c := range map[string]struct {
 		target any
@@ -333,8 +318,7 @@ type cyclicTarget struct {
 // assembled at the call site, so a cycle in it is that site's programming
 // error rather than anything the host could act on.
 func TestDecodeRefusesATargetThatCyclesBack(t *testing.T) {
-	m := collect(t, declaring("cache", Schema{Namespace: "cache", Mounts: []Mount{{Value: &decodeOptions{}}}}))
-	r, _ := newReader(t, m)
+	r, _ := readerOver(t, declaring("cache", Schema{Namespace: "cache", Mounts: []Mount{{Value: &decodeOptions{}}}}))
 
 	var target cyclicTarget
 	target.Next = &target
@@ -363,9 +347,8 @@ func TestDecodeReadsAnInlinedEmbeddedField(t *testing.T) {
 		Name string
 	}
 	defaults := inlineTarget{}
-	m := collect(t, declaring("cache", Schema{Namespace: "cache", Mounts: []Mount{{Value: &defaults}}}))
-	r, d := newReader(t, m)
-	if err := d.applyPrimary(m, map[string]any{"cache": map[string]any{"addr": "given:1"}}); err != nil {
+	r, l := readerOver(t, declaring("cache", Schema{Namespace: "cache", Mounts: []Mount{{Value: &defaults}}}))
+	if err := givePrimary(t, l, map[string]any{"cache": map[string]any{"addr": "given:1"}}); err != nil {
 		t.Fatalf("applying the primary source failed: %v", err)
 	}
 
@@ -375,5 +358,207 @@ func TestDecodeReadsAnInlinedEmbeddedField(t *testing.T) {
 	}
 	if opts.Addr != "given:1" {
 		t.Fatalf("the inlined field decoded to %q, want the value the primary source gave", opts.Addr)
+	}
+}
+
+// TestContainerKeepsTheKeysTheSourceWrote pins that the inner keys of a
+// container leaf reach the module as the source wrote them. They are the
+// user's own data and are not in the manifest, so folding them to lower case
+// rewrites the configuration rather than normalising a name this module owns:
+// a label written Zone would arrive as zone, and the module that reads it back
+// under the name it published would find nothing there.
+func TestContainerKeepsTheKeysTheSourceWrote(t *testing.T) {
+	type holder struct {
+		Labels map[string]string `config:"labels"`
+	}
+	var defaults holder
+	l := loadOver(t,
+		declaring("store", Schema{
+			Namespace: "store",
+			Mounts:    []Mount{{Value: &defaults}},
+		}),
+		providing("transport",
+			fakeSource{scheme: "test", data: []byte("ignored"), format: "fake"},
+			fakeFormat{name: "fake", content: map[string]any{
+				"store": map[string]any{"labels": map[string]any{
+					"Zone": "EU-West", "TierName": "Cold", "lower": "plain",
+				}},
+			}}))
+	if err := l.ReadPrimary(t.Context(), "test:///anywhere"); err != nil {
+		t.Fatalf("reading the primary source failed: %v", err)
+	}
+	var got holder
+	if err := l.Reader().Decode("store", &got); err != nil {
+		t.Fatalf("decoding failed: %v", err)
+	}
+	for _, key := range []string{"Zone", "TierName", "lower"} {
+		if _, present := got.Labels[key]; !present {
+			t.Fatalf("the container reads back as %v, and the source wrote %q", got.Labels, key)
+		}
+	}
+}
+
+// TestContainerElementTakesItsJSONTagAsWritten pins the leg of the field-name
+// rule that only a container element exercises: a field naming itself with a
+// json tag is written in the source under that tag. The rule is one rule for
+// the whole tree, so a camel-cased tag has to reach the field it names.
+//
+// This is the same defect as the keys above wearing a second face. Folding the
+// source did not merely rename the key here: the element field kept its zero
+// value and nothing reported it, so a setting written in the file had no
+// effect and no diagnostic said so.
+func TestContainerElementTakesItsJSONTagAsWritten(t *testing.T) {
+	type tier struct {
+		TierName string `json:"tierName"`
+		MaxSize  int    `json:"maxSize"`
+	}
+	type holder struct {
+		Tiers []tier `config:"tiers"`
+	}
+	var defaults holder
+	l := loadOver(t,
+		declaring("storage", Schema{
+			Namespace: "storage",
+			Mounts:    []Mount{{Value: &defaults}},
+		}),
+		providing("transport",
+			fakeSource{scheme: "test", data: []byte("ignored"), format: "fake"},
+			fakeFormat{name: "fake", content: map[string]any{
+				"storage": map[string]any{"tiers": []any{
+					map[string]any{"tierName": "hot", "maxSize": 10},
+				}},
+			}}))
+	if err := l.ReadPrimary(t.Context(), "test:///anywhere"); err != nil {
+		t.Fatalf("reading the primary source failed: %v", err)
+	}
+	var got holder
+	if err := l.Reader().Decode("storage", &got); err != nil {
+		t.Fatalf("decoding failed: %v", err)
+	}
+	if len(got.Tiers) != 1 {
+		t.Fatalf("the source gave one element and the target holds %d: %v", len(got.Tiers), got.Tiers)
+	}
+	if got.Tiers[0].TierName != "hot" || got.Tiers[0].MaxSize != 10 {
+		t.Fatalf("the element reads back as %+v, and the source wrote what its json tags name",
+			got.Tiers[0])
+	}
+}
+
+// TestSourceWritingNothingLeavesEveryLeafItsDefault pins that a key the source
+// wrote with no value behind it is not a value it gave, whatever kind of leaf
+// stands there. Reading a container from what the source wrote rather than
+// from the layering tool puts the two on different paths, and the meaning of
+// an empty key must not come to depend on the type behind it.
+func TestSourceWritingNothingLeavesEveryLeafItsDefault(t *testing.T) {
+	type holder struct {
+		Labels map[string]string `config:"labels"`
+		Hosts  []string          `config:"hosts"`
+		Addr   string            `config:"addr"`
+	}
+	defaults := holder{
+		Labels: map[string]string{"DefaultKey": "dv"},
+		Hosts:  []string{"d1"},
+		Addr:   "dflt",
+	}
+	l := loadOver(t,
+		declaring("storage", Schema{
+			Namespace: "storage",
+			Mounts:    []Mount{{Value: &defaults}},
+		}),
+		providing("transport",
+			fakeSource{scheme: "test", data: []byte("ignored"), format: "fake"},
+			fakeFormat{name: "fake", content: map[string]any{
+				"storage": map[string]any{"labels": nil, "hosts": nil, "addr": nil},
+			}}))
+	if err := l.ReadPrimary(t.Context(), "test:///anywhere"); err != nil {
+		t.Fatalf("reading the primary source failed: %v", err)
+	}
+	var got holder
+	if err := l.Reader().Decode("storage", &got); err != nil {
+		t.Fatalf("decoding failed: %v", err)
+	}
+	if len(got.Labels) != 1 || got.Hosts[0] != "d1" || got.Addr != "dflt" {
+		t.Fatalf("the three leaves read back as labels=%v hosts=%v addr=%q, and a key written "+
+			"with nothing behind it leaves every one of them its declared default",
+			got.Labels, got.Hosts, got.Addr)
+	}
+}
+
+// TestContainerKeepsItsKeysWhenThePathIsWrittenFlat pins that a source writing
+// a path as one dotted key reaches the same value as one writing it nested.
+// Both spellings are accepted, so reaching the untouched tree only by the
+// nested one would let the same document mean two things.
+func TestContainerKeepsItsKeysWhenThePathIsWrittenFlat(t *testing.T) {
+	type holder struct {
+		Labels map[string]string `config:"labels"`
+	}
+	var defaults holder
+	l := loadOver(t,
+		declaring("storage", Schema{
+			Namespace: "storage",
+			Mounts:    []Mount{{Value: &defaults}},
+		}),
+		providing("transport",
+			fakeSource{scheme: "test", data: []byte("ignored"), format: "fake"},
+			fakeFormat{name: "fake", content: map[string]any{
+				"storage.labels": map[string]any{"Zone": "EU-West"},
+			}}))
+	if err := l.ReadPrimary(t.Context(), "test:///anywhere"); err != nil {
+		t.Fatalf("reading the primary source failed: %v", err)
+	}
+	var got holder
+	if err := l.Reader().Decode("storage", &got); err != nil {
+		t.Fatalf("decoding failed: %v", err)
+	}
+	if _, present := got.Labels["Zone"]; !present {
+		t.Fatalf("the flat spelling reads back as %v, and the source wrote %q", got.Labels, "Zone")
+	}
+}
+
+// TestOneHolderCannotWriteIntoAnother pins the promise decodeInto states: a
+// container arrives as a copy. A field whose target type is any receives the
+// node of the parsed source itself unless it is copied, so a holder writing
+// into what it was handed would reach both the next holder and the tree every
+// later read comes from.
+func TestOneHolderCannotWriteIntoAnother(t *testing.T) {
+	type holder struct {
+		Anys map[string]any `config:"anys"`
+	}
+	var defaults holder
+	l := loadOver(t,
+		declaring("storage", Schema{
+			Namespace: "storage",
+			Mounts:    []Mount{{Value: &defaults}},
+		}),
+		providing("transport",
+			fakeSource{scheme: "test", data: []byte("ignored"), format: "fake"},
+			fakeFormat{name: "fake", content: map[string]any{
+				"storage": map[string]any{"anys": map[string]any{
+					"outer": map[string]any{"inner": "original"},
+				}},
+			}}))
+	if err := l.ReadPrimary(t.Context(), "test:///anywhere"); err != nil {
+		t.Fatalf("reading the primary source failed: %v", err)
+	}
+	reader := l.Reader()
+	var first, second holder
+	if err := reader.Decode("storage", &first); err != nil {
+		t.Fatalf("the first decode failed: %v", err)
+	}
+	inner, isSection := first.Anys["outer"].(map[string]any)
+	if !isSection {
+		t.Fatalf("the first holder received %#v, want a section under outer", first.Anys["outer"])
+	}
+	inner["inner"] = "written by the first holder"
+
+	if err := reader.Decode("storage", &second); err != nil {
+		t.Fatalf("the second decode failed: %v", err)
+	}
+	again, isSection := second.Anys["outer"].(map[string]any)
+	if !isSection {
+		t.Fatalf("the second holder received %#v, want a section under outer", second.Anys["outer"])
+	}
+	if again["inner"] != "original" {
+		t.Fatalf("the second holder reads %q, and what the first one wrote is its own", again["inner"])
 	}
 }

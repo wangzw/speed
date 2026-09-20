@@ -61,10 +61,10 @@ type anExampleHost struct {
 
 // startExample assembles a host and runs it until the entry point has served.
 //
-// The assembly is the one a host with a config file builds: the configuration
-// module with the JSON format and the file source, the host identity pointing
-// at the document above, a logger writing to standard output, and the standard
-// library entry point.
+// The assembly is the one a host with a config file builds: the JSON format
+// and the file source, the host identity pointing at the document above, a
+// logger writing to standard output, and the standard library entry point, all
+// taken into a command tree whose single command drives the whole lifecycle.
 //
 // registrant runs in the Init stage of a module that declares its dependency
 // on Router, so the assembly orders it after the entry point: the registration
@@ -86,15 +86,16 @@ func startExample(registrant func(*core.Registry) error, extra ...core.Module) (
 		return nil, err
 	}
 
-	// The configuration module reads the command line unconditionally, and the
-	// arguments a test binary is started with are not this program's.
+	// A command tree takes its arguments and its program name from the
+	// process, and the ones a test binary is started with are not this
+	// program's. They stand in while the tree is built, which is when it
+	// takes them.
 	args := os.Args
 	os.Args = []string{"example"}
 	defer func() { os.Args = args }()
 
 	served := make(chan struct{})
 	reg := core.New()
-	reg.Register(config.Module())
 	reg.Register(jsonformat.Module())
 	reg.Register(filesource.Module())
 	reg.Register(core.Module{
@@ -118,9 +119,17 @@ func startExample(registrant func(*core.Registry) error, extra ...core.Module) (
 		},
 	})
 
+	// The host's command tree: one command, every available module in it,
+	// driven to the end of the lifecycle. The reader every module reads its
+	// configuration through comes from here, which is why nothing above
+	// registers a module to deliver it.
+	app := config.NewApp(reg)
+	app.Root().IncludeAll()
+	app.Root().Do(core.StageServe, nil)
+
 	ctx, cancel := context.WithCancel(context.Background())
 	result := make(chan error, 1)
-	go func() { result <- reg.Run(ctx) }()
+	go func() { result <- app.Execute(ctx) }()
 
 	select {
 	case <-served:

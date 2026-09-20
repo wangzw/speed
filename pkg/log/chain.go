@@ -34,8 +34,9 @@ type chain struct {
 //
 // It takes a resolved Config rather than a config.Reader. Reading the
 // configuration belongs to the descriptor's callbacks, and keeping it out of
-// here is also what lets the assembly be exercised at all: the real reader is
-// built by config's own module, which reads os.Args unconditionally.
+// here is also what lets the assembly be exercised at all: the real reader
+// comes from a run of the command tree, which reads the process's own
+// arguments.
 //
 // Redaction sits above the fan-out, so a record is judged once and every
 // destination gets the same judgement. The level sits above redaction, so a

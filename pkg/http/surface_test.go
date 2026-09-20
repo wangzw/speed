@@ -183,9 +183,9 @@ func exportedMembers(s *ast.TypeSpec) []string {
 
 // TestStandardServeMuxSatisfiesEngine pins the seam the package documentation
 // claims: the standard library's multiplexer fits Engine as it stands, which
-// is what lets the zero-dependency implementation subpackage exist at all. A
-// method added to Engine that ServeMux does not have would break that claim
-// silently until the subpackage is compiled.
+// is what lets an implementation subpackage that binds no routing library
+// exist at all. A method added to Engine that ServeMux does not have would
+// break that claim silently until the subpackage is compiled.
 func TestStandardServeMuxSatisfiesEngine(t *testing.T) {
 	var engine Engine = nethttp.NewServeMux()
 	engine.Handle("GET /things", nethttp.NotFoundHandler())

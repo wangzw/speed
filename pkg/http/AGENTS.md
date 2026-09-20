@@ -22,11 +22,16 @@ here must not cross, and how to run it.
 
 ## Boundaries
 
-- **The root package has no third-party dependency, and its surface carries no
-  third-party type.** Every module that registers a route imports this package,
-  so a dependency added here lands in the dependency list of all of them. A
-  routing library is bound by an implementation subpackage and its types stop
-  there; `deps_test.go` fails on the first one that gets through.
+- **The root package adds no third-party dependency of its own, and its
+  surface carries no third-party type.** Every module that registers a route
+  imports this package, so a dependency added here lands in the dependency list
+  of all of them. What already reaches them from here is what reading
+  configuration costs: the input items are declared to `pkg/config` and the
+  endpoints are read through its reader, so config's parsing libraries are in
+  the closure (ADR-config-parsing-2026-09-20). A routing library is bound by an
+  implementation subpackage and its types stop there; `deps_test.go` holds the
+  budget — the standard library, this repository's modules and config's own
+  closure — and fails on the first package outside it.
 - **The engine seam is `Engine`, and it is not for registrants.** A change that
   puts the engine's type, or any other plumbing type, on the surface is the
   shape to reject: a registrant goes through `Endpoint`, and the request

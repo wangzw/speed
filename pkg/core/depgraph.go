@@ -7,21 +7,83 @@ import (
 	"strings"
 )
 
+// Closure expands a list of module names into the set a command has to
+// include: the names given, plus the modules that provide what those require
+// at construction time, transitively.
+//
+// Including a module means including what it takes to build it, and the
+// expansion lives here rather than in the caller because the matching rule
+// does: a requirement meets a delivery when their element types are the same,
+// never by assignability, exactly as Resolve matches. The command tree calls
+// this while it is assembled and hands Drive the literal result, so the drive
+// expands nothing.
+//
+// A requirement a supplied product satisfies adds nothing, since no module
+// holds it. One nothing delivers adds nothing either, Optional or not:
+// dependency resolution reports that during the drive, where the failure can
+// name the module that required it and say what is missing. A name no module
+// registered is ErrUnknownParticipant.
+//
+// The result is deduplicated and in name order.
+func (r *Registry) Closure(names []string) ([]string, error) {
+	r.mu.RLock()
+	defer r.mu.RUnlock()
+
+	providers := make(map[reflect.Type][]string)
+	for _, name := range r.sortedNamesLocked() {
+		for _, ct := range declaredCapabilities(r.mods[name].module) {
+			providers[ct] = append(providers[ct], name)
+		}
+	}
+
+	included := make(map[string]bool, len(names))
+	pending := slices.Clone(names)
+	for len(pending) > 0 {
+		name := pending[0]
+		pending = pending[1:]
+		if included[name] {
+			continue
+		}
+		reg, ok := r.mods[name]
+		if !ok {
+			return nil, unknownParticipantError(name)
+		}
+		included[name] = true
+		for i, req := range reg.module.Requires {
+			// An optional requirement does not pull its providers in. Its
+			// meaning is that going without it is a legal configuration, and
+			// a provider the host never listed, added here on the module's
+			// behalf, would leave it no way to be absent.
+			if req.Optional {
+				continue
+			}
+			ct := capabilityType(req.Token, fmt.Sprintf("module %q Requires[%d]", name, i))
+			pending = append(pending, providers[ct]...)
+		}
+	}
+	return sortedKeys(included), nil
+}
+
 // planConstruction resolves Requires over the enabled set and returns the
 // order construction follows.
 //
-// Resolution happens before any business module is constructed: a required
-// capability without a provider is ErrMissingProvider, a cycle is
-// ErrDependencyCycle, and at that point the only constructed instance is the
-// config module, which is closed by the rollback rule.
+// Resolution happens before any module is constructed: a required capability
+// without a provider is ErrMissingProvider and a cycle is ErrDependencyCycle,
+// and nothing has been built yet for either of them to roll back.
+//
+// A requirement a supplied product satisfies is met without an edge. Supplied
+// products exist before the first construction, so there is nothing to order
+// against, and an edge would point at a node the graph does not have.
 //
 // Exclusive conflicts are not re-checked here; resolution settled them. An
 // Optional requirement whose provider is absent is skipped, while a present
 // one still takes part in the ordering.
 //
-// sites maps a module name to the package that registered it, and a name
-// missing from it loses only that half of the report.
-func planConstruction(enabled, all []Module, final map[string]Enablement, sites map[string]string) ([]string, error) {
+// participants is what this command included and outside what it left
+// registered but out, which is one of the ways a capability ends up without a
+// provider. sites maps a module name to the package that registered it, and a
+// name missing from it loses only that half of the report.
+func planConstruction(enabled, participants, outside []Module, final map[string]Enablement, sites map[string]string, supplied map[reflect.Type]bool) ([]string, error) {
 	nodes := make([]string, 0, len(enabled))
 	for _, m := range enabled {
 		nodes = append(nodes, m.Name)
@@ -50,26 +112,20 @@ func planConstruction(enabled, all []Module, final map[string]Enablement, sites 
 		indegree[to]++
 	}
 
-	// The config module is an implicit dependency of every other module, so
-	// it is ordered first without anyone declaring it.
-	if slices.Contains(nodes, configModuleName) {
-		for _, name := range nodes {
-			if name != configModuleName {
-				addEdge(configModuleName, name)
-			}
-		}
-	}
-
 	for _, name := range nodes {
 		m := moduleByName(enabled, name)
 		for i, req := range m.Requires {
 			ct := capabilityType(req.Token, fmt.Sprintf("module %q Requires[%d]", name, i))
+			if supplied[ct] {
+				continue
+			}
 			ps := providers[ct]
 			if len(ps) == 0 {
 				if req.Optional {
 					continue
 				}
-				return nil, missingProviderError(ct, declarersOf(all, ct), final, name, sites[name])
+				return nil, missingProviderError(ct, declarersOf(participants, ct),
+					declarersOf(outside, ct), final, name, sites[name])
 			}
 			for _, p := range ps {
 				addEdge(p, name)
@@ -165,15 +221,21 @@ func cycleError(nodes, ordered []string, edges map[string]map[string]bool) error
 		ErrDependencyCycle, strings.Join(quoteAll(cycle), " -> "))
 }
 
-// missingProviderError tells the three causes apart, because the fixing action
-// differs: nothing delivers the capability, a provider is disabled, or a
-// provider exists but is constructed after the caller.
+// missingProviderError tells the four causes apart, because the fixing action
+// differs: nothing delivers the capability, a provider is disabled, a provider
+// exists but is constructed after the caller, or a provider is registered and
+// this command did not include it.
+//
+// declarers are the modules this command included, notIncluded the ones it
+// left out. Reporting the second group as any of the other three gives an
+// instruction that does nothing: the module is not disabled, and it is not
+// ordered late — it is not in this command at all.
 //
 // requiredBy is the module whose Requires went unmet, and site the package that
 // registered it. Both are empty when the registry does not know them, which is
 // the Resolve path: a lookup does not say who is making it.
-func missingProviderError(ct reflect.Type, declarers []string, final map[string]Enablement, requiredBy, site string) error {
-	if len(declarers) == 0 {
+func missingProviderError(ct reflect.Type, declarers, notIncluded []string, final map[string]Enablement, requiredBy, site string) error {
+	if len(declarers) == 0 && len(notIncluded) == 0 {
 		return errorText{
 			wrapped: ErrMissingProvider,
 			text: fmt.Sprintf("%s: no module delivers capability %s%s. %s. The interface "+
@@ -203,6 +265,11 @@ func missingProviderError(ct reflect.Type, declarers []string, final map[string]
 		fmt.Fprintf(&b, "; %s declares it but is constructed later, so declare the capability "+
 			"in Requires to order it first, or take it up in Init instead",
 			strings.Join(quoteAll(later), " and "))
+	}
+	if len(notIncluded) > 0 {
+		fmt.Fprintf(&b, "; %s declares it but this command does not include it, so add it "+
+			"to the Include of the command that needs it",
+			strings.Join(quoteAll(notIncluded), " and "))
 	}
 	return errorText{wrapped: ErrMissingProvider, text: b.String()}
 }

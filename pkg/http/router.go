@@ -107,6 +107,10 @@ func (r *router) declaredNames() string {
 
 // open lets registrations through. It is called from this module's Migrate,
 // which is the last thing that runs before the Init stage begins.
+//
+// Whether it is called at all follows from the depth of the drive: one that
+// stops short of Migrate leaves the gate shut and reaches no Init, so there is
+// no registration for a shut gate to turn away.
 func (r *router) open() {
 	r.mu.Lock()
 	defer r.mu.Unlock()
@@ -124,6 +128,10 @@ func (r *router) open() {
 // other direction: the whole Start stage, and the Serve callbacks of every
 // module ordered ahead of this one, would still be accepted, and those
 // registrations reach no chain.
+//
+// A drive that stops exactly at Migrate opens the gate and never reaches this,
+// so the gate stays open for the rest of the process. Such a run has no Init,
+// no registration and no traffic behind it.
 func (r *router) seal() {
 	r.mu.Lock()
 	defer r.mu.Unlock()

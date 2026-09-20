@@ -1,14 +1,16 @@
 # examples/minimal-host
 
 The smallest host that assembles a run: a `main` that imports the modules
-it wants and drives the lifecycle. It is a module of the workspace like
-any other, and it is the working proof that the mechanism assembles
-something — what its `main` does not need to contain is as much the point
-as what it does.
+it wants, writes the command tree, and lets that tree drive the lifecycle.
+It is a module of the workspace like any other, and it is the working
+proof that the mechanism assembles something — what its `main` does not
+need to contain is as much the point as what it does.
 
 Everything in the directory except `main.go` and `host.go` is an ordinary
 module: two implementations of one capability, and an application module
-that takes the capability up without naming either.
+that takes the capability up without naming either. The command tree —
+which commands there are, what each assembles, how far each drives — lives
+in `main.go`, and nothing outside it contributes to the tree.
 
 ## Where the authority is
 
@@ -21,13 +23,10 @@ that takes the capability up without naming either.
 - The decisions behind the shape of a host:
   [`docs/adr/`](../../docs/adr/) — the assembly bootstrap above all.
 - What this host itself demonstrates: the package comment in `main.go`
-  lists the cases, each with a test in `e2e_test.go`.
+  lists the cases, each with a test in `e2e_test.go` — or in
+  `wiring_test.go`, for the few whose property leaves no trace in a run.
 
 ## Boundaries
-
-- **Some boundaries below state the settled design, not what the code does
-  today.** The design documents' implementation-status tables say which. Moving the code toward them is the intended direction;
-  reasserting the shape they replaced is not.
 
 - **The host contributes its standing declarations as resources on a module
   it registers**, not as arguments of the driver. Host identity goes that

@@ -9,8 +9,15 @@ import (
 	"github.com/vislake/speed/pkg/core"
 )
 
-// moduleName is this module's name in the registry.
-const moduleName = "log"
+// ModuleName is this module's name in the registry, and the word a command
+// takes this module in by.
+//
+// It is exported because inclusion is by name: a host writes log.ModuleName in
+// its command tree, and the name reaches the tree from the package that
+// registered it. A literal spelled at the inclusion site would go on compiling
+// after a rename and leave the module out of the command that meant to take it
+// in.
+const ModuleName = "log"
 
 // bootstrapLevel is the level the bootstrap chain filters by, held by the root
 // package and set from configuration in Prepare.
@@ -37,18 +44,23 @@ func init() { core.ProcessRegistry.Register(Module()) }
 // dependants would take up the other implementation while the configured
 // destinations, formats and rotation parameters lose their only consumer.
 //
-// config is an implicit dependency of every module, so it is not declared: the
-// registry constructs it first and Prepare reads through it.
+// The reader this module reads through is a product the host supplies to the
+// registry before the drive begins, so it is there before the first module is
+// constructed. That is why Requires does not name it: there is no provider to
+// be ordered after, and no module is constructed ahead of the others by name.
+// Its absence is still a startup failure — Prepare returns rather than falling
+// back to anything.
 func Module() core.Module {
 	return core.Module{
-		Name:      moduleName,
+		Name:      ModuleName,
 		Provides:  []core.Provision{{Token: (*Logger)(nil), Exclusive: true}},
 		Resources: []any{schema()},
 		Prepare: func(_ context.Context, reg *core.Registry) (core.Enablement, error) {
 			reader, err := core.Resolve[config.Reader](reg)
 			if err != nil {
 				return core.Enablement{}, fmt.Errorf(
-					"log: the level is read from configuration, and no module delivers it: %w", err)
+					"log: the level is read from configuration, and the reader a host supplies "+
+						"to the registry before assembly is not in it: %w", err)
 			}
 			return prepare(reader)
 		},
@@ -56,7 +68,8 @@ func Module() core.Module {
 			reader, err := core.Resolve[config.Reader](reg)
 			if err != nil {
 				return nil, fmt.Errorf(
-					"log: the handler chain is assembled from configuration, and no module delivers it: %w", err)
+					"log: the handler chain is assembled from configuration, and the reader a host "+
+						"supplies to the registry before assembly is not in it: %w", err)
 			}
 			return newLogger(reader)
 		},

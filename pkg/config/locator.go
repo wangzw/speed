@@ -67,17 +67,73 @@ func collectTransports(reg *core.Registry) (*transports, error) {
 // All three being silent is a legal configuration: there is no primary config
 // source, and the defaults, the environment and the command line carry the run
 // on their own.
-func locate(m *manifest, environ map[string]string, flags *parsedFlags) string {
+func locate(m *manifest, environ map[string]string, flagLocator string, flagGiven bool) string {
 	locator := m.host.DefaultLocator
 	if m.host.Prefix != "" {
 		if given, set := environ[locatorEnvName(m.host.Prefix)]; set {
 			locator = given
 		}
 	}
-	if flags.hasLocator {
-		locator = flags.locator
+	if flagGiven {
+		locator = flagLocator
 	}
 	return locator
+}
+
+// ReadPrimary reads the primary config source and puts it under the defaults
+// and above nothing. An empty locator means there is no primary source, which
+// is a legal configuration and not a failure.
+//
+// The content is checked before it is merged in. The layering tool folds the
+// keys of the map it is handed to lower case in place, so a check made
+// afterwards would no longer be looking at what the source wrote.
+//
+// A second call is a programming error rather than a second layer: the design
+// gives a run one primary source, and the tool merges rather than replaces, so
+// two reads would silently stack.
+func (l *loader) ReadPrimary(ctx context.Context, locator string) error {
+	if l.readPrimary {
+		panic("config: the primary config source was read twice. A run has one primary source, " +
+			"and reading a second would stack it on the first instead of replacing it")
+	}
+	l.readPrimary = true
+	if locator == "" {
+		return nil
+	}
+	content, err := l.t.read(ctx, locator)
+	if err != nil {
+		return err
+	}
+	if err := validatePrimary(l.m, content); err != nil {
+		return err
+	}
+	if cloned, ok := clonedTree(content).(map[string]any); ok {
+		l.primary = cloned
+	}
+	return l.v.MergeConfigMap(content)
+}
+
+// clonedTree copies a parsed source so that the folding the layering tool
+// performs in place leaves the copy alone. Only the maps and lists on the way
+// down are rebuilt; the values at the leaves are what the parser produced and
+// are handed on as they are.
+func clonedTree(v any) any {
+	switch t := v.(type) {
+	case map[string]any:
+		out := make(map[string]any, len(t))
+		for k, inner := range t {
+			out[k] = clonedTree(inner)
+		}
+		return out
+	case []any:
+		out := make([]any, len(t))
+		for i, inner := range t {
+			out[i] = clonedTree(inner)
+		}
+		return out
+	default:
+		return v
+	}
 }
 
 // read fetches the primary config source and parses it. The transport answers

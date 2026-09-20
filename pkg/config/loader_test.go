@@ -2,9 +2,13 @@ package config
 
 import (
 	"errors"
+	"io"
+	"os"
 	"strings"
 	"testing"
 	"time"
+
+	"github.com/spf13/pflag"
 
 	"github.com/vislake/speed/pkg/core"
 )
@@ -15,19 +19,18 @@ type loadOptions struct {
 	Salutate string
 }
 
-// loaderSetup builds a registry carrying a host identity, one declaring
-// module, a transport and a format, and returns a loader over it together with
-// the two streams and the transport's call counter.
+// loaderSetup is a registry carrying a host identity, one declaring module, a
+// transport and a format, together with the diagnostics stream and the
+// transport's call counter.
 type loaderSetup struct {
-	loader *loader
-	stdout *strings.Builder
+	reg    *core.Registry
 	stderr *strings.Builder
 	// fetches counts what the transport was asked for, which is how a case
 	// shows that something happened before the primary source was read.
 	fetches *int
 }
 
-func newLoaderSetup(t *testing.T, host HostIdentity, content map[string]any, args, environ []string, extra ...core.Module) loaderSetup {
+func newLoaderSetup(t *testing.T, host HostIdentity, content map[string]any, extra ...core.Module) loaderSetup {
 	t.Helper()
 	fetches := 0
 	defaults := loadOptions{Addr: "localhost:6379", TTL: 5 * time.Minute, Salutate: "Hello"}
@@ -45,9 +48,32 @@ func newLoaderSetup(t *testing.T, host HostIdentity, content map[string]any, arg
 	for _, m := range extra {
 		reg.Register(m)
 	}
-	s := loaderSetup{stdout: &strings.Builder{}, stderr: &strings.Builder{}, fetches: &fetches}
-	s.loader = &loader{reg: reg, args: args, environ: environ, stdout: s.stdout, stderr: s.stderr}
-	return s
+	return loaderSetup{reg: reg, stderr: &strings.Builder{}, fetches: &fetches}
+}
+
+// load runs the whole staged load the way the command tree runs it: collect,
+// register the arguments of the participating modules, parse, locate, read the
+// primary source, report, hand out the reader.
+func (s loaderSetup) load(t *testing.T, args []string) (Reader, error) {
+	t.Helper()
+	l, err := NewLoader(s.reg, s.stderr)
+	if err != nil {
+		return nil, err
+	}
+	fs := pflag.NewFlagSet("test", pflag.ContinueOnError)
+	fs.SetOutput(io.Discard)
+	locator := fs.String(locatorFlag, "", "the URI of the primary config source")
+	if err := l.BindLayer(fs, []string{"cache"}); err != nil {
+		return nil, err
+	}
+	if err := fs.Parse(args); err != nil {
+		return nil, l.ClassifyParseError(err)
+	}
+	if err := l.ReadPrimary(t.Context(), locate(l.m, environMap(os.Environ()), *locator, fs.Changed(locatorFlag))); err != nil {
+		return nil, err
+	}
+	l.ReportUnclaimed()
+	return l.Reader(), nil
 }
 
 func decodeCache(t *testing.T, r Reader) loadOptions {
@@ -62,15 +88,16 @@ func decodeCache(t *testing.T, r Reader) loadOptions {
 // TestLoadAppliesEveryLayerInOrder pins the whole stack: the declared
 // defaults, then the primary source, then the environment, then the command
 // line, each overriding the one below it and no layer touching what a higher
-// one already settled.
+// one already settled. It is the case that says the layering tool's own order
+// and the way this module binds into it agree.
 func TestLoadAppliesEveryLayerInOrder(t *testing.T) {
+	t.Setenv("MYAPP_CACHE__SALUTATE", "from-env")
+	t.Setenv("MYAPP_CACHE__ADDR", "from-env:2")
 	s := newLoaderSetup(t,
 		HostIdentity{Prefix: "MYAPP", DefaultLocator: "file:///app.yaml"},
 		map[string]any{"cache": map[string]any{"addr": "from-file:1", "ttl": "1m", "salutate": "from-file"}},
-		[]string{"--salutation=from-flag"},
-		[]string{"MYAPP_CACHE__SALUTATE=from-env", "MYAPP_CACHE__ADDR=from-env:2"},
 	)
-	r, err := s.loader.load(t.Context())
+	r, err := s.load(t, []string{"--salutation=from-flag"})
 	if err != nil {
 		t.Fatalf("loading failed: %v", err)
 	}
@@ -89,8 +116,8 @@ func TestLoadAppliesEveryLayerInOrder(t *testing.T) {
 // TestNoPrimarySourceStillLoads pins that a run with no locator at all is a
 // legal configuration, the other layers carrying it on their own.
 func TestNoPrimarySourceStillLoads(t *testing.T) {
-	s := newLoaderSetup(t, HostIdentity{Prefix: "MYAPP"}, nil, nil, nil)
-	r, err := s.loader.load(t.Context())
+	s := newLoaderSetup(t, HostIdentity{Prefix: "MYAPP"}, nil)
+	r, err := s.load(t, nil)
 	if err != nil {
 		t.Fatalf("loading without a primary config source failed: %v", err)
 	}
@@ -104,13 +131,12 @@ func TestNoPrimarySourceStillLoads(t *testing.T) {
 
 // TestLocatorFromEnvVar pins the middle leg of the locator's three steps.
 func TestLocatorFromEnvVar(t *testing.T) {
+	t.Setenv("MYAPP_CONFIG", "file:///app.yaml")
 	s := newLoaderSetup(t,
 		HostIdentity{Prefix: "MYAPP"},
 		map[string]any{"cache": map[string]any{"addr": "from-file:1"}},
-		nil,
-		[]string{"MYAPP_CONFIG=file:///app.yaml"},
 	)
-	r, err := s.loader.load(t.Context())
+	r, err := s.load(t, nil)
 	if err != nil {
 		t.Fatalf("loading failed: %v", err)
 	}
@@ -123,94 +149,21 @@ func TestLocatorFromEnvVar(t *testing.T) {
 // the config data. Were they to go in, the unknown-key check would trip over
 // this module's own names first.
 func TestLocatorKeysNotInConfigData(t *testing.T) {
-	s := newLoaderSetup(t,
-		HostIdentity{Prefix: "MYAPP"},
-		map[string]any{},
-		[]string{"--config=file:///app.yaml"},
-		[]string{"MYAPP_CONFIG=file:///app.yaml"},
-	)
-	r, err := s.loader.load(t.Context())
+	t.Setenv("MYAPP_CONFIG", "file:///app.yaml")
+	s := newLoaderSetup(t, HostIdentity{Prefix: "MYAPP"}, map[string]any{})
+	r, err := s.load(t, []string{"--config=file:///app.yaml"})
 	if err != nil {
 		t.Fatalf("loading failed: %v", err)
 	}
 	held := r.(*reader)
-	for _, path := range []string{"config", "help", "MYAPP_CONFIG"} {
-		if _, present := held.data.values[path]; present {
-			t.Fatalf("the config data carries %q, which is a reserved name and not an input item", path)
+	for _, path := range []string{locatorFlag, helpFlag} {
+		if got := held.l.v.Get(path); got != nil {
+			t.Fatalf("the config data carries %q as %#v, which is a reserved name and not an "+
+				"input item", path, got)
 		}
 	}
 	if strings.Contains(s.stderr.String(), "MYAPP_CONFIG") {
 		t.Fatalf("the diagnostics report the locator variable as unread:\n%s", s.stderr)
-	}
-}
-
-// TestHelpShortCircuitsBeforeFetch pins that help is answered before the
-// primary source is read, so the output does not depend on any external source
-// being reachable.
-func TestHelpShortCircuitsBeforeFetch(t *testing.T) {
-	s := newLoaderSetup(t,
-		HostIdentity{Prefix: "MYAPP", DefaultLocator: "file:///app.yaml"},
-		map[string]any{},
-		[]string{"--help"},
-		nil,
-	)
-	r, err := s.loader.load(t.Context())
-	if !errors.Is(err, ErrHelpRequested) {
-		t.Fatalf("asking for help returned %v, want ErrHelpRequested", err)
-	}
-	if r != nil {
-		t.Fatal("asking for help produced a reader as well")
-	}
-	if *s.fetches != 0 {
-		t.Fatalf("the transport was asked for something %d time(s) while rendering help", *s.fetches)
-	}
-}
-
-// TestHelpGoesToStdoutAndTheSentinelCarriesNoText pins where the help output
-// goes. Standard output is where a command-line program puts it, diagnostics
-// and errors going to standard error, and the sentinel stays bare so that a
-// wrapping of it does not produce a second copy of the whole page.
-func TestHelpGoesToStdoutAndTheSentinelCarriesNoText(t *testing.T) {
-	s := newLoaderSetup(t, HostIdentity{Prefix: "MYAPP"}, nil, []string{"--help"}, nil)
-	_, err := s.loader.load(t.Context())
-	if !errors.Is(err, ErrHelpRequested) {
-		t.Fatalf("asking for help returned %v, want ErrHelpRequested", err)
-	}
-	if !strings.Contains(s.stdout.String(), "--salutation") {
-		t.Fatalf("the help output did not reach standard output:\n%s", s.stdout)
-	}
-	if s.stderr.Len() != 0 {
-		t.Fatalf("standard error carries %q, and the help output belongs on standard output alone", s.stderr)
-	}
-	if strings.Contains(err.Error(), "--salutation") {
-		t.Fatalf("the error reads %q, and carrying the page would reproduce it at every wrapping", err)
-	}
-}
-
-// brokenWriter is a stdout whose other end has gone away, which is what
-// `--help | head` leaves behind once head has read its lines and exited.
-type brokenWriter struct{}
-
-func (brokenWriter) Write([]byte) (int, error) { return 0, errors.New("stdout is gone") }
-
-// TestHelpSurvivesAWriteThatFails pins that failing to write the help output
-// does not change what Load returns. Help was asked for and has been answered
-// either way, and the usual way the write fails is a reader that closed the
-// pipe early -- ordinary use of a command-line program, not a startup that
-// went wrong.
-func TestHelpSurvivesAWriteThatFails(t *testing.T) {
-	s := newLoaderSetup(t, HostIdentity{Prefix: "MYAPP"}, nil, []string{"--help"}, nil)
-	s.loader.stdout = brokenWriter{}
-
-	r, err := s.loader.load(t.Context())
-	if !errors.Is(err, ErrHelpRequested) {
-		t.Fatalf("help whose output could not be written returned %v, want ErrHelpRequested", err)
-	}
-	if r != nil {
-		t.Fatal("asking for help produced a reader as well")
-	}
-	if s.stderr.Len() != 0 {
-		t.Fatalf("standard error carries %q; a broken pipe on help is not a diagnostic", s.stderr)
 	}
 }
 
@@ -224,10 +177,9 @@ func TestConflictDetectedBeforeFetch(t *testing.T) {
 	s := newLoaderSetup(t,
 		HostIdentity{Prefix: "MYAPP", DefaultLocator: "file:///app.yaml"},
 		map[string]any{},
-		nil, nil,
 		clash,
 	)
-	_, err := s.loader.load(t.Context())
+	_, err := s.load(t, nil)
 	if !errors.Is(err, ErrConfigConflict) {
 		t.Fatalf("two modules claiming one path returned %v, want ErrConfigConflict", err)
 	}
@@ -241,16 +193,13 @@ func TestConflictDetectedBeforeFetch(t *testing.T) {
 // that produced it, since several writers share a stream the host cannot
 // redirect.
 func TestUnknownEnvDiagnosticsOnStderr(t *testing.T) {
-	s := newLoaderSetup(t,
-		HostIdentity{Prefix: "MYAPP"},
-		nil, nil,
-		[]string{"MYAPP_SERVICE_HOST=10.0.0.1"},
-	)
-	if _, err := s.loader.load(t.Context()); err != nil {
+	t.Setenv("MYAPP_SERVICE_HOST", "10.0.0.1")
+	s := newLoaderSetup(t, HostIdentity{Prefix: "MYAPP"}, nil)
+	if _, err := s.load(t, nil); err != nil {
 		t.Fatalf("a variable under the prefix that no item reads failed the startup: %v", err)
 	}
 	line := s.stderr.String()
-	if !strings.HasPrefix(line, "config: ") {
+	if !strings.HasPrefix(line, diagnosticPrefix) {
 		t.Fatalf("the diagnostic reads %q, and a line on a shared stream has to name its writer", line)
 	}
 	if !strings.Contains(line, "MYAPP_SERVICE_HOST") {
@@ -259,16 +208,81 @@ func TestUnknownEnvDiagnosticsOnStderr(t *testing.T) {
 }
 
 // TestPrimarySourceUnknownKeyStopsTheStartup pins that the checks reach
-// through the whole load, not only the unit that applies a layer.
+// through the whole load, not only the unit that validates a source.
 func TestPrimarySourceUnknownKeyStopsTheStartup(t *testing.T) {
 	s := newLoaderSetup(t,
 		HostIdentity{Prefix: "MYAPP", DefaultLocator: "file:///app.yaml"},
 		//nolint:misspell // "addres" is the unknown-key input under test, for
 		// the reason data_test.go's identical case gives.
 		map[string]any{"cache": map[string]any{"addres": "typo"}},
-		nil, nil,
 	)
-	if _, err := s.loader.load(t.Context()); !errors.Is(err, ErrUnknownKey) {
+	if _, err := s.load(t, nil); !errors.Is(err, ErrUnknownKey) {
 		t.Fatalf("a misspelled key in the primary source returned %v, want ErrUnknownKey", err)
 	}
+}
+
+// TestLoadWithoutACommandTree pins the exported entry: every registered module
+// takes part, the arguments are one flat set, and what comes back is a reader
+// over the same layers a command tree would have produced.
+//
+// The locator reaches it through the process environment, which is the only
+// environment it reads. The layering tool pulls the values from there, so a
+// second way in for <PREFIX>_CONFIG alone would leave a run taking its primary
+// source from one environment and its values from another.
+func TestLoadWithoutACommandTree(t *testing.T) {
+	t.Setenv("MYAPP_CONFIG", "file:///app.yaml")
+	s := newLoaderSetup(t,
+		HostIdentity{Prefix: "MYAPP"},
+		map[string]any{"cache": map[string]any{"addr": "from-file:1"}},
+	)
+	r, err := Load(t.Context(), s.reg, []string{"--salutation=from-flag"})
+	if err != nil {
+		t.Fatalf("loading failed: %v", err)
+	}
+	opts := decodeCache(t, r)
+	if opts.Addr != "from-file:1" {
+		t.Fatalf("cache.addr decoded to %q, want the file the variable pointed at", opts.Addr)
+	}
+	if opts.Salutate != "from-flag" {
+		t.Fatalf("cache.salutate decoded to %q, want the command line's value", opts.Salutate)
+	}
+}
+
+// TestLoadTakesEveryRegisteredModuleIn pins what makes Load an entry of its
+// own: the question a command answers -- which modules this run assembles --
+// does not arise, so the arguments are one flat set over the whole registry.
+// Two modules a tree would never put on the same command are both reachable.
+func TestLoadTakesEveryRegisteredModuleIn(t *testing.T) {
+	reg := treeRegistry(t, &treeRun{}, nil)
+	r, err := Load(t.Context(), reg, []string{"--cache-addr=given", "--logging-addr=also"})
+	if err != nil {
+		t.Fatalf("loading failed: %v", err)
+	}
+	if got := decodeAddr(t, r, "cache"); got != "given" {
+		t.Errorf("cache.addr reads %q, want the command line's value", got)
+	}
+	if got := decodeAddr(t, r, "logging"); got != "also" {
+		t.Errorf("logging.addr reads %q, want the command line's value", got)
+	}
+}
+
+// TestPrimarySourceReadTwiceIsAProgrammingError pins the guard on the one
+// primary source a run has. The layering tool merges rather than replaces, so
+// a second read would stack on the first instead of being refused.
+func TestPrimarySourceReadTwiceIsAProgrammingError(t *testing.T) {
+	s := newLoaderSetup(t, HostIdentity{Prefix: "MYAPP"}, map[string]any{})
+	l, err := NewLoader(s.reg, s.stderr)
+	if err != nil {
+		t.Fatalf("collecting the declarations failed: %v", err)
+	}
+	if err := l.ReadPrimary(t.Context(), ""); err != nil {
+		t.Fatalf("the first read failed: %v", err)
+	}
+	defer func() {
+		if recover() == nil {
+			t.Fatal("reading the primary source a second time returned, and it would have " +
+				"stacked on the first")
+		}
+	}()
+	_ = l.ReadPrimary(t.Context(), "")
 }

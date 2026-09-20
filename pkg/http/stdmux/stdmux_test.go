@@ -23,15 +23,15 @@ import (
 // its configuration, with no registration call of its own.
 //
 // The name is written out here instead of being read from the constant, which
-// is the only way this pins anything: a lookup by moduleName follows the
+// is the only way this pins anything: a lookup by ModuleName follows the
 // constant wherever it goes and passes under any name at all. The absence of a
 // module under "http" is the other half of the same statement — that is the
 // release unit, and no module registers under it.
 func TestModuleRegistersItself(t *testing.T) {
 	const name = "http.stdmux"
-	if moduleName != name {
+	if ModuleName != name {
 		t.Errorf("this module registers as %q, and an implementation subpackage is named %q, "+
-			"the release unit plus the subpackage", moduleName, name)
+			"the release unit plus the subpackage", ModuleName, name)
 	}
 	if _, found := core.ProcessRegistry.Lookup("http"); found {
 		t.Error(`a module is registered under "http", which names the release unit and not a module`)
@@ -283,42 +283,68 @@ func toText(raised any) string {
 }
 
 // TestDependencyClosureStaysInsideTheRepo is the executable form of the claim
-// this subpackage's documentation makes: it brings no dependency a host would
-// not otherwise carry. The four in-repository prefixes are struck out first —
-// the closure necessarily contains them — and what is left has to be the
-// standard library.
+// this subpackage's documentation makes: the engine it binds is the standard
+// library's, so importing it costs a host nothing over importing the parent
+// package.
+//
+// The budget is the standard library, this repository's modules, and the
+// closure of pkg/config. The parent package declares its input items and
+// reads its endpoints through config, and taking configuration up is taking
+// up the tools config parses it with (ADR-config-parsing-2026-09-20); they
+// reach this package from there. What is checked is the increment: binding
+// the engine adds nothing to them, and a routing library would land here the
+// moment one is imported.
+//
+// The budget is computed rather than written out, so that config exchanging
+// one of its dependencies does not turn into an edit here.
 func TestDependencyClosureStaysInsideTheRepo(t *testing.T) {
-	out, err := exec.Command("go", "list", "-deps", "./...").CombinedOutput()
+	reached := dependenciesOf(t, "./...")
+	// The positive control. This package is in its own dependency listing,
+	// and a listing that lost it came from a load that did not happen --
+	// every judgement below would then pass over nothing.
+	if !reached[repoPrefix+"pkg/http/stdmux"] {
+		t.Fatalf("the dependency listing does not hold %spkg/http/stdmux, so what it read "+
+			"is not this package's dependency face", repoPrefix)
+	}
+
+	withinBudget := dependenciesOf(t, repoPrefix+"pkg/config")
+	for pkg := range reached {
+		switch {
+		case stdlibPackage(pkg), strings.HasPrefix(pkg, repoPrefix), withinBudget[pkg]:
+			continue
+		}
+		t.Errorf("stdmux depends on %s, which is neither the standard library, nor a module "+
+			"of this repository, nor part of what reading configuration through pkg/config "+
+			"costs. The engine here is net/http's own multiplexer, and a routing library "+
+			"landing in this package would reach every host that imports it", pkg)
+	}
+}
+
+// repoPrefix is this repository's own module path.
+const repoPrefix = "github.com/vislake/speed/"
+
+// dependenciesOf lists the packages a `go list -deps` target reaches.
+func dependenciesOf(t *testing.T, target string) map[string]bool {
+	t.Helper()
+	out, err := exec.Command("go", "list", "-deps", target).CombinedOutput()
 	if err != nil {
-		t.Fatalf("go list -deps failed: %v\n%s", err, out)
+		t.Fatalf("go list -deps %s failed: %v\n%s", target, err, out)
 	}
-	own := []string{
-		"github.com/vislake/speed/pkg/core",
-		"github.com/vislake/speed/pkg/config",
-		"github.com/vislake/speed/pkg/log",
-		"github.com/vislake/speed/pkg/http",
-	}
-	scanned := 0
+	reached := make(map[string]bool)
 	for line := range strings.SplitSeq(strings.TrimSpace(string(out)), "\n") {
-		pkg := strings.TrimSpace(line)
-		if pkg == "" {
-			continue
-		}
-		scanned++
-		mine := false
-		for _, prefix := range own {
-			if pkg == prefix || strings.HasPrefix(pkg, prefix+"/") {
-				mine = true
-			}
-		}
-		if mine {
-			continue
-		}
-		if first, _, _ := strings.Cut(pkg, "/"); strings.Contains(first, ".") {
-			t.Errorf("stdmux depends on %s, which is outside the standard library", pkg)
+		if pkg := strings.TrimSpace(line); pkg != "" {
+			reached[pkg] = true
 		}
 	}
-	if scanned == 0 {
-		t.Fatal("go list -deps listed no package, so the scan above proved nothing")
+	if len(reached) == 0 {
+		t.Fatalf("go list -deps %s listed nothing, so there is no dependency face to check", target)
 	}
+	return reached
+}
+
+// stdlibPackage reports whether a package path names a package of the standard
+// library, whose first path element never carries a dot.
+func stdlibPackage(pkg string) bool {
+	first, _, _ := strings.Cut(pkg, "/")
+	return !strings.Contains(first, ".")
 }

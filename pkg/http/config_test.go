@@ -1,7 +1,6 @@
 package http
 
 import (
-	"context"
 	"errors"
 	nethttp "net/http"
 	"os"
@@ -16,16 +15,21 @@ import (
 	"github.com/vislake/speed/pkg/core"
 )
 
-// readThrough runs the real config module over a JSON document and hands back
-// what this module's own section decodes into.
+// readThrough loads a JSON document through the real configuration path and
+// hands back what this module's own section decodes into.
 //
 // The module's own declaration is what is exercised: a stub reader would prove
 // the struct tags match the stub, while what has to hold is that config accepts
 // this declaration, treats the endpoint set as a container leaf and coerces the
 // durations by its own rule.
 //
+// Load is that path without a lifecycle behind it, and a reader is the whole of
+// what these cases want. Driving an assembly to obtain one would put the
+// failures they look at behind a startup failure instead.
+//
 // declared is the schema to register, so one test can put a deliberately
-// defective declaration through the same path.
+// defective declaration through the same path. The three results are the
+// decoded section, the failure of the decode, and the failure of the load.
 func readThrough(t *testing.T, document string, declared config.Schema) (moduleConfig, error, error) {
 	t.Helper()
 
@@ -34,50 +38,28 @@ func readThrough(t *testing.T, document string, declared config.Schema) (moduleC
 		t.Fatalf("writing the config document: %v", err)
 	}
 
-	// config reads the command line unconditionally, and the arguments go
-	// test passes a test binary are not this program's.
-	saved := os.Args
-	os.Args = []string{"http-test"}
-	t.Cleanup(func() { os.Args = saved })
-
-	ctx, cancel := context.WithCancel(context.Background())
-	defer cancel()
-
 	reg := core.New()
-	reg.Register(config.Module())
 	reg.Register(jsonformat.Module())
 	reg.Register(filesource.Module())
 	reg.Register(core.Module{
 		Name:      "host",
 		Resources: []any{config.HostIdentity{Prefix: "HTTPTEST", DefaultLocator: "file:" + path}},
 	})
+	// The declaration under test reaches the load as a registered module's
+	// resource, which is the only way one ever reaches it.
+	reg.Register(core.Module{Name: "reader", Resources: []any{declared}})
+
+	// No arguments, and a prefix no machine carries variables under: the
+	// document is reached through the host's default locator, so nothing
+	// outside this test steers the run.
+	reader, err := config.Load(t.Context(), reg, nil)
+	if err != nil {
+		return moduleConfig{}, nil, err
+	}
 
 	var got moduleConfig
-	var decodeErr error
-	reg.Register(core.Module{
-		Name:      "reader",
-		Resources: []any{declared},
-		Prepare: func(_ context.Context, r *core.Registry) (core.Enablement, error) {
-			reader, err := core.Resolve[config.Reader](r)
-			if err != nil {
-				return core.Enablement{}, err
-			}
-			// The decode failure is carried out rather than returned:
-			// the test is about what this module's section decodes to,
-			// and aborting the startup would hide it behind whatever
-			// core wraps a Prepare failure in.
-			decodeErr = reader.Decode(configPath, &got)
-			return core.Enablement{State: core.StateEnabled}, nil
-		},
-		// Startup is complete by the Serve stage, so this is where the run
-		// has served its purpose.
-		Serve: func(context.Context, *core.Registry, any) error {
-			cancel()
-			return nil
-		},
-	})
-
-	return got, decodeErr, reg.Run(ctx)
+	decodeErr := reader.Decode(configPath, &got)
+	return got, decodeErr, nil
 }
 
 // TestEndpointsIsPrimaryOnlyContainerLeaf pins the origin declaration. The
@@ -110,7 +92,7 @@ func TestEndpointsIsPrimaryOnlyContainerLeaf(t *testing.T) {
 func TestEnvOriginOnTheEndpointSetIsRefused(t *testing.T) {
 	defective := schema()
 	defective.Items = map[string]config.Item{
-		endpointsItem: {Origins: config.OriginPrimary | config.OriginEnv, Group: configGroup, Description: "x"},
+		endpointsItem: {Origins: config.OriginPrimary | config.OriginEnv, Description: "x"},
 	}
 
 	_, _, runErr := readThrough(t, `{"http":{"endpoints":{}}}`, defective)
@@ -278,7 +260,7 @@ func TestReadHeaderTimeoutCannotBeSwitchedOff(t *testing.T) {
 }
 
 // TestDrainTimeoutRefusesExplicitZero pins the second of the two bounds that
-// cannot be switched off, and pins it through the real config module: what makes
+// cannot be switched off, and pins it through the real load: what makes
 // the refusal reachable at all is that config delivers an explicit "0s" as a
 // pointer to 0 rather than as an absent key, which is the difference between
 // "switch it off" and "take the default".

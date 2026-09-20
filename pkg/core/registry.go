@@ -2,16 +2,11 @@ package core
 
 import (
 	"fmt"
+	"reflect"
 	"runtime"
 	"strings"
 	"sync"
 )
-
-// configModuleName is the one name the registry recognises. The module that
-// carries it is constructed first, during Prepare, and is an implicit
-// dependency of every other module. That is the whole of the special
-// treatment, and no other module has any.
-const configModuleName = "config"
 
 // ProcessRegistry is the process-level registry. Registrations made in init
 // land here, so the available set is decided by what the binary imports.
@@ -34,6 +29,16 @@ type Registry struct {
 	// they did. Rollback walks it backwards.
 	lifecycle []string
 
+	// supplied holds the products the host handed in before the drive,
+	// by the capability each was supplied under, and suppliedSites the
+	// package that handed each one in, so a conflict can name both
+	// parties. They stay out of instances, out of order and out of
+	// lifecycle: a supplied product has no module name to be indexed by,
+	// and borrowing one would leak it into Modules, into Enablement and
+	// into the rollback, where the design keeps it from appearing.
+	supplied      map[reflect.Type]any
+	suppliedSites map[reflect.Type]string
+
 	// enablement holds the verdict resolution reached, keyed by module name.
 	// It is nil until resolution has run.
 	enablement map[string]Enablement
@@ -55,8 +60,10 @@ type registration struct {
 // of modules in a test.
 func New() *Registry {
 	return &Registry{
-		mods:      make(map[string]*registration),
-		instances: make(map[string]any),
+		mods:          make(map[string]*registration),
+		instances:     make(map[string]any),
+		supplied:      make(map[reflect.Type]any),
+		suppliedSites: make(map[reflect.Type]string),
 	}
 }
 
@@ -64,7 +71,11 @@ func New() *Registry {
 //
 // A duplicate name panics, and so does an illegal token in Requires or
 // Provides: both are programming errors, and both surface at the moment of
-// registration rather than somewhere downstream.
+// registration rather than somewhere downstream. So does a module that
+// declares a capability the host has already supplied. Supply checks the same
+// conflict from its side, and both sides have to, or the supply-then-register
+// order slips through — and that is the order a registry assembled by hand
+// runs in.
 func (r *Registry) Register(m Module) {
 	site := callerPackage(3)
 	if m.Name == "" {
@@ -84,6 +95,18 @@ func (r *Registry) Register(m Module) {
 			"The available set is decided by imports, so one of the two may have been "+
 			"pulled in by a dependency rather than by the host itself",
 			m.Name, existing.site, site))
+	}
+	for _, ct := range declaredCapabilities(m) {
+		supplySite, ok := r.suppliedSites[ct]
+		if !ok {
+			continue
+		}
+		panic(fmt.Sprintf("core: module %q registered from %s declares capability %s in "+
+			"Provides, and that capability was already supplied from %s. A supplied "+
+			"product does not go through construction, so the two cannot both answer a "+
+			"lookup for it; the available set is decided by imports, so this module may "+
+			"have been pulled in by a dependency rather than by the host itself",
+			m.Name, site, typeName(ct), supplySite))
 	}
 	r.mods[m.Name] = &registration{module: m, site: site}
 	r.order = append(r.order, m.Name)

@@ -20,11 +20,6 @@ change here must not cross, and how to run it.
 
 ## Boundaries
 
-- **Some boundaries below state the settled design, not what the code does
-  today.** The implementation-status table in this module's design document
-  says which. Moving the code toward them is the intended direction;
-  reasserting the shape they replaced is not.
-
 - **No third-party dependency, ever.** Every module imports this one, so a
   dependency added here lands in every host's dependency list. The
   standard library is the whole budget. The command tree, and everything

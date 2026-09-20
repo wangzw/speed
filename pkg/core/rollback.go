@@ -11,11 +11,19 @@ import (
 // reverse construction order, and returns the primary error with whatever the
 // cleanup added.
 //
+// It closes every drive, whatever depth that drive asked for and whether it
+// arrived or failed on the way: the instances a drive built are the
+// instances it releases.
+//
 // Every constructed instance is covered whatever stage the failure happened
 // in. Rolling back only the modules that completed the failing stage would
 // leave behind the ones constructed earlier that never got that far, holding
 // connections and goroutines nobody releases. That is also why Stop and Close
 // have to tolerate an instance that was never initialised or started.
+//
+// A supplied product is not in range. It was constructed by the party that
+// handed it in, never entered the lifecycle list, and is released by that
+// same party; closing it here would shut down something the host still holds.
 //
 // Stop and Close run on a context stripped of cancellation. On the normal
 // path shutdown is reached because the host's context was cancelled, and a

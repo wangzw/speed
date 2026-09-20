@@ -1,31 +1,73 @@
 package config
 
 import (
+	"bytes"
+	"encoding/json"
 	"os/exec"
-	"strings"
+	"slices"
 	"testing"
 )
 
-// TestConfigRootHasNoThirdPartyDependencies is the executable form of the rule
-// that the root package stays on the standard library and pkg/core: collection,
-// the layers and the config data are all within reach of it, and a dependency
-// here would land on every host that declares configuration. Third-party
-// dependencies belong to the transport and format subpackages, which is why
-// this case lists the root package alone.
-func TestConfigRootHasNoThirdPartyDependencies(t *testing.T) {
-	out, err := exec.Command("go", "list", "-deps", ".").CombinedOutput()
-	if err != nil {
-		t.Fatalf("go list -deps failed: %v\n%s", err, out)
+// TestConfigRootCarriesOnlyTheParsingTools is the executable form of the
+// boundary in this module's AGENTS.md: the root package carries the parsing
+// tools and nothing else third-party. Every module that declares
+// configuration imports this package, so that budget is spent for all of them
+// at once, and spending it again needs the same kind of decision that spent it
+// the first time.
+//
+// The criterion is the direct requirements rather than the whole dependency
+// tree. What this module brought in is what it asked for; the transitive set
+// belongs to the tools and drifts with them, and a list of it here would be a
+// snapshot masquerading as a rule.
+//
+// They are read out of go.mod itself rather than asked of the build list,
+// which in a workspace is the workspace's: it holds every module the other
+// modules of this repository require, and judging those against the list
+// below would fail on dependencies this module never asked for.
+func TestConfigRootCarriesOnlyTheParsingTools(t *testing.T) {
+	allowed := []string{
+		"github.com/go-viper/mapstructure/v2",
+		"github.com/spf13/cobra",
+		"github.com/spf13/pflag",
+		"github.com/spf13/viper",
+		"github.com/vislake/speed/pkg/core",
+		// The YAML parser belongs to the format/yaml subpackage, which shares
+		// this go.mod with the root package. A host that does not import that
+		// subpackage does not carry it.
+		"go.yaml.in/yaml/v3",
 	}
-	for _, line := range strings.Split(strings.TrimSpace(string(out)), "\n") {
-		pkg := strings.TrimSpace(line)
-		if pkg == "" || strings.HasPrefix(pkg, "github.com/vislake/speed/pkg/core") ||
-			strings.HasPrefix(pkg, "github.com/vislake/speed/pkg/config") {
+
+	cmd := exec.Command("go", "mod", "edit", "-json")
+	var stderr bytes.Buffer
+	cmd.Stderr = &stderr
+	out, err := cmd.Output()
+	if err != nil {
+		t.Fatalf("reading this module's go.mod failed: %v\n%s", err, stderr.String())
+	}
+	var mod struct {
+		Require []struct {
+			Path     string
+			Indirect bool
+		}
+	}
+	if err := json.Unmarshal(out, &mod); err != nil {
+		t.Fatalf("reading this module's go.mod failed: %v\n%s", err, out)
+	}
+
+	direct := 0
+	for _, req := range mod.Require {
+		if req.Indirect {
 			continue
 		}
-		first, _, _ := strings.Cut(pkg, "/")
-		if strings.Contains(first, ".") {
-			t.Errorf("the config root package depends on %s, which is neither the standard library nor pkg/core", pkg)
+		direct++
+		if !slices.Contains(allowed, req.Path) {
+			t.Errorf("this module requires %s, which is not one of the parsing tools the "+
+				"budget was spent on: %v", req.Path, allowed)
 		}
+	}
+	// The positive control. A go.mod with no direct requirement at all would
+	// pass every judgement above without one of them having been made.
+	if direct == 0 {
+		t.Fatal("go.mod names no direct requirement, so the scan above proved nothing")
 	}
 }

@@ -109,21 +109,73 @@ func TestRegistersAsFormatResource(t *testing.T) {
 	}
 }
 
-// TestJSONFormatUsesStdlibOnly is the executable form of what splitting the
-// two parsers buys: a host that configures itself in JSON takes on no parsing
-// dependency. A standard library path has no domain in its first segment.
-func TestJSONFormatUsesStdlibOnly(t *testing.T) {
-	out, err := exec.Command("go", "list", "-deps", ".").CombinedOutput()
-	if err != nil {
-		t.Fatalf("go list -deps failed: %v\n%s", err, out)
+// TestJSONFormatAddsNoParsingLibrary is the executable form of what splitting
+// the two parsers buys: a host that configures itself in JSON does not carry
+// the YAML parser, which shares a go.mod with this package and is one import
+// away from arriving unnoticed.
+//
+// The budget is the standard library, this repository's modules, and the
+// closure of the root package. This package delivers its parser as a resource
+// of that package and is reached from it, so whatever reading a configuration
+// costs is already spent by the time anybody gets here; that cost is recorded
+// in ADR-config-parsing-2026-09-20. What is checked is the increment: parsing
+// JSON adds nothing on top of it.
+//
+// The budget is computed rather than written out, so that the root package
+// exchanging one of its own dependencies does not turn into an edit here.
+func TestJSONFormatAddsNoParsingLibrary(t *testing.T) {
+	reached := dependenciesOf(t, ".")
+	// The positive control. This package is in its own dependency listing,
+	// and a listing that lost it came from a load that did not happen --
+	// every judgement below would then pass over nothing.
+	if !reached[rootPackage+"/format/json"] {
+		t.Fatalf("the dependency listing does not hold %s/format/json, so what it read is "+
+			"not this package's dependency face", rootPackage)
 	}
-	for _, line := range strings.Split(strings.TrimSpace(string(out)), "\n") {
-		pkg := strings.TrimSpace(line)
-		if pkg == "" || strings.HasPrefix(pkg, "github.com/vislake/speed/pkg/") {
+
+	withinBudget := dependenciesOf(t, rootPackage)
+	for pkg := range reached {
+		switch {
+		case stdlibPackage(pkg), strings.HasPrefix(pkg, repoPrefix), withinBudget[pkg]:
 			continue
 		}
-		if first, _, _ := strings.Cut(pkg, "/"); strings.Contains(first, ".") {
-			t.Errorf("the json format package depends on %s, which is outside the standard library", pkg)
+		t.Errorf("the json format package depends on %s, which is neither the standard "+
+			"library, nor a module of this repository, nor part of what reading "+
+			"configuration through the root package costs. Parsing JSON is encoding/json's "+
+			"work, and a parsing library landing here would reach every host that reads a "+
+			"JSON configuration", pkg)
+	}
+}
+
+// repoPrefix is this repository's own module path, and rootPackage the
+// configuration package this one registers itself with.
+const (
+	repoPrefix  = "github.com/vislake/speed/"
+	rootPackage = repoPrefix + "pkg/config"
+)
+
+// dependenciesOf lists the packages a `go list -deps` target reaches.
+func dependenciesOf(t *testing.T, target string) map[string]bool {
+	t.Helper()
+	out, err := exec.Command("go", "list", "-deps", target).CombinedOutput()
+	if err != nil {
+		t.Fatalf("go list -deps %s failed: %v\n%s", target, err, out)
+	}
+	reached := make(map[string]bool)
+	for line := range strings.SplitSeq(strings.TrimSpace(string(out)), "\n") {
+		if pkg := strings.TrimSpace(line); pkg != "" {
+			reached[pkg] = true
 		}
 	}
+	if len(reached) == 0 {
+		t.Fatalf("go list -deps %s listed nothing, so there is no dependency face to check", target)
+	}
+	return reached
+}
+
+// stdlibPackage reports whether a package path names a package of the standard
+// library, whose first path element never carries a dot.
+func stdlibPackage(pkg string) bool {
+	first, _, _ := strings.Cut(pkg, "/")
+	return !strings.Contains(first, ".")
 }

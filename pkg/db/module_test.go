@@ -141,8 +141,9 @@ func TestTheDescriptorIsTheShapeTheDesignGivesIt(t *testing.T) {
 			"engine would be settled by resolution instead of failing the startup")
 	}
 	if len(module.Requires) != 0 {
-		t.Errorf("the module requires %v; configuration is an implicit dependency and nothing "+
-			"else is taken up at construction", module.Requires)
+		t.Errorf("the module requires %v; the reading face is a product the host supplies before "+
+			"assembly begins, which no module declares, and nothing else is taken up at "+
+			"construction", module.Requires)
 	}
 	if module.Stop != nil {
 		t.Errorf("the module carries a Stop callback, and the design gives it no work there")
@@ -426,12 +427,19 @@ func TestMigrateReportsAProductItCannotApplyOn(t *testing.T) {
 // configuration loader reading body. It is how a case reaches a verdict that
 // only exists after resolution: the stance of every module is taken first, and
 // the failures below are raised before any module is constructed.
+//
+// The command takes every registered module in. Naming them one by one would
+// leave the two sides of an exclusivity conflict free to fall out of the
+// participating set, and a case about that conflict would then pass by not
+// reaching it.
+//
+// The command line is the process's, so the arguments a test binary carries
+// are taken away for the run and the cases here do not run in parallel.
 func startupOver(t *testing.T, body string, modules ...core.Module) error {
 	t.Helper()
 	locator := writeConfig(t, body)
 
 	reg := core.New()
-	reg.Register(config.Module())
 	reg.Register(jsonformat.Module())
 	reg.Register(filesource.Module())
 	reg.Register(core.Module{
@@ -446,9 +454,13 @@ func startupOver(t *testing.T, body string, modules ...core.Module) error {
 	os.Args = []string{"db.test"}
 	defer func() { os.Args = previous }()
 
+	app := config.NewApp(reg)
+	app.Root().IncludeAll()
+	app.Root().Do(core.StageServe, nil)
+
 	ctx, cancel := context.WithTimeout(t.Context(), 30*time.Second)
 	defer cancel()
-	return reg.Run(ctx)
+	return app.Execute(ctx)
 }
 
 // TestTwoConfiguredImplementationsFailTheStartup pins the outcome of a host

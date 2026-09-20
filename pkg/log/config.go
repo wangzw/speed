@@ -101,20 +101,15 @@ func schema() config.Schema {
 				Origins:     config.OriginPrimary | config.OriginEnv | config.OriginFlag,
 				FlagName:    "log-level",
 				Placeholder: "LEVEL",
-				Group:       configGroup,
 				Description: "the lowest level that is logged: debug, info, warn or error",
 			},
 			"outputs": {
 				Origins:     config.OriginPrimary,
-				Group:       configGroup,
 				Description: "the destinations and formats to log to",
 			},
 		},
 	}
 }
-
-// configGroup is the section the help output lists this module's items under.
-const configGroup = "Logging"
 
 // resolvedConfig is a Config that has been validated and completed: the level
 // is a slog.Level and every optional parameter carries a number.
