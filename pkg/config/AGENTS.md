@@ -22,10 +22,21 @@ change here must not cross, and how to run it.
 
 ## Boundaries
 
-- **A third-party dependency belongs to the subpackage that needs it, never
-  to the root package.** The split exists so a host that configures itself
-  in JSON carries no YAML parser. Adding an import to the root package
-  spends that budget for every host at once.
+- **Some boundaries below state the settled design, not what the code does
+  today.** The implementation-status table in this module's design document
+  says which. Moving the code toward them is the intended direction;
+  reasserting the shape they replaced is not.
+
+- **The root package carries the parsing tools, and nothing else
+  third-party.** Command-line parsing, the command tree, layering and type
+  conversion are delegated, and those imports sit here because the manifest
+  and the command tree do. Every module that declares configuration imports
+  this package, so that budget is spent for all of them at once; spending it
+  again on anything else needs the same kind of decision that spent it the
+  first time.
+- **A transport or a format still belongs to the subpackage that needs it.**
+  The split exists so a host that configures itself in JSON carries no YAML
+  parser, and delegating the parsing does not change that.
 - **A transport or a format reaches the assembly by being imported**, as a
   resource of a module registered in `init`. Nothing about it is named in
   the root package.
@@ -35,8 +46,16 @@ import _ "github.com/vislake/speed/pkg/config/format/yaml"
 ```
 
 - **This module depends on `pkg/core` and on nothing else in the
-  repository.** It is constructed before every other module, so anything
-  it required would have to exist before configuration does.
+  repository.** Its loading runs before assembly begins, so anything it
+  required from another module would have to exist before configuration
+  does.
+- **The command tree is the host's.** Nothing here names a subcommand, and
+  no module contributes one: which commands exist, and which modules each
+  one includes, is written in the host's `main`.
+- **The root package registers no module.** Loading runs before assembly and
+  hands the reader to the registry as a supplied product, so nothing here
+  needs a descriptor, a stance or a lifecycle callback. Transports and
+  formats still register one each, carrying only `Resources`.
 - **No value is interpreted on a module's behalf.** The declaring module
   gets its own values back and decides what they mean.
 
