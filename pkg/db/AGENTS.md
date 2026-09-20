@@ -34,6 +34,11 @@ must not cross, and how to run it.
 
 ## Boundaries
 
+- **Some boundaries below state the settled design, not what the code does
+  today.** The implementation-status table in this module's design document
+  says which. Moving the code toward them is the intended direction;
+  reasserting the shape they replaced is not.
+
 - **The root package imports no dialect driver.** Its third-party surface is
   GORM and GORM's own closure, no more, so a host that imports this package
   carries no engine but the one it deploys on. Nothing enforces that at compile
@@ -44,8 +49,8 @@ must not cross, and how to run it.
 - **A driver belongs to the subpackage that binds it.** The root package reaches
   an engine only through the `Spec.Dialector` an implementation hands it.
 - **The root package registers no module.** Each engine's subpackage does it in
-  its own `init`, so a host that imports an engine has it available as soon as
-  the configuration names it.
+  its own `init`, so a host that imports an engine has it available as soon as a
+  command includes it and the configuration names it.
 - **A new engine is a subpackage, a `Dialect` value, and a namespace of its
   own.** The dialect value is also the name of the subdirectory the engine's
   migrations are read from, so it has to stay a single path element. The
