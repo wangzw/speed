@@ -13,9 +13,7 @@ Python 3.11 or newer is required: `check_toolchain.py` parses TOML with
 
 A script named `check_*.py` is a gate: it takes no arguments, it reports
 against the current directory, and `make repo-check` runs every one of
-them, so a gate added here is wired by its name alone. `scan_cjk.py`
-carries another prefix because it is run on demand rather than by
-`make check`.
+them, so a gate added here is wired by its name alone.
 
 Each script also runs on its own:
 
@@ -23,7 +21,6 @@ Each script also runs on its own:
 python3 tools/check_toolchain.py
 python3 tools/check_markdown_examples.py
 python3 tools/check_workflow_refs.py
-python3 tools/scan_cjk.py
 ```
 
 Their own test suites run together, from the repository root:
@@ -74,10 +71,3 @@ reported by name), 1 a relative reference found, 2 infrastructure error
 (no `.github/workflows/` directory, no guarded file to check, or a file
 that cannot be read).
 
-`scan_cjk.py` — reports CJK characters outside the paths it carves
-out, which is how the language rule stated in the root `CLAUDE.md` gets
-checked. The two lists are read together: a path `CLAUDE.md` declares
-Chinese is only exempt once it is carved out here. Go files are checked
-in their comments only, through a lexer that honours string and rune
-context; other text files are checked whole. The script's docstring
-carries the carve-outs.

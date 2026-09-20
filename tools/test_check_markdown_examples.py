@@ -140,8 +140,7 @@ class NestedCheckoutTests(unittest.TestCase):
     def test_nested_worktree_corpus_is_not_discovered(self):
         # .claude/worktrees/ holds this repository's git worktrees --
         # complete checkouts whose own AGENTS.md/README/ADR files are never
-        # part of this checkout's corpus (the same exact-path prune
-        # tools/scan_cjk.py documents). Discovery must see only the
+        # part of this checkout's corpus. Discovery must see only the
         # in-tree file.
         with tempfile.TemporaryDirectory() as td:
             root = pathlib.Path(td)
