@@ -87,8 +87,8 @@ const (
 // copies nothing of the code under test and delays nothing, so what it writes
 // is the race as it happened.
 //
-// The log is one per peer, beside the script, and that is the point of it: the
-// window's "No such object" and the answer a first look at a container that has
+// The log is one per peer, beside the script, and that is the point of it: what
+// the window answers a look with and what a first look at a container that has
 // not been created yet gets are the same text, so a shared log could not tell a
 // peer that ran into the window on its own recovery from a peer that merely
 // looked before anything existed. Reading one peer's log alone is what makes
@@ -368,6 +368,14 @@ func (r peerRun) timeline() string {
 	return line.String()
 }
 
+// answeredWith reports whether an answer carries the part of it that says what
+// is wrong, with letter case folded away. Case is not docker's to keep stable:
+// the same refusal comes back capitalized from one version of the CLI and
+// lower-cased from another, and both are the same answer.
+func answeredWith(stderr, words string) bool {
+	return strings.Contains(strings.ToLower(stderr), strings.ToLower(words))
+}
+
 // hitWindow reports whether this peer lost the create race and then, by its own
 // later calls, was told the container was still not there.
 //
@@ -384,22 +392,24 @@ func (r peerRun) timeline() string {
 // a round claim coverage it never had, which is the same defect as counting a
 // failure from some other call.
 //
-// The words are matched by containment, and what each is matched against is
-// only the part of that answer which says what is wrong; the machine's own
-// docker is held to them by
+// The words are matched by containment with letter case folded away, and what
+// each is matched against is only the part of that answer which says what is
+// wrong — the first line of that call's stderr, which is all the shim's log
+// keeps of it. The machine's own docker is held to the words by
 // TestWhatDockerSaysAboutAMissingContainerIsWhatTheWindowAsksFor. A docker CLI
-// that words either of them differently still has that half of this never
-// match, the round reported as one that did not reach the window. That is the
-// safe direction — an answer this does not recognize costs the round a coverage
-// claim it cannot show, and never makes one.
+// that words either of them differently — another phrase, another sentence —
+// still has that half of this never match, the round reported as one that did
+// not reach the window; letter case is the one difference tolerated. That is
+// the safe direction — an answer this does not recognize costs the round a
+// coverage claim it cannot show, and never makes one.
 func (r peerRun) hitWindow() bool {
 	conflicted := false
 	for _, call := range r.calls {
 		if conflicted {
 			switch {
-			case call.sub == "inspect" && call.status != 0 && strings.Contains(call.stderr, missingObjectResponse):
+			case call.sub == "inspect" && call.status != 0 && answeredWith(call.stderr, missingObjectResponse):
 				return true
-			case call.sub == "start" && call.status != 0 && strings.Contains(call.stderr, missingContainerResponse):
+			case call.sub == "start" && call.status != 0 && answeredWith(call.stderr, missingContainerResponse):
 				return true
 			}
 		}
@@ -826,8 +836,36 @@ func TestHitWindowAsksForTheWindowsOwnAnswers(t *testing.T) {
 			true,
 		},
 		{
+			"a look the window answers in lower case",
+			[]dockerCall{conflict, {
+				sub: "inspect", status: failureStatus,
+				stderr: "error: no such object: speed-pgtest",
+			}},
+			true,
+		},
+		{
+			"a look the window answers in upper case",
+			[]dockerCall{conflict, {
+				sub: "inspect", status: failureStatus,
+				stderr: "Error: No such object: speed-pgtest",
+			}},
+			true,
+		},
+		{
 			"a start the window answers",
 			[]dockerCall{conflict, {sub: "start", status: failureStatus, stderr: missingContainerResponse}},
+			true,
+		},
+		// The wording here is written out rather than measured: this machine's
+		// docker answers a start in upper case. Without this case no observation
+		// separates a fix that folds case on the look alone from one that folds
+		// it on both halves.
+		{
+			"a start the window answers in lower case",
+			[]dockerCall{conflict, {
+				sub: "start", status: failureStatus,
+				stderr: "error response from daemon: no such container: speed-pgtest",
+			}},
 			true,
 		},
 		{
@@ -849,6 +887,14 @@ func TestHitWindowAsksForTheWindowsOwnAnswers(t *testing.T) {
 		{
 			"a look answered with the start's answer",
 			[]dockerCall{conflict, {sub: "inspect", status: failureStatus, stderr: missingContainerResponse}},
+			false,
+		},
+		{
+			"a look answered with the daemon's refusal of a container",
+			[]dockerCall{conflict, {
+				sub: "inspect", status: failureStatus,
+				stderr: "Error response from daemon: No such container: speed-pgtest",
+			}},
 			false,
 		},
 		{

@@ -41,13 +41,16 @@ import (
 // the two apart by what they say and waits for the container instead.
 //
 // What is kept of each is only the part that says what is wrong. The match is
-// containment (see hitWindow), and around that part sit a prefix that moves
-// between docker versions and this package's own container name — neither is
-// docker's to keep stable. Both answers are measured, on docker 28.0.4: an
-// inspect of a name that is not there answers "Error: No such object: <name>",
-// and a start answers "Error response from daemon: No such container: <name>"
-// ahead of "Error: failed to start containers: <name>". The words are held to
-// the machine's own docker by
+// containment with letter case folded away (see hitWindow), and around that
+// part sit a prefix that moves between docker versions and this package's own
+// container name; letter case moves between versions too. None of the three is
+// docker's to keep stable and none is depended on here — the phrase itself is.
+// Each constant is also the stderr the stand-in replays, so it carries one
+// casing of that phrase: the match ignores the casing, the replay uses it. What
+// does separate the two halves is the noun — one answer says object and the
+// other says container, and it is the only thing the match tells them apart by.
+// Of the two, only the start answer arrives behind the daemon's own response
+// prefix. The words are held to the machine's own docker by
 // TestWhatDockerSaysAboutAMissingContainerIsWhatTheWindowAsksFor, so a docker
 // that words them differently fails there rather than quietly costing the
 // window one of its halves.
@@ -140,9 +143,10 @@ func TestWhatDockerSaysAboutAMissingContainerIsWhatTheWindowAsksFor(t *testing.T
 			}}
 			if !run.hitWindow() {
 				t.Errorf("docker %s against a name that is not there left exit %d and %q, and a peer told "+
-					"that is not counted as one that reached the window, whose %s half asks for %q: bring "+
-					"the constant to the words this docker answers with, since the answers the window cases "+
-					"replay are the real ones only as long as this holds",
+					"that is not counted as one that reached the window, whose %s half asks for %q: this "+
+					"docker words the answer another way, so that half no longer recognizes the window. "+
+					"What has to be decided is whether the constant moves to the new wording, or whether "+
+					"this docker does not behave the way the window describes",
 					strings.Join(c.args, " "), recorded[0].status, recorded[0].stderr, c.constant, c.words)
 			}
 		})
@@ -481,9 +485,9 @@ func requireEndedWithinItsBound(t *testing.T, took, bound time.Duration) {
 // another test binary created the container and this one was refused the name,
 // so the container this one goes on to use is the one that won.
 //
-// The winner is not there to be seen at first — inspect answers "No such
-// object" for as long as the window lasts, which is what the old recovery ended
-// on. The stand-in answers that twice before the container shows up: the first
+// The winner is not there to be seen at first — inspect answers that there is
+// no such object for as long as the window lasts, which is what the old
+// recovery ended on. The stand-in answers that twice before the container shows up: the first
 // is the look taken before this process tried to create anything, the second
 // the look the old recovery made and gave up on. One answer would make this
 // case pass without the code being fixed at all.

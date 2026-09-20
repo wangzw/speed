@@ -283,7 +283,7 @@ func recoveryFailure(bound time.Duration, createErr, startErr error, state strin
 }
 
 // inspectRunning reports whether the shared container is running, and fails
-// when there is no such container.
+// when there is no such object.
 func inspectRunning() (string, error) {
 	ctx, cancel := context.WithTimeout(context.Background(), dockerTimeout)
 	defer cancel()
