@@ -1,7 +1,9 @@
 go 1.26.8
 
 use (
+	./examples/authenticated-host
 	./examples/minimal-host
+	./pkg/authn
 	./pkg/config
 	./pkg/core
 	./pkg/db
