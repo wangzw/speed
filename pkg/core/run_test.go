@@ -387,6 +387,32 @@ func TestDependencyFailureClosesConfigModule(t *testing.T) {
 	}
 }
 
+// TestMissingProviderNamesTheRequiringModuleAndItsSite pins that the failure
+// carries who asked and where that module was registered, through Run rather
+// than through the planner alone. The available set is decided by imports, so
+// the module left unsatisfied may be one a dependency pulled in, and a host
+// that never wrote it down can act on neither a bare capability name nor a
+// module name with no package behind it.
+func TestMissingProviderNamesTheRequiringModuleAndItsSite(t *testing.T) {
+	p := &probe{}
+	reg := core.New()
+	consumer := p.module("consumer")
+	consumer.Requires = []core.Requirement{{Token: (*Cache)(nil)}}
+	register(reg, p.configModule(), consumer)
+
+	err := runToFailure(t, reg)
+	if !errors.Is(err, core.ErrMissingProvider) {
+		t.Fatalf("Run returned %v, want ErrMissingProvider", err)
+	}
+	if !strings.Contains(err.Error(), `"consumer"`) {
+		t.Errorf("error %q does not name the module whose requirement went unmet", err)
+	}
+	if !strings.Contains(err.Error(), "registered from ") {
+		t.Errorf("error %q does not say where that module was registered, so a host that "+
+			"did not write it down has nothing to trace back to what pulled it in", err)
+	}
+}
+
 func TestPrepareErrorAbortsAndClosesConfig(t *testing.T) {
 	p := &probe{}
 	reg := core.New()

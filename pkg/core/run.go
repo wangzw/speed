@@ -82,7 +82,7 @@ func (r *Registry) startup(ctx context.Context) error {
 			enabled = append(enabled, m)
 		}
 	}
-	order, err := planConstruction(enabled, all, final)
+	order, err := planConstruction(enabled, all, final, r.registrationSites())
 	if err != nil {
 		return err
 	}

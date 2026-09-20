@@ -34,7 +34,7 @@ func (r *Registry) Resolve(t Token) (any, error) {
 	case 1:
 		return r.instances[constructed[0]], nil
 	case 0:
-		return nil, missingProviderError(ct, declarers, r.enablement)
+		return nil, missingProviderError(ct, declarers, r.enablement, "", "")
 	default:
 		return nil, fmt.Errorf("%w: capability %s is delivered by %s, and a single-valued "+
 			"lookup cannot choose between them. Take them up together with ResolveAll, or "+

@@ -25,7 +25,7 @@ func allEnabled(mods ...Module) map[string]Enablement {
 
 func mustPlan(t *testing.T, mods ...Module) []string {
 	t.Helper()
-	order, err := planConstruction(mods, mods, allEnabled(mods...))
+	order, err := planConstruction(mods, mods, allEnabled(mods...), nil)
 	if err != nil {
 		t.Fatalf("planning failed: %v", err)
 	}
@@ -44,7 +44,7 @@ func indexOf(t *testing.T, order []string, name string) int {
 func TestMissingProviderNoDeclarer(t *testing.T) {
 	consumer := Module{Name: "consumer", Requires: needs((*cacheCap)(nil))}
 
-	_, err := planConstruction([]Module{consumer}, []Module{consumer}, allEnabled(consumer))
+	_, err := planConstruction([]Module{consumer}, []Module{consumer}, allEnabled(consumer), nil)
 	if !errors.Is(err, ErrMissingProvider) {
 		t.Fatalf("planning returned %v, want ErrMissingProvider", err)
 	}
@@ -67,7 +67,7 @@ func TestMissingProviderTextCarriesDisableReason(t *testing.T) {
 		"provider": {State: StateDisabled, Reason: "no connection address configured"},
 	}
 
-	_, err := planConstruction([]Module{consumer}, []Module{consumer, provider}, final)
+	_, err := planConstruction([]Module{consumer}, []Module{consumer, provider}, final, nil)
 	if !errors.Is(err, ErrMissingProvider) {
 		t.Fatalf("planning returned %v, want ErrMissingProvider", err)
 	}
@@ -78,13 +78,31 @@ func TestMissingProviderTextCarriesDisableReason(t *testing.T) {
 	}
 }
 
+// TestMissingProviderNamesTheRequiringModule pins that the failure says which
+// module asked for the capability. The available set is decided by imports, so
+// the module left unsatisfied may be one a dependency pulled in rather than one
+// the host wrote down, and disabling it is a fixing action no host can take
+// without its name.
+func TestMissingProviderNamesTheRequiringModule(t *testing.T) {
+	consumer := Module{Name: "consumer", Requires: needs((*cacheCap)(nil))}
+
+	_, err := planConstruction([]Module{consumer}, []Module{consumer}, allEnabled(consumer), nil)
+	if !errors.Is(err, ErrMissingProvider) {
+		t.Fatalf("planning returned %v, want ErrMissingProvider", err)
+	}
+	if !strings.Contains(err.Error(), `"consumer"`) {
+		t.Errorf("error %q does not name the module whose requirement went unmet, so a host "+
+			"reading it cannot tell which module to satisfy or to disable", err)
+	}
+}
+
 func TestOptionalMissingIsNotAnError(t *testing.T) {
 	consumer := Module{
 		Name:     "consumer",
 		Requires: []Requirement{{Token: (*cacheCap)(nil), Optional: true}},
 	}
 
-	order, err := planConstruction([]Module{consumer}, []Module{consumer}, allEnabled(consumer))
+	order, err := planConstruction([]Module{consumer}, []Module{consumer}, allEnabled(consumer), nil)
 	if err != nil {
 		t.Fatalf("an absent optional dependency failed the planning: %v", err)
 	}
@@ -110,7 +128,7 @@ func TestCycleDetectedNamingModules(t *testing.T) {
 	a := Module{Name: "a", Requires: needs((*storeCap)(nil)), Provides: provides((*cacheCap)(nil))}
 	b := Module{Name: "b", Requires: needs((*cacheCap)(nil)), Provides: provides((*storeCap)(nil))}
 
-	_, err := planConstruction([]Module{a, b}, []Module{a, b}, allEnabled(a, b))
+	_, err := planConstruction([]Module{a, b}, []Module{a, b}, allEnabled(a, b), nil)
 	if !errors.Is(err, ErrDependencyCycle) {
 		t.Fatalf("planning returned %v, want ErrDependencyCycle", err)
 	}
@@ -131,7 +149,7 @@ func TestSelfCycle(t *testing.T) {
 		Provides: provides((*cacheCap)(nil)),
 	}
 
-	_, err := planConstruction([]Module{m}, []Module{m}, allEnabled(m))
+	_, err := planConstruction([]Module{m}, []Module{m}, allEnabled(m), nil)
 	if !errors.Is(err, ErrDependencyCycle) {
 		t.Fatalf("planning returned %v, want ErrDependencyCycle", err)
 	}

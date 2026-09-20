@@ -18,7 +18,10 @@ import (
 // Exclusive conflicts are not re-checked here; resolution settled them. An
 // Optional requirement whose provider is absent is skipped, while a present
 // one still takes part in the ordering.
-func planConstruction(enabled, all []Module, final map[string]Enablement) ([]string, error) {
+//
+// sites maps a module name to the package that registered it, and a name
+// missing from it loses only that half of the report.
+func planConstruction(enabled, all []Module, final map[string]Enablement, sites map[string]string) ([]string, error) {
 	nodes := make([]string, 0, len(enabled))
 	for _, m := range enabled {
 		nodes = append(nodes, m.Name)
@@ -66,7 +69,7 @@ func planConstruction(enabled, all []Module, final map[string]Enablement) ([]str
 				if req.Optional {
 					continue
 				}
-				return nil, missingProviderError(ct, declarersOf(all, ct), final)
+				return nil, missingProviderError(ct, declarersOf(all, ct), final, name, sites[name])
 			}
 			for _, p := range ps {
 				addEdge(p, name)
@@ -165,15 +168,19 @@ func cycleError(nodes, ordered []string, edges map[string]map[string]bool) error
 // missingProviderError tells the three causes apart, because the fixing action
 // differs: nothing delivers the capability, a provider is disabled, or a
 // provider exists but is constructed after the caller.
-func missingProviderError(ct reflect.Type, declarers []string, final map[string]Enablement) error {
+//
+// requiredBy is the module whose Requires went unmet, and site the package that
+// registered it. Both are empty when the registry does not know them, which is
+// the Resolve path: a lookup does not say who is making it.
+func missingProviderError(ct reflect.Type, declarers []string, final map[string]Enablement, requiredBy, site string) error {
 	if len(declarers) == 0 {
 		return errorText{
 			wrapped: ErrMissingProvider,
-			text: fmt.Sprintf("%s: no module delivers capability %s, declared in %s. Import "+
-				"an implementation of it, or enable one that is already imported. The "+
-				"package named here is the one the interface lives in, not necessarily the "+
-				"one to import: an implementation usually sits in a subpackage of its own",
-				ErrMissingProvider, typeName(ct), interfacePackage(ct)),
+			text: fmt.Sprintf("%s: no module delivers capability %s%s. %s. The interface "+
+				"lives in %s, which is not necessarily the package to import: an "+
+				"implementation usually sits in a subpackage of its own",
+				ErrMissingProvider, typeName(ct), requiredByClause(requiredBy, site, false),
+				fixingActions(requiredBy), interfacePackage(ct)),
 		}
 	}
 
@@ -187,7 +194,8 @@ func missingProviderError(ct reflect.Type, declarers []string, final map[string]
 	}
 
 	var b strings.Builder
-	fmt.Fprintf(&b, "%s: capability %s has no provider to take up", ErrMissingProvider, typeName(ct))
+	fmt.Fprintf(&b, "%s: capability %s%s has no provider to take up",
+		ErrMissingProvider, typeName(ct), requiredByClause(requiredBy, site, true))
 	if len(disabled) > 0 {
 		fmt.Fprintf(&b, "; %s", strings.Join(disabled, "; "))
 	}
@@ -197,6 +205,40 @@ func missingProviderError(ct reflect.Type, declarers []string, final map[string]
 			strings.Join(quoteAll(later), " and "))
 	}
 	return errorText{wrapped: ErrMissingProvider, text: b.String()}
+}
+
+// requiredByClause names the module whose requirement went unmet, together with
+// the package that registered it. The available set is decided by imports, so
+// that module may be one a dependency pulled in rather than one the host wrote
+// down, and a name on its own does not say where to look for it.
+//
+// trailing puts a comma after the clause, for the sentences that carry on past
+// it rather than ending there.
+func requiredByClause(requiredBy, site string, trailing bool) string {
+	if requiredBy == "" {
+		return ""
+	}
+	clause := fmt.Sprintf(", required by module %q", requiredBy)
+	if site != "" {
+		clause += fmt.Sprintf(" registered from %s", site)
+	}
+	if trailing {
+		clause += ","
+	}
+	return clause
+}
+
+// fixingActions lists what a host can do about a capability nothing delivers.
+// Taking the requiring module out is one of them, and it only becomes
+// actionable once the failure names that module: a host that never asked for it
+// may want it gone rather than want a provider in.
+func fixingActions(requiredBy string) string {
+	actions := []string{"Import an implementation of it", "enable one that is already imported"}
+	if requiredBy != "" {
+		actions = append(actions, fmt.Sprintf("disable %q", requiredBy))
+	}
+	last := len(actions) - 1
+	return strings.Join(actions[:last], ", ") + ", or " + actions[last]
 }
 
 // declarersOf lists the modules that declared a capability, in name order.

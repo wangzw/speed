@@ -89,6 +89,19 @@ func (r *Registry) Register(m Module) {
 	r.order = append(r.order, m.Name)
 }
 
+// registrationSites maps each registered module to the package that called
+// Register for it. A failure that names a module the host never wrote down can
+// say where it came in, which the name alone does not.
+func (r *Registry) registrationSites() map[string]string {
+	r.mu.RLock()
+	defer r.mu.RUnlock()
+	sites := make(map[string]string, len(r.mods))
+	for name, reg := range r.mods {
+		sites[name] = reg.site
+	}
+	return sites
+}
+
 // Modules gives the full set of descriptors. A capability with a single
 // provider can be traced back to its module from here; several providers give
 // only the candidate set, and routing by name belongs to the capability
