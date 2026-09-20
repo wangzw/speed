@@ -30,6 +30,7 @@ import (
 	"fmt"
 	"os"
 	"os/exec"
+	"strconv"
 	"strings"
 	"sync"
 	"sync/atomic"
@@ -57,6 +58,18 @@ const (
 	// maintenanceDatabase is the database the create and drop statements are
 	// issued from. Neither can run from inside the database it acts on.
 	maintenanceDatabase = "postgres"
+	// runningState is what the running flag renders as, and it is named
+	// rather than written twice inline.
+	//
+	// Unlike the words in recovery_test.go it is not docker's prose and
+	// cannot move with a docker version: the field behind it is a boolean,
+	// and a template renders one through the standard library, so the only
+	// two things it can ever print are this and its opposite. What can move
+	// is the field going away or ceasing to be a boolean, and that does not
+	// arrive as a word this fails to match — the template itself fails, the
+	// call exits non-zero, and the look reports it. No case holds this value
+	// to a real docker for that reason.
+	runningState = "true"
 	// namePrefix starts the name of every database this package creates. It
 	// is also how the housekeeping tells them from anything else on a
 	// container someone else's tooling may share.
@@ -111,6 +124,24 @@ func Skip() string {
 	return ""
 }
 
+// requireDocker skips the calling test when this machine cannot reach docker,
+// and fails it instead where CI is set.
+//
+// The decision is one policy — a laptop without docker skips, a run that is
+// meant to exercise these cases does not get to — and it is here rather than at
+// each caller because a gate that is silently skipped wherever it is actually
+// meant to run is not a gate, and that is exactly what a copy left behind on an
+// edit becomes.
+func requireDocker(t *testing.T) {
+	t.Helper()
+	if reason := Skip(); reason != "" {
+		if _, underCI := os.LookupEnv("CI"); underCI {
+			t.Fatalf("CI is set, so a skip here would leave this gate unguarded: %s", reason)
+		}
+		t.Skip(reason)
+	}
+}
+
 // Acquire hands back a locator for an empty PostgreSQL database of this test's
 // own, starting the shared container if it is not already up, and drops the
 // database when the test ends.
@@ -119,12 +150,7 @@ func Skip() string {
 // environment, where it fails the test instead.
 func Acquire(t *testing.T) string {
 	t.Helper()
-	if reason := Skip(); reason != "" {
-		if _, underCI := os.LookupEnv("CI"); underCI {
-			t.Fatalf("CI is set, so a skip here would leave this gate unguarded: %s", reason)
-		}
-		t.Skip(reason)
-	}
+	requireDocker(t)
 	port, err := server()
 	if err != nil {
 		t.Fatalf("bringing up the %s container: %v", containerName, err)
@@ -203,7 +229,7 @@ func ensureContainer() error { return ensureContainerWithin(recoveryBound, recov
 // the wait at all.
 func ensureContainerWithin(bound, interval time.Duration) error {
 	if state, err := inspectRunning(); err == nil {
-		if state == "true" {
+		if state == runningState {
 			return nil
 		}
 		// The container is there and not running: whoever created it did not
@@ -245,7 +271,7 @@ func awaitContainerWithin(bound, interval time.Duration, createErr error) error 
 	for {
 		state, inspectErr = inspectRunning()
 		switch {
-		case inspectErr == nil && state == "true":
+		case inspectErr == nil && state == runningState:
 			return nil
 		case inspectErr == nil:
 			// The container is there and not running yet: the winner is
@@ -316,19 +342,57 @@ func createContainer() error {
 	return err
 }
 
+// loopbackPortFormat renders the host port 5432 is published on at 127.0.0.1,
+// and nothing when it is published nowhere else or nowhere at all.
+//
+// The binding is read as a field rather than out of prose: `docker port` prints
+// address:port per family, and the address side of an IPv6 line carries colons
+// of its own, so reading it back means splitting an address off again. The two
+// other things this package asks docker are already templated, and this one
+// answers with the value itself.
+//
+// The address is pinned to the one DSN dials. A container this package created
+// publishes only there, but ensureContainer reuses whatever container holds the
+// name, whoever made it: one published on another address, or per family with a
+// port each, then reads as no port on this address rather than as a port
+// nothing listens on — the failure this whole path exists to keep from arriving
+// at the connection instead of at the read.
+// Each match ends in a newline. A container may hold more than one binding on
+// the address, and a range that wrote them end to end would render two ports as
+// one number that is neither.
+const loopbackPortFormat = `{{range (index .NetworkSettings.Ports "5432/tcp")}}` +
+	`{{if eq .HostIp "127.0.0.1"}}{{.HostPort}}{{"\n"}}{{end}}{{end}}`
+
 // publishedPort reports the host port 5432 inside the container is mapped to.
 func publishedPort() (string, error) {
 	ctx, cancel := context.WithTimeout(context.Background(), dockerTimeout)
 	defer cancel()
-	out, err := docker(exec.CommandContext(ctx, "docker", "port", containerName, "5432/tcp"))
+	out, err := docker(exec.CommandContext(ctx, "docker", "inspect",
+		"--format", loopbackPortFormat, containerName))
 	if err != nil {
 		return "", fmt.Errorf("reading the published port of %s: %w", containerName, err)
 	}
-	// docker prints one line per binding, as address:port.
-	line, _, _ := strings.Cut(strings.TrimSpace(out), "\n")
-	_, port, found := strings.Cut(strings.TrimSpace(line), ":")
-	if !found || port == "" {
-		return "", fmt.Errorf("the published port of %s reads as %q, which carries no port", containerName, out)
+	port, _, _ := strings.Cut(strings.TrimSpace(out), "\n")
+	if port == "" {
+		// An empty answer is two situations that read alike and are put
+		// right differently, so the look that tells them apart is made
+		// here rather than left to whoever reads the failure: a container
+		// that is no longer running has no bindings at all, while one
+		// published somewhere else has bindings and none on this address.
+		if state, err := inspectRunning(); err == nil && state != runningState {
+			return "", fmt.Errorf("%s is not running, so it publishes nothing: it was up when this "+
+				"look began and was stopped or removed in between", containerName)
+		}
+		return "", fmt.Errorf("%s publishes 5432 on no loopback address, so nothing here can be "+
+			"dialled: remove that container and let this package create its own", containerName)
+	}
+	// The port is held to the range one can be in. What comes back is a field
+	// rather than prose, so this is not parsing docker's output over again; it
+	// is refusing at the read a value that could only fail at the connection,
+	// where the report would name PostgreSQL and not this.
+	if _, err := strconv.ParseUint(port, 10, 16); err != nil {
+		return "", fmt.Errorf("the loopback binding of %s reads as %q, which is no port: %w",
+			containerName, port, err)
 	}
 	return port, nil
 }

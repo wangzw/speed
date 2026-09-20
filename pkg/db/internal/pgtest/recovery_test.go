@@ -41,7 +41,8 @@ import (
 // the two apart by what they say and waits for the container instead.
 //
 // What is kept of each is only the part that says what is wrong. The match is
-// containment with letter case folded away (see hitWindow), and around that
+// containment, with letter case folded away for the two a look and a start are
+// answered with and read as written for the refusal (see hitWindow), and around that
 // part sit a prefix that moves between docker versions and this package's own
 // container name; letter case moves between versions too. None of the three is
 // docker's to keep stable and none is depended on here — the phrase itself is.
@@ -58,6 +59,11 @@ const (
 	// conflictResponse is the refusal of a second container under the shared
 	// name. docker leaves 125 for it.
 	conflictResponse = `docker: Error response from daemon: Conflict. The container name "/speed-pgtest" is already in use by container "5b8f0c2a91d4".`
+	// conflictMarker is the part of the refusal that says the name is taken.
+	// It is matched as written, unlike the two below: docker capitalises it
+	// and "conflicting options" does not, and a fold would let that set the
+	// gate this opens.
+	conflictMarker = `Conflict`
 	// missingObjectResponse is the words inspect answers a name that is not
 	// there with, in the window and before it alike.
 	missingObjectResponse = `No such object`
@@ -84,17 +90,11 @@ const (
 // It makes the two calls a recovery makes — the look and the start — against a
 // name that cannot be there, behind the harness's own shim, so that each answer
 // is read back the way a peer's log holds it: the exit status docker left with,
-// and the first line of standard error. What has to come out is a peer whose
+// and what it wrote to standard error. What has to come out is a peer whose
 // create was refused and was then told by that call that the container was not
 // there — the window as hitWindow counts it, on this machine's docker.
 func TestWhatDockerSaysAboutAMissingContainerIsWhatTheWindowAsksFor(t *testing.T) {
-	if reason := Skip(); reason != "" {
-		if _, underCI := os.LookupEnv("CI"); underCI {
-			t.Fatalf("CI is set, so a skip here would leave the words the window cases replay unheld to "+
-				"a real docker: %s", reason)
-		}
-		t.Skip(reason)
-	}
+	requireDocker(t)
 	dockerPath, err := exec.LookPath("docker")
 	if err != nil {
 		t.Fatalf("this case drives the machine's own docker, which is not on PATH: %v", err)
@@ -150,6 +150,83 @@ func TestWhatDockerSaysAboutAMissingContainerIsWhatTheWindowAsksFor(t *testing.T
 					strings.Join(c.args, " "), recorded[0].status, recorded[0].stderr, c.constant, c.words)
 			}
 		})
+	}
+}
+
+// TestWhatDockerSaysAboutATakenNameIsWhatTheWindowAsksFor holds the third
+// reading the window rests on: the refusal that opens it.
+//
+// The other two halves are held by the case above. This one could not be,
+// because that case works from a name that is not there and this needs a name
+// that is, so it makes one: a container created and left alone, and a second
+// create under the same name behind the same shim. What has to come out is the
+// exit status and the words a losing peer's log holds — the status gate and the
+// word gate of the conflict half, together, since the conflict half is what
+// admits the other two and neither of its parts is read anywhere else against a
+// real docker.
+//
+// The image the throwaway is created from is the one the shared container runs,
+// so bringing that container up first is what puts it on the machine: this case
+// is about words, and a pull inside it would be a surprise rather than a cost
+// the package already accepts.
+func TestWhatDockerSaysAboutATakenNameIsWhatTheWindowAsksFor(t *testing.T) {
+	requireDocker(t)
+	skipIfStray(t)
+	dockerPath, err := exec.LookPath("docker")
+	if err != nil {
+		t.Fatalf("this case drives the machine's own docker, which is not on PATH: %v", err)
+	}
+	if dockerPath, err = filepath.Abs(dockerPath); err != nil {
+		t.Fatalf("resolving the docker to run: %v", err)
+	}
+	if err := ensureContainer(); err != nil {
+		t.Fatalf("bringing up %s, which is what puts %s on this machine: %v", containerName, image, err)
+	}
+
+	name := containerName + "-conflict-guard"
+	// A run cut off between the create and its cleanup leaves the name behind,
+	// and the next run's create would then be refused for the very reason this
+	// case is about — failing on the setup, with a message about the setup. The
+	// removal before it is best effort for the same reason the cold-start round
+	// does one: the name not being there is the ordinary case.
+	remove := func() {
+		ctx, cancel := context.WithTimeout(context.Background(), dockerTimeout)
+		defer cancel()
+		_, _ = docker(exec.CommandContext(ctx, "docker", "rm", "--force", name))
+	}
+	remove()
+	ctx, cancel := context.WithTimeout(context.Background(), dockerTimeout)
+	defer cancel()
+	if _, err := docker(exec.CommandContext(ctx, "docker", "create", "--name", name, image)); err != nil {
+		t.Fatalf("creating the container this case then asks docker for a second time: %v", err)
+	}
+	t.Cleanup(remove)
+
+	shim := plantShim(t, dockerPath, t.TempDir(), "conflict-guard", 0)
+	args := []string{"run", "--detach", "--name", name, image}
+	runCtx, runCancel := context.WithTimeout(context.Background(), dockerTimeout)
+	defer runCancel()
+	if err := exec.CommandContext(runCtx, filepath.Join(shim, "docker"), args...).Run(); err == nil {
+		t.Fatalf("docker %s started a second container under a name already taken, so there is no "+
+			"refusal to read", strings.Join(args, " "))
+	}
+	recorded := readCalls(filepath.Join(shim, "calls.log"))
+	if len(recorded) != 1 {
+		t.Fatalf("the shim recorded %d calls for the one it ran: %v", len(recorded), recorded)
+	}
+
+	run := peerRun{calls: []dockerCall{
+		recorded[0],
+		{sub: "inspect", status: failureStatus, stderr: missingObjectResponse},
+	}}
+	if !run.hitWindow() {
+		t.Errorf("docker %s against a name already taken left exit %d and %q, and a peer refused that "+
+			"way is not counted as one whose create was refused, which is what admits the look and the "+
+			"start that follow: the conflict half asks for exit %d (conflictStatus) and for %q "+
+			"(conflictMarker) to appear as written. Bring whichever of the two this docker no longer "+
+			"answers with to what it does, or establish that it refuses a taken name some other way",
+			strings.Join(args, " "), recorded[0].status, recorded[0].stderr,
+			conflictStatus, conflictMarker)
 	}
 }
 
@@ -497,7 +574,7 @@ func TestConflictRecoveryReusesTheWinningContainer(t *testing.T) {
 	stub.answers(t, "inspect",
 		failed(failureStatus, missingObjectResponse),
 		failed(failureStatus, missingObjectResponse),
-		succeeded("true"),
+		succeeded(runningState),
 	)
 	stub.answers(t, "run", failed(conflictStatus, conflictResponse))
 
@@ -527,7 +604,7 @@ func TestConflictRecoveryRetriesAStartThatFailedInTheWindow(t *testing.T) {
 	stub.answers(t, "inspect",
 		failed(failureStatus, missingObjectResponse),
 		succeeded("false"),
-		succeeded("true"),
+		succeeded(runningState),
 	)
 	stub.answers(t, "run", failed(conflictStatus, conflictResponse))
 	stub.answers(t, "start", failed(failureStatus, missingContainerResponse))

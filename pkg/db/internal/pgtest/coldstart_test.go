@@ -87,6 +87,14 @@ const (
 // copies nothing of the code under test and delays nothing, so what it writes
 // is the race as it happened.
 //
+// The newlines in a call's standard error become spaces, because the log is one
+// entry per line and a reader that keeps only the prefixed line keeps only the
+// first line docker wrote. docker puts the thing that went wrong last: a create
+// refused for a name already taken says so underneath however many lines the
+// image pull took, and this round removes the image before every round, so that
+// is the ordinary case rather than the odd one. Keeping the first line alone
+// left every refused create unrecognisable.
+//
 // The log is one per peer, beside the script, and that is the point of it: what
 // the window answers a look with and what a first look at a container that has
 // not been created yet gets are the same text, so a shared log could not tell a
@@ -106,7 +114,7 @@ finished=$(date +%s.%N)
 	printf 'argv: %s\n' "$*"
 	printf 'exit: %s\n' "$status"
 	printf 'from: %s to: %s\n' "$started" "$finished"
-	printf 'stderr: %s\n' "$(cat "$err")"
+	printf 'stderr: %s\n' "$(tr '\n' ' ' < "$err")"
 	echo ---
 } >>"$log"
 cat "$err" >&2
@@ -394,8 +402,8 @@ func answeredWith(stderr, words string) bool {
 //
 // The words are matched by containment with letter case folded away, and what
 // each is matched against is only the part of that answer which says what is
-// wrong — the first line of that call's stderr, which is all the shim's log
-// keeps of it. The machine's own docker is held to the words by
+// wrong; the answer itself is everything that call wrote to standard error, on
+// one line. The machine's own docker is held to the words by
 // TestWhatDockerSaysAboutAMissingContainerIsWhatTheWindowAsksFor. A docker CLI
 // that words either of them differently — another phrase, another sentence —
 // still has that half of this never match, the round reported as one that did
@@ -413,7 +421,12 @@ func (r peerRun) hitWindow() bool {
 				return true
 			}
 		}
-		if call.sub == "run" && call.status == conflictStatus && strings.Contains(call.stderr, "Conflict") {
+		// The casing is read here, unlike the two halves above. docker
+		// capitalises the refusal of a taken name, while "conflicting
+		// options" and its kind do not, and folding the case would let
+		// those set this gate: a round would then count a window it
+		// never entered, which is the one direction this may not go.
+		if call.sub == "run" && call.status == conflictStatus && strings.Contains(call.stderr, conflictMarker) {
 			conflicted = true
 		}
 	}
@@ -499,6 +512,12 @@ func TestColdStartConcurrency(t *testing.T) {
 		t.Skip(verdict.sentence)
 	case conclusionCovered:
 		t.Log(verdict.sentence)
+	default:
+		// A kind added to the set and not given an arm here would leave
+		// the run saying nothing at all about the race and passing, which
+		// is the one outcome this check must not be able to reach.
+		t.Fatalf("the run concluded kind %d, which nothing here reports: %s",
+			verdict.kind, verdict.sentence)
 	}
 }
 
