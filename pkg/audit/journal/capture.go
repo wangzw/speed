@@ -27,13 +27,12 @@ const (
 
 // capture is the plugin the descriptor declares.
 //
-// It holds nothing. The instance is frozen with the descriptor at init time,
-// and the database module hands that one instance to every handle it builds, so
-// a process driving two commands builds two registries that share it and
-// anything kept on it would be the other run's value on the second one. What a
-// callback needs is closed over as the callback is registered instead: the
-// handle that Initialize was given, and a failure signal belonging to that
-// handle alone.
+// It holds nothing at all. The instance is frozen with the descriptor at init
+// time, and the database module hands that one instance to every handle it
+// builds, so a process driving two commands builds two registries that share
+// it; anything kept on it would be the other run's value on the second one. The
+// callbacks need nothing from it either — they take the session they are handed
+// — which is why there is no per-handle state here to get wrong.
 type capture struct{}
 
 // newCapture builds the plugin the descriptor declares.
@@ -46,27 +45,29 @@ func (c *capture) Name() string { return "github.com/vislake/speed/pkg/audit/jou
 
 // Initialize registers the capture callbacks on one handle.
 //
-// The handle is captured, not kept on the instance, and GORM calls this once
-// per handle. The anchor names a step rather than a position: what it gives is
-// a lower bound, and the sort puts the callback at the end of the processor's
-// chain — after the statement has run and after the transaction it was in has
-// been committed or rolled back. The tenant filter registers on the same
-// processors ahead of their own steps, so the two orders are decided by the
-// anchors and not by which plugin was installed first.
+// The handle is used to register and then dropped. GORM calls this once per
+// handle, and what each callback works on is the session it is handed when it
+// runs, so no handle has to be remembered and a second one needs no special
+// care.
+//
+// The anchor names a step rather than a position: what it gives is a lower
+// bound, and the sort puts the callback at the end of the processor's chain.
+// The tenant filter registers on the same processors ahead of their own steps,
+// so the two orders are decided by the anchors and not by which plugin was
+// installed first.
 func (c *capture) Initialize(handle *gorm.DB) error {
-	sig := newSignal()
 	registered := []func(*gorm.DB) error{
 		func(h *gorm.DB) error {
 			return h.Callback().Create().After(createProcessor).
-				Register(captureCallbackName, captureOne(h, sig, "create"))
+				Register(captureCallbackName, captureOne("create"))
 		},
 		func(h *gorm.DB) error {
 			return h.Callback().Update().After(updateProcessor).
-				Register(captureCallbackName, captureOne(h, sig, "update"))
+				Register(captureCallbackName, captureOne("update"))
 		},
 		func(h *gorm.DB) error {
 			return h.Callback().Delete().After(deleteProcessor).
-				Register(captureCallbackName, captureOne(h, sig, "delete"))
+				Register(captureCallbackName, captureOne("delete"))
 		},
 	}
 	for _, register := range registered {
@@ -79,11 +80,18 @@ func (c *capture) Initialize(handle *gorm.DB) error {
 
 // captureOne builds the callback for one processor.
 //
-// handle is the root handle, so the row is written on a connection of its own
-// and not through the session the business statement ran in. A failure to write
-// therefore neither rolls the statement back nor is rolled back by it, and it
-// is reported rather than raised.
-func captureOne(handle *gorm.DB, sig *signal, action string) func(*gorm.DB) {
+// The row is written on the session the statement ran on, which is what makes
+// this path different from the three the module drives. The two consequences
+// are the reason for it. The record stands or falls with the write it records —
+// a transaction the caller opened and later rolled back takes the row with it,
+// and no row is left saying a write happened that did not. And there is only
+// ever one connection in play, so an engine that admits a single writer — the
+// one this repository ships migrations for — has nothing to contend over.
+//
+// The price is that a failure here is raised rather than reported: the
+// statement fails, because on this connection the record and the write are one
+// unit of work. That is the one path in the module where that is true.
+func captureOne(action string) func(*gorm.DB) {
 	return func(tx *gorm.DB) {
 		st := tx.Statement
 		if st == nil {
@@ -101,11 +109,17 @@ func captureOne(handle *gorm.DB, sig *signal, action string) func(*gorm.DB) {
 				"rows_affected": strconv.FormatInt(tx.RowsAffected, 10),
 			},
 		}
-		if err := insert(handle.WithContext(st.Context), assemble(st.Context, audit.SourceStatement, entry, "")); err != nil {
-			sig.fail(err)
-			return
+		// A session of its own on the same connection: NewDB clears the
+		// conditions the statement being recorded left on it, and the
+		// transaction underneath — if there is one — is not one of them.
+		session := tx.Session(&gorm.Session{NewDB: true, Context: st.Context})
+		if err := insert(session, assemble(st.Context, audit.SourceStatement, entry, "")); err != nil {
+			// The write that produced this row is not going to be reported any
+			// other way: there is no caller to return to and no signal this
+			// path reports through, because the row and the statement are one
+			// unit. Raising it on the session is what fails the statement.
+			_ = tx.AddError(err)
 		}
-		sig.recover()
 	}
 }
 

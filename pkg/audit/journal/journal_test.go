@@ -149,6 +149,42 @@ func TestStatementCaptureLeavesItsOwnWritesAlone(t *testing.T) {
 	}
 }
 
+// A statement-level row rides the statement's transaction.
+//
+// This is the decision the path turns on: the record and the write it describes
+// are one unit of work. Writing on a connection of its own instead leaves the
+// row behind after the rollback, and this case says so.
+func TestStatementCaptureRidesTheStatementsTransaction(t *testing.T) {
+	handle := open(t)
+
+	changed := errors.New("the caller changed its mind")
+	err := handle.Transaction(func(tx *gorm.DB) error {
+		if err := tx.Create(&order{ID: "o1", Note: "rolled back"}).Error; err != nil {
+			return err
+		}
+		return changed
+	})
+	if !errors.Is(err, changed) {
+		t.Fatalf("the transaction gave %v, want the caller's own error", err)
+	}
+	if got := len(auditRows(t, handle)); got != 0 {
+		t.Fatalf("a rolled-back write left %d audit row(s) behind", got)
+	}
+
+	if err := handle.Transaction(func(tx *gorm.DB) error {
+		return tx.Create(&order{ID: "o2", Note: "committed"}).Error
+	}); err != nil {
+		t.Fatalf("committing: %v", err)
+	}
+	rows := auditRows(t, handle)
+	if len(rows) != 1 {
+		t.Fatalf("want the committed write recorded, got %d row(s)", len(rows))
+	}
+	if rows[0].Outcome != "ok" {
+		t.Errorf("outcome is %q, want %q", rows[0].Outcome, "ok")
+	}
+}
+
 // Raw SQL reaches no audit row.
 //
 // The plugin registers on the model-path processors only, so a statement issued

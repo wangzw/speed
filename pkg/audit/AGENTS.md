@@ -40,6 +40,12 @@ must not cross, and how to run it.
   model path, where the target table is resolved; a write issued as raw SQL
   would carry no table and would not reach the plugin at all. Someone changing
   the name changes it in the constant and in both migration files.
+- **The statement callbacks write on the session they are handed.** That is what
+  puts the row in the statement's transaction and keeps it off a second
+  connection. Writing through a handle captured at `Initialize` instead — or
+  through a fresh connection — reopens both problems the choice closed: a
+  rolled-back write that still left a row, and a second writer contending on an
+  engine that admits one.
 - **The statement callbacks register on the model-path processors only.**
   `Exec` and `Raw` are left out on purpose. Adding them would put raw SQL in
   reach, which is where the module's own migrations and a host's own cleanup
@@ -52,10 +58,19 @@ must not cross, and how to run it.
   with no dot in them is what makes the two readings agree on every member. A
   name with a dot in it would be masked in one place and not the other, with
   nothing reporting the difference.
-- **A capture path this module drives never returns its failure to what it was
-  recording.** The request layer, the subscription and the plugin report through
-  the failure signal and carry on. `Record` is the one that returns an error,
-  because its caller asked for the record and can decide what a failure means.
+- **A failing write fails different things on different paths, and the split is
+  the decision, not an accident.** Statement capture writes on the statement's
+  own session, so its failure fails that statement and the record rides the
+  statement's transaction — that is what keeps the row and the write it
+  describes one thing, and what leaves a single-writer engine nothing to contend
+  over. The request layer and the subscription report through the failure signal
+  and carry on. `Record` returns an error, because its caller asked for the
+  record and can decide what a failure means. Changing one path to match another
+  undoes the reason that path has its rule.
+- **The plugin holds no handle.** GORM hands each callback the session the
+  statement ran on; nothing has to be remembered between `Initialize` calls, so
+  a second handle — including one `db.Open` builds — needs no special care, and
+  no per-handle state can leak between registries.
 - **The output plugin holds nothing between `Initialize` calls.** The database
   module hands one plugin instance to every handle it builds, and a process
   driving two commands builds two registries that share it. What a callback
