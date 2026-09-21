@@ -6,9 +6,11 @@ import (
 	"errors"
 	"io"
 	"io/fs"
+	"log/slog"
 	nethttp "net/http"
 	"net/http/httptest"
 	"strings"
+	"sync"
 	"testing"
 	"time"
 
@@ -17,6 +19,7 @@ import (
 	"gorm.io/gorm/logger"
 
 	"github.com/vislake/speed/pkg/audit"
+	"github.com/vislake/speed/pkg/event"
 	"github.com/vislake/speed/pkg/log"
 )
 
@@ -59,6 +62,44 @@ func applyMigration(t *testing.T, handle *gorm.DB, name string) {
 			t.Fatalf("applying %s: %v", name, err)
 		}
 	}
+}
+
+// newTestJournal builds a product that is accepting, reports nowhere and logs
+// nowhere: what these cases assert is what reached the table.
+func newTestJournal(handle *gorm.DB, set settings) *journal {
+	j := newJournal(set, handle, slog.New(slog.NewTextHandler(io.Discard, nil)))
+	j.signal = &signal{out: io.Discard}
+	j.accepting.Store(true)
+	return j
+}
+
+// recordingBus is a bus that keeps what was subscribed to it, so a case can
+// hand the module a fact the way a bus would.
+type recordingBus struct {
+	mu       sync.Mutex
+	handlers map[string][]event.Handler
+}
+
+func newRecordingBus() *recordingBus {
+	return &recordingBus{handlers: map[string][]event.Handler{}}
+}
+
+func (b *recordingBus) Subscribe(eventType string, h event.Handler) {
+	b.mu.Lock()
+	defer b.mu.Unlock()
+	b.handlers[eventType] = append(b.handlers[eventType], h)
+}
+
+// Publish plays the publisher's part: every handler the type has registered is
+// called, which is what a process-local bus does.
+func (b *recordingBus) Publish(ctx context.Context, evt event.Event) error {
+	b.mu.Lock()
+	handlers := append([]event.Handler(nil), b.handlers[evt.Type]...)
+	b.mu.Unlock()
+	for _, h := range handlers {
+		_ = h(ctx, evt)
+	}
+	return nil
 }
 
 // quiet is the configuration every handle in these tests opens with. GORM
@@ -491,6 +532,122 @@ func TestMiddlewareCarriesTheAuditToken(t *testing.T) {
 	}
 	if mw.Wrap == nil {
 		t.Error("the layer has no Wrap")
+	}
+}
+
+// A subscription records the type it was made for, with what the payload says
+// about the fact and the tenant the bus carried.
+func TestEventPathRecordsASubscribedType(t *testing.T) {
+	handle := open(t)
+	bus := newRecordingBus()
+	j := newTestJournal(handle, settings{events: []string{"order.updated"}})
+	j.subscribe(bus)
+
+	if err := bus.Publish(context.Background(), event.Event{
+		Type:     "order.updated",
+		TenantID: "acme",
+		Payload: map[string]any{
+			"object":  "order/o1",
+			"outcome": "ok",
+			"note":    "shipped",
+		},
+	}); err != nil {
+		t.Fatalf("publishing: %v", err)
+	}
+
+	rows := auditRows(t, handle)
+	if len(rows) != 1 {
+		t.Fatalf("want one row for the subscribed type, got %d", len(rows))
+	}
+	got := rows[0]
+	if got.Source != string(audit.SourceEvent) {
+		t.Errorf("source is %q, want %q", got.Source, audit.SourceEvent)
+	}
+	if got.Action != "order.updated" {
+		t.Errorf("action is %q, want the type name", got.Action)
+	}
+	if got.Object != "order/o1" || got.Outcome != "ok" {
+		t.Errorf("object/outcome are %q/%q, want the payload's", got.Object, got.Outcome)
+	}
+	// The tenant arrives on the event, not in a context a subscription callback
+	// has none of.
+	if got.TenantID == nil || *got.TenantID != "acme" {
+		t.Errorf("tenant is %v, want the one the event carried", got.TenantID)
+	}
+	if !strings.Contains(got.Detail, `"note":"shipped"`) {
+		t.Errorf("the payload's string fields are not in the detail: %s", got.Detail)
+	}
+}
+
+// A type nobody subscribed to is not recorded, and a payload that cannot be
+// read costs the event rather than the row.
+func TestEventPathIgnoresUnsubscribedTypesAndUnreadablePayloads(t *testing.T) {
+	handle := open(t)
+	bus := newRecordingBus()
+	j := newTestJournal(handle, settings{events: []string{"order.updated"}})
+	j.subscribe(bus)
+
+	if err := bus.Publish(context.Background(), event.Event{Type: "order.deleted"}); err != nil {
+		t.Fatalf("publishing an unsubscribed type: %v", err)
+	}
+	if got := len(auditRows(t, handle)); got != 0 {
+		t.Fatalf("an unsubscribed type was recorded: %d row(s)", got)
+	}
+
+	// A payload that cannot be decoded to an object. The subscriber's contract
+	// with its publisher is to drop what it cannot read.
+	if err := bus.Publish(context.Background(), event.Event{
+		Type:    "order.updated",
+		Payload: make(chan int),
+	}); err != nil {
+		t.Fatalf("publishing an unreadable payload: %v", err)
+	}
+	if got := len(auditRows(t, handle)); got != 0 {
+		t.Fatalf("an unreadable payload was recorded: %d row(s)", got)
+	}
+}
+
+// A type named twice is one subscription, so the fact is recorded once.
+func TestEventPathSubscribesOncePerType(t *testing.T) {
+	handle := open(t)
+	bus := newRecordingBus()
+	j := newTestJournal(handle, settings{events: []string{"order.updated", "order.updated"}})
+	j.subscribe(bus)
+
+	if err := bus.Publish(context.Background(), event.Event{Type: "order.updated"}); err != nil {
+		t.Fatalf("publishing: %v", err)
+	}
+	if got := len(auditRows(t, handle)); got != 1 {
+		t.Fatalf("a repeated type produced %d row(s), want 1", got)
+	}
+}
+
+// Updates and deletes are captured the way inserts are, each under its own
+// verb — the callbacks are three separate registrations and one of them
+// standing in for another would go unnoticed here otherwise.
+func TestStatementCaptureRecordsUpdateAndDelete(t *testing.T) {
+	handle := open(t)
+
+	if err := handle.Create(&order{ID: "o1", Note: "first"}).Error; err != nil {
+		t.Fatalf("creating the order: %v", err)
+	}
+	if err := handle.Model(&order{}).Where("id = ?", "o1").Update("note", "second").Error; err != nil {
+		t.Fatalf("updating the order: %v", err)
+	}
+	if err := handle.Delete(&order{}, "id = ?", "o1").Error; err != nil {
+		t.Fatalf("deleting the order: %v", err)
+	}
+
+	rows := auditRows(t, handle)
+	verbs := make([]string, 0, len(rows))
+	for _, r := range rows {
+		if r.Object != "orders" {
+			t.Errorf("a statement was recorded against %q, want %q", r.Object, "orders")
+		}
+		verbs = append(verbs, r.Action)
+	}
+	if want := "create,update,delete"; strings.Join(verbs, ",") != want {
+		t.Fatalf("the verbs are %q, want %q", strings.Join(verbs, ","), want)
 	}
 }
 
