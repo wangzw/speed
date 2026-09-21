@@ -76,9 +76,11 @@ type Handler func(ctx context.Context, evt Event) error
 |---|---|
 | `pkg/core` | 注册描述符、交付功能 |
 | `pkg/config` | 声明本模块的输入项 |
-| 共享发布单元 | 仅 Redis 实现使用：客户端类型与连接构造 |
+| 共享发布单元（见下） | Redis 实现与 PostgreSQL 实现各自的使用：客户端的类型与连接构造、连接池的构造 |
 
 **不依赖任何业务模块，与键值模块同处依赖图底层。** 租户标识是字符串而非租户模块的类型：import 那个模块的接口包会让每一个使用本模块的宿主在构建图里带上数据库、GORM、SQLite 驱动、HTTP 入口与认证，而本模块只需要一个字符串（[ADR-event-scope-2026-09-21](../../adr/adr-event-scope-2026-09-21.md)）。
+
+Redis 实现与键值模块的 Redis 实现共用一个封装该客户端的发布单元，PostgreSQL 实现与键值模块的 PostgreSQL 实现共用一个封装连接池构造的发布单元；各实现子包的集成用例所用的服务器夹具（`pgpool/pgtest`、`natstest`、`redis/redistest`）同样来自共享单元，理由与形态见 [ADR-shared-backend-unit-2026-09-21](../../adr/adr-shared-backend-unit-2026-09-21.md)。
 
 ## UML 图
 

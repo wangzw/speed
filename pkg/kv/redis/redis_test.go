@@ -5,6 +5,8 @@ import (
 	"errors"
 	"testing"
 
+	goredis "github.com/redis/go-redis/v9"
+
 	"github.com/vislake/speed/pkg/core"
 	"github.com/vislake/speed/pkg/kv"
 	"github.com/vislake/speed/pkg/kv/internal/kvsuite"
@@ -94,3 +96,35 @@ func TestOnlyTheServersNonNumericWordingBecomesTheSentinel(t *testing.T) {
 // leaves it where it was — is covered by the contract suite, which asserts both
 // against a real server here. A case repeating them would be a second copy of
 // one property, free to rot on its own.
+
+// TestKeysLiveUnderTheImplementationPrefix pins the namespace boundary between
+// this backend and everything else that may share its server. The event
+// module's Redis backend can be pointed at the same database, and without a
+// prefix of its own, a key here that reads like one of the event streams would
+// let a Set replace the stream — the events in it gone with no trace.
+func TestKeysLiveUnderTheImplementationPrefix(t *testing.T) {
+	addr, db := redistest.Acquire(t)
+	proto := speedredis.Defaults()
+	proto.Addr, proto.DB = addr, db
+	opened, err := open(context.Background(), &proto)
+	if err != nil {
+		t.Fatalf("open: %v", err)
+	}
+	s := opened.(*store)
+	t.Cleanup(func() { _ = s.Close(context.Background()) })
+	ctx := context.Background()
+
+	// A key spelled exactly like one of the event streams, to make the
+	// collision this guards against the one under test.
+	const key = "speed:events:order.placed"
+	if err := s.Set(ctx, key, []byte("v"), 0); err != nil {
+		t.Fatalf("Set: %v", err)
+	}
+	if got, err := s.client.Get(ctx, prefixed(key)).Bytes(); err != nil || string(got) != "v" {
+		t.Fatalf("reading the prefixed key gave (%q, %v); the value is not where this backend says it puts it", got, err)
+	}
+	if _, err := s.client.Get(ctx, key).Bytes(); !errors.Is(err, goredis.Nil) {
+		t.Fatalf("the bare key %q holds something after a Set: this backend is not namespacing its keys, and "+
+			"a stream living there would have been overwritten", key)
+	}
+}

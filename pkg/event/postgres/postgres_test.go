@@ -10,38 +10,20 @@ import (
 	"github.com/vislake/speed/pkg/core"
 	"github.com/vislake/speed/pkg/event"
 	"github.com/vislake/speed/pkg/event/internal/bussuite"
-	"github.com/vislake/speed/pkg/event/internal/pgtest"
+	"github.com/vislake/speed/pkg/pgpool"
+	"github.com/vislake/speed/pkg/pgpool/pgtest"
 )
-
-// errFailedOnPurpose is what a subscriber returns in the cases that check what
-// the publisher is told about it.
-var errFailedOnPurpose = errors.New("this handler failed on purpose")
 
 // openBus builds a bus over the given database.
 func openBus(t *testing.T, dsn string) *bus {
 	t.Helper()
-	opened, err := open(context.Background(), &Config{DSN: dsn, MaxConns: 4})
+	opened, err := open(context.Background(), &pgpool.Config{DSN: dsn, MaxConns: 4})
 	if err != nil {
 		t.Fatalf("open: %v", err)
 	}
 	local := opened.(*bus)
 	t.Cleanup(func() { _ = local.Close(context.Background()) })
 	return local
-}
-
-// waitFor polls until cond holds, and fails the case if it never does. Delivery
-// here happens on the reader goroutine, after Publish has returned, so every
-// assertion about it waits.
-func waitFor(t *testing.T, what string, cond func() bool) {
-	t.Helper()
-	deadline := time.Now().Add(10 * time.Second)
-	for time.Now().Before(deadline) {
-		if cond() {
-			return
-		}
-		time.Sleep(20 * time.Millisecond)
-	}
-	t.Fatalf("timed out waiting for %s", what)
 }
 
 func TestConforms(t *testing.T) {
@@ -57,7 +39,7 @@ func TestConforms(t *testing.T) {
 }
 
 func TestStanceStandsDownWithoutAConnectionString(t *testing.T) {
-	got := stance(&Config{})
+	got := stance(&pgpool.Config{})
 	if got.State != core.StateDisabled {
 		t.Fatalf("stance with no locator = %v, want StateDisabled", got.State)
 	}
@@ -67,7 +49,7 @@ func TestStanceStandsDownWithoutAConnectionString(t *testing.T) {
 }
 
 func TestStanceEnablesOnceAConnectionStringIsGiven(t *testing.T) {
-	got := stance(&Config{DSN: "postgres://localhost/x"})
+	got := stance(&pgpool.Config{DSN: "postgres://localhost/x"})
 	if got.State != core.StateEnabled {
 		t.Fatalf("stance with a locator = %v, want StateEnabled", got.State)
 	}
@@ -103,8 +85,8 @@ func TestEveryReplicaReceivesEveryEvent(t *testing.T) {
 	if err := second.Publish(ctx, event.Event{Type: "order.placed"}); err != nil {
 		t.Fatalf("Publish: %v", err)
 	}
-	waitFor(t, "the publishing replica's subscriber to run", func() bool { return gotSecond.Load() == 1 })
-	waitFor(t, "the other replica's subscriber to run", func() bool { return gotFirst.Load() == 1 })
+	bussuite.WaitFor(t, "the publishing replica's subscriber to run", func() bool { return gotSecond.Load() == 1 })
+	bussuite.WaitFor(t, "the other replica's subscriber to run", func() bool { return gotFirst.Load() == 1 })
 }
 
 // TestAnEventPublishedWhileNothingWasListeningIsStillDelivered is the window
@@ -136,27 +118,7 @@ func TestAnEventPublishedWhileNothingWasListeningIsStillDelivered(t *testing.T) 
 	if err := late.begin(ctx); err != nil {
 		t.Fatalf("begin: %v", err)
 	}
-	waitFor(t, "the late replica to catch up", func() bool { return got.Load() == 1 })
-}
-
-// TestPublishReportsNothingAboutSubscribers pins the capability's floor against
-// a real server.
-func TestPublishReportsNothingAboutSubscribers(t *testing.T) {
-	dsn := pgtest.Acquire(t)
-	ctx := context.Background()
-	b := openBus(t, dsn)
-	var ran atomic.Int32
-	b.Subscribe("t", func(context.Context, event.Event) error {
-		ran.Add(1)
-		return errFailedOnPurpose
-	})
-	if err := b.begin(ctx); err != nil {
-		t.Fatalf("begin: %v", err)
-	}
-	if err := b.Publish(ctx, event.Event{Type: "t"}); err != nil {
-		t.Fatalf("Publish reported a subscriber's failure: %v", err)
-	}
-	waitFor(t, "the failing subscriber to run", func() bool { return ran.Load() == 1 })
+	bussuite.WaitFor(t, "the late replica to catch up", func() bool { return got.Load() == 1 })
 }
 
 func TestAnUnserializablePayloadIsRefused(t *testing.T) {
@@ -183,5 +145,58 @@ func TestAClosedBusRefusesPublishes(t *testing.T) {
 	}
 	if err := b.Publish(ctx, event.Event{Type: "t"}); !errors.Is(err, event.ErrClosed) {
 		t.Fatalf("Publish after Close: %v, want ErrClosed", err)
+	}
+}
+
+// TestRetireRunsAtMostOncePerInterval pins the pacing of the retention pass:
+// draining used to end in the pass on every round — two large DELETEs at the
+// poll interval, per replica, one of them an anti-join over the delivered
+// table — a standing load whose window is a day wide.
+func TestRetireRunsAtMostOncePerInterval(t *testing.T) {
+	b := &bus{}
+	start := time.Now()
+	runs := 0
+	run := func() error { runs++; return nil }
+	if err := b.retireIfDue(start, run); err != nil {
+		t.Fatalf("the first pass: %v", err)
+	}
+	if runs != 1 {
+		t.Fatal("the first round did not run the retention pass, so a process that just started " +
+			"retires nothing until the second interval")
+	}
+	if err := b.retireIfDue(start.Add(time.Minute), run); err != nil {
+		t.Fatalf("the second pass: %v", err)
+	}
+	if runs != 1 {
+		t.Fatal("a round a minute later ran the retention pass again; the pass is due once per " +
+			"retireEvery, not once per poll")
+	}
+	if err := b.retireIfDue(start.Add(retireEvery), run); err != nil {
+		t.Fatalf("the third pass: %v", err)
+	}
+	if runs != 2 {
+		t.Fatal("the retention pass is not due when the interval has passed")
+	}
+}
+
+// TestAFailedRetireDoesNotBuyAnHour pins what a failed pass does to the
+// schedule: nothing. Recording the run before running it would leave a
+// transient DELETE failure with an hour of silence.
+func TestAFailedRetireDoesNotBuyAnHour(t *testing.T) {
+	b := &bus{}
+	start := time.Now()
+	sentinel := errors.New("the connection dropped")
+	runs := 0
+	fail := func() error { runs++; return sentinel }
+	if err := b.retireIfDue(start, fail); !errors.Is(err, sentinel) {
+		t.Fatalf("a failed pass returned %v, want the failure itself", err)
+	}
+	if err := b.retireIfDue(start.Add(time.Second), fail); !errors.Is(err, sentinel) {
+		t.Fatalf("the next round returned %v; a failed pass has to be retried, not skipped for "+
+			"the whole interval", err)
+	}
+	if runs != 2 {
+		t.Fatalf("the failing pass ran %d times across two rounds, want 2: a failed pass must not "+
+			"record itself as done", runs)
 	}
 }

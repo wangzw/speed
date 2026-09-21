@@ -21,6 +21,12 @@
 // which tables exist and on what the record table holds, and neither survives
 // being shared with the packages go test runs in parallel or with the second
 // test leg make check runs.
+//
+// Every module whose tests need PostgreSQL uses this one — the database module
+// and the postgres backends of the key-value and event modules — which is why
+// it lives beside the pool wrapper they share rather than inside any of them.
+// The cost is that it is exported rather than internal, so it is part of that
+// package's surface: see docs/adr/adr-shared-backend-unit-2026-09-21.md.
 package pgtest
 
 import (
@@ -174,13 +180,32 @@ func DSN(port, database string) string {
 		superuser, password, port, database)
 }
 
-// serverOnce holds the result of bringing the container up, so the work happens
-// once per test binary however many databases it acquires.
-var serverOnce = sync.OnceValues(startServer)
+// The result of bringing the container up is held so the work happens once per
+// test binary however many databases it acquires — the successful result, that
+// is. A failure is not remembered: docker may be reachable again a moment
+// later, and a case whose first Acquire raced a restarting daemon would
+// otherwise fail every later case with a stale error.
+var (
+	serverMu   sync.Mutex
+	serverPort string
+	serverUp   bool
+)
 
 // server reports the host port the shared container's PostgreSQL is published
 // on, starting or reusing the container as needed.
-func server() (string, error) { return serverOnce() }
+func server() (string, error) {
+	serverMu.Lock()
+	defer serverMu.Unlock()
+	if serverUp {
+		return serverPort, nil
+	}
+	port, err := startServer()
+	if err != nil {
+		return "", err
+	}
+	serverPort, serverUp = port, true
+	return port, nil
+}
 
 // startServer leaves the shared container running and reports its published
 // port.
@@ -351,17 +376,19 @@ func createContainer() error {
 // other things this package asks docker are already templated, and this one
 // answers with the value itself.
 //
-// The address is pinned to the one DSN dials. A container this package created
-// publishes only there, but ensureContainer reuses whatever container holds the
-// name, whoever made it: one published on another address, or per family with a
-// port each, then reads as no port on this address rather than as a port
-// nothing listens on — the failure this whole path exists to keep from arriving
-// at the connection instead of at the read.
+// The address is held to the ones DSN can dial. A container this package
+// created publishes on 127.0.0.1, but ensureContainer reuses whatever
+// container holds the name, whoever made it: an earlier fixture of this
+// repository published on every interface — which loopback reaches too — and
+// one published on some other single address, or per family with a port each,
+// then reads as no port that can be dialled rather than as a port nothing
+// listens on — the failure this whole path exists to keep from arriving at the
+// connection instead of at the read.
 // Each match ends in a newline. A container may hold more than one binding on
 // the address, and a range that wrote them end to end would render two ports as
 // one number that is neither.
 const loopbackPortFormat = `{{range (index .NetworkSettings.Ports "5432/tcp")}}` +
-	`{{if eq .HostIp "127.0.0.1"}}{{.HostPort}}{{"\n"}}{{end}}{{end}}`
+	`{{if or (eq .HostIp "127.0.0.1") (eq .HostIp "0.0.0.0") (eq .HostIp "")}}{{.HostPort}}{{"\n"}}{{end}}{{end}}`
 
 // publishedPort reports the host port 5432 inside the container is mapped to.
 func publishedPort() (string, error) {

@@ -21,13 +21,10 @@ package redis
 
 import (
 	"context"
-	"crypto/rand"
-	"encoding/hex"
 	"encoding/json"
 	"errors"
 	"fmt"
 	"log/slog"
-	"os"
 	"slices"
 	"strings"
 	"sync"
@@ -38,6 +35,7 @@ import (
 	"github.com/vislake/speed/pkg/config"
 	"github.com/vislake/speed/pkg/core"
 	"github.com/vislake/speed/pkg/event"
+	"github.com/vislake/speed/pkg/event/internal/replica"
 	"github.com/vislake/speed/pkg/redis"
 )
 
@@ -295,6 +293,20 @@ func (b *bus) read(stream, eventType string) {
 			if errors.Is(err, goredis.Nil) {
 				continue
 			}
+			if strings.Contains(err.Error(), "NOGROUP") {
+				// The stream or the group is gone — destroyed by an operator,
+				// flushed, or evicted under memory pressure — and every read
+				// will answer NOGROUP until it exists again, so the reader
+				// would deliver nothing for this type for the rest of the
+				// process's life. The create is idempotent (it answers
+				// BUSYGROUP when the group is already there), which is what
+				// makes rerunning it here safe.
+				if createErr := b.client.XGroupCreateMkStream(b.readCtx, stream, b.group, newGroupStart).Err(); createErr != nil &&
+					!strings.Contains(createErr.Error(), "BUSYGROUP") {
+					slog.Default().Error("event/redis: recreating the consumer group failed",
+						"event", eventType, "err", createErr)
+				}
+			}
 			slog.Default().Error("event/redis: reading the stream failed; retrying",
 				"event", eventType, "err", err)
 			select {
@@ -394,25 +406,7 @@ func streamKey(eventType string) string { return streamPrefix + eventType }
 
 // defaultGroupName gives this process a group of its own, which is what makes
 // the delivery a broadcast rather than a load balance.
-func defaultGroupName() string { return "speed-" + processToken() }
+func defaultGroupName() string { return "speed-" + replica.Name() }
 
 // defaultConsumerName names this process within its group.
-func defaultConsumerName() string { return "consumer-" + processToken() }
-
-// processToken is the host name plus random bytes: the host name makes a group
-// recognizable to an operator looking at the server, and the random part keeps
-// two processes on one host apart.
-func processToken() string {
-	host, err := os.Hostname()
-	if err != nil || host == "" {
-		host = "replica"
-	}
-	var b [8]byte
-	if _, err := rand.Read(b[:]); err != nil {
-		// crypto/rand does not fail in practice; a time-based fallback keeps a
-		// name unique enough to be a distinct group rather than panicking over
-		// something an operator cannot act on.
-		return fmt.Sprintf("%s-%d", host, time.Now().UnixNano())
-	}
-	return host + "-" + hex.EncodeToString(b[:])
-}
+func defaultConsumerName() string { return "consumer-" + replica.Name() }

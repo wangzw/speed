@@ -6,13 +6,15 @@ import (
 	"encoding/hex"
 	"fmt"
 	"strconv"
+	"sync"
 	"testing"
 	"time"
 
 	"github.com/vislake/speed/pkg/core"
 	"github.com/vislake/speed/pkg/kv"
+	"github.com/vislake/speed/pkg/kv/internal/expiry"
 	"github.com/vislake/speed/pkg/kv/internal/kvsuite"
-	"github.com/vislake/speed/pkg/kv/internal/natstest"
+	"github.com/vislake/speed/pkg/natstest"
 )
 
 // bucketName returns a name no earlier run can have used.
@@ -85,7 +87,7 @@ func TestTheExpiryTravelsInsideTheValue(t *testing.T) {
 	if err != nil {
 		t.Fatalf("reading the raw entry: %v", err)
 	}
-	value, expires, live := unwrapFull(entry.Value())
+	value, expires, live := expiry.UnwrapFull(entry.Value())
 	if !live {
 		t.Fatal("a key set with a moment to live reads as expired")
 	}
@@ -150,5 +152,56 @@ func TestTwoStoresOnOneBucketShareTheSameEntries(t *testing.T) {
 	}
 	if total != 12 {
 		t.Fatalf("the two stores counted to %v between them, want 12", total)
+	}
+}
+
+// TestCompareAndSwapOnAnExpiredKeyUnderContention pins the expired path's
+// sentinel handling: two swaps that both read the same expired revision are not
+// a failure for the one that loses. It is a swap that did not happen — the same
+// reading the live path already gives a contended key — and a caller that got
+// an error here could not tell it from the store being broken.
+func TestCompareAndSwapOnAnExpiredKeyUnderContention(t *testing.T) {
+	s := newStore(t)
+	ctx := context.Background()
+	const key = "contested"
+
+	// An entry whose time has passed but which is still in the bucket: this
+	// backend decides expiry itself, so the row is there to be contended.
+	if err := s.Set(ctx, key, []byte("v"), 50*time.Millisecond); err != nil {
+		t.Fatalf("Set: %v", err)
+	}
+	time.Sleep(100 * time.Millisecond)
+
+	const writers = 8
+	type outcome struct {
+		swapped bool
+		err     error
+	}
+	results := make([]outcome, writers)
+	start := make(chan struct{})
+	var wg sync.WaitGroup
+	for i := range writers {
+		wg.Add(1)
+		go func(i int) {
+			defer wg.Done()
+			<-start
+			swapped, err := s.CompareAndSwap(ctx, key, nil, []byte("next"))
+			results[i] = outcome{swapped, err}
+		}(i)
+	}
+	close(start)
+	wg.Wait()
+
+	swapped := 0
+	for i, r := range results {
+		if r.err != nil {
+			t.Errorf("writer %d reported %v; a lost revision is a swap that did not happen, not a failure", i, r.err)
+		}
+		if r.swapped {
+			swapped++
+		}
+	}
+	if swapped != 1 {
+		t.Fatalf("%d writers report a successful swap, want exactly one", swapped)
 	}
 }

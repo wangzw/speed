@@ -11,8 +11,8 @@ import (
 	"gorm.io/gorm"
 
 	"github.com/vislake/speed/pkg/db"
-	"github.com/vislake/speed/pkg/db/internal/pgtest"
 	"github.com/vislake/speed/pkg/db/postgres"
+	"github.com/vislake/speed/pkg/pgpool/pgtest"
 )
 
 // TestLockTimeoutIsErrMigrationLockTimeout holds the bounded wait to its

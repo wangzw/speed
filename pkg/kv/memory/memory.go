@@ -145,7 +145,7 @@ func (s *store) Set(ctx context.Context, key string, value []byte, ttl time.Dura
 	}
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	s.entries[key] = entry{value: bytes.Clone(value), expires: expiry(ttl)}
+	s.put(key, entry{value: bytes.Clone(value), expires: expiry(ttl)})
 	return nil
 }
 
@@ -197,14 +197,14 @@ func (s *store) increment(ctx context.Context, key string, delta float64, ttl ti
 	encoded := []byte(strconv.FormatFloat(next, 'g', -1, 64))
 
 	if live {
-		s.entries[key] = entry{value: encoded, expires: e.expires}
+		s.put(key, entry{value: encoded, expires: e.expires})
 		return next, nil
 	}
 	var expires time.Time
 	if withTTL {
 		expires = expiry(ttl)
 	}
-	s.entries[key] = entry{value: encoded, expires: expires}
+	s.put(key, entry{value: encoded, expires: expires})
 	return next, nil
 }
 
@@ -227,7 +227,7 @@ func (s *store) CompareAndSwap(ctx context.Context, key string, old, newVal []by
 	if !bytes.Equal(current, old) {
 		return false, nil
 	}
-	s.entries[key] = entry{value: bytes.Clone(newVal), expires: expires}
+	s.put(key, entry{value: bytes.Clone(newVal), expires: expires})
 	return true, nil
 }
 
@@ -246,6 +246,53 @@ func (s *store) load(key string) (entry, bool) {
 		return entry{}, false
 	}
 	return e, true
+}
+
+// put stores an entry and gives the sweep a turn, so the sweep's pace follows
+// the write rate without any writer having to remember it.
+//
+// The caller holds the mutex.
+func (s *store) put(key string, e entry) {
+	s.entries[key] = e
+	// Only a write that carries an expiry can add to the population of entries
+	// waiting to age out, and a deployment that sets no ttl anywhere — a lock
+	// table, a long-lived session store — would pay the sweep on every write
+	// for nothing.
+	if !e.expires.IsZero() {
+		s.sweep()
+	}
+}
+
+// sweepSample is how many entries one sweep looks at.
+//
+// Go's map iteration starts at a random position, so a sweep that stops early
+// is a random sample: successive writes look at different regions instead of
+// paying a full pass each time. The sample looks at far more entries than one
+// write adds, so it outpaces the writes, and a long-running process that gives
+// every key its own expiry does not accumulate one per key it has ever seen.
+const sweepSample = 32
+
+// sweep drops up to sweepSample expired entries.
+//
+// Expiry is otherwise lazy — an entry past its time is dropped by load when
+// someone asks for it — and a key nothing ever asks for again would sit in the
+// map forever. This is the active half of that pair: the write path is the
+// clock, so the population of expired-but-unvisited entries stays bounded
+// rather than growing with the keys the process has written.
+//
+// The caller holds the mutex.
+func (s *store) sweep() {
+	now := time.Now()
+	seen := 0
+	for key, e := range s.entries {
+		if seen >= sweepSample {
+			break
+		}
+		seen++
+		if !e.expires.IsZero() && !now.Before(e.expires) {
+			delete(s.entries, key)
+		}
+	}
 }
 
 // expiry turns a ttl into the instant a key stops being visible. Zero or less

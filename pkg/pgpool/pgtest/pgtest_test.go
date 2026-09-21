@@ -5,11 +5,9 @@ import (
 	"strings"
 	"testing"
 
-	pgdriver "gorm.io/driver/postgres"
-	"gorm.io/gorm"
-	"gorm.io/gorm/logger"
+	_ "github.com/jackc/pgx/v5/stdlib" // registers the driver this package opens through
 
-	"github.com/vislake/speed/pkg/db/internal/pgtest"
+	"github.com/vislake/speed/pkg/pgpool/pgtest"
 )
 
 // TestEachAcquisitionGetsAnEmptyDatabase holds this package to the isolation
@@ -29,7 +27,7 @@ func TestEachAcquisitionGetsAnEmptyDatabase(t *testing.T) {
 	}
 
 	firstHandle, secondHandle := open(t, first), open(t, second)
-	if err := firstHandle.Exec(`CREATE TABLE only_in_the_first (id INTEGER)`).Error; err != nil {
+	if _, err := firstHandle.Exec(`CREATE TABLE only_in_the_first (id INTEGER)`); err != nil {
 		t.Fatalf("creating a table on the first database: %v", err)
 	}
 	if tableExists(t, secondHandle, "only_in_the_first") {
@@ -62,18 +60,14 @@ func TestAcquiredDatabaseNamesCarryTheOwningProcess(t *testing.T) {
 }
 
 // open opens a handle on a locator this package handed back.
-func open(t *testing.T, dsn string) *gorm.DB {
+func open(t *testing.T, dsn string) *sql.DB {
 	t.Helper()
-	handle, err := gorm.Open(pgdriver.Open(dsn), &gorm.Config{Logger: logger.Discard})
+	handle, err := sql.Open("pgx", dsn)
 	if err != nil {
 		t.Fatalf("opening %q: %v", dsn, err)
 	}
-	pool, err := handle.DB()
-	if err != nil {
-		t.Fatalf("reaching the connection pool of %q: %v", dsn, err)
-	}
 	t.Cleanup(func() {
-		if err := pool.Close(); err != nil {
+		if err := handle.Close(); err != nil {
 			t.Errorf("closing the handle on %q: %v", dsn, err)
 		}
 	})
@@ -81,10 +75,10 @@ func open(t *testing.T, dsn string) *gorm.DB {
 }
 
 // tableExists reports whether a table is in the handle's database.
-func tableExists(t *testing.T, handle *gorm.DB, table string) bool {
+func tableExists(t *testing.T, handle *sql.DB, table string) bool {
 	t.Helper()
 	var name sql.NullString
-	err := handle.Raw(`SELECT to_regclass(?)::text`, table).Scan(&name).Error
+	err := handle.QueryRow(`SELECT to_regclass($1)::text`, table).Scan(&name)
 	if err != nil {
 		t.Fatalf("asking whether the table %q exists: %v", table, err)
 	}

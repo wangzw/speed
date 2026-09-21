@@ -17,6 +17,8 @@ replace github.com/vislake/speed/pkg/http => ../../pkg/http
 
 replace github.com/vislake/speed/pkg/log => ../../pkg/log
 
+replace github.com/vislake/speed/pkg/pgpool => ../../pkg/pgpool
+
 replace github.com/vislake/speed/pkg/tenant => ../../pkg/tenant
 
 require (
@@ -51,7 +53,7 @@ require (
 	github.com/spf13/viper v1.21.0 // indirect
 	github.com/subosito/gotenv v1.6.0 // indirect
 	go.yaml.in/yaml/v3 v3.0.5 // indirect
-	golang.org/x/sys v0.29.0 // indirect
+	golang.org/x/sys v0.32.0 // indirect
 	golang.org/x/text v0.29.0 // indirect
 	gorm.io/gorm v1.31.2 // indirect
 	modernc.org/libc v1.22.5 // indirect

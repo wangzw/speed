@@ -125,5 +125,6 @@ database of its own per case. A machine without docker skips them, and under
 `CI` that skip becomes a failure: those cases hold the gate on the cross-process
 migration mutex, and a gate that silently skips where it is meant to run is not a
 gate. `internal/dbhost` is the test host the multi-process cases build and run;
-`internal/pgtest` is the container fixture; `internal/dbsuite` holds the
+`pkg/pgpool/pgtest` is the container fixture, shared with the key-value and
+event modules' postgres backends; `internal/dbsuite` holds the
 engine-neutral migration cases each engine's fixture is driven through.

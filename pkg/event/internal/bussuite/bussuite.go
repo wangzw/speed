@@ -32,15 +32,24 @@ import (
 // case has subscribed. A case therefore subscribes and then calls the function.
 type Factory func(t *testing.T) (bus event.Bus, start func())
 
-// waitFor polls until cond holds, and fails the case if it never does.
+// WaitFor polls until cond holds, and fails the case if it never does.
 //
 // The polling is what lets one contract cover both delivery paths: a
 // process-local bus has run every handler by the time Publish returns, while a
 // bus backed by a transport delivers after it has. A case may not assume
 // either, so it waits instead.
-func waitFor(t *testing.T, what string, cond func() bool) {
+//
+// It is exported so that a backend's own cases — the ones that go past the
+// suite into what its backend does — wait the same way, at the same pace. A
+// copy with a longer bound would let a case pass here that the suite's own
+// bound would fail, which is how the pace drifted once already.
+func WaitFor(t *testing.T, what string, cond func() bool) {
 	t.Helper()
-	deadline := time.Now().Add(5 * time.Second)
+	// The bound is generous because delivery through a transport can take
+	// seconds on a loaded machine — the cross-replica cases wait on another
+	// process's reader — and a case that is genuinely broken still fails, just
+	// later.
+	deadline := time.Now().Add(10 * time.Second)
 	for time.Now().Before(deadline) {
 		if cond() {
 			return
@@ -65,7 +74,7 @@ func AssertConforms(t *testing.T, newBus Factory) {
 		if err := b.Publish(context.Background(), event.Event{Type: "order.placed"}); err != nil {
 			t.Fatalf("Publish: %v", err)
 		}
-		waitFor(t, "the subscriber to run", func() bool { return seen.Load() == 1 })
+		WaitFor(t, "the subscriber to run", func() bool { return seen.Load() == 1 })
 	})
 
 	t.Run("matching is by exact type name", func(t *testing.T) {
@@ -102,7 +111,7 @@ func AssertConforms(t *testing.T, newBus Factory) {
 		if err := b.Publish(context.Background(), event.Event{Type: "t"}); err != nil {
 			t.Fatalf("Publish: %v", err)
 		}
-		waitFor(t, "all subscribers to run", func() bool { return seen.Load() == subscribers })
+		WaitFor(t, "all subscribers to run", func() bool { return seen.Load() == subscribers })
 	})
 
 	t.Run("publishing a type nobody subscribed to is accepted", func(t *testing.T) {
@@ -158,7 +167,7 @@ func AssertConforms(t *testing.T, newBus Factory) {
 		if err := b.Publish(context.Background(), event.Event{Type: "t"}); err != nil {
 			t.Fatalf("Publish reported a subscriber's failure: %v", err)
 		}
-		waitFor(t, "the failing subscriber to run", func() bool { return ran.Load() == 1 })
+		WaitFor(t, "the failing subscriber to run", func() bool { return ran.Load() == 1 })
 	})
 
 	t.Run("one subscriber's failure does not stop the others", func(t *testing.T) {
@@ -175,7 +184,7 @@ func AssertConforms(t *testing.T, newBus Factory) {
 		if err := b.Publish(context.Background(), event.Event{Type: "t"}); err != nil {
 			t.Fatalf("Publish: %v", err)
 		}
-		waitFor(t, "the subscriber after the failing one to run",
+		WaitFor(t, "the subscriber after the failing one to run",
 			func() bool { return after.Load() == 1 })
 	})
 

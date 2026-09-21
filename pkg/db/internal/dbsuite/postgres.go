@@ -8,7 +8,7 @@ import (
 	"gorm.io/gorm"
 	"gorm.io/gorm/logger"
 
-	"github.com/vislake/speed/pkg/db/internal/pgtest"
+	"github.com/vislake/speed/pkg/pgpool/pgtest"
 )
 
 // init contributes the PostgreSQL fixture, so that every dialect-neutral

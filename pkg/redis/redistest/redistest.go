@@ -52,12 +52,26 @@ const (
 	dockerTimeout = 2 * time.Minute
 	// runningState is what docker's template prints for a running container.
 	runningState = "true"
+	// bringUpBound bounds the wait that follows a create lost to another test
+	// binary, and bringUpInterval is how often it looks while it waits.
+	bringUpBound    = 30 * time.Second
+	bringUpInterval = 150 * time.Millisecond
 )
 
 // nextDB hands out database indices. A counter rather than a random pick keeps
-// the sequence reproducible and makes a collision mean "more than sixteen
-// concurrent callers", which is worth failing over rather than hiding.
-var nextDB atomic.Int32
+// the sequence reproducible, and it is seeded from the process id so that two
+// test binaries running at once — go test across packages, or make check's two
+// legs — walk different stretches of the sixteen a default Redis has: with a
+// plain counter both would start at zero, and the second binary's FlushDB
+// would clear whatever database the first was using. Two process ids sixteen
+// apart still collide; that window is small because it now takes ids that line
+// up rather than every pair of binaries.
+var nextDB = func() *atomic.Int32 {
+	seeded := &atomic.Int32{}
+	//nolint:gosec // a process id is small next to int32 by construction
+	seeded.Store(int32(os.Getpid()))
+	return seeded
+}()
 
 // Acquire returns a server address and a database index on it that no other
 // caller is using, with that database empty.
@@ -99,18 +113,47 @@ func requireDocker(t *testing.T) {
 // not already running.
 func ensureServer(t *testing.T) string {
 	t.Helper()
-	if running(t) {
-		return publishedAddr(t)
+	if !running(t) {
+		// A container that is there but not running is started, not removed:
+		// it is another test binary's container a moment before it comes up,
+		// or an interrupted run's leftover, and removing it would reach into
+		// the other binary's window and take its server with it.
+		if exists(t) {
+			if _, err := docker(t, "start", containerName); err != nil && !running(t) {
+				t.Fatalf("redistest: starting the existing %s container: %v", containerName, err)
+			}
+		} else if createErr := create(t); createErr != nil {
+			// The create can lose to another test binary starting at the same
+			// moment: docker refuses the duplicate name, and it takes the name
+			// before the container can be looked at, so the loser spends a
+			// window being told there is no such container and only then finds
+			// the winner's. The wait below is that window, and the container it
+			// ends on is the winner's; a losing process never creates one of
+			// its own.
+			deadline := time.Now().Add(bringUpBound)
+			for time.Now().Before(deadline) {
+				if running(t) {
+					break
+				}
+				time.Sleep(bringUpInterval)
+			}
+			if !running(t) {
+				t.Fatalf("redistest: the %s container did not come up within %s: create failed with %v",
+					containerName, bringUpBound, createErr)
+			}
+		}
 	}
-	// A container left over from an interrupted run is removed rather than
-	// reused: nothing here can tell a half-started one from a good one, and
-	// removing it costs a cold start that is about to happen anyway.
-	if exists(t) {
-		run(t, "rm", "-f", containerName)
-	}
-	run(t, "run", "-d", "--name", containerName, "-p", "0:6379", image)
 	waitReady(t)
 	return publishedAddr(t)
+}
+
+// create starts the container. It reports docker's refusal as an error rather
+// than failing the case, because the caller has to decide whether the refusal
+// was the race above.
+func create(t *testing.T) error {
+	t.Helper()
+	_, err := docker(t, "run", "-d", "--name", containerName, "-p", "0:6379", image)
+	return err
 }
 
 // running reports whether the named container is up.
@@ -177,13 +220,4 @@ func docker(t *testing.T, args ...string) (string, error) {
 	cmd := exec.CommandContext(ctx, "docker", args...)
 	out, err := cmd.Output()
 	return string(out), err
-}
-
-// run runs one docker invocation and fails the case if it does not succeed.
-func run(t *testing.T, args ...string) {
-	t.Helper()
-	out, err := docker(t, args...)
-	if err != nil {
-		t.Fatalf("redistest: docker %s: %v\n%s", strings.Join(args, " "), err, out)
-	}
 }

@@ -15,10 +15,6 @@ import (
 	"github.com/vislake/speed/pkg/redis/redistest"
 )
 
-// errFailedOnPurpose is what a subscriber returns in the cases that check what
-// the publisher is told about it.
-var errFailedOnPurpose = errors.New("this handler failed on purpose")
-
 // openBus builds a bus over the given server, with a consumer group name of its
 // own unless one is given.
 func openBus(t *testing.T, addr string, db int, group string) *bus {
@@ -32,21 +28,6 @@ func openBus(t *testing.T, addr string, db int, group string) *bus {
 	local := opened.(*bus)
 	t.Cleanup(func() { _ = local.Close(context.Background()) })
 	return local
-}
-
-// waitFor polls until cond holds, and fails the case if it never does. Delivery
-// here happens on the reader goroutines, after Publish has returned, so every
-// assertion about it waits.
-func waitFor(t *testing.T, what string, cond func() bool) {
-	t.Helper()
-	deadline := time.Now().Add(5 * time.Second)
-	for time.Now().Before(deadline) {
-		if cond() {
-			return
-		}
-		time.Sleep(10 * time.Millisecond)
-	}
-	t.Fatalf("timed out waiting for %s", what)
 }
 
 func TestConforms(t *testing.T) {
@@ -113,8 +94,8 @@ func TestEveryReplicaReceivesEveryEvent(t *testing.T) {
 	if err := second.Publish(ctx, event.Event{Type: "order.placed"}); err != nil {
 		t.Fatalf("Publish: %v", err)
 	}
-	waitFor(t, "the publishing replica's subscriber to run", func() bool { return gotSecond.Load() == 1 })
-	waitFor(t, "the other replica's subscriber to run", func() bool { return gotFirst.Load() == 1 })
+	bussuite.WaitFor(t, "the publishing replica's subscriber to run", func() bool { return gotSecond.Load() == 1 })
+	bussuite.WaitFor(t, "the other replica's subscriber to run", func() bool { return gotFirst.Load() == 1 })
 }
 
 // TestTwoInstancesSharingAGroupSplitTheEvents is the other side of the same
@@ -144,34 +125,13 @@ func TestTwoInstancesSharingAGroupSplitTheEvents(t *testing.T) {
 	if err := first.Publish(ctx, event.Event{Type: "t"}); err != nil {
 		t.Fatalf("Publish: %v", err)
 	}
-	waitFor(t, "one of the two to take the event", func() bool { return total.Load() >= 1 })
+	bussuite.WaitFor(t, "one of the two to take the event", func() bool { return total.Load() >= 1 })
 	// The event is delivered once between them, not once each.
 	time.Sleep(300 * time.Millisecond)
 	if n := total.Load(); n != 1 {
 		t.Fatalf("the two instances handled the event %d times between them, want exactly 1: they "+
 			"share a group, so Redis balances the stream between them", n)
 	}
-}
-
-// TestPublishReportsNothingAboutSubscribers pins the capability's floor against
-// a real transport: a publish whose subscriber fails still returns nil, because
-// the failure happened on a reader goroutine after this call had returned.
-func TestPublishReportsNothingAboutSubscribers(t *testing.T) {
-	addr, db := redistest.Acquire(t)
-	ctx := context.Background()
-	b := openBus(t, addr, db, "")
-	var ran atomic.Int32
-	b.Subscribe("t", func(context.Context, event.Event) error {
-		ran.Add(1)
-		return errFailedOnPurpose
-	})
-	if err := b.begin(ctx); err != nil {
-		t.Fatalf("begin: %v", err)
-	}
-	if err := b.Publish(ctx, event.Event{Type: "t"}); err != nil {
-		t.Fatalf("Publish reported a subscriber's failure: %v", err)
-	}
-	waitFor(t, "the failing subscriber to run", func() bool { return ran.Load() == 1 })
 }
 
 // TestAnUnserializablePayloadIsRefusedBeforeItReachesTheStream covers the other
@@ -212,4 +172,48 @@ func TestStreamsAreNamespaced(t *testing.T) {
 	if got := streamKey("order.placed"); !strings.HasPrefix(got, streamPrefix) {
 		t.Fatalf("streamKey returned %q, which is not under %q", got, streamPrefix)
 	}
+}
+
+// TestReadRecoversWhenTheGroupIsGone pins the recovery from a vanished stream
+// or group: an operator's XGROUP DESTROY, a flush, or an eviction under memory
+// pressure answers every read with NOGROUP, and a reader that does not recreate
+// the group delivers nothing for this type for the rest of the process's life —
+// while Publish keeps returning nil.
+func TestReadRecoversWhenTheGroupIsGone(t *testing.T) {
+	addr, db := redistest.Acquire(t)
+	ctx := context.Background()
+	b := openBus(t, addr, db, "")
+	var seen atomic.Int32
+	b.Subscribe("t", func(context.Context, event.Event) error {
+		seen.Add(1)
+		return nil
+	})
+	if err := b.begin(ctx); err != nil {
+		t.Fatalf("begin: %v", err)
+	}
+
+	if err := b.client.XGroupDestroy(ctx, streamKey("t"), b.group).Err(); err != nil {
+		t.Fatalf("destroying the consumer group: %v", err)
+	}
+
+	// It is the reader that recreates the group, not this case: waiting for
+	// the group to come back is what shows the recovery happened at all.
+	bussuite.WaitFor(t, "the reader to recreate the consumer group", func() bool {
+		groups, err := b.client.XInfoGroups(ctx, streamKey("t")).Result()
+		if err != nil {
+			return false
+		}
+		for _, g := range groups {
+			if g.Name == b.group {
+				return true
+			}
+		}
+		return false
+	})
+
+	if err := b.Publish(ctx, event.Event{Type: "t"}); err != nil {
+		t.Fatalf("Publish: %v", err)
+	}
+	bussuite.WaitFor(t, "the event to arrive after the group came back",
+		func() bool { return seen.Load() == 1 })
 }

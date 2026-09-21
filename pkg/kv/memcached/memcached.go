@@ -25,10 +25,8 @@ import (
 	"bytes"
 	"context"
 	"encoding/base64"
-	"encoding/binary"
 	"errors"
 	"fmt"
-	"math/rand/v2"
 	"strconv"
 	"time"
 
@@ -37,6 +35,8 @@ import (
 	"github.com/vislake/speed/pkg/config"
 	"github.com/vislake/speed/pkg/core"
 	"github.com/vislake/speed/pkg/kv"
+	"github.com/vislake/speed/pkg/kv/internal/expiry"
+	"github.com/vislake/speed/pkg/kv/internal/retry"
 )
 
 const (
@@ -44,8 +44,6 @@ const (
 	ModuleName = "kv.memcached"
 	// ConfigNamespace is where this implementation's input items are mounted.
 	ConfigNamespace = ModuleName
-	// headerLen is the width of the expiry header every stored value carries.
-	headerLen = 8
 	// casAttempts bounds the retries one swap-driven operation makes. Every
 	// increment of one key is a read, an add and a swap here — Memcached's own
 	// increment takes an unsigned integer and the capability's takes a float64
@@ -140,7 +138,7 @@ func (s *store) Get(ctx context.Context, key string) ([]byte, bool, error) {
 	if err != nil {
 		return nil, false, err
 	}
-	value, live := unwrap(item.Value)
+	value, live := expiry.Unwrap(item.Value)
 	if !live {
 		// Past its expiry, and Memcached was never told about it. Dropping it
 		// here is what makes the key read as absent; nothing else will.
@@ -156,7 +154,7 @@ func (s *store) Set(ctx context.Context, key string, value []byte, ttl time.Dura
 	}
 	return s.client.Set(&memcache.Item{
 		Key:   encodeKey(key),
-		Value: wrap(value, expiryOf(ttl)),
+		Value: expiry.Wrap(value, expiry.Of(ttl)),
 	})
 }
 
@@ -203,16 +201,16 @@ func (s *store) increment(ctx context.Context, key string, delta float64, ttl ti
 			next := delta
 			expires := time.Time{}
 			if withTTL {
-				expires = expiryOf(ttl)
+				expires = expiry.Of(ttl)
 			}
 			// Add rather than Set, so a writer that got there between the miss
 			// and this write wins instead of being overwritten.
 			addErr := s.client.Add(&memcache.Item{
 				Key:   encoded,
-				Value: wrap([]byte(formatFloat(next)), expires),
+				Value: expiry.Wrap([]byte(formatFloat(next)), expires),
 			})
 			if errors.Is(addErr, memcache.ErrNotStored) {
-				backoff(attempt)
+				retry.Backoff(attempt)
 				continue
 			}
 			if addErr != nil {
@@ -223,7 +221,7 @@ func (s *store) increment(ctx context.Context, key string, delta float64, ttl ti
 			return 0, err
 		}
 
-		value, expires, live := unwrapFull(item.Value)
+		value, expires, live := expiry.UnwrapFull(item.Value)
 		var current float64
 		if live {
 			parsed, err := strconv.ParseFloat(string(value), 64)
@@ -235,14 +233,20 @@ func (s *store) increment(ctx context.Context, key string, delta float64, ttl ti
 			// Expired. The write that follows creates it, so the ttl applies.
 			expires = time.Time{}
 			if withTTL {
-				expires = expiryOf(ttl)
+				expires = expiry.Of(ttl)
 			}
 		}
 		next := current + delta
-		item.Value = wrap([]byte(formatFloat(next)), expires)
+		item.Value = expiry.Wrap([]byte(formatFloat(next)), expires)
 		if err := s.client.CompareAndSwap(item); err != nil {
-			if errors.Is(err, memcache.ErrCASConflict) || errors.Is(err, memcache.ErrNotStored) {
-				backoff(attempt)
+			// A conflict, or the entry is gone — deleted or evicted between
+			// the read and the write, which a compare-and-swap reports as a
+			// miss. Both are contention rather than failure: the retry reads
+			// it again, and a miss with nothing to read creates the key.
+			if errors.Is(err, memcache.ErrCASConflict) ||
+				errors.Is(err, memcache.ErrNotStored) ||
+				errors.Is(err, memcache.ErrCacheMiss) {
+				retry.Backoff(attempt)
 				continue
 			}
 			return 0, err
@@ -250,24 +254,6 @@ func (s *store) increment(ctx context.Context, key string, delta float64, ttl ti
 		return next, nil
 	}
 	return 0, fmt.Errorf("%s: %q stayed contested across %d attempts", ModuleName, key, casAttempts)
-}
-
-// backoff waits a jittered moment before the next attempt.
-//
-// Without it the contenders retry in lockstep and keep colliding: each round
-// produces one winner and the rest immediately try again, which is the shape
-// that made this loop exhaust its budget under fifty writers. The wait grows
-// with the attempt count and is capped, so a quiet key pays nothing and a hot
-// one spreads its writers out.
-func backoff(attempt int) {
-	ceiling := time.Duration(attempt+1) * 200 * time.Microsecond
-	if ceiling > 5*time.Millisecond {
-		ceiling = 5 * time.Millisecond
-	}
-	if ceiling > 0 {
-		//nolint:gosec // the jitter only has to spread contenders out; nothing in a retry delay needs a value an attacker cannot predict
-		time.Sleep(time.Duration(rand.Int64N(int64(ceiling))))
-	}
 }
 
 // CompareAndSwap writes only on a match, and never touches the expiry.
@@ -283,7 +269,7 @@ func (s *store) CompareAndSwap(ctx context.Context, key string, old, newVal []by
 		if len(old) > 0 {
 			return false, nil
 		}
-		addErr := s.client.Add(&memcache.Item{Key: encoded, Value: wrap(newVal, time.Time{})})
+		addErr := s.client.Add(&memcache.Item{Key: encoded, Value: expiry.Wrap(newVal, time.Time{})})
 		if errors.Is(addErr, memcache.ErrNotStored) {
 			return false, nil
 		}
@@ -295,7 +281,7 @@ func (s *store) CompareAndSwap(ctx context.Context, key string, old, newVal []by
 	if err != nil {
 		return false, err
 	}
-	value, expires, live := unwrapFull(item.Value)
+	value, expires, live := expiry.UnwrapFull(item.Value)
 	if !live {
 		// Expired reads as absent, so only an empty old matches.
 		if len(old) > 0 {
@@ -310,7 +296,7 @@ func (s *store) CompareAndSwap(ctx context.Context, key string, old, newVal []by
 		if delErr := s.client.Delete(encoded); delErr != nil && !errors.Is(delErr, memcache.ErrCacheMiss) {
 			return false, delErr
 		}
-		addErr := s.client.Add(&memcache.Item{Key: encoded, Value: wrap(newVal, time.Time{})})
+		addErr := s.client.Add(&memcache.Item{Key: encoded, Value: expiry.Wrap(newVal, time.Time{})})
 		if errors.Is(addErr, memcache.ErrNotStored) {
 			return false, nil
 		}
@@ -324,69 +310,20 @@ func (s *store) CompareAndSwap(ctx context.Context, key string, old, newVal []by
 	}
 	// The expiry is carried over rather than reset: the swap never changes when
 	// a key stops being visible.
-	item.Value = wrap(newVal, expires)
+	item.Value = expiry.Wrap(newVal, expires)
 	if err := s.client.CompareAndSwap(item); err != nil {
-		if errors.Is(err, memcache.ErrCASConflict) || errors.Is(err, memcache.ErrNotStored) {
-			// Someone else wrote in between, which is a swap that did not
-			// happen rather than a failure.
+		if errors.Is(err, memcache.ErrCASConflict) ||
+			errors.Is(err, memcache.ErrNotStored) ||
+			errors.Is(err, memcache.ErrCacheMiss) {
+			// Someone else wrote or removed it in between — the miss included,
+			// which is what a delete or an eviction between the read and the
+			// write reports — and each is a swap that did not happen rather
+			// than a failure.
 			return false, nil
 		}
 		return false, err
 	}
 	return true, nil
-}
-
-// wrap puts the expiry in front of the value.
-//
-// The header is eight big-endian bytes of Unix nanoseconds, and zero means no
-// expiry. An expiry lives here rather than in Memcached's own expiration field
-// because a compare-and-swap write cannot carry the old one forward, and the
-// capability says a swap and an increment both leave it where it was.
-func wrap(value []byte, expires time.Time) []byte {
-	out := make([]byte, headerLen+len(value))
-	binary.BigEndian.PutUint64(out[:headerLen], stamp(expires))
-	copy(out[headerLen:], value)
-	return out
-}
-
-// unwrap returns the value, reporting whether it is still live.
-func unwrap(stored []byte) ([]byte, bool) {
-	value, _, live := unwrapFull(stored)
-	return value, live
-}
-
-// unwrapFull returns the value, its expiry, and whether it is still live.
-//
-// A stored value too short to hold a header is reported as a value with no
-// expiry rather than as a failure: nothing this package wrote has that shape,
-// and a caller is better served by the bytes than by an error it cannot act on.
-func unwrapFull(stored []byte) (value []byte, expires time.Time, live bool) {
-	if len(stored) < headerLen {
-		return stored, time.Time{}, true
-	}
-	//nolint:gosec // the header is this package's own: it holds a Unix nanosecond stamp, which fits an int64 by construction
-	nanos := int64(binary.BigEndian.Uint64(stored[:headerLen]))
-	if nanos == 0 {
-		return stored[headerLen:], time.Time{}, true
-	}
-	expires = time.Unix(0, nanos)
-	return stored[headerLen:], expires, time.Now().Before(expires)
-}
-
-// stamp is the header value for an expiry, or zero for none.
-func stamp(expires time.Time) uint64 {
-	if expires.IsZero() {
-		return 0
-	}
-	return uint64(expires.UnixNano())
-}
-
-// expiryOf turns a ttl into the instant a key stops being visible.
-func expiryOf(ttl time.Duration) time.Time {
-	if ttl <= 0 {
-		return time.Time{}
-	}
-	return time.Now().Add(ttl)
 }
 
 // formatFloat renders a counter as the shortest text that round-trips.

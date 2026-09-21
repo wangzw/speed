@@ -22,14 +22,10 @@ package postgres
 
 import (
 	"context"
-	"crypto/rand"
-	"encoding/hex"
 	"encoding/json"
 	"errors"
 	"fmt"
 	"log/slog"
-	"math"
-	"os"
 	"slices"
 	"strings"
 	"sync"
@@ -38,9 +34,10 @@ import (
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgxpool"
 
-	"github.com/vislake/speed/pkg/config"
 	"github.com/vislake/speed/pkg/core"
 	"github.com/vislake/speed/pkg/event"
+	"github.com/vislake/speed/pkg/event/internal/replica"
+	"github.com/vislake/speed/pkg/pgpool"
 )
 
 const (
@@ -75,6 +72,11 @@ const (
 	// bounds both tables, which would otherwise grow without limit: a replica
 	// that has been down for longer than this does not receive what it missed.
 	retention = 24 * time.Hour
+	// retireEvery bounds how often the retention pass runs. Retiring on every
+	// poll would turn two large DELETEs — one of them an anti-join over the
+	// delivered table — into a standing load at the poll interval, while the
+	// window they enforce is a day wide.
+	retireEvery = time.Hour
 	// createTable is idempotent, and it is this package's own record of having
 	// been applied — this capability is below the database module in the
 	// dependency graph and has no migration machinery to borrow.
@@ -93,52 +95,30 @@ const (
 	CREATE INDEX IF NOT EXISTS ` + deliveredTable + `_replica ON ` + deliveredTable + ` (replica, event_id)`
 )
 
-// Config is what this implementation accepts.
-type Config struct {
-	DSN string `config:"dsn"`
-	// MaxConns is the largest number of connections the pool opens.
-	MaxConns int `config:"max-conns"`
-}
-
-const (
-	dsnKey      = "dsn"
-	maxConnsKey = "max-conns"
-)
-
-const defaultMaxConns = 10
-
 // init registers this module with the process registry.
 func init() { core.ProcessRegistry.Register(Module()) }
 
 // Module is this module's descriptor.
 func Module() core.Module {
-	return event.NewModule(event.Spec[Config]{
+	defaults := pgpool.Defaults()
+	return event.NewModule(event.Spec[pgpool.Config]{
 		ModuleName:      ModuleName,
 		ConfigNamespace: ConfigNamespace,
-		Config:          &Config{MaxConns: defaultMaxConns},
-		Items: map[string]config.Item{
-			dsnKey: {
-				Sensitive: true,
-				Description: "the PostgreSQL connection string; leaving it out runs the assembly " +
-					"without this backend",
-			},
-			maxConnsKey: {
-				Description: "the largest number of connections the pool opens",
-			},
-		},
-		Stance: stance,
-		Open:   open,
-		Start:  start,
+		Config:          &defaults,
+		Items:           pgpool.Items(),
+		Stance:          stance,
+		Open:            open,
+		Start:           start,
 	})
 }
 
 // stance states whether this implementation runs.
-func stance(cfg *Config) core.Enablement {
+func stance(cfg *pgpool.Config) core.Enablement {
 	if strings.TrimSpace(cfg.DSN) == "" {
 		return core.Enablement{
 			State: core.StateDisabled,
 			Reason: fmt.Sprintf("%s.%s gives no connection string, so this assembly runs without a "+
-				"PostgreSQL event bus; set it to run on PostgreSQL", ConfigNamespace, dsnKey),
+				"PostgreSQL event bus; set it to run on PostgreSQL", ConfigNamespace, pgpool.DSNKey),
 		}
 	}
 	return core.Enablement{State: core.StateEnabled}
@@ -146,24 +126,10 @@ func stance(cfg *Config) core.Enablement {
 
 // open builds the pool, makes sure the outbox is there, and takes the listening
 // connection.
-func open(ctx context.Context, cfg *Config) (event.Bus, error) {
-	poolCfg, err := pgxpool.ParseConfig(cfg.DSN)
+func open(ctx context.Context, cfg *pgpool.Config) (event.Bus, error) {
+	pool, err := pgpool.Connect(ctx, ModuleName, *cfg)
 	if err != nil {
-		return nil, fmt.Errorf("%s: reading the connection string: %w", ModuleName, err)
-	}
-	if cfg.MaxConns > 0 {
-		// A value past what the pool takes is refused rather than wrapped: a
-		// negative one would be read as "no limit" or as an immediate refusal,
-		// depending on the pool, and neither is what the host configured.
-		if cfg.MaxConns > math.MaxInt32 {
-			return nil, fmt.Errorf("%s: %s is %d, past what a connection pool accepts",
-				ModuleName, maxConnsKey, cfg.MaxConns)
-		}
-		poolCfg.MaxConns = int32(cfg.MaxConns)
-	}
-	pool, err := pgxpool.NewWithConfig(ctx, poolCfg)
-	if err != nil {
-		return nil, fmt.Errorf("%s: building the pool: %w", ModuleName, err)
+		return nil, err
 	}
 	if _, createErr := pool.Exec(ctx, createTable); createErr != nil {
 		pool.Close()
@@ -182,14 +148,14 @@ func open(ctx context.Context, cfg *Config) (event.Bus, error) {
 		pool.Close()
 		return nil, fmt.Errorf("%s: listening on %s: %w", ModuleName, channel, err)
 	}
-	replica := defaultReplicaName()
+	self := replica.Name()
 	// A subscriber that arrives now is not owed what was published before it,
 	// so everything already in the outbox is marked as delivered to this
 	// replica before it starts reading. Marking rather than skipping to an id
 	// is what keeps a late commit from being mistaken for an old one.
 	if _, err := pool.Exec(ctx,
 		`INSERT INTO `+deliveredTable+` (event_id, replica) SELECT id, $1 FROM `+table+`
-		 ON CONFLICT DO NOTHING`, replica); err != nil {
+		 ON CONFLICT DO NOTHING`, self); err != nil {
 		_ = listen.Close(ctx)
 		pool.Close()
 		return nil, fmt.Errorf("%s: marking the outbox's existing entries: %w", ModuleName, err)
@@ -197,7 +163,7 @@ func open(ctx context.Context, cfg *Config) (event.Bus, error) {
 	return &bus{
 		pool:     pool,
 		listen:   listen,
-		replica:  replica,
+		replica:  self,
 		handlers: make(map[string][]event.Handler),
 	}, nil
 }
@@ -227,6 +193,9 @@ type bus struct {
 	readCtx context.Context
 	cancel  context.CancelFunc
 	reader  sync.WaitGroup
+	// lastRetire is when the retention pass last ran. Only the read goroutine
+	// touches it, so it needs no lock of its own.
+	lastRetire time.Time
 }
 
 // Subscribe registers a handler for one event type.
@@ -316,6 +285,14 @@ func (b *bus) read() {
 	for {
 		if b.readCtx.Err() != nil {
 			return
+		}
+		// The retention pass runs whether or not this replica subscribes to
+		// anything: a publish-only process ages its outbox out on the same
+		// clock as any other. It sits here rather than at the end of drain,
+		// because drain returns early when there are no subscribers.
+		if err := b.retireIfDue(time.Now(), b.runRetention); err != nil {
+			slog.Default().Error("event/postgres: retiring old entries failed; the next round retries",
+				"err", err)
 		}
 		if err := b.drain(); err != nil {
 			if b.readCtx.Err() != nil {
@@ -415,42 +392,50 @@ func (b *bus) drain() error {
 			return err
 		}
 	}
-	b.retire()
 	return nil
 }
 
-// retire drops what is past the retention window.
+// retireIfDue runs the retention pass when it is due, and records the run only
+// when it succeeded: a failed pass leaves the schedule alone, so the next
+// round tries again rather than the failure buying an hour of silence.
+//
+// run is a parameter so a case can drive the pass and its failure without a
+// database, the way the pool fixture takes the pace of its wait as parameters.
+//
+// The caller is the single read goroutine, so the field it reads and writes
+// needs no lock.
+func (b *bus) retireIfDue(now time.Time, run func() error) error {
+	if now.Sub(b.lastRetire) < retireEvery {
+		return nil
+	}
+	if err := run(); err != nil {
+		return err
+	}
+	b.lastRetire = now
+	return nil
+}
+
+// runRetention drops what is past the retention window.
 //
 // Both tables grow with every event, and nothing else bounds them: the outbox
 // by what was published, the delivered table by what each replica has marked.
 // The cost is stated where the window is: a replica that has been away longer
 // than the window does not receive what it missed, because the entries are
 // gone.
-func (b *bus) retire() {
+func (b *bus) runRetention() error {
+	var errs []error
 	if _, err := b.pool.Exec(b.readCtx,
 		`DELETE FROM `+table+` WHERE created_at < $1`, time.Now().Add(-retention)); err != nil {
-		slog.Default().Error("event/postgres: retiring old outbox entries failed", "err", err)
+		errs = append(errs, fmt.Errorf("retiring old outbox entries: %w", err))
 	}
 	// The marks of entries that are gone are gone too; without this the
 	// delivered table would outlive the thing it describes.
 	if _, err := b.pool.Exec(b.readCtx,
 		`DELETE FROM `+deliveredTable+` d WHERE NOT EXISTS (SELECT 1 FROM `+table+` o WHERE o.id = d.event_id)`,
 	); err != nil {
-		slog.Default().Error("event/postgres: retiring stale delivery marks failed", "err", err)
+		errs = append(errs, fmt.Errorf("retiring stale delivery marks: %w", err))
 	}
-}
-
-// defaultReplicaName names this process in the delivered table.
-func defaultReplicaName() string {
-	host, err := os.Hostname()
-	if err != nil || host == "" {
-		host = "replica"
-	}
-	var raw [8]byte
-	if _, err := rand.Read(raw[:]); err != nil {
-		return fmt.Sprintf("%s-%d", host, time.Now().UnixNano())
-	}
-	return host + "-" + hex.EncodeToString(raw[:])
+	return errors.Join(errs...)
 }
 
 // deliver runs this replica's handlers for one event, and reports whether it

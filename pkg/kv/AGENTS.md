@@ -5,9 +5,9 @@ an expiry and three atomic operations, and it serves both the callers who want a
 cache and the ones who want a counter, a lock or a session-revocation list.
 
 The root package carries the interface and everything the implementations share.
-Concrete backends are subpackages — `memory` today, others as they arrive — and
-each registers one module, binds its own client, and declares the same capability
-exclusively.
+Concrete backends are subpackages — `memory`, `redis`, `postgres`, `memcached`
+and `nats` — and each registers one module, binds its own client, and declares
+the same capability exclusively.
 
 ## Where the authority is
 
@@ -117,5 +117,7 @@ GOWORK=off go -C pkg/kv build ./...   # the standalone leg, without the workspac
 ```
 
 The in-memory implementation needs nothing beyond the Go toolchain. A backend
-whose client is a container holds its own integration cases and its own fixture;
-`pkg/db/internal/pgtest` is the shape one of those takes.
+whose client is a container adds its own integration cases; the fixture they
+run against is shared — `pkg/pgpool/pgtest` for PostgreSQL, `pkg/natstest` for
+NATS, `pkg/redis/redistest` for Redis — so two backends cannot drift onto
+differently behaved servers.

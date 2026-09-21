@@ -66,11 +66,13 @@ type KV interface {
 |---|---|
 | `pkg/core` | 注册描述符、交付功能、声明资源 |
 | `pkg/config` | 声明本模块的输入项 |
-| 共享发布单元（见下） | 仅 Redis 实现使用：客户端类型与连接构造 |
+| 共享发布单元（见下） | Redis 实现与 PostgreSQL 实现各自的使用：客户端的类型与连接构造、连接池的构造 |
 
 **不依赖任何其他功能模块。** 本模块位于依赖图的底层，与 [db](design-db.md) 同层：它不认识租户、不认识日志、不认识请求上下文。
 
-Redis 实现与事件模块的 Redis 实现共用一个封装该客户端的发布单元。那个发布单元不登记模块、不交付功能，只提供客户端类型、连接配置与构造关闭（[ADR-shared-backend-unit-2026-09-21](../../adr/adr-shared-backend-unit-2026-09-21.md)）。
+Redis 实现与事件模块的 Redis 实现共用一个封装该客户端的发布单元，PostgreSQL 实现与事件模块的 PostgreSQL 实现共用一个封装连接池构造的发布单元。两个发布单元都不登记模块、不交付功能、不参与生命周期（[ADR-shared-backend-unit-2026-09-21](../../adr/adr-shared-backend-unit-2026-09-21.md)）。
+
+各实现子包的集成用例所需的服务器夹具同样来自共享单元：PostgreSQL 用 `pgpool/pgtest`，NATS 用 `natstest`，Redis 用 `redis/redistest`；夹具的共享理由写在同一条记录里——两份副本会各自演进到行为不同的服务器上，而失配最难归因。
 
 ## UML 图
 

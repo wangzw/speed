@@ -33,7 +33,18 @@ const (
 	ModuleName = "kv.redis"
 	// ConfigNamespace is where this implementation's input items are mounted.
 	ConfigNamespace = ModuleName
+	// keyPrefix namespaces every key this implementation touches. The key-value
+	// backend and the event module's Redis backend both talk to whatever server
+	// and database the configuration names, and an assembly may point them at
+	// the same one; without this, a key here that reads like one of the event
+	// streams — "speed:events:" and a type name — would let a SET replace the
+	// stream, and the events accumulated in it would be gone with no trace.
+	// The event backend carries its own prefix for the same reason.
+	keyPrefix = "speed:kv:"
 )
+
+// prefixed returns the key this implementation stores under.
+func prefixed(key string) string { return keyPrefix + key }
 
 // init registers this module with the process registry.
 func init() { core.ProcessRegistry.Register(Module()) }
@@ -94,7 +105,7 @@ func (s *store) Close(_ context.Context) error {
 // never holds a slice the caller can write into and never hands out one of its
 // own; Redis values are binary-safe, so no encoding stands between the two.
 func (s *store) Get(ctx context.Context, key string) ([]byte, bool, error) {
-	value, err := s.client.Get(ctx, key).Bytes()
+	value, err := s.client.Get(ctx, prefixed(key)).Bytes()
 	if errors.Is(err, goredis.Nil) {
 		return nil, false, nil
 	}
@@ -106,7 +117,7 @@ func (s *store) Get(ctx context.Context, key string) ([]byte, bool, error) {
 
 // Set stores the value with the given expiry.
 func (s *store) Set(ctx context.Context, key string, value []byte, ttl time.Duration) error {
-	return s.client.Set(ctx, key, value, plainTTL(ttl)).Err()
+	return s.client.Set(ctx, prefixed(key), value, plainTTL(ttl)).Err()
 }
 
 // plainTTL turns the capability's "zero or less means no expiry" into the
@@ -127,14 +138,14 @@ func plainTTL(ttl time.Duration) time.Duration {
 // Delete removes the key. Redis reports how many keys it removed, and removing
 // an absent one is not an error.
 func (s *store) Delete(ctx context.Context, key string) error {
-	return s.client.Del(ctx, key).Err()
+	return s.client.Del(ctx, prefixed(key)).Err()
 }
 
 // IncrByFloat uses the server's own counter. Redis leaves an existing key's
 // expiry alone when it increments, which is the semantics the capability
 // requires and the reason this is a plain command rather than a script.
 func (s *store) IncrByFloat(ctx context.Context, key string, delta float64) (float64, error) {
-	got, err := s.client.IncrByFloat(ctx, key, delta).Result()
+	got, err := s.client.IncrByFloat(ctx, prefixed(key), delta).Result()
 	return got, asNotNumeric(err)
 }
 
@@ -145,7 +156,7 @@ func (s *store) IncrByFloat(ctx context.Context, key string, delta float64) (flo
 // both report no ttl, so the ttl alone cannot tell the two apart, and extending
 // an existing key is exactly what the capability forbids.
 func (s *store) IncrByFloatWithTTL(ctx context.Context, key string, delta float64, ttl time.Duration) (float64, error) {
-	got, err := incrWithTTL.Run(ctx, s.client, []string{key}, delta, ttlMillis(ttl)).Float64()
+	got, err := incrWithTTL.Run(ctx, s.client, []string{prefixed(key)}, delta, ttlMillis(ttl)).Float64()
 	return got, asNotNumeric(err)
 }
 
@@ -157,7 +168,7 @@ func (s *store) IncrByFloatWithTTL(ctx context.Context, key string, delta float6
 // successful swap leaves the expiry where it was; a key that did not exist is
 // created without one.
 func (s *store) CompareAndSwap(ctx context.Context, key string, old, newVal []byte) (bool, error) {
-	swapped, err := compareAndSwap.Run(ctx, s.client, []string{key}, old, newVal).Int64()
+	swapped, err := compareAndSwap.Run(ctx, s.client, []string{prefixed(key)}, old, newVal).Int64()
 	if err != nil {
 		return false, err
 	}

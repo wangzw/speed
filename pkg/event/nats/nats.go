@@ -21,13 +21,11 @@ package nats
 
 import (
 	"context"
-	"crypto/rand"
 	"encoding/hex"
 	"encoding/json"
 	"errors"
 	"fmt"
 	"log/slog"
-	"os"
 	"slices"
 	"strings"
 	"sync"
@@ -39,6 +37,7 @@ import (
 	"github.com/vislake/speed/pkg/config"
 	"github.com/vislake/speed/pkg/core"
 	"github.com/vislake/speed/pkg/event"
+	"github.com/vislake/speed/pkg/event/internal/replica"
 )
 
 const (
@@ -57,6 +56,11 @@ const (
 	batchSize = 64
 	// fetchWait bounds how long a fetch waits before looping.
 	fetchWait = 2 * time.Second
+	// consumerRetryWait is how long a reader waits before taking the consumer
+	// again after a failed take. It is shorter than fetchWait because it sits
+	// on the startup path: the consumer was created moments earlier, so the
+	// first retries are the ones that usually succeed.
+	consumerRetryWait = 250 * time.Millisecond
 )
 
 // Config is what this implementation accepts.
@@ -349,11 +353,31 @@ func (b *bus) begin(ctx context.Context) error {
 // read delivers what its stream hands this instance.
 func (b *bus) read(stream, eventType string) {
 	defer b.readers.Done()
-	consumer, err := b.js.Consumer(b.readCtx, stream, b.consumer)
-	if err != nil {
-		slog.Default().Error("event/nats: taking the consumer failed; this type will not be delivered",
-			"event", eventType, "err", err)
-		return
+	// Taking the consumer is retried like everything else in this loop: the
+	// consumer was created moments ago, so a failure here is a transient one,
+	// and giving up would leave this event type undelivered for the rest of
+	// the process's life while a single log line says so.
+	var consumer jetstream.Consumer
+	for {
+		if b.readCtx.Err() != nil {
+			return
+		}
+		taken, err := b.js.Consumer(b.readCtx, stream, b.consumer)
+		if err == nil {
+			consumer = taken
+			break
+		}
+		if b.readCtx.Err() != nil {
+			// The failure is the shutdown cancelling the call, not the server,
+			// and an error line for it would misdirect whoever reads the log.
+			return
+		}
+		slog.Default().Error("event/nats: taking the consumer failed; retrying", "event", eventType, "err", err)
+		select {
+		case <-b.readCtx.Done():
+			return
+		case <-time.After(consumerRetryWait):
+		}
 	}
 	for {
 		if b.readCtx.Err() != nil {
@@ -485,14 +509,6 @@ func checkNamespace(namespace string) error {
 // defaultConsumerName gives this process a consumer of its own, which is what
 // makes the delivery a broadcast rather than a load balance.
 func defaultConsumerName() string {
-	host, err := os.Hostname()
-	if err != nil || host == "" {
-		host = "replica"
-	}
-	var b [8]byte
-	if _, err := rand.Read(b[:]); err != nil {
-		return fmt.Sprintf("%s-%d", host, time.Now().UnixNano())
-	}
 	// A durable name admits no dot, so the host is folded into one token.
-	return strings.ReplaceAll(host, ".", "_") + "_" + hex.EncodeToString(b[:])
+	return strings.ReplaceAll(replica.Name(), ".", "_")
 }

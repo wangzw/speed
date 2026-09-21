@@ -8,13 +8,14 @@ import (
 	"github.com/vislake/speed/pkg/core"
 	"github.com/vislake/speed/pkg/kv"
 	"github.com/vislake/speed/pkg/kv/internal/kvsuite"
-	"github.com/vislake/speed/pkg/kv/internal/pgtest"
+	"github.com/vislake/speed/pkg/pgpool"
+	"github.com/vislake/speed/pkg/pgpool/pgtest"
 )
 
 func newStore(t *testing.T) *store {
 	t.Helper()
 	dsn := pgtest.Acquire(t)
-	opened, err := open(context.Background(), &Config{DSN: dsn, MaxConns: 4})
+	opened, err := open(context.Background(), &pgpool.Config{DSN: dsn, MaxConns: 4})
 	if err != nil {
 		t.Fatalf("open: %v", err)
 	}
@@ -41,7 +42,7 @@ func TestConforms(t *testing.T) {
 }
 
 func TestStanceStandsDownWithoutAConnectionString(t *testing.T) {
-	got := stance(&Config{})
+	got := stance(&pgpool.Config{})
 	if got.State != core.StateDisabled {
 		t.Fatalf("stance with no locator = %v, want StateDisabled", got.State)
 	}
@@ -51,7 +52,7 @@ func TestStanceStandsDownWithoutAConnectionString(t *testing.T) {
 }
 
 func TestStanceEnablesOnceAConnectionStringIsGiven(t *testing.T) {
-	got := stance(&Config{DSN: "postgres://localhost/x"})
+	got := stance(&pgpool.Config{DSN: "postgres://localhost/x"})
 	if got.State != core.StateEnabled {
 		t.Fatalf("stance with a locator = %v, want StateEnabled", got.State)
 	}
@@ -85,11 +86,11 @@ func TestOnlyTheServersNonNumericWordingBecomesTheSentinel(t *testing.T) {
 func TestTwoStoresOnOneDatabaseShareTheSameEntries(t *testing.T) {
 	dsn := pgtest.Acquire(t)
 	ctx := context.Background()
-	first, err := open(ctx, &Config{DSN: dsn, MaxConns: 4})
+	first, err := open(ctx, &pgpool.Config{DSN: dsn, MaxConns: 4})
 	if err != nil {
 		t.Fatalf("open on the first: %v", err)
 	}
-	second, err := open(ctx, &Config{DSN: dsn, MaxConns: 4})
+	second, err := open(ctx, &pgpool.Config{DSN: dsn, MaxConns: 4})
 	if err != nil {
 		t.Fatalf("open on the second: %v", err)
 	}

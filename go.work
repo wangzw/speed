@@ -13,6 +13,8 @@ use (
 	./pkg/http
 	./pkg/kv
 	./pkg/log
+	./pkg/natstest
+	./pkg/pgpool
 	./pkg/redis
 	./pkg/tenant
 )

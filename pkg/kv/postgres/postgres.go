@@ -23,7 +23,6 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"math"
 	"strconv"
 	"strings"
 	"time"
@@ -31,9 +30,9 @@ import (
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgxpool"
 
-	"github.com/vislake/speed/pkg/config"
 	"github.com/vislake/speed/pkg/core"
 	"github.com/vislake/speed/pkg/kv"
+	"github.com/vislake/speed/pkg/pgpool"
 )
 
 const (
@@ -55,84 +54,43 @@ const (
 	)`
 )
 
-// Config is what this implementation accepts.
-type Config struct {
-	// DSN is the connection string. Marked sensitive: it carries credentials,
-	// and the logs and the help output would otherwise echo it. An absent one
-	// is how an assembly says it does not run this backend.
-	DSN string `config:"dsn"`
-	// MaxConns is the largest number of connections the pool opens.
-	MaxConns int `config:"max-conns"`
-}
-
-// The input item paths, relative to this implementation's namespace.
-const (
-	dsnKey      = "dsn"
-	maxConnsKey = "max-conns"
-)
-
-// defaultMaxConns is what the pool opens when the configuration names nothing.
-const defaultMaxConns = 10
-
 // init registers this module with the process registry.
 func init() { core.ProcessRegistry.Register(Module()) }
 
 // Module is this module's descriptor, exported for the registries that do not
 // inherit the process-level registrations.
 func Module() core.Module {
-	return kv.NewModule(kv.Spec[Config]{
+	defaults := pgpool.Defaults()
+	return kv.NewModule(kv.Spec[pgpool.Config]{
 		ModuleName:      ModuleName,
 		ConfigNamespace: ConfigNamespace,
-		Config:          &Config{MaxConns: defaultMaxConns},
-		Items: map[string]config.Item{
-			dsnKey: {
-				Sensitive: true,
-				Description: "the PostgreSQL connection string; leaving it out runs the assembly " +
-					"without this backend",
-			},
-			maxConnsKey: {
-				Description: "the largest number of connections the pool opens",
-			},
-		},
-		Stance: stance,
-		Open:   open,
+		Config:          &defaults,
+		Items:           pgpool.Items(),
+		Stance:          stance,
+		Open:            open,
 	})
 }
 
 // stance states whether this implementation runs, on the same terms as the other
 // remote backends: an absent locator disables it with a reason, a configured one
 // states StateEnabled so a second configured backend fails the startup.
-func stance(cfg *Config) core.Enablement {
+func stance(cfg *pgpool.Config) core.Enablement {
 	if strings.TrimSpace(cfg.DSN) == "" {
 		return core.Enablement{
 			State: core.StateDisabled,
 			Reason: fmt.Sprintf("%s.%s gives no connection string, so this assembly runs without a "+
 				"PostgreSQL key-value store; set it to run on PostgreSQL",
-				ConfigNamespace, dsnKey),
+				ConfigNamespace, pgpool.DSNKey),
 		}
 	}
 	return core.Enablement{State: core.StateEnabled}
 }
 
 // open builds the pool and makes sure the table is there.
-func open(ctx context.Context, cfg *Config) (kv.KV, error) {
-	poolCfg, err := pgxpool.ParseConfig(cfg.DSN)
+func open(ctx context.Context, cfg *pgpool.Config) (kv.KV, error) {
+	pool, err := pgpool.Connect(ctx, ModuleName, *cfg)
 	if err != nil {
-		return nil, fmt.Errorf("%s: reading the connection string: %w", ModuleName, err)
-	}
-	if cfg.MaxConns > 0 {
-		// A value past what the pool takes is refused rather than wrapped: a
-		// negative one would be read as "no limit" or as an immediate refusal,
-		// depending on the pool, and neither is what the host configured.
-		if cfg.MaxConns > math.MaxInt32 {
-			return nil, fmt.Errorf("%s: %s is %d, past what a connection pool accepts",
-				ModuleName, maxConnsKey, cfg.MaxConns)
-		}
-		poolCfg.MaxConns = int32(cfg.MaxConns)
-	}
-	pool, err := pgxpool.NewWithConfig(ctx, poolCfg)
-	if err != nil {
-		return nil, fmt.Errorf("%s: building the pool: %w", ModuleName, err)
+		return nil, err
 	}
 	if _, createErr := pool.Exec(ctx, createTable); createErr != nil {
 		pool.Close()

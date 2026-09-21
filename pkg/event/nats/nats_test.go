@@ -8,15 +8,13 @@ import (
 	"testing"
 	"time"
 
+	"github.com/nats-io/nats.go/jetstream"
+
 	"github.com/vislake/speed/pkg/core"
 	"github.com/vislake/speed/pkg/event"
 	"github.com/vislake/speed/pkg/event/internal/bussuite"
-	"github.com/vislake/speed/pkg/event/internal/natstest"
+	"github.com/vislake/speed/pkg/natstest"
 )
-
-// errFailedOnPurpose is what a subscriber returns in the cases that check what
-// the publisher is told about it.
-var errFailedOnPurpose = errors.New("this handler failed on purpose")
 
 // eventTypeSerial names each case's event type, so two cases on one server
 // cannot see each other's streams.
@@ -77,7 +75,7 @@ func TestTwoAssembliesOnOneServerDoNotSeeEachOther(t *testing.T) {
 	if err := second.Publish(ctx, event.Event{Type: eventType}); err != nil {
 		t.Fatalf("Publish: %v", err)
 	}
-	waitFor(t, "the publishing assembly's subscriber to run", func() bool { return gotSecond.Load() == 1 })
+	bussuite.WaitFor(t, "the publishing assembly's subscriber to run", func() bool { return gotSecond.Load() == 1 })
 	// Long enough for a delivery that should not happen to have happened.
 	time.Sleep(2 * time.Second)
 	if n := gotFirst.Load(); n != 0 {
@@ -101,18 +99,6 @@ func TestANamespaceASubjectCannotCarryIsRefused(t *testing.T) {
 			t.Errorf("checkNamespace(%q) refused it: %v", good, err)
 		}
 	}
-}
-
-func waitFor(t *testing.T, what string, cond func() bool) {
-	t.Helper()
-	deadline := time.Now().Add(10 * time.Second)
-	for time.Now().Before(deadline) {
-		if cond() {
-			return
-		}
-		time.Sleep(20 * time.Millisecond)
-	}
-	t.Fatalf("timed out waiting for %s", what)
 }
 
 func TestConforms(t *testing.T) {
@@ -176,8 +162,8 @@ func TestEveryReplicaReceivesEveryEvent(t *testing.T) {
 	if err := second.Publish(ctx, event.Event{Type: eventType}); err != nil {
 		t.Fatalf("Publish: %v", err)
 	}
-	waitFor(t, "the publishing replica's subscriber to run", func() bool { return gotSecond.Load() == 1 })
-	waitFor(t, "the other replica's subscriber to run", func() bool { return gotFirst.Load() == 1 })
+	bussuite.WaitFor(t, "the publishing replica's subscriber to run", func() bool { return gotSecond.Load() == 1 })
+	bussuite.WaitFor(t, "the other replica's subscriber to run", func() bool { return gotFirst.Load() == 1 })
 }
 
 // TestTwoInstancesSharingAConsumerSplitTheEvents is the other side of the same
@@ -207,33 +193,12 @@ func TestTwoInstancesSharingAConsumerSplitTheEvents(t *testing.T) {
 	if err := first.Publish(ctx, event.Event{Type: eventType}); err != nil {
 		t.Fatalf("Publish: %v", err)
 	}
-	waitFor(t, "one of the two to take the event", func() bool { return total.Load() >= 1 })
+	bussuite.WaitFor(t, "one of the two to take the event", func() bool { return total.Load() >= 1 })
 	time.Sleep(500 * time.Millisecond)
 	if n := total.Load(); n != 1 {
 		t.Fatalf("the two instances handled the event %d times between them, want exactly 1: they "+
 			"share a consumer, so JetStream balances the stream between them", n)
 	}
-}
-
-// TestPublishReportsNothingAboutSubscribers pins the capability's floor against
-// a real server.
-func TestPublishReportsNothingAboutSubscribers(t *testing.T) {
-	url := natstest.URL(t)
-	ctx := context.Background()
-	eventType := nextType()
-	b := openBus(t, url, "")
-	var ran atomic.Int32
-	b.Subscribe(eventType, func(context.Context, event.Event) error {
-		ran.Add(1)
-		return errFailedOnPurpose
-	})
-	if err := b.begin(ctx); err != nil {
-		t.Fatalf("begin: %v", err)
-	}
-	if err := b.Publish(ctx, event.Event{Type: eventType}); err != nil {
-		t.Fatalf("Publish reported a subscriber's failure: %v", err)
-	}
-	waitFor(t, "the failing subscriber to run", func() bool { return ran.Load() == 1 })
 }
 
 func TestAnUnserializablePayloadIsRefused(t *testing.T) {
@@ -261,4 +226,51 @@ func TestAClosedBusRefusesPublishes(t *testing.T) {
 	if err := b.Publish(ctx, event.Event{Type: nextType()}); !errors.Is(err, event.ErrClosed) {
 		t.Fatalf("Publish after Close: %v, want ErrClosed", err)
 	}
+}
+
+// TestReadRecoversWhenTheConsumerAppearsLate pins the retry around taking the
+// consumer: a reader that gives up there leaves its event type undelivered for
+// the rest of the process's life on the strength of one transient failure, and
+// only a single startup log line says so — while Publish keeps returning nil,
+// because the event really was written to the stream.
+func TestReadRecoversWhenTheConsumerAppearsLate(t *testing.T) {
+	url := natstest.URL(t)
+	ctx := context.Background()
+	eventType := nextType()
+	b := openBus(t, url, "")
+	var seen atomic.Int32
+	b.Subscribe(eventType, func(context.Context, event.Event) error {
+		seen.Add(1)
+		return nil
+	})
+
+	// The stream exists and the consumer does not: the state a reader lands in
+	// when the take fails transiently. begin is not called — its consumer
+	// creation is exactly what this case withholds — so the fields it would
+	// set are set here.
+	stream := b.streamName(eventType)
+	if err := b.ensureStream(ctx, eventType); err != nil {
+		t.Fatalf("ensureStream: %v", err)
+	}
+	b.readCtx, b.cancel = context.WithCancel(ctx)
+	b.readers.Add(1)
+	go b.read(stream, eventType)
+
+	// The consumer appears only now. A reader that gave up on the first take
+	// has already returned and will never deliver; one that retries picks it
+	// up on a later attempt.
+	time.Sleep(300 * time.Millisecond)
+	if _, err := b.js.CreateOrUpdateConsumer(ctx, stream, jetstream.ConsumerConfig{
+		Durable:       b.consumer,
+		AckPolicy:     jetstream.AckExplicitPolicy,
+		DeliverPolicy: jetstream.DeliverNewPolicy,
+	}); err != nil {
+		t.Fatalf("creating the consumer: %v", err)
+	}
+
+	if err := b.Publish(ctx, event.Event{Type: eventType}); err != nil {
+		t.Fatalf("Publish: %v", err)
+	}
+	bussuite.WaitFor(t, "the reader to recover and deliver the event",
+		func() bool { return seen.Load() == 1 })
 }

@@ -9,6 +9,10 @@ replace github.com/vislake/speed/pkg/config => ../config
 
 replace github.com/vislake/speed/pkg/core => ../core
 
+replace github.com/vislake/speed/pkg/natstest => ../natstest
+
+replace github.com/vislake/speed/pkg/pgpool => ../pgpool
+
 replace github.com/vislake/speed/pkg/redis => ../redis
 
 require (
@@ -18,6 +22,8 @@ require (
 	github.com/redis/go-redis/v9 v9.22.0
 	github.com/vislake/speed/pkg/config v0.0.0-00010101000000-000000000000
 	github.com/vislake/speed/pkg/core v0.0.0
+	github.com/vislake/speed/pkg/natstest v0.0.0-00010101000000-000000000000
+	github.com/vislake/speed/pkg/pgpool v0.0.0-00010101000000-000000000000
 	github.com/vislake/speed/pkg/redis v0.0.0-00010101000000-000000000000
 )
 

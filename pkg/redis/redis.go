@@ -77,10 +77,12 @@ func Defaults() Config {
 // are held as constants because they appear twice over: once in the declaration
 // and once in the text that names one to an operator.
 const (
-	AddrKey     = "addr"
-	PasswordKey = "password"
-	DBKey       = "db"
-	PoolSizeKey = "pool-size"
+	AddrKey        = "addr"
+	PasswordKey    = "password"
+	DBKey          = "db"
+	PoolSizeKey    = "pool-size"
+	DialTimeoutKey = "dial-timeout"
+	ReadTimeoutKey = "read-timeout"
 )
 
 // Items describes the connection settings, keyed by their path within the
@@ -100,6 +102,12 @@ func Items() map[string]config.Item {
 		},
 		PoolSizeKey: {
 			Description: "the largest number of connections the client keeps open",
+		},
+		DialTimeoutKey: {
+			Description: "how long establishing one connection may take",
+		},
+		ReadTimeoutKey: {
+			Description: "how long a single command's round trip may take",
 		},
 	}
 }

@@ -13,7 +13,7 @@ import "context"
 // Token identifies a capability in a delivery declaration, a requirement
 // declaration and a lookup alike, and identifies a resource type in a resource
 // query. It is written as a typed nil pointer to the designated type, for
-// example (*Cache)(nil).
+// example (*KV)(nil).
 //
 // A capability token's element type must be an interface; a resource token's
 // element type may be any type. An illegal token panics where it appears:

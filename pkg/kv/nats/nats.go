@@ -22,10 +22,8 @@ package nats
 import (
 	"bytes"
 	"context"
-	"encoding/binary"
 	"errors"
 	"fmt"
-	"math/rand/v2"
 	"strconv"
 	"time"
 
@@ -35,6 +33,8 @@ import (
 	"github.com/vislake/speed/pkg/config"
 	"github.com/vislake/speed/pkg/core"
 	"github.com/vislake/speed/pkg/kv"
+	"github.com/vislake/speed/pkg/kv/internal/expiry"
+	"github.com/vislake/speed/pkg/kv/internal/retry"
 )
 
 const (
@@ -45,8 +45,6 @@ const (
 	// defaultBucket is the bucket entries live in when the configuration names
 	// none.
 	defaultBucket = "speed_kv"
-	// headerLen is the width of the expiry header every stored value carries.
-	headerLen = 8
 	// casAttempts bounds the retries one swap-driven operation makes.
 	casAttempts = 5000
 )
@@ -153,7 +151,7 @@ func (s *store) Get(ctx context.Context, key string) ([]byte, bool, error) {
 	if err != nil {
 		return nil, false, err
 	}
-	value, live := unwrap(entry.Value())
+	value, live := expiry.Unwrap(entry.Value())
 	if !live {
 		return nil, false, nil
 	}
@@ -162,7 +160,7 @@ func (s *store) Get(ctx context.Context, key string) ([]byte, bool, error) {
 
 // Set stores the value, replacing any existing one and its expiry.
 func (s *store) Set(ctx context.Context, key string, value []byte, ttl time.Duration) error {
-	_, err := s.bucket.Put(ctx, encodeKey(key), wrap(value, expiryOf(ttl)))
+	_, err := s.bucket.Put(ctx, encodeKey(key), expiry.Wrap(value, expiry.Of(ttl)))
 	return err
 }
 
@@ -203,11 +201,11 @@ func (s *store) increment(ctx context.Context, key string, delta float64, ttl ti
 			next := delta
 			expires := time.Time{}
 			if withTTL {
-				expires = expiryOf(ttl)
+				expires = expiry.Of(ttl)
 			}
-			if _, createErr := s.bucket.Create(ctx, encoded, wrap([]byte(formatFloat(next)), expires)); createErr != nil {
+			if _, createErr := s.bucket.Create(ctx, encoded, expiry.Wrap([]byte(formatFloat(next)), expires)); createErr != nil {
 				if errors.Is(createErr, jetstream.ErrKeyExists) {
-					backoff(attempt)
+					retry.Backoff(attempt)
 					continue
 				}
 				return 0, createErr
@@ -217,7 +215,7 @@ func (s *store) increment(ctx context.Context, key string, delta float64, ttl ti
 		if err != nil {
 			return 0, err
 		}
-		value, expires, live := unwrapFull(entry.Value())
+		value, expires, live := expiry.UnwrapFull(entry.Value())
 		var current float64
 		if live {
 			parsed, err := strconv.ParseFloat(string(value), 64)
@@ -229,17 +227,17 @@ func (s *store) increment(ctx context.Context, key string, delta float64, ttl ti
 			// Expired: the write that follows creates it, so the ttl applies.
 			expires = time.Time{}
 			if withTTL {
-				expires = expiryOf(ttl)
+				expires = expiry.Of(ttl)
 			}
 		}
 		next := current + delta
-		if _, updateErr := s.bucket.Update(ctx, encoded, wrap([]byte(formatFloat(next)), expires), entry.Revision()); updateErr != nil {
+		if _, updateErr := s.bucket.Update(ctx, encoded, expiry.Wrap([]byte(formatFloat(next)), expires), entry.Revision()); updateErr != nil {
 			// A revision that no longer matches is what a lost race looks like
 			// here, and JetStream reports it as ErrKeyRevisionMismatch rather
 			// than as anything the key-exists sentinel covers.
 			if errors.Is(updateErr, jetstream.ErrKeyNotFound) ||
 				errors.Is(updateErr, jetstream.ErrKeyRevisionMismatch) {
-				backoff(attempt)
+				retry.Backoff(attempt)
 				continue
 			}
 			return 0, updateErr
@@ -257,7 +255,7 @@ func (s *store) CompareAndSwap(ctx context.Context, key string, old, newVal []by
 		if len(old) > 0 {
 			return false, nil
 		}
-		if _, createErr := s.bucket.Create(ctx, encoded, wrap(newVal, time.Time{})); createErr != nil {
+		if _, createErr := s.bucket.Create(ctx, encoded, expiry.Wrap(newVal, time.Time{})); createErr != nil {
 			if errors.Is(createErr, jetstream.ErrKeyExists) {
 				return false, nil
 			}
@@ -268,15 +266,19 @@ func (s *store) CompareAndSwap(ctx context.Context, key string, old, newVal []by
 	if err != nil {
 		return false, err
 	}
-	value, expires, live := unwrapFull(entry.Value())
+	value, expires, live := expiry.UnwrapFull(entry.Value())
 	if !live {
 		// Expired reads as absent, so only an empty old matches, and the write
 		// that follows creates it without an expiry.
 		if len(old) > 0 {
 			return false, nil
 		}
-		if _, err := s.bucket.Update(ctx, encoded, wrap(newVal, time.Time{}), entry.Revision()); err != nil {
-			if errors.Is(err, jetstream.ErrKeyNotFound) {
+		if _, err := s.bucket.Update(ctx, encoded, expiry.Wrap(newVal, time.Time{}), entry.Revision()); err != nil {
+			// Someone else wrote or removed it in between — both are a swap
+			// that did not happen rather than a failure, and JetStream reports
+			// the write case with a sentinel of its own.
+			if errors.Is(err, jetstream.ErrKeyNotFound) ||
+				errors.Is(err, jetstream.ErrKeyRevisionMismatch) {
 				return false, nil
 			}
 			return false, err
@@ -287,7 +289,7 @@ func (s *store) CompareAndSwap(ctx context.Context, key string, old, newVal []by
 		return false, nil
 	}
 	// The expiry is carried over rather than reset.
-	if _, updateErr := s.bucket.Update(ctx, encoded, wrap(newVal, expires), entry.Revision()); updateErr != nil {
+	if _, updateErr := s.bucket.Update(ctx, encoded, expiry.Wrap(newVal, expires), entry.Revision()); updateErr != nil {
 		// Someone else wrote or removed it in between — both are a swap that
 		// did not happen rather than a failure, and JetStream reports the write
 		// case with a sentinel of its own.
@@ -298,65 +300,6 @@ func (s *store) CompareAndSwap(ctx context.Context, key string, old, newVal []by
 		return false, updateErr
 	}
 	return true, nil
-}
-
-// backoff waits a jittered moment before the next attempt, so that contenders
-// do not retry in lockstep and keep colliding.
-func backoff(attempt int) {
-	ceiling := time.Duration(attempt+1) * 200 * time.Microsecond
-	if ceiling > 5*time.Millisecond {
-		ceiling = 5 * time.Millisecond
-	}
-	if ceiling > 0 {
-		//nolint:gosec // the jitter only has to spread contenders out; nothing in a retry delay needs a value an attacker cannot predict
-		time.Sleep(time.Duration(rand.Int64N(int64(ceiling))))
-	}
-}
-
-// wrap puts the expiry in front of the value.
-//
-// The header is eight big-endian bytes of Unix nanoseconds, and zero means no
-// expiry. It is here rather than in the bucket's own time-to-live because that
-// setting is one value for the whole bucket, and the capability needs one per
-// key and needs an increment to leave it alone.
-func wrap(value []byte, expires time.Time) []byte {
-	out := make([]byte, headerLen+len(value))
-	binary.BigEndian.PutUint64(out[:headerLen], stamp(expires))
-	copy(out[headerLen:], value)
-	return out
-}
-
-func unwrap(stored []byte) ([]byte, bool) {
-	value, _, live := unwrapFull(stored)
-	return value, live
-}
-
-// unwrapFull returns the value, its expiry, and whether it is still live.
-func unwrapFull(stored []byte) (value []byte, expires time.Time, live bool) {
-	if len(stored) < headerLen {
-		return stored, time.Time{}, true
-	}
-	//nolint:gosec // the header is this package's own: it holds a Unix nanosecond stamp, which fits an int64 by construction
-	nanos := int64(binary.BigEndian.Uint64(stored[:headerLen]))
-	if nanos == 0 {
-		return stored[headerLen:], time.Time{}, true
-	}
-	expires = time.Unix(0, nanos)
-	return stored[headerLen:], expires, time.Now().Before(expires)
-}
-
-func stamp(expires time.Time) uint64 {
-	if expires.IsZero() {
-		return 0
-	}
-	return uint64(expires.UnixNano())
-}
-
-func expiryOf(ttl time.Duration) time.Time {
-	if ttl <= 0 {
-		return time.Time{}
-	}
-	return time.Now().Add(ttl)
 }
 
 func formatFloat(v float64) string { return strconv.FormatFloat(v, 'g', -1, 64) }

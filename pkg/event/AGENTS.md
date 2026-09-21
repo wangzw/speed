@@ -6,7 +6,7 @@ cross-cutting capabilities — audit, observability — reach domain facts they
 would otherwise have to couple themselves to every producer for.
 
 The root package carries the interface, the event type and the payload helpers.
-Concrete backends are subpackages — `memory` today, others as they arrive — and
+Concrete backends are subpackages — `memory`, `redis`, `postgres` and `nats` — and
 each registers one module, binds its own client, and declares the same capability
 exclusively.
 

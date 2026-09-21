@@ -2,7 +2,7 @@
 
 ## 概览
 
-speed 以库的形式交付。`pkg/` 下每个目录是一个发布单元，提供一种功能；功能的多种实现拆为它的子包，每个实现子包各自登记为一个模块（[ADR-module-packaging-2026-09-13](../adr/adr-module-packaging-2026-09-13.md)）。**一个发布单元可以不含任何功能**：它封装一个第三方客户端，供两个模块的实现子包共用一份连接构造，自身不登记模块（[ADR-shared-backend-unit-2026-09-21](../adr/adr-shared-backend-unit-2026-09-21.md)）。
+speed 以库的形式交付。`pkg/` 下每个目录是一个发布单元，提供一种功能；功能的多种实现拆为它的子包，每个实现子包各自登记为一个模块（[ADR-module-packaging-2026-09-13](../adr/adr-module-packaging-2026-09-13.md)）。**一个发布单元可以不含任何功能**：它封装一个第三方客户端，或一份供测试共用的服务器夹具，供两个模块的实现子包共用，自身不登记模块（[ADR-shared-backend-unit-2026-09-21](../adr/adr-shared-backend-unit-2026-09-21.md)）。
 
 宿主编写自己的 `main`，import 所需的模块，驱动启动与停止。speed 不接管程序入口，也不规定应用的形态：HTTP 服务、gRPC 服务、不对外暴露入口的后台进程，都由模块与宿主自己组成（[ADR-core-scope-2026-09-13](../adr/adr-core-scope-2026-09-13.md)）。
 

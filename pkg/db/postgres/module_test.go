@@ -14,8 +14,8 @@ import (
 	filesource "github.com/vislake/speed/pkg/config/source/file"
 	"github.com/vislake/speed/pkg/core"
 	"github.com/vislake/speed/pkg/db"
-	"github.com/vislake/speed/pkg/db/internal/pgtest"
 	"github.com/vislake/speed/pkg/db/postgres"
+	"github.com/vislake/speed/pkg/pgpool/pgtest"
 )
 
 // sharedItems are the input items every implementation declares, written out

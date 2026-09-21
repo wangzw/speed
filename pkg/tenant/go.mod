@@ -17,6 +17,8 @@ replace github.com/vislake/speed/pkg/http => ../http
 
 replace github.com/vislake/speed/pkg/log => ../log
 
+replace github.com/vislake/speed/pkg/pgpool => ../pgpool
+
 require (
 	github.com/glebarez/sqlite v1.11.0
 	github.com/vislake/speed/pkg/authn v0.0.0-00010101000000-000000000000
@@ -49,7 +51,7 @@ require (
 	github.com/spf13/viper v1.21.0 // indirect
 	github.com/subosito/gotenv v1.6.0 // indirect
 	go.yaml.in/yaml/v3 v3.0.5 // indirect
-	golang.org/x/sys v0.29.0 // indirect
+	golang.org/x/sys v0.32.0 // indirect
 	golang.org/x/text v0.29.0 // indirect
 	modernc.org/libc v1.22.5 // indirect
 	modernc.org/mathutil v1.5.0 // indirect

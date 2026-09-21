@@ -2,7 +2,9 @@ package memory
 
 import (
 	"context"
+	"fmt"
 	"testing"
+	"time"
 
 	"github.com/vislake/speed/pkg/core"
 	"github.com/vislake/speed/pkg/kv"
@@ -42,5 +44,46 @@ func TestStanceStandsDownWhenSeveralReplicasShareTheState(t *testing.T) {
 	if got.Reason == "" {
 		t.Fatal("the stand-down carries no reason, and the reason reaches the startup diagnostics, " +
 			"which is the only place a missing capability is noticed")
+	}
+}
+
+// TestExpiredEntriesAreSweptOutOfTheMap pins the active half of expiry: an
+// entry whose time passed while nothing asked for it is dropped by a later
+// write's sweep, rather than sitting in the map until the key is read again.
+// A process that gives every request its own ttl'd key — a rate-limit counter,
+// a session-revocation marker — would otherwise grow with every key it has
+// ever written.
+func TestExpiredEntriesAreSweptOutOfTheMap(t *testing.T) {
+	s, ok := newStore(t).(*store)
+	if !ok {
+		t.Fatal("the store is not the in-memory one, so this case is not looking at the map it means to")
+	}
+	ctx := context.Background()
+
+	// Plant entries that expired an hour ago. Planting them directly makes the
+	// case deterministic: it is about what later writes do with them, not
+	// about waiting for a clock.
+	const planted = 1000
+	expired := time.Now().Add(-time.Hour)
+	for i := range planted {
+		s.entries[fmt.Sprintf("dead-%d", i)] = entry{value: []byte("v"), expires: expired}
+	}
+
+	// Writes drive the sweep, and each sweeps a random sample of the map, so a
+	// batch of them covers the whole of it many times over.
+	const written = 500
+	for i := range written {
+		if err := s.Set(ctx, fmt.Sprintf("live-%d", i), []byte("v"), time.Minute); err != nil {
+			t.Fatalf("Set: %v", err)
+		}
+	}
+
+	s.mu.Lock()
+	held := len(s.entries)
+	s.mu.Unlock()
+	if held > written+200 {
+		t.Fatalf("the map holds %d entries after %d live writes and %d long-expired ones: nothing "+
+			"sweeps the expired ones out, so the map grows with every key the process has ever written",
+			held, written, planted)
 	}
 }
