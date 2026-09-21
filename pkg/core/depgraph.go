@@ -350,10 +350,11 @@ func requiredByClause(requiredBy, site string, trailing bool) string {
 }
 
 // fixingActions lists what a host can do about a capability nothing delivers.
-// Importing an implementation is one of them; taking the requiring module out
-// is the other, and it only becomes actionable once the failure names that
-// module: a host that never asked for it may want it gone rather than want a
-// provider in.
+// Importing an implementation is one of them; leaving the requiring module out
+// of the command is the other, and it only becomes actionable once the failure
+// names that module: a host that never asked for it may want it gone rather
+// than want a provider in. The command tree is the whole of that move — a
+// module taken in at run level has to start, so no setting turns it back off.
 //
 // The list carries no "enable one that is already imported". This failure is
 // reached only when no registered module declared the capability, so an
@@ -361,7 +362,7 @@ func requiredByClause(requiredBy, site string, trailing bool) string {
 func fixingActions(requiredBy string) string {
 	actions := []string{"Import an implementation of it"}
 	if requiredBy != "" {
-		actions = append(actions, fmt.Sprintf("disable %q", requiredBy))
+		actions = append(actions, fmt.Sprintf("leave %q out of this command", requiredBy))
 	}
 	if len(actions) == 1 {
 		return actions[0]

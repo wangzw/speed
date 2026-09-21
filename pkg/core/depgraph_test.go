@@ -71,7 +71,7 @@ func TestFixingActionsListsWhatCanBeDone(t *testing.T) {
 	if got, want := fixingActions(""), "Import an implementation of it"; got != want {
 		t.Errorf("with no requiring module, fixingActions is %q, want %q", got, want)
 	}
-	if got, want := fixingActions("api"), `Import an implementation of it, or disable "api"`; got != want {
+	if got, want := fixingActions("api"), `Import an implementation of it, or leave "api" out of this command`; got != want {
 		t.Errorf("with a requiring module, fixingActions is %q, want %q", got, want)
 	}
 }
