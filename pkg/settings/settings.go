@@ -64,7 +64,8 @@ type Layer interface {
 // Its tenant is the tenant column of the rows the layer names, empty for the
 // global layer. That is the storage column's spelling of the layer, not the
 // interface's: the interface has no empty value, since a tenant layer's
-// constructor refuses an empty or blank identifier and the global layer is
+// constructor refuses an identifier outside the tenant identifier's domain —
+// empty, or carrying a blank or a control character — and the global layer is
 // named by its own constructor.
 type layer struct {
 	tenant string

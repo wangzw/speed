@@ -59,7 +59,7 @@ type Layer interface {
 // Global 返回全局层。
 func Global() Layer
 
-// ForTenant 返回标识为 id 的租户层；id 为空或只有空白是调用点的编程错误，与层选为零值同一档：当场 panic，不返回错误。
+// ForTenant 返回标识为 id 的租户层；id 落在租户标识取值域之外（为空、含空白或控制字符）是调用点的编程错误，与层选为零值同一档：当场 panic，不返回错误。
 func ForTenant(id string) Layer
 
 // Store 是设置的读写面。功能标识为 (*Store)(nil)。
