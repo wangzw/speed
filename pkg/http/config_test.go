@@ -406,8 +406,9 @@ func TestHalfConfiguredTLSIsRejected(t *testing.T) {
 }
 
 // TestNoEndpointIsNotAFailure pins that an empty endpoint set resolves cleanly.
-// It is the input the disabled stance is made of, and a failure here would turn
-// "this host runs no entry point" into a broken startup.
+// resolve only decodes and completes what is there; that a host with no
+// endpoint cannot run this module is judged in Prepare, which fails the startup
+// rather than letting an entry point start and serve nothing.
 func TestNoEndpointIsNotAFailure(t *testing.T) {
 	settings, err := moduleConfig{}.resolve()
 	if err != nil {

@@ -201,6 +201,21 @@ func TestSecondRunAppliesNothing(t *testing.T) {
 	})
 }
 
+// mutedCapability stands for whatever capability two modules deliver
+// exclusively, one of them explicitly enabled. A case about a module that is
+// out of the enabled set needs it: no module may state that it does not run, so
+// the only disabled verdict left is the one resolution gives, and resolution
+// only stands a provider down when it claims a capability exclusively while
+// stating StateAuto beside an explicitly enabled provider of it.
+type mutedCapability interface{ muted() }
+
+// rivalProduct is what the module holding the capability against the muted one
+// constructs. It exists because a module that declares a delivery has to
+// construct something that delivers it.
+type rivalProduct struct{}
+
+func (rivalProduct) muted() {}
+
 // TestDisabledModuleMigrationsAreNotApplied pins the enablement filter. It runs
 // the real lifecycle, because a module's verdict only exists after resolution
 // and the registry reports nothing before that.
@@ -209,18 +224,27 @@ func TestDisabledModuleMigrationsAreNotApplied(t *testing.T) {
 		muted := declaring("muted", migrationSet(dialect, map[string]string{
 			"0001_create_muted.sql": `CREATE TABLE muted_rows (id INTEGER NOT NULL, PRIMARY KEY (id))`,
 		}))
-		muted.Prepare = func(context.Context, *core.Registry) (core.Enablement, error) {
-			return core.Enablement{State: core.StateDisabled, Reason: "this test disables it"}, nil
+		// The muted module loses a resolution rather than stating that it does
+		// not run: a module taken in at run level has to start, so a case that
+		// needs the disabled verdict has to produce it the one way it exists.
+		muted.Provides = []core.Provision{{Token: (*mutedCapability)(nil), Exclusive: true}}
+		rival := core.Module{
+			Name:     "rival",
+			Provides: []core.Provision{{Token: (*mutedCapability)(nil), Exclusive: true}},
+			Prepare: func(context.Context, *core.Registry) (core.Enablement, error) {
+				return core.Enablement{State: core.StateEnabled}, nil
+			},
+			New: func(context.Context, *core.Registry) (any, error) { return rivalProduct{}, nil },
 		}
 		catalog := declaring("catalog", migrationSet(dialect, map[string]string{
 			"0001_create_widgets.sql": createWidgets,
 		}))
 
-		if err := startupWith(t, handle, dialect, muted, catalog); err != nil {
+		if err := startupWith(t, handle, dialect, muted, rival, catalog); err != nil {
 			t.Fatalf("startup: %v", err)
 		}
 		if hasTable(t, handle, "muted_rows") {
-			t.Error("a disabled module's table was created")
+			t.Error("a module resolution stood down had its table created")
 		}
 		if !hasTable(t, handle, "widgets") {
 			t.Error("an enabled module's table was not created, so the filter caught too much")

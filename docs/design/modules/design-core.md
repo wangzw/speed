@@ -551,6 +551,7 @@ http.Spec{...}
 | `ErrMissingProvider` | 必需的功能没有可取用的提供者 |
 | `ErrAmbiguousProvider` | `Resolve` 要求唯一，而该功能有多个已构造的提供者 |
 | `ErrExclusiveViolated` | 消解之后同一功能仍有多于一个启用的提供者，其中至少一个声明排他 |
+| `ErrDisabledStance` | 模块在 `Prepare` 中表态 `StateDisabled`——被运行级纳入的模块必须启动 |
 | `ErrDependencyCycle` | `Requires` 构成的依赖图有环 |
 | `ErrUndeliveredCapability` | 构造完成，但声明的 `Provides` 功能未交付 |
 | `ErrUnknownParticipant` | 参与集、声明集或闭包展开中出现一个未登记的名字 |

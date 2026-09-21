@@ -15,19 +15,21 @@ import (
 // What is not shared is where they hang. Each implementation mounts this
 // carrier under its own namespace, db.postgres or db.sqlite, and that
 // separation is load-bearing rather than tidy: the configuration manifest is
-// collected from every registered module, this run's disabled ones included,
-// so two implementations declaring input items on one path conflict as soon as
-// a host imports both, and that conflict is raised before exclusivity is
-// resolved. Importing several implementations and configuring one is the
-// intended shape.
+// collected from every registered module, the ones this run does not enable
+// included, so two implementations declaring input items on one path conflict
+// as soon as a host imports both, and that conflict is raised before
+// exclusivity is resolved. Importing several implementations and naming one on
+// the command tree is the intended shape.
 type Config struct {
 	// DSN is the connection locator, in the form this implementation's own
 	// driver reads. It is marked sensitive: it carries credentials, and both
 	// the logs and the help output would otherwise echo it.
 	//
-	// It is not marked required. An absent locator is how an assembly says it
-	// runs without this engine, which Prepare turns into a disabled module
-	// with a reason rather than a startup failure.
+	// It is not marked required, and the stance does not read the flag either
+	// way: the item is simply absent from an assembly that left this engine out
+	// of its command tree, which is the one way to run without it. An assembly
+	// that named this implementation has to give it a locator, and Prepare
+	// fails the startup naming this key when it does not.
 	DSN string `config:"dsn"`
 	// MaxOpenConns is the largest number of connections the pool opens.
 	MaxOpenConns int `config:"max-open-conns"`
@@ -136,7 +138,8 @@ func (s Spec) schema() config.Schema {
 		dsnKey: {
 			Sensitive: true,
 			Description: "the locator of the database to connect to, in the form this engine's " +
-				"own driver reads; leaving it out runs the assembly without this engine",
+				"own driver reads; an assembly that names this engine on its command tree has to " +
+				"set it",
 		},
 		maxOpenConnsKey: {
 			Description: "the largest number of connections the pool opens",

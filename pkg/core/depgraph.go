@@ -9,7 +9,8 @@ import (
 
 // Closure expands a list of module names into the set a command has to
 // include: the names given, plus the modules that provide what those require
-// at construction time, transitively.
+// at construction time, transitively. A provider that claims what it delivers
+// exclusively is not expanded; the rule and why it is the exception are below.
 //
 // Including a module means including what it takes to build it, and the
 // expansion lives here rather than in the caller because the matching rule
@@ -21,8 +22,10 @@ import (
 // A requirement a supplied product satisfies adds nothing, since no module
 // holds it. One nothing delivers adds nothing either, Optional or not:
 // dependency resolution reports that during the drive, where the failure can
-// name the module that required it and say what is missing. A name no module
-// registered is ErrUnknownParticipant.
+// name the module that required it and say what is missing. So does one whose
+// providers all claim the capability exclusively: none of them is pulled in,
+// and the failure says the host has to name one implementation on the command
+// tree. A name no module registered is ErrUnknownParticipant.
 //
 // The result is deduplicated and in name order.
 func (r *Registry) Closure(names []string) ([]string, error) {
@@ -58,7 +61,20 @@ func (r *Registry) Closure(names []string) ([]string, error) {
 				continue
 			}
 			ct := capabilityType(req.Token, fmt.Sprintf("module %q Requires[%d]", name, i))
-			pending = append(pending, providers[ct]...)
+			for _, provider := range providers[ct] {
+				// Neither does a provider that claims the capability
+				// exclusively. Several implementations may each claim it
+				// alone, and picking one for the host would be a decision:
+				// the expansion rule introduces none, so which of them runs
+				// is what the host names on the command tree. Two providers
+				// of one capability nobody claims exclusively are the normal
+				// case and are all added, which is what a set of
+				// interchangeable backends relies on.
+				if claimsExclusive(r.mods[provider].module, ct) {
+					continue
+				}
+				pending = append(pending, provider)
+			}
 		}
 	}
 	return sortedKeys(included), nil
@@ -77,7 +93,10 @@ func (r *Registry) Closure(names []string) ([]string, error) {
 //
 // Exclusive conflicts are not re-checked here; resolution settled them. An
 // Optional requirement whose provider is absent is skipped, while a present
-// one still takes part in the ordering.
+// one still takes part in the ordering. A capability every provider of which
+// claims it exclusively has no provider here unless the command named one —
+// the closure never pulled one in — so it fails as a missing provider whose
+// fix is to name an implementation rather than to import one.
 //
 // participants is what this command runs, and declarationsOnly and outside are
 // the two halves of what it did not: modules it reached for their declarations
@@ -126,9 +145,10 @@ func planConstruction(enabled, participants, declarationsOnly, outside []Module,
 				if req.Optional {
 					continue
 				}
+				notIncluded := declarersOf(outside, ct)
 				return nil, missingProviderError(ct, declarersOf(participants, ct),
-					declarersOf(declarationsOnly, ct), declarersOf(outside, ct),
-					final, name, sites[name])
+					declarersOf(declarationsOnly, ct), notIncluded,
+					exclusiveAmong(outside, ct), final, name, sites[name])
 			}
 			for _, p := range ps {
 				addEdge(p, name)
@@ -224,20 +244,25 @@ func cycleError(nodes, ordered []string, edges map[string]map[string]bool) error
 		ErrDependencyCycle, strings.Join(quoteAll(cycle), " -> "))
 }
 
-// missingProviderError tells the four causes apart, because the fixing action
+// missingProviderError tells the causes apart, because the fixing action
 // differs: nothing delivers the capability, a provider is disabled, a provider
-// exists but is constructed after the caller, or a provider is registered and
-// this command did not include it.
+// exists but is constructed after the caller, a provider is registered and
+// this command did not include it, or every provider of it claims the
+// capability exclusively and the command named none of them.
 //
 // declarers are the modules this command included, notIncluded the ones it
 // left out. Reporting the second group as any of the other three gives an
 // instruction that does nothing: the module is not disabled, and it is not
 // ordered late — it is not in this command at all.
 //
+// exclusive is the part of notIncluded that claims the capability exclusively.
+// Those modules are left out by the expansion rule rather than by the host's
+// writing, so the fix is a decision only the host can make: name one of them.
+//
 // requiredBy is the module whose Requires went unmet, and site the package that
 // registered it. Both are empty when the registry does not know them, which is
 // the Resolve path: a lookup does not say who is making it.
-func missingProviderError(ct reflect.Type, declarers, declarationsOnly, notIncluded []string, final map[string]Enablement, requiredBy, site string) error {
+func missingProviderError(ct reflect.Type, declarers, declarationsOnly, notIncluded, exclusive []string, final map[string]Enablement, requiredBy, site string) error {
 	if len(declarers) == 0 && len(declarationsOnly) == 0 && len(notIncluded) == 0 {
 		return errorText{
 			wrapped: ErrMissingProvider,
@@ -275,12 +300,32 @@ func missingProviderError(ct reflect.Type, declarers, declarationsOnly, notInclu
 			"if this command is meant to have it",
 			strings.Join(quoteAll(declarationsOnly), " and "))
 	}
-	if len(notIncluded) > 0 {
+	if len(exclusive) > 0 {
+		fmt.Fprintf(&b, "; it is claimed exclusively by %s, and the dependency closure does "+
+			"not pull an exclusive provider into a command on its own: name one implementation "+
+			"on the command tree of this command, and that one is what runs",
+			strings.Join(quoteAll(exclusive), " and "))
+	}
+	if rest := excluding(notIncluded, exclusive); len(rest) > 0 {
 		fmt.Fprintf(&b, "; %s declares it but this command does not include it, so add it "+
 			"to the Include of the command that needs it",
-			strings.Join(quoteAll(notIncluded), " and "))
+			strings.Join(quoteAll(rest), " and "))
 	}
 	return errorText{wrapped: ErrMissingProvider, text: b.String()}
+}
+
+// excluding drops the names in drop from names, keeping the order of the rest.
+func excluding(names, drop []string) []string {
+	if len(drop) == 0 {
+		return names
+	}
+	var out []string
+	for _, name := range names {
+		if !slices.Contains(drop, name) {
+			out = append(out, name)
+		}
+	}
+	return out
 }
 
 // requiredByClause names the module whose requirement went unmet, together with
@@ -305,13 +350,21 @@ func requiredByClause(requiredBy, site string, trailing bool) string {
 }
 
 // fixingActions lists what a host can do about a capability nothing delivers.
-// Taking the requiring module out is one of them, and it only becomes
-// actionable once the failure names that module: a host that never asked for it
-// may want it gone rather than want a provider in.
+// Importing an implementation is one of them; taking the requiring module out
+// is the other, and it only becomes actionable once the failure names that
+// module: a host that never asked for it may want it gone rather than want a
+// provider in.
+//
+// The list carries no "enable one that is already imported". This failure is
+// reached only when no registered module declared the capability, so an
+// implementation already imported does not exist by construction.
 func fixingActions(requiredBy string) string {
-	actions := []string{"Import an implementation of it", "enable one that is already imported"}
+	actions := []string{"Import an implementation of it"}
 	if requiredBy != "" {
 		actions = append(actions, fmt.Sprintf("disable %q", requiredBy))
+	}
+	if len(actions) == 1 {
+		return actions[0]
 	}
 	last := len(actions) - 1
 	return strings.Join(actions[:last], ", ") + ", or " + actions[last]
@@ -322,6 +375,20 @@ func declarersOf(mods []Module, ct reflect.Type) []string {
 	var names []string
 	for _, m := range mods {
 		if slices.Contains(declaredCapabilities(m), ct) {
+			names = append(names, m.Name)
+		}
+	}
+	slices.Sort(names)
+	return names
+}
+
+// exclusiveAmong lists the modules of a group that claim a capability
+// exclusively, in name order. These are the ones the expansion rule leaves
+// out, so their absence from a command is the host's to fix by naming one.
+func exclusiveAmong(mods []Module, ct reflect.Type) []string {
+	var names []string
+	for _, m := range mods {
+		if claimsExclusive(m, ct) {
 			names = append(names, m.Name)
 		}
 	}

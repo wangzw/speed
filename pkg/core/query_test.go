@@ -98,6 +98,33 @@ func TestResolveNamesLaterConstructedProvider(t *testing.T) {
 	}
 }
 
+// TestResolveNamesTheExclusiveFix pins the fix the planner reports on the
+// lookup path too: a capability its providers claim exclusively is not pulled
+// into a command, so a lookup that finds no provider tells the host to name one
+// implementation rather than sending it after an import it already has.
+func TestResolveNamesTheExclusiveFix(t *testing.T) {
+	reg := New()
+	reg.Register(Module{
+		Name:     "memory",
+		Provides: []Provision{{Token: (*cacheCap)(nil), Exclusive: true}},
+	})
+	reg.Register(Module{
+		Name:     "redis",
+		Provides: []Provision{{Token: (*cacheCap)(nil), Exclusive: true}},
+	})
+	reg.participating = map[string]bool{}
+
+	_, err := reg.Resolve((*cacheCap)(nil))
+	if !errors.Is(err, ErrMissingProvider) {
+		t.Fatalf("Resolve returned %v, want ErrMissingProvider", err)
+	}
+	for _, want := range []string{"memory", "redis", "claimed exclusively", "name one implementation"} {
+		if !strings.Contains(err.Error(), want) {
+			t.Errorf("error %q does not mention %q", err, want)
+		}
+	}
+}
+
 func TestResolveAllSortedByModuleName(t *testing.T) {
 	reg := New()
 	for _, name := range []string{"zeta", "alpha", "mid"} {

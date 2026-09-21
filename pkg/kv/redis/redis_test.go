@@ -3,6 +3,7 @@ package redis
 import (
 	"context"
 	"errors"
+	"strings"
 	"testing"
 
 	goredis "github.com/redis/go-redis/v9"
@@ -44,21 +45,29 @@ func TestConforms(t *testing.T) {
 	kvsuite.AssertConforms(t, newStore(t, s))
 }
 
-func TestStanceStandsDownWithoutAServer(t *testing.T) {
+// TestStanceFailsTheStartupWithoutAServer pins the rule that a module named in
+// the command tree has to start: this one reaches Redis at a server, so being
+// named without one stops the startup and names the input it stopped on. Under
+// the stand-down it replaces, the process came up with the capability silently
+// missing.
+func TestStanceFailsTheStartupWithoutAServer(t *testing.T) {
 	cfg := speedredis.Defaults()
-	got := stance(&cfg)
-	if got.State != core.StateDisabled {
-		t.Fatalf("stance with no address = %v, want StateDisabled", got.State)
+	_, err := stance(&cfg)
+	if err == nil {
+		t.Fatal("naming this implementation without a server started anyway")
 	}
-	if got.Reason == "" {
-		t.Fatal("the stand-down carries no reason")
+	if want := ConfigNamespace + ".addr"; !strings.Contains(err.Error(), want) {
+		t.Fatalf("the error does not say what the startup stopped on, want it to name %q: %v", want, err)
 	}
 }
 
 func TestStanceEnablesOnceAServerIsNamed(t *testing.T) {
 	cfg := speedredis.Defaults()
 	cfg.Addr = "127.0.0.1:6379"
-	got := stance(&cfg)
+	got, err := stance(&cfg)
+	if err != nil {
+		t.Fatalf("stance with an address: %v", err)
+	}
 	if got.State != core.StateEnabled {
 		t.Fatalf("stance with an address = %v, want StateEnabled: two configured backends have to "+
 			"collide at startup rather than one winning silently", got.State)

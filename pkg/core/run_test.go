@@ -695,15 +695,23 @@ func TestSecondRunPanics(t *testing.T) {
 }
 
 // TestRunEmitsDiagnosticsAfterResolution pins the one observable surface this
-// framework has: a module that is not running says so on stderr.
+// framework has: a module resolution stood down says so on stderr.
+//
+// Standing down is the only way an included module misses the enabled set. The
+// pair below is that case: an exclusive default stating StateAuto, and an
+// exclusive implementation beside it stating StateEnabled, which propagation
+// prefers.
 func TestRunEmitsDiagnosticsAfterResolution(t *testing.T) {
 	p := &probe{}
 	reg := core.New()
-	off := p.module("switched-off")
-	off.Prepare = func(context.Context, *core.Registry) (core.Enablement, error) {
-		return core.Enablement{State: core.StateDisabled, Reason: "no connection address configured"}, nil
+	def := p.module("switched-off")
+	def.Provides = []core.Provision{{Token: (*Cache)(nil), Exclusive: true}}
+	ground := p.module("running")
+	ground.Provides = []core.Provision{{Token: (*Cache)(nil), Exclusive: true}}
+	ground.Prepare = func(context.Context, *core.Registry) (core.Enablement, error) {
+		return core.Enablement{State: core.StateEnabled}, nil
 	}
-	register(reg, p.module("running"), off)
+	register(reg, ground, def)
 
 	var runErr error
 	text := captureStderr(t, func() {
@@ -712,19 +720,19 @@ func TestRunEmitsDiagnosticsAfterResolution(t *testing.T) {
 	if runErr != nil {
 		t.Fatalf("Run returned %v", runErr)
 	}
-	for _, want := range []string{"core: ", "switched-off", "no connection address configured"} {
+	for _, want := range []string{"core: ", "switched-off", "explicitly enabled"} {
 		if !strings.Contains(text, want) {
 			t.Errorf("stderr %q does not contain %q", text, want)
 		}
 	}
-	if strings.Contains(text, "\"running\"") {
+	if strings.Contains(text, `module "running"`) {
 		t.Errorf("stderr %q lists a module that is enabled", text)
 	}
 	if p.has("new switched-off") {
-		t.Errorf("a disabled module was constructed: %v", p.snapshot())
+		t.Errorf("a module resolution stood down was constructed: %v", p.snapshot())
 	}
 	if got, ok := reg.Enablement("switched-off"); !ok || got.State != core.StateDisabled {
-		t.Errorf("Enablement reported %+v/%v for a disabled module", got, ok)
+		t.Errorf("Enablement reported %+v/%v for a module resolution stood down", got, ok)
 	}
 }
 

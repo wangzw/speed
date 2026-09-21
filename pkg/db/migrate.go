@@ -312,8 +312,7 @@ func applyOne(session *gorm.DB, m migration) error {
 // migrations answerable without starting a database: the declaring set is
 // settled before anything is read. What the participating set decides is the
 // other reading, the one a module's own verdict belongs to: a module this
-// command runs and that stated it does not run, or that resolution stood down,
-// has its tables withheld.
+// command runs and that resolution stood down has its tables withheld.
 //
 // The two are not one filter and must not be collapsed into one. Collected by
 // participation alone, a command whose work is applying migrations takes in
@@ -340,8 +339,8 @@ func collectMigrations(reg *core.Registry, dialect Dialect) ([]migration, error)
 		// command did not take in, at either level, has its tables left
 		// to whichever command does take it in. The second applies only
 		// to a module the command runs, and is its own verdict: a
-		// module inside the participating set that stated it does not
-		// run, or that resolution stood down, has its tables withheld.
+		// module inside the participating set that resolution stood down
+		// has its tables withheld.
 		//
 		// Asking the second alone is the shape that migrates nothing. A
 		// command whose work is applying migrations runs the engine and

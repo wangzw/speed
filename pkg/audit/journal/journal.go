@@ -86,16 +86,22 @@ func init() { core.ProcessRegistry.Register(Module()) }
 // quietly does nothing.
 //
 // The event bus and the entry point are taken up in Init instead of being
-// declared. They exist already by then, so there is no order to settle, and
-// declaring them would drag their providers into commands a host never listed
-// them on.
+// declared. They exist already by then, so there is no order to arrange, and a
+// declaration would arrange nothing else: both are delivered exclusively, and
+// the closure follows no exclusive provider into a command.
 //
 // There is no stand-down. No input item can be missing — all three default to
 // empty — so a command that takes this module in gets a journal, and a command
-// that wants none leaves it out. That is also why the stance is never
-// StateAuto: standing down means yielding to something explicitly enabled, and
-// what enables this module is the host writing it into a command tree, not
-// anything configuration could infer.
+// that wants none leaves it out. Its stance is StateEnabled and never
+// StateAuto: the capability is delivered exclusively, and an exclusive provider
+// stating StateAuto is exactly the cell resolution disables, which would let
+// one journal yield to another.
+//
+// A module a drive includes has to start, so the stance says nothing about
+// whether it runs. Where it cannot — a configuration reader the host never
+// supplied, a section that will not decode — Prepare returns an error naming
+// what is absent and the startup ends with it, rather than the module standing
+// itself down.
 func Module() core.Module {
 	return core.Module{
 		Name: ModuleName,
@@ -107,6 +113,8 @@ func Module() core.Module {
 		Resources: []any{schema(), db.Migrations{FS: migrationsFS}, db.Plugin{Plugin: newCapture()}},
 
 		Prepare: func(_ context.Context, reg *core.Registry) (core.Enablement, error) {
+			// A stance handed back beside a failure is not read, so the failing
+			// paths return the zero Enablement with their error.
 			reader, err := readerOf(reg)
 			if err != nil {
 				return core.Enablement{}, err
@@ -114,7 +122,7 @@ func Module() core.Module {
 			if _, err := readSettings(reader); err != nil {
 				return core.Enablement{}, err
 			}
-			return core.Enablement{State: core.StateEnabled}, nil
+			return stance(), nil
 		},
 
 		New: func(_ context.Context, reg *core.Registry) (any, error) {
@@ -175,6 +183,16 @@ func Module() core.Module {
 		Close: func(_ context.Context, _ *core.Registry, _ any) error { return nil },
 	}
 }
+
+// stance is what this module states in Prepare: StateEnabled, and never
+// StateAuto.
+//
+// The capability is delivered exclusively, and an exclusive provider stating
+// StateAuto is exactly the cell resolution disables — a journal would yield to
+// another one that is explicitly enabled. What this module states instead says
+// nothing about whether it runs: a module a drive includes has to start, and
+// where it cannot, Prepare returns the error that ends the startup.
+func stance() core.Enablement { return core.Enablement{State: core.StateEnabled} }
 
 // journal is the module's product. It delivers the audit capability.
 type journal struct {

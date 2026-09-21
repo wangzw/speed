@@ -38,26 +38,26 @@ func probeSpec() Spec {
 	}
 }
 
-// TestMissingDSNDisablesWithReason pins the stance an implementation takes
-// when its locator is absent.
+// TestAMissingDSNFailsTheStartupNamingTheKey pins the stance an implementation
+// takes when its locator is absent.
 //
-// Disabling with a reason rather than failing is what lets a host import
-// several engines and configure one. The reason is not decoration: it is the
-// only thing a module that required the database capability has to go on, so
-// it has to name the key that would turn this module on, in the namespace this
-// implementation owns.
-func TestMissingDSNDisablesWithReason(t *testing.T) {
+// It fails the startup rather than standing itself down. This implementation is
+// in the run because the command tree named it, and a module taken in at run
+// level has to start: leaving the engine out of the tree is the way to run
+// without a database, and a run that named it owes it a locator. The error
+// names the key that would start it, in the namespace this implementation
+// owns, so the operator is told which dial to turn rather than that something
+// is missing.
+func TestAMissingDSNFailsTheStartupNamingTheKey(t *testing.T) {
 	spec := probeSpec()
-	stance, err := spec.prepare(readerFor(t, spec, `{}`))
-	if err != nil {
-		t.Fatalf("Prepare failed on a configuration that simply has no database: %v", err)
+	_, err := spec.prepare(readerFor(t, spec, `{}`))
+	if err == nil {
+		t.Fatal("Prepare accepted a configuration with no locator, so a module taken in at run " +
+			"level stood itself down instead of failing the startup")
 	}
-	if stance.State != core.StateDisabled {
-		t.Fatalf("Prepare states %v with no locator configured, want StateDisabled", stance.State)
-	}
-	if want := probeNamespace + "." + dsnKey; !strings.Contains(stance.Reason, want) {
-		t.Errorf("the reason %q does not name %s, which is the key that would turn this "+
-			"module on", stance.Reason, want)
+	if want := probeNamespace + "." + dsnKey; !strings.Contains(err.Error(), want) {
+		t.Errorf("the failure %q does not name %s, which is the key that would start this "+
+			"module", err, want)
 	}
 }
 
@@ -80,18 +80,18 @@ func TestAConfiguredImplementationStatesEnabledNotAuto(t *testing.T) {
 	}
 }
 
-// TestABlankDSNIsTheSameAsNoDSN keeps a locator of spaces from enabling the
-// module. Enabled on it, the failure moves to the driver, which reports
-// something about its own syntax rather than about the key that was left
-// blank.
+// TestABlankDSNIsTheSameAsNoDSN keeps a locator of spaces from starting the
+// module. Started on it, the failure moves to the driver, which reports
+// something about its own syntax rather than about the key that was left blank.
 func TestABlankDSNIsTheSameAsNoDSN(t *testing.T) {
 	spec := probeSpec()
-	stance, err := spec.prepare(readerFor(t, spec, `{"db":{"probe":{"dsn":"   "}}}`))
-	if err != nil {
-		t.Fatalf("Prepare failed on a blank locator: %v", err)
+	_, err := spec.prepare(readerFor(t, spec, `{"db":{"probe":{"dsn":"   "}}}`))
+	if err == nil {
+		t.Fatal("Prepare accepted a locator of spaces, so the failure moves to the driver and " +
+			"names the wrong thing")
 	}
-	if stance.State != core.StateDisabled {
-		t.Errorf("a locator of spaces states %v, want StateDisabled", stance.State)
+	if want := probeNamespace + "." + dsnKey; !strings.Contains(err.Error(), want) {
+		t.Errorf("the failure %q does not name %s, the key that was left blank", err, want)
 	}
 }
 
@@ -103,8 +103,9 @@ func TestPrepareCarriesTheReaderFailureOut(t *testing.T) {
 	if !errors.Is(err, sentinel) {
 		t.Fatalf("Prepare gave %v, want the reader's own error", err)
 	}
-	if stance.State == core.StateDisabled {
-		t.Errorf("a failed read stood the module down instead of failing the startup")
+	if stance != (core.Enablement{}) {
+		t.Errorf("Prepare returned the stance %+v beside a failed read, want the zero stance",
+			stance)
 	}
 }
 
@@ -483,24 +484,19 @@ func TestTwoConfiguredImplementationsFailTheStartup(t *testing.T) {
 	}
 }
 
-// TestADependantIsToldWhyTheDatabaseIsMissing pins that the reason a stance
-// carries reaches the module that needed the capability.
+// TestANamedImplementationWithNoLocatorFailsTheStartup pins what a host that
+// took the implementation in and gave it no locator gets, driven over the real
+// lifecycle.
 //
-// This is the whole value of disabling with a reason rather than failing: the
-// host is not told that some capability is unavailable, it is told which key
-// would have provided it.
-func TestADependantIsToldWhyTheDatabaseIsMissing(t *testing.T) {
-	dependant := core.Module{
-		Name:     "reports",
-		Requires: []core.Requirement{{Token: (*Database)(nil)}},
-		New: func(_ context.Context, reg *core.Registry) (any, error) {
-			return core.Resolve[Database](reg)
-		},
-	}
-	err := startupOver(t, `{}`, NewModule(probeSpec()), dependant)
-	if !errors.Is(err, core.ErrMissingProvider) {
-		t.Fatalf("a dependant of an unconfigured database started up with %v, want "+
-			"core.ErrMissingProvider", err)
+// The implementation is in the run, so its Prepare returns an error and the
+// startup terminates with it — there is no stance that takes it back out and
+// leaves the dependants without a database. The key the failure names is what
+// makes it fixable: "no provider for the database capability" would leave the
+// operator to guess which of the engine's items stopped it.
+func TestANamedImplementationWithNoLocatorFailsTheStartup(t *testing.T) {
+	err := startupOver(t, `{}`, NewModule(probeSpec()))
+	if err == nil {
+		t.Fatal("a startup that took the implementation in with no locator succeeded")
 	}
 	if want := probeNamespace + "." + dsnKey; !strings.Contains(err.Error(), want) {
 		t.Errorf("the startup failure does not name %s, so the host is left to guess which "+

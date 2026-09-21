@@ -34,8 +34,8 @@ const (
 	// caseBothEnginesConfigured configures both of them, which is not an
 	// assembly this release unit can serve.
 	caseBothEnginesConfigured = "both-engines-configured"
-	// caseNoEngineConfigured gives neither of them a locator, while a
-	// dependant requires the capability.
+	// caseNoEngineConfigured names no engine, while a dependant requires the
+	// capability.
 	caseNoEngineConfigured = "no-engine-configured"
 	// caseMigrateSubcommand runs the migrate command, whose depth is the
 	// migration stage: the migrations are applied and nothing past them

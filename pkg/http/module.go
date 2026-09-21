@@ -152,28 +152,33 @@ func productOf(instance any) (*router, bool) {
 	return r, ok && r != nil
 }
 
-// prepare reads the configuration and states whether this module runs.
+// prepare reads the configuration, checks the declared fragments and states the
+// stance.
 //
-// With no endpoint configured the module stands down with a reason naming the
-// key to write: an entry point that silently does nothing is the failure this
-// stance exists to prevent. The declared fragments are checked only on the path
-// where the module runs, since a disabled module publishes nothing for a reader
-// to merge.
+// A module taken in at run level has to start, so not being able to start is a
+// failure and not a stance. With no endpoint configured there is no address to
+// serve on, and this returns an error naming the key to write; the alternative
+// — standing down — is what the module-level rule forbids, because a host that
+// named this entry point would otherwise get a process with no entry point and
+// a zero exit status.
+//
+// The declared fragments are checked first, and over the available set: the
+// shape of a fragment is a static fact about the binary, so a malformed one has
+// to be reported whatever this run's configuration says. Checking it after the
+// endpoint premise would let a host that configured no endpoint hide a fragment
+// another configuration of the same binary would reject.
 func prepare(reader config.Reader, specs []core.Resource[Spec]) (core.Enablement, error) {
 	settings, err := readSettings(reader)
 	if err != nil {
 		return core.Enablement{}, err
 	}
-	if len(settings) == 0 {
-		return core.Enablement{
-			State: core.StateDisabled,
-			Reason: fmt.Sprintf("no listening endpoint is configured: %s.%s is empty, "+
-				"so there is no address to serve on. Declare an endpoint under that key "+
-				"to switch the entry point on", configNamespace, endpointsItem),
-		}, nil
-	}
 	if err := validateSpecs(specs); err != nil {
 		return core.Enablement{}, err
+	}
+	if len(settings) == 0 {
+		return core.Enablement{}, fmt.Errorf("http: no listening endpoint is configured: "+
+			"%s.%s is empty, so there is no address to serve on. Declare an endpoint under "+
+			"that key to run this entry point", configNamespace, endpointsItem)
 	}
 	return core.Enablement{State: core.StateEnabled}, nil
 }

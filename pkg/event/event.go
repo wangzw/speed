@@ -60,8 +60,9 @@ type Event struct {
 
 // Handler processes a single published Event. A non-nil error reports that this
 // handler failed to process the event. It never prevents the remaining handlers
-// of the same event from running, and whether it reaches the publisher depends
-// on the implementation, not on this interface.
+// of the same event from running, and it never reaches the publisher: no
+// implementation hands a subscriber's failure back through Publish, which is
+// what keeps that error meaning one thing.
 type Handler func(ctx context.Context, evt Event) error
 
 // Bus is the capability every implementation delivers.
@@ -76,10 +77,11 @@ type Handler func(ctx context.Context, evt Event) error
 //     subscriber failed.
 //   - A subscriber's failure never reaches the publisher.
 //
-// An implementation may promise more, and says so in its own documentation. A
-// process-local bus delivers synchronously and can therefore report handler
-// failures through Publish; a caller must not rely on that, because a change of
-// implementation takes it away without any caller-side edit.
+// An implementation may promise more, and says so in its own documentation. The
+// process-local bus, for one, delivers to every subscriber on the publisher's
+// own goroutine, so by the time Publish returns they have all run; a caller must
+// not rely on that, because a change of implementation takes it away without any
+// caller-side edit.
 //
 // The bus promises neither delivery count nor order. Exactly-once across
 // replicas and publication order are properties of an implementation and its

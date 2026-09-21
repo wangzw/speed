@@ -13,9 +13,10 @@ import "context"
 type Stage uint8
 
 const (
-	// StagePrepare is the stance stage: every participating module says
-	// whether it runs. It is the zero value, so a Drive that leaves Depth
-	// out advances no further than this.
+	// StagePrepare is the stance stage: every participating module states
+	// its stance on its exclusive claims, and one that cannot start returns
+	// an error here, ending the advance. It is the zero value, so a Drive
+	// that leaves Depth out advances no further than this.
 	StagePrepare Stage = iota
 	// StageNew constructs the products of the enabled set, in dependency
 	// order.

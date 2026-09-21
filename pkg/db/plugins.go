@@ -24,9 +24,11 @@ type pluginInstall struct {
 // A declaration from a module that does not run is dropped: a plugin acts on
 // the statements this run issues, so what decides it is whether the module
 // belongs to this run, and a module that is not part of the run has nothing in
-// force here. That is every way a module can fail to run -- it stated it does
-// not, resolution stood it down, this command never took it in, or it was
-// taken in for its declarations alone.
+// force here. Three things leave a module out -- resolution stood it down over
+// an exclusive claim, this command never took it in, or it was taken in for its
+// declarations alone. Stating that it does not run is not one of them: a module
+// taken in at run level has to start, so a stance of StateDisabled is refused
+// rather than honoured.
 //
 // This is where it parts company with the migration collection beside it,
 // which reads the declaring set and drops only a module that ran and was

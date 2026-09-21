@@ -3,6 +3,7 @@ package settings
 import (
 	"context"
 	"errors"
+	"strconv"
 	"strings"
 	"testing"
 	"time"
@@ -52,42 +53,62 @@ func TestReadFallsBackThroughTheThreeLayers(t *testing.T) {
 	b := store
 
 	// Nothing written: the declared default.
-	if got, err := Get[int](b, "t1", "demo.limit"); err != nil || got != 100 {
+	if got, err := Get[int](b, ForTenant("t1"), "demo.limit"); err != nil || got != 100 {
 		t.Fatalf("unset key read %v (%v), want the declared default 100", got, err)
 	}
 
 	// A global row covers every tenant that has no row of its own.
-	if err := b.Set(ctx, Write{Key: "demo.limit", Value: 200}); err != nil {
+	if err := b.Set(ctx, Write{Layer: Global(), Key: "demo.limit", Value: 200}); err != nil {
 		t.Fatalf("writing the global row: %v", err)
 	}
 	for _, tenant := range []string{"t1", "t2"} {
-		if got, _ := Get[int](b, tenant, "demo.limit"); got != 200 {
+		if got, _ := Get[int](b, ForTenant(tenant), "demo.limit"); got != 200 {
 			t.Errorf("tenant %q read %v, want the global row's 200", tenant, got)
 		}
 	}
 
 	// A tenant row wins over the global row, and leaves the other tenants on it.
-	if err := b.Set(ctx, Write{Tenant: "t1", Key: "demo.limit", Value: 300}); err != nil {
+	if err := b.Set(ctx, Write{Layer: ForTenant("t1"), Key: "demo.limit", Value: 300}); err != nil {
 		t.Fatalf("writing the tenant row: %v", err)
 	}
-	if got, _ := Get[int](b, "t1", "demo.limit"); got != 300 {
+	if got, _ := Get[int](b, ForTenant("t1"), "demo.limit"); got != 300 {
 		t.Errorf("t1 read %v, want its own 300", got)
 	}
-	if got, _ := Get[int](b, "t2", "demo.limit"); got != 200 {
+	if got, _ := Get[int](b, ForTenant("t2"), "demo.limit"); got != 200 {
 		t.Errorf("t2 read %v, want the global row's 200", got)
 	}
 }
 
-// An empty tenant reads the global layer directly: that is what the fallback
-// resolves to for it, since it has no row of its own.
-func TestAnEmptyTenantReadsTheGlobalLayer(t *testing.T) {
+// The global layer's reads and writes land on the global row: the row whose
+// tenant column is empty. The column is how storage spells the layer, while
+// the interface names it with Global().
+func TestTheGlobalLayerReadsAndWritesTheGlobalRow(t *testing.T) {
 	keys := demoTable(t)
 	store, _ := storeOf(t, keys, newRecordingBus())
-	if err := store.Set(context.Background(), Write{Key: "demo.limit", Value: 42}); err != nil {
+	ctx := context.Background()
+	if err := store.Set(ctx, Write{Layer: Global(), Key: "demo.limit", Value: 42}); err != nil {
 		t.Fatalf("writing the global row: %v", err)
 	}
-	if got, _ := Get[int](store, "", "demo.limit"); got != 42 {
-		t.Errorf("the empty tenant read %v, want the global row's 42", got)
+
+	// The row it landed on is the one with an empty tenant column, rather than
+	// one under a placeholder identifier. The read is of the table itself, so
+	// that this is not the layer's own filter answering for it.
+	var tenantID string
+	if err := store.handle.Raw("SELECT tenant_id FROM "+tableName+" WHERE key = ?", "demo.limit").
+		Row().Scan(&tenantID); err != nil {
+		t.Fatalf("reading the written row's tenant column: %v", err)
+	}
+	if tenantID != "" {
+		t.Errorf("the global write landed on a row whose tenant column is %q, want empty", tenantID)
+	}
+
+	// The global layer reads that row, and it is the layer a tenant with no row
+	// of its own falls back to.
+	if got, _ := Get[int](store, Global(), "demo.limit"); got != 42 {
+		t.Errorf("the global layer read %v, want its own 42", got)
+	}
+	if got, _ := Get[int](store, ForTenant("t1"), "demo.limit"); got != 42 {
+		t.Errorf("tenant t1 read %v, want the global row's 42", got)
 	}
 }
 
@@ -96,21 +117,21 @@ func TestDeleteFallsBackToTheLayerBelow(t *testing.T) {
 	keys := demoTable(t)
 	store, _ := storeOf(t, keys, newRecordingBus())
 	ctx := context.Background()
-	if err := store.Set(ctx, Write{Key: "demo.limit", Value: 200}); err != nil {
+	if err := store.Set(ctx, Write{Layer: Global(), Key: "demo.limit", Value: 200}); err != nil {
 		t.Fatalf("writing the global row: %v", err)
 	}
-	if err := store.Set(ctx, Write{Tenant: "t1", Key: "demo.limit", Value: 300}); err != nil {
+	if err := store.Set(ctx, Write{Layer: ForTenant("t1"), Key: "demo.limit", Value: 300}); err != nil {
 		t.Fatalf("writing the tenant row: %v", err)
 	}
-	if err := store.Delete(ctx, "t1", "demo.limit", "operator"); err != nil {
+	if err := store.Delete(ctx, ForTenant("t1"), "demo.limit", "operator"); err != nil {
 		t.Fatalf("deleting the tenant row: %v", err)
 	}
-	if got, _ := Get[int](store, "t1", "demo.limit"); got != 200 {
+	if got, _ := Get[int](store, ForTenant("t1"), "demo.limit"); got != 200 {
 		t.Errorf("after the delete t1 read %v, want the global row's 200", got)
 	}
 	// Deleting a row that is not there is not an error: the row is gone, which
 	// is what the caller asked for.
-	if err := store.Delete(ctx, "t9", "demo.limit", "operator"); err != nil {
+	if err := store.Delete(ctx, ForTenant("t9"), "demo.limit", "operator"); err != nil {
 		t.Errorf("deleting an absent row returned %v, want nil", err)
 	}
 }
@@ -121,10 +142,10 @@ func TestAnUndeclaredKeyIsRefused(t *testing.T) {
 	keys := demoTable(t)
 	store, _ := storeOf(t, keys, newRecordingBus())
 	var target int
-	if err := store.Get("t1", "demo.missing", &target); !errors.Is(err, ErrUnknownKey) {
+	if err := store.Get(ForTenant("t1"), "demo.missing", &target); !errors.Is(err, ErrUnknownKey) {
 		t.Errorf("reading an undeclared key returned %v, want ErrUnknownKey", err)
 	}
-	err := store.Set(context.Background(), Write{Key: "demo.missing", Value: 1})
+	err := store.Set(context.Background(), Write{Layer: Global(), Key: "demo.missing", Value: 1})
 	if !errors.Is(err, ErrUnknownKey) {
 		t.Errorf("writing an undeclared key returned %v, want ErrUnknownKey", err)
 	}
@@ -136,7 +157,7 @@ func TestReadingIntoTheWrongTypeIsAMismatch(t *testing.T) {
 	keys := demoTable(t)
 	store, _ := storeOf(t, keys, newRecordingBus())
 	var target string
-	if err := store.Get("t1", "demo.limit", &target); !errors.Is(err, ErrTypeMismatch) {
+	if err := store.Get(ForTenant("t1"), "demo.limit", &target); !errors.Is(err, ErrTypeMismatch) {
 		t.Errorf("reading an int key into a string returned %v, want ErrTypeMismatch", err)
 	}
 }
@@ -146,7 +167,7 @@ func TestReadingIntoTheWrongTypeIsAMismatch(t *testing.T) {
 func TestTheGenericReadReportsAMismatch(t *testing.T) {
 	keys := demoTable(t)
 	store, _ := storeOf(t, keys, newRecordingBus())
-	if _, err := Get[string](store, "t1", "demo.limit"); !errors.Is(err, ErrTypeMismatch) {
+	if _, err := Get[string](store, ForTenant("t1"), "demo.limit"); !errors.Is(err, ErrTypeMismatch) {
 		t.Errorf("Get[string] on an int key returned %v, want ErrTypeMismatch", err)
 	}
 }
@@ -171,7 +192,87 @@ func TestABadTargetPanics(t *testing.T) {
 					t.Errorf("Get with %s as its target did not panic", c.name)
 				}
 			}()
-			_ = store.Get("t1", "demo.limit", c.target)
+			_ = store.Get(ForTenant("t1"), "demo.limit", c.target)
+		})
+	}
+}
+
+// A layer that is the zero value is a mistake at the call site, and it panics
+// rather than returning an error — the judgement a bad target gets, for the
+// same reason: a nil Layer is not a layer, nothing has one on purpose, and the
+// call site has nothing to do with the error.
+//
+// This is the failure the layer selector exists to produce. While a string
+// tenant carried the layer, a call site that dropped one wrote the global row
+// and everything about the call looked right.
+func TestAZeroLayerPanics(t *testing.T) {
+	keys := demoTable(t)
+	store, _ := storeOf(t, keys, newRecordingBus())
+	ctx := context.Background()
+	var target int
+	cases := []struct {
+		name string
+		call func()
+	}{
+		{"Get", func() { _ = store.Get(nil, "demo.limit", &target) }},
+		{"the generic read", func() { _, _ = Get[int](store, nil, "demo.limit") }},
+		{"Set", func() { _ = store.Set(ctx, Write{Key: "demo.limit", Value: 1}) }},
+		{"Delete", func() { _ = store.Delete(ctx, nil, "demo.limit", "operator") }},
+		{"List", func() { _, _ = store.List(ctx, nil) }},
+	}
+	for _, c := range cases {
+		t.Run(c.name, func(t *testing.T) {
+			defer func() {
+				if recover() == nil {
+					t.Errorf("%s with a zero layer did not panic", c.name)
+				}
+			}()
+			c.call()
+		})
+	}
+}
+
+// An empty identifier is a mistake at the call site too, and it panics at the
+// constructor rather than at the operation. The tenant identifier's value
+// domain has no empty string in it, so an empty one can only be a dropped
+// value — and honouring it would act on every tenant at once.
+func TestForTenantRejectsAnEmptyIdentifier(t *testing.T) {
+	defer func() {
+		if recover() == nil {
+			t.Error(`ForTenant("") did not panic`)
+		}
+	}()
+	_ = ForTenant("")
+}
+
+// A blank identifier is refused the same way an empty one is: whitespace is
+// outside the identifier's value domain, so a blank id can only be a mangle at
+// the call site. Honouring it would build a layer that names no tenant — a
+// write lands in a row no tenant's read reaches, and a read falls past it to
+// the global row and hands back the shared value.
+// TestForTenantRejectsAnIdentifierOutsideTheDomain covers the whole of the
+// tenant identifier's value domain, not just the empty string. A blank or
+// control character anywhere in the id is the directory's own criterion, and an
+// id carrying one names no tenant: a write would land on a row no tenant's read
+// reaches, and a read would fall through to the shared layer and answer with a
+// value the caller never asked for. Both are silent, so the constructor refuses
+// the id where it is given.
+func TestForTenantRejectsAnIdentifierOutsideTheDomain(t *testing.T) {
+	for _, id := range []string{"", " ", "\t", " \t ", "acme ", " acme", "a b", "a\nb", "a\x00b"} {
+		t.Run(strconv.Quote(id), func(t *testing.T) {
+			defer func() {
+				if recover() == nil {
+					t.Errorf("ForTenant(%q) did not panic", id)
+				}
+			}()
+			_ = ForTenant(id)
+		})
+	}
+	for _, id := range []string{"acme", "acme-1", "a.b"} {
+		t.Run("accepted/"+id, func(t *testing.T) {
+			if got := ForTenant(id); got == nil {
+				t.Errorf("ForTenant(%q) = nil, want a layer", id)
+			}
 		})
 	}
 }
@@ -181,7 +282,7 @@ func TestABadTargetPanics(t *testing.T) {
 func TestWritingAValueOfTheWrongTypeIsAMismatch(t *testing.T) {
 	keys := demoTable(t)
 	store, _ := storeOf(t, keys, newRecordingBus())
-	err := store.Set(context.Background(), Write{Key: "demo.limit", Value: "not a number"})
+	err := store.Set(context.Background(), Write{Layer: Global(), Key: "demo.limit", Value: "not a number"})
 	if !errors.Is(err, ErrTypeMismatch) {
 		t.Errorf("writing a string to an int key returned %v, want ErrTypeMismatch", err)
 	}
@@ -204,7 +305,7 @@ func TestABrokenRowReportsItselfAndSparesTheRest(t *testing.T) {
 	}
 
 	var target int
-	err := store.Get("t1", "demo.limit", &target)
+	err := store.Get(ForTenant("t1"), "demo.limit", &target)
 	if !errors.Is(err, ErrTypeMismatch) {
 		t.Errorf("reading the bad row returned %v, want ErrTypeMismatch", err)
 	}
@@ -212,7 +313,7 @@ func TestABrokenRowReportsItselfAndSparesTheRest(t *testing.T) {
 		t.Errorf("the mismatch does not name the key: %v", err)
 	}
 	// Another tenant falls back to the global row and is unaffected.
-	if got, err := Get[int](store, "t2", "demo.limit"); err != nil || got != 100 {
+	if got, err := Get[int](store, ForTenant("t2"), "demo.limit"); err != nil || got != 100 {
 		t.Errorf("an unrelated read returned %v (%v), want the declared default", got, err)
 	}
 }
@@ -238,7 +339,7 @@ func TestAnOverwrittenBrokenRowReportsWhatWasThere(t *testing.T) {
 		t.Fatalf("loading: %v", err)
 	}
 
-	if err := store.Set(context.Background(), Write{Key: "demo.limit", Value: 5}); err != nil {
+	if err := store.Set(context.Background(), Write{Layer: Global(), Key: "demo.limit", Value: 5}); err != nil {
 		t.Fatalf("overwriting the broken row: %v", err)
 	}
 	events := bus.events()
@@ -263,10 +364,10 @@ func TestWriteIncrementsTheVersionAndPublishes(t *testing.T) {
 	store, _ := storeOf(t, keys, bus)
 	ctx := context.Background()
 
-	if err := store.Set(ctx, Write{Tenant: "t1", Key: "demo.limit", Value: 7, Actor: "alice"}); err != nil {
+	if err := store.Set(ctx, Write{Layer: ForTenant("t1"), Key: "demo.limit", Value: 7, Actor: "alice"}); err != nil {
 		t.Fatalf("the first write: %v", err)
 	}
-	if err := store.Set(ctx, Write{Tenant: "t1", Key: "demo.limit", Value: 8, Actor: "bob"}); err != nil {
+	if err := store.Set(ctx, Write{Layer: ForTenant("t1"), Key: "demo.limit", Value: 8, Actor: "bob"}); err != nil {
 		t.Fatalf("the second write: %v", err)
 	}
 
@@ -296,7 +397,7 @@ func TestASensitiveValueNeverReachesTheEvent(t *testing.T) {
 	keys := demoTable(t)
 	bus := newRecordingBus()
 	store, _ := storeOf(t, keys, bus)
-	if err := store.Set(context.Background(), Write{Key: "demo.label", Value: "hunter2"}); err != nil {
+	if err := store.Set(context.Background(), Write{Layer: Global(), Key: "demo.label", Value: "hunter2"}); err != nil {
 		t.Fatalf("writing the sensitive item: %v", err)
 	}
 	events := bus.events()
@@ -321,7 +422,7 @@ func TestAGlobalChangeCarriesNoTenant(t *testing.T) {
 	keys := demoTable(t)
 	bus := newRecordingBus()
 	store, _ := storeOf(t, keys, bus)
-	if err := store.Set(context.Background(), Write{Key: "demo.limit", Value: 5}); err != nil {
+	if err := store.Set(context.Background(), Write{Layer: Global(), Key: "demo.limit", Value: 5}); err != nil {
 		t.Fatalf("writing the global row: %v", err)
 	}
 	if got := bus.events()[0].TenantID; got != "" {
@@ -335,10 +436,10 @@ func TestDeletePublishesTheOldValue(t *testing.T) {
 	bus := newRecordingBus()
 	store, _ := storeOf(t, keys, bus)
 	ctx := context.Background()
-	if err := store.Set(ctx, Write{Tenant: "t1", Key: "demo.limit", Value: 9}); err != nil {
+	if err := store.Set(ctx, Write{Layer: ForTenant("t1"), Key: "demo.limit", Value: 9}); err != nil {
 		t.Fatalf("writing: %v", err)
 	}
-	if err := store.Delete(ctx, "t1", "demo.limit", "carol"); err != nil {
+	if err := store.Delete(ctx, ForTenant("t1"), "demo.limit", "carol"); err != nil {
 		t.Fatalf("deleting: %v", err)
 	}
 	events := bus.events()
@@ -355,7 +456,7 @@ func TestAnOversizedValueIsRefused(t *testing.T) {
 	bus := newRecordingBus()
 	store, _ := storeOf(t, keys, bus)
 	huge := strings.Repeat("x", maxValueBytes+1)
-	err := store.Set(context.Background(), Write{Key: "demo.label", Value: huge})
+	err := store.Set(context.Background(), Write{Layer: Global(), Key: "demo.label", Value: huge})
 	if !errors.Is(err, ErrInvalidValue) {
 		t.Fatalf("writing an oversized value returned %v, want ErrInvalidValue", err)
 	}
@@ -374,7 +475,7 @@ func TestAValueOfExactlyTheLimitIsAdmitted(t *testing.T) {
 	keys := demoTable(t)
 	store, _ := storeOf(t, keys, newRecordingBus())
 	exact := strings.Repeat("x", maxValueBytes)
-	if err := store.Set(context.Background(), Write{Key: "demo.label", Value: exact}); err != nil {
+	if err := store.Set(context.Background(), Write{Layer: Global(), Key: "demo.label", Value: exact}); err != nil {
 		t.Fatalf("writing a value of exactly the limit returned %v, want nil", err)
 	}
 }
@@ -395,10 +496,10 @@ func TestDeleteClearsARowWhoseDeclarationIsGone(t *testing.T) {
 		t.Fatalf("planting a row for an undeclared key: %v", err)
 	}
 
-	if err := store.Delete(ctx, "t1", "gone.key", "operator"); err != nil {
+	if err := store.Delete(ctx, ForTenant("t1"), "gone.key", "operator"); err != nil {
 		t.Fatalf("deleting a row with no declaration returned %v, want nil", err)
 	}
-	rows, err := store.List(ctx, "t1")
+	rows, err := store.List(ctx, ForTenant("t1"))
 	if err != nil {
 		t.Fatalf("listing: %v", err)
 	}
@@ -416,10 +517,10 @@ func TestDeletingASensitiveItemWithholdsItsValue(t *testing.T) {
 	bus := newRecordingBus()
 	store, _ := storeOf(t, keys, bus)
 	ctx := context.Background()
-	if err := store.Set(ctx, Write{Key: "demo.label", Value: "hunter2"}); err != nil {
+	if err := store.Set(ctx, Write{Layer: Global(), Key: "demo.label", Value: "hunter2"}); err != nil {
 		t.Fatalf("writing the sensitive item: %v", err)
 	}
-	if err := store.Delete(ctx, "", "demo.label", "carol"); err != nil {
+	if err := store.Delete(ctx, Global(), "demo.label", "carol"); err != nil {
 		t.Fatalf("deleting the sensitive item: %v", err)
 	}
 
@@ -443,15 +544,15 @@ func TestListReportsWrittenRowsInKeyOrder(t *testing.T) {
 	store, _ := storeOf(t, keys, newRecordingBus())
 	ctx := context.Background()
 	for _, w := range []Write{
-		{Key: "demo.limit", Value: 1},
-		{Key: "demo.on", Value: true},
-		{Tenant: "t1", Key: "demo.window", Value: 2 * time.Minute},
+		{Layer: Global(), Key: "demo.limit", Value: 1},
+		{Layer: Global(), Key: "demo.on", Value: true},
+		{Layer: ForTenant("t1"), Key: "demo.window", Value: 2 * time.Minute},
 	} {
 		if err := store.Set(ctx, w); err != nil {
 			t.Fatalf("writing %+v: %v", w, err)
 		}
 	}
-	global, err := store.List(ctx, "")
+	global, err := store.List(ctx, Global())
 	if err != nil {
 		t.Fatalf("listing the global rows: %v", err)
 	}
@@ -473,7 +574,7 @@ func TestListReportsWrittenRowsInKeyOrder(t *testing.T) {
 	if global[0].Version != 1 {
 		t.Errorf("the listed row's version is %d, want 1 for its first write", global[0].Version)
 	}
-	tenant, err := store.List(ctx, "t1")
+	tenant, err := store.List(ctx, ForTenant("t1"))
 	if err != nil {
 		t.Fatalf("listing t1's rows: %v", err)
 	}
@@ -494,38 +595,38 @@ func TestValuesRoundTrip(t *testing.T) {
 	ctx := context.Background()
 	starts := time.Date(2026, 9, 21, 12, 30, 0, 0, time.UTC)
 	writes := []Write{
-		{Key: "demo.window", Value: 90 * time.Second},
-		{Key: "demo.limit", Value: -12},
-		{Key: "demo.count", Value: uint(7)},
-		{Key: "demo.label", Value: "a label"},
-		{Key: "demo.on", Value: true},
-		{Key: "demo.ratio", Value: 0.125},
-		{Key: "demo.starts-at", Value: starts},
+		{Layer: Global(), Key: "demo.window", Value: 90 * time.Second},
+		{Layer: Global(), Key: "demo.limit", Value: -12},
+		{Layer: Global(), Key: "demo.count", Value: uint(7)},
+		{Layer: Global(), Key: "demo.label", Value: "a label"},
+		{Layer: Global(), Key: "demo.on", Value: true},
+		{Layer: Global(), Key: "demo.ratio", Value: 0.125},
+		{Layer: Global(), Key: "demo.starts-at", Value: starts},
 	}
 	for _, w := range writes {
 		if err := store.Set(ctx, w); err != nil {
 			t.Fatalf("writing %s: %v", w.Key, err)
 		}
 	}
-	if got, err := Get[time.Duration](store, "", "demo.window"); err != nil || got != 90*time.Second {
+	if got, err := Get[time.Duration](store, Global(), "demo.window"); err != nil || got != 90*time.Second {
 		t.Errorf("the duration read back as %v (%v)", got, err)
 	}
-	if got, _ := Get[int](store, "", "demo.limit"); got != -12 {
+	if got, _ := Get[int](store, Global(), "demo.limit"); got != -12 {
 		t.Errorf("the integer read back as %v", got)
 	}
-	if got, _ := Get[uint](store, "", "demo.count"); got != 7 {
+	if got, _ := Get[uint](store, Global(), "demo.count"); got != 7 {
 		t.Errorf("the unsigned integer read back as %v", got)
 	}
-	if got, _ := Get[bool](store, "", "demo.on"); got != true {
+	if got, _ := Get[bool](store, Global(), "demo.on"); got != true {
 		t.Errorf("the boolean read back as %v", got)
 	}
-	if got, _ := Get[string](store, "", "demo.label"); got != "a label" {
+	if got, _ := Get[string](store, Global(), "demo.label"); got != "a label" {
 		t.Errorf("the string read back as %q", got)
 	}
-	if got, _ := Get[float64](store, "", "demo.ratio"); got != 0.125 {
+	if got, _ := Get[float64](store, Global(), "demo.ratio"); got != 0.125 {
 		t.Errorf("the float read back as %v", got)
 	}
-	got, err := Get[time.Time](store, "", "demo.starts-at")
+	got, err := Get[time.Time](store, Global(), "demo.starts-at")
 	if err != nil {
 		t.Fatalf("reading the timestamp: %v", err)
 	}
@@ -547,11 +648,11 @@ func TestADeliveredEventReloadsTheSnapshot(t *testing.T) {
 		"VALUES ('', 'demo.limit', '777', 1, ?)", time.Now().UTC()).Error; err != nil {
 		t.Fatalf("planting a row: %v", err)
 	}
-	if got, _ := Get[int](store, "", "demo.limit"); got != 100 {
+	if got, _ := Get[int](store, Global(), "demo.limit"); got != 100 {
 		t.Fatalf("before the event the read was %v, want the stale default", got)
 	}
 	bus.deliver(t, ChangedEventType, eventOf("demo.limit"))
-	if got, _ := Get[int](store, "", "demo.limit"); got != 777 {
+	if got, _ := Get[int](store, Global(), "demo.limit"); got != 777 {
 		t.Errorf("after the event the read was %v, want 777", got)
 	}
 }
@@ -561,10 +662,10 @@ func TestADeliveredEventReloadsTheSnapshot(t *testing.T) {
 func TestAWriteIsVisibleToTheWriterImmediately(t *testing.T) {
 	keys := demoTable(t)
 	store, _ := storeOf(t, keys, newRecordingBus())
-	if err := store.Set(context.Background(), Write{Tenant: "t1", Key: "demo.limit", Value: 5}); err != nil {
+	if err := store.Set(context.Background(), Write{Layer: ForTenant("t1"), Key: "demo.limit", Value: 5}); err != nil {
 		t.Fatalf("writing: %v", err)
 	}
-	if got, _ := Get[int](store, "t1", "demo.limit"); got != 5 {
+	if got, _ := Get[int](store, ForTenant("t1"), "demo.limit"); got != 5 {
 		t.Errorf("the writer read %v, want its own 5", got)
 	}
 }
@@ -577,10 +678,10 @@ func TestAPublishFailureDoesNotFailTheWrite(t *testing.T) {
 	bus := newRecordingBus()
 	bus.failWith = errors.New("the bus is unreachable")
 	store, _ := storeOf(t, keys, bus)
-	if err := store.Set(context.Background(), Write{Key: "demo.limit", Value: 3}); err != nil {
+	if err := store.Set(context.Background(), Write{Layer: Global(), Key: "demo.limit", Value: 3}); err != nil {
 		t.Fatalf("the write returned %v, want nil despite the publish failure", err)
 	}
-	if got, _ := Get[int](store, "", "demo.limit"); got != 3 {
+	if got, _ := Get[int](store, Global(), "demo.limit"); got != 3 {
 		t.Errorf("the value read back as %v, want 3", got)
 	}
 }
@@ -599,6 +700,38 @@ func TestAMissingTableIsReportedAsSuch(t *testing.T) {
 	}
 	if !strings.Contains(loadErr.Error(), tableName) {
 		t.Errorf("the error does not name the table %q: %v", tableName, loadErr)
+	}
+}
+
+// A List failure names the layer it was listing once. describeLayer already
+// returns a noun phrase with its article, so it goes straight into the noun
+// slot: a second "the layer" in front of it would read "the layer the global
+// layer".
+func TestAListFailureNamesItsLayer(t *testing.T) {
+	keys := demoTable(t)
+	store, handle := storeOf(t, keys, newRecordingBus())
+	ctx := context.Background()
+	if err := handle.Exec("DROP TABLE " + tableName).Error; err != nil {
+		t.Fatalf("dropping the table: %v", err)
+	}
+	cases := []struct {
+		name  string
+		layer Layer
+		want  string
+	}{
+		{"the global layer", Global(), "listing the rows of the global layer"},
+		{"a tenant layer", ForTenant("t1"), `listing the rows of tenant "t1"`},
+	}
+	for _, c := range cases {
+		t.Run(c.name, func(t *testing.T) {
+			_, err := store.List(ctx, c.layer)
+			if err == nil {
+				t.Fatal("listing without the table returned nil, want an error")
+			}
+			if !strings.Contains(err.Error(), c.want) {
+				t.Errorf("the failure does not name the layer once: %v", err)
+			}
+		})
 	}
 }
 

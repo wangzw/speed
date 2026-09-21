@@ -21,7 +21,8 @@ const defaultName = "static"
 
 // configDefaults is what this module is worth without a configuration file.
 // There is no default subject table: a credential table guessed into existence
-// would admit somebody nobody wrote down.
+// would admit somebody nobody wrote down, so a table naming no subject refuses
+// the startup rather than standing down.
 var configDefaults = moduleConfig{Name: defaultName}
 
 // moduleConfig is the set of input items this module accepts.

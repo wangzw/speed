@@ -71,19 +71,17 @@ func Module() core.Module {
 	})
 }
 
-// stance states whether this implementation runs, on the same terms as the other
-// remote backends: an absent locator disables it with a reason, a configured one
-// states StateEnabled so a second configured backend fails the startup.
-func stance(cfg *pgpool.Config) core.Enablement {
+// stance states this implementation's stance, or reports what it cannot start
+// without, on the same terms as the other remote backends: an absent locator
+// stops the startup and names the missing input, and a configured one states
+// StateEnabled so a second configured backend fails the startup.
+func stance(cfg *pgpool.Config) (core.Enablement, error) {
 	if strings.TrimSpace(cfg.DSN) == "" {
-		return core.Enablement{
-			State: core.StateDisabled,
-			Reason: fmt.Sprintf("%s.%s gives no connection string, so this assembly runs without a "+
-				"PostgreSQL key-value store; set it to run on PostgreSQL",
-				ConfigNamespace, pgpool.DSNKey),
-		}
+		return core.Enablement{}, fmt.Errorf("%s.%s gives no connection string, and this implementation "+
+			"reaches PostgreSQL at one: with none set there is nothing to start against. Set it, or "+
+			"leave this implementation out of the command", ConfigNamespace, pgpool.DSNKey)
 	}
-	return core.Enablement{State: core.StateEnabled}
+	return core.Enablement{State: core.StateEnabled}, nil
 }
 
 // open builds the pool and makes sure the table is there.

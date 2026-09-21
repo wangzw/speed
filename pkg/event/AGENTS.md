@@ -61,11 +61,16 @@ must not cross, and how to run it.
   has to be its own: the configuration manifest is collected from every
   registered module, so two implementations declaring items on one path conflict
   as soon as a host imports both.
-- **Every implementation declares the capability exclusively**, and says in its
-  `Stance` whether it was pointed at anything and whether the deployment suits
-  it. A zero-configuration backend states `StateAuto` so it yields to one that
-  was explicitly enabled; a backend that must be pointed at something states
-  `StateEnabled` so that two of them being configured at once fails the startup.
+- **Every implementation declares the capability exclusively**, and judges in its
+  `Stance` whether the host pointed it at anything and whether the deployment
+  suits it. A run-level inclusion is a promise that the module starts, so a
+  premise it cannot meet — no address to reach a backend, a replica count the
+  backend cannot serve — is an error naming the input, never a stance that lets
+  the run continue without an event bus. `StateDisabled` is not an implementation's
+  to state; resolution is its only source. What is left is how the exclusive claim
+  gives way: a zero-configuration backend states `StateAuto` so it stands down for
+  one that was explicitly enabled; a backend that must be pointed at something
+  states `StateEnabled` so that two of them being pointed at once fails the startup.
 - **A subscription is made in `Init` and nowhere else.** The drive calls each
   module's `Init` one at a time, so a backend freezes its subscription table at
   the start stage and refuses later registrations at the call site. A
@@ -91,7 +96,7 @@ func Module() core.Module {
 		ConfigNamespace: ModuleName,   // where this backend's items are mounted
 		Config:          &prototype,   // the prototype, carrying the defaults
 		Items:           items,        // the declared input items
-		Stance:          stance,       // pointed at anything? does the deployment suit it?
+		Stance:          stance,       // can it start? how does its claim give way?
 		Open:            open,         // the client, and the only place it appears
 		Start:           start,        // freeze the subscription table
 	})

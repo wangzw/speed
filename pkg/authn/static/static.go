@@ -63,9 +63,10 @@ func init() { core.ProcessRegistry.Register(Module()) }
 //
 // Exclusive is left empty, which is what lets several backends run at once,
 // each the authority for its own slice of the subject space. Prepare is
-// declared, and declaring it is not optional for a backend: a module without
-// one first decodes in New, where there is no stance left to take and a missing
-// section is a startup failure rather than a quiet stand-down.
+// declared, and declaring it is not optional for a backend: a module without one
+// first reads its configuration in New, so a missing section is still a startup
+// failure but one construction later, after the modules ordered before this one
+// have already been built.
 func Module() core.Module {
 	return core.Module{
 		Name:      ModuleName,
@@ -109,32 +110,39 @@ func readerOf(reg *core.Registry) (config.Reader, error) {
 	return reader, nil
 }
 
-// prepare reads the configuration and states whether this backend runs.
+// prepare reads the configuration and states that this backend runs.
 //
-// The reason names this module and what it lacked. Under an assembly carrying
-// several backends that line is the only thing telling an operator which of
-// them stood down, and why.
+// There is no stance in which it runs with nobody to vouch for. A command that
+// names this module has promised it starts, so a table that names no subject is
+// a startup failure naming the key to write: a backend claiming no subject space
+// authenticates nobody, and the gateway refuses it rather than carrying it along.
 func prepare(reader config.Reader) (core.Enablement, error) {
 	set, err := readSettings(reader)
 	if err != nil {
 		if errors.Is(err, config.ErrMissingRequired) {
-			return core.Enablement{State: core.StateDisabled, Reason: standDownReason()}, nil
+			return core.Enablement{}, fmt.Errorf("%w: %w", err, nobodyToVouchFor())
 		}
 		return core.Enablement{}, err
 	}
 	if len(set.subjects) == 0 {
-		return core.Enablement{State: core.StateDisabled, Reason: standDownReason()}, nil
+		return core.Enablement{}, nobodyToVouchFor()
 	}
 	return core.Enablement{State: core.StateEnabled}, nil
 }
 
-// standDownReason is the one reason this backend states for not running. An
-// absent table and an empty one are the same fact — it is the authority for
-// nobody — and a backend claiming no subject space at all is refused by the
-// gateway rather than carried along.
-func standDownReason() string {
-	return fmt.Sprintf("the %s backend has no subject to be the authority for: %s.%s names none. "+
-		"Write the subjects and their password hashes under that key to switch this backend on",
+// nobodyToVouchFor is the failure this backend reports when its table holds no
+// subject.
+//
+// An absent table and an empty one are the same fact — this backend would be the
+// authority for nobody — and are worth the same sentence. It is a startup
+// failure rather than a stance: a module taken into a command has to start, and
+// the way out is to write the subjects, or to leave this backend out of the
+// command whose traffic it was meant to authenticate.
+func nobodyToVouchFor() error {
+	return fmt.Errorf("the %s backend has no subject to be the authority for: %s.%s names "+
+		"none, and a backend claiming no subject space authenticates nobody. Write the "+
+		"subjects and their password hashes under that key to switch this backend on, or "+
+		"leave this backend out of the command",
 		ModuleName, ConfigNamespace, subjectsItem)
 }
 

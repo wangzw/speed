@@ -30,9 +30,11 @@ func init() { core.ProcessRegistry.Register(hostModule()) }
 // hostModule carries the two inputs that precede all configuration.
 //
 // DefaultLocator is left empty: this host has no installed config file to fall
-// back on. A run with no primary config source is legal and reaches the
-// modules' stand-down paths, since the endpoints to guard and the extractor to
-// resolve with can come from nowhere else.
+// back on. A run with no primary config source is legal in itself, but not for
+// this host: the endpoints to guard and the extractor to resolve with come from
+// nowhere else, and a module taken in has to start, so such a run stops in the
+// gateway's or the resolver's Prepare, naming the key to write, rather than
+// standing down.
 func hostModule() core.Module {
 	return core.Module{
 		Name:      hostModuleName,

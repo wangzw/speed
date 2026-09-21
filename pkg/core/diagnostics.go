@@ -12,9 +12,13 @@ import (
 // the reader cannot tell the lines apart on standard error.
 const diagnosticPrefix = "core: "
 
-// writeDiagnostics lists every module that did not make it into the enabled
-// set, one line each, in module-name order, with the reason it stated or the
-// reason resolution gave.
+// writeDiagnostics lists every module resolution kept out of the enabled set,
+// one line each, in module-name order, with the reason resolution gave.
+//
+// Resolution is the only thing that can leave a module out of that set: a
+// module a drive takes in at run level must start, so a provider stands down
+// only when another provider of the same exclusive capability is explicitly
+// enabled.
 //
 // A process that starts up missing a piece of functionality with nobody
 // noticing is the most dangerous failure of configuration-driven assembly, and

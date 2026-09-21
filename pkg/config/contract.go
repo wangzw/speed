@@ -42,8 +42,8 @@ type Format interface {
 }
 
 // Reader is how a module reads its own values back. Modules take it up as a
-// capability, in Prepare to decide whether they run and in New to build their
-// product.
+// capability, in Prepare to report what they cannot start without and in New to
+// build their product.
 //
 // The interface carries reads only: configuration is a snapshot taken at
 // startup and does not change afterwards.

@@ -45,7 +45,8 @@ func (r *Registry) Resolve(t Token) (any, error) {
 		return r.instances[constructed[0]], nil
 	case 0:
 		running, declaringOnly, left := r.splitDeclarersLocked(declarers)
-		return nil, missingProviderError(ct, running, declaringOnly, left, r.enablement, "", "")
+		return nil, missingProviderError(ct, running, declaringOnly, left,
+			r.exclusiveAmongLocked(left, ct), r.enablement, "", "")
 	default:
 		return nil, fmt.Errorf("%w: capability %s is delivered by %s, and a single-valued "+
 			"lookup cannot choose between them. Take them up together with ResolveAll, or "+
@@ -111,18 +112,18 @@ func (r *Registry) Resources(t Token) []Resource[any] {
 	return out
 }
 
-// Enablement gives the verdict resolution reached for a module, not the stance
-// the module itself took: a module resolution disabled reports StateDisabled
-// with the reason resolution gave. It reports false for a name that was never
-// registered, and for any name before resolution has run.
+// Enablement gives the verdict the registry reached for a module, not the
+// stance the module took: a provider that stood down in resolution reports
+// StateDisabled with the reason resolution gave. It reports false for a name
+// that was never registered, and for any name before resolution has run.
 //
 // A registered module this drive left out of its participating set reports
-// StateDisabled with that as the reason. It never took a stance, and it is
-// not running, which is what a caller asking "is it running" needs. Why it
-// is not running is a different question and this query does not answer it:
-// a stance against running, a resolution that stood the module down, and a
-// command that never asked for it all arrive here as the same state. A
-// mechanism collecting declarations filters by its own domain instead, and
+// StateDisabled with that as the reason. It is not running, which is what a
+// caller asking "is it running" needs. Why it is not running is a different
+// question and this query does not answer it: a resolution that stood the
+// module down, a module the command never asked for, and one it reached for
+// its declarations alone all arrive here as the same state. A mechanism
+// collecting declarations filters by its own domain instead, and
 // Participating and Declaring are what it composes.
 //
 // Startup diagnostics are written to os.Stderr and the host cannot redirect
@@ -169,8 +170,8 @@ const notIncludedReason = "not in this command's participating set"
 // the same fact; what it cannot say is which of a disabled module's several
 // situations produced the verdict, and by reporting a module the command
 // never asked for as disabled it made those situations look alike. A
-// consumption point that has to tell "it stated it does not run" from "this
-// command never asked" asks this beside Enablement.
+// consumption point that has to tell a module resolution stood down from one
+// this command never asked for asks this beside Enablement.
 func (r *Registry) Participating(name string) bool {
 	r.mu.RLock()
 	defer r.mu.RUnlock()
@@ -188,8 +189,9 @@ func (r *Registry) Participating(name string) bool {
 //
 // Like Participating it is false before a drive has begun and for a name no
 // module registered. Neither answers whether the module runs: a module
-// reached for its declarations alone never does, and one that is declaring
-// and participating may still have stated that it does not.
+// reached for its declarations alone never does, and one taken in at run level
+// can still come out of resolution with StateDisabled, when it stands down
+// over an exclusive claim.
 func (r *Registry) Declaring(name string) bool {
 	r.mu.RLock()
 	defer r.mu.RUnlock()
@@ -250,6 +252,20 @@ func (r *Registry) splitDeclarersLocked(declarers []string) (running, declaringO
 func (r *Registry) declarationOf(name string) bool {
 	_, ok := r.declaringOnly[name]
 	return ok
+}
+
+// exclusiveAmongLocked filters module names down to the ones that claim the
+// capability exclusively. Those are the modules the dependency closure leaves
+// out on its own, so a lookup that finds no provider among them has a fix of
+// its own to report. The caller holds the lock.
+func (r *Registry) exclusiveAmongLocked(names []string, ct reflect.Type) []string {
+	var out []string
+	for _, name := range names {
+		if claimsExclusive(r.mods[name].module, ct) {
+			out = append(out, name)
+		}
+	}
+	return out
 }
 
 // matchesResourceType decides whether a declared resource satisfies the queried

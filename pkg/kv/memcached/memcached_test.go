@@ -2,6 +2,7 @@ package memcached
 
 import (
 	"context"
+	"strings"
 	"testing"
 	"time"
 
@@ -40,18 +41,80 @@ func TestConforms(t *testing.T) {
 	})
 }
 
-func TestStanceStandsDownWithoutAServer(t *testing.T) {
-	got := stance(&Config{})
-	if got.State != core.StateDisabled {
-		t.Fatalf("stance with no server = %v, want StateDisabled", got.State)
+// TestStanceFailsTheStartupWithoutAServer pins the rule that a module named in
+// the command tree has to start: this one reaches Memcached at a server, so
+// being named without one stops the startup and names the input it stopped on.
+// Under the stand-down it replaces, the process came up with the capability
+// silently missing.
+func TestStanceFailsTheStartupWithoutAServer(t *testing.T) {
+	_, err := stance(&Config{})
+	if err == nil {
+		t.Fatal("naming this implementation without a server started anyway")
 	}
-	if got.Reason == "" {
-		t.Fatal("the stand-down carries no reason")
+	if want := ConfigNamespace + "." + serversKey; !strings.Contains(err.Error(), want) {
+		t.Fatalf("the error does not say what the startup stopped on, want it to name %q: %v", want, err)
+	}
+}
+
+// TestStanceRefusesABlankServerEntry covers the other shape of a missing
+// server. The addresses are handed to gomemcache as they are written, and its
+// client connects lazily and reads an empty address as the zero port rather
+// than skipping it: an entry that is empty or only whitespace would therefore
+// open cleanly and then fail every operation that lands on it, with nothing at
+// the startup naming the input. One such entry is enough to fail the startup,
+// whether or not the list also holds a real address.
+func TestStanceRefusesABlankServerEntry(t *testing.T) {
+	for _, servers := range [][]string{
+		{""},
+		{"  "},
+		{"\t"},
+		{"", "  "},
+		{"", "127.0.0.1:11211"},
+		{"127.0.0.1:11211", "\t"},
+	} {
+		_, err := stance(&Config{Servers: servers})
+		if err == nil {
+			t.Errorf("stance with servers %q started anyway, and every operation against a blank "+
+				"address fails", servers)
+			continue
+		}
+		if want := ConfigNamespace + "." + serversKey; !strings.Contains(err.Error(), want) {
+			t.Errorf("the error for servers %q does not name %q: %v", servers, want, err)
+		}
+	}
+	for _, servers := range [][]string{{"127.0.0.1:11211"}, {"127.0.0.1:11211", "127.0.0.1:11212"}} {
+		got, err := stance(&Config{Servers: servers})
+		if err != nil {
+			t.Errorf("stance with servers %q failed the startup: %v", servers, err)
+			continue
+		}
+		if got.State != core.StateEnabled {
+			t.Errorf("stance with servers %q = %v, want StateEnabled", servers, got.State)
+		}
+	}
+}
+
+// TestStanceFailsTheStartupWhenTheDataHasToBeKept is the deployment
+// precondition. This is the one backend here whose data can vanish without a
+// restart, and the failure it would otherwise cause is silent: entries are
+// dropped under memory pressure as normal operation and the server does not
+// report that it has. An assembly that declares the data has to be kept
+// therefore stops the startup, naming the declaration rather than a setting.
+func TestStanceFailsTheStartupWhenTheDataHasToBeKept(t *testing.T) {
+	_, err := stance(&Config{Servers: []string{"127.0.0.1:11211"}, RequiresPersistence: true})
+	if err == nil {
+		t.Fatal("a deployment that declared its data has to survive a restart was accepted")
+	}
+	if want := ConfigNamespace + "." + persistenceKey; !strings.Contains(err.Error(), want) {
+		t.Fatalf("the error does not say what the startup stopped on, want it to name %q: %v", want, err)
 	}
 }
 
 func TestStanceEnablesOnceAServerIsNamed(t *testing.T) {
-	got := stance(&Config{Servers: []string{"127.0.0.1:11211"}})
+	got, err := stance(&Config{Servers: []string{"127.0.0.1:11211"}})
+	if err != nil {
+		t.Fatalf("stance with a server: %v", err)
+	}
 	if got.State != core.StateEnabled {
 		t.Fatalf("stance with a server = %v, want StateEnabled", got.State)
 	}

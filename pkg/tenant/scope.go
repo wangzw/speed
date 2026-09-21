@@ -21,8 +21,8 @@ import (
 //
 // Downstream therefore has to handle the false case itself. It is true on a
 // listening endpoint this module does not guard, in a process that did not take
-// this release unit in or had it stand down, and on statements a caller builds
-// without a request behind them.
+// this release unit in, and on statements a caller builds without a request
+// behind them.
 func FromContext(ctx context.Context) (ID, bool) {
 	id, ok := tenantctx.ID(ctx)
 	if !ok {

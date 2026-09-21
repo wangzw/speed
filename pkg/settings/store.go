@@ -55,13 +55,13 @@ type settingsStore struct {
 // key with no declaration a certain failure instead of a value that reads as
 // unset. Past that point the layers are tried in order and a row that failed
 // to decode reports itself.
-func (s *settingsStore) Get(tenant, key string, target any) error {
+func (s *settingsStore) Get(layer Layer, key string, target any) error {
 	entry, declared := s.keys.lookup(key)
 	if !declared {
 		return fmt.Errorf("%w: %q. Add a declaration covering it, or correct the key at the "+
 			"call site", ErrUnknownKey, key)
 	}
-	value, err := s.snapshot.Load().value(entry, tenant)
+	value, err := s.snapshot.Load().value(entry, layer)
 	if err != nil {
 		return err
 	}
@@ -91,13 +91,13 @@ func (s *settingsStore) Set(ctx context.Context, w Write) error {
 			ErrInvalidValue, w.Key, len(text), maxValueBytes)
 	}
 
-	old, _ := s.snapshot.Load().explicitText(w.Tenant, w.Key)
-	version, err := s.writeRow(ctx, w.Tenant, w.Key, text)
+	old, _ := s.snapshot.Load().explicitText(w.Layer, w.Key)
+	version, err := s.writeRow(ctx, w.Layer, w.Key, text)
 	if err != nil {
 		return err
 	}
 	s.reload(ctx)
-	s.publish(ctx, w.Tenant, changeFor(entry, old, text, w.Actor, version, false))
+	s.publish(ctx, w.Layer, changeFor(entry, old, text, w.Actor, version, false))
 	return nil
 }
 
@@ -133,15 +133,16 @@ func changeFor(entry keyEntry, old, fresh, actor string, version uint64, deleted
 // behind after a declaration is removed — the one window in which a row for an
 // undeclared key can still be reached — and both Get and Set refuse such a key
 // before the table is consulted at all.
-func (s *settingsStore) Delete(ctx context.Context, tenant, key, actor string) error {
-	old, _ := s.snapshot.Load().explicitText(tenant, key)
+func (s *settingsStore) Delete(ctx context.Context, layer Layer, key, actor string) error {
+	tenant := tenantOf(layer)
+	old, _ := s.snapshot.Load().explicitText(layer, key)
 	sql := "DELETE FROM " + tableName + " WHERE tenant_id = " + bind(s.dialect, 1) +
 		" AND key = " + bind(s.dialect, 2)
 	if err := s.handle.WithContext(ctx).Exec(sql, tenant, key).Error; err != nil {
 		return fmt.Errorf("settings: deleting key %q: %w", key, err)
 	}
 	s.reload(ctx)
-	s.publish(ctx, tenant, s.deleteChange(key, old, actor))
+	s.publish(ctx, layer, s.deleteChange(key, old, actor))
 	return nil
 }
 
@@ -164,12 +165,14 @@ func (s *settingsStore) deleteChange(key, old, actor string) Change {
 // List reports the explicit rows of one layer, in key order. It hands out what
 // was written rather than what a read would resolve to: nothing falls back
 // here.
-func (s *settingsStore) List(ctx context.Context, tenant string) ([]Entry, error) {
+func (s *settingsStore) List(ctx context.Context, layer Layer) ([]Entry, error) {
+	tenant := tenantOf(layer)
 	sql := "SELECT tenant_id, key, value, version, updated_at FROM " + tableName +
 		" WHERE tenant_id = " + bind(s.dialect, 1) + " ORDER BY key"
 	var rows []listRow
 	if err := s.handle.WithContext(ctx).Raw(sql, tenant).Scan(&rows).Error; err != nil {
-		return nil, fmt.Errorf("settings: listing the rows of tenant %q: %w", tenant, err)
+		return nil, fmt.Errorf("settings: listing the rows of %s: %w",
+			describeLayer(layer), err)
 	}
 	entries := make([]Entry, 0, len(rows))
 	for _, r := range rows {
@@ -198,13 +201,18 @@ type listRow struct {
 // The version is read back by the same statement that increments it. A second
 // query would return whatever another writer stored in between, and the
 // version in the change event would then not be this write's.
-func (s *settingsStore) writeRow(ctx context.Context, tenant, key, text string) (uint64, error) {
+//
+// The layer is flattened to the tenant column here, which is the last point
+// before the statement: the column is what the row is keyed by, and the global
+// layer is the row whose column is empty.
+func (s *settingsStore) writeRow(ctx context.Context, layer Layer, key, text string) (uint64, error) {
 	sql := "INSERT INTO " + tableName + " (tenant_id, key, value, version, updated_at) VALUES (" +
 		bind(s.dialect, 1) + ", " + bind(s.dialect, 2) + ", " + bind(s.dialect, 3) + ", 1, " +
 		bind(s.dialect, 4) + ") ON CONFLICT (tenant_id, key) DO UPDATE SET value = EXCLUDED.value, " +
 		"version = " + tableName + ".version + 1, updated_at = EXCLUDED.updated_at RETURNING version"
 	var version uint64
-	err := s.handle.WithContext(ctx).Raw(sql, tenant, key, text, time.Now().UTC()).Row().Scan(&version)
+	err := s.handle.WithContext(ctx).Raw(sql, tenantOf(layer), key, text, time.Now().UTC()).
+		Row().Scan(&version)
 	if err != nil {
 		return 0, fmt.Errorf("settings: writing key %q: %w", key, err)
 	}
@@ -253,7 +261,8 @@ func (s *settingsStore) swap(ctx context.Context) (*snapshot, error) {
 // be sent would make the caller see a failure for a write that happened.
 // Publish returning nil is not a stronger statement either: it says the bus
 // accepted the event, not that any replica has reloaded.
-func (s *settingsStore) publish(ctx context.Context, tenant string, change Change) {
+func (s *settingsStore) publish(ctx context.Context, layer Layer, change Change) {
+	tenant := tenantOf(layer)
 	evt := event.Event{
 		Type: ChangedEventType,
 		// The tenant the change applies to travels on the envelope; the global

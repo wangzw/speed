@@ -1,7 +1,6 @@
 package resolve
 
 import (
-	"errors"
 	"fmt"
 
 	"github.com/vislake/speed/pkg/config"
@@ -31,8 +30,8 @@ const (
 // There are no defaults for the endpoints or for the selected extractor.
 // Guessing which endpoints are multi-tenant would be a guess about which
 // traffic is scoped, and guessing how a name is carried would be a guess about
-// the shape of the API's addresses; a module that cannot answer either states
-// itself disabled instead, with the reason naming the key.
+// the shape of the API's addresses; a module that cannot answer either fails
+// the startup instead, naming the key it is missing.
 var configDefaults = moduleConfig{
 	HeaderName:     "X-Tenant",
 	SubdomainIndex: 0,
@@ -142,46 +141,41 @@ func readSettings(reader config.Reader) (settings, error) {
 	return cfg.resolve()
 }
 
-// prepare states whether this module runs.
+// prepare states this module's stance, or reports what it cannot start without.
 //
-// The two keys that have no default decide it, and they are told apart in the
-// reason: a deployment that named neither, and one that named endpoints but
-// forgot how a name arrives, are looking at different lines to write.
+// The two keys that have no default decide it, and each is named on its own: a
+// deployment that wrote neither, and one that named endpoints but forgot how a
+// name arrives, are looking at different lines to write. A command that took
+// this module in has to start it, so an unwritten key is a startup failure
+// rather than a stance to stand down from — the endpoints it was meant to
+// guard would otherwise be served with no tenant, and every scoped statement
+// refused, with nothing said beyond a diagnostic line.
 func prepare(reader config.Reader) (core.Enablement, error) {
 	set, err := readSettings(reader)
 	if err != nil {
-		if errors.Is(err, config.ErrMissingRequired) {
-			return core.Enablement{State: core.StateDisabled, Reason: missingReason(err)}, nil
-		}
 		return core.Enablement{}, err
 	}
 	if len(set.endpoints) == 0 {
-		return core.Enablement{State: core.StateDisabled, Reason: standDownReason(endpointsItem)}, nil
+		return core.Enablement{}, unwritten(endpointsItem)
 	}
 	if set.extractor == "" {
-		return core.Enablement{State: core.StateDisabled, Reason: standDownReason(extractorItem)}, nil
+		return core.Enablement{}, unwritten(extractorItem)
 	}
 	return core.Enablement{State: core.StateEnabled}, nil
 }
 
-// standDownReason says which key is unwritten, and what leaving it unwritten
-// would mean. The startup account is the only place an operator learns this:
-// a module that stood down runs no part of itself, and the endpoints it was
-// meant to guard go on being served without a tenant.
-func standDownReason(key string) string {
-	return fmt.Sprintf(
-		"nothing is resolved: %s.%s is unwritten, so requests reach handlers with no "+
-			"tenant and every scoped statement is refused. Write that key to switch "+
-			"tenant resolution on", ConfigNamespace, key)
-}
-
-// missingReason names the key the configuration module reported as required and
-// absent. It is a stand-down rather than a startup failure — the same fact as
-// an empty list, reached by a different route — so the sentence is the same
-// one, with the key taken from the decoder rather than assumed.
-func missingReason(err error) string {
-	return fmt.Sprintf(
-		"nothing is resolved: %s. Write the keys %s.%s and %s.%s to switch tenant "+
-			"resolution on", err, ConfigNamespace, endpointsItem,
-		ConfigNamespace, extractorItem)
+// unwritten is the failure of an input item this module cannot start without.
+//
+// It names the key, and it names the other way out: a command that does not
+// want tenant resolution leaves this module out of it, which is the only way
+// left for a module not to run.
+//
+// A key the decoder found absent never reaches this: Decode raises
+// config.ErrMissingRequired and names the path itself, and prepare carries
+// that failure out as it stands.
+func unwritten(key string) error {
+	return fmt.Errorf("%s: nothing is resolved: %s.%s is unwritten, so requests reach "+
+		"handlers with no tenant and every scoped statement is refused. Write that key "+
+		"to run this module, or leave it out of the command",
+		ConfigNamespace, ConfigNamespace, key)
 }

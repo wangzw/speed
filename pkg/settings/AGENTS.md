@@ -21,8 +21,8 @@ implementation subpackage to hold one backend apart from another.
   ([`adr-settings-scope-2026-09-21.md`](../../docs/adr/adr-settings-scope-2026-09-21.md)),
   why items are declared rather than typed at the call site
   ([`adr-settings-declaration-2026-09-21.md`](../../docs/adr/adr-settings-declaration-2026-09-21.md)),
-  why a read has three layers
-  ([`adr-settings-precedence-2026-09-21.md`](../../docs/adr/adr-settings-precedence-2026-09-21.md)),
+  why a read has three layers and how a layer is named
+  ([`adr-settings-layer-2026-09-21.md`](../../docs/adr/adr-settings-layer-2026-09-21.md)),
   how a change reaches the other replicas
   ([`adr-settings-propagation-2026-09-21.md`](../../docs/adr/adr-settings-propagation-2026-09-21.md)),
   and where the history of a change lives
@@ -34,6 +34,15 @@ here must not cross, and how to run it.
 
 ## Boundaries
 
+- **A layer is named by a constructor, never by a value.** `Global()` and
+  `ForTenant(id)` are the whole of how a read or a write says which layer it
+  acts on; `Layer`'s unexported method closes the set of implementations to
+  this package, and `ForTenant` refuses an empty or blank identifier. The zero
+  value is a mistake at the call site and panics, and that check is a run-time
+  one — a call site that passes no layer at all still compiles. The empty tenant
+  column is storage's spelling of the global row and stays storage's: `tenantOf`
+  is the single crossing between the interface and the column, and a second
+  crossing is a second way for "no tenant" to come to mean "global".
 - **The key rule is a second implementation of configuration's, and it has to
   stay one.** `keys.go` derives a key path by the same rules `pkg/config` uses
   — the `config` tag, then the `json` tag, then the field name in lower kebab

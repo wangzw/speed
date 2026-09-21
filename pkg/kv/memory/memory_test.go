@@ -3,6 +3,7 @@ package memory
 import (
 	"context"
 	"fmt"
+	"strings"
 	"testing"
 	"time"
 
@@ -28,7 +29,10 @@ func TestConforms(t *testing.T) {
 }
 
 func TestStanceIsAutoWhenOneReplicaSharesTheState(t *testing.T) {
-	got := stance(&Config{Replicas: 1})
+	got, err := stance(&Config{Replicas: 1})
+	if err != nil {
+		t.Fatalf("stance with one replica: %v", err)
+	}
 	if got.State != core.StateAuto {
 		t.Fatalf("stance with one replica = %v, want StateAuto: this implementation is the "+
 			"capability's zero-configuration default and has to yield to an explicitly enabled backend",
@@ -36,14 +40,22 @@ func TestStanceIsAutoWhenOneReplicaSharesTheState(t *testing.T) {
 	}
 }
 
-func TestStanceStandsDownWhenSeveralReplicasShareTheState(t *testing.T) {
-	got := stance(&Config{Replicas: 3})
-	if got.State != core.StateDisabled {
-		t.Fatalf("stance with three replicas = %v, want StateDisabled", got.State)
+// TestStanceFailsTheStartupWhenSeveralReplicasShareTheState pins the deployment
+// precondition. A host that declared several replicas gets a startup that stops
+// and names the input it stopped on: this backend would give each replica its
+// own private map, every call would still succeed, and nothing else in the
+// process would ever notice. A stand-down would be worse than useless here — it
+// would leave the capability missing with the process still coming up.
+func TestStanceFailsTheStartupWhenSeveralReplicasShareTheState(t *testing.T) {
+	_, err := stance(&Config{Replicas: 3})
+	if err == nil {
+		t.Fatal("a host that declared three replicas was given a store each replica writes to alone")
 	}
-	if got.Reason == "" {
-		t.Fatal("the stand-down carries no reason, and the reason reaches the startup diagnostics, " +
-			"which is the only place a missing capability is noticed")
+	for _, want := range []string{ConfigNamespace + "." + replicasKey, "3"} {
+		if !strings.Contains(err.Error(), want) {
+			t.Fatalf("the error does not say what the startup stopped on, want it to name %q: %v",
+				want, err)
+		}
 	}
 }
 

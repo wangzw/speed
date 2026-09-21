@@ -81,6 +81,11 @@ const (
 	journalModuleName = journal.ModuleName
 )
 
+// gateConfigNamespace is where the gateway mounts its input items. A case
+// asserts on the item a failed startup names, and the namespace is part of that
+// item's path.
+const gateConfigNamespace = gate.ConfigNamespace
+
 func TestMain(m *testing.M) {
 	dir, err := os.MkdirTemp("", "orders-host")
 	if err != nil {
@@ -840,6 +845,12 @@ func TestTheExemptedRouteNeedsNoCredential(t *testing.T) {
 // this design treats as the worst one: a run that comes up with routes whose
 // guard is missing. Nothing about serving would report it — the routes answer,
 // the process lives — so the shape that reports it is a startup that refuses.
+//
+// The refusal comes from the gateway's own Prepare, and that is where it has to
+// come from now: a module taken in at run level must start, so the gateway
+// cannot stand itself down when it is given no endpoint to guard. It fails the
+// startup instead, naming itself and the input item that is missing, and the
+// guarded routes never reach the wire.
 func TestAGuardedRouteWithNoGatewayStopsTheStartup(t *testing.T) {
 	f := writeUnguardedFixture(t)
 	f.migrate(t)
@@ -850,17 +861,20 @@ func TestAGuardedRouteWithNoGatewayStopsTheStartup(t *testing.T) {
 	out, err := cmd.CombinedOutput()
 
 	// The deadline is checked before the error: a process that served on
-	// until the case killed it reports a non-nil error and prints the
-	// module's stand-down notice too, so "it failed and said the right
-	// thing" is satisfied by a run that never refused anything.
+	// until the case killed it reports a non-nil error too, so "it failed
+	// and said the right thing" is satisfied by a run that never refused
+	// anything.
 	if ctx.Err() != nil {
 		t.Fatalf("the run was still serving when the case gave up; a configuration naming no endpoint to guard must refuse to start rather than serve:\n%s", out)
 	}
 	if err == nil {
 		t.Fatalf("a configuration naming no endpoint to guard served anyway; it wrote:\n%s", out)
 	}
-	if !strings.Contains(string(out), ordersModuleName) {
-		t.Errorf("the failure does not name the module that could not take its gateway up:\n%s", out)
+	if !strings.Contains(string(out), `module "`+gateModuleName+`" Prepare:`) {
+		t.Errorf("the failure does not name the gateway as the module whose Prepare failed:\n%s", out)
+	}
+	if !strings.Contains(string(out), gateConfigNamespace+".endpoints") {
+		t.Errorf("the failure does not name the input item the gateway is missing:\n%s", out)
 	}
 }
 

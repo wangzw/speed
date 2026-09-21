@@ -20,7 +20,8 @@ const configNamespace = "http"
 const configPath = configNamespace
 
 // endpointsItem is the key of the endpoint set, relative to the namespace. The
-// disabled stance names it, so the reader is told which key to write.
+// startup failure for a host that configured none names it, so the reader is
+// told which key to write.
 const endpointsItem = "endpoints"
 
 // moduleConfig is the set of input items this module accepts. It is not
@@ -91,9 +92,9 @@ const (
 )
 
 // configDefaults is the prototype this module declares. The endpoint set is
-// empty in it, which is what makes the disabled stance reachable: a default
-// endpoint would open a port on every host that never asked for one, and the
-// "no endpoint is configured" branch could never be taken.
+// empty in it: a default endpoint would open a port on every host that never
+// asked for one, and the "no endpoint is configured" startup failure could
+// never be taken.
 var configDefaults = moduleConfig{}
 
 // schema is this module's input item declaration.

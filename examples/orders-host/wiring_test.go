@@ -42,15 +42,18 @@ func TestEveryModuleThatLogsDeclaresTheLoggingDependency(t *testing.T) {
 }
 
 // TestTheConsumerDeclaresTheCapabilitiesItTakesUp is the same case for the two
-// capabilities the backends deliver, and it is what makes the run's shape say
-// something: this module names no backend in any command, and these two
-// declarations are the statement that explains how one arrives.
+// capabilities the backends deliver. The declarations do not bring the
+// providers in: both backends deliver exclusively, so every run that wants them
+// names them, and `serve` does. What the declarations state is that this module
+// takes the capability up at all, which is what orders it after the module that
+// delivers it and what fails the startup when no provider is named.
 func TestTheConsumerDeclaresTheCapabilitiesItTakesUp(t *testing.T) {
 	module := inventoryModule()
 	for _, capability := range []core.Token{(*kv.KV)(nil), (*event.Bus)(nil)} {
 		if !requiresCapability(module, capability) {
 			t.Errorf("module %q takes the %T capability out of the registry and declares no requirement on it, "+
-				"so nothing draws a provider into a run that never names one",
+				"so nothing orders this module after the one that delivers it and nothing fails the startup "+
+				"when the command tree names no provider",
 				module.Name, capability)
 		}
 	}
@@ -87,8 +90,9 @@ func TestNoModuleDeclaresTheConfigReaderRequirement(t *testing.T) {
 func TestTheHostModuleProvidesNothingThatCouldPullItIntoACommand(t *testing.T) {
 	module := hostModule()
 	if len(module.Provides) != 0 {
-		t.Errorf("module %q declares %d provision(s); a module that delivers a capability is "+
-			"taken into every command that requires it, named there or not",
+		t.Errorf("module %q declares %d provision(s); a capability delivered without an exclusive "+
+			"claim draws its provider into every command that requires it, named there or not, "+
+			"so nothing would keep this module out of a command that never names it",
 			module.Name, len(module.Provides))
 	}
 	if module.New != nil {

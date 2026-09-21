@@ -53,8 +53,8 @@ const (
 	// implementations of the database capability were both enabled.
 	exclusiveViolatedMarker = "dbhost: exclusive-violated"
 	// missingProviderMarker reports a startup that failed because a module
-	// required the database capability and no enabled implementation
-	// delivered one.
+	// required the database capability and the command named no engine to
+	// deliver it.
 	missingProviderMarker = "dbhost: missing-provider"
 )
 
@@ -75,21 +75,20 @@ func run() int {
 
 	app := config.NewApp(core.ProcessRegistry)
 
-	// The root takes every available module in and drives the whole
-	// lifecycle. Every scenario but one is written as `dbhost --config=...`
-	// with no subcommand, so the root has to be a command a run can select;
-	// and the set is every available module rather than a list, because a
-	// scenario's modules include ones registered by packages this file only
-	// imports for their side effects.
-	app.Root().IncludeAll()
-	app.Root().Do(core.StageServe, nil)
+	// The root drives the whole lifecycle, and it is the command every
+	// scenario but one is written as: `dbhost --config=...` with no
+	// subcommand. It names the engine the scenario configures rather than
+	// taking in everything registered — namedModules says why.
+	root := app.Root()
+	root.Include(namedModules()...)
+	root.Do(core.StageServe, nil)
 
-	// migrate is the command with a depth of its own: it takes in the two
-	// engines and the module that declares the migration set, drives as far
-	// as applying them, and returns. The stages past the migration one do not
-	// run, so nothing this assembly could serve on is ever opened.
-	migrate := app.Root().Sub("migrate")
-	migrate.Include(postgres.ModuleName, sqlite.ModuleName, probeModuleName)
+	// migrate is the command with a depth of its own: it drives as far as
+	// applying the migrations and returns, so nothing this assembly could
+	// serve on is ever opened. It names no module of its own, because a
+	// level's inclusions hold for every command under it and the root already
+	// named this scenario's engine and its dependant.
+	migrate := root.Sub("migrate")
 	migrate.Do(core.StageMigrate, nil)
 
 	if err := app.Execute(ctx); err != nil {
@@ -105,6 +104,40 @@ func run() int {
 		return 1
 	}
 	return 0
+}
+
+// namedModules is what the command tree takes in: the engine this scenario
+// configures, and the dependant beside it.
+//
+// The tree names the engine rather than taking in every registered module, and
+// that is the design's shape rather than a preference: the database capability
+// is delivered exclusively, so the dependency closure does not pull a provider
+// in on its own — the host names the engine it wants, and an engine it does not
+// name need not be configured. A command that took in everything registered
+// would demand a locator for both engines, which is a different assembly from
+// the one any of these scenarios is about.
+//
+// The scenarios are separate processes and the tree is built per process, so
+// each gets its own list. Two of them turn on an engine being absent, and the
+// selection is what makes that so: with an engine named, the dependant would
+// find a provider and there would be nothing to observe.
+func namedModules() []string {
+	switch scenario() {
+	case caseBothEnginesConfigured:
+		return []string{postgres.ModuleName, sqlite.ModuleName, probeModuleName}
+	case caseNoEngineConfigured:
+		return []string{probeModuleName}
+	case caseFirstMigration:
+		return []string{postgres.ModuleName, probeModuleName}
+	case caseSerializerRoundTrip, caseOneEngineConfigured, caseMigrateSubcommand:
+		return []string{sqlite.ModuleName, probeModuleName}
+	default:
+		// An unknown scenario is one the cases never start, so this is
+		// unreachable in the suite. Leaving the engine out makes it fail on
+		// the dependant's requirement rather than succeed on a database the
+		// scenario never asked about.
+		return []string{probeModuleName}
+	}
 }
 
 // say writes one line of this host's own narration, as opposed to the startup

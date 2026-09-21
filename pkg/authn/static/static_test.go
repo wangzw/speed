@@ -8,6 +8,7 @@ import (
 	"testing"
 
 	"github.com/vislake/speed/pkg/authn"
+	"github.com/vislake/speed/pkg/authn/internal/configreader"
 	"github.com/vislake/speed/pkg/authn/internal/verdict"
 )
 
@@ -255,17 +256,33 @@ func TestAnUnusableHashNeverReachesAnErrorMessage(t *testing.T) {
 	}
 }
 
-// TestABackendWithNobodyToVouchForStandsDownWithAReasonNamingItself holds the
-// stance a backend has to be able to take, and what its reason has to carry.
+// TestABackendWithNobodyToVouchForRefusesToStart holds what this backend does
+// when its table names no subject, which is not a stance it may take.
 //
-// Under an assembly with several backends, that line is the only thing telling
-// an operator which of them stood down and what it lacked.
-func TestABackendWithNobodyToVouchForStandsDownWithAReasonNamingItself(t *testing.T) {
-	reason := standDownReason()
-
-	for _, want := range []string{ModuleName, ConfigNamespace + "." + subjectsItem} {
-		if !strings.Contains(reason, want) {
-			t.Errorf("the stand-down reason reads %q and does not carry %q", reason, want)
-		}
+// A command that names this module has promised it starts, so a table it cannot
+// be the authority for stops the startup rather than leaving the command quietly
+// without a credential source. The failure has to name the key: under an
+// assembly carrying several backends, that line is the only thing telling an
+// operator which of them could not start and what it lacked.
+func TestABackendWithNobodyToVouchForRefusesToStart(t *testing.T) {
+	for _, c := range []struct {
+		name string
+		body string
+	}{
+		{"the key is absent", `{"authn":{"static":{"name":"local"}}}`},
+		{"the table is empty", `{"authn":{"static":{"name":"local","subjects":{}}}}`},
+	} {
+		t.Run(c.name, func(t *testing.T) {
+			_, err := prepare(configreader.Over(t, Module(), c.body))
+			if err == nil {
+				t.Fatal("a table naming no subject was carried into the run, so a command would " +
+					"come up with a backend that authenticates nobody")
+			}
+			for _, want := range []string{ModuleName, ConfigNamespace + "." + subjectsItem} {
+				if !strings.Contains(err.Error(), want) {
+					t.Errorf("the failure reads %q and does not carry %q", err, want)
+				}
+			}
+		})
 	}
 }

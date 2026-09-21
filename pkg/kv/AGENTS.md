@@ -49,15 +49,22 @@ must not cross, and how to run it.
   as soon as a host imports both, before exclusivity resolution can stand one of
   them down.
 - **Every implementation declares the capability exclusively**, and says in its
-  `Stance` whether it was pointed at anything and whether the deployment suits
-  it. A zero-configuration backend states `StateAuto` so it yields to one that
-  was explicitly enabled; a backend that must be pointed at something states
+  `Stance` how that claim yields and what it cannot start without. A
+  zero-configuration backend states `StateAuto` so it yields to one that was
+  explicitly enabled; a backend that must be pointed at a setting states
   `StateEnabled` so that two of them being configured at once fails the startup
   rather than one silently winning.
+- **A module named in the command tree has to start.** An implementation that
+  cannot — a setting it was not given, a deployment precondition its backend
+  cannot serve — returns an error naming that input, and the startup fails with
+  it. `StateDisabled` is not a stance an implementation may take: it is
+  resolution's verdict on a provider that stood down over an exclusive claim, and
+  the answer the enablement query gives for a module this command did not take in
+  at run level.
 - **A deployment precondition is declared, never inferred.** An implementation
-  whose backend cannot serve the assembly it finds itself in states
-  `StateDisabled` with a reason naming the input item and what it read. It does
-  not guess, and it does not start and misbehave quietly.
+  whose backend cannot serve the assembly it finds itself in says so in its
+  `Stance`, as an error naming the input item and what it read. It does not
+  guess, and it does not start and misbehave quietly.
 - **The sentinel table is closed at one entry.** `ErrNotNumeric` is the only
   failure this capability defines; a backend's own failures travel as its own
   errors and are wrapped with `%w` so the chain stays walkable.
@@ -82,7 +89,7 @@ func Module() core.Module {
 		ConfigNamespace: ModuleName,   // where this backend's items are mounted
 		Config:          &prototype,   // the prototype, carrying the defaults
 		Items:           items,        // the declared input items
-		Stance:          stance,       // pointed at anything? does the deployment suit it?
+		Stance:          stance,       // how the exclusive claim yields, or what is missing
 		Open:            open,         // the client, and the only place it appears
 	})
 }

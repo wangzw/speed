@@ -35,10 +35,11 @@ func hostModule() core.Module {
 // delivers one and reaches its Migrate stage after the migrations have been
 // applied; what each scenario makes of that position is in cases.go.
 //
-// It is also what gives the two startup-failure cases their teeth. A run that
-// configured no engine at all would otherwise start up cleanly with every
-// implementation disabled, and a case that only read the diagnostics could not
-// tell that run from one that deliberately carries no database.
+// It is also what makes the missing-provider case a failure. A command that
+// names no engine is a legal assembly as far as the database is concerned — it
+// is the dependant's requirement that turns the absence into a startup failure,
+// and without it a run that deliberately carries no database and one that
+// forgot to name an engine would be the same run.
 func probeModule() core.Module {
 	return core.Module{
 		Name:      probeModuleName,

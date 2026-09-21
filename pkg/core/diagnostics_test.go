@@ -18,7 +18,7 @@ func diagnosticLines(t *testing.T, final map[string]Enablement) []string {
 	return strings.Split(text, "\n")
 }
 
-func TestDiagnosticsListsSelfDisabledModuleWithReason(t *testing.T) {
+func TestDiagnosticsListsNotEnabledModuleWithItsReason(t *testing.T) {
 	lines := diagnosticLines(t, map[string]Enablement{
 		"remote": {State: StateDisabled, Reason: "no connection address configured"},
 	})
@@ -33,7 +33,9 @@ func TestDiagnosticsListsSelfDisabledModuleWithReason(t *testing.T) {
 }
 
 // TestDiagnosticsListsResolutionDisabledModuleWithResolutionReason pins that
-// the reason shown is the one resolution gave, not the stance the module took.
+// the reason shown is the one resolution gave. Resolution is the only source of
+// it: a module taken in at run level has to start, so standing down over an
+// exclusive claim is the one way a participant misses the enabled set.
 func TestDiagnosticsListsResolutionDisabledModuleWithResolutionReason(t *testing.T) {
 	final := mustResolve(t,
 		stated("memory", StateAuto, "", exclusive((*cacheCap)(nil))),

@@ -4,17 +4,20 @@
 // It holds every value in this process's memory, so its state is neither shared
 // with other replicas nor kept across a restart. Those are properties of the
 // backend, not defects, and the way they surface is this implementation's own
-// deployment precondition: a host that declares several replicas gets this
-// module disabled with a reason rather than a store each replica writes to
-// alone.
+// deployment precondition: a host that declares several replicas gets a startup
+// that stops with an error naming the replica count, rather than a store each
+// replica writes to alone.
 //
 // It is the capability's default implementation in the sense core's resolution
 // gives that word. It claims the capability exclusively while stating
-// StateAuto, so it runs until another provider is explicitly enabled and then
-// stands down — which is what lets a host import it as the zero-configuration
-// path and have a configured backend take over without editing the command
-// tree. It is also the test double every consistency run is written against,
-// so it needs no third-party dependency and no container.
+// StateAuto, so it runs until another provider is enabled and then stands down.
+// The stand-down takes a host that names that provider in the command tree: an
+// exclusive provider is not pulled in by the dependency closure, so one left
+// unnamed enters no participant set and this implementation never yields — the
+// assembly then runs on this one while the host believes it is running the
+// other, and nothing reports the difference. It is also the test double every
+// consistency run is written against, so it needs no third-party dependency and
+// no container.
 package memory
 
 import (
@@ -65,7 +68,7 @@ func Module() core.Module {
 		Items: map[string]config.Item{
 			replicasKey: {
 				Description: "how many replicas share this assembly's state; this implementation " +
-					"keeps every value in one process's memory, so any value above 1 disables it",
+					"keeps every value in one process's memory, so any value above 1 fails the startup",
 			},
 		},
 		Stance: stance,
@@ -73,29 +76,30 @@ func Module() core.Module {
 	})
 }
 
-// stance states whether this implementation runs.
+// stance states this implementation's stance, or reports the deployment it
+// cannot serve.
 //
 // A declared replica count above one is a deployment this backend cannot serve:
 // each replica would hold its own values and never see the others' writes, and
 // every call would still succeed, so the failure would have no signal anywhere.
-// Standing down here turns that into a startup diagnostic naming the reason.
+// Returning it as an error stops the startup and names the input it stopped on,
+// which is the only place this can be noticed at all.
 //
 // Otherwise the stance is StateAuto rather than StateEnabled. This is the
 // capability's zero-configuration implementation, and StateAuto is what lets a
-// host import it alongside a real backend and have it yield once that backend is
-// configured.
-func stance(cfg *Config) core.Enablement {
+// host import it alongside a real backend and have it stand down once that
+// backend is enabled. The host naming that backend in the command tree is what
+// makes the stand-down possible at all: an exclusive provider the command tree
+// leaves out enters no participant set, so there is nothing for this one to
+// yield to.
+func stance(cfg *Config) (core.Enablement, error) {
 	if cfg.Replicas > 1 {
-		return core.Enablement{
-			State: core.StateDisabled,
-			Reason: fmt.Sprintf("%s.%s is %d, and this implementation keeps every value in one "+
-				"process's memory: each replica would hold its own and never see the others' writes, "+
-				"while every call still succeeded. Point the capability at a backend that shares "+
-				"state across replicas, or declare one replica",
-				ConfigNamespace, replicasKey, cfg.Replicas),
-		}
+		return core.Enablement{}, fmt.Errorf("%s.%s is %d, and this implementation keeps every value "+
+			"in one process's memory: each replica would hold its own and never see the others' writes, "+
+			"while every call still succeeded. Point the command at a backend that shares state across "+
+			"replicas, or declare one replica", ConfigNamespace, replicasKey, cfg.Replicas)
 	}
-	return core.Enablement{State: core.StateAuto}
+	return core.Enablement{State: core.StateAuto}, nil
 }
 
 // open builds the store. Nothing is held open, so the product implements no

@@ -9,7 +9,7 @@ func TestSentinelSetMatchesDesignTable(t *testing.T) {
 		"ErrMissingProvider":       ErrMissingProvider,
 		"ErrAmbiguousProvider":     ErrAmbiguousProvider,
 		"ErrExclusiveViolated":     ErrExclusiveViolated,
-		"ErrMissingReason":         ErrMissingReason,
+		"ErrDisabledStance":        ErrDisabledStance,
 		"ErrDependencyCycle":       ErrDependencyCycle,
 		"ErrUndeliveredCapability": ErrUndeliveredCapability,
 		"ErrUnknownParticipant":    ErrUnknownParticipant,

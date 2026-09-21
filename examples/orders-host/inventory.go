@@ -33,10 +33,14 @@ func init() { core.ProcessRegistry.Register(inventoryModule()) }
 // was placed, and it learns about placements by subscribing rather than by
 // being called.
 //
-// It declares both requirements, and that declaration is what draws their
-// providers into a run that never names them. A host that wrote the backends
-// into its command tree as well would be saying the same thing twice — and the
-// declaration is the half that stays right when a module is added.
+// It declares both requirements, and neither declaration is the way a provider
+// arrives: both backends deliver their capability exclusively, and the closure
+// expands a required capability into its declared providers except the ones
+// that claim it exclusively. What the declarations do is state what this module
+// takes up — ordering it after the modules that deliver it, and failing the
+// startup at resolution when the run names no provider for one of them. The run
+// that wants a counter is the one that names the two backends in its command
+// tree.
 //
 // The logging requirement orders this module around the logger it writes
 // through, and it is declared for the same reason the other two are: this

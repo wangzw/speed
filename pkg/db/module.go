@@ -19,13 +19,13 @@ import (
 // cross-process migration mutex when its engine appears in multi-replica
 // deployments.
 //
-// Everything else — the input item declaration, the stance on whether the
-// module runs, the connection, the plugins, the encryption serializer, the
+// Everything else — the input item declaration, the stance it states in
+// Prepare, the connection, the plugins, the encryption serializer, the
 // migration run and the release of the pool — is this package's, shared by
 // every implementation. That split is what keeps the implementations from
 // drifting apart in the behaviour a host sees: an engine that put its own
-// Prepare together would be one edit away from disabling itself on a different
-// condition than its neighbour.
+// Prepare together would be one edit away from failing the startup on a
+// different condition than its neighbour.
 type Spec struct {
 	// ModuleName is this implementation's name in the registry: its identity
 	// in the startup diagnostics and in an enablement lookup.
@@ -154,7 +154,8 @@ func (s Spec) reader(reg *core.Registry, what string) (config.Reader, error) {
 	return reader, nil
 }
 
-// prepare states whether this implementation runs, judging by its own section.
+// prepare states this implementation's stance, or reports what it cannot start
+// without, judging by its own section.
 //
 // A configured locator states StateEnabled rather than StateAuto, and the
 // difference is the whole point of the stance here. Resolution stands down an
@@ -162,22 +163,23 @@ func (s Spec) reader(reg *core.Registry, what string) (config.Reader, error) {
 // configured two engines would get one of them silently, with half its tables
 // in a database nobody mentioned. Stating enabled makes that assembly fail.
 //
-// An absent locator disables the module with a reason instead of failing the
-// startup: whether an assembly needs a database is the assembly's decision,
-// and a host that does need one finds out through the dependency resolution of
-// whatever module required the capability, with this reason attached.
+// An absent or blank locator fails the startup, naming the key. This
+// implementation is in the run because the command tree named it, and a module
+// taken in at run level has to start: it has no stance that takes it back out,
+// so a database it cannot be pointed at is a startup failure rather than an
+// assembly that goes on without one. A host that wants no database leaves this
+// implementation out of the command tree — the capability is delivered
+// exclusively, so the dependency closure does not pull a provider in on its own
+// (ADR-dependency-resolution-2026-09-13, ADR-module-enablement-2026-09-21).
 func (s Spec) prepare(reader config.Reader) (core.Enablement, error) {
 	cfg, err := s.read(reader)
 	if err != nil {
 		return core.Enablement{}, err
 	}
 	if strings.TrimSpace(cfg.DSN) == "" {
-		return core.Enablement{
-			State: core.StateDisabled,
-			Reason: fmt.Sprintf("%s.%s gives no connection locator, so this assembly runs "+
-				"without a %s database; set it to run on %s",
-				s.ConfigNamespace, dsnKey, s.Dialect, s.Dialect),
-		}, nil
+		return core.Enablement{}, fmt.Errorf("%s: %s.%s gives no connection locator, and a module "+
+			"taken in at run level has to start: set it to run on %s, or leave %s out of the "+
+			"command tree", s.ModuleName, s.ConfigNamespace, dsnKey, s.Dialect, s.ModuleName)
 	}
 	return core.Enablement{State: core.StateEnabled}, nil
 }

@@ -57,6 +57,52 @@ func TestMissingProviderNoDeclarer(t *testing.T) {
 	}
 }
 
+// TestFixingActionsListsWhatCanBeDone pins the actions a capability nothing
+// delivers leaves a host with: import an implementation, and -- once the
+// requiring module is named -- disable it. "Enable one that is already
+// imported" is not among them, because this failure is reached only when no
+// registered module declared the capability, so an implementation already
+// imported does not exist by construction.
+//
+// The single-action shape has to read as a sentence on its own: the Resolve
+// path reaches the failure with no requiring module to name, and joining one
+// action as though there were a list would leave a dangling ", or".
+func TestFixingActionsListsWhatCanBeDone(t *testing.T) {
+	if got, want := fixingActions(""), "Import an implementation of it"; got != want {
+		t.Errorf("with no requiring module, fixingActions is %q, want %q", got, want)
+	}
+	if got, want := fixingActions("api"), `Import an implementation of it, or disable "api"`; got != want {
+		t.Errorf("with a requiring module, fixingActions is %q, want %q", got, want)
+	}
+}
+
+// TestMissingProviderForAnExclusiveCapabilitySaysToNameOne pins the fix that
+// belongs to the closure's exception. A capability its providers claim
+// exclusively is not pulled into a command, so a consumer of it fails with an
+// instruction to name one implementation -- not with the instruction to import
+// one, which is already satisfied and would change nothing.
+func TestMissingProviderForAnExclusiveCapabilitySaysToNameOne(t *testing.T) {
+	consumer := Module{Name: "consumer", Requires: needs((*cacheCap)(nil))}
+	memory := Module{Name: "memory", Provides: []Provision{exclusive((*cacheCap)(nil))}}
+	redis := Module{Name: "redis", Provides: []Provision{exclusive((*cacheCap)(nil))}}
+
+	_, err := planConstruction([]Module{consumer}, []Module{consumer}, nil,
+		[]Module{memory, redis}, allEnabled(consumer), nil, nil)
+	if !errors.Is(err, ErrMissingProvider) {
+		t.Fatalf("planning returned %v, want ErrMissingProvider", err)
+	}
+	for _, want := range []string{"memory", "redis", "claimed exclusively", "name one implementation"} {
+		if !strings.Contains(err.Error(), want) {
+			t.Errorf("error %q does not mention %q", err, want)
+		}
+	}
+	if strings.Contains(err.Error(), "declares it but this command does not include it") {
+		t.Errorf("error %q gives the import-and-include fix for a provider that is registered "+
+			"and specifically left out by the expansion rule, which sends the reader to a "+
+			"change that does nothing", err)
+	}
+}
+
 // TestMissingProviderTextCarriesDisableReason pins that a capability lost to
 // resolution reports why its provider is not running, not merely that nobody
 // provides it.

@@ -3,6 +3,7 @@ package memory
 import (
 	"context"
 	"errors"
+	"strings"
 	"sync/atomic"
 	"testing"
 
@@ -38,22 +39,36 @@ func TestConforms(t *testing.T) {
 }
 
 func TestStanceIsAutoWhenOneReplicaSharesTheState(t *testing.T) {
-	got := stance(&Config{Replicas: 1})
+	got, err := stance(&Config{Replicas: 1})
+	if err != nil {
+		t.Fatalf("stance with one replica failed the startup: %v", err)
+	}
 	if got.State != core.StateAuto {
 		t.Fatalf("stance with one replica = %v, want StateAuto: this implementation is the "+
-			"capability's zero-configuration default and has to yield to an explicitly enabled backend",
-			got.State)
+			"capability's zero-configuration default and has to stand down for an explicitly "+
+			"enabled backend", got.State)
 	}
 }
 
-func TestStanceStandsDownWhenSeveralReplicasShareTheState(t *testing.T) {
-	got := stance(&Config{Replicas: 2})
-	if got.State != core.StateDisabled {
-		t.Fatalf("stance with two replicas = %v, want StateDisabled", got.State)
+// TestStanceFailsTheStartupWhenSeveralReplicasShareTheState is the half of the
+// enablement rule this module owns: a module taken in at run level has to start,
+// and this one cannot start on a deployment of several replicas. The answer is a
+// failure naming the input, not a stance that lets the startup succeed with the
+// capability missing — a stand-down there is the silent loss of the bus the
+// premise exists to prevent.
+func TestStanceFailsTheStartupWhenSeveralReplicasShareTheState(t *testing.T) {
+	got, err := stance(&Config{Replicas: 2})
+	if err == nil {
+		t.Fatal("stance with two replicas did not fail the startup: a subscriber on one replica " +
+			"would never see an event published on another, while every publish still returned " +
+			"success")
 	}
-	if got.Reason == "" {
-		t.Fatal("the stand-down carries no reason, and the reason reaches the startup diagnostics, " +
-			"which is the only place a missing capability is noticed")
+	if !strings.Contains(err.Error(), ConfigNamespace+"."+replicasKey) {
+		t.Fatalf("the failure does not name the input that caused it: %v", err)
+	}
+	if got.State == core.StateDisabled {
+		t.Fatal("the stance stands this module down, and StateDisabled is not a stance a module " +
+			"may state: resolution is its only source")
 	}
 }
 

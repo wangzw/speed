@@ -40,20 +40,24 @@ type Spec[C any] struct {
 	// Items describes each declared item, keyed by its path within the
 	// namespace.
 	Items map[string]config.Item
-	// Stance reads the decoded configuration and states whether this
-	// implementation runs.
+	// Stance reads the decoded configuration and states what this implementation
+	// cannot start without, and how its exclusive claim gives way.
 	//
 	// It is where an implementation answers two questions at once: whether the
 	// host pointed it at anything, and whether the deployment it found itself in
-	// suits it. A backend that needs an address and was given none states
-	// StateDisabled with a reason; an implementation that delivers within one
-	// process states StateDisabled when the host declared several replicas.
+	// suits it. Both are answered the same way: an implementation that cannot
+	// run returns an error naming the input that would have let it, and the
+	// startup fails with that text. A module the host took in at run level has
+	// to start, so "this run does not want it" is not one of its answers; the
+	// only source of StateDisabled is resolution.
 	//
-	// A zero-configuration implementation states StateAuto, so that it yields to
-	// an explicitly enabled backend rather than colliding with it. An
-	// implementation that has to be pointed at a backend states StateEnabled, so
-	// that two of them being configured at once fails the startup.
-	Stance func(cfg *C) core.Enablement
+	// What is left is the pair of states that say how this implementation's
+	// exclusive claim gives way. A zero-configuration implementation states
+	// StateAuto, so that it runs until another provider of the capability is
+	// explicitly enabled and then stands down. An implementation that has to be
+	// pointed at a backend states StateEnabled, so that two of them being
+	// pointed at once fails the startup.
+	Stance func(cfg *C) (core.Enablement, error)
 	// Open builds this implementation from the decoded configuration.
 	Open func(ctx context.Context, cfg *C) (Bus, error)
 	// Start is called when the drive reaches the start stage, and is where an
@@ -91,7 +95,7 @@ func NewModule[C any](spec Spec[C]) core.Module {
 			if err != nil {
 				return core.Enablement{}, err
 			}
-			return spec.Stance(cfg), nil
+			return spec.Stance(cfg)
 		},
 		New: func(ctx context.Context, reg *core.Registry) (any, error) {
 			cfg, err := spec.read(reg)
@@ -134,7 +138,8 @@ func (s Spec[C]) check() {
 			"accepted input items and their defaults are read from; a backend that accepts nothing "+
 			"still mounts an empty struct here", s.ModuleName))
 	case s.Stance == nil:
-		panic(fmt.Sprintf("event: module %q gives no stance, so nothing decides whether it runs", s.ModuleName))
+		panic(fmt.Sprintf("event: module %q gives no stance, so nothing decides whether it can start "+
+			"or how its exclusive claim gives way", s.ModuleName))
 	case s.Open == nil:
 		panic(fmt.Sprintf("event: module %q gives no constructor, so nothing reaches its backend", s.ModuleName))
 	}

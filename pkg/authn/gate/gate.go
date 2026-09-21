@@ -225,33 +225,40 @@ func readerOf(reg *core.Registry) (config.Reader, error) {
 	return reader, nil
 }
 
-// prepare reads the configuration and states whether this module runs.
+// prepare reads the configuration and states that this module runs.
 //
-// With no endpoint named, the gateway stands down with a reason naming the key
-// to write. Guarding an endpoint it was not told to guard would be a guess about
-// which traffic is public, and a gateway that guards nothing is worth saying out
-// loud rather than leaving to be discovered.
+// There is no stance in which this gateway guards nothing. A command that names
+// this module has promised it starts, so a configuration that names no endpoint
+// to guard is a startup failure naming the key to write: registering on no
+// endpoint would leave every route on every endpoint served without a
+// credential, and which traffic is public is not a guess this module makes for
+// the host.
 func prepare(reader config.Reader) (core.Enablement, error) {
 	set, err := readSettings(reader)
 	if err != nil {
 		if errors.Is(err, config.ErrMissingRequired) {
-			return core.Enablement{State: core.StateDisabled, Reason: standDownReason()}, nil
+			return core.Enablement{}, fmt.Errorf("%w: %w", err, nothingToGuard())
 		}
 		return core.Enablement{}, err
 	}
 	if len(set.endpoints) == 0 {
-		return core.Enablement{State: core.StateDisabled, Reason: standDownReason()}, nil
+		return core.Enablement{}, nothingToGuard()
 	}
 	return core.Enablement{State: core.StateEnabled}, nil
 }
 
-// standDownReason is the one reason this module states for not running. The
-// absent key and an explicitly empty list are the same fact — no endpoint is
-// guarded — and are worth the same sentence.
-func standDownReason() string {
-	return fmt.Sprintf("no endpoint is guarded: %s.%s names none, so every route would be "+
+// nothingToGuard is the failure this module reports when the configuration
+// names no endpoint for it to guard.
+//
+// The absent key and an explicitly empty list are the same fact — no endpoint is
+// guarded — and are worth the same sentence. It is a startup failure rather than
+// a stance: a module taken into a command has to start, and the way out is to
+// write the endpoints, or to leave this module out of the command.
+func nothingToGuard() error {
+	return fmt.Errorf("no endpoint is guarded: %s.%s names none, so every route would be "+
 		"served without a credential. Name the endpoints to guard under that key to switch "+
-		"authentication on", ConfigNamespace, endpointsItem)
+		"authentication on, or leave this module out of the command",
+		ConfigNamespace, endpointsItem)
 }
 
 // newGateway builds the product. It takes up no module's product: everything
@@ -284,8 +291,7 @@ func (g *gateway) wire(reg *core.Registry) error {
 	if len(verifiers) == 0 {
 		return fmt.Errorf("%w: this command includes the authentication gateway but not one "+
 			"credential-verifying backend, so no credential could ever hold. Write the "+
-			"chosen backend subpackage's module name into this command, or read why the "+
-			"one that is there stated itself disabled", authn.ErrNoVerifier)
+			"chosen backend subpackage's module name into this command", authn.ErrNoVerifier)
 	}
 	table, err := buildOwnership(verifiers)
 	if err != nil {

@@ -42,21 +42,32 @@ func TestConforms(t *testing.T) {
 	})
 }
 
-func TestStanceStandsDownWithoutAServer(t *testing.T) {
+// TestStanceFailsWithoutAServer pins the enablement rule at this backend's own
+// precondition: a module taken in at run level has to start, so an implementation
+// the host did not point at a server fails the startup naming the item. It is
+// not a stance that lets the run continue without an event bus.
+func TestStanceFailsWithoutAServer(t *testing.T) {
 	cfg := Config{Config: speedredis.Defaults()}
-	got := stance(&cfg)
-	if got.State != core.StateDisabled {
-		t.Fatalf("stance with no address = %v, want StateDisabled", got.State)
+	got, err := stance(&cfg)
+	if err == nil {
+		t.Fatal("stance with no address did not fail the startup")
 	}
-	if got.Reason == "" {
-		t.Fatal("the stand-down carries no reason")
+	if !strings.Contains(err.Error(), ConfigNamespace+"."+speedredis.AddrKey) {
+		t.Fatalf("the failure does not name the input that caused it: %v", err)
+	}
+	if got.State == core.StateDisabled {
+		t.Fatal("the stance stands this module down, and StateDisabled is not a stance a module " +
+			"may state: resolution is its only source")
 	}
 }
 
 func TestStanceEnablesOnceAServerIsNamed(t *testing.T) {
 	cfg := Config{Config: speedredis.Defaults()}
 	cfg.Addr = "127.0.0.1:6379"
-	got := stance(&cfg)
+	got, err := stance(&cfg)
+	if err != nil {
+		t.Fatalf("stance with an address failed the startup: %v", err)
+	}
 	if got.State != core.StateEnabled {
 		t.Fatalf("stance with an address = %v, want StateEnabled", got.State)
 	}

@@ -32,9 +32,10 @@ import (
 // so `kv.redis.addr` and `event.redis.addr` are separate input items that happen
 // to accept the same shape.
 type Config struct {
-	// Addr is the host and port of the server. An absent one is how an assembly
-	// says it does not run this backend, so the mounting implementation turns it
-	// into a disabled module with a reason rather than a startup failure.
+	// Addr is the host and port of the server. An absent one is not how an
+	// assembly says it does not run this backend: a mounting implementation is
+	// in the run because the command tree named it, so one that has to reach
+	// Redis at a server nobody gave it stops the startup and names this key.
 	Addr string `config:"addr"`
 	// Password is the credential. Marked sensitive: it must not reach logs,
 	// diagnostics or the help output.
@@ -90,8 +91,9 @@ const (
 func Items() map[string]config.Item {
 	return map[string]config.Item{
 		AddrKey: {
-			Description: "the host and port of the Redis server; leaving it out runs the assembly " +
-				"without this backend",
+			Description: "the host and port of the Redis server; naming this implementation on the " +
+				"command tree is what puts it in the run, and it has to be pointed at one, so " +
+				"leaving this key out fails the startup",
 		},
 		PasswordKey: {
 			Sensitive:   true,

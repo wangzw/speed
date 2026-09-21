@@ -33,32 +33,31 @@ type stance struct {
 // shows up". A provider that never claimed exclusivity has nothing to restrain,
 // so propagation leaves it alone; disabling it too would let a doomed
 // exclusive default drag down the non-exclusive defaults beside it.
+//
+// Every stance here belongs to a module this drive took in at run level, and
+// such a module has to start. A stance of StateDisabled is therefore refused
+// rather than honoured: the module is misusing the API, and the startup stops
+// with that named, where any other premise it cannot meet would stop it.
 func resolveEnablement(stances []stance) (map[string]Enablement, error) {
 	stances = slices.SortedFunc(slices.Values(stances), func(a, b stance) int {
 		return strings.Compare(a.module.Name, b.module.Name)
 	})
 
 	for _, s := range stances {
-		if s.state.State == StateDisabled && s.state.Reason == "" {
-			return nil, fmt.Errorf("%w: module %q stated StateDisabled with an empty Reason. "+
-				"The reason reaches the startup diagnostics, which is the only way a missing "+
-				"piece of functionality gets noticed", ErrMissingReason, s.module.Name)
-		}
-	}
-
-	// A provider whose stance is StateDisabled does not carry its exclusive
-	// claim into resolution: it does not run this time, so there is no
-	// contest between the others.
-	live := make([]stance, 0, len(stances))
-	for _, s := range stances {
 		if s.state.State != StateDisabled {
-			live = append(live, s)
+			continue
 		}
+		return nil, fmt.Errorf("%w: %q. A module "+
+			"taken in at run level must start, so it cannot stand itself down: when it cannot "+
+			"start — a missing setting, an unmet premise — it returns an error saying what is "+
+			"absent, and the startup fails with that. StateDisabled is not a stance; it is only "+
+			"the verdict resolution gives when a provider stands down over an exclusive claim",
+			ErrDisabledStance, s.module.Name)
 	}
 
 	providers := make(map[reflect.Type][]stance)
 	var contested []reflect.Type
-	for _, s := range live {
+	for _, s := range stances {
 		for _, ct := range declaredCapabilities(s.module) {
 			providers[ct] = append(providers[ct], s)
 		}
@@ -127,14 +126,14 @@ func resolveEnablement(stances []stance) (map[string]Enablement, error) {
 
 	final := make(map[string]Enablement, len(stances))
 	for _, s := range stances {
-		switch {
-		case s.state.State == StateDisabled:
-			final[s.module.Name] = s.state
-		case standDown[s.module.Name] != "":
-			final[s.module.Name] = Enablement{State: StateDisabled, Reason: standDown[s.module.Name]}
-		default:
-			final[s.module.Name] = Enablement{State: StateEnabled}
+		// Membership is the verdict, not the reason's content: a provider
+		// propagation stood down is disabled whatever its reason text turned
+		// out to be.
+		if reason, down := standDown[s.module.Name]; down {
+			final[s.module.Name] = Enablement{State: StateDisabled, Reason: reason}
+			continue
 		}
+		final[s.module.Name] = Enablement{State: StateEnabled}
 	}
 	return final, nil
 }

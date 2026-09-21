@@ -20,8 +20,9 @@
 //
 // State is one process's memory, so a subscription made on one replica reaches
 // no publisher on another. That is this implementation's deployment
-// precondition, and a host declaring several replicas gets this module disabled
-// with a reason rather than a bus each replica publishes into alone.
+// precondition, and a host declaring several replicas fails the startup with the
+// replica count named, rather than getting a bus each replica publishes into
+// alone.
 package memory
 
 import (
@@ -50,11 +51,14 @@ const (
 // Config is what this implementation accepts: the deployment fact its
 // precondition is judged against.
 type Config struct {
-	// Replicas is how many replicas share this assembly's state. It states a
-	// fact about the deployment rather than a preference of this
-	// implementation: the default of one is what makes an undeclared assembly
-	// single-replica, and a host running several replicas that leaves it unset
-	// has told this module nothing.
+	// Replicas is how many replicas share this assembly's state.
+	//
+	// It states a fact about the deployment rather than a preference of this
+	// implementation, and what the premise below is judged against is what the
+	// configuration declares: an assembly that names nothing is one replica, and
+	// a deployment of several that leaves the item at that default is read as a
+	// single process here. That declared fact is all this module can judge — it
+	// has no way to count the replicas that are running.
 	Replicas int `config:"replicas"`
 }
 
@@ -72,7 +76,7 @@ func Module() core.Module {
 		Items: map[string]config.Item{
 			replicasKey: {
 				Description: "how many replicas share this assembly's state; this implementation " +
-					"delivers within one process, so any value above 1 disables it",
+					"delivers within one process, so any value above 1 fails the startup",
 			},
 		},
 		Stance: stance,
@@ -81,29 +85,32 @@ func Module() core.Module {
 	})
 }
 
-// stance states whether this implementation runs.
+// stance states this implementation's stance, or reports the deployment it
+// cannot serve.
 //
 // A declared replica count above one is a deployment this backend cannot serve:
 // a subscription lives in one process's memory, so a publisher on another
 // replica would reach none of its subscribers, and Publish would return nil
-// every time.
+// every time. That is a startup failure naming the item rather than a stand-down
+// — this module was taken in at run level, so the host either declares one
+// replica, points the capability at a backend that carries events between
+// replicas, or leaves this implementation out of the command tree.
 //
 // Otherwise the stance is StateAuto rather than StateEnabled. This is the
 // capability's zero-configuration implementation, and StateAuto is what lets a
-// host import it alongside a real backend and have it yield once that backend is
-// configured.
-func stance(cfg *Config) core.Enablement {
+// host import it alongside a real backend and have it stand down once that
+// backend is enabled. StateDisabled is not among the answers here: it is what
+// resolution gives when that stand-down happens.
+func stance(cfg *Config) (core.Enablement, error) {
 	if cfg.Replicas > 1 {
-		return core.Enablement{
-			State: core.StateDisabled,
-			Reason: fmt.Sprintf("%s.%s is %d, and this implementation delivers within one process: "+
-				"a subscriber on one replica would never see an event published on another, while "+
-				"every publish still returned success. Point the capability at a backend that "+
-				"carries events between replicas, or declare one replica",
-				ConfigNamespace, replicasKey, cfg.Replicas),
-		}
+		return core.Enablement{}, fmt.Errorf("%s.%s is %d, and this implementation delivers within "+
+			"one process: a subscriber on one replica would never see an event published on "+
+			"another, while every publish still returned success. Declare one replica, point the "+
+			"capability at a backend that carries events between replicas, or leave this "+
+			"implementation out of the command tree",
+			ConfigNamespace, replicasKey, cfg.Replicas)
 	}
-	return core.Enablement{State: core.StateAuto}
+	return core.Enablement{State: core.StateAuto}, nil
 }
 
 // open builds the bus.

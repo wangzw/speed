@@ -77,8 +77,14 @@ func init() { core.ProcessRegistry.Register(Module()) }
 // snapshot in Init, this module registers its layer in Init, and Init runs in
 // dependency order: without the declaration the two could run either way round,
 // and a layer registered before the snapshot exists would refuse every request
-// on an endpoint it guards, with nothing saying why. It also means a host that
-// writes this module's name gets the roster without writing it too.
+// on an endpoint it guards, with nothing saying why.
+//
+// The declaration does not take the roster in, though. The roster delivers its
+// capability exclusively, and the dependency closure never pulls an exclusive
+// provider into a command on its own, so a host that writes this module's name
+// and not the roster's is left with no provider for the capability this module
+// requires — which ends the run at dependency resolution, before anything is
+// constructed. The two module names go into the command together.
 func Module() core.Module {
 	return core.Module{
 		Name:      ModuleName,

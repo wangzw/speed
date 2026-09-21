@@ -23,8 +23,9 @@ import "context"
 //
 // It is taken up with core.Resolve[authn.Gate](reg) in the registrant's own
 // Init and is not declared in Requires: the gateway is constructed before any
-// Init runs, so there is no order to arrange, while declaring it would draw the
-// gateway into commands whose host never listed it.
+// Init runs, so there is no order to arrange, and a declaration would draw in no
+// provider either — the gateway delivers Gate exclusively, which is a claim the
+// resolution closure does not follow into a command.
 type Gate interface {
 	// Exempt registers one route as needing no credential. The pattern is
 	// the string the registrant passed to Endpoint.Route, method included;

@@ -27,9 +27,10 @@ var _ Reader = (*reader)(nil)
 // A path the caller never declared is not an error: target keeps what the
 // caller put in it. A required item that no source gave a value for is
 // ErrMissingRequired, raised here rather than in a global sweep, because the
-// manifest holds the items of modules this run will not enable, and failing
-// on theirs would break the very stance that lets a default implementation
-// stand down.
+// manifest is collected from every registered module, the ones this run does
+// not enable included, while a required item binds only where it is decoded:
+// on the modules that participate in this run. A sweep over the manifest would
+// fail the run over items no participant declared.
 //
 // An illegal target panics rather than returning an error: a non-pointer, a
 // nil, or a struct that cycles back into itself is a programming error at the

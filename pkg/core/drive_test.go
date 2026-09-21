@@ -494,11 +494,11 @@ func TestUnknownParticipantIsAnError(t *testing.T) {
 	}
 }
 
-// TestDisabledParticipantIsDiagnosed and the test below it pin the two sides
-// of what the startup diagnostics are for: a module that was included and is
-// not running is the surprise worth reporting, while one the command never
-// listed is the host's own writing.
-func TestDisabledParticipantIsDiagnosed(t *testing.T) {
+// TestAParticipantStatingDisabledFailsTheDrive pins the rule through the
+// driver rather than through resolution alone: a module taken in at run level
+// has to start, so one that states StateDisabled stops the startup with that
+// named instead of quietly leaving the command one module short.
+func TestAParticipantStatingDisabledFailsTheDrive(t *testing.T) {
 	p := &probe{}
 	reg := core.New()
 	off := preparing(p, "switched-off")
@@ -506,6 +506,46 @@ func TestDisabledParticipantIsDiagnosed(t *testing.T) {
 		return core.Enablement{State: core.StateDisabled, Reason: "no connection address configured"}, nil
 	}
 	register(reg, preparing(p, "running"), off)
+
+	err := driveToEnd(t, reg, core.Drive{
+		Depth:        core.StageServe,
+		Participants: []string{"running", "switched-off"},
+		Action:       noAction,
+	})
+	if err == nil {
+		t.Fatal("a drive accepted a participant that stated StateDisabled")
+	}
+	for _, want := range []string{"switched-off", "stated StateDisabled"} {
+		if !strings.Contains(err.Error(), want) {
+			t.Errorf("Drive returned %q, which does not mention %q", err, want)
+		}
+	}
+	if p.has("new switched-off") {
+		t.Errorf("the module that could not start was constructed anyway: %v", p.snapshot())
+	}
+}
+
+// TestDisabledParticipantIsDiagnosed and the test below it pin the two sides
+// of what the startup diagnostics are for: a module that was included and is
+// not running is the surprise worth reporting, while one the command never
+// listed is the host's own writing.
+//
+// Standing down is the only way a participant misses the enabled set, now that
+// a module taken in at run level has to start. The pair below is that case: an
+// exclusive default that states StateAuto, and an exclusive implementation
+// beside it that states StateEnabled, so propagation stands the default down.
+func TestDisabledParticipantIsDiagnosed(t *testing.T) {
+	p := &probe{}
+	reg := core.New()
+	def := preparing(p, "switched-off")
+	def.Provides = []core.Provision{{Token: (*Cache)(nil), Exclusive: true}}
+	ground := preparing(p, "running")
+	ground.Provides = []core.Provision{{Token: (*Cache)(nil), Exclusive: true}}
+	ground.Prepare = func(context.Context, *core.Registry) (core.Enablement, error) {
+		p.record("prepare running")
+		return core.Enablement{State: core.StateEnabled}, nil
+	}
+	register(reg, ground, def)
 
 	var err error
 	text := captureStderr(t, func() {
@@ -518,10 +558,13 @@ func TestDisabledParticipantIsDiagnosed(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Drive returned %v", err)
 	}
-	for _, want := range []string{"core: ", "switched-off", "no connection address configured"} {
+	for _, want := range []string{"core: ", "switched-off", "explicitly enabled"} {
 		if !strings.Contains(text, want) {
 			t.Errorf("stderr %q does not contain %q", text, want)
 		}
+	}
+	if strings.Contains(text, `module "running"`) {
+		t.Errorf("stderr %q reports a module that is enabled", text)
 	}
 }
 
@@ -770,6 +813,82 @@ func TestClosureLeavesOutAnOptionalRequirementsProviders(t *testing.T) {
 	if !slices.Equal(got, want) {
 		t.Fatalf("the closure is %v, want %v: a required capability brings its providers in and "+
 			"an optional one does not", got, want)
+	}
+}
+
+// TestClosureLeavesOutAnExclusiveProvider pins the exception to expansion. Two
+// implementations may each claim a capability alone, and hauling one of them in
+// on the requiring module's behalf would be the expansion rule making a
+// decision. It makes none: the host names which implementation runs, and only
+// the named one joins the command.
+func TestClosureLeavesOutAnExclusiveProvider(t *testing.T) {
+	reg := core.New()
+	register(reg,
+		core.Module{Name: "consumer", Requires: []core.Requirement{{Token: (*Cache)(nil)}}},
+		core.Module{
+			Name:     "memory",
+			Provides: []core.Provision{{Token: (*Cache)(nil), Exclusive: true}},
+		},
+		core.Module{
+			Name:     "redis",
+			Provides: []core.Provision{{Token: (*Cache)(nil), Exclusive: true}},
+		},
+	)
+
+	got, err := reg.Closure([]string{"consumer", "redis"})
+	if err != nil {
+		t.Fatalf("Closure returned %v", err)
+	}
+	if want := []string{"consumer", "redis"}; !slices.Equal(got, want) {
+		t.Fatalf("Closure gave %v, want %v: a provider claiming the capability exclusively is "+
+			"not pulled into a command that never named it", got, want)
+	}
+}
+
+// TestClosureLeavesOutOnlyTheExclusiveProviders pins where the exception stops.
+// A provider that does not claim the capability alone is added exactly as
+// before, so a set of interchangeable backends behind one interface keeps
+// coming along without the host listing each of them.
+func TestClosureLeavesOutOnlyTheExclusiveProviders(t *testing.T) {
+	reg := core.New()
+	register(reg,
+		core.Module{Name: "consumer", Requires: []core.Requirement{{Token: (*Cache)(nil)}}},
+		core.Module{
+			Name:     "memory",
+			Provides: []core.Provision{{Token: (*Cache)(nil), Exclusive: true}},
+		},
+		core.Module{Name: "redis", Provides: []core.Provision{{Token: (*Cache)(nil)}}},
+	)
+
+	got, err := reg.Closure([]string{"consumer"})
+	if err != nil {
+		t.Fatalf("Closure returned %v", err)
+	}
+	if want := []string{"consumer", "redis"}; !slices.Equal(got, want) {
+		t.Fatalf("Closure gave %v, want %v: only the exclusive provider is withheld", got, want)
+	}
+}
+
+// TestClosureOfAConsumerOfAnExclusiveCapabilityIsItself pins what the exception
+// leaves behind: with no implementation named, the command has no provider for a
+// required capability at all, and dependency resolution is where that is
+// reported, together with the fix.
+func TestClosureOfAConsumerOfAnExclusiveCapabilityIsItself(t *testing.T) {
+	reg := core.New()
+	register(reg,
+		core.Module{Name: "consumer", Requires: []core.Requirement{{Token: (*Cache)(nil)}}},
+		core.Module{
+			Name:     "memory",
+			Provides: []core.Provision{{Token: (*Cache)(nil), Exclusive: true}},
+		},
+	)
+
+	got, err := reg.Closure([]string{"consumer"})
+	if err != nil {
+		t.Fatalf("Closure returned %v", err)
+	}
+	if want := []string{"consumer"}; !slices.Equal(got, want) {
+		t.Fatalf("Closure gave %v, want %v", got, want)
 	}
 }
 

@@ -176,32 +176,18 @@ func countOccurrences(stream, text string) int {
 	return n
 }
 
-// requireDisabledWithReason asserts that a startup diagnostic says the named
-// module did not run, and returns the line that says it.
+// requireNoMentionOf asserts that neither stream names the module.
 //
-// The reason is the point of the line and is asserted with the rest of it: a
-// diagnostic that named a module without saying what to set would leave the
-// operator to guess which of the module's input items matters, and the reason
-// names the one whose absence disabled it.
-func requireDisabledWithReason(t *testing.T, got outcome, module string, wants ...string) string {
+// An engine the command never took in has no line anywhere: it took no stance,
+// so it is not in the enabled set the diagnostics report, and leaving it out was
+// the host's own writing rather than a surprise the diagnostics exist to catch.
+func requireNoMentionOf(t *testing.T, got outcome, module string) {
 	t.Helper()
-	for _, line := range strings.Split(got.stderr, "\n") {
-		if !strings.Contains(line, `module "`+module+`"`) {
-			continue
-		}
-		if !strings.Contains(line, "is not enabled") {
-			t.Errorf("the diagnostic for %s does not say the module is disabled:\n%s", module, line)
-		}
-		for _, want := range wants {
-			if !strings.Contains(line, want) {
-				t.Errorf("the diagnostic for %s does not name %q:\n%s", module, want, line)
-			}
-		}
-		return line
+	want := `module "` + module + `"`
+	if strings.Contains(got.stderr, want) || strings.Contains(got.stdout, want) {
+		t.Errorf("the run names %s, which the command never took in:\nstdout:\n%s\nstderr:\n%s",
+			module, got.stdout, got.stderr)
 	}
-	t.Fatalf("the startup diagnostics say nothing about %s, and a module that did not run silently is "+
-		"what they exist to prevent:\n%s", module, got.stderr)
-	return ""
 }
 
 // The case that needs no engine of its own: an encrypted field written and read
@@ -228,7 +214,7 @@ func TestSerializerIsRegisteredBeforeDelivery(t *testing.T) {
 }
 
 // The two cases about one import pair: both implementations are carried, and the
-// configuration decides which of them runs.
+// command tree names which of them runs.
 
 func TestBothImplementationsImportedOneConfigured(t *testing.T) {
 	locator := writeConfig(t, dbConfig{DB: dbSection{SQLite: &engineSection{
@@ -239,15 +225,21 @@ func TestBothImplementationsImportedOneConfigured(t *testing.T) {
 
 	// The end-to-end form of what separate namespaces are for. Both
 	// implementations declare their input items, and the manifest is collected
-	// from every registered module, this run's disabled ones included: had the
-	// two shared a namespace they would have conflicted while it was being
-	// collected, before exclusivity was ever resolved, and this run would have
-	// died there rather than starting on the one that was configured.
-	requireDisabledWithReason(t, got, "db.postgres", "db.postgres.dsn")
+	// from every registered module, the ones this run does not enable included:
+	// had the two shared a namespace they would have conflicted while it was
+	// being collected, before exclusivity was ever resolved, and this run would
+	// have died there rather than starting on the engine the command named.
+	//
+	// The engine the command did not name is in neither half of the output. It
+	// was not taken in, so it took no stance and is not in the enabled set the
+	// diagnostics report — and being left out of the command is the host's own
+	// writing rather than a surprise, so it is not named there for that reason
+	// either.
+	requireNoMentionOf(t, got, "db.postgres")
 	// The other half: the configured engine has to be the one that ran. A run
-	// that disabled both would carry the line above as well, and the dependant
-	// requiring the capability is what rules it out — this line is what says
-	// which of the two took the requirement up.
+	// that named no engine would carry the same silence above and fail the
+	// dependant's requirement instead, so a clean exit is what says the command
+	// named the engine it configured.
 	if countOccurrences(got.stderr, `module "db.sqlite"`) != 0 {
 		t.Errorf("the configured implementation is reported as not running:\n%s", got.stderr)
 	}
@@ -280,30 +272,27 @@ func TestBothConfiguredIsExclusiveViolated(t *testing.T) {
 	}
 }
 
-func TestNoDSNDisablesAndDependantGetsMissingProvider(t *testing.T) {
+func TestNoEngineNamedIsMissingProvider(t *testing.T) {
 	// A document that carries no database section at all, which is a legal
-	// assembly: whether a run needs a database is the run's decision, and this
-	// one's dependant makes it.
+	// assembly, beside a command that names no engine: whether a run needs a
+	// database is the run's decision, and this one's dependant makes it.
 	locator := writeConfig(t, struct{}{})
 	got := runHost(t, caseNoEngineConfigured, "--config="+locator)
 
 	if got.code == 0 {
-		t.Fatalf("the startup succeeded although a module required the database capability and neither "+
-			"implementation was configured\nstdout:\n%s\nstderr:\n%s", got.stdout, got.stderr)
+		t.Fatalf("the startup succeeded although a module required the database capability and the "+
+			"command named no engine to deliver it\nstdout:\n%s\nstderr:\n%s", got.stdout, got.stderr)
 	}
 	if !strings.Contains(got.stdout, missingProviderMarker) {
 		t.Errorf("the startup failed for another reason than an unmet requirement\nstdout:\n%s\nstderr:\n%s",
 			got.stdout, got.stderr)
 	}
-	// The requirement is what makes the absence fail the startup, and the
-	// diagnostics are what makes it fixable: the reason has to reach the error,
-	// or the operator is told a capability is missing and not which dial turns
-	// it on.
-	requireDisabledWithReason(t, got, "db.sqlite", "db.sqlite.dsn")
-	if !strings.Contains(got.stderr, "db.sqlite.dsn") {
-		t.Errorf("the unmet requirement does not carry the reason the implementation was disabled:\n%s",
-			got.stderr)
-	}
+	// Neither engine is in the command, so neither takes a stance: the failure
+	// is the requirement with no provider, and the command tree is what says
+	// what is absent rather than a diagnostic line about an engine that was
+	// never asked to run.
+	requireNoMentionOf(t, got, "db.sqlite")
+	requireNoMentionOf(t, got, "db.postgres")
 }
 
 // The case about a command whose depth is not the serving stage.

@@ -16,9 +16,14 @@ var (
 	// enabled provider through resolution while at least one of them claims
 	// exclusivity.
 	ErrExclusiveViolated = errors.New("core: exclusive capability has more than one enabled provider")
-	// ErrMissingReason reports a module that disabled itself without saying
-	// why.
-	ErrMissingReason = errors.New("core: module disabled itself without a reason")
+	// ErrDisabledStance reports that a module stated StateDisabled in
+	// Prepare. Only resolution disables a module, and only by giving that
+	// verdict to a provider that stands down over an exclusive claim: a
+	// module taken in at run level has to start, so one that cannot start
+	// returns an error naming what is absent instead of standing itself
+	// down.
+	ErrDisabledStance = errors.New("core: a module stated StateDisabled in Prepare, which " +
+		"is not a stance a module may take")
 	// ErrDependencyCycle reports a cycle in the graph the Requires
 	// declarations form.
 	ErrDependencyCycle = errors.New("core: module dependency graph has a cycle")

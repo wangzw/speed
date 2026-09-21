@@ -17,6 +17,8 @@ replace github.com/vislake/speed/pkg/log => ../log
 
 replace github.com/vislake/speed/pkg/pgpool => ../pgpool
 
+replace github.com/vislake/speed/pkg/redis => ../redis
+
 require (
 	github.com/glebarez/sqlite v1.11.0
 	github.com/vislake/speed/pkg/config v0.0.0

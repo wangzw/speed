@@ -112,16 +112,22 @@ func Module() core.Module {
 	})
 }
 
-// stance states whether this implementation runs.
-func stance(cfg *pgpool.Config) core.Enablement {
+// stance states this implementation's stance, or reports what it cannot start
+// without.
+//
+// A module taken in at run level has to start, so an absent connection string is
+// a startup failure naming the item rather than a stand-down, and a configured
+// one states StateEnabled, which is what makes a second configured backend fail
+// the startup.
+func stance(cfg *pgpool.Config) (core.Enablement, error) {
 	if strings.TrimSpace(cfg.DSN) == "" {
-		return core.Enablement{
-			State: core.StateDisabled,
-			Reason: fmt.Sprintf("%s.%s gives no connection string, so this assembly runs without a "+
-				"PostgreSQL event bus; set it to run on PostgreSQL", ConfigNamespace, pgpool.DSNKey),
-		}
+		return core.Enablement{}, fmt.Errorf("%s.%s gives no connection string, and this "+
+			"implementation cannot start without one: it was taken in at run level and delivers the "+
+			"event capability, which it reaches over PostgreSQL. Set it, or leave this implementation "+
+			"out of the command tree and let another backend deliver the capability",
+			ConfigNamespace, pgpool.DSNKey)
 	}
-	return core.Enablement{State: core.StateEnabled}
+	return core.Enablement{State: core.StateEnabled}, nil
 }
 
 // open builds the pool, makes sure the outbox is there, and takes the listening

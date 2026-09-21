@@ -47,14 +47,14 @@ The things no module's own suite can hold:
 - **`serve` names every module it means to run.** `IncludeAll()` would make the
   participating set a function of the import graph, and on a path carrying
   tenant scoping that means a module nobody wrote down could carry a statement
-  filter into the run. The one thing this host does not name is the pair of
-  backends: they arrive through the requirements the modules here declare, which
-  is the half of the wiring that stays right when a module is added.
-- **`pkg/tenant/catalog` is imported blank, and its name is nowhere in the
-  command tree.** The roster runs because the resolving module declares a
-  construction-time dependency on the capability it delivers. Importing the
-  package is what puts it in the available set; writing its name down as well
-  would say the same thing twice.
+  filter into the run.
+- **Every exclusive provider is named, the two backends and the roster
+  included.** Naming one is the only way it can be in the run: the closure
+  expands a required capability into its declared providers except the ones
+  that claim it exclusively, because picking one of several implementations is
+  the host's decision and the expansion rule makes no decisions. A capability
+  nobody claims exclusively is expanded instead, which is what lets several
+  implementations of one capability be assembled side by side.
 - **`migrate` takes the whole available set rather than a list.**
   `IncludeAllDeclarations()` has a silent failure of its own — a module left out
   of it has its tables quietly not built — so a list is the wrong shape for it.

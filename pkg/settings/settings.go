@@ -22,7 +22,10 @@ package settings
 
 import (
 	"context"
+	"fmt"
+	"strings"
 	"time"
+	"unicode"
 )
 
 // ModuleName is this module's name in the registry. It is also the namespace
@@ -38,26 +41,122 @@ const ConfigNamespace = ModuleName
 // checking the two ends against each other.
 const ChangedEventType = "settings.changed"
 
+// Layer names the layer a read or write acts on: the global layer, or one
+// tenant's layer.
+//
+// The zero value is not a layer. A Layer comes from Global or ForTenant and
+// from nowhere else, so passing a nil one is a mistake at the call site:
+// nothing has a nil layer on purpose, it involves no second party and no data,
+// and the first time the line runs settles it. It therefore panics rather than
+// returning an error, the same judgement an illegal target for a read gets.
+//
+// The interface carries no accessor. The two constructors are the whole of its
+// surface, and the conversion to the tenant column a statement binds is this
+// package's own business (tenantOf).
+type Layer interface {
+	// isLayer is unexported, which closes the set of implementations to this
+	// package: a Layer is what the two constructors below hand out.
+	isLayer()
+}
+
+// layer is the one implementation of Layer.
+//
+// Its tenant is the tenant column of the rows the layer names, empty for the
+// global layer. That is the storage column's spelling of the layer, not the
+// interface's: the interface has no empty value, since a tenant layer's
+// constructor refuses an empty or blank identifier and the global layer is
+// named by its own constructor.
+type layer struct {
+	tenant string
+}
+
+func (layer) isLayer() {}
+
+// Global returns the global layer.
+func Global() Layer { return layer{} }
+
+// ForTenant returns the layer of the tenant identified by id.
+//
+// An id outside the tenant identifier's value domain is a mistake at the call
+// site, in the same class as a nil layer: it panics at once rather than
+// returning an error. That domain is the one the tenant directory enforces —
+// non-empty, and free of blanks and control characters anywhere in it — so an
+// id failing it can only be a caller that dropped or mangled one, and it names
+// no tenant: the row it would write is one no tenant's read ever reaches, while
+// a read of it falls through to the shared layer and answers with a value the
+// caller never asked for.
+func ForTenant(id string) Layer {
+	if id == "" || strings.IndexFunc(id, notInAnIdentifier) >= 0 {
+		panic("settings: ForTenant was given an identifier outside the tenant identifier's " +
+			"domain, which is non-empty and free of blanks and control characters. Name the " +
+			"shared layer with Global(), or fix the identifier at the call site")
+	}
+	return layer{tenant: id}
+}
+
+// notInAnIdentifier reports the characters no tenant identifier carries. It is
+// the tenant directory's criterion, restated here: an identifier reaches log
+// lines, diagnostics and error text, where a newline splits one record into
+// two.
+func notInAnIdentifier(r rune) bool {
+	return unicode.IsSpace(r) || unicode.IsControl(r)
+}
+
+// tenantOf returns the tenant column the layer names: empty for the global
+// layer, the identifier for a tenant's.
+//
+// A nil layer panics here, for the reason Layer gives. The assertion cannot
+// fail — the unexported method leaves this package the only implementer of
+// Layer, and both constructors return a layer — and it is written out anyway
+// because an unchecked assertion panics with no account of what arrived.
+func tenantOf(l Layer) string {
+	if l == nil {
+		panic("settings: a nil Layer names no layer. Name one with Global(), or with " +
+			"ForTenant(id)")
+	}
+	named, ok := l.(layer)
+	if !ok {
+		panic(fmt.Sprintf("settings: a Layer of type %T is not one this package builds; layers "+
+			"come from Global() and ForTenant(id)", l))
+	}
+	return named.tenant
+}
+
+// isGlobal reports whether the layer is the global one, the only layer the
+// fallback below a tenant's does not go through.
+func isGlobal(l Layer) bool { return tenantOf(l) == "" }
+
+// describeLayer names a layer the way a failure message needs it named: the
+// global layer, or the tenant identifier the layer carries. It is the layers'
+// counterpart of describeTarget.
+func describeLayer(l Layer) string {
+	if isGlobal(l) {
+		return "the global layer"
+	}
+	return fmt.Sprintf("tenant %q", tenantOf(l))
+}
+
 // Store is the settings read and write surface. Its capability token is
 // (*Store)(nil).
 type Store interface {
 	// Get decodes the value of key into target, under the declared type.
 	//
-	// The value falls back tenant row, global row, declared default; an empty
-	// tenant reads the global layer, which is where the fallback starts for it.
+	// The value falls back tenant row, global row, declared default, starting
+	// at the layer the selector names: naming the global layer starts the
+	// fallback at the global row, which is also where it ends.
 	//
 	// An undeclared key is ErrUnknownKey. A value already written that does not
 	// decode under the declared type is ErrTypeMismatch, naming the key. A
-	// target that is not a non-nil pointer panics: that is a mistake at the
-	// call site, not a fact about the data.
+	// target that is not a non-nil pointer panics, and so does a layer that is
+	// the zero value: both are mistakes at the call site, not facts about the
+	// data.
 	//
 	// It takes no context because it reads the in-memory snapshot and starts no
 	// IO, so there is nothing to cancel.
-	Get(tenant, key string, target any) error
+	Get(layer Layer, key string, target any) error
 
-	// Set encodes w.Value under the declared type and writes it. An empty
-	// w.Tenant writes the global row. A successful write publishes a
-	// settings.changed event.
+	// Set encodes w.Value under the declared type and writes it to the layer
+	// w.Layer names. A successful write publishes a settings.changed event.
 	//
 	// It validates, writes the row, reloads this replica's snapshot and
 	// publishes, in that order. A failure before the row is written returns
@@ -65,29 +164,28 @@ type Store interface {
 	// back and does not change the result.
 	Set(ctx context.Context, w Write) error
 
-	// Delete removes one explicitly written row. Deleting a row that is not
-	// there is not an error. Which layer the row belongs to is given by tenant;
-	// an empty tenant names the global row.
+	// Delete removes the explicit row the selector names. Deleting a row that
+	// is not there is not an error.
 	//
 	// Delete is the one operation that does not consult the key table: it is
 	// the cleanup path for rows left behind after a declaration is removed,
 	// and both Get and Set refuse an undeclared key before reaching the table.
-	Delete(ctx context.Context, tenant, key, actor string) error
+	Delete(ctx context.Context, layer Layer, key, actor string) error
 
-	// List lists the explicit rows of tenant, or the global rows for an empty
-	// tenant. The result is ordered by key.
+	// List lists the explicit rows of the layer the selector names. The result
+	// is ordered by key.
 	//
 	// It hands out the written rows rather than the values reads resolve to:
 	// nothing falls back here.
-	List(ctx context.Context, tenant string) ([]Entry, error)
+	List(ctx context.Context, layer Layer) ([]Entry, error)
 }
 
 // Get is the generic wrapper over Store.Get, folding the assertion into the
 // function the way core.Resolve does. A type parameter that does not match the
 // declared type is ErrTypeMismatch.
-func Get[T any](s Store, tenant, key string) (T, error) {
+func Get[T any](s Store, layer Layer, key string) (T, error) {
 	var target T
-	if err := s.Get(tenant, key, &target); err != nil {
+	if err := s.Get(layer, key, &target); err != nil {
 		return target, err
 	}
 	return target, nil
@@ -95,9 +193,10 @@ func Get[T any](s Store, tenant, key string) (T, error) {
 
 // Write is one value to write. It is what Set takes.
 type Write struct {
-	// Tenant is the tenant the row belongs to. An empty value writes the
-	// global row.
-	Tenant string
+	// Layer names the layer the row belongs to: Global() writes the global
+	// row, ForTenant(id) the tenant's. It is required, and the zero value is a
+	// mistake at the call site.
+	Layer Layer
 	// Key is the full path of a declared setting item.
 	Key string
 	// Value is encoded under the declared type.
@@ -110,6 +209,9 @@ type Write struct {
 // Entry is one explicitly written row, as List reports it. Value is the text
 // as stored, not a value decoded under a declaration.
 type Entry struct {
+	// Tenant is the row's tenant column, and it stays a string: it reports the
+	// column as the row holds it, empty for a global row. Naming a layer to a
+	// read or a write is the layer selector's job, not a string's.
 	Tenant    string
 	Key       string
 	Value     string

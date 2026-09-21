@@ -63,23 +63,22 @@ func Module() core.Module {
 	})
 }
 
-// stance states whether this implementation runs.
+// stance states this implementation's stance, or reports what it cannot start
+// without.
 //
-// An absent address disables it with a reason rather than failing the startup:
-// whether an assembly needs this backend is the assembly's decision, and a host
-// that does need one finds out through whatever required the capability, with
-// this reason attached. A configured address states StateEnabled rather than
-// StateAuto, so that a second configured backend collides here at startup
-// instead of one of them winning silently.
-func stance(cfg *redis.Config) core.Enablement {
+// An absent address is a startup failure rather than a stand-down: a module
+// named in the command tree has been committed to, so one that reaches Redis at
+// a server nobody gave it stops the startup and says which input is missing. A
+// configured address states StateEnabled rather than StateAuto, so that a second
+// configured backend collides here at startup instead of one of them winning
+// silently.
+func stance(cfg *redis.Config) (core.Enablement, error) {
 	if strings.TrimSpace(cfg.Addr) == "" {
-		return core.Enablement{
-			State: core.StateDisabled,
-			Reason: fmt.Sprintf("%s.addr gives no server, so this assembly runs without a Redis "+
-				"key-value store; set it to run on Redis", ConfigNamespace),
-		}
+		return core.Enablement{}, fmt.Errorf("%s.addr gives no server, and this implementation reaches "+
+			"Redis at one: with none set there is nothing to start against. Set it to the server to run "+
+			"on, or leave this implementation out of the command", ConfigNamespace)
 	}
-	return core.Enablement{State: core.StateEnabled}
+	return core.Enablement{State: core.StateEnabled}, nil
 }
 
 // open builds the store.

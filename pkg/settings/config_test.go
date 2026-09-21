@@ -90,7 +90,7 @@ func TestTheRefreshTickerReloadsTheSnapshot(t *testing.T) {
 
 	deadline := time.Now().Add(2 * time.Second)
 	for time.Now().Before(deadline) {
-		if got, _ := Get[int](store, "", "demo.limit"); got == 777 {
+		if got, _ := Get[int](store, Global(), "demo.limit"); got == 777 {
 			return
 		}
 		time.Sleep(2 * time.Millisecond)

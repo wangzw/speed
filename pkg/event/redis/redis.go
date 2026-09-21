@@ -117,18 +117,25 @@ func items() map[string]config.Item {
 	return out
 }
 
-// stance states whether this implementation runs, on the same terms as the
-// key-value module's: an absent address disables it with a reason, a configured
-// one states StateEnabled so a second configured backend fails the startup.
-func stance(cfg *Config) core.Enablement {
+// stance states this implementation's stance, or reports what it cannot start
+// without, on the same terms as the key-value module's: a module taken in at
+// run level has to start, so an absent address is a startup failure naming the
+// item rather than a stand-down, and a configured one states StateEnabled, which
+// is what makes a second configured backend fail the startup.
+//
+// There is no third answer here. "The host did not point this implementation at
+// a server, so this run does not want it" is expressed by leaving the
+// implementation out of the command tree, not by the module standing itself
+// down.
+func stance(cfg *Config) (core.Enablement, error) {
 	if strings.TrimSpace(cfg.Addr) == "" {
-		return core.Enablement{
-			State: core.StateDisabled,
-			Reason: fmt.Sprintf("%s.addr gives no server, so this assembly runs without a Redis "+
-				"event bus; set it to run on Redis", ConfigNamespace),
-		}
+		return core.Enablement{}, fmt.Errorf("%s.%s gives no server, and this implementation cannot "+
+			"start without one: it was taken in at run level and delivers the event capability, "+
+			"which it reaches over Redis. Set it, or leave this implementation out of the command "+
+			"tree and let another backend deliver the capability",
+			ConfigNamespace, redis.AddrKey)
 	}
-	return core.Enablement{State: core.StateEnabled}
+	return core.Enablement{State: core.StateEnabled}, nil
 }
 
 // open builds the bus.

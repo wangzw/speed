@@ -51,7 +51,11 @@ type Drive struct {
 	// its opposite would sooner or later be reached by a command that
 	// merely forgot to list anything. "Include everything" is expanded
 	// into names where the command tree is written, and so are the
-	// providers of what the listed modules require.
+	// providers of what the listed modules require — except a provider
+	// that declares the capability exclusively: the expansion rule picks
+	// no implementation for the host, so one of those has to be named
+	// here, and until it is, a capability every provider of which claims
+	// it exclusively has no provider in this drive's participating set.
 	//
 	// Order does not matter and a repeated name counts once, which is
 	// what a module included at two levels of one command path produces.
@@ -301,7 +305,7 @@ func unknownParticipantError(name string) error {
 // modulesOutside lists the registered modules this drive did not take in at
 // run level, divided into the ones it reached for their declarations alone and
 // the rest. A capability whose only provider is among them has no provider
-// here, and the failure says so rather than blaming the order or a stance.
+// here, and the failure says so rather than blaming the order.
 //
 // The division exists for that failure. Both groups declare the capability and
 // neither can take it up, and what to do about them differs: one was asked for
@@ -331,9 +335,11 @@ func (r *Registry) modulesOutside(participants []Module) (declarationsOnly, outs
 // prepare runs the stance stage over the modules this drive includes.
 //
 // The stage guarantees no order within itself: a module only reads its own
-// configuration and states a verdict. No module's product exists yet — the
-// only thing to take up is what the host supplied before the drive, which is
-// how a module reads its own configuration before stating anything.
+// configuration and states a stance, and a module that cannot start returns an
+// error here, which ends the advance before anything is constructed. No
+// module's product exists yet — the only thing to take up is what the host
+// supplied before the drive, which is how a module reads its own configuration
+// before stating anything.
 func (r *Registry) prepare(ctx context.Context, participants []Module) ([]stance, error) {
 	stances := make([]stance, 0, len(participants))
 	for _, m := range participants {

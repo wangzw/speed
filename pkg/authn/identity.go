@@ -24,7 +24,7 @@ type Identity = identity.Identity
 // FromContext takes the identity out of a request's context.
 //
 // There is no fallback. The second result is false on an exempt route, in a
-// process where this module was not included or stated itself disabled, and
+// process where this module was not taken into the command that started it, and
 // anywhere off the request path — and a caller has to handle that, because the
 // alternative is reading an anonymous request as some subject. This is the
 // reverse of how a logger travels, where falling back to the process root is

@@ -21,6 +21,7 @@ import (
 	"gorm.io/gorm/logger"
 
 	"github.com/vislake/speed/pkg/audit"
+	"github.com/vislake/speed/pkg/core"
 	"github.com/vislake/speed/pkg/event"
 	"github.com/vislake/speed/pkg/log"
 )
@@ -780,5 +781,80 @@ func TestUnmatchedRequestIsPassedThrough(t *testing.T) {
 
 	if !served {
 		t.Error("the inner handler never ran")
+	}
+}
+
+// A failing Prepare hands back the zero Enablement.
+//
+// Only a Prepare that returned no error has its stance read, so what travels
+// with the error is the zero value — the convention every other module states a
+// stance under. The stance this module states on the way through is StateEnabled
+// and never StateAuto: the capability is delivered exclusively, and an exclusive
+// provider stating StateAuto is the one cell resolution disables.
+func TestPrepareReturnsZeroEnablementWhenItCannotStart(t *testing.T) {
+	// Nothing is supplied, so the run carries no configuration reader for
+	// this module to read its own section with.
+	reg := core.New()
+	stated, err := Module().Prepare(context.Background(), reg)
+	if err == nil {
+		t.Fatal("Prepare accepted a run carrying no configuration reader")
+	}
+	if stated != (core.Enablement{}) {
+		t.Errorf("Prepare handed back %+v beside its failure, want the zero Enablement: a stance "+
+			"is read only from a Prepare that returned no error", stated)
+	}
+	if !strings.Contains(err.Error(), "configuration reader") {
+		t.Errorf("the failure does not name what is absent: %v", err)
+	}
+}
+
+// A configuration naming event types fails the startup when the run carries no
+// bus, and the failure names the input item that asked for it.
+func TestWireFailsWhenEventsAreNamedAndNoBusIsInTheRun(t *testing.T) {
+	j := newTestJournal(open(t), settings{events: []string{"thing.changed"}})
+	err := j.wire(context.Background(), core.New())
+	if err == nil {
+		t.Fatal("wiring accepted event types named with no bus in the run")
+	}
+	if !strings.Contains(err.Error(), eventsItem) {
+		t.Errorf("the failure does not name the %s input item: %v", eventsItem, err)
+	}
+}
+
+// Naming an endpoint without an entry point in the run fails the startup too,
+// rather than leaving the layer off the endpoint in silence.
+func TestWireFailsWhenEndpointsAreNamedAndNoRouterIsInTheRun(t *testing.T) {
+	j := newTestJournal(open(t), settings{endpoints: []string{"public"}})
+	err := j.wire(context.Background(), core.New())
+	if err == nil {
+		t.Fatal("wiring accepted an endpoint named with no entry point in the run")
+	}
+	if !strings.Contains(err.Error(), endpointsItem) {
+		t.Errorf("the failure does not name the %s input item: %v", endpointsItem, err)
+	}
+}
+
+// A request pattern the matcher cannot read fails the startup, and the failure
+// names the input item the pattern came from.
+func TestWireFailsWhenARequestPatternCannotBeRead(t *testing.T) {
+	j := newTestJournal(open(t), settings{requests: []string{"/a/{b"}})
+	err := j.wire(context.Background(), core.New())
+	if err == nil {
+		t.Fatal("wiring accepted a request pattern the matcher cannot read")
+	}
+	if !strings.Contains(err.Error(), requestsItem) {
+		t.Errorf("the failure does not name the %s input item: %v", requestsItem, err)
+	}
+}
+
+// A configuration naming nothing wires cleanly and builds no matcher: the
+// control the three failures above are read against.
+func TestWireSucceedsWhenNothingIsNamed(t *testing.T) {
+	j := newTestJournal(open(t), settings{})
+	if err := j.wire(context.Background(), core.New()); err != nil {
+		t.Fatalf("wiring a configuration that names nothing: %v", err)
+	}
+	if j.matcher != nil {
+		t.Error("a matcher was built for a configuration that names no request")
 	}
 }

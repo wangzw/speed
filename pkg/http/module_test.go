@@ -40,18 +40,33 @@ func oneEndpoint(name string) moduleConfig {
 	return moduleConfig{Endpoints: map[string]endpointConfig{name: {Address: "127.0.0.1:0"}}}
 }
 
-// TestPrepareDisablesWithReasonWhenNoEndpoints pins the stance a host with no
-// endpoint configured gets. An entry point that quietly does nothing is the
-// failure this stance exists to prevent, so the reason names the key to write.
-func TestPrepareDisablesWithReasonWhenNoEndpoints(t *testing.T) {
-	stance, err := prepare(&stubReader{}, nil)
-	if err != nil {
-		t.Fatalf("Prepare with no endpoints failed instead of standing down: %v", err)
+// TestPrepareFailsWhenNoEndpointIsConfigured pins that a host which took this
+// module in but configured no endpoint gets a startup failure, not a stance.
+// An entry point that quietly does nothing is the failure the module-level
+// rule forbids, so the error names the key to write.
+func TestPrepareFailsWhenNoEndpointIsConfigured(t *testing.T) {
+	_, err := prepare(&stubReader{}, nil)
+	if err == nil {
+		t.Fatal("Prepare with no endpoint configured succeeded, so this entry point would " +
+			"start and serve nothing")
 	}
-	if stance.State != core.StateDisabled {
-		t.Fatalf("the stance is %v, and with no endpoint there is nothing to serve", stance.State)
+	mustContain(t, err.Error(), "http.endpoints", "the configuration key to write")
+}
+
+// TestPrepareValidatesSpecsBeforeTheEndpointPremise pins the order inside
+// Prepare. A fragment's shape is a static fact about the binary and is checked
+// over the available set, so a host that configured no endpoint still sees a
+// malformed fragment reported: the two are independent premises and the shape
+// check comes first. Reversed, a differently configured binary would reject a
+// fragment this one accepted.
+func TestPrepareValidatesSpecsBeforeTheEndpointPremise(t *testing.T) {
+	specs := []core.Resource[Spec]{{Module: "billing", Value: Spec{Endpoint: "public", Document: []byte(`{}`)}}}
+	_, err := prepare(&stubReader{}, specs)
+	if !errors.Is(err, ErrInvalidSpec) {
+		t.Fatalf("with no endpoint configured and a malformed fragment, Prepare returned %v; "+
+			"the fragment's shape is checked first", err)
 	}
-	mustContain(t, stance.Reason, "http.endpoints", "the configuration key to write")
+	mustContain(t, err.Error(), "billing", "the module that declared the fragment")
 }
 
 // TestPrepareStatesEnabledNotAuto pins the pair that keeps this module from
@@ -149,9 +164,9 @@ func TestLoggerRequirementIsOptional(t *testing.T) {
 // Undeclared is not optional. The endpoints are read through the reader and
 // there is nothing to serve without them, so a Prepare reaching a registry
 // that was handed none fails and says so. One that swallowed the absence, or
-// fell back to an empty endpoint set, would let such a host start up and stand
-// down for "no endpoint configured", naming a configuration key instead of the
-// reader nobody handed in.
+// fell back to an empty endpoint set, would send such a host down the "no
+// endpoint configured" failure instead, naming a configuration key rather than
+// the reader nobody handed in — the wrong premise, and a misleading one.
 //
 // Neither half shows itself at run time: a missing declaration and a
 // superfluous one both behave exactly like the right one in an assembly that

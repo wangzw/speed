@@ -54,23 +54,23 @@ type Spec[C any] struct {
 	// Items describes each declared item, keyed by its path within the
 	// namespace.
 	Items map[string]config.Item
-	// Stance reads the decoded configuration and states whether this
-	// implementation runs.
+	// Stance reads the decoded configuration and answers two things: how this
+	// implementation's exclusive claim yields to another provider's, and what it
+	// cannot start without.
 	//
-	// It is where an implementation answers two different questions at once:
-	// whether the host pointed it at anything (a backend that needs an address
-	// and was given none states StateDisabled with a reason rather than failing
-	// the startup), and whether the deployment it found itself in suits it (an
-	// implementation that keeps its values in one process's memory states
-	// StateDisabled when the host declared several replicas).
+	// A module taken in at run level has to start, so the state it returns says
+	// nothing about whether it runs. It is one of StateAuto or StateEnabled:
+	// StateAuto is for the capability's zero-configuration implementation, which
+	// yields the moment another provider is explicitly enabled, and StateEnabled
+	// is for an implementation that has to be pointed at a backend, so that two
+	// of them pointed at once fail the startup instead of one silently winning.
 	//
-	// A zero-configuration implementation states StateAuto: it runs unless
-	// another provider of the capability is explicitly enabled, which is what
-	// lets a host import it as a fallback and have it stand down the moment a
-	// real backend is configured. An implementation that has to be pointed at a
-	// backend states StateEnabled, so that two of them being pointed at once
-	// fails the startup instead of one silently winning.
-	Stance func(cfg *C) core.Enablement
+	// Everything this implementation cannot start without — a setting it was not
+	// given, a deployment premise its backend cannot serve — is an error naming
+	// that input, and the startup fails with it. StateDisabled is not a stance a
+	// module may take: only resolution gives it, to a provider that stood down
+	// over an exclusive claim.
+	Stance func(cfg *C) (core.Enablement, error)
 	// Open builds this implementation from the decoded configuration.
 	Open func(ctx context.Context, cfg *C) (KV, error)
 }
@@ -98,7 +98,7 @@ func NewModule[C any](spec Spec[C]) core.Module {
 			if err != nil {
 				return core.Enablement{}, err
 			}
-			return spec.Stance(cfg), nil
+			return spec.Stance(cfg)
 		},
 		New: func(ctx context.Context, reg *core.Registry) (any, error) {
 			cfg, err := spec.read(reg)
@@ -130,7 +130,8 @@ func (s Spec[C]) check() {
 			"input items and their defaults are read from; a backend that accepts nothing still mounts "+
 			"an empty struct here", s.ModuleName))
 	case s.Stance == nil:
-		panic(fmt.Sprintf("kv: module %q gives no stance, so nothing decides whether it runs", s.ModuleName))
+		panic(fmt.Sprintf("kv: module %q gives no stance, so nothing states how its exclusive claim "+
+			"yields and nothing reports what it cannot start without", s.ModuleName))
 	case s.Open == nil:
 		panic(fmt.Sprintf("kv: module %q gives no constructor, so nothing reaches its backend", s.ModuleName))
 	}

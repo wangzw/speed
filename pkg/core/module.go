@@ -41,11 +41,15 @@ type Module struct {
 	// one that reads it back.
 	Resources []any
 
-	// Prepare states whether the module is enabled for this run, judging by
+	// Prepare states the module's stance on its exclusive claims, judging by
 	// its own configuration. The stage runs for the modules this drive
 	// includes and guarantees no order within itself: no module's product
 	// exists at this point, and the only thing to take up is what the host
-	// supplied before the drive began.
+	// supplied before the drive began. A module that cannot start — a
+	// setting is missing, a premise does not hold — returns an error saying
+	// what is absent; being taken in at run level, it has no way to stand
+	// itself down. The stance of a call that failed is not read, so a
+	// failing Prepare returns the zero Enablement with its error.
 	Prepare func(ctx context.Context, reg *Registry) (Enablement, error)
 	// New constructs the module's product. It runs in dependency order. A
 	// module without this callback takes part in the later stages with a nil
@@ -97,22 +101,33 @@ type Provision struct {
 	// provider of it may stay enabled. It is a statement about this module,
 	// not about the capability, so providers need not agree; any exclusive
 	// claim violated in a run fails the startup.
+	//
+	// It also keeps the dependency closure from pulling this provider into
+	// a command: several implementations of a capability may each claim it
+	// exclusively, and picking one for the host would be a decision the
+	// expansion rule does not make. The host names the implementation it
+	// wants on the command tree, and a capability every provider of which
+	// claims exclusively has no provider in the participating set until it
+	// does.
 	Exclusive bool
 }
 
-// Enablement is a module's stance on whether it runs, and after resolution the
-// registry's verdict on it.
+// Enablement is a module's stance on its exclusive claims in Prepare, and after
+// resolution the registry's verdict on it.
 type Enablement struct {
-	// State is the stance, or the final verdict when read back from the
-	// registry.
+	// State is the stance in Prepare, or the final verdict when read back
+	// from the registry. A module states StateAuto or StateEnabled; only the
+	// registry gives StateDisabled.
 	State EnablementState
-	// Reason is mandatory when State is StateDisabled. It reaches the
-	// startup diagnostics, which is the only defence against a process that
-	// starts up missing a piece of functionality unnoticed.
+	// Reason says why the module is not running, and the registry fills it
+	// in with the verdict. It reaches the startup diagnostics, which is the
+	// only defence against a process that starts up missing a piece of
+	// functionality unnoticed.
 	Reason string
 }
 
-// EnablementState is the stance a module takes in Prepare.
+// EnablementState is the stance a module takes in Prepare, and the shape of the
+// verdict the registry reaches.
 type EnablementState int
 
 const (
@@ -121,7 +136,11 @@ const (
 	StateAuto EnablementState = iota
 	// StateEnabled enables the module explicitly.
 	StateEnabled
-	// StateDisabled keeps the module out of this run and requires a reason.
+	// StateDisabled is not a stance a module may state: one taken in at run
+	// level must start, so stating this fails the startup. It is the verdict
+	// resolution gives when a provider stands down over an exclusive claim,
+	// and what Enablement reports for a module a drive did not take in at
+	// run level.
 	StateDisabled
 )
 

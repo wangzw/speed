@@ -32,8 +32,11 @@ import (
 // happen to accept the same shape.
 type Config struct {
 	// DSN is the connection string. Marked sensitive: it carries credentials,
-	// and the logs and the help output would otherwise echo it. An absent one
-	// is how an assembly says it does not run this backend.
+	// and the logs and the help output would otherwise echo it. An absent one is
+	// not how an assembly says it does not run this backend: a mounting
+	// implementation is in the run because the command tree named it, so one
+	// that has to reach PostgreSQL at a server nobody gave it stops the startup
+	// and names this key.
 	DSN string `config:"dsn"`
 	// MaxConns is the largest number of connections the pool opens.
 	MaxConns int `config:"max-conns"`
@@ -62,8 +65,9 @@ func Items() map[string]config.Item {
 	return map[string]config.Item{
 		DSNKey: {
 			Sensitive: true,
-			Description: "the PostgreSQL connection string; leaving it out runs the assembly " +
-				"without this backend",
+			Description: "the PostgreSQL connection string; naming this implementation on the " +
+				"command tree is what puts it in the run, and it has to be pointed at one, so " +
+				"leaving this key out fails the startup",
 		},
 		MaxConnsKey: {
 			Description: "the largest number of connections the pool opens",

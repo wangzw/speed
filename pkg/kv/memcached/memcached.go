@@ -17,8 +17,10 @@
 //
 // It is also the one implementation whose data can vanish without a restart: a
 // Memcached server drops entries under memory pressure as a matter of normal
-// operation, and it does not report that it has. Its stance says so, and a host
-// that needs the data it puts here has the wrong backend.
+// operation, and it does not report that it has. Its stance says so — an
+// assembly that declares its data has to survive a restart stops the startup,
+// naming that declaration — rather than letting a host put data here and lose it
+// silently.
 package memcached
 
 import (
@@ -28,6 +30,7 @@ import (
 	"errors"
 	"fmt"
 	"strconv"
+	"strings"
 	"time"
 
 	"github.com/bradfitz/gomemcache/memcache"
@@ -54,16 +57,26 @@ const (
 
 // Config is what this implementation accepts.
 type Config struct {
-	// Servers is the list of addresses to spread keys over, as host:port. An
-	// absent list is how an assembly says it does not run this backend.
+	// Servers is the list of addresses to spread keys over, as host:port. A
+	// host that names this implementation has to give it at least one.
 	Servers []string `config:"servers"`
 	// Timeout bounds one round trip to a server.
 	Timeout time.Duration `config:"timeout"`
+	// RequiresPersistence is the deployment fact this implementation's
+	// precondition is judged against: whether the data written here has to
+	// survive a restart.
+	//
+	// It states a fact about the deployment rather than a preference of this
+	// implementation. The default of false is the precondition holding — an
+	// assembly that declares nothing is taken to accept the loss — so a host
+	// that does need this data kept has to say so.
+	RequiresPersistence bool `config:"requires-persistence"`
 }
 
 const (
-	serversKey = "servers"
-	timeoutKey = "timeout"
+	serversKey     = "servers"
+	timeoutKey     = "timeout"
+	persistenceKey = "requires-persistence"
 )
 
 const defaultTimeout = 3 * time.Second
@@ -79,11 +92,16 @@ func Module() core.Module {
 		Config:          &Config{Timeout: defaultTimeout},
 		Items: map[string]config.Item{
 			serversKey: {
-				Description: "the Memcached servers to spread keys over, as a list of host:port; " +
-					"leaving it out runs the assembly without this backend",
+				Description: "the Memcached servers to spread keys over, as a list of host:port; an " +
+					"assembly that names this implementation has to give it at least one",
 			},
 			timeoutKey: {
 				Description: "how long one round trip to a server may take, written with a unit",
+			},
+			persistenceKey: {
+				Description: "whether the data this assembly writes has to survive a restart; this " +
+					"implementation's server keeps nothing across one, so declaring that it must fails " +
+					"the startup",
 			},
 		},
 		Stance: stance,
@@ -91,21 +109,55 @@ func Module() core.Module {
 	})
 }
 
-// stance states whether this implementation runs.
+// stance states this implementation's stance, or reports what it cannot start
+// without.
 //
-// A configured server list states StateEnabled, so a second configured backend
-// fails the startup. The reason on the disabled stance names the deployment
-// fact rather than a missing setting alone, because this is a backend a host
-// might reach for when what it wanted was something that keeps its data.
-func stance(cfg *Config) core.Enablement {
-	if len(cfg.Servers) == 0 {
-		return core.Enablement{
-			State: core.StateDisabled,
-			Reason: fmt.Sprintf("%s.%s names no server, so this assembly runs without a Memcached "+
-				"key-value store; set it to run on Memcached", ConfigNamespace, serversKey),
+// A server list nobody gave it and a deployment that declares it needs its data
+// kept are both startup failures rather than stand-downs: a module named in the
+// command tree has been committed to, so one that cannot serve the assembly it
+// found itself in stops the startup and names the input it stopped on. The
+// second is the deployment precondition — this backend loses everything the
+// server held without a restart, so a host that needs it kept has the wrong
+// backend.
+//
+// A configured server list otherwise states StateEnabled, so a second configured
+// backend fails the startup.
+func stance(cfg *Config) (core.Enablement, error) {
+	if !serversUsable(cfg.Servers) {
+		return core.Enablement{}, fmt.Errorf("%s.%s names no usable server, and this implementation "+
+			"reaches Memcached at one: with none set, or with an entry that is empty or only "+
+			"whitespace, there is nothing to start against. Set it, or leave this implementation out "+
+			"of the command", ConfigNamespace, serversKey)
+	}
+	if cfg.RequiresPersistence {
+		return core.Enablement{}, fmt.Errorf("%s.%s is true, and this implementation's server keeps "+
+			"nothing across a restart: a process restart, a rolling upgrade and a normal eviction under "+
+			"memory pressure each drop the whole of it, and the server does not report that it has. "+
+			"Point the command at a backend that keeps its data, or stop declaring that this assembly "+
+			"needs it kept", ConfigNamespace, persistenceKey)
+	}
+	return core.Enablement{State: core.StateEnabled}, nil
+}
+
+// serversUsable reports whether the list is one this implementation can start
+// against: it is not empty, and no entry is empty or only whitespace.
+//
+// Every entry goes straight to gomemcache, whose client connects lazily and
+// takes an empty address as the zero port rather than skipping it. A blank
+// entry would therefore open cleanly and then fail every operation that lands
+// on it — a process up and running on a store that never worked, with nothing
+// in the diagnostics naming the input. Judging the whole list here is what
+// turns that into a startup failure instead.
+func serversUsable(servers []string) bool {
+	if len(servers) == 0 {
+		return false
+	}
+	for _, s := range servers {
+		if strings.TrimSpace(s) == "" {
+			return false
 		}
 	}
-	return core.Enablement{State: core.StateEnabled}
+	return true
 }
 
 // open builds the client. There is no ping to make: gomemcache connects lazily,

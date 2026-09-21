@@ -10,11 +10,11 @@
 //
 // The namespace is this engine's alone, and that is load-bearing rather than
 // tidy. The configuration manifest is collected from every registered module,
-// this run's disabled ones included, so two implementations declaring input
-// items on one path conflict as soon as a host imports both — and that conflict
-// is raised while the manifest is being collected, before exclusivity is
-// resolved, so the resolution that would have stood one of them down never
-// runs. Importing several implementations and configuring one is the intended
+// the ones this run does not enable included, so two implementations declaring
+// input items on one path conflict as soon as a host imports both — and that
+// conflict is raised while the manifest is being collected, which is before
+// resolution runs, so clearing it is nothing resolution can do. Importing
+// several implementations and naming one on the command tree is the intended
 // shape, and separate namespaces are what make it work.
 //
 // A dialect has three admission conditions to meet before it may carry

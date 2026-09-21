@@ -281,21 +281,26 @@ func TestDuplicatePluginNameIsErrPluginFailed(t *testing.T) {
 	}
 }
 
-// disabledModule declares the two things a module can declare, and states that
-// it does not run.
+// disabledModule declares the two things a module can declare, and claims the
+// database capability exclusively without stating that it is enabled.
+//
+// That is how a case reaches the disabled verdict: no module may state that it
+// does not run, so one that has to be out of the enabled set has to lose a
+// resolution — and a provider that claims a capability exclusively while
+// stating StateAuto stands down beside the host implementation, which is
+// explicitly enabled. Its declarations are then the ones the module that did
+// not run left behind.
 func disabledModule(name string, plugin gorm.Plugin, set db.Migrations) core.Module {
 	return core.Module{
 		Name:      name,
+		Provides:  []core.Provision{{Token: (*db.Database)(nil), Exclusive: true}},
 		Resources: []any{db.Plugin{Plugin: plugin}, set},
-		Prepare: func(context.Context, *core.Registry) (core.Enablement, error) {
-			return core.Enablement{State: core.StateDisabled, Reason: "this assembly does not run it"}, nil
-		},
 	}
 }
 
 // TestTheDeclarationsOfADisabledModuleAreNotInForce pins both halves of what a
-// module that stated it does not run leaves behind: its migrations are not
-// applied, and its plugin is not installed.
+// module resolution stood down leaves behind: its migrations are not applied,
+// and its plugin is not installed.
 //
 // The two halves are one ruling, and they used to differ — the migration set was
 // filtered and the plugin was not. A module that does not run has nothing in
@@ -322,7 +327,7 @@ func TestTheDeclarationsOfADisabledModuleAreNotInForce(t *testing.T) {
 		}},
 	)
 	if err != nil {
-		t.Fatalf("starting a host beside a module that declared itself disabled: %v", err)
+		t.Fatalf("starting a host beside a module resolution stood down: %v", err)
 	}
 
 	handle := h.Instance.DB()
@@ -331,16 +336,16 @@ func TestTheDeclarationsOfADisabledModuleAreNotInForce(t *testing.T) {
 			"observes is a run that applies nothing")
 	}
 	if handle.Migrator().HasTable("optout_rows") {
-		t.Error("the disabled module's migration was applied although it declared that it does not run")
+		t.Error("the migration of a module resolution stood down was applied")
 	}
 	if got := installedOn(handle); !slices.Contains(got, "audit-plugin") {
 		t.Fatalf("the handle carries the plugins %v, and an enabled module's plugin is not among "+
 			"them: what the next assertion observes is a handle that installs nothing", got)
 	}
 	if got := installedOn(handle); slices.Contains(got, "optout-plugin") {
-		t.Errorf("the handle carries the plugins %v, including one declared by the module that "+
-			"declared itself disabled: a module that did not run has a declaration in force, and "+
-			"every dependant that relies on it loses it without a word", got)
+		t.Errorf("the handle carries the plugins %v, including one declared by a module that did "+
+			"not run: such a module has a declaration in force, and every dependant that relies on "+
+			"it loses it without a word", got)
 	}
 }
 
@@ -349,14 +354,15 @@ func TestTheDeclarationsOfADisabledModuleAreNotInForce(t *testing.T) {
 // a second one built with Open.
 //
 // The delivered handle's plugin table is checked for being non-empty before it
-// is checked for what is absent from it: "the disabled module's plugin is not on
-// the handle" holds just as well for a handle that carries nothing, which is
-// what an implementation that installed no plugin at all would deliver.
+// is checked for what is absent from it: "the plugin of the module that did not
+// run is not on the handle" holds just as well for a handle that carries
+// nothing, which is what an implementation that installed no plugin at all
+// would deliver.
 //
 // Open is read too because the two handles are installed from one collection —
 // the set the delivered handle got is the set the product kept. An
 // implementation that filtered at the install site of the delivered handle alone
-// would pass the first assertion and install the disabled module's plugin on the
+// would pass the first assertion and install the other module's plugin on the
 // second, which is the handle a caller moves a query to.
 func TestOnlyTheEnabledModulesPluginReachesTheHandle(t *testing.T) {
 	h, err := startHost(t, sqliteSpec(), hostConfig(t),
@@ -366,7 +372,7 @@ func TestOnlyTheEnabledModulesPluginReachesTheHandle(t *testing.T) {
 		disabledModule("optout", recordingPlugin{name: "optout-plugin"}, migrationSet(db.SQLite, nil)),
 	)
 	if err != nil {
-		t.Fatalf("starting a host beside a module that declared itself disabled: %v", err)
+		t.Fatalf("starting a host beside a module resolution stood down: %v", err)
 	}
 
 	handle := h.Instance.DB()
@@ -377,7 +383,7 @@ func TestOnlyTheEnabledModulesPluginReachesTheHandle(t *testing.T) {
 	want := []string{"audit-plugin"}
 	if got := installedOn(handle); !slices.Equal(got, want) {
 		t.Errorf("the delivered handle carries the plugins %v, want exactly %v: the declaration of "+
-			"the module that declared itself disabled is not in force", got, want)
+			"a module that did not run is not in force", got, want)
 	}
 
 	opened, err := h.Instance.Open(t.Context(), filepath.Join(t.TempDir(), "elsewhere.db"))

@@ -38,13 +38,25 @@ func providingBus(bus event.Bus) core.Module {
 	}
 }
 
-// standingDown is a declarer that takes part in the run and then states it does
-// not run, which is the one way a module negates its own declaration.
-func standingDown(name, namespace string) core.Module {
+// contestedCapability is the token the two declarers below claim. Nothing ever
+// resolves it: the exclusive claim alone is what makes resolution run over
+// them.
+type contestedCapability interface{ contested() }
+
+// contesting is a declarer that claims one capability exclusively, stating
+// whether it is the provider the host explicitly enabled. Two of these on the
+// same claim are what puts one through resolution and leaves it with the
+// registry's StateDisabled verdict — the one way a participating module now
+// ends a run without running.
+func contesting(name, namespace string, explicit bool) core.Module {
 	defaults := demoDefaults()
 	m := declaring(name, Schema{Namespace: namespace, Mounts: []Mount{{Value: &defaults}}})
+	m.Provides = []core.Provision{{Token: (*contestedCapability)(nil), Exclusive: true}}
 	m.Prepare = func(context.Context, *core.Registry) (core.Enablement, error) {
-		return core.Enablement{State: core.StateDisabled, Reason: "not needed by this run"}, nil
+		if explicit {
+			return core.Enablement{State: core.StateEnabled}, nil
+		}
+		return core.Enablement{State: core.StateAuto}, nil
 	}
 	return m
 }
@@ -76,13 +88,13 @@ func TestTheModuleDrivesAndServes(t *testing.T) {
 			if err != nil {
 				t.Fatalf("resolving the settings capability: %v", err)
 			}
-			if err := store.Set(ctx, Write{Tenant: "t1", Key: "demo.limit", Value: 12}); err != nil {
+			if err := store.Set(ctx, Write{Layer: ForTenant("t1"), Key: "demo.limit", Value: 12}); err != nil {
 				t.Fatalf("writing through the resolved capability: %v", err)
 			}
-			if got, err := Get[int](store, "t1", "demo.limit"); err != nil || got != 12 {
+			if got, err := Get[int](store, ForTenant("t1"), "demo.limit"); err != nil || got != 12 {
 				t.Errorf("read back %v (%v), want 12", got, err)
 			}
-			if entries, err := store.List(ctx, "t1"); err != nil || len(entries) != 1 {
+			if entries, err := store.List(ctx, ForTenant("t1")); err != nil || len(entries) != 1 {
 				t.Errorf("List returned %+v (%v), want one row", entries, err)
 			}
 			return nil
@@ -100,31 +112,44 @@ func TestTheModuleDrivesAndServes(t *testing.T) {
 	}
 }
 
-// A declaration made by a module this run did not take in stays in the key
-// table: that module never spoke, and the validity of a key follows the binary
-// rather than one command's participating set.
+// A key's validity follows the binary rather than this run's verdict on its
+// module. The key table is the available set and no consumer point subtracts
+// from it (architecture invariant 15, design-settings.md), so a module that
+// lost a resolution keeps its keys exactly as one the command never took in
+// does: a subtraction would make the same key legal under one command and
+// illegal under another while the declaration itself did not change.
 //
-// A declaration made by a module that did take part and then stated it does
-// not run leaves: that is the assembly's own verdict on it.
-func TestOnlyARunLevelVerdictRemovesADeclaration(t *testing.T) {
+// The resolution loser is the case that used to be subtracted here. Reading
+// the verdict back first is what keeps this a test of that case: if the drive
+// stopped disabling the loser, the assertion would hold for the wrong reason.
+func TestEveryRegisteredDeclarationStaysInTheKeyTable(t *testing.T) {
 	handle := open(t)
 	reg := core.New()
 	reg.Supply((*config.Reader)(nil), noConfig{})
 	reg.Register(providingDB(handle))
 	reg.Register(providingBus(newRecordingBus()))
-	reg.Register(standingDown("test.off", "off"))
-	reg.Register(declarerNamed("test.on", "on"))
+	reg.Register(contesting("test.loser", "loser", false))
+	reg.Register(contesting("test.winner", "winner", true))
 	reg.Register(declarerNamed("test.out", "out"))
 	reg.Register(Module())
 
 	ctx := context.Background()
 	err := reg.Drive(ctx, core.Drive{
-		Depth: core.StageNew,
-		// test.out is registered but named by no drive: it stated nothing.
-		Participants: []string{"test.database", "test.event", "test.off", "test.on", ModuleName},
+		// To Prepare and no further: the verdicts are what this case reads, and
+		// the contesting declarers stand in for modules rather than delivering a
+		// capability anything resolves.
+		Depth: core.StagePrepare,
+		// test.out is registered but named by no drive: this run never took it in.
+		Participants: []string{"test.database", "test.event", "test.loser", "test.winner", ModuleName},
 	})
 	if err != nil {
-		t.Fatalf("driving to New: %v", err)
+		t.Fatalf("driving to Prepare: %v", err)
+	}
+	lost, known := reg.Enablement("test.loser")
+	if !known || lost.State != core.StateDisabled {
+		t.Fatalf("test.loser is %v (known = %v), want the StateDisabled resolution gives the "+
+			"provider that stood down: without it this case says nothing about a resolution loser",
+			lost.State, known)
 	}
 
 	keys, err := buildKeyTable(reg)
@@ -135,9 +160,9 @@ func TestOnlyARunLevelVerdictRemovesADeclaration(t *testing.T) {
 		key  string
 		want bool
 	}{
-		{"on.limit", true},   // took part and runs
-		{"out.limit", true},  // never took part: no verdict to honour
-		{"off.limit", false}, // took part and stood down
+		{"loser.limit", true},  // took part and lost the resolution
+		{"winner.limit", true}, // took part and won it
+		{"out.limit", true},    // never took part: no verdict to honour
 	}
 	for _, c := range cases {
 		if _, found := keys.lookup(c.key); found != c.want {

@@ -143,11 +143,13 @@ func (a *App) assemble(l *loader, p *plan, decl *Command, parent *planNode, mods
 // it reaches for their declarations alone.
 //
 // The first group is this level's run-level modules, every module the levels
-// above took in, and the providers of what all of those require. The
-// dependency closure is the registry's to expand. The rule that matches a
-// requirement to a delivery lives there, and a second expansion here would be
-// a second reading of that rule: the two would divide only on the runs where
-// they disagreed, and nothing on a normal path would show it.
+// above took in, and the providers of what all of those require. A provider
+// that declares an exclusive delivery is not among them: the closure takes
+// only the ones the host wrote on the command tree, and one it did not write
+// stays out. The dependency closure is the registry's to expand. The rule that
+// matches a requirement to a delivery lives there, and a second expansion here
+// would be a second reading of that rule: the two would divide only on the runs
+// where they disagreed, and nothing on a normal path would show it.
 //
 // The second group is not expanded. A module reached for its declarations
 // alone is not constructed, so it has no construction-time requirements for a

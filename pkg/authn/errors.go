@@ -24,8 +24,9 @@ var (
 
 	// ErrNoVerifier reports that Init took up no credential-verifying
 	// backend. The fix is to write the chosen backend's module name into
-	// this command, or to read why the one that is there stated itself
-	// disabled.
+	// this command: a backend that was named but cannot start has already
+	// stopped the startup with its own failure, so reaching here means no
+	// backend was named at all.
 	ErrNoVerifier = errors.New("authn: no credential-verifying backend in this command")
 
 	// ErrClaimConflict reports two backends owning the same exact key: one

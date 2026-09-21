@@ -46,14 +46,22 @@ must not cross, and how to run it.
   an engine only through the `Spec.Dialector` an implementation hands it.
 - **The root package registers no module.** Each engine's subpackage does it in
   its own `init`, so a host that imports an engine has it available as soon as a
-  command includes it and the configuration names it.
+  command names it on its tree. The command has to name it: the capability is
+  delivered exclusively and the dependency closure does not pull an exclusive
+  provider in on its own, so leaving every engine out of the tree is how an
+  assembly runs without a database.
+- **The stance fails the startup; it does not stand the module down.** A named
+  implementation whose locator is absent or blank returns an error naming the
+  key, because a module taken in at run level has to start. `StateDisabled` is
+  not something an implementation states — resolution gives it, and only to a
+  provider that stands down over an exclusive claim.
 - **A new engine is a subpackage, a `Dialect` value, and a namespace of its
   own.** The dialect value is also the name of the subdirectory the engine's
   migrations are read from, so it has to stay a single path element. The
   namespace must be one of its own: the configuration manifest is collected from
   every registered module, so two implementations declaring items on one path
-  conflict as soon as a host imports both, before exclusivity resolution can
-  stand one of them down.
+  conflict as soon as a host imports both — a conflict the collection raises on
+  its own, which resolution never gets a chance to clear.
 - **A dialect carries migrations only if it meets all three admission
   conditions**, because the engine-neutral migration suite holds them on every
   engine it runs on: DDL goes inside a transaction, a migration file of several

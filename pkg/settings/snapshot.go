@@ -14,7 +14,8 @@ import (
 // once in each dialect's migration file, and the two are kept in step by hand.
 const tableName = "settings"
 
-// cell identifies one explicitly written row: a key in one layer.
+// cell identifies one explicitly written row: a key in one layer, the layer
+// being the row's tenant column, empty for the global row.
 type cell struct {
 	tenant string
 	key    string
@@ -71,8 +72,8 @@ func emptySnapshot() *snapshot {
 // explicitText returns the text of one layer's row, and reports whether that
 // layer holds one. It is what a change event reports as the value before a
 // write.
-func (s *snapshot) explicitText(tenant, key string) (string, bool) {
-	c := cell{tenant: tenant, key: key}
+func (s *snapshot) explicitText(l Layer, key string) (string, bool) {
+	c := cell{tenant: tenantOf(l), key: key}
 	if row, ok := s.values[c]; ok {
 		return row.text, true
 	}
@@ -83,15 +84,15 @@ func (s *snapshot) explicitText(tenant, key string) (string, bool) {
 	return "", false
 }
 
-// value resolves a read: the tenant's row, then the global row, then the
-// declaration's default. An empty tenant starts at the global layer, since
-// that is the only row it has.
-func (s *snapshot) value(entry keyEntry, tenant string) (any, error) {
-	if found, ok, err := s.layer(entry.key, tenant); ok {
+// value resolves a read: the named layer's row, then the global row, then the
+// declaration's default. A read that names the global layer starts at the
+// global row, which is the bottom of the fallback, so it ends there too.
+func (s *snapshot) value(entry keyEntry, l Layer) (any, error) {
+	if found, ok, err := s.layer(entry.key, l); ok {
 		return found, err
 	}
-	if tenant != "" {
-		if found, ok, err := s.layer(entry.key, ""); ok {
+	if !isGlobal(l) {
+		if found, ok, err := s.layer(entry.key, Global()); ok {
 			return found, err
 		}
 	}
@@ -101,8 +102,8 @@ func (s *snapshot) value(entry keyEntry, tenant string) (any, error) {
 // layer reports what one layer holds for a key. found is false when the layer
 // has no row, which is what sends a read to the next layer; a row that failed
 // to decode is found, and carries its error.
-func (s *snapshot) layer(key, tenant string) (value any, found bool, err error) {
-	c := cell{tenant: tenant, key: key}
+func (s *snapshot) layer(key string, l Layer) (value any, found bool, err error) {
+	c := cell{tenant: tenantOf(l), key: key}
 	if broken, ok := s.broken[c]; ok {
 		return nil, true, broken.err
 	}

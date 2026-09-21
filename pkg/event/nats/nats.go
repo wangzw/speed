@@ -65,8 +65,9 @@ const (
 
 // Config is what this implementation accepts.
 type Config struct {
-	// URL is the server to connect to. An absent one is how an assembly says it
-	// does not run this backend.
+	// URL is the server to connect to. This implementation is pointed at a
+	// backend by it, and a deployment that takes the implementation in without
+	// setting it fails the startup rather than reaching the first publish.
 	URL string `config:"url"`
 	// ConsumerName names this instance's durable consumer. It defaults to a
 	// name unique to this process, which is what makes the delivery a
@@ -116,8 +117,8 @@ func Module() core.Module {
 		Config:          &Config{Timeout: defaultTimeout},
 		Items: map[string]config.Item{
 			urlKey: {
-				Description: "the NATS server to connect to; leaving it out runs the assembly " +
-					"without this backend",
+				Description: "the NATS server to connect to; this implementation has to be pointed " +
+					"at one, so leaving it out fails the startup when the implementation is taken in",
 			},
 			consumerNameKey: {
 				Description: "the name of this replica's durable consumer; leaving it out gives " +
@@ -143,16 +144,22 @@ func Module() core.Module {
 	})
 }
 
-// stance states whether this implementation runs.
-func stance(cfg *Config) core.Enablement {
-	if cfg.URL == "" {
-		return core.Enablement{
-			State: core.StateDisabled,
-			Reason: fmt.Sprintf("%s.%s gives no server, so this assembly runs without a NATS event "+
-				"bus; set it to run on NATS", ConfigNamespace, urlKey),
-		}
+// stance states this implementation's stance, or reports what it cannot start
+// without.
+//
+// A module taken in at run level has to start, so an absent server is a startup
+// failure naming the item rather than a stand-down, and a configured one states
+// StateEnabled, which is what makes a second configured backend fail the
+// startup.
+func stance(cfg *Config) (core.Enablement, error) {
+	if strings.TrimSpace(cfg.URL) == "" {
+		return core.Enablement{}, fmt.Errorf("%s.%s gives no server, and this implementation cannot "+
+			"start without one: it was taken in at run level and delivers the event capability, "+
+			"which it reaches over NATS. Set it, or leave this implementation out of the command "+
+			"tree and let another backend deliver the capability",
+			ConfigNamespace, urlKey)
 	}
-	return core.Enablement{State: core.StateEnabled}
+	return core.Enablement{State: core.StateEnabled}, nil
 }
 
 // open connects.

@@ -6,6 +6,7 @@ import (
 	"encoding/hex"
 	"fmt"
 	"strconv"
+	"strings"
 	"sync"
 	"testing"
 	"time"
@@ -56,18 +57,43 @@ func TestConforms(t *testing.T) {
 	})
 }
 
-func TestStanceStandsDownWithoutAServer(t *testing.T) {
-	got := stance(&Config{})
-	if got.State != core.StateDisabled {
-		t.Fatalf("stance with no server = %v, want StateDisabled", got.State)
+// TestStanceFailsTheStartupWithoutAServer pins the rule that a module named in
+// the command tree has to start: this one reaches NATS at a server, so being
+// named without one stops the startup and names the input it stopped on. Under
+// the stand-down it replaces, the process came up with the capability silently
+// missing.
+func TestStanceFailsTheStartupWithoutAServer(t *testing.T) {
+	_, err := stance(&Config{})
+	if err == nil {
+		t.Fatal("naming this implementation without a server started anyway")
 	}
-	if got.Reason == "" {
-		t.Fatal("the stand-down carries no reason")
+	if want := ConfigNamespace + "." + urlKey; !strings.Contains(err.Error(), want) {
+		t.Fatalf("the error does not say what the startup stopped on, want it to name %q: %v", want, err)
+	}
+}
+
+// TestStanceTreatsABlankServerAsNone covers the case an equality check on the
+// raw setting misses: a URL that is only whitespace is not a server, and the
+// stance is what turns it into a startup failure naming the input rather than a
+// connect refusal at the first operation.
+func TestStanceTreatsABlankServerAsNone(t *testing.T) {
+	for _, url := range []string{"", " ", "\t", "\n"} {
+		_, err := stance(&Config{URL: url})
+		if err == nil {
+			t.Errorf("stance with url %q started anyway", url)
+			continue
+		}
+		if want := ConfigNamespace + "." + urlKey; !strings.Contains(err.Error(), want) {
+			t.Errorf("the error for url %q does not name %q: %v", url, want, err)
+		}
 	}
 }
 
 func TestStanceEnablesOnceAServerIsNamed(t *testing.T) {
-	got := stance(&Config{URL: "nats://127.0.0.1:4222"})
+	got, err := stance(&Config{URL: "nats://127.0.0.1:4222"})
+	if err != nil {
+		t.Fatalf("stance with a server: %v", err)
+	}
 	if got.State != core.StateEnabled {
 		t.Fatalf("stance with a server = %v, want StateEnabled", got.State)
 	}

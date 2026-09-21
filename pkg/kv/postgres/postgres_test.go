@@ -3,6 +3,7 @@ package postgres
 import (
 	"context"
 	"errors"
+	"strings"
 	"testing"
 
 	"github.com/vislake/speed/pkg/core"
@@ -41,18 +42,26 @@ func TestConforms(t *testing.T) {
 	})
 }
 
-func TestStanceStandsDownWithoutAConnectionString(t *testing.T) {
-	got := stance(&pgpool.Config{})
-	if got.State != core.StateDisabled {
-		t.Fatalf("stance with no locator = %v, want StateDisabled", got.State)
+// TestStanceFailsTheStartupWithoutAConnectionString pins the rule that a module
+// named in the command tree has to start: this one reaches PostgreSQL at a
+// locator, so being named without one stops the startup and names the input it
+// stopped on. Under the stand-down it replaces, the process came up with the
+// capability silently missing.
+func TestStanceFailsTheStartupWithoutAConnectionString(t *testing.T) {
+	_, err := stance(&pgpool.Config{})
+	if err == nil {
+		t.Fatal("naming this implementation without a connection string started anyway")
 	}
-	if got.Reason == "" {
-		t.Fatal("the stand-down carries no reason")
+	if want := ConfigNamespace + "." + pgpool.DSNKey; !strings.Contains(err.Error(), want) {
+		t.Fatalf("the error does not say what the startup stopped on, want it to name %q: %v", want, err)
 	}
 }
 
 func TestStanceEnablesOnceAConnectionStringIsGiven(t *testing.T) {
-	got := stance(&pgpool.Config{DSN: "postgres://localhost/x"})
+	got, err := stance(&pgpool.Config{DSN: "postgres://localhost/x"})
+	if err != nil {
+		t.Fatalf("stance with a locator: %v", err)
+	}
 	if got.State != core.StateEnabled {
 		t.Fatalf("stance with a locator = %v, want StateEnabled", got.State)
 	}

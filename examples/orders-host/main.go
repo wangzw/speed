@@ -27,11 +27,11 @@
 //     nevertheless — which is what a command that runs one module and needs
 //     everyone's declarations is for. A module left out of it has its tables
 //     quietly not built, so the whole available set is taken rather than a list.
-//   - A module taken in takes in the providers of what it requires. `serve` names
-//     neither key-value nor event backend, and both run: the inventory module
-//     requires the key-value capability and the settings module requires the
-//     event bus, so the providers arrive through the closure rather than from
-//     anything written in this file.
+//   - A module taken in takes in the providers of what it requires, except the
+//     ones that claim what they deliver exclusively: `serve` names the
+//     key-value backend, the event backend and the roster itself, because the
+//     closure never picks one implementation of an exclusive capability for
+//     the host. `migrate` names the engine for the same reason.
 //   - A config file and an environment variable reach the same input item, and
 //     the environment wins. The argument naming the file belongs to the root, so
 //     it may be written before the command or after it and the run is the same
@@ -104,16 +104,17 @@ import (
 
 	_ "github.com/vislake/speed/pkg/config/format/yaml"
 	_ "github.com/vislake/speed/pkg/config/source/file"
-	_ "github.com/vislake/speed/pkg/event/memory"
-	_ "github.com/vislake/speed/pkg/kv/memory"
 
-	// The roster module registers itself in init, so importing the package is
-	// what puts it in the available set. Nothing here names it: the resolving
-	// module declares a construction-time dependency on the capability it
-	// delivers, and that declaration is what draws it into the participating
-	// set. Writing its name into the command tree as well would say the same
-	// thing twice.
-	_ "github.com/vislake/speed/pkg/tenant/catalog"
+	// The backends and the roster register themselves in init, so importing
+	// the package is what puts each in the available set. They are aliased
+	// rather than blank-imported because the serving command has to write
+	// their names into the command tree: each claims its capability
+	// exclusively, and the dependency closure never picks one implementation
+	// of an exclusive capability on the host's behalf. The two memory backends
+	// share a package name.
+	eventmemory "github.com/vislake/speed/pkg/event/memory"
+	kvmemory "github.com/vislake/speed/pkg/kv/memory"
+	"github.com/vislake/speed/pkg/tenant/catalog"
 )
 
 // stoppedMsg is the record the serving command writes once its run is over.
@@ -186,19 +187,26 @@ func commandTree(reg *core.Registry) *config.App {
 	// the import graph, and on this path that means a module nobody wrote down
 	// here could carry a statement filter into the run.
 	//
-	// Neither backend is named. They are in this run because the modules here
-	// require the capabilities they deliver, which is the declaration that
-	// stays right when a module is added — and the backends are the part of
-	// this run that is a consequence rather than a choice.
+	// Every exclusive provider this run needs is named, the two backends and
+	// the roster included. Naming one is the only way it can be in the run:
+	// the closure expands a required capability into its declared providers
+	// except the ones that claim it exclusively, because picking one of
+	// several implementations is the host's decision and the expansion rule
+	// makes no decisions. A capability nobody claims exclusively is expanded
+	// instead — which is the shape that lets several credential backends be
+	// assembled side by side.
 	serve := app.Root().Sub("serve")
 	serve.Include(
 		stdmux.ModuleName,
 		gate.ModuleName,
 		static.ModuleName,
 		resolve.ModuleName,
+		catalog.ModuleName,
 		sqlite.ModuleName,
 		journal.ModuleName,
 		settings.ModuleName,
+		kvmemory.ModuleName,
+		eventmemory.ModuleName,
 		ordersModuleName,
 		inventoryModuleName,
 		log.ModuleName,
@@ -300,17 +308,26 @@ func seed(ctx context.Context, reg *core.Registry) error {
 	// The two page sizes land at the two written layers. Nothing is written
 	// for the retention setting, so a read of that one answers at the
 	// declaration — which is the only way the third layer is observable at
-	// all.
+	// all. The layer names the row; the label beside it is there only so that a
+	// failed seed says which row it was on, the payload no longer carrying a
+	// tenant of its own.
 	set, err := core.Resolve[settings.Store](reg)
 	if err != nil {
 		return err
 	}
-	for _, w := range []settings.Write{
-		{Tenant: "", Key: pageSizeSetting, Value: globalPageSize, Actor: "seed"},
-		{Tenant: acmeTenant, Key: pageSizeSetting, Value: acmePageSize, Actor: "seed"},
+	for _, w := range []struct {
+		where string
+		write settings.Write
+	}{
+		{"the global layer", settings.Write{
+			Layer: settings.Global(), Key: pageSizeSetting, Value: globalPageSize, Actor: "seed",
+		}},
+		{acmeTenant, settings.Write{
+			Layer: settings.ForTenant(acmeTenant), Key: pageSizeSetting, Value: acmePageSize, Actor: "seed",
+		}},
 	} {
-		if writeErr := set.Set(ctx, w); writeErr != nil {
-			return fmt.Errorf("writing %s for %q: %w", w.Key, w.Tenant, writeErr)
+		if writeErr := set.Set(ctx, w.write); writeErr != nil {
+			return fmt.Errorf("writing %s for %s: %w", w.write.Key, w.where, writeErr)
 		}
 	}
 

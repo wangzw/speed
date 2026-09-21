@@ -3,12 +3,14 @@ package kv_test
 import (
 	"context"
 	"errors"
+	"strings"
 	"testing"
 
 	"github.com/vislake/speed/pkg/config"
 	"github.com/vislake/speed/pkg/core"
 	"github.com/vislake/speed/pkg/kv"
 	"github.com/vislake/speed/pkg/kv/memory"
+	"github.com/vislake/speed/pkg/kv/redis"
 )
 
 // noConfig is the reading face for an assembly whose configuration declares
@@ -28,8 +30,8 @@ func (p enabledProvider) Module() core.Module {
 		ModuleName:      p.name,
 		ConfigNamespace: p.name,
 		Config:          &cfg,
-		Stance: func(*struct{}) core.Enablement {
-			return core.Enablement{State: core.StateEnabled}
+		Stance: func(*struct{}) (core.Enablement, error) {
+			return core.Enablement{State: core.StateEnabled}, nil
 		},
 		Open: func(context.Context, *struct{}) (kv.KV, error) {
 			return nil, errors.New("this provider is never constructed at the depth under test")
@@ -71,7 +73,10 @@ func TestTheInMemoryImplementationStandsAloneWhenNothingElseRuns(t *testing.T) {
 // TestTheInMemoryImplementationStandsDownForAConfiguredBackend pins the other
 // half. This is the whole reason it claims the capability exclusively while
 // stating StateAuto: a host that imports it as a fallback and then configures a
-// real backend must get that backend, not a startup failure.
+// real backend must get that backend, not a startup failure. Naming that
+// backend in the command tree is part of the premise rather than a detail of
+// the case: an exclusive provider the command tree leaves out enters no
+// participant set, so this case would have nothing to stand down for.
 func TestTheInMemoryImplementationStandsDownForAConfiguredBackend(t *testing.T) {
 	reg, err := prepare(t, "kv.memory", "kv.other-backend")
 	if err != nil {
@@ -87,6 +92,33 @@ func TestTheInMemoryImplementationStandsDownForAConfiguredBackend(t *testing.T) 
 	won, _ := reg.Enablement("kv.other-backend")
 	if won.State != core.StateEnabled {
 		t.Fatalf("kv.other-backend is %v, want enabled", won.State)
+	}
+}
+
+// TestAnImplementationWithoutItsInputFailsTheStartup pins the rule a module
+// named in the command tree lives under: the name is a commitment to run it, so
+// one that was pointed at nothing stops the startup and says which input was
+// missing, rather than standing itself down and leaving the process up with the
+// capability silently absent.
+//
+// It drives a real implementation rather than a test double, because what is
+// being pinned is that an implementation of this capability carries the rule
+// through: the constructor an implementation hands this package is where its
+// stance is read, and the error has to survive that wiring.
+func TestAnImplementationWithoutItsInputFailsTheStartup(t *testing.T) {
+	reg := core.New()
+	reg.Supply((*config.Reader)(nil), noConfig{})
+	reg.Register(redis.Module())
+	err := reg.Drive(context.Background(), core.Drive{
+		Depth:        core.StagePrepare,
+		Participants: []string{redis.ModuleName},
+	})
+	if err == nil {
+		t.Fatal("an implementation named in the command tree and configured with nothing started " +
+			"anyway, so the command tree is not a reliable statement of what this run has")
+	}
+	if want := redis.ConfigNamespace + ".addr"; !strings.Contains(err.Error(), want) {
+		t.Fatalf("the startup stopped without naming the input it stopped on, want %q: %v", want, err)
 	}
 }
 

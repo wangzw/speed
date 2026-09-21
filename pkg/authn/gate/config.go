@@ -7,8 +7,9 @@ import (
 	"github.com/vislake/speed/pkg/config"
 )
 
-// The keys this module accepts, relative to its namespace. The disabled stance
-// names the first of them, so a reader is told which key to write.
+// The keys this module accepts, relative to its namespace. The failure this
+// module reports when it has nothing to guard names the first of them, so a
+// reader is told which key to write.
 const (
 	endpointsItem = "endpoints"
 	budgetItem    = "call-budget"
@@ -19,7 +20,7 @@ const (
 //
 // There is no default for the endpoints: guarding one by guessing its name
 // would be a guess about which traffic is public, and a gateway that guards
-// nothing states itself disabled instead, with the reason naming the key.
+// nothing refuses to start, with the failure naming the key.
 var configDefaults = moduleConfig{
 	CallBudget: 5 * time.Second,
 	InFlight:   64,

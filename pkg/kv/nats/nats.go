@@ -25,6 +25,7 @@ import (
 	"errors"
 	"fmt"
 	"strconv"
+	"strings"
 	"time"
 
 	"github.com/nats-io/nats.go"
@@ -51,8 +52,8 @@ const (
 
 // Config is what this implementation accepts.
 type Config struct {
-	// URL is the server to connect to. An absent one is how an assembly says it
-	// does not run this backend.
+	// URL is the server to connect to. A host that names this implementation
+	// has to give it one.
 	URL string `config:"url"`
 	// Bucket is the key-value bucket to use.
 	Bucket string `config:"bucket"`
@@ -79,8 +80,8 @@ func Module() core.Module {
 		Config:          &Config{Bucket: defaultBucket, Timeout: defaultTimeout},
 		Items: map[string]config.Item{
 			urlKey: {
-				Description: "the NATS server to connect to; leaving it out runs the assembly " +
-					"without this backend",
+				Description: "the NATS server to connect to; an assembly that names this " +
+					"implementation has to give it one",
 			},
 			bucketKey: {
 				Description: "the JetStream key-value bucket entries are kept in",
@@ -94,16 +95,21 @@ func Module() core.Module {
 	})
 }
 
-// stance states whether this implementation runs.
-func stance(cfg *Config) core.Enablement {
-	if cfg.URL == "" {
-		return core.Enablement{
-			State: core.StateDisabled,
-			Reason: fmt.Sprintf("%s.%s gives no server, so this assembly runs without a NATS "+
-				"key-value store; set it to run on NATS", ConfigNamespace, urlKey),
-		}
+// stance states this implementation's stance, or reports what it cannot start
+// without.
+//
+// An absent server is a startup failure rather than a stand-down: a module named
+// in the command tree has been committed to, so one that reaches NATS at a
+// server nobody gave it stops the startup and says which input is missing. A
+// configured server states StateEnabled so a second configured backend fails the
+// startup.
+func stance(cfg *Config) (core.Enablement, error) {
+	if strings.TrimSpace(cfg.URL) == "" {
+		return core.Enablement{}, fmt.Errorf("%s.%s gives no server, and this implementation reaches "+
+			"NATS at one: with none set there is nothing to start against. Set it, or leave this "+
+			"implementation out of the command", ConfigNamespace, urlKey)
 	}
-	return core.Enablement{State: core.StateEnabled}
+	return core.Enablement{State: core.StateEnabled}, nil
 }
 
 // open connects and makes sure the bucket is there.

@@ -6,11 +6,13 @@ import (
 	"log/slog"
 	nethttp "net/http"
 	"net/http/httptest"
+	"strings"
 	"sync/atomic"
 	"testing"
 	"time"
 
 	"github.com/vislake/speed/pkg/authn"
+	"github.com/vislake/speed/pkg/authn/internal/configreader"
 	speedhttp "github.com/vislake/speed/pkg/http"
 	"github.com/vislake/speed/pkg/log"
 )
@@ -165,4 +167,33 @@ func request(method, target string) *nethttp.Request {
 func withBasic(r *nethttp.Request, user, password string) *nethttp.Request {
 	r.SetBasicAuth(user, password)
 	return r
+}
+
+// TestAGatewayToldToGuardNothingRefusesToStart holds the only answer this
+// module has when the configuration names no endpoint for it to guard.
+//
+// A command that lists this module has promised it starts, so there is no
+// stance in which a gateway comes up registered on nothing and every route on
+// every endpoint is served without a credential. The failure names the key: for
+// the operator reading it, that is the whole of what to fix.
+func TestAGatewayToldToGuardNothingRefusesToStart(t *testing.T) {
+	for _, c := range []struct {
+		name string
+		body string
+	}{
+		{"the key is absent", `{}`},
+		{"the list is empty", `{"authn":{"gate":{"endpoints":[]}}}`},
+	} {
+		t.Run(c.name, func(t *testing.T) {
+			state, err := prepare(configreader.Over(t, Module(), c.body))
+			if err == nil {
+				t.Fatalf("a gateway with no endpoint to guard took the stance %v, so a command "+
+					"would come up serving every route on every endpoint without a credential",
+					state.State)
+			}
+			if !strings.Contains(err.Error(), ConfigNamespace+"."+endpointsItem) {
+				t.Errorf("the failure reads %q and does not name the key to write", err)
+			}
+		})
+	}
 }

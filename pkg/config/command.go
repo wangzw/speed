@@ -89,7 +89,10 @@ func (c *Command) Sub(use string) *Command {
 }
 
 // Include takes the named modules into this command, and with them the
-// providers of what they require to be constructed.
+// providers of what they require to be constructed. A provider that declares an
+// exclusive delivery is not among them: the closure takes only the ones the
+// host wrote on the command tree, and a capability whose exclusive providers
+// are all unnamed has no provider at all, which fails the startup.
 //
 // A module is taken in by name, which is its identity: the host imported the
 // package that registers it, and that package exports the name as a constant

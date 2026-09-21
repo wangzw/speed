@@ -302,13 +302,14 @@ func listOrders(database db.Database, set settings.Store) nethttp.HandlerFunc {
 		// The read falls back tenant row, global row, declared default, and
 		// this call site names the tenant so that a case can watch which
 		// layer answered.
-		limit, err := settings.Get[int](set, string(id), pageSizeSetting)
+		layer := settings.ForTenant(string(id))
+		limit, err := settings.Get[int](set, layer, pageSizeSetting)
 		if err != nil {
 			log.FromContext(ctx).Error("reading the page size", "error", err)
 			w.WriteHeader(nethttp.StatusInternalServerError)
 			return
 		}
-		retention, err := settings.Get[int](set, string(id), retentionSetting)
+		retention, err := settings.Get[int](set, layer, retentionSetting)
 		if err != nil {
 			log.FromContext(ctx).Error("reading the retention", "error", err)
 			w.WriteHeader(nethttp.StatusInternalServerError)

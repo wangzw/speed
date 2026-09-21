@@ -46,17 +46,17 @@ func TestADefinedScalarRoundTrips(t *testing.T) {
 	ctx := context.Background()
 
 	var got mode
-	if err := store.Get("", "defined.mode", &got); err != nil {
+	if err := store.Get(Global(), "defined.mode", &got); err != nil {
 		t.Fatalf("reading the declared default: %v", err)
 	}
 	if got != "auto" {
 		t.Errorf("the default read back as %q, want auto", got)
 	}
 
-	if err := store.Set(ctx, Write{Key: "defined.mode", Value: mode("manual")}); err != nil {
+	if err := store.Set(ctx, Write{Layer: Global(), Key: "defined.mode", Value: mode("manual")}); err != nil {
 		t.Fatalf("writing the defined string: %v", err)
 	}
-	if err := store.Get("", "defined.mode", &got); err != nil {
+	if err := store.Get(Global(), "defined.mode", &got); err != nil {
 		t.Fatalf("reading a written defined string: %v", err)
 	}
 	if got != "manual" {
@@ -64,10 +64,10 @@ func TestADefinedScalarRoundTrips(t *testing.T) {
 	}
 
 	var flag toggle
-	if err := store.Set(ctx, Write{Key: "defined.toggle", Value: toggle(false)}); err != nil {
+	if err := store.Set(ctx, Write{Layer: Global(), Key: "defined.toggle", Value: toggle(false)}); err != nil {
 		t.Fatalf("writing the defined bool: %v", err)
 	}
-	if err := store.Get("", "defined.toggle", &flag); err != nil {
+	if err := store.Get(Global(), "defined.toggle", &flag); err != nil {
 		t.Fatalf("reading a written defined bool: %v", err)
 	}
 	if flag {
@@ -83,20 +83,20 @@ func TestANumberIsHeldToTheDeclaredType(t *testing.T) {
 	store, _ := storeOf(t, keys, newRecordingBus())
 	ctx := context.Background()
 
-	if err := store.Set(ctx, Write{Key: "demo.limit", Value: 10.0}); err != nil {
+	if err := store.Set(ctx, Write{Layer: Global(), Key: "demo.limit", Value: 10.0}); err != nil {
 		t.Fatalf("writing a whole float to an integer item: %v", err)
 	}
-	if got, _ := Get[int](store, "", "demo.limit"); got != 10 {
+	if got, _ := Get[int](store, Global(), "demo.limit"); got != 10 {
 		t.Errorf("the whole float read back as %v, want 10", got)
 	}
 
-	if err := store.Set(ctx, Write{Key: "demo.limit", Value: 10.5}); !errors.Is(err, ErrTypeMismatch) {
+	if err := store.Set(ctx, Write{Layer: Global(), Key: "demo.limit", Value: 10.5}); !errors.Is(err, ErrTypeMismatch) {
 		t.Errorf("writing a fractional float returned %v, want ErrTypeMismatch", err)
 	}
-	if err := store.Set(ctx, Write{Key: "demo.limit", Value: int64(1) << 62}); err != nil {
+	if err := store.Set(ctx, Write{Layer: Global(), Key: "demo.limit", Value: int64(1) << 62}); err != nil {
 		t.Errorf("writing a wide integer returned %v, and an int is 64-bit wide", err)
 	}
-	if err := store.Set(ctx, Write{Key: "demo.limit", Value: "text"}); !errors.Is(err, ErrTypeMismatch) {
+	if err := store.Set(ctx, Write{Layer: Global(), Key: "demo.limit", Value: "text"}); !errors.Is(err, ErrTypeMismatch) {
 		t.Errorf("writing a string returned %v, want ErrTypeMismatch", err)
 	}
 }
@@ -114,11 +114,11 @@ func TestAReadHandsOutItsOwnCopy(t *testing.T) {
 	// The declared default: writing through what a read returned must not
 	// change the declaration the next read resolves against.
 	var got textList
-	if err := store.Get("", "copy.addrs", &got); err != nil {
+	if err := store.Get(Global(), "copy.addrs", &got); err != nil {
 		t.Fatalf("reading the default: %v", err)
 	}
 	got[0] = "changed"
-	if err := store.Get("", "copy.addrs", &got); err != nil {
+	if err := store.Get(Global(), "copy.addrs", &got); err != nil {
 		t.Fatalf("reading the default again: %v", err)
 	}
 	if got[0] != "a" {
@@ -130,14 +130,14 @@ func TestAReadHandsOutItsOwnCopy(t *testing.T) {
 	}
 
 	// The snapshot's value: the same has to hold once a row exists.
-	if err := store.Set(ctx, Write{Key: "copy.addrs", Value: textList{"x", "y"}}); err != nil {
+	if err := store.Set(ctx, Write{Layer: Global(), Key: "copy.addrs", Value: textList{"x", "y"}}); err != nil {
 		t.Fatalf("writing: %v", err)
 	}
-	if err := store.Get("", "copy.addrs", &got); err != nil {
+	if err := store.Get(Global(), "copy.addrs", &got); err != nil {
 		t.Fatalf("reading the written value: %v", err)
 	}
 	got[0] = "changed"
-	if err := store.Get("", "copy.addrs", &got); err != nil {
+	if err := store.Get(Global(), "copy.addrs", &got); err != nil {
 		t.Fatalf("reading the written value again: %v", err)
 	}
 	if got[0] != "x" {
@@ -169,7 +169,7 @@ func TestASensitiveValueStaysOutOfTheErrorText(t *testing.T) {
 	}
 
 	var target int
-	err := store.Get("", "secret.token", &target)
+	err := store.Get(Global(), "secret.token", &target)
 	if err == nil {
 		t.Fatal("reading a value that does not decode returned no error")
 	}
@@ -199,7 +199,7 @@ func TestAnOrdinaryValueIsNamedInTheErrorText(t *testing.T) {
 	}
 
 	var target int
-	err := store.Get("", "demo.limit", &target)
+	err := store.Get(Global(), "demo.limit", &target)
 	if err == nil {
 		t.Fatal("reading a value that does not decode returned no error")
 	}

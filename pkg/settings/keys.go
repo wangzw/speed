@@ -78,13 +78,15 @@ func (t *keyTable) lookup(key string) (keyEntry, bool) {
 
 // buildKeyTable collects every declaration and turns it into the key table.
 //
-// The source is every registered module's Schema, minus the ones this run
-// negated: a module taken in at run level that then stated it does not run, or
-// that lost a resolution, had its say about this assembly, and its declaration
-// leaves with it. A module the command never took in, and one it reached for
-// its declarations alone, stated nothing — their declarations stay, because
-// the validity of a key follows the binary rather than one command's
-// participating set (architecture invariant 15).
+// The source is every registered module's Schema, which is the available set:
+// a key's validity follows the binary rather than one command's participating
+// set, so the module a run never took in, the one it reached for its
+// declarations alone and the one that lost a resolution all keep their keys.
+// Nothing is subtracted here (architecture invariant 15): this consumer reads
+// the available set, and a subtraction would make one key legal under one
+// command and illegal under another while the declaration itself did not
+// change. Whether a module runs is a fact about the run; the declaration is a
+// fact about the binary.
 func buildKeyTable(reg *core.Registry) (*keyTable, error) {
 	declared := core.Resources[Schema](reg)
 	table := &keyTable{entries: make(map[string]keyEntry)}
@@ -97,9 +99,6 @@ func buildKeyTable(reg *core.Registry) (*keyTable, error) {
 	})
 
 	for _, resource := range declared {
-		if !declarationInForce(reg, resource.Module) {
-			continue
-		}
 		entries, err := expandSchema(resource.Module, resource.Value)
 		if err != nil {
 			return nil, err
@@ -114,26 +113,6 @@ func buildKeyTable(reg *core.Registry) (*keyTable, error) {
 		}
 	}
 	return table, nil
-}
-
-// declarationInForce reports whether a module's declaration stays in the key
-// table.
-//
-// Only a module this drive took in at run level can negate its own
-// declaration, and only by stating that it does not run: that is the
-// assembly's own verdict, and a declaration that reached a run which decided
-// against its module is not a value anything should read. A module outside the
-// participating set never spoke — being left out is the host's writing, not a
-// decision about this module — so its declaration stands.
-func declarationInForce(reg *core.Registry, module string) bool {
-	if !reg.Participating(module) {
-		return true
-	}
-	verdict, known := reg.Enablement(module)
-	if !known {
-		return true
-	}
-	return verdict.State != core.StateDisabled
 }
 
 // expandSchema turns one module's declaration into its setting items: it walks

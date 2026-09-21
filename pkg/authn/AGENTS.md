@@ -60,10 +60,14 @@ name, reports the subject space it is the authority for, and answers about one
 credential at a time. The admission conditions are in the design's extension
 points section; the two that are easiest to get wrong are here.
 
-`Prepare` is not optional. A module without one first decodes in `New`, where
-there is no stance left to take, so a missing section becomes a startup failure
-instead of a stand-down that says which backend lacked what. The descriptor
-field reads:
+`Prepare` is not optional. A module taken into a command has to start, so a
+configuration it cannot run on — a required item nobody gave, a table naming no
+subject — is a startup failure whose text names what is absent; there is no
+stand-down for a backend to take. Declaring `Prepare` puts that failure ahead of
+every construction. A module without one reads its configuration for the first
+time in `New`, where the same absent item still stops the startup, one
+construction later and after the modules ordered ahead of it have been built.
+The descriptor field reads:
 
 ```go
 return core.Module{
