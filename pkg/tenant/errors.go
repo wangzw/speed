@@ -56,14 +56,20 @@ var (
 	ErrRosterMissing = errors.New("tenant: the roster table does not exist")
 
 	// ErrInvalidTenant reports a tenant this module will not act on: one
-	// whose own shape is wrong — an empty identifier or alias, or one
-	// carrying blanks or control characters — or an identifier no row of
-	// the roster carries, which is what a caller asking to change the state
-	// of a tenant that is not there is told.
+	// whose own shape is wrong — an empty identifier or alias, an identifier
+	// longer than the domain admits, or either carrying blanks or control
+	// characters — or an identifier no row of the roster carries, which is
+	// what a caller asking to change the state of a tenant that is not there
+	// is told.
 	//
-	// The two are one sentinel because the caller's move is the same either
+	// The cases are one sentinel because the caller's move is the same either
 	// way: check the value it passed, against the shape and against the
 	// roster. They are told apart in the message.
+	//
+	// A roster row holding such a tenant is reported through this sentinel
+	// too, by the read that refuses it. The table can be written by something
+	// other than Put, and an identifier that reached the snapshot would reach
+	// every caller that resolves a tenant to it.
 	ErrInvalidTenant = errors.New("tenant: a tenant this module will not act on")
 
 	// ErrAliasConflict reports a write that would put one alias on two

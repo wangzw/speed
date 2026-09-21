@@ -38,8 +38,8 @@ here must not cross, and how to run it.
   `ForTenant(id)` are the whole of how a read or a write says which layer it
   acts on; `Layer`'s unexported method closes the set of implementations to
   this package, and `ForTenant` refuses an identifier outside the tenant
-  identifier's value domain — non-empty, and carrying no blank or control
-  character anywhere in it. The zero
+  identifier's value domain — non-empty, no longer than 36 bytes, and carrying
+  no blank or control character anywhere in it. The zero
   value is a mistake at the call site and panics, and that check is a run-time
   one — a call site that passes no layer at all still compiles. The empty tenant
   column is storage's spelling of the global row and stays storage's: `tenantOf`

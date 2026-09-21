@@ -246,14 +246,16 @@ func TestForTenantRejectsAnEmptyIdentifier(t *testing.T) {
 }
 
 // TestForTenantRejectsAnIdentifierOutsideTheDomain covers the whole of the
-// tenant identifier's value domain, not just the empty string. A blank or
-// control character anywhere in the id is the directory's own criterion, and an
-// id carrying one names no tenant: a write would land on a row no tenant's read
-// reaches, and a read would fall through to the shared layer and answer with a
-// value the caller never asked for. Both are silent, so the constructor refuses
-// the id where it is given.
+// tenant identifier's value domain, not just the empty string. The directory's
+// criteria are three — an id is non-empty, no longer than maxIdentifier, and
+// free of blanks and control characters anywhere — and an id failing any of them
+// names no tenant: a write would land on a row no tenant's read reaches, and a
+// read would fall through to the shared layer and answer with a value the caller
+// never asked for. The failures are silent, so the constructor refuses the id
+// where it is given.
 func TestForTenantRejectsAnIdentifierOutsideTheDomain(t *testing.T) {
-	for _, id := range []string{"", " ", "\t", " \t ", "acme ", " acme", "a b", "a\nb", "a\x00b"} {
+	overLong := strings.Repeat("a", maxIdentifier+1)
+	for _, id := range []string{"", " ", "\t", " \t ", "acme ", " acme", "a b", "a\nb", "a\x00b", overLong} {
 		t.Run(strconv.Quote(id), func(t *testing.T) {
 			defer func() {
 				if recover() == nil {
@@ -263,7 +265,7 @@ func TestForTenantRejectsAnIdentifierOutsideTheDomain(t *testing.T) {
 			_ = ForTenant(id)
 		})
 	}
-	for _, id := range []string{"acme", "acme-1", "a.b"} {
+	for _, id := range []string{"acme", "acme-1", "a.b", strings.Repeat("a", maxIdentifier)} {
 		t.Run("accepted/"+id, func(t *testing.T) {
 			if got := ForTenant(id); got == nil {
 				t.Errorf("ForTenant(%q) = nil, want a layer", id)

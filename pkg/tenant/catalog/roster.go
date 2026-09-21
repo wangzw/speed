@@ -150,7 +150,39 @@ func (r *roster) read(ctx context.Context) error {
 				"reaches this module for its declarations",
 			tenant.ErrRosterMissing, tableName, err)
 	}
+	if err := checkRows(rows); err != nil {
+		return err
+	}
 	r.snap.Store(buildSnapshot(rows))
+	return nil
+}
+
+// checkRows refuses a read holding a tenant this module will not act on.
+//
+// The rows are put through the same predicate a write passes, so a row that
+// arrived by some other route — a statement outside this module, a row from a
+// database this module shares — is refused where it is read, and the
+// identifier it carries reaches no caller.
+//
+// It fails the read rather than dropping the row in passing. A snapshot that
+// quietly left a tenant out would answer every request for it as one that does
+// not exist, with nothing said; the identifier's domain is checked here
+// because a caller downstream cannot check it, and a silent omission is the
+// shape that makes the check invisible.
+//
+// The failure takes the read's own semantics: the load at Init ends the
+// startup, and a later refresh keeps the previous snapshot and reports it.
+//
+// What is named is the table and the field. Never the value: keeping the value
+// out of log lines and error text is what the domain is for.
+func checkRows(rows []row) error {
+	for _, r := range rows {
+		t := tenant.Tenant{ID: tenant.ID(r.ID), Alias: r.Alias, Status: tenant.Status(r.Status)}
+		if err := checkTenant(t); err != nil {
+			return fmt.Errorf("%w: table %s holds a row this module will not act on: %w",
+				tenant.ErrInvalidTenant, tableName, err)
+		}
+	}
 	return nil
 }
 
@@ -278,12 +310,35 @@ func (r *roster) afterWrite(ctx context.Context) error {
 	return nil
 }
 
+// maxIdentifier is the longest identifier this module acts on: a UUID in its
+// canonical spelling is the longest identifier the shape admits, because a
+// deployment migrating from a system of its own brings that system's tenant
+// numbers across unchanged and none of the forms they take is longer. The
+// bound is the identifier's alone: an alias is bounded by whichever grammar
+// reads it, and this module prescribes none.
+const maxIdentifier = 36
+
 // checkTenant refuses a tenant this module will not act on.
 func checkTenant(t tenant.Tenant) error {
-	if err := checkField("identifier", string(t.ID)); err != nil {
+	if err := checkIdentifier(string(t.ID)); err != nil {
 		return err
 	}
 	return checkField("alias", t.Alias)
+}
+
+// checkIdentifier refuses an identifier outside the domain this module acts
+// on: empty, longer than maxIdentifier, or carrying a blank or a control
+// character anywhere in it. The length is counted in bytes, which is what the
+// column holds and what a log line carries.
+func checkIdentifier(value string) error {
+	if err := checkField("identifier", value); err != nil {
+		return err
+	}
+	if len(value) > maxIdentifier {
+		return fmt.Errorf("%w: the identifier is %d bytes, past the %d one may take",
+			tenant.ErrInvalidTenant, len(value), maxIdentifier)
+	}
+	return nil
 }
 
 // checkField refuses a field that is empty or carries a character an alias

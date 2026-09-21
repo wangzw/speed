@@ -65,8 +65,8 @@ type Layer interface {
 // global layer. That is the storage column's spelling of the layer, not the
 // interface's: the interface has no empty value, since a tenant layer's
 // constructor refuses an identifier outside the tenant identifier's domain —
-// empty, or carrying a blank or a control character — and the global layer is
-// named by its own constructor.
+// empty, longer than maxIdentifier, or carrying a blank or a control character
+// — and the global layer is named by its own constructor.
 type layer struct {
 	tenant string
 }
@@ -81,22 +81,37 @@ func Global() Layer { return layer{} }
 // An id outside the tenant identifier's value domain is a mistake at the call
 // site, in the same class as a nil layer: it panics at once rather than
 // returning an error. That domain is the one the tenant directory enforces —
-// non-empty, and free of blanks and control characters anywhere in it — so an
+// non-empty, no longer than maxIdentifier, and free of blanks and control
+// characters anywhere in it — so an
 // id failing it can only be a caller that dropped or mangled one, and it names
 // no tenant: the row it would write is one no tenant's read ever reaches, while
 // a read of it falls through to the shared layer and answers with a value the
 // caller never asked for.
 func ForTenant(id string) Layer {
-	if id == "" || strings.IndexFunc(id, notInAnIdentifier) >= 0 {
-		panic("settings: ForTenant was given an identifier outside the tenant identifier's " +
-			"domain, which is non-empty and free of blanks and control characters. Name the " +
-			"shared layer with Global(), or fix the identifier at the call site")
+	if outOfDomain(id) {
+		panic(fmt.Sprintf("settings: ForTenant was given an identifier outside the tenant "+
+			"identifier's domain, which is non-empty, at most %d bytes long, and free of blanks "+
+			"and control characters. Name the shared layer with Global(), or fix the identifier "+
+			"at the call site", maxIdentifier))
 	}
 	return layer{tenant: id}
 }
 
+// maxIdentifier is the longest identifier the tenant directory acts on,
+// counted in bytes.
+const maxIdentifier = 36
+
+// outOfDomain reports whether an identifier falls outside the tenant
+// identifier's value domain. The directory's criteria are three — non-empty,
+// no longer than maxIdentifier, and free of blanks and control characters
+// anywhere — and this states all three in one place so a caller reads the
+// domain rather than assembling it.
+func outOfDomain(id string) bool {
+	return id == "" || len(id) > maxIdentifier || strings.IndexFunc(id, notInAnIdentifier) >= 0
+}
+
 // notInAnIdentifier reports the characters no tenant identifier carries. It is
-// the tenant directory's criterion, restated here: an identifier reaches log
+// one of the directory's criteria, restated here: an identifier reaches log
 // lines, diagnostics and error text, where a newline splits one record into
 // two.
 func notInAnIdentifier(r rune) bool {
