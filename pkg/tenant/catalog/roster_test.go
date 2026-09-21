@@ -77,7 +77,6 @@ func TestReadRefusesARowOutsideTheIdentifierDomain(t *testing.T) {
 	}{
 		{"a blank inside the identifier", insert("acme corp", "acme"), "identifier"},
 		{"a control character in the identifier", insert(`acme`+"\n"+`corp`, "acme"), "identifier"},
-		{"an identifier past the length bound", insert(strings.Repeat("a", maxIdentifier+1), "acme"), "identifier"},
 		{"an empty identifier", insert("", "acme"), "identifier"},
 		{"a blank inside the alias", insert("acme", "ac me"), "alias"},
 		{"a control character in the alias", insert("acme", `ac`+"\t"+`me`), "alias"},
@@ -111,11 +110,14 @@ func TestReadRefusesARowOutsideTheIdentifierDomain(t *testing.T) {
 
 // TestReadPublishesAConformingRoster is the other side of the same check: the
 // predicate is the domain's, and a table inside it loads.
+//
+// One of the two identifiers is long. This module defines no length for one, so
+// it has none to refuse, and a case that started refusing a long identifier
+// would fail here.
 func TestReadPublishesAConformingRoster(t *testing.T) {
-	// The identifier of exactly the bound's length is inside it.
 	r := rosterOver(t,
 		insert("acme", "acme"),
-		insert(strings.Repeat("a", maxIdentifier), "globex"),
+		insert(strings.Repeat("a", 200), "globex"),
 	)
 	if err := r.read(context.Background()); err != nil {
 		t.Fatalf("reading a table inside the domain: %v", err)
@@ -128,7 +130,8 @@ func TestReadPublishesAConformingRoster(t *testing.T) {
 		t.Error("the snapshot does not hold the tenant the table carries")
 	}
 	if _, ok := s.byAlias["globex"]; !ok {
-		t.Error("the snapshot does not hold the tenant whose identifier is exactly the bound")
+		t.Error("the snapshot does not hold the tenant with a long identifier, which this module " +
+			"has no reason to refuse")
 	}
 }
 
