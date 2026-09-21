@@ -13,7 +13,7 @@ import (
 // subscription in. A subscription made later would miss everything published
 // before it and would have no way to learn that it had.
 func (j *journal) subscribe(bus event.Bus) {
-	for _, typeName := range j.settings.events {
+	for _, typeName := range unique(j.settings.events) {
 		bus.Subscribe(typeName, j.handlerFor(typeName))
 	}
 }

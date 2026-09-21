@@ -30,6 +30,12 @@ import (
 // request or a statement must not fail on account of the record of it.
 var ErrWriteFailed = errors.New("audit: the entry was not written")
 
+// ErrNotAccepting reports that the module is not taking records: it has not
+// started, or it has stopped. The capture paths this module drives drop a
+// record in that state without a word, because there is nobody to tell; the
+// seam says so, because its caller asked.
+var ErrNotAccepting = errors.New("audit: the module is not accepting records")
+
 // Audit is the capability the implementation delivers.
 //
 // It is also the token the request-level capture layer stands for on the entry

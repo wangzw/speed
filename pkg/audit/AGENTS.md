@@ -64,6 +64,18 @@ must not cross, and how to run it.
 - **The layer's `Provides` carries `(*audit.Audit)(nil)`**, the same token the
   descriptor delivers under. That is the only anchor another layer has for
   placing itself inside or outside audit, so the two must not drift.
+- **The plugin is installed on every handle the database module builds, the
+  second connection included.** `db.Open` carries the same declared plugins and
+  applies no migrations, so on a second connection this module's table is
+  whatever that database happens to have: usually absent, in which case every
+  captured write fails and only the first failure is reported. The design
+  document carries this as a non-guarantee; it is not something to fix by
+  guessing which handle is which.
+- **The event path's field spellings are this module's own choice.** A payload
+  is read for an object and an outcome under a short list of candidate names,
+  and one that carries neither leaves those columns empty without a signal. A
+  publisher wanting its events recorded reads that list in `event.go`; nothing
+  checks the two ends against each other.
 
 ## Running it
 

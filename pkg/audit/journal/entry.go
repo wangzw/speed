@@ -49,10 +49,18 @@ func (row) TableName() string { return tableName }
 
 // Record takes over one entry. It is the record seam.
 //
+// It is behind the same gate the request and event paths are: the seam belongs
+// to the three paths that begin at Start. A caller that asks before then, or
+// after Stop, is told rather than silently dropped — those three drop silently
+// because there is nobody to tell.
+//
 // The error goes back to the caller and to the failure signal both. A caller
 // that wants its own operation to stand or fall with the record can act on it;
 // the capture paths inside this module never do.
 func (j *journal) Record(ctx context.Context, e audit.Entry) error {
+	if !j.accepting.Load() {
+		return audit.ErrNotAccepting
+	}
 	err := j.write(ctx, audit.SourceSeam, e, "")
 	j.note(err)
 	return err
@@ -60,13 +68,19 @@ func (j *journal) Record(ctx context.Context, e audit.Entry) error {
 
 // write puts one entry in the table.
 //
+// The caller's context travels with the write, so a request that is cancelled
+// or has run out of time does not leave a goroutine waiting on a statement
+// nobody is going to read the answer to. That bound matters here more than
+// usual: this module's whole promise is that its failure does not become the
+// business's, and an unbounded wait on a busy pool would be exactly that.
+//
 // tenantOverride carries the tenant an event was published under. The bus
 // carries it on the event precisely so that a subscriber does not have to
 // reconstruct it, and a subscription callback usually has no request context to
 // read one from; the context wins when it has one, because that is the tenant
 // the work was done under.
 func (j *journal) write(ctx context.Context, src audit.Source, e audit.Entry, tenantOverride string) error {
-	return insert(j.handle, assemble(ctx, src, e, tenantOverride))
+	return insert(j.handle.WithContext(ctx), assemble(ctx, src, e, tenantOverride))
 }
 
 // submit is how the capture paths this module drives record an entry: the

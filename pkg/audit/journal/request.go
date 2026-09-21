@@ -1,6 +1,8 @@
 package journal
 
 import (
+	"bufio"
+	"net"
 	nethttp "net/http"
 	"strconv"
 
@@ -42,19 +44,46 @@ func (j *journal) middlewareFor(endpoint string) speedhttp.Middleware {
 				// and nothing else, and a result column holding a constant is
 				// worth nothing to whoever reads it.
 				rec := &statusRecorder{ResponseWriter: w, status: nethttp.StatusOK}
+				outcome := ""
+				defer func() {
+					// A handler that panics never returns, and a panic is the
+					// request an audit trail least wants to lose. The value is
+					// recorded and then thrown again rather than swallowed:
+					// this layer's job is to record what happened, not to
+					// change what happens.
+					if thrown := recover(); thrown != nil {
+						outcome = panicOutcome
+						j.recordRequest(r, endpoint, pattern, outcome)
+						panic(thrown)
+					}
+					j.recordRequest(r, endpoint, pattern, outcome)
+				}()
 				next.ServeHTTP(rec, r)
-				j.submit(r.Context(), audit.SourceRequest, audit.Entry{
-					Action:  r.Method,
-					Object:  pattern,
-					Outcome: strconv.Itoa(rec.status),
-					Detail: map[string]string{
-						"endpoint": endpoint,
-						"path":     r.URL.Path,
-					},
-				})
+				outcome = strconv.Itoa(rec.status)
 			})
 		},
 	}
+}
+
+// panicOutcome is what the result column holds for a request whose handler
+// panicked. The status never arrived, so a status code would be a guess.
+const panicOutcome = "panic"
+
+// recordRequest writes the row for one matched request.
+//
+// The endpoint name goes into the detail rather than into a column of its own:
+// it is not one of the entry's fields, and the layer does know which endpoint
+// it was registered on.
+func (j *journal) recordRequest(r *nethttp.Request, endpoint, pattern, outcome string) {
+	j.submit(r.Context(), audit.SourceRequest, audit.Entry{
+		Action:  r.Method,
+		Object:  pattern,
+		Outcome: outcome,
+		Detail: map[string]string{
+			"endpoint": endpoint,
+			"path":     r.URL.Path,
+		},
+	})
 }
 
 // statusRecorder remembers the status the inner chain answered with.
@@ -83,3 +112,27 @@ func (s *statusRecorder) Write(b []byte) (int, error) {
 // Unwrap lets http.ResponseController reach the writer underneath, so a handler
 // that flushes or hijacks the connection still can.
 func (s *statusRecorder) Unwrap() nethttp.ResponseWriter { return s.ResponseWriter }
+
+// Flush forwards to the writer underneath.
+//
+// Wrapping a writer hides whatever optional interfaces it carries, and a
+// handler that reaches for one by type assertion is the ordinary way to write a
+// streaming response. Without this, a server-sent-events route on a guarded
+// endpoint would buffer every frame until the handler returned — the client
+// would see nothing until the end, and nothing would say why. The two that
+// change what a client receives are forwarded here; the rest are reachable
+// through Unwrap.
+func (s *statusRecorder) Flush() {
+	if flusher, ok := s.ResponseWriter.(nethttp.Flusher); ok {
+		flusher.Flush()
+	}
+}
+
+// Hijack forwards to the writer underneath, which is what an upgrade to a
+// protocol of its own needs.
+func (s *statusRecorder) Hijack() (net.Conn, *bufio.ReadWriter, error) {
+	if hijacker, ok := s.ResponseWriter.(nethttp.Hijacker); ok {
+		return hijacker.Hijack()
+	}
+	return nil, nil, nethttp.ErrNotSupported
+}

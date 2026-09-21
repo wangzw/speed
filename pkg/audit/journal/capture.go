@@ -101,7 +101,7 @@ func captureOne(handle *gorm.DB, sig *signal, action string) func(*gorm.DB) {
 				"rows_affected": strconv.FormatInt(tx.RowsAffected, 10),
 			},
 		}
-		if err := insert(handle, assemble(st.Context, audit.SourceStatement, entry, "")); err != nil {
+		if err := insert(handle.WithContext(st.Context), assemble(st.Context, audit.SourceStatement, entry, "")); err != nil {
 			sig.fail(err)
 			return
 		}

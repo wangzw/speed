@@ -5,6 +5,7 @@ import (
 	"context"
 	"errors"
 	"io"
+	"io/fs"
 	nethttp "net/http"
 	"net/http/httptest"
 	"strings"
@@ -29,24 +30,36 @@ type order struct {
 
 func (order) TableName() string { return "orders" }
 
-const (
-	createOrders = `CREATE TABLE orders (
-		id   TEXT PRIMARY KEY,
-		note TEXT NOT NULL
-	)`
-	createAuditEntries = `CREATE TABLE audit_entries (
-		id          INTEGER PRIMARY KEY AUTOINCREMENT,
-		occurred_at DATETIME NOT NULL,
-		actor       TEXT     NOT NULL,
-		tenant_id   TEXT,
-		source      TEXT     NOT NULL,
-		action      TEXT     NOT NULL,
-		object      TEXT     NOT NULL,
-		outcome     TEXT     NOT NULL,
-		purpose     TEXT     NOT NULL,
-		detail      TEXT     NOT NULL
-	)`
-)
+const createOrders = `CREATE TABLE orders (
+	id   TEXT PRIMARY KEY,
+	note TEXT NOT NULL
+)`
+
+// auditMigration is the migration the module ships for the dialect these cases
+// run on. The table the cases write into is built from it rather than from a
+// copy written out here: a copy is a second description of the schema, and the
+// two part company at the first column someone adds.
+const auditMigration = "sqlite/0001_audit_entries.sql"
+
+// applyMigration runs one of the module's own migration files.
+//
+// The statements go through Exec, which does not reach the plugin — reaching it
+// needs the model path. That is also how the production run applies them.
+func applyMigration(t *testing.T, handle *gorm.DB, name string) {
+	t.Helper()
+	sql, err := fs.ReadFile(migrationsFS, name)
+	if err != nil {
+		t.Fatalf("reading the migration %s: %v", name, err)
+	}
+	for _, statement := range strings.Split(string(sql), ";") {
+		if strings.TrimSpace(statement) == "" {
+			continue
+		}
+		if err := handle.Exec(statement).Error; err != nil {
+			t.Fatalf("applying %s: %v", name, err)
+		}
+	}
+}
 
 // quiet is the configuration every handle in these tests opens with. GORM
 // prints a statement that failed, and two of these cases fail a statement on
@@ -67,11 +80,10 @@ func open(t *testing.T) *gorm.DB {
 	if err := handle.Use(newCapture()); err != nil {
 		t.Fatalf("installing the capture plugin: %v", err)
 	}
-	for _, statement := range []string{createOrders, createAuditEntries} {
-		if err := handle.Exec(statement).Error; err != nil {
-			t.Fatalf("creating a table: %v", err)
-		}
+	if err := handle.Exec(createOrders).Error; err != nil {
+		t.Fatalf("creating the orders table: %v", err)
 	}
+	applyMigration(t, handle, auditMigration)
 	return handle
 }
 
@@ -269,22 +281,127 @@ func TestSignalReportsOncePerFault(t *testing.T) {
 // what a caller asked for; the request path reports and carries on, which is
 // what keeps a request from failing on account of the record of it.
 func TestTheSeamReturnsItsFailureAndACapturePathDoesNot(t *testing.T) {
+	// A handle with no audit table, so every write fails.
 	handle, err := gorm.Open(sqlitedriver.Open("file:"+t.Name()+"?mode=memory&cache=shared"), quiet())
 	if err != nil {
 		t.Fatalf("opening the handle: %v", err)
 	}
+	var reported bytes.Buffer
 	j := newJournal(settings{}, handle, nil)
-	j.signal = &signal{out: io.Discard}
+	j.signal = &signal{out: &reported}
+	j.accepting.Store(true)
 
+	// A capture path reports the failure without raising it. The signal is what
+	// makes that observable: without this assertion the case passes whether
+	// submit reports, swallows, or panics.
+	j.submit(context.Background(), audit.SourceRequest, audit.Entry{Action: "a"})
+	if reported.Len() == 0 {
+		t.Error("a capture path's write failure was not reported anywhere")
+	}
+
+	// The seam says so too, which is what a caller asked for — and it says so
+	// without adding a second line for the same standing fault.
+	after := reported.Len()
 	if err := j.Record(context.Background(), audit.Entry{Action: "a"}); !errors.Is(err, audit.ErrWriteFailed) {
 		t.Fatalf("Record gave %v, want ErrWriteFailed", err)
 	}
+	if reported.Len() != after {
+		t.Error("a failure while one already stood produced a second line")
+	}
+}
 
+// The seam is behind the same gate as the paths the module drives.
+func TestTheSeamIsBehindTheGate(t *testing.T) {
+	handle := open(t)
+	j := newJournal(settings{}, handle, nil)
+	j.signal = &signal{out: io.Discard}
+
+	if err := j.Record(context.Background(), audit.Entry{Action: "before"}); !errors.Is(err, audit.ErrNotAccepting) {
+		t.Fatalf("Record before Start gave %v, want ErrNotAccepting", err)
+	}
 	j.accepting.Store(true)
-	j.submit(context.Background(), audit.SourceRequest, audit.Entry{Action: "a"})
 
+	if err := j.Record(context.Background(), audit.Entry{Action: "during"}); err != nil {
+		t.Fatalf("Record after Start gave %v, want nil", err)
+	}
 	j.accepting.Store(false)
-	j.submit(context.Background(), audit.SourceRequest, audit.Entry{Action: "a"})
+
+	if err := j.Record(context.Background(), audit.Entry{Action: "after"}); !errors.Is(err, audit.ErrNotAccepting) {
+		t.Fatalf("Record after Stop gave %v, want ErrNotAccepting", err)
+	}
+
+	rows := auditRows(t, handle)
+	if len(rows) != 1 || rows[0].Action != "during" {
+		t.Fatalf("want the one record taken while accepting, got %+v", rows)
+	}
+}
+
+// The request path writes what the design says it writes: the method as the
+// action, the matched pattern as the object, and the answer as the outcome.
+func TestMatchedRequestRecordsTheOutcome(t *testing.T) {
+	handle := open(t)
+	j := newJournal(settings{}, handle, nil)
+	j.signal = &signal{out: io.Discard}
+	j.accepting.Store(true)
+	m, err := newMatcher([]string{"GET /things"})
+	if err != nil {
+		t.Fatalf("building the matcher: %v", err)
+	}
+	j.matcher = m
+
+	inner := nethttp.HandlerFunc(func(w nethttp.ResponseWriter, _ *nethttp.Request) {
+		w.WriteHeader(nethttp.StatusTeapot)
+	})
+	layer := j.middlewareFor("public").Wrap(inner)
+	layer.ServeHTTP(httptest.NewRecorder(), httptest.NewRequest("GET", "/things", nil))
+
+	rows := auditRows(t, handle)
+	if len(rows) != 1 {
+		t.Fatalf("want one row, got %d", len(rows))
+	}
+	got := rows[0]
+	if got.Source != string(audit.SourceRequest) || got.Action != "GET" ||
+		got.Object != "GET /things" || got.Outcome != "418" {
+		t.Errorf("unexpected row: %+v", got)
+	}
+	if !strings.Contains(got.Detail, `"endpoint":"public"`) {
+		t.Errorf("the endpoint is not in the detail: %s", got.Detail)
+	}
+}
+
+// A handler that panics is still recorded, and the panic is still thrown.
+func TestPanickingHandlerIsRecordedAndRethrown(t *testing.T) {
+	handle := open(t)
+	j := newJournal(settings{}, handle, nil)
+	j.signal = &signal{out: io.Discard}
+	j.accepting.Store(true)
+	m, err := newMatcher([]string{"GET /things"})
+	if err != nil {
+		t.Fatalf("building the matcher: %v", err)
+	}
+	j.matcher = m
+
+	inner := nethttp.HandlerFunc(func(nethttp.ResponseWriter, *nethttp.Request) {
+		panic("the handler fell over")
+	})
+	layer := j.middlewareFor("public").Wrap(inner)
+
+	func() {
+		defer func() {
+			if recover() == nil {
+				t.Error("the panic was swallowed rather than thrown again")
+			}
+		}()
+		layer.ServeHTTP(httptest.NewRecorder(), httptest.NewRequest("GET", "/things", nil))
+	}()
+
+	rows := auditRows(t, handle)
+	if len(rows) != 1 {
+		t.Fatalf("want the panicking request recorded, got %d row(s)", len(rows))
+	}
+	if rows[0].Outcome != panicOutcome {
+		t.Errorf("outcome is %q, want %q", rows[0].Outcome, panicOutcome)
+	}
 }
 
 // The capture layer is not registered when nothing names its requests, and the

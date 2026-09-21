@@ -107,7 +107,7 @@ func Module() core.Module {
 		Resources: []any{schema(), db.Migrations{FS: migrationsFS}, db.Plugin{Plugin: newCapture()}},
 
 		Prepare: func(_ context.Context, reg *core.Registry) (core.Enablement, error) {
-			reader, err := core.Resolve[config.Reader](reg)
+			reader, err := readerOf(reg)
 			if err != nil {
 				return core.Enablement{}, err
 			}
@@ -118,7 +118,7 @@ func Module() core.Module {
 		},
 
 		New: func(_ context.Context, reg *core.Registry) (any, error) {
-			reader, err := core.Resolve[config.Reader](reg)
+			reader, err := readerOf(reg)
 			if err != nil {
 				return nil, err
 			}
@@ -186,10 +186,9 @@ type journal struct {
 	accepting atomic.Bool
 }
 
-// newJournal builds the product. The matcher is built here rather than in Init
-// because whether the configured patterns are ones the matcher accepts is a
-// question about configuration alone, and the answer belongs to the stage that
-// judges configuration.
+// newJournal builds the product. It holds configuration and nothing derived
+// from it: the matcher and the capture layer are both built in Init, once the
+// capabilities they need have been taken up.
 func newJournal(set settings, handle *gorm.DB, logger *slog.Logger) *journal {
 	return &journal{
 		settings: set,
@@ -211,7 +210,8 @@ func (j *journal) wire(_ context.Context, reg *core.Registry) error {
 	if len(j.settings.requests) > 0 {
 		m, err := newMatcher(j.settings.requests)
 		if err != nil {
-			return err
+			return fmt.Errorf("%s%s: the %s input item: %w",
+				diagnosticPrefix, ModuleName, requestsItem, err)
 		}
 		j.matcher = m
 	}
@@ -222,7 +222,7 @@ func (j *journal) wire(_ context.Context, reg *core.Registry) error {
 			return fmt.Errorf("%s%s: the %s input item names endpoints, but %w",
 				diagnosticPrefix, ModuleName, endpointsItem, err)
 		}
-		for _, name := range j.settings.endpoints {
+		for _, name := range unique(j.settings.endpoints) {
 			endpoint, err := router.Endpoint(name)
 			if err != nil {
 				return fmt.Errorf("%s%s: %s lists the endpoint %q: %w",
@@ -248,10 +248,49 @@ func (j *journal) wire(_ context.Context, reg *core.Registry) error {
 	return nil
 }
 
+// readerOf takes up the configuration reader.
+//
+// A reader that is not there means the host never supplied one, which is the
+// host's omission and not something to read as "nothing was configured". The
+// failure names this module, because a run can carry several modules each
+// wanting a reader and the sentinel alone does not say which one was asking.
+func readerOf(reg *core.Registry) (config.Reader, error) {
+	reader, err := core.Resolve[config.Reader](reg)
+	if err != nil {
+		return nil, fmt.Errorf("%s%s: taking up the configuration reader: %w",
+			diagnosticPrefix, ModuleName, err)
+	}
+	return reader, nil
+}
+
 // productOf narrows an instance to this module's product. A product of another
 // shape means the registry handed this callback something it did not build,
 // which is not something a host can cause.
 func productOf(instance any) (*journal, bool) {
 	j, ok := instance.(*journal)
 	return j, ok
+}
+
+// unique drops repeated names, keeping the order they were first written in.
+//
+// A name written twice is the same request written twice, and passing it
+// through is not harmless: a second layer on one endpoint records every request
+// twice and stands for the audit capability a second time, and a second
+// subscription to one event type delivers it twice. The matcher does the same
+// for its patterns, for the same reason and one more — the router it is built
+// on panics on a repeated registration.
+func unique(names []string) []string {
+	if len(names) < 2 {
+		return names
+	}
+	seen := make(map[string]struct{}, len(names))
+	out := make([]string, 0, len(names))
+	for _, name := range names {
+		if _, duplicate := seen[name]; duplicate {
+			continue
+		}
+		seen[name] = struct{}{}
+		out = append(out, name)
+	}
+	return out
 }
