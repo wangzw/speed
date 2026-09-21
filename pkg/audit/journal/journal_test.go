@@ -185,6 +185,41 @@ func TestStatementCaptureRidesTheStatementsTransaction(t *testing.T) {
 	}
 }
 
+// A bare write and its record fail together.
+//
+// This is the path a host writes most of its code on: no transaction of its
+// own, so the one GORM opens around the statement is the one that matters.
+// Anchoring the callback on the statement's own step rather than on the commit
+// put the row after that transaction had already ended — the row went out on a
+// second connection, and a failure was raised against a statement that had
+// committed, telling the caller to retry a write that was already durable.
+func TestABareWriteFailsWithItsRecord(t *testing.T) {
+	handle, err := gorm.Open(sqlitedriver.Open("file:"+t.Name()+"?mode=memory&cache=shared"), quiet())
+	if err != nil {
+		t.Fatalf("opening the handle: %v", err)
+	}
+	if err := handle.Use(newCapture()); err != nil {
+		t.Fatalf("installing the capture plugin: %v", err)
+	}
+	if err := handle.Exec(createOrders).Error; err != nil {
+		t.Fatalf("creating the orders table: %v", err)
+	}
+	// No audit table, so every capture write fails.
+
+	err = handle.Create(&order{ID: "o1", Note: "no trail"}).Error
+	if !errors.Is(err, audit.ErrWriteFailed) {
+		t.Fatalf("the write gave %v, want ErrWriteFailed", err)
+	}
+
+	var committed int64
+	if err := handle.Model(&order{}).Count(&committed).Error; err != nil {
+		t.Fatalf("counting: %v", err)
+	}
+	if committed != 0 {
+		t.Fatalf("the caller was told the statement failed, but %d business row(s) committed", committed)
+	}
+}
+
 // Raw SQL reaches no audit row.
 //
 // The plugin registers on the model-path processors only, so a statement issued

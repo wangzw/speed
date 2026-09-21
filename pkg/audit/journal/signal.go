@@ -22,9 +22,10 @@ import (
 // outside, which is why this is reported as a gap in what a host can notice
 // rather than as a metric.
 //
-// One instance guards one writer. The statement-level plugin builds one per
-// handle inside Initialize, because that is the only place a handle-specific
-// thing can live; this module's own paths share the one built with the product.
+// One instance guards one writer, built with the product and shared by the two
+// paths that report through it. Statement capture does not report here at all:
+// its row and the write it records are one unit of work, so its failure is
+// raised on that work rather than reported.
 type signal struct {
 	mu     sync.Mutex
 	failed bool

@@ -12,18 +12,26 @@ import (
 // registry, which is per processor.
 const captureCallbackName = "audit:capture"
 
-// The processors this plugin registers on, and the steps its anchors name.
+// commitStep is the step GORM ends a statement's transaction at, and the anchor
+// this plugin hangs its callbacks on.
 //
-// Only the model-path processors are here. `Exec` and `Raw` are not, and
-// leaving them out is what makes the self-reference judgement a comparison
+// Anchoring on the statement's own step is not enough, and the difference is
+// the whole of what this path promises. GORM registers that step without an
+// anchor of its own, and its sort appends anything anchored *after* a step that
+// is already ordered to the end of the chain — so a callback anchored after
+// `gorm:create` lands after the commit, once the connection has been handed
+// back to the pool. A row written there is written on a connection of its own
+// again, after the fact: the record and the write stop being one unit of work,
+// and a failure is reported against a statement that has already committed.
+// Anchored before this step, the callback runs with the transaction still open,
+// which is the only place the promise holds.
+//
+// Only the model-path processors are registered on. `Exec` and `Raw` are not,
+// and leaving them out is what makes the self-reference judgement a comparison
 // rather than a guard: a statement this plugin never sees cannot recurse
 // through it. The price is stated as a non-guarantee — a host's own cleanup and
 // a migration file issue raw SQL and reach no audit row.
-const (
-	createProcessor = "gorm:create"
-	updateProcessor = "gorm:update"
-	deleteProcessor = "gorm:delete"
-)
+const commitStep = "gorm:commit_or_rollback_transaction"
 
 // capture is the plugin the descriptor declares.
 //
@@ -50,23 +58,22 @@ func (c *capture) Name() string { return "github.com/vislake/speed/pkg/audit/jou
 // runs, so no handle has to be remembered and a second one needs no special
 // care.
 //
-// The anchor names a step rather than a position: what it gives is a lower
-// bound, and the sort puts the callback at the end of the processor's chain.
-// The tenant filter registers on the same processors ahead of their own steps,
-// so the two orders are decided by the anchors and not by which plugin was
-// installed first.
+// The anchor is the step the transaction ends at, so the callback runs after
+// the statement's own work and before the commit. The tenant filter registers
+// on the same processors ahead of their own steps, so the two orders are
+// decided by the anchors and not by which plugin was installed first.
 func (c *capture) Initialize(handle *gorm.DB) error {
 	registered := []func(*gorm.DB) error{
 		func(h *gorm.DB) error {
-			return h.Callback().Create().After(createProcessor).
+			return h.Callback().Create().Before(commitStep).
 				Register(captureCallbackName, captureOne("create"))
 		},
 		func(h *gorm.DB) error {
-			return h.Callback().Update().After(updateProcessor).
+			return h.Callback().Update().Before(commitStep).
 				Register(captureCallbackName, captureOne("update"))
 		},
 		func(h *gorm.DB) error {
-			return h.Callback().Delete().After(deleteProcessor).
+			return h.Callback().Delete().Before(commitStep).
 				Register(captureCallbackName, captureOne("delete"))
 		},
 	}

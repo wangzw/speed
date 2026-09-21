@@ -19,7 +19,7 @@ implementation is the `journal` subpackage, which registers the module
   ([`adr-audit-scope-2026-09-21.md`](../../docs/adr/adr-audit-scope-2026-09-21.md)),
   why the capture surface has these paths
   ([`adr-audit-capture-2026-09-21.md`](../../docs/adr/adr-audit-capture-2026-09-21.md)),
-  why writes do not block the work they record
+  why the statement path fails with what it records
   ([`adr-audit-failure-2026-09-21.md`](../../docs/adr/adr-audit-failure-2026-09-21.md)).
 - The API itself: the godoc in this package and in `journal`.
 
@@ -71,11 +71,6 @@ must not cross, and how to run it.
   statement ran on; nothing has to be remembered between `Initialize` calls, so
   a second handle — including one `db.Open` builds — needs no special care, and
   no per-handle state can leak between registries.
-- **The output plugin holds nothing between `Initialize` calls.** The database
-  module hands one plugin instance to every handle it builds, and a process
-  driving two commands builds two registries that share it. What a callback
-  needs is closed over as it is registered — the handle of that call, and a
-  failure signal of that handle's own.
 - **The layer's `Provides` carries `(*audit.Audit)(nil)`**, the same token the
   descriptor delivers under. That is the only anchor another layer has for
   placing itself inside or outside audit, so the two must not drift.
