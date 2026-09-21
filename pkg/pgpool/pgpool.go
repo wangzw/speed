@@ -88,7 +88,18 @@ func Connect(ctx context.Context, namespace string, cfg Config) (*pgxpool.Pool, 
 	// one value. A caller that judged a trimmed DSN usable — the modules'
 	// stances do — would otherwise hand this function the untrimmed text, and
 	// the parser would refuse a string this function had just accepted.
-	poolCfg, err := pgxpool.ParseConfig(strings.TrimSpace(cfg.DSN))
+	dsn := strings.TrimSpace(cfg.DSN)
+	if dsn == "" {
+		// pgx reads an empty connection string as the libpq defaults — PGHOST,
+		// the default unix socket, the login name — and builds a pool from them
+		// without reporting anything. A caller that reached this function with
+		// nothing would be handed a live connection to whichever server answers
+		// there, which is not the database the run was configured against.
+		return nil, fmt.Errorf("%s: %s names no database, and this pool has to be pointed at one: "+
+			"an empty connection string is not refused by the driver, it is read as the libpq "+
+			"defaults", namespace, DSNKey)
+	}
+	poolCfg, err := pgxpool.ParseConfig(dsn)
 	if err != nil {
 		return nil, fmt.Errorf("%s: reading the connection string: %w", namespace, err)
 	}

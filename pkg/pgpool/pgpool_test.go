@@ -1,9 +1,26 @@
 package pgpool
 
 import (
+	"context"
 	"strings"
 	"testing"
 )
+
+// TestAnEmptyConnectionStringIsRefused covers the fallback this shared unit
+// must not take. pgx does not refuse an empty connection string: it reads it as
+// the libpq defaults — PGHOST, the default unix socket, the login name — and
+// hands back a pool with no error, so a caller that reached Connect with
+// nothing would be given a live connection to whichever server answers on the
+// local default, and the first statement would go to a database the run never
+// named.
+func TestAnEmptyConnectionStringIsRefused(t *testing.T) {
+	pool, err := Connect(context.Background(), "probe", Config{})
+	if err == nil {
+		pool.Close()
+		t.Fatal("an empty connection string built a pool; the driver's fallback is the libpq " +
+			"defaults, which name no database this run was pointed at")
+	}
+}
 
 // The dsn item's description is what the help output prints for it, and it is
 // the only place an operator is told what leaving the key out does. An
