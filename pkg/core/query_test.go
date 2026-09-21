@@ -327,3 +327,54 @@ func TestResolveMatchesCapabilityByTypeIdentity(t *testing.T) {
 		t.Fatalf("the declared capability resolved to %#v, want the module's own product", got)
 	}
 }
+
+// TestADriveThatNamesOneModuleTwiceKeepsBothAdjustments pins where the
+// declaration list is folded.
+//
+// The list is literal and a host builds one by hand: a registry assembled in a
+// test is given a Drive directly, and nothing about that is a misuse. So what a
+// Drive means cannot be left to whichever producer happened to write it -- two
+// entries are two things somebody asked for, and a fold that kept only one of
+// them would drop a request from a Drive that was accepted without complaint.
+func TestADriveThatNamesOneModuleTwiceKeepsBothAdjustments(t *testing.T) {
+	reg := New()
+	reg.Register(Module{Name: "collected"})
+
+	if err := reg.Drive(t.Context(), Drive{DeclaringOnly: []Declaration{
+		{Name: "collected"},
+		{Name: "collected", AllResources: true},
+	}}); err != nil {
+		t.Fatalf("Drive returned %v", err)
+	}
+	if !reg.AllResourcesInForce("collected") {
+		t.Error("a Drive that named one module twice, once with the override, lost the " +
+			"override")
+	}
+}
+
+// TestAModuleADriveNamesAtBothLevelsIsAParticipant pins which level wins when
+// one Drive names a module as both.
+//
+// It runs, so the reading that treats it as reached for its declarations alone
+// never arises, and the adjustments that came with that naming go with it. What
+// the drive must not do is answer both ways about one module: a consumption
+// point reading the two queries would then see a module it runs and a module
+// whose declarations are in force, and take the second to mean it does not.
+func TestAModuleADriveNamesAtBothLevelsIsAParticipant(t *testing.T) {
+	reg := New()
+	reg.Register(Module{Name: "both"})
+
+	if err := reg.Drive(t.Context(), Drive{
+		Participants:  []string{"both"},
+		DeclaringOnly: []Declaration{{Name: "both", AllResources: true}},
+	}); err != nil {
+		t.Fatalf("Drive returned %v", err)
+	}
+	if !reg.Participating("both") {
+		t.Error("a module this drive runs was not counted as taking part")
+	}
+	if reg.AllResourcesInForce("both") {
+		t.Error("a module this drive runs was also recorded as collected, so the two readings " +
+			"are both available for one module")
+	}
+}

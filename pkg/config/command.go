@@ -163,10 +163,15 @@ type Inclusion struct {
 // address it never opens.
 //
 // Naming a module twice takes it in once, and an adjustment made on one of
-// them holds for both. A name no module registered is
-// core.ErrUnknownParticipant, the same as for Include: a declaration-level
-// name that goes unmatched leaves declarations out silently, which is the
-// failure this whole level exists to make preventable.
+// them holds for both. That reading belongs to the registry rather than to
+// this tree: see core.Drive, where the list is folded once for every Drive
+// whatever wrote it. This level accumulates what each naming asked for and
+// hands the accumulation over.
+//
+// A name no module registered is core.ErrUnknownParticipant, the same as for
+// Include: a declaration-level name that goes unmatched leaves declarations
+// out silently, which is the failure this whole level exists to make
+// preventable.
 func (c *Command) IncludeDeclarations(names ...string) *Inclusion {
 	for _, name := range names {
 		if name == "" {

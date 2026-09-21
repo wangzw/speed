@@ -4,7 +4,6 @@ import (
 	"errors"
 	"fmt"
 	"slices"
-	"strings"
 
 	"github.com/spf13/cobra"
 	"github.com/spf13/pflag"
@@ -37,9 +36,18 @@ type planNode struct {
 	// is an empty list rather than nil: a command that assembles nothing
 	// takes in nothing.
 	participants []string
-	// declaringOnly is every module the path to this command reaches for
-	// its declarations alone, deduplicated and in name order, carrying the
-	// adjustments the host made to each.
+	// declaringOnly accumulates what the path to this command reaches for
+	// its declarations alone, carrying the adjustments the host made to
+	// each.
+	//
+	// It is an accumulation and not a folded set: a module named at two
+	// levels appears once per naming, and a module this command runs is
+	// not filtered out here. Folding is the registry's, because the
+	// drive is a contract a host can build by hand and what a Drive
+	// means cannot depend on whether a command tree built it -- see
+	// recordDeclarationSets. Everything this side reads it for is
+	// indifferent to repetition, and a module named twice costs one
+	// entry.
 	declaringOnly []core.Declaration
 }
 
@@ -203,7 +211,7 @@ func (a *App) setsOf(decl *Command, parent *planNode, mods []core.Module) (
 		if parent != nil {
 			seeds = slices.Clone(parent.declaringOnly)
 		}
-		declaringOnly = mergeDeclarations(append(seeds, mine...), running)
+		declaringOnly = withoutRunning(append(seeds, mine...), running)
 	}
 
 	return participants, declaringOnly, nil
@@ -223,34 +231,6 @@ func withoutRunning(declared []core.Declaration, running map[string]bool) []core
 			out = append(out, d)
 		}
 	}
-	return out
-}
-
-// mergeDeclarations folds repeated names into one record each, in name order.
-//
-// A name this command runs is dropped rather than merged: it is a participant,
-// and the reading that treats it as declaring alone never arises.
-//
-// A name arriving twice with different adjustments keeps each of them. Two
-// inclusions of one command are two things the host wrote, and there is no
-// reading under which one of the two requests should be discarded.
-func mergeDeclarations(seeds []core.Declaration, running map[string]bool) []core.Declaration {
-	byName := make(map[string]core.Declaration, len(seeds))
-	for _, d := range seeds {
-		if running[d.Name] {
-			continue
-		}
-		at := byName[d.Name]
-		at.Name = d.Name
-		at.WithFlags = at.WithFlags || d.WithFlags
-		at.AllResources = at.AllResources || d.AllResources
-		byName[d.Name] = at
-	}
-	out := make([]core.Declaration, 0, len(byName))
-	for _, d := range byName {
-		out = append(out, d)
-	}
-	slices.SortFunc(out, func(a, b core.Declaration) int { return strings.Compare(a.Name, b.Name) })
 	return out
 }
 
