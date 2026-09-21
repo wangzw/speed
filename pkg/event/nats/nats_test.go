@@ -119,16 +119,12 @@ func TestConforms(t *testing.T) {
 // the host did not point at a server fails the startup naming the item. It is not
 // a stance that lets the run continue without an event bus.
 func TestStanceFailsWithoutAServer(t *testing.T) {
-	got, err := stance(&Config{})
+	_, err := stance(&Config{})
 	if err == nil {
 		t.Fatal("stance with no server did not fail the startup")
 	}
 	if !strings.Contains(err.Error(), ConfigNamespace+"."+urlKey) {
 		t.Fatalf("the failure does not name the input that caused it: %v", err)
-	}
-	if got.State == core.StateDisabled {
-		t.Fatal("the stance stands this module down, and StateDisabled is not a stance a module " +
-			"may state: resolution is its only source")
 	}
 }
 

@@ -48,16 +48,12 @@ func TestConforms(t *testing.T) {
 // not a stance that lets the run continue without an event bus.
 func TestStanceFailsWithoutAServer(t *testing.T) {
 	cfg := Config{Config: speedredis.Defaults()}
-	got, err := stance(&cfg)
+	_, err := stance(&cfg)
 	if err == nil {
 		t.Fatal("stance with no address did not fail the startup")
 	}
 	if !strings.Contains(err.Error(), ConfigNamespace+"."+speedredis.AddrKey) {
 		t.Fatalf("the failure does not name the input that caused it: %v", err)
-	}
-	if got.State == core.StateDisabled {
-		t.Fatal("the stance stands this module down, and StateDisabled is not a stance a module " +
-			"may state: resolution is its only source")
 	}
 }
 

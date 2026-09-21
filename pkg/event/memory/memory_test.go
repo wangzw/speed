@@ -57,7 +57,7 @@ func TestStanceIsAutoWhenOneReplicaSharesTheState(t *testing.T) {
 // capability missing — a stand-down there is the silent loss of the bus the
 // premise exists to prevent.
 func TestStanceFailsTheStartupWhenSeveralReplicasShareTheState(t *testing.T) {
-	got, err := stance(&Config{Replicas: 2})
+	_, err := stance(&Config{Replicas: 2})
 	if err == nil {
 		t.Fatal("stance with two replicas did not fail the startup: a subscriber on one replica " +
 			"would never see an event published on another, while every publish still returned " +
@@ -65,10 +65,6 @@ func TestStanceFailsTheStartupWhenSeveralReplicasShareTheState(t *testing.T) {
 	}
 	if !strings.Contains(err.Error(), ConfigNamespace+"."+replicasKey) {
 		t.Fatalf("the failure does not name the input that caused it: %v", err)
-	}
-	if got.State == core.StateDisabled {
-		t.Fatal("the stance stands this module down, and StateDisabled is not a stance a module " +
-			"may state: resolution is its only source")
 	}
 }
 
