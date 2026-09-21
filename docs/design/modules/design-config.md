@@ -251,7 +251,9 @@ err := app.Execute(ctx)
 
 `WithFlags` 让那些模块的输入项出现在帮助输出里并可在命令行上给出，必填仍然不判——**当前没有任何一种静态资源需要配置才能确定**，这项修饰因而暂无正当用例，打开它就有了一个能给却无人读取的参数：那个模块不构造，不会去 `Decode`。
 
-`AllResources` 令那些模块的全部声明生效，**覆盖各消费点自己的取材域裁定**（架构不变量 15）。它对每一种资源的后果都要由宿主自己承担：在 `db` 那一侧，它把一个不运行的模块的插件装到数据库句柄上，绕过"没启用就不生效"（见 [db](design-db.md)）；本模块定义的四种资源本就按完整清单收集，不受它影响；接口规格的形状校验同理。用在 `IncludeAllDeclarations` 上即令二进制里每一个模块的全部声明生效，包括每一个表态禁用模块的插件——这是宿主写得出的最宽的一次覆盖，不是默认。
+`AllResources` 令这一次纳入所列模块的全部声明生效，**覆盖各消费点自己的取材域裁定**（架构不变量 15）。它对每一种资源的后果都要由宿主自己承担：在 `db` 那一侧，它把一个不运行的模块的插件装到数据库句柄上，绕过"没启用就不生效"（见 [db](design-db.md)）；本模块定义的四种资源本就按完整清单收集，不受它影响；接口规格的形状校验同理。
+
+**它够不到同时被运行级纳入的模块。** 一个模块被两级同时纳入时按运行级处置，因而不在静态级的那一份清单里，`AllResources` 对它不生效——它的声明照常按各消费点的取材域裁定。`IncludeAll()` 与 `IncludeAllDeclarations().AllResources()` 同写时，这条命令运行的每一个模块都落在够不到的那一半里，宿主要的是覆盖反而什么都得不到。**这个覆盖的作用面是这条命令不运行的模块**，不是"二进制里的全部模块"。
 
 **`Include` 与 `IncludeDeclarations` 收到一个未登记的名字，一律启动失败**，错误点名是哪条命令写下了它，并可 `errors.Is` 到 `core.ErrUnknownParticipant`（[core](design-core.md)）。两级同样处置：静态级那一侧放行拼错的名字，后果是该模块的声明静默缺席——迁移少建一批表而退出码为零，正是本模块要消灭的那种失效。本模块不为它另立哨兵：名字是否登记由注册表回答，这里补的只是注册表说不出的那一半——是哪条命令要的它。宿主写了常量却没 import 那个包，是一次合法的编译，因而只能在这里报出来。
 
@@ -295,8 +297,8 @@ classDiagram
     }
     class Command {
         +Sub(use) Command
-        +Include(names) Inclusion
-        +IncludeAll() Inclusion
+        +Include(names)
+        +IncludeAll()
         +IncludeDeclarations(names) Inclusion
         +IncludeAllDeclarations() Inclusion
         +Do(depth, action)
@@ -664,7 +666,7 @@ cache.redis.max-conns   ->   MYAPP_CACHE__REDIS__MAX_CONNS
 | 输入项声明与收集 | 已实现 | `pkg/config/schema.go`、`pkg/config/manifest.go` |
 | 冲突判据 | 已实现 | `pkg/config/conflict.go` |
 | 命令树与参与集 | 已实现 | `pkg/config/app.go`、`pkg/config/command.go`、`pkg/config/tree.go` |
-| 纳入分级与两个修饰 | 未实现 | `pkg/config/command.go`、`pkg/config/tree.go`、`pkg/config/flagbind.go` |
+| 纳入分级与两个修饰 | 已实现 | `pkg/config/command.go` `IncludeDeclarations`、`IncludeAllDeclarations`，`pkg/config/tree.go` `setsOf` |
 | 读取面交付 | 已实现 | `pkg/config/load.go`、`pkg/config/app.go`；根包不注册模块，读取面由 `Execute` 作为预置产物交进注册表 |
 | 配置定位符 | 已实现 | `pkg/config/locator.go` |
 | 命令行与命令树 | 已实现 | `pkg/config/flagbind.go`、`pkg/config/flagvalue.go`、`pkg/config/tree.go` |

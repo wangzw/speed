@@ -32,6 +32,13 @@ type loader struct {
 	// command-line leg of the question which layer gave a value, and it
 	// fills up as the command tree descends.
 	bound map[string]*pflag.Flag
+	// declaresOnly records the modules some command took in for their
+	// declarations alone and asked for their flags anyway. Their arguments
+	// reach a command line, so an argument of theirs that is not registered
+	// where it was given was not left off by mistake, and saying "add the
+	// module to the Include" would construct a module the command was
+	// written not to build.
+	declaresOnly map[string]bool
 	// readPrimary records that the primary source has been read, so that a
 	// second read is caught rather than merged on top of the first.
 	readPrimary bool
@@ -59,12 +66,13 @@ func NewLoader(reg *core.Registry, stderr io.Writer) (*loader, error) {
 		return nil, err
 	}
 	l := &loader{
-		reg:    reg,
-		m:      m,
-		t:      t,
-		v:      viper.New(),
-		bound:  make(map[string]*pflag.Flag),
-		stderr: stderr,
+		reg:          reg,
+		m:            m,
+		t:            t,
+		v:            viper.New(),
+		bound:        make(map[string]*pflag.Flag),
+		declaresOnly: make(map[string]bool),
+		stderr:       stderr,
 	}
 	l.seedDefaults()
 	if err := l.bindEnv(); err != nil {

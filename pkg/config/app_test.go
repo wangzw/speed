@@ -112,6 +112,255 @@ func TestCommandTakingNothingInDrivesWithNoModule(t *testing.T) {
 	}
 }
 
+// TestADeclarationLevelModuleIsReachedButNotRun pins both halves of what the
+// second level does.
+//
+// The module is within reach of a collection -- the action asks the registry
+// and it answers -- and it is not run: it states no stance and is never
+// constructed. Those are two different questions about one module, and a
+// command whose work is applying migrations needs them answered differently:
+// it wants the tables of modules it must not build.
+func TestADeclarationLevelModuleIsReachedButNotRun(t *testing.T) {
+	run := &treeRun{}
+	a, _, _ := treeApp(treeRegistry(t, run, nil), "migrate")
+	declaring := false
+	migrate := a.Root().Sub("migrate")
+	migrate.Include("cache")
+	migrate.IncludeDeclarations("greeter")
+	migrate.Do(core.StageMigrate, func(_ context.Context, reg *core.Registry) error {
+		declaring = reg.Declaring("greeter")
+		return nil
+	})
+
+	if err := a.Execute(t.Context()); err != nil {
+		t.Fatalf("the run failed: %v", err)
+	}
+	if !declaring {
+		t.Error("the declaring set did not reach a module this command took in at that level, " +
+			"so a command of this shape collects nothing")
+	}
+	if got := run.at("prepare"); !slices.Equal(got, []string{"cache"}) {
+		t.Errorf("%v were asked for a stance, want only the module the command runs", got)
+	}
+	if got := run.at("new"); !slices.Equal(got, []string{"cache"}) {
+		t.Errorf("%v were constructed, want only the module the command runs", got)
+	}
+}
+
+// TestADeclarationLevelModulePutsNoArgumentOnTheCommandLine pins the half that
+// makes the level usable.
+//
+// A command whose work is applying migrations runs the engine and collects the
+// tables of modules it has no use for running. If taking those in put their
+// arguments on the command line, the command would be made to answer for a
+// listener address it never opens -- which is why taking them in at run level
+// was never a workable answer in the first place.
+func TestADeclarationLevelModulePutsNoArgumentOnTheCommandLine(t *testing.T) {
+	a, stdout, _ := treeApp(treeRegistry(t, &treeRun{}, nil), "help", "migrate")
+	migrate := a.Root().Sub("migrate")
+	migrate.Include("cache")
+	migrate.IncludeDeclarations("greeter")
+	migrate.Do(core.StageMigrate, nil)
+
+	if err := a.Execute(t.Context()); err != nil {
+		t.Fatalf("asking for help returned %v", err)
+	}
+	help := stdout.String()
+	if !strings.Contains(help, "--cache-addr") {
+		t.Errorf("the help reads %q, which omits an argument of a module the command runs", help)
+	}
+	if strings.Contains(help, "--greeter-addr") {
+		t.Errorf("the help reads %q, which carries an argument of a module the command only "+
+			"collects declarations from", help)
+	}
+}
+
+// TestWithFlagsPutsADeclarationLevelModulesArgumentOnTheCommandLine pins the
+// adjustment that reverses the half above.
+//
+// It does not make the module run and it does not make its required items be
+// checked: a module that is never constructed never decodes its configuration,
+// so the argument is one a run may give rather than one it must.
+func TestWithFlagsPutsADeclarationLevelModulesArgumentOnTheCommandLine(t *testing.T) {
+	a, stdout, _ := treeApp(treeRegistry(t, &treeRun{}, nil), "help", "migrate")
+	migrate := a.Root().Sub("migrate")
+	migrate.Include("cache")
+	migrate.IncludeDeclarations("greeter").WithFlags()
+	migrate.Do(core.StageMigrate, nil)
+
+	if err := a.Execute(t.Context()); err != nil {
+		t.Fatalf("asking for help returned %v", err)
+	}
+	if help := stdout.String(); !strings.Contains(help, "--greeter-addr") {
+		t.Errorf("the help reads %q, which omits the argument a host asked to be reachable", help)
+	}
+}
+
+// TestAnArgumentOfADeclarationLevelModuleSaysWhereItBelongs pins the diagnosis
+// for an argument that is absent because the module behind it is only
+// collected from.
+//
+// The module is taken in, so telling a host this command "does not take that
+// module in" is false of it, and the fix that sentence suggests -- add it to
+// the command's Include -- constructs a module the command was written not to
+// build. The adjustment that would accept the argument is the thing to name,
+// and this is the only place a host can be told about it: the argument is
+// registered nowhere, so the library knows only that it is unknown.
+func TestAnArgumentOfADeclarationLevelModuleSaysWhereItBelongs(t *testing.T) {
+	a, _, _ := treeApp(treeRegistry(t, &treeRun{}, nil), "migrate", "--greeter-addr=:1")
+	migrate := a.Root().Sub("migrate")
+	migrate.Include("cache")
+	migrate.IncludeDeclarations("greeter")
+	migrate.Do(core.StageMigrate, nil)
+
+	err := a.Execute(t.Context())
+	if !errors.Is(err, ErrUnknownKey) {
+		t.Fatalf("running with an argument this command does not carry returned %v, want %v",
+			err, ErrUnknownKey)
+	}
+	if !strings.Contains(err.Error(), "WithFlags") {
+		t.Errorf("the failure reads %q, which does not name the adjustment that would accept "+
+			"the argument", err)
+	}
+	if strings.Contains(err.Error(), "does not take that module in") {
+		t.Errorf("the failure reads %q, and this command does take that module in", err)
+	}
+}
+
+// TestIncludeAllDeclarationsReachesEveryRegisteredModule pins the form that
+// does not need a list kept in step.
+//
+// A command collecting declarations would otherwise name every module with
+// tables, and a name left off that list is a table that never gets created --
+// silently, since being left out is not among the things that reach the
+// startup diagnostics.
+func TestIncludeAllDeclarationsReachesEveryRegisteredModule(t *testing.T) {
+	a, _, _ := treeApp(treeRegistry(t, &treeRun{}, nil), "version")
+	var missed []string
+	version := a.Root().Sub("version")
+	version.IncludeAllDeclarations()
+	version.Do(core.StagePrepare, func(_ context.Context, reg *core.Registry) error {
+		for _, m := range reg.Modules() {
+			if !reg.Declaring(m.Name) {
+				missed = append(missed, m.Name)
+			}
+		}
+		return nil
+	})
+
+	if err := a.Execute(t.Context()); err != nil {
+		t.Fatalf("the run failed: %v", err)
+	}
+	if len(missed) != 0 {
+		t.Errorf("%v are registered and were not reached by taking every declaration in",
+			missed)
+	}
+}
+
+// TestAModuleTakenInAtBothLevelsIsAParticipant pins which level wins.
+//
+// The two lists are two things the host wrote, and there is only one reading
+// of a module named in both: it runs. Reporting it as declaring alone would
+// leave a module that is constructed and serving out of the set that describes
+// what this command runs.
+func TestAModuleTakenInAtBothLevelsIsAParticipant(t *testing.T) {
+	run := &treeRun{}
+	a, _, _ := treeApp(treeRegistry(t, run, nil), "migrate")
+	participating := false
+	migrate := a.Root().Sub("migrate")
+	migrate.Include("cache")
+	migrate.IncludeDeclarations("cache")
+	migrate.Do(core.StageMigrate, func(_ context.Context, reg *core.Registry) error {
+		participating = reg.Participating("cache")
+		return nil
+	})
+
+	if err := a.Execute(t.Context()); err != nil {
+		t.Fatalf("the run failed: %v", err)
+	}
+	if got := run.at("new"); !slices.Equal(got, []string{"cache"}) {
+		t.Fatalf("%v were constructed, want the module both levels name", got)
+	}
+	if !participating {
+		t.Error("a module named at both levels was not counted as taking part")
+	}
+}
+
+// TestADeclarationNameNoModuleRegisteredIsRefused pins that the second level
+// is checked the way the first is.
+//
+// A misspelt name at this level leaves declarations out with nothing said, and
+// the command goes on to report success: the failure is a table that was never
+// created, met later as a query against it.
+func TestADeclarationNameNoModuleRegisteredIsRefused(t *testing.T) {
+	a, _, _ := treeApp(treeRegistry(t, &treeRun{}, nil), "migrate")
+	migrate := a.Root().Sub("migrate")
+	migrate.IncludeDeclarations("misspelt")
+	migrate.Do(core.StageMigrate, nil)
+
+	err := a.Execute(t.Context())
+	if !errors.Is(err, core.ErrUnknownParticipant) {
+		t.Fatalf("a declaration-level name that matches nothing returned %v, want %v",
+			err, core.ErrUnknownParticipant)
+	}
+	if !strings.Contains(err.Error(), "migrate") {
+		t.Errorf("the failure reads %q, which does not say which command wrote the name", err)
+	}
+}
+
+// TestADeclarationLevelInclusionHoldsForEveryCommandUnderIt pins that the
+// second level is inherited the way the first is.
+//
+// What a level takes in holds for every command under it. The two levels are
+// no different there, so a host writes the modules its program collects
+// declarations from once, where they belong, rather than repeating them under
+// each command that needs them.
+func TestADeclarationLevelInclusionHoldsForEveryCommandUnderIt(t *testing.T) {
+	a, _, _ := treeApp(treeRegistry(t, &treeRun{}, nil), "version")
+	declaring := false
+	a.Root().IncludeDeclarations("greeter")
+	version := a.Root().Sub("version")
+	version.Do(core.StagePrepare, func(_ context.Context, reg *core.Registry) error {
+		declaring = reg.Declaring("greeter")
+		return nil
+	})
+
+	if err := a.Execute(t.Context()); err != nil {
+		t.Fatalf("the run failed: %v", err)
+	}
+	if !declaring {
+		t.Error("a declaration-level inclusion written on the root did not hold for a command " +
+			"under it")
+	}
+}
+
+// TestAllResourcesReachesTheDrive pins that what a host sets on an inclusion
+// survives the trip from the command tree to the registry.
+//
+// They sit far apart: the adjustment is set where the tree is written, before
+// anything is parsed, and it is read by whichever module asks the registry.
+// A step that dropped it would leave the call looking applied and doing
+// nothing -- which, for an override that installs a module's plugins onto a
+// handle it does not run on, is the difference between a host's deliberate
+// choice and a silent no-op.
+func TestAllResourcesReachesTheDrive(t *testing.T) {
+	a, _, _ := treeApp(treeRegistry(t, &treeRun{}, nil), "version")
+	inForce := false
+	version := a.Root().Sub("version")
+	version.IncludeDeclarations("greeter").AllResources()
+	version.Do(core.StagePrepare, func(_ context.Context, reg *core.Registry) error {
+		inForce = reg.AllResourcesInForce("greeter")
+		return nil
+	})
+
+	if err := a.Execute(t.Context()); err != nil {
+		t.Fatalf("the run failed: %v", err)
+	}
+	if !inForce {
+		t.Error("an adjustment set where the tree is written did not reach the registry")
+	}
+}
+
 // TestLocatorArgumentIsAcceptedOnEitherSideOfTheSubcommand pins the reserved
 // argument as the root's own: it holds for every command, so the run reaches
 // the same primary source whether it is written before the subcommand or

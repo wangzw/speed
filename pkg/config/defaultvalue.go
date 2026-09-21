@@ -75,11 +75,19 @@ func placeholder(item *manifestItem) string {
 const requiredMarker = "(required)"
 
 // flagUsage is the text the command-line library prints beside an argument:
-// the declared description, carrying the marker when the item is required.
+// the declared description, carrying the marker when the item is required and
+// this command is one that will ask for it.
+//
 // The library prints this string as it stands, which is what makes it the
 // marker's seat.
-func flagUsage(item *manifestItem) string {
-	if !item.item.Required {
+//
+// runs is whether the item's module is one this command runs. An item of a
+// module taken in for its declarations alone is never decoded -- the module is
+// not constructed -- so no run will come up short of its value, and marking it
+// would say the opposite on the one page where the reader is deciding whether
+// a run can start without it.
+func flagUsage(item *manifestItem, runs bool) string {
+	if !runs || !item.item.Required {
 		return item.item.Description
 	}
 	if item.item.Description == "" {

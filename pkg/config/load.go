@@ -37,7 +37,7 @@ func Load(ctx context.Context, reg *core.Registry, args []string) (Reader, error
 	for i, m := range modules {
 		participants[i] = m.Name
 	}
-	if err := l.BindLayer(fs, participants); err != nil {
+	if err := l.BindLayer(fs, participants, participants, nil); err != nil {
 		return nil, err
 	}
 	if err := fs.Parse(args); err != nil {

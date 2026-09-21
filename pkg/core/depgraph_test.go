@@ -26,7 +26,7 @@ func allEnabled(mods ...Module) map[string]Enablement {
 
 func mustPlan(t *testing.T, mods ...Module) []string {
 	t.Helper()
-	order, err := planConstruction(mods, mods, nil, allEnabled(mods...), nil, nil)
+	order, err := planConstruction(mods, mods, nil, nil, allEnabled(mods...), nil, nil)
 	if err != nil {
 		t.Fatalf("planning failed: %v", err)
 	}
@@ -45,7 +45,7 @@ func indexOf(t *testing.T, order []string, name string) int {
 func TestMissingProviderNoDeclarer(t *testing.T) {
 	consumer := Module{Name: "consumer", Requires: needs((*cacheCap)(nil))}
 
-	_, err := planConstruction([]Module{consumer}, []Module{consumer}, nil, allEnabled(consumer), nil, nil)
+	_, err := planConstruction([]Module{consumer}, []Module{consumer}, nil, nil, allEnabled(consumer), nil, nil)
 	if !errors.Is(err, ErrMissingProvider) {
 		t.Fatalf("planning returned %v, want ErrMissingProvider", err)
 	}
@@ -68,7 +68,7 @@ func TestMissingProviderTextCarriesDisableReason(t *testing.T) {
 		"provider": {State: StateDisabled, Reason: "no connection address configured"},
 	}
 
-	_, err := planConstruction([]Module{consumer}, []Module{consumer, provider}, nil, final, nil, nil)
+	_, err := planConstruction([]Module{consumer}, []Module{consumer, provider}, nil, nil, final, nil, nil)
 	if !errors.Is(err, ErrMissingProvider) {
 		t.Fatalf("planning returned %v, want ErrMissingProvider", err)
 	}
@@ -87,7 +87,7 @@ func TestMissingProviderTextCarriesDisableReason(t *testing.T) {
 func TestMissingProviderNamesTheRequiringModule(t *testing.T) {
 	consumer := Module{Name: "consumer", Requires: needs((*cacheCap)(nil))}
 
-	_, err := planConstruction([]Module{consumer}, []Module{consumer}, nil, allEnabled(consumer), nil, nil)
+	_, err := planConstruction([]Module{consumer}, []Module{consumer}, nil, nil, allEnabled(consumer), nil, nil)
 	if !errors.Is(err, ErrMissingProvider) {
 		t.Fatalf("planning returned %v, want ErrMissingProvider", err)
 	}
@@ -103,7 +103,7 @@ func TestOptionalMissingIsNotAnError(t *testing.T) {
 		Requires: []Requirement{{Token: (*cacheCap)(nil), Optional: true}},
 	}
 
-	order, err := planConstruction([]Module{consumer}, []Module{consumer}, nil, allEnabled(consumer), nil, nil)
+	order, err := planConstruction([]Module{consumer}, []Module{consumer}, nil, nil, allEnabled(consumer), nil, nil)
 	if err != nil {
 		t.Fatalf("an absent optional dependency failed the planning: %v", err)
 	}
@@ -129,7 +129,7 @@ func TestCycleDetectedNamingModules(t *testing.T) {
 	a := Module{Name: "a", Requires: needs((*storeCap)(nil)), Provides: provides((*cacheCap)(nil))}
 	b := Module{Name: "b", Requires: needs((*cacheCap)(nil)), Provides: provides((*storeCap)(nil))}
 
-	_, err := planConstruction([]Module{a, b}, []Module{a, b}, nil, allEnabled(a, b), nil, nil)
+	_, err := planConstruction([]Module{a, b}, []Module{a, b}, nil, nil, allEnabled(a, b), nil, nil)
 	if !errors.Is(err, ErrDependencyCycle) {
 		t.Fatalf("planning returned %v, want ErrDependencyCycle", err)
 	}
@@ -150,7 +150,7 @@ func TestSelfCycle(t *testing.T) {
 		Provides: provides((*cacheCap)(nil)),
 	}
 
-	_, err := planConstruction([]Module{m}, []Module{m}, nil, allEnabled(m), nil, nil)
+	_, err := planConstruction([]Module{m}, []Module{m}, nil, nil, allEnabled(m), nil, nil)
 	if !errors.Is(err, ErrDependencyCycle) {
 		t.Fatalf("planning returned %v, want ErrDependencyCycle", err)
 	}
@@ -209,7 +209,7 @@ func TestSuppliedCapabilityMeetsARequirementWithoutAnEdge(t *testing.T) {
 		capabilityType((*readerCap)(nil), "test"): true,
 	}
 
-	order, err := planConstruction([]Module{consumer}, []Module{consumer}, nil,
+	order, err := planConstruction([]Module{consumer}, []Module{consumer}, nil, nil,
 		allEnabled(consumer), nil, supplied)
 	if err != nil {
 		t.Fatalf("a requirement a supplied product meets failed the planning: %v", err)
@@ -227,7 +227,7 @@ func TestMissingProviderNamesAModuleThisCommandLeftOut(t *testing.T) {
 	consumer := Module{Name: "consumer", Requires: needs((*cacheCap)(nil))}
 	provider := Module{Name: "left-out", Provides: provides((*cacheCap)(nil))}
 
-	_, err := planConstruction([]Module{consumer}, []Module{consumer}, []Module{provider},
+	_, err := planConstruction([]Module{consumer}, []Module{consumer}, nil, []Module{provider},
 		allEnabled(consumer), nil, nil)
 	if !errors.Is(err, ErrMissingProvider) {
 		t.Fatalf("planning returned %v, want ErrMissingProvider", err)
@@ -243,5 +243,69 @@ func TestMissingProviderNamesAModuleThisCommandLeftOut(t *testing.T) {
 			t.Errorf("error %q reports the module as %q, which is an instruction that "+
 				"changes nothing: it is not in this command at all", err, wrong)
 		}
+	}
+}
+
+// TestMissingProviderTellsADeclarationLevelModuleApart pins the fifth cause
+// apart from the fourth.
+//
+// A module taken in for its declarations alone is taken in, so the advice the
+// fourth cause gives -- add it to the command's Include -- is false of it, and
+// following that advice constructs a module the command was written not to
+// build. What it cannot do is deliver: it is never constructed, however much it
+// declares. The two groups arrive from the same command's writing and lead to
+// opposite fixes, so a report that merged them would send half its readers the
+// wrong way.
+func TestMissingProviderTellsADeclarationLevelModuleApart(t *testing.T) {
+	consumer := Module{Name: "consumer", Requires: needs((*cacheCap)(nil))}
+	declarer := Module{Name: "collected", Provides: provides((*cacheCap)(nil))}
+
+	_, err := planConstruction([]Module{consumer}, []Module{consumer}, []Module{declarer}, nil,
+		allEnabled(consumer), nil, nil)
+	if !errors.Is(err, ErrMissingProvider) {
+		t.Fatalf("planning returned %v, want ErrMissingProvider", err)
+	}
+	if !strings.Contains(err.Error(), "collected") {
+		t.Errorf("error %q does not name the provider this command collects from", err)
+	}
+	if !strings.Contains(err.Error(), "declarations alone") {
+		t.Errorf("error %q does not say the module was taken in for its declarations alone, "+
+			"which is the one thing that tells this cause from the ones beside it", err)
+	}
+	if strings.Contains(err.Error(), "does not include it") {
+		t.Errorf("error %q says the command does not include a module it did take in", err)
+	}
+}
+
+// TestTheDriveReachesTheDeclarationLevelInItsReport is the same report through
+// a drive rather than through the planner, so that the split a drive makes is
+// the split the report is built from.
+//
+// Nothing in the planner can tell the two groups of outside modules apart: it
+// is given them already divided, and this is what checks that the drive divides
+// them the way it says it does.
+func TestTheDriveReachesTheDeclarationLevelInItsReport(t *testing.T) {
+	reg := New()
+	reg.Register(Module{Name: "consumer", Requires: needs((*cacheCap)(nil))})
+	reg.Register(Module{Name: "collected", Provides: provides((*cacheCap)(nil))})
+
+	// StageNew rather than the zero depth: a command that collects stances
+	// alone never resolves dependencies, and this is about the report a
+	// construction attempt makes.
+	err := reg.Drive(t.Context(), Drive{
+		Depth:         StageNew,
+		Participants:  []string{"consumer"},
+		DeclaringOnly: []Declaration{{Name: "collected"}},
+	})
+	if !errors.Is(err, ErrMissingProvider) {
+		t.Fatalf("Drive returned %v, want ErrMissingProvider", err)
+	}
+	if !strings.Contains(err.Error(), "declarations alone") {
+		t.Errorf("the drive's report reads %q, which does not say the module was reached for "+
+			"its declarations alone", err)
+	}
+	if strings.Contains(err.Error(), "does not include it") {
+		t.Errorf("the drive's report reads %q, which says of a module it took in that it "+
+			"did not", err)
 	}
 }

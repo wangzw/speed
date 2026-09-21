@@ -39,8 +39,14 @@ type Command struct {
 	// includeAll records that this level takes in every available module,
 	// whatever the registry turns out to hold.
 	includeAll bool
-	depth      core.Stage
-	action     Action
+	// declIncludes records the declaration-level inclusions, in declaration
+	// order, each carrying whatever the host adjusted on the value it
+	// returned. They are kept apart from include because the two levels
+	// differ in what they do, not in how much of it there is: a module
+	// named in both is a participant, and the drive settles that.
+	declIncludes []declarationInclusion
+	depth        core.Stage
+	action       Action
 	// hasDo tells a command that drives to StagePrepare from one that never
 	// said how far it goes. The depth's zero value is a legal answer, so the
 	// field cannot carry the question.
@@ -112,6 +118,130 @@ func (c *Command) Include(names ...string) {
 // The set is expanded into names while the tree is assembled, so the drive is
 // handed the same literal list an explicit Include would have produced.
 func (c *Command) IncludeAll() { c.includeAll = true }
+
+// declarationInclusion is one declaration-level inclusion as written, with
+// the adjustments the host made on the value it returned.
+type declarationInclusion struct {
+	names        []string
+	all          bool
+	withFlags    bool
+	allResources bool
+}
+
+// Inclusion is what a declaration-level inclusion returns, so that a host can
+// adjust it where it was written.
+//
+// It is not the command. One command can carry several declaration-level
+// inclusions and a host may want them treated differently, so an adjustment
+// made here says nothing about any other one: the value carries which
+// inclusion it is, not only which command.
+//
+// Its methods are on this type alone, and it is returned by the
+// declaration-level entries alone. A module that runs contributes its
+// arguments and has its required items checked with no adjustment available,
+// and asking for one where it would have no effect is a compile error rather
+// than a startup failure.
+type Inclusion struct {
+	cmd *Command
+	at  int
+}
+
+// IncludeDeclarations takes the named modules into this command for their
+// declarations alone.
+//
+// Such a module is not constructed: it runs no callback, takes no stance, and
+// its requirements are not expanded, since expanding them is what makes its
+// providers be constructed beside it. What it contributes is its resource
+// declarations, and only to a consumption point that reads the declaring set
+// or wider. Its input items do not reach the command line unless WithFlags
+// says so, and its required items are never checked.
+//
+// This is how a command collects the declarations of modules it does not run.
+// A command applying migrations includes the engine and reaches its tables
+// this way, which is what keeps the engine's own arguments from being the
+// only ones on a command that must not be made to answer for a listener
+// address it never opens.
+//
+// Naming a module twice takes it in once, and an adjustment made on one of
+// them holds for both. A name no module registered is
+// core.ErrUnknownParticipant, the same as for Include: a declaration-level
+// name that goes unmatched leaves declarations out silently, which is the
+// failure this whole level exists to make preventable.
+func (c *Command) IncludeDeclarations(names ...string) *Inclusion {
+	for _, name := range names {
+		if name == "" {
+			panic("config: " + c.path() + " includes a module under an empty name. A module " +
+				"is taken in by the name it registered, which the package that registers " +
+				"it exports as a constant")
+		}
+	}
+	// The slice is copied rather than kept. A variadic call passes the
+	// caller's own slice when it spreads one, and a tree is written ahead
+	// of the run that reads it: a host that builds a list of modules, hands
+	// it over and goes on using it would otherwise be writing into this
+	// command's declarations from outside them. Include copies for the same
+	// reason, and the two have to answer a caller's aliasing the same way.
+	c.declIncludes = append(c.declIncludes, declarationInclusion{names: slices.Clone(names)})
+	return &Inclusion{cmd: c, at: len(c.declIncludes) - 1}
+}
+
+// IncludeAllDeclarations takes every available module into this command for
+// its declarations alone. The available set is what the host's imports reach,
+// the same set IncludeAll spans.
+//
+// It is the way to write a command that collects everything declared and runs
+// almost none of it, and it is what makes that command's collection complete
+// without a list the host has to keep in step. IncludeAll carries a cost this
+// one does not: the participating set decides the help output, the available
+// arguments and the required range, all of them things a person reads. The
+// declaring set decides none of those, so taking every module's declarations
+// in adds nothing to the command line and nothing to a run's obligations.
+//
+// What it does add is reach: a module the host never heard of, registered by
+// a package some dependency imported, has its declarations collected too.
+// That is the point, and it is also the price, since the host cannot see the
+// list it is accepting.
+func (c *Command) IncludeAllDeclarations() *Inclusion {
+	c.declIncludes = append(c.declIncludes, declarationInclusion{all: true})
+	return &Inclusion{cmd: c, at: len(c.declIncludes) - 1}
+}
+
+// WithFlags lets the modules of this inclusion reach the command line of the
+// command that took them in, and of every command beneath it.
+//
+// It does not make them required: a module reached for its declarations alone
+// is never constructed, so it never decodes its configuration and there is no
+// reading of it that could come up short. The flag is an argument a run may
+// give, not one it must.
+//
+// Nothing a module declares today needs this. A declaration is static by
+// construction -- it is on the descriptor, settled before the registry is
+// read -- so a value read from the command line cannot be what settles one,
+// and a flag that is accepted and never read is the shape a mistake takes.
+// The adjustment is here for the case that would change that, and a host that
+// reaches for it now is accepting an argument no one will read.
+func (i *Inclusion) WithFlags() *Inclusion {
+	i.cmd.declIncludes[i.at].withFlags = true
+	return i
+}
+
+// AllResources puts every declaration the modules of this inclusion make in
+// force, overriding the set the consumption point would otherwise read.
+//
+// Which set a declaration is collected from is the consumption point's
+// decision, and this overrides it. A point reading the enabled set then
+// collects these modules' declarations as though the modules were running,
+// and they are not.
+//
+// The price is concrete and it lands on the consumption point that has the
+// most to lose by it: a database plugin is installed onto the handle for the
+// statements this run issues, and this installs the plugins of modules that
+// are not part of the run at all. Nothing will say which of them rewrote a
+// statement. The host is choosing that knowingly, and it is not the default.
+func (i *Inclusion) AllResources() *Inclusion {
+	i.cmd.declIncludes[i.at].allResources = true
+	return i
+}
 
 // Do states how far this command drives and what it does on arrival.
 //

@@ -317,9 +317,140 @@ func TestModulesOutsideTheParticipantSetTakeNoPart(t *testing.T) {
 	if got.State != core.StateDisabled {
 		t.Errorf("Enablement reported %+v for a module that is not running, want disabled", got)
 	}
-	if !strings.Contains(got.Reason, "not included") {
+	if !strings.Contains(got.Reason, "participating set") {
 		t.Errorf("the verdict reads %q, which does not tell being left out of this command "+
 			"apart from having switched itself off", got.Reason)
+	}
+	if !reg.Participating("included") {
+		t.Error("Participating denied a module this command listed")
+	}
+	if reg.Participating("left-out") {
+		t.Error("Participating counted a module this command left out, which is the whole " +
+			"thing a mechanism filtering by participation has to be able to ask")
+	}
+	if !reg.Declaring("included") {
+		t.Error("Declaring denied a participant, so the declaring set does not contain the " +
+			"participating one")
+	}
+	if reg.Declaring("left-out") {
+		t.Error("Declaring counted a registered module this command took in at neither level")
+	}
+}
+
+// TestADeclarationLevelModuleContributesDeclarationsAndNothingElse pins what
+// the second level of inclusion reaches and what it leaves alone.
+//
+// The module is in the declaring set, so a collection reading that set finds
+// it. It is not a participant, so it states no stance and is not constructed.
+// The two queries have to answer differently for that to be expressible at
+// all: one verdict reported the same thing either way, and a command whose
+// work is applying migrations had no way to collect the tables of modules it
+// must not build.
+func TestADeclarationLevelModuleContributesDeclarationsAndNothingElse(t *testing.T) {
+	p := &probe{}
+	constructed := false
+	reg := core.New()
+	register(reg, preparing(p, "runs"))
+	register(reg, core.Module{
+		Name:      "declares",
+		Resources: []any{"a declaration"},
+		New: func(context.Context, *core.Registry) (any, error) {
+			constructed = true
+			return nil, nil
+		},
+	})
+
+	err := driveToEnd(t, reg, core.Drive{
+		Depth:         core.StageServe,
+		Participants:  []string{"runs"},
+		DeclaringOnly: []core.Declaration{{Name: "declares"}},
+		Action:        noAction,
+	})
+	if err != nil {
+		t.Fatalf("Drive returned %v", err)
+	}
+	if !reg.Declaring("declares") {
+		t.Error("Declaring denied a module this drive reached for its declarations")
+	}
+	if reg.Participating("declares") {
+		t.Error("Participating counted a module this drive took in at declaration level only")
+	}
+	if constructed {
+		t.Error("a module reached for its declarations alone was constructed, so the level " +
+			"does not spare it the configuration a command of this shape has no use for")
+	}
+	if !p.has("prepare runs") {
+		t.Errorf("the participating module did not run; recorded %v", p.snapshot())
+	}
+}
+
+// TestANameNoModuleRegisteredIsRefusedAtEitherLevel pins that the second level
+// is checked the way the first is.
+//
+// A declaration-level name that matches nothing leaves declarations out with
+// nobody the wiser, and that is the failure the level exists to make
+// preventable: the command runs, collects less than it was written to collect,
+// and reports success.
+func TestANameNoModuleRegisteredIsRefusedAtEitherLevel(t *testing.T) {
+	reg := core.New()
+	register(reg, core.Module{Name: "registered"})
+
+	err := driveToEnd(t, reg, core.Drive{
+		Participants:  []string{"registered"},
+		DeclaringOnly: []core.Declaration{{Name: "misspelt"}},
+	})
+	if !errors.Is(err, core.ErrUnknownParticipant) {
+		t.Fatalf("a declaration-level name that matches nothing returned %v, want %v",
+			err, core.ErrUnknownParticipant)
+	}
+}
+
+// TestTheSetsAreUnsettledUntilADriveSettlesThem pins that neither query
+// invents an answer before there is a command to answer about.
+//
+// A registry holds registrations until it is driven, and until then no command
+// has taken anything in. Answering "yes" for a registered module would be the
+// reading that treats the available set as if it were a decision.
+func TestTheSetsAreUnsettledUntilADriveSettlesThem(t *testing.T) {
+	reg := core.New()
+	register(reg, core.Module{Name: "registered"})
+
+	if reg.Participating("registered") {
+		t.Error("Participating answered before a drive had settled the set")
+	}
+	if reg.Declaring("registered") {
+		t.Error("Declaring answered before a drive had settled the set")
+	}
+	if reg.Participating("never-registered") || reg.Declaring("never-registered") {
+		t.Error("a query answered for a name no module registered")
+	}
+	if reg.AllResourcesInForce("registered") {
+		t.Error("AllResourcesInForce answered before a drive had settled the adjustment")
+	}
+}
+
+// TestAllResourcesInForceFollowsTheHostsAdjustment pins the override the host
+// can set, and that it is off unless set.
+//
+// It says a module's declarations are in force whether or not it runs, which
+// is the one thing a consumption point cannot work out on its own: its own
+// domain is a decision of its own, and this is the host answering for it.
+func TestAllResourcesInForceFollowsTheHostsAdjustment(t *testing.T) {
+	for name, declared := range map[string]core.Declaration{
+		"without the adjustment": {Name: "declares"},
+		"with the adjustment":    {Name: "declares", AllResources: true},
+	} {
+		t.Run(name, func(t *testing.T) {
+			reg := core.New()
+			register(reg, core.Module{Name: "declares"})
+			if err := driveToEnd(t, reg, core.Drive{DeclaringOnly: []core.Declaration{declared}}); err != nil {
+				t.Fatalf("Drive returned %v", err)
+			}
+			want := declared.AllResources
+			if got := reg.AllResourcesInForce("declares"); got != want {
+				t.Errorf("AllResourcesInForce reported %v, want %v", got, want)
+			}
+		})
 	}
 }
 

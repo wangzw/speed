@@ -109,7 +109,7 @@ func (a *App) Execute(ctx context.Context) error {
 	// it already take in, so the argument of a module two levels of one
 	// path take in sits on the shallower, and the deeper inherits it.
 	for _, node := range p.allNodes() {
-		if err := l.BindLayer(node.cmd.PersistentFlags(), node.added()); err != nil {
+		if err := l.BindLayer(node.cmd.PersistentFlags(), node.added(), node.participants, node.declaredNames()); err != nil {
 			return a.reportEarly(err)
 		}
 	}
@@ -159,9 +159,10 @@ func (a *App) run(ctx context.Context, l *loader, p *plan, node *planNode) error
 	a.reg.Supply((*Reader)(nil), l.Reader())
 
 	return a.reg.Drive(ctx, core.Drive{
-		Depth:        node.decl.depth,
-		Participants: node.participants,
-		Action:       node.decl.action,
+		Depth:         node.decl.depth,
+		Participants:  node.participants,
+		DeclaringOnly: node.declaringOnly,
+		Action:        node.decl.action,
 	})
 }
 

@@ -4,6 +4,7 @@ import (
 	"errors"
 	"fmt"
 	"slices"
+	"strings"
 
 	"github.com/spf13/cobra"
 	"github.com/spf13/pflag"
@@ -30,11 +31,16 @@ type planNode struct {
 	decl   *Command
 	cmd    *cobra.Command
 	parent *planNode
-	// participants is every module the path to this command takes in,
-	// dependencies included, deduplicated and in name order. It is what the
-	// drive is handed, and an empty one is an empty list rather than nil:
-	// a command that assembles nothing takes in nothing.
+	// participants is every module the path to this command takes in and
+	// runs, dependencies included, deduplicated and in name order. It is
+	// what the drive is handed as its participating set, and an empty one
+	// is an empty list rather than nil: a command that assembles nothing
+	// takes in nothing.
 	participants []string
+	// declaringOnly is every module the path to this command reaches for
+	// its declarations alone, deduplicated and in name order, carrying the
+	// adjustments the host made to each.
+	declaringOnly []core.Declaration
 }
 
 // plan is the assembled tree: the root, and the way back from a command the
@@ -72,11 +78,16 @@ func (a *App) compile(l *loader) (*plan, error) {
 
 // assemble builds one command and everything under it.
 func (a *App) assemble(l *loader, p *plan, decl *Command, parent *planNode, mods []core.Module) (*planNode, error) {
-	participants, err := a.participantsOf(decl, parent, mods)
+	participants, declaringOnly, err := a.setsOf(decl, parent, mods)
 	if err != nil {
 		return nil, err
 	}
-	node := &planNode{decl: decl, parent: parent, participants: participants}
+	node := &planNode{
+		decl:          decl,
+		parent:        parent,
+		participants:  participants,
+		declaringOnly: declaringOnly,
+	}
 	node.cmd = &cobra.Command{
 		Use: decl.use,
 		// No command takes positional arguments: an action receives the
@@ -120,32 +131,155 @@ func (a *App) assemble(l *loader, p *plan, decl *Command, parent *planNode, mods
 	return node, nil
 }
 
-// participantsOf settles what one command assembles: the modules its own
-// level takes in, the ones every level above it takes in, and the providers of
-// what all of those require.
+// setsOf settles what one command reaches: the modules it runs, and the ones
+// it reaches for their declarations alone.
 //
-// The dependency closure is the registry's to expand. The rule that matches a
+// The first group is this level's run-level modules, every module the levels
+// above took in, and the providers of what all of those require. The
+// dependency closure is the registry's to expand. The rule that matches a
 // requirement to a delivery lives there, and a second expansion here would be
 // a second reading of that rule: the two would divide only on the runs where
 // they disagreed, and nothing on a normal path would show it.
-func (a *App) participantsOf(decl *Command, parent *planNode, mods []core.Module) ([]string, error) {
-	var seeds []string
+//
+// The second group is not expanded. A module reached for its declarations
+// alone is not constructed, so it has no construction-time requirements for a
+// closure to follow, and expanding one would build providers on behalf of a
+// module that never asked for them.
+//
+// A module named at both levels is a participant here as it is in the
+// registry, so it appears in the first group and not the second. The two
+// levels are settled together rather than in sequence for that reason: which
+// one a name belongs to is a fact about the whole of what the host wrote.
+//
+// The third thing a command needs -- which modules put input items on its
+// command line -- is not settled here but derived, by flagModules, so that it
+// cannot come to disagree with the two groups it is made of.
+func (a *App) setsOf(decl *Command, parent *planNode, mods []core.Module) (
+	participants []string, declaringOnly []core.Declaration, err error,
+) {
+	var runSeeds []string
 	if parent != nil {
-		seeds = slices.Clone(parent.participants)
+		runSeeds = slices.Clone(parent.participants)
 	}
-	seeds = append(seeds, includedAt(decl, mods)...)
+	runSeeds = append(runSeeds, includedAt(decl, mods)...)
 
-	participants, err := a.reg.Closure(seeds)
+	participants, err = a.reg.Closure(runSeeds)
 	if err != nil {
 		if errors.Is(err, core.ErrUnknownParticipant) {
 			// Which command wrote the name is the one thing the registry
 			// cannot say; what to do about it, it already said.
-			return nil, fmt.Errorf("config: command %q includes a module that is not "+
-				"registered: %w", decl.path(), err)
+			return nil, nil, fmt.Errorf("config: command %q includes a module that is "+
+				"not registered: %w", decl.path(), err)
 		}
-		return nil, err
+		return nil, nil, err
 	}
-	return participants, nil
+
+	mine := declarationsAt(decl, mods)
+	for _, d := range mine {
+		// The name is looked up rather than expanded: a module reached
+		// this way is not constructed, so it has no requirements for the
+		// registry to follow, and asking it for the closure would pull in
+		// providers this command never asked to build.
+		if _, registered := a.reg.Lookup(d.Name); !registered {
+			return nil, nil, fmt.Errorf("config: command %q includes a module that is "+
+				"not registered: %w: %q", decl.path(), core.ErrUnknownParticipant, d.Name)
+		}
+	}
+
+	running := make(map[string]bool, len(participants))
+	for _, name := range participants {
+		running[name] = true
+	}
+
+	if len(mine) == 0 && parent != nil {
+		// This level adds none of its own, which is the ordinary case: what
+		// the levels above reached carries over as it stands, minus
+		// whatever this level has since taken in at run level. Their names
+		// were looked up where they were written, so there is nothing to
+		// check here either.
+		declaringOnly = withoutRunning(parent.declaringOnly, running)
+	} else {
+		var seeds []core.Declaration
+		if parent != nil {
+			seeds = slices.Clone(parent.declaringOnly)
+		}
+		declaringOnly = mergeDeclarations(append(seeds, mine...), running)
+	}
+
+	return participants, declaringOnly, nil
+}
+
+// withoutRunning drops the declarations of modules this command runs, keeping
+// the order it was given.
+//
+// A level that adds no declaration-level inclusion of its own takes what the
+// levels above reached as it stands, and this is the one way that set can
+// still have to change: taking a module in at run level here makes it a
+// participant, and a participant is not reached for its declarations alone.
+func withoutRunning(declared []core.Declaration, running map[string]bool) []core.Declaration {
+	out := make([]core.Declaration, 0, len(declared))
+	for _, d := range declared {
+		if !running[d.Name] {
+			out = append(out, d)
+		}
+	}
+	return out
+}
+
+// mergeDeclarations folds repeated names into one record each, in name order.
+//
+// A name this command runs is dropped rather than merged: it is a participant,
+// and the reading that treats it as declaring alone never arises.
+//
+// A name arriving twice with different adjustments keeps each of them. Two
+// inclusions of one command are two things the host wrote, and there is no
+// reading under which one of the two requests should be discarded.
+func mergeDeclarations(seeds []core.Declaration, running map[string]bool) []core.Declaration {
+	byName := make(map[string]core.Declaration, len(seeds))
+	for _, d := range seeds {
+		if running[d.Name] {
+			continue
+		}
+		at := byName[d.Name]
+		at.Name = d.Name
+		at.WithFlags = at.WithFlags || d.WithFlags
+		at.AllResources = at.AllResources || d.AllResources
+		byName[d.Name] = at
+	}
+	out := make([]core.Declaration, 0, len(byName))
+	for _, d := range byName {
+		out = append(out, d)
+	}
+	slices.SortFunc(out, func(a, b core.Declaration) int { return strings.Compare(a.Name, b.Name) })
+	return out
+}
+
+// declarationsAt lists what one level takes in for its declarations alone,
+// with "every available module" expanded into names.
+//
+// The expansion belongs here for the same reason the participating set's
+// does: what the drive receives is then always a literal list. What differs
+// is that the expansion carries the adjustments along, since they are set per
+// inclusion and two inclusions of one command may disagree about them.
+func declarationsAt(c *Command, mods []core.Module) []core.Declaration {
+	var out []core.Declaration
+	for _, inc := range c.declIncludes {
+		names := inc.names
+		if inc.all {
+			names = make([]string, len(mods))
+			for i, m := range mods {
+				names[i] = m.Name
+			}
+		}
+		for _, name := range names {
+			out = append(out, core.Declaration{
+				Name:         name,
+				WithFlags:    inc.withFlags,
+				AllResources: inc.allResources,
+			})
+		}
+	}
+	return out
 }
 
 // includedAt lists the modules one level takes in, with "every available
@@ -191,27 +325,74 @@ func (p *plan) allNodes() []*planNode {
 	return out
 }
 
-// added lists the modules this command takes in that no command above it
-// takes in. It is what decides where an argument is registered: on the
-// shallowest command of a path whose participating set holds the module,
+// added lists the modules whose arguments this command contributes and no
+// command above it does. It is what decides where an argument is registered:
+// on the shallowest command of a path whose flagged set holds the module,
 // which every command below then inherits. A second definition deeper down
 // would shadow the one the layering tool is bound to, and the value would be
 // given on the command line and never read.
 //
+// It reads the flagged set rather than the participating set, and the two
+// differ exactly when a host asked for a declaration-level module's arguments
+// to be reachable. Reading the participating set instead would put the
+// arguments of every declaration-level module on the command line, which is
+// the thing taking them in at declaration level avoids.
+//
 // Commands on separate branches stand above none of each other, so each of
-// them registers what it takes in, and the argument they register is one and
-// the same.
+// them registers what it flags, and the argument they register is one and the
+// same.
 func (n *planNode) added() []string {
 	if n.parent == nil {
-		return n.participants
+		return n.flagModules()
 	}
-	above := make(map[string]bool, len(n.parent.participants))
-	for _, name := range n.parent.participants {
-		above[name] = true
+	return subtract(n.flagModules(), n.parent.flagModules())
+}
+
+// declaredNames lists the modules this command reached for their declarations
+// alone, in the order it holds them, which is name order.
+//
+// It is what the argument-registering code needs to tell an argument that was
+// deliberately kept off the command line from one of a module the command never
+// took in; those two get different diagnoses and different fixes.
+func (n *planNode) declaredNames() []string {
+	out := make([]string, 0, len(n.declaringOnly))
+	for _, d := range n.declaringOnly {
+		out = append(out, d.Name)
 	}
-	out := make([]string, 0, len(n.participants))
-	for _, name := range n.participants {
-		if !above[name] {
+	return out
+}
+
+// flagModules lists the modules whose input items this command puts on its
+// command line: the ones it runs, plus the declaration-level ones a host asked
+// for by name.
+//
+// It is derived from the two sets rather than settled alongside them, so that
+// the three cannot come apart. It is deliberately not the participating set:
+// every module in that set contributes its arguments, and a declaration-level
+// module does so only because the host said it should -- which is what keeps a
+// command collecting declarations from growing arguments it never wanted.
+func (n *planNode) flagModules() []string {
+	out := slices.Clone(n.participants)
+	for _, d := range n.declaringOnly {
+		if d.WithFlags {
+			out = append(out, d.Name)
+		}
+	}
+	slices.Sort(out)
+	return out
+}
+
+// subtract lists what is in names and not in others, in the order it was given.
+// Both sides are sorted and free of repetition, which is what lets one pass
+// over a membership map answer it.
+func subtract(names, others []string) []string {
+	minus := make(map[string]bool, len(others))
+	for _, name := range others {
+		minus[name] = true
+	}
+	out := make([]string, 0, len(names))
+	for _, name := range names {
+		if !minus[name] {
 			out = append(out, name)
 		}
 	}

@@ -279,7 +279,7 @@ func TestItemWithoutFlagOriginHasNoFlag(t *testing.T) {
 	l := flagLoader(t)
 	fs := pflag.NewFlagSet("test", pflag.ContinueOnError)
 	fs.SetOutput(io.Discard)
-	if err := l.BindLayer(fs, []string{"server"}); err != nil {
+	if err := l.BindLayer(fs, []string{"server"}, []string{"server"}, nil); err != nil {
 		t.Fatalf("binding failed: %v", err)
 	}
 	if fs.Lookup("file-only") != nil {
@@ -334,12 +334,12 @@ func TestOneItemIsOneArgumentOnEveryCommandThatTakesItIn(t *testing.T) {
 	l := flagLoader(t)
 	first := pflag.NewFlagSet("first", pflag.ContinueOnError)
 	first.SetOutput(io.Discard)
-	if err := l.BindLayer(first, []string{"server"}); err != nil {
+	if err := l.BindLayer(first, []string{"server"}, []string{"server"}, nil); err != nil {
 		t.Fatalf("binding the first command failed: %v", err)
 	}
 	second := pflag.NewFlagSet("second", pflag.ContinueOnError)
 	second.SetOutput(io.Discard)
-	if err := l.BindLayer(second, []string{"server"}); err != nil {
+	if err := l.BindLayer(second, []string{"server"}, []string{"server"}, nil); err != nil {
 		t.Fatalf("binding the second command failed: %v", err)
 	}
 	if second.Lookup("addr") == nil {
@@ -369,7 +369,7 @@ func TestReservedConfigFlagAcceptedAndNotInData(t *testing.T) {
 	fs := pflag.NewFlagSet("test", pflag.ContinueOnError)
 	fs.SetOutput(io.Discard)
 	locator := fs.String(locatorFlag, "", "the URI of the primary config source")
-	if err := l.BindLayer(fs, []string{"server"}); err != nil {
+	if err := l.BindLayer(fs, []string{"server"}, []string{"server"}, nil); err != nil {
 		t.Fatalf("binding failed: %v", err)
 	}
 	if err := fs.Parse([]string{"--config=file:///a.yaml", "--addr=:9090"}); err != nil {
@@ -402,7 +402,7 @@ func TestHelpGivesAListItsDeclaredPlaceholder(t *testing.T) {
 	}))
 	fs := pflag.NewFlagSet("test", pflag.ContinueOnError)
 	fs.SetOutput(io.Discard)
-	if err := l.BindLayer(fs, []string{"server"}); err != nil {
+	if err := l.BindLayer(fs, []string{"server"}, []string{"server"}, nil); err != nil {
 		t.Fatalf("binding failed: %v", err)
 	}
 	usage := fs.FlagUsages()
@@ -431,7 +431,7 @@ func TestListArgumentAccumulatesWithinOneLayer(t *testing.T) {
 			l := flagLoader(t)
 			fs := pflag.NewFlagSet("test", pflag.ContinueOnError)
 			fs.SetOutput(io.Discard)
-			if err := l.BindLayer(fs, []string{"server"}); err != nil {
+			if err := l.BindLayer(fs, []string{"server"}, []string{"server"}, nil); err != nil {
 				t.Fatalf("binding failed: %v", err)
 			}
 			if err := fs.Parse(c.args); err != nil {

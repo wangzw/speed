@@ -25,7 +25,17 @@ var (
 	// ErrUndeliveredCapability reports a module whose product does not
 	// implement a capability it declared in Provides.
 	ErrUndeliveredCapability = errors.New("core: module did not deliver a declared capability")
-	// ErrUnknownParticipant reports a name in a drive's participating set
-	// that no module registered under.
-	ErrUnknownParticipant = errors.New("core: participating set names a module that is not registered")
+	// ErrUnknownParticipant reports a name a drive was assembled from --
+	// in its participating set, its declaring set, or the closure either
+	// one expands to -- that no module registered under. The text carries
+	// the guidance because the two ways it happens look alike from a host:
+	// the package that registers the module was not imported, or the name
+	// is not the one it registers under. Writing a module-name constant
+	// without importing its package compiles, so the mismatch has to come
+	// out as a diagnosable startup failure rather than as a command that
+	// runs one module short with nobody the wiser.
+	ErrUnknownParticipant = errors.New("core: no module registered under this name. The " +
+		"available set is decided by imports, so either the package that registers the " +
+		"module is not imported by the host, or the name is not the one it registers under; " +
+		"the registering package exports that name as a constant")
 )

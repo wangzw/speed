@@ -8,6 +8,30 @@ import (
 	"slices"
 )
 
+// Declaration is a module one drive reaches for its declarations alone.
+//
+// Such a module is not constructed: it runs no stage callback, takes no
+// stance, and its requirements are not expanded, since expanding them is what
+// makes a module's providers be constructed alongside it. What it contributes
+// is its resource declarations, and only to a consumption point that reads
+// the declaring set or wider.
+type Declaration struct {
+	// Name is the module, by the name it registered under.
+	Name string
+	// WithFlags lets this module's input items reach the command line of
+	// the command that took it in. Required is still not enforced for it:
+	// a module that is not constructed never decodes its configuration,
+	// so there is no reading of it that could come up short.
+	WithFlags bool
+	// AllResources puts every declaration this module makes in force,
+	// overriding the domain a consumption point would otherwise read. A
+	// point reading the enabled set then sees this module's declarations
+	// too, even though the module is not running. There is deliberately
+	// no check that the module would have been enabled: the host asked
+	// for its declarations regardless, and the price is the host's.
+	AllResources bool
+}
+
 // Drive states one advance through the lifecycle: how far it goes, which
 // modules take part, and what to do once it arrives.
 type Drive struct {
@@ -29,6 +53,21 @@ type Drive struct {
 	// what a module included at two levels of one command path produces.
 	// A name no module registered is ErrUnknownParticipant.
 	Participants []string
+	// DeclaringOnly lists the modules this drive reaches for their
+	// declarations alone, with whatever the host adjusted on each.
+	//
+	// It adds to Participants rather than replacing anything: the
+	// declaring set is the two of them together, and it is that set a
+	// consumption point reading declarations collects from. A module
+	// named in both is a participant, and is not recorded here; building
+	// a Drive by hand with a name in both is not an error, it is a
+	// participant.
+	//
+	// It is a literal list on the same terms as Participants, and a name
+	// no module registered is ErrUnknownParticipant. Nothing is expanded
+	// from it: a module reached this way is not built, so it has no
+	// construction-time requirements for the closure to follow.
+	DeclaringOnly []Declaration
 	// Action runs after the drive has reached Depth and before shutdown
 	// begins. Its failure is returned as the primary error, and either
 	// way every constructed instance is rolled back. A nil Action at
@@ -116,6 +155,9 @@ func (r *Registry) advance(ctx context.Context, d Drive) error {
 	if err != nil {
 		return err
 	}
+	if err = r.recordDeclarationSets(d.Participants, d.DeclaringOnly); err != nil {
+		return err
+	}
 
 	stances, err := r.prepare(ctx, participants)
 	if err != nil {
@@ -145,7 +187,8 @@ func (r *Registry) advance(ctx context.Context, d Drive) error {
 			enabled = append(enabled, m)
 		}
 	}
-	order, err := planConstruction(enabled, participants, r.modulesOutside(participants),
+	declarationsOnly, outside := r.modulesOutside(participants)
+	order, err := planConstruction(enabled, participants, declarationsOnly, outside,
 		final, r.registrationSites(), r.suppliedCapabilities())
 	if err != nil {
 		return err
@@ -176,6 +219,50 @@ func (r *Registry) advance(ctx context.Context, d Drive) error {
 	return nil
 }
 
+// recordDeclarationSets settles the participating and declaring sets for this
+// drive and makes them answerable.
+//
+// Both are recorded before the stances are taken, because both are already
+// settled then: the command tree decided them, and nothing in an advance
+// changes them. Resolution fills the enablement map later, and that map is a
+// narrower thing again -- the participating set, each with the verdict it
+// reached.
+//
+// A module named at both levels is recorded as a participant and not here. It
+// runs, so the reading that treats it as declaring alone never arises, and
+// keeping it out of the second map is what stops the two from disagreeing.
+// A module named twice with different adjustments keeps each of them: the
+// host asked for both, and there is no reading under which one of the two
+// requests should be dropped.
+func (r *Registry) recordDeclarationSets(participants []string, declared []Declaration) error {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+
+	participating := make(map[string]bool, len(participants))
+	for _, name := range participants {
+		participating[name] = true
+	}
+
+	declaringOnly := make(map[string]Declaration, len(declared))
+	for _, d := range declared {
+		if participating[d.Name] {
+			continue
+		}
+		if _, ok := r.mods[d.Name]; !ok {
+			return unknownParticipantError(d.Name)
+		}
+		at := declaringOnly[d.Name]
+		at.Name = d.Name
+		at.WithFlags = at.WithFlags || d.WithFlags
+		at.AllResources = at.AllResources || d.AllResources
+		declaringOnly[d.Name] = at
+	}
+
+	r.participating = participating
+	r.declaringOnly = declaringOnly
+	return nil
+}
+
 // participantModules turns the names a drive listed into descriptors, in name
 // order and without repetition.
 //
@@ -200,24 +287,24 @@ func (r *Registry) participantModules(names []string) ([]Module, error) {
 	return out, nil
 }
 
-// unknownParticipantError reports a participating name no module registered.
-//
-// Writing a module-name constant without importing the package that registers
-// it compiles, so the mismatch has to come out as a diagnosable startup
-// failure. Passing over the name instead would leave the command one module
-// short with nobody the wiser, which is the failure this mechanism exists to
-// catch.
+// unknownParticipantError names what the drive could not find. The guidance is
+// the sentinel's own, so that a name refused before it reaches the drive --
+// one the command tree checked against the registry itself -- reads the same
+// as one refused here.
 func unknownParticipantError(name string) error {
-	return fmt.Errorf("%w: %q. The available set is decided by imports, so either the package "+
-		"that registers this module is not imported by the host, or the name is not the one "+
-		"it registers under; the registering package exports that name as a constant",
-		ErrUnknownParticipant, name)
+	return fmt.Errorf("%w: %q", ErrUnknownParticipant, name)
 }
 
-// modulesOutside lists the registered modules this drive left out. A
-// capability whose only provider is one of them has no provider here, and the
-// failure says so rather than blaming the order or a stance.
-func (r *Registry) modulesOutside(participants []Module) []Module {
+// modulesOutside lists the registered modules this drive did not take in at
+// run level, divided into the ones it reached for their declarations alone and
+// the rest. A capability whose only provider is among them has no provider
+// here, and the failure says so rather than blaming the order or a stance.
+//
+// The division exists for that failure. Both groups declare the capability and
+// neither can take it up, and what to do about them differs: one was asked for
+// and is not built, so the command's own writing is to be revisited; the other
+// was never asked for, so the module belongs on this command.
+func (r *Registry) modulesOutside(participants []Module) (declarationsOnly, outside []Module) {
 	taking := make(map[string]bool, len(participants))
 	for _, m := range participants {
 		taking[m.Name] = true
@@ -225,14 +312,17 @@ func (r *Registry) modulesOutside(participants []Module) []Module {
 
 	r.mu.RLock()
 	defer r.mu.RUnlock()
-	out := make([]Module, 0, len(r.order))
 	for _, name := range r.sortedNamesLocked() {
 		if taking[name] {
 			continue
 		}
-		out = append(out, r.mods[name].module)
+		if r.declarationOf(name) {
+			declarationsOnly = append(declarationsOnly, r.mods[name].module)
+			continue
+		}
+		outside = append(outside, r.mods[name].module)
 	}
-	return out
+	return declarationsOnly, outside
 }
 
 // prepare runs the stance stage over the modules this drive includes.

@@ -70,11 +70,36 @@ func declaring(name string, sets ...Migrations) core.Module {
 	return core.Module{Name: name, Resources: resources}
 }
 
-// registryOf builds a registry holding the given modules.
+// registryOf builds a registry holding the given modules, undriven.
 func registryOf(modules ...core.Module) *core.Registry {
 	reg := core.New()
 	for _, m := range modules {
 		reg.Register(m)
+	}
+	return reg
+}
+
+// settledRegistry is registryOf with the drive's sets already settled and
+// every module it holds taking part in them.
+//
+// The collection reads the declaring set, and that is a property of a drive:
+// a registry that has never been driven has none, so a case calling a
+// collecting function directly has to settle one first. A drive stopping at
+// StagePrepare settles both sets and constructs nothing, which is the whole of
+// what these cases need -- they are about what gets collected and applied, not
+// about who took part.
+//
+// Cases that go through driveWith keep using registryOf: the drive they
+// perform is the thing they observe, and it settles the sets on its own terms.
+func settledRegistry(t *testing.T, modules ...core.Module) *core.Registry {
+	t.Helper()
+	reg := registryOf(modules...)
+	names := make([]string, 0, len(modules))
+	for _, m := range reg.Modules() {
+		names = append(names, m.Name)
+	}
+	if err := reg.Drive(t.Context(), core.Drive{Participants: names}); err != nil {
+		t.Fatalf("settling the sets of %v: %v", names, err)
 	}
 	return reg
 }
@@ -129,7 +154,7 @@ func TestMigrationExecutionAndRecordShareOneTransaction(t *testing.T) {
 			t.Fatalf("preparing the record table that refuses inserts: %v", err)
 		}
 
-		reg := registryOf(declaring("catalog", migrationSet(dialect, map[string]string{
+		reg := settledRegistry(t, declaring("catalog", migrationSet(dialect, map[string]string{
 			"0001_create_widgets.sql": createWidgets,
 		})))
 
@@ -154,7 +179,7 @@ func TestMigrationExecutionAndRecordShareOneTransaction(t *testing.T) {
 // run rather than quietly doing the work twice.
 func TestSecondRunAppliesNothing(t *testing.T) {
 	forEachDialect(t, func(t *testing.T, dialect Dialect, handle *gorm.DB) {
-		reg := registryOf(declaring("catalog", migrationSet(dialect, map[string]string{
+		reg := settledRegistry(t, declaring("catalog", migrationSet(dialect, map[string]string{
 			"0001_create_widgets.sql": createWidgets,
 		})))
 
@@ -242,6 +267,141 @@ func TestAnUnincludedModuleMigrationsAreNotApplied(t *testing.T) {
 	})
 }
 
+// silentPlugin is a gorm.Plugin that does nothing, so a case can observe
+// whether it was installed without the installation doing anything else.
+type silentPlugin string
+
+func (p silentPlugin) Name() string              { return string(p) }
+func (p silentPlugin) Initialize(*gorm.DB) error { return nil }
+
+// TestAModuleReachedForItsDeclarationsIsMigratedWithoutRunning pins the split
+// between what a command runs and whose declarations it collects.
+//
+// A command whose work is applying migrations runs the engine and nothing
+// else. The modules owning the tables depend on the engine, so the dependency
+// closure never reaches them: they cannot be participants without being
+// constructed, and constructing one makes it answer for configuration this
+// command has no use for -- an address to listen on, a credential it never
+// presents. Their tables arrive through the declaring set instead, and the
+// case reads both halves off one drive.
+//
+// Collected by the participating set alone, this command applies nothing at
+// all: the modules that own the tables are outside that set by construction,
+// so the run creates the record table, takes the mutex, applies no migration,
+// releases the mutex and exits successfully.
+func TestAModuleReachedForItsDeclarationsIsMigratedWithoutRunning(t *testing.T) {
+	forEachDialect(t, func(t *testing.T, dialect Dialect, handle *gorm.DB) {
+		built := false
+		outsider := declaring("outsider", migrationSet(dialect, map[string]string{
+			"0001_create_outsider.sql": `CREATE TABLE outsider_rows (id INTEGER NOT NULL, PRIMARY KEY (id))`,
+		}))
+		outsider.New = func(context.Context, *core.Registry) (any, error) {
+			built = true
+			return nil, nil
+		}
+
+		if err := driveSpec(t, handle, dialect, []string{},
+			[]core.Declaration{{Name: "outsider"}}, outsider); err != nil {
+			t.Fatalf("startup: %v", err)
+		}
+		if !hasTable(t, handle, "outsider_rows") {
+			t.Error("a module reached for its declarations was not migrated, so this command " +
+				"applied nothing and reported success")
+		}
+		var recorded bool
+		for _, row := range recordedMigrations(t, handle) {
+			if row.Module == "outsider" {
+				recorded = true
+			}
+		}
+		if !recorded {
+			t.Errorf("the record table holds %v and nothing for the outsider, so its file was "+
+				"applied without being recorded, or not applied at all",
+				recordedMigrations(t, handle))
+		}
+		if built {
+			t.Error("a module this command reached for its declarations alone was constructed, " +
+				"so the two levels are not the difference they are meant to be")
+		}
+	})
+}
+
+// TestADeclarationLevelModuleKeepsItsPluginOutOfTheRun pins the one place the
+// two collections disagree, on the module shape where it shows: one that both
+// owns a table and declares a plugin.
+//
+// The table is created and the plugin is not installed. Both halves come from
+// one drive, so an implementation that unified the two filters again -- either
+// way round -- fails here whichever way it unified them: on the declaring set
+// and the plugin shows up, on enablement and the table goes missing.
+//
+// The split follows from what each one describes. A table outlives the command
+// that created it, so a command that did not take its owner in still creates
+// it. A plugin acts on the statements this run issues, so a module that is not
+// part of the run has nothing for it to act on.
+func TestADeclarationLevelModuleKeepsItsPluginOutOfTheRun(t *testing.T) {
+	forEachDialect(t, func(t *testing.T, dialect Dialect, handle *gorm.DB) {
+		outsider := declaring("outsider", migrationSet(dialect, map[string]string{
+			"0001_create_outsider.sql": `CREATE TABLE outsider_rows (id INTEGER NOT NULL, PRIMARY KEY (id))`,
+		}))
+		outsider.Resources = append(outsider.Resources, Plugin{Plugin: silentPlugin("outsider")})
+
+		reg := registryOf(outsider)
+		if err := reg.Drive(t.Context(), core.Drive{
+			DeclaringOnly: []core.Declaration{{Name: "outsider"}},
+		}); err != nil {
+			t.Fatalf("settling the sets: %v", err)
+		}
+		if err := applyMigrations(t.Context(), reg, handle, dialect, nil); err != nil {
+			t.Fatalf("applying migrations: %v", err)
+		}
+		if !hasTable(t, handle, "outsider_rows") {
+			t.Error("the declaring set did not reach the table of a module this command " +
+				"reached for its declarations")
+		}
+
+		installs, err := collectPlugins(reg)
+		if err != nil {
+			t.Fatalf("collecting plugins: %v", err)
+		}
+		for _, install := range installs {
+			if install.module == "outsider" {
+				t.Errorf("the plugin of a module outside this run was collected for installation: "+
+					"%+v, on a module that will never issue a statement", install)
+			}
+		}
+	})
+}
+
+// TestAllResourcesPutsADeclarationLevelModulesPluginInForce pins the host's
+// override of the collection's own domain.
+//
+// It is the same module and the same drive as the case above, with one
+// adjustment, and the plugin that was left out is installed. Nothing about the
+// module changed: what changed is that the host asked for its declarations
+// regardless of whether it runs, and a consumption point reading the enabled
+// set takes it.
+func TestAllResourcesPutsADeclarationLevelModulesPluginInForce(t *testing.T) {
+	outsider := declaring("outsider")
+	outsider.Resources = append(outsider.Resources, Plugin{Plugin: silentPlugin("outsider")})
+
+	reg := registryOf(outsider)
+	if err := reg.Drive(t.Context(), core.Drive{
+		DeclaringOnly: []core.Declaration{{Name: "outsider", AllResources: true}},
+	}); err != nil {
+		t.Fatalf("settling the sets: %v", err)
+	}
+
+	installs, err := collectPlugins(reg)
+	if err != nil {
+		t.Fatalf("collecting plugins: %v", err)
+	}
+	if len(installs) != 1 || installs[0].module != "outsider" {
+		t.Errorf("collecting the plugins of a module whose declarations are in force gave %+v, "+
+			"want the one it declares", installs)
+	}
+}
+
 // TestOnlyCurrentDialectSubdirectoryIsRead pins that a declaration covering
 // several engines contributes only the running one's files. The subdirectories
 // that are not the running dialect hold statements no engine accepts, so
@@ -257,7 +417,7 @@ func TestOnlyCurrentDialectSubdirectoryIsRead(t *testing.T) {
 			tree[path.Join(string(other), "0001_create_widgets.sql")] = &fstest.MapFile{Data: []byte(body)}
 		}
 
-		reg := registryOf(declaring("catalog", Migrations{FS: tree}))
+		reg := settledRegistry(t, declaring("catalog", Migrations{FS: tree}))
 		if err := applyMigrations(t.Context(), reg, handle, dialect, nil); err != nil {
 			t.Fatalf("applying the %s files of a multi-dialect declaration: %v", dialect, err)
 		}
@@ -272,7 +432,7 @@ func TestOnlyCurrentDialectSubdirectoryIsRead(t *testing.T) {
 // that this is not a failure.
 func TestMissingDialectSubdirectoryIsZeroMigrations(t *testing.T) {
 	forEachDialect(t, func(t *testing.T, dialect Dialect, handle *gorm.DB) {
-		reg := registryOf(declaring("catalog", migrationSet("mysql", map[string]string{
+		reg := settledRegistry(t, declaring("catalog", migrationSet("mysql", map[string]string{
 			"0001_create_widgets.sql": createWidgets,
 		})))
 
@@ -306,7 +466,7 @@ func TestUnrelatedEmbedFSIsNotApplied(t *testing.T) {
 			t.Fatalf("reaching the embedded assets: %v", err)
 		}
 
-		reg := registryOf(
+		reg := settledRegistry(t,
 			core.Module{Name: "i18n", Resources: []any{unrelatedAssets}},
 			core.Module{Name: "templates", Resources: []any{assetRoot}},
 			declaring("catalog", migrationSet(dialect, map[string]string{
@@ -349,7 +509,7 @@ func TestMigrationFailureNamesModuleAndFile(t *testing.T) {
 			t.Fatal("the fixture accepted a statement that is not SQL, so there is no failure to inspect")
 		}
 
-		reg := registryOf(declaring("catalog", migrationSet(dialect, map[string]string{
+		reg := settledRegistry(t, declaring("catalog", migrationSet(dialect, map[string]string{
 			"0007_broken.sql": broken,
 		})))
 
@@ -386,7 +546,7 @@ func TestRecordTableFailureIsAlsoErrMigrationFailed(t *testing.T) {
 			t.Fatalf("preparing an unusable record table: %v", err)
 		}
 
-		reg := registryOf(declaring("catalog", migrationSet(dialect, map[string]string{
+		reg := settledRegistry(t, declaring("catalog", migrationSet(dialect, map[string]string{
 			"0001_create_widgets.sql": createWidgets,
 		})))
 
@@ -426,7 +586,7 @@ func TestModulesMigrateInDependencyOrder(t *testing.T) {
 		}))
 		alpha.Requires = []core.Requirement{{Token: (*probeCapability)(nil)}}
 
-		reg := registryOf(alpha, zeta)
+		reg := settledRegistry(t, alpha, zeta)
 		if err := applyMigrations(t.Context(), reg, handle, dialect, nil); err != nil {
 			t.Fatalf("applying in dependency order: %v — a dependant's migration ran before the "+
 				"module it depends on", err)
@@ -446,7 +606,7 @@ func TestModulesMigrateInDependencyOrder(t *testing.T) {
 // order inside one module: the second file depends on the first having run.
 func TestFileOrderWithinAModuleIsLexical(t *testing.T) {
 	forEachDialect(t, func(t *testing.T, dialect Dialect, handle *gorm.DB) {
-		reg := registryOf(declaring("catalog", migrationSet(dialect, map[string]string{
+		reg := settledRegistry(t, declaring("catalog", migrationSet(dialect, map[string]string{
 			"0002_fill_widgets.sql":   `INSERT INTO widgets (id) VALUES (1)`,
 			"0001_create_widgets.sql": createWidgets,
 		})))
@@ -468,7 +628,7 @@ func TestFileOrderWithinAModuleIsLexical(t *testing.T) {
 // and nothing would say so.
 func TestDuplicateFileNameWithinOneModuleIsRejected(t *testing.T) {
 	forEachDialect(t, func(t *testing.T, dialect Dialect, handle *gorm.DB) {
-		reg := registryOf(declaring("catalog",
+		reg := settledRegistry(t, declaring("catalog",
 			migrationSet(dialect, map[string]string{"0001_create.sql": createWidgets}),
 			migrationSet(dialect, map[string]string{"0001_create.sql": `CREATE TABLE gadgets (id INTEGER)`}),
 		))
@@ -502,7 +662,7 @@ func TestDuplicateFileNameWithinOneModuleIsRejected(t *testing.T) {
 // take its migrations out of the run silently.
 func TestDirectoryInsideADialectDirectoryIsRejected(t *testing.T) {
 	forEachDialect(t, func(t *testing.T, dialect Dialect, handle *gorm.DB) {
-		reg := registryOf(declaring("catalog", migrationSet(dialect, map[string]string{
+		reg := settledRegistry(t, declaring("catalog", migrationSet(dialect, map[string]string{
 			"0001_create_widgets.sql":         createWidgets,
 			"archive/0002_create_gadgets.sql": `CREATE TABLE gadgets (id INTEGER)`,
 		})))
@@ -532,7 +692,7 @@ func TestDirectoryInsideADialectDirectoryIsRejected(t *testing.T) {
 // checked each entry as it reached it would have applied it before refusing.
 func TestAFileThatIsNotSQLIsRejected(t *testing.T) {
 	forEachDialect(t, func(t *testing.T, dialect Dialect, handle *gorm.DB) {
-		reg := registryOf(declaring("catalog", migrationSet(dialect, map[string]string{
+		reg := settledRegistry(t, declaring("catalog", migrationSet(dialect, map[string]string{
 			"0001_create_widgets.sql": createWidgets,
 			"NOTES.txt":               "this directory holds the widget migrations",
 		})))
@@ -654,7 +814,7 @@ var _ MigrationLock = (*probeLock)(nil)
 func TestTheMutexSpansTheWholeRun(t *testing.T) {
 	forEachDialect(t, func(t *testing.T, dialect Dialect, handle *gorm.DB) {
 		lock := &probeLock{handle: handle}
-		reg := registryOf(declaring("catalog", migrationSet(dialect, map[string]string{
+		reg := settledRegistry(t, declaring("catalog", migrationSet(dialect, map[string]string{
 			"0001_create_widgets.sql": createWidgets,
 			"0002_fill_widgets.sql":   `INSERT INTO widgets (id) VALUES (1)`,
 		})))
@@ -683,7 +843,7 @@ func TestTheMutexSpansTheWholeRun(t *testing.T) {
 func TestTheMutexIsReleasedAfterAFailedMigration(t *testing.T) {
 	forEachDialect(t, func(t *testing.T, dialect Dialect, handle *gorm.DB) {
 		lock := &probeLock{handle: handle}
-		reg := registryOf(declaring("catalog", migrationSet(dialect, map[string]string{
+		reg := settledRegistry(t, declaring("catalog", migrationSet(dialect, map[string]string{
 			"0001_broken.sql": `THIS IS NOT SQL IN ANY DIALECT`,
 		})))
 
@@ -703,7 +863,7 @@ func TestTheMutexIsReleasedAfterAFailedMigration(t *testing.T) {
 func TestReleaseFailureIsReported(t *testing.T) {
 	forEachDialect(t, func(t *testing.T, dialect Dialect, handle *gorm.DB) {
 		lock := &probeLock{handle: handle, releaseErr: errors.New("the connection went away")}
-		reg := registryOf(declaring("catalog", migrationSet(dialect, map[string]string{
+		reg := settledRegistry(t, declaring("catalog", migrationSet(dialect, map[string]string{
 			"0001_create_widgets.sql": createWidgets,
 		})))
 
@@ -729,7 +889,7 @@ func TestLockTimeoutKeepsItsOwnSentinel(t *testing.T) {
 			handle:     handle,
 			acquireErr: fmt.Errorf("%w: waited 1s for another replica", ErrMigrationLockTimeout),
 		}
-		reg := registryOf(declaring("catalog", migrationSet(dialect, map[string]string{
+		reg := settledRegistry(t, declaring("catalog", migrationSet(dialect, map[string]string{
 			"0001_create_widgets.sql": createWidgets,
 		})))
 
@@ -756,7 +916,7 @@ func TestLockTimeoutKeepsItsOwnSentinel(t *testing.T) {
 func TestFailingToTakeTheMutexIsErrMigrationFailed(t *testing.T) {
 	forEachDialect(t, func(t *testing.T, dialect Dialect, handle *gorm.DB) {
 		lock := &probeLock{handle: handle, acquireErr: errors.New("no connection to take it on")}
-		reg := registryOf(declaring("catalog", migrationSet(dialect, map[string]string{
+		reg := settledRegistry(t, declaring("catalog", migrationSet(dialect, map[string]string{
 			"0001_create_widgets.sql": createWidgets,
 		})))
 
@@ -788,6 +948,20 @@ func startupWith(t *testing.T, handle *gorm.DB, dialect Dialect, modules ...core
 // to reach it through a drive that includes everything.
 func driveWith(t *testing.T, handle *gorm.DB, dialect Dialect, included []string, modules ...core.Module) error {
 	t.Helper()
+	return driveSpec(t, handle, dialect, included, nil, modules...)
+}
+
+// driveSpec is driveWith with the declaration-level half of the drive as well.
+//
+// declared names the modules the drive reaches for their declarations alone.
+// That is the shape of a command whose work is applying migrations: it runs
+// the engine and cannot run the modules owning the tables, since those are the
+// engine's dependants and taking them in would construct them, so their tables
+// arrive through the declaring set instead.
+func driveSpec(t *testing.T, handle *gorm.DB, dialect Dialect, included []string,
+	declared []core.Declaration, modules ...core.Module,
+) error {
+	t.Helper()
 	reg := registryOf(modules...)
 	reg.Register(core.Module{
 		Name: "db.fixture",
@@ -814,7 +988,11 @@ func driveWith(t *testing.T, handle *gorm.DB, dialect Dialect, included []string
 	defer cancel()
 	done := make(chan error, 1)
 	go func() {
-		done <- reg.Drive(ctx, core.Drive{Depth: core.StageServe, Participants: participants})
+		done <- reg.Drive(ctx, core.Drive{
+			Depth:         core.StageServe,
+			Participants:  participants,
+			DeclaringOnly: declared,
+		})
 	}()
 
 	select {
@@ -870,7 +1048,7 @@ const createWidgetsAndIndex = createWidgets + ";\n" +
 // looking for both objects.
 func TestEveryStatementInAMigrationFileIsExecuted(t *testing.T) {
 	forEachDialect(t, func(t *testing.T, dialect Dialect, handle *gorm.DB) {
-		reg := registryOf(declaring("catalog", migrationSet(dialect, map[string]string{
+		reg := settledRegistry(t, declaring("catalog", migrationSet(dialect, map[string]string{
 			"0001_create_widgets.sql": createWidgetsAndIndex,
 		})))
 
@@ -920,7 +1098,7 @@ func TestTheDialectRunsAMigrationFileWithSeveralStatements(t *testing.T) {
 func TestReleaseFailureSaysTheMigrationsWereApplied(t *testing.T) {
 	forEachDialect(t, func(t *testing.T, dialect Dialect, handle *gorm.DB) {
 		lock := &probeLock{handle: handle, releaseErr: errors.New("the connection went away")}
-		reg := registryOf(declaring("catalog", migrationSet(dialect, map[string]string{
+		reg := settledRegistry(t, declaring("catalog", migrationSet(dialect, map[string]string{
 			"0001_create_widgets.sql": createWidgets,
 		})))
 
@@ -952,7 +1130,7 @@ func TestReleaseFailureSaysTheMigrationsWereApplied(t *testing.T) {
 func TestReleaseFailureAfterAFailedRunDoesNotClaimSuccess(t *testing.T) {
 	forEachDialect(t, func(t *testing.T, dialect Dialect, handle *gorm.DB) {
 		lock := &probeLock{handle: handle, releaseErr: errors.New("the connection went away")}
-		reg := registryOf(declaring("catalog", migrationSet(dialect, map[string]string{
+		reg := settledRegistry(t, declaring("catalog", migrationSet(dialect, map[string]string{
 			"0001_broken.sql": `THIS IS NOT SQL IN ANY DIALECT`,
 		})))
 
@@ -996,7 +1174,7 @@ func TestAPoolOfOneConnectionCarriesTheWholeRun(t *testing.T) {
 		defer cancel()
 
 		lock := &probeLock{handle: handle}
-		reg := registryOf(declaring("catalog", migrationSet(dialect, map[string]string{
+		reg := settledRegistry(t, declaring("catalog", migrationSet(dialect, map[string]string{
 			"0001_create_widgets.sql": createWidgets,
 			"0002_fill_widgets.sql":   `INSERT INTO widgets (id) VALUES (1)`,
 		})))
@@ -1061,7 +1239,7 @@ func TestTheWholeRunStaysOnOnePhysicalConnection(t *testing.T) {
 			t.Skipf("%s has no session-scoped schema to observe the connection through", dialect)
 		}
 		lock := &schemaProbeLock{}
-		reg := registryOf(declaring("catalog", migrationSet(dialect, map[string]string{
+		reg := settledRegistry(t, declaring("catalog", migrationSet(dialect, map[string]string{
 			"0001_create_widgets.sql": createWidgets,
 		})))
 

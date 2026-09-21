@@ -343,7 +343,7 @@ sequenceDiagram
 | 软删除 | 已实现 | 由 GORM 提供，随 `pkg/db/handle.go` `(*database).DB` 交付 |
 | 字段级加密与盲索引 | 已实现 | `pkg/db/serializer.go` `installEncryption`、`pkg/db/crypto.go` `deriveSubkey`、`pkg/db/handle.go` `(*database).BlindIndex` |
 | 插件的安装 | 已实现 | `pkg/db/plugins.go` `collectPlugins`、`installPlugins`、`pkg/db/handle.go` `newDatabase` |
-| 迁移的收齐与应用 | 部分实现，取材域仍按启用结果一刀切，未纳入的模块其表不建 | `pkg/db/migrate.go` `collectMigrations`、`applyMigrations` |
+| 迁移的收齐与应用 | 已实现 | `pkg/db/migrate.go` `collectMigrations`、`applyMigrations` |
 | 迁移的跨进程互斥 | 已实现 | `pkg/db/migrate.go` `MigrationLock`、`pkg/db/postgres/lock.go` `NewMigrationLock` |
 | PostgreSQL 实现子包 | 已实现 | `pkg/db/postgres/module.go` `Module` |
 | SQLite 实现子包 | 已实现 | `pkg/db/sqlite/sqlite.go` `Module` |

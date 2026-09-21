@@ -147,6 +147,7 @@ func (r *Registry) Enablement(name string) (Enablement, bool)
 ```go
 func (r *Registry) Participating(name string) bool
 func (r *Registry) Declaring(name string) bool
+func (r *Registry) AllResourcesInForce(name string) bool
 ```
 
 `Participating` 回答"这次驱动运行级纳入了这个名字吗"，`Declaring` 回答"它在声明集里吗"——运行级与静态级都算。两者都不回答它是否启用。未登记的名字一律为 `false`。
@@ -168,6 +169,8 @@ func (r *Registry) Declaring(name string) bool
 
 按声明模块的去向过滤的消费点据此裁定自己的取材域（架构不变量 15）：迁移集取声明集，插件安装取启用集（见 [db](design-db.md)）。**判据一律用这几个查询，不得比对禁用原因的文本**——那是写给人看的诊断串，一次文案修订会改变装配行为。
 
+**`AllResourcesInForce` 是宿主对取材域的覆盖**，不是第四个集合。它只对**仅**被静态级纳入、且那次纳入带了 `AllResources` 的模块答真；对运行级纳入的模块一律答假，因为那样的模块不在 `DeclaringOnly` 里。一个消费点读到真时，把该模块的声明当作在册处理，越过它自己那个取材域——这是宿主替消费点作的一次决定，`core` 只转达它，不知道它会被谁读到。
+
 **生命周期**：
 
 ```go
@@ -183,10 +186,17 @@ const (
 )
 
 type Drive struct {
-    Depth        Stage      // 推进到这个阶段为止
-    Participants  []string  // 参与集：运行级纳入，逐个列出；空清单即不纳入任何模块
-    DeclaringOnly []string  // 仅静态级纳入的那些；与 Participants 之并是声明集
-    Action       func(ctx context.Context, reg *Registry) error
+    Depth         Stage      // 推进到这个阶段为止
+    Participants  []string   // 参与集：运行级纳入，逐个列出；空清单即不纳入任何模块
+    DeclaringOnly []Declaration // 仅静态级纳入的那些；与 Participants 之并是声明集
+    Action        func(ctx context.Context, reg *Registry) error
+}
+
+// Declaration 是一个只为其声明而被纳入的模块，连同宿主在那次纳入上做的调整。
+type Declaration struct {
+    Name         string  // 模块登记时用的名字
+    WithFlags    bool    // 它的输入项可以出现在这条命令的命令行上；必填仍不判
+    AllResources bool    // 它的全部声明生效，覆盖消费点自己的取材域裁定
 }
 
 func (r *Registry) Drive(ctx context.Context, d Drive) error
@@ -205,7 +215,9 @@ func (r *Registry) Run(ctx context.Context) error
 
 `Participants` 由宿主的命令树给出（见 [config](design-config.md)），是一份字面的名字清单。**空清单就是不纳入任何模块**，不解释为全部——打印版本这类命令什么都不装配，而一个会反转成其对立面的零值，迟早会被某条忘了列举的命令撞上。命令树上的"纳入全部"在组装命令树时就展开成具体的名字，`core` 收到的始终是列举结果。`core` 不认识命令，也不解析命令行，更不引入解析命令行所需的依赖。
 
-`DeclaringOnly` 同样是字面清单，列的是**仅**被静态级纳入的模块（[ADR-command-tree-2026-09-21](../../adr/adr-command-tree-2026-09-21.md)）。这些模块不被构造，不执行任何阶段回调，不表态，不参与消解，其依赖闭包不展开——它们不构造，没有构造期依赖可言。它们唯一的作用是让自己声明的资源进入声明集，供按声明集取材的消费点收集。两份清单不相交：一个模块同时被两级纳入时按运行级处置，只出现在 `Participants` 里。
+`DeclaringOnly` 同样是字面清单，列的是**仅**被静态级纳入的模块（[ADR-command-tree-2026-09-21](../../adr/adr-command-tree-2026-09-21.md)）。这些模块不被构造，不执行任何阶段回调，不表态，不参与消解，其依赖闭包不展开——它们不构造，没有构造期依赖可言。它们唯一的作用是让自己声明的资源进入声明集，供按声明集取材的消费点收集。两份清单不相交：一个模块同时被两级纳入时按运行级处置，只出现在 `Participants` 里，**它的调整随之作废**——`AllResourcesInForce` 对它答否，声明照常按消费点的取材域裁定。一个名字写错未登记时同样拒绝，错误是 `ErrUnknownParticipant`。
+
+清单里每一条带的两个调整由 [config](design-config.md) 的命令树写出。**`core` 只保存它们，一个也不执行**：`AllResourcesInForce` 回答的是消费方来问的那一个，`WithFlags` 连回答都轮不到它——命令行是不是认得某个参数，由 `config` 在组装命令树时决定，`core` 既不写命令行也不认命令。因此**手工构造 `Drive` 时写上的 `WithFlags` 不会产生任何效果，也不会报错**；它是命令树与驱动之间的一件行李，不是 `core` 的一个开关。走命令树的宿主不必知道这一点，它由 `config` 落成参数。
 
 **字段叫 `DeclaringOnly` 而查询叫 `Declaring`，两者指的不是同一个集合**：字段是差集（仅静态级），查询答的是并集（声明集，两级都算）。命名上把这个差别写进字段名，是因为一个照字段名实现的查询——直接在 `DeclaringOnly` 里找名字——能编译、能跑，而对每一个运行级纳入的模块都答错，按声明集取材的消费点会据此丢掉全部运行级模块的声明。`core` 对这份清单只做两件事：记住它，以及把它与 `Participants` 合起来回答 `Declaring`；它不知道声明集会被谁拿去做什么。
 
@@ -572,4 +584,4 @@ http.Spec{...}
 | 生命周期驱动与回滚 | 已实现 | `pkg/core/run.go`、`pkg/core/stage.go`、`pkg/core/rollback.go` |
 | 启动诊断 | 已实现 | `pkg/core/diagnostics.go` |
 | 哨兵错误 | 已实现 | `pkg/core/errors.go` |
-| 纳入分级与参与结果查询 | 未实现 | `pkg/core/query.go`、`pkg/core/run.go` |
+| 纳入分级与参与结果查询 | 已实现 | `pkg/core/query.go` `Participating`、`Declaring`，`pkg/core/run.go` `recordDeclarationSets` |

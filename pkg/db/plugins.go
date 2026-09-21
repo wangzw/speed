@@ -21,8 +21,20 @@ type pluginInstall struct {
 // collectPlugins takes the declared plugins out of the registry, in the order
 // they are installed.
 //
-// A declaration from a module that resolution left out is dropped, the way that
-// module's migrations are: a module that does not run has nothing in force here.
+// A declaration from a module that does not run is dropped: a plugin acts on
+// the statements this run issues, so what decides it is whether the module
+// belongs to this run, and a module that is not part of the run has nothing in
+// force here. That is every way a module can fail to run -- it stated it does
+// not, resolution stood it down, this command never took it in, or it was
+// taken in for its declarations alone.
+//
+// This is where it parts company with the migration collection beside it,
+// which reads the declaring set and drops only a module that ran and was
+// disabled. The split is deliberate and it follows from what each describes:
+// a plugin's lifetime is this run, and the database structure's is the binary.
+// Neither filter can be derived from the other, so a change to one is not a
+// reason to touch the other.
+//
 // The price is real and it is what "not enabled" means rather than a defect — a
 // module whose whole work is declaring a plugin, the shape of a cross-cutting
 // capability that needs nothing back from the database, takes that capability
@@ -45,8 +57,15 @@ func collectPlugins(reg *core.Registry) ([]pluginInstall, error) {
 	byModule := make(map[string][]Plugin)
 	var modules []string
 	for _, declared := range core.Resources[Plugin](reg) {
-		if state, known := reg.Enablement(declared.Module); known && state.State == core.StateDisabled {
-			continue
+		// A host may put a module's declarations in force regardless of
+		// whether it runs, and this is where that override lands. It is
+		// not the default and it is not a second reading of enablement:
+		// it is the host saying it wants this module's declarations on a
+		// module that is not part of the run.
+		if !reg.AllResourcesInForce(declared.Module) {
+			if state, known := reg.Enablement(declared.Module); known && state.State == core.StateDisabled {
+				continue
+			}
 		}
 		if absent(declared.Value.Plugin) {
 			// Nothing to install, and installing it anyway would

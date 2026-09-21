@@ -24,8 +24,8 @@ change here must not cross, and how to run it.
   dependency added here lands in every host's dependency list. The
   standard library is the whole budget. The command tree, and everything
   needed to parse a command line, live in `pkg/config`: this package
-  receives a participating set as a list of names and knows nothing about
-  commands.
+  receives the modules of a run as literal lists of names and knows nothing
+  about commands.
 - **No knowledge of any capability, and no interpretation of any
   resource.** Both travel through the registry as opaque values; the
   module that defines a type is the one that reads it back. A `switch` on

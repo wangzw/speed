@@ -193,10 +193,10 @@ speed 不引入进程边界。宿主是单一进程，注册表与全部模块�
 
 | 模块 | 状态 |
 |---|---|
-| [core](modules/design-core.md) | 部分实现，缺纳入分级与参与结果查询 |
-| [config](modules/design-config.md) | 部分实现，缺纳入分级与两个修饰 |
+| [core](modules/design-core.md) | 已实现 |
+| [config](modules/design-config.md) | 已实现 |
 | [log](modules/design-log.md) | 已实现 |
-| [db](modules/design-db.md) | 部分实现，迁移集的取材域仍按启用结果一刀切 |
+| [db](modules/design-db.md) | 已实现 |
 | [http](modules/design-http.md) | 已实现 |
 | [authn](modules/design-authn.md) | 已实现 |
 | [tenant](modules/design-tenant.md) | 未实现 |

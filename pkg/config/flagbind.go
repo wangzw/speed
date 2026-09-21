@@ -9,21 +9,38 @@ import (
 
 // BindLayer registers the arguments of one command on its flag set: the items
 // of the modules named here that declared the command line as an origin. The
-// command tree calls it once per command, naming the modules that command
-// takes in and no command above it does, so an empty list registers nothing.
+// command tree calls it once per command, naming the modules whose arguments
+// that command contributes and no command above it does, so an empty list
+// registers nothing.
+//
+// running names the ones among them this command actually runs, and declared
+// names the modules it reached for their declarations alone. The three answer
+// different questions and all three are needed. An argument of a collected
+// module is not marked required, because this command never decodes the module
+// and so never comes up short of the value; and giving one that is not on the
+// command line gets a diagnosis that says where it does belong, which it can
+// only do by knowing the module was taken in at all.
 //
 // An item is one argument for the whole tree: it is defined the first time a
 // command takes its module in, and that same argument is registered on every
 // other command that takes it in. Two commands on separate branches therefore
 // share one argument, bound to the layering tool once, and a run reads its
 // value from there whichever of the two it selected.
-func (l *loader) BindLayer(fs *pflag.FlagSet, participants []string) error {
-	taking := make(map[string]bool, len(participants))
-	for _, name := range participants {
-		taking[name] = true
+func (l *loader) BindLayer(fs *pflag.FlagSet, taking, running, declared []string) error {
+	takes := make(map[string]bool, len(taking))
+	for _, name := range taking {
+		takes[name] = true
 	}
+	runs := make(map[string]bool, len(running))
+	for _, name := range running {
+		runs[name] = true
+	}
+	for _, name := range declared {
+		l.declaresOnly[name] = true
+	}
+
 	for _, item := range l.m.items {
-		if !taking[item.module] || !item.origins.has(OriginFlag) {
+		if !takes[item.module] || !item.origins.has(OriginFlag) {
 			continue
 		}
 		if flag, already := l.bound[item.path]; already {
@@ -35,7 +52,7 @@ func (l *loader) BindLayer(fs *pflag.FlagSet, participants []string) error {
 			continue
 		}
 		value, noOptDefVal := newFlagValue(item)
-		fs.VarP(value, item.item.FlagName, item.item.FlagShort, flagUsage(item))
+		fs.VarP(value, item.item.FlagName, item.item.FlagShort, flagUsage(item, runs[item.module]))
 		flag := fs.Lookup(item.item.FlagName)
 		flag.NoOptDefVal = noOptDefVal
 		if err := l.v.BindPFlag(item.path, flag); err != nil {
@@ -93,6 +110,13 @@ func (l *loader) unknownFlagError(unknown *pflag.NotExistError) error {
 			"of %q but does not accept from the command line: it reads %s. Add OriginFlag to "+
 			"the item, or drop FlagName",
 			ErrUnknownKey, written, item.module, item.path, originNames(item.origins))
+	}
+	if l.declaresOnly[item.module] {
+		return fmt.Errorf("%w: the command line gives %s, which module %q declares for %q, and "+
+			"this command takes that module in for its declarations alone, so nothing here "+
+			"reads it. Add WithFlags to that inclusion to accept the argument, or take the "+
+			"module in at run level if this command is meant to run it",
+			ErrUnknownKey, written, item.module, item.path)
 	}
 	return fmt.Errorf("%w: the command line gives %s, which module %q declares for %q, and this "+
 		"command does not take that module in. Give it on a command that includes the module, "+

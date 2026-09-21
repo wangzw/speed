@@ -306,7 +306,7 @@ func TestCloseReleasesTheDeliveredPool(t *testing.T) {
 func migrateThrough(t *testing.T, spec Spec, body string, handle *gorm.DB, modules ...core.Module) error {
 	t.Helper()
 	instance := &stubDatabase{handle: handle, dialect: spec.Dialect}
-	return spec.migrate(t.Context(), registryOf(modules...), readerFor(t, spec, body), instance)
+	return spec.migrate(t.Context(), settledRegistry(t, modules...), readerFor(t, spec, body), instance)
 }
 
 // TestMigrateAppliesTheDeclaredSetsToTheDeliveredHandle pins that the stage

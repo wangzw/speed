@@ -303,14 +303,28 @@ func applyOne(session *gorm.DB, m migration) error {
 // collectMigrations turns the declared resources into the list to apply, in the
 // order to apply it.
 //
-// Two kinds of module are skipped, and one enablement query covers both. A
-// module resolution stood down is disabled, and a module this command never
-// took in is reported disabled too, with not being included as its reason: a
-// registered module outside the participating set never took a stance, so its
-// tables belong to a run other than this one. Either way its tables are not
-// created. An enabled module's migration may still reference one of them, and
-// that shows up here as a migration that will not apply — nothing reads the
-// statements, so it cannot be caught at declaration time.
+// The set it collects from is the declaring set -- what this command took in,
+// at either level -- and the participating set narrows it rather than forming
+// it. Database structure outlives the command that applied it, so a module
+// reached for its declarations alone still gets its tables; one the command did
+// not take in at all does not, and which of the two a module is is the host's
+// own writing rather than a surprise. That is also what makes the binary's
+// migrations answerable without starting a database: the declaring set is
+// settled before anything is read. What the participating set decides is the
+// other reading, the one a module's own verdict belongs to: a module this
+// command runs and that stated it does not run, or that resolution stood down,
+// has its tables withheld.
+//
+// The two are not one filter and must not be collapsed into one. Collected by
+// participation alone, a command whose work is applying migrations takes in
+// the engine and nothing else -- the modules that own the tables depend on the
+// engine rather than the other way round, so the closure never reaches them --
+// and it applies no migration at all while exiting successfully.
+//
+// Withholding a module's tables has a consequence that shows up later rather
+// than here: an enabled module's migration may reference a table that was not
+// created, and nothing reads the statements, so it cannot be caught at
+// declaration time. It surfaces as a migration that will not apply.
 //
 // The order is separate from all of that. It comes from dependencyRank over
 // every registered module, participating or not, so that the sequence a set of
@@ -321,8 +335,29 @@ func collectMigrations(reg *core.Registry, dialect Dialect) ([]migration, error)
 	byModule := make(map[string][]Migrations)
 	var modules []string
 	for _, declared := range core.Resources[Migrations](reg) {
-		if state, known := reg.Enablement(declared.Module); known && state.State == core.StateDisabled {
+		// Two questions, and both have to be asked. The first is
+		// whether the declaration is within reach at all: a module this
+		// command did not take in, at either level, has its tables left
+		// to whichever command does take it in. The second applies only
+		// to a module the command runs, and is its own verdict: a
+		// module inside the participating set that stated it does not
+		// run, or that resolution stood down, has its tables withheld.
+		//
+		// Asking the second alone is the shape that migrates nothing. A
+		// command whose work is applying migrations runs the engine and
+		// reaches the tables through the first question; the modules
+		// that own them depend on the engine, the engine does not
+		// depend on them, and the closure therefore never reaches them
+		// -- so they are outside the participating set by construction,
+		// and a filter reading only that set applies none of them and
+		// reports success.
+		if !reg.Declaring(declared.Module) {
 			continue
+		}
+		if reg.Participating(declared.Module) {
+			if state, known := reg.Enablement(declared.Module); known && state.State == core.StateDisabled {
+				continue
+			}
 		}
 		if _, seen := byModule[declared.Module]; !seen {
 			modules = append(modules, declared.Module)

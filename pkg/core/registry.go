@@ -43,6 +43,20 @@ type Registry struct {
 	// It is nil until resolution has run.
 	enablement map[string]Enablement
 
+	// participating holds the modules this drive took in at run level,
+	// keyed by name. It is settled when the drive begins, ahead of the
+	// stances, because the command tree already knows it; nil until then.
+	// It is deliberately not the same thing as the key set of enablement,
+	// which resolution fills later and which reports a module the drive
+	// left out as disabled rather than absent.
+	participating map[string]bool
+	// declaringOnly holds the modules this drive reached for their
+	// declarations alone, keyed by name, with the adjustments the host
+	// made to each. A name in both maps is not possible: a participant is
+	// a participant whatever else it was named as. Nil until a drive
+	// begins.
+	declaringOnly map[string]Declaration
+
 	running bool
 }
 

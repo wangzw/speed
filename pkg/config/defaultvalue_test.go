@@ -157,7 +157,7 @@ func corpusDefault(t *testing.T, name string) string {
 func helpFlags(t *testing.T, l *loader, module string) *pflag.FlagSet {
 	t.Helper()
 	fs := pflag.NewFlagSet("test", pflag.ContinueOnError)
-	if err := l.BindLayer(fs, []string{module}); err != nil {
+	if err := l.BindLayer(fs, []string{module}, []string{module}, nil); err != nil {
 		t.Fatalf("registering the arguments of %q failed: %v", module, err)
 	}
 	return fs
@@ -444,6 +444,43 @@ func TestHelpMarksARequiredItem(t *testing.T) {
 	}
 	if strings.Contains(usage, "the port the greeter listens on (required)") {
 		t.Errorf("the help output reads\n%s\nand an optional argument carries no mark", usage)
+	}
+}
+
+// TestHelpDoesNotMarkACollectedModulesArgumentAsRequired pins that the mark
+// follows the module a run asks for its configuration rather than the item
+// that declares itself required.
+//
+// A module taken in for its declarations alone is never constructed, so it
+// never decodes its configuration and no run comes up short of the value. The
+// marker says a run will not start without it, and it is printed on the one
+// page a reader uses to decide exactly that.
+func TestHelpDoesNotMarkACollectedModulesArgumentAsRequired(t *testing.T) {
+	defaults := struct{ Addr string }{}
+	l := loadOver(t, declaring("greeter", Schema{
+		Namespace: "greeter",
+		Mounts:    []Mount{{Value: &defaults}},
+		Items: map[string]Item{"addr": {
+			Origins:     OriginFlag,
+			FlagName:    "remote-addr",
+			Description: "the address of the greeting service",
+			Required:    true,
+		}},
+	}))
+
+	fs := pflag.NewFlagSet("test", pflag.ContinueOnError)
+	// Named as reached for its declarations alone: it contributes the
+	// argument and nothing here runs it.
+	if err := l.BindLayer(fs, []string{"greeter"}, nil, []string{"greeter"}); err != nil {
+		t.Fatalf("registering the arguments failed: %v", err)
+	}
+	usage := fs.FlagUsages()
+	if !strings.Contains(usage, "the address of the greeting service") {
+		t.Errorf("the help output reads\n%s\nand the argument is not there at all", usage)
+	}
+	if strings.Contains(usage, "(required)") {
+		t.Errorf("the help output reads\n%s\nand marks required an argument of a module this "+
+			"run never constructs", usage)
 	}
 }
 

@@ -63,7 +63,7 @@ func (s loaderSetup) load(t *testing.T, args []string) (Reader, error) {
 	fs := pflag.NewFlagSet("test", pflag.ContinueOnError)
 	fs.SetOutput(io.Discard)
 	locator := fs.String(locatorFlag, "", "the URI of the primary config source")
-	if err := l.BindLayer(fs, []string{"cache"}); err != nil {
+	if err := l.BindLayer(fs, []string{"cache"}, []string{"cache"}, nil); err != nil {
 		return nil, err
 	}
 	if err := fs.Parse(args); err != nil {

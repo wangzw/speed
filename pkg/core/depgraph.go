@@ -79,11 +79,13 @@ func (r *Registry) Closure(names []string) ([]string, error) {
 // Optional requirement whose provider is absent is skipped, while a present
 // one still takes part in the ordering.
 //
-// participants is what this command included and outside what it left
-// registered but out, which is one of the ways a capability ends up without a
-// provider. sites maps a module name to the package that registered it, and a
-// name missing from it loses only that half of the report.
-func planConstruction(enabled, participants, outside []Module, final map[string]Enablement, sites map[string]string, supplied map[reflect.Type]bool) ([]string, error) {
+// participants is what this command runs, and declarationsOnly and outside are
+// the two halves of what it did not: modules it reached for their declarations
+// alone, and modules it left registered but out. The second of those two is one
+// of the ways a capability ends up without a provider. sites maps a module name
+// to the package that registered it, and a name missing from it loses only that
+// half of the report.
+func planConstruction(enabled, participants, declarationsOnly, outside []Module, final map[string]Enablement, sites map[string]string, supplied map[reflect.Type]bool) ([]string, error) {
 	nodes := make([]string, 0, len(enabled))
 	for _, m := range enabled {
 		nodes = append(nodes, m.Name)
@@ -125,7 +127,8 @@ func planConstruction(enabled, participants, outside []Module, final map[string]
 					continue
 				}
 				return nil, missingProviderError(ct, declarersOf(participants, ct),
-					declarersOf(outside, ct), final, name, sites[name])
+					declarersOf(declarationsOnly, ct), declarersOf(outside, ct),
+					final, name, sites[name])
 			}
 			for _, p := range ps {
 				addEdge(p, name)
@@ -234,8 +237,8 @@ func cycleError(nodes, ordered []string, edges map[string]map[string]bool) error
 // requiredBy is the module whose Requires went unmet, and site the package that
 // registered it. Both are empty when the registry does not know them, which is
 // the Resolve path: a lookup does not say who is making it.
-func missingProviderError(ct reflect.Type, declarers, notIncluded []string, final map[string]Enablement, requiredBy, site string) error {
-	if len(declarers) == 0 && len(notIncluded) == 0 {
+func missingProviderError(ct reflect.Type, declarers, declarationsOnly, notIncluded []string, final map[string]Enablement, requiredBy, site string) error {
+	if len(declarers) == 0 && len(declarationsOnly) == 0 && len(notIncluded) == 0 {
 		return errorText{
 			wrapped: ErrMissingProvider,
 			text: fmt.Sprintf("%s: no module delivers capability %s%s. %s. The interface "+
@@ -265,6 +268,12 @@ func missingProviderError(ct reflect.Type, declarers, notIncluded []string, fina
 		fmt.Fprintf(&b, "; %s declares it but is constructed later, so declare the capability "+
 			"in Requires to order it first, or take it up in Init instead",
 			strings.Join(quoteAll(later), " and "))
+	}
+	if len(declarationsOnly) > 0 {
+		fmt.Fprintf(&b, "; %s declares it but was taken in for its declarations alone, so it "+
+			"is never constructed and cannot take the capability up. Take it in at run level "+
+			"if this command is meant to have it",
+			strings.Join(quoteAll(declarationsOnly), " and "))
 	}
 	if len(notIncluded) > 0 {
 		fmt.Fprintf(&b, "; %s declares it but this command does not include it, so add it "+
