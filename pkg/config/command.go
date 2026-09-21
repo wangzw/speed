@@ -128,6 +128,21 @@ type declarationInclusion struct {
 	allResources bool
 }
 
+// collectedModule is one module a command reaches for its declarations alone,
+// with the adjustments the inclusions that named it asked for.
+//
+// It is this module's own type rather than core.Declaration because one of the
+// two adjustments never crosses that boundary. WithFlags decides whether the
+// module's input items reach this command's command line; the registry neither
+// writes a command line nor recognises one, so a field for it on the type a
+// drive takes would be read by no one there and ignored without a word by a
+// Drive built by hand. What the drive acts on is converted on the way in.
+type collectedModule struct {
+	name         string
+	withFlags    bool
+	allResources bool
+}
+
 // Inclusion is what a declaration-level inclusion returns, so that a host can
 // adjust it where it was written.
 //
@@ -219,12 +234,20 @@ func (c *Command) IncludeAllDeclarations() *Inclusion {
 // reading of it that could come up short. The flag is an argument a run may
 // give, not one it must.
 //
-// Nothing a module declares today needs this. A declaration is static by
-// construction -- it is on the descriptor, settled before the registry is
-// read -- so a value read from the command line cannot be what settles one,
-// and a flag that is accepted and never read is the shape a mistake takes.
-// The adjustment is here for the case that would change that, and a host that
-// reaches for it now is accepting an argument no one will read.
+// It serves one shape: a command that runs no module at all and reports or
+// checks the configuration. Such a command has to collect every module's
+// input items and let the operator give an override on its own command line,
+// without constructing anything or enforcing any required item. Neither
+// existing way gets there. Taking the modules in at declaration level alone
+// gives the command no arguments to offer; taking them in at run level builds
+// them and turns their required items on, which is what a command that only
+// reports must not do.
+//
+// No command of that shape exists today, and none has to: this module defines
+// no subcommands. So the adjustment is here to make the shape writable, not
+// because something needs it now, and the price is already paid -- a module's
+// required items are never enforced at this level, so the argument is one no
+// module will read.
 func (i *Inclusion) WithFlags() *Inclusion {
 	i.cmd.declIncludes[i.at].withFlags = true
 	return i

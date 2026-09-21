@@ -161,7 +161,7 @@ func (a *App) run(ctx context.Context, l *loader, p *plan, node *planNode) error
 	return a.reg.Drive(ctx, core.Drive{
 		Depth:         node.decl.depth,
 		Participants:  node.participants,
-		DeclaringOnly: node.declaringOnly,
+		DeclaringOnly: node.declarationsForTheDrive(),
 		Action:        node.decl.action,
 	})
 }

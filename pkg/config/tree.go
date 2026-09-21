@@ -48,7 +48,7 @@ type planNode struct {
 	// recordDeclarationSets. Everything this side reads it for is
 	// indifferent to repetition, and a module named twice costs one
 	// entry.
-	declaringOnly []core.Declaration
+	declaringOnly []collectedModule
 }
 
 // plan is the assembled tree: the root, and the way back from a command the
@@ -163,7 +163,7 @@ func (a *App) assemble(l *loader, p *plan, decl *Command, parent *planNode, mods
 // command line -- is not settled here but derived, by flagModules, so that it
 // cannot come to disagree with the two groups it is made of.
 func (a *App) setsOf(decl *Command, parent *planNode, mods []core.Module) (
-	participants []string, declaringOnly []core.Declaration, err error,
+	participants []string, declaringOnly []collectedModule, err error,
 ) {
 	var runSeeds []string
 	if parent != nil {
@@ -188,9 +188,9 @@ func (a *App) setsOf(decl *Command, parent *planNode, mods []core.Module) (
 		// this way is not constructed, so it has no requirements for the
 		// registry to follow, and asking it for the closure would pull in
 		// providers this command never asked to build.
-		if _, registered := a.reg.Lookup(d.Name); !registered {
+		if _, registered := a.reg.Lookup(d.name); !registered {
 			return nil, nil, fmt.Errorf("config: command %q includes a module that is "+
-				"not registered: %w: %q", decl.path(), core.ErrUnknownParticipant, d.Name)
+				"not registered: %w: %q", decl.path(), core.ErrUnknownParticipant, d.name)
 		}
 	}
 
@@ -207,7 +207,7 @@ func (a *App) setsOf(decl *Command, parent *planNode, mods []core.Module) (
 		// check here either.
 		declaringOnly = withoutRunning(parent.declaringOnly, running)
 	} else {
-		var seeds []core.Declaration
+		var seeds []collectedModule
 		if parent != nil {
 			seeds = slices.Clone(parent.declaringOnly)
 		}
@@ -224,10 +224,10 @@ func (a *App) setsOf(decl *Command, parent *planNode, mods []core.Module) (
 // levels above reached as it stands, and this is the one way that set can
 // still have to change: taking a module in at run level here makes it a
 // participant, and a participant is not reached for its declarations alone.
-func withoutRunning(declared []core.Declaration, running map[string]bool) []core.Declaration {
-	out := make([]core.Declaration, 0, len(declared))
+func withoutRunning(declared []collectedModule, running map[string]bool) []collectedModule {
+	out := make([]collectedModule, 0, len(declared))
 	for _, d := range declared {
-		if !running[d.Name] {
+		if !running[d.name] {
 			out = append(out, d)
 		}
 	}
@@ -238,11 +238,12 @@ func withoutRunning(declared []core.Declaration, running map[string]bool) []core
 // with "every available module" expanded into names.
 //
 // The expansion belongs here for the same reason the participating set's
-// does: what the drive receives is then always a literal list. What differs
-// is that the expansion carries the adjustments along, since they are set per
-// inclusion and two inclusions of one command may disagree about them.
-func declarationsAt(c *Command, mods []core.Module) []core.Declaration {
-	var out []core.Declaration
+// does: a level's own writing has to become the literal list of modules it
+// comes to. What differs is that the expansion carries the adjustments along,
+// since they are set per inclusion and two inclusions of one command may
+// disagree about them.
+func declarationsAt(c *Command, mods []core.Module) []collectedModule {
+	var out []collectedModule
 	for _, inc := range c.declIncludes {
 		names := inc.names
 		if inc.all {
@@ -252,10 +253,10 @@ func declarationsAt(c *Command, mods []core.Module) []core.Declaration {
 			}
 		}
 		for _, name := range names {
-			out = append(out, core.Declaration{
-				Name:         name,
-				WithFlags:    inc.withFlags,
-				AllResources: inc.allResources,
+			out = append(out, collectedModule{
+				name:         name,
+				withFlags:    inc.withFlags,
+				allResources: inc.allResources,
 			})
 		}
 	}
@@ -328,6 +329,22 @@ func (n *planNode) added() []string {
 	return subtract(n.flagModules(), n.parent.flagModules())
 }
 
+// declarationsForTheDrive renders the accumulated list in the form a drive
+// takes: the module names, and the one adjustment the registry acts on.
+//
+// The other adjustment stops here, and this is the seam where that is
+// visible. Whether a module's arguments reach the command line was settled
+// when those arguments were registered, by this module, before anything was
+// parsed; the registry neither writes a command line nor recognises one, so
+// handing it that fact would give it something it could only ignore.
+func (n *planNode) declarationsForTheDrive() []core.Declaration {
+	out := make([]core.Declaration, 0, len(n.declaringOnly))
+	for _, d := range n.declaringOnly {
+		out = append(out, core.Declaration{Name: d.name, AllResources: d.allResources})
+	}
+	return out
+}
+
 // declaredNames lists the modules this command reached for their declarations
 // alone, in the order it holds them, which is name order.
 //
@@ -337,7 +354,7 @@ func (n *planNode) added() []string {
 func (n *planNode) declaredNames() []string {
 	out := make([]string, 0, len(n.declaringOnly))
 	for _, d := range n.declaringOnly {
-		out = append(out, d.Name)
+		out = append(out, d.name)
 	}
 	return out
 }
@@ -354,8 +371,8 @@ func (n *planNode) declaredNames() []string {
 func (n *planNode) flagModules() []string {
 	out := slices.Clone(n.participants)
 	for _, d := range n.declaringOnly {
-		if d.WithFlags {
-			out = append(out, d.Name)
+		if d.withFlags {
+			out = append(out, d.name)
 		}
 	}
 	slices.Sort(out)

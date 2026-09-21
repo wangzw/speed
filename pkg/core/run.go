@@ -15,14 +15,18 @@ import (
 // makes a module's providers be constructed alongside it. What it contributes
 // is its resource declarations, and only to a consumption point that reads
 // the declaring set or wider.
+//
+// It carries one adjustment and not two, and the one it leaves out is the
+// point. Whether a module's input items reach the command line is decided
+// where the command line is written, which is not here: a Drive says what the
+// drive does, and this package neither writes a command line nor recognises
+// one. A field for it on this type would be a field nothing here could act on
+// and nothing here could refuse -- read by no one, silently ignored by any
+// Drive built by hand, and asking a reader to work out which of the two it
+// was.
 type Declaration struct {
 	// Name is the module, by the name it registered under.
 	Name string
-	// WithFlags lets this module's input items reach the command line of
-	// the command that took it in. Required is still not enforced for it:
-	// a module that is not constructed never decodes its configuration,
-	// so there is no reading of it that could come up short.
-	WithFlags bool
 	// AllResources puts every declaration this module makes in force,
 	// overriding the domain a consumption point would otherwise read. A
 	// point reading the enabled set then sees this module's declarations
@@ -253,7 +257,6 @@ func (r *Registry) recordDeclarationSets(participants []string, declared []Decla
 		}
 		at := declaringOnly[d.Name]
 		at.Name = d.Name
-		at.WithFlags = at.WithFlags || d.WithFlags
 		at.AllResources = at.AllResources || d.AllResources
 		declaringOnly[d.Name] = at
 	}

@@ -196,6 +196,39 @@ func TestWithFlagsPutsADeclarationLevelModulesArgumentOnTheCommandLine(t *testin
 	}
 }
 
+// TestAReportingCommandCollectsEveryArgumentWithoutRunningAnything pins the
+// one shape the flag adjustment exists for.
+//
+// A command that reports or checks the configuration has to offer every
+// module's arguments and construct none of them: it reads the values itself
+// rather than asking each module to, so nothing should be built and no
+// required item should be enforced. Both halves are observed here, and the
+// first is the load-bearing one -- take the arguments away and there is no
+// way for the operator to give the command the value it is being asked to
+// report on.
+func TestAReportingCommandCollectsEveryArgumentWithoutRunningAnything(t *testing.T) {
+	run := &treeRun{}
+	a, _, _ := treeApp(treeRegistry(t, run, nil), "check", "--greeter-addr=:1")
+	read := ""
+	check := a.Root().Sub("check")
+	check.IncludeAllDeclarations().WithFlags()
+	check.Do(core.StagePrepare, func(_ context.Context, reg *core.Registry) error {
+		read = decodeAddr(t, readerFrom(t, reg), "greeter")
+		return nil
+	})
+
+	if err := a.Execute(t.Context()); err != nil {
+		t.Fatalf("a command collecting every module's arguments reported %v", err)
+	}
+	if read != ":1" {
+		t.Errorf("the command read greeter.addr as %q, want the value given on its own command "+
+			"line: an argument it cannot accept is an argument the operator cannot give it", read)
+	}
+	if len(run.steps) != 0 {
+		t.Errorf("%v ran under a command whose whole work is reading configuration", run.steps)
+	}
+}
+
 // TestAnArgumentOfADeclarationLevelModuleSaysWhereItBelongs pins the diagnosis
 // for an argument that is absent because the module behind it is only
 // collected from.
