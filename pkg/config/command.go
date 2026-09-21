@@ -120,6 +120,14 @@ func (c *Command) Include(names ...string) {
 //
 // The set is expanded into names while the tree is assembled, so the drive is
 // handed the same literal list an explicit Include would have produced.
+//
+// Every name it expands to joins this command at run level, and a module taken
+// in at run level has to start. An implementation the host never meant to run —
+// the second database engine an indirect dependency registers, say — therefore
+// fails the startup over the configuration it was not given. A command that
+// wants the
+// declarations and not the modules that made them takes them in at declaration
+// level instead, with IncludeAllDeclarations.
 func (c *Command) IncludeAll() { c.includeAll = true }
 
 // declarationInclusion is one declaration-level inclusion as written, with
