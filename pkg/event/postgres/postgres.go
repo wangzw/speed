@@ -1,0 +1,486 @@
+// Package postgres is the PostgreSQL implementation of the event-bus capability
+// pkg/event declares.
+//
+// It is the sister of pkg/kv/postgres: both exist for a deployment that already
+// runs PostgreSQL and does not want to bring up Redis or NATS for one more
+// thing, and both keep their own table.
+//
+// An event goes into an outbox table and a NOTIFY announces it. The outbox is
+// the source of truth and the notification is only a hint: NOTIFY has no way to
+// reach a session that was not listening when it was sent, so a replica that
+// was disconnected learns about what it missed by reading the table, not by
+// receiving a notification.
+//
+// Each replica keeps a listening connection of its own — taken from outside the
+// pool, never returned to it, because a connection running LISTEN would
+// otherwise be handed out for ordinary queries. Where it has read up to is held
+// in memory: this implementation is told apart from the process-local one by
+// carrying events between replicas, and a replica that restarts starts at the
+// end of the outbox, which is the same "no history for a late subscriber"
+// behaviour the capability states.
+package postgres
+
+import (
+	"context"
+	"crypto/rand"
+	"encoding/hex"
+	"encoding/json"
+	"errors"
+	"fmt"
+	"log/slog"
+	"math"
+	"os"
+	"slices"
+	"strings"
+	"sync"
+	"time"
+
+	"github.com/jackc/pgx/v5"
+	"github.com/jackc/pgx/v5/pgxpool"
+
+	"github.com/vislake/speed/pkg/config"
+	"github.com/vislake/speed/pkg/core"
+	"github.com/vislake/speed/pkg/event"
+)
+
+const (
+	// ModuleName is this implementation's name in the registry.
+	ModuleName = "event.postgres"
+	// ConfigNamespace is where this implementation's input items are mounted.
+	ConfigNamespace = ModuleName
+	// table is this implementation's own outbox.
+	table = "event_outbox"
+	// channel is the NOTIFY channel. It is a fixed name rather than one per
+	// assembly: PostgreSQL channels are per database, and two assemblies
+	// sharing a database are already sharing the outbox below.
+	channel = "speed_events"
+	// pollInterval bounds how long a replica waits for a notification before
+	// looking at the table anyway, which is what covers a notification that was
+	// sent while it was not listening.
+	pollInterval = 2 * time.Second
+	// batchSize bounds how many rows one pass reads.
+	batchSize = 64
+	// deliveredTable records, per replica, which outbox entries that replica has
+	// handed to its subscribers.
+	//
+	// It exists because a sequence is not a cursor. BIGSERIAL hands out ids in
+	// the order transactions reach for them, not in the order they commit, so a
+	// watermark that only moves forward skips whatever committed late behind
+	// it — permanently, and silently, because the row is still there and looks
+	// for all the world like one that had been read. Marking each entry per
+	// replica has no such hole to fall into: an entry is delivered or it is
+	// not, and a late commit is simply one that has not been marked yet.
+	deliveredTable = "event_delivered"
+	// retention is how long an outbox entry stays after it was published. It
+	// bounds both tables, which would otherwise grow without limit: a replica
+	// that has been down for longer than this does not receive what it missed.
+	retention = 24 * time.Hour
+	// createTable is idempotent, and it is this package's own record of having
+	// been applied — this capability is below the database module in the
+	// dependency graph and has no migration machinery to borrow.
+	createTable = `CREATE TABLE IF NOT EXISTS ` + table + ` (
+		id         BIGSERIAL PRIMARY KEY,
+		type       TEXT NOT NULL,
+		tenant     TEXT NOT NULL DEFAULT '',
+		payload    TEXT NOT NULL,
+		created_at TIMESTAMPTZ NOT NULL DEFAULT now()
+	);
+	CREATE TABLE IF NOT EXISTS ` + deliveredTable + ` (
+		event_id BIGINT NOT NULL,
+		replica  TEXT NOT NULL,
+		PRIMARY KEY (event_id, replica)
+	);
+	CREATE INDEX IF NOT EXISTS ` + deliveredTable + `_replica ON ` + deliveredTable + ` (replica, event_id)`
+)
+
+// Config is what this implementation accepts.
+type Config struct {
+	DSN string `config:"dsn"`
+	// MaxConns is the largest number of connections the pool opens.
+	MaxConns int `config:"max-conns"`
+}
+
+const (
+	dsnKey      = "dsn"
+	maxConnsKey = "max-conns"
+)
+
+const defaultMaxConns = 10
+
+// init registers this module with the process registry.
+func init() { core.ProcessRegistry.Register(Module()) }
+
+// Module is this module's descriptor.
+func Module() core.Module {
+	return event.NewModule(event.Spec[Config]{
+		ModuleName:      ModuleName,
+		ConfigNamespace: ConfigNamespace,
+		Config:          &Config{MaxConns: defaultMaxConns},
+		Items: map[string]config.Item{
+			dsnKey: {
+				Sensitive: true,
+				Description: "the PostgreSQL connection string; leaving it out runs the assembly " +
+					"without this backend",
+			},
+			maxConnsKey: {
+				Description: "the largest number of connections the pool opens",
+			},
+		},
+		Stance: stance,
+		Open:   open,
+		Start:  start,
+	})
+}
+
+// stance states whether this implementation runs.
+func stance(cfg *Config) core.Enablement {
+	if strings.TrimSpace(cfg.DSN) == "" {
+		return core.Enablement{
+			State: core.StateDisabled,
+			Reason: fmt.Sprintf("%s.%s gives no connection string, so this assembly runs without a "+
+				"PostgreSQL event bus; set it to run on PostgreSQL", ConfigNamespace, dsnKey),
+		}
+	}
+	return core.Enablement{State: core.StateEnabled}
+}
+
+// open builds the pool, makes sure the outbox is there, and takes the listening
+// connection.
+func open(ctx context.Context, cfg *Config) (event.Bus, error) {
+	poolCfg, err := pgxpool.ParseConfig(cfg.DSN)
+	if err != nil {
+		return nil, fmt.Errorf("%s: reading the connection string: %w", ModuleName, err)
+	}
+	if cfg.MaxConns > 0 {
+		// A value past what the pool takes is refused rather than wrapped: a
+		// negative one would be read as "no limit" or as an immediate refusal,
+		// depending on the pool, and neither is what the host configured.
+		if cfg.MaxConns > math.MaxInt32 {
+			return nil, fmt.Errorf("%s: %s is %d, past what a connection pool accepts",
+				ModuleName, maxConnsKey, cfg.MaxConns)
+		}
+		poolCfg.MaxConns = int32(cfg.MaxConns)
+	}
+	pool, err := pgxpool.NewWithConfig(ctx, poolCfg)
+	if err != nil {
+		return nil, fmt.Errorf("%s: building the pool: %w", ModuleName, err)
+	}
+	if _, createErr := pool.Exec(ctx, createTable); createErr != nil {
+		pool.Close()
+		return nil, fmt.Errorf("%s: creating %s: %w", ModuleName, table, createErr)
+	}
+	// The listening connection is outside the pool on purpose: a connection
+	// running LISTEN would otherwise be handed to an ordinary query, where the
+	// subscription would sit idle and the query would wait on it.
+	listen, err := pgx.Connect(ctx, cfg.DSN)
+	if err != nil {
+		pool.Close()
+		return nil, fmt.Errorf("%s: taking the listening connection: %w", ModuleName, err)
+	}
+	if _, err := listen.Exec(ctx, "LISTEN "+channel); err != nil {
+		_ = listen.Close(ctx)
+		pool.Close()
+		return nil, fmt.Errorf("%s: listening on %s: %w", ModuleName, channel, err)
+	}
+	replica := defaultReplicaName()
+	// A subscriber that arrives now is not owed what was published before it,
+	// so everything already in the outbox is marked as delivered to this
+	// replica before it starts reading. Marking rather than skipping to an id
+	// is what keeps a late commit from being mistaken for an old one.
+	if _, err := pool.Exec(ctx,
+		`INSERT INTO `+deliveredTable+` (event_id, replica) SELECT id, $1 FROM `+table+`
+		 ON CONFLICT DO NOTHING`, replica); err != nil {
+		_ = listen.Close(ctx)
+		pool.Close()
+		return nil, fmt.Errorf("%s: marking the outbox's existing entries: %w", ModuleName, err)
+	}
+	return &bus{
+		pool:     pool,
+		listen:   listen,
+		replica:  replica,
+		handlers: make(map[string][]event.Handler),
+	}, nil
+}
+
+// start freezes the table and begins reading.
+func start(ctx context.Context, b event.Bus) error {
+	local, ok := b.(*bus)
+	if !ok {
+		return fmt.Errorf("%s: the bus handed to the start stage is %T", ModuleName, b)
+	}
+	return local.begin(ctx)
+}
+
+type bus struct {
+	pool   *pgxpool.Pool
+	listen *pgx.Conn
+
+	mu       sync.Mutex
+	handlers map[string][]event.Handler
+	// replica is this instance's identity in the delivered table. It is what
+	// makes each entry's delivery a fact about this replica rather than a
+	// position in a sequence.
+	replica string
+	frozen  bool
+	closed  bool
+
+	readCtx context.Context
+	cancel  context.CancelFunc
+	reader  sync.WaitGroup
+}
+
+// Subscribe registers a handler for one event type.
+func (b *bus) Subscribe(eventType string, h event.Handler) {
+	b.mu.Lock()
+	defer b.mu.Unlock()
+	if b.frozen {
+		panic(fmt.Sprintf("event/postgres: Subscribe(%q) arrived after the reader started at the "+
+			"start stage; a subscription registered later would miss everything already delivered",
+			eventType))
+	}
+	b.handlers[eventType] = append(b.handlers[eventType], h)
+}
+
+// Publish writes the event to the outbox and announces it.
+//
+// Both happen in one transaction, and the order is the point: NOTIFY has no way
+// to reach a session that is not listening, so the row has to be there before
+// the announcement, or a replica that was between connections would never learn
+// about it.
+func (b *bus) Publish(ctx context.Context, evt event.Event) error {
+	payload, err := json.Marshal(evt.Payload)
+	if err != nil {
+		return fmt.Errorf("%s: event %q carries a payload that cannot be serialized: %w",
+			ModuleName, evt.Type, err)
+	}
+	b.mu.Lock()
+	closed := b.closed
+	b.mu.Unlock()
+	if closed {
+		return event.ErrClosed
+	}
+	tx, err := b.pool.Begin(ctx)
+	if err != nil {
+		return err
+	}
+	defer func() { _ = tx.Rollback(ctx) }()
+	var id int64
+	if err := tx.QueryRow(ctx,
+		`INSERT INTO `+table+` (type, tenant, payload) VALUES ($1, $2, $3) RETURNING id`,
+		evt.Type, evt.TenantID, string(payload)).Scan(&id); err != nil {
+		return err
+	}
+	if _, err := tx.Exec(ctx, `SELECT pg_notify($1, $2)`, channel, fmt.Sprint(id)); err != nil {
+		return err
+	}
+	return tx.Commit(ctx)
+}
+
+// Close stops the reader and releases both connections.
+func (b *bus) Close(ctx context.Context) error {
+	b.mu.Lock()
+	b.closed = true
+	cancel := b.cancel
+	b.mu.Unlock()
+	if cancel != nil {
+		cancel()
+	}
+	b.reader.Wait()
+	err := b.listen.Close(ctx)
+	b.pool.Close()
+	return err
+}
+
+// begin freezes the table and starts the reader.
+func (b *bus) begin(ctx context.Context) error {
+	b.mu.Lock()
+	defer b.mu.Unlock()
+	if b.frozen {
+		return nil
+	}
+	b.frozen = true
+	b.readCtx, b.cancel = context.WithCancel(ctx)
+	b.reader.Add(1)
+	go b.read()
+	return nil
+}
+
+// read delivers what the outbox holds beyond this replica's watermark.
+//
+// It waits for a notification and reads anyway when one does not come. The
+// timeout is not a fallback for a broken notification path: it is the path a
+// notification sent while this replica was reconnecting takes, which is exactly
+// the window the outbox exists for.
+func (b *bus) read() {
+	defer b.reader.Done()
+	for {
+		if b.readCtx.Err() != nil {
+			return
+		}
+		if err := b.drain(); err != nil {
+			if b.readCtx.Err() != nil {
+				return
+			}
+			slog.Default().Error("event/postgres: reading the outbox failed; retrying",
+				"err", err)
+			select {
+			case <-b.readCtx.Done():
+				return
+			case <-time.After(pollInterval):
+			}
+			continue
+		}
+		waitCtx, cancel := context.WithTimeout(b.readCtx, pollInterval)
+		_, waitErr := b.listen.WaitForNotification(waitCtx)
+		cancel()
+		// The waiting connection is how this replica learns that something was
+		// published. A failure here is not fatal — the read above still runs —
+		// but it is the only signal that the notification path has degraded,
+		// and without a pause it would turn this loop into a spin against the
+		// database.
+		if waitErr != nil && b.readCtx.Err() == nil && !errors.Is(waitErr, context.DeadlineExceeded) {
+			slog.Default().Error("event/postgres: waiting for a notification failed; carrying on "+
+				"by polling the table", "err", waitErr)
+			select {
+			case <-b.readCtx.Done():
+				return
+			case <-time.After(pollInterval):
+			}
+		}
+	}
+}
+
+// drain reads one batch past the watermark and delivers it.
+func (b *bus) drain() error {
+	b.mu.Lock()
+	replica := b.replica
+	types := make([]string, 0, len(b.handlers))
+	for eventType := range b.handlers {
+		types = append(types, eventType)
+	}
+	b.mu.Unlock()
+	if len(types) == 0 {
+		return nil
+	}
+	slices.Sort(types)
+
+	// Every entry this replica has not delivered, whatever its id relative to
+	// anything else. Reading by what is missing rather than by where a cursor
+	// stands is what makes a commit that lands late just another entry.
+	rows, err := b.pool.Query(b.readCtx,
+		`SELECT o.id, o.type, o.tenant, o.payload FROM `+table+` o
+		 WHERE o.type = ANY($2)
+		   AND NOT EXISTS (SELECT 1 FROM `+deliveredTable+` d
+		                   WHERE d.event_id = o.id AND d.replica = $1)
+		 ORDER BY o.id LIMIT $3`,
+		replica, types, batchSize)
+	if err != nil {
+		return err
+	}
+	type row struct {
+		id      int64
+		evt     event.Event
+		payload string
+	}
+	var batch []row
+	for rows.Next() {
+		var r row
+		if err := rows.Scan(&r.id, &r.evt.Type, &r.evt.TenantID, &r.payload); err != nil {
+			rows.Close()
+			return err
+		}
+		batch = append(batch, r)
+	}
+	rows.Close()
+	if err := rows.Err(); err != nil {
+		return err
+	}
+
+	for _, r := range batch {
+		var payload any
+		if err := json.Unmarshal([]byte(r.payload), &payload); err == nil {
+			r.evt.Payload = payload
+		}
+		if !b.deliver(r.evt) {
+			// The bus is closing. Leaving the entry unmarked is what has it
+			// delivered to whoever runs next.
+			return nil
+		}
+		// Marked even for a type whose handlers failed: the entry has been
+		// handed over, and unmarking would redeliver it forever with nobody
+		// left to tell.
+		if _, err := b.pool.Exec(b.readCtx,
+			`INSERT INTO `+deliveredTable+` (event_id, replica) VALUES ($1, $2)
+			 ON CONFLICT DO NOTHING`, r.id, replica); err != nil {
+			return err
+		}
+	}
+	b.retire()
+	return nil
+}
+
+// retire drops what is past the retention window.
+//
+// Both tables grow with every event, and nothing else bounds them: the outbox
+// by what was published, the delivered table by what each replica has marked.
+// The cost is stated where the window is: a replica that has been away longer
+// than the window does not receive what it missed, because the entries are
+// gone.
+func (b *bus) retire() {
+	if _, err := b.pool.Exec(b.readCtx,
+		`DELETE FROM `+table+` WHERE created_at < $1`, time.Now().Add(-retention)); err != nil {
+		slog.Default().Error("event/postgres: retiring old outbox entries failed", "err", err)
+	}
+	// The marks of entries that are gone are gone too; without this the
+	// delivered table would outlive the thing it describes.
+	if _, err := b.pool.Exec(b.readCtx,
+		`DELETE FROM `+deliveredTable+` d WHERE NOT EXISTS (SELECT 1 FROM `+table+` o WHERE o.id = d.event_id)`,
+	); err != nil {
+		slog.Default().Error("event/postgres: retiring stale delivery marks failed", "err", err)
+	}
+}
+
+// defaultReplicaName names this process in the delivered table.
+func defaultReplicaName() string {
+	host, err := os.Hostname()
+	if err != nil || host == "" {
+		host = "replica"
+	}
+	var raw [8]byte
+	if _, err := rand.Read(raw[:]); err != nil {
+		return fmt.Sprintf("%s-%d", host, time.Now().UnixNano())
+	}
+	return host + "-" + hex.EncodeToString(raw[:])
+}
+
+// deliver runs this replica's handlers for one event, and reports whether it
+// ran them. A false answer is what keeps the reader from marking an entry it
+// did not hand over.
+func (b *bus) deliver(evt event.Event) bool {
+	b.mu.Lock()
+	if b.closed {
+		b.mu.Unlock()
+		return false
+	}
+	handlers := slices.Clone(b.handlers[evt.Type])
+	b.mu.Unlock()
+	for i, h := range handlers {
+		if err := b.runHandler(h, evt); err != nil {
+			slog.Default().Error("event/postgres: a subscriber failed; the publisher is not told",
+				"event", evt.Type, "handler", i, "err", err)
+		}
+	}
+	return true
+}
+
+// runHandler isolates one handler from the reader goroutine that runs it: a
+// panic would take the reader down, and the reader is what delivers every later
+// event for the rest of the process's life.
+func (b *bus) runHandler(h event.Handler, evt event.Event) (err error) {
+	defer func() {
+		if r := recover(); r != nil {
+			err = fmt.Errorf("the handler panicked: %v", r)
+		}
+	}()
+	return h(b.readCtx, evt)
+}

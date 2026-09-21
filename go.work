@@ -8,7 +8,10 @@ use (
 	./pkg/config
 	./pkg/core
 	./pkg/db
+	./pkg/event
 	./pkg/http
+	./pkg/kv
 	./pkg/log
+	./pkg/redis
 	./pkg/tenant
 )

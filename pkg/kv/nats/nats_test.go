@@ -1,0 +1,154 @@
+package nats
+
+import (
+	"context"
+	"crypto/rand"
+	"encoding/hex"
+	"fmt"
+	"strconv"
+	"testing"
+	"time"
+
+	"github.com/vislake/speed/pkg/core"
+	"github.com/vislake/speed/pkg/kv"
+	"github.com/vislake/speed/pkg/kv/internal/kvsuite"
+	"github.com/vislake/speed/pkg/kv/internal/natstest"
+)
+
+// bucketName returns a name no earlier run can have used.
+//
+// A counter is not enough: the server keeps a bucket between runs, and make
+// check runs the tests twice, so the second leg would start with the first
+// leg's entries still in the bucket of the same name — which shows up as a
+// counter that is already at its expected value.
+func bucketName() string {
+	var raw [8]byte
+	if _, err := rand.Read(raw[:]); err != nil {
+		return fmt.Sprintf("speedtest_%d", time.Now().UnixNano())
+	}
+	return "speedtest_" + hex.EncodeToString(raw[:])
+}
+
+func newStore(t *testing.T) *store {
+	t.Helper()
+	url := natstest.URL(t)
+	bucket := bucketName()
+	opened, err := open(context.Background(), &Config{URL: url, Bucket: bucket, Timeout: 10 * time.Second})
+	if err != nil {
+		t.Fatalf("open: %v", err)
+	}
+	s := opened.(*store)
+	t.Cleanup(func() { _ = s.Close(context.Background()) })
+	return s
+}
+
+// TestConforms runs the shared contract against a real server.
+//
+// Each subtest gets a bucket of its own rather than a flushed server: JetStream
+// has no logical databases and emptying a bucket is a delete per key, so a
+// fresh bucket is both the simplest and the exact expression of "a store with no
+// relation to the ones before it".
+func TestConforms(t *testing.T) {
+	kvsuite.AssertConforms(t, func(t *testing.T) kv.KV {
+		return newStore(t)
+	})
+}
+
+func TestStanceStandsDownWithoutAServer(t *testing.T) {
+	got := stance(&Config{})
+	if got.State != core.StateDisabled {
+		t.Fatalf("stance with no server = %v, want StateDisabled", got.State)
+	}
+	if got.Reason == "" {
+		t.Fatal("the stand-down carries no reason")
+	}
+}
+
+func TestStanceEnablesOnceAServerIsNamed(t *testing.T) {
+	got := stance(&Config{URL: "nats://127.0.0.1:4222"})
+	if got.State != core.StateEnabled {
+		t.Fatalf("stance with a server = %v, want StateEnabled", got.State)
+	}
+}
+
+// TestTheExpiryTravelsInsideTheValue pins the design this backend forced: a
+// bucket's time-to-live is one setting for the whole bucket, so the expiry is
+// kept in the value and this package is what decides a key has aged out.
+func TestTheExpiryTravelsInsideTheValue(t *testing.T) {
+	s := newStore(t)
+	ctx := context.Background()
+	const ttl = 400 * time.Millisecond
+	if err := s.Set(ctx, "k", []byte("v"), ttl); err != nil {
+		t.Fatalf("Set: %v", err)
+	}
+	entry, err := s.bucket.Get(ctx, encodeKey("k"))
+	if err != nil {
+		t.Fatalf("reading the raw entry: %v", err)
+	}
+	value, expires, live := unwrapFull(entry.Value())
+	if !live {
+		t.Fatal("a key set with a moment to live reads as expired")
+	}
+	if expires.IsZero() {
+		t.Fatal("the expiry is not in the value, so nothing here can keep one per key")
+	}
+	if string(value) != "v" {
+		t.Fatalf("the value behind the header is %q, want %q", value, "v")
+	}
+	// Past the expiry, the entry is still in the bucket: it is this package
+	// that reports the key as absent, which is what makes a per-key expiry
+	// possible at all.
+	time.Sleep(ttl + 100*time.Millisecond)
+	if _, present, err := s.Get(ctx, "k"); err != nil || present {
+		t.Fatalf("Get past the ttl: present=%v err=%v", present, err)
+	}
+	if _, err := s.bucket.Get(ctx, encodeKey("k")); err != nil {
+		t.Fatalf("the entry itself is gone, so this case no longer shows what it means to: %v", err)
+	}
+}
+
+// TestTwoStoresOnOneBucketShareTheSameEntries is what this backend is for.
+func TestTwoStoresOnOneBucketShareTheSameEntries(t *testing.T) {
+	url := natstest.URL(t)
+	ctx := context.Background()
+	bucket := bucketName()
+	mk := func() *store {
+		opened, err := open(ctx, &Config{URL: url, Bucket: bucket, Timeout: 10 * time.Second})
+		if err != nil {
+			t.Fatalf("open: %v", err)
+		}
+		s := opened.(*store)
+		t.Cleanup(func() { _ = s.Close(ctx) })
+		return s
+	}
+	first, second := mk(), mk()
+
+	if err := first.Set(ctx, "k", []byte("from-the-first"), 0); err != nil {
+		t.Fatalf("Set: %v", err)
+	}
+	got, present, err := second.Get(ctx, "k")
+	if err != nil || !present {
+		t.Fatalf("Get on the other store: present=%v err=%v", present, err)
+	}
+	if string(got) != "from-the-first" {
+		t.Fatalf("the other store read %q", got)
+	}
+
+	if _, incrErr := first.IncrByFloat(ctx, "n", 5); incrErr != nil {
+		t.Fatalf("IncrByFloat: %v", incrErr)
+	}
+	if _, incrErr := second.IncrByFloat(ctx, "n", 7); incrErr != nil {
+		t.Fatalf("IncrByFloat: %v", incrErr)
+	}
+	text, _, err := first.Get(ctx, "n")
+	if err != nil {
+		t.Fatalf("Get: %v", err)
+	}
+	total, err := strconv.ParseFloat(string(text), 64)
+	if err != nil {
+		t.Fatalf("the counter holds %q, which is not a number", text)
+	}
+	if total != 12 {
+		t.Fatalf("the two stores counted to %v between them, want 12", total)
+	}
+}

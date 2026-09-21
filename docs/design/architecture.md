@@ -200,5 +200,5 @@ speed 不引入进程边界。宿主是单一进程，注册表与全部模块�
 | [http](modules/design-http.md) | 已实现 |
 | [authn](modules/design-authn.md) | 已实现 |
 | [tenant](modules/design-tenant.md) | 已实现 |
-| [kv](modules/design-kv.md) | 未实现 |
-| [event](modules/design-event.md) | 未实现 |
+| [kv](modules/design-kv.md) | 已实现 |
+| [event](modules/design-event.md) | 已实现 |

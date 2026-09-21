@@ -180,10 +180,10 @@ classDiagram
 
 | 能力 | 状态 | 代码 |
 |---|---|---|
-| 接口与根包 | 未实现 | — |
-| 内存实现 | 未实现 | — |
-| Redis 实现 | 未实现 | — |
-| PostgreSQL 实现 | 未实现 | — |
-| Memcached 实现 | 未实现 | — |
-| NATS JetStream 实现 | 未实现 | — |
-| 一致性套件 | 未实现 | — |
+| 接口与根包 | 已实现 | `pkg/kv/kv.go` `KV`；`pkg/kv/module.go` `Spec`、`NewModule` |
+| 内存实现 | 已实现 | `pkg/kv/memory/memory.go` `Module`、`stance` |
+| 一致性套件 | 已实现 | `pkg/kv/internal/kvsuite/kvsuite.go` `AssertConforms` |
+| Redis 实现 | 已实现 | `pkg/kv/redis/redis.go` `Module`、`store` |
+| PostgreSQL 实现 | 已实现 | `pkg/kv/postgres/postgres.go` `Module`、`store` |
+| Memcached 实现 | 已实现 | `pkg/kv/memcached/memcached.go` `Module`、`store` |
+| NATS JetStream 实现 | 已实现 | `pkg/kv/nats/nats.go` `Module`、`store` |

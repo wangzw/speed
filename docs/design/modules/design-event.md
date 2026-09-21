@@ -154,7 +154,7 @@ sequenceDiagram
 
 ### 投递路径
 
-进程内实现在发布方的协程上依次调用订阅者，因此它知道每一次调用的结果，但这不是接口承诺。
+进程内实现在发布方的协程上依次调用订阅者，所以 `Publish` 返回时它们都已处理完毕。这不是接口承诺——经传输投递的实现做不到——而它们的失败不回传，与任何实现一样。
 
 经传输投递的实现把事件写入其后端，并由每个副本自己的读取协程投递。**投递给本副本订阅者与投递给其他副本订阅者走的是同一条路径**，因此它们在时间上都不早于 `Publish` 返回；发布方无从得知任何一次调用的结果。
 
@@ -168,7 +168,7 @@ sequenceDiagram
 - `Publish` 返回非 nil 表示发布**没有被接受**，且失败发生在交给总线的那一步：载荷不可序列化、连接不可用、总线已关闭。不表示某个订阅者处理失败。
 - 订阅者的失败不回传发布方。
 
-**实现可以更强，且必须在自己的文档里写明强在哪。** 进程内实现同步调用每个订阅者并汇总它们的失败，这是它的性质；调用方不得依赖，因为换一个实现就没有了。
+**实现可以更强，且必须在自己的文档里写明强在哪。** 进程内实现在发布方的协程上依次调用每一个订阅者，所以 `Publish` 返回时它们都已处理完毕；调用方不得依赖这一点，因为经传输投递的实现做不到。**订阅者的失败在任何实现里都不回传**，理由见 [ADR-event-delivery-2026-09-21](../adr/adr-event-delivery-2026-09-21.md)。
 
 | 情形 | 表现 |
 |---|---|
@@ -206,9 +206,9 @@ sequenceDiagram
 
 | 能力 | 状态 | 代码 |
 |---|---|---|
-| 接口与根包 | 未实现 | — |
-| 内存实现 | 未实现 | — |
-| Redis 实现 | 未实现 | — |
-| PostgreSQL 实现 | 未实现 | — |
-| NATS JetStream 实现 | 未实现 | — |
-| 一致性套件 | 未实现 | — |
+| 接口与根包 | 已实现 | `pkg/event/event.go` `Bus`、`Event`、载荷读取辅助；`pkg/event/module.go` `Spec`、`NewModule` |
+| 内存实现 | 已实现 | `pkg/event/memory/memory.go` `Module`、`stance`、`start` |
+| 一致性套件 | 已实现 | `pkg/event/internal/bussuite/bussuite.go` `AssertConforms` |
+| Redis 实现 | 已实现 | `pkg/event/redis/redis.go` `Module`、`bus` |
+| PostgreSQL 实现 | 已实现 | `pkg/event/postgres/postgres.go` `Module`、`bus` |
+| NATS JetStream 实现 | 已实现 | `pkg/event/nats/nats.go` `Module`、`bus` |
