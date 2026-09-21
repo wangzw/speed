@@ -198,11 +198,11 @@ func TestABareWriteFailsWithItsRecord(t *testing.T) {
 	if err != nil {
 		t.Fatalf("opening the handle: %v", err)
 	}
-	if err := handle.Use(newCapture()); err != nil {
-		t.Fatalf("installing the capture plugin: %v", err)
+	if installErr := handle.Use(newCapture()); installErr != nil {
+		t.Fatalf("installing the capture plugin: %v", installErr)
 	}
-	if err := handle.Exec(createOrders).Error; err != nil {
-		t.Fatalf("creating the orders table: %v", err)
+	if createErr := handle.Exec(createOrders).Error; createErr != nil {
+		t.Fatalf("creating the orders table: %v", createErr)
 	}
 	// No audit table, so every capture write fails.
 

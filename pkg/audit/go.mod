@@ -19,6 +19,8 @@ replace github.com/vislake/speed/pkg/http => ../http
 
 replace github.com/vislake/speed/pkg/log => ../log
 
+replace github.com/vislake/speed/pkg/pgpool => ../pgpool
+
 replace github.com/vislake/speed/pkg/tenant => ../tenant
 
 require (
