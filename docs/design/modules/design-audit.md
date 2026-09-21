@@ -368,14 +368,15 @@ sequenceDiagram
 
 ## 实现状态
 
-本模块尚未实现，因而没有可引的符号；下表列出各项将要落在的路径。
-
 | 能力 | 状态 | 代码 |
 |---|---|---|
-| 接口与数据类型 | 未实现 | `pkg/audit`（目录尚不存在） |
-| 审计表与迁移 | 未实现 | `pkg/audit/journal`（目录尚不存在） |
-| 语句级捕获 | 未实现 | `pkg/audit/journal`（目录尚不存在） |
-| 请求级捕获 | 未实现 | `pkg/audit/journal`（目录尚不存在） |
-| 事件级捕获 | 未实现 | `pkg/audit/journal`（目录尚不存在） |
-| 记录接缝 | 未实现 | `pkg/audit/journal`（目录尚不存在） |
-| 明细脱敏 | 未实现 | `pkg/audit/journal`（目录尚不存在） |
+| 接口与数据类型 | 已实现 | `pkg/audit/audit.go` `Audit`、`Entry`、`Source` |
+| 审计表与迁移 | 已实现 | `pkg/audit/journal/entry.go` `row`；`pkg/audit/journal/migrations/<方言>/0001_audit_entries.sql` |
+| 语句级捕获 | 已实现 | `pkg/audit/journal/capture.go` `capture`、`captureOne` |
+| 请求级捕获 | 已实现 | `pkg/audit/journal/request.go` `middlewareFor`；`pkg/audit/journal/matcher.go` `newMatcher` |
+| 事件级捕获 | 已实现 | `pkg/audit/journal/event.go` `subscribe`、`handlerFor` |
+| 记录接缝 | 已实现 | `pkg/audit/journal/entry.go` `Record` |
+| 明细脱敏 | 已实现 | `pkg/audit/journal/redact.go` `maskedKeySet`、`maskDetail` |
+| 失败信号 | 已实现 | `pkg/audit/journal/signal.go` `signal`、`report` |
+| 配置 | 已实现 | `pkg/audit/journal/config.go` `schema`、`readSettings` |
+| 模块登记 | 已实现 | `pkg/audit/journal/journal.go` `Module`、`ModuleName` |

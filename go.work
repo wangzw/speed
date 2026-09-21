@@ -4,6 +4,7 @@ use (
 	./examples/authenticated-host
 	./examples/minimal-host
 	./examples/tenanted-host
+	./pkg/audit
 	./pkg/authn
 	./pkg/config
 	./pkg/core
