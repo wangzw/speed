@@ -5,6 +5,7 @@ import (
 	"database/sql"
 	"errors"
 	"fmt"
+	"strings"
 
 	"gorm.io/gorm"
 )
@@ -30,7 +31,10 @@ import (
 // and never the locator: it carries credentials, and this error reaches the
 // startup diagnostics.
 func openHandle(ctx context.Context, spec Spec, cfg lockingConfig) (*gorm.DB, error) {
-	session, err := gorm.Open(spec.Dialector(cfg.DSN), &gorm.Config{})
+	// The locator is normalised once, and the dialector is the only reader:
+	// the stance judged the trimmed text, so the driver has to be handed the
+	// same one rather than the text with its surrounding whitespace intact.
+	session, err := gorm.Open(spec.Dialector(strings.TrimSpace(cfg.DSN)), &gorm.Config{})
 	if err != nil {
 		return nil, fmt.Errorf("%w: opening a %s connection failed: %w",
 			ErrConnectFailed, spec.Dialect, err)

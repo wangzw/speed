@@ -2,9 +2,12 @@ package memcached
 
 import (
 	"context"
+	"errors"
 	"strings"
 	"testing"
 	"time"
+
+	"github.com/bradfitz/gomemcache/memcache"
 
 	"github.com/vislake/speed/pkg/core"
 	"github.com/vislake/speed/pkg/kv"
@@ -57,12 +60,11 @@ func TestStanceFailsTheStartupWithoutAServer(t *testing.T) {
 }
 
 // TestStanceRefusesABlankServerEntry covers the other shape of a missing
-// server. The addresses are handed to gomemcache as they are written, and its
-// client connects lazily and reads an empty address as the zero port rather
-// than skipping it: an entry that is empty or only whitespace would therefore
-// open cleanly and then fail every operation that lands on it, with nothing at
-// the startup naming the input. One such entry is enough to fail the startup,
-// whether or not the list also holds a real address.
+// server. gomemcache connects lazily and reads an empty address as the zero
+// port rather than skipping it, so an entry that is empty or only whitespace
+// would open cleanly and then fail every operation that lands on it, with
+// nothing at the startup naming the input. One such entry is enough to fail
+// the startup, whether or not the list also holds a real address.
 func TestStanceRefusesABlankServerEntry(t *testing.T) {
 	for _, servers := range [][]string{
 		{""},
@@ -91,6 +93,32 @@ func TestStanceRefusesABlankServerEntry(t *testing.T) {
 		if got.State != core.StateEnabled {
 			t.Errorf("stance with servers %q = %v, want StateEnabled", servers, got.State)
 		}
+	}
+}
+
+// TestAPaddedServerEntryStillReachesTheClient is the half a stance cannot hold
+// on its own. The guard judges an entry by its trimmed text, so an entry
+// written with surrounding whitespace passes it — and gomemcache then resolves
+// every address it is given and discards the whole list when one fails to
+// resolve, which is what a padded address does. Handing the client the text as
+// written would leave it holding no server at all: the process runs, every
+// operation fails with "no servers configured or available", and nothing names
+// the input.
+//
+// The address below has nothing listening, so the operation fails either way.
+// What the case pins is which failure: a client that kept the address reports
+// the connection attempt, and one that discarded the list reports that it has
+// no servers.
+func TestAPaddedServerEntryStillReachesTheClient(t *testing.T) {
+	opened, err := open(context.Background(), &Config{
+		Servers: []string{" 127.0.0.1:1 "},
+		Timeout: 200 * time.Millisecond,
+	})
+	if err != nil {
+		t.Fatalf("opening against a padded address: %v", err)
+	}
+	if _, _, err := opened.Get(context.Background(), "padded"); errors.Is(err, memcache.ErrNoServers) {
+		t.Fatalf("the client was built without the address the host named: %v", err)
 	}
 }
 

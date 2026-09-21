@@ -18,6 +18,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"strings"
 	"time"
 
 	"github.com/redis/go-redis/v9"
@@ -123,12 +124,17 @@ func Items() map[string]config.Item {
 // built here and then found unusable is closed before the error is returned, so
 // a failed startup leaves no pool behind.
 func Connect(ctx context.Context, cfg Config) (*redis.Client, error) {
-	if cfg.Addr == "" {
+	// The address is normalised once and everything below reads that one
+	// value. A caller that judged a trimmed address usable — the modules'
+	// stances do — would otherwise hand this function the untrimmed text, and
+	// the client would refuse an address this function had just accepted.
+	addr := strings.TrimSpace(cfg.Addr)
+	if addr == "" {
 		return nil, errors.New("redis: the connection address is empty, and an assembly that runs " +
 			"this backend has to name one")
 	}
 	client := redis.NewClient(&redis.Options{
-		Addr:        cfg.Addr,
+		Addr:        addr,
 		Password:    cfg.Password,
 		DB:          cfg.DB,
 		PoolSize:    cfg.PoolSize,
@@ -137,7 +143,7 @@ func Connect(ctx context.Context, cfg Config) (*redis.Client, error) {
 	})
 	if err := client.Ping(ctx).Err(); err != nil {
 		_ = client.Close()
-		return nil, fmt.Errorf("redis: %s did not answer: %w", cfg.Addr, err)
+		return nil, fmt.Errorf("redis: %s did not answer: %w", addr, err)
 	}
 	return client, nil
 }

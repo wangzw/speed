@@ -45,6 +45,27 @@ func TestConforms(t *testing.T) {
 	kvsuite.AssertConforms(t, newStore(t, s))
 }
 
+// TestAPaddedAddressStillReachesTheServer is the half the stance cannot hold on
+// its own. The stance reads a trimmed address, so one written with surrounding
+// whitespace passes it; the client is built from that same value and the server
+// answers. Handing the client the text as written would refuse at the dial an
+// address the stance had just accepted, and the failure would land in New
+// rather than in Prepare.
+func TestAPaddedAddressStillReachesTheServer(t *testing.T) {
+	addr, db := redistest.Acquire(t)
+	proto := speedredis.Defaults()
+	proto.Addr, proto.DB = " "+addr+" ", db
+	opened, err := open(context.Background(), &proto)
+	if err != nil {
+		t.Fatalf("opening against a padded address: %v", err)
+	}
+	s := opened.(*store)
+	t.Cleanup(func() { _ = s.Close(context.Background()) })
+	if _, found, err := s.Get(context.Background(), "padded"); err != nil || found {
+		t.Fatalf("reading through a padded address: found = %v, err = %v", found, err)
+	}
+}
+
 // TestStanceFailsTheStartupWithoutAServer pins the rule that a module named in
 // the command tree has to start: this one reaches Redis at a server, so being
 // named without one stops the startup and names the input it stopped on. Under

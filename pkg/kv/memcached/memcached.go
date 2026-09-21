@@ -123,7 +123,7 @@ func Module() core.Module {
 // A configured server list otherwise states StateEnabled, so a second configured
 // backend fails the startup.
 func stance(cfg *Config) (core.Enablement, error) {
-	if !serversUsable(cfg.Servers) {
+	if _, ok := usableServers(cfg.Servers); !ok {
 		return core.Enablement{}, fmt.Errorf("%s.%s names no usable server, and this implementation "+
 			"reaches Memcached at one: with none set, or with an entry that is empty or only "+
 			"whitespace, there is nothing to start against. Set it, or leave this implementation out "+
@@ -139,31 +139,42 @@ func stance(cfg *Config) (core.Enablement, error) {
 	return core.Enablement{State: core.StateEnabled}, nil
 }
 
-// serversUsable reports whether the list is one this implementation can start
-// against: it is not empty, and no entry is empty or only whitespace.
+// usableServers returns the addresses this implementation reaches Memcached
+// at, each with its surrounding whitespace trimmed, and reports whether the
+// list holds at least one.
 //
-// Every entry goes straight to gomemcache, whose client connects lazily and
-// takes an empty address as the zero port rather than skipping it. A blank
-// entry would therefore open cleanly and then fail every operation that lands
-// on it — a process up and running on a store that never worked, with nothing
-// in the diagnostics naming the input. Judging the whole list here is what
-// turns that into a startup failure instead.
-func serversUsable(servers []string) bool {
+// Trimming here rather than in the judgement alone is what keeps the guard and
+// the client on one value. Every entry goes straight to gomemcache, which
+// resolves the whole list at once and keeps none of it when one address fails
+// to resolve — so an entry this guard accepted and the client then refused
+// would leave a process running on a client with no server at all, failing
+// every operation with "no servers configured or available" and naming no
+// input. An entry that is empty or only whitespace is still refused outright
+// rather than skipped: dropping it would start against a list the host did not
+// write.
+func usableServers(servers []string) ([]string, bool) {
 	if len(servers) == 0 {
-		return false
+		return nil, false
 	}
+	usable := make([]string, 0, len(servers))
 	for _, s := range servers {
-		if strings.TrimSpace(s) == "" {
-			return false
+		trimmed := strings.TrimSpace(s)
+		if trimmed == "" {
+			return nil, false
 		}
+		usable = append(usable, trimmed)
 	}
-	return true
+	return usable, true
 }
 
 // open builds the client. There is no ping to make: gomemcache connects lazily,
 // and a server that is down fails the first operation rather than the open.
 func open(_ context.Context, cfg *Config) (kv.KV, error) {
-	client := memcache.New(cfg.Servers...)
+	// The stance has already refused a list holding no usable entry, so the
+	// list here has one; trimming the addresses is what keeps the client on
+	// the values the guard judged rather than on the text it was handed.
+	servers, _ := usableServers(cfg.Servers)
+	client := memcache.New(servers...)
 	client.Timeout = cfg.Timeout
 	return &store{client: client}, nil
 }

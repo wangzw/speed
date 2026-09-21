@@ -42,6 +42,25 @@ func TestConforms(t *testing.T) {
 	})
 }
 
+// TestAPaddedConnectionStringStillReachesTheServer is the half the stance
+// cannot hold on its own. The stance reads a trimmed connection string, so one
+// written with surrounding whitespace passes it; the pool is built from that
+// same value and the server answers. Handing the parser the text as written
+// would refuse a string the stance had just accepted, and the failure would
+// land in New rather than in Prepare.
+func TestAPaddedConnectionStringStillReachesTheServer(t *testing.T) {
+	dsn := pgtest.Acquire(t)
+	opened, err := open(context.Background(), &pgpool.Config{DSN: " " + dsn + " ", MaxConns: 4})
+	if err != nil {
+		t.Fatalf("opening against a padded connection string: %v", err)
+	}
+	s, ok := opened.(*store)
+	if !ok {
+		t.Fatalf("open returned %T, want *store", opened)
+	}
+	t.Cleanup(func() { _ = s.Close(context.Background()) })
+}
+
 // TestStanceFailsTheStartupWithoutAConnectionString pins the rule that a module
 // named in the command tree has to start: this one reaches PostgreSQL at a
 // locator, so being named without one stops the startup and names the input it

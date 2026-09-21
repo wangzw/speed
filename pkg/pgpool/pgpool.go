@@ -18,6 +18,7 @@ import (
 	"context"
 	"fmt"
 	"math"
+	"strings"
 
 	"github.com/jackc/pgx/v5/pgxpool"
 
@@ -83,7 +84,11 @@ func Items() map[string]config.Item {
 // lazily, and each backend does something over it right after this and fails
 // there — so a pool that comes back has been assembled, not used.
 func Connect(ctx context.Context, namespace string, cfg Config) (*pgxpool.Pool, error) {
-	poolCfg, err := pgxpool.ParseConfig(cfg.DSN)
+	// The connection string is normalised once and everything below reads that
+	// one value. A caller that judged a trimmed DSN usable — the modules'
+	// stances do — would otherwise hand this function the untrimmed text, and
+	// the parser would refuse a string this function had just accepted.
+	poolCfg, err := pgxpool.ParseConfig(strings.TrimSpace(cfg.DSN))
 	if err != nil {
 		return nil, fmt.Errorf("%s: reading the connection string: %w", namespace, err)
 	}

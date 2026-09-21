@@ -137,6 +137,37 @@ func TestConnectFailureNamesTheConnectivityStep(t *testing.T) {
 	}
 }
 
+// TestTheLocatorReachesTheDriverTrimmed is the half the stance cannot hold on
+// its own. prepare reads a trimmed locator, so one written with surrounding
+// whitespace passes it; the driver has to be handed that same value. Handing it
+// the text as written would refuse a locator prepare had just accepted, and the
+// refusal would land in New rather than in Prepare.
+//
+// What the dialector was given is recorded rather than inferred from what the
+// driver does with it: SQLite opens a path with a space in the name rather than
+// refusing it, so the driver's own behaviour cannot tell the two apart.
+func TestTheLocatorReachesTheDriverTrimmed(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "trimmed.db")
+	var seen string
+	spec := sqliteSpec()
+	spec.Dialector = func(dsn string) gorm.Dialector {
+		seen = dsn
+		return sqlite.Open(dsn)
+	}
+	handle, err := openHandle(t.Context(), spec, sqliteSection(" "+path+" "))
+	if err != nil {
+		t.Fatalf("opening against a padded locator: %v", err)
+	}
+	sqlDB, err := handle.DB()
+	if err != nil {
+		t.Fatalf("the session came back without a pool: %v", err)
+	}
+	defer func() { _ = sqlDB.Close() }()
+	if seen != path {
+		t.Fatalf("the driver was handed %q, want %q", seen, path)
+	}
+}
+
 // TestPoolParametersReachTheConnection pins that the largest number of
 // connections the pool opens is the configured one.
 //
