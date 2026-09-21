@@ -2,7 +2,7 @@
 
 ## 状态
 
-已接受
+已被 [ADR-settings-layer-2026-09-21](adr-settings-layer-2026-09-21.md) 整篇取代。
 
 ## 背景
 

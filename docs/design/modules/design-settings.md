@@ -15,7 +15,7 @@
 - **不认识租户模块。** 租户标识是字符串，本模块不校验它在不在名册、不读请求上下文、不产生标识（[ADR-settings-scope-2026-09-21](../../adr/adr-settings-scope-2026-09-21.md)）。
 - **不解释值的内容。** 通知模板在本模块是一段字符串；渲染、校验与转义归消费方。
 - **不承载容器类型。** 映射与列表不在声明的类型集合里，需要它们的消费方把 JSON 文本存进字符串项自行解码（[ADR-settings-declaration-2026-09-21](../../adr/adr-settings-declaration-2026-09-21.md)）。
-- **不保存变更历史。** 变更事实经事件发布，历史的记录与查询归审计模块（[ADR-settings-audit-2026-09-21](../../adr/adr-settings-audit-2026-09-21.md)）。
+- **不保存变更历史。** 变更事实经事件发布，历史的记录归审计模块，而审计不提供查询面（见 [audit](design-audit.md)），检索与导出的承载单元要另立（[ADR-settings-audit-2026-09-21](../../adr/adr-settings-audit-2026-09-21.md)）。
 - **不做事件总线。** 广播与投递由事件模块承担，本模块只发布与订阅（[ADR-settings-propagation-2026-09-21](../../adr/adr-settings-propagation-2026-09-21.md)）。
 - **不提供无类型的键值存取。** 那是键值模块的能力；没有声明的键在本模块读写两侧都不可用（[ADR-settings-declaration-2026-09-21](../../adr/adr-settings-declaration-2026-09-21.md)）。
 
@@ -28,8 +28,9 @@
 | 设置项 | setting item | 一个有键、有类型、有默认值的运行期可变参数，由某个模块声明。 |
 | 声明 | Schema | 本模块定义的资源类型，承载一个模块的全部设置项与它们的默认值。 |
 | 键 | key | 设置项的路径标识，由命名空间与字段路径拼出，与配置键的规则同一条。 |
-| 全局行 | global row | 租户列为空的设置行，是全部租户共享的一层取值。 |
-| 回落 | fallback | 读取按租户行、全局行、声明默认值依次取值的过程。 |
+| 层选 | layer selector | 指名读写作用于哪一层的值，由 `Global()` 或 `ForTenant(id)` 构造；零值不是一个层。 |
+| 全局行 | global row | 全局层对应的设置行，是全部租户共享的一层取值；存储上它的租户列为空。 |
+| 回落 | fallback | 读取按租户行、全局行、声明默认值依次取值的过程；起点是调用方以层选指名的那一层。 |
 | 键表 | key table | 装配期由全部声明聚合出的映射：键到声明类型、默认值与元信息。 |
 | 快照 | snapshot | 全部已写入行在内存里的拷贝，装载时按声明预解码。 |
 | 版本 | version | 一行的写入序号，每次写入递增，随变更事件发布。 |
@@ -49,44 +50,57 @@
 功能标识的元素类型必须是接口，取用写作 `core.Resolve[settings.Store](reg)`。
 
 ```go
+// Layer 指名读写作用于哪一层：全局层，或某个租户的租户层。
+// 零值不是一个层，是调用点的编程错误。
+type Layer interface {
+    isLayer() // 未导出方法封住实现：Layer 只能由本模块的构造器产生
+}
+
+// Global 返回全局层。
+func Global() Layer
+
+// ForTenant 返回标识为 id 的租户层；id 为空是调用点的编程错误，与层选为零值同一档：当场 panic，不返回错误。
+func ForTenant(id string) Layer
+
 // Store 是设置的读写面。功能标识为 (*Store)(nil)。
 type Store interface {
     // Get 按声明的类型把设置值解码进 target。
-    // 取值按 租户行 > 全局行 > 声明默认值 回落；tenant 为空时读全局层。
+    // 取值按 租户行 > 全局行 > 声明默认值 回落，从 layer 指名的层开始。
     // 键未声明时报 ErrUnknownKey；该键的已写入值解不成声明类型时报 ErrTypeMismatch。
-    Get(tenant, key string, target any) error
+    Get(layer Layer, key string, target any) error
 
-    // Set 按声明的类型编码 w.Value 并写入；w.Tenant 为空时写全局行。
+    // Set 按声明的类型编码 w.Value 并写入 w.Layer 指名的那一层。
     // 写入成功后发布 settings.changed。
     Set(ctx context.Context, w Write) error
 
-    // Delete 删除一个显式写入的行；删除不存在的行不是错误。
-    // 被删的行属于哪一层由 tenant 指定，空表示全局行。
-    Delete(ctx context.Context, tenant, key, actor string) error
+    // Delete 删除 layer 指名的那一层上的显式行；删除不存在的行不是错误。
+    Delete(ctx context.Context, layer Layer, key, actor string) error
 
-    // List 列出 tenant 的显式行，空租户列出全局行。结果按键排序。
-    List(ctx context.Context, tenant string) ([]Entry, error)
+    // List 列出 layer 指名的那一层的显式行。结果按键排序。
+    List(ctx context.Context, layer Layer) ([]Entry, error)
 }
 
 // Get 是 Store.Get 的泛型封装，像 core.Resolve 一样把断言收进函数里；
 // 类型参数与声明类型不符时返回 ErrTypeMismatch。
-func Get[T any](s Store, tenant, key string) (T, error)
+func Get[T any](s Store, layer Layer, key string) (T, error)
 
 type Write struct {
-    Tenant string // 空表示全局行
-    Key    string
-    Value  any    // 按声明类型编码
-    Actor  string // 记入事件载荷，本模块不解释
+    Layer Layer  // Global() 或 ForTenant(id)
+    Key   string
+    Value any    // 按声明类型编码
+    Actor string // 记入事件载荷，本模块不解释
 }
 
 type Entry struct {
-    Tenant    string
+    Tenant    string // 这一行的租户列：全局行为空
     Key       string
     Value     string
     Version   uint64
     UpdatedAt time.Time
 }
 ```
+
+**零值不是一个层。** 接口上不存在"空租户"这个值：指名全局层要经 `Global()`，指名租户层要经 `ForTenant(id)`，而 `ForTenant` 拒收空标识。传一个 `nil` 的层选是调用点的编程错误，当场 panic 而不返回错误，判据与目标参数的非法形态同一条（见读取面）。
 
 **读取不收上下文，写入收。** 读取只走内存快照，不发起任何 IO，因而没有可取消的点；写入与列举访问数据库，收上下文。同一种功能的两个方向取不同签名的判据是它们做什么，不是形态上的一致。
 
@@ -129,14 +143,14 @@ settings.Schema{
 
 // 读取
 var opts options  // 零值即可：未写入的键取声明默认值
-err := store.Get(tenantID, "ratelimit.window", &opts.Window)
+err := store.Get(settings.ForTenant(tenantID), "ratelimit.window", &opts.Window)
 ```
 
 **键的路径派生与 `pkg/config` 是同一套规则**：优先 `config` tag，其次 `json` tag，都没有则字段名转小写短横线；匿名字段内联；tag 写作 `-` 的字段跳过；实现了 `encoding.TextUnmarshaler` 的类型按标量叶子处理；不可解码的字段自动跳过（判据与清单见 [config](design-config.md) 的名字的派生与映射一节，本模块不另立规则）。从配置迁往设置的一个参数，键名与承载结构体因此都不变。
 
 **类型集合是封闭的**：字符串、布尔、整数、浮点、时长，以及实现 `encoding.TextUnmarshaler` 的类型。容器不在其中（见非职责）。取值纪律与配置相同，本模块不另立规则：实现 `TextUnmarshaler` 的类型按它自己的约定往返，`time.Duration` 只接受 `time.ParseDuration` 可解的文本，浮点写入整数字段要求可无损转换。
 
-**声明的收集取自可用集，再按架构不变量 15 做一次减法**：来源是 `core.Resources[settings.Schema](reg)` 的全体；其中本次运行级纳入、而后表态禁用或消解落选的模块，其声明退出——那是这次装配给出的否定；未被本次命令纳入与只被静态级纳入的模块没有表态，其声明留在键表里。判据是键的有效性跟着二进制走，比任何一次命令长寿。两个模块声明同一个键是收集期的冲突，终止启动并点名冲突双方；单个声明自身的缺陷（判据：不涉及第二方，仅凭这一份声明即可判定不可用）同样是启动失败，判据与示例归 `ErrInvalidDeclaration`。
+**声明的收集取自可用集**：来源是 `core.Resources[settings.Schema](reg)` 的全体；判据是键的有效性跟着二进制走，比任何一次命令长寿，因而未运行、消解落选与只被静态级纳入的模块，其声明一律在键表里。**取可用集的消费点不做减法**（架构不变量 15）：一份参数声明不是由哪一次运行产生的，减法会让同一个键在一条命令下合法、在另一条下非法，而声明本身没变。两个模块声明同一个键是收集期的冲突，终止启动并点名冲突双方；单个声明自身的缺陷（判据：不涉及第二方，仅凭这一份声明即可判定不可用）同样是启动失败，判据与示例归 `ErrInvalidDeclaration`。
 
 **声明的聚合发生在 `New`**，产出键表：键到声明类型、默认值与元信息的映射。键表在装配期一次性建立，此后只读。
 
@@ -150,15 +164,15 @@ err := store.Get(tenantID, "ratelimit.window", &opts.Window)
 | 二 | 全局行 | 租户行为空而全局行有值 |
 | 三 | 声明默认值 | 两层都没有行 |
 
-**调用方传空租户读到的就是全局层**：回落直接从全局行开始。空串不是合法的租户标识（[ADR-settings-precedence-2026-09-21](../../adr/adr-settings-precedence-2026-09-21.md)），它与任何真实租户不会相撞。
+**读取从层选指名的那一层开始**：指名全局层时回落直接落在全局行上。层选由 `Global()` 或 `ForTenant(id)` 构造，接口上不存在"空租户"这个值（[ADR-settings-layer-2026-09-21](../../adr/adr-settings-layer-2026-09-21.md)）。
 
 **值在快照装载时按声明预解码**，读取路径上没有文本转换。解码失败的行单独记下（键与层到错误的映射），读取命中它时报 `ErrTypeMismatch` 并点名键；其余键照常可用。装载因此不因一行坏值而失败——坏值的作用面限于读它的代码路径，进程照常启动，其余设置照常可用。
 
-**目标参数的非法形态是调用点的编程错误，panic 而不返回错误**：传入非指针、传入 `nil`。判据与配置的取值面同一条（[config](design-config.md) 的取值与校验一节）。
+**目标参数与层选的非法形态是调用点的编程错误，panic 而不返回错误**：目标传入非指针、传入 `nil`；层选传入 `nil`、`ForTenant` 收到空标识。判据与配置的取值面同一条（[config](design-config.md) 的取值与校验一节）；这一类不涉及第二方、与数据无关，调用点无从处理它。
 
 ### 写入面
 
-写入只作用于显式的层：`Write.Tenant` 为空即写全局行，否则写该租户的行。写入不改动其它层的任何行。
+写入只作用于显式的层：`Write.Layer` 指名写哪一层，`Global()` 写全局行，`ForTenant(id)` 写该租户的行。写入不改动其它层的任何行。
 
 **写入的值按声明类型编码为文本**，编码规则是读取方向的逆：`TextUnmarshaler` 类型的文本表示、`Duration` 的 `ParseDuration` 格式、布尔与数值的常规文本。编码失败的形态是 `ErrTypeMismatch`，点名键与声明类型。
 
@@ -211,21 +225,21 @@ type Change struct {
 
 周期刷新是变更事件的兜底（[ADR-settings-propagation-2026-09-21](../../adr/adr-settings-propagation-2026-09-21.md)）；取零表示接受"只靠事件"的收敛语义——未被投递到本副本的变更在进程重启前不再被它看到。**负值使启动失败并点名该输入项**——负的间隔在计时器上无从表达。
 
-本模块不声明敏感输入项，也没有可缺的输入项：**没有被纳入即表态启用**，退让的档位不存在，不想要设置功能的命令不纳入它。
+本模块不声明敏感输入项，也没有可缺的输入项：**被运行级纳入即启动**，不想要设置功能的命令不纳入它。
 
 ### 对宿主的要求
 
 以下各条是宿主在命令树上要做的全部动作。**本模块既不能把它们声明出来，也没有检查它们的位置**，漏写不报错。
 
-- **每条要用到设置读写的命令写出本模块的 `ModuleName`。** 数据库与事件总线的实现经构造期依赖一并进入参与集，它们各自的配置要在那条命令下配齐。
+- **每条要用到设置读写的命令写出本模块的 `ModuleName`，并点名一个数据库实现与一个事件总线实现。** 这两者排他交付，依赖闭包不替宿主挑，本模块的构造期依赖因而不把它们拉进参与集——不点名即在依赖解析处以缺提供者终止启动，点名了则各自的配置还要在那条命令下配齐。
 - **把本模块静态级纳入施加迁移的命令。** 设置表与本模块的迁移集一起建立，依赖闭包够不到不运行的模块；`IncludeAllDeclarations` 是这类命令的推荐写法（见 [db](design-db.md) 的迁移的应用）。
-- **不要把本模块放进根命令。** 后果与租户、认证记下的同一条：它进入施加迁移那条命令的参与集并要在那里表态，而其表在该命令下的建立不受影响（设置没有可缺的输入项，不会在那里表态禁用），真正的代价是它的输入项升格为全局参数、出现在每条命令的帮助里。
+- **不要把本模块放进根命令。** 后果与租户、认证记下的同一条：它进入施加迁移那条命令的参与集并要在那里启动，而其表在该命令下的建立不受影响（迁移集按声明集取材，本模块在其中且不会被消解排除），真正的代价是它的输入项升格为全局参数、出现在每条命令的帮助里。
 - **写入面的访问控制由宿主负责。** 本模块不判权限，一个暴露到网络的写入口要由宿主自己鉴权。
-- **租户标识由调用方从请求面取得**（`tenant.FromContext`），本模块拿到的是字符串；写一个不在名册上的标识不会被本模块拒绝，读取它的行也不会——本模块不认识名册。
+- **租户标识由调用方从请求面取得**（`tenant.FromContext`），以 `ForTenant` 包成层选交给本模块；取不到租户时读全局层还是拒绝由调用方决定。写一个不在名册上的标识不会被本模块拒绝，读取它的行也不会——本模块不认识名册。
 
 ### 稳定性承诺
 
-`Store`、`Get`、`Write`、`Entry`、`Schema`、`Mount`、`Item`、`Change`、`ChangedEventType`、`ModuleName` 与哨兵错误是本模块与其他模块之间的契约。键的路径派生规则与配置共用一条，改它同时改变两个模块的键名。变更事件的类型名与载荷字段名是发布方与订阅方之间的约定，改一个字段名会静默断开订阅方的读取（[event](design-event.md) 记有同一条）。
+`Layer`、`Global`、`ForTenant`、`Store`、`Get`、`Write`、`Entry`、`Schema`、`Mount`、`Item`、`Change`、`ChangedEventType`、`ModuleName` 与哨兵错误是本模块与其他模块之间的契约。键的路径派生规则与配置共用一条，改它同时改变两个模块的键名。变更事件的类型名与载荷字段名是发布方与订阅方之间的约定，改一个字段名会静默断开订阅方的读取（[event](design-event.md) 记有同一条）。
 
 表名、列名与迁移文件的组织是内部实现，不在契约面上。
 
@@ -249,16 +263,20 @@ type Change struct {
 
 ## UML 图
 
-下图给出契约面上的类型与模块内部的两份结构。图中画不出的约束：键表在装配期建立后只读；快照由写入重载、事件重载与周期刷新替换，替换是对整份的原子指针交换。
+下图给出契约面上的类型与模块内部的两份结构。图中画不出的约束：键表在装配期建立后只读；快照由写入重载、事件重载与周期刷新替换，替换是对整份的原子指针交换；层选由 `Global` 与 `ForTenant` 两个构造器产生，零值不是一个层。
 
 ```mermaid
 classDiagram
+    class Layer {
+        <<interface>>
+        +isLayer()
+    }
     class Store {
         <<interface>>
-        +Get(tenant, key, target) error
+        +Get(layer, key, target) error
         +Set(ctx, w) error
-        +Delete(ctx, tenant, key, actor) error
-        +List(ctx, tenant) []Entry, error
+        +Delete(ctx, layer, key, actor) error
+        +List(ctx, layer) []Entry, error
     }
     class Schema {
         +string Namespace
@@ -266,7 +284,7 @@ classDiagram
         +map Items
     }
     class Write {
-        +string Tenant
+        +Layer Layer
         +string Key
         +any Value
         +string Actor
@@ -302,6 +320,8 @@ classDiagram
     settingsStore ..> Schema : 从资源收齐
     settingsStore ..> keyTable : 建立
     settingsStore ..> snapshot : 装载、替换
+    Store ..> Layer : 收
+    Write --> Layer : 携带
     Store ..> Write : 收
     Store ..> Entry : 交出
     settingsStore ..> Change : 发布
@@ -353,13 +373,13 @@ flowchart TD
 
 | 列 | 类型 | 说明 |
 |---|---|---|
-| `tenant_id` | 文本，非空，默认空串 | 空串表示全局行 |
+| `tenant_id` | 文本，非空，默认空串 | 这一行的层：全局层取空串，租户层取租户标识 |
 | `key` | 文本，非空 | 完整路径 |
 | `value` | 文本，非空 | 按声明类型编码 |
 | `version` | 整数，非空 | 每次写入递增 |
 | `updated_at` | 时间，非空 | 每次写入更新 |
 
-表不内嵌受租户约束的模型约定，读写它的语句自带租户条件；全局行以空串落在同一个键空间里，主键因此覆盖"一个键在某一层至多一行"。
+表不内嵌受租户约束的模型约定，读写它的语句自带租户条件；全局行与租户行落在同一个键空间里，主键因此覆盖"一个键在某一层至多一行"。**空的租户列是存储侧的表达**：接口上不存在"空租户"这个值，指名一层由层选承担（[ADR-settings-layer-2026-09-21](../../adr/adr-settings-layer-2026-09-21.md)）。
 
 **键表**是装配期由全部声明聚合出的只读映射：键到声明类型、默认值与元信息。它在 `New` 建立，装载快照与两个读写方向都读它。
 
@@ -373,7 +393,7 @@ flowchart TD
 
 | 阶段 | 行为 |
 |---|---|
-| `Prepare` | `Decode` 自己那份配置；无可缺输入项，表态启用 |
+| `Prepare` | `Decode` 自己那份配置，不合格即启动失败；表态启用 |
 | `New` | 取数据库与事件功能，收集声明、建立键表；不读写数据 |
 | `Migrate` | 无动作。设置表由本模块声明的迁移集建立，由数据库模块统一施加 |
 | `Init` | 取日志（可用则取）；订阅变更事件；装载快照 |
@@ -384,13 +404,13 @@ flowchart TD
 
 **未被推进到的阶段其回调不执行**（[ADR-lifecycle-drive-2026-09-20](../../adr/adr-lifecycle-drive-2026-09-20.md)）。深度浅于 `Init` 的驱动不装载快照、不订阅事件；深度止于 `Migrate` 的驱动下设置表照建，与"表随二进制走"一致。
 
-**取配置读取面的失败形态与租户名册同一条**：`core.Resolve[config.Reader](reg)` 得到 `ErrMissingProvider` 说明宿主漏了预置，是终止启动的失败，不是表态禁用的理由。
+**取配置读取面的失败形态与租户名册同一条**：`core.Resolve[config.Reader](reg)` 得到 `ErrMissingProvider` 说明宿主漏了预置，是终止启动的失败，没有一档表态可以让启动带着缺席的配置读取面继续走。
 
 ### 声明的收集与键表的建立
 
-收集在 `New` 内完成，来源是 `core.Resources[settings.Schema](reg)` 的全体，减去其中本次运行级纳入、而后表态禁用或消解落选的模块（架构不变量 15）；键的有效性因此跟着二进制走，比任何一次命令长寿。
+收集在 `New` 内完成，来源是 `core.Resources[settings.Schema](reg)` 的全体；键的有效性跟着二进制走，比任何一次命令长寿，未运行与只被静态级纳入的模块，其声明因而一律在键表里。**取可用集的消费点不做减法**（架构不变量 15）。
 
-每个声明贡献一组键：命名空间与挂载路径与字段路径逐段拼接，展开规则与配置的名字派生一致。聚合时逐键检查唯一性，两个声明落在同一个键上即 `ErrDeclarationConflict`，终止启动并点名两个声明方；单份声明的缺陷（键名违反字符集、挂载值不是结构体指针、展开出现类型环、`Items` 的键不对应任何叶子、声明的类型不在集合内）即 `ErrInvalidDeclaration`。两类判据与配置的冲突判据同源（[config](design-config.md) 的冲突判据一节）。
+每个声明贡献一组键：命名空间与挂载路径与字段路径逐段拼接，展开规则与配置的名字派生一致。聚合时逐键检查唯一性，两个声明落在同一个键上即 `ErrDeclarationConflict`，终止启动并点名两个声明方；单份声明的缺陷（键名违反字符集、挂载值不是结构体指针、展开出现类型环、`Items` 的键不对应任何叶子、声明的类型不在集合内）即 `ErrInvalidDeclaration`。两类判据与配置的输入项清单一节所列的判据同源（[config](design-config.md)）。
 
 **同一功能的互斥实现各自划分键的命名空间**，与配置对互斥实现的同一条要求：清单收集自全部已注册模块，两个实现即便不同时运行，声明仍然同时在册，同键即冲突、进程起不来。
 
@@ -453,7 +473,7 @@ flowchart TD
 
 ### 接受的代价
 
-**各条裁定本身带来的代价记在各自的记录里**：值模型的边界见 [ADR-settings-declaration-2026-09-21](../../adr/adr-settings-declaration-2026-09-21.md)；对事件总线的构造期依赖见 [ADR-settings-propagation-2026-09-21](../../adr/adr-settings-propagation-2026-09-21.md)；变更历史的存否与敏感项的记录见 [ADR-settings-audit-2026-09-21](../../adr/adr-settings-audit-2026-09-21.md)；全局行的共享性与读取的额外一级见 [ADR-settings-precedence-2026-09-21](../../adr/adr-settings-precedence-2026-09-21.md)；消费方对"没有租户"一档的处理与裸字符串标识见 [ADR-settings-scope-2026-09-21](../../adr/adr-settings-scope-2026-09-21.md)。
+**各条裁定本身带来的代价记在各自的记录里**：值模型的边界见 [ADR-settings-declaration-2026-09-21](../../adr/adr-settings-declaration-2026-09-21.md)；对事件总线的构造期依赖见 [ADR-settings-propagation-2026-09-21](../../adr/adr-settings-propagation-2026-09-21.md)；变更历史的存否与敏感项的记录见 [ADR-settings-audit-2026-09-21](../../adr/adr-settings-audit-2026-09-21.md)；全局行的共享性与读取的额外一级见 [ADR-settings-precedence-2026-09-21](../../adr/adr-settings-precedence-2026-09-21.md)；接口收层选与零值不可用见 [ADR-settings-layer-2026-09-21](../../adr/adr-settings-layer-2026-09-21.md)；消费方对"没有租户"一档的处理与裸字符串标识见 [ADR-settings-scope-2026-09-21](../../adr/adr-settings-scope-2026-09-21.md)。
 
 设计本身带来的代价是两处：**每一条读取多一次映射查找**（租户行未命中时的全局行查找），装载时的一次预解码换来读取路径上的零转换；**快照常驻内存**，规模是全部已写入行——稀疏使用下可控，把设置当高频数据写会把这份内存放大。
 
@@ -463,7 +483,7 @@ flowchart TD
 
 **周期刷新在 `Stop` 取消**，`Close` 不等待它：它是幂等的读，取消之后未完成的工作不产生要回收的东西。
 
-**写入的并发由数据库仲裁**：两个并发写是两条独立语句，后提交的覆盖先提交的；版本递增在语句内完成，不经过读改写，本模块不在写入路径上加锁。
+**写入的并发由数据库仲裁**：两个并发写是两条独立语句，后提交的覆盖先提交的；版本递增在语句内完成，不经过读改写。**写入路径上另有一把进程内的锁**：每次写之后都要重载快照，而重载与事件重载、周期刷新、首次装载共用同一把互斥，写入因此与这三者排队——它保护的是快照替换与读取之间的一致性，不是数据本身的正确性。
 
 **本模块不开事务。** 写入是单行语句，自身原子；变更事件在语句之外发布，与写入不在同一个事务里——这正是审计只能依靠事件投递的形态来源，代价已经记在 [ADR-settings-audit-2026-09-21](../../adr/adr-settings-audit-2026-09-21.md)。调用方要在自己的事务里读设置做不到：读取走快照，事务不作用于它。
 
@@ -475,14 +495,14 @@ flowchart TD
 
 | 能力 | 状态 | 代码 |
 |---|---|---|
-| 接口与数据类型 | 已实现 | `pkg/settings/settings.go` `Store`、`Write`、`Entry`、`Schema`、`Mount`、`Item`、`Change`、`ChangedEventType`、`Get` |
+| 接口与数据类型 | 部分实现：层选类型 `Layer` 与 `Global`、`ForTenant` 两个构造器尚未落地 | `pkg/settings/settings.go` `Store`、`Write`、`Entry`、`Schema`、`Mount`、`Item`、`Change`、`ChangedEventType`、`Get` |
 | 声明面与键表 | 已实现 | `pkg/settings/keys.go` `buildKeyTable`、`expandSchema`、`classifyLeaf`、`fieldName`、`camelToKebab` |
-| 读取的三级回落与泛型封装 | 已实现 | `pkg/settings/store.go` `Get`；`pkg/settings/snapshot.go` `value`、`layer`；`pkg/settings/codec.go` `assignTarget` |
-| 写入面与版本递增 | 已实现 | `pkg/settings/store.go` `Set`、`writeRow`、`Delete`、`List`；`pkg/settings/codec.go` `encodeValue`、`coerce` |
+| 读取的三级回落与泛型封装 | 部分实现：读写面仍收字符串租户 | `pkg/settings/store.go` `Get`；`pkg/settings/snapshot.go` `value`、`layer`；`pkg/settings/codec.go` `assignTarget` |
+| 写入面与版本递增 | 部分实现：读写面仍收字符串租户 | `pkg/settings/store.go` `Set`、`writeRow`、`Delete`、`List`；`pkg/settings/codec.go` `encodeValue`、`coerce` |
 | 设置表与它的迁移集 | 已实现 | `pkg/settings/snapshot.go` `tableName`、`row`；`pkg/settings/migrations/<方言>/0001_settings.sql` |
 | 快照的装载、刷新路径与原子替换 | 已实现 | `pkg/settings/snapshot.go` `loadSnapshot`、`snapshot`；`pkg/settings/store.go` `reload`、`swap`；`pkg/settings/refresh.go` `startRefresh`、`stopRefresh` |
 | 变更事件的发布与订阅 | 已实现 | `pkg/settings/store.go` `publish`；`pkg/settings/module.go` `subscribe` |
 | 敏感项的事件遮蔽 | 已实现 | `pkg/settings/store.go` `changeFor`、`deleteChange`；`pkg/settings/codec.go` `mismatch` |
 | 配置 | 已实现 | `pkg/settings/config.go` `schema`、`readSettings`、`moduleConfig` |
-| 模块登记 | 已实现 | `pkg/settings/module.go` `Module`、`ModuleName` |
+| 模块登记 | 已实现 | `pkg/settings/module.go` `Module`；`pkg/settings/settings.go` `ModuleName` |
 | 哨兵错误 | 已实现 | `pkg/settings/errors.go` `ErrUnknownKey`、`ErrTypeMismatch`、`ErrInvalidValue`、`ErrDeclarationConflict`、`ErrInvalidDeclaration`、`ErrTableMissing` |

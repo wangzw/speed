@@ -2,7 +2,7 @@
 
 ## 状态
 
-已接受
+已被 [ADR-module-enablement-2026-09-21](adr-module-enablement-2026-09-21.md) 取代。
 
 ## 背景
 
