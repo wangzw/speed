@@ -38,8 +38,8 @@ import (
 
 	// The transports and the format the cases' configuration documents arrive
 	// through. Both implementations are imported above rather than here: the
-	// migrate command names them, so the name each one registers under is
-	// read from the subpackage that holds it.
+	// root command names them, so the name each one registers under is read
+	// from the subpackage that holds it.
 	_ "github.com/vislake/speed/pkg/config/format/json"
 	_ "github.com/vislake/speed/pkg/config/source/file"
 )

@@ -176,11 +176,14 @@ func countOccurrences(stream, text string) int {
 	return n
 }
 
-// requireNoMentionOf asserts that neither stream names the module.
+// requireNoMentionOf asserts that no diagnostic line names the module.
 //
-// An engine the command never took in has no line anywhere: it took no stance,
-// so it is not in the enabled set the diagnostics report, and leaving it out was
-// the host's own writing rather than a surprise the diagnostics exist to catch.
+// An engine the command never took in has no diagnostic line: it took no
+// stance, so it is not in the enabled set the diagnostics report, and leaving it
+// out was the host's own writing rather than a surprise the diagnostics exist to
+// catch. The failure text a startup ends with is a different stream, and it does
+// name the implementations claiming the capability exclusively — that is how the
+// host learns which ones it has to choose between.
 func requireNoMentionOf(t *testing.T, got outcome, module string) {
 	t.Helper()
 	want := `module "` + module + `"`
