@@ -132,7 +132,7 @@ go -C pkg/authn test -race ./...
 ```
 
 The tests bring up their own gateways and ask for no service, no database and
-no environment. `examples/authenticated-host` is where the assembly is held
+no environment. `examples/orders-host` is where the assembly is held
 from outside the process: it starts a real binary, reaches it over a socket and
 checks the status codes, which is the only place the registration of the
 middleware layer is observable at all.

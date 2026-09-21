@@ -24,21 +24,25 @@ Build, test and check everything in the workspace:
 make check
 ```
 
-Run the smallest host that assembles a real run, and see the inputs the
-assembled modules declared:
+Ask a command what it takes. The arguments it prints are the ones its modules
+declared as flags; the rest reaches them through the configuration file and the
+environment:
 
 ```
-go -C examples/minimal-host run . --help
+go -C examples/orders-host run . serve --help
 ```
 
-Run it for real, against the config file its tests use:
+Run it for real — every module in this repository, one process, no external
+service:
 
 ```
-MINIHOST_CONFIG=file:testdata/local.yaml go -C examples/minimal-host run .
+ORDERSHOST_CONFIG=file:testdata/local.yaml go -C examples/orders-host run . migrate
+ORDERSHOST_CONFIG=file:testdata/local.yaml go -C examples/orders-host run . serve
 ```
 
-It starts, greets, and waits; Ctrl-C stops and closes every module in
-reverse dependency order.
+It migrates, seeds three tenants, serves and waits; Ctrl-C stops and closes
+every module in reverse dependency order. The account it serves is `alice` with
+the password `s3cret`.
 
 `make help` lists the other entry points. The toolchain versions the
 checks need are pinned in `.mise.toml`.
@@ -48,7 +52,7 @@ checks need are pinned in `.mise.toml`.
 | Path | What it is |
 |---|---|
 | `pkg/` | The modules. One directory per release unit, each with its own `go.mod`. |
-| `examples/` | Hosts that assemble modules into a running program. |
+| `examples/` | A host that assembles modules into a running program. |
 | `docs/` | The design documents and decision records. |
 | `tools/` | Repository self-checks. |
 | `go.work` | The module roster every command derives its module set from. |

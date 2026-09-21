@@ -7,8 +7,8 @@ import (
 
 // envPrefix is the environment variable prefix of this host. Every derived
 // variable name starts with it, and so does the one that names the config
-// source, TENANTHOST_CONFIG.
-const envPrefix = "TENANTHOST"
+// source, ORDERSHOST_CONFIG.
+const envPrefix = "ORDERSHOST"
 
 // hostModuleName is the name the host's own module is registered under.
 const hostModuleName = "host"

@@ -1,9 +1,7 @@
 go 1.26.8
 
 use (
-	./examples/authenticated-host
-	./examples/minimal-host
-	./examples/tenanted-host
+	./examples/orders-host
 	./pkg/audit
 	./pkg/authn
 	./pkg/config

@@ -157,7 +157,7 @@ func Default() *slog.Logger
 
 **声明保的是构造顺序。** 给构造顺序加边的机制只有 `Requires`；顺序是这些边上的拓扑排序，并列的就绪模块按模块名字典序取最小（`pkg/core/depgraph.go` 的 `planConstruction`）。取 `log.Logger` 的模块排在 log 之后，当且仅当它自己声明、或经别的模块的声明传递地排在 log 之后；否则它排在前还是在后由模块名决定。排在 log 之后：`Resolve` 照常取到产物，模块经 `Named` 写出的记录照常进配置的目的地，漏掉的那一行在这一次运行里毫无迹象。排在 log 之前：日志模块还没有构造出产物，`core.Resolve[log.Logger]` 在它的 `New` 中失败，启动以退出码 1 终止，日志文件根本没建起来。
 
-**守这条要求的只能是描述符层面的断言**：读模块描述符的 `Requires`，不跑宿主。漏声明在运行期没有指向它的观察面——构造顺序的两种结局都不落在漏掉的那一行上——而 `examples/minimal-host/wiring_test.go` 的 `TestEveryModuleThatLogsDeclaresTheLoggingDependency` 正是这种形态。
+**守这条要求的只能是描述符层面的断言**：读模块描述符的 `Requires`，不跑宿主。漏声明在运行期没有指向它的观察面——构造顺序的两种结局都不落在漏掉的那一行上——而 `examples/orders-host/wiring_test.go` 的 `TestEveryModuleThatLogsDeclaresTheLoggingDependency` 正是这种形态。
 
 **这条断言有一处接受的代价**：描述符里没有任何东西表明一个模块会写日志（它取什么在自己的 `New` 里），名录因而只能写死在测试里，新模块若既漏声明、又漏登记名录，照样静默通过。替代做法都补不上这处缺口：扫源码找 `core.Resolve[log.Logger]` 的调用点会让日志模块变成源码分析器、越过模块边界；让 `core` 在 `Resolve` 时校验调用方声明，要 `core` 持有调用方身份，它没有也不该有；给描述符加一个"会写日志"位，由同一个作者自报，与漏声明同源，不构成兜底。
 

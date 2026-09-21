@@ -485,4 +485,4 @@ sequenceDiagram
 | 哨兵错误 | 已实现 | `pkg/authn/errors.go` |
 | 校验后端子包 | 已实现 | `pkg/authn/static/` |
 
-装配级的性质在 `examples/authenticated-host` 的 `e2e_test.go` 里从进程外守住：中间件的登记是否发生，在网关自己的包里观察不到。
+装配级的性质在 `examples/orders-host` 的 `e2e_test.go` 里从进程外守住：中间件的登记是否发生，在网关自己的包里观察不到。

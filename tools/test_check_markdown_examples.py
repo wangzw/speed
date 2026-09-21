@@ -51,7 +51,7 @@ import check_markdown_examples as m  # noqa: E402
 
 # A roster of the shape go.work carries: module directories relative to
 # the repository root.
-ROSTER = frozenset({"pkg/core", "pkg/config", "examples/minimal-host"})
+ROSTER = frozenset({"pkg/core", "pkg/config", "examples/orders-host"})
 
 
 def write_workspace(root: pathlib.Path, dirs, inline: bool = False) -> None:
@@ -71,7 +71,7 @@ class InScopeTests(unittest.TestCase):
     def test_module_prose_is_in_scope(self):
         self.assertTrue(m._in_scope("pkg/core/AGENTS.md", ROSTER))
         self.assertTrue(m._in_scope("pkg/core/README.md", ROSTER))
-        self.assertTrue(m._in_scope("examples/minimal-host/AGENTS.md", ROSTER))
+        self.assertTrue(m._in_scope("examples/orders-host/AGENTS.md", ROSTER))
 
     def test_prose_below_a_module_is_in_scope(self):
         # A subpackage's own prose belongs to the module that holds it.
@@ -262,9 +262,9 @@ class ModuleDirsForBlockTests(unittest.TestCase):
         )
 
     def test_example_host_import(self):
-        body = 'import "github.com/vislake/speed/examples/minimal-host"\n'
+        body = 'import "github.com/vislake/speed/examples/orders-host"\n'
         self.assertEqual(
-            m._module_dirs_for_block(body, ROSTER), ({"examples/minimal-host"}, set())
+            m._module_dirs_for_block(body, ROSTER), ({"examples/orders-host"}, set())
         )
 
     def test_import_outside_the_workspace_is_unresolved(self):

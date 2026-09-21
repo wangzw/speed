@@ -1,0 +1,42 @@
+# A configuration this host serves on by hand, kept small on purpose: the cases
+# in e2e_test.go write their own, with their own ports and their own database
+# file, so nothing here is load-bearing for `make check`.
+#
+# The one account is alice with the password "s3cret". The hash below is what
+# the `hash` command produces for it, which is the only form a password is ever
+# written in: this file is the one an operator checks in or mounts as a secret.
+http:
+  endpoints:
+    public:
+      address: "127.0.0.1:8080"
+    ops:
+      address: "127.0.0.1:8081"
+db:
+  sqlite:
+    dsn: "orders-host.db"
+authn:
+  gate:
+    endpoints:
+      - public
+  static:
+    name: local
+    subjects:
+      alice: "pbkdf2-sha256$600000$BX9j3EiuLR4S79FTmjj9dw$2vKTCfw3Uq14KIrgIFfmxlzQ3AR17pdHLADoJPAoaCw"
+tenant:
+  resolve:
+    endpoints:
+      - public
+    extractor: header
+    header-name: X-Tenant
+  catalog:
+    refresh-period: 30s
+audit:
+  journal:
+    endpoints:
+      - public
+    requests:
+      - "GET /orders"
+    events:
+      - order.placed
+settings:
+  refresh-interval: 30s

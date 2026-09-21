@@ -567,7 +567,7 @@ flowchart TD
 模块内的性质由各自的包守住：隔离插件的四档判定在 `pkg/tenant/catalog/plugin_test.go` 里跑真实的 `*gorm.DB`，
 取法的登记窗口在 `pkg/tenant/resolve/extract_test.go` 里跑真实的登记与关窗。
 
-**装配级的性质在 `examples/tenanted-host` 的 `e2e_test.go` 里从进程外守住**，因为它们在别的包自己的测试里
+**装配级的性质在 `examples/orders-host` 的 `e2e_test.go` 里从进程外守住**，因为它们在别的包自己的测试里
 观察不到：中间件在链上的位置（无凭据的请求由认证拦下、且不驱动名册查询）、名册模块在名字没写进命令树的情况下
 经构造期依赖进入参与集、以及名册表与应用模块的表经静态级纳入被 `migrate` 建出来——最后一条由该用例直接读
 数据库文件的 schema 判定，而不是采信命令的输出。
