@@ -202,9 +202,19 @@ func (a *App) Root() *Command
 func (a *App) Execute(ctx context.Context) error
 
 func (c *Command) Sub(use string) *Command          // 添加一条子命令
-func (c *Command) Include(names ...string)          // 纳入模块
-func (c *Command) IncludeAll()                      // 纳入全部可用模块
 func (c *Command) Do(depth core.Stage, action Action)
+
+// 运行级纳入
+func (c *Command) Include(names ...string)
+func (c *Command) IncludeAll()
+
+// 静态级纳入：只让声明进入收集范围
+func (c *Command) IncludeDeclarations(names ...string) *Inclusion
+func (c *Command) IncludeAllDeclarations() *Inclusion
+
+// 修饰，作用于这一次纳入所列的模块
+func (i *Inclusion) WithFlags() *Inclusion          // 参数出现在帮助里，仍不判必填
+func (i *Inclusion) AllResources() *Inclusion       // 全部声明生效，覆盖消费点的裁定
 
 type Action func(ctx context.Context, reg *core.Registry) error
 ```
@@ -216,7 +226,8 @@ app := config.NewApp(core.ProcessRegistry)
 app.Root().Include(log.ModuleName)          // 全局：每条命令都有日志
 
 migrate := app.Root().Sub("migrate")
-migrate.Include(postgres.ModuleName)        // 宿主 import 的那个引擎
+migrate.Include(postgres.ModuleName)        // 运行级：宿主 import 的那个引擎
+migrate.IncludeAllDeclarations()            // 静态级：全部，不贡献任何参数
 migrate.Do(core.StageMigrate, nil)          // 推进到迁移施加完毕即退出
 
 serve := app.Root().Sub("serve")
@@ -226,9 +237,23 @@ serve.Do(core.StageServe, nil)              // 推进到底，阻塞等待 ctx �
 err := app.Execute(ctx)
 ```
 
-**`Include` 按模块名纳入。** 模块的身份就是它的名字；宿主 import 了那个包才能纳入它，**登记模块的包因此导出自己的名字常量**供这里引用（见 [core](design-core.md)）。纳入一个模块即一并纳入它构造期依赖的提供者。
+**纳入分两级**（[ADR-command-tree-2026-09-21](../../adr/adr-command-tree-2026-09-21.md)）。运行级纳入的模块被构造与驱动、有资格表态、其输入项出现在这条命令的参数面上；静态级纳入的模块只让它声明的资源进入声明集，不构造、不表态、不展开依赖闭包，其输入项默认不出现在参数面上，且**任何情况下都不判必填**。一个模块同时被两级纳入时按运行级处置。
 
-**`Include` 收到一个未登记的名字即启动失败**，错误点名是哪条命令写下了它，并可 `errors.Is` 到 `core.ErrUnknownParticipant`（[core](design-core.md)）。本模块不为它另立哨兵：名字是否登记由注册表回答，这里补的只是注册表说不出的那一半——是哪条命令要的它。宿主写了常量却没 import 那个包，是一次合法的编译，因而只能在这里报出来。
+**施加迁移那条命令只运行级纳入引擎。** 带表的模块依赖数据库，数据库不依赖它们，依赖闭包够不到它们；而迁移集按声明集取材（见 [db](design-db.md)），静态级纳入就够。把它们改成运行级纳入会让它们的全部输入项连同必填项进入这条命令——`migrate` 会因为缺一个 HTTP 监听地址而启动不起来。
+
+**`IncludeAllDeclarations` 是这类命令的推荐写法。** `IncludeAll` 那条代价——参与集重新成为 import 图的函数，而参与集决定帮助输出、可用参数与必填范围——对它不成立，静态级不碰人机界面。逐个列举静态级纳入的模块是另一条路，代价是宿主要维护一份"谁有声明"的清单，漏一个不报错：那一种不进启动诊断。
+
+**`Include` 按模块名纳入。** 模块的身份就是它的名字；宿主 import 了那个包才能纳入它，**登记模块的包因此导出自己的名字常量**供这里引用（见 [core](design-core.md)）。运行级纳入一个模块即一并纳入它构造期依赖的提供者。
+
+**两个修饰只对静态级纳入有意义，因此只有静态级的两个入口返回 `*Inclusion`**，运行级的两个不返回。这条约束交给编译器而不是运行期检查：`Include(x).WithFlags()` 根本编译不过，不必为它新立一条哨兵，也不必让宿主在启动时才发现。
+
+**修饰的粒度是这一次纳入所列的模块**，不是单个模块名。对 `IncludeDeclarations(a, b)` 调用它作用于 `a` 与 `b`；对 `IncludeAllDeclarations()` 调用则作用于全部可用模块——要只对其中一个放开，就分两次纳入，把那一个单独写成一次 `IncludeDeclarations`。
+
+`WithFlags` 让那些模块的输入项出现在帮助输出里并可在命令行上给出，必填仍然不判——**当前没有任何一种静态资源需要配置才能确定**，这项修饰因而暂无正当用例，打开它就有了一个能给却无人读取的参数：那个模块不构造，不会去 `Decode`。
+
+`AllResources` 令那些模块的全部声明生效，**覆盖各消费点自己的取材域裁定**（架构不变量 15）。它对每一种资源的后果都要由宿主自己承担：在 `db` 那一侧，它把一个不运行的模块的插件装到数据库句柄上，绕过"没启用就不生效"（见 [db](design-db.md)）；本模块定义的四种资源本就按完整清单收集，不受它影响；接口规格的形状校验同理。用在 `IncludeAllDeclarations` 上即令二进制里每一个模块的全部声明生效，包括每一个表态禁用模块的插件——这是宿主写得出的最宽的一次覆盖，不是默认。
+
+**`Include` 与 `IncludeDeclarations` 收到一个未登记的名字，一律启动失败**，错误点名是哪条命令写下了它，并可 `errors.Is` 到 `core.ErrUnknownParticipant`（[core](design-core.md)）。两级同样处置：静态级那一侧放行拼错的名字，后果是该模块的声明静默缺席——迁移少建一批表而退出码为零，正是本模块要消灭的那种失效。本模块不为它另立哨兵：名字是否登记由注册表回答，这里补的只是注册表说不出的那一半——是哪条命令要的它。宿主写了常量却没 import 那个包，是一次合法的编译，因而只能在这里报出来。
 
 纳入的是**登记模块的那个包**，不是发布单元。一种功能的多个实现各自登记一个模块，纳入哪个由宿主决定——它 import 了哪些实现，只有它知道；数据库的引擎子包正是这种形态，根包不登记模块，纳入的是 `postgres` 或 `sqlite`。
 
@@ -270,9 +295,15 @@ classDiagram
     }
     class Command {
         +Sub(use) Command
-        +Include(names)
-        +IncludeAll()
+        +Include(names) Inclusion
+        +IncludeAll() Inclusion
+        +IncludeDeclarations(names) Inclusion
+        +IncludeAllDeclarations() Inclusion
         +Do(depth, action)
+    }
+    class Inclusion {
+        +WithFlags() Inclusion
+        +AllResources() Inclusion
     }
     class Loader {
         <<internal>>
@@ -292,6 +323,7 @@ classDiagram
     }
 
     App *-- Command : 根节点与子命令
+    Command ..> Inclusion : 每次纳入返回一个，供链式修饰
     App ..> Loader : 解析到叶子后加载
     App ..> Reader : 作为预置产物交进注册表
     Command ..> Command : 子命令
@@ -337,21 +369,28 @@ flowchart TD
 
 命令树由宿主写出：每个节点是一条命令，节点上列举该层纳入哪些模块，以及这条命令驱动到哪个阶段、到达之后做什么。声明只有这一侧——模块不知道自己被哪条命令纳入（[ADR-command-tree-2026-09-20](../../adr/adr-command-tree-2026-09-20.md)）。
 
-**参与集是命令路径上各层纳入的模块，连同它们的依赖闭包。** 纳入一个模块即一并纳入它在 `Requires` 中声明的功能的提供者。根命令纳入的模块对每条子命令都有效，这一层的参数因而是全局参数。
+**参与集是命令路径上各层运行级纳入的模块，连同它们的依赖闭包。** 运行级纳入一个模块即一并纳入它在 `Requires` 中声明的功能的提供者。根命令纳入的模块对每条子命令都有效，这一层的参数因而是全局参数。
 
-宿主也可以让一条命令纳入全部可用模块。可用集由 import 决定（[architecture](../architecture.md)），"全部"指的是这一集合，而不是宿主逐一列举出来的那些。
+**声明集是参与集加上各层静态级纳入的模块。** 静态级纳入不展开依赖闭包——那些模块不构造，没有构造期依赖可言。两级都沿命令路径向下继承。
 
-**纳入不等于启用。** 参与集决定哪些模块有资格在 `Prepare` 中表态，启用仍由各模块依据自己的配置决定（[ADR-module-enablement-2026-09-13](../../adr/adr-module-enablement-2026-09-13.md)）。一条命令纳入某个模块，不保证它会运行。
+宿主也可以让一条命令纳入全部可用模块，两级各有自己的"全部"。可用集由 import 决定（[architecture](../architecture.md)），"全部"指的是这一集合，而不是宿主逐一列举出来的那些。
 
-参与集决定的事情是有限的几件，其余一律按完整清单判定：
+**纳入不等于启用。** 参与集决定哪些模块有资格在 `Prepare` 中表态，启用仍由各模块依据自己的配置决定（[ADR-module-enablement-2026-09-13](../../adr/adr-module-enablement-2026-09-13.md)）。一条命令纳入某个模块，不保证它会运行。静态级纳入更不给予表态的资格：那些模块不执行 `Prepare`。
+
+**本模块之内**，参与集决定的是下面这几件，其余一律按完整清单判定：
 
 | 按参与集 | 按完整清单 |
 |---|---|
-| 这一层命令行上有哪些参数 | 输入项路径、命令行名与环境变量名的冲突 |
-| 帮助输出列出哪些参数 | 主配置源中哪些键是未知键 |
+| 这一层命令行上有哪些参数（外加 `WithFlags` 打开的那些静态级模块） | 输入项路径、命令行名与环境变量名的冲突 |
+| 帮助输出列出哪些参数（同上） | 主配置源中哪些键是未知键 |
 | 哪些模块的必填项会被判到（经各自的 `Decode` 触发，不是一次扫描） | 环境变量前缀下哪些变量算被认领 |
+| | 本模块定义的四种资源的收集：`Schema`、`HostIdentity`、`Source`、`Format` |
 
 右列中主配置源那一条最容易写反：一份配置源由各条命令共用，按参与集判定会让它在任何一条命令下都含有未知键。
+
+**必填项只对参与集内的模块判得到，静态级纳入的模块永不判必填**——它不构造，不会去 `Decode`，`WithFlags` 打开参数可见性也不改变这一点。
+
+参与集在本模块之外还决定别的事情——哪些模块有资格表态、消解的取材域、启动诊断的覆盖面，都在 [core](design-core.md) 与 [architecture](../architecture.md) 里。反过来，**不是每一种按模块过滤的机制都按参与集走**：资源声明的取材域由消费点自行裁定（架构不变量 15）。本模块定义的四种资源全部按完整清单收集，判据是它们描述的东西跟着这个二进制走，不跟着这一次命令。这一点与"它们的收集跑在装配开始之前、此时还没有启用结果"是两件事：时机决定了此刻无从过滤，判据决定了即便可以过滤也不过滤。把 `Schema` 的收集改按启用结果过滤，一个表态禁用的实现其命名空间下的键会立刻变成主配置源里的未知键，同一份配置文件在另一个实现被选中时启动失败。
 
 ### 输入项清单
 
@@ -528,7 +567,7 @@ cache.redis.max-conns   ->   MYAPP_CACHE__REDIS__MAX_CONNS
 
 ### 帮助输出
 
-帮助由命令行库渲染。本模块不实现渲染，不定义 `--help` 的行为，也不因为帮助被请求而产生任何返回值上的特例（[ADR-config-parsing-2026-09-20](../../adr/adr-config-parsing-2026-09-20.md)）。每条命令各有自己的帮助，其中列出的是这条命令参与集内的输入项所暴露的参数，以及它的子命令。
+帮助由命令行库渲染。本模块不实现渲染，不定义 `--help` 的行为，也不因为帮助被请求而产生任何返回值上的特例（[ADR-config-parsing-2026-09-20](../../adr/adr-config-parsing-2026-09-20.md)）。每条命令各有自己的帮助，其中列出的是这条命令参与集内的输入项所暴露的参数、经 `WithFlags` 打开的那些静态级模块的参数，以及它的子命令。
 
 本模块在把输入项交给命令行库时决定下列各项，排布、去向与退出状态都由库承担：
 
@@ -550,7 +589,7 @@ cache.redis.max-conns   ->   MYAPP_CACHE__REDIS__MAX_CONNS
 
 命令行库还自行向命令树挂上 `help` 与 `completion` 两条命令。它们不由宿主写出，也不出自任何模块，是委托解析一并接过来的东西——[ADR-config-parsing-2026-09-20](../../adr/adr-config-parsing-2026-09-20.md) 在后果里记的「帮助输出、shell 补全、子命令的组织由命令行库提供」正是它们。这与本模块不定义任何子命令并不冲突：那一条说的是本模块与宿主的分工，这一句说的是库的贡献。
 
-分组不再由声明表达。命令行库按命令组织参数，一条命令的参数就是它参与集内的那些；这一层划分取代了原先由 `Item` 给出的分组，`migrate` 的帮助里不会出现只有 `serve` 才纳入的那些模块的参数。
+分组不再由声明表达。命令行库按命令组织参数，一条命令的参数就是它参与集内的那些；这一层划分取代了原先由 `Item` 给出的分组，`migrate` 的帮助里不会出现只有 `serve` 才运行级纳入的那些模块的参数——**而那些模块的迁移照样施加**，参数面与声明的生效面是两件事（见 [db](design-db.md)）。
 
 ### 取值与校验
 
@@ -574,7 +613,7 @@ cache.redis.max-conns   ->   MYAPP_CACHE__REDIS__MAX_CONNS
 
 **环境变量层例外：前缀之下不在清单中的变量放行，并在启动诊断中列出。** 主配置源与命令行由宿主逐字写定，出现陌生键只可能是写错；环境变量所在的进程环境却不归宿主独有，编排系统会按服务名注入形如 `<前缀>_PORT`、`<前缀>_SERVICE_HOST` 的变量，把它们判为启动失败，等于让一个与配置无关的部署动作掐死进程。放行而列出，既不夺走察觉的途径，也不把无从控制的环境变成启动条件。层叠工具没有与这条对应的行为——它按需拉取自己关心的变量，不会回头说哪些变量没人要——因此前缀下变量的枚举与比对由本模块自己做。
 
-标注 `Required` 的输入项，在主配置源、环境变量、命令行三层都没有给出它时，`Decode` 返回 `ErrMissingRequired`。**默认值层不算给出**：承载结构体的字段总有取值，若把默认值也算作一个来源，必填与取到零值就无从区分，判定失去依据。**必填的校验发生在 `Decode`，不是先于装配扫描一遍。** 参与集中包含本次不会启用的模块——纳入不等于启用——对它们的必填项一律判失败，会让"没有配置连接地址就表态禁用"这一用法直接启动不起来，而那正是默认实现得以退让的前提。参与集比完整清单小，但小不到能取消这条理由。
+标注 `Required` 的输入项，在主配置源、环境变量、命令行三层都没有给出它时，`Decode` 返回 `ErrMissingRequired`。**默认值层不算给出**：承载结构体的字段总有取值，若把默认值也算作一个来源，必填与取到零值就无从区分，判定失去依据。**必填的校验发生在 `Decode`，不是先于装配扫描一遍。** 参与集中包含本次不会启用的模块——纳入不等于启用——对它们的必填项一律判失败，会让"没有配置连接地址就表态禁用"这一用法直接启动不起来，而那正是默认实现得以退让的前提。参与集比完整清单小，但小不到能取消这条理由。**静态级纳入的模块不在此列**：它一个回调都不执行，`Decode` 不会被调用，必填因而无从判起——这不是另加的一条规则，是不构造的直接结果。
 
 模块在 `Prepare` 中 `Decode` 自己那份配置，拿到 `ErrMissingRequired` 即表态禁用并以此为原因。必填因而是模块判断自己能否工作的依据，而不是一道先于判断的全局关卡。
 
@@ -625,6 +664,7 @@ cache.redis.max-conns   ->   MYAPP_CACHE__REDIS__MAX_CONNS
 | 输入项声明与收集 | 已实现 | `pkg/config/schema.go`、`pkg/config/manifest.go` |
 | 冲突判据 | 已实现 | `pkg/config/conflict.go` |
 | 命令树与参与集 | 已实现 | `pkg/config/app.go`、`pkg/config/command.go`、`pkg/config/tree.go` |
+| 纳入分级与两个修饰 | 未实现 | `pkg/config/command.go`、`pkg/config/tree.go`、`pkg/config/flagbind.go` |
 | 读取面交付 | 已实现 | `pkg/config/load.go`、`pkg/config/app.go`；根包不注册模块，读取面由 `Execute` 作为预置产物交进注册表 |
 | 配置定位符 | 已实现 | `pkg/config/locator.go` |
 | 命令行与命令树 | 已实现 | `pkg/config/flagbind.go`、`pkg/config/flagvalue.go`、`pkg/config/tree.go` |
