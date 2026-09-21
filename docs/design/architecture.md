@@ -199,6 +199,6 @@ speed 不引入进程边界。宿主是单一进程，注册表与全部模块�
 | [db](modules/design-db.md) | 已实现 |
 | [http](modules/design-http.md) | 已实现 |
 | [authn](modules/design-authn.md) | 已实现 |
-| [tenant](modules/design-tenant.md) | 未实现 |
+| [tenant](modules/design-tenant.md) | 已实现 |
 | [kv](modules/design-kv.md) | 未实现 |
 | [event](modules/design-event.md) | 未实现 |

@@ -558,7 +558,7 @@ flowchart TD
 | 取法的登记面与冻结 | 已实现 | `pkg/tenant/resolve/resolve.go` `Register`、`open`、`seal` |
 | 请求期的解析、日志字段绑定与收口 | 已实现 | `pkg/tenant/resolve/resolve.go` `admit`、`refuse`、`middlewareFor` |
 | 受约束模型的约定与识别 | 已实现 | `pkg/tenant/model.go` `Model`；`pkg/tenant/catalog/plugin.go` `scoped`、`embedsConvention` |
-| 隔离插件的两处作用点、四档判定与显式租户列的核对 | 已实现 | `pkg/tenant/catalog/plugin.go` `Initialize`、`scopeWhere`、`fillColumn`、`fillOne` |
+| 隔离插件的两处作用点、四档判定与显式租户列的核对 | 已实现 | `pkg/tenant/catalog/plugin.go` `Initialize`、`scopeWhere`、`scopeUpdate`、`applyCondition`、`fillColumn`、`fillOne` |
 | 跨租户的上下文标记 | 已实现 | `pkg/tenant/scope.go` `CrossTenant`；`internal/tenantctx/tenantctx.go` |
 | 租户标识作为关联字段绑上 logger | 已实现 | `pkg/tenant/resolve/resolve.go` `admit` |
 | 启动诊断：快照规模、状态分布与受守护的监听端 | 已实现 | `pkg/tenant/catalog/roster.go` `load`；`pkg/tenant/resolve/resolve.go` `seal` |
