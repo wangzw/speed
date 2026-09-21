@@ -245,11 +245,6 @@ func TestForTenantRejectsAnEmptyIdentifier(t *testing.T) {
 	_ = ForTenant("")
 }
 
-// A blank identifier is refused the same way an empty one is: whitespace is
-// outside the identifier's value domain, so a blank id can only be a mangle at
-// the call site. Honouring it would build a layer that names no tenant — a
-// write lands in a row no tenant's read reaches, and a read falls past it to
-// the global row and hands back the shared value.
 // TestForTenantRejectsAnIdentifierOutsideTheDomain covers the whole of the
 // tenant identifier's value domain, not just the empty string. A blank or
 // control character anywhere in the id is the directory's own criterion, and an
