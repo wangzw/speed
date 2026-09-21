@@ -63,9 +63,9 @@ Same rule: the scope is the package directory name under `web/packages/`, and `w
 `deps`, `ci`, `reference-app`, `adr`
 
 Repository-level:
-- `internal` — design documents under `docs/internal/`
+- `internal` — design documents under `docs/internal/`, belonging to the earlier implementation
 - `repo` — repository-level configuration, guidance and standards (`CLAUDE.md`, `.claude/skills/`, `.gitignore`, the Makefile)
-- `site` — the public documentation site under `docs/site/`
+- `site` — the documentation site under `docs/site/`, generated from the earlier implementation
 
 ## Examples
 

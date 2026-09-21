@@ -1,5 +1,17 @@
 # docs/site — the speed documentation site
 
+> **Legacy — kept as a historical record, not maintained.** This site
+> was generated from the earlier implementation under `go/` and `web/`,
+> and is out of scope by default along with it (see `CLAUDE.md`). It
+> describes an assembly API this repository no longer has — `app.Assemble`
+> taking a `LoadSpec`, and a composition file's `deployment` /
+> `components` keys — so it is not a second opinion on anything
+> `docs/design` settles; that tree is the design authority. The checks
+> and generators named below (`tools/check_docs_site.py`,
+> `tools/scan_cjk.py`, `tools/gen_error_code_index.py`,
+> `tools/configrefgen`, the Taskfile) are no longer in the repository,
+> so none of the validation described here can be run as written.
+
 This directory holds the documentation site for speed: the modular
 monolith distributed as libraries that business projects pull in via
 `go get` / `npm install`. The site is the versioned, central reference
