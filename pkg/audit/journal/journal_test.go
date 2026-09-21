@@ -1,12 +1,14 @@
 package journal
 
 import (
+	"bufio"
 	"bytes"
 	"context"
 	"errors"
 	"io"
 	"io/fs"
 	"log/slog"
+	"net"
 	nethttp "net/http"
 	"net/http/httptest"
 	"strings"
@@ -648,6 +650,114 @@ func TestStatementCaptureRecordsUpdateAndDelete(t *testing.T) {
 	}
 	if want := "create,update,delete"; strings.Join(verbs, ",") != want {
 		t.Fatalf("the verbs are %q, want %q", strings.Join(verbs, ","), want)
+	}
+}
+
+// A panic on a request this layer does not record is not this layer's business.
+//
+// The contrast with the case above is the point: a panic is recorded because the
+// request matched, not because it panicked. A layer that recorded every panic it
+// saw would be a different thing, and one that decided after the fact could not
+// know which endpoint the request belonged to.
+func TestPanicOnAnUnmatchedRequestIsNotRecorded(t *testing.T) {
+	handle := open(t)
+	j := newTestJournal(handle, settings{})
+	m, err := newMatcher([]string{"GET /things"})
+	if err != nil {
+		t.Fatalf("building the matcher: %v", err)
+	}
+	j.matcher = m
+
+	inner := nethttp.HandlerFunc(func(nethttp.ResponseWriter, *nethttp.Request) {
+		panic("the handler fell over")
+	})
+	layer := j.middlewareFor("public").Wrap(inner)
+
+	func() {
+		defer func() {
+			if recover() == nil {
+				t.Error("the panic was swallowed rather than thrown again")
+			}
+		}()
+		layer.ServeHTTP(httptest.NewRecorder(), httptest.NewRequest("GET", "/other", nil))
+	}()
+
+	if got := len(auditRows(t, handle)); got != 0 {
+		t.Fatalf("an unmatched request's panic was recorded: %d row(s)", got)
+	}
+}
+
+// The layer leaves the response writer's optional interfaces reachable.
+//
+// Wrapping a writer hides them, and a streaming handler reaches for one by type
+// assertion. Without the forwarding the assertion fails, nothing is flushed, and
+// the client sees no frame until the response ends — with nothing saying why.
+func TestTheLayerForwardsFlushing(t *testing.T) {
+	handle := open(t)
+	j := newTestJournal(handle, settings{})
+	m, err := newMatcher([]string{"GET /things"})
+	if err != nil {
+		t.Fatalf("building the matcher: %v", err)
+	}
+	j.matcher = m
+
+	var couldFlush bool
+	inner := nethttp.HandlerFunc(func(w nethttp.ResponseWriter, _ *nethttp.Request) {
+		flusher, ok := w.(nethttp.Flusher)
+		couldFlush = ok
+		if ok {
+			flusher.Flush()
+		}
+	})
+	layer := j.middlewareFor("public").Wrap(inner)
+
+	rec := httptest.NewRecorder()
+	layer.ServeHTTP(rec, httptest.NewRequest("GET", "/things", nil))
+
+	if !couldFlush {
+		t.Fatal("the handler could not reach the flusher through the layer")
+	}
+	if !rec.Flushed {
+		t.Fatal("the flush did not reach the writer underneath")
+	}
+}
+
+// hijackable is a writer that carries the optional interface an upgrade needs,
+// so that the layer's forwarding of it can be asked about directly.
+type hijackable struct {
+	nethttp.ResponseWriter
+	hijacked bool
+}
+
+func (h *hijackable) Hijack() (net.Conn, *bufio.ReadWriter, error) {
+	h.hijacked = true
+	return nil, nil, nil
+}
+
+// The same forwarding, for the interface an upgrade to another protocol needs,
+// and the answer a writer without it gives.
+func TestTheLayerForwardsHijacking(t *testing.T) {
+	inner := &hijackable{ResponseWriter: httptest.NewRecorder()}
+	wrapped := &statusRecorder{ResponseWriter: inner, status: nethttp.StatusOK}
+
+	hijacker, ok := nethttp.ResponseWriter(wrapped).(nethttp.Hijacker)
+	if !ok {
+		t.Fatal("the hijacker is not reachable through the layer")
+	}
+	if _, _, err := hijacker.Hijack(); err != nil {
+		t.Fatalf("hijacking gave %v, want the writer underneath to answer", err)
+	}
+	if !inner.hijacked {
+		t.Fatal("the hijack did not reach the writer underneath")
+	}
+
+	plain := &statusRecorder{ResponseWriter: httptest.NewRecorder(), status: nethttp.StatusOK}
+	hijacker, ok = nethttp.ResponseWriter(plain).(nethttp.Hijacker)
+	if !ok {
+		t.Fatal("the hijacker is not reachable through the layer")
+	}
+	if _, _, err := hijacker.Hijack(); !errors.Is(err, nethttp.ErrNotSupported) {
+		t.Fatalf("hijacking a plain writer gave %v, want ErrNotSupported", err)
 	}
 }
 
