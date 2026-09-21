@@ -15,3 +15,4 @@ speed 是一个配置驱动的模块化应用程序框架，以 Go 库的形式�
 | [db](modules/design-db.md) | 数据库访问：连接的建立与关闭、迁移的收齐与应用、插件扩展点 |
 | [http](modules/design-http.md) | HTTP 入口：监听端、路由与中间件的登记、中间件排序、请求上下文、两拍停机 |
 | [authn](modules/design-authn.md) | 认证：调用方身份的认定、免认证路由的裁定、身份的上下文承载、校验后端的归属与接缝 |
+| [tenant](modules/design-tenant.md) | 租户：请求面的租户解析、名册与生命周期、共享表加租户列的语句过滤 |
