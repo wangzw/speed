@@ -46,8 +46,8 @@ must not cross, and how to run it.
 - **A new backend is a subpackage with a namespace of its own.** The namespace
   has to be its own: the configuration manifest is collected from every
   registered module, so two implementations declaring items on one path conflict
-  as soon as a host imports both, before exclusivity resolution can stand one of
-  them down.
+  as soon as a host imports both — a conflict the collection raises on its own,
+  which resolution never gets a chance to clear.
 - **Every implementation declares the capability exclusively**, and says in its
   `Stance` how that claim yields and what it cannot start without. A
   zero-configuration backend states `StateAuto` so it yields to one that was
