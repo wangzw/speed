@@ -18,3 +18,4 @@ speed 是一个配置驱动的模块化应用程序框架，以 Go 库的形式�
 | [tenant](modules/design-tenant.md) | 租户：请求面的租户解析、名册与生命周期、共享表加租户列的语句过滤 |
 | [kv](modules/design-kv.md) | 键值原语：不透明字节的存取与过期、原子自增与比较并交换、按最弱后端设计的接口面 |
 | [event](modules/design-event.md) | 事件总线：按类型发布与订阅、载荷的结构化读取、投递承诺的下界 |
+| [audit](modules/design-audit.md) | 审计：语句、事件、请求与记录接缝的捕获通路、审计表、明细的脱敏 |
