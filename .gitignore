@@ -23,6 +23,7 @@ go.work.sum
 # build their own copy into a temporary directory instead.
 /examples/authenticated-host/authenticated-host
 /examples/minimal-host/minimal-host
+/examples/tenanted-host/tenanted-host
 
 # Python (the checkers under tools/ and the skills' own scripts)
 __pycache__/

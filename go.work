@@ -3,10 +3,12 @@ go 1.26.8
 use (
 	./examples/authenticated-host
 	./examples/minimal-host
+	./examples/tenanted-host
 	./pkg/authn
 	./pkg/config
 	./pkg/core
 	./pkg/db
 	./pkg/http
 	./pkg/log
+	./pkg/tenant
 )

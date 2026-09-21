@@ -1,0 +1,170 @@
+package resolve
+
+import (
+	"errors"
+	nethttp "net/http"
+	"net/http/httptest"
+	"testing"
+
+	"github.com/vislake/speed/pkg/tenant"
+)
+
+func request(t *testing.T, target, host string, header map[string]string) *nethttp.Request {
+	t.Helper()
+	r := httptest.NewRequest(nethttp.MethodGet, target, nil)
+	if host != "" {
+		r.Host = host
+	}
+	for k, v := range header {
+		r.Header.Set(k, v)
+	}
+	return r
+}
+
+func TestHeaderExtractor(t *testing.T) {
+	e := headerExtractor{name: "X-Tenant"}
+	for _, tc := range []struct {
+		what   string
+		value  string
+		want   string
+		wantOK bool
+	}{
+		{"a plain value", "acme", "acme", true},
+		{"surrounding space", "  acme  ", "acme", true},
+		{"empty", "", "", false},
+		{"blanks alone", "   ", "", false},
+	} {
+		t.Run(tc.what, func(t *testing.T) {
+			h := map[string]string{}
+			if tc.value != "" {
+				h["X-Tenant"] = tc.value
+			}
+			got, ok := e.Extract(request(t, "/", "api.example.com", h))
+			if got != tc.want || ok != tc.wantOK {
+				t.Fatalf("got (%q, %v), want (%q, %v)", got, ok, tc.want, tc.wantOK)
+			}
+		})
+	}
+}
+
+func TestSubdomainExtractor(t *testing.T) {
+	for _, tc := range []struct {
+		what  string
+		host  string
+		index int
+		want  string
+	}{
+		{"the leading label", "acme.example.com", 0, "acme"},
+		{"a middle label", "acme.example.com", 1, "example"},
+		{"a port is not a label", "acme.example.com:8443", 0, "acme"},
+		{"out of range", "acme.example.com", 7, ""},
+	} {
+		t.Run(tc.what, func(t *testing.T) {
+			got, ok := subdomainExtractor{index: tc.index}.
+				Extract(request(t, "/", tc.host, nil))
+			if tc.want == "" {
+				if ok {
+					t.Fatalf("got (%q, true), want no name", got)
+				}
+				return
+			}
+			if got != tc.want || !ok {
+				t.Fatalf("got (%q, %v), want %q", got, ok, tc.want)
+			}
+		})
+	}
+}
+
+func TestPathExtractor(t *testing.T) {
+	for _, tc := range []struct {
+		what  string
+		path  string
+		index int
+		want  string
+	}{
+		{"the leading segment", "/acme/orders", 0, "acme"},
+		{"a later segment", "/acme/orders", 1, "orders"},
+		{"a trailing slash is not a segment", "/acme/orders/", 1, "orders"},
+		{"out of range", "/acme", 3, ""},
+		{"the root", "/", 0, ""},
+	} {
+		t.Run(tc.what, func(t *testing.T) {
+			got, ok := pathExtractor{index: tc.index}.
+				Extract(request(t, tc.path, "api.example.com", nil))
+			if tc.want == "" {
+				if ok {
+					t.Fatalf("got (%q, true), want no name", got)
+				}
+				return
+			}
+			if got != tc.want || !ok {
+				t.Fatalf("got (%q, %v), want %q", got, ok, tc.want)
+			}
+		})
+	}
+}
+
+// stub is a stand-in for an extractor another module would register.
+type stub struct{ name string }
+
+func (s stub) Extract(*nethttp.Request) (string, bool) { return s.name, s.name != "" }
+
+var _ tenant.Extractor = stub{}
+
+func TestRegisterOutsideTheWindowPanics(t *testing.T) {
+	defer func() {
+		if recover() == nil {
+			t.Fatal("registering before the window opened was accepted")
+		}
+	}()
+	newResolver(settings{}, nil).Register("late", stub{})
+}
+
+func TestSealRefusesADuplicateName(t *testing.T) {
+	r := newResolver(settings{extractor: "header"}, nil)
+	r.open()
+	r.Register("header", stub{name: "acme"})
+	r.Register("header", headerExtractor{name: "X-Tenant"})
+
+	if err := r.seal(); err == nil {
+		t.Fatal("a duplicate registration was accepted")
+	}
+}
+
+func TestSealRefusesAnUnregisteredSelection(t *testing.T) {
+	r := newResolver(settings{extractor: "subdomain"}, nil)
+	r.open()
+	r.Register(HeaderExtractor, headerExtractor{name: "X-Tenant"})
+
+	err := r.seal()
+	if err == nil {
+		t.Fatal("selecting an extractor that was never registered was accepted")
+	}
+	if !errors.Is(err, tenant.ErrNoExtractor) {
+		t.Fatalf("got %v, want ErrNoExtractor", err)
+	}
+}
+
+func TestSealRefusesANilImplementation(t *testing.T) {
+	r := newResolver(settings{extractor: "custom"}, nil)
+	r.open()
+	r.Register("custom", nil)
+
+	if err := r.seal(); err == nil {
+		t.Fatal("a nil implementation was accepted")
+	}
+}
+
+func TestSealSelectsTheConfiguredExtractor(t *testing.T) {
+	r := newResolver(settings{extractor: HeaderExtractor}, nil)
+	r.open()
+	r.Register(HeaderExtractor, headerExtractor{name: "X-Tenant"})
+	r.Register(PathExtractor, pathExtractor{index: 0})
+
+	if err := r.seal(); err != nil {
+		t.Fatalf("sealing: %v", err)
+	}
+	if _, ok := r.selected.(headerExtractor); !ok {
+		t.Fatalf("selected %T, want the configured one", r.selected)
+	}
+}

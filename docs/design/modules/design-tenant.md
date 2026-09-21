@@ -85,7 +85,7 @@ type Catalog interface {
 
 两份交付声明都写作 `Provides: []core.Provision{{Token: (*Resolution)(nil), Exclusive: true}}` 与 `Provides: []core.Provision{{Token: (*Catalog)(nil), Exclusive: true}}`。**两者的排他性不可局部违反**：解析排他，因为两层解析同时在链上时上下文里那个租户由哪一层写的说不清；名册排他，因为两份名册等于两个真相（[ADR-tenant-packaging-2026-09-21](../../adr/adr-tenant-packaging-2026-09-21.md)）。
 
-**两个模块的表态只能是 `StateEnabled` 或 `StateDisabled`，永不 `StateAuto`**（形态与理由见认证网关的那一条，[ADR-authn-packaging-2026-09-20](../../adr/adr-authn-packaging-2026-09-20.md)）。解析模块配置给出了要守护的监听端即表态启用，一个都没有给出即表态禁用并给出理由；名册模块配置给出了库即启用，取不到数据库功能即 `Init` 失败。
+**两个模块的表态只能是 `StateEnabled` 或 `StateDisabled`，永不 `StateAuto`**（形态与理由见认证网关的那一条，[ADR-authn-packaging-2026-09-20](../../adr/adr-authn-packaging-2026-09-20.md)）。解析模块把监听端清单与选定的取法都配齐即表态启用，缺任一项即表态禁用，理由点名缺的是哪一个键；**名册模块没有被纳入即表态启用**，它没有可缺的输入项——刷新周期有默认值——因而没有退让档，不想要名册的命令不纳入它。
 
 ### 租户与请求上下文
 
@@ -160,12 +160,14 @@ type Model struct {
 }
 ```
 
-**内嵌它即声明受约束**，没有第二个动作（[ADR-tenant-isolation-2026-09-21](../../adr/adr-tenant-isolation-2026-09-21.md)）。约定把那一列定死为 `tenant_id`、非空、带一个普通索引。
+**内嵌它即声明受约束**，没有第二个动作（[ADR-tenant-isolation-2026-09-21](../../adr/adr-tenant-isolation-2026-09-21.md)）。约定把那一列定死为 `tenant_id`、非空、**并且是主键的一部分**。
+
+**那一列必须进主键，判据是它挡掉的那一类语句。** 唯一约束不以租户列打头的表——标识全局生成、业务键自己唯一——会让一个租户的写经由 `Save` 或 `OnConflict` 产生的插入碰到**另一个租户**的行，并把它改成写入方的租户：语句里没有任何一处写了别的租户，插件因而没有可以拒绝的东西。把租户列放进键里，这个形状从 schema 上就不存在了，不必逐条语句去判。模型自己的键与它并列标 `primaryKey`，合成受约束表本来该有的那个复合键。
 
 声明方在迁移文件里另有两条义务，本模块验不了：
 
-- **那一列的类型与长度要与标识的形状一致**，且带非空约束。缺了非空约束，插件缺席时的插入不会失败，静默写下一个空值。
-- **受约束表的每一个索引以租户列打头**，否则单租户的查询扫全表。以自增整数做主键的表，其唯一约束要包含租户列，否则两个租户的同一业务键会撞车。
+- **迁移里的键要与这个类型声明的键一致**，那一列的类型与长度也要与标识的形状一致，且带非空约束。缺了非空约束，插件缺席时的插入不会失败，静默写下一个空值。
+- **受约束表的其余索引以租户列打头**，否则单租户的查询扫全表。主键那一部分由约定本身给出。
 
 未内嵌约定的模型不受本模块影响：它的语句不带条件，插入不由插件填列。
 
@@ -216,7 +218,7 @@ func CrossTenant(ctx context.Context) context.Context
 
 解析模块的输入项挂在 `tenant.resolve` 下。其中 `endpoints` 给出本模块守护哪些监听端，`extractor` 给出选定的取法名，其余几项是各取法自己的参数——头名、子域名取第几段标签、路径前缀取第几段。**端名清单只能是本模块自己的输入项**：登记面只有按名取端一个方法，枚举不出来；去 `Decode` 入口模块的命名空间会把本模块的配置面耦合到别人的配置形状上（与认证网关同一条判据，见 [authn](design-authn.md)）。
 
-名册模块的输入项挂在 `tenant.catalog` 下：刷新周期与快照规模的上界。**刷新周期取零表示只在 `Init` 装载一次、此后不刷新**，那一档下停用要到进程重启才生效。
+名册模块的输入项挂在 `tenant.catalog` 下，只有一项：刷新周期。**取零表示只在 `Init` 装载一次、此后不刷新**，那一档下停用要到进程重启才生效；不取零时它是名册那一读的间隔，也是"停用多久生效"这条上界。
 
 两个模块都不声明 `Sensitive` 输入项：取法的参数是头名与路径段，都不是要保密的值。
 
@@ -232,11 +234,11 @@ func CrossTenant(ctx context.Context) context.Context
 
 ### 稳定性承诺
 
-`Resolution`、`Catalog`、`Extractor`、`Tenant`、`ID`、`Status`、`Model` 与 `CrossTenant`、`FromContext` 是本模块与其他模块之间的契约。中间件在链上代表的那个功能标识与描述符里的交付标识同为 `(*Resolution)(nil)`，别的模块据它排序，取值不变。约定里那一列的名字 `tenant_id` 与它的非空约束同样在这个面上：迁移文件由声明方写，改名是一次全库迁移。
+`Resolution`、`Catalog`、`Extractor`、`Tenant`、`ID`、`Status`、`Model` 与 `CrossTenant`、`FromContext` 是本模块与其他模块之间的契约。中间件在链上代表的那个功能标识与描述符里的交付标识同为 `(*Resolution)(nil)`，别的模块据它排序，取值不变。约定里那一列的名字 `tenant_id`、它的非空约束与它在主键里的位置同样在这个面上：迁移文件由声明方写，改名或改键都是一次全库迁移。
 
 ## 依赖
 
-根包 import `pkg/core` 与 `pkg/config`，接口面上只出现标准库与本包自己的类型。**根包不依赖 `pkg/db`**：模型约定是一个只有一项字段与一条标签的结构体，不引用数据库模块的任何类型，`gorm` 这个包名只出现在标签字符串里。这与认证接口包的自我约束同形、同源——一个只要租户解析、或者只要在自己的模型上带一列的应用，不该因此承受数据库依赖（[ADR-authn-packaging-2026-09-20](../../adr/adr-authn-packaging-2026-09-20.md)）。插件与迁移所需的一切留在名册子包里。
+根包不 import 本仓的任何模块，接口面上只出现标准库与本包自己的类型。**根包不依赖 `pkg/db`**：模型约定是一个只有一项字段与一条标签的结构体，不引用数据库模块的任何类型，`gorm` 这个包名只出现在标签字符串里。这与认证接口包的自我约束同形、同源——一个只要租户解析、或者只要在自己的模型上带一列的应用，不该因此承受数据库依赖（[ADR-authn-packaging-2026-09-20](../../adr/adr-authn-packaging-2026-09-20.md)）。插件与迁移所需的一切留在名册子包里。
 
 解析子包 import 根包、`pkg/core`、`pkg/config`、`pkg/http` 与 `pkg/authn` 的根包。**指向认证功能标识的硬约束要写出 `(*authn.Gate)(nil)` 这个表达式，那个 import 因而不可避免**（[ADR-tenant-ordering-2026-09-21](../../adr/adr-tenant-ordering-2026-09-21.md)）。
 
@@ -292,22 +294,20 @@ classDiagram
     class resolver {
         -chosen string
         -extractors map
-        -snapshot rosterSnapshot
     }
     class tenantPlugin {
         -column string
     }
     Resolution <|.. resolver : 实现
     Extractor ..> resolver : 按名登记、配置选定一个
-    resolver --> Catalog : 不在内建取法上
-    resolver --> rosterSnapshot : 读
+    resolver --> Catalog : 按别名换成标识
     Catalog --> Tenant : 交出
     Tenant --> Status : 携带
-    Catalog ..> rosterSnapshot : 装载与刷新
+    Catalog ..> rosterSnapshot : 装载、刷新
     tenantPlugin ..> Model : 据此识别受约束模型
 ```
 
-`resolver` 与 `tenantPlugin` 都未导出。**只有 `resolver` 读快照**：一个租户是否存在、是否停用由解析层判定，插件只按上下文里的标识加条件，它不认识名册（见插件在语句上的作用点）。
+`resolver` 与 `tenantPlugin` 都未导出。**只有 `resolver` 走到名册**：它经名册功能把别名换成标识，一个租户是否存在、是否停用因此由解析层判定；插件只按上下文里的标识加条件，它和名册之间没有边（见插件在语句上的作用点）。快照是名册模块内部的东西，本模块的另一半不经过它的类型，类图里因而只挂在名册功能上。
 
 下图给出请求期的路径，各类失败各走一条分支。它要固定的是定序：认证层整体早于解析层，因而未认证的请求驱动不了名册查询；解析层的判定整体早于 handler，因而受约束语句的作用域在 handler 运行之前就已确定。
 
@@ -427,7 +427,7 @@ flowchart TD
 
 判定按活动图那四档进行，每条语句走一遍。
 
-**识别一档读的是 GORM 已经解析好的 schema**，因而是常数时间的一次字段查找，不重做反射。
+**识别一档读的是 GORM 已经解析好的 schema**：先按约定那一列的名字查找，命中再看模型类型有没有把约定内嵌进去。两次都是常数时间的查找，规模是模型的字段数，而它每一步都读 GORM 已经算好的结果——GORM 自己解析一次模型并缓存，这里不重做那一遍。
 
 **读语句加上的是与已有条件并列的一个等值条件**，不覆盖调用方写的任何条件：一条已经带租户条件的语句在插件作用下带上两条，语义不变。
 
@@ -449,7 +449,7 @@ flowchart TD
 | `ErrExtractorConflict` | `Start` 关窗后，两条登记用了同一个名字 | 点名那个名字与两处登记的实现类型。**登记面拿不到登记方的身份**，因而点不到模块名——与认证的豁免登记同形（见 [authn](design-authn.md)） |
 | `ErrInvalidExtractor` | `Start` 关窗后，一条登记的名字为空或只含空白，或者实现为空 | 点名那个名字与实现类型；实现为空时类型打不出来，错误文本点明"有一条实现为空的登记" |
 | `ErrRosterMissing` | `Init` 装载快照时表不存在 | 点名那张表与施加迁移的那条命令；把它写进那条命令的声明集 |
-| `ErrInvalidTenant` | `Put` 的标识或别名为空、含空白或控制字符 | 点名该字段与那个取值 |
+| `ErrInvalidTenant` | 一个本模块不予处置的租户：`Put` 的标识或别名为空、含空白或控制字符，或者 `SetStatus` 给的标识没有任何一行 | 点名那个字段或那个标识 |
 | `ErrAliasConflict` | 两个租户抢同一个别名 | 点名该别名与占有它的那个标识；改掉其中一个 |
 | `ErrNoTenantInContext` | 受约束模型的语句在上下文中没有标识 | 点名模型；由调用方给出租户，或显式标为跨租户 |
 | `ErrExplicitTenantMismatch` | 一条写语句显式给出的租户列取值与上下文里的标识不同 | 点名该模型与两个取值；删掉显式写下的那个，或者改用 `CrossTenant` |
@@ -483,11 +483,12 @@ flowchart TD
 
 ### 接受的代价
 
+- **不经请求面的路径用不上过滤。** 上下文里那个标识只有解析层写得进去（见租户与请求上下文），因而一条后台路径要么整段跨租户、自己带租户列，要么不碰受约束表，没有第三种形状。过滤在那条路径上完全不生效，出错的形态因而是跨租户读写而不是被拦下——写入侧关上换来了意图的显式，代价是那里没有兜底。
 - **各条裁定本身带来的代价记在各自的记录里**：取值途径与请求面伪造见 [ADR-tenant-resolution-2026-09-21](../../adr/adr-tenant-resolution-2026-09-21.md)；与认证的先后及它换来的两处看不见见 [ADR-tenant-ordering-2026-09-21](../../adr/adr-tenant-ordering-2026-09-21.md)；标识与别名的两个概念见 [ADR-tenant-identifier-2026-09-21](../../adr/adr-tenant-identifier-2026-09-21.md)；停用的时延与名册在关键路径上见 [ADR-tenant-directory-2026-09-21](../../adr/adr-tenant-directory-2026-09-21.md)；隔离是一条条件而非边界见 [ADR-tenant-isolation-2026-09-21](../../adr/adr-tenant-isolation-2026-09-21.md)；跨租户途径可被滥用见 [ADR-tenant-scoping-2026-09-21](../../adr/adr-tenant-scoping-2026-09-21.md)。
 - **一个受守护的监听端上不能有不需要租户的路由。** 解析层按监听端守护，没有按路由的例外；探活与诊断这类路由要放到另一个监听端上。这一条是取法按监听端配置换来的（[ADR-tenant-resolution-2026-09-21](../../adr/adr-tenant-resolution-2026-09-21.md)）。
 - **每一条请求多两次映射查找，每一条受约束语句多一次字段查找与一次映射查找。** 解析层的开销是每请求两次映射查找，插件的开销是每语句一次字段查找与一次映射查找，都是常数时间（见核心算法与流程）。
 - **快照与库之间有一个窗口。** 一个刚写入的租户在刷新发生之前对解析层不可见；一个刚被停用的租户在同一个窗口内继续被服务。
-- **约定期望声明方遵守的两条本模块验不了**：那一列的类型与长度、以及索引以租户列打头。类型与长度漏了的形态由非空约束兜住一半；索引没以租户列打头的形态是规模上去之后变慢。
+- **约定期望声明方遵守的两条本模块验不了**：那一列的类型与长度，以及迁移里的键与模型声明的是同一个。类型与长度漏了的形态由非空约束兜住一半；键漏了的形态是 upsert 能把别的租户的行改写过来，而它不报错、也不落在任何一条判据里。
 - **名册的写入是本模块唯一的运维面动作，而它没有配套的管理界面。** 改一个租户的状态要宿主自己写一条命令或在别处调用 `SetStatus`。
 
 ### 非保证
@@ -504,7 +505,7 @@ flowchart TD
 - **不保证租户标识不向内泄漏。** 解析层不改写请求，请求面上那个名字原样到达 handler。
 - **不保证按请求做键的缓存或合并层把租户纳入键。** 排在解析层之内的缓存层若以路径为键缓存响应，一个租户的响应会被返给另一个租户；标识在上下文里，缓存层不去读它就看不见它。**宿主自己要做的是：解析层以内任何按请求做键的缓存或合并层，键里必须含租户标识。**
 - **不保证停用即时生效。** 生效窗口的上界是快照的刷新周期，跨副本部署时各副本的相位还不同（[ADR-tenant-directory-2026-09-21](../../adr/adr-tenant-directory-2026-09-21.md)）。
-- **不保证停用之后语句面也拒绝。** 插件不知道一个租户是否停用，它只按上下文里的标识加条件（见插件在语句上的作用点）。经请求面到达的语句在停用之后都会在解析层被拦下，而一条自己把标识放进上下文的后台路径照常读得到那个租户的数据。**宿主自己要做的是：后台路径上用的标识来自名册的一次读取，而不是某个长期驻留的常量。**
+- **不保证停用之后语句面也拒绝。** 插件不知道一个租户是否停用，它只按上下文里的标识加条件（见插件在语句上的作用点）。经请求面到达的语句在停用之后都会在解析层被拦下。**而不经请求面的路径根本没有标识可用**——写入侧是关着的，只有解析层写得进去——这样一条路径要处理受约束表，唯一的形状是整段跨租户、自己把租户列写出来，过滤在它上面因而不生效。**宿主自己要做的是：后台路径上写的租户列来自名册的一次读取，而不是某个长期驻留的常量**；本模块不经过那条路径，也就替它兜不住。
 - **不保证请求面取到的租户不是伪造的。** `Host` 与 `X-Forwarded-*` 由前置代理写入，本模块信任它读到的东西。**宿主自己要做的是：不让不受信的客户端直接够到本进程，也不把入站头当可信输入转发。**
 - **不保证别名回收之后旧书签不指向新租户。** 别名在任一时刻唯一，本模块不保证它指过的东西保持不变（[ADR-tenant-identifier-2026-09-21](../../adr/adr-tenant-identifier-2026-09-21.md)）。
 - **不保证同一份租户在同一个二进制的每条命令下都可用。** 到场的模块由这条命令纳入了谁、各自表态如何决定（见 [config](design-config.md)），而宿主可以在两条命令下列举不同的模块。
@@ -549,16 +550,24 @@ flowchart TD
 
 | 能力 | 状态 | 代码 |
 |---|---|---|
-| 解析模块、名册模块与各自的排他交付 | 未实现 | — |
-| 名册表与它的迁移集 | 未实现 | — |
-| 名册的读写面与两个索引的快照 | 未实现 | — |
-| 快照的周期刷新与 `Stop` 取消 | 未实现 | — |
-| 三种内建取法 | 未实现 | — |
-| 取法的登记面与冻结 | 未实现 | — |
-| 请求期的解析、日志字段绑定与收口 | 未实现 | — |
-| 受约束模型的约定与识别 | 未实现 | — |
-| 隔离插件的两处作用点、四档判定与显式租户列的核对 | 未实现 | — |
-| 跨租户的上下文标记 | 未实现 | — |
-| 租户标识作为关联字段绑上 logger | 未实现 | — |
-| 启动诊断：快照规模、状态分布与受守护的监听端 | 未实现 | — |
-| 哨兵错误 | 未实现 | — |
+| 解析模块、名册模块与各自的排他交付 | 已实现 | `pkg/tenant/resolve/resolve.go` `Module`、`pkg/tenant/catalog/catalog.go` `Module` |
+| 名册表与它的迁移集 | 已实现 | `pkg/tenant/catalog/migrations/`；`catalog.go` `migrationsFS` |
+| 名册的读写面与两个索引的快照 | 已实现 | `pkg/tenant/catalog/roster.go` `Get`、`ByAlias`、`Put`、`SetStatus`、`List`；`snapshot.go` `buildSnapshot` |
+| 快照的周期刷新与 `Stop` 取消 | 已实现 | `pkg/tenant/catalog/roster.go` `start`、`stop`、`refreshOnce` |
+| 三种内建取法 | 已实现 | `pkg/tenant/resolve/extract.go` `headerExtractor`、`subdomainExtractor`、`pathExtractor` |
+| 取法的登记面与冻结 | 已实现 | `pkg/tenant/resolve/resolve.go` `Register`、`open`、`seal` |
+| 请求期的解析、日志字段绑定与收口 | 已实现 | `pkg/tenant/resolve/resolve.go` `admit`、`refuse`、`middlewareFor` |
+| 受约束模型的约定与识别 | 已实现 | `pkg/tenant/model.go` `Model`；`pkg/tenant/catalog/plugin.go` `scoped`、`embedsConvention` |
+| 隔离插件的两处作用点、四档判定与显式租户列的核对 | 已实现 | `pkg/tenant/catalog/plugin.go` `Initialize`、`scopeWhere`、`fillColumn`、`fillOne` |
+| 跨租户的上下文标记 | 已实现 | `pkg/tenant/scope.go` `CrossTenant`；`internal/tenantctx/tenantctx.go` |
+| 租户标识作为关联字段绑上 logger | 已实现 | `pkg/tenant/resolve/resolve.go` `admit` |
+| 启动诊断：快照规模、状态分布与受守护的监听端 | 已实现 | `pkg/tenant/catalog/roster.go` `load`；`pkg/tenant/resolve/resolve.go` `seal` |
+| 哨兵错误 | 已实现 | `pkg/tenant/errors.go` |
+
+模块内的性质由各自的包守住：隔离插件的四档判定在 `pkg/tenant/catalog/plugin_test.go` 里跑真实的 `*gorm.DB`，
+取法的登记窗口在 `pkg/tenant/resolve/extract_test.go` 里跑真实的登记与关窗。
+
+**装配级的性质在 `examples/tenanted-host` 的 `e2e_test.go` 里从进程外守住**，因为它们在别的包自己的测试里
+观察不到：中间件在链上的位置（无凭据的请求由认证拦下、且不驱动名册查询）、名册模块在名字没写进命令树的情况下
+经构造期依赖进入参与集、以及名册表与应用模块的表经静态级纳入被 `migrate` 建出来——最后一条由该用例直接读
+数据库文件的 schema 判定，而不是采信命令的输出。

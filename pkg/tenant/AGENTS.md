@@ -1,0 +1,122 @@
+# pkg/tenant
+
+The tenancy release unit: the interface package a model embeds and a handler
+reads a tenant from, `pkg/tenant/resolve` — the module that reads a tenant name
+off the request surface — and `pkg/tenant/catalog`, the module that keeps the
+roster and filters statements to the tenant they carry.
+
+## Where the authority is
+
+- What this module is and why it is shaped this way:
+  [`docs/design/modules/design-tenant.md`](../../docs/design/modules/design-tenant.md).
+- The decisions behind it, one file per decision:
+  [`docs/adr/`](../../docs/adr/) — `adr-tenant-scope-2026-09-21`,
+  `adr-tenant-packaging-2026-09-21`, `adr-tenant-resolution-2026-09-21`,
+  `adr-tenant-ordering-2026-09-21`, `adr-tenant-identifier-2026-09-21`,
+  `adr-tenant-directory-2026-09-21`, `adr-tenant-isolation-2026-09-21`,
+  `adr-tenant-scoping-2026-09-21`, `adr-tenant-guarantees-2026-09-21`.
+- The API itself: the godoc in this package. Read `Model`'s comment and
+  `CrossTenant`'s before writing a scoped model.
+
+This file states only what neither of those states: the boundaries a change
+here must not cross, and how to run it.
+
+## Boundaries
+
+- **The root package registers no module.** A model embeds `Model` and a
+  handler reads an identifier, so a module registered here would put a roster
+  and a request layer into the available set of every binary that touches
+  either. Registration lives in the subpackages: importing
+  `pkg/tenant/catalog` is what decides that a binary has tenants at all, and
+  importing `pkg/tenant/resolve` is what decides that its requests are scoped.
+- **The identifier's injection point is closed.** `internal/tenantctx` is where
+  a tenant is written into a context, and the compiler is what keeps every
+  other package out of it. Exporting a writer — or moving the key into this
+  package — removes the enforcement without removing the claim, and the claim
+  is the whole point: resolving a tenant happens once per request, in one
+  place.
+- **`CrossTenant` is the only way across tenants, and it marks rather than
+  scopes.** A statement naming a tenant column value other than its context's
+  is refused rather than honoured
+  (`ErrExplicitTenantMismatch`, in `catalog/plugin.go`). Honouring it would be a
+  second way in, and one that carries no mark of intent: a write copied from
+  elsewhere and edited would land in another tenant with nothing said.
+  `plugin_test.go` pins both halves.
+- **The statement filter holds no state, and reads no roster.** The plugin
+  instance is frozen with the descriptor at init time, database hands that one
+  instance to every handle it builds, and a process driving two commands builds
+  two registries that share it — so anything learned per run is the other
+  registry's value on the second run. It also does not consult the roster, which
+  is why disabling a tenant takes effect on the request face and not on the
+  statement face. Both facts are in the design's non-guarantees section.
+- **`catalog/catalog.go` reaches a handle only through `db.Database`.** The
+  plugin registers callbacks; nothing in this module opens a connection or
+  writes SQL. A table belongs to the module that declares it, and this module's
+  one table comes from `catalog/migrations/`.
+- **The roster table does not embed the convention.** It is the fact scoping is
+  decided from, so a read of it that needed a tenant first would have nothing to
+  read it with. It is not special-cased anywhere: it takes the same path through
+  the filter as any table that embeds nothing.
+- **`Status`'s zero value is `StatusDisabled`.** A status column never written,
+  or holding a value a later build does not know, has to read as not served. A
+  change that puts the zero on the serving side inverts the direction a value
+  nobody chose falls, and `scope_test.go` fails when it does.
+- **The registration window spans the global `Init` stage, not this module's
+  own callback.** It opens in `Migrate` and shuts in `Start` for that reason: a
+  module registering an extractor declares no dependency on this one, so it may
+  legally register from an `Init` that runs first. Opening it in `Init` would
+  turn a legal registration into a panic.
+
+## Shape of a scoped model
+
+A scoped model embeds `tenant.Model`. That one act declares the model and
+supplies the column; there is no second thing to remember and no interface to
+implement.
+
+```go
+type Order struct {
+	tenant.Model
+	ID   string `gorm:"column:id;primaryKey"`
+	Note string `gorm:"column:note"`
+}
+```
+
+**The tenant column is part of the primary key, and that is what keeps one
+tenant's write out of another's row.** A unique constraint that does not lead
+with it — a globally generated identifier, a business key unique on its own —
+lets the insert a `Save` or an `OnConflict` produces conflict on the other
+tenant's row and update that row into the writer's tenant. Nothing in the
+statement names another tenant, so the filter has nothing to refuse; the shape
+of the key is what closes it. Marking a model's own key `primaryKey` beside this
+one is what gives the composite key a scoped table has, and the migration has to
+declare the same one — which is the obligation the filter cannot check, along
+with the column's type and its NOT NULL.
+
+A model that should be scoped and does not embed this reads exactly like a table
+that is global on purpose, and nothing says which it is. That is the one failure
+this convention cannot catch, and it is why the design writes it as a
+non-guarantee rather than pretending to detect it.
+
+## Running it
+
+From the repository root, over every module in the workspace:
+
+```
+make build
+make test
+make lint
+make check
+```
+
+This module on its own:
+
+```
+go -C pkg/tenant build ./...
+go -C pkg/tenant test ./...
+go -C pkg/tenant test -race ./...
+```
+
+The tests bring up their own in-memory database and ask for no service and no
+environment. `pkg/tenant/catalog/plugin_test.go` is where the filter's four
+answers are pinned; `pkg/tenant/resolve/extract_test.go` is where the
+registration window's behaviour under a duplicate or a late registration is.
