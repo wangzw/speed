@@ -74,9 +74,9 @@ func Module() core.Module {
 // silently.
 func stance(cfg *redis.Config) (core.Enablement, error) {
 	if strings.TrimSpace(cfg.Addr) == "" {
-		return core.Enablement{}, fmt.Errorf("%s.addr gives no server, and this implementation reaches "+
+		return core.Enablement{}, fmt.Errorf("%s.%s gives no server, and this implementation reaches "+
 			"Redis at one: with none set there is nothing to start against. Set it to the server to run "+
-			"on, or leave this implementation out of the command", ConfigNamespace)
+			"on, or leave this implementation out of the command", ConfigNamespace, redis.AddrKey)
 	}
 	return core.Enablement{State: core.StateEnabled}, nil
 }
