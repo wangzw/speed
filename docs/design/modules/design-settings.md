@@ -475,11 +475,14 @@ flowchart TD
 
 | 能力 | 状态 | 代码 |
 |---|---|---|
-| 声明面与键表 | 未实现 | — |
-| 读取的三级回落与泛型封装 | 未实现 | — |
-| 写入面与版本递增 | 未实现 | — |
-| 设置表与它的迁移集 | 未实现 | — |
-| 快照的装载、刷新路径与原子替换 | 未实现 | — |
-| 变更事件的发布与订阅 | 未实现 | — |
-| 敏感项的事件遮蔽 | 未实现 | — |
-| 哨兵错误 | 未实现 | — |
+| 接口与数据类型 | 已实现 | `pkg/settings/settings.go` `Store`、`Write`、`Entry`、`Schema`、`Mount`、`Item`、`Change`、`ChangedEventType`、`Get` |
+| 声明面与键表 | 已实现 | `pkg/settings/keys.go` `buildKeyTable`、`expandSchema`、`classifyLeaf`、`fieldName`、`camelToKebab` |
+| 读取的三级回落与泛型封装 | 已实现 | `pkg/settings/store.go` `Get`；`pkg/settings/snapshot.go` `value`、`layer`；`pkg/settings/codec.go` `assignTarget` |
+| 写入面与版本递增 | 已实现 | `pkg/settings/store.go` `Set`、`writeRow`、`Delete`、`List`；`pkg/settings/codec.go` `encodeValue`、`coerce` |
+| 设置表与它的迁移集 | 已实现 | `pkg/settings/snapshot.go` `tableName`、`row`；`pkg/settings/migrations/<方言>/0001_settings.sql` |
+| 快照的装载、刷新路径与原子替换 | 已实现 | `pkg/settings/snapshot.go` `loadSnapshot`、`snapshot`；`pkg/settings/store.go` `reload`、`swap`；`pkg/settings/refresh.go` `startRefresh`、`stopRefresh` |
+| 变更事件的发布与订阅 | 已实现 | `pkg/settings/store.go` `publish`；`pkg/settings/module.go` `subscribe` |
+| 敏感项的事件遮蔽 | 已实现 | `pkg/settings/store.go` `changeFor`、`deleteChange`；`pkg/settings/codec.go` `mismatch` |
+| 配置 | 已实现 | `pkg/settings/config.go` `schema`、`readSettings`、`moduleConfig` |
+| 模块登记 | 已实现 | `pkg/settings/module.go` `Module`、`ModuleName` |
+| 哨兵错误 | 已实现 | `pkg/settings/errors.go` `ErrUnknownKey`、`ErrTypeMismatch`、`ErrInvalidValue`、`ErrDeclarationConflict`、`ErrInvalidDeclaration`、`ErrTableMissing` |
