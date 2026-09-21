@@ -16,5 +16,6 @@ use (
 	./pkg/natstest
 	./pkg/pgpool
 	./pkg/redis
+	./pkg/settings
 	./pkg/tenant
 )
