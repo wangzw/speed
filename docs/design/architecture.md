@@ -2,7 +2,7 @@
 
 ## 概览
 
-speed 以库的形式交付。`pkg/` 下每个目录是一个发布单元，提供一种功能；功能的多种实现拆为它的子包，每个实现子包各自登记为一个模块（[ADR-module-packaging-2026-09-13](../adr/adr-module-packaging-2026-09-13.md)）。
+speed 以库的形式交付。`pkg/` 下每个目录是一个发布单元，提供一种功能；功能的多种实现拆为它的子包，每个实现子包各自登记为一个模块（[ADR-module-packaging-2026-09-13](../adr/adr-module-packaging-2026-09-13.md)）。**一个发布单元可以不含任何功能**：它封装一个第三方客户端，供两个模块的实现子包共用一份连接构造，自身不登记模块（[ADR-shared-backend-unit-2026-09-21](../adr/adr-shared-backend-unit-2026-09-21.md)）。
 
 宿主编写自己的 `main`，import 所需的模块，驱动启动与停止。speed 不接管程序入口，也不规定应用的形态：HTTP 服务、gRPC 服务、不对外暴露入口的后台进程，都由模块与宿主自己组成（[ADR-core-scope-2026-09-13](../adr/adr-core-scope-2026-09-13.md)）。
 
@@ -75,7 +75,7 @@ graph TD
   cli["命令行参数与环境变量"]
   primary[("主配置源<br/>文件或远程配置中心")]
   client["外部调用方"]
-  backend[("外部后端<br/>数据库、缓存、对象存储")]
+  backend[("外部后端<br/>数据库、键值存储、对象存储")]
 
   subgraph proc["宿主进程"]
     main["main：写出命令树"]
@@ -200,3 +200,5 @@ speed 不引入进程边界。宿主是单一进程，注册表与全部模块�
 | [http](modules/design-http.md) | 已实现 |
 | [authn](modules/design-authn.md) | 已实现 |
 | [tenant](modules/design-tenant.md) | 未实现 |
+| [kv](modules/design-kv.md) | 未实现 |
+| [event](modules/design-event.md) | 未实现 |

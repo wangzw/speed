@@ -16,7 +16,7 @@
 - **不编码应用形态。** 一个应用可能是 HTTP 服务、gRPC 服务，或者不对外暴露任何入口的后台进程。`core` 驱动阶段，形态由模块与宿主自己决定，驱动入口不认识形态，也不为形态提供选项（[ADR-core-scope-2026-09-13](../../adr/adr-core-scope-2026-09-13.md)）。
 - **不解释任何资源。** 模块声明的资源由 `core` 原样保存并供查询，它不认识其中任何一种的含义。配置 schema、命令行参数、API spec、i18n 资源，各自由需要它的模块定义类型并自行解释。
 - **不认识任何具体功能。** `core` 中不出现任何功能接口的类型名。依赖取用借助泛型与反射完成，类型由调用方给出。
-- **不提供任何具体功能。** 日志、数据库、缓存、HTTP 服务等一律由各自的模块承担。
+- **不提供任何具体功能。** 日志、数据库、键值、事件、HTTP 服务等一律由各自的模块承担。
 - **不接管程序入口。** 宿主编写自己的 `main`，`core` 被调用，不调用宿主。
 - **不提供运行期参数。** 归设置承载的那些参数由独立模块提供，`core` 不介入；配置与设置的划界判据见 [ADR-config-scope-2026-09-13](../../adr/adr-config-scope-2026-09-13.md)。
 
@@ -56,8 +56,8 @@ func (r *Registry) ResolveAll(t Token) []any                  // 取全部
 功能以类型化空指针指代。方法这一层返回 `any`，取用与断言落在调用点：
 
 ```go
-v, err := reg.Resolve((*Cache)(nil))
-cache := v.(Cache)
+v, err := reg.Resolve((*KV)(nil))
+kv := v.(KV)
 ```
 
 `core` 为这两个方法各提供一个自由泛型函数，它们自行构造功能标识并完成断言：
@@ -67,13 +67,13 @@ func Resolve[T any](r *Registry) (T, error)
 func ResolveAll[T any](r *Registry) []T
 ```
 
-调用因此写成 `core.Resolve[Cache](reg)`。它们换来的是调用点的类型安全，不是少敲几个字符：`Token` 的构造与结果的类型断言都收进了函数里，不再可能写错。
+调用因此写成 `core.Resolve[KV](reg)`。它们换来的是调用点的类型安全，不是少敲几个字符：`Token` 的构造与结果的类型断言都收进了函数里，不再可能写错。
 
 `Resolve` 的匹配域是**声明了该功能的模块，加上被预置的产物**：恰好一个这样的来源已就位，其产物即结果。模块这一侧，一个产物碰巧实现了某功能却未在 `Provides` 中声明，取用时看不到它，声明因而是唯一权威，装配期校验与运行期取用面对同一个集合；预置产物不出自任何模块，它在交进注册表时就指明了自己占据哪个功能标识（见预置产物）。取不到即 `ErrMissingProvider`，可选依赖的读法就是对它做 `errors.Is` 判断，随后走模块自己文档所载的默认行为（[ADR-dependency-resolution-2026-09-13](../../adr/adr-dependency-resolution-2026-09-13.md)）。缺席是一种合法配置这件事，由声明中的 `Optional` 表达，不需要第二个取用接口。
 
-**一条交付声明与被请求的功能标识，按元素类型相同匹配，不按可赋值性。** 设 `SuperCache` 内嵌 `Cache`，交付 `(*SuperCache)(nil)` 的模块与交付 `(*Cache)(nil)` 的模块交付的是两个功能，`Resolve[Cache]` 只看到后者。
+**一条交付声明与被请求的功能标识，按元素类型相同匹配，不按可赋值性。** 设 `SuperKV` 内嵌 `KV`，交付 `(*SuperKV)(nil)` 的模块与交付 `(*KV)(nil)` 的模块交付的是两个功能，`Resolve[KV]` 只看到后者。
 
-按可赋值性匹配则无法自洽：消解要把提供者按功能分组，而可赋值是偏序不是等价关系，`SuperCache` 的提供者既属于自己那一组又属于 `Cache` 那一组，「该功能的提供者」定不出唯一的分组。后果是消解放行的组合，取用时反而报 `ErrAmbiguousProvider`，与「排他冲突在消解阶段一次暴露，早于任何构造」和「装配期校验与运行期取用面对同一个集合」同时相悖。
+按可赋值性匹配则无法自洽：消解要把提供者按功能分组，而可赋值是偏序不是等价关系，`SuperKV` 的提供者既属于自己那一组又属于 `KV` 那一组，「该功能的提供者」定不出唯一的分组。后果是消解放行的组合，取用时反而报 `ErrAmbiguousProvider`，与「排他冲突在消解阶段一次暴露，早于任何构造」和「装配期校验与运行期取用面对同一个集合」同时相悖。
 
 资源查询仍按可赋值性，见资源查询一节。可赋值性说的是值与它所要满足的类型之间的关系，与一个标识如何匹配另一个标识是两回事（[ADR-capability-token-2026-09-13](../../adr/adr-capability-token-2026-09-13.md)）。
 
@@ -344,7 +344,7 @@ type Module struct {
 功能在声明与取用中以类型化空指针指代：
 
 ```go
-// Token 指代一种功能，写作指向该功能接口的类型化空指针，例如 (*Cache)(nil)。
+// Token 指代一种功能，写作指向该功能接口的类型化空指针，例如 (*KV)(nil)。
 type Token = any
 ```
 
@@ -352,7 +352,7 @@ type Token = any
 
 类型化空指针是功能的写法，不需要任何构造函数（[ADR-capability-token-2026-09-13](../../adr/adr-capability-token-2026-09-13.md)）。
 
-代价是 `Token` 的静态类型退化为 `any`，写成 `Cache(nil)` 或误传一个实例，编译器都不会拦。注册表因此在 `Register` 中校验每个 `Token` 确为类型化空指针，不合法的当场 panic，与重名冲突同样暴露在登记的那一刻。
+代价是 `Token` 的静态类型退化为 `any`，写成 `KV(nil)` 或误传一个实例，编译器都不会拦。注册表因此在 `Register` 中校验每个 `Token` 确为类型化空指针，不合法的当场 panic，与重名冲突同样暴露在登记的那一刻。
 
 **功能标识的元素类型必须是接口**，`Provides` 与 `Requires` 中出现 `(*bytes.Buffer)(nil)` 这类指向具体类型的空指针即 panic。功能是模块之间相互取用的单位，取用方拿到的是一组方法而非一份内存布局；要求接口也让交付校验始终有意义，否则无从判断产物是否实现了所声明的功能。资源标识不受此限：资源是被动数据，其类型可以是任意类型。
 
@@ -394,7 +394,7 @@ const (
 模块的声明因此写成：
 
 ```go
-Requires: []Requirement{{Token: (*Cache)(nil)}},
+Requires: []Requirement{{Token: (*KV)(nil)}},
 Provides: []Provision{{Token: (*Store)(nil)}},
 ```
 
@@ -408,7 +408,7 @@ Provides: []Provision{{Token: (*Store)(nil)}},
 
 ```go
 // pkg/config 定义，声明本模块接受哪些输入项
-config.Schema{Namespace: "cache", Mounts: ...}
+config.Schema{Namespace: "kv", Mounts: ...}
 
 // pkg/http 定义，声明本模块提供哪些 API
 http.Spec{...}

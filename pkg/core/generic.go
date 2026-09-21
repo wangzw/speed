@@ -7,7 +7,7 @@ package core
 // characters.
 
 // Resolve returns the instance of the one module that delivers capability T.
-// It is the type-safe form of (*Registry).Resolve, written core.Resolve[Cache](reg).
+// It is the type-safe form of (*Registry).Resolve, written core.Resolve[KV](reg).
 //
 // T must be an interface: a capability is a set of methods, so core.Resolve[int]
 // panics just as a concrete token in a declaration does.

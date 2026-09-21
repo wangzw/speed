@@ -32,8 +32,8 @@ func pointerElem(t Token, where, kind string) reflect.Type {
 	v := reflect.ValueOf(t)
 	if !v.IsValid() {
 		panic(fmt.Sprintf("core: %s: %s token is an untyped nil. "+
-			"Write it as a typed nil pointer, for example (*Cache)(nil); "+
-			"Cache(nil) converts to an untyped nil interface and designates nothing", where, kind))
+			"Write it as a typed nil pointer, for example (*KV)(nil); "+
+			"KV(nil) converts to an untyped nil interface and designates nothing", where, kind))
 	}
 	if v.Kind() != reflect.Pointer {
 		panic(fmt.Sprintf("core: %s: %s token must be a typed nil pointer, got %s. "+
