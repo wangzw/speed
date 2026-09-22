@@ -132,10 +132,14 @@ func init() { core.ProcessRegistry.Register(ordersModule()) }
 // around the module that makes it — in both directions, which is what lets this
 // module's release records still reach the configured destinations. The entry
 // point, the gateway, the roster, the database, the settings surface and the
-// bus are taken up in Init instead, where every instance exists: a requirement
-// on any of them would make this module's presence in a command drag in
-// whichever provider happens to be registered, and which providers a command
-// runs is this host's choice to write into the command tree.
+// bus are taken up in Init instead, where every instance exists already: none
+// of the six is taken up at construction, so there is no order to arrange
+// around them. Declaring one would buy a failure that arrives at resolution,
+// naming the capability, rather than in this module's Init — and nothing on the
+// provider side. All six are delivered exclusively, and the closure never
+// expands a required capability into an exclusive provider, so a declaration
+// could not bring one into the command: which providers a command runs stays
+// this host's choice to write into the command tree.
 func ordersModule() core.Module {
 	return core.Module{
 		Name: ordersModuleName,

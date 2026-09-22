@@ -2,10 +2,10 @@
 // repository's modules into one running program: an HTTP entry point, the
 // database engine, the authentication gateway with one credential backend, the
 // tenant capability directory — resolution and roster — the audit journal, the
-// runtime settings surface, a key-value and an event backend, and the telemetry
-// providers, together with two application modules of its own. It writes the
-// command tree that says what each run may be, and lets that tree drive the
-// lifecycle.
+// rate limiting layer, the runtime settings surface, a key-value and an event
+// backend, and the telemetry providers, together with two application modules
+// of its own. It writes the command tree that says what each run may be, and
+// lets that tree drive the lifecycle.
 //
 // Importing a module's package is what puts it in the available set: each
 // registers itself in init, so the import is the whole of the wiring. Nothing
@@ -80,6 +80,17 @@
 //     request that carried it, the placement event, and a crossing of tenants
 //     that no capture path can explain — a seed — which states its purpose
 //     through the seam, the one path whose caller knows why.
+//   - The rate limiting layer is registered on the endpoint the configuration
+//     names and on no other, and on that endpoint it sits inside
+//     authentication, tenant resolution and the journal. Those three are the
+//     anchors the layer declares, and the chain listing is where they are
+//     readable as positions that landed rather than as spellings.
+//   - A request past the rate limit is refused with 429 and a Retry-After
+//     header: the layer reads the limit written for its tenant, so the count
+//     happens and the refusal lands. The journal sits outside the layer, so it
+//     captures the refusal as well. The row the seed writes reaches the tenant
+//     it names alone, because the layer reads its limit per tenant: every other
+//     tenant there keeps the declared default.
 //   - A request to a served endpoint produces a span and a request-duration
 //     measurement without the handler asking for either. Which endpoints carry
 //     the layer is configuration, so the layer covers every route on the ones
@@ -105,6 +116,7 @@ import (
 	"github.com/vislake/speed/pkg/db/sqlite"
 	"github.com/vislake/speed/pkg/http/stdmux"
 	"github.com/vislake/speed/pkg/log"
+	"github.com/vislake/speed/pkg/ratelimit"
 	"github.com/vislake/speed/pkg/settings"
 	"github.com/vislake/speed/pkg/tenant"
 	"github.com/vislake/speed/pkg/tenant/resolve"
@@ -147,13 +159,16 @@ const hostVersion = "orders-host 0.1.0"
 // The tenants this host puts on the roster when it serves, and the orders it
 // writes for them.
 //
-// Two are active and one is disabled. The disabled one is here so that a case
+// Three are active and one is disabled. The disabled one is here so that a case
 // can see the two refusals being one answer, and the order written for it is
-// here so that the refusal is observably not about the rows being absent.
+// here so that the refusal is observably not about the rows being absent. The
+// remaining active one is named by the case that drives a request past the rate
+// limit and by no other case, for the reason the limiting row below states.
 const (
 	acmeTenant    = "acme"
 	globexTenant  = "globex"
 	initechTenant = "initech"
+	hooliTenant   = "hooli"
 )
 
 // The page sizes the seed writes: one for a single tenant and one for everyone.
@@ -166,6 +181,30 @@ const (
 const (
 	globalPageSize = 2
 	acmePageSize   = 10
+)
+
+// The rate limiting row the seed writes.
+//
+// The layer reads its two settings under the declared paths — the ratelimit
+// namespace, a dot, then the item key — so the row goes under one of them. Its
+// value is below the declared default so that a case can drive a request past
+// it, and it is written for one tenant so that the rest keep the default: the
+// count is per identity string inside a tenant, and a case that polls a route
+// spends it on every call.
+//
+// That tenant is one no other case names, and the seed is why it has to be. The
+// seed writes the row on every serve, and the layer reads its limit per tenant —
+// it takes the settings layer from the request's tenant, so a second identity
+// inside the tenant reads the same low row. The layer registers on the endpoint
+// the configuration names rather than on a route, so the row covers every route
+// there. A case reaching the endpoint as that tenant and sending more than the
+// seeded number of requests is therefore refused by the seeded row alone,
+// whatever any other case did: no counter and no row is shared between cases,
+// since each serves its own host against its own database.
+const (
+	limitedTenant = hooliTenant
+	limitSetting  = ratelimit.ConfigNamespace + ".limit"
+	limitedLimit  = 3
 )
 
 func main() { os.Exit(run()) }
@@ -218,6 +257,7 @@ func commandTree(reg *core.Registry) *config.App {
 		catalog.ModuleName,
 		sqlite.ModuleName,
 		journal.ModuleName,
+		ratelimit.ModuleName,
 		settings.ModuleName,
 		kvmemory.ModuleName,
 		eventmemory.ModuleName,
@@ -268,8 +308,8 @@ func serveUntilCancelled(ctx context.Context, reg *core.Registry) error {
 	return nil
 }
 
-// seed registers three tenants, writes orders for each of them, and writes the
-// two page sizes.
+// seed registers four tenants, writes orders for three of them, and writes the
+// settings a case reads back through its layers.
 //
 // The roster needs no tenant, and that is a property rather than a convenience:
 // its table does not embed the scoping convention, so its statements take the
@@ -293,6 +333,10 @@ func seed(ctx context.Context, reg *core.Registry) error {
 		{ID: acmeTenant, Alias: acmeTenant, Status: tenant.StatusActive},
 		{ID: globexTenant, Alias: globexTenant, Status: tenant.StatusActive},
 		{ID: initechTenant, Alias: initechTenant, Status: tenant.StatusDisabled},
+		// The tenant the limiting row names. It takes no order: the case that
+		// reaches it past the limit asserts on the refusal, and a listing with
+		// nothing in it is the same 200 the requests before the refusal get.
+		{ID: hooliTenant, Alias: hooliTenant, Status: tenant.StatusActive},
 	} {
 		if putErr := roster.Put(ctx, t); putErr != nil {
 			return fmt.Errorf("registering %s: %w", t.ID, putErr)
@@ -345,6 +389,16 @@ func seed(ctx context.Context, reg *core.Registry) error {
 		if writeErr := set.Set(ctx, w.write); writeErr != nil {
 			return fmt.Errorf("writing %s for %s: %w", w.write.Key, w.where, writeErr)
 		}
+	}
+
+	// The limit the limiting case drives a request past. The declared default
+	// is far above what a case can spend, so this one tenant carries a low
+	// value and the rest keep the default.
+	if writeErr := set.Set(ctx, settings.Write{
+		Layer: settings.ForTenant(limitedTenant), Key: limitSetting,
+		Value: limitedLimit, Actor: "seed",
+	}); writeErr != nil {
+		return fmt.Errorf("writing %s for %s: %w", limitSetting, limitedTenant, writeErr)
 	}
 
 	// The seam, and only the seam. A record written here is accepted even

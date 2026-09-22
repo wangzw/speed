@@ -3,10 +3,10 @@
 A host that assembles a working set of this repository's modules into one
 running program: an HTTP entry point, the database engine, the authentication
 gateway with one credential backend, the tenant capability directory —
-resolution and roster — the audit journal, the runtime settings surface, a
-key-value and an event backend, and the telemetry providers, together with two
-application modules of its own. It writes the command tree that says what each
-run may be, and lets that tree drive the lifecycle.
+resolution and roster — the audit journal, the rate limiting layer, the runtime
+settings surface, a key-value and an event backend, and the telemetry providers,
+together with two application modules of its own. It writes the command tree
+that says what each run may be, and lets that tree drive the lifecycle.
 
 It is a working set and not a census: what is here is what the cases below need
 to hold, and a module this host does not assemble is a module whose composition
@@ -35,6 +35,15 @@ The things no module's own suite can hold:
   pass every case that names one. The seam is the one path whose caller knows
   *why* — a cross-tenant write outside any request — which is the fact no
   capture path can supply.
+- **The limiting layer lands where the configuration and its own declaration
+  put it.** The rate limiting module is named on `serve` and registers a layer
+  on the endpoint the configuration names, and on that endpoint it sits inside
+  authentication, tenant resolution and the journal — the three anchors its own
+  declaration carries, so the chain listing can be read as positions that
+  landed rather than as spellings. Neither its reach nor its position is
+  observable from inside `pkg/ratelimit`: the layer registers itself through the
+  entry point and never sees the chain it landed on, and an anchor that no layer
+  stands for is dropped with nothing said about where the layer ended up.
 - **A published fact reaches a subscriber that does not know the publisher.**
   The placement module publishes under a type name; the inventory module counts
   what it is handed without reading the payload or importing the publisher.
@@ -152,6 +161,9 @@ audit:
       - order.placed
 settings:
   refresh-interval: 30s
+ratelimit:
+  endpoints:
+    - public
 observability:
   otel:
     service-name: orders-host

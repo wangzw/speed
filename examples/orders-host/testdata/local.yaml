@@ -40,6 +40,9 @@ audit:
       - order.placed
 settings:
   refresh-interval: 30s
+ratelimit:
+  endpoints:
+    - public
 observability:
   otel:
     service-name: orders-host

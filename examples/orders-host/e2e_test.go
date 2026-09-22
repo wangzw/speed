@@ -22,6 +22,7 @@ import (
 	"github.com/vislake/speed/pkg/audit/journal"
 	"github.com/vislake/speed/pkg/authn/gate"
 	"github.com/vislake/speed/pkg/authn/static"
+	"github.com/vislake/speed/pkg/ratelimit"
 	"github.com/vislake/speed/pkg/tenant/resolve"
 
 	// The SQLite driver, so that a case can read what the host's migrate
@@ -62,9 +63,12 @@ const (
 	qualified = "local/" + subject
 )
 
-// The tenants the host seeds. The two active ones differ in whether a page size
-// was written for them; the third is disabled and has a row of its own, so that
-// its refusal is observably not about the rows being absent.
+// The tenants a case reaches for by alias. The two active ones differ in
+// whether a page size was written for them; the third is disabled and has a row
+// of its own, so that its refusal is observably not about the rows being
+// absent. The tenant the limiting row names is named by its constant instead,
+// because the case that drives a request past the limit is the only one that
+// reaches it.
 const (
 	acme    = acmeTenant
 	globex  = globexTenant
@@ -76,9 +80,10 @@ const (
 // renamed is a compile error here rather than a case that quietly stops
 // checking anything.
 const (
-	gateModuleName    = gate.ModuleName
-	resolveModuleName = resolve.ModuleName
-	journalModuleName = journal.ModuleName
+	gateModuleName      = gate.ModuleName
+	resolveModuleName   = resolve.ModuleName
+	journalModuleName   = journal.ModuleName
+	ratelimitModuleName = ratelimit.ModuleName
 )
 
 // gateConfigNamespace is where the gateway mounts its input items. A case
@@ -283,6 +288,9 @@ audit:
       - %q
 settings:
   refresh-interval: 0s
+ratelimit:
+  endpoints:
+    - public
 observability:
   otel:
     service-name: orders-host
@@ -304,6 +312,11 @@ observability:
 // writeUnguardedFixture lays out the same configuration with no endpoint named
 // under the gateway, which is the shape a host must refuse to serve rather than
 // serving guarded routes unguarded.
+//
+// The rate limiting module's section is here for the same reason every other
+// one is: the serving command names that module, so a run it cannot read a
+// section for stops in its own Prepare. This fixture exists to stop in the
+// gateway's.
 func writeUnguardedFixture(t *testing.T) *fixture {
 	t.Helper()
 
@@ -337,6 +350,9 @@ tenant:
     header-name: X-Tenant
   catalog:
     refresh-period: 0s
+ratelimit:
+  endpoints:
+    - public
 observability:
   otel:
     service-name: orders-host
@@ -493,10 +509,10 @@ type running struct {
 	stop   func()
 }
 
-// call makes one request and returns the status and the body. An empty tenant
-// sends no tenant header at all; an empty credential sends no Authorization
-// header.
-func call(t *testing.T, base, path, tenantName, credential string) (int, string) {
+// get builds one GET request, with the tenant header and the credential the
+// arguments name. An empty tenant sends no tenant header at all; an empty
+// credential sends no Authorization header.
+func get(t *testing.T, base, path, tenantName, credential string) *nethttp.Request {
 	t.Helper()
 	r, err := nethttp.NewRequest(nethttp.MethodGet, base+path, nil)
 	if err != nil {
@@ -508,7 +524,14 @@ func call(t *testing.T, base, path, tenantName, credential string) (int, string)
 	if credential != "" {
 		r.SetBasicAuth(credential, password)
 	}
-	return send(t, r)
+	return r
+}
+
+// call makes one request and returns the status and the body.
+func call(t *testing.T, base, path, tenantName, credential string) (int, string) {
+	t.Helper()
+	status, _, body := send(t, get(t, base, path, tenantName, credential))
+	return status, body
 }
 
 // place makes one placement and returns the status and the body.
@@ -529,11 +552,14 @@ func place(t *testing.T, base, tenantName, credential, id, item string) (int, st
 	if credential != "" {
 		r.SetBasicAuth(credential, password)
 	}
-	return send(t, r)
+	status, _, text := send(t, r)
+	return status, text
 }
 
-// send performs one request and returns the status and the body.
-func send(t *testing.T, r *nethttp.Request) (int, string) {
+// send performs one request and returns the status, the response headers and
+// the body. The headers are kept because a refusal's Retry-After travels on one
+// and nowhere in the body.
+func send(t *testing.T, r *nethttp.Request) (int, nethttp.Header, string) {
 	t.Helper()
 	resp, err := nethttp.DefaultClient.Do(r)
 	if err != nil {
@@ -542,7 +568,7 @@ func send(t *testing.T, r *nethttp.Request) (int, string) {
 	defer resp.Body.Close()
 	var body strings.Builder
 	_, _ = io.Copy(&body, resp.Body)
-	return resp.StatusCode, body.String()
+	return resp.StatusCode, resp.Header, body.String()
 }
 
 // decode unmarshals a body into v, failing the case when it cannot.
@@ -1117,12 +1143,7 @@ func TestTheStartupDiagnosticsNameTheChain(t *testing.T) {
 	f.migrate(t)
 	run := f.start(t)
 
-	rec, ok := findRecord(run.output(), "an HTTP endpoint's chain is assembled", "endpoint", publicEndpoint)
-	if !ok {
-		t.Fatalf("the startup diagnostics name no chain for %q; the run wrote:\n%s",
-			publicEndpoint, run.output())
-	}
-	chain := rec["chain"]
+	chain := chainFor(t, run, publicEndpoint)
 	auth := strings.Index(chain, gateModuleName)
 	resolution := strings.Index(chain, resolveModuleName)
 	journal := strings.Index(chain, journalModuleName)
@@ -1132,6 +1153,157 @@ func TestTheStartupDiagnosticsNameTheChain(t *testing.T) {
 	case auth >= resolution || resolution >= journal:
 		t.Errorf("the chain %q puts the layers in an order that lets a request reach resolution before authentication",
 			chain)
+	}
+}
+
+// chainFor reads an endpoint's assembled chain out of the run's startup
+// diagnostics: the layers on it, in order, outermost first.
+func chainFor(t *testing.T, run *running, endpoint string) string {
+	t.Helper()
+	rec, ok := findRecord(run.output(), "an HTTP endpoint's chain is assembled", "endpoint", endpoint)
+	if !ok {
+		t.Fatalf("the startup diagnostics name no chain for %q; the run wrote:\n%s", endpoint, run.output())
+	}
+	return rec["chain"]
+}
+
+// TestTheLimitingLayerSitsInsideTheGuards is the case for where the rate
+// limiting layer lands on an assembled endpoint.
+//
+// The layer registers itself on the endpoints the configuration names, so its
+// reach is configuration and not something every route gets. On the endpoint it
+// guards it sits inside authentication, tenant resolution and the journal:
+// those three are the anchors its own declaration carries, and an anchor whose
+// capability no layer on the endpoint stands for is dropped rather than
+// honoured. The chain listing is where the anchors are therefore readable as
+// positions that landed — a layer outside authentication reads no identity
+// string, and one outside resolution reads the limits of the shared layer
+// instead of the caller's tenant.
+func TestTheLimitingLayerSitsInsideTheGuards(t *testing.T) {
+	f := writeFixture(t)
+	f.migrate(t)
+	run := f.start(t)
+
+	chain := chainFor(t, run, publicEndpoint)
+	limiter := strings.Index(chain, ratelimitModuleName)
+	if limiter < 0 {
+		t.Fatalf("the chain %q carries no %q layer, which the configuration names %q for",
+			chain, ratelimitModuleName, publicEndpoint)
+	}
+	for _, inside := range []string{gateModuleName, resolveModuleName, journalModuleName} {
+		at := strings.Index(chain, inside)
+		if at < 0 {
+			t.Fatalf("the chain %q is missing the %q layer the limiter has to sit inside", chain, inside)
+		}
+		if limiter < at {
+			t.Errorf("the chain %q puts %q outside %q, which it has to sit inside",
+				chain, ratelimitModuleName, inside)
+		}
+	}
+
+	// The endpoint the configuration does not name is served without the layer,
+	// and its own listing is the witness: a limiter that turned up there would
+	// have judged requests carrying neither an identity nor a tenant.
+	if ops := chainFor(t, run, opsEndpoint); strings.Contains(ops, ratelimitModuleName) {
+		t.Errorf("the chain %q carries the limiting layer on an endpoint the configuration does not name", ops)
+	}
+}
+
+// TestTheLimitingLayerRefusesPastTheLimit is the case for the layer's decision
+// being reached at all. The limit is the value written for one tenant, and the
+// request past it is refused through the assembled chain: the answer is 429
+// with a Retry-After header, and the journal, which sits outside the layer,
+// captures the refusal.
+//
+// The tenant this case drives past the limit belongs to this case and to no
+// other case, and the seed is why. The seed writes this tenant's low row on
+// every serve, and the layer reads its limit per tenant — it takes the settings
+// layer from the request's tenant, so a second identity inside the tenant reads
+// the same low row, and the row reaches every route on the endpoint. Any case
+// sending more than the seeded number of requests to this endpoint as that
+// tenant is therefore refused by the seeded row alone, whatever any other case
+// did: no counter and no row is shared between cases, since each serves its own
+// host against its own database. A case added to this endpoint takes a tenant
+// of its own; the case below holds that, by spending more than the row's value
+// on each of the endpoint's other tenants.
+//
+// The settings module registers an item under its full path — the namespace
+// plus the item key — and looks a key up by that exact path. A read of the bare
+// item key covers no declaration and fails open, which is a run that lets every
+// request through and says so only on its own standard error. The count and the
+// refusal below are what tell the declared path from the bare one; the chain
+// listing cannot, because the layer's position is the same either way.
+func TestTheLimitingLayerRefusesPastTheLimit(t *testing.T) {
+	f := writeFixture(t)
+	f.migrate(t)
+	run := f.start(t)
+
+	for i := 1; i <= limitedLimit; i++ {
+		status, _, body := send(t, get(t, run.public, "/orders", limitedTenant, subject))
+		if status != nethttp.StatusOK {
+			t.Fatalf("request %d of the %d the limit allows answered %d: %s",
+				i, limitedLimit, status, body)
+		}
+	}
+
+	status, header, body := send(t, get(t, run.public, "/orders", limitedTenant, subject))
+	if status != nethttp.StatusTooManyRequests {
+		t.Fatalf("the request past the limit answered %d, want %d: %s",
+			status, nethttp.StatusTooManyRequests, body)
+	}
+	if got := header.Get("Retry-After"); got == "" || got == "0" {
+		t.Errorf("the refusal carries Retry-After %q, want a positive number of seconds", got)
+	}
+
+	// The request row is written once the inner chain has returned, so the
+	// table is read until the refusal turns up rather than once.
+	deadline := time.Now().Add(settleLimit)
+	for {
+		var captured bool
+		for _, row := range f.journal(t) {
+			if row.source == "request" && row.object == ordersRoute &&
+				row.outcome == strconv.Itoa(nethttp.StatusTooManyRequests) &&
+				row.tenant == limitedTenant {
+				captured = true
+			}
+		}
+		if captured {
+			return
+		}
+		if time.Now().After(deadline) {
+			t.Fatalf("the journal captured no request row for the refusal of %s on %s",
+				limitedTenant, ordersRoute)
+		}
+		time.Sleep(20 * time.Millisecond)
+	}
+}
+
+// TestTheLimitingRowCoversOneTenantAlone is the case for how far the row the
+// seed writes reaches.
+//
+// The layer registers on the endpoint and reads its limit for the request's
+// tenant, so the row the seed writes for one tenant covers every route on that
+// endpoint for that tenant. Every other tenant keeps the declared default,
+// which is far above what a case spends: the seed writes the low row for one
+// tenant alone, so a case reaching the endpoint as another tenant is never
+// refused by it. The reads below spend more than the row's value on each of
+// them, which is what tells the declared default from a second copy of the row.
+//
+// The disabled tenant is left out on purpose: resolution refuses it before the
+// layer is reached, so its request count says nothing about the row.
+func TestTheLimitingRowCoversOneTenantAlone(t *testing.T) {
+	f := writeFixture(t)
+	f.migrate(t)
+	run := f.start(t)
+
+	for _, other := range []string{acme, globex} {
+		for i := 1; i <= limitedLimit+1; i++ {
+			status, _, body := send(t, get(t, run.public, "/orders", other, subject))
+			if status != nethttp.StatusOK {
+				t.Fatalf("request %d of %d to %s answered %d: %s; the row the seed writes names %s, and every other tenant on the endpoint reads the declared default",
+					i, limitedLimit+1, other, status, body, limitedTenant)
+			}
+		}
 	}
 }
 
