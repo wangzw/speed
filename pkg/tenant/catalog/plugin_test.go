@@ -34,6 +34,11 @@ type memo struct {
 func (memo) TableName() string { return "memos" }
 
 // open builds a handle with the filter installed and the two tables created.
+//
+// The pool is closed when the case ends. The handle is an in-memory database
+// shared by name, and a pool left open keeps that database alive past the case
+// — into the next run under -count, where the same name then finds the tables
+// already there and the case dies at the fixture.
 func open(t *testing.T) *gorm.DB {
 	t.Helper()
 	handle, err := gorm.Open(sqlitedriver.Open("file:"+t.Name()+"?mode=memory&cache=shared"),
@@ -41,6 +46,12 @@ func open(t *testing.T) *gorm.DB {
 	if err != nil {
 		t.Fatalf("opening the handle: %v", err)
 	}
+	pool, err := handle.DB()
+	if err != nil {
+		t.Fatalf("reaching the handle's pool: %v", err)
+	}
+	t.Cleanup(func() { pool.Close() })
+
 	if err := handle.Use(newFilter()); err != nil {
 		t.Fatalf("installing the filter: %v", err)
 	}

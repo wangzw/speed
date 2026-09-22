@@ -19,6 +19,11 @@ const tableName = "tenants"
 // with. Nothing is special-cased for it — it takes the same path through the
 // filter as any other global table, which is the path a model that embeds
 // nothing takes.
+//
+// The alias's `uniqueIndex` tag does not hold that column unique: this type is
+// never migrated — the table comes from the module's declared migration — so
+// the constraint in that file is what enforces the alias, and the tag records
+// the shape for a reader.
 type row struct {
 	ID     string `gorm:"column:id;primaryKey"`
 	Alias  string `gorm:"column:alias;not null;uniqueIndex"`

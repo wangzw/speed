@@ -75,7 +75,9 @@ here must not cross, and how to run it.
 - **The identifier's value domain is stated once here and restated by its
   consumers.** `IsIdentifier` in this package is the module's one statement of
   the rule — non-empty, free of blanks and control characters — and the roster's
-  field check (`checkField`) calls it. A module that layers a value by an
+  field check (`checkField`) calls it; the empty value is judged just before
+  that call, only to pick which of the two messages the failure carries, so the
+  domain itself still has one statement. A module that layers a value by an
   identifier restates the rule rather than importing it, because the dependency
   between it and this module is deliberately absent; `pkg/settings`'s
   `ForTenant` is the one that exists. Two statements drift, and the drift is not

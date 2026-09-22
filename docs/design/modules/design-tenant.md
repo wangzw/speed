@@ -241,7 +241,7 @@ func CrossTenant(ctx context.Context) context.Context
 
 `Resolution`、`Catalog`、`Extractor`、`Tenant`、`ID`、`IsIdentifier`、`Status`、`Model` 与 `CrossTenant`、`FromContext` 是本模块与其他模块之间的契约。中间件在链上代表的那个功能标识与描述符里的交付标识同为 `(*Resolution)(nil)`，别的模块据它排序，取值不变。约定里那一列的名字 `tenant_id`、它的非空约束与它在主键里的位置同样在这个面上：迁移文件由声明方写，改名或改键都是一次全库迁移。
 
-**标识的取值域也在契约面上**：非空，且不含空白与控制字符，根包的 `IsIdentifier` 是本模块对这一条的唯一陈述，名册的字段判定（`pkg/tenant/catalog/roster.go` 的 `checkField`）也走它。按租户取值的模块各自复述这条判据——设置模块的 `ForTenant` 即一处——而不以 import 本模块的方式取用它（[settings](design-settings.md) 记有那条依赖为何不存在）。两处是否仍是同一条，由消费方自己的测试包 `pkg/settings/settings_test.go` 的 `TestForTenantAgreesWithTheTenantIdentifierDomain` 拿同一张标识形状表逐形状驱动双方守住。
+**标识的取值域也在契约面上**：非空，且不含空白与控制字符，根包的 `IsIdentifier` 是本模块对这一条的唯一陈述，名册的字段判定（`pkg/tenant/catalog/roster.go` 的 `checkField`）也走它——空值在那次调用之前先判一档，只为挑出两种文本，取值域本身仍只有 `IsIdentifier` 一条陈述。按租户取值的模块各自复述这条判据——设置模块的 `ForTenant` 即一处——而不以 import 本模块的方式取用它（[settings](design-settings.md) 记有那条依赖为何不存在）。两处是否仍是同一条，由消费方自己的测试包 `pkg/settings/settings_test.go` 的 `TestForTenantAgreesWithTheTenantIdentifierDomain` 拿同一张标识形状表逐形状驱动双方守住。
 
 ## 依赖
 
@@ -459,7 +459,7 @@ flowchart TD
 | `ErrExtractorConflict` | `Start` 关窗后，两条登记用了同一个名字 | 点名那个名字与两处登记的实现类型。**登记面拿不到登记方的身份**，因而点不到模块名——与认证的豁免登记同形（见 [authn](design-authn.md)） |
 | `ErrInvalidExtractor` | `Start` 关窗后，一条登记的名字为空或只含空白，或者实现为空 | 点名那个名字与实现类型；实现为空时类型打不出来，错误文本点明"有一条实现为空的登记" |
 | `ErrRosterMissing` | `Init` 装载快照时表不存在 | 点名那张表与施加迁移的那条命令；把它写进那条命令的声明集 |
-| `ErrInvalidTenant` | 一个本模块不予处置的租户：`Put` 的标识或别名为空、含空白或控制字符；`SetStatus` 给的标识没有任何一行；或者装载与刷新读到的某一行本身就是这样一个租户 | 点名那个字段、那个标识或那张表 |
+| `ErrInvalidTenant` | 一个本模块不予处置的租户：`Put` 的标识或别名为空、含空白或控制字符；`SetStatus` 给的标识没有任何一行；或者装载与刷新读到的某一行本身就是这样一个租户 | 点名那个字段、那个标识或那张表。**字段为空与字段含空白或控制字符是两档，文本上分开说**：前者要补一个值，后者要改掉那个值，改法不同。哨兵仍只有一个——调用方对这一类的处置相同，都是检查它传进来的那个值 |
 | `ErrAliasConflict` | 两个租户抢同一个别名 | 点名该别名与占有它的那个标识；改掉其中一个 |
 | `ErrNoTenantInContext` | 受约束模型的语句在上下文中没有标识 | 点名模型；由调用方给出租户，或显式标为跨租户 |
 | `ErrExplicitTenantMismatch` | 一条写语句显式给出的租户列取值与上下文里的标识不同 | 点名该模型与两个取值；删掉显式写下的那个，或者改用 `CrossTenant` |
