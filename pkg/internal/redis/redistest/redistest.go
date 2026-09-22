@@ -9,10 +9,11 @@
 //
 // One container serves the whole machine under a fixed name and is left running
 // between test runs, so a day's work costs one cold start rather than one per
-// binary. Isolation is per database index, not per container: Acquire hands each
-// caller one of the sixteen a default Redis has, and clears it first, because
-// go test runs the packages of one module in parallel and make check runs two
-// legs.
+// binary. Isolation is per database index, not per container: Acquire claims one
+// of the databases a default Redis has and clears it, because go test runs the
+// packages of one module in parallel and make check runs two legs — and two
+// callers landing on one database have each of them clearing the other's work,
+// which is a failure that shows up as a missing key rather than as a collision.
 //
 // Two modules use this — the key-value one and the event one — so it lives with
 // the client wrapper they share, in pkg/internal/redis/redistest, inside the pkg
@@ -28,7 +29,6 @@ import (
 	"os/exec"
 	"strconv"
 	"strings"
-	"sync/atomic"
 	"testing"
 	"time"
 
@@ -44,8 +44,16 @@ const (
 	image = "redis:7-alpine"
 	// databases is how many logical databases a default Redis offers. They are
 	// the unit of isolation here; a key prefix would not do, because some cases
-	// assert on which keys exist.
+	// assert on which keys exist. One of them holds the leases and is never
+	// handed out, so this many databases means one fewer a case can run in.
 	databases = 16
+	// leaseDB is the database the claims live in. It is outside the range
+	// Acquire hands out, so no case ever clears it.
+	leaseDB = databases - 1
+	// leaseTTL bounds how long a claim lives. It is far longer than any case
+	// here, and short enough that a binary killed mid-case does not hold a
+	// database for the rest of the machine's uptime.
+	leaseTTL = 15 * time.Minute
 	// readyTimeout bounds the wait for a cold container to answer, the image
 	// pull included.
 	readyTimeout = 3 * time.Minute
@@ -59,34 +67,34 @@ const (
 	bringUpInterval = 150 * time.Millisecond
 )
 
-// nextDB hands out database indices. A counter rather than a random pick keeps
-// the sequence reproducible, and it is seeded from the process id so that two
-// test binaries running at once — go test across packages, or make check's two
-// legs — walk different stretches of the sixteen a default Redis has: with a
-// plain counter both would start at zero, and the second binary's FlushDB
-// would clear whatever database the first was using. Two process ids sixteen
-// apart still collide; that window is small because it now takes ids that line
-// up rather than every pair of binaries.
-var nextDB = func() *atomic.Int32 {
-	seeded := &atomic.Int32{}
-	//nolint:gosec // a process id is small next to int32 by construction
-	seeded.Store(int32(os.Getpid()))
-	return seeded
-}()
+// acquireTimeout bounds the wait for a database to come free. A machine
+// running several test binaries at once can have every one of them taken at
+// the moment one asks, and waiting is the answer rather than failing: the
+// leases expire and the callers that hold them give them back when their cases
+// end.
+const acquireTimeout = 2 * time.Minute
+
+// releaseTimeout bounds the call that gives a database back. It runs from a
+// cleanup, where a failure has nowhere useful to go.
+const releaseTimeout = 5 * time.Second
 
 // Acquire returns a server address and a database index on it that no other
 // caller is using, with that database empty.
 //
 // The caller does not close anything: the container outlives the test run, and
-// the database is cleared by the next Acquire that takes it.
+// the database is cleared by the next Acquire that takes it. The index is
+// given back when the case ends.
 func Acquire(t *testing.T) (addr string, db int) {
 	t.Helper()
 	requireDocker(t)
 	addr = ensureServer(t)
-	db = int(nextDB.Add(1)-1) % databases
 
 	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 	defer cancel()
+	db = claim(t, ctx, addr)
+
+	t.Cleanup(func() { release(addr, db, t) })
+
 	client := redis.NewClient(&redis.Options{Addr: addr, DB: db})
 	defer func() { _ = client.Close() }()
 	if err := client.FlushDB(ctx).Err(); err != nil {
@@ -94,6 +102,87 @@ func Acquire(t *testing.T) (addr string, db int) {
 	}
 	return addr, db
 }
+
+// claim takes a database nobody else holds and returns its index.
+//
+// The claim is a key written with NX into the lease database, which is outside
+// the range handed out here and so is never cleared by a case. That is what
+// makes the twenty-odd tests in two packages, running as separate binaries at
+// once, land on twenty-odd databases without any of them clearing another's
+// work: the write is the arbitration, and it is atomic on the server.
+//
+// A lease carries a bound on its life so that a binary killed mid-case does
+// not hold a database for the rest of the machine's uptime. The bound is far
+// longer than any case here.
+func claim(t *testing.T, ctx context.Context, addr string) int {
+	t.Helper()
+
+	deadline := time.Now().Add(acquireTimeout)
+	for {
+		db, err := claimFor(ctx, addr, leaseOwner())
+		if err != nil {
+			t.Fatalf("redistest: claiming a database: %v", err)
+		}
+		if db >= 0 {
+			return db
+		}
+		if time.Now().After(deadline) {
+			t.Fatalf("redistest: every one of the %d databases has been claimed for %v, "+
+				"which means a case is holding one far longer than any case here does",
+				databases-1, acquireTimeout)
+		}
+		time.Sleep(bringUpInterval)
+	}
+}
+
+// claimFor takes the first free database for owner, or reports -1 when they
+// are all taken.
+//
+// The arbitration is the SetNX itself: it is atomic on the server, so two
+// callers asking at the same instant in different processes cannot both be
+// told they hold the same index. Nothing about the caller enters into it,
+// which is the point — an index derived from the caller's identity would put
+// two test binaries on one database as soon as their identities lined up.
+func claimFor(ctx context.Context, addr, owner string) (int, error) {
+	client := redis.NewClient(&redis.Options{Addr: addr, DB: leaseDB})
+	defer func() { _ = client.Close() }()
+
+	for n := range databases - 1 {
+		ok, err := client.SetNX(ctx, leaseKey(n), owner, leaseTTL).Result()
+		if err != nil {
+			return 0, err
+		}
+		if ok {
+			return n, nil
+		}
+	}
+	return -1, nil
+}
+
+// release gives a database back. A failure is reported and not fatal: the
+// lease expires on its own, and a cleanup that fails should not turn a passing
+// case red.
+func release(addr string, db int, t *testing.T) {
+	t.Helper()
+
+	ctx, cancel := context.WithTimeout(context.Background(), releaseTimeout)
+	defer cancel()
+	client := redis.NewClient(&redis.Options{Addr: addr, DB: leaseDB})
+	defer func() { _ = client.Close() }()
+	if err := client.Del(ctx, leaseKey(db)).Err(); err != nil {
+		t.Logf("redistest: giving database %d back: %v", db, err)
+	}
+}
+
+// leaseOwner identifies the holder of a lease, for a reader looking at the
+// lease database while a case is running.
+func leaseOwner() string {
+	//nolint:gosec // a process id is small next to int32 by construction
+	return "pid:" + strconv.Itoa(os.Getpid())
+}
+
+// leaseKey is the key a claim for one database is written under.
+func leaseKey(n int) string { return "redistest:lease:" + strconv.Itoa(n) }
 
 // requireDocker fails the case when there is no docker to drive.
 //
