@@ -381,15 +381,25 @@ func (r *Registry) construct(ctx context.Context, m Module) error {
 // assertDelivered checks the product against the delivery declaration, so a
 // declaration that drifted from the code surfaces on the construction that
 // produced it rather than on some later module that cannot find a dependency.
+//
+// A nil instance has two causes, and the message names which one it is: the
+// module has no New callback, or its New callback returned no product. The two
+// call for different fixes, so reporting a missing callback for both sends half
+// the readers after a callback that is not absent.
 func assertDelivered(m Module, instance any) error {
 	it := reflect.TypeOf(instance)
 	for _, ct := range declaredCapabilities(m) {
 		if it != nil && it.AssignableTo(ct) {
 			continue
 		}
-		got := "nothing, because the module has no New callback"
-		if it != nil {
+		var got string
+		switch {
+		case it != nil:
 			got = typeName(it)
+		case m.New == nil:
+			got = "nothing, because the module has no New callback"
+		default:
+			got = "nothing, because the module's New callback returned no product"
 		}
 		return fmt.Errorf("%w: module %q declares capability %s in Provides but constructed %s",
 			ErrUndeliveredCapability, m.Name, typeName(ct), got)
