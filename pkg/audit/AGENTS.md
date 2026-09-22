@@ -74,6 +74,13 @@ must not cross, and how to run it.
 - **The layer's `Provides` carries `(*audit.Audit)(nil)`**, the same token the
   descriptor delivers under. That is the only anchor another layer has for
   placing itself inside or outside audit, so the two must not drift.
+- **A request whose handler abandons its connection is recorded as a panic.**
+  `net/http`'s `ErrAbortHandler` is a handler asking for its connection to be
+  dropped, not a defect; the entry point's fallback lets that value past
+  without answering, but this layer sits inside it and cannot tell the two
+  apart, so the outcome column holds `panic` for a request the caller got no
+  response to. Recording the request is what this layer is for, so the row
+  stays; the design document carries the misreport as a non-guarantee.
 - **The plugin is installed on every handle the database module builds, the
   second connection included.** `db.Open` carries the same declared plugins and
   applies no migrations, so on a second connection this module's table is

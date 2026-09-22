@@ -9,9 +9,11 @@ import (
 
 // subscribe registers one handler per configured type name.
 //
-// This runs in the Init stage, which is the only stage the bus accepts a
-// subscription in. A subscription made later would miss everything published
-// before it and would have no way to learn that it had.
+// It runs in the Init stage: the bus freezes its subscription table at its own
+// Start callback, which the drive reaches after every module's Init. A
+// subscription registered after that freeze does not cover anything published
+// before it, whether the bus refuses it at the call site or accepts it and
+// misses those events.
 func (j *journal) subscribe(bus event.Bus) {
 	for _, typeName := range unique(j.settings.events) {
 		bus.Subscribe(typeName, j.handlerFor(typeName))

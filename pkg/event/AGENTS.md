@@ -43,6 +43,17 @@ must not cross, and how to run it.
   type-asserts a payload has stopped being an implementation of this interface,
   and so has one that hands a subscriber something other than what was
   published.
+- **A publisher keeps credentials out of a payload, and the bus does not
+  help.** A subscriber reads a payload by field name and may write what it read
+  straight onto its own signal surface — observability writes every top-level
+  field as a span attribute — while the bus neither inspects nor strips a
+  payload. A credential put in a payload reaches that surface.
+- **The context a handler receives is the implementation's, and a subscriber's
+  span parentage follows from it.** The process-local bus calls a handler on the
+  publisher's own context, so a span started there joins the trace that produced
+  the fact; a transport-backed bus calls it on a context of its own, leaving the
+  span a root. Which shape a subscriber sees is a property of the deployed
+  backend, not of this interface.
 - **The root package registers no module.** Each implementation's subpackage does
   it in its own `init`.
 - **The root package imports no backend client.** A client belongs to the
@@ -73,11 +84,13 @@ must not cross, and how to run it.
   gives way: a zero-configuration backend states `StateAuto` so it stands down for
   one that was explicitly enabled; a backend that must be pointed at something
   states `StateEnabled` so that two of them being pointed at once fails the startup.
-- **A subscription is made in `Init` and nowhere else.** The drive calls each
-  module's `Init` one at a time, so a backend freezes its subscription table at
-  the start stage and refuses later registrations at the call site. A
-  subscription arriving after the first publish would miss everything published
-  before it, and nothing else would say so.
+- **A subscription is registered before the subscription table freezes, and a
+  backend freezes the table in its own `Start` callback.** The drive calls every
+  module's `Init` before it reaches that stage, so a table frozen there holds
+  each module's subscription made in its own `Init`. A registration arriving
+  after the freeze does not cover anything published before it: an
+  implementation may refuse it at the call site; one that accepts it leaves the
+  subscriber missing everything published first.
 - **`Event.Type` is an agreement with no checker.** A publisher that renames one
   silently stops reaching its subscribers. Nothing here can catch that, and an
   implementation must not try by, say, refusing types nobody publishes — a
