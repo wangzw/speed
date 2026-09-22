@@ -12,7 +12,8 @@ implementation subpackage that binds the standard library's routing engine.
 - The decisions behind it, one file per decision:
   [`docs/adr/`](../../docs/adr/) — `adr-http-surface-2026-09-14`,
   `adr-http-middleware-2026-09-14`, `adr-http-routing-2026-09-14`,
-  `adr-http-endpoints-2026-09-14`, `adr-http-shutdown-2026-09-14`.
+  `adr-http-endpoints-2026-09-14`, `adr-http-shutdown-2026-09-14`,
+  `adr-http-recovery-2026-09-22`.
 - The API itself: the godoc in this package, and the runnable examples in
   `example_test.go`. Read `Middleware`'s field comments before adding a seat to
   a layer.
