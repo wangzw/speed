@@ -2,6 +2,7 @@ package otel
 
 import (
 	"fmt"
+	"math"
 	"time"
 
 	"github.com/vislake/speed/pkg/config"
@@ -153,7 +154,12 @@ func (c *Config) validate() error {
 	if c.ServiceName == "" {
 		return ErrEmptyServiceName
 	}
-	if c.SampleRatio < 0 || c.SampleRatio > 1 {
+	// NaN is outside [0,1] and yet compares false against both bounds, so the
+	// interval test alone lets it through. A NaN ratio is worth refusing here
+	// because it is not the zero the sampler switch-off path announces: it
+	// builds a sampler that drops every locally-rooted span while no line
+	// reports the module as producing nothing.
+	if math.IsNaN(c.SampleRatio) || c.SampleRatio < 0 || c.SampleRatio > 1 {
 		return fmt.Errorf("%w: got %v", ErrInvalidSampleRatio, c.SampleRatio)
 	}
 	if c.Batch.MaxQueueSize < 0 || c.Batch.MaxExportBatchSize < 0 {

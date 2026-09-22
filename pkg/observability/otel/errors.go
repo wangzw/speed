@@ -11,8 +11,9 @@ var (
 	// supplied; an empty value is a different input and needs its own answer.
 	ErrEmptyServiceName = errors.New("observability.otel: service-name is set but empty")
 
-	// ErrInvalidSampleRatio reports a ratio outside [0,1]. The text names the
-	// accepted interval, which is the whole of what a reader needs to fix it.
+	// ErrInvalidSampleRatio reports a ratio that is not a finite number within
+	// [0,1]. The text names the accepted interval, which is the whole of what a
+	// reader needs to fix it.
 	ErrInvalidSampleRatio = errors.New("observability.otel: sample-ratio must lie within [0,1]")
 
 	// ErrInvalidBatchParam reports a negative batch parameter. Zero is not this

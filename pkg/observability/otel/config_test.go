@@ -2,6 +2,7 @@ package otel
 
 import (
 	"errors"
+	"math"
 	"testing"
 )
 
@@ -50,6 +51,9 @@ func TestValidateNamesEachFailure(t *testing.T) {
 		{"an empty service name", func(c *Config) { c.ServiceName = "" }, ErrEmptyServiceName},
 		{"a ratio below zero", func(c *Config) { c.SampleRatio = -0.01 }, ErrInvalidSampleRatio},
 		{"a ratio above one", func(c *Config) { c.SampleRatio = 1.01 }, ErrInvalidSampleRatio},
+		// NaN is neither below zero nor above one, so the interval comparisons
+		// miss it; it must be refused as a ratio outside [0,1] all the same.
+		{"a NaN ratio", func(c *Config) { c.SampleRatio = math.NaN() }, ErrInvalidSampleRatio},
 		{"a negative queue size", func(c *Config) { c.Batch.MaxQueueSize = -1 }, ErrInvalidBatchParam},
 		{"a negative export batch size", func(c *Config) { c.Batch.MaxExportBatchSize = -1 }, ErrInvalidBatchParam},
 		{"a zero batch timeout", func(c *Config) { c.Batch.BatchTimeout = 0 }, ErrInvalidDuration},

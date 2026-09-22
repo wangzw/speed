@@ -72,6 +72,21 @@ must not cross, and how to run it.
   request has not been dispatched — and no tenant: that dimension lives on
   event-derived spans. The instrument's name and unit are equally fixed; a
   dashboard reads them.
+- **An event-derived span's attributes are the payload's fields as published.**
+  Every top-level field of the payload becomes one attribute, so the set is
+  whatever publishers put in payloads and the module limits no attribute's
+  cardinality. Keeping a credential out of a payload is therefore the
+  publisher's obligation: this module neither inspects nor strips one.
+- **An event-derived span's parent and kind come from the bus, not from this
+  module.** The span starts on the context the handler was handed: the
+  process-local bus hands the publisher's own context, so the span joins the
+  trace that produced the fact, while a transport-backed bus hands one of its
+  own, leaving the span a root. The kind is `consumer`, the value upstream
+  defines for receiving a message from a broker; a locally-subscribed fact
+  crosses no such boundary, so the kind upstream defines for an in-application
+  operation — `internal` — is the closer fit. It stays `consumer` because one
+  handler serves both backend shapes, and a transport-backed bus does receive
+  from a broker.
 - **The method dimension is folded in both signals.** The histogram's method
   attribute and the span name both fold anything outside the nine standard
   methods into one value. Narrowing the cardinality on one side only moves it to
@@ -82,6 +97,15 @@ must not cross, and how to run it.
   would report a code no caller saw. And it forwards flushing and hijacking,
   because a handler type-asserts the writer it was given, which is this type,
   and never reaches the writer underneath.
+- **A handler that abandons its connection is recorded as a defect.** A handler
+  panicking with `net/http`'s `ErrAbortHandler` asks for its connection to be
+  dropped; the entry module's fallback lets that value past without answering or
+  logging, and this layer sits inside it. The layer cannot tell the two apart, so
+  it does what it does for any panic: marks the span errored and records the
+  fallback's default status, for a response the caller never received. Reporting
+  the recorder's untouched default instead would file every panicking request
+  under success, so the misreport stays — the design document carries it as a
+  non-guarantee.
 - **A name written twice in `endpoints` or `events` is registered once.** Both
   loops register unconditionally and neither the entry module nor the bus
   dedupes, so a repeat would double every request in the histogram and open two
