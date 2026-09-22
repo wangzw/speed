@@ -55,8 +55,9 @@ type gateway struct {
 	settings settings
 
 	// mu guards the exemption registration window and what is registered
-	// through it. Both are touched from other modules' Init callbacks,
-	// which may register from a goroutine.
+	// through it. Both are written from other modules' callbacks, which may
+	// register from a goroutine of their own, so the order of the writes is
+	// not that of the drive.
 	mu       sync.Mutex
 	phase    phase
 	declared []exemption
@@ -146,18 +147,29 @@ func Module() core.Module {
 			return newGateway(set), nil
 		},
 
-		// The registration window is opened here and shut in Start, which
-		// leaves it open for exactly the Init stage: stages advance one at
-		// a time, so this callback runs before any module's Init and the
-		// Start callback runs after every one of them. Neither end could
-		// be this module's own Init — a registrant that declared no
-		// dependency on the gateway may legally resolve it and register
-		// from an Init that runs first.
+		// The gate is opened in Migrate and sealed in Start, the two
+		// stage slots the design's stage table gives it. The window that
+		// leaves open contains the Init stage whole and reaches beyond it
+		// at both ends, because a stage advances one module at a time:
+		// this module's Migrate callback runs before the assembly enters
+		// Init, and its Start callback runs once Init has ended. The rest
+		// of the Migrate stage, and the Start callbacks ordered ahead of
+		// this module, lie inside it too, and a registration from any of
+		// them is accepted and takes effect.
+		// Neither end could be this module's own Init callback — a module
+		// that never declared a dependency on Gate may legally resolve it
+		// and register from an Init that runs before this one. This
+		// module migrates nothing and has no service of its own to start,
+		// so the two slots have no other use.
 		//
-		// A drive stopping exactly at Migrate opens the window with nobody
-		// to shut it. That run registers nothing and serves nothing; the
-		// way round it is for a command whose purpose is to apply
-		// migrations not to take this module in.
+		// Whether either slot runs is the depth of the drive to decide,
+		// and the two are tied by nothing. A drive shallower than Migrate
+		// runs neither and reaches no Init: both sides of the window are
+		// absent together and the result is consistent. A drive that stops
+		// exactly at Migrate opens the gate with nobody to seal it, and it
+		// stays open for the rest of the process; that run has no Init, no
+		// registration and no traffic. The way round it is for a command
+		// whose purpose is to apply migrations not to take this module in.
 		Migrate: func(_ context.Context, _ *core.Registry, instance any) error {
 			if g, ok := productOf(instance); ok {
 				g.open()

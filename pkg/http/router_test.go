@@ -42,7 +42,7 @@ func mustContain(t *testing.T, text, fragment, why string) {
 }
 
 // TestRouteBeforeGateOpensPanics pins the closed half of the gate. A
-// registration made before the Init stage is a wiring mistake, and the surface
+// registration made before the gate opens is a wiring mistake, and the surface
 // returns nothing, so the panic is the only way it can be reported at all.
 func TestRouteBeforeGateOpensPanics(t *testing.T) {
 	r := testRouter("public")
@@ -52,7 +52,13 @@ func TestRouteBeforeGateOpensPanics(t *testing.T) {
 		e.Route("GET /things", nethttp.NotFoundHandler())
 	})
 	mustContain(t, text, "public", "the endpoint the call was made on")
-	mustContain(t, text, "Init", "the stage registrations are accepted in")
+	mustContain(t, text, "before the registration gate opened", "which side of the window the call fell on")
+	mustContain(t, text, "this module's Migrate callback", "where the window that accepts writes opens")
+	// The last two fragments are read as a pair. The action phrase is the same
+	// on both sides of the gate, so on its own it places the call on neither;
+	// the sentence naming what the open window frames is what ties it to this
+	// side.
+	mustContain(t, text, "contains the whole Init stage", "what the surface's open window frames")
 	mustContain(t, text, "Move the call into the module's Init callback", "the fixing action")
 }
 
@@ -65,7 +71,7 @@ func TestUseBeforeGateOpensPanics(t *testing.T) {
 		e.Use(Middleware{Name: "trace", Wrap: passThrough})
 	})
 	mustContain(t, text, "Use", "the call that was refused")
-	mustContain(t, text, "Init", "the stage registrations are accepted in")
+	mustContain(t, text, "before the registration gate opened", "which side of the window the call fell on")
 }
 
 // TestRegistrationInsideInitSucceeds is the open half: the window the gate
@@ -100,13 +106,13 @@ func TestRegistrationAfterSealPanics(t *testing.T) {
 	text := wantPanic(t, "Route after the gate was sealed", func() {
 		e.Route("GET /things", nethttp.NotFoundHandler())
 	})
-	mustContain(t, text, "after the Init stage", "which side of the window the call fell on")
+	mustContain(t, text, "after the registration gate closed", "which side of the window the call fell on")
 	mustContain(t, text, "assembled once in Serve", "why a late registration reaches nothing")
 
 	useText := wantPanic(t, "Use after the gate was sealed", func() {
 		e.Use(Middleware{Name: "trace", Wrap: passThrough})
 	})
-	mustContain(t, useText, "after the Init stage", "which side of the window the call fell on")
+	mustContain(t, useText, "after the registration gate closed", "which side of the window the call fell on")
 }
 
 // TestUnknownEndpointNamesAvailableEndpoints pins the failure a misspelled
@@ -307,8 +313,8 @@ func TestProvidesIsRecordedOnTheLayer(t *testing.T) {
 }
 
 // TestConcurrentRegistrationIsSafe pins the mutex. The design does not assume
-// registrations come from one goroutine: Init is driven one module at a time,
-// but a registrant may start goroutines of its own inside its callback.
+// registrations come from one goroutine: the stages are driven one module at a
+// time, but a registrant may start goroutines of its own inside its callback.
 //
 // Run under -race, an unsynchronised append shows up here; the count assertion
 // catches the lost update that an unsynchronised append also produces without

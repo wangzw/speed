@@ -24,8 +24,10 @@ type Router interface {
 
 // Endpoint is the registration surface of one listening endpoint.
 //
-// Route and Use accept writes during the Init stage only; a write outside it
-// panics. They return nothing: the only way a registration can fail is a
+// Route and Use accept writes while this module's registration gate is open; a
+// write outside that window panics. The gate opens in the module's Migrate
+// callback and closes in its Start callback, so the window contains the whole
+// Init stage. They return nothing: the only way a registration can fail is a
 // programming error at the call site, and handing back an error a registrant
 // is free to drop would leave a route silently unbound. A conflict between two
 // route patterns is not of that kind — it can only be judged once the chain is

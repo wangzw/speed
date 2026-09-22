@@ -238,8 +238,9 @@ func ExampleEndpoint_Route() {
 //
 // Provides and After are what make a constraint land: Provides says which
 // capability a layer stands for on the chain, and After places this layer
-// inside the middleware of that capability. A layer that names an After
-// without saying what it stands for has nothing to land on.
+// inside the middleware of that capability. The constraint reaches whichever
+// layer declares the capability in its own Provides, so a capability no layer
+// declares places nothing.
 func ExampleEndpoint_Use() {
 	// The capabilities the two layers name. A real layer points at a
 	// capability some module delivers; what matters here is that the layer

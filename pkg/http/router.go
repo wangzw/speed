@@ -16,12 +16,17 @@ type phase int
 const (
 	// phaseDeclared is the state the endpoints are constructed in. The
 	// surface exists and can be read, and a write is a call that arrived
-	// before the stage that accepts writes.
+	// before the gate opened.
 	phaseDeclared phase = iota
-	// phaseOpen is the Init stage, the one stage registrations are made in.
+	// phaseOpen is the window registrations are accepted in. It opens in this
+	// module's Migrate callback and closes in its Start callback, and because
+	// a stage runs its callbacks one module after another, that interval
+	// covers the global Init stage whole and reaches into the rest of the
+	// Migrate stage and the Start callbacks ordered ahead of this module.
 	phaseOpen
-	// phaseSealed is everything after Init. The chains are assembled from
-	// what was registered, and a later registration would reach no chain.
+	// phaseSealed is everything after that window. The chains are assembled
+	// from what was registered, and a later registration would reach no
+	// chain.
 	phaseSealed
 )
 
@@ -30,8 +35,8 @@ const (
 // registration surfaces share.
 //
 // The endpoint set is fixed at construction, so a lookup needs no lock; the
-// mutex covers the gate and the registrations, which arrive during Init from
-// whatever goroutine a registrant chose to use.
+// mutex covers the gate and the registrations, which arrive while the gate is
+// open, from whatever goroutine a registrant chose to use.
 type router struct {
 	mu        sync.Mutex
 	phase     phase
@@ -109,8 +114,9 @@ func (r *router) declaredNames() string {
 	return strings.Join(quoted, ", ")
 }
 
-// open lets registrations through. It is called from this module's Migrate,
-// which is the last thing that runs before the Init stage begins.
+// open lets registrations through. It is called from this module's Migrate
+// callback, which runs inside the Migrate stage, before the assembly enters
+// Init.
 //
 // Whether it is called at all follows from the depth of the drive: one that
 // stops short of Migrate leaves the gate shut and reaches no Init, so there is
@@ -121,17 +127,21 @@ func (r *router) open() {
 	r.phase = phaseOpen
 }
 
-// seal stops accepting registrations. It is called from this module's Start,
-// which is the first thing that runs after the Init stage has ended.
+// seal stops accepting registrations. It is called from this module's Start
+// callback, which runs inside the Start stage, after the Init stage has ended.
 //
-// The pair of borrowed stages is what makes the open window exactly the Init
-// stage. Opening in this module's own Init would be too late: Lookup does not
-// filter by Requires, so a module that never declared a dependency on Router
-// may be constructed and initialised before this one and still legally register
-// in its own Init. Sealing in this module's own Serve would be too early in the
-// other direction: the whole Start stage, and the Serve callbacks of every
-// module ordered ahead of this one, would still be accepted, and those
-// registrations reach no chain.
+// The pair of borrowed stages is what frames the global Init window, and the
+// window it leaves open is wider than that stage. Registration is accepted from
+// this module's Migrate callback until this module's Start callback, and a
+// stage runs its callbacks one module after another, so the interval also
+// covers the rest of the Migrate stage and the Start callbacks ordered ahead of
+// this module; what those register is accepted and takes effect. Opening in
+// this module's own Init would be too late: Lookup does not filter by Requires,
+// so a module that never declared a dependency on Router may be constructed and
+// initialised before this one and still legally register in its own Init.
+// Sealing in this module's own Serve would close the gate later still,
+// accepting the rest of the Start stage and the Serve callbacks of every module
+// ordered ahead of this one, none of which reaches a chain.
 //
 // A drive that stops exactly at Migrate opens the gate and never reaches this,
 // so the gate stays open for the rest of the process. Such a run has no Init,
@@ -144,7 +154,7 @@ func (r *router) seal() {
 
 // write performs one registration behind the gate.
 //
-// A registration outside the Init stage panics rather than returning an error,
+// A registration outside the open window panics rather than returning an error,
 // for the reason the surface returns nothing at all: it is a wiring mistake at
 // the call site, and a silently dropped registration shows up as a route nobody
 // can reach, long after the call that caused it.
@@ -155,14 +165,16 @@ func (r *router) write(endpoint, call string, record func()) {
 	case phaseOpen:
 		record()
 	case phaseDeclared:
-		panic(fmt.Sprintf("http: endpoint %q: %s was called before the Init stage, and the "+
-			"registration surface accepts writes during Init alone. Move the call into the "+
-			"module's Init callback: every instance exists by then, which is what makes it "+
-			"the stage modules wire each other up in", endpoint, call))
+		panic(fmt.Sprintf("http: endpoint %q: %s was called before the registration gate "+
+			"opened. The surface accepts writes from this module's Migrate callback until "+
+			"its Start callback, a window that contains the whole Init stage. Move the call "+
+			"into the module's Init callback: every instance exists by then, which is what "+
+			"makes it the stage modules wire each other up in", endpoint, call))
 	case phaseSealed:
-		panic(fmt.Sprintf("http: endpoint %q: %s was called after the Init stage, and the "+
-			"registration surface accepts writes during Init alone. The chain of each "+
-			"endpoint is assembled once in Serve, so this registration would reach no "+
+		panic(fmt.Sprintf("http: endpoint %q: %s was called after the registration gate "+
+			"closed. The surface accepts writes from this module's Migrate callback until "+
+			"its Start callback, a window that contains the whole Init stage. The chain of "+
+			"each endpoint is assembled once in Serve, so this registration would reach no "+
 			"chain at all. Move the call into the module's Init callback", endpoint, call))
 	}
 }
@@ -226,8 +238,8 @@ func (e *endpoint) Route(pattern string, h nethttp.Handler) {
 // with another one, and the two are told apart by what else is on the engine:
 // nothing is on this one, so anything raised here is about this pattern alone.
 //
-// The engine is thrown away with the call. It costs one engine per route
-// registered, once, during Init.
+// The engine is thrown away with the call, so it costs one engine per route
+// registered.
 func patternRefusal(newEngine func() Engine, pattern string, h nethttp.Handler) (raised any) {
 	defer func() { raised = recover() }()
 	newEngine().Handle(pattern, h)

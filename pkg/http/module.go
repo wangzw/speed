@@ -100,9 +100,10 @@ func Module(name string, newEngine func() Engine) core.Module {
 
 		// The gate is opened in Migrate and sealed in Start, the two
 		// stage slots the design's stage table gives it. The window that
-		// leaves open is exactly the Init stage, because stages advance one
-		// at a time: this module's Migrate callback runs before the assembly
-		// enters Init, and its Start callback runs once Init has ended.
+		// leaves open contains the Init stage whole and reaches beyond it at
+		// both ends, because a stage advances one module at a time: this
+		// module's Migrate callback runs before the assembly enters Init,
+		// and its Start callback runs once Init has ended.
 		// Neither end could be this module's own Init or Serve callback — a
 		// module that never declared a dependency on Router may legally
 		// resolve it and register from an Init that runs before this one,

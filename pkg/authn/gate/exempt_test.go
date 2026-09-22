@@ -2,6 +2,7 @@ package gate
 
 import (
 	"errors"
+	"fmt"
 	nethttp "net/http"
 	"strings"
 	"testing"
@@ -17,20 +18,31 @@ import (
 // matchers are built from it, so a late registration would change what is
 // guarded while requests are already being served. Neither is something a
 // caller can retry, which is why it is a panic rather than a value handed back.
+//
+// The panic text is part of what is held here: it is the only thing the caller
+// sees, and it has to say which side of the window the call fell on and where
+// the call belongs.
 func TestRegisteringOutsideTheWindowPanics(t *testing.T) {
 	t.Run("before the window opens", func(t *testing.T) {
 		g := newGateway(settings{endpoints: []string{"public"}, inFlight: 1})
-		assertPanics(t, "registering before Migrate", func() {
+		text := panicked(t, "registering before Migrate", func() {
 			g.Exempt("public", "GET /health")
 		})
+		mustContain(t, text, "before the registration gate opened", "which side of the window the call fell on")
+		mustContain(t, text, "this module's Migrate callback", "where the window that accepts writes opens")
+		mustContain(t, text, "whole Init stage", "what the window frames")
+		mustContain(t, text, "Move the call into the registering module's Init callback", "the fixing action")
 	})
 
 	t.Run("after the window shuts", func(t *testing.T) {
 		g := testGateway(t, []string{"public"}, enumerating("local", "alice"))
 		sealed(t, g, routerWith("public"))
-		assertPanics(t, "registering after Start", func() {
+		text := panicked(t, "registering after Start", func() {
 			g.Exempt("public", "GET /health")
 		})
+		mustContain(t, text, "after the registration gate closed", "which side of the window the call fell on")
+		mustContain(t, text, "so this registration would change what is guarded", "why a late registration reaches nothing")
+		mustContain(t, text, "Move the call into the registering module's Init callback", "the fixing action")
 	})
 }
 
@@ -201,4 +213,33 @@ func assertPanics(t *testing.T, what string, fn func()) {
 		}
 	}()
 	fn()
+}
+
+// panicked is assertPanics with the message kept. The panic a refused
+// registration raises is a rendered message, and it is the whole of what the
+// caller sees: only the text can hold which side of the window the call fell on
+// and where the call belongs.
+func panicked(t *testing.T, what string, fn func()) (text string) {
+	t.Helper()
+	defer func() {
+		raised := recover()
+		if raised == nil {
+			t.Errorf("%s returned without panicking", what)
+			return
+		}
+		text = fmt.Sprint(raised)
+	}()
+	fn()
+	return ""
+}
+
+// mustContain fails when the rendered message does not carry the fragment,
+// naming what the fragment stands for so that a missing one reads as the
+// property that was lost rather than as a string mismatch.
+func mustContain(t *testing.T, text, fragment, why string) {
+	t.Helper()
+	if !strings.Contains(text, fragment) {
+		t.Errorf("the message does not carry %q, which is %s.\nThe message was: %s",
+			fragment, why, text)
+	}
 }

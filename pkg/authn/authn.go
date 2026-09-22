@@ -31,7 +31,9 @@ type Gate interface {
 	// the string the registrant passed to Endpoint.Route, method included;
 	// this package invents no syntax of its own for it.
 	//
-	// Registration holds during Init alone. A call outside that window is a
+	// Registration holds from the gateway's Migrate callback until its
+	// Start callback, a window that contains the whole Init stage and
+	// reaches beyond it at both ends. A call outside that window is a
 	// mistake at the call site rather than a condition to report, and it
 	// panics, as the entry point's own registration surface does.
 	Exempt(endpoint, pattern string)

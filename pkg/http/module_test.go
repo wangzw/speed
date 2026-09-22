@@ -237,8 +237,9 @@ func TestModuleWithoutAnEngineIsACallSiteError(t *testing.T) {
 	mustContain(t, text, "engine", "what is missing")
 }
 
-// TestGateOpensInMigrateAndSealsInStart pins the two borrowed stages, which is
-// what makes the window registrations are accepted in exactly the Init stage.
+// TestGateOpensInMigrateAndSealsInStart pins the two borrowed stages, which are
+// what frames the window registrations are accepted in: that window contains
+// the whole Init stage and reaches beyond it at both ends.
 //
 // Opening in this module's own Init would refuse a module that legally
 // registers from an Init running before this one — Lookup does not filter by

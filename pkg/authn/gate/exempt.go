@@ -12,8 +12,10 @@ import (
 )
 
 // phase is the three states the exemption registration surface moves through.
-// The window in the middle is exactly the Init stage: Migrate opens it and
-// Start shuts it, and stages advance one at a time.
+// The window in the middle opens in Migrate and shuts in Start: a stage
+// advances one module at a time, so it contains the Init stage whole and
+// reaches into the rest of the Migrate stage and the Start callbacks ordered
+// ahead of this module.
 type phase int
 
 const (
@@ -21,7 +23,9 @@ const (
 	// constructing, which is too early for the registry to have every
 	// instance.
 	phaseShut phase = iota
-	// phaseOpen is the Init stage.
+	// phaseOpen is the window Migrate opens and Start shuts: the Init stage
+	// whole, plus the rest of the Migrate stage and the Start callbacks
+	// ordered ahead of this module.
 	phaseOpen
 	// phaseSealed is Start onwards. The table is frozen and the matchers
 	// are built from it, so a later write would have to rebuild them under
@@ -48,22 +52,30 @@ type exemption struct {
 // What can only be judged once the window has shut is judged in Start and ends
 // the startup there.
 //
-// A write outside the Init stage panics. It is not a configuration mistake but
-// a call from the wrong stage, and the two ends of the window are stages of the
-// drive, not anything a caller can retry.
+// A write outside the registration window panics. The window opens in this
+// module's Migrate callback and shuts in its Start callback, so it contains the
+// whole Init stage. It is not a configuration mistake but a call from the wrong
+// stage, and the two ends of the window are stages of the drive, not anything a
+// caller can retry.
 func (g *gateway) Exempt(endpoint, pattern string) {
 	g.mu.Lock()
 	defer g.mu.Unlock()
 
 	switch g.phase {
 	case phaseShut:
-		panic(fmt.Sprintf("%s: Exempt(%q, %q) was called before the Init stage, where no "+
-			"instance exists yet. Register exemptions from the registering module's own "+
-			"Init callback", ModuleName, endpoint, pattern))
+		panic(fmt.Sprintf("%s: Exempt(%q, %q) was called before the registration gate "+
+			"opened. The surface accepts writes from this module's Migrate callback until "+
+			"its Start callback, a window that contains the whole Init stage. Move the call "+
+			"into the registering module's Init callback: every instance exists by then, "+
+			"which is what makes it the stage modules wire each other up in",
+			ModuleName, endpoint, pattern))
 	case phaseSealed:
-		panic(fmt.Sprintf("%s: Exempt(%q, %q) was called after the Init stage. The exemption "+
-			"table is frozen in Start and the matchers are built from it, so a later "+
-			"registration would change what is guarded while traffic is being served",
+		panic(fmt.Sprintf("%s: Exempt(%q, %q) was called after the registration gate "+
+			"closed. The surface accepts writes from this module's Migrate callback until "+
+			"its Start callback, a window that contains the whole Init stage. The exemption "+
+			"table is frozen in Start and the matchers are built from it, so this "+
+			"registration would change what is guarded while traffic is being served. "+
+			"Move the call into the registering module's Init callback",
 			ModuleName, endpoint, pattern))
 	}
 	g.declared = append(g.declared, exemption{endpoint: endpoint, pattern: pattern})

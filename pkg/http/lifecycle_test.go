@@ -278,17 +278,25 @@ func TestRegistrationOutsideInitPanicsInAssembly(t *testing.T) {
 	mu.Lock()
 	early, late := fromNew, fromStart
 	mu.Unlock()
+	// Each refusal is read in two parts: the call site and the side of the
+	// gate, then the wording that belongs to this module's gate. That second
+	// part pairs the sentence naming what the surface's open window frames
+	// with the action the registrant is handed; the action phrase reads the
+	// same on both sides, so the window sentence is what ties it to the side
+	// asserted here.
 	if early == "" {
-		t.Error("registering from New, before any module reached Init, did not panic: the " +
+		t.Error("registering from New, before the gate opened, did not panic: the " +
 			"surface returns nothing, so a registration it drops is a route nobody can reach")
 	} else {
-		assertNames(t, early, "\"public\"", "Route", "before the Init stage", "Init callback")
+		assertNames(t, early, "\"public\"", "Route", "before the registration gate opened",
+			"contains the whole Init stage", "Move the call into the module's Init callback")
 	}
 	if late == "" {
-		t.Error("registering from Start, after the Init stage had ended, did not panic: the " +
+		t.Error("registering from Start, after the gate had closed, did not panic: the " +
 			"chains are assembled in Serve, so that registration would reach no chain")
 	} else {
-		assertNames(t, late, "\"public\"", "Route", "after the Init stage", "Init callback")
+		assertNames(t, late, "\"public\"", "Route", "after the registration gate closed",
+			"contains the whole Init stage", "Move the call into the module's Init callback")
 	}
 }
 
