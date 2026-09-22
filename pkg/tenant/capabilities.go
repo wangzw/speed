@@ -54,6 +54,10 @@ type Resolution interface {
 // action. A host takes it up to register tenants and to change their state;
 // nothing else in the assembly adds a tenant.
 //
+// A roster that has not been read refuses these calls rather than answering as
+// though it held no tenant: which tenants exist is a fact about the table, and
+// only a read that has happened can state it.
+//
 // None of these methods is scoped to a tenant. The roster is the fact that
 // scoping is decided from, so its own statements run outside the filter, and
 // none of them needs a tenant in its context.
@@ -73,6 +77,8 @@ type Catalog interface {
 	// SetStatus changes one tenant's state. Disabling goes through here and
 	// only here; there is no delete.
 	SetStatus(ctx context.Context, id ID, s Status) error
-	// List returns every tenant the roster holds, ordered by identifier.
+	// List returns every tenant the roster holds, ordered by identifier, as a
+	// copy: a caller sorting or trimming what it was handed does not disturb
+	// what the next caller sees.
 	List(ctx context.Context) ([]Tenant, error)
 }

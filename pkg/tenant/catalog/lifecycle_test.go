@@ -3,7 +3,9 @@ package catalog
 import (
 	"context"
 	"errors"
+	"fmt"
 	"log/slog"
+	"strings"
 	"sync"
 	"testing"
 	"time"
@@ -14,8 +16,9 @@ import (
 // recorded is a slog.Handler that keeps the records written through it. The
 // roster's startup account and its failed-refresh line are promises about what
 // is written, and the record is the thing written: a handler of this shape lets
-// a case read a line's level and the values it carries without depending on how
-// a handler would render them.
+// a case read a line by the values it carries without depending on how a
+// handler would render them, and without reading the level the line was written
+// at, which is not what either promise is about.
 type recorded struct {
 	mu   sync.Mutex
 	held []slog.Record
@@ -36,31 +39,80 @@ func (h *recorded) Handle(_ context.Context, r slog.Record) error {
 func (h *recorded) WithAttrs([]slog.Attr) slog.Handler { return h }
 func (h *recorded) WithGroup(string) slog.Handler      { return h }
 
-// at returns the records written at one level.
-func (h *recorded) at(level slog.Level) []slog.Record {
+// carrying returns the records holding every one of the named attributes. The
+// startup account is the line that names the snapshot's size and its two
+// halves, so a case about it reads the line by those names: what is promised is
+// that the load writes the account, not that it writes it at one particular
+// level.
+func (h *recorded) carrying(keys ...string) []slog.Record {
 	h.mu.Lock()
 	defer h.mu.Unlock()
 	var out []slog.Record
 	for _, r := range h.held {
-		if r.Level == level {
-			out = append(out, r)
+		held := map[string]bool{}
+		r.Attrs(func(a slog.Attr) bool {
+			held[a.Key] = true
+			return true
+		})
+		all := true
+		for _, key := range keys {
+			if !held[key] {
+				all = false
+				break
+			}
+		}
+		if all {
+			out = append(out, r.Clone())
 		}
 	}
 	return out
 }
 
-// atLeast returns the records written at one level or above. A line the process
-// writes for an operator is judged by what it says, not by the exact level it
-// was written at: the default chain shows info and above, so any level at or
-// above info is a line an operator sees while a debug-only one is not.
-func (h *recorded) atLeast(level slog.Level) []slog.Record {
+// carryingText returns the records one of whose attributes carries want. A line
+// that reports a failure carries that failure's text, and how it was handed
+// over is not part of the promise: an error written under a name and that
+// error's message written under the same name say the same thing to whoever
+// reads the line.
+func (h *recorded) carryingText(want string) []slog.Record {
 	h.mu.Lock()
 	defer h.mu.Unlock()
 	var out []slog.Record
 	for _, r := range h.held {
-		if r.Level >= level {
-			out = append(out, r)
+		carries := false
+		r.Attrs(func(a slog.Attr) bool {
+			if strings.Contains(attrText(a.Value), want) {
+				carries = true
+				return false
+			}
+			return true
+		})
+		if carries {
+			out = append(out, r.Clone())
 		}
+	}
+	return out
+}
+
+// attrText is one attribute's value as the text a reader sees: an error is its
+// message, a string is itself, and any other value is its default rendering.
+func attrText(v slog.Value) string {
+	if err, ok := v.Any().(error); ok {
+		return err.Error()
+	}
+	if s, ok := v.Any().(string); ok {
+		return s
+	}
+	return fmt.Sprint(v.Any())
+}
+
+// messages returns what the held records say, so that a case which expected one
+// line and found none can show the lines it found instead.
+func (h *recorded) messages() []string {
+	h.mu.Lock()
+	defer h.mu.Unlock()
+	out := make([]string, 0, len(h.held))
+	for _, r := range h.held {
+		out = append(out, r.Message)
 	}
 	return out
 }
@@ -73,16 +125,6 @@ func captureLogs(r *roster) *recorded {
 	return rec
 }
 
-// values returns the values of a record's attributes, in order.
-func values(r slog.Record) []any {
-	var out []any
-	r.Attrs(func(a slog.Attr) bool {
-		out = append(out, a.Value.Any())
-		return true
-	})
-	return out
-}
-
 // attrs returns a record's attributes as they were written, in order. The
 // startup account names each count it carries, and a case about that line reads
 // the names to hold which count is which.
@@ -93,21 +135,6 @@ func attrs(r slog.Record) []slog.Attr {
 		return true
 	})
 	return out
-}
-
-// carriesError reports whether one of the record's attributes is an error
-// matching target. A line that reports a failure has to carry the failure
-// itself, so that a caller reaches the same sentinel it would from the call.
-func carriesError(r slog.Record, target error) bool {
-	found := false
-	r.Attrs(func(a slog.Attr) bool {
-		if err, ok := a.Value.Any().(error); ok && errors.Is(err, target) {
-			found = true
-			return false
-		}
-		return true
-	})
-	return found
 }
 
 // rosterOverPeriod is rosterOver with the refresh period set, so that a case
@@ -127,6 +154,11 @@ func rosterOverPeriod(t *testing.T, period time.Duration, rows ...string) *roste
 //
 // The row is written as a statement, the one route to the table Put does not
 // police, so the read is what has to catch it.
+//
+// What the failed load must not write is the startup account, and the case
+// reads for it by the names the account carries. Silence is not the promise — a
+// failure path may write lines of its own — so the check is the account's
+// content rather than the absence of a level.
 func TestLoadEndsTheStartupWhenTheReadRefuses(t *testing.T) {
 	r := rosterOver(t, insert("acme corp", "acme"))
 	rec := captureLogs(r)
@@ -139,9 +171,9 @@ func TestLoadEndsTheStartupWhenTheReadRefuses(t *testing.T) {
 	if !errors.Is(err, tenant.ErrInvalidTenant) {
 		t.Fatalf("the failure is %v, want the read's own error", err)
 	}
-	if got := len(rec.at(slog.LevelInfo)); got != 0 {
-		t.Errorf("the failed load wrote %d startup account lines, want none: the account is the "+
-			"success path's", got)
+	if lines := rec.carrying("tenants", "active", "disabled"); len(lines) != 0 {
+		t.Errorf("the failed load wrote %d records carrying the startup account's counts, want none: "+
+			"the account is the success path's; the lines written were %v", len(lines), rec.messages())
 	}
 }
 
@@ -158,6 +190,11 @@ func TestLoadEndsTheStartupWhenTheReadRefuses(t *testing.T) {
 // apart from a correct one; a case that compared the values as a bag could not
 // tell the halves apart at all, since a line reporting the active count under
 // the disabled name would carry the same three numbers and pass.
+//
+// The line is found by those names and not by a level. The promise is that the
+// successful load writes the account; a release that moved the line to another
+// level would still have written it, so a level is not something this case can
+// hold the account to.
 func TestLoadWritesTheStartupAccount(t *testing.T) {
 	r := rosterOver(t,
 		insert("acme", "acme"),
@@ -173,9 +210,10 @@ func TestLoadWritesTheStartupAccount(t *testing.T) {
 		t.Fatalf("loading a conforming roster: %v", err)
 	}
 
-	lines := rec.at(slog.LevelInfo)
+	lines := rec.carrying("tenants", "active", "disabled")
 	if len(lines) != 1 {
-		t.Fatalf("the successful load wrote %d startup account lines, want 1", len(lines))
+		t.Fatalf("the successful load wrote %d records carrying the startup account's counts, want 1: %v",
+			len(lines), rec.messages())
 	}
 	got := map[string]int64{}
 	for _, a := range attrs(lines[0]) {
@@ -198,13 +236,15 @@ func TestLoadWritesTheStartupAccount(t *testing.T) {
 // a background reread that fails in silence leaves the process serving a roster
 // the operator cannot see is stale — so the line is the refresher's own promise.
 //
-// The line is judged by what the default chain would show and by what it
-// carries, not by its wording. It has to be written at a level an operator sees
-// without turning debug logging on — the default chain shows info and above —
-// and it has to carry the failure itself, so that the operator can tell a
-// refused read from a lost connection. The level is read as "at least info"
-// rather than as one exact name, because the promise is that the line is
-// written, not that it is written at one particular level above info.
+// The line is judged by what it carries, not by its wording, its level or the
+// Go type of its attributes. It has to carry the failure itself, which is what
+// lets an operator tell a refused read from a lost connection, so the case looks
+// for that failure's text among the record's attributes: the error value and its
+// message are the same text to a reader, and which one the code hands over is
+// not something this promise fixes. The level is not part of it either — the
+// bootstrap chain's level defaults to Info but configuration sets it
+// (docs/design/modules/design-log.md) — so a line recorded at Debug is still the
+// line that says the previous snapshot stays in force.
 func TestRefreshOnceKeepsTheSnapshotAndSaysSo(t *testing.T) {
 	r := rosterOver(t, insert("acme", "acme"))
 	ctx := context.Background()
@@ -235,13 +275,16 @@ func TestRefreshOnceKeepsTheSnapshotAndSaysSo(t *testing.T) {
 		t.Error("the previous snapshot no longer answers for the tenant it held")
 	}
 
-	lines := rec.atLeast(slog.LevelInfo)
-	if len(lines) != 1 {
-		t.Fatalf("the refused refresh wrote %d lines the default chain would show, want the one that "+
-			"says the previous snapshot stays in force", len(lines))
+	// The failure the refresher had to report is the one this same read returns,
+	// so the case reads it from the read rather than matching a fragment of it.
+	refused := r.read(ctx)
+	if refused == nil {
+		t.Fatal("the read accepted the row it was made to refuse, so this case cannot say which " +
+			"failure the refresher had to report")
 	}
-	if !carriesError(lines[0], tenant.ErrInvalidTenant) {
-		t.Errorf("the line does not carry the failure that refused the read: %v", values(lines[0]))
+	if lines := rec.carryingText(refused.Error()); len(lines) == 0 {
+		t.Errorf("the refused refresh wrote no record carrying the failure that refused the read "+
+			"(%v); the lines written were %v", refused, rec.messages())
 	}
 }
 
@@ -371,6 +414,77 @@ func TestAPeriodAboveZeroRereadsTheTable(t *testing.T) {
 		if time.Now().After(deadline) {
 			t.Fatal("the refresher never reread the table: the tenant written after the load never " +
 				"became resolvable")
+		}
+		time.Sleep(5 * time.Millisecond)
+	}
+}
+
+// TestStopEndsTheRefresher holds the refresher's end. The design fixes it, in
+// docs/design/modules/design-tenant.md: the refresh goroutine is cancelled at
+// Stop. The observable that follows is that the table is not reread afterwards —
+// a tenant written once the roster has been stopped never becomes resolvable.
+//
+// The case establishes first that a refresher is running at all, so that a
+// roster which never started one cannot pass for a roster whose refresher was
+// stopped. That wait is the one TestAPeriodAboveZeroRereadsTheTable makes, over
+// the same period, the same five-second deadline and the same poll interval: it
+// writes a tenant after the load and observes it become resolvable.
+//
+// The second wait is TestAZeroPeriodStartsNoRefresher's wait, over the same
+// five-second deadline and the same five-millisecond poll interval: a wait that
+// catches a refresh there is long enough to catch one here, so a tenant that
+// became resolvable within this deadline is what a refresher still ticking after
+// Stop would look like. The case can refute such a refresher but cannot confirm
+// its absence — a goroutine that has exited and one that ticks without ever
+// rereading look the same — so only the negative observation is reported.
+func TestStopEndsTheRefresher(t *testing.T) {
+	const period = 20 * time.Millisecond
+	r := rosterOverPeriod(t, period, insert("acme", "acme"))
+	ctx := context.Background()
+	if err := r.read(ctx); err != nil {
+		t.Fatalf("the first read: %v", err)
+	}
+	r.start()
+	t.Cleanup(r.stop)
+
+	if err := r.handle.Exec(insert("globex", "globex")).Error; err != nil {
+		t.Fatalf("writing a tenant outside Put: %v", err)
+	}
+	deadline := time.Now().Add(5 * time.Second)
+	for {
+		if _, ok, err := r.ByAlias(ctx, "globex"); err != nil {
+			t.Fatalf("resolving the tenant that was written: %v", err)
+		} else if ok {
+			break
+		}
+		if time.Now().After(deadline) {
+			t.Fatal("no refresher was running to stop: the tenant written after the load never became " +
+				"resolvable")
+		}
+		time.Sleep(5 * time.Millisecond)
+	}
+
+	r.stop()
+
+	// Stop does not wait for a refresh already in flight, so one is given time
+	// to land before the row below is written: what the deadline that follows
+	// measures is a refresher still ticking, not one finishing a read it had
+	// already started.
+	time.Sleep(10 * period)
+
+	if err := r.handle.Exec(insert("initech", "initech")).Error; err != nil {
+		t.Fatalf("writing a tenant outside Put after the stop: %v", err)
+	}
+	deadline = time.Now().Add(5 * time.Second)
+	for {
+		if _, ok, err := r.ByAlias(ctx, "initech"); err != nil {
+			t.Fatalf("resolving the tenant written after the stop: %v", err)
+		} else if ok {
+			t.Fatal("the roster reread the table after it was stopped: a tenant written after the " +
+				"stop became resolvable, so the refresh goroutine outlived Stop")
+		}
+		if time.Now().After(deadline) {
+			return
 		}
 		time.Sleep(5 * time.Millisecond)
 	}

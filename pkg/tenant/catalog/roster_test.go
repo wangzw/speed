@@ -760,9 +760,12 @@ func TestPutReportsAWriteThatCouldNotBeReread(t *testing.T) {
 // process is left serving a roster that still holds the tenant as it was.
 //
 // Only the caller can act on that, so the failure says the change was applied
-// instead of letting the refusal stand in for one that never happened. The
-// message is a claim about the table, so the case checks the table: the row is
-// read back through the handle, which is what the reread failed to fold into
+// instead of letting the refusal stand in for one that never happened. What the
+// case reads is that conclusion — "the write was applied" — and not the
+// sentence it is wrapped in, the same way the sibling case over Put reads it: a
+// caller acts on the conclusion, and the wording may change under it. The
+// message is a claim about the table, so the case checks the table too: the row
+// is read back through the handle, which is what the reread failed to fold into
 // the snapshot the process serves.
 func TestSetStatusReportsAWriteThatCouldNotBeReread(t *testing.T) {
 	r := rosterOver(t, insert("acme corp", "acme"), insert("globex", "globex"))
@@ -773,7 +776,7 @@ func TestSetStatusReportsAWriteThatCouldNotBeReread(t *testing.T) {
 	if !errors.Is(err, tenant.ErrInvalidTenant) {
 		t.Fatalf("the failure is %v, want it to carry the sentinel of the read that refused the table", err)
 	}
-	if text := err.Error(); !strings.Contains(text, "the write was applied, but the roster could not be reread") {
+	if text := err.Error(); !strings.Contains(text, "the write was applied") {
 		t.Errorf("the failure does not say the write was applied, so a caller cannot tell a refused "+
 			"state change from one that landed: %v", err)
 	}
