@@ -209,4 +209,4 @@ speed 不引入进程边界。宿主是单一进程，注册表与全部模块�
 | [event](modules/design-event.md) | 已实现 |
 | [audit](modules/design-audit.md) | 已实现 |
 | [settings](modules/design-settings.md) | 已实现 |
-| [ratelimit](modules/design-ratelimit.md) | 未实现 |
+| [ratelimit](modules/design-ratelimit.md) | 已实现 |

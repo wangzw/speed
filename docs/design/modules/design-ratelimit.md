@@ -344,9 +344,10 @@ sequenceDiagram
 
 | 能力 | 状态 | 代码 |
 |---|---|---|
-| 接口、配置与模块登记 | 未实现 | — |
-| 设置面与键表声明 | 未实现 | — |
-| 中间件的登记与链上位置声明 | 未实现 | — |
-| 窗口编号、权重与判定 | 未实现 | — |
-| 键的构造与转义 | 未实现 | — |
-| 失败信号与共享计数 | 未实现 | — |
+| 接口、配置与模块登记 | 已实现 | `pkg/ratelimit/ratelimit.go` `Limiter`、`Config`；`module.go` `Module` |
+| 设置面与键表声明 | 已实现 | `pkg/ratelimit/ratelimit.go` `settingsSchema`、`defaults` |
+| 中间件的登记与链上位置声明 | 已实现 | `pkg/ratelimit/limit.go` `middleware`、`wire` |
+| 窗口编号、权重与判定 | 已实现 | `pkg/ratelimit/limit.go` `count`、`retryAfterSeconds` |
+| 键的构造与转义 | 已实现 | `pkg/ratelimit/key.go` `countKey`、`escape` |
+| 失败信号与共享计数 | 已实现 | `pkg/ratelimit/signal.go` `signal`、`settle` |
+| 哨兵错误 | 已实现 | `pkg/ratelimit/errors.go` `ErrDuplicateEndpoint` |
