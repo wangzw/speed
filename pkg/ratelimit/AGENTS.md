@@ -55,8 +55,12 @@ here must not cross, and how to run it.
 - **The failure classes are reported apart, each with its own flag.** They do
   not imply one another: while the counter backend is unreachable, the
   thresholds class still has to be able to report itself, and one shared flag
-  would keep it from ever writing a line. A class clears when a decision passes
-  in which it did not appear — not when a decision succeeds outright.
+  would keep it from ever writing a line. A class clears when a decision
+  evaluates it and it does not trip — not when a decision succeeds outright. A
+  decision returns at the first class that trips, so the classes behind it are
+  never evaluated and their flags are left alone; a class ahead of the trip
+  still clears, which is what keeps a fixed condition from waiting on an
+  unfixed one.
 - **The lines go to the process's standard error, not through the logging
   module.** The reporting chain may be absent or switched off, which is the same
   reason the logging module reports its own write failures that way.
@@ -64,11 +68,24 @@ here must not cross, and how to run it.
   backend or one bad row into a refusal of the whole endpoint. The limits here
   are an abuse surface, not a data boundary
   ([`adr-ratelimit-boundary-2026-09-22.md`](../../docs/adr/adr-ratelimit-boundary-2026-09-22.md)).
-- **Both settings domains exclude zero.** A limit of zero would refuse every
-  request carrying an identity string, since the increment comes first and the
-  current count is at least one; a window of zero leaves the window index
-  undefined. Neither is a value this layer acts on, and the settings module does
-  not judge values on this module's behalf.
+- **A settings read names the item's declared path, not its item key.** The
+  settings module registers every item under its full path — the namespace, a
+  dot, then the item key — and looks a key up by that exact path. A read of the
+  bare item key covers no declaration, so it fails, and every decision then
+  falls on the read class and lets the request through: the layer refuses
+  nothing in any assembly, and no chain listing shows it, because the layer's
+  position is the same either way. `windowPath` and `limitPath` derive the
+  paths from the namespace and the item keys, and have to stay in step with
+  what `settingsSchema` registers. There is a test holding the read paths
+  against the declaration (`TestThresholdsReadsTheDeclaredPathOfEachItem`).
+- **Both settings domains exclude zero, and the window has an upper bound.** A
+  limit of zero would refuse every request carrying an identity string, since
+  the increment comes first and the current count is at least one; a window of
+  zero leaves the window index undefined; a window too long to double leaves
+  the counting key written with a non-positive expiry, which the key-value
+  contract reads as "no expiry", so the key never disappears. None of the three
+  is a value this layer acts on, and the settings module does not judge values
+  on this module's behalf.
 - **The layer's `Provides` carries `(*Limiter)(nil)`**, the same token the
   descriptor delivers under. That is the only anchor another layer has for
   placing itself inside or outside rate limiting, so the two must not drift.

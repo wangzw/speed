@@ -27,7 +27,9 @@ const (
 	reasonThresholdDomain   reason = "the window or the limit is outside its domain"
 )
 
-// reasons is every class, in the order they are settled after each decision.
+// reasons is every class this module reports, named once so the per-class maps
+// are sized from the same list the classes are declared in rather than from a
+// number kept beside it.
 var reasons = []reason{
 	reasonCounterRead,
 	reasonCounterNotNumeric,
@@ -72,14 +74,19 @@ func newSignalTo(out io.Writer) *signal {
 }
 
 // settle accounts for one decision: it reports the class that decision
-// tripped, if any, and marks every other class recovered.
+// tripped, if any, and clears every class the decision evaluated without
+// tripping.
 //
-// "Recovered" means the next decision in which that class did not appear, not
-// a decision that succeeded outright — otherwise a class whose condition was
-// fixed while another class keeps failing would never clear its flag.
-func (s *signal) settle(tripped reason) {
-	for _, r := range reasons {
-		if r == tripped {
+// A class clears in a decision that evaluated it and did not trip it — not in
+// one that succeeded outright, and not in one that returned at an earlier
+// class. Such a decision never asked about the classes behind it, so clearing
+// them there would print "back to limiting" for a condition nothing checked.
+// A class ahead of the trip is still cleared while one behind it keeps
+// failing, which is what keeps a fixed condition from waiting on an unfixed
+// one.
+func (s *signal) settle(d decision) {
+	for _, r := range d.evaluated {
+		if r == d.tripped {
 			s.report(r)
 			continue
 		}
@@ -101,7 +108,7 @@ func (s *signal) report(r reason) {
 	// writer is the report sink itself, so a line that does not get there has
 	// no second channel left to travel by.
 	//nolint:errcheck // the writer is the report sink itself.
-	fmt.Fprintf(s.out, "%s%s: letting requests through: %s\n", diagnosticPrefix, ModuleName, r)
+	fmt.Fprintf(s.out, "%s: letting requests through: %s\n", ModuleName, r)
 }
 
 func (s *signal) recover(r reason) {
@@ -114,5 +121,5 @@ func (s *signal) recover(r reason) {
 	}
 	s.written.Add(1)
 	//nolint:errcheck // the writer is the report sink itself.
-	fmt.Fprintf(s.out, "%s%s: back to limiting: %s\n", diagnosticPrefix, ModuleName, r)
+	fmt.Fprintf(s.out, "%s: back to limiting: %s\n", ModuleName, r)
 }

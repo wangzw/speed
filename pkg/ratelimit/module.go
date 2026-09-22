@@ -43,12 +43,12 @@ func Module() core.Module {
 				return core.Enablement{}, err
 			}
 			if len(cfg.Endpoints) == 0 {
-				return core.Enablement{}, fmt.Errorf("%s%s: no listening endpoint to guard: %w",
-					diagnosticPrefix, ModuleName, config.ErrMissingRequired)
+				return core.Enablement{}, fmt.Errorf("%s: no listening endpoint to guard: %w",
+					ModuleName, config.ErrMissingRequired)
 			}
 			if name, twice := duplicateEndpoint(cfg.Endpoints); twice {
-				return core.Enablement{}, fmt.Errorf("%s%s: listening endpoint %q is named twice: %w",
-					diagnosticPrefix, ModuleName, name, ErrDuplicateEndpoint)
+				return core.Enablement{}, fmt.Errorf("%s: listening endpoint %q is named twice: %w",
+					ModuleName, name, ErrDuplicateEndpoint)
 			}
 			return stance(), nil
 		},
@@ -83,13 +83,13 @@ func stance() core.Enablement { return core.Enablement{State: core.StateEnabled}
 func configOf(reg *core.Registry) (Config, error) {
 	reader, err := core.Resolve[config.Reader](reg)
 	if err != nil {
-		return Config{}, fmt.Errorf("%s%s: taking up the configuration reader: %w",
-			diagnosticPrefix, ModuleName, err)
+		return Config{}, fmt.Errorf("%s: taking up the configuration reader: %w",
+			ModuleName, err)
 	}
 	cfg, err := readConfig(reader)
 	if err != nil {
-		return Config{}, fmt.Errorf("%s%s: reading the configuration: %w",
-			diagnosticPrefix, ModuleName, err)
+		return Config{}, fmt.Errorf("%s: reading the configuration: %w",
+			ModuleName, err)
 	}
 	return cfg, nil
 }

@@ -6,6 +6,7 @@ import (
 	"errors"
 	nethttp "net/http"
 	"net/http/httptest"
+	"slices"
 	"strconv"
 	"strings"
 	"sync"
@@ -86,18 +87,20 @@ func TestCountLetsThroughUpToTheLimit(t *testing.T) {
 	l.counters = kv
 
 	for i := 1; i <= 5; i++ {
-		allowed, _, tripped := l.count(context.Background(), "local/bob", "acme", time.Minute, 5)
-		if tripped != "" {
-			t.Fatalf("request %d tripped %q", i, tripped)
+		var d decision
+		allowed, _ := l.count(context.Background(), "local/bob", "acme", time.Minute, 5, &d)
+		if d.tripped != "" {
+			t.Fatalf("request %d tripped %q", i, d.tripped)
 		}
 		if !allowed {
 			t.Fatalf("request %d was refused, want allowed", i)
 		}
 	}
 
-	allowed, retry, tripped := l.count(context.Background(), "local/bob", "acme", time.Minute, 5)
-	if tripped != "" {
-		t.Fatalf("tripped %q", tripped)
+	var d decision
+	allowed, retry := l.count(context.Background(), "local/bob", "acme", time.Minute, 5, &d)
+	if d.tripped != "" {
+		t.Fatalf("tripped %q", d.tripped)
 	}
 	if allowed {
 		t.Fatal("the request past the limit was allowed")
@@ -116,7 +119,7 @@ func TestCountSpendsOnRefusedRequestsToo(t *testing.T) {
 	l.counters = kv
 
 	for i := 0; i < 3; i++ {
-		l.count(context.Background(), "local/bob", "acme", time.Minute, 2)
+		l.count(context.Background(), "local/bob", "acme", time.Minute, 2, &decision{})
 	}
 	key := countKey("acme", "local/bob", pinnedAt.UnixNano()/int64(time.Minute))
 	if got := kv.value(key); got != 3 {
@@ -131,9 +134,9 @@ func TestCountStaysRefusedAfterTheFirstRefusal(t *testing.T) {
 	l := pinned()
 	l.counters = kv
 
-	l.count(context.Background(), "local/bob", "acme", time.Minute, 1)
+	l.count(context.Background(), "local/bob", "acme", time.Minute, 1, &decision{})
 	for i := 0; i < 4; i++ {
-		allowed, _, _ := l.count(context.Background(), "local/bob", "acme", time.Minute, 1)
+		allowed, _ := l.count(context.Background(), "local/bob", "acme", time.Minute, 1, &decision{})
 		if allowed {
 			t.Fatalf("request %d past the limit was allowed", i+2)
 		}
@@ -151,7 +154,7 @@ func TestCountAsksForTwoWindowsOfExpiry(t *testing.T) {
 	l.counters = kv
 
 	const window = time.Minute
-	l.count(context.Background(), "local/bob", "acme", window, 10)
+	l.count(context.Background(), "local/bob", "acme", window, 10, &decision{})
 
 	index := pinnedAt.UnixNano() / int64(window)
 	ttl := kv.ttlOf(countKey("acme", "local/bob", index))
@@ -174,9 +177,10 @@ func TestCountCarriesThePreviousWindowOver(t *testing.T) {
 
 	// At a window's start the previous window weighs one, so a limit of five
 	// is already spent.
-	allowed, _, tripped := l.count(context.Background(), "local/bob", "acme", window, 5)
-	if tripped != "" {
-		t.Fatalf("tripped %q", tripped)
+	var d decision
+	allowed, _ := l.count(context.Background(), "local/bob", "acme", window, 5, &d)
+	if d.tripped != "" {
+		t.Fatalf("tripped %q", d.tripped)
 	}
 	if allowed {
 		t.Fatal("the previous window's spending was not carried over")
@@ -187,9 +191,10 @@ func TestCountStandsAsideWhenTheReadFails(t *testing.T) {
 	l := newLimiter(nil)
 	l.counters = &fakeKV{readErr: errors.New("backend down")}
 
-	allowed, _, tripped := l.count(context.Background(), "local/bob", "acme", time.Minute, 5)
-	if tripped != reasonCounterRead {
-		t.Fatalf("tripped %q, want %q", tripped, reasonCounterRead)
+	var d decision
+	allowed, _ := l.count(context.Background(), "local/bob", "acme", time.Minute, 5, &d)
+	if d.tripped != reasonCounterRead {
+		t.Fatalf("tripped %q, want %q", d.tripped, reasonCounterRead)
 	}
 	if !allowed {
 		t.Fatal("a failed read refused the request")
@@ -202,9 +207,10 @@ func TestCountStandsAsideWhenTheIncrementFails(t *testing.T) {
 	l := newLimiter(nil)
 	l.counters = kv
 
-	allowed, _, tripped := l.count(context.Background(), "local/bob", "acme", time.Minute, 5)
-	if tripped != reasonCounterIncrement {
-		t.Fatalf("tripped %q, want %q", tripped, reasonCounterIncrement)
+	var d decision
+	allowed, _ := l.count(context.Background(), "local/bob", "acme", time.Minute, 5, &d)
+	if d.tripped != reasonCounterIncrement {
+		t.Fatalf("tripped %q, want %q", d.tripped, reasonCounterIncrement)
 	}
 	if !allowed {
 		t.Fatal("a failed increment refused the request")
@@ -219,9 +225,10 @@ func TestCountStandsAsideOnAKeyHoldingNoNumber(t *testing.T) {
 	width := int64(time.Minute)
 	kv.putRaw(countKey("acme", "local/bob", pinnedAt.UnixNano()/width-1), "not a number")
 
-	allowed, _, tripped := l.count(context.Background(), "local/bob", "acme", time.Minute, 5)
-	if tripped != reasonCounterNotNumeric {
-		t.Fatalf("tripped %q, want %q", tripped, reasonCounterNotNumeric)
+	var d decision
+	allowed, _ := l.count(context.Background(), "local/bob", "acme", time.Minute, 5, &d)
+	if d.tripped != reasonCounterNotNumeric {
+		t.Fatalf("tripped %q, want %q", d.tripped, reasonCounterNotNumeric)
 	}
 	if !allowed {
 		t.Fatal("a foreign value refused the request")
@@ -232,18 +239,58 @@ func TestCountStandsAsideOnAKeyHoldingNoNumber(t *testing.T) {
 
 func TestThresholdsReadsTheLayerItIsGiven(t *testing.T) {
 	store := &fakeStore{values: map[string]any{
-		windowKey: 2 * time.Minute,
-		limitKey:  42,
+		windowPath: 2 * time.Minute,
+		limitPath:  42,
 	}}
 	l := newLimiter(nil)
 	l.store = store
 
-	window, limit, tripped := l.thresholds(settings.Global())
-	if tripped != "" {
-		t.Fatalf("tripped %q", tripped)
+	var d decision
+	window, limit := l.thresholds(settings.Global(), &d)
+	if d.tripped != "" {
+		t.Fatalf("tripped %q", d.tripped)
 	}
 	if window != 2*time.Minute || limit != 42 {
 		t.Fatalf("window = %v, limit = %d", window, limit)
+	}
+}
+
+// The settings module registers every declared item under its full path — the
+// namespace, a dot, then the item key — and a read is looked up by that exact
+// path. This holds the two paths the layer reads against the declaration
+// itself, so a read that named the bare item key cannot pass: it covers no
+// declaration, and every decision would therefore fail open on it with nothing
+// in the assembly to show for it.
+func TestThresholdsReadsTheDeclaredPathOfEachItem(t *testing.T) {
+	declared, ok := declaredSettingsSchema()
+	if !ok {
+		t.Fatal("the module declares no settings.Schema, so the read paths are held to nothing")
+	}
+	if len(declared.Items) == 0 {
+		t.Fatal("the declared schema has no items, so this case would check nothing")
+	}
+
+	// The store serves every key and records the ones it was asked for, so a
+	// read reaches the second item only if the first one did not trip.
+	store := &recordingStore{}
+	l := newLimiter(nil)
+	l.store = store
+
+	var d decision
+	l.thresholds(settings.Global(), &d)
+	if d.tripped != "" {
+		t.Fatalf("tripped %q; the store serves every key, so no read should fail", d.tripped)
+	}
+
+	want := make([]string, 0, len(declared.Items))
+	for key := range declared.Items {
+		want = append(want, declared.Namespace+"."+key)
+	}
+	got := slices.Clone(store.keys)
+	slices.Sort(want)
+	slices.Sort(got)
+	if !slices.Equal(got, want) {
+		t.Fatalf("the layer read %v, want the declared paths %v", store.keys, want)
 	}
 }
 
@@ -251,9 +298,10 @@ func TestThresholdsStandsAsideWhenTheReadFails(t *testing.T) {
 	l := newLimiter(nil)
 	l.store = &fakeStore{err: settings.ErrUnknownKey}
 
-	_, _, tripped := l.thresholds(settings.Global())
-	if tripped != reasonThresholdRead {
-		t.Fatalf("tripped %q, want %q", tripped, reasonThresholdRead)
+	var d decision
+	l.thresholds(settings.Global(), &d)
+	if d.tripped != reasonThresholdRead {
+		t.Fatalf("tripped %q, want %q", d.tripped, reasonThresholdRead)
 	}
 }
 
@@ -262,16 +310,18 @@ func TestThresholdsStandsAsideWhenTheReadFails(t *testing.T) {
 // a window of zero leaves the window index undefined.
 func TestThresholdsStandsAsideOutsideTheDomain(t *testing.T) {
 	cases := map[string]map[string]any{
-		"zero limit":      {windowKey: time.Minute, limitKey: 0},
-		"zero window":     {windowKey: time.Duration(0), limitKey: 10},
-		"negative limit":  {windowKey: time.Minute, limitKey: -1},
-		"negative window": {windowKey: -time.Minute, limitKey: 10},
+		"zero limit":      {windowPath: time.Minute, limitPath: 0},
+		"zero window":     {windowPath: time.Duration(0), limitPath: 10},
+		"negative limit":  {windowPath: time.Minute, limitPath: -1},
+		"negative window": {windowPath: -time.Minute, limitPath: 10},
 	}
 	for name, values := range cases {
 		l := newLimiter(nil)
 		l.store = &fakeStore{values: values}
-		if _, _, tripped := l.thresholds(settings.Global()); tripped != reasonThresholdDomain {
-			t.Errorf("%s: tripped %q, want %q", name, tripped, reasonThresholdDomain)
+		var d decision
+		l.thresholds(settings.Global(), &d)
+		if d.tripped != reasonThresholdDomain {
+			t.Errorf("%s: tripped %q, want %q", name, d.tripped, reasonThresholdDomain)
 		}
 	}
 }
@@ -281,14 +331,14 @@ func TestThresholdsStandsAsideOutsideTheDomain(t *testing.T) {
 func TestDecideLetsARequestWithoutAnIdentityThrough(t *testing.T) {
 	l := newLimiter(nil)
 	l.counters = newFakeKV()
-	l.store = &fakeStore{values: map[string]any{windowKey: time.Minute, limitKey: 0}}
+	l.store = &fakeStore{values: map[string]any{windowPath: time.Minute, limitPath: 0}}
 
 	reached := false
 	next := nethttp.HandlerFunc(func(nethttp.ResponseWriter, *nethttp.Request) { reached = true })
 	rec := newRecorder()
 
-	if tripped := l.decide(rec, newRequest(), next, authn.Identity{}, false); tripped != "" {
-		t.Fatalf("tripped %q", tripped)
+	if d := l.decide(rec, newRequest(), next, authn.Identity{}, false); d.tripped != "" {
+		t.Fatalf("tripped %q", d.tripped)
 	}
 	if !reached {
 		t.Fatal("the request was not passed on")
@@ -301,7 +351,7 @@ func TestDecideLetsARequestWithoutAnIdentityThrough(t *testing.T) {
 func TestDecideAnswersTooManyRequestsWithRetryAfter(t *testing.T) {
 	l := pinned()
 	l.counters = newFakeKV()
-	l.store = &fakeStore{values: map[string]any{windowKey: time.Minute, limitKey: 1}}
+	l.store = &fakeStore{values: map[string]any{windowPath: time.Minute, limitPath: 1}}
 
 	reached := false
 	next := nethttp.HandlerFunc(func(nethttp.ResponseWriter, *nethttp.Request) { reached = true })
@@ -315,8 +365,8 @@ func TestDecideAnswersTooManyRequestsWithRetryAfter(t *testing.T) {
 
 	reached = false
 	rec = newRecorder()
-	if tripped := l.decide(rec, newRequest(), next, authn.Identity{}, true); tripped != "" {
-		t.Fatalf("tripped %q", tripped)
+	if d := l.decide(rec, newRequest(), next, authn.Identity{}, true); d.tripped != "" {
+		t.Fatalf("tripped %q", d.tripped)
 	}
 	if reached {
 		t.Fatal("the request past the limit reached the inner chain")
@@ -339,8 +389,8 @@ func TestDecideLetsThroughWhenTheThresholdsAreUnreadable(t *testing.T) {
 	next := nethttp.HandlerFunc(func(nethttp.ResponseWriter, *nethttp.Request) { reached = true })
 	rec := newRecorder()
 
-	if tripped := l.decide(rec, newRequest(), next, authn.Identity{}, true); tripped != reasonThresholdRead {
-		t.Fatalf("tripped %q, want %q", tripped, reasonThresholdRead)
+	if d := l.decide(rec, newRequest(), next, authn.Identity{}, true); d.tripped != reasonThresholdRead {
+		t.Fatalf("tripped %q, want %q", d.tripped, reasonThresholdRead)
 	}
 	if !reached {
 		t.Fatal("an unreadable threshold refused the request")
@@ -349,6 +399,30 @@ func TestDecideLetsThroughWhenTheThresholdsAreUnreadable(t *testing.T) {
 
 // --- the signal ------------------------------------------------------------
 
+// everyClass is the decision a request that ran the whole counting path
+// produced: it evaluated every class and tripped none.
+var everyClass = decision{evaluated: []reason{
+	reasonThresholdRead,
+	reasonThresholdDomain,
+	reasonCounterRead,
+	reasonCounterNotNumeric,
+	reasonCounterIncrement,
+}}
+
+// stoppedAt is the decision a request the layer stopped at r produced: the
+// classes evaluated ahead of r in the layer's own order, then r itself.
+func stoppedAt(r reason) decision {
+	d := decision{}
+	for _, c := range everyClass.evaluated {
+		d.evaluated = append(d.evaluated, c)
+		if c == r {
+			d.tripped = r
+			return d
+		}
+	}
+	return d
+}
+
 // The classes do not imply one another: while one has been failing, another
 // has to be able to report itself. A single shared flag would keep the second
 // one from ever writing a line.
@@ -356,14 +430,20 @@ func TestSignalReportsEachReasonOnItsOwn(t *testing.T) {
 	var out bytes.Buffer
 	s := newSignalTo(&out)
 
-	s.settle(reasonCounterRead)
-	s.settle(reasonCounterRead)
-	s.settle(reasonThresholdRead)
+	s.settle(stoppedAt(reasonCounterRead))
+	s.settle(stoppedAt(reasonCounterRead))
+	// The counter passes in a decision that reached it, so that class clears;
+	// the thresholds then fail and report themselves.
+	s.settle(everyClass)
+	s.settle(stoppedAt(reasonThresholdRead))
 
 	lines := strings.Split(strings.TrimSpace(out.String()), "\n")
-	// The counter fails, then recovers as the thresholds fail.
 	if len(lines) != 3 {
 		t.Fatalf("wrote %d lines, want 3:\n%s", len(lines), out.String())
+	}
+	if !strings.Contains(lines[0], "letting requests through") ||
+		!strings.Contains(lines[0], string(reasonCounterRead)) {
+		t.Errorf("first line = %q, want the counter reported", lines[0])
 	}
 	if !strings.Contains(lines[1], "back to limiting") ||
 		!strings.Contains(lines[1], string(reasonCounterRead)) {
@@ -380,10 +460,10 @@ func TestSignalWritesOneLinePerFailureAndOnePerRecovery(t *testing.T) {
 	s := newSignalTo(&out)
 
 	for i := 0; i < 5; i++ {
-		s.settle(reasonCounterRead)
+		s.settle(stoppedAt(reasonCounterRead))
 	}
-	s.settle("") // a decision in which this class did not appear
-	s.settle(reasonCounterRead)
+	s.settle(everyClass) // a decision that evaluated this class and passed it
+	s.settle(stoppedAt(reasonCounterRead))
 
 	lines := strings.Split(strings.TrimSpace(out.String()), "\n")
 	if len(lines) != 3 {
@@ -391,31 +471,31 @@ func TestSignalWritesOneLinePerFailureAndOnePerRecovery(t *testing.T) {
 	}
 }
 
-// A class whose condition was fixed must clear its flag even while another
-// class keeps failing, otherwise it can never report again.
+// A class whose condition was fixed clears its flag even while another class
+// keeps failing, otherwise it can never report again. The thresholds are
+// evaluated ahead of the counter, so they clear in a decision that then trips
+// the counter.
 func TestSignalRecoversAClassWhileAnotherKeepsFailing(t *testing.T) {
 	var out bytes.Buffer
 	s := newSignalTo(&out)
 
-	s.settle(reasonCounterRead)
-	s.settle(reasonThresholdRead)
-	// The counter is back, the thresholds are still broken.
-	s.settle(reasonThresholdRead)
-	s.settle(reasonThresholdRead)
-	// The counter breaks again: this must be reported as a fresh failure.
-	s.settle(reasonCounterRead)
-	s.settle(reasonCounterRead)
+	// The thresholds fail, then the counter fails behind them.
+	s.settle(stoppedAt(reasonThresholdRead))
+	s.settle(stoppedAt(reasonCounterRead))
+	s.settle(stoppedAt(reasonCounterRead))
+	// The thresholds recover in a decision that still trips the counter.
+	s.settle(stoppedAt(reasonCounterRead))
 
 	lines := strings.Split(strings.TrimSpace(out.String()), "\n")
-	counter := 0
+	thresholds := 0
 	for _, line := range lines {
-		if strings.Contains(line, string(reasonCounterRead)) {
-			counter++
+		if strings.Contains(line, string(reasonThresholdRead)) {
+			thresholds++
 		}
 	}
-	if counter != 3 {
-		t.Fatalf("the counter class wrote %d lines, want 3 (failure, recovery, failure):\n%s",
-			counter, out.String())
+	if thresholds != 2 {
+		t.Fatalf("the thresholds class wrote %d lines, want 2 (failure, recovery):\n%s",
+			thresholds, out.String())
 	}
 }
 
@@ -486,6 +566,136 @@ func TestProductDeliversTheLimiter(t *testing.T) {
 	}
 }
 
+// --- the failure classes ---------------------------------------------------
+
+// A context the caller cancelled belongs to the caller, not to the backend: the
+// decision reports nothing and lets the request through. Folding it into the
+// counter class would write a failure line for one client disconnect and raise
+// that class's shared flag, so the next real backend failure would write
+// nothing.
+func TestDecideReportsNothingForACancelledContext(t *testing.T) {
+	next := nethttp.HandlerFunc(func(nethttp.ResponseWriter, *nethttp.Request) {})
+	cases := []struct {
+		name     string
+		counters *fakeKV
+	}{
+		{"the read", &fakeKV{readErr: context.Canceled}},
+		{"the increment", &fakeKV{incrementErr: context.Canceled}},
+	}
+	for _, c := range cases {
+		var out bytes.Buffer
+		l := pinned()
+		l.counters = c.counters
+		l.store = &fakeStore{values: map[string]any{windowPath: time.Minute, limitPath: 10}}
+		l.signal = newSignalTo(&out)
+
+		d := l.decide(newRecorder(), newRequest(), next, authn.Identity{}, true)
+		l.signal.settle(d)
+
+		if d.tripped != "" {
+			t.Errorf("%s: tripped %q, want the empty reason", c.name, d.tripped)
+		}
+		if out.Len() != 0 {
+			t.Errorf("%s: wrote %q, want nothing", c.name, out.String())
+		}
+	}
+}
+
+// Every diagnostic line carries the module's name once. The capability
+// directory and the module name are the same token here, so a format that
+// writes both repeats it.
+func TestDiagnosticsNameTheModuleOnce(t *testing.T) {
+	var out bytes.Buffer
+	newSignalTo(&out).settle(stoppedAt(reasonCounterRead))
+	if got := strings.Count(strings.TrimSpace(out.String()), ModuleName+":"); got != 1 {
+		t.Errorf("the signal line names the module %d times, want 1: %q", got, out.String())
+	}
+
+	_, err := Module().Prepare(context.Background(), registryWith(t, nil))
+	if err == nil {
+		t.Fatal("Prepare accepted an empty endpoint list")
+	}
+	if got := strings.Count(err.Error(), ModuleName+":"); got != 1 {
+		t.Errorf("the startup error names the module %d times, want 1: %q", got, err)
+	}
+}
+
+// A decision returns at the first class that trips, so a class behind it was
+// never asked about. Clearing it there would print "back to limiting" for a
+// condition nothing checked.
+func TestDecideClearsOnlyTheClassesItEvaluated(t *testing.T) {
+	var out bytes.Buffer
+	l := pinned()
+	next := nethttp.HandlerFunc(func(nethttp.ResponseWriter, *nethttp.Request) {})
+	l.signal = newSignalTo(&out)
+
+	// One request through the layer, its class accounted for as wrap does.
+	step := func() reason {
+		d := l.decide(newRecorder(), newRequest(), next, authn.Identity{}, true)
+		l.signal.settle(d)
+		return d.tripped
+	}
+
+	// The counter read fails, so its class is reported.
+	l.counters = &fakeKV{readErr: errors.New("backend down")}
+	l.store = &fakeStore{values: map[string]any{windowPath: time.Minute, limitPath: 10}}
+	if tripped := step(); tripped != reasonCounterRead {
+		t.Fatalf("tripped %q, want %q", tripped, reasonCounterRead)
+	}
+	if !containsLine(out.String(), "letting requests through", string(reasonCounterRead)) {
+		t.Fatalf("the counter class was not reported:\n%s", out.String())
+	}
+
+	// Only the thresholds are broken now, and the decision stops there: it
+	// never reached the counter class, so that class must not be cleared.
+	out.Reset()
+	l.counters = newFakeKV()
+	l.store = &fakeStore{values: map[string]any{windowPath: time.Duration(0), limitPath: 10}}
+	if tripped := step(); tripped != reasonThresholdDomain {
+		t.Fatalf("tripped %q, want %q", tripped, reasonThresholdDomain)
+	}
+	if containsLine(out.String(), "back to limiting", string(reasonCounterRead)) {
+		t.Fatalf("a class the decision never evaluated was reported recovered:\n%s", out.String())
+	}
+
+	// A decision that reaches the counter and passes clears it.
+	out.Reset()
+	l.store = &fakeStore{values: map[string]any{windowPath: time.Minute, limitPath: 10}}
+	if tripped := step(); tripped != "" {
+		t.Fatalf("tripped %q", tripped)
+	}
+	if !containsLine(out.String(), "back to limiting", string(reasonCounterRead)) {
+		t.Fatalf("the counter class was not reported recovered:\n%s", out.String())
+	}
+}
+
+// A window whose double overflows the duration type has its counting key
+// written with a non-positive expiry, which the key-value contract reads as
+// "no expiry": the key is then left in the store forever. It is out of domain
+// like any other window the module does not act on.
+func TestThresholdsStandsAsideOnAWindowTooLongToDouble(t *testing.T) {
+	l := newLimiter(nil)
+	l.store = &fakeStore{values: map[string]any{
+		windowPath: 150 * 365 * 24 * time.Hour,
+		limitPath:  10,
+	}}
+	var d decision
+	l.thresholds(settings.Global(), &d)
+	if d.tripped != reasonThresholdDomain {
+		t.Fatalf("tripped %q, want %q", d.tripped, reasonThresholdDomain)
+	}
+}
+
+// containsLine reports whether any line of out holds both parts.
+func containsLine(out, first, second string) bool {
+	for _, line := range strings.Split(out, "\n") {
+		if strings.Contains(line, first) && strings.Contains(line, second) {
+			return true
+		}
+	}
+	return false
+}
+
 // --- helpers ---------------------------------------------------------------
 
 type recorder struct {
@@ -503,6 +713,48 @@ func (r *recorder) Write(b []byte) (int, error) { return len(b), nil }
 
 func newRequest() *nethttp.Request {
 	return httptest.NewRequest(nethttp.MethodGet, "/things", nil)
+}
+
+// declaredSettingsSchema picks this module's settings declaration out of its
+// own descriptor, so a case can hold the code to what the module declares
+// rather than to a copy of the declaration.
+func declaredSettingsSchema() (settings.Schema, bool) {
+	for _, resource := range Module().Resources {
+		if declared, ok := resource.(settings.Schema); ok {
+			return declared, true
+		}
+	}
+	return settings.Schema{}, false
+}
+
+// recordingStore records the key of every read it serves.
+//
+// It answers under a value inside both domains, so that a decision reaches the
+// counter and a read's own failure cannot stand in for a wrong path.
+type recordingStore struct {
+	keys []string
+}
+
+func (s *recordingStore) Get(_ settings.Layer, key string, target any) error {
+	s.keys = append(s.keys, key)
+	switch out := target.(type) {
+	case *time.Duration:
+		*out = time.Minute
+	case *int:
+		*out = 10
+	default:
+		return errors.New("unsupported target")
+	}
+	return nil
+}
+
+func (s *recordingStore) Set(context.Context, settings.Write) error { return nil }
+func (s *recordingStore) Delete(context.Context, settings.Layer, string, string) error {
+	return nil
+}
+
+func (s *recordingStore) List(context.Context, settings.Layer) ([]settings.Entry, error) {
+	return nil, nil
 }
 
 // fakeStore serves the two items this module reads.

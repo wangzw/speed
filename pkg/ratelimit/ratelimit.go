@@ -15,8 +15,13 @@ import (
 	"github.com/vislake/speed/pkg/settings"
 )
 
-// ModuleName is this module's name in the registry. A host writes it into the
-// commands whose traffic should be limited.
+// ModuleName is this module's name in the registry and the token that opens
+// every diagnostic line the module writes. A host writes it into the commands
+// whose traffic should be limited.
+//
+// The capability directory and the module name are the same string here, so
+// the diagnostics carry this one token: a format that wrote a prefix as well
+// would render the name twice.
 const ModuleName = "ratelimit"
 
 // ConfigNamespace is where this module's input items are mounted, and where
@@ -24,15 +29,20 @@ const ModuleName = "ratelimit"
 // registering module's namespace always is.
 const ConfigNamespace = ModuleName
 
-// diagnosticPrefix starts every line this module writes to the process's
-// standard error. The reporting chain itself may be absent or switched off, so
-// these lines do not go through it.
-const diagnosticPrefix = "ratelimit: "
-
-// The two setting items, relative to the namespace.
+// The two setting items, and the full paths they are declared and read under.
+//
+// The settings module registers every declared item under its full path — the
+// namespace, a dot, then the item key — and looks a key up by that exact path,
+// so a read names the full path and not the bare item key. The paths derive
+// from ConfigNamespace and the item keys, and they have to stay in step with
+// what settingsSchema registers: a read of a path nothing declares finds no
+// declaration and fails open on every request.
 const (
 	windowKey = "window"
 	limitKey  = "limit"
+
+	windowPath = ConfigNamespace + "." + windowKey
+	limitPath  = ConfigNamespace + "." + limitKey
 )
 
 // Limiter is the capability this module delivers. A layer writes it into its
@@ -62,7 +72,8 @@ type Config struct {
 // A host that writes no row for either key gets these values. Both domains
 // exclude zero: a limit of zero rejects every request that carries an identity
 // string, because the increment happens before the decision, and a window of
-// zero leaves the window index undefined.
+// zero leaves the window index undefined. The window is bounded above as well,
+// by the longest one whose double still fits a duration.
 type options struct {
 	Window time.Duration `config:"window"`
 	Limit  int           `config:"limit"`
@@ -95,7 +106,8 @@ func settingsSchema() settings.Schema {
 		Namespace: ConfigNamespace,
 		Mounts:    []settings.Mount{{Value: &defaults}},
 		Items: map[string]settings.Item{
-			windowKey: {Description: "the length of one counting window, which must be positive"},
+			windowKey: {Description: "the length of one counting window, which must be positive " +
+				"and short enough for two of them to fit in a duration"},
 			limitKey: {
 				Description: "the requests one identity string may make in one window " +
 					"within one tenant, which must be positive",
