@@ -2,11 +2,12 @@
 // in.
 //
 // Both making one and putting one into a context live here, so that neither is
-// reachable from outside this release unit: Go admits an internal package to
-// the subtree it sits in and to nothing else. The interface package re-exports
-// the type under an alias, so a permission model reads an identity the ordinary
-// way while no layer on the chain can write one. Deciding who the caller is
-// exactly once, in exactly one place, is the whole of what authentication does.
+// reachable from outside this capability directory: Go admits an internal
+// package to the subtree it sits in and to nothing else. The interface package
+// re-exports the type under an alias, so a permission model reads an identity
+// the ordinary way while no layer on the chain can write one. Deciding who the
+// caller is exactly once, in exactly one place, is the whole of what
+// authentication does.
 package identity
 
 import "context"

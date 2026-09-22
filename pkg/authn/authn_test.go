@@ -132,12 +132,13 @@ func TestAContextThatWentThroughNoGatewayCarriesNobody(t *testing.T) {
 	}
 }
 
-// Why there is no case here asserting that nothing outside this release unit
-// can write an identity: making one and putting one into a context both live in
-// pkg/authn/internal/identity, and Go admits an internal package to the subtree
-// it sits in alone. The compiler enforces it for every package outside, and a
-// case written from inside — the only place a case can be written — would hold
-// nothing, since the restriction does not apply there and is not meant to. A
-// test that cannot fail under a wrong implementation is a comment wearing a
-// test's name, so this is a comment. The half that is observable from outside
-// is held above: a context nothing wrote to carries nobody.
+// Why there is no case here asserting that nothing outside this capability
+// directory can write an identity: making one and putting one into a context
+// both live in pkg/authn/internal/identity, and Go admits an internal package
+// to the subtree it sits in alone. The compiler enforces it for every package
+// outside, and a case written from inside — the only place a case can be
+// written — would hold nothing, since the restriction does not apply there and
+// is not meant to. A test that cannot fail under a wrong implementation is a
+// comment wearing a test's name, so this is a comment. The half that is
+// observable from outside is held above: a context nothing wrote to carries
+// nobody.

@@ -2,10 +2,11 @@
 // reading of it.
 //
 // The type lives here rather than in the interface package so that answering
-// and reading can be separated. A backend outside this release unit answers
-// through the constructors the interface package re-exports; it cannot reach
-// the readers below, because Go admits an internal package to the subtree it
-// sits in and to nothing outside. The gateway, which is in that subtree, reads.
+// and reading can be separated. A backend outside this capability directory
+// answers through the constructors the interface package re-exports; it cannot
+// reach the readers below, because Go admits an internal package to the subtree
+// it sits in and to nothing outside. The gateway, which is in that subtree,
+// reads.
 //
 // The readers are functions rather than methods for the same reason: a method
 // would travel with the type through the alias in the interface package and be

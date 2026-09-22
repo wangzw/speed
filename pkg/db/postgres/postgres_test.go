@@ -12,7 +12,7 @@ import (
 
 	"github.com/vislake/speed/pkg/db"
 	"github.com/vislake/speed/pkg/db/postgres"
-	"github.com/vislake/speed/pkg/pgpool/pgtest"
+	"github.com/vislake/speed/pkg/internal/pgpool/pgtest"
 )
 
 // TestPostgresPutsDDLInsideATransaction holds this engine to the first

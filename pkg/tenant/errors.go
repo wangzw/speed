@@ -2,23 +2,23 @@ package tenant
 
 import "errors"
 
-// The failures this release unit judges for itself. A caller tells them apart
-// with errors.Is, and every wrap on the way out uses %w so the chain stays
-// whole.
+// The failures this capability directory judges for itself. A caller tells
+// them apart with errors.Is, and every wrap on the way out uses %w so the
+// chain stays whole.
 //
-// The set is closed over what this release unit produces: a newly judged class
-// of failure either joins one of these or earns another. Two classes are
-// deliberately outside it.
+// The set is closed over what this capability directory produces: a newly
+// judged class of failure either joins one of these or earns another. Two
+// classes are deliberately outside it.
 //
-// The first is a module of this release unit being absent. Both modules declare
-// what they need as a construction-time dependency, and dependency resolution
-// runs before anything is constructed, so a provider that is missing or stood
-// down ends the run there as core's ErrMissingProvider. A sentinel here would
-// be a clause nothing can reach.
+// The first is a module of this capability directory being absent. Both
+// modules declare what they need as a construction-time dependency, and
+// dependency resolution runs before anything is constructed, so a provider
+// that is missing or stood down ends the run there as core's
+// ErrMissingProvider. A sentinel here would be a clause nothing can reach.
 //
 // The second is taking up the configuration reader, which is core's
 // ErrMissingProvider too: it means the host never supplied one, which is the
-// host's omission rather than a defect this unit judged.
+// host's omission rather than a defect this capability directory judged.
 var (
 	// ErrNoRouter reports that Init found no HTTP entry point to register a
 	// layer on. The fix is to write the entry implementation's module name

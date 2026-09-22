@@ -7,7 +7,7 @@ import (
 
 	_ "github.com/jackc/pgx/v5/stdlib" // registers the driver this package opens through
 
-	"github.com/vislake/speed/pkg/pgpool/pgtest"
+	"github.com/vislake/speed/pkg/internal/pgpool/pgtest"
 )
 
 // TestEachAcquisitionGetsAnEmptyDatabase holds this package to the isolation

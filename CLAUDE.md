@@ -42,7 +42,7 @@ toolchain they need comes from `mise install`, which reads `.mise.toml`.
 | Path | What it is |
 |---|---|
 | `go.work` | The module roster. Adding a module here registers it everywhere. |
-| `pkg/` | The implementation. One directory per module, each with its own `go.mod` and `AGENTS.md`. |
+| `pkg/` | The implementation: one Go module. Each top-level directory under it is a capability directory, and each carries its own `AGENTS.md`. The shared units and their test fixtures live under `pkg/internal/`, each shared unit with an `AGENTS.md` of its own. |
 | `examples/` | Hosts that assemble the modules into a running program. |
 | `docs/design`, `docs/adr`, `docs/glossary.md` | The design authority. Chinese, per the language rule above. |
 | `tools/` | Repository self-checks. `tools/README.md` says what each one does. |
@@ -55,8 +55,9 @@ toolchain they need comes from `mise install`, which reads `.mise.toml`.
 ## Boundaries
 
 - **New code goes under `pkg/`; a program that assembles modules goes
-  under `examples/`.** A module directory owns its `go.mod`, its
-  `AGENTS.md` and its tests.
+  under `examples/`.** The `pkg` module owns its `go.mod`; each
+  capability directory owns its `AGENTS.md` and its tests, and each
+  shared unit under `pkg/internal/` owns its `AGENTS.md`.
 - **Read the design before changing a public signature.** The design
   document is where a shape is decided; code that contradicts it is the
   thing to fix, in one direction or the other, before the change lands.
@@ -69,7 +70,8 @@ toolchain they need comes from `mise install`, which reads `.mise.toml`.
   race-detector warnings are fixed, not silenced; anything deferred is
   called out rather than left to be discovered.
 - **Commit messages are English, in Conventional Commits form, scoped by
-  module** — `fix(config): reject a manifest with two mounts on one path`.
+  the capability directory the change touches** — `fix(config): reject a
+  manifest with two mounts on one path`.
 - **Rebase onto the target branch and fast-forward.** History stays
   linear.
 

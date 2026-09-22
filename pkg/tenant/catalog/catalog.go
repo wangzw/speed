@@ -3,7 +3,7 @@
 // that every scoped model passes through.
 //
 // It is one module rather than two because the table and the filter are the
-// same release unit's presence on the database side, and neither is useful
+// same capability directory's presence on the database side, and neither is
 // without the other: a filter with no roster filters to a tenant nothing can
 // enumerate, and a roster with no filter is a table of names. Splitting them
 // would put a second name on the command tree whose omission is silent in
@@ -37,8 +37,8 @@ const ModuleName = "tenant.catalog"
 const ConfigNamespace = ModuleName
 
 // diagnosticPrefix starts every line this module writes to the startup
-// diagnostics, which have several writers. It names the release unit rather
-// than the module, and the module follows it in the line itself.
+// diagnostics, which have several writers. It names the capability directory
+// rather than the module, and the module follows it in the line itself.
 const diagnosticPrefix = "tenant: "
 
 //go:embed migrations
@@ -73,8 +73,9 @@ func init() { core.ProcessRegistry.Register(Module()) }
 //
 // The database capability is a construction-time dependency, so a command that
 // takes this module in without an engine fails at dependency resolution rather
-// than at any callback here. That is why no sentinel in this release unit names
-// it: a run that cannot resolve one never reaches code that could report it.
+// than at any callback here. That is why no sentinel in this capability
+// directory names it: a run that cannot resolve one never reaches code that
+// could report it.
 //
 // There is no stand-down. The configuration has no item that could be missing —
 // the refresh period has a default — so a command that takes this module in

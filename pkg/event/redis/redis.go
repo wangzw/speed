@@ -36,7 +36,7 @@ import (
 	"github.com/vislake/speed/pkg/core"
 	"github.com/vislake/speed/pkg/event"
 	"github.com/vislake/speed/pkg/event/internal/replica"
-	"github.com/vislake/speed/pkg/redis"
+	"github.com/vislake/speed/pkg/internal/redis"
 )
 
 const (

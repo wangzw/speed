@@ -14,7 +14,7 @@ import (
 	"github.com/vislake/speed/pkg/core"
 	"github.com/vislake/speed/pkg/event"
 	"github.com/vislake/speed/pkg/event/internal/bussuite"
-	"github.com/vislake/speed/pkg/natstest"
+	"github.com/vislake/speed/pkg/internal/natstest"
 )
 
 // eventTypeSerial names each case's event type, so two cases on one server

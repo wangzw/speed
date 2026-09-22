@@ -14,12 +14,15 @@ const rootPackage = "github.com/vislake/speed/pkg/audit"
 // boundary the module's own documentation draws.
 //
 // The root package is what a module imports to name the audit anchor on the
-// entry point's middleware chain. Go resolves dependencies per module, so
-// whatever this package reaches lands in the dependency list of every module
-// that places a layer against audit — the cost the anchor record states and
-// accepts. The one thing that must not happen is that cost growing without
-// anyone saying so: an interface package whose surface needs a database type
-// has stopped being an interface package.
+// entry point's middleware chain. Dependencies resolve at package granularity,
+// so what this package reaches is what every module that places a layer against
+// audit takes on — the cost the anchor record states and accepts. It reaches the
+// standard library alone, so nothing third-party enters that module's go.mod;
+// the go.sum and the `go mod tidy` fetch follow the test closures of the
+// imported packages instead, and whole-graph reads see every library an
+// implementation binds. The one thing that must not happen is that cost growing
+// without anyone saying so: an interface package whose surface needs a database
+// type has stopped being an interface package.
 //
 // Nothing holds this at compile time. The root package and the implementation
 // subpackage are one module, so the module's dependency list carries the

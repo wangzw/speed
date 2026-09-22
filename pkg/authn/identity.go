@@ -16,9 +16,9 @@ const Separator = identity.Separator
 // Identity is the caller this request was authenticated as.
 //
 // Reading one is open to anyone. Making one, and putting one into a request's
-// context, are not on this surface at all: both live inside this release unit,
-// so no layer on the chain can write an identity. What must happen once is the
-// deciding, not the looking.
+// context, are not on this surface at all: both live inside this capability
+// directory, so no layer on the chain can write an identity. What must happen
+// once is the deciding, not the looking.
 type Identity = identity.Identity
 
 // FromContext takes the identity out of a request's context.

@@ -12,8 +12,8 @@ package tenant
 // Embedding removes that class rather than detecting it.
 //
 // The column name is fixed here because the filter has to find it. A model that
-// embeds this is scoped; a model that does not is untouched by this release
-// unit, which is also what keeps a single-tenant host from carrying any of
+// embeds this is scoped; a model that does not is untouched by this capability
+// directory, which is also what keeps a single-tenant host from carrying any of
 // this. The other direction is not checkable: a model that should be scoped and
 // does not embed this reads exactly like a table that is global on purpose, and
 // nothing says which it is.

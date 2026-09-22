@@ -85,15 +85,15 @@ func TestAProgramImportingOnlyTheRootPackageRegistersNothing(t *testing.T) {
 			"import from this module is the root package got an entry point. The registry it read "+
 			"was %v", report.Routers, report.Modules)
 	}
-	// Every module an implementation subpackage registers carries this release
-	// unit's name: "http" is the unit and "http.stdmux" is one of its
-	// subpackages, the release unit's name plus the subpackage's. A program
-	// that imported no subpackage holds no module named either way.
+	// Every module an implementation subpackage registers carries this capability
+	// directory's name: "http" is that directory and "http.stdmux" is one of its
+	// subpackages, the capability directory's name plus the subpackage's. A
+	// program that imported no subpackage holds no module named either way.
 	for _, name := range report.Modules {
 		if name == "http" || strings.HasPrefix(name, "http.") {
-			t.Errorf("the program's registry holds a module named %q, which belongs to this release "+
-				"unit and which importing this package alone cannot have registered. The registry it "+
-				"read was %v", name, report.Modules)
+			t.Errorf("the program's registry holds a module named %q, which belongs to this "+
+				"capability directory and which importing this package alone cannot have "+
+				"registered. The registry it read was %v", name, report.Modules)
 		}
 	}
 }

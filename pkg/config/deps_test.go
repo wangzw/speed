@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"os/exec"
 	"slices"
+	"strings"
 	"testing"
 )
 
@@ -15,15 +16,12 @@ import (
 // at once, and spending it again needs the same kind of decision that spent it
 // the first time.
 //
-// The criterion is the direct requirements rather than the whole dependency
-// tree. What this module brought in is what it asked for; the transitive set
-// belongs to the tools and drifts with them, and a list of it here would be a
-// snapshot masquerading as a rule.
-//
-// They are read out of go.mod itself rather than asked of the build list,
-// which in a workspace is the workspace's: it holds every module the other
-// modules of this repository require, and judging those against the list
-// below would fail on dependencies this module never asked for.
+// The observation is the root package's own non-test import face: what a host
+// compiles by importing this package, and no more. It is read out of the
+// package rather than out of go.mod because one go.mod now covers the whole of
+// pkg/: its requirements are the union of every capability's, and judging that
+// list would fail on dependencies this package never asked for. The cost of
+// having no compiler support here is recorded in ADR-module-packaging-2026-09-22.
 func TestConfigRootCarriesOnlyTheParsingTools(t *testing.T) {
 	allowed := []string{
 		"github.com/go-viper/mapstructure/v2",
@@ -31,43 +29,52 @@ func TestConfigRootCarriesOnlyTheParsingTools(t *testing.T) {
 		"github.com/spf13/pflag",
 		"github.com/spf13/viper",
 		"github.com/vislake/speed/pkg/core",
-		// The YAML parser belongs to the format/yaml subpackage, which shares
-		// this go.mod with the root package. A host that does not import that
-		// subpackage does not carry it.
-		"go.yaml.in/yaml/v3",
 	}
 
-	cmd := exec.Command("go", "mod", "edit", "-json")
+	imports := packageImports(t, ".")
+	// The positive control. A listing produced by a load that did not happen
+	// would pass every judgement below without one of them having been made.
+	if !slices.Contains(imports, "github.com/vislake/speed/pkg/core") {
+		t.Fatalf("the root package's import list does not hold pkg/core, so what is checked below is "+
+			"not this package's import face: %v", imports)
+	}
+
+	for _, pkg := range imports {
+		if stdlibPackage(pkg) || slices.Contains(allowed, pkg) {
+			continue
+		}
+		t.Errorf("the root package imports %s, which is not one of the parsing tools the budget was "+
+			"spent on: %v", pkg, allowed)
+	}
+}
+
+// packageImports lists the packages a non-test build of target imports. The
+// imports its test files make are separate fields of the same listing, and an
+// import a case makes is not what a host pays for.
+func packageImports(t *testing.T, target string) []string {
+	t.Helper()
+	cmd := exec.Command("go", "list", "-json", target)
 	var stderr bytes.Buffer
 	cmd.Stderr = &stderr
 	out, err := cmd.Output()
 	if err != nil {
-		t.Fatalf("reading this module's go.mod failed: %v\n%s", err, stderr.String())
+		t.Fatalf("listing %s's imports failed: %v\n%s", target, err, stderr.String())
 	}
-	var mod struct {
-		Require []struct {
-			Path     string
-			Indirect bool
-		}
+	var listed struct {
+		Imports []string
 	}
-	if err := json.Unmarshal(out, &mod); err != nil {
-		t.Fatalf("reading this module's go.mod failed: %v\n%s", err, out)
+	if err := json.Unmarshal(out, &listed); err != nil {
+		t.Fatalf("reading the listing of %s failed: %v\n%s", target, err, out)
 	}
+	if len(listed.Imports) == 0 {
+		t.Fatalf("the listing of %s names no import, so there is no import face to check", target)
+	}
+	return listed.Imports
+}
 
-	direct := 0
-	for _, req := range mod.Require {
-		if req.Indirect {
-			continue
-		}
-		direct++
-		if !slices.Contains(allowed, req.Path) {
-			t.Errorf("this module requires %s, which is not one of the parsing tools the "+
-				"budget was spent on: %v", req.Path, allowed)
-		}
-	}
-	// The positive control. A go.mod with no direct requirement at all would
-	// pass every judgement above without one of them having been made.
-	if direct == 0 {
-		t.Fatal("go.mod names no direct requirement, so the scan above proved nothing")
-	}
+// stdlibPackage reports whether a package path names a package of the standard
+// library, whose first path element never carries a dot.
+func stdlibPackage(pkg string) bool {
+	first, _, _ := strings.Cut(pkg, "/")
+	return !strings.Contains(first, ".")
 }

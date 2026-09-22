@@ -125,6 +125,6 @@ GOWORK=off go -C pkg/kv build ./...   # the standalone leg, without the workspac
 
 The in-memory implementation needs nothing beyond the Go toolchain. A backend
 whose client is a container adds its own integration cases; the fixture they
-run against is shared — `pkg/pgpool/pgtest` for PostgreSQL, `pkg/natstest` for
-NATS, `pkg/redis/redistest` for Redis — so two backends cannot drift onto
+run against is shared — `pkg/internal/pgpool/pgtest` for PostgreSQL, `pkg/internal/natstest` for
+NATS, `pkg/internal/redis/redistest` for Redis — so two backends cannot drift onto
 differently behaved servers.

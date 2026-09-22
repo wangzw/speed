@@ -20,7 +20,7 @@ const repoPrefix = "github.com/vislake/speed/"
 // root package are one module, so the module's dependency list carries every
 // client whichever backend a host deploys on, and the split is a rule about
 // imports. This case is the gate that keeps it — the cost of having no compiler
-// support here is recorded in ADR-module-packaging-2026-09-13.
+// support here is recorded in ADR-module-packaging-2026-09-22.
 //
 // The observation is the root package's own non-test dependency face: what a
 // host compiles by importing this package, and no more. The cases in this

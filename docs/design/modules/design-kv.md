@@ -6,7 +6,7 @@
 
 实现有多个，绑定不同后端：进程内映射、Redis、PostgreSQL、Memcached、NATS JetStream。**功能排他交付**：同一个进程里恰好一个实现生效，多于一个表态启用即启动失败（[ADR-kv-implementations-2026-09-21](../../adr/adr-kv-implementations-2026-09-21.md)）。
 
-接口面按**最弱后端**设计，这是模块边界的核心约束：不暴露服务端脚本、管道、有序结构或超出不透明字节之外的数据类型。凡是接口承诺的，每一个实现都能实现；需要更强能力的调用方得不到它，而不是在一个后端上得到、在另一个上失效（[ADR-kv-scope-2026-09-21](../../adr/adr-kv-scope-2026-09-21.md)）。
+接口面按**最弱后端**设计，这是接口包与实现子包之间那条分界的核心约束：不暴露服务端脚本、管道、有序结构或超出不透明字节之外的数据类型。凡是接口承诺的，每一个实现都能实现；需要更强能力的调用方得不到它，而不是在一个后端上得到、在另一个上失效（[ADR-kv-scope-2026-09-21](../../adr/adr-kv-scope-2026-09-21.md)）。
 
 ### 非职责
 
@@ -66,13 +66,13 @@ type KV interface {
 |---|---|
 | `pkg/core` | 注册描述符、交付功能、声明资源 |
 | `pkg/config` | 声明本模块的输入项 |
-| 共享发布单元（见下） | Redis 实现与 PostgreSQL 实现各自的使用：客户端的类型与连接构造、连接池的构造 |
+| 共享单元（见下） | Redis 实现与 PostgreSQL 实现各自的使用：客户端的类型与连接构造、连接池的构造 |
 
 **不依赖任何其他功能模块。** 本模块位于依赖图的底层，与 [db](design-db.md) 同层：它不认识租户、不认识日志、不认识请求上下文。
 
-Redis 实现与事件模块的 Redis 实现共用一个封装该客户端的发布单元，PostgreSQL 实现与事件模块的 PostgreSQL 实现共用一个封装连接池构造的发布单元。两个发布单元都不登记模块、不交付功能、不参与生命周期（[ADR-shared-backend-unit-2026-09-21](../../adr/adr-shared-backend-unit-2026-09-21.md)）。
+Redis 实现与事件模块的 Redis 实现共用一个封装该客户端的共享单元，PostgreSQL 实现与事件模块的 PostgreSQL 实现共用一个封装连接池构造的共享单元。两个共享单元都不登记模块、不交付功能、不参与生命周期（[ADR-shared-backend-unit-2026-09-21](../../adr/adr-shared-backend-unit-2026-09-21.md)）。
 
-各实现子包的集成用例所需的服务器夹具同样来自共享单元：PostgreSQL 用 `pgpool/pgtest`，NATS 用 `natstest`，Redis 用 `redis/redistest`；夹具的共享理由写在同一条记录里——两份副本会各自演进到行为不同的服务器上，而失配最难归因。
+各实现子包的集成用例所需的服务器夹具同属共享单元，落在 `pkg/internal/` 下：PostgreSQL 用 `pkg/internal/pgpool/pgtest`，NATS 用 `pkg/internal/natstest`，Redis 用 `pkg/internal/redis/redistest`；夹具的共享理由写在同一条记录里——两份副本会各自演进到行为不同的服务器上，而失配最难归因。
 
 ## UML 图
 

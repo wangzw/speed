@@ -5,7 +5,7 @@
 // implementation subpackages would otherwise each carry their own copy of
 // "read an address, build a client, close it": the two copies would differ only
 // in where their configuration hangs, and neither could be covered by the
-// other's tests. The cost of that sharing — one release unit whose changes
+// other's tests. The cost of that sharing — one shared unit whose changes
 // reach two modules — is recorded in
 // docs/adr/adr-shared-backend-unit-2026-09-21.md.
 //

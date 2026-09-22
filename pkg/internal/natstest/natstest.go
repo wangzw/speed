@@ -8,10 +8,12 @@
 // logical databases, and the cases name their own so that two of them on one
 // server cannot see each other's entries.
 //
-// The key-value and event modules' NATS backends both test against this one,
-// which is why it stands as a release unit of its own rather than inside either
-// of them; the same arrangement, for the pool-based fixture, is pkg/pgpool's
-// pgtest, and the record behind both is
+// The key-value and event modules' NATS backends both test against this one, so
+// it stands as a shared unit of its own in pkg/internal/natstest, inside the
+// pkg module's internal/ tree: it is read by tests only, belongs to no public
+// surface, and the compiler holds that, keeping anything outside the module
+// from importing it. The pool-based fixture lives in pkg/internal/pgpool/pgtest,
+// inside the pool wrapper's directory, and the record behind both is
 // docs/adr/adr-shared-backend-unit-2026-09-21.md.
 package natstest
 

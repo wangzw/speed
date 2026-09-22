@@ -28,7 +28,7 @@ import (
 //
 // Run it alone, on a machine whose container nothing else needs:
 //
-//	SPEED_PGTEST_COLDSTART=1 go -C pkg/pgpool test -count=1 -v -run '^TestColdStartConcurrency$' ./pgtest/
+//	SPEED_PGTEST_COLDSTART=1 go -C pkg/internal/pgpool test -count=1 -v -run '^TestColdStartConcurrency$' ./pgtest/
 //
 // A round is eight peers started at once on a machine with no container and no
 // image, each of them taking a database the way any case does. What the round

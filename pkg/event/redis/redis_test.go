@@ -11,8 +11,8 @@ import (
 	"github.com/vislake/speed/pkg/core"
 	"github.com/vislake/speed/pkg/event"
 	"github.com/vislake/speed/pkg/event/internal/bussuite"
-	speedredis "github.com/vislake/speed/pkg/redis"
-	"github.com/vislake/speed/pkg/redis/redistest"
+	speedredis "github.com/vislake/speed/pkg/internal/redis"
+	"github.com/vislake/speed/pkg/internal/redis/redistest"
 )
 
 // openBus builds a bus over the given server, with a consumer group name of its

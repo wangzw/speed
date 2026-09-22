@@ -48,9 +48,9 @@ type Resolution interface {
 // Catalog is the capability the roster subpackage delivers: the roster's read
 // and write surface.
 //
-// Writing through it is this release unit's only operations-facing action. A
-// host takes it up to register tenants and to change their state; nothing else
-// in the assembly adds a tenant.
+// Writing through it is this capability directory's only operations-facing
+// action. A host takes it up to register tenants and to change their state;
+// nothing else in the assembly adds a tenant.
 //
 // None of these methods is scoped to a tenant. The roster is the fact that
 // scoping is decided from, so its own statements run outside the filter, and

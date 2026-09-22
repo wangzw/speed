@@ -30,10 +30,10 @@ must not cross, and how to run it.
 
 - **The root package imports the standard library alone.** It is the package a
   module imports to name the anchor `(*audit.Audit)(nil)` on the middleware
-  chain, and Go resolves dependencies per module — so anything added to it lands
-  in the dependency list of every module that places a layer against audit.
-  Adding a non-standard-library import here is the shape to reject; what needs
-  one belongs in `journal`.
+  chain, and what it imports belongs to the closure of every package that
+  places a layer against audit — so anything added to it lands in the dependency
+  list of every module that does. Adding a non-standard-library import here is
+  the shape to reject; what needs one belongs in `journal`.
 - **`tableName` is one constant in two places.** The model's `TableName`, the
   migration files and the statement-level self-reference judgement all have to
   agree. The judgement holds because the module's own write goes through the

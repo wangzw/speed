@@ -42,8 +42,8 @@ const ModuleName = "audit.journal"
 const ConfigNamespace = ModuleName
 
 // diagnosticPrefix starts every line this module writes to the startup
-// diagnostics, which have several writers. It names the release unit rather
-// than the module, and the module follows it in the line itself.
+// diagnostics, which have several writers. It names the capability directory
+// rather than the module, and the module follows it in the line itself.
 const diagnosticPrefix = "audit: "
 
 // middlewareOrder places the capture layer where the constraints leave a

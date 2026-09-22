@@ -51,7 +51,7 @@ checks need are pinned in `.mise.toml`.
 
 | Path | What it is |
 |---|---|
-| `pkg/` | The modules. One directory per release unit, each with its own `go.mod`. |
+| `pkg/` | The modules: one capability directory each, in a single Go module. |
 | `examples/` | A host that assembles modules into a running program. |
 | `docs/` | The design documents and decision records. |
 | `tools/` | Repository self-checks. |

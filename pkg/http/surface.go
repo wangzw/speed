@@ -114,9 +114,12 @@ type Spec struct {
 // takes pattern registrations and answers as a handler. The standard library's
 // *nethttp.ServeMux satisfies it as it stands.
 //
-// The engine's own type never appears on this package's surface, which is what
-// keeps a routing library out of the dependency list of every module that
-// registers a route.
+// The engine's own type never appears on this package's surface, which keeps a
+// routing library out of the go.mod of every module that registers a route, and
+// out of its build. The go.sum and the `go mod tidy` fetch are not held to that
+// face — they follow the test closures of the imported packages — and
+// whole-graph reads see every library an implementation binds
+// (ADR-module-packaging-2026-09-22).
 //
 // The seam asks one thing of an implementation subpackage beyond this
 // interface: when the engine refuses to mount a pattern beside the others, the

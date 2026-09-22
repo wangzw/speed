@@ -40,13 +40,13 @@ const ModuleName = "authn.gate"
 
 // ConfigNamespace is where this module's input items are mounted. It is this
 // module's own name, the way a registering module's namespace always is, so
-// that each backend's section sits beside this one under the release unit's
-// heading and no module owns that heading itself.
+// that each backend's section sits beside this one under the capability
+// directory's heading and no module owns that heading itself.
 const ConfigNamespace = ModuleName
 
 // diagnosticPrefix starts every line this module writes to the startup
-// diagnostics, which have several writers. It names the release unit rather
-// than the module: a reader scanning the diagnostics is looking for what
+// diagnostics, which have several writers. It names the capability directory
+// rather than the module: a reader scanning the diagnostics is looking for what
 // authentication did, and the gateway is the only part of it that writes here.
 const diagnosticPrefix = "authn: "
 

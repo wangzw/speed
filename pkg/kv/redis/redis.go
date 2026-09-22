@@ -3,7 +3,7 @@
 //
 // It binds the Redis client, names the configuration namespace this backend's
 // input items hang under, and delivers the capability exclusively. The client
-// itself comes from pkg/redis, which the event module's Redis backend uses too,
+// itself comes from pkg/internal/redis, which the event module's Redis backend uses too,
 // so the two share one notion of what connecting means.
 //
 // Every operation is one command or one script. Two of them cannot be a plain
@@ -24,8 +24,8 @@ import (
 	goredis "github.com/redis/go-redis/v9"
 
 	"github.com/vislake/speed/pkg/core"
+	"github.com/vislake/speed/pkg/internal/redis"
 	"github.com/vislake/speed/pkg/kv"
-	"github.com/vislake/speed/pkg/redis"
 )
 
 const (

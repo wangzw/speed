@@ -242,7 +242,7 @@ func (r *Registry) Run(ctx context.Context) error
 
 `core` 不依赖任何模块，也不依赖任何第三方库。它位于依赖图的底部，被每一个模块 import。
 
-这一位置是架构不变量的直接后果：`core` 的任何依赖都会落到每一个宿主的依赖清单中。
+这一位置是架构不变量的直接后果：`core` 的任何依赖都会落到每一个宿主的 `go.mod` 中。
 
 ## UML 图
 

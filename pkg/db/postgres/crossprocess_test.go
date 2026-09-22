@@ -17,7 +17,7 @@ import (
 	"gorm.io/gorm/logger"
 
 	"github.com/vislake/speed/pkg/db/postgres"
-	"github.com/vislake/speed/pkg/pgpool/pgtest"
+	"github.com/vislake/speed/pkg/internal/pgpool/pgtest"
 )
 
 // The scenario a re-executed copy of this test binary runs instead of the

@@ -11,8 +11,8 @@ import (
 	"github.com/vislake/speed/pkg/core"
 	"github.com/vislake/speed/pkg/event"
 	"github.com/vislake/speed/pkg/event/internal/bussuite"
-	"github.com/vislake/speed/pkg/pgpool"
-	"github.com/vislake/speed/pkg/pgpool/pgtest"
+	"github.com/vislake/speed/pkg/internal/pgpool"
+	"github.com/vislake/speed/pkg/internal/pgpool/pgtest"
 )
 
 // openBus builds a bus over the given database.

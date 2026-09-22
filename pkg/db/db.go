@@ -37,7 +37,7 @@ const (
 	SQLite Dialect = "sqlite"
 )
 
-// Database is the capability this release unit delivers. It is an interface
+// Database is what this capability directory delivers. It is an interface
 // because a capability token's element type must be one, while *gorm.DB is a
 // concrete type and cannot designate a capability; the handle comes out of it
 // through DB.

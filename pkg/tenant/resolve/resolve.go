@@ -41,8 +41,8 @@ const ModuleName = "tenant.resolve"
 const ConfigNamespace = ModuleName
 
 // diagnosticPrefix starts every line this module writes to the startup
-// diagnostics, which have several writers. It names the release unit rather
-// than the module, and the module follows it in the line itself.
+// diagnostics, which have several writers. It names the capability directory
+// rather than the module, and the module follows it in the line itself.
 const diagnosticPrefix = "tenant: "
 
 // tenantField is the name the resolved identifier is bound to on the logger.
@@ -62,7 +62,7 @@ const middlewareOrder = 90
 
 // The module registers itself. Importing this package is what puts tenant
 // resolution in a binary's available set; a host that never imports it carries
-// no resolution layer, whatever else of this release unit it takes in.
+// no resolution layer, whatever else of this capability it takes in.
 func init() { core.ProcessRegistry.Register(Module()) }
 
 // Module is the descriptor a host registers.

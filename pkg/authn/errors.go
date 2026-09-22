@@ -2,19 +2,19 @@ package authn
 
 import "errors"
 
-// The failures this release unit judges for itself. A caller tells them apart
-// with errors.Is, and every wrap on the way out uses %w so the chain stays
-// whole.
+// The failures this capability directory judges for itself. A caller tells
+// them apart with errors.Is, and every wrap on the way out uses %w so the
+// chain stays whole.
 //
-// The set is closed over what this release unit produces: a newly judged class
-// of failure either joins one of these or earns another, and none of them is
-// invented for a failure that merely passed through. A backend's own errors are
-// its own to name; the gateway carries them out unchanged.
+// The set is closed over what this capability directory produces: a newly
+// judged class of failure either joins one of these or earns another, and none
+// of them is invented for a failure that merely passed through. A backend's own
+// errors are its own to name; the gateway carries them out unchanged.
 //
 // Taking up the configuration reader is the exception that stays outside: a
 // reader that is not there means the host never supplied one, which is core's
 // ErrMissingProvider and is carried out as it stands. The fix is the host's,
-// not a defect this unit judged.
+// not a defect this capability directory judged.
 var (
 	// ErrNoRouter reports that Init found no HTTP entry point to register
 	// on. The fix is to write the entry implementation's module name into

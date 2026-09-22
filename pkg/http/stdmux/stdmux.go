@@ -25,12 +25,12 @@ import (
 	speedhttp "github.com/vislake/speed/pkg/http"
 )
 
-// ModuleName is this module's name in the registry: the release unit's name
-// plus this subpackage's, which is the form the design gives an implementation
-// subpackage. A diagnostic line naming it therefore says both which entry point
-// it is about and which engine is behind it, and two entry point
-// implementations in one process are two distinct registrations rather than a
-// duplicate name at init time.
+// ModuleName is this module's name in the registry: the capability directory's
+// name plus this subpackage's, which is the form the design gives an
+// implementation subpackage. A diagnostic line naming it therefore says both
+// which entry point it is about and which engine is behind it, and two entry
+// point implementations in one process are two distinct registrations rather
+// than a duplicate name at init time.
 //
 // It is also the name a host writes to take this module into a command of its
 // tree, and that is why it is exported: a command takes a module in by name,

@@ -31,8 +31,8 @@ import (
 	"github.com/jackc/pgx/v5/pgxpool"
 
 	"github.com/vislake/speed/pkg/core"
+	"github.com/vislake/speed/pkg/internal/pgpool"
 	"github.com/vislake/speed/pkg/kv"
-	"github.com/vislake/speed/pkg/pgpool"
 )
 
 const (

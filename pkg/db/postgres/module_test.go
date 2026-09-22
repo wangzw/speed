@@ -15,7 +15,7 @@ import (
 	"github.com/vislake/speed/pkg/core"
 	"github.com/vislake/speed/pkg/db"
 	"github.com/vislake/speed/pkg/db/postgres"
-	"github.com/vislake/speed/pkg/pgpool/pgtest"
+	"github.com/vislake/speed/pkg/internal/pgpool/pgtest"
 )
 
 // sharedItems are the input items every implementation declares, written out

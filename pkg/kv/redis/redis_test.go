@@ -9,10 +9,10 @@ import (
 	goredis "github.com/redis/go-redis/v9"
 
 	"github.com/vislake/speed/pkg/core"
+	speedredis "github.com/vislake/speed/pkg/internal/redis"
+	"github.com/vislake/speed/pkg/internal/redis/redistest"
 	"github.com/vislake/speed/pkg/kv"
 	"github.com/vislake/speed/pkg/kv/internal/kvsuite"
-	speedredis "github.com/vislake/speed/pkg/redis"
-	"github.com/vislake/speed/pkg/redis/redistest"
 )
 
 // newStore hands out one store over a real server, cleared before each subtest.

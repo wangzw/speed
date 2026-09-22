@@ -1,9 +1,9 @@
 # pkg/authn
 
-The authentication release unit: the interface package a backend implements and
-a handler reads an identity from, `pkg/authn/gate` — the gateway module that
-guards listening endpoints — and `pkg/authn/static`, the first credential
-backend, whose subject table comes from configuration.
+The authentication capability directory: the interface package a backend
+implements and a handler reads an identity from, `pkg/authn/gate` — the gateway
+module that guards listening endpoints — and `pkg/authn/static`, the first
+credential backend, whose subject table comes from configuration.
 
 ## Where the authority is
 
@@ -33,7 +33,7 @@ here must not cross, and how to run it.
   Both types live in `internal/` packages and are re-exported here as aliases.
   That is what makes the zero verdict mean *nobody answered* rather than
   something a backend can assemble by hand, and what keeps the context
-  injection point closed to everything outside this release unit — the
+  injection point closed to everything outside this capability directory — the
   compiler enforces both, and a change that moves either type into this
   package removes the enforcement without removing the claim.
   `authn_test.go` records the half of that property a test can observe and why

@@ -6,7 +6,7 @@
 // "parse a connection string, build a pool, refuse a size the pool cannot
 // take": the two copies would differ only in where their configuration hangs,
 // and neither could be covered by the other's tests. The cost of that sharing —
-// one release unit whose changes reach two modules — is recorded in
+// one shared unit whose changes reach two modules — is recorded in
 // docs/adr/adr-shared-backend-unit-2026-09-21.md.
 //
 // The pool type is exposed as it is rather than behind an abstraction of this

@@ -12,7 +12,7 @@ import (
 
 	"github.com/vislake/speed/pkg/db"
 	"github.com/vislake/speed/pkg/db/postgres"
-	"github.com/vislake/speed/pkg/pgpool/pgtest"
+	"github.com/vislake/speed/pkg/internal/pgpool/pgtest"
 )
 
 // TestLockTimeoutIsErrMigrationLockTimeout holds the bounded wait to its

@@ -52,11 +52,13 @@ must not cross, and how to run it.
   the gate that stands in for it is `TestRootPackageImportsNoBackendClient` in
   `deps_test.go`.
 - **The root package does not import the tenant module.** The tenant identifier
-  on an event is a string. Importing that module's interface package would put
-  its whole dependency closure — the database, the HTTP entry point, their
-  drivers — into every host that only wants to publish an event, because Go
-  resolves dependencies per module rather than per package. The reason and its
-  cost are recorded in `adr-event-scope-2026-09-21`.
+  on an event is a string. Every publisher imports this package, so naming the
+  tenant module's type here would make it import that module's interface
+  package, and that edge would sit in every publisher's closure. The cost is
+  that dependency — the bus reaching a concrete capability's interface — rather
+  than a third-party stack, since the tenant interface package imports the
+  standard library alone. The reason and its cost are recorded in
+  `adr-event-scope-2026-09-21`.
 - **A new backend is a subpackage with a namespace of its own.** The namespace
   has to be its own: the configuration manifest is collected from every
   registered module, so two implementations declaring items on one path conflict
@@ -132,4 +134,6 @@ GOWORK=off go -C pkg/event build ./...   # the standalone leg, without the works
 ```
 
 The in-memory implementation needs nothing beyond the Go toolchain. A backend
-whose transport is a broker holds its own integration cases and its own fixture.
+whose transport is a broker holds its own integration cases, and reaches the
+broker through the fixture it shares with the key-value module's backend of the
+same kind (`pkg/internal/natstest`).

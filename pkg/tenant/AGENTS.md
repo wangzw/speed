@@ -1,9 +1,9 @@
 # pkg/tenant
 
-The tenancy release unit: the interface package a model embeds and a handler
-reads a tenant from, `pkg/tenant/resolve` — the module that reads a tenant name
-off the request surface — and `pkg/tenant/catalog`, the module that keeps the
-roster and filters statements to the tenant they carry.
+The tenancy capability directory: the interface package a model embeds and a
+handler reads a tenant from, `pkg/tenant/resolve` — the module that reads a
+tenant name off the request surface — and `pkg/tenant/catalog`, the module that
+keeps the roster and filters statements to the tenant they carry.
 
 ## Where the authority is
 

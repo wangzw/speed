@@ -8,9 +8,9 @@
 - 把认定出的身份写进请求上下文，供链上其余各层与 handler 取用。
 - 定义校验后端的接缝：凭据的形状、判决的形状，以及后端自报身份与归属的途径。
 
-本发布单元由接口包与子包组成。`pkg/authn` 根包定义功能接口与数据类型，**自身不注册模块，也不导出模块名常量**；网关住在自己的子包并注册一个模块，每个校验后端各住一个子包、各注册一个模块（[ADR-authn-packaging-2026-09-20](../../adr/adr-authn-packaging-2026-09-20.md)、[ADR-module-packaging-2026-09-14](../../adr/adr-module-packaging-2026-09-14.md)）。下文的“网关”指网关子包所注册的那个模块的产物。
+本功能目录由接口包与子包组成。`pkg/authn` 根包定义功能接口与数据类型，**自身不注册模块，也不导出模块名常量**；网关住在自己的子包并注册一个模块，每个校验后端各住一个子包、各注册一个模块（[ADR-authn-packaging-2026-09-20](../../adr/adr-authn-packaging-2026-09-20.md)、[ADR-module-packaging-2026-09-14](../../adr/adr-module-packaging-2026-09-14.md)）。下文的“网关”指网关子包所注册的那个模块的产物。
 
-认证与路由豁免同属本发布单元，权限模型另立（[ADR-authn-scope-2026-09-20](../../adr/adr-authn-scope-2026-09-20.md)）。
+认证与路由豁免同属本功能目录，权限模型另立（[ADR-authn-scope-2026-09-20](../../adr/adr-authn-scope-2026-09-20.md)）。
 
 **根包不导出模块名常量**，判据是导出它没有对应的登记：命令树按名字纳入模块（见 [config](design-config.md)），宿主拿一个无人登记的名字去纳入，得到的是一个不在可用集里的名字，而命令树对未登记名字的处置在 `config` 的哨兵表里没有对应项。
 
@@ -186,9 +186,9 @@ func FromContext(ctx context.Context) (Identity, bool)
 
 ## 依赖
 
-`pkg/authn` 根包 import `pkg/core` 与 `pkg/config`：`core` 提供功能标识与查询，`config` 用于声明输入项。接口面上只出现标准库与本包自己的类型。
+本模块 import `pkg/core` 与 `pkg/config`：`core` 提供功能标识与查询，`config` 用于声明输入项。两者都落在实现子包里——根包只 import 标准库与本包自己的 internal 子包，接口面上只出现标准库与本包自己的类型。
 
-**接口包不依赖 `pkg/db`，这是本模块的自我约束而不是架构的要求**（架构对跨发布单元依赖的要求是一律指向对方的接口包，见 [architecture](../architecture.md) 的概览，指向 `pkg/db` 的接口包并不违反它；本条见 [ADR-authn-packaging-2026-09-20](../../adr/adr-authn-packaging-2026-09-20.md)）。理由是凭据事实的存放形态是后端自己的事：自带凭据表的后端把 `db` 依赖、迁移集与模型全部留在它自己的子包里，其余后端不因此承受数据库依赖。
+**接口包不依赖 `pkg/db`，这是本模块的自我约束而不是架构的要求**（架构对跨功能目录依赖的要求是一律指向对方的接口包，见 [architecture](../architecture.md) 的概览，指向 `pkg/db` 的接口包并不违反它；本条见 [ADR-authn-packaging-2026-09-20](../../adr/adr-authn-packaging-2026-09-20.md)）。理由是凭据事实的存放形态是后端自己的事：自带凭据表的后端把 `db` 依赖、迁移集与模型全部留在它自己的子包里，数据库实现所绑的第三方库因此不进宿主的 `go.mod`，宿主的 `go.sum` 与实际下载则会经被 import 包的测试闭包带上它们，只有读整图的操作会看到全部实现所绑的第三方库（[ADR-module-packaging-2026-09-22](../../adr/adr-module-packaging-2026-09-22.md)）。
 
 网关子包 import 根包、`pkg/core`、`pkg/config` 与 `pkg/http`。校验后端子包 import 根包，以及它自己那个凭据来源所需的东西。
 
@@ -198,7 +198,7 @@ func FromContext(ctx context.Context) (Identity, bool)
 
 **日志功能不构成依赖。** 主体作为关联字段绑上去用的是 `log.WithAttrs`，包级函数，不经注册表；只有脱敏规则的登记要 `Logger` 这个功能的实例，网关在 `Init` 里取它，取不到即本次装配没有日志模块，规则无处登记。登记不改变任何认证行为，缺席也不改变，因而不为它声明依赖。
 
-方向满足架构不变量：本发布单元位于 `core`、`config`、`log`、`http` 与 `db` 之上，不被其中任何一个 import。权限模型位于本模块之上，它取用身份而本模块不认识它。
+方向满足架构不变量：本功能目录位于 `core`、`config`、`log`、`http` 与 `db` 之上，不被其中任何一个 import。权限模型位于本模块之上，它取用身份而本模块不认识它。
 
 ## UML 图
 

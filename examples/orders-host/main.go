@@ -1,10 +1,10 @@
 // Command orders-host is a host that assembles every module of this repository
 // into one running program: an HTTP entry point, the database engine, the
-// authentication gateway with one credential backend, the tenant release unit —
-// resolution and roster — the audit journal, the runtime settings surface, and
-// a key-value and an event backend, together with two application modules of
-// its own. It writes the command tree that says what each run may be, and lets
-// that tree drive the lifecycle.
+// authentication gateway with one credential backend, the tenant capability
+// directory — resolution and roster — the audit journal, the runtime settings
+// surface, and a key-value and an event backend, together with two application
+// modules of its own. It writes the command tree that says what each run may
+// be, and lets that tree drive the lifecycle.
 //
 // Importing a module's package is what puts it in the available set: each
 // registers itself in init, so the import is the whole of the wiring. Nothing
@@ -262,8 +262,8 @@ func serveUntilCancelled(ctx context.Context, reg *core.Registry) error {
 //
 // The orders are a different matter. This runs outside any request, so there is
 // no resolving layer to establish a tenant and the writing side of the context
-// is closed to everything outside the release unit. A path like this one
-// therefore states what it is doing: it crosses tenants, and it writes the
+// is closed to everything outside the capability directory. A path like this
+// one therefore states what it is doing: it crosses tenants, and it writes the
 // tenant column itself. That crossing is also the one fact no capture path of
 // the audit journal can explain — the statement sees a write, the request path
 // is not on it, and no event was published — so this is where the seam is used

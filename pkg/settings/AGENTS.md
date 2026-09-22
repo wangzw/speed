@@ -17,7 +17,7 @@ implementation subpackage to hold one backend apart from another.
 - What this module is and why it is shaped this way:
   [`docs/design/modules/design-settings.md`](../../docs/design/modules/design-settings.md).
 - The decisions behind it, one file per decision:
-  [`docs/adr/`](../../docs/adr/) — what the release unit delivers
+  [`docs/adr/`](../../docs/adr/) — what the capability directory delivers
   ([`adr-settings-scope-2026-09-21.md`](../../docs/adr/adr-settings-scope-2026-09-21.md)),
   why items are declared rather than typed at the call site
   ([`adr-settings-declaration-2026-09-21.md`](../../docs/adr/adr-settings-declaration-2026-09-21.md)),

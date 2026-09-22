@@ -7,10 +7,10 @@ import (
 	"testing"
 
 	"github.com/vislake/speed/pkg/core"
+	"github.com/vislake/speed/pkg/internal/pgpool"
+	"github.com/vislake/speed/pkg/internal/pgpool/pgtest"
 	"github.com/vislake/speed/pkg/kv"
 	"github.com/vislake/speed/pkg/kv/internal/kvsuite"
-	"github.com/vislake/speed/pkg/pgpool"
-	"github.com/vislake/speed/pkg/pgpool/pgtest"
 )
 
 func newStore(t *testing.T) *store {

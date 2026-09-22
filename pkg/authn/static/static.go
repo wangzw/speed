@@ -53,10 +53,13 @@ var _ authn.Verifier = (*backend)(nil)
 
 // init registers this module with the process registry.
 //
-// A host chooses its backends by importing them, and the dependency list
-// follows: a host that takes only this one carries a password hash and nothing
-// else, with no directory client and no database provider anywhere in its
-// graph.
+// A host chooses its backends by importing them, and what enters its go.mod
+// follows the packages it imported: a host that takes only this one carries a
+// password hash and no other backend's library — no directory client and no
+// database provider in it. The go.sum and the `go mod tidy` fetch are not held
+// to that face — they follow the test closures of the imported packages — and
+// whole-graph reads see every library an implementation binds
+// (ADR-module-packaging-2026-09-22).
 func init() { core.ProcessRegistry.Register(Module()) }
 
 // Module is the descriptor a host registers.

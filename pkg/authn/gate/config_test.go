@@ -91,10 +91,11 @@ func TestASoundConfigurationResolves(t *testing.T) {
 // swap for one another, because both are spelled out of the same two words.
 //
 // The configuration namespace is this module's own name: each backend hangs its
-// section under the release unit too, and a gateway that took the bare heading
-// would sit on the path they extend. The startup diagnostics go the other way —
-// they are prefixed with the release unit, because a reader scanning them is
-// looking for what authentication did, not for which of its modules said so.
+// section under the capability directory too, and a gateway that took the bare
+// heading would sit on the path they extend. The startup diagnostics go the
+// other way — they are prefixed with the capability directory, because a reader
+// scanning them is looking for what authentication did, not for which of its
+// modules said so.
 func TestWhereAHostWritesThisModulesInputs(t *testing.T) {
 	if ConfigNamespace != ModuleName {
 		t.Errorf("the configuration namespace is %q while the module is %q, so a host writing "+

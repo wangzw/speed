@@ -15,7 +15,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/vislake/speed/pkg/pgpool/pgtest"
+	"github.com/vislake/speed/pkg/internal/pgpool/pgtest"
 )
 
 // The cases run the host as a real child process. What they have to prove is

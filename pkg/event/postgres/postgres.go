@@ -37,7 +37,7 @@ import (
 	"github.com/vislake/speed/pkg/core"
 	"github.com/vislake/speed/pkg/event"
 	"github.com/vislake/speed/pkg/event/internal/replica"
-	"github.com/vislake/speed/pkg/pgpool"
+	"github.com/vislake/speed/pkg/internal/pgpool"
 )
 
 const (

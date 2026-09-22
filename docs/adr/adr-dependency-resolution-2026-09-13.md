@@ -48,7 +48,7 @@
 
 ## 后果
 
-依赖方只 import 功能的接口包，实现由 import 决定，实现的第三方依赖不会传染给依赖方。
+依赖方只 import 功能的接口包，实现由 import 决定：实现的第三方依赖不进依赖方的 `go.mod`，`go.sum` 与实际下载则会经被 import 包的测试闭包带上它们，只有读整图的操作会看到全部实现所绑的库（[ADR-module-packaging-2026-09-22](adr-module-packaging-2026-09-22.md)）。
 
 `core` 不认识任何具体功能，新增功能不改 `core`。
 

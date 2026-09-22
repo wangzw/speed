@@ -15,7 +15,7 @@
 // none of them.
 //
 // This package does not decide what a caller may do. That is a permission
-// model's work, and it is a separate release unit.
+// model's work, and it is a separate capability.
 package tenant
 
 // ID is a tenant's immutable identifier.

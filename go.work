@@ -2,18 +2,5 @@ go 1.26.8
 
 use (
 	./examples/orders-host
-	./pkg/audit
-	./pkg/authn
-	./pkg/config
-	./pkg/core
-	./pkg/db
-	./pkg/event
-	./pkg/http
-	./pkg/kv
-	./pkg/log
-	./pkg/natstest
-	./pkg/pgpool
-	./pkg/redis
-	./pkg/settings
-	./pkg/tenant
+	./pkg
 )

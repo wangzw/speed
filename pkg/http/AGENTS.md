@@ -143,5 +143,5 @@ The tests bring up their own assemblies and ask for no service, no database and
 no environment: the Go toolchain is the whole of what they need installed.
 `pkg/http/stdmux` is a directory inside this module, so these commands cover
 both packages; the `GOWORK=off` legs of `make build` and `make tidy-check` are
-what catch a missing `replace` directive, since none of the `pkg/` modules has
-a released version to fall back on.
+what catch a missing `replace` directive, since the `pkg` module has no
+released version to fall back on.

@@ -32,7 +32,7 @@ const (
 	// implementations configured.
 	caseOneEngineConfigured = "one-engine-configured"
 	// caseBothEnginesConfigured configures both of them, which is not an
-	// assembly this release unit can serve.
+	// assembly this capability directory can serve.
 	caseBothEnginesConfigured = "both-engines-configured"
 	// caseNoEngineConfigured names no engine, while a dependant requires the
 	// capability.

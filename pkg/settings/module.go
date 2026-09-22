@@ -192,9 +192,9 @@ func (s *settingsStore) load(ctx context.Context) error {
 // A reader that is not there means the host never supplied one, which is the
 // host's omission rather than something to read as "nothing was configured".
 // The failure names this module, since a run can carry several modules each
-// wanting a reader. The name stands in for the release unit here as well: this
-// one registers from its own root package, so the two are the same string and
-// writing both would say it twice.
+// wanting a reader. The name stands in for the capability directory here as
+// well: this one registers from its own root package, so the two are the same
+// string and writing both would say it twice.
 func readerOf(reg *core.Registry) (config.Reader, error) {
 	reader, err := core.Resolve[config.Reader](reg)
 	if err != nil {

@@ -9,9 +9,9 @@
 - 把租户标识作为关联字段绑上 logger。
 - 定义取法的接缝。
 
-本发布单元由接口包与两个实现子包组成。`pkg/tenant` 根包定义功能接口、数据类型与模型约定，**自身不注册模块，也不导出模块名常量**；解析住在自己的子包并注册一个模块，名册住在自己的子包并注册一个模块，两者各自排他交付（[ADR-tenant-packaging-2026-09-21](../../adr/adr-tenant-packaging-2026-09-21.md)、[ADR-module-packaging-2026-09-14](../../adr/adr-module-packaging-2026-09-14.md)）。下文的"解析模块"与"名册模块"分别指这两个子包所注册的模块。
+本功能目录由接口包与两个实现子包组成。`pkg/tenant` 根包定义功能接口、数据类型与模型约定，**自身不注册模块，也不导出模块名常量**；解析住在自己的子包并注册一个模块，名册住在自己的子包并注册一个模块，两者各自排他交付（[ADR-tenant-packaging-2026-09-21](../../adr/adr-tenant-packaging-2026-09-21.md)、[ADR-module-packaging-2026-09-14](../../adr/adr-module-packaging-2026-09-14.md)）。下文的"解析模块"与"名册模块"分别指这两个子包所注册的模块。
 
-租户的认定、名册的维护与语句的过滤同属本发布单元，按租户取值的参数归[设置模块](design-settings.md)，按租户的授权判定归权限模型（[ADR-tenant-scope-2026-09-21](../../adr/adr-tenant-scope-2026-09-21.md)）。
+租户的认定、名册的维护与语句的过滤同属本功能目录，按租户取值的参数归[设置模块](design-settings.md)，按租户的授权判定归权限模型（[ADR-tenant-scope-2026-09-21](../../adr/adr-tenant-scope-2026-09-21.md)）。
 
 **根包不导出模块名常量**，判据与认证的同一条：导出它没有对应的登记，宿主拿一个无人登记的名字去纳入，得到的是一个不在可用集里的名字，而命令树对未登记名字的处置在配置模块的哨兵表里没有对应项（见 [config](design-config.md)）。
 
@@ -240,7 +240,7 @@ func CrossTenant(ctx context.Context) context.Context
 
 ## 依赖
 
-根包不 import 本仓的任何模块，接口面上只出现标准库与本包自己的类型。**根包不依赖 `pkg/db`**：模型约定是一个只有一项字段与一条标签的结构体，不引用数据库模块的任何类型，`gorm` 这个包名只出现在标签字符串里。这与认证接口包的自我约束同形、同源——一个只要租户解析、或者只要在自己的模型上带一列的应用，不该因此承受数据库依赖（[ADR-authn-packaging-2026-09-20](../../adr/adr-authn-packaging-2026-09-20.md)）。插件与迁移所需的一切留在名册子包里。
+根包不 import 本仓的任何模块，接口面上只出现标准库与本包自己的类型。**根包不依赖 `pkg/db`**：模型约定是一个只有一项字段与一条标签的结构体，不引用数据库模块的任何类型，`gorm` 这个包名只出现在标签字符串里。这与认证接口包的自我约束同形、同源——一个只要租户解析、或者只要在自己的模型上带一列的应用，不该因此承受数据库依赖（[ADR-authn-packaging-2026-09-20](../../adr/adr-authn-packaging-2026-09-20.md)）：它的 `go.mod` 不含数据库实现所绑的那串第三方库，`go.sum` 与实际下载则会经被 import 包的测试闭包带上它们，只有读整图的操作会看到全部实现所绑的库（[ADR-module-packaging-2026-09-22](../../adr/adr-module-packaging-2026-09-22.md)）。插件与迁移所需的一切留在名册子包里。
 
 解析子包 import 根包、`pkg/core`、`pkg/config`、`pkg/http` 与 `pkg/authn` 的根包。**指向认证功能标识的硬约束要写出 `(*authn.Gate)(nil)` 这个表达式，那个 import 因而不可避免**（[ADR-tenant-ordering-2026-09-21](../../adr/adr-tenant-ordering-2026-09-21.md)）。
 
@@ -252,7 +252,7 @@ func CrossTenant(ctx context.Context) context.Context
 
 **日志功能不构成依赖。** 租户标识作为关联字段绑上去用的是 `log.WithAttrs`，包级函数，不经注册表。
 
-方向满足架构不变量：本发布单元位于 `core`、`config`、`log`、`db`、`http` 与 `authn` 之上，不被其中任何一个 import。权限模型与按租户取值的模块位于本模块之上，它们取用标识而本模块不认识它们。
+方向满足架构不变量：本功能目录位于 `core`、`config`、`log`、`db`、`http` 与 `authn` 之上，不被其中任何一个 import。权限模型与按租户取值的模块位于本模块之上，它们取用标识而本模块不认识它们。
 
 ## UML 图
 

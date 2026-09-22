@@ -1,9 +1,9 @@
 // Package configreader builds the configuration reader a case hands a module
 // under test.
 //
-// It lives in the release unit's internal subtree because the gateway and the
-// static backend both need it, and a helper written in one package's tests is
-// out of reach of the other's.
+// It lives in the capability directory's internal subtree because the gateway
+// and the static backend both need it, and a helper written in one package's
+// tests is out of reach of the other's.
 package configreader
 
 import (

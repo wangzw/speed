@@ -28,7 +28,7 @@ Follows [Conventional Commits](https://www.conventionalcommits.org/); the conven
 
 - **Header** is required and must be a single line.
 - **Keep the header short — aim for 72 characters or less.** This is a guideline, not a hard limit: a header that needs a few more characters to stay clear is better than a truncated one. Do not sacrifice meaning for the count.
-- **Scope is required.** This monorepo holds Go modules and npm packages; without a scope there is no way to tell what a commit touched.
+- **Scope is required.** This monorepo holds Go code and npm packages; without a scope there is no way to tell what a commit touched.
 - **Description** uses the imperative mood, lowercase, no trailing period: "add subdomain tenant resolution", not "added ..." or "adds ...".
 - **Body** explains *why*, not *what* — the diff already shows what changed.
 - **Footer** carries breaking-change notices (`BREAKING CHANGE:`) and issue references (`Closes #123`).
@@ -50,9 +50,9 @@ Follows [Conventional Commits](https://www.conventionalcommits.org/); the conven
 
 ## Scopes
 
-### Go modules
+### Go packages under `pkg/`
 
-The scope of a Go module is its own directory name: `pkg/core` commits under `core`. The membership authority is the root `go.work` `use` block -- the same source the Makefile derives every module loop from -- so read it rather than a list here, which would go stale. A commit inside the earlier implementation under `go/` takes the directory name there the same way, even though `go.work` does not list it.
+The scope is the capability directory under `pkg/` the change belongs to: `pkg/core` commits under `core`, and `pkg/tenant/catalog` commits under `tenant` -- the capability directory, never a subpackage. A change inside `pkg/internal/` commits under the shared unit it belongs to: `pkg/internal/pgpool/pgtest` commits under `pgpool`, and `pkg/internal/natstest` under `natstest`. The membership authority is the set of those directories: read the directory rather than a list here, which would go stale. A commit inside the earlier implementation under `go/` takes the directory name there the same way, even though `go.work` does not list it.
 
 ### Frontend npm packages (`web/packages/<scope>/`)
 

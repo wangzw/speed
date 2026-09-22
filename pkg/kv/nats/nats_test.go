@@ -12,10 +12,10 @@ import (
 	"time"
 
 	"github.com/vislake/speed/pkg/core"
+	"github.com/vislake/speed/pkg/internal/natstest"
 	"github.com/vislake/speed/pkg/kv"
 	"github.com/vislake/speed/pkg/kv/internal/expiry"
 	"github.com/vislake/speed/pkg/kv/internal/kvsuite"
-	"github.com/vislake/speed/pkg/natstest"
 )
 
 // bucketName returns a name no earlier run can have used.

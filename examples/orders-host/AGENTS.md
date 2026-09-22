@@ -2,10 +2,11 @@
 
 A host that assembles every module of this repository into one running program:
 an HTTP entry point, the database engine, the authentication gateway with one
-credential backend, the tenant release unit — resolution and roster — the audit
-journal, the runtime settings surface, and a key-value and an event backend,
-together with two application modules of its own. It writes the command tree
-that says what each run may be, and lets that tree drive the lifecycle.
+credential backend, the tenant capability directory — resolution and roster —
+the audit journal, the runtime settings surface, and a key-value and an event
+backend, together with two application modules of its own. It writes the
+command tree that says what each run may be, and lets that tree drive the
+lifecycle.
 
 It assembles the whole set at once, and what it exists to show is that the set
 composes: that a setting a module declares is read back through three layers,
@@ -64,12 +65,12 @@ The things no module's own suite can hold:
   says which traffic is scoped.
 - **The background path states what it is doing.** `seed` runs outside any
   request, where there is no resolving layer to establish a tenant and the
-  writing side of the context is closed to everything but the release unit. It
-  crosses tenants and writes the tenant column itself, and it records that
-  crossing through the audit seam with the purpose stated — the seam exists for
-  exactly the decisions no capture path can see. The roster needs none of that:
-  its table does not embed the convention, so its statements are neither
-  conditioned nor refused.
+  writing side of the context is closed to everything but the capability
+  directory. It crosses tenants and writes the tenant column itself, and it
+  records that crossing through the audit seam with the purpose stated — the
+  seam exists for exactly the decisions no capture path can see. The roster
+  needs none of that: its table does not embed the convention, so its
+  statements are neither conditioned nor refused.
 - **A scoped table leads its primary key with the tenant column.** The
   migration does, and the comment there says why. This is not only a query plan:
   a unique constraint that does not lead with the tenant column lets the insert
@@ -143,9 +144,9 @@ settings:
   refresh-interval: 30s
 ```
 
-Each module hangs under its own release unit's heading — `authn.gate` beside
-`authn.static`, `tenant.resolve` beside `tenant.catalog`, `audit.journal` under
-`audit` — and none of them owns the heading itself.
+Each module hangs under its own capability directory's heading — `authn.gate`
+beside `authn.static`, `tenant.resolve` beside `tenant.catalog`,
+`audit.journal` under `audit` — and none of them owns the heading itself.
 
 Two things a run of this binary will not do on its own. It does not register any
 tenant: a host does that through the roster's write surface, and `seed` here is

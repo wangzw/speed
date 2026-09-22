@@ -25,7 +25,7 @@ same capability exclusively.
   why this package's interface exposes GORM
   ([`adr-module-packaging-2026-09-14.md`](../../docs/adr/adr-module-packaging-2026-09-14.md)),
   and where a driver is allowed to live
-  ([`adr-module-packaging-2026-09-13.md`](../../docs/adr/adr-module-packaging-2026-09-13.md)).
+  ([`adr-module-packaging-2026-09-22.md`](../../docs/adr/adr-module-packaging-2026-09-22.md)).
 - The API itself: the godoc in this package and in each subpackage. Read `Spec`'s
   field comments before adding an implementation.
 
@@ -41,7 +41,7 @@ must not cross, and how to run it.
   time — an implementation subpackage and the root package are one module, so
   both drivers are in one dependency list — and `TestRootPackageImportsNoDriver`
   in `deps_test.go` is the gate that stands in for it. The cost of having no
-  compiler behind this is recorded in `adr-module-packaging-2026-09-13`.
+  compiler behind this is recorded in `adr-module-packaging-2026-09-22`.
 - **A driver belongs to the subpackage that binds it.** The root package reaches
   an engine only through the `Spec.Dialector` an implementation hands it.
 - **The root package registers no module.** Each engine's subpackage does it in
@@ -133,6 +133,6 @@ database of its own per case. A machine without docker skips them, and under
 `CI` that skip becomes a failure: those cases hold the gate on the cross-process
 migration mutex, and a gate that silently skips where it is meant to run is not a
 gate. `internal/dbhost` is the test host the multi-process cases build and run;
-`pkg/pgpool/pgtest` is the container fixture, shared with the key-value and
+`pkg/internal/pgpool/pgtest` is the container fixture, shared with the key-value and
 event modules' postgres backends; `internal/dbsuite` holds the
 engine-neutral migration cases each engine's fixture is driven through.

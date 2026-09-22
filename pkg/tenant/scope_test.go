@@ -6,8 +6,8 @@ import (
 )
 
 // TestFromContextDoesNotFallBack records the half of the property a test can
-// reach. The other half — that nothing outside this release unit can write an
-// identifier — is enforced by the compiler, because the writing function lives
+// reach. The other half — that nothing outside this capability directory can
+// write an identifier — is enforced by the compiler, because the writing
 // in an internal package; a test cannot observe its absence.
 func TestFromContextDoesNotFallBack(t *testing.T) {
 	if id, ok := FromContext(context.Background()); ok {

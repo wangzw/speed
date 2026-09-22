@@ -46,11 +46,12 @@ type Event struct {
 	// capability's identifier as a string, and stays empty for events that are
 	// not tenant-scoped.
 	//
-	// It is a string rather than the tenant capability's own type because Go
-	// resolves dependencies per module: importing that module's interface
-	// package would put its whole dependency closure — the database, the HTTP
-	// entry point, their drivers — into every host that only wants to publish
-	// an event.
+	// It is a string rather than the tenant capability's own type because every
+	// publisher imports this package: naming that type here would make this
+	// package import that module's interface package, and that edge would sit in
+	// every publisher's closure. The cost is that edge — the bus reaching a
+	// concrete capability's interface — rather than a third-party stack, since
+	// that interface package imports the standard library alone.
 	TenantID string
 
 	// Payload carries the event data. Subscribers read it structurally, by
