@@ -10,6 +10,7 @@ import (
 
 	sqlitedriver "github.com/glebarez/sqlite"
 	"gorm.io/gorm"
+	"gorm.io/gorm/logger"
 
 	"github.com/vislake/speed/pkg/db"
 	"github.com/vislake/speed/pkg/tenant"
@@ -35,6 +36,26 @@ func rosterOver(t *testing.T, rows ...string) *roster {
 	return rosterOverDialect(t, "sqlite", rows...)
 }
 
+// openHandle opens the in-memory handle a case builds its roster over. The
+// driver's query log is silenced: a case that makes a read fail on purpose
+// asserts on the error that came back, and the driver's echo of that same
+// failure is output rather than a result.
+func openHandle(t *testing.T) *gorm.DB {
+	t.Helper()
+	handle, err := gorm.Open(
+		sqlitedriver.Open("file:"+t.Name()+"?mode=memory&cache=shared"),
+		&gorm.Config{Logger: logger.Default.LogMode(logger.Silent)})
+	if err != nil {
+		t.Fatalf("opening the handle: %v", err)
+	}
+	pool, err := handle.DB()
+	if err != nil {
+		t.Fatalf("reaching the handle's pool: %v", err)
+	}
+	t.Cleanup(func() { pool.Close() })
+	return handle
+}
+
 // rosterOverDialect is rosterOver with the dialect named, so that a case can
 // build the table from any dialect's migration rather than only the one this
 // fixture's handle speaks.
@@ -51,15 +72,7 @@ func rosterOver(t *testing.T, rows ...string) *roster {
 // already there and the case dies at the fixture.
 func rosterOverDialect(t *testing.T, dialect string, rows ...string) *roster {
 	t.Helper()
-	handle, err := gorm.Open(sqlitedriver.Open("file:"+t.Name()+"?mode=memory&cache=shared"), &gorm.Config{})
-	if err != nil {
-		t.Fatalf("opening the handle: %v", err)
-	}
-	pool, err := handle.DB()
-	if err != nil {
-		t.Fatalf("reaching the handle's pool: %v", err)
-	}
-	t.Cleanup(func() { pool.Close() })
+	handle := openHandle(t)
 
 	ddl, err := fs.ReadFile(migrationsFS, dialect+"/0001_tenants.sql")
 	if err != nil {
@@ -185,6 +198,234 @@ func TestReadLeavesThePreviousSnapshotInPlaceWhenItRefuses(t *testing.T) {
 	}
 	if _, ok := after.byAlias["acme"]; !ok {
 		t.Error("the previous snapshot no longer answers for the tenant it held")
+	}
+}
+
+// rosterWithoutTable builds a roster over a handle whose table was never
+// created. A deployment that never applied this module's migration reaches the
+// read with no table, which is the condition the load has to report rather than
+// read as an empty roster.
+func rosterWithoutTable(t *testing.T) *roster {
+	t.Helper()
+	return newRoster(settings{}, databaseOver{handle: openHandle(t)})
+}
+
+// requireRosterMissingOnLoad holds one load's failure to the sentinel and the
+// table name the design promises it carries.
+func requireRosterMissingOnLoad(t *testing.T, r *roster) {
+	t.Helper()
+	err := r.load(context.Background())
+	if err == nil {
+		t.Fatal("the load returned nil for a table that is not there, so the startup would continue " +
+			"against an empty roster")
+	}
+	if !errors.Is(err, tenant.ErrRosterMissing) {
+		t.Fatalf("the failure is %v, want it to carry ErrRosterMissing", err)
+	}
+	if text := err.Error(); !strings.Contains(text, tableName) {
+		t.Errorf("the failure does not name the table (%q): %v", tableName, err)
+	}
+}
+
+// TestLoadEndsTheStartupWhenTheTableIsNotThere holds the sentinel the design
+// names for a table that is not there: ErrRosterMissing is reported when the
+// snapshot is loaded, ends the startup, and names the table. It is the failure
+// with no other repair than applying the migration set, so a load that reported
+// it as anything else — or as nothing at all — would leave a deployment serving
+// an empty roster while telling the operator to look elsewhere.
+//
+// Both routes to a missing table are covered: one that was never created, and
+// one dropped from under a roster that has already loaded.
+func TestLoadEndsTheStartupWhenTheTableIsNotThere(t *testing.T) {
+	t.Run("never created", func(t *testing.T) {
+		requireRosterMissingOnLoad(t, rosterWithoutTable(t))
+	})
+	t.Run("dropped after a load", func(t *testing.T) {
+		r := rosterOver(t, insert("acme", "acme"))
+		// The startup account the successful load writes is not what this case
+		// is about, so it is read into a handler that keeps it rather than left
+		// on the process's own logger.
+		captureLogs(r)
+		if err := r.load(context.Background()); err != nil {
+			t.Fatalf("loading a conforming roster: %v", err)
+		}
+		if err := r.handle.Exec("DROP TABLE " + tableName).Error; err != nil {
+			t.Fatalf("dropping the table: %v", err)
+		}
+		requireRosterMissingOnLoad(t, r)
+	})
+}
+
+// requireUnreadRefusal holds one read method of a roster that has not been read
+// to a refusal rather than the empty answer. The empty answer — a zero tenant
+// with found false and no error — is what a caller reads as "no tenant carries
+// this", so a method that returned it would turn every request into a 404 for a
+// roster that has not yet looked at the table.
+func requireUnreadRefusal(t *testing.T, method string, got tenant.Tenant, found bool, err error) {
+	t.Helper()
+	if err == nil {
+		t.Fatalf("%s answered a roster that has not been read: %+v (found=%v), want a failure so that "+
+			"a caller cannot read an empty answer as a tenant that does not exist", method, got, found)
+	}
+	if found || got != (tenant.Tenant{}) {
+		t.Errorf("%s reported the tenant %+v (found=%v) on a roster that has not been read",
+			method, got, found)
+	}
+	// A caller decides "no such tenant" from ErrInvalidTenant on the paths that
+	// report it, so the refusal must not be that failure.
+	if errors.Is(err, tenant.ErrInvalidTenant) {
+		t.Errorf("the failure %s returns carries ErrInvalidTenant, which a caller reads as a tenant "+
+			"that is not there: %v", method, err)
+	}
+}
+
+// TestAnUnreadRosterRefusesTheReads holds the whole read face to a refusal
+// before the first read has published a snapshot. A consumer that reached the
+// roster before its load — an ordering the module cannot rule out for the host
+// — must not be answered with the empty result, because the empty result is
+// indistinguishable from the roster saying a tenant does not exist.
+//
+// All three read methods go through the same refusal, so all three are held,
+// each to the same two things: an error rather than the empty answer, and one
+// that is not the sentinel a caller reads as "no such tenant".
+func TestAnUnreadRosterRefusesTheReads(t *testing.T) {
+	r := rosterOver(t)
+	ctx := context.Background()
+
+	got, found, err := r.Get(ctx, "acme")
+	requireUnreadRefusal(t, "Get", got, found, err)
+
+	byAlias, found, err := r.ByAlias(ctx, "acme")
+	requireUnreadRefusal(t, "ByAlias", byAlias, found, err)
+
+	listed, err := r.List(ctx)
+	if err == nil {
+		t.Fatalf("List answered a roster that has not been read with %d tenants, want a failure",
+			len(listed))
+	}
+	if len(listed) != 0 {
+		t.Errorf("List returned %d tenants on a roster that has not been read", len(listed))
+	}
+	if errors.Is(err, tenant.ErrInvalidTenant) {
+		t.Errorf("the failure List returns carries ErrInvalidTenant, which a caller reads as a "+
+			"tenant that is not there: %v", err)
+	}
+}
+
+// identifiersOf joins a listing's identifiers in the order the listing returned
+// them, so that a case can state the order it wants as one value.
+func identifiersOf(list []tenant.Tenant) string {
+	ids := make([]string, len(list))
+	for i, entry := range list {
+		ids[i] = string(entry.ID)
+	}
+	return strings.Join(ids, ",")
+}
+
+// TestListIsOrderedByIdentifierAndIsACopy holds the two things List promises
+// about what it hands out.
+//
+// The order is the module's, not the table's: the snapshot is sorted by
+// identifier as it is built, so a listing does not depend on the order the rows
+// happen to come back in. The rows here are written in an order of their own so
+// that a listing which merely echoed the table's order would be told apart from
+// one ordered by identifier. What is read is the identifier order that comes
+// out, which is this promise's own expression: it is what a caller that wants a
+// stable enumeration relies on, and comparing the tenants as a bag of values
+// would hold nothing about it.
+//
+// The slice is a copy: a caller sorting or trimming what it was handed must not
+// disturb what the next caller sees. Mutating the returned slice and listing
+// again is what holds that half.
+func TestListIsOrderedByIdentifierAndIsACopy(t *testing.T) {
+	r := rosterOver(t,
+		insert("carol", "carol"),
+		insert("alice", "alice"),
+		insert("bob", "bob"),
+	)
+	ctx := context.Background()
+	if err := r.read(ctx); err != nil {
+		t.Fatalf("reading a conforming roster: %v", err)
+	}
+
+	got, err := r.List(ctx)
+	if err != nil {
+		t.Fatalf("listing the roster: %v", err)
+	}
+	if held := identifiersOf(got); held != "alice,bob,carol" {
+		t.Errorf("List returned the identifiers %q, want them ordered by identifier %q",
+			held, "alice,bob,carol")
+	}
+
+	// A caller is free to reorder or replace what it was handed.
+	if len(got) > 0 {
+		got[0] = tenant.Tenant{ID: "zzz", Alias: "zzz", Status: tenant.StatusActive}
+	}
+	again, err := r.List(ctx)
+	if err != nil {
+		t.Fatalf("listing the roster a second time: %v", err)
+	}
+	if held := identifiersOf(again); held != "alice,bob,carol" {
+		t.Errorf("a caller's change to the slice it was handed changed the next list: %q, want %q",
+			held, "alice,bob,carol")
+	}
+}
+
+// TestListOnALoadedTableWithNoTenants is the third answer a listing has, and
+// the one a caller cannot get from the other two: a table that exists and holds
+// nobody lists as nothing, with no failure, where a roster that has not been
+// read refuses and one with tenants lists them. An operator's first run against
+// a freshly migrated database is this shape, and a listing that failed there
+// would report a fault where there is none.
+func TestListOnALoadedTableWithNoTenants(t *testing.T) {
+	r := rosterOver(t)
+	ctx := context.Background()
+	if err := r.read(ctx); err != nil {
+		t.Fatalf("reading the table the migration makes: %v", err)
+	}
+
+	got, err := r.List(ctx)
+	if err != nil {
+		t.Fatalf("listing a roster whose table holds no tenant: %v", err)
+	}
+	if len(got) != 0 {
+		t.Errorf("List returned %d tenants, want none: %v", len(got), got)
+	}
+}
+
+// TestLookupsMissByAnsweringRatherThanFailing is the other side of the unread
+// refusal: once the roster has been read, a name no row carries is an answer —
+// no such tenant — and not a failure. A caller reads the two differently: a
+// failure says the roster has not looked, a miss says it looked and the tenant
+// is not there, and only the second is a fact about the table. Both lookups are
+// held, because the resolving layer makes the alias lookup on every request and
+// a miss there is what answers a request for a tenant that does not exist.
+func TestLookupsMissByAnsweringRatherThanFailing(t *testing.T) {
+	r := rosterOver(t, insert("acme", "acme"))
+	ctx := context.Background()
+	if err := r.read(ctx); err != nil {
+		t.Fatalf("reading the roster: %v", err)
+	}
+
+	for _, lookup := range []struct {
+		name string
+		call func() (tenant.Tenant, bool, error)
+	}{
+		{"by identifier", func() (tenant.Tenant, bool, error) { return r.Get(ctx, "absent") }},
+		{"by alias", func() (tenant.Tenant, bool, error) { return r.ByAlias(ctx, "absent") }},
+	} {
+		t.Run(lookup.name, func(t *testing.T) {
+			found, ok, err := lookup.call()
+			if err != nil {
+				t.Fatalf("the lookup failed for a name no tenant carries: %v", err)
+			}
+			if ok {
+				t.Error("the lookup reported a tenant for a name no row carries")
+			}
+			if found.ID != "" || found.Alias != "" {
+				t.Errorf("the lookup returned %+v for a name no row carries, want the zero tenant", found)
+			}
+		})
 	}
 }
 

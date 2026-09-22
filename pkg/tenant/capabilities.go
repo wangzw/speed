@@ -73,6 +73,6 @@ type Catalog interface {
 	// SetStatus changes one tenant's state. Disabling goes through here and
 	// only here; there is no delete.
 	SetStatus(ctx context.Context, id ID, s Status) error
-	// List returns every tenant the roster holds.
+	// List returns every tenant the roster holds, ordered by identifier.
 	List(ctx context.Context) ([]Tenant, error)
 }
