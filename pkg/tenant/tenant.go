@@ -18,6 +18,11 @@
 // model's work, and it is a separate capability.
 package tenant
 
+import (
+	"strings"
+	"unicode"
+)
+
 // ID is a tenant's immutable identifier.
 //
 // It is what the tenant column of a scoped table holds, and what the logs, the
@@ -29,6 +34,18 @@ package tenant
 // A host migrating from an existing system carries its own numbering across,
 // and a second scheme minted alongside it would sit there indefinitely.
 type ID string
+
+// IsIdentifier reports whether s is a value the identifier's domain admits:
+// non-empty, and free of blanks and control characters anywhere in it.
+//
+// The domain is part of this package's contract face. A module that layers a
+// value by an identifier restates the rule rather than importing it, because
+// the dependency between that module and this one is deliberately absent.
+func IsIdentifier(s string) bool {
+	return s != "" && strings.IndexFunc(s, func(r rune) bool {
+		return unicode.IsSpace(r) || unicode.IsControl(r)
+	}) < 0
+}
 
 // Status is a tenant's state. The set of values is closed: adding one changes
 // every place that branches on it, and those places live in two subpackages.

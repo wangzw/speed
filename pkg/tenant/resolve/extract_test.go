@@ -4,6 +4,7 @@ import (
 	"errors"
 	nethttp "net/http"
 	"net/http/httptest"
+	"strings"
 	"testing"
 
 	"github.com/vislake/speed/pkg/tenant"
@@ -111,13 +112,45 @@ func (s stub) Extract(*nethttp.Request) (string, bool) { return s.name, s.name !
 
 var _ tenant.Extractor = stub{}
 
+// TestRegisterOutsideTheWindowPanics pins the shut side of the state
+// transition and the message a caller acts on: the window runs from this
+// module's Migrate callback to its Start callback, and the fixing action is to
+// register from the registrant's own Init callback. Registration before that
+// window opened is refused rather than dropped.
 func TestRegisterOutsideTheWindowPanics(t *testing.T) {
-	defer func() {
-		if recover() == nil {
-			t.Fatal("registering before the window opened was accepted")
+	text := wantPanicMessage(t, func() {
+		newResolver(settings{}, nil).Register("late", stub{})
+	})
+	for _, want := range []struct{ fragment, why string }{
+		{"Migrate callback", "where the window that accepts registrations opens"},
+		{"Start callback", "where it closes"},
+		{"Init callback", "the fixing action the message names"},
+	} {
+		if !strings.Contains(text, want.fragment) {
+			t.Fatalf("the panic text does not name %s (%q): %s", want.why, want.fragment, text)
 		}
+	}
+}
+
+// wantPanicMessage runs f, requires it to panic, and returns the panic's text.
+func wantPanicMessage(t *testing.T, f func()) string {
+	t.Helper()
+	var text string
+	func() {
+		defer func() {
+			raised := recover()
+			if raised == nil {
+				t.Fatal("the call did not panic")
+			}
+			s, ok := raised.(string)
+			if !ok {
+				t.Fatalf("the panic carried %T, want a message string", raised)
+			}
+			text = s
+		}()
+		f()
 	}()
-	newResolver(settings{}, nil).Register("late", stub{})
+	return text
 }
 
 func TestSealRefusesADuplicateName(t *testing.T) {

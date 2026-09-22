@@ -116,13 +116,14 @@ func Module() core.Module {
 			return newResolver(set, catalog), nil
 		},
 
-		// The registration window is opened here and shut in Start, which
-		// leaves it open for exactly the Init stage: stages advance one at a
-		// time, so this callback runs before any module's Init and the Start
-		// callback runs after every one of them. Neither end could be this
-		// module's own Init — a module registering an extractor declares no
-		// dependency on this one, so it may legally register from an Init
-		// that runs first.
+		// The window is opened in Migrate and shut in Start, the two stage
+		// slots the design's stage table gives it. The window that leaves open
+		// contains the Init stage whole and reaches beyond it at both ends,
+		// because a stage advances one module at a time: this module's Migrate
+		// callback runs before the assembly enters Init, and its Start callback
+		// runs once Init has ended. Neither end could be this module's own Init
+		// — a module registering an extractor declares no dependency on this
+		// one, so it may legally register from an Init that runs first.
 		//
 		// A drive stopping exactly at Migrate opens the window with nobody to
 		// shut it. That run registers nothing and serves nothing, and the way
@@ -172,8 +173,9 @@ type resolver struct {
 	roster   tenant.Catalog
 
 	// mu guards the registration window and what is registered through it.
-	// Both are touched from other modules' Init callbacks, and a module is
-	// free to register from a goroutine of its own.
+	// Both are written from other modules' callbacks, which may register
+	// from a goroutine of their own, so the order of the writes is not that
+	// of the drive.
 	mu         sync.Mutex
 	openWindow bool
 	extractors map[string]tenant.Extractor
@@ -206,21 +208,23 @@ func (r *resolver) open() {
 
 // Register implements tenant.Resolution.
 //
-// Registration holds during Init alone. A call outside that window is a mistake
-// at the call site rather than a condition to report, and it panics, as the
-// entry point's own registration surface does.
+// Registration is accepted from this module's Migrate callback until its Start
+// callback, a window that contains the whole Init stage. A call outside that
+// window is a mistake at the call site rather than a condition to report, and
+// it panics, as the entry point's own registration surface does.
 //
 // A malformed registration and a duplicate name are recorded rather than
-// raised: registrations arrive from other modules' Init callbacks, where there
-// is no caller to return an error to, and the window has to stay open for the
-// rest of the stage. seal reports them once it closes.
+// raised: registrations arrive from other modules' callbacks while the window
+// is open, where there is no caller to return an error to, and the window has
+// to stay open for the rest of the stage. seal reports them once it closes.
 func (r *resolver) Register(name string, e tenant.Extractor) {
 	r.mu.Lock()
 	defer r.mu.Unlock()
 	if !r.openWindow {
-		panic(ModuleName + ": an extractor was registered outside the Init window. " +
-			"Registration holds while the Init stage runs, and the window is opened in " +
-			"Migrate and shut in Start")
+		panic(ModuleName + ": an extractor was registered outside the registration window. " +
+			"The surface accepts registrations from this module's Migrate callback until its " +
+			"Start callback, a window that contains the whole Init stage. Register the " +
+			"extractor from the module's Init callback")
 	}
 	if err := checkExtractorName(name); err != nil {
 		r.faults = append(r.faults, err)
@@ -267,10 +271,10 @@ func (r *resolver) wire(reg *core.Registry) error {
 //
 // They go through it rather than around it, so that a module registering its
 // own is doing exactly what this module does and no more. They are registered
-// here, in Init, because that is the stage the window is open for; a host that
-// configures one of them by name is configuring something this module put
-// there, and a host that configures a name nobody registered is told so at
-// seal.
+// here, in this module's Init callback, where every instance already exists and
+// the window is still open; a host that configures one of them by name is
+// configuring something this module put there, and a host that configures a
+// name nobody registered is told so at seal.
 func (r *resolver) registerBuiltins() {
 	r.Register(HeaderExtractor, headerExtractor{name: r.settings.header})
 	r.Register(SubdomainExtractor, subdomainExtractor{index: r.settings.subdomain})

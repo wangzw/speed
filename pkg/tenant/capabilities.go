@@ -26,14 +26,16 @@ type Extractor interface {
 // Resolution is the capability the resolving subpackage delivers, and the
 // surface an extractor is registered on.
 //
-// It is taken up with core.Resolve[tenant.Resolution](reg) in the registrant's
-// own Init, which is the only window in which registration holds. A call
-// outside that window is a mistake at the call site rather than a condition to
-// report, and it panics, as the entry point's own registration surface does.
+// It is taken up with core.Resolve[tenant.Resolution](reg) from a registrant's
+// own Init callback, and registration is accepted for a window that contains
+// the whole Init stage: it opens in this module's Migrate callback and closes
+// in its Start callback. A call outside that window is a mistake at the call
+// site rather than a condition to report, and it panics, as the entry point's
+// own registration surface does.
 //
-// Registration holds for the Init stage rather than for this module's own Init
-// callback: a module registering an extractor declares no dependency on this
-// one, so the two may run in either order.
+// The window is wider than this module's own Init callback for a reason: a
+// module registering an extractor declares no dependency on this one, so the
+// two may run in either order.
 type Resolution interface {
 	// Register declares an extractor under a name the configuration selects
 	// it by. The name is non-empty and free of blanks, and two registrations

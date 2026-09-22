@@ -11,6 +11,7 @@ import (
 	jsonformat "github.com/vislake/speed/pkg/config/format/json"
 	filesource "github.com/vislake/speed/pkg/config/source/file"
 	"github.com/vislake/speed/pkg/core"
+	"github.com/vislake/speed/pkg/tenant"
 )
 
 // readThrough loads a JSON document through the real configuration path and
@@ -154,5 +155,58 @@ func TestPrepareTellsTheTwoAbsencesApart(t *testing.T) {
 	}
 	if stance != (core.Enablement{}) {
 		t.Fatalf("a failed prepare carried the stance %+v, want none", stance)
+	}
+}
+
+// TestPrepareFailsOnAnEndpointNamedTwice pins that the endpoint list is a set.
+// The list is this module's own input, and the entry point's surface takes an
+// endpoint by name without deduplicating, so a name written twice registers
+// the resolution layer on that endpoint twice: the roster lookup and the
+// identifier's binding to the logger would each run twice per request, and
+// nothing would say the configuration was wrong. Other modules that read a
+// listening-endpoint list handle a repeat differently: pkg/ratelimit and
+// pkg/authn/gate refuse it at startup, pkg/observability/otel drops it and
+// writes a line saying so, and pkg/audit/journal validates nothing and carries
+// the list through, dropping the repeat in its unique. This module refuses it
+// at startup.
+func TestPrepareFailsOnAnEndpointNamedTwice(t *testing.T) {
+	got, err := prepare(readThrough(t, `{
+		"tenant": {"resolve": {"endpoints": ["public", "public"], "extractor": "header"}}
+	}`))
+	if err == nil {
+		t.Fatalf("prepare over an endpoint list naming public twice = %+v, want a startup failure", got)
+	}
+	if got != (core.Enablement{}) {
+		t.Fatalf("a failed prepare carried the stance %+v, want none", got)
+	}
+	if !errors.Is(err, tenant.ErrDuplicateEndpoint) {
+		t.Fatalf("the failure is not this module's duplicate-endpoint sentinel: %v", err)
+	}
+	if !strings.Contains(err.Error(), `"public"`) {
+		t.Fatalf("the failure does not name the endpoint that is repeated: %v", err)
+	}
+	if !strings.Contains(err.Error(), ConfigNamespace+"."+endpointsItem) {
+		t.Fatalf("the failure does not name the key the repeat was written in: %v", err)
+	}
+	// The namespace appears once, as the prefix of the item path. Writing it
+	// again ahead of the path spells "tenant.resolve: tenant.resolve.endpoints",
+	// and the second copy says nothing the path does not already carry.
+	if n := strings.Count(err.Error(), ConfigNamespace); n != 1 {
+		t.Fatalf("the failure names %s %d times, want once: %v", ConfigNamespace, n, err)
+	}
+}
+
+// TestPrepareAcceptsEachEndpointOnce is the other half of the rule above: a
+// list of distinct names is what this module is for, and the duplicate check
+// must not refuse the configuration it accepts the single entry of.
+func TestPrepareAcceptsEachEndpointOnce(t *testing.T) {
+	got, err := prepare(readThrough(t, `{
+		"tenant": {"resolve": {"endpoints": ["public", "admin"], "extractor": "header"}}
+	}`))
+	if err != nil {
+		t.Fatalf("prepare over two distinct endpoints: %v", err)
+	}
+	if got.State != core.StateEnabled {
+		t.Fatalf("the stance is %v, want StateEnabled", got.State)
 	}
 }

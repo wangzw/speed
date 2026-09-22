@@ -5,6 +5,7 @@ import (
 
 	"github.com/vislake/speed/pkg/config"
 	"github.com/vislake/speed/pkg/core"
+	"github.com/vislake/speed/pkg/tenant"
 )
 
 // The keys this module accepts, relative to its namespace.
@@ -83,6 +84,23 @@ func (c moduleConfig) resolve() (settings, error) {
 	if c.PathIndex < 0 {
 		return settings{}, fmt.Errorf("%s: %s must not be negative, got %d",
 			ConfigNamespace, pathIndexItem, c.PathIndex)
+	}
+	// The endpoint list is a set. The entry point's surface takes an endpoint
+	// by name and appends the layer to whatever is already there, so a name
+	// written twice would register this module's layer on that endpoint a
+	// second time: the roster lookup and the identifier's binding to the
+	// logger would each run twice per request, and the second registration
+	// buys nothing. That is a mistake to report rather than a repeat to drop
+	// quietly.
+	seen := make(map[string]struct{}, len(c.Endpoints))
+	for _, name := range c.Endpoints {
+		if _, twice := seen[name]; twice {
+			return settings{}, fmt.Errorf("%s.%s names the endpoint %q twice, which would "+
+				"register the tenant resolution layer on it twice and run the roster lookup "+
+				"and the identifier binding twice for every request it carries: %w",
+				ConfigNamespace, endpointsItem, name, tenant.ErrDuplicateEndpoint)
+		}
+		seen[name] = struct{}{}
 	}
 	return settings{
 		endpoints: c.Endpoints,

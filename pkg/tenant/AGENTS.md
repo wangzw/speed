@@ -66,6 +66,24 @@ here must not cross, and how to run it.
   module registering an extractor declares no dependency on this one, so it may
   legally register from an `Init` that runs first. Opening it in `Init` would
   turn a legal registration into a panic.
+- **The endpoint list is a set, judged at startup.** The entry point's surface
+  takes an endpoint by name and appends the layer without deduplicating, so a
+  name written twice would put the resolution layer on that endpoint twice and
+  run the roster lookup and the identifier binding twice per request. A repeat
+  is refused in `moduleConfig.resolve`, naming the endpoint, rather than
+  dropped in passing.
+- **The identifier's value domain is stated once here and restated by its
+  consumers.** `IsIdentifier` in this package is the module's one statement of
+  the rule — non-empty, free of blanks and control characters — and the roster's
+  field check (`checkField`) calls it. A module that layers a value by an
+  identifier restates the rule rather than importing it, because the dependency
+  between it and this module is deliberately absent; `pkg/settings`'s
+  `ForTenant` is the one that exists. Two statements drift, and the drift is not
+  quiet: the rate-limit layer hands `ForTenant` the identifier it read out of
+  the request context, so a consumer-side tightening turns every request of an
+  accepted tenant into a panic the entry module answers with a 500.
+  `pkg/settings/settings_test.go` drives one table of identifier shapes through
+  both predicates, so a divergence fails there.
 
 ## Shape of a scoped model
 
@@ -119,4 +137,11 @@ go -C pkg/tenant test -race ./...
 The tests bring up their own in-memory database and ask for no service and no
 environment. `pkg/tenant/catalog/plugin_test.go` is where the filter's four
 answers are pinned; `pkg/tenant/resolve/extract_test.go` is where the
-registration window's behaviour under a duplicate or a late registration is.
+registration window's behaviour under a duplicate or a late registration is;
+`pkg/tenant/resolve/config_test.go` is where the judgement over this module's
+own configuration is pinned — a missing key, an empty list or name, and an
+endpoint named twice; `pkg/tenant/catalog/roster_test.go` is where the
+identifier's value domain is refused on the read path. The comparison against
+the settings module's restatement of it needs both modules' predicates at once,
+so it lives in that module's own external test package,
+`pkg/settings/settings_test.go`.

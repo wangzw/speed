@@ -45,7 +45,15 @@ here must not cross, and how to run it.
   one — a call site that passes no layer at all still compiles. The empty tenant
   column is storage's spelling of the global row and stays storage's: `tenantOf`
   is the single crossing between the interface and the column, and a second
-  crossing is a second way for "no tenant" to come to mean "global".
+  crossing is a second way for "no tenant" to come to mean "global". That value
+  domain is the tenant directory's, restated here rather than imported — this
+  module's code declares no dependency on `pkg/tenant` — so the two statements
+  are held in step by a shared table driven through both predicates in
+  `pkg/settings/settings_test.go`, this module's external test package, where
+  importing the tenant module's `IsIdentifier` is the direction the dependency
+  rules allow. A divergence is not quiet: a consumer hands `ForTenant` the
+  identifier it read out of the request context, and one outside the domain
+  panics into the entry module's recovery layer.
 - **The key rule is a second implementation of configuration's, and it has to
   stay one.** `keys.go` derives a key path by the same rules `pkg/config` uses
   — the `config` tag, then the `json` tag, then the field name in lower kebab

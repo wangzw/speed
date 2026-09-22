@@ -259,6 +259,8 @@ type Change struct {
 
 **不依赖租户模块。** 租户标识是字符串（[ADR-settings-scope-2026-09-21](../../adr/adr-settings-scope-2026-09-21.md)）；设置的表承载全局行，不内嵌受租户约束的模型约定，不依赖名册与隔离插件（[ADR-settings-precedence-2026-09-21](../../adr/adr-settings-precedence-2026-09-21.md)）。
 
+**`ForTenant` 的取值域是租户标识的取值域，本模块复述了它**：判据与名册对标识的要求同一条——非空，且不含空白与控制字符（见 [tenant](design-tenant.md)）。复述与本模块不 import 租户模块两件事并存，两处是否仍是同一条因而不由本模块独自保证：本模块的测试包 `pkg/settings/settings_test.go` 里，`TestForTenantAgreesWithTheTenantIdentifierDomain` 拿同一张标识形状表同时驱动本模块的 `ForTenant` 与租户模块根包的 `IsIdentifier`。**比对落在本模块的测试面**：`IsIdentifier` 由测试包 import，而测试包的 import 不进产品的 import 闭包，本模块的接口包因而不接上租户模块。这一处比对不是可有可无的：按租户取值的模块把从请求上下文读到的标识原样交给 `ForTenant`，落在取值域之外时它当场 panic，而那个 panic 由入口模块的兜底层收成 500——名册已经收下的标识，设置一侧收紧一格就答不出来。
+
 方向满足架构不变量：本功能目录位于 `core`、`config`、`log`、`db` 与 `event` 之上，不被其中任何一个 import。按租户取值并消费设置的模块（限流、通知）位于本模块之上，它们取用 `Store` 而本模块不认识它们。
 
 ## UML 图

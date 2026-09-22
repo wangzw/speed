@@ -5,11 +5,9 @@ import (
 	"errors"
 	"fmt"
 	"log/slog"
-	"strings"
 	"sync"
 	"sync/atomic"
 	"time"
-	"unicode"
 
 	"gorm.io/gorm"
 	"gorm.io/gorm/clause"
@@ -330,13 +328,15 @@ func checkTenant(t tenant.Tenant) error {
 // them. An identifier ends up in log lines, diagnostics and error text, where a
 // newline splits one record into two; an alias arrives from a subdomain label,
 // a path segment or a header, and none of those can carry a blank.
+//
+// The domain itself is tenant.IsIdentifier, so this module states the rule
+// once. The empty case is judged first anyway, because the two failures have
+// different fixes and the message says which one the field carried.
 func checkField(what, value string) error {
 	if value == "" {
 		return fmt.Errorf("%w: the %s is empty", tenant.ErrInvalidTenant, what)
 	}
-	if strings.IndexFunc(value, func(r rune) bool {
-		return unicode.IsSpace(r) || unicode.IsControl(r)
-	}) >= 0 {
+	if !tenant.IsIdentifier(value) {
 		return fmt.Errorf("%w: the %s carries a blank or a control character",
 			tenant.ErrInvalidTenant, what)
 	}

@@ -31,6 +31,12 @@ var (
 	// name, or to declare that endpoint in the entry point's configuration.
 	ErrUnknownEndpoint = errors.New("tenant: the endpoint list names an endpoint that does not exist")
 
+	// ErrDuplicateEndpoint reports that the configured endpoint list names
+	// one endpoint twice. The list is a set — a repeated entry registers the
+	// resolution layer on that endpoint a second time — so the fix is to
+	// drop the repeat. The message names the endpoint.
+	ErrDuplicateEndpoint = errors.New("tenant: the endpoint list names an endpoint twice")
+
 	// ErrNoExtractor reports that the configured extractor name matches no
 	// registration by the time the window closes. The fix is to correct the
 	// name, or to register an extractor under it.
