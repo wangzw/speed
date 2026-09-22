@@ -234,6 +234,106 @@ func TestTheLayerRecordsAPanicAndLetsItThrough(t *testing.T) {
 	}
 }
 
+// TestTheLayerReportsAPanicAsAnInternalErrorOutcome pins what the histogram
+// says about a request the handler abandoned.
+//
+// The recorder's status is untouched when nothing was written, so reporting it
+// reports the 200 it started from — putting every panicking request into the
+// success bucket, which is the one place an operator most needs it not to be.
+// The response the caller ends up with is the entry module's, whose recovery
+// layer answers a panicking handler with an internal error.
+func TestTheLayerReportsAPanicAsAnInternalErrorOutcome(t *testing.T) {
+	p, _, reader := layerUnderTest(t)
+	handler := p.instrument("api")(nethttp.HandlerFunc(func(nethttp.ResponseWriter, *nethttp.Request) {
+		panic("handler gave up")
+	}))
+
+	func() {
+		defer func() { _ = recover() }()
+		handler.ServeHTTP(httptest.NewRecorder(), httptest.NewRequest(nethttp.MethodGet, "http://example.test/x", nil))
+	}()
+
+	point := durationPoint(t, reader)
+	if got := attributeOf(t, point.Attributes, "http.response.status_code"); got != "500" {
+		t.Errorf("a panicking request is recorded as %q, want the internal error the caller is left "+
+			"with", got)
+	}
+}
+
+// TestTheLayerFoldsTheMethodInTheSpanNameToo pins that the method dimension is
+// closed in both signals. The histogram folds anything outside the standard set
+// precisely because it is unbounded otherwise, and a span name is indexed by a
+// backend just as a dimension is; leaving the span out of that would move the
+// cardinality from the signal that was guarded to the one that was not.
+func TestTheLayerFoldsTheMethodInTheSpanNameToo(t *testing.T) {
+	p, rec, _ := layerUnderTest(t)
+	handler := p.instrument("api")(nethttp.HandlerFunc(func(nethttp.ResponseWriter, *nethttp.Request) {}))
+	handler.ServeHTTP(httptest.NewRecorder(), httptest.NewRequest("PURGE", "http://example.test/x", nil))
+
+	spans := rec.recorded()
+	if len(spans) != 1 {
+		t.Fatalf("the layer ended %d spans, want 1", len(spans))
+	}
+	if got, want := spans[0].Name(), "api "+otherMethod; got != want {
+		t.Errorf("the span is named %q, want %q: an unfolded method would let a caller grow the span "+
+			"name one verb at a time", got, want)
+	}
+}
+
+// TestTheLayerKeepsTheFirstStatusWritten pins which WriteHeader counts. The
+// server ignores a second one and answers with the first, so a recorder that
+// took the last would report a status no caller ever saw.
+func TestTheLayerKeepsTheFirstStatusWritten(t *testing.T) {
+	p, _, reader := layerUnderTest(t)
+	handler := p.instrument("api")(nethttp.HandlerFunc(func(w nethttp.ResponseWriter, _ *nethttp.Request) {
+		w.WriteHeader(nethttp.StatusOK)
+		w.WriteHeader(nethttp.StatusInternalServerError)
+	}))
+	handler.ServeHTTP(httptest.NewRecorder(), httptest.NewRequest(nethttp.MethodGet, "http://example.test/x", nil))
+
+	point := durationPoint(t, reader)
+	if got := attributeOf(t, point.Attributes, "http.response.status_code"); got != "200" {
+		t.Errorf("the status attribute is %q, want the first code written, which is the one the caller "+
+			"received", got)
+	}
+}
+
+// TestTheLayerForwardsTheOptionalInterfaces pins the two the standard library
+// names. A handler that type-asserts the writer makes the assertion against
+// this layer, never against the writer underneath, so without the forwarding
+// its streaming branch is skipped and the endpoint degrades with nothing said.
+func TestTheLayerForwardsTheOptionalInterfaces(t *testing.T) {
+	p, _, _ := layerUnderTest(t)
+	var flushed bool
+	sentinel := &flushRecorder{header: nethttp.Header{}, flushes: &flushed}
+	handler := p.instrument("api")(nethttp.HandlerFunc(func(w nethttp.ResponseWriter, _ *nethttp.Request) {
+		f, ok := w.(nethttp.Flusher)
+		if !ok {
+			t.Error("the writer does not satisfy http.Flusher, so a streaming handler would skip its flush")
+			return
+		}
+		f.Flush()
+	}))
+	handler.ServeHTTP(sentinel, httptest.NewRequest(nethttp.MethodGet, "http://example.test/x", nil))
+	if !flushed {
+		t.Error("Flush did not reach the writer underneath")
+	}
+}
+
+// flushRecorder is a writer that can flush and says so.
+type flushRecorder struct {
+	header  nethttp.Header
+	flushes *bool
+}
+
+func (f *flushRecorder) Header() nethttp.Header { return f.header }
+
+func (f *flushRecorder) Write(b []byte) (int, error) { return len(b), nil }
+
+func (f *flushRecorder) WriteHeader(int) {}
+
+func (f *flushRecorder) Flush() { *f.flushes = true }
+
 // TestTheLayerExposesTheWriterUnderneath pins the Unwrap. A handler that
 // asserts the writer for flushing or hijacking reaches the real one through it;
 // without it, such a handler fails on every instrumented endpoint and nothing

@@ -1,7 +1,9 @@
 package otel
 
 import (
+	"bufio"
 	"fmt"
+	"net"
 	nethttp "net/http"
 	"time"
 
@@ -117,7 +119,7 @@ func (p *providers) instrument(endpoint string) func(nethttp.Handler) nethttp.Ha
 			// sent one, is what decides sampling and what the trace looks like
 			// from the other side.
 			ctx := observability.Propagator().Extract(r.Context(), propagation.HeaderCarrier(r.Header))
-			ctx, span := tracer.Start(ctx, endpoint+" "+r.Method, trace.WithSpanKind(trace.SpanKindServer))
+			ctx, span := tracer.Start(ctx, endpoint+" "+methodOf(r.Method), trace.WithSpanKind(trace.SpanKindServer))
 
 			// The attribute keys are this module's, bound here and read by the
 			// log module without it knowing what they mean. The logger itself is
@@ -133,13 +135,23 @@ func (p *providers) instrument(endpoint string) func(nethttp.Handler) nethttp.Ha
 				raised := recover()
 				elapsed := time.Since(start)
 
+				code := rec.status
 				if raised != nil {
 					span.RecordError(fmt.Errorf("%v", raised))
 					span.SetStatus(codes.Error, "handler panicked")
+					// Nothing was written, so the status the caller will see is
+					// the entry module's, whose recovery layer answers a
+					// panicking handler with an internal error. Reporting the
+					// recorder's untouched default instead would put every
+					// panicking request into the 200 bucket, which is the one
+					// place an operator most needs it not to be.
+					if !rec.wroteHeader {
+						code = nethttp.StatusInternalServerError
+					}
 				}
 				duration.Record(ctx, elapsed.Seconds(), metric.WithAttributes(
 					attrRequestMethod.String(methodOf(r.Method)),
-					attrResponseCode.Int(rec.status),
+					attrResponseCode.Int(code),
 				))
 				span.End()
 
@@ -157,23 +169,60 @@ func (p *providers) instrument(endpoint string) func(nethttp.Handler) nethttp.Ha
 	}
 }
 
-// recorder remembers the status code and exposes the writer underneath.
+// recorder remembers what the handler answered and keeps the writer's optional
+// interfaces reachable.
 //
-// The status is what the histogram attribute needs; the Unwrap is what keeps
-// the optional interfaces a handler may assert — flushing, hijacking — reachable
-// through the wrapper. Without it, a handler that type-asserts the writer fails
-// on every instrumented endpoint, silently.
+// The status it keeps is the first code the handler wrote, not the last: a
+// second WriteHeader is ignored by the server, which answers with the first, so
+// a recorder that took the last one would report a status no caller ever saw. A
+// body written without a header is the implicit 200 the status starts from.
+//
+// The two optional interfaces net/http has a name for — flushing and hijacking
+// — are forwarded explicitly rather than left to Unwrap. Unwrap is what
+// http.ResponseController follows, and a handler using it is served either way;
+// a handler that type-asserts the writer is not, because the assertion is made
+// against this type and never reaches the writer underneath. It would fail, the
+// handler's streaming branch would be skipped, and the endpoint would degrade
+// with nothing said. Forwarding makes the assertion succeed, and a writer
+// underneath that cannot do the thing is the same no-op it was before this
+// layer existed.
 type recorder struct {
 	nethttp.ResponseWriter
-	status int
+	status      int
+	wroteHeader bool
 }
 
-// WriteHeader records the code and passes it on.
+// WriteHeader records the first code and passes it on.
 func (r *recorder) WriteHeader(code int) {
-	r.status = code
+	if !r.wroteHeader {
+		r.wroteHeader = true
+		r.status = code
+	}
 	r.ResponseWriter.WriteHeader(code)
 }
 
-// Unwrap exposes the writer this one wraps, which is how the optional
-// interfaces are reached through it.
+// Write passes the body on, counting it as the implicit 200 the status starts
+// from.
+func (r *recorder) Write(body []byte) (int, error) {
+	r.wroteHeader = true
+	return r.ResponseWriter.Write(body)
+}
+
+// Flush forwards to the writer underneath when it can flush.
+func (r *recorder) Flush() {
+	if f, ok := r.ResponseWriter.(nethttp.Flusher); ok {
+		f.Flush()
+	}
+}
+
+// Hijack forwards to the writer underneath when it can be taken over.
+func (r *recorder) Hijack() (net.Conn, *bufio.ReadWriter, error) {
+	if h, ok := r.ResponseWriter.(nethttp.Hijacker); ok {
+		return h.Hijack()
+	}
+	return nil, nil, nethttp.ErrNotSupported
+}
+
+// Unwrap exposes the writer this one wraps, which is what http.ResponseController
+// follows for the optional interfaces beyond the two above.
 func (r *recorder) Unwrap() nethttp.ResponseWriter { return r.ResponseWriter }

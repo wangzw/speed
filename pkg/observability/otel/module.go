@@ -97,7 +97,7 @@ func wire(ctx context.Context, reg *core.Registry, instance any) error {
 		if err != nil {
 			return err
 		}
-		for _, name := range p.cfg.Endpoints {
+		for _, name := range p.distinct("endpoints", p.cfg.Endpoints) {
 			ep, err := router.Endpoint(name)
 			if err != nil {
 				return err
@@ -110,11 +110,38 @@ func wire(ctx context.Context, reg *core.Registry, instance any) error {
 		if err != nil {
 			return err
 		}
-		for _, evt := range p.cfg.Events {
+		for _, evt := range p.distinct("events", p.cfg.Events) {
 			bus.Subscribe(evt, p.spanFor())
 		}
 	}
 	return nil
+}
+
+// distinct drops repeated names from one of the configured lists, keeping the
+// order they were written in.
+//
+// A name written twice is not two registrations anyone means. The entry module
+// appends a layer per call and does not dedupe, so a repeated endpoint carries
+// two identical layers: every request on it opens two server spans and counts
+// twice in the histogram, which reads from outside as twice the traffic. A
+// repeated event type subscribes twice and produces two spans per fact.
+//
+// The intent of a repeated name is the single name, so that is what it gets,
+// and the line reports that the configuration was not quite what it said — a
+// host reviewing its own settings otherwise has no way to find out.
+func (p *providers) distinct(list string, names []string) []string {
+	seen := make(map[string]bool, len(names))
+	kept := make([]string, 0, len(names))
+	for _, name := range names {
+		if seen[name] {
+			p.lg.Warn("a configured list names the same thing twice; the repeat is ignored",
+				"list", list, "name", name)
+			continue
+		}
+		seen[name] = true
+		kept = append(kept, name)
+	}
+	return kept
 }
 
 // shutdown flushes both providers and releases them.

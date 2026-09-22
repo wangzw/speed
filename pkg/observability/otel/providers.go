@@ -2,6 +2,7 @@ package otel
 
 import (
 	"context"
+	"log/slog"
 
 	"go.opentelemetry.io/otel/attribute"
 	"go.opentelemetry.io/otel/metric"
@@ -46,6 +47,9 @@ type providers struct {
 
 	tp *sdktrace.TracerProvider
 	mp *sdkmetric.MeterProvider
+	// lg is the logger this module was given, held for the lines the wiring
+	// stage writes about a configuration that names the same thing twice.
+	lg *slog.Logger
 	// duration is the one instrument this module records on. It is built here
 	// rather than at registration because building an instrument can report an
 	// error, and New is the stage where an error can still be returned.
@@ -127,6 +131,9 @@ func newProviders(ctx context.Context, reg *core.Registry) (any, error) {
 	mp := sdkmetric.NewMeterProvider(metricOpts...)
 	duration, err := newRequestDuration(mp)
 	if err != nil {
+		// The meter provider is running its readers, and nothing holds it: this
+		// failure returns from New, so no provider exists to shut it down later.
+		_ = mp.Shutdown(ctx)
 		return nil, err
 	}
 	tp := sdktrace.NewTracerProvider(traceOpts...)
@@ -136,6 +143,7 @@ func newProviders(ctx context.Context, reg *core.Registry) (any, error) {
 		MeterProvider:  mp,
 		tp:             tp,
 		mp:             mp,
+		lg:             lg,
 		duration:       duration,
 	}, nil
 }

@@ -43,11 +43,17 @@ func (p *providers) spanFor() event.Handler {
 		_, span := tracer.Start(ctx, evt.Type, trace.WithSpanKind(trace.SpanKindConsumer))
 		defer span.End()
 
-		if evt.TenantID != "" {
-			span.SetAttributes(tenantIDKey.String(evt.TenantID))
-		}
 		for name, value := range fields {
 			span.SetAttributes(attribute.String(name, fmt.Sprint(value)))
+		}
+		// The tenant goes on last, after the payload's own fields. Upstream
+		// attributes are last-value-wins, so a payload that happens to carry a
+		// field of the same name — which a fact about a tenant easily does —
+		// would otherwise overwrite what the bus said. The bus is the authority
+		// on which tenant a fact belongs to, and the payload is data a producer
+		// wrote.
+		if evt.TenantID != "" {
+			span.SetAttributes(tenantIDKey.String(evt.TenantID))
 		}
 		return nil
 	}

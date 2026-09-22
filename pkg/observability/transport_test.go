@@ -84,6 +84,38 @@ func TestTransportWithoutASpanPassesTheRequestThrough(t *testing.T) {
 	}
 }
 
+// TestTransportForwardsCloseIdleConnections pins the one optional method a
+// client looks for by assertion. http.Client does nothing at all when it is
+// missing, so a wrapped transport that did not forward it would keep the pool
+// alive past the point the caller asked for it to go, with nothing to say the
+// wrapper was why.
+func TestTransportForwardsCloseIdleConnections(t *testing.T) {
+	underneath := &closeIdleTransport{}
+	closer, ok := observability.Transport(underneath).(interface{ CloseIdleConnections() })
+	if !ok {
+		t.Fatal("the wrapper does not satisfy the interface http.Client looks for, so CloseIdleConnections " +
+			"on a client would silently do nothing")
+	}
+	closer.CloseIdleConnections()
+	if !underneath.closed {
+		t.Error("CloseIdleConnections did not reach the transport underneath")
+	}
+
+	// A transport that cannot close idle connections is not an error: the call
+	// is the same no-op it would have been without the wrapper.
+	plain := observability.Transport(roundTripperFunc(func(*nethttp.Request) (*nethttp.Response, error) {
+		return nil, nil
+	})).(interface{ CloseIdleConnections() })
+	plain.CloseIdleConnections()
+}
+
+// closeIdleTransport is a transport that can close its idle connections.
+type closeIdleTransport struct{ closed bool }
+
+func (c *closeIdleTransport) RoundTrip(*nethttp.Request) (*nethttp.Response, error) { return nil, nil }
+
+func (c *closeIdleTransport) CloseIdleConnections() { c.closed = true }
+
 // TestPropagatorIsStable pins that both sides of a boundary get one propagator.
 // The upstream default is an empty composite that injects nothing and reports
 // no error, so a second construction that happened to be empty would be

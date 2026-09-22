@@ -43,8 +43,22 @@ func (t spanTransport) RoundTrip(req *nethttp.Request) (*nethttp.Response, error
 	if !trace.SpanContextFromContext(req.Context()).IsValid() {
 		return t.base.RoundTrip(req)
 	}
+	// Clone already copies the header, so injecting into the copy's header
+	// leaves the caller's alone.
 	clone := req.Clone(req.Context())
-	clone.Header = req.Header.Clone()
 	propagator.Inject(req.Context(), propagation.HeaderCarrier(clone.Header))
 	return t.base.RoundTrip(clone)
+}
+
+// CloseIdleConnections forwards to the wrapped transport when it has the method.
+//
+// http.Client finds it by assertion and does nothing at all when it is missing,
+// so a client whose transport was wrapped would quietly keep its connections
+// past the point the caller asked for them to go — the same class of silent
+// loss the request layer avoids on the server side by exposing the writer
+// underneath.
+func (t spanTransport) CloseIdleConnections() {
+	if c, ok := t.base.(interface{ CloseIdleConnections() }); ok {
+		c.CloseIdleConnections()
+	}
 }

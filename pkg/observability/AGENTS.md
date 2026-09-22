@@ -72,6 +72,20 @@ must not cross, and how to run it.
   request has not been dispatched — and no tenant: that dimension lives on
   event-derived spans. The instrument's name and unit are equally fixed; a
   dashboard reads them.
+- **The method dimension is folded in both signals.** The histogram's method
+  attribute and the span name both fold anything outside the nine standard
+  methods into one value. Narrowing the cardinality on one side only moves it to
+  the other: a backend indexes a span name just as it indexes a dimension.
+- **The recorder is the only place the response is observed, so it owes two
+  things.** It keeps the *first* status the handler wrote, because the server
+  ignores a second `WriteHeader` and answers with the first — reporting the last
+  would report a code no caller saw. And it forwards flushing and hijacking,
+  because a handler type-asserts the writer it was given, which is this type,
+  and never reaches the writer underneath.
+- **A name written twice in `endpoints` or `events` is registered once.** Both
+  loops register unconditionally and neither the entry module nor the bus
+  dedupes, so a repeat would double every request in the histogram and open two
+  spans for it. The repeat is dropped and a line says so.
 - **`TraceIDKey` and `SpanIDKey` are a contract with whoever reads a log line**,
   not an implementation detail. They are bound here and the log module carries
   them without knowing what they mean.
