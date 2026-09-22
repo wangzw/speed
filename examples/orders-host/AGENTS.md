@@ -1,12 +1,16 @@
 # examples/orders-host
 
-A host that assembles every module of this repository into one running program:
-an HTTP entry point, the database engine, the authentication gateway with one
-credential backend, the tenant capability directory — resolution and roster —
-the audit journal, the runtime settings surface, and a key-value and an event
-backend, together with two application modules of its own. It writes the
-command tree that says what each run may be, and lets that tree drive the
-lifecycle.
+A host that assembles a working set of this repository's modules into one
+running program: an HTTP entry point, the database engine, the authentication
+gateway with one credential backend, the tenant capability directory —
+resolution and roster — the audit journal, the runtime settings surface, a
+key-value and an event backend, and the telemetry providers, together with two
+application modules of its own. It writes the command tree that says what each
+run may be, and lets that tree drive the lifecycle.
+
+It is a working set and not a census: what is here is what the cases below need
+to hold, and a module this host does not assemble is a module whose composition
+nothing here shows.
 
 It assembles the whole set at once, and what it exists to show is that the set
 composes: that a setting a module declares is read back through three layers,
@@ -40,6 +44,12 @@ The things no module's own suite can hold:
 - **A command reaches a module for its declarations without running it.**
   `migrate` runs the engine and nothing else, and the application module's
   table, the journal's and the settings surface's are built anyway.
+- **A route nobody instrumented produces a span.** The telemetry layer is
+  registered on an endpoint by configuration, so every route on that endpoint is
+  covered without a handler asking for anything, and the destination the signals
+  leave through is a module the command tree names rather than something the
+  assembler knows about. Neither half is visible from inside `pkg/http` or
+  `pkg/observability`.
 
 ## Boundaries
 
@@ -142,6 +152,13 @@ audit:
       - order.placed
 settings:
   refresh-interval: 30s
+observability:
+  otel:
+    service-name: orders-host
+    endpoints:
+      - public
+    events:
+      - order.placed
 ```
 
 Each module hangs under its own capability directory's heading — `authn.gate`

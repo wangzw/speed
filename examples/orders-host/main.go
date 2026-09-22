@@ -1,10 +1,11 @@
-// Command orders-host is a host that assembles every module of this repository
-// into one running program: an HTTP entry point, the database engine, the
-// authentication gateway with one credential backend, the tenant capability
-// directory — resolution and roster — the audit journal, the runtime settings
-// surface, and a key-value and an event backend, together with two application
-// modules of its own. It writes the command tree that says what each run may
-// be, and lets that tree drive the lifecycle.
+// Command orders-host is a host that assembles a working set of this
+// repository's modules into one running program: an HTTP entry point, the
+// database engine, the authentication gateway with one credential backend, the
+// tenant capability directory — resolution and roster — the audit journal, the
+// runtime settings surface, a key-value and an event backend, and the telemetry
+// providers, together with two application modules of its own. It writes the
+// command tree that says what each run may be, and lets that tree drive the
+// lifecycle.
 //
 // Importing a module's package is what puts it in the available set: each
 // registers itself in init, so the import is the whole of the wiring. Nothing
@@ -79,6 +80,12 @@
 //     request that carried it, the placement event, and a crossing of tenants
 //     that no capture path can explain — a seed — which states its purpose
 //     through the seam, the one path whose caller knows why.
+//   - A request to a served endpoint produces a span and a request-duration
+//     measurement without the handler asking for either. Which endpoints carry
+//     the layer is configuration, so the layer covers every route on the ones
+//     it names — including the routes that refuse a request before any handler
+//     runs — and the destination it exports through is a module the command
+//     tree names, not something the assembler knows.
 package main
 
 import (
@@ -115,6 +122,13 @@ import (
 	eventmemory "github.com/vislake/speed/pkg/event/memory"
 	kvmemory "github.com/vislake/speed/pkg/kv/memory"
 	"github.com/vislake/speed/pkg/tenant/catalog"
+
+	// The telemetry assembler is an exclusive provider too, and the backend it
+	// exports through is not: the assembler delivers the two providers and
+	// names the destinations nowhere, so the command tree says which one this
+	// run exports through.
+	"github.com/vislake/speed/pkg/observability/otel"
+	"github.com/vislake/speed/pkg/observability/stdout"
 )
 
 // stoppedMsg is the record the serving command writes once its run is over.
@@ -210,6 +224,8 @@ func commandTree(reg *core.Registry) *config.App {
 		ordersModuleName,
 		inventoryModuleName,
 		log.ModuleName,
+		otel.ModuleName,
+		stdout.ModuleName,
 	)
 	serve.Do(core.StageServe, serveUntilCancelled)
 

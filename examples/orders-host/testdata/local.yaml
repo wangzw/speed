@@ -40,3 +40,10 @@ audit:
       - order.placed
 settings:
   refresh-interval: 30s
+observability:
+  otel:
+    service-name: orders-host
+    endpoints:
+      - public
+    events:
+      - order.placed

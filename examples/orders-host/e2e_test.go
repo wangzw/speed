@@ -283,7 +283,16 @@ audit:
       - %q
 settings:
   refresh-interval: 0s
-`, public, ops, dbPath, subject, hashed, placedEventType)
+observability:
+  otel:
+    service-name: orders-host
+    batch:
+      batch-timeout: 200ms
+    endpoints:
+      - public
+    events:
+      - %q
+`, public, ops, dbPath, subject, hashed, placedEventType, placedEventType)
 
 	configPath := filepath.Join(dir, "config.yaml")
 	if err := os.WriteFile(configPath, []byte(body), 0o600); err != nil {
@@ -328,6 +337,9 @@ tenant:
     header-name: X-Tenant
   catalog:
     refresh-period: 0s
+observability:
+  otel:
+    service-name: orders-host
 `, freeAddress(t), freeAddress(t), dbPath, subject, hashed)
 
 	configPath := filepath.Join(dir, "config.yaml")
@@ -1239,6 +1251,37 @@ func TestAnUnknownCommandIsReportedByTheLibrary(t *testing.T) {
 		t.Fatalf("an unknown command succeeded; it wrote:\n%s", out)
 	}
 	requireFailedRun(t, string(out), "nosuchcommand")
+}
+
+// TestAServedRequestProducesASpan is the telemetry case.
+//
+// The layer is registered on the endpoint by configuration and by nothing a
+// route says, so a handler written with no thought for telemetry produces a
+// span all the same, and the run exports it through the backend the command
+// tree named. Neither the route nor the handler asks for any of it.
+func TestAServedRequestProducesASpan(t *testing.T) {
+	f := writeFixture(t)
+	f.migrate(t)
+	run := f.start(t)
+
+	status, body := call(t, run.public, "/orders", acme, subject)
+	if status != nethttp.StatusOK {
+		t.Fatalf("a guarded route with a credential answered %d: %s", status, body)
+	}
+
+	// The batch processor hands the span over on its own schedule, so the case
+	// waits for the line rather than reading it straight away. The span is
+	// named for the endpoint and the method the layer observed, which is a
+	// string nothing else in this run writes.
+	deadline := time.Now().Add(settleLimit)
+	for time.Now().Before(deadline) {
+		if strings.Contains(run.output(), publicEndpoint+" GET") {
+			return
+		}
+		time.Sleep(20 * time.Millisecond)
+	}
+	t.Fatalf("no span named for the endpoint and the method reached the export backend; the run wrote:\n%s",
+		run.output())
 }
 
 // contains reports whether a string slice holds a value.
