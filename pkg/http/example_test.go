@@ -245,8 +245,8 @@ func ExampleEndpoint_Use() {
 	// capability some module delivers; what matters here is that the layer
 	// standing for one says so itself.
 	type (
-		recovery interface{ recovers() }
-		tracing  interface{ traces() }
+		spans   interface{ spans() }
+		tracing interface{ traces() }
 	)
 
 	host, err := startExample(func(reg *core.Registry) error {
@@ -258,21 +258,21 @@ func ExampleEndpoint_Use() {
 		if err != nil {
 			return err
 		}
-		// trace stands for tracing and belongs inside the recovery layer.
-		// Its Order asks for the front of the chain; the After constraint
-		// is what overrides that.
+		// trace stands for tracing and belongs inside the span layer. Its
+		// Order asks for the front of the chain; the After constraint is
+		// what overrides that.
 		endpoint.Use(speedhttp.Middleware{
 			Name:     "trace",
 			Provides: []core.Token{(*tracing)(nil)},
-			After:    []core.Token{(*recovery)(nil)},
+			After:    []core.Token{(*spans)(nil)},
 			Order:    -100,
 			Wrap:     func(next http.Handler) http.Handler { return next },
 		})
-		// recover stands for recovery itself, so trace's constraint lands
-		// on it and nowhere else.
+		// span stands for spans itself, so trace's constraint lands on it
+		// and nowhere else.
 		endpoint.Use(speedhttp.Middleware{
-			Name:     "recover",
-			Provides: []core.Token{(*recovery)(nil)},
+			Name:     "span",
+			Provides: []core.Token{(*spans)(nil)},
 			Wrap:     func(next http.Handler) http.Handler { return next },
 		})
 		return nil
@@ -284,7 +284,7 @@ func ExampleEndpoint_Use() {
 	defer func() { _ = host.stop() }()
 
 	// Output:
-	// INFO an HTTP endpoint's chain is assembled endpoint=public routes=0 chain=http:base -> recover -> trace
+	// INFO an HTTP endpoint's chain is assembled endpoint=public routes=0 chain=http:base -> span -> trace
 }
 
 // ExampleDecode decodes a request body in a handler.
