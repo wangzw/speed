@@ -243,6 +243,14 @@ func (s *settingsStore) reload(ctx context.Context) {
 // The read and the replacement happen under one lock so that two concurrent
 // loads cannot install their results out of order, which would leave a replica
 // serving a state older than one it had already read.
+//
+// A replacement that brings different rows is recorded, and one that brings
+// the same rows is not. The line's timestamp is the moment a snapshot took
+// effect on this replica, which is what a reader needs when a value they wrote
+// is not the one being served: it says how far behind this process is. Only
+// the rows are compared, because the refresh path runs on a ticker and a write
+// and an event, and a line per run would be a line per request that writes a
+// setting.
 func (s *settingsStore) swap(ctx context.Context) (*snapshot, error) {
 	s.reloadMu.Lock()
 	defer s.reloadMu.Unlock()
@@ -250,7 +258,11 @@ func (s *settingsStore) swap(ctx context.Context) (*snapshot, error) {
 	if err != nil {
 		return nil, err
 	}
-	s.snapshot.Store(loaded)
+	previous := s.snapshot.Swap(loaded)
+	if previous == nil || !sameRows(previous, loaded) {
+		s.logger.Info("settings: the snapshot now holds different rows",
+			"rows", len(loaded.values), "undecodable", len(loaded.broken))
+	}
 	return loaded, nil
 }
 

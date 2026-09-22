@@ -131,6 +131,34 @@ type row struct {
 // broken.
 //
 // The failure of the read itself is where ErrTableMissing is decided.
+// sameRows reports whether two snapshots hold the same rows, read the same
+// way.
+//
+// A row is compared by the text it was decoded from rather than by the decoded
+// value: the text is what the table holds, and two rows carrying one text
+// decode to one value under one declaration. That also keeps a snapshot
+// loaded before a row's declaration changed from reading as unchanged, which
+// is right — the rows are the same; what changed was how they are read, and
+// that is a startup-time matter.
+func sameRows(a, b *snapshot) bool {
+	if len(a.values) != len(b.values) || len(a.broken) != len(b.broken) {
+		return false
+	}
+	for c, row := range b.values {
+		other, ok := a.values[c]
+		if !ok || other.text != row.text {
+			return false
+		}
+	}
+	for c, row := range b.broken {
+		other, ok := a.broken[c]
+		if !ok || other.text != row.text {
+			return false
+		}
+	}
+	return true
+}
+
 func loadSnapshot(ctx context.Context, handle *gorm.DB, keys *keyTable) (*snapshot, error) {
 	var rows []row
 	err := handle.WithContext(ctx).Raw("SELECT tenant_id, key, value FROM " + tableName).Scan(&rows).Error

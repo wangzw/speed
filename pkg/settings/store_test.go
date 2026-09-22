@@ -3,6 +3,7 @@ package settings
 import (
 	"context"
 	"errors"
+	"log/slog"
 	"strconv"
 	"strings"
 	"testing"
@@ -789,4 +790,53 @@ func countRows(t *testing.T, store *settingsStore) int {
 		t.Fatalf("counting the rows: %v", err)
 	}
 	return n
+}
+
+// collectingHandler keeps the lines a store writes.
+type collectingHandler struct{ lines *[]string }
+
+func (h collectingHandler) Enabled(context.Context, slog.Level) bool { return true }
+func (h collectingHandler) WithAttrs([]slog.Attr) slog.Handler       { return h }
+func (h collectingHandler) WithGroup(string) slog.Handler            { return h }
+
+func (h collectingHandler) Handle(_ context.Context, r slog.Record) error {
+	*h.lines = append(*h.lines, r.Message)
+	return nil
+}
+
+// TestReplacingTheSnapshotIsRecorded pins that the moment a snapshot takes
+// effect is written down.
+//
+// Nothing else records it: reads serve whatever the current snapshot holds,
+// and a row carries the time it was written rather than the time this process
+// last read it. Without the line, a value that was written and is not the one
+// being served leaves nothing to say how far behind the replica is — and that
+// moment is what the propagation record points a reader at.
+func TestReplacingTheSnapshotIsRecorded(t *testing.T) {
+	keys := demoTable(t)
+	store, _ := storeOf(t, keys, newRecordingBus())
+
+	var lines []string
+	store.logger = slog.New(collectingHandler{lines: &lines})
+
+	if err := store.Set(context.Background(), Write{
+		Layer: Global(),
+		Key:   "demo.limit",
+		Value: 7,
+		Actor: "t",
+	}); err != nil {
+		t.Fatalf("writing a setting: %v", err)
+	}
+	if len(lines) == 0 {
+		t.Fatal("a snapshot took effect and left no record of when it did")
+	}
+
+	// A reload that reads the same rows writes nothing. The refresh path runs
+	// on a ticker, on a write and on an event, and a line per run would be a
+	// line per request that writes a setting.
+	lines = nil
+	store.reload(context.Background())
+	if len(lines) != 0 {
+		t.Fatalf("a reload that changed nothing was recorded: %v", lines)
+	}
 }
