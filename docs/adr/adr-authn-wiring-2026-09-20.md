@@ -10,7 +10,7 @@
 
 网关要用到的东西是入口模块的登记面与全部校验后端，而它们在构造期都还用不上：
 
-- 登记面只在 `Init` 阶段接受写入，此外的写入一律失败（[ADR-http-routing-2026-09-14](adr-http-routing-2026-09-14.md)）。
+- 登记面在构造期不接受写入：写入窗口借用 `Migrate` 与 `Start` 两个阶段位，框住全局 `Init` 阶段（[ADR-http-routing-2026-09-14](adr-http-routing-2026-09-14.md)）。
 - 校验后端在请求到达时才被问到，那发生在 `Serve` 之后。
 
 `Init` 运行时全部实例均已构造完毕，相互引用在此成立（[ADR-lifecycle-stages-2026-09-13](adr-lifecycle-stages-2026-09-13.md)）。
