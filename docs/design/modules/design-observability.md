@@ -91,7 +91,7 @@ const ModuleName = "observability.stdout"   // pkg/observability/stdout
 
 ## 依赖
 
-根包 import `pkg/core`（功能标识与查询的类型）与上游的追踪 API、指标 API、两个 SDK 导出接口所在的包。它不 import `pkg/config`（不声明配置），也不 import `pkg/log`（只给出字段名常量，不取 logger、不写记录）。
+根包只 import 上游的追踪 API、指标 API、两个 SDK 导出接口所在的包。它不 import 本仓库的任何模块：类型别名不需要 `core`，两条工具函数不收也不交任何模块产物（功能标识由写 `Provides` 的那一方构造，`(*TracerProvider)(nil)` 指向的就是别名本身）。它同样不 import `pkg/config`（不声明配置）与 `pkg/log`（只给出字段名常量，不取 logger、不写记录）。
 
 各实现子包 import `pkg/core`（`init` 中登记）、`pkg/config`（声明并读取自己的配置）、根包，以及自己所绑的后端。装配器另 import `pkg/log`（取 logger 用于导出失败的日志行）。
 
@@ -189,18 +189,18 @@ type Config struct {
     SampleRatio float64  `config:"sample-ratio"`   // [0,1]
 
     Batch struct {
-        MaxQueueSize       *int           `config:"max-queue-size"`
-        MaxExportBatchSize *int           `config:"max-export-batch-size"`
-        BatchTimeout       *time.Duration `config:"batch-timeout"`
-        ExportTimeout      *time.Duration `config:"export-timeout"`
+        MaxQueueSize       int           `config:"max-queue-size"`
+        MaxExportBatchSize int           `config:"max-export-batch-size"`
+        BatchTimeout       time.Duration `config:"batch-timeout"`
+        ExportTimeout      time.Duration `config:"export-timeout"`
     } `config:"batch"`
 
     Metric struct {
-        Interval *time.Duration `config:"interval"`
-        Timeout  *time.Duration `config:"timeout"`
+        Interval time.Duration `config:"interval"`
+        Timeout  time.Duration `config:"timeout"`
     } `config:"metric"`
 
-    ShutdownTimeout *time.Duration `config:"shutdown-timeout"`
+    ShutdownTimeout time.Duration `config:"shutdown-timeout"`
     Endpoints       []string       `config:"endpoints"`   // 在哪些监听端登记采集层
     Events          []string       `config:"events"`      // 订阅哪些事件类型
 }
@@ -208,19 +208,19 @@ type Config struct {
 
 `service-name`、`sample-ratio` 与两个清单在 provider 构造之前就被需要，批处理、导出周期与停机上界是 provider 的构造选项，因此都属于配置（[ADR-observability-config-2026-09-22](../../adr/adr-observability-config-2026-09-22.md)）。本模块不声明任何设置项。
 
-**指针字段区分「没写」与「写了零」。** 键缺席时取默认；显式写 `0` 时按该字段自己的规定处置，见下表。值类型字段无法表达这个区分——零值既是「没写」也是「写了 0」。
+**默认值由承载结构体承载，不由指针区分。** 解码器对一个没有任何来源给出取值的字段留它原样，而承载结构体已经预填了默认值；`batch` 与 `metric` 是单个结构体而不是容器，主配置源给出其中一个叶子不会把其余叶子打回零值。字段因此是值类型：键缺席时它保持承载结构体里的默认值，显式写 `0` 时它真的是零，下表两种情形由此分开。需要指针的是容器叶子（结构体列表与映射），那里主源是整体替换——本模块没有那种叶子。
 
 | 字段 | 默认 | 显式 `0` 的含义 |
 |---|---|---|
-| `batch.max-queue-size` | 2048 | 交给上游 SDK 的默认值 |
-| `batch.max-export-batch-size` | 512 | 交给上游 SDK 的默认值 |
+| `batch.max-queue-size` | 上游的默认值 | 同缺席，交回上游 |
+| `batch.max-export-batch-size` | 上游的默认值 | 同缺席，交回上游 |
 | `batch.batch-timeout` | 5s | 拒绝，启动失败 |
 | `batch.export-timeout` | 30s | 拒绝，启动失败 |
 | `metric.interval` | 60s | 拒绝，启动失败 |
 | `metric.timeout` | 30s | 拒绝，启动失败 |
 | `shutdown-timeout` | 10s | 拒绝，启动失败 |
 
-时长为零使该处失去意义而不是关闭它：批处理的超时为零意味着每一批都立即失败，导出周期为零意味着读数的间隔不存在。数值为零留给「取上游默认」，因为那两个字段的上游默认是一个具体值，而配置作者显式写零时想要的正是它。
+时长为零使该处失去意义而不是关闭它：批处理的超时为零意味着每一批都立即失败，导出周期为零意味着读数的间隔不存在。两个整型项的零留给「取上游默认」，而本模块不写下那个默认：上游把零读成容量为零的队列，不是读成默认，因此装配器把上游自己导出的默认常量代入，本模块里没有第二份 2048 与 512。
 
 导出后端的配置，`observability.otlp`：
 
@@ -231,7 +231,7 @@ type Config struct {
     Insecure       bool          `config:"insecure"`
     Headers        []string      `config:"headers"`         // 形如 k=v
     ProbeAtStartup bool          `config:"probe-at-startup"`
-    ProbeTimeout   *time.Duration `config:"probe-timeout"`
+    ProbeTimeout   time.Duration `config:"probe-timeout"`
 }
 ```
 
@@ -264,14 +264,13 @@ type Config struct {
 次序是承重的：
 
 1. 经注册表收全部导出器，逐个套上转发包装。
-2. 以**已包装**的指标导出器构造指标 provider 的读数器。
-3. 从指标 provider 取一个仪表——转发包装的失败计数要经它上报，而失败计数按裁定不对外暴露，因此这一步只为取包装自身需要的计数器。
-4. 以已包装的追踪导出器构造追踪 provider。
-5. 返回同时实现两个 provider 接口的产物。
+2. 以已包装的指标导出器构造指标 provider 的读数器。
+3. 以已包装的追踪导出器构造追踪 provider。
+4. 返回同时实现两个 provider 接口的产物。
 
-第 2 步与第 4 步分开是因为包装必须先于 provider 构造：provider 在构造时持有导出器，构造之后再包一层，那一层不在导出路径上，转发包装的日志行永远不会写。指标一侧因此先建 provider、后建追踪一侧，而追踪一侧的包装在第 1 步就已经套好。
+包装必须先于 provider 构造：provider 在构造时持有导出器，构造之后再包一层，那一层不在导出路径上，转发包装的日志行永远不会写。第 2 步与第 3 步之间没有次序要求。
 
-**转发包装逐方法转发到内层。** 导出接口上与导出数据无关的那些方法——指标的时间性、聚合选择与两者的关闭——也必须转发：漏掉其中任何一个，指标的时间性与聚合会静默回到上游默认值，而关闭漏转发会让末批数据在停机时丢失（[ADR-observability-anchor-2026-09-22](../../adr/adr-observability-anchor-2026-09-22.md)）。上游若在这两个接口上新增方法，包装在编译期失败，这正是想要的失败时机。
+**转发包装以内嵌的方式转发到内层。** 包装内嵌导出器接口，它的每一个方法——包括与导出数据无关的那些：指标的时间性、聚合选择、强制刷出、两者的关闭——都原样传到内层。手写的转发要维护一份与上游接口对齐的清单：漏掉一个，指标的时间性与聚合会静默回到上游默认值，而关闭漏转发会让末批数据在停机时丢失（[ADR-observability-anchor-2026-09-22](../../adr/adr-observability-anchor-2026-09-22.md)）；上游在这两个接口上新增方法时，那份清单还要跟着改。内嵌没有这份清单可漏。
 
 转发包装在导出调用返回错误时写日志行：**连续失败的首次**写一行，恢复之后再写一行，中间的重复失败不再写。状态是该包装自己持有的一个标志，受一把互斥量保护。写出的行经 `New` 中持有的 logger 进配置的目的地。
 
@@ -347,6 +346,7 @@ type Config struct {
 | `ErrInvalidDuration` | `observability.otel` | 上表规定「拒绝零」的时长为零或负 |
 | `ErrUnknownProtocol` | `observability.otlp` | `protocol` 不是 `grpc` 或 `http` |
 | `ErrInvalidHeader` | `observability.otlp` | `headers` 的元素不是 `k=v` |
+| `ErrInvalidDuration` | `observability.otlp` | `probe-timeout` 为零或负 |
 | `ErrExporterUnreachable` | `observability.otlp` | 启用了启动探测而端点不可达 |
 
 `ErrInvalidSampleRatio`、`ErrUnknownProtocol` 与 `ErrInvalidHeader` 的文本要列出合法取值或形状，取值都在闭集内，列出它即给出修复动作。`service-name` 缺值走配置的必填判定，本模块不另立名字；有值而为空串是另一种输入，由本模块自己的哨兵承接。
@@ -410,14 +410,16 @@ type Config struct {
 
 | 功能 | 状态 | 代码 |
 |---|---|---|
-| 接口包的类型别名与字段名常量 | 未实现 | — |
-| 出站注入工具与传播器 | 未实现 | — |
-| 装配器的描述符与各阶段行为 | 未实现 | — |
-| provider 的构造与转发包装 | 未实现 | — |
-| 请求路径的采集层 | 未实现 | — |
-| 请求时长的计量 | 未实现 | — |
-| 事件订阅 | 未实现 | — |
-| 配置声明与解读 | 未实现 | — |
-| 导出后端的描述符与构造 | 未实现 | — |
-| 启动连通性探测 | 未实现 | — |
-| 哨兵错误 | 未实现 | — |
+| 接口包的类型别名与字段名常量 | 已实现 | `pkg/observability/observability.go` `TracerProvider`、`MeterProvider`、`SpanExporter`、`MetricExporter`、`TraceIDKey`、`SpanIDKey` |
+| 传播器与出站注入工具 | 已实现 | `pkg/observability/observability.go` `Propagator`、`pkg/observability/transport.go` `Transport` |
+| 装配器的描述符与各阶段行为 | 已实现 | `pkg/observability/otel/module.go` `Module`、`prepare`、`wire`、`shutdown` |
+| provider 的构造 | 已实现 | `pkg/observability/otel/providers.go` `newProviders`、`queueSize` |
+| 转发包装与导出失败的上报 | 已实现 | `pkg/observability/otel/wrapper.go` `spanExporter`、`metricExporter`、`notifier` |
+| 请求路径的采集层 | 已实现 | `pkg/observability/otel/layer.go` `instrument`、`recorder` |
+| 请求时长的计量 | 已实现 | `pkg/observability/otel/layer.go` `newRequestDuration` |
+| 事件订阅 | 已实现 | `pkg/observability/otel/events.go` `spanFor` |
+| 配置声明与解读 | 已实现 | `pkg/observability/otel/config.go` `Config`、`schema`、`pkg/observability/otlp/otlp.go` `Config`、`pkg/observability/stdout/stdout.go` `Config` |
+| OTLP 导出后端 | 已实现 | `pkg/observability/otlp/exporters.go` `newExporters`、`build`、`probe` |
+| 标准输出导出后端 | 已实现 | `pkg/observability/stdout/exporters.go` `newExporters` |
+| 哨兵错误 | 已实现 | `pkg/observability/otel/errors.go`、`pkg/observability/otlp/otlp.go` `ErrUnknownProtocol`、`ErrInvalidHeader`、`ErrExporterUnreachable`、`ErrInvalidDuration` |
+| 依赖预算的两种判定 | 已实现 | `pkg/observability/deps_test.go` `TestTheInterfacePackageReachesNoBackendLibrary`、`TestTheAssemblerReachesNoBackendTransport` |
