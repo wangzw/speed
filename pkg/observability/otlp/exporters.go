@@ -2,10 +2,8 @@ package otlp
 
 import (
 	"context"
-	"errors"
 	"fmt"
 	"net"
-	"sync"
 	"time"
 
 	"go.opentelemetry.io/otel/exporters/otlp/otlpmetric/otlpmetricgrpc"
@@ -13,27 +11,11 @@ import (
 	"go.opentelemetry.io/otel/exporters/otlp/otlptrace/otlptracegrpc"
 	"go.opentelemetry.io/otel/exporters/otlp/otlptrace/otlptracehttp"
 	sdkmetric "go.opentelemetry.io/otel/sdk/metric"
-	"go.opentelemetry.io/otel/sdk/metric/metricdata"
 	sdktrace "go.opentelemetry.io/otel/sdk/trace"
 
 	"github.com/vislake/speed/pkg/core"
+	"github.com/vislake/speed/pkg/observability"
 )
-
-// exporters is this module's product: one value that is both a span exporter
-// and a metric exporter.
-//
-// Both capabilities are delivered by one module, so the registry's delivery
-// check requires one product to satisfy both. Shutdown is declared by both
-// interfaces and therefore exists once here; it releases both exporters, and
-// the second provider's call finds the work already done. See the same shape in
-// the standard-output backend, which has the same reason for it.
-type exporters struct {
-	span   sdktrace.SpanExporter
-	metric sdkmetric.Exporter
-
-	once sync.Once
-	err  error
-}
 
 // newExporters builds the two exporters, probing the endpoint first when the
 // configuration asks for it.
@@ -65,7 +47,7 @@ func newExporters(ctx context.Context, reg *core.Registry) (any, error) {
 	if err != nil {
 		return nil, err
 	}
-	return &exporters{span: span, metric: metric}, nil
+	return &observability.Exporters{Span: span, Metric: metric}, nil
 }
 
 // build constructs both exporters for the configured protocol.
@@ -140,34 +122,3 @@ func probe(ctx context.Context, endpoint string, timeout time.Duration) error {
 	_ = conn.Close()
 	return nil
 }
-
-// ExportSpans implements observability.SpanExporter.
-func (e *exporters) ExportSpans(ctx context.Context, spans []sdktrace.ReadOnlySpan) error {
-	return e.span.ExportSpans(ctx, spans)
-}
-
-// Shutdown implements the shutdown method both exporter interfaces declare.
-func (e *exporters) Shutdown(ctx context.Context) error {
-	e.once.Do(func() {
-		e.err = errors.Join(e.span.Shutdown(ctx), e.metric.Shutdown(ctx))
-	})
-	return e.err
-}
-
-// Export implements observability.MetricExporter.
-func (e *exporters) Export(ctx context.Context, rm *metricdata.ResourceMetrics) error {
-	return e.metric.Export(ctx, rm)
-}
-
-// Temporality implements observability.MetricExporter.
-func (e *exporters) Temporality(kind sdkmetric.InstrumentKind) metricdata.Temporality {
-	return e.metric.Temporality(kind)
-}
-
-// Aggregation implements observability.MetricExporter.
-func (e *exporters) Aggregation(kind sdkmetric.InstrumentKind) sdkmetric.Aggregation {
-	return e.metric.Aggregation(kind)
-}
-
-// ForceFlush implements observability.MetricExporter.
-func (e *exporters) ForceFlush(ctx context.Context) error { return e.metric.ForceFlush(ctx) }

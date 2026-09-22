@@ -1,4 +1,4 @@
-package stdout
+package observability_test
 
 import (
 	"context"
@@ -7,10 +7,14 @@ import (
 	sdkmetric "go.opentelemetry.io/otel/sdk/metric"
 	"go.opentelemetry.io/otel/sdk/metric/metricdata"
 	sdktrace "go.opentelemetry.io/otel/sdk/trace"
+
+	"github.com/vislake/speed/pkg/observability"
 )
 
-// countingSpanExporter counts the shutdowns it is asked for.
-type countingSpanExporter struct{ shutdowns int }
+// countingSpanExporter counts what it was asked for.
+type countingSpanExporter struct {
+	shutdowns int
+}
 
 func (c *countingSpanExporter) ExportSpans(context.Context, []sdktrace.ReadOnlySpan) error {
 	return nil
@@ -22,18 +26,19 @@ func (c *countingSpanExporter) Shutdown(context.Context) error {
 }
 
 // countingMetricExporter is the same on the metric side, and answers the
-// shaping methods so that the product's forwarding is exercised.
+// shaping methods with values a default would not be, so that a combination
+// failing to forward them is visible.
 type countingMetricExporter struct {
 	shutdowns int
 	flushes   int
 }
 
 func (c *countingMetricExporter) Temporality(sdkmetric.InstrumentKind) metricdata.Temporality {
-	return metricdata.CumulativeTemporality
+	return metricdata.DeltaTemporality
 }
 
 func (c *countingMetricExporter) Aggregation(sdkmetric.InstrumentKind) sdkmetric.Aggregation {
-	return sdkmetric.AggregationDefault{}
+	return sdkmetric.AggregationDrop{}
 }
 
 func (c *countingMetricExporter) Export(context.Context, *metricdata.ResourceMetrics) error {
@@ -50,16 +55,16 @@ func (c *countingMetricExporter) Shutdown(context.Context) error {
 	return nil
 }
 
-// TestTheProductSatisfiesBothInterfacesAndShutsDownOnce pins the shape one
+// TestExportersSatisfiesBothInterfacesAndShutsDownOnce pins the shape one
 // module delivering two capabilities forces on its product: a single Shutdown
 // serves both interfaces, so both providers call it, and it must release each
 // exporter exactly once. Releasing twice is not something the upstream promises
-// anything about, and the failure would show up as an exporter that refuses the
-// second shutdown rather than as anything obviously wrong.
-func TestTheProductSatisfiesBothInterfacesAndShutsDownOnce(t *testing.T) {
+// anything about, and the failure shows up as an exporter refusing the second
+// shutdown rather than as anything obviously wrong.
+func TestExportersSatisfiesBothInterfacesAndShutsDownOnce(t *testing.T) {
 	span := &countingSpanExporter{}
 	metric := &countingMetricExporter{}
-	product := &exporters{span: span, metric: metric}
+	product := &observability.Exporters{Span: span, Metric: metric}
 
 	var _ sdktrace.SpanExporter = product
 	var _ sdkmetric.Exporter = product
@@ -79,18 +84,19 @@ func TestTheProductSatisfiesBothInterfacesAndShutsDownOnce(t *testing.T) {
 	}
 }
 
-// TestTheProductForwardsTheShapingMethods pins that the product is transparent
-// to everything but data: the temporality and the aggregation are the backend's
-// answer, and a product that returned its own would change how the data is
-// shaped without anyone asking it to.
-func TestTheProductForwardsTheShapingMethods(t *testing.T) {
+// TestExportersForwardsTheShapingMethods pins that the combination is
+// transparent to everything but data. The temporality and the aggregation are
+// the backend's statement about the data it wants, and a combination that
+// answered them itself would change how the data is shaped without the backend
+// asking.
+func TestExportersForwardsTheShapingMethods(t *testing.T) {
 	metric := &countingMetricExporter{}
-	product := &exporters{span: &countingSpanExporter{}, metric: metric}
+	product := &observability.Exporters{Span: &countingSpanExporter{}, Metric: metric}
 
-	if got := product.Temporality(sdkmetric.InstrumentKindCounter); got != metricdata.CumulativeTemporality {
+	if got := product.Temporality(sdkmetric.InstrumentKindCounter); got != metricdata.DeltaTemporality {
 		t.Errorf("Temporality answered %v, want the backend's", got)
 	}
-	if _, ok := product.Aggregation(sdkmetric.InstrumentKindCounter).(sdkmetric.AggregationDefault); !ok {
+	if _, ok := product.Aggregation(sdkmetric.InstrumentKindCounter).(sdkmetric.AggregationDrop); !ok {
 		t.Errorf("Aggregation answered %T, want the backend's", product.Aggregation(sdkmetric.InstrumentKindCounter))
 	}
 	if err := product.ForceFlush(context.Background()); err != nil {

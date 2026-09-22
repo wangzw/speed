@@ -87,11 +87,11 @@ must not cross, and how to run it.
   it on the command tree. It also releases what it built through the providers:
   a backend has no `Close` callback of its own, and giving it one would shut the
   same exporter down twice.
-- **There is no shared unit under `pkg/internal/` for this capability.** The two
-  backends carry the same small adapter that makes one product satisfy both
-  exporter interfaces. That is deliberate: the extraction criterion is a shared
-  third-party client construction or a shared fixture, and neither backend has
-  one. A third backend is when the criterion is worth revisiting.
+- **A backend returns `observability.Exporters` from its `New`.** That type is
+  where the two exporters become one product, and it lives in the interface
+  package rather than in each backend because two copies is how the two would
+  drift. It is not under `pkg/internal/` because it is not what those units
+  hold: they carry third-party clients and fixtures, and this carries neither.
 
 ## Running it
 

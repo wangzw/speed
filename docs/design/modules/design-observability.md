@@ -58,7 +58,16 @@ func Propagator() propagation.TextMapPropagator
 
 // Transport 包住一个 RoundTripper，把当前跨度上下文写进出站头部。
 func Transport(base nethttp.RoundTripper) nethttp.RoundTripper
+
+// Exporters 是一个同时满足两个导出接口的值：导出后端在 New 中把自己的两个
+// 导出器装进它交回，注册表的交付校验要求一个产物满足描述符声明的每一个功能。
+type Exporters struct {
+    Span   SpanExporter
+    Metric MetricExporter
+}
 ```
+
+`Exporters` 由接口包提供，因为它组合的正是接口包自己定义的那两个接口，而写一个新的导出后端的人要先有它。两个导出接口各自声明一个 `Shutdown`，合到一个产物上就只有一次：它一次释放两个导出器，而装配器建的两个 provider 各自会调它一次——第二次是空操作，上游没有对「同一个导出器被释放两次」承诺过任何事。它在接口包而不在 `pkg/internal/`：共享单元装的是第三方客户端与测试夹具，它两者都不是。
 
 接口包暴露的上游类型限于上表所列的别名。**这是本模块唯一被允许引入第三方类型的位置**：别名必须写出被别名的包，因而根包的依赖闭包含上游的追踪 API、指标 API 与 SDK 导出接口所在的包。SDK 导出接口上接口面的理由与 API 侧相同——本模块就是那个库的封装，导出器是本模块的扩展点，另造一层等价抽象只会让后端实现方在两套类型之间来回转换（[ADR-observability-library-2026-09-22](../../adr/adr-observability-library-2026-09-22.md)）。
 
@@ -108,7 +117,7 @@ pkg/observability/otlp       导出后端，登记 observability.otlp
 pkg/observability/stdout     导出后端，登记 observability.stdout
 ```
 
-实现子包之间互不 import，跨子包的引用一律指向根包。本模块不设共享单元：抽取判据是两个实现子包共用同一份第三方客户端构造或测试夹具，而各导出后端各绑各的库、装配器独占 provider 的构造，判据不触发。
+实现子包之间互不 import，跨子包的引用一律指向根包。本模块不设共享单元：抽取判据是两个实现子包共用同一份第三方客户端构造或测试夹具，而各导出后端各绑各的库、装配器独占 provider 的构造，判据不触发。两个导出后端唯一共用的东西是产物类型 `Exporters`，它住在接口包——判据同样不触发，因为它既不是第三方客户端也不是夹具，而是一个由该包自己定义的两个接口组合出来的值。
 
 `observability/otlp` 与 `observability/stdout` 各自绑定自己的传输库（前者含 gRPC 与 protobuf）。只 import 接口包或装配器的宿主，其 `go.mod` 不带这些库。
 
