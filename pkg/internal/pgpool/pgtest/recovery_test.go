@@ -537,25 +537,90 @@ func underRecoveryWait(t *testing.T, bound, interval, limit time.Duration) (time
 	return run.took, run.err
 }
 
+// The band the bound check leaves, in the units the machine running it sets.
+const (
+	// roundsOfSlack is how many stand-in invocations' worth of time the check
+	// allows a call past its bound before calling it deaf to that bound. The
+	// span it times is the bound's wait and the rounds around it, and every
+	// round of any of those costs this machine an invocation, so a multiple this
+	// size leaves the machine room to stretch its rounds — the part no
+	// measurement of a spawned process can see — without the check mistaking
+	// that for a call that ignores the bound.
+	roundsOfSlack = 20
+	// leastSlack is the floor under roundsOfSlack rounds: a machine fast enough
+	// that their product comes to less than this gets this instead, so that the
+	// ceiling never sits within the jitter a single round carries.
+	leastSlack = 100 * time.Millisecond
+	// roundSamples is how many invocations the round's cost is taken from. One
+	// sample is too easy to catch fast or slow; the mean of a few holds either
+	// way, and setting a band that decides a pass or a failure on a single
+	// process spawn is not worth the few milliseconds it saves.
+	roundSamples = 8
+)
+
 // requireEndedWithinItsBound fails the case when a failure that was given a
-// bound took longer to arrive than that bound allows for.
+// bound took longer to arrive than that bound plus the slack this machine's own
+// rounds account for.
 //
-// What it catches is an implementation that does not read its own bound — one
-// that checks the deadline only every so often, or not at all. The case's own
-// guard cannot say that: the guard is what ends a case whose call never comes
-// back, and it is set far wider than the bound on purpose. The slack is for
-// this goroutine's scheduling and the stand-in's own invocations; a second is
-// orders of magnitude more than those take, and orders of magnitude less than
-// what an implementation deaf to its bound would add — the assertion this
-// replaces gave the failure a whole minute, which nothing that fails within
-// the guard's ten can ever reach, so it could not fail at all.
-func requireEndedWithinItsBound(t *testing.T, took, bound time.Duration) {
+// What it catches is a call that lands more than the slack past the bound it
+// was given: one that checks where the bound falls only every so often, and one
+// whose wait is a fixed span where the bound belongs. The distance past the
+// bound is what decides, whichever of the two left the call deaf to it. A call
+// that never comes back inside the guard is underRecoveryWait's to fail, and
+// does not reach this.
+//
+// The slack comes from the machine rather than from a constant. A round of the
+// wait costs what one stand-in invocation costs, measured here through
+// standInRoundCost, and a call may spend roundsOfSlack of those past its bound
+// before this calls it deaf to that bound. leastSlack is the floor under that
+// product, and the midpoint of the bound and the guard is the cap: the ceiling
+// this yields stays below the guard, so every span above it belongs to this
+// error or to the guard with none between them, and a machine slow enough to
+// reach the cap widens the band no further than that midpoint.
+//
+// What neither reaches is a call that overshoots its bound by less than the
+// slack: it ends inside the band this check leaves open, and how wide that band
+// is the machine decides.
+func requireEndedWithinItsBound(t *testing.T, took, bound, limit, roundCost time.Duration) {
 	t.Helper()
-	const slack = time.Second
-	if took > bound+slack {
-		t.Errorf("the failure took %s, and the wait it was given was %s: it has to end when that wait "+
-			"ends", took, bound)
+	slack := roundsOfSlack * roundCost
+	if slack < leastSlack {
+		slack = leastSlack
 	}
+	if cap := (limit - bound) / 2; slack > cap {
+		slack = cap
+	}
+	if took > bound+slack {
+		t.Errorf("the failure took %s, and the wait it was given was %s: it has to end within %s of that "+
+			"wait on this machine, not %s past it", took, bound, slack, took-bound)
+	}
+}
+
+// standInRoundCost is what one round of the wait costs this process: the time
+// to run the docker stand-in once, the unit every round of the wait spends.
+//
+// It runs a copy of the same stand-in script the case planted, in a directory
+// of its own, so that the case's record of what the code asked docker is left
+// as the code left it — the copy logs into its own directory. What the
+// implementation runs on a round is a shell script resolved out of PATH, and
+// this is that script, planted the same way and answering as a container that
+// is already running.
+func standInRoundCost(t *testing.T) time.Duration {
+	t.Helper()
+	dir := t.TempDir()
+	if err := os.WriteFile(filepath.Join(dir, "docker"), []byte(dockerStubScript), 0o755); err != nil {
+		t.Fatalf("planting the copy of the docker stand-in the round cost is measured from: %v", err)
+	}
+	if err := os.WriteFile(filepath.Join(dir, "inspect.responses"), []byte(succeeded(runningState)+"\n"), 0o600); err != nil {
+		t.Fatalf("describing what the copy of the docker stand-in answers: %v", err)
+	}
+	started := time.Now()
+	for i := 0; i < roundSamples; i++ {
+		if err := exec.Command(filepath.Join(dir, "docker"), "inspect", containerName).Run(); err != nil {
+			t.Fatalf("running the docker stand-in the round cost is measured from: %v", err)
+		}
+	}
+	return time.Since(started) / roundSamples
 }
 
 // TestConflictRecoveryReusesTheWinningContainer is the case the race is about:
@@ -635,7 +700,9 @@ func TestConflictRecoveryFailsWithinItsBoundCarryingTheLastWords(t *testing.T) {
 	stub.answers(t, "run", failed(conflictStatus, conflictResponse))
 
 	bound := 200 * time.Millisecond
-	took, err := underRecoveryWait(t, bound, time.Millisecond, 10*time.Second)
+	const limit = 10 * time.Second
+	roundCost := standInRoundCost(t)
+	took, err := underRecoveryWait(t, bound, time.Millisecond, limit)
 	if err == nil {
 		t.Fatal("the container was reported as up although every look at it failed")
 	}
@@ -650,7 +717,7 @@ func TestConflictRecoveryFailsWithinItsBoundCarryingTheLastWords(t *testing.T) {
 		t.Errorf("docker inspect ran %d times, so the recovery did not look again after a failed "+
 			"look: %v", looks, err)
 	}
-	requireEndedWithinItsBound(t, took, bound)
+	requireEndedWithinItsBound(t, took, bound, limit, roundCost)
 }
 
 // TestConflictRecoveryReportsCreateAndStartTogether covers the end of the
@@ -671,7 +738,9 @@ func TestConflictRecoveryReportsCreateAndStartTogether(t *testing.T) {
 	stub.answers(t, "start", failed(failureStatus, missingContainerResponse))
 
 	bound := 200 * time.Millisecond
-	took, err := underRecoveryWait(t, bound, time.Millisecond, 10*time.Second)
+	const limit = 10 * time.Second
+	roundCost := standInRoundCost(t)
+	took, err := underRecoveryWait(t, bound, time.Millisecond, limit)
 	if err == nil {
 		t.Fatal("the container was reported as up although it was never started")
 	}
@@ -681,7 +750,7 @@ func TestConflictRecoveryReportsCreateAndStartTogether(t *testing.T) {
 			t.Errorf("the failure does not carry %q:\n%v", want, err)
 		}
 	}
-	requireEndedWithinItsBound(t, took, bound)
+	requireEndedWithinItsBound(t, took, bound, limit, roundCost)
 }
 
 // TestExistingContainerStartFailureIsReportedAtOnce pins the path that is not
