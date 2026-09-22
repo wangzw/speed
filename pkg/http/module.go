@@ -41,6 +41,12 @@ import (
 // still a startup failure — the endpoints are read through it and there is
 // nothing to serve without them.
 //
+// The dependency on PanicResponder is declared optional too, and its absence
+// is the ordinary case rather than a state only a hand-built registry reaches:
+// which shape a defect's response takes is the business of whichever module
+// owns that API, and most assemblies have none. With no provider the fallback
+// writes the status alone.
+//
 // The dependency on Logger is declared optional, and that declaration is a
 // statement of contract rather than a branch a host reaches. This package
 // imports pkg/log, which registers itself with the process registry at package
@@ -56,8 +62,11 @@ func Module(name string, newEngine func() Engine) core.Module {
 			"module without putting its type on the surface", name))
 	}
 	return core.Module{
-		Name:      name,
-		Requires:  []core.Requirement{{Token: (*log.Logger)(nil), Optional: true}},
+		Name: name,
+		Requires: []core.Requirement{
+			{Token: (*log.Logger)(nil), Optional: true},
+			{Token: (*PanicResponder)(nil), Optional: true},
+		},
 		Provides:  []core.Provision{{Token: (*Router)(nil), Exclusive: true}},
 		Resources: []any{schema()},
 
@@ -82,7 +91,11 @@ func Module(name string, newEngine func() Engine) core.Module {
 			if err != nil {
 				return nil, err
 			}
-			return newModule(reader, newEngine, injected)
+			responder, err := panicResponder(reg)
+			if err != nil {
+				return nil, err
+			}
+			return newModule(reader, newEngine, injected, responder)
 		},
 
 		// The gate is opened in Migrate and sealed in Start, the two
@@ -196,13 +209,16 @@ func readSettings(reader config.Reader) ([]endpointSettings, error) {
 
 // newModule builds the product: one endpoint per configured entry, with the
 // gate still shut. Nothing is bound here — the address is bound in Serve.
-func newModule(reader config.Reader, newEngine func() Engine, injected *slog.Logger) (*router, error) {
+func newModule(reader config.Reader, newEngine func() Engine, injected *slog.Logger,
+	responder PanicResponder,
+) (*router, error) {
 	settings, err := readSettings(reader)
 	if err != nil {
 		return nil, err
 	}
 	r := newRouter(settings, newEngine)
 	r.injected = injected
+	r.responder = responder
 	r.logger = injected
 	if r.logger == nil {
 		// No Logger capability in this assembly, a state reached only by
@@ -232,6 +248,25 @@ func requestLogger(reg *core.Registry, name string) (*slog.Logger, error) {
 	return delivered.Named(name), nil
 }
 
+// panicResponder takes up the optional PanicResponder capability and returns
+// what decides the fallback's response shape, or nil when no module delivers
+// it.
+//
+// Absence is told apart from a real failure the same way, and for the same
+// reason: it is the ordinary case, because most assemblies have no module that
+// owns an API's error shape.
+func panicResponder(reg *core.Registry) (PanicResponder, error) {
+	delivered, err := core.Resolve[PanicResponder](reg)
+	if err != nil {
+		if errors.Is(err, core.ErrMissingProvider) {
+			return nil, nil
+		}
+		return nil, fmt.Errorf("http: taking up the responder that decides the panic fallback's "+
+			"response shape: %w", err)
+	}
+	return delivered, nil
+}
+
 // serve assembles every endpoint's chain and binds its address.
 //
 // Both are synchronous, so a failure of either terminates the startup rather
@@ -242,7 +277,7 @@ func requestLogger(reg *core.Registry, name string) (*slog.Logger, error) {
 func (r *router) serve() error {
 	for _, name := range r.names {
 		e := r.endpoints[name]
-		handler, err := e.assemble(r.newEngine(), r.injected, r.logger)
+		handler, err := e.assemble(r.newEngine(), r.injected, r.logger, r.responder)
 		if err != nil {
 			return err
 		}

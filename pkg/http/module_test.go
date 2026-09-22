@@ -26,7 +26,7 @@ func testModule() core.Module { return Module("http", testEngine) }
 func testProduct(t *testing.T, cfg moduleConfig) *router {
 	t.Helper()
 	logger, _ := newRecordingLogger()
-	r, err := newModule(&stubReader{cfg: cfg}, testEngine, nil)
+	r, err := newModule(&stubReader{cfg: cfg}, testEngine, nil, nil)
 	if err != nil {
 		t.Fatalf("building the product: %v", err)
 	}
@@ -105,7 +105,7 @@ func TestPrepareAndNewReadOneSection(t *testing.T) {
 		t.Fatalf("Prepare: %v", err)
 	}
 	product := &stubReader{cfg: oneEndpoint("public")}
-	if _, err := newModule(product, testEngine, nil); err != nil {
+	if _, err := newModule(product, testEngine, nil, nil); err != nil {
 		t.Fatalf("New: %v", err)
 	}
 	if stance.path != configPath || product.path != configPath {
@@ -131,19 +131,30 @@ func TestModuleProvidesRouterExclusively(t *testing.T) {
 	}
 }
 
-// TestLoggerRequirementIsOptional pins the one declared dependency. Without the
-// Optional flag, a host assembling no logging module would fail to start over a
-// dependency this module states a default behaviour for.
-func TestLoggerRequirementIsOptional(t *testing.T) {
+// TestDeclaredDependenciesAreOptional pins both declared dependencies. Without
+// the Optional flag, a host assembling no module for either would fail to start
+// over a dependency this module states a default behaviour for: the process
+// default logger, and a fallback response that is the status alone.
+//
+// The absence of each is asked for here rather than assumed, because a lookup
+// that failed for a reason other than "no provider" has to terminate the
+// startup instead, and the two are told apart by the sentinel.
+func TestDeclaredDependenciesAreOptional(t *testing.T) {
 	requires := testModule().Requires
-	if len(requires) != 1 {
+	want := []reflect.Type{
+		reflect.TypeFor[*log.Logger](),
+		reflect.TypeFor[*PanicResponder](),
+	}
+	if len(requires) != len(want) {
 		t.Fatalf("the module declares %d requirements: %+v", len(requires), requires)
 	}
-	if got := reflect.TypeOf(requires[0].Token); got != reflect.TypeFor[*log.Logger]() {
-		t.Errorf("the requirement is on %v, and it has to be (*log.Logger)(nil)", got)
-	}
-	if !requires[0].Optional {
-		t.Error("the dependency on Logger is declared as mandatory")
+	for i, req := range requires {
+		if got := reflect.TypeOf(req.Token); got != want[i] {
+			t.Errorf("requirement %d is on %v, and it has to be %v", i, got, want[i])
+		}
+		if !req.Optional {
+			t.Errorf("the dependency on %v is declared as mandatory", reflect.TypeOf(req.Token))
+		}
 	}
 
 	injected, err := requestLogger(core.New(), "http")
@@ -152,6 +163,14 @@ func TestLoggerRequirementIsOptional(t *testing.T) {
 	}
 	if injected != nil {
 		t.Error("a logger was produced although no module delivers the capability")
+	}
+
+	responder, err := panicResponder(core.New())
+	if err != nil {
+		t.Fatalf("taking up the panic responder from a registry that has none: %v", err)
+	}
+	if responder != nil {
+		t.Error("a panic responder was produced although no module delivers the capability")
 	}
 }
 

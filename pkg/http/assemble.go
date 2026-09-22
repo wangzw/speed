@@ -11,13 +11,16 @@ import (
 
 // assemble builds this endpoint's final handler, once, from the inside out:
 // the routes are mounted on the engine, the middleware is wrapped around it in
-// the order the constraints and the preferences give, and the base sits outside
-// all of it.
+// the order the constraints and the preferences give, the fallback closes over
+// the whole of that, and the base sits outside all of it.
 //
 // injected is the logger to put in each request's context, or nil when no
 // module delivers the Logger capability. logger is where this assembly's own
-// diagnostics go.
-func (e *endpoint) assemble(engine Engine, injected, logger *slog.Logger) (nethttp.Handler, error) {
+// diagnostics go. responder is what decides the shape of the fallback's
+// response, or nil when no module delivers the PanicResponder capability.
+func (e *endpoint) assemble(engine Engine, injected, logger *slog.Logger,
+	responder PanicResponder,
+) (nethttp.Handler, error) {
 	if err := e.mount(engine); err != nil {
 		return nil, err
 	}
@@ -51,7 +54,7 @@ func (e *endpoint) assemble(engine Engine, injected, logger *slog.Logger) (netht
 		"endpoint", e.settings.name,
 		"routes", len(e.routes),
 		"chain", chainDescription(ordered))
-	return e.base(handler, injected), nil
+	return e.base(fallback(handler, e.settings.name, responder), injected), nil
 }
 
 // reportUnlanded writes out the constraints that placed nothing.
@@ -207,12 +210,14 @@ func (e *endpoint) base(next nethttp.Handler, injected *slog.Logger) nethttp.Han
 }
 
 // chainDescription renders an assembled chain for the startup log, outermost
-// first. The base layer this module puts outside every registered one is named
-// too: a reader comparing the line with the code otherwise finds the body limit
-// and the logger applied by something the line does not mention.
+// first. The layers this module puts outside every registered one are named
+// too, and by name alone: they are not on the registration surface and stand
+// for no capability, so a reader comparing the line with the code would
+// otherwise find the body limit, the logger and the panic fallback applied by
+// something the line does not mention.
 func chainDescription(ordered []layer) string {
-	names := make([]string, 0, len(ordered)+1)
-	names = append(names, "http:base")
+	names := make([]string, 0, len(ordered)+2)
+	names = append(names, baseName, fallbackName)
 	for _, l := range ordered {
 		names = append(names, l.mw.Name)
 	}

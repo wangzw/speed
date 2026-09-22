@@ -370,7 +370,15 @@ stateDiagram-v2
 
 **它不覆盖跨协程的 panic。** 一个模块在自己起的协程里 panic，只有那个协程自己接得住；兜底层覆盖的是请求路径所在的这一次调用（同一条界限见 [authn](design-authn.md)）。
 
-**它的归因止于本次请求。** 兜底层不区分崩的是哪一层、哪个模块，它拿到的信息不比一次响应更多；把一类 panic 归到具体某个后端或某条路径名下，仍由发现它的那一层自己做（见 [authn](design-authn.md)、[tenant](design-tenant.md)）。
+**`net/http` 的 `ErrAbortHandler` 不被它接住。** 那个值是处理器在请求放弃这条连接，不是缺陷：本层原样抛出，让协议层按既有处置关掉连接，既不写状态码也不记一行。答成一次响应，会给一条已被处理器判定为坏掉的连接写状态码，并为一次客户端中途离开记一条错误。
+
+**`net/http` 为它自己写的记录进本模块的日志出口。** 监听端的服务器把它的输出交给本模块的 logger，因而 `base` 自身与协议层产生的 panic、TLS 握手失败、以及它对一条连接的处置，都进配置的目的地；没有这一步它们落进标准库日志的默认出口即标准错误，那是本模块的配置管不到的地方。**接受的代价**：端口扫描与协议探测产生的握手失败也在其中，它们在配置的目的地里是一类可观的量，而此前只在标准错误上；日志模块不在场时这些记录落在标准输出，与请求路径上那些记录同途。那些记录的措辞是 `net/http` 的，本模块不改写。
+
+**头部已经提交时，`net/http` 另会写一条 superfluous 记录**，说本模块在头部之后又写了一次状态码——它的措辞会让人以为缺陷在写出状态码的那一处。它与本模块自己那一行同时出现，是同一次 panic 的两条记录。
+
+**它写出的那次响应不带归因。** 响应不区分崩的是哪一层、哪个模块；把一类 panic 归到具体某个后端或某条路径名下，仍由发现它的那一层自己做（见 [authn](design-authn.md)、[tenant](design-tenant.md)）。它记下的那一行则是另一回事：那一行带端名、panic 值与堆栈，读日志的人据此定位到崩溃的那一帧。响应不给归因与记录不给证据不是同一件事，这里要的是前者。
+
+**头部已经提交、响应已经开始流出去时，这一次以「格式完好但内容截断」的形态结束。** 兜底层接住 panic 之后正常返回，协议层因而按正常结束补上分块的结尾；没有兜底层时 panic 一路逃到协议层，连接被直接关掉，客户端解析分块时看得出中断。带上这一层换来的是一次可读的记录与一个可预期的状态码，代价是这一档截断对客户端不再可分辨——需要分辨它的处理器得自己在流的中间处理失败。
 
 ### 阶段行为
 
@@ -452,7 +460,8 @@ stateDiagram-v2
 | 中间件排序与链组装 | 已实现 | `pkg/http/order.go` `orderLayers`、`pkg/http/assemble.go` `(*endpoint).assemble`、`reportUnlanded` |
 | 监听端的绑定与两拍停机 | 已实现 | `pkg/http/listener.go` `(*listener).start`、`(*listener).stop`、`(*listener).close` |
 | 请求上下文的建立 | 已实现 | `pkg/http/assemble.go` `(*endpoint).base` |
-| 请求路径的 panic 兜底 | 未实现 | 尚无该层，`pkg/http` 里也没有 `PanicResponder`；设计见本文件的兜底层一节 |
+| 请求路径的 panic 兜底 | 已实现 | `pkg/http/recovery.go` `fallback`、`writePanicResponse`、`stackTrace` |
+| `PanicResponder` 可选接缝 | 已实现 | `pkg/http/recovery.go` `PanicResponder`、`pkg/http/module.go` `panicResponder` |
 | `Spec` 资源、形状校验与查询 | 已实现 | `pkg/http/surface.go` `Spec`、`pkg/http/spec.go` `validateSpecs`、`validateSpec` |
 | 请求处理工具 | 已实现 | `pkg/http/decode.go` `Decode`、`pkg/http/respond.go` `WriteJSON`、`StatusFor` |
 | 标准库路由引擎子包 | 已实现 | `pkg/http/stdmux/stdmux.go` `Module` |

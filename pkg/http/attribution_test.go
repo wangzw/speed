@@ -62,7 +62,7 @@ var _ Engine = (*setwiseEngine)(nil)
 // mounting would move.
 func TestRefusalNoSetwiseEngineCanAttributeSaysSo(t *testing.T) {
 	logger, _ := newRecordingLogger()
-	_, err := assembleEndpointOn(t, newSetwiseEngine(2), testSettings("public"), nil, logger,
+	_, err := assembleEndpointOn(t, newSetwiseEngine(2), testSettings("public"), nil, logger, nil,
 		func(e Endpoint) {
 			e.Route("GET /one", nethttp.NotFoundHandler())
 			e.Route("GET /two", nethttp.NotFoundHandler())

@@ -49,6 +49,10 @@ type router struct {
 	// injected is the logger put into each request's context, nil when no
 	// module delivers the Logger capability.
 	injected *slog.Logger
+	// responder is what decides the shape of the response a request path's
+	// panic fallback writes, nil when no module delivers the PanicResponder
+	// capability.
+	responder PanicResponder
 	// logger is where this module's own diagnostics go. Unlike injected it
 	// is never nil: with no Logger capability it is the process default.
 	logger *slog.Logger

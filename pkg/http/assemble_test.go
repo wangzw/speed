@@ -22,20 +22,21 @@ func assembleEndpoint(t *testing.T, s endpointSettings, injected, logger *slog.L
 	register func(Endpoint),
 ) (nethttp.Handler, error) {
 	t.Helper()
-	return assembleEndpointOn(t, nethttp.NewServeMux(), s, injected, logger, register)
+	return assembleEndpointOn(t, nethttp.NewServeMux(), s, injected, logger, nil, register)
 }
 
-// assembleEndpointOn is assembleEndpoint with the engine under the test's
-// control, for the tests whose subject is what the assembly asks the engine.
+// assembleEndpointOn is assembleEndpoint with the engine and the panic
+// responder under the test's control, for the tests whose subject is what the
+// assembly asks the engine or what the fallback writes.
 func assembleEndpointOn(t *testing.T, engine Engine, s endpointSettings, injected, logger *slog.Logger,
-	register func(Endpoint),
+	responder PanicResponder, register func(Endpoint),
 ) (nethttp.Handler, error) {
 	t.Helper()
 	r := newRouter([]endpointSettings{s}, func() Engine { return nethttp.NewServeMux() })
 	r.open()
 	register(endpointOf(t, r, s.name))
 	r.seal()
-	return r.endpoints[s.name].assemble(engine, injected, logger)
+	return r.endpoints[s.name].assemble(engine, injected, logger, responder)
 }
 
 // mustAssemble is assembleEndpoint for the tests whose subject is the chain
@@ -114,7 +115,7 @@ func TestRouteConflictIsStartupFailure(t *testing.T) {
 func TestRouteConflictNamesBothPatternsAndTheEndpoint(t *testing.T) {
 	logger, _ := newRecordingLogger()
 	engine := attributingEngine{nethttp.NewServeMux()}
-	_, err := assembleEndpointOn(t, engine, testSettings("public"), nil, logger, func(e Endpoint) {
+	_, err := assembleEndpointOn(t, engine, testSettings("public"), nil, logger, nil, func(e Endpoint) {
 		e.Route("GET /things/{id}", nethttp.NotFoundHandler())
 		e.Route("GET /things/{name}", nethttp.NotFoundHandler())
 	})
@@ -156,7 +157,7 @@ func TestConflictWithoutAttributionSaysSo(t *testing.T) {
 func TestConflictAnsweredWithNoPairSaysSo(t *testing.T) {
 	logger, _ := newRecordingLogger()
 	engine := unattributableEngine{nethttp.NewServeMux()}
-	_, err := assembleEndpointOn(t, engine, testSettings("public"), nil, logger, func(e Endpoint) {
+	_, err := assembleEndpointOn(t, engine, testSettings("public"), nil, logger, nil, func(e Endpoint) {
 		e.Route("GET /things/{id}", nethttp.NotFoundHandler())
 		e.Route("GET /things/{name}", nethttp.NotFoundHandler())
 	})
@@ -487,7 +488,7 @@ func TestAssembledChainIsListed(t *testing.T) {
 	})
 
 	written := strings.Join(records.at(slog.LevelInfo), "\n")
-	mustContain(t, written, "chain=http:base -> outer -> inner", "the chain in the order it runs")
+	mustContain(t, written, "chain=http:base -> http:fallback -> outer -> inner", "the chain in the order it runs")
 	mustContain(t, written, "endpoint=public", "the endpoint the chain belongs to")
 }
 

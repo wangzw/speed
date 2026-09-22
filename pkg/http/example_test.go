@@ -231,7 +231,7 @@ func ExampleEndpoint_Route() {
 	defer func() { _ = host.stop() }()
 
 	// Output:
-	// INFO an HTTP endpoint's chain is assembled endpoint=public routes=1 chain=http:base
+	// INFO an HTTP endpoint's chain is assembled endpoint=public routes=1 chain=http:base -> http:fallback
 }
 
 // ExampleEndpoint_Use registers two middleware layers on one endpoint.
@@ -284,7 +284,7 @@ func ExampleEndpoint_Use() {
 	defer func() { _ = host.stop() }()
 
 	// Output:
-	// INFO an HTTP endpoint's chain is assembled endpoint=public routes=0 chain=http:base -> span -> trace
+	// INFO an HTTP endpoint's chain is assembled endpoint=public routes=0 chain=http:base -> http:fallback -> span -> trace
 }
 
 // ExampleDecode decodes a request body in a handler.

@@ -105,6 +105,13 @@ func (l *listener) start(s endpointSettings, h nethttp.Handler, logger *slog.Log
 		ReadTimeout:       s.readTimeout,
 		WriteTimeout:      s.writeTimeout,
 		IdleTimeout:       s.idleTimeout,
+		// What net/http writes for itself goes to this module's logger rather
+		// than to the process default: a panic outside the request path — in
+		// the base layer, or in the protocol implementation — and its own
+		// reports about a connection would otherwise be the only records in
+		// the process that miss the configured destinations. The wording is
+		// net/http's and this module does not rewrite it.
+		ErrorLog: slog.NewLogLogger(logger.Handler(), slog.LevelError),
 	}
 	// The socket is wrapped so that closing it twice is closing it once.
 	// Stop closes it and starts the Shutdown that follows straight away,

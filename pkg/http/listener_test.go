@@ -480,3 +480,29 @@ func TestDrainsOfSeveralEndpointsRunTogether(t *testing.T) {
 			endpoints, budget, elapsed)
 	}
 }
+
+// TestTheServersOwnRecordsGoToTheModulesLogger pins what net/http writes for
+// itself reaching the destinations this module's logger is configured with.
+//
+// Those records are net/http's own: the panic it catches when nothing on the
+// request path did, a TLS handshake that failed, a status written after the
+// header was already committed. Left to the process default they are the only
+// records in the process that miss the configured destinations, and they go to
+// a file descriptor the host never chose.
+func TestTheServersOwnRecordsGoToTheModulesLogger(t *testing.T) {
+	logger, records := newRecordingLogger()
+	l, _ := startTestEndpoint(t, testSettings("public"), nethttp.NotFoundHandler(), logger)
+
+	if l.server == nil || l.server.ErrorLog == nil {
+		t.Fatal("the listener's server was given no log of its own, so what net/http writes for " +
+			"itself goes to the process default instead of the configured destinations")
+	}
+	l.server.ErrorLog.Print("net/http writing for itself")
+
+	written := records.at(slog.LevelError)
+	if len(written) != 1 {
+		t.Fatalf("the server's own record produced %d entries on this module's logger, want one: %v",
+			len(written), written)
+	}
+	mustContain(t, written[0], "net/http writing for itself", "the text net/http wrote")
+}
