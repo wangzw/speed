@@ -139,12 +139,16 @@ func (p *providers) instrument(endpoint string) func(nethttp.Handler) nethttp.Ha
 				if raised != nil {
 					span.RecordError(fmt.Errorf("%v", raised))
 					span.SetStatus(codes.Error, "handler panicked")
-					// Nothing was written, so the status the caller will see is
-					// the entry module's, whose recovery layer answers a
-					// panicking handler with an internal error. Reporting the
+					// Nothing was written, so the status the caller sees is the
+					// one the entry module's recovery layer writes, and that
+					// layer's default is an internal error. Reporting the
 					// recorder's untouched default instead would put every
 					// panicking request into the 200 bucket, which is the one
-					// place an operator most needs it not to be.
+					// place an operator most needs it not to be. A module that
+					// delivered a PanicResponder can write something else, and
+					// this layer cannot see that decision — the module's
+					// documentation states it as one of the things it does not
+					// guarantee.
 					if !rec.wroteHeader {
 						code = nethttp.StatusInternalServerError
 					}
