@@ -284,7 +284,7 @@ func ExampleEndpoint_Use() {
 	defer func() { _ = host.stop() }()
 
 	// Output:
-	// INFO an HTTP endpoint's chain is assembled endpoint=public routes=0 chain=http:base -> http:fallback -> span -> trace
+	// INFO an HTTP endpoint's chain is assembled endpoint=public routes=0 chain=http:base -> http:fallback -> span(github.com/vislake/speed/pkg/http_test.spans) -> trace(github.com/vislake/speed/pkg/http_test.tracing)
 }
 
 // ExampleDecode decodes a request body in a handler.

@@ -53,7 +53,7 @@ func (e *endpoint) assemble(engine Engine, injected, logger *slog.Logger,
 	logger.Info("an HTTP endpoint's chain is assembled",
 		"endpoint", e.settings.name,
 		"routes", len(e.routes),
-		"chain", chainDescription(ordered))
+		"chain", chainDescription(e.settings.name, ordered))
 	return e.base(fallback(handler, e.settings.name, responder), injected), nil
 }
 
@@ -210,16 +210,37 @@ func (e *endpoint) base(next nethttp.Handler, injected *slog.Logger) nethttp.Han
 }
 
 // chainDescription renders an assembled chain for the startup log, outermost
-// first. The layers this module puts outside every registered one are named
-// too, and by name alone: they are not on the registration surface and stand
-// for no capability, so a reader comparing the line with the code would
-// otherwise find the body limit, the logger and the panic fallback applied by
-// something the line does not mention.
-func chainDescription(ordered []layer) string {
-	names := make([]string, 0, len(ordered)+2)
-	names = append(names, baseName, fallbackName)
+// first.
+//
+// A registered layer is written down together with the capabilities it stands
+// for. This line is where those are readable side by side, and what makes it
+// worth reading: a capability no layer on this endpoint stands for is a
+// position another layer's After or Before asked for and did not get, and the
+// name alone does not answer whether the layer that should have stood for it
+// was in the assembly at all. The layers this module puts outside every
+// registered one are named too, and by name alone: they are not on the
+// registration surface and stand for no capability, so a reader comparing the
+// line with the code would otherwise find the body limit, the logger and the
+// panic fallback applied by something the line does not mention.
+func chainDescription(endpoint string, ordered []layer) string {
+	parts := make([]string, 0, len(ordered)+2)
+	parts = append(parts, baseName, fallbackName)
 	for _, l := range ordered {
-		names = append(names, l.mw.Name)
+		parts = append(parts, chainLayer(endpoint, l))
 	}
-	return strings.Join(names, " -> ")
+	return strings.Join(parts, " -> ")
+}
+
+// chainLayer names one registered layer on the chain listing, and the
+// capabilities it stands for.
+//
+// A layer whose Provides is empty is written as its name alone. That is legal
+// — nobody can point at such a layer, which is the whole cost — and it reads
+// the same way the built-in layers do, which is how a reader tells a layer
+// that stands for nothing from one whose capabilities are listed.
+func chainLayer(endpoint string, l layer) string {
+	if len(l.provides) == 0 {
+		return l.mw.Name
+	}
+	return l.mw.Name + "(" + strings.Join(capabilityNames(endpoint, l, "Provides", l.provides), ", ") + ")"
 }
