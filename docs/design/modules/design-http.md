@@ -97,20 +97,20 @@ type Middleware struct {
 声明写成：
 
 ```go
-// 追踪模块：本层代表追踪，此外不关心
+// 遥测模块：本层代表它交付的追踪与指标，位置靠外，不指向任何别的功能
 ep.Use(http.Middleware{
-    Name:     "trace",
-    Provides: []core.Token{(*tracing.Tracer)(nil)},
+    Name:     "observability",
+    Provides: []core.Token{(*observability.TracerProvider)(nil), (*observability.MeterProvider)(nil)},
     Order:    -10,
-    Wrap:     trace,
+    Wrap:     instrument,
 })
 
-// 某模块的层：指向追踪层，落在它之内
+// 另一个模块的层：本层代表审计，示例把它排在遥测层之内
 ep.Use(http.Middleware{
-    Name:     "span",
-    Provides: []core.Token{(*spans.Span)(nil)},
-    After:    []core.Token{(*tracing.Tracer)(nil)},
-    Wrap:     span,
+    Name:     "audit",
+    Provides: []core.Token{(*audit.Audit)(nil)},
+    After:    []core.Token{(*observability.TracerProvider)(nil)},
+    Wrap:     capture,
 })
 ```
 

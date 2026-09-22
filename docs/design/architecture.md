@@ -210,3 +210,4 @@ speed 不引入进程边界。宿主是单一进程，注册表与全部模块�
 | [audit](modules/design-audit.md) | 已实现 |
 | [settings](modules/design-settings.md) | 已实现 |
 | [ratelimit](modules/design-ratelimit.md) | 已实现 |
+| [observability](modules/design-observability.md) | 未实现 |
