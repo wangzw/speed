@@ -1,7 +1,7 @@
 package http
 
 import (
-	"bufio"
+	"bytes"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -33,6 +33,14 @@ type Validator interface {
 // failure shape this project avoids everywhere. A handler that genuinely wants
 // a lenient parse uses encoding/json directly.
 //
+// For the same reason a member name has to match its field exactly, case
+// included, and appears at most once in an object. encoding/json fills a field
+// from a name that matches it only when case is ignored, and keeps the last of
+// a repeated member's values; both are refused as malformed bodies. A map or
+// an untyped value is checked for repeated names alone, since two keys that
+// differ in case are two keys there, and a type that parses its own JSON is
+// left to itself.
+//
 // Decode does not limit the size of the body. The endpoint's configured limit
 // is imposed by the outermost layer of the chain, so it covers every handler
 // on the endpoint rather than only the ones that call Decode; a body cut off
@@ -54,18 +62,17 @@ func Decode(r *nethttp.Request, dst any) error {
 		return fmt.Errorf("http: Decode was given %T, which is not a non-nil pointer and cannot "+
 			"be decoded into. Pass the address of the value the body is meant to fill", dst)
 	}
-	body := bufio.NewReader(requestBody(r))
-	first, err := firstSignificantByte(body)
-	if err != nil {
-		return decodeFailure(err)
-	}
-	dec := json.NewDecoder(body)
-	dec.DisallowUnknownFields()
-	if err = dec.Decode(dst); err != nil {
+	// The body is read as one raw value before anything is decoded into dst:
+	// its member names are checked against dst's type first, and that takes
+	// a pass of its own. encoding/json buffers a whole value before decoding
+	// it in any case, so the raw copy costs no more memory than the decode.
+	body := json.NewDecoder(requestBody(r))
+	var raw json.RawMessage
+	if err := body.Decode(&raw); err != nil {
 		return decodeFailure(err)
 	}
 	var trailing json.RawMessage
-	err = dec.Decode(&trailing)
+	err := body.Decode(&trailing)
 	switch {
 	case err == nil:
 		return fmt.Errorf("%w: the body carries a second JSON value after the first. "+
@@ -73,11 +80,20 @@ func Decode(r *nethttp.Request, dst any) error {
 	case !errors.Is(err, io.EOF):
 		return decodeFailure(err)
 	}
-	if first == 'n' {
-		// The only JSON value that begins with n is null, and it decoded, so
-		// that is what the body was.
+	if bytes.Equal(bytes.TrimSpace(raw), []byte("null")) {
 		return fmt.Errorf("%w: the body is JSON null, which carries no value. "+
 			"Send the JSON document the endpoint expects", ErrMalformedBody)
+	}
+	if err = checkMembers(raw, reflect.TypeOf(dst)); err != nil {
+		if errors.Is(err, ErrMalformedBody) {
+			return err
+		}
+		return decodeFailure(err)
+	}
+	dec := json.NewDecoder(bytes.NewReader(raw))
+	dec.DisallowUnknownFields()
+	if err = dec.Decode(dst); err != nil {
+		return decodeFailure(err)
 	}
 	if v, ok := dst.(Validator); ok {
 		if err := v.Validate(); err != nil {
@@ -96,23 +112,6 @@ func requestBody(r *nethttp.Request) io.Reader {
 		return nethttp.NoBody
 	}
 	return r.Body
-}
-
-// firstSignificantByte returns the first byte of the body that is not JSON
-// whitespace, and leaves it unread. A body with nothing else in it reports
-// io.EOF, the same thing the decoder reports for it.
-func firstSignificantByte(body *bufio.Reader) (byte, error) {
-	for {
-		b, err := body.ReadByte()
-		if err != nil {
-			return 0, err
-		}
-		switch b {
-		case ' ', '\t', '\n', '\r':
-			continue
-		}
-		return b, body.UnreadByte()
-	}
 }
 
 // decodeFailure classifies a failure from the JSON decoder.

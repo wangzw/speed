@@ -198,6 +198,8 @@ func StatusFor(err error) int
 
 **未知字段一律拒绝，没有开关。** 客户端把字段名拼错时，宽松解码会静默地把它当成没传，而请求看起来是成功的——这正是本项目一贯要避免的失效形态。需要宽松解析的 handler 直接用标准库。
 
+**成员名要与字段名逐字相同，一个对象里的同名成员只许出现一次。** 标准库不区分大小写地匹配字段，`NAME` 会填进 `name`；同名成员写了两次时它留下最后一个值、丢掉其余的。前者把一个 API 没有的名字读成它有的那个，后者静默丢掉客户端发来的一个值，两者还让同一段请求体在本进程与在它之前经手的网关、过滤层或签名校验那里读出不同的意思。两者都归入请求体不合法，错误点名那个成员。在任何大小写下都不是字段名的成员仍按未知字段拒绝。映射与无类型的值只查同名：两个仅大小写不同的键在那里是两个键。自己解析 JSON 的类型（实现了 `json.Unmarshaler` 或 `encoding.TextUnmarshaler`）的内部不在此列，那归该类型自己。**代价**：请求体在解码之前要按目标类型再走一遍，逐个检查成员名。
+
 **工具只返回错误，不写错误响应。** 响应体的形状归提供该 API 的模块，`StatusFor` 给出的是状态码而非响应体，工具因而不定义任何错误响应的结构。兜底层写出的那次响应不由工具产生，也不构成对任何 API 响应形状的定义。
 
 请求体的大小不由 `Decode` 限制：该端配置的上限由链最外层施加，对该端的每个 handler 一律生效，包括不用 `Decode` 的那些。
@@ -480,6 +482,6 @@ stateDiagram-v2
 | 请求路径的 panic 兜底 | 已实现 | `pkg/http/recovery.go` `fallback`、`writePanicResponse`、`stackTrace` |
 | `PanicResponder` 可选接缝 | 已实现 | `pkg/http/recovery.go` `PanicResponder`、`pkg/http/module.go` `panicResponder` |
 | `Spec` 资源、形状校验与查询 | 已实现 | `pkg/http/surface.go` `Spec`、`pkg/http/spec.go` `validateSpecs`、`validateSpec` |
-| 请求处理工具 | 已实现 | `pkg/http/decode.go` `Decode`、`pkg/http/respond.go` `WriteJSON`、`StatusFor` |
+| 请求处理工具 | 已实现 | `pkg/http/decode.go` `Decode`、`pkg/http/members.go` `checkMembers`、`jsonFields`、`pkg/http/respond.go` `WriteJSON`、`StatusFor` |
 | 排空信号 | 已实现 | `pkg/http/draining.go` `Draining`、`pkg/http/listener.go` `(*listener).start`、`(*listener).stop` |
 | 标准库路由引擎子包 | 已实现 | `pkg/http/stdmux/stdmux.go` `Module` |
