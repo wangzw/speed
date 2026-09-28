@@ -175,7 +175,25 @@ func stance(cfg *Config) (core.Enablement, error) {
 
 // open connects.
 func open(ctx context.Context, cfg *Config, logger *slog.Logger) (event.Bus, error) {
-	nc, err := nats.Connect(cfg.URL, nats.Timeout(cfg.Timeout))
+	nc, err := nats.Connect(cfg.URL,
+		nats.Timeout(cfg.Timeout),
+		// A bus lives as long as its process. The library's default gives up
+		// reconnecting after two minutes, and past that the connection is
+		// closed for good: every publish and every fetch would fail until the
+		// process restarted, whenever the server came back.
+		nats.MaxReconnects(-1),
+		// Losing the server and getting it back are the only signals of a bus
+		// that cannot deliver, so both reach the assembly's log. A clean close
+		// reports no error and says nothing.
+		nats.DisconnectErrHandler(func(_ *nats.Conn, err error) {
+			if err != nil {
+				logger.Error("event/nats: the connection to the server was lost; reconnecting", "err", err)
+			}
+		}),
+		nats.ReconnectHandler(func(conn *nats.Conn) {
+			logger.Info("event/nats: reconnected to the server", "server", conn.ConnectedUrlRedacted())
+		}),
+	)
 	if err != nil {
 		return nil, fmt.Errorf("%s: connecting: %w", ModuleName, err)
 	}
