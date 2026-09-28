@@ -303,4 +303,51 @@ func TestPruneFailureIsReportedOnce(t *testing.T) {
 	if !strings.Contains(reported, rf.path) {
 		t.Errorf("the report %q does not name the destination", reported)
 	}
+	requireOnePrefix(t, reported)
+}
+
+// requireOnePrefix asserts that a report line carries this module's prefix
+// once: every line to standard error is prefixed where it is written, so a
+// message that spells the prefix out itself reads "log: log:".
+func requireOnePrefix(t *testing.T, reported string) {
+	t.Helper()
+	if !strings.HasPrefix(reported, "log: ") || strings.Contains(reported, "log: log:") {
+		t.Errorf("the report %q does not start with the module's prefix exactly once", reported)
+	}
+}
+
+// TestAnArchiveThatCannotBeDeletedIsReportedOnce is the other failure a prune
+// can meet: the directory lists, and an archive in it cannot be removed. It is
+// reported once, with the archive named and the prefix written once.
+func TestAnArchiveThatCannotBeDeletedIsReportedOnce(t *testing.T) {
+	if os.Geteuid() == 0 {
+		t.Skip("the superuser deletes from a directory without write permission")
+	}
+	dir := filepath.Join(t.TempDir(), "logs")
+	if err := os.Mkdir(dir, 0o700); err != nil {
+		t.Fatalf("creating the log directory failed: %v", err)
+	}
+	rf := newTestFile(t, filepath.Join(dir, "app.log"), 0, 0, 1, time.Now)
+	// An archive past the retention appears after the open, and the directory
+	// then refuses to have it removed.
+	archive := filepath.Join(dir, "app-20200101-000000.log")
+	if err := os.WriteFile(archive, []byte("old\n"), 0o600); err != nil {
+		t.Fatalf("creating the archive failed: %v", err)
+	}
+	if err := os.Chmod(dir, 0o500); err != nil {
+		t.Fatalf("making the directory read-only failed: %v", err)
+	}
+	t.Cleanup(func() { _ = os.Chmod(dir, 0o700) })
+
+	reported := captureStderr(t, func() {
+		rf.prune()
+		rf.prune()
+	})
+	if got := strings.Count(reported, "\n"); got != 1 {
+		t.Errorf("two failed deletions wrote %d lines to standard error, want one:\n%s", got, reported)
+	}
+	if !strings.Contains(reported, archive) {
+		t.Errorf("the report %q does not name the archive", reported)
+	}
+	requireOnePrefix(t, reported)
 }

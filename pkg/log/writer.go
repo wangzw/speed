@@ -156,7 +156,8 @@ func (w *destWriter) close() {
 	}
 }
 
-// report writes one line to os.Stderr.
+// report writes one line to os.Stderr, prefixed with this module's name. The
+// prefix is added here and only here, so a message passed in does not spell it.
 //
 // Reporting is fixed there and does not go through this module's writers: a
 // writer that is failing has no way to carry the news of its own failure, and

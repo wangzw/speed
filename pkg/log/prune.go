@@ -41,7 +41,7 @@ func (rf *rotatingFile) prune() {
 	}
 	entries, err := os.ReadDir(rf.dir)
 	if err != nil {
-		rf.notePruneFailure("log: the archives of %s could not be listed: %v", rf.path, err)
+		rf.notePruneFailure("the archives of %s could not be listed: %v", rf.path, err)
 		return
 	}
 	current := filepath.Base(rf.path)
@@ -70,7 +70,7 @@ func (rf *rotatingFile) prune() {
 			continue
 		}
 		if err := os.Remove(a.name); err != nil && !os.IsNotExist(err) {
-			rf.notePruneFailure("log: the archive %s could not be deleted: %v", a.name, err)
+			rf.notePruneFailure("the archive %s could not be deleted: %v", a.name, err)
 			failed = true
 		}
 	}
