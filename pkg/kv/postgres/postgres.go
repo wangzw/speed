@@ -29,6 +29,7 @@ import (
 	"time"
 
 	"github.com/jackc/pgx/v5"
+	"github.com/jackc/pgx/v5/pgconn"
 	"github.com/jackc/pgx/v5/pgxpool"
 
 	"github.com/vislake/speed/pkg/core"
@@ -297,7 +298,7 @@ func (s *store) increment(ctx context.Context, key string, delta float64, ttl ti
 		 RETURNING convert_from(value, 'UTF8')`,
 		spell(key), formatFloat(delta), expires).Scan(&text)
 	if incrErr != nil {
-		return 0, asNotNumeric(incrErr)
+		return 0, asNotNumeric(incrErr, key)
 	}
 	if commitErr := tx.Commit(ctx); commitErr != nil {
 		return 0, commitErr
@@ -398,23 +399,37 @@ func formatFloat(v float64) string { return strconv.FormatFloat(v, 'g', -1, 64) 
 // caller receives is the float64 this returns.
 func parseFloat(text string) (float64, error) { return strconv.ParseFloat(text, 64) }
 
+// The SQLSTATE codes the increment statement raises when the stored value is
+// not a counter.
+const (
+	// invalidTextRepresentation is the numeric cast refusing the value's text.
+	invalidTextRepresentation = "22P02"
+	// characterNotInRepertoire is the decode refusing bytes that are not
+	// UTF-8, which it has to do before the cast can ask for a number.
+	characterNotInRepertoire = "22021"
+)
+
 // asNotNumeric maps PostgreSQL's complaint about a value that is not a number
 // onto this capability's sentinel.
 //
-// The match is on the server's own wording, which is the only signal it gives,
-// and it is narrow so that everything else stays as it came: a caller has to be
-// able to tell a bad value from a connection that dropped.
 // It matches two complaints, not one. A value that is not a number is the
 // obvious case; a value that is not valid UTF-8 is the other, because the
 // statement has to decode the bytes before it can ask whether they are a
 // number, and the capability's values are opaque bytes that are allowed not to
 // be text at all. Both mean the same thing to a caller — this key does not hold
 // a counter — so both become the sentinel rather than one of them escaping as a
-// raw statement failure.
-func asNotNumeric(err error) error {
-	if err != nil && (strings.Contains(err.Error(), "invalid input syntax for type numeric") ||
-		strings.Contains(err.Error(), "invalid byte sequence for encoding")) {
-		return fmt.Errorf("%w: %s", kv.ErrNotNumeric, err.Error())
+// raw statement failure. The match is on the error code and narrow, so that
+// everything else stays as it came: a caller has to be able to tell a bad value
+// from a connection that dropped.
+//
+// The server's message is left behind rather than wrapped. It quotes the
+// offending text, and the value under a key may be anything a caller stored —
+// a credential, an address — that an error would carry into a log.
+func asNotNumeric(err error, key string) error {
+	var pgErr *pgconn.PgError
+	if errors.As(err, &pgErr) &&
+		(pgErr.Code == invalidTextRepresentation || pgErr.Code == characterNotInRepertoire) {
+		return fmt.Errorf("%w (key %q)", kv.ErrNotNumeric, key)
 	}
 	return err
 }

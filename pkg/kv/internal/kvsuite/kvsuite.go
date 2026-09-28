@@ -285,6 +285,33 @@ func AssertConforms(t *testing.T, newStore Factory) {
 		}
 	})
 
+	t.Run("the non-numeric error leaves the stored value out of its text", func(t *testing.T) {
+		s := newStore(t)
+		ctx := context.Background()
+		// The value may be anything a caller stored, a credential or an
+		// address among them, and an error travels into logs.
+		for _, stored := range []string{"alice@example.com", "\xffalice@example.com"} {
+			if err := s.Set(ctx, "k", []byte(stored), 0); err != nil {
+				t.Fatalf("Set: %v", err)
+			}
+			for name, incr := range map[string]func() error{
+				"IncrByFloat": func() error { _, err := s.IncrByFloat(ctx, "k", 1); return err },
+				"IncrByFloatWithTTL": func() error {
+					_, err := s.IncrByFloatWithTTL(ctx, "k", 1, liveTTL)
+					return err
+				},
+			} {
+				err := incr()
+				if !errors.Is(err, kv.ErrNotNumeric) {
+					t.Fatalf("%s on %q: %v, want ErrNotNumeric", name, stored, err)
+				}
+				if strings.Contains(err.Error(), "alice") {
+					t.Fatalf("%s on a non-numeric value names it in its error: %v", name, err)
+				}
+			}
+		}
+	})
+
 	t.Run("compare-and-swap writes only on a match", func(t *testing.T) {
 		s := newStore(t)
 		ctx := context.Background()

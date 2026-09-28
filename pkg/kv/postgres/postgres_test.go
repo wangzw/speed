@@ -7,6 +7,8 @@ import (
 	"sync"
 	"testing"
 
+	"github.com/jackc/pgx/v5/pgconn"
+
 	"github.com/vislake/speed/pkg/core"
 	"github.com/vislake/speed/pkg/internal/pgpool"
 	"github.com/vislake/speed/pkg/internal/pgpool/pgtest"
@@ -90,21 +92,29 @@ func TestStanceEnablesOnceAConnectionStringIsGiven(t *testing.T) {
 // TestOnlyTheServersNonNumericWordingBecomesTheSentinel covers the one mapping
 // this backend has to make, and the narrowness that keeps a connection failure
 // from being read as a bad value.
-func TestOnlyTheServersNonNumericWordingBecomesTheSentinel(t *testing.T) {
-	if got := asNotNumeric(nil); got != nil {
+func TestOnlyTheServersNonNumericComplaintsBecomeTheSentinel(t *testing.T) {
+	if got := asNotNumeric(nil, "k"); got != nil {
 		t.Fatalf("asNotNumeric(nil) = %v, want nil", got)
 	}
 	conn := errors.New("failed to connect to `host=127.0.0.1`: connection refused")
-	if got := asNotNumeric(conn); !errors.Is(got, conn) {
+	if got := asNotNumeric(conn, "k"); !errors.Is(got, conn) {
 		t.Fatalf("a connection failure was rewritten as %v", got)
 	}
-	other := errors.New(`ERROR: relation "kv_entries" does not exist (SQLSTATE 42P01)`)
-	if got := asNotNumeric(other); !errors.Is(got, other) {
+	other := &pgconn.PgError{Code: "42P01", Message: `relation "kv_entries" does not exist`}
+	if got := asNotNumeric(other, "k"); !errors.Is(got, other) {
 		t.Fatalf("an unrelated server error was rewritten as %v", got)
 	}
-	nonNumeric := errors.New(`ERROR: invalid input syntax for type numeric: "not a number" (SQLSTATE 22P02)`)
-	if got := asNotNumeric(nonNumeric); !errors.Is(got, kv.ErrNotNumeric) {
-		t.Fatalf("the server's non-numeric complaint was not mapped onto the sentinel: %v", got)
+	for _, complaint := range []*pgconn.PgError{
+		{Code: invalidTextRepresentation, Message: `invalid input syntax for type numeric: "not a number"`},
+		{Code: characterNotInRepertoire, Message: `invalid byte sequence for encoding "UTF8": 0xff`},
+	} {
+		got := asNotNumeric(complaint, "k")
+		if !errors.Is(got, kv.ErrNotNumeric) {
+			t.Fatalf("the server's complaint %q was not mapped onto the sentinel: %v", complaint.Message, got)
+		}
+		if strings.Contains(got.Error(), "not a number") || strings.Contains(got.Error(), "0xff") {
+			t.Fatalf("the sentinel carries the server's quotation of the stored value: %v", got)
+		}
 	}
 }
 
