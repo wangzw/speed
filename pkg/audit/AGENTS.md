@@ -128,7 +128,10 @@ must not cross, and how to run it.
   driver and an ending context does not cut it short, so `boundLockWait` sets
   the busy timeout of the connection the row takes and puts it back afterwards;
   a connection whose busy timeout cannot be put back is discarded, never handed
-  back to the pool carrying the row's bound.
+  back to the pool carrying the row's bound. On a SQLite in-memory database in a
+  shared cache the driver waits for a table lock with neither the busy timeout
+  nor the context ending it, so none of these bounds holds there; the design
+  document carries that as a non-guarantee.
 - **The event column is unique, and the event path's insert yields on it.** A
   broadcast bus hands every event to every replica, every replica writes into
   the one table, and the event's identifier is the same on every delivery, so
