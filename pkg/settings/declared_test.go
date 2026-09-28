@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"math/big"
 	"net/netip"
 	"reflect"
 	"strings"
@@ -124,6 +125,86 @@ func TestDeclaredWithholdsASensitiveDefault(t *testing.T) {
 		if item.Key == "notify.mail.token" && !item.Sensitive {
 			t.Errorf("the credential is listed as an ordinary item, so nothing tells a surface to "+
 				"mask the rows List hands out for it: %+v", item)
+		}
+	}
+}
+
+// listingSecrets carries one item of every kind the type set admits, each with
+// a default a credential could be: a PIN is an integer, a rotation period a
+// duration, a peer an address, a signing key a big number.
+type listingSecrets struct {
+	Password string
+	Channel  listingChannel
+	Pin      int
+	Serial   uint64
+	Armed    bool
+	Seed     float64
+	Rotation time.Duration
+	Issued   time.Time
+	Peer     netip.Addr
+	Key      big.Int
+}
+
+// listingSecretsModule declares a listingSecrets under namespace, every item
+// marked sensitive or none of them.
+func listingSecretsModule(namespace string, sensitive bool) core.Module {
+	secrets := listingSecrets{
+		Password: listingSecret,
+		Channel:  "pager",
+		Pin:      482915,
+		Serial:   9007199254740993,
+		Armed:    true,
+		Seed:     0.4142,
+		Rotation: 97 * time.Minute,
+		Issued:   time.Date(2031, 3, 4, 5, 6, 7, 0, time.UTC),
+		Peer:     netip.MustParseAddr("192.0.2.77"),
+	}
+	secrets.Key.Lsh(big.NewInt(1), 70)
+	items := make(map[string]Item)
+	for _, key := range []string{
+		"password", "channel", "pin", "serial", "armed", "seed", "rotation", "issued", "peer", "key",
+	} {
+		items[key] = Item{Sensitive: sensitive}
+	}
+	return declaring("test."+namespace, Schema{
+		Namespace: namespace,
+		Mounts:    []Mount{{Value: &secrets}},
+		Items:     items,
+	})
+}
+
+// A sensitive item's default is withheld whatever its declared type is.
+//
+// The marker is a property of the declaration, not of a type: a PIN compiled in
+// as an integer default, a rotation period as a duration or a peer as an
+// address reaches a client through the listing exactly as a string credential
+// would. The same carrier declared without the marker is the control: every one
+// of those defaults is listed there, so each one withheld is one that was there
+// to withhold.
+func TestDeclaredWithholdsTheDefaultOfASensitiveItemOfEveryKind(t *testing.T) {
+	keys := tableOf(t, listingSecretsModule("secret", true), listingSecretsModule("plain", false))
+	store, _ := storeOf(t, keys, newRecordingBus())
+
+	kinds := reflect.TypeFor[listingSecrets]().NumField()
+	listed := map[string][]DeclaredItem{}
+	for _, item := range store.Declared() {
+		namespace, _, _ := strings.Cut(item.Key, ".")
+		listed[namespace] = append(listed[namespace], item)
+	}
+	if len(listed["secret"]) != kinds || len(listed["plain"]) != kinds {
+		t.Fatalf("listed %d sensitive and %d ordinary items, want %d of each: %+v",
+			len(listed["secret"]), len(listed["plain"]), kinds, listed)
+	}
+	for _, item := range listed["plain"] {
+		if item.Default == "" {
+			t.Errorf("the ordinary item %q is listed with no default, so the case cannot tell a "+
+				"withheld default from an absent one", item.Key)
+		}
+	}
+	for _, item := range listed["secret"] {
+		if !item.Sensitive || item.Default != "" {
+			t.Errorf("the sensitive %v item %q is listed with default %q (sensitive = %v), want "+
+				"none", item.Type, item.Key, item.Default, item.Sensitive)
 		}
 	}
 }
