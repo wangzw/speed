@@ -2,7 +2,6 @@ package catalog
 
 import (
 	"context"
-	"errors"
 	"fmt"
 	"log/slog"
 	"sync"
@@ -239,14 +238,13 @@ func (r *roster) Put(ctx context.Context, t tenant.Tenant) error {
 		return err
 	}
 	err := r.handle.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
-		var held row
-		err := tx.Where("alias = ?", t.Alias).First(&held).Error
-		switch {
-		case err == nil && held.ID != string(t.ID):
-			return fmt.Errorf("%w: alias %q is held by tenant %q",
-				tenant.ErrAliasConflict, t.Alias, held.ID)
-		case err != nil && !errors.Is(err, gorm.ErrRecordNotFound):
+		held, err := lookUp(tx, "alias", t.Alias)
+		if err != nil {
 			return err
+		}
+		if len(held) > 0 && held[0].ID != string(t.ID) {
+			return fmt.Errorf("%w: alias %q is held by tenant %q",
+				tenant.ErrAliasConflict, t.Alias, held[0].ID)
 		}
 		return tx.Clauses(clause.OnConflict{
 			Columns:   []clause.Column{{Name: "id"}},
@@ -274,13 +272,12 @@ func (r *roster) SetStatus(ctx context.Context, id tenant.ID, s tenant.Status) e
 		return err
 	}
 	err := r.handle.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
-		var held row
-		err := tx.Where("id = ?", string(id)).First(&held).Error
-		if errors.Is(err, gorm.ErrRecordNotFound) {
-			return fmt.Errorf("%w: no tenant has identifier %q", tenant.ErrInvalidTenant, id)
-		}
+		held, err := lookUp(tx, "id", string(id))
 		if err != nil {
 			return err
+		}
+		if len(held) == 0 {
+			return fmt.Errorf("%w: no tenant has identifier %q", tenant.ErrInvalidTenant, id)
 		}
 		return tx.Model(&row{}).Where("id = ?", string(id)).
 			Update("status", int(s)).Error
@@ -289,6 +286,22 @@ func (r *roster) SetStatus(ctx context.Context, id tenant.ID, s tenant.Status) e
 		return err
 	}
 	return r.afterWrite(ctx)
+}
+
+// lookUp reads the row, if any, whose unique column holds this value.
+//
+// Finding none is an answer, and it is read as one: an empty result rather than
+// the not-found failure GORM's First reports. That failure reaches GORM's
+// logger as a failed statement, which its default logger prints to standard
+// output as an error, outside the logging module — on every tenant a new alias
+// is put for, and on every status change naming a tenant that is not there.
+func lookUp(tx *gorm.DB, column, value string) ([]row, error) {
+	var held []row
+	if err := tx.Where(clause.Eq{Column: clause.Column{Name: column}, Value: value}).
+		Limit(1).Find(&held).Error; err != nil {
+		return nil, err
+	}
+	return held, nil
 }
 
 // afterWrite rereads the table so that the writer sees its own write. Writes are
