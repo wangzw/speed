@@ -95,6 +95,10 @@ const (
 		PRIMARY KEY (event_id, replica)
 	);
 	CREATE INDEX IF NOT EXISTS ` + deliveredTable + `_replica ON ` + deliveredTable + ` (replica, event_id)`
+	// schemaLock is the advisory lock the table creation runs under. Its value
+	// is the bytes of "speed_ev", so it is recognisable in pg_locks and does
+	// not collide with a lock another part of the assembly takes by number.
+	schemaLock int64 = 0x73706565645f6576
 )
 
 // init registers this module with the process registry.
@@ -139,7 +143,7 @@ func open(ctx context.Context, cfg *pgpool.Config, logger *slog.Logger) (event.B
 	if err != nil {
 		return nil, err
 	}
-	if _, createErr := pool.Exec(ctx, createTable); createErr != nil {
+	if createErr := createTables(ctx, pool); createErr != nil {
 		pool.Close()
 		return nil, fmt.Errorf("%s: creating %s: %w", ModuleName, table, createErr)
 	}
@@ -175,6 +179,32 @@ func open(ctx context.Context, cfg *pgpool.Config, logger *slog.Logger) (event.B
 		replica: self,
 		table:   dispatch.New("event/postgres", logger),
 	}, nil
+}
+
+// createTables makes sure this implementation's tables are there, one replica
+// at a time.
+//
+// IF NOT EXISTS does not make concurrent creation safe: two sessions that both
+// find the table missing both go on to create it, and the one that commits
+// second fails on the catalog's unique indexes. Replicas of one assembly
+// starting together against a new database do exactly that, so every one of
+// them but the first would fail its startup. The transaction-scoped advisory
+// lock turns the creations into a queue: the first creates, and each after it
+// finds the tables there once it holds the lock. It is released with the
+// transaction, whatever becomes of it.
+func createTables(ctx context.Context, pool *pgxpool.Pool) error {
+	tx, err := pool.Begin(ctx)
+	if err != nil {
+		return err
+	}
+	defer func() { _ = tx.Rollback(ctx) }()
+	if _, err := tx.Exec(ctx, `SELECT pg_advisory_xact_lock($1)`, schemaLock); err != nil {
+		return fmt.Errorf("waiting for the schema lock: %w", err)
+	}
+	if _, err := tx.Exec(ctx, createTable); err != nil {
+		return err
+	}
+	return tx.Commit(ctx)
 }
 
 // start freezes the table, opens the bus to publishing, and begins reading.
