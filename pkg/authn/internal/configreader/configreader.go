@@ -32,6 +32,13 @@ import (
 // outside the case reaches the values.
 func Over(t *testing.T, module core.Module, body string) config.Reader {
 	t.Helper()
+	return OverAll(t, body, module)
+}
+
+// OverAll is Over for a case that assembles several modules, each of which
+// reads its own section of the one body.
+func OverAll(t *testing.T, body string, modules ...core.Module) config.Reader {
+	t.Helper()
 
 	locator := filepath.Join(t.TempDir(), "config.json")
 	if err := os.WriteFile(locator, []byte(body), 0o600); err != nil {
@@ -45,7 +52,9 @@ func Over(t *testing.T, module core.Module, body string) config.Reader {
 		Name:      "host",
 		Resources: []any{config.HostIdentity{Prefix: "SPEEDAUTHNTEST", DefaultLocator: "file://" + locator}},
 	})
-	reg.Register(module)
+	for _, module := range modules {
+		reg.Register(module)
+	}
 
 	reader, err := config.Load(t.Context(), reg, nil)
 	if err != nil {
