@@ -183,7 +183,7 @@ err := store.Get(settings.ForTenant(tenantID), "ratelimit.window", &opts.Window)
 
 - 已是声明类型的值原样接受。
 - `time.Duration` 只收 `time.ParseDuration` 可解的文本，裸数字判 `ErrTypeMismatch`：它的单位是纳秒，`300` 在写的人眼里是五分钟，存下来是三百纳秒。
-- 数值写入另一种 Go 类型的数值项：整数值的浮点可写进整数项，整数可写进浮点项；带小数部分或超出目标类型范围的值判 `ErrTypeMismatch`，不做截断。
+- 数值写入另一种 Go 类型的数值项：整数值的浮点可写进整数项，整数可写进目标类型能精确表示它的浮点项，浮点数写进 `float32` 项要求按 `float32` 最短写法读回仍是写入的那个数；带小数部分、超出目标类型范围或会被存成邻近值的判 `ErrTypeMismatch`，不做截断，也不做舍入。
 - 文本写入实现 `TextUnmarshaler` 的类型，由该类型自己的 `UnmarshalText` 解析。
 - 文本写入布尔与数值项，按常规文本解析。
 - 字符串与布尔写入以同一底层种类定义的类型。

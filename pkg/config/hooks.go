@@ -210,8 +210,10 @@ func durationHook(from, to reflect.Type, data any) (any, error) {
 // Every one of those refusals has to be made here. The library truncates a
 // float into an integer field without a word, it writes an integer in with no
 // width check at all, so a value out of range wraps round instead of failing,
-// and it converts a float too wide for the field into an infinity, which reads
-// back as a value rather than as a failure.
+// it converts a float too wide for the field into an infinity, which reads
+// back as a value rather than as a failure, and it rounds an integer or a
+// float into a float field that cannot hold it, so 16777217 lands in a
+// float32 as 16777216.
 func exactNumberHook(from, to reflect.Type, data any) (any, error) {
 	if to == durationType {
 		return data, nil // settled by durationHook
@@ -232,6 +234,10 @@ func exactNumberHook(from, to reflect.Type, data any) (any, error) {
 		switch from.Kind() {
 		case reflect.Float32, reflect.Float64:
 			return fitFloat(v.Float(), to)
+		case reflect.Int, reflect.Int8, reflect.Int16, reflect.Int32, reflect.Int64:
+			return fitIntegerAsFloat(v.Int(), to)
+		case reflect.Uint, reflect.Uint8, reflect.Uint16, reflect.Uint32, reflect.Uint64:
+			return fitUnsignedAsFloat(v.Uint(), to)
 		}
 	}
 	return data, nil
@@ -311,14 +317,69 @@ func fitUnsigned(u uint64, to reflect.Type) (any, error) {
 	return out.Interface(), nil
 }
 
-// fitFloat writes a number into the target's own float type, refusing a value
-// the type cannot hold.
+// fitFloat writes a float into the target's own float type when the field
+// reads it back as the same number.
+//
+// A float64 field holds every float the sources deliver. A float32 field holds
+// one when the float32 nearest to it is either that very value or, written in
+// float32's own shortest form, the same number: 0.1 is both the float the
+// source gave and what its float32 reads back as, while 16777217 comes back as
+// 16777216, 0.123456789 as 0.12345679 and 1e-50 as zero. Refusing those is the
+// float half of the rule the integer fields follow: a value is never stored as
+// its neighbour. NaN and the infinities pass as they are, since every float
+// type holds them.
 func fitFloat(f float64, to reflect.Type) (any, error) {
 	out := reflect.New(to).Elem()
 	if out.OverflowFloat(f) {
 		return nil, fmt.Errorf("%v does not fit", f)
 	}
 	out.SetFloat(f)
+	if held := out.Float(); held != f && !math.IsNaN(f) && !readsBackAs(held, to, f) {
+		return nil, fmt.Errorf("%v does not fit without rounding: the field would hold %v",
+			f, strconv.FormatFloat(held, 'g', -1, to.Bits()))
+	}
+	return out.Interface(), nil
+}
+
+// readsBackAs reports whether a float held at a narrower precision, written in
+// that precision's shortest form, reads back as want.
+func readsBackAs(held float64, to reflect.Type, want float64) bool {
+	back, err := strconv.ParseFloat(strconv.FormatFloat(held, 'g', -1, to.Bits()), 64)
+	return err == nil && back == want
+}
+
+// fitIntegerAsFloat writes a whole number into a float field when the field's
+// type holds it exactly: an integer is an exact quantity, and the float
+// nearest to one the type cannot hold is a different number.
+func fitIntegerAsFloat(n int64, to reflect.Type) (any, error) {
+	out := reflect.New(to).Elem()
+	if to.Kind() == reflect.Float32 {
+		out.SetFloat(float64(float32(n)))
+	} else {
+		out.SetFloat(float64(n))
+	}
+	// The held value is below 2^63 whenever it is exact, since n is; testing
+	// the bound first keeps the conversion back inside int64's range.
+	if held := out.Float(); held >= 1<<63 || int64(held) != n {
+		return nil, fmt.Errorf("%d does not fit without rounding: the field would hold %v",
+			n, strconv.FormatFloat(out.Float(), 'g', -1, to.Bits()))
+	}
+	return out.Interface(), nil
+}
+
+// fitUnsignedAsFloat is fitIntegerAsFloat for a whole number with no sign,
+// whose range reaches past the largest signed value.
+func fitUnsignedAsFloat(u uint64, to reflect.Type) (any, error) {
+	out := reflect.New(to).Elem()
+	if to.Kind() == reflect.Float32 {
+		out.SetFloat(float64(float32(u)))
+	} else {
+		out.SetFloat(float64(u))
+	}
+	if held := out.Float(); held >= 1<<64 || uint64(held) != u {
+		return nil, fmt.Errorf("%d does not fit without rounding: the field would hold %v",
+			u, strconv.FormatFloat(out.Float(), 'g', -1, to.Bits()))
+	}
 	return out.Interface(), nil
 }
 
@@ -357,6 +418,14 @@ func textScalarHook(from, to reflect.Type, data any) (any, error) {
 		}
 		return fitUnsigned(u, to)
 	case reflect.Float32, reflect.Float64:
+		// A text that is a whole number is held to the integer rule, the way
+		// the same number written in a config file arrives as an integer.
+		if n, err := strconv.ParseInt(text, 10, 64); err == nil {
+			return fitIntegerAsFloat(n, to)
+		}
+		if u, err := strconv.ParseUint(text, 10, 64); err == nil {
+			return fitUnsignedAsFloat(u, to)
+		}
 		f, err := strconv.ParseFloat(text, 64)
 		if err != nil {
 			return nil, fmt.Errorf("%q is not a number", text)

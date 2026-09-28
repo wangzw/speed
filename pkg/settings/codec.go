@@ -84,9 +84,11 @@ func encodeValue(entry keyEntry, value any) (string, error) {
 //     that reads as five minutes to whoever wrote it would be stored as three
 //     hundred nanoseconds.
 //   - A number converts into a numeric item of another Go type when the item
-//     holds it. JSON has no integer type, so a 10 decoded as a float belongs in
-//     an integer item, while 10.5 does not; an integer goes into a float item;
-//     a value outside the item type's range is refused.
+//     holds it as the same number. JSON has no integer type, so a 10 decoded
+//     as a float belongs in an integer item, while 10.5 does not; an integer
+//     goes into a float item whose type holds it exactly; a float goes into a
+//     float32 item when it reads back as the same number, which 0.1 does and
+//     16777217 does not; a value outside the item type's range is refused.
 //   - A text goes into a type that decodes itself from text through that
 //     type's own UnmarshalText.
 //   - A text goes into a boolean or a numeric item when it parses as one.
@@ -186,6 +188,17 @@ func coerceText(text string, entry keyEntry) (reflect.Value, error) {
 			fitted, ok = fitUnsigned(parsed, entry.typ)
 		}
 	case reflect.Float32, reflect.Float64:
+		// A text that is a whole number is held to the integer rule, the way
+		// configuration holds the same text and the same number written in a
+		// document.
+		if whole, wholeErr := strconv.ParseInt(text, 10, 64); wholeErr == nil {
+			fitted, ok = fitIntegerAsFloat(whole, entry.typ)
+			break
+		}
+		if whole, wholeErr := strconv.ParseUint(text, 10, 64); wholeErr == nil {
+			fitted, ok = fitUnsignedAsFloat(whole, entry.typ)
+			break
+		}
 		var parsed float64
 		if parsed, err = strconv.ParseFloat(text, 64); err == nil {
 			fitted, ok = fitFloat(parsed, entry.typ)
@@ -199,26 +212,23 @@ func coerceText(text string, entry keyEntry) (reflect.Value, error) {
 	}
 	if !ok {
 		return reflect.Value{}, writeRefused(entry, strconv.Quote(text),
-			fmt.Errorf("the number is outside what %s holds", typeName(entry.typ)))
+			fmt.Errorf("%s does not hold that number: it is out of range, or would be stored "+
+				"as a neighbour of it", typeName(entry.typ)))
 	}
 	return fitted, nil
 }
 
 // fitNumber writes a number into a numeric item of another Go type, and reports
 // false when the item is not numeric, when a fractional value meets an integer
-// item, or when the value is outside the item type's range.
+// item, when the value is outside the item type's range, or when a float item
+// would hold a number other than the one written.
 func fitNumber(rv reflect.Value, to reflect.Type) (reflect.Value, bool) {
 	switch to.Kind() {
 	case reflect.Int, reflect.Int8, reflect.Int16, reflect.Int32, reflect.Int64,
 		reflect.Uint, reflect.Uint8, reflect.Uint16, reflect.Uint32, reflect.Uint64:
 		switch {
 		case rv.CanFloat():
-			f := rv.Float()
-			whole := int64(f)
-			if float64(whole) != f {
-				return reflect.Value{}, false
-			}
-			return fitInteger(whole, to)
+			return fitWholeFloat(rv.Float(), to)
 		case rv.CanInt():
 			return fitInteger(rv.Int(), to)
 		case rv.CanUint():
@@ -229,12 +239,40 @@ func fitNumber(rv reflect.Value, to reflect.Type) (reflect.Value, bool) {
 		case rv.CanFloat():
 			return fitFloat(rv.Float(), to)
 		case rv.CanInt():
-			return fitFloat(float64(rv.Int()), to)
+			return fitIntegerAsFloat(rv.Int(), to)
 		case rv.CanUint():
-			return fitFloat(float64(rv.Uint()), to)
+			return fitUnsignedAsFloat(rv.Uint(), to)
 		}
 	}
 	return reflect.Value{}, false
+}
+
+// fitWholeFloat writes a float into an integer item when it holds a whole
+// number the item's type can hold.
+//
+// The range is judged on the float, against the bounds of a 64-bit integer of
+// the item's signedness, before anything is converted. Converting a float an
+// integer type cannot hold is implementation-defined in Go: where it
+// saturates, 2^63 turns into the largest int64 and a check made after the
+// conversion would store a number one past the range as a different one. An
+// unsigned item is converted as unsigned, so the half of its range above the
+// largest signed value is reachable.
+func fitWholeFloat(f float64, to reflect.Type) (reflect.Value, bool) {
+	if f != math.Trunc(f) {
+		return reflect.Value{}, false
+	}
+	switch to.Kind() {
+	case reflect.Uint, reflect.Uint8, reflect.Uint16, reflect.Uint32, reflect.Uint64:
+		if f < 0 || f >= 1<<64 {
+			return reflect.Value{}, false
+		}
+		return fitUnsigned(uint64(f), to)
+	default:
+		if f < -1<<63 || f >= 1<<63 {
+			return reflect.Value{}, false
+		}
+		return fitInteger(int64(f), to)
+	}
 }
 
 // describeNumber names a number in a refusal. The number itself is shown, as
@@ -286,14 +324,56 @@ func fitUnsigned(u uint64, to reflect.Type) (reflect.Value, bool) {
 	return out, true
 }
 
-// fitFloat writes a number into the target's own float type, refusing a value
-// the type cannot hold.
+// fitFloat writes a float into the target's own float type when the item reads
+// it back as the same number: a float64 item holds every float, and a float32
+// item holds one whose nearest float32 is either that value or, written in
+// float32's own shortest form, the same number. 0.1 passes; 16777217 would
+// come back as 16777216 and 1e-50 as zero, and both are refused. NaN and the
+// infinities pass as they are.
 func fitFloat(f float64, to reflect.Type) (reflect.Value, bool) {
 	out := reflect.New(to).Elem()
 	if out.OverflowFloat(f) {
 		return reflect.Value{}, false
 	}
 	out.SetFloat(f)
+	if held := out.Float(); held != f && !math.IsNaN(f) {
+		back, err := strconv.ParseFloat(strconv.FormatFloat(held, 'g', -1, to.Bits()), 64)
+		if err != nil || back != f {
+			return reflect.Value{}, false
+		}
+	}
+	return out, true
+}
+
+// fitIntegerAsFloat writes a whole number into a float item when the item's
+// type holds it exactly; the float nearest to one it cannot hold is a
+// different number.
+func fitIntegerAsFloat(n int64, to reflect.Type) (reflect.Value, bool) {
+	out := reflect.New(to).Elem()
+	if to.Kind() == reflect.Float32 {
+		out.SetFloat(float64(float32(n)))
+	} else {
+		out.SetFloat(float64(n))
+	}
+	// The held value is below 2^63 whenever it is exact, since n is; testing
+	// the bound first keeps the conversion back inside int64's range.
+	if held := out.Float(); held >= 1<<63 || int64(held) != n {
+		return reflect.Value{}, false
+	}
+	return out, true
+}
+
+// fitUnsignedAsFloat is fitIntegerAsFloat for a whole number with no sign.
+func fitUnsignedAsFloat(u uint64, to reflect.Type) (reflect.Value, bool) {
+	out := reflect.New(to).Elem()
+	if to.Kind() == reflect.Float32 {
+		out.SetFloat(float64(float32(u)))
+	} else {
+		out.SetFloat(float64(u))
+	}
+	if held := out.Float(); held >= 1<<64 || uint64(held) != u {
+		return reflect.Value{}, false
+	}
 	return out, true
 }
 

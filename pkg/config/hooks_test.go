@@ -281,6 +281,44 @@ func TestFloatOverflowRejected(t *testing.T) {
 	}
 }
 
+// TestANumberIntoAFloatFieldIsNeverRounded pins that a float field takes only
+// a number it reads back as the one the source gave.
+//
+// An integer has to be one the field's type holds exactly: 16777217 is not a
+// float32, and 2^53+1 is not a float64, so either would be stored as its
+// neighbour. A float going into a float32 has to come back as the same number
+// when the float32 is written in its own shortest form: 0.1 does, while
+// 16777217.0 comes back as 16777216 and 1e-50 as zero. The text form is held
+// to the same rule as the typed one, so the command line and a config file do
+// not differ on what a field takes.
+func TestANumberIntoAFloatFieldIsNeverRounded(t *testing.T) {
+	for _, raw := range []any{int64(16_777_217), float64(16_777_217), "16777217", 1e-50, "1e-50"} {
+		decodeRejects[float32](t, raw)
+	}
+	for _, raw := range []any{int64(1<<53 + 1), uint64(1<<53 + 1), "9007199254740993"} {
+		decodeRejects[float64](t, raw)
+	}
+
+	if got := decodeTo[float32](t, int64(16_777_216)); got != 16_777_216 {
+		t.Errorf("2^24 converted to %v, want it exactly", got)
+	}
+	if got := decodeTo[float32](t, 0.1); got != float32(0.1) {
+		t.Errorf("0.1 converted to %v, want the float32 nearest to it", got)
+	}
+	if got := decodeTo[float32](t, "0.1"); got != float32(0.1) {
+		t.Errorf("the text 0.1 converted to %v, want the float32 nearest to it", got)
+	}
+	if got := decodeTo[float32](t, float32(0.1)); got != float32(0.1) {
+		t.Errorf("a float32 converted to %v, want itself", got)
+	}
+	if got := decodeTo[float64](t, int64(1<<53)); got != 1<<53 {
+		t.Errorf("2^53 converted to %v, want it exactly", got)
+	}
+	if got := decodeTo[float64](t, "0.1"); got != 0.1 {
+		t.Errorf("the text 0.1 converted to %v, want 0.1", got)
+	}
+}
+
 // TestAWholeFloatIsHeldToTheIntegerRangeExactly pins the edges of the 64-bit
 // range for a whole number that arrives as a float, which is how a source
 // writing one with an exponent delivers it.
