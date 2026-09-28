@@ -161,7 +161,7 @@ func (a *App) run(ctx context.Context, l *loader, p *plan, node *planNode) error
 	// and a drive closes only what it constructed. This one holds the
 	// values of the run and has nothing to release; anything added to it
 	// that does will have to be released here.
-	a.reg.Supply((*Reader)(nil), l.Reader())
+	a.reg.Supply((*Reader)(nil), l.ReaderFor(node.participants))
 
 	return a.reg.Drive(ctx, core.Drive{
 		Depth:         node.decl.depth,

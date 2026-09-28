@@ -873,6 +873,47 @@ func TestAnArgumentGivenOnARunningChildSatisfiesTheRequiredItem(t *testing.T) {
 	}
 }
 
+// TestAReportingActionReadsACollectedModuleWithoutItsRequiredItems pins that a
+// module this run does not take in at run level has no required item judged,
+// whoever decodes its path.
+//
+// A command that reports the configuration reads every module's values in its
+// own action, and the modules it reads are ones it only collects: judging their
+// required items there would fail the report over a value only the command
+// that runs the module needs. The command that does run it still fails
+// without the value, from its action as from the module itself.
+func TestAReportingActionReadsACollectedModuleWithoutItsRequiredItems(t *testing.T) {
+	decodeIn := func(command string, includeAtRunLevel bool) error {
+		var decoded error
+		tree := func(a *App) {
+			c := a.Root().Sub(command)
+			if includeAtRunLevel {
+				c.Include("greeter")
+			} else {
+				c.IncludeAllDeclarations().WithFlags()
+			}
+			c.Do(core.StagePrepare, func(_ context.Context, reg *core.Registry) error {
+				var got treeAddr
+				decoded = readerFrom(t, reg).Decode("greeter", &got)
+				return nil
+			})
+		}
+		if _, err := requiredArgumentApp(t, tree, command); err != nil {
+			t.Fatalf("running %s returned %v", command, err)
+		}
+		return decoded
+	}
+
+	if err := decodeIn("check", false); err != nil {
+		t.Errorf("a command that only collects the module decoded its path with %v, and the "+
+			"module's required items are never judged there", err)
+	}
+	if err := decodeIn("serve", true); !errors.Is(err, ErrMissingRequired) {
+		t.Errorf("a command that runs the module decoded its path with %v, want %v",
+			err, ErrMissingRequired)
+	}
+}
+
 // TestTheDiagnosisOfAnUnknownArgumentIsAboutTheSelectedCommand pins that the
 // fix an unknown argument is met with is read off the command the run
 // selected. A sibling that reaches the module for its declarations alone says

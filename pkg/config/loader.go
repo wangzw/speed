@@ -95,11 +95,33 @@ func (l *loader) Manifest() *manifest { return l.m }
 // Host is the declared host identity, zero when no module declared one.
 func (l *loader) Host() HostIdentity { return l.m.host }
 
-// Reader hands out the values of this run.
+// Reader hands out the values of a run every registered module takes part in,
+// which is the run Load assembles: the required items of every module are
+// judged.
 //
 // The command line leg of the question which layer gave a value rests on
 // BindLayer having been called for every level of the selected command path.
 // Handing out a reader before that would make the leg answer no for every
 // item, and a required item given on the command line would be reported as
 // missing.
-func (l *loader) Reader() Reader { return &reader{l: l} }
+func (l *loader) Reader() Reader {
+	modules := l.reg.Modules()
+	running := make([]string, len(modules))
+	for i, m := range modules {
+		running[i] = m.Name
+	}
+	return l.ReaderFor(running)
+}
+
+// ReaderFor hands out the values of a run that takes the named modules in at
+// run level. Their required items are judged and no other module's are: a
+// module the run only collects from is never constructed, so nothing of the
+// run is short of its values, and a command reading them in its own action is
+// reporting on them rather than depending on them.
+func (l *loader) ReaderFor(running []string) Reader {
+	judged := make(map[string]bool, len(running))
+	for _, name := range running {
+		judged[name] = true
+	}
+	return &reader{l: l, judged: judged}
+}

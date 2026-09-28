@@ -12,6 +12,13 @@ import (
 // is nothing to refresh and nothing to guard.
 type reader struct {
 	l *loader
+	// judged holds the modules this run takes in at run level, which are
+	// the ones whose required items are judged. A module the run only
+	// collects from, or does not take in at all, is not among them however
+	// its path comes to be decoded: nothing of this run needs its values,
+	// and a command that reports the configuration reads them in its own
+	// action.
+	judged map[string]bool
 }
 
 var _ Reader = (*reader)(nil)
@@ -28,9 +35,12 @@ var _ Reader = (*reader)(nil)
 // caller put in it. A required item that no source gave a value for is
 // ErrMissingRequired, raised here rather than in a global sweep, because the
 // manifest is collected from every registered module, the ones this run does
-// not enable included, while a required item binds only where it is decoded:
-// on the modules that participate in this run. A sweep over the manifest would
-// fail the run over items no participant declared.
+// not enable included, while a required item binds only where it is decoded
+// and only for the modules this run takes in at run level. A sweep over the
+// manifest would fail the run over items no participant declared, and judging
+// every decoded path would fail a command that reads a module it only collects
+// from -- one that reports the configuration -- over a value only the command
+// that runs the module needs.
 //
 // An illegal target panics rather than returning an error: a non-pointer, a
 // nil, or a struct that cycles back into itself is a programming error at the
@@ -139,7 +149,7 @@ func (r *reader) descend(v reflect.Value, key string, chain []reflect.Type, f re
 // value, which is the opposite of the leaf-wise overriding the design states.
 func (r *reader) leaf(path string, fv reflect.Value) error {
 	item, declared := r.l.m.byPath[path]
-	if declared && item.item.Required && !r.l.given(item) {
+	if declared && item.item.Required && r.judged[item.module] && !r.l.given(item) {
 		return fmt.Errorf("%w: %q is required and neither the primary config source, the "+
 			"environment nor the command line gave it a value. The default in the carrier struct "+
 			"does not count: a value nobody gave and a value that happens to be the zero one "+

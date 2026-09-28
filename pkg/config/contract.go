@@ -57,5 +57,11 @@ type Reader interface {
 	// Defaults arrive through the config data's base layer, so a caller
 	// passing a zero struct still gets them. A path that was never declared
 	// is not an error: target keeps what the caller put in it.
+	//
+	// A required item no source gave is ErrMissingRequired when its module
+	// is one this run takes in at run level. The required items of any other
+	// module are not judged, whoever decodes its path: a command that reports
+	// the configuration reads modules it only collects from, and their
+	// required items are the business of the commands that run them.
 	Decode(path string, target any) error
 }
