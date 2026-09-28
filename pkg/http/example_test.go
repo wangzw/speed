@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"io"
 	"log/slog"
+	"net"
 	"net/http"
 	"net/http/httptest"
 	"os"
@@ -189,6 +190,10 @@ var _ log.Logger = exampleLogger{}
 
 // exampleHandler renders one record per line, level and message first and then
 // the attributes in the order they were written.
+//
+// The port of a bound address is written as <port>. The examples listen on
+// port 0, so the operating system picks the port and the record carries a
+// different one on every run; what an example can show is where it appears.
 type exampleHandler struct{}
 
 func (exampleHandler) Enabled(context.Context, slog.Level) bool { return true }
@@ -196,7 +201,13 @@ func (exampleHandler) Enabled(context.Context, slog.Level) bool { return true }
 func (exampleHandler) Handle(_ context.Context, r slog.Record) error {
 	line := r.Level.String() + " " + r.Message
 	r.Attrs(func(a slog.Attr) bool {
-		line += fmt.Sprintf(" %s=%v", a.Key, a.Value.Any())
+		value := fmt.Sprint(a.Value.Any())
+		if a.Key == "address" {
+			if host, _, err := net.SplitHostPort(value); err == nil {
+				value = net.JoinHostPort(host, "<port>")
+			}
+		}
+		line += fmt.Sprintf(" %s=%s", a.Key, value)
 		return true
 	})
 	fmt.Println(line)
@@ -232,6 +243,7 @@ func ExampleEndpoint_Route() {
 
 	// Output:
 	// INFO an HTTP endpoint's chain is assembled endpoint=public routes=1 chain=http:base -> http:fallback
+	// INFO an HTTP endpoint is listening endpoint=public address=127.0.0.1:<port> configured=127.0.0.1:0 tls=false
 }
 
 // ExampleEndpoint_Use registers two middleware layers on one endpoint.
@@ -286,6 +298,7 @@ func ExampleEndpoint_Use() {
 
 	// Output:
 	// INFO an HTTP endpoint's chain is assembled endpoint=public routes=0 chain=http:base -> http:fallback -> span(github.com/vislake/speed/pkg/http_test.spans) -> trace(github.com/vislake/speed/pkg/http_test.tracing)
+	// INFO an HTTP endpoint is listening endpoint=public address=127.0.0.1:<port> configured=127.0.0.1:0 tls=false
 }
 
 // ExampleDecode decodes a request body in a handler.

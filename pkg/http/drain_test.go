@@ -4,11 +4,41 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"log/slog"
 	"net"
 	nethttp "net/http"
 	"testing"
 	"time"
 )
+
+// TestTheBoundAddressIsReported pins the record a host reads the real address
+// from. An endpoint configured on port 0 is given one by the operating
+// system, and without this record nothing outside the process can learn which:
+// a harness would have to pick a free port beforehand and race every other
+// process for it.
+func TestTheBoundAddressIsReported(t *testing.T) {
+	logger, records := newRecordingLogger()
+	_, addr := startTestEndpoint(t, testSettings("public"), nethttp.NotFoundHandler(), logger)
+
+	attrs, found := records.first(listeningMsg)
+	if !found {
+		t.Fatalf("binding an endpoint wrote no %q record; the records were %v",
+			listeningMsg, records.at(slog.LevelInfo))
+	}
+	if attrs["endpoint"] != "public" {
+		t.Errorf("the record names endpoint %q, want %q", attrs["endpoint"], "public")
+	}
+	if attrs["address"] != addr {
+		t.Errorf("the record gives the address %q, want the one the socket bound, %q",
+			attrs["address"], addr)
+	}
+	if attrs["configured"] != "127.0.0.1:0" {
+		t.Errorf("the record gives the configured address %q, want %q", attrs["configured"], "127.0.0.1:0")
+	}
+	if _, port, err := net.SplitHostPort(attrs["address"]); err != nil || port == "0" {
+		t.Errorf("the reported address %q carries no port a client could connect to", attrs["address"])
+	}
+}
 
 // hijackingHandler takes the connection over from the server, the way a
 // WebSocket upgrade does, and holds it until the test lets go. net/http stops

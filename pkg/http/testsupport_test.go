@@ -161,6 +161,25 @@ func (h *recordingHandler) at(level slog.Level) []string {
 	return out
 }
 
+// first returns the attributes of the first record written with msg, each
+// value rendered as text.
+func (h *recordingHandler) first(msg string) (map[string]string, bool) {
+	h.mu.Lock()
+	defer h.mu.Unlock()
+	for _, r := range h.records {
+		if r.Message != msg {
+			continue
+		}
+		attrs := make(map[string]string)
+		r.Attrs(func(a slog.Attr) bool {
+			attrs[a.Key] = a.Value.String()
+			return true
+		})
+		return attrs, true
+	}
+	return nil, false
+}
+
 // gateHandler is a handler a test holds inside: it reports that a request
 // arrived and stays there until the test lets go. The drain is only observable
 // with a request in flight across the shutdown.

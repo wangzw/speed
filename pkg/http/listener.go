@@ -73,6 +73,9 @@ type listener struct {
 	listen func(network, address string) (net.Listener, error)
 }
 
+// listeningMsg is the record an endpoint writes once its address is bound.
+const listeningMsg = "an HTTP endpoint is listening"
+
 // start binds the address and puts the assembled handler behind it.
 //
 // The bind is synchronous and the accept loop is not: the Serve callback must
@@ -155,6 +158,17 @@ func (l *listener) start(s endpointSettings, h nethttp.Handler, logger *slog.Log
 	l.drained = make(chan struct{})
 	l.logger = logger
 	l.mu.Unlock()
+
+	// The address is reported as the socket bound it, beside the one the
+	// configuration gave: an endpoint on port 0 is handed a port by the
+	// operating system, and this record is the one place outside the process
+	// that says which. The socket is bound already, so a client reading it may
+	// connect at once.
+	logger.Info(listeningMsg,
+		"endpoint", s.name,
+		"address", socket.Addr().String(),
+		"configured", s.address,
+		"tls", s.tls())
 
 	go l.accept(server, socket)
 	return nil
