@@ -99,7 +99,9 @@ type Item struct {
 	FlagShort string
 	// EnvName pins the environment variable name. An empty name is derived
 	// from the prefix and the path; pinning is how conventional names such
-	// as NO_COLOR are expressed.
+	// as NO_COLOR are expressed. It is a name a shell can export: letters,
+	// digits and underscores, not beginning with a digit, in the case it is
+	// written in.
 	EnvName string
 	// Placeholder is the value placeholder in the help output.
 	Placeholder string
@@ -126,7 +128,9 @@ type Item struct {
 // different prefixes without interfering.
 type HostIdentity struct {
 	// Prefix is the environment variable prefix. With no prefix, derived
-	// variable names do not apply while pinned ones still do.
+	// variable names do not apply while pinned ones still do. It holds
+	// letters, digits and underscores and does not begin with a digit, so
+	// that every name derived from it is one a shell can export.
 	Prefix string
 	// DefaultLocator is the config locator to use when neither the
 	// environment nor the command line gives one. An empty locator with

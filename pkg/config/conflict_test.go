@@ -307,6 +307,54 @@ func TestDuplicateHostIdentityConflict(t *testing.T) {
 	)
 }
 
+// TestAnEnvironmentVariableNameAShellCannotSetIsASchemaDefect pins the names
+// the environment layer reads to the set a POSIX shell can export: letters,
+// digits and underscores, not beginning with a digit. The derivation already
+// turns the hyphens of a path into underscores for that reason, and a prefix or
+// a pinned name outside the set undoes it -- a name with an equals sign in it
+// cannot be put in any environment at all, and one with a hyphen or a space
+// cannot be exported from a shell, so every value it was meant to carry stays
+// the default and nothing says so.
+//
+// Both the prefix and a pinned name are decided by the one declaration, and a
+// pinned name keeps the case it was written in, as conventional lower-case
+// names such as http_proxy are.
+func TestAnEnvironmentVariableNameAShellCannotSetIsASchemaDefect(t *testing.T) {
+	for _, prefix := range []string{"crm-app", "my app", "APP=1", "1APP"} {
+		reg := core.New()
+		reg.Register(identifying("host", HostIdentity{Prefix: prefix}))
+		_, err := newManifest(reg)
+		if !errors.Is(err, ErrInvalidSchema) {
+			t.Errorf("the prefix %q was collected with %v, want ErrInvalidSchema", prefix, err)
+			continue
+		}
+		if !strings.Contains(err.Error(), `"host"`) {
+			t.Errorf("the rejection of %q reads %q, which does not name the module", prefix, err)
+		}
+	}
+	for _, name := range []string{"MY-VAR", "A=B", "9LIVES", "has space"} {
+		err := expandFails(t, Schema{
+			Mounts: mount(&addrCarrier{}),
+			Items:  map[string]Item{"addr": {Origins: OriginEnv, EnvName: name}},
+		}, "")
+		if !strings.Contains(err.Error(), `"addr"`) {
+			t.Errorf("the rejection of %q reads %q, which does not name the item", name, err)
+		}
+	}
+
+	m := collect(t,
+		identifying("host", HostIdentity{Prefix: "crm_app"}),
+		declaring("alpha", Schema{
+			Namespace: "cache",
+			Mounts:    []Mount{{Value: &addrCarrier{}}},
+			Items:     map[string]Item{"addr": {Origins: OriginEnv, EnvName: "http_proxy"}},
+		}),
+	)
+	if got := m.byEnv["http_proxy"]; got == nil {
+		t.Errorf("the manifest indexes the environment names %v, want the pinned http_proxy", envNames(m))
+	}
+}
+
 func TestHostIdentityReachesDerivation(t *testing.T) {
 	m := collect(t,
 		identifying("host", HostIdentity{Prefix: "MYAPP", DefaultLocator: "file:///etc/myapp.yaml"}),

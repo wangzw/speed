@@ -87,6 +87,11 @@ func (m *manifest) collectHost(reg *core.Registry) error {
 			ErrConfigConflict, declared[0].Module, declared[1].Module)
 	}
 	if len(declared) == 1 {
+		if d := envNameDefect(declared[0].Value.Prefix); d != "" {
+			return fmt.Errorf("%w: module %q declares the environment variable prefix %q: %s. "+
+				"Every derived name and the config locator's variable begin with it",
+				ErrInvalidSchema, declared[0].Module, declared[0].Value.Prefix, d)
+		}
 		m.host, m.hasHost = declared[0].Value, true
 	}
 	return nil

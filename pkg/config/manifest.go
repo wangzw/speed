@@ -225,6 +225,10 @@ func (e *expander) leaf(key string, fv reflect.Value, ft reflect.Type) error {
 			"placeholder",
 			ErrInvalidSchema, e.module, key, item.Placeholder)
 	}
+	if d := envNameDefect(item.EnvName); d != "" {
+		return fmt.Errorf("%w: module %q pins the environment variable %q for %q: %s",
+			ErrInvalidSchema, e.module, item.EnvName, key, d)
+	}
 	if origins.has(OriginFlag) && item.FlagName == "" {
 		return fmt.Errorf("%w: module %q gives %q the command line as an origin but no FlagName. "+
 			"Long names are never derived from the path, because the command line is a human "+
@@ -454,6 +458,30 @@ func segmentDefect(segment string) string {
 		}
 		return fmt.Sprintf("segment %q contains %q, and a config key segment holds "+
 			"lowercase letters, digits and hyphens only", segment, string(r))
+	}
+	return ""
+}
+
+// envNameDefect reports why an environment variable name, or the prefix names
+// are derived from, is not one a POSIX shell can export, or "" when it is. The
+// set is letters, digits and underscores, not beginning with a digit, which is
+// what the derivation keeps to when it turns a hyphen into an underscore. A
+// name outside it is one the operator cannot set from a shell, and with an
+// equals sign in it one no environment can hold, so the values it was meant to
+// carry would stay their defaults and nothing would say so.
+func envNameDefect(name string) string {
+	for i, r := range name {
+		switch {
+		case r >= 'A' && r <= 'Z', r >= 'a' && r <= 'z', r == '_':
+			continue
+		case r >= '0' && r <= '9':
+			if i > 0 {
+				continue
+			}
+			return "it begins with a digit, and a shell reads no such word as a variable name"
+		}
+		return fmt.Sprintf("it contains %q, and an environment variable name holds letters, "+
+			"digits and underscores only, which is what a shell can export", string(r))
 	}
 	return ""
 }
