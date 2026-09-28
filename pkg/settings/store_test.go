@@ -524,6 +524,65 @@ func TestDeleteClearsARowWhoseDeclarationIsGone(t *testing.T) {
 	}
 }
 
+// A delete reports the value the removed row held, read back by the delete
+// itself, rather than whatever this replica's snapshot has for the cell.
+//
+// The snapshot is the wrong source twice over. It carries no row for a key
+// whose declaration is gone — which is exactly the row this path exists to
+// clear — and it trails the table when another replica wrote the row. Either
+// way the change reported an empty old value for a row that held one, and a
+// subscriber recording the history would have written down that nothing was
+// there.
+func TestADeleteReportsWhatTheRemovedRowHeld(t *testing.T) {
+	cases := []struct {
+		name string
+		key  string
+	}{
+		{"a row whose declaration is gone", "gone.key"},
+		{"a row another replica wrote", "demo.limit"},
+	}
+	for _, c := range cases {
+		t.Run(c.name, func(t *testing.T) {
+			keys := demoTable(t)
+			bus := newRecordingBus()
+			store, handle := storeOf(t, keys, bus)
+			// Planted behind the store's back: this replica's snapshot does
+			// not hold it.
+			if err := handle.Exec("INSERT INTO settings (tenant_id, key, value, version, updated_at) "+
+				"VALUES ('t1', ?, '41', 1, ?)", c.key, time.Now().UTC()).Error; err != nil {
+				t.Fatalf("planting a row: %v", err)
+			}
+			if err := store.Delete(context.Background(), ForTenant("t1"), c.key, "operator"); err != nil {
+				t.Fatalf("deleting: %v", err)
+			}
+			events := bus.events()
+			if len(events) != 1 {
+				t.Fatalf("want one event for the removed row, got %d", len(events))
+			}
+			change := events[0].Payload.(Change)
+			if !change.Deleted || change.Old != "41" {
+				t.Errorf("the change is %+v, want a delete whose Old is the row's 41", change)
+			}
+		})
+	}
+}
+
+// A delete that removed no row publishes nothing: nothing in the table
+// changed, and an event saying otherwise would be recorded as a deletion that
+// never happened. It is still not an error — the row the caller wanted gone is
+// gone.
+func TestADeleteThatRemovedNothingPublishesNothing(t *testing.T) {
+	keys := demoTable(t)
+	bus := newRecordingBus()
+	store, _ := storeOf(t, keys, bus)
+	if err := store.Delete(context.Background(), ForTenant("t1"), "demo.limit", "operator"); err != nil {
+		t.Fatalf("deleting an absent row returned %v, want nil", err)
+	}
+	if events := bus.events(); len(events) != 0 {
+		t.Errorf("a delete that removed nothing published %+v", events)
+	}
+}
+
 // A delete of a sensitive item withholds the value it held, the way a write
 // does: the delete path is the second place a payload is built, and a
 // credential must not reach an event because the row was removed rather than

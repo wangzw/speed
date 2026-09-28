@@ -154,18 +154,35 @@ func changeFor(entry keyEntry, old, fresh, actor string, version uint64, deleted
 // behind after a declaration is removed — the one window in which a row for an
 // undeclared key can still be reached — and both Get and Set refuse such a key
 // before the table is consulted at all.
+//
+// The old value is read back by the statement that removes the row, not taken
+// from the snapshot. The snapshot holds no row for a key whose declaration is
+// gone, which is the row this path exists to clear, and it trails the table
+// when another replica wrote the row; the statement's own result also says
+// whether a row was there at all. A delete that removed nothing publishes
+// nothing, because nothing in the table changed.
 func (s *settingsStore) Delete(ctx context.Context, layer Layer, key, actor string) error {
 	tenant := tenantOf(layer)
-	old, _ := s.snapshot.Load().explicitText(layer, key)
 	sql := "DELETE FROM " + tableName + " WHERE tenant_id = " + bind(s.dialect, 1) +
-		" AND key = " + bind(s.dialect, 2)
-	if err := s.handle.WithContext(ctx).Exec(sql, tenant, key).Error; err != nil {
+		" AND key = " + bind(s.dialect, 2) + " RETURNING value"
+	var removed []removedRow
+	if err := s.handle.WithContext(ctx).Raw(sql, tenant, key).Scan(&removed).Error; err != nil {
 		return fmt.Errorf("settings: deleting key %q: %w", key, err)
 	}
 	after := landed(ctx)
 	s.reload(after)
-	s.publish(after, layer, s.deleteChange(key, old, actor))
+	if len(removed) == 0 {
+		return nil
+	}
+	s.publish(after, layer, s.deleteChange(key, removed[0].Value, actor))
 	return nil
+}
+
+// removedRow is what a delete reads back of the row it removed. The key of the
+// table is the tenant column and the key column, so a delete removes one row
+// at most.
+type removedRow struct {
+	Value string `gorm:"column:value"`
 }
 
 // deleteChange builds the payload of a delete.

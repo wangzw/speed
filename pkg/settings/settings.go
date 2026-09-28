@@ -267,13 +267,16 @@ type Item struct {
 // payload does not repeat it.
 //
 // Old and New are the explicit values of the layer the write acted on, not the
-// values reads fall back to. Old comes from the snapshot of the replica that
-// initiated the write, which may trail the database.
+// values reads fall back to. For a Set, Old comes from the snapshot of the
+// replica that initiated the write, which may trail the database. For a
+// delete it is the text the removed row held, read back by the statement that
+// removed it; a delete that removed no row publishes no change at all.
 type Change struct {
 	// Key is the full path of the setting item.
 	Key string
 	// Old is the explicit value of that layer before the write, empty when the
-	// layer held no row.
+	// layer held no row. A delete always removed one, so its Old is that row's
+	// text.
 	Old string
 	// New is the explicit value of that layer after the write, empty on a
 	// delete.
