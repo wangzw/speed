@@ -162,6 +162,9 @@ answers are pinned; `pkg/tenant/catalog/reach_test.go` is where the statements
 it has to reach beyond the query processor are — a scan, an association join,
 a subquery rendered into another statement; `pkg/tenant/resolve/extract_test.go` is where the
 registration window's behaviour under a duplicate or a late registration is;
+`pkg/tenant/resolve/admit_test.go` and `panic_test.go` are where the layer's
+answers to a request are — the four statuses, what an admitted request
+carries, which logger a refusal goes to, and whose panic the layer recovers;
 `pkg/tenant/resolve/config_test.go` is where the judgement over this module's
 own configuration is pinned — a missing key, an empty list or name, and an
 endpoint named twice; `pkg/tenant/catalog/roster_test.go` is where the

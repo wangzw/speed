@@ -342,7 +342,25 @@ func (r *resolver) middlewareFor() speedhttp.Middleware {
 // caller — this request belongs to no tenant being served — and answering them
 // differently would let one tell a name that never existed from one that was
 // switched off, which is a way to enumerate the roster.
-func (r *resolver) admit(w nethttp.ResponseWriter, req *nethttp.Request) *nethttp.Request {
+//
+// A panic inside this function is this module's own defect — an extractor
+// registered through the seam runs here — and is recovered here, answered with
+// a 500 and recorded under this module's name. Left to propagate it reaches the
+// entry point, whose answer does not say which layer failed. The call to the
+// next layer is deliberately outside this function: the handler's panic is not
+// this layer's to catch, and catching it here would change what every route
+// behind the layer does on one.
+func (r *resolver) admit(w nethttp.ResponseWriter, req *nethttp.Request) (resolved *nethttp.Request) {
+	defer func() {
+		if rec := recover(); rec != nil {
+			log.FromContext(req.Context()).Error(diagnosticPrefix+ModuleName+
+				": the resolution layer panicked while resolving this request",
+				slog.Any("panic", rec))
+			w.WriteHeader(nethttp.StatusInternalServerError)
+			resolved = nil
+		}
+	}()
+
 	name, ok := r.selected.Extract(req)
 	if !ok {
 		r.refuse(w, req, "the request carries no tenant name", "")
