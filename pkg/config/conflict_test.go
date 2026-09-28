@@ -44,7 +44,7 @@ func loadOver(t *testing.T, modules ...core.Module) *loader {
 	for _, m := range modules {
 		reg.Register(m)
 	}
-	l, err := NewLoader(reg, io.Discard)
+	l, err := newLoader(reg, io.Discard)
 	if err != nil {
 		t.Fatalf("collecting the declarations failed: %v", err)
 	}

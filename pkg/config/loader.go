@@ -50,13 +50,18 @@ type loader struct {
 	stderr  io.Writer
 }
 
-// NewLoader collects the declarations of a registry and lays the base layer.
+// newLoader collects the declarations of a registry and lays the base layer.
 //
 // Collection comes before everything and covers every registered module,
 // whichever command this run selects: without the whole manifest there is no
 // way to tell an unknown key from a misspelled one, and no way to know which
 // environment variable names are claimed.
-func NewLoader(reg *core.Registry, stderr io.Writer) (*loader, error) {
+//
+// It is not exported. The stages have an order the reader depends on -- a
+// Reader taken before the command line is bound reports every required item
+// given there as missing -- and App and Load are the two places that keep it,
+// so they are the two ways in.
+func newLoader(reg *core.Registry, stderr io.Writer) (*loader, error) {
 	m, err := newManifest(reg)
 	if err != nil {
 		return nil, err

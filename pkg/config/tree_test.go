@@ -122,7 +122,7 @@ func (p *plan) selected(args []string) *planNode {
 // command line is read.
 func planOf(t *testing.T, a *App) *plan {
 	t.Helper()
-	l, err := NewLoader(a.reg, a.stderr)
+	l, err := newLoader(a.reg, a.stderr)
 	if err != nil {
 		t.Fatalf("collecting the declarations failed: %v", err)
 	}
@@ -137,7 +137,7 @@ func planOf(t *testing.T, a *App) *plan {
 // failure.
 func compileFails(t *testing.T, a *App) error {
 	t.Helper()
-	l, err := NewLoader(a.reg, a.stderr)
+	l, err := newLoader(a.reg, a.stderr)
 	if err != nil {
 		t.Fatalf("collecting the declarations failed: %v", err)
 	}

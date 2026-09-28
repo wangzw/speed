@@ -76,7 +76,7 @@ func (a *App) Execute(ctx context.Context) error {
 	}
 	a.executed = true
 
-	l, err := NewLoader(a.reg, a.stderr)
+	l, err := newLoader(a.reg, a.stderr)
 	if err != nil {
 		return a.reportEarly(err)
 	}

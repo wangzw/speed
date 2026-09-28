@@ -56,7 +56,7 @@ func newLoaderSetup(t *testing.T, host HostIdentity, content map[string]any, ext
 // primary source, report, hand out the reader.
 func (s loaderSetup) load(t *testing.T, args []string) (Reader, error) {
 	t.Helper()
-	l, err := NewLoader(s.reg, s.stderr)
+	l, err := newLoader(s.reg, s.stderr)
 	if err != nil {
 		return nil, err
 	}
@@ -271,7 +271,7 @@ func TestLoadTakesEveryRegisteredModuleIn(t *testing.T) {
 // a second read would stack on the first instead of being refused.
 func TestPrimarySourceReadTwiceIsAProgrammingError(t *testing.T) {
 	s := newLoaderSetup(t, HostIdentity{Prefix: "MYAPP"}, map[string]any{})
-	l, err := NewLoader(s.reg, s.stderr)
+	l, err := newLoader(s.reg, s.stderr)
 	if err != nil {
 		t.Fatalf("collecting the declarations failed: %v", err)
 	}

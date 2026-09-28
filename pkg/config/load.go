@@ -23,7 +23,7 @@ import (
 // where the layering tool reads them. A caller that steers a variable writes
 // it into the process environment, which in a test is t.Setenv.
 func Load(ctx context.Context, reg *core.Registry, args []string) (Reader, error) {
-	l, err := NewLoader(reg, os.Stderr)
+	l, err := newLoader(reg, os.Stderr)
 	if err != nil {
 		return nil, err
 	}
