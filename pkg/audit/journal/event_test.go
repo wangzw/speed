@@ -1,10 +1,17 @@
 package journal
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
+	"io/fs"
 	"testing"
+	"time"
 
+	sqlitedriver "github.com/glebarez/sqlite"
+	"gorm.io/gorm"
+
+	"github.com/vislake/speed/pkg/audit"
 	"github.com/vislake/speed/pkg/event"
 )
 
@@ -95,4 +102,143 @@ func TestEventDetailLeavesNestedValuesOut(t *testing.T) {
 	if detail["object"] != "user/u1" {
 		t.Errorf("the string field was dropped: %v", detail)
 	}
+}
+
+// replicas builds journals over one table, each subscribed on a bus of its own:
+// the shape a transport that broadcasts every event gives each replica. Every
+// journal reports its failures into the one buffer returned.
+func replicas(t *testing.T, handle *gorm.DB, n int) ([]*recordingBus, *bytes.Buffer) {
+	t.Helper()
+	var reported bytes.Buffer
+	buses := make([]*recordingBus, n)
+	for i := range buses {
+		buses[i] = newRecordingBus()
+		j := newTestJournal(handle, settings{events: []string{"order.updated"}})
+		j.signal = &signal{out: &reported}
+		j.subscribe(buses[i])
+	}
+	return buses, &reported
+}
+
+// deliver hands one event to each bus in turn.
+func deliver(t *testing.T, evt event.Event, buses ...*recordingBus) {
+	t.Helper()
+	for _, bus := range buses {
+		if err := bus.Publish(context.Background(), evt); err != nil {
+			t.Fatalf("publishing: %v", err)
+		}
+	}
+}
+
+// An event a broadcast bus hands to every replica is recorded once, and the row
+// carries the event's identifier.
+//
+// Every replica runs its own subscription into the one table, so without a key
+// the table holds a row per replica — and a row per redelivery — that a reader
+// cannot tell from separate events. The identifier on the row is what lets a
+// reader match the row to the event it records. A delivery that finds the row
+// already written has nothing to report: the fact is in the table.
+func TestAnEventDeliveredToEveryReplicaIsRecordedOnce(t *testing.T) {
+	handle := open(t)
+	buses, reported := replicas(t, handle, 2)
+	evt := event.Event{
+		ID: event.NewID(), Type: "order.updated", TenantID: "acme",
+		Payload: map[string]any{"object": "order/o1"},
+	}
+	deliver(t, evt, buses[0], buses[1], buses[0])
+
+	rows := auditRows(t, handle)
+	if len(rows) != 1 {
+		t.Fatalf("one event delivered to two replicas, and once more to one of them, left %d row(s), want 1",
+			len(rows))
+	}
+	if rows[0].EventID == nil || *rows[0].EventID != evt.ID {
+		t.Errorf("the row records event %v, want %q", rows[0].EventID, evt.ID)
+	}
+	if reported.Len() != 0 {
+		t.Errorf("a delivery the table already held was reported as a failure: %s", reported.String())
+	}
+}
+
+// Two events are two rows even when everything but the identifier agrees, and
+// an event that carries no identifier is recorded on every delivery rather than
+// merged with every other such event under an empty key.
+func TestOnlyAnEventsOwnIdentifierMergesItsDeliveries(t *testing.T) {
+	handle := open(t)
+	buses, _ := replicas(t, handle, 2)
+	same := map[string]any{"object": "order/o1"}
+	deliver(t, event.Event{ID: event.NewID(), Type: "order.updated", Payload: same}, buses[0])
+	deliver(t, event.Event{ID: event.NewID(), Type: "order.updated", Payload: same}, buses[0])
+	deliver(t, event.Event{Type: "order.updated", Payload: same}, buses...)
+
+	rows := auditRows(t, handle)
+	if len(rows) != 4 {
+		t.Fatalf("two identified events and one unidentified event delivered twice left %d row(s), want 4",
+			len(rows))
+	}
+	for _, r := range rows[2:] {
+		if r.EventID != nil {
+			t.Errorf("an event without an identifier was recorded under %q, want none", *r.EventID)
+		}
+	}
+}
+
+// requireTheUpgradeKeepsTheTable builds the audit table from the dialect's first
+// migration, puts a row in it, applies the rest, and checks that the row is
+// still there and that every capture path writes into the table afterwards.
+//
+// A table built before the event column existed is what a deployment already
+// running this module has, and the later migrations have to take it as it is:
+// a file rewritten in place would never run there, because the database module
+// records the first file as applied.
+func requireTheUpgradeKeepsTheTable(t *testing.T, handle *gorm.DB, dialect string) {
+	t.Helper()
+	entries, err := fs.ReadDir(migrationsFS, dialect)
+	if err != nil || len(entries) < 2 {
+		t.Fatalf("listing the %s migrations gave %v (%v), want the first file and a later one", dialect, entries, err)
+	}
+	applyMigration(t, handle, dialect+"/"+entries[0].Name())
+	if err := handle.Exec("INSERT INTO "+tableName+
+		" (occurred_at, actor, tenant_id, source, action, object, outcome, purpose, detail)"+
+		" VALUES (?, '', NULL, 'seam', 'before', '', '', '', '{}')", time.Now().UTC()).Error; err != nil {
+		t.Fatalf("writing a row into the table the first migration built: %v", err)
+	}
+	for _, entry := range entries[1:] {
+		applyMigration(t, handle, dialect+"/"+entry.Name())
+	}
+
+	if err := handle.Create(&order{ID: "o1", Note: "after"}).Error; err != nil {
+		t.Fatalf("a model write after the upgrade: %v", err)
+	}
+	buses, reported := replicas(t, handle, 2)
+	deliver(t, event.Event{ID: event.NewID(), Type: "order.updated"}, buses...)
+	if reported.Len() != 0 {
+		t.Errorf("a capture path failed on the upgraded table: %s", reported.String())
+	}
+
+	rows := auditRows(t, handle)
+	if len(rows) != 3 {
+		t.Fatalf("want the row from before the upgrade, the write and the event, got %+v", rows)
+	}
+	if before := rows[0]; before.Action != "before" || before.EventID != nil {
+		t.Errorf("the row written before the upgrade reads back as %+v", before)
+	}
+	if rows[1].Source != string(audit.SourceStatement) || rows[2].Source != string(audit.SourceEvent) {
+		t.Errorf("the rows written after the upgrade are %+v", rows[1:])
+	}
+}
+
+// The migration adding the event column keeps a table the first one built.
+func TestTheEventColumnMigrationKeepsAnExistingTable(t *testing.T) {
+	handle, err := gorm.Open(sqlitedriver.Open("file:"+t.Name()+"?mode=memory&cache=shared"), quiet())
+	if err != nil {
+		t.Fatalf("opening the handle: %v", err)
+	}
+	if err := handle.Use(newCapture()); err != nil {
+		t.Fatalf("installing the capture plugin: %v", err)
+	}
+	if err := handle.Exec(createOrders).Error; err != nil {
+		t.Fatalf("creating the orders table: %v", err)
+	}
+	requireTheUpgradeKeepsTheTable(t, handle, auditDialect)
 }

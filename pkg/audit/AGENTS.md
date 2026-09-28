@@ -39,7 +39,8 @@ must not cross, and how to run it.
   agree. The judgement holds because the module's own write goes through the
   model path, where the target table is resolved; a write issued as raw SQL
   would carry no table and would not reach the plugin at all. Someone changing
-  the name changes it in the constant and in both migration files.
+  the name changes it in the constant and in every migration file of both
+  dialects.
 - **The statement callbacks write on the session they are handed.** That is what
   puts the row in the statement's transaction and keeps it off a second
   connection. Writing through a handle captured at `Initialize` instead — or
@@ -101,6 +102,15 @@ must not cross, and how to run it.
   running journals, or a probe for the table on each handle — because the
   plugin instance is shared by every registry in the process and a guess would
   hand one run's rows to another's table.
+- **The event column is unique, and the event path's insert yields on it.** A
+  broadcast bus hands every event to every replica, every replica writes into
+  the one table, and the event's identifier is the same on every delivery, so
+  the first insert writes the row and every later one does nothing. Two
+  shortcuts break it without a compile error: an insert that meets the key
+  without the conflict clause reports every later delivery through the failure
+  signal as a broken table, and an empty identifier stored as a value rather
+  than as null merges every event that carries none into the first. The column
+  is also what a reader matches a row to the event it records by.
 - **The event path's field spellings are this module's own choice.** A payload
   is read for an object and an outcome under a short list of candidate names,
   and one that carries neither leaves those columns empty without a signal. A

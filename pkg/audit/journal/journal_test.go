@@ -41,11 +41,12 @@ const createOrders = `CREATE TABLE orders (
 	note TEXT NOT NULL
 )`
 
-// auditMigration is the migration the module ships for the dialect these cases
-// run on. The table the cases write into is built from it rather than from a
-// copy written out here: a copy is a second description of the schema, and the
-// two part company at the first column someone adds.
-const auditMigration = "sqlite/0001_audit_entries.sql"
+// auditDialect is the dialect these cases run on, and the subdirectory of the
+// migrations the module ships for it. The table the cases write into is built
+// from those files rather than from a copy written out here: a copy is a second
+// description of the schema, and the two part company at the first column
+// someone adds.
+const auditDialect = "sqlite"
 
 // applyMigration runs one of the module's own migration files.
 //
@@ -64,6 +65,19 @@ func applyMigration(t *testing.T, handle *gorm.DB, name string) {
 		if err := handle.Exec(statement).Error; err != nil {
 			t.Fatalf("applying %s: %v", name, err)
 		}
+	}
+}
+
+// applyMigrations runs every migration file the module ships for one dialect,
+// in the order the database module applies them: by file name.
+func applyMigrations(t *testing.T, handle *gorm.DB, dialect string) {
+	t.Helper()
+	entries, err := fs.ReadDir(migrationsFS, dialect)
+	if err != nil {
+		t.Fatalf("listing the %s migrations: %v", dialect, err)
+	}
+	for _, entry := range entries {
+		applyMigration(t, handle, dialect+"/"+entry.Name())
 	}
 }
 
@@ -127,7 +141,7 @@ func open(t *testing.T) *gorm.DB {
 	if err := handle.Exec(createOrders).Error; err != nil {
 		t.Fatalf("creating the orders table: %v", err)
 	}
-	applyMigration(t, handle, auditMigration)
+	applyMigrations(t, handle, auditDialect)
 	return handle
 }
 
@@ -233,10 +247,10 @@ func TestStatementCaptureRidesTheStatementsTransaction(t *testing.T) {
 //
 // This is the path a host writes most of its code on: no transaction of its
 // own, so the one GORM opens around the statement is the one that matters.
-// Anchoring the callback on the statement's own step rather than on the commit
-// put the row after that transaction had already ended — the row went out on a
-// second connection, and a failure was raised against a statement that had
-// committed, telling the caller to retry a write that was already durable.
+// A callback anchored on the statement's own step rather than on the commit
+// runs after that transaction has ended: the row goes out on a second
+// connection, and a failure is raised against a statement that has committed,
+// telling the caller to retry a write that is already durable.
 func TestABareWriteFailsWithItsRecord(t *testing.T) {
 	handle, err := gorm.Open(sqlitedriver.Open("file:"+t.Name()+"?mode=memory&cache=shared"), quiet())
 	if err != nil {
@@ -409,7 +423,8 @@ func TestTheSeamReturnsItsFailureAndACapturePathDoesNot(t *testing.T) {
 	// A capture path reports the failure without raising it. The signal is what
 	// makes that observable: without this assertion the case passes whether
 	// submit reports, swallows, or panics.
-	j.submit(context.Background(), audit.SourceRequest, audit.Entry{Action: "a"}, "")
+	ctx := context.Background()
+	j.submit(ctx, assemble(ctx, audit.SourceRequest, audit.Entry{Action: "a"}, ""))
 	if reported.Len() == 0 {
 		t.Error("a capture path's write failure was not reported anywhere")
 	}

@@ -7,6 +7,7 @@ import (
 	"time"
 
 	"gorm.io/gorm"
+	"gorm.io/gorm/clause"
 
 	"github.com/vislake/speed/pkg/audit"
 	"github.com/vislake/speed/pkg/authn"
@@ -30,6 +31,11 @@ const tableName = "audit_entries"
 // the plugin filled and constrained would make their entries unwritable. What
 // the plugin reads to decide is whether a model embeds the convention, and this
 // one does not.
+//
+// The event column holds the identifier of the event an event-path row
+// records, and is null on every other row. It is unique, which is what makes a
+// second delivery of one event — to another replica, or to this one again —
+// leave the row the first delivery wrote; see insert.
 type row struct {
 	ID         uint64    `gorm:"primaryKey"`
 	OccurredAt time.Time `gorm:"not null;index"`
@@ -41,7 +47,12 @@ type row struct {
 	Outcome    string `gorm:"not null"`
 	Purpose    string `gorm:"not null"`
 	Detail     string `gorm:"not null"`
+	EventID    *string
 }
+
+// eventColumn is the column the event identifier is kept in, and the conflict
+// target the event path's insert names.
+const eventColumn = "event_id"
 
 // TableName is the name the statement-level capture compares against, and the
 // name the migration files create.
@@ -61,31 +72,25 @@ func (j *journal) Record(ctx context.Context, e audit.Entry) error {
 	if !j.accepting.Load() {
 		return audit.ErrNotAccepting
 	}
-	err := j.write(ctx, audit.SourceSeam, e, "")
+	err := j.write(ctx, assemble(ctx, audit.SourceSeam, e, ""))
 	j.note(err)
 	return err
 }
 
-// write puts one entry in the table.
+// write puts one row in the table.
 //
 // The context travels with the write. Its values are where the actor and the
-// tenant are read from; its cancellation bounds the write, which on the seam is
+// tenant were read from; its cancellation bounds the write, which on the seam is
 // the caller's to set — a caller that gives up on its own operation is told the
 // entry was not written. The paths this module drives detach from the
 // cancellation before they get here; see submit.
-//
-// tenantOverride carries the tenant an event was published under. The bus
-// carries it on the event precisely so that a subscriber does not have to
-// reconstruct it, and a subscription callback usually has no request context to
-// read one from; the context wins when it has one, because that is the tenant
-// the work was done under.
-func (j *journal) write(ctx context.Context, src audit.Source, e audit.Entry, tenantOverride string) error {
-	return insert(j.handle.WithContext(ctx), assemble(ctx, src, e, tenantOverride))
+func (j *journal) write(ctx context.Context, r row) error {
+	return insert(j.handle.WithContext(ctx), r)
 }
 
-// submit is how the capture paths this module drives record an entry: the
-// failure is reported and the caller carries on, because a request or an event
-// must not fail on account of the record of it.
+// submit is how the capture paths this module drives record a row: the failure
+// is reported and the caller carries on, because a request or an event must not
+// fail on account of the record of it.
 //
 // The write keeps the context's values and drops its cancellation. By the time
 // either path writes, the fact it records has happened — the handler has
@@ -96,11 +101,11 @@ func (j *journal) write(ctx context.Context, src audit.Source, e audit.Entry, te
 // that has nothing to do with the table, and reports a healthy table as failing.
 // The price is that nothing bounds the write but the database's own timeouts,
 // so a slow or locked table slows every request and event it records.
-func (j *journal) submit(ctx context.Context, src audit.Source, e audit.Entry, tenantOverride string) {
+func (j *journal) submit(ctx context.Context, r row) {
 	if !j.accepting.Load() {
 		return
 	}
-	j.note(j.write(context.WithoutCancel(ctx), src, e, tenantOverride))
+	j.note(j.write(context.WithoutCancel(ctx), r))
 }
 
 // note routes one write's outcome to the failure signal.
@@ -113,6 +118,12 @@ func (j *journal) note(err error) {
 }
 
 // assemble fills in the half of a row the caller does not supply.
+//
+// tenantOverride carries the tenant an event was published under. The bus
+// carries it on the event precisely so that a subscriber does not have to
+// reconstruct it, and a subscription callback usually has no request context to
+// read one from; the context wins when it has one, because that is the tenant
+// the work was done under.
 func assemble(ctx context.Context, src audit.Source, e audit.Entry, tenantOverride string) row {
 	return row{
 		OccurredAt: time.Now().UTC(),
@@ -128,7 +139,22 @@ func assemble(ctx context.Context, src audit.Source, e audit.Entry, tenantOverri
 }
 
 // insert writes one row through the given handle.
+//
+// A row that records an event is written only if no row records that event
+// yet. A bus promises no delivery count: a transport hands every event to every
+// replica's subscription, and a backend may hand it to one of them again, while
+// every replica writes into the one table. The event's identifier is the same
+// on every delivery, so a later insert meets the unique key the first one left
+// and does nothing — whichever delivery gets there first writes the row, and the
+// rest succeed without writing. That is not a swallowed failure: the fact is in
+// the table, which is what each of them was writing for.
 func insert(handle *gorm.DB, r row) error {
+	if r.EventID != nil {
+		handle = handle.Clauses(clause.OnConflict{
+			Columns:   []clause.Column{{Name: eventColumn}},
+			DoNothing: true,
+		})
+	}
 	if err := handle.Create(&r).Error; err != nil {
 		return fmt.Errorf("%w: %w", audit.ErrWriteFailed, err)
 	}

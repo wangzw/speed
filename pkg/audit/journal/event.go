@@ -54,9 +54,29 @@ func (j *journal) handlerFor(typeName string) event.Handler {
 		// carries it so that a subscriber does not have to reconstruct it, and
 		// a subscription callback usually has no request context to read one
 		// from.
-		j.submit(ctx, audit.SourceEvent, entry, evt.TenantID)
+		r := assemble(ctx, audit.SourceEvent, entry, evt.TenantID)
+		r.EventID = eventIDOf(evt)
+		j.submit(ctx, r)
 		return nil
 	}
+}
+
+// eventIDOf is the identifier a row records its event under, or nil for an
+// event that carries none.
+//
+// The identifier is what tells a second delivery of one event from a second
+// event, on every replica alike, so it is kept on the row both to let a reader
+// match the row to the event and to let the table refuse the same event twice.
+// An event with no identifier has nothing to be told apart by — the bus assigns
+// one on Publish, so only a bus that does not reaches this — and it is recorded
+// on every delivery rather than merged with every other such event under an
+// empty key.
+func eventIDOf(evt event.Event) *string {
+	if evt.ID == "" {
+		return nil
+	}
+	id := evt.ID
+	return &id
 }
 
 // readFields decodes a payload's top-level fields, each as the text the

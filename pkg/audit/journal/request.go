@@ -75,7 +75,8 @@ const panicOutcome = "panic"
 // it is not one of the entry's fields, and the layer does know which endpoint
 // it was registered on.
 func (j *journal) recordRequest(r *nethttp.Request, endpoint, pattern, outcome string) {
-	j.submit(r.Context(), audit.SourceRequest, audit.Entry{
+	ctx := r.Context()
+	j.submit(ctx, assemble(ctx, audit.SourceRequest, audit.Entry{
 		Action:  r.Method,
 		Object:  pattern,
 		Outcome: outcome,
@@ -83,7 +84,7 @@ func (j *journal) recordRequest(r *nethttp.Request, endpoint, pattern, outcome s
 			"endpoint": endpoint,
 			"path":     r.URL.Path,
 		},
-	}, "")
+	}, ""))
 }
 
 // statusRecorder remembers the status the inner chain answered with.
