@@ -128,6 +128,11 @@ type decision struct {
 	// decision asked about. The class in tripped, when there is one, is the
 	// last entry.
 	evaluated []reason
+
+	// tenant is the tenant segment the decision read its thresholds and
+	// counted under, empty for a request that carries no tenant. The signal
+	// names it on the line a thresholds failure first writes.
+	tenant string
 }
 
 // decide runs one request through the count and answers it.
@@ -151,9 +156,8 @@ func (l *limiter) decide(w nethttp.ResponseWriter, r *nethttp.Request, next neth
 		return decision{}
 	}
 
-	var d decision
-
 	layer, tenantSegment := l.scopeOf(r.Context())
+	d := decision{tenant: tenantSegment}
 	window, limit := l.thresholds(layer, &d)
 	if d.tripped != "" {
 		next.ServeHTTP(w, r)

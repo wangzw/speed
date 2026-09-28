@@ -56,11 +56,15 @@ here must not cross, and how to run it.
   not imply one another: while the counter backend is unreachable, the
   thresholds class still has to be able to report itself, and one shared flag
   would keep it from ever writing a line. A class clears when a decision
-  evaluates it and it does not trip — not when a decision succeeds outright. A
-  decision returns at the first class that trips, so the classes behind it are
-  never evaluated and their flags are left alone; a class ahead of the trip
-  still clears, which is what keeps a fixed condition from waiting on an
-  unfixed one.
+  evaluates it and it does not trip, once it has gone `recoveryQuiet` without
+  failing — not when a decision succeeds outright, and not on the first
+  passing decision. A decision returns at the first class that trips, so the
+  classes behind it are never evaluated and their flags are left alone; a
+  class ahead of the trip still clears, which is what keeps a fixed condition
+  from waiting on an unfixed one. The quiet period is what keeps a failure
+  confined to some decisions — one tenant's row, one key, a backend answering
+  some calls — from writing a pair of lines per alternation
+  (`TestAFailureConfinedToOneTenantWritesOneLine`).
 - **The lines go to the process's standard error, not through the logging
   module.** The reporting chain may be absent or switched off, which is the same
   reason the logging module reports its own write failures that way.

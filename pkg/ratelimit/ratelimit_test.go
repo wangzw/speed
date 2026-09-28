@@ -428,12 +428,14 @@ func stoppedAt(r reason) decision {
 // one from ever writing a line.
 func TestSignalReportsEachReasonOnItsOwn(t *testing.T) {
 	var out bytes.Buffer
-	s := newSignalTo(&out)
+	s, clock := signalOnAPinnedClock(&out)
 
 	s.settle(stoppedAt(reasonCounterRead))
 	s.settle(stoppedAt(reasonCounterRead))
-	// The counter passes in a decision that reached it, so that class clears;
-	// the thresholds then fail and report themselves.
+	// The counter passes in a decision that reached it once it has been quiet
+	// long enough, so that class clears; the thresholds then fail and report
+	// themselves.
+	clock.advance(recoveryQuiet)
 	s.settle(everyClass)
 	s.settle(stoppedAt(reasonThresholdRead))
 
@@ -457,11 +459,12 @@ func TestSignalReportsEachReasonOnItsOwn(t *testing.T) {
 
 func TestSignalWritesOneLinePerFailureAndOnePerRecovery(t *testing.T) {
 	var out bytes.Buffer
-	s := newSignalTo(&out)
+	s, clock := signalOnAPinnedClock(&out)
 
 	for i := 0; i < 5; i++ {
 		s.settle(stoppedAt(reasonCounterRead))
 	}
+	clock.advance(recoveryQuiet)
 	s.settle(everyClass) // a decision that evaluated this class and passed it
 	s.settle(stoppedAt(reasonCounterRead))
 
@@ -477,13 +480,15 @@ func TestSignalWritesOneLinePerFailureAndOnePerRecovery(t *testing.T) {
 // the counter.
 func TestSignalRecoversAClassWhileAnotherKeepsFailing(t *testing.T) {
 	var out bytes.Buffer
-	s := newSignalTo(&out)
+	s, clock := signalOnAPinnedClock(&out)
 
 	// The thresholds fail, then the counter fails behind them.
 	s.settle(stoppedAt(reasonThresholdRead))
 	s.settle(stoppedAt(reasonCounterRead))
 	s.settle(stoppedAt(reasonCounterRead))
-	// The thresholds recover in a decision that still trips the counter.
+	// The thresholds recover in a decision that still trips the counter,
+	// once they have been quiet long enough.
+	clock.advance(recoveryQuiet)
 	s.settle(stoppedAt(reasonCounterRead))
 
 	lines := strings.Split(strings.TrimSpace(out.String()), "\n")
@@ -629,7 +634,8 @@ func TestDecideClearsOnlyTheClassesItEvaluated(t *testing.T) {
 	var out bytes.Buffer
 	l := pinned()
 	next := nethttp.HandlerFunc(func(nethttp.ResponseWriter, *nethttp.Request) {})
-	l.signal = newSignalTo(&out)
+	var clock *pinnedClock
+	l.signal, clock = signalOnAPinnedClock(&out)
 
 	// One request through the layer, its class accounted for as wrap does.
 	step := func() reason {
@@ -650,6 +656,9 @@ func TestDecideClearsOnlyTheClassesItEvaluated(t *testing.T) {
 
 	// Only the thresholds are broken now, and the decision stops there: it
 	// never reached the counter class, so that class must not be cleared.
+	// The counter class has been quiet long enough by now, so it is only the
+	// decision not having asked about it that keeps it from clearing.
+	clock.advance(recoveryQuiet)
 	out.Reset()
 	l.counters = newFakeKV()
 	l.store = &fakeStore{values: map[string]any{windowPath: time.Duration(0), limitPath: 10}}
