@@ -24,6 +24,8 @@ package memcachetest
 import (
 	"context"
 	"crypto/rand"
+	"errors"
+	"fmt"
 	"net"
 	"os"
 	"os/exec"
@@ -47,6 +49,11 @@ const (
 	// dockerTimeout bounds one docker invocation.
 	dockerTimeout = time.Minute
 	runningState  = "true"
+	// bringUpBound bounds the wait that follows a create or a start lost to
+	// another test binary, and bringUpInterval is how often it looks while it
+	// waits.
+	bringUpBound    = 30 * time.Second
+	bringUpInterval = 150 * time.Millisecond
 	// spaceEnd closes every space. Memcached accepts it in a key, base32 does
 	// not contain it, and no spelling the implementation makes contains it.
 	spaceEnd = "."
@@ -93,14 +100,41 @@ func requireDocker(t *testing.T) {
 	}
 }
 
+// ensureServer leaves the shared server running, tolerating the window in
+// which another test binary on this machine is bringing it up.
+//
+// A container that is there but not running is started, never removed: it is
+// either an interrupted run's leftover or another binary's container a moment
+// before it comes up, and removing it would reach into that window and take
+// the other binary's server with it. A create can lose to another binary too:
+// docker refuses the duplicate name, and it takes the name before the
+// container can be looked at, so the loser spends a window being told there is
+// no such container and only then finds the winner's. The wait below is that
+// window, and the container it ends on is the winner's; a losing binary never
+// creates one of its own.
 func ensureServer(t *testing.T) {
 	t.Helper()
-	if !running(t) {
-		if exists(t) {
-			run(t, "rm", "-f", containerName)
-		}
-		run(t, "run", "-d", "--name", containerName, "-p", "0:"+serverPort, image)
+	if running(t) {
+		return
 	}
+	var err error
+	if exists(t) {
+		_, err = docker(t, "start", containerName)
+	} else {
+		_, err = docker(t, "run", "-d", "--name", containerName, "-p", "0:"+serverPort, image)
+	}
+	if err == nil {
+		return
+	}
+	deadline := time.Now().Add(bringUpBound)
+	for time.Now().Before(deadline) {
+		if running(t) {
+			return
+		}
+		time.Sleep(bringUpInterval)
+	}
+	t.Fatalf("memcachetest: the %s container did not come up within %s: bringing it up failed with %v, "+
+		"and it is %s", containerName, bringUpBound, err, stateWords(t))
 }
 
 func running(t *testing.T) bool {
@@ -113,6 +147,17 @@ func exists(t *testing.T) bool {
 	t.Helper()
 	_, err := docker(t, "inspect", "-f", "{{.Name}}", containerName)
 	return err == nil
+}
+
+// stateWords reports what docker says the container's state is right now, for
+// the give-up message: the state, or why it could not be read.
+func stateWords(t *testing.T) string {
+	t.Helper()
+	out, err := docker(t, "inspect", "-f", "{{.State.Status}}", containerName)
+	if err != nil {
+		return fmt.Sprintf("not inspectable (%v)", err)
+	}
+	return strings.TrimSpace(out)
 }
 
 func publishedAddr(t *testing.T) string {
@@ -149,13 +194,13 @@ func docker(t *testing.T, args ...string) (string, error) {
 	defer cancel()
 	//nolint:gosec // every argument is one of this file's own constants; nothing a case supplies reaches the command line
 	out, err := exec.CommandContext(ctx, "docker", args...).Output()
-	return string(out), err
-}
-
-func run(t *testing.T, args ...string) {
-	t.Helper()
-	out, err := docker(t, args...)
 	if err != nil {
-		t.Fatalf("memcachetest: docker %s: %v\n%s", strings.Join(args, " "), err, out)
+		// docker's own words are on stderr, and without them a failure here
+		// reads as a bare "exit status 125" with nothing to act on.
+		var exit *exec.ExitError
+		if errors.As(err, &exit) {
+			return string(out), fmt.Errorf("%w: %s", err, strings.TrimSpace(string(exit.Stderr)))
+		}
 	}
+	return string(out), err
 }
