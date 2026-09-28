@@ -8,7 +8,6 @@ import (
 	"testing"
 	"time"
 
-	sqlitedriver "github.com/glebarez/sqlite"
 	"gorm.io/gorm"
 
 	"github.com/vislake/speed/pkg/audit"
@@ -302,10 +301,7 @@ func requireTheUpgradeKeepsTheTable(t *testing.T, handle *gorm.DB, dialect strin
 
 // The migration adding the event column keeps a table the first one built.
 func TestTheEventColumnMigrationKeepsAnExistingTable(t *testing.T) {
-	handle, err := gorm.Open(sqlitedriver.Open("file:"+t.Name()+"?mode=memory&cache=shared"), quiet())
-	if err != nil {
-		t.Fatalf("opening the handle: %v", err)
-	}
+	handle := sharedMemory(t)
 	if err := handle.Use(newCapture()); err != nil {
 		t.Fatalf("installing the capture plugin: %v", err)
 	}

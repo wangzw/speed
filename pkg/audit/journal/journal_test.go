@@ -5,6 +5,7 @@ import (
 	"bytes"
 	"context"
 	"errors"
+	"fmt"
 	"io"
 	"io/fs"
 	"log/slog"
@@ -13,6 +14,7 @@ import (
 	"net/http/httptest"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -126,15 +128,40 @@ func quiet() *gorm.Config {
 	return &gorm.Config{Logger: logger.Default.LogMode(logger.Silent)}
 }
 
+// sharedMemories numbers the in-memory databases sharedMemory opens in this
+// process.
+var sharedMemories atomic.Int64
+
+// sharedMemory opens a handle on an in-memory database of this call's own,
+// which every connection of the handle's pool shares, and closes the pool when
+// the case ends.
+//
+// An in-memory database in a shared cache lives as long as a connection to it
+// is open, and is reached again by any connection that names it. The name is
+// therefore this call's alone — a case run a second time in one process, under
+// -count, gets an empty database rather than the tables and rows the first run
+// left — and the pool is closed, so the database goes with the case.
+func sharedMemory(t *testing.T) *gorm.DB {
+	t.Helper()
+	name := fmt.Sprintf("file:%s-%d?mode=memory&cache=shared", t.Name(), sharedMemories.Add(1))
+	handle, err := gorm.Open(sqlitedriver.Open(name), quiet())
+	if err != nil {
+		t.Fatalf("opening the handle: %v", err)
+	}
+	pool, err := handle.DB()
+	if err != nil {
+		t.Fatalf("reaching the pool: %v", err)
+	}
+	t.Cleanup(func() { _ = pool.Close() })
+	return handle
+}
+
 // open builds a handle with the capture plugin installed and both tables
 // created. The tables are created with raw SQL, which the plugin does not
 // capture — reaching the plugin needs the model path.
 func open(t *testing.T) *gorm.DB {
 	t.Helper()
-	handle, err := gorm.Open(sqlitedriver.Open("file:"+t.Name()+"?mode=memory&cache=shared"), quiet())
-	if err != nil {
-		t.Fatalf("opening the handle: %v", err)
-	}
+	handle := sharedMemory(t)
 	if err := handle.Use(newCapture()); err != nil {
 		t.Fatalf("installing the capture plugin: %v", err)
 	}
@@ -252,10 +279,7 @@ func TestStatementCaptureRidesTheStatementsTransaction(t *testing.T) {
 // connection, and a failure is raised against a statement that has committed,
 // telling the caller to retry a write that is already durable.
 func TestABareWriteFailsWithItsRecord(t *testing.T) {
-	handle, err := gorm.Open(sqlitedriver.Open("file:"+t.Name()+"?mode=memory&cache=shared"), quiet())
-	if err != nil {
-		t.Fatalf("opening the handle: %v", err)
-	}
+	handle := sharedMemory(t)
 	if installErr := handle.Use(newCapture()); installErr != nil {
 		t.Fatalf("installing the capture plugin: %v", installErr)
 	}
@@ -264,7 +288,7 @@ func TestABareWriteFailsWithItsRecord(t *testing.T) {
 	}
 	// No audit table, so every capture write fails.
 
-	err = handle.Create(&order{ID: "o1", Note: "no trail"}).Error
+	err := handle.Create(&order{ID: "o1", Note: "no trail"}).Error
 	if !errors.Is(err, audit.ErrWriteFailed) {
 		t.Fatalf("the write gave %v, want ErrWriteFailed", err)
 	}
@@ -411,10 +435,7 @@ func TestSignalReportsOncePerFault(t *testing.T) {
 // what keeps a request from failing on account of the record of it.
 func TestTheSeamReturnsItsFailureAndACapturePathDoesNot(t *testing.T) {
 	// A handle with no audit table, so every write fails.
-	handle, err := gorm.Open(sqlitedriver.Open("file:"+t.Name()+"?mode=memory&cache=shared"), quiet())
-	if err != nil {
-		t.Fatalf("opening the handle: %v", err)
-	}
+	handle := sharedMemory(t)
 	var reported bytes.Buffer
 	j := newJournal(settings{}, handle, nil)
 	j.signal = &signal{out: &reported}
