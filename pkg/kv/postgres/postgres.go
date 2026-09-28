@@ -49,9 +49,9 @@ const (
 	// host could point elsewhere would let two assemblies on one server
 	// overwrite each other's entries with no sign that they had.
 	table = "kv_entries"
-	// createTable is idempotent, and it runs on every open rather than behind a
-	// ledger: this package has no migration machinery of its own, and a
-	// CREATE TABLE IF NOT EXISTS is its own record of having been applied.
+	// createTable runs only when the table is missing, rather than behind a
+	// ledger: this package has no migration machinery of its own, and the
+	// table being there is its own record of having been created.
 	//
 	// The key is bytes rather than text. The capability's keys are opaque, and
 	// a text column refuses two kinds of them outright: a NUL byte, and bytes
@@ -61,12 +61,19 @@ const (
 		value      BYTEA NOT NULL,
 		expires_at TIMESTAMPTZ
 	)`
-	// createExpiryIndex is what lets the sweep find expired rows without
-	// reading the table. Only rows with an expiry are in it.
-	createExpiryIndex = `CREATE INDEX IF NOT EXISTS ` + table + `_expires_at ON ` + table +
+	// expiryIndex is what lets the sweep find expired rows without reading the
+	// table. Only rows with an expiry are in it.
+	expiryIndex       = table + `_expires_at`
+	createExpiryIndex = `CREATE INDEX IF NOT EXISTS ` + expiryIndex + ` ON ` + table +
 		` (expires_at) WHERE expires_at IS NOT NULL`
+	// tablePresent and indexPresent ask the catalog whether the table, and the
+	// expiry index on it, are there. Both resolve the table the way every other
+	// statement here does: through the search path.
+	tablePresent = `SELECT to_regclass('` + table + `') IS NOT NULL`
+	indexPresent = `SELECT EXISTS (SELECT 1 FROM pg_index i JOIN pg_class c ON c.oid = i.indexrelid
+		WHERE i.indrelid = to_regclass('` + table + `') AND c.relname = '` + expiryIndex + `')`
 	// keyColumnType reads the type the table's key column has, resolving the
-	// table the way every other statement here does: through the search path.
+	// table the same way.
 	keyColumnType = `SELECT format_type(atttypid, atttypmod) FROM pg_attribute
 		WHERE attrelid = to_regclass('` + table + `') AND attname = 'key'`
 	// migrateTextKeys converts a table whose key column is text into the shape
@@ -141,7 +148,7 @@ func open(ctx context.Context, cfg *pgpool.Config) (kv.KV, error) {
 	}
 	if prepareErr := prepareTable(ctx, pool); prepareErr != nil {
 		pool.Close()
-		return nil, fmt.Errorf("%s: creating %s: %w", ModuleName, table, prepareErr)
+		return nil, fmt.Errorf("%s: preparing %s: %w", ModuleName, table, prepareErr)
 	}
 	sweepCtx, stopSweeps := context.WithCancel(context.Background())
 	return &store{pool: pool, sweepCtx: sweepCtx, stopSweeps: stopSweeps}, nil
@@ -152,8 +159,8 @@ func open(ctx context.Context, cfg *pgpool.Config) (kv.KV, error) {
 // server, so it only has to be distinct from what other modules hash.
 const schemaLock = "speed:kv:" + table
 
-// prepareTable creates the table, holding a transaction-scoped advisory lock
-// while it does.
+// prepareTable creates the table and its expiry index where they are missing,
+// holding a transaction-scoped advisory lock while it looks and creates.
 //
 // The lock is what makes several replicas starting at once against an empty
 // database safe. CREATE TABLE IF NOT EXISTS is not safe against a concurrent
@@ -161,6 +168,14 @@ const schemaLock = "speed:kv:" + table
 // that commits second fails on the catalog's unique index for the table's row
 // type — a replica that fails its startup for no fault of its own. Under the
 // lock the second session waits, then finds the table and does nothing.
+//
+// The catalog is asked before anything is created, and nothing is created that
+// is there. PostgreSQL checks CREATE on the schema before it looks for the
+// object an IF NOT EXISTS names, and ownership of the table before it looks for
+// an index: a start that ran the statements regardless would need both
+// privileges on every start, and a service running under a role that may only
+// read and write rows would fail on a database whose table is all there. The
+// lock and the catalog reads need no privilege of their own.
 func prepareTable(ctx context.Context, pool *pgxpool.Pool) error {
 	tx, beginErr := pool.Begin(ctx)
 	if beginErr != nil {
@@ -170,8 +185,14 @@ func prepareTable(ctx context.Context, pool *pgxpool.Pool) error {
 	if _, lockErr := tx.Exec(ctx, `SELECT pg_advisory_xact_lock(hashtextextended($1, 0))`, schemaLock); lockErr != nil {
 		return lockErr
 	}
-	if _, createErr := tx.Exec(ctx, createTable); createErr != nil {
-		return createErr
+	var present bool
+	if presentErr := tx.QueryRow(ctx, tablePresent).Scan(&present); presentErr != nil {
+		return fmt.Errorf("asking whether the table is there: %w", presentErr)
+	}
+	if !present {
+		if _, createErr := tx.Exec(ctx, createTable); createErr != nil {
+			return fmt.Errorf("creating the table: %w", createErr)
+		}
 	}
 	var keyType string
 	if typeErr := tx.QueryRow(ctx, keyColumnType).Scan(&keyType); typeErr != nil {
@@ -192,8 +213,14 @@ func prepareTable(ctx context.Context, pool *pgxpool.Pool) error {
 	default:
 		return fmt.Errorf("the key column is %s, and this implementation stores keys as bytea", keyType)
 	}
-	if _, indexErr := tx.Exec(ctx, createExpiryIndex); indexErr != nil {
-		return fmt.Errorf("creating the expiry index: %w", indexErr)
+	var indexed bool
+	if indexedErr := tx.QueryRow(ctx, indexPresent).Scan(&indexed); indexedErr != nil {
+		return fmt.Errorf("asking whether the expiry index is there: %w", indexedErr)
+	}
+	if !indexed {
+		if _, indexErr := tx.Exec(ctx, createExpiryIndex); indexErr != nil {
+			return fmt.Errorf("creating the expiry index: %w", indexErr)
+		}
 	}
 	return tx.Commit(ctx)
 }

@@ -160,6 +160,85 @@ func TestReplicasOpeningAFreshDatabaseTogetherAllStart(t *testing.T) {
 	}
 }
 
+// TestARoleThatMayOnlyWriteRowsStartsOnAPreparedDatabase pins the deployment
+// that splits the credentials: the table created once by a role that may create
+// it, the service run by one that may only read and write rows. Every start
+// prepares the table, and with the table already there that preparation has
+// nothing to change — so it must not need a privilege that changes anything.
+// PostgreSQL checks CREATE on the schema before it looks for the table an
+// IF NOT EXISTS names, so a start that issues the statement regardless fails on
+// the role that has everything it will use.
+//
+// The role is then held to every statement the store runs, the sweep's
+// included, so a start that succeeds is not followed by a first request that
+// fails on a grant the deployment could not have known it needed.
+func TestARoleThatMayOnlyWriteRowsStartsOnAPreparedDatabase(t *testing.T) {
+	dsn := pgtest.Acquire(t)
+	ctx := context.Background()
+	prepared, err := open(ctx, &pgpool.Config{DSN: dsn, MaxConns: 1})
+	if err != nil {
+		t.Fatalf("preparing the table as its owner: %v", err)
+	}
+	_ = prepared.(*store).Close(ctx)
+
+	roleDSN := pgtest.DMLRole(t, dsn)
+	opened, err := open(ctx, &pgpool.Config{DSN: roleDSN, MaxConns: 2})
+	if err != nil {
+		t.Fatalf("a role that may read and write rows could not start on a database whose table is "+
+			"already there: %v", err)
+	}
+	s := opened.(*store)
+	t.Cleanup(func() { _ = s.Close(ctx) })
+
+	if err := s.Set(ctx, "k", []byte("v"), time.Hour); err != nil {
+		t.Errorf("Set as the role: %v", err)
+	}
+	if _, _, err := s.Get(ctx, "k"); err != nil {
+		t.Errorf("Get as the role: %v", err)
+	}
+	if _, err := s.CompareAndSwap(ctx, "k", []byte("v"), []byte("w")); err != nil {
+		t.Errorf("CompareAndSwap as the role: %v", err)
+	}
+	if _, err := s.SetIfAbsent(ctx, "claim", []byte("v"), time.Hour); err != nil {
+		t.Errorf("SetIfAbsent as the role: %v", err)
+	}
+	if _, err := s.IncrByFloatWithTTL(ctx, "n", 1, time.Hour); err != nil {
+		t.Errorf("IncrByFloatWithTTL as the role: %v", err)
+	}
+	if err := s.Delete(ctx, "k"); err != nil {
+		t.Errorf("Delete as the role: %v", err)
+	}
+	if _, err := s.pool.Exec(ctx, sweepExpired, sweepBatch); err != nil {
+		t.Errorf("the sweep as the role: %v", err)
+	}
+}
+
+// TestARoleThatMayOnlyWriteRowsIsToldWhatIsMissing is the other side of the
+// same deployment: a database whose table was never created. The start has to
+// create it, cannot, and fails saying it was creating the table and carrying
+// the server's refusal, so the failure says what the owning role has to create
+// and that a privilege is what stopped it.
+func TestARoleThatMayOnlyWriteRowsIsToldWhatIsMissing(t *testing.T) {
+	dsn := pgtest.Acquire(t)
+	roleDSN := pgtest.DMLRole(t, dsn)
+	opened, err := open(context.Background(), &pgpool.Config{DSN: roleDSN, MaxConns: 1})
+	if err == nil {
+		_ = opened.(*store).Close(context.Background())
+		t.Fatal("a role that may create nothing started on a database without the table")
+	}
+	if !strings.Contains(err.Error(), table) || !strings.Contains(err.Error(), "creating the table") {
+		t.Errorf("the failure does not say it was creating %s: %v", table, err)
+	}
+	var refusal *pgconn.PgError
+	if !errors.As(err, &refusal) || refusal.Code != insufficientPrivilege {
+		t.Errorf("the failure does not carry the server's refusal for want of a privilege: %v", err)
+	}
+}
+
+// insufficientPrivilege is the SQLSTATE the server refuses a statement with
+// when the role lacks a privilege it needs.
+const insufficientPrivilege = "42501"
+
 // TestATableWithTextKeysIsConvertedInPlace covers a database that already holds
 // the table in the shape it had when its key column was text. Opening converts
 // the column rather than leaving it — every statement here compares bytes, and
