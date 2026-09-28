@@ -4,7 +4,9 @@ import (
 	"context"
 	"fmt"
 	"log/slog"
+	"slices"
 	"strconv"
+	"strings"
 	"sync"
 	"sync/atomic"
 	"time"
@@ -204,10 +206,17 @@ func (s *settingsStore) deleteChange(key, old, actor string) Change {
 // List reports the explicit rows of one layer, in key order. It hands out what
 // was written rather than what a read would resolve to: nothing falls back
 // here.
+//
+// The order is the keys' byte order, and it is put in place here rather than
+// by the statement. A database orders text under its collation: SQLite
+// compares bytes, while PostgreSQL uses the one the database was created with,
+// and the common default there sets punctuation aside, so a-b sorts next to ab
+// instead of before aa. The same rows would otherwise come back in an order
+// that depends on the dialect a command runs on.
 func (s *settingsStore) List(ctx context.Context, layer Layer) ([]Entry, error) {
 	tenant := tenantOf(layer)
 	sql := "SELECT tenant_id, key, value, version, updated_at FROM " + tableName +
-		" WHERE tenant_id = " + bind(s.dialect, 1) + " ORDER BY key"
+		" WHERE tenant_id = " + bind(s.dialect, 1)
 	var rows []listRow
 	if err := s.handle.WithContext(ctx).Raw(sql, tenant).Scan(&rows).Error; err != nil {
 		return nil, fmt.Errorf("settings: listing the rows of %s: %w",
@@ -223,6 +232,7 @@ func (s *settingsStore) List(ctx context.Context, layer Layer) ([]Entry, error) 
 			UpdatedAt: r.UpdatedAt,
 		})
 	}
+	slices.SortFunc(entries, func(a, b Entry) int { return strings.Compare(a.Key, b.Key) })
 	return entries, nil
 }
 

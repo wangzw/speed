@@ -142,7 +142,9 @@ go -C pkg/settings test -race ./...
 GOWORK=off go -C pkg/settings build ./...   # the standalone leg, without the workspace
 ```
 
-The tests bring up their own in-memory database and ask for no service and no
-environment: the Go toolchain is the whole of what they need installed. The
-event bus they use is a stub in `helpers_test.go` rather than the memory
+Most cases bring up their own in-memory SQLite database and ask for no
+service. The cases that run the statements against PostgreSQL take a database
+of their own on the shared container `pkg/internal/pgpool/pgtest` starts:
+they skip on a machine without docker, and fail instead where `CI` is set. The
+event bus the cases use is a stub in `helpers_test.go` rather than the memory
 module, whose bus constructor is unexported.

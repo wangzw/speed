@@ -181,7 +181,8 @@ type Store interface {
 	Delete(ctx context.Context, layer Layer, key, actor string) error
 
 	// List lists the explicit rows of the layer the selector names. The result
-	// is ordered by key.
+	// is ordered by the keys' bytes, whatever collation the database orders
+	// text under, so it is the same order on every dialect.
 	//
 	// It hands out the written rows rather than the values reads resolve to:
 	// nothing falls back here.
