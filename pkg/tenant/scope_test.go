@@ -3,6 +3,8 @@ package tenant
 import (
 	"context"
 	"testing"
+
+	"github.com/vislake/speed/pkg/tenant/internal/tenantctx"
 )
 
 // TestFromContextDoesNotFallBack records the half of the property a test can
@@ -22,6 +24,21 @@ func TestFromContextDoesNotFallBack(t *testing.T) {
 func TestCrossTenantIsNotATenant(t *testing.T) {
 	if id, ok := FromContext(CrossTenant(context.Background())); ok {
 		t.Fatalf("a cross-tenant context reported tenant %q", id)
+	}
+}
+
+// TestCrossTenantHandsOverTheIdentifier is the same fact on a context that did
+// belong to a tenant: marking it to cross gives that tenant up. A reader of the
+// marked context — the audit journal filling its tenant column is one — would
+// otherwise file an unscoped statement under the tenant of the request that
+// happened to issue it.
+func TestCrossTenantHandsOverTheIdentifier(t *testing.T) {
+	scoped := tenantctx.WithID(context.Background(), "acme")
+	if id, ok := FromContext(CrossTenant(scoped)); ok {
+		t.Fatalf("a context marked to cross still reported tenant %q", id)
+	}
+	if id, ok := FromContext(scoped); !ok || id != "acme" {
+		t.Fatalf("marking a derived context changed its parent: got %q, %v", id, ok)
 	}
 }
 

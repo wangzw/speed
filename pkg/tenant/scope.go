@@ -19,10 +19,10 @@ import (
 // carries no tenant as one that carries a particular one, and the two are the
 // opposite of each other downstream.
 //
-// Downstream therefore has to handle the false case itself. It is true on a
+// Downstream therefore has to handle the false case itself. It holds on a
 // listening endpoint this module does not guard, in a process that did not take
-// this capability in, and on statements a caller builds without a request
-// behind them.
+// this capability in, on statements a caller builds without a request behind
+// them, and in a context marked to cross tenants.
 func FromContext(ctx context.Context) (ID, bool) {
 	id, ok := tenantctx.ID(ctx)
 	if !ok {
@@ -33,6 +33,12 @@ func FromContext(ctx context.Context) (ID, bool) {
 
 // CrossTenant returns a context in which scoped statements are neither filtered
 // by a tenant nor made to fill the tenant column.
+//
+// The context it returns belongs to no tenant. Marking a context that carried
+// one gives that tenant up: FromContext reports none in the result. A crossing
+// statement belongs to no tenant, and a reader that took the marked context for
+// the one it was derived from — the audit journal filling its tenant column is
+// one — would file an unscoped statement under a scope it does not have.
 //
 // This is the only way across tenants. It is a context fact rather than a
 // statement fact so that it can be established once at the mouth of a function
