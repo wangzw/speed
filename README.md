@@ -40,8 +40,11 @@ ORDERSHOST_CONFIG=file:testdata/local.yaml go -C examples/orders-host run . migr
 ORDERSHOST_CONFIG=file:testdata/local.yaml go -C examples/orders-host run . serve
 ```
 
-It migrates, seeds three tenants, serves and waits; Ctrl-C stops and closes
-every module in reverse dependency order. The account it serves is `alice` with
+It migrates, seeds four tenants (one of them disabled) and orders for three of
+them, serves and waits. Ctrl-C stops the HTTP entry point first, letting the
+requests it admitted finish within its drain timeout, then stops the other
+modules in reverse dependency order; once every stop has returned, every module
+is closed in reverse dependency order. The account it serves is `alice` with
 the password `s3cret`.
 
 `make help` lists the other entry points. The toolchain versions the
