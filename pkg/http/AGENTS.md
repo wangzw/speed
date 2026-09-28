@@ -68,6 +68,7 @@ import (
 	"context"
 	"net/http"
 
+	"github.com/vislake/speed/pkg/audit"
 	"github.com/vislake/speed/pkg/core"
 	speedhttp "github.com/vislake/speed/pkg/http"
 )
@@ -75,10 +76,6 @@ import (
 // Catalog is what this module delivers, and what another module's layer can
 // place itself relative to.
 type Catalog interface{ catalog() }
-
-// Audit is another module's capability. This module names it to say where its
-// own layer belongs, and imports nothing from the module that delivers it.
-type Audit interface{ audit() }
 
 // Module wires this package's route and the layer guarding it.
 func Module() core.Module {
@@ -98,11 +95,15 @@ func Module() core.Module {
 			endpoint.Route("GET /things", http.HandlerFunc(listThings))
 
 			// The layer stands for this module's capability and belongs
-			// inside the middleware of the auditing module.
+			// inside the middleware of the auditing module. The anchor is
+			// that module's own interface type, taken from its interface
+			// package: the ordering matches tokens by type identity, so an
+			// interface declared here with the same methods would be
+			// another type, stand for no layer, and place nothing.
 			endpoint.Use(speedhttp.Middleware{
 				Name:     "catalog-access",
 				Provides: []core.Token{(*Catalog)(nil)},
-				After:    []core.Token{(*Audit)(nil)},
+				After:    []core.Token{(*audit.Audit)(nil)},
 				Wrap:     access,
 			})
 			return nil
@@ -128,21 +129,22 @@ From the repository root, over every module in the workspace:
 ```
 make build
 make test
+make test-race
 make lint
 make check
 ```
 
-`make check` is what CI runs. This module on its own:
+`make check` is what CI runs. This capability directory alone, inside the `pkg`
+module:
 
 ```
-go -C pkg/http build ./...
-go -C pkg/http test ./...
-go -C pkg/http test -race ./...
+go -C pkg build ./http/...
+go -C pkg vet ./http/...
+go -C pkg test ./http/...
+go -C pkg test -race ./http/...
 ```
 
 The tests bring up their own assemblies and ask for no service, no database and
 no environment: the Go toolchain is the whole of what they need installed.
-`pkg/http/stdmux` is a directory inside this module, so these commands cover
-both packages; the `GOWORK=off` legs of `make build` and `make tidy-check` are
-what catch a missing `replace` directive, since the `pkg` module has no
-released version to fall back on.
+`pkg/http/stdmux` sits under this directory, so these commands cover both
+packages.
