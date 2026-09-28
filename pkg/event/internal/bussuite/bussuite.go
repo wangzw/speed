@@ -290,6 +290,29 @@ func AssertConforms(t *testing.T, newBus Factory) {
 		}
 	})
 
+	t.Run("an event published without a payload decodes as missing", func(t *testing.T) {
+		b, start := newBus(t)
+		got := make(chan error, 1)
+		b.Subscribe("t", func(_ context.Context, evt event.Event) error {
+			var v struct {
+				ID string `json:"id"`
+			}
+			err := event.DecodePayload(evt.Payload, &v)
+			got <- err
+			return err
+		})
+		start(context.Background())
+		if err := b.Publish(context.Background(), event.Event{Type: "t"}); err != nil {
+			t.Fatalf("Publish: %v", err)
+		}
+		// The typed path is the one that surfaces a failure, so an event that
+		// carries nothing is reported as such in every shape it arrives in,
+		// rather than decoding into a zero value with no error.
+		if err := receive(t, got); !errors.Is(err, event.ErrNoPayload) {
+			t.Fatalf("decoding the payload of an event published without one: %v, want ErrNoPayload", err)
+		}
+	})
+
 	t.Run("every subscriber receives the identifier the bus assigned", func(t *testing.T) {
 		b, start := newBus(t)
 		first, second := make(chan string, 2), make(chan string, 2)

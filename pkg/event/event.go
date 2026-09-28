@@ -46,6 +46,11 @@ var ErrClosed = errors.New("event: the bus is closed")
 // publishes it from its own Start, which the drive calls after the bus's.
 var ErrNotStarted = errors.New("event: the bus has not started")
 
+// ErrNoPayload is returned by DecodePayload for an event that carries no
+// payload: nil, or a value that serializes to null — a nil pointer, map or
+// slice — in whichever shape it arrived.
+var ErrNoPayload = errors.New("event: the event carries no payload")
+
 // Event is a domain fact published on the bus.
 type Event struct {
 	// ID identifies this event, and it is the key a consumer that must act on
@@ -228,10 +233,19 @@ func PayloadBool(payload any, keys ...string) (bool, bool) {
 // reads exactly whatever its size, over a transport as in process: a transport
 // keeps each number's decimal text, which serializes back to what the publisher
 // wrote.
+//
+// An event that carries no payload is reported as ErrNoPayload, with v left as
+// it was. Decoding nothing into v would otherwise succeed and hand the
+// subscriber a zero value — a deal with an empty identifier — as if the
+// publisher had sent it, on the one path whose purpose is to surface a
+// failure. The probes answer the same payload with false.
 func DecodePayload(payload any, v any) error {
 	encoded, err := json.Marshal(payload)
 	if err != nil {
 		return err
+	}
+	if string(encoded) == "null" {
+		return ErrNoPayload
 	}
 	return json.Unmarshal(encoded, v)
 }

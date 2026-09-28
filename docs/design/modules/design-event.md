@@ -76,7 +76,7 @@ type Handler func(ctx context.Context, evt Event) error
 | 解码为字段表 | 读顶层字段，任一形状不可用时报 false，不 panic |
 | 按候选名取字符串 | 依次尝试若干个拼写（序列化标签、结构体字段名），取第一个非空字符串 |
 | 按候选名取布尔 | 同上，区别是 false 是一个有意义的值，只有缺失或非布尔才继续尝试 |
-| 解码为具名类型 | 订阅方能命名自己的形状时直接解，且要向上报出失败时用它 |
+| 解码为具名类型 | 订阅方能命名自己的形状时直接解，且要向上报出失败时用它；事件不带载荷（空值，或序列化为 null 的值）时返回 `ErrNoPayload`，不把零值当作解码结果交出 |
 
 **数在两种形状下读出同一个值。** 经传输投递的实现把载荷里的每一个数保留为它的十进制文本（`json.Number`），不转成浮点数；解码为具名类型时，整数无论多大都与同进程投递得到的一致。解码为字段表时，两种形状下的数都是浮点数，2^53 以内的整数精确，超出的会被舍入；要读出更大的整数——标识、以分计的金额——的订阅方解码为具名类型。
 
@@ -250,7 +250,7 @@ sequenceDiagram
 
 | 能力 | 状态 | 代码 |
 |---|---|---|
-| 接口与根包 | 已实现 | `pkg/event/event.go` `Bus`、`Event`、`ErrNotStarted`、`ErrClosed`、载荷读取辅助；`pkg/event/id.go` `NewID`；`pkg/event/module.go` `Spec`、`NewModule` |
+| 接口与根包 | 已实现 | `pkg/event/event.go` `Bus`、`Event`、`ErrNotStarted`、`ErrClosed`、`ErrNoPayload`、载荷读取辅助；`pkg/event/id.go` `NewID`；`pkg/event/module.go` `Spec`、`NewModule` |
 | 订阅表、阶段与标识的赋予 | 已实现 | `pkg/event/internal/dispatch/dispatch.go` `Table`、`Grace`、`Stamp` |
 | 内存实现 | 已实现 | `pkg/event/memory/memory.go` `Module`、`stance`、`start` |
 | 一致性套件 | 已实现 | `pkg/event/internal/bussuite/bussuite.go` `AssertConforms`、`AssertReplicated` |
