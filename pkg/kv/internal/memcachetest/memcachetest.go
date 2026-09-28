@@ -4,9 +4,12 @@
 // fixtures do: a test-only container library would still land in this module's
 // dependency list.
 //
-// Isolation is per case rather than per container: Memcached has no logical
-// databases, so each Acquire flushes the server and the cases run one at a
-// time. Nothing else in the workspace uses this server.
+// One server serves every test binary on the machine, and it is not divided:
+// Memcached has no logical databases. Addr hands out the address and leaves
+// the server as it is. A case that needs it empty flushes it, which empties it
+// for every test binary on the machine using it at that moment, and a case that
+// shares it writes keys no other case writes. Only this module's Memcached
+// implementation uses this server.
 package memcachetest
 
 import (
