@@ -106,8 +106,9 @@ here must not cross, and how to run it.
   failure or a permission problem passes through as its implementation named
   it, so that the fixing action does not point at the wrong cause.
 - **The snapshot is replaced, never written in place, and the replacement is
-  serialised.** Four goroutines reload — a writer's, the subscription's, the
-  ticker's and the initial load's — and each reload is a read of the table
+  serialised.** Several goroutines reload — a writer's, the subscription's,
+  the ticker's and the lifecycle driver's for the startup loads in `Init` and
+  `Start` — and each reload is a read of the table
   followed by a swap. `reloadMu` holds those two steps together: without it, a
   reload whose read returned an older state can swap after one that read a
   newer state, and the replica that just wrote goes back to serving the value

@@ -33,13 +33,16 @@ type settingsStore struct {
 	bus    event.Bus
 	logger *slog.Logger
 	config moduleSettings
-	// cancelRefresh stops the ticker. It is written in Start and read in Stop,
+	// cancelRefresh stops the ticker, and refreshDone is closed once its
+	// goroutine has returned. Both are written in Start and read in Stop,
 	// which the lifecycle driver calls one after the other on its own
-	// goroutine, so it needs no synchronisation of its own.
+	// goroutine, so they need no synchronisation of their own.
 	cancelRefresh context.CancelFunc
+	refreshDone   chan struct{}
 	// reloadMu serialises the reload path, which is a read of the table
-	// followed by a swap. Four goroutines reach it — a writer's, the
-	// subscription's, the ticker's and the initial load's — and without this,
+	// followed by a swap. Several goroutines reach it — a writer's, the
+	// subscription's, the ticker's and the lifecycle driver's for the startup
+	// loads — and without this,
 	// a reload whose read returned an older state could swap after one that
 	// read a newer state, putting the staler snapshot back. On the replica
 	// that just wrote, that silently undoes a write Set has already reported
@@ -306,18 +309,30 @@ func (s *settingsStore) commit(ctx context.Context, statement func(tx *gorm.DB) 
 
 // reload replaces the snapshot with a freshly loaded one.
 //
-// It is the same path for all three triggers — a write of this replica, a
-// delivered change event, and the refresh ticker — because the operation is
-// the same one: read the table, build a snapshot, swap it in. The swap is what
-// makes the operation idempotent, and it has to be, since a replica's own
-// event may be delivered back to it.
+// It is the same path for every trigger after startup — a write of this
+// replica, a delivered change event, the refresh ticker — because the
+// operation is the same one: read the table, build a snapshot, swap it in. The
+// swap is what makes the operation idempotent, and it has to be, since a
+// replica's own event may be delivered back to it.
 //
 // A failure keeps the snapshot that is already in place and records the
 // reason. Reads then serve a value that is behind rather than failing, which
 // is what the design states as a non-guarantee and what the refresh path
 // exists to close.
+//
+// A reload whose context was cancelled was withdrawn by whoever triggered it,
+// and its failure is that cancellation rather than anything about the table:
+// Stop cancels the ticker's, and a bus that stops cancels the context it
+// delivers on. It is recorded at debug level only, since an error record would
+// otherwise come with ordinary shutdowns. A write's reload runs on a context
+// that is never cancelled, so its failures always reach the error level.
 func (s *settingsStore) reload(ctx context.Context) {
 	if _, err := s.swap(ctx); err != nil {
+		if ctx.Err() != nil {
+			s.logger.Debug("settings: a reload was withdrawn before it finished; the previous "+
+				"snapshot stays in use", "error", err)
+			return
+		}
 		s.logger.Error("settings: reloading the snapshot failed; the previous one stays in use",
 			"error", err)
 	}
