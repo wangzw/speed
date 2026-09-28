@@ -217,6 +217,18 @@ func open(ctx context.Context, cfg *Config) (kv.KV, error) {
 // store is the capability over one client.
 type store struct {
 	client *memcache.Client
+	// space is written in front of every key's spelling, so stores in one
+	// space share their entries. Every store open builds has none. The tests
+	// give each case a space of its own from memcachetest.Space, whose spaces
+	// keep the entries of stores in two of them apart, because the server the
+	// tests run against is shared by every test binary on the machine.
+	space string
+}
+
+// spell is the name the server keeps key's entry under: the store's space,
+// then the key spelled within what the space leaves of the server's limit.
+func (s *store) spell(key string) string {
+	return s.space + encodeKey(key, maxKeyLen-len(s.space))
 }
 
 // Close releases the idle connections the client keeps between operations.
@@ -227,7 +239,7 @@ func (s *store) Get(ctx context.Context, key string) ([]byte, bool, error) {
 	if err := ctx.Err(); err != nil {
 		return nil, false, err
 	}
-	item, err := s.client.Get(encodeKey(key))
+	item, err := s.client.Get(s.spell(key))
 	if errors.Is(err, memcache.ErrCacheMiss) {
 		return nil, false, nil
 	}
@@ -251,7 +263,7 @@ func (s *store) Set(ctx context.Context, key string, value []byte, ttl time.Dura
 		return err
 	}
 	return s.client.Set(&memcache.Item{
-		Key:   encodeKey(key),
+		Key:   s.spell(key),
 		Value: expiry.Wrap(value, expiry.Of(ttl)),
 	})
 }
@@ -261,7 +273,7 @@ func (s *store) Delete(ctx context.Context, key string) error {
 	if err := ctx.Err(); err != nil {
 		return err
 	}
-	if err := s.client.Delete(encodeKey(key)); err != nil && !errors.Is(err, memcache.ErrCacheMiss) {
+	if err := s.client.Delete(s.spell(key)); err != nil && !errors.Is(err, memcache.ErrCacheMiss) {
 		return err
 	}
 	return nil
@@ -289,7 +301,7 @@ func (s *store) increment(ctx context.Context, key string, delta float64, ttl ti
 	if err := counter.CheckDelta(ModuleName, key, delta); err != nil {
 		return 0, err
 	}
-	encoded := encodeKey(key)
+	encoded := s.spell(key)
 	for attempt := 0; attempt < casAttempts; attempt++ {
 		if err := ctx.Err(); err != nil {
 			return 0, err
@@ -411,7 +423,7 @@ type decision func(value []byte, expires time.Time, live bool) ([]byte, time.Tim
 // now there or a write lands. Answering false on the refusal alone would be
 // wrong whenever the writer that got in first left the entry still matching.
 func (s *store) writeIf(ctx context.Context, key string, decide decision) (bool, error) {
-	encoded := encodeKey(key)
+	encoded := s.spell(key)
 	for attempt := 0; attempt < casAttempts; attempt++ {
 		if err := ctx.Err(); err != nil {
 			return false, err
@@ -469,23 +481,26 @@ const maxKeyLen = 250
 // spelling starts with it.
 const digestPrefix = "sha256:"
 
-// encodeKey makes an arbitrary key acceptable to Memcached.
+// encodeKey makes an arbitrary key acceptable to Memcached, in a spelling of
+// at most limit bytes for any limit of at least the digest spelling's 50.
 //
 // The capability's keys are opaque strings of any length; Memcached's may not
 // contain a space or a control character, may not be empty and may not exceed
-// 250 bytes. The plain spelling is the key in base64url, which is injective and
-// uses only characters Memcached accepts. A key whose plain spelling is empty
-// or too long is spelled instead as the prefix and the base64url of its
-// SHA-256 digest, which fits whatever the key's length.
+// 250 bytes. The limit is those 250 for a store with no space, and what its
+// space leaves of them for one with a space. The plain spelling is the key in
+// base64url, which is injective and uses only characters Memcached accepts. A
+// key whose plain spelling is empty or longer than the limit is spelled
+// instead as the prefix and the base64url of its SHA-256 digest, which is 50
+// bytes whatever the key's length.
 //
 // Neither spelling puts two keys on one entry. The plain spellings are
 // injective among themselves, the digest spellings are as collision-resistant
 // as SHA-256, and the two never meet, because no plain spelling contains the
 // prefix's colon. A key is never cut short to fit: two keys sharing their first
 // 250 bytes would then share an entry.
-func encodeKey(key string) string {
+func encodeKey(key string, limit int) string {
 	plain := base64.RawURLEncoding.EncodeToString([]byte(key))
-	if plain != "" && len(plain) <= maxKeyLen {
+	if plain != "" && len(plain) <= limit {
 		return plain
 	}
 	sum := sha256.Sum256([]byte(key))

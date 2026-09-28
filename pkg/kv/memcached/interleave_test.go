@@ -3,7 +3,6 @@ package memcached
 import (
 	"bufio"
 	"context"
-	"fmt"
 	"io"
 	"net"
 	"strconv"
@@ -176,28 +175,16 @@ func (p *holdingProxy) forward(client, server net.Conn) {
 	}
 }
 
-// openOn opens a store over the server at addr.
-func openOn(t *testing.T, addr string) *store {
-	t.Helper()
-	opened, err := open(context.Background(), &Config{Servers: []string{addr}, Timeout: 5 * time.Second})
-	if err != nil {
-		t.Fatalf("open: %v", err)
-	}
-	s := opened.(*store)
-	t.Cleanup(func() { _ = s.Close(context.Background()) })
-	return s
-}
-
-// interleave writes key with a value that has already expired, then runs
-// second's claim up to the write that follows its read, runs first's claim to
-// completion, and lets second's claim finish. It reports what each claim
+// interleave writes key in space with a value that has already expired, then
+// runs second's claim up to the write that follows its read, runs first's claim
+// to completion, and lets second's claim finish. It reports what each claim
 // returned, first's before second's.
-func interleave[T any](t *testing.T, key string, claim func(s *store, mine string) (T, error)) (T, T) {
+func interleave[T any](t *testing.T, space, key string, claim func(s *store, mine string) (T, error)) (T, T) {
 	t.Helper()
 	addr := memcachetest.Addr(t)
-	first := openOn(t, addr)
+	first := openOn(t, addr, space)
 	proxy := startHoldingProxy(t, addr)
-	second := openOn(t, proxy.addr())
+	second := openOn(t, proxy.addr(), space)
 
 	ctx := context.Background()
 	if err := first.Set(ctx, key, []byte("1"), time.Millisecond); err != nil {
@@ -228,12 +215,6 @@ func interleave[T any](t *testing.T, key string, claim func(s *store, mine strin
 	return firstGot, secondOutcome.got
 }
 
-// uniqueKey names a key no other case, and no other run sharing the server,
-// writes.
-func uniqueKey(t *testing.T) string {
-	return fmt.Sprintf("%s-%d", t.Name(), time.Now().UnixNano())
-}
-
 // TestAnExpiredKeyHasOneClaimantWhenTheClaimsInterleave holds the two
 // conditional writes to one winner over an expired entry, whichever of them
 // the claim is: the second writer read the same expired entry as the first,
@@ -250,8 +231,8 @@ func TestAnExpiredKeyHasOneClaimantWhenTheClaimsInterleave(t *testing.T) {
 		},
 	} {
 		t.Run(name, func(t *testing.T) {
-			key := uniqueKey(t)
-			firstWon, secondWon := interleave(t, key, func(s *store, mine string) (bool, error) {
+			space, key := memcachetest.Space(t), "claimed"
+			firstWon, secondWon := interleave(t, space, key, func(s *store, mine string) (bool, error) {
 				return claim(s, key, mine)
 			})
 			if !firstWon {
@@ -261,7 +242,7 @@ func TestAnExpiredKeyHasOneClaimantWhenTheClaimsInterleave(t *testing.T) {
 				t.Fatal("both writers claimed the expired key: the second replaced the value the first " +
 					"had just written, although it had read the expired entry that value replaced")
 			}
-			reader := openOn(t, memcachetest.Addr(t))
+			reader := openOn(t, memcachetest.Addr(t), space)
 			if got, present, err := reader.Get(context.Background(), key); err != nil || !present ||
 				string(got) != "first" {
 				t.Fatalf("the key holds %q (present=%v, err=%v), want the first writer's value", got, present, err)
@@ -275,8 +256,8 @@ func TestAnExpiredKeyHasOneClaimantWhenTheClaimsInterleave(t *testing.T) {
 // at 1, and the second's write has to be refused and counted again from the 1
 // the first left rather than from the zero it read.
 func TestAnExpiredCounterCountsEveryIncrementWhenTheyInterleave(t *testing.T) {
-	key := uniqueKey(t)
-	firstGot, secondGot := interleave(t, key, func(s *store, _ string) (float64, error) {
+	space, key := memcachetest.Space(t), "counter"
+	firstGot, secondGot := interleave(t, space, key, func(s *store, _ string) (float64, error) {
 		return s.IncrByFloatWithTTL(context.Background(), key, 1, time.Hour)
 	})
 	if firstGot != 1 || secondGot != 2 {

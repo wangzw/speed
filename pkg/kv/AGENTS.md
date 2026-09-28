@@ -131,4 +131,8 @@ server another module tests against too is shared — `pkg/internal/pgpool/pgtes
 for PostgreSQL, `pkg/internal/natstest` for NATS, `pkg/internal/redis/redistest`
 for Redis — so two modules cannot drift onto differently behaved servers. The
 Memcached fixture serves this module alone and lives in
-`internal/memcachetest`.
+`internal/memcachetest`. Every test binary on the machine, from every checkout,
+shares its one server, and Memcached has no logical databases: a case works in a
+key space of its own (`memcachetest.Space`), and no case empties the server —
+a flush takes the entries of whatever case another binary is running at that
+moment.

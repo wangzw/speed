@@ -1,19 +1,29 @@
-// Package memcachetest hands the tests a Memcached server to run against.
+// Package memcachetest hands the tests a Memcached server to run against, and
+// every case a key space of its own on it.
 //
 // It drives the docker CLI through os/exec, for the same reason the other
 // fixtures do: a test-only container library would still land in this module's
 // dependency list.
 //
-// One server serves every test binary on the machine, and it is not divided:
-// Memcached has no logical databases. Addr hands out the address and leaves
-// the server as it is. A case that needs it empty flushes it, which empties it
-// for every test binary on the machine using it at that moment, and a case that
-// shares it writes keys no other case writes. Only this module's Memcached
-// implementation uses this server.
+// One container serves the whole machine under a fixed name and is left
+// running between test runs: every test binary of this checkout and of every
+// other checkout on the machine reaches the same server. Memcached has no
+// logical databases, so isolation is by key space rather than by server. Space
+// hands each case a prefix no other caller is handed, the implementation writes
+// it in front of every key's spelling, and nothing empties the server — a flush
+// takes every entry out from under whichever case another binary is running at
+// that moment, and that case fails as a key that vanished mid-case.
+//
+// The entries a case leaves behind are never read again. The server evicts
+// them as its memory fills, least recently used first, so they are the ones it
+// drops before anything a running case has just written.
+//
+// Only this module's Memcached implementation uses this server.
 package memcachetest
 
 import (
 	"context"
+	"crypto/rand"
 	"net"
 	"os"
 	"os/exec"
@@ -37,17 +47,40 @@ const (
 	// dockerTimeout bounds one docker invocation.
 	dockerTimeout = time.Minute
 	runningState  = "true"
+	// spaceEnd closes every space. Memcached accepts it in a key, base32 does
+	// not contain it, and no spelling the implementation makes contains it.
+	spaceEnd = "."
 )
 
-// Addr returns the address of the shared server.
+// Addr returns the address of the shared server, starting it when no test
+// binary on the machine has yet.
 //
-// It does not empty it. Memcached has no logical databases and its own flush is
-// a command a client sends, so the caller that wants a clean server sends it —
-// see the flush in the cases that need one.
+// The server holds every other case's entries too, and it is never emptied: a
+// case works in a Space of its own instead.
 func Addr(t *testing.T) string {
 	t.Helper()
 	requireDocker(t)
-	return ensureServer(t)
+	ensureServer(t)
+	addr := publishedAddr(t)
+	waitReady(t, addr)
+	return addr
+}
+
+// Space returns a key space for one case: a prefix no other call returns, in
+// this test binary or in any other on the machine.
+//
+// A space is random base32 text closed by a dot, and that dot is the only one
+// in it. The name of an entry therefore says where its space ends, at its
+// first dot, so two spaces never claim one name. A name with no dot is in no
+// space at all, and that is every name the implementation makes for a store
+// with no space: base64url has no dot, and the digest's prefix ends in a
+// colon. Stores in two spaces therefore never meet on an entry, and neither do
+// a store in a space and one without.
+//
+// It reaches no server and needs no docker.
+func Space(t *testing.T) string {
+	t.Helper()
+	return rand.Text() + spaceEnd
 }
 
 func requireDocker(t *testing.T) {
@@ -60,7 +93,7 @@ func requireDocker(t *testing.T) {
 	}
 }
 
-func ensureServer(t *testing.T) string {
+func ensureServer(t *testing.T) {
 	t.Helper()
 	if !running(t) {
 		if exists(t) {
@@ -68,9 +101,6 @@ func ensureServer(t *testing.T) string {
 		}
 		run(t, "run", "-d", "--name", containerName, "-p", "0:"+serverPort, image)
 	}
-	addr := publishedAddr(t)
-	waitReady(t, addr)
-	return addr
 }
 
 func running(t *testing.T) bool {
