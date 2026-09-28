@@ -325,10 +325,10 @@ func awaitContainerWithin(bound, interval time.Duration, createErr error) error 
 // recoveryFailure is a create that was never made good: the refusal itself, and
 // the last word from each call the wait made after it.
 //
-// All of it is carried because of what this race cost while it was undiagnosed.
-// The failures CI saw said only that the container had not been created; the
-// look that failed last, which is the one thing that says where the wait
-// stopped, was made and then thrown away by the recovery that made it.
+// All of it is carried because the refusal alone says only that the container
+// was not created. The look that failed last is the one thing that says where
+// the wait stopped, and a report without it leaves nothing to diagnose the
+// race by.
 func recoveryFailure(bound time.Duration, createErr, startErr error, state string, inspectErr error) error {
 	failure := fmt.Errorf("creating the %s container from %s: %w", containerName, image, createErr)
 	if inspectErr != nil {
@@ -396,12 +396,11 @@ func createContainer() error {
 //
 // The address is held to the ones DSN can dial. A container this package
 // created publishes on 127.0.0.1, but ensureContainer reuses whatever
-// container holds the name, whoever made it: an earlier fixture of this
-// repository published on every interface — which loopback reaches too — and
-// one published on some other single address, or per family with a port each,
-// then reads as no port that can be dialled rather than as a port nothing
-// listens on — the failure this whole path exists to keep from arriving at the
-// connection instead of at the read.
+// container holds the name, whoever made it: one published on every interface
+// is reached through loopback too, and one published on some other single
+// address, or per family with a port each, then reads as no port that can be
+// dialled rather than as a port nothing listens on — the failure this whole
+// path exists to keep from arriving at the connection instead of at the read.
 // Each match ends in a newline. A container may hold more than one binding on
 // the address, and a range that wrote them end to end would render two ports as
 // one number that is neither.

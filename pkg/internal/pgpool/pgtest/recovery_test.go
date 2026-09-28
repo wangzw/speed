@@ -18,7 +18,7 @@ import (
 )
 
 // The create-conflict cases, run against a stand-in docker that replays the
-// answers the real one gave during the race on issue #12.
+// answers the real one gives during the race.
 //
 // ensureContainer is what every test binary on this machine goes through to
 // reach the shared container, and on a machine where the container is not up
@@ -27,7 +27,7 @@ import (
 // is not the end of it, though. docker takes the name before the container can
 // be looked at, so for a window afterwards the losing binary asks about an
 // object that does not exist yet — the window measured 100–200ms on a cold
-// image, and it is what the old recovery, which looked exactly once, fell into.
+// image, and a recovery that looked exactly once would fall into it.
 //
 // The responses below are the ones captured inside that window, so whether a
 // loser recovers is decided by the code and not by the machine it runs on. The
@@ -35,10 +35,10 @@ import (
 // coldstart_test.go — it cannot be a gate, because whether the window opens at
 // all is a matter of timing.
 
-// The daemon's answers, taken from the capture on the issue. inspect and start
-// are answered with the same two responses both before the container exists and
-// in the window after the name is taken, which is why the recovery cannot tell
-// the two apart by what they say and waits for the container instead.
+// The daemon's answers, as captured inside the window. inspect and start are
+// answered with the same two responses both before the container exists and in
+// the window after the name is taken, which is why the recovery cannot tell the
+// two apart by what they say and waits for the container instead.
 //
 // What is kept of each is only the part that says what is wrong. The match is
 // containment, with letter case folded away for the two a look and a start are
@@ -641,11 +641,12 @@ func requireNoRoundPastItsBound(t *testing.T, stub *dockerStub, planted <-chan b
 // so the container this one goes on to use is the one that won.
 //
 // The winner is not there to be seen at first — inspect answers that there is
-// no such object for as long as the window lasts, which is what the old
-// recovery ended on. The stand-in answers that twice before the container shows up: the first
-// is the look taken before this process tried to create anything, the second
-// the look the old recovery made and gave up on. One answer would make this
-// case pass without the code being fixed at all.
+// no such object for as long as the window lasts, which is what a recovery that
+// looks once ends on. The stand-in answers that twice before the container
+// shows up: the first is the look taken before this process tried to create
+// anything, the second the first look after the refused create, which a
+// recovery that looks once makes and gives up on. One answer would let such a
+// recovery pass this case.
 func TestConflictRecoveryReusesTheWinningContainer(t *testing.T) {
 	stub := newDockerStub(t)
 	skipIfStray(t)
@@ -997,13 +998,13 @@ func mutantReport(err error, stdout, stderr string) string {
 // The mutant is then asked to run the guard. The guard's second child fails at
 // once, and in the mutant that child is built from the same changed source, so
 // its failure goes through the mutant's own TestMain and is swallowed — which
-// is the change — and the guard reaches its report. Fixed, the report leaves
+// is the change — and the guard reaches its report. The report leaves
 // directly: the mutant's exit status is non-zero and the diagnostic is on its
-// standard error. In the source the guard was fixed from — t.Fatalf — the
-// report goes into the same swallowed status, and the mutant leaves 0 with the
+// standard error. A guard that reported through t.Fatalf would put the report
+// into the same swallowed status, and the mutant would leave 0 with the
 // diagnostic on standard output instead. Those two things are how the runs are
-// told apart, and they are what makes this case red before the fix and green
-// after.
+// told apart, and they are what makes this case fail for a guard whose report
+// stays inside the run.
 //
 // The copy is the whole file, this case's own source included, so the two lines
 // are written here in pieces that never join: joined, they would be in the copy
