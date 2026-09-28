@@ -172,6 +172,60 @@ func TestANestedJoinThroughAGlobalTableIsScopedWhereItIsScoped(t *testing.T) {
 	}
 }
 
+// A nested join given alone renders every level of its path, the scoped one
+// in the middle included, from that one join entry; the middle level is held
+// to the tenant as the last would be.
+func TestANestedJoinGivenAloneIsScopedAtEveryScopedLevel(t *testing.T) {
+	handle := open(t)
+	seedJoined(t, handle)
+
+	var got []purchase
+	if err := handle.WithContext(scopedContext("acme")).
+		Joins("Customer.Country").Find(&got).Error; err != nil {
+		t.Fatalf("reading with a nested join: %v", err)
+	}
+	if len(got) != 1 || got[0].Customer.Name != "acme's customer" ||
+		got[0].Customer.Country.Name != "the Netherlands" {
+		t.Fatalf("a nested join given alone returned %+v, want acme's purchase, customer and country", got)
+	}
+}
+
+// delivery reaches two scoped rows through two associations of one model.
+type delivery struct {
+	tenant.Model
+	ID         string   `gorm:"column:id;primaryKey"`
+	CustomerID string   `gorm:"column:customer_id"`
+	BuyerID    string   `gorm:"column:buyer_id"`
+	Customer   customer `gorm:"foreignKey:CustomerID;references:ID"`
+	Buyer      customer `gorm:"foreignKey:BuyerID;references:ID"`
+}
+
+func (delivery) TableName() string { return "deliveries" }
+
+// Each scoped join of a statement is held to the tenant, not only the first:
+// the second association reaches a customer identifier both tenants use.
+func TestEveryScopedJoinOfAStatementIsScoped(t *testing.T) {
+	handle := open(t)
+	seedJoined(t, handle)
+	if err := handle.Exec("CREATE TABLE deliveries (tenant_id TEXT NOT NULL, id TEXT NOT NULL, " +
+		"customer_id TEXT, buyer_id TEXT, PRIMARY KEY (tenant_id, id))").Error; err != nil {
+		t.Fatalf("creating the table: %v", err)
+	}
+	if err := handle.WithContext(crossContext()).Exec("INSERT INTO deliveries (tenant_id, id, customer_id, " +
+		"buyer_id) VALUES ('acme', 'd1', 'c1', 'c1')").Error; err != nil {
+		t.Fatalf("seeding: %v", err)
+	}
+
+	var got []delivery
+	if err := handle.WithContext(scopedContext("acme")).
+		Joins("Customer").Joins("Buyer").Find(&got).Error; err != nil {
+		t.Fatalf("reading with two joins: %v", err)
+	}
+	if len(got) != 1 || got[0].Customer.Name != "acme's customer" || got[0].Buyer.Name != "acme's customer" {
+		t.Fatalf("two scoped joins returned %+v, want acme's delivery joined to acme's customer twice", got)
+	}
+}
+
 // A global model reaching a scoped one through a join reaches that model's
 // rows, and is scoped by them: refused without a tenant, held to it with one.
 func TestAJoinFromAGlobalModelToAScopedOneIsScoped(t *testing.T) {
