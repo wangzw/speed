@@ -2,6 +2,7 @@ package catalog
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"log/slog"
 	"sync"
@@ -233,6 +234,13 @@ func (r *roster) List(_ context.Context) ([]tenant.Tenant, error) {
 // alias is checked inside the same transaction as the write: the column's
 // unique index would catch a collision too, but it would report it as a
 // constraint violation rather than as which tenant holds the name.
+//
+// The check does not close the race on its own. Two writes putting one alias
+// on two tenants at once can both find it free, and the later insert then
+// meets the unique index. That is the same conflict, and it is answered the
+// same way: a write that failed is read again against the table, and an alias
+// another tenant now holds is reported as ErrAliasConflict naming it, with the
+// driver's error kept in the chain.
 func (r *roster) Put(ctx context.Context, t tenant.Tenant) error {
 	if err := checkTenant(t); err != nil {
 		return err
@@ -256,9 +264,25 @@ func (r *roster) Put(ctx context.Context, t tenant.Tenant) error {
 		}).Error
 	})
 	if err != nil {
-		return err
+		return r.failedPut(ctx, t, err)
 	}
 	return r.afterWrite(ctx)
+}
+
+// failedPut names the conflict a failed Put ran into when the alias turns out
+// to be held by another tenant, and returns the failure as it stands otherwise.
+// The read runs outside the failed transaction, which a PostgreSQL transaction
+// that met a constraint no longer accepts statements in.
+func (r *roster) failedPut(ctx context.Context, t tenant.Tenant, err error) error {
+	if errors.Is(err, tenant.ErrAliasConflict) {
+		return err
+	}
+	held, lookErr := lookUp(r.handle.WithContext(ctx), "alias", t.Alias)
+	if lookErr != nil || len(held) == 0 || held[0].ID == string(t.ID) {
+		return err
+	}
+	return fmt.Errorf("%w: alias %q is held by tenant %q, which took it while this write was "+
+		"in flight: %w", tenant.ErrAliasConflict, t.Alias, held[0].ID, err)
 }
 
 // SetStatus implements tenant.Catalog, and is the only way to disable a tenant.
