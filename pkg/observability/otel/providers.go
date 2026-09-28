@@ -129,6 +129,11 @@ func newProviders(ctx context.Context, reg *core.Registry) (any, error) {
 		sdktrace.WithResource(res),
 		// ParentBased over the ratio, so that a sampled parent keeps its
 		// children: sampling per process would break a trace apart mid-flight.
+		// The ratio therefore decides only for a trace this process starts. A
+		// request arriving with a parent follows the parent's flag either way —
+		// recorded at a ratio of zero when the caller sampled it, not recorded
+		// at a ratio of one when the caller did not — and the request layer
+		// extracts ahead of authentication, so that caller is anyone.
 		sdktrace.WithSampler(sdktrace.ParentBased(sdktrace.TraceIDRatioBased(cfg.SampleRatio))),
 	}
 	for _, e := range spanExporters {
@@ -164,7 +169,7 @@ func newProviders(ctx context.Context, reg *core.Registry) (any, error) {
 		lg.Warn("no metric export backend is configured: metrics are produced and dropped")
 	}
 	if cfg.SampleRatio == 0 {
-		lg.Warn("sample-ratio is 0: no trace is recorded")
+		lg.Warn("sample-ratio is 0: no trace is started here, and a request whose caller sampled its trace is still recorded")
 	}
 
 	mp := sdkmetric.NewMeterProvider(metricOpts...)

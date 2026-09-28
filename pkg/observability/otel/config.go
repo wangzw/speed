@@ -27,9 +27,12 @@ type Config struct {
 	// required item of this namespace. An unset service name makes every signal
 	// arriving at a collector ambiguous about which process sent it.
 	ServiceName string `config:"service-name"`
-	// SampleRatio is the fraction of traces that are recorded, in [0,1]. Zero is
-	// legal and records nothing; SampleRatio is the ratio rather than a switch so
-	// that a deployment can dial it down on the way to switching it off.
+	// SampleRatio is the fraction of the traces this process starts that are
+	// recorded, in [0,1]. A request that arrives with a parent follows the
+	// parent's decision instead, so zero is legal and stops this process from
+	// starting a trace, not from recording one a caller sampled. SampleRatio is
+	// the ratio rather than a switch so that a deployment can dial it down on
+	// the way to switching it off.
 	SampleRatio float64 `config:"sample-ratio"`
 	// Batch configures the span batch processor.
 	Batch Batch `config:"batch"`
