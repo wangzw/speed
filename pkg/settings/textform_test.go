@@ -35,25 +35,47 @@ func (h *hashed) UnmarshalText(text []byte) error {
 }
 
 // A type that decodes itself from text and cannot write itself back is refused
-// when the key table is built.
+// when the key table is built, as a defect of the type rather than of the
+// default, for a sensitive item as for any other.
 //
 // A write stores a value as the text the declared type writes, so no write of
 // such a key could store anything. Admitted, the declaration would start the
 // process and leave an item every Set refuses, found at the first write rather
 // than at startup.
+//
+// The fix is on the type — a MarshalText, or the item declared as the string
+// it is written as — and whatever the default holds, no default would do. A
+// refusal that blamed the default would send the reader to the wrong line of
+// the declaration, and for a sensitive item, whose default's failure withholds
+// its cause, it would not say what is missing at all.
 func TestATypeThatCannotWriteItselfBackIsRefused(t *testing.T) {
-	prototype := struct{ Token decodeOnly }{}
-	_, err := buildKeyTable(registryWith(t, declaring("test.decl", Schema{
-		Namespace: "ns",
-		Mounts:    []Mount{{Value: &prototype}},
-	})))
-	if !errors.Is(err, ErrInvalidDeclaration) {
-		t.Fatalf("building the key table returned %v, want ErrInvalidDeclaration", err)
+	cases := []struct {
+		name  string
+		items map[string]Item
+	}{
+		{"an ordinary item", nil},
+		{"a sensitive item", map[string]Item{"token": {Sensitive: true}}},
 	}
-	for _, want := range []string{`"token"`, "MarshalText"} {
-		if !strings.Contains(err.Error(), want) {
-			t.Errorf("the refusal does not mention %s: %v", want, err)
-		}
+	for _, c := range cases {
+		t.Run(c.name, func(t *testing.T) {
+			prototype := struct{ Token decodeOnly }{}
+			_, err := buildKeyTable(registryWith(t, declaring("test.decl", Schema{
+				Namespace: "ns",
+				Mounts:    []Mount{{Value: &prototype}},
+				Items:     c.items,
+			})))
+			if !errors.Is(err, ErrInvalidDeclaration) {
+				t.Fatalf("building the key table returned %v, want ErrInvalidDeclaration", err)
+			}
+			for _, want := range []string{`"token"`, "MarshalText"} {
+				if !strings.Contains(err.Error(), want) {
+					t.Errorf("the refusal does not mention %s: %v", want, err)
+				}
+			}
+			if strings.Contains(err.Error(), "its default") {
+				t.Errorf("the refusal blames the default for what the type lacks: %v", err)
+			}
+		})
 	}
 }
 
