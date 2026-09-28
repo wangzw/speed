@@ -14,7 +14,8 @@ keeps the roster and filters statements to the tenant they carry.
   `adr-tenant-packaging-2026-09-21`, `adr-tenant-resolution-2026-09-21`,
   `adr-tenant-ordering-2026-09-21`, `adr-tenant-identifier-2026-09-21`,
   `adr-tenant-directory-2026-09-21`, `adr-tenant-isolation-2026-09-21`,
-  `adr-tenant-scoping-2026-09-21`, `adr-tenant-guarantees-2026-09-21`.
+  `adr-tenant-scoping-2026-09-21`, `adr-tenant-guarantees-2026-09-21`,
+  `adr-tenant-scoping-2026-09-28`.
 - The API itself: the godoc in this package. Read `Model`'s comment and
   `CrossTenant`'s before writing a scoped model.
 
