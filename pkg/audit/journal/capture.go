@@ -55,8 +55,8 @@ func (c *capture) Name() string { return "github.com/vislake/speed/pkg/audit/jou
 //
 // The handle is used to register and then dropped. GORM calls this once per
 // handle, and what each callback works on is the session it is handed when it
-// runs, so no handle has to be remembered and a second one needs no special
-// care.
+// runs, so no handle has to be remembered. Where a row for a statement on a
+// second handle belongs is a question of its own; see captureOne.
 //
 // The anchor is the step the transaction ends at, so the callback runs after
 // the statement's own work and before the commit. The tenant filter registers
@@ -98,6 +98,17 @@ func (c *capture) Initialize(handle *gorm.DB) error {
 // The price is that a failure here is raised rather than reported: the
 // statement fails, because on this connection the record and the write are one
 // unit of work. That is the one path in the module where that is true.
+//
+// A connection the database module built with Open is where this callback and
+// the design part company. That connection carries this plugin but no
+// migration, so the database it reaches usually has no audit table, and the
+// design puts the row in the delivered database's table instead. The plugin
+// instance is shared by every registry in the process and holds nothing, so the
+// session alone does not say which handle it came from, and nothing the
+// database module hands a plugin says it either. The row therefore goes out on
+// the statement's session here as everywhere else, and a statement whose
+// database lacks the table fails with ErrWriteFailed rather than going
+// unrecorded.
 //
 // A statement that has already failed is left alone. GORM runs every callback
 // of a processor whatever the ones before it did, so this one is reached by a

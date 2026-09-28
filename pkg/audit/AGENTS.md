@@ -76,9 +76,8 @@ must not cross, and how to run it.
   record and can decide what a failure means. Changing one path to match another
   undoes the reason that path has its rule.
 - **The plugin holds no handle.** GORM hands each callback the session the
-  statement ran on; nothing has to be remembered between `Initialize` calls, so
-  a second handle — including one `db.Open` builds — needs no special care, and
-  no per-handle state can leak between registries.
+  statement ran on; nothing has to be remembered between `Initialize` calls,
+  and no per-handle state can leak between registries.
 - **The layer's `Provides` carries `(*audit.Audit)(nil)`**, the same token the
   descriptor delivers under. That is the only anchor another layer has for
   placing itself inside or outside audit, so the two must not drift.
@@ -90,12 +89,18 @@ must not cross, and how to run it.
   response to. Recording the request is what this layer is for, so the row
   stays; the design document carries the misreport as a non-guarantee.
 - **The plugin is installed on every handle the database module builds, the
-  second connection included.** `db.Open` carries the same declared plugins and
-  applies no migrations, so on a second connection this module's table is
-  whatever that database happens to have: usually absent, in which case every
-  captured write fails and only the first failure is reported. The design
-  document carries this as a non-guarantee; it is not something to fix by
-  guessing which handle is which.
+  second connection included, and a row for a statement on a second connection
+  belongs in the delivered database's table.** `db.Open` carries the same
+  declared plugins and applies no migrations, so the database a second
+  connection reaches usually has no audit table, and one process keeps one
+  audit table. The capture writes such a row on the statement's own session like
+  any other, so every model write on a second connection without the table
+  fails with `ErrWriteFailed`; the design document's status table carries the
+  gap. Closing it takes the database module saying which handle a second
+  connection was opened from. It is not something to close by guessing — a process-wide list of
+  running journals, or a probe for the table on each handle — because the
+  plugin instance is shared by every registry in the process and a guess would
+  hand one run's rows to another's table.
 - **The event path's field spellings are this module's own choice.** A payload
   is read for an object and an outcome under a short list of candidate names,
   and one that carries neither leaves those columns empty without a signal. A
