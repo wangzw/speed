@@ -89,7 +89,10 @@ func New() *Registry {
 // declares a capability the host has already supplied. Supply checks the same
 // conflict from its side, and both sides have to, or the supply-then-register
 // order slips through — and that is the order a registry assembled by hand
-// runs in.
+// runs in. So, finally, does a call made once the drive has started, from a
+// stage, from the action or after the drive returned: descriptors and the
+// resources they carry are fixed before the drive, and a query answered
+// during it would otherwise change under the run that asked.
 func (r *Registry) Register(m Module) {
 	site := callerPackage(3)
 	if m.Name == "" {
@@ -104,6 +107,14 @@ func (r *Registry) Register(m Module) {
 
 	r.mu.Lock()
 	defer r.mu.Unlock()
+	if r.running {
+		panic(fmt.Sprintf("core: module %q was registered from %s after the drive started. "+
+			"Descriptors are written before the drive and read-only after it, so what "+
+			"Modules and Resources answer stays fixed for the whole run; a module that has "+
+			"to exist in this run is registered before it begins, and one that depends on "+
+			"configuration is a runtime registration with another module's capability, "+
+			"made in Init", m.Name, site))
+	}
 	if existing, ok := r.mods[m.Name]; ok {
 		panic(fmt.Sprintf("core: duplicate module name %q: registered from %s and from %s. "+
 			"The available set is decided by imports, so one of the two may have been "+

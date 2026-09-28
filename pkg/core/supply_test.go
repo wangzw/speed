@@ -242,6 +242,66 @@ func TestSupplyAfterTheDriveStartedPanics(t *testing.T) {
 	}
 }
 
+// TestRegisterAfterTheDriveStartedPanics pins the other way into the registry
+// shut at the same moment. Descriptors are written before the drive and read
+// only after it: a module registered from inside a stage, or by the action, or
+// once the drive has returned, would change what Modules and Resources answer
+// in the middle of a run that promised them fixed, and would report as a
+// module this drive left out although it was never asked about.
+func TestRegisterAfterTheDriveStartedPanics(t *testing.T) {
+	late := core.Module{Name: "late", Resources: []any{"a resource that arrives too late"}}
+	for name, drive := range map[string]func(reg *core.Registry) error{
+		"from Prepare": func(reg *core.Registry) error {
+			register(reg, core.Module{
+				Name: "registrar",
+				Prepare: func(_ context.Context, r *core.Registry) (core.Enablement, error) {
+					r.Register(late)
+					return core.Enablement{}, nil
+				},
+			})
+			return reg.Drive(t.Context(), core.Drive{Depth: core.StagePrepare, Participants: []string{"registrar"}})
+		},
+		"from New": func(reg *core.Registry) error {
+			register(reg, core.Module{
+				Name: "registrar",
+				New: func(_ context.Context, r *core.Registry) (any, error) {
+					r.Register(late)
+					return nil, nil
+				},
+			})
+			return reg.Drive(t.Context(), core.Drive{Depth: core.StageNew, Participants: []string{"registrar"}})
+		},
+		"from the action": func(reg *core.Registry) error {
+			return reg.Drive(t.Context(), core.Drive{
+				Depth:        core.StagePrepare,
+				Participants: []string{},
+				Action: func(_ context.Context, r *core.Registry) error {
+					r.Register(late)
+					return nil
+				},
+			})
+		},
+		"after the drive returned": func(reg *core.Registry) error {
+			if err := reg.Drive(t.Context(), core.Drive{Participants: []string{}}); err != nil {
+				return err
+			}
+			reg.Register(late)
+			return nil
+		},
+	} {
+		t.Run(name, func(t *testing.T) {
+			reg := core.New()
+			msg := recoverMessage(t, func() { _ = drive(reg) })
+			if !strings.Contains(msg, "after the drive") || !strings.Contains(msg, `"late"`) {
+				t.Fatalf("panic %q does not name the module and say it came too late", msg)
+			}
+			if _, registered := reg.Lookup("late"); registered {
+				t.Fatal("the late module was recorded although its registration was refused")
+			}
+		})
+	}
+}
+
 // TestSuppliedProductSurvivesTheDriveUntouched pins the release boundary from
 // the product's own side: it is handed in whole and comes back whole, because
 // the party that built it is the party that releases it.
