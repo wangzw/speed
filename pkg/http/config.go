@@ -3,7 +3,10 @@ package http
 import (
 	"fmt"
 	"maps"
+	"reflect"
 	"slices"
+	"strconv"
+	"strings"
 	"time"
 
 	"github.com/vislake/speed/pkg/config"
@@ -78,6 +81,13 @@ type endpointConfig struct {
 	// replaced are outside this module.
 	TLSCertFile string `config:"tls-cert-file"`
 	TLSKeyFile  string `config:"tls-key-file"`
+
+	// Unknown collects the keys of the entry that name none of the fields
+	// above. Configuration checks no key inside a container leaf, so without
+	// it a misspelled drain-timeout or body limit would vanish and the
+	// default would govern an endpoint its operator believed configured
+	// otherwise; resolve refuses the entry instead.
+	Unknown map[string]any `config:",remain"`
 }
 
 // The defaults of the optional per-endpoint items, applied after decoding
@@ -162,6 +172,14 @@ func (c moduleConfig) resolve() ([]endpointSettings, error) {
 // to change: a startup failure that only says "missing address" leaves the host
 // to work out which of its endpoints it came from.
 func (e endpointConfig) resolve(name string) (endpointSettings, error) {
+	if len(e.Unknown) > 0 {
+		unknown := slices.Sorted(maps.Keys(e.Unknown))
+		return endpointSettings{}, fmt.Errorf(
+			"http: endpoint %q gives %s, which %s not among the keys an endpoint takes: %s. "+
+				"Correct the spelling under %s.%s.%s",
+			name, quotedList(unknown), pluralVerb(len(unknown)), quotedList(endpointKeys()),
+			configNamespace, endpointsItem, name)
+	}
 	if e.Address == "" {
 		return endpointSettings{}, fmt.Errorf(
 			"http: endpoint %q gives no address to listen on. Write %s.%s.%s.address, "+
@@ -245,6 +263,37 @@ func (e endpointConfig) resolve(name string) (endpointSettings, error) {
 		tlsCertFile:       e.TLSCertFile,
 		tlsKeyFile:        e.TLSKeyFile,
 	}, nil
+}
+
+// endpointKeys lists the keys an endpoint entry takes, read off the carrier's
+// own tags so the message cannot drift from the fields.
+func endpointKeys() []string {
+	t := reflect.TypeFor[endpointConfig]()
+	keys := make([]string, 0, t.NumField())
+	for i := range t.NumField() {
+		key, _, _ := strings.Cut(t.Field(i).Tag.Get("config"), ",")
+		if key != "" {
+			keys = append(keys, key)
+		}
+	}
+	return keys
+}
+
+// quotedList renders names for a message, each quoted.
+func quotedList(names []string) string {
+	quoted := make([]string, 0, len(names))
+	for _, name := range names {
+		quoted = append(quoted, strconv.Quote(name))
+	}
+	return strings.Join(quoted, ", ")
+}
+
+// pluralVerb is the verb agreeing with a count of keys.
+func pluralVerb(n int) string {
+	if n == 1 {
+		return "is"
+	}
+	return "are"
 }
 
 // valueOrDefault reads an optional item in its three states: absent takes the

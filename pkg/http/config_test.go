@@ -134,6 +134,41 @@ func TestEndpointsDecodeFromThePrimarySource(t *testing.T) {
 	}
 }
 
+// TestAMisspelledKeyInAnEndpointIsAStartupFailure pins the keys inside one
+// endpoint's entry. The endpoint set is a container leaf, whose inner keys
+// configuration does not check, so a misspelled drain-timeout or body limit
+// would be dropped and the default would govern an endpoint its operator
+// believed configured otherwise — a safety setting silently not in force.
+func TestAMisspelledKeyInAnEndpointIsAStartupFailure(t *testing.T) {
+	for _, key := range []string{"drain-timout", "max-body-bytez", "read_timeout"} {
+		got, decodeErr, runErr := readThrough(t,
+			`{"http":{"endpoints":{"public":{"address":":8080","`+key+`":"1s"}}}}`, schema())
+		if runErr != nil || decodeErr != nil {
+			t.Fatalf("%s: the section did not decode: %v", key, errors.Join(runErr, decodeErr))
+		}
+		_, err := got.resolve()
+		if err == nil {
+			t.Errorf("an endpoint giving the key %q started, and the key was dropped", key)
+			continue
+		}
+		mustContain(t, err.Error(), `"`+key+`"`, "the key that is not one of the endpoint's")
+		mustContain(t, err.Error(), `"public"`, "the endpoint the key was written under")
+		mustContain(t, err.Error(), "drain-timeout", "the keys an endpoint takes")
+	}
+
+	// The keys an endpoint does take, spelled as the declaration spells them,
+	// still decode.
+	got, decodeErr, runErr := readThrough(t, `{"http":{"endpoints":{"public":{
+		"address":":8080","read-header-timeout":"1s","read-timeout":"1s","write-timeout":"1s",
+		"idle-timeout":"1s","drain-timeout":"1s","max-body-bytes":10}}}}`, schema())
+	if runErr != nil || decodeErr != nil {
+		t.Fatalf("the section did not decode: %v", errors.Join(runErr, decodeErr))
+	}
+	if _, err := got.resolve(); err != nil {
+		t.Errorf("an endpoint giving only its own keys was refused: %v", err)
+	}
+}
+
 // TestDurationItemRejectsBareNumber pins config's rule for a duration, which
 // this module's field types opt into: a bare 300 reads as five minutes to a
 // person and means three hundred nanoseconds to the machine, so only the string
