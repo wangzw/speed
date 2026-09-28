@@ -110,6 +110,14 @@ type Catalog interface {
 	// identifier is read against the roster: one no row carries is refused
 	// with ErrInvalidTenant, and one that is disabled with ErrTenantDisabled.
 	//
+	// A refusal is the table's answer, not a snapshot's: where this replica's
+	// snapshot would refuse, the tenant's row is read from the table, so a
+	// tenant another replica registered or served again since this one last
+	// read the roster is entered at once. A table that cannot be read at that
+	// point gives neither refusal but the failure itself. An admission comes
+	// from the snapshot, so a tenant disabled on another replica is still
+	// entered here until this replica next rereads the roster.
+	//
 	// The context returned carries no cross-tenant mark, and whatever tenant
 	// the one passed in carried is replaced. On a refusal the context returned
 	// carries neither a tenant nor the mark, so a caller that uses it anyway

@@ -201,7 +201,10 @@ is where an assignment's target is read the way each database reads it, on both
 dialects; `pkg/tenant/catalog/create_test.go` is where a registration that must
 not overwrite is refused against the table rather than the snapshot, where
 a write's reread outlives its caller, and where reads of the table publish in
-the order they read; `pkg/tenant/resolve/extract_test.go` is where the
+the order they read; `pkg/tenant/catalog/enter_test.go` is where entering a
+tenant is — a refusal taken from the table rather than the snapshot and what an
+entered context carries;
+`pkg/tenant/resolve/extract_test.go` is where the
 registration window's behaviour under a duplicate or a late registration is;
 `pkg/tenant/resolve/admit_test.go` and `panic_test.go` are where the layer's
 answers to a request are — the four statuses, what an admitted request

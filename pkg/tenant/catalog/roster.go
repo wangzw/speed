@@ -152,8 +152,9 @@ func (r *roster) reportFailedReread(err error) {
 
 // read replaces the snapshot with the table's current contents.
 //
-// Reads run one at a time, and each publishes what it read. Two paths read —
-// the refresher and a write rereading once it has committed — and two reads in flight together could publish
+// Reads run one at a time, and each publishes what it read. Three paths read —
+// the refresher, a write rereading once it has committed, and an entry bringing
+// the snapshot up to the table — and two reads in flight together could publish
 // out of order: a refresh that read the table before a write committed,
 // finishing after the write's own reread, would put the roster without the
 // write back in force, and a tenant just disabled would be served again until
@@ -273,13 +274,28 @@ func (r *roster) List(_ context.Context) ([]tenant.Tenant, error) {
 }
 
 // Enter implements tenant.Catalog.
+func (r *roster) Enter(ctx context.Context, id tenant.ID) (context.Context, error) {
+	return r.enter(ctx, id, false)
+}
+
+// enter admits a tenant the roster serves or, with anyStatus set, one it holds
+// whatever its status.
 //
-// It reads the snapshot the resolving layer reads, so a path entering a tenant
-// gets the answer a request naming it would: a tenant disabled on this replica
-// is refused at once, and one disabled on another replica once this replica's
-// snapshot is next reread. The identifier's shape is judged first, because a
-// value outside the domain is no tenant's and the message says which of the two
-// fixes it needs.
+// It admits from the snapshot the resolving layer reads, and refuses only on
+// the table's word. A refusal is what a path with no request behind it drops
+// its work on — a bus acknowledges an event whatever its handler answered — so
+// a snapshot behind the table would lose that work for good: a tenant another
+// replica registered, or served again, since this replica last read the roster.
+// Where the snapshot would refuse, the tenant's row is read from the table, the
+// answer is the row's, and a snapshot found behind it is brought up to the table
+// (catchUp). An admission is taken from the snapshot as it stands, so a tenant
+// disabled on another replica is entered here until this replica's snapshot is
+// next reread — the window the request face has too.
+//
+// The identifier's shape is judged first, because a value outside the domain
+// is no tenant's and the message says which of the two fixes it needs. A table
+// that cannot be read gives no answer, and the failure is reported as it
+// stands rather than as either refusal.
 //
 // What it writes is what the resolving layer writes on admitting a request —
 // the identifier into the context and onto the logger, replacing a tenant the
@@ -289,7 +305,7 @@ func (r *roster) List(_ context.Context) ([]tenant.Tenant, error) {
 // cross-tenant mark the context carried and takes a tenant bound on its logger
 // off: a caller that drops the error and goes on with the context has its
 // scoped statements refused, not let across, and its records name no tenant.
-func (r *roster) Enter(ctx context.Context, id tenant.ID) (context.Context, error) {
+func (r *roster) enter(ctx context.Context, id tenant.ID, anyStatus bool) (context.Context, error) {
 	refused := tenantctx.Bind(ctx, "", contextLogger)
 	if err := checkField("identifier", string(id)); err != nil {
 		return refused, err
@@ -298,14 +314,72 @@ func (r *roster) Enter(ctx context.Context, id tenant.ID) (context.Context, erro
 	if err != nil {
 		return refused, err
 	}
+	admits := func(t tenant.Tenant) bool { return anyStatus || t.Status == tenant.StatusActive }
 	t, ok := s.byID[id]
+	if !ok || !admits(t) {
+		if t, ok, err = r.fromTable(ctx, id); err != nil {
+			return refused, err
+		}
+		r.catchUp(ctx, id, t, ok)
+	}
 	switch {
 	case !ok:
 		return refused, fmt.Errorf("%w: no tenant has identifier %q", tenant.ErrInvalidTenant, id)
-	case t.Status != tenant.StatusActive:
+	case !admits(t):
 		return refused, fmt.Errorf("%w: tenant %q is %s", tenant.ErrTenantDisabled, id, t.Status)
 	}
 	return tenantctx.Bind(ctx, string(t.ID), contextLogger), nil
+}
+
+// fromTable reads one tenant's row from the table. A row this module will not
+// act on is refused as the read of the whole roster refuses it.
+func (r *roster) fromTable(ctx context.Context, id tenant.ID) (tenant.Tenant, bool, error) {
+	held, err := lookUp(r.handle.WithContext(ctx), "id", string(id))
+	if err != nil {
+		return tenant.Tenant{}, false, fmt.Errorf(
+			"%s%s: this replica's snapshot does not admit tenant %q, and table %s could not be read "+
+				"for it, so there is no answer: %w", diagnosticPrefix, ModuleName, id, tableName, err)
+	}
+	if len(held) == 0 {
+		return tenant.Tenant{}, false, nil
+	}
+	if err := checkRows(held); err != nil {
+		return tenant.Tenant{}, false, err
+	}
+	return tenant.Tenant{ID: tenant.ID(held[0].ID), Alias: held[0].Alias, Status: tenant.Status(held[0].Status)},
+		true, nil
+}
+
+// catchUp rereads the roster when the row an entry read from the table is not
+// what this replica's snapshot holds for it, so that the snapshot — which the
+// resolving layer reads too — learns what the entry learned.
+//
+// Entries arriving together for one such tenant wait for one another on the
+// slot reads run in; the first to find the snapshot still behind rereads it,
+// and the rest find it caught up. An entry whose context ends while it waits
+// leaves the snapshot to the next reread. A failed reread is reported as a
+// failed refresh is, and the entry keeps the answer it read.
+func (r *roster) catchUp(ctx context.Context, id tenant.ID, t tenant.Tenant, held bool) {
+	if agrees(r.snap.Load(), id, t, held) {
+		return
+	}
+	if err := r.acquire(ctx); err != nil {
+		return
+	}
+	defer r.release()
+	if agrees(r.snap.Load(), id, t, held) {
+		return
+	}
+	if err := r.readHeld(ctx); err != nil {
+		r.reportFailedReread(err)
+	}
+}
+
+// agrees reports whether a snapshot holds what the table was found to hold for
+// one identifier: this tenant, or, when held is false, none.
+func agrees(s *snapshot, id tenant.ID, t tenant.Tenant, held bool) bool {
+	current, ok := s.byID[id]
+	return ok == held && current == t
 }
 
 // contextLogger is how an entered tenant reaches the logger a context carries.

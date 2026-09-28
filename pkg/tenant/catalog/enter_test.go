@@ -6,7 +6,11 @@ import (
 	"log/slog"
 	"slices"
 	"sync"
+	"sync/atomic"
 	"testing"
+	"time"
+
+	"gorm.io/gorm"
 
 	"github.com/vislake/speed/pkg/log"
 	"github.com/vislake/speed/pkg/tenant"
@@ -161,6 +165,200 @@ func TestEnterSeesADisableOnTheWritersReplica(t *testing.T) {
 	}
 	if _, err := r.Enter(context.Background(), "t_acme"); !errors.Is(err, tenant.ErrTenantDisabled) {
 		t.Fatalf("entering a tenant just disabled gave %v, want ErrTenantDisabled", err)
+	}
+}
+
+// A refusal is what a path with no request behind it drops its work on — a bus
+// acknowledges an event whatever its handler answered — so a refusal comes from
+// the table rather than from a snapshot that may be behind it. A tenant another
+// replica registered, or served again, after this replica last read the roster
+// is entered here at once, and this replica's snapshot learns it on the way.
+func TestEnterAdmitsWhatAnotherReplicaWroteSinceTheLastRead(t *testing.T) {
+	for name, write := range map[string]func(ctx context.Context, other *roster) error{
+		"registered": func(ctx context.Context, other *roster) error {
+			return other.Create(ctx, tenant.Tenant{ID: "t_new", Alias: "new", Status: tenant.StatusActive})
+		},
+		"served again": func(ctx context.Context, other *roster) error {
+			return other.SetStatus(ctx, "t_new", tenant.StatusActive)
+		},
+	} {
+		t.Run(name, func(t *testing.T) {
+			r := enteringRoster(t)
+			if name == "served again" {
+				if err := r.handle.Exec(
+					"INSERT INTO tenants (id, alias, status) VALUES ('t_new', 'new', 0)").Error; err != nil {
+					t.Fatalf("seeding: %v", err)
+				}
+				if err := r.read(context.Background()); err != nil {
+					t.Fatalf("reading: %v", err)
+				}
+			}
+			if err := write(context.Background(), secondReplica(t, r)); err != nil {
+				t.Fatalf("writing on the other replica: %v", err)
+			}
+
+			ctx, err := r.Enter(context.Background(), "t_new")
+			if err != nil {
+				t.Fatalf("entering a tenant the table serves gave %v, want the tenant", err)
+			}
+			if id, ok := tenant.FromContext(ctx); !ok || id != "t_new" {
+				t.Fatalf("the entered context reports tenant (%q, %v), want t_new", id, ok)
+			}
+			got, ok, err := r.ByAlias(context.Background(), "new")
+			if err != nil || !ok || got.Status != tenant.StatusActive {
+				t.Fatalf("this replica's snapshot answers (%+v, %v, %v), want the tenant the table serves",
+					got, ok, err)
+			}
+		})
+	}
+}
+
+// What the table refuses stays refused, whatever the snapshot said, and a row
+// this module will not act on is refused on this path as on the read of the
+// whole roster.
+func TestEnterRefusesWhatTheTableRefuses(t *testing.T) {
+	for _, c := range []struct {
+		name string
+		row  string
+		want error
+	}{
+		{
+			"registered disabled", "INSERT INTO tenants (id, alias, status) VALUES ('t_new', 'new', 0)",
+			tenant.ErrTenantDisabled,
+		},
+		{
+			"outside the domain", "INSERT INTO tenants (id, alias, status) VALUES ('t_new', 'new alias', 1)",
+			tenant.ErrInvalidTenant,
+		},
+	} {
+		t.Run(c.name, func(t *testing.T) {
+			r := enteringRoster(t)
+			if err := r.handle.Exec(c.row).Error; err != nil {
+				t.Fatalf("writing the row: %v", err)
+			}
+			ctx, err := r.Enter(crossContext(), "t_new")
+			if !errors.Is(err, c.want) {
+				t.Fatalf("entering gave %v, want %v", err, c.want)
+			}
+			if id, ok := tenant.FromContext(ctx); ok || tenantctx.CrossTenant(ctx) {
+				t.Fatalf("a refused entry handed back tenant (%q, %v), crossing %v; want neither",
+					id, ok, tenantctx.CrossTenant(ctx))
+			}
+		})
+	}
+}
+
+// A table that cannot be read gives no answer about the tenant, and the failure
+// is not reported as one: a caller told ErrInvalidTenant drops its work for a
+// tenant that may well exist.
+func TestEnterWhoseTableCannotBeReadRefusesWithoutAnAnswer(t *testing.T) {
+	r := enteringRoster(t)
+	if err := r.handle.Exec("DROP TABLE tenants").Error; err != nil {
+		t.Fatalf("dropping the table: %v", err)
+	}
+	ctx, err := r.Enter(context.Background(), "t_new")
+	if err == nil || errors.Is(err, tenant.ErrInvalidTenant) || errors.Is(err, tenant.ErrTenantDisabled) {
+		t.Fatalf("entering over a table that cannot be read gave %v, want a failure that is neither refusal", err)
+	}
+	if id, ok := tenant.FromContext(ctx); ok || tenantctx.CrossTenant(ctx) {
+		t.Fatalf("a failed entry handed back tenant (%q, %v), crossing %v; want neither",
+			id, ok, tenantctx.CrossTenant(ctx))
+	}
+}
+
+// countFullReads counts the reads of the whole roster table this roster makes
+// from here on: the reads that name no row.
+func countFullReads(t *testing.T, r *roster) *atomic.Int32 {
+	t.Helper()
+	var n atomic.Int32
+	err := r.handle.Callback().Query().Before("gorm:query").Register("test:count-full-reads",
+		func(tx *gorm.DB) {
+			if _, conditioned := tx.Statement.Clauses["WHERE"]; !conditioned && tx.Statement.Table == tableName {
+				n.Add(1)
+			}
+		})
+	if err != nil {
+		t.Fatalf("registering the callback: %v", err)
+	}
+	return &n
+}
+
+// rowReadsArriveTogether holds the first n reads of one roster row, once each
+// has its answer, until all n have arrived: n entries have each read the row
+// before any of them goes on to bring the snapshot up to the table.
+func rowReadsArriveTogether(t *testing.T, r *roster, n int) {
+	t.Helper()
+	var mu sync.Mutex
+	arrived := 0
+	all := make(chan struct{})
+	err := r.handle.Callback().Query().After("gorm:query").Register("test:row-reads-arrive-together",
+		func(tx *gorm.DB) {
+			if _, conditioned := tx.Statement.Clauses["WHERE"]; !conditioned || tx.Statement.Table != tableName {
+				return
+			}
+			mu.Lock()
+			arrived++
+			if arrived == n {
+				close(all)
+			}
+			late := arrived > n
+			mu.Unlock()
+			if late {
+				return
+			}
+			select {
+			case <-all:
+			case <-time.After(10 * time.Second):
+			}
+		})
+	if err != nil {
+		t.Fatalf("registering the callback: %v", err)
+	}
+}
+
+// Entries arriving together for a tenant this replica's snapshot lacks read
+// that tenant's row each, and the whole roster once: the first to find the
+// snapshot behind the table brings it up to date, and the rest find it so.
+func TestEntriesTogetherForATenantTheSnapshotLacksRereadTheRosterOnce(t *testing.T) {
+	r := enteringRoster(t)
+	if err := secondReplica(t, r).Create(context.Background(),
+		tenant.Tenant{ID: "t_new", Alias: "new", Status: tenant.StatusActive}); err != nil {
+		t.Fatalf("registering on the other replica: %v", err)
+	}
+	reads := countFullReads(t, r)
+
+	const entries = 8
+	rowReadsArriveTogether(t, r, entries)
+	// The first reread of the whole roster waits before it publishes, long
+	// enough for every other entry to have found the snapshot behind and to be
+	// waiting its turn to reread it.
+	var first atomic.Bool
+	if err := r.handle.Callback().Query().After("gorm:query").Register("test:slow-first-full-read",
+		func(tx *gorm.DB) {
+			if _, conditioned := tx.Statement.Clauses["WHERE"]; !conditioned && tx.Statement.Table == tableName &&
+				first.CompareAndSwap(false, true) {
+				time.Sleep(50 * time.Millisecond)
+			}
+		}); err != nil {
+		t.Fatalf("registering the callback: %v", err)
+	}
+	var wg sync.WaitGroup
+	errs := make([]error, entries)
+	for i := range entries {
+		wg.Add(1)
+		go func(i int) {
+			defer wg.Done()
+			_, errs[i] = r.Enter(context.Background(), "t_new")
+		}(i)
+	}
+	wg.Wait()
+	for i, err := range errs {
+		if err != nil {
+			t.Fatalf("entry %d gave %v, want the tenant", i, err)
+		}
+	}
+	if got := reads.Load(); got != 1 {
+		t.Fatalf("the entries read the whole roster %d times, want once", got)
 	}
 }
 
