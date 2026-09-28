@@ -56,10 +56,10 @@ const (
 	batchSize = 64
 	// fetchWait bounds how long a fetch waits before looping.
 	fetchWait = 2 * time.Second
-	// consumerRetryWait is how long a reader waits before taking the consumer
-	// again after a failed take. It is shorter than fetchWait because it sits
-	// on the startup path: the consumer was created moments earlier, so the
-	// first retries are the ones that usually succeed.
+	// consumerRetryWait is how long a reader waits before opening its durable
+	// again after a failed open. It is shorter than fetchWait because it sits
+	// on the startup path and on the way back from a durable found gone, where
+	// the first retries are the ones that usually succeed.
 	consumerRetryWait = 250 * time.Millisecond
 	// inactiveThreshold is how long the server keeps a durable named after
 	// its process once no one has pulled from it. A process that closes
@@ -84,7 +84,9 @@ type Config struct {
 	// the server once it has been idle for inactiveThreshold; a configured one
 	// stays.
 	ConsumerName string `config:"consumer-name"`
-	// Timeout bounds connecting and one operation.
+	// Timeout bounds connecting, and every request to the server made on a
+	// context with no deadline of its own. One that is not positive takes the
+	// default.
 	Timeout time.Duration `config:"timeout"`
 	// MaxEntries bounds how many entries each stream keeps. A stream with no
 	// bound grows with every event ever published, on a server whose storage it
@@ -137,7 +139,8 @@ func Module() core.Module {
 					"every event, and which is removed when the process closes or has been gone a day",
 			},
 			timeoutKey: {
-				Description: "how long connecting and one operation may take, written with a unit",
+				Description: "how long connecting, and each request to the server that carries no " +
+					"deadline of its own, may take; written with a unit",
 			},
 			maxEntriesKey: {
 				Description: "how many entries each stream keeps before the oldest are discarded, so " +
@@ -175,8 +178,16 @@ func stance(cfg *Config) (core.Enablement, error) {
 
 // open connects.
 func open(ctx context.Context, cfg *Config, logger *slog.Logger) (event.Bus, error) {
+	// A timeout that is not positive is a configuration gone wrong: the
+	// library reads zero on the connect as no bound at all, and refuses it for
+	// a request. Folding it back onto the default keeps a typo from removing
+	// the bound.
+	timeout := cfg.Timeout
+	if timeout <= 0 {
+		timeout = defaultTimeout
+	}
 	nc, err := nats.Connect(cfg.URL,
-		nats.Timeout(cfg.Timeout),
+		nats.Timeout(timeout),
 		// A bus lives as long as its process. The library's default gives up
 		// reconnecting after two minutes, and past that the connection is
 		// closed for good: every publish and every fetch would fail until the
@@ -197,7 +208,10 @@ func open(ctx context.Context, cfg *Config, logger *slog.Logger) (event.Bus, err
 	if err != nil {
 		return nil, fmt.Errorf("%s: connecting: %w", ModuleName, err)
 	}
-	js, err := jetstream.New(nc)
+	// The timeout bounds every request made on a context with no deadline of
+	// its own — a publish on a request's context, the stream and consumer
+	// management — and not only the connect.
+	js, err := jetstream.New(nc, jetstream.WithDefaultTimeout(timeout))
 	if err != nil {
 		nc.Close()
 		return nil, fmt.Errorf("%s: opening JetStream: %w", ModuleName, err)
@@ -227,7 +241,7 @@ func open(ctx context.Context, cfg *Config, logger *slog.Logger) (event.Bus, err
 		logger:      logger,
 		consumer:    name,
 		ownConsumer: cfg.ConsumerName == "",
-		timeout:     cfg.Timeout,
+		timeout:     timeout,
 		maxEntries:  maxEntries,
 		namespace:   namespace,
 		table:       dispatch.New("event/nats", logger),
