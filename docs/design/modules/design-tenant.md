@@ -447,6 +447,14 @@ flowchart TD
 
 **读语句加上的是与已有条件并列的一个等值条件**，不覆盖调用方写的任何条件：一条已经带租户条件的语句在插件作用下带上两条，语义不变。
 
+**调用方写下的条件整体成组，组内的意思就是 GORM 把它渲染成 WHERE 时的意思。** GORM 渲染 WHERE 时有两步改写：只含一个 AND 组的条件列表按组内内容渲染；以单个 OR 打头的列表，把第一个不是单个 OR 的条件挪到最前面，`Or(a).Where(b)` 因而读作 `b OR a`。成组时重做这两步，否则同一张列表会读成 `a AND b`。组尽量保持为 AND 组，因为 `FirstOrCreate` 与 `FirstOrInit` 在查不到时把 WHERE 里的等值条件抄回返回值，而它们只往 AND 组里看；只有单个条件且不是一条列上的等值时才另加括号。
+
+**插件自己的条件不算调用方的条件。** GORM 拒绝一条什么条件都没有的更新或删除（`gorm.ErrMissingWhereClause`），插件的条件若被算进去，这条拒绝就变成一条作用于整个租户的写。判定因而推迟到语句渲染的那一刻、GORM 自己的条件——按结构体主键派生的那一段、软删除谓词——都已加上之后，按 GORM 的口径把插件那一条除开来算：除它之外没有条件、调用方也没有声明全局写的更新或删除，以 `gorm.ErrMissingWhereClause` 失败；声明了全局写的，照常作用于本租户的全部行。
+
+**按结构体主键寻址的更新与删除，主键里租户那一半由插件按上下文填上。** 复合主键下，租户那一半没写的结构体指的是一行不属于任何租户的数据，写因而打不到任何行却报告成功。只在主键其余部分有值时才填：全零的主键什么也不指，给它填上租户那一半，等于把它变成指向整个租户的主键。主键里租户那一半写了别的租户，与显式写了别的租户的写同类，以 `ErrExplicitTenantMismatch` 失败。按值传入的结构体先复制一份再填，调用方交出的本来就是副本。
+
+**同一条语句执行两次，按第二次的上下文重新判定。** 插件放进 WHERE 的那一条带着调用方原来的条件列表，再次执行时先把它取出、还原成调用方写下的样子再判定：先计数后读取的链不会叠出两条租户条件，一条在某个租户下执行过、再被带到另一个上下文里的链，按新上下文加条件、跨租户或拒绝。
+
 **写语句填列发生在参数绑定之前**，值取自上下文里的标识。填列不覆盖调用方显式写下的值——一件显式指定了租户列的写，其语义是跨租户写入，而那条路径已经由跨租户标记表达；没有标记而显式写了别的租户的标识，是一次应当被读出来的调用点缺陷，本模块不以覆盖的方式掩盖它，行为见错误与失败语义。
 
 **第四档的失败发生在语句构造处而非执行处**，因而一条落在其中的语句不会到达数据库。代价是判定要在回调里完成，而回调抛错改写了 GORM 默认的错误处理路径，具体形态见错误与失败语义。
@@ -575,7 +583,7 @@ flowchart TD
 | 取法的登记面与冻结 | 已实现 | `pkg/tenant/resolve/resolve.go` `Register`、`open`、`seal` |
 | 请求期的解析、日志字段绑定与收口 | 已实现 | `pkg/tenant/resolve/resolve.go` `admit`、`refuse`、`middlewareFor` |
 | 受约束模型的约定与识别 | 已实现 | `pkg/tenant/model.go` `Model`；`pkg/tenant/catalog/plugin.go` `scoped`、`embedsConvention` |
-| 隔离插件的三处作用点、四档判定与显式租户列的核对 | 已实现 | `pkg/tenant/catalog/plugin.go` `Initialize`、`scopeWhere`、`scopeUpdate`、`applyCondition`、`fillColumn`、`fillOne` |
+| 隔离插件的三处作用点、四档判定与显式租户列的核对 | 已实现 | `pkg/tenant/catalog/plugin.go` `Initialize`、`scopeRead`、`scopeDelete`、`scopeUpdate`、`applyCondition`、`scopeTerm`、`grouped`、`fillKey`、`fillColumn`、`fillOne` |
 | 跨租户的上下文标记 | 已实现 | `pkg/tenant/scope.go` `CrossTenant`；`internal/tenantctx/tenantctx.go` |
 | 取值域之外的标识拒绝被绑定 | 已实现 | `pkg/tenant/tenant.go` `ID.Value` |
 | 租户标识作为关联字段绑上 logger | 已实现 | `pkg/tenant/resolve/resolve.go` `admit` |

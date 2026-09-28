@@ -74,13 +74,13 @@ func (f *filter) Name() string { return "github.com/vislake/speed/pkg/tenant/cat
 func (f *filter) Initialize(handle *gorm.DB) error {
 	registered := []func(*gorm.DB) error{
 		func(h *gorm.DB) error {
-			return h.Callback().Query().Before("gorm:query").Register(callbackName, f.scopeWhere)
+			return h.Callback().Query().Before("gorm:query").Register(callbackName, f.scopeRead)
 		},
 		func(h *gorm.DB) error {
 			return h.Callback().Update().Before("gorm:update").Register(callbackName, f.scopeUpdate)
 		},
 		func(h *gorm.DB) error {
-			return h.Callback().Delete().Before("gorm:delete").Register(callbackName, f.scopeWhere)
+			return h.Callback().Delete().Before("gorm:delete").Register(callbackName, f.scopeDelete)
 		},
 		func(h *gorm.DB) error {
 			return h.Callback().Create().Before("gorm:create").Register(callbackName, f.fillColumn)
@@ -95,34 +95,70 @@ func (f *filter) Initialize(handle *gorm.DB) error {
 }
 
 // scopedTo settles whether this statement is this plugin's business, and
-// returns the tenant it belongs to when it is.
+// returns the convention's field and the tenant the statement belongs to when
+// it is.
 //
 // The answers are ordered, and the order is load-bearing. Recognising the model
 // comes first, so a statement that is not scoped is left alone whatever its
 // context says. The cross-tenant mark comes next, so a statement that means to
 // cross is not refused for lacking the very thing it means to lack. Only then
 // is the identifier looked for.
-func scopedTo(tx *gorm.DB, st *gorm.Statement) (string, bool) {
-	if !scoped(st) || tenantctx.CrossTenant(st.Context) {
-		return "", false
+//
+// A statement that is scoped but not to be filtered gives up any condition an
+// earlier execution of it left behind: a chain first run under one tenant and
+// then carried to a crossing context, or to none, is judged by the context it
+// runs under now.
+func scopedTo(tx *gorm.DB, st *gorm.Statement) (*gormschema.Field, string, bool) {
+	if !scoped(st) {
+		return nil, "", false
+	}
+	if tenantctx.CrossTenant(st.Context) {
+		releaseCondition(st)
+		return nil, "", false
 	}
 	id, ok := tenantctx.ID(st.Context)
 	if !ok {
+		releaseCondition(st)
 		// The return value is the statement's accumulated error, which the
 		// statement already holds; the caller reads it back through Error.
 		_ = tx.AddError(noTenant(st))
-		return "", false
+		return nil, "", false
 	}
-	return id, true
+	return st.Schema.LookUpField(conventionField), id, true
 }
 
-// scopeWhere adds the tenant condition to a statement that carries a WHERE.
-func (f *filter) scopeWhere(tx *gorm.DB) {
-	id, ok := scopedTo(tx, tx.Statement)
+// scopeRead adds the tenant condition to a read.
+func (f *filter) scopeRead(tx *gorm.DB) {
+	st := tx.Statement
+	field, id, ok := scopedTo(tx, st)
 	if !ok {
 		return
 	}
-	applyCondition(tx.Statement, id)
+	applyCondition(st, field.DBName, id, false)
+}
+
+// scopeDelete adds the tenant condition to a delete, and writes the tenant into
+// the key a delete addressed by a struct derives its identity from.
+//
+// The condition is one GORM does not count as the caller's: a delete that
+// carries nothing else is refused as GORM refuses it, rather than reaching
+// every row of the tenant, unless the caller asked for a global delete.
+func (f *filter) scopeDelete(tx *gorm.DB) {
+	st := tx.Statement
+	field, id, ok := scopedTo(tx, st)
+	if !ok {
+		return
+	}
+	makeAddressable(st)
+	keyed := []reflect.Value{st.ReflectValue}
+	if st.Model != nil && !samePointer(st.Model, st.Dest) {
+		keyed = append(keyed, reflect.ValueOf(st.Model))
+	}
+	if err := fillKey(st, field, id, keyed...); err != nil {
+		_ = tx.AddError(err)
+		return
+	}
+	applyCondition(st, field.DBName, id, !tx.AllowGlobalUpdate)
 }
 
 // scopeUpdate adds the condition and refuses a write that names another tenant.
@@ -132,9 +168,12 @@ func (f *filter) scopeWhere(tx *gorm.DB) {
 // unexamined lets a statement matched against one tenant's row move that row
 // into another: the condition decides which rows are reached, and the value
 // they are then given carries them away.
+//
+// The model an update is addressed by is keyed like a delete's, and the
+// condition is discounted the same way.
 func (f *filter) scopeUpdate(tx *gorm.DB) {
 	st := tx.Statement
-	id, ok := scopedTo(tx, st)
+	field, id, ok := scopedTo(tx, st)
 	if !ok {
 		return
 	}
@@ -143,7 +182,11 @@ func (f *filter) scopeUpdate(tx *gorm.DB) {
 			tenant.ErrExplicitTenantMismatch, st.Schema.Name, written))
 		return
 	}
-	applyCondition(st, id)
+	if err := fillKey(st, field, id, st.ReflectValue); err != nil {
+		_ = tx.AddError(err)
+		return
+	}
+	applyCondition(st, field.DBName, id, !tx.AllowGlobalUpdate)
 }
 
 // fillColumn writes the tenant into the rows an insert is about to bind.
@@ -155,17 +198,84 @@ func (f *filter) scopeUpdate(tx *gorm.DB) {
 // its context carries.
 func (f *filter) fillColumn(tx *gorm.DB) {
 	st := tx.Statement
-	id, ok := scopedTo(tx, st)
+	field, id, ok := scopedTo(tx, st)
 	if !ok {
 		return
 	}
-	field := st.Schema.LookUpField(conventionField)
 	for _, dest := range destinations(st.Dest) {
 		if err := fillOne(st, field, dest, id); err != nil {
 			_ = tx.AddError(err)
 			return
 		}
 	}
+}
+
+// scopeTerm is the tenant equality this plugin puts into a statement's WHERE.
+//
+// It is a type of its own rather than a clause.Eq, for two reasons. The first
+// is that it has to be recognisable. A statement executed a second time — a
+// chain that counted and then read, a clone carried to another context — still
+// holds the term its first execution left, and the plugin replaces its own term
+// rather than stacking a second one or leaving a stale tenant in force. The term
+// carries the caller's expression list as it stood before it was grouped, so
+// replacing it restores exactly what the caller wrote.
+//
+// The second is that it renders after GORM has added the conditions of its
+// own — the key of a struct a delete or an update is addressed by, the
+// soft-delete predicate — which is the only moment at which the question GORM
+// asks of such a write, whether anything narrows it, can be asked with this
+// plugin's condition set aside. GORM asks it after the statement is built and
+// would find this term there; asking it here, the way GORM asks it, keeps
+// GORM's refusal of an unconditioned write a refusal rather than letting the
+// tenant condition turn it into a write over the whole tenant.
+type scopeTerm struct {
+	column string
+	id     string
+	// written is the caller's expression list as it stood before the term
+	// was put beside it.
+	written []clause.Expression
+	// requireCondition is set on an update or a delete that did not ask for a
+	// global write.
+	requireCondition bool
+}
+
+// Build renders the equality, refusing an unconditioned write on the way.
+func (t scopeTerm) Build(builder clause.Builder) {
+	if t.requireCondition && !narrowed(builder) {
+		_ = builder.AddError(gorm.ErrMissingWhereClause)
+	}
+	clause.Eq{
+		Column: clause.Column{Table: clause.CurrentTable, Name: t.column},
+		Value:  t.id,
+	}.Build(builder)
+}
+
+// softDeleteKey is the marker GORM leaves on a statement whose model soft
+// deletes, after it has added the predicate that hides deleted rows. GORM does
+// not count that predicate as a condition of the caller's, and neither does
+// narrowed.
+const softDeleteKey = "soft_delete_enabled"
+
+// narrowed reports whether the statement being rendered carries a condition
+// besides this plugin's, counted the way GORM counts one.
+func narrowed(builder clause.Builder) bool {
+	st, ok := builder.(*gorm.Statement)
+	if !ok {
+		// Only a statement is ever handed in; anything else is not a write
+		// this can judge, and it is not refused on a guess.
+		return true
+	}
+	where, _ := st.Clauses[whereKey].Expression.(clause.Where)
+	others := 0
+	for _, e := range where.Exprs {
+		if _, ours := e.(scopeTerm); !ours {
+			others++
+		}
+	}
+	if _, soft := st.Clauses[softDeleteKey]; soft {
+		return others > 1
+	}
+	return others > 0
 }
 
 // applyCondition puts the tenant equality into the statement's WHERE, with
@@ -178,44 +288,234 @@ func (f *filter) fillColumn(tx *gorm.DB) {
 // tighter, which leaves the whole `a` branch unscoped. Grouping what the caller
 // wrote first makes the rendering `(a OR b) AND tenant = ?` whatever shape that
 // expression takes.
-func applyCondition(st *gorm.Statement, id string) {
+func applyCondition(st *gorm.Statement, column, id string, requireCondition bool) {
+	written := writtenConditions(st)
+	exprs := make([]clause.Expression, 0, 2)
+	if group := grouped(written); group != nil {
+		exprs = append(exprs, group)
+	}
+	exprs = append(exprs, scopeTerm{
+		column: column, id: id, written: written, requireCondition: requireCondition,
+	})
 	if st.Clauses == nil {
 		st.Clauses = map[string]clause.Clause{}
 	}
-	st.Clauses[whereKey] = clause.Clause{
-		Name:       whereKey,
-		Expression: condition(st, id),
+	c := st.Clauses[whereKey]
+	c.Name = whereKey
+	c.Expression = clause.Where{Exprs: exprs}
+	st.Clauses[whereKey] = c
+}
+
+// writtenConditions is the caller's own expression list: the statement's WHERE
+// with any term this plugin put there taken back out, and whatever was added
+// after the term — a condition chained on after an execution, or one GORM
+// derived during it — kept after the caller's.
+func writtenConditions(st *gorm.Statement) []clause.Expression {
+	where, ok := st.Clauses[whereKey].Expression.(clause.Where)
+	if !ok {
+		return nil
+	}
+	for i, e := range where.Exprs {
+		if term, ours := e.(scopeTerm); ours {
+			restored := make([]clause.Expression, 0, len(term.written)+len(where.Exprs)-i-1)
+			restored = append(restored, term.written...)
+			return append(restored, where.Exprs[i+1:]...)
+		}
+	}
+	return append([]clause.Expression(nil), where.Exprs...)
+}
+
+// releaseCondition takes this plugin's term back out of a statement that is no
+// longer to be filtered, leaving the caller's WHERE as the caller wrote it — or
+// no WHERE at all where the caller wrote none, so that GORM's own refusal of an
+// unconditioned write sees the statement as the caller left it.
+func releaseCondition(st *gorm.Statement) {
+	where, ok := st.Clauses[whereKey].Expression.(clause.Where)
+	if !ok || !carriesTerm(where) {
+		return
+	}
+	written := writtenConditions(st)
+	if len(written) == 0 {
+		delete(st.Clauses, whereKey)
+		return
+	}
+	c := st.Clauses[whereKey]
+	c.Expression = clause.Where{Exprs: written}
+	st.Clauses[whereKey] = c
+}
+
+// carriesTerm reports whether this plugin's term is in the expression list.
+func carriesTerm(where clause.Where) bool {
+	for _, e := range where.Exprs {
+		if _, ours := e.(scopeTerm); ours {
+			return true
+		}
+	}
+	return false
+}
+
+// grouped renders the caller's expression list as one expression that means
+// what GORM's own rendering of that list as a WHERE means, inside parentheses.
+//
+// Two steps of GORM's rendering are repeated here, because rendering the list
+// as anything but a WHERE skips them. A list holding one AND group is that
+// group's contents. And a list whose first expression is a lone OR is rendered
+// with the first expression that is not one moved in front of it, so that
+// `Or(a).Where(b)` reads `b OR a`; without the move the same list reads
+// `a AND b`, which is a different question.
+//
+// The group stays an AND group wherever it can, because GORM reads the
+// conditions of a WHERE back — FirstOrCreate and FirstOrInit copy its
+// equalities onto the value they return — and it looks inside an AND group and
+// nowhere else. An AND group of more than one expression renders its own
+// parentheses. A single expression gets explicit ones, unless it is an
+// equality on a column, which cannot carry an OR and is the one shape those
+// callers read back.
+func grouped(written []clause.Expression) clause.Expression {
+	exprs := append([]clause.Expression(nil), written...)
+	if len(exprs) == 1 {
+		if and, ok := exprs[0].(clause.AndConditions); ok {
+			exprs = append([]clause.Expression(nil), and.Exprs...)
+		}
+	}
+	for i, e := range exprs {
+		if or, ok := e.(clause.OrConditions); !ok || len(or.Exprs) > 1 {
+			if i != 0 {
+				exprs[0], exprs[i] = exprs[i], exprs[0]
+			}
+			break
+		}
+	}
+	switch len(exprs) {
+	case 0:
+		return nil
+	case 1:
+		if eq, ok := exprs[0].(clause.Eq); ok && !rawColumn(eq.Column) {
+			return clause.AndConditions{Exprs: exprs}
+		}
+		return clause.Expr{SQL: "(?)", Vars: []interface{}{exprs[0]}}
+	default:
+		return clause.AndConditions{Exprs: exprs}
 	}
 }
 
-// condition builds the WHERE this plugin imposes.
-func condition(st *gorm.Statement, id string) clause.Where {
-	tenantTerm := clause.Eq{
-		Column: clause.Column{Table: clause.CurrentTable, Name: columnName},
-		Value:  id,
+// rawColumn reports whether a column is written into the SQL as it stands,
+// which is the one way an equality's left side could carry an OR.
+func rawColumn(column interface{}) bool {
+	c, ok := column.(clause.Column)
+	return ok && c.Raw
+}
+
+// fillKey writes the context's tenant into the key of the values an update or a
+// delete derives its identity from, and refuses a key naming another tenant.
+//
+// GORM addresses a write by a struct's primary key, and under the composite key
+// the convention declares, a struct whose tenant half is unwritten names a row
+// of no tenant: the write would reach nothing and report success. Filling that
+// half is the insert's fill carried over to the key. It is done only where some
+// other part of the key is written, because a key that is all zero addresses
+// nothing, and filling its tenant half would turn it into one addressing the
+// whole tenant.
+func fillKey(st *gorm.Statement, field *gormschema.Field, id string, values ...reflect.Value) error {
+	for _, rv := range values {
+		for _, v := range structValues(rv, st.Schema.ModelType) {
+			written, isZero := field.ValueOf(st.Context, v)
+			if !isZero {
+				if s, ok := stringValue(reflect.ValueOf(written)); !ok || s != id {
+					return fmt.Errorf("%w: %s is addressed by a key naming tenant %v",
+						tenant.ErrExplicitTenantMismatch, st.Schema.Name, written)
+				}
+				continue
+			}
+			if !v.CanAddr() || !otherKeyWritten(st, field, v) {
+				continue
+			}
+			if err := field.Set(st.Context, v, id); err != nil {
+				return err
+			}
+		}
 	}
-	written, ok := st.Clauses[whereKey].Expression.(clause.Where)
-	if !ok || len(written.Exprs) == 0 {
-		return clause.Where{Exprs: []clause.Expression{tenantTerm}}
+	return nil
+}
+
+// otherKeyWritten reports whether any primary field besides the tenant's holds
+// a value.
+func otherKeyWritten(st *gorm.Statement, field *gormschema.Field, v reflect.Value) bool {
+	for _, key := range st.Schema.PrimaryFields {
+		if key == field {
+			continue
+		}
+		if _, isZero := key.ValueOf(st.Context, v); !isZero {
+			return true
+		}
 	}
-	// What is grouped is the caller's expression list, not its WHERE clause:
-	// clause.Where writes the keyword itself, and nesting it here would put a
-	// second WHERE inside the parentheses.
-	//
-	// The parentheses are written out rather than left to AndConditions,
-	// because buildExprs flattens a group holding more than one expression into
-	// the surrounding list and drops its parentheses — which is exactly the
-	// case this has to survive. Where AndConditions does add its own, the
-	// result is one redundant pair and no change in meaning.
-	return clause.Where{Exprs: []clause.Expression{
-		clause.Expr{SQL: "(?)", Vars: []interface{}{
-			// AndConditions shares its one field with Where; what
-			// differs is how each renders, and it is the list that
-			// has to be rendered here, not the clause.
-			clause.AndConditions(written),
-		}},
-		tenantTerm,
-	}}
+	return false
+}
+
+// structValues lists the values of the model's type a reflected value holds: the
+// value itself, or each element of a slice or an array, through any pointers.
+func structValues(rv reflect.Value, model reflect.Type) []reflect.Value {
+	rv = indirect(rv)
+	switch rv.Kind() {
+	case reflect.Struct:
+		if rv.Type() == model {
+			return []reflect.Value{rv}
+		}
+	case reflect.Slice, reflect.Array:
+		out := make([]reflect.Value, 0, rv.Len())
+		for i := 0; i < rv.Len(); i++ {
+			if elem := indirect(rv.Index(i)); elem.Kind() == reflect.Struct && elem.Type() == model {
+				out = append(out, elem)
+			}
+		}
+		return out
+	}
+	return nil
+}
+
+// indirect follows pointers and interfaces to the value they hold, returning
+// the zero Value where one of them is nil.
+func indirect(v reflect.Value) reflect.Value {
+	for v.IsValid() && (v.Kind() == reflect.Pointer || v.Kind() == reflect.Interface) {
+		if v.IsNil() {
+			return reflect.Value{}
+		}
+		v = v.Elem()
+	}
+	return v
+}
+
+// makeAddressable replaces a destination handed in by value with a pointer to
+// a copy of it, so that the plugin can write into it.
+//
+// GORM accepts a struct or an array by value and reads the row from it; nothing
+// can be written into such a value, so without the copy the tenant would have
+// nowhere to go. The caller handed over a copy in the first place, and cannot
+// observe the one made here. GORM set the model to the same value when the
+// caller named no other, and it is moved along with the destination so that the
+// two stay one value.
+func makeAddressable(st *gorm.Statement) {
+	rv := st.ReflectValue
+	if !rv.IsValid() || rv.CanAddr() || (rv.Kind() != reflect.Struct && rv.Kind() != reflect.Array) {
+		return
+	}
+	copied := reflect.New(rv.Type())
+	copied.Elem().Set(rv)
+	if st.Model != nil && reflect.TypeOf(st.Model) == rv.Type() {
+		st.Model = copied.Interface()
+	}
+	st.Dest = copied.Interface()
+	st.ReflectValue = copied.Elem()
+}
+
+// samePointer reports whether two values are one pointer. It is how GORM's own
+// comparison of a statement's model with its destination reads for the
+// pointers it matters for, without comparing two values of a type that cannot
+// be compared.
+func samePointer(a, b any) bool {
+	va, vb := reflect.ValueOf(a), reflect.ValueOf(b)
+	return va.Kind() == reflect.Pointer && vb.Kind() == reflect.Pointer &&
+		va.Type() == vb.Type() && va.Pointer() == vb.Pointer()
 }
 
 // fillOne writes the identifier onto one destination, refusing a value the
