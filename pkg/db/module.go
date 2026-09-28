@@ -190,6 +190,17 @@ func (s Spec) prepare(reader config.Reader) (core.Enablement, error) {
 			"taken in at run level has to start: set it to run on %s, or leave %s out of the "+
 			"command tree", s.ModuleName, s.ConfigNamespace, dsnKey, s.Dialect, s.ModuleName)
 	}
+	// A configured timeout is held to the rule check holds the Spec's default
+	// to, for the same reason: a wait bounded by zero or less is a single
+	// attempt, so on a first start every replica but the one holding the
+	// mutex would give up at once — the collision the mutex exists to turn
+	// into a queue.
+	if s.NewMigrationLock != nil && cfg.MigrationLockTimeout <= 0 {
+		return core.Enablement{}, fmt.Errorf("%s: %s.%s is %s, and a replica given no time to wait "+
+			"gives up on the migration mutex at its first attempt, so on a first start every replica "+
+			"but one fails: set it to a positive duration", s.ModuleName, s.ConfigNamespace,
+			MigrationLockTimeoutKey, cfg.MigrationLockTimeout)
+	}
 	return core.Enablement{State: core.StateEnabled}, nil
 }
 

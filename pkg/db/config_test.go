@@ -365,6 +365,31 @@ func TestTheMutexTimeoutDefaultsToTheImplementationValue(t *testing.T) {
 	}
 }
 
+// TestANonPositiveMutexTimeoutFailsTheStartup pins the configured timeout to
+// the rule the Spec's default is held to. A timeout of zero or less makes the
+// wait for the mutex a single attempt, so on a first start every replica but
+// the one that took the mutex gives up at once — the collision the mutex is
+// there to queue. The stance refuses it, naming the key.
+func TestANonPositiveMutexTimeoutFailsTheStartup(t *testing.T) {
+	spec := specWithMutex()
+	for _, timeout := range []string{"0s", "-5s"} {
+		body := `{"db":{"postgres":{"dsn":"x","migration-lock-timeout":"` + timeout + `"}}}`
+		_, err := spec.prepare(readerFor(t, spec, body))
+		if err == nil {
+			t.Errorf("Prepare accepted %s of %s, so a replica that meets the mutex held gives up "+
+				"without waiting", MigrationLockTimeoutKey, timeout)
+			continue
+		}
+		if want := postgresNamespace + "." + MigrationLockTimeoutKey; !strings.Contains(err.Error(), want) {
+			t.Errorf("the refusal of %s does not name %s: %v", timeout, want, err)
+		}
+	}
+	if _, err := spec.prepare(readerFor(t, spec,
+		`{"db":{"postgres":{"dsn":"x","migration-lock-timeout":"1s"}}}`)); err != nil {
+		t.Errorf("Prepare refused a positive %s: %v", MigrationLockTimeoutKey, err)
+	}
+}
+
 // TestRetiredKeysReadBackAsAList pins that the retired keys are a list rather
 // than one string. Read as a single value, a host rotating a second time would
 // silently lose the ability to decrypt what the first key wrote.

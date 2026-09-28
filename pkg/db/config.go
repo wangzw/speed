@@ -70,7 +70,8 @@ type lockingConfig struct {
 	Config
 	// MigrationLockTimeout bounds the wait for the migration mutex. Past it
 	// the startup fails with ErrMigrationLockTimeout rather than waiting on a
-	// replica that may never finish.
+	// replica that may never finish. It has to be positive, and the stance
+	// refuses one that is not: a bound of zero is no wait at all.
 	MigrationLockTimeout time.Duration `config:"migration-lock-timeout"`
 }
 
@@ -166,7 +167,7 @@ func (s Spec) schema() config.Schema {
 		mount = config.Mount{Value: &proto}
 		items[MigrationLockTimeoutKey] = config.Item{
 			Description: "how long to wait for another replica to finish applying migrations " +
-				"before giving up, written with a unit, such as 5m",
+				"before giving up, a positive duration written with a unit, such as 5m",
 		}
 	}
 	return config.Schema{
