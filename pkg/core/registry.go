@@ -58,6 +58,10 @@ type Registry struct {
 	declaringOnly map[string]Declaration
 
 	running bool
+	// constructing records that this drive has begun constructing. Until it
+	// has, no module's product exists, and a lookup that finds none is not
+	// a matter of construction order.
+	constructing bool
 }
 
 // registration is a descriptor plus where it was registered from. The other

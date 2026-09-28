@@ -46,7 +46,7 @@ func (r *Registry) Resolve(t Token) (any, error) {
 	case 0:
 		running, declaringOnly, left := r.splitDeclarersLocked(declarers)
 		return nil, missingProviderError(ct, running, declaringOnly, left,
-			r.exclusiveAmongLocked(left, ct), r.enablement, "", "")
+			r.exclusiveAmongLocked(left, ct), r.enablement, "", "", r.nothingBuiltLocked())
 	default:
 		return nil, fmt.Errorf("%w: capability %s is delivered by %s, and a single-valued "+
 			"lookup cannot choose between them. Take them up together with ResolveAll, or "+
@@ -216,6 +216,30 @@ func (r *Registry) AllResourcesInForce(name string) bool {
 	r.mu.RLock()
 	defer r.mu.RUnlock()
 	return r.declaringOnly[name].AllResources
+}
+
+// nothingBuiltLocked says why no module's product exists at the moment of a
+// lookup, or returns "" once construction has begun.
+//
+// A lookup made before construction finds every declarer unconstructed, and
+// the order of construction has nothing to do with it: Requires orders
+// construction and none is under way. Three moments come to this, and each has
+// a fix of its own. The caller holds the lock.
+func (r *Registry) nothingBuiltLocked() string {
+	switch {
+	case r.constructing:
+		return ""
+	case !r.running:
+		return "no drive has started, so no module's product exists yet: products are " +
+			"constructed in New, during a drive"
+	case r.enablement == nil:
+		return "the lookup is made in Prepare, before any module's product is constructed: " +
+			"only a supplied product can be taken up there, so take this one up in New or " +
+			"later, where declaring the capability in Requires orders its provider first"
+	default:
+		return "this drive constructs nothing, since it stops at StagePrepare: a command that " +
+			"takes the capability up drives to StageNew or deeper"
+	}
 }
 
 // splitDeclarersLocked divides the modules declaring a capability by what this

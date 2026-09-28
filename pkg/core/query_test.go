@@ -1,6 +1,7 @@
 package core
 
 import (
+	"context"
 	"errors"
 	"slices"
 	"strings"
@@ -74,11 +75,28 @@ func TestResolveDoesNotFilterByRequires(t *testing.T) {
 
 // TestResolveNamesLaterConstructedProvider separates "constructed later" from
 // "nobody delivers it": the fixing actions differ.
+//
+// The case is a real one: construction has begun, and the provider sorts after
+// the module looking it up, which declared no requirement that would order it
+// first.
 func TestResolveNamesLaterConstructedProvider(t *testing.T) {
 	reg := New()
-	seed(t, reg, Module{Name: "later", Provides: provides((*cacheCap)(nil))}, nil)
-
-	_, err := reg.Resolve((*cacheCap)(nil))
+	var err error
+	reg.Register(Module{
+		Name: "early",
+		New: func(_ context.Context, r *Registry) (any, error) {
+			_, err = r.Resolve((*cacheCap)(nil))
+			return nil, nil
+		},
+	})
+	reg.Register(Module{
+		Name:     "later",
+		Provides: provides((*cacheCap)(nil)),
+		New:      func(context.Context, *Registry) (any, error) { return &product{id: "later"}, nil },
+	})
+	if drove := reg.Drive(t.Context(), Drive{Depth: StageNew, Participants: []string{"early", "later"}}); drove != nil {
+		t.Fatalf("the drive failed: %v", drove)
+	}
 	if !errors.Is(err, ErrMissingProvider) {
 		t.Fatalf("Resolve returned %v, want ErrMissingProvider", err)
 	}
@@ -95,6 +113,86 @@ func TestResolveNamesLaterConstructedProvider(t *testing.T) {
 	}
 	if strings.Contains(absent.Error(), "Requires") {
 		t.Errorf("the no-declarer message %q reads like the constructed-later one", absent)
+	}
+}
+
+// TestResolveBeforeAnyProductExistsSaysSo pins the lookups that no ordering
+// can satisfy, because nothing has been or will be constructed when they are
+// made: before the drive, in Prepare, and in the action of a drive that stops
+// at StagePrepare. Telling those callers to declare the capability in Requires
+// sends them after a fix that changes nothing, since Requires orders
+// construction and none is under way.
+func TestResolveBeforeAnyProductExistsSaysSo(t *testing.T) {
+	provider := Module{
+		Name:     "provider",
+		Provides: provides((*cacheCap)(nil)),
+		New:      func(context.Context, *Registry) (any, error) { return &product{id: "p"}, nil },
+	}
+	cases := map[string]struct {
+		lookup func(t *testing.T) error
+		says   string
+	}{
+		"before the drive": {
+			lookup: func(t *testing.T) error {
+				reg := New()
+				reg.Register(provider)
+				_, err := reg.Resolve((*cacheCap)(nil))
+				return err
+			},
+			says: "no drive has started",
+		},
+		"in Prepare": {
+			lookup: func(t *testing.T) error {
+				reg := New()
+				reg.Register(provider)
+				var err error
+				reg.Register(Module{
+					Name: "early",
+					Prepare: func(_ context.Context, r *Registry) (Enablement, error) {
+						_, err = r.Resolve((*cacheCap)(nil))
+						return Enablement{}, nil
+					},
+				})
+				if drove := reg.Drive(t.Context(), Drive{Depth: StageNew, Participants: []string{"early", "provider"}}); drove != nil {
+					t.Fatalf("the drive failed: %v", drove)
+				}
+				return err
+			},
+			says: "Prepare",
+		},
+		"in the action of a drive that constructs nothing": {
+			lookup: func(t *testing.T) error {
+				reg := New()
+				reg.Register(provider)
+				var err error
+				if drove := reg.Drive(t.Context(), Drive{
+					Depth:        StagePrepare,
+					Participants: []string{"provider"},
+					Action: func(_ context.Context, r *Registry) error {
+						_, err = r.Resolve((*cacheCap)(nil))
+						return nil
+					},
+				}); drove != nil {
+					t.Fatalf("the drive failed: %v", drove)
+				}
+				return err
+			},
+			says: "StagePrepare",
+		},
+	}
+	for name, c := range cases {
+		t.Run(name, func(t *testing.T) {
+			err := c.lookup(t)
+			if !errors.Is(err, ErrMissingProvider) {
+				t.Fatalf("Resolve returned %v, want ErrMissingProvider", err)
+			}
+			if !strings.Contains(err.Error(), `"provider"`) || !strings.Contains(err.Error(), c.says) {
+				t.Errorf("error %q does not name the provider and say %q", err, c.says)
+			}
+			if strings.Contains(err.Error(), "constructed later") {
+				t.Errorf("error %q blames the construction order, and nothing is being constructed", err)
+			}
+		})
 	}
 }
 

@@ -202,6 +202,9 @@ func (r *Registry) advance(ctx context.Context, d Drive) error {
 		return err
 	}
 
+	r.mu.Lock()
+	r.constructing = true
+	r.mu.Unlock()
 	for _, name := range order {
 		if err := r.construct(ctx, moduleByName(enabled, name)); err != nil {
 			return err

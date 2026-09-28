@@ -148,7 +148,7 @@ func planConstruction(enabled, participants, declarationsOnly, outside []Module,
 				notIncluded := declarersOf(outside, ct)
 				return nil, missingProviderError(ct, declarersOf(participants, ct),
 					declarersOf(declarationsOnly, ct), notIncluded,
-					exclusiveAmong(outside, ct), final, name, sites[name])
+					exclusiveAmong(outside, ct), final, name, sites[name], "")
 			}
 			for _, p := range ps {
 				addEdge(p, name)
@@ -262,7 +262,13 @@ func cycleError(nodes, ordered []string, edges map[string]map[string]bool) error
 // requiredBy is the module whose Requires went unmet, and site the package that
 // registered it. Both are empty when the registry does not know them, which is
 // the Resolve path: a lookup does not say who is making it.
-func missingProviderError(ct reflect.Type, declarers, declarationsOnly, notIncluded, exclusive []string, final map[string]Enablement, requiredBy, site string) error {
+//
+// nothingBuilt is set when the lookup is made while no module's product exists
+// and says why: then an enabled declarer is not constructed later than the
+// caller, it is not constructed at all yet, and ordering it by Requires cannot
+// help. It is empty on the planning path, where every declarer this command
+// runs and that has no product is one resolution disabled.
+func missingProviderError(ct reflect.Type, declarers, declarationsOnly, notIncluded, exclusive []string, final map[string]Enablement, requiredBy, site, nothingBuilt string) error {
 	if len(declarers) == 0 && len(declarationsOnly) == 0 && len(notIncluded) == 0 {
 		return errorText{
 			wrapped: ErrMissingProvider,
@@ -289,7 +295,10 @@ func missingProviderError(ct reflect.Type, declarers, declarationsOnly, notInclu
 	if len(disabled) > 0 {
 		fmt.Fprintf(&b, "; %s", strings.Join(disabled, "; "))
 	}
-	if len(later) > 0 {
+	switch {
+	case len(later) > 0 && nothingBuilt != "":
+		fmt.Fprintf(&b, "; %s declares it, and %s", strings.Join(quoteAll(later), " and "), nothingBuilt)
+	case len(later) > 0:
 		fmt.Fprintf(&b, "; %s declares it but is constructed later, so declare the capability "+
 			"in Requires to order it first, or take it up in Init instead",
 			strings.Join(quoteAll(later), " and "))
