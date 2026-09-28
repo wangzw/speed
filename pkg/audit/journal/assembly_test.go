@@ -410,6 +410,144 @@ func TestAConnectionOpenedOntoTheDeliveredDatabaseRecordsOnItsOwnSession(t *test
 	}
 }
 
+// trailEntry is a host's read-only model over the audit table for one tenant's
+// trail: it embeds the tenant convention, so the tenant filter scopes every read
+// through it, and it reads the columns the table's contract promises.
+type trailEntry struct {
+	tenant.Model
+	ID     uint64 `gorm:"column:id"`
+	Source string `gorm:"column:source"`
+	Action string `gorm:"column:action"`
+}
+
+func (trailEntry) TableName() string { return tableName }
+
+// anyTenantsEntry reads the audit table across tenants, with a tenant field that
+// takes a NULL as the absence it is.
+type anyTenantsEntry struct {
+	ID       uint64  `gorm:"column:id"`
+	TenantID *string `gorm:"column:tenant_id"`
+	Action   string  `gorm:"column:action"`
+}
+
+func (anyTenantsEntry) TableName() string { return tableName }
+
+// A host reads one tenant's trail through the tenant filter, with a read-only
+// model that embeds the convention: it reads that tenant's rows and no row
+// without a tenant, a disabled tenant's trail is read after entering it with
+// EnterRegistered, and a read across tenants through a type whose tenant field
+// is nullable tells the rows with no tenant from the rest.
+//
+// This is the read the table's contract is for: the tenant column is tenant_id,
+// holding the identifier's text or NULL, and the id key is unique over the
+// table. The same read through the embedding type across tenants gives the rows
+// without a tenant an empty identifier and no error, which is why a read across
+// tenants takes a type of its own.
+func TestATenantsTrailIsReadThroughTheTenantFilter(t *testing.T) {
+	assembled(t, []core.Module{catalog.Module()}, func(ctx context.Context, reg *core.Registry) error {
+		roster, err := core.Resolve[tenant.Catalog](reg)
+		if err != nil {
+			t.Errorf("resolving the tenant roster: %v", err)
+			return errCaseFailed
+		}
+		recorder, err := core.Resolve[audit.Audit](reg)
+		if err != nil {
+			t.Errorf("resolving the audit capability: %v", err)
+			return errCaseFailed
+		}
+		for _, registered := range []tenant.Tenant{
+			{ID: "t_acme", Alias: "acme", Status: tenant.StatusActive},
+			{ID: "t_globex", Alias: "globex", Status: tenant.StatusActive},
+		} {
+			if putErr := roster.Put(ctx, registered); putErr != nil {
+				t.Errorf("registering %s: %v", registered.ID, putErr)
+				return errCaseFailed
+			}
+		}
+		for _, entry := range []struct {
+			tenant tenant.ID
+			action string
+		}{{"t_acme", "acme-export"}, {"t_globex", "globex-export"}, {"", "system-sweep"}} {
+			at := ctx
+			if entry.tenant != "" {
+				if at, err = roster.Enter(ctx, entry.tenant); err != nil {
+					t.Errorf("entering %s: %v", entry.tenant, err)
+					return errCaseFailed
+				}
+			}
+			if recordErr := recorder.Record(at, audit.Entry{Action: entry.action}); recordErr != nil {
+				t.Errorf("recording %s: %v", entry.action, recordErr)
+				return errCaseFailed
+			}
+		}
+		if statusErr := roster.SetStatus(ctx, "t_globex", tenant.StatusDisabled); statusErr != nil {
+			t.Errorf("disabling t_globex: %v", statusErr)
+			return errCaseFailed
+		}
+		database, err := core.Resolve[db.Database](reg)
+		if err != nil {
+			t.Errorf("resolving the database capability: %v", err)
+			return errCaseFailed
+		}
+		handle := database.DB()
+
+		trailOf := func(at context.Context) []string {
+			var entries []trailEntry
+			if readErr := handle.WithContext(at).Where("source = ?", string(audit.SourceSeam)).
+				Order("id").Find(&entries).Error; readErr != nil {
+				t.Errorf("reading a tenant's trail: %v", readErr)
+			}
+			actions := make([]string, 0, len(entries))
+			for _, e := range entries {
+				actions = append(actions, string(e.TenantID)+":"+e.Action)
+			}
+			return actions
+		}
+		acme, err := roster.Enter(ctx, "t_acme")
+		if err != nil {
+			t.Errorf("entering t_acme: %v", err)
+			return errCaseFailed
+		}
+		if got := trailOf(acme); len(got) != 1 || got[0] != "t_acme:acme-export" {
+			t.Errorf("t_acme's trail reads %v, want its own entry alone", got)
+		}
+		globex, err := roster.EnterRegistered(ctx, "t_globex")
+		if err != nil {
+			t.Errorf("entering the disabled t_globex for its trail: %v", err)
+			return errCaseFailed
+		}
+		if got := trailOf(globex); len(got) != 1 || got[0] != "t_globex:globex-export" {
+			t.Errorf("the disabled t_globex's trail reads %v, want its own entry alone", got)
+		}
+
+		crossing := tenant.CrossTenant(ctx)
+		var every []anyTenantsEntry
+		if err := handle.WithContext(crossing).Where("source = ?", string(audit.SourceSeam)).
+			Order("id").Find(&every).Error; err != nil {
+			t.Errorf("reading the trail across tenants: %v", err)
+			return errCaseFailed
+		}
+		if len(every) != 3 || every[2].Action != "system-sweep" || every[2].TenantID != nil {
+			read := make([]string, 0, len(every))
+			for _, e := range every {
+				read = append(read, text(e.TenantID)+":"+e.Action)
+			}
+			t.Errorf("the trail across tenants reads %v, want three entries, the last with a NULL tenant", read)
+		}
+		var embedded []trailEntry
+		if err := handle.WithContext(crossing).Where("source = ?", string(audit.SourceSeam)).
+			Order("id").Find(&embedded).Error; err != nil {
+			t.Errorf("reading the trail across tenants through the embedding type gave %v, want the rows", err)
+			return errCaseFailed
+		}
+		if len(embedded) != 3 || embedded[2].TenantID != "" {
+			t.Errorf("the trail across tenants through the embedding type reads %+v, want the entry with no "+
+				"tenant read with an empty identifier", embedded)
+		}
+		return nil
+	})
+}
+
 // A statement issued across tenants from a context that belonged to one has no
 // tenant in its row, and neither has an entry handed to the seam there.
 //
