@@ -7,6 +7,7 @@ import (
 	nethttp "net/http"
 	"net/http/httptest"
 	"slices"
+	"strconv"
 	"strings"
 	"sync"
 	"testing"
@@ -330,6 +331,48 @@ func TestTheLayerKeepsTheFirstStatusWritten(t *testing.T) {
 	if got := attributeOf(t, point.Attributes, "http.response.status_code"); got != "200" {
 		t.Errorf("the status attribute is %q, want the first code written, which is the one the caller "+
 			"received", got)
+	}
+}
+
+// TestTheLayerSkipsAnInformationalStatus pins the one kind of code a handler may
+// write before its final one. An informational response — 103 Early Hints, say —
+// is sent ahead of the response and does not stop the handler from writing the
+// final status, so it is not what the caller was answered with. The final code
+// is the one recorded, whether the handler wrote it explicitly or only wrote a
+// body afterwards.
+//
+// The case runs a real server and reads the code the client received: the
+// standard library's own test recorder keeps the first code it is given, 1xx
+// included, and would agree with a recorder that got this wrong.
+func TestTheLayerSkipsAnInformationalStatus(t *testing.T) {
+	for name, final := range map[string]func(nethttp.ResponseWriter){
+		"an explicit final status": func(w nethttp.ResponseWriter) { w.WriteHeader(nethttp.StatusCreated) },
+		"a body after the hints":   func(w nethttp.ResponseWriter) { _, _ = w.Write([]byte("body")) },
+	} {
+		t.Run(name, func(t *testing.T) {
+			p, _, reader := layerUnderTest(t)
+			server := httptest.NewServer(p.instrument("api")(nethttp.HandlerFunc(
+				func(w nethttp.ResponseWriter, _ *nethttp.Request) {
+					w.WriteHeader(nethttp.StatusEarlyHints)
+					final(w)
+				})))
+			defer server.Close()
+
+			resp, err := server.Client().Get(server.URL + "/x")
+			if err != nil {
+				t.Fatalf("the request failed: %v", err)
+			}
+			_ = resp.Body.Close()
+			if resp.StatusCode < 200 {
+				t.Fatalf("the client was answered %d, want a final status", resp.StatusCode)
+			}
+
+			point := durationPoint(t, reader)
+			want := strconv.Itoa(resp.StatusCode)
+			if got := attributeOf(t, point.Attributes, "http.response.status_code"); got != want {
+				t.Errorf("the status attribute is %q, want the final code %s the caller was answered with", got, want)
+			}
+		})
 	}
 }
 

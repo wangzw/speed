@@ -189,10 +189,12 @@ func (p *providers) instrument(endpoint string) func(nethttp.Handler) nethttp.Ha
 // recorder remembers what the handler answered and keeps the writer's optional
 // interfaces reachable.
 //
-// The status it keeps is the first code the handler wrote, not the last: a
-// second WriteHeader is ignored by the server, which answers with the first, so
-// a recorder that took the last one would report a status no caller ever saw. A
-// body written without a header is the implicit 200 the status starts from.
+// The status it keeps is the first final code the handler wrote, not the last:
+// a second WriteHeader is ignored by the server, which answers with the first,
+// so a recorder that took the last one would report a status no caller ever
+// saw. An informational code is passed on and not kept, since the final status
+// still follows it. A body written without a header is the implicit 200 the
+// status starts from.
 //
 // The two optional interfaces net/http has a name for — flushing and hijacking
 // — are forwarded explicitly rather than left to Unwrap. Unwrap is what
@@ -209,13 +211,26 @@ type recorder struct {
 	wroteHeader bool
 }
 
-// WriteHeader records the first code and passes it on.
+// WriteHeader records the first final code and passes every code on.
+//
+// An informational code is not a final one. net/http sends it ahead of the
+// response and lets the handler go on to write the real status, so a 103 Early
+// Hints followed by a 200 answered the caller with the 200; keeping the 103 as
+// the first code would report a status that ends no request. 101 Switching
+// Protocols is the exception the server makes too: it is the last thing written
+// on the connection before it changes hands, so it is the final code.
 func (r *recorder) WriteHeader(code int) {
-	if !r.wroteHeader {
+	if !r.wroteHeader && !informational(code) {
 		r.wroteHeader = true
 		r.status = code
 	}
 	r.ResponseWriter.WriteHeader(code)
+}
+
+// informational reports whether a code is sent ahead of the final response
+// rather than as it.
+func informational(code int) bool {
+	return code >= 100 && code < 200 && code != nethttp.StatusSwitchingProtocols
 }
 
 // Write passes the body on, counting it as the implicit 200 the status starts

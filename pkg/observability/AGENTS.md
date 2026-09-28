@@ -103,11 +103,13 @@ must not cross, and how to run it.
   methods into one value. Narrowing the cardinality on one side only moves it to
   the other: a backend indexes a span name just as it indexes a dimension.
 - **The recorder is the only place the response is observed, so it owes two
-  things.** It keeps the *first* status the handler wrote, because the server
-  ignores a second `WriteHeader` and answers with the first — reporting the last
-  would report a code no caller saw. And it forwards flushing and hijacking,
-  because a handler type-asserts the writer it was given, which is this type,
-  and never reaches the writer underneath.
+  things.** It keeps the *first* final status the handler wrote, because the
+  server ignores a second `WriteHeader` and answers with the first — reporting
+  the last would report a code no caller saw. An informational code other than
+  101 is not a final one: the server sends it ahead of the response and the
+  handler still writes the real status afterwards. And it forwards flushing and
+  hijacking, because a handler type-asserts the writer it was given, which is
+  this type, and never reaches the writer underneath.
 - **A handler that abandons its connection is recorded as a defect.** A handler
   panicking with `net/http`'s `ErrAbortHandler` asks for its connection to be
   dropped; the entry module's fallback lets that value past without answering or
