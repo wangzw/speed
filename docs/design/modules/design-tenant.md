@@ -238,6 +238,8 @@ func CrossTenant(ctx context.Context) context.Context
 
 **读语句在 GORM 里分两条处理链，两条都挂。** `Find`、`First`、`Count`、`Pluck` 走查询链，`Scan`、`Row`、`Rows` 走行链；只挂查询链，后一类读在没有租户的上下文里读出全部租户的行而不报错，报表与投影到另一种结构体的写法恰好都用它。
 
+**被拒绝的 `Row` 经它交回的那一行报出拒绝。** `Row` 没有自己的错误返回值，只交回 GORM 行链那一步产出的行，而语句已经失败时那一步不产出任何行，调用方的 `Scan` 会对一个空指针取值而 panic。被拒绝的 `Row` 因而不把拒绝记在语句上，而是与被拒绝的子查询一样渲染成一个绑定即失败的取值，替换它原先带着的 SQL：GORM 照常执行它，没有任何一张表被读到，交回的那一行在 `Scan` 与 `Err` 上以同一个哨兵失败，点名模型。`Rows` 与 `Scan` 有错误返回值，照查询链的方式拒绝。
+
 **按关联写的联接，被联接那一侧同样加租户条件。** `Joins("Customer")` 读的是被联接模型的行，复合主键又允许两个租户复用同一个标识，只给主表加条件会把别的租户同标识的那一行联接进来。条件写进每一层联接的 ON 子句，逐层按那一层的模型判定：嵌套联接途经的全局表不加条件；一个全局模型经关联联接到受约束模型，同样要求上下文里有租户。以 SQL 文本写出的联接不在此列，见非保证。
 
 **子查询的拒绝随外层语句报出。** GORM 在渲染外层语句时执行子查询，并丢弃子查询自己的错误——一条建在没有租户的句柄上的子查询因而会渲染成空，在一种方言上读成空集，在另一种方言上报一个与成因无关的语法错误。被拒绝的子查询于是渲染成一个绑定即失败的取值，外层语句执行时以同一个哨兵失败。
@@ -563,7 +565,7 @@ flowchart TD
 
 ### 语句期的失败
 
-第四档的失败发生在语句构造处，因而一条落在其中的语句不会到达数据库。GORM 把回调返回的错误记在语句上，随后的 `Error` 读出它——**调用方按 `errors.Is` 判别即可，不需要另加一层包装**。
+第四档的失败发生在语句构造处，因而一条落在其中的语句不会到达数据库。GORM 把回调返回的错误记在语句上，随后的 `Error` 读出它——**调用方按 `errors.Is` 判别即可，不需要另加一层包装**。`Row` 没有 `Error` 可读，它的拒绝经交回的那一行的 `Scan` 与 `Err` 报出，判别方式相同（见插件在语句上的作用点）。
 
 **语句期只用哨兵区分本模块判得出的那些，不区分一个租户是否存在、是否停用**——插件读不到名册，那是解析层的判定。理由与状态码那一侧并不相反：这里的读者是写代码的人，哨兵要说得出修复动作，而"这个标识不在名册上"对一条语句的修复动作与"没有标识"并无不同，都是调用点该把租户弄对。这一档也不构成预言机：发起语句的是本进程自己的代码，不是不受信的输入。
 
@@ -654,7 +656,7 @@ flowchart TD
 | 请求期的解析、日志字段绑定与收口 | 已实现 | `pkg/tenant/resolve/resolve.go` `admit`、`refuse`、`middlewareFor` |
 | 受约束模型的约定与识别 | 已实现 | `pkg/tenant/model.go` `Model`；`pkg/tenant/catalog/plugin.go` `conventionFieldOf`、`embedsConvention` |
 | 隔离插件的三处作用点、四档判定与显式租户列的核对 | 已实现 | `pkg/tenant/catalog/plugin.go` `Initialize`、`scopeRead`、`scopeDelete`、`scopeUpdate`、`applyCondition`、`scopeTerm`、`grouped`、`fillKey`、`fillColumn`、`writeRows`、`assignedValues`、`upsertValues`、`keyReaches`、`targetReaches` |
-| 行链上的读、关联联接的条件与子查询的拒绝 | 已实现 | `pkg/tenant/catalog/plugin.go` `Initialize`、`scopedJoins`、`applyJoins`、`joinTerm`、`renderRefusal` |
+| 行链上的读、`Row` 经交回的行报出拒绝、关联联接的条件与子查询的拒绝 | 已实现 | `pkg/tenant/catalog/plugin.go` `Initialize`、`scopeRow`、`refuseRead`、`scopedJoins`、`applyJoins`、`joinTerm`、`renderRefusal` |
 | 跨租户的上下文标记 | 已实现 | `pkg/tenant/scope.go` `CrossTenant`；`internal/tenantctx/tenantctx.go` `WithCrossTenant` |
 | 不经请求面的路径经名册进入单个租户 | 已实现 | `pkg/tenant/catalog/roster.go` `Enter`；`internal/tenantctx/tenantctx.go` `Bind`、`LogField` |
 | 取值域之外的标识拒绝被绑定 | 已实现 | `pkg/tenant/tenant.go` `ID.Value` |

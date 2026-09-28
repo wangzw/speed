@@ -2,7 +2,9 @@ package catalog
 
 import (
 	"context"
+	"database/sql"
 	"errors"
+	"strings"
 	"testing"
 
 	"gorm.io/gorm"
@@ -72,6 +74,45 @@ func TestRowAndRowsAreScopedToTheContext(t *testing.T) {
 	}
 	if len(ids) != 1 || ids[0] != "a" {
 		t.Fatalf("scoped Rows returned %v, want just acme's row", ids)
+	}
+}
+
+// Row has no error of its own to report through: the row it hands back is the
+// one place a refusal can reach its caller. A refused Row hands back a row whose
+// Scan fails with the refusal, rather than no row at all for the caller's Scan
+// to dereference.
+func TestARowWithoutATenantReportsTheRefusalThroughItsScan(t *testing.T) {
+	handle := open(t)
+	seed(t, handle)
+	requireRowRefusal(t, handle)
+}
+
+func TestARowWithoutATenantReportsTheRefusalThroughItsScanOnPostgres(t *testing.T) {
+	handle := openFilteredPostgres(t)
+	seed(t, handle)
+	requireRowRefusal(t, handle)
+}
+
+func requireRowRefusal(t *testing.T, handle *gorm.DB) {
+	t.Helper()
+	for name, row := range map[string]func(tx *gorm.DB) *sql.Row{
+		"a read of the model": func(tx *gorm.DB) *sql.Row {
+			return tx.Model(&order{}).Select("count(*)").Row()
+		},
+		"statement text written over the model": func(tx *gorm.DB) *sql.Row {
+			return tx.Model(&order{}).Raw("SELECT count(*) FROM orders").Row()
+		},
+	} {
+		t.Run(name, func(t *testing.T) {
+			n := -1
+			err := noPanic(t, func() error { return row(handle.WithContext(context.Background())).Scan(&n) })
+			if !errors.Is(err, tenant.ErrNoTenantInContext) {
+				t.Fatalf("a Row with no tenant gave %v (count %d), want ErrNoTenantInContext", err, n)
+			}
+			if !strings.Contains(err.Error(), "order") {
+				t.Fatalf("the refusal %q does not name the model", err)
+			}
+		})
 	}
 }
 

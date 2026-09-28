@@ -193,8 +193,9 @@ refusal on the PostgreSQL driver as well: those take a database on the shared
 container through `pkg/internal/pgpool/pgtest`, which skips them on a machine
 without docker and fails them under CI. `pkg/tenant/catalog/plugin_test.go` is where the filter's four
 answers are pinned; `pkg/tenant/catalog/reach_test.go` is where the statements
-it has to reach beyond the query processor are — a scan, an association join,
-a subquery rendered into another statement; `pkg/tenant/catalog/targets_test.go`
+it has to reach beyond the query processor are — a scan, a Row whose refusal
+comes back through the row it hands back, an association join, a subquery
+rendered into another statement; `pkg/tenant/catalog/targets_test.go`
 is where an assignment's target is read the way each database reads it, on both
 dialects; `pkg/tenant/catalog/create_test.go` is where a registration that must
 not overwrite is refused against the table rather than the snapshot, and where

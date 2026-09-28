@@ -80,7 +80,7 @@ func (f *filter) Initialize(handle *gorm.DB) error {
 			return h.Callback().Query().Before("gorm:query").Register(callbackName, f.scopeRead)
 		},
 		func(h *gorm.DB) error {
-			return h.Callback().Row().Before("gorm:row").Register(callbackName, f.scopeRead)
+			return h.Callback().Row().Before("gorm:row").Register(callbackName, f.scopeRow)
 		},
 		func(h *gorm.DB) error {
 			return h.Callback().Update().Before("gorm:update").Register(callbackName, f.scopeUpdate)
@@ -112,7 +112,8 @@ const (
 	// column is still judged.
 	crossing
 	// refused is a scoped statement whose context carries no tenant. The
-	// refusal is already on the statement.
+	// refusal comes back beside it, for the caller to put on the statement in
+	// the form that statement can report.
 	refused
 	// tenanted is a scoped statement whose context carries a tenant.
 	tenanted
@@ -120,7 +121,7 @@ const (
 
 // scopeOf settles whether this statement is this plugin's business, and
 // returns the convention's field and the tenant the statement belongs to when
-// it has one.
+// it has one, or the refusal when it has none.
 //
 // The answers are ordered, and the order is load-bearing. Recognising the model
 // comes first, so a statement that is not scoped is left alone whatever its
@@ -136,48 +137,50 @@ const (
 // A read of a model that is not scoped is still scoped when one of its
 // association joins reaches a model that is: it reads that model's rows. The
 // field is nil for such a read, which carries no condition of its own.
-func scopeOf(tx *gorm.DB, st *gorm.Statement, joins []scopedJoin) (*gormschema.Field, string, scope) {
+func scopeOf(st *gorm.Statement, joins []scopedJoin) (*gormschema.Field, string, scope, error) {
 	field := conventionFieldOf(st.Schema)
 	if field == nil && len(joins) == 0 {
-		return nil, "", unscoped
+		return nil, "", unscoped, nil
 	}
 	if tenantctx.CrossTenant(st.Context) {
 		releaseCondition(st)
 		releaseJoins(st, joins)
-		return field, "", crossing
+		return field, "", crossing, nil
 	}
 	id, ok := tenantctx.ID(st.Context)
 	if !ok {
 		releaseCondition(st)
 		releaseJoins(st, joins)
-		// The return value is the statement's accumulated error, which the
-		// statement already holds; the caller reads it back through Error.
-		_ = tx.AddError(noTenant(st, joins))
-		return field, "", refused
+		return field, "", refused, noTenant(st, joins)
 	}
-	return field, id, tenanted
+	return field, id, tenanted, nil
 }
 
-// scopeRead adds the tenant condition to a read, and to every association join
-// of it that reaches a scoped model.
-//
-// A read that is refused while being rendered rather than run is a subquery:
-// GORM renders one into the statement it is part of and drops its error on the
-// way, so the refusal would reach nobody and the subquery would render as
-// nothing — an empty set on one dialect, a syntax error unrelated to the cause
-// on the other. The refused subquery renders instead as a select of one value
-// whose binding fails with the refusal, which is what carries it into the
-// statement that runs.
-func (f *filter) scopeRead(tx *gorm.DB) {
+// scopeRead adds the tenant condition to a read the query processor runs, and
+// to every association join of it that reaches a scoped model.
+func (f *filter) scopeRead(tx *gorm.DB) { f.read(tx, false) }
+
+// scopeRow is scopeRead for the row processor, which Row, Rows and Scan run.
+func (f *filter) scopeRow(tx *gorm.DB) { f.read(tx, handsBackOneRow(tx)) }
+
+// handsBackOneRow reports whether a statement on the row processor is a Row.
+// GORM's own row step tells Row from Rows and Scan by the setting they leave on
+// the statement: false for the one, true for the others.
+func handsBackOneRow(tx *gorm.DB) bool {
+	setting, ok := tx.Get("rows")
+	many, isBool := setting.(bool)
+	return ok && isBool && !many
+}
+
+// read scopes one read, or refuses it in the form it can report.
+func (f *filter) read(tx *gorm.DB, oneRow bool) {
 	st := tx.Statement
 	joins := scopedJoins(st)
-	field, id, s := scopeOf(tx, st, joins)
+	field, id, s, refusal := scopeOf(st, joins)
 	switch s {
 	case tenanted:
 	case refused:
-		if tx.DryRun && st.SQL.Len() == 0 {
-			renderRefusal(st, tx.Error)
-		}
+		refuseRead(tx, refusal, oneRow)
 		return
 	default:
 		return
@@ -186,6 +189,41 @@ func (f *filter) scopeRead(tx *gorm.DB) {
 		applyCondition(st, field.DBName, id, false)
 	}
 	applyJoins(st, joins, id)
+}
+
+// refuseRead fails a read that has no tenant to be scoped to.
+//
+// Two reads cannot report a refusal put on the statement, and both are
+// rendered instead as a select of one value whose binding fails with the
+// refusal, so that the refusal travels with the statement that does run.
+//
+// A read refused while being rendered rather than run is a subquery: GORM
+// renders one into the statement it is part of and drops its error on the way,
+// so the refusal would reach nobody and the subquery would render as nothing —
+// an empty set on one dialect, a syntax error unrelated to the cause on the
+// other.
+//
+// A Row has no error of its own to return: it hands back the row GORM's row
+// step produced, and that step produces none once the statement has failed, so
+// the caller's Scan would dereference nil. A refused Row is rendered in place of
+// whatever SQL it carried, GORM's step runs it, nothing reaches a table, and
+// the row handed back reports the refusal through its Scan and its Err. A Row
+// that has already failed for some other reason is left to GORM's own answer.
+func refuseRead(tx *gorm.DB, refusal error, oneRow bool) {
+	st := tx.Statement
+	switch {
+	case oneRow && tx.Error == nil && !tx.DryRun:
+		st.SQL.Reset()
+		st.Vars = nil
+		renderRefusal(st, refusal)
+	case tx.DryRun && st.SQL.Len() == 0:
+		// The return value is the statement's accumulated error, which the
+		// statement now holds; the subquery carries all of it.
+		_ = tx.AddError(refusal)
+		renderRefusal(st, tx.Error)
+	default:
+		_ = tx.AddError(refusal)
+	}
 }
 
 // renderRefusal writes a refused read as a select of one value that refuses to
@@ -370,8 +408,13 @@ func withoutJoinTerm(on *clause.Where) []clause.Expression {
 // every row of the tenant, unless the caller asked for a global delete.
 func (f *filter) scopeDelete(tx *gorm.DB) {
 	st := tx.Statement
-	field, id, s := scopeOf(tx, st, nil)
-	if s != tenanted {
+	field, id, s, refusal := scopeOf(st, nil)
+	switch s {
+	case tenanted:
+	case refused:
+		_ = tx.AddError(refusal)
+		return
+	default:
 		return
 	}
 	makeAddressable(st)
@@ -400,13 +443,16 @@ func (f *filter) scopeDelete(tx *gorm.DB) {
 // condition is discounted the same way.
 func (f *filter) scopeUpdate(tx *gorm.DB) {
 	st := tx.Statement
-	field, id, s := scopeOf(tx, st, nil)
+	field, id, s, refusal := scopeOf(st, nil)
 	var judge func(any) error
 	switch s {
 	case crossing:
 		judge = someTenant(st)
 	case tenanted:
 		judge = ownTenant(st, id)
+	case refused:
+		_ = tx.AddError(refusal)
+		return
 	default:
 		return
 	}
@@ -435,13 +481,16 @@ func (f *filter) scopeUpdate(tx *gorm.DB) {
 // its rows has to name its tenant itself.
 func (f *filter) fillColumn(tx *gorm.DB) {
 	st := tx.Statement
-	field, id, s := scopeOf(tx, st, nil)
+	field, id, s, refusal := scopeOf(st, nil)
 	var judge func(any) error
 	switch s {
 	case tenanted:
 		judge = ownTenant(st, id)
 	case crossing:
 		judge = someTenant(st)
+	case refused:
+		_ = tx.AddError(refusal)
+		return
 	default:
 		return
 	}
