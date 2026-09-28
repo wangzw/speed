@@ -52,7 +52,7 @@ func Close(*gorm.DB) error
 
 实现子包的交付声明写作 `Provides: []core.Provision{{Token: (*Database)(nil), Exclusive: true}}`，排他即由此而来。
 
-取用写作 `core.Resolve[db.Database](reg)`。访问库的模块在 `Requires` 中声明 `(*db.Database)(nil)`，因而必然排在本模块之后构造，也排在迁移之后。
+取用写作 `core.Resolve[db.Database](reg)`。访问库的模块在 `Requires` 中声明 `(*db.Database)(nil)`，因而排在本模块之后构造，此后每个阶段也都排在本模块之后，它自己的 `Migrate` 回调在迁移施加之后运行。依赖方的 `New` 不在其列：全部模块的 `New` 都早于第一个 `Migrate` 回调（见 [core](design-core.md)），首次启动时在 `New` 里读写自己的表会碰上表还不存在，读写库的工作从 `Init` 起才有表可用。
 
 **额外的连接**。配置给出的那个库经模块机制交付，是唯一能被 `Requires` 声明和 `Resolve` 取用的；访问别的库——只读副本、另一个系统的库、一次性的数据来源——用 `Open` 自建。
 
@@ -175,7 +175,7 @@ SQLite 实现子包绑定纯 Go 的驱动。**采纳的读法**：`github.com/gl
 
 ## UML 图
 
-下图给出交付面与资源类型的关系。`Database` 是唯一被取用的功能，`database` 代表实现子包中满足它的类型，每个子包各有一个；`Migrations` 与 `Plugin` 由别的模块声明、由本模块消费，箭头方向因而与取用相反。图中画不出的约束是时机：插件在 `New` 内安装完毕，迁移在 `Migrate` 中应用，两者都早于任何依赖方开始工作。
+下图给出交付面与资源类型的关系。`Database` 是唯一被取用的功能，`database` 代表实现子包中满足它的类型，每个子包各有一个；`Migrations` 与 `Plugin` 由别的模块声明、由本模块消费，箭头方向因而与取用相反。图中画不出的约束是时机：插件在 `New` 内安装完毕，早于任何依赖方的构造；迁移在 `Migrate` 中应用，早于任何依赖方自己的 `Migrate` 及其后各阶段，依赖方的 `New` 则在它之前。
 
 ```mermaid
 classDiagram
