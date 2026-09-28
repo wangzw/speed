@@ -63,12 +63,24 @@ func fallback(next nethttp.Handler, endpoint string, responder PanicResponder) n
 				if returned {
 					return
 				}
-				// A recovered nil is a panic(nil), not a request that
-				// finished: the runtime rewrites panic(nil) to a
-				// *runtime.PanicNilError, but that rests on the current
-				// semantics, and reading the two alike would answer such a
-				// panic with an empty 200 and no record at all.
-				thrown = errNilPanic
+				// Nothing was recovered and the handler never returned. It
+				// called runtime.Goexit, which unwinds the stack with no
+				// value, or it panicked with nil under GODEBUG=panicnil=1,
+				// which the runtime otherwise rewrites to a
+				// *runtime.PanicNilError. The two cannot be told apart here.
+				// Either is a defect that gets its record, and neither is a
+				// request that finished; the record says which kind of
+				// defect it is rather than calling it a panic. The response
+				// is written as for a panic: after a Goexit it never reaches
+				// the connection, and after a nil panic it is the answer.
+				log.FromContext(r.Context()).Error("a request's handler stopped without returning "+
+					"and without a panic value, by runtime.Goexit or by panic(nil) under "+
+					"GODEBUG=panicnil=1, and the endpoint's fallback answered it",
+					"endpoint", endpoint,
+					"stack", stackTrace(),
+				)
+				writePanicResponse(w, r, errUnwound, responder)
+				return
 			}
 			// ErrAbortHandler is a handler asking for its connection to be
 			// abandoned, not a defect: net/http suppresses the stack for it
@@ -95,10 +107,10 @@ func fallback(next nethttp.Handler, endpoint string, responder PanicResponder) n
 	})
 }
 
-// errNilPanic stands for a panic whose recovered value is nil, which the
-// fallback reports as a defect like any other. It exists so that a recovered
-// nil and a request that returned are not read as the same thing.
-var errNilPanic = errors.New("a request panicked with a nil value")
+// errUnwound is what a PanicResponder is handed for a handler that stopped
+// without returning and without a panic value, so that it is never handed a
+// nil it would have to read as "nothing happened".
+var errUnwound = errors.New("the handler stopped without returning and without a panic value")
 
 // writePanicResponse writes the one response this module writes on its own.
 //

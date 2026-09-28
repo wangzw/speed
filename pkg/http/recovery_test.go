@@ -7,6 +7,7 @@ import (
 	"log/slog"
 	nethttp "net/http"
 	"net/http/httptest"
+	"runtime"
 	"strings"
 	"testing"
 
@@ -271,10 +272,11 @@ func TestAWrappedErrAbortHandlerIsNotAnswered(t *testing.T) {
 	}
 }
 
-// TestAPanicWithANilValueIsAnswered pins the other reading of a recovered nil.
-// A request that returned and a panic(nil) both leave the deferred function
-// with nothing to report, and reading them alike answers such a panic with an
-// empty 200 and no record at all.
+// TestAPanicWithANilValueIsAnswered pins that panic(nil) is answered like any
+// other panic. The runtime hands it to the fallback as a
+// *runtime.PanicNilError, and under GODEBUG=panicnil=1 as a recovered nil;
+// read as a request that returned, either would be an empty 200 with no
+// record at all.
 func TestAPanicWithANilValueIsAnswered(t *testing.T) {
 	logger, records := newRecordingLogger()
 	handler := assembleFallback(t, nil, logger, func(e Endpoint) {
@@ -293,6 +295,37 @@ func TestAPanicWithANilValueIsAnswered(t *testing.T) {
 		t.Errorf("the fallback wrote %d error records for a nil-valued panic, want one: %v",
 			len(written), written)
 	}
+}
+
+// TestAGoexitIsNotRecordedAsAPanic pins what the fallback says about a handler
+// that ended its goroutine: runtime.Goexit unwinds the stack without a value,
+// so the deferred function recovers nil while the handler never returned. It
+// is a defect worth a record, but nothing panicked, and a record saying a
+// request panicked sends its reader looking for a panic that never happened.
+func TestAGoexitIsNotRecordedAsAPanic(t *testing.T) {
+	logger, records := newRecordingLogger()
+	handler := assembleFallback(t, nil, logger, func(e Endpoint) {
+		e.Route("GET /things", nethttp.HandlerFunc(func(nethttp.ResponseWriter, *nethttp.Request) {
+			runtime.Goexit()
+		}))
+	})
+
+	done := make(chan struct{})
+	go func() {
+		defer close(done)
+		handler.ServeHTTP(newSpyWriter(), httptest.NewRequest(nethttp.MethodGet, "/things", nil))
+	}()
+	waitFor(t, done, "the goroutine the handler ended")
+
+	written := records.at(slog.LevelError)
+	if len(written) != 1 {
+		t.Fatalf("the fallback wrote %d error records for a handler that called Goexit, want one: %v",
+			len(written), written)
+	}
+	if strings.Contains(written[0], "panicked") {
+		t.Errorf("the record says the request panicked, and nothing did: %s", written[0])
+	}
+	mustContain(t, written[0], "Goexit", "the way the handler ended")
 }
 
 // TestARequestWithoutAPanicIsLeftAlone is the other half: the fallback does not
