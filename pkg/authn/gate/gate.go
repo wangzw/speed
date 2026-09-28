@@ -457,10 +457,15 @@ func (g *gateway) tally() map[string]int64 {
 // carry.
 //
 // The schemes are the ones backends claim whole, plus the one the gateway reads
-// a subject out of itself: together those are exactly the schemes under which a
-// credential can arrive and reach a backend at all. Each is a token, which
-// newClaimant checks when the claim is made, so taking a scheme's first byte
-// below lands on a whole character.
+// a subject out of itself when that reading leads to a backend — when some
+// backend claims subjects, one by one or openly. Together those are exactly the
+// schemes under which a credential can arrive and reach a backend at all; an
+// assembly whose backends all claim whole schemes has nowhere for a Basic
+// credential to go, and offering one would have a browser prompt for a password
+// that is refused unread. Each is a token, which newClaimant checks when the
+// claim is made, so taking a scheme's first byte below lands on a whole
+// character. The list is never empty: a claimant that claims none of the three
+// is refused when the table is built.
 //
 // The realm is the endpoint's name. Basic requires one (RFC 7617), and a realm
 // is the name of a protection space — which is what an endpoint is here, since
@@ -469,7 +474,10 @@ func (g *gateway) tally() map[string]int64 {
 // instead would put a name of this module's choosing into every client that
 // keeps credentials per realm.
 func challengeFor(table *ownership, endpoint string) string {
-	named := map[string]struct{}{canonicalScheme(basicScheme): {}}
+	named := make(map[string]struct{})
+	if len(table.bySubject) > 0 || len(table.open) > 0 {
+		named[canonicalScheme(basicScheme)] = struct{}{}
+	}
 	for _, scheme := range table.schemes() {
 		named[canonicalScheme(scheme)] = struct{}{}
 	}

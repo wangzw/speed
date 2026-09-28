@@ -1019,6 +1019,63 @@ func TestARealmCannotBreakOutOfTheChallenge(t *testing.T) {
 	}
 }
 
+// TestTheChallengeOffersExactlyTheSchemesACredentialCanReachABackendUnder holds
+// what the scheme list in the challenge is: every way a credential can arrive
+// and be put to some backend, and nothing else.
+//
+// Basic reaches a backend through the gateway's own reading of it, and that
+// reading leads somewhere only when some backend claims subjects — one by one,
+// or openly. An assembly whose backends all claim whole schemes has nowhere for
+// a Basic credential to go, and offering it anyway tells a caller to send a
+// credential that is refused unread; a browser shown a Basic challenge opens its
+// native password prompt for it.
+func TestTheChallengeOffersExactlyTheSchemesACredentialCanReachABackendUnder(t *testing.T) {
+	yes := func(context.Context, string) (bool, error) { return true, nil }
+	for _, c := range []struct {
+		name      string
+		verifiers []authn.Verifier
+		want      string
+	}{
+		{
+			name:      "whole schemes alone",
+			verifiers: []authn.Verifier{claimingScheme("issuer", "Bearer")},
+			want:      `Bearer realm="public"`,
+		},
+		{
+			name:      "enumerated subjects",
+			verifiers: []authn.Verifier{enumerating("local", "alice")},
+			want:      `Basic realm="public"`,
+		},
+		{
+			name:      "an open claim",
+			verifiers: []authn.Verifier{openly("directory", yes)},
+			want:      `Basic realm="public"`,
+		},
+		{
+			name:      "Basic claimed whole",
+			verifiers: []authn.Verifier{claimingScheme("vault", "basic")},
+			want:      `Basic realm="public"`,
+		},
+		{
+			name: "a whole scheme beside enumerated subjects",
+			verifiers: []authn.Verifier{
+				claimingScheme("issuer", "Bearer"), enumerating("local", "alice"),
+			},
+			want: `Basic realm="public", Bearer realm="public"`,
+		},
+	} {
+		t.Run(c.name, func(t *testing.T) {
+			table, err := buildOwnership(c.verifiers)
+			if err != nil {
+				t.Fatalf("building the table: %v", err)
+			}
+			if got := challengeFor(table, "public"); got != c.want {
+				t.Errorf("the challenge reads %q, want %q", got, c.want)
+			}
+		})
+	}
+}
+
 // TestAPassCarriesNoChallenge keeps the case above honest: the header belongs to
 // a refusal, and a request that was admitted has nothing to be challenged about.
 func TestAPassCarriesNoChallenge(t *testing.T) {
