@@ -18,9 +18,11 @@ package kvsuite
 import (
 	"bytes"
 	"context"
+	"crypto/sha256"
 	"errors"
 	"fmt"
 	"strconv"
+	"strings"
 	"sync"
 	"testing"
 	"time"
@@ -73,6 +75,45 @@ func AssertConforms(t *testing.T, newStore Factory) {
 		}
 		if !bytes.Equal(got, want) {
 			t.Fatalf("Get returned %q, want %q", got, want)
+		}
+	})
+
+	t.Run("every key the contract allows is its own entry", func(t *testing.T) {
+		s := newStore(t)
+		ctx := context.Background()
+		keys := keysTheContractAllows()
+		for i, key := range keys {
+			if err := s.Set(ctx, key, []byte(strconv.Itoa(i)), 0); err != nil {
+				t.Fatalf("Set on key %s: %v", describeKey(key), err)
+			}
+		}
+		// Read back only once every key is written, so two keys that landed
+		// on one entry show up as the later write's value under the earlier
+		// key.
+		for i, key := range keys {
+			got, present, err := s.Get(ctx, key)
+			if err != nil || !present {
+				t.Fatalf("Get on key %s: present=%v err=%v", describeKey(key), present, err)
+			}
+			if want := strconv.Itoa(i); string(got) != want {
+				t.Fatalf("key %s reads %q, want %q: two keys share one entry", describeKey(key), got, want)
+			}
+		}
+		// The other operations reach the same entry the writes did.
+		for _, key := range keys {
+			if swapped, err := s.CompareAndSwap(ctx, key, nil, []byte("x")); err != nil || swapped {
+				t.Fatalf("CompareAndSwap from absent on the present key %s: swapped=%v err=%v",
+					describeKey(key), swapped, err)
+			}
+			if err := s.Delete(ctx, key); err != nil {
+				t.Fatalf("Delete on key %s: %v", describeKey(key), err)
+			}
+			if _, present, err := s.Get(ctx, key); err != nil || present {
+				t.Fatalf("Get after Delete on key %s: present=%v err=%v", describeKey(key), present, err)
+			}
+			if got, err := s.IncrByFloat(ctx, key, 2); err != nil || got != 2 {
+				t.Fatalf("IncrByFloat on key %s: got=%v err=%v", describeKey(key), got, err)
+			}
 		}
 	})
 
@@ -404,4 +445,50 @@ func AssertConforms(t *testing.T, newStore Factory) {
 			t.Fatalf("the stored value is %q but %q reported winning", got, winners[0])
 		}
 	})
+}
+
+// keysTheContractAllows is a set of distinct keys covering the shapes a
+// backend's own key rules refuse: the empty key, bytes that are not text, the
+// separators and wildcards of the backends' own grammars, and lengths past
+// every backend's limit. The long keys come in pairs that differ only in their
+// last byte, so a backend that shortened a key by cutting it would put both on
+// one entry.
+func keysTheContractAllows() []string {
+	// A chain of digests does not compress, so a backend that stores the key in
+	// an index cannot squeeze a long one under the index's row limit, and it
+	// is the same on every run.
+	noise := func(n int) string {
+		out := make([]byte, 0, n+sha256.Size)
+		block := sha256.Sum256(nil)
+		for len(out) < n {
+			out = append(out, block[:]...)
+			block = sha256.Sum256(block[:])
+		}
+		return string(out[:n])
+	}
+	long := strings.Repeat("k", 5000)
+	wide := noise(4000)
+	return []string{
+		"",
+		"plain",
+		"with space",
+		"sep:ar/at.ed*and>wild",
+		"nul\x00byte",
+		"bad\xffutf8",
+		"ключ-键-🔑",
+		strings.Repeat("m", 200),
+		long + "a",
+		long + "b",
+		wide + "a",
+		wide + "b",
+	}
+}
+
+// describeKey names a key in a failure message without printing thousands of
+// bytes of it.
+func describeKey(key string) string {
+	if len(key) <= 32 {
+		return fmt.Sprintf("%q", key)
+	}
+	return fmt.Sprintf("%q… (%d bytes)", key[:16], len(key))
 }

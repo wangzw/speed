@@ -14,14 +14,18 @@
 //     the expiry is not the bucket's: it travels in front of the value, and
 //     this package decides from it whether a key is still there.
 //
-// Keys are hex-encoded on the way in. JetStream's own key grammar excludes
-// characters the capability's keys may contain, and the encoding is injective,
-// so no two of its keys share a bucket entry.
+// Keys are respelled on the way in. JetStream's own key grammar excludes
+// characters and lengths the capability's keys may have, so a key is stored
+// under its hex spelling, or under a digest spelling when that would be empty
+// or too long for a request to carry; encodeKey says why no two keys share a
+// bucket entry either way.
 package nats
 
 import (
 	"bytes"
 	"context"
+	"crypto/sha256"
+	"encoding/hex"
 	"errors"
 	"fmt"
 	"strconv"
@@ -310,16 +314,36 @@ func (s *store) CompareAndSwap(ctx context.Context, key string, old, newVal []by
 
 func formatFloat(v float64) string { return strconv.FormatFloat(v, 'g', -1, 64) }
 
+// maxPlainKeyLen is the longest plain spelling a key keeps. A key's spelling is
+// part of the subject every request carries, and a request line past the
+// server's control line limit — 4096 bytes by default, bucket name and reply
+// subject included — makes the server drop the client, closing the connection
+// for every key at once. The bound keeps the subject far below that.
+const maxPlainKeyLen = 1024
+
+// digestPrefix starts the spelling of a key whose plain spelling JetStream
+// would refuse or the server's control line could not carry. Its letters and
+// its dot are outside the hex alphabet, so no plain spelling starts with it.
+const digestPrefix = "sha256."
+
 // encodeKey makes an arbitrary key acceptable to JetStream.
 //
-// Its key grammar admits a limited character set, and the capability's keys are
-// opaque strings. Hex is injective, so no two of the capability's keys share a
-// bucket entry — which a truncated or lossy encoding would allow silently.
+// Its key grammar admits a limited character set and no empty key, and the
+// capability's keys are opaque strings of any length. The plain spelling is
+// the key in hex, which is injective and uses only characters the grammar
+// admits. A key whose plain spelling is empty or longer than maxPlainKeyLen is
+// spelled instead as the prefix and the hex of its SHA-256 digest, which fits
+// whatever the key's length.
+//
+// Neither spelling puts two keys on one entry. The plain spellings are
+// injective among themselves, the digest spellings are as collision-resistant
+// as SHA-256, and the two never meet, because no plain spelling contains the
+// prefix's letters. A key is never cut short to fit: two keys sharing their
+// first bytes would then share an entry.
 func encodeKey(key string) string {
-	const hex = "0123456789abcdef"
-	out := make([]byte, 0, len(key)*2)
-	for i := 0; i < len(key); i++ {
-		out = append(out, hex[key[i]>>4], hex[key[i]&0x0f])
+	if key != "" && 2*len(key) <= maxPlainKeyLen {
+		return hex.EncodeToString([]byte(key))
 	}
-	return string(out)
+	sum := sha256.Sum256([]byte(key))
+	return digestPrefix + hex.EncodeToString(sum[:])
 }

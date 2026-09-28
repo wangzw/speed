@@ -21,6 +21,7 @@ package postgres
 
 import (
 	"context"
+	"crypto/sha256"
 	"errors"
 	"fmt"
 	"strconv"
@@ -47,12 +48,52 @@ const (
 	// createTable is idempotent, and it runs on every open rather than behind a
 	// ledger: this package has no migration machinery of its own, and a
 	// CREATE TABLE IF NOT EXISTS is its own record of having been applied.
+	//
+	// The key is bytes rather than text. The capability's keys are opaque, and
+	// a text column refuses two kinds of them outright: a NUL byte, and bytes
+	// that are not valid UTF-8.
 	createTable = `CREATE TABLE IF NOT EXISTS ` + table + ` (
-		key        TEXT PRIMARY KEY,
+		key        BYTEA PRIMARY KEY,
 		value      BYTEA NOT NULL,
 		expires_at TIMESTAMPTZ
 	)`
+	// keyColumnType reads the type the table's key column has, resolving the
+	// table the way every other statement here does: through the search path.
+	keyColumnType = `SELECT format_type(atttypid, atttypmod) FROM pg_attribute
+		WHERE attrelid = to_regclass('` + table + `') AND attname = 'key'`
+	// migrateTextKeys converts a table whose key column is text into the shape
+	// createTable builds, and respells the keys that are too long to keep
+	// their plain spelling, so every entry stays reachable under its key.
+	migrateTextKeys = `ALTER TABLE ` + table + ` ALTER COLUMN key TYPE BYTEA USING convert_to(key, 'UTF8')`
+	respellLongKeys = `UPDATE ` + table + ` SET key = substring(key FROM 1 FOR $1) || sha256(key)
+		WHERE length(key) > $1`
 )
+
+// maxPlainKeyLen is the longest key stored as its own bytes. PostgreSQL's
+// btree refuses an index entry past about a third of a page — some 2700 bytes
+// once compression has nothing to squeeze out — so a longer key could not be
+// the primary key at all.
+const maxPlainKeyLen = 1024
+
+// spell returns the bytes a key is stored under.
+//
+// A key up to maxPlainKeyLen bytes is stored as itself. A longer one is stored
+// as its first maxPlainKeyLen bytes followed by its SHA-256 digest: the prefix
+// keeps it recognisable to an operator reading the table, and the digest keeps
+// it distinct from every other long key sharing that prefix. The two forms
+// never meet, because every long spelling is longer than any plain one, and
+// the long spellings are as collision-resistant as SHA-256. A key is never cut
+// short without the digest: two keys sharing their first bytes would then
+// share an entry.
+func spell(key string) []byte {
+	if len(key) <= maxPlainKeyLen {
+		return []byte(key)
+	}
+	sum := sha256.Sum256([]byte(key))
+	out := make([]byte, 0, maxPlainKeyLen+len(sum))
+	out = append(out, key[:maxPlainKeyLen]...)
+	return append(out, sum[:]...)
+}
 
 // init registers this module with the process registry.
 func init() { core.ProcessRegistry.Register(Module()) }
@@ -123,6 +164,25 @@ func prepareTable(ctx context.Context, pool *pgxpool.Pool) error {
 	if _, createErr := tx.Exec(ctx, createTable); createErr != nil {
 		return createErr
 	}
+	var keyType string
+	if typeErr := tx.QueryRow(ctx, keyColumnType).Scan(&keyType); typeErr != nil {
+		return fmt.Errorf("reading the key column's type: %w", typeErr)
+	}
+	switch keyType {
+	case "bytea":
+	case "text":
+		// A table from before the key column held bytes. Its keys are text,
+		// so their UTF-8 bytes are exactly the plain spelling, and only the
+		// long ones need a new one.
+		if _, alterErr := tx.Exec(ctx, migrateTextKeys); alterErr != nil {
+			return fmt.Errorf("converting the key column to bytes: %w", alterErr)
+		}
+		if _, respellErr := tx.Exec(ctx, respellLongKeys, maxPlainKeyLen); respellErr != nil {
+			return fmt.Errorf("respelling the long keys: %w", respellErr)
+		}
+	default:
+		return fmt.Errorf("the key column is %s, and this implementation stores keys as bytea", keyType)
+	}
 	return tx.Commit(ctx)
 }
 
@@ -148,7 +208,7 @@ const live = `(expires_at IS NULL OR expires_at > now())`
 func (s *store) Get(ctx context.Context, key string) ([]byte, bool, error) {
 	var value []byte
 	err := s.pool.QueryRow(ctx,
-		`SELECT value FROM `+table+` WHERE key = $1 AND `+live, key).Scan(&value)
+		`SELECT value FROM `+table+` WHERE key = $1 AND `+live, spell(key)).Scan(&value)
 	if errors.Is(err, pgx.ErrNoRows) {
 		return nil, false, nil
 	}
@@ -163,13 +223,13 @@ func (s *store) Set(ctx context.Context, key string, value []byte, ttl time.Dura
 	_, err := s.pool.Exec(ctx,
 		`INSERT INTO `+table+` (key, value, expires_at) VALUES ($1, $2, $3)
 		 ON CONFLICT (key) DO UPDATE SET value = EXCLUDED.value, expires_at = EXCLUDED.expires_at`,
-		key, value, expiresAt(ttl))
+		spell(key), value, expiresAt(ttl))
 	return err
 }
 
 // Delete removes the key, whether or not it was there.
 func (s *store) Delete(ctx context.Context, key string) error {
-	_, err := s.pool.Exec(ctx, `DELETE FROM `+table+` WHERE key = $1`, key)
+	_, err := s.pool.Exec(ctx, `DELETE FROM `+table+` WHERE key = $1`, spell(key))
 	return err
 }
 
@@ -204,7 +264,7 @@ func (s *store) increment(ctx context.Context, key string, delta float64, ttl ti
 	// longer has.
 	if _, deleteErr := tx.Exec(ctx,
 		`DELETE FROM `+table+` WHERE key = $1 AND expires_at IS NOT NULL AND expires_at <= now()`,
-		key); deleteErr != nil {
+		spell(key)); deleteErr != nil {
 		return 0, deleteErr
 	}
 
@@ -222,7 +282,7 @@ func (s *store) increment(ctx context.Context, key string, delta float64, ttl ti
 		 ON CONFLICT (key) DO UPDATE
 		 SET value = convert_to((convert_from(`+table+`.value, 'UTF8')::numeric + $2::numeric)::text, 'UTF8')
 		 RETURNING convert_from(value, 'UTF8')`,
-		key, formatFloat(delta), expires).Scan(&text)
+		spell(key), formatFloat(delta), expires).Scan(&text)
 	if incrErr != nil {
 		return 0, asNotNumeric(incrErr)
 	}
@@ -259,7 +319,7 @@ func (s *store) CompareAndSwap(ctx context.Context, key string, old, newVal []by
 
 	if _, deleteErr := tx.Exec(ctx,
 		`DELETE FROM `+table+` WHERE key = $1 AND expires_at IS NOT NULL AND expires_at <= now()`,
-		key); deleteErr != nil {
+		spell(key)); deleteErr != nil {
 		return false, deleteErr
 	}
 
@@ -275,7 +335,7 @@ func (s *store) CompareAndSwap(ctx context.Context, key string, old, newVal []by
 	var one int
 	updateErr := tx.QueryRow(ctx,
 		`UPDATE `+table+` SET value = $2 WHERE key = $1 AND value = $3::bytea RETURNING 1`,
-		key, newVal, old).Scan(&one)
+		spell(key), newVal, old).Scan(&one)
 	if updateErr == nil {
 		if commitErr := tx.Commit(ctx); commitErr != nil {
 			return false, commitErr
@@ -295,7 +355,7 @@ func (s *store) CompareAndSwap(ctx context.Context, key string, old, newVal []by
 		`INSERT INTO `+table+` (key, value) VALUES ($1, $2)
 		 ON CONFLICT (key) DO NOTHING
 		 RETURNING 1`,
-		key, newVal).Scan(&one)
+		spell(key), newVal).Scan(&one)
 	if errors.Is(insertErr, pgx.ErrNoRows) {
 		// Something took the key between the two statements — or it is there
 		// with a value that is not empty — so the swap did not happen. An

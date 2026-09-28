@@ -183,25 +183,28 @@ func TestTheExpiryTravelsInsideTheValue(t *testing.T) {
 	}
 }
 
-// TestAKeyMemcachedCannotHoldIsRefusedRatherThanTruncated covers the one place
-// this backend's limits reach a caller: the encoding is injective, so a key
-// that runs past the server's limit is refused by the server rather than
-// silently sharing an entry with another.
-func TestAKeyMemcachedCannotHoldIsRefusedRatherThanTruncated(t *testing.T) {
-	long := make([]byte, 400)
-	for i := range long {
-		long[i] = 'a'
+// TestEveryKeyHasASpellingMemcachedAccepts pins the spelling rule at the
+// boundary the contract suite only crosses from far away: a key whose plain
+// spelling is exactly the server's limit keeps it, one byte more switches to
+// the digest, and the empty key — whose plain spelling is empty and refused —
+// gets the digest too. Every spelling is one the client and the server accept.
+func TestEveryKeyHasASpellingMemcachedAccepts(t *testing.T) {
+	// 187 raw bytes are 250 base64url characters; 188 are 251.
+	atLimit, pastLimit := strings.Repeat("a", 187), strings.Repeat("a", 188)
+	if got := encodeKey(atLimit); strings.HasPrefix(got, digestPrefix) || len(got) != maxKeyLen {
+		t.Fatalf("a key whose plain spelling fits exactly was spelled %q", got)
 	}
-	encoded := encodeKey(string(long))
-	if encoded == encodeKey(string(long[:len(long)-1])) {
-		t.Fatal("two different keys encode to the same spelling, so one would overwrite the other")
+	for _, key := range []string{"", pastLimit, strings.Repeat("\x00", 10000)} {
+		got := encodeKey(key)
+		if !strings.HasPrefix(got, digestPrefix) {
+			t.Errorf("the key of %d bytes was not spelled by its digest: %q", len(key), got)
+		}
+		if got == "" || len(got) > maxKeyLen || strings.ContainsAny(got, " \t\r\n\x00") {
+			t.Errorf("the key of %d bytes is spelled %q, which Memcached refuses", len(key), got)
+		}
 	}
-	if len(encoded) <= 250 {
-		t.Skip("the encoding fits the server's limit, so there is nothing to refuse here")
-	}
-	s := newStore(t)
-	if err := s.Set(context.Background(), string(long), []byte("v"), 0); err == nil {
-		t.Fatal("a key past the server's limit was accepted")
+	if encodeKey(pastLimit) == encodeKey(pastLimit+"a") {
+		t.Fatal("two long keys differing in their last byte share a spelling")
 	}
 }
 

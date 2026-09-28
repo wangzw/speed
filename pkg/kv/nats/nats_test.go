@@ -135,6 +135,28 @@ func TestTheExpiryTravelsInsideTheValue(t *testing.T) {
 	}
 }
 
+// TestALongKeyLeavesTheConnectionUsable covers the failure a long key used to
+// cause here, which reached far past the key itself. A key's spelling is part
+// of the subject every request carries, and a subject past the server's control
+// line limit makes the server drop the client: the connection closes for good,
+// and every later operation on every key fails until the process restarts. The
+// case writes a key well past that limit and then uses a short one on the same
+// connection.
+func TestALongKeyLeavesTheConnectionUsable(t *testing.T) {
+	s := newStore(t)
+	ctx := context.Background()
+	long := strings.Repeat("x", 8000)
+	if err := s.Set(ctx, long, []byte("v"), 0); err != nil {
+		t.Fatalf("Set on an 8000-byte key: %v", err)
+	}
+	if err := s.Set(ctx, "short", []byte("w"), 0); err != nil {
+		t.Fatalf("Set on a short key after a long one: %v", err)
+	}
+	if got, present, err := s.Get(ctx, "short"); err != nil || !present || string(got) != "w" {
+		t.Fatalf("Get on a short key after a long one: %q, present=%v, err=%v", got, present, err)
+	}
+}
+
 // TestTwoStoresOnOneBucketShareTheSameEntries is what this backend is for.
 func TestTwoStoresOnOneBucketShareTheSameEntries(t *testing.T) {
 	url := natstest.URL(t)

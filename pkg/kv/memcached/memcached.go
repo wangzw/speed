@@ -26,6 +26,7 @@ package memcached
 import (
 	"bytes"
 	"context"
+	"crypto/sha256"
 	"encoding/base64"
 	"errors"
 	"fmt"
@@ -392,17 +393,33 @@ func (s *store) CompareAndSwap(ctx context.Context, key string, old, newVal []by
 // formatFloat renders a counter as the shortest text that round-trips.
 func formatFloat(v float64) string { return strconv.FormatFloat(v, 'g', -1, 64) }
 
+// maxKeyLen is the longest key Memcached accepts.
+const maxKeyLen = 250
+
+// digestPrefix starts the spelling of a key whose plain spelling Memcached
+// would refuse. The colon is outside the base64url alphabet, so no plain
+// spelling starts with it.
+const digestPrefix = "sha256:"
+
 // encodeKey makes an arbitrary key acceptable to Memcached.
 //
-// The capability's keys are opaque strings; Memcached's may not contain a space
-// or a control character and may not exceed 250 bytes. Base64 is injective and
-// produces only characters it accepts, so every key this capability allows has
-// one spelling here.
+// The capability's keys are opaque strings of any length; Memcached's may not
+// contain a space or a control character, may not be empty and may not exceed
+// 250 bytes. The plain spelling is the key in base64url, which is injective and
+// uses only characters Memcached accepts. A key whose plain spelling is empty
+// or too long is spelled instead as the prefix and the base64url of its
+// SHA-256 digest, which fits whatever the key's length.
 //
-// It is not truncated when it runs long. A truncated key would silently put two
-// different keys on one entry, which is worse than a refusal: Memcached's own
-// "key too long" reaches the caller, and a caller that did not mean to use a
-// 187-byte key is told rather than quietly served someone else's value.
+// Neither spelling puts two keys on one entry. The plain spellings are
+// injective among themselves, the digest spellings are as collision-resistant
+// as SHA-256, and the two never meet, because no plain spelling contains the
+// prefix's colon. A key is never cut short to fit: two keys sharing their first
+// 250 bytes would then share an entry.
 func encodeKey(key string) string {
-	return base64.RawURLEncoding.EncodeToString([]byte(key))
+	plain := base64.RawURLEncoding.EncodeToString([]byte(key))
+	if plain != "" && len(plain) <= maxKeyLen {
+		return plain
+	}
+	sum := sha256.Sum256([]byte(key))
+	return digestPrefix + base64.RawURLEncoding.EncodeToString(sum[:])
 }

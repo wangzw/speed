@@ -147,6 +147,49 @@ func TestReplicasOpeningAFreshDatabaseTogetherAllStart(t *testing.T) {
 	}
 }
 
+// TestATableWithTextKeysIsConvertedInPlace covers a database that already holds
+// the table in the shape it had when its key column was text. Opening converts
+// the column rather than leaving it — every statement here compares bytes, and
+// against text they would all fail at the first request — and the entries
+// already there stay readable under the keys they were written with, the long
+// one included, whose spelling changes.
+func TestATableWithTextKeysIsConvertedInPlace(t *testing.T) {
+	dsn := pgtest.Acquire(t)
+	ctx := context.Background()
+	pool, err := pgpool.Connect(ctx, "probe", pgpool.Config{DSN: dsn, MaxConns: 1})
+	if err != nil {
+		t.Fatalf("connecting: %v", err)
+	}
+	long := strings.Repeat("l", 1500)
+	for _, statement := range []string{
+		`CREATE TABLE ` + table + ` (key TEXT PRIMARY KEY, value BYTEA NOT NULL, expires_at TIMESTAMPTZ)`,
+		`INSERT INTO ` + table + ` (key, value) VALUES ('short', 'one'), ('` + long + `', 'two')`,
+	} {
+		if _, execErr := pool.Exec(ctx, statement); execErr != nil {
+			pool.Close()
+			t.Fatalf("preparing the text-keyed table: %v", execErr)
+		}
+	}
+	pool.Close()
+
+	opened, err := open(ctx, &pgpool.Config{DSN: dsn, MaxConns: 2})
+	if err != nil {
+		t.Fatalf("opening over a text-keyed table: %v", err)
+	}
+	s := opened.(*store)
+	t.Cleanup(func() { _ = s.Close(ctx) })
+	for key, want := range map[string]string{"short": "one", long: "two"} {
+		got, present, err := s.Get(ctx, key)
+		if err != nil || !present || string(got) != want {
+			t.Fatalf("Get on the %d-byte key written before the conversion: %q, present=%v, err=%v",
+				len(key), got, present, err)
+		}
+	}
+	if err := s.Set(ctx, "nul\x00byte", []byte("three"), 0); err != nil {
+		t.Fatalf("Set on a key a text column refuses, after the conversion: %v", err)
+	}
+}
+
 // TestTwoStoresOnOneDatabaseShareTheSameEntries is what this backend is for: an
 // assembly of several replicas pointed at one PostgreSQL reads and writes one
 // set of entries, and the increment is arbitrated by the server rather than by
