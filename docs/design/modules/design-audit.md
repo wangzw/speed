@@ -85,7 +85,16 @@ const (
 	// SourceSeam 是记录接缝。
 	SourceSeam Source = "seam"
 )
+
+// ErrWriteFailed 表示一条审计行没有写进表，原因在本模块自己的连接、表或约束上。
+// Record 返回它；一条模型写语句在记录它的那一行写不进去时也返回它。
+var ErrWriteFailed = errors.New("audit: the entry was not written")
+
+// ErrNotAccepting 表示本模块不在受理期：Start 之前或 Stop 之后。只有 Record 返回它。
+var ErrNotAccepting = errors.New("audit: the module is not accepting records")
 ```
+
+实现子包另导出 `ErrUnmatchablePattern`，表示 `requests` 里的一条模式本模块的匹配器解释不了。各哨兵出现的场合见错误与失败语义。
 
 交付声明写作 `Provides: []core.Provision{{Token: (*Audit)(nil), Exclusive: true}}`。
 
@@ -152,7 +161,7 @@ const (
 
 ### 稳定性承诺
 
-`Audit`、`Entry` 与 `Source` 是本模块与其他模块之间的契约。中间件在链上代表的那个功能标识与描述符里的交付标识同为 `(*Audit)(nil)`，别的模块据它排序，取值不变。**审计表的表名与上面那一组脱敏键名同为契约的一部分**：表名与语句级捕获的自指判据共用一个常量，改名要一起改；脱敏键名的增删改变每一条审计行的内容。
+`Audit`、`Entry`、`Source` 与上面的哨兵是本模块与其他模块之间的契约，调用方以 `errors.Is` 判别哨兵，不比对错误文本。中间件在链上代表的那个功能标识与描述符里的交付标识同为 `(*Audit)(nil)`，别的模块据它排序，取值不变。**审计表的表名与上面那一组脱敏键名同为契约的一部分**：表名与语句级捕获的自指判据共用一个常量，改名要一起改；脱敏键名的增删改变每一条审计行的内容。
 
 ## 依赖
 
@@ -330,7 +339,7 @@ sequenceDiagram
 | 数据库模块或日志模块缺席、被禁用 | 缺提供者失败，点名本模块与那条构造期依赖 |
 | 配置点名了端名，而入口模块本身缺席、被禁用 | 缺提供者失败，点名本模块与那个配置项 |
 | `endpoints` 里的端名在入口模块上不存在 | 原样外传入口模块的错误 |
-| `requests` 里的模式本模块的匹配器解释不了 | 点名端名、模式与那条配置项 |
+| `requests` 里的模式本模块的匹配器解释不了 | 包着 `ErrUnmatchablePattern`，点名那条配置项与模式；模式不绑定监听端，文本里因而没有端名 |
 | 配置列出了事件类型，而本次运行取不到事件总线 | 缺提供者失败，点名那个配置项 |
 | 本模块与另一个审计实现同时表态启用 | 排他冲突，消解阶段报出双方 |
 
@@ -352,6 +361,15 @@ sequenceDiagram
 | 事件载荷读不出 | 丢弃这条事件并记录（这条记录写进日志链，链可被整条关掉） |
 | 上下文里没有主体或租户 | 该字段留空，审计行照常写入 |
 | 记录接缝返回值被调用方忽略 | 该次记录失败只进那一行标准错误，调用方自己的操作照常 |
+| 记录接缝在 `Start` 之前或 `Stop` 之后被调用 | `Record` 返回 `ErrNotAccepting`，不写行；请求级与事件级在这段时间里不记，也不报 |
+
+各哨兵出现的场合：
+
+| 哨兵 | 所在包 | 何时出现 |
+|---|---|---|
+| `ErrWriteFailed` | 接口包 | `Record` 写表失败；一条模型写语句记录它的那一行写不进去，那条语句失败。语句自身失败时不出现 |
+| `ErrNotAccepting` | 接口包 | `Record` 在受理期之外被调用 |
+| `ErrUnmatchablePattern` | 实现子包 | `Init` 构建匹配器时，`requests` 里的一条模式解释不了，启动终止 |
 
 ### 非保证
 
@@ -401,6 +419,7 @@ sequenceDiagram
 | 能力 | 状态 | 代码 |
 |---|---|---|
 | 接口与数据类型 | 已实现 | `pkg/audit/audit.go` `Audit`、`Entry`、`Source` |
+| 哨兵 | 已实现 | `pkg/audit/audit.go` `ErrWriteFailed`、`ErrNotAccepting`；`pkg/audit/journal/errors.go` `ErrUnmatchablePattern` |
 | 审计表与迁移 | 已实现 | `pkg/audit/journal/entry.go` `row`；`pkg/audit/journal/migrations/<方言>/0001_audit_entries.sql` |
 | 语句级捕获 | 已实现 | `pkg/audit/journal/capture.go` `capture`、`captureOne` |
 | 请求级捕获 | 已实现 | `pkg/audit/journal/request.go` `middlewareFor`；`pkg/audit/journal/matcher.go` `newMatcher` |
