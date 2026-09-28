@@ -104,10 +104,23 @@ func (s *settingsStore) Set(ctx context.Context, w Write) error {
 	if err != nil {
 		return err
 	}
-	s.reload(ctx)
-	s.publish(ctx, w.Layer, changeFor(entry, old, text, w.Actor, version, false))
+	after := landed(ctx)
+	s.reload(after)
+	s.publish(after, w.Layer, changeFor(entry, old, text, w.Actor, version, false))
 	return nil
 }
+
+// landed returns the context the work after a committed statement runs on:
+// the caller's, with its values and without its cancellation.
+//
+// Once the statement has committed, the reload and the publish are this
+// module's bookkeeping for a row already in the table rather than the caller's
+// work. A caller whose request ended just then — a client that disconnected, a
+// deadline that fell due — would otherwise get nil back from a write this
+// replica goes on not serving and no other replica hears about. The price is
+// that a write can outlast the caller's deadline by the time the reload and
+// the publish take, which the database's and the bus's own timeouts bound.
+func landed(ctx context.Context) context.Context { return context.WithoutCancel(ctx) }
 
 // changeFor builds the payload of one change.
 //
@@ -149,8 +162,9 @@ func (s *settingsStore) Delete(ctx context.Context, layer Layer, key, actor stri
 	if err := s.handle.WithContext(ctx).Exec(sql, tenant, key).Error; err != nil {
 		return fmt.Errorf("settings: deleting key %q: %w", key, err)
 	}
-	s.reload(ctx)
-	s.publish(ctx, layer, s.deleteChange(key, old, actor))
+	after := landed(ctx)
+	s.reload(after)
+	s.publish(after, layer, s.deleteChange(key, old, actor))
 	return nil
 }
 

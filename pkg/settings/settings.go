@@ -163,10 +163,17 @@ type Store interface {
 	// publishes, in that order. A failure before the row is written returns
 	// without touching anything; a failure to publish does not roll the write
 	// back and does not change the result.
+	//
+	// ctx bounds the statement. Once the row is written, the reload and the
+	// publish run whatever becomes of ctx, since they are this module's
+	// bookkeeping for a row already in the table: a caller that gives up at
+	// that point still leaves its value served here and announced to the
+	// other replicas.
 	Set(ctx context.Context, w Write) error
 
 	// Delete removes the explicit row the selector names. Deleting a row that
-	// is not there is not an error.
+	// is not there is not an error. ctx bounds the statement and nothing after
+	// it, as for Set.
 	//
 	// Delete is the one operation that does not consult the key table: it is
 	// the cleanup path for rows left behind after a declaration is removed,

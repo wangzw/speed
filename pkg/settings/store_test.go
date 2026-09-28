@@ -686,6 +686,82 @@ func TestAWriteIsVisibleToTheWriterImmediately(t *testing.T) {
 	}
 }
 
+// cancelWhenReadingBack cancels a context the moment the store starts reading
+// the table back, which on the write path is the moment the write's statement
+// has committed. It stands for a caller whose request ends just then: a client
+// that disconnected, a deadline that fell due.
+func cancelWhenReadingBack(t *testing.T, handle *gorm.DB, cancel context.CancelFunc) {
+	t.Helper()
+	err := handle.Callback().Row().Before("gorm:row").Register("test:cancel-when-reading-back",
+		func(tx *gorm.DB) {
+			if strings.HasPrefix(tx.Statement.SQL.String(), "SELECT tenant_id, key, value FROM "+tableName) {
+				cancel()
+			}
+		})
+	if err != nil {
+		t.Fatalf("registering the callback: %v", err)
+	}
+}
+
+// A write that has landed finishes its own work whatever becomes of the
+// caller's context: this replica reloads, and the change is published.
+//
+// The reload and the publish are this module's bookkeeping for a row that is
+// already in the table, not the caller's work. Were they to share the caller's
+// cancellation, a request that ended just after the statement committed would
+// get nil back from a write that this replica goes on not serving and that no
+// other replica hears about — until the next refresh, or with the refresh off
+// until a restart.
+func TestAWriteThatLandedFinishesAfterTheCallerLeaves(t *testing.T) {
+	keys := demoTable(t)
+	bus := newRecordingBus()
+	store, handle := storeOf(t, keys, bus)
+	if err := store.Set(context.Background(), Write{Layer: Global(), Key: "demo.limit", Value: 12}); err != nil {
+		t.Fatalf("writing the first value: %v", err)
+	}
+
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	cancelWhenReadingBack(t, handle, cancel)
+
+	if err := store.Set(ctx, Write{Layer: Global(), Key: "demo.limit", Value: 99}); err != nil {
+		t.Fatalf("the write returned %v, and its statement had committed", err)
+	}
+	if ctx.Err() == nil {
+		t.Fatal("the caller's context was never cancelled, so this case tested nothing")
+	}
+	if got, _ := Get[int](store, Global(), "demo.limit"); got != 99 {
+		t.Errorf("the writer reads %v after its own write, want 99", got)
+	}
+	if events := bus.events(); len(events) != 2 || events[1].Payload.(Change).New != "99" {
+		t.Errorf("published %+v, want the second write's change as well", events)
+	}
+
+	// Delete is the same shape: its row is gone before the read-back starts.
+	deleting, stop := context.WithCancel(context.Background())
+	defer stop()
+	cancelOnDelete := func(tx *gorm.DB) {
+		if strings.HasPrefix(tx.Statement.SQL.String(), "SELECT tenant_id, key, value FROM "+tableName) {
+			stop()
+		}
+	}
+	if err := handle.Callback().Row().Replace("test:cancel-when-reading-back", cancelOnDelete); err != nil {
+		t.Fatalf("replacing the callback: %v", err)
+	}
+	if err := store.Delete(deleting, Global(), "demo.limit", "operator"); err != nil {
+		t.Fatalf("the delete returned %v, and its statement had committed", err)
+	}
+	if deleting.Err() == nil {
+		t.Fatal("the deleting context was never cancelled, so this half tested nothing")
+	}
+	if got, _ := Get[int](store, Global(), "demo.limit"); got != 100 {
+		t.Errorf("the writer reads %v after its delete, want the declared default 100", got)
+	}
+	if events := bus.events(); len(events) != 3 || !events[2].Payload.(Change).Deleted {
+		t.Errorf("published %+v, want the delete's change as well", events)
+	}
+}
+
 // A publish failure does not undo the write: the value is in the database, and
 // reporting the write as failed would tell the caller the opposite of what
 // happened.

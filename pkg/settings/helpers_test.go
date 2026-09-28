@@ -50,7 +50,12 @@ func newRecordingBus() *recordingBus {
 	return &recordingBus{handlers: make(map[string][]event.Handler)}
 }
 
-func (b *recordingBus) Publish(_ context.Context, evt event.Event) error {
+// Publish refuses a context that is already done, which is what the bus
+// contract holds every backend to, and records the event otherwise.
+func (b *recordingBus) Publish(ctx context.Context, evt event.Event) error {
+	if err := ctx.Err(); err != nil {
+		return err
+	}
 	b.mu.Lock()
 	defer b.mu.Unlock()
 	if b.failWith != nil {
