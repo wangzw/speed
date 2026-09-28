@@ -15,12 +15,16 @@ import (
 // publish the same event again after a failure it cannot read, so that a
 // consumer that already acted on the first attempt recognises the second.
 //
-// Version 7 leads with the time in milliseconds, so identifiers minted later
-// sort later, and a consumer keeping the identifiers it has seen in an index
-// appends to it rather than inserting all over it. The remaining 74 bits are
-// random, which keeps apart two identifiers minted in the same millisecond, on
-// one replica or on two. It uses the standard library alone because every
-// publisher imports this package.
+// Version 7 leads with the time in milliseconds, so an identifier minted in a
+// later millisecond sorts after one minted in an earlier one, each millisecond
+// read from the clock of the process that minted it, and a consumer keeping the
+// identifiers it has seen in an index appends to it rather than inserting all
+// over it. The remaining 74 bits are random, which keeps apart two identifiers
+// minted in the same millisecond, on one replica or on two, and leaves their
+// order to chance: two events published within one millisecond, even one after
+// the other on one goroutine, sort either way. The identifier is therefore no
+// record of the order events were published in. It uses the standard library
+// alone because every publisher imports this package.
 func NewID() string {
 	var b [16]byte
 	// crypto/rand.Read never returns an error and always fills the buffer.
