@@ -209,11 +209,13 @@ func (b *bus) Publish(ctx context.Context, evt event.Event) error {
 	if stageErr := b.table.Accepting(); stageErr != nil {
 		return stageErr
 	}
+	evt = dispatch.Stamp(evt)
 	return b.client.XAdd(ctx, &goredis.XAddArgs{
 		Stream: streamKey(evt.Type),
 		MaxLen: b.maxEntries,
 		Approx: true,
 		Values: map[string]any{
+			fieldID:       evt.ID,
 			fieldType:     evt.Type,
 			fieldTenantID: evt.TenantID,
 			fieldPayload:  string(payload),
@@ -328,6 +330,7 @@ func (b *bus) read(reading, handling context.Context, stream, eventType string) 
 // The entry field names, in one place because the writer and the reader have to
 // agree on them and nothing else checks that they do.
 const (
+	fieldID       = "id"
 	fieldType     = "type"
 	fieldTenantID = "tenant"
 	fieldPayload  = "payload"
@@ -340,6 +343,9 @@ const (
 // payload structurally for exactly this reason.
 func decode(eventType string, values map[string]any) event.Event {
 	evt := event.Event{Type: eventType}
+	if v, ok := values[fieldID].(string); ok {
+		evt.ID = v
+	}
 	if v, ok := values[fieldTenantID].(string); ok {
 		evt.TenantID = v
 	}

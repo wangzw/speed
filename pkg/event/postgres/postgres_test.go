@@ -28,16 +28,24 @@ func openBus(t *testing.T, dsn string) *bus {
 	return local
 }
 
-func TestConforms(t *testing.T) {
-	dsn := pgtest.Acquire(t)
-	bussuite.AssertConforms(t, func(t *testing.T) (event.Bus, func(context.Context)) {
+// factoryOn builds buses over one database, each a replica of its own.
+func factoryOn(dsn string) bussuite.Factory {
+	return func(t *testing.T) (event.Bus, func(context.Context)) {
 		b := openBus(t, dsn)
 		return b, func(ctx context.Context) {
 			if err := b.begin(ctx); err != nil {
 				t.Fatalf("begin: %v", err)
 			}
 		}
-	})
+	}
+}
+
+func TestConforms(t *testing.T) {
+	bussuite.AssertConforms(t, factoryOn(pgtest.Acquire(t)))
+}
+
+func TestReplicated(t *testing.T) {
+	bussuite.AssertReplicated(t, factoryOn(pgtest.Acquire(t)))
 }
 
 // TestStanceFailsWithoutAConnectionString pins the enablement rule at this

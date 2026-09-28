@@ -143,6 +143,21 @@ func (t *Table) Accepting() error {
 	}
 }
 
+// Stamp gives evt the identifier Publish assigns when the publisher left it
+// empty, and leaves a non-empty one as it is.
+//
+// Every implementation stamps before the event leaves the publisher's call —
+// before it is written to a backend, and before the in-process bus hands it
+// to its first subscriber — so the one value is what every subscriber on
+// every replica receives, and a redelivery of what the backend holds carries
+// it again.
+func Stamp(evt event.Event) event.Event {
+	if evt.ID == "" {
+		evt.ID = event.NewID()
+	}
+	return evt
+}
+
 // Deliver runs every handler subscribed to evt's type, in subscription order,
 // on ctx. Each is isolated from the others: a returned error or a panic is
 // logged and the next handler still runs, and neither reaches the caller.

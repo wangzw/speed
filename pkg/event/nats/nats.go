@@ -283,7 +283,10 @@ func (b *bus) Publish(ctx context.Context, evt event.Event) error {
 	if streamErr := b.ensureStream(ctx, evt.Type); streamErr != nil {
 		return streamErr
 	}
-	body, err := json.Marshal(envelope{Type: evt.Type, TenantID: evt.TenantID, Payload: json.RawMessage(payload)})
+	evt = dispatch.Stamp(evt)
+	body, err := json.Marshal(envelope{
+		ID: evt.ID, Type: evt.Type, TenantID: evt.TenantID, Payload: json.RawMessage(payload),
+	})
 	if err != nil {
 		return fmt.Errorf("%s: encoding event %q: %w", ModuleName, evt.Type, err)
 	}
@@ -410,10 +413,11 @@ func (b *bus) read(reading, handling context.Context, stream, eventType string) 
 
 // envelope is what travels on the wire.
 //
-// The type and the tenant ride beside the payload rather than inside it, so a
-// subscriber never has to guess at field spellings to learn which tenant an
-// event belongs to.
+// The identifier, the type and the tenant ride beside the payload rather than
+// inside it, so a subscriber never has to guess at field spellings to learn
+// which event it holds or which tenant it belongs to.
 type envelope struct {
+	ID       string          `json:"id"`
 	Type     string          `json:"type"`
 	TenantID string          `json:"tenant"`
 	Payload  json.RawMessage `json:"payload"`
@@ -424,6 +428,7 @@ func decode(eventType string, data []byte) event.Event {
 	evt := event.Event{Type: eventType}
 	var env envelope
 	if err := json.Unmarshal(data, &env); err == nil {
+		evt.ID = env.ID
 		evt.TenantID = env.TenantID
 		if len(env.Payload) > 0 {
 			var payload any

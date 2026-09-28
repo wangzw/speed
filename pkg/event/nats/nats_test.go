@@ -117,16 +117,25 @@ func TestANamespaceASubjectCannotCarryIsRefused(t *testing.T) {
 	}
 }
 
-func TestConforms(t *testing.T) {
-	url := natstest.URL(t)
-	bussuite.AssertConforms(t, func(t *testing.T) (event.Bus, func(context.Context)) {
+// factoryOn builds buses over one server, each with a durable consumer of its
+// own: replicas of one assembly.
+func factoryOn(url string) bussuite.Factory {
+	return func(t *testing.T) (event.Bus, func(context.Context)) {
 		b := openBus(t, url, "")
 		return b, func(ctx context.Context) {
 			if err := b.begin(ctx); err != nil {
 				t.Fatalf("begin: %v", err)
 			}
 		}
-	})
+	}
+}
+
+func TestConforms(t *testing.T) {
+	bussuite.AssertConforms(t, factoryOn(natstest.URL(t)))
+}
+
+func TestReplicated(t *testing.T) {
+	bussuite.AssertReplicated(t, factoryOn(natstest.URL(t)))
 }
 
 // TestStanceFailsWithoutAServer pins the enablement rule at this backend's own

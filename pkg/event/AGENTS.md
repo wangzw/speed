@@ -18,8 +18,10 @@ exclusively.
   why the payload is read structurally and the tenant identifier is carried on
   the event
   ([`adr-event-scope-2026-09-21.md`](../../docs/adr/adr-event-scope-2026-09-21.md)),
-  and what a publish does and does not promise
-  ([`adr-event-delivery-2026-09-21.md`](../../docs/adr/adr-event-delivery-2026-09-21.md)).
+  what a publish does and does not promise
+  ([`adr-event-delivery-2026-09-21.md`](../../docs/adr/adr-event-delivery-2026-09-21.md)),
+  and why an event carries an identifier a consumer de-duplicates by
+  ([`adr-event-delivery-2026-09-28.md`](../../docs/adr/adr-event-delivery-2026-09-28.md)).
 - The API itself: the godoc in this package and in each subpackage. Read `Spec`'s
   field comments before adding an implementation.
 
@@ -108,6 +110,14 @@ must not cross, and how to run it.
   and delivers and acknowledges what a reader had already taken. The stage
   bookkeeping lives in `internal/dispatch` and an implementation takes it from
   there rather than writing its own.
+- **`Event.ID` reaches every subscriber unchanged, and it is the only key a
+  consumer de-duplicates by.** Every `Publish` stamps an empty one through
+  `dispatch.Stamp` before the event leaves the call, and every transport
+  carries the value beside the payload, so each subscriber on each replica
+  receives the same one. An implementation never mints a second identifier
+  for an event it redelivers, and never substitutes its backend's own entry
+  identity: a consumer's stored keys would stop matching the day the backend
+  changed. The decision and its costs are in `adr-event-delivery-2026-09-28`.
 - **`Event.Type` is an agreement with no checker.** A publisher that renames one
   silently stops reaching its subscribers. Nothing here can catch that, and an
   implementation must not try by, say, refusing types nobody publishes — a
@@ -135,11 +145,14 @@ func Module() core.Module {
 }
 ```
 
-It then runs `internal/bussuite.AssertConforms` in its own tests. That suite is
-the capability's promises written once, and it deliberately covers only the
-floor: delivery across replicas, durability, ordering and exactly-once are
-properties of a backend, and a backend that promises one tests it where its own
-machinery lives.
+It then runs `internal/bussuite.AssertConforms` in its own tests, and a backend
+that carries events between replicas runs `internal/bussuite.AssertReplicated`
+as well. That suite is the capability's promises written once, and it
+deliberately covers only the floor and what every replica is owed whatever the
+delivery shape — the one identifier, and a reading position fixed before the
+start stage returns: broadcast or load balancing, durability, ordering and
+exactly-once are properties of a backend, and a backend that promises one
+tests it where its own machinery lives.
 
 ## Running it
 

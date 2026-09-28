@@ -134,19 +134,25 @@ func TestAnOutboxFromBeforeTheCurrentColumnsIsBroughtUpToDate(t *testing.T) {
 
 	b := openBus(t, dsn)
 	var got atomic.Int32
-	b.Subscribe("t", func(context.Context, event.Event) error {
+	var id atomic.Value
+	b.Subscribe("t", func(_ context.Context, evt event.Event) error {
 		got.Add(1)
+		id.Store(evt.ID)
 		return nil
 	})
 	if err := b.begin(ctx); err != nil {
 		t.Fatalf("begin: %v", err)
 	}
-	if err := b.Publish(ctx, event.Event{Type: "t"}); err != nil {
+	const published = "published-on-the-older-outbox"
+	if err := b.Publish(ctx, event.Event{ID: published, Type: "t"}); err != nil {
 		t.Fatalf("Publish on the older outbox: %v", err)
 	}
 	bussuite.WaitFor(t, "the event published on the older outbox", func() bool { return got.Load() >= 1 })
 	time.Sleep(pollInterval + 500*time.Millisecond)
 	if n := got.Load(); n != 1 {
 		t.Fatalf("the replica delivered %d events, want only the 1 published after it opened", n)
+	}
+	if carried := id.Load(); carried != published {
+		t.Fatalf("the event arrived with the identifier %v, want %q", carried, published)
 	}
 }

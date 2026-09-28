@@ -31,16 +31,27 @@ func openBus(t *testing.T, addr string, db int, group string) *bus {
 	return local
 }
 
-func TestConforms(t *testing.T) {
-	addr, db := redistest.Acquire(t)
-	bussuite.AssertConforms(t, func(t *testing.T) (event.Bus, func(context.Context)) {
+// factoryOn builds buses over one server and database, each with a consumer
+// group of its own: replicas of one assembly.
+func factoryOn(addr string, db int) bussuite.Factory {
+	return func(t *testing.T) (event.Bus, func(context.Context)) {
 		b := openBus(t, addr, db, "")
 		return b, func(ctx context.Context) {
 			if err := b.begin(ctx); err != nil {
 				t.Fatalf("begin: %v", err)
 			}
 		}
-	})
+	}
+}
+
+func TestConforms(t *testing.T) {
+	addr, db := redistest.Acquire(t)
+	bussuite.AssertConforms(t, factoryOn(addr, db))
+}
+
+func TestReplicated(t *testing.T) {
+	addr, db := redistest.Acquire(t)
+	bussuite.AssertReplicated(t, factoryOn(addr, db))
 }
 
 // TestStanceFailsWithoutAServer pins the enablement rule at this backend's own

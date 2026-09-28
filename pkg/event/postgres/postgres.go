@@ -85,14 +85,17 @@ const (
 	//
 	// xact is the transaction that wrote the entry. It is what a replica tells
 	// an entry published before it opened from one published after by: see
-	// bus.origin.
+	// bus.origin. identifier is the event's own identifier, which every
+	// replica's subscribers receive; id is this table's row key and orders the
+	// reads.
 	createTable = `CREATE TABLE IF NOT EXISTS ` + table + ` (
 		id         BIGSERIAL PRIMARY KEY,
 		type       TEXT NOT NULL,
 		tenant     TEXT NOT NULL DEFAULT '',
 		payload    TEXT NOT NULL,
 		created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
-		xact       xid8 NOT NULL DEFAULT pg_current_xact_id()
+		xact       xid8 NOT NULL DEFAULT pg_current_xact_id(),
+		identifier TEXT NOT NULL DEFAULT ''
 	);
 	CREATE TABLE IF NOT EXISTS ` + deliveredTable + ` (
 		event_id BIGINT NOT NULL,
@@ -226,6 +229,7 @@ func createTables(ctx context.Context, pool *pgxpool.Pool) error {
 // them would fail on it.
 var addedColumns = []struct{ name, definition string }{
 	{"xact", "xid8 NOT NULL DEFAULT pg_current_xact_id()"},
+	{"identifier", "TEXT NOT NULL DEFAULT ''"},
 }
 
 // addMissingColumns adds each of addedColumns the outbox lacks.
@@ -318,6 +322,7 @@ func (b *bus) Publish(ctx context.Context, evt event.Event) error {
 	if stageErr := b.table.Accepting(); stageErr != nil {
 		return stageErr
 	}
+	evt = dispatch.Stamp(evt)
 	tx, err := b.pool.Begin(ctx)
 	if err != nil {
 		return err
@@ -325,8 +330,8 @@ func (b *bus) Publish(ctx context.Context, evt event.Event) error {
 	defer func() { _ = tx.Rollback(ctx) }()
 	var id int64
 	if err := tx.QueryRow(ctx,
-		`INSERT INTO `+table+` (type, tenant, payload) VALUES ($1, $2, $3) RETURNING id`,
-		evt.Type, evt.TenantID, string(payload)).Scan(&id); err != nil {
+		`INSERT INTO `+table+` (identifier, type, tenant, payload) VALUES ($1, $2, $3, $4) RETURNING id`,
+		evt.ID, evt.Type, evt.TenantID, string(payload)).Scan(&id); err != nil {
 		return err
 	}
 	if _, err := tx.Exec(ctx, `SELECT pg_notify($1, $2)`, channel, fmt.Sprint(id)); err != nil {
@@ -469,7 +474,7 @@ func (b *bus) drain(reading, handling context.Context) error {
 	// missing rather than by where a cursor stands is what makes a commit that
 	// lands late just another entry.
 	rows, err := b.pool.Query(reading,
-		`SELECT o.id, o.type, o.tenant, o.payload FROM `+table+` o
+		`SELECT o.id, o.identifier, o.type, o.tenant, o.payload FROM `+table+` o
 		 WHERE o.type = ANY($2)
 		   AND NOT pg_visible_in_snapshot(o.xact, $4::pg_snapshot)
 		   AND NOT EXISTS (SELECT 1 FROM `+deliveredTable+` d
@@ -487,7 +492,7 @@ func (b *bus) drain(reading, handling context.Context) error {
 	var batch []row
 	for rows.Next() {
 		var r row
-		if err := rows.Scan(&r.id, &r.evt.Type, &r.evt.TenantID, &r.payload); err != nil {
+		if err := rows.Scan(&r.id, &r.evt.ID, &r.evt.Type, &r.evt.TenantID, &r.payload); err != nil {
 			rows.Close()
 			return err
 		}

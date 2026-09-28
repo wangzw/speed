@@ -173,8 +173,9 @@ func (b *bus) Publish(ctx context.Context, evt event.Event) error {
 	}
 	// The handlers run on the publisher's goroutine and context, with no lock
 	// of this bus held: a handler that publishes again would otherwise
-	// deadlock against this call.
-	b.table.Deliver(ctx, evt)
+	// deadlock against this call. Each receives a copy of the one stamped
+	// event, so they all see the same identifier.
+	b.table.Deliver(ctx, dispatch.Stamp(evt))
 	return nil
 }
 

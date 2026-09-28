@@ -5,10 +5,13 @@
 // capability's promises" is a single statement a backend either passes or does
 // not.
 //
-// What is deliberately not here: delivery across replicas, durability, ordering,
-// and exactly-once. Those are properties of a backend rather than of the
-// capability, and the capability promises none of them; a backend that does
-// promise one tests it where its own machinery lives.
+// What is deliberately not here: the shape of delivery across replicas —
+// broadcast or load-balanced — durability, ordering, and exactly-once. Those
+// are properties of a backend rather than of the capability, and the
+// capability promises none of them; a backend that does promise one tests it
+// where its own machinery lives. What a bus carrying events between replicas
+// owes whatever its shape — the one identifier on every replica, the reading
+// position fixed by the start stage — is in AssertReplicated.
 package bussuite
 
 import (
@@ -76,6 +79,81 @@ func WaitFor(t *testing.T, what string, cond func() bool) {
 		time.Sleep(10 * time.Millisecond)
 	}
 	t.Fatalf("timed out waiting for %s", what)
+}
+
+// receive waits for one value on ch, and fails the case if none arrives.
+func receive[T any](t *testing.T, ch <-chan T) T {
+	t.Helper()
+	select {
+	case v := <-ch:
+		return v
+	case <-time.After(10 * time.Second):
+		t.Fatal("timed out waiting for a delivery")
+		var zero T
+		return zero
+	}
+}
+
+// AssertReplicated runs the part of the contract that only a bus carrying
+// events between replicas can be held to, against pairs of buses the factory
+// builds: every bus a factory builds is a replica of the others, reaching the
+// same backend.
+//
+// The in-process implementation does not run it, having no second replica to
+// reach.
+func AssertReplicated(t *testing.T, newBus Factory) {
+	t.Helper()
+
+	t.Run("every replica receives the one identifier", func(t *testing.T) {
+		publisher, startPublisher := newBus(t)
+		other, startOther := newBus(t)
+		here, there := make(chan string, 2), make(chan string, 2)
+		publisher.Subscribe("t", func(_ context.Context, evt event.Event) error {
+			here <- evt.ID
+			return nil
+		})
+		other.Subscribe("t", func(_ context.Context, evt event.Event) error {
+			there <- evt.ID
+			return nil
+		})
+		startPublisher(context.Background())
+		startOther(context.Background())
+		// Broadcast hands one event to every replica, so a consumer whose
+		// effect is shared between replicas — one row, one webhook — acts on
+		// it once only by recognising the second arrival. The identifier is
+		// what it recognises it by, and it has to be the same on each.
+		for _, published := range []event.Event{{Type: "t"}, {ID: "set-by-the-publisher", Type: "t"}} {
+			if err := publisher.Publish(context.Background(), published); err != nil {
+				t.Fatalf("Publish: %v", err)
+			}
+			a, b := receive(t, here), receive(t, there)
+			if a == "" || a != b {
+				t.Fatalf("the replicas received the identifiers %q and %q for one event", a, b)
+			}
+			if published.ID != "" && a != published.ID {
+				t.Fatalf("the replicas received the identifier %q, want the %q its publisher set", a, published.ID)
+			}
+		}
+	})
+
+	t.Run("an event published as soon as a replica starts reaches it", func(t *testing.T) {
+		publisher, startPublisher := newBus(t)
+		late, startLate := newBus(t)
+		var got atomic.Int32
+		late.Subscribe("t", func(context.Context, event.Event) error {
+			got.Add(1)
+			return nil
+		})
+		startPublisher(context.Background())
+		// A subscriber registered in Init owns everything published once its
+		// implementation's start stage has returned: the replica's reading
+		// position is fixed before the stage returns.
+		startLate(context.Background())
+		if err := publisher.Publish(context.Background(), event.Event{Type: "t"}); err != nil {
+			t.Fatalf("Publish: %v", err)
+		}
+		WaitFor(t, "the replica that had just started to receive the event", func() bool { return got.Load() == 1 })
+	})
 }
 
 // AssertConforms runs the whole contract against buses the factory builds.
@@ -167,6 +245,59 @@ func AssertConforms(t *testing.T, newBus Factory) {
 			}
 		case <-time.After(5 * time.Second):
 			t.Fatal("timed out waiting for the event to arrive")
+		}
+	})
+
+	t.Run("every subscriber receives the identifier the bus assigned", func(t *testing.T) {
+		b, start := newBus(t)
+		first, second := make(chan string, 2), make(chan string, 2)
+		b.Subscribe("t", func(_ context.Context, evt event.Event) error {
+			first <- evt.ID
+			return nil
+		})
+		b.Subscribe("t", func(_ context.Context, evt event.Event) error {
+			second <- evt.ID
+			return nil
+		})
+		start(context.Background())
+		for range 2 {
+			if err := b.Publish(context.Background(), event.Event{Type: "t"}); err != nil {
+				t.Fatalf("Publish: %v", err)
+			}
+		}
+		// The identifier is the key an idempotent consumer de-duplicates by, so
+		// it has to be there, it has to be the same for every subscriber of one
+		// event, and it has to differ between two events.
+		var seen []string
+		for range 2 {
+			a, b := receive(t, first), receive(t, second)
+			if a == "" {
+				t.Fatal("an event published without an identifier reached its subscriber without one")
+			}
+			if a != b {
+				t.Fatalf("two subscribers of one event received the identifiers %q and %q", a, b)
+			}
+			seen = append(seen, a)
+		}
+		if seen[0] == seen[1] {
+			t.Fatalf("two events published separately received the one identifier %q", seen[0])
+		}
+	})
+
+	t.Run("an identifier the publisher set arrives unchanged", func(t *testing.T) {
+		b, start := newBus(t)
+		got := make(chan string, 1)
+		b.Subscribe("t", func(_ context.Context, evt event.Event) error {
+			got <- evt.ID
+			return nil
+		})
+		start(context.Background())
+		const mine = "order-42/placed"
+		if err := b.Publish(context.Background(), event.Event{ID: mine, Type: "t"}); err != nil {
+			t.Fatalf("Publish: %v", err)
+		}
+		if id := receive(t, got); id != mine {
+			t.Fatalf("the event arrived with the identifier %q, want the %q its publisher set", id, mine)
 		}
 	})
 

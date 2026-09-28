@@ -48,6 +48,27 @@ var ErrNotStarted = errors.New("event: the bus has not started")
 
 // Event is a domain fact published on the bus.
 type Event struct {
+	// ID identifies this event, and it is the key a consumer that must act on
+	// an event once de-duplicates by.
+	//
+	// The bus promises no delivery count: a transport delivers every event to
+	// every replica's subscribers, a backend may redeliver, and a publisher may
+	// publish again after a failure it could not read. A consumer whose effect
+	// lands outside its own replica — a webhook, a projection, a row per event
+	// in a shared database — tells a second delivery of one event from a
+	// second event by this value. Two events carrying the same ID are, to a
+	// subscriber, the same event delivered twice.
+	//
+	// Publish assigns one when the publisher left it empty, in the form NewID
+	// mints. A non-empty one is carried as it is and its shape is not checked,
+	// so a subscriber must not assume every identifier is a UUID. Every
+	// subscriber, on every replica and over every backend, receives the same
+	// value. Publish cannot hand an assigned value back, so a publisher that
+	// has to know it — to record it next to the write the event announces, or
+	// to publish again after a failure without the consumer counting the
+	// event twice — sets it itself, with NewID or a key of its own.
+	ID string
+
 	// Type is the routing key handlers subscribe to. Subscription matching is
 	// an exact string comparison; no wildcards or prefixes are interpreted.
 	//
