@@ -127,7 +127,7 @@ func namedModules() []string {
 		return []string{postgres.ModuleName, sqlite.ModuleName, probeModuleName}
 	case caseNoEngineConfigured:
 		return []string{probeModuleName}
-	case caseFirstMigration:
+	case caseFirstMigration, caseConnectRefused:
 		return []string{postgres.ModuleName, probeModuleName}
 	case caseSerializerRoundTrip, caseOneEngineConfigured, caseMigrateSubcommand:
 		return []string{sqlite.ModuleName, probeModuleName}

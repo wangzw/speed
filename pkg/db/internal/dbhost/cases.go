@@ -41,6 +41,9 @@ const (
 	// migration stage: the migrations are applied and nothing past them
 	// runs.
 	caseMigrateSubcommand = "migrate-subcommand"
+	// caseConnectRefused starts on a PostgreSQL server that refuses the
+	// login, so the startup ends in the database module's New.
+	caseConnectRefused = "connect-refused"
 )
 
 // The variables that drive the concurrency scenario, and the paths they carry.

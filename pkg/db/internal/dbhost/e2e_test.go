@@ -298,6 +298,42 @@ func TestNoEngineNamedIsMissingProvider(t *testing.T) {
 	requireNoMentionOf(t, got, "db.postgres")
 }
 
+// The case about what a refused connection leaves on the process's streams.
+
+// TestARefusedConnectionIsReportedOnceOnTheDiagnosticStream starts on a server
+// that refuses the login. The startup fails with the database module's own
+// error on standard error, and nothing else reports it: GORM's logger writes to
+// standard output from inside gorm.Open when its own connectivity check fails,
+// which puts a second copy of the driver's reason — the user, the database and
+// the address it tried — on the stream a host's log pipeline reads. Neither
+// stream carries the password.
+func TestARefusedConnectionIsReportedOnceOnTheDiagnosticStream(t *testing.T) {
+	parsed, err := url.Parse(pgtest.Acquire(t))
+	if err != nil {
+		t.Fatalf("reading the fixture's locator: %v", err)
+	}
+	const wrongPassword = "not-the-password-7d2e"
+	parsed.User = url.UserPassword(parsed.User.Username(), wrongPassword)
+	locator := writeConfig(t, dbConfig{DB: dbSection{Postgres: &engineSection{DSN: parsed.String()}}})
+	got := runHost(t, caseConnectRefused, "--config="+locator)
+
+	if got.code == 0 {
+		t.Fatalf("the startup succeeded with a password the server refuses\nstdout:\n%s\nstderr:\n%s",
+			got.stdout, got.stderr)
+	}
+	if !strings.Contains(got.stderr, "db: connection could not be established") {
+		t.Errorf("standard error does not carry the connect failure:\n%s", got.stderr)
+	}
+	for _, text := range []string{"failed to initialize database", "failed to connect", parsed.User.Username()} {
+		if strings.Contains(got.stdout, text) {
+			t.Errorf("standard output reports the refused connection (%q):\n%s", text, got.stdout)
+		}
+	}
+	if strings.Contains(got.stdout+got.stderr, wrongPassword) {
+		t.Errorf("the run echoes the password\nstdout:\n%s\nstderr:\n%s", got.stdout, got.stderr)
+	}
+}
+
 // The case about a command whose depth is not the serving stage.
 
 // TestTheMigrateCommandStopsAtTheMigrationStage is the end-to-end form of a
