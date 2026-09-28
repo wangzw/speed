@@ -165,8 +165,8 @@ type Store interface {
 	//
 	// It validates, writes the row, reloads this replica's snapshot and
 	// publishes, in that order. A failure before the row is written returns
-	// without touching anything; a failure to publish does not roll the write
-	// back and does not change the result.
+	// without touching anything; a failure to reload or to publish does not
+	// roll the write back and does not change the result.
 	//
 	// ctx bounds the wait for a connection and the statement. Once the row is
 	// written, the reload and the publish run whatever becomes of ctx, since
@@ -184,9 +184,11 @@ type Store interface {
 	//
 	// The result is what happened to the row. An error means it was not
 	// changed, whatever point ctx was cancelled at; nil means the change is
-	// committed, served by this replica and handed to the bus. A connection
-	// lost while the change commits is the one outcome only the database
-	// can settle.
+	// committed and the reload and the publish have run. Either of those
+	// failing after the commit is logged rather than returned, and a failed
+	// reload leaves this replica serving the value from before until its next
+	// one. A connection lost while the change commits is the one outcome only
+	// the database can settle.
 	Set(ctx context.Context, w Write) error
 
 	// Delete removes the explicit row the selector names. Deleting a row that
