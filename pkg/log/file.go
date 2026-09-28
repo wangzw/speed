@@ -1,6 +1,7 @@
 package log
 
 import (
+	"errors"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -45,9 +46,10 @@ type rotatingFile struct {
 	maxAgeDays int
 
 	// f is the open active file and size is how much has been written to it.
-	// f is nil when a rotation could not create the new file; writes then
-	// fail rather than reopen, because this module does not reopen a
-	// destination behind its own back.
+	// f is nil when a rotation renamed the active file away and could not
+	// create the new one, or could not reopen the active file after a
+	// rename that failed; writes then fail rather than retry the open,
+	// because this module does not reopen a destination behind its own back.
 	f    *os.File
 	size int64
 
@@ -73,6 +75,10 @@ type rotatingFile struct {
 	// that a destination whose directory has gone does not report the same
 	// fault on every pass.
 	pruneFailureReported bool
+	// rotateFailureReported says a rotation whose rename failed has already
+	// been reported. Every write past the limit tries the rotation again, and
+	// a line each would flood standard error with the one fault.
+	rotateFailureReported bool
 }
 
 // backgroundPruneInterval is how often a file destination prunes on its own.
@@ -159,13 +165,31 @@ func (rf *rotatingFile) shouldRotate(record int64) bool {
 // rotate renames the active file to an archive and creates path anew, then
 // prunes: the count limit takes effect the moment an archive appears rather
 // than at the next background pass.
+//
+// A rename that fails — a directory the process may no longer write to, an
+// archive name on another device — leaves the active file where it was and
+// intact. It is reopened and the record goes into it past the limit: dropping
+// every later record over a file that is still there to write would turn a
+// rotation fault into the loss of the destination. The fault is reported once,
+// every later write past the limit tries the rotation again, and rotation
+// resumes by itself once the rename can happen.
 func (rf *rotatingFile) rotate() error {
 	if err := rf.f.Close(); err != nil {
 		return err
 	}
 	rf.f = nil
 	if err := os.Rename(rf.path, rf.archiveName()); err != nil {
-		return err
+		f, reopenErr := os.OpenFile(rf.path, os.O_CREATE|os.O_WRONLY|os.O_APPEND, fileMode)
+		if reopenErr != nil {
+			return errors.Join(err, reopenErr)
+		}
+		rf.f = f
+		if !rf.rotateFailureReported {
+			rf.rotateFailureReported = true
+			report("the active file %s could not be rotated: %v; records go on into it past the size limit "+
+				"until a rotation succeeds", rf.path, err)
+		}
+		return nil
 	}
 	f, err := os.OpenFile(rf.path, os.O_CREATE|os.O_WRONLY|os.O_APPEND, fileMode)
 	if err != nil {
@@ -173,6 +197,7 @@ func (rf *rotatingFile) rotate() error {
 	}
 	rf.f = f
 	rf.size = 0
+	rf.rotateFailureReported = false
 	rf.prune()
 	return nil
 }

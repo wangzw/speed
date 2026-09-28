@@ -71,6 +71,57 @@ func read(t *testing.T, path string) string {
 	return string(content)
 }
 
+// TestAFailedRenameKeepsWritingToTheActiveFile pins what a rotation that cannot
+// rename does. The active file is still where it was and still writable, so
+// records go on into it past the limit rather than being dropped; the failure
+// is reported once, and rotation resumes as soon as the rename can happen.
+//
+// A directory the process may not write to is what refuses the rename here,
+// while the active file inside it stays open to appends.
+func TestAFailedRenameKeepsWritingToTheActiveFile(t *testing.T) {
+	if os.Geteuid() == 0 {
+		t.Skip("the superuser renames inside a directory without write permission")
+	}
+	dir := filepath.Join(t.TempDir(), "logs")
+	if err := os.Mkdir(dir, 0o700); err != nil {
+		t.Fatalf("creating the log directory failed: %v", err)
+	}
+	path := filepath.Join(dir, "app.log")
+	rf := newTestFile(t, path, 16, 0, 0, time.Now)
+	write(t, rf, "first-record\n")
+
+	if err := os.Chmod(dir, 0o500); err != nil {
+		t.Fatalf("making the directory read-only failed: %v", err)
+	}
+	t.Cleanup(func() { _ = os.Chmod(dir, 0o700) })
+
+	reported := captureStderr(t, func() {
+		for _, record := range []string{"second-record\n", "third-record\n"} {
+			if _, err := rf.Write([]byte(record)); err != nil {
+				t.Errorf("writing %q after a failed rename failed: %v", record, err)
+			}
+		}
+	})
+	if got := read(t, path); got != "first-record\nsecond-record\nthird-record\n" {
+		t.Errorf("the active file holds %q, want every record written past the limit", got)
+	}
+	if got := strings.Count(reported, "\n"); got != 1 || !strings.Contains(reported, path) {
+		t.Errorf("two failed rotations reported %q, want one line naming the active file", reported)
+	}
+	requireOnePrefix(t, reported)
+
+	if err := os.Chmod(dir, 0o700); err != nil {
+		t.Fatalf("making the directory writable again failed: %v", err)
+	}
+	write(t, rf, "fourth-record\n")
+	if got := read(t, path); got != "fourth-record\n" {
+		t.Errorf("once the rename could happen the active file holds %q, want a fresh file", got)
+	}
+	if got := otherFilesIn(t, dir, "app.log"); len(got) != 1 || !archiveNamePattern.MatchString(got[0]) {
+		t.Errorf("the directory holds %v beside the active file, want the one archive the rotation made", got)
+	}
+}
+
 // TestRotateRenamesCurrentAndRecreatesPath pins what a rotation is: the current
 // file is renamed to an archive and the configured path is created anew.
 //
