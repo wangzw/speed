@@ -272,8 +272,10 @@ func (c *countingVerifier) Verify(ctx context.Context, subject string, cred auth
 // registration end to end: Init takes the logging capability up, registers the
 // rules there, and a record written afterwards through that module's chain
 // reaches its destination with the credential masked — under a credential key,
-// and inside the free text of any other value.
+// and inside the free text of any other value — while a refusal cause that only
+// talks about a scheme arrives as it was written.
 func TestTheRedactionRulesReachTheLoggingModulesOwnOutput(t *testing.T) {
+	const cause = "the bearer token names no live session"
 	path := filepath.Join(t.TempDir(), "log.json")
 	body := `{"authn":{"gate":{"endpoints":["public"]}},` +
 		`"log":{"outputs":[{"to":"file","format":"json","path":"` + path + `"}]}}`
@@ -290,7 +292,8 @@ func TestTheRedactionRulesReachTheLoggingModulesOwnOutput(t *testing.T) {
 		}
 		logging.Named("case").Info("a handler that logs what it was sent",
 			"Authorization", "Basic YWxpY2U6c2VjcmV0",
-			"note", "the caller sent Bearer tok-very-secret and nothing else")
+			"note", "the caller sent Bearer tok-very-secret and nothing else",
+			"cause", cause)
 		return nil
 	})
 	if err != nil {
@@ -309,5 +312,9 @@ func TestTheRedactionRulesReachTheLoggingModulesOwnOutput(t *testing.T) {
 		if strings.Contains(text, secret) {
 			t.Errorf("the output carries the credential %q in the clear:\n%s", secret, text)
 		}
+	}
+	if !strings.Contains(text, cause) {
+		t.Errorf("the output does not carry the refusal cause %q as it was written, so the rule "+
+			"took a word of prose for a credential:\n%s", cause, text)
 	}
 }

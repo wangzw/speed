@@ -38,6 +38,14 @@ func registerRedaction(r log.Redaction, schemes []string) {
 // credentialMatcher builds the rule that masks the value following an
 // authentication scheme wherever one appears inside a string.
 //
+// What it masks is one word: wherever a scheme name in play begins a word and is
+// followed by blanks, the run after the blanks up to the next whitespace or
+// quote, unless that run is a word of schemeProse. That covers a credential in
+// the token68 form every scheme in this repository uses. A credential written as
+// a list of auth-params is masked only up to its first quote or blank, and not
+// at all when its first parameter is named by a word of schemeProse (realm=,
+// token=); a value that runs across several words keeps all but the first.
+//
 // The matcher runs on every resolved string value and every error text of every
 // record in the process, so its cost lands on the whole logging path. It is kept
 // to a scan per scheme for that reason, with no expression engine behind it.
@@ -68,7 +76,8 @@ func credentialMatcher(schemes []string) log.Matcher {
 				if !startsWord(value, at) {
 					continue
 				}
-				if span, found := valueSpan(value, from); found {
+				span, found := valueSpan(value, from)
+				if found && !isProse(value[span.Start:span.End]) {
 					spans = append(spans, span)
 				}
 			}
@@ -141,9 +150,55 @@ func isWordByte(b byte) bool {
 	return false
 }
 
-// valueSpan takes the credential value starting at from and running to the next
-// whitespace or the end of the string.
+// schemeProse is the vocabulary a scheme name is followed by when it is written
+// about rather than sent: the nouns a sentence about authentication puts after
+// "Basic" or "Bearer", and the function words that follow a scheme name standing
+// in a sentence of its own.
+//
+// Leaving a word of this list unmasked gives nothing away, whatever the scheme
+// and whatever the writer meant by it. The list is fixed and public, so a
+// credential that is one of its words is a credential anybody reading this file
+// can name. That is what makes an exemption by list safe where one by shape is
+// not: no shape tells the word "token" from a bearer token that happens to be
+// five lower-case letters, and the Basic credential of k:s is "azpz".
+//
+// Every other word after a scheme name is masked, prose included. The list keeps
+// the sentences this repository and its hosts write about credentials readable;
+// it does not make every English word after a scheme name survive.
+var schemeProse = map[string]struct{}{
+	// What a sentence about a credential names after the scheme.
+	"auth": {}, "authentication": {}, "authorization": {},
+	"challenge": {}, "challenges": {}, "credential": {}, "credentials": {},
+	"header": {}, "headers": {}, "realm": {}, "scheme": {}, "schemes": {},
+	"token": {}, "tokens": {},
+	// What follows a scheme name that is itself the subject or object of a
+	// sentence.
+	"a": {}, "an": {}, "and": {}, "are": {}, "as": {}, "at": {}, "be": {},
+	"but": {}, "by": {}, "for": {}, "from": {}, "has": {}, "if": {}, "in": {},
+	"is": {}, "it": {}, "nor": {}, "not": {}, "of": {}, "on": {}, "or": {},
+	"than": {}, "that": {}, "the": {}, "then": {}, "to": {}, "was": {},
+	"were": {}, "when": {}, "which": {}, "with": {},
+}
+
+// isProse reports whether the run after a scheme name is a word of schemeProse,
+// in any case and with the punctuation a sentence puts after a word — or the
+// '=' a challenge puts after "realm" — left off.
+func isProse(run string) bool {
+	_, listed := schemeProse[strings.ToLower(strings.TrimRight(run, ".,;:!?)="))]
+	return listed
+}
+
+// valueSpan takes the credential value that follows a scheme name: from the
+// first byte after the blanks that separate the two, to the next whitespace or
+// quote or the end of the string.
+//
+// The needle carries one space, and RFC 9110 separates scheme and credential by
+// one or more; the gateway trims whatever surrounds the value, so a credential
+// written with several blanks is one it would have read.
 func valueSpan(value string, from int) (log.Span, bool) {
+	for from < len(value) && (value[from] == ' ' || value[from] == '\t') {
+		from++
+	}
 	end := from
 	for end < len(value) && !isSpaceByte(value[end]) {
 		end++

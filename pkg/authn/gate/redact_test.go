@@ -1,22 +1,32 @@
 package gate
 
 import (
+	"slices"
 	"strings"
 	"testing"
 
 	"github.com/vislake/speed/pkg/log"
 )
 
-// mask applies the spans the matcher reports, the way the logging layer does,
-// so that a case reads what would actually reach a destination.
+// mask applies the spans the matcher reports, the way the logging layer does —
+// ordered by start and with overlapping ones merged, since the matcher hands
+// them back in the order it found them — so that a case reads what would
+// actually reach a destination.
 func mask(matcher log.Matcher, value string) string {
-	spans := matcher(value)
+	spans := slices.Clone(matcher(value))
+	slices.SortFunc(spans, func(a, b log.Span) int { return a.Start - b.Start })
 	var b strings.Builder
-	at := 0
+	at, masked := 0, false
 	for _, s := range spans {
+		if masked && s.Start <= at {
+			// Overlapping or touching the span before it, so it is
+			// part of the one mask already written.
+			at = max(at, s.End)
+			continue
+		}
 		b.WriteString(value[at:s.Start])
 		b.WriteString(log.MaskedText)
-		at = s.End
+		at, masked = s.End, true
 	}
 	b.WriteString(value[at:])
 	return b.String()
@@ -58,6 +68,20 @@ func TestTheCredentialIsMaskedWhereverTheSchemeAppears(t *testing.T) {
 			value: "notbasic YWxpY2U6czNjcmV0",
 			kept:  "YWxpY2U6czNjcmV0",
 		},
+		{
+			// RFC 9110 separates the scheme from the credential with
+			// one or more spaces, and the gateway reads a credential
+			// written with several, so a string carrying one that way
+			// carries a credential the gateway would have accepted.
+			name:   "a credential after more than one space",
+			value:  "Basic   YWxpY2U6czNjcmV0",
+			secret: "YWxpY2U6czNjcmV0",
+		},
+		{
+			name:   "a credential after a tab",
+			value:  "rejected Bearer \tey.Jh.bGci",
+			secret: "ey.Jh.bGci",
+		},
 	} {
 		t.Run(c.name, func(t *testing.T) {
 			got := mask(matcher, c.value)
@@ -66,6 +90,39 @@ func TestTheCredentialIsMaskedWhereverTheSchemeAppears(t *testing.T) {
 			}
 			if c.kept != "" && !strings.Contains(got, c.kept) {
 				t.Errorf("the masked value %q lost %q, which is not a credential", got, c.kept)
+			}
+		})
+	}
+}
+
+// TestProseAboutASchemeKeepsItsWords holds the other side of a rule that runs on
+// every string of every record in the process.
+//
+// A scheme name is also an English word, and the text written about a credential
+// uses it as one: a backend's refusal cause, the gateway's own sentences, any
+// other module's. Taking the word after it for a credential masks ordinary prose
+// — "the bearer [REDACTED] names no live session" — and a refusal cause masked
+// that way does not say what was wrong. Every value here is text a real
+// component writes or would write, and none of it carries a credential, so each
+// has to reach the destination exactly as it was written.
+func TestProseAboutASchemeKeepsItsWords(t *testing.T) {
+	matcher := credentialMatcher([]string{"bearer"})
+
+	for _, value := range []string{
+		// pkg/authn/static's refusal of a malformed Basic credential.
+		"authn.static: the Basic credential is not base64 of user:password, or it is " +
+			"qualified with a backend that is not this one",
+		"the bearer token names no live session",
+		"Basic auth is switched off on this endpoint",
+		"neither Basic nor Bearer is claimed by any backend",
+		"refused: the Bearer Token.",
+		"the challenge read Basic realm=\"public\"",
+		"the bearer credentials, the basic scheme and the Bearer header",
+	} {
+		t.Run(value, func(t *testing.T) {
+			if got := mask(matcher, value); got != value {
+				t.Errorf("prose about a scheme reads %q once masked, want it unchanged: the "+
+					"word after the scheme name is a word, not a credential", got)
 			}
 		})
 	}
