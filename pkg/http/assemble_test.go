@@ -135,9 +135,10 @@ func TestRouteConflictNamesBothPatternsAndTheEndpoint(t *testing.T) {
 //
 // The discriminating assertion is that sentence. The engine here is the bare
 // multiplexer, which answers nothing; an assembly that worked the pair out on
-// its own — the shape this module used to have — writes the pair instead and
-// fails here, while an implementation that reads the engine's own complaint
-// fails on the pattern it names.
+// its own, replaying the patterns on engines of its own instead of asking the
+// one it was given, writes the pair instead and fails here, while an
+// implementation that reads the engine's own complaint fails on the pattern it
+// names.
 func TestConflictWithoutAttributionSaysSo(t *testing.T) {
 	logger, _ := newRecordingLogger()
 	_, err := assembleEndpoint(t, testSettings("public"), nil, logger, func(e Endpoint) {
