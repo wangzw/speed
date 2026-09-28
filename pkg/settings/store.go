@@ -51,12 +51,17 @@ type settingsStore struct {
 
 // Get serves a read out of the snapshot.
 //
-// The key is looked up before the snapshot is touched, which is what makes a
-// key with no declaration a certain failure instead of a value that reads as
-// unset. Past that point the layers are tried in order and a row that failed
-// to decode reports itself.
+// The layer and the target are judged first, before the key: both are the
+// call site's mistakes whatever key comes with them, and a check that waited
+// for a declared key would let one line return an error on one run and panic
+// on another. The key is looked up before the snapshot is touched, which is
+// what makes a key with no declaration a certain failure instead of a value
+// that reads as unset. Past that point the layers are tried in order and a row
+// that failed to decode reports itself.
 func (s *settingsStore) Get(layer Layer, key string, target any) error {
+	tenantOf(layer)
 	entry, declared := s.keys.lookup(key)
+	requireTarget(target, key, entry, declared)
 	if !declared {
 		return fmt.Errorf("%w: %q. Add a declaration covering it, or correct the key at the "+
 			"call site", ErrUnknownKey, key)
@@ -75,7 +80,10 @@ func (s *settingsStore) Get(layer Layer, key string, target any) error {
 // failure after it does not undo the write: the value is in the database, and
 // reporting the write as failed because the event could not be sent would tell
 // the caller the opposite of what happened.
+//
+// The layer is judged before anything else, for the reason Get gives.
 func (s *settingsStore) Set(ctx context.Context, w Write) error {
+	tenantOf(w.Layer)
 	entry, declared := s.keys.lookup(w.Key)
 	if !declared {
 		return fmt.Errorf("%w: %q. Add a declaration covering it, or correct the key at the "+

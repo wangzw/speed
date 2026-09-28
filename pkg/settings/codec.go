@@ -402,7 +402,29 @@ func mismatch(entry keyEntry, text string, cause error) error {
 		"under it: %w", ErrTypeMismatch, entry.key, typeName(entry.typ), text, cause)
 }
 
-// assignTarget writes a decoded value into the pointer a caller passed to Get.
+// requireTarget panics unless the target of a read is a non-nil pointer.
+//
+// A target of any other shape is a mistake at the call site, not a fact about
+// the data: it is settled the first time the line runs, whatever key the line
+// reads and whatever the snapshot holds for it, and no caller has anything to
+// do with the error. The judgement is configuration's, on its value-reading
+// side. The declared type is named when the key has one, since that is the
+// type the pointer has to point to.
+func requireTarget(target any, key string, entry keyEntry, declared bool) {
+	rv := reflect.ValueOf(target)
+	if rv.Kind() == reflect.Pointer && !rv.IsNil() {
+		return
+	}
+	want := "the key's declared type"
+	if declared {
+		want = "the declared type " + typeName(entry.typ)
+	}
+	panic(fmt.Sprintf("settings: Get was given %s as its target for key %q, and a target is "+
+		"a non-nil pointer to %s", describeTarget(target), key, want))
+}
+
+// assignTarget writes a decoded value into the pointer a caller passed to Get,
+// which requireTarget has already held to being a non-nil pointer.
 //
 // The target's element type must be the declared type exactly: a caller asking
 // for a key declared as one type through a pointer to another is the shape
@@ -414,17 +436,7 @@ func mismatch(entry keyEntry, text string, cause error) error {
 // and for a declared type that is a slice underneath, assigning it would share
 // that slice with the caller.
 func assignTarget(entry keyEntry, target any, value any) error {
-	rv := reflect.ValueOf(target)
-	if rv.Kind() != reflect.Pointer || rv.IsNil() {
-		// A target that is not a non-nil pointer is a mistake at the call
-		// site, not a fact about the data: it is settled the first time the
-		// line runs, and no caller has anything to do with the error. The
-		// judgement is configuration's, on its value-reading side.
-		panic(fmt.Sprintf("settings: Get was given %s as its target for key %q, and a target is "+
-			"a non-nil pointer to the declared type %s",
-			describeTarget(target), entry.key, typeName(entry.typ)))
-	}
-	elem := rv.Elem()
+	elem := reflect.ValueOf(target).Elem()
 	if elem.Type() != entry.typ {
 		return fmt.Errorf("%w: key %q is declared as %s, and it was read into %s",
 			ErrTypeMismatch, entry.key, typeName(entry.typ), typeName(elem.Type()))

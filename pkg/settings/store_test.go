@@ -187,14 +187,18 @@ func TestABadTargetPanics(t *testing.T) {
 		{"a value", 0},
 		{"a nil pointer", (*int)(nil)},
 	} {
-		t.Run(c.name, func(t *testing.T) {
-			defer func() {
-				if recover() == nil {
-					t.Errorf("Get with %s as its target did not panic", c.name)
-				}
-			}()
-			_ = store.Get(ForTenant("t1"), "demo.limit", c.target)
-		})
+		// The key does not decide it: a bad target is the call site's mistake
+		// whether or not the key it asks for is declared.
+		for _, key := range []string{"demo.limit", "demo.missing"} {
+			t.Run(c.name+"/"+key, func(t *testing.T) {
+				defer func() {
+					if recover() == nil {
+						t.Errorf("Get of %s with %s as its target did not panic", key, c.name)
+					}
+				}()
+				_ = store.Get(ForTenant("t1"), key, c.target)
+			})
+		}
 	}
 }
 
@@ -220,6 +224,18 @@ func TestAZeroLayerPanics(t *testing.T) {
 		{"Set", func() { _ = store.Set(ctx, Write{Key: "demo.limit", Value: 1}) }},
 		{"Delete", func() { _ = store.Delete(ctx, nil, "demo.limit", "operator") }},
 		{"List", func() { _, _ = store.List(ctx, nil) }},
+		// The mistake is the call site's whatever the rest of the call holds:
+		// a check that ran only once the key and the value had passed would
+		// let the same line return an error on one run and panic on the next,
+		// and the first run that happened to carry a bad key would hide it.
+		{"Get of an undeclared key", func() { _ = store.Get(nil, "demo.missing", &target) }},
+		{"Set of an undeclared key", func() { _ = store.Set(ctx, Write{Key: "demo.missing", Value: 1}) }},
+		{"Set of a value that does not convert", func() {
+			_ = store.Set(ctx, Write{Key: "demo.limit", Value: "not a number"})
+		}},
+		{"Set of an oversized value", func() {
+			_ = store.Set(ctx, Write{Key: "demo.label", Value: strings.Repeat("x", maxValueBytes+1)})
+		}},
 	}
 	for _, c := range cases {
 		t.Run(c.name, func(t *testing.T) {
