@@ -134,6 +134,13 @@ one is what gives the composite key a scoped table has, and the migration has to
 declare the same one — which is the obligation the filter cannot check, along
 with the column's type and its NOT NULL.
 
+A write addressed by a struct's key gets the tenant half of the key from the
+context wherever the rest of the key is written, except through `Save`: GORM
+decides before any callback that a struct with a zero key part is a new row,
+so saving one whose tenant half is unwritten inserts it and, against a row
+that exists, fails on the key. A save meant to rewrite a row writes the tenant
+half itself (`catalog/writes_test.go`).
+
 A model that should be scoped and does not embed this reads exactly like a table
 that is global on purpose, and nothing says which it is. That is the one failure
 this convention cannot catch, and it is why the design writes it as a

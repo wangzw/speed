@@ -120,6 +120,28 @@ func TestSavingARowReadBackIsAllowed(t *testing.T) {
 	requireRowTenant(t, handle, "a", "acme")
 }
 
+// GORM decides before any callback runs that a struct whose key has a zero
+// part is a new row, so a save of a struct whose tenant half is unwritten is an
+// insert, whatever the filter then fills in. Against a row that exists it
+// fails on the key rather than rewriting the row, and it fails loudly: the row
+// is untouched and the caller has an error.
+func TestSavingAStructWithoutItsTenantHalfFailsRatherThanRewrites(t *testing.T) {
+	handle := open(t)
+	seed(t, handle)
+
+	err := handle.WithContext(scopedContext("acme")).Save(&order{ID: "a", Note: "saved"}).Error
+	if err == nil {
+		t.Fatal("a save by a key without its tenant half reported success")
+	}
+	var o order
+	if err := handle.WithContext(scopedContext("acme")).First(&o, "id = ?", "a").Error; err != nil {
+		t.Fatalf("reading back: %v", err)
+	}
+	if o.Note != "for acme" {
+		t.Fatalf("the failed save left the row as %+v, want it untouched", o)
+	}
+}
+
 // An explicit SET clause is the assignment list GORM renders as it stands.
 func TestUpdateThroughAnExplicitSetClauseIsChecked(t *testing.T) {
 	handle := open(t)
