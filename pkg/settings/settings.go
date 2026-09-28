@@ -147,7 +147,10 @@ type Store interface {
 	// fallback at the global row, which is also where it ends.
 	//
 	// An undeclared key is ErrUnknownKey. A value already written that does not
-	// decode under the declared type is ErrTypeMismatch, naming the key. A
+	// decode under the declared type is ErrTypeMismatch, naming the key. A read
+	// before this module's Init has loaded the snapshot is ErrNotLoaded rather
+	// than the declared default: a module that reads in its own Init declares
+	// Requires (*Store)(nil) so that it is initialised after this one. A
 	// target that is not a non-nil pointer panics, and so does a layer that is
 	// the zero value: both are mistakes at the call site, not facts about the
 	// data.

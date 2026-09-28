@@ -114,6 +114,13 @@ here must not cross, and how to run it.
   from before its write. A change that mutated the map in place would be
   visible to a reader halfway through, which is what taking the pointer once
   avoids.
+- **Before the first load there is no snapshot, not an empty one.** The store
+  is delivered at `New` and the table is first read in `Init`, so a module
+  initialised ahead of this one can reach it in between. An empty snapshot
+  there would answer every read with its declared default whatever the table
+  holds; holding none is what lets `Get` refuse the read with `ErrNotLoaded`
+  instead. A change that seeded the store with an empty snapshot would bring
+  the silent default back.
 - **A read hands out its own copy.** What a read resolves to is either the
   key table's declared default or the snapshot's stored value, and both are the
   module's own storage. A declared type that is a slice underneath — `net.IP`

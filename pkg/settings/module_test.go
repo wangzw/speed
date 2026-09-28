@@ -2,7 +2,10 @@ package settings
 
 import (
 	"context"
+	"errors"
+	"strings"
 	"testing"
+	"time"
 
 	"gorm.io/gorm"
 
@@ -109,6 +112,87 @@ func TestTheModuleDrivesAndServes(t *testing.T) {
 	bus.mu.Unlock()
 	if handlers == 0 {
 		t.Errorf("the module did not subscribe to %q", ChangedEventType)
+	}
+}
+
+// readingInInit is a module that reads a setting in its own Init, and keeps
+// what the read returned for the case to inspect.
+func readingInInit(name string, requires []core.Requirement, got *int, readErr *error) core.Module {
+	return core.Module{
+		Name:     name,
+		Requires: requires,
+		New:      func(context.Context, *core.Registry) (any, error) { return struct{}{}, nil },
+		Init: func(_ context.Context, reg *core.Registry, _ any) error {
+			store, err := core.Resolve[Store](reg)
+			if err != nil {
+				return err
+			}
+			*got, *readErr = Get[int](store, Global(), "demo.limit")
+			return nil
+		},
+	}
+}
+
+// A read made before this module's Init has loaded the snapshot is refused,
+// and one made by a module ordered after it gets the table's value.
+//
+// Before the load the snapshot holds nothing, so a read would answer with the
+// declared default whatever the table holds, and nothing would say so. A
+// module that reads in its own Init without declaring the requirement lands
+// wherever the construction order puts it — ahead of this one whenever its
+// name sorts first — and the value it acts on for the rest of the process
+// would be the default.
+func TestAReadBeforeTheLoadIsRefused(t *testing.T) {
+	handle := open(t)
+	if err := handle.Exec("INSERT INTO settings (tenant_id, key, value, version, updated_at) "+
+		"VALUES ('', 'demo.limit', '7', 1, ?)", time.Now().UTC()).Error; err != nil {
+		t.Fatalf("planting a row: %v", err)
+	}
+	reg := core.New()
+	reg.Supply((*config.Reader)(nil), noConfig{})
+	reg.Register(providingDB(handle))
+	reg.Register(providingBus(newRecordingBus()))
+	reg.Register(declarerNamed("test.declarer", demoNamespace))
+	reg.Register(Module())
+
+	// "crm" sorts ahead of "settings" and declares nothing, so it is
+	// initialised first; "crm.after" declares the requirement.
+	var early, late int
+	var earlyErr, lateErr error
+	reg.Register(readingInInit("crm", nil, &early, &earlyErr))
+	reg.Register(readingInInit("crm.after", []core.Requirement{{Token: (*Store)(nil)}}, &late, &lateErr))
+
+	err := reg.Drive(context.Background(), core.Drive{
+		Depth: core.StageInit,
+		Participants: []string{
+			"test.database", "test.event", "test.declarer", ModuleName,
+			"crm", "crm.after",
+		},
+	})
+	if err != nil {
+		t.Fatalf("driving the lifecycle: %v", err)
+	}
+	if !errors.Is(earlyErr, ErrNotLoaded) {
+		t.Errorf("the read ahead of the load returned %v (%v), want ErrNotLoaded", early, earlyErr)
+	}
+	if lateErr != nil || late != 7 {
+		t.Errorf("the read after the load returned %v (%v), want the table's 7", late, lateErr)
+	}
+}
+
+// A store that has not loaded refuses a read rather than answering from the
+// declared default, and the refusal names the key and what to do about it.
+func TestAStoreThatHasNotLoadedRefusesAReadNamingTheKey(t *testing.T) {
+	store := newSettingsStore(demoTable(t), stubDatabase{handle: open(t), dialect: db.SQLite},
+		newRecordingBus(), moduleSettings{})
+	_, err := Get[int](store, Global(), "demo.limit")
+	if !errors.Is(err, ErrNotLoaded) {
+		t.Fatalf("a read before the load returned %v, want ErrNotLoaded", err)
+	}
+	for _, want := range []string{"demo.limit", "Requires"} {
+		if !strings.Contains(err.Error(), want) {
+			t.Errorf("the refusal does not mention %q: %v", want, err)
+		}
 	}
 }
 

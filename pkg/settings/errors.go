@@ -3,9 +3,9 @@ package settings
 import "errors"
 
 // The sentinel errors this module raises for the failures it judges itself.
-// The startup ones abort the startup; the write-path ones reach the caller of
-// Set or Delete. Callers tell the classes apart with errors.Is, and every wrap
-// uses %w.
+// The startup ones abort the startup; the read-path and write-path ones reach
+// the caller of Get, Set or Delete. Callers tell the classes apart with
+// errors.Is, and every wrap uses %w.
 //
 // A failure that came from the database or the event bus is not here. Those
 // implementations define their own errors and this module does not invent
@@ -62,4 +62,15 @@ var (
 	// fixing action is to write this module into that command's declaration
 	// set.
 	ErrTableMissing = errors.New("settings: settings table does not exist")
+
+	// ErrNotLoaded reports a read made before this module's Init first loaded
+	// the snapshot. Until then nothing has been read from the table, and a
+	// read would answer with the declared default whatever the table holds.
+	//
+	// It is a fact about the assembly rather than about the data: the reading
+	// module was initialised ahead of this one, or the drive stopped short of
+	// Init. The message names the key; the fixing action is for the reading
+	// module to declare Requires (*Store)(nil), which initialises it after
+	// this one, or for the drive to run to Init at least.
+	ErrNotLoaded = errors.New("settings: the snapshot has not been loaded yet")
 )

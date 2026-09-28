@@ -65,7 +65,17 @@ func (s *settingsStore) Get(layer Layer, key string, target any) error {
 		return fmt.Errorf("%w: %q. Add a declaration covering it, or correct the key at the "+
 			"call site", ErrUnknownKey, key)
 	}
-	value, err := s.snapshot.Load().value(entry, layer)
+	current := s.snapshot.Load()
+	if current == nil {
+		// Nothing has been read from the table yet, so every key would answer
+		// with its declared default whatever the table holds, and the reader
+		// would act on that value with nothing saying it was not the real one.
+		return fmt.Errorf("%w: key %q was read before the %s module's Init loaded it. A module "+
+			"reading settings in its own Init declares Requires (*settings.Store)(nil), which "+
+			"initialises it after this one; a drive that reads them runs to Init at least",
+			ErrNotLoaded, key, ModuleName)
+	}
+	value, err := current.value(entry, layer)
 	if err != nil {
 		return err
 	}

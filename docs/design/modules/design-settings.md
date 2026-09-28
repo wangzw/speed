@@ -66,7 +66,8 @@ func ForTenant(id string) Layer
 type Store interface {
     // Get 按声明的类型把设置值解码进 target。
     // 取值按 租户行 > 全局行 > 声明默认值 回落，从 layer 指名的层开始。
-    // 键未声明时报 ErrUnknownKey；该键的已写入值解不成声明类型时报 ErrTypeMismatch。
+    // 键未声明时报 ErrUnknownKey；该键的已写入值解不成声明类型时报 ErrTypeMismatch；
+    // 本模块的 Init 装载快照之前读取报 ErrNotLoaded。
     Get(layer Layer, key string, target any) error
 
     // Set 按声明的类型编码 w.Value 并写入 w.Layer 指名的那一层。
@@ -166,6 +167,8 @@ err := store.Get(settings.ForTenant(tenantID), "ratelimit.window", &opts.Window)
 
 **读取从层选指名的那一层开始**：指名全局层时回落直接落在全局行上。层选由 `Global()` 或 `ForTenant(id)` 构造，接口上不存在"空租户"这个值（[ADR-settings-layer-2026-09-21](../../adr/adr-settings-layer-2026-09-21.md)）。
 
+**快照装载之前的读取报 `ErrNotLoaded`**，不回落到声明默认值。快照在本模块的 `Init` 装载，此前没有从表里读过任何一行，回落到默认值就是不论表里写着什么都答默认值，而读取方会拿它当真值用下去、没有任何一处报出来。功能在 `New` 之后即可取用，在别的模块自己的 `Init` 里读设置因而取决于构造次序：没有声明依赖的模块按名字排序，名字排在 `settings` 之前就先于它初始化。修复动作是读取方声明 `Requires (*settings.Store)(nil)`，或者让驱动至少推进到 `Init`；写入不受此限——`Set` 与 `Delete` 直接作用于表，写后的重载会把快照装上。
+
 **值在快照装载时按声明预解码**，读取路径上没有文本转换。解码失败的行单独记下（键与层到错误的映射），读取命中它时报 `ErrTypeMismatch` 并点名键；其余键照常可用。装载因此不因一行坏值而失败——坏值的作用面限于读它的代码路径，进程照常启动，其余设置照常可用。
 
 **目标参数与层选的非法形态是调用点的编程错误，panic 而不返回错误**：目标传入非指针、传入 `nil`；层选传入 `nil`、`ForTenant` 收到落在租户标识取值域之外的标识（空、或含空白与控制字符）。判据与配置的取值面同一条（[config](design-config.md) 的取值与校验一节）；这一类不涉及第二方、与数据无关，调用点无从处理它。**这一判定先于键表**：`Get` 与 `Set` 先判层选与目标，再查键、编码值，同一个调用点因而无论键是否已声明、值能否编码都当场 panic，不会这一次返回错误、下一次才 panic。
@@ -247,6 +250,7 @@ type Change struct {
 - **每条要用到设置读写的命令写出本模块的 `ModuleName`，并点名一个数据库实现与一个事件总线实现。** 这两者排他交付，依赖闭包不替宿主挑，本模块的构造期依赖因而不把它们拉进参与集——不点名即在依赖解析处以缺提供者终止启动，点名了则各自的配置还要在那条命令下配齐。
 - **把本模块静态级纳入施加迁移的命令。** 设置表与本模块的迁移集一起建立，依赖闭包够不到不运行的模块；`IncludeAllDeclarations` 是这类命令的推荐写法（见 [db](design-db.md) 的迁移的应用）。
 - **不要把本模块放进根命令。** 后果与租户、认证记下的同一条：它进入施加迁移那条命令的参与集并要在那里启动，而其表在该命令下的建立不受影响（迁移集按声明集取材，本模块在其中且不会被消解排除），真正的代价是它的输入项升格为全局参数、出现在每条命令的帮助里。
+- **在自己的 `Init` 里读设置的模块声明 `Requires (*settings.Store)(nil)`。** 不声明，它的初始化次序由名字决定，排在本模块之前时读取报 `ErrNotLoaded`（见读取面）；在请求路径上读取的模块不受影响，那时每个模块的 `Init` 都已跑完。
 - **写入面的访问控制由宿主负责。** 本模块不判权限，一个暴露到网络的写入口要由宿主自己鉴权。
 - **租户标识由调用方从请求面取得**（`tenant.FromContext`），以 `ForTenant` 包成层选交给本模块；取不到租户时读全局层还是拒绝由调用方决定。写一个不在名册上的标识不会被本模块拒绝，读取它的行也不会——本模块不认识名册。
 
@@ -417,7 +421,7 @@ flowchart TD
 | `Stop` | 取消周期刷新 |
 | `Close` | 无动作 |
 
-**未被推进到的阶段其回调不执行**（[ADR-lifecycle-drive-2026-09-20](../../adr/adr-lifecycle-drive-2026-09-20.md)）。深度浅于 `Init` 的驱动不装载快照、不订阅事件；深度止于 `Migrate` 的驱动下设置表照建，与"表随二进制走"一致。
+**未被推进到的阶段其回调不执行**（[ADR-lifecycle-drive-2026-09-20](../../adr/adr-lifecycle-drive-2026-09-20.md)）。深度浅于 `Init` 的驱动不装载快照、不订阅事件，其间的读取报 `ErrNotLoaded`；深度止于 `Migrate` 的驱动下设置表照建，与"表随二进制走"一致。
 
 **取配置读取面的失败形态与租户名册同一条**：`core.Resolve[config.Reader](reg)` 得到 `ErrMissingProvider` 说明宿主漏了预置，是终止启动的失败，没有一档表态可以让启动带着缺席的配置读取面继续走。
 
@@ -470,6 +474,7 @@ flowchart TD
 | `ErrDeclarationConflict` | 两个模块声明了同一个键 | 点名该键与两个声明方；其中一方改键或改命名空间 |
 | `ErrInvalidDeclaration` | 单个模块的声明自身的缺陷：不涉及第二方，仅凭这个模块声明的内容即可判定不可用 | 点名声明方与缺陷；判据与示例见声明的收集与键表的建立 |
 | `ErrTableMissing` | `Init` 装载时数据库报告设置表不存在 | 点名那张表与施加迁移的命令；把本模块写进那条命令的声明集 |
+| `ErrNotLoaded` | 本模块的 `Init` 装载快照之前读取 | 点名该键；读取方声明 `Requires (*settings.Store)(nil)`，或让驱动至少推进到 `Init` |
 
 **`ErrTableMissing` 只覆盖表不存在这一种读失败**：连接失败、权限不足这类由各自的实现命名并原样外传，不并入它——并进去，修复动作会指向错误的成因。
 
@@ -528,4 +533,4 @@ flowchart TD
 | 敏感项的事件遮蔽 | 已实现 | `pkg/settings/store.go` `changeFor`、`deleteChange`；`pkg/settings/codec.go` `mismatch` |
 | 配置 | 已实现 | `pkg/settings/config.go` `schema`、`readSettings`、`moduleConfig` |
 | 模块登记 | 已实现 | `pkg/settings/module.go` `Module`；`pkg/settings/settings.go` `ModuleName` |
-| 哨兵错误 | 已实现 | `pkg/settings/errors.go` `ErrUnknownKey`、`ErrTypeMismatch`、`ErrInvalidValue`、`ErrDeclarationConflict`、`ErrInvalidDeclaration`、`ErrTableMissing` |
+| 哨兵错误 | 已实现 | `pkg/settings/errors.go` `ErrUnknownKey`、`ErrTypeMismatch`、`ErrInvalidValue`、`ErrDeclarationConflict`、`ErrInvalidDeclaration`、`ErrTableMissing`、`ErrNotLoaded` |

@@ -144,7 +144,9 @@ func newSettingsStore(keys *keyTable, database db.Database, bus event.Bus, cfg m
 		config: cfg,
 		logger: log.Default(),
 	}
-	s.snapshot.Store(emptySnapshot())
+	// The snapshot stays unset until the first load: a store that has read
+	// nothing from the table refuses a read rather than answering from the
+	// declared defaults.
 	return s
 }
 

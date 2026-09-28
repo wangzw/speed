@@ -62,9 +62,11 @@ type stored struct {
 	text  string
 }
 
-// emptySnapshot is the state the store starts in, before Init loads the table.
-// Every read of a key falls through to its declared default, which is also
-// what a read of an unwritten key resolves to once the load has happened.
+// emptySnapshot is a snapshot holding no rows, the one a load fills.
+//
+// It is not the state a store starts in. Before the first load the store holds
+// no snapshot at all, which is what lets a read tell "nothing has been read
+// from the table" apart from "the table holds nothing for this key".
 func emptySnapshot() *snapshot {
 	return &snapshot{values: make(map[cell]stored), broken: make(map[cell]brokenRow)}
 }
@@ -72,7 +74,14 @@ func emptySnapshot() *snapshot {
 // explicitText returns the text of one layer's row, and reports whether that
 // layer holds one. It is what a change event reports as the value before a
 // write.
+//
+// A store that has not loaded yet has no snapshot, and a write it makes then
+// reports the layer as empty: the write itself goes to the table, and the
+// value before it is one this replica never read.
 func (s *snapshot) explicitText(l Layer, key string) (string, bool) {
+	if s == nil {
+		return "", false
+	}
 	c := cell{tenant: tenantOf(l), key: key}
 	if row, ok := s.values[c]; ok {
 		return row.text, true
