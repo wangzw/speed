@@ -4,8 +4,10 @@ import (
 	"context"
 	"encoding/base64"
 	"errors"
+	"strconv"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/vislake/speed/pkg/authn"
 	"github.com/vislake/speed/pkg/authn/internal/configreader"
@@ -121,8 +123,27 @@ func TestThisBackendNeverAnswersUnavailable(t *testing.T) {
 // context is asked before it begins: a call whose time is already gone spends
 // no derivation and answers that it could not say, which is the truth — the
 // password was never checked.
+//
+// Whether a derivation ran is observed through its cost. The subject's hash asks
+// for more iterations than the derivation finishes in hours, so a call that
+// returns within the bound below did not begin one. The verdict alone cannot
+// tell: asked after the derivation, the same check still answers unavailable for
+// the right password, having spent the whole cost first.
 func TestAContextThatHasEndedIsHonouredBeforeThePasswordIsDerived(t *testing.T) {
-	b := tableWith(t, "local", map[string]string{"alice": "correct horse"})
+	const bound = 2 * time.Second
+	// A well-formed entry: startup parses it with a single-round derivation,
+	// and only a verification would run the count it carries.
+	endless := strings.Join([]string{
+		hashScheme,
+		strconv.Itoa(1 << 40),
+		hashEncoding.EncodeToString([]byte("0123456789abcdef")),
+		hashEncoding.EncodeToString(make([]byte, keyLength)),
+	}, hashSeparator)
+	set, err := moduleConfig{Name: "local", Subjects: map[string]string{"alice": endless}}.resolve()
+	if err != nil {
+		t.Fatalf("resolving the configuration for this case: %v", err)
+	}
+	b := newBackend(set)
 
 	cancelled, cancel := context.WithCancel(context.Background())
 	cancel()
@@ -131,7 +152,16 @@ func TestAContextThatHasEndedIsHonouredBeforeThePasswordIsDerived(t *testing.T) 
 
 	for name, ctx := range map[string]context.Context{"cancelled": cancelled, "expired": expired} {
 		t.Run(name, func(t *testing.T) {
-			got := b.Verify(ctx, "alice", basic("alice", "correct horse"))
+			answered := make(chan authn.Verdict, 1)
+			go func() { answered <- b.Verify(ctx, "alice", basic("alice", "correct horse")) }()
+
+			var got authn.Verdict
+			select {
+			case got = <-answered:
+			case <-time.After(bound):
+				t.Fatalf("Verify had not returned %s after it was handed a context that had "+
+					"already ended, so it began a derivation nobody was waiting for", bound)
+			}
 			if verdict.OutcomeOf(got) != verdict.Unavailable {
 				t.Errorf("the verdict reads %v, want unavailable: the call's time was gone "+
 					"before the password was derived", verdict.OutcomeOf(got))
