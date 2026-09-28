@@ -67,6 +67,9 @@ const (
 	// maintenanceDatabase is the database the create and drop statements are
 	// issued from. Neither can run from inside the database it acts on.
 	maintenanceDatabase = "postgres"
+	// maxConnections is how many clients the server this package creates
+	// takes at once; see createContainer.
+	maxConnections = "500"
 	// runningState is what the running flag renders as, and it is named
 	// rather than written twice inline.
 	//
@@ -362,6 +365,13 @@ func startContainer() error {
 //
 // The host port is ephemeral: several servers on one machine must not fight
 // over 5432, and nothing here needs a fixed one.
+//
+// The server takes maxConnections clients rather than PostgreSQL's default of
+// 100, which is sized for one application. This one serves every test binary
+// on the machine at once — go test runs packages in parallel, and the runs of
+// several checkouts can overlap — and a case refused a connection for want of
+// one fails for a reason that is not its own. A container that is already there keeps the limit it was created
+// with; the new one applies once it has been removed by hand.
 func createContainer() error {
 	ctx, cancel := context.WithTimeout(context.Background(), dockerTimeout)
 	defer cancel()
@@ -370,7 +380,8 @@ func createContainer() error {
 		"--env", "POSTGRES_PASSWORD="+password,
 		"--env", "POSTGRES_USER="+superuser,
 		"--publish", "127.0.0.1::5432",
-		image))
+		image,
+		"-c", "max_connections="+maxConnections))
 	return err
 }
 
