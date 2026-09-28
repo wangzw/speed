@@ -994,10 +994,8 @@ func judgeSpellings(st *gorm.Statement, spellings []*gormschema.Field, v reflect
 // Adding the column writes into the caller's map, as filling a struct writes
 // into the caller's struct.
 //
-// GORM selects a key's column under the column's name when the schema resolves
-// the key and under the key itself when it does not; the value is judged when
-// either leaves it assigned, so that a selection spelled one way cannot let a
-// key spelled the other way through unjudged.
+// A key's value is judged when GORM inserts it, which it decides under the
+// column the key is written as (keyColumn).
 func writeMap(st *gorm.Statement, field *gormschema.Field, m map[string]interface{},
 	id string, fill bool, judge func(any) error,
 ) error {
@@ -1011,7 +1009,7 @@ func writeMap(st *gorm.Statement, field *gormschema.Field, m map[string]interfac
 			continue
 		}
 		named = true
-		if !assigned(selected, restricted, field.DBName) && !assigned(selected, restricted, key) {
+		if !assigned(selected, restricted, keyColumn(st, key)) {
 			continue
 		}
 		if err := judge(v); err != nil {
@@ -1089,10 +1087,11 @@ func assignedValues(st *gorm.Statement, field *gormschema.Field) []any {
 // destinationValues lists what the destination of an update assigns to the
 // tenant column.
 //
-// GORM selects a map key's column under the column's name when the schema
-// resolves the key and under the key itself when it does not; the value is
-// judged when either leaves it assigned, so that a selection spelled one way
-// cannot let a key spelled the other way through unjudged.
+// A map key's value is assigned when GORM's selection leaves it so, which it
+// decides under the column the key is written as (keyColumn). GORM also stamps
+// the update time into every field of the model that carries one and that the
+// map leaves out, unless the selection leaves that field out, so a field doing
+// that under a spelling of the tenant column assigns the time to it.
 //
 // A struct is read the way GORM builds assignments from one. For each of the
 // model's columns GORM looks up a field of the updating type — the model's own,
@@ -1111,9 +1110,21 @@ func destinationValues(st *gorm.Statement, field *gormschema.Field) []any {
 	if m, ok := updating.Interface().(map[string]interface{}); ok {
 		var out []any
 		for key, v := range m {
-			if keyReaches(st, key, field) &&
-				(assigned(selected, restricted, field.DBName) || assigned(selected, restricted, key)) {
+			if keyReaches(st, key, field) && assigned(selected, restricted, keyColumn(st, key)) {
 				out = append(out, v)
+			}
+		}
+		if st.SkipHooks {
+			return out
+		}
+		for _, column := range st.Schema.DBNames {
+			f := st.Schema.LookUpField(column)
+			if f == nil || f.AutoUpdateTime == 0 || m[f.Name] != nil || m[f.DBName] != nil ||
+				targetReaches(st, clause.Column{Name: f.DBName}, field) != tenantColumn {
+				continue
+			}
+			if sel, explicit := selected[f.DBName]; !explicit || sel {
+				out = append(out, st.NowFunc())
 			}
 		}
 		return out
@@ -1220,11 +1231,20 @@ const (
 // spelled in another case or carrying its own quotes, or for a field of the
 // model tagged with such a spelling, is the tenant column.
 func keyReaches(st *gorm.Statement, key string, field *gormschema.Field) bool {
-	column := key
+	return targetReaches(st, clause.Column{Name: keyColumn(st, key)}, field) == tenantColumn
+}
+
+// keyColumn is the column GORM writes a map key's value as, and the one it looks
+// the key up under in the statement's selection: the column of the field the
+// model's schema resolves the key to — by the field's Go name or by its
+// column — or the key itself when the schema resolves none. A key naming a
+// field of the model tagged with another spelling of the tenant column is
+// therefore selected by any selection naming that field, however it names it.
+func keyColumn(st *gorm.Statement, key string) string {
 	if f := st.Schema.LookUpField(key); f != nil {
-		column = f.DBName
+		return f.DBName
 	}
-	return targetReaches(st, clause.Column{Name: column}, field) == tenantColumn
+	return key
 }
 
 // targetReaches reads the column an assignment is written to the way the

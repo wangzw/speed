@@ -64,7 +64,10 @@ here must not cross, and how to run it.
   column with blanks around it, the primary key placeholder — in an explicit
   SET and in the destination alike (GORM renders the second when it yields
   anything), a struct of another type, a field — the model's own or another
-  type's — whose tag carries another spelling of the column, an upsert's
+  type's — whose tag carries another spelling of the column, whatever a
+  selection names it by and whether its value comes from the caller or from
+  GORM's update-time stamp, every one of several assignments reaching the
+  column rather than the first, an upsert's
   assignments (`catalog/targets_test.go`). The reading is the widest of the dialects', and a
   raw target that is not one column name is refused under any context: reading
   too narrowly is a row carried into another tenant. A value the filter cannot

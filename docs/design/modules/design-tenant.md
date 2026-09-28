@@ -524,8 +524,8 @@ flowchart TD
 
 **写进租户列的取值按 GORM 自己读取它的方式去读，写到哪一列按数据库解析列名的方式去认。** GORM 接受的每一种写法都要覆盖到，漏掉一种，那一种就是一条绕过核对的路：
 
-- 插入的行从 GORM 解析出的目标值上读：结构体、结构体切片与指针切片，按指针传入与按值传入都算；按值传入的结构体或数组先复制一份再填。以 map 或 map 切片插入的，按键找租户列，键怎么认见下文，没写这一列的 map 由插件补上。模型上除约定之外、写到的列被数据库读成租户列的字段——同一列的另一种写法——GORM 与租户列并排写出，而 SQLite 对插入里重复的列取第一个，那一行的租户因而由先声明的那种写法决定；这样的字段按 GORM 构造那一行的方式取值（选列与省列、默认值、创建时间），与租户列同样核对。
-- 更新的赋值：显式的 SET 子句与目标值两处都读——目标值产出赋值时 GORM 渲染的是它们、不是调用方写的 SET 子句，产不出时才轮到 SET 子句，只读其中一处，另一处就是绕过核对的路；map 按键读；结构体按 GORM 从结构体构造赋值的方式读：对模型的每一列，GORM 在承载赋值的那个类型——模型自己，或另一种类型——上按这一列的名字找字段，这一步也按 Go 字段名找得到，再把找到的那个字段自己的列写进赋值。写到租户列上的因而是这些列里数据库读成租户列的那几列，而不是那个类型上恰好以租户列命名的字段：模型有一列名叫 `Note`，补丁类型的 `Note` 字段标着租户列的另一种写法，写出的就是那种写法。选列与省列决定哪些列被赋值，被选中的零值也算赋值。被寻址的那个值自己的主键字段是条件而不是赋值，归主键那一档核对。
+- 插入的行从 GORM 解析出的目标值上读：结构体、结构体切片与指针切片，按指针传入与按值传入都算；按值传入的结构体或数组先复制一份再填。以 map 或 map 切片插入的，按键找租户列，键怎么认见下文，没写这一列的 map 由插件补上。**map 的一个键有没有被选中，按 GORM 写出它的那一列去判**：模型的 schema 解析得到的键——按字段的 Go 名或按它的列名——看那个字段的列，解析不到的键看键本身；`Select` 点名的是一个以租户列另一种写法为列的字段时，写到租户列上的正是它，照样核对。模型上除约定之外、写到的列被数据库读成租户列的字段——同一列的另一种写法——GORM 与租户列并排写出，而 SQLite 对插入里重复的列取第一个，那一行的租户因而由先声明的那种写法决定；这样的字段按 GORM 构造那一行的方式取值（选列与省列、默认值、创建时间），与租户列同样核对。
+- 更新的赋值：显式的 SET 子句与目标值两处都读——目标值产出赋值时 GORM 渲染的是它们、不是调用方写的 SET 子句，产不出时才轮到 SET 子句，只读其中一处，另一处就是绕过核对的路；map 按键读；结构体按 GORM 从结构体构造赋值的方式读：对模型的每一列，GORM 在承载赋值的那个类型——模型自己，或另一种类型——上按这一列的名字找字段，这一步也按 Go 字段名找得到，再把找到的那个字段自己的列写进赋值。写到租户列上的因而是这些列里数据库读成租户列的那几列，而不是那个类型上恰好以租户列命名的字段：模型有一列名叫 `Note`，补丁类型的 `Note` 字段标着租户列的另一种写法，写出的就是那种写法。选列与省列决定哪些列被赋值，被选中的零值也算赋值，map 的键按插入那一条的规则判选列。GORM 还给模型上每一个带更新时间戳、而 map 没有写到的字段写进当前时间，除非选列把它排除在外；这样一个字段的列是租户列的另一种写法时，写进租户列的就是那个时间，照样核对。被寻址的那个值自己的主键字段是条件而不是赋值，归主键那一档核对。**落到租户列上的赋值不止一条时，每一条都核对**：SQLite 对更新里重复的列取最后一个，只核对第一条，排在后面的另一种写法就能把行改到别的租户。
 - upsert 在冲突时对冲突行的赋值：以 GORM 自己写出的形式赋成将要插入的那一行自己的租户列——`excluded` 下的那一列、按原名——不算写别的租户，其余一律核对；另一种写法可能被数据库读成将要插入那一行的别的列，把它抄进租户列。
 
 **一个赋值目标是不是租户列，按数据库的读法去认，取几种读法里最宽的那一个。** GORM 先经模型的 schema 解析一个键，解析得到就写那个字段的列，解析不到的键并不丢弃，而是作为列名写进语句；两种情形下写出的列名都加引号，交给数据库去解析——SQLite 比较列名不分大小写，引号里也一样；PostgreSQL 把不带引号的名字折成小写；标成原样写入的列（`clause.Column{Raw: true}`）按 SQL 原文读，两边都略过它两侧的空白；带点的名字取最后一段作列；GORM 的主键占位符写成它所代表的那一列，模型自己的主键不叫 `id` 时即是排在最前的租户列。于是 `tEnAnT_iD`、自带引号的 `` `tenant_id` ``、原样写入的 ` tenant_id` 都会落到租户列上，插件把它们一律认作租户列、照常核对。**认宽的代价是拒掉一条数据库本来也会拒绝的写，认窄的代价是一行被带进别的租户**，因而取宽：去掉两侧空白与一对引号后不分大小写地等于租户列名，即认作租户列。
@@ -678,7 +678,7 @@ flowchart TD
 | 取法的登记面与冻结 | 已实现 | `pkg/tenant/resolve/resolve.go` `Register`、`open`、`seal` |
 | 请求期的解析、日志字段绑定与收口 | 已实现 | `pkg/tenant/resolve/resolve.go` `admit`、`refuse`、`middlewareFor` |
 | 受约束模型的约定与识别 | 已实现 | `pkg/tenant/model.go` `Model`；`pkg/tenant/catalog/plugin.go` `conventionFieldOf`、`embedsConvention` |
-| 隔离插件的三处作用点、四档判定与显式租户列的核对 | 已实现 | `pkg/tenant/catalog/plugin.go` `Initialize`、`scopeRead`、`scopeDelete`、`scopeUpdate`、`applyCondition`、`scopeTerm`、`grouped`、`fillKey`、`fillColumn`、`writeRows`、`otherSpellings`、`judgeSpellings`、`assignedValues`、`destinationValues`、`upsertValues`、`keyReaches`、`targetReaches` |
+| 隔离插件的三处作用点、四档判定与显式租户列的核对 | 已实现 | `pkg/tenant/catalog/plugin.go` `Initialize`、`scopeRead`、`scopeDelete`、`scopeUpdate`、`applyCondition`、`scopeTerm`、`grouped`、`fillKey`、`fillColumn`、`writeRows`、`otherSpellings`、`judgeSpellings`、`writeMap`、`assignedValues`、`destinationValues`、`upsertValues`、`keyReaches`、`keyColumn`、`targetReaches` |
 | 行链上的读、`Row` 经交回的行报出拒绝、关联联接的条件与子查询的拒绝 | 已实现 | `pkg/tenant/catalog/plugin.go` `Initialize`、`scopeRow`、`refuseRead`、`scopedJoins`、`applyJoins`、`joinTerm`、`renderRefusal` |
 | 跨租户的上下文标记 | 已实现 | `pkg/tenant/scope.go` `CrossTenant`；`internal/tenantctx/tenantctx.go` `WithCrossTenant` |
 | 不经请求面的路径经名册进入单个租户，放行读快照、拒绝读表并追平快照 | 已实现 | `pkg/tenant/catalog/roster.go` `Enter`、`enter`、`fromTable`、`catchUp`；`internal/tenantctx/tenantctx.go` `Bind`、`LogField` |

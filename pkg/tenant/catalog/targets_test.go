@@ -297,16 +297,20 @@ type shadowed struct {
 func (shadowed) TableName() string { return "orders" }
 
 // A field of the model writing the tenant column under another spelling is
-// judged as the tenant column is, on an insert and on an update alike.
+// judged as the tenant column is, on an insert and on an update alike, and
+// whatever a selection names it by: GORM selects a map key under the column the
+// schema resolves it to, so a selection naming the field by its Go name or by
+// its column's spelling writes it.
 func TestAFieldOfTheModelWritingTheTenantColumnIsJudged(t *testing.T) {
-	handle := open(t)
-	seed(t, handle)
 	ctx := scopedContext("acme")
-
 	for name, write := range map[string]func(tx *gorm.DB) error{
 		"a struct insert": func(tx *gorm.DB) error { return tx.Create(&shadowed{Owner: "globex", ID: "x"}).Error },
 		"a map insert keyed by the field": func(tx *gorm.DB) error {
 			return tx.Model(&shadowed{}).Create(map[string]any{"ID": "x", "Owner": "globex"}).Error
+		},
+		"a map insert selecting the field": func(tx *gorm.DB) error {
+			return tx.Model(&shadowed{}).Select("Owner", "ID").
+				Create(map[string]any{"ID": "x", "Owner": "globex"}).Error
 		},
 		"a struct update": func(tx *gorm.DB) error {
 			return tx.Model(&shadowed{}).Where("id = ?", "a").Updates(shadowed{Owner: "globex"}).Error
@@ -314,16 +318,97 @@ func TestAFieldOfTheModelWritingTheTenantColumnIsJudged(t *testing.T) {
 		"a map update keyed by the field": func(tx *gorm.DB) error {
 			return tx.Model(&shadowed{}).Where("id = ?", "a").Updates(map[string]any{"Owner": "globex"}).Error
 		},
+		"a map update selecting the field": func(tx *gorm.DB) error {
+			return tx.Model(&shadowed{}).Where("id = ?", "a").Select("Owner").
+				Updates(map[string]any{"Owner": "globex"}).Error
+		},
+		"a map update selecting the field's column": func(tx *gorm.DB) error {
+			return tx.Model(&shadowed{}).Where("id = ?", "a").Select("TENANT_ID").
+				Updates(map[string]any{"Owner": "globex"}).Error
+		},
+		"an update of one column selecting the field": func(tx *gorm.DB) error {
+			return tx.Model(&shadowed{}).Where("id = ?", "a").Select("Owner").Update("Owner", "globex").Error
+		},
 	} {
-		if err := write(handle.WithContext(ctx)); !errors.Is(err, tenant.ErrExplicitTenantMismatch) {
-			t.Fatalf("%s writing another tenant under a second spelling gave %v, want ErrExplicitTenantMismatch",
-				name, err)
-		}
+		t.Run(name, func(t *testing.T) {
+			handle := open(t)
+			seed(t, handle)
+			if err := write(handle.WithContext(ctx)); !errors.Is(err, tenant.ErrExplicitTenantMismatch) {
+				t.Fatalf("writing another tenant under a second spelling gave %v, want ErrExplicitTenantMismatch",
+					err)
+			}
+			requireRowsUnmoved(t, handle)
+		})
 	}
-	requireRowsUnmoved(t, handle)
 
-	if err := handle.WithContext(ctx).Create(&shadowed{Owner: "acme", ID: "y"}).Error; err != nil {
-		t.Fatalf("an insert whose second spelling names the context's tenant: %v", err)
+	t.Run("an insert naming the context's tenant", func(t *testing.T) {
+		handle := open(t)
+		seed(t, handle)
+		if err := handle.WithContext(ctx).Create(&shadowed{Owner: "acme", ID: "y"}).Error; err != nil {
+			t.Fatalf("an insert whose second spelling names the context's tenant: %v", err)
+		}
+		requireRowTenant(t, handle, "y", "acme")
+	})
+}
+
+// stamping is a scoped model carrying a field that GORM stamps with the update
+// time, under another spelling of the tenant column.
+type stamping struct {
+	tenant.Model
+	ID      string `gorm:"column:id;primaryKey"`
+	Note    string `gorm:"column:note"`
+	Touched int64  `gorm:"column:TENANT_ID;autoUpdateTime"`
+}
+
+func (stamping) TableName() string { return "orders" }
+
+// GORM stamps the update time into a field the map of an update leaves out,
+// and a field doing that under a spelling of the tenant column writes the time
+// into it, which is not the context's tenant.
+func TestAnUpdateStampingASpellingOfTheTenantColumnIsJudged(t *testing.T) {
+	handle := open(t)
+	seed(t, handle)
+	err := handle.WithContext(scopedContext("acme")).Model(&stamping{}).Where("id = ?", "a").
+		Updates(map[string]any{"note": "touched"}).Error
+	requireMismatch(t, err)
+	requireRowsUnmoved(t, handle)
+}
+
+// SQLite keeps the last of an update's duplicate columns, so a write carrying
+// the context's tenant under one spelling of the tenant column and another
+// tenant under a later one moves the row to the later: every assignment that
+// reaches the tenant column is judged, not only the first.
+func TestEveryAssignmentReachingTheTenantColumnIsJudged(t *testing.T) {
+	type twoSpellings struct {
+		TenantID string `gorm:"column:tenant_id"`
+		Note     string `gorm:"column:TENANT_ID"`
 	}
-	requireRowTenant(t, handle, "y", "acme")
+	for name, write := range map[string]func(tx *gorm.DB) error{
+		"a struct from another type": func(tx *gorm.DB) error {
+			return tx.Model(&noted{}).Where("id = ?", "a").
+				Updates(twoSpellings{TenantID: "acme", Note: "globex"}).Error
+		},
+		"an explicit SET clause": func(tx *gorm.DB) error {
+			return tx.Model(&order{}).Where("id = ?", "a").Clauses(clause.Set{
+				{Column: clause.Column{Name: "tenant_id"}, Value: "acme"},
+				{Column: clause.Column{Name: "TENANT_ID"}, Value: "globex"},
+			}).Updates(map[string]any{}).Error
+		},
+		"an upsert's assignments": func(tx *gorm.DB) error {
+			return tx.Clauses(clause.OnConflict{
+				Columns: []clause.Column{{Name: "tenant_id"}, {Name: "id"}},
+				DoUpdates: clause.Set{
+					{Column: clause.Column{Name: "tenant_id"}, Value: "acme"},
+					{Column: clause.Column{Name: "TENANT_ID"}, Value: "globex"},
+				},
+			}).Create(&order{ID: "a", Note: "again"}).Error
+		},
+	} {
+		t.Run(name, func(t *testing.T) {
+			handle := open(t)
+			seed(t, handle)
+			requireMismatch(t, write(handle.WithContext(scopedContext("acme"))))
+			requireRowsUnmoved(t, handle)
+		})
+	}
 }
