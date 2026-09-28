@@ -48,6 +48,10 @@ func (fakeRoster) List(context.Context) ([]tenant.Tenant, error) {
 	return nil, errors.New("not used by the resolution layer")
 }
 
+func (fakeRoster) Enter(ctx context.Context, _ tenant.ID) (context.Context, error) {
+	return ctx, errors.New("not used by the resolution layer")
+}
+
 // record is one log record as a case reads it: the level, the message, and
 // every attribute, bound or passed, rendered as text.
 type record struct {

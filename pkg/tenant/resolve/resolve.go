@@ -48,10 +48,11 @@ const diagnosticPrefix = "tenant: "
 
 // tenantField is the name the resolved identifier is bound to on the logger.
 //
-// The field name is this module's to choose — the logging module knows no
-// domain fields — and it is a contract once a dashboard reads it, so it is
-// fixed here rather than left to each call site.
-const tenantField = "tenant_id"
+// The field name is this capability directory's to choose — the logging
+// module knows no domain fields — and it is a contract once a dashboard reads
+// it. The roster binds the same field when a path enters a tenant, so the name
+// is the one both writers share rather than one fixed here.
+const tenantField = tenantctx.LogField
 
 // middlewareOrder places this layer where the constraints leave a choice.
 //

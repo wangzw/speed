@@ -16,6 +16,7 @@ import (
 	"github.com/vislake/speed/pkg/db"
 	"github.com/vislake/speed/pkg/log"
 	"github.com/vislake/speed/pkg/tenant"
+	"github.com/vislake/speed/pkg/tenant/internal/tenantctx"
 )
 
 // roster is this module's product. It implements tenant.Catalog.
@@ -226,6 +227,42 @@ func (r *roster) List(_ context.Context) ([]tenant.Tenant, error) {
 	out := make([]tenant.Tenant, len(s.ordered))
 	copy(out, s.ordered)
 	return out, nil
+}
+
+// Enter implements tenant.Catalog.
+//
+// It reads the snapshot the resolving layer reads, so a path entering a tenant
+// gets the answer a request naming it would: a tenant disabled on this replica
+// is refused at once, and one disabled on another replica once this replica's
+// snapshot is next reread. The identifier's shape is judged first, because a
+// value outside the domain is no tenant's and the message says which of the two
+// fixes it needs.
+//
+// What it writes is what the resolving layer writes on admitting a request —
+// the identifier into the context and onto the logger — through the same
+// internal package, which is what keeps the writing side closed to everything
+// outside this capability directory. A refusal writes the empty identifier
+// instead, which lifts a cross-tenant mark the context carried: a caller that
+// drops the error and goes on with the context has its scoped statements
+// refused, not let across.
+func (r *roster) Enter(ctx context.Context, id tenant.ID) (context.Context, error) {
+	refused := tenantctx.WithID(ctx, "")
+	if err := checkField("identifier", string(id)); err != nil {
+		return refused, err
+	}
+	s, err := r.current()
+	if err != nil {
+		return refused, err
+	}
+	t, ok := s.byID[id]
+	switch {
+	case !ok:
+		return refused, fmt.Errorf("%w: no tenant has identifier %q", tenant.ErrInvalidTenant, id)
+	case t.Status != tenant.StatusActive:
+		return refused, fmt.Errorf("%w: tenant %q is %s", tenant.ErrTenantDisabled, id, t.Status)
+	}
+	entered := tenantctx.WithID(ctx, string(t.ID))
+	return log.WithAttrs(entered, slog.String(tenantctx.LogField, string(t.ID))), nil
 }
 
 // Put implements tenant.Catalog.

@@ -1,10 +1,12 @@
 // Package tenantctx carries the tenant a context belongs to.
 //
-// It is internal so that the only writer of a tenant identifier is this
-// capability directory. The resolving layer puts one in as it admits a request,
-// and nothing else can: a chain layer able to write an identifier could rewrite
-// the scope every statement below it is filtered by, and the point of resolving
-// a tenant once per request is that it happens once.
+// It is internal so that the only writers of a tenant identifier are in this
+// capability directory, and both read the roster before they write: the
+// resolving layer as it admits a request, and the roster's Enter as a path with
+// no request behind it enters a tenant. Nothing else can. A chain layer able to
+// write an identifier could rewrite the scope every statement below it is
+// filtered by, and a writer that did not read the roster could put a tenant
+// into a context that the roster does not carry or does not serve.
 //
 // The cross-tenant mark is the exception, and it is here for the same reason
 // rather than in spite of it. Crossing tenants is meant to be written at the
@@ -18,6 +20,11 @@ package tenantctx
 
 import "context"
 
+// LogField is the name both writers bind the identifier to on the logger a
+// context carries. It is a contract once a dashboard reads it, and the two
+// writers have to agree on it, so it is fixed once, here.
+const LogField = "tenant_id"
+
 // idKey and crossKey are distinct types so that the two facts cannot be read
 // as one another even if a future value has the same shape.
 type (
@@ -26,7 +33,12 @@ type (
 )
 
 // WithID returns a context carrying this tenant identifier and no cross-tenant
-// mark. It is called by the resolving layer, and by nothing else.
+// mark. It is called by the resolving layer and by the roster's Enter, and by
+// nothing else.
+//
+// The empty identifier is how a writer states that the context belongs to no
+// tenant and does not cross either: ID reads it as absent, and the mark is
+// lifted all the same.
 func WithID(ctx context.Context, id string) context.Context {
 	return context.WithValue(context.WithValue(ctx, crossKey{}, false), idKey{}, id)
 }

@@ -65,7 +65,7 @@ var (
 	// whose own shape is wrong — an empty identifier or alias, or either
 	// carrying blanks or control characters — or an identifier no row of the
 	// roster carries, which is what a caller asking to change the state of a
-	// tenant that is not there is told.
+	// tenant that is not there, or to enter one, is told.
 	//
 	// The cases are one sentinel because the caller's move is the same either
 	// way: check the value it passed, against the shape and against the
@@ -81,6 +81,19 @@ var (
 	// every caller that resolves a tenant to it.
 	ErrInvalidTenant = errors.New("tenant: a tenant this module will not act on")
 
+	// ErrTenantDisabled reports a tenant the roster carries but does not
+	// serve, asked to be entered. The fix is the tenant's state, not the call:
+	// a path acting for a disabled tenant has nothing to act on until the
+	// tenant is served again.
+	//
+	// It is apart from ErrInvalidTenant, which an identifier no row carries
+	// gets, because a caller's move differs: an unknown identifier is a defect
+	// in whatever handed it over, a disabled one is a state the work waits out
+	// or drops. The request face answers both alike, and for a reason that
+	// does not hold here: that answer goes to a caller outside the process,
+	// and this one to the process's own code.
+	ErrTenantDisabled = errors.New("tenant: the tenant is not being served")
+
 	// ErrAliasConflict reports a write that would put one alias on two
 	// tenants. The fix is to change one of them, or to rename the tenant
 	// that already holds it.
@@ -88,8 +101,9 @@ var (
 
 	// ErrNoTenantInContext reports a statement against a scoped model whose
 	// context carries no tenant. The fix is to put one there — through a
-	// request whose endpoint this module guards, or by the caller that
-	// built the context — or to state the intent to cross tenants.
+	// request whose endpoint this module guards, or by entering the tenant
+	// through the roster on a path with no request behind it — or to state
+	// the intent to cross tenants.
 	//
 	// A row that would reach the table with no tenant is reported through
 	// this sentinel too: a write crossing tenants that leaves the tenant

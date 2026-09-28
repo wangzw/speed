@@ -33,8 +33,12 @@ here must not cross, and how to run it.
   a tenant is written into a context, and the compiler is what keeps every
   other package out of it. Exporting a writer — or moving the key into this
   package — removes the enforcement without removing the claim, and the claim
-  is the whole point: resolving a tenant happens once per request, in one
-  place.
+  is the whole point: a tenant is written into a context only after the roster
+  has been read. There are two writers and both read it first: the resolving
+  layer, once per request, and `Catalog.Enter`, for a path with no request
+  behind it (`catalog/enter_test.go`). A third writer, or one that skips the
+  roster, puts into a context a tenant the roster may not carry or serve, and
+  the filter, which reads no roster, would act on it.
 - **`CrossTenant` is the only way across tenants, and it marks rather than
   scopes.** A statement naming a tenant column value other than its context's
   is refused rather than honoured

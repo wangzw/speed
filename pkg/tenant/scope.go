@@ -11,9 +11,11 @@ import (
 //
 // There is no injection point beside this one, and that is the shape rather
 // than an omission: exporting one would let any layer on the chain rewrite the
-// tenant, which is the single decision this capability directory exists to
-// make once. The writing side lives in an internal package, so the compiler
-// enforces what a comment otherwise only asks for.
+// tenant, and put into a context a tenant the roster does not carry or does not
+// serve. The writing side lives in an internal package, so the compiler
+// enforces what a comment otherwise only asks for, and its two writers both
+// read the roster first: the resolving layer as it admits a request, and
+// Catalog.Enter for a path with no request behind it.
 //
 // Nor does this fall back to anything. A default would read a request that
 // carries no tenant as one that carries a particular one, and the two are the
@@ -21,8 +23,8 @@ import (
 //
 // Downstream therefore has to handle the false case itself. It holds on a
 // listening endpoint this module does not guard, in a process that did not take
-// this capability in, on statements a caller builds without a request behind
-// them, and in a context marked to cross tenants.
+// this capability in, on a path with no request behind it that has not entered
+// a tenant, and in a context marked to cross tenants.
 func FromContext(ctx context.Context) (ID, bool) {
 	id, ok := tenantctx.ID(ctx)
 	if !ok {

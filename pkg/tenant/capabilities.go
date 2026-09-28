@@ -61,6 +61,11 @@ type Resolution interface {
 // None of these methods is scoped to a tenant. The roster is the fact that
 // scoping is decided from, so its own statements run outside the filter, and
 // none of them needs a tenant in its context.
+//
+// Enter is the one method that puts a tenant into a context, and it is here
+// rather than beside FromContext because the roster is what it has to read
+// first: a path with no request behind it names a tenant by its identifier, and
+// only a tenant the roster carries and serves is entered.
 type Catalog interface {
 	// Get returns the tenant with this identifier. The second result is
 	// false when the roster has no such row.
@@ -81,4 +86,20 @@ type Catalog interface {
 	// copy: a caller sorting or trimming what it was handed does not disturb
 	// what the next caller sees.
 	List(ctx context.Context) ([]Tenant, error)
+	// Enter returns a context that belongs to this tenant, as a resolved
+	// request's does: FromContext answers it, scoped statements issued under
+	// it are conditioned on it, filled with it and checked against it, and
+	// the logger it carries has the identifier bound as the tenant field.
+	//
+	// It is how a path with no request behind it — an event subscriber, a
+	// worker, a command-line action — acts for one tenant, instead of crossing
+	// tenants and writing the tenant into every statement by hand. The
+	// identifier is read against the roster: one no row carries is refused
+	// with ErrInvalidTenant, and one that is disabled with ErrTenantDisabled.
+	//
+	// The context returned carries no cross-tenant mark, and whatever tenant
+	// the one passed in carried is replaced. On a refusal the context returned
+	// carries neither a tenant nor the mark, so a caller that uses it anyway
+	// has every scoped statement refused rather than let across.
+	Enter(ctx context.Context, id ID) (context.Context, error)
 }
