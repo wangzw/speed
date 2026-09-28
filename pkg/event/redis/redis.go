@@ -68,6 +68,10 @@ const (
 	// this exists to prevent and a host that never thought about it is exactly
 	// the host that needs one.
 	defaultMaxEntries = 10000
+	// closeWait bounds removing what this process leaves in the consumer
+	// groups when it closes, so an unreachable server does not hold up the
+	// process's exit once per subscribed type.
+	closeWait = 5 * time.Second
 )
 
 // Config is what this implementation accepts: the connection, plus where this
@@ -78,7 +82,8 @@ type Config struct {
 	// unique to this process, which is what makes the delivery a broadcast:
 	// Redis balances a stream between consumers of one group, so two replicas
 	// sharing a group name would split the events between them instead of both
-	// seeing them.
+	// seeing them. A group of the process's own is destroyed when the process
+	// closes; a configured one stays.
 	ConsumerGroup string `config:"consumer-group"`
 	// MaxEntries bounds how many entries a stream keeps. A stream with no bound
 	// grows with every event ever published, on a server that is very often
@@ -122,7 +127,8 @@ func items() map[string]config.Item {
 	}
 	out["consumer-group"] = config.Item{
 		Description: "the name of this replica's consumer group; leaving it out gives this process " +
-			"a name of its own, which is what makes every replica receive every event",
+			"a group of its own, which is what makes every replica receive every event, and which " +
+			"the process removes when it closes",
 	}
 	return out
 }
@@ -169,6 +175,7 @@ func open(ctx context.Context, cfg *Config, logger *slog.Logger) (event.Bus, err
 		client:     client,
 		logger:     logger,
 		group:      group,
+		ownGroup:   cfg.ConsumerGroup == "",
 		consumer:   defaultConsumerName(),
 		maxEntries: maxEntries,
 		table:      dispatch.New("event/redis", logger),
@@ -196,11 +203,18 @@ type bus struct {
 	client *goredis.Client
 	// readers carries the readers' commands. begin builds it, and Close
 	// releases it after the readers have returned.
-	readers    *goredis.Client
-	logger     *slog.Logger
-	group      string
+	readers *goredis.Client
+	logger  *slog.Logger
+	group   string
+	// ownGroup reports that the group's name is this process's own rather
+	// than one the host configured: no other process reads through it.
+	ownGroup   bool
 	consumer   string
 	maxEntries int64
+	// types is what the table held when it froze: the streams this bus holds
+	// a group on. begin writes it before any reader starts, and Close reads
+	// it once they have returned.
+	types []string
 
 	// table holds the subscriptions, the stage, and the readers' lifetime.
 	table *dispatch.Table
@@ -244,13 +258,50 @@ func (b *bus) Publish(ctx context.Context, evt event.Event) error {
 // acknowledged within the table's grace.
 func (b *bus) Stop(_ context.Context) error { return b.table.Stop() }
 
-// Close stops the bus if the stop stage has not, and releases both clients.
-func (b *bus) Close(_ context.Context) error {
+// Close stops the bus if the stop stage has not, takes out of the consumer
+// groups what only this process used, and releases both clients.
+//
+// A group named after this process is read by no other, so one left behind
+// would never be read again, and every process start — each replica of a
+// rolling deploy, each command that takes the bus in — would add one to every
+// stream it subscribes to, its lag growing for good. It is destroyed. A group
+// the host named is shared, or outlives this process on purpose, and stays;
+// only this process's consumer is taken out of it, the consumer's name being
+// this process's own either way. By now the stop stage has acknowledged what
+// the readers took, so nothing pending goes with either.
+//
+// A process that never reaches its close leaves both behind, and nothing
+// removes them but an operator. Failing to remove them here does not fail the
+// close.
+func (b *bus) Close(ctx context.Context) error {
 	errs := []error{b.table.Close()}
+	if len(b.types) > 0 {
+		b.leaveGroups(ctx)
+		b.types = nil
+	}
 	if b.readers != nil {
 		errs = append(errs, b.readers.Close())
 	}
 	return errors.Join(append(errs, b.client.Close())...)
+}
+
+// leaveGroups removes this process's group from every stream it read, or its
+// consumer from the configured group.
+func (b *bus) leaveGroups(ctx context.Context) {
+	removing, cancel := context.WithTimeout(ctx, closeWait)
+	defer cancel()
+	for _, eventType := range b.types {
+		var err error
+		if b.ownGroup {
+			err = b.client.XGroupDestroy(removing, streamKey(eventType), b.group).Err()
+		} else {
+			err = b.client.XGroupDelConsumer(removing, streamKey(eventType), b.group, b.consumer).Err()
+		}
+		if err != nil {
+			b.logger.Warn("event/redis: removing what this process left in the consumer group failed",
+				"event", eventType, "group", b.group, "err", err)
+		}
+	}
 }
 
 // begin freezes the table and starts one reader per subscribed type.
@@ -259,6 +310,7 @@ func (b *bus) begin(ctx context.Context) error {
 	if !first || len(types) == 0 {
 		return nil
 	}
+	b.types = types
 	b.readers = readerClient(b.client, len(types))
 	for _, eventType := range types {
 		// MkStream creates the stream when it does not exist yet, so a
