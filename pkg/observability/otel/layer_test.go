@@ -334,6 +334,49 @@ func TestTheLayerKeepsTheFirstStatusWritten(t *testing.T) {
 	}
 }
 
+// TestTheServerSpanCarriesTheOutcome pins what a span says about the request it
+// covers: the same method and status attributes the histogram carries, and an
+// error status when the answer was a server error. A handler that answers 500
+// without panicking failed just as much as one that panicked, and a span left
+// unmarked would file it with the successes at every backend that filters
+// traces by status. A client error is not this endpoint's failure and leaves
+// the status unset.
+func TestTheServerSpanCarriesTheOutcome(t *testing.T) {
+	for _, tc := range []struct {
+		code      int
+		wantError bool
+	}{
+		{nethttp.StatusOK, false},
+		{nethttp.StatusNotFound, false},
+		{nethttp.StatusInternalServerError, true},
+		{nethttp.StatusServiceUnavailable, true},
+	} {
+		t.Run(strconv.Itoa(tc.code), func(t *testing.T) {
+			p, rec, _ := layerUnderTest(t)
+			handler := p.instrument("api")(nethttp.HandlerFunc(func(w nethttp.ResponseWriter, _ *nethttp.Request) {
+				w.WriteHeader(tc.code)
+			}))
+			handler.ServeHTTP(httptest.NewRecorder(), httptest.NewRequest("PURGE", "http://example.test/x", nil))
+
+			spans := rec.recorded()
+			if len(spans) != 1 {
+				t.Fatalf("the layer ended %d spans, want 1", len(spans))
+			}
+			attrs := attribute.NewSet(spans[0].Attributes()...)
+			if got := attributeOf(t, attrs, "http.request.method"); got != otherMethod {
+				t.Errorf("the span's method attribute is %q, want the folded %q", got, otherMethod)
+			}
+			if got := attributeOf(t, attrs, "http.response.status_code"); got != strconv.Itoa(tc.code) {
+				t.Errorf("the span's status attribute is %q, want %d", got, tc.code)
+			}
+			if got := spans[0].Status().Code == codes.Error; got != tc.wantError {
+				t.Errorf("a %d answer left the span with status %v, want error=%v",
+					tc.code, spans[0].Status().Code, tc.wantError)
+			}
+		})
+	}
+}
+
 // TestTheLayerSkipsAnInformationalStatus pins the one kind of code a handler may
 // write before its final one. An informational response — 103 Early Hints, say —
 // is sent ahead of the response and does not stop the handler from writing the

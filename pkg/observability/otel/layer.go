@@ -41,9 +41,9 @@ const (
 	otherMethod = "_OTHER"
 )
 
-// The two attributes the request histogram carries. Both are closed sets — the
-// standard methods plus otherMethod, and the status codes — so neither grows
-// with traffic. A route attribute is not among them: this layer sits outside
+// The two attributes the request histogram and the server span carry. Both are
+// closed sets — the standard methods plus otherMethod, and the status codes —
+// so neither grows with traffic. A route attribute is not among them: this layer sits outside
 // the routing engine and the request has not been dispatched yet, so the only
 // way to fill it would be to invent a source.
 var (
@@ -166,10 +166,24 @@ func (p *providers) instrument(endpoint string) func(nethttp.Handler) nethttp.Ha
 						code = nethttp.StatusInternalServerError
 					}
 				}
-				duration.Record(ctx, elapsed.Seconds(), metric.WithAttributes(
+				outcome := []attribute.KeyValue{
 					attrRequestMethod.String(methodOf(r.Method)),
 					attrResponseCode.Int(code),
-				))
+				}
+				duration.Record(ctx, elapsed.Seconds(), metric.WithAttributes(outcome...))
+
+				// The span carries the same outcome the histogram does, and a
+				// server error marks it failed whether or not the handler
+				// panicked: a 500 written on purpose is as much this endpoint's
+				// failure as one written by the recovery layer, and a span left
+				// unmarked files it with the successes wherever traces are
+				// filtered by status. A client error is the caller's, and the
+				// status stays unset for it, which is the upstream convention
+				// for a server span.
+				span.SetAttributes(outcome...)
+				if raised == nil && code >= nethttp.StatusInternalServerError {
+					span.SetStatus(codes.Error, "")
+				}
 				span.End()
 
 				// The panic goes on to the entry module's own recovery layer,

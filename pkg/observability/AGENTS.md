@@ -82,7 +82,9 @@ must not cross, and how to run it.
   the status code. No route — this layer sits outside the routing engine and the
   request has not been dispatched — and no tenant: that dimension lives on
   event-derived spans. The instrument's name, unit and bucket boundaries are
-  equally fixed; a dashboard reads them.
+  equally fixed; a dashboard reads them. The server span carries the same two
+  attributes, and a final server-error status marks it errored whether or not
+  the handler panicked.
 - **An event-derived span's attributes are the payload's fields as published.**
   Every top-level field of the payload becomes one attribute, so the set is
   whatever publishers put in payloads and the module limits no attribute's
