@@ -10,6 +10,32 @@ import (
 	"github.com/vislake/speed/pkg/log"
 )
 
+// TestTheListeningConnectionGoesWhereThePoolGoes pins that the listening
+// session reaches the same database as every publish, whatever whitespace the
+// connection string carries. Secrets and env files routinely end in a newline;
+// the pool normalises the string, and a listening connection parsed from the
+// raw text again failed the startup on a trailing newline, and on leading
+// whitespace went to the libpq defaults instead — a different server or
+// database, where the notifications a publish sends never arrive.
+func TestTheListeningConnectionGoesWhereThePoolGoes(t *testing.T) {
+	dsn := pgtest.Acquire(t)
+	for _, given := range []string{dsn + "\n", "  " + dsn, "\t" + dsn + " \r\n"} {
+		opened, err := open(context.Background(), &pgpool.Config{DSN: given, MaxConns: 2}, log.Default())
+		if err != nil {
+			t.Errorf("open with the connection string %q: %v", given, err)
+			continue
+		}
+		b := opened.(*bus)
+		pooled, listening := b.pool.Config().ConnConfig, b.listen.Config()
+		if listening.Host != pooled.Host || listening.Port != pooled.Port || listening.Database != pooled.Database {
+			t.Errorf("with the connection string %q the listening session went to %s:%d/%s, and the "+
+				"pool to %s:%d/%s", given, listening.Host, listening.Port, listening.Database,
+				pooled.Host, pooled.Port, pooled.Database)
+		}
+		_ = b.Close(context.Background())
+	}
+}
+
 // TestReplicasStartingTogetherOnANewDatabaseAllStart pins what a rollout of
 // several replicas onto an empty database needs: every one of them starts.
 // CREATE TABLE IF NOT EXISTS run by several sessions at once is not safe — the

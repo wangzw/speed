@@ -150,7 +150,14 @@ func open(ctx context.Context, cfg *pgpool.Config, logger *slog.Logger) (event.B
 	// The listening connection is outside the pool on purpose: a connection
 	// running LISTEN would otherwise be handed to an ordinary query, where the
 	// subscription would sit idle and the query would wait on it.
-	listen, err := pgx.Connect(ctx, cfg.DSN)
+	//
+	// It is built from the pool's own parsed configuration rather than from the
+	// connection string again. The pool normalised that string before parsing
+	// it, and a second parse of the raw text is how a trailing newline failed
+	// the startup and leading whitespace — read as a keyword/value string
+	// naming nothing — sent the listening session to the libpq defaults, a
+	// different server or database from the one every publish writes to.
+	listen, err := pgx.ConnectConfig(ctx, pool.Config().ConnConfig.Copy())
 	if err != nil {
 		pool.Close()
 		return nil, fmt.Errorf("%s: taking the listening connection: %w", ModuleName, err)
