@@ -87,7 +87,9 @@ type Database interface {
 	// plugins, same encryption serializer — and it shares the same connection
 	// pool parameters, except that a locator naming a database private to one
 	// connection, such as SQLite's :memory:, gets a pool of one. The connection
-	// attempt is bound to ctx.
+	// attempt is bound to ctx. A blank locator is refused with
+	// ErrConnectFailed: a driver handed one connects to a database nobody
+	// named rather than failing.
 	//
 	// It carries no migrations and this module does not hold it: the caller
 	// closes it with Close in its own Close stage. Leaking it leaks

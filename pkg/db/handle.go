@@ -3,6 +3,8 @@ package db
 import (
 	"context"
 	"errors"
+	"fmt"
+	"strings"
 
 	"gorm.io/gorm"
 
@@ -121,7 +123,18 @@ func (d *database) BlindIndex(plaintext string) string {
 // migrations to it, and does not close it. The caller closes it with the
 // package-level Close in its own Close stage, and leaking it leaks connections
 // that nothing here can release on its behalf.
+//
+// A blank locator is refused, the rule the delivered one is held to. Handed to
+// a driver, it does not mean "no database": PostgreSQL's driver fills it in from
+// the process environment and the local defaults and connects to whatever that
+// names, and SQLite's opens a temporary database private to each pooled
+// connection. Either way the caller holds a working handle on a database it
+// never named, which is the one outcome a missing locator must not have.
 func (d *database) Open(ctx context.Context, dsn string) (*gorm.DB, error) {
+	if strings.TrimSpace(dsn) == "" {
+		return nil, fmt.Errorf("%w: Open was handed a blank %s locator, and a connection this module "+
+			"builds has to name the database it reaches", ErrConnectFailed, d.spec.Dialect)
+	}
 	cfg := d.cfg
 	cfg.DSN = dsn
 	handle, err := openHandle(ctx, d.spec, cfg)
