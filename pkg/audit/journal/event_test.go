@@ -160,6 +160,78 @@ func TestAnEventDeliveredToEveryReplicaIsRecordedOnce(t *testing.T) {
 	}
 }
 
+// requireTheFirstDeliveryIsKept delivers one event through a journal on the
+// first handle, then again, later and with everything a delivery carries changed
+// but the identifier, through a journal on the second, and checks that the
+// table still holds the row the first delivery wrote, unchanged.
+//
+// A later delivery that rewrote the row — an insert that updates on the key
+// instead of yielding to it — would leave one row with the right identifier, and
+// the count alone would not tell it from the row the first delivery wrote. What
+// tells them apart is the row's content: its acceptance time, its tenant and
+// what it read from the payload.
+func requireTheFirstDeliveryIsKept(t *testing.T, first, second *gorm.DB) {
+	t.Helper()
+	var reported bytes.Buffer
+	buses := [2]*recordingBus{newRecordingBus(), newRecordingBus()}
+	for i, handle := range []*gorm.DB{first, second} {
+		j := newTestJournal(handle, settings{events: []string{"order.updated"}})
+		j.signal = &signal{out: &reported}
+		j.subscribe(buses[i])
+	}
+	id := event.NewID()
+	deliver(t, event.Event{
+		ID: id, Type: "order.updated", TenantID: "acme",
+		Payload: map[string]any{"object": "order/o1", "outcome": "placed", "note": "first"},
+	}, buses[0])
+	kept := auditRows(t, first)
+	if len(kept) != 1 {
+		t.Fatalf("the first delivery left %d row(s), want 1", len(kept))
+	}
+	// The acceptance time is kept to the millisecond or finer on both
+	// dialects, so a later delivery that rewrote the row would change it.
+	time.Sleep(20 * time.Millisecond)
+	deliver(t, event.Event{
+		ID: id, Type: "order.updated", TenantID: "globex",
+		Payload: map[string]any{"object": "order/o2", "outcome": "shipped", "note": "second"},
+	}, buses[1])
+
+	after := auditRows(t, first)
+	if len(after) != 1 {
+		t.Fatalf("two deliveries of one event left %d row(s), want 1", len(after))
+	}
+	want, got := kept[0], after[0]
+	if got.ID != want.ID || !got.OccurredAt.Equal(want.OccurredAt) || got.Object != want.Object ||
+		got.Outcome != want.Outcome || got.Detail != want.Detail || got.Actor != want.Actor ||
+		!sameText(got.TenantID, want.TenantID) || !sameText(got.EventID, want.EventID) {
+		t.Errorf("the later delivery changed the row: it reads %+v (tenant %v), want the first delivery's %+v "+
+			"(tenant %v)", got, text(got.TenantID), want, text(want.TenantID))
+	}
+	if reported.Len() != 0 {
+		t.Errorf("a delivery the table already held was reported as a failure: %s", reported.String())
+	}
+}
+
+// sameText reports whether two nullable columns hold the same value.
+func sameText(a, b *string) bool {
+	return (a == nil && b == nil) || (a != nil && b != nil && *a == *b)
+}
+
+// text renders a nullable column for a failure message.
+func text(s *string) string {
+	if s == nil {
+		return "NULL"
+	}
+	return *s
+}
+
+// The row an event leaves is the first delivery's: a later delivery of the same
+// event, to another replica, changes nothing in it.
+func TestTheFirstDeliveryOfAnEventIsTheOneKept(t *testing.T) {
+	handle := open(t)
+	requireTheFirstDeliveryIsKept(t, handle, handle)
+}
+
 // Two events are two rows even when everything but the identifier agrees, and
 // an event that carries no identifier is recorded on every delivery rather than
 // merged with every other such event under an empty key.

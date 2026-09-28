@@ -192,6 +192,13 @@ func TestPostgresAnEventDeliveredToEveryReplicaIsRecordedOnce(t *testing.T) {
 	}
 }
 
+// The row an event leaves on PostgreSQL is the first delivery's, when the later
+// delivery comes from another replica's pool.
+func TestPostgresTheFirstDeliveryOfAnEventIsTheOneKept(t *testing.T) {
+	first, second := openPostgresReplicas(t)
+	requireTheFirstDeliveryIsKept(t, first, second)
+}
+
 // The migration adding the event column keeps a table the first one built.
 func TestPostgresTheEventColumnMigrationKeepsAnExistingTable(t *testing.T) {
 	handle := connectPostgres(t, pgtest.Acquire(t))
