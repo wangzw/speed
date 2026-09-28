@@ -145,6 +145,33 @@ func TestAnUnreachableServerFailsTheStartup(t *testing.T) {
 	}
 }
 
+// TestCloseReleasesTheConnectionsTheClientKeeps pins the Close stage: the
+// connections this module opened are closed by this module. The client keeps
+// idle connections between operations, so a Close that released nothing would
+// leave them open on the server after the module shut down — for as long as
+// the process lives, in a host or a test binary that outlives the module.
+func TestCloseReleasesTheConnectionsTheClientKeeps(t *testing.T) {
+	server := startFakeServer(t)
+	opened, err := open(context.Background(), &Config{Servers: []string{server.addr()}, Timeout: time.Second})
+	if err != nil {
+		t.Fatalf("open: %v", err)
+	}
+	if _, _, getErr := opened.Get(context.Background(), "k"); getErr != nil {
+		t.Fatalf("Get: %v", getErr)
+	}
+	if closeErr := opened.(*store).Close(context.Background()); closeErr != nil {
+		t.Fatalf("Close: %v", closeErr)
+	}
+	deadline := time.Now().Add(2 * time.Second)
+	for server.closed.Load() < server.accepted.Load() {
+		if time.Now().After(deadline) {
+			t.Fatalf("after Close the client still holds %d of the %d connections it opened",
+				server.accepted.Load()-server.closed.Load(), server.accepted.Load())
+		}
+		time.Sleep(10 * time.Millisecond)
+	}
+}
+
 // TestBurstsOfOperationsReuseTheirConnections covers what a busy replica does
 // to its sockets. The client keeps only so many idle connections per server
 // and closes every connection past that when an operation returns it, so each

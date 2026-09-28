@@ -219,10 +219,8 @@ type store struct {
 	client *memcache.Client
 }
 
-// Close releases nothing: gomemcache keeps no connection pool of its own, so
-// there is no closer to call. It is defined all the same, so that the module's
-// release path is exercised rather than skipped.
-func (s *store) Close(context.Context) error { return nil }
+// Close releases the idle connections the client keeps between operations.
+func (s *store) Close(context.Context) error { return s.client.Close() }
 
 // Get returns a copy of the value, absent when its header says it has expired.
 func (s *store) Get(ctx context.Context, key string) ([]byte, bool, error) {
