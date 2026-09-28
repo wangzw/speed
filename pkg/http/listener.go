@@ -55,6 +55,11 @@ type listener struct {
 	// shutdown's aggregate twice.
 	reported bool
 
+	// handlers counts the handler calls under way on this endpoint. The drain
+	// waits for it as well as for Shutdown, because Shutdown stops tracking a
+	// connection once its handler has hijacked it.
+	handlers inFlight
+
 	// logger is where this endpoint's own diagnostics go. It is the module's
 	// logger, not the one injected into a request context.
 	logger *slog.Logger
@@ -107,7 +112,7 @@ func (l *listener) start(s endpointSettings, h nethttp.Handler, logger *slog.Log
 
 	server := &nethttp.Server{
 		Addr:              s.address,
-		Handler:           h,
+		Handler:           l.track(h),
 		ReadHeaderTimeout: s.readHeaderTimeout,
 		ReadTimeout:       s.readTimeout,
 		WriteTimeout:      s.writeTimeout,
@@ -213,12 +218,23 @@ func (l *listener) drain(ctx context.Context, server *nethttp.Server, drained ch
 	}
 
 	err := server.Shutdown(ctx)
+	if err == nil {
+		// Shutdown has waited for every connection it still tracks, which
+		// leaves out the ones a handler hijacked: their handlers can still be
+		// running, and a request is in flight until its handler returns.
+		select {
+		case <-l.handlers.idle():
+		case <-ctx.Done():
+			err = ctx.Err()
+		}
+	}
 	switch {
 	case errors.Is(err, context.DeadlineExceeded):
 		// Shutdown gives up waiting but leaves the connections it was
 		// waiting for running. server.Close is what actually cuts them, and
 		// without it the caller is told the endpoint was cut while the
-		// requests carry on.
+		// requests carry on. A hijacked connection is not among them: it
+		// belongs to its handler, and nothing here can cut it.
 		cutErr := server.Close()
 		err = fmt.Errorf("%w: endpoint %q still had requests in flight when its drain-timeout "+
 			"of %s expired, and the connections still open were cut. Raise %s.%s.%s.drain-timeout "+
@@ -271,6 +287,61 @@ func (l *listener) close(ctx context.Context) error {
 	}
 	l.reported = true
 	return errors.Join(stopErr, l.drainErr)
+}
+
+// track counts every call of next as in flight until it returns, the ones that
+// hijack their connection included.
+func (l *listener) track(next nethttp.Handler) nethttp.Handler {
+	return nethttp.HandlerFunc(func(w nethttp.ResponseWriter, r *nethttp.Request) {
+		l.handlers.enter()
+		defer l.handlers.leave()
+		next.ServeHTTP(w, r)
+	})
+}
+
+// inFlight counts calls under way and tells a waiter when none is left.
+//
+// A sync.WaitGroup does not fit: the count may rise again after a waiter has
+// begun, when a request read just before the socket closed reaches its
+// handler, and a WaitGroup forbids an Add from zero concurrent with a Wait.
+type inFlight struct {
+	mu sync.Mutex
+	n  int
+	// zero is closed when the count falls to zero, and replaced by the next
+	// waiter that finds calls under way.
+	zero chan struct{}
+}
+
+func (f *inFlight) enter() {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	f.n++
+}
+
+func (f *inFlight) leave() {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	f.n--
+	if f.n == 0 && f.zero != nil {
+		close(f.zero)
+		f.zero = nil
+	}
+}
+
+// idle returns a channel that is closed once no call is under way; it is
+// closed already when none is.
+func (f *inFlight) idle() <-chan struct{} {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	if f.n == 0 {
+		done := make(chan struct{})
+		close(done)
+		return done
+	}
+	if f.zero == nil {
+		f.zero = make(chan struct{})
+	}
+	return f.zero
 }
 
 // isAccepting reports whether this endpoint is still taking requests.

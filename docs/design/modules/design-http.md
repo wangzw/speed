@@ -407,6 +407,8 @@ stateDiagram-v2
 
 **构造在本模块之后的模块不在这条保证之内。** 停机按构造逆序推进，那些模块先于本模块收到 `Stop`，那时本模块仍在接受请求；`Close` 则一律落在排空之后。这一段的先后由注册表给出，本模块改变不了：这类模块的 `Stop` 里只宜停下不影响在途请求的工作，例如后台刷新。察觉：读注册表给出的构造序。
 
+**被接管的连接同样算在途。** handler 接管连接之后（WebSocket 一类的协议升级即是如此），协议层不再跟踪那条连接，它的关停既不等它、也切不断它。本模块另按 handler 的调用计数等待：一次请求在它的 handler 返回之前都算在途，排空要等计数归零，以同一个排空时限为界，到期未归零同样是排空超时。**接受的代价**：时限到期时被接管的连接切不断，它归 handler 所有，本模块手里没有它；handler 把连接交给自己另起的协程后即返回的，那些协程不在排空的覆盖之内。
+
 `Stop` 先关闭全部端的监听器，再逐端等待，各端的排空因而并行进行。一个端的排空超时不缩短其余端的等待，逐端的失败聚合后由 `Stop` 一并返回，每一端的失败只报一次。
 
 **时限从该端关闭监听器起算**，即排空真正开始的那一刻。它限的是排空这件事本身，本模块关闭其余端监听器所花的时间不计入其中。
@@ -460,7 +462,7 @@ stateDiagram-v2
 |---|---|---|
 | 登记面与写入闸门 | 已实现 | `pkg/http/surface.go` `Router`、`Endpoint`、`Middleware`、`pkg/http/router.go` `(*router).open`、`(*router).seal`、`(*router).write` |
 | 中间件排序与链组装 | 已实现 | `pkg/http/order.go` `orderLayers`、`pkg/http/assemble.go` `(*endpoint).assemble`、`reportUnlanded` |
-| 监听端的绑定与停机排空 | 已实现 | `pkg/http/listener.go` `(*listener).start`、`(*listener).stop`、`(*listener).close`、`pkg/http/module.go` `(*router).stop` |
+| 监听端的绑定与停机排空 | 已实现 | `pkg/http/listener.go` `(*listener).start`、`(*listener).stop`、`(*listener).close`、`(*listener).track`、`inFlight`、`pkg/http/module.go` `(*router).stop` |
 | 请求上下文的建立 | 已实现 | `pkg/http/assemble.go` `(*endpoint).base` |
 | 请求路径的 panic 兜底 | 已实现 | `pkg/http/recovery.go` `fallback`、`writePanicResponse`、`stackTrace` |
 | `PanicResponder` 可选接缝 | 已实现 | `pkg/http/recovery.go` `PanicResponder`、`pkg/http/module.go` `panicResponder` |
