@@ -1,6 +1,7 @@
 package db
 
 import (
+	"database/sql"
 	"strings"
 	"sync"
 	"testing"
@@ -257,6 +258,161 @@ func TestAnInsertFromAMapSealsTheField(t *testing.T) {
 	}
 	for i, row := range rows {
 		assertSealed(t, product, row.ID, want[i])
+	}
+}
+
+// contactModel keeps a sealed field whose Go name and column differ by more
+// than letter case: ContactEmail, in contact_email. GORM resolves a map key or
+// a Select entry written with either name to the column, while a comparison of
+// the text alone finds the column only under its own name.
+type contactModel struct {
+	ID           uint
+	ContactEmail string `gorm:"serializer:encrypted"`
+	Note         string
+}
+
+// leftOut is what a case puts under Note where its Select leaves Note out, so
+// that the column still holding something else shows the Select was in force.
+const leftOut = "left out"
+
+// assertContactSealed holds one row of contactModel to what a sealed write
+// leaves — a contact_email column without the plaintext, which the model reads
+// back as the plaintext — and to the Select the write ran under, which kept
+// leftOut out of the note column.
+func assertContactSealed(t *testing.T, product *database, id uint, want string) {
+	t.Helper()
+	var stored struct {
+		ContactEmail sql.NullString
+		Note         sql.NullString
+	}
+	if err := product.DB().Raw("SELECT contact_email, note FROM contact_models WHERE id = ?", id).
+		Row().Scan(&stored.ContactEmail, &stored.Note); err != nil {
+		t.Fatalf("reading the row with native SQL: %v", err)
+	}
+	if !stored.ContactEmail.Valid {
+		t.Fatalf("the contact_email column is NULL after writing %q into it", want)
+	}
+	if strings.Contains(stored.ContactEmail.String, want) {
+		t.Errorf("the contact_email column holds %q, which carries the plaintext %q: the write stored it "+
+			"in clear", stored.ContactEmail.String, want)
+	}
+	if stored.Note.String == leftOut {
+		t.Errorf("the note column holds %q, which the write's Select left out", leftOut)
+	}
+	var read contactModel
+	if err := product.DB().First(&read, id).Error; err != nil {
+		t.Fatalf("reading the row back through the model: %v", err)
+	}
+	if read.ContactEmail != want {
+		t.Errorf("the model reads the contact email back as %q, want %q", read.ContactEmail, want)
+	}
+}
+
+// assembleContacts assembles a product with key material and brings
+// contactModel's table up on it.
+func assembleContacts(t *testing.T) *database {
+	t.Helper()
+	product := assembleEncrypted(t, encryptedDSN(t), encryptedRootKeyItem)
+	if err := product.DB().AutoMigrate(&contactModel{}); err != nil {
+		t.Fatalf("creating the model's table: %v", err)
+	}
+	return product
+}
+
+// TestAnUpdateNamingTheFieldByItsGoNameIsSealed covers the updates that name
+// the sealed column by its Go field name, in a map key or in a Select, and the
+// ones whose Select names it one way while the map names it the other. GORM
+// writes the value in each of them. What is sealed has to be decided on the
+// column GORM resolves the name to: a key read as the text it is misses the
+// column, and a Select entry held against the key as written leaves out a
+// value GORM writes, and either stores the plaintext.
+func TestAnUpdateNamingTheFieldByItsGoNameIsSealed(t *testing.T) {
+	cases := []struct {
+		name  string
+		write func(db *gorm.DB, id uint, email string) error
+	}{
+		{"Updates with a map keyed by the field name", func(db *gorm.DB, id uint, email string) error {
+			return db.Model(&contactModel{ID: id}).Updates(map[string]any{"ContactEmail": email}).Error
+		}},
+		{"Update with the field name", func(db *gorm.DB, id uint, email string) error {
+			return db.Model(&contactModel{ID: id}).Update("ContactEmail", email).Error
+		}},
+		{"UpdateColumns with a map keyed by the field name", func(db *gorm.DB, id uint, email string) error {
+			return db.Model(&contactModel{}).Where("id = ?", id).
+				UpdateColumns(map[string]any{"ContactEmail": email}).Error
+		}},
+		{"Select naming the field over a map keyed by the column", func(db *gorm.DB, id uint, email string) error {
+			return db.Model(&contactModel{ID: id}).Select("ContactEmail").
+				Updates(map[string]any{"contact_email": email, "note": leftOut}).Error
+		}},
+		{"Select naming the column over a map keyed by the field name", func(db *gorm.DB, id uint, email string) error {
+			return db.Model(&contactModel{ID: id}).Select("contact_email").
+				Updates(map[string]any{"ContactEmail": email, "Note": leftOut}).Error
+		}},
+		{"Select naming the field over a map keyed by the field name", func(db *gorm.DB, id uint, email string) error {
+			return db.Model(&contactModel{ID: id}).Select("ContactEmail").
+				Updates(map[string]any{"ContactEmail": email, "Note": leftOut}).Error
+		}},
+		{"Select naming the qualified column over a map keyed by the field name", func(db *gorm.DB, id uint, email string) error {
+			return db.Model(&contactModel{ID: id}).Select("contact_models.contact_email").
+				Updates(map[string]any{"ContactEmail": email, "Note": leftOut}).Error
+		}},
+		{"Omit naming another field over a map keyed by the field name", func(db *gorm.DB, id uint, email string) error {
+			return db.Model(&contactModel{ID: id}).Omit("Note").
+				Updates(map[string]any{"ContactEmail": email, "Note": leftOut}).Error
+		}},
+	}
+	for _, c := range cases {
+		t.Run(c.name, func(t *testing.T) {
+			product := assembleContacts(t)
+			row := contactModel{ContactEmail: "first@example.com"}
+			if err := product.DB().Create(&row).Error; err != nil {
+				t.Fatalf("writing the row the case starts from: %v", err)
+			}
+
+			const email = "patched@example.com"
+			if err := c.write(product.DB(), row.ID, email); err != nil {
+				t.Fatalf("the write failed: %v", err)
+			}
+			assertContactSealed(t, product, row.ID, email)
+		})
+	}
+}
+
+// TestAnInsertNamingTheFieldByItsGoNameIsSealed covers Create over maps that
+// name the sealed column by its Go field name, alone and under a Select that
+// names the columns either way, for the reason the update case gives.
+func TestAnInsertNamingTheFieldByItsGoNameIsSealed(t *testing.T) {
+	const id = 7
+	cases := []struct {
+		name  string
+		write func(db *gorm.DB, email string) error
+	}{
+		{"Create from a map keyed by the field name", func(db *gorm.DB, email string) error {
+			return db.Model(&contactModel{}).Create(map[string]any{"ID": id, "ContactEmail": email}).Error
+		}},
+		{"Create from a slice of maps keyed by the field name", func(db *gorm.DB, email string) error {
+			return db.Model(&contactModel{}).Create(&[]map[string]any{{"ID": id, "ContactEmail": email}}).Error
+		}},
+		{"Create with Select naming the fields", func(db *gorm.DB, email string) error {
+			return db.Model(&contactModel{}).Select("ID", "ContactEmail").
+				Create(map[string]any{"ID": id, "ContactEmail": email, "Note": leftOut}).Error
+		}},
+		{"Create with Select naming the columns over a map keyed by the field names", func(db *gorm.DB, email string) error {
+			return db.Model(&contactModel{}).Select("id", "contact_email").
+				Create(map[string]any{"ID": id, "ContactEmail": email, "Note": leftOut}).Error
+		}},
+	}
+	for _, c := range cases {
+		t.Run(c.name, func(t *testing.T) {
+			product := assembleContacts(t)
+
+			const email = "created@example.com"
+			if err := c.write(product.DB(), email); err != nil {
+				t.Fatalf("the write failed: %v", err)
+			}
+			assertContactSealed(t, product, id, email)
+		})
 	}
 }
 
