@@ -22,6 +22,7 @@ import (
 // two see one set of items with one set of types.
 type disciplineCarrier struct {
 	Window  time.Duration
+	Span    disciplineSpan
 	Limit   int
 	Small   int8
 	Count   uint
@@ -40,6 +41,10 @@ type disciplineCarrier struct {
 type (
 	disciplineMode   string
 	disciplineToggle bool
+	// disciplineSpan is built on time.Duration, and reflection sees nothing
+	// of that: it is an int64 of its own, and both sides hold it to the
+	// integer rules.
+	disciplineSpan time.Duration
 )
 
 // TestTheWriteDisciplineAgreesWithConfiguration holds the two statements of
@@ -66,6 +71,8 @@ func TestTheWriteDisciplineAgreesWithConfiguration(t *testing.T) {
 		{"window", `1.5`, false},
 		{"window", `"300"`, false},
 		{"window", `true`, false},
+		{"span", `300`, true},
+		{"span", `"5m"`, false},
 		{"limit", `10`, true},
 		{"limit", `10.0`, true},
 		{"limit", `10.5`, false},

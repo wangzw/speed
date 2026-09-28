@@ -178,6 +178,12 @@ func inlinedStruct(f reflect.StructField, tagged bool) (reflect.Type, bool) {
 //
 // A value that already is a duration passes: that is the default layer handing
 // back what the carrier struct declared.
+//
+// The rule is time.Duration's own. A type defined over it, such as
+// type Timeout time.Duration, keeps nothing of Duration that reflection can
+// see: it is an int64 of its own, the same as any integer type, and its items
+// follow the integer rules. A type that is to read as a duration implements
+// encoding.TextUnmarshaler, which makes it a leaf that parses itself.
 func durationHook(from, to reflect.Type, data any) (any, error) {
 	if to != durationType || from == durationType {
 		return data, nil

@@ -82,7 +82,9 @@ func encodeValue(entry keyEntry, value any) (string, error) {
 //   - A time.Duration takes a text time.ParseDuration accepts, and nothing
 //     else. A bare number is refused: its unit is the nanosecond, so a 300
 //     that reads as five minutes to whoever wrote it would be stored as three
-//     hundred nanoseconds.
+//     hundred nanoseconds. A type defined over time.Duration is not one: to
+//     reflection it is an int64 of its own, as it is to configuration, and
+//     the integer rules hold it.
 //   - A number converts into a numeric item of another Go type when the item
 //     holds it as the same number. JSON has no integer type, so a 10 decoded
 //     as a float belongs in an integer item, while 10.5 does not; an integer
