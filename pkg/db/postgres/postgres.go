@@ -6,7 +6,8 @@
 // its dialect owes the migration run, and registers the module that assembles
 // all of it. The connection, plugin, encryption and migration logic are
 // pkg/db's, shared with every other implementation; what is dialect-specific
-// stops at the driver, the mutex, the namespace and the module registration.
+// stops at the driver, how the driver reports a constraint refusal, the mutex,
+// the namespace and the module registration.
 //
 // The namespace is this engine's alone, and that is load-bearing rather than
 // tidy. The configuration manifest is collected from every registered module,
@@ -29,8 +30,10 @@
 package postgres
 
 import (
+	"errors"
 	"time"
 
+	"github.com/jackc/pgx/v5/pgconn"
 	pgdriver "gorm.io/driver/postgres"
 	"gorm.io/gorm"
 
@@ -75,3 +78,33 @@ const (
 // what lets a host move between engines without touching a line of the code
 // that uses the database.
 func Dialector(dsn string) gorm.Dialector { return pgdriver.Open(dsn) }
+
+// The SQLSTATE codes of the two constraint refusals this engine's handles
+// classify.
+const (
+	uniqueViolation     = "23505"
+	foreignKeyViolation = "23503"
+)
+
+// constraintViolation classifies a refusal this engine reports by its SQLSTATE:
+// unique_violation — a primary key's included — is a duplicated key, and
+// foreign_key_violation is a foreign key violation.
+//
+// The driver's own GORM translation maps two further codes, an undefined
+// column and a check constraint, and SQLite's reports neither; classifying
+// only the two refusals both engines report keeps one check meaning the same
+// on either, and every other refusal stays the engine's own error.
+func constraintViolation(err error) error {
+	var refusal *pgconn.PgError
+	if !errors.As(err, &refusal) {
+		return nil
+	}
+	switch refusal.Code {
+	case uniqueViolation:
+		return gorm.ErrDuplicatedKey
+	case foreignKeyViolation:
+		return gorm.ErrForeignKeyViolated
+	default:
+		return nil
+	}
+}

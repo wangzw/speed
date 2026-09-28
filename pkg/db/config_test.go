@@ -37,6 +37,7 @@ func specWithMutex() Spec {
 		ConfigNamespace:             postgresNamespace,
 		Dialect:                     Postgres,
 		Dialector:                   func(string) gorm.Dialector { return nil },
+		ConstraintViolation:         func(error) error { return nil },
 		NewMigrationLock:            func(time.Duration) MigrationLock { return nil },
 		DefaultMigrationLockTimeout: 5 * time.Minute,
 	}
@@ -46,10 +47,11 @@ func specWithMutex() Spec {
 // cross-process mutex.
 func specWithoutMutex() Spec {
 	return Spec{
-		ModuleName:      sqliteNamespace,
-		ConfigNamespace: sqliteNamespace,
-		Dialect:         SQLite,
-		Dialector:       func(string) gorm.Dialector { return nil },
+		ModuleName:          sqliteNamespace,
+		ConfigNamespace:     sqliteNamespace,
+		Dialect:             SQLite,
+		Dialector:           func(string) gorm.Dialector { return nil },
+		ConstraintViolation: func(error) error { return nil },
 	}
 }
 

@@ -33,6 +33,7 @@ func spec() db.Spec {
 		ConfigNamespace:             ConfigNamespace,
 		Dialect:                     Dialect,
 		Dialector:                   Dialector,
+		ConstraintViolation:         constraintViolation,
 		NewMigrationLock:            NewMigrationLock,
 		DefaultMigrationLockTimeout: DefaultMigrationLockTimeout,
 	}

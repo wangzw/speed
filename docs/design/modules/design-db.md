@@ -70,6 +70,14 @@ func Close(*gorm.DB) error
 
 物理删除仍然是 `Unscoped().Delete`，本模块不对它设门槛——谁可以物理删除是权限问题，由认识操作者的那一层决定。
 
+**约束拒绝**。一条语句被唯一约束（主键在内）拒绝时，本模块打开的每个句柄——交付的与 `Open` 自建的——交回的错误上 `errors.Is(err, gorm.ErrDuplicatedKey)` 成立；被外键拒绝时 `errors.Is(err, gorm.ErrForeignKeyViolated)` 成立。两个引擎上是同一条判断，宿主据此把业务唯一键的冲突答成冲突应答，不必 import 驱动（[ADR-db-errors-2026-09-28](../../adr/adr-db-errors-2026-09-28.md)）。
+
+驱动自己的错误留在同一条错误链上，错误文本也是驱动的原文：`errors.As` 仍取得到 PostgreSQL 的 `*pgconn.PgError`，被违反的约束名就在它上面。这条保证覆盖经 GORM 报回错误的每一条路：模型路径的写入、`Exec`、以 `Raw` 写的 `INSERT … RETURNING` 经 `Scan` 读取、事务里的语句，以及延迟检查的外键在 `COMMIT` 时的拒绝。
+
+只分类这两类。检查约束、非空约束、写了表里没有的列，这些拒绝在两个引擎上都保持驱动错误原样，不带任何一个 GORM 哨兵。经 `Row` 的 `Scan`、以及宿主自己迭代 `Rows` 时由 `rows.Err()` 报出的错误来自 database/sql，不经 GORM，也不带分类；要分类就用 `Scan`、`Find` 这类由 GORM 收尾的方法读结果。
+
+哪些驱动错误属于这两类由方言判断，实现子包经 `Spec.ConstraintViolation` 交给本模块。
+
 **字段级加密**。模型字段标注 `gorm:"serializer:encrypted"` 即落库前加密、读出后解密，密钥来自配置。序列化器由本模块注册到 GORM，时机与插件安装相同：建立连接之后、交付句柄之前。
 
 **采纳的读法**：注册到 GORM 的序列化器是全局的、且不持有任何状态；本实例的密钥由每次装配安装的一条注入回调放进语句的上下文，序列化器从那里取。这个形状由 GORM 定死——`schema.RegisterSerializer` 写的是进程级的一张表，而序列化器接口的方法拿到的是一个字段与一个上下文，拿不到 `*gorm.DB`。**考虑过而放弃的读法**：把序列化器做成按实例的；放弃的理由是 GORM 里没有这个形态，此路不通。
@@ -136,7 +144,7 @@ type Plugin struct {
 
 一条声明里没有可安装的东西——nil 接口，或带类型的 nil 指针（`db.Plugin{Plugin: (*T)(nil)}`，普通 nil 判据挡不住）——在收集阶段判 `ErrPluginFailed` 并点名声明它的模块，此时连接都还没开。**采纳的读法**：收集阶段拒绝并点名模块。**考虑过而放弃的读法**：放任到 GORM 第一次调用上 panic；放弃的理由是 panic 起不到点名模块的作用，它报不出是哪个模块把这条声明交出来的。
 
-**稳定性承诺**。`Database`、`Migrations` 与 `Plugin` 是本模块与其他模块之间的契约。`*gorm.DB` 出现在契约面上，GORM 的不兼容升级因此直达依赖方，这是封装型模块接受的代价（[ADR-module-packaging-2026-09-14](../../adr/adr-module-packaging-2026-09-14.md)）。
+**稳定性承诺**。`Database`、`Migrations` 与 `Plugin` 是本模块与其他模块之间的契约，约束拒绝落在 `gorm.ErrDuplicatedKey` 与 `gorm.ErrForeignKeyViolated` 上这一条同属契约。`*gorm.DB` 出现在契约面上，GORM 的不兼容升级因此直达依赖方，这是封装型模块接受的代价（[ADR-module-packaging-2026-09-14](../../adr/adr-module-packaging-2026-09-14.md)）。
 
 **配置**。输入项由各实现子包模块声明，**各自挂在自己的命名空间下**：`db.postgres` 与 `db.sqlite`。互斥的实现必须划分各自的输入项路径——清单收集自全部已注册模块，包含本次不会启用的那些，同一路径上的两份声明只要都被 import 就是冲突，且这个冲突在收集阶段检出，早于排他消解（见 [config](design-config.md)）。分开之后，同时 import 多个实现是常态：两份实现各自声明排他，依赖闭包因而不替宿主挑，只取命令树上已经写下的那些。宿主在运行级纳入里点名 `db.postgres` 或 `db.sqlite`，用哪个方言就是哪一个，未点名的实现不进参与集；点名的那个必须配好它的连接信息才能启动，两个都点名即排他冲突、启动失败，一个都没点名而又有模块依赖数据库功能时缺提供者、启动失败。
 
@@ -181,7 +189,7 @@ type Plugin struct {
 
 SQLite 实现子包绑定纯 Go 的驱动。**采纳的读法**：`github.com/glebarez/sqlite`。**考虑过而放弃的读法**：GORM 官方那个走 cgo 的 `gorm.io/driver/sqlite`；放弃的理由是它会把 C 工具链变成使用这个方言的构建前提，并让 `CGO_ENABLED=0` 的宿主用不了这个方言——cgo 落在 import 了它的那个包的构建上，而驱动只在一个子包内部，换掉它不改任何依赖方的一行代码。
 
-迁移的应用与插件的安装是各实现子包共用的逻辑，位于根包；实现子包自身不写任何阶段回调，它交出的是一份 `Spec`，四个回调一律由 `NewModule` 写出并对所有实现同形。方言特定的部分有三处：驱动的打开、连接池的设置，以及迁移的跨进程互斥。
+迁移的应用与插件的安装是各实现子包共用的逻辑，位于根包；实现子包自身不写任何阶段回调，它交出的是一份 `Spec`，四个回调一律由 `NewModule` 写出并对所有实现同形。方言特定的部分是驱动的打开、连接池的设置、约束拒绝的识别，以及迁移的跨进程互斥。
 
 方向满足架构不变量：本功能目录位于 `core` 与 `config` 之上、全部访问库的模块之下，不 import 其中任何一个。承担插件能力的模块 import 根包，根包不反向 import 它们——它不认识任何一种插件实现的能力。
 
@@ -338,7 +346,7 @@ sequenceDiagram
 
 每条错误的文本给出修复动作所需的信息。`ErrConnectFailed` 点名方言与失败的环节，**不回显定位符本身，也从不含口令**：它承载凭据，且会出现在诊断输出中。驱动给出的原因原样保留，那就是诊断；PostgreSQL 的驱动在其中写出它尝试的用户名、库名与地址，不写口令。这一条同样用于 `Open` 在运行期建立连接失败——补救动作与启动期相同，都是检查那个定位符与它指向的服务，因而不另立一条。`ErrMigrationFailed` 落在某一条迁移上时，点名声明它的模块与文件名——要修的是声明它的那个模块，而本模块无从知道该怎么改它；落在记录表的读写上时没有这样一条可点名，文本给出失败的操作。这些共用一条哨兵，因为宿主的补救动作同属一类。释放互斥失败时，文本要写明迁移已经全部施加、失败落在释放上——不这么写，操作者会照着这条哨兵去查迁移文件，而迁移根本没有问题。`ErrMigrationLockTimeout` 单列，是因为它的补救动作不同：要查的是另一个副本为何迟迟没有做完，或者这个时限给得是否太短，而不是去改哪一条迁移。
 
-以上都是启动期的失败。加解密在运行期发生：密钥缺失、密文损坏、密钥与密文不匹配，以及字段级加密一节拒绝的那些读写，都在那时暴露，由 GORM 把错误带回调用点；被拒绝的 `Row` 没有错误可带回，以 panic 暴露（见字段级加密一节）。本模块不为它们另立哨兵——启动期的哨兵表供宿主在启动失败时分类，而运行期的错误落在具体那一次查询上，由发出它的代码处理。
+以上都是启动期的失败。加解密在运行期发生：密钥缺失、密文损坏、密钥与密文不匹配，以及字段级加密一节拒绝的那些读写，都在那时暴露，由 GORM 把错误带回调用点；被拒绝的 `Row` 没有错误可带回，以 panic 暴露（见字段级加密一节）。本模块不为它们另立哨兵——启动期的哨兵表供宿主在启动失败时分类，而运行期的错误落在具体那一次查询上，由发出它的代码处理。约束拒绝也是运行期的错误，同样不进这张表：它落在 GORM 已有的两个哨兵上（见外部接口契约的约束拒绝）。
 
 `Migrate` 中途失败会留下已施加的部分。该部分不在回滚范围内，也无法回滚：注册表的回滚只驱动 `Stop` 与 `Close`，而数据变更不因此撤销。这是迁移这件事本身的性质。
 
@@ -364,7 +372,7 @@ sequenceDiagram
 
 **插件建议可被多次 `Initialize`，本模块不校验这一点。** `Open` 自建的连接复用同一批插件实例，而 GORM 的 `Use` 对每个句柄各调一次 `Initialize`：一个把首个 `*gorm.DB` 捕获进闭包的插件，在第二个句柄上表现为安装成功而不生效。**采纳的读法**：写作建议而非要求。**考虑过而放弃的读法**：把"须可重复 `Initialize`"写成硬要求并由本模块校验；放弃的理由是插件是外部类型，本模块没有可观察面判断一个插件是否可重复初始化——写一条验不了的契约等于不写。代价是：不满足这条建议的插件，失效形态是静默的，判定它是否满足留在声明方那一侧。
 
-**方言实现。** 新增一种方言即新增一个实现子包，绑定该方言的驱动，交付 `Database`；接口包在此只增加 `Dialect` 的一个取值，功能接口与资源类型都不变。各模块的迁移集增加一个同名子目录即支持该方言，不增加则视为不支持。方言实现要满足这些：把 DDL 纳入事务，否则迁移的执行与记录不再原子；能一次执行含多条语句的迁移文件，而不要求本模块切分 SQL 文本；出现在多副本部署中的，还要提供跨进程互斥。都见迁移的应用一节。
+**方言实现。** 新增一种方言即新增一个实现子包，绑定该方言的驱动，交付 `Database`；接口包在此只增加 `Dialect` 的一个取值，功能接口与资源类型都不变。各模块的迁移集增加一个同名子目录即支持该方言，不增加则视为不支持。方言实现要满足这些：把 DDL 纳入事务，否则迁移的执行与记录不再原子；能一次执行含多条语句的迁移文件，而不要求本模块切分 SQL 文本；出现在多副本部署中的，还要提供跨进程互斥。都见迁移的应用一节。此外它要经 `Spec.ConstraintViolation` 认出唯一约束与外键的拒绝，`NewModule` 拒绝不给出这一项的 `Spec`：少了它，同一种拒绝在这个方言上就认不出来（见外部接口契约的约束拒绝）。
 
 ## 实现状态
 
@@ -376,6 +384,7 @@ sequenceDiagram
 | 软删除 | 已实现 | 由 GORM 提供，随 `pkg/db/handle.go` `(*database).DB` 交付 |
 | 字段级加密与盲索引 | 已实现 | `pkg/db/serializer.go` `installEncryption`、`pkg/db/crypto.go` `deriveSubkey`、`pkg/db/handle.go` `(*database).BlindIndex` |
 | 不经模型字段的读写 | 已实现 | `pkg/db/encryptedwrites.go` `sealUpdate`、`sealCreate`、`pkg/db/encryptedreads.go` `guardReads`、`guardRowReads`、`refuseRenamedRead`、`pkg/db/identifiers.go` `sealedTarget` |
+| 约束拒绝的识别 | 已实现 | `pkg/db/constraints.go` `classifyingDialector`、`installRowClassification`、`pkg/db/sqlite/sqlite.go` `constraintViolation`、`pkg/db/postgres/postgres.go` `constraintViolation` |
 | SQLite 被拒提交的回滚 | 已实现 | `pkg/db/sqlite/commit.go` `endingTx` |
 | 插件的安装 | 已实现 | `pkg/db/plugins.go` `collectPlugins`、`installPlugins`、`pkg/db/handle.go` `newDatabase` |
 | 迁移的收齐与应用 | 已实现 | `pkg/db/migrate.go` `collectMigrations`、`applyMigrations` |

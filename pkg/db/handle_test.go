@@ -30,13 +30,15 @@ const hostNamespace = "db.testhost"
 //
 // The driver is the real one rather than a stand-in, and the implementation
 // subpackage is not imported: its init registers a module in the process
-// registry, which would take part in every case in this binary.
+// registry, which would take part in every case in this binary. No case here
+// runs into a constraint, so the classification answers none.
 func sqliteSpec() db.Spec {
 	return db.Spec{
-		ModuleName:      hostNamespace,
-		ConfigNamespace: hostNamespace,
-		Dialect:         db.SQLite,
-		Dialector:       sqlite.Open,
+		ModuleName:          hostNamespace,
+		ConfigNamespace:     hostNamespace,
+		Dialect:             db.SQLite,
+		Dialector:           sqlite.Open,
+		ConstraintViolation: func(error) error { return nil },
 	}
 }
 

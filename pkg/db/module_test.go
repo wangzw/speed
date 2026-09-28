@@ -31,10 +31,11 @@ const probeNamespace = "db.probe"
 // that reach a database do so through the in-memory fixture.
 func probeSpec() Spec {
 	return Spec{
-		ModuleName:      probeNamespace,
-		ConfigNamespace: probeNamespace,
-		Dialect:         SQLite,
-		Dialector:       func(string) gorm.Dialector { return nil },
+		ModuleName:          probeNamespace,
+		ConfigNamespace:     probeNamespace,
+		Dialect:             SQLite,
+		Dialector:           func(string) gorm.Dialector { return nil },
+		ConstraintViolation: func(error) error { return nil },
 	}
 }
 
@@ -197,6 +198,10 @@ func TestADefectiveSpecIsRefusedWhereItIsWritten(t *testing.T) {
 		{"no namespace", func(s Spec) Spec { s.ConfigNamespace = ""; return s }, "namespace"},
 		{"no dialect", func(s Spec) Spec { s.Dialect = ""; return s }, "dialect"},
 		{"no dialector", func(s Spec) Spec { s.Dialector = nil; return s }, "dialector"},
+		{
+			"no constraint classification", func(s Spec) Spec { s.ConstraintViolation = nil; return s },
+			"ConstraintViolation",
+		},
 		{"a mutex with no default timeout", func(s Spec) Spec {
 			s.NewMigrationLock = func(time.Duration) MigrationLock { return nil }
 			return s

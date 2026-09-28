@@ -5,7 +5,8 @@
 // input items hang under, and delivers the capability exclusively. The
 // connection, plugin, encryption and migration logic are pkg/db's, shared with
 // every other implementation; what is dialect-specific stops at the driver, the
-// namespace, and which locators name a database private to one connection.
+// namespace, how the driver reports a constraint refusal, and which locators
+// name a database private to one connection.
 //
 // Those locators — an in-memory database, a temporary one — are one database
 // per connection in SQLite, so a handle on one is held to a single connection
@@ -48,11 +49,14 @@
 package sqlite
 
 import (
+	"errors"
 	"net/url"
 	"strings"
 
+	gosqlite "github.com/glebarez/go-sqlite"
 	sqlitedriver "github.com/glebarez/sqlite"
 	"gorm.io/gorm"
+	sqlite3 "modernc.org/sqlite/lib"
 
 	"github.com/vislake/speed/pkg/core"
 	"github.com/vislake/speed/pkg/db"
@@ -81,6 +85,32 @@ const Dialect = db.SQLite
 // commit.go, which rolls a transaction back when SQLite refuses to commit it.
 func Dialector(dsn string) gorm.Dialector {
 	return &sqlitedriver.Dialector{DriverName: driverName, DSN: dsn}
+}
+
+// constraintViolation classifies a refusal this engine's driver reports by its
+// extended result code: a UNIQUE or PRIMARY KEY constraint, or a rowid that is
+// not unique, is a duplicated key, and a FOREIGN KEY constraint is a foreign key
+// violation. A foreign key is only enforced on a connection that turned it on —
+// the locator's _pragma=foreign_keys(1) — and on one that did not, the refusal
+// never happens.
+//
+// The driver's own GORM translation leaves the rowid out, so a table without an
+// INTEGER PRIMARY KEY that is written with an explicit rowid would report its
+// duplicates as something else; that is why the classification is written here
+// against the result codes rather than taken from it.
+func constraintViolation(err error) error {
+	var refusal *gosqlite.Error
+	if !errors.As(err, &refusal) {
+		return nil
+	}
+	switch refusal.Code() {
+	case sqlite3.SQLITE_CONSTRAINT_UNIQUE, sqlite3.SQLITE_CONSTRAINT_PRIMARYKEY, sqlite3.SQLITE_CONSTRAINT_ROWID:
+		return gorm.ErrDuplicatedKey
+	case sqlite3.SQLITE_CONSTRAINT_FOREIGNKEY:
+		return gorm.ErrForeignKeyViolated
+	default:
+		return nil
+	}
 }
 
 // connectionScoped reports whether a locator names a database that belongs to
@@ -125,10 +155,11 @@ func init() { core.ProcessRegistry.Register(Module()) }
 // with it: this engine does not appear in multi-replica deployments.
 func Module() core.Module {
 	return db.NewModule(db.Spec{
-		ModuleName:       ModuleName,
-		ConfigNamespace:  ConfigNamespace,
-		Dialect:          Dialect,
-		Dialector:        Dialector,
-		ConnectionScoped: connectionScoped,
+		ModuleName:          ModuleName,
+		ConfigNamespace:     ConfigNamespace,
+		Dialect:             Dialect,
+		Dialector:           Dialector,
+		ConstraintViolation: constraintViolation,
+		ConnectionScoped:    connectionScoped,
 	})
 }

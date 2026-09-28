@@ -15,6 +15,10 @@ import "errors"
 // match its ciphertext all surface on the query that hit them, carried back by
 // GORM — and they get no sentinel here: this table is for classifying a startup
 // failure, and a run-time error belongs to the code that issued the statement.
+// A statement a unique or a foreign key constraint refuses is recognised
+// through GORM's own gorm.ErrDuplicatedKey and gorm.ErrForeignKeyViolated,
+// which every handle this package opens attaches beside the driver's error
+// (see classifyingDialector); a sentinel here would be a second name for each.
 var (
 	// ErrConnectFailed reports that the driver would not open, or that the
 	// connectivity check did not pass. Its text names the dialect and the

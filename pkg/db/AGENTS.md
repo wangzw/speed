@@ -22,6 +22,8 @@ same capability exclusively.
   ([`adr-db-multiplicity-2026-09-14.md`](../../docs/adr/adr-db-multiplicity-2026-09-14.md)),
   how migrations are applied
   ([`adr-db-migration-2026-09-14.md`](../../docs/adr/adr-db-migration-2026-09-14.md)),
+  how a constraint refusal is recognised
+  ([`adr-db-errors-2026-09-28.md`](../../docs/adr/adr-db-errors-2026-09-28.md)),
   why this package's interface exposes GORM
   ([`adr-module-packaging-2026-09-14.md`](../../docs/adr/adr-module-packaging-2026-09-14.md)),
   and where a driver is allowed to live
@@ -76,7 +78,10 @@ must not cross, and how to run it.
 - **The sentinel table is closed at four entries and there is no fifth.**
   Encryption and decryption failures are run-time errors that belong to the
   statement that hit them and get no sentinel here; a new class of startup
-  failure is a decision, not an addition.
+  failure is a decision, not an addition. A constraint refusal is a run-time
+  error too, and it is classified with GORM's own `gorm.ErrDuplicatedKey` and
+  `gorm.ErrForeignKeyViolated`, attached beside the driver's error rather than
+  in its place (`adr-db-errors-2026-09-28`).
 - **Every wrap uses `%w`.** A `%v` leaves the text all but identical and makes
   the sentinel unreachable, which is the failure the note in `errors.go` exists
   to prevent; the error-chain cases hold each path to it.
@@ -94,10 +99,11 @@ func init() { core.ProcessRegistry.Register(Module()) }
 
 func Module() core.Module {
 	return db.NewModule(db.Spec{
-		ModuleName:      ModuleName,      // "db.sqlite"
-		ConfigNamespace: ModuleName,      // where this engine's items are mounted
-		Dialect:         Dialect,         // also the migration subdirectory
-		Dialector:       Dialector,       // the driver, and the only place it appears
+		ModuleName:          ModuleName,          // "db.sqlite"
+		ConfigNamespace:     ModuleName,          // where this engine's items are mounted
+		Dialect:             Dialect,             // also the migration subdirectory
+		Dialector:           Dialector,           // the driver, and the only place it appears
+		ConstraintViolation: constraintViolation, // the driver's unique and foreign key refusals
 		// NewMigrationLock and DefaultMigrationLockTimeout only for an engine
 		// that appears in multi-replica deployments.
 	})
@@ -135,4 +141,5 @@ migration mutex, and a gate that silently skips where it is meant to run is not 
 gate. `internal/dbhost` is the test host the multi-process cases build and run;
 `pkg/internal/pgpool/pgtest` is the container fixture, shared with the key-value and
 event modules' postgres backends; `internal/dbsuite` holds the
-engine-neutral migration cases each engine's fixture is driven through.
+engine-neutral migration cases each engine's fixture is driven through, and the
+constraint-refusal cases each engine runs on the handle its module delivers.

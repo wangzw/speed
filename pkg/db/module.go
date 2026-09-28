@@ -15,9 +15,9 @@ import (
 
 // Spec is what an implementation subpackage hands this package to become a
 // module. It is the whole of what an implementation contributes: a name, an
-// engine, the namespace its input items hang under, the driver binding, and a
-// cross-process migration mutex when its engine appears in multi-replica
-// deployments.
+// engine, the namespace its input items hang under, the driver binding, how
+// its driver reports a constraint refusal, and a cross-process migration
+// mutex when its engine appears in multi-replica deployments.
 //
 // Everything else — the input item declaration, the stance it states in
 // Prepare, the connection, the plugins, the encryption serializer, the
@@ -43,6 +43,18 @@ type Spec struct {
 	// one place a third-party driver enters, which is what lets a host move
 	// between engines without touching the code that uses the database.
 	Dialector func(dsn string) gorm.Dialector
+	// ConstraintViolation classifies an error this engine's driver reports:
+	// gorm.ErrDuplicatedKey when a unique constraint refused the statement —
+	// a primary key is one — gorm.ErrForeignKeyViolated when a foreign key
+	// did, and nil for anything else. It looks through wrapping, the way
+	// errors.As does. Every handle this package opens attaches that class to
+	// the driver's error, which stays in the chain beside it, so a host tells
+	// the two refusals apart with errors.Is on either engine.
+	//
+	// It is mandatory: an engine without it would report those refusals as
+	// its driver's raw error, and the same check would find a duplicate on
+	// one engine and nothing on the other.
+	ConstraintViolation func(err error) error
 	// ConnectionScoped reports whether a locator names a database that
 	// belongs to the one connection opening it — SQLite's in-memory and
 	// temporary databases are — so that over a pool of several connections
@@ -143,6 +155,10 @@ func (s Spec) check() {
 	case s.Dialector == nil:
 		panic(fmt.Sprintf("db: module %q gives no dialector, and there is no other way to reach "+
 			"its driver", s.ModuleName))
+	case s.ConstraintViolation == nil:
+		panic(fmt.Sprintf("db: module %q gives no ConstraintViolation, so its handles would report a "+
+			"unique or foreign key refusal as the driver's raw error while every other engine "+
+			"reports it through gorm.ErrDuplicatedKey and gorm.ErrForeignKeyViolated", s.ModuleName))
 	case s.NewMigrationLock != nil && s.DefaultMigrationLockTimeout <= 0:
 		panic(fmt.Sprintf("db: module %q supplies a migration mutex and no default for %s.%s, "+
 			"so a run that configured none would give up on the mutex before waiting",

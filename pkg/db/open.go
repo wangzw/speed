@@ -46,12 +46,20 @@ import (
 // larger pool every connection would open a database of its own under the one
 // handle: the migrations would land on one of them and a request on any other
 // would find no table.
+//
+// Every handle classifies the constraint refusals its driver reports, through
+// the implementation's Spec.ConstraintViolation: a statement a unique
+// constraint refused reports an error errors.Is finds gorm.ErrDuplicatedKey
+// in, one a foreign key refused an error it finds gorm.ErrForeignKeyViolated
+// in, and the driver's own error stays in the chain beside it. A host maps a
+// duplicate to a conflict the same way on either engine.
 func openHandle(ctx context.Context, spec Spec, cfg lockingConfig) (*gorm.DB, error) {
 	// The locator is normalised once, and the dialector is the only reader:
 	// the stance judged the trimmed text, so the driver has to be handed the
 	// same one rather than the text with its surrounding whitespace intact.
 	locator := strings.TrimSpace(cfg.DSN)
-	session, err := gorm.Open(spec.Dialector(locator), &gorm.Config{DisableAutomaticPing: true})
+	dialector := classifyingDialector{Dialector: spec.Dialector(locator), classify: spec.ConstraintViolation}
+	session, err := gorm.Open(dialector, &gorm.Config{DisableAutomaticPing: true, TranslateError: true})
 	if err != nil {
 		return nil, fmt.Errorf("%w: opening a %s connection failed: %w",
 			ErrConnectFailed, spec.Dialect, err)
@@ -90,6 +98,9 @@ func openHandle(ctx context.Context, spec Spec, cfg lockingConfig) (*gorm.DB, er
 	// instead — the declared plugins — is installed by the callers, which
 	// are the sites that hold it.
 	if err := installEncryption(session, spec.ConfigNamespace, cfg.Config); err != nil {
+		return nil, errors.Join(err, Close(session))
+	}
+	if err := installRowClassification(session, spec.ConstraintViolation); err != nil {
 		return nil, errors.Join(err, Close(session))
 	}
 	return session, nil

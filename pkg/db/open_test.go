@@ -34,10 +34,11 @@ const locatorSecret = "hunter2-must-not-be-echoed"
 // process registry and would take part in every other case in this binary.
 func sqliteSpec() Spec {
 	return Spec{
-		ModuleName:      sqliteNamespace,
-		ConfigNamespace: sqliteNamespace,
-		Dialect:         SQLite,
-		Dialector:       sqlite.Open,
+		ModuleName:          sqliteNamespace,
+		ConfigNamespace:     sqliteNamespace,
+		Dialect:             SQLite,
+		Dialector:           sqlite.Open,
+		ConstraintViolation: sqliteViolation,
 	}
 }
 
