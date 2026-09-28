@@ -66,6 +66,13 @@ type Verifier interface {
 	// Verify answers for a subject that falls inside this backend's claim.
 	// The subject arrives separately from the credential because ownership
 	// was settled before the call.
+	//
+	// It returns once ctx ends, answering Unavailable. The gateway's call
+	// budget arrives as ctx's deadline, and a call that ignores it keeps its
+	// request goroutine and a slot of the gateway's in-flight gate until it
+	// returns. When what ended ctx is the request's own deadline or its
+	// caller going away rather than the budget, the gateway does not charge
+	// that Unavailable to this backend.
 	Verify(ctx context.Context, subject string, c Credential) Verdict
 }
 
@@ -91,7 +98,8 @@ type Claim struct {
 //
 // Owns is asked before any credential is read, so it settles who answers rather
 // than whether the credential holds, and it spends none of the budget a
-// verification gets.
+// verification gets. It runs under a budget of its own, and once ctx ends it
+// returns with an error, on the terms Verifier.Verify states.
 type Owner interface {
 	Owns(ctx context.Context, subject string) (bool, error)
 }

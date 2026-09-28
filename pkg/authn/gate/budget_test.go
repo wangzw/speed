@@ -2,7 +2,9 @@ package gate
 
 import (
 	"context"
+	"log/slog"
 	nethttp "net/http"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -253,14 +255,182 @@ func TestACallerWithLessTimeThanTheBudgetIsNotABackendFailure(t *testing.T) {
 	defer cancel()
 	r := withBasic(request("GET", "/orders"), "alice", "secret")
 
+	// The backend ignores the deadline and answers after the caller's has
+	// fired. The budget was never exceeded, so the answer is the backend's
+	// own and it stands: a caller's deadline is not the gateway's to turn
+	// into a verdict about anybody.
+	if _, deny := g.identify(r.WithContext(ctx)); deny != nil {
+		t.Errorf("a pass that arrived within the budget but after the caller's own deadline "+
+			"ended as %d charged to %q; the budget was not exceeded, so the answer stands",
+			deny.status, deny.backend)
+	}
+}
+
+// honouring builds a backend that does what the extension surface asks of every
+// backend: it waits on its context, and once that ends it reports that it could
+// not answer. inside is closed when the call has begun.
+func honouring(inside chan struct{}) *fakeVerifier {
+	backend := enumerating("local", "alice")
+	backend.verify = func(ctx context.Context, _ string, _ authn.Credential) authn.Verdict {
+		close(inside)
+		<-ctx.Done()
+		return authn.Unavailable(ctx.Err())
+	}
+	return backend
+}
+
+// TestABackendThatHonoursItsContextIsNotChargedForTheCallersDeadline holds the
+// attribution of a context the request itself brought to an end.
+//
+// A backend is required to return once its context ends, and the one that does
+// reports that it could not answer — it has nothing else to report. When what
+// ended the context is the caller's own deadline or the caller going away,
+// charging that report to the backend names a credential store that is healthy
+// and inflates the outage count an operator alerts on with requests nobody was
+// waiting for. It is charged to the gateway, as the other outages in which no
+// backend failed are.
+func TestABackendThatHonoursItsContextIsNotChargedForTheCallersDeadline(t *testing.T) {
+	for _, c := range []struct {
+		name string
+		// end brings the request's own context to an end once the
+		// backend is inside the call.
+		end func(t *testing.T, inside chan struct{}) (context.Context, func())
+	}{
+		{
+			name: "the caller went away",
+			end: func(_ *testing.T, inside chan struct{}) (context.Context, func()) {
+				ctx, cancel := context.WithCancel(context.Background())
+				go func() {
+					<-inside
+					cancel()
+				}()
+				return ctx, cancel
+			},
+		},
+		{
+			name: "the caller's deadline fired first",
+			end: func(_ *testing.T, _ chan struct{}) (context.Context, func()) {
+				return context.WithTimeout(context.Background(), 20*time.Millisecond)
+			},
+		},
+	} {
+		t.Run(c.name, func(t *testing.T) {
+			inside := make(chan struct{})
+			g := gatewayWith(t, settings{
+				endpoints: []string{"public"},
+				budget:    10 * time.Second,
+				inFlight:  4,
+			}, honouring(inside))
+			sealed(t, g, routerWith("public"))
+
+			ctx, cancel := c.end(t, inside)
+			defer cancel()
+			r := withBasic(request("GET", "/orders"), "alice", "secret")
+
+			_, deny := g.identify(r.WithContext(ctx))
+			if deny == nil {
+				t.Fatal("a request whose own context ended while its backend waited was admitted")
+			}
+			if deny.status != nethttp.StatusServiceUnavailable {
+				t.Errorf("the conclusion answers %d, want %d", deny.status,
+					nethttp.StatusServiceUnavailable)
+			}
+			if deny.backend != "" {
+				t.Errorf("the conclusion is charged to %q, want the gateway: the backend did "+
+					"what it is required to do when its context ends", deny.backend)
+			}
+			if deny.level != slog.LevelInfo {
+				t.Errorf("the conclusion is written at %v, want %v: a request its own caller "+
+					"ended is ordinary traffic, not an outage anybody has to look at",
+					deny.level, slog.LevelInfo)
+			}
+		})
+	}
+}
+
+// TestAnOpenClaimThatHonoursItsContextIsNotChargedForTheCallersDeadline holds the
+// same attribution for the ownership question, which is the other call a
+// request makes into a backend and the one every bare name goes through.
+func TestAnOpenClaimThatHonoursItsContextIsNotChargedForTheCallersDeadline(t *testing.T) {
+	inside := make(chan struct{})
+	directory := openly("directory", func(ctx context.Context, _ string) (bool, error) {
+		close(inside)
+		<-ctx.Done()
+		return false, ctx.Err()
+	})
+	g := gatewayWith(t, settings{
+		endpoints: []string{"public"},
+		budget:    10 * time.Second,
+		inFlight:  4,
+	}, directory)
+	sealed(t, g, routerWith("public"))
+
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	go func() {
+		<-inside
+		cancel()
+	}()
+	r := withBasic(request("GET", "/orders"), "dave", "secret")
+
 	_, deny := g.identify(r.WithContext(ctx))
 	if deny == nil {
-		return // The backend beat the caller's deadline; nothing to attribute.
+		t.Fatal("a request whose own context ended while an open claim waited was admitted")
 	}
 	if deny.backend != "" {
-		t.Errorf("the conclusion is charged to %q, want nobody: the deadline that fired was "+
-			"the caller's, and the backend never had the budget's worth of time to spend",
-			deny.backend)
+		t.Errorf("the conclusion is charged to %q, want the gateway: the open claim did what it "+
+			"is required to do when its context ends", deny.backend)
+	}
+}
+
+// TestARequestWhoseContextHasEndedReachesNoBackend holds the same rule on the
+// near side of the call. Nobody is waiting for the answer, and a backend asked
+// anyway spends a verification on it — a password derivation, a directory round
+// trip — and a slot of the in-flight gate while it does.
+func TestARequestWhoseContextHasEndedReachesNoBackend(t *testing.T) {
+	var asked atomic.Int64
+	backend := passes(enumerating("local", "alice"))
+	backend.asked = &asked
+	g := testGateway(t, []string{"public"}, backend)
+	sealed(t, g, routerWith("public"))
+
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+	r := withBasic(request("GET", "/orders"), "alice", "secret")
+
+	_, deny := g.identify(r.WithContext(ctx))
+	if deny == nil {
+		t.Fatal("a request whose own context had already ended was admitted")
+	}
+	if deny.status != nethttp.StatusServiceUnavailable || deny.backend != "" {
+		t.Errorf("the conclusion answers %d charged to %q, want %d charged to the gateway",
+			deny.status, deny.backend, nethttp.StatusServiceUnavailable)
+	}
+	if asked.Load() != 0 {
+		t.Errorf("a backend was asked %d time(s) about a request nobody was waiting for, want none",
+			asked.Load())
+	}
+}
+
+// TestABackendThatRunsOutTheBudgetIsChargedEvenWhenItHonoursItsContext keeps the
+// cases above honest: a backend that stops at the gateway's own deadline did not
+// answer within the time it was given, and that is the backend's outage whatever
+// it reports once the deadline has fired.
+func TestABackendThatRunsOutTheBudgetIsChargedEvenWhenItHonoursItsContext(t *testing.T) {
+	g := gatewayWith(t, settings{
+		endpoints: []string{"public"},
+		budget:    5 * time.Millisecond,
+		inFlight:  4,
+	}, honouring(make(chan struct{})))
+	sealed(t, g, routerWith("public"))
+
+	_, deny := g.identify(withBasic(request("GET", "/orders"), "alice", "secret"))
+	if deny == nil {
+		t.Fatal("a backend that ran out the budget admitted the request")
+	}
+	if deny.backend != "local" {
+		t.Errorf("the conclusion is charged to %q, want the backend that did not answer within "+
+			"the budget", deny.backend)
 	}
 }
 

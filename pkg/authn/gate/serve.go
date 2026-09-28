@@ -54,9 +54,17 @@ const middlewareOrder = 100
 // errStopped and errSaturated are the two refusals the gateway makes before a
 // backend is reached at all. Both end the request as an outage: the module
 // cannot answer right now, and neither says anything about the credential.
+//
+// errAbandoned is the request's own context ending — the deadline it arrived
+// with, or the caller going away — either before a backend was asked or while
+// one was being asked, before this module's own budget ran out. It ends the
+// request as an outage too, and nobody failed: a backend that returns once its
+// context ends is doing what it is required to do, and what it reports then is
+// that it could not answer, which says nothing about its health.
 var (
 	errStopped   = errors.New("the gateway has stopped accepting backend calls")
 	errSaturated = errors.New("the in-flight gate is full")
+	errAbandoned = errors.New("the request's own context ended before the backend answered")
 )
 
 // reach records why a backend was asked. Exit binding needs it: what counts as
@@ -128,16 +136,23 @@ func gatewayRefusal(reason string, attrs ...any) *refusal {
 // panicked is charged; the gateway having stopped taking calls, or its own
 // in-flight gate being full, is this module's own limit and is charged here —
 // the backend was never asked, and an operator chasing a 503 against a backend
-// that is perfectly healthy would be chasing the wrong thing.
+// that is perfectly healthy would be chasing the wrong thing. The request's own
+// context ending is charged here as well, for the same reason: no backend
+// failed.
 //
 // The cause decides the level too. An outage is written at Warn; a panic is a
 // defect rather than an outage, is written at Error, and carries the stack it
-// was raised on.
+// was raised on; a request its own caller brought to an end is ordinary
+// traffic and is written at Info.
 func outage(backend, reason string, cause error, attrs ...any) *refusal {
-	if errors.Is(cause, errStopped) || errors.Is(cause, errSaturated) {
+	if errors.Is(cause, errStopped) || errors.Is(cause, errSaturated) ||
+		errors.Is(cause, errAbandoned) {
 		backend = ""
 	}
 	level := slog.LevelWarn
+	if errors.Is(cause, errAbandoned) {
+		level = slog.LevelInfo
+	}
 	if cause != nil {
 		attrs = append(attrs, slog.String("cause", cause.Error()))
 	}
@@ -637,6 +652,14 @@ func (g *gateway) verify(ctx context.Context, c *claimant, subject string, cred 
 		return authn.Verdict{}, fmt.Errorf("backend %q did not answer within the call budget of %s",
 			c.name, g.settings.budget)
 	}
+	// Only a report of not being able to answer is read against the
+	// request's context. A pass or a refusal is an answer about the
+	// credential, and it stands however late the caller's own deadline was.
+	if verdict.OutcomeOf(answer) == verdict.Unavailable {
+		if abandoned := made.abandoned(); abandoned != nil {
+			return authn.Verdict{}, abandoned
+		}
+	}
 	return answer, nil
 }
 
@@ -655,12 +678,15 @@ func (g *gateway) owns(ctx context.Context, c *claimant, subject string) (owns b
 	}()
 
 	owns, err = c.owner.Owns(made.ctx, subject)
-	if err != nil {
-		return false, err
-	}
 	if made.overran() {
 		return false, fmt.Errorf("backend %q did not answer ownership within the call budget of %s",
 			c.name, g.settings.budget)
+	}
+	if err != nil {
+		if abandoned := made.abandoned(); abandoned != nil {
+			return false, abandoned
+		}
+		return false, err
 	}
 	return owns, nil
 }
@@ -671,7 +697,14 @@ func (g *gateway) owns(ctx context.Context, c *claimant, subject string) (owns b
 // The slot is taken without waiting: past the gate a request ends as an outage
 // straight away rather than queueing, so that a backend that stopped answering
 // cannot take every goroutine the server has.
+//
+// A request whose own context has already ended is not let in at all. Nobody is
+// waiting for its answer, and asking a backend anyway would spend a
+// verification and a slot on it.
 func (g *gateway) enter(ctx context.Context) (call, error) {
+	if ended := ctx.Err(); ended != nil {
+		return call{}, fmt.Errorf("%w: %w", errAbandoned, ended)
+	}
 	g.callsMu.Lock()
 	if g.stopped {
 		g.callsMu.Unlock()
@@ -701,8 +734,9 @@ func (g *gateway) enter(ctx context.Context) (call, error) {
 		ours = false
 	}
 	return call{
-		ctx:  callCtx,
-		ours: ours,
+		ctx:     callCtx,
+		request: ctx,
+		ours:    ours,
 		release: func() {
 			cancel()
 			<-g.slots
@@ -711,11 +745,13 @@ func (g *gateway) enter(ctx context.Context) (call, error) {
 	}, nil
 }
 
-// call is one admitted call into a backend: the context it runs under, whether
-// the deadline on that context is this module's budget or one the request
-// arrived with, and the release that gives the in-flight slot back.
+// call is one admitted call into a backend: the context it runs under, the
+// request's own context it was derived from, whether the deadline on the call's
+// context is this module's budget or one the request arrived with, and the
+// release that gives the in-flight slot back.
 type call struct {
 	ctx     context.Context
+	request context.Context
 	ours    bool
 	release func()
 }
@@ -727,4 +763,19 @@ type call struct {
 // allows itself, and charging either to a backend would name the wrong party.
 func (c call) overran() bool {
 	return c.ours && errors.Is(c.ctx.Err(), context.DeadlineExceeded)
+}
+
+// abandoned reports the request's own context having ended while the call was
+// inside the backend, when it was that and not this module's budget which ended
+// the call's context. A backend that returns once its context ends reports that
+// it could not answer, and the report is the caller's doing rather than a
+// failure of the backend.
+func (c call) abandoned() error {
+	if c.overran() {
+		return nil
+	}
+	if ended := c.request.Err(); ended != nil {
+		return fmt.Errorf("%w: %w", errAbandoned, ended)
+	}
+	return nil
 }
