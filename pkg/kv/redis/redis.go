@@ -121,19 +121,19 @@ func (s *store) Set(ctx context.Context, key string, value []byte, ttl time.Dura
 	return s.client.Set(ctx, prefixed(key), value, plainTTL(ttl)).Err()
 }
 
-// plainTTL turns the capability's "zero or less means no expiry" into the
-// duration the client library reads that way.
+// plainTTL turns the capability's ttl into the duration the client library
+// sends: zero for no expiry, and otherwise the whole milliseconds ttlMillis
+// gives.
 //
 // The library does not agree with the capability on what a negative duration
 // means: it carries a KeepTTL constant of -1, and a SET given it leaves the
 // key's existing expiry alone instead of clearing it. Passing the caller's
 // duration straight through therefore makes `Set(k, v, -1)` — a caller saying
-// "no expiry, from now on" — keep the expiry the key already had.
+// "no expiry, from now on" — keep the expiry the key already had. A duration
+// under a millisecond the library rounds up itself, but it prints a warning
+// to the standard error each time, outside the logging the assembly set up.
 func plainTTL(ttl time.Duration) time.Duration {
-	if ttl <= 0 {
-		return 0
-	}
-	return ttl
+	return time.Duration(ttlMillis(ttl)) * time.Millisecond
 }
 
 // Delete removes the key. Redis reports how many keys it removed, and removing
