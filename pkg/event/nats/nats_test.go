@@ -11,8 +11,6 @@ import (
 	"testing"
 	"time"
 
-	"github.com/nats-io/nats.go/jetstream"
-
 	"github.com/vislake/speed/pkg/core"
 	"github.com/vislake/speed/pkg/event"
 	"github.com/vislake/speed/pkg/event/internal/bussuite"
@@ -277,12 +275,12 @@ func TestAClosedBusRefusesPublishes(t *testing.T) {
 	}
 }
 
-// TestReadRecoversWhenTheConsumerAppearsLate pins the retry around taking the
-// consumer: a reader that gives up there leaves its event type undelivered for
-// the rest of the process's life on the strength of one transient failure, and
-// only a single startup log line says so — while Publish keeps returning nil,
-// because the event really was written to the stream.
-func TestReadRecoversWhenTheConsumerAppearsLate(t *testing.T) {
+// TestAReaderOpensWhatIsMissing pins that a reader does not depend on begin
+// having left its stream and durable in place: it opens both itself, and
+// again whenever it finds them gone. A reader that only took an existing
+// durable would, on the first one missing, leave its event type undelivered
+// for the rest of the process's life while Publish kept returning nil.
+func TestAReaderOpensWhatIsMissing(t *testing.T) {
 	url := natstest.URL(t)
 	ctx := context.Background()
 	eventType := nextType()
@@ -293,32 +291,19 @@ func TestReadRecoversWhenTheConsumerAppearsLate(t *testing.T) {
 		return nil
 	})
 
-	// The stream exists and the consumer does not: the state a reader lands in
-	// when the take fails transiently. begin is not called — its consumer
-	// creation is exactly what this case withholds — so what it does besides
-	// is done here.
-	stream := b.streamName(eventType)
-	if err := b.ensureStream(ctx, eventType); err != nil {
-		t.Fatalf("ensureStream: %v", err)
-	}
+	// Neither the stream nor the durable exists. begin is not called — what
+	// it creates is exactly what this case withholds — so what it does
+	// besides is done here.
 	b.table.Freeze(ctx)
-	b.table.Go(func(reading, handling context.Context) { b.read(reading, handling, stream, eventType) })
+	b.table.Go(func(reading, handling context.Context) { b.read(reading, handling, eventType) })
 
-	// The consumer appears only now. A reader that gave up on the first take
-	// has already returned and will never deliver; one that retries picks it
-	// up on a later attempt.
-	time.Sleep(300 * time.Millisecond)
-	if _, err := b.js.CreateOrUpdateConsumer(ctx, stream, jetstream.ConsumerConfig{
-		Durable:       b.consumer,
-		AckPolicy:     jetstream.AckExplicitPolicy,
-		DeliverPolicy: jetstream.DeliverNewPolicy,
-	}); err != nil {
-		t.Fatalf("creating the consumer: %v", err)
-	}
-
+	js := inspect(t, url)
+	bussuite.WaitFor(t, "the reader to open its durable", func() bool {
+		_, ok := consumerOf(t, js, b.streamName(eventType), b.consumer)
+		return ok
+	})
 	if err := b.Publish(ctx, event.Event{Type: eventType}); err != nil {
 		t.Fatalf("Publish: %v", err)
 	}
-	bussuite.WaitFor(t, "the reader to recover and deliver the event",
-		func() bool { return seen.Load() == 1 })
+	bussuite.WaitFor(t, "the reader to deliver the event", func() bool { return seen.Load() == 1 })
 }

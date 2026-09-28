@@ -61,6 +61,14 @@ const (
 	// on the startup path: the consumer was created moments earlier, so the
 	// first retries are the ones that usually succeed.
 	consumerRetryWait = 250 * time.Millisecond
+	// inactiveThreshold is how long the server keeps a durable named after
+	// its process once no one has pulled from it. A process that closes
+	// removes its own durables; this is what removes those of a process that
+	// never reached its close. A running reader pulls at least every
+	// fetchWait, so only a durable nobody reads is idle this long, and one
+	// removed under a reader cut off from the server for longer is opened
+	// again when the reader reaches it.
+	inactiveThreshold = 24 * time.Hour
 )
 
 // Config is what this implementation accepts.
@@ -71,7 +79,10 @@ type Config struct {
 	URL string `config:"url"`
 	// ConsumerName names this instance's durable consumer. It defaults to a
 	// name unique to this process, which is what makes the delivery a
-	// broadcast: consumers sharing a name split the stream between them.
+	// broadcast: consumers sharing a name split the stream between them. A
+	// durable of the process's own is removed when the process closes, or by
+	// the server once it has been idle for inactiveThreshold; a configured one
+	// stays.
 	ConsumerName string `config:"consumer-name"`
 	// Timeout bounds connecting and one operation.
 	Timeout time.Duration `config:"timeout"`
@@ -122,8 +133,8 @@ func Module() core.Module {
 			},
 			consumerNameKey: {
 				Description: "the name of this replica's durable consumer; leaving it out gives " +
-					"this process a name of its own, which is what makes every replica receive " +
-					"every event",
+					"this process a durable of its own, which is what makes every replica receive " +
+					"every event, and which is removed when the process closes or has been gone a day",
 			},
 			timeoutKey: {
 				Description: "how long connecting and one operation may take, written with a unit",
@@ -193,14 +204,16 @@ func open(ctx context.Context, cfg *Config, logger *slog.Logger) (event.Bus, err
 		return nil, err
 	}
 	return &bus{
-		nc:         nc,
-		js:         js,
-		logger:     logger,
-		consumer:   name,
-		maxEntries: maxEntries,
-		namespace:  namespace,
-		table:      dispatch.New("event/nats", logger),
-		streams:    make(map[string]bool),
+		nc:          nc,
+		js:          js,
+		logger:      logger,
+		consumer:    name,
+		ownConsumer: cfg.ConsumerName == "",
+		timeout:     cfg.Timeout,
+		maxEntries:  maxEntries,
+		namespace:   namespace,
+		table:       dispatch.New("event/nats", logger),
+		streams:     make(map[string]bool),
 	}, nil
 }
 
@@ -214,10 +227,17 @@ func start(ctx context.Context, b event.Bus) error {
 }
 
 type bus struct {
-	nc         *nats.Conn
-	js         jetstream.JetStream
-	logger     *slog.Logger
-	consumer   string
+	nc       *nats.Conn
+	js       jetstream.JetStream
+	logger   *slog.Logger
+	consumer string
+	// ownConsumer reports that the durable's name is this process's own
+	// rather than one the host configured: no other process reads it, so it
+	// is removed when this one closes and left to the server's inactivity
+	// threshold when it never does.
+	ownConsumer bool
+	// timeout bounds removing this process's durables when it closes.
+	timeout    time.Duration
 	maxEntries int64
 	// namespace is the first token of every subject this bus touches, and the
 	// prefix of every stream it names.
@@ -225,6 +245,10 @@ type bus struct {
 
 	// table holds the subscriptions, the stage, and the readers' lifetime.
 	table *dispatch.Table
+	// types is what the table held when it froze: the streams this bus holds a
+	// durable on. begin writes it before any reader starts, and Close reads it
+	// once they have returned.
+	types []string
 
 	mu sync.Mutex
 	// streams records the types whose stream is known to be there. It is what
@@ -233,6 +257,15 @@ type bus struct {
 	// capped a stream by hand would have that cap reset on the next publish,
 	// with nothing said.
 	streams map[string]bool
+}
+
+// forgetStream drops what this bus knows about a type's stream, so the next
+// ensureStream creates it again. It is for a stream found gone — deleted, or
+// lost with a server's storage.
+func (b *bus) forgetStream(eventType string) {
+	b.mu.Lock()
+	delete(b.streams, eventType)
+	b.mu.Unlock()
 }
 
 // ensureStream makes sure the type's stream exists, and does it once.
@@ -291,6 +324,18 @@ func (b *bus) Publish(ctx context.Context, evt event.Event) error {
 		return fmt.Errorf("%s: encoding event %q: %w", ModuleName, evt.Type, err)
 	}
 	_, err = b.js.Publish(ctx, b.subject(evt.Type), body)
+	if errors.Is(err, jetstream.ErrNoStreamResponse) {
+		// No stream took the message: the one this bus created is gone —
+		// deleted, or lost with the server's storage — and without creating it
+		// again every publish of this type would fail until the process
+		// restarted. Nothing stored the message, so publishing it again cannot
+		// store it twice.
+		b.forgetStream(evt.Type)
+		if streamErr := b.ensureStream(ctx, evt.Type); streamErr != nil {
+			return streamErr
+		}
+		_, err = b.js.Publish(ctx, b.subject(evt.Type), body)
+	}
 	return err
 }
 
@@ -299,11 +344,30 @@ func (b *bus) Publish(ctx context.Context, evt event.Event) error {
 // the table's grace.
 func (b *bus) Stop(_ context.Context) error { return b.table.Stop() }
 
-// Close stops the bus if the stop stage has not, and releases the connection.
-// Closing the connection flushes what it still buffers, the acknowledgements
-// of the last entries delivered included.
-func (b *bus) Close(_ context.Context) error {
+// Close stops the bus if the stop stage has not, removes the durables named
+// after this process, and releases the connection. Closing the connection
+// flushes what it still buffers, the acknowledgements of the last entries
+// delivered included.
+//
+// A durable named after this process is read by no other, so one left behind
+// would never be read again, and every process start would add one per
+// subscribed type. A durable the host named is shared, or resumes across a
+// restart, and stays. Failing to remove one does not fail the close: the
+// server removes it once it has been idle for inactiveThreshold.
+func (b *bus) Close(ctx context.Context) error {
 	stopErr := b.table.Close()
+	if b.ownConsumer && len(b.types) > 0 {
+		removing, cancel := context.WithTimeout(ctx, b.timeout)
+		for _, eventType := range b.types {
+			if err := b.js.DeleteConsumer(removing, b.streamName(eventType), b.consumer); err != nil &&
+				!errors.Is(err, jetstream.ErrConsumerNotFound) && !errors.Is(err, jetstream.ErrStreamNotFound) {
+				b.logger.Warn("event/nats: removing this process's consumer failed; the server removes it "+
+					"once it has been idle for "+inactiveThreshold.String(), "event", eventType, "err", err)
+			}
+		}
+		cancel()
+		b.types = nil
+	}
 	b.nc.Close()
 	return stopErr
 }
@@ -314,28 +378,58 @@ func (b *bus) begin(ctx context.Context) error {
 	if !first {
 		return nil
 	}
+	b.types = types
 	for _, eventType := range types {
-		stream := b.streamName(eventType)
-		if err := b.ensureStream(ctx, eventType); err != nil {
+		if _, err := b.openConsumer(ctx, eventType); err != nil {
 			return err
-		}
-		if _, err := b.js.CreateOrUpdateConsumer(ctx, stream, jetstream.ConsumerConfig{
-			Durable:   b.consumer,
-			AckPolicy: jetstream.AckExplicitPolicy,
-			// DeliverNew keeps a replica that starts today from being handed
-			// every event ever published, which is the "no history for a late
-			// subscriber" behaviour the capability states.
-			DeliverPolicy: jetstream.DeliverNewPolicy,
-		}); err != nil {
-			return fmt.Errorf("%s: opening the consumer for %q: %w", ModuleName, eventType, err)
 		}
 	}
 	for _, eventType := range types {
 		b.table.Go(func(reading, handling context.Context) {
-			b.read(reading, handling, b.streamName(eventType), eventType)
+			b.read(reading, handling, eventType)
 		})
 	}
 	return nil
+}
+
+// consumerConfig is the durable this bus reads each stream through.
+func (b *bus) consumerConfig() jetstream.ConsumerConfig {
+	cfg := jetstream.ConsumerConfig{
+		Durable:   b.consumer,
+		AckPolicy: jetstream.AckExplicitPolicy,
+		// DeliverNew keeps a replica that starts today from being handed
+		// every event ever published, which is the "no history for a late
+		// subscriber" behaviour the capability states.
+		DeliverPolicy: jetstream.DeliverNewPolicy,
+	}
+	if b.ownConsumer {
+		cfg.InactiveThreshold = inactiveThreshold
+	}
+	return cfg
+}
+
+// openConsumer makes sure the type's stream and this bus's durable on it are
+// there, and hands the durable back.
+//
+// It is idempotent, which is what lets a reader call it again whenever its
+// durable is found gone. A stream that is gone as well is created again
+// first; the durable, created anew, starts at the stream's end.
+func (b *bus) openConsumer(ctx context.Context, eventType string) (jetstream.Consumer, error) {
+	if err := b.ensureStream(ctx, eventType); err != nil {
+		return nil, err
+	}
+	consumer, err := b.js.CreateOrUpdateConsumer(ctx, b.streamName(eventType), b.consumerConfig())
+	if errors.Is(err, jetstream.ErrStreamNotFound) {
+		b.forgetStream(eventType)
+		if streamErr := b.ensureStream(ctx, eventType); streamErr != nil {
+			return nil, streamErr
+		}
+		consumer, err = b.js.CreateOrUpdateConsumer(ctx, b.streamName(eventType), b.consumerConfig())
+	}
+	if err != nil {
+		return nil, fmt.Errorf("%s: opening the consumer for %q: %w", ModuleName, eventType, err)
+	}
+	return consumer, nil
 }
 
 // read delivers what its stream hands this instance, until the stop stage.
@@ -345,69 +439,116 @@ func (b *bus) begin(ctx context.Context) error {
 // consumer was handed and never acknowledged goes back to the durable only
 // after the server's acknowledgement wait, and only a consumer of the same
 // name ever receives it again.
-func (b *bus) read(reading, handling context.Context, stream, eventType string) {
-	// Taking the consumer is retried like everything else in this loop: the
-	// consumer was created moments ago, so a failure here is a transient one,
-	// and giving up would leave this event type undelivered for the rest of
-	// the process's life while a single log line says so.
-	var consumer jetstream.Consumer
+func (b *bus) read(reading, handling context.Context, eventType string) {
 	for {
-		if reading.Err() != nil {
+		consumer := b.take(reading, eventType)
+		if consumer == nil {
 			return
 		}
-		taken, err := b.js.Consumer(reading, stream, b.consumer)
+		if !b.fetch(reading, handling, consumer, eventType) {
+			return
+		}
+	}
+}
+
+// take opens this bus's durable on the type's stream, retrying until it is
+// open or the stop stage begins, when it returns nil.
+//
+// A failure here is retried rather than given up on: giving up would leave
+// this event type undelivered for the rest of the process's life while a
+// single log line said so, and Publish went on returning nil.
+func (b *bus) take(reading context.Context, eventType string) jetstream.Consumer {
+	for {
+		if reading.Err() != nil {
+			return nil
+		}
+		consumer, err := b.openConsumer(reading, eventType)
 		if err == nil {
-			consumer = taken
-			break
+			return consumer
 		}
 		if reading.Err() != nil {
 			// The failure is the stop stage cancelling the call, not the
 			// server, and an error line for it would misdirect whoever reads
 			// the log.
-			return
+			return nil
 		}
-		b.logger.Error("event/nats: taking the consumer failed; retrying", "event", eventType, "err", err)
-		select {
-		case <-reading.Done():
-			return
-		case <-time.After(consumerRetryWait):
+		b.logger.Error("event/nats: opening the consumer failed; retrying", "event", eventType, "err", err)
+		if !pause(reading, consumerRetryWait) {
+			return nil
 		}
 	}
+}
+
+// fetch delivers what the durable hands this bus. It returns false when the
+// stop stage has begun, and true when the durable is gone, so the reader opens
+// it again.
+//
+// Every other failure — of the fetch, or of the batch it brought — pauses for
+// fetchWait before the next one. A failure that repeats at once, as every
+// fetch on a vanished durable does, would otherwise spin against the server
+// and write an error line a few times a millisecond.
+func (b *bus) fetch(reading, handling context.Context, consumer jetstream.Consumer, eventType string) bool {
 	for {
 		if reading.Err() != nil {
-			return
+			return false
 		}
 		batch, err := consumer.Fetch(batchSize, jetstream.FetchMaxWait(fetchWait))
-		if err != nil {
-			if reading.Err() != nil {
-				return
+		if err == nil {
+			if !b.deliver(handling, batch, eventType) {
+				return false
 			}
-			b.logger.Error("event/nats: fetching failed; retrying", "event", eventType, "err", err)
-			select {
-			case <-reading.Done():
-				return
-			case <-time.After(fetchWait):
-			}
+			err = batch.Error()
+		}
+		if err == nil || reading.Err() != nil {
 			continue
 		}
-		for msg := range batch.Messages() {
-			if handling.Err() != nil {
-				// The stop stage's grace ran out. What is left of this fetch
-				// stays unacknowledged.
-				return
-			}
-			b.table.Deliver(handling, decode(eventType, msg.Data()))
-			// Acknowledged whatever the handlers returned: the entry has been
-			// handed over, and an unacknowledged one would be redelivered
-			// forever with nobody left to tell.
-			if err := msg.Ack(); err != nil && handling.Err() == nil {
-				b.logger.Error("event/nats: acknowledging a delivered entry failed",
-					"event", eventType, "err", err)
-			}
+		if consumerGone(err) {
+			b.logger.Error("event/nats: the consumer is gone; opening it again", "event", eventType, "err", err)
+			return true
 		}
-		if err := batch.Error(); err != nil && reading.Err() == nil {
-			b.logger.Error("event/nats: the fetch ended in an error", "event", eventType, "err", err)
+		b.logger.Error("event/nats: fetching failed; retrying", "event", eventType, "err", err)
+		if !pause(reading, fetchWait) {
+			return false
 		}
+	}
+}
+
+// deliver hands every entry of a batch to the subscribers and acknowledges
+// it. It returns false when the stop stage's grace ran out part-way; what is
+// left of the batch stays unacknowledged.
+func (b *bus) deliver(handling context.Context, batch jetstream.MessageBatch, eventType string) bool {
+	for msg := range batch.Messages() {
+		if handling.Err() != nil {
+			return false
+		}
+		b.table.Deliver(handling, decode(eventType, msg.Data()))
+		// Acknowledged whatever the handlers returned: the entry has been
+		// handed over, and an unacknowledged one would be redelivered
+		// forever with nobody left to tell.
+		if err := msg.Ack(); err != nil && handling.Err() == nil {
+			b.logger.Error("event/nats: acknowledging a delivered entry failed",
+				"event", eventType, "err", err)
+		}
+	}
+	return true
+}
+
+// consumerGone reports whether a fetch failed because the durable it pulls
+// from is no longer on the server: deleted while the pull was waiting, or
+// already gone, which leaves the pull with no one to answer it.
+func consumerGone(err error) bool {
+	return errors.Is(err, jetstream.ErrConsumerDeleted) ||
+		errors.Is(err, jetstream.ErrConsumerNotFound) ||
+		errors.Is(err, nats.ErrNoResponders)
+}
+
+// pause waits d, and reports false when the stop stage began first.
+func pause(reading context.Context, d time.Duration) bool {
+	select {
+	case <-reading.Done():
+		return false
+	case <-time.After(d):
+		return true
 	}
 }
 
