@@ -92,8 +92,10 @@ type Item struct {
 	// FlagName is the command-line long name. It is mandatory when Origins
 	// contains OriginFlag and is never derived: the command line is a human
 	// interface, and a name derived from a path is rarely the wanted one.
+	// It is written without the leading dashes and holds no equals sign.
 	FlagName string
-	// FlagShort is the command-line short name, optional.
+	// FlagShort is the command-line short name, optional: one ASCII
+	// character other than a dash.
 	FlagShort string
 	// EnvName pins the environment variable name. An empty name is derived
 	// from the prefix and the path; pinning is how conventional names such

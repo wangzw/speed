@@ -210,6 +210,14 @@ func (e *expander) leaf(key string, fv reflect.Value, ft reflect.Type) error {
 			"written together, so no declaration would ever match it as one",
 			ErrInvalidSchema, e.module, key, item.FlagShort, item.FlagShort)
 	}
+	if d := shortNameDefect(item.FlagShort); d != "" {
+		return fmt.Errorf("%w: module %q gives %q the command-line short name %q: %s",
+			ErrInvalidSchema, e.module, key, item.FlagShort, d)
+	}
+	if d := longNameDefect(item.FlagName); d != "" {
+		return fmt.Errorf("%w: module %q gives %q the command-line name %q: %s",
+			ErrInvalidSchema, e.module, key, item.FlagName, d)
+	}
 	if magicValueTypes[item.Placeholder] {
 		return fmt.Errorf("%w: module %q gives %q the placeholder %q, which is one of the type "+
 			"names the layering tool reads a command-line value by. It would convert the text "+
@@ -265,6 +273,41 @@ func (e *expander) checkItemKeys() error {
 		}
 	}
 	return nil
+}
+
+// shortNameDefect reports why a single-character short name is one no command
+// line can reach, or "" when it is not. The command-line library indexes a
+// short name by its one byte and panics on a character that takes more, and a
+// dash after the leading one is how a long name begins.
+func shortNameDefect(short string) string {
+	switch {
+	case short == "":
+		return ""
+	case len(short) > 1:
+		return "the command-line syntax takes a short name of one ASCII character, and this " +
+			"one is written in several bytes"
+	case short == "-":
+		return "a dash after the leading one begins a long name, so -- is never read as this " +
+			"short name"
+	}
+	return ""
+}
+
+// longNameDefect reports why a long name is one no command line can reach, or
+// "" when it is not. The command-line syntax reads a name beginning with a
+// dash as a syntax error, and cuts a name at its first equals sign to find the
+// value, so the name it looks up is never the one declared. The name is
+// written without the leading dashes, which the syntax adds.
+func longNameDefect(name string) string {
+	switch {
+	case strings.HasPrefix(name, "-"):
+		return "the name is written without the leading dashes, which the command line adds, " +
+			"and one that begins with a dash is never read as a name"
+	case strings.Contains(name, "="):
+		return "the command line cuts an argument at its first equals sign to find the value, " +
+			"so a name holding one is never the name looked up"
+	}
+	return ""
 }
 
 // fieldName derives the path segment of a field: the config tag first, the

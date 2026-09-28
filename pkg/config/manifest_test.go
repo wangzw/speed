@@ -8,6 +8,8 @@ import (
 	"strings"
 	"testing"
 	"time"
+
+	"github.com/vislake/speed/pkg/core"
 )
 
 // expandOne expands a single module's declaration and indexes the result by
@@ -526,6 +528,61 @@ func TestMultiCharShortNameIsASchemaDefect(t *testing.T) {
 	}, "")
 	if !strings.Contains(err.Error(), "single character") {
 		t.Fatalf("the rejection reads %q, which does not say a short name is one character", err)
+	}
+}
+
+// TestACommandLineNameNoArgumentCanReachIsASchemaDefect pins the names the
+// command-line syntax can never match, each decided by the declaration alone.
+//
+// A short name is one byte to the command-line library, which panics when it is
+// handed a character that takes more than one, and a dash as a short name is
+// the start of a long one. A long name that begins with a dash is read as a
+// syntax error, and one holding an equals sign is cut at it, so the name
+// looked up is never the one declared: the help output would advertise an
+// argument that nothing written on a command line reaches.
+func TestACommandLineNameNoArgumentCanReachIsASchemaDefect(t *testing.T) {
+	type carrier struct {
+		Addr string
+	}
+	for _, item := range []Item{
+		{Origins: OriginFlag, FlagName: "addr", FlagShort: "é"},
+		{Origins: OriginFlag, FlagName: "addr", FlagShort: "-"},
+		{Origins: OriginFlag, FlagName: "--addr"},
+		{Origins: OriginFlag, FlagName: "-addr"},
+		{Origins: OriginFlag, FlagName: "addr=host"},
+	} {
+		err := expandFails(t, Schema{Mounts: mount(&carrier{}), Items: map[string]Item{"addr": item}}, "")
+		if !strings.Contains(err.Error(), `"addr"`) {
+			t.Errorf("the rejection of --%s -%s reads %q, which does not name the item",
+				item.FlagName, item.FlagShort, err)
+		}
+	}
+}
+
+// TestLoadRefusesAShortNameTheLibraryWouldPanicOn pins where that refusal
+// reaches a host: as ErrInvalidSchema from the loading call, not as a panic out
+// of the command-line library while the arguments are registered.
+func TestLoadRefusesAShortNameTheLibraryWouldPanicOn(t *testing.T) {
+	type carrier struct {
+		Addr string
+	}
+	reg := core.New()
+	reg.Register(declaring("server", Schema{
+		Namespace: "server",
+		Mounts:    mount(&carrier{}),
+		Items:     map[string]Item{"addr": {Origins: OriginFlag, FlagName: "addr", FlagShort: "é"}},
+	}))
+	var err error
+	func() {
+		defer func() {
+			if p := recover(); p != nil {
+				t.Fatalf("loading panicked with %v, want ErrInvalidSchema", p)
+			}
+		}()
+		_, err = Load(t.Context(), reg, nil)
+	}()
+	if !errors.Is(err, ErrInvalidSchema) {
+		t.Fatalf("loading returned %v, want ErrInvalidSchema", err)
 	}
 }
 
