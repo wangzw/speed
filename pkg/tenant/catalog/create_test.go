@@ -14,7 +14,7 @@ import (
 )
 
 // The cases in this file are about registering a tenant that must not
-// overwrite one.
+// overwrite one, and about what a write owes its caller once it has committed.
 
 // secondReplica is another process's roster over the same table: it read the
 // table when it started and has not read it since.
@@ -189,5 +189,62 @@ func TestConcurrentCreationsOfOneIdentifierAreOneTenant(t *testing.T) {
 	held, ok := rowOf(t, first, "t_acme")
 	if !ok || held.Alias != fmt.Sprintf("acme_%d", won) {
 		t.Fatalf("the table holds %+v, want the row creation %d wrote", held, won)
+	}
+}
+
+// cancelOnReread cancels the caller's context the moment a write, having
+// committed, starts rereading the roster — the one read of the table that
+// names no row.
+func cancelOnReread(t *testing.T, r *roster, cancel context.CancelFunc) {
+	t.Helper()
+	err := r.handle.Callback().Query().Before("gorm:query").Register("test:cancel-on-reread",
+		func(tx *gorm.DB) {
+			if _, conditioned := tx.Statement.Clauses["WHERE"]; !conditioned && tx.Statement.Table == tableName {
+				cancel()
+			}
+		})
+	if err != nil {
+		t.Fatalf("registering the callback: %v", err)
+	}
+}
+
+// A caller that goes away once its write has committed has nothing left to
+// stop. The reread that serves the writer its own write carries on, so the
+// write is reported as the success it was and this replica serves it at once.
+func TestAWriteIsServedWhenItsCallerGoesAwayAfterTheCommit(t *testing.T) {
+	for name, write := range map[string]func(ctx context.Context, r *roster) error{
+		"Put": func(ctx context.Context, r *roster) error {
+			return r.Put(ctx, tenant.Tenant{ID: "t_new", Alias: "new", Status: tenant.StatusActive})
+		},
+		"Create": func(ctx context.Context, r *roster) error {
+			return r.Create(ctx, tenant.Tenant{ID: "t_new", Alias: "new", Status: tenant.StatusActive})
+		},
+		"SetStatus": func(ctx context.Context, r *roster) error {
+			return r.SetStatus(ctx, "t_new", tenant.StatusActive)
+		},
+	} {
+		t.Run(name, func(t *testing.T) {
+			r := rosterOver(t, "INSERT INTO tenants (id, alias, status) VALUES ('t_old', 'old', 1)")
+			if name == "SetStatus" {
+				if err := r.handle.Exec("INSERT INTO tenants (id, alias, status) VALUES ('t_new', 'new', 0)").
+					Error; err != nil {
+					t.Fatalf("seeding: %v", err)
+				}
+			}
+			if err := r.read(context.Background()); err != nil {
+				t.Fatalf("reading: %v", err)
+			}
+			ctx, cancel := context.WithCancel(context.Background())
+			defer cancel()
+			cancelOnReread(t, r, cancel)
+
+			if err := write(ctx, r); err != nil {
+				t.Fatalf("a write whose caller went away after the commit gave %v, want success", err)
+			}
+			got, ok, err := r.Get(context.Background(), "t_new")
+			if err != nil || !ok || got.Status != tenant.StatusActive {
+				t.Fatalf("the writer's replica serves (%+v, %v, %v), want the write", got, ok, err)
+			}
+		})
 	}
 }

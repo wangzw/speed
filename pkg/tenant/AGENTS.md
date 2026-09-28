@@ -188,7 +188,11 @@ container through `pkg/internal/pgpool/pgtest`, which skips them on a machine
 without docker and fails them under CI. `pkg/tenant/catalog/plugin_test.go` is where the filter's four
 answers are pinned; `pkg/tenant/catalog/reach_test.go` is where the statements
 it has to reach beyond the query processor are — a scan, an association join,
-a subquery rendered into another statement; `pkg/tenant/resolve/extract_test.go` is where the
+a subquery rendered into another statement; `pkg/tenant/catalog/targets_test.go`
+is where an assignment's target is read the way each database reads it, on both
+dialects; `pkg/tenant/catalog/create_test.go` is where a registration that must
+not overwrite is refused against the table rather than the snapshot, and where
+a write's reread outlives its caller; `pkg/tenant/resolve/extract_test.go` is where the
 registration window's behaviour under a duplicate or a late registration is;
 `pkg/tenant/resolve/admit_test.go` and `panic_test.go` are where the layer's
 answers to a request are — the four statuses, what an admitted request

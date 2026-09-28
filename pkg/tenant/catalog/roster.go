@@ -449,8 +449,15 @@ func lookUp(tx *gorm.DB, column, value string) ([]row, error) {
 // A failed reread is reported rather than swallowed: the write is durable, but
 // this process is now serving a roster that does not contain it, and the caller
 // is the only one in a position to know that.
+//
+// The reread runs on the caller's context with its cancellation taken off. The
+// write has committed by then, so a caller that goes away at that moment has
+// nothing left to stop: ending the reread with it would only leave this replica
+// serving a roster without the write until the next refresh — or, with none
+// configured, until a restart — and report as failed a write that took place.
+// The values the context carries, and so the logger and the trace, stay.
 func (r *roster) afterWrite(ctx context.Context) error {
-	if err := r.read(ctx); err != nil {
+	if err := r.read(context.WithoutCancel(ctx)); err != nil {
 		return fmt.Errorf(
 			"%s%s: the write was applied, but the roster could not be reread, so this "+
 				"process is serving the roster as it was before it: %w",
