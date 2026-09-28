@@ -228,11 +228,16 @@ func TestARowOverTheModelThatReachesTheSealedColumnPanicsWithTheRefusal(t *testi
 // TestARowReadThatDoesNotReachTheSealedColumnGoesThrough keeps that refusal to
 // the statements it is about: one over the model that selects or omits around
 // the sealed columns, and one that names no model — native SQL, or a table
-// name alone — which this module has no schema to judge by.
+// name alone — which this module has no schema to judge by. GORM's migrator
+// reads an existing table's columns through the row chain, so bringing the
+// model's table up a second time is among them.
 func TestARowReadThatDoesNotReachTheSealedColumnGoesThrough(t *testing.T) {
 	product := assembleEncrypted(t, encryptedDSN(t), encryptedRootKeyItem)
 	createEncryptedTable(t, product)
 	row := writtenRow(t, product)
+	if err := product.DB().AutoMigrate(&encryptedModel{}); err != nil {
+		t.Errorf("bringing the existing table of the model up again failed: %v", err)
+	}
 
 	var ids []uint
 	if err := product.DB().Model(&encryptedModel{}).Select("id").Scan(&ids).Error; err != nil {
