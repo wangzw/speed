@@ -46,6 +46,14 @@ must not cross, and how to run it.
   through a fresh connection — reopens both problems the choice closed: a
   rolled-back write that still left a row, and a second writer contending on an
   engine that admits one.
+- **A statement that has already failed is not recorded.** GORM runs every
+  callback on a processor whatever the earlier ones did, and the session the
+  row would go out on carries the statement's error, so an insert attempted
+  there fails with that same error and dresses the caller's duplicate key or
+  plugin refusal up as `ErrWriteFailed`. The row could not stand anyway: the
+  transaction is on its way to a rollback, and PostgreSQL refuses every further
+  statement in it. Recording failed attempts would need a second connection,
+  which writing on the session the callback is handed rules out.
 - **The statement callbacks register on the model-path processors only.**
   `Exec` and `Raw` are left out on purpose. Adding them would put raw SQL in
   reach, which is where the module's own migrations and a host's own cleanup
@@ -116,5 +124,7 @@ go -C pkg/audit test -race ./...
 GOWORK=off go -C pkg/audit build ./...   # the standalone leg, without the workspace
 ```
 
-The tests bring up their own in-memory database and ask for no service and no
-environment: the Go toolchain is the whole of what they need installed.
+Most cases bring up their own in-memory database. The PostgreSQL cases take a
+database of their own on the shared fixture in `pkg/internal/pgpool/pgtest`,
+which starts a container through the docker CLI: they skip on a machine without
+docker, and fail instead where `CI` is set.

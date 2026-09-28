@@ -98,8 +98,23 @@ func (c *capture) Initialize(handle *gorm.DB) error {
 // The price is that a failure here is raised rather than reported: the
 // statement fails, because on this connection the record and the write are one
 // unit of work. That is the one path in the module where that is true.
+//
+// A statement that has already failed is left alone. GORM runs every callback
+// of a processor whatever the ones before it did, so this one is reached by a
+// statement another plugin refused before it ran, by one GORM itself refused,
+// and by one the engine turned down — and none of those changed anything, so
+// there is no write to record. The row could not stand anyway: the transaction
+// underneath is on its way to a rollback that takes it along, and an engine that
+// refuses every further statement in a transaction one has failed in would not
+// take it at all. Attempting it is worse than pointless, because the session
+// the row goes out on carries the statement's error: the insert fails with that
+// same error, and raising it would hand the caller its own failure dressed up as
+// an audit store that could not be written to.
 func captureOne(action string) func(*gorm.DB) {
 	return func(tx *gorm.DB) {
+		if tx.Error != nil {
+			return
+		}
 		st := tx.Statement
 		if st == nil {
 			return
@@ -111,7 +126,7 @@ func captureOne(action string) func(*gorm.DB) {
 		entry := audit.Entry{
 			Action:  action,
 			Object:  table,
-			Outcome: outcomeOf(tx),
+			Outcome: statementOutcome,
 			Detail: map[string]string{
 				"rows_affected": strconv.FormatInt(tx.RowsAffected, 10),
 			},
@@ -147,10 +162,7 @@ func targetTable(st *gorm.Statement) string {
 	return ""
 }
 
-// outcomeOf renders how a statement ended.
-func outcomeOf(tx *gorm.DB) string {
-	if tx.Error != nil {
-		return "failed"
-	}
-	return "ok"
-}
+// statementOutcome is what the result column holds on every statement row. A
+// statement that failed leaves no row, so the one that does has succeeded; how
+// much it changed is the detail's rows_affected.
+const statementOutcome = "ok"

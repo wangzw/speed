@@ -25,9 +25,15 @@ import (
 // module's own state — its connection, its table, its constraints — and not
 // about the entry, which was well formed enough to be accepted.
 //
-// Callers of Record may act on it; the capture paths inside the module do not.
-// Those treat a failure as something to report and carry on from, because a
-// request or a statement must not fail on account of the record of it.
+// It reaches two kinds of caller. Record returns it, and its caller may act on
+// it. A model write returns it too, when the row recording that write could not
+// be written: the statement-level record and the write are one unit of work, so
+// the write fails with it. A write that fails on its own — a duplicate key, a
+// refusal by another plugin — keeps its own error and does not carry this one.
+//
+// The request and event paths never return it. Those treat a failure as
+// something to report and carry on from, because a request or an event must not
+// fail on account of the record of it.
 var ErrWriteFailed = errors.New("audit: the entry was not written")
 
 // ErrNotAccepting reports that the module is not taking records: it has not
