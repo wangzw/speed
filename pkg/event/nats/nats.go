@@ -136,7 +136,8 @@ func Module() core.Module {
 			consumerNameKey: {
 				Description: "the name of this replica's durable consumer; leaving it out gives " +
 					"this process a durable of its own, which is what makes every replica receive " +
-					"every event, and which is removed when the process closes or has been gone a day",
+					"every event, and which is removed when the process closes or has been gone a day; a " +
+					"name holds no dot, wildcard, path separator or whitespace",
 			},
 			timeoutKey: {
 				Description: "how long connecting, and each request to the server that carries no " +
@@ -173,8 +174,19 @@ func stance(cfg *Config) (core.Enablement, error) {
 			"tree and let another backend deliver the capability",
 			ConfigNamespace, urlKey)
 	}
+	// JetStream refuses such a durable name only when the durable is created,
+	// at the start stage, with an error that names a stream rather than the
+	// input. Judged here, it fails the startup naming the item, as every other
+	// premise does.
+	if strings.ContainsAny(cfg.ConsumerName, durableNameForbidden) {
+		return core.Enablement{}, fmt.Errorf("%s.%s is %q, and a JetStream durable name may not hold "+
+			"a dot, a wildcard, a path separator or whitespace", ConfigNamespace, consumerNameKey, cfg.ConsumerName)
+	}
 	return core.Enablement{State: core.StateEnabled}, nil
 }
+
+// durableNameForbidden is what JetStream refuses in a durable consumer's name.
+const durableNameForbidden = ".*> /\\\t\r\n"
 
 // open connects.
 func open(ctx context.Context, cfg *Config, logger *slog.Logger) (event.Bus, error) {

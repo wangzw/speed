@@ -2,9 +2,11 @@ package nats
 
 import (
 	"context"
+	"strings"
 	"testing"
 	"time"
 
+	"github.com/vislake/speed/pkg/event"
 	"github.com/vislake/speed/pkg/internal/natstest"
 	"github.com/vislake/speed/pkg/log"
 )
@@ -57,5 +59,31 @@ func TestATimeoutThatIsNotPositiveTakesTheDefault(t *testing.T) {
 				configured, b.nc.Opts.Timeout, b.js.Options().DefaultTimeout, defaultTimeout)
 		}
 		_ = b.Close(context.Background())
+	}
+}
+
+// TestAConsumerNameTheServerRefusesIsRefusedNamingTheItem pins where a
+// durable name JetStream cannot carry is caught. The server refuses it when
+// the durable is created, at the start stage, with an error that names the
+// stream but not the input; every other premise of this backend is judged
+// before that and names its item.
+func TestAConsumerNameTheServerRefusesIsRefusedNamingTheItem(t *testing.T) {
+	url := natstest.URL(t)
+	for _, name := range []string{"crm.prod", "crm prod", "crm*", "crm>", "crm/prod", `crm\prod`, "crm\tprod"} {
+		// The premise: the durable really cannot be created under this name.
+		b := openBus(t, url, name)
+		b.Subscribe(nextType(), func(context.Context, event.Event) error { return nil })
+		if err := b.begin(context.Background()); err == nil {
+			t.Errorf("a durable named %q was created, so refusing the name would refuse a usable one", name)
+			continue
+		}
+		_, err := stance(&Config{URL: url, ConsumerName: name, Timeout: defaultTimeout})
+		if err == nil {
+			t.Errorf("the consumer name %q passed the stance and fails only at the start stage", name)
+			continue
+		}
+		if want := ConfigNamespace + "." + consumerNameKey; !strings.Contains(err.Error(), want) {
+			t.Errorf("the refusal of %q does not name %s: %v", name, want, err)
+		}
 	}
 }
