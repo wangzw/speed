@@ -129,6 +129,20 @@ func TestAFailureConfinedToOneTenantWritesOneLine(t *testing.T) {
 	}
 }
 
+// TestAnEmptyEndpointListNamesTheKey pins the startup failure's fixing action:
+// the host is told which key to write. The sentinel alone says an input item
+// has no value and not which one, and a host running several modules is left
+// to guess.
+func TestAnEmptyEndpointListNamesTheKey(t *testing.T) {
+	_, err := Module().Prepare(context.Background(), registryWith(t, nil))
+	if err == nil {
+		t.Fatal("Prepare accepted an empty endpoint list")
+	}
+	if !strings.Contains(err.Error(), ConfigNamespace+".endpoints") {
+		t.Errorf("the failure %q does not name the key %s.endpoints", err, ConfigNamespace)
+	}
+}
+
 // TestACounterFailureLineNamesNoIdentity keeps the counter classes' lines to
 // the class alone. Their key carries the identity string, and a failure line
 // on standard error is not the place to repeat it.

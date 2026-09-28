@@ -56,6 +56,14 @@ type Limiter interface {
 	limit()
 }
 
+// endpointsKey is the input item naming the endpoints to guard, and
+// endpointsPath its full path, which the startup failure for an empty list
+// names so the host knows which key to write.
+const (
+	endpointsKey  = "endpoints"
+	endpointsPath = ConfigNamespace + "." + endpointsKey
+)
+
 // Config is the set of input items this module accepts.
 //
 // There is no default: an empty list means this module has no endpoint to
@@ -92,9 +100,9 @@ func schema() config.Schema {
 		Namespace: ConfigNamespace,
 		Mounts:    []config.Mount{{Value: &Config{}}},
 		Items: map[string]config.Item{
-			"endpoints": {
-				Description: "the listening endpoints whose requests are limited, " +
-					"or empty to guard none of them",
+			endpointsKey: {
+				Description: "the listening endpoints whose requests are limited, by the names " +
+					"the entry point's configuration gives them; at least one is required",
 			},
 		},
 	}
