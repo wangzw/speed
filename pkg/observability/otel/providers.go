@@ -2,7 +2,9 @@ package otel
 
 import (
 	"context"
+	"crypto/rand"
 	"errors"
+	"fmt"
 	"log/slog"
 
 	"go.opentelemetry.io/otel/attribute"
@@ -16,11 +18,34 @@ import (
 	"github.com/vislake/speed/pkg/observability"
 )
 
-// serviceNameKey is the resource attribute the service identity is reported
-// under. It is written out rather than taken from a semantic-conventions
-// package: the key is what every backend reads, and pinning it here keeps this
-// module out of the version churn those packages carry.
-const serviceNameKey = attribute.Key("service.name")
+// serviceNameKey and serviceInstanceIDKey are the resource attributes the
+// process is identified under: which service it is, and which running instance
+// of it. They are written out rather than taken from a semantic-conventions
+// package: the keys are what every backend reads, and pinning them here keeps
+// this module out of the version churn those packages carry.
+const (
+	serviceNameKey       = attribute.Key("service.name")
+	serviceInstanceIDKey = attribute.Key("service.instance.id")
+)
+
+// newInstanceID returns an identity for one assembly of this module: a random
+// version 4 UUID, the form the upstream semantic conventions recommend.
+//
+// Replicas of one service export the same metric streams with the same
+// attributes, and a resource carrying the service name alone gives two
+// replicas' cumulative streams one identity: a collector or a metric store then
+// sees a single series flapping between their values. A random identity is
+// enough to keep them apart, and it changes on every start, which is what an
+// instance is. It is generated rather than configured because nothing in a
+// deployment's configuration differs between replicas.
+func newInstanceID() string {
+	var b [16]byte
+	// rand.Read never returns an error and always fills the buffer.
+	_, _ = rand.Read(b[:])
+	b[6] = b[6]&0x0f | 0x40
+	b[8] = b[8]&0x3f | 0x80
+	return fmt.Sprintf("%x-%x-%x-%x-%x", b[0:4], b[4:6], b[6:8], b[8:10], b[10:16])
+}
 
 // providers is this module's product.
 //
@@ -95,7 +120,10 @@ func newProviders(ctx context.Context, reg *core.Registry) (any, error) {
 		exporters = append(exporters, e)
 	}
 
-	res := resource.NewSchemaless(serviceNameKey.String(cfg.ServiceName))
+	res := resource.NewSchemaless(
+		serviceNameKey.String(cfg.ServiceName),
+		serviceInstanceIDKey.String(newInstanceID()),
+	)
 
 	traceOpts := []sdktrace.TracerProviderOption{
 		sdktrace.WithResource(res),

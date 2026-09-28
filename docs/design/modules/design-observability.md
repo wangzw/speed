@@ -283,6 +283,8 @@ type Config struct {
 
 包装必须先于 provider 构造：provider 在构造时持有导出器，构造之后再包一层，那一层不在导出路径上，转发包装的日志行永远不会写。第 2 步与第 3 步之间没有次序要求。
 
+**两个 provider 共用一份资源，其中只有两个属性**：`service.name` 取配置的 `service-name`；`service.instance.id` 是这一次装配在 `New` 中生成的随机 UUID（版本 4，上游语义约定推荐的形式）。同一服务的多个副本导出的指标流名字与属性都相同，资源只带服务名时，两个副本的累计流在采集端或指标存储里是同一条序列，取值在两个副本之间来回跳；实例标识把它们分开。它每次启动都变，这正是「实例」的含义；它由本模块生成而不来自配置，因为副本之间的配置没有可以区分彼此的地方。
+
 **转发包装以内嵌的方式转发到内层，只截下两个调用。** 包装内嵌导出器接口，导出与关闭之外的每一个方法——包括与导出数据无关的那些：指标的时间性、聚合选择、强制刷出——都原样传到内层。手写的转发要维护一份与上游接口对齐的清单：漏掉一个，指标的时间性与聚合会静默回到上游默认值；上游在这两个接口上新增方法时，那份清单还要跟着改。内嵌没有这份清单可漏。截下的一个是导出调用，为的是下面那两行日志；另一个是关闭调用：provider 关停时对它持有的导出器发出的关闭不传到后端，后端由装配器在两个 provider 都关停之后释放，理由见[关停时的刷出](#关停时的刷出)。
 
 转发包装在导出调用返回错误时写日志行：**连续失败的首次**写一行，恢复之后再写一行，中间的重复失败不再写。状态是该包装自己持有的一个标志，受一把互斥量保护。写出的行经 `New` 中持有的 logger 进配置的目的地。
@@ -444,7 +446,7 @@ type Config struct {
 | 接口包的类型别名与字段名常量 | 已实现 | `pkg/observability/observability.go` `TracerProvider`、`MeterProvider`、`SpanExporter`、`MetricExporter`、`TraceIDKey`、`SpanIDKey` |
 | 传播器与出站注入工具 | 已实现 | `pkg/observability/observability.go` `Propagator`、`pkg/observability/transport.go` `Transport` |
 | 装配器的描述符与各阶段行为 | 已实现 | `pkg/observability/otel/module.go` `Module`、`prepare`、`wire`、`shutdown` |
-| provider 的构造与导出器的释放 | 已实现 | `pkg/observability/otel/providers.go` `newProviders`、`queueSize`、`releaseExporters` |
+| provider 的构造、资源与导出器的释放 | 已实现 | `pkg/observability/otel/providers.go` `newProviders`、`newInstanceID`、`queueSize`、`releaseExporters` |
 | 转发包装、导出失败的上报与关闭的截留 | 已实现 | `pkg/observability/otel/wrapper.go` `spanExporter`、`metricExporter`、`notifier` |
 | 请求路径的采集层 | 已实现 | `pkg/observability/otel/layer.go` `instrument`、`recorder` |
 | 请求时长的计量 | 已实现 | `pkg/observability/otel/layer.go` `newRequestDuration` |
