@@ -55,6 +55,61 @@ func TestAnAnswerThatArrivesAfterTheBudgetIsNotHonoured(t *testing.T) {
 	}
 }
 
+// TestARefusalThatArrivesAfterTheBudgetIsNotHonouredEither holds the other half
+// of the same rule. A backend slower than the budget is one that cannot answer
+// in the time it is given, and whatever it says afterwards — a pass or a
+// refusal — ends the request as its outage. The refusal is not kept as a 401:
+// what raises a conclusion to an outage is the budget having run out, which the
+// gateway reads off its own call context, never what the backend put into the
+// refusal.
+func TestARefusalThatArrivesAfterTheBudgetIsNotHonouredEither(t *testing.T) {
+	slow := enumerating("local", "alice")
+	slow.verify = func(context.Context, string, authn.Credential) authn.Verdict {
+		time.Sleep(40 * time.Millisecond)
+		return authn.Denied(errors.New("wrong password"))
+	}
+
+	g := gatewayWith(t, settings{
+		endpoints: []string{"public"},
+		budget:    5 * time.Millisecond,
+		inFlight:  4,
+	}, slow)
+	sealed(t, g, routerWith("public"))
+
+	_, deny := g.identify(withBasic(request("GET", "/orders"), "alice", "secret"))
+	if deny == nil {
+		t.Fatal("a refusal that arrived after the budget admitted the request")
+	}
+	if deny.status != nethttp.StatusServiceUnavailable || deny.backend != "local" {
+		t.Errorf("a refusal that arrived after the budget answered %d charged to %q, want %d "+
+			"charged to the backend that did not answer in time", deny.status, deny.backend,
+			nethttp.StatusServiceUnavailable)
+	}
+}
+
+// TestADeadlineInsideARefusalDoesNotMakeItAnOutage keeps the case above honest:
+// a refusal that arrives within the budget stays a refusal whatever it carries,
+// a timeout value included, so a backend cannot turn a wrong password into a 503
+// by choosing its cause.
+func TestADeadlineInsideARefusalDoesNotMakeItAnOutage(t *testing.T) {
+	prompt := enumerating("local", "alice")
+	prompt.verify = func(context.Context, string, authn.Credential) authn.Verdict {
+		return authn.Denied(context.DeadlineExceeded)
+	}
+
+	g := gatewayWith(t, settings{
+		endpoints: []string{"public"},
+		budget:    time.Second,
+		inFlight:  4,
+	}, prompt)
+	sealed(t, g, routerWith("public"))
+
+	_, deny := g.identify(withBasic(request("GET", "/orders"), "alice", "secret"))
+	if deny == nil || deny.status != nethttp.StatusUnauthorized {
+		t.Errorf("a refusal carrying a deadline within the budget concluded as %+v, want a 401", deny)
+	}
+}
+
 // TestAnOwnershipAnswerThatArrivesAfterTheBudgetIsNotHonoured holds the same
 // rule for the other call a request makes into a backend: an open claim that
 // answers late must not be able to pick up a subject either.

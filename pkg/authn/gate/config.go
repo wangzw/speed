@@ -39,7 +39,7 @@ type moduleConfig struct {
 	// CallBudget is the deadline one call into a backend is given, the
 	// ownership question included, and the point past which its answer is
 	// no longer honoured: a backend that answers late ends the request as
-	// an outage rather than as a pass.
+	// an outage, whether what it answered was a pass or a refusal.
 	//
 	// It does not cut the wait short. The call is synchronous, so a backend
 	// that ignores the deadline holds its goroutine and its in-flight slot

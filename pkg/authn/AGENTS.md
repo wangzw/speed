@@ -111,9 +111,9 @@ A backend must also return when the context it was handed runs out. The call
 budget is a deadline given to the backend, not a blade the gateway swings: the
 call is synchronous, so a backend that ignores the deadline keeps its request
 goroutine and one slot of the in-flight gate until it returns. What the gateway
-can do on its own side is refuse to honour a late answer — a pass that arrives
-after the budget ends the request as an outage — and cap how many calls are
-inside a backend at once.
+can do on its own side is refuse to honour a late answer — a pass or a refusal
+that arrives after the budget ends the request as an outage — and cap how many
+calls are inside a backend at once.
 
 `pkg/authn/static` is the worked example. Its table is in memory from startup,
 so while its context holds there is no moment at which it is present and unable
