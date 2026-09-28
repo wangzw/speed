@@ -450,6 +450,36 @@ type nilPlugin struct{}
 func (nilPlugin) Name() string              { return "nil-plugin" }
 func (nilPlugin) Initialize(*gorm.DB) error { return nil }
 
+// rawGuard is a plugin of the shape a statement guard for native SQL takes: it
+// registers on the raw chain and refuses every statement it sees there.
+type rawGuard struct{}
+
+func (rawGuard) Name() string { return "raw-guard" }
+
+func (rawGuard) Initialize(handle *gorm.DB) error {
+	return handle.Callback().Raw().Before("gorm:raw").Register("raw-guard", func(tx *gorm.DB) {
+		_ = tx.AddError(errors.New("raw-guard refuses native SQL"))
+	})
+}
+
+// TestTheMigrationRunPassesThroughTheInstalledPlugins pins what the design
+// says about a plugin on the native SQL chain: the migration run issues its
+// statements on the delivered handle, after the plugins are installed, so such
+// a plugin sees the record table's statements and every migration body — and
+// one that refuses them fails the startup under ErrMigrationFailed.
+func TestTheMigrationRunPassesThroughTheInstalledPlugins(t *testing.T) {
+	tables := core.Module{Name: "catalog", Resources: []any{migrationSet(db.SQLite, map[string]string{
+		"0001_widgets.sql": `CREATE TABLE widgets (id INTEGER PRIMARY KEY)`,
+	})}}
+	_, err := startHost(t, sqliteSpec(), hostConfig(t), pluginModule("guard", rawGuard{}), tables)
+	if !errors.Is(err, db.ErrMigrationFailed) {
+		t.Fatalf("a plugin refusing native SQL left the startup with %v, want ErrMigrationFailed", err)
+	}
+	if !strings.Contains(err.Error(), "raw-guard") {
+		t.Errorf("the failure does not carry the plugin's refusal: %v", err)
+	}
+}
+
 // TestAPluginDeclarationWithNothingInItIsRefused pins the two shapes of an
 // empty declaration against what they would otherwise do.
 //
