@@ -82,12 +82,17 @@ const (
 	// createTable is idempotent, and it is this package's own record of having
 	// been applied — this capability is below the database module in the
 	// dependency graph and has no migration machinery to borrow.
+	//
+	// xact is the transaction that wrote the entry. It is what a replica tells
+	// an entry published before it opened from one published after by: see
+	// bus.origin.
 	createTable = `CREATE TABLE IF NOT EXISTS ` + table + ` (
 		id         BIGSERIAL PRIMARY KEY,
 		type       TEXT NOT NULL,
 		tenant     TEXT NOT NULL DEFAULT '',
 		payload    TEXT NOT NULL,
-		created_at TIMESTAMPTZ NOT NULL DEFAULT now()
+		created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+		xact       xid8 NOT NULL DEFAULT pg_current_xact_id()
 	);
 	CREATE TABLE IF NOT EXISTS ` + deliveredTable + ` (
 		event_id BIGINT NOT NULL,
@@ -167,23 +172,21 @@ func open(ctx context.Context, cfg *pgpool.Config, logger *slog.Logger) (event.B
 		pool.Close()
 		return nil, fmt.Errorf("%s: listening on %s: %w", ModuleName, channel, err)
 	}
-	self := replica.Name()
-	// A subscriber that arrives now is not owed what was published before it,
-	// so everything already in the outbox is marked as delivered to this
-	// replica before it starts reading. Marking rather than skipping to an id
-	// is what keeps a late commit from being mistaken for an old one.
-	if _, err := pool.Exec(ctx,
-		`INSERT INTO `+deliveredTable+` (event_id, replica) SELECT id, $1 FROM `+table+`
-		 ON CONFLICT DO NOTHING`, self); err != nil {
+	// A subscriber that arrives now is not owed what was published before it.
+	// What "before" means is fixed here, as the set of transactions the
+	// database counts as committed at this moment: see bus.origin.
+	var origin string
+	if err := pool.QueryRow(ctx, `SELECT pg_current_snapshot()::text`).Scan(&origin); err != nil {
 		_ = listen.Close(ctx)
 		pool.Close()
-		return nil, fmt.Errorf("%s: marking the outbox's existing entries: %w", ModuleName, err)
+		return nil, fmt.Errorf("%s: taking this replica's starting point: %w", ModuleName, err)
 	}
 	return &bus{
 		pool:    pool,
 		listen:  listen,
 		logger:  logger,
-		replica: self,
+		replica: replica.Name(),
+		origin:  origin,
 		table:   dispatch.New("event/postgres", logger),
 	}, nil
 }
@@ -211,7 +214,45 @@ func createTables(ctx context.Context, pool *pgxpool.Pool) error {
 	if _, err := tx.Exec(ctx, createTable); err != nil {
 		return err
 	}
+	if err := addMissingColumns(ctx, tx); err != nil {
+		return err
+	}
 	return tx.Commit(ctx)
+}
+
+// addedColumns are the outbox columns a table created before they existed
+// lacks, with the definition each is added with. CREATE TABLE IF NOT EXISTS
+// leaves such a table as it is, so without this every statement naming one of
+// them would fail on it.
+var addedColumns = []struct{ name, definition string }{
+	{"xact", "xid8 NOT NULL DEFAULT pg_current_xact_id()"},
+}
+
+// addMissingColumns adds each of addedColumns the outbox lacks.
+//
+// The catalog is asked first rather than running ADD COLUMN IF NOT EXISTS on
+// every start: ALTER TABLE takes the table's strongest lock before it looks,
+// and that lock would queue behind every running publish and hold up every
+// publish behind it, once per replica start, for a change that is already
+// there.
+func addMissingColumns(ctx context.Context, tx pgx.Tx) error {
+	for _, column := range addedColumns {
+		var present bool
+		if err := tx.QueryRow(ctx,
+			`SELECT EXISTS (SELECT 1 FROM information_schema.columns
+			 WHERE table_schema = current_schema() AND table_name = $1 AND column_name = $2)`,
+			table, column.name).Scan(&present); err != nil {
+			return fmt.Errorf("reading the columns of %s: %w", table, err)
+		}
+		if present {
+			continue
+		}
+		if _, err := tx.Exec(ctx,
+			`ALTER TABLE `+table+` ADD COLUMN IF NOT EXISTS `+column.name+` `+column.definition); err != nil {
+			return fmt.Errorf("adding %s to %s: %w", column.name, table, err)
+		}
+	}
+	return nil
 }
 
 // start freezes the table, opens the bus to publishing, and begins reading.
@@ -232,6 +273,19 @@ type bus struct {
 	// makes each entry's delivery a fact about this replica rather than a
 	// position in a sequence.
 	replica string
+	// origin is the database's snapshot at the moment this replica opened, in
+	// its text form. An entry whose writing transaction is visible in it was
+	// committed before this replica existed, and is not this replica's to
+	// deliver; every other entry is, once it commits.
+	//
+	// It is what lets a replica start without writing anything. Marking every
+	// entry already in the outbox as delivered would say the same, at the cost
+	// of one mark per entry on every process start — every command that takes
+	// this bus in, a short-lived one included — held until the entries retire.
+	// And it keeps what the marks exist for: a transaction still in flight
+	// when the replica opened is not visible in the snapshot, whatever its
+	// entry's id, so an entry that commits late is still delivered.
+	origin string
 
 	// table holds the subscriptions, the stage, and the reader's lifetime.
 	table *dispatch.Table
@@ -410,16 +464,18 @@ func (b *bus) drain(reading, handling context.Context) error {
 		return nil
 	}
 
-	// Every entry this replica has not delivered, whatever its id relative to
-	// anything else. Reading by what is missing rather than by where a cursor
-	// stands is what makes a commit that lands late just another entry.
+	// Every entry published since this replica opened that it has not
+	// delivered, whatever its id relative to anything else. Reading by what is
+	// missing rather than by where a cursor stands is what makes a commit that
+	// lands late just another entry.
 	rows, err := b.pool.Query(reading,
 		`SELECT o.id, o.type, o.tenant, o.payload FROM `+table+` o
 		 WHERE o.type = ANY($2)
+		   AND NOT pg_visible_in_snapshot(o.xact, $4::pg_snapshot)
 		   AND NOT EXISTS (SELECT 1 FROM `+deliveredTable+` d
 		                   WHERE d.event_id = o.id AND d.replica = $1)
 		 ORDER BY o.id LIMIT $3`,
-		b.replica, b.types, batchSize)
+		b.replica, b.types, batchSize, b.origin)
 	if err != nil {
 		return err
 	}
