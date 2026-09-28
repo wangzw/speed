@@ -223,8 +223,21 @@ func (s *store) Set(ctx context.Context, key string, value []byte, ttl time.Dura
 	_, err := s.pool.Exec(ctx,
 		`INSERT INTO `+table+` (key, value, expires_at) VALUES ($1, $2, $3)
 		 ON CONFLICT (key) DO UPDATE SET value = EXCLUDED.value, expires_at = EXCLUDED.expires_at`,
-		spell(key), value, expiresAt(ttl))
+		spell(key), nonNull(value), expiresAt(ttl))
 	return err
+}
+
+// nonNull folds a nil value into an empty one before it reaches PostgreSQL.
+//
+// The capability spells "empty" two ways — a nil slice and a zero-length one —
+// and means the same thing by both, but pgx sends a nil slice as SQL NULL. The
+// value column refuses NULL, and a comparison against NULL matches nothing, so
+// every value that reaches a statement goes through here.
+func nonNull(value []byte) []byte {
+	if value == nil {
+		return []byte{}
+	}
+	return value
 }
 
 // Delete removes the key, whether or not it was there.
@@ -302,14 +315,7 @@ func (s *store) increment(ctx context.Context, key string, delta float64, ttl ti
 // empty old, and anything else must not be written. Without that condition an
 // absent key would be created whatever old was.
 func (s *store) CompareAndSwap(ctx context.Context, key string, old, newVal []byte) (bool, error) {
-	// The capability spells "empty" two ways — a nil slice and a zero-length
-	// one — and means the same thing by both. Folded together here rather than
-	// inside the comparison, because a nil argument reaches PostgreSQL as SQL
-	// NULL and NULL equals nothing: the two spellings would otherwise give two
-	// answers to one question.
-	if old == nil {
-		old = []byte{}
-	}
+	old, newVal = nonNull(old), nonNull(newVal)
 
 	tx, beginErr := s.pool.Begin(ctx)
 	if beginErr != nil {

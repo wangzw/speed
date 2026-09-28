@@ -78,6 +78,32 @@ func AssertConforms(t *testing.T, newStore Factory) {
 		}
 	})
 
+	t.Run("a nil value is stored as an empty one", func(t *testing.T) {
+		s := newStore(t)
+		ctx := context.Background()
+		if err := s.Set(ctx, "set", nil, 0); err != nil {
+			t.Fatalf("Set with a nil value: %v", err)
+		}
+		if got, present, err := s.Get(ctx, "set"); err != nil || !present || len(got) != 0 {
+			t.Fatalf("Get after a nil Set: %q, present=%v, err=%v", got, present, err)
+		}
+		if swapped, err := s.CompareAndSwap(ctx, "swapped", nil, nil); err != nil || !swapped {
+			t.Fatalf("CompareAndSwap from absent to nil: swapped=%v err=%v", swapped, err)
+		}
+		if got, present, err := s.Get(ctx, "swapped"); err != nil || !present || len(got) != 0 {
+			t.Fatalf("Get after a swap to nil: %q, present=%v, err=%v", got, present, err)
+		}
+		if err := s.Set(ctx, "replaced", []byte("v"), 0); err != nil {
+			t.Fatalf("Set: %v", err)
+		}
+		if swapped, err := s.CompareAndSwap(ctx, "replaced", []byte("v"), nil); err != nil || !swapped {
+			t.Fatalf("CompareAndSwap from a value to nil: swapped=%v err=%v", swapped, err)
+		}
+		if got, present, err := s.Get(ctx, "replaced"); err != nil || !present || len(got) != 0 {
+			t.Fatalf("Get after a swap from a value to nil: %q, present=%v, err=%v", got, present, err)
+		}
+	})
+
 	t.Run("every key the contract allows is its own entry", func(t *testing.T) {
 		s := newStore(t)
 		ctx := context.Background()
