@@ -85,8 +85,10 @@ type Drive struct {
 	Action func(ctx context.Context, reg *Registry) error
 }
 
-// Drive advances the lifecycle to d.Depth, runs d.Action, then shuts down in
-// reverse order and returns.
+// Drive advances the lifecycle to d.Depth, runs d.Action, then shuts down and
+// returns. The shutdown stops the entry points, the modules that declare
+// Serve, before any other module, and closes every module once every Stop has
+// returned; Module's Stop and Close fields state the order in full.
 //
 // A failure in any stage terminates the advance, rolls back every constructed
 // instance and returns the original error. Cancellation is the normal way to
@@ -139,7 +141,7 @@ func (r *Registry) Drive(ctx context.Context, d Drive) error {
 
 // Run is one value of Drive: every registered module takes part, the advance
 // goes to StageServe, and there is no action, so it runs until ctx is
-// cancelled and then shuts down in reverse order.
+// cancelled and then shuts down in the order Drive states.
 //
 // Cancellation is the normal way to stop: with a clean cleanup the result is
 // nil rather than ctx.Err(). Run may be called once, for the reason Drive

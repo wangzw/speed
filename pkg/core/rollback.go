@@ -7,9 +7,26 @@ import (
 	"slices"
 )
 
-// shutdown runs Stop and then Close over every constructed instance, in
-// reverse construction order, and returns the primary error with whatever the
-// cleanup added.
+// shutdown runs Stop and then Close over every constructed instance and
+// returns the primary error with whatever the cleanup added.
+//
+// Stop runs over the entry points first -- the modules that declare a Serve
+// callback -- and over every other module after them, each group in reverse
+// construction order. Close runs once every Stop has returned, in reverse
+// construction order with no grouping.
+//
+// The entry points go first for the reason Serve is a stage of its own. A
+// request an entry point admitted can reach any module in the process, not
+// only the ones the entry point depends on, and the modules it reaches have
+// no construction-time edge that puts them on either side of it: a registrant
+// requiring the entry point's capability is constructed after it, and one that
+// takes it up in Init lands wherever the registry linearises what the
+// declarations leave open. Reverse construction order alone would stop some of
+// them while the entry point is still draining, and they would refuse the work
+// of a request it admitted. The Serve field is how an entry point is
+// recognised: the registry interprets that field already, and needs no
+// module's name to do it. Within each group a module is still stopped before
+// the modules it depends on.
 //
 // It closes every drive, whatever depth that drive asked for and whether it
 // arrived or failed on the way: the instances a drive built are the
@@ -49,7 +66,7 @@ func (r *Registry) shutdown(ctx context.Context, primary error) error {
 	slices.Reverse(order)
 
 	failures := []error{primary}
-	for _, name := range order {
+	for _, name := range r.entryPointsFirst(order) {
 		m, ok := r.Lookup(name)
 		if !ok || m.Stop == nil {
 			continue
@@ -68,6 +85,21 @@ func (r *Registry) shutdown(ctx context.Context, primary error) error {
 		}
 	}
 	return errors.Join(failures...)
+}
+
+// entryPointsFirst moves the modules that declare a Serve callback ahead of
+// every other module, keeping the given order within each group.
+func (r *Registry) entryPointsFirst(order []string) []string {
+	entries := make([]string, 0, len(order))
+	rest := make([]string, 0, len(order))
+	for _, name := range order {
+		if m, ok := r.Lookup(name); ok && m.Serve != nil {
+			entries = append(entries, name)
+			continue
+		}
+		rest = append(rest, name)
+	}
+	return append(entries, rest...)
 }
 
 // instanceOf returns the product a module was constructed with, or nil for a

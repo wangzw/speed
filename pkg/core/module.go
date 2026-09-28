@@ -68,18 +68,28 @@ type Module struct {
 	// returned. It must not block: the driver advances through the stage
 	// before it enters running state, so blocking here starves every entry
 	// point after it. Listen on a separate goroutine.
+	//
+	// Declaring Serve is what makes a module an entry point, and it places
+	// the module's Stop ahead of every other module's.
 	Serve func(ctx context.Context, reg *Registry, instance any) error
-	// Stop stops accepting new work and begins draining. Reverse dependency
-	// order. A failure here does not abort the stage.
+	// Stop stops accepting new work. The entry points, the modules that
+	// declare Serve, are stopped first, in reverse dependency order among
+	// themselves; every other module is stopped after the last of them
+	// returns, in reverse dependency order. A request an entry point
+	// admitted can reach any module in the process, so an entry point's
+	// Stop returns once the work it admitted has drained, and a module that
+	// declares no Serve may then refuse new work here without refusing a
+	// request in flight. A failure here does not abort the stage.
 	//
 	// Stop may be called on an instance that was never initialised or
 	// started: a startup failure rolls back every constructed instance
 	// whatever stage it had reached. Tolerating that is part of the
 	// contract.
 	Stop func(ctx context.Context, reg *Registry, instance any) error
-	// Close releases resources. Reverse dependency order. Failures are
-	// aggregated and returned together. Close carries the same
-	// never-initialised obligation as Stop.
+	// Close releases resources, once every Stop has returned. Reverse
+	// dependency order, entry points included. Failures are aggregated and
+	// returned together. Close carries the same never-initialised
+	// obligation as Stop.
 	Close func(ctx context.Context, reg *Registry, instance any) error
 }
 

@@ -44,7 +44,9 @@ change here must not cross, and how to run it.
 
 A capability is an interface; a token is a typed nil pointer to it; a
 provider declares it in `Provides` and a consumer in `Requires`. The
-requirement is also what orders construction and shutdown.
+requirement is also what orders construction and shutdown, with one
+exception at shutdown: a module that declares `Serve` is an entry point, and
+every entry point is stopped before any other module.
 
 ```go
 package greeting

@@ -58,6 +58,38 @@ func TestRollbackIsReverseDependencyOrderStopsBeforeCloses(t *testing.T) {
 	}
 }
 
+// TestEntryPointsStopFirstAndCloseIgnoresTheGrouping pins the whole shutdown
+// order: every module that declares Serve is stopped before any module that
+// does not, each group in reverse construction order, and the Close beat that
+// follows every Stop runs in reverse construction order across both groups.
+func TestEntryPointsStopFirstAndCloseIgnoresTheGrouping(t *testing.T) {
+	rec := &recorder{}
+	serving := func(name string) Module {
+		m := closer(rec, name, nil, nil)
+		m.Serve = func(context.Context, *Registry, any) error { return nil }
+		return m
+	}
+	reg := New()
+	constructAll(t, reg,
+		closer(rec, "first", nil, nil),
+		serving("entry"),
+		closer(rec, "later", nil, nil),
+		serving("second-entry"),
+		closer(rec, "last", nil, nil),
+	)
+
+	if err := reg.shutdown(t.Context(), nil); err != nil {
+		t.Fatalf("a clean shutdown returned %v", err)
+	}
+	want := []string{
+		"stop second-entry", "stop entry", "stop last", "stop later", "stop first",
+		"close last", "close second-entry", "close later", "close entry", "close first",
+	}
+	if !slices.Equal(rec.calls, want) {
+		t.Fatalf("shutdown ran %v, want %v", rec.calls, want)
+	}
+}
+
 // TestStopFailureDoesNotAbortStopPhase pins that a failed drain notice cannot
 // hold back the rest of the stage or the Close that follows.
 func TestStopFailureDoesNotAbortStopPhase(t *testing.T) {
