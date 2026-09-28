@@ -7,6 +7,7 @@ import (
 	"log/slog"
 	"sync"
 	"testing"
+	"time"
 
 	sdkmetric "go.opentelemetry.io/otel/sdk/metric"
 	"go.opentelemetry.io/otel/sdk/metric/metricdata"
@@ -212,6 +213,68 @@ func TestCloseDeliversTheLastBatchToEveryBackend(t *testing.T) {
 				"want one span, orders.placed and none late", name, d.spans, d.metrics, d.late)
 		}
 		d.mu.Unlock()
+	}
+}
+
+// boundedConfig gives this module a service name and a short shutdown bound.
+type boundedConfig struct{ bound time.Duration }
+
+func (c boundedConfig) Decode(namespace string, target any) error {
+	if namespace == otel.ModuleName {
+		cfg := target.(*otel.Config)
+		cfg.ServiceName = "orders"
+		cfg.ShutdownTimeout = c.bound
+	}
+	return nil
+}
+
+// stuckSpans is a destination whose export never returns before it is
+// cancelled.
+type stuckSpans struct{}
+
+func (stuckSpans) ExportSpans(ctx context.Context, _ []sdktrace.ReadOnlySpan) error {
+	<-ctx.Done()
+	return ctx.Err()
+}
+func (stuckSpans) Shutdown(context.Context) error { return nil }
+
+// TestAShutdownPastItsBoundFailsTheStop pins what a flush that does not finish
+// within shutdown-timeout reports: Close stops waiting at the bound and returns
+// the deadline, so the drive fails and the host sees that the stop did not
+// complete. What was lost is not reported.
+func TestAShutdownPastItsBoundFailsTheStop(t *testing.T) {
+	reg := core.New()
+	reg.Supply((*config.Reader)(nil), boundedConfig{bound: 50 * time.Millisecond})
+	reg.Supply((*log.Logger)(nil), stubLogger{lg: slog.New(slog.NewTextHandler(&bytes.Buffer{}, nil))})
+	reg.Register(otel.Module())
+	reg.Register(core.Module{
+		Name:     "observability.test-stuck",
+		Provides: []core.Provision{{Token: (*observability.SpanExporter)(nil)}},
+		Prepare: func(context.Context, *core.Registry) (core.Enablement, error) {
+			return core.Enablement{State: core.StateEnabled}, nil
+		},
+		New: func(context.Context, *core.Registry) (any, error) { return stuckSpans{}, nil },
+	})
+
+	start := time.Now()
+	err := reg.Drive(context.Background(), core.Drive{
+		Depth:        core.StageInit,
+		Participants: []string{otel.ModuleName, "observability.test-stuck"},
+		Action: func(ctx context.Context, reg *core.Registry) error {
+			tp, err := core.Resolve[observability.TracerProvider](reg)
+			if err != nil {
+				return err
+			}
+			_, span := tp.Tracer("orders").Start(ctx, "place")
+			span.End()
+			return nil
+		},
+	})
+	if !errors.Is(err, context.DeadlineExceeded) {
+		t.Errorf("a flush past its bound ended the drive with %v, want the deadline", err)
+	}
+	if elapsed := time.Since(start); elapsed > 5*time.Second {
+		t.Errorf("the stop took %v against a bound of 50ms", elapsed)
 	}
 }
 

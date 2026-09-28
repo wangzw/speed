@@ -153,9 +153,11 @@ func (p *providers) distinct(list string, names []string) []string {
 //
 // The bound comes from configuration because a Close callback receives a
 // context with its cancellation stripped, and it must be bounded because the
-// registry does not impose a timeout of its own. A shutdown that times out
-// cuts the export short; what was in flight is then lost with no signal, which
-// the module's documentation states as a cost rather than promising otherwise.
+// registry does not impose a timeout of its own. A shutdown that reaches the
+// bound stops waiting and returns the deadline, so the drive fails and the host
+// sees that the stop did not complete; what was still in flight is lost, and
+// which records those were is not reported — the module's documentation states
+// that as a cost rather than promising otherwise.
 //
 // Every shape a rollback can hand it is tolerated: a startup that failed
 // part-way closes every module whatever stage it reached, so this runs on an
