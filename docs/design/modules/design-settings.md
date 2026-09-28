@@ -168,7 +168,7 @@ err := store.Get(settings.ForTenant(tenantID), "ratelimit.window", &opts.Window)
 
 ### 读取面
 
-读取按三级回落取值（[ADR-settings-precedence-2026-09-21](../../adr/adr-settings-precedence-2026-09-21.md)）：
+读取按三级回落取值（[ADR-settings-layer-2026-09-21](../../adr/adr-settings-layer-2026-09-21.md)）：
 
 | 次序 | 来源 | 何时命中 |
 |---|---|---|
@@ -298,7 +298,7 @@ type Change struct {
 
 **日志不构成依赖**：取用的是 `log.Logger` 功能的可用则取、取不到则用进程根 logger 的形态（`Init` 里尝试一次，不写进 `Requires`）。日志记录只写键与租户，不写值。
 
-**不依赖租户模块。** 租户标识是字符串（[ADR-settings-scope-2026-09-21](../../adr/adr-settings-scope-2026-09-21.md)）；设置的表承载全局行，不内嵌受租户约束的模型约定，不依赖名册与隔离插件（[ADR-settings-precedence-2026-09-21](../../adr/adr-settings-precedence-2026-09-21.md)）。
+**不依赖租户模块。** 租户标识是字符串（[ADR-settings-scope-2026-09-21](../../adr/adr-settings-scope-2026-09-21.md)）；设置的表承载全局行，不内嵌受租户约束的模型约定，不依赖名册与隔离插件（[ADR-settings-layer-2026-09-21](../../adr/adr-settings-layer-2026-09-21.md)）。
 
 **`ForTenant` 的取值域是租户标识的取值域，本模块复述了它**：判据与名册对标识的要求同一条——非空，且不含空白与控制字符（见 [tenant](design-tenant.md)）。复述与本模块不 import 租户模块两件事并存，两处是否仍是同一条因而不由本模块独自保证：本模块的测试包 `pkg/settings/settings_test.go` 里，`TestForTenantAgreesWithTheTenantIdentifierDomain` 拿同一张标识形状表同时驱动本模块的 `ForTenant` 与租户模块根包的 `IsIdentifier`。**比对落在本模块的测试面**：`IsIdentifier` 由测试包 import，而测试包的 import 不进产品的 import 闭包，本模块的接口包因而不接上租户模块。这一处比对不是可有可无的：按租户取值的模块把从请求上下文读到的标识原样交给 `ForTenant`，落在取值域之外时它当场 panic，而那个 panic 由入口模块的兜底层收成 500——名册已经收下的标识，设置一侧收紧一格就答不出来。
 
@@ -537,7 +537,7 @@ flowchart TD
 
 ### 接受的代价
 
-**各条裁定本身带来的代价记在各自的记录里**：值模型的边界见 [ADR-settings-declaration-2026-09-21](../../adr/adr-settings-declaration-2026-09-21.md)；对事件总线的构造期依赖见 [ADR-settings-propagation-2026-09-21](../../adr/adr-settings-propagation-2026-09-21.md)；变更历史的存否与敏感项的记录见 [ADR-settings-audit-2026-09-21](../../adr/adr-settings-audit-2026-09-21.md)；全局行的共享性与读取的额外一级见 [ADR-settings-precedence-2026-09-21](../../adr/adr-settings-precedence-2026-09-21.md)；接口收层选与零值不可用见 [ADR-settings-layer-2026-09-21](../../adr/adr-settings-layer-2026-09-21.md)；消费方对"没有租户"一档的处理与裸字符串标识见 [ADR-settings-scope-2026-09-21](../../adr/adr-settings-scope-2026-09-21.md)。
+**各条裁定本身带来的代价记在各自的记录里**：值模型的边界见 [ADR-settings-declaration-2026-09-21](../../adr/adr-settings-declaration-2026-09-21.md)；对事件总线的构造期依赖见 [ADR-settings-propagation-2026-09-21](../../adr/adr-settings-propagation-2026-09-21.md)；变更历史的存否与敏感项的记录见 [ADR-settings-audit-2026-09-21](../../adr/adr-settings-audit-2026-09-21.md)；全局行的共享性、读取的额外一级、接口收层选与零值不可用见 [ADR-settings-layer-2026-09-21](../../adr/adr-settings-layer-2026-09-21.md)；消费方对"没有租户"一档的处理与裸字符串标识见 [ADR-settings-scope-2026-09-21](../../adr/adr-settings-scope-2026-09-21.md)。
 
 设计本身带来的代价如下：**每一条读取多一次映射查找**（租户行未命中时的全局行查找），装载时的一次预解码换来标量种类读取路径上的零转换；**自带文本形式的项每次读取多一次解码**，换来读取方拿到的值与模块存储互不牵连，读取频繁的参数宜声明为标量；**快照常驻内存**，规模是全部已写入行——稀疏使用下可控，把设置当高频数据写会把这份内存放大。
 

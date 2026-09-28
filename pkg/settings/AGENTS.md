@@ -25,8 +25,10 @@ implementation subpackage to hold one backend apart from another.
   ([`adr-settings-layer-2026-09-21.md`](../../docs/adr/adr-settings-layer-2026-09-21.md)),
   how a change reaches the other replicas
   ([`adr-settings-propagation-2026-09-21.md`](../../docs/adr/adr-settings-propagation-2026-09-21.md)),
-  and where the history of a change lives
-  ([`adr-settings-audit-2026-09-21.md`](../../docs/adr/adr-settings-audit-2026-09-21.md)).
+  where the history of a change lives
+  ([`adr-settings-audit-2026-09-21.md`](../../docs/adr/adr-settings-audit-2026-09-21.md)),
+  and why the declared items are listed through the store
+  ([`adr-settings-declaration-2026-09-29.md`](../../docs/adr/adr-settings-declaration-2026-09-29.md)).
 - The API itself: the godoc in this package.
 
 This file states only what neither of those states: the boundaries a change
