@@ -3,6 +3,7 @@ package config
 import (
 	"errors"
 	"fmt"
+	"slices"
 
 	"github.com/spf13/pflag"
 )
@@ -13,20 +14,16 @@ import (
 // that command contributes and no command above it does, so an empty list
 // registers nothing.
 //
-// running names the ones among them this command actually runs, and declared
-// names the modules it reached for their declarations alone. The three answer
-// different questions and all three are needed. An argument of a collected
-// module is not marked required, because this command never decodes the module
-// and so never comes up short of the value; and giving one that is not on the
-// command line gets a diagnosis that says where it does belong, which it can
-// only do by knowing the module was taken in at all.
+// running names the ones among them this command actually runs. An argument of
+// a module the command only collects from is not marked required, because this
+// command never decodes the module and so never comes up short of the value.
 //
 // An item is one argument for the whole tree: it is defined the first time a
 // command takes its module in, and that same argument is registered on every
 // other command that takes it in. Two commands on separate branches therefore
 // share one argument, bound to the layering tool once, and a run reads its
 // value from there whichever of the two it selected.
-func (l *loader) BindLayer(fs *pflag.FlagSet, taking, running, declared []string) error {
+func (l *loader) BindLayer(fs *pflag.FlagSet, taking, running []string) error {
 	takes := make(map[string]bool, len(taking))
 	for _, name := range taking {
 		takes[name] = true
@@ -34,9 +31,6 @@ func (l *loader) BindLayer(fs *pflag.FlagSet, taking, running, declared []string
 	runs := make(map[string]bool, len(running))
 	for _, name := range running {
 		runs[name] = true
-	}
-	for _, name := range declared {
-		l.declaresOnly[name] = true
 	}
 
 	for _, item := range l.m.items {
@@ -69,14 +63,20 @@ func (l *loader) BindLayer(fs *pflag.FlagSet, taking, running, declared []string
 // module's sentinels. The library's error types are what the classification
 // reads, not the text they render: the text is the library's to change.
 //
+// collected names the modules the command the library was parsing reached for
+// their declarations alone. It is that command's and no other's: which fix an
+// unknown argument calls for depends on what the command being run took in,
+// and a sibling that collects the module says nothing about a command that
+// does not take it in at all.
+//
 // Anything it does not recognise is returned as it stands. An unknown
 // subcommand is one of those: the library reports it, and inventing a
 // sentinel of this module's own for it would claim a failure that is not
 // about configuration.
-func (l *loader) ClassifyParseError(err error) error {
+func (l *loader) ClassifyParseError(err error, collected []string) error {
 	var unknown *pflag.NotExistError
 	if errors.As(err, &unknown) {
-		return l.unknownFlagError(unknown)
+		return l.unknownFlagError(unknown, collected)
 	}
 	var missingValue *pflag.ValueRequiredError
 	if errors.As(err, &missingValue) {
@@ -98,7 +98,7 @@ func (l *loader) ClassifyParseError(err error) error {
 // name is registered on this command; which of the three it is can only be
 // answered by looking the name up in the manifest, and the answers lead to
 // three different fixes.
-func (l *loader) unknownFlagError(unknown *pflag.NotExistError) error {
+func (l *loader) unknownFlagError(unknown *pflag.NotExistError, collected []string) error {
 	written, item := l.writtenAs(unknown)
 	if item == nil {
 		return fmt.Errorf("%w: the command line gives %s, which no input item declares. An item "+
@@ -111,7 +111,7 @@ func (l *loader) unknownFlagError(unknown *pflag.NotExistError) error {
 			"the item, or drop FlagName",
 			ErrUnknownKey, written, item.module, item.path, originNames(item.origins))
 	}
-	if l.declaresOnly[item.module] {
+	if slices.Contains(collected, item.module) {
 		return fmt.Errorf("%w: the command line gives %s, which module %q declares for %q, and "+
 			"this command takes that module in for its declarations alone, so nothing here "+
 			"reads it. Add WithFlags to that inclusion to accept the argument, or take the "+

@@ -733,3 +733,30 @@ func TestBooleanOnAMiddleLayerDoesNotHideTheSubcommand(t *testing.T) {
 		})
 	}
 }
+
+// TestTheDiagnosisOfAnUnknownArgumentIsAboutTheSelectedCommand pins that the
+// fix an unknown argument is met with is read off the command the run
+// selected. A sibling that reaches the module for its declarations alone says
+// nothing about a command that does not take it in at all, and pointing that
+// command at WithFlags would send the host to change an inclusion it never
+// wrote.
+func TestTheDiagnosisOfAnUnknownArgumentIsAboutTheSelectedCommand(t *testing.T) {
+	a, _, _ := treeApp(treeRegistry(t, &treeRun{}, nil), "version", "--greeter-addr=:1")
+	check := a.Root().Sub("check")
+	check.IncludeAllDeclarations().WithFlags()
+	check.Do(core.StagePrepare, nil)
+	version := a.Root().Sub("version")
+	version.Do(core.StagePrepare, nil)
+
+	err := a.Execute(t.Context())
+	if !errors.Is(err, ErrUnknownKey) {
+		t.Fatalf("an argument the selected command does not carry returned %v, want %v",
+			err, ErrUnknownKey)
+	}
+	if strings.Contains(err.Error(), "WithFlags") || strings.Contains(err.Error(), "declarations alone") {
+		t.Errorf("the failure reads %q, and version does not take the module in at any level", err)
+	}
+	if !strings.Contains(err.Error(), "does not take that module in") {
+		t.Errorf("the failure reads %q, which does not say the module is outside this command", err)
+	}
+}

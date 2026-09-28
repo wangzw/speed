@@ -69,11 +69,11 @@ func giveFlags(t *testing.T, l *loader, participants []string, args ...string) e
 	t.Helper()
 	fs := pflag.NewFlagSet("test", pflag.ContinueOnError)
 	fs.SetOutput(io.Discard)
-	if err := l.BindLayer(fs, participants, participants, nil); err != nil {
+	if err := l.BindLayer(fs, participants, participants); err != nil {
 		return err
 	}
 	if err := fs.Parse(args); err != nil {
-		return l.ClassifyParseError(err)
+		return l.ClassifyParseError(err, nil)
 	}
 	return nil
 }

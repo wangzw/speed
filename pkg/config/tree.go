@@ -347,15 +347,22 @@ func (n *planNode) declarationsForTheDrive() []core.Declaration {
 	return out
 }
 
-// declaredNames lists the modules this command reached for their declarations
-// alone, in the order it holds them, which is name order.
+// collectedAt lists the modules the given command reached for their
+// declarations alone.
 //
-// It is what the argument-registering code needs to tell an argument that was
-// deliberately kept off the command line from one of a module the command never
-// took in; those two get different diagnoses and different fixes.
-func (n *planNode) declaredNames() []string {
-	out := make([]string, 0, len(n.declaringOnly))
-	for _, d := range n.declaringOnly {
+// It is what the diagnosis of an unknown argument needs to tell an argument
+// that was deliberately kept off this command's command line from one of a
+// module the command never took in; those two get different diagnoses and
+// different fixes. The answer is the command's own: a sibling that collects the
+// module has no bearing on it. A command the library added itself -- help,
+// completion -- was declared by no one and collects nothing.
+func (p *plan) collectedAt(cmd *cobra.Command) []string {
+	node, declared := p.byCommand[cmd]
+	if !declared {
+		return nil
+	}
+	out := make([]string, 0, len(node.declaringOnly))
+	for _, d := range node.declaringOnly {
 		out = append(out, d.name)
 	}
 	return out

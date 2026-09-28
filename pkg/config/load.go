@@ -37,11 +37,12 @@ func Load(ctx context.Context, reg *core.Registry, args []string) (Reader, error
 	for i, m := range modules {
 		participants[i] = m.Name
 	}
-	if err := l.BindLayer(fs, participants, participants, nil); err != nil {
+	if err := l.BindLayer(fs, participants, participants); err != nil {
 		return nil, err
 	}
+	// Every module runs here, so none is collected from alone.
 	if err := fs.Parse(args); err != nil {
-		return nil, l.ClassifyParseError(err)
+		return nil, l.ClassifyParseError(err, nil)
 	}
 
 	if err := l.ReadPrimary(ctx, locate(l.m, environMap(os.Environ()), *locator, fs.Changed(locatorFlag))); err != nil {

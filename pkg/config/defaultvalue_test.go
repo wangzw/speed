@@ -157,7 +157,7 @@ func corpusDefault(t *testing.T, name string) string {
 func helpFlags(t *testing.T, l *loader, module string) *pflag.FlagSet {
 	t.Helper()
 	fs := pflag.NewFlagSet("test", pflag.ContinueOnError)
-	if err := l.BindLayer(fs, []string{module}, []string{module}, nil); err != nil {
+	if err := l.BindLayer(fs, []string{module}, []string{module}); err != nil {
 		t.Fatalf("registering the arguments of %q failed: %v", module, err)
 	}
 	return fs
@@ -469,9 +469,9 @@ func TestHelpDoesNotMarkACollectedModulesArgumentAsRequired(t *testing.T) {
 	}))
 
 	fs := pflag.NewFlagSet("test", pflag.ContinueOnError)
-	// Named as reached for its declarations alone: it contributes the
-	// argument and nothing here runs it.
-	if err := l.BindLayer(fs, []string{"greeter"}, nil, []string{"greeter"}); err != nil {
+	// Named among the modules taking part and not among the ones running:
+	// it contributes the argument and nothing here runs it.
+	if err := l.BindLayer(fs, []string{"greeter"}, nil); err != nil {
 		t.Fatalf("registering the arguments failed: %v", err)
 	}
 	usage := fs.FlagUsages()

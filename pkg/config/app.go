@@ -91,9 +91,12 @@ func (a *App) Execute(ctx context.Context) error {
 	root.SetErr(a.stderr)
 	// A command line the library rejects is classified where its own error
 	// types are still in hand. The seam is the library's own, so nothing
-	// here reads the text of a message that is the library's to reword.
-	root.SetFlagErrorFunc(func(_ *cobra.Command, err error) error {
-		return l.ClassifyParseError(err)
+	// here reads the text of a message that is the library's to reword. The
+	// command it hands over is the one it was parsing, which is the one the
+	// run selected, and what that command took in is what the diagnosis of
+	// an unknown argument is about.
+	root.SetFlagErrorFunc(func(cmd *cobra.Command, err error) error {
+		return l.ClassifyParseError(err, p.collectedAt(cmd))
 	})
 
 	// Every command's arguments are registered before any of them is
@@ -109,7 +112,7 @@ func (a *App) Execute(ctx context.Context) error {
 	// it already take in, so the argument of a module two levels of one
 	// path take in sits on the shallower, and the deeper inherits it.
 	for _, node := range p.allNodes() {
-		if err := l.BindLayer(node.cmd.PersistentFlags(), node.added(), node.participants, node.declaredNames()); err != nil {
+		if err := l.BindLayer(node.cmd.PersistentFlags(), node.added(), node.participants); err != nil {
 			return a.reportEarly(err)
 		}
 	}
