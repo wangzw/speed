@@ -153,12 +153,35 @@ func open(ctx context.Context, cfg *Config) (kv.KV, error) {
 		nc.Close()
 		return nil, fmt.Errorf("%s: opening JetStream: %w", ModuleName, err)
 	}
-	bucket, err := js.CreateOrUpdateKeyValue(ctx, jetstream.KeyValueConfig{Bucket: cfg.Bucket})
+	bucket, err := bindBucket(ctx, js, cfg.Bucket)
 	if err != nil {
 		nc.Close()
 		return nil, fmt.Errorf("%s: opening the bucket %q: %w", ModuleName, cfg.Bucket, err)
 	}
 	return &store{nc: nc, bucket: bucket}, nil
+}
+
+// bindBucket binds to the bucket as it is, and creates it only when it is not
+// there.
+//
+// An existing bucket's configuration is not this module's to set: an operator
+// may have provisioned it with a history, size limits, a description, or — on
+// a cluster — several replicas. Creating or updating it to a configuration
+// naming only the bucket would put all of those back to the defaults, on every
+// replica's every start.
+//
+// Two replicas starting together against a server without the bucket may both
+// try to create it. The one that loses finds the bucket there, and binds to it.
+func bindBucket(ctx context.Context, js jetstream.JetStream, name string) (jetstream.KeyValue, error) {
+	bucket, err := js.KeyValue(ctx, name)
+	if !errors.Is(err, jetstream.ErrBucketNotFound) {
+		return bucket, err
+	}
+	bucket, err = js.CreateKeyValue(ctx, jetstream.KeyValueConfig{Bucket: name})
+	if errors.Is(err, jetstream.ErrBucketExists) {
+		return js.KeyValue(ctx, name)
+	}
+	return bucket, err
 }
 
 // store is the capability over one bucket.

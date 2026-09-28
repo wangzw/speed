@@ -11,6 +11,9 @@ import (
 	"testing"
 	"time"
 
+	"github.com/nats-io/nats.go"
+	"github.com/nats-io/nats.go/jetstream"
+
 	"github.com/vislake/speed/pkg/config"
 	"github.com/vislake/speed/pkg/core"
 	"github.com/vislake/speed/pkg/internal/natstest"
@@ -194,6 +197,59 @@ func TestTheConnectionKeepsReconnectingThroughAnOutage(t *testing.T) {
 	if got := s.nc.Opts.MaxReconnect; got >= 0 {
 		t.Fatalf("the connection gives up after %d reconnect attempts, and stays closed after an outage "+
 			"that outlasts them", got)
+	}
+}
+
+// TestAnExistingBucketKeepsItsConfiguration covers a bucket an operator
+// provisioned: its history, its size limits, its description, and on a cluster
+// its replica count. Opening binds to it as it is. Creating or updating it to a
+// configuration naming only the bucket would put every one of those back to
+// the default, on every replica's every start — dropping the high availability
+// the operator configured, with no sign anywhere that it had.
+func TestAnExistingBucketKeepsItsConfiguration(t *testing.T) {
+	url := natstest.URL(t)
+	ctx := context.Background()
+	bucket := bucketName()
+	want := jetstream.KeyValueConfig{
+		Bucket:       bucket,
+		Description:  "provisioned by the operator",
+		History:      5,
+		MaxBytes:     10 << 20,
+		MaxValueSize: 4096,
+	}
+	nc, err := nats.Connect(url)
+	if err != nil {
+		t.Fatalf("connecting: %v", err)
+	}
+	t.Cleanup(nc.Close)
+	js, err := jetstream.New(nc)
+	if err != nil {
+		t.Fatalf("opening JetStream: %v", err)
+	}
+	if _, createErr := js.CreateKeyValue(ctx, want); createErr != nil {
+		t.Fatalf("provisioning the bucket: %v", createErr)
+	}
+
+	opened, err := open(ctx, &Config{URL: url, Bucket: bucket, Timeout: 10 * time.Second})
+	if err != nil {
+		t.Fatalf("open over a provisioned bucket: %v", err)
+	}
+	t.Cleanup(func() { _ = opened.(*store).Close(ctx) })
+
+	kv, err := js.KeyValue(ctx, bucket)
+	if err != nil {
+		t.Fatalf("binding to the bucket: %v", err)
+	}
+	status, err := kv.Status(ctx)
+	if err != nil {
+		t.Fatalf("reading the bucket's status: %v", err)
+	}
+	got := status.(*jetstream.KeyValueBucketStatus).Config()
+	if got.Description != want.Description || got.History != want.History ||
+		got.MaxBytes != want.MaxBytes || got.MaxValueSize != want.MaxValueSize {
+		t.Fatalf("opening rewrote the bucket's configuration: description %q, history %d, max bytes %d, "+
+			"max value size %d; the operator set %q, %d, %d, %d", got.Description, got.History, got.MaxBytes,
+			got.MaxValueSize, want.Description, want.History, want.MaxBytes, want.MaxValueSize)
 	}
 }
 
