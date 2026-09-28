@@ -41,7 +41,9 @@ const (
 	// kindText is a type that decodes itself from text, such as time.Time,
 	// net.IP or netip.Addr. It is a leaf rather than a level of the path:
 	// expanding such a type would walk into unexported fields and make the
-	// item disappear.
+	// item disappear. A declaration of one is usable only when the type also
+	// encodes itself back to text, which is what a write stores; one that
+	// decodes and cannot encode is refused as a declaration defect.
 	//
 	// A type with a binary form only is not one of them. url.URL implements
 	// UnmarshalBinary and no UnmarshalText, so it is expanded field by field
@@ -268,6 +270,12 @@ func (e *expander) leaf(key string, fv reflect.Value, ft reflect.Type) error {
 			"a string item instead",
 			ErrInvalidDeclaration, e.module, key, typeName(ft))
 	}
+	if kind == kindText && !encodesToText(ft) {
+		return fmt.Errorf("%w: module %q declares %q as %s, which decodes itself from text and "+
+			"has no MarshalText to write itself back, so no write of the key could store it. "+
+			"Give the type a MarshalText, or declare the item as the string it is written as",
+			ErrInvalidDeclaration, e.module, key, typeName(ft))
+	}
 	if e.keys[key] {
 		// Two mounts of one declaration reaching one key: no second party is
 		// involved, and this declaration alone is enough to judge it unusable.
@@ -277,15 +285,59 @@ func (e *expander) leaf(key string, fv reflect.Value, ft reflect.Type) error {
 			ErrInvalidDeclaration, e.module, key)
 	}
 	e.keys[key] = true
-	e.entries = append(e.entries, keyEntry{
+	entry := keyEntry{
 		key:    joinPath(e.schema.Namespace, key),
 		module: e.module,
 		typ:    ft,
 		kind:   kind,
 		def:    defaultValue(fv),
 		item:   e.schema.Items[key],
-	})
+	}
+	if _, err := defaultText(entry); err != nil {
+		return fmt.Errorf("%w: module %q declares %q: %w", ErrInvalidDeclaration, e.module, key, err)
+	}
+	e.entries = append(e.entries, entry)
 	return nil
+}
+
+// defaultText writes a declared default in the declared type's own text form,
+// the text a row holding that value would carry, and checks that the text
+// reads back.
+//
+// A default either of those fails for is the declaration's own defect: the
+// type set is closed so that every declared value round-trips through text,
+// and a default that does not is one no write could restore once a row has
+// replaced it. The scalar kinds cannot fail here, since strconv and
+// time.ParseDuration read back what their formatters write; a type that
+// carries its own text form can, through its own MarshalText or
+// UnmarshalText. A sensitive item's text and cause are withheld, since a
+// type's error may quote the value.
+func defaultText(entry keyEntry) (string, error) {
+	text, err := textOf(entry, reflect.ValueOf(entry.def))
+	if err != nil {
+		if entry.item.Sensitive {
+			return "", fmt.Errorf("its default does not encode to text as %s. The cause is "+
+				"withheld: the item is marked sensitive", typeName(entry.typ))
+		}
+		return "", fmt.Errorf("its default does not encode to text as %s: %w", typeName(entry.typ), err)
+	}
+	if entry.kind != kindText {
+		return text, nil
+	}
+	decoder, ok := reflect.New(entry.typ).Interface().(encoding.TextUnmarshaler)
+	if !ok {
+		// Unreachable: a type is kindText because it decodes itself from text.
+		return "", fmt.Errorf("%s does not decode itself from text", typeName(entry.typ))
+	}
+	if err := decoder.UnmarshalText([]byte(text)); err != nil {
+		if entry.item.Sensitive {
+			return "", fmt.Errorf("its default encodes to a text %s does not read back. The "+
+				"text and the cause are withheld: the item is marked sensitive", typeName(entry.typ))
+		}
+		return "", fmt.Errorf("its default encodes to %q, which %s does not read back: %w",
+			text, typeName(entry.typ), err)
+	}
+	return text, nil
 }
 
 // checkItemKeys refuses an Items key that reached no leaf. Every item lives in
@@ -517,6 +569,9 @@ func typeName(t reflect.Type) string {
 // textUnmarshalerType is the interface a type uses to decode itself from text.
 var textUnmarshalerType = reflect.TypeFor[encoding.TextUnmarshaler]()
 
+// textMarshalerType is the interface a type uses to encode itself to text.
+var textMarshalerType = reflect.TypeFor[encoding.TextMarshaler]()
+
 // durationType is the type Duration text is held to.
 var durationType = reflect.TypeFor[time.Duration]()
 
@@ -528,4 +583,12 @@ func decodesFromText(t reflect.Type) bool {
 		return true
 	}
 	return t.Kind() != reflect.Pointer && reflect.PointerTo(t).Implements(textUnmarshalerType)
+}
+
+// encodesToText reports whether a type writes itself to text, on either
+// receiver: math/big.Int declares MarshalText on its pointer. It is the other
+// half of what a type that carries its own text form needs here, since a row
+// is written by it and read back by decodesFromText's half.
+func encodesToText(t reflect.Type) bool {
+	return t.Implements(textMarshalerType) || reflect.PointerTo(t).Implements(textMarshalerType)
 }

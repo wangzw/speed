@@ -29,6 +29,19 @@ func encodeValue(entry keyEntry, value any) (string, error) {
 	if err != nil {
 		return "", err
 	}
+	text, err := textOf(entry, rv)
+	if err != nil {
+		return "", fmt.Errorf("%w: key %q as %s: %w",
+			ErrTypeMismatch, entry.key, typeName(entry.typ), err)
+	}
+	return text, nil
+}
+
+// textOf writes a value of the declared type in that type's own text form,
+// which is what a row holds and what decodeValue reads back. It is the one
+// place the text form is decided, for a write and for a declared default
+// alike.
+func textOf(entry keyEntry, rv reflect.Value) (string, error) {
 	switch entry.kind {
 	case kindString:
 		return rv.String(), nil
@@ -48,24 +61,36 @@ func encodeValue(entry keyEntry, value any) (string, error) {
 		// everywhere else in this repository.
 		return time.Duration(rv.Int()).String(), nil
 	case kindText:
-		marshaler, ok := rv.Interface().(encoding.TextMarshaler)
-		if !ok {
-			return "", fmt.Errorf("%w: key %q is declared as %s, which decodes itself from "+
-				"text but cannot encode itself back to it: give the type a MarshalText, or "+
-				"declare the item as the string it is written as",
-				ErrTypeMismatch, entry.key, typeName(entry.typ))
-		}
-		text, err := marshaler.MarshalText()
-		if err != nil {
-			return "", fmt.Errorf("%w: key %q as %s: %w",
-				ErrTypeMismatch, entry.key, typeName(entry.typ), err)
-		}
-		return string(text), nil
+		return marshalText(entry.typ, rv)
 	}
 	// Unreachable: classifyLeaf admits only the kinds above, and a declaration
 	// failing it never reaches the table.
-	return "", fmt.Errorf("%w: key %q has an unencodable declared type %s",
-		ErrTypeMismatch, entry.key, typeName(entry.typ))
+	return "", fmt.Errorf("the declared type %s has no text form", typeName(entry.typ))
+}
+
+// marshalText writes a value that carries its own text form through its
+// MarshalText.
+//
+// The value is first copied into an addressable value of the declared type,
+// for two reasons. MarshalText may be declared on the pointer — math/big.Int
+// declares it there — and a value's own method set lacks the methods of its
+// pointer; and a value that coerce passed because it is assignable to the
+// declared type may be of an unnamed type that has no methods at all, where
+// what is written is the declared type's text.
+func marshalText(declared reflect.Type, rv reflect.Value) (string, error) {
+	held := reflect.New(declared)
+	held.Elem().Set(rv)
+	marshaler, ok := held.Interface().(encoding.TextMarshaler)
+	if !ok {
+		// Unreachable: a declaration whose type has no MarshalText on either
+		// receiver is refused when the key table is built.
+		return "", fmt.Errorf("%s has no MarshalText", typeName(declared))
+	}
+	text, err := marshaler.MarshalText()
+	if err != nil {
+		return "", err
+	}
+	return string(text), nil
 }
 
 // coerce holds a written value to the declared type.

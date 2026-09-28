@@ -62,7 +62,11 @@ here must not cross, and how to run it.
   exported that could be reused, so the rules live in two places and a change
   to either one has to be made in both. The two differ in what a leaf may be:
   configuration accepts containers and pointers to scalars, this module's type
-  set is closed and does not.
+  set is closed and does not. Configuration only ever decodes, so a type that
+  decodes itself from text is a leaf there; here it is usable only when it also
+  encodes itself back, because a row is the text the declared type writes, and
+  `leaf` refuses one that cannot, together with a default that does not
+  survive the round trip.
 - **The write discipline is a second statement of configuration's value
   discipline, and it has to stay one.** `coerce` takes what a configuration
   source would give for the same item — duration text and never a bare number,
