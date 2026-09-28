@@ -140,7 +140,15 @@ func open(ctx context.Context, cfg *Config) (kv.KV, error) {
 	if err != nil {
 		return nil, fmt.Errorf("%s: connecting: %w", ModuleName, err)
 	}
-	js, err := jetstream.New(nc)
+	// The timeout bounds every JetStream request whose context carries no
+	// deadline of its own. Without it the library's own five seconds applies
+	// whatever the configuration says, and the item would bound the connect
+	// alone.
+	var jsOpts []jetstream.JetStreamOpt
+	if cfg.Timeout > 0 {
+		jsOpts = append(jsOpts, jetstream.WithDefaultTimeout(cfg.Timeout))
+	}
+	js, err := jetstream.New(nc, jsOpts...)
 	if err != nil {
 		nc.Close()
 		return nil, fmt.Errorf("%s: opening JetStream: %w", ModuleName, err)

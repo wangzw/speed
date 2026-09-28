@@ -197,6 +197,34 @@ func TestTheConnectionKeepsReconnectingThroughAnOutage(t *testing.T) {
 	}
 }
 
+// TestTheTimeoutBoundsAnOperation pins what the timeout item says it does: it
+// bounds connecting and one operation. An operation whose context carries no
+// deadline of its own is bounded by it, so a server that stops answering fails
+// the operation after the configured time, not after the client library's own
+// default of five seconds.
+func TestTheTimeoutBoundsAnOperation(t *testing.T) {
+	proxy := startStallingProxy(t, hostPort(natstest.URL(t)))
+	const timeout = 500 * time.Millisecond
+	opened, err := open(context.Background(), &Config{URL: proxy.url(), Bucket: bucketName(), Timeout: timeout})
+	if err != nil {
+		t.Fatalf("open: %v", err)
+	}
+	s := opened.(*store)
+	t.Cleanup(func() { _ = s.Close(context.Background()) })
+
+	proxy.stalled.Store(true)
+	started := time.Now()
+	_, _, err = s.Get(context.Background(), "k")
+	elapsed := time.Since(started)
+	proxy.stalled.Store(false)
+	if err == nil {
+		t.Fatal("a Get the server never answered succeeded")
+	}
+	if elapsed > 4*timeout {
+		t.Fatalf("a Get the server never answered took %s to fail, with a timeout of %s", elapsed, timeout)
+	}
+}
+
 // TestTwoStoresOnOneBucketShareTheSameEntries is what this backend is for.
 func TestTwoStoresOnOneBucketShareTheSameEntries(t *testing.T) {
 	url := natstest.URL(t)
