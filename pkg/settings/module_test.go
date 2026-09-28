@@ -196,6 +196,73 @@ func TestAStoreThatHasNotLoadedRefusesAReadNamingTheKey(t *testing.T) {
 	}
 }
 
+// eventsOnly is the configuration a host that relies on change events alone
+// supplies: the periodic refresh is off.
+type eventsOnly struct{}
+
+func (eventsOnly) Decode(namespace string, target any) error {
+	if cfg, ok := target.(*moduleConfig); ok && namespace == ConfigNamespace {
+		cfg.RefreshInterval = 0
+	}
+	return nil
+}
+
+// A change made between this module's Init and its Start is served once the
+// module has started, even though no event for it ever arrives.
+//
+// A transport bus creates its consumers when it starts, and hands them only
+// what is published from then on, while this module loads its snapshot in
+// Init, before any Start. A change another replica published in between is
+// therefore delivered to nobody here, and with the refresh off this replica
+// would serve the value from before it until a restart. This module requires
+// the bus, so it starts after it: a load at its own Start sees everything
+// written before the consumers existed.
+func TestAChangeBeforeTheBusStartsIsNotLost(t *testing.T) {
+	handle := open(t)
+	reg := core.New()
+	reg.Supply((*config.Reader)(nil), eventsOnly{})
+	reg.Register(providingDB(handle))
+	// The recording bus delivers nothing unless a case drives it, which is
+	// what a transport bus does with an event published before it started.
+	reg.Register(providingBus(newRecordingBus()))
+	reg.Register(declarerNamed("test.declarer", demoNamespace))
+	reg.Register(Module())
+	// Initialised after this module, and before any module starts: the row it
+	// writes is the one another replica writes in that window.
+	reg.Register(core.Module{
+		Name:     "test.other-replica",
+		Requires: []core.Requirement{{Token: (*Store)(nil)}},
+		New:      func(context.Context, *core.Registry) (any, error) { return struct{}{}, nil },
+		Init: func(context.Context, *core.Registry, any) error {
+			return handle.Exec("INSERT INTO settings (tenant_id, key, value, version, updated_at) "+
+				"VALUES ('', 'demo.limit', '7', 1, ?)", time.Now().UTC()).Error
+		},
+	})
+
+	var got int
+	var readErr error
+	err := reg.Drive(context.Background(), core.Drive{
+		Depth: core.StageStart,
+		Participants: []string{
+			"test.database", "test.event", "test.declarer", ModuleName, "test.other-replica",
+		},
+		Action: func(_ context.Context, reg *core.Registry) error {
+			store, err := core.Resolve[Store](reg)
+			if err != nil {
+				return err
+			}
+			got, readErr = Get[int](store, Global(), "demo.limit")
+			return nil
+		},
+	})
+	if err != nil {
+		t.Fatalf("driving the lifecycle: %v", err)
+	}
+	if readErr != nil || got != 7 {
+		t.Errorf("after the start the read returned %v (%v), want the 7 written before it", got, readErr)
+	}
+}
+
 // A key's validity follows the binary rather than this run's verdict on its
 // module. The key table is the available set and no consumer point subtracts
 // from it (architecture invariant 15, design-settings.md), so a module that

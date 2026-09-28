@@ -115,10 +115,26 @@ func Module() core.Module {
 			return s.load(ctx)
 		},
 
+		// Start loads the snapshot a second time, then starts the refresh.
+		//
+		// A transport bus creates its consumers at its own Start and hands
+		// them only what is published from then on, while the first load ran
+		// in Init, before any module started. A change another replica
+		// published in between is delivered to nobody here, and with the
+		// refresh off this replica would serve the value from before it until
+		// a restart. This module requires the bus and therefore starts after
+		// it, so a load now covers every change written before the consumers
+		// existed, and the consumers cover every change after. Its failure
+		// stops the process for the reason load gives.
 		Start: func(ctx context.Context, _ *core.Registry, instance any) error {
-			if s, ok := productOf(instance); ok {
-				s.startRefresh(ctx)
+			s, ok := productOf(instance)
+			if !ok {
+				return nil
 			}
+			if err := s.load(ctx); err != nil {
+				return err
+			}
+			s.startRefresh(ctx)
 			return nil
 		},
 
@@ -178,11 +194,13 @@ func (s *settingsStore) subscribe() {
 
 // load replaces the snapshot and reports why it could not.
 //
-// This is the one load whose failure stops the process. A snapshot that could
-// not be read at startup means every read would answer from defaults while the
-// database may hold something else, and a module that serves defaults it
-// cannot vouch for is worse than one that refuses to start. Later loads — a
-// write, a delivered event, the ticker — keep the previous snapshot instead.
+// The two startup loads, in Init and in Start, are the ones whose failure
+// stops the process. A snapshot that could not be read at startup means every
+// read would answer from defaults, or from a state that may have missed a
+// change no event will bring, while the database holds something else, and a
+// module serving values it cannot vouch for is worse than one that refuses to
+// start. Later loads — a write, a delivered event, the ticker — keep the
+// previous snapshot instead.
 func (s *settingsStore) load(ctx context.Context) error {
 	_, err := s.swap(ctx)
 	return err
