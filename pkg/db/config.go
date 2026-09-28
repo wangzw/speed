@@ -49,7 +49,8 @@ type Config struct {
 	// An absent key is not a startup failure: which models carry encrypted
 	// fields is not known until GORM parses them, which happens on first use,
 	// long after startup. Encryption and decryption then fail on the
-	// statement that reached one.
+	// statement that reached one. A present key shorter than 14 bytes, or one
+	// of whitespace only, fails the assembly.
 	EncryptionKey string `config:"encryption-key"`
 	// EncryptionRetiredKeys are root keys that are no longer written with but
 	// still decrypt what they wrote. Marked sensitive.
@@ -155,7 +156,8 @@ func (s Spec) schema() config.Schema {
 		encryptionKeyKey: {
 			Sensitive: true,
 			Description: "the root key the field encryption and blind index subkeys are derived " +
-				"from; without it every encrypted field fails on use rather than at startup",
+				"from, at least 14 bytes long; without it every encrypted field fails on use rather " +
+				"than at startup",
 		},
 		encryptionRetiredKeysKey: {
 			Sensitive: true,

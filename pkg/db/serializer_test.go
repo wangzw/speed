@@ -426,6 +426,55 @@ func TestABlankRootKeyFailsTheAssembly(t *testing.T) {
 	}
 }
 
+// TestAShortRootKeyFailsTheAssembly pins the floor under the current root key:
+// shorter than 112 bits, the key every column is sealed under from now on can
+// be found by trying them all, while every write reports success. The assembly
+// refuses it naming the item, and accepts a key at the floor. A retired key
+// below it still opens what it sealed, because refusing it would strand the
+// rows of a deployment moving off such a key.
+func TestAShortRootKeyFailsTheAssembly(t *testing.T) {
+	for _, key := range []string{"k", "thirteen-byte"} {
+		spec := sqliteSpec()
+		body := sectionBody(encryptedDSN(t), `"encryption-key":"`+key+`"`)
+		product, err := spec.newDatabase(t.Context(), readerFor(t, spec, body), nil)
+		if err == nil {
+			_ = Close(product.DB())
+			t.Errorf("an assembly over %s went ahead, sealing under a %d-byte root key", body, len(key))
+			continue
+		}
+		if !strings.Contains(err.Error(), sqliteNamespace+"."+encryptionKeyKey) {
+			t.Errorf("the refusal of %s does not name %s.%s: %v", body, sqliteNamespace, encryptionKeyKey, err)
+		}
+	}
+
+	floor := assembleEncrypted(t, encryptedDSN(t), `"encryption-key":"fourteen-bytes"`)
+	createEncryptedTable(t, floor)
+	atFloor := encryptedModel{Email: "sealed-at-the-floor@example.com"}
+	if err := floor.DB().Create(&atFloor).Error; err != nil {
+		t.Fatalf("writing under a key at the floor: %v", err)
+	}
+
+	const weakKey, plaintext = "weak", "sealed-under-a-weak-key@example.com"
+	weak, err := deriveKeySet(weakKey)
+	if err != nil {
+		t.Fatalf("deriving the weak key's subkeys: %v", err)
+	}
+	sealedUnderWeak := (&keyRing{current: weak}).encrypt([]byte(plaintext))
+	rotated := assembleEncrypted(t, encryptedDSN(t), encryptedRootKeyItem,
+		`"encryption-retired-keys":["`+weakKey+`"]`)
+	createEncryptedTable(t, rotated)
+	if err := rotated.DB().Exec("INSERT INTO encrypted_models (id, email) VALUES (1, ?)", sealedUnderWeak).Error; err != nil {
+		t.Fatalf("storing a row sealed under the weak key: %v", err)
+	}
+	var read encryptedModel
+	if err := rotated.DB().First(&read, 1).Error; err != nil {
+		t.Fatalf("reading a row sealed under a short retired key: %v", err)
+	}
+	if read.Email != plaintext {
+		t.Errorf("a row sealed under a short retired key reads %q, want %q", read.Email, plaintext)
+	}
+}
+
 // TestKeyInjectionIsRegisteredOnTheDeliveredHandle pins the assembly's timing
 // from the handle itself.
 //

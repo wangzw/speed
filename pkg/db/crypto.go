@@ -26,6 +26,12 @@ const (
 	blindIndexPurpose = "speed/db/blind-index"
 )
 
+// minimumRootKeyBytes is the shortest current root key an assembly accepts:
+// 112 bits, the security strength NIST SP 800-131A sets as the floor and the
+// length hkdf.Key already demands of its secret in FIPS 140-only mode. Holding
+// every mode to it means a key that starts in one mode starts in the other.
+const minimumRootKeyBytes = 112 / 8
+
 // subkeyLength is how long each subkey is. It is the width AES-256 takes; for
 // HMAC-SHA256 it is the natural key width, and any key at or below the hash's
 // block length is used as it is.
@@ -63,13 +69,16 @@ type keyRing struct {
 // ever open, and writes them without an error anywhere near.
 //
 // A root key that cannot be used fails the assembly instead, and so does one
-// that is nothing but whitespace. A key shorter than 112 bits cannot be derived
-// in a program running in FIPS 140-only mode, and an operator has two actions
-// available for it — configure a longer key, or stop enforcing that mode —
-// where a startup that went ahead would have encryption that quietly does
-// nothing. A key of whitespace derives, and is the key a template that
-// expanded to nothing leaves behind: everything sealed under it opens for
-// anyone who guesses it, while every write reports success.
+// that is nothing but whitespace, and a current key shorter than
+// minimumRootKeyBytes. A key of whitespace derives, and is the key a template
+// that expanded to nothing leaves behind; a short one derives too, and can be
+// found by trying every key of its length. Either way everything sealed under
+// it opens for anyone who guesses it, while every write reports success. The
+// floor binds the current key only: a retired key opens and never seals, and
+// refusing a short one would strand the rows of a deployment moving off it.
+// In a program running in FIPS 140-only mode hkdf.Key refuses a short retired
+// key all the same, and that refusal fails the assembly naming the item rather
+// than leaving the rows it sealed to fail one by one.
 //
 // A key is otherwise used byte for byte, surrounding whitespace included.
 // Trimming it would change the subkeys of every deployment whose key has a
@@ -84,6 +93,13 @@ func newKeyRing(namespace string, cfg Config) (*keyRing, error) {
 		return nil, fmt.Errorf("db: %s.%s holds nothing but whitespace, which anyone can guess and "+
 			"which seals nothing: set a real root key, or leave the item out",
 			namespace, encryptionKeyKey)
+	}
+	if len(cfg.EncryptionKey) < minimumRootKeyBytes {
+		return nil, fmt.Errorf("db: %s.%s is %d bytes long, and a root key shorter than %d bytes "+
+			"(%d bits) can be found by trying every key of its length: set a longer one, and list "+
+			"this one under %s so the rows it sealed stay readable",
+			namespace, encryptionKeyKey, len(cfg.EncryptionKey), minimumRootKeyBytes,
+			minimumRootKeyBytes*8, encryptionRetiredKeysKey)
 	}
 	current, err := deriveKeySet(cfg.EncryptionKey)
 	if err != nil {
