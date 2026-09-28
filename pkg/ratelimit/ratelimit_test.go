@@ -589,7 +589,9 @@ func TestDecideReportsNothingForACancelledContext(t *testing.T) {
 		l.store = &fakeStore{values: map[string]any{windowPath: time.Minute, limitPath: 10}}
 		l.signal = newSignalTo(&out)
 
-		d := l.decide(newRecorder(), newRequest(), next, authn.Identity{}, true)
+		ctx, cancel := context.WithCancel(context.Background())
+		cancel()
+		d := l.decide(newRecorder(), newRequest().WithContext(ctx), next, authn.Identity{}, true)
 		l.signal.settle(d)
 
 		if d.tripped != "" {

@@ -2,7 +2,6 @@ package ratelimit
 
 import (
 	"context"
-	"errors"
 	"fmt"
 	"math"
 	nethttp "net/http"
@@ -246,7 +245,7 @@ func (l *limiter) count(ctx context.Context, subject, tenantSegment string, wind
 	weight := float64(width-elapsed) / float64(width)
 
 	previous, present, err := l.counters.Get(ctx, countKey(tenantSegment, subject, index-1))
-	if err != nil && cancelled(err) {
+	if err != nil && cancelled(ctx) {
 		// The caller's context ended, not the backend: the class is left
 		// alone as well as unreported, so a decision that was cut short
 		// neither writes a line nor clears a failure it never observed.
@@ -277,7 +276,7 @@ func (l *limiter) count(ctx context.Context, subject, tenantSegment string, wind
 	// made its first request at the start of a window, and the weighted term
 	// would collapse to nothing.
 	current, err := l.counters.IncrByFloatWithTTL(ctx, countKey(tenantSegment, subject, index), 1, 2*window)
-	if err != nil && cancelled(err) {
+	if err != nil && cancelled(ctx) {
 		return true, 0
 	}
 	d.evaluated = append(d.evaluated, reasonCounterIncrement)
@@ -290,17 +289,22 @@ func (l *limiter) count(ctx context.Context, subject, tenantSegment string, wind
 	return estimate <= float64(limit), retryAfterSeconds(width - elapsed)
 }
 
-// cancelled reports whether err is the caller's context ending rather than a
-// failure of the backend.
+// cancelled reports whether a failed call failed because the request's own
+// context ended, rather than because the backend failed.
 //
 // A cancellation belongs to the caller — a client disconnect, a request
 // deadline — not to the counting backend. Folding it into a counter class
 // would make one disconnect write a failure line and raise that class's shared
-// flag, so the next real backend failure would write nothing. The primitives
-// honour a cancelled context by returning its error, which is what makes the
-// two distinguishable here.
-func cancelled(err error) bool {
-	return errors.Is(err, context.Canceled) || errors.Is(err, context.DeadlineExceeded)
+// flag, so the next real backend failure would write nothing.
+//
+// The request's context is asked, not the error. A backend client that bounds
+// a call with a timeout of its own answers with context.DeadlineExceeded while
+// the request is still live, and one that loses its connection may answer with
+// context.Canceled; read off the error, either would pass for the caller's
+// cancellation, and an unreachable backend would let every request through
+// with no line written at all.
+func cancelled(ctx context.Context) bool {
+	return ctx.Err() != nil
 }
 
 // retryAfterSeconds rounds the remaining part of the window up.
