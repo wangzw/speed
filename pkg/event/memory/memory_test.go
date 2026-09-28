@@ -27,12 +27,12 @@ func openBus(t *testing.T) event.Bus {
 // TestConforms runs the shared contract. Every implementation of the capability
 // runs this same suite.
 func TestConforms(t *testing.T) {
-	bussuite.AssertConforms(t, func(t *testing.T) (event.Bus, func()) {
+	bussuite.AssertConforms(t, func(t *testing.T) (event.Bus, func(context.Context)) {
 		b := openBus(t)
 		// This bus delivers in-process, so putting it into service is only the
 		// freeze the drive performs at its start stage.
-		return b, func() {
-			if err := start(context.Background(), b); err != nil {
+		return b, func(ctx context.Context) {
+			if err := start(ctx, b); err != nil {
 				t.Fatalf("start: %v", err)
 			}
 		}

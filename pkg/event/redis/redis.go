@@ -25,9 +25,7 @@ import (
 	"errors"
 	"fmt"
 	"log/slog"
-	"slices"
 	"strings"
-	"sync"
 	"time"
 
 	goredis "github.com/redis/go-redis/v9"
@@ -35,6 +33,7 @@ import (
 	"github.com/vislake/speed/pkg/config"
 	"github.com/vislake/speed/pkg/core"
 	"github.com/vislake/speed/pkg/event"
+	"github.com/vislake/speed/pkg/event/internal/dispatch"
 	"github.com/vislake/speed/pkg/event/internal/replica"
 	"github.com/vislake/speed/pkg/internal/redis"
 )
@@ -161,11 +160,12 @@ func open(ctx context.Context, cfg *Config, logger *slog.Logger) (event.Bus, err
 		group:      group,
 		consumer:   defaultConsumerName(),
 		maxEntries: maxEntries,
-		handlers:   make(map[string][]event.Handler),
+		table:      dispatch.New("event/redis", logger),
 	}, nil
 }
 
-// start freezes the subscription table and begins reading.
+// start freezes the subscription table, opens the bus to publishing, and
+// begins reading.
 //
 // The readers start here rather than in Subscribe because the table is not
 // complete until every module has had its Init: a reader started on the first
@@ -186,31 +186,14 @@ type bus struct {
 	consumer   string
 	maxEntries int64
 
-	mu       sync.Mutex
-	handlers map[string][]event.Handler
-	frozen   bool
-	closed   bool
-
-	readCtx context.Context
-	cancel  context.CancelFunc
-	readers sync.WaitGroup
+	// table holds the subscriptions, the stage, and the readers' lifetime.
+	table *dispatch.Table
 }
 
-// Subscribe registers a handler for one event type.
-//
-// It panics once the table is frozen, on the same reasoning the process-local
-// implementation gives: a subscription arriving after the readers started would
-// miss everything already delivered and nothing would say so.
-func (b *bus) Subscribe(eventType string, h event.Handler) {
-	b.mu.Lock()
-	defer b.mu.Unlock()
-	if b.frozen {
-		panic(fmt.Sprintf("event/redis: Subscribe(%q) arrived after the readers started at the "+
-			"start stage; a subscription registered later would miss everything already "+
-			"delivered", eventType))
-	}
-	b.handlers[eventType] = append(b.handlers[eventType], h)
-}
+// Subscribe registers a handler for one event type. It panics once the
+// readers have started at the start stage: a subscription registered later
+// would miss everything already delivered.
+func (b *bus) Subscribe(eventType string, h event.Handler) { b.table.Subscribe(eventType, h) }
 
 // Publish appends the event to its stream, which every replica's group reads.
 //
@@ -223,11 +206,8 @@ func (b *bus) Publish(ctx context.Context, evt event.Event) error {
 		return fmt.Errorf("%s: event %q carries a payload that cannot be serialized: %w",
 			ModuleName, evt.Type, err)
 	}
-	b.mu.Lock()
-	closed := b.closed
-	b.mu.Unlock()
-	if closed {
-		return event.ErrClosed
+	if stageErr := b.table.Accepting(); stageErr != nil {
+		return stageErr
 	}
 	return b.client.XAdd(ctx, &goredis.XAddArgs{
 		Stream: streamKey(evt.Type),
@@ -241,54 +221,50 @@ func (b *bus) Publish(ctx context.Context, evt event.Event) error {
 	}).Err()
 }
 
-// Close stops the readers and releases the client.
+// Stop is the stop stage: publishing is refused, the readers take nothing more
+// from their streams, and what they had already taken is delivered and
+// acknowledged within the table's grace.
+func (b *bus) Stop(_ context.Context) error { return b.table.Stop() }
+
+// Close stops the bus if the stop stage has not, and releases the client.
 func (b *bus) Close(_ context.Context) error {
-	b.mu.Lock()
-	b.closed = true
-	cancel := b.cancel
-	b.mu.Unlock()
-	if cancel != nil {
-		cancel()
-	}
-	b.readers.Wait()
-	return b.client.Close()
+	stopErr := b.table.Close()
+	return errors.Join(stopErr, b.client.Close())
 }
 
 // begin freezes the table and starts one reader per subscribed type.
 func (b *bus) begin(ctx context.Context) error {
-	b.mu.Lock()
-	defer b.mu.Unlock()
-	if b.frozen {
+	types, first := b.table.Freeze(ctx)
+	if !first {
 		return nil
 	}
-	b.frozen = true
-	b.readCtx, b.cancel = context.WithCancel(ctx)
-
-	types := make([]string, 0, len(b.handlers))
-	for eventType := range b.handlers {
-		types = append(types, eventType)
-	}
-	slices.Sort(types)
 	for _, eventType := range types {
-		stream := streamKey(eventType)
 		// MkStream creates the stream when it does not exist yet, so a
 		// subscriber for a type nobody has published can still be read from
 		// once someone does.
-		if err := b.client.XGroupCreateMkStream(ctx, stream, b.group, newGroupStart).Err(); err != nil &&
+		if err := b.client.XGroupCreateMkStream(ctx, streamKey(eventType), b.group, newGroupStart).Err(); err != nil &&
 			!strings.Contains(err.Error(), "BUSYGROUP") {
 			return fmt.Errorf("%s: creating the consumer group for %q: %w", ModuleName, eventType, err)
 		}
-		b.readers.Add(1)
-		go b.read(stream, eventType)
+	}
+	for _, eventType := range types {
+		b.table.Go(func(reading, handling context.Context) {
+			b.read(reading, handling, streamKey(eventType), eventType)
+		})
 	}
 	return nil
 }
 
-// read delivers what its stream hands this instance.
-func (b *bus) read(stream, eventType string) {
-	defer b.readers.Done()
+// read delivers what its stream hands this instance, until the stop stage.
+//
+// A read that returns entries is delivered in full even when the stop stage
+// began while it was blocked: the entries are this consumer's from the moment
+// the read returned them, and nothing in this implementation claims an entry
+// back from a consumer, so one left unacknowledged here would be delivered by
+// no one.
+func (b *bus) read(reading, handling context.Context, stream, eventType string) {
 	for {
-		res, err := b.client.XReadGroup(b.readCtx, &goredis.XReadGroupArgs{
+		res, err := b.client.XReadGroup(reading, &goredis.XReadGroupArgs{
 			Group:    b.group,
 			Consumer: b.consumer,
 			Streams:  []string{stream, ">"},
@@ -296,7 +272,7 @@ func (b *bus) read(stream, eventType string) {
 			Block:    readBlock,
 		}).Result()
 		if err != nil {
-			if b.readCtx.Err() != nil {
+			if reading.Err() != nil {
 				return
 			}
 			if errors.Is(err, goredis.Nil) {
@@ -310,8 +286,8 @@ func (b *bus) read(stream, eventType string) {
 				// process's life. The create is idempotent (it answers
 				// BUSYGROUP when the group is already there), which is what
 				// makes rerunning it here safe.
-				if createErr := b.client.XGroupCreateMkStream(b.readCtx, stream, b.group, newGroupStart).Err(); createErr != nil &&
-					!strings.Contains(createErr.Error(), "BUSYGROUP") {
+				if createErr := b.client.XGroupCreateMkStream(reading, stream, b.group, newGroupStart).Err(); createErr != nil &&
+					!strings.Contains(createErr.Error(), "BUSYGROUP") && reading.Err() == nil {
 					b.logger.Error("event/redis: recreating the consumer group failed",
 						"event", eventType, "err", createErr)
 				}
@@ -319,7 +295,7 @@ func (b *bus) read(stream, eventType string) {
 			b.logger.Error("event/redis: reading the stream failed; retrying",
 				"event", eventType, "err", err)
 			select {
-			case <-b.readCtx.Done():
+			case <-reading.Done():
 				return
 			case <-time.After(readBlock):
 			}
@@ -327,60 +303,26 @@ func (b *bus) read(stream, eventType string) {
 		}
 		for _, s := range res {
 			for _, msg := range s.Messages {
-				if !b.deliver(eventType, msg) {
-					// The bus is closing. Leaving the entry pending is what has
-					// it delivered to whoever runs next; acknowledging it here
-					// would mark as consumed something no subscriber ever saw.
+				if handling.Err() != nil {
+					// The stop stage's grace ran out. What is left of this
+					// read stays pending in this replica's group, delivered
+					// by no one.
 					return
 				}
+				b.table.Deliver(handling, decode(eventType, msg.Values))
 				// Acknowledged whatever the handlers returned: the entry has
-				// been handed over, and a pending entry would be redelivered
-				// forever with nobody left to tell.
-				if err := b.client.XAck(b.readCtx, stream, b.group, msg.ID).Err(); err != nil &&
-					b.readCtx.Err() == nil {
+				// been handed over, and a pending entry would never be
+				// delivered again with nobody left to tell. The context is the
+				// handlers', which the stop stage leaves live, so an entry
+				// delivered while the bus is stopping is acknowledged too.
+				if err := b.client.XAck(handling, stream, b.group, msg.ID).Err(); err != nil &&
+					handling.Err() == nil {
 					b.logger.Error("event/redis: acknowledging a delivered entry failed",
 						"event", eventType, "id", msg.ID, "err", err)
 				}
 			}
 		}
 	}
-}
-
-// deliver runs this instance's handlers for one entry, and reports whether it
-// ran them. A false answer is what keeps a reader from acknowledging an entry
-// it did not hand over.
-func (b *bus) deliver(eventType string, msg goredis.XMessage) bool {
-	b.mu.Lock()
-	if b.closed {
-		b.mu.Unlock()
-		return false
-	}
-	handlers := slices.Clone(b.handlers[eventType])
-	b.mu.Unlock()
-
-	evt := decode(eventType, msg.Values)
-	for i, h := range handlers {
-		if err := b.runHandler(h, evt); err != nil {
-			b.logger.Error("event/redis: a subscriber failed; the publisher is not told",
-				"event", eventType, "handler", i, "err", err)
-		}
-	}
-	return true
-}
-
-// runHandler isolates one handler from the reader goroutine that runs it.
-//
-// A panic here would take the reader down with it, and the reader is what
-// delivers every later event of this type for the rest of the process's life.
-// The capability says nothing about panics; this implementation's answer is to
-// report one and keep reading.
-func (b *bus) runHandler(h event.Handler, evt event.Event) (err error) {
-	defer func() {
-		if r := recover(); r != nil {
-			err = fmt.Errorf("the handler panicked: %v", r)
-		}
-	}()
-	return h(b.readCtx, evt)
 }
 
 // The entry field names, in one place because the writer and the reader have to

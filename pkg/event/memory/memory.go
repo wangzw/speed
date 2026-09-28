@@ -33,12 +33,11 @@ import (
 	"encoding/json"
 	"fmt"
 	"log/slog"
-	"slices"
-	"sync"
 
 	"github.com/vislake/speed/pkg/config"
 	"github.com/vislake/speed/pkg/core"
 	"github.com/vislake/speed/pkg/event"
+	"github.com/vislake/speed/pkg/event/internal/dispatch"
 )
 
 const (
@@ -118,61 +117,43 @@ func stance(cfg *Config) (core.Enablement, error) {
 
 // open builds the bus.
 func open(_ context.Context, _ *Config, logger *slog.Logger) (event.Bus, error) {
-	return &bus{logger: logger, handlers: make(map[string][]event.Handler)}, nil
+	return &bus{table: dispatch.New("event/memory", logger)}, nil
 }
 
-// start freezes the subscription table.
+// start freezes the subscription table and opens the bus to publishing.
 //
 // The drive calls each module's Init one at a time, so the table is not
 // complete until the stage after them; freezing it there is what turns a
 // subscription registered later into a defect at its call site rather than a
 // subscriber that silently receives nothing published before it.
-func start(_ context.Context, b event.Bus) error {
+func start(ctx context.Context, b event.Bus) error {
 	local, ok := b.(*bus)
 	if !ok {
 		return fmt.Errorf("%s: the bus handed to the start stage is %T, and every constructed module "+
 			"reaches this stage with the capability it delivers", ModuleName, b)
 	}
-	local.freeze()
+	local.table.Freeze(ctx)
 	return nil
 }
 
-// bus is the whole of this implementation's state.
+// bus is the whole of this implementation's state: the subscription table and
+// the stage it is in.
 type bus struct {
-	logger *slog.Logger
-
-	mu       sync.RWMutex
-	handlers map[string][]event.Handler
-	frozen   bool
-	closed   bool
+	table *dispatch.Table
 }
 
-// Subscribe adds a handler for one event type.
-//
-// It panics once the table is frozen. The promise Subscribe makes is that the
-// handler sees every event of that type published after the subscription, and a
-// subscription arriving after the bus started publishing cannot keep it for
-// anything published in between — while nothing at the call site would show
-// that. Refusing at the call site is the only place the mistake is visible.
-func (b *bus) Subscribe(eventType string, h event.Handler) {
-	b.mu.Lock()
-	defer b.mu.Unlock()
-	if b.frozen {
-		panic(fmt.Sprintf("event/memory: Subscribe(%q) arrived after the subscription table was "+
-			"frozen at the start stage. Every module subscribes in its own Init, which the drive "+
-			"calls before that stage; a subscription registered later would miss everything "+
-			"published before it and nothing would say so", eventType))
-	}
-	b.handlers[eventType] = append(b.handlers[eventType], h)
-}
+// Subscribe adds a handler for one event type. It panics once the table is
+// frozen at the start stage.
+func (b *bus) Subscribe(eventType string, h event.Handler) { b.table.Subscribe(eventType, h) }
 
 // Publish delivers to every handler of this event type, on the caller's own
 // goroutine.
 //
 // The error it returns is only ever about handing the event over: a cancelled
-// context, or a bus that is closed. A handler's failure is logged and left out
-// of it — see the package documentation for why the two must not share one
-// return value.
+// context, a payload that cannot be serialized, or a bus that is not accepting
+// publishes — before its start stage or from its stop stage on. A handler's
+// failure is logged and left out of it — see the package documentation for why
+// the two must not share one return value.
 func (b *bus) Publish(ctx context.Context, evt event.Event) error {
 	if err := ctx.Err(); err != nil {
 		return err
@@ -187,49 +168,20 @@ func (b *bus) Publish(ctx context.Context, evt event.Event) error {
 		return fmt.Errorf("event/memory: event %q carries a payload that cannot be serialized: %w",
 			evt.Type, err)
 	}
-	b.mu.RLock()
-	if b.closed {
-		b.mu.RUnlock()
-		return event.ErrClosed
+	if err := b.table.Accepting(); err != nil {
+		return err
 	}
-	// The snapshot is taken under the lock and the handlers are called without
-	// it: a handler that subscribes, or one that publishes, would otherwise
-	// deadlock against the lock this call is holding.
-	handlers := slices.Clone(b.handlers[evt.Type])
-	b.mu.RUnlock()
-
-	for i, h := range handlers {
-		if err := runHandler(ctx, h, evt); err != nil {
-			b.logger.Error("event/memory: a subscriber failed; the publisher is not told",
-				"event", evt.Type, "handler", i, "err", err)
-		}
-	}
+	// The handlers run on the publisher's goroutine and context, with no lock
+	// of this bus held: a handler that publishes again would otherwise
+	// deadlock against this call.
+	b.table.Deliver(ctx, evt)
 	return nil
 }
 
-// runHandler isolates one handler from the publisher's goroutine and from the
-// handlers after it.
-func runHandler(ctx context.Context, h event.Handler, evt event.Event) (err error) {
-	defer func() {
-		if r := recover(); r != nil {
-			err = fmt.Errorf("the handler panicked: %v", r)
-		}
-	}()
-	return h(ctx, evt)
-}
+// Stop is the stop stage: a publish from here on reports ErrClosed rather than
+// reaching nobody. A publish already delivering runs to its end on the
+// publisher's goroutine; this bus has no readers of its own to wait for.
+func (b *bus) Stop(_ context.Context) error { return b.table.Stop() }
 
-// Close stops delivery. A publish after it reports ErrClosed rather than
-// silently reaching nobody.
-func (b *bus) Close(_ context.Context) error {
-	b.mu.Lock()
-	defer b.mu.Unlock()
-	b.closed = true
-	return nil
-}
-
-// freeze closes the subscription table.
-func (b *bus) freeze() {
-	b.mu.Lock()
-	defer b.mu.Unlock()
-	b.frozen = true
-}
+// Close stops the bus if the stop stage has not. There is nothing to release.
+func (b *bus) Close(_ context.Context) error { return b.table.Close() }

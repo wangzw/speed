@@ -30,10 +30,10 @@ func openBus(t *testing.T, dsn string) *bus {
 
 func TestConforms(t *testing.T) {
 	dsn := pgtest.Acquire(t)
-	bussuite.AssertConforms(t, func(t *testing.T) (event.Bus, func()) {
+	bussuite.AssertConforms(t, func(t *testing.T) (event.Bus, func(context.Context)) {
 		b := openBus(t, dsn)
-		return b, func() {
-			if err := b.begin(context.Background()); err != nil {
+		return b, func(ctx context.Context) {
+			if err := b.begin(ctx); err != nil {
 				t.Fatalf("begin: %v", err)
 			}
 		}
@@ -118,7 +118,11 @@ func TestAnEventPublishedWhileNothingWasListeningIsStillDelivered(t *testing.T) 
 	})
 
 	// The late bus is opened — its LISTEN is in place — but its reader is not
-	// running, and the watermark it took sits at the outbox's end.
+	// running, and the watermark it took sits at the outbox's end. The
+	// publisher is in service: a publish is accepted from the start stage on.
+	if err := publisher.begin(ctx); err != nil {
+		t.Fatalf("begin on the publisher: %v", err)
+	}
 	if err := publisher.Publish(ctx, event.Event{Type: "t"}); err != nil {
 		t.Fatalf("Publish: %v", err)
 	}

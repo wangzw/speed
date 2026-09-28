@@ -26,9 +26,7 @@ import (
 	"errors"
 	"fmt"
 	"log/slog"
-	"slices"
 	"strings"
-	"sync"
 	"time"
 
 	"github.com/jackc/pgx/v5"
@@ -36,6 +34,7 @@ import (
 
 	"github.com/vislake/speed/pkg/core"
 	"github.com/vislake/speed/pkg/event"
+	"github.com/vislake/speed/pkg/event/internal/dispatch"
 	"github.com/vislake/speed/pkg/event/internal/replica"
 	"github.com/vislake/speed/pkg/internal/pgpool"
 )
@@ -69,8 +68,11 @@ const (
 	// not, and a late commit is simply one that has not been marked yet.
 	deliveredTable = "event_delivered"
 	// retention is how long an outbox entry stays after it was published. It
-	// bounds both tables, which would otherwise grow without limit: a replica
-	// that has been down for longer than this does not receive what it missed.
+	// bounds both tables, which would otherwise grow without limit. The window
+	// is what a running replica can catch up across — a reader that has been
+	// unable to reach the database for longer than this does not receive what
+	// was published meanwhile — and it is nothing a restart catches up across:
+	// a replica is this process, and a new process starts at the outbox's end.
 	retention = 24 * time.Hour
 	// retireEvery bounds how often the retention pass runs. Retiring on every
 	// poll would turn two large DELETEs — one of them an anti-join over the
@@ -167,15 +169,15 @@ func open(ctx context.Context, cfg *pgpool.Config, logger *slog.Logger) (event.B
 		return nil, fmt.Errorf("%s: marking the outbox's existing entries: %w", ModuleName, err)
 	}
 	return &bus{
-		pool:     pool,
-		listen:   listen,
-		logger:   logger,
-		replica:  self,
-		handlers: make(map[string][]event.Handler),
+		pool:    pool,
+		listen:  listen,
+		logger:  logger,
+		replica: self,
+		table:   dispatch.New("event/postgres", logger),
 	}, nil
 }
 
-// start freezes the table and begins reading.
+// start freezes the table, opens the bus to publishing, and begins reading.
 func start(ctx context.Context, b event.Bus) error {
 	local, ok := b.(*bus)
 	if !ok {
@@ -189,34 +191,26 @@ type bus struct {
 	listen *pgx.Conn
 	logger *slog.Logger
 
-	mu       sync.Mutex
-	handlers map[string][]event.Handler
 	// replica is this instance's identity in the delivered table. It is what
 	// makes each entry's delivery a fact about this replica rather than a
 	// position in a sequence.
 	replica string
-	frozen  bool
-	closed  bool
 
-	readCtx context.Context
-	cancel  context.CancelFunc
-	reader  sync.WaitGroup
+	// table holds the subscriptions, the stage, and the reader's lifetime.
+	table *dispatch.Table
+	// types is what the table held when it froze. The reader is the only one
+	// that reads it, after begin has written it.
+	types []string
+
 	// lastRetire is when the retention pass last ran. Only the read goroutine
 	// touches it, so it needs no lock of its own.
 	lastRetire time.Time
 }
 
-// Subscribe registers a handler for one event type.
-func (b *bus) Subscribe(eventType string, h event.Handler) {
-	b.mu.Lock()
-	defer b.mu.Unlock()
-	if b.frozen {
-		panic(fmt.Sprintf("event/postgres: Subscribe(%q) arrived after the reader started at the "+
-			"start stage; a subscription registered later would miss everything already delivered",
-			eventType))
-	}
-	b.handlers[eventType] = append(b.handlers[eventType], h)
-}
+// Subscribe registers a handler for one event type. It panics once the reader
+// has started at the start stage: a subscription registered later would miss
+// everything already delivered.
+func (b *bus) Subscribe(eventType string, h event.Handler) { b.table.Subscribe(eventType, h) }
 
 // Publish writes the event to the outbox and announces it.
 //
@@ -230,11 +224,8 @@ func (b *bus) Publish(ctx context.Context, evt event.Event) error {
 		return fmt.Errorf("%s: event %q carries a payload that cannot be serialized: %w",
 			ModuleName, evt.Type, err)
 	}
-	b.mu.Lock()
-	closed := b.closed
-	b.mu.Unlock()
-	if closed {
-		return event.ErrClosed
+	if stageErr := b.table.Accepting(); stageErr != nil {
+		return stageErr
 	}
 	tx, err := b.pool.Begin(ctx)
 	if err != nil {
@@ -253,69 +244,69 @@ func (b *bus) Publish(ctx context.Context, evt event.Event) error {
 	return tx.Commit(ctx)
 }
 
-// Close stops the reader and releases both connections.
+// Stop is the stop stage: publishing is refused, the reader reads nothing
+// more, and the batch it already read is delivered and marked within the
+// table's grace.
+func (b *bus) Stop(_ context.Context) error { return b.table.Stop() }
+
+// Close stops the bus if the stop stage has not, and releases both
+// connections.
 func (b *bus) Close(ctx context.Context) error {
-	b.mu.Lock()
-	b.closed = true
-	cancel := b.cancel
-	b.mu.Unlock()
-	if cancel != nil {
-		cancel()
-	}
-	b.reader.Wait()
+	stopErr := b.table.Close()
 	err := b.listen.Close(ctx)
 	b.pool.Close()
-	return err
+	return errors.Join(stopErr, err)
 }
 
 // begin freezes the table and starts the reader.
 func (b *bus) begin(ctx context.Context) error {
-	b.mu.Lock()
-	defer b.mu.Unlock()
-	if b.frozen {
+	types, first := b.table.Freeze(ctx)
+	if !first {
 		return nil
 	}
-	b.frozen = true
-	b.readCtx, b.cancel = context.WithCancel(ctx)
-	b.reader.Add(1)
-	go b.read()
+	b.types = types
+	b.table.Go(b.read)
 	return nil
 }
 
-// read delivers what the outbox holds beyond this replica's watermark.
+// read delivers what the outbox holds for this replica, until the stop stage.
 //
 // It waits for a notification and reads anyway when one does not come. The
 // timeout is not a fallback for a broken notification path: it is the path a
 // notification sent while this replica was reconnecting takes, which is exactly
 // the window the outbox exists for.
-func (b *bus) read() {
-	defer b.reader.Done()
+func (b *bus) read(reading, handling context.Context) {
 	for {
-		if b.readCtx.Err() != nil {
+		if reading.Err() != nil {
 			return
 		}
 		// The retention pass runs whether or not this replica subscribes to
 		// anything: a publish-only process ages its outbox out on the same
 		// clock as any other. It sits here rather than at the end of drain,
-		// because drain returns early when there are no subscribers.
-		if err := b.retireIfDue(time.Now(), b.runRetention); err != nil {
+		// because drain returns early when there are no subscribers. A failure
+		// that is the stop stage cancelling the pass is not one.
+		if err := b.retireIfDue(time.Now(), func() error { return b.runRetention(reading) }); err != nil &&
+			reading.Err() == nil {
 			b.logger.Error("event/postgres: retiring old entries failed; the next round retries",
 				"err", err)
 		}
-		if err := b.drain(); err != nil {
-			if b.readCtx.Err() != nil {
+		if err := b.drain(reading, handling); err != nil {
+			if reading.Err() != nil {
 				return
 			}
 			b.logger.Error("event/postgres: reading the outbox failed; retrying",
 				"err", err)
 			select {
-			case <-b.readCtx.Done():
+			case <-reading.Done():
 				return
 			case <-time.After(pollInterval):
 			}
 			continue
 		}
-		waitCtx, cancel := context.WithTimeout(b.readCtx, pollInterval)
+		if reading.Err() != nil {
+			return
+		}
+		waitCtx, cancel := context.WithTimeout(reading, pollInterval)
 		_, waitErr := b.listen.WaitForNotification(waitCtx)
 		cancel()
 		// The waiting connection is how this replica learns that something was
@@ -323,11 +314,11 @@ func (b *bus) read() {
 		// but it is the only signal that the notification path has degraded,
 		// and without a pause it would turn this loop into a spin against the
 		// database.
-		if waitErr != nil && b.readCtx.Err() == nil && !errors.Is(waitErr, context.DeadlineExceeded) {
+		if waitErr != nil && reading.Err() == nil && !errors.Is(waitErr, context.DeadlineExceeded) {
 			b.logger.Error("event/postgres: waiting for a notification failed; carrying on "+
 				"by polling the table", "err", waitErr)
 			select {
-			case <-b.readCtx.Done():
+			case <-reading.Done():
 				return
 			case <-time.After(pollInterval):
 			}
@@ -335,30 +326,27 @@ func (b *bus) read() {
 	}
 }
 
-// drain reads one batch past the watermark and delivers it.
-func (b *bus) drain() error {
-	b.mu.Lock()
-	replica := b.replica
-	types := make([]string, 0, len(b.handlers))
-	for eventType := range b.handlers {
-		types = append(types, eventType)
-	}
-	b.mu.Unlock()
-	if len(types) == 0 {
+// drain reads one batch this replica has not delivered and delivers it.
+//
+// The batch is read under reading and delivered under handling: a batch the
+// stop stage finds already read is delivered and marked within its grace,
+// rather than left for a next run that never comes — a replica's identity is
+// this process's, so what it leaves unmarked no one delivers on its behalf.
+func (b *bus) drain(reading, handling context.Context) error {
+	if len(b.types) == 0 {
 		return nil
 	}
-	slices.Sort(types)
 
 	// Every entry this replica has not delivered, whatever its id relative to
 	// anything else. Reading by what is missing rather than by where a cursor
 	// stands is what makes a commit that lands late just another entry.
-	rows, err := b.pool.Query(b.readCtx,
+	rows, err := b.pool.Query(reading,
 		`SELECT o.id, o.type, o.tenant, o.payload FROM `+table+` o
 		 WHERE o.type = ANY($2)
 		   AND NOT EXISTS (SELECT 1 FROM `+deliveredTable+` d
 		                   WHERE d.event_id = o.id AND d.replica = $1)
 		 ORDER BY o.id LIMIT $3`,
-		replica, types, batchSize)
+		b.replica, b.types, batchSize)
 	if err != nil {
 		return err
 	}
@@ -382,21 +370,22 @@ func (b *bus) drain() error {
 	}
 
 	for _, r := range batch {
+		if handling.Err() != nil {
+			// The stop stage's grace ran out. What is left of the batch stays
+			// unmarked for this replica.
+			return nil
+		}
 		var payload any
 		if err := json.Unmarshal([]byte(r.payload), &payload); err == nil {
 			r.evt.Payload = payload
 		}
-		if !b.deliver(r.evt) {
-			// The bus is closing. Leaving the entry unmarked is what has it
-			// delivered to whoever runs next.
-			return nil
-		}
+		b.table.Deliver(handling, r.evt)
 		// Marked even for a type whose handlers failed: the entry has been
 		// handed over, and unmarking would redeliver it forever with nobody
 		// left to tell.
-		if _, err := b.pool.Exec(b.readCtx,
+		if _, err := b.pool.Exec(handling,
 			`INSERT INTO `+deliveredTable+` (event_id, replica) VALUES ($1, $2)
-			 ON CONFLICT DO NOTHING`, r.id, replica); err != nil {
+			 ON CONFLICT DO NOTHING`, r.id, b.replica); err != nil {
 			return err
 		}
 	}
@@ -427,53 +416,19 @@ func (b *bus) retireIfDue(now time.Time, run func() error) error {
 //
 // Both tables grow with every event, and nothing else bounds them: the outbox
 // by what was published, the delivered table by what each replica has marked.
-// The cost is stated where the window is: a replica that has been away longer
-// than the window does not receive what it missed, because the entries are
-// gone.
-func (b *bus) runRetention() error {
+// The cost is stated where the window is.
+func (b *bus) runRetention(ctx context.Context) error {
 	var errs []error
-	if _, err := b.pool.Exec(b.readCtx,
+	if _, err := b.pool.Exec(ctx,
 		`DELETE FROM `+table+` WHERE created_at < $1`, time.Now().Add(-retention)); err != nil {
 		errs = append(errs, fmt.Errorf("retiring old outbox entries: %w", err))
 	}
 	// The marks of entries that are gone are gone too; without this the
 	// delivered table would outlive the thing it describes.
-	if _, err := b.pool.Exec(b.readCtx,
+	if _, err := b.pool.Exec(ctx,
 		`DELETE FROM `+deliveredTable+` d WHERE NOT EXISTS (SELECT 1 FROM `+table+` o WHERE o.id = d.event_id)`,
 	); err != nil {
 		errs = append(errs, fmt.Errorf("retiring stale delivery marks: %w", err))
 	}
 	return errors.Join(errs...)
-}
-
-// deliver runs this replica's handlers for one event, and reports whether it
-// ran them. A false answer is what keeps the reader from marking an entry it
-// did not hand over.
-func (b *bus) deliver(evt event.Event) bool {
-	b.mu.Lock()
-	if b.closed {
-		b.mu.Unlock()
-		return false
-	}
-	handlers := slices.Clone(b.handlers[evt.Type])
-	b.mu.Unlock()
-	for i, h := range handlers {
-		if err := b.runHandler(h, evt); err != nil {
-			b.logger.Error("event/postgres: a subscriber failed; the publisher is not told",
-				"event", evt.Type, "handler", i, "err", err)
-		}
-	}
-	return true
-}
-
-// runHandler isolates one handler from the reader goroutine that runs it: a
-// panic would take the reader down, and the reader is what delivers every later
-// event for the rest of the process's life.
-func (b *bus) runHandler(h event.Handler, evt event.Event) (err error) {
-	defer func() {
-		if r := recover(); r != nil {
-			err = fmt.Errorf("the handler panicked: %v", r)
-		}
-	}()
-	return h(b.readCtx, evt)
 }

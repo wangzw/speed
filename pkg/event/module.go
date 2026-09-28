@@ -71,7 +71,8 @@ type Spec[C any] struct {
 	// configured destinations, format and redaction whenever there are any.
 	Open func(ctx context.Context, cfg *C, logger *slog.Logger) (Bus, error)
 	// Start is called when the drive reaches the start stage, and is where an
-	// implementation freezes what has to be fixed before the first publish.
+	// implementation freezes what has to be fixed before the first publish and
+	// opens itself to publishing.
 	//
 	// The subscription table is the thing that has to be: every module
 	// subscribes in its own Init, which the drive calls one module at a time, so
@@ -122,6 +123,9 @@ func NewModule[C any](spec Spec[C]) core.Module {
 				return nil, err
 			}
 			return spec.Open(ctx, cfg, logger)
+		},
+		Stop: func(ctx context.Context, _ *core.Registry, instance any) error {
+			return stop(ctx, instance)
 		},
 		Close: func(ctx context.Context, _ *core.Registry, instance any) error {
 			return release(ctx, instance)
@@ -212,6 +216,28 @@ func (s Spec[C]) logger(reg *core.Registry) (*slog.Logger, error) {
 			s.ModuleName, err)
 	}
 	return delivered.Named(s.ModuleName), nil
+}
+
+// stopper is what an implementation's product implements to end its service
+// at the stop stage: publishing is refused from then on, delivery ends, and the
+// subscribers already running are given a bounded time to finish.
+//
+// The stage is the implementation's rather than Close's, because the drive
+// runs every module's Stop before any module's Close. Delivery that lasted
+// until Close would run on for as long as every other module took to release
+// its resources, handing events to subscribers that had already stopped.
+type stopper interface {
+	Stop(ctx context.Context) error
+}
+
+// stop ends an implementation's service, when it has one to end. It tolerates
+// every shape a rollback hands it, on the same terms as release.
+func stop(ctx context.Context, instance any) error {
+	s, ok := instance.(stopper)
+	if !ok {
+		return nil
+	}
+	return s.Stop(ctx)
 }
 
 // closer is what an implementation's product implements to release what it

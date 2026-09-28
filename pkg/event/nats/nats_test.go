@@ -119,10 +119,10 @@ func TestANamespaceASubjectCannotCarryIsRefused(t *testing.T) {
 
 func TestConforms(t *testing.T) {
 	url := natstest.URL(t)
-	bussuite.AssertConforms(t, func(t *testing.T) (event.Bus, func()) {
+	bussuite.AssertConforms(t, func(t *testing.T) (event.Bus, func(context.Context)) {
 		b := openBus(t, url, "")
-		return b, func() {
-			if err := b.begin(context.Background()); err != nil {
+		return b, func(ctx context.Context) {
+			if err := b.begin(ctx); err != nil {
 				t.Fatalf("begin: %v", err)
 			}
 		}
@@ -286,15 +286,14 @@ func TestReadRecoversWhenTheConsumerAppearsLate(t *testing.T) {
 
 	// The stream exists and the consumer does not: the state a reader lands in
 	// when the take fails transiently. begin is not called — its consumer
-	// creation is exactly what this case withholds — so the fields it would
-	// set are set here.
+	// creation is exactly what this case withholds — so what it does besides
+	// is done here.
 	stream := b.streamName(eventType)
 	if err := b.ensureStream(ctx, eventType); err != nil {
 		t.Fatalf("ensureStream: %v", err)
 	}
-	b.readCtx, b.cancel = context.WithCancel(ctx)
-	b.readers.Add(1)
-	go b.read(stream, eventType)
+	b.table.Freeze(ctx)
+	b.table.Go(func(reading, handling context.Context) { b.read(reading, handling, stream, eventType) })
 
 	// The consumer appears only now. A reader that gave up on the first take
 	// has already returned and will never deliver; one that retries picks it

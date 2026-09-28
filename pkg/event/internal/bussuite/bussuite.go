@@ -23,14 +23,33 @@ import (
 
 // Factory builds a fresh bus for one subtest, with an open subscription table
 // and no relation to the buses built before it, and returns a function that
-// puts it into service.
+// puts it into service: the implementation's start stage, run on the context
+// it is handed, which stands for the drive's.
 //
-// The second result is why this is not a plain constructor. An implementation
-// that delivers in-process has nothing to start and returns a no-op, but one
+// The second result is why this is not a plain constructor. The subscription
+// table freezes and the bus opens to publishing at the start stage, and one
 // that reads from a transport cannot deliver until its readers are running —
-// and the readers cannot start before the table is complete, which is after the
-// case has subscribed. A case therefore subscribes and then calls the function.
-type Factory func(t *testing.T) (bus event.Bus, start func())
+// which cannot happen before the table is complete, after the case has
+// subscribed. A case therefore subscribes and then calls the function.
+//
+// A factory's buses also carry the stop stage every implementation has, as a
+// Stop method; the cases that end a bus's service reach it there.
+type Factory func(t *testing.T) (bus event.Bus, start func(ctx context.Context))
+
+// stopper is the stop stage an implementation's product carries.
+type stopper interface {
+	Stop(ctx context.Context) error
+}
+
+// stopOf returns the bus's stop stage, and fails the case when it has none.
+func stopOf(t *testing.T, b event.Bus) stopper {
+	t.Helper()
+	s, ok := b.(stopper)
+	if !ok {
+		t.Fatalf("%T has no stop stage, and every implementation ends its service there", b)
+	}
+	return s
+}
 
 // WaitFor polls until cond holds, and fails the case if it never does.
 //
@@ -70,7 +89,7 @@ func AssertConforms(t *testing.T, newBus Factory) {
 			seen.Add(1)
 			return nil
 		})
-		start()
+		start(context.Background())
 		if err := b.Publish(context.Background(), event.Event{Type: "order.placed"}); err != nil {
 			t.Fatalf("Publish: %v", err)
 		}
@@ -84,7 +103,7 @@ func AssertConforms(t *testing.T, newBus Factory) {
 			wrong.Add(1)
 			return nil
 		})
-		start()
+		start(context.Background())
 		// Neither a prefix nor a different case may reach it.
 		for _, other := range []string{"order", "order.placed.extra", "Order.Placed", ""} {
 			if err := b.Publish(context.Background(), event.Event{Type: other}); err != nil {
@@ -107,7 +126,7 @@ func AssertConforms(t *testing.T, newBus Factory) {
 				return nil
 			})
 		}
-		start()
+		start(context.Background())
 		if err := b.Publish(context.Background(), event.Event{Type: "t"}); err != nil {
 			t.Fatalf("Publish: %v", err)
 		}
@@ -116,7 +135,7 @@ func AssertConforms(t *testing.T, newBus Factory) {
 
 	t.Run("publishing a type nobody subscribed to is accepted", func(t *testing.T) {
 		b, start := newBus(t)
-		start()
+		start(context.Background())
 		if err := b.Publish(context.Background(), event.Event{Type: "nobody.listens"}); err != nil {
 			t.Fatalf("Publish with no subscriber: %v", err)
 		}
@@ -130,7 +149,7 @@ func AssertConforms(t *testing.T, newBus Factory) {
 			got <- evt
 			return nil
 		})
-		start()
+		start(context.Background())
 		if err := b.Publish(context.Background(), want); err != nil {
 			t.Fatalf("Publish: %v", err)
 		}
@@ -158,7 +177,7 @@ func AssertConforms(t *testing.T, newBus Factory) {
 			ran.Add(1)
 			return errors.New("this handler failed on purpose")
 		})
-		start()
+		start(context.Background())
 		// The contract says Publish's error is about handing the event over,
 		// never about a subscriber. An implementation that knows the result —
 		// the process-local one does — must still keep it out of this value,
@@ -180,7 +199,7 @@ func AssertConforms(t *testing.T, newBus Factory) {
 			after.Add(1)
 			return nil
 		})
-		start()
+		start(context.Background())
 		if err := b.Publish(context.Background(), event.Event{Type: "t"}); err != nil {
 			t.Fatalf("Publish: %v", err)
 		}
@@ -198,7 +217,7 @@ func AssertConforms(t *testing.T, newBus Factory) {
 			after.Add(1)
 			return nil
 		})
-		start()
+		start(context.Background())
 		// A panic is a subscriber's failure like any other: it must not come
 		// back through Publish, which on an in-process bus runs the handlers on
 		// the publisher's own goroutine, and it must not keep the subscriber
@@ -223,7 +242,7 @@ func AssertConforms(t *testing.T, newBus Factory) {
 			ran.Add(1)
 			return nil
 		})
-		start()
+		start(context.Background())
 		ctx, cancel := context.WithCancel(context.Background())
 		cancel()
 		if err := b.Publish(ctx, event.Event{Type: "t"}); !errors.Is(err, context.Canceled) {
@@ -232,6 +251,112 @@ func AssertConforms(t *testing.T, newBus Factory) {
 		time.Sleep(200 * time.Millisecond)
 		if n := ran.Load(); n != 0 {
 			t.Fatalf("a subscriber ran %d times for a publish whose context was already cancelled", n)
+		}
+	})
+
+	t.Run("a publish before the start stage is refused", func(t *testing.T) {
+		b, start := newBus(t)
+		var ran atomic.Int32
+		b.Subscribe("t", func(context.Context, event.Event) error {
+			ran.Add(1)
+			return nil
+		})
+		// The table is still being filled before the start stage, so a publish
+		// there would reach whichever subscribers happened to be registered
+		// and miss the rest. It is refused, and the refusal says why.
+		if err := b.Publish(context.Background(), event.Event{Type: "t"}); !errors.Is(err, event.ErrNotStarted) {
+			t.Fatalf("Publish before the start stage: %v, want ErrNotStarted", err)
+		}
+		start(context.Background())
+		time.Sleep(200 * time.Millisecond)
+		if n := ran.Load(); n != 0 {
+			t.Fatalf("a subscriber ran %d times for a publish the bus refused", n)
+		}
+	})
+
+	t.Run("delivery outlives the drive's context until the stop stage", func(t *testing.T) {
+		b, start := newBus(t)
+		var ran atomic.Int32
+		b.Subscribe("t", func(context.Context, event.Event) error {
+			ran.Add(1)
+			return nil
+		})
+		// A host cancels the drive's context the moment it begins shutting
+		// down, before any module's stop stage — while a request still being
+		// drained may publish. The bus serves until its own stop stage.
+		drive, cancel := context.WithCancel(context.Background())
+		start(drive)
+		cancel()
+		// Past the longest read a transport blocks in, so a reader that ended
+		// with the drive's context has had every chance to be gone.
+		time.Sleep(2500 * time.Millisecond)
+		if err := b.Publish(context.Background(), event.Event{Type: "t"}); err != nil {
+			t.Fatalf("Publish after the drive's context was cancelled: %v", err)
+		}
+		WaitFor(t, "the subscriber to run", func() bool { return ran.Load() == 1 })
+	})
+
+	t.Run("a publish from the stop stage on is refused", func(t *testing.T) {
+		b, start := newBus(t)
+		var ran atomic.Int32
+		b.Subscribe("t", func(context.Context, event.Event) error {
+			ran.Add(1)
+			return nil
+		})
+		start(context.Background())
+		if err := stopOf(t, b).Stop(context.Background()); err != nil {
+			t.Fatalf("Stop: %v", err)
+		}
+		// No reader is left on this replica to deliver it, so accepting it
+		// would report as handed over an event that goes nowhere.
+		if err := b.Publish(context.Background(), event.Event{Type: "t"}); !errors.Is(err, event.ErrClosed) {
+			t.Fatalf("Publish after the stop stage: %v, want ErrClosed", err)
+		}
+		time.Sleep(200 * time.Millisecond)
+		if n := ran.Load(); n != 0 {
+			t.Fatalf("a subscriber ran %d times for a publish the bus refused", n)
+		}
+	})
+
+	t.Run("a subscriber running at the stop stage finishes on a live context", func(t *testing.T) {
+		b, start := newBus(t)
+		entered := make(chan struct{})
+		release := make(chan struct{})
+		finished := make(chan error, 1)
+		b.Subscribe("t", func(ctx context.Context, _ event.Event) error {
+			close(entered)
+			<-release
+			// What the subscriber would do next — write what it handled —
+			// runs on this context, so it must not have been cancelled
+			// underneath it.
+			finished <- ctx.Err()
+			return nil
+		})
+		drive, cancel := context.WithCancel(context.Background())
+		start(drive)
+		go func() { _ = b.Publish(context.Background(), event.Event{Type: "t"}) }()
+		select {
+		case <-entered:
+		case <-time.After(10 * time.Second):
+			t.Fatal("timed out waiting for the subscriber to start")
+		}
+		// The shape of a host's shutdown: the drive's context goes first, then
+		// the stop stage begins while the subscriber is still running.
+		cancel()
+		stopped := make(chan error, 1)
+		go func() { stopped <- stopOf(t, b).Stop(context.Background()) }()
+		time.Sleep(200 * time.Millisecond)
+		close(release)
+		if err := <-finished; err != nil {
+			t.Fatalf("the subscriber running at the stop stage found its context done: %v", err)
+		}
+		select {
+		case err := <-stopped:
+			if err != nil {
+				t.Fatalf("Stop: %v", err)
+			}
+		case <-time.After(10 * time.Second):
+			t.Fatal("the stop stage did not return after the subscriber finished")
 		}
 	})
 }

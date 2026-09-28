@@ -33,10 +33,10 @@ func openBus(t *testing.T, addr string, db int, group string) *bus {
 
 func TestConforms(t *testing.T) {
 	addr, db := redistest.Acquire(t)
-	bussuite.AssertConforms(t, func(t *testing.T) (event.Bus, func()) {
+	bussuite.AssertConforms(t, func(t *testing.T) (event.Bus, func(context.Context)) {
 		b := openBus(t, addr, db, "")
-		return b, func() {
-			if err := b.begin(context.Background()); err != nil {
+		return b, func(ctx context.Context) {
+			if err := b.begin(ctx); err != nil {
 				t.Fatalf("begin: %v", err)
 			}
 		}

@@ -26,7 +26,6 @@ import (
 	"errors"
 	"fmt"
 	"log/slog"
-	"slices"
 	"strings"
 	"sync"
 	"time"
@@ -37,6 +36,7 @@ import (
 	"github.com/vislake/speed/pkg/config"
 	"github.com/vislake/speed/pkg/core"
 	"github.com/vislake/speed/pkg/event"
+	"github.com/vislake/speed/pkg/event/internal/dispatch"
 	"github.com/vislake/speed/pkg/event/internal/replica"
 )
 
@@ -199,12 +199,12 @@ func open(ctx context.Context, cfg *Config, logger *slog.Logger) (event.Bus, err
 		consumer:   name,
 		maxEntries: maxEntries,
 		namespace:  namespace,
-		handlers:   make(map[string][]event.Handler),
+		table:      dispatch.New("event/nats", logger),
 		streams:    make(map[string]bool),
 	}, nil
 }
 
-// start freezes the table and begins fetching.
+// start freezes the table, opens the bus to publishing, and begins fetching.
 func start(ctx context.Context, b event.Bus) error {
 	local, ok := b.(*bus)
 	if !ok {
@@ -223,20 +223,16 @@ type bus struct {
 	// prefix of every stream it names.
 	namespace string
 
-	mu       sync.Mutex
-	handlers map[string][]event.Handler
+	// table holds the subscriptions, the stage, and the readers' lifetime.
+	table *dispatch.Table
+
+	mu sync.Mutex
 	// streams records the types whose stream is known to be there. It is what
 	// keeps a publish from re-issuing the stream definition every time: the
 	// library's upsert rewrites the whole configuration, so a host that had
 	// capped a stream by hand would have that cap reset on the next publish,
 	// with nothing said.
 	streams map[string]bool
-	frozen  bool
-	closed  bool
-
-	readCtx context.Context
-	cancel  context.CancelFunc
-	readers sync.WaitGroup
 }
 
 // ensureStream makes sure the type's stream exists, and does it once.
@@ -264,17 +260,10 @@ func (b *bus) ensureStream(ctx context.Context, eventType string) error {
 	return nil
 }
 
-// Subscribe registers a handler for one event type.
-func (b *bus) Subscribe(eventType string, h event.Handler) {
-	b.mu.Lock()
-	defer b.mu.Unlock()
-	if b.frozen {
-		panic(fmt.Sprintf("event/nats: Subscribe(%q) arrived after the readers started at the start "+
-			"stage; a subscription registered later would miss everything already delivered",
-			eventType))
-	}
-	b.handlers[eventType] = append(b.handlers[eventType], h)
-}
+// Subscribe registers a handler for one event type. It panics once the readers
+// have started at the start stage: a subscription registered later would miss
+// everything already delivered.
+func (b *bus) Subscribe(eventType string, h event.Handler) { b.table.Subscribe(eventType, h) }
 
 // Publish writes the event to its stream.
 //
@@ -288,11 +277,8 @@ func (b *bus) Publish(ctx context.Context, evt event.Event) error {
 		return fmt.Errorf("%s: event %q carries a payload that cannot be serialized: %w",
 			ModuleName, evt.Type, err)
 	}
-	b.mu.Lock()
-	closed := b.closed
-	b.mu.Unlock()
-	if closed {
-		return event.ErrClosed
+	if stageErr := b.table.Accepting(); stageErr != nil {
+		return stageErr
 	}
 	if streamErr := b.ensureStream(ctx, evt.Type); streamErr != nil {
 		return streamErr
@@ -305,39 +291,26 @@ func (b *bus) Publish(ctx context.Context, evt event.Event) error {
 	return err
 }
 
-// Close stops the readers and releases the connection.
+// Stop is the stop stage: publishing is refused, the readers fetch nothing
+// more, and what their last fetch brought is delivered and acknowledged within
+// the table's grace.
+func (b *bus) Stop(_ context.Context) error { return b.table.Stop() }
+
+// Close stops the bus if the stop stage has not, and releases the connection.
+// Closing the connection flushes what it still buffers, the acknowledgements
+// of the last entries delivered included.
 func (b *bus) Close(_ context.Context) error {
-	b.mu.Lock()
-	b.closed = true
-	cancel := b.cancel
-	b.mu.Unlock()
-	if cancel != nil {
-		cancel()
-	}
-	b.readers.Wait()
+	stopErr := b.table.Close()
 	b.nc.Close()
-	return nil
+	return stopErr
 }
 
 // begin freezes the table and starts one reader per subscribed type.
 func (b *bus) begin(ctx context.Context) error {
-	// The lock is released before anything is opened. ensureStream takes it
-	// too, and the reader goroutines started below take it on every delivery,
-	// so holding it across them would deadlock against this same call.
-	b.mu.Lock()
-	if b.frozen {
-		b.mu.Unlock()
+	types, first := b.table.Freeze(ctx)
+	if !first {
 		return nil
 	}
-	b.frozen = true
-	b.readCtx, b.cancel = context.WithCancel(ctx)
-	types := make([]string, 0, len(b.handlers))
-	for eventType := range b.handlers {
-		types = append(types, eventType)
-	}
-	b.mu.Unlock()
-
-	slices.Sort(types)
 	for _, eventType := range types {
 		stream := b.streamName(eventType)
 		if err := b.ensureStream(ctx, eventType); err != nil {
@@ -353,74 +326,83 @@ func (b *bus) begin(ctx context.Context) error {
 		}); err != nil {
 			return fmt.Errorf("%s: opening the consumer for %q: %w", ModuleName, eventType, err)
 		}
-		b.readers.Add(1)
-		go b.read(stream, eventType)
+	}
+	for _, eventType := range types {
+		b.table.Go(func(reading, handling context.Context) {
+			b.read(reading, handling, b.streamName(eventType), eventType)
+		})
 	}
 	return nil
 }
 
-// read delivers what its stream hands this instance.
-func (b *bus) read(stream, eventType string) {
-	defer b.readers.Done()
+// read delivers what its stream hands this instance, until the stop stage.
+//
+// A fetch is not cut short by the stop stage: it runs to the end of its wait,
+// and whatever it brought is delivered and acknowledged. An entry this
+// consumer was handed and never acknowledged goes back to the durable only
+// after the server's acknowledgement wait, and only a consumer of the same
+// name ever receives it again.
+func (b *bus) read(reading, handling context.Context, stream, eventType string) {
 	// Taking the consumer is retried like everything else in this loop: the
 	// consumer was created moments ago, so a failure here is a transient one,
 	// and giving up would leave this event type undelivered for the rest of
 	// the process's life while a single log line says so.
 	var consumer jetstream.Consumer
 	for {
-		if b.readCtx.Err() != nil {
+		if reading.Err() != nil {
 			return
 		}
-		taken, err := b.js.Consumer(b.readCtx, stream, b.consumer)
+		taken, err := b.js.Consumer(reading, stream, b.consumer)
 		if err == nil {
 			consumer = taken
 			break
 		}
-		if b.readCtx.Err() != nil {
-			// The failure is the shutdown cancelling the call, not the server,
-			// and an error line for it would misdirect whoever reads the log.
+		if reading.Err() != nil {
+			// The failure is the stop stage cancelling the call, not the
+			// server, and an error line for it would misdirect whoever reads
+			// the log.
 			return
 		}
 		b.logger.Error("event/nats: taking the consumer failed; retrying", "event", eventType, "err", err)
 		select {
-		case <-b.readCtx.Done():
+		case <-reading.Done():
 			return
 		case <-time.After(consumerRetryWait):
 		}
 	}
 	for {
-		if b.readCtx.Err() != nil {
+		if reading.Err() != nil {
 			return
 		}
 		batch, err := consumer.Fetch(batchSize, jetstream.FetchMaxWait(fetchWait))
 		if err != nil {
-			if b.readCtx.Err() != nil {
+			if reading.Err() != nil {
 				return
 			}
 			b.logger.Error("event/nats: fetching failed; retrying", "event", eventType, "err", err)
 			select {
-			case <-b.readCtx.Done():
+			case <-reading.Done():
 				return
 			case <-time.After(fetchWait):
 			}
 			continue
 		}
 		for msg := range batch.Messages() {
-			if !b.deliver(eventType, msg.Data()) {
-				// The bus is closing. Leaving the entry unacknowledged is what
-				// has the durable deliver it to whoever runs next; acking it
-				// here would mark as consumed something no subscriber ever saw.
+			if handling.Err() != nil {
+				// The stop stage's grace ran out. What is left of this fetch
+				// stays unacknowledged.
 				return
 			}
+			b.table.Deliver(handling, decode(eventType, msg.Data()))
 			// Acknowledged whatever the handlers returned: the entry has been
 			// handed over, and an unacknowledged one would be redelivered
 			// forever with nobody left to tell.
-			if err := msg.Ack(); err != nil && b.readCtx.Err() == nil {
+			if err := msg.Ack(); err != nil && handling.Err() == nil {
 				b.logger.Error("event/nats: acknowledging a delivered entry failed",
 					"event", eventType, "err", err)
 			}
 		}
-		if err := batch.Error(); err != nil && b.readCtx.Err() == nil {
+		if err := batch.Error(); err != nil && reading.Err() == nil {
 			b.logger.Error("event/nats: the fetch ended in an error", "event", eventType, "err", err)
 		}
 	}
@@ -437,18 +419,8 @@ type envelope struct {
 	Payload  json.RawMessage `json:"payload"`
 }
 
-// deliver runs this instance's handlers for one entry, and reports whether it
-// ran them. A false answer is what keeps a reader from acknowledging an entry
-// it did not hand over.
-func (b *bus) deliver(eventType string, data []byte) bool {
-	b.mu.Lock()
-	if b.closed {
-		b.mu.Unlock()
-		return false
-	}
-	handlers := slices.Clone(b.handlers[eventType])
-	b.mu.Unlock()
-
+// decode turns a message back into an event.
+func decode(eventType string, data []byte) event.Event {
 	evt := event.Event{Type: eventType}
 	var env envelope
 	if err := json.Unmarshal(data, &env); err == nil {
@@ -460,25 +432,7 @@ func (b *bus) deliver(eventType string, data []byte) bool {
 			}
 		}
 	}
-	for i, h := range handlers {
-		if err := b.runHandler(h, evt); err != nil {
-			b.logger.Error("event/nats: a subscriber failed; the publisher is not told",
-				"event", eventType, "handler", i, "err", err)
-		}
-	}
-	return true
-}
-
-// runHandler isolates one handler from the reader goroutine that runs it: a
-// panic would take the reader down, and the reader is what delivers every later
-// event of this type for the rest of the process's life.
-func (b *bus) runHandler(h event.Handler, evt event.Event) (err error) {
-	defer func() {
-		if r := recover(); r != nil {
-			err = fmt.Errorf("the handler panicked: %v", r)
-		}
-	}()
-	return h(b.readCtx, evt)
+	return evt
 }
 
 // streamName is the stream one event type travels on, within this bus's

@@ -97,6 +97,17 @@ must not cross, and how to run it.
   after the freeze does not cover anything published before it: an
   implementation may refuse it at the call site; one that accepts it leaves the
   subscriber missing everything published first.
+- **A publish is accepted between the start stage and the stop stage, and
+  nowhere else.** Before `Start` the table is still being filled, so a publish
+  would reach part of it; from `Stop` on no reader is left to deliver it. Both
+  are refused (`ErrNotStarted`, `ErrClosed`) rather than accepted and dropped.
+- **A transport's delivery ends at its own stop stage, not with the drive's
+  context.** The contexts a reader reads and handles under are derived from the
+  start stage's without its cancellation; the stop stage ends reading, lets the
+  subscribers already running finish on a live context within `dispatch.Grace`,
+  and delivers and acknowledges what a reader had already taken. The stage
+  bookkeeping lives in `internal/dispatch` and an implementation takes it from
+  there rather than writing its own.
 - **`Event.Type` is an agreement with no checker.** A publisher that renames one
   silently stops reaching its subscribers. Nothing here can catch that, and an
   implementation must not try by, say, refusing types nobody publishes — a

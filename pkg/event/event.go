@@ -28,9 +28,23 @@ import (
 	"errors"
 )
 
-// ErrClosed is returned by Publish when the bus has been closed. It describes
-// the bus's own state, not anything about the event.
+// ErrClosed is returned by Publish once the bus has stopped: from its stop
+// stage on, and after it is closed. It describes the bus's own state, not
+// anything about the event.
+//
+// The stop stage is where a bus ends its service, and a publish arriving after
+// it is refused rather than accepted: an accepted event would have no reader
+// left on this replica to deliver it, and a nil return would say it had been
+// handed over.
 var ErrClosed = errors.New("event: the bus is closed")
+
+// ErrNotStarted is returned by Publish before the bus has reached its start
+// stage. Every module subscribes in its own Init, so until then the
+// subscription table is still being filled: a publish would reach whichever
+// subscribers happened to be registered already, miss the rest, and report
+// nothing. A module that has something to announce while the process starts
+// publishes it from its own Start, which the drive calls after the bus's.
+var ErrNotStarted = errors.New("event: the bus has not started")
 
 // Event is a domain fact published on the bus.
 type Event struct {
@@ -95,6 +109,10 @@ type Handler func(ctx context.Context, evt Event) error
 // payload.
 type Bus interface {
 	// Publish delivers evt to every handler subscribed to evt.Type.
+	//
+	// A publish is accepted from the bus's start stage until its stop stage.
+	// Before it, Publish returns ErrNotStarted; from the stop stage on, it
+	// returns ErrClosed.
 	Publish(ctx context.Context, evt Event) error
 
 	// Subscribe registers h for events whose Type equals eventType exactly.
