@@ -112,6 +112,7 @@ lg.Redaction().AddKeys("stripe-customer-secret", "webhook-signing-key")
 func FromContext(ctx context.Context) *slog.Logger
 func WithLogger(ctx context.Context, l *slog.Logger) context.Context
 func WithAttrs(ctx context.Context, args ...any) context.Context
+func WithoutAttrs(ctx context.Context, keys ...string) context.Context
 ```
 
 `WithAttrs` 是取出、绑定、写回三步的合写，注入点的常用形态：
@@ -125,6 +126,13 @@ log.FromContext(ctx).Info("connected", "addr", addr)
 ```
 
 **带上下文的路径从上下文取 logger**，进程根 logger 不带任何请求字段。属性经 `With` 绑定一次后由 handler 预处理，该请求的全部记录复用它，逐条不重复求值（[ADR-log-context-2026-09-13](../../adr/adr-log-context-2026-09-13.md)）。
+
+**经 `WithAttrs` 绑定的属性按键替换，经 `WithoutAttrs` 按键撤下。** 一个关联字段说的是它所在的上下文，上下文换了一个取值——换了租户、换了任务——记录要带的是新值一个，而不是旧值在前、新值在后两个；`slog.Logger.With` 只追加、handler 又已把绑定的属性预处理进自己的状态，因而上下文除了 logger 还另存经 `WithAttrs` 绑定的那些属性，每个键至多一项，按键首次绑定的次序排列：
+
+- 同一个键再次绑定，新值替换旧值，位置不变；一次调用里同一个键写两次，后一个为准。空键的组在输出里是内联的，它的成员按各自的键参与替换；空键而不是组的属性不参与替换，与其余各项并存。
+- `WithoutAttrs` 撤下这些键上的属性，供产生字段的模块在上下文不再是那个字段所说的样子时收回自己的字段；没有绑定过的键不是错误，一个键也没撤下时交回的就是传入的上下文。
+- **只追加新键的绑定照旧在上下文里现有的 logger 上绑定**，一次替换或撤下则从注入的 logger 重新派生，把留下的各项重新绑定一遍——它们因而按那一刻已登记的规则重新判定脱敏，比首次绑定时只多不少。
+- **注入的 logger 按原样取用**：`WithLogger` 之前经 `WithAttrs` 绑定的属性不带过去，注入的 logger 自己绑定的属性——`Named` 绑的模块名即是——是它的一部分，替换与撤下都够不到它。
 
 **`FromContext` 在上下文中没有 logger 时返回 `Default()`。** 见[取 logger 的途径](#取-logger-的途径)。
 
@@ -185,7 +193,7 @@ func Default() *slog.Logger
 
 这与注入点漏绑某一个字段不是同一类失败：漏绑只少几个属性，记录仍在配置的目的地。
 
-`WithAttrs` 的第一步是 `FromContext`，在没有 logger 的上下文上取到的是 `Default()`；绑定属性后写回上下文，下游从此取到带属性的那一个，链路后续的绑定照常累积——属性不丢，但整条路径仍在引导链上。
+`WithAttrs` 在没有 logger 的上下文上绑定到 `Default()` 上；绑定属性后写回上下文，下游从此取到带属性的那一个，链路后续的绑定照常累积、同一个键照常替换——属性不丢，但整条路径仍在引导链上。
 
 ### 首次注入的归属
 
@@ -473,7 +481,7 @@ log:
 
 ### 上下文中的关联字段
 
-经 `WithAttrs` 或 `WithLogger` 绑定的属性进入 handler 的状态：脱敏层在 `WithAttrs` 被调用时就地处理它们，此后该请求的每条记录复用处理结果，不再重复检查。这是绑定相对逐条附加的差别所在——属性求值与脱敏各发生一次，而不是每条记录各发生一次。
+经 `WithAttrs` 或 `WithLogger` 绑定的属性进入 handler 的状态：脱敏层在 `WithAttrs` 被调用时就地处理它们，此后该请求的每条记录复用处理结果，不再重复检查。这是绑定相对逐条附加的差别所在——属性求值与脱敏各发生一次，而不是每条记录各发生一次。一次替换或撤下把留下的各项重新绑定一遍，求值与脱敏在那一刻再发生一次，开销与经 `WithAttrs` 绑定的属性个数成正比。
 
 注入点的位置决定字段的覆盖范围：在中间件链中位置靠后的注入点，其字段对更外层已经产生的日志不生效。
 
@@ -560,7 +568,7 @@ log:
 
 登记的判定函数在每条记录的每个字符串值上执行，本模块不校验它的复杂度与终止性：一个低效或不终止的实现拖慢的是全进程的日志路径。
 
-上下文存取不引入共享状态：`WithLogger` 与 `WithAttrs` 各自返回新的 `context.Context`，原上下文不变，派生出的 logger 与原 logger 共享同一条处理链。
+上下文存取不引入共享状态：`WithLogger`、`WithAttrs` 与 `WithoutAttrs` 各自返回新的 `context.Context`，原上下文不变，它的 logger 照旧带着它绑定的那些属性；派生出的 logger 与原 logger 共享同一条处理链。
 
 **每个目的地只有一个写入者，由本模块在进程内按目的地去重后建立。** 两条输出指向同一个目的地是允许的——同一个 `stdout` 搭配两种格式，或两条输出写同一个 `Path`——此时它们共用该目的地的那一个写入者与它的锁。
 
@@ -614,7 +622,7 @@ log:
 |---|---|---|
 | 日志功能与按名取用 | 已实现 | `pkg/log/log.go` `Logger`、`pkg/log/module.go` `logger` |
 | 脱敏规则的登记 | 已实现 | `pkg/log/log.go` `Redaction`、`pkg/log/rules.go` `ruleSet`、`AddKeys`、`AddPattern` |
-| 上下文存取 | 已实现 | `pkg/log/context.go` `FromContext`、`WithLogger`、`WithAttrs` |
+| 上下文存取，按键替换与撤下 | 已实现 | `pkg/log/context.go` `FromContext`、`WithLogger`、`WithAttrs`、`WithoutAttrs` |
 | 进程根 logger 与引导链 | 已实现 | `pkg/log/bootstrap.go` `Default`、`newBootstrapChain` |
 | 配置声明与解读 | 已实现 | `pkg/log/config.go` `Config`、`Output`、`schema` |
 | 模块描述符与阶段行为 | 已实现 | `pkg/log/module.go` `Module`、`prepare` |

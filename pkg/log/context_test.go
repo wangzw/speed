@@ -175,3 +175,173 @@ func TestFromContextIgnoresAForeignValueUnderItsKey(t *testing.T) {
 		t.Errorf("FromContext returned %p for an injected nil logger, want the default logger", got)
 	}
 }
+
+// jsonContext is a context carrying a logger that renders its records as JSON
+// into the buffer returned, which is how these cases see every attribute a
+// record carries, a repeated key included.
+func jsonContext(l func(slog.Handler) *slog.Logger) (context.Context, *bytes.Buffer) {
+	var buf bytes.Buffer
+	h := slog.NewJSONHandler(&buf, &slog.HandlerOptions{Level: allLevels})
+	return WithLogger(context.Background(), l(h)), &buf
+}
+
+func plainLogger(h slog.Handler) *slog.Logger { return slog.New(h) }
+
+// requireOnce asserts that the record carries the key exactly once, with this
+// value.
+func requireOnce(t *testing.T, out, key, value string) {
+	t.Helper()
+	if n := strings.Count(out, `"`+key+`":`); n != 1 {
+		t.Fatalf("the record carries %s %d times, want once: %s", key, n, out)
+	}
+	if !strings.Contains(out, `"`+key+`":"`+value+`"`) {
+		t.Fatalf("the record carries %s with another value than %q: %s", key, value, out)
+	}
+}
+
+// requireAbsent asserts that the record does not carry the key.
+func requireAbsent(t *testing.T, out, key string) {
+	t.Helper()
+	if strings.Contains(out, `"`+key+`":`) {
+		t.Fatalf("the record still carries %s: %s", key, out)
+	}
+}
+
+// TestWithAttrsReplacesAKeyAlreadyBound pins that a field describes the context
+// it is bound on: a context that moved on to another value of the field has its
+// records carry that value once, not the old one beside it.
+func TestWithAttrsReplacesAKeyAlreadyBound(t *testing.T) {
+	ctx, buf := jsonContext(plainLogger)
+	ctx = WithAttrs(ctx, "trace_id", "t-1", "tenant_id", "n-1")
+	ctx = WithAttrs(ctx, "tenant_id", "n-2")
+
+	FromContext(ctx).Info("served")
+
+	out := buf.String()
+	requireOnce(t, out, "tenant_id", "n-2")
+	requireOnce(t, out, "trace_id", "t-1")
+	if !strings.Contains(out, `"trace_id":"t-1","tenant_id":"n-2"`) {
+		t.Errorf("the replaced key moved from where it was first bound: %s", out)
+	}
+}
+
+// A key given twice in one call is the same binding said twice; the later one
+// stands, as it would across two calls.
+func TestWithAttrsKeepsTheLaterOfAKeyGivenTwiceInOneCall(t *testing.T) {
+	ctx, buf := jsonContext(plainLogger)
+	ctx = WithAttrs(ctx, "tenant_id", "n-1", "tenant_id", "n-2")
+	FromContext(ctx).Info("served")
+	requireOnce(t, buf.String(), "tenant_id", "n-2")
+}
+
+// The members of a group with an empty key are written in line, so they are
+// keyed by their own keys, and a later binding of one of them replaces it.
+func TestWithAttrsKeysTheMembersOfAnInlineGroup(t *testing.T) {
+	ctx, buf := jsonContext(plainLogger)
+	ctx = WithAttrs(ctx, slog.Group("", slog.String("tenant_id", "n-1"), slog.String("job", "j-1")))
+	ctx = WithAttrs(ctx, "tenant_id", "n-2")
+	FromContext(ctx).Info("served")
+	out := buf.String()
+	requireOnce(t, out, "tenant_id", "n-2")
+	requireOnce(t, out, "job", "j-1")
+}
+
+// TestWithoutAttrsTakesABoundKeyOff pins the other half: a producer takes its
+// own field off a context that stopped being what the field said, and what the
+// others bound stays.
+func TestWithoutAttrsTakesABoundKeyOff(t *testing.T) {
+	ctx, buf := jsonContext(plainLogger)
+	ctx = WithAttrs(ctx, "trace_id", "t-1", "tenant_id", "n-1")
+	ctx = WithoutAttrs(ctx, "tenant_id")
+
+	FromContext(ctx).Info("served")
+
+	out := buf.String()
+	requireAbsent(t, out, "tenant_id")
+	requireOnce(t, out, "trace_id", "t-1")
+
+	// Binding the key again after it was taken off binds it once.
+	buf.Reset()
+	FromContext(WithAttrs(ctx, "tenant_id", "n-3")).Info("served")
+	requireOnce(t, buf.String(), "tenant_id", "n-3")
+}
+
+// Taking off a key nothing bound changes nothing, and hands the context back as
+// it was.
+func TestWithoutAttrsOfAKeyNothingBoundLeavesTheContext(t *testing.T) {
+	ctx, _ := jsonContext(plainLogger)
+	ctx = WithAttrs(ctx, "trace_id", "t-1")
+	if got := WithoutAttrs(ctx, "tenant_id"); got != ctx {
+		t.Error("taking off a key nothing bound derived a new context")
+	}
+	bare := context.Background()
+	if got := WithoutAttrs(bare, "tenant_id"); got != bare {
+		t.Error("taking a key off a context with no logger derived a new context")
+	}
+}
+
+// A replacement or a removal derives a new context; the one it came from goes
+// on carrying what it carried.
+func TestReplacingAKeyLeavesTheContextItCameFromAlone(t *testing.T) {
+	parent, buf := jsonContext(plainLogger)
+	parent = WithAttrs(parent, "tenant_id", "n-1")
+	_ = WithAttrs(parent, "tenant_id", "n-2")
+	_ = WithoutAttrs(parent, "tenant_id")
+
+	FromContext(parent).Info("served")
+	requireOnce(t, buf.String(), "tenant_id", "n-1")
+}
+
+// The injected logger is taken as it stands: what it bound itself — the module
+// name Named binds, for one — survives a replacement or a removal of the keys
+// bound on top of it, and is not reached by either.
+func TestReplacingAKeyKeepsWhatTheInjectedLoggerBound(t *testing.T) {
+	ctx, buf := jsonContext(func(h slog.Handler) *slog.Logger {
+		return slog.New(h).With(ModuleAttrKey, "http", "tenant_id", "injected")
+	})
+	ctx = WithAttrs(ctx, "trace_id", "t-1")
+	ctx = WithAttrs(ctx, "trace_id", "t-2")
+	ctx = WithoutAttrs(ctx, "tenant_id")
+
+	FromContext(ctx).Info("served")
+
+	out := buf.String()
+	requireOnce(t, out, ModuleAttrKey, "http")
+	requireOnce(t, out, "trace_id", "t-2")
+	requireOnce(t, out, "tenant_id", "injected")
+}
+
+// A replacement binds every attribute afresh, and the fresh binding passes the
+// redaction layer like the first one did: a credential bound earlier is not
+// written in the clear because another key was replaced after it.
+func TestAReplacementStillPassesRedaction(t *testing.T) {
+	isolateRules(t)
+	const secret = "rebound-plaintext-credential"
+	processRedaction.AddKeys("rebound-context-key")
+
+	ctx, buf := jsonContext(func(h slog.Handler) *slog.Logger { return slog.New(newRedactHandler(h)) })
+	ctx = WithAttrs(ctx, "rebound-context-key", secret, "tenant_id", "n-1")
+	ctx = WithAttrs(ctx, "tenant_id", "n-2")
+	ctx = WithoutAttrs(ctx, "trace_id", "tenant_id")
+
+	FromContext(ctx).Info("served")
+
+	out := buf.String()
+	if strings.Contains(out, secret) {
+		t.Fatalf("a rebinding wrote the credential in the clear: %s", out)
+	}
+	requireOnce(t, out, "rebound-context-key", MaskedText)
+	requireAbsent(t, out, "tenant_id")
+}
+
+// On a context with no logger the replacement holds on the default logger too.
+func TestWithAttrsReplacesAKeyOnTheDefaultChain(t *testing.T) {
+	ctx := WithAttrs(context.Background(), "tenant_id", "n-1")
+	ctx = WithAttrs(ctx, "tenant_id", "n-2")
+
+	out := captureBootstrapStdout(t, func() { FromContext(ctx).Info("served") })
+
+	if n := strings.Count(out, "tenant_id="); n != 1 || !strings.Contains(out, "tenant_id=n-2") {
+		t.Errorf("the bootstrap chain's record carries tenant_id %d times, want once as n-2: %q", n, out)
+	}
+}
