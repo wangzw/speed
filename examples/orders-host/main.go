@@ -37,10 +37,14 @@
 //     the environment wins. The argument naming the file belongs to the root, so
 //     it may be written before the command or after it and the run is the same
 //     one.
-//   - Cancelling the context stops and closes every module in reverse
-//     construction order, and a record a module writes as it closes still
-//     reaches the configured destinations: the logger it holds is closed after
-//     it, which is what declaring that requirement buys.
+//   - Cancelling the context stops the entry point before any other module: a
+//     placement it admitted is still answered, and neither application module
+//     is told to stop until it has been, although both are constructed after
+//     the entry point. The other modules are stopped after it in reverse
+//     construction order, and every module is closed once every Stop has
+//     returned, in reverse construction order again. A record a module writes
+//     as it closes still reaches the configured destinations: the logger it
+//     holds is closed after it, which is what declaring that requirement buys.
 //   - A record says which module wrote it, without the module putting its own
 //     name into the call.
 //   - A guarded route answers 401 without a credential and 200 with one, and the

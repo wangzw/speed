@@ -57,9 +57,10 @@ const (
 )
 
 // The records a module writes as it is released. They are messages rather than
-// free text so that a case finds them by name, and the order the two modules'
-// records appear in is what shows the release running in reverse construction
-// order.
+// free text so that a case finds them by name, and where the two modules'
+// records appear is what shows the shutdown order: no stop before the entry
+// point has answered what it admitted, the stops in reverse construction order,
+// and the closes after every stop in that order again.
 const (
 	stopMsg  = "stop"
 	closeMsg = "close"

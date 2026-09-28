@@ -1,6 +1,7 @@
 package main
 
 import (
+	"bufio"
 	"bytes"
 	"context"
 	"database/sql"
@@ -48,6 +49,12 @@ var hostBinary string
 // leave. Exceeding it means the host hung, and the case says so with the output
 // attached rather than with a timeout of the test binary.
 const waitLimit = 15 * time.Second
+
+// streamLag is how long a case lets what the host wrote reach the buffer it
+// reads before reading it for a record that must not be there. The host's
+// output crosses a pipe and a copying goroutine, so a record written an instant
+// earlier may not be readable at once.
+const streamLag = 200 * time.Millisecond
 
 // settleLimit bounds how long a case waits for a capture path that writes after
 // the response. A request-level audit row is written once the handler is done,
@@ -482,6 +489,15 @@ func (f *fixture) start(t *testing.T) *running {
 	// only after it is.
 	var exited error
 	stopped := make(chan struct{})
+
+	// interrupt asks the run to stop and returns at once. It signals once
+	// only: the host stops listening for the signal as it leaves, so a second
+	// one landing then would kill it and read as an unclean exit.
+	var signalled sync.Once
+	interrupt := func() {
+		signalled.Do(func() { _ = cmd.Process.Signal(os.Interrupt) })
+	}
+
 	var once sync.Once
 	// stop interrupts the run and asserts that it left the way a graceful stop
 	// is supposed to: on its own, within the wait limit, with a zero exit
@@ -490,7 +506,7 @@ func (f *fixture) start(t *testing.T) *running {
 	// returned an error is visible from outside the process.
 	stop := func() {
 		once.Do(func() {
-			_ = cmd.Process.Signal(os.Interrupt)
+			interrupt()
 			select {
 			case <-stopped:
 			case <-time.After(waitLimit):
@@ -512,16 +528,26 @@ func (f *fixture) start(t *testing.T) *running {
 	t.Cleanup(stop)
 
 	waitUntilReady(t, read)
-	return &running{public: "http://" + f.public, ops: "http://" + f.ops, output: read, stop: stop}
+	return &running{
+		public:     "http://" + f.public,
+		publicAddr: f.public,
+		ops:        "http://" + f.ops,
+		output:     read,
+		interrupt:  interrupt,
+		stop:       stop,
+	}
 }
 
 // running is a host that is listening, together with what it has written and
-// the way to ask it to stop.
+// the ways to ask it to stop: interrupt only sends the signal, stop sends it
+// and waits for the host to leave.
 type running struct {
-	public string
-	ops    string
-	output func() string
-	stop   func()
+	public     string
+	publicAddr string
+	ops        string
+	output     func() string
+	interrupt  func()
+	stop       func()
 }
 
 // get builds one GET request, with the tenant header and the credential the
@@ -1323,11 +1349,22 @@ func TestTheLimitingRowCoversOneTenantAlone(t *testing.T) {
 }
 
 // TestAnInterruptStopsTheRun is the case for the lifecycle's exit. The run is
-// asked to stop rather than killed, every module is released, and the records
-// are written in the reverse of the order the modules were built — which is the
-// ordering the release is defined by, and the only place it is observable.
+// asked to stop rather than killed, with a placement in flight, and the order
+// the modules are released in is read off what reaches the stream.
 //
-// A record written as a module closes only reaches the stream because the
+// The entry point is stopped before any other module: the placement it
+// admitted is answered, and neither application module is told to stop until
+// it has been. Both take the router up in Init rather than requiring it, and
+// here both are constructed after the entry point, so reverse construction
+// order alone would stop them while the placement is still inside. The stream
+// is read once the entry point is seen to stop listening, with the placement
+// still waiting for its body, and a module stopped ahead of the entry point has
+// written its record by then.
+//
+// The other modules follow in reverse construction order, every stop ahead of
+// every close, and the closes run in reverse construction order again:
+// inventory is constructed before orders, so it is stopped and closed after
+// it. A record written as a module closes only reaches the stream because the
 // logging requirement puts the logging module behind it: without the
 // declaration, the logger would already be closed and the record would go
 // nowhere while the case still saw a clean exit.
@@ -1339,6 +1376,20 @@ func TestAnInterruptStopsTheRun(t *testing.T) {
 	if _, already := findRecord(run.output(), stoppedMsg); already {
 		t.Fatal("the host had already stopped before the case interrupted it")
 	}
+	held := holdPlacement(t, run, acme, subject, "held", "a widget placed across the interrupt")
+	run.interrupt()
+	waitUntilRefused(t, run)
+
+	draining := run.output()
+	for _, name := range []string{ordersModuleName, inventoryModuleName} {
+		if recordOrder(draining, stopMsg, "module", name) >= 0 {
+			t.Errorf("%s was stopped while the entry point was still draining a placement it admitted; the run wrote:\n%s",
+				name, draining)
+		}
+	}
+	if status, body := held.finish(t); status != nethttp.StatusCreated {
+		t.Errorf("the placement admitted before the interrupt answered %d: %s", status, body)
+	}
 	run.stop()
 
 	out := run.output()
@@ -1346,15 +1397,134 @@ func TestAnInterruptStopsTheRun(t *testing.T) {
 		t.Fatalf("after an interrupt the run wrote no %q record; it wrote:\n%s", stoppedMsg, out)
 	}
 
-	ordersClosed := recordOrder(out, closeMsg, "module", ordersModuleName)
-	inventoryClosed := recordOrder(out, closeMsg, "module", inventoryModuleName)
-	switch {
-	case ordersClosed < 0 || inventoryClosed < 0:
-		t.Errorf("the release did not write a close record from both modules; the run wrote:\n%s", out)
-	case ordersClosed > inventoryClosed:
-		t.Errorf("%s closed before %s; the release runs in reverse construction order, and %s is constructed first",
-			inventoryModuleName, ordersModuleName, inventoryModuleName)
+	// The records the release writes, in the order it has to write them.
+	release := []struct{ msg, module string }{
+		{stopMsg, ordersModuleName},
+		{stopMsg, inventoryModuleName},
+		{closeMsg, ordersModuleName},
+		{closeMsg, inventoryModuleName},
 	}
+	previous := -1
+	for i, r := range release {
+		at := recordOrder(out, r.msg, "module", r.module)
+		if at < 0 {
+			t.Fatalf("the release wrote no %q record from %s; the run wrote:\n%s", r.msg, r.module, out)
+		}
+		if at < previous {
+			t.Fatalf("the %q record from %s came before the %q record from %s; want %v, the stops in "+
+				"reverse construction order and the closes after every stop in the same order; the run wrote:\n%s",
+				r.msg, r.module, release[i-1].msg, release[i-1].module, release, out)
+		}
+		previous = at
+	}
+}
+
+// heldPlacement is a placement the host has admitted and whose handler is
+// waiting for the body, which the case sends when it chooses.
+type heldPlacement struct {
+	conn   net.Conn
+	reader *bufio.Reader
+	req    *nethttp.Request
+	body   []byte
+}
+
+// holdPlacement sends a placement's head and returns once its handler has asked
+// for the body.
+//
+// The head carries Expect: 100-continue, and the server sends the interim
+// answer only when the handler first reads the body. Receiving it is what says
+// the request is inside the handler: a connection that is merely open may still
+// be waiting in the listener's backlog, where closing the socket drops it
+// rather than draining it.
+func holdPlacement(t *testing.T, run *running, tenantName, credential, id, item string) *heldPlacement {
+	t.Helper()
+	body, err := json.Marshal(map[string]string{"id": id, "item": item})
+	if err != nil {
+		t.Fatalf("encoding the placement: %v", err)
+	}
+	r, err := nethttp.NewRequest(nethttp.MethodPost, run.public+"/orders", bytes.NewReader(body))
+	if err != nil {
+		t.Fatalf("building the request: %v", err)
+	}
+	r.Header.Set("Content-Type", "application/json")
+	r.Header.Set("Expect", "100-continue")
+	r.Header.Set("X-Tenant", tenantName)
+	r.SetBasicAuth(credential, password)
+	r.Close = true
+
+	var wire bytes.Buffer
+	if err = r.Write(&wire); err != nil {
+		t.Fatalf("serialising the placement: %v", err)
+	}
+	head, ok := bytes.CutSuffix(wire.Bytes(), body)
+	if !ok {
+		t.Fatalf("the serialised placement does not end in its body:\n%s", wire.Bytes())
+	}
+
+	conn, err := net.DialTimeout("tcp", run.publicAddr, waitLimit)
+	if err != nil {
+		t.Fatalf("connecting to the public endpoint: %v", err)
+	}
+	t.Cleanup(func() { _ = conn.Close() })
+	if err = conn.SetDeadline(time.Now().Add(waitLimit)); err != nil {
+		t.Fatalf("bounding the placement's connection: %v", err)
+	}
+	if _, err = conn.Write(head); err != nil {
+		t.Fatalf("sending the placement's head: %v", err)
+	}
+	reader := bufio.NewReader(conn)
+	interim, err := nethttp.ReadResponse(reader, r)
+	if err != nil {
+		t.Fatalf("reading the answer to the placement's head: %v", err)
+	}
+	if interim.StatusCode != nethttp.StatusContinue {
+		var text strings.Builder
+		_, _ = io.Copy(&text, interim.Body)
+		t.Fatalf("the placement's head was answered %d rather than asked for its body: %s",
+			interim.StatusCode, text.String())
+	}
+	return &heldPlacement{conn: conn, reader: reader, req: r, body: body}
+}
+
+// finish sends the body and returns the placement's status and response body.
+func (h *heldPlacement) finish(t *testing.T) (int, string) {
+	t.Helper()
+	if _, err := h.conn.Write(h.body); err != nil {
+		t.Fatalf("sending the placement's body: %v", err)
+	}
+	resp, err := nethttp.ReadResponse(h.reader, h.req)
+	if err != nil {
+		t.Fatalf("reading the answer to the placement: %v", err)
+	}
+	defer resp.Body.Close()
+	var text strings.Builder
+	_, _ = io.Copy(&text, resp.Body)
+	return resp.StatusCode, text.String()
+}
+
+// waitUntilRefused polls the public endpoint until it refuses a connection,
+// which is the entry point's Stop closing its listening socket, and then lets
+// the stream catch up.
+//
+// The pause after the refusal is for a module stopped ahead of the entry point:
+// its record was written before the socket closed, and the pause is the time
+// the record has to cross into what the case reads.
+func waitUntilRefused(t *testing.T, run *running) {
+	t.Helper()
+	deadline := time.Now().Add(waitLimit)
+	for {
+		conn, err := net.DialTimeout("tcp", run.publicAddr, time.Second)
+		if err != nil {
+			break
+		}
+		_ = conn.Close()
+		if time.Now().After(deadline) {
+			t.Fatalf("the public endpoint still accepted connections %v after the interrupt; the run wrote:\n%s",
+				waitLimit, run.output())
+		}
+		time.Sleep(10 * time.Millisecond)
+	}
+	time.Sleep(streamLag)
 }
 
 // TestVersionAssemblesNothing is the case for an empty participating set being
