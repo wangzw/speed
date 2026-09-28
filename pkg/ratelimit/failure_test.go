@@ -129,6 +129,61 @@ func TestAFailureConfinedToOneTenantWritesOneLine(t *testing.T) {
 	}
 }
 
+// TestTheQuietPeriodRunsFromTheLastFailure pins where the quiet period is
+// measured from. A condition confined to some decisions keeps recurring for as
+// long as it lasts, and every recurrence starts the quiet period again. Measured
+// from the first failure instead, the class would recover one quiet period
+// after the condition began however long it went on, and the next recurrence
+// would write a new failure line: a pair of lines per quiet period, which is
+// the flapping the period is there to prevent, only slower.
+//
+// The condition here lasts three quiet periods and recurs at half a period's
+// spacing, so a class measured from its first failure has already recovered
+// inside the loop; the last part pins the recovery to one quiet period after
+// the last failure, in both directions.
+func TestTheQuietPeriodRunsFromTheLastFailure(t *testing.T) {
+	var out bytes.Buffer
+	s, clock := signalOnAPinnedClock(&out)
+
+	bad := stoppedAt(reasonThresholdDomain)
+	bad.tenant = "bad"
+	good := everyClass
+	good.tenant = "good"
+
+	step := recoveryQuiet / 4
+	var lastFailure time.Time
+	for elapsed := time.Duration(0); elapsed < 3*recoveryQuiet; elapsed += 2 * step {
+		s.settle(bad)
+		lastFailure = clock.now()
+		clock.advance(step)
+		s.settle(good)
+		clock.advance(step)
+	}
+	if strings.Contains(out.String(), "back to limiting") {
+		t.Fatalf("a failure recurring every %v for %v was reported recovered while it still "+
+			"recurred, so the quiet period was not restarted by the later failures:\n%s",
+			2*step, 3*recoveryQuiet, out.String())
+	}
+	if got := strings.Count(out.String(), "letting requests through"); got != 1 {
+		t.Fatalf("a failure that never went quiet wrote %d failure lines, want 1:\n%s", got, out.String())
+	}
+
+	// The condition has stopped. Just short of a quiet period after the last
+	// failure the class is still failing; at a quiet period it recovers.
+	clock.at = lastFailure.Add(recoveryQuiet - time.Second)
+	s.settle(good)
+	if strings.Contains(out.String(), "back to limiting") {
+		t.Fatalf("the class recovered %v after its last failure, short of the quiet period %v:\n%s",
+			recoveryQuiet-time.Second, recoveryQuiet, out.String())
+	}
+	clock.at = lastFailure.Add(recoveryQuiet)
+	s.settle(good)
+	if got := strings.Count(out.String(), "back to limiting"); got != 1 {
+		t.Fatalf("a quiet period after the last failure the recovery was written %d times, want once:\n%s",
+			got, out.String())
+	}
+}
+
 // TestAnEmptyEndpointListNamesTheKey pins the startup failure's fixing action:
 // the host is told which key to write. The sentinel alone says an input item
 // has no value and not which one, and a host running several modules is left
