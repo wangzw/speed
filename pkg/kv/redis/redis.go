@@ -6,12 +6,13 @@
 // itself comes from pkg/internal/redis, which the event module's Redis backend uses too,
 // so the two share one notion of what connecting means.
 //
-// Every operation is one command or one script. Two of them cannot be a plain
-// command: attaching an expiry only to a key an increment creates, and swapping
-// a value only when it matches. Redis has no verb for either, and doing them as
-// two commands would leave the gap this module exists to close — an increment
-// landing between the two would be lost, and a swap would not be one. Both run
-// as scripts, which Redis executes atomically.
+// Every operation is one command or one script. The increments and the swap
+// cannot be a plain command: attaching an expiry only to a key an increment
+// creates, refusing a sum no float64 holds without having written it, and
+// swapping a value only when it matches. Redis has no verb for any of them,
+// and doing them as two commands would leave the gap this module exists to
+// close — an increment landing between the two would be lost, and a swap would
+// not be one. They run as scripts, which Redis executes atomically.
 package redis
 
 import (
@@ -26,6 +27,7 @@ import (
 	"github.com/vislake/speed/pkg/core"
 	"github.com/vislake/speed/pkg/internal/redis"
 	"github.com/vislake/speed/pkg/kv"
+	"github.com/vislake/speed/pkg/kv/internal/counter"
 )
 
 const (
@@ -142,22 +144,44 @@ func (s *store) Delete(ctx context.Context, key string) error {
 
 // IncrByFloat uses the server's own counter. Redis leaves an existing key's
 // expiry alone when it increments, which is the semantics the capability
-// requires and the reason this is a plain command rather than a script.
+// requires.
 func (s *store) IncrByFloat(ctx context.Context, key string, delta float64) (float64, error) {
-	got, err := s.client.IncrByFloat(ctx, prefixed(key), delta).Result()
-	return got, asNotNumeric(err)
+	return s.increment(ctx, key, delta, 0)
 }
 
 // IncrByFloatWithTTL attaches the expiry only to a key this call creates.
 //
-// The script asks whether the key exists before incrementing, rather than
-// reading the ttl afterwards: an existing key with no expiry and a fresh key
-// both report no ttl, so the ttl alone cannot tell the two apart, and extending
-// an existing key is exactly what the capability forbids.
+// The script reads the key before incrementing, rather than reading the ttl
+// afterwards: an existing key with no expiry and a fresh key both report no
+// ttl, so the ttl alone cannot tell the two apart, and extending an existing
+// key is exactly what the capability forbids.
 func (s *store) IncrByFloatWithTTL(ctx context.Context, key string, delta float64, ttl time.Duration) (float64, error) {
+	return s.increment(ctx, key, delta, ttl)
+}
+
+// increment is both increment operations, run as one script. A ttl of zero
+// attaches nothing, which is the plain increment.
+//
+// It is a script rather than the bare INCRBYFLOAT because the server adds at a
+// wider precision than float64: a sum past float64's range is a value it
+// stores happily and the client then cannot parse, so the caller would be told
+// an increment failed that had in fact been written — and would retry it. The
+// script checks the sum it stored and puts the previous value back when no
+// float64 holds it, all inside one atomic step.
+func (s *store) increment(ctx context.Context, key string, delta float64, ttl time.Duration) (float64, error) {
+	if err := counter.CheckDelta(ModuleName, key, delta); err != nil {
+		return 0, err
+	}
 	got, err := incrWithTTL.Run(ctx, s.client, []string{prefixed(key)}, delta, ttlMillis(ttl)).Float64()
+	if err != nil && strings.Contains(err.Error(), outOfRangeReply) {
+		return 0, counter.OutOfRange(ModuleName, key)
+	}
 	return got, asNotNumeric(err)
 }
+
+// outOfRangeReply is the error the increment script answers when the sum is
+// past float64's range.
+const outOfRangeReply = "KVRANGE"
 
 // CompareAndSwap compares and writes in one script, so no other command can
 // land between the comparison and the write.
@@ -209,12 +233,23 @@ func asNotNumeric(err error) error {
 }
 
 var (
-	// incrWithTTL increments, and attaches the expiry in the same script when
-	// the key was not there.
+	// incrWithTTL increments, refuses a sum no float64 holds by putting the
+	// previous value back, and attaches the expiry in the same script when the
+	// key was not there. Lua reads a number past float64's range as an
+	// infinity, which is how the sum is judged.
 	incrWithTTL = goredis.NewScript(`
-local existed = redis.call('EXISTS', KEYS[1])
+local previous = redis.call('GET', KEYS[1])
 local value = redis.call('INCRBYFLOAT', KEYS[1], ARGV[1])
-if existed == 0 and tonumber(ARGV[2]) > 0 then
+local sum = tonumber(value)
+if sum == nil or sum ~= sum or sum == math.huge or sum == -math.huge then
+  if previous then
+    redis.call('SET', KEYS[1], previous, 'KEEPTTL')
+  else
+    redis.call('DEL', KEYS[1])
+  end
+  return redis.error_reply('KVRANGE the sum is past what a float64 holds')
+end
+if not previous and tonumber(ARGV[2]) > 0 then
   redis.call('PEXPIRE', KEYS[1], ARGV[2])
 end
 return value

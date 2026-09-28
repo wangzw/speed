@@ -38,6 +38,7 @@ import (
 	"github.com/vislake/speed/pkg/config"
 	"github.com/vislake/speed/pkg/core"
 	"github.com/vislake/speed/pkg/kv"
+	"github.com/vislake/speed/pkg/kv/internal/counter"
 	"github.com/vislake/speed/pkg/kv/internal/expiry"
 	"github.com/vislake/speed/pkg/kv/internal/retry"
 )
@@ -201,6 +202,9 @@ func (s *store) IncrByFloatWithTTL(ctx context.Context, key string, delta float6
 // plays the same role — it fails when someone else got there first, rather than
 // overwriting them.
 func (s *store) increment(ctx context.Context, key string, delta float64, ttl time.Duration, withTTL bool) (float64, error) {
+	if err := counter.CheckDelta(ModuleName, key, delta); err != nil {
+		return 0, err
+	}
 	encoded := encodeKey(key)
 	for attempt := 0; attempt < casAttempts; attempt++ {
 		if err := ctx.Err(); err != nil {
@@ -241,6 +245,9 @@ func (s *store) increment(ctx context.Context, key string, delta float64, ttl ti
 			}
 		}
 		next := current + delta
+		if err := counter.CheckResult(ModuleName, key, next); err != nil {
+			return 0, err
+		}
 		if _, updateErr := s.bucket.Update(ctx, encoded, expiry.Wrap([]byte(formatFloat(next)), expires), entry.Revision()); updateErr != nil {
 			// A revision that no longer matches is what a lost race looks like
 			// here, and JetStream reports it as ErrKeyRevisionMismatch rather

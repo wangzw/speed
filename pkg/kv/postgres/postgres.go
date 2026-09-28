@@ -35,6 +35,7 @@ import (
 	"github.com/vislake/speed/pkg/core"
 	"github.com/vislake/speed/pkg/internal/pgpool"
 	"github.com/vislake/speed/pkg/kv"
+	"github.com/vislake/speed/pkg/kv/internal/counter"
 )
 
 const (
@@ -267,6 +268,9 @@ func (s *store) IncrByFloatWithTTL(ctx context.Context, key string, delta float6
 // — the column holds bytes and PostgreSQL's numeric type does not read them, so
 // the conversion happens in the statement.
 func (s *store) increment(ctx context.Context, key string, delta float64, ttl time.Duration, withTTL bool) (float64, error) {
+	if deltaErr := counter.CheckDelta(ModuleName, key, delta); deltaErr != nil {
+		return 0, deltaErr
+	}
 	tx, beginErr := s.pool.Begin(ctx)
 	if beginErr != nil {
 		return 0, beginErr
@@ -300,12 +304,21 @@ func (s *store) increment(ctx context.Context, key string, delta float64, ttl ti
 	if incrErr != nil {
 		return 0, asNotNumeric(incrErr, key)
 	}
+	// The sum is judged before the commit, not after. PostgreSQL's numeric
+	// has no ceiling, so a sum past float64's range is a valid row that no
+	// caller can read back as a number; committing it and then reporting the
+	// failure would have a caller retry a write that happened. ParseFloat
+	// answers such a sum with an infinity, and the deferred rollback leaves
+	// the counter as it was.
+	got, parseErr := parseFloat(text)
+	if parseErr != nil && !errors.Is(parseErr, strconv.ErrRange) {
+		return 0, fmt.Errorf("%s: the increment of %q produced %q, which is not a number", ModuleName, key, text)
+	}
+	if resultErr := counter.CheckResult(ModuleName, key, got); resultErr != nil {
+		return 0, resultErr
+	}
 	if commitErr := tx.Commit(ctx); commitErr != nil {
 		return 0, commitErr
-	}
-	got, parseErr := parseFloat(text)
-	if parseErr != nil {
-		return 0, fmt.Errorf("%s: the counter for %q holds %q, which is not a number", ModuleName, key, text)
 	}
 	return got, nil
 }

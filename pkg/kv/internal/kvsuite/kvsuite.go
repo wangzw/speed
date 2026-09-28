@@ -21,6 +21,7 @@ import (
 	"crypto/sha256"
 	"errors"
 	"fmt"
+	"math"
 	"strconv"
 	"strings"
 	"sync"
@@ -282,6 +283,55 @@ func AssertConforms(t *testing.T, newStore Factory) {
 		}
 		if !bytes.Equal(got, []byte("not a number")) {
 			t.Fatalf("the refused increment changed the value to %q", got)
+		}
+	})
+
+	t.Run("an increment that would leave no finite number is refused and changes nothing", func(t *testing.T) {
+		s := newStore(t)
+		ctx := context.Background()
+		increments := map[string]func(key string, delta float64) error{
+			"IncrByFloat": func(key string, delta float64) error {
+				_, err := s.IncrByFloat(ctx, key, delta)
+				return err
+			},
+			"IncrByFloatWithTTL": func(key string, delta float64) error {
+				_, err := s.IncrByFloatWithTTL(ctx, key, delta, liveTTL)
+				return err
+			},
+		}
+		for name, incr := range increments {
+			// A delta that is not a number reaches no backend: the key is not
+			// created, and it is not reported as holding something non-numeric,
+			// because it holds nothing at all.
+			for _, delta := range []float64{math.NaN(), math.Inf(1), math.Inf(-1)} {
+				err := incr("absent", delta)
+				if err == nil {
+					t.Fatalf("%s by %v succeeded", name, delta)
+				}
+				if errors.Is(err, kv.ErrNotNumeric) {
+					t.Fatalf("%s by %v on an absent key blamed the stored value: %v", name, delta, err)
+				}
+				if _, present, getErr := s.Get(ctx, "absent"); getErr != nil || present {
+					t.Fatalf("%s by %v created the key: present=%v err=%v", name, delta, present, getErr)
+				}
+			}
+			// A sum past float64's range is refused before anything is
+			// written, so a caller never gets an error for a write that
+			// happened — which it would retry and count twice.
+			const largest = "1.7976931348623157e308"
+			if err := s.Set(ctx, "full", []byte(largest), 0); err != nil {
+				t.Fatalf("Set: %v", err)
+			}
+			err := incr("full", math.MaxFloat64)
+			if err == nil {
+				t.Fatalf("%s past float64's range succeeded", name)
+			}
+			if errors.Is(err, kv.ErrNotNumeric) {
+				t.Fatalf("%s past float64's range blamed the stored value, which is a number: %v", name, err)
+			}
+			if got, _, getErr := s.Get(ctx, "full"); getErr != nil || string(got) != largest {
+				t.Fatalf("%s past float64's range changed the counter to %q (err %v)", name, got, getErr)
+			}
 		}
 	})
 

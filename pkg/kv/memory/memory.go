@@ -31,6 +31,7 @@ import (
 	"github.com/vislake/speed/pkg/config"
 	"github.com/vislake/speed/pkg/core"
 	"github.com/vislake/speed/pkg/kv"
+	"github.com/vislake/speed/pkg/kv/internal/counter"
 )
 
 const (
@@ -185,6 +186,9 @@ func (s *store) increment(ctx context.Context, key string, delta float64, ttl ti
 	if err := ctx.Err(); err != nil {
 		return 0, err
 	}
+	if err := counter.CheckDelta(ModuleName, key, delta); err != nil {
+		return 0, err
+	}
 	s.mu.Lock()
 	defer s.mu.Unlock()
 
@@ -198,6 +202,9 @@ func (s *store) increment(ctx context.Context, key string, delta float64, ttl ti
 		current = parsed
 	}
 	next := current + delta
+	if err := counter.CheckResult(ModuleName, key, next); err != nil {
+		return 0, err
+	}
 	encoded := []byte(strconv.FormatFloat(next, 'g', -1, 64))
 
 	if live {

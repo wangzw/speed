@@ -65,6 +65,15 @@ type KV interface {
 	// parse with strconv.ParseFloat rather than compare as text. A key holding
 	// a non-numeric value fails with ErrNotNumeric and is left unchanged.
 	//
+	// A counter holds a finite number. A delta that is not finite, and an
+	// increment whose sum no float64 holds, fail with an error that is not
+	// ErrNotNumeric and write nothing. A value put in place by Set is read as a
+	// number by every implementation when it is plain decimal text — an
+	// optional sign, digits, an optional fraction and exponent, which is the
+	// form the increments write — and other spellings (hexadecimal, digit
+	// separators, surrounding space, NaN and the infinities) are read as a
+	// number by some implementations and refused by others.
+	//
 	// The arithmetic is not guaranteed bit-identical across implementations for
 	// a delta not exactly representable in binary float64 (0.1, for instance):
 	// some backends round after every accumulation, others accumulate at a
