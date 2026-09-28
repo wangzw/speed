@@ -92,6 +92,12 @@ type Event struct {
 	// every publisher's closure. The cost is that edge — the bus reaching a
 	// concrete capability's interface — rather than a third-party stack, since
 	// that interface package imports the standard library alone.
+	//
+	// A subscriber that acts for the event's tenant enters that tenant from
+	// this field, through the tenant roster's Enter, rather than relying on the
+	// context its handler receives: the in-process bus hands over the
+	// publisher's context, tenant and all, and a transport bus hands over one
+	// with no tenant in it, so only the field reads the same on every bus.
 	TenantID string
 
 	// Payload carries the event data. Subscribers read it structurally, by
