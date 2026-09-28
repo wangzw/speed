@@ -37,6 +37,12 @@ const tableName = "audit_entries"
 // records, and is null on every other row. It is unique, which is what makes a
 // second delivery of one event — to another replica, or to this one again —
 // leave the row the first delivery wrote; see insert.
+//
+// A host reading the table for one tenant's trail relies on three facts, and
+// they are part of this module's contract rather than of its schema: the tenant
+// column is tenant_id and holds the identifier's text, or NULL where there is
+// none, never an empty string; the id key is unique over the whole table; and
+// this module is the table's only writer.
 type row struct {
 	ID         uint64    `gorm:"primaryKey"`
 	OccurredAt time.Time `gorm:"not null;index"`

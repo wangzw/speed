@@ -20,7 +20,9 @@ implementation is the `journal` subpackage, which registers the module
   why the capture surface has these paths
   ([`adr-audit-capture-2026-09-21.md`](../../docs/adr/adr-audit-capture-2026-09-21.md)),
   why the statement path fails with what it records
-  ([`adr-audit-failure-2026-09-21.md`](../../docs/adr/adr-audit-failure-2026-09-21.md)).
+  ([`adr-audit-failure-2026-09-21.md`](../../docs/adr/adr-audit-failure-2026-09-21.md)),
+  what a host reading the table may rely on
+  ([`adr-audit-sink-2026-09-29.md`](../../docs/adr/adr-audit-sink-2026-09-29.md)).
 - The API itself: the godoc in this package and in `journal`.
 
 This file states only what neither of those states: the boundaries a change here
