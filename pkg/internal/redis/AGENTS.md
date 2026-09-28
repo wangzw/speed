@@ -25,6 +25,12 @@ here must not cross, and how to run it.
 - **The client type is the interface.** `Connect` hands back a `*redis.Client`,
   not an abstraction of this package's own: a caller that needs something this
   wrapper does not offer reaches the client directly.
+- **The client `Connect` builds retries nothing.** A command whose reply was
+  lost may have run, and sending it again runs it twice — a double increment,
+  a winning swap reported as lost, a stream entry appended twice. The library
+  retries by default, so `Connect` turns it off, and
+  `TestACommandWhoseReplyIsLostIsNotSentAgain` holds that against a server that
+  loses replies. Whether to repeat an operation is the caller's decision.
 - **The configuration shape is fixed here.** `addr`, `password`, `db`,
   `pool-size`, `dial-timeout` and `read-timeout` are the same items under every
   mounting namespace; a setting only one backend has goes on that backend's own

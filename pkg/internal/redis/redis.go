@@ -140,6 +140,15 @@ func Connect(ctx context.Context, cfg Config) (*redis.Client, error) {
 		PoolSize:    cfg.PoolSize,
 		DialTimeout: cfg.DialTimeout,
 		ReadTimeout: cfg.ReadTimeout,
+		// The client retries nothing. Left at its zero value, go-redis
+		// retries a command up to three times when its reply is lost — the
+		// connection dropping after the write, or the read timing out — and a
+		// command whose reply was lost may well have run: an increment would
+		// count twice and report the doubled value, a compare-and-swap that
+		// won would re-run and report that it lost, and a stream entry would
+		// be appended twice. Whether an operation is safe to repeat is the
+		// caller's to know, so the failure goes back to the caller.
+		MaxRetries: -1,
 	})
 	if err := client.Ping(ctx).Err(); err != nil {
 		_ = client.Close()
