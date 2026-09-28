@@ -36,6 +36,11 @@ type roster struct {
 	// snapshot whose contents it never observed being written.
 	snap atomic.Pointer[snapshot]
 
+	// reading is held by the one read of the table in flight. It is a channel
+	// of one slot rather than a mutex so that a read waiting for it gives up
+	// when its context ends.
+	reading chan struct{}
+
 	// logger is where the startup account goes, and where a failed refresh
 	// is reported. It starts at the process root so that a build with no
 	// logging module still says something, and is replaced by the named
@@ -55,6 +60,7 @@ func newRoster(set settings, database db.Database) *roster {
 	return &roster{
 		handle:  database.DB(),
 		refresh: set.refresh,
+		reading: make(chan struct{}, 1),
 		logger:  log.Default(),
 	}
 }
@@ -132,14 +138,51 @@ func (r *roster) stop() {
 // reason to do that.
 func (r *roster) refreshOnce(ctx context.Context) {
 	if err := r.read(ctx); err != nil {
-		r.logger.Warn(diagnosticPrefix+ModuleName+
-			": the roster could not be reread; the previous one stays in force",
-			"error", err)
+		r.reportFailedReread(err)
 	}
 }
 
+// reportFailedReread says that a reread failed and the snapshot it would have
+// replaced is still the one served.
+func (r *roster) reportFailedReread(err error) {
+	r.logger.Warn(diagnosticPrefix+ModuleName+
+		": the roster could not be reread; the previous one stays in force",
+		"error", err)
+}
+
 // read replaces the snapshot with the table's current contents.
+//
+// Reads run one at a time, and each publishes what it read. Two paths read —
+// the refresher and a write rereading once it has committed — and two reads in flight together could publish
+// out of order: a refresh that read the table before a write committed,
+// finishing after the write's own reread, would put the roster without the
+// write back in force, and a tenant just disabled would be served again until
+// the next refresh. In sequence, the read that read last publishes last.
 func (r *roster) read(ctx context.Context) error {
+	if err := r.acquire(ctx); err != nil {
+		return fmt.Errorf("%s%s: reading table %s was given up while another read of it was in flight: %w",
+			diagnosticPrefix, ModuleName, tableName, err)
+	}
+	defer r.release()
+	return r.readHeld(ctx)
+}
+
+// acquire takes the one slot reads of the table run in, or gives up when the
+// context ends first.
+func (r *roster) acquire(ctx context.Context) error {
+	select {
+	case r.reading <- struct{}{}:
+		return nil
+	case <-ctx.Done():
+		return ctx.Err()
+	}
+}
+
+// release gives the slot back.
+func (r *roster) release() { <-r.reading }
+
+// readHeld is read, run by a caller already holding the slot.
+func (r *roster) readHeld(ctx context.Context) error {
 	var rows []row
 	if err := r.handle.WithContext(ctx).Model(&row{}).Find(&rows).Error; err != nil {
 		return fmt.Errorf(

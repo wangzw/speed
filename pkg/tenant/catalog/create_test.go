@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"sync"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -246,5 +247,70 @@ func TestAWriteIsServedWhenItsCallerGoesAwayAfterTheCommit(t *testing.T) {
 				t.Fatalf("the writer's replica serves (%+v, %v, %v), want the write", got, ok, err)
 			}
 		})
+	}
+}
+
+// holdFirstFullRead holds the first read of the whole roster table from here
+// on, once it has the table's rows and before it publishes them, until release
+// is closed. The channel it returns is closed once that read is being held.
+func holdFirstFullRead(t *testing.T, r *roster, release <-chan struct{}) <-chan struct{} {
+	t.Helper()
+	held := make(chan struct{})
+	var taken atomic.Bool
+	err := r.handle.Callback().Query().After("gorm:query").Register("test:hold-first-full-read",
+		func(tx *gorm.DB) {
+			if _, conditioned := tx.Statement.Clauses["WHERE"]; conditioned || tx.Statement.Table != tableName {
+				return
+			}
+			if taken.CompareAndSwap(false, true) {
+				close(held)
+				<-release
+			}
+		})
+	if err != nil {
+		t.Fatalf("registering the callback: %v", err)
+	}
+	return held
+}
+
+// A refresh that read the table before a write committed, and publishes only
+// after the write's own reread has, would put the roster without the write back
+// in force on the writer's replica — a tenant just disabled served again until
+// the next refresh. The reads of the roster publish in the order they read.
+func TestARefreshThatReadBeforeAWriteDoesNotUndoIt(t *testing.T) {
+	r := rosterOver(t, insert("t_old", "old"))
+	if err := r.read(context.Background()); err != nil {
+		t.Fatalf("reading: %v", err)
+	}
+	release := make(chan struct{})
+	held := holdFirstFullRead(t, r, release)
+	refreshed := make(chan struct{})
+	go func() {
+		defer close(refreshed)
+		r.refreshOnce(context.Background())
+	}()
+	<-held
+
+	written := make(chan error, 1)
+	go func() {
+		written <- r.Create(context.Background(), tenant.Tenant{ID: "t_new", Alias: "new", Status: tenant.StatusActive})
+	}()
+	var err error
+	done := false
+	select {
+	case err = <-written:
+		done = true
+	case <-time.After(200 * time.Millisecond):
+	}
+	close(release)
+	<-refreshed
+	if !done {
+		err = <-written
+	}
+	if err != nil {
+		t.Fatalf("creating: %v", err)
+	}
+	if got, ok, err := r.Get(context.Background(), "t_new"); err != nil || !ok {
+		t.Fatalf("after the refresh the writer's replica serves (%+v, %v, %v), want its own write", got, ok, err)
 	}
 }

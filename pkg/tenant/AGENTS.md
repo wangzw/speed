@@ -199,8 +199,9 @@ comes back through the row it hands back, an association join, a subquery
 rendered into another statement; `pkg/tenant/catalog/targets_test.go`
 is where an assignment's target is read the way each database reads it, on both
 dialects; `pkg/tenant/catalog/create_test.go` is where a registration that must
-not overwrite is refused against the table rather than the snapshot, and where
-a write's reread outlives its caller; `pkg/tenant/resolve/extract_test.go` is where the
+not overwrite is refused against the table rather than the snapshot, where
+a write's reread outlives its caller, and where reads of the table publish in
+the order they read; `pkg/tenant/resolve/extract_test.go` is where the
 registration window's behaviour under a duplicate or a late registration is;
 `pkg/tenant/resolve/admit_test.go` and `panic_test.go` are where the layer's
 answers to a request are — the four statuses, what an admitted request
