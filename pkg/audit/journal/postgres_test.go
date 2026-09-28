@@ -1,6 +1,7 @@
 package journal
 
 import (
+	"context"
 	"errors"
 	"strings"
 	"testing"
@@ -43,6 +44,58 @@ func openPostgres(t *testing.T) *gorm.DB {
 	}
 	applyMigration(t, handle, pgMigration)
 	return handle
+}
+
+// The PostgreSQL migration builds a table the statement path and the seam both
+// write into, with the absent tenant stored as NULL rather than as an empty
+// string and the masked key replaced before the row is written.
+func TestPostgresMigrationTakesTheStatementAndTheSeam(t *testing.T) {
+	handle := openPostgres(t)
+	if err := handle.Create(&order{ID: "o1", Note: "first"}).Error; err != nil {
+		t.Fatalf("writing the order: %v", err)
+	}
+	j := newTestJournal(handle, settings{})
+	if err := j.Record(context.Background(), audit.Entry{
+		Action: "export", Object: "orders", Outcome: "ok",
+		Detail: map[string]string{"token": "t", "note": "kept"},
+	}); err != nil {
+		t.Fatalf("recording through the seam: %v", err)
+	}
+
+	rows := auditRows(t, handle)
+	if len(rows) != 2 {
+		t.Fatalf("want a statement row and a seam row, got %d", len(rows))
+	}
+	statement, seam := rows[0], rows[1]
+	if statement.Source != string(audit.SourceStatement) || statement.Action != "create" ||
+		statement.Object != "orders" || statement.Outcome != "ok" ||
+		statement.Detail != `{"rows_affected":"1"}` {
+		t.Errorf("unexpected statement row: %+v", statement)
+	}
+	if statement.TenantID != nil {
+		t.Errorf("a write with no tenant in its context stored tenant %q, want NULL", *statement.TenantID)
+	}
+	if seam.Source != string(audit.SourceSeam) || seam.Detail != `{"note":"kept","token":"[REDACTED]"}` {
+		t.Errorf("unexpected seam row: %+v", seam)
+	}
+}
+
+// A statement row rides the statement's transaction on PostgreSQL as well.
+func TestPostgresStatementRowRidesTheTransaction(t *testing.T) {
+	handle := openPostgres(t)
+	changed := errors.New("the caller changed its mind")
+	err := handle.Transaction(func(tx *gorm.DB) error {
+		if err := tx.Create(&order{ID: "o1", Note: "rolled back"}).Error; err != nil {
+			return err
+		}
+		return changed
+	})
+	if !errors.Is(err, changed) {
+		t.Fatalf("the transaction gave %v, want the caller's own error", err)
+	}
+	if got := len(auditRows(t, handle)); got != 0 {
+		t.Fatalf("a rolled-back write left %d audit row(s) behind", got)
+	}
 }
 
 // A duplicate key on PostgreSQL reaches the caller as the engine's own error.
