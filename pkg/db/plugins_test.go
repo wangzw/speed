@@ -11,6 +11,7 @@ import (
 	"testing"
 	"testing/fstest"
 
+	"github.com/glebarez/sqlite"
 	"gorm.io/gorm"
 
 	"github.com/vislake/speed/pkg/core"
@@ -64,11 +65,16 @@ func pluginModule(name string, plugins ...gorm.Plugin) core.Module {
 	return core.Module{Name: name, Resources: resources}
 }
 
-// installedOn lists the plugins on a handle, sorted, so a case compares sets
-// rather than the map's iteration order.
+// installedOn lists the declared plugins on a handle, sorted, so a case compares
+// sets rather than the map's iteration order. The mark a connection built with
+// Open carries in the same table is left out: it is this package's own, and no
+// module declared it.
 func installedOn(handle *gorm.DB) []string {
 	names := make([]string, 0, len(handle.Plugins))
 	for name := range handle.Plugins {
+		if name == db.OpenedMarkerName {
+			continue
+		}
 		names = append(names, name)
 	}
 	slices.Sort(names)
@@ -183,6 +189,103 @@ func TestOpenedHandleCarriesTheSameAssembly(t *testing.T) {
 		t.Errorf("the connection built with Open carries the plugins %v, want %v; the caller moved a "+
 			"query to another database and lost what the declarations do to it", got, want)
 	}
+}
+
+// originProbe is a plugin that records, each time it is installed, whether the
+// handle it is installed on answers OpenedFrom — the question a plugin keeping a
+// table of its own asks.
+type originProbe struct {
+	mu      sync.Mutex
+	answers []bool
+}
+
+func (p *originProbe) Name() string { return "origin-probe" }
+
+func (p *originProbe) Initialize(handle *gorm.DB) error {
+	_, opened := db.OpenedFrom(handle)
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	p.answers = append(p.answers, opened)
+	return nil
+}
+
+func (p *originProbe) seen() []bool {
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	return slices.Clone(p.answers)
+}
+
+// OpenedFrom answers the delivered handle on every session derived from a
+// connection built with Open, and nothing on the delivered handle or on a handle
+// this module did not build.
+//
+// Every derived shape is asked because each is one a caller reaches for, and a
+// mark that did not survive one of them would fail silently: a context value is
+// gone at the first WithContext, a statement setting at the first new
+// statement, and a plugin reading either would take a second connection for the
+// delivered one. The Initialize half holds that the mark is in place before the
+// declared plugins go on.
+func TestOpenedFromAnswersTheDeliveredHandle(t *testing.T) {
+	probe := &originProbe{}
+	h, err := startHost(t, sqliteSpec(), hostConfig(t), pluginModule("probe-plugin", probe))
+	if err != nil {
+		t.Fatalf("starting a host with a declared plugin: %v", err)
+	}
+	delivered := h.Instance.DB()
+	opened, err := h.Instance.Open(t.Context(), filepath.Join(t.TempDir(), "elsewhere.db"))
+	if err != nil {
+		t.Fatalf("building a second connection: %v", err)
+	}
+	t.Cleanup(func() {
+		if closeErr := db.Close(opened); closeErr != nil {
+			t.Errorf("releasing the second connection: %v", closeErr)
+		}
+	})
+
+	if got := probe.seen(); !slices.Equal(got, []bool{false, true}) {
+		t.Errorf("the declared plugin, installed on the delivered handle and then on the second "+
+			"connection, saw OpenedFrom answer %v, want [false true]", got)
+	}
+
+	requireOrigin := func(name string, session *gorm.DB) {
+		t.Helper()
+		got, ok := db.OpenedFrom(session)
+		if !ok || got != delivered {
+			t.Errorf("%s: OpenedFrom gave (%p, %v), want the delivered handle %p", name, got, ok, delivered)
+		}
+	}
+	requireOrigin("the connection itself", opened)
+	requireOrigin("a session with a context of its own", opened.WithContext(context.Background()))
+	requireOrigin("a new session", opened.Session(&gorm.Session{NewDB: true}))
+	requireOrigin("a statement under way", opened.Table("anything").Where("1 = 1"))
+	if txErr := opened.Transaction(func(tx *gorm.DB) error {
+		requireOrigin("a transaction", tx)
+		return nil
+	}); txErr != nil {
+		t.Fatalf("running a transaction on the second connection: %v", txErr)
+	}
+
+	requireNone := func(name string, session *gorm.DB) {
+		t.Helper()
+		if got, ok := db.OpenedFrom(session); ok {
+			t.Errorf("%s: OpenedFrom gave %p, want no answer", name, got)
+		}
+	}
+	requireNone("the delivered handle", delivered)
+	requireNone("a session on the delivered handle", delivered.WithContext(context.Background()))
+	if txErr := delivered.Transaction(func(tx *gorm.DB) error {
+		requireNone("a transaction on the delivered handle", tx)
+		return nil
+	}); txErr != nil {
+		t.Fatalf("running a transaction on the delivered handle: %v", txErr)
+	}
+	foreign, err := gorm.Open(sqlite.Open(filepath.Join(t.TempDir(), "foreign.db")), &gorm.Config{})
+	if err != nil {
+		t.Fatalf("opening a handle outside the module: %v", err)
+	}
+	t.Cleanup(func() { _ = db.Close(foreign) })
+	requireNone("a handle the module did not build", foreign)
+	requireNone("no handle at all", nil)
 }
 
 // orderingCapability stands for whatever capability one module takes up from

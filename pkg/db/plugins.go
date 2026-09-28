@@ -104,6 +104,11 @@ func collectPlugins(reg *core.Registry) ([]pluginInstall, error) {
 // as the delivered one, and a caller that moved to another database would
 // otherwise lose tenant filtering or auditing silently.
 //
+// Carrying the plugins is not all a plugin needs there. One that writes rows of
+// its own finds a database the module applied no migration to, so its table is
+// usually missing; what it has to go on is OpenedFrom, which Open makes answer
+// on that handle before this runs.
+//
 // A plugin that will not install fails the startup under ErrPluginFailed. This
 // module cannot judge the plugin's content, so all it reports is which
 // declaration failed and what the plugin itself said.
@@ -128,6 +133,70 @@ func installPlugins(session *gorm.DB, plugins []pluginInstall) error {
 				ErrPluginFailed, name, install.module, err)
 		}
 		declaredBy[name] = install.module
+	}
+	return nil
+}
+
+// OpenedFrom reports the handle this capability delivered, for a session on a
+// connection built from it with Open. The second result is false for a session
+// on the delivered handle itself and for one on a handle this module did not
+// build with Open.
+//
+// It is how a plugin tells the two kinds of connection apart. The plugin
+// instances are shared by every handle built from one declaration — and by
+// every registry in the process — so an instance cannot remember which handle it
+// was installed on, and GORM hands a callback a session with nothing on it
+// saying where it came from. A plugin that keeps a table of its own needs that
+// answer: the declared migrations are applied to the database the configuration
+// names and to no other, so a second connection usually reaches a database
+// without that table.
+//
+// The answer holds for every session derived from the connection — a
+// WithContext, a Session, a transaction — because it travels with the
+// connection's configuration, which each of them shares, rather than with a
+// context a caller replaces. It is in place before any declared plugin is
+// installed, so a plugin's Initialize can ask it too.
+func OpenedFrom(session *gorm.DB) (*gorm.DB, bool) {
+	if session == nil || session.Config == nil {
+		return nil, false
+	}
+	marker, ok := session.Plugins[openedMarkerName].(*openedMarker)
+	if !ok {
+		return nil, false
+	}
+	return marker.delivered, true
+}
+
+// openedMarkerName is the name the marker is installed under in a handle's
+// plugin table. It is this package's own path with a suffix no declared plugin
+// takes, so a declaration cannot collide with it by following the convention.
+const openedMarkerName = "github.com/vislake/speed/pkg/db#opened-from"
+
+// openedMarker is what Open installs on the connection it builds, ahead of the
+// declared plugins: the delivered handle the connection was opened from.
+//
+// It sits in the plugin table because that table is the one piece of a handle
+// every derived session shares by reference. A context value would be gone at
+// the first WithContext, and a statement setting at the first new statement.
+type openedMarker struct {
+	delivered *gorm.DB
+}
+
+// Name is the marker's key in the plugin table.
+func (*openedMarker) Name() string { return openedMarkerName }
+
+// Initialize registers nothing: the marker is read, not run.
+func (*openedMarker) Initialize(*gorm.DB) error { return nil }
+
+// markOpened installs the marker on a connection Open built.
+//
+// The connection is fresh, so its plugin table is empty and the install has
+// nothing to collide with; a failure here would be GORM's own, and it is
+// reported under the sentinel the installation that follows reports under.
+func markOpened(opened, delivered *gorm.DB) error {
+	if err := opened.Use(&openedMarker{delivered: delivered}); err != nil {
+		return fmt.Errorf("%w: marking a connection built with Open with the handle it was opened "+
+			"from failed: %w", ErrPluginFailed, err)
 	}
 	return nil
 }

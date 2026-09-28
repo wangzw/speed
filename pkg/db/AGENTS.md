@@ -82,6 +82,14 @@ must not cross, and how to run it.
   error too, and it is classified with GORM's own `gorm.ErrDuplicatedKey` and
   `gorm.ErrForeignKeyViolated`, attached beside the driver's error rather than
   in its place (`adr-db-errors-2026-09-28`).
+- **The mark `Open` installs lives in the connection's plugin table, ahead of
+  the declared plugins.** It names the delivered handle, and `OpenedFrom` reads
+  it. The plugin table is the one piece of a handle every derived session — a
+  `WithContext`, a `Session`, a transaction — shares by reference; a context
+  value is gone at the first `WithContext` and a statement setting at the first
+  new statement, and `OpenedFrom` answering false there sends a plugin's row to
+  a database no migration reached, with nothing reporting it. Installing it
+  after the declared plugins leaves their `Initialize` unable to ask.
 - **Every wrap uses `%w`.** A `%v` leaves the text all but identical and makes
   the sentinel unreachable, which is the failure the note in `errors.go` exists
   to prevent; the error-chain cases hold each path to it.

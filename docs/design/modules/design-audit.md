@@ -284,7 +284,7 @@ sequenceDiagram
 
 **交付连接上的语句，写入走这条语句自己的会话**，不另开一条连接。两处后果是这条选择的理由：记录与它所记录的那次写入同生共死——调用方自开的事务随后回滚，那条审计行跟着一起没了，不会留下一条说「发生过」而其实没发生的行；而全程只有一条连接，一个只允许单写者的引擎（本仓为其提供迁移的那个）没有可争的东西。
 
-**额外连接上的语句，审计行归交付连接那个库里的审计表。** 数据库模块经 `Open` 建出的连接装着同一批插件，却不施加迁移（见 [db](design-db.md) 的额外的连接）；它连着的库通常没有审计表，而一个进程只有一张审计表。那条连接上的一条模型写语句，审计行经交付连接写出，写在它提交之前，写不进去令它失败，与交付连接上的语句同一个方向；只是它与那条语句不在一件工作里，两个库之间没有共同的事务（[ADR-audit-failure-2026-09-21](../../adr/adr-audit-failure-2026-09-21.md)）。**插件自己分不出这两种连接**：实例被多个注册表共用、不持有状态，从句柄上读不出它的来历，这个回答由建出额外连接的数据库模块给出。
+**额外连接上的语句，审计行归交付连接那个库里的审计表。** 数据库模块经 `Open` 建出的连接装着同一批插件，却不施加迁移（见 [db](design-db.md) 的额外的连接）；它连着的库通常没有审计表，而一个进程只有一张审计表。那条连接上的一条模型写语句，审计行经交付连接写出，写在它提交之前，写不进去令它失败，与交付连接上的语句同一个方向；只是它与那条语句不在一件工作里，两个库之间没有共同的事务（[ADR-audit-failure-2026-09-21](../../adr/adr-audit-failure-2026-09-21.md)）。**插件自己分不出这两种连接**：实例被多个注册表共用、不持有状态，从句柄上读不出它的来历，这个回答由建出额外连接的数据库模块给出——回调对语句所在的会话调用 `db.OpenedFrom`，它答出一个交付句柄时，这一行经那个句柄写出，答不出时写在语句自己的会话上（见 [db](design-db.md) 的额外的连接）。经交付句柄写出的这一行沿用语句的上下文，主体与租户照常从那里读出。
 
 **代价是这条通路的失败是抛上去的，不是报出去的**：写入失败会让那条业务语句失败，因为在同一条连接上记录与写入是一件工作。三条自驱通路的失败处置与此相反，见错误与失败语义。插件因此不持有任何句柄，连「哪一次 `Initialize` 的句柄」都不必记。
 
@@ -444,7 +444,8 @@ sequenceDiagram
 | 接口与数据类型 | 已实现 | `pkg/audit/audit.go` `Audit`、`Entry`、`Source` |
 | 哨兵 | 已实现 | `pkg/audit/audit.go` `ErrWriteFailed`、`ErrNotAccepting`；`pkg/audit/journal/errors.go` `ErrUnmatchablePattern` |
 | 审计表与迁移 | 已实现 | `pkg/audit/journal/entry.go` `row`；`pkg/audit/journal/migrations/<方言>/0001_audit_entries.sql`、`0002_audit_entries_event_id.sql` |
-| 语句级捕获 | 部分实现：缺额外连接上的行经交付连接写出。额外连接上的语句写在它自己的会话上，那个库没有审计表时每条模型写语句以 `ErrWriteFailed` 失败；补上它要数据库模块给出从额外连接认出交付连接的途径 | `pkg/audit/journal/capture.go` `capture`、`captureOne` |
+| 语句级捕获 | 已实现 | `pkg/audit/journal/capture.go` `capture`、`captureOne`、`recordSession` |
+| 额外连接上的行经交付连接写出 | 已实现 | `pkg/audit/journal/capture.go` `recordSession`；`pkg/db/plugins.go` `OpenedFrom` |
 | 请求级捕获 | 已实现 | `pkg/audit/journal/request.go` `middlewareFor`；`pkg/audit/journal/matcher.go` `newMatcher` |
 | 事件级捕获 | 已实现 | `pkg/audit/journal/event.go` `subscribe`、`handlerFor` |
 | 事件级按事件标识去重 | 已实现 | `pkg/audit/journal/event.go` `eventIDOf`；`pkg/audit/journal/entry.go` `insert` |

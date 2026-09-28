@@ -41,12 +41,12 @@ must not cross, and how to run it.
   would carry no table and would not reach the plugin at all. Someone changing
   the name changes it in the constant and in every migration file of both
   dialects.
-- **The statement callbacks write on the session they are handed.** That is what
-  puts the row in the statement's transaction and keeps it off a second
-  connection. Writing through a handle captured at `Initialize` instead — or
-  through a fresh connection — reopens both problems the choice closed: a
-  rolled-back write that still left a row, and a second writer contending on an
-  engine that admits one.
+- **On the delivered connection, the statement callbacks write on the session
+  they are handed.** That is what puts the row in the statement's transaction
+  and keeps it off a second connection. Writing through a handle captured at
+  `Initialize` instead — or through a fresh connection — reopens both problems
+  the choice closed: a rolled-back write that still left a row, and a second
+  writer contending on an engine that admits one.
 - **A statement that has already failed is not recorded.** GORM runs every
   callback on a processor whatever the earlier ones did, and the session the
   row would go out on carries the statement's error, so an insert attempted
@@ -90,18 +90,17 @@ must not cross, and how to run it.
   response to. Recording the request is what this layer is for, so the row
   stays; the design document carries the misreport as a non-guarantee.
 - **The plugin is installed on every handle the database module builds, the
-  second connection included, and a row for a statement on a second connection
-  belongs in the delivered database's table.** `db.Open` carries the same
-  declared plugins and applies no migrations, so the database a second
-  connection reaches usually has no audit table, and one process keeps one
-  audit table. The capture writes such a row on the statement's own session like
-  any other, so every model write on a second connection without the table
-  fails with `ErrWriteFailed`; the design document's status table carries the
-  gap. Closing it takes the database module saying which handle a second
-  connection was opened from. It is not something to close by guessing — a process-wide list of
-  running journals, or a probe for the table on each handle — because the
-  plugin instance is shared by every registry in the process and a guess would
-  hand one run's rows to another's table.
+  connections built with `Open` included, and a row for a statement on such a
+  connection belongs in the delivered database's table.** `Open` carries the
+  same declared plugins and applies no migrations, so the database it reaches
+  usually has no audit table, and one process keeps one audit table. The
+  capture asks `db.OpenedFrom` of the statement's session and, when it answers,
+  writes the row through the delivered handle it names: before the statement
+  commits, failing the statement when the row cannot be written, but outside
+  its transaction. The answer is the database module's to give. Replacing it
+  with a guess made here — a process-wide list of running journals, or a probe
+  for the table on each handle — hands one run's rows to another's table,
+  because the plugin instance is shared by every registry in the process.
 - **The event column is unique, and the event path's insert yields on it.** A
   broadcast bus hands every event to every replica, every replica writes into
   the one table, and the event's identifier is the same on every delivery, so

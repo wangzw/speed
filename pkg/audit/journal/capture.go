@@ -6,6 +6,7 @@ import (
 	"gorm.io/gorm"
 
 	"github.com/vislake/speed/pkg/audit"
+	"github.com/vislake/speed/pkg/db"
 )
 
 // captureCallbackName identifies this plugin's callbacks in GORM's own
@@ -56,7 +57,8 @@ func (c *capture) Name() string { return "github.com/vislake/speed/pkg/audit/jou
 // The handle is used to register and then dropped. GORM calls this once per
 // handle, and what each callback works on is the session it is handed when it
 // runs, so no handle has to be remembered. Where a row for a statement on a
-// second handle belongs is a question of its own; see captureOne.
+// connection built with Open belongs is asked of that session when the
+// statement runs; see captureOne.
 //
 // The anchor is the step the transaction ends at, so the callback runs after
 // the statement's own work and before the commit. The tenant filter registers
@@ -99,16 +101,19 @@ func (c *capture) Initialize(handle *gorm.DB) error {
 // statement fails, because on this connection the record and the write are one
 // unit of work. That is the one path in the module where that is true.
 //
-// A connection the database module built with Open is where this callback and
-// the design part company. That connection carries this plugin but no
-// migration, so the database it reaches usually has no audit table, and the
-// design puts the row in the delivered database's table instead. The plugin
+// A connection the database module built with Open is the exception. It carries
+// this plugin but no migration, so the database it reaches usually has no audit
+// table, and one process keeps one audit table: the row goes to the delivered
+// database's, through the delivered handle the database module says the
+// connection was opened from. It is still written before the statement commits
+// and still fails the statement when it cannot be written, so a write that left
+// no record does not happen there either; what it loses is the shared unit of
+// work, because two databases have no transaction in common, and a statement
+// rolled back after its row was written leaves the row behind. The plugin
 // instance is shared by every registry in the process and holds nothing, so the
-// session alone does not say which handle it came from, and nothing the
-// database module hands a plugin says it either. The row therefore goes out on
-// the statement's session here as everywhere else, and a statement whose
-// database lacks the table fails with ErrWriteFailed rather than going
-// unrecorded.
+// answer has to come from the session: a guess made here — the only journal
+// running, or whichever handle has the table — would hand one run's rows to
+// another's table.
 //
 // A statement that has already failed is left alone. GORM runs every callback
 // of a processor whatever the ones before it did, so this one is reached by a
@@ -142,11 +147,7 @@ func captureOne(action string) func(*gorm.DB) {
 				"rows_affected": strconv.FormatInt(tx.RowsAffected, 10),
 			},
 		}
-		// A session of its own on the same connection: NewDB clears the
-		// conditions the statement being recorded left on it, and the
-		// transaction underneath — if there is one — is not one of them.
-		session := tx.Session(&gorm.Session{NewDB: true, Context: st.Context})
-		if err := insert(session, assemble(st.Context, audit.SourceStatement, entry, "")); err != nil {
+		if err := insert(recordSession(tx), assemble(st.Context, audit.SourceStatement, entry, "")); err != nil {
 			// The write that produced this row is not going to be reported any
 			// other way: there is no caller to return to and no signal this
 			// path reports through, because the row and the statement are one
@@ -154,6 +155,26 @@ func captureOne(action string) func(*gorm.DB) {
 			_ = tx.AddError(err)
 		}
 	}
+}
+
+// recordSession is the session a statement's row goes out on.
+//
+// On the delivered connection it is a session of its own on the statement's
+// connection: NewDB clears the conditions the statement being recorded left on
+// it, and the transaction underneath — if there is one — is not one of them. On
+// a connection built with Open it is the delivered handle, under the
+// statement's context, which is where the actor and the tenant are read from.
+//
+// Both carry the statement's own logger. The row is part of the statement's
+// work, so a caller that gave its statement a logger of its own gets the
+// record's failure reported the way the statement's is, whichever connection
+// the row went out on.
+func recordSession(tx *gorm.DB) *gorm.DB {
+	ctx := tx.Statement.Context
+	if delivered, opened := db.OpenedFrom(tx); opened {
+		return delivered.Session(&gorm.Session{NewDB: true, Context: ctx, Logger: tx.Logger})
+	}
+	return tx.Session(&gorm.Session{NewDB: true, Context: ctx})
 }
 
 // targetTable is the table a statement writes to.

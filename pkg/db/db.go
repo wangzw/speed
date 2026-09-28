@@ -98,6 +98,10 @@ type Database interface {
 	// It carries no migrations and this module does not hold it: the caller
 	// closes it with Close in its own Close stage. Leaking it leaks
 	// connections, and nothing here can release them on the caller's behalf.
+	//
+	// OpenedFrom answers the delivered handle for every session on it, which
+	// is how a declared plugin keeping a table of its own reaches that table
+	// from a database no migration was applied to.
 	Open(ctx context.Context, dsn string) (*gorm.DB, error)
 }
 

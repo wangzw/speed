@@ -119,6 +119,12 @@ func (d *database) BlindIndex(plaintext string) string {
 // the instances are the declared ones, and the declaration is what this module
 // installs.
 //
+// It also carries the one thing the delivered handle does not: a mark naming
+// the delivered handle it was opened from, which OpenedFrom reads. It goes on
+// before the declared plugins, so each of them can already see it. A plugin
+// that writes rows of a table of its own needs it, because no migration reaches
+// the database this connection names.
+//
 // It is the caller's: this package keeps no reference to it, does not apply
 // migrations to it, and does not close it. The caller closes it with the
 // package-level Close in its own Close stage, and leaking it leaks connections
@@ -140,6 +146,9 @@ func (d *database) Open(ctx context.Context, dsn string) (*gorm.DB, error) {
 	handle, err := openHandle(ctx, d.spec, cfg)
 	if err != nil {
 		return nil, err
+	}
+	if err := markOpened(handle, d.handle); err != nil {
+		return nil, errors.Join(err, Close(handle))
 	}
 	if err := installPlugins(handle, d.plugins); err != nil {
 		return nil, errors.Join(err, Close(handle))

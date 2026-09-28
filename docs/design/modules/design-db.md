@@ -46,6 +46,8 @@ type Database interface {
 }
 
 func Close(*gorm.DB) error
+
+func OpenedFrom(*gorm.DB) (*gorm.DB, bool)
 ```
 
 `DB` 返回的句柄已装好按本模块取材域收取的插件（见插件的安装）。`Dialect` 供调用方在原生 SQL 上按方言分支——占位符写法与函数名在方言之间有差异，GORM 的查询构造器屏蔽了这部分，绕过它写的语句没有。方言的取值同时是迁移集中子目录的名字，新增一种方言即在这个集合里增加一个取值。
@@ -62,7 +64,11 @@ func Close(*gorm.DB) error
 
 `Open` 收到的定位符为空白时判 `ErrConnectFailed`，与交付侧的 `dsn` 是同一条规则：一个连接必须说得出它连的是哪个库。**采纳的读法**：空白即拒绝。**考虑过而放弃的读法**：定位符原样交给驱动；放弃的理由是空白串在两个驱动那里都不是"没有库"。PostgreSQL 的驱动用进程环境里的 `PG*` 变量、本机套接字与进程用户补全它，连上的是环境指向的那个库；`glebarez/sqlite` 为池里的每条连接各开一个临时库，一条连接上建的表在另一条上不存在。两种结果都是拿着一个可用句柄、连着一个没人点名的库，全程不报错（[ADR-db-multiplicity-2026-09-14](../../adr/adr-db-multiplicity-2026-09-14.md)）。要一个临时库的调用方写 `:memory:`，这样的句柄按配置一节的例外只开一条连接。
 
-它不施加任何迁移。迁移集是各模块声明给配置那个库的，第二个库的 schema 由调用方保证，缺表的表现是运行期的查询失败。缺的也可能是某个插件的表：在语句所在的会话上写入的插件（审计的语句捕获是一例）在第二个库上同样要写它自己的表，那里没有这张表时，经这个连接、走模型的每一次写入都失败。
+它不施加任何迁移。迁移集是各模块声明给配置那个库的，第二个库的 schema 由调用方保证，缺表的表现是运行期的查询失败。
+
+插件自己的表也只在配置的那个库里，所以自建的连接比交付的那个多带一样东西：一个标记，记着它是从哪个交付句柄建出的。`OpenedFrom` 读这个标记——对自建连接派生出的每个会话（`WithContext`、`Session`、事务）答出那个交付句柄，对交付句柄本身及其会话、对不经本模块 `Open` 建出的句柄不作答。插件实例被多个句柄、乃至同一进程里的多个注册表共用，从一个会话上读不出它的来历，这个回答因而由建出连接的本模块给出。在语句所在的会话上写入自己的表的插件据它把那一行写到交付的库里，审计的语句捕获即是（见 [audit](design-audit.md) 的语句级捕获）。标记在安装已声明的插件之前装上，插件的 `Initialize` 同样问得到。
+
+**采纳的读法**：标记放在句柄的插件表里。派生出的每个会话都按引用共用这张表，标记因而跟着连接走。**考虑过而放弃的读法**：放在句柄自身的上下文里，或放在语句的设置里；放弃的理由是调用方一次 `WithContext` 就换掉了上下文，一条新语句就换掉了设置，`OpenedFrom` 随之答不出，插件把那一行写到一个没有施加迁移的库上，全程不报错。
 
 它也不由本模块持有：自建的连接有自己的连接池，与交付的那个互不相干，调用方在自己的 `Close` 阶段用包级的 `Close` 释放它。`Close` 是包级函数而不是 `Database` 的方法，因为关闭一个句柄用不到本模块的任何状态；它可重入，重复调用不报错，传入 nil 同样返回 nil——`Open` 失败时调用方那条 `defer` 照样会执行，让它报错等于要求每个调用点先判一次空，而那个错误没有补救动作：没有连接要释放，正是关闭想达到的状态。漏关就是连接泄漏，本模块无从代为释放。
 
@@ -381,6 +387,7 @@ sequenceDiagram
 | 连接的建立与关闭 | 已实现 | `pkg/db/open.go` `openHandle`、`pkg/db/db.go` `Close` |
 | 只属于单条连接的库 | 已实现 | `pkg/db/module.go` `Spec.ConnectionScoped`、`pkg/db/sqlite/sqlite.go` `connectionScoped` |
 | 额外连接的自建 | 已实现 | `pkg/db/handle.go` `(*database).Open` |
+| 额外连接的来历 | 已实现 | `pkg/db/plugins.go` `OpenedFrom`、`markOpened` |
 | 软删除 | 已实现 | 由 GORM 提供，随 `pkg/db/handle.go` `(*database).DB` 交付 |
 | 字段级加密与盲索引 | 已实现 | `pkg/db/serializer.go` `installEncryption`、`pkg/db/crypto.go` `deriveSubkey`、`pkg/db/handle.go` `(*database).BlindIndex` |
 | 不经模型字段的读写 | 已实现 | `pkg/db/encryptedwrites.go` `sealUpdate`、`sealCreate`、`pkg/db/encryptedreads.go` `guardReads`、`guardRowReads`、`refuseRenamedRead`、`pkg/db/identifiers.go` `sealedTarget` |
