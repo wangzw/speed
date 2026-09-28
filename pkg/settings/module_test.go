@@ -49,8 +49,8 @@ type contestedCapability interface{ contested() }
 // contesting is a declarer that claims one capability exclusively, stating
 // whether it is the provider the host explicitly enabled. Two of these on the
 // same claim are what puts one through resolution and leaves it with the
-// registry's StateDisabled verdict — the one way a participating module now
-// ends a run without running.
+// registry's StateDisabled verdict — the one way a participating module ends
+// a run without running.
 func contesting(name, namespace string, explicit bool) core.Module {
 	defaults := demoDefaults()
 	m := declaring(name, Schema{Namespace: namespace, Mounts: []Mount{{Value: &defaults}}})
@@ -270,9 +270,10 @@ func TestAChangeBeforeTheBusStartsIsNotLost(t *testing.T) {
 // does: a subtraction would make the same key legal under one command and
 // illegal under another while the declaration itself did not change.
 //
-// The resolution loser is the case that used to be subtracted here. Reading
-// the verdict back first is what keeps this a test of that case: if the drive
-// stopped disabling the loser, the assertion would hold for the wrong reason.
+// The resolution loser is the case a subtraction would drop: it took part in
+// the run and did not run. Reading the verdict back first is what keeps this a
+// test of that case: if the drive stopped disabling the loser, the assertion
+// would hold for the wrong reason.
 func TestEveryRegisteredDeclarationStaysInTheKeyTable(t *testing.T) {
 	handle := open(t)
 	reg := core.New()

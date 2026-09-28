@@ -207,9 +207,9 @@ func TestABadTargetPanics(t *testing.T) {
 // same reason: a nil Layer is not a layer, nothing has one on purpose, and the
 // call site has nothing to do with the error.
 //
-// This is the failure the layer selector exists to produce. While a string
-// tenant carried the layer, a call site that dropped one wrote the global row
-// and everything about the call looked right.
+// This is the failure the layer selector exists to produce. Were the layer a
+// string tenant, a call site that dropped one would write the global row and
+// everything about the call would look right.
 func TestAZeroLayerPanics(t *testing.T) {
 	keys := demoTable(t)
 	store, _ := storeOf(t, keys, newRecordingBus())
@@ -530,9 +530,9 @@ func TestDeleteClearsARowWhoseDeclarationIsGone(t *testing.T) {
 // The snapshot is the wrong source twice over. It carries no row for a key
 // whose declaration is gone — which is exactly the row this path exists to
 // clear — and it trails the table when another replica wrote the row. Either
-// way the change reported an empty old value for a row that held one, and a
-// subscriber recording the history would have written down that nothing was
-// there.
+// way a change built from it would report an empty old value for a row that
+// held one, and a subscriber recording the history would write down that
+// nothing was there.
 func TestADeleteReportsWhatTheRemovedRowHeld(t *testing.T) {
 	cases := []struct {
 		name string

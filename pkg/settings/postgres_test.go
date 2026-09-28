@@ -156,9 +156,9 @@ type ordering struct {
 // SQLite compares text byte by byte. PostgreSQL compares it under the
 // database's collation, and the one a PostgreSQL server built against the GNU
 // C library is created with by default, en_US.UTF-8, sets punctuation aside
-// at its first level — so a-b sorts next to ab rather than before aa, and the
-// same rows came back in a different order depending on the dialect a command
-// ran on. An ICU collation with alternate=shifted stands for that default
+// at its first level — so a-b sorts next to ab rather than before aa, and an
+// order left to the statement would bring the same rows back in a different
+// order depending on the dialect a command runs on. An ICU collation with alternate=shifted stands for that default
 // here: the fixture's server is built against a C library whose collations
 // compare bytes.
 func TestListOrdersByTheKeysBytesOnEveryDialect(t *testing.T) {

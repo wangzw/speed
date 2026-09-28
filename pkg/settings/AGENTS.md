@@ -91,9 +91,9 @@ here must not cross, and how to run it.
 - **`Delete` does not consult the key table, and that has one consequence.**
   It clears rows whose declaration is already gone, which is why it cannot
   refuse an undeclared key. When the key is still declared its sensitive marker
-  is honoured; when it is not, nothing says whether the value used to be
-  sensitive, and the payload reports it as an ordinary one rather than
-  guessing. The marker belongs to a declaration, and a declaration that no
+  is honoured; when it is not, nothing says whether the declaration that is
+  gone marked the value sensitive, and the payload reports it as an ordinary
+  one rather than guessing. The marker belongs to a declaration, and a declaration that no
   longer exists cannot mark anything.
 - **The subscription is made in `Init` and nowhere else.** A bus freezes its
   subscription table when it starts and panics on a later `Subscribe`, and the

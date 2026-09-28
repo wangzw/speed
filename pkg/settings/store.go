@@ -203,10 +203,10 @@ type removedRow struct {
 //
 // Delete does not refuse an undeclared key, so it may be clearing a row whose
 // declaration is already gone. When the key is still declared its marker is
-// honoured; when it is not, nothing says whether the value used to be
-// sensitive, and the payload reports it as an ordinary one rather than
-// guessing. The sensitive marker is a property of the declaration, and a
-// declaration that no longer exists cannot mark anything.
+// honoured; when it is not, nothing says whether the declaration that is gone
+// marked the value sensitive, and the payload reports it as an ordinary one
+// rather than guessing. The sensitive marker is a property of the
+// declaration, and a declaration that no longer exists cannot mark anything.
 func (s *settingsStore) deleteChange(key, old, actor string) Change {
 	entry, declared := s.keys.lookup(key)
 	if !declared {

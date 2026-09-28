@@ -16,10 +16,10 @@ import (
 //
 // The statement reads back what it wrote — the upsert its version, the delete
 // the removed value — so its result arrives after the server has executed it.
-// Run on its own, the statement had committed by then on PostgreSQL, and a
-// cancellation at that point made Set and Delete return an error for a change
-// that was in the table: nothing reloaded, nothing was published, and a caller
-// that believed the error would not even retry. The case cancels at exactly
+// Run on its own, the statement has committed by then on PostgreSQL, and a
+// cancellation at that point would make Set and Delete return an error for a
+// change that is in the table: nothing would reload, nothing would be
+// published, and a caller that believed the error would not even retry. The case cancels at exactly
 // that point and holds the outcome to one of the two truthful ones: an error
 // and an untouched table, or nil and a change this replica serves and
 // published.
