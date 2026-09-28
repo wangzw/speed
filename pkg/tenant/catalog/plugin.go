@@ -651,10 +651,13 @@ func rawColumn(column interface{}) bool {
 // fillKey writes the context's tenant into the key of the values an update or a
 // delete derives its identity from, and refuses a key naming another tenant.
 //
-// GORM addresses a write by a struct's primary key, and under the composite key
-// the convention declares, a struct whose tenant half is unwritten names a row
-// of no tenant: the write would reach nothing and report success. Filling that
-// half is the insert's fill carried over to the key. It is done only where some
+// GORM addresses a write by a struct's primary key. A delete puts every part of
+// the key into its condition, so under the composite key the convention
+// declares, a struct whose tenant half is unwritten names a row of no tenant:
+// the delete would reach nothing and report success. An update puts only the
+// written parts there, and the fill keeps the value it is addressed by in step
+// with the row it reaches. Filling that half is the insert's fill carried over
+// to the key. It is done only where some
 // other part of the key is written, because a key that is all zero addresses
 // nothing, and filling its tenant half would turn it into one addressing the
 // whole tenant.
