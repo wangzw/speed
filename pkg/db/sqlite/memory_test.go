@@ -8,6 +8,7 @@ import (
 	"sync"
 	"testing"
 	"testing/fstest"
+	"time"
 
 	"gorm.io/gorm"
 
@@ -18,11 +19,16 @@ import (
 )
 
 // deliver runs a real assembly around this subpackage's module, with the
-// widgets migration declared, and returns the capability once the migrations
-// are applied. The assembly is shut down when the case ends.
-func deliver(t *testing.T, dsn string) db.Database {
+// widgets migration declared and the given items configured beside the
+// locator, and returns the capability once the migrations are applied. The
+// assembly is shut down when the case ends.
+func deliver(t *testing.T, dsn string, items ...string) db.Database {
 	t.Helper()
-	body := fmt.Sprintf(`{"db":{"sqlite":{"dsn":%q}}}`, dsn)
+	body := fmt.Sprintf(`{"db":{"sqlite":{"dsn":%q`, dsn)
+	for _, item := range items {
+		body += "," + item
+	}
+	body += "}}}"
 	probe := newProbe()
 	reg := assembly(t, body,
 		sqlite.Module(),
@@ -126,6 +132,28 @@ func TestAnInMemoryLocatorIsOneDatabaseForTheWholeHandle(t *testing.T) {
 			t.Errorf("%d of %d concurrent inserts failed on Open(%q), the first with: %v",
 				len(failures), rows, locator, failures[0])
 		}
+	}
+}
+
+// TestAnInMemoryDatabaseOutlivesThePoolParameters pins the other half of one
+// connection: it is never replaced. A pool that retires a connection for its
+// age, or keeps none idle between statements, closes the in-memory database
+// with it and opens an empty one in its place, so the migrated table and the
+// rows in it are gone with no error until the next statement cannot find them.
+func TestAnInMemoryDatabaseOutlivesThePoolParameters(t *testing.T) {
+	const lifetime = 20 * time.Millisecond
+	instance := deliver(t, ":memory:",
+		fmt.Sprintf(`"conn-max-lifetime":%q`, lifetime.String()), `"max-idle-conns":0`)
+	if err := instance.DB().Exec("INSERT INTO widgets (id) VALUES (1)").Error; err != nil {
+		t.Fatalf("writing a row into the migrated table: %v", err)
+	}
+	time.Sleep(5 * lifetime)
+	var count int64
+	if err := instance.DB().Table("widgets").Count(&count).Error; err != nil {
+		t.Fatalf("the migrated table is gone after the configured lifetime passed: %v", err)
+	}
+	if count != 1 {
+		t.Errorf("the handle sees %d rows after the configured lifetime passed, want the 1 written", count)
 	}
 }
 
