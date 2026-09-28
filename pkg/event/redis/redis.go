@@ -17,6 +17,12 @@
 // on a read that happens after its own call returned — and leaving the entry
 // pending would have it redelivered forever, which is a worse answer than
 // reporting it to the assembly's log once.
+//
+// Publishing and reading draw on separate connection pools. The configured
+// pool carries the publishes; the readers — one per subscribed type, each
+// holding a connection for the whole of its blocking read — run on a client of
+// their own with one connection per reader, so the connections this bus keeps
+// open are the configured pool plus one per subscribed type.
 package redis
 
 import (
@@ -102,9 +108,14 @@ func Module() core.Module {
 }
 
 // items is the shared connection declaration plus this implementation's own
-// item.
+// items, with the pool size's description saying which connections it bounds
+// here.
 func items() map[string]config.Item {
 	out := redis.Items()
+	out[redis.PoolSizeKey] = config.Item{
+		Description: "the largest number of connections publishing keeps open; the readers take one " +
+			"connection each, one per subscribed type, on top of it",
+	}
 	out[maxEntriesKey] = config.Item{
 		Description: "how many entries a stream keeps before the oldest are trimmed, so that a bus " +
 			"left running does not fill the server it shares",
@@ -178,9 +189,14 @@ func start(ctx context.Context, b event.Bus) error {
 	return local.begin(ctx)
 }
 
-// bus is the capability over one client.
+// bus is the capability over one client for publishing, and one more for its
+// readers once they start.
 type bus struct {
-	client     *goredis.Client
+	// client carries every publish. The readers never draw from its pool.
+	client *goredis.Client
+	// readers carries the readers' commands. begin builds it, and Close
+	// releases it after the readers have returned.
+	readers    *goredis.Client
 	logger     *slog.Logger
 	group      string
 	consumer   string
@@ -228,23 +244,27 @@ func (b *bus) Publish(ctx context.Context, evt event.Event) error {
 // acknowledged within the table's grace.
 func (b *bus) Stop(_ context.Context) error { return b.table.Stop() }
 
-// Close stops the bus if the stop stage has not, and releases the client.
+// Close stops the bus if the stop stage has not, and releases both clients.
 func (b *bus) Close(_ context.Context) error {
-	stopErr := b.table.Close()
-	return errors.Join(stopErr, b.client.Close())
+	errs := []error{b.table.Close()}
+	if b.readers != nil {
+		errs = append(errs, b.readers.Close())
+	}
+	return errors.Join(append(errs, b.client.Close())...)
 }
 
 // begin freezes the table and starts one reader per subscribed type.
 func (b *bus) begin(ctx context.Context) error {
 	types, first := b.table.Freeze(ctx)
-	if !first {
+	if !first || len(types) == 0 {
 		return nil
 	}
+	b.readers = readerClient(b.client, len(types))
 	for _, eventType := range types {
 		// MkStream creates the stream when it does not exist yet, so a
 		// subscriber for a type nobody has published can still be read from
 		// once someone does.
-		if err := b.client.XGroupCreateMkStream(ctx, streamKey(eventType), b.group, newGroupStart).Err(); err != nil &&
+		if err := b.readers.XGroupCreateMkStream(ctx, streamKey(eventType), b.group, newGroupStart).Err(); err != nil &&
 			!strings.Contains(err.Error(), "BUSYGROUP") {
 			return fmt.Errorf("%s: creating the consumer group for %q: %w", ModuleName, eventType, err)
 		}
@@ -257,6 +277,24 @@ func (b *bus) begin(ctx context.Context) error {
 	return nil
 }
 
+// readerClient builds the client the readers run on: the publishing client's
+// options, with a pool of one connection per reader.
+//
+// A reader holds a connection for the whole of its blocking read, up to
+// readBlock at a time, and issues its commands one after another. Readers
+// drawn from the pool the publishes use would take its connections as soon
+// as they outnumbered them, and every publish would then queue behind a
+// blocked read — about a second per reader past the pool's size. A pool of
+// their own, sized to how many there are, leaves each reader a connection
+// that is free whenever it needs one, and leaves the configured pool to the
+// publishes. The cost is that the connections this bus keeps open are the
+// configured pool plus one per subscribed type.
+func readerClient(publishing *goredis.Client, readers int) *goredis.Client {
+	opts := *publishing.Options()
+	opts.PoolSize = readers
+	return goredis.NewClient(&opts)
+}
+
 // read delivers what its stream hands this instance, until the stop stage.
 //
 // A read that returns entries is delivered in full even when the stop stage
@@ -266,7 +304,7 @@ func (b *bus) begin(ctx context.Context) error {
 // no one.
 func (b *bus) read(reading, handling context.Context, stream, eventType string) {
 	for {
-		res, err := b.client.XReadGroup(reading, &goredis.XReadGroupArgs{
+		res, err := b.readers.XReadGroup(reading, &goredis.XReadGroupArgs{
 			Group:    b.group,
 			Consumer: b.consumer,
 			Streams:  []string{stream, ">"},
@@ -288,7 +326,7 @@ func (b *bus) read(reading, handling context.Context, stream, eventType string) 
 				// process's life. The create is idempotent (it answers
 				// BUSYGROUP when the group is already there), which is what
 				// makes rerunning it here safe.
-				if createErr := b.client.XGroupCreateMkStream(reading, stream, b.group, newGroupStart).Err(); createErr != nil &&
+				if createErr := b.readers.XGroupCreateMkStream(reading, stream, b.group, newGroupStart).Err(); createErr != nil &&
 					!strings.Contains(createErr.Error(), "BUSYGROUP") && reading.Err() == nil {
 					b.logger.Error("event/redis: recreating the consumer group failed",
 						"event", eventType, "err", createErr)
@@ -317,7 +355,7 @@ func (b *bus) read(reading, handling context.Context, stream, eventType string) 
 				// delivered again with nobody left to tell. The context is the
 				// handlers', which the stop stage leaves live, so an entry
 				// delivered while the bus is stopping is acknowledged too.
-				if err := b.client.XAck(handling, stream, b.group, msg.ID).Err(); err != nil &&
+				if err := b.readers.XAck(handling, stream, b.group, msg.ID).Err(); err != nil &&
 					handling.Err() == nil {
 					b.logger.Error("event/redis: acknowledging a delivered entry failed",
 						"event", eventType, "id", msg.ID, "err", err)

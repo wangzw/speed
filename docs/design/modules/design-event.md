@@ -211,6 +211,7 @@ sequenceDiagram
 | 某订阅者 panic | 与返回错误同等处置：实现接住它并记录，其余订阅者照常被调用；发布方看不到它，进程内实现下也不沿发布方的协程上抛 |
 | 订阅了无人发布的类型 | 不报错，也不产生任何信号 |
 | 同一个事件到达多次（广播到每个副本、后端重投、发布方带同一标识重发） | 每一次到达带着同一个标识；按它去重归订阅方 |
+| 订阅的类型多于配置的连接池（Redis 实现） | 发布不受影响：每个类型一个读取协程，各占读取专用客户端的一条连接，不取发布所用的连接池；本实现保持的连接数是配置的池大小加上订阅的类型数 |
 | 多个副本同时在一个空库上启动（PostgreSQL 实现） | 建表在事务级咨询锁下依次进行，每个副本都启动成功 |
 | 连接串带首尾空白（PostgreSQL 实现） | 监听会话取连接池解析后的配置，与每一次发布落在同一个库 |
 | 监听会话丢失（PostgreSQL 实现） | 读取协程以同一份配置重新取一条监听会话，随即读一遍表；取不到时每个轮询间隔重试一次，其间只靠读表投递 |
@@ -248,6 +249,6 @@ sequenceDiagram
 | 订阅表、阶段与标识的赋予 | 已实现 | `pkg/event/internal/dispatch/dispatch.go` `Table`、`Grace`、`Stamp` |
 | 内存实现 | 已实现 | `pkg/event/memory/memory.go` `Module`、`stance`、`start` |
 | 一致性套件 | 已实现 | `pkg/event/internal/bussuite/bussuite.go` `AssertConforms`、`AssertReplicated` |
-| Redis 实现 | 已实现 | `pkg/event/redis/redis.go` `Module`、`bus` |
+| Redis 实现 | 已实现 | `pkg/event/redis/redis.go` `Module`、`bus`、`readerClient` |
 | PostgreSQL 实现 | 已实现 | `pkg/event/postgres/postgres.go` `Module`、`bus` |
 | NATS JetStream 实现 | 已实现 | `pkg/event/nats/nats.go` `Module`、`bus` |
