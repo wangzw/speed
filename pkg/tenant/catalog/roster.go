@@ -81,7 +81,8 @@ func (r *roster) takeLogger(reg *core.Registry) {
 //
 // The alternative — carrying on with an empty roster — would refuse every
 // request on every guarded endpoint while telling the operator nothing about
-// why, which is the shape this capability directory refuses everywhere else it
+// why, which is the shape this capability directory refuses wherever it meets
+// it.
 func (r *roster) load(ctx context.Context) error {
 	if err := r.read(ctx); err != nil {
 		return err

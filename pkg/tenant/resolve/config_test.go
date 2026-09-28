@@ -66,12 +66,11 @@ func TestPrepareStatesEnabled(t *testing.T) {
 	}
 }
 
-// TestPrepareFailsWithoutTheEndpointList pins the rule that replaced the
-// stand-down. A module taken in at run level has to start, so a required key
-// nobody wrote is a startup failure carried out of Prepare, not a stance that
-// disables the module and lets the run go on. Under the old behaviour prepare
-// answered StateDisabled with a reason and a nil error, and this test failed on
-// the nil error alone.
+// TestPrepareFailsWithoutTheEndpointList pins that a required key nobody wrote
+// fails the startup. A module taken in at run level has to start, so the
+// missing key is a failure carried out of Prepare, not a stance that disables
+// the module and lets the run go on: a prepare answering StateDisabled with a
+// reason and a nil error fails this case on the nil error alone.
 func TestPrepareFailsWithoutTheEndpointList(t *testing.T) {
 	got, err := prepare(readThrough(t, `{
 		"tenant": {"resolve": {"extractor": "header"}}
