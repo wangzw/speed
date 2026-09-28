@@ -378,6 +378,39 @@ func TestAnUpsertAssigningTheColumnFromTheInsertedRowIsAllowed(t *testing.T) {
 	requireRowTenant(t, handle, "a", "acme")
 }
 
+// Reassigning the tenant column from the inserted row is the same statement
+// written twice only when what it reads there is the tenant column itself, in
+// the form GORM writes it. Another column of that row carries whatever the
+// caller put there, and an expression over the column is a value of its own:
+// either one copied into the tenant column moves the conflicting row — the
+// context tenant's own — into the tenant it names.
+func TestAnUpsertAssigningTheColumnFromAnythingElseOfTheInsertedRowIsRefused(t *testing.T) {
+	requireInsertedRowCopiesRefused(t, open)
+}
+
+func TestAnUpsertAssigningTheColumnFromAnythingElseOfTheInsertedRowIsRefusedOnPostgres(t *testing.T) {
+	requireInsertedRowCopiesRefused(t, openFilteredPostgres)
+}
+
+func requireInsertedRowCopiesRefused(t *testing.T, open func(*testing.T) *gorm.DB) {
+	t.Helper()
+	for name, from := range map[string]clause.Column{
+		"another column":                       {Table: "excluded", Name: "note"},
+		"an expression over the tenant column": {Table: "excluded", Name: "tenant_id || 'x'", Raw: true},
+	} {
+		t.Run(name, func(t *testing.T) {
+			handle := open(t)
+			seed(t, handle)
+			err := handle.WithContext(scopedContext("acme")).Clauses(clause.OnConflict{
+				Columns:   []clause.Column{{Name: "tenant_id"}, {Name: "id"}},
+				DoUpdates: clause.Set{{Column: clause.Column{Name: "tenant_id"}, Value: from}},
+			}).Create(&order{ID: "a", Note: "globex"}).Error
+			requireMismatch(t, err)
+			requireRowsUnmoved(t, handle)
+		})
+	}
+}
+
 // Crossing tenants lifts the condition and the fill, not the column: a row
 // written across tenants with no tenant in its column belongs to none, and no
 // scoped statement can ever reach it again.
