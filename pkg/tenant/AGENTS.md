@@ -61,8 +61,9 @@ here must not cross, and how to run it.
   leaves for the database to resolve: another case, its own quotes, a raw
   column with blanks around it, the primary key placeholder — in an explicit
   SET and in the destination alike (GORM renders the second when it yields
-  anything), a struct of another type, an upsert's assignments
-  (`catalog/targets_test.go`). The reading is the widest of the dialects', and a
+  anything), a struct of another type, a field — the model's own or another
+  type's — whose tag carries another spelling of the column, an upsert's
+  assignments (`catalog/targets_test.go`). The reading is the widest of the dialects', and a
   raw target that is not one column name is refused under any context: reading
   too narrowly is a row carried into another tenant. A value the filter cannot
   read as the context's identifier is refused like another tenant's. The mark

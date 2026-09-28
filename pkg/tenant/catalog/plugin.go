@@ -897,6 +897,12 @@ func judgeEach(values []any, judge func(any) error) error {
 // a struct, a slice of structs and a slice of pointers alike — whether handed
 // over by pointer or by value — and a struct or an array handed over by value is
 // copied first so that there is somewhere to write.
+//
+// A field of the model besides the convention's whose column the database reads
+// as the tenant column is another spelling of that column, and GORM writes it
+// beside the tenant column; SQLite keeps the first value an insert gives one
+// column, so the spelling declared first decides the row's tenant. What such a
+// field binds is judged as the tenant column's value is.
 func writeRows(st *gorm.Statement, field *gormschema.Field, id string, fill bool, judge func(any) error) error {
 	if maps, ok := insertedMaps(st.Dest); ok {
 		for _, m := range maps {
@@ -909,7 +915,11 @@ func writeRows(st *gorm.Statement, field *gormschema.Field, id string, fill bool
 	if fill {
 		makeAddressable(st)
 	}
+	spellings := otherSpellings(st, field)
 	for _, v := range structValues(st.ReflectValue, st.Schema.ModelType) {
+		if err := judgeSpellings(st, spellings, v, judge); err != nil {
+			return err
+		}
 		written, isZero := field.ValueOf(st.Context, v)
 		if !isZero {
 			if err := judge(written); err != nil {
@@ -926,6 +936,52 @@ func writeRows(st *gorm.Statement, field *gormschema.Field, id string, fill bool
 			continue
 		}
 		if err := field.Set(st.Context, v, id); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+// otherSpellings lists the model's fields besides the convention's whose column
+// the database may read as the tenant column.
+func otherSpellings(st *gorm.Statement, field *gormschema.Field) []*gormschema.Field {
+	var out []*gormschema.Field
+	for _, f := range st.Schema.Fields {
+		if f != field && f.DBName != "" &&
+			targetReaches(st, clause.Column{Name: f.DBName}, field) == tenantColumn {
+			out = append(out, f)
+		}
+	}
+	return out
+}
+
+// judgeSpellings judges what an insert binds, for one row, under each of these
+// other spellings of the tenant column, read the way GORM builds the row: a
+// field left out by selection or omission binds nothing, a zero value gives way
+// to the field's default or its creation time, and a zero value of a field whose
+// default is the database's binds nothing.
+func judgeSpellings(st *gorm.Statement, spellings []*gormschema.Field, v reflect.Value, judge func(any) error) error {
+	if len(spellings) == 0 {
+		return nil
+	}
+	selected, restricted := st.SelectAndOmitColumns(true, false)
+	for _, f := range spellings {
+		sel, explicit := selected[f.DBName]
+		stamped := f.AutoCreateTime > 0 || f.AutoUpdateTime > 0
+		if inSelection := (explicit && sel) || (!explicit && (!restricted || stamped)); !inSelection {
+			continue
+		}
+		value, isZero := f.ValueOf(st.Context, v)
+		switch {
+		case !isZero:
+		case f.DefaultValueInterface != nil:
+			value = f.DefaultValueInterface
+		case f.HasDefaultValue:
+			continue
+		case stamped:
+			value = st.NowFunc()
+		}
+		if err := judge(value); err != nil {
 			return err
 		}
 	}
@@ -1009,11 +1065,10 @@ func insertedMaps(dest any) ([]map[string]interface{}, bool) {
 // read here: which of the two reaches the table depends on the destination, and
 // the one left unread would be a way past the judgement. A SET clause's targets
 // are read as the database reads them (targetReaches). A map names its columns
-// by key (keyReaches); a struct is read through its own schema, which is the
-// model's or, for an update carrying its assignments in another type, that
-// type's. A key field of the very value the update is addressed by is a
-// condition rather than an assignment, and the key is judged where the key is
-// filled. Selection and omission decide which of the rest are assigned, zero
+// by key (keyReaches); a struct is read the way GORM builds its assignments
+// (destinationValues). A key field of the very value the update is addressed by
+// is a condition rather than an assignment, and the key is judged where the key
+// is filled. Selection and omission decide which of the rest are assigned, zero
 // values included where they are selected.
 func assignedValues(st *gorm.Statement, field *gormschema.Field) []any {
 	var out []any
@@ -1038,6 +1093,15 @@ func assignedValues(st *gorm.Statement, field *gormschema.Field) []any {
 // resolves the key and under the key itself when it does not; the value is
 // judged when either leaves it assigned, so that a selection spelled one way
 // cannot let a key spelled the other way through unjudged.
+//
+// A struct is read the way GORM builds assignments from one. For each of the
+// model's columns GORM looks up a field of the updating type — the model's own,
+// or another type's — under that column's name, which also finds a field whose
+// Go name it is, and assigns the column that field carries. What reaches the
+// tenant column is therefore whichever of those columns the database reads as
+// it, rather than the field that happens to be named like it: a patch type
+// whose field is found for a column named Note and tagged with another spelling
+// of the tenant column writes that spelling.
 func destinationValues(st *gorm.Statement, field *gormschema.Field) []any {
 	updating := indirect(reflect.ValueOf(st.Dest))
 	if !updating.IsValid() {
@@ -1065,21 +1129,29 @@ func destinationValues(st *gorm.Statement, field *gormschema.Field) []any {
 			schema = parsed.Schema
 		}
 	}
-	own := schema.LookUpField(field.DBName)
-	if own == nil || (own.PrimaryKey && sameValue) {
-		return nil
+	var out []any
+	for _, column := range st.Schema.DBNames {
+		own := schema.LookUpField(column)
+		if own == nil || (own.PrimaryKey && sameValue) ||
+			targetReaches(st, clause.Column{Name: own.DBName}, field) != tenantColumn {
+			continue
+		}
+		sel, explicit := selected[own.DBName]
+		stamped := !st.SkipHooks && own.AutoUpdateTime > 0
+		if inSelection := (explicit && sel) || (!explicit && (!restricted || stamped)); !inSelection {
+			continue
+		}
+		v, isZero := own.ValueOf(st.Context, updating)
+		if stamped {
+			// GORM assigns the update time in place of whatever the
+			// field holds.
+			v, isZero = st.NowFunc(), false
+		}
+		if (explicit || !isZero) && own.Updatable {
+			out = append(out, v)
+		}
 	}
-	sel, explicit := selected[own.DBName]
-	inSelection := (explicit && sel) ||
-		(!explicit && (!restricted || (!st.SkipHooks && own.AutoUpdateTime > 0)))
-	if !inSelection {
-		return nil
-	}
-	v, isZero := own.ValueOf(st.Context, updating)
-	if (!explicit && isZero) || !own.Updatable {
-		return nil
-	}
-	return []any{v}
+	return out
 }
 
 // upsertValues lists what an insert's conflict clause assigns to the tenant
@@ -1143,14 +1215,16 @@ const (
 //
 // GORM resolves the key through the model's schema first, and writes the
 // field's own column when that succeeds. A key the schema does not know is not
-// dropped: it goes into the statement as a column name, and reaches whatever
-// the database reads that name as — which, for a key spelled in another case or
-// carrying its own quotes, is the tenant column.
+// dropped: it goes into the statement as a column name. Either way the column
+// written reaches whatever the database reads that name as — which, for a key
+// spelled in another case or carrying its own quotes, or for a field of the
+// model tagged with such a spelling, is the tenant column.
 func keyReaches(st *gorm.Statement, key string, field *gormschema.Field) bool {
+	column := key
 	if f := st.Schema.LookUpField(key); f != nil {
-		return f.DBName == field.DBName
+		column = f.DBName
 	}
-	return targetReaches(st, clause.Column{Name: key}, field) == tenantColumn
+	return targetReaches(st, clause.Column{Name: column}, field) == tenantColumn
 }
 
 // targetReaches reads the column an assignment is written to the way the

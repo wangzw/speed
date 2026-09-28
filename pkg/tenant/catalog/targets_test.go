@@ -1,7 +1,10 @@
 package catalog
 
 import (
+	"context"
 	"errors"
+	"reflect"
+	"strconv"
 	"testing"
 
 	"gorm.io/gorm"
@@ -219,4 +222,108 @@ func TestATargetNamingAnotherColumnIsAssigned(t *testing.T) {
 		t.Fatalf("the row reads %+v, want acme's with the note rewritten", o)
 	}
 	requireRowTenant(t, handle, "a", "acme")
+}
+
+// noted is a scoped model whose note column is named like an exported Go
+// identifier. GORM assigns a model's column from the field of the updating type
+// it finds under that column's name or under that field's Go name, and writes
+// the column that field carries: a patch type's Note field reaches whatever
+// column its own tag names.
+type noted struct {
+	tenant.Model
+	ID   string `gorm:"column:id;primaryKey"`
+	Note string `gorm:"column:Note"`
+}
+
+func (noted) TableName() string { return "orders" }
+
+// patchWriting is a type of its own with one field, Note, carrying this value
+// under a column spelled as given.
+func patchWriting(column, value string) any {
+	typ := reflect.StructOf([]reflect.StructField{{
+		Name: "Note",
+		Type: reflect.TypeOf(""),
+		Tag:  reflect.StructTag("gorm:" + strconv.Quote("column:"+column)),
+	}})
+	v := reflect.New(typ).Elem()
+	v.Field(0).SetString(value)
+	return v.Interface()
+}
+
+// requirePatchesRefused drives an update whose assignments are carried in
+// another type, with the field GORM finds for the model's Note column writing
+// each of these columns, under a tenant that is not the value written and
+// across tenants with a value no tenant has.
+func requirePatchesRefused(t *testing.T, open func(*testing.T) *gorm.DB, columns []string) {
+	t.Helper()
+	for _, column := range columns {
+		t.Run(column, func(t *testing.T) {
+			handle := open(t)
+			seed(t, handle)
+			patch := func(ctx context.Context, value string) error {
+				return handle.WithContext(ctx).Model(&noted{}).Where("id = ?", "a").
+					Updates(patchWriting(column, value)).Error
+			}
+			requireMismatch(t, patch(scopedContext("acme"), "globex"))
+			requireRowsUnmoved(t, handle)
+			if err := patch(crossContext(), "acme corp"); !errors.Is(err, tenant.ErrInvalidTenant) {
+				t.Fatalf("a patch across tenants writing a blank into %q gave %v, want ErrInvalidTenant", column, err)
+			}
+			requireRowsUnmoved(t, handle)
+		})
+	}
+}
+
+// The column an update from another type writes is the one the field GORM
+// found carries, read the way the database reads it — not whichever field of
+// that type is named like the tenant column.
+func TestAnUpdateFromAnotherTypeIsJudgedByTheColumnItWrites(t *testing.T) {
+	requirePatchesRefused(t, open, []string{"TENANT_ID", "Tenant_Id", "`tenant_id`", "tenant_id"})
+}
+
+func TestAnUpdateFromAnotherTypeIsJudgedByTheColumnItWritesOnPostgres(t *testing.T) {
+	requirePatchesRefused(t, openFilteredPostgres, []string{`"tenant_id"`, "tenant_id"})
+}
+
+// shadowed is a scoped model carrying, ahead of the convention, a field of its
+// own whose column the database reads as the tenant column. GORM writes both
+// columns; SQLite keeps the first of an insert's and the last of an update's.
+type shadowed struct {
+	Owner string `gorm:"column:TENANT_ID"`
+	tenant.Model
+	ID string `gorm:"column:id;primaryKey"`
+}
+
+func (shadowed) TableName() string { return "orders" }
+
+// A field of the model writing the tenant column under another spelling is
+// judged as the tenant column is, on an insert and on an update alike.
+func TestAFieldOfTheModelWritingTheTenantColumnIsJudged(t *testing.T) {
+	handle := open(t)
+	seed(t, handle)
+	ctx := scopedContext("acme")
+
+	for name, write := range map[string]func(tx *gorm.DB) error{
+		"a struct insert": func(tx *gorm.DB) error { return tx.Create(&shadowed{Owner: "globex", ID: "x"}).Error },
+		"a map insert keyed by the field": func(tx *gorm.DB) error {
+			return tx.Model(&shadowed{}).Create(map[string]any{"ID": "x", "Owner": "globex"}).Error
+		},
+		"a struct update": func(tx *gorm.DB) error {
+			return tx.Model(&shadowed{}).Where("id = ?", "a").Updates(shadowed{Owner: "globex"}).Error
+		},
+		"a map update keyed by the field": func(tx *gorm.DB) error {
+			return tx.Model(&shadowed{}).Where("id = ?", "a").Updates(map[string]any{"Owner": "globex"}).Error
+		},
+	} {
+		if err := write(handle.WithContext(ctx)); !errors.Is(err, tenant.ErrExplicitTenantMismatch) {
+			t.Fatalf("%s writing another tenant under a second spelling gave %v, want ErrExplicitTenantMismatch",
+				name, err)
+		}
+	}
+	requireRowsUnmoved(t, handle)
+
+	if err := handle.WithContext(ctx).Create(&shadowed{Owner: "acme", ID: "y"}).Error; err != nil {
+		t.Fatalf("an insert whose second spelling names the context's tenant: %v", err)
+	}
+	requireRowTenant(t, handle, "y", "acme")
 }
