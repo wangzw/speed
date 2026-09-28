@@ -99,6 +99,12 @@ var (
 	// that already holds it.
 	ErrAliasConflict = errors.New("tenant: two tenants would share one alias")
 
+	// ErrTenantExists reports a creation naming an identifier the roster's
+	// table already holds. Nothing was written. The fix depends on what the
+	// caller meant: a new tenant needs an identifier of its own, and a change
+	// to the one that exists goes through Put or SetStatus.
+	ErrTenantExists = errors.New("tenant: a tenant with this identifier is already registered")
+
 	// ErrNoTenantInContext reports a statement against a scoped model whose
 	// context carries no tenant. The fix is to put one there — through a
 	// request whose endpoint this module guards, or by entering the tenant

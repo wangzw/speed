@@ -77,6 +77,8 @@ type Catalog interface {
     ByAlias(ctx context.Context, alias string) (Tenant, bool, error)
     // Put 登记一个新租户，或者改写一个既有的租户。
     Put(ctx context.Context, t Tenant) error
+    // Create 登记一个尚未登记的租户。名册表里已有这个标识报 ErrTenantExists，什么也不写。
+    Create(ctx context.Context, t Tenant) error
     // SetStatus 改一个租户的状态。停用只走这一条，不删数据。
     SetStatus(ctx context.Context, id ID, s Status) error
     // List 列出全部租户，按标识排序。
@@ -160,6 +162,8 @@ type Extractor interface {
 名册的读写面就是 `Catalog` 的方法。**写入是本模块唯一的运维面动作**：宿主经它登记租户、改别名、改状态。`Enter` 不写名册，它读名册、写上下文，见不经请求面的路径。
 
 `Put` 是幂等的按标识写入：标识已存在即改写那一行，别名与状态一并取新值。两个租户抢同一个别名是 `ErrAliasConflict`，写入与登记都拒绝，不留半个结果。**并发时同样如此**：两次写同时查到别名空闲，后提交的那一次撞上别名列的唯一约束，它同样以 `ErrAliasConflict` 作答并点名占有者，驱动的约束错误留在错误链里，而不是以驱动错误本身作答。
+
+**不许覆盖既有租户的登记走 `Create`。** 它只插入：名册表里已有这个标识即以 `ErrTenantExists` 拒绝，什么也不写；别名的冲突与 `Put` 同样以 `ErrAliasConflict` 拒绝。**标识是否已被占用问的是表，不是快照**：插入本身在标识冲突时什么也不做，没有插入任何一行即是拒绝，因而一个快照早于别的副本那次登记的副本，拿不到那个标识；同一个标识的两次创建同时发生，结局是一个租户、一次 `ErrTenantExists`，后到的那一次等前一次的行落定之后被拒，不改写它。先 `Get` 再 `Put` 两条性质都没有：快照还没见过某个租户的副本会把它当成新租户，改写它的别名与状态，一个停用的租户因此被重新启用。宿主的注册入口、管理端点这类"开一个新租户"的动作因而写 `Create`，并把 `ErrTenantExists` 答成冲突；种子数据这类有意每次都写成同一份的动作写 `Put`。
 
 `SetStatus` 是停用的唯一途径。名册没有删除动作：删掉一行不会删掉受约束表里那个租户的数据，留下一批无主行，而"无主"在库里看不出来（[ADR-tenant-directory-2026-09-21](../../adr/adr-tenant-directory-2026-09-21.md)）。
 
@@ -310,6 +314,7 @@ classDiagram
         +Get(id ID) Tenant, bool, error
         +ByAlias(alias string) Tenant, bool, error
         +Put(t Tenant) error
+        +Create(t Tenant) error
         +SetStatus(id ID, s Status) error
         +List() []Tenant, error
         +Enter(id ID) Context, error
@@ -390,7 +395,7 @@ sequenceDiagram
 
 ```mermaid
 stateDiagram-v2
-    [*] --> 在册 : Put 登记一个新标识
+    [*] --> 在册 : Put 或 Create 登记一个新标识
     在册 --> 停用 : SetStatus
     停用 --> 在册 : SetStatus
     note right of 停用
@@ -526,8 +531,9 @@ flowchart TD
 | `ErrExtractorConflict` | `Start` 关窗后，两条登记用了同一个名字 | 点名那个名字与两处登记的实现类型。**登记面拿不到登记方的身份**，因而点不到模块名——与认证的豁免登记同形（见 [authn](design-authn.md)） |
 | `ErrInvalidExtractor` | `Start` 关窗后，一条登记的名字为空或含空白——任何一个 Unicode 算作空白的字符，出现在哪里都算——或者实现为空 | 点名那个名字与实现类型；实现为空时类型打不出来，错误文本点明"有一条实现为空的登记" |
 | `ErrRosterMissing` | 名册表不存在：`Init` 装载时它还没建，或此后被删；快照尚未发布时名册被读或被进入，也以它作答 | 点名那张表与施加迁移的那条命令；把它写进那条命令的声明集 |
-| `ErrInvalidTenant` | 一个本模块不予处置的租户：`Put` 的标识或别名为空、含空白或控制字符；`SetStatus` 或 `Enter` 给的标识没有任何一行，或本身不在取值域内；或者装载与刷新读到的某一行本身就是这样一个租户；或者这样一个标识被写进租户列——跨租户的写给了含空白或控制字符的字面值，或者它在任何句柄上被绑定进语句 | 点名那个字段、那个标识或那张表。**字段为空与字段含空白或控制字符是两档，文本上分开说**：前者要补一个值，后者要改掉那个值，改法不同。哨兵仍只有一个——调用方对这一类的处置相同，都是检查它传进来的那个值 |
-| `ErrAliasConflict` | 两个租户抢同一个别名 | 点名该别名与占有它的那个标识；改掉其中一个 |
+| `ErrInvalidTenant` | 一个本模块不予处置的租户：`Put` 或 `Create` 的标识或别名为空、含空白或控制字符；`SetStatus` 或 `Enter` 给的标识没有任何一行，或本身不在取值域内；或者装载与刷新读到的某一行本身就是这样一个租户；或者这样一个标识被写进租户列——跨租户的写给了含空白或控制字符的字面值，或者它在任何句柄上被绑定进语句 | 点名那个字段、那个标识或那张表。**字段为空与字段含空白或控制字符是两档，文本上分开说**：前者要补一个值，后者要改掉那个值，改法不同。哨兵仍只有一个——调用方对这一类的处置相同，都是检查它传进来的那个值 |
+| `ErrAliasConflict` | 两个租户抢同一个别名，经 `Put` 或 `Create` | 点名该别名与占有它的那个标识；改掉其中一个 |
+| `ErrTenantExists` | `Create` 给的标识名册表里已经有一行，无论本副本的快照里有没有它；什么也没写 | 点名那个标识；要开一个新租户就换一个标识，要改既有的那一个走 `Put` 或 `SetStatus` |
 | `ErrTenantDisabled` | `Enter` 给的标识在名册上，但那个租户已停用 | 点名那个标识与它的状态；这不是调用点的缺陷，要做的事等租户恢复服务，或者丢弃。与 `ErrInvalidTenant` 分开，因为两者的处置不同；请求面把二者收成同一个 404 的理由——不向进程外的调用方暴露名册——在这里不成立，这里的读者是进程自己的代码 |
 | `ErrNoTenantInContext` | 受约束模型的语句在上下文中没有标识；跨租户的写把租户列写成空串或 NULL，或插入的行没写租户列；空标识在任何句柄上被绑定进语句 | 点名模型；由调用方给出租户——经受守护的监听端，或不经请求面时经 `Enter`——或显式标为跨租户并在行上写明租户 |
 | `ErrExplicitTenantMismatch` | 一条写语句显式给出的租户列取值与上下文里的标识不同，或是一个读不出是不是那个标识的取值（表达式、子查询、NULL）——租户列按数据库的读法去认，键与列名的任何写法都算；或者一条按结构体主键寻址的写，主键里租户那一半写了别的租户；或者一条写的赋值目标是认不出是哪一列的原样 SQL，无论上下文跨不跨租户 | 点名该模型与写下的取值，目标认不出时点名那段原样文本；删掉显式写下的那个，或者改用 `CrossTenant`；目标认不出的，把它写成单独一个列名 |
@@ -617,7 +623,7 @@ flowchart TD
 
 **跨租户标记随上下文进入事务。** 一条在跨租户上下文里开启的事务，其内部每一条语句都落在跨租户之下；事务不改变本模块的任何判定。
 
-本模块不开启任何事务，也不改变调用方开启的事务。名册的写入由调用方自己决定是否包在一个事务里；`Put` 的单条写入自身是原子的。
+插件不开启任何事务，也不改变调用方开启的事务。名册的写入各自在名册自己的句柄上开一个事务，把别名与标识的核对和写入包在里面，不加入调用方的事务——名册功能拿到的只有上下文，上下文里没有调用方的事务可加入；`Put`、`Create` 与 `SetStatus` 各自的写入因而是原子的，而一次名册写入与应用自己的写入合不进同一个事务。
 
 ## 扩展点
 
@@ -639,7 +645,7 @@ flowchart TD
 |---|---|---|
 | 解析模块、名册模块与各自的排他交付 | 已实现 | `pkg/tenant/resolve/resolve.go` `Module`、`pkg/tenant/catalog/catalog.go` `Module` |
 | 名册表与它的迁移集 | 已实现 | `pkg/tenant/catalog/migrations/`；`catalog.go` `migrationsFS` |
-| 名册的读写面与两个索引的快照 | 已实现 | `pkg/tenant/catalog/roster.go` `Get`、`ByAlias`、`Put`、`SetStatus`、`List`；`snapshot.go` `buildSnapshot` |
+| 名册的读写面与两个索引的快照 | 已实现 | `pkg/tenant/catalog/roster.go` `Get`、`ByAlias`、`Put`、`Create`、`SetStatus`、`List`、`afterWrite`；`snapshot.go` `buildSnapshot` |
 | 快照的周期刷新与 `Stop` 取消 | 已实现 | `pkg/tenant/catalog/roster.go` `start`、`stop`、`refreshOnce` |
 | 三种内建取法 | 已实现 | `pkg/tenant/resolve/extract.go` `headerExtractor`、`subdomainExtractor`、`pathExtractor` |
 | 取法的登记面与冻结 | 已实现 | `pkg/tenant/resolve/resolve.go` `Register`、`open`、`seal` |

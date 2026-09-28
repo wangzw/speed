@@ -325,6 +325,80 @@ func (r *roster) failedPut(ctx context.Context, t tenant.Tenant, err error) erro
 		"in flight: %w", tenant.ErrAliasConflict, t.Alias, held[0].ID, err)
 }
 
+// Create implements tenant.Catalog.
+//
+// Whether the identifier is taken is asked of the table inside the write, not
+// of the snapshot: a replica whose snapshot predates another replica's
+// registration would otherwise take the identifier for free, and the write
+// would land on that tenant's row. The insert itself does nothing when the
+// identifier is already there, and a write that inserted nothing is the
+// refusal — so two creations of one identifier at once end with one row and
+// one ErrTenantExists, the later one having waited on the earlier's row rather
+// than overwriting it. The alias is checked and its race answered as Put
+// answers it.
+func (r *roster) Create(ctx context.Context, t tenant.Tenant) error {
+	if err := checkTenant(t); err != nil {
+		return err
+	}
+	err := r.handle.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+		held, err := lookUp(tx, "id", string(t.ID))
+		if err != nil {
+			return err
+		}
+		if len(held) > 0 {
+			return tenantExists(t.ID)
+		}
+		held, err = lookUp(tx, "alias", t.Alias)
+		if err != nil {
+			return err
+		}
+		if len(held) > 0 {
+			return fmt.Errorf("%w: alias %q is held by tenant %q",
+				tenant.ErrAliasConflict, t.Alias, held[0].ID)
+		}
+		written := tx.Clauses(clause.OnConflict{
+			Columns:   []clause.Column{{Name: "id"}},
+			DoNothing: true,
+		}).Create(&row{
+			ID:     string(t.ID),
+			Alias:  t.Alias,
+			Status: int(t.Status),
+		})
+		if written.Error != nil {
+			return written.Error
+		}
+		if written.RowsAffected == 0 {
+			return tenantExists(t.ID)
+		}
+		return nil
+	})
+	if err != nil {
+		return r.failedCreate(ctx, t, err)
+	}
+	return r.afterWrite(ctx)
+}
+
+// tenantExists is the refusal of a creation whose identifier is taken.
+func tenantExists(id tenant.ID) error {
+	return fmt.Errorf("%w: identifier %q", tenant.ErrTenantExists, id)
+}
+
+// failedCreate names what a failed Create ran into: its own refusals as they
+// stand, and a driver failure as the conflict it turns out to be once the table
+// is read again — the identifier registered, or the alias taken, by a write
+// that got there first.
+func (r *roster) failedCreate(ctx context.Context, t tenant.Tenant, err error) error {
+	if errors.Is(err, tenant.ErrTenantExists) || errors.Is(err, tenant.ErrAliasConflict) {
+		return err
+	}
+	held, lookErr := lookUp(r.handle.WithContext(ctx), "id", string(t.ID))
+	if lookErr == nil && len(held) > 0 {
+		return fmt.Errorf("%w, by a write that got there while this one was in flight: %w",
+			tenantExists(t.ID), err)
+	}
+	return r.failedPut(ctx, t, err)
+}
+
 // SetStatus implements tenant.Catalog, and is the only way to disable a tenant.
 //
 // Existence is checked with its own read rather than inferred from the update's

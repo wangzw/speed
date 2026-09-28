@@ -41,6 +41,10 @@ func (fakeRoster) Put(context.Context, tenant.Tenant) error {
 	return errors.New("not used by the resolution layer")
 }
 
+func (fakeRoster) Create(context.Context, tenant.Tenant) error {
+	return errors.New("not used by the resolution layer")
+}
+
 func (fakeRoster) SetStatus(context.Context, tenant.ID, tenant.Status) error {
 	return errors.New("not used by the resolution layer")
 }

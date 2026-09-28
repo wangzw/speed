@@ -79,6 +79,19 @@ type Catalog interface {
 	// It is idempotent by identifier. A second tenant arriving with an
 	// alias another one holds is refused, and nothing is written.
 	Put(ctx context.Context, t Tenant) error
+	// Create registers a tenant that is not registered yet, and refuses one
+	// whose identifier the roster's table already holds with ErrTenantExists,
+	// writing nothing. An alias another tenant holds is refused as Put
+	// refuses it.
+	//
+	// It is how a registration that must not overwrite is written: whether
+	// the identifier is taken is asked of the table rather than of this
+	// replica's snapshot, which may predate another replica's registration,
+	// and two creations of one identifier at once end with one tenant and
+	// one refusal. Checking with Get and then calling Put has neither
+	// property: a replica whose snapshot has not seen a tenant yet rewrites
+	// its alias and status — re-enabling it if it was disabled.
+	Create(ctx context.Context, t Tenant) error
 	// SetStatus changes one tenant's state. Disabling goes through here and
 	// only here; there is no delete.
 	SetStatus(ctx context.Context, id ID, s Status) error
