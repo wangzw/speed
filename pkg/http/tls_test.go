@@ -1,6 +1,7 @@
 package http
 
 import (
+	"context"
 	"crypto/ecdsa"
 	"crypto/elliptic"
 	"crypto/rand"
@@ -59,6 +60,16 @@ func writeSelfSignedCertificate(t *testing.T, dir string) (certFile, keyFile str
 	return certFile, keyFile, roots
 }
 
+// getOverTLS sends one GET for the root of the endpoint at addr through client,
+// whose Timeout is the request's deadline.
+func getOverTLS(client *nethttp.Client, addr string) (*nethttp.Response, error) {
+	req, err := nethttp.NewRequestWithContext(context.Background(), nethttp.MethodGet, "https://"+addr+"/", nil)
+	if err != nil {
+		return nil, err
+	}
+	return client.Do(req)
+}
+
 // TestATLSEndpointOffersHTTP2 pins that serving TLS through a listener this
 // module builds itself — which it does so that a certificate that cannot be
 // loaded fails the startup — keeps what the standard library's own TLS path
@@ -85,7 +96,7 @@ func TestATLSEndpointOffersHTTP2(t *testing.T) {
 			ForceAttemptHTTP2: len(c.protocols) > 1,
 		}
 		client := &nethttp.Client{Transport: transport, Timeout: waitDeadline}
-		resp, err := client.Get("https://" + addr + "/") //nolint:noctx // the deadline is the client's own
+		resp, err := getOverTLS(client, addr)
 		if err != nil {
 			t.Fatalf("%s: the request failed: %v", c.name, err)
 		}
@@ -129,7 +140,7 @@ func TestAnHTTP2RequestIsDrained(t *testing.T) {
 	client := &nethttp.Client{Transport: transport, Timeout: 2 * waitDeadline}
 	answered := make(chan *nethttp.Response, 1)
 	go func() {
-		resp, err := client.Get("https://" + addr + "/") //nolint:noctx // the deadline is the client's own
+		resp, err := getOverTLS(client, addr)
 		if err != nil {
 			answered <- nil
 			return

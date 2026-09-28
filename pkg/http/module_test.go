@@ -299,14 +299,13 @@ func TestServeBindsAndTheEndpointServes(t *testing.T) {
 		t.Fatal("the endpoint reports that it is not accepting requests after Serve returned")
 	}
 	addr := product.endpoints["public"].socket.addr().String()
-	resp, err := nethttp.Get("http://" + addr + "/things") //nolint:noctx // the test's own deadline applies
+	status, err := getStatus(ctx, addr, "/things")
 	if err != nil {
 		t.Fatalf("the bound endpoint refused a request: %v", err)
 	}
-	defer resp.Body.Close()
-	if resp.StatusCode != nethttp.StatusTeapot {
+	if status != nethttp.StatusTeapot {
 		t.Errorf("the registered handler answered %d, not the %d it writes",
-			resp.StatusCode, nethttp.StatusTeapot)
+			status, nethttp.StatusTeapot)
 	}
 
 	if err := m.Stop(ctx, nil, product); err != nil {

@@ -32,7 +32,11 @@ func startTestEndpoint(t *testing.T, s endpointSettings, h nethttp.Handler, logg
 // get issues one request and reports what came back, for the tests that need a
 // request in flight rather than a response.
 func get(url string) error {
-	resp, err := nethttp.Get(url) //nolint:noctx // the deadline is the test's own
+	req, err := nethttp.NewRequestWithContext(context.Background(), nethttp.MethodGet, url, nil)
+	if err != nil {
+		return err
+	}
+	resp, err := nethttp.DefaultClient.Do(req)
 	if err != nil {
 		return err
 	}
