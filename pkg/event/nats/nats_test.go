@@ -2,6 +2,8 @@ package nats
 
 import (
 	"context"
+	"crypto/rand"
+	"encoding/hex"
 	"errors"
 	"fmt"
 	"strings"
@@ -21,8 +23,20 @@ import (
 // cannot see each other's streams.
 var eventTypeSerial atomic.Int32
 
+// runToken keeps those names apart across test processes as well. A stream
+// outlives the process that made it on the shared server, and so does a durable
+// consumer with a fixed name: a type named by a counter alone is the same type
+// in the next run, or in another checkout running at the same moment, and a
+// case sharing a consumer would be handed every event that earlier run left in
+// the stream.
+var runToken = func() string {
+	var b [6]byte
+	_, _ = rand.Read(b[:])
+	return hex.EncodeToString(b[:])
+}()
+
 func nextType() string {
-	return fmt.Sprintf("case.%d", eventTypeSerial.Add(1))
+	return fmt.Sprintf("case.%s.%d", runToken, eventTypeSerial.Add(1))
 }
 
 // openBus builds a bus over the shared server, with a consumer name of its own
