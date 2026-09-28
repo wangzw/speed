@@ -514,6 +514,55 @@ func AssertConforms(t *testing.T, newBus Factory) {
 		}
 	})
 
+	t.Run("a payload that cannot be serialized is refused", func(t *testing.T) {
+		b, start := newBus(t)
+		var ran atomic.Int32
+		b.Subscribe("t", func(context.Context, event.Event) error {
+			ran.Add(1)
+			return nil
+		})
+		start(context.Background())
+		// Every implementation refuses it, the in-process one included, which
+		// never serializes the payload: a publisher developed against it would
+		// otherwise meet the refusal only once the assembly moved to a transport.
+		if err := b.Publish(context.Background(), event.Event{Type: "t", Payload: make(chan int)}); err == nil {
+			t.Fatal("a payload that cannot be serialized was accepted")
+		}
+		time.Sleep(200 * time.Millisecond)
+		if n := ran.Load(); n != 0 {
+			t.Fatalf("a subscriber ran %d times for a publish the bus refused", n)
+		}
+	})
+
+	t.Run("a subscription after the start stage is refused at the call site", func(t *testing.T) {
+		b, start := newBus(t)
+		start(context.Background())
+		// A subscription arriving now would miss everything published before
+		// it with nothing to say so; the call site is the one place the mistake
+		// is visible.
+		defer func() {
+			if recover() == nil {
+				t.Fatal("Subscribe after the start stage was accepted")
+			}
+		}()
+		b.Subscribe("t", func(context.Context, event.Event) error { return nil })
+	})
+
+	t.Run("a publish after the bus is closed is refused", func(t *testing.T) {
+		b, start := newBus(t)
+		start(context.Background())
+		c, ok := b.(interface{ Close(context.Context) error })
+		if !ok {
+			t.Fatalf("%T has no Close", b)
+		}
+		if err := c.Close(context.Background()); err != nil {
+			t.Fatalf("Close: %v", err)
+		}
+		if err := b.Publish(context.Background(), event.Event{Type: "t"}); !errors.Is(err, event.ErrClosed) {
+			t.Fatalf("Publish after Close: %v, want ErrClosed", err)
+		}
+	})
+
 	t.Run("a subscriber running at the stop stage finishes on a live context", func(t *testing.T) {
 		b, start := newBus(t)
 		entered := make(chan struct{})
