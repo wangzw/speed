@@ -22,11 +22,14 @@ import (
 // The connectivity check is bound to ctx, which is the ctx the stage received:
 // a host that wants a bound on how long a startup may wait for the database
 // sets it on the context it hands Run, because the driver's own timeouts are
-// written in the locator rather than declared here as input items. It is the
-// first time the connection is reached. GORM's own check on open takes no
-// context, and against a host that accepts the connection and never answers
-// it waits for as long as the driver does — without a timeout in the locator,
-// for good — so it is switched off, and the check below is the one that runs.
+// written in the locator rather than declared here as input items. GORM's own
+// check on open takes no context, and against a host that accepts the
+// connection and never answers it waits for as long as the driver does —
+// without a timeout in the locator, for good — so it is switched off, and the
+// check below is the one that runs. On PostgreSQL that check is the first time
+// the connection is reached, because the driver connects on first use. The
+// SQLite dialector queries the library version as it opens, with no context;
+// that opens a local file, and nothing on it waits on a network.
 //
 // A failure reports ErrConnectFailed whatever the step — opening the driver,
 // reaching the pool behind the session, or the connectivity check — because
