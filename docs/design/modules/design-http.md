@@ -190,7 +190,7 @@ func WriteJSON(w nethttp.ResponseWriter, status int, v any) error
 func StatusFor(err error) int
 ```
 
-**空请求体归入请求体不合法**，不单设一类：调用 `Decode` 就是声明这个 handler 需要请求体，而调用方对空体与格式错误的补救是同一件事。不需要请求体的 handler 不调用它。
+**空请求体归入请求体不合法**，不单设一类：调用 `Decode` 就是声明这个 handler 需要请求体，而调用方对空体与格式错误的补救是同一件事。不需要请求体的 handler 不调用它。**整个请求体是 JSON 的 `null` 同样归入这一类**：标准库把 `null` 解进指针目标时不报错、原样留下目标，handler 于是带着客户端从未发送的零值往下走，这是空体的另一种写法。文档内部某个字段上的 `null` 不在此列，那是该字段的一个取值。
 
 **解码失败映射 400，校验未通过映射 422。** 这个区分对调用方有用：解码失败说的是这段字节不是本 API 能解析的形状，校验未通过说的是形状对而取值不合法，客户端的修法不同。`StatusFor(nil)` 返回 200——`nil` 不是错误，让 `WriteJSON(w, StatusFor(err), v)` 在没有错误时也成立。
 

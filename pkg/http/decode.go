@@ -1,6 +1,7 @@
 package http
 
 import (
+	"bufio"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -37,24 +38,37 @@ type Validator interface {
 // by that limit reaches here as an error wrapping ErrBodyTooLarge.
 //
 // The returned errors wrap ErrMalformedBody, ErrBodyTooLarge or ErrValidation.
-// An empty body is one of the malformed ones and has no class of its own.
+// An empty body is one of the malformed ones and has no class of its own, and
+// so is a body that is JSON null: encoding/json decodes null by leaving the
+// target alone, which would hand the handler a value the client never sent.
 // Decode writes nothing to the response: the shape of an error response
 // belongs to the module that provides the API, so a caller turns the error
 // into a status code with StatusFor and writes the body it wants.
 func Decode(r *nethttp.Request, dst any) error {
-	dec := json.NewDecoder(requestBody(r))
+	body := bufio.NewReader(requestBody(r))
+	first, err := firstSignificantByte(body)
+	if err != nil {
+		return decodeFailure(err)
+	}
+	dec := json.NewDecoder(body)
 	dec.DisallowUnknownFields()
-	if err := dec.Decode(dst); err != nil {
+	if err = dec.Decode(dst); err != nil {
 		return decodeFailure(err)
 	}
 	var trailing json.RawMessage
-	err := dec.Decode(&trailing)
+	err = dec.Decode(&trailing)
 	switch {
 	case err == nil:
 		return fmt.Errorf("%w: the body carries a second JSON value after the first. "+
 			"Send exactly one JSON value", ErrMalformedBody)
 	case !errors.Is(err, io.EOF):
 		return decodeFailure(err)
+	}
+	if first == 'n' {
+		// The only JSON value that begins with n is null, and it decoded, so
+		// that is what the body was.
+		return fmt.Errorf("%w: the body is JSON null, which carries no value. "+
+			"Send the JSON document the endpoint expects", ErrMalformedBody)
 	}
 	if v, ok := dst.(Validator); ok {
 		if err := v.Validate(); err != nil {
@@ -73,6 +87,23 @@ func requestBody(r *nethttp.Request) io.Reader {
 		return nethttp.NoBody
 	}
 	return r.Body
+}
+
+// firstSignificantByte returns the first byte of the body that is not JSON
+// whitespace, and leaves it unread. A body with nothing else in it reports
+// io.EOF, the same thing the decoder reports for it.
+func firstSignificantByte(body *bufio.Reader) (byte, error) {
+	for {
+		b, err := body.ReadByte()
+		if err != nil {
+			return 0, err
+		}
+		switch b {
+		case ' ', '\t', '\n', '\r':
+			continue
+		}
+		return b, body.UnreadByte()
+	}
 }
 
 // decodeFailure classifies a failure from the JSON decoder.

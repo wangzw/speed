@@ -239,6 +239,38 @@ func TestEmptyBodyIsMalformed(t *testing.T) {
 	}
 }
 
+// TestANullBodyIsMalformed pins the body that is JSON's way of sending nothing.
+// encoding/json decodes null into a pointer target by leaving the target
+// alone, so without a check of its own Decode reports success and the handler
+// proceeds with a zero value the client never sent — the empty-body case in
+// another spelling, and the same failure shape as a misspelled field.
+func TestANullBodyIsMalformed(t *testing.T) {
+	for _, body := range []string{"null", "  null\n"} {
+		var got thing
+		err := Decode(postWithBody(body), &got)
+		if err == nil {
+			t.Errorf("the body %q was accepted, so the handler proceeds with a value nobody sent", body)
+			continue
+		}
+		if !errors.Is(err, ErrMalformedBody) {
+			t.Errorf("the body %q fails with %v, which does not match ErrMalformedBody", body, err)
+		}
+		if status := StatusFor(err); status != nethttp.StatusBadRequest {
+			t.Errorf("the body %q reaches the client as %d, want 400", body, status)
+		}
+		if !strings.Contains(err.Error(), "null") {
+			t.Errorf("the failure %q does not say the body was null", err)
+		}
+	}
+
+	// A null inside the document is a value like any other: the field it is
+	// written for takes its zero value, which is what the client asked for.
+	var got thing
+	if err := Decode(postWithBody(`{"name":null,"count":2}`), &got); err != nil {
+		t.Errorf("a null field inside the document was refused: %v", err)
+	}
+}
+
 // TestDecodeToleratesARequestWithoutABody covers the request net/http hands a
 // handler for a GET: Body is nil rather than an empty reader.
 func TestDecodeToleratesARequestWithoutABody(t *testing.T) {
