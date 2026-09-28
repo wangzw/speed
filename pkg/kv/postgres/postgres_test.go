@@ -3,9 +3,11 @@ package postgres
 import (
 	"context"
 	"errors"
+	"net/url"
 	"strings"
 	"sync"
 	"testing"
+	"time"
 
 	"github.com/jackc/pgx/v5/pgconn"
 
@@ -198,6 +200,82 @@ func TestATableWithTextKeysIsConvertedInPlace(t *testing.T) {
 	if err := s.Set(ctx, "nul\x00byte", []byte("three"), 0); err != nil {
 		t.Fatalf("Set on a key a text column refuses, after the conversion: %v", err)
 	}
+}
+
+// TestAnExpiryIsJudgedByTheClockThatSetIt covers replicas whose clocks do not
+// agree with the database's. The statements judge a row's expiry against the
+// database's now(), so the instant a row expires has to come from the same
+// clock: stamped from the writing replica's clock instead, a replica running
+// ahead of the database writes keys that live too long, and one running behind
+// writes keys that are expired the moment they land.
+//
+// The case skews the database's clock rather than the replica's, which is the
+// same disagreement seen from the other side: a now() of its own, earlier on
+// the search path than the catalog's, shadows the server's for every statement
+// the store runs.
+func TestAnExpiryIsJudgedByTheClockThatSetIt(t *testing.T) {
+	for name, skew := range map[string]string{
+		"a database clock ahead of the replica": "+ interval '1 hour'",
+		"a database clock behind the replica":   "- interval '1 hour'",
+	} {
+		t.Run(name, func(t *testing.T) {
+			dsn := pgtest.Acquire(t)
+			ctx := context.Background()
+			pool, err := pgpool.Connect(ctx, "probe", pgpool.Config{DSN: dsn, MaxConns: 1})
+			if err != nil {
+				t.Fatalf("connecting: %v", err)
+			}
+			for _, statement := range []string{
+				`CREATE SCHEMA skewed`,
+				`CREATE FUNCTION skewed.now() RETURNS timestamptz LANGUAGE sql STABLE AS
+					$$ SELECT pg_catalog.now() ` + skew + ` $$`,
+			} {
+				if _, execErr := pool.Exec(ctx, statement); execErr != nil {
+					pool.Close()
+					t.Fatalf("skewing the clock: %v", execErr)
+				}
+			}
+			pool.Close()
+
+			opened, err := open(ctx, &pgpool.Config{DSN: withSearchPath(dsn, "skewed,pg_catalog"), MaxConns: 2})
+			if err != nil {
+				t.Fatalf("open: %v", err)
+			}
+			s := opened.(*store)
+			t.Cleanup(func() { _ = s.Close(ctx) })
+
+			// A key with half an hour to live is there now, and a key with a
+			// moment to live is gone a little later — whichever way the clocks
+			// disagree.
+			if setErr := s.Set(ctx, "long", []byte("v"), 30*time.Minute); setErr != nil {
+				t.Fatalf("Set: %v", setErr)
+			}
+			if _, incrErr := s.IncrByFloatWithTTL(ctx, "counter", 1, 30*time.Minute); incrErr != nil {
+				t.Fatalf("IncrByFloatWithTTL: %v", incrErr)
+			}
+			for _, key := range []string{"long", "counter"} {
+				if _, present, getErr := s.Get(ctx, key); getErr != nil || !present {
+					t.Fatalf("Get on %q, written with half an hour to live: present=%v err=%v", key, present, getErr)
+				}
+			}
+			if setErr := s.Set(ctx, "short", []byte("v"), 20*time.Millisecond); setErr != nil {
+				t.Fatalf("Set: %v", setErr)
+			}
+			time.Sleep(100 * time.Millisecond)
+			if _, present, getErr := s.Get(ctx, "short"); getErr != nil || present {
+				t.Fatalf("Get on a key past its 20ms: present=%v err=%v", present, getErr)
+			}
+		})
+	}
+}
+
+// withSearchPath adds a search_path run-time parameter to a connection URL.
+func withSearchPath(dsn, path string) string {
+	separator := "?"
+	if strings.Contains(dsn, "?") {
+		separator = "&"
+	}
+	return dsn + separator + "search_path=" + url.QueryEscape(path)
 }
 
 // TestTwoStoresOnOneDatabaseShareTheSameEntries is what this backend is for: an

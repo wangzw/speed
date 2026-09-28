@@ -223,9 +223,9 @@ func (s *store) Get(ctx context.Context, key string) ([]byte, bool, error) {
 // Set stores the value, replacing any existing one and its expiry.
 func (s *store) Set(ctx context.Context, key string, value []byte, ttl time.Duration) error {
 	_, err := s.pool.Exec(ctx,
-		`INSERT INTO `+table+` (key, value, expires_at) VALUES ($1, $2, $3)
+		`INSERT INTO `+table+` (key, value, expires_at) VALUES ($1, $2, `+expiryFrom("$3")+`)
 		 ON CONFLICT (key) DO UPDATE SET value = EXCLUDED.value, expires_at = EXCLUDED.expires_at`,
-		spell(key), nonNull(value), expiresAt(ttl))
+		spell(key), nonNull(value), ttlMicros(ttl))
 	return err
 }
 
@@ -286,9 +286,9 @@ func (s *store) increment(ctx context.Context, key string, delta float64, ttl ti
 		return 0, deleteErr
 	}
 
-	var expires any
+	var expires int64
 	if withTTL {
-		expires = expiresAt(ttl)
+		expires = ttlMicros(ttl)
 	}
 	var text string
 	// Every statement in this transaction names its own error rather than
@@ -296,7 +296,7 @@ func (s *store) increment(ctx context.Context, key string, delta float64, ttl ti
 	// reassigned by each, leaving a reader to work out which failure a return
 	// belongs to.
 	incrErr := tx.QueryRow(ctx,
-		`INSERT INTO `+table+` (key, value, expires_at) VALUES ($1, convert_to($2, 'UTF8'), $3)
+		`INSERT INTO `+table+` (key, value, expires_at) VALUES ($1, convert_to($2, 'UTF8'), `+expiryFrom("$3")+`)
 		 ON CONFLICT (key) DO UPDATE
 		 SET value = convert_to((convert_from(`+table+`.value, 'UTF8')::numeric + $2::numeric)::text, 'UTF8')
 		 RETURNING convert_from(value, 'UTF8')`,
@@ -391,13 +391,34 @@ func (s *store) CompareAndSwap(ctx context.Context, key string, old, newVal []by
 	return true, nil
 }
 
-// expiresAt turns a ttl into the instant a row stops being visible, or nil for
-// no expiry.
-func expiresAt(ttl time.Duration) any {
+// expiryFrom is the SQL for the instant a row stops being visible, given a
+// statement parameter holding the ttl in microseconds; zero means no expiry.
+//
+// The instant is the database's now() plus the ttl, never this process's
+// clock. Every statement judges a row's expiry against the database's now(),
+// so the instant has to come from the same clock: stamped by the writing
+// replica instead, a replica running ahead of the database would write keys
+// that live too long, one running behind would write keys that are expired
+// the moment they land, and replicas would disagree about whether a key exists.
+func expiryFrom(param string) string {
+	return `CASE WHEN ` + param + `::bigint > 0 THEN now() + ` + param +
+		`::bigint * interval '1 microsecond' END`
+}
+
+// ttlMicros turns a ttl into the whole microseconds expiryFrom takes.
+//
+// Rounding up rather than truncating is what keeps a positive ttl positive: a
+// ttl under a microsecond would truncate to zero, which reads as no expiry —
+// the opposite of what the caller asked for. A ttl of zero or less stays zero.
+func ttlMicros(ttl time.Duration) int64 {
 	if ttl <= 0 {
-		return nil
+		return 0
 	}
-	return time.Now().Add(ttl)
+	micros := ttl.Microseconds()
+	if time.Duration(micros)*time.Microsecond < ttl {
+		micros++
+	}
+	return micros
 }
 
 // formatFloat renders a delta as the shortest text that round-trips, which is
