@@ -141,12 +141,15 @@ func prepare(reader config.Reader) (core.Enablement, error) {
 // failure rather than a stance: a module taken into a command has to start, and
 // the way out is to write the subjects, or to leave this backend out of the
 // command whose traffic it was meant to authenticate.
+//
+// It wraps the sentinel the gateway refuses a claim of no subject space with,
+// because that is what this table would hand it.
 func nobodyToVouchFor() error {
-	return fmt.Errorf("the %s backend has no subject to be the authority for: %s.%s names "+
+	return fmt.Errorf("%w: the %s backend has no subject to be the authority for: %s.%s names "+
 		"none, and a backend claiming no subject space authenticates nobody. Write the "+
 		"subjects and their password hashes under that key to switch this backend on, or "+
 		"leave this backend out of the command",
-		ModuleName, ConfigNamespace, subjectsItem)
+		authn.ErrInvalidClaim, ModuleName, ConfigNamespace, subjectsItem)
 }
 
 // newBackend builds the product, fixing the claim at construction time.

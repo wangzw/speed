@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"time"
 
+	"github.com/vislake/speed/pkg/authn"
 	"github.com/vislake/speed/pkg/config"
 )
 
@@ -71,8 +72,8 @@ func (c moduleConfig) resolve() (settings, error) {
 	seen := make(map[string]struct{}, len(c.Endpoints))
 	for _, name := range c.Endpoints {
 		if name == "" {
-			return settings{}, fmt.Errorf("%s: %s.%s holds an empty endpoint name, which names "+
-				"no endpoint the entry point has", ModuleName, ConfigNamespace, endpointsItem)
+			return settings{}, fmt.Errorf("%w: %s.%s holds an empty endpoint name, which names "+
+				"no endpoint the entry point has", authn.ErrInvalidConfig, ConfigNamespace, endpointsItem)
 		}
 		// A name written twice would register the layer twice on that
 		// endpoint: every request would be authenticated twice, every
@@ -80,19 +81,19 @@ func (c moduleConfig) resolve() (settings, error) {
 		// second registration buys nothing, so this is a mistake to
 		// report rather than a duplicate to drop quietly.
 		if _, twice := seen[name]; twice {
-			return settings{}, fmt.Errorf("%s: %s.%s names the endpoint %q twice, which would "+
+			return settings{}, fmt.Errorf("%w: %s.%s names the endpoint %q twice, which would "+
 				"register the authentication layer on it twice and ask every backend "+
-				"twice per request", ModuleName, ConfigNamespace, endpointsItem, name)
+				"twice per request", authn.ErrInvalidConfig, ConfigNamespace, endpointsItem, name)
 		}
 		seen[name] = struct{}{}
 	}
 	if s.budget <= 0 {
-		return settings{}, fmt.Errorf("%s: %s.%s is %s, and a call with no bound is one a hung "+
-			"backend never gives back", ModuleName, ConfigNamespace, budgetItem, s.budget)
+		return settings{}, fmt.Errorf("%w: %s.%s is %s, and a call with no bound is one a hung "+
+			"backend never gives back", authn.ErrInvalidConfig, ConfigNamespace, budgetItem, s.budget)
 	}
 	if s.inFlight <= 0 {
-		return settings{}, fmt.Errorf("%s: %s.%s is %d, and a gateway that admits no call at all "+
-			"refuses every request it is given", ModuleName, ConfigNamespace, inFlightItem, s.inFlight)
+		return settings{}, fmt.Errorf("%w: %s.%s is %d, and a gateway that admits no call at all "+
+			"refuses every request it is given", authn.ErrInvalidConfig, ConfigNamespace, inFlightItem, s.inFlight)
 	}
 	return s, nil
 }

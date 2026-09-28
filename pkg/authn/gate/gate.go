@@ -272,10 +272,10 @@ func prepare(reader config.Reader) (core.Enablement, error) {
 // a stance: a module taken into a command has to start, and the way out is to
 // write the endpoints, or to leave this module out of the command.
 func nothingToGuard() error {
-	return fmt.Errorf("no endpoint is guarded: %s.%s names none, so every route would be "+
+	return fmt.Errorf("%w: no endpoint is guarded: %s.%s names none, so every route would be "+
 		"served without a credential. Name the endpoints to guard under that key to switch "+
 		"authentication on, or leave this module out of the command",
-		ConfigNamespace, endpointsItem)
+		authn.ErrInvalidConfig, ConfigNamespace, endpointsItem)
 }
 
 // newGateway builds the product. It takes up no module's product: everything
@@ -435,8 +435,8 @@ func (g *gateway) drain(ctx context.Context) error {
 	case <-done:
 		return nil
 	case <-timer.C:
-		return fmt.Errorf("%sbackend calls were still in flight after the call budget of %s",
-			diagnosticPrefix, g.settings.budget)
+		return fmt.Errorf("%w: Close waited the call budget of %s (%s.%s) and gave up the wait",
+			authn.ErrDrainTimeout, g.settings.budget, ConfigNamespace, budgetItem)
 	case <-ctx.Done():
 		return fmt.Errorf("%swaiting for in-flight backend calls: %w", diagnosticPrefix, ctx.Err())
 	}

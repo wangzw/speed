@@ -2,6 +2,7 @@ package gate
 
 import (
 	"context"
+	"errors"
 	"io"
 	"log/slog"
 	nethttp "net/http"
@@ -13,6 +14,7 @@ import (
 
 	"github.com/vislake/speed/pkg/authn"
 	"github.com/vislake/speed/pkg/authn/internal/configreader"
+	"github.com/vislake/speed/pkg/config"
 	speedhttp "github.com/vislake/speed/pkg/http"
 	"github.com/vislake/speed/pkg/log"
 )
@@ -178,11 +180,12 @@ func withBasic(r *nethttp.Request, user, password string) *nethttp.Request {
 // the operator reading it, that is the whole of what to fix.
 func TestAGatewayToldToGuardNothingRefusesToStart(t *testing.T) {
 	for _, c := range []struct {
-		name string
-		body string
+		name   string
+		body   string
+		absent bool
 	}{
-		{"the key is absent", `{}`},
-		{"the list is empty", `{"authn":{"gate":{"endpoints":[]}}}`},
+		{"the key is absent", `{}`, true},
+		{"the list is empty", `{"authn":{"gate":{"endpoints":[]}}}`, false},
 	} {
 		t.Run(c.name, func(t *testing.T) {
 			state, err := prepare(configreader.Over(t, Module(), c.body))
@@ -193,6 +196,15 @@ func TestAGatewayToldToGuardNothingRefusesToStart(t *testing.T) {
 			}
 			if !strings.Contains(err.Error(), ConfigNamespace+"."+endpointsItem) {
 				t.Errorf("the failure reads %q and does not name the key to write", err)
+			}
+			// The absent key and the empty list are one fact, so they
+			// carry one sentinel; the absent key carries the loader's own
+			// as well, because the loader judged it first.
+			if !errors.Is(err, authn.ErrInvalidConfig) {
+				t.Errorf("the failure reads %q and does not wrap %v", err, authn.ErrInvalidConfig)
+			}
+			if c.absent && !errors.Is(err, config.ErrMissingRequired) {
+				t.Errorf("the failure reads %q and does not wrap %v", err, config.ErrMissingRequired)
 			}
 		})
 	}

@@ -1,9 +1,12 @@
 package gate
 
 import (
+	"errors"
 	"strings"
 	"testing"
 	"time"
+
+	"github.com/vislake/speed/pkg/authn"
 )
 
 // TestAConfigurationThisGatewayCannotRunOnIsRefused holds the inputs that are
@@ -66,6 +69,12 @@ func TestAConfigurationThisGatewayCannotRunOnIsRefused(t *testing.T) {
 			if !strings.Contains(err.Error(), c.mentions) {
 				t.Errorf("the failure reads %q and does not say what is wrong (looked for %q)",
 					err, c.mentions)
+			}
+			// The sentinel table is closed over what this module judges
+			// itself, and a caller tells a configuration it has to
+			// correct from every other startup failure by it.
+			if !errors.Is(err, authn.ErrInvalidConfig) {
+				t.Errorf("the failure reads %q and does not wrap %v", err, authn.ErrInvalidConfig)
 			}
 		})
 	}

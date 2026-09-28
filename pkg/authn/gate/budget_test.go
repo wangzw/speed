@@ -2,6 +2,7 @@ package gate
 
 import (
 	"context"
+	"errors"
 	"log/slog"
 	nethttp "net/http"
 	"sync/atomic"
@@ -219,9 +220,10 @@ func TestDrainingGivesUpOnCallsThatOutlastTheBudget(t *testing.T) {
 	err := g.drain(context.Background())
 	waited := time.Since(started)
 
-	if err == nil {
-		t.Error("draining returned without complaint while a call was still inside a backend; " +
-			"a shutdown that reports nothing looks like a clean one")
+	if !errors.Is(err, authn.ErrDrainTimeout) {
+		t.Errorf("draining returned %v while a call was still inside a backend, want a failure "+
+			"wrapping %v: a shutdown that reports nothing looks like a clean one", err,
+			authn.ErrDrainTimeout)
 	}
 	if waited > time.Second {
 		t.Errorf("draining waited %s for a backend that had stopped answering, and the whole "+

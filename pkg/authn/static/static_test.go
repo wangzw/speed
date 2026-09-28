@@ -314,6 +314,12 @@ func TestABackendWithNobodyToVouchForRefusesToStart(t *testing.T) {
 					t.Errorf("the failure reads %q and does not carry %q", err, want)
 				}
 			}
+			// A table naming nobody is a claim of no subject space, which
+			// is what the gateway refuses as a malformed claim; the two
+			// report one fact, under one sentinel.
+			if !errors.Is(err, authn.ErrInvalidClaim) {
+				t.Errorf("the failure reads %q and does not wrap %v", err, authn.ErrInvalidClaim)
+			}
 		})
 	}
 }
