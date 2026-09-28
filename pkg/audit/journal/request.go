@@ -97,11 +97,21 @@ type statusRecorder struct {
 }
 
 func (s *statusRecorder) WriteHeader(code int) {
-	if !s.written {
+	if !s.written && !informational(code) {
 		s.status = code
 		s.written = true
 	}
 	s.ResponseWriter.WriteHeader(code)
+}
+
+// informational reports a status that comes ahead of the answer rather than
+// being it. net/http sends a 1xx response at once and lets the handler go on to
+// send more of them and then the final status, so the first status written is
+// not the outcome when it is one of these — 103 Early Hints ahead of the real
+// response is the common case. Switching protocols is the exception: the
+// connection passes to another protocol and no other status follows it.
+func informational(code int) bool {
+	return code >= 100 && code < 200 && code != nethttp.StatusSwitchingProtocols
 }
 
 func (s *statusRecorder) Write(b []byte) (int, error) {

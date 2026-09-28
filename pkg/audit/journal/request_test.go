@@ -88,3 +88,75 @@ func TestAnEventPublishedOnAFinishedContextIsStillRecorded(t *testing.T) {
 		t.Errorf("the failure signal reported a healthy table: %s", reported.String())
 	}
 }
+
+// headerLog is a response writer that keeps every status it was handed, which
+// is what lets a case send an informational response before the final one.
+type headerLog struct {
+	header nethttp.Header
+	codes  []int
+}
+
+func (h *headerLog) Header() nethttp.Header {
+	if h.header == nil {
+		h.header = nethttp.Header{}
+	}
+	return h.header
+}
+
+func (h *headerLog) Write(b []byte) (int, error) { return len(b), nil }
+
+func (h *headerLog) WriteHeader(code int) { h.codes = append(h.codes, code) }
+
+// recordOne runs one matched request through the layer with the given inner
+// handler and returns the row it left.
+func recordOne(t *testing.T, inner nethttp.Handler) row {
+	t.Helper()
+	handle := open(t)
+	j := newTestJournal(handle, settings{})
+	m, err := newMatcher([]string{"GET /things"})
+	if err != nil {
+		t.Fatalf("building the matcher: %v", err)
+	}
+	j.matcher = m
+	j.middlewareFor("public").Wrap(inner).ServeHTTP(&headerLog{}, httptest.NewRequest("GET", "/things", nil))
+	rows := auditRows(t, handle)
+	if len(rows) != 1 {
+		t.Fatalf("want one row, got %d", len(rows))
+	}
+	return rows[0]
+}
+
+// An informational response is not the answer. A handler may send any number of
+// them — 103 Early Hints ahead of the real response is the common one — before
+// the status the request ends with, and the outcome column holds that one.
+func TestAnInformationalResponseIsNotTheOutcome(t *testing.T) {
+	t.Run("an explicit final status", func(t *testing.T) {
+		got := recordOne(t, nethttp.HandlerFunc(func(w nethttp.ResponseWriter, _ *nethttp.Request) {
+			w.WriteHeader(nethttp.StatusEarlyHints)
+			w.WriteHeader(nethttp.StatusCreated)
+		}))
+		if got.Outcome != "201" {
+			t.Fatalf("outcome is %q, want the final status %q", got.Outcome, "201")
+		}
+	})
+	t.Run("the implicit final status", func(t *testing.T) {
+		got := recordOne(t, nethttp.HandlerFunc(func(w nethttp.ResponseWriter, _ *nethttp.Request) {
+			w.WriteHeader(nethttp.StatusEarlyHints)
+			_, _ = w.Write([]byte("body"))
+		}))
+		if got.Outcome != "200" {
+			t.Fatalf("outcome is %q, want the implicit final status %q", got.Outcome, "200")
+		}
+	})
+}
+
+// Switching protocols is the one informational status that is final: the
+// connection is handed to another protocol and no other status follows.
+func TestSwitchingProtocolsIsTheOutcome(t *testing.T) {
+	got := recordOne(t, nethttp.HandlerFunc(func(w nethttp.ResponseWriter, _ *nethttp.Request) {
+		w.WriteHeader(nethttp.StatusSwitchingProtocols)
+	}))
+	if got.Outcome != "101" {
+		t.Fatalf("outcome is %q, want %q", got.Outcome, "101")
+	}
+}
