@@ -1,6 +1,7 @@
 package catalog
 
 import (
+	"database/sql/driver"
 	"fmt"
 	"reflect"
 	"strings"
@@ -8,6 +9,7 @@ import (
 	"gorm.io/gorm"
 	"gorm.io/gorm/clause"
 	gormschema "gorm.io/gorm/schema"
+	"gorm.io/gorm/utils"
 
 	"github.com/vislake/speed/pkg/tenant"
 	"github.com/vislake/speed/pkg/tenant/internal/tenantctx"
@@ -67,10 +69,18 @@ func (f *filter) Name() string { return "github.com/vislake/speed/pkg/tenant/cat
 // instead. Registering before each processor's own step is what puts the
 // condition into the clause the step renders, and the value into the row it
 // binds.
+//
+// A read goes through one of two processors. Find, First, Count and Pluck run
+// the query processor; Scan, Row and Rows run the row processor, and a filter
+// registered on the query processor alone leaves every one of them reading
+// across tenants with no tenant in the context and no error.
 func (f *filter) Initialize(handle *gorm.DB) error {
 	registered := []func(*gorm.DB) error{
 		func(h *gorm.DB) error {
 			return h.Callback().Query().Before("gorm:query").Register(callbackName, f.scopeRead)
+		},
+		func(h *gorm.DB) error {
+			return h.Callback().Row().Before("gorm:row").Register(callbackName, f.scopeRead)
 		},
 		func(h *gorm.DB) error {
 			return h.Callback().Update().Before("gorm:update").Register(callbackName, f.scopeUpdate)
@@ -122,34 +132,234 @@ const (
 // earlier execution of it left behind: a chain first run under one tenant and
 // then carried to a crossing context, or to none, is judged by the context it
 // runs under now.
-func scopeOf(tx *gorm.DB, st *gorm.Statement) (*gormschema.Field, string, scope) {
-	if !scoped(st) {
+//
+// A read of a model that is not scoped is still scoped when one of its
+// association joins reaches a model that is: it reads that model's rows. The
+// field is nil for such a read, which carries no condition of its own.
+func scopeOf(tx *gorm.DB, st *gorm.Statement, joins []scopedJoin) (*gormschema.Field, string, scope) {
+	field := conventionFieldOf(st.Schema)
+	if field == nil && len(joins) == 0 {
 		return nil, "", unscoped
 	}
-	field := st.Schema.LookUpField(conventionField)
 	if tenantctx.CrossTenant(st.Context) {
 		releaseCondition(st)
+		releaseJoins(st, joins)
 		return field, "", crossing
 	}
 	id, ok := tenantctx.ID(st.Context)
 	if !ok {
 		releaseCondition(st)
+		releaseJoins(st, joins)
 		// The return value is the statement's accumulated error, which the
 		// statement already holds; the caller reads it back through Error.
-		_ = tx.AddError(noTenant(st))
+		_ = tx.AddError(noTenant(st, joins))
 		return field, "", refused
 	}
 	return field, id, tenanted
 }
 
-// scopeRead adds the tenant condition to a read.
+// scopeRead adds the tenant condition to a read, and to every association join
+// of it that reaches a scoped model.
+//
+// A read that is refused while being rendered rather than run is a subquery:
+// GORM renders one into the statement it is part of and drops its error on the
+// way, so the refusal would reach nobody and the subquery would render as
+// nothing — an empty set on one dialect, a syntax error unrelated to the cause
+// on the other. The refused subquery renders instead as a select of one value
+// whose binding fails with the refusal, which is what carries it into the
+// statement that runs.
 func (f *filter) scopeRead(tx *gorm.DB) {
 	st := tx.Statement
-	field, id, s := scopeOf(tx, st)
-	if s != tenanted {
+	joins := scopedJoins(st)
+	field, id, s := scopeOf(tx, st, joins)
+	switch s {
+	case tenanted:
+	case refused:
+		if tx.DryRun && st.SQL.Len() == 0 {
+			renderRefusal(st, tx.Error)
+		}
+		return
+	default:
 		return
 	}
-	applyCondition(st, field.DBName, id, false)
+	if field != nil {
+		applyCondition(st, field.DBName, id, false)
+	}
+	applyJoins(st, joins, id)
+}
+
+// renderRefusal writes a refused read as a select of one value that refuses to
+// be bound.
+func renderRefusal(st *gorm.Statement, err error) {
+	st.SQL.WriteString("SELECT ")
+	st.AddVar(&st.SQL, refusal{err: err})
+}
+
+// refusal is a value whose binding fails with the error it carries.
+type refusal struct{ err error }
+
+// Value implements driver.Valuer.
+func (r refusal) Value() (driver.Value, error) { return nil, r.err }
+
+// scopedJoin is one association join of a read that reaches a scoped model,
+// with what its ON clause needs to render the condition at each level of the
+// join.
+//
+// A nested join renders one ON clause per level from the same join entry, and
+// the levels need not all be scoped: a purchase joined to its customer and on to
+// a global country is two levels, one of each. The condition is rendered per
+// level, keyed by the alias GORM gives that level's table; a level whose model
+// is not scoped renders a condition that holds for every row. An alias this
+// plugin did not foresee renders the tenant condition, so that a table the
+// plugin did not recognise fails the statement rather than reading across
+// tenants.
+type scopedJoin struct {
+	index    int
+	model    string
+	columns  map[string]string
+	unscoped map[string]bool
+	fallback string
+}
+
+// scopedJoins lists the association joins of this read that reach a scoped
+// model. A join GORM renders from the caller's own expression, or a join
+// written as SQL text, names its tables in text the plugin does not parse, and
+// is not among them.
+func scopedJoins(st *gorm.Statement) []scopedJoin {
+	if st.Schema == nil || len(st.Joins) == 0 {
+		return nil
+	}
+	var out []scopedJoin
+	for i, j := range st.Joins {
+		if j.Expression != nil {
+			continue
+		}
+		chain := relationChain(st.Schema, j.Name)
+		if len(chain) == 0 {
+			continue
+		}
+		sj := scopedJoin{index: i, columns: map[string]string{}, unscoped: map[string]bool{}}
+		parent := ""
+		for level, rel := range chain {
+			current := rel.Name
+			if parent != "" {
+				current = utils.NestedRelationName(parent, rel.Name)
+			}
+			alias := current
+			if level == len(chain)-1 && j.Alias != "" {
+				alias = j.Alias
+			}
+			if f := conventionFieldOf(rel.FieldSchema); f != nil {
+				sj.columns[alias] = f.DBName
+				sj.fallback = f.DBName
+				if sj.model == "" {
+					sj.model = rel.FieldSchema.Name
+				}
+			} else {
+				sj.unscoped[alias] = true
+			}
+			parent = current
+		}
+		if sj.model != "" {
+			out = append(out, sj)
+		}
+	}
+	return out
+}
+
+// relationChain resolves a join's name to the relationships it follows, the way
+// GORM resolves it: a relationship of the model by that name, or a dotted path
+// of them. A name that resolves to neither is SQL text.
+func relationChain(s *gormschema.Schema, name string) []*gormschema.Relationship {
+	if rel, ok := s.Relationships.Relations[name]; ok {
+		return []*gormschema.Relationship{rel}
+	}
+	parts := strings.Split(name, ".")
+	if len(parts) < 2 {
+		return nil
+	}
+	chain := make([]*gormschema.Relationship, 0, len(parts))
+	relations := s.Relationships.Relations
+	for _, part := range parts {
+		rel, ok := relations[part]
+		if !ok {
+			return nil
+		}
+		chain = append(chain, rel)
+		relations = rel.FieldSchema.Relationships.Relations
+	}
+	return chain
+}
+
+// joinTerm is the tenant condition this plugin puts into a join's ON clause.
+type joinTerm struct {
+	id       string
+	columns  map[string]string
+	unscoped map[string]bool
+	fallback string
+}
+
+// Build renders the condition for the level whose ON clause is being built:
+// GORM builds each level's ON clause on a statement named after that level's
+// alias.
+func (t joinTerm) Build(builder clause.Builder) {
+	alias := ""
+	if st, ok := builder.(*gorm.Statement); ok {
+		alias = st.Table
+	}
+	if t.unscoped[alias] {
+		clause.Expr{SQL: "1 = 1"}.Build(builder)
+		return
+	}
+	column, ok := t.columns[alias]
+	if !ok {
+		column = t.fallback
+	}
+	clause.Eq{
+		Column: clause.Column{Table: clause.CurrentTable, Name: column},
+		Value:  t.id,
+	}.Build(builder)
+}
+
+// applyJoins puts the tenant condition into the ON clause of every scoped join,
+// replacing the one an earlier execution left there.
+func applyJoins(st *gorm.Statement, joins []scopedJoin, id string) {
+	for _, sj := range joins {
+		j := &st.Joins[sj.index]
+		exprs := withoutJoinTerm(j.On)
+		exprs = append(exprs, joinTerm{id: id, columns: sj.columns, unscoped: sj.unscoped, fallback: sj.fallback})
+		j.On = &clause.Where{Exprs: exprs}
+	}
+}
+
+// releaseJoins takes this plugin's condition back out of the joins of a read
+// that is no longer to be filtered.
+func releaseJoins(st *gorm.Statement, joins []scopedJoin) {
+	for _, sj := range joins {
+		j := &st.Joins[sj.index]
+		if j.On == nil {
+			continue
+		}
+		if exprs := withoutJoinTerm(j.On); len(exprs) > 0 {
+			j.On = &clause.Where{Exprs: exprs}
+		} else {
+			j.On = nil
+		}
+	}
+}
+
+// withoutJoinTerm is a join's own ON conditions, with this plugin's taken out.
+func withoutJoinTerm(on *clause.Where) []clause.Expression {
+	if on == nil {
+		return nil
+	}
+	out := make([]clause.Expression, 0, len(on.Exprs)+1)
+	for _, e := range on.Exprs {
+		if _, ours := e.(joinTerm); !ours {
+			out = append(out, e)
+		}
+	}
+	return out
 }
 
 // scopeDelete adds the tenant condition to a delete, and writes the tenant into
@@ -160,7 +370,7 @@ func (f *filter) scopeRead(tx *gorm.DB) {
 // every row of the tenant, unless the caller asked for a global delete.
 func (f *filter) scopeDelete(tx *gorm.DB) {
 	st := tx.Statement
-	field, id, s := scopeOf(tx, st)
+	field, id, s := scopeOf(tx, st, nil)
 	if s != tenanted {
 		return
 	}
@@ -190,7 +400,7 @@ func (f *filter) scopeDelete(tx *gorm.DB) {
 // condition is discounted the same way.
 func (f *filter) scopeUpdate(tx *gorm.DB) {
 	st := tx.Statement
-	field, id, s := scopeOf(tx, st)
+	field, id, s := scopeOf(tx, st, nil)
 	switch s {
 	case crossing:
 		if err := judgeEach(assignedValues(st, field), someTenant(st)); err != nil {
@@ -223,7 +433,7 @@ func (f *filter) scopeUpdate(tx *gorm.DB) {
 // its rows has to name its tenant itself.
 func (f *filter) fillColumn(tx *gorm.DB) {
 	st := tx.Statement
-	field, id, s := scopeOf(tx, st)
+	field, id, s := scopeOf(tx, st, nil)
 	var judge func(any) error
 	switch s {
 	case tenanted:
@@ -866,17 +1076,22 @@ func stringValue(v reflect.Value) (string, bool) {
 	return v.String(), true
 }
 
-// scoped reports whether this statement is against a scoped model.
+// conventionFieldOf returns the field the convention contributes to a model's
+// schema, or nil when the model is not scoped.
 //
 // The check is on the model type the schema was parsed from rather than on the
 // column it happens to have, so a model carrying a field named like the
 // convention's is not swept up by it. What makes a model scoped is embedding
 // the convention, and nothing else is allowed to mean that.
-func scoped(st *gorm.Statement) bool {
-	if st.Schema == nil || st.Schema.LookUpField(conventionField) == nil {
-		return false
+func conventionFieldOf(s *gormschema.Schema) *gormschema.Field {
+	if s == nil {
+		return nil
 	}
-	return embedsConvention(st.Schema.ModelType)
+	field := s.LookUpField(conventionField)
+	if field == nil || !embedsConvention(s.ModelType) {
+		return nil
+	}
+	return field
 }
 
 // embedsConvention walks the model's own fields looking for the convention as
@@ -899,11 +1114,15 @@ func embedsConvention(modelType reflect.Type) bool {
 
 // noTenant names the model a refused statement was against. The model is what
 // the caller has to look at to see why no tenant reached it, and it is the one
-// thing this side knows.
-func noTenant(st *gorm.Statement) error {
+// thing this side knows. A read refused for a scoped model it reaches through a
+// join names that model.
+func noTenant(st *gorm.Statement, joins []scopedJoin) error {
 	name := "a scoped model"
-	if st.Schema != nil {
+	switch {
+	case conventionFieldOf(st.Schema) != nil:
 		name = st.Schema.Name
+	case len(joins) > 0:
+		name = joins[0].model
 	}
 	return fmt.Errorf("%w: model %s", tenant.ErrNoTenantInContext, name)
 }

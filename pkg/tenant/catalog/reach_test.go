@@ -1,0 +1,254 @@
+package catalog
+
+import (
+	"context"
+	"errors"
+	"testing"
+
+	"gorm.io/gorm"
+
+	"github.com/vislake/speed/pkg/tenant"
+)
+
+// The cases in this file are about which statements the filter reaches: a
+// statement GORM runs through a processor other than the query one, a table
+// reached through an association join rather than through the model, and a
+// subquery rendered inside another statement.
+
+// A scan reads through GORM's row processor rather than its query processor,
+// and a filter registered on the query processor alone never sees it.
+func TestScanIsScopedToTheContext(t *testing.T) {
+	handle := open(t)
+	seed(t, handle)
+
+	var got []struct{ ID string }
+	if err := handle.WithContext(scopedContext("acme")).Model(&order{}).Scan(&got).Error; err != nil {
+		t.Fatalf("scanning: %v", err)
+	}
+	if len(got) != 1 || got[0].ID != "a" {
+		t.Fatalf("a scoped scan returned %v, want just acme's row", got)
+	}
+}
+
+func TestScanWithoutATenantIsRefused(t *testing.T) {
+	handle := open(t)
+	seed(t, handle)
+
+	var got []struct{ ID string }
+	err := handle.WithContext(context.Background()).Model(&order{}).Scan(&got).Error
+	if !errors.Is(err, tenant.ErrNoTenantInContext) {
+		t.Fatalf("scanning with no tenant gave %v (rows %v), want ErrNoTenantInContext", err, got)
+	}
+}
+
+func TestRowAndRowsAreScopedToTheContext(t *testing.T) {
+	handle := open(t)
+	seed(t, handle)
+	ctx := scopedContext("acme")
+
+	var n int
+	if err := handle.WithContext(ctx).Model(&order{}).Select("count(*)").Row().Scan(&n); err != nil {
+		t.Fatalf("reading one row: %v", err)
+	}
+	if n != 1 {
+		t.Fatalf("a scoped Row counted %d rows, want acme's one", n)
+	}
+
+	rows, err := handle.WithContext(ctx).Model(&order{}).Select("id").Rows()
+	if err != nil {
+		t.Fatalf("reading rows: %v", err)
+	}
+	defer rows.Close()
+	var ids []string
+	for rows.Next() {
+		var id string
+		if err := rows.Scan(&id); err != nil {
+			t.Fatalf("scanning a row: %v", err)
+		}
+		ids = append(ids, id)
+	}
+	if err := rows.Err(); err != nil {
+		t.Fatalf("iterating: %v", err)
+	}
+	if len(ids) != 1 || ids[0] != "a" {
+		t.Fatalf("scoped Rows returned %v, want just acme's row", ids)
+	}
+}
+
+// customer, country and purchase are joined by associations: two scoped
+// models, and a global one between them.
+type country struct {
+	ID   string `gorm:"column:id;primaryKey"`
+	Name string `gorm:"column:name"`
+}
+
+func (country) TableName() string { return "countries" }
+
+type customer struct {
+	tenant.Model
+	ID        string  `gorm:"column:id;primaryKey"`
+	Name      string  `gorm:"column:name"`
+	CountryID string  `gorm:"column:country_id"`
+	Country   country `gorm:"foreignKey:CountryID;references:ID"`
+}
+
+func (customer) TableName() string { return "customers" }
+
+type purchase struct {
+	tenant.Model
+	ID         string   `gorm:"column:id;primaryKey"`
+	CustomerID string   `gorm:"column:customer_id"`
+	Customer   customer `gorm:"foreignKey:CustomerID;references:ID"`
+}
+
+func (purchase) TableName() string { return "purchases" }
+
+// countryStats is a global model whose association reaches a scoped one.
+type countryStats struct {
+	ID        string   `gorm:"column:id;primaryKey"`
+	CountryID string   `gorm:"column:country_id"`
+	Customer  customer `gorm:"foreignKey:CountryID;references:CountryID"`
+}
+
+func (countryStats) TableName() string { return "countries" }
+
+// seedJoined gives two tenants one customer identifier each, under a shared
+// country, and acme one purchase of it.
+func seedJoined(t *testing.T, handle *gorm.DB) {
+	t.Helper()
+	for _, ddl := range []string{
+		"CREATE TABLE countries (id TEXT PRIMARY KEY, name TEXT, country_id TEXT)",
+		"CREATE TABLE customers (tenant_id TEXT NOT NULL, id TEXT NOT NULL, name TEXT, " +
+			"country_id TEXT, PRIMARY KEY (tenant_id, id))",
+		"CREATE TABLE purchases (tenant_id TEXT NOT NULL, id TEXT NOT NULL, customer_id TEXT, " +
+			"PRIMARY KEY (tenant_id, id))",
+	} {
+		if err := handle.Exec(ddl).Error; err != nil {
+			t.Fatalf("creating a table: %v", err)
+		}
+	}
+	for _, stmt := range []string{
+		"INSERT INTO countries (id, name, country_id) VALUES ('nl', 'the Netherlands', 'nl')",
+		"INSERT INTO customers (tenant_id, id, name, country_id) VALUES " +
+			"('acme', 'c1', 'acme''s customer', 'nl'), ('globex', 'c1', 'globex''s customer', 'nl')",
+		"INSERT INTO purchases (tenant_id, id, customer_id) VALUES ('acme', 'p1', 'c1')",
+	} {
+		if err := handle.WithContext(crossContext()).Exec(stmt).Error; err != nil {
+			t.Fatalf("seeding: %v", err)
+		}
+	}
+}
+
+// An association join renders its own ON clause from the relationship. Two
+// tenants may reuse one customer identifier under the composite key, so the
+// joined side has to be held to the context's tenant as well.
+func TestAnAssociationJoinIsScopedOnBothSides(t *testing.T) {
+	handle := open(t)
+	seedJoined(t, handle)
+
+	var got []purchase
+	if err := handle.WithContext(scopedContext("acme")).Joins("Customer").Find(&got).Error; err != nil {
+		t.Fatalf("reading with a join: %v", err)
+	}
+	if len(got) != 1 || got[0].Customer.Name != "acme's customer" {
+		t.Fatalf("a scoped join returned %+v, want acme's purchase joined to acme's customer", got)
+	}
+}
+
+// A nested join passes through a global table; only the scoped levels carry
+// the condition.
+func TestANestedJoinThroughAGlobalTableIsScopedWhereItIsScoped(t *testing.T) {
+	handle := open(t)
+	seedJoined(t, handle)
+
+	var got []purchase
+	if err := handle.WithContext(scopedContext("acme")).
+		Joins("Customer").Joins("Customer.Country").Find(&got).Error; err != nil {
+		t.Fatalf("reading with a nested join: %v", err)
+	}
+	if len(got) != 1 || got[0].Customer.Name != "acme's customer" ||
+		got[0].Customer.Country.Name != "the Netherlands" {
+		t.Fatalf("a nested join returned %+v, want acme's customer and its country", got)
+	}
+}
+
+// A global model reaching a scoped one through a join reaches that model's
+// rows, and is scoped by them: refused without a tenant, held to it with one.
+func TestAJoinFromAGlobalModelToAScopedOneIsScoped(t *testing.T) {
+	handle := open(t)
+	seedJoined(t, handle)
+
+	var refused []countryStats
+	err := handle.WithContext(context.Background()).Joins("Customer").Find(&refused).Error
+	if !errors.Is(err, tenant.ErrNoTenantInContext) {
+		t.Fatalf("a join to a scoped model with no tenant gave %v (rows %+v), want ErrNoTenantInContext",
+			err, refused)
+	}
+
+	var got []countryStats
+	if err := handle.WithContext(scopedContext("globex")).Joins("Customer").Find(&got).Error; err != nil {
+		t.Fatalf("reading with a join: %v", err)
+	}
+	if len(got) != 1 || got[0].Customer.Name != "globex's customer" {
+		t.Fatalf("a scoped join from a global model returned %+v, want globex's customer", got)
+	}
+
+	var all []countryStats
+	if err := handle.WithContext(crossContext()).Joins("Customer").Find(&all).Error; err != nil {
+		t.Fatalf("reading across tenants: %v", err)
+	}
+	if len(all) != 2 {
+		t.Fatalf("a crossing join returned %+v, want both customers", all)
+	}
+}
+
+// A subquery built on a handle with no tenant refuses, and the refusal must
+// reach the statement it is part of rather than be rendered as an empty set.
+func TestASubqueryWithoutATenantFailsTheStatement(t *testing.T) {
+	handle := open(t)
+	seed(t, handle)
+	requireSubqueryRefusal(t, handle)
+}
+
+func TestASubqueryWithoutATenantFailsTheStatementOnPostgres(t *testing.T) {
+	handle := openFilteredPostgres(t)
+	seed(t, handle)
+	requireSubqueryRefusal(t, handle)
+}
+
+// openFilteredPostgres is the orders table on the PostgreSQL fixture with the
+// filter installed. The driver there binds arguments itself, so a refusal
+// carried as an argument has a second path to the statement to be proven on.
+func openFilteredPostgres(t *testing.T) *gorm.DB {
+	t.Helper()
+	handle := openUnfilteredPostgres(t)
+	if err := handle.Use(newFilter()); err != nil {
+		t.Fatalf("installing the filter: %v", err)
+	}
+	return handle
+}
+
+func requireSubqueryRefusal(t *testing.T, handle *gorm.DB) {
+	t.Helper()
+	sub := handle.Model(&order{}).Select("id")
+	var got []order
+	err := handle.WithContext(scopedContext("acme")).Where("id IN (?)", sub).Find(&got).Error
+	if !errors.Is(err, tenant.ErrNoTenantInContext) {
+		t.Fatalf("a subquery with no tenant gave %v (rows %v), want ErrNoTenantInContext", err, got)
+	}
+}
+
+// A subquery built on the statement's own context is scoped like the rest.
+func TestASubqueryOnTheSameContextIsScoped(t *testing.T) {
+	handle := open(t)
+	seed(t, handle)
+
+	tx := handle.WithContext(scopedContext("acme"))
+	var got []order
+	if err := tx.Where("id IN (?)", tx.Model(&order{}).Select("id")).Find(&got).Error; err != nil {
+		t.Fatalf("reading: %v", err)
+	}
+	if len(got) != 1 || got[0].ID != "a" {
+		t.Fatalf("a scoped subquery returned %v, want acme's row", got)
+	}
+}

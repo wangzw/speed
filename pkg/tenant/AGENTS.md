@@ -150,9 +150,13 @@ go -C pkg/tenant test ./...
 go -C pkg/tenant test -race ./...
 ```
 
-The tests bring up their own in-memory database and ask for no service and no
-environment. `pkg/tenant/catalog/plugin_test.go` is where the filter's four
-answers are pinned; `pkg/tenant/resolve/extract_test.go` is where the
+The tests bring up their own in-memory database, except the cases that prove a
+refusal on the PostgreSQL driver as well: those take a database on the shared
+container through `pkg/internal/pgpool/pgtest`, which skips them on a machine
+without docker and fails them under CI. `pkg/tenant/catalog/plugin_test.go` is where the filter's four
+answers are pinned; `pkg/tenant/catalog/reach_test.go` is where the statements
+it has to reach beyond the query processor are — a scan, an association join,
+a subquery rendered into another statement; `pkg/tenant/resolve/extract_test.go` is where the
 registration window's behaviour under a duplicate or a late registration is;
 `pkg/tenant/resolve/config_test.go` is where the judgement over this module's
 own configuration is pinned — a missing key, an empty list or name, and an
