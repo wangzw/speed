@@ -452,6 +452,8 @@ flowchart TD
 
 **调用方的上下文只约束落库那条语句。** 语句提交之后的重载与发布是本模块为一行已在库里的值做的收尾，不是调用方的工作，它们在去掉了取消信号、保留了其余值（追踪信息在内）的上下文上跑完：请求恰在提交之后结束——客户端断开、截止时刻到了——这次写入照样在本副本生效、照样通知其余副本，而不是返回成功之后本副本继续服务旧值、其余副本也无从得知。`Delete` 同一条。
 
+**返回值与落库结果一致**：`Set` 与 `Delete` 返回错误即这一行没有改动，返回 `nil` 即改动已提交、本副本已重载、事件已交给总线。写入语句要取回它写下的东西（版本号、被删那一行的值），结果在服务端执行完之后才到；单独执行时 PostgreSQL 此刻已经提交，调用方在取回结果途中取消，调用会对一次已经落库的改动报错，本副本不重载、其余副本也收不到事件。语句因此放在一个只含它自己的事务里：事务的开启与提交不随调用方取消，语句本身随调用方取消——结果取回之前取消，语句失败、事务回滚；之后取消，已够不着提交。唯一无法判定的是提交途中数据库连接断开，那一次的结果只有数据库知道。
+
 **写入后的版本号随写入语句取回**：实现用方言的返回子句在同一条语句里取回它；另发一次查询会读到别的写入者后写的值，版本号与这次写入对不上。
 
 `Set` 的 `Old` 取自写入前本副本的快照——覆盖携带该层原先的显式值，新增携带空串；`New` 是写入后的显式值。**删除以一条带返回子句的语句完成**，取回被删那一行的文本作为 `Old`，`New` 为空、载荷的删除标记为真；返回子句没有带回行即表示没有删掉任何行，此时不发布事件。
@@ -504,9 +506,9 @@ flowchart TD
 
 **写入的并发由数据库仲裁**：两个并发写是两条独立语句，后提交的覆盖先提交的；版本递增在语句内完成，不经过读改写。**写入路径上另有一把进程内的锁**：每次写之后都要重载快照，而重载与事件重载、周期刷新、首次装载共用同一把互斥，写入因此与这三者排队——它保护的是快照替换与读取之间的一致性，不是数据本身的正确性。
 
-**写入可能比调用方的截止时刻多占一段时间**：语句提交之后的重载与发布不随调用方取消（见写入路径），这段时间的上界由数据库与事件实现各自的超时给出，本模块不另设。
+**写入可能比调用方的截止时刻多占一段时间**：事务的提交与其后的重载、发布不随调用方取消（见写入路径），这段时间的上界由数据库与事件实现各自的超时给出，本模块不另设。
 
-**本模块不开事务。** 写入是单行语句，自身原子；变更事件在语句之外发布，与写入不在同一个事务里——这正是审计只能依靠事件投递的形态来源，代价已经记在 [ADR-settings-audit-2026-09-21](../../adr/adr-settings-audit-2026-09-21.md)。调用方要在自己的事务里读设置做不到：读取走快照，事务不作用于它。
+**本模块的事务只包一条写入语句。** 写入是单行语句，自身原子；它放进事务不是为了原子性，而是为了让返回值与落库结果一致（见写入路径）。变更事件在事务之外发布，与写入不在同一个事务里——这正是审计只能依靠事件投递的形态来源，代价已经记在 [ADR-settings-audit-2026-09-21](../../adr/adr-settings-audit-2026-09-21.md)。调用方要在自己的事务里读设置做不到：读取走快照，事务不作用于它。
 
 ## 扩展点
 
@@ -519,7 +521,7 @@ flowchart TD
 | 接口与数据类型 | 已实现 | `pkg/settings/settings.go` `Layer`、`Global`、`ForTenant`、`Store`、`Write`、`Entry`、`Schema`、`Mount`、`Item`、`Change`、`ChangedEventType`、`Get` |
 | 声明面与键表 | 已实现 | `pkg/settings/keys.go` `buildKeyTable`、`expandSchema`、`classifyLeaf`、`fieldName`、`camelToKebab` |
 | 读取的三级回落与泛型封装 | 已实现 | `pkg/settings/store.go` `Get`；`pkg/settings/snapshot.go` `value`、`layer`；`pkg/settings/codec.go` `assignTarget` |
-| 写入面与版本递增 | 已实现 | `pkg/settings/store.go` `Set`、`writeRow`、`Delete`、`List`；`pkg/settings/codec.go` `encodeValue`、`coerce` |
+| 写入面与版本递增 | 已实现 | `pkg/settings/store.go` `Set`、`writeRow`、`commit`、`landed`、`Delete`、`List`；`pkg/settings/codec.go` `encodeValue`、`coerce` |
 | 设置表与它的迁移集 | 已实现 | `pkg/settings/snapshot.go` `tableName`、`row`；`pkg/settings/migrations/<方言>/0001_settings.sql` |
 | 快照的装载、刷新路径与原子替换 | 已实现 | `pkg/settings/snapshot.go` `loadSnapshot`、`snapshot`；`pkg/settings/store.go` `reload`、`swap`；`pkg/settings/refresh.go` `startRefresh`、`stopRefresh` |
 | 变更事件的发布与订阅 | 已实现 | `pkg/settings/store.go` `publish`；`pkg/settings/module.go` `subscribe` |

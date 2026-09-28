@@ -169,11 +169,17 @@ type Store interface {
 	// bookkeeping for a row already in the table: a caller that gives up at
 	// that point still leaves its value served here and announced to the
 	// other replicas.
+	//
+	// The result is what happened to the row. An error means it was not
+	// changed, whatever point ctx was cancelled at; nil means the change is
+	// committed, served by this replica and handed to the bus. A connection
+	// lost while the change commits is the one outcome only the database
+	// can settle.
 	Set(ctx context.Context, w Write) error
 
 	// Delete removes the explicit row the selector names. Deleting a row that
 	// is not there is not an error. ctx bounds the statement and nothing after
-	// it, as for Set.
+	// it, and the result is what happened to the row, both as for Set.
 	//
 	// Delete is the one operation that does not consult the key table: it is
 	// the cleanup path for rows left behind after a declaration is removed,

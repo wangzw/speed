@@ -164,7 +164,10 @@ func (s *settingsStore) Delete(ctx context.Context, layer Layer, key, actor stri
 	tenant := tenantOf(layer)
 	sql := "DELETE FROM " + tableName + " WHERE tenant_id = ? AND key = ? RETURNING value"
 	var removed []removedRow
-	if err := s.handle.WithContext(ctx).Raw(sql, tenant, key).Scan(&removed).Error; err != nil {
+	err := s.commit(ctx, func(tx *gorm.DB) error {
+		return tx.Raw(sql, tenant, key).Scan(&removed).Error
+	})
+	if err != nil {
 		return fmt.Errorf("settings: deleting key %q: %w", key, err)
 	}
 	after := landed(ctx)
@@ -261,12 +264,34 @@ func (s *settingsStore) writeRow(ctx context.Context, layer Layer, key, text str
 		"VALUES (?, ?, ?, 1, ?) ON CONFLICT (tenant_id, key) DO UPDATE SET value = EXCLUDED.value, " +
 		"version = " + tableName + ".version + 1, updated_at = EXCLUDED.updated_at RETURNING version"
 	var version uint64
-	err := s.handle.WithContext(ctx).Raw(sql, tenantOf(layer), key, text, time.Now().UTC()).
-		Row().Scan(&version)
+	err := s.commit(ctx, func(tx *gorm.DB) error {
+		return tx.Raw(sql, tenantOf(layer), key, text, time.Now().UTC()).Row().Scan(&version)
+	})
 	if err != nil {
 		return 0, fmt.Errorf("settings: writing key %q: %w", key, err)
 	}
 	return version, nil
+}
+
+// commit runs one write statement so that its result says whether it landed.
+//
+// A write statement here reads back what it wrote, so its result arrives after
+// the server has executed it. Run on its own, it has committed by then on
+// PostgreSQL, and a caller's context cancelled while the result is read makes
+// the call fail for a change that is in the table — one this replica then
+// does not reload and no replica hears about. The statement therefore runs in
+// a transaction whose begin and commit are out of the caller's cancellation,
+// while the statement itself stays inside it: a cancellation before the
+// statement's result is in fails the statement and rolls the transaction
+// back, and one after it no longer reaches the commit. Either way the error
+// and the table agree.
+//
+// The one outcome left unknown is a connection lost during the commit itself,
+// which only the database can settle.
+func (s *settingsStore) commit(ctx context.Context, statement func(tx *gorm.DB) error) error {
+	return s.handle.WithContext(landed(ctx)).Transaction(func(tx *gorm.DB) error {
+		return statement(tx.WithContext(ctx))
+	})
 }
 
 // reload replaces the snapshot with a freshly loaded one.
