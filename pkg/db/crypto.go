@@ -11,6 +11,7 @@ import (
 	"encoding/hex"
 	"errors"
 	"fmt"
+	"strings"
 )
 
 // The two purposes one root key is split into.
@@ -61,14 +62,28 @@ type keyRing struct {
 // alternative — a subkey derived from nothing — writes columns nothing can
 // ever open, and writes them without an error anywhere near.
 //
-// A root key that cannot be derived fails the assembly instead. The one way it
-// happens is a key shorter than 112 bits in a program running in FIPS 140-only
-// mode, and an operator has two actions available for it — configure a longer
-// key, or stop enforcing that mode — where a startup that went ahead would
-// have encryption that quietly does nothing.
+// A root key that cannot be used fails the assembly instead, and so does one
+// that is nothing but whitespace. A key shorter than 112 bits cannot be derived
+// in a program running in FIPS 140-only mode, and an operator has two actions
+// available for it — configure a longer key, or stop enforcing that mode —
+// where a startup that went ahead would have encryption that quietly does
+// nothing. A key of whitespace derives, and is the key a template that
+// expanded to nothing leaves behind: everything sealed under it opens for
+// anyone who guesses it, while every write reports success.
+//
+// A key is otherwise used byte for byte, surrounding whitespace included.
+// Trimming it would change the subkeys of every deployment whose key has a
+// trailing newline, and every column already sealed under them would stop
+// opening; two replicas whose keys differ in one byte fail loudly instead, on
+// the first row one of them cannot open.
 func newKeyRing(namespace string, cfg Config) (*keyRing, error) {
 	if cfg.EncryptionKey == "" {
 		return nil, nil
+	}
+	if strings.TrimSpace(cfg.EncryptionKey) == "" {
+		return nil, fmt.Errorf("db: %s.%s holds nothing but whitespace, which anyone can guess and "+
+			"which seals nothing: set a real root key, or leave the item out",
+			namespace, encryptionKeyKey)
 	}
 	current, err := deriveKeySet(cfg.EncryptionKey)
 	if err != nil {
@@ -77,6 +92,11 @@ func newKeyRing(namespace string, cfg Config) (*keyRing, error) {
 	}
 	ring := &keyRing{current: current}
 	for _, rootKey := range cfg.EncryptionRetiredKeys {
+		if strings.TrimSpace(rootKey) == "" {
+			return nil, fmt.Errorf("db: a key listed under %s.%s is empty or nothing but whitespace, "+
+				"which is not a root key anything was sealed under: remove it from the list",
+				namespace, encryptionRetiredKeysKey)
+		}
 		retired, err := deriveKeySet(rootKey)
 		if err != nil {
 			return nil, fmt.Errorf("db: a key listed under %s.%s cannot be used as a root key: %w",

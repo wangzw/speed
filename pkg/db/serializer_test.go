@@ -396,6 +396,36 @@ func TestMissingEncryptionKeyStartsUpAndFailsAtUse(t *testing.T) {
 	}
 }
 
+// TestABlankRootKeyFailsTheAssembly pins a root key of whitespace to the
+// treatment an unusable one gets. It is not absent — the item was written —
+// and used as it stands it is a key anyone can guess, so every column sealed
+// under it is as good as clear while every write reports success. The
+// assembly refuses it naming the item, for the current key and for a retired
+// one alike.
+func TestABlankRootKeyFailsTheAssembly(t *testing.T) {
+	cases := []struct {
+		item string
+		key  string
+	}{
+		{`"encryption-key":"   "`, encryptionKeyKey},
+		{`"encryption-key":"\n"`, encryptionKeyKey},
+		{encryptedRootKeyItem + `,"encryption-retired-keys":["old-key"," "]`, encryptionRetiredKeysKey},
+	}
+	for _, c := range cases {
+		spec := sqliteSpec()
+		body := sectionBody(encryptedDSN(t), c.item)
+		product, err := spec.newDatabase(t.Context(), readerFor(t, spec, body), nil)
+		if err == nil {
+			_ = Close(product.DB())
+			t.Errorf("an assembly over %s went ahead, sealing under a key of whitespace", body)
+			continue
+		}
+		if !strings.Contains(err.Error(), sqliteNamespace+"."+c.key) {
+			t.Errorf("the refusal of %s does not name %s.%s: %v", body, sqliteNamespace, c.key, err)
+		}
+	}
+}
+
 // TestKeyInjectionIsRegisteredOnTheDeliveredHandle pins the assembly's timing
 // from the handle itself.
 //
