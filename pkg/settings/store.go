@@ -60,6 +60,15 @@ type settingsStore struct {
 // what makes a key with no declaration a certain failure instead of a value
 // that reads as unset. Past that point the layers are tried in order and a row
 // that failed to decode reports itself.
+//
+// A read hands out a value that shares nothing with the module's storage. The
+// scalar kinds carry no reference, so the value resolved is already that. A
+// type that carries its own text form may share storage between its copies in
+// a way reflection cannot see — net.IP is a slice, and math/big.Int's methods
+// write into the digits a copy shares — so its value is decoded afresh from
+// the resolved text, the declared default's included. A caller computing with
+// what it read cannot then rewrite the declaration or the snapshot for every
+// other reader. The price is one decode per read of such an item.
 func (s *settingsStore) Get(layer Layer, key string, target any) error {
 	tenantOf(layer)
 	entry, declared := s.keys.lookup(key)
@@ -78,9 +87,15 @@ func (s *settingsStore) Get(layer Layer, key string, target any) error {
 			"initialises it after this one; a drive that reads them runs to Init at least",
 			ErrNotLoaded, key, ModuleName)
 	}
-	value, err := current.value(entry, layer)
+	resolved, err := current.value(entry, layer)
 	if err != nil {
 		return err
+	}
+	value := resolved.value
+	if entry.kind == kindText {
+		if value, err = decodeValue(entry, resolved.text); err != nil {
+			return err
+		}
 	}
 	return assignTarget(entry, target, value)
 }

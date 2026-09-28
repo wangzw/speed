@@ -128,10 +128,14 @@ here must not cross, and how to run it.
   the silent default back.
 - **A read hands out its own copy.** What a read resolves to is either the
   key table's declared default or the snapshot's stored value, and both are the
-  module's own storage. A declared type that is a slice underneath — `net.IP`
-  is the shape, and the closed type set admits it because it carries its own
-  text form — would otherwise be shared with the caller, who could write into
-  the declaration or into the snapshot through what it read.
+  module's own storage. The scalar kinds carry no reference and are handed
+  over as they are. A type that carries its own text form may share storage
+  between its copies in ways reflection cannot see — `net.IP` is a slice,
+  `math/big.Int`'s methods write into the digits a copy shares — so `Get`
+  decodes it afresh from the resolved text, the default's `defText` included.
+  A change that handed out the snapshot's or the key table's value for such a
+  type, or that copied it by reflection, would let a caller computing with what
+  it read rewrite the declaration or the snapshot for every other reader.
 
 ## Running it
 

@@ -169,7 +169,7 @@ err := store.Get(settings.ForTenant(tenantID), "ratelimit.window", &opts.Window)
 
 **快照装载之前的读取报 `ErrNotLoaded`**，不回落到声明默认值。快照在本模块的 `Init` 装载，此前没有从表里读过任何一行，回落到默认值就是不论表里写着什么都答默认值，而读取方会拿它当真值用下去、没有任何一处报出来。功能在 `New` 之后即可取用，在别的模块自己的 `Init` 里读设置因而取决于构造次序：没有声明依赖的模块按名字排序，名字排在 `settings` 之前就先于它初始化。修复动作是读取方声明 `Requires (*settings.Store)(nil)`，或者让驱动至少推进到 `Init`；写入不受此限——`Set` 与 `Delete` 直接作用于表，写后的重载会把快照装上。
 
-**值在快照装载时按声明预解码**，读取路径上没有文本转换。解码失败的行单独记下（键与层到错误的映射），读取命中它时报 `ErrTypeMismatch` 并点名键；其余键照常可用。装载因此不因一行坏值而失败——坏值的作用面限于读它的代码路径，进程照常启动，其余设置照常可用。
+**值在快照装载时按声明预解码**，标量种类的读取路径上没有文本转换。**自带文本形式的类型每次读取由文本重新解码**，那一行的文本，或声明默认值的文本：这类类型的拷贝之间可能共享存储而反射看不透——`net.IP` 底层是切片，`math/big.Int` 的方法原地改写拷贝共享的数位——读取方拿读到的值做运算，改掉的就是声明默认值或快照里的值，进程内其余读取方随之读到它。重新解码交出的值与本模块的存储无关。解码失败的行单独记下（键与层到错误的映射），读取命中它时报 `ErrTypeMismatch` 并点名键；其余键照常可用。装载因此不因一行坏值而失败——坏值的作用面限于读它的代码路径，进程照常启动，其余设置照常可用。
 
 **目标参数与层选的非法形态是调用点的编程错误，panic 而不返回错误**：目标传入非指针、传入 `nil`；层选传入 `nil`、`ForTenant` 收到落在租户标识取值域之外的标识（空、或含空白与控制字符）。判据与配置的取值面同一条（[config](design-config.md) 的取值与校验一节）；这一类不涉及第二方、与数据无关，调用点无从处理它。**这一判定先于键表**：`Get` 与 `Set` 先判层选与目标，再查键、编码值，同一个调用点因而无论键是否已声明、值能否编码都当场 panic，不会这一次返回错误、下一次才 panic。
 
@@ -504,7 +504,7 @@ flowchart TD
 
 **各条裁定本身带来的代价记在各自的记录里**：值模型的边界见 [ADR-settings-declaration-2026-09-21](../../adr/adr-settings-declaration-2026-09-21.md)；对事件总线的构造期依赖见 [ADR-settings-propagation-2026-09-21](../../adr/adr-settings-propagation-2026-09-21.md)；变更历史的存否与敏感项的记录见 [ADR-settings-audit-2026-09-21](../../adr/adr-settings-audit-2026-09-21.md)；全局行的共享性与读取的额外一级见 [ADR-settings-precedence-2026-09-21](../../adr/adr-settings-precedence-2026-09-21.md)；接口收层选与零值不可用见 [ADR-settings-layer-2026-09-21](../../adr/adr-settings-layer-2026-09-21.md)；消费方对"没有租户"一档的处理与裸字符串标识见 [ADR-settings-scope-2026-09-21](../../adr/adr-settings-scope-2026-09-21.md)。
 
-设计本身带来的代价是两处：**每一条读取多一次映射查找**（租户行未命中时的全局行查找），装载时的一次预解码换来读取路径上的零转换；**快照常驻内存**，规模是全部已写入行——稀疏使用下可控，把设置当高频数据写会把这份内存放大。
+设计本身带来的代价如下：**每一条读取多一次映射查找**（租户行未命中时的全局行查找），装载时的一次预解码换来标量种类读取路径上的零转换；**自带文本形式的项每次读取多一次解码**，换来读取方拿到的值与模块存储互不牵连，读取频繁的参数宜声明为标量；**快照常驻内存**，规模是全部已写入行——稀疏使用下可控，把设置当高频数据写会把这份内存放大。
 
 ## 并发与事务边界
 
@@ -527,9 +527,9 @@ flowchart TD
 | 能力 | 状态 | 代码 |
 |---|---|---|
 | 接口与数据类型 | 已实现 | `pkg/settings/settings.go` `Layer`、`Global`、`ForTenant`、`Store`、`Write`、`Entry`、`Schema`、`Mount`、`Item`、`Change`、`ChangedEventType`、`Get` |
-| 声明面与键表 | 已实现 | `pkg/settings/keys.go` `buildKeyTable`、`expandSchema`、`classifyLeaf`、`fieldName`、`camelToKebab` |
-| 读取的三级回落与泛型封装 | 已实现 | `pkg/settings/store.go` `Get`；`pkg/settings/snapshot.go` `value`、`layer`；`pkg/settings/codec.go` `assignTarget` |
-| 写入面与版本递增 | 已实现 | `pkg/settings/store.go` `Set`、`writeRow`、`commit`、`landed`、`Delete`、`List`；`pkg/settings/codec.go` `encodeValue`、`coerce` |
+| 声明面与键表 | 已实现 | `pkg/settings/keys.go` `buildKeyTable`、`expandSchema`、`classifyLeaf`、`encodesToText`、`defaultText`、`fieldName`、`camelToKebab` |
+| 读取的三级回落与泛型封装 | 已实现 | `pkg/settings/store.go` `Get`；`pkg/settings/snapshot.go` `value`、`layer`；`pkg/settings/codec.go` `decodeValue`、`assignTarget` |
+| 写入面与版本递增 | 已实现 | `pkg/settings/store.go` `Set`、`writeRow`、`commit`、`landed`、`Delete`、`List`；`pkg/settings/codec.go` `encodeValue`、`coerce`、`textOf`、`marshalText` |
 | 设置表与它的迁移集 | 已实现 | `pkg/settings/snapshot.go` `tableName`、`row`；`pkg/settings/migrations/<方言>/0001_settings.sql` |
 | 快照的装载、刷新路径与原子替换 | 已实现 | `pkg/settings/snapshot.go` `loadSnapshot`、`snapshot`；`pkg/settings/store.go` `reload`、`swap`；`pkg/settings/refresh.go` `startRefresh`、`stopRefresh` |
 | 变更事件的发布与订阅 | 已实现 | `pkg/settings/store.go` `publish`；`pkg/settings/module.go` `subscribe` |

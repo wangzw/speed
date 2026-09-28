@@ -56,7 +56,10 @@ type brokenRow struct {
 // explicit value of the layer it wrote, and that value is the row as it was —
 // re-encoding the decoded value would give a text that means the same but is
 // spelled differently from what the row holds ("5m0s" for a row reading
-// "300s").
+// "300s"). A read of a type that carries its own text form decodes the text
+// again rather than handing out the value, for the reason Get gives; the
+// value decoded at load is what tells a row that decodes from one that does
+// not.
 type stored struct {
 	value any
 	text  string
@@ -96,7 +99,10 @@ func (s *snapshot) explicitText(l Layer, key string) (string, bool) {
 // value resolves a read: the named layer's row, then the global row, then the
 // declaration's default. A read that names the global layer starts at the
 // global row, which is the bottom of the fallback, so it ends there too.
-func (s *snapshot) value(entry keyEntry, l Layer) (any, error) {
+//
+// What it resolves to is the decoded value together with the text it was
+// decoded from, the declared default's text for a key no layer covers.
+func (s *snapshot) value(entry keyEntry, l Layer) (stored, error) {
 	if found, ok, err := s.layer(entry.key, l); ok {
 		return found, err
 	}
@@ -105,22 +111,22 @@ func (s *snapshot) value(entry keyEntry, l Layer) (any, error) {
 			return found, err
 		}
 	}
-	return entry.def, nil
+	return stored{value: entry.def, text: entry.defText}, nil
 }
 
 // layer reports what one layer holds for a key. found is false when the layer
 // has no row, which is what sends a read to the next layer; a row that failed
 // to decode is found, and carries its error.
-func (s *snapshot) layer(key string, l Layer) (value any, found bool, err error) {
+func (s *snapshot) layer(key string, l Layer) (row stored, found bool, err error) {
 	c := cell{tenant: tenantOf(l), key: key}
 	if broken, ok := s.broken[c]; ok {
-		return nil, true, broken.err
+		return stored{}, true, broken.err
 	}
 	row, ok := s.values[c]
 	if !ok {
-		return nil, false, nil
+		return stored{}, false, nil
 	}
-	return row.value, true, nil
+	return row, true, nil
 }
 
 // row is one settings row as it is read back for loading.

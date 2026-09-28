@@ -68,6 +68,11 @@ type keyEntry struct {
 	// def is the value a read falls back to when neither the tenant row nor
 	// the global row holds one.
 	def any
+	// defText is def in the declared type's own text form: the text a row
+	// holding the default would carry. A read of a type that carries its own
+	// text form decodes it rather than handing out def, for the reason Get
+	// gives.
+	defText string
 	// item is the metadata the declaring module gave.
 	item Item
 }
@@ -293,9 +298,11 @@ func (e *expander) leaf(key string, fv reflect.Value, ft reflect.Type) error {
 		def:    defaultValue(fv),
 		item:   e.schema.Items[key],
 	}
-	if _, err := defaultText(entry); err != nil {
+	text, err := defaultText(entry)
+	if err != nil {
 		return fmt.Errorf("%w: module %q declares %q: %w", ErrInvalidDeclaration, e.module, key, err)
 	}
+	entry.defText = text
 	e.entries = append(e.entries, entry)
 	return nil
 }
@@ -507,20 +514,22 @@ func classifyLeaf(t reflect.Type) (leafKind, bool) {
 // is the declaration's default: it is what a read falls back to when no row
 // holds the key, so "not set" and "set to the zero value" stay apart.
 //
-// A value whose kind carries a reference is detached rather than handed out.
-// The closed type set admits no container, but it does admit a type that
+// A value whose kind carries a reference is detached rather than kept as it
+// is. The closed type set admits no container, but it does admit a type that
 // carries its own text form and is a slice underneath — net.IP is one — and a
 // default read straight out of the prototype would share that slice with it.
-// Two registries may be decoded against one prototype, and a caller that
-// modified what it read would then be modifying the declaration.
+// Two registries may be decoded against one prototype, and the key table
+// keeps nothing the prototype's owner can still write into. What a read hands
+// out does not come from here for such a type: Get decodes it afresh from the
+// default's text.
 func defaultValue(v reflect.Value) any {
 	return detached(v).Interface()
 }
 
 // detached returns a value whose kind carries a reference as a copy of its
-// own, so that a caller modifying what it read cannot reach the storage the
-// module holds. Both ends of a read come through here: the declared default of
-// a key no layer covers, and the value the snapshot holds for a key one does.
+// own, so that the key table and the prototype it was read from share no
+// storage. It copies the top level only, which is all reflection can see of a
+// type that carries its own text form.
 func detached(v reflect.Value) reflect.Value {
 	switch v.Kind() {
 	case reflect.Map:

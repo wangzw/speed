@@ -152,6 +152,46 @@ func TestATypeWritingItselfThroughItsPointerRoundTrips(t *testing.T) {
 	}
 }
 
+// A read of a type that carries its own text form hands out a value of its
+// own, even where copies of the type share storage in a way reflection cannot
+// see.
+//
+// math/big.Int is such a type: a copy of one shares its digits, and its
+// methods write into them in place. A caller that read one and computed with
+// it — the ordinary way to use the type — would otherwise rewrite the declared
+// default, or the snapshot's value, for every other reader in the process.
+func TestAReadOfATextFormTypeSharesNothingWithTheModule(t *testing.T) {
+	var prototype struct{ Amount big.Int }
+	prototype.Amount.SetInt64(1 << 40)
+	declared := prototype.Amount.String()
+	keys := tableOf(t, declaring("test.big", Schema{Namespace: "big", Mounts: []Mount{{Value: &prototype}}}))
+	store, _ := storeOf(t, keys, newRecordingBus())
+
+	computeWithARead := func(t *testing.T, want string) {
+		t.Helper()
+		first, err := Get[big.Int](store, Global(), "big.amount")
+		if err != nil {
+			t.Fatalf("reading: %v", err)
+		}
+		first.SetInt64(3)
+		second, err := Get[big.Int](store, Global(), "big.amount")
+		if err != nil || second.String() != want {
+			t.Errorf("after one reader computed with its value, the next read returned %s (%v), "+
+				"want %s", second.String(), err, want)
+		}
+	}
+
+	computeWithARead(t, declared)
+	if prototype.Amount.String() != declared {
+		t.Errorf("the declaration's prototype became %s, want %s", prototype.Amount.String(), declared)
+	}
+
+	if err := store.Set(context.Background(), Write{Layer: Global(), Key: "big.amount", Value: "12345"}); err != nil {
+		t.Fatalf("writing: %v", err)
+	}
+	computeWithARead(t, "12345")
+}
+
 // A value assignable to the declared type without being of it — a []string for
 // a textList item — is written in the declared type's own text form, the one a
 // read decodes.

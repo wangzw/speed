@@ -9,10 +9,12 @@ import (
 	"time"
 )
 
-// A value crosses between the typed world and the text column exactly twice:
-// once on the way in, when Set encodes what the caller handed it, and once at
-// snapshot load, when every row is decoded under its declaration. Reads then
-// serve the decoded value with no text conversion on the path at all.
+// A value crosses between the typed world and the text column on the way in,
+// when Set encodes what the caller handed it, and at snapshot load, when every
+// row is decoded under its declaration. A read of a scalar kind then serves
+// the decoded value with no text conversion on the path. A read of a type that
+// carries its own text form decodes the text once more, so that what it hands
+// out shares no storage with the module (Get says why).
 //
 // The two directions are inverses of one another, and the round trip is what
 // the closed type set buys: every type in it has a text form both sides agree
@@ -542,17 +544,16 @@ func requireTarget(target any, key string, entry keyEntry, declared bool) {
 // ErrTypeMismatch is for, and it is caught here rather than at the assignment,
 // which would panic.
 //
-// The value is detached on the way out. A read hands out what the module
-// holds — the key table's declared default, or the snapshot's stored value —
-// and for a declared type that is a slice underneath, assigning it would share
-// that slice with the caller.
+// The value is the caller's own already: Get hands a scalar kind over as it
+// is, since it carries no reference, and decodes a type that carries its own
+// text form afresh.
 func assignTarget(entry keyEntry, target any, value any) error {
 	elem := reflect.ValueOf(target).Elem()
 	if elem.Type() != entry.typ {
 		return fmt.Errorf("%w: key %q is declared as %s, and it was read into %s",
 			ErrTypeMismatch, entry.key, typeName(entry.typ), typeName(elem.Type()))
 	}
-	elem.Set(detached(reflect.ValueOf(value)))
+	elem.Set(reflect.ValueOf(value))
 	return nil
 }
 
