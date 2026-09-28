@@ -140,6 +140,14 @@ func (l *loader) ClassifyParseError(err error, collected []string) error {
 	}
 	var badValue *pflag.InvalidValueError
 	if errors.As(err, &badValue) {
+		// The library's text quotes the value it refused, which a sensitive
+		// item keeps out of every diagnostic: this one is printed to
+		// standard error.
+		if item := l.m.byFlag[badValue.GetFlag().Name]; item != nil && item.item.Sensitive {
+			return fmt.Errorf("%w: the command line gives --%s a value it does not take, for %q. "+
+				"The value is not repeated here, since the item is sensitive",
+				ErrTypeMismatch, item.item.FlagName, item.path)
+		}
 		return fmt.Errorf("%w: %w", ErrTypeMismatch, err)
 	}
 	return err

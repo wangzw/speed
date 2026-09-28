@@ -112,8 +112,8 @@ type Item struct {
 	// layer does not count as a value, or a required item and one that took
 	// the zero value could not be told apart.
 	Required bool
-	// Sensitive keeps the value out of logs and keeps the default out of the
-	// help output.
+	// Sensitive keeps the value out of logs and out of the error a failed
+	// conversion reports, and keeps the default out of the help output.
 	Sensitive bool
 }
 

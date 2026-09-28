@@ -168,14 +168,33 @@ func (r *reader) leaf(path string, fv reflect.Value) error {
 			if !fv.CanSet() {
 				return nil
 			}
-			return decodeInto(path, given, fv)
+			return convert(item, path, given, fv)
 		}
 	}
 	raw := r.l.v.Get(path)
 	if raw == nil || !fv.CanSet() {
 		return nil
 	}
-	return decodeInto(path, raw, fv)
+	return convert(item, path, raw, fv)
+}
+
+// convert writes a source value into the field of one leaf, keeping a
+// sensitive item's value out of the failure.
+//
+// A failed conversion quotes what it was given -- the text that is not a
+// number, the text a type refused to read itself from, the element of a
+// container that did not fit -- and the failure travels up through the stage
+// that decoded it to standard error, where it is a diagnostic like any other.
+// A sensitive item's failure names the item and the type it takes, which is
+// what the operator has to fix, and leaves the value out. item is nil for a
+// path no module declared, which has no sensitivity to keep.
+func convert(item *manifestItem, path string, raw any, fv reflect.Value) error {
+	err := decodeInto(path, raw, fv)
+	if err == nil || item == nil || !item.item.Sensitive {
+		return err
+	}
+	return fmt.Errorf("%w: %q takes %s, and the value given does not convert to it. The value "+
+		"is not repeated here, since the item is sensitive", ErrTypeMismatch, path, typeName(fv.Type()))
 }
 
 // primaryValue walks the untouched primary source to one path.

@@ -114,7 +114,7 @@ type Item struct {
     Placeholder string   // 帮助输出中的取值占位符
     Description string
     Required    bool     // 除默认值外无人给值时，Decode 返回错误
-    Sensitive   bool     // 不写入日志，帮助输出不回显默认值
+    Sensitive   bool     // 不写入日志与错误文本，帮助输出不回显默认值
 }
 ```
 
@@ -639,7 +639,7 @@ kv.redis.max-conns   ->   MYAPP_KV__REDIS__MAX_CONNS
 
 每个挂载点各 `Decode` 一次是模块的义务：从不 `Decode` 的挂载点，其下的必填项永远不会被校验。
 
-`Sensitive` 的输入项不写入日志，帮助输出中也不回显其默认值。
+`Sensitive` 的输入项不写入日志，帮助输出中也不回显其默认值。**它的值转换失败时，错误文本不复述那个值**，只点名该输入项与它要的类型：这类错误随启动失败打印到标准错误，同样是诊断，而转换工具自己的错误文本会原样引用它收到的值。经环境变量、主配置源与命令行给出的值一律如此。
 
 ## 错误与失败语义
 
