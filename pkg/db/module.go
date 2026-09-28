@@ -43,6 +43,15 @@ type Spec struct {
 	// one place a third-party driver enters, which is what lets a host move
 	// between engines without touching the code that uses the database.
 	Dialector func(dsn string) gorm.Dialector
+	// ConnectionScoped reports whether a locator names a database that
+	// belongs to the one connection opening it — SQLite's in-memory and
+	// temporary databases are — so that over a pool of several connections
+	// one handle would stand for several databases. Every connection this
+	// package opens on such a locator, the delivered one and each one Open
+	// builds, is held to a single connection that is never replaced. The
+	// locator it is handed is the trimmed one the driver receives. An
+	// implementation whose engine has no such locator leaves it nil.
+	ConnectionScoped func(dsn string) bool
 	// NewMigrationLock builds the cross-process mutex the migration run is
 	// held under, bounded by the configured timeout. An implementation whose
 	// engine does not appear in multi-replica deployments leaves it nil, and

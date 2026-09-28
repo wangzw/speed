@@ -58,7 +58,7 @@ func Close(*gorm.DB) error
 
 自建的连接与交付的那个装配一致：同一个方言，同样装好已声明的插件与加密序列化器。换一个库不会因此失去它们，代价是连不了另一种引擎的库——那要求那个引擎的实现也被启用，而排他不允许。
 
-它沿用同一份连接池参数：`max-open-conns` 这些输入项作用于本模块建立的每一个连接，不只是交付的那个。需要别的池形状的调用方，这里没有旋钮。
+它沿用同一份连接池参数：`max-open-conns` 这些输入项作用于本模块建立的每一个连接，不只是交付的那个。需要别的池形状的调用方，这里没有旋钮。定位符指向只属于单条连接的库时例外，见配置一节。
 
 `Open` 收到的定位符为空白时，本模块不加规则，照驱动的行为落地：`glebarez/sqlite` 对空串打开一个临时库并返回可用句柄，写进去的东西随连接消失，全程不报错。**采纳的读法**：定位符原样交给驱动。**考虑过而放弃的读法**：把空白定位符判为 `ErrConnectFailed`；放弃的理由是设计只对交付侧那个 `dsn` 表过态——配置给出的库必须有一个说得出的地址——而 `Open` 是宿主自建连接的路径，语义不同，把它判死会让"故意开一个临时库"这类用法无从表达（[ADR-db-multiplicity-2026-09-14](../../adr/adr-db-multiplicity-2026-09-14.md)）。
 
@@ -142,6 +142,8 @@ type Plugin struct {
 | `encryption-retired-keys` | 仍用于解密的退役根密钥，标为敏感 | 空 |
 
 需要跨进程互斥的实现另有一项 `migration-lock-timeout`，默认 5 分钟，含义见迁移的应用一节；不需要互斥的实现不声明它。
+
+连接池参数作用于本模块打开的每一个连接，只有一种例外：定位符指向的库只属于打开它的那条连接，SQLite 的内存库与临时库都是如此。这样的句柄只开一条连接、永不替换，不管池参数怎么写。池里每条连接打开的会是各自的库，迁移落在钉住的那一条上，其余连接上的请求找不到表；只开一条是这种定位符唯一说得通的形状。共享缓存的内存库（`file::memory:?cache=shared`）对进程内每条连接是同一个库，不在此列。认出这类定位符是方言的事，由实现子包经 `Spec.ConnectionScoped` 交给本模块。
 
 `dsn` 不写入日志，帮助输出也不回显——它承载凭据。各方言的 `dsn` 形态本就不同，服务器地址与文件路径不是一回事，键名随实现分开与此一致。
 
@@ -349,6 +351,7 @@ sequenceDiagram
 | 能力 | 状态 | 代码 |
 |---|---|---|
 | 连接的建立与关闭 | 已实现 | `pkg/db/open.go` `openHandle`、`pkg/db/db.go` `Close` |
+| 只属于单条连接的库 | 已实现 | `pkg/db/module.go` `Spec.ConnectionScoped`、`pkg/db/sqlite/sqlite.go` `connectionScoped` |
 | 额外连接的自建 | 已实现 | `pkg/db/handle.go` `(*database).Open` |
 | 软删除 | 已实现 | 由 GORM 提供，随 `pkg/db/handle.go` `(*database).DB` 交付 |
 | 字段级加密与盲索引 | 已实现 | `pkg/db/serializer.go` `installEncryption`、`pkg/db/crypto.go` `deriveSubkey`、`pkg/db/handle.go` `(*database).BlindIndex` |

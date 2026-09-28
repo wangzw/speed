@@ -4,8 +4,13 @@
 // It binds the SQLite driver, names the configuration namespace this engine's
 // input items hang under, and delivers the capability exclusively. The
 // connection, plugin, encryption and migration logic are pkg/db's, shared with
-// every other implementation; what is dialect-specific stops at the driver and
-// the namespace.
+// every other implementation; what is dialect-specific stops at the driver, the
+// namespace, and which locators name a database private to one connection.
+//
+// Those locators — an in-memory database, a temporary one — are one database
+// per connection in SQLite, so a handle on one is held to a single connection
+// rather than to the configured pool: over the pool, the migrations would land
+// on one connection and a request on another would find no table.
 //
 // It supplies no cross-process migration mutex, and this is where it differs
 // from the PostgreSQL subpackage beyond the driver. A mutex orders replicas that
@@ -39,6 +44,9 @@
 package sqlite
 
 import (
+	"net/url"
+	"strings"
+
 	sqlitedriver "github.com/glebarez/sqlite"
 	"gorm.io/gorm"
 
@@ -68,6 +76,32 @@ const Dialect = db.SQLite
 // that uses the database.
 func Dialector(dsn string) gorm.Dialector { return sqlitedriver.Open(dsn) }
 
+// connectionScoped reports whether a locator names a database that belongs to
+// the one connection opening it: :memory:, an empty file name, or a file: URI
+// naming either or asking for mode=memory, unless that URI shares the cache.
+// SQLite gives each connection that opens such a locator a database of its own,
+// so pkg/db holds a handle on one to a single connection.
+//
+// The reading follows the driver's. A locator that is not a file: URI is a
+// file name followed by the driver's own parameters, which are cut off at the
+// first question mark; a file: URI is SQLite's, parameters included, and
+// cache=shared is what makes an in-memory database one for every connection
+// of the process.
+func connectionScoped(dsn string) bool {
+	name, query, _ := strings.Cut(dsn, "?")
+	path, uri := strings.CutPrefix(name, "file:")
+	if !uri {
+		return name == "" || name == ":memory:"
+	}
+	// A query the URI cannot be parsed from is refused by the driver when it
+	// opens the connection, so there is no database here to scope.
+	params, err := url.ParseQuery(query)
+	if err != nil || params.Get("cache") == "shared" {
+		return false
+	}
+	return path == "" || path == ":memory:" || params.Get("mode") == "memory"
+}
+
 // init registers this module with the process registry, so a host that imports
 // the package has this engine available as soon as its configuration names it.
 func init() { core.ProcessRegistry.Register(Module()) }
@@ -84,9 +118,10 @@ func init() { core.ProcessRegistry.Register(Module()) }
 // with it: this engine does not appear in multi-replica deployments.
 func Module() core.Module {
 	return db.NewModule(db.Spec{
-		ModuleName:      ModuleName,
-		ConfigNamespace: ConfigNamespace,
-		Dialect:         Dialect,
-		Dialector:       Dialector,
+		ModuleName:       ModuleName,
+		ConfigNamespace:  ConfigNamespace,
+		Dialect:          Dialect,
+		Dialector:        Dialector,
+		ConnectionScoped: connectionScoped,
 	})
 }

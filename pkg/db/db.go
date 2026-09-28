@@ -85,7 +85,9 @@ type Database interface {
 	// read replica, another system's database or a one-off source. It is
 	// assembled like the delivered handle — same dialect, same declared
 	// plugins, same encryption serializer — and it shares the same connection
-	// pool parameters. The connection attempt is bound to ctx.
+	// pool parameters, except that a locator naming a database private to one
+	// connection, such as SQLite's :memory:, gets a pool of one. The connection
+	// attempt is bound to ctx.
 	//
 	// It carries no migrations and this module does not hold it: the caller
 	// closes it with Close in its own Close stage. Leaking it leaks

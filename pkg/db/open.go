@@ -36,6 +36,13 @@ import (
 // the startup diagnostics. The driver's own reason is kept, because it is the
 // diagnosis; on PostgreSQL it names the user, the database and the address it
 // tried, and never the password.
+//
+// A locator whose database belongs to the connection that opens it, which the
+// implementation recognises through Spec.ConnectionScoped, gets a pool of one
+// connection that is never replaced, whatever the pool parameters say. Over a
+// larger pool every connection would open a database of its own under the one
+// handle: the migrations would land on one of them and a request on any other
+// would find no table.
 func openHandle(ctx context.Context, spec Spec, cfg lockingConfig) (*gorm.DB, error) {
 	// The locator is normalised once, and the dialector is the only reader:
 	// the stance judged the trimmed text, so the driver has to be handed the
@@ -58,6 +65,15 @@ func openHandle(ctx context.Context, spec Spec, cfg lockingConfig) (*gorm.DB, er
 	pool.SetMaxOpenConns(cfg.MaxOpenConns)
 	pool.SetMaxIdleConns(cfg.MaxIdleConns)
 	pool.SetConnMaxLifetime(cfg.ConnMaxLifetime)
+	if spec.ConnectionScoped != nil && spec.ConnectionScoped(locator) {
+		// The one connection is the database: it is kept idle rather than
+		// closed, and never retired for its age or its idleness, because
+		// retiring it discards everything written through the handle.
+		pool.SetMaxOpenConns(1)
+		pool.SetMaxIdleConns(1)
+		pool.SetConnMaxLifetime(0)
+		pool.SetConnMaxIdleTime(0)
+	}
 	if err := pool.PingContext(ctx); err != nil {
 		return nil, errors.Join(
 			fmt.Errorf("%w: the %s database did not answer the connectivity check: %w",
