@@ -58,7 +58,8 @@ const (
 	SpanIDKey = "span_id"
 )
 
-// propagator is the composite this module extracts and injects with.
+// propagator is the format this module extracts and injects with: the W3C trace
+// context, and nothing besides.
 //
 // It is a value of this module's own rather than the library's global one: the
 // upstream default is an empty composite that silently injects and extracts
@@ -66,10 +67,14 @@ const (
 // another's. Every place in this module that crosses a process boundary uses
 // this value through Propagator, so the two sides of a link cannot drift onto
 // different formats.
-var propagator propagation.TextMapPropagator = propagation.NewCompositeTextMapPropagator(
-	propagation.TraceContext{},
-	propagation.Baggage{},
-)
+//
+// Baggage is not carried. The request layer extracts ahead of authentication,
+// so an inbound baggage header is whatever an unauthenticated caller chose to
+// write; extracted, it would sit in the request's context, and Transport would
+// re-emit it to every third party the request calls on, under this service's
+// name. The span context is what continuing a trace needs, and it is all that
+// crosses in either direction.
+var propagator propagation.TextMapPropagator = propagation.TraceContext{}
 
 // Propagator returns the trace-context propagator this module uses on both
 // sides of a process boundary.

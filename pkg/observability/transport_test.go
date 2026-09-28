@@ -57,6 +57,50 @@ func TestTransportInjectsTheSpanContextAndLeavesTheCallersRequestAlone(t *testin
 	}
 }
 
+// TestAnInboundBaggageIsNotForwarded pins what crosses the boundary in both
+// directions: the span context and nothing else. The request layer extracts
+// with this propagator ahead of authentication, so whatever an unauthenticated
+// caller writes into a baggage header would otherwise sit in the request's
+// context and be re-emitted by Transport to every third party the request goes
+// on to call, under this service's name.
+func TestAnInboundBaggageIsNotForwarded(t *testing.T) {
+	inbound := nethttp.Header{}
+	inbound.Set("traceparent", "00-0af7651916cd43dd8448eb211c80319c-b7ad6b7169203331-01")
+	inbound.Set("baggage", "injected=by-the-caller")
+	ctx := observability.Propagator().Extract(context.Background(), propagation.HeaderCarrier(inbound))
+
+	tp := sdktrace.NewTracerProvider(sdktrace.WithSampler(sdktrace.AlwaysSample()))
+	defer func() { _ = tp.Shutdown(context.Background()) }()
+	ctx, span := tp.Tracer("test").Start(ctx, "handler")
+	defer span.End()
+
+	var seen nethttp.Header
+	inner := roundTripperFunc(func(r *nethttp.Request) (*nethttp.Response, error) {
+		seen = r.Header
+		return &nethttp.Response{StatusCode: nethttp.StatusOK, Body: nethttp.NoBody, Header: nethttp.Header{}}, nil
+	})
+	req, err := nethttp.NewRequestWithContext(ctx, nethttp.MethodPost, "http://webhook.example.test/", nil)
+	if err != nil {
+		t.Fatalf("build the request: %v", err)
+	}
+	if _, err := observability.Transport(inner).RoundTrip(req); err != nil {
+		t.Fatalf("round trip: %v", err)
+	}
+
+	if !strings.Contains(seen.Get("traceparent"), "0af7651916cd43dd8448eb211c80319c") {
+		t.Errorf("the outbound traceparent %q does not continue the caller's trace", seen.Get("traceparent"))
+	}
+	if got := seen.Get("baggage"); got != "" {
+		t.Errorf("the caller's baggage reached a third party as %q, want no baggage header", got)
+	}
+	for _, field := range observability.Propagator().Fields() {
+		if field == "baggage" {
+			t.Errorf("the propagator reads and writes %v, want the trace context headers alone",
+				observability.Propagator().Fields())
+		}
+	}
+}
+
 // TestTransportWithoutASpanPassesTheRequestThrough pins the other half of the
 // contract: background work and startup reach the wrapper with no span in the
 // context, and the answer for them is to send the request as it was. Injecting
