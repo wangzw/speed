@@ -38,9 +38,16 @@ const (
 	// form differs: a bare number would mean nanoseconds to the machine and
 	// minutes to the reader.
 	kindDuration
-	// kindText is a type carrying its own text form, such as time.Time, net.IP
-	// or url.URL. It is a leaf rather than a level of the path: expanding such
-	// a type would walk into unexported fields and make the item disappear.
+	// kindText is a type that decodes itself from text, such as time.Time,
+	// net.IP or netip.Addr. It is a leaf rather than a level of the path:
+	// expanding such a type would walk into unexported fields and make the
+	// item disappear.
+	//
+	// A type with a binary form only is not one of them. url.URL implements
+	// UnmarshalBinary and no UnmarshalText, so it is expanded field by field
+	// like any struct — the way configuration expands it — into keys such as
+	// endpoint.scheme and endpoint.host, with no key for the URL as a whole. A
+	// URL item is declared as the string it is written as.
 	kindText
 )
 
