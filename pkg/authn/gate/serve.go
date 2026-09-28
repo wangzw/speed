@@ -105,11 +105,12 @@ type refusal struct {
 	reason string
 	// level is what the log line is written at, and it follows who has
 	// something to do about it. A refusal is ordinary traffic and is written
-	// at Info; an outage is an operator's to look at and is written at Warn;
-	// a backend that returned without answering, or that panicked, is a
-	// defect somebody has to fix in code and is written at Error. The level
-	// is the first filter every log pipeline applies, so a signal written
-	// below the one a deployment keeps is a signal nobody receives.
+	// at Info, and so is a request its own caller ended; an outage is an
+	// operator's to look at and is written at Warn; a backend that returned
+	// without answering, that panicked, or that passed a subject outside its
+	// claim is a defect somebody has to fix and is written at Error. The
+	// level is the first filter every log pipeline applies, so a signal
+	// written below the one a deployment keeps is a signal nobody receives.
 	level slog.Level
 	// backend is the name this is charged to, empty when the gateway
 	// produced the refusal itself.
