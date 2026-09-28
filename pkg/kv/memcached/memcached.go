@@ -329,72 +329,88 @@ func (s *store) increment(ctx context.Context, key string, delta float64, ttl ti
 
 // CompareAndSwap writes only on a match, and never touches the expiry.
 func (s *store) CompareAndSwap(ctx context.Context, key string, old, newVal []byte) (bool, error) {
-	if err := ctx.Err(); err != nil {
-		return false, err
-	}
+	return s.writeIf(ctx, key, func(value []byte, expires time.Time, live bool) ([]byte, time.Time, bool) {
+		if !live {
+			// Missing or expired reads as empty, so only an empty old
+			// matches, and the write creates the key without an expiry.
+			value, expires = nil, time.Time{}
+		}
+		if !bytes.Equal(value, old) {
+			return nil, time.Time{}, false
+		}
+		// The expiry is carried over rather than reset: the swap never
+		// changes when a key stops being visible.
+		return newVal, expires, true
+	})
+}
+
+// decision is what a conditional write makes of the entry it found: the value
+// it read, that value's expiry, and whether the key is live. It returns the
+// value and expiry to write, or false to leave the entry alone.
+type decision func(value []byte, expires time.Time, live bool) ([]byte, time.Time, bool)
+
+// writeIf writes what decide asks for, only if the entry decide judged is
+// still the one there, and reports whether it wrote.
+//
+// Every write here is conditional on the server: a missing key is created with
+// Add, which fails when someone else created it first, and an entry that is
+// there — live or past its expiry — is replaced with a compare-and-swap
+// carrying the cas id it was read with, which fails when anyone else has
+// written it since. An expired entry goes through the second path like a live
+// one. It is still an entry to the server, because it is this implementation
+// and not Memcached that decided it aged out, and replacing it under its cas
+// id is what gives several writers racing for it exactly one winner.
+//
+// A write refused because the entry changed is not an answer yet: the entry is
+// read again and judged afresh, and the loop ends when decide refuses what is
+// now there or a write lands. Answering false on the refusal alone would be
+// wrong whenever the writer that got in first left the entry still matching.
+func (s *store) writeIf(ctx context.Context, key string, decide decision) (bool, error) {
 	encoded := encodeKey(key)
-	item, err := s.client.Get(encoded)
-	if errors.Is(err, memcache.ErrCacheMiss) {
-		// Nothing there. An empty old matches, which is what makes this
-		// set-if-absent; anything else is a mismatch.
-		if len(old) > 0 {
+	for attempt := 0; attempt < casAttempts; attempt++ {
+		if err := ctx.Err(); err != nil {
+			return false, err
+		}
+		item, err := s.client.Get(encoded)
+		if errors.Is(err, memcache.ErrCacheMiss) {
+			value, expires, ok := decide(nil, time.Time{}, false)
+			if !ok {
+				return false, nil
+			}
+			addErr := s.client.Add(&memcache.Item{Key: encoded, Value: expiry.Wrap(value, expires)})
+			if errors.Is(addErr, memcache.ErrNotStored) {
+				retry.Backoff(attempt)
+				continue
+			}
+			if addErr != nil {
+				return false, addErr
+			}
+			return true, nil
+		}
+		if err != nil {
+			return false, err
+		}
+		current, currentExpires, live := expiry.UnwrapFull(item.Value)
+		value, expires, ok := decide(current, currentExpires, live)
+		if !ok {
 			return false, nil
 		}
-		addErr := s.client.Add(&memcache.Item{Key: encoded, Value: expiry.Wrap(newVal, time.Time{})})
-		if errors.Is(addErr, memcache.ErrNotStored) {
-			return false, nil
-		}
-		if addErr != nil {
-			return false, addErr
-		}
-		return true, nil
-	}
-	if err != nil {
-		return false, err
-	}
-	value, expires, live := expiry.UnwrapFull(item.Value)
-	if !live {
-		// Expired reads as absent, so only an empty old matches.
-		if len(old) > 0 {
-			return false, nil
-		}
-		// The entry is still there as far as the server is concerned — it is
-		// this implementation, not Memcached, that decided the key aged out —
-		// so Add would be refused as a duplicate. Removing it first is what
-		// makes the create below a create; a writer landing between the two
-		// simply wins the Add, and the swap reports that it did not happen,
-		// which is the right answer.
-		if delErr := s.client.Delete(encoded); delErr != nil && !errors.Is(delErr, memcache.ErrCacheMiss) {
-			return false, delErr
-		}
-		addErr := s.client.Add(&memcache.Item{Key: encoded, Value: expiry.Wrap(newVal, time.Time{})})
-		if errors.Is(addErr, memcache.ErrNotStored) {
-			return false, nil
-		}
-		if addErr != nil {
-			return false, addErr
-		}
-		return true, nil
-	}
-	if !bytes.Equal(value, old) {
-		return false, nil
-	}
-	// The expiry is carried over rather than reset: the swap never changes when
-	// a key stops being visible.
-	item.Value = expiry.Wrap(newVal, expires)
-	if err := s.client.CompareAndSwap(item); err != nil {
-		if errors.Is(err, memcache.ErrCASConflict) ||
-			errors.Is(err, memcache.ErrNotStored) ||
-			errors.Is(err, memcache.ErrCacheMiss) {
+		item.Value = expiry.Wrap(value, expires)
+		if casErr := s.client.CompareAndSwap(item); casErr != nil {
 			// Someone else wrote or removed it in between — the miss included,
 			// which is what a delete or an eviction between the read and the
-			// write reports — and each is a swap that did not happen rather
-			// than a failure.
-			return false, nil
+			// write reports. Each is contention, not failure.
+			if errors.Is(casErr, memcache.ErrCASConflict) ||
+				errors.Is(casErr, memcache.ErrNotStored) ||
+				errors.Is(casErr, memcache.ErrCacheMiss) {
+				retry.Backoff(attempt)
+				continue
+			}
+			return false, casErr
 		}
-		return false, err
+		return true, nil
 	}
-	return true, nil
+	return false, fmt.Errorf("%s: %q stayed contested across %d attempts", ModuleName, key, casAttempts)
 }
 
 // formatFloat renders a counter as the shortest text that round-trips.

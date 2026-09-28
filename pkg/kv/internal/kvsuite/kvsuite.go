@@ -548,6 +548,75 @@ func AssertConforms(t *testing.T, newStore Factory) {
 			t.Fatalf("the stored value is %q but %q reported winning", got, winners[0])
 		}
 	})
+
+	t.Run("concurrent set-if-absent on an expired key has exactly one winner", func(t *testing.T) {
+		s := newStore(t)
+		raceOnExpiredKeys(t, s, func(key string, mine []byte) (bool, error) {
+			return s.CompareAndSwap(context.Background(), key, nil, mine)
+		})
+	})
+}
+
+// raceOnExpiredKeys runs claim concurrently from several writers against each
+// of several keys that are stored but past their expiry, and fails unless each
+// key has exactly one winner whose value is the one stored.
+//
+// A key that has expired but is still held by the backend is a different
+// path from a key that was never written on every backend that decides expiry
+// itself: the entry is there to be contended, and the write that replaces it
+// is not a plain create. The race is probabilistic, so it runs over many keys.
+func raceOnExpiredKeys(t *testing.T, s kv.KV, claim func(key string, mine []byte) (bool, error)) {
+	t.Helper()
+	ctx := context.Background()
+	const keys, writers = 100, 8
+	for k := range keys {
+		if err := s.Set(ctx, fmt.Sprintf("expired-%d", k), []byte("stale"), time.Millisecond); err != nil {
+			t.Fatalf("Set: %v", err)
+		}
+	}
+	time.Sleep(20 * time.Millisecond)
+	for k := range keys {
+		key := fmt.Sprintf("expired-%d", k)
+		start := make(chan struct{})
+		var wg sync.WaitGroup
+		wins := make(chan string, writers)
+		errs := make(chan error, writers)
+		for w := range writers {
+			wg.Add(1)
+			go func() {
+				defer wg.Done()
+				mine := []byte(fmt.Sprintf("writer-%d", w))
+				<-start
+				won, err := claim(key, mine)
+				if err != nil {
+					errs <- err
+					return
+				}
+				if won {
+					wins <- string(mine)
+				}
+			}()
+		}
+		close(start)
+		wg.Wait()
+		close(wins)
+		close(errs)
+		for err := range errs {
+			t.Fatalf("a claim on the expired key %q failed rather than losing: %v", key, err)
+		}
+		var winners []string
+		for w := range wins {
+			winners = append(winners, w)
+		}
+		if len(winners) != 1 {
+			t.Fatalf("%d writers claimed the expired key %q, want exactly 1: %v", len(winners), key, winners)
+		}
+		got, present, err := s.Get(ctx, key)
+		if err != nil || !present || string(got) != winners[0] {
+			t.Fatalf("the expired key %q holds %q (present=%v, err=%v) but %q reported winning",
+				key, got, present, err, winners[0])
+		}
+	}
 }
 
 // keysTheContractAllows is a set of distinct keys covering the shapes a
