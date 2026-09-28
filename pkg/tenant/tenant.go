@@ -19,6 +19,8 @@
 package tenant
 
 import (
+	"database/sql/driver"
+	"fmt"
 	"strings"
 	"unicode"
 )
@@ -34,6 +36,35 @@ import (
 // A host migrating from an existing system carries its own numbering across,
 // and a second scheme minted alongside it would sit there indefinitely.
 type ID string
+
+// Value implements driver.Valuer, and refuses to bind an identifier outside
+// the domain: the empty one above all, which is what a scoped row's tenant
+// column holds when nothing filled it.
+//
+// This is the one guard the convention carries with it. The filter fills the
+// column where it is installed, but a command that runs a scoped model without
+// the roster module has no filter at all, and a row crossing tenants is filled
+// by nobody; in both cases the column would otherwise reach the database as an
+// empty string, which the NOT NULL a migration declares does not stop. Refusing
+// here turns that into a failed statement wherever the value is bound — an
+// insert, and a condition naming the tenant by value — on whatever handle it
+// runs, and with nothing beyond the standard library.
+//
+// The string is returned alongside the error rather than instead of it. A
+// caller that reads the value and drops the error — GORM keys rows by their
+// primary values that way, and a nil there panics — still gets the value it
+// asked for, while every driver that binds it gets the refusal.
+func (id ID) Value() (driver.Value, error) {
+	switch {
+	case id == "":
+		return string(id), fmt.Errorf("%w: a tenant column is being written empty",
+			ErrNoTenantInContext)
+	case !IsIdentifier(string(id)):
+		return string(id), fmt.Errorf("%w: a tenant column is being written with a blank "+
+			"or a control character", ErrInvalidTenant)
+	}
+	return string(id), nil
+}
 
 // IsIdentifier reports whether s is a value the identifier's domain admits:
 // non-empty, and free of blanks and control characters anywhere in it.

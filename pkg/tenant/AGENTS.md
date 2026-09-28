@@ -72,6 +72,14 @@ here must not cross, and how to run it.
   run the roster lookup and the identifier binding twice per request. A repeat
   is refused in `moduleConfig.resolve`, naming the endpoint, rather than
   dropped in passing.
+- **`ID` refuses to be bound outside its domain.** `ID.Value` answers an
+  empty identifier with `ErrNoTenantInContext` and a blank or control character
+  with `ErrInvalidTenant`, so an unfilled tenant column fails at the driver on
+  any handle, filtered or not — the NOT NULL a migration declares stops a null,
+  not the empty string an unfilled column holds. It hands the string back
+  beside the error, because GORM keys rows by their primary values and drops
+  the error while doing so; a nil value there panics. `scope_test.go` and
+  `catalog/unfiltered_test.go` pin both halves, the second on both dialects.
 - **The identifier's value domain is stated once here and restated by its
   consumers.** `IsIdentifier` in this package is the module's one statement of
   the rule — non-empty, free of blanks and control characters — and the roster's

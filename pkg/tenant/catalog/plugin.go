@@ -150,8 +150,9 @@ func (f *filter) scopeUpdate(tx *gorm.DB) {
 //
 // A condition cannot do this job: it decides which rows a statement reaches,
 // and an insert reaches none. Without this the column would be left to the
-// caller, and a caller that forgot would write an empty value — the one outcome
-// the NOT NULL constraint is there to turn into a failure.
+// caller, and a caller that forgot would bind an empty identifier, which the
+// identifier refuses: the statement would fail rather than land in the tenant
+// its context carries.
 func (f *filter) fillColumn(tx *gorm.DB) {
 	st := tx.Statement
 	id, ok := scopedTo(tx, st)

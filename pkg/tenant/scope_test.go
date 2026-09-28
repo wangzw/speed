@@ -2,6 +2,7 @@ package tenant
 
 import (
 	"context"
+	"errors"
 	"testing"
 
 	"github.com/vislake/speed/pkg/tenant/internal/tenantctx"
@@ -39,6 +40,33 @@ func TestCrossTenantHandsOverTheIdentifier(t *testing.T) {
 	}
 	if id, ok := FromContext(scoped); !ok || id != "acme" {
 		t.Fatalf("marking a derived context changed its parent: got %q, %v", id, ok)
+	}
+}
+
+// TestAnIdentifierOutsideTheDomainIsNotBound records the guard the convention
+// carries with it. The empty identifier is what an unfilled tenant column
+// holds, and binding it would write a row that belongs to no tenant.
+func TestAnIdentifierOutsideTheDomainIsNotBound(t *testing.T) {
+	for _, tc := range []struct {
+		id   ID
+		want error
+	}{
+		{"", ErrNoTenantInContext},
+		{"acme corp", ErrInvalidTenant},
+		{"acme\ncorp", ErrInvalidTenant},
+	} {
+		v, err := tc.id.Value()
+		if !errors.Is(err, tc.want) {
+			t.Errorf("binding %q gave %v, want %v", tc.id, err, tc.want)
+		}
+		// The value still comes back beside the refusal, for the callers
+		// that read it and drop the error.
+		if v != string(tc.id) {
+			t.Errorf("binding %q returned the value %#v beside its refusal, want the string", tc.id, v)
+		}
+	}
+	if v, err := ID("acme").Value(); err != nil || v != "acme" {
+		t.Fatalf("binding an identifier in the domain gave %#v, %v", v, err)
 	}
 }
 

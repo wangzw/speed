@@ -34,9 +34,11 @@ package tenant
 //
 // One obligation stays with the module that declares the table, because this
 // one does not read other modules' models: the migration must declare the same
-// key this type does. Column order, type and the NOT NULL are the rest of it —
-// without the constraint, a statement issued while the filter is not installed
-// writes an empty value instead of failing. Every index on a scoped table
+// key this type does. Column order, type and the NOT NULL are the rest of it.
+// The NOT NULL stops a null and not an empty string, which is what an unfilled
+// column holds: where no filter fills it — a command that runs a scoped model
+// without the roster module is one — the insert fails because ID refuses to be
+// bound empty, not because of the constraint. Every index on a scoped table
 // should also lead with the tenant column, or a single tenant's query scans the
 // whole table; the key this type declares does that part on its own.
 type Model struct {
