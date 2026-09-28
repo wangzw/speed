@@ -19,6 +19,8 @@ import (
 	"github.com/vislake/speed/pkg/db"
 	"github.com/vislake/speed/pkg/db/sqlite"
 	"github.com/vislake/speed/pkg/log"
+	"github.com/vislake/speed/pkg/tenant"
+	"github.com/vislake/speed/pkg/tenant/catalog"
 )
 
 // assembled drives a real registry to Start and runs action there: the SQLite
@@ -295,6 +297,84 @@ func TestAnOpenedConnectionsWriteFailsWithItsRecord(t *testing.T) {
 		var committed int64
 		if err := opened.Model(&order{}).Count(&committed).Error; err != nil || committed != 0 {
 			t.Errorf("the caller was told the write failed, but %d order(s) committed (%v)", committed, err)
+		}
+		return nil
+	})
+}
+
+// A statement issued across tenants from a context that belonged to one has no
+// tenant in its row, and neither has an entry handed to the seam there.
+//
+// The context is a tenant's own, entered through the roster the way a path with
+// no request behind it enters one, so the case reaches the context shape a
+// request handler holds. A reader of the marked context that still found the
+// tenant it was derived from would file an unscoped statement under that
+// tenant's scope — and the control half of the case shows the tenant is filled
+// where it belongs.
+func TestAWriteAcrossTenantsFromATenantsContextHasNoTenant(t *testing.T) {
+	assembled(t, []core.Module{catalog.Module()}, func(ctx context.Context, reg *core.Registry) error {
+		roster, err := core.Resolve[tenant.Catalog](reg)
+		if err != nil {
+			t.Errorf("resolving the tenant roster: %v", err)
+			return errCaseFailed
+		}
+		registered := tenant.Tenant{ID: "t_acme", Alias: "acme", Status: tenant.StatusActive}
+		if putErr := roster.Put(ctx, registered); putErr != nil {
+			t.Errorf("registering the tenant: %v", putErr)
+			return errCaseFailed
+		}
+		entered, err := roster.Enter(ctx, "t_acme")
+		if err != nil {
+			t.Errorf("entering the tenant: %v", err)
+			return errCaseFailed
+		}
+		database, err := core.Resolve[db.Database](reg)
+		if err != nil {
+			t.Errorf("resolving the database capability: %v", err)
+			return errCaseFailed
+		}
+		recorder, err := core.Resolve[audit.Audit](reg)
+		if err != nil {
+			t.Errorf("resolving the audit capability: %v", err)
+			return errCaseFailed
+		}
+		handle := database.DB()
+		if err := handle.Exec(createOrders).Error; err != nil {
+			t.Errorf("creating the orders table: %v", err)
+			return errCaseFailed
+		}
+
+		if err := handle.WithContext(entered).Create(&order{ID: "o1", Note: "own"}).Error; err != nil {
+			t.Errorf("writing under the tenant's context: %v", err)
+			return errCaseFailed
+		}
+		crossing := tenant.CrossTenant(entered)
+		if err := handle.WithContext(crossing).Create(&order{ID: "o2", Note: "across"}).Error; err != nil {
+			t.Errorf("writing across tenants: %v", err)
+			return errCaseFailed
+		}
+		if err := recorder.Record(crossing, audit.Entry{Action: "export", Purpose: "support"}); err != nil {
+			t.Errorf("recording across tenants: %v", err)
+			return errCaseFailed
+		}
+
+		var rows []row
+		if err := handle.Where("object = ? OR source = ?", "orders", string(audit.SourceSeam)).
+			Order("id").Find(&rows).Error; err != nil {
+			t.Errorf("reading the audit table: %v", err)
+			return errCaseFailed
+		}
+		if len(rows) != 3 {
+			t.Errorf("want the two writes and the seam entry recorded, got %+v", rows)
+			return errCaseFailed
+		}
+		if own := rows[0]; own.TenantID == nil || *own.TenantID != "t_acme" {
+			t.Errorf("the write under the tenant's context has tenant %v, want t_acme", own.TenantID)
+		}
+		for _, crossed := range rows[1:] {
+			if crossed.TenantID != nil {
+				t.Errorf("the %s row made across tenants has tenant %q, want none", crossed.Source, *crossed.TenantID)
+			}
 		}
 		return nil
 	})
