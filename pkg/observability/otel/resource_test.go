@@ -124,6 +124,30 @@ func resourceValue(t *testing.T, res *resource.Resource, key string) string {
 	return v.AsString()
 }
 
+// TestTheEnvironmentAddsToTheResourceButCannotRenameIt pins what the upstream's
+// resource variables do to the resource this module builds. The upstream merges
+// the attributes of OTEL_RESOURCE_ATTRIBUTES into it when the providers are
+// built, which is how a platform adds where a replica runs; on a name both give,
+// this module's value wins, so neither that variable nor OTEL_SERVICE_NAME can
+// rename the service or give two replicas one instance.
+func TestTheEnvironmentAddsToTheResourceButCannotRenameIt(t *testing.T) {
+	t.Setenv("OTEL_SERVICE_NAME", "renamed")
+	t.Setenv("OTEL_RESOURCE_ATTRIBUTES", "service.name=renamed,service.instance.id=shared,deployment.environment=prod")
+
+	rec := runReplica(t)
+	for _, res := range []*resource.Resource{rec.spans[0], rec.metrics[0]} {
+		if got := resourceValue(t, res, "service.name"); got != "orders" {
+			t.Errorf("the service name is %q, want the configured orders", got)
+		}
+		if got := resourceValue(t, res, "service.instance.id"); got == "shared" {
+			t.Errorf("the instance identity is the environment's %q, want this assembly's own", got)
+		}
+		if got := resourceValue(t, res, "deployment.environment"); got != "prod" {
+			t.Errorf("deployment.environment is %q, want the attribute the environment added", got)
+		}
+	}
+}
+
 // TestEachReplicaExportsUnderItsOwnInstance is the case for telling two
 // replicas of one service apart. Both export the same metric streams with the
 // same attributes; a resource that carried the service name alone would give

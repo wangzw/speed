@@ -89,8 +89,9 @@ must not cross, and how to run it.
   Every top-level field of the payload becomes one attribute, in the type and
   with the digits it was published with — a number is not read through a
   float64 and printed back — so the set is whatever publishers put in payloads
-  and the module limits no attribute's cardinality. Keeping a credential out of a payload is therefore the
-  publisher's obligation: this module neither inspects nor strips one.
+  and the module limits no attribute's cardinality. Keeping a credential out of
+  a payload is therefore the publisher's obligation: this module neither
+  inspects nor strips one.
 - **An event-derived span's parent and kind come from the bus, not from this
   module.** The span starts on the context the handler was handed: the
   process-local bus hands the publisher's own context, so the span joins the
@@ -129,6 +130,16 @@ must not cross, and how to run it.
 - **`TraceIDKey` and `SpanIDKey` are a contract with whoever reads a log line**,
   not an implementation detail. They are bound here and the log module carries
   them without knowing what they mean.
+- **Every setting the configuration declares, and every part of the wire
+  shape the design documents, is given to the upstream exporter explicitly.**
+  The upstream reads the standard `OTEL_EXPORTER_OTLP_*` variables for whatever
+  it is not given, and applies them before the options, so an option that
+  looks redundant because it passes the upstream default is what keeps a
+  variable out: the endpoint's path, the TLS switch and its certificates, the
+  headers, the encoding, and the metric temporality and aggregation. Removing
+  one reopens a second environment surface outside this module's prefix and
+  its sensitive marking. `TestNoUpstreamVariableOverridesTheConfiguration` and
+  `TestNoUpstreamVariableTurnsTLSOff` hold it.
 - **No input item takes its value from the command line.** The endpoint locator
   and the headers would then be readable from the process list. Items that carry
   a credential are additionally marked sensitive, and an error about one never

@@ -3,7 +3,10 @@
 // It is the backend a deployment uses: one endpoint carries both signals, and
 // the collector decides where they go from there. The exporter is the upstream
 // one for the protocol named in configuration, so the transport's own details —
-// retry, backoff, compression — are the library's rather than this module's.
+// retry, backoff, compression, the per-request timeout — are the library's
+// rather than this module's, and so are the standard OTEL_EXPORTER_OTLP_*
+// variables that set them. What the configuration declares is given to the
+// upstream explicitly, so none of those variables reaches it.
 //
 // It delivers both exporter capabilities, non-exclusively, so that a host can
 // export to a collector and somewhere else at the same time.
