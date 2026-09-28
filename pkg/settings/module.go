@@ -138,12 +138,11 @@ func Module() core.Module {
 // newSettingsStore builds the product.
 func newSettingsStore(keys *keyTable, database db.Database, bus event.Bus, cfg moduleSettings) *settingsStore {
 	s := &settingsStore{
-		keys:    keys,
-		handle:  database.DB(),
-		dialect: database.Dialect(),
-		bus:     bus,
-		config:  cfg,
-		logger:  log.Default(),
+		keys:   keys,
+		handle: database.DB(),
+		bus:    bus,
+		config: cfg,
+		logger: log.Default(),
 	}
 	s.snapshot.Store(emptySnapshot())
 	return s

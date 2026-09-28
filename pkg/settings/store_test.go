@@ -886,24 +886,15 @@ func TestAListFailureNamesItsLayer(t *testing.T) {
 	}
 }
 
-// The statement placeholders follow the dialect, and the absent-table
-// judgement reads each engine's own text.
+// The absent-table judgement reads each engine's own text, and tells the
+// absent table apart from the failures that are not it.
 //
-// Neither branch can be exercised against a live engine here — the fixtures
-// are SQLite throughout, and PostgreSQL asks for a service — so the two are
-// pinned directly. Without this, flattening either would leave the suite green
-// and reach the one backend this module is deployed against.
-func TestTheDialectBranches(t *testing.T) {
-	if got := bind(db.Postgres, 1); got != "$1" {
-		t.Errorf("the first PostgreSQL placeholder is %q, want $1", got)
-	}
-	if got := bind(db.Postgres, 4); got != "$4" {
-		t.Errorf("the fourth PostgreSQL placeholder is %q, want $4", got)
-	}
-	if got := bind(db.SQLite, 1); got != "?" {
-		t.Errorf("the SQLite placeholder is %q, want ?", got)
-	}
-
+// TestTheStatementsRunOnPostgreSQL meets the PostgreSQL text live. The texts
+// are also pinned here, where no docker is needed, because the judgement is a
+// string match: a machine that skips the live case would otherwise leave a
+// flattened match unnoticed until it reached the one backend this module is
+// deployed against.
+func TestTheAbsentTableJudgement(t *testing.T) {
 	cases := []struct {
 		name string
 		text string

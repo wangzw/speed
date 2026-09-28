@@ -5,7 +5,6 @@ import (
 	"fmt"
 	"log/slog"
 	"slices"
-	"strconv"
 	"strings"
 	"sync"
 	"sync/atomic"
@@ -13,7 +12,6 @@ import (
 
 	"gorm.io/gorm"
 
-	"github.com/vislake/speed/pkg/db"
 	"github.com/vislake/speed/pkg/event"
 )
 
@@ -30,12 +28,11 @@ const maxValueBytes = 1 << 20
 // subscription's goroutine and on the refresh ticker's, while reads happen on
 // every other goroutine a consumer has.
 type settingsStore struct {
-	keys    *keyTable
-	handle  *gorm.DB
-	dialect db.Dialect
-	bus     event.Bus
-	logger  *slog.Logger
-	config  moduleSettings
+	keys   *keyTable
+	handle *gorm.DB
+	bus    event.Bus
+	logger *slog.Logger
+	config moduleSettings
 	// cancelRefresh stops the ticker. It is written in Start and read in Stop,
 	// which the lifecycle driver calls one after the other on its own
 	// goroutine, so it needs no synchronisation of its own.
@@ -165,8 +162,7 @@ func changeFor(entry keyEntry, old, fresh, actor string, version uint64, deleted
 // nothing, because nothing in the table changed.
 func (s *settingsStore) Delete(ctx context.Context, layer Layer, key, actor string) error {
 	tenant := tenantOf(layer)
-	sql := "DELETE FROM " + tableName + " WHERE tenant_id = " + bind(s.dialect, 1) +
-		" AND key = " + bind(s.dialect, 2) + " RETURNING value"
+	sql := "DELETE FROM " + tableName + " WHERE tenant_id = ? AND key = ? RETURNING value"
 	var removed []removedRow
 	if err := s.handle.WithContext(ctx).Raw(sql, tenant, key).Scan(&removed).Error; err != nil {
 		return fmt.Errorf("settings: deleting key %q: %w", key, err)
@@ -216,7 +212,7 @@ func (s *settingsStore) deleteChange(key, old, actor string) Change {
 func (s *settingsStore) List(ctx context.Context, layer Layer) ([]Entry, error) {
 	tenant := tenantOf(layer)
 	sql := "SELECT tenant_id, key, value, version, updated_at FROM " + tableName +
-		" WHERE tenant_id = " + bind(s.dialect, 1)
+		" WHERE tenant_id = ?"
 	var rows []listRow
 	if err := s.handle.WithContext(ctx).Raw(sql, tenant).Scan(&rows).Error; err != nil {
 		return nil, fmt.Errorf("settings: listing the rows of %s: %w",
@@ -254,10 +250,15 @@ type listRow struct {
 // The layer is flattened to the tenant column here, which is the last point
 // before the statement: the column is what the row is keyed by, and the global
 // layer is the row whose column is empty.
+//
+// The statements in this module are written once for both dialects. The
+// upsert and the RETURNING clause are syntax SQLite and PostgreSQL share, and
+// the placeholders are GORM's: Raw rewrites each ? into the placeholder the
+// handle's dialect uses, $n on PostgreSQL, before the statement reaches the
+// driver.
 func (s *settingsStore) writeRow(ctx context.Context, layer Layer, key, text string) (uint64, error) {
-	sql := "INSERT INTO " + tableName + " (tenant_id, key, value, version, updated_at) VALUES (" +
-		bind(s.dialect, 1) + ", " + bind(s.dialect, 2) + ", " + bind(s.dialect, 3) + ", 1, " +
-		bind(s.dialect, 4) + ") ON CONFLICT (tenant_id, key) DO UPDATE SET value = EXCLUDED.value, " +
+	sql := "INSERT INTO " + tableName + " (tenant_id, key, value, version, updated_at) " +
+		"VALUES (?, ?, ?, 1, ?) ON CONFLICT (tenant_id, key) DO UPDATE SET value = EXCLUDED.value, " +
 		"version = " + tableName + ".version + 1, updated_at = EXCLUDED.updated_at RETURNING version"
 	var version uint64
 	err := s.handle.WithContext(ctx).Raw(sql, tenantOf(layer), key, text, time.Now().UTC()).
@@ -337,16 +338,4 @@ func (s *settingsStore) publish(ctx context.Context, layer Layer, change Change)
 		s.logger.Error("settings: publishing a change failed; other replicas converge on "+
 			"their next refresh", "key", change.Key, "tenant", tenant, "error", err)
 	}
-}
-
-// bind renders the placeholder for the nth argument of a statement.
-//
-// Native SQL reaches the driver unchanged, so the two dialects' placeholder
-// syntaxes are this module's problem: PostgreSQL numbers its parameters,
-// SQLite does not.
-func bind(dialect db.Dialect, n int) string {
-	if dialect == db.Postgres {
-		return "$" + strconv.Itoa(n)
-	}
-	return "?"
 }
