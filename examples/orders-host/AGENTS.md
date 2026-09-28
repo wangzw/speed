@@ -83,13 +83,16 @@ The things no module's own suite can hold:
   is no way to exempt a route from it. The two endpoints here are how a host
   says which traffic is scoped.
 - **The background path states what it is doing.** `seed` runs outside any
-  request, where there is no resolving layer to establish a tenant and the
-  writing side of the context is closed to everything but the capability
-  directory. It crosses tenants and writes the tenant column itself, and it
-  records that crossing through the audit seam with the purpose stated — the
-  seam exists for exactly the decisions no capture path can see. The roster
-  needs none of that: its table does not embed the convention, so its
-  statements are neither conditioned nor refused.
+  request, where there is no resolving layer to establish a tenant. A path that
+  works for one tenant enters it through the roster's `Enter`; `seed` writes
+  the rows of several tenants in one pass, work that belongs to none of them,
+  so it crosses tenants and writes the tenant column itself, and it records that
+  crossing through the audit seam with the purpose stated — the seam exists for
+  exactly the decisions no capture path can see. The roster needs none of that:
+  its table does not embed the convention, so its statements are neither
+  conditioned nor refused. `seed` puts its tenants rather than creating them,
+  because it writes the same roster on every run; a registration that must not
+  overwrite a tenant that is there is a `Create`.
 - **A scoped table leads its primary key with the tenant column.** The
   migration does, and the comment there says why. This is not only a query plan:
   a unique constraint that does not lead with the tenant column lets the insert

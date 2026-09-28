@@ -316,14 +316,19 @@ func serveUntilCancelled(ctx context.Context, reg *core.Registry) error {
 // same path through the filter as any global table and are neither conditioned
 // nor refused.
 //
+// The tenants are put rather than created: a seed writes the same roster on
+// every run, and Put rewrites a tenant that is there where Create would refuse
+// it. A registration that must not overwrite an existing tenant is a Create.
+//
 // The orders are a different matter. This runs outside any request, so there is
-// no resolving layer to establish a tenant and the writing side of the context
-// is closed to everything outside the capability directory. A path like this
-// one therefore states what it is doing: it crosses tenants, and it writes the
-// tenant column itself. That crossing is also the one fact no capture path of
-// the audit journal can explain — the statement sees a write, the request path
-// is not on it, and no event was published — so this is where the seam is used
-// and the purpose is stated.
+// no resolving layer to establish a tenant. A path working for one tenant would
+// enter it through the roster's Enter and let the filter scope what it writes;
+// this one writes the orders of several tenants in one pass, which is work that
+// belongs to none of them. It therefore states what it is doing: it crosses
+// tenants, and it writes the tenant column itself. That crossing is also the
+// one fact no capture path of the audit journal can explain — the statement
+// sees a write, the request path is not on it, and no event was published — so
+// this is where the seam is used and the purpose is stated.
 func seed(ctx context.Context, reg *core.Registry) error {
 	roster, err := core.Resolve[tenant.Catalog](reg)
 	if err != nil {
@@ -369,8 +374,8 @@ func seed(ctx context.Context, reg *core.Registry) error {
 	// for the retention setting, so a read of that one answers at the
 	// declaration — which is the only way the third layer is observable at
 	// all. The layer names the row; the label beside it is there only so that a
-	// failed seed says which row it was on, the payload no longer carrying a
-	// tenant of its own.
+	// failed seed says which row it was on, since the payload carries no tenant
+	// of its own.
 	set, err := core.Resolve[settings.Store](reg)
 	if err != nil {
 		return err
