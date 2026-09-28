@@ -38,11 +38,19 @@ import (
 // opened are released either way.
 func assembled(t *testing.T, extra []core.Module, action func(ctx context.Context, reg *core.Registry) error) {
 	t.Helper()
+	assembledAt(t, filepath.Join(t.TempDir(), "delivered.db"), extra, action)
+}
+
+// assembledAt is assembled on the delivered database the locator names.
+func assembledAt(t *testing.T, dsn string, extra []core.Module,
+	action func(ctx context.Context, reg *core.Registry) error,
+) {
+	t.Helper()
 	dir := t.TempDir()
 	// The log chain writes to a file of the case's own, so the records the
 	// modules write at startup stay out of the test's output.
 	body := fmt.Sprintf(`{"db":{"sqlite":{"dsn":%q}},"log":{"outputs":[{"to":"file","format":"json","path":%q}]}}`,
-		filepath.Join(dir, "delivered.db"), filepath.Join(dir, "log.json"))
+		dsn, filepath.Join(dir, "log.json"))
 	locator := filepath.Join(dir, "config.json")
 	if err := os.WriteFile(locator, []byte(body), 0o600); err != nil {
 		t.Fatalf("writing the primary config source: %v", err)

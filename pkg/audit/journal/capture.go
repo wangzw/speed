@@ -1,7 +1,13 @@
 package journal
 
 import (
+	"context"
+	"database/sql"
+	"database/sql/driver"
+	"errors"
+	"fmt"
 	"strconv"
+	"time"
 
 	"gorm.io/gorm"
 
@@ -113,7 +119,7 @@ func (c *capture) Initialize(handle *gorm.DB) error {
 // instance is shared by every registry in the process and holds nothing, so the
 // answer has to come from the session: a guess made here — the only journal
 // running, or whichever handle has the table — would hand one run's rows to
-// another's table.
+// another's table. How long that row may wait is bounded; see record.
 //
 // A statement that has already failed is left alone. GORM runs every callback
 // of a processor whatever the ones before it did, so this one is reached by a
@@ -147,7 +153,7 @@ func captureOne(action string) func(*gorm.DB) {
 				"rows_affected": strconv.FormatInt(tx.RowsAffected, 10),
 			},
 		}
-		if err := insert(recordSession(tx), assemble(st.Context, audit.SourceStatement, entry, "")); err != nil {
+		if err := record(tx, assemble(st.Context, audit.SourceStatement, entry, "")); err != nil {
 			// The write that produced this row is not going to be reported any
 			// other way: there is no caller to return to and no signal this
 			// path reports through, because the row and the statement are one
@@ -157,24 +163,138 @@ func captureOne(action string) func(*gorm.DB) {
 	}
 }
 
-// recordSession is the session a statement's row goes out on.
+// record writes a statement's row.
 //
-// On the delivered connection it is a session of its own on the statement's
-// connection: NewDB clears the conditions the statement being recorded left on
-// it, and the transaction underneath — if there is one — is not one of them. On
-// a connection built with Open it is the delivered handle, under the
-// statement's context, which is where the actor and the tenant are read from.
-//
-// Both carry the statement's own logger. The row is part of the statement's
-// work, so a caller that gave its statement a logger of its own gets the
-// record's failure reported the way the statement's is, whichever connection
-// the row went out on.
-func recordSession(tx *gorm.DB) *gorm.DB {
-	ctx := tx.Statement.Context
+// On the delivered connection it goes out on a session of its own on the
+// statement's connection: NewDB clears the conditions the statement being
+// recorded left on it, and the transaction underneath — if there is one — is not
+// one of them. Nothing is waited for there, because the row takes nothing the
+// statement does not already hold. On a connection built with Open it goes out
+// through the delivered handle; see recordOpened.
+func record(tx *gorm.DB, r row) error {
 	if delivered, opened := db.OpenedFrom(tx); opened {
-		return delivered.Session(&gorm.Session{NewDB: true, Context: ctx, Logger: tx.Logger})
+		return recordOpened(tx, delivered, r)
 	}
-	return tx.Session(&gorm.Session{NewDB: true, Context: ctx})
+	return insert(tx.Session(&gorm.Session{NewDB: true, Context: tx.Statement.Context}), r)
+}
+
+// recordOpened writes the row of a statement on a connection built with Open,
+// through the delivered handle, under the statement's context, which is where
+// the actor and the tenant are read from.
+//
+// The row needs a connection of the delivered pool and, on an engine with one
+// writer, the delivered database's write lock, while the statement it records
+// holds its own transaction open on the other database. A caller inside a
+// transaction on the delivered handle holds both until after the statement
+// returns, and a connection opened onto the delivered database itself holds the
+// lock through the statement. Nothing a statement can see tells either from
+// another writer's brief hold, so the wait is bounded rather than recognised:
+// the connection is taken within openedRowWait, and the lock is waited for only
+// as long as what remains of it. Past the bound the statement fails with
+// ErrWriteFailed naming the wait — a record the statement could not have without
+// waiting on itself is a record it does not get, and the write it would record
+// does not happen.
+//
+// The insert itself runs under the statement's context, not the bound's: the
+// bound is on waiting for what another holds, and cutting a write short once it
+// is under way would leave it to the engine whether the row had been kept.
+//
+// The session carries the statement's own logger. The row is part of the
+// statement's work, so a caller that gave its statement a logger of its own
+// gets the record's failure reported the way the statement's is.
+func recordOpened(tx, delivered *gorm.DB, r row) error {
+	ctx := tx.Statement.Context
+	bounded, cancel := context.WithTimeout(ctx, openedRowWait)
+	defer cancel()
+	failed := func(err error) error {
+		if errors.Is(bounded.Err(), context.DeadlineExceeded) && ctx.Err() == nil {
+			return fmt.Errorf("%w: the row of a statement on a connection built with Open was not "+
+				"written to the delivered database within %v, and the statement waits no longer: a "+
+				"transaction the caller holds on the delivered handle, or a connection opened onto the "+
+				"delivered database itself, keeps what the row needs until after the statement "+
+				"returns: %w", audit.ErrWriteFailed, openedRowWait, err)
+		}
+		return fmt.Errorf("%w: %w", audit.ErrWriteFailed, err)
+	}
+
+	pool, err := delivered.DB()
+	if err != nil {
+		return fmt.Errorf("%w: the delivered handle has no connection pool: %w", audit.ErrWriteFailed, err)
+	}
+	conn, err := pool.Conn(bounded)
+	if err != nil {
+		return failed(err)
+	}
+	release, err := boundLockWait(delivered, conn, bounded)
+	defer release()
+	if err != nil {
+		return fmt.Errorf("%w: %w", audit.ErrWriteFailed, err)
+	}
+	session := delivered.Session(&gorm.Session{NewDB: true, Context: ctx, Logger: tx.Logger})
+	session.Statement.ConnPool = conn
+	if err := create(session, r); err != nil {
+		return failed(err)
+	}
+	return nil
+}
+
+// openedRowWait bounds the wait of a row for a statement on a connection built
+// with Open: for a connection of the delivered pool, and for the delivered
+// database's write lock.
+//
+// An insert into the audit table that the delivered database takes at all takes
+// it in milliseconds. Waiting longer only helps when another writer holds the
+// delivered database for longer than this, and every second of it keeps the
+// statement's own transaction open on the other database; inside a transaction
+// on the delivered handle no amount of waiting ends it, because what the row
+// waits for is the caller's.
+const openedRowWait = time.Second
+
+// lockWaitMargin is how far past the bound the lock wait runs, so that a write
+// refused for the lock is refused once the bound has passed and is reported as
+// the wait it was.
+const lockWaitMargin = 50 * time.Millisecond
+
+// sqliteDialector is the name the SQLite engine's GORM dialector answers, which
+// is how a plugin holding nothing but a handle tells that engine apart.
+const sqliteDialector = "sqlite"
+
+// boundLockWait holds the wait for the delivered database's write lock on conn
+// to what remains of the bound, where the engine makes one connection's write
+// wait for another's, and returns what hands the connection back to the pool as
+// it was taken.
+//
+// SQLite waits for the lock inside the driver, for the busy timeout the
+// connection carries, and a context that ends meanwhile does not cut that wait
+// short; the connection's own busy timeout is therefore the only bound there
+// is, and it is set for this write and put back after it. A connection whose
+// busy timeout cannot be put back is discarded rather than handed on with this
+// write's bound. An engine without a database-wide write lock needs none of
+// this: its insert into the audit table waits for no other connection.
+func boundLockWait(delivered *gorm.DB, conn *sql.Conn, bounded context.Context) (func(), error) {
+	handBack := func() { _ = conn.Close() }
+	// Name is the dialector's, reached through the handle's configuration.
+	if delivered.Name() != sqliteDialector {
+		return handBack, nil
+	}
+	settle := context.WithoutCancel(bounded)
+	var taken int64
+	if err := conn.QueryRowContext(settle, "PRAGMA busy_timeout").Scan(&taken); err != nil {
+		return handBack, fmt.Errorf("reading the busy timeout of a connection of the delivered database: %w", err)
+	}
+	remaining := lockWaitMargin
+	if deadline, ok := bounded.Deadline(); ok {
+		remaining += max(time.Until(deadline), 0)
+	}
+	if _, err := conn.ExecContext(settle, fmt.Sprintf("PRAGMA busy_timeout = %d", remaining.Milliseconds())); err != nil {
+		return handBack, fmt.Errorf("bounding the lock wait of a connection of the delivered database: %w", err)
+	}
+	return func() {
+		if _, err := conn.ExecContext(settle, fmt.Sprintf("PRAGMA busy_timeout = %d", taken)); err != nil {
+			_ = conn.Raw(func(any) error { return driver.ErrBadConn })
+		}
+		_ = conn.Close()
+	}, nil
 }
 
 // targetTable is the table a statement writes to.

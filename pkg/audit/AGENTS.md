@@ -101,6 +101,21 @@ must not cross, and how to run it.
   with a guess made here — a process-wide list of running journals, or a probe
   for the table on each handle — hands one run's rows to another's table,
   because the plugin instance is shared by every registry in the process.
+- **A row that goes out on a connection of its own waits for the delivered
+  database only within a bound.** A caller holding a transaction on the
+  delivered handle holds that database's write lock — and, on a database held
+  to one connection, the connection itself — until after its own call returns,
+  so a row that waited for either without a bound would wait on the caller for
+  good. The bound is `openedRowWait` for a statement's row on a connection built
+  with `Open`, and `connectionWait` on taking a connection for the rows this
+  module writes itself. Nothing a row can see tells a caller's own hold from
+  another writer's brief one, which is why the wait is bounded rather than
+  recognised: a bound at zero fails such a write whenever anyone else is
+  writing, and no bound hangs. On SQLite the lock wait happens inside the
+  driver and an ending context does not cut it short, so `boundLockWait` sets
+  the busy timeout of the connection the row takes and puts it back afterwards;
+  a connection whose busy timeout cannot be put back is discarded, never handed
+  back to the pool carrying the row's bound.
 - **The event column is unique, and the event path's insert yields on it.** A
   broadcast bus hands every event to every replica, every replica writes into
   the one table, and the event's identifier is the same on every delivery, so
