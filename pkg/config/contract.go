@@ -37,7 +37,9 @@ type Format interface {
 	// Unmarshal decodes the data into a tree of string-keyed maps. A
 	// non-string key anywhere in the tree, which YAML permits, is an error:
 	// silently stringifying it would make 1 and "1" indistinguishable, and a
-	// numeric key is not a legal config key in the first place.
+	// numeric key is not a legal config key in the first place. So is a key
+	// given twice in one mapping: a map holds one of the two values, and the
+	// other would be a setting written and never read.
 	Unmarshal(data []byte) (map[string]any, error)
 }
 

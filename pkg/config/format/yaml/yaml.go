@@ -180,14 +180,27 @@ func (c *converter) value(node *yamlv3.Node) (any, error) {
 	return nil, nil
 }
 
-// mapping converts a mapping node, refusing every key that is not a string.
+// mapping converts a mapping node, refusing every key that is not a string and
+// every key given twice.
+//
+// The library refuses a repeated key when it decodes into a map, and the walk
+// over the document tree is what bypasses that check, so it is made here.
+// Keeping either value drops the other, and a second section under one key
+// drops every setting of the first that the second does not repeat.
 func (c *converter) mapping(node *yamlv3.Node) (map[string]any, error) {
 	out := make(map[string]any, len(node.Content)/2)
+	lines := make(map[string]int, len(node.Content)/2)
 	for i := 0; i+1 < len(node.Content); i += 2 {
 		key, err := stringKey(node.Content[i])
 		if err != nil {
 			return nil, err
 		}
+		if first, repeated := lines[key]; repeated {
+			return nil, fmt.Errorf("line %d: the key %q is given twice in one mapping, first at "+
+				"line %d. Only one of the two could take effect; give it once, with every "+
+				"setting it is meant to carry", node.Content[i].Line, key, first)
+		}
+		lines[key] = node.Content[i].Line
 		value, err := c.value(node.Content[i+1])
 		if err != nil {
 			return nil, err

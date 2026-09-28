@@ -10,8 +10,11 @@
 package json
 
 import (
+	"bytes"
 	stdjson "encoding/json"
+	"errors"
 	"fmt"
+	"io"
 
 	"github.com/vislake/speed/pkg/config"
 	"github.com/vislake/speed/pkg/core"
@@ -56,13 +59,32 @@ func (format) Name() string { return "json" }
 // parser nothing; numbers arrive as float64, which is what the conversion
 // layer expects of a source that cannot tell 1 from 1.0.
 //
+// An object that gives one key twice is refused. The standard library keeps
+// the last of them, so a second section under one key would drop every setting
+// of the first that it does not repeat, and nothing would say so. Data after
+// the document is refused for the same reason. The document is therefore read
+// token by token rather than decoded in one call, which is the one way the
+// standard library leaves the keys of an object in view.
+//
 // A document holding null is an empty configuration rather than a failure: a
 // source that carries no settings is a legal way to run, and the layers below
 // it decide the values.
 func (format) Unmarshal(data []byte) (map[string]any, error) {
-	var document any
-	if err := stdjson.Unmarshal(data, &document); err != nil {
+	w := &walker{data: data, dec: stdjson.NewDecoder(bytes.NewReader(data))}
+	document, err := w.value()
+	if err != nil {
+		if errors.Is(err, io.EOF) {
+			return nil, fmt.Errorf("the data holds no JSON value: %w", io.ErrUnexpectedEOF)
+		}
 		return nil, err
+	}
+	switch _, err := w.dec.Token(); {
+	case errors.Is(err, io.EOF):
+	case err != nil:
+		return nil, err
+	default:
+		return nil, fmt.Errorf("line %d: the data goes on after the document, and a config "+
+			"source is one JSON value", w.line())
 	}
 	switch top := document.(type) {
 	case map[string]any:
@@ -73,6 +95,82 @@ func (format) Unmarshal(data []byte) (map[string]any, error) {
 		return nil, fmt.Errorf("the document is %s at the top level, and a config source is a "+
 			"mapping of keys to values, written {\"cache\": {\"ttl\": \"5m\"}}", describe(document))
 	}
+}
+
+// walker reads one document off the decoder's token stream. The decoder holds
+// the syntax to the standard; the walker builds the tree and judges the keys.
+type walker struct {
+	data []byte
+	dec  *stdjson.Decoder
+}
+
+// value reads the value that starts at the next token.
+func (w *walker) value() (any, error) {
+	tok, err := w.dec.Token()
+	if err != nil {
+		return nil, err
+	}
+	switch tok {
+	case stdjson.Delim('{'):
+		return w.object()
+	case stdjson.Delim('['):
+		return w.array()
+	}
+	// A closing delimiter where a value belongs is a syntax error the
+	// decoder reports itself, so what arrives here is a scalar.
+	return tok, nil
+}
+
+// object reads the members of an object whose opening brace has been read,
+// refusing a key given twice.
+func (w *walker) object() (map[string]any, error) {
+	out := map[string]any{}
+	lines := map[string]int{}
+	for w.dec.More() {
+		tok, err := w.dec.Token()
+		if err != nil {
+			return nil, err
+		}
+		// Inside an object the decoder yields a key as a string or fails.
+		key, _ := tok.(string)
+		if first, repeated := lines[key]; repeated {
+			return nil, fmt.Errorf("line %d: the key %q is given twice in one object, first at "+
+				"line %d. Only one of the two could take effect; give it once, with every "+
+				"setting it is meant to carry", w.line(), key, first)
+		}
+		lines[key] = w.line()
+		value, err := w.value()
+		if err != nil {
+			return nil, err
+		}
+		out[key] = value
+	}
+	if _, err := w.dec.Token(); err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+// array reads the elements of an array whose opening bracket has been read.
+func (w *walker) array() ([]any, error) {
+	out := []any{}
+	for w.dec.More() {
+		value, err := w.value()
+		if err != nil {
+			return nil, err
+		}
+		out = append(out, value)
+	}
+	if _, err := w.dec.Token(); err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+// line is the line the decoder has read up to, counted from one, which is the
+// line of the token it returned last.
+func (w *walker) line() int {
+	return 1 + bytes.Count(w.data[:w.dec.InputOffset()], []byte("\n"))
 }
 
 // describe names what a value is in the words of the format, so the error says

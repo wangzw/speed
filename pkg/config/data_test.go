@@ -149,6 +149,43 @@ func TestKeyNotAcceptedFromPrimary(t *testing.T) {
 	}
 }
 
+// TestOnePathGivenTwiceIsRefused covers a primary source that writes the same
+// path once as a key holding the dots and once nested. Both spellings are
+// accepted, which is what makes the pair two values for one item: the read
+// takes one of them and drops the other, and nothing else says a written
+// setting had no effect. A section written both ways is not the same thing,
+// as long as the two spellings give different items in it.
+func TestOnePathGivenTwiceIsRefused(t *testing.T) {
+	for name, content := range map[string]map[string]any{
+		"scalar": {"cache.addr": "flat:1", "cache": map[string]any{"addr": "nested:1"}},
+		"container": {
+			"cache.labels": map[string]any{"tier": "cold"},
+			"cache":        map[string]any{"labels": map[string]any{"tier": "warm"}},
+		},
+	} {
+		t.Run(name, func(t *testing.T) {
+			err := givePrimary(t, cacheLoader(t, nil), content)
+			if !errors.Is(err, ErrMalformedConfig) {
+				t.Fatalf("one path written twice returned %v, want ErrMalformedConfig", err)
+			}
+			if !strings.Contains(err.Error(), "twice") {
+				t.Errorf("the rejection reads %q, which does not say the path is given twice", err)
+			}
+		})
+	}
+
+	l := cacheLoader(t, nil)
+	if err := givePrimary(t, l, map[string]any{
+		"cache.addr": "flat:1",
+		"cache":      map[string]any{"ttl": "1m"},
+	}); err != nil {
+		t.Fatalf("a section written both ways with different items in each returned %v", err)
+	}
+	if got := decodeCacheOptions(t, l); got.Addr != "flat:1" || got.TTL != time.Minute {
+		t.Errorf("the section decoded to addr %q and ttl %v, want both spellings' items", got.Addr, got.TTL)
+	}
+}
+
 // TestSectionGivenAValue covers the shape error the other way round: the path
 // is a section holding input items, and the source put a value on it.
 func TestSectionGivenAValue(t *testing.T) {

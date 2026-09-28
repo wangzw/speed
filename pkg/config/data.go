@@ -21,14 +21,25 @@ import (
 // Conversion is not done here. A value that does not fit its field is refused
 // where the target type is in hand, which is Decode; this pass answers only
 // whether the key is one this source may write.
+//
+// A path may be written as one key holding the dots, nested, or any mixture of
+// the two, and every spelling reaches the same item. Two spellings of one path
+// in one source are therefore two values for one item, and the read would take
+// one and drop the other, so the pair is refused here, where both are still in
+// view.
 func validatePrimary(m *manifest, content map[string]any) error {
-	return validatePrimarySection(m, "", content)
+	return validatePrimarySection(m, nil, content, make(map[string][]string))
 }
 
-func validatePrimarySection(m *manifest, prefix string, section map[string]any) error {
+// validatePrimarySection checks one section. written is the keys that lead to
+// it as the source wrote them, and given records the keys that reached each
+// declared path.
+func validatePrimarySection(m *manifest, written []string, section map[string]any, given map[string][]string) error {
+	prefix := strings.Join(written, ".")
 	for _, key := range slices.Sorted(maps.Keys(section)) {
 		path := joinPath(prefix, key)
 		raw := section[key]
+		spelled := append(slices.Clone(written), key)
 
 		if item, declared := m.byPath[path]; declared {
 			if !item.origins.has(OriginPrimary) {
@@ -37,6 +48,12 @@ func validatePrimarySection(m *manifest, prefix string, section map[string]any) 
 					"it through would swallow a value written on purpose",
 					ErrUnknownKey, path, item.module, originNames(item.origins))
 			}
+			if earlier, twice := given[path]; twice {
+				return fmt.Errorf("%w: the primary config source gives %q twice, once written as "+
+					"the keys %q and once as %q, and only one of the two could take effect. Give "+
+					"it once", ErrMalformedConfig, path, earlier, spelled)
+			}
+			given[path] = spelled
 			// The keys inside a container leaf are not in the manifest and do
 			// not take part in this check: the same fact decides that the
 			// value is replaced as a whole.
@@ -50,7 +67,7 @@ func validatePrimarySection(m *manifest, prefix string, section map[string]any) 
 					"section holding input items rather than an input item of its own",
 					ErrUnknownKey, path)
 			}
-			if err := validatePrimarySection(m, path, child); err != nil {
+			if err := validatePrimarySection(m, spelled, child, given); err != nil {
 				return err
 			}
 			continue

@@ -85,6 +85,60 @@ func TestNullDocumentIsEmpty(t *testing.T) {
 	}
 }
 
+// TestDuplicateKeyRejected covers an object that gives one key twice. The
+// standard library keeps the last one, so a second section under one key
+// drops every setting of the first that the second does not repeat, and those
+// fall back to their defaults with nothing said about it. A key written with
+// an escape is the same key as the one written plainly.
+func TestDuplicateKeyRejected(t *testing.T) {
+	for name, data := range map[string]string{
+		"section":   `{"app": {"level": "info", "port": 1}, "app": {"level": "debug"}}`,
+		"nested":    `{"app": {"level": "info", "level": "debug"}}`,
+		"escaped":   `{"level": "info", "level": "debug"}`,
+		"in a list": `{"endpoints": [{"addr": "a:1", "addr": "b:2"}]}`,
+	} {
+		t.Run(name, func(t *testing.T) {
+			got, err := parser(t).Unmarshal([]byte(data))
+			if err == nil {
+				t.Fatalf("Unmarshal() = %#v, want an error for a key given twice", got)
+			}
+			if !strings.Contains(err.Error(), "twice") {
+				t.Errorf("err = %v, want the text to say the key is given twice", err)
+			}
+		})
+	}
+}
+
+// TestTrailingDataRejected covers bytes after the document. A second value
+// after the first is one more place a setting can be written and never read.
+func TestTrailingDataRejected(t *testing.T) {
+	for _, data := range []string{`{"a": 1} {"a": 2}`, `{"a": 1} x`, `{"a": 1}]`} {
+		if got, err := parser(t).Unmarshal([]byte(data)); err == nil {
+			t.Errorf("Unmarshal(%s) = %#v, want an error for the data after the document", data, got)
+		}
+	}
+}
+
+// TestKeysAndValuesSurviveTheWalk pins the tree for the shapes a config file is
+// made of, so that the walk that detects duplicates hands on exactly what the
+// document says.
+func TestKeysAndValuesSurviveTheWalk(t *testing.T) {
+	got, err := parser(t).Unmarshal([]byte(`{"a": {"b": [1, "x", true, null, {"c": []}], "d": {}}, "e\"f": "g"}`))
+	if err != nil {
+		t.Fatalf("Unmarshal failed: %v", err)
+	}
+	want := map[string]any{
+		"a": map[string]any{
+			"b": []any{float64(1), "x", true, nil, map[string]any{"c": []any{}}},
+			"d": map[string]any{},
+		},
+		`e"f`: "g",
+	}
+	if !reflect.DeepEqual(got, want) {
+		t.Errorf("Unmarshal() = %#v, want %#v", got, want)
+	}
+}
+
 func TestMalformedDocumentRejected(t *testing.T) {
 	if _, err := parser(t).Unmarshal([]byte(`{"a": }`)); err == nil {
 		t.Fatal("Unmarshal() succeeded on malformed JSON, want an error")

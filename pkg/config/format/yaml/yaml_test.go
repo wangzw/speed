@@ -175,6 +175,31 @@ func TestMultipleDocumentsRejected(t *testing.T) {
 	}
 }
 
+// TestDuplicateKeyRejected covers a mapping that gives one key twice. Keeping
+// either value drops the other, and a second section under one key drops every
+// setting of the first that the second does not repeat, which then falls back
+// to its default with nothing said about it. The same key written once plainly
+// and once quoted, or once through an alias, is still the same key.
+func TestDuplicateKeyRejected(t *testing.T) {
+	for name, data := range map[string]string{
+		"section":   "app:\n  level: info\n  port: 1\napp:\n  level: debug\n",
+		"nested":    "app:\n  level: info\n  level: debug\n",
+		"quoted":    "level: info\n\"level\": debug\n",
+		"aliased":   "name: &k level\nsection:\n  level: info\n  *k : debug\n",
+		"in a list": "endpoints:\n  - addr: a:1\n    addr: b:2\n",
+	} {
+		t.Run(name, func(t *testing.T) {
+			got, err := parser(t).Unmarshal([]byte(data))
+			if err == nil {
+				t.Fatalf("Unmarshal() = %#v, want an error for a key given twice", got)
+			}
+			if !strings.Contains(err.Error(), "twice") {
+				t.Errorf("err = %v, want the text to say the key is given twice", err)
+			}
+		})
+	}
+}
+
 // TestEmptyDocumentIsEmptyMapping fixes the reading that a source carrying
 // nothing is a legal run rather than a failure.
 func TestEmptyDocumentIsEmptyMapping(t *testing.T) {

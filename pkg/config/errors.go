@@ -25,7 +25,10 @@ var (
 	// ErrSourceUnavailable reports a Fetch failure: the file is missing, the
 	// remote is unreachable, the permissions are insufficient.
 	ErrSourceUnavailable = errors.New("config: primary source could not be read")
-	// ErrMalformedConfig reports data the selected format could not parse.
+	// ErrMalformedConfig reports data the selected format could not parse,
+	// and data that parses but gives one path twice, as a key repeated in one
+	// mapping or as the same path written both flat and nested: only one of
+	// the two values could take effect.
 	ErrMalformedConfig = errors.New("config: primary source could not be parsed")
 	// ErrConfigConflict reports a conflict between two declarations, found
 	// while the manifest was collected.
