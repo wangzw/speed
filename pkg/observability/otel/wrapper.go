@@ -20,8 +20,9 @@ import (
 // would have to be kept in step by hand, and a method left out of it is a
 // silent behaviour change rather than a compile error.
 //
-// Only the export call is intercepted, because only it can fail in a way an
-// operator needs to hear about once.
+// Two calls are intercepted. The export call, because only it can fail in a way
+// an operator needs to hear about once. And Shutdown, because the release of the
+// backend is the assembler's to make rather than the provider's: see Shutdown.
 type spanExporter struct {
 	sdktrace.SpanExporter
 	note *notifier
@@ -33,6 +34,18 @@ func (w *spanExporter) ExportSpans(ctx context.Context, spans []sdktrace.ReadOnl
 	w.note.note(err)
 	return err
 }
+
+// Shutdown is where the tracer provider's processor releases the exporter it
+// holds, and it does not reach the backend.
+//
+// A backend hands one product for both capabilities, and that product has one
+// Shutdown that releases both of its exporters. Forwarded here, the tracer
+// provider's shutdown would release the backend's metric exporter as well,
+// before the meter provider made its final collection — the metrics recorded
+// since the last interval would then be exported into an exporter that is
+// already gone, and lost. The assembler releases every exporter it collected
+// itself, once both providers have flushed through them (releaseExporters).
+func (w *spanExporter) Shutdown(context.Context) error { return nil }
 
 // metricExporter wraps one backend's metric exporter on the same terms.
 //
@@ -51,6 +64,11 @@ func (w *metricExporter) Export(ctx context.Context, rm *metricdata.ResourceMetr
 	w.note.note(err)
 	return err
 }
+
+// Shutdown is where the meter provider's reader releases the exporter it holds,
+// and it does not reach the backend, for the reason the span side gives: the
+// release is the assembler's, made once both providers have flushed.
+func (w *metricExporter) Shutdown(context.Context) error { return nil }
 
 // notifier writes the two log lines an export failure is worth.
 //

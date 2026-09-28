@@ -472,8 +472,22 @@ func (f *fixture) start(t *testing.T) *running {
 		t.Fatalf("starting the host: %v", err)
 	}
 
+	read := func() string {
+		mu.Lock()
+		defer mu.Unlock()
+		return written.String()
+	}
+
+	// exited is what Wait returned, written before stopped is closed and read
+	// only after it is.
+	var exited error
 	stopped := make(chan struct{})
 	var once sync.Once
+	// stop interrupts the run and asserts that it left the way a graceful stop
+	// is supposed to: on its own, within the wait limit, with a zero exit
+	// status. A run that hangs past the limit is killed and reported, and a run
+	// whose release failed exits non-zero, which is the only place a Close that
+	// returned an error is visible from outside the process.
 	stop := func() {
 		once.Do(func() {
 			_ = cmd.Process.Signal(os.Interrupt)
@@ -482,20 +496,21 @@ func (f *fixture) start(t *testing.T) *running {
 			case <-time.After(waitLimit):
 				_ = cmd.Process.Kill()
 				<-stopped
+				t.Errorf("the host did not leave within %v of an interrupt and was killed; it wrote:\n%s",
+					waitLimit, read())
+				return
+			}
+			if exited != nil {
+				t.Errorf("the host did not stop cleanly after an interrupt: %v; it wrote:\n%s", exited, read())
 			}
 		})
 	}
 	go func() {
-		_ = cmd.Wait()
+		exited = cmd.Wait()
 		close(stopped)
 	}()
 	t.Cleanup(stop)
 
-	read := func() string {
-		mu.Lock()
-		defer mu.Unlock()
-		return written.String()
-	}
 	waitUntilReady(t, read)
 	return &running{public: "http://" + f.public, ops: "http://" + f.ops, output: read, stop: stop}
 }

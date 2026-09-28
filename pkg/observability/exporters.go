@@ -32,10 +32,16 @@ type Exporters struct {
 
 	// Shutdown is declared by both exporter interfaces and therefore exists
 	// once here, while there are two exporters to release. It releases both,
-	// and the second call finds the work already done: the providers the
-	// assembler built each shut their exporter down, so this value is asked
-	// twice for what is one shutdown. Releasing an exporter twice is not
-	// something the upstream promises anything about.
+	// and the second call finds the work already done: the assembler collects
+	// this one value under both capabilities and releases everything it
+	// collected, so the value is asked twice for what is one shutdown.
+	// Releasing an exporter twice is not something the upstream promises
+	// anything about.
+	//
+	// Releasing both halves on one call is also why the providers never make
+	// that call themselves: the first provider to shut down would release the
+	// other provider's exporter ahead of its final export. The assembler holds
+	// their calls back and releases this value once both have flushed.
 	once sync.Once
 	err  error
 }

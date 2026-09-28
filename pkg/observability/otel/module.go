@@ -144,7 +144,12 @@ func (p *providers) distinct(list string, names []string) []string {
 	return kept
 }
 
-// shutdown flushes both providers and releases them.
+// shutdown flushes both providers, releases them, and then releases the
+// exporters they flushed through.
+//
+// The exporters come last because a backend's product serves both providers
+// with one Shutdown: releasing it between the two would leave the second
+// provider's final export with nowhere to go. See releaseExporters.
 //
 // The bound comes from configuration because a Close callback receives a
 // context with its cancellation stripped, and it must be bounded because the
@@ -168,6 +173,9 @@ func shutdown(ctx context.Context, _ *core.Registry, instance any) error {
 		errs = append(errs, err)
 	}
 	if err := p.mp.Shutdown(ctx); err != nil {
+		errs = append(errs, err)
+	}
+	if err := releaseExporters(ctx, p.exporters); err != nil {
 		errs = append(errs, err)
 	}
 	return errors.Join(errs...)

@@ -125,8 +125,8 @@ func TestTheNotifierWritesTheFirstFailureAndTheRecovery(t *testing.T) {
 // TestTheWrapperForwardsEverythingItDoesNotIntercept is the case that keeps the
 // embedding honest. The metric interface carries the temporality and the
 // aggregation the backend asked for, and a wrapper that answered those itself
-// would change how the data is shaped without anyone asking it to; the
-// lifecycle methods are what releases the backend and flushes it.
+// would change how the data is shaped without anyone asking it to; the flush is
+// what pushes the backend's own buffer out.
 func TestTheWrapperForwardsEverythingItDoesNotIntercept(t *testing.T) {
 	ctx := context.Background()
 	inner := &stubMetricExporter{
@@ -148,9 +148,6 @@ func TestTheWrapperForwardsEverythingItDoesNotIntercept(t *testing.T) {
 	if err := w.ForceFlush(ctx); err != nil {
 		t.Fatalf("ForceFlush: %v", err)
 	}
-	if err := w.Shutdown(ctx); err != nil {
-		t.Fatalf("Shutdown: %v", err)
-	}
 	inner.mu.Lock()
 	defer inner.mu.Unlock()
 	if inner.exports != 1 {
@@ -159,31 +156,33 @@ func TestTheWrapperForwardsEverythingItDoesNotIntercept(t *testing.T) {
 	if inner.flushes != 1 {
 		t.Errorf("the backend saw %d flushes, want 1", inner.flushes)
 	}
-	if inner.shutdowns != 1 {
-		t.Errorf("the backend saw %d shutdowns, want 1: a wrapper that swallowed this would leave the "+
-			"exporter's own buffer unflushed at Close", inner.shutdowns)
-	}
 }
 
-// TestTheSpanWrapperForwardsShutdown pins the trace-side half of the same
-// obligation.
-func TestTheSpanWrapperForwardsShutdown(t *testing.T) {
-	flaky := &flakySpanExporter{}
-	lg, _ := logBuffer()
-	w := &spanExporter{SpanExporter: flaky, note: &notifier{lg: lg}}
+// TestTheWrappersHoldTheProvidersShutdownBack pins the one lifecycle call the
+// wrappers do not forward. A provider shuts down the exporter it holds as the
+// last step of its own shutdown, and a backend's product releases both of its
+// exporters on that one call: forwarded, the first provider to shut down would
+// release the second provider's exporter ahead of its final export. The release
+// is the assembler's, made after both providers are done, and the case for it is
+// TestCloseDeliversTheLastBatchOfBothSignals.
+func TestTheWrappersHoldTheProvidersShutdownBack(t *testing.T) {
 	ctx := context.Background()
-	if err := w.ExportSpans(ctx, nil); err != nil {
-		t.Fatalf("ExportSpans: %v", err)
+	lg, _ := logBuffer()
+	spans := &flakySpanExporter{}
+	metrics := &stubMetricExporter{}
+
+	if err := (&spanExporter{SpanExporter: spans, note: &notifier{lg: lg}}).Shutdown(ctx); err != nil {
+		t.Fatalf("the span wrapper's Shutdown: %v", err)
 	}
-	if err := w.Shutdown(ctx); err != nil {
-		t.Fatalf("Shutdown: %v", err)
+	if err := (&metricExporter{Exporter: metrics, note: &notifier{lg: lg}}).Shutdown(ctx); err != nil {
+		t.Fatalf("the metric wrapper's Shutdown: %v", err)
 	}
-	flaky.mu.Lock()
-	defer flaky.mu.Unlock()
-	if flaky.exportCalls != 1 {
-		t.Errorf("the backend saw %d exports, want 1", flaky.exportCalls)
-	}
-	if flaky.shutdowns != 1 {
-		t.Errorf("the backend saw %d shutdowns, want 1", flaky.shutdowns)
+	spans.mu.Lock()
+	defer spans.mu.Unlock()
+	metrics.mu.Lock()
+	defer metrics.mu.Unlock()
+	if spans.shutdowns != 0 || metrics.shutdowns != 0 {
+		t.Errorf("a provider's shutdown reached the backend (%d span, %d metric), want neither: the "+
+			"backend is released by the assembler once both providers have flushed", spans.shutdowns, metrics.shutdowns)
 	}
 }

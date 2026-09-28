@@ -46,9 +46,14 @@ must not cross, and how to run it.
   which is a slower way to learn it.
 - **One module delivers both exporter capabilities, so one product satisfies
   both.** The consequence is that `Shutdown` — declared by both interfaces and
-  therefore present once — releases both exporters and must do so once; two
-  providers call it, and an exporter released twice is not something the
-  upstream promises anything about.
+  therefore present once — releases both exporters and must do so once; the
+  assembler collects the product under both capabilities and asks it twice, and
+  an exporter released twice is not something the upstream promises anything
+  about. Because one call releases both halves, no provider may make it: the
+  first provider to shut down would release the other's exporter ahead of that
+  provider's final export. The forwarding wrappers hold the providers' calls
+  back, and the assembler releases every collected exporter after both
+  providers have flushed (`releaseExporters`).
 - **The providers are never installed into the library's global state.** The
   global is a process-level singleton that the second assembly in one process
   overwrites, and architecture invariant 9 rules out handing instances around
@@ -122,9 +127,9 @@ must not cross, and how to run it.
 - **A new export backend is a subpackage that delivers both exporter
   capabilities, non-exclusively.** The assembler collects exporters through the
   registry and knows no destination, so adding one is adding a module and naming
-  it on the command tree. It also releases what it built through the providers:
-  a backend has no `Close` callback of its own, and giving it one would shut the
-  same exporter down twice.
+  it on the command tree. What it built is released by the assembler: a backend
+  has no `Close` callback of its own, and giving it one would shut the same
+  exporter down twice, possibly ahead of the final export.
 - **A backend returns `observability.Exporters` from its `New`.** That type is
   where the two exporters become one product, and it lives in the interface
   package rather than in each backend because two copies is how the two would

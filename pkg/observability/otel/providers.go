@@ -2,6 +2,7 @@ package otel
 
 import (
 	"context"
+	"errors"
 	"log/slog"
 
 	"go.opentelemetry.io/otel/attribute"
@@ -47,6 +48,9 @@ type providers struct {
 
 	tp *sdktrace.TracerProvider
 	mp *sdkmetric.MeterProvider
+	// exporters are the backends' exporters as collected, unwrapped, which
+	// Close releases once both providers have flushed through them.
+	exporters []releasable
 	// lg is the logger this module was given, held for the lines the wiring
 	// stage writes about a configuration that names the same thing twice.
 	lg *slog.Logger
@@ -83,6 +87,13 @@ func newProviders(ctx context.Context, reg *core.Registry) (any, error) {
 
 	spanExporters := core.ResolveAll[observability.SpanExporter](reg)
 	metricExporters := core.ResolveAll[observability.MetricExporter](reg)
+	exporters := make([]releasable, 0, len(spanExporters)+len(metricExporters))
+	for _, e := range spanExporters {
+		exporters = append(exporters, e)
+	}
+	for _, e := range metricExporters {
+		exporters = append(exporters, e)
+	}
 
 	res := resource.NewSchemaless(serviceNameKey.String(cfg.ServiceName))
 
@@ -131,9 +142,11 @@ func newProviders(ctx context.Context, reg *core.Registry) (any, error) {
 	mp := sdkmetric.NewMeterProvider(metricOpts...)
 	duration, err := newRequestDuration(mp)
 	if err != nil {
-		// The meter provider is running its readers, and nothing holds it: this
-		// failure returns from New, so no provider exists to shut it down later.
+		// The meter provider is running its readers, and nothing holds it or
+		// the exporters: this failure returns from New, so no product exists
+		// for Close to release them through.
 		_ = mp.Shutdown(ctx)
+		_ = releaseExporters(ctx, exporters)
 		return nil, err
 	}
 	tp := sdktrace.NewTracerProvider(traceOpts...)
@@ -143,6 +156,7 @@ func newProviders(ctx context.Context, reg *core.Registry) (any, error) {
 		MeterProvider:  mp,
 		tp:             tp,
 		mp:             mp,
+		exporters:      exporters,
 		lg:             lg,
 		duration:       duration,
 	}, nil
@@ -160,4 +174,32 @@ func queueSize(configured, upstreamDefault int) int {
 		return upstreamDefault
 	}
 	return configured
+}
+
+// releasable is the one method both exporter interfaces share, and the one the
+// assembler calls on every exporter it collected.
+type releasable interface {
+	Shutdown(ctx context.Context) error
+}
+
+// releaseExporters shuts down every exporter the assembler collected, after the
+// providers have made their final export through them.
+//
+// The release is here rather than in the providers because a backend's product
+// is collected under both capabilities and has one Shutdown for both: a
+// provider releasing it would release the other provider's exporter too, ahead
+// of that provider's final export. The wrappers therefore hold the providers'
+// shutdown calls back, and this runs after both providers are shut down.
+//
+// A product collected under both capabilities appears here twice. An
+// observability.Exporters value releases its pair once and answers the second
+// call with the result of the first, which is what the backends hand over.
+func releaseExporters(ctx context.Context, exporters []releasable) error {
+	var errs []error
+	for _, e := range exporters {
+		if err := e.Shutdown(ctx); err != nil {
+			errs = append(errs, err)
+		}
+	}
+	return errors.Join(errs...)
 }

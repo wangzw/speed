@@ -36,7 +36,7 @@
 | 导出后端 | export backend | 交付一个导出器的模块，把信号交给一种目的地（`observability.otlp`、`observability.stdout`）。 |
 | 导出器 | exporter | 上游 SDK 的导出接口的一个实现，由导出后端在 `New` 中构造并交出。 |
 | 采集层 | instrumentation layer | 装配器登记到监听端上的那个中间件层：提取、开始跨度、绑定关联字段、结束跨度。 |
-| 转发包装 | forwarding wrapper | 装配器套在导出器外的装饰器：逐方法转发到内层，并在导出失败时写日志行。 |
+| 转发包装 | forwarding wrapper | 装配器套在导出器外的装饰器：除关闭之外逐方法转发到内层，并在导出失败时写日志行。 |
 
 ## 外部接口契约
 
@@ -67,7 +67,7 @@ type Exporters struct {
 }
 ```
 
-`Exporters` 由接口包提供，因为它组合的正是接口包自己定义的那两个接口，而写一个新的导出后端的人要先有它。两个导出接口各自声明一个 `Shutdown`，合到一个产物上就只有一次：它一次释放两个导出器，而装配器建的两个 provider 各自会调它一次——第二次是空操作，上游没有对「同一个导出器被释放两次」承诺过任何事。它在接口包而不在 `pkg/internal/`：共享单元装的是第三方客户端与测试夹具，它两者都不是。
+`Exporters` 由接口包提供，因为它组合的正是接口包自己定义的那两个接口，而写一个新的导出后端的人要先有它。两个导出接口各自声明一个 `Shutdown`，合到一个产物上就只有一次：它一次释放两个导出器。装配器在两种功能下各收到这个产物一次，关停时对收到的每一个导出器各调一次关闭——第二次是空操作，上游没有对「同一个导出器被释放两次」承诺过任何事。一次关闭释放两半，也决定了这次调用不能交给 provider 去做，见[关停时的刷出](#关停时的刷出)。它在接口包而不在 `pkg/internal/`：共享单元装的是第三方客户端与测试夹具，它两者都不是。
 
 接口包暴露的上游类型限于上表所列的别名。**这是本模块唯一被允许引入第三方类型的位置**：别名必须写出被别名的包，因而根包的依赖闭包含上游的追踪 API、指标 API 与 SDK 导出接口所在的包。SDK 导出接口上接口面的理由与 API 侧相同——本模块就是那个库的封装，导出器是本模块的扩展点，另造一层等价抽象只会让后端实现方在两套类型之间来回转换（[ADR-observability-library-2026-09-22](../../adr/adr-observability-library-2026-09-22.md)）。
 
@@ -281,7 +281,7 @@ type Config struct {
 
 包装必须先于 provider 构造：provider 在构造时持有导出器，构造之后再包一层，那一层不在导出路径上，转发包装的日志行永远不会写。第 2 步与第 3 步之间没有次序要求。
 
-**转发包装以内嵌的方式转发到内层。** 包装内嵌导出器接口，它的每一个方法——包括与导出数据无关的那些：指标的时间性、聚合选择、强制刷出、两者的关闭——都原样传到内层。手写的转发要维护一份与上游接口对齐的清单：漏掉一个，指标的时间性与聚合会静默回到上游默认值，而关闭漏转发会让末批数据在停机时丢失（[ADR-observability-anchor-2026-09-22](../../adr/adr-observability-anchor-2026-09-22.md)）；上游在这两个接口上新增方法时，那份清单还要跟着改。内嵌没有这份清单可漏。
+**转发包装以内嵌的方式转发到内层，只截下两个调用。** 包装内嵌导出器接口，导出与关闭之外的每一个方法——包括与导出数据无关的那些：指标的时间性、聚合选择、强制刷出——都原样传到内层。手写的转发要维护一份与上游接口对齐的清单：漏掉一个，指标的时间性与聚合会静默回到上游默认值；上游在这两个接口上新增方法时，那份清单还要跟着改。内嵌没有这份清单可漏。截下的一个是导出调用，为的是下面那两行日志；另一个是关闭调用：provider 关停时对它持有的导出器发出的关闭不传到后端，后端由装配器在两个 provider 都关停之后释放，理由见[关停时的刷出](#关停时的刷出)。
 
 转发包装在导出调用返回错误时写日志行：**连续失败的首次**写一行，恢复之后再写一行，中间的重复失败不再写。状态是该包装自己持有的一个标志，受一把互斥量保护。写出的行经 `New` 中持有的 logger 进配置的目的地。
 
@@ -332,11 +332,13 @@ type Config struct {
 
 ### 关停时的刷出
 
-`Stop` 无动作。`Close` 以 `shutdown-timeout` 为上界，依次关停追踪 provider 与指标 provider：关停会先把批处理器与读数器里的在途数据刷出，再释放资源。超时则切断在途导出，剩余记录丢失且不产生信号。
+`Stop` 无动作。`Close` 以 `shutdown-timeout` 为上界，依次关停追踪 provider 与指标 provider，再逐个释放收到的导出器：关停一个 provider 会先把批处理器与读数器里的在途数据刷出——读数器在关停时做最后一次收集并导出——再释放 provider 自己的资源。超时则切断在途导出，剩余记录丢失且不产生信号。
+
+**导出器的释放不交给 provider。** 上游的批处理器与读数器在自己关停的最后一步关闭它持有的导出器；而一个导出后端的两个导出器合在一个产物上、共用一次关闭（见[外部接口契约](#外部接口契约)），先关停的那个 provider 会连带释放另一个 provider 的导出器，后者最后一次导出便落进一个已经关闭的导出器：自上一个导出周期以来的指标全部丢失，`Close` 以错误返回，宿主的每一次正常停机都以非零状态退出。转发包装因而截下 provider 发出的关闭，装配器在两个 provider 都关停之后才逐个释放导出器，两个 provider 的关停先后与末批数据是否送达从此无关。
 
 上界只能来自配置：`Stop` 与 `Close` 收到的上下文已被剥掉取消（见 [core](design-core.md) 的阶段一节），排空的界在上下文里表达不出来；而注册表不对停机施加超时。
 
-**这一份上界由两个 provider 与它们各自的导出器共用，先到先得。** 装配器的 `Close` 在同一个截止时刻下依次关停两个 provider，而每个 provider 里的导出器又共用它那一次的窗口：一个目的地刷得慢，就把其余几个的排空窗口一起用光，它们拿到的是一个已经过期的上下文，末批数据被立刻取消。这是「以 `shutdown-timeout` 为上界」的直接后果，配置改不动它——把它调长只延长总预算，不改变谁先到。
+**这一份上界由两个 provider 与它们各自的导出器共用，先到先得。** 装配器的 `Close` 在同一个截止时刻下依次关停两个 provider、再释放导出器，而每个 provider 里的导出器又共用它那一次的窗口：一个目的地刷得慢，就把其余几个的排空窗口一起用光，它们拿到的是一个已经过期的上下文，末批数据被立刻取消。这是「以 `shutdown-timeout` 为上界」的直接后果，配置改不动它——把它调长只延长总预算，不改变谁先到。
 
 `Close` 必须在从未执行过 `Init` 或 `Start` 的实例上可用，也必须自身有界——回滚路径会在这样的实例上调用它。
 
@@ -349,7 +351,7 @@ type Config struct {
 | `Init`、`Start`、`Serve`、`Stop` | 无动作 |
 | `Close` | 无动作 |
 
-**`Close` 无动作是因为导出器的生命周期归 provider**：provider 在关停时回调它持有的导出器的关闭方法。导出后端交出导出器之后不再持有它，重复关停会与 provider 的那一次相撞。**接受的代价**：装配在收取导出器之后、provider 构造之前失败时，没有任何一方关闭它们。导出器是无状态的客户端，代价止于一次未被释放的连接。
+**`Close` 无动作是因为导出器的生命周期归装配器**：装配器在两个 provider 都刷出之后释放它收到的每一个导出器（见[关停时的刷出](#关停时的刷出)）。导出后端交出导出器之后不再持有它，自己再关一次会与装配器的那一次相撞，还可能落在最后一次导出之前。**接受的代价**：装配在导出后端构造之后、装配器收取导出器之前失败时，没有任何一方关闭它们。导出器是无状态的客户端，代价止于一次未被释放的连接。
 
 **探测落在 `New` 而不是 `Prepare`。** `Prepare` 对本次命令纳入的每个模块执行，包括那些只取表态、不构造任何东西的浅深度命令；把一次网络往返放进去，会让一条只打印版本、不装配运行时的命令也去拨那个端点，端点暂时不可达就使它失败。`New` 只在真正构造时执行，探测因而跟着「这次运行确实要用它」走。探测的界由 `probe-timeout` 给出。
 
@@ -434,8 +436,8 @@ type Config struct {
 | 接口包的类型别名与字段名常量 | 已实现 | `pkg/observability/observability.go` `TracerProvider`、`MeterProvider`、`SpanExporter`、`MetricExporter`、`TraceIDKey`、`SpanIDKey` |
 | 传播器与出站注入工具 | 已实现 | `pkg/observability/observability.go` `Propagator`、`pkg/observability/transport.go` `Transport` |
 | 装配器的描述符与各阶段行为 | 已实现 | `pkg/observability/otel/module.go` `Module`、`prepare`、`wire`、`shutdown` |
-| provider 的构造 | 已实现 | `pkg/observability/otel/providers.go` `newProviders`、`queueSize` |
-| 转发包装与导出失败的上报 | 已实现 | `pkg/observability/otel/wrapper.go` `spanExporter`、`metricExporter`、`notifier` |
+| provider 的构造与导出器的释放 | 已实现 | `pkg/observability/otel/providers.go` `newProviders`、`queueSize`、`releaseExporters` |
+| 转发包装、导出失败的上报与关闭的截留 | 已实现 | `pkg/observability/otel/wrapper.go` `spanExporter`、`metricExporter`、`notifier` |
 | 请求路径的采集层 | 已实现 | `pkg/observability/otel/layer.go` `instrument`、`recorder` |
 | 请求时长的计量 | 已实现 | `pkg/observability/otel/layer.go` `newRequestDuration` |
 | 事件订阅 | 已实现 | `pkg/observability/otel/events.go` `spanFor` |

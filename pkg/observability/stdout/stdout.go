@@ -49,10 +49,10 @@ func Module() core.Module {
 		}},
 		Prepare: prepare,
 		New:     newExporters,
-		// No Close: what this module hands over is driven and released by the
-		// providers the assembler built, which shut their exporters down when
-		// they are shut down. Releasing it here as well would be a second
-		// shutdown of the same value.
+		// No Close: what this module hands over is driven by the providers the
+		// assembler built and released by the assembler once both providers
+		// have flushed. Releasing it here as well would be a second shutdown of
+		// the same value, and one that could land ahead of the final export.
 	}
 }
 

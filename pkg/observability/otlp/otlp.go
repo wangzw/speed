@@ -126,8 +126,8 @@ func Module() core.Module {
 		}},
 		Prepare: prepare,
 		New:     newExporters,
-		// No Close: the providers the assembler built drive these exporters and
-		// shut them down with themselves.
+		// No Close: the providers the assembler built drive these exporters,
+		// and the assembler releases them once both providers have flushed.
 	}
 }
 
