@@ -44,6 +44,10 @@ type listener struct {
 	// apart from an accept loop that died by itself.
 	stopping bool
 
+	// draining is closed when stop closes the socket. Every request context
+	// the server creates carries it, and Draining hands it to a handler.
+	draining chan struct{}
+
 	// drained is closed when the background drain has finished, and drainErr
 	// holds what it came back with. close waits on the channel rather than
 	// draining itself, because the drain starts in stop.
@@ -110,6 +114,7 @@ func (l *listener) start(s endpointSettings, h nethttp.Handler, logger *slog.Log
 		})
 	}
 
+	draining := make(chan struct{})
 	server := &nethttp.Server{
 		Addr:              s.address,
 		Handler:           l.track(h),
@@ -117,6 +122,12 @@ func (l *listener) start(s endpointSettings, h nethttp.Handler, logger *slog.Log
 		ReadTimeout:       s.readTimeout,
 		WriteTimeout:      s.writeTimeout,
 		IdleTimeout:       s.idleTimeout,
+		// Every request context descends from this one, which is how the
+		// draining signal reaches a handler without a layer of its own on the
+		// chain.
+		BaseContext: func(net.Listener) context.Context {
+			return withDraining(context.Background(), draining)
+		},
 		// What net/http writes for itself goes to this module's logger rather
 		// than to the process default: a panic outside the request path — in
 		// the base layer, or in the protocol implementation — and its own
@@ -140,6 +151,7 @@ func (l *listener) start(s endpointSettings, h nethttp.Handler, logger *slog.Log
 	l.socket = socket
 	l.bound = true
 	l.accepting = true
+	l.draining = draining
 	l.drained = make(chan struct{})
 	l.logger = logger
 	l.mu.Unlock()
@@ -191,10 +203,14 @@ func (l *listener) stop(ctx context.Context) error {
 	l.stopping = true
 	l.accepting = false
 	name, server, socket := l.name, l.server, l.socket
-	drained, timeout := l.drained, l.drainTimeout
+	draining, drained, timeout := l.draining, l.drained, l.drainTimeout
 	l.mu.Unlock()
 
 	closeErr := socket.Close()
+	// The signal goes out once the socket is closed, so a handler that ends
+	// its response on it cannot be followed by a request the endpoint still
+	// accepted.
+	close(draining)
 	go l.drain(ctx, server, drained, timeout)
 	if closeErr != nil {
 		return fmt.Errorf("http: endpoint %q could not close its listening socket: %w", name, closeErr)

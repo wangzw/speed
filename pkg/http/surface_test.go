@@ -31,6 +31,7 @@ var exportedSurface = []string{
 	"field Spec.Document",
 	"field Spec.Endpoint",
 	"func Decode",
+	"func Draining",
 	"func Module",
 	"func StatusFor",
 	"func WriteJSON",

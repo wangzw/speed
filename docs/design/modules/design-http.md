@@ -7,7 +7,7 @@
 - 按各中间件声明的约束与数值组装每个监听端的链。
 - 接住各登记层与 handler 抛出的 panic，收口一次响应并记一行日志（[ADR-http-recovery-2026-09-22](../../adr/adr-http-recovery-2026-09-22.md)）。
 - 建立请求上下文，把日志模块的 logger 注入其中，供链上各层与 handler 取用。
-- 停机时由 `Stop` 关闭各端的监听器，并等在途请求排空结束才返回（[ADR-http-shutdown-2026-09-14](../../adr/adr-http-shutdown-2026-09-14.md)）。
+- 停机时由 `Stop` 关闭各端的监听器，并等在途请求排空结束才返回（[ADR-http-shutdown-2026-09-14](../../adr/adr-http-shutdown-2026-09-14.md)）；排空开始时向不会自行结束的响应发出信号。
 - 报告各监听端是否仍在接受请求。
 - 定义资源类型 `Spec`，供模块声明自己的 OpenAPI 文档片段，并在启动时校验其形状。
 - 提供请求体解码、校验与 JSON 响应的工具，供 handler 取用。
@@ -201,6 +201,15 @@ func StatusFor(err error) int
 **工具只返回错误，不写错误响应。** 响应体的形状归提供该 API 的模块，`StatusFor` 给出的是状态码而非响应体，工具因而不定义任何错误响应的结构。兜底层写出的那次响应不由工具产生，也不构成对任何 API 响应形状的定义。
 
 请求体的大小不由 `Decode` 限制：该端配置的上限由链最外层施加，对该端的每个 handler 一律生效，包括不用 `Decode` 的那些。
+
+**排空信号**。不会自行结束的响应——服务端事件流、长轮询、被接管去跑别的协议的连接——要知道停机已经开始，才能自己收尾：
+
+```go
+// Draining 返回一个通道：ctx 所属请求的那个监听端停止接受请求、开始排空时，它被关闭。
+func Draining(ctx context.Context) <-chan struct{}
+```
+
+**排空不取消在途请求的 context**：普通请求要能对着一个完整的系统走完，取消它的 context 会让它中途失败。只看自己 context 的长连接 handler 因而得不到任何通知，一直跑到排空时限把它切断，停机随之报排空超时；这个信号与请求的 context 分开，正是为此。它由监听端的服务器放进每个请求的上下文，不经登记面，也不占链上的位置。**不是派生自请求上下文的 context 取不到它**，返回 `nil`，一个永远不会就绪的通道。
 
 **兜底层写出的响应形状由一个可选接缝决定。** 它是一个功能接口，本模块对它声明可选依赖，取法与 `Logger` 同形：
 
@@ -407,7 +416,7 @@ stateDiagram-v2
 
 **构造在本模块之后的模块不在这条保证之内。** 停机按构造逆序推进，那些模块先于本模块收到 `Stop`，那时本模块仍在接受请求；`Close` 则一律落在排空之后。这一段的先后由注册表给出，本模块改变不了：这类模块的 `Stop` 里只宜停下不影响在途请求的工作，例如后台刷新。察觉：读注册表给出的构造序。
 
-**被接管的连接同样算在途。** handler 接管连接之后（WebSocket 一类的协议升级即是如此），协议层不再跟踪那条连接，它的关停既不等它、也切不断它。本模块另按 handler 的调用计数等待：一次请求在它的 handler 返回之前都算在途，排空要等计数归零，以同一个排空时限为界，到期未归零同样是排空超时。**接受的代价**：时限到期时被接管的连接切不断，它归 handler 所有，本模块手里没有它；handler 把连接交给自己另起的协程后即返回的，那些协程不在排空的覆盖之内。
+**被接管的连接同样算在途。** handler 接管连接之后（WebSocket 一类的协议升级即是如此），协议层不再跟踪那条连接，它的关停既不等它、也切不断它。本模块另按 handler 的调用计数等待：一次请求在它的 handler 返回之前都算在途，排空要等计数归零，以同一个排空时限为界，到期未归零同样是排空超时。这类连接与流式响应一样不会自行结束，它们的 handler 在 `Draining` 关闭时收尾，排空才能在时限之内走完（见外部接口契约）。**接受的代价**：时限到期时被接管的连接切不断，它归 handler 所有，本模块手里没有它；handler 把连接交给自己另起的协程后即返回的，那些协程不在排空的覆盖之内。
 
 `Stop` 先关闭全部端的监听器，再逐端等待，各端的排空因而并行进行。一个端的排空超时不缩短其余端的等待，逐端的失败聚合后由 `Stop` 一并返回，每一端的失败只报一次。
 
@@ -468,4 +477,5 @@ stateDiagram-v2
 | `PanicResponder` 可选接缝 | 已实现 | `pkg/http/recovery.go` `PanicResponder`、`pkg/http/module.go` `panicResponder` |
 | `Spec` 资源、形状校验与查询 | 已实现 | `pkg/http/surface.go` `Spec`、`pkg/http/spec.go` `validateSpecs`、`validateSpec` |
 | 请求处理工具 | 已实现 | `pkg/http/decode.go` `Decode`、`pkg/http/respond.go` `WriteJSON`、`StatusFor` |
+| 排空信号 | 已实现 | `pkg/http/draining.go` `Draining`、`pkg/http/listener.go` `(*listener).start`、`(*listener).stop` |
 | 标准库路由引擎子包 | 已实现 | `pkg/http/stdmux/stdmux.go` `Module` |
