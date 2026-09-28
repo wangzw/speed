@@ -128,7 +128,15 @@ func stance(cfg *Config) (core.Enablement, error) {
 // host that pointed this module at a fresh server would otherwise fail on its
 // first write rather than on startup.
 func open(ctx context.Context, cfg *Config) (kv.KV, error) {
-	nc, err := nats.Connect(cfg.URL, nats.Timeout(cfg.Timeout))
+	nc, err := nats.Connect(cfg.URL,
+		nats.Timeout(cfg.Timeout),
+		// The connection reconnects for as long as the store is open. The
+		// client's default gives up after sixty attempts two seconds apart
+		// and closes the connection for good, so an outage of a few minutes
+		// would leave every operation failing until the process restarted,
+		// long after the server was back. An operation during the outage
+		// fails on its own deadline either way.
+		nats.MaxReconnects(-1))
 	if err != nil {
 		return nil, fmt.Errorf("%s: connecting: %w", ModuleName, err)
 	}

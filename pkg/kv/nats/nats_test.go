@@ -179,6 +179,24 @@ func TestALongKeyLeavesTheConnectionUsable(t *testing.T) {
 	}
 }
 
+// TestTheConnectionKeepsReconnectingThroughAnOutage covers a server that is
+// away longer than the client's reconnect budget. Past that budget — sixty
+// attempts two seconds apart, by the client library's default — the client
+// closes the connection for good, and every operation fails until the process
+// restarts, although the server came back long ago. The other remote backends
+// recover on their own once their server answers again, and so must this one:
+// the connection has to keep trying for as long as the store is open.
+//
+// The case reads the budget the connection was built with rather than waiting
+// out an outage of minutes.
+func TestTheConnectionKeepsReconnectingThroughAnOutage(t *testing.T) {
+	s := newStore(t)
+	if got := s.nc.Opts.MaxReconnect; got >= 0 {
+		t.Fatalf("the connection gives up after %d reconnect attempts, and stays closed after an outage "+
+			"that outlasts them", got)
+	}
+}
+
 // TestTwoStoresOnOneBucketShareTheSameEntries is what this backend is for.
 func TestTwoStoresOnOneBucketShareTheSameEntries(t *testing.T) {
 	url := natstest.URL(t)
