@@ -64,6 +64,11 @@ type Event struct {
 // of the same event from running, and it never reaches the publisher: no
 // implementation hands a subscriber's failure back through Publish, which is
 // what keeps that error meaning one thing.
+//
+// A handler that panics has failed in the same sense, and every implementation
+// treats it the same way: the panic is recovered and reported, the remaining
+// handlers still run, and nothing of it reaches the publisher — not even on the
+// in-process bus, where the handler runs on the publisher's own goroutine.
 type Handler func(ctx context.Context, evt Event) error
 
 // Bus is the capability every implementation delivers.

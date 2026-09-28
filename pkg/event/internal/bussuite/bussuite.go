@@ -188,6 +188,34 @@ func AssertConforms(t *testing.T, newBus Factory) {
 			func() bool { return after.Load() == 1 })
 	})
 
+	t.Run("a subscriber's panic reaches neither the publisher nor the others", func(t *testing.T) {
+		b, start := newBus(t)
+		var after atomic.Int32
+		b.Subscribe("t", func(context.Context, event.Event) error {
+			panic("this handler panics on purpose")
+		})
+		b.Subscribe("t", func(context.Context, event.Event) error {
+			after.Add(1)
+			return nil
+		})
+		start()
+		// A panic is a subscriber's failure like any other: it must not come
+		// back through Publish, which on an in-process bus runs the handlers on
+		// the publisher's own goroutine, and it must not keep the subscriber
+		// after it from running.
+		func() {
+			defer func() {
+				if r := recover(); r != nil {
+					t.Fatalf("a subscriber's panic reached the publisher: %v", r)
+				}
+			}()
+			if err := b.Publish(context.Background(), event.Event{Type: "t"}); err != nil {
+				t.Fatalf("Publish reported a subscriber's panic: %v", err)
+			}
+		}()
+		WaitFor(t, "the subscriber after the panicking one to run", func() bool { return after.Load() == 1 })
+	})
+
 	t.Run("a cancelled context is honoured", func(t *testing.T) {
 		b, start := newBus(t)
 		var ran atomic.Int32

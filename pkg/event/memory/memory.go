@@ -14,9 +14,12 @@
 // no way to tell them apart. The failure is written to the assembly's logger
 // instead.
 //
-// A handler that panics is not recovered. A panic is a defect in the handler,
-// and swallowing it here would leave the publisher unable to distinguish a
-// subscriber that ran from one that did not.
+// A handler that panics is recovered, reported the same way, and the handlers
+// after it still run. A panic is a subscriber's failure like any other: letting
+// it unwind the publisher's goroutine would hand that failure back to the
+// publisher — after the publisher's own work had already been done — and
+// would starve every subscriber registered after the one that panicked, which
+// is exactly what the capability's floor rules out for a returned error.
 //
 // State is one process's memory, so a subscription made on one replica reaches
 // no publisher on another. That is this implementation's deployment
@@ -196,12 +199,23 @@ func (b *bus) Publish(ctx context.Context, evt event.Event) error {
 	b.mu.RUnlock()
 
 	for i, h := range handlers {
-		if err := h(ctx, evt); err != nil {
+		if err := runHandler(ctx, h, evt); err != nil {
 			b.logger.Error("event/memory: a subscriber failed; the publisher is not told",
 				"event", evt.Type, "handler", i, "err", err)
 		}
 	}
 	return nil
+}
+
+// runHandler isolates one handler from the publisher's goroutine and from the
+// handlers after it.
+func runHandler(ctx context.Context, h event.Handler, evt event.Event) (err error) {
+	defer func() {
+		if r := recover(); r != nil {
+			err = fmt.Errorf("the handler panicked: %v", r)
+		}
+	}()
+	return h(ctx, evt)
 }
 
 // Close stops delivery. A publish after it reports ErrClosed rather than
