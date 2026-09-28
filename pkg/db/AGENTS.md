@@ -150,4 +150,5 @@ gate. `internal/dbhost` is the test host the multi-process cases build and run;
 `pkg/internal/pgpool/pgtest` is the container fixture, shared with the key-value and
 event modules' postgres backends; `internal/dbsuite` holds the
 engine-neutral migration cases each engine's fixture is driven through, and the
-constraint-refusal cases each engine runs on the handle its module delivers.
+constraint-refusal and refused-commit cases each engine runs on the handle its
+module delivers.
