@@ -21,8 +21,8 @@ import (
 // session reaches the same database as every publish, whatever whitespace the
 // connection string carries. Secrets and env files routinely end in a newline;
 // the pool normalises the string, and a listening connection parsed from the
-// raw text again failed the startup on a trailing newline, and on leading
-// whitespace went to the libpq defaults instead — a different server or
+// raw text again would fail the startup on a trailing newline, and on leading
+// whitespace would go to the libpq defaults instead — a different server or
 // database, where the notifications a publish sends never arrive.
 func TestTheListeningConnectionGoesWhereThePoolGoes(t *testing.T) {
 	dsn := pgtest.Acquire(t)
@@ -121,7 +121,7 @@ const insufficientPrivilege = "42501"
 // several replicas onto an empty database needs: every one of them starts.
 // CREATE TABLE IF NOT EXISTS run by several sessions at once is not safe — the
 // sessions that lose fail on the catalog's unique indexes — so without the
-// creation serialised, all replicas but the first failed their startup.
+// creation serialised, all replicas but the first would fail their startup.
 //
 // Each round is a fresh database, because only the first creation races.
 func TestReplicasStartingTogetherOnANewDatabaseAllStart(t *testing.T) {

@@ -137,8 +137,8 @@ func TestPayloadKeepsEveryNumberAsItsText(t *testing.T) {
 	}
 }
 
-// TestPayloadRefusesDataAfterItsValue keeps the decoder as strict as the
-// one-shot decoding it replaces: a payload is one value.
+// TestPayloadRefusesDataAfterItsValue holds the decoder to a payload being one
+// value, with nothing after it but whitespace.
 func TestPayloadRefusesDataAfterItsValue(t *testing.T) {
 	if _, err := Payload([]byte(`{"a":1} {"b":2}`)); err == nil {
 		t.Fatal("a payload carrying a second value decoded without an error")
