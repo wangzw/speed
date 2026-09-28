@@ -185,14 +185,14 @@ func (r *roster) release() { <-r.reading }
 
 // readHeld is read, run by a caller already holding the slot.
 func (r *roster) readHeld(ctx context.Context) error {
+	session, release, err := r.held(ctx)
+	if err != nil {
+		return fmt.Errorf("%s%s: table %s was not read: %w", diagnosticPrefix, ModuleName, tableName, err)
+	}
+	defer release()
 	var rows []row
-	if err := r.handle.WithContext(ctx).Model(&row{}).Find(&rows).Error; err != nil {
-		return fmt.Errorf(
-			"%w: reading table %s failed, and a table that was never created reads "+
-				"the same way: %w. This module's migration set creates it, and a command "+
-				"whose work is applying migrations collects that set only when the host "+
-				"reaches this module for its declarations",
-			tenant.ErrRosterMissing, tableName, err)
+	if err := session.Model(&row{}).Find(&rows).Error; err != nil {
+		return unreadable(ctx, err)
 	}
 	if err := checkRows(rows); err != nil {
 		return err
@@ -200,6 +200,84 @@ func (r *roster) readHeld(ctx context.Context) error {
 	r.snap.Store(buildSnapshot(rows))
 	return nil
 }
+
+// unreadable is the failure of a statement reading the roster table under ctx.
+//
+// A table that is not there — never created, or dropped since — fails a read as
+// a read fails for any other reason, and the drivers word the failure each their
+// own way, so every read of the table that fails carries ErrRosterMissing, with
+// the failure the read met kept in the chain and in the text: the sentinel names
+// the likely repair, the text what happened. Two failures are told apart
+// because their cause is known: a read whose context ended, reported with the
+// context's error, and a read that never got a connection (held). Neither says
+// anything about the table.
+func unreadable(ctx context.Context, err error) error {
+	if ended := ctx.Err(); ended != nil {
+		return fmt.Errorf("reading table %s ended with its context (%w): %w", tableName, ended, err)
+	}
+	return fmt.Errorf(
+		"%w: reading table %s failed, and a table that is not there — never created, or dropped "+
+			"since — reads the same way: %w. This module's migration set creates it, and a command "+
+			"whose work is applying migrations collects that set only when the host reaches this "+
+			"module for its declarations",
+		tenant.ErrRosterMissing, tableName, err)
+}
+
+// held takes a connection of the delivered pool for the roster's own
+// statements, within connectionWait, and returns a session of the delivered
+// handle on it under the caller's context, with what gives the connection back.
+//
+// Only the wait for the connection is bounded. The statements run under the
+// caller's context, so its deadline and its cancellation end them as they end
+// the wait; a bound on a statement already under way would cut short a write the
+// database may be committing.
+//
+// A connection that does not come free within the bound is reported as that
+// wait, with ErrNoConnection, and a context that ends first as the context's
+// own error. Neither is a read of the table that failed, so neither carries
+// ErrRosterMissing.
+func (r *roster) held(ctx context.Context) (*gorm.DB, func(), error) {
+	pool, err := r.handle.DB()
+	if err != nil {
+		return nil, nil, fmt.Errorf("the delivered handle has no connection pool: %w", err)
+	}
+	taking, cancel := context.WithTimeout(ctx, connectionWait)
+	defer cancel()
+	conn, err := pool.Conn(taking)
+	if err != nil {
+		if errors.Is(err, context.DeadlineExceeded) && ctx.Err() == nil {
+			return nil, nil, fmt.Errorf("%w: none came free within %v; on a database held to one "+
+				"connection, a transaction the caller holds on the delivered handle keeps it until the "+
+				"caller's own call returns: %w", tenant.ErrNoConnection, connectionWait, err)
+		}
+		return nil, nil, fmt.Errorf("taking a connection of the delivered database: %w", err)
+	}
+	session := r.handle.Session(&gorm.Session{NewDB: true, Context: ctx})
+	session.Statement.ConnPool = conn
+	return session, func() { _ = conn.Close() }, nil
+}
+
+// connectionWait bounds how long each of the roster's own statements waits for
+// a connection of the delivered pool: the reads of the whole table, an entry's
+// read of one row, and each write with the reads it makes.
+//
+// The roster's statements run on connections of their own, and a caller may be
+// holding the one they need. On a database held to one connection — pkg/db
+// holds an in-memory SQLite database to one — a caller inside its own
+// transaction on the delivered handle holds that connection until its own call
+// returns, so a statement of the roster's waiting for it is waiting for the
+// caller: under a context with no deadline, forever. An in-process bus is the
+// ordinary shape of it, running a subscriber on its publisher's goroutine inside
+// whatever transaction the publisher holds, and the subscriber enters the
+// event's tenant. Nothing a statement can see tells that hold from another
+// caller's brief one, so the wait is bounded rather than recognised.
+//
+// It is the SQLite driver's default busy timeout, which is how long the same
+// statement waits for a lock the caller holds on a file database: on a database
+// held to one connection the connection plays the lock's part, and the two
+// shapes of one engine fail alike. A connection taken under load comes free in
+// the time a statement takes, far inside it.
+const connectionWait = 5 * time.Second
 
 // checkRows refuses a read holding a tenant this module will not act on.
 //
@@ -301,7 +379,12 @@ func (r *roster) EnterRegistered(ctx context.Context, id tenant.ID) (context.Con
 // The identifier's shape is judged first, because a value outside the domain
 // is no tenant's and the message says which of the two fixes it needs. A table
 // that cannot be read gives no answer, and the failure is reported as it
-// stands rather than as either refusal.
+// stands rather than as either refusal: a read that failed as ErrRosterMissing,
+// which a table no longer there fails as, and a connection that did not come
+// free within connectionWait as ErrNoConnection. The second is what an entry
+// inside a transaction the caller holds on a database held to one connection
+// meets, once the snapshot would refuse; an admission reads nothing, and is
+// not held up by it.
 //
 // What it writes is what the resolving layer writes on admitting a request —
 // the identifier into the context and onto the logger, replacing a tenant the
@@ -337,14 +420,23 @@ func (r *roster) enter(ctx context.Context, id tenant.ID, anyStatus bool) (conte
 	return tenantctx.Bind(ctx, string(t.ID), contextLogger), nil
 }
 
-// fromTable reads one tenant's row from the table. A row this module will not
-// act on is refused as the read of the whole roster refuses it.
+// fromTable reads one tenant's row from the table, under the caller's context,
+// on a connection taken within connectionWait. A row this module will not act
+// on is refused as the read of the whole roster refuses it.
 func (r *roster) fromTable(ctx context.Context, id tenant.ID) (tenant.Tenant, bool, error) {
-	held, err := lookUp(r.handle.WithContext(ctx), "id", string(id))
-	if err != nil {
-		return tenant.Tenant{}, false, fmt.Errorf(
+	noAnswer := func(err error) error {
+		return fmt.Errorf(
 			"%s%s: this replica's snapshot does not admit tenant %q, and table %s could not be read "+
 				"for it, so there is no answer: %w", diagnosticPrefix, ModuleName, id, tableName, err)
+	}
+	session, release, err := r.held(ctx)
+	if err != nil {
+		return tenant.Tenant{}, false, noAnswer(err)
+	}
+	held, err := lookUp(session, "id", string(id))
+	release()
+	if err != nil {
+		return tenant.Tenant{}, false, noAnswer(err)
 	}
 	if len(held) == 0 {
 		return tenant.Tenant{}, false, nil
@@ -363,8 +455,10 @@ func (r *roster) fromTable(ctx context.Context, id tenant.ID) (tenant.Tenant, bo
 // Entries arriving together for one such tenant wait for one another on the
 // slot reads run in; the first to find the snapshot still behind rereads it,
 // and the rest find it caught up. An entry whose context ends while it waits
-// leaves the snapshot to the next reread. A failed reread is reported as a
-// failed refresh is, and the entry keeps the answer it read.
+// leaves the snapshot to the next reread. The wait for the slot is bounded
+// through the reads that hold it, each of which waits at most connectionWait
+// for its connection. A failed reread is reported as a failed refresh is, and
+// the entry keeps the answer it read.
 func (r *roster) catchUp(ctx context.Context, id tenant.ID, t tenant.Tenant, held bool) {
 	if agrees(r.snap.Load(), id, t, held) {
 		return
@@ -404,11 +498,13 @@ var contextLogger = tenantctx.Logger{With: log.WithAttrs, Without: log.WithoutAt
 // same way: a write that failed is read again against the table, and an alias
 // another tenant now holds is reported as ErrAliasConflict naming it, with the
 // driver's error kept in the chain.
+//
+// The write and the read that names a conflict run on one connection (write).
 func (r *roster) Put(ctx context.Context, t tenant.Tenant) error {
 	if err := checkTenant(t); err != nil {
 		return err
 	}
-	err := r.handle.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+	return r.write(ctx, func(tx *gorm.DB) error {
 		held, err := lookUp(tx, "alias", t.Alias)
 		if err != nil {
 			return err
@@ -425,22 +521,41 @@ func (r *roster) Put(ctx context.Context, t tenant.Tenant) error {
 			Alias:  t.Alias,
 			Status: int(t.Status),
 		}).Error
-	})
+	}, func(session *gorm.DB, err error) error { return failedPut(session, t, err) })
+}
+
+// write runs one write of the roster in a transaction of its own, on a
+// connection taken within connectionWait; failed, when there is one, names what
+// a failed transaction ran into, reading on that same connection. The
+// connection is given back before the reread that follows a write takes its
+// own, which on a database held to one connection is the only one there is.
+func (r *roster) write(ctx context.Context, apply func(tx *gorm.DB) error,
+	failed func(session *gorm.DB, err error) error,
+) error {
+	session, release, err := r.held(ctx)
 	if err != nil {
-		return r.failedPut(ctx, t, err)
+		return fmt.Errorf("%s%s: nothing was written: %w", diagnosticPrefix, ModuleName, err)
+	}
+	err = session.Transaction(apply)
+	if err != nil && failed != nil {
+		err = failed(session, err)
+	}
+	release()
+	if err != nil {
+		return err
 	}
 	return r.afterWrite(ctx)
 }
 
 // failedPut names the conflict a failed Put ran into when the alias turns out
 // to be held by another tenant, and returns the failure as it stands otherwise.
-// The read runs outside the failed transaction, which a PostgreSQL transaction
-// that met a constraint no longer accepts statements in.
-func (r *roster) failedPut(ctx context.Context, t tenant.Tenant, err error) error {
+// The read runs on the write's session outside the failed transaction, which a
+// PostgreSQL transaction that met a constraint no longer accepts statements in.
+func failedPut(session *gorm.DB, t tenant.Tenant, err error) error {
 	if errors.Is(err, tenant.ErrAliasConflict) {
 		return err
 	}
-	held, lookErr := lookUp(r.handle.WithContext(ctx), "alias", t.Alias)
+	held, lookErr := lookUp(session, "alias", t.Alias)
 	if lookErr != nil || len(held) == 0 || held[0].ID == string(t.ID) {
 		return err
 	}
@@ -458,12 +573,12 @@ func (r *roster) failedPut(ctx context.Context, t tenant.Tenant, err error) erro
 // refusal — so two creations of one identifier at once end with one row and
 // one ErrTenantExists, the later one having waited on the earlier's row rather
 // than overwriting it. The alias is checked and its race answered as Put
-// answers it.
+// answers it, on the write's one connection (write).
 func (r *roster) Create(ctx context.Context, t tenant.Tenant) error {
 	if err := checkTenant(t); err != nil {
 		return err
 	}
-	err := r.handle.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+	return r.write(ctx, func(tx *gorm.DB) error {
 		held, err := lookUp(tx, "id", string(t.ID))
 		if err != nil {
 			return err
@@ -494,11 +609,7 @@ func (r *roster) Create(ctx context.Context, t tenant.Tenant) error {
 			return tenantExists(t.ID)
 		}
 		return nil
-	})
-	if err != nil {
-		return r.failedCreate(ctx, t, err)
-	}
-	return r.afterWrite(ctx)
+	}, func(session *gorm.DB, err error) error { return failedCreate(session, t, err) })
 }
 
 // tenantExists is the refusal of a creation whose identifier is taken.
@@ -509,17 +620,18 @@ func tenantExists(id tenant.ID) error {
 // failedCreate names what a failed Create ran into: its own refusals as they
 // stand, and a driver failure as the conflict it turns out to be once the table
 // is read again — the identifier registered, or the alias taken, by a write
-// that got there first.
-func (r *roster) failedCreate(ctx context.Context, t tenant.Tenant, err error) error {
+// that got there first. The reads run on the write's session, as failedPut's
+// does.
+func failedCreate(session *gorm.DB, t tenant.Tenant, err error) error {
 	if errors.Is(err, tenant.ErrTenantExists) || errors.Is(err, tenant.ErrAliasConflict) {
 		return err
 	}
-	held, lookErr := lookUp(r.handle.WithContext(ctx), "id", string(t.ID))
+	held, lookErr := lookUp(session, "id", string(t.ID))
 	if lookErr == nil && len(held) > 0 {
 		return fmt.Errorf("%w, by a write that got there while this one was in flight: %w",
 			tenantExists(t.ID), err)
 	}
-	return r.failedPut(ctx, t, err)
+	return failedPut(session, t, err)
 }
 
 // SetStatus implements tenant.Catalog, and is the only way to disable a tenant.
@@ -527,12 +639,13 @@ func (r *roster) failedCreate(ctx context.Context, t tenant.Tenant, err error) e
 // Existence is checked with its own read rather than inferred from the update's
 // affected-row count: a driver is free to report zero rows for an update that
 // set a value to what it already was, and this call would then report a tenant
-// that exists as one that does not.
+// that exists as one that does not. The check and the update run on one
+// connection (write).
 func (r *roster) SetStatus(ctx context.Context, id tenant.ID, s tenant.Status) error {
 	if err := checkField("identifier", string(id)); err != nil {
 		return err
 	}
-	err := r.handle.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+	return r.write(ctx, func(tx *gorm.DB) error {
 		held, err := lookUp(tx, "id", string(id))
 		if err != nil {
 			return err
@@ -542,11 +655,7 @@ func (r *roster) SetStatus(ctx context.Context, id tenant.ID, s tenant.Status) e
 		}
 		return tx.Model(&row{}).Where("id = ?", string(id)).
 			Update("status", int(s)).Error
-	})
-	if err != nil {
-		return err
-	}
-	return r.afterWrite(ctx)
+	}, nil)
 }
 
 // lookUp reads the row, if any, whose unique column holds this value.
@@ -556,11 +665,15 @@ func (r *roster) SetStatus(ctx context.Context, id tenant.ID, s tenant.Status) e
 // logger as a failed statement, which its default logger prints to standard
 // output as an error, outside the logging module — on every tenant a new alias
 // is put for, and on every status change naming a tenant that is not there.
+//
+// A read that fails is reported as every failed read of the table is
+// (unreadable), so an entry or a write over a table dropped since the load says
+// so as the reread of the whole table does.
 func lookUp(tx *gorm.DB, column, value string) ([]row, error) {
 	var held []row
 	if err := tx.Where(clause.Eq{Column: clause.Column{Name: column}, Value: value}).
 		Limit(1).Find(&held).Error; err != nil {
-		return nil, err
+		return nil, unreadable(tx.Statement.Context, err)
 	}
 	return held, nil
 }

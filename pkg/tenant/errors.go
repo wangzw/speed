@@ -52,14 +52,38 @@ var (
 	// name that is empty or carries a blank anywhere, or a nil implementation.
 	ErrInvalidExtractor = errors.New("tenant: an extractor registration is not well formed")
 
-	// ErrRosterMissing reports that the roster table was not there when the
-	// snapshot was loaded. The fix is to write the roster subpackage's
-	// module name into the command that applies migrations, so that its
-	// migration set is collected: a command that reaches it for its
-	// declarations alone is the form that does this, and the alternative —
-	// taking it in to run — makes it answerable for its own configuration
-	// on a command that only builds tables.
+	// ErrRosterMissing reports a read of the roster table that failed, which
+	// is how a table that is not there reads: never created when the snapshot
+	// is loaded, or dropped since, under the reread of the whole table, an
+	// entry's read of one row, or the reads a write makes. The drivers word
+	// that failure each their own way, so every failed read of the table
+	// carries this sentinel, with the failure itself kept in the chain; a read
+	// that did not happen — its context ended, or no connection came free
+	// (ErrNoConnection) — does not. A roster not yet read is refused with it
+	// as well.
+	//
+	// The fix is to write the roster subpackage's module name into the
+	// command that applies migrations, so that its migration set is
+	// collected: a command that reaches it for its declarations alone is the
+	// form that does this, and the alternative — taking it in to run — makes
+	// it answerable for its own configuration on a command that only builds
+	// tables.
 	ErrRosterMissing = errors.New("tenant: the roster table does not exist")
+
+	// ErrNoConnection reports a statement of the roster's that did not get a
+	// connection of the delivered pool within the five seconds it waits for
+	// one: a read of the table, or a write, which then did not happen. Each
+	// such statement takes a connection of its own rather than joining the
+	// caller's transaction, and on a database held to one connection — an
+	// in-memory one — a caller inside its own transaction on the delivered
+	// handle holds that connection until its own call returns.
+	//
+	// The fix is to make the call outside such a transaction — to publish an
+	// event once the transaction has committed, for a subscriber that enters
+	// the event's tenant — or, on a pool held by other callers for longer, to
+	// size the pool for the load. It is neither refusal: the table was not
+	// read, so there is no answer about the tenant.
+	ErrNoConnection = errors.New("tenant: the roster got no connection of the delivered database in time")
 
 	// ErrInvalidTenant reports a tenant this module will not act on: one
 	// whose own shape is wrong — an empty identifier or alias, or either

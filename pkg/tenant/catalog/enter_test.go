@@ -250,19 +250,59 @@ func TestEnterRefusesWhatTheTableRefuses(t *testing.T) {
 
 // A table that cannot be read gives no answer about the tenant, and the failure
 // is not reported as one: a caller told ErrInvalidTenant drops its work for a
-// tenant that may well exist.
-func TestEnterWhoseTableCannotBeReadRefusesWithoutAnAnswer(t *testing.T) {
-	r := enteringRoster(t)
-	if err := r.handle.Exec("DROP TABLE tenants").Error; err != nil {
-		t.Fatalf("dropping the table: %v", err)
+// tenant that may well exist. A table dropped since the load is reported as the
+// reread of the whole table reports it, with ErrRosterMissing.
+func TestEnterOverADroppedTableGivesNoAnswer(t *testing.T) {
+	for name, enter := range map[string]func(r *roster) (context.Context, error){
+		"Enter": func(r *roster) (context.Context, error) { return r.Enter(context.Background(), "t_new") },
+		"Enter a disabled tenant": func(r *roster) (context.Context, error) {
+			return r.Enter(context.Background(), "t_paused")
+		},
+		"EnterRegistered": func(r *roster) (context.Context, error) {
+			return r.EnterRegistered(context.Background(), "t_new")
+		},
+	} {
+		t.Run(name, func(t *testing.T) {
+			r := enteringRoster(t)
+			if err := r.handle.Exec("DROP TABLE tenants").Error; err != nil {
+				t.Fatalf("dropping the table: %v", err)
+			}
+			ctx, err := enter(r)
+			if !errors.Is(err, tenant.ErrRosterMissing) ||
+				errors.Is(err, tenant.ErrInvalidTenant) || errors.Is(err, tenant.ErrTenantDisabled) {
+				t.Fatalf("entering over a dropped table gave %v, want ErrRosterMissing and neither refusal", err)
+			}
+			if id, ok := tenant.FromContext(ctx); ok || tenantctx.CrossTenant(ctx) {
+				t.Fatalf("a failed entry handed back tenant (%q, %v), crossing %v; want neither",
+					id, ok, tenantctx.CrossTenant(ctx))
+			}
+		})
 	}
-	ctx, err := r.Enter(context.Background(), "t_new")
-	if err == nil || errors.Is(err, tenant.ErrInvalidTenant) || errors.Is(err, tenant.ErrTenantDisabled) {
-		t.Fatalf("entering over a table that cannot be read gave %v, want a failure that is neither refusal", err)
-	}
-	if id, ok := tenant.FromContext(ctx); ok || tenantctx.CrossTenant(ctx) {
-		t.Fatalf("a failed entry handed back tenant (%q, %v), crossing %v; want neither",
-			id, ok, tenantctx.CrossTenant(ctx))
+}
+
+// A write over a table dropped since the load reads the table first, and is
+// reported as that read is.
+func TestAWriteOverADroppedTableReportsTheRosterMissing(t *testing.T) {
+	for name, write := range map[string]func(r *roster) error{
+		"Put": func(r *roster) error {
+			return r.Put(context.Background(), tenant.Tenant{ID: "t_new", Alias: "new", Status: tenant.StatusActive})
+		},
+		"Create": func(r *roster) error {
+			return r.Create(context.Background(), tenant.Tenant{ID: "t_new", Alias: "new", Status: tenant.StatusActive})
+		},
+		"SetStatus": func(r *roster) error {
+			return r.SetStatus(context.Background(), "t_acme", tenant.StatusDisabled)
+		},
+	} {
+		t.Run(name, func(t *testing.T) {
+			r := enteringRoster(t)
+			if err := r.handle.Exec("DROP TABLE tenants").Error; err != nil {
+				t.Fatalf("dropping the table: %v", err)
+			}
+			if err := write(r); !errors.Is(err, tenant.ErrRosterMissing) {
+				t.Fatalf("%s over a dropped table gave %v, want ErrRosterMissing", name, err)
+			}
+		})
 	}
 }
 

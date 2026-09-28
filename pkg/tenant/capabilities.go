@@ -62,6 +62,17 @@ type Resolution interface {
 // scoping is decided from, so its own statements run outside the filter, and
 // none of them needs a tenant in its context.
 //
+// A method that reads the table or writes it — Put, Create, SetStatus, and an
+// entry the snapshot would refuse — runs its statements on a connection of the
+// delivered pool of its own, not in the caller's transaction, and waits at most
+// five seconds for that connection; past that it fails with ErrNoConnection and
+// has done nothing. On a database held to one connection — an in-memory one —
+// a caller inside its own transaction on the delivered handle holds that
+// connection until its own call returns, so such a call made inside that
+// transaction fails once the five seconds have passed. Once it has its
+// connection, its statements run under the caller's context. Get, ByAlias and
+// List read the snapshot and nothing else.
+//
 // Enter and EnterRegistered are the methods that put a tenant into a context,
 // and they are here rather than beside FromContext because the roster is what
 // they have to read first: a path with no request behind it names a tenant by
@@ -115,9 +126,14 @@ type Catalog interface {
 	// snapshot would refuse, the tenant's row is read from the table, so a
 	// tenant another replica registered or served again since this one last
 	// read the roster is entered at once. A table that cannot be read at that
-	// point gives neither refusal but the failure itself. An admission comes
-	// from the snapshot, so a tenant disabled on another replica is still
-	// entered here until this replica next rereads the roster.
+	// point gives neither refusal but the failure itself: ErrRosterMissing for
+	// a read that failed, with the read's own error in the chain, and
+	// ErrNoConnection for a read that got no connection — which is what an
+	// in-process subscriber entering a disabled or unknown tenant meets inside
+	// its publisher's transaction on a database held to one connection. An
+	// admission comes from the snapshot and reads nothing, so a tenant disabled
+	// on another replica is still entered here until this replica next rereads
+	// the roster.
 	//
 	// The context returned carries no cross-tenant mark, and whatever tenant
 	// the one passed in carried is replaced. On a refusal the context returned

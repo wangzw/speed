@@ -15,7 +15,8 @@ keeps the roster and filters statements to the tenant they carry.
   `adr-tenant-ordering-2026-09-21`, `adr-tenant-identifier-2026-09-21`,
   `adr-tenant-directory-2026-09-21`, `adr-tenant-isolation-2026-09-21`,
   `adr-tenant-scoping-2026-09-21`, `adr-tenant-guarantees-2026-09-21`,
-  `adr-tenant-scoping-2026-09-28`.
+  `adr-tenant-scoping-2026-09-28`, `adr-tenant-scoping-2026-09-29`,
+  `adr-tenant-directory-2026-09-29`.
 - The API itself: the godoc in this package. Read `Model`'s comment and
   `CrossTenant`'s before writing a scoped model.
 
@@ -80,9 +81,24 @@ here must not cross, and how to run it.
   is why disabling a tenant takes effect on the request face and not on the
   statement face. Both facts are in the design's non-guarantees section.
 - **`catalog/catalog.go` reaches a handle only through `db.Database`.** The
-  plugin registers callbacks; nothing in this module opens a connection or
-  writes SQL. A table belongs to the module that declares it, and this module's
-  one table comes from `catalog/migrations/`.
+  plugin registers callbacks; nothing in this module opens a database of its
+  own or writes SQL. A table belongs to the module that declares it, and this
+  module's one table comes from `catalog/migrations/`.
+- **Every statement of the roster's takes a connection of the delivered pool
+  within `connectionWait`, and runs under the caller's context once it has
+  one** (`catalog/roster.go` `held`). The roster's statements never join a
+  caller's transaction — its methods take a context, which carries none — and
+  on a database held to one connection a caller inside its own transaction on
+  the delivered handle holds that connection until its own call returns: an
+  in-process subscriber entering a disabled tenant inside its publisher's
+  transaction is the ordinary case. A read or a write that waits for the
+  connection with no bound waits for the caller itself, forever under a context
+  with no deadline.
+  Past the bound the call fails with `ErrNoConnection`, which is neither
+  refusal: answering an entry from the snapshot instead would drop work for a
+  tenant the table serves. A new statement of the roster's goes through `held`,
+  and the connection a write takes is given back before its reread takes one
+  (`catalog/wait_test.go`).
 - **The roster table does not embed the convention.** It is the fact scoping is
   decided from, so a read of it that needed a tenant first would have nothing to
   read it with. It is not special-cased anywhere: it takes the same path through
@@ -204,7 +220,11 @@ not overwrite is refused against the table rather than the snapshot, where
 a write's reread outlives its caller, and where reads of the table publish in
 the order they read; `pkg/tenant/catalog/enter_test.go` is where entering a
 tenant is — a refusal taken from the table rather than the snapshot, what an
-entered context carries, and the entry that admits a disabled tenant;
+entered context carries, the entry that admits a disabled tenant, and a table
+dropped under an entry or a write; `pkg/tenant/catalog/wait_test.go` is where
+the roster's wait for a connection is — bounded inside a caller's transaction
+on a database held to one connection, taken when it comes free inside the
+bound, and ended by the caller's context;
 `pkg/tenant/resolve/extract_test.go` is where the
 registration window's behaviour under a duplicate or a late registration is;
 `pkg/tenant/resolve/admit_test.go` and `panic_test.go` are where the layer's
