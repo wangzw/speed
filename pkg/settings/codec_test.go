@@ -3,6 +3,7 @@ package settings
 import (
 	"context"
 	"errors"
+	"math"
 	"strings"
 	"testing"
 	"time"
@@ -107,6 +108,78 @@ func TestANumberIsHeldToTheDeclaredType(t *testing.T) {
 	}
 	if got, _ := Get[float64](store, Global(), "demo.ratio"); got != 1 {
 		t.Errorf("the integer read back as %v, want 1", got)
+	}
+}
+
+// The largest finite float32 goes back in as float32 writes it.
+//
+// float32's shortest text for math.MaxFloat32 is 3.4028235e+38, and that text
+// names a number a little above the value itself. It is still a number the item
+// holds by the round-trip rule: its nearest float32 is math.MaxFloat32, which
+// float32 writes as the same text. So the default the listing gives for such an
+// item, and the row List reports for it, are texts Set takes back, as they are
+// for every other value. A number whose nearest float32 is an infinity, and one
+// the item would hold as its largest value while writing it as a different
+// number, are refused as every other neighbour is.
+func TestTheLargestFloat32GoesBackInAsItIsWritten(t *testing.T) {
+	defaults := struct {
+		Ceiling float32
+		Floor   float32
+	}{Ceiling: math.MaxFloat32, Floor: -math.MaxFloat32}
+	keys := tableOf(t, declaring("test.edge", Schema{Namespace: "edge", Mounts: []Mount{{Value: &defaults}}}))
+	store, _ := storeOf(t, keys, newRecordingBus())
+	ctx := context.Background()
+
+	for _, item := range store.Declared() {
+		want, err := Get[float32](store, Global(), item.Key)
+		if err != nil {
+			t.Fatalf("reading the default of %q: %v", item.Key, err)
+		}
+		if err := store.Set(ctx, Write{Layer: Global(), Key: item.Key, Value: item.Default}); err != nil {
+			t.Errorf("writing the listed default %q of %q back returned %v", item.Default, item.Key, err)
+			continue
+		}
+		if got, err := Get[float32](store, Global(), item.Key); err != nil || got != want {
+			t.Errorf("%q read back as %v (%v) after its default went back in, want %v",
+				item.Key, got, err, want)
+		}
+	}
+	entries, err := store.List(ctx, Global())
+	if err != nil || len(entries) != 2 {
+		t.Fatalf("listing the rows gave %+v (%v), want the two written", entries, err)
+	}
+	for _, e := range entries {
+		if err := store.Set(ctx, Write{Layer: Global(), Key: e.Key, Value: e.Value}); err != nil {
+			t.Errorf("writing the row %q of %q back returned %v", e.Value, e.Key, err)
+		}
+	}
+
+	halfway := 0x1p128 - 0x1p103 // between math.MaxFloat32 and the next power of two
+	cases := []struct {
+		value    any
+		accepted bool
+	}{
+		{3.4028235e38, true},
+		{"3.4028235e+38", true},
+		{-3.4028235e38, true},
+		{"-3.4028235e+38", true},
+		{float64(math.MaxFloat32), true},
+		{3.40282356e38, false},
+		{"3.40282356e+38", false},
+		{math.Nextafter(halfway, 0), false},
+		{halfway, false},
+		{3.4028236e38, false},
+		{"3.4028236e+38", false},
+		{-1e39, false},
+	}
+	for _, c := range cases {
+		err := store.Set(ctx, Write{Layer: Global(), Key: "edge.ceiling", Value: c.value})
+		switch {
+		case c.accepted && err != nil:
+			t.Errorf("writing %v into a float32 item returned %v, want it held as math.MaxFloat32", c.value, err)
+		case !c.accepted && !errors.Is(err, ErrTypeMismatch):
+			t.Errorf("writing %v into a float32 item returned %v, want ErrTypeMismatch", c.value, err)
+		}
 	}
 }
 
