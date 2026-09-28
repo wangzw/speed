@@ -78,7 +78,11 @@ type Middleware struct {
 	// A capability no other layer stands for drops the constraint, and the
 	// dropped constraint is listed in the startup diagnostics with the cause
 	// it dropped for: no layer on the endpoint represents the capability, or
-	// only this one does, and that edge to itself is dropped too.
+	// only this one does, and that edge to itself is dropped too. A
+	// capability nobody on the endpoint represents is written at Info,
+	// because a module that is absent or does not guard the endpoint is a
+	// legal configuration; one only this layer represents is written at
+	// Warn, because no assembly makes that declaration place anything.
 	After []core.Token
 	// Before places this layer outside the middleware of these
 	// capabilities, with the same treatment of an absent provider.

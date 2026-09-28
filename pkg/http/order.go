@@ -28,13 +28,14 @@ type layer struct {
 // point at, so it drew no edge and the declared position is not what the layer
 // gets.
 //
-// It is not a failure: a capability absent from the assembly is a legal
+// It is not a failure: a capability absent from the endpoint is a legal
 // configuration, and the layer runs unconstrained by design. It is reported
 // because nothing else about it is observable, and because the ways of
 // arriving here are the same shape in the graph — the module that would stand
-// for the capability is not in this process, or it is in it and left its
-// Provides empty — so without the report none of them produces any signal at
-// all.
+// for the capability is not in this process, or it is and does not guard this
+// endpoint, or it is on the endpoint and left its Provides empty — so without
+// the report none of them produces any signal at all. How loudly it is
+// reported follows from its cause; see unlandedCause.level.
 type unlandedConstraint struct {
 	// endpoint and layer say where the declaration was made.
 	endpoint string
@@ -55,14 +56,16 @@ type unlandedConstraint struct {
 
 // unlandedCause is why a constraint placed nothing on the chain. The two are
 // told apart because the fixing action differs: one asks who should have been
-// in the assembly and was not, the other asks the declaring layer to correct
-// what it said about itself.
+// on the endpoint and was not, if anyone, the other asks the declaring layer to
+// correct what it said about itself.
 type unlandedCause string
 
 const (
 	// causeNoProvider is a capability no layer on this endpoint stands for:
-	// the module that would stand for it is not in this process, or it is in
-	// it and left its Provides empty. The graph cannot tell those two apart.
+	// the module that would stand for it is not in this process, or it is
+	// and does not guard this endpoint, or its layer is here and left its
+	// Provides empty. The graph cannot tell those apart, and a module that is
+	// absent or does not guard the endpoint is a legal configuration.
 	causeNoProvider unlandedCause = "no layer on this endpoint stands for the capability"
 	// causeSelfOnly is a capability whose only representative is the layer
 	// declaring the constraint. The self edge is dropped, so the constraint

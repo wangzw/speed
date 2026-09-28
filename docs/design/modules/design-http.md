@@ -357,7 +357,7 @@ stateDiagram-v2
 
 每个监听端各算一次，输入是该端登记的中间件表。
 
-各中间件按其声明的功能标识建图：一条 `After` 边把本层排在提供该功能的那些中间件之内，`Before` 边反之。引用的功能在本次装配中没有提供者时，该边不存在，约束自动满足。
+各中间件按其声明的功能标识建图：一条 `After` 边把本层排在提供该功能的那些中间件之内，`Before` 边反之。引用的功能在该端上没有提供者时，该边不存在，约束自动满足；提供它的模块在进程里却不守这个端，也是这一档。
 
 图按拓扑序展开，就绪集合中取出的次序由 `Order` 决定，小者先出、落在外层；`Order` 相同者按登记先后。`Order` 只在就绪集合内选择，因而选不出违反约束的位置。
 
@@ -367,7 +367,9 @@ stateDiagram-v2
 
 **未落到任何一层的约束要在启动诊断中列出。** 判据是这条约束有没有摆放任何东西：一条 `After` 或 `Before` 在跳过声明它的那一层之后若不再指向任何一层，它就无声地消失了——声明它的那一层以为自己有位置保证，实际没有。这不构成失败（功能缺席是合法配置），但它必须能被看见。
 
-**诊断要分清两种原因，它们的修法不同。** 一种是该功能在本端无人代表：装配里缺了那个模块，或者它在场却漏写了 `Provides`。另一种是该功能只由声明这条约束的那一层自己代表——自指的边按跳过自身丢掉，约束因而什么也没约束到，而这是声明本身写错了，不是谁不在场。**本层之外还有别的层代表该功能时不属于此列**：自指那部分被跳过，其余照常生效。
+**诊断要分清两种原因，它们的修法不同。** 一种是该功能在本端无人代表：装配里缺了那个模块，或者它在进程里却不守这个端，或者它的层在这个端上却漏写了 `Provides`。另一种是该功能只由声明这条约束的那一层自己代表——自指的边按跳过自身丢掉，约束因而什么也没约束到，而这是声明本身写错了，不是谁不在场。**本层之外还有别的层代表该功能时不属于此列**：自指那部分被跳过，其余照常生效。
+
+**诊断的级别随原因而定，判据是这次装配照原样能不能是对的。** 该功能在本端无人代表时，这一行记 Info：模块不在进程里、在进程里却不守这个端，都是合法配置，一个只在部分端上解析租户的宿主每次启动都会产生这样的行。把它记成警告，合法装配就带着一条永远消不掉的警告运行，运维学会跳过它之后，真正需要处理的那一条也随之被跳过。自指的那一种记 Warn：这条声明在任何装配下都摆放不了任何东西，没有哪种配置能让它成立。**代价**：漏写 `Provides` 在图上与模块缺席同形，登记面又不知道哪一层是谁登记的，它因而同样只记 Info，没有警告指向它（[ADR-http-middleware-2026-09-14](../../adr/adr-http-middleware-2026-09-14.md)）。约束成环不在此列，它是启动失败。
 
 ### 请求上下文的建立
 
@@ -480,7 +482,7 @@ stateDiagram-v2
 | 能力 | 状态 | 代码 |
 |---|---|---|
 | 登记面与写入闸门 | 已实现 | `pkg/http/surface.go` `Router`、`Endpoint`、`Middleware`、`pkg/http/router.go` `(*router).open`、`(*router).seal`、`(*router).write` |
-| 中间件排序与链组装 | 已实现 | `pkg/http/order.go` `orderLayers`、`pkg/http/assemble.go` `(*endpoint).assemble`、`reportUnlanded` |
+| 中间件排序与链组装 | 已实现 | `pkg/http/order.go` `orderLayers`、`unplacedCause`、`pkg/http/assemble.go` `(*endpoint).assemble`、`reportUnlanded`、`unlandedCause.level` |
 | 监听端的绑定与停机排空 | 已实现 | `pkg/http/listener.go` `(*listener).start`、`(*listener).stop`、`(*listener).close`、`(*listener).track`、`inFlight`、`pkg/http/module.go` `(*router).stop` |
 | 请求上下文的建立 | 已实现 | `pkg/http/assemble.go` `(*endpoint).base` |
 | 请求路径的 panic 兜底 | 已实现 | `pkg/http/recovery.go` `fallback`、`writePanicResponse`、`stackTrace` |

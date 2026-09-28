@@ -1,6 +1,7 @@
 package http
 
 import (
+	"context"
 	"fmt"
 	"log/slog"
 	nethttp "net/http"
@@ -57,29 +58,58 @@ func (e *endpoint) assemble(engine Engine, injected, logger *slog.Logger,
 	return e.base(fallback(handler, e.settings.name, responder), injected), nil
 }
 
-// reportUnlanded writes out the constraints that placed nothing.
+// unlandedMsg is the message of the record reporting a constraint that placed
+// nothing.
+const unlandedMsg = "an HTTP middleware constraint landed on no layer"
+
+// reportUnlanded writes out the constraints that placed nothing, one record
+// each, at the level their cause calls for.
 //
 // This is the whole of their observability. The assembly carries on — a
 // capability absent from the process is a legal configuration — so the layer
 // that declared itself inside authentication runs anyway, in the position its
 // Order happens to give it. The cause is written with each line because the
 // two causes are answered by different edits: a capability nobody stands for
-// sends the reader looking for the module that should have been in the
-// assembly, while a capability only the declaring layer stands for is that
+// sends the reader looking for the module that should have been on the
+// endpoint, while a capability only the declaring layer stands for is that
 // layer correcting what it said about itself.
 //
 // It goes to this module's own logger because core does not export a startup
-// diagnostics surface. The level is Warn: written at Info it would sit beside
-// the chain listing of every endpoint, which is the routine output a reader
-// skims past.
+// diagnostics surface. The level is the cause's; see unlandedCause.level.
 func reportUnlanded(logger *slog.Logger, unlanded []unlandedConstraint) {
 	for _, u := range unlanded {
-		logger.Warn("an HTTP middleware constraint landed on no layer",
+		logger.Log(context.Background(), u.cause.level(), unlandedMsg,
 			"endpoint", u.endpoint,
 			"middleware", u.layer,
 			"declaration", fmt.Sprintf("%s[%d]", u.field, u.at),
 			"capability", u.capability,
 			"cause", string(u.cause))
+	}
+}
+
+// level is the level a constraint that placed nothing is written at. What
+// decides it is whether the assembly can be right as it stands.
+//
+// A capability no layer on the endpoint stands for is what a legal assembly
+// produces whenever the module standing for it is absent from the process or
+// does not guard that endpoint, so it is written at Info, beside the chain
+// listing it explains. A warning there would be one every such assembly
+// carries for as long as it runs, and an operator who learns to skip it skips
+// the ones that mean something along with it. The price is that the one wrong
+// declaration of that shape — a module on the endpoint that left its Provides
+// empty — is written at Info too: the graph cannot tell it from an absent
+// module, and nothing here knows who registered which layer.
+//
+// A layer that is the only one standing for the capability it names has a
+// declaration that places nothing in every assembly, which no configuration
+// makes right, so it is written at Warn. So is any cause not named here: a
+// level is decided per cause, and one nobody decided is not assumed legal.
+func (c unlandedCause) level() slog.Level {
+	switch c {
+	case causeNoProvider:
+		return slog.LevelInfo
+	default:
+		return slog.LevelWarn
 	}
 }
 

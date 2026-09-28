@@ -109,7 +109,8 @@ func TestSelfReferentialConstraintWithAnotherProviderIsNotReported(t *testing.T)
 		e.Route("GET /things", nethttp.NotFoundHandler())
 	})
 
-	for _, line := range records.at(slog.LevelWarn) {
+	reported := unlandedLines(append(records.at(slog.LevelInfo), records.at(slog.LevelWarn)...))
+	for _, line := range reported {
 		if strings.Contains(line, "middleware=warden") {
 			t.Errorf("the constraint of warden was reported as landing on nothing, and another "+
 				"layer on this endpoint stands for the capability it names, so the edge to that "+

@@ -7,6 +7,7 @@ import (
 	nethttp "net/http"
 	"net/http/httptest"
 	"reflect"
+	"slices"
 	"strings"
 	"sync"
 	"testing"
@@ -242,6 +243,14 @@ func TestEmptyProvidesStaysLegal(t *testing.T) {
 // process is a legal configuration — so each of the two unplaced constraints
 // has to be visible, located, and told apart from the other, because the two
 // are answered by different edits.
+//
+// The two are written at different levels, and the level is part of what is
+// pinned. A capability nobody on the endpoint stands for is what a legal
+// assembly produces whenever a module is absent or does not guard that
+// endpoint, so it is written at Info; a warning there would be one every such
+// assembly carries for as long as it runs. A layer that is the only one
+// standing for the capability it names has a declaration that is wrong in
+// every assembly, so it is written at Warn.
 func TestUnlandedConstraintIsReported(t *testing.T) {
 	logger, records := newRecordingLogger()
 	_, err := assembleEndpoint(t, testSettings("public"), nil, logger, func(e Endpoint) {
@@ -272,28 +281,29 @@ func TestUnlandedConstraintIsReported(t *testing.T) {
 		t.Fatalf("a constraint that placed nothing must not fail the assembly: %v", err)
 	}
 
-	warned := records.at(slog.LevelWarn)
-	if len(warned) == 0 {
-		t.Fatal("nothing was written about the constraints that placed nothing, so a module " +
-			"absent from the process and a module that forgot its Provides look the same")
+	informed := unlandedLines(records.at(slog.LevelInfo))
+	warned := unlandedLines(records.at(slog.LevelWarn))
+	written := strings.Join(append(slices.Clone(informed), warned...), "\n")
+	if len(informed)+len(warned) == 0 {
+		t.Fatal("nothing was written about the constraints that placed nothing, so the layers " +
+			"that declared them run where Order puts them with no signal at all")
 	}
-	written := strings.Join(warned, "\n")
-	if strings.Contains(written, "tenant") {
+	if strings.Contains(written, "middleware=tenant") {
 		t.Errorf("the report lists tenant, whose constraint found a provider and placed it. "+
 			"Listing the constraints that worked buries the ones that did not:\n%s", written)
 	}
 
-	var absent, self string
-	for _, line := range warned {
-		switch {
-		case strings.Contains(line, "middleware=audit"):
-			absent = line
-		case strings.Contains(line, "middleware=recover"):
-			self = line
-		}
-	}
+	absent := lineFor(informed, "middleware=audit")
+	self := lineFor(warned, "middleware=recover")
 	if absent == "" || self == "" {
-		t.Fatalf("the diagnostics were\n%s\nwant one line each for audit and recover", written)
+		t.Fatalf("the diagnostics were\nInfo:\n%s\nWarn:\n%s\nwant audit's at Info, since a "+
+			"capability nobody on the endpoint stands for is a legal configuration, and recover's "+
+			"at Warn, since a declaration naming only its own layer is wrong in every assembly",
+			strings.Join(informed, "\n"), strings.Join(warned, "\n"))
+	}
+	if len(warned) != 1 {
+		t.Errorf("the warnings were\n%s\nwant only recover's: the other unplaced constraint is one "+
+			"a legal assembly produces", strings.Join(warned, "\n"))
 	}
 
 	mustContain(t, absent, typeName(reflect.TypeOf((*capQuota)(nil)).Elem()),
@@ -308,6 +318,73 @@ func TestUnlandedConstraintIsReported(t *testing.T) {
 	mustContain(t, self, "cause="+string(causeSelfOnly),
 		"the cause of a layer standing only for the capability it names: nobody is absent here, "+
 			"the declaration is what is wrong")
+}
+
+// TestALegalAssemblyStartsWithoutAWarning pins the shape a host with an
+// unguarded endpoint produces: a capturing layer declares itself inside
+// authentication and tenant resolution on every endpoint it guards, and one of
+// those endpoints carries authentication but no tenant resolution, because the
+// host resolves no tenant there. Nothing in that assembly is wrong. The
+// constraint on the absent capability placed nothing, and that is still
+// written down, located and with its cause, beside the chain listing it
+// explains; but a warning that every such assembly carries from its first
+// start is one an operator learns to skip, and the one a wrong declaration
+// raises would then be skipped with it.
+func TestALegalAssemblyStartsWithoutAWarning(t *testing.T) {
+	logger, records := newRecordingLogger()
+	_, err := assembleEndpoint(t, testSettings("admin"), nil, logger, func(e Endpoint) {
+		e.Use(Middleware{
+			Name:     "gate",
+			Provides: []core.Token{(*capAuth)(nil)},
+			Wrap:     passThrough,
+		})
+		e.Use(Middleware{
+			Name:  "journal",
+			After: []core.Token{(*capAuth)(nil), (*capTenant)(nil)},
+			Wrap:  passThrough,
+		})
+		e.Route("GET /tenants", nethttp.NotFoundHandler())
+	})
+	if err != nil {
+		t.Fatalf("a legal assembly failed: %v", err)
+	}
+
+	if warned := records.at(slog.LevelWarn); len(warned) != 0 {
+		t.Errorf("a legal assembly wrote warnings at startup:\n%s", strings.Join(warned, "\n"))
+	}
+	informed := unlandedLines(records.at(slog.LevelInfo))
+	if len(informed) != 1 {
+		t.Fatalf("the unplaced constraints written at Info were\n%s\nwant exactly journal's After[1]",
+			strings.Join(informed, "\n"))
+	}
+	line := informed[0]
+	mustContain(t, line, "middleware=journal", "the layer that declared the constraint")
+	mustContain(t, line, "declaration=After[1]", "which declaration on that layer placed nothing")
+	mustContain(t, line, "endpoint=admin", "the endpoint the declaration was made on")
+	mustContain(t, line, typeName(reflect.TypeOf((*capTenant)(nil)).Elem()),
+		"the capability no layer on this endpoint stands for")
+	mustContain(t, line, "cause="+string(causeNoProvider), "why the constraint placed nothing")
+}
+
+// unlandedLines keeps the lines that report a constraint placing nothing.
+func unlandedLines(lines []string) []string {
+	var out []string
+	for _, line := range lines {
+		if strings.HasPrefix(line, unlandedMsg) {
+			out = append(out, line)
+		}
+	}
+	return out
+}
+
+// lineFor returns the first line carrying want, or "" when none does.
+func lineFor(lines []string, want string) string {
+	for _, line := range lines {
+		if strings.Contains(line, want) {
+			return line
+		}
+	}
+	return ""
 }
 
 // TestCycleThroughUseFailsTheAssembly pins that a cycle is reachable through
