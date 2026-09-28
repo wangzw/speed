@@ -106,11 +106,35 @@ func quiet() *gorm.Config {
 // ships rather than a copy written out here.
 func open(t *testing.T) *gorm.DB {
 	t.Helper()
+	handle := openMemory(t)
+	applyMigration(t, handle, "sqlite/0001_settings.sql")
+	return handle
+}
+
+// openMemory builds a handle on an in-memory database of the case's own, with
+// no table in it.
+//
+// The database is named after the case and shared across the handle's
+// connections, and SQLite keeps such a database for as long as any connection
+// to it is open. The handle's pool is therefore closed when the case ends: a
+// pool left open carries the database — its table and its rows — into the next
+// run of the same case under -count, which then finds the table already there
+// and rows it never wrote.
+func openMemory(t *testing.T) *gorm.DB {
+	t.Helper()
 	handle, err := gorm.Open(sqlitedriver.Open("file:"+t.Name()+"?mode=memory&cache=shared"), quiet())
 	if err != nil {
 		t.Fatalf("opening the handle: %v", err)
 	}
-	applyMigration(t, handle, "sqlite/0001_settings.sql")
+	pool, err := handle.DB()
+	if err != nil {
+		t.Fatalf("reaching the handle's connection pool: %v", err)
+	}
+	t.Cleanup(func() {
+		if err := pool.Close(); err != nil {
+			t.Errorf("closing the handle: %v", err)
+		}
+	})
 	return handle
 }
 

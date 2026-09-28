@@ -9,7 +9,6 @@ import (
 	"testing"
 	"time"
 
-	sqlitedriver "github.com/glebarez/sqlite"
 	"gorm.io/gorm"
 
 	"github.com/vislake/speed/pkg/db"
@@ -840,10 +839,7 @@ func TestAPublishFailureDoesNotFailTheWrite(t *testing.T) {
 // A load against a database without the table names the table and says what to
 // do about it; it is not folded in with the other read failures.
 func TestAMissingTableIsReportedAsSuch(t *testing.T) {
-	handle, err := gorm.Open(sqlitedriver.Open("file:"+t.Name()+"?mode=memory&cache=shared"), quiet())
-	if err != nil {
-		t.Fatalf("opening the handle: %v", err)
-	}
+	handle := openMemory(t)
 	keys := demoTable(t)
 	_, loadErr := loadSnapshot(context.Background(), handle, keys)
 	if !errors.Is(loadErr, ErrTableMissing) {
