@@ -78,7 +78,9 @@ func encode(iterations int, salt []byte, password string) (string, error) {
 
 // ParseHash reads a stored hash. Every table entry goes through it at startup,
 // so an entry that could never verify is a startup failure rather than a
-// refusal only the holder of that account would ever run into.
+// refusal only the holder of that account would ever run into: one whose fields
+// cannot be read, one whose derived key is not the length verification
+// derives, and one whose parameters this process's derivation refuses.
 //
 // The error never carries the hash or any part of it.
 func ParseHash(encoded string) (hashed, error) {
@@ -106,6 +108,23 @@ func ParseHash(encoded string) (hashed, error) {
 	if err != nil || len(key) == 0 {
 		return hashed{}, fmt.Errorf("%w: the derived key is not unpadded base64 of at least one "+
 			"byte", ErrMalformedHash)
+	}
+	// Verification derives keyLength bytes and compares in constant time,
+	// which never matches keys of two different lengths. A key of any other
+	// length is well formed and could never verify, so it is refused here
+	// with the rest of what cannot.
+	if len(key) != keyLength {
+		return hashed{}, fmt.Errorf("%w: the derived key is %d byte(s), and this backend derives "+
+			"and compares %d", ErrMalformedHash, len(key), keyLength)
+	}
+	// Whether a derivation can run at all with these parameters is the
+	// derivation's own answer, and it depends on the process: in FIPS 140-only
+	// mode the standard library refuses a salt shorter than 128 bits. A
+	// single round is enough to ask, and the answer does not depend on the
+	// password or on the count.
+	if _, err := pbkdf2.Key(sha256.New, "", salt, 1, keyLength); err != nil {
+		return hashed{}, fmt.Errorf("%w: this process cannot derive a key from it: %w",
+			ErrMalformedHash, err)
 	}
 	return hashed{iterations: iterations, salt: salt, key: key}, nil
 }

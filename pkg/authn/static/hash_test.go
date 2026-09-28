@@ -1,7 +1,11 @@
 package static
 
 import (
+	"crypto/pbkdf2"
+	"crypto/sha256"
 	"errors"
+	"os"
+	"os/exec"
 	"strings"
 	"testing"
 )
@@ -110,21 +114,108 @@ func TestWhatCannotBeAHashIsRefusedWhenItIsRead(t *testing.T) {
 	}
 }
 
+// TestAKeyOfAnotherLengthIsRefusedWhenItIsRead holds the length of the derived
+// key against the one verification derives.
+//
+// Verification derives keyLength bytes and compares them in constant time, and
+// a constant-time comparison of two different lengths never matches. A
+// well-formed pbkdf2-sha256 hash carrying a key of any other length — what
+// another tool writes when it is set to a different length — therefore refuses
+// the right password for ever, and the only person who would ever find out is
+// the holder of that account. It is refused when the table is read instead, as
+// every other entry that could never verify is.
+func TestAKeyOfAnotherLengthIsRefusedWhenItIsRead(t *testing.T) {
+	salt := []byte("0123456789abcdef")
+	for _, length := range []int{16, keyLength - 1, keyLength + 1, 64} {
+		key, err := pbkdf2.Key(sha256.New, "correct horse", salt, 2, length)
+		if err != nil {
+			t.Fatalf("deriving a %d-byte key: %v", length, err)
+		}
+		encoded := strings.Join([]string{
+			hashScheme, "2", hashEncoding.EncodeToString(salt),
+			hashEncoding.EncodeToString(key),
+		}, hashSeparator)
+
+		_, err = ParseHash(encoded)
+		if !errors.Is(err, ErrMalformedHash) {
+			t.Errorf("a hash carrying a %d-byte key read back with %v, want a failure wrapping "+
+				"%v: verification derives %d bytes, so it could never verify",
+				length, err, ErrMalformedHash, keyLength)
+		}
+	}
+}
+
+// fipsChild marks the copy of the test binary that
+// TestASaltThisProcessCannotDeriveWithIsRefusedWhenItIsRead starts under FIPS
+// 140-only mode.
+const fipsChild = "SPEED_AUTHN_STATIC_FIPS_CHILD"
+
+// TestASaltThisProcessCannotDeriveWithIsRefusedWhenItIsRead holds the same rule
+// for what the derivation itself refuses. In FIPS 140-only mode the standard
+// library will not derive from a salt shorter than 128 bits, so an entry
+// carrying one reads as well formed and then refuses the right password for
+// ever. Whether a derivation can run is the derivation's own answer, and it is
+// asked when the table is read.
+//
+// The mode is fixed when a process starts, so the case runs in a copy of this
+// test binary started under it.
+func TestASaltThisProcessCannotDeriveWithIsRefusedWhenItIsRead(t *testing.T) {
+	if os.Getenv(fipsChild) == "" {
+		child := exec.Command(os.Args[0], "-test.run=^"+t.Name()+"$", "-test.count=1")
+		child.Env = append(os.Environ(), fipsChild+"=1", "GODEBUG=fips140=only")
+		if out, err := child.CombinedOutput(); err != nil {
+			t.Fatalf("the case failed in FIPS 140-only mode: %v\n%s", err, out)
+		}
+		return
+	}
+
+	// Eight bytes of salt: enough for this backend's format, short of what
+	// the derivation accepts in this mode. The key is any 32 bytes, since
+	// the case is about reading the entry, not about deriving it.
+	short := strings.Join([]string{
+		hashScheme, "2", hashEncoding.EncodeToString([]byte("8 bytes!")),
+		hashEncoding.EncodeToString(make([]byte, keyLength)),
+	}, hashSeparator)
+	if _, err := ParseHash(short); !errors.Is(err, ErrMalformedHash) {
+		t.Errorf("a hash with an 8-byte salt read back with %v in FIPS 140-only mode, want a "+
+			"failure wrapping %v: the derivation refuses that salt here, so it could never verify",
+			err, ErrMalformedHash)
+	}
+
+	// A hash Hash wrote is one the derivation accepts in this mode too.
+	written, err := Hash("correct horse")
+	if err != nil {
+		t.Fatalf("writing a hash in FIPS 140-only mode: %v", err)
+	}
+	parsed, err := ParseHash(written)
+	if err != nil {
+		t.Fatalf("reading back a hash Hash wrote in FIPS 140-only mode: %v", err)
+	}
+	if !parsed.matches("correct horse") {
+		t.Error("a hash Hash wrote does not verify its own password in FIPS 140-only mode")
+	}
+}
+
 // TestReadingAHashNeverEchoesIt holds the rule an error about a credential
 // table has to keep: the thing it is complaining about is the secret.
 func TestReadingAHashNeverEchoesIt(t *testing.T) {
 	const entry = "pbkdf2-sha256$600000$c2VjcmV0c2FsdA$c2VjcmV0a2V5bWF0ZXJpYWw"
 
-	// A well-formed hash with a key of the wrong length still parses; the
-	// case that fails here is a deliberately broken field.
-	broken := strings.Replace(entry, "c2VjcmV0a2V5bWF0ZXJpYWw", "not base64!", 1)
-	_, err := ParseHash(broken)
-	if err == nil {
-		t.Fatal("a hash with an unreadable key parsed without complaint")
-	}
-	for _, secret := range []string{"c2VjcmV0c2FsdA", "c2VjcmV0a2V5bWF0ZXJpYWw", "not base64!"} {
-		if strings.Contains(err.Error(), secret) {
-			t.Errorf("the failure reads %q and carries %q out of the stored hash", err, secret)
+	// Each case fails on one field, so that its text could quote the others:
+	// a key that is not base64, and the entry as written, whose key is
+	// readable and of a length verification never derives.
+	for _, broken := range []string{
+		strings.Replace(entry, "c2VjcmV0a2V5bWF0ZXJpYWw", "not base64!", 1),
+		entry,
+	} {
+		_, err := ParseHash(broken)
+		if err == nil {
+			t.Fatalf("the hash %q parsed without complaint", broken)
+		}
+		for _, secret := range []string{"c2VjcmV0c2FsdA", "c2VjcmV0a2V5bWF0ZXJpYWw", "not base64!"} {
+			if strings.Contains(err.Error(), secret) {
+				t.Errorf("the failure reads %q and carries %q out of the stored hash", err, secret)
+			}
 		}
 	}
 }
