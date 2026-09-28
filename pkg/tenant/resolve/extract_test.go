@@ -59,6 +59,7 @@ func TestSubdomainExtractor(t *testing.T) {
 		{"the leading label", "acme.example.com", 0, "acme"},
 		{"a middle label", "acme.example.com", 1, "example"},
 		{"a port is not a label", "acme.example.com:8443", 0, "acme"},
+		{"a host is read in lower case", "ACME.Example.com", 0, "acme"},
 		{"out of range", "acme.example.com", 7, ""},
 	} {
 		t.Run(tc.what, func(t *testing.T) {

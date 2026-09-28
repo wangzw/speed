@@ -36,6 +36,12 @@ func (e headerExtractor) Extract(r *nethttp.Request) (string, bool) {
 // the left, which is the direction a reader of a hostname scans it; a
 // deployment whose host carries a variable number of leading labels is better
 // served by a path prefix, where the segments are the application's own.
+//
+// The label is handed over in lower case. A host name is case-insensitive, so
+// ACME.example.com and acme.example.com are one host and have to reach one
+// tenant; the roster matches an alias byte for byte, and folding here is what
+// makes the two spellings one name. An alias served through this extractor is
+// therefore registered in lower case.
 type subdomainExtractor struct{ index int }
 
 func (e subdomainExtractor) Extract(r *nethttp.Request) (string, bool) {
@@ -47,7 +53,7 @@ func (e subdomainExtractor) Extract(r *nethttp.Request) (string, bool) {
 	if e.index < 0 || e.index >= len(labels) {
 		return "", false
 	}
-	name := labels[e.index]
+	name := strings.ToLower(labels[e.index])
 	return name, name != ""
 }
 
