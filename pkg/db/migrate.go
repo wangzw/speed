@@ -59,9 +59,10 @@ type MigrationLock interface {
 // recordTableName is the table that records which migrations have been applied.
 // A row per applied migration, keyed by the declaring module and the file name.
 //
-// It is created by an unconditionally reentrant statement before every run,
-// rather than by anyone's migration set: reading it is how the run learns what
-// is already applied, so it has no moment of its own that could be tracked.
+// It is created by an unconditionally reentrant statement, in any run that does
+// not find it, rather than by anyone's migration set: reading it is how the run
+// learns what is already applied, so it has no moment of its own that could be
+// tracked.
 // Nothing in the three statements below is dialect-specific, so they are not
 // split per dialect.
 const recordTableName = "db_migrations"
@@ -225,10 +226,20 @@ func discard(conn *sql.Conn) error {
 
 // applyUnderLock is the run itself, with the mutex already held, on the session
 // pinned to the connection the mutex was taken on.
+//
+// The record table is created only when it is not there. The statement that
+// creates it is reentrant, but PostgreSQL checks the privilege to create in the
+// schema before it looks for the table, so running it on every start would ask
+// every command for DDL privilege — the service's too, in a deployment that
+// applies migrations with one role and serves with another that may only read
+// and write rows. Looked up first, a run whose migrations are all applied reads
+// the record table and changes nothing, which is all such a role can do.
 func applyUnderLock(reg *core.Registry, session *gorm.DB, dialect Dialect) error {
-	if err := session.Exec(createRecordTable).Error; err != nil {
-		return fmt.Errorf("%w: creating the migration record table %q failed: %w",
-			ErrMigrationFailed, recordTableName, err)
+	if !session.Migrator().HasTable(recordTableName) {
+		if err := session.Exec(createRecordTable).Error; err != nil {
+			return fmt.Errorf("%w: creating the migration record table %q failed: %w",
+				ErrMigrationFailed, recordTableName, err)
+		}
 	}
 	applied, err := readRecords(session)
 	if err != nil {
