@@ -117,9 +117,16 @@ func TestANamespaceASubjectCannotCarryIsRefused(t *testing.T) {
 
 // factoryOn builds buses over one server, each with a durable consumer of its
 // own: replicas of one assembly.
+//
+// They share a namespace of this test process's own. The suite names its
+// event types by hand, the same names in every run, and the server is shared
+// with every other checkout running the suite at the same moment: in the
+// default namespace, each of those runs would publish onto the streams this
+// one reads, and a case counting deliveries would count theirs.
 func factoryOn(url string) bussuite.Factory {
+	namespace := "suite_" + runToken
 	return func(t *testing.T) (event.Bus, func(context.Context)) {
-		b := openBus(t, url, "")
+		b := openBusIn(t, url, "", namespace)
 		return b, func(ctx context.Context) {
 			if err := b.begin(ctx); err != nil {
 				t.Fatalf("begin: %v", err)
