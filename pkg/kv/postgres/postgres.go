@@ -90,11 +90,40 @@ func open(ctx context.Context, cfg *pgpool.Config) (kv.KV, error) {
 	if err != nil {
 		return nil, err
 	}
-	if _, createErr := pool.Exec(ctx, createTable); createErr != nil {
+	if prepareErr := prepareTable(ctx, pool); prepareErr != nil {
 		pool.Close()
-		return nil, fmt.Errorf("%s: creating %s: %w", ModuleName, table, createErr)
+		return nil, fmt.Errorf("%s: creating %s: %w", ModuleName, table, prepareErr)
 	}
 	return &store{pool: pool}, nil
+}
+
+// schemaLock names the advisory lock that serialises this implementation's
+// DDL within one database. It is hashed into the lock's key space by the
+// server, so it only has to be distinct from what other modules hash.
+const schemaLock = "speed:kv:" + table
+
+// prepareTable creates the table, holding a transaction-scoped advisory lock
+// while it does.
+//
+// The lock is what makes several replicas starting at once against an empty
+// database safe. CREATE TABLE IF NOT EXISTS is not safe against a concurrent
+// copy of itself: two sessions can both find the table missing, and the one
+// that commits second fails on the catalog's unique index for the table's row
+// type — a replica that fails its startup for no fault of its own. Under the
+// lock the second session waits, then finds the table and does nothing.
+func prepareTable(ctx context.Context, pool *pgxpool.Pool) error {
+	tx, beginErr := pool.Begin(ctx)
+	if beginErr != nil {
+		return beginErr
+	}
+	defer func() { _ = tx.Rollback(ctx) }()
+	if _, lockErr := tx.Exec(ctx, `SELECT pg_advisory_xact_lock(hashtextextended($1, 0))`, schemaLock); lockErr != nil {
+		return lockErr
+	}
+	if _, createErr := tx.Exec(ctx, createTable); createErr != nil {
+		return createErr
+	}
+	return tx.Commit(ctx)
 }
 
 // store is the capability over one pool.

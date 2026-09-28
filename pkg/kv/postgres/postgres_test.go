@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"strings"
+	"sync"
 	"testing"
 
 	"github.com/vislake/speed/pkg/core"
@@ -104,6 +105,45 @@ func TestOnlyTheServersNonNumericWordingBecomesTheSentinel(t *testing.T) {
 	nonNumeric := errors.New(`ERROR: invalid input syntax for type numeric: "not a number" (SQLSTATE 22P02)`)
 	if got := asNotNumeric(nonNumeric); !errors.Is(got, kv.ErrNotNumeric) {
 		t.Fatalf("the server's non-numeric complaint was not mapped onto the sentinel: %v", got)
+	}
+}
+
+// TestReplicasOpeningAFreshDatabaseTogetherAllStart covers the first rollout of
+// several replicas against an empty database. Each one creates the table as it
+// opens, and PostgreSQL's CREATE TABLE IF NOT EXISTS is not safe against a
+// concurrent copy of itself: two sessions can both find the table missing, and
+// the one that commits second fails on the catalog's unique index for the
+// table's row type — which here is a replica that fails its startup.
+//
+// The race is probabilistic, so the case gives it several fresh databases and
+// several simultaneous opens on each.
+func TestReplicasOpeningAFreshDatabaseTogetherAllStart(t *testing.T) {
+	const rounds, replicas = 4, 6
+	ctx := context.Background()
+	for round := range rounds {
+		dsn := pgtest.Acquire(t)
+		start := make(chan struct{})
+		errs := make(chan error, replicas)
+		var wg sync.WaitGroup
+		for range replicas {
+			wg.Add(1)
+			go func() {
+				defer wg.Done()
+				<-start
+				opened, err := open(ctx, &pgpool.Config{DSN: dsn, MaxConns: 1})
+				if err != nil {
+					errs <- err
+					return
+				}
+				_ = opened.(*store).Close(ctx)
+			}()
+		}
+		close(start)
+		wg.Wait()
+		close(errs)
+		for err := range errs {
+			t.Errorf("round %d: a replica failed to start against a fresh database: %v", round, err)
+		}
 	}
 }
 
