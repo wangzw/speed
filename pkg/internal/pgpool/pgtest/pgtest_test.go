@@ -2,6 +2,7 @@ package pgtest_test
 
 import (
 	"database/sql"
+	"net/url"
 	"strings"
 	"testing"
 
@@ -56,6 +57,42 @@ func TestAcquiredDatabaseNamesCarryTheOwningProcess(t *testing.T) {
 	if !strings.HasPrefix(name, "pgtest_p") || !strings.Contains(name, "_n") {
 		t.Errorf("the database name %q does not carry the owning process id, so a later run cannot tell "+
 			"a dead run's leftovers from a live run's databases", name)
+	}
+}
+
+// TestADMLRoleWritesRowsAndCreatesNothing holds DMLRole to the credential the
+// cases built on it describe: it reads and writes the rows of a table that was
+// there when it was made, it creates nothing, and its name carries the owning
+// process, which is how the housekeeping tells a dead run's role from a live
+// one's.
+func TestADMLRoleWritesRowsAndCreatesNothing(t *testing.T) {
+	dsn := pgtest.Acquire(t)
+	owner := open(t, dsn)
+	if _, err := owner.Exec(`CREATE TABLE rows_only (id BIGSERIAL PRIMARY KEY, note TEXT)`); err != nil {
+		t.Fatalf("creating the table as the owner: %v", err)
+	}
+	roleDSN := pgtest.DMLRole(t, dsn)
+	parsed, err := url.Parse(roleDSN)
+	if err != nil {
+		t.Fatalf("reading the role's locator: %v", err)
+	}
+	if name := parsed.User.Username(); !strings.HasPrefix(name, "pgtest_p") || !strings.Contains(name, "_r") {
+		t.Errorf("the role name %q does not carry the owning process id, so a later run cannot tell a "+
+			"dead run's role from a live run's", name)
+	}
+
+	asRole := open(t, roleDSN)
+	if _, err := asRole.Exec(`INSERT INTO rows_only (note) VALUES ('written')`); err != nil {
+		t.Errorf("the role cannot write a row of a table that was there when it was made: %v", err)
+	}
+	if _, err := asRole.Exec(`UPDATE rows_only SET note = 'rewritten'`); err != nil {
+		t.Errorf("the role cannot update a row: %v", err)
+	}
+	if _, err := asRole.Exec(`DELETE FROM rows_only`); err != nil {
+		t.Errorf("the role cannot delete a row: %v", err)
+	}
+	if _, err := asRole.Exec(`CREATE TABLE created_by_the_role (id INTEGER)`); err == nil {
+		t.Error("the role created a table")
 	}
 }
 

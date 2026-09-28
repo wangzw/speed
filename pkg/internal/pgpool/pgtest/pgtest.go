@@ -20,7 +20,9 @@
 // each call and drops it when the test ends. The migration cases assert on
 // which tables exist and on what the record table holds, and neither survives
 // being shared with the packages go test runs in parallel or with the second
-// test leg make check runs.
+// test leg make check runs. DMLRole adds, on such a database, a role that may
+// read and write rows and create nothing, for the cases about a service that
+// runs without the privilege to change the schema.
 //
 // Every module whose tests need PostgreSQL uses this one — the database module
 // and the postgres backends of the key-value and event modules — so it lives
@@ -77,10 +79,13 @@ const (
 	// call exits non-zero, and the look reports it. No case holds this value
 	// to a real docker for that reason.
 	runningState = "true"
-	// namePrefix starts the name of every database this package creates. It
-	// is also how the housekeeping tells them from anything else on a
-	// container someone else's tooling may share.
+	// namePrefix starts the name of every database and role this package
+	// creates. It is also how the housekeeping tells them from anything else
+	// on a container someone else's tooling may share.
 	namePrefix = "pgtest_p"
+	// databaseInfix separates the owning process id from the counter in a
+	// database's name.
+	databaseInfix = "_n"
 	// readyTimeout bounds the wait for a cold container to accept
 	// connections, the image pull included.
 	readyTimeout = 3 * time.Minute
@@ -163,7 +168,7 @@ func Acquire(t *testing.T) string {
 		t.Fatalf("bringing up the %s container: %v", containerName, err)
 	}
 
-	name := fmt.Sprintf("%s%d_n%d", namePrefix, os.Getpid(), databaseCounter.Add(1))
+	name := fmt.Sprintf("%s%d%s%d", namePrefix, os.Getpid(), databaseInfix, databaseCounter.Add(1))
 	if err := createDatabase(port, name); err != nil {
 		t.Fatalf("creating the database %s: %v", name, err)
 	}
@@ -222,6 +227,7 @@ func startServer() (string, error) {
 		return "", err
 	}
 	dropStaleDatabases(port)
+	dropStaleRoles(port)
 	return port, nil
 }
 
@@ -535,14 +541,27 @@ func maintenanceStatement(port, statement string) error {
 // Failures here are not reported: this is housekeeping, and a database that
 // could not be dropped costs disk rather than correctness.
 func dropStaleDatabases(port string) {
-	for _, name := range stale(port) {
+	for _, name := range stale(port, `SELECT datname FROM pg_database WHERE datname LIKE $1`, databaseInfix) {
 		_ = dropDatabase(port, name)
 	}
 }
 
-// stale lists the databases this package created for processes that have since
-// exited.
-func stale(port string) []string {
+// dropStaleRoles removes the roles DMLRole made for processes that are gone.
+//
+// A role belongs to the server rather than to a database, so dropping a dead
+// run's database leaves its role behind. It runs after dropStaleDatabases: the
+// grants a role held went with its database, and a role holding none can be
+// dropped. Failures are not reported, for the same reason as there.
+func dropStaleRoles(port string) {
+	for _, name := range stale(port, `SELECT rolname FROM pg_roles WHERE rolname LIKE $1`, roleInfix) {
+		_ = maintenanceStatement(port, "DROP ROLE IF EXISTS "+pgx.Identifier{name}.Sanitize())
+	}
+}
+
+// stale lists the names this package created for processes that have since
+// exited, out of what query returns for this package's name prefix; infix is
+// what follows the process id in those names.
+func stale(port, query, infix string) []string {
 	pool, err := maintenance(port)
 	if err != nil {
 		return nil
@@ -551,8 +570,7 @@ func stale(port string) []string {
 	ctx, cancel := context.WithTimeout(context.Background(), statementTimeout)
 	defer cancel()
 
-	rows, err := pool.QueryContext(ctx,
-		`SELECT datname FROM pg_database WHERE datname LIKE $1`, namePrefix+"%")
+	rows, err := pool.QueryContext(ctx, query, namePrefix+"%")
 	if err != nil {
 		return nil
 	}
@@ -565,7 +583,7 @@ func stale(port string) []string {
 		if err := rows.Scan(&name); err != nil {
 			return nil
 		}
-		pid, ok := ownerPID(name)
+		pid, ok := ownerPID(name, infix)
 		if !ok || pid == self || processAlive(pid) {
 			continue
 		}
@@ -577,13 +595,14 @@ func stale(port string) []string {
 	return leftovers
 }
 
-// ownerPID reads the process id out of a database name this package created.
-func ownerPID(name string) (int, bool) {
+// ownerPID reads the process id out of a name this package created, in which
+// infix follows the id.
+func ownerPID(name, infix string) (int, bool) {
 	rest, found := strings.CutPrefix(name, namePrefix)
 	if !found {
 		return 0, false
 	}
-	digits, _, found := strings.Cut(rest, "_n")
+	digits, _, found := strings.Cut(rest, infix)
 	if !found {
 		return 0, false
 	}
