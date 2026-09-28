@@ -13,12 +13,13 @@ import (
 	"github.com/vislake/speed/pkg/event/internal/bussuite"
 	"github.com/vislake/speed/pkg/internal/pgpool"
 	"github.com/vislake/speed/pkg/internal/pgpool/pgtest"
+	"github.com/vislake/speed/pkg/log"
 )
 
 // openBus builds a bus over the given database.
 func openBus(t *testing.T, dsn string) *bus {
 	t.Helper()
-	opened, err := open(context.Background(), &pgpool.Config{DSN: dsn, MaxConns: 4})
+	opened, err := open(context.Background(), &pgpool.Config{DSN: dsn, MaxConns: 4}, log.Default())
 	if err != nil {
 		t.Fatalf("open: %v", err)
 	}

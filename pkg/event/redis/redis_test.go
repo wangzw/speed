@@ -13,6 +13,7 @@ import (
 	"github.com/vislake/speed/pkg/event/internal/bussuite"
 	speedredis "github.com/vislake/speed/pkg/internal/redis"
 	"github.com/vislake/speed/pkg/internal/redis/redistest"
+	"github.com/vislake/speed/pkg/log"
 )
 
 // openBus builds a bus over the given server, with a consumer group name of its
@@ -21,7 +22,7 @@ func openBus(t *testing.T, addr string, db int, group string) *bus {
 	t.Helper()
 	proto := Config{Config: speedredis.Defaults()}
 	proto.Addr, proto.DB, proto.ConsumerGroup = addr, db, group
-	opened, err := open(context.Background(), &proto)
+	opened, err := open(context.Background(), &proto, log.Default())
 	if err != nil {
 		t.Fatalf("open: %v", err)
 	}

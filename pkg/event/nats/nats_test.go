@@ -17,6 +17,7 @@ import (
 	"github.com/vislake/speed/pkg/event"
 	"github.com/vislake/speed/pkg/event/internal/bussuite"
 	"github.com/vislake/speed/pkg/internal/natstest"
+	"github.com/vislake/speed/pkg/log"
 )
 
 // eventTypeSerial names each case's event type, so two cases on one server
@@ -51,7 +52,7 @@ func openBusIn(t *testing.T, url string, name string, namespace string) *bus {
 	t.Helper()
 	opened, err := open(context.Background(), &Config{
 		URL: url, ConsumerName: name, Namespace: namespace, Timeout: 10 * time.Second,
-	})
+	}, log.Default())
 	if err != nil {
 		t.Fatalf("open: %v", err)
 	}

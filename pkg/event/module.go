@@ -2,10 +2,13 @@ package event
 
 import (
 	"context"
+	"errors"
 	"fmt"
+	"log/slog"
 
 	"github.com/vislake/speed/pkg/config"
 	"github.com/vislake/speed/pkg/core"
+	"github.com/vislake/speed/pkg/log"
 )
 
 // Spec is what an implementation subpackage hands this package to become a
@@ -59,7 +62,14 @@ type Spec[C any] struct {
 	// pointed at once fails the startup.
 	Stance func(cfg *C) (core.Enablement, error)
 	// Open builds this implementation from the decoded configuration.
-	Open func(ctx context.Context, cfg *C) (Bus, error)
+	//
+	// logger is where the implementation writes what it has to report on its
+	// own — a subscriber's failure, a backend it could not read — since none of
+	// that has a caller to return to. It is the assembly's logger named after
+	// this module when the assembly delivers the logging capability, and the
+	// logging module's process default otherwise, so the records obey the
+	// configured destinations, format and redaction whenever there are any.
+	Open func(ctx context.Context, cfg *C, logger *slog.Logger) (Bus, error)
 	// Start is called when the drive reaches the start stage, and is where an
 	// implementation freezes what has to be fixed before the first publish.
 	//
@@ -84,6 +94,11 @@ func NewModule[C any](spec Spec[C]) core.Module {
 	spec.check()
 	m := core.Module{
 		Name: spec.ModuleName,
+		// Optional, because a bus has to work in an assembly that never took
+		// logging in; declared, because an assembly that did has to have it
+		// constructed first, or the bus would be built before there was a
+		// logger to hand it.
+		Requires: []core.Requirement{{Token: (*log.Logger)(nil), Optional: true}},
 		// Exclusive, because two backends behind one capability is not a
 		// configuration this module could serve: a publisher would hand its
 		// events to whichever one resolution happened to leave standing, and its
@@ -102,7 +117,11 @@ func NewModule[C any](spec Spec[C]) core.Module {
 			if err != nil {
 				return nil, err
 			}
-			return spec.Open(ctx, cfg)
+			logger, err := spec.logger(reg)
+			if err != nil {
+				return nil, err
+			}
+			return spec.Open(ctx, cfg, logger)
 		},
 		Close: func(ctx context.Context, _ *core.Registry, instance any) error {
 			return release(ctx, instance)
@@ -175,6 +194,24 @@ func (s Spec[C]) read(reg *core.Registry) (*C, error) {
 		return nil, err
 	}
 	return cfg, nil
+}
+
+// logger takes up the logging capability when the assembly delivers one.
+//
+// Its absence is a legal assembly and is told apart from a failed lookup by the
+// sentinel: anything other than "no provider" is the lookup itself failing,
+// and that terminates the startup rather than quietly sending this module's
+// records somewhere the host did not configure.
+func (s Spec[C]) logger(reg *core.Registry) (*slog.Logger, error) {
+	delivered, err := core.Resolve[log.Logger](reg)
+	if err != nil {
+		if errors.Is(err, core.ErrMissingProvider) {
+			return log.Default(), nil
+		}
+		return nil, fmt.Errorf("%s: taking up the logger this implementation reports through: %w",
+			s.ModuleName, err)
+	}
+	return delivered.Named(s.ModuleName), nil
 }
 
 // closer is what an implementation's product implements to release what it

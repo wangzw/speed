@@ -10,13 +10,14 @@ import (
 	"github.com/vislake/speed/pkg/core"
 	"github.com/vislake/speed/pkg/event"
 	"github.com/vislake/speed/pkg/event/internal/bussuite"
+	"github.com/vislake/speed/pkg/log"
 )
 
 // openBus builds a bus that has not been put into service, for the cases that
 // drive the stages themselves.
 func openBus(t *testing.T) event.Bus {
 	t.Helper()
-	b, err := open(context.Background(), &Config{Replicas: 1})
+	b, err := open(context.Background(), &Config{Replicas: 1}, log.Default())
 	if err != nil {
 		t.Fatalf("open: %v", err)
 	}

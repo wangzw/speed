@@ -16,7 +16,7 @@
 // whatever they returned. A failure has nowhere to go — no publisher is waiting
 // on a read that happens after its own call returned — and leaving the entry
 // pending would have it redelivered forever, which is a worse answer than
-// reporting it to the process's log once.
+// reporting it to the assembly's log once.
 package redis
 
 import (
@@ -139,7 +139,7 @@ func stance(cfg *Config) (core.Enablement, error) {
 }
 
 // open builds the bus.
-func open(ctx context.Context, cfg *Config) (event.Bus, error) {
+func open(ctx context.Context, cfg *Config, logger *slog.Logger) (event.Bus, error) {
 	client, err := redis.Connect(ctx, cfg.Config)
 	if err != nil {
 		return nil, fmt.Errorf("%s: %w", ModuleName, err)
@@ -157,6 +157,7 @@ func open(ctx context.Context, cfg *Config) (event.Bus, error) {
 	}
 	return &bus{
 		client:     client,
+		logger:     logger,
 		group:      group,
 		consumer:   defaultConsumerName(),
 		maxEntries: maxEntries,
@@ -180,6 +181,7 @@ func start(ctx context.Context, b event.Bus) error {
 // bus is the capability over one client.
 type bus struct {
 	client     *goredis.Client
+	logger     *slog.Logger
 	group      string
 	consumer   string
 	maxEntries int64
@@ -310,11 +312,11 @@ func (b *bus) read(stream, eventType string) {
 				// makes rerunning it here safe.
 				if createErr := b.client.XGroupCreateMkStream(b.readCtx, stream, b.group, newGroupStart).Err(); createErr != nil &&
 					!strings.Contains(createErr.Error(), "BUSYGROUP") {
-					slog.Default().Error("event/redis: recreating the consumer group failed",
+					b.logger.Error("event/redis: recreating the consumer group failed",
 						"event", eventType, "err", createErr)
 				}
 			}
-			slog.Default().Error("event/redis: reading the stream failed; retrying",
+			b.logger.Error("event/redis: reading the stream failed; retrying",
 				"event", eventType, "err", err)
 			select {
 			case <-b.readCtx.Done():
@@ -336,7 +338,7 @@ func (b *bus) read(stream, eventType string) {
 				// forever with nobody left to tell.
 				if err := b.client.XAck(b.readCtx, stream, b.group, msg.ID).Err(); err != nil &&
 					b.readCtx.Err() == nil {
-					slog.Default().Error("event/redis: acknowledging a delivered entry failed",
+					b.logger.Error("event/redis: acknowledging a delivered entry failed",
 						"event", eventType, "id", msg.ID, "err", err)
 				}
 			}
@@ -359,7 +361,7 @@ func (b *bus) deliver(eventType string, msg goredis.XMessage) bool {
 	evt := decode(eventType, msg.Values)
 	for i, h := range handlers {
 		if err := b.runHandler(h, evt); err != nil {
-			slog.Default().Error("event/redis: a subscriber failed; the publisher is not told",
+			b.logger.Error("event/redis: a subscriber failed; the publisher is not told",
 				"event", eventType, "handler", i, "err", err)
 		}
 	}

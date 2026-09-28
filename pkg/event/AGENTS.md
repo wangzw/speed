@@ -54,6 +54,12 @@ must not cross, and how to run it.
   the fact; a transport-backed bus calls it on a context of its own, leaving the
   span a root. Which shape a subscriber sees is a property of the deployed
   backend, not of this interface.
+- **An implementation reports through the logger `Spec.Open` hands it, and
+  through nothing else.** That logger is the assembly's, named after the module,
+  when the assembly delivers logging; the log module never replaces the process
+  default logger, so a record written through `slog.Default()` bypasses the
+  configured destinations, format and redaction — and a subscriber's error text
+  can quote payload values.
 - **The root package registers no module.** Each implementation's subpackage does
   it in its own `init`.
 - **The root package imports no backend client.** A client belongs to the

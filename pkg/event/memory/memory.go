@@ -11,8 +11,8 @@
 // but doing so would make Publish's error mean two different things: the event
 // was not accepted, or the event was accepted and a subscriber failed. A
 // publisher cannot act on the second the way it acts on the first, and it has
-// no way to tell them apart. The failure is written to the process's default
-// logger instead.
+// no way to tell them apart. The failure is written to the assembly's logger
+// instead.
 //
 // A handler that panics is not recovered. A panic is a defect in the handler,
 // and swallowing it here would leave the publisher unable to distinguish a
@@ -114,8 +114,8 @@ func stance(cfg *Config) (core.Enablement, error) {
 }
 
 // open builds the bus.
-func open(_ context.Context, _ *Config) (event.Bus, error) {
-	return &bus{handlers: make(map[string][]event.Handler)}, nil
+func open(_ context.Context, _ *Config, logger *slog.Logger) (event.Bus, error) {
+	return &bus{logger: logger, handlers: make(map[string][]event.Handler)}, nil
 }
 
 // start freezes the subscription table.
@@ -136,6 +136,8 @@ func start(_ context.Context, b event.Bus) error {
 
 // bus is the whole of this implementation's state.
 type bus struct {
+	logger *slog.Logger
+
 	mu       sync.RWMutex
 	handlers map[string][]event.Handler
 	frozen   bool
@@ -195,7 +197,7 @@ func (b *bus) Publish(ctx context.Context, evt event.Event) error {
 
 	for i, h := range handlers {
 		if err := h(ctx, evt); err != nil {
-			slog.Default().Error("event/memory: a subscriber failed; the publisher is not told",
+			b.logger.Error("event/memory: a subscriber failed; the publisher is not told",
 				"event", evt.Type, "handler", i, "err", err)
 		}
 	}

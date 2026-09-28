@@ -132,7 +132,7 @@ func stance(cfg *pgpool.Config) (core.Enablement, error) {
 
 // open builds the pool, makes sure the outbox is there, and takes the listening
 // connection.
-func open(ctx context.Context, cfg *pgpool.Config) (event.Bus, error) {
+func open(ctx context.Context, cfg *pgpool.Config, logger *slog.Logger) (event.Bus, error) {
 	pool, err := pgpool.Connect(ctx, ModuleName, *cfg)
 	if err != nil {
 		return nil, err
@@ -169,6 +169,7 @@ func open(ctx context.Context, cfg *pgpool.Config) (event.Bus, error) {
 	return &bus{
 		pool:     pool,
 		listen:   listen,
+		logger:   logger,
 		replica:  self,
 		handlers: make(map[string][]event.Handler),
 	}, nil
@@ -186,6 +187,7 @@ func start(ctx context.Context, b event.Bus) error {
 type bus struct {
 	pool   *pgxpool.Pool
 	listen *pgx.Conn
+	logger *slog.Logger
 
 	mu       sync.Mutex
 	handlers map[string][]event.Handler
@@ -297,14 +299,14 @@ func (b *bus) read() {
 		// clock as any other. It sits here rather than at the end of drain,
 		// because drain returns early when there are no subscribers.
 		if err := b.retireIfDue(time.Now(), b.runRetention); err != nil {
-			slog.Default().Error("event/postgres: retiring old entries failed; the next round retries",
+			b.logger.Error("event/postgres: retiring old entries failed; the next round retries",
 				"err", err)
 		}
 		if err := b.drain(); err != nil {
 			if b.readCtx.Err() != nil {
 				return
 			}
-			slog.Default().Error("event/postgres: reading the outbox failed; retrying",
+			b.logger.Error("event/postgres: reading the outbox failed; retrying",
 				"err", err)
 			select {
 			case <-b.readCtx.Done():
@@ -322,7 +324,7 @@ func (b *bus) read() {
 		// and without a pause it would turn this loop into a spin against the
 		// database.
 		if waitErr != nil && b.readCtx.Err() == nil && !errors.Is(waitErr, context.DeadlineExceeded) {
-			slog.Default().Error("event/postgres: waiting for a notification failed; carrying on "+
+			b.logger.Error("event/postgres: waiting for a notification failed; carrying on "+
 				"by polling the table", "err", waitErr)
 			select {
 			case <-b.readCtx.Done():
@@ -457,7 +459,7 @@ func (b *bus) deliver(evt event.Event) bool {
 	b.mu.Unlock()
 	for i, h := range handlers {
 		if err := b.runHandler(h, evt); err != nil {
-			slog.Default().Error("event/postgres: a subscriber failed; the publisher is not told",
+			b.logger.Error("event/postgres: a subscriber failed; the publisher is not told",
 				"event", evt.Type, "handler", i, "err", err)
 		}
 	}

@@ -16,7 +16,7 @@
 // whatever they returned. A failure has nowhere to go — no publisher is waiting
 // on a read that happens after its own call returned — and leaving an entry
 // unacknowledged would have it redelivered forever, which is a worse answer
-// than reporting it to the process's log once.
+// than reporting it to the assembly's log once.
 package nats
 
 import (
@@ -163,7 +163,7 @@ func stance(cfg *Config) (core.Enablement, error) {
 }
 
 // open connects.
-func open(ctx context.Context, cfg *Config) (event.Bus, error) {
+func open(ctx context.Context, cfg *Config, logger *slog.Logger) (event.Bus, error) {
 	nc, err := nats.Connect(cfg.URL, nats.Timeout(cfg.Timeout))
 	if err != nil {
 		return nil, fmt.Errorf("%s: connecting: %w", ModuleName, err)
@@ -195,6 +195,7 @@ func open(ctx context.Context, cfg *Config) (event.Bus, error) {
 	return &bus{
 		nc:         nc,
 		js:         js,
+		logger:     logger,
 		consumer:   name,
 		maxEntries: maxEntries,
 		namespace:  namespace,
@@ -215,6 +216,7 @@ func start(ctx context.Context, b event.Bus) error {
 type bus struct {
 	nc         *nats.Conn
 	js         jetstream.JetStream
+	logger     *slog.Logger
 	consumer   string
 	maxEntries int64
 	// namespace is the first token of every subject this bus touches, and the
@@ -379,7 +381,7 @@ func (b *bus) read(stream, eventType string) {
 			// and an error line for it would misdirect whoever reads the log.
 			return
 		}
-		slog.Default().Error("event/nats: taking the consumer failed; retrying", "event", eventType, "err", err)
+		b.logger.Error("event/nats: taking the consumer failed; retrying", "event", eventType, "err", err)
 		select {
 		case <-b.readCtx.Done():
 			return
@@ -395,7 +397,7 @@ func (b *bus) read(stream, eventType string) {
 			if b.readCtx.Err() != nil {
 				return
 			}
-			slog.Default().Error("event/nats: fetching failed; retrying", "event", eventType, "err", err)
+			b.logger.Error("event/nats: fetching failed; retrying", "event", eventType, "err", err)
 			select {
 			case <-b.readCtx.Done():
 				return
@@ -414,12 +416,12 @@ func (b *bus) read(stream, eventType string) {
 			// handed over, and an unacknowledged one would be redelivered
 			// forever with nobody left to tell.
 			if err := msg.Ack(); err != nil && b.readCtx.Err() == nil {
-				slog.Default().Error("event/nats: acknowledging a delivered entry failed",
+				b.logger.Error("event/nats: acknowledging a delivered entry failed",
 					"event", eventType, "err", err)
 			}
 		}
 		if err := batch.Error(); err != nil && b.readCtx.Err() == nil {
-			slog.Default().Error("event/nats: the fetch ended in an error", "event", eventType, "err", err)
+			b.logger.Error("event/nats: the fetch ended in an error", "event", eventType, "err", err)
 		}
 	}
 }
@@ -460,7 +462,7 @@ func (b *bus) deliver(eventType string, data []byte) bool {
 	}
 	for i, h := range handlers {
 		if err := b.runHandler(h, evt); err != nil {
-			slog.Default().Error("event/nats: a subscriber failed; the publisher is not told",
+			b.logger.Error("event/nats: a subscriber failed; the publisher is not told",
 				"event", eventType, "handler", i, "err", err)
 		}
 	}
