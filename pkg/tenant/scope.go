@@ -40,6 +40,13 @@ func FromContext(ctx context.Context) (ID, bool) {
 // the one it was derived from — the audit journal filling its tenant column is
 // one — would file an unscoped statement under a scope it does not have.
 //
+// What crossing lifts is the condition and the fill, not the column. A row
+// written across tenants still has to carry a tenant, so an insert under this
+// mark whose row names none, and a write under it that puts an empty value, a
+// null or a value outside the identifier's domain into the tenant column, is
+// refused: such a row belongs to no tenant, and no scoped statement could reach
+// it again.
+//
 // This is the only way across tenants. It is a context fact rather than a
 // statement fact so that it can be established once at the mouth of a function
 // and hold for everything that function goes on to issue, which is also what

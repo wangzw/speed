@@ -1,9 +1,9 @@
 package catalog
 
 import (
-	"context"
 	"fmt"
 	"reflect"
+	"strings"
 
 	"gorm.io/gorm"
 	"gorm.io/gorm/clause"
@@ -17,14 +17,10 @@ import (
 // registry.
 const callbackName = "tenant:scope"
 
-const (
-	// conventionField is the Go field tenant.Model contributes. GORM
-	// flattens an embedded struct, so the field appears on the model's own
-	// schema under this name.
-	conventionField = "TenantID"
-	// columnName is where that field lands in the table.
-	columnName = "tenant_id"
-)
+// conventionField is the Go field tenant.Model contributes. GORM flattens an
+// embedded struct, so the field appears on the model's own schema under this
+// name. The column it lands in is read off the field, not assumed.
+const conventionField = "TenantID"
 
 // conventionType is the embedded type that marks a model as scoped. Comparing
 // against it is what distinguishes a model that embedded the convention from
@@ -94,9 +90,27 @@ func (f *filter) Initialize(handle *gorm.DB) error {
 	return nil
 }
 
-// scopedTo settles whether this statement is this plugin's business, and
+// scope is what the plugin makes of one statement.
+type scope int
+
+const (
+	// unscoped is a statement against a model that does not embed the
+	// convention. The plugin leaves it alone.
+	unscoped scope = iota
+	// crossing is a scoped statement whose context crosses tenants. It is
+	// neither conditioned nor filled, and what it writes into the tenant
+	// column is still judged.
+	crossing
+	// refused is a scoped statement whose context carries no tenant. The
+	// refusal is already on the statement.
+	refused
+	// tenanted is a scoped statement whose context carries a tenant.
+	tenanted
+)
+
+// scopeOf settles whether this statement is this plugin's business, and
 // returns the convention's field and the tenant the statement belongs to when
-// it is.
+// it has one.
 //
 // The answers are ordered, and the order is load-bearing. Recognising the model
 // comes first, so a statement that is not scoped is left alone whatever its
@@ -108,13 +122,14 @@ func (f *filter) Initialize(handle *gorm.DB) error {
 // earlier execution of it left behind: a chain first run under one tenant and
 // then carried to a crossing context, or to none, is judged by the context it
 // runs under now.
-func scopedTo(tx *gorm.DB, st *gorm.Statement) (*gormschema.Field, string, bool) {
+func scopeOf(tx *gorm.DB, st *gorm.Statement) (*gormschema.Field, string, scope) {
 	if !scoped(st) {
-		return nil, "", false
+		return nil, "", unscoped
 	}
+	field := st.Schema.LookUpField(conventionField)
 	if tenantctx.CrossTenant(st.Context) {
 		releaseCondition(st)
-		return nil, "", false
+		return field, "", crossing
 	}
 	id, ok := tenantctx.ID(st.Context)
 	if !ok {
@@ -122,16 +137,16 @@ func scopedTo(tx *gorm.DB, st *gorm.Statement) (*gormschema.Field, string, bool)
 		// The return value is the statement's accumulated error, which the
 		// statement already holds; the caller reads it back through Error.
 		_ = tx.AddError(noTenant(st))
-		return nil, "", false
+		return field, "", refused
 	}
-	return st.Schema.LookUpField(conventionField), id, true
+	return field, id, tenanted
 }
 
 // scopeRead adds the tenant condition to a read.
 func (f *filter) scopeRead(tx *gorm.DB) {
 	st := tx.Statement
-	field, id, ok := scopedTo(tx, st)
-	if !ok {
+	field, id, s := scopeOf(tx, st)
+	if s != tenanted {
 		return
 	}
 	applyCondition(st, field.DBName, id, false)
@@ -145,8 +160,8 @@ func (f *filter) scopeRead(tx *gorm.DB) {
 // every row of the tenant, unless the caller asked for a global delete.
 func (f *filter) scopeDelete(tx *gorm.DB) {
 	st := tx.Statement
-	field, id, ok := scopedTo(tx, st)
-	if !ok {
+	field, id, s := scopeOf(tx, st)
+	if s != tenanted {
 		return
 	}
 	makeAddressable(st)
@@ -161,25 +176,33 @@ func (f *filter) scopeDelete(tx *gorm.DB) {
 	applyCondition(st, field.DBName, id, !tx.AllowGlobalUpdate)
 }
 
-// scopeUpdate adds the condition and refuses a write that names another tenant.
+// scopeUpdate adds the condition and judges what the update assigns to the
+// tenant column.
 //
-// The refusal belongs here rather than beside the insert's, because an update
+// The judgement belongs here as well as beside the insert's, because an update
 // states which columns to set and the tenant column is one of them. Leaving it
 // unexamined lets a statement matched against one tenant's row move that row
 // into another: the condition decides which rows are reached, and the value
-// they are then given carries them away.
+// they are then given carries them away. An update crossing tenants is not
+// conditioned, and may move a row on purpose, but it may not empty the column.
 //
 // The model an update is addressed by is keyed like a delete's, and the
 // condition is discounted the same way.
 func (f *filter) scopeUpdate(tx *gorm.DB) {
 	st := tx.Statement
-	field, id, ok := scopedTo(tx, st)
-	if !ok {
+	field, id, s := scopeOf(tx, st)
+	switch s {
+	case crossing:
+		if err := judgeEach(assignedValues(st, field), someTenant(st)); err != nil {
+			_ = tx.AddError(err)
+		}
+		return
+	case tenanted:
+	default:
 		return
 	}
-	if written, ok := assignedTenant(st); ok && written != "" && written != id {
-		_ = tx.AddError(fmt.Errorf("%w: %s is being set to %q",
-			tenant.ErrExplicitTenantMismatch, st.Schema.Name, written))
+	if err := judgeEach(assignedValues(st, field), ownTenant(st, id)); err != nil {
+		_ = tx.AddError(err)
 		return
 	}
 	if err := fillKey(st, field, id, st.ReflectValue); err != nil {
@@ -189,24 +212,33 @@ func (f *filter) scopeUpdate(tx *gorm.DB) {
 	applyCondition(st, field.DBName, id, !tx.AllowGlobalUpdate)
 }
 
-// fillColumn writes the tenant into the rows an insert is about to bind.
+// fillColumn writes the tenant into the rows an insert is about to bind, and
+// judges what the rows and an upsert's assignments already carry there.
 //
 // A condition cannot do this job: it decides which rows a statement reaches,
 // and an insert reaches none. Without this the column would be left to the
 // caller, and a caller that forgot would bind an empty identifier, which the
 // identifier refuses: the statement would fail rather than land in the tenant
-// its context carries.
+// its context carries. An insert crossing tenants is not filled, and each of
+// its rows has to name its tenant itself.
 func (f *filter) fillColumn(tx *gorm.DB) {
 	st := tx.Statement
-	field, id, ok := scopedTo(tx, st)
-	if !ok {
+	field, id, s := scopeOf(tx, st)
+	var judge func(any) error
+	switch s {
+	case tenanted:
+		judge = ownTenant(st, id)
+	case crossing:
+		judge = someTenant(st)
+	default:
 		return
 	}
-	for _, dest := range destinations(st.Dest) {
-		if err := fillOne(st, field, dest, id); err != nil {
-			_ = tx.AddError(err)
-			return
-		}
+	if err := writeRows(st, field, id, s == tenanted, judge); err != nil {
+		_ = tx.AddError(err)
+		return
+	}
+	if err := judgeEach(upsertValues(st, field), judge); err != nil {
+		_ = tx.AddError(err)
 	}
 }
 
@@ -518,73 +550,306 @@ func samePointer(a, b any) bool {
 		va.Type() == vb.Type() && va.Pointer() == vb.Pointer()
 }
 
-// fillOne writes the identifier onto one destination, refusing a value the
-// caller wrote by hand.
+// ownTenant judges a value written under a tenant: it has to be that tenant's
+// identifier.
 //
 // Crossing tenants is a context fact with one way in. Letting a statement name
 // a second tenant would be a second way in, and one that carries no mark of
 // intent: a write copied from elsewhere and edited would land in another tenant
 // with nothing said. A value equal to the context's is not refused — it is the
-// same statement written twice.
-func fillOne(st *gorm.Statement, field *gormschema.Field, dest reflect.Value, id string) error {
-	if written, ok := writtenTenant(st.Context, field, dest); ok && written != "" && written != id {
-		return fmt.Errorf("%w: %s carries %q in its tenant column",
-			tenant.ErrExplicitTenantMismatch, st.Schema.Name, written)
+// same statement written twice. Anything this cannot read as a string — an
+// expression, a subquery, a null — is refused rather than trusted, because the
+// question is whether it is the context's tenant, and nothing here can answer
+// that for it.
+func ownTenant(st *gorm.Statement, id string) func(any) error {
+	return func(v any) error {
+		if s, ok := stringValue(reflect.ValueOf(v)); ok {
+			if s == id {
+				return nil
+			}
+			return fmt.Errorf("%w: %s names tenant %q in its tenant column",
+				tenant.ErrExplicitTenantMismatch, st.Schema.Name, s)
+		}
+		return fmt.Errorf("%w: %s puts %s in its tenant column, which cannot be read as "+
+			"the context's tenant", tenant.ErrExplicitTenantMismatch, st.Schema.Name, describe(v))
 	}
-	return field.Set(st.Context, dest, id)
 }
 
-// assignedTenant reads the tenant column an update is about to set, if it is
-// about to set it at all.
+// someTenant judges a value written across tenants: whatever tenant it names,
+// it has to name one.
 //
-// An update states its assignments in one of two shapes: a map, which is what
-// Update and Updates with a map produce, or a struct, which is what Updates and
-// Save produce. Both are read here, because a plugin that covered one would
-// leave the same hole open through the other.
-func assignedTenant(st *gorm.Statement) (string, bool) {
-	rv := reflect.ValueOf(st.Dest)
-	for rv.Kind() == reflect.Pointer {
-		if rv.IsNil() {
-			return "", false
+// A row whose tenant column is empty, or null, belongs to no tenant, and no
+// scoped statement can reach it again. A literal outside the identifier's
+// domain is no tenant either. An expression is the caller's own statement of
+// what the column becomes, which crossing tenants allows.
+func someTenant(st *gorm.Statement) func(any) error {
+	return func(v any) error {
+		if isNull(v) {
+			return fmt.Errorf("%w: %s puts a null in its tenant column across tenants",
+				tenant.ErrNoTenantInContext, st.Schema.Name)
 		}
-		rv = rv.Elem()
+		s, ok := stringValue(reflect.ValueOf(v))
+		switch {
+		case !ok:
+			return nil
+		case s == "":
+			return fmt.Errorf("%w: %s is written across tenants with an empty tenant column",
+				tenant.ErrNoTenantInContext, st.Schema.Name)
+		case !tenant.IsIdentifier(s):
+			return fmt.Errorf("%w: %s is written across tenants with a tenant column carrying "+
+				"a blank or a control character", tenant.ErrInvalidTenant, st.Schema.Name)
+		}
+		return nil
 	}
+}
+
+// judgeEach applies a judgement to every value, stopping at the first refusal.
+func judgeEach(values []any, judge func(any) error) error {
+	for _, v := range values {
+		if err := judge(v); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+// writeRows fills and judges the tenant column of every row an insert binds.
+//
+// The rows are read from where GORM reads them. A map, or a slice of maps, is
+// written by key, and a key naming the column is found the way GORM finds it;
+// a map that names none gets the column added. Anything else is read through
+// the value GORM resolved the destination to, which is what makes a struct, a
+// slice of structs and a slice of pointers alike — whether handed over by
+// pointer or by value — and a struct or an array handed over by value is
+// copied first so that there is somewhere to write.
+func writeRows(st *gorm.Statement, field *gormschema.Field, id string, fill bool, judge func(any) error) error {
+	if maps, ok := insertedMaps(st.Dest); ok {
+		for _, m := range maps {
+			if err := writeMap(st, field, m, id, fill, judge); err != nil {
+				return err
+			}
+		}
+		return nil
+	}
+	if fill {
+		makeAddressable(st)
+	}
+	for _, v := range structValues(st.ReflectValue, st.Schema.ModelType) {
+		written, isZero := field.ValueOf(st.Context, v)
+		if !isZero {
+			if err := judge(written); err != nil {
+				return err
+			}
+			continue
+		}
+		if !fill {
+			return unnamedAcross(st)
+		}
+		if !v.CanAddr() {
+			// Nothing can be written here; the identifier refuses to be
+			// bound empty, so the insert still fails.
+			continue
+		}
+		if err := field.Set(st.Context, v, id); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+// writeMap fills and judges the tenant column of one row an insert binds from a
+// map.
+//
+// Adding the column writes into the caller's map, as filling a struct writes
+// into the caller's struct.
+func writeMap(st *gorm.Statement, field *gormschema.Field, m map[string]interface{},
+	id string, fill bool, judge func(any) error,
+) error {
+	if m == nil {
+		return nil
+	}
+	selected, restricted := st.SelectAndOmitColumns(true, false)
+	named := false
+	for key, v := range m {
+		if !namesColumn(st.Schema, key, field) {
+			continue
+		}
+		named = true
+		if !assigned(selected, restricted, field.DBName) {
+			continue
+		}
+		if err := judge(v); err != nil {
+			return err
+		}
+	}
+	switch {
+	case named:
+		return nil
+	case !fill:
+		return unnamedAcross(st)
+	}
+	m[field.DBName] = id
+	return nil
+}
+
+// unnamedAcross is the refusal of a row inserted across tenants that names no
+// tenant at all.
+func unnamedAcross(st *gorm.Statement) error {
+	return fmt.Errorf("%w: %s is inserted across tenants with no tenant in its tenant column",
+		tenant.ErrNoTenantInContext, st.Schema.Name)
+}
+
+// insertedMaps returns the maps an insert reads its rows from, for the four
+// destination types GORM reads as maps.
+func insertedMaps(dest any) ([]map[string]interface{}, bool) {
+	switch v := dest.(type) {
+	case map[string]interface{}:
+		return []map[string]interface{}{v}, true
+	case *map[string]interface{}:
+		if v == nil {
+			return nil, true
+		}
+		return []map[string]interface{}{*v}, true
+	case []map[string]interface{}:
+		return v, true
+	case *[]map[string]interface{}:
+		if v == nil {
+			return nil, true
+		}
+		return *v, true
+	}
+	return nil, false
+}
+
+// assignedValues lists what an update assigns to the tenant column, read the
+// way GORM builds the assignments.
+//
+// An explicit SET clause is used as it stands, and the destination is then not
+// read at all. A map names its columns by key, resolved against the model's
+// schema; a struct is read through its own schema, which is the model's or,
+// for an update carrying its assignments in another type, that type's. A key
+// field of the very value the update is addressed by is a condition rather
+// than an assignment, and the key is judged where the key is filled. Selection
+// and omission decide which of the rest are assigned, zero values included
+// where they are selected.
+func assignedValues(st *gorm.Statement, field *gormschema.Field) []any {
+	if c, ok := st.Clauses["SET"]; ok {
+		set, _ := c.Expression.(clause.Set)
+		var out []any
+		for _, a := range set {
+			if namesColumn(st.Schema, a.Column.Name, field) {
+				out = append(out, a.Value)
+			}
+		}
+		return out
+	}
+	updating := indirect(reflect.ValueOf(st.Dest))
+	if !updating.IsValid() {
+		return nil
+	}
+	selected, restricted := st.SelectAndOmitColumns(false, true)
+	if m, ok := updating.Interface().(map[string]interface{}); ok {
+		var out []any
+		for key, v := range m {
+			if namesColumn(st.Schema, key, field) && assigned(selected, restricted, field.DBName) {
+				out = append(out, v)
+			}
+		}
+		return out
+	}
+	if updating.Kind() != reflect.Struct {
+		return nil
+	}
+	sameValue := updating.CanAddr() && samePointer(st.Dest, st.Model)
+	schema := st.Schema
+	if !sameValue {
+		parsed := &gorm.Statement{DB: st.DB}
+		if err := parsed.Parse(st.Dest); err == nil {
+			schema = parsed.Schema
+		}
+	}
+	own := schema.LookUpField(field.DBName)
+	if own == nil || (own.PrimaryKey && sameValue) {
+		return nil
+	}
+	sel, explicit := selected[own.DBName]
+	inSelection := (explicit && sel) ||
+		(!explicit && (!restricted || (!st.SkipHooks && own.AutoUpdateTime > 0)))
+	if !inSelection {
+		return nil
+	}
+	v, isZero := own.ValueOf(st.Context, updating)
+	if (!explicit && isZero) || !own.Updatable {
+		return nil
+	}
+	return []any{v}
+}
+
+// upsertValues lists what an insert's conflict clause assigns to the tenant
+// column on the row it conflicts with. Reassigning the column from the row that
+// was about to be inserted is not an assignment of a tenant: that row's own
+// column is judged as the insert's.
+func upsertValues(st *gorm.Statement, field *gormschema.Field) []any {
+	c, ok := st.Clauses["ON CONFLICT"]
+	if !ok {
+		return nil
+	}
+	conflict, ok := c.Expression.(clause.OnConflict)
+	if !ok {
+		return nil
+	}
+	var out []any
+	for _, a := range conflict.DoUpdates {
+		if !namesColumn(st.Schema, a.Column.Name, field) {
+			continue
+		}
+		if col, ok := a.Value.(clause.Column); ok && strings.EqualFold(col.Table, excludedTable) &&
+			namesColumn(st.Schema, col.Name, field) {
+			continue
+		}
+		out = append(out, a.Value)
+	}
+	return out
+}
+
+// excludedTable is the name a conflict clause reads the row it was about to
+// insert under, which is how GORM writes an assignment from that row.
+const excludedTable = "excluded"
+
+// namesColumn reports whether a key names the convention's column, resolved
+// the way GORM resolves an assignment's key: through the model's schema, and as
+// the column name where the schema has no field by that key.
+func namesColumn(schema *gormschema.Schema, key string, field *gormschema.Field) bool {
+	if f := schema.LookUpField(key); f != nil {
+		return f.DBName == field.DBName
+	}
+	return key == field.DBName
+}
+
+// assigned reports whether selection and omission leave a column assigned.
+func assigned(selected map[string]bool, restricted bool, column string) bool {
+	sel, explicit := selected[column]
+	return (explicit && sel) || (!explicit && !restricted)
+}
+
+// isNull reports whether a value binds as a null.
+func isNull(v any) bool {
+	rv := reflect.ValueOf(v)
 	switch rv.Kind() {
-	case reflect.Map:
-		iter := rv.MapRange()
-		for iter.Next() {
-			key := iter.Key()
-			if key.Kind() != reflect.String {
-				continue
-			}
-			if key.String() != columnName && key.String() != conventionField {
-				continue
-			}
-			return stringValue(iter.Value())
-		}
-	case reflect.Struct:
-		if st.Schema != nil {
-			if field := st.Schema.LookUpField(conventionField); field != nil {
-				return writtenTenant(st.Context, field, rv)
-			}
-		}
+	case reflect.Invalid:
+		return true
+	case reflect.Pointer, reflect.Interface, reflect.Map, reflect.Slice:
+		return rv.IsNil()
 	}
-	return "", false
+	return false
 }
 
-// writtenTenant reads the tenant column as the caller left it, reporting
-// whether the caller wrote anything there.
-//
-// Field.ValueOf's second result is whether the field holds its zero value, not
-// whether the read succeeded — reading it the other way round makes a field
-// someone filled in look unwritten and a field nobody touched look written,
-// which is the exact inversion this check exists to catch.
-func writtenTenant(ctx context.Context, field *gormschema.Field, dest reflect.Value) (string, bool) {
-	v, isZero := field.ValueOf(ctx, dest)
-	if isZero || v == nil {
-		return "", false
+// describe names what a value is for a refusal's message, without its content.
+func describe(v any) string {
+	if isNull(v) {
+		return "a null"
 	}
-	return stringValue(reflect.ValueOf(v))
+	return fmt.Sprintf("a %T", v)
 }
 
 // stringValue unwraps a value to a string, reporting whether it was one.
@@ -599,29 +864,6 @@ func stringValue(v reflect.Value) (string, bool) {
 		return "", false
 	}
 	return v.String(), true
-}
-
-// destinations lists the values an insert will read the row from: the struct a
-// pointer points at, or each element of a slice, which is how a batch insert
-// arrives.
-func destinations(dest any) []reflect.Value {
-	rv := reflect.ValueOf(dest)
-	if rv.Kind() != reflect.Pointer || rv.IsNil() {
-		return nil
-	}
-	rv = rv.Elem()
-	switch rv.Kind() {
-	case reflect.Slice, reflect.Array:
-		out := make([]reflect.Value, 0, rv.Len())
-		for i := 0; i < rv.Len(); i++ {
-			out = append(out, rv.Index(i))
-		}
-		return out
-	case reflect.Struct:
-		return []reflect.Value{rv}
-	default:
-		return nil
-	}
 }
 
 // scoped reports whether this statement is against a scoped model.

@@ -71,6 +71,10 @@ var (
 	// way: check the value it passed, against the shape and against the
 	// roster. They are told apart in the message.
 	//
+	// A tenant column given such an identifier is reported through it as
+	// well: by a write crossing tenants that names one, and by the identifier
+	// itself wherever it is bound into a statement.
+	//
 	// A roster row holding such a tenant is reported through this sentinel
 	// too, by the read that refuses it. The table can be written by something
 	// other than Put, and an identifier that reached the snapshot would reach
@@ -86,11 +90,18 @@ var (
 	// context carries no tenant. The fix is to put one there — through a
 	// request whose endpoint this module guards, or by the caller that
 	// built the context — or to state the intent to cross tenants.
+	//
+	// A row that would reach the table with no tenant is reported through
+	// this sentinel too: a write crossing tenants that leaves the tenant
+	// column empty or null, and an empty identifier bound into a statement
+	// on a handle no filter is installed on. The context of either carries
+	// no tenant, and the fix is the same — name one.
 	ErrNoTenantInContext = errors.New("tenant: a scoped statement has no tenant in its context")
 
 	// ErrExplicitTenantMismatch reports a write that names a tenant column
-	// value other than the one its context carries. Crossing tenants is a
-	// context fact with one way in, so a statement naming a second tenant
-	// is a call-site defect rather than a way to cross.
+	// value other than the one its context carries, or one that cannot be
+	// read as that value at all — an expression, a subquery, a null. Crossing
+	// tenants is a context fact with one way in, so a statement naming a
+	// second tenant is a call-site defect rather than a way to cross.
 	ErrExplicitTenantMismatch = errors.New("tenant: a write names a tenant other than its context's")
 )
