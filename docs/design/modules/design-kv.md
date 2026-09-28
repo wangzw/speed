@@ -75,7 +75,7 @@ type KV interface {
 
 Redis 实现与事件模块的 Redis 实现共用一个封装该客户端的共享单元，PostgreSQL 实现与事件模块的 PostgreSQL 实现共用一个封装连接池构造的共享单元。两个共享单元都不登记模块、不交付功能、不参与生命周期（[ADR-shared-backend-unit-2026-09-21](../../adr/adr-shared-backend-unit-2026-09-21.md)）。
 
-各实现子包的集成用例所需的服务器夹具同属共享单元，落在 `pkg/internal/` 下：PostgreSQL 用 `pkg/internal/pgpool/pgtest`，NATS 用 `pkg/internal/natstest`，Redis 用 `pkg/internal/redis/redistest`；夹具的共享理由写在同一条记录里——两份副本会各自演进到行为不同的服务器上，而失配最难归因。
+各实现子包的集成用例跑在真服务器上。与其他模块共用同一种服务器的夹具同属共享单元，落在 `pkg/internal/` 下：PostgreSQL 用 `pkg/internal/pgpool/pgtest`，NATS 用 `pkg/internal/natstest`，Redis 用 `pkg/internal/redis/redistest`；夹具的共享理由写在同一条记录里——两份副本会各自演进到行为不同的服务器上，而失配最难归因。Memcached 的夹具只服务本模块的 Memcached 实现，没有第二个引用方，因而不是共享单元，落在本模块自己的 `pkg/kv/internal/memcachetest` 下。
 
 ## UML 图
 
@@ -127,6 +127,8 @@ classDiagram
 - 能原样或以单射编码（Memcached 用 base64url，NATS 用十六进制）存放的键，存放在这一拼写下。
 - 这一拼写为空或超出后端上限的键，改以键的 SHA-256 摘要拼写。摘要拼写在形式上与普通拼写互不相交（Memcached 与 NATS 的摘要拼写带有编码字母表之外的前缀；PostgreSQL 的摘要拼写是键的前若干字节接上摘要，长度超过任何普通拼写），摘要拼写之间的区分力即 SHA-256 的抗碰撞性。
 - 不以截断缩短键：共享同一前缀的两个长键截断后会共用一个条目。
+
+**值的长度受后端上限约束。** 值可以是任意字节，但单个值能有多长由后端决定：Memcached 的单条目上限与 NATS 的单条消息上限都由服务端配置给出，默认约 1 MB，NATS 的桶还可以设得更小；Redis 与 PostgreSQL 的上限在数百 MB 以上。超出上限的写入失败，返回实现自己的错误，不截断也不静默丢弃。失败之后键上是什么随实现而异：Memcached 的服务端在一次因值过大而失败的 `Set` 之后删去该键原有的值，键读作不存在，这落在它"可丢失"的部署前提之内；其他实现以及 Memcached 上的其他写入保持原值。
 
 ## 核心算法与流程
 

@@ -236,8 +236,10 @@ func (s *store) Get(ctx context.Context, key string) ([]byte, bool, error) {
 	}
 	value, live := expiry.Unwrap(item.Value)
 	if !live {
-		// Past its expiry, and Memcached was never told about it. Dropping it
-		// here is what makes the key read as absent; nothing else will.
+		// Past its expiry, and Memcached was never told about it: the entry
+		// is still on the server, and reporting it absent here is what makes
+		// the key read as absent. The entry stays until a write replaces it
+		// or the server evicts it.
 		return nil, false, nil
 	}
 	return value, true, nil
