@@ -18,10 +18,11 @@ import (
 // wants the values and has no lifecycle to drive, a test of a module outside
 // its own package among them.
 //
-// The environment is the process's own throughout: the <PREFIX>_CONFIG that
-// selects the primary source is read from it, and so are the values, which is
-// where the layering tool reads them. A caller that steers a variable writes
-// it into the process environment, which in a test is t.Setenv.
+// The environment is the process's own, read once when the call begins: the
+// <PREFIX>_CONFIG that selects the primary source is read from that snapshot,
+// and so are the values. A caller that steers a variable writes it into the
+// process environment before calling, which in a test is t.Setenv; a variable
+// changed afterwards reaches nothing the returned Reader decodes.
 func Load(ctx context.Context, reg *core.Registry, args []string) (Reader, error) {
 	l, err := newLoader(reg, os.Stderr)
 	if err != nil {
@@ -45,7 +46,7 @@ func Load(ctx context.Context, reg *core.Registry, args []string) (Reader, error
 		return nil, l.ClassifyParseError(err, nil)
 	}
 
-	if err := l.ReadPrimary(ctx, locate(l.m, environMap(os.Environ()), *locator, fs.Changed(locatorFlag))); err != nil {
+	if err := l.ReadPrimary(ctx, locate(l.m, l.env, *locator, fs.Changed(locatorFlag))); err != nil {
 		return nil, err
 	}
 	l.ReportUnclaimed()

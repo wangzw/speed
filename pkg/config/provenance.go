@@ -1,7 +1,5 @@
 package config
 
-import "os"
-
 // given reports whether any source above the defaults gave the item a value,
 // which is exactly the question a required item asks.
 //
@@ -21,11 +19,8 @@ func (l *loader) given(item *manifestItem) bool {
 	if flag := l.bound[item.path]; flag != nil && flag.Changed {
 		return true
 	}
-	if item.envName == "" {
-		return false
-	}
-	// An empty variable counts, which is the same reading AllowEmptyEnv gives
-	// the layering tool: somebody who set the variable did give a value.
-	_, set := os.LookupEnv(item.envName)
+	// The environment leg reads the snapshot the values come from, so an item
+	// counts as given exactly when the environment layer supplies its value.
+	_, set := l.envValue(item)
 	return set
 }

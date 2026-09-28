@@ -332,11 +332,11 @@ func TestALevelRegistersWhatTheLevelsAboveItDoNot(t *testing.T) {
 }
 
 // TestTheLocatorVariableIsReadFromTheProcessEnvironment pins which environment
-// a run's locator comes from. The layering tool pulls the values out of the
-// process's own and the unclaimed-variable diagnostic scans that one too, so
-// <PREFIX>_CONFIG is read there as well: were it read anywhere else, a run
-// would take its primary source from one environment and its values from
-// another, and nothing on a normal path would show it.
+// a run's locator comes from. The values are read out of a snapshot of the
+// process's own environment and the unclaimed-variable diagnostic scans that
+// snapshot too, so <PREFIX>_CONFIG is read there as well: were it read anywhere
+// else, a run would take its primary source from one environment and its
+// values from another, and nothing on a normal path would show it.
 func TestTheLocatorVariableIsReadFromTheProcessEnvironment(t *testing.T) {
 	t.Setenv("MYAPP_CONFIG", "file:///app.yaml")
 	content := map[string]any{"cache": map[string]any{"addr": "from-file:1"}}

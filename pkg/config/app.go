@@ -151,7 +151,7 @@ func (a *App) reportEarly(err error) error {
 // sits on the root, so the locator is settled by the bootstrap layer whatever
 // command the run turns out to be.
 func (a *App) run(ctx context.Context, l *loader, p *plan, node *planNode) error {
-	locator := locate(l.Manifest(), environMap(os.Environ()), p.locator.Value.String(), p.locator.Changed)
+	locator := locate(l.Manifest(), l.env, p.locator.Value.String(), p.locator.Changed)
 	if err := l.ReadPrimary(ctx, locator); err != nil {
 		return err
 	}
@@ -177,10 +177,10 @@ func (a *App) run(ctx context.Context, l *loader, p *plan, node *planNode) error
 // would be a second answer to where they come from.
 //
 // The environment has no such pair. Every layer that reads one -- the values,
-// the unclaimed-variable diagnostic, the locator -- reads the process's own,
-// and a second way in would make a run's locator come from one environment
-// while its values came from another. A case that steers a variable writes it
-// with t.Setenv.
+// the unclaimed-variable diagnostic, the locator -- reads the one snapshot of
+// the process's own taken when Execute begins, and a second way in would make a
+// run's locator come from one environment while its values came from another.
+// A case that steers a variable writes it with t.Setenv before Execute.
 func (a *App) withArgs(args ...string) *App {
 	// A nil list would send the command-line library back to the process's
 	// own arguments, which is the one thing a test asking for none means to

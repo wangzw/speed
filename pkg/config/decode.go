@@ -181,11 +181,31 @@ func (r *reader) leaf(path string, fv reflect.Value) error {
 			return convert(item, path, given, fv)
 		}
 	}
-	raw := r.l.v.Get(path)
+	raw := r.l.raw(item, path)
 	if raw == nil || !fv.CanSet() {
 		return nil
 	}
 	return convert(item, path, raw, fv)
+}
+
+// raw is the value one leaf takes, from the topmost layer that gives it.
+//
+// The environment is the one layer the layering tool does not hold. It would
+// read the process environment at every lookup, and the configuration of a run
+// is what the process was started with: a variable changed after loading began
+// would otherwise reach a module that decodes again, and a variable changed
+// between two modules' decodes would give the two of them different
+// configurations. The layer is read out of the snapshot taken when loading
+// began instead, and it sits where the layering tool would put it: above the
+// primary source and the defaults, below an argument given on the command line.
+func (l *loader) raw(item *manifestItem, path string) any {
+	if item != nil {
+		given := l.bound[item.path]
+		if value, set := l.envValue(item); set && (given == nil || !given.Changed) {
+			return value
+		}
+	}
+	return l.v.Get(path)
 }
 
 // convert writes a source value into the field of one leaf, keeping a

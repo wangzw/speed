@@ -2,39 +2,26 @@ package config
 
 import (
 	"fmt"
-	"os"
 	"slices"
 	"strings"
 )
 
-// bindEnv hands the layering tool the environment variable of every item that
-// reads one. Each name is given in full, so deriveEnvName stays the one
-// authority on how a path becomes a variable name and the tool derives
-// nothing: its own derivation joins a prefix and then rewrites the whole name,
-// which would reach inside a pinned name and rewrite that too. Nor is the tool
-// allowed to read the environment for keys nobody bound, or an item would take
-// a value from a source it never declared.
+// envValue is the value the environment gives an item, read out of the
+// snapshot taken when loading began, and whether it gives one.
 //
-// The domain is the whole manifest and not the participants of a command: the
-// environment names are claimed and checked against every declaration there
-// is, so binding only what one command takes in would have the rest reported
-// as variables nobody reads.
+// The name looked up is the item's own, derived or pinned, so deriveEnvName
+// stays the one authority on how a path becomes a variable name. An item that
+// reads no variable is given nothing here, whatever the environment holds, or
+// it would take a value from a source it never declared.
 //
 // An empty variable counts as a value. The design reads an empty list out of
-// an empty variable, and somebody who wrote the variable did give a value;
-// the tool's own default is to treat it as unset.
-func (l *loader) bindEnv() error {
-	l.v.AllowEmptyEnv(true)
-	for _, item := range l.m.items {
-		if item.envName == "" {
-			continue
-		}
-		if err := l.v.BindEnv(item.path, item.envName); err != nil {
-			return fmt.Errorf("%w: module %q reads %s for %q, which could not be bound: %w",
-				ErrConfigConflict, item.module, item.envName, item.path, err)
-		}
+// an empty variable, and somebody who wrote the variable did give a value.
+func (l *loader) envValue(item *manifestItem) (string, bool) {
+	if item.envName == "" {
+		return "", false
 	}
-	return nil
+	value, set := l.env[item.envName]
+	return value, set
 }
 
 // ReportUnclaimed writes out the variables under the host's prefix that no
@@ -46,11 +33,10 @@ func (l *loader) bindEnv() error {
 // own -- it pulls the variables it was told about and never says which ones
 // nobody wanted -- so the enumeration is this module's to make.
 //
-// The environment it scans is the process's own, which is the one the
-// layering tool reads values from. Scanning any other would let the
-// diagnostics and the values disagree.
+// The environment it scans is the snapshot the values are read from. Scanning
+// any other would let the diagnostics and the values disagree.
 func (l *loader) ReportUnclaimed() {
-	for _, name := range unclaimedEnvNames(l.m, environMap(os.Environ())) {
+	for _, name := range unclaimedEnvNames(l.m, l.env) {
 		//nolint:errcheck // l.stderr is the diagnostic sink itself: a failed
 		// write has nowhere to be reported, and this line is explicitly not a
 		// failure condition -- see the doc comment above.

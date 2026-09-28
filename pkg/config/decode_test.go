@@ -154,24 +154,31 @@ func TestDefaultLayerDoesNotSatisfyRequired(t *testing.T) {
 }
 
 func TestRequiredSatisfiedByOneLayerAlone(t *testing.T) {
-	for name, give := range map[string]func(*testing.T, *loader){
-		"the primary source": func(t *testing.T, l *loader) {
+	// The environment is given before the loader is built, as it is for a
+	// run: it is read once, when loading begins.
+	for name, give := range map[string]func(*testing.T) *reader{
+		"the primary source": func(t *testing.T) *reader {
+			r, l := requiredSetup(t)
 			if err := givePrimary(t, l, map[string]any{"remote": map[string]any{"addr": "a:1"}}); err != nil {
 				t.Fatalf("applying the primary source failed: %v", err)
 			}
+			return r
 		},
-		"the environment": func(t *testing.T, l *loader) {
+		"the environment": func(t *testing.T) *reader {
 			t.Setenv("MYAPP_REMOTE__ADDR", "a:1")
+			r, _ := requiredSetup(t)
+			return r
 		},
-		"the command line": func(t *testing.T, l *loader) {
+		"the command line": func(t *testing.T) *reader {
+			r, l := requiredSetup(t)
 			if err := giveFlags(t, l, []string{"remote"}, "--remote-addr=a:1"); err != nil {
 				t.Fatalf("parsing the command line failed: %v", err)
 			}
+			return r
 		},
 	} {
 		t.Run(name, func(t *testing.T) {
-			r, l := requiredSetup(t)
-			give(t, l)
+			r := give(t)
 
 			var opts requiredOptions
 			if err := r.Decode("remote", &opts); err != nil {

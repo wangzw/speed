@@ -8,11 +8,13 @@
 // own values back through Reader.
 //
 // The parsing itself is delegated: the command line and the command tree to
-// pflag and cobra, the primary source, the environment and the layering to
-// viper, the conversion into a module's own types to mapstructure. What this
-// package holds them to is the manifest, the constraints the design puts on
-// top of them, and the two facts none of them keeps: which layer gave a value,
-// and which variables under the host's prefix nobody reads.
+// pflag and cobra, the primary source and the layering to viper, the
+// conversion into a module's own types to mapstructure. What this package
+// holds them to is the manifest, the constraints the design puts on top of
+// them, and the facts none of them keeps: which layer gave a value, which
+// variables under the host's prefix nobody reads, and the environment as it
+// stood when loading began, which is the one the environment layer is read
+// from.
 //
 // The root package carries the declarations, the manifest and the command
 // tree, and defines the Source and Format extension points. Concrete

@@ -2,6 +2,7 @@ package config
 
 import (
 	"io"
+	"os"
 
 	"github.com/spf13/pflag"
 	"github.com/spf13/viper"
@@ -25,9 +26,16 @@ type loader struct {
 	reg *core.Registry
 	m   *manifest
 	t   *transports
-	// v is the layering tool holding the defaults, the primary source, the
-	// environment and the command line.
+	// v is the layering tool holding the defaults, the primary source and
+	// the command line.
 	v *viper.Viper
+	// env is the process environment as it stood when loading began. Every
+	// reading of the environment in a run is a reading of this one -- the
+	// values, whether a required item was given, the config locator and the
+	// unclaimed-variable report -- so they cannot disagree, and a variable
+	// changed later reaches nothing: configuration is a snapshot taken at
+	// startup.
+	env map[string]string
 	// bound is the argument each item was registered as, by path. It is the
 	// command-line leg of the question which layer gave a value, and it
 	// fills up as the command tree descends.
@@ -68,13 +76,11 @@ func newLoader(reg *core.Registry, stderr io.Writer) (*loader, error) {
 		m:      m,
 		t:      t,
 		v:      viper.New(),
+		env:    environMap(os.Environ()),
 		bound:  make(map[string]*pflag.Flag),
 		stderr: stderr,
 	}
 	l.seedDefaults()
-	if err := l.bindEnv(); err != nil {
-		return nil, err
-	}
 	return l, nil
 }
 

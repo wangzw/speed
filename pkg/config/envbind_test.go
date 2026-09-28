@@ -2,6 +2,7 @@ package config
 
 import (
 	"errors"
+	"os"
 	"reflect"
 	"slices"
 	"strings"
@@ -19,10 +20,11 @@ type envOptions struct {
 // envLoader declares one module under the given prefix, with a pinned name
 // that owes nothing to the prefix and one item the environment never gives.
 //
-// The cases drive it with t.Setenv rather than by handing it an environment:
-// the layering tool reads the process environment directly, and a second
-// environment injected beside it would put the diagnostics and the values on
-// different footings. Parallelism goes with it, since t.Setenv forbids it.
+// The cases drive it with t.Setenv before building it rather than by handing
+// it an environment: the loader reads the process environment once, when it is
+// built, and a second environment injected beside it would put the diagnostics
+// and the values on different footings. Parallelism goes with it, since
+// t.Setenv forbids it.
 func envLoader(t *testing.T, prefix string) *loader {
 	t.Helper()
 	defaults := envOptions{Addr: ":8080", Retries: 3, Hosts: []string{"a"}}
@@ -188,5 +190,36 @@ func TestUndeclaredContainerIgnoresTheEnvironment(t *testing.T) {
 	}
 	if l.given(l.m.byPath["server.labels"]) {
 		t.Fatal("the map took a value from the environment, which has no form to give it one")
+	}
+}
+
+// TestTheEnvironmentIsReadOnceWhenLoadingBegins pins the snapshot the
+// configuration of a run is. A variable changed in the process after loading
+// began -- set, changed or removed -- reaches no value a module decodes, and
+// no answer to whether a required item was given: a module that decodes again
+// at run time would otherwise see a configuration nobody started the process
+// with.
+func TestTheEnvironmentIsReadOnceWhenLoadingBegins(t *testing.T) {
+	t.Setenv("MYAPP_SERVER__ADDR", ":1")
+	t.Setenv("MYAPP_SERVER__RETRIES", "5")
+	l := envLoader(t, "MYAPP")
+	before := decodeServer(t, l)
+
+	t.Setenv("MYAPP_SERVER__ADDR", ":2")
+	if err := os.Unsetenv("MYAPP_SERVER__RETRIES"); err != nil {
+		t.Fatalf("removing the variable failed: %v", err)
+	}
+	t.Setenv("MYAPP_SERVER__HOSTS", "late")
+	after := decodeServer(t, l)
+
+	if after.Addr != ":1" || after.Retries != 5 || !reflect.DeepEqual(after.Hosts, before.Hosts) {
+		t.Errorf("the second decode read %+v after the process environment changed, want the "+
+			"values the run was loaded with, %+v", after, before)
+	}
+	if !l.given(l.m.byPath["server.retries"]) {
+		t.Error("a variable removed after loading began no longer counts as given")
+	}
+	if l.given(l.m.byPath["server.hosts"]) {
+		t.Error("a variable set after loading began counts as given")
 	}
 }
