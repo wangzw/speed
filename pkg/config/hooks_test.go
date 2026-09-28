@@ -295,7 +295,7 @@ func TestANumberIntoAFloatFieldIsNeverRounded(t *testing.T) {
 	for _, raw := range []any{int64(16_777_217), float64(16_777_217), "16777217", 1e-50, "1e-50"} {
 		decodeRejects[float32](t, raw)
 	}
-	for _, raw := range []any{int64(1<<53 + 1), uint64(1<<53 + 1), "9007199254740993"} {
+	for _, raw := range []any{int64(1<<53 + 1), uint64(1<<53 + 1), "9007199254740993", "-9007199254740993"} {
 		decodeRejects[float64](t, raw)
 	}
 

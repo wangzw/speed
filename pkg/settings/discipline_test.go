@@ -95,6 +95,7 @@ func TestTheWriteDisciplineAgreesWithConfiguration(t *testing.T) {
 		{"ratio", `9007199254740992`, true},
 		{"ratio", `9007199254740993`, false},
 		{"ratio", `"9007199254740993"`, false},
+		{"ratio", `"-9007199254740993"`, false},
 		{"narrow", `3.5e38`, false},
 		{"narrow", `16777216`, true},
 		{"narrow", `16777217`, false},
