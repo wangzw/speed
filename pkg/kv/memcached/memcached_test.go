@@ -2,13 +2,11 @@ package memcached
 
 import (
 	"context"
-	"errors"
+	"net"
 	"strings"
 	"sync"
 	"testing"
 	"time"
-
-	"github.com/bradfitz/gomemcache/memcache"
 
 	"github.com/vislake/speed/pkg/core"
 	"github.com/vislake/speed/pkg/kv"
@@ -106,20 +104,44 @@ func TestStanceRefusesABlankServerEntry(t *testing.T) {
 // operation fails with "no servers configured or available", and nothing names
 // the input.
 //
-// The address below has nothing listening, so the operation fails either way.
-// What the case pins is which failure: a client that kept the address reports
-// the connection attempt, and one that discarded the list reports that it has
-// no servers.
+// The case pads the address of a real server: the open's check reaches it, and
+// an operation afterwards is served.
 func TestAPaddedServerEntryStillReachesTheClient(t *testing.T) {
+	addr := memcachetest.Addr(t)
 	opened, err := open(context.Background(), &Config{
-		Servers: []string{" 127.0.0.1:1 "},
-		Timeout: 200 * time.Millisecond,
+		Servers: []string{" " + addr + " "},
+		Timeout: 5 * time.Second,
 	})
 	if err != nil {
 		t.Fatalf("opening against a padded address: %v", err)
 	}
-	if _, _, err := opened.Get(context.Background(), "padded"); errors.Is(err, memcache.ErrNoServers) {
-		t.Fatalf("the client was built without the address the host named: %v", err)
+	t.Cleanup(func() { _ = opened.(*store).Close(context.Background()) })
+	if _, _, err := opened.Get(context.Background(), "padded"); err != nil {
+		t.Fatalf("an operation through a padded address: %v", err)
+	}
+}
+
+// TestAnUnreachableServerFailsTheStartup pins the stage the capability puts a
+// connection failure in. The client connects lazily, so without a check at
+// open a mistyped or unreachable server passes the startup, the process
+// reports ready, and the failure lands on whichever request uses the store
+// first.
+func TestAnUnreachableServerFailsTheStartup(t *testing.T) {
+	// A port that was just free and has nothing listening on it.
+	listener, err := net.Listen("tcp", "127.0.0.1:0")
+	if err != nil {
+		t.Fatalf("listening: %v", err)
+	}
+	addr := listener.Addr().String()
+	_ = listener.Close()
+
+	opened, err := open(context.Background(), &Config{Servers: []string{addr}, Timeout: time.Second})
+	if err == nil {
+		_ = opened.(*store).Close(context.Background())
+		t.Fatalf("opening against %s, where nothing listens, succeeded", addr)
+	}
+	if !strings.Contains(err.Error(), addr) {
+		t.Fatalf("the startup failure does not name the server it could not reach: %v", err)
 	}
 }
 

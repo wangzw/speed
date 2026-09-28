@@ -185,9 +185,14 @@ func usableServers(servers []string) ([]string, bool) {
 	return usable, true
 }
 
-// open builds the client. There is no ping to make: gomemcache connects lazily,
-// and a server that is down fails the first operation rather than the open.
-func open(_ context.Context, cfg *Config) (kv.KV, error) {
+// open builds the client and confirms every server answers it.
+//
+// The confirmation is what puts a connection failure where the capability
+// says it goes, in the startup. gomemcache connects lazily, so without it a
+// mistyped or unreachable server would pass the open and fail whichever request
+// used the store first. Every server is asked, not one: keys are spread over
+// the whole list, and an unreachable entry fails the keys that land on it.
+func open(ctx context.Context, cfg *Config) (kv.KV, error) {
 	// The stance has already refused a list holding no usable entry, so the
 	// list here has one; trimming the addresses is what keeps the client on
 	// the values the guard judged rather than on the text it was handed.
@@ -197,6 +202,14 @@ func open(_ context.Context, cfg *Config) (kv.KV, error) {
 	client.MaxIdleConns = cfg.MaxIdleConns
 	if client.MaxIdleConns <= 0 {
 		client.MaxIdleConns = defaultMaxIdleConns
+	}
+	if err := ctx.Err(); err != nil {
+		return nil, err
+	}
+	if err := client.Ping(); err != nil {
+		_ = client.Close()
+		return nil, fmt.Errorf("%s: the servers %s did not all answer: %w",
+			ModuleName, strings.Join(servers, ", "), err)
 	}
 	return &store{client: client}, nil
 }
