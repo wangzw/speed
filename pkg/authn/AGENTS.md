@@ -51,7 +51,10 @@ here must not cross, and how to run it.
 - **A gateway-produced refusal is charged to the gateway, never to a backend.**
   The attribution is in the log and nowhere else, and it decides which of two
   people has something to fix. The four counting buckets are named by
-  `verdict.Outcome.String` and are fixed once a dashboard reads them.
+  `verdict.Outcome.String` and reach a dashboard through the metric capability
+  as the `authn.gate.conclusions` counter, one `outcome` attribute value per
+  bucket; the bucket names, the counter's name and the attribute's name are
+  all fixed once a dashboard reads them.
 
 ## Shape of a backend
 

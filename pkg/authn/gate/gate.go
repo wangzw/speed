@@ -26,6 +26,8 @@ import (
 	"sync/atomic"
 	"time"
 
+	"go.opentelemetry.io/otel/metric"
+
 	"github.com/vislake/speed/pkg/authn"
 	"github.com/vislake/speed/pkg/authn/internal/verdict"
 	"github.com/vislake/speed/pkg/config"
@@ -89,6 +91,9 @@ type gateway struct {
 	// counts are the four buckets every request-time conclusion lands in,
 	// indexed by outcome.
 	counts [4]atomic.Int64
+	// metrics is the callback that reports counts through the metric
+	// capability, nil when the assembly carries none.
+	metrics metric.Registration
 }
 
 // gateway must satisfy the capability it delivers.
@@ -205,7 +210,7 @@ func Module() core.Module {
 			if !ok {
 				return nil
 			}
-			return g.drain(ctx)
+			return errors.Join(g.drain(ctx), g.dropMeter())
 		},
 	}
 }
@@ -284,7 +289,8 @@ func newGateway(set settings) *gateway {
 }
 
 // wire runs in Init: it registers the middleware on every guarded endpoint,
-// builds the ownership table, and registers the credential redaction rules.
+// builds the ownership table, registers the credential redaction rules, and
+// registers the conclusion counter with the metric capability.
 func (g *gateway) wire(reg *core.Registry) error {
 	router, err := core.Resolve[speedhttp.Router](reg)
 	if err != nil {
@@ -337,6 +343,9 @@ func (g *gateway) wire(reg *core.Registry) error {
 	}
 
 	g.takeLogger(reg)
+	if err := g.takeMeter(reg); err != nil {
+		return err
+	}
 	g.logger.Info(diagnosticPrefix+"the credential-verifying backends taking part",
 		slog.String("backends", strings.Join(table.names(), ", ")),
 		slog.String("endpoints", describeGuarded(g.settings.endpoints)))
@@ -433,8 +442,9 @@ func (g *gateway) drain(ctx context.Context) error {
 	}
 }
 
-// tally reports the four counters, for the tests and for whoever reads them
-// back. The bucket names are fixed by the outcome's own String.
+// tally reports the four counters by bucket name, for the tests. Outside the
+// process they are read through the metric capability (takeMeter). The bucket
+// names are fixed by the outcome's own String.
 func (g *gateway) tally() map[string]int64 {
 	out := make(map[string]int64, len(g.counts))
 	for i := range g.counts {
