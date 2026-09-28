@@ -1,8 +1,9 @@
 # pkg/kv
 
 The key-value module: it delivers opaque bytes stored under an opaque key, with
-an expiry and three atomic operations, and it serves both the callers who want a
-cache and the ones who want a counter, a lock or a session-revocation list.
+an expiry and atomic operations, and it serves both the callers who want a cache
+and the ones who want a counter, a lock, an idempotency key or a
+session-revocation list.
 
 The root package carries the interface and everything the implementations share.
 Concrete backends are subpackages — `memory`, `redis`, `postgres`, `memcached`
@@ -30,8 +31,9 @@ must not cross, and how to run it.
 
 - **The interface is designed against the weakest backend it must support.** No
   server-side scripting, no pipelines, no ordered structures, no data type beyond
-  opaque bytes. Atomicity is the increment pair and the compare-and-swap. A
-  caller that needs a read-modify-write cycle builds it from those. Adding a
+  opaque bytes. Atomicity is the increment pair, the compare-and-swap and the
+  set-if-absent. A caller that needs a read-modify-write cycle builds it from
+  those. Adding a
   method that only some backend can honour breaks the property that a caller
   writes once and deploys anywhere, and it is the one change to `KV` that a
   review must refuse.

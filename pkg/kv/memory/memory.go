@@ -242,6 +242,21 @@ func (s *store) CompareAndSwap(ctx context.Context, key string, old, newVal []by
 	return true, nil
 }
 
+// SetIfAbsent stores a copy of the value with its expiry when the key is
+// missing or expired, and leaves a live key alone.
+func (s *store) SetIfAbsent(ctx context.Context, key string, value []byte, ttl time.Duration) (bool, error) {
+	if err := ctx.Err(); err != nil {
+		return false, err
+	}
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if _, live := s.load(key); live {
+		return false, nil
+	}
+	s.put(key, entry{value: bytes.Clone(value), expires: expiry(ttl)})
+	return true, nil
+}
+
 // load returns the entry for key, treating one whose expiry has passed as
 // absent and dropping it on the way out. It is the only reader of the map, so
 // every operation shares one notion of what is still there.

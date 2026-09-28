@@ -1,5 +1,5 @@
 // Package kv declares the key-value capability: opaque bytes stored under an
-// opaque key, with an expiry and three atomic operations.
+// opaque key, with an expiry and atomic operations.
 //
 // This is the interface package. It registers no module: what registers are the
 // implementation subpackages, each binding one backend and each delivering this
@@ -9,9 +9,10 @@
 // The surface is designed against the weakest backend it must support, and that
 // is the constraint the rest of it follows. It exposes no server-side scripting,
 // no pipelines, no ordered structures and no data type beyond opaque bytes.
-// Atomicity is expressed through the increment pair and the compare-and-swap,
-// which every backend can honour; a caller that needs a read-modify-write cycle
-// builds it from those rather than from a Get followed by a Set.
+// Atomicity is expressed through the increment pair, the compare-and-swap and
+// the set-if-absent, which every backend can honour; a caller that needs a
+// read-modify-write cycle builds it from those rather than from a Get followed
+// by a Set.
 //
 // Values are opaque and the module never interprets one, with the single
 // exception of the numeric encoding the increment operations read and write.
@@ -102,8 +103,28 @@ type KV interface {
 
 	// CompareAndSwap replaces the value under key with newVal only if the
 	// current value equals old, and reports whether the swap happened. A
-	// missing or expired key matches an old of nil or zero length, which makes
-	// this usable as set-if-absent. A mismatch is an expected outcome and
-	// returns false with a nil error. The swap never changes the key's expiry.
+	// missing or expired key matches an old of nil or zero length, so a swap
+	// from an empty old creates a key that is not there — without an expiry;
+	// SetIfAbsent is the claim that carries one. A mismatch is an expected
+	// outcome and returns false with a nil error, and false means a value that
+	// did not match was seen: a write another caller got in ahead of is judged
+	// again against what that caller left. The swap never changes the key's
+	// expiry.
 	CompareAndSwap(ctx context.Context, key string, old, newVal []byte) (bool, error)
+
+	// SetIfAbsent stores value under key with ttl as its expiry, only if the
+	// key is missing or expired, and reports whether it stored. A live key is
+	// left as it is, value and expiry both, and the call returns false with a
+	// nil error. A ttl of zero or less stores the key without an expiry,
+	// matching Set's convention.
+	//
+	// It is one atomic step: of several callers racing for one key, exactly
+	// one is told it stored, and its value and expiry are the ones in place —
+	// whether the key was never written or is still held by the backend past
+	// its expiry. That is the claim an idempotency key, a lease or a
+	// de-duplication marker makes, and it cannot be built from the other
+	// operations: a swap from an empty old creates a key with no expiry, and
+	// a caller that stops between that swap and a Set attaching one leaves a
+	// claim that never lapses.
+	SetIfAbsent(ctx context.Context, key string, value []byte, ttl time.Duration) (bool, error)
 }

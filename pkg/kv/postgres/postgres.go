@@ -460,6 +460,33 @@ const swapFromEmpty = `INSERT INTO ` + table + ` (key, value) VALUES ($1, $2)
 	WHERE ` + table + `.value = ''::bytea OR ` + table + `.expires_at <= now()
 	RETURNING 1`
 
+// SetIfAbsent stores the value with its expiry when the key is missing or
+// expired, and leaves a live key alone.
+//
+// It is one statement. A missing key is inserted; a row that is there is
+// replaced only when it has expired, and the conflict branch locks the row it
+// found, so several writers racing for one expired key are judged one after
+// another and only the first finds it expired.
+func (s *store) SetIfAbsent(ctx context.Context, key string, value []byte, ttl time.Duration) (bool, error) {
+	var one int
+	err := s.pool.QueryRow(ctx,
+		`INSERT INTO `+table+` (key, value, expires_at) VALUES ($1, $2, `+expiryFrom("$3")+`)
+		 ON CONFLICT (key) DO UPDATE SET value = EXCLUDED.value, expires_at = EXCLUDED.expires_at
+		 WHERE `+table+`.expires_at <= now()
+		 RETURNING 1`,
+		spell(key), nonNull(value), ttlMicros(ttl)).Scan(&one)
+	if errors.Is(err, pgx.ErrNoRows) {
+		return false, nil
+	}
+	if err != nil {
+		return false, err
+	}
+	if ttl > 0 {
+		s.afterExpiringWrite()
+	}
+	return true, nil
+}
+
 // expiryFrom is the SQL for the instant a row stops being visible, given a
 // statement parameter holding the ttl in microseconds; zero means no expiry.
 //

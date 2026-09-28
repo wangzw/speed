@@ -858,6 +858,10 @@ func (k *fakeKV) CompareAndSwap(context.Context, string, []byte, []byte) (bool, 
 	return false, nil
 }
 
+func (k *fakeKV) SetIfAbsent(context.Context, string, []byte, time.Duration) (bool, error) {
+	return false, nil
+}
+
 func (k *fakeKV) value(key string) float64 {
 	k.mu.Lock()
 	defer k.mu.Unlock()

@@ -44,6 +44,11 @@ const ttlSettle = 150 * time.Millisecond
 // shortTTL is the expiry the cases attach when they want one to pass.
 const shortTTL = 30 * time.Millisecond
 
+// contendedTTL is the expiry a case attaches when many writers race for a key
+// before it asserts on the result. It outlives the race and the reads that
+// follow it on a slow server, and it is short enough to wait out.
+const contendedTTL = 500 * time.Millisecond
+
 // liveTTL is the expiry the cases attach when they want a key to stay. It
 // outlives ttlSettle by a wide margin, so a wait shorter than it proves nothing
 // about a backend that expires too eagerly.
@@ -132,11 +137,20 @@ func AssertConforms(t *testing.T, newStore Factory) {
 				t.Fatalf("CompareAndSwap from absent on the present key %s: swapped=%v err=%v",
 					describeKey(key), swapped, err)
 			}
+			if stored, err := s.SetIfAbsent(ctx, key, []byte("x"), 0); err != nil || stored {
+				t.Fatalf("SetIfAbsent on the present key %s: stored=%v err=%v", describeKey(key), stored, err)
+			}
 			if err := s.Delete(ctx, key); err != nil {
 				t.Fatalf("Delete on key %s: %v", describeKey(key), err)
 			}
 			if _, present, err := s.Get(ctx, key); err != nil || present {
 				t.Fatalf("Get after Delete on key %s: present=%v err=%v", describeKey(key), present, err)
+			}
+			if stored, err := s.SetIfAbsent(ctx, key, []byte("y"), 0); err != nil || !stored {
+				t.Fatalf("SetIfAbsent on the deleted key %s: stored=%v err=%v", describeKey(key), stored, err)
+			}
+			if err := s.Delete(ctx, key); err != nil {
+				t.Fatalf("Delete on key %s: %v", describeKey(key), err)
 			}
 			if got, err := s.IncrByFloat(ctx, key, 2); err != nil || got != 2 {
 				t.Fatalf("IncrByFloat on key %s: got=%v err=%v", describeKey(key), got, err)
@@ -433,6 +447,14 @@ func AssertConforms(t *testing.T, newStore Factory) {
 		if got, _, _ := s.Get(ctx, "k"); !bytes.Equal(got, []byte("stored")) {
 			t.Fatalf("writing into the slice handed to Set changed the stored value to %q", got)
 		}
+		claimed := []byte("claimed")
+		if stored, err := s.SetIfAbsent(ctx, "claim", claimed, 0); err != nil || !stored {
+			t.Fatalf("SetIfAbsent: stored=%v err=%v", stored, err)
+		}
+		copy(claimed, []byte("XXXXXXX"))
+		if got, _, _ := s.Get(ctx, "claim"); !bytes.Equal(got, []byte("claimed")) {
+			t.Fatalf("writing into the slice handed to SetIfAbsent changed the stored value to %q", got)
+		}
 		got, _, err := s.Get(ctx, "k")
 		if err != nil {
 			t.Fatalf("Get: %v", err)
@@ -464,6 +486,9 @@ func AssertConforms(t *testing.T, newStore Factory) {
 		}
 		if _, err := s.CompareAndSwap(ctx, "k", nil, []byte("v")); !errors.Is(err, context.Canceled) {
 			t.Errorf("CompareAndSwap: %v, want context.Canceled", err)
+		}
+		if _, err := s.SetIfAbsent(ctx, "k", []byte("v"), 0); !errors.Is(err, context.Canceled) {
+			t.Errorf("SetIfAbsent: %v, want context.Canceled", err)
 		}
 	})
 
@@ -598,6 +623,139 @@ func AssertConforms(t *testing.T, newStore Factory) {
 		s := newStore(t)
 		raceOnExpiredKeys(t, s, func(key string, mine []byte) (bool, error) {
 			return s.CompareAndSwap(context.Background(), key, nil, mine)
+		})
+	})
+
+	t.Run("SetIfAbsent stores where the key is absent and leaves a live key alone", func(t *testing.T) {
+		s := newStore(t)
+		ctx := context.Background()
+		if stored, err := s.SetIfAbsent(ctx, "k", []byte("first"), 0); err != nil || !stored {
+			t.Fatalf("SetIfAbsent on an absent key: stored=%v err=%v", stored, err)
+		}
+		if got, present, err := s.Get(ctx, "k"); err != nil || !present || string(got) != "first" {
+			t.Fatalf("Get after SetIfAbsent: %q, present=%v, err=%v", got, present, err)
+		}
+		// A live key keeps its value and its expiry. The refused call carries
+		// a short ttl, and the key it leaves alone has none, so a store that
+		// applied the ttl anyway would drop the key while this case waits.
+		if stored, err := s.SetIfAbsent(ctx, "k", []byte("second"), shortTTL); err != nil || stored {
+			t.Fatalf("SetIfAbsent on a live key: stored=%v err=%v", stored, err)
+		}
+		time.Sleep(ttlSettle)
+		if got, present, err := s.Get(ctx, "k"); err != nil || !present || string(got) != "first" {
+			t.Fatalf("Get after a refused SetIfAbsent: %q, present=%v, err=%v", got, present, err)
+		}
+		// The other way round: a refused call carrying a long ttl does not
+		// extend a key that is about to expire.
+		if err := s.Set(ctx, "expiring", []byte("v"), shortTTL); err != nil {
+			t.Fatalf("Set: %v", err)
+		}
+		if stored, err := s.SetIfAbsent(ctx, "expiring", []byte("x"), liveTTL); err != nil || stored {
+			t.Fatalf("SetIfAbsent on a live key: stored=%v err=%v", stored, err)
+		}
+		time.Sleep(ttlSettle)
+		if _, present, err := s.Get(ctx, "expiring"); err != nil || present {
+			t.Fatalf("a refused SetIfAbsent extended the key: present=%v err=%v", present, err)
+		}
+		// A key an increment wrote is as present as any other.
+		if _, err := s.IncrByFloat(ctx, "n", 1); err != nil {
+			t.Fatalf("IncrByFloat: %v", err)
+		}
+		if stored, err := s.SetIfAbsent(ctx, "n", []byte("x"), 0); err != nil || stored {
+			t.Fatalf("SetIfAbsent on a counter: stored=%v err=%v", stored, err)
+		}
+	})
+
+	t.Run("SetIfAbsent attaches its ttl, and an expired key is absent to it", func(t *testing.T) {
+		s := newStore(t)
+		ctx := context.Background()
+		if stored, err := s.SetIfAbsent(ctx, "k", []byte("v"), shortTTL); err != nil || !stored {
+			t.Fatalf("SetIfAbsent: stored=%v err=%v", stored, err)
+		}
+		if got, present, err := s.Get(ctx, "k"); err != nil || !present || string(got) != "v" {
+			t.Fatalf("Get before the ttl: %q, present=%v, err=%v", got, present, err)
+		}
+		time.Sleep(ttlSettle)
+		if _, present, err := s.Get(ctx, "k"); err != nil || present {
+			t.Fatalf("Get past the ttl: present=%v err=%v", present, err)
+		}
+		// Past its expiry the key is absent, so the next call stores — here
+		// with no ttl, which the key then keeps.
+		if stored, err := s.SetIfAbsent(ctx, "k", []byte("again"), 0); err != nil || !stored {
+			t.Fatalf("SetIfAbsent on an expired key: stored=%v err=%v", stored, err)
+		}
+		time.Sleep(ttlSettle)
+		if got, present, err := s.Get(ctx, "k"); err != nil || !present || string(got) != "again" {
+			t.Fatalf("Get after a SetIfAbsent with no ttl: %q, present=%v, err=%v", got, present, err)
+		}
+	})
+
+	t.Run("SetIfAbsent stores a nil value as an empty one", func(t *testing.T) {
+		s := newStore(t)
+		ctx := context.Background()
+		if stored, err := s.SetIfAbsent(ctx, "k", nil, 0); err != nil || !stored {
+			t.Fatalf("SetIfAbsent with a nil value: stored=%v err=%v", stored, err)
+		}
+		if got, present, err := s.Get(ctx, "k"); err != nil || !present || len(got) != 0 {
+			t.Fatalf("Get after a nil SetIfAbsent: %q, present=%v, err=%v", got, present, err)
+		}
+		// An empty value is a value: the key is present.
+		if stored, err := s.SetIfAbsent(ctx, "k", []byte("x"), 0); err != nil || stored {
+			t.Fatalf("SetIfAbsent over an empty value: stored=%v err=%v", stored, err)
+		}
+	})
+
+	t.Run("concurrent SetIfAbsent has exactly one winner, whose ttl applies", func(t *testing.T) {
+		s := newStore(t)
+		ctx := context.Background()
+		const goroutines = 30
+		start := make(chan struct{})
+		var wg sync.WaitGroup
+		wins := make(chan string, goroutines)
+		errs := make(chan error, goroutines)
+		for i := range goroutines {
+			wg.Add(1)
+			go func() {
+				defer wg.Done()
+				mine := []byte(fmt.Sprintf("writer-%d", i))
+				<-start
+				stored, err := s.SetIfAbsent(ctx, "k", mine, contendedTTL)
+				if err != nil {
+					errs <- err
+					return
+				}
+				if stored {
+					wins <- string(mine)
+				}
+			}()
+		}
+		close(start)
+		wg.Wait()
+		close(wins)
+		close(errs)
+		for err := range errs {
+			t.Fatalf("concurrent SetIfAbsent: %v", err)
+		}
+		var winners []string
+		for w := range wins {
+			winners = append(winners, w)
+		}
+		if len(winners) != 1 {
+			t.Fatalf("%d writers won SetIfAbsent, want exactly 1: %v", len(winners), winners)
+		}
+		if got, present, err := s.Get(ctx, "k"); err != nil || !present || string(got) != winners[0] {
+			t.Fatalf("the key holds %q (present=%v, err=%v) but %q reported winning", got, present, err, winners[0])
+		}
+		time.Sleep(contendedTTL + ttlSettle)
+		if _, present, err := s.Get(ctx, "k"); err != nil || present {
+			t.Fatalf("the winner's ttl did not apply: present=%v err=%v", present, err)
+		}
+	})
+
+	t.Run("concurrent SetIfAbsent on an expired key has exactly one winner", func(t *testing.T) {
+		s := newStore(t)
+		raceOnExpiredKeys(t, s, func(key string, mine []byte) (bool, error) {
+			return s.SetIfAbsent(context.Background(), key, mine, liveTTL)
 		})
 	})
 }

@@ -198,6 +198,14 @@ func (s *store) CompareAndSwap(ctx context.Context, key string, old, newVal []by
 	return swapped == 1, nil
 }
 
+// SetIfAbsent is the server's own SET with NX: one command, which the server
+// runs atomically, and which finds an expired key absent because the server
+// judges the expiry itself. A key it creates carries the expiry given, and a
+// key that is there is left as it is.
+func (s *store) SetIfAbsent(ctx context.Context, key string, value []byte, ttl time.Duration) (bool, error) {
+	return s.client.SetNX(ctx, prefixed(key), value, plainTTL(ttl)).Result()
+}
+
 // ttlMillis turns a duration into the whole milliseconds the script's PEXPIRE
 // takes.
 //
