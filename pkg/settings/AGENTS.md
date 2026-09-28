@@ -63,6 +63,16 @@ here must not cross, and how to run it.
   to either one has to be made in both. The two differ in what a leaf may be:
   configuration accepts containers and pointers to scalars, this module's type
   set is closed and does not.
+- **The write discipline is a second statement of configuration's value
+  discipline, and it has to stay one.** `coerce` takes what a configuration
+  source would give for the same item — duration text and never a bare number,
+  a whole float into an integer item, text through a type's own
+  `UnmarshalText` — because a parameter moving between the two modules has to
+  accept the same values in both, and nothing in `pkg/config` exports those
+  rules either. `TestTheWriteDisciplineAgreesWithConfiguration` drives one
+  table of YAML values through configuration's real loading path and through
+  this module's encoder, so a rule changed on one side and not the other fails
+  there.
 - **A pointer leaf is refused, and that is deliberate.** Settings answer "was
   this ever written" through the layers, so the third state a pointer would
   express — set to nothing — has no reader. `classifyLeaf` refusing it is what

@@ -99,6 +99,49 @@ func TestANumberIsHeldToTheDeclaredType(t *testing.T) {
 	if err := store.Set(ctx, Write{Layer: Global(), Key: "demo.limit", Value: "text"}); !errors.Is(err, ErrTypeMismatch) {
 		t.Errorf("writing a string returned %v, want ErrTypeMismatch", err)
 	}
+
+	// An integer goes into a float item: 1 written from Go source is an int,
+	// and configuration takes it into the same field.
+	if err := store.Set(ctx, Write{Layer: Global(), Key: "demo.ratio", Value: 1}); err != nil {
+		t.Fatalf("writing an integer to a float item returned %v, want nil", err)
+	}
+	if got, _ := Get[float64](store, Global(), "demo.ratio"); got != 1 {
+		t.Errorf("the integer read back as %v, want 1", got)
+	}
+}
+
+// A duration item takes duration text and refuses a bare number.
+//
+// A duration counts nanoseconds underneath, so a bare number is the one value
+// that reads as one thing and means another: an endpoint receiving
+// {"value": 60} for a window it shows in seconds would store sixty
+// nanoseconds, and a consumer checking only that the window is positive would
+// act on it. The text is the form configuration takes for the same item.
+func TestADurationIsWrittenAsText(t *testing.T) {
+	keys := demoTable(t)
+	store, _ := storeOf(t, keys, newRecordingBus())
+	ctx := context.Background()
+
+	for _, number := range []any{300, int64(300), uint(300), float64(300)} {
+		err := store.Set(ctx, Write{Layer: Global(), Key: "demo.window", Value: number})
+		if !errors.Is(err, ErrTypeMismatch) {
+			t.Errorf("writing the %T %v to a duration item returned %v, want ErrTypeMismatch",
+				number, number, err)
+		}
+	}
+	if rows := countRows(t, store); rows != 0 {
+		t.Fatalf("a refused duration left %d rows behind", rows)
+	}
+
+	if err := store.Set(ctx, Write{Layer: Global(), Key: "demo.window", Value: "300s"}); err != nil {
+		t.Fatalf("writing duration text returned %v, want nil", err)
+	}
+	if got, _ := Get[time.Duration](store, Global(), "demo.window"); got != 5*time.Minute {
+		t.Errorf("the duration read back as %v, want 5m0s", got)
+	}
+	if err := store.Set(ctx, Write{Layer: Global(), Key: "demo.window", Value: "soon"}); !errors.Is(err, ErrTypeMismatch) {
+		t.Errorf("writing text that is not a duration returned %v, want ErrTypeMismatch", err)
+	}
 }
 
 // A read hands out a copy of what the module holds, so a caller that modifies

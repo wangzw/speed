@@ -176,6 +176,19 @@ err := store.Get(settings.ForTenant(tenantID), "ratelimit.window", &opts.Window)
 
 **写入的值按声明类型编码为文本**，编码规则是读取方向的逆：`TextUnmarshaler` 类型的文本表示、`Duration` 的 `ParseDuration` 格式、布尔与数值的常规文本。编码失败的形态是 `ErrTypeMismatch`，点名键与声明类型。
 
+**写入收下的值先按配置的取值纪律归到声明类型**，本模块不另立规则。下列各步按配置的判定次序排列，先命中者定，清单是完整的：
+
+- 已是声明类型的值原样接受。
+- `time.Duration` 只收 `time.ParseDuration` 可解的文本，裸数字判 `ErrTypeMismatch`：它的单位是纳秒，`300` 在写的人眼里是五分钟，存下来是三百纳秒。
+- 数值写入另一种 Go 类型的数值项：整数值的浮点可写进整数项，整数可写进浮点项；带小数部分或超出目标类型范围的值判 `ErrTypeMismatch`，不做截断。
+- 文本写入实现 `TextUnmarshaler` 的类型，由该类型自己的 `UnmarshalText` 解析。
+- 文本写入布尔与数值项，按常规文本解析。
+- 字符串与布尔写入以同一底层种类定义的类型。
+
+其余一律不转换，判 `ErrTypeMismatch`。管理端点把请求体按 JSON 或 YAML 解出的值原样交给 `Set` 是这条纪律的常规用法：那些值正是配置源对同一项会给出的值。落库的文本一律是声明类型自己的写法，与调用方交来的形式无关，以 `"300s"` 写入的时长存为 `5m0s`。
+
+**两处陈述由同一张取值表约束**：配置模块不导出它的转换规则，本模块在 `pkg/settings/codec.go` 的 `coerce` 里复述了一遍；`pkg/settings/discipline_test.go` 的 `TestTheWriteDisciplineAgreesWithConfiguration` 把同一份 YAML 文档里的值分别送进配置的装载路径与本模块的编码路径，要求两侧同拒，或同收且得到同一个值。
+
 **值的文本上限是 1 MiB**，超过即 `ErrInvalidValue`，不落库。上限服务的对象是快照：全部已写入行常驻内存，一个失控的写入不该把整个进程的内存拖垮。
 
 **版本在数据库端递增**：`version = version + 1`，新行为 1。两个并发写入同一个键时结果是后到的那一个，版本号仍逐次递增——本模块不做比较并交换，丢更新写进非保证。

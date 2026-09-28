@@ -20,12 +20,10 @@ import (
 
 // encodeValue turns a declared value into the text to store.
 //
-// The value is first held to the declared type. A value that is not already of
-// that type is refused rather than converted, with one exception the two
-// modules share: a whole number written into an integer item is accepted, and
-// a fractional one or one the item's type cannot hold is not. That is the
-// discipline configuration applies to the same conversion, and a parameter
-// moving between the two modules has to behave the same way in both.
+// The value is first held to the declared type under configuration's value
+// discipline (coerce), and the text is then written in the declared type's own
+// form. What is stored is therefore always that form, whatever the caller
+// handed in: a duration written as "300s" is stored as "5m0s".
 func encodeValue(entry keyEntry, value any) (string, error) {
 	rv, err := coerce(value, entry)
 	if err != nil {
@@ -72,13 +70,33 @@ func encodeValue(entry keyEntry, value any) (string, error) {
 
 // coerce holds a written value to the declared type.
 //
-// A value already of that type passes through. A number of another Go type is
-// converted under the discipline configuration applies to the same situation:
-// JSON has no integer type, so a 10 written as a float belongs in an integer
-// item, while 10.5 does not, and neither does a value the item's type cannot
-// hold. Nothing else converts, because a declaration is what the column is read
-// back under and a value of an unrelated type would produce a row no read of
-// that key could decode.
+// The discipline is configuration's, restated here because nothing in
+// pkg/config exports it: a parameter moving between the two modules has to
+// accept the same values in both, and a write takes whatever a configuration
+// source would give for the same item — a value decoded out of a JSON or YAML
+// document an administrative endpoint received is the ordinary case. The steps
+// run in the order configuration decides them in, and the first that applies
+// settles the value:
+//
+//   - A value already of the declared type passes.
+//   - A time.Duration takes a text time.ParseDuration accepts, and nothing
+//     else. A bare number is refused: its unit is the nanosecond, so a 300
+//     that reads as five minutes to whoever wrote it would be stored as three
+//     hundred nanoseconds.
+//   - A number converts into a numeric item of another Go type when the item
+//     holds it. JSON has no integer type, so a 10 decoded as a float belongs in
+//     an integer item, while 10.5 does not; an integer goes into a float item;
+//     a value outside the item type's range is refused.
+//   - A text goes into a type that decodes itself from text through that
+//     type's own UnmarshalText.
+//   - A text goes into a boolean or a numeric item when it parses as one.
+//   - A string or a boolean goes into a defined type built on the same kind.
+//
+// Nothing else converts. A declaration is what the column is read back under,
+// and a value of an unrelated type would produce a row no read of that key
+// could decode. TestTheWriteDisciplineAgreesWithConfiguration drives one table
+// of values through configuration's decoding and through this function, which
+// is what holds the two statements of the discipline in step.
 func coerce(value any, entry keyEntry) (reflect.Value, error) {
 	rv := reflect.ValueOf(value)
 	if !rv.IsValid() {
@@ -87,36 +105,146 @@ func coerce(value any, entry keyEntry) (reflect.Value, error) {
 	if rv.Type().AssignableTo(entry.typ) {
 		return rv, nil
 	}
+	if entry.kind == kindDuration {
+		return coerceDuration(rv, entry)
+	}
+	if rv.CanInt() || rv.CanUint() || rv.CanFloat() {
+		if fitted, ok := fitNumber(rv, entry.typ); ok {
+			return fitted, nil
+		}
+		return reflect.Value{}, writeMismatch(entry, describeNumber(rv, entry))
+	}
+	if rv.Kind() == reflect.String {
+		return coerceText(rv.String(), entry)
+	}
+	if rv.Kind() == reflect.Bool && entry.typ.Kind() == reflect.Bool {
+		return rv.Convert(entry.typ), nil
+	}
+	return reflect.Value{}, writeMismatch(entry, typeName(rv.Type()))
+}
+
+// coerceDuration holds a value to time.Duration: a text time.ParseDuration
+// accepts, and nothing else. The value is not of the declared type, or coerce
+// would have passed it already.
+func coerceDuration(rv reflect.Value, entry keyEntry) (reflect.Value, error) {
+	if rv.Kind() != reflect.String {
+		if rv.CanInt() || rv.CanUint() || rv.CanFloat() {
+			return reflect.Value{}, writeRefused(entry, describeNumber(rv, entry),
+				fmt.Errorf("a duration is written as a text time.ParseDuration accepts, such as "+
+					"\"5m\": a bare number counts nanoseconds, so 300 would read as five minutes "+
+					"and mean three hundred nanoseconds"))
+		}
+		return reflect.Value{}, writeMismatch(entry, typeName(rv.Type()))
+	}
+	parsed, err := time.ParseDuration(rv.String())
+	if err != nil {
+		return reflect.Value{}, writeRefused(entry, strconv.Quote(rv.String()),
+			fmt.Errorf("it is not a duration, which is written as in \"5m\", \"1h30m\" or \"200ms\""))
+	}
+	return reflect.ValueOf(parsed), nil
+}
+
+// coerceText holds a text to the declared type: through the type's own
+// UnmarshalText when it has one, by parsing it when the item is a boolean or a
+// number, and as the same string otherwise when the item is a string.
+func coerceText(text string, entry keyEntry) (reflect.Value, error) {
+	if entry.kind == kindText {
+		v := reflect.New(entry.typ)
+		unmarshaler, ok := v.Interface().(encoding.TextUnmarshaler)
+		if !ok {
+			// Unreachable: classifyLeaf admits a type as kindText because it
+			// decodes itself from text.
+			return reflect.Value{}, writeMismatch(entry, "a string")
+		}
+		if err := unmarshaler.UnmarshalText([]byte(text)); err != nil {
+			return reflect.Value{}, writeRefused(entry, strconv.Quote(text), err)
+		}
+		return v.Elem(), nil
+	}
+	var (
+		fitted reflect.Value
+		ok     bool
+		err    error
+	)
 	switch entry.typ.Kind() {
+	case reflect.String:
+		return reflect.ValueOf(text).Convert(entry.typ), nil
+	case reflect.Bool:
+		var parsed bool
+		if parsed, err = strconv.ParseBool(text); err == nil {
+			fitted, ok = reflect.New(entry.typ).Elem(), true
+			fitted.SetBool(parsed)
+		}
+	case reflect.Int, reflect.Int8, reflect.Int16, reflect.Int32, reflect.Int64:
+		var parsed int64
+		if parsed, err = strconv.ParseInt(text, 10, 64); err == nil {
+			fitted, ok = fitInteger(parsed, entry.typ)
+		}
+	case reflect.Uint, reflect.Uint8, reflect.Uint16, reflect.Uint32, reflect.Uint64:
+		var parsed uint64
+		if parsed, err = strconv.ParseUint(text, 10, 64); err == nil {
+			fitted, ok = fitUnsigned(parsed, entry.typ)
+		}
+	case reflect.Float32, reflect.Float64:
+		var parsed float64
+		if parsed, err = strconv.ParseFloat(text, 64); err == nil {
+			fitted, ok = fitFloat(parsed, entry.typ)
+		}
+	default:
+		return reflect.Value{}, writeMismatch(entry, "a string")
+	}
+	if err != nil {
+		return reflect.Value{}, writeRefused(entry, strconv.Quote(text),
+			fmt.Errorf("it does not parse as %s", typeName(entry.typ)))
+	}
+	if !ok {
+		return reflect.Value{}, writeRefused(entry, strconv.Quote(text),
+			fmt.Errorf("the number is outside what %s holds", typeName(entry.typ)))
+	}
+	return fitted, nil
+}
+
+// fitNumber writes a number into a numeric item of another Go type, and reports
+// false when the item is not numeric, when a fractional value meets an integer
+// item, or when the value is outside the item type's range.
+func fitNumber(rv reflect.Value, to reflect.Type) (reflect.Value, bool) {
+	switch to.Kind() {
 	case reflect.Int, reflect.Int8, reflect.Int16, reflect.Int32, reflect.Int64,
 		reflect.Uint, reflect.Uint8, reflect.Uint16, reflect.Uint32, reflect.Uint64:
-		switch rv.Kind() {
-		case reflect.Float32, reflect.Float64:
+		switch {
+		case rv.CanFloat():
 			f := rv.Float()
 			whole := int64(f)
 			if float64(whole) != f {
-				break
+				return reflect.Value{}, false
 			}
-			if fitted, ok := fitInteger(whole, entry.typ); ok {
-				return fitted, nil
-			}
-		case reflect.Int, reflect.Int8, reflect.Int16, reflect.Int32, reflect.Int64:
-			if fitted, ok := fitInteger(rv.Int(), entry.typ); ok {
-				return fitted, nil
-			}
-		case reflect.Uint, reflect.Uint8, reflect.Uint16, reflect.Uint32, reflect.Uint64:
-			if fitted, ok := fitUnsigned(rv.Uint(), entry.typ); ok {
-				return fitted, nil
-			}
+			return fitInteger(whole, to)
+		case rv.CanInt():
+			return fitInteger(rv.Int(), to)
+		case rv.CanUint():
+			return fitUnsigned(rv.Uint(), to)
 		}
 	case reflect.Float32, reflect.Float64:
-		if rv.Kind() == reflect.Float32 || rv.Kind() == reflect.Float64 {
-			if fitted, ok := fitFloat(rv.Float(), entry.typ); ok {
-				return fitted, nil
-			}
+		switch {
+		case rv.CanFloat():
+			return fitFloat(rv.Float(), to)
+		case rv.CanInt():
+			return fitFloat(float64(rv.Int()), to)
+		case rv.CanUint():
+			return fitFloat(float64(rv.Uint()), to)
 		}
 	}
-	return reflect.Value{}, writeMismatch(entry, typeName(rv.Type()))
+	return reflect.Value{}, false
+}
+
+// describeNumber names a number in a refusal. The number itself is shown, as
+// the nearest thing to what the caller wrote, unless the item is sensitive:
+// then only its Go type is.
+func describeNumber(rv reflect.Value, entry keyEntry) string {
+	if entry.item.Sensitive {
+		return typeName(rv.Type())
+	}
+	return fmt.Sprintf("the %s %v", typeName(rv.Type()), rv.Interface())
 }
 
 // fitInteger writes a whole number into the target's own type, refusing a
@@ -169,10 +297,26 @@ func fitFloat(f float64, to reflect.Type) (reflect.Value, bool) {
 	return out, true
 }
 
-// writeMismatch reports a value that cannot be held to its declaration.
+// writeMismatch reports a value that cannot be held to its declaration. got
+// describes the value without its content where the item is sensitive.
 func writeMismatch(entry keyEntry, got string) error {
 	return fmt.Errorf("%w: key %q is declared as %s, and the value written is %s",
 		ErrTypeMismatch, entry.key, typeName(entry.typ), got)
+}
+
+// writeRefused reports a value of a kind the declaration takes that still does
+// not convert to it: a text that does not parse, a number a duration refuses.
+//
+// A sensitive item's value is withheld, and so is the reason, for the reason
+// mismatch gives: a parser's error quotes the text it failed on.
+func writeRefused(entry keyEntry, shown string, reason error) error {
+	if entry.item.Sensitive {
+		return fmt.Errorf("%w: key %q is declared as %s, and the value written does not convert "+
+			"to it. The value is withheld: the item is marked sensitive",
+			ErrTypeMismatch, entry.key, typeName(entry.typ))
+	}
+	return fmt.Errorf("%w: key %q is declared as %s, and the value written, %s, does not convert "+
+		"to it: %w", ErrTypeMismatch, entry.key, typeName(entry.typ), shown, reason)
 }
 
 // decodeValue turns the text of a stored row into a value of the declared
