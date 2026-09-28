@@ -308,12 +308,15 @@ func (p *plan) allNodes() []*planNode {
 	return out
 }
 
-// added lists the modules whose arguments this command contributes and no
-// command above it does. It is what decides where an argument is registered:
-// on the shallowest command of a path whose flagged set holds the module,
-// which every command below then inherits. A second definition deeper down
-// would shadow the one the layering tool is bound to, and the value would be
-// given on the command line and never read.
+// added lists the modules whose arguments this command shows in a way no
+// command above it already does. It is what decides where an argument's face is
+// registered: on the shallowest command of a path whose flagged set holds the
+// module, which every command below then inherits -- unless a command below
+// runs a module the one above only collects from. The two then say different
+// things about a required item, and the deeper command registers a face of its
+// own, which shadows the inherited one on its page and below it. Every face
+// holds the one value the layering tool is bound to, so where the argument was
+// written on the path makes no difference to what is read.
 //
 // It reads the flagged set rather than the participating set, and the two
 // differ exactly when a host asked for a declaration-level module's arguments
@@ -322,13 +325,35 @@ func (p *plan) allNodes() []*planNode {
 // the thing taking them in at declaration level avoids.
 //
 // Commands on separate branches stand above none of each other, so each of
-// them registers what it flags, and the argument they register is one and the
-// same.
+// them registers a face of what it flags, and the value behind the faces is
+// one and the same.
 func (n *planNode) added() []string {
 	if n.parent == nil {
 		return n.flagModules()
 	}
-	return subtract(n.flagModules(), n.parent.flagModules())
+	above := make(map[string]bool)
+	aboveRuns := make(map[string]bool, len(n.parent.participants))
+	for _, name := range n.parent.participants {
+		aboveRuns[name] = true
+	}
+	// Running is inherited down a path, so a module the command above
+	// runs is one this command runs too, and what the two show agrees.
+	runs := make(map[string]bool, len(n.participants))
+	for _, name := range n.participants {
+		runs[name] = true
+	}
+	for _, name := range n.parent.flagModules() {
+		if aboveRuns[name] || !runs[name] {
+			above[name] = true
+		}
+	}
+	out := make([]string, 0, len(n.flagModules()))
+	for _, name := range n.flagModules() {
+		if !above[name] {
+			out = append(out, name)
+		}
+	}
+	return out
 }
 
 // declarationsForTheDrive renders the accumulated list in the form a drive
@@ -385,22 +410,5 @@ func (n *planNode) flagModules() []string {
 		}
 	}
 	slices.Sort(out)
-	return out
-}
-
-// subtract lists what is in names and not in others, in the order it was given.
-// Both sides are sorted and free of repetition, which is what lets one pass
-// over a membership map answer it.
-func subtract(names, others []string) []string {
-	minus := make(map[string]bool, len(others))
-	for _, name := range others {
-		minus[name] = true
-	}
-	out := make([]string, 0, len(names))
-	for _, name := range names {
-		if !minus[name] {
-			out = append(out, name)
-		}
-	}
 	return out
 }

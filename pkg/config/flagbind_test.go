@@ -327,9 +327,9 @@ func TestArgumentOfAModuleOutsideTheCommandRejected(t *testing.T) {
 // TestOneItemIsOneArgumentOnEveryCommandThatTakesItIn pins what a second
 // command taking the same module in gets. It carries the argument, since the
 // module is in its participating set and a run selects it as readily as any
-// other command; and it carries the one the first command defined, since a
-// second definition would hold a second value and only the one the layering
-// tool is bound to is ever read.
+// other command; and what it carries holds the value the first command's does,
+// since a second value would be one the layering tool is not bound to and
+// never reads.
 func TestOneItemIsOneArgumentOnEveryCommandThatTakesItIn(t *testing.T) {
 	l := flagLoader(t)
 	first := pflag.NewFlagSet("first", pflag.ContinueOnError)
@@ -345,11 +345,12 @@ func TestOneItemIsOneArgumentOnEveryCommandThatTakesItIn(t *testing.T) {
 	if second.Lookup("addr") == nil {
 		t.Fatal("the second command carries no argument for an item of the module it takes in")
 	}
-	if first.Lookup("addr") != second.Lookup("addr") {
-		t.Fatal("the two commands carry two arguments for one item")
-	}
 	if err := second.Parse([]string{"--addr=:9090"}); err != nil {
 		t.Fatalf("parsing the second command failed: %v", err)
+	}
+	if got := first.Lookup("addr").Value.String(); got != ":9090" {
+		t.Fatalf("the first command's argument holds %q after the second was given :9090, "+
+			"so the two commands carry two values for one item", got)
 	}
 	var opts serverOptions
 	if err := l.Reader().Decode("server", &opts); err != nil {

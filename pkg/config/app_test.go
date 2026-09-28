@@ -734,6 +734,145 @@ func TestBooleanOnAMiddleLayerDoesNotHideTheSubcommand(t *testing.T) {
 	}
 }
 
+// requiredArgumentApp builds a tree over a module whose one argument is
+// required, and hands back what asking the given command line produced. Every
+// case runs on a registry of its own, since a tree runs once.
+func requiredArgumentApp(t *testing.T, write func(*App), args ...string) (string, error) {
+	t.Helper()
+	defaults := &treeAddr{}
+	reg := core.New()
+	reg.Register(identifying("host", HostIdentity{Prefix: "MYAPP"}))
+	reg.Register(declaring("greeter", Schema{
+		Namespace: "greeter",
+		Mounts:    []Mount{{Value: defaults}},
+		Items: map[string]Item{"addr": {
+			Origins:     OriginPrimary | OriginEnv | OriginFlag,
+			FlagName:    "greeter-addr",
+			Placeholder: "HOST:PORT",
+			Description: "the address of the greeting service",
+			Required:    true,
+		}},
+	}))
+	a, stdout, _ := treeApp(reg, args...)
+	write(a)
+	err := a.Execute(t.Context())
+	return stdout.String(), err
+}
+
+// greeterLine is the help line of the fixture's required argument.
+func greeterLine(t *testing.T, help string) string {
+	t.Helper()
+	for line := range strings.SplitSeq(help, "\n") {
+		if strings.Contains(line, "--greeter-addr") {
+			return strings.TrimSpace(line)
+		}
+	}
+	t.Fatalf("the help reads\n%s\nand carries no --greeter-addr line", help)
+	return ""
+}
+
+// TestTheRequiredMarkFollowsTheCommandWhoseHelpIsShown pins that the mark on
+// an argument says whether the command being described will ask for it, and
+// not what whichever command happened to register the argument first would
+// say.
+//
+// A reporting command collects every module's arguments without running any
+// of them, so on its page the argument is one a run may give; on the command
+// that runs the module the same argument is one a run cannot start without.
+// Both are one argument, and the two pages still have to say different
+// things about it. The reporting command is named on either side of serve,
+// since the command-line library orders siblings by name and which of them
+// registers an argument first follows that order.
+func TestTheRequiredMarkFollowsTheCommandWhoseHelpIsShown(t *testing.T) {
+	for _, reporter := range []string{"check", "zcheck"} {
+		tree := func(a *App) {
+			report := a.Root().Sub(reporter)
+			report.IncludeAllDeclarations().WithFlags()
+			report.Do(core.StagePrepare, nil)
+			serve := a.Root().Sub("serve")
+			serve.Include("greeter")
+			serve.Do(core.StagePrepare, nil)
+		}
+		t.Run(reporter+" beside serve", func(t *testing.T) {
+			help, err := requiredArgumentApp(t, tree, "serve", "--help")
+			if err != nil {
+				t.Fatalf("asking serve for help returned %v", err)
+			}
+			if line := greeterLine(t, help); !strings.Contains(line, "(required)") {
+				t.Errorf("serve's help reads %q, and serve runs the module that will not start "+
+					"without this argument", line)
+			}
+			help, err = requiredArgumentApp(t, tree, reporter, "--help")
+			if err != nil {
+				t.Fatalf("asking %s for help returned %v", reporter, err)
+			}
+			if line := greeterLine(t, help); strings.Contains(line, "(required)") {
+				t.Errorf("%s's help reads %q, and %s runs nothing that would ask for it",
+					reporter, line, reporter)
+			}
+		})
+	}
+}
+
+// TestTheRequiredMarkReachesACommandThatRunsWhatItsParentOnlyCollects pins
+// the same rule down one path rather than across siblings. The parent reaches
+// the module for its declarations and puts its argument on the command line,
+// and the child runs it: the argument is one and the same, and the child's
+// page is the one that says a run of it cannot start without the value.
+func TestTheRequiredMarkReachesACommandThatRunsWhatItsParentOnlyCollects(t *testing.T) {
+	tree := func(a *App) {
+		tool := a.Root().Sub("tool")
+		tool.IncludeDeclarations("greeter").WithFlags()
+		run := tool.Sub("run")
+		run.Include("greeter")
+		run.Do(core.StagePrepare, nil)
+	}
+	help, err := requiredArgumentApp(t, tree, "tool", "run", "--help")
+	if err != nil {
+		t.Fatalf("asking tool run for help returned %v", err)
+	}
+	if line := greeterLine(t, help); !strings.Contains(line, "(required)") {
+		t.Errorf("tool run's help reads %q, and tool run runs the module that will not start "+
+			"without this argument", line)
+	}
+	help, err = requiredArgumentApp(t, tree, "tool", "--help")
+	if err != nil {
+		t.Fatalf("asking tool for help returned %v", err)
+	}
+	if line := greeterLine(t, help); strings.Contains(line, "(required)") {
+		t.Errorf("tool's help reads %q, and tool runs nothing that would ask for it", line)
+	}
+}
+
+// TestAnArgumentGivenOnARunningChildSatisfiesTheRequiredItem pins that the
+// argument a child registers for itself is the one the value is read from:
+// giving it there, or on the parent that also carries it, counts as given, so
+// the required item is satisfied and the value arrives.
+func TestAnArgumentGivenOnARunningChildSatisfiesTheRequiredItem(t *testing.T) {
+	for _, args := range [][]string{
+		{"tool", "run", "--greeter-addr=:1"},
+		{"tool", "--greeter-addr=:1", "run"},
+	} {
+		read := ""
+		tree := func(a *App) {
+			tool := a.Root().Sub("tool")
+			tool.IncludeDeclarations("greeter").WithFlags()
+			run := tool.Sub("run")
+			run.Include("greeter")
+			run.Do(core.StagePrepare, func(_ context.Context, reg *core.Registry) error {
+				read = decodeAddr(t, readerFrom(t, reg), "greeter")
+				return nil
+			})
+		}
+		if _, err := requiredArgumentApp(t, tree, args...); err != nil {
+			t.Fatalf("%v returned %v", args, err)
+		}
+		if read != ":1" {
+			t.Errorf("%v read greeter.addr as %q, want the value it was given", args, read)
+		}
+	}
+}
+
 // TestTheDiagnosisOfAnUnknownArgumentIsAboutTheSelectedCommand pins that the
 // fix an unknown argument is met with is read off the command the run
 // selected. A sibling that reaches the module for its declarations alone says

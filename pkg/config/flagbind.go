@@ -11,18 +11,21 @@ import (
 // BindLayer registers the arguments of one command on its flag set: the items
 // of the modules named here that declared the command line as an origin. The
 // command tree calls it once per command, naming the modules whose arguments
-// that command contributes and no command above it does, so an empty list
-// registers nothing.
+// that command shows in a way no command above it already does, so an empty
+// list registers nothing.
 //
 // running names the ones among them this command actually runs. An argument of
 // a module the command only collects from is not marked required, because this
 // command never decodes the module and so never comes up short of the value.
 //
-// An item is one argument for the whole tree: it is defined the first time a
-// command takes its module in, and that same argument is registered on every
-// other command that takes it in. Two commands on separate branches therefore
-// share one argument, bound to the layering tool once, and a run reads its
-// value from there whichever of the two it selected.
+// An item holds one value for the whole tree, and each command that carries it
+// shows it with a face of its own. The value is defined the first time any
+// command takes the module in and is bound to the layering tool once, so a run
+// reads it from there whichever command it selected and wherever on the path
+// the argument was written. The face is per command because what the help
+// output says about the argument is: the same required item is one a run of
+// the command that runs its module cannot start without, and one a run of a
+// command that only collects its declarations can leave out.
 func (l *loader) BindLayer(fs *pflag.FlagSet, taking, running []string) error {
 	takes := make(map[string]bool, len(taking))
 	for _, name := range taking {
@@ -37,25 +40,74 @@ func (l *loader) BindLayer(fs *pflag.FlagSet, taking, running []string) error {
 		if !takes[item.module] || !item.origins.has(OriginFlag) {
 			continue
 		}
-		if flag, already := l.bound[item.path]; already {
-			// Another command defined this argument. That one is
-			// registered here rather than a second definition of
-			// it: two definitions would hold two values, and only
-			// the one the layering tool is bound to is ever read.
-			fs.AddFlag(flag)
-			continue
+		arg, err := l.argumentOf(item)
+		if err != nil {
+			return err
 		}
-		value, noOptDefVal := newFlagValue(item)
-		fs.VarP(value, item.item.FlagName, item.item.FlagShort, flagUsage(item, runs[item.module]))
-		flag := fs.Lookup(item.item.FlagName)
-		flag.NoOptDefVal = noOptDefVal
-		if err := l.v.BindPFlag(item.path, flag); err != nil {
-			return fmt.Errorf("%w: module %q declares the command-line name %q for %q, which "+
-				"could not be bound: %w", ErrConfigConflict, item.module, item.item.FlagName,
-				item.path, err)
-		}
-		l.bound[item.path] = flag
+		fs.AddFlag(faceOf(arg, flagUsage(item, runs[item.module])))
 	}
+	return nil
+}
+
+// argumentOf gives the one argument an item is across the tree, defining it
+// and binding it to the layering tool the first time it is asked for.
+//
+// The argument is registered on no command itself. Every command registers a
+// face of it instead, and a face forwards what it is given here: two
+// definitions would hold two values, and only the one the layering tool is
+// bound to is ever read.
+func (l *loader) argumentOf(item *manifestItem) (*pflag.Flag, error) {
+	if arg, defined := l.bound[item.path]; defined {
+		return arg, nil
+	}
+	value, noOptDefVal := newFlagValue(item)
+	arg := &pflag.Flag{
+		Name:        item.item.FlagName,
+		Shorthand:   item.item.FlagShort,
+		Usage:       item.item.Description,
+		Value:       value,
+		DefValue:    value.String(),
+		NoOptDefVal: noOptDefVal,
+	}
+	if err := l.v.BindPFlag(item.path, arg); err != nil {
+		return nil, fmt.Errorf("%w: module %q declares the command-line name %q for %q, which "+
+			"could not be bound: %w", ErrConfigConflict, item.module, item.item.FlagName,
+			item.path, err)
+	}
+	l.bound[item.path] = arg
+	return arg, nil
+}
+
+// faceOf is the argument as one command shows it: the same name, the same
+// default and the same value, under the usage text that command's help prints.
+func faceOf(arg *pflag.Flag, usage string) *pflag.Flag {
+	return &pflag.Flag{
+		Name:        arg.Name,
+		Shorthand:   arg.Shorthand,
+		Usage:       usage,
+		Value:       sharedValue{arg: arg},
+		DefValue:    arg.DefValue,
+		NoOptDefVal: arg.NoOptDefVal,
+	}
+}
+
+// sharedValue is the value of a face: it is the argument's own. Setting it
+// marks the argument given as well as the face, since the argument is what the
+// layering tool and the required rule read.
+type sharedValue struct {
+	arg *pflag.Flag
+}
+
+var _ pflag.Value = sharedValue{}
+
+func (v sharedValue) String() string { return v.arg.Value.String() }
+func (v sharedValue) Type() string   { return v.arg.Value.Type() }
+
+func (v sharedValue) Set(s string) error {
+	if err := v.arg.Value.Set(s); err != nil {
+		return err
+	}
+	v.arg.Changed = true
 	return nil
 }
 

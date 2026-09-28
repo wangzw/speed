@@ -108,9 +108,11 @@ func (a *App) Execute(ctx context.Context) error {
 	// wrong one. The tree is settled before anything is parsed, so there is
 	// nothing to wait for.
 	//
-	// Each command registers what it adds to the modules the commands above
-	// it already take in, so the argument of a module two levels of one
-	// path take in sits on the shallower, and the deeper inherits it.
+	// Each command registers what it shows differently from the commands
+	// above it, so the argument of a module two levels of one path take in
+	// sits on the shallower and the deeper inherits it, unless the deeper
+	// one runs a module the shallower only collects from and marks its
+	// required items where the shallower does not.
 	for _, node := range p.allNodes() {
 		if err := l.BindLayer(node.cmd.PersistentFlags(), node.added(), node.participants); err != nil {
 			return a.reportEarly(err)

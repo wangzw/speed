@@ -595,6 +595,8 @@ kv.redis.max-conns   ->   MYAPP_KV__REDIS__MAX_CONNS
 --remote-addr HOST:PORT   the address of the greeting service (required)
 ```
 
+**标记按帮助所属的那条命令判定。** 输入项所属的模块由这条命令运行时带标记；这条命令只为声明而静态级纳入它、经 `WithFlags` 把参数放上命令行时不带——那个模块不构造，不给这个值照样启动得了。同一个输入项在整棵命令树上只有一个取值，各条命令展示的是它的一个侧面：兄弟命令各有各的标记，同一路径上浅层只收集、深层才运行的，深层也有自己的那一面；无论参数写在哪条命令、路径上的哪一层，读到的都是同一个值。
+
 命令行库还自行向命令树挂上 `help` 与 `completion` 两条命令。它们不由宿主写出，也不出自任何模块，是委托解析一并接过来的东西——[ADR-config-parsing-2026-09-20](../../adr/adr-config-parsing-2026-09-20.md) 在后果里记的「帮助输出、shell 补全、子命令的组织由命令行库提供」正是它们。这与本模块不定义任何子命令并不冲突：那一条说的是本模块与宿主的分工，这一句说的是库的贡献。
 
 分组不再由声明表达。命令行库按命令组织参数，一条命令的参数就是它参与集内的那些；这一层划分取代了原先由 `Item` 给出的分组，`migrate` 的帮助里不会出现只有 `serve` 才运行级纳入的那些模块的参数——**而那些模块的迁移照样施加**，参数面与声明的生效面是两件事（见 [db](design-db.md)）。
@@ -677,7 +679,7 @@ kv.redis.max-conns   ->   MYAPP_KV__REDIS__MAX_CONNS
 | 配置定位符 | 已实现 | `pkg/config/locator.go` |
 | 命令行与命令树 | 已实现 | `pkg/config/flagbind.go`、`pkg/config/flagvalue.go`、`pkg/config/tree.go` |
 | 环境变量层 | 已实现 | `pkg/config/envbind.go` |
-| 帮助输出 | 已实现 | 渲染由命令行库承担；`pkg/config/defaultvalue.go` 承载默认值的可回写渲染、敏感项遮蔽与必填标记 |
+| 帮助输出 | 已实现 | 渲染由命令行库承担；`pkg/config/defaultvalue.go` 承载默认值的可回写渲染、敏感项遮蔽与必填标记；各命令各自的参数侧面由 `pkg/config/flagbind.go` `faceOf` 与 `pkg/config/tree.go` `added` 承载 |
 | 传输扩展点 | 已实现 | `pkg/config/contract.go` |
 | 格式扩展点 | 已实现 | `pkg/config/contract.go` |
 | 文件传输实现 | 已实现 | `pkg/config/source/file` |
