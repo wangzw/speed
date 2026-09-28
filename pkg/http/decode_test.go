@@ -271,6 +271,36 @@ func TestANullBodyIsMalformed(t *testing.T) {
 	}
 }
 
+// TestAnUnusableTargetIsNotBlamedOnTheClient pins where a target Decode cannot
+// write into is reported. A value rather than a pointer, or a nil pointer, is
+// the calling handler's defect whatever the client sent; answered 400 through
+// ErrMalformedBody, it would tell a client with a well-formed body to fix it,
+// and the defect would hide in the client error rate.
+func TestAnUnusableTargetIsNotBlamedOnTheClient(t *testing.T) {
+	for _, c := range []struct {
+		name string
+		dst  any
+	}{
+		{"a value", thing{}},
+		{"a nil pointer", (*thing)(nil)},
+		{"nil", nil},
+	} {
+		err := Decode(postWithBody(`{"name":"a"}`), c.dst)
+		if err == nil {
+			t.Errorf("%s: Decode reported success for a target it cannot write into", c.name)
+			continue
+		}
+		for name, sentinel := range sentinels {
+			if errors.Is(err, sentinel) {
+				t.Errorf("%s: the failure matches %s, which blames the request: %v", c.name, name, err)
+			}
+		}
+		if status := StatusFor(err); status != nethttp.StatusInternalServerError {
+			t.Errorf("%s: the failure maps to %d, want 500", c.name, status)
+		}
+	}
+}
+
 // TestDecodeToleratesARequestWithoutABody covers the request net/http hands a
 // handler for a GET: Body is nil rather than an empty reader.
 func TestDecodeToleratesARequestWithoutABody(t *testing.T) {

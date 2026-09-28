@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"io"
 	nethttp "net/http"
+	"reflect"
 )
 
 // Validator is implemented by a request body type that checks itself. This
@@ -45,6 +46,14 @@ type Validator interface {
 // belongs to the module that provides the API, so a caller turns the error
 // into a status code with StatusFor and writes the body it wants.
 func Decode(r *nethttp.Request, dst any) error {
+	if target := reflect.ValueOf(dst); target.Kind() != reflect.Pointer || target.IsNil() {
+		// The calling handler's defect rather than the client's, so it
+		// joins none of the request's classes and StatusFor answers 500:
+		// reported as a malformed body, it would tell a client with a
+		// well-formed one to change it.
+		return fmt.Errorf("http: Decode was given %T, which is not a non-nil pointer and cannot "+
+			"be decoded into. Pass the address of the value the body is meant to fill", dst)
+	}
 	body := bufio.NewReader(requestBody(r))
 	first, err := firstSignificantByte(body)
 	if err != nil {
