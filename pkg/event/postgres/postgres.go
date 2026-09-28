@@ -13,11 +13,17 @@
 //
 // Each replica keeps a listening connection of its own — taken from outside the
 // pool, never returned to it, because a connection running LISTEN would
-// otherwise be handed out for ordinary queries. Where it has read up to is held
-// in memory: this implementation is told apart from the process-local one by
-// carrying events between replicas, and a replica that restarts starts at the
-// end of the outbox, which is the same "no history for a late subscriber"
-// behaviour the capability states.
+// otherwise be handed out for ordinary queries. A replica is this process: its
+// starting point is the database's snapshot when it opens, held in memory, and
+// what it has delivered since is marked in a table under an identity of its
+// own. A replica that restarts is a new one, starting from that moment, which
+// is the same "no history for a late subscriber" behaviour the capability
+// states.
+//
+// It needs PostgreSQL 13 or later: an outbox entry records the transaction
+// that wrote it as an xid8, and a replica's starting point is a pg_snapshot,
+// both of which arrived in that release. An older server fails the startup
+// when the outbox is created.
 package postgres
 
 import (
