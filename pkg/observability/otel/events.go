@@ -1,8 +1,10 @@
 package otel
 
 import (
+	"bytes"
 	"context"
-	"fmt"
+	"encoding/json"
+	"strings"
 
 	"go.opentelemetry.io/otel/attribute"
 	"go.opentelemetry.io/otel/trace"
@@ -32,7 +34,7 @@ const tenantIDKey = attribute.Key("tenant_id")
 func (p *providers) spanFor() event.Handler {
 	tracer := p.tp.Tracer(instrumentationName)
 	return func(ctx context.Context, evt event.Event) error {
-		fields, ok := event.PayloadFields(evt.Payload)
+		fields, ok := payloadAttributes(evt.Payload)
 		if !ok {
 			return nil
 		}
@@ -43,9 +45,7 @@ func (p *providers) spanFor() event.Handler {
 		_, span := tracer.Start(ctx, evt.Type, trace.WithSpanKind(trace.SpanKindConsumer))
 		defer span.End()
 
-		for name, value := range fields {
-			span.SetAttributes(attribute.String(name, fmt.Sprint(value)))
-		}
+		span.SetAttributes(fields...)
 		// The tenant goes on last, after the payload's own fields. Upstream
 		// attributes are last-value-wins, so a payload that happens to carry a
 		// field of the same name — which a fact about a tenant easily does —
@@ -56,5 +56,74 @@ func (p *providers) spanFor() event.Handler {
 			span.SetAttributes(tenantIDKey.String(evt.TenantID))
 		}
 		return nil
+	}
+}
+
+// payloadAttributes reads an event payload into one attribute per top-level
+// field, reporting false when the payload is not an object.
+//
+// It reads the shapes event.PayloadFields reads — a same-process publish hands
+// over the publisher's own value, a transport-backed bus the decoded data — and
+// in the same way, by serialising and decoding, but it keeps numbers as the
+// text they were published as. The ordinary decoding turns every number into a
+// float64, which prints an amount of 2500000 as 2.5e+06 and moves a 64-bit
+// identifier to a neighbouring value; an attribute is meant to carry the field
+// as the publisher wrote it.
+func payloadAttributes(payload any) ([]attribute.KeyValue, bool) {
+	if payload == nil {
+		return nil, false
+	}
+	encoded, err := json.Marshal(payload)
+	if err != nil {
+		return nil, false
+	}
+	decoder := json.NewDecoder(bytes.NewReader(encoded))
+	decoder.UseNumber()
+	var fields map[string]any
+	if err := decoder.Decode(&fields); err != nil || fields == nil {
+		return nil, false
+	}
+	attrs := make([]attribute.KeyValue, 0, len(fields))
+	for name, value := range fields {
+		if kv, ok := fieldAttribute(name, value); ok {
+			attrs = append(attrs, kv)
+		}
+	}
+	return attrs, true
+}
+
+// fieldAttribute turns one decoded field into the attribute of the matching
+// type, and reports false for a null, which carries no value to record.
+//
+// A number that is an integer within the signed 64-bit range is an integer
+// attribute, any other finite number a floating-point one, and an integer too
+// large for either keeps its digits as a string rather than losing them. A
+// nested object or list has no attribute type of its own and is written as the
+// JSON it was published as.
+func fieldAttribute(name string, value any) (attribute.KeyValue, bool) {
+	switch v := value.(type) {
+	case nil:
+		return attribute.KeyValue{}, false
+	case string:
+		return attribute.String(name, v), true
+	case bool:
+		return attribute.Bool(name, v), true
+	case json.Number:
+		if n, err := v.Int64(); err == nil {
+			return attribute.Int64(name, n), true
+		}
+		if !strings.ContainsAny(v.String(), ".eE") {
+			return attribute.String(name, v.String()), true
+		}
+		if f, err := v.Float64(); err == nil {
+			return attribute.Float64(name, f), true
+		}
+		return attribute.String(name, v.String()), true
+	default:
+		nested, err := json.Marshal(v)
+		if err != nil {
+			return attribute.KeyValue{}, false
+		}
+		return attribute.String(name, string(nested)), true
 	}
 }

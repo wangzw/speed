@@ -86,9 +86,10 @@ must not cross, and how to run it.
   attributes, and a final server-error status marks it errored whether or not
   the handler panicked.
 - **An event-derived span's attributes are the payload's fields as published.**
-  Every top-level field of the payload becomes one attribute, so the set is
-  whatever publishers put in payloads and the module limits no attribute's
-  cardinality. Keeping a credential out of a payload is therefore the
+  Every top-level field of the payload becomes one attribute, in the type and
+  with the digits it was published with — a number is not read through a
+  float64 and printed back — so the set is whatever publishers put in payloads
+  and the module limits no attribute's cardinality. Keeping a credential out of a payload is therefore the
   publisher's obligation: this module neither inspects nor strips one.
 - **An event-derived span's parent and kind come from the bus, not from this
   module.** The span starts on the context the handler was handed: the

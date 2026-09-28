@@ -326,6 +326,8 @@ type Config struct {
 
 **载荷按字段名结构化读取**，不做类型断言、也不期待与发布方共享静态类型；读不出的字段跳过，整条读不出的事件丢弃。**租户取自总线自带的那个字段**，不另立来源。
 
+**每个顶层字段成为一个属性，取发布时的值与类型。** 载荷以 JSON 的形态流转，按常规解码时每个数字都成了浮点数，打印出来 `2500000` 变成 `2.5e+06`，一个 64 位的标识被挪到相邻的另一个数上；本模块因而保留数字在发布时的写法再定类型。字符串与布尔照原样；落在 64 位有符号整数范围内的整数记为整数属性，其余有限数记为浮点属性，超出这两者的整数以原数字串记为字符串；嵌套对象与数组没有对应的属性类型，以发布时的 JSON 文本记为字符串；取值为 null 的字段没有可记的值，不产生属性。
+
 **跨度的起止时间是订阅回调收到它的时刻，不是事实发生的时刻。** 总线的事件不带时间戳，因此事件派生的跨度只能落在消费时间轴上，不能与产生它的业务跨度对齐。
 
 **跨度的父取决于在场的是哪个后端。** 跨度起在回调收到的那个上下文上：进程内实现在发布方的上下文上调用回调，那个上下文带着产生事实的业务跨度，派生的跨度因而成为它的子跨度；经传输投递的实现用一个自己的上下文调用回调，派生的跨度因而是一条独立追踪的根。同一模块、同一份配置，信号形状随部署的后端而变。
@@ -444,7 +446,7 @@ type Config struct {
 | 转发包装、导出失败的上报与关闭的截留 | 已实现 | `pkg/observability/otel/wrapper.go` `spanExporter`、`metricExporter`、`notifier` |
 | 请求路径的采集层 | 已实现 | `pkg/observability/otel/layer.go` `instrument`、`recorder` |
 | 请求时长的计量 | 已实现 | `pkg/observability/otel/layer.go` `newRequestDuration` |
-| 事件订阅 | 已实现 | `pkg/observability/otel/events.go` `spanFor` |
+| 事件订阅 | 已实现 | `pkg/observability/otel/events.go` `spanFor`、`payloadAttributes`、`fieldAttribute` |
 | 配置声明与解读 | 已实现 | `pkg/observability/otel/config.go` `Config`、`schema`、`pkg/observability/otlp/otlp.go` `Config`、`pkg/observability/stdout/stdout.go` `Config` |
 | OTLP 导出后端 | 已实现 | `pkg/observability/otlp/exporters.go` `newExporters`、`build`、`probe` |
 | 标准输出导出后端 | 已实现 | `pkg/observability/stdout/exporters.go` `newExporters` |
