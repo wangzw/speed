@@ -155,8 +155,13 @@ A write addressed by a struct's key gets the tenant half of the key from the
 context wherever the rest of the key is written, except through `Save`: GORM
 decides before any callback that a struct with a zero key part is a new row,
 so saving one whose tenant half is unwritten inserts it and, against a row
-that exists, fails on the key. A save meant to rewrite a row writes the tenant
-half itself (`catalog/writes_test.go`).
+that exists, fails on the key. No hook runs before that decision, so the filter
+cannot fill the half in time. A write meant to create a row or rewrite the one
+its key names is an upsert on the key —
+`Clauses(clause.OnConflict{UpdateAll: true}).Create(&x)` — which leaves the
+tenant half to the filter and conflicts on the context tenant's own row; a save
+that must stay a save writes the tenant half itself, from `FromContext`
+(`catalog/writes_test.go`).
 
 A model that should be scoped and does not embed this reads exactly like a table
 that is global on purpose, and nothing says which it is. That is the one failure

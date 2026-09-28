@@ -142,6 +142,75 @@ func TestSavingAStructWithoutItsTenantHalfFailsRatherThanRewrites(t *testing.T) 
 	}
 }
 
+// A save meant to rewrite a row by its key writes the tenant half of the key
+// itself, from the context: the value is the context's own, so the filter lets
+// it stand, and GORM, finding no key part zero, updates the row.
+func TestSavingAStructWithTheContextTenantWrittenRewritesTheRow(t *testing.T) {
+	handle := open(t)
+	seed(t, handle)
+	ctx := scopedContext("acme")
+
+	id, _ := tenant.FromContext(ctx)
+	if err := handle.WithContext(ctx).Save(&order{Model: tenant.Model{TenantID: id}, ID: "a", Note: "saved"}).
+		Error; err != nil {
+		t.Fatalf("saving: %v", err)
+	}
+	var o order
+	if err := handle.WithContext(ctx).First(&o, "id = ?", "a").Error; err != nil {
+		t.Fatalf("reading back: %v", err)
+	}
+	if o.Note != "saved" {
+		t.Fatalf("the save left the row as %+v, want it rewritten", o)
+	}
+	requireRowsUnmoved(t, handle)
+}
+
+// A write that creates a row or rewrites the one its key names, with the
+// tenant half left to the filter, is an upsert on the key: the filter fills the
+// tenant half before GORM renders the conflict clause, and the composite key
+// puts the conflict on the context tenant's own row — never on another
+// tenant's row that happens to share the rest of the key.
+func TestAnUpsertByKeyRewritesTheContextTenantsOwnRow(t *testing.T) {
+	requireUpsertByKey(t, open(t))
+}
+
+func TestAnUpsertByKeyRewritesTheContextTenantsOwnRowOnPostgres(t *testing.T) {
+	requireUpsertByKey(t, openFilteredPostgres(t))
+}
+
+func requireUpsertByKey(t *testing.T, handle *gorm.DB) {
+	t.Helper()
+	seed(t, handle)
+	ctx := scopedContext("acme")
+	upsert := func(o *order) error {
+		return handle.WithContext(ctx).Clauses(clause.OnConflict{UpdateAll: true}).Create(o).Error
+	}
+
+	if err := upsert(&order{ID: "a", Note: "rewritten"}); err != nil {
+		t.Fatalf("upserting a row the tenant has: %v", err)
+	}
+	if err := upsert(&order{ID: "b", Note: "acme's own b"}); err != nil {
+		t.Fatalf("upserting a key another tenant uses: %v", err)
+	}
+
+	var rows []struct{ TenantID, ID, Note string }
+	if err := handle.WithContext(crossContext()).
+		Raw("SELECT tenant_id, id, note FROM orders ORDER BY id, tenant_id").Scan(&rows).Error; err != nil {
+		t.Fatalf("reading back: %v", err)
+	}
+	want := []struct{ TenantID, ID, Note string }{
+		{"acme", "a", "rewritten"}, {"acme", "b", "acme's own b"}, {"globex", "b", "for globex"},
+	}
+	if len(rows) != len(want) {
+		t.Fatalf("the table holds %+v, want %+v", rows, want)
+	}
+	for i := range want {
+		if rows[i] != want[i] {
+			t.Fatalf("the table holds %+v, want %+v", rows, want)
+		}
+	}
+}
+
 // An explicit SET clause is the assignment list GORM renders as it stands.
 func TestUpdateThroughAnExplicitSetClauseIsChecked(t *testing.T) {
 	handle := open(t)
