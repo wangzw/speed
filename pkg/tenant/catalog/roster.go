@@ -278,8 +278,13 @@ func (r *roster) Enter(ctx context.Context, id tenant.ID) (context.Context, erro
 	return r.enter(ctx, id, false)
 }
 
-// enter admits a tenant the roster serves or, with anyStatus set, one it holds
-// whatever its status.
+// EnterRegistered implements tenant.Catalog.
+func (r *roster) EnterRegistered(ctx context.Context, id tenant.ID) (context.Context, error) {
+	return r.enter(ctx, id, true)
+}
+
+// enter is both entries: Enter admits a tenant the roster serves, and
+// EnterRegistered one it holds whatever its status.
 //
 // It admits from the snapshot the resolving layer reads, and refuses only on
 // the table's word. A refusal is what a path with no request behind it drops

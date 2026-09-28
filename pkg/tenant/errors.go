@@ -84,7 +84,9 @@ var (
 	// ErrTenantDisabled reports a tenant the roster carries but does not
 	// serve, asked to be entered. The fix is the tenant's state, not the call:
 	// a path acting for a disabled tenant has nothing to act on until the
-	// tenant is served again.
+	// tenant is served again. Work that belongs to the tenant while it is
+	// disabled — its trail read, its data exported or deleted — enters it
+	// through Catalog.EnterRegistered instead.
 	//
 	// It is apart from ErrInvalidTenant, which an identifier no row carries
 	// gets, because a caller's move differs: an unknown identifier is a defect

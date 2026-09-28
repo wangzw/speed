@@ -2,8 +2,8 @@
 //
 // It is internal so that the only writers of a tenant identifier are in this
 // capability directory, and both read the roster before they write: the
-// resolving layer as it admits a request, and the roster's Enter as a path with
-// no request behind it enters a tenant. Nothing else can. A chain layer able to
+// resolving layer as it admits a request, and the roster's entries as a path
+// with no request behind it enters a tenant. Nothing else can. A chain layer able to
 // write an identifier could rewrite the scope every statement below it is
 // filtered by, and a writer that did not read the roster could put a tenant
 // into a context that the roster does not carry or does not serve.

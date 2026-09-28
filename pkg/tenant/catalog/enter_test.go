@@ -362,6 +362,71 @@ func TestEntriesTogetherForATenantTheSnapshotLacksRereadTheRosterOnce(t *testing
 	}
 }
 
+// Work that belongs to one tenant while it is not served — reading its trail,
+// exporting or deleting its data — enters it through EnterRegistered, and the
+// filter scopes that work to it as it scopes any entered path; its records name
+// it.
+func TestEnterRegisteredScopesAPathToADisabledTenant(t *testing.T) {
+	r := enteringRoster(t)
+	if err := r.handle.WithContext(crossContext()).Exec(
+		"INSERT INTO orders (tenant_id, id, note) VALUES ('t_paused', 'p', 'z')").Error; err != nil {
+		t.Fatalf("seeding: %v", err)
+	}
+	base, rec := loggedContext()
+	ctx, err := r.EnterRegistered(base, "t_paused")
+	if err != nil {
+		t.Fatalf("entering a disabled tenant: %v", err)
+	}
+	log.FromContext(ctx).Info("working")
+	requireLogged(t, rec, "t_paused")
+	requireScopedTo(t, r, ctx, "t_paused")
+}
+
+func TestEnterRegisteredEntersAServedTenant(t *testing.T) {
+	r := enteringRoster(t)
+	ctx, err := r.EnterRegistered(crossContext(), "t_acme")
+	if err != nil {
+		t.Fatalf("entering: %v", err)
+	}
+	requireScopedTo(t, r, ctx, "t_acme")
+}
+
+func TestEnterRegisteredRefusesAnIdentifierNoRowCarries(t *testing.T) {
+	for name, id := range map[string]tenant.ID{
+		"no row carries it": "t_ghost", "empty": "", "outside the domain": "t acme",
+	} {
+		t.Run(name, func(t *testing.T) {
+			r := enteringRoster(t)
+			ctx, err := r.EnterRegistered(crossContext(), id)
+			if !errors.Is(err, tenant.ErrInvalidTenant) {
+				t.Fatalf("entering %q gave %v, want ErrInvalidTenant", id, err)
+			}
+			var got []order
+			if err := r.handle.WithContext(ctx).Find(&got).Error; !errors.Is(err, tenant.ErrNoTenantInContext) {
+				t.Fatalf("a read under a refused entry gave %v (%d rows), want ErrNoTenantInContext",
+					err, len(got))
+			}
+		})
+	}
+}
+
+// Whether a row carries the identifier is the table's answer here as it is for
+// Enter.
+func TestEnterRegisteredAdmitsATenantAnotherReplicaRegistered(t *testing.T) {
+	r := enteringRoster(t)
+	if err := secondReplica(t, r).Create(context.Background(),
+		tenant.Tenant{ID: "t_new", Alias: "new", Status: tenant.StatusDisabled}); err != nil {
+		t.Fatalf("registering on the other replica: %v", err)
+	}
+	ctx, err := r.EnterRegistered(context.Background(), "t_new")
+	if err != nil {
+		t.Fatalf("entering a tenant the table holds gave %v, want the tenant", err)
+	}
+	if id, ok := tenant.FromContext(ctx); !ok || id != "t_new" {
+		t.Fatalf("the entered context reports tenant (%q, %v), want t_new", id, ok)
+	}
+}
+
 // fieldRecorder is a slog handler that keeps, for each record, every attribute
 // it carried — bound or passed, in order, a repeated key repeated — so that a
 // field bound twice is seen twice.

@@ -14,8 +14,9 @@ import (
 // tenant, and put into a context a tenant the roster does not carry or does not
 // serve. The writing side lives in an internal package, so the compiler
 // enforces what a comment otherwise only asks for, and its two writers both
-// read the roster first: the resolving layer as it admits a request, and
-// Catalog.Enter for a path with no request behind it.
+// read the roster first: the resolving layer as it admits a request, and the
+// roster's entries, Catalog.Enter and Catalog.EnterRegistered, for a path with
+// no request behind it.
 //
 // Nor does this fall back to anything. A default would read a request that
 // carries no tenant as one that carries a particular one, and the two are the
@@ -38,7 +39,7 @@ func FromContext(ctx context.Context) (ID, bool) {
 //
 // The context it returns belongs to no tenant. Marking a context that carried
 // one gives that tenant up: FromContext reports none in the result, and the
-// tenant field the resolving layer or Catalog.Enter bound on the context's
+// tenant field the resolving layer or a roster entry bound on the context's
 // logger is taken off, so a record written across tenants names none. A
 // crossing statement belongs to no tenant, and a reader that took the marked
 // context for the one it was derived from — the audit journal filling its

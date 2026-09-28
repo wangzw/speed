@@ -36,8 +36,9 @@ here must not cross, and how to run it.
   package — removes the enforcement without removing the claim, and the claim
   is the whole point: a tenant is written into a context only after the roster
   has been read. There are two writers and both read it first: the resolving
-  layer, once per request, and `Catalog.Enter`, for a path with no request
-  behind it (`catalog/enter_test.go`). A third writer, or one that skips the
+  layer, once per request, and the roster's two entries, `Catalog.Enter` and
+  `Catalog.EnterRegistered`, for a path with no request behind it
+  (`catalog/enter_test.go`). A third writer, or one that skips the
   roster, puts into a context a tenant the roster may not carry or serve, and
   the filter, which reads no roster, would act on it. Both writers go through
   `tenantctx.Bind`, which binds the identifier on the context's logger too —
@@ -202,8 +203,8 @@ dialects; `pkg/tenant/catalog/create_test.go` is where a registration that must
 not overwrite is refused against the table rather than the snapshot, where
 a write's reread outlives its caller, and where reads of the table publish in
 the order they read; `pkg/tenant/catalog/enter_test.go` is where entering a
-tenant is — a refusal taken from the table rather than the snapshot and what an
-entered context carries;
+tenant is — a refusal taken from the table rather than the snapshot, what an
+entered context carries, and the entry that admits a disabled tenant;
 `pkg/tenant/resolve/extract_test.go` is where the
 registration window's behaviour under a duplicate or a late registration is;
 `pkg/tenant/resolve/admit_test.go` and `panic_test.go` are where the layer's

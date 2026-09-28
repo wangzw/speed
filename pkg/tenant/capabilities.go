@@ -62,10 +62,11 @@ type Resolution interface {
 // scoping is decided from, so its own statements run outside the filter, and
 // none of them needs a tenant in its context.
 //
-// Enter is the one method that puts a tenant into a context, and it is here
-// rather than beside FromContext because the roster is what it has to read
-// first: a path with no request behind it names a tenant by its identifier, and
-// only a tenant the roster carries and serves is entered.
+// Enter and EnterRegistered are the methods that put a tenant into a context,
+// and they are here rather than beside FromContext because the roster is what
+// they have to read first: a path with no request behind it names a tenant by
+// its identifier, and only a tenant the roster carries is entered — by Enter
+// only while the roster serves it.
 type Catalog interface {
 	// Get returns the tenant with this identifier. The second result is
 	// false when the roster has no such row.
@@ -123,4 +124,16 @@ type Catalog interface {
 	// carries neither a tenant nor the mark, so a caller that uses it anyway
 	// has every scoped statement refused rather than let across.
 	Enter(ctx context.Context, id ID) (context.Context, error)
+	// EnterRegistered is Enter for a tenant whatever its status: it enters a
+	// disabled tenant as well as a served one, and refuses only an identifier
+	// no row carries, with ErrInvalidTenant.
+	//
+	// It is how work that belongs to one tenant is done while that tenant is
+	// not served — reading its trail, exporting its data, deleting it — with
+	// the filter scoping every statement to that tenant, rather than crossing
+	// tenants, where a statement missing its condition reaches every tenant's
+	// rows. Disabling a tenant keeps its requests and Enter out; it does not
+	// keep out a path that names it here, which is why this is a method of its
+	// own, recognisable at the call site, rather than an option of Enter's.
+	EnterRegistered(ctx context.Context, id ID) (context.Context, error)
 }
