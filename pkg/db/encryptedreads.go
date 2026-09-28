@@ -132,6 +132,8 @@ func guardRowReads(tx *gorm.DB) {
 func refuseUnsealedRead(st *gorm.Statement, sealed []*schema.Field) error {
 	into, typ := destinationOf(st)
 	switch into {
+	case intoModel:
+		return refuseRenamedRead(st, st.Schema, sealed)
 	case intoStruct:
 		view := &gorm.Statement{DB: st.DB}
 		if err := view.Parse(st.Dest); err != nil || view.Schema == nil {
@@ -144,6 +146,7 @@ func refuseUnsealedRead(st *gorm.Statement, sealed []*schema.Field) error {
 			}
 			return unsealedRead(field, fmt.Sprintf("%s.%s", view.Schema.Name, target.Name))
 		}
+		return refuseRenamedRead(st, view.Schema, sealed)
 	case intoMap:
 		for _, field := range sealed {
 			if reads(st, field, true) {
@@ -158,6 +161,97 @@ func refuseUnsealedRead(st *gorm.Statement, sealed []*schema.Field) error {
 		}
 	}
 	return nil
+}
+
+// refuseRenamedRead refuses a read into a struct — the model or another — that
+// takes an encrypted column, or a value computed from it, under a name other
+// than the column's own.
+//
+// GORM scans each result column into the field its name resolves to, and a
+// selection item that reads a sealed column under an alias, or inside an
+// expression, gives its result column another name: `email AS email_index`
+// lands in the model's EmailIndex, which has no serializer, and the ciphertext
+// is handed back as that field's value. So for every item of a readable
+// selection that mentions a sealed column other than as the column itself, the
+// names its result column can carry are worked out — the alias the caller set
+// apart or ended the item with, and the function's name, which is what
+// PostgreSQL calls an unaliased call — and a field of the destination under one
+// of those names refuses the read when it can take text and does not carry
+// this package's serializer. A field that cannot take text — a count, a
+// length, a test for NULL — is left to receive what it can.
+//
+// A selection that cannot be read — none written, or native SQL — has nothing
+// renamed that this package can see; the name lookups the caller of this
+// function makes cover it.
+func refuseRenamedRead(st *gorm.Statement, dest *schema.Schema, sealed []*schema.Field) error {
+	items, known := selection(st)
+	if !known {
+		return nil
+	}
+	for _, item := range items {
+		if item.alias == "" && readsAsItself(item.text) {
+			continue
+		}
+		for _, field := range sealed {
+			if !mentions(st.Schema, item.text, field) {
+				continue
+			}
+			for _, name := range resultNames(item) {
+				for _, candidate := range []string{name, strings.ToLower(name)} {
+					receiver := dest.LookUpField(candidate)
+					if receiver == nil || !receiver.Readable || isEncrypted(receiver) || !holdsText(receiver) {
+						continue
+					}
+					return fmt.Errorf("db: field %s is encrypted, and this query reads its column %q "+
+						"under the name %q into %s.%s, which GORM fills without the serializer, so what "+
+						"came back would be the ciphertext or a value computed from it: select the column "+
+						"under its own name into a field that carries serializer:%s, or select around it",
+						fieldName(field), field.DBName, name, dest.Name, receiver.Name, encryptedSerializerName)
+				}
+			}
+		}
+	}
+	return nil
+}
+
+// readsAsItself reports whether a selection item reads columns under their own
+// names: a wildcard, or a column reference with no alias.
+func readsAsItself(text string) bool {
+	text = strings.TrimSpace(text)
+	if text == "*" || strings.HasSuffix(text, ".*") {
+		return true
+	}
+	_, isColumn := columnName(text)
+	return isColumn
+}
+
+// resultNames lists the names a selection item's result column can carry.
+func resultNames(item selected) []string {
+	if item.alias != "" {
+		return []string{item.alias}
+	}
+	var names []string
+	if alias, ok := trailingAlias(item.text); ok {
+		names = append(names, alias)
+	}
+	text := strings.TrimSpace(item.text)
+	if open := strings.IndexByte(text, '('); open > 0 {
+		if function, ok := columnName(text[:open]); ok {
+			names = append(names, function)
+		}
+	}
+	return names
+}
+
+// holdsText reports whether a field can take a column's stored text: a string,
+// a byte slice, an interface, a scanner, or a field whose serializer — one of
+// another package — is handed the stored value as it is.
+func holdsText(field *schema.Field) bool {
+	if field.Serializer != nil {
+		return true
+	}
+	into, _ := classify(field.IndirectFieldType)
+	return into == intoText
 }
 
 // unsealedRead is the refusal of a read that would hand back the ciphertext.
@@ -181,9 +275,16 @@ func destinationOf(st *gorm.Statement) (destination, reflect.Type) {
 			typ = typ.Elem()
 		}
 	}
-	switch {
-	case typ == st.Schema.ModelType:
+	if typ == st.Schema.ModelType {
 		return intoModel, typ
+	}
+	return classify(typ)
+}
+
+// classify sorts a type that is not the model by what a column scanned into
+// it becomes.
+func classify(typ reflect.Type) (destination, reflect.Type) {
+	switch {
 	case typ.Kind() == reflect.Map:
 		return intoMap, typ
 	case reflect.PointerTo(typ).Implements(scannerType):
@@ -206,7 +307,7 @@ func destinationOf(st *gorm.Statement) (destination, reflect.Type) {
 // be read: true for a destination GORM fills with every column, false for one
 // that takes the single column the caller named.
 func reads(st *gorm.Statement, field *schema.Field, unknownReads bool) bool {
-	texts, known := selection(st)
+	items, known := selection(st)
 	if !known {
 		for _, omitted := range st.Omits {
 			if omitted == field.DBName || st.Schema.LookUpField(omitted) == field {
@@ -215,40 +316,54 @@ func reads(st *gorm.Statement, field *schema.Field, unknownReads bool) bool {
 		}
 		return unknownReads
 	}
-	for _, text := range texts {
-		if mentions(st.Schema, text, field) {
+	for _, item := range items {
+		if mentions(st.Schema, item.text, field) {
 			return true
 		}
 	}
 	return false
 }
 
-// selection collects the texts a statement's selection is written in, and
-// reports whether it carries one that can be read. Native SQL carries none: the
-// statement is the caller's text, and this package does not parse SQL.
-func selection(st *gorm.Statement) ([]string, bool) {
+// selected is one item of a statement's selection: the text it is written in,
+// and the name the caller set apart for its result column, if any.
+type selected struct {
+	text  string
+	alias string
+}
+
+// selection collects the items a statement's selection is written in, and
+// reports whether it carries one that can be read. A text naming several
+// items is cut at its top-level commas. Native SQL carries none: the statement
+// is the caller's text, and this package does not parse SQL.
+func selection(st *gorm.Statement) ([]selected, bool) {
 	if st.SQL.Len() > 0 {
 		return nil, false
 	}
-	var texts []string
+	var items []selected
 	if c, ok := st.Clauses["SELECT"]; ok && c.Expression != nil {
 		sel, ok := c.Expression.(clause.Select)
 		if !ok {
 			return nil, false
 		}
 		for _, column := range sel.Columns {
-			texts = append(texts, column.Name)
+			items = append(items, selected{text: column.Name, alias: column.Alias})
 		}
 		if sel.Expression != nil {
 			expr, ok := sel.Expression.(clause.Expr)
 			if !ok {
 				return nil, false
 			}
-			texts = append(texts, expr.SQL)
+			for _, text := range splitSelection(expr.SQL) {
+				items = append(items, selected{text: text})
+			}
 		}
 	}
-	texts = append(texts, st.Selects...)
-	return texts, len(texts) > 0
+	for _, written := range st.Selects {
+		for _, text := range splitSelection(written) {
+			items = append(items, selected{text: text})
+		}
+	}
+	return items, len(items) > 0
 }
 
 // mentions reports whether one selection text reads a field's column: a

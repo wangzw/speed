@@ -107,11 +107,7 @@ func sealCreate(tx *gorm.DB) {
 // struct is the caller's to mark, and nothing here can know it was meant to be.
 func sealUpdate(tx *gorm.DB) {
 	st := tx.Statement
-	if tx.Error != nil || st.Schema == nil {
-		return
-	}
-	sealed := encryptedFields(st.Schema)
-	if len(sealed) == 0 {
+	if tx.Error != nil || st.Schema == nil || len(encryptedFields(st.Schema)) == 0 {
 		return
 	}
 	// A SET clause the caller wrote is used as it is, and GORM then reads
@@ -147,7 +143,7 @@ func sealUpdate(tx *gorm.DB) {
 		}
 		return
 	}
-	if err := refuseUnsealedStruct(st, sealed); err != nil {
+	if err := refuseUnsealedStruct(st); err != nil {
 		_ = tx.AddError(err)
 	}
 }
@@ -228,17 +224,32 @@ func updatedMap(dest any) (map[string]any, bool) {
 // sealMap replaces, in place, each value of a map that GORM will write into an
 // encrypted column, and returns what it replaced so it can be put back.
 //
-// A key reaches a column the way GORM resolves it — by column name or by field
-// name — and only when the statement's Select and Omit leave that column in:
-// a value GORM is not going to write is neither sealed nor refused.
+// A key names the column GORM writes for it: the resolved field's column when
+// GORM resolves the key — by column name, by field name or through its naming
+// strategy — and the key itself when it does not. Which column that is, is
+// then judged the way the database resolves the name (see sealedTarget), so a
+// key that differs from the column's name only in letter case or quoting is
+// sealed like the name itself. A value GORM is not going to write, because the
+// statement's Select and Omit leave its column out, is neither sealed nor
+// refused.
 func sealMap(st *gorm.Statement, values map[string]any, selectColumns map[string]bool, restricted bool) ([]restoration, error) {
 	var restorations []restoration
 	for key, value := range values {
-		field := st.Schema.LookUpField(key)
-		if field == nil || field.DBName == "" || !isEncrypted(field) {
+		written := key
+		if field := st.Schema.LookUpField(key); field != nil {
+			if field.DBName == "" {
+				continue
+			}
+			written = field.DBName
+		}
+		if chosen, named := selectColumns[written]; (named && !chosen) || (!named && restricted) {
 			continue
 		}
-		if chosen, named := selectColumns[field.DBName]; (named && !chosen) || (!named && restricted) {
+		field, judged := sealedTarget(st, clause.Column{Name: written})
+		if !judged {
+			return restorations, unjudgedColumn(st, key)
+		}
+		if field == nil {
 			continue
 		}
 		sealed, err := sealValue(st, field, value)
@@ -255,11 +266,20 @@ func sealMap(st *gorm.Statement, values map[string]any, selectColumns map[string
 // encrypted column sealed. The caller's slice is left as it was: an assignment
 // list is often a value built once and reused, and sealing into it would carry
 // one statement's seal into the next.
+//
+// GORM writes an assignment's column as the caller gave it, so the column is
+// judged the way the database resolves the name, and one this package cannot
+// judge — raw text that is not an identifier — is refused rather than let
+// through: it may be the encrypted column, and the value would then be stored
+// in clear.
 func sealAssignments(st *gorm.Statement, assignments []clause.Assignment) ([]clause.Assignment, error) {
 	var out []clause.Assignment
 	for i, assignment := range assignments {
-		field := st.Schema.LookUpField(assignment.Column.Name)
-		if field == nil || field.DBName == "" || !isEncrypted(field) {
+		field, judged := sealedTarget(st, assignment.Column)
+		if !judged {
+			return nil, unjudgedColumn(st, assignment.Column.Name)
+		}
+		if field == nil {
 			continue
 		}
 		sealed, err := sealValue(st, field, assignment.Value)
@@ -288,17 +308,18 @@ func sealAssignments(st *gorm.Statement, assignments []clause.Assignment) ([]cla
 // the assignment back into the row the caller passed.
 //
 // Nil stays NULL, which is the absence the serializer maps it to. A column
-// reference is kept when the column it names is sealed as well — the value
-// arriving is then already a seal, which is how an upsert takes the inserted
-// value — and refused otherwise. Anything the database evaluates, an
-// expression or a subquery, is refused: it produces its value after anything
-// here could have sealed it.
+// reference is kept when the column it names — judged the way the database
+// resolves the name — is sealed as well: the value arriving is then already a
+// seal, which is how an upsert takes the inserted value. Any other column
+// reference is refused. Anything the database evaluates, an expression or a
+// subquery, is refused: it produces its value after anything here could have
+// sealed it.
 func sealValue(st *gorm.Statement, field *schema.Field, value any) (any, error) {
 	switch v := value.(type) {
 	case nil:
 		return nil, nil
 	case clause.Column:
-		if source := st.Schema.LookUpField(v.Name); source != nil && isEncrypted(source) {
+		if source, judged := sealedTarget(st, v); judged && source != nil {
 			return v, nil
 		}
 		return nil, unsealable(field, value)
@@ -326,10 +347,14 @@ func unsealable(field *schema.Field, value any) error {
 // the model when one of its fields would put a value into an encrypted column
 // of the model without the serializer.
 //
-// Whether the field is written is decided the way GORM decides it: named by
-// Select, or holding a value and not left out by Select or Omit. A struct that
-// does not reach the sealed column has nothing to refuse.
-func refuseUnsealedStruct(st *gorm.Statement, sealed []*schema.Field) error {
+// What the struct writes is found the way GORM finds it: for each column of
+// the model, the struct's field GORM resolves that column's name to, written
+// under that field's own column name — named by Select, or holding a value and
+// not left out by Select or Omit. The column written is then judged the way the
+// database resolves its name, so a field whose column differs from the sealed
+// one only in letter case reaches it as surely as one that matches it. A struct
+// that does not reach a sealed column has nothing to refuse.
+func refuseUnsealedStruct(st *gorm.Statement) error {
 	updating := reflect.ValueOf(st.Dest)
 	for updating.Kind() == reflect.Pointer {
 		if updating.IsNil() {
@@ -345,21 +370,28 @@ func refuseUnsealedStruct(st *gorm.Statement, sealed []*schema.Field) error {
 		return nil
 	}
 	selectColumns, restricted := st.SelectAndOmitColumns(false, true)
-	for _, field := range sealed {
-		source := other.Schema.LookUpField(field.DBName)
+	for _, column := range st.Schema.DBNames {
+		source := other.Schema.LookUpField(column)
 		if source == nil || source.DBName == "" || isEncrypted(source) || !source.Updatable {
 			continue
 		}
-		chosen, named := selectColumns[field.DBName]
+		chosen, named := selectColumns[source.DBName]
 		if (named && !chosen) || (!named && restricted) {
 			continue
 		}
 		if _, zero := source.ValueOf(st.Context, updating); zero && !named {
 			continue
 		}
+		field, judged := sealedTarget(st, clause.Column{Name: source.DBName})
+		if !judged {
+			return unjudgedColumn(st, source.DBName)
+		}
+		if field == nil {
+			continue
+		}
 		return fmt.Errorf("db: field %s is encrypted, and this update writes its column %q from %s.%s, "+
 			"which does not carry serializer:%s, so the value would be stored in clear: mark that "+
-			"field serializer:%s as well, or update through the model", fieldName(field), field.DBName,
+			"field serializer:%s as well, or update through the model", fieldName(field), source.DBName,
 			other.Schema.Name, source.Name, encryptedSerializerName, encryptedSerializerName)
 	}
 	return nil

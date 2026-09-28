@@ -175,3 +175,73 @@ func TestEncryptedReadsOnThisEngine(t *testing.T) {
 		t.Errorf("scanning with the delivered handle read %v, want the plaintext", scanned)
 	}
 }
+
+// TestNamesThisEngineResolvesToTheSealedColumn holds the sealing to the column
+// PostgreSQL resolves a name to. GORM passes a name that arrives already in
+// double quotes through as it stands, and this engine folds an unquoted raw
+// name to lower case, so each of these reaches the sealed column; a raw column
+// written with a Unicode escape reaches it too, and nothing short of parsing
+// SQL can tell, so it is refused.
+func TestNamesThisEngineResolvesToTheSealedColumn(t *testing.T) {
+	capability := encryptedAssembly(t)
+	handle := capability.DB()
+	row := contact{Email: "first@example.com"}
+	if err := handle.Create(&row).Error; err != nil {
+		t.Fatalf("creating the row: %v", err)
+	}
+
+	if err := handle.Model(&row).Update(`"email"`, "quoted@example.com").Error; err != nil {
+		t.Fatalf("updating the column named in double quotes: %v", err)
+	}
+	assertSealedOnThisEngine(t, capability, row.ID, "quoted@example.com")
+
+	if err := handle.Model(&contact{}).Where("id = ?", row.ID).
+		Clauses(clause.Set{{Column: clause.Column{Name: `"email"`, Raw: true}, Value: "raw@example.com"}}).
+		Updates(map[string]any{}).Error; err != nil {
+		t.Fatalf("updating through a raw column in double quotes: %v", err)
+	}
+	assertSealedOnThisEngine(t, capability, row.ID, "raw@example.com")
+
+	inserted := map[string]any{"id": 99, `"email"`: "inserted@example.com"}
+	if err := handle.Model(&contact{}).Create(inserted).Error; err != nil {
+		t.Fatalf("inserting from a map keyed by the quoted column: %v", err)
+	}
+	assertSealedOnThisEngine(t, capability, 99, "inserted@example.com")
+
+	escaped := `U&"\0065mail"`
+	err := handle.Model(&contact{}).Where("id = ?", row.ID).
+		Clauses(clause.Set{{Column: clause.Column{Name: escaped, Raw: true}, Value: "clear@example.com"}}).
+		Updates(map[string]any{}).Error
+	if err == nil {
+		t.Error("a raw column written with a Unicode escape went through")
+	}
+	assertSealedOnThisEngine(t, capability, row.ID, "raw@example.com")
+}
+
+// lowerView takes the result column this engine names after an unaliased
+// function call.
+type lowerView struct {
+	ID    uint
+	Lower string
+}
+
+// TestAReadUnderAnotherNameOnThisEngine covers the renamed reads where this
+// engine's naming decides the receiving field: an unaliased call is named after
+// its function, so lower(email) lands in a field called Lower.
+func TestAReadUnderAnotherNameOnThisEngine(t *testing.T) {
+	capability := encryptedAssembly(t)
+	handle := capability.DB()
+	if err := handle.Create(&contact{Email: "first@example.com"}).Error; err != nil {
+		t.Fatalf("creating the row: %v", err)
+	}
+
+	var lowered []lowerView
+	if err := handle.Model(&contact{}).Select("id, lower(email)").Find(&lowered).Error; err == nil {
+		t.Errorf("reading lower(email) into a field named after the function went through and handed "+
+			"back %+v", lowered)
+	}
+	var renamed []lowerView
+	if err := handle.Model(&contact{}).Select("id, email AS lower").Find(&renamed).Error; err == nil {
+		t.Errorf("reading the sealed column under an alias went through and handed back %+v", renamed)
+	}
+}

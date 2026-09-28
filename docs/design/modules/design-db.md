@@ -80,7 +80,11 @@ func Close(*gorm.DB) error
 
 写入侧，经模型本身的写入（`Create`、`Save`、以模型为参数的 `Updates`）由 GORM 调用序列化器。以值而不是以模型给出的写入——`Update(列, 值)`、`Updates(map)`、`UpdateColumn` 与 `UpdateColumns`、从 map 或 map 切片 `Create`、`ON CONFLICT DO UPDATE` 按值给出的赋值、调用方自己写的 `SET` 子句——GORM 原样绑定，本模块在生成 SQL 之前把其中落到加密列的值封装为密文，`Select` 与 `Omit` 排除掉的列不动。更新用的 map 在一份副本上封装，调用方的 map 全程只读：GORM 更新时只读这个 map，同一个 map 因而可以交给并发的多次更新，把密文写进它会让另一次更新把密文当作值再封装一遍。插入用的 map 就地封装、在 SQL 生成之后恢复成原来的明文，因为 GORM 插入之后要把生成的主键写回调用方的 map，这份写回照常保留；同一个 map 交给并发的插入，本来就因 GORM 的这次写回而不安全。落到加密列上而本模块封装不了的值一律拒绝：SQL 表达式与子查询由数据库求值，求值发生在本模块能加密之后；指向不加密列的列引用把那一列的原文带进来。指向另一个加密列的列引用照常放行，例如 upsert 取插入值的 `excluded` 列，那一列本来就是密文。以另一个结构体给出的 `Updates` 按那个结构体自己的字段取值，其中写到加密列而不带 `serializer:encrypted` 的字段会被拒绝：该不该加密由那个结构体的声明决定，本模块只能指出它漏了。
 
+值落到哪一列，按数据库解析列名的方式判断，而不只按 GORM 认得的名字。GORM 按字段名、列名与命名策略解析 map 的键和赋值的列，解析不了的原样写进 SQL，随后决定它是哪一列的是数据库：SQLite 比较标识符不分大小写，PostgreSQL 把不带引号的标识符折成小写，已经带着引号的名字两者都按引号里的内容认。`Updates(map[string]any{"eMaIl": v})`、键写成带引号的列名、列为原样文本的 `SET` 子句，于是同样落到加密列上，本模块同样封装它们。判据是：列名去掉引号之后的最后一段，与某个加密列的列名在不分大小写时相同，就按那一列封装。这是 SQLite 的规则，PostgreSQL 解析到加密列的名字都在它之内。原样文本不是标识符的——表达式、函数调用、PostgreSQL 的 `U&"…"` 转义写法——本模块不解析 SQL，判断不了它落到哪一列，在带加密字段的模型上一律拒绝并点名那一列：它可能正是加密列，放行就是把明文写进去。以另一个结构体给出的 `Updates` 同样按它实际写出的列名判断，那个结构体的字段列名与加密列只差大小写时，照样被拒绝。
+
 读取侧，扫描进模型、或进一个对应字段带同一标签的结构体，由序列化器解密。查询链上目标在执行前已知的读取——`Find`、`First`、`Take`、`Pluck` 这一类——若会把加密列扫进 map、扫进对应字段不带标签的结构体、或扫进字符串这样的单值，就拒绝执行并点名字段。读不读这一列依据语句上写明的选择来判断：`Select`、`Omit` 与 `Pluck` 给出的列；避开加密列的读取照常执行。没写选择时，map 与另一个结构体按 GORM 的做法视为读取全部列。
+
+以别名、或在表达式里读到加密列时，结果列换了名字，GORM 按那个名字找接收它的字段：`Select("id, email AS email_index")` 把密文扫进模型自己那个不带标签的字段，扫进模型也不例外。选择里的这样一项，本模块按它的结果列可能叫的名字——调用方写下的别名，写不写 `AS` 都算，`clause.Column` 上单独给出的别名也算；以及函数名，那是 PostgreSQL 给不带别名的函数调用起的列名——在目标结构体上找字段，模型本身与另一个结构体都如此。找到的字段能装文本而不带同一标签时，拒绝并点名字段；装不了文本的字段——计数、长度、是否为 NULL——照常接收。
 
 `Row`、`Rows` 与 `Scan` 把结果集交给调用方自己挑的目标，挑目标发生在本模块最后一个回调之后，语句上看不出列会扫进哪里：扫进模型由序列化器解密，扫进字符串、map 或不带标签的结构体得到的是密文，而且都报告成功。这三个调用经过模型、又读到加密列时一律拒绝并点名字段，扫进模型本身也在其内；选择避开了加密列的照常执行，读不读依据的仍是语句上写明的选择，没写选择视为读取全部列。**采纳的读法**：看不见目标的路径上，读到加密列即拒绝。代价是经模型的 `Scan` 与 `Rows` 连扫进模型的读取也用不了，要改用 `Find`、`First`、`Take` 或 `FindInBatches`——它们在执行前就把目标放在语句上，由查询链上的判断核对。**考虑过而放弃的读法**：在这些路径上写明边界、照常执行；放弃的理由是那正是把密文当作值交出去而不报错的形态。**另一种考虑过而放弃的读法**：在这些目标上就地解密；放弃的理由是 map、接口值、各种扫描器类型这些目标形状是开放的，逐一改写等于在 GORM 的扫描之外另造一套，而拒绝把读取引回 GORM 为序列化器设计的那条路，并在报错里说出那条路。
 
@@ -369,7 +373,7 @@ sequenceDiagram
 | 额外连接的自建 | 已实现 | `pkg/db/handle.go` `(*database).Open` |
 | 软删除 | 已实现 | 由 GORM 提供，随 `pkg/db/handle.go` `(*database).DB` 交付 |
 | 字段级加密与盲索引 | 已实现 | `pkg/db/serializer.go` `installEncryption`、`pkg/db/crypto.go` `deriveSubkey`、`pkg/db/handle.go` `(*database).BlindIndex` |
-| 不经模型字段的读写 | 已实现 | `pkg/db/encryptedwrites.go` `sealUpdate`、`sealCreate`、`pkg/db/encryptedreads.go` `guardReads`、`guardRowReads` |
+| 不经模型字段的读写 | 已实现 | `pkg/db/encryptedwrites.go` `sealUpdate`、`sealCreate`、`pkg/db/encryptedreads.go` `guardReads`、`guardRowReads`、`refuseRenamedRead`、`pkg/db/identifiers.go` `sealedTarget` |
 | 插件的安装 | 已实现 | `pkg/db/plugins.go` `collectPlugins`、`installPlugins`、`pkg/db/handle.go` `newDatabase` |
 | 迁移的收齐与应用 | 已实现 | `pkg/db/migrate.go` `collectMigrations`、`applyMigrations` |
 | 迁移的跨进程互斥 | 已实现 | `pkg/db/migrate.go` `MigrationLock`、`pkg/db/postgres/lock.go` `NewMigrationLock` |
