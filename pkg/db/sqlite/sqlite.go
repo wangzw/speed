@@ -10,7 +10,11 @@
 // Those locators — an in-memory database, a temporary one — are one database
 // per connection in SQLite, so a handle on one is held to a single connection
 // rather than to the configured pool: over the pool, the migrations would land
-// on one connection and a request on another would find no table.
+// on one connection and a request on another would find no table. Such a
+// handle queues its statements: while a transaction or an open result set
+// holds the connection, another statement on the same handle waits for it,
+// until its context ends or for good, so a statement inside a transaction goes
+// through the transaction's handle.
 //
 // It supplies no cross-process migration mutex, and this is where it differs
 // from the PostgreSQL subpackage beyond the driver. A mutex orders replicas that
