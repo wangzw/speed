@@ -227,7 +227,7 @@ Memcached 与 NATS 的后端不提供能按键保持过期时刻的服务端时�
 - 必须在 `Prepare` 中 `Decode` 自己那份配置，并在其中判断部署前提；前提不满足即启动失败，错误要能认出是哪个实现缺了哪一项。
 - 必须排他交付：`Exclusive` 非空，且交付的功能标识为 `(*KV)(nil)`。
 - 必须挂在 `kv.<后端>` 专属的配置命名空间下——两个实现在同一个命名空间下声明输入项，只要都被 import 就是冲突，进程起不来（[ADR-config-parsing-2026-09-20](../../adr/adr-config-parsing-2026-09-20.md)）。
-- 必须通过共享的一致性套件。套件覆盖接口的每一条语义，包括并发下的不丢更新，以及比较并交换与不存在则写入的恰好一个赢家；恰好一个赢家对从未写过的键成立，对已过期却仍留存在后端里的键同样成立——自己判定过期的后端在这里走的是替换既有条目而非新建的路径。
+- 必须通过共享的一致性套件。套件覆盖接口的每一条语义，包括并发下的不丢更新，以及比较并交换与不存在则写入的恰好一个赢家；恰好一个赢家对从未写过的键成立，对已过期却仍留存在后端里的键同样成立——自己判定过期的后端在这里走的是替换既有条目而非新建的路径。套件不把慢当作错：要求键在 ttl 之内被操作的用例按这一次往返的实测时长判定，往返超出 ttl 的一次尝试不下结论，换一个键、以加倍的 ttl 重来。
 - 必须诚实地声明自己的部署前提。一个不持久、不跨副本的实现不得省略前提输入项。
 
 ## 实现状态
@@ -236,7 +236,7 @@ Memcached 与 NATS 的后端不提供能按键保持过期时刻的服务端时�
 |---|---|---|
 | 接口与根包 | 已实现 | `pkg/kv/kv.go` `KV`；`pkg/kv/module.go` `Spec`、`NewModule` |
 | 内存实现 | 已实现 | `pkg/kv/memory/memory.go` `Module`、`stance` |
-| 一致性套件 | 已实现 | `pkg/kv/internal/kvsuite/kvsuite.go` `AssertConforms` |
+| 一致性套件 | 已实现 | `pkg/kv/internal/kvsuite/kvsuite.go` `AssertConforms`、`AssertUnderLatency` |
 | Redis 实现 | 已实现 | `pkg/kv/redis/redis.go` `Module`、`store` |
 | PostgreSQL 实现 | 已实现 | `pkg/kv/postgres/postgres.go` `Module`、`store` |
 | Memcached 实现 | 已实现 | `pkg/kv/memcached/memcached.go` `Module`、`store` |

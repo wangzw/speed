@@ -28,6 +28,15 @@ func TestConforms(t *testing.T) {
 	kvsuite.AssertConforms(t, newStore)
 }
 
+// TestTheSuiteTellsASlowStoreFromAWrongOne runs the shared suite's cases that
+// act on a key within its ttl against this implementation with every call
+// arriving late, as a loaded server makes it arrive. This store is correct, so
+// a case failing here is a case that reads a slow round trip as a wrong answer,
+// and would fail a correct backend on any loaded run.
+func TestTheSuiteTellsASlowStoreFromAWrongOne(t *testing.T) {
+	kvsuite.AssertUnderLatency(t, newStore)
+}
+
 func TestStanceIsAutoWhenOneReplicaSharesTheState(t *testing.T) {
 	got, err := stance(&Config{Replicas: 1})
 	if err != nil {
