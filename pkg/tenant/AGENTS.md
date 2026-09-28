@@ -105,7 +105,11 @@ here must not cross, and how to run it.
 
 A scoped model embeds `tenant.Model`. That one act declares the model and
 supplies the column; there is no second thing to remember and no interface to
-implement.
+implement. Embedding counts however GORM flattens it — directly, through an
+exported base struct, by pointer, or in a field tagged `embedded` — and the
+filter recognises the field by the struct it comes from, not by its name
+(`catalog/recognise_test.go`). A base struct of an unexported type is skipped
+by GORM altogether, so the convention inside one is not on the model at all.
 
 ```go
 type Order struct {

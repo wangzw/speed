@@ -18,6 +18,12 @@ package tenant
 // does not embed this reads exactly like a table that is global on purpose, and
 // nothing says which it is.
 //
+// Embedding is whatever GORM flattens into the model: this type embedded
+// directly, through an exported base struct the model embeds, by pointer, or in
+// a field tagged embedded. GORM does not read an embedded struct of an
+// unexported type, so a base struct that is not exported carries no column onto
+// the model, and the model is a global table.
+//
 // The column is declared not null and part of the primary key, and the second
 // half is load-bearing rather than tidy. A unique constraint that does not lead
 // with the tenant column — an id generated globally, a business key unique on

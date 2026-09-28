@@ -1079,37 +1079,53 @@ func stringValue(v reflect.Value) (string, bool) {
 // conventionFieldOf returns the field the convention contributes to a model's
 // schema, or nil when the model is not scoped.
 //
-// The check is on the model type the schema was parsed from rather than on the
-// column it happens to have, so a model carrying a field named like the
-// convention's is not swept up by it. What makes a model scoped is embedding
-// the convention, and nothing else is allowed to mean that.
+// The check is on where the field comes from rather than on the column it
+// lands in, so a model carrying a field named like the convention's is not
+// swept up by it. What makes a model scoped is embedding the convention, and
+// nothing else is allowed to mean that.
 func conventionFieldOf(s *gormschema.Schema) *gormschema.Field {
 	if s == nil {
 		return nil
 	}
 	field := s.LookUpField(conventionField)
-	if field == nil || !embedsConvention(s.ModelType) {
+	if field == nil || !embedsConvention(s.ModelType, field.StructField.Index) {
 		return nil
 	}
 	return field
 }
 
-// embedsConvention walks the model's own fields looking for the convention as
-// an embedded type.
-func embedsConvention(modelType reflect.Type) bool {
-	for modelType.Kind() == reflect.Pointer {
-		modelType = modelType.Elem()
-	}
-	if modelType.Kind() != reflect.Struct {
-		return false
-	}
-	for i := 0; i < modelType.NumField(); i++ {
-		f := modelType.Field(i)
-		if f.Anonymous && f.Type == conventionType {
-			return true
+// embedsConvention reports whether the field at this index path of the model is
+// the convention's own, reached through embedding.
+//
+// Embedding is whatever GORM flattens into the model, and GORM flattens an
+// embedded struct however it is reached: directly, through a base struct the
+// model embeds, by pointer, or through a field tagged embedded. Each of those
+// puts the convention's column on the model, so each declares it scoped; a
+// check of the model's own fields alone would take every other one for a
+// global table and read it across tenants. GORM records the path from the model
+// to the flattened field, with a pointer step written as a negative index, and
+// the field is the convention's when the struct the path ends in is.
+func embedsConvention(modelType reflect.Type, path []int) bool {
+	t := modelType
+	for _, step := range path[:max(len(path)-1, 0)] {
+		for t.Kind() == reflect.Pointer {
+			t = t.Elem()
 		}
+		if t.Kind() != reflect.Struct {
+			return false
+		}
+		if step < 0 {
+			step = -step - 1
+		}
+		if step >= t.NumField() {
+			return false
+		}
+		t = t.Field(step).Type
 	}
-	return false
+	for t.Kind() == reflect.Pointer {
+		t = t.Elem()
+	}
+	return len(path) > 1 && t == conventionType
 }
 
 // noTenant names the model a refused statement was against. The model is what
