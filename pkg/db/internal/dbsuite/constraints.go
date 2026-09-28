@@ -41,10 +41,11 @@ func (constraintChild) TableName() string { return "constraint_children" }
 // contract the database capability states for a constraint refusal: a
 // statement a unique constraint refuses — a primary key's included — reports
 // an error in which errors.Is finds gorm.ErrDuplicatedKey, one a foreign key
-// refuses an error in which it finds gorm.ErrForeignKeyViolated, and neither
-// class is found in a refusal of any other kind. The contract is the same on
-// every engine, which is what lets one check map a duplicate to a conflict
-// whichever engine the host deploys on, so every engine runs these cases.
+// refuses an error in which it finds gorm.ErrForeignKeyViolated, whether the
+// statement inserts, updates or deletes, and neither class is found in a
+// refusal of any other kind. The contract is the same on every engine, which
+// is what lets one check map a duplicate to a conflict whichever engine the
+// host deploys on, so every engine runs these cases.
 //
 // carriesDriverError reports whether an error still carries the engine's own
 // driver error, which the classification keeps beside the class.
@@ -62,7 +63,11 @@ func ConstraintRefusals(t *testing.T, handle *gorm.DB, carriesDriverError func(e
 		t.Fatalf("writing the row the cases collide with: %v", err)
 	}
 	if err := handle.Create(&constraintParent{ID: 2, Code: "free"}).Error; err != nil {
-		t.Fatalf("writing the row the update case moves: %v", err)
+		t.Fatalf("writing the row the update cases move: %v", err)
+	}
+	named := uint(1)
+	if err := handle.Create(&constraintChild{ID: 5, ParentID: &named}).Error; err != nil {
+		t.Fatalf("writing the row that names the first parent: %v", err)
 	}
 	missing := uint(999)
 
@@ -80,6 +85,9 @@ func ConstraintRefusals(t *testing.T, handle *gorm.DB, carriesDriverError func(e
 		{"an update onto a unique key", gorm.ErrDuplicatedKey, func(db *gorm.DB) error {
 			return db.Model(&constraintParent{}).Where("id = ?", 2).Update("code", "taken").Error
 		}},
+		{"an update onto the primary key", gorm.ErrDuplicatedKey, func(db *gorm.DB) error {
+			return db.Model(&constraintParent{}).Where("id = ?", 2).Update("id", 1).Error
+		}},
 		{"native SQL through Exec", gorm.ErrDuplicatedKey, func(db *gorm.DB) error {
 			return db.Exec("INSERT INTO constraint_parents (id, code) VALUES (?, ?)", 11, "taken").Error
 		}},
@@ -95,6 +103,12 @@ func ConstraintRefusals(t *testing.T, handle *gorm.DB, carriesDriverError func(e
 		}},
 		{"a row naming a parent that does not exist", gorm.ErrForeignKeyViolated, func(db *gorm.DB) error {
 			return db.Create(&constraintChild{ID: 1, ParentID: &missing}).Error
+		}},
+		{"an update naming a parent that does not exist", gorm.ErrForeignKeyViolated, func(db *gorm.DB) error {
+			return db.Model(&constraintChild{}).Where("id = ?", 5).Update("parent_id", missing).Error
+		}},
+		{"a delete of a parent a row still names", gorm.ErrForeignKeyViolated, func(db *gorm.DB) error {
+			return db.Delete(&constraintParent{ID: 1}).Error
 		}},
 		{"a deferred foreign key the commit refuses", gorm.ErrForeignKeyViolated, func(db *gorm.DB) error {
 			return db.Transaction(func(tx *gorm.DB) error {

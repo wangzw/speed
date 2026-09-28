@@ -78,7 +78,7 @@ func OpenedFrom(*gorm.DB) (*gorm.DB, bool)
 
 **约束拒绝**。一条语句被唯一约束（主键在内）拒绝时，本模块打开的每个句柄——交付的与 `Open` 自建的——交回的错误上 `errors.Is(err, gorm.ErrDuplicatedKey)` 成立；被外键拒绝时 `errors.Is(err, gorm.ErrForeignKeyViolated)` 成立。两个引擎上是同一条判断，宿主据此把业务唯一键的冲突答成冲突应答，不必 import 驱动（[ADR-db-errors-2026-09-28](../../adr/adr-db-errors-2026-09-28.md)）。
 
-驱动自己的错误留在同一条错误链上，错误文本也是驱动的原文：`errors.As` 仍取得到 PostgreSQL 的 `*pgconn.PgError`，被违反的约束名就在它上面。这条保证覆盖经 GORM 报回错误的每一条路：模型路径的写入、`Exec`、以 `Raw` 写的 `INSERT … RETURNING` 经 `Scan` 读取、事务里的语句，以及延迟检查的外键在 `COMMIT` 时的拒绝。
+驱动自己的错误留在同一条错误链上，错误文本也是驱动的原文：`errors.As` 仍取得到 PostgreSQL 的 `*pgconn.PgError`，被违反的约束名就在它上面。这条保证覆盖经 GORM 报回错误的每一条路：模型路径的插入、更新与删除、`Exec`、以 `Raw` 写的 `INSERT … RETURNING` 经 `Scan` 读取、事务里的语句，以及延迟检查的外键在 `COMMIT` 时的拒绝。
 
 只分类这两类。检查约束、非空约束、写了表里没有的列，这些拒绝在两个引擎上都保持驱动错误原样，不带任何一个 GORM 哨兵。经 `Row` 的 `Scan`、以及宿主自己迭代 `Rows` 时由 `rows.Err()` 报出的错误来自 database/sql，不经 GORM，也不带分类；要分类就用 `Scan`、`Find` 这类由 GORM 收尾的方法读结果。
 
