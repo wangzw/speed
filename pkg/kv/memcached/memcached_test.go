@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"strings"
+	"sync"
 	"testing"
 	"time"
 
@@ -119,6 +120,50 @@ func TestAPaddedServerEntryStillReachesTheClient(t *testing.T) {
 	}
 	if _, _, err := opened.Get(context.Background(), "padded"); errors.Is(err, memcache.ErrNoServers) {
 		t.Fatalf("the client was built without the address the host named: %v", err)
+	}
+}
+
+// TestBurstsOfOperationsReuseTheirConnections covers what a busy replica does
+// to its sockets. The client keeps only so many idle connections per server
+// and closes every connection past that when an operation returns it, so each
+// burst of concurrent operations — a wave of requests arriving together — ends
+// with most of its connections closed and the next burst dialling them again,
+// each close leaving a socket in TIME_WAIT. Under sustained bursty load the
+// replica runs out of local ports and operations fail to dial. The case sends
+// bursts of a modest width and counts the connections the server accepted.
+func TestBurstsOfOperationsReuseTheirConnections(t *testing.T) {
+	server := startFakeServer(t)
+	opened, err := open(context.Background(), &Config{
+		Servers: []string{server.addr()},
+		Timeout: 5 * time.Second,
+	})
+	if err != nil {
+		t.Fatalf("open: %v", err)
+	}
+	t.Cleanup(func() { _ = opened.(*store).Close(context.Background()) })
+
+	const width, bursts = 16, 20
+	for range bursts {
+		start := make(chan struct{})
+		var wg sync.WaitGroup
+		for range width {
+			wg.Add(1)
+			go func() {
+				defer wg.Done()
+				<-start
+				if _, _, getErr := opened.Get(context.Background(), "k"); getErr != nil {
+					t.Errorf("Get: %v", getErr)
+				}
+			}()
+		}
+		close(start)
+		wg.Wait()
+	}
+	// One connection per operation of the widest burst at most, and one for
+	// the check the open makes.
+	if got := server.accepted.Load(); got > width+1 {
+		t.Fatalf("%d bursts of %d operations made the server accept %d connections: the client closes "+
+			"the connections a burst used and dials them again for the next", bursts, width, got)
 	}
 }
 

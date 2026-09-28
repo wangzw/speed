@@ -64,6 +64,11 @@ type Config struct {
 	Servers []string `config:"servers"`
 	// Timeout bounds one round trip to a server.
 	Timeout time.Duration `config:"timeout"`
+	// MaxIdleConns is how many idle connections the client keeps per server.
+	// A burst of concurrent operations wider than this closes the surplus
+	// when it ends and dials it again for the next burst, and every close
+	// leaves a local port in TIME_WAIT. Zero or less takes the default.
+	MaxIdleConns int `config:"max-idle-conns"`
 	// RequiresPersistence is the deployment fact this implementation's
 	// precondition is judged against: whether the data written here has to
 	// survive a restart.
@@ -76,12 +81,19 @@ type Config struct {
 }
 
 const (
-	serversKey     = "servers"
-	timeoutKey     = "timeout"
-	persistenceKey = "requires-persistence"
+	serversKey      = "servers"
+	timeoutKey      = "timeout"
+	maxIdleConnsKey = "max-idle-conns"
+	persistenceKey  = "requires-persistence"
 )
 
 const defaultTimeout = 3 * time.Second
+
+// defaultMaxIdleConns is how many idle connections the client keeps per server
+// when the configuration names no number. The client library's own default is
+// two, which has a replica serving a few dozen concurrent requests dial most
+// of its connections anew for every wave of them.
+const defaultMaxIdleConns = 32
 
 // init registers this module with the process registry.
 func init() { core.ProcessRegistry.Register(Module()) }
@@ -91,7 +103,7 @@ func Module() core.Module {
 	return kv.NewModule(kv.Spec[Config]{
 		ModuleName:      ModuleName,
 		ConfigNamespace: ConfigNamespace,
-		Config:          &Config{Timeout: defaultTimeout},
+		Config:          &Config{Timeout: defaultTimeout, MaxIdleConns: defaultMaxIdleConns},
 		Items: map[string]config.Item{
 			serversKey: {
 				Description: "the Memcached servers to spread keys over, as a list of host:port; an " +
@@ -99,6 +111,10 @@ func Module() core.Module {
 			},
 			timeoutKey: {
 				Description: "how long one round trip to a server may take, written with a unit",
+			},
+			maxIdleConnsKey: {
+				Description: "how many idle connections the client keeps per server; a burst of " +
+					"concurrent operations wider than this dials the surplus again every time",
 			},
 			persistenceKey: {
 				Description: "whether the data this assembly writes has to survive a restart; this " +
@@ -178,6 +194,10 @@ func open(_ context.Context, cfg *Config) (kv.KV, error) {
 	servers, _ := usableServers(cfg.Servers)
 	client := memcache.New(servers...)
 	client.Timeout = cfg.Timeout
+	client.MaxIdleConns = cfg.MaxIdleConns
+	if client.MaxIdleConns <= 0 {
+		client.MaxIdleConns = defaultMaxIdleConns
+	}
 	return &store{client: client}, nil
 }
 
