@@ -352,6 +352,8 @@ sequenceDiagram
 
 本模块不定义事务传播机制。事务由调用方用 GORM 自己的 API 开启，事务句柄在调用方内部传递；跨模块传递一个进行中的事务不在本模块的契约内。声明了插件的模块要自己保证其回调在事务内外行为一致——本模块不区分句柄当前是否处在事务中。
 
+一次提交被拒绝，这个事务就没有生效，它占用的连接回到池里时不在任何事务之中。SQLite 在拒绝 `COMMIT` 时让事务继续开着——延迟检查的外键在提交时发现违反是常见的一种——以便应用修好再提交，而 database/sql 在提交返回之后就把连接还回池里。本模块的 SQLite 实现因此在同一条连接上回滚这个事务，再把连接交还；调用方收到的仍是提交的拒绝。不回滚的话，此后落到这条连接上的语句都报告成功却从不提交：别的连接看不见它们，连接关闭时一并丢失，在它上面开下一个事务则直接失败。PostgreSQL 在拒绝提交时自己结束事务，不需要这一步。
+
 迁移的事务边界见迁移的应用一节：一条迁移的执行与记录同属一个事务，条与条之间不是。进程之间的协调也在那里——同一个库上同时启动的多个进程，其迁移过程互斥。
 
 ## 扩展点
@@ -374,6 +376,7 @@ sequenceDiagram
 | 软删除 | 已实现 | 由 GORM 提供，随 `pkg/db/handle.go` `(*database).DB` 交付 |
 | 字段级加密与盲索引 | 已实现 | `pkg/db/serializer.go` `installEncryption`、`pkg/db/crypto.go` `deriveSubkey`、`pkg/db/handle.go` `(*database).BlindIndex` |
 | 不经模型字段的读写 | 已实现 | `pkg/db/encryptedwrites.go` `sealUpdate`、`sealCreate`、`pkg/db/encryptedreads.go` `guardReads`、`guardRowReads`、`refuseRenamedRead`、`pkg/db/identifiers.go` `sealedTarget` |
+| SQLite 被拒提交的回滚 | 已实现 | `pkg/db/sqlite/commit.go` `endingTx` |
 | 插件的安装 | 已实现 | `pkg/db/plugins.go` `collectPlugins`、`installPlugins`、`pkg/db/handle.go` `newDatabase` |
 | 迁移的收齐与应用 | 已实现 | `pkg/db/migrate.go` `collectMigrations`、`applyMigrations` |
 | 迁移的跨进程互斥 | 已实现 | `pkg/db/migrate.go` `MigrationLock`、`pkg/db/postgres/lock.go` `NewMigrationLock` |

@@ -77,8 +77,11 @@ const Dialect = db.SQLite
 //
 // The driver appears here and nowhere in the capability's surface, which is
 // what lets a host move between engines without touching a line of the code
-// that uses the database.
-func Dialector(dsn string) gorm.Dialector { return sqlitedriver.Open(dsn) }
+// that uses the database. Its connections are opened through the wrapper in
+// commit.go, which rolls a transaction back when SQLite refuses to commit it.
+func Dialector(dsn string) gorm.Dialector {
+	return &sqlitedriver.Dialector{DriverName: driverName, DSN: dsn}
+}
 
 // connectionScoped reports whether a locator names a database that belongs to
 // the one connection opening it: :memory:, an empty file name, or a file: URI
