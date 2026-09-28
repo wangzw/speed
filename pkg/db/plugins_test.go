@@ -302,11 +302,12 @@ func disabledModule(name string, plugin gorm.Plugin, set db.Migrations) core.Mod
 // module resolution stood down leaves behind: its migrations are not applied,
 // and its plugin is not installed.
 //
-// The two halves are one ruling, and they used to differ — the migration set was
-// filtered and the plugin was not. A module that does not run has nothing in
-// force, whatever kind of declaration it is, and keeping the plugin would put a
-// declaration of a module that was never constructed into force: a hole in "not
-// enabled, not in force" that reports nothing.
+// The two halves are one ruling, and an implementation that filtered one kind
+// of declaration and not the other would pass a case holding only one. A module
+// that does not run has nothing in force, whatever kind of declaration it is,
+// and keeping the plugin would put a declaration of a module that was never
+// constructed into force: a hole in "not enabled, not in force" that reports
+// nothing.
 //
 // The positives sit beside the negatives. Without them, "the migration was not
 // applied" would hold for a run that applied nothing at all, and "the plugin is
