@@ -190,6 +190,19 @@ that is global on purpose, and nothing says which it is. That is the one failure
 this convention cannot catch, and it is why the design writes it as a
 non-guarantee rather than pretending to detect it.
 
+**A model that embeds the convention only to read, by tenant, a table another
+module declares and writes carries neither obligation above** — the audit table
+is one such table. The tenant-led key and the NOT NULL bind the side that
+creates the table and writes it, because what they keep out is a write. Through
+such a model a tenant's read never reaches a row whose tenant column is null; a
+read across tenants does, and reads that column as the empty identifier with no
+error, so a reader that has to tell those rows apart uses a type whose tenant
+field can hold a null (`catalog/readonly_test.go`). **Such a model issues reads
+only.** A write through it is filled and checked, but that table's key does not
+lead with the tenant column, so an upsert by its key can reach another tenant's
+row, and the table is its declaring module's to write. The filter cannot tell a
+read-only model from a scoped one; review holds this.
+
 ## Running it
 
 From the repository root, over every module in the workspace:
@@ -227,7 +240,9 @@ entered context carries, the entry that admits a disabled tenant, and a table
 dropped under an entry or a write; `pkg/tenant/catalog/wait_test.go` is where
 the roster's wait for a connection is — bounded inside a caller's transaction
 on a database held to one connection, taken when it comes free inside the
-bound, and ended by the caller's context;
+bound, and ended by the caller's context; `pkg/tenant/catalog/readonly_test.go`
+is where a read-only model's reads over a nullable tenant column are, on both
+dialects;
 `pkg/tenant/resolve/extract_test.go` is where the
 registration window's behaviour under a duplicate or a late registration is;
 `pkg/tenant/resolve/admit_test.go` and `panic_test.go` are where the layer's

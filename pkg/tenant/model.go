@@ -47,6 +47,20 @@ package tenant
 // bound empty, not because of the constraint. Every index on a scoped table
 // should also lead with the tenant column, or a single tenant's query scans the
 // whole table; the key this type declares does that part on its own.
+//
+// A model that embeds this only to read, by tenant, a table another module
+// declares and writes — the audit table is one — carries none of those
+// obligations: the key led by the tenant column and the NOT NULL bind the side
+// that creates the table and writes it, and what they keep out is a write. The
+// filter puts the tenant condition on every read through such a model, so a
+// row whose tenant column is null belongs to no tenant and no tenant's read
+// reaches it. A read across tenants does, and reads that column as the empty
+// identifier with no error; a reader that has to tell those rows apart reads
+// them into a type whose tenant field can hold a null. Such a model issues
+// reads only. A write through it is filled and checked like any other, but the
+// table's key does not lead with the tenant column, so an upsert by its key can
+// reach another tenant's row, and the table is its declaring module's to write.
+// The filter cannot tell a read-only model from a scoped one; review holds this.
 type Model struct {
 	TenantID ID `gorm:"column:tenant_id;not null;primaryKey"`
 }
