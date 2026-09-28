@@ -1,7 +1,9 @@
 package journal
 
 import (
+	"bytes"
 	"context"
+	"encoding/json"
 
 	"github.com/vislake/speed/pkg/audit"
 	"github.com/vislake/speed/pkg/event"
@@ -46,7 +48,7 @@ func (j *journal) handlerFor(typeName string) event.Handler {
 			Action:  typeName,
 			Object:  objectOf(evt.Payload),
 			Outcome: readOutcome(evt.Payload),
-			Detail:  stringsOf(fields),
+			Detail:  detailOf(fields),
 		}
 		// The tenant arrives on the event rather than in the context: the bus
 		// carries it so that a subscriber does not have to reconstruct it, and
@@ -57,18 +59,22 @@ func (j *journal) handlerFor(typeName string) event.Handler {
 	}
 }
 
-// readFields decodes a payload's top-level fields, reporting whether it could
-// be read.
+// readFields decodes a payload's top-level fields, each as the text the
+// payload's own serialization gave it, reporting whether it could be read.
 //
 // A payload that is simply absent is readable and empty: an event with nothing
 // to say is still an event, and dropping it would lose the fact of its
-// publication. Only a payload that is present and cannot be decoded is
-// unreadable.
-func readFields(payload any) (map[string]any, bool) {
+// publication. Only a payload that is present and does not serialize to an
+// object is unreadable, which is the line the bus's own field helpers draw.
+func readFields(payload any) (map[string]json.RawMessage, bool) {
 	if payload == nil {
 		return nil, true
 	}
-	return event.PayloadFields(payload)
+	var fields map[string]json.RawMessage
+	if err := event.DecodePayload(payload, &fields); err != nil || fields == nil {
+		return nil, false
+	}
+	return fields, true
 }
 
 // objectOf reads the object the event is about, by the spellings a publisher
@@ -84,17 +90,27 @@ func readOutcome(payload any) string {
 	return value
 }
 
-// stringsOf keeps the payload's string-valued top-level fields as the entry's
-// detail. Values of any other shape are left out rather than rendered: the
-// detail is written as text, and a rendering chosen here would be this module
-// inventing a spelling for someone else's data.
-func stringsOf(fields map[string]any) map[string]string {
+// detailOf keeps the payload's top-level scalar fields as the entry's detail.
+//
+// A string is kept as its value, and a boolean or a number as the text the
+// payload's serialization wrote for it. That text is the payload's own spelling
+// rather than one this module chose, and it keeps a number exact where decoding
+// it first would round an integer past a float's range. Those fields are where a
+// publisher puts the facts that tell one kind of event from another — a delete
+// from a write of the empty value, a withheld value from an unchanged one, the
+// version a change produced — so leaving them out loses the distinction.
+//
+// A nested object, an array and a null are left out. Masking compares whole
+// top-level keys, so a key inside a nested value is never compared at all, and
+// rendering the value as text would put whatever it carries into the table
+// unmasked.
+func detailOf(fields map[string]json.RawMessage) map[string]string {
 	if len(fields) == 0 {
 		return nil
 	}
 	out := make(map[string]string, len(fields))
-	for key, value := range fields {
-		if text, isString := value.(string); isString {
+	for key, raw := range fields {
+		if text, scalar := scalarText(raw); scalar {
 			out[key] = text
 		}
 	}
@@ -102,4 +118,25 @@ func stringsOf(fields map[string]any) map[string]string {
 		return nil
 	}
 	return out
+}
+
+// scalarText renders one serialized field, reporting false for the shapes the
+// detail leaves out.
+func scalarText(raw json.RawMessage) (string, bool) {
+	value := bytes.TrimSpace(raw)
+	if len(value) == 0 {
+		return "", false
+	}
+	switch first := value[0]; {
+	case first == '"':
+		var text string
+		if err := json.Unmarshal(value, &text); err != nil {
+			return "", false
+		}
+		return text, true
+	case first == 't', first == 'f', first == '-', first >= '0' && first <= '9':
+		return string(value), true
+	default:
+		return "", false
+	}
 }
