@@ -401,18 +401,20 @@ func (f *filter) scopeDelete(tx *gorm.DB) {
 func (f *filter) scopeUpdate(tx *gorm.DB) {
 	st := tx.Statement
 	field, id, s := scopeOf(tx, st, nil)
+	var judge func(any) error
 	switch s {
 	case crossing:
-		if err := judgeEach(assignedValues(st, field), someTenant(st)); err != nil {
-			_ = tx.AddError(err)
-		}
-		return
+		judge = someTenant(st)
 	case tenanted:
+		judge = ownTenant(st, id)
 	default:
 		return
 	}
-	if err := judgeEach(assignedValues(st, field), ownTenant(st, id)); err != nil {
+	if err := judgeEach(assignedValues(st, field), judge); err != nil {
 		_ = tx.AddError(err)
+		return
+	}
+	if s == crossing {
 		return
 	}
 	if err := fillKey(st, field, id, st.ReflectValue); err != nil {
@@ -773,9 +775,14 @@ func samePointer(a, b any) bool {
 // same statement written twice. Anything this cannot read as a string — an
 // expression, a subquery, a null — is refused rather than trusted, because the
 // question is whether it is the context's tenant, and nothing here can answer
-// that for it.
+// that for it. An assignment whose target cannot be read as one column is
+// refused for the same reason: whether it reaches the tenant column, and with
+// what, is not something the filter can answer.
 func ownTenant(st *gorm.Statement, id string) func(any) error {
 	return func(v any) error {
+		if u, ok := v.(unreadTarget); ok {
+			return u.refusal(st)
+		}
 		if s, ok := stringValue(reflect.ValueOf(v)); ok {
 			if s == id {
 				return nil
@@ -794,9 +801,15 @@ func ownTenant(st *gorm.Statement, id string) func(any) error {
 // A row whose tenant column is empty, or null, belongs to no tenant, and no
 // scoped statement can reach it again. A literal outside the identifier's
 // domain is no tenant either. An expression is the caller's own statement of
-// what the column becomes, which crossing tenants allows.
+// what the column becomes, which crossing tenants allows. A target that cannot
+// be read as one column is refused here as it is under a tenant: what crossing
+// allows is an expression the caller wrote for the tenant column, and nothing
+// says this one is for that column or which value lands in it.
 func someTenant(st *gorm.Statement) func(any) error {
 	return func(v any) error {
+		if u, ok := v.(unreadTarget); ok {
+			return u.refusal(st)
+		}
 		if isNull(v) {
 			return fmt.Errorf("%w: %s puts a null in its tenant column across tenants",
 				tenant.ErrNoTenantInContext, st.Schema.Name)
@@ -829,11 +842,11 @@ func judgeEach(values []any, judge func(any) error) error {
 // writeRows fills and judges the tenant column of every row an insert binds.
 //
 // The rows are read from where GORM reads them. A map, or a slice of maps, is
-// written by key, and a key naming the column is found the way GORM finds it;
-// a map that names none gets the column added. Anything else is read through
-// the value GORM resolved the destination to, which is what makes a struct, a
-// slice of structs and a slice of pointers alike — whether handed over by
-// pointer or by value — and a struct or an array handed over by value is
+// written by key, and a key is taken for the column it reaches in the database
+// (keyReaches); a map that names none gets the column added. Anything else is
+// read through the value GORM resolved the destination to, which is what makes
+// a struct, a slice of structs and a slice of pointers alike — whether handed
+// over by pointer or by value — and a struct or an array handed over by value is
 // copied first so that there is somewhere to write.
 func writeRows(st *gorm.Statement, field *gormschema.Field, id string, fill bool, judge func(any) error) error {
 	if maps, ok := insertedMaps(st.Dest); ok {
@@ -875,6 +888,11 @@ func writeRows(st *gorm.Statement, field *gormschema.Field, id string, fill bool
 //
 // Adding the column writes into the caller's map, as filling a struct writes
 // into the caller's struct.
+//
+// GORM selects a key's column under the column's name when the schema resolves
+// the key and under the key itself when it does not; the value is judged when
+// either leaves it assigned, so that a selection spelled one way cannot let a
+// key spelled the other way through unjudged.
 func writeMap(st *gorm.Statement, field *gormschema.Field, m map[string]interface{},
 	id string, fill bool, judge func(any) error,
 ) error {
@@ -884,11 +902,11 @@ func writeMap(st *gorm.Statement, field *gormschema.Field, m map[string]interfac
 	selected, restricted := st.SelectAndOmitColumns(true, false)
 	named := false
 	for key, v := range m {
-		if !namesColumn(st.Schema, key, field) {
+		if !keyReaches(st, key, field) {
 			continue
 		}
 		named = true
-		if !assigned(selected, restricted, field.DBName) {
+		if !assigned(selected, restricted, field.DBName) && !assigned(selected, restricted, key) {
 			continue
 		}
 		if err := judge(v); err != nil {
@@ -937,25 +955,41 @@ func insertedMaps(dest any) ([]map[string]interface{}, bool) {
 // assignedValues lists what an update assigns to the tenant column, read the
 // way GORM builds the assignments.
 //
-// An explicit SET clause is used as it stands, and the destination is then not
-// read at all. A map names its columns by key, resolved against the model's
-// schema; a struct is read through its own schema, which is the model's or,
-// for an update carrying its assignments in another type, that type's. A key
-// field of the very value the update is addressed by is a condition rather
-// than an assignment, and the key is judged where the key is filled. Selection
-// and omission decide which of the rest are assigned, zero values included
-// where they are selected.
+// GORM renders the assignments it derives from the destination whenever there
+// are any, and a SET clause the caller wrote only when there are none. Both are
+// read here: which of the two reaches the table depends on the destination, and
+// the one left unread would be a way past the judgement. A SET clause's targets
+// are read as the database reads them (targetReaches). A map names its columns
+// by key (keyReaches); a struct is read through its own schema, which is the
+// model's or, for an update carrying its assignments in another type, that
+// type's. A key field of the very value the update is addressed by is a
+// condition rather than an assignment, and the key is judged where the key is
+// filled. Selection and omission decide which of the rest are assigned, zero
+// values included where they are selected.
 func assignedValues(st *gorm.Statement, field *gormschema.Field) []any {
+	var out []any
 	if c, ok := st.Clauses["SET"]; ok {
 		set, _ := c.Expression.(clause.Set)
-		var out []any
 		for _, a := range set {
-			if namesColumn(st.Schema, a.Column.Name, field) {
+			switch targetReaches(st, a.Column, field) {
+			case tenantColumn:
 				out = append(out, a.Value)
+			case unread:
+				out = append(out, unreadTarget{name: a.Column.Name})
 			}
 		}
-		return out
 	}
+	return append(out, destinationValues(st, field)...)
+}
+
+// destinationValues lists what the destination of an update assigns to the
+// tenant column.
+//
+// GORM selects a map key's column under the column's name when the schema
+// resolves the key and under the key itself when it does not; the value is
+// judged when either leaves it assigned, so that a selection spelled one way
+// cannot let a key spelled the other way through unjudged.
+func destinationValues(st *gorm.Statement, field *gormschema.Field) []any {
 	updating := indirect(reflect.ValueOf(st.Dest))
 	if !updating.IsValid() {
 		return nil
@@ -964,7 +998,8 @@ func assignedValues(st *gorm.Statement, field *gormschema.Field) []any {
 	if m, ok := updating.Interface().(map[string]interface{}); ok {
 		var out []any
 		for key, v := range m {
-			if namesColumn(st.Schema, key, field) && assigned(selected, restricted, field.DBName) {
+			if keyReaches(st, key, field) &&
+				(assigned(selected, restricted, field.DBName) || assigned(selected, restricted, key)) {
 				out = append(out, v)
 			}
 		}
@@ -999,9 +1034,16 @@ func assignedValues(st *gorm.Statement, field *gormschema.Field) []any {
 }
 
 // upsertValues lists what an insert's conflict clause assigns to the tenant
-// column on the row it conflicts with. Reassigning the column from the row that
-// was about to be inserted is not an assignment of a tenant: that row's own
-// column is judged as the insert's.
+// column on the row it conflicts with, its targets read as the database reads
+// them.
+//
+// Reassigning the column from the row that was about to be inserted is not an
+// assignment of a tenant: that row's own column is judged as the insert's. Only
+// the form GORM itself writes that reassignment in is taken for it — the
+// column by its own name, under the name the conflict clause reads that row by.
+// A spelling the database might read as some other column of that row is
+// judged like any other value, because letting it through would copy that
+// column into the tenant column.
 func upsertValues(st *gorm.Statement, field *gormschema.Field) []any {
 	c, ok := st.Clauses["ON CONFLICT"]
 	if !ok {
@@ -1013,11 +1055,15 @@ func upsertValues(st *gorm.Statement, field *gormschema.Field) []any {
 	}
 	var out []any
 	for _, a := range conflict.DoUpdates {
-		if !namesColumn(st.Schema, a.Column.Name, field) {
+		switch targetReaches(st, a.Column, field) {
+		case elsewhere:
+			continue
+		case unread:
+			out = append(out, unreadTarget{name: a.Column.Name})
 			continue
 		}
-		if col, ok := a.Value.(clause.Column); ok && strings.EqualFold(col.Table, excludedTable) &&
-			namesColumn(st.Schema, col.Name, field) {
+		if col, ok := a.Value.(clause.Column); ok && !col.Raw &&
+			col.Table == excludedTable && col.Name == field.DBName {
 			continue
 		}
 		out = append(out, a.Value)
@@ -1029,14 +1075,194 @@ func upsertValues(st *gorm.Statement, field *gormschema.Field) []any {
 // insert under, which is how GORM writes an assignment from that row.
 const excludedTable = "excluded"
 
-// namesColumn reports whether a key names the convention's column, resolved
-// the way GORM resolves an assignment's key: through the model's schema, and as
-// the column name where the schema has no field by that key.
-func namesColumn(schema *gormschema.Schema, key string, field *gormschema.Field) bool {
-	if f := schema.LookUpField(key); f != nil {
+// reach is where the database takes an assignment's target to be.
+type reach int
+
+const (
+	// elsewhere is a target the database reads as some other column.
+	elsewhere reach = iota
+	// tenantColumn is a target the database may read as the tenant column.
+	tenantColumn
+	// unread is a target that cannot be read as one column at all. It may
+	// name the tenant column among others, so it is refused rather than
+	// guessed at.
+	unread
+)
+
+// keyReaches reports whether a key GORM builds an assignment or an inserted
+// column from reaches the tenant column.
+//
+// GORM resolves the key through the model's schema first, and writes the
+// field's own column when that succeeds. A key the schema does not know is not
+// dropped: it goes into the statement as a column name, and reaches whatever
+// the database reads that name as — which, for a key spelled in another case or
+// carrying its own quotes, is the tenant column.
+func keyReaches(st *gorm.Statement, key string, field *gormschema.Field) bool {
+	if f := st.Schema.LookUpField(key); f != nil {
 		return f.DBName == field.DBName
 	}
-	return key == field.DBName
+	return targetReaches(st, clause.Column{Name: key}, field) == tenantColumn
+}
+
+// targetReaches reads the column an assignment is written to the way the
+// database reads it.
+//
+// GORM writes a target into the statement quoted, part by part at each dot,
+// unless it is marked raw, which writes it as it stands; its primary key
+// placeholder is written as the column it stands for. The database then
+// resolves the name by its own rules: SQLite compares names without regard to
+// case, quoted or not; PostgreSQL folds a bare name to lower case; both skip
+// the blanks around a name written as it stands, and both take the last part of
+// a dotted name for the column. The comparison here is the widest of those
+// readings — a name is the tenant column if any of them could make it so —
+// because reading too widely costs a refusal of a write the database would
+// have rejected anyway, and reading too narrowly costs a row carried into
+// another tenant.
+//
+// A raw target that is not one column name, possibly qualified and quoted, is
+// SQL the filter does not parse, and is unread. A name the model's schema
+// resolves to the convention's field is taken for the tenant column as well,
+// although GORM does not resolve a clause's column through the schema: the
+// database rejects such a name if it is not the column, so reading it as the
+// column refuses nothing that would have run.
+func targetReaches(st *gorm.Statement, col clause.Column, field *gormschema.Field) reach {
+	name := col.Name
+	if name == clause.PrimaryKey {
+		name = primaryColumn(st.Schema)
+	} else if f := st.Schema.LookUpField(name); f != nil && f.DBName == field.DBName {
+		return tenantColumn
+	}
+	if !col.Raw {
+		if sameIdentifier(name[strings.LastIndexByte(name, '.')+1:], field.DBName) {
+			return tenantColumn
+		}
+		return elsewhere
+	}
+	parts, ok := columnParts(name)
+	switch {
+	case !ok:
+		return unread
+	case sameIdentifier(parts[len(parts)-1], field.DBName):
+		return tenantColumn
+	}
+	return elsewhere
+}
+
+// primaryColumn is the column GORM writes its primary key placeholder as: the
+// field it prefers as the key, or the model's first column when it prefers
+// none — which, for a model whose own key is not called id, is the tenant
+// column the convention puts first.
+func primaryColumn(s *gormschema.Schema) string {
+	if s.PrioritizedPrimaryField != nil {
+		return s.PrioritizedPrimaryField.DBName
+	}
+	if len(s.DBNames) > 0 {
+		return s.DBNames[0]
+	}
+	return ""
+}
+
+// sameIdentifier reports whether a written name may resolve to the column: its
+// surrounding blanks and one pair of quotes of any of the three kinds taken
+// off, and compared without regard to case.
+func sameIdentifier(written, column string) bool {
+	s := strings.TrimSpace(written)
+	if len(s) >= 2 {
+		if closing, ok := quoteClosing(s[0]); ok && s[len(s)-1] == closing {
+			s = strings.TrimSpace(s[1 : len(s)-1])
+		}
+	}
+	return strings.EqualFold(s, column)
+}
+
+// quoteClosing returns the character that closes a quoted name opened by c.
+func quoteClosing(c byte) (byte, bool) {
+	switch c {
+	case '"', '`':
+		return c, true
+	case '[':
+		return ']', true
+	}
+	return 0, false
+}
+
+// columnParts reads a column reference written into a statement as it stands:
+// blanks around it, then one or more parts joined by dots, each a bare name or
+// a name quoted with double quotes, backquotes or brackets, a doubled quote
+// inside standing for one. It reports false for anything else — an
+// expression, a list of assignments, a comment — which names no single column.
+func columnParts(s string) ([]string, bool) {
+	s = strings.TrimSpace(s)
+	var parts []string
+	for {
+		part, rest, ok := columnPart(s)
+		if !ok {
+			return nil, false
+		}
+		parts = append(parts, part)
+		if rest == "" {
+			return parts, true
+		}
+		if rest[0] != '.' {
+			return nil, false
+		}
+		s = rest[1:]
+	}
+}
+
+// columnPart reads one part of a column reference off the front of s.
+func columnPart(s string) (part, rest string, ok bool) {
+	if s == "" {
+		return "", "", false
+	}
+	if closing, quoted := quoteClosing(s[0]); quoted {
+		var b strings.Builder
+		for i := 1; i < len(s); i++ {
+			if s[i] != closing {
+				b.WriteByte(s[i])
+				continue
+			}
+			if closing != ']' && i+1 < len(s) && s[i+1] == closing {
+				b.WriteByte(closing)
+				i++
+				continue
+			}
+			return b.String(), s[i+1:], true
+		}
+		return "", "", false
+	}
+	end := 0
+	for end < len(s) && isNameByte(s[end], end == 0) {
+		end++
+	}
+	if end == 0 {
+		return "", "", false
+	}
+	return s[:end], s[end:], true
+}
+
+// isNameByte reports whether a byte may stand in a bare name at this position:
+// a letter, an underscore or any byte of a character outside ASCII anywhere,
+// and a digit or a dollar sign after the first.
+func isNameByte(c byte, first bool) bool {
+	switch {
+	case c == '_' || c >= 0x80 || ('a' <= c && c <= 'z') || ('A' <= c && c <= 'Z'):
+		return true
+	case ('0' <= c && c <= '9') || c == '$':
+		return !first
+	}
+	return false
+}
+
+// unreadTarget stands, among the values a write gives the tenant column, for
+// an assignment whose target cannot be read as one column. Both judgements
+// refuse it: it may be the tenant column, and what lands there cannot be told.
+type unreadTarget struct{ name string }
+
+// refusal is the error a write carrying this target is refused with.
+func (u unreadTarget) refusal(st *gorm.Statement) error {
+	return fmt.Errorf("%w: %s assigns to %q, which cannot be read as one column and may be its "+
+		"tenant column; name the column alone", tenant.ErrExplicitTenantMismatch, st.Schema.Name, u.name)
 }
 
 // assigned reports whether selection and omission leave a column assigned.

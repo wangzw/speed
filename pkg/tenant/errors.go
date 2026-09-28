@@ -117,5 +117,13 @@ var (
 	// read as that value at all — an expression, a subquery, a null. Crossing
 	// tenants is a context fact with one way in, so a statement naming a
 	// second tenant is a call-site defect rather than a way to cross.
+	//
+	// The tenant column is whatever the database would take an assignment's
+	// target for: a key in any case, carrying its own quotes, or written as it
+	// stands with blanks around it. A target written as it stands that cannot
+	// be read as one column at all is reported through this sentinel as well,
+	// under any context, crossing tenants included: it may be the tenant
+	// column, and what it writes there cannot be told. The fix is to name the
+	// column alone.
 	ErrExplicitTenantMismatch = errors.New("tenant: a write names a tenant other than its context's")
 )

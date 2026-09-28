@@ -55,13 +55,20 @@ here must not cross, and how to run it.
   (`ErrExplicitTenantMismatch`, in `catalog/plugin.go`). Honouring it would be a
   second way in, and one that carries no mark of intent: a write copied from
   elsewhere and edited would land in another tenant with nothing said. What
-  counts as naming the column is whatever GORM resolves to it — every key
-  spelling, an explicit SET, a struct of another type, an upsert's assignments
-  — and a value the filter cannot read as the context's identifier is refused
-  like another tenant's. The mark itself lifts the condition and the fill, not
-  the column: a write under it that leaves the tenant column empty or null is
-  refused, because that row would belong to no tenant. `plugin_test.go` and
-  `catalog/writes_test.go` pin both halves.
+  counts as naming the column is whatever the database would take an
+  assignment's target for — a key GORM resolves through the schema, and one it
+  leaves for the database to resolve: another case, its own quotes, a raw
+  column with blanks around it, the primary key placeholder — in an explicit
+  SET and in the destination alike (GORM renders the second when it yields
+  anything), a struct of another type, an upsert's assignments
+  (`catalog/targets_test.go`). The reading is the widest of the dialects', and a
+  raw target that is not one column name is refused under any context: reading
+  too narrowly is a row carried into another tenant. A value the filter cannot
+  read as the context's identifier is refused like another tenant's. The mark
+  itself lifts the condition and the fill, not the column: a write under it that
+  leaves the tenant column empty or null is refused, because that row would
+  belong to no tenant. `plugin_test.go` and `catalog/writes_test.go` pin both
+  halves.
 - **The statement filter holds no state, and reads no roster.** The plugin
   instance is frozen with the descriptor at init time, database hands that one
   instance to every handle it builds, and a process driving two commands builds

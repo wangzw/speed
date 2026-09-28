@@ -50,7 +50,9 @@ func FromContext(ctx context.Context) (ID, bool) {
 // mark whose row names none, and a write under it that puts an empty value, a
 // null or a value outside the identifier's domain into the tenant column, is
 // refused: such a row belongs to no tenant, and no scoped statement could reach
-// it again.
+// it again. So is a write whose assignment target is SQL written as it stands
+// that cannot be read as one column, since nothing says whether it writes the
+// tenant column or with what.
 //
 // This is the only way across tenants. It is a context fact rather than a
 // statement fact so that it can be established once at the mouth of a function
