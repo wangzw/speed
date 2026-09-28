@@ -92,8 +92,8 @@ func TestAnInsertWithNoFilterAndNoTenantFailsOnPostgres(t *testing.T) {
 }
 
 // A delete addressed by a key whose tenant half is empty names no tenant's
-// row. Unfiltered it used to reach nothing and report success; it now fails
-// where the empty identifier is bound.
+// row. Unfiltered, it fails where the empty identifier is bound, rather than
+// reaching nothing and reporting success.
 func TestAnUnfilteredDeleteByAKeyWithNoTenantFails(t *testing.T) {
 	handle := openUnfiltered(t)
 	err := handle.Delete(&order{ID: "x"}).Error
