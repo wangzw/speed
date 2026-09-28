@@ -248,6 +248,48 @@ func AssertConforms(t *testing.T, newBus Factory) {
 		}
 	})
 
+	t.Run("an integer past the exact range of a float64 arrives exact", func(t *testing.T) {
+		type deal struct {
+			AmountCents int64 `json:"amount_cents"`
+		}
+		type won struct {
+			ID   int64 `json:"id"`
+			Deal deal  `json:"deal"`
+		}
+		// 2^53+1 is the first integer a float64 cannot hold; the other is the
+		// largest int64.
+		want := won{ID: 1<<53 + 1, Deal: deal{AmountCents: 1<<63 - 1}}
+		b, start := newBus(t)
+		got := make(chan won, 1)
+		failed := make(chan error, 1)
+		b.Subscribe("t", func(_ context.Context, evt event.Event) error {
+			var w won
+			if err := event.DecodePayload(evt.Payload, &w); err != nil {
+				failed <- err
+				return err
+			}
+			got <- w
+			return nil
+		})
+		start(context.Background())
+		if err := b.Publish(context.Background(), event.Event{Type: "t", Payload: want}); err != nil {
+			t.Fatalf("Publish: %v", err)
+		}
+		// Identifiers and amounts in cents are the integers a subscriber
+		// decodes, and a value rounded on the way reads back with no error: the
+		// typed path has to give what an in-process publish gives.
+		select {
+		case w := <-got:
+			if w != want {
+				t.Fatalf("the payload decoded as %+v, want %+v", w, want)
+			}
+		case err := <-failed:
+			t.Fatalf("DecodePayload: %v", err)
+		case <-time.After(10 * time.Second):
+			t.Fatal("timed out waiting for the event to arrive")
+		}
+	})
+
 	t.Run("every subscriber receives the identifier the bus assigned", func(t *testing.T) {
 		b, start := newBus(t)
 		first, second := make(chan string, 2), make(chan string, 2)

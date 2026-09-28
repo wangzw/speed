@@ -509,8 +509,8 @@ func (b *bus) drain(reading, handling context.Context) error {
 			// unmarked for this replica.
 			return nil
 		}
-		var payload any
-		if err := json.Unmarshal([]byte(r.payload), &payload); err == nil {
+		// The payload's numbers keep their decimal text; see dispatch.Payload.
+		if payload, err := dispatch.Payload([]byte(r.payload)); err == nil {
 			r.evt.Payload = payload
 		}
 		b.table.Deliver(handling, r.evt)

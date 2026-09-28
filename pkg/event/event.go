@@ -146,8 +146,13 @@ type Bus interface {
 // A payload reaches this package in one of two shapes: a same-process publish
 // hands over the publisher's own concrete value, while a bus backed by a
 // transport delivers whatever that transport decoded, ordinarily a
-// map[string]any carrying the same serialization. A subscriber reads either the
-// same way.
+// map[string]any carrying the same serialization, with every number kept as a
+// json.Number. A subscriber reads either the same way.
+//
+// A number among the fields is a float64 in both shapes, exact for integers up
+// to 2^53 and rounded past it. A subscriber that reads a larger integer — an
+// identifier, an amount in cents — decodes the payload into a type of its own
+// with DecodePayload, which is exact in both shapes.
 //
 // It reports false when the payload is nil, cannot be serialized, or does not
 // decode to an object. It never panics and never returns a partial value: a
@@ -219,7 +224,10 @@ func PayloadBool(payload any, keys ...string) (bool, bool) {
 //
 // It is the typed counterpart of the probes: a subscriber that can name a shape
 // of its own, or that must surface the failure rather than drop the event,
-// decodes into it directly instead of probing field spellings.
+// decodes into it directly instead of probing field spellings. An integer field
+// reads exactly whatever its size, over a transport as in process: a transport
+// keeps each number's decimal text, which serializes back to what the publisher
+// wrote.
 func DecodePayload(payload any, v any) error {
 	encoded, err := json.Marshal(payload)
 	if err != nil {

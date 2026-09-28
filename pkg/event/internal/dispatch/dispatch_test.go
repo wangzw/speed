@@ -2,6 +2,7 @@ package dispatch
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"io"
 	"log/slog"
@@ -109,5 +110,40 @@ func TestTheDrivesCancellationDoesNotReachTheBus(t *testing.T) {
 	}
 	if got[0].Err() == nil {
 		t.Fatal("the reading context outlived the stop stage")
+	}
+}
+
+// TestPayloadKeepsEveryNumberAsItsText pins the transport-side decoding: a
+// number comes back as the decimal text the publisher's serialization wrote,
+// nested ones included, so an integer past 2^53 is not rounded on the way.
+func TestPayloadKeepsEveryNumberAsItsText(t *testing.T) {
+	got, err := Payload([]byte(`{"id":9007199254740993,"deal":{"amount":9223372036854775807},"ratio":0.25}`))
+	if err != nil {
+		t.Fatalf("Payload: %v", err)
+	}
+	fields, ok := got.(map[string]any)
+	if !ok {
+		t.Fatalf("the payload decoded as %T, want the ordinary map", got)
+	}
+	if id := fields["id"]; id != json.Number("9007199254740993") {
+		t.Fatalf("id decoded as %#v, want its text", id)
+	}
+	nested, _ := fields["deal"].(map[string]any)
+	if amount := nested["amount"]; amount != json.Number("9223372036854775807") {
+		t.Fatalf("the nested amount decoded as %#v, want its text", amount)
+	}
+	if ratio := fields["ratio"]; ratio != json.Number("0.25") {
+		t.Fatalf("ratio decoded as %#v, want its text", ratio)
+	}
+}
+
+// TestPayloadRefusesDataAfterItsValue keeps the decoder as strict as the
+// one-shot decoding it replaces: a payload is one value.
+func TestPayloadRefusesDataAfterItsValue(t *testing.T) {
+	if _, err := Payload([]byte(`{"a":1} {"b":2}`)); err == nil {
+		t.Fatal("a payload carrying a second value decoded without an error")
+	}
+	if _, err := Payload([]byte(" null \n")); err != nil {
+		t.Fatalf("a payload of null with surrounding whitespace: %v", err)
 	}
 }

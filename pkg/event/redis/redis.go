@@ -378,7 +378,8 @@ const (
 //
 // The payload is decoded into the ordinary shape rather than into whatever the
 // publisher held: this path has only what was written, and a subscriber reads a
-// payload structurally for exactly this reason.
+// payload structurally for exactly this reason. Its numbers keep their decimal
+// text; see dispatch.Payload.
 func decode(eventType string, values map[string]any) event.Event {
 	evt := event.Event{Type: eventType}
 	if v, ok := values[fieldID].(string); ok {
@@ -388,8 +389,7 @@ func decode(eventType string, values map[string]any) event.Event {
 		evt.TenantID = v
 	}
 	if raw, ok := values[fieldPayload].(string); ok {
-		var payload any
-		if err := json.Unmarshal([]byte(raw), &payload); err == nil {
+		if payload, err := dispatch.Payload([]byte(raw)); err == nil {
 			evt.Payload = payload
 		}
 	}

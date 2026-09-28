@@ -11,8 +11,12 @@
 package dispatch
 
 import (
+	"bytes"
 	"context"
+	"encoding/json"
+	"errors"
 	"fmt"
+	"io"
 	"log/slog"
 	"maps"
 	"slices"
@@ -156,6 +160,30 @@ func Stamp(evt event.Event) event.Event {
 		evt.ID = event.NewID()
 	}
 	return evt
+}
+
+// Payload turns the serialized payload a transport carried back into the shape
+// a subscriber reads: the ordinary decoded structure, with every number kept as
+// a json.Number — its decimal text — rather than a float64.
+//
+// A float64 holds integers exactly only up to 2^53, and an identifier or an
+// amount in cents goes past that. Decoded as a float64, such a value comes back
+// rounded, and a subscriber that decodes the payload into its own type reads
+// the rounded value with no error — or fails outright on the largest integers
+// — where an in-process publish would have handed it the exact one. Kept as
+// its text, a number serializes back to what the publisher wrote, so every
+// payload helper reads it as it reads the in-process shape.
+func Payload(raw []byte) (any, error) {
+	dec := json.NewDecoder(bytes.NewReader(raw))
+	dec.UseNumber()
+	var payload any
+	if err := dec.Decode(&payload); err != nil {
+		return nil, err
+	}
+	if _, err := dec.Token(); !errors.Is(err, io.EOF) {
+		return nil, fmt.Errorf("the payload carries data after its value")
+	}
+	return payload, nil
 }
 
 // Deliver runs every handler subscribed to evt's type, in subscription order,

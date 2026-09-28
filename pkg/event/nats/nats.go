@@ -423,7 +423,8 @@ type envelope struct {
 	Payload  json.RawMessage `json:"payload"`
 }
 
-// decode turns a message back into an event.
+// decode turns a message back into an event. The payload's numbers keep their
+// decimal text; see dispatch.Payload.
 func decode(eventType string, data []byte) event.Event {
 	evt := event.Event{Type: eventType}
 	var env envelope
@@ -431,8 +432,7 @@ func decode(eventType string, data []byte) event.Event {
 		evt.ID = env.ID
 		evt.TenantID = env.TenantID
 		if len(env.Payload) > 0 {
-			var payload any
-			if err := json.Unmarshal(env.Payload, &payload); err == nil {
+			if payload, err := dispatch.Payload(env.Payload); err == nil {
 				evt.Payload = payload
 			}
 		}
