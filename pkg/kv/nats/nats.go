@@ -58,7 +58,7 @@ const (
 // Config is what this implementation accepts.
 type Config struct {
 	// URL is the server to connect to. A host that names this implementation
-	// has to give it one.
+	// has to give it one. Marked sensitive: it carries the credentials.
 	URL string `config:"url"`
 	// Bucket is the key-value bucket to use.
 	Bucket string `config:"bucket"`
@@ -85,8 +85,12 @@ func Module() core.Module {
 		Config:          &Config{Bucket: defaultBucket, Timeout: defaultTimeout},
 		Items: map[string]config.Item{
 			urlKey: {
-				Description: "the NATS server to connect to; an assembly that names this " +
-					"implementation has to give it one",
+				// A NATS URL carries the credentials to connect with — a user
+				// and password or a token in its authority — so it must not
+				// reach logs, diagnostics or the help output.
+				Sensitive: true,
+				Description: "the NATS server to connect to, with any credentials in the URL; an " +
+					"assembly that names this implementation has to give it one",
 			},
 			bucketKey: {
 				Description: "the JetStream key-value bucket entries are kept in",

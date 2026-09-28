@@ -11,6 +11,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/vislake/speed/pkg/config"
 	"github.com/vislake/speed/pkg/core"
 	"github.com/vislake/speed/pkg/internal/natstest"
 	"github.com/vislake/speed/pkg/kv"
@@ -86,6 +87,27 @@ func TestStanceTreatsABlankServerAsNone(t *testing.T) {
 		if want := ConfigNamespace + "." + urlKey; !strings.Contains(err.Error(), want) {
 			t.Errorf("the error for url %q does not name %q: %v", url, want, err)
 		}
+	}
+}
+
+// TestTheServerURLIsSensitive covers the credentials a NATS URL carries. The
+// client reads a user and password or a token from it (nats://user:secret@host),
+// and an item not marked sensitive is printed by the help output and the
+// diagnostics as it was given.
+func TestTheServerURLIsSensitive(t *testing.T) {
+	var schema config.Schema
+	for _, resource := range Module().Resources {
+		if s, ok := resource.(config.Schema); ok {
+			schema = s
+		}
+	}
+	item, ok := schema.Items[urlKey]
+	if !ok {
+		t.Fatalf("the module declares no %q item", urlKey)
+	}
+	if !item.Sensitive {
+		t.Fatalf("%s.%s is not marked sensitive, and a URL carries the credentials to connect with",
+			ConfigNamespace, urlKey)
 	}
 }
 
