@@ -437,53 +437,75 @@ func (s *store) increment(ctx context.Context, key string, delta float64, ttl ti
 
 // CompareAndSwap writes only on a match, and never touches the expiry.
 func (s *store) CompareAndSwap(ctx context.Context, key string, old, newVal []byte) (bool, error) {
+	return s.writeIf(ctx, key, func(value []byte, expires time.Time, live bool) ([]byte, time.Time, bool) {
+		if !live {
+			// Missing or expired reads as empty, so only an empty old
+			// matches, and the write creates the key without an expiry.
+			value, expires = nil, time.Time{}
+		}
+		if !bytes.Equal(value, old) {
+			return nil, time.Time{}, false
+		}
+		// The expiry is carried over rather than reset: the swap never
+		// changes when a key stops being visible.
+		return newVal, expires, true
+	})
+}
+
+// decision is what a conditional write makes of the entry it found: the value
+// it read, that value's expiry, and whether the key is live. It returns the
+// value and expiry to write, or false to leave the entry alone.
+type decision func(value []byte, expires time.Time, live bool) ([]byte, time.Time, bool)
+
+// writeIf writes what decide asks for, only if the entry decide judged is
+// still the key's latest, and reports whether it wrote.
+//
+// Every write here is conditional on the server: a key with no entry is
+// created, which fails when someone else created it first, and an entry that
+// is there — live or past its expiry — is replaced under the revision it was
+// read at, which fails when anyone else has written it since. An expired entry
+// goes through the second path like a live one, since it is this package and
+// not the server that decided it aged out, and replacing it under its revision
+// is what gives several writers racing for it exactly one winner.
+//
+// A write refused because the entry changed is not an answer yet: the entry is
+// read again and judged afresh, and the loop ends when decide refuses what is
+// now there or a write lands. Answering false on the refusal alone would be
+// wrong whenever the writer that got in first left the entry still matching.
+func (s *store) writeIf(ctx context.Context, key string, decide decision) (bool, error) {
 	encoded := encodeKey(key)
-	entry, err := s.bucket.Get(ctx, encoded)
-	if errors.Is(err, jetstream.ErrKeyNotFound) {
-		if len(old) > 0 {
-			return false, nil
+	for attempt := 0; attempt < casAttempts; attempt++ {
+		if err := ctx.Err(); err != nil {
+			return false, err
 		}
-		if createErr := s.create(ctx, encoded, expiry.Wrap(newVal, time.Time{}), time.Time{}); createErr != nil {
-			if errors.Is(createErr, errContended) {
+		entry, err := s.bucket.Get(ctx, encoded)
+		switch {
+		case errors.Is(err, jetstream.ErrKeyNotFound):
+			value, expires, ok := decide(nil, time.Time{}, false)
+			if !ok {
 				return false, nil
 			}
-			return false, createErr
-		}
-		return true, nil
-	}
-	if err != nil {
-		return false, err
-	}
-	value, expires, live := expiry.UnwrapFull(entry.Value())
-	if !live {
-		// Expired reads as absent, so only an empty old matches, and the write
-		// that follows creates it without an expiry.
-		if len(old) > 0 {
-			return false, nil
-		}
-		if err := s.update(ctx, encoded, expiry.Wrap(newVal, time.Time{}), time.Time{}, entry.Revision()); err != nil {
-			// Someone else wrote or removed it in between, which is a swap
-			// that did not happen rather than a failure.
-			if errors.Is(err, errContended) {
+			err = s.create(ctx, encoded, expiry.Wrap(value, expires), expires)
+		case err != nil:
+			return false, err
+		default:
+			current, currentExpires, live := expiry.UnwrapFull(entry.Value())
+			value, expires, ok := decide(current, currentExpires, live)
+			if !ok {
 				return false, nil
 			}
+			err = s.update(ctx, encoded, expiry.Wrap(value, expires), expires, entry.Revision())
+		}
+		if errors.Is(err, errContended) {
+			retry.Backoff(attempt)
+			continue
+		}
+		if err != nil {
 			return false, err
 		}
 		return true, nil
 	}
-	if !bytes.Equal(value, old) {
-		return false, nil
-	}
-	// The expiry is carried over rather than reset.
-	if updateErr := s.update(ctx, encoded, expiry.Wrap(newVal, expires), expires, entry.Revision()); updateErr != nil {
-		// Someone else wrote or removed it in between, which is a swap that
-		// did not happen rather than a failure.
-		if errors.Is(updateErr, errContended) {
-			return false, nil
-		}
-		return false, updateErr
-	}
-	return true, nil
+	return false, fmt.Errorf("%s: %q stayed contested across %d attempts", ModuleName, key, casAttempts)
 }
 
 func formatFloat(v float64) string { return strconv.FormatFloat(v, 'g', -1, 64) }

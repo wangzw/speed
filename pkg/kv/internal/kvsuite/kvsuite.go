@@ -549,6 +549,51 @@ func AssertConforms(t *testing.T, newStore Factory) {
 		}
 	})
 
+	t.Run("a swap whose match holds throughout always happens", func(t *testing.T) {
+		s := newStore(t)
+		ctx := context.Background()
+		// Every writer swaps the value for the same value, so it matches every
+		// writer's old at every moment and each swap finds what it expects,
+		// whichever order they land in. A store that reports a write refused
+		// for contention as a mismatch, without judging the entry again,
+		// answers false here although nothing ever failed to match.
+		if err := s.Set(ctx, "k", []byte("v"), 0); err != nil {
+			t.Fatalf("Set: %v", err)
+		}
+		const rounds, writers = 20, 8
+		race := func(key string, value []byte) {
+			start := make(chan struct{})
+			var wg sync.WaitGroup
+			refused := make(chan error, writers)
+			for range writers {
+				wg.Add(1)
+				go func() {
+					defer wg.Done()
+					<-start
+					swapped, err := s.CompareAndSwap(ctx, key, value, value)
+					if err != nil || !swapped {
+						refused <- fmt.Errorf("swapped=%v err=%w", swapped, err)
+					}
+				}()
+			}
+			close(start)
+			wg.Wait()
+			close(refused)
+			for err := range refused {
+				t.Fatalf("a swap of %q from %q, which always matched, did not happen: %v", key, value, err)
+			}
+		}
+		for range rounds {
+			race("k", []byte("v"))
+		}
+		// An absent key and an empty value both match an empty old, so the
+		// writers racing to create an empty value all match too: the first
+		// creates it, and each of the others finds it matching.
+		for round := range rounds {
+			race(fmt.Sprintf("absent-%d", round), nil)
+		}
+	})
+
 	t.Run("concurrent set-if-absent on an expired key has exactly one winner", func(t *testing.T) {
 		s := newStore(t)
 		raceOnExpiredKeys(t, s, func(key string, mine []byte) (bool, error) {

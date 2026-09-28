@@ -12,11 +12,11 @@
 // to get one table created would make every host that wants a counter carry
 // GORM.
 //
-// The two operations that have to be atomic are one transaction each. A
-// transaction rather than a single statement because an expired row has to go
-// before the write: PostgreSQL's ON CONFLICT would otherwise find the row and
-// take the update branch, leaving a key that the capability says must read as
-// absent.
+// Every operation that has to be atomic is one statement, which the server
+// arbitrates, except the increment. It is one transaction, because an expired
+// row has to go before the write: PostgreSQL's ON CONFLICT would otherwise find
+// the row and take the update branch, and the counter would go on from a value
+// the capability says is no longer there.
 package postgres
 
 import (
@@ -420,71 +420,45 @@ func (s *store) increment(ctx context.Context, key string, delta float64, ttl ti
 
 // CompareAndSwap writes only on a match, and never touches the expiry.
 //
-// The insert branch carries the match too: a key that is not there matches an
-// empty old, and anything else must not be written. Without that condition an
-// absent key would be created whatever old was.
+// Each case is one statement, so the server arbitrates the whole swap and no
+// write between a comparison and its write can be taken for a mismatch. A row
+// a concurrent statement is writing is waited for, and the condition is judged
+// again against the row as that statement left it.
 func (s *store) CompareAndSwap(ctx context.Context, key string, old, newVal []byte) (bool, error) {
 	old, newVal = nonNull(old), nonNull(newVal)
-
-	tx, beginErr := s.pool.Begin(ctx)
-	if beginErr != nil {
-		return false, beginErr
-	}
-	defer func() { _ = tx.Rollback(ctx) }()
-
-	if _, deleteErr := tx.Exec(ctx,
-		`DELETE FROM `+table+` WHERE key = $1 AND expires_at IS NOT NULL AND expires_at <= now()`,
-		spell(key)); deleteErr != nil {
-		return false, deleteErr
-	}
-
-	// The swap is two statements rather than one, and that is what the
-	// semantics need. A single INSERT ... ON CONFLICT cannot express it: the
-	// conflict branch only runs when an insert is attempted, and the insert has
-	// to be conditional on the key being absent, so a guarded INSERT never
-	// attempts one and its ON CONFLICT never fires.
-	//
-	// The comparison casts explicitly. Left to itself the server infers a text
-	// parameter from the comparison against a bytea column and then refuses it:
-	// `operator does not exist: bytea = text`.
 	var one int
-	updateErr := tx.QueryRow(ctx,
-		`UPDATE `+table+` SET value = $2 WHERE key = $1 AND value = $3::bytea RETURNING 1`,
-		spell(key), newVal, old).Scan(&one)
-	if updateErr == nil {
-		if commitErr := tx.Commit(ctx); commitErr != nil {
-			return false, commitErr
-		}
-		return true, nil
-	}
-	if !errors.Is(updateErr, pgx.ErrNoRows) {
-		return false, updateErr
-	}
-
-	// Nothing matched. A key that is not there matches an empty old, which is
-	// what makes this set-if-absent; anything else must not be written.
+	var err error
 	if len(old) > 0 {
+		// Only a live row can hold a non-empty value to match.
+		err = s.pool.QueryRow(ctx,
+			`UPDATE `+table+` SET value = $2 WHERE key = $1 AND value = $3::bytea AND `+live+` RETURNING 1`,
+			spell(key), newVal, old).Scan(&one)
+	} else {
+		err = s.pool.QueryRow(ctx, swapFromEmpty, spell(key), newVal).Scan(&one)
+	}
+	if errors.Is(err, pgx.ErrNoRows) {
 		return false, nil
 	}
-	insertErr := tx.QueryRow(ctx,
-		`INSERT INTO `+table+` (key, value) VALUES ($1, $2)
-		 ON CONFLICT (key) DO NOTHING
-		 RETURNING 1`,
-		spell(key), newVal).Scan(&one)
-	if errors.Is(insertErr, pgx.ErrNoRows) {
-		// Something took the key between the two statements — or it is there
-		// with a value that is not empty — so the swap did not happen. An
-		// expected outcome, not a failure.
-		return false, nil
-	}
-	if insertErr != nil {
-		return false, insertErr
-	}
-	if commitErr := tx.Commit(ctx); commitErr != nil {
-		return false, commitErr
+	if err != nil {
+		return false, err
 	}
 	return true, nil
 }
+
+// swapFromEmpty is the swap for an empty old, which a missing key, an expired
+// one and an empty value all match.
+//
+// A missing key is created without an expiry. A row that is there is replaced
+// only when it matches: an expired row loses its expiry with its value, since
+// the key it held was absent, and a live empty one keeps its expiry, since the
+// swap never changes it. The conflict branch locks the row it found, so
+// several writers racing for one key are judged one after another, each
+// against what the one before it left.
+const swapFromEmpty = `INSERT INTO ` + table + ` (key, value) VALUES ($1, $2)
+	ON CONFLICT (key) DO UPDATE SET value = EXCLUDED.value,
+		expires_at = CASE WHEN ` + table + `.expires_at <= now() THEN NULL ELSE ` + table + `.expires_at END
+	WHERE ` + table + `.value = ''::bytea OR ` + table + `.expires_at <= now()
+	RETURNING 1`
 
 // expiryFrom is the SQL for the instant a row stops being visible, given a
 // statement parameter holding the ttl in microseconds; zero means no expiry.
