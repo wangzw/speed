@@ -230,8 +230,16 @@ func (d *dependant) module() core.Module {
 // dependant's unmet requirement rather than a run that quietly did nothing.
 func runAssembly(t *testing.T, dsn string) (db.Database, error) {
 	t.Helper()
+	return runAssemblyWith(t, context.Background(), map[string]any{"dsn": dsn})
+}
+
+// runAssemblyWith is runAssembly over a section the case writes in full, driven
+// under a context the case hands in: a deadline on it is a deadline on the
+// whole startup, the way a host bounds one.
+func runAssemblyWith(t *testing.T, parent context.Context, section map[string]any) (db.Database, error) {
+	t.Helper()
 	body, err := json.Marshal(map[string]any{
-		"db": map[string]any{"postgres": map[string]any{"dsn": dsn}},
+		"db": map[string]any{"postgres": section},
 	})
 	if err != nil {
 		t.Fatalf("building the primary configuration source: %v", err)
@@ -264,7 +272,7 @@ func runAssembly(t *testing.T, dsn string) (db.Database, error) {
 	app.Root().IncludeAll()
 	app.Root().Do(core.StageServe, nil)
 
-	ctx, cancel := context.WithCancel(context.Background())
+	ctx, cancel := context.WithCancel(parent)
 	done := make(chan error, 1)
 	go func() { done <- app.Execute(ctx) }()
 

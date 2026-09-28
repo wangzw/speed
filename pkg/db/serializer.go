@@ -68,6 +68,20 @@ func keysInContext(ctx context.Context) (*keyRing, bool) {
 // builds a statement's SQL, so the material is in place before any field of it
 // is serialised.
 //
+// The handle's own context carries the key as well. A statement derived from
+// the handle starts from that context, and that is the only way the key reaches
+// a call that runs no callback chain at all: ScanRows scans a result set on a
+// statement of its own, and on the delivered handle that statement is built
+// from the handle's context and nothing else. A caller that replaced the
+// context with WithContext takes that copy away, which is why the injection
+// stays the path every chain relies on.
+//
+// The injection is followed on the write and query chains by the callbacks in
+// encryptedwrites.go and encryptedreads.go. GORM applies a field's serializer
+// only where it reads the value from, or scans it into, a field of the parsed
+// model, so a map, an assignment list or a destination of another type would
+// otherwise carry the plaintext in or the ciphertext out with no error.
+//
 // An assembly with no root key installs a nil ring all the same. The serializer
 // then reports which key is missing instead of reporting that the handle does
 // not belong to this package, and the two are different answers for an
@@ -83,6 +97,7 @@ func installEncryption(session *gorm.DB, namespace string, cfg Config) error {
 	// first needs it would find it whether or not this handle was assembled
 	// at all.
 	schema.RegisterSerializer(encryptedSerializerName, encryptedSerializer{})
+	session.Statement.Context = contextWithKeys(session.Statement.Context, keys)
 
 	inject := func(tx *gorm.DB) {
 		tx.Statement.Context = contextWithKeys(tx.Statement.Context, keys)
@@ -94,6 +109,13 @@ func installEncryption(session *gorm.DB, namespace string, cfg Config) error {
 	// registered anyway, so that the rule is "every chain" rather than a list
 	// that has to stay right, and the cost of it is a context value on
 	// statements that will not look at one.
+	//
+	// The sealing and the guard are anchored after the injection, because
+	// what they build carries the statement's context and the key has to be
+	// on it by then; and right before the step that builds the SQL, so that a
+	// model hook that set a column on the way has already done so. The values
+	// sealed into a caller's map go back into it right after that step, before
+	// anything else on the chain reads the map.
 	return errors.Join(
 		cb.Create().Before("gorm:create").Register(keyInjectionCallbackName, inject),
 		cb.Update().Before("gorm:update").Register(keyInjectionCallbackName, inject),
@@ -101,6 +123,17 @@ func installEncryption(session *gorm.DB, namespace string, cfg Config) error {
 		cb.Query().Before("gorm:query").Register(keyInjectionCallbackName, inject),
 		cb.Row().Before("gorm:row").Register(keyInjectionCallbackName, inject),
 		cb.Raw().Before("gorm:raw").Register(keyInjectionCallbackName, inject),
+
+		cb.Create().Before("gorm:create").After(keyInjectionCallbackName).
+			Register(sealWritesCallbackName, sealCreate),
+		cb.Create().After("gorm:create").Before("gorm:save_after_associations").
+			Register(restoreWritesCallbackName, restoreCallerValues),
+		cb.Update().Before("gorm:update").After(keyInjectionCallbackName).
+			Register(sealWritesCallbackName, sealUpdate),
+		cb.Update().After("gorm:update").Before("gorm:save_after_associations").
+			Register(restoreWritesCallbackName, restoreCallerValues),
+		cb.Query().Before("gorm:query").After(keyInjectionCallbackName).
+			Register(guardReadsCallbackName, guardReads),
 	)
 }
 
@@ -173,9 +206,11 @@ func (encryptedSerializer) Scan(ctx context.Context, field *schema.Field, dst re
 // keysOfStatement takes the material the handle put on this statement.
 //
 // Both ways of finding none are reported rather than encrypted around. A
-// statement whose context carries no material was not built by a handle this
-// package opened — a handle of the caller's own, or one whose statement was
-// replaced wholesale — and one whose material is nil ran on an assembly whose
+// statement whose context carries no material either came from a handle this
+// package did not open, or reached the field through a call that runs no
+// callback chain on a context the caller replaced — ScanRows on a handle given
+// WithContext is that call, since the scan builds its statement from that
+// context alone. One whose material is nil ran on an assembly whose
 // configuration gave no root key. Sealing under a key nobody chose would write
 // a column nothing can ever open, and the data would be wrong with no error
 // anywhere near it, so both are refused where the field is reached.
@@ -184,7 +219,10 @@ func keysOfStatement(ctx context.Context, field *schema.Field) (*keyRing, error)
 	switch {
 	case !ok:
 		return nil, fmt.Errorf("db: field %s is encrypted, and the statement it travelled on "+
-			"carries no encryption key: it was not built by a handle this module opened",
+			"carries no encryption key. Either the handle is not one this module opened, or the "+
+			"field was reached by a call that runs no callback chain on a context the caller "+
+			"replaced — ScanRows on a handle given WithContext is one: call ScanRows on the "+
+			"handle Rows was called on, or on the delivered handle itself",
 			fieldName(field))
 	case keys == nil:
 		return nil, fmt.Errorf("db: field %s is encrypted, and the database this statement ran on "+
