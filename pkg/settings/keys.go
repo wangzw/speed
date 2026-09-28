@@ -82,6 +82,9 @@ type keyEntry struct {
 // with no declaration a certain failure.
 type keyTable struct {
 	entries map[string]keyEntry
+	// listing is every entry as Declared reports it, in the keys' byte
+	// order. It is built with the table, since neither changes afterwards.
+	listing []DeclaredItem
 }
 
 // lookup returns the declaration of a key.
@@ -135,7 +138,32 @@ func buildKeyTable(reg *core.Registry) (*keyTable, error) {
 			table.entries[entry.key] = entry
 		}
 	}
+	for _, key := range slices.Sorted(maps.Keys(table.entries)) {
+		table.listing = append(table.listing, declaredItem(table.entries[key]))
+	}
 	return table, nil
+}
+
+// declaredItem builds the listing entry of one declared item.
+//
+// It is the single place such an entry is built, because withholding a
+// sensitive item's default is a property of the listing rather than of a
+// caller: the listing exists to reach a client — an administrative endpoint's
+// response, a command's output — and a credential compiled in as a default
+// does not earn that reach by being declared. A second place building an entry
+// is a second place that can forget to withhold it.
+func declaredItem(entry keyEntry) DeclaredItem {
+	item := DeclaredItem{
+		Key:     entry.key,
+		Module:  entry.module,
+		Type:    entry.typ,
+		Default: entry.defText,
+		Item:    entry.item,
+	}
+	if entry.item.Sensitive {
+		item.Default = ""
+	}
+	return item
 }
 
 // expandSchema turns one module's declaration into its setting items: it walks

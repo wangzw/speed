@@ -3,6 +3,7 @@ package settings
 import (
 	"context"
 	"errors"
+	"slices"
 	"strings"
 	"testing"
 	"time"
@@ -99,6 +100,13 @@ func TestTheModuleDrivesAndServes(t *testing.T) {
 			}
 			if entries, err := store.List(ctx, ForTenant("t1")); err != nil || len(entries) != 1 {
 				t.Errorf("List returned %+v (%v), want one row", entries, err)
+			}
+			// Another module's declaration, read through the delivered
+			// capability rather than restated here.
+			if !slices.ContainsFunc(store.Declared(), func(d DeclaredItem) bool {
+				return d.Key == "demo.limit" && d.Module == "test.declarer" && d.Default == "100"
+			}) {
+				t.Errorf("Declared does not list test.declarer's demo.limit: %+v", store.Declared())
 			}
 			return nil
 		},

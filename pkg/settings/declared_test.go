@@ -1,0 +1,225 @@
+package settings
+
+import (
+	"context"
+	"errors"
+	"fmt"
+	"net/netip"
+	"reflect"
+	"strings"
+	"testing"
+	"time"
+
+	"gorm.io/gorm"
+
+	"github.com/vislake/speed/pkg/core"
+	"github.com/vislake/speed/pkg/db"
+)
+
+// listingPolicy and listingNotify are two modules' declarations: the shape an
+// administrative surface lists without restating either of them.
+type listingPolicy struct {
+	Window  time.Duration
+	Limit   int
+	Opens   time.Time
+	Gateway netip.Addr
+}
+
+type listingNotify struct {
+	Template string
+	Token    string
+	Ratio    float32
+	Channel  listingChannel
+}
+
+// listingChannel is a defined string, the ordinary shape of an enumeration.
+type listingChannel string
+
+// listingSecret is the sensitive default listingModules declares, which no
+// listing may carry.
+const listingSecret = "hunter2"
+
+func listingModules() []core.Module {
+	policy := listingPolicy{
+		Window:  90 * time.Second,
+		Limit:   100,
+		Opens:   time.Date(2026, 9, 21, 12, 30, 0, 0, time.UTC),
+		Gateway: netip.MustParseAddr("10.0.0.1"),
+	}
+	notify := listingNotify{Template: "Hello {{.Name}}", Token: listingSecret, Ratio: 0.1, Channel: "mail"}
+	return []core.Module{
+		declaring("test.policy", Schema{
+			Namespace: "policy",
+			Mounts:    []Mount{{Value: &policy}},
+			Items:     map[string]Item{"limit": {Description: "requests per window"}},
+		}),
+		declaring("test.notify", Schema{
+			Namespace: "notify",
+			Mounts:    []Mount{{Path: "mail", Value: &notify}},
+			Items: map[string]Item{
+				"mail.template": {Description: "the message body"},
+				"mail.token":    {Description: "the gateway credential", Sensitive: true},
+			},
+		}),
+	}
+}
+
+// Declared lists every item of every declaring module, in the keys' byte
+// order, with the declarer, the declared type, the default in the text a row
+// would hold, and the metadata.
+//
+// Each field is one a surface over the settings cannot get elsewhere without
+// restating the declaration: the type is what a read's target has to be, the
+// default is what a key with no row reads as, and the description is written
+// nowhere else. The default is the declared type's own text — a time as its
+// MarshalText writes it, not as it prints — because that text is what Set
+// takes back and what List reports for a row holding the same value.
+func TestDeclaredListsEveryItemOfEveryModule(t *testing.T) {
+	keys := tableOf(t, listingModules()...)
+	store, _ := storeOf(t, keys, newRecordingBus())
+
+	want := []DeclaredItem{
+		{Key: "notify.mail.channel", Module: "test.notify", Type: reflect.TypeFor[listingChannel](), Default: "mail"},
+		{Key: "notify.mail.ratio", Module: "test.notify", Type: reflect.TypeFor[float32](), Default: "0.1"},
+		{
+			Key: "notify.mail.template", Module: "test.notify", Type: reflect.TypeFor[string](),
+			Default: "Hello {{.Name}}", Item: Item{Description: "the message body"},
+		},
+		{
+			Key: "notify.mail.token", Module: "test.notify", Type: reflect.TypeFor[string](),
+			Item: Item{Description: "the gateway credential", Sensitive: true},
+		},
+		{Key: "policy.gateway", Module: "test.policy", Type: reflect.TypeFor[netip.Addr](), Default: "10.0.0.1"},
+		{
+			Key: "policy.limit", Module: "test.policy", Type: reflect.TypeFor[int](),
+			Default: "100", Item: Item{Description: "requests per window"},
+		},
+		{Key: "policy.opens", Module: "test.policy", Type: reflect.TypeFor[time.Time](), Default: "2026-09-21T12:30:00Z"},
+		{Key: "policy.window", Module: "test.policy", Type: reflect.TypeFor[time.Duration](), Default: "1m30s"},
+	}
+	got := store.Declared()
+	if len(got) != len(want) {
+		t.Fatalf("Declared listed %d items, want %d: %+v", len(got), len(want), got)
+	}
+	for i := range want {
+		if !reflect.DeepEqual(got[i], want[i]) {
+			t.Errorf("item %d is %+v, want %+v", i, got[i], want[i])
+		}
+	}
+}
+
+// A sensitive item is listed with its metadata and without its default.
+//
+// The listing exists to reach a client: an administrative endpoint's response,
+// a command's output. A credential compiled in as a default does not earn that
+// reach by being declared, so the listing carries the fact that the item is
+// sensitive and nothing it holds.
+func TestDeclaredWithholdsASensitiveDefault(t *testing.T) {
+	store, _ := storeOf(t, tableOf(t, listingModules()...), newRecordingBus())
+	listed := store.Declared()
+	if rendered := fmt.Sprintf("%#v", listed); strings.Contains(rendered, listingSecret) {
+		t.Errorf("the listing carries the sensitive default: %s", rendered)
+	}
+	for _, item := range listed {
+		if item.Key == "notify.mail.token" && !item.Sensitive {
+			t.Errorf("the credential is listed as an ordinary item, so nothing tells a surface to "+
+				"mask the rows List hands out for it: %+v", item)
+		}
+	}
+}
+
+// The listing answers before the snapshot is loaded, where a read does not.
+//
+// A read before the load is refused because the snapshot is not there to say
+// what the table holds; the listing reads the key table alone, which is
+// complete once the store is constructed. A module that lists the settings in
+// its own Init, or a command whose drive stops short of this module's Init,
+// gets the full listing either way.
+func TestDeclaredAnswersBeforeTheSnapshotLoads(t *testing.T) {
+	store := newSettingsStore(tableOf(t, listingModules()...),
+		stubDatabase{handle: open(t), dialect: db.SQLite}, newRecordingBus(), moduleSettings{})
+	if _, err := Get[int](store, Global(), "policy.limit"); !errors.Is(err, ErrNotLoaded) {
+		t.Fatalf("a read before the load returned %v, want ErrNotLoaded", err)
+	}
+	if listed := store.Declared(); len(listed) == 0 {
+		t.Error("the listing is empty before the snapshot loads")
+	}
+}
+
+// The listing handed out is the caller's own: modifying it changes nothing
+// the next caller receives.
+func TestDeclaredHandsOutTheCallersOwnListing(t *testing.T) {
+	store, _ := storeOf(t, tableOf(t, listingModules()...), newRecordingBus())
+	first := store.Declared()
+	first[0].Key = "changed"
+	first[0].Default = "changed"
+	if second := store.Declared(); second[0].Key == "changed" || second[0].Default == "changed" {
+		t.Errorf("a caller's change to its listing reached the next one: %+v", second[0])
+	}
+}
+
+// A surface built on nothing but the listing reads every item under its
+// listed type, writes the listed default back as text, and finds that text in
+// the rows, on either dialect.
+//
+// This is the use the listing is for: an endpoint that knows no declaration
+// of its own. A read's target has to be exactly the declared type, which only
+// the listed Type lets such a surface build; a default in any form other than
+// the declared type's own text would read as a different value than the one
+// the key serves, or be refused when written back.
+func TestAListingDrivesAnAdministrativeSurfaceOnEveryDialect(t *testing.T) {
+	dialects := []struct {
+		name    string
+		dialect db.Dialect
+		open    func(t *testing.T) *gorm.DB
+	}{
+		{"sqlite", db.SQLite, open},
+		{"postgres", db.Postgres, openPostgres},
+	}
+	for _, d := range dialects {
+		t.Run(d.name, func(t *testing.T) {
+			keys := tableOf(t, listingModules()...)
+			store := storeOn(t, d.open(t), d.dialect, keys, newRecordingBus())
+			ctx := context.Background()
+			tenant := ForTenant("t1")
+
+			listed := store.Declared()
+			for _, item := range listed {
+				if item.Sensitive {
+					continue
+				}
+				target := reflect.New(item.Type)
+				if err := store.Get(tenant, item.Key, target.Interface()); err != nil {
+					t.Fatalf("reading %q under its listed type %v: %v", item.Key, item.Type, err)
+				}
+				served, err := encodeValue(keys.entries[item.Key], target.Elem().Interface())
+				if err != nil || served != item.Default {
+					t.Errorf("%q serves %q (%v), and the listing gives its default as %q",
+						item.Key, served, err, item.Default)
+				}
+				err = store.Set(ctx, Write{Layer: tenant, Key: item.Key, Value: item.Default, Actor: "admin"})
+				if err != nil {
+					t.Errorf("writing the listed default of %q back returned %v", item.Key, err)
+				}
+			}
+
+			entries, err := store.List(ctx, tenant)
+			if err != nil {
+				t.Fatalf("listing the rows: %v", err)
+			}
+			rows := make(map[string]string, len(entries))
+			for _, e := range entries {
+				rows[e.Key] = e.Value
+			}
+			for _, item := range listed {
+				if item.Sensitive {
+					continue
+				}
+				if text, ok := rows[item.Key]; !ok || text != item.Default {
+					t.Errorf("the row of %q holds %q (present = %v), want the listed default %q",
+						item.Key, text, ok, item.Default)
+				}
+			}
+		})
+	}
+}

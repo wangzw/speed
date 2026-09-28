@@ -263,6 +263,15 @@ func (s *settingsStore) List(ctx context.Context, layer Layer) ([]Entry, error) 
 	return entries, nil
 }
 
+// Declared reports the key table's listing, built with the table in New and
+// unchanged afterwards. The copy is the caller's: a caller modifying it
+// reaches neither the listing nor the next caller's result, and the entries
+// carry nothing that shares storage with the table — a reflect.Type is
+// immutable and the rest are strings and booleans.
+func (s *settingsStore) Declared() []DeclaredItem {
+	return slices.Clone(s.keys.listing)
+}
+
 // listRow is one row of List's result.
 type listRow struct {
 	TenantID  string `gorm:"column:tenant_id"`

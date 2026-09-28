@@ -79,6 +79,9 @@ type Store interface {
 
     // List 列出 layer 指名的那一层的显式行。结果按键的字节序排列，与数据库的排序规则无关。
     List(ctx context.Context, layer Layer) ([]Entry, error)
+
+    // Declared 按键的字节序列出键表中的全部设置项；敏感项不带默认值。
+    Declared() []DeclaredItem
 }
 
 // Get 是 Store.Get 的泛型封装，像 core.Resolve 一样把断言收进函数里；
@@ -98,6 +101,14 @@ type Entry struct {
     Value     string
     Version   uint64
     UpdatedAt time.Time
+}
+
+type DeclaredItem struct {
+    Key     string       // 完整路径
+    Module  string       // 声明方模块
+    Type    reflect.Type // 声明类型：reflect.New(Type) 即 Get 接受的目标
+    Default string       // 声明类型自己的文本形式；敏感项为空
+    Item                 // 声明给出的说明与敏感标记
 }
 ```
 
@@ -198,7 +209,19 @@ err := store.Get(settings.ForTenant(tenantID), "ratelimit.window", &opts.Window)
 
 **写入的次序**：校验、落库、重载本进程快照、发布事件；发布失败不回滚、不改变返回值，见事件一节。**删除**只删指定的层，被删的键此后回落到下一级；**`Delete` 不过键表**——它是声明被删之后留在库中的旧行的清理路径，而读取与 `Set` 都被键表拦住；`List` 交出的是显式行，不是回落后的有效值。**`List` 的次序是键的字节序，由本模块排好**，不交给语句：数据库按排序规则比较文本，SQLite 逐字节比较，PostgreSQL 取建库时的排序规则，而常见的默认规则在第一级忽略标点，`a-b` 排在 `ab` 旁边而不是 `aa` 之前——交给语句，同一批行的次序就随命令所在的方言变化。
 
-**敏感项的值不进入本模块的任何日志与错误文本**。本模块的日志只写键与租户，不写值；敏感标记的作用面是事件载荷（见下）。
+**敏感项的值不进入本模块的任何日志与错误文本**。本模块的日志只写键与租户，不写值；敏感标记的作用面是事件载荷（见下）与设置项的列表（见列出设置项）。
+
+### 列出设置项
+
+`Declared` 按键的字节序列出键表中的全部设置项，与 `List` 同一种次序（[ADR-settings-declaration-2026-09-29](../../adr/adr-settings-declaration-2026-09-29.md)）。每一项带着键、声明方模块、声明类型、默认值与声明给出的元信息；它为管理面这类宿主代码而设，那里要列出别的模块声明的每一项，又不该复述它们的声明。
+
+**它只读键表**：键表在 `New` 建立、此后不变，`Declared` 因而不收上下文、不发起 IO，快照装载之前即可用——这一点与读取不同，读取在装载之前报 `ErrNotLoaded`。返回值是调用方自己的一份，改动它够不着键表，也够不着下一个调用方。
+
+**`Type` 是声明类型本身**：读取的目标必须恰为声明类型，`reflect.New(Type)` 即 `Get` 接受的目标，不认识这份声明的代码也能按类型读出一个键的值；类型的名字由它的 `String()` 给出。
+
+**`Default` 是声明类型自己的文本形式**，与一行持有同一个值时存下的文本相同：时长写作 `1m30s`，时间按它的 `MarshalText` 写出，而不是它打印出来的样子。这段文本 `Set` 原样收得下，`List` 对持有它的行也报出同一段文本；键的有效值因此可以由 `List` 的租户行、全局行与 `Default` 按回落规则推出，全程都是文本。**敏感项的 `Default` 为空**，`Sensitive` 同时说明它被扣下：列表的去处是客户端，一个编进二进制的凭据不因为被声明就获得传播到那里的资格。`Get` 与 `List` 对敏感项的行为不变，照常交出值，以列表的 `Sensitive` 遮蔽它们是宿主的事（见对宿主的要求）。
+
+**列表里没有而 `List` 里有的键，是声明被删之后留下的旧行**，也就是 `Delete` 要清理的那些。
 
 ### 事件
 
@@ -252,11 +275,12 @@ type Change struct {
 - **不要把本模块放进根命令。** 后果与租户、认证记下的同一条：它进入施加迁移那条命令的参与集并要在那里启动，而其表在该命令下的建立不受影响（迁移集按声明集取材，本模块在其中且不会被消解排除），真正的代价是它的输入项升格为全局参数、出现在每条命令的帮助里。
 - **在自己的 `Init` 里读设置的模块声明 `Requires (*settings.Store)(nil)`。** 不声明，它的初始化次序由名字决定，排在本模块之前时读取报 `ErrNotLoaded`（见读取面）；在请求路径上读取的模块不受影响，那时每个模块的 `Init` 都已跑完。
 - **写入面的访问控制由宿主负责。** 本模块不判权限，一个暴露到网络的写入口要由宿主自己鉴权。
+- **管理面自己遮蔽敏感项的值。** `Declared` 的列表不带敏感项的默认值，`List` 与 `Get` 却照常交出敏感项的值；把它们交给客户端的宿主，按列表里的 `Sensitive` 把这些值遮住。漏了这一步不报错，凭据随响应一起出去。
 - **租户标识由调用方从请求面取得**（`tenant.FromContext`），以 `ForTenant` 包成层选交给本模块；取不到租户时读全局层还是拒绝由调用方决定。写一个不在名册上的标识不会被本模块拒绝，读取它的行也不会——本模块不认识名册。
 
 ### 稳定性承诺
 
-`Layer`、`Global`、`ForTenant`、`Store`、`Get`、`Write`、`Entry`、`Schema`、`Mount`、`Item`、`Change`、`ChangedEventType`、`ModuleName` 与哨兵错误是本模块与其他模块之间的契约。键的路径派生规则与配置共用一条，改它同时改变两个模块的键名。变更事件的类型名与载荷字段名是发布方与订阅方之间的约定，改一个字段名会静默断开订阅方的读取（[event](design-event.md) 记有同一条）。
+`Layer`、`Global`、`ForTenant`、`Store`、`Get`、`Write`、`Entry`、`DeclaredItem`、`Schema`、`Mount`、`Item`、`Change`、`ChangedEventType`、`ModuleName` 与哨兵错误是本模块与其他模块之间的契约。键的路径派生规则与配置共用一条，改它同时改变两个模块的键名。变更事件的类型名与载荷字段名是发布方与订阅方之间的约定，改一个字段名会静默断开订阅方的读取（[event](design-event.md) 记有同一条）。
 
 表名、列名与迁移文件的组织是内部实现，不在契约面上。
 
@@ -282,7 +306,7 @@ type Change struct {
 
 ## UML 图
 
-下图给出契约面上的类型与模块内部的两份结构。图中画不出的约束：键表在装配期建立后只读；快照在 `Init` 与 `Start` 各装载一次，此后由写入重载、事件重载与周期刷新替换，替换是对整份的原子指针交换；层选由 `Global` 与 `ForTenant` 两个构造器产生，零值不是一个层。
+下图给出契约面上的类型与模块内部的结构。图中画不出的约束：键表在装配期建立后只读，`Declared` 交出的是它那份列表的拷贝；快照在 `Init` 与 `Start` 各装载一次，此后由写入重载、事件重载与周期刷新替换，替换是对整份的原子指针交换；层选由 `Global` 与 `ForTenant` 两个构造器产生，零值不是一个层。
 
 ```mermaid
 classDiagram
@@ -296,6 +320,14 @@ classDiagram
         +Set(ctx, w) error
         +Delete(ctx, layer, key, actor) error
         +List(ctx, layer) []Entry, error
+        +Declared() []DeclaredItem
+    }
+    class DeclaredItem {
+        +string Key
+        +string Module
+        +reflect.Type Type
+        +string Default
+        +Item Item
     }
     class Schema {
         +string Namespace
@@ -325,7 +357,8 @@ classDiagram
         +bool Sensitive
     }
     class keyTable {
-        -map byKey
+        -map entries
+        -[]DeclaredItem listing
     }
     class snapshot {
         -map values
@@ -343,6 +376,8 @@ classDiagram
     Write --> Layer : 携带
     Store ..> Write : 收
     Store ..> Entry : 交出
+    Store ..> DeclaredItem : 列出
+    keyTable --> DeclaredItem : 建表时排好
     settingsStore ..> Change : 发布
 ```
 
@@ -400,7 +435,7 @@ flowchart TD
 
 表不内嵌受租户约束的模型约定，读写它的语句自带租户条件；全局行与租户行落在同一个键空间里，主键因此覆盖"一个键在某一层至多一行"。**空的租户列是存储侧的表达**：接口上不存在"空租户"这个值，指名一层由层选承担（[ADR-settings-layer-2026-09-21](../../adr/adr-settings-layer-2026-09-21.md)）。
 
-**键表**是装配期由全部声明聚合出的只读映射：键到声明类型、默认值与元信息。它在 `New` 建立，装载快照与两个读写方向都读它。
+**键表**是装配期由全部声明聚合出的只读映射：键到声明类型、默认值（连同它的文本形式）与元信息，另带一份按键的字节序排好的设置项列表。它在 `New` 建立，装载快照、两个读写方向与 `Declared` 都读它；`Declared` 交出的是那份列表的拷贝。
 
 **快照**是全部已写入行在内存里的拷贝，两份索引：键与层到预解码值的映射，以及键与层到解码错误的映射（装载时解码失败的行）。它在 `Init` 装载、在 `Start` 再装载一次，此后由写入重载、事件重载与周期刷新整体替换；替换经一个原子指针完成，请求路径读到的永远是一份自洽的快照。
 
@@ -498,7 +533,7 @@ flowchart TD
 - **不保证两层之间的一致性快照。** 读取按层取值，两次读取之间任何一层都可能改变；把多个键拼成一个自洽的观察不是本模块的承诺。
 - **不保证租户标识在册。** 写入一个不在名册上的标识不会被拒绝，它留下的行没有租户读它；本模块不认识名册。
 - **不保证写入面被鉴权。** 访问控制由宿主负责（[ADR-settings-scope-2026-09-21](../../adr/adr-settings-scope-2026-09-21.md)）。
-- **不保证敏感项的值不外泄。** 事件载荷对敏感项遮蔽值，但值本身以文本存库、出现在 `Entry` 的返回里；保护库与调用方代码是宿主的责任。
+- **不保证敏感项的值不外泄。** 事件载荷与 `Declared` 的列表对敏感项遮蔽值，但值本身以文本存库、出现在 `Entry` 与 `Get` 的返回里；按列表的 `Sensitive` 遮蔽它们、保护库与调用方代码是宿主的责任。
 
 ### 接受的代价
 
@@ -526,10 +561,11 @@ flowchart TD
 
 | 能力 | 状态 | 代码 |
 |---|---|---|
-| 接口与数据类型 | 已实现 | `pkg/settings/settings.go` `Layer`、`Global`、`ForTenant`、`Store`、`Write`、`Entry`、`Schema`、`Mount`、`Item`、`Change`、`ChangedEventType`、`Get` |
+| 接口与数据类型 | 已实现 | `pkg/settings/settings.go` `Layer`、`Global`、`ForTenant`、`Store`、`Write`、`Entry`、`DeclaredItem`、`Schema`、`Mount`、`Item`、`Change`、`ChangedEventType`、`Get` |
 | 声明面与键表 | 已实现 | `pkg/settings/keys.go` `buildKeyTable`、`expandSchema`、`classifyLeaf`、`encodesToText`、`defaultText`、`fieldName`、`camelToKebab` |
 | 读取的三级回落与泛型封装 | 已实现 | `pkg/settings/store.go` `Get`；`pkg/settings/snapshot.go` `value`、`layer`；`pkg/settings/codec.go` `decodeValue`、`assignTarget` |
 | 写入面与版本递增 | 已实现 | `pkg/settings/store.go` `Set`、`writeRow`、`commit`、`landed`、`Delete`、`List`；`pkg/settings/codec.go` `encodeValue`、`coerce`、`textOf`、`marshalText` |
+| 设置项的列表与敏感默认值的扣下 | 已实现 | `pkg/settings/store.go` `Declared`；`pkg/settings/keys.go` `buildKeyTable`、`declaredItem` |
 | 设置表与它的迁移集 | 已实现 | `pkg/settings/snapshot.go` `tableName`、`row`；`pkg/settings/migrations/<方言>/0001_settings.sql` |
 | 快照的装载、刷新路径与原子替换 | 已实现 | `pkg/settings/snapshot.go` `loadSnapshot`、`snapshot`；`pkg/settings/store.go` `reload`、`swap`；`pkg/settings/refresh.go` `startRefresh`、`stopRefresh` |
 | 变更事件的发布与订阅 | 已实现 | `pkg/settings/store.go` `publish`；`pkg/settings/module.go` `subscribe` |

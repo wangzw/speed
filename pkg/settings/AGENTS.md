@@ -92,6 +92,14 @@ here must not cross, and how to run it.
   reach a message backend and every subscriber on it, and a credential does not
   earn that reach by being audited. A second place building a payload is a
   second place that can forget to withhold the values.
+- **`declaredItem` is the only place a listing entry is built.** `Declared`
+  exists to reach a client — an administrative endpoint's response, a
+  command's output — so withholding a sensitive item's default is a property
+  of the listing, the way withholding its values is a property of the change
+  payload. The listing is built once with the key table and handed out as a
+  copy, which is why `Declared` takes no context and answers before the first
+  load; a change that built it from the snapshot would give it both a failure
+  mode and `ErrNotLoaded`, neither of which a declaration has.
 - **`Delete` does not consult the key table, and that has one consequence.**
   It clears rows whose declaration is already gone, which is why it cannot
   refuse an undeclared key. When the key is still declared its sensitive marker

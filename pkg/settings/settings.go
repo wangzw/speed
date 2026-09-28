@@ -23,6 +23,7 @@ package settings
 import (
 	"context"
 	"fmt"
+	"reflect"
 	"strings"
 	"time"
 	"unicode"
@@ -196,6 +197,23 @@ type Store interface {
 	// It hands out the written rows rather than the values reads resolve to:
 	// nothing falls back here.
 	List(ctx context.Context, layer Layer) ([]Entry, error)
+
+	// Declared lists every declared setting item, ordered by the keys' bytes
+	// as List is: its key, the module that declared it, its declared type,
+	// its default and the metadata its declaration gave. It is what lets a
+	// surface over the settings — an administrative endpoint, a command that
+	// prints them — name every item, its type and its default without
+	// restating another module's declaration.
+	//
+	// It reads the key table, which is built before Init and never changes,
+	// so it takes no context, starts no IO and answers before the snapshot
+	// is loaded. The result is the caller's own to modify.
+	//
+	// A sensitive item's default is withheld, so nothing in the result is a
+	// value a sensitive item holds and it can reach a client as it is. Get
+	// and List still hand out a sensitive item's value; a surface built on
+	// them masks it by the Sensitive the listing reports.
+	Declared() []DeclaredItem
 }
 
 // Get is the generic wrapper over Store.Get, folding the assertion into the
@@ -237,6 +255,27 @@ type Entry struct {
 	UpdatedAt time.Time
 }
 
+// DeclaredItem is one declared setting item, as Declared reports it.
+type DeclaredItem struct {
+	// Key is the full path of the item, the one Get, Set, Delete and Entry
+	// name it by.
+	Key string
+	// Module is the name of the module that declared it.
+	Module string
+	// Type is the declared type. A read's target is a pointer to exactly this
+	// type, so reflect.New(Type) is a target Get accepts for the key.
+	Type reflect.Type
+	// Default is the declared default in the declared type's own text form:
+	// the text a row holding it would carry, which Set accepts back and which
+	// List reports for such a row. A duration's default reads "1m0s" and a
+	// time's reads as its MarshalText writes it. It is empty for a sensitive
+	// item, whatever the declaration holds.
+	Default string
+	// Item is the metadata the declaration gave. Its Sensitive also says that
+	// Default was withheld.
+	Item
+}
+
 // Schema is the resource type a module declares to state its setting items.
 // The module puts it in its descriptor's Resources, and this module collects
 // every one of them when it builds the key table.
@@ -265,10 +304,11 @@ type Mount struct {
 
 // Item is the metadata of one setting item.
 type Item struct {
-	// Description explains the item.
+	// Description explains the item. Declared reports it.
 	Description string
-	// Sensitive keeps the value out of change events: an event for a sensitive
-	// item carries neither the old nor the new value.
+	// Sensitive keeps the value out of change events and out of Declared: an
+	// event for a sensitive item carries neither the old nor the new value,
+	// and the listing carries no default for it.
 	Sensitive bool
 }
 
