@@ -103,6 +103,17 @@ must not cross, and how to run it.
   with a guess made here — a process-wide list of running journals, or a probe
   for the table on each handle — hands one run's rows to another's table,
   because the plugin instance is shared by every registry in the process.
+- **A connection built with `Open` that reaches the delivered audit table itself
+  is the delivered connection for its row**, which goes on the statement's own
+  session: through the delivered handle it would wait for the write lock its
+  own statement holds on SQLite, and stay behind a rollback on PostgreSQL.
+  `reachesDeliveredTable` asks the two engines which table each connection
+  reaches — the main database file on SQLite, the server's start time, the
+  database and the relation the table's name resolves to on PostgreSQL. Two
+  shortcuts break it: comparing locators, which spell one database many ways
+  and are the database module's to read; and taking "this connection has an
+  audit table" for "this is the delivered one", which a copy or another run's
+  database also has.
 - **A row that goes out on a connection of its own waits for the delivered
   database only within a bound.** A caller holding a transaction on the
   delivered handle holds that database's write lock — and, on a database held

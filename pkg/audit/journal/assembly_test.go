@@ -41,21 +41,31 @@ func assembled(t *testing.T, extra []core.Module, action func(ctx context.Contex
 	assembledAt(t, filepath.Join(t.TempDir(), "delivered.db"), extra, action)
 }
 
-// assembledAt is assembled on the delivered database the locator names.
+// assembledAt is assembled on the delivered SQLite database the locator names.
 func assembledAt(t *testing.T, dsn string, extra []core.Module,
+	action func(ctx context.Context, reg *core.Registry) error,
+) {
+	t.Helper()
+	assembledOn(t, sqlite.Module(), "sqlite", dsn, extra, action)
+}
+
+// assembledOn is assembled on the engine the module delivers, over the database
+// the locator names; engine is the key the module's input items sit under in
+// the db namespace.
+func assembledOn(t *testing.T, database core.Module, engine, dsn string, extra []core.Module,
 	action func(ctx context.Context, reg *core.Registry) error,
 ) {
 	t.Helper()
 	dir := t.TempDir()
 	// The log chain writes to a file of the case's own, so the records the
 	// modules write at startup stay out of the test's output.
-	body := fmt.Sprintf(`{"db":{"sqlite":{"dsn":%q}},"log":{"outputs":[{"to":"file","format":"json","path":%q}]}}`,
-		dsn, filepath.Join(dir, "log.json"))
+	body := fmt.Sprintf(`{"db":{%q:{"dsn":%q}},"log":{"outputs":[{"to":"file","format":"json","path":%q}]}}`,
+		engine, dsn, filepath.Join(dir, "log.json"))
 	locator := filepath.Join(dir, "config.json")
 	if err := os.WriteFile(locator, []byte(body), 0o600); err != nil {
 		t.Fatalf("writing the primary config source: %v", err)
 	}
-	modules := append([]core.Module{sqlite.Module(), log.Module(), Module()}, extra...)
+	modules := append([]core.Module{database, log.Module(), Module()}, extra...)
 
 	// The loader reads its own registry. The command line is given as empty
 	// and the prefix is one no machine carries variables under, so nothing
@@ -308,6 +318,96 @@ func TestAnOpenedConnectionsWriteFailsWithItsRecord(t *testing.T) {
 		}
 		return nil
 	})
+}
+
+// A connection built with Open onto the delivered database itself is recorded
+// the way the delivered connection is: in the delivered table, on the
+// statement's own session, inside the statement's own transaction — whichever
+// spelling of the database's file the connection was opened with.
+//
+// Sent through the delivered handle instead, the row would wait for the write
+// lock its own statement holds, and every such write would fail. The rolled-back
+// half is what tells the statement's own session from the delivered handle: a
+// row written through the delivered handle stays behind a rollback.
+func TestAConnectionOpenedOntoTheDeliveredDatabaseRecordsOnItsOwnSession(t *testing.T) {
+	for _, spelling := range []struct {
+		name string
+		of   func(t *testing.T, file string) string
+	}{
+		{name: "the delivered locator", of: func(_ *testing.T, file string) string { return file }},
+		{name: "a symbolic link to the file", of: func(t *testing.T, file string) string {
+			link := filepath.Join(t.TempDir(), "symbolic.db")
+			if err := os.Symlink(file, link); err != nil {
+				t.Fatalf("linking to the delivered file: %v", err)
+			}
+			return link
+		}},
+		{name: "a hard link to the file", of: func(t *testing.T, file string) string {
+			link := filepath.Join(t.TempDir(), "hard.db")
+			if err := os.Link(file, link); err != nil {
+				t.Fatalf("linking to the delivered file: %v", err)
+			}
+			return link
+		}},
+	} {
+		t.Run(spelling.name, func(t *testing.T) {
+			file := filepath.Join(t.TempDir(), "delivered.db")
+			assembledAt(t, file, nil, func(ctx context.Context, reg *core.Registry) error {
+				database, err := core.Resolve[db.Database](reg)
+				if err != nil {
+					t.Errorf("resolving the database capability: %v", err)
+					return errCaseFailed
+				}
+				handle := database.DB()
+				if createErr := handle.Exec(createOrders).Error; createErr != nil {
+					t.Errorf("creating the orders table: %v", createErr)
+					return errCaseFailed
+				}
+				again, err := database.Open(ctx, spelling.of(t, file))
+				if err != nil {
+					t.Errorf("opening the delivered database a second time: %v", err)
+					return errCaseFailed
+				}
+				defer func() { _ = db.Close(again) }()
+				busy := openedBusyTimeout(ctx, t, handle)
+
+				returned, err := within(selfWaitTimer, func() error {
+					return quietly(again).WithContext(ctx).Create(&order{ID: "o1", Note: "committed"}).Error
+				})
+				if !returned {
+					t.Errorf("a write on a connection opened onto the delivered database was still waiting "+
+						"after %v", selfWaitTimer)
+					return errCaseFailed
+				}
+				if err != nil {
+					t.Errorf("a write on a connection opened onto the delivered database gave %v, want it "+
+						"written and recorded", err)
+					return errCaseFailed
+				}
+				changed := errors.New("the caller changed its mind")
+				if err := again.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+					if err := tx.Create(&order{ID: "o2", Note: "rolled back"}).Error; err != nil {
+						return err
+					}
+					return changed
+				}); !errors.Is(err, changed) {
+					t.Errorf("the rolled-back transaction gave %v, want the caller's own error", err)
+					return errCaseFailed
+				}
+
+				if rows := statementRows(t, handle); len(rows) != 1 || rows[0].Object != "orders" {
+					t.Errorf("the delivered table holds the statement rows %+v, want the committed write's "+
+						"alone: the rolled-back one goes with its statement's transaction", rows)
+				}
+				var committed int64
+				if err := handle.Model(&order{}).Count(&committed).Error; err != nil || committed != 1 {
+					t.Errorf("the delivered database holds %d order(s) (%v), want the committed one", committed, err)
+				}
+				requireBusyTimeoutsHandedBack(ctx, t, handle, busy)
+				return nil
+			})
+		})
+	}
 }
 
 // A statement issued across tenants from a context that belonged to one has no

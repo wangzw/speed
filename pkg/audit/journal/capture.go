@@ -6,6 +6,7 @@ import (
 	"database/sql/driver"
 	"errors"
 	"fmt"
+	"os"
 	"strconv"
 	"time"
 
@@ -119,7 +120,10 @@ func (c *capture) Initialize(handle *gorm.DB) error {
 // instance is shared by every registry in the process and holds nothing, so the
 // answer has to come from the session: a guess made here — the only journal
 // running, or whichever handle has the table — would hand one run's rows to
-// another's table. How long that row may wait is bounded; see record.
+// another's table. How long that row may wait is bounded; see recordOpened. A
+// connection built with Open onto the delivered database itself is no
+// exception: its statement's session reaches the delivered table, and the row
+// is written there; see reachesDeliveredTable.
 //
 // A statement that has already failed is left alone. GORM runs every callback
 // of a processor whatever the ones before it did, so this one is reached by a
@@ -165,35 +169,51 @@ func captureOne(action string) func(*gorm.DB) {
 
 // record writes a statement's row.
 //
-// On the delivered connection it goes out on a session of its own on the
-// statement's connection: NewDB clears the conditions the statement being
-// recorded left on it, and the transaction underneath — if there is one — is not
-// one of them. Nothing is waited for there, because the row takes nothing the
-// statement does not already hold. On a connection built with Open it goes out
-// through the delivered handle; see recordOpened.
+// On the delivered connection it goes out on the statement's own session; see
+// onOwnSession. On a connection built with Open it goes out through the
+// delivered handle, unless that connection reaches the delivered table itself;
+// see recordOpened.
 func record(tx *gorm.DB, r row) error {
 	if delivered, opened := db.OpenedFrom(tx); opened {
 		return recordOpened(tx, delivered, r)
 	}
+	return onOwnSession(tx, r)
+}
+
+// onOwnSession writes a statement's row on a session of its own on the
+// statement's connection: NewDB clears the conditions the statement being
+// recorded left on it, and the transaction underneath — if there is one — is not
+// one of them. Nothing is waited for there, because the row takes nothing the
+// statement does not already hold.
+func onOwnSession(tx *gorm.DB, r row) error {
 	return insert(tx.Session(&gorm.Session{NewDB: true, Context: tx.Statement.Context}), r)
 }
 
 // recordOpened writes the row of a statement on a connection built with Open,
-// through the delivered handle, under the statement's context, which is where
-// the actor and the tenant are read from.
+// under the statement's context, which is where the actor and the tenant are
+// read from.
 //
-// The row needs a connection of the delivered pool and, on an engine with one
-// writer, the delivered database's write lock, while the statement it records
-// holds its own transaction open on the other database. A caller inside a
-// transaction on the delivered handle holds both until after the statement
-// returns, and a connection opened onto the delivered database itself holds the
-// lock through the statement. Nothing a statement can see tells either from
-// another writer's brief hold, so the wait is bounded rather than recognised:
-// the connection is taken within openedRowWait, and the lock is waited for only
-// as long as what remains of it. Past the bound the statement fails with
-// ErrWriteFailed naming the wait — a record the statement could not have without
-// waiting on itself is a record it does not get, and the write it would record
-// does not happen.
+// A connection opened onto the delivered database itself reaches the delivered
+// table on its own session, and the row is written there, as it is for a
+// statement on the delivered connection: in the statement's own transaction,
+// waiting for nothing. Sent through the delivered handle instead, it would wait
+// for the write lock the statement itself holds on an engine with one writer,
+// and on the other engine it would leave its row behind a statement rolled back
+// on a database the two share. Which connection that is, is read from the two
+// databases rather than from their locators; see reachesDeliveredTable.
+//
+// Every other row goes out through the delivered handle. It needs a connection
+// of the delivered pool and, on an engine with one writer, the delivered
+// database's write lock, while the statement it records holds its own
+// transaction open on the other database. A caller inside a transaction on the
+// delivered handle holds both until after the statement returns. Nothing a
+// statement can see tells that from another writer's brief hold, so the wait is
+// bounded rather than recognised: the connection is taken within openedRowWait,
+// and the lock is waited for only as long as what remains of it. Past the bound
+// the statement fails with ErrWriteFailed naming the wait — a record the
+// statement could not have without waiting on the caller is a record it does not
+// get, and the write it would record does not happen. The connection that tells
+// which of the two ways the row goes is taken within the same bound.
 //
 // The insert itself runs under the statement's context, not the bound's: the
 // bound is on waiting for what another holds, and cutting a write short once it
@@ -210,9 +230,8 @@ func recordOpened(tx, delivered *gorm.DB, r row) error {
 		if errors.Is(bounded.Err(), context.DeadlineExceeded) && ctx.Err() == nil {
 			return fmt.Errorf("%w: the row of a statement on a connection built with Open was not "+
 				"written to the delivered database within %v, and the statement waits no longer: a "+
-				"transaction the caller holds on the delivered handle, or a connection opened onto the "+
-				"delivered database itself, keeps what the row needs until after the statement "+
-				"returns: %w", audit.ErrWriteFailed, openedRowWait, err)
+				"transaction the caller holds on the delivered handle keeps what the row needs until "+
+				"after the statement returns: %w", audit.ErrWriteFailed, openedRowWait, err)
 		}
 		return fmt.Errorf("%w: %w", audit.ErrWriteFailed, err)
 	}
@@ -225,6 +244,16 @@ func recordOpened(tx, delivered *gorm.DB, r row) error {
 	if err != nil {
 		return failed(err)
 	}
+	same, err := reachesDeliveredTable(ctx, bounded, tx, conn)
+	if err != nil {
+		_ = conn.Close()
+		return fmt.Errorf("%w: telling whether a connection built with Open reaches the delivered "+
+			"database's audit table: %w", audit.ErrWriteFailed, err)
+	}
+	if same {
+		_ = conn.Close()
+		return onOwnSession(tx, r)
+	}
 	release, err := boundLockWait(delivered, conn, bounded)
 	defer release()
 	if err != nil {
@@ -236,6 +265,101 @@ func recordOpened(tx, delivered *gorm.DB, r row) error {
 		return failed(err)
 	}
 	return nil
+}
+
+// reachesDeliveredTable reports whether the statement's own session reaches the
+// audit table a row written through the delivered connection would land in.
+//
+// The two databases are asked, not their locators. A locator is the database
+// module's to read, and one database answers to many of them — a relative path
+// and an absolute one, a link, a host name and its address — while each engine
+// can say which database a connection is on: SQLite by the file it keeps its
+// main database in, PostgreSQL by the server run, the database and the relation
+// the table's name resolves to on that connection. The statement's side is asked
+// on the statement's own connection, which it already holds; the delivered side
+// on a connection of the delivered pool, which is only ever read.
+//
+// A database with no file behind it — SQLite's in-memory and temporary ones —
+// is never taken for the delivered one. A private one belongs to its own
+// connection and cannot be; one in a shared cache has no name the engine
+// reports, so it is not recognised. On an engine this plugin knows no question
+// for, the answer is no, which sends the row through the delivered handle.
+func reachesDeliveredTable(ctx, bounded context.Context, tx *gorm.DB, delivered *sql.Conn) (bool, error) {
+	own := tx.Statement.ConnPool
+	switch tx.Name() {
+	case sqliteDialector:
+		return sameSQLiteFile(ctx, bounded, own, delivered)
+	case postgresDialector:
+		return samePostgresTable(ctx, bounded, own, delivered)
+	default:
+		return false, nil
+	}
+}
+
+// sqliteMainFile is the file SQLite keeps a connection's main database in, as
+// the engine resolved it, links followed; it is empty for a database with no
+// file behind it.
+const sqliteMainFile = "SELECT file FROM pragma_database_list WHERE name = 'main'"
+
+// sameSQLiteFile reports whether two SQLite connections keep their main
+// database in one file. The engine's own path decides, links resolved, and a
+// second name of one file the engine does not resolve to the same path — a hard
+// link — is recognised by the file system.
+func sameSQLiteFile(ctx, bounded context.Context, own gorm.ConnPool, delivered *sql.Conn) (bool, error) {
+	var ownFile, deliveredFile string
+	if err := own.QueryRowContext(ctx, sqliteMainFile).Scan(&ownFile); err != nil {
+		return false, fmt.Errorf("reading the statement's database file: %w", err)
+	}
+	if ownFile == "" {
+		return false, nil
+	}
+	if err := delivered.QueryRowContext(bounded, sqliteMainFile).Scan(&deliveredFile); err != nil {
+		return false, fmt.Errorf("reading the delivered database file: %w", err)
+	}
+	if deliveredFile == "" {
+		return false, nil
+	}
+	if ownFile == deliveredFile {
+		return true, nil
+	}
+	ownInfo, ownErr := os.Stat(ownFile)
+	deliveredInfo, deliveredErr := os.Stat(deliveredFile)
+	return ownErr == nil && deliveredErr == nil && os.SameFile(ownInfo, deliveredInfo), nil
+}
+
+// postgresDialector is the name the PostgreSQL engine's GORM dialector answers.
+const postgresDialector = "postgres"
+
+// postgresTable names, on one connection, the server run, the database and the
+// relation the audit table's name resolves to there, quoted the way GORM writes
+// it. The relation is null where the name resolves to nothing.
+var postgresTable = fmt.Sprintf(
+	`SELECT pg_postmaster_start_time(), current_database(), to_regclass('"%s"')::oid::int8`, tableName)
+
+// samePostgresTable reports whether two PostgreSQL connections resolve the
+// audit table's name to one relation of one database on one server run.
+//
+// The relation is what a row goes into, and it is compared rather than the
+// database alone because a connection's search path decides which schema's
+// table the name reaches. The server run is when the server started, which two
+// servers holding copies of one database — a restored backup, a promoted
+// standby — do not share.
+func samePostgresTable(ctx, bounded context.Context, own gorm.ConnPool, delivered *sql.Conn) (bool, error) {
+	var ownStarted, deliveredStarted time.Time
+	var ownDatabase, deliveredDatabase string
+	var ownRelation, deliveredRelation sql.NullInt64
+	if err := own.QueryRowContext(ctx, postgresTable).Scan(&ownStarted, &ownDatabase, &ownRelation); err != nil {
+		return false, fmt.Errorf("reading which audit table the statement's connection reaches: %w", err)
+	}
+	if !ownRelation.Valid {
+		return false, nil
+	}
+	if err := delivered.QueryRowContext(bounded, postgresTable).
+		Scan(&deliveredStarted, &deliveredDatabase, &deliveredRelation); err != nil {
+		return false, fmt.Errorf("reading which audit table the delivered connection reaches: %w", err)
+	}
+	return ownStarted.Equal(deliveredStarted) && ownDatabase == deliveredDatabase &&
+		ownRelation == deliveredRelation, nil
 }
 
 // openedRowWait bounds the wait of a row for a statement on a connection built

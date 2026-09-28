@@ -13,6 +13,9 @@ import (
 	"gorm.io/gorm"
 
 	"github.com/vislake/speed/pkg/audit"
+	"github.com/vislake/speed/pkg/core"
+	"github.com/vislake/speed/pkg/db"
+	dbpostgres "github.com/vislake/speed/pkg/db/postgres"
 	"github.com/vislake/speed/pkg/event"
 	"github.com/vislake/speed/pkg/internal/pgpool/pgtest"
 )
@@ -197,6 +200,127 @@ func TestPostgresAnEventDeliveredToEveryReplicaIsRecordedOnce(t *testing.T) {
 func TestPostgresTheFirstDeliveryOfAnEventIsTheOneKept(t *testing.T) {
 	first, second := openPostgresReplicas(t)
 	requireTheFirstDeliveryIsKept(t, first, second)
+}
+
+// assembledOnPostgres drives the assembly on a PostgreSQL database of this
+// case's own and hands the action that database's locator.
+func assembledOnPostgres(t *testing.T, action func(ctx context.Context, reg *core.Registry, dsn string) error) {
+	t.Helper()
+	dsn := pgtest.Acquire(t)
+	assembledOn(t, dbpostgres.Module(), "postgres", dsn, nil, func(ctx context.Context, reg *core.Registry) error {
+		return action(ctx, reg, dsn)
+	})
+}
+
+// A connection built with Open onto the delivered PostgreSQL database records
+// on the statement's own session, as the delivered connection does: a write it
+// rolls back leaves no row behind. The row written through the delivered handle
+// would be in a transaction of its own, and would stay.
+func TestPostgresAConnectionOpenedOntoTheDeliveredDatabaseRidesItsTransaction(t *testing.T) {
+	assembledOnPostgres(t, func(ctx context.Context, reg *core.Registry, dsn string) error {
+		database, err := core.Resolve[db.Database](reg)
+		if err != nil {
+			t.Errorf("resolving the database capability: %v", err)
+			return errCaseFailed
+		}
+		handle := database.DB()
+		if createErr := handle.Exec(createOrders).Error; createErr != nil {
+			t.Errorf("creating the orders table: %v", createErr)
+			return errCaseFailed
+		}
+		again, err := database.Open(ctx, dsn)
+		if err != nil {
+			t.Errorf("opening the delivered database a second time: %v", err)
+			return errCaseFailed
+		}
+		defer func() { _ = db.Close(again) }()
+
+		if err := again.WithContext(ctx).Create(&order{ID: "o1", Note: "committed"}).Error; err != nil {
+			t.Errorf("a write on a connection opened onto the delivered database gave %v", err)
+			return errCaseFailed
+		}
+		changed := errors.New("the caller changed its mind")
+		if err := again.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+			if err := tx.Create(&order{ID: "o2", Note: "rolled back"}).Error; err != nil {
+				return err
+			}
+			return changed
+		}); !errors.Is(err, changed) {
+			t.Errorf("the rolled-back transaction gave %v, want the caller's own error", err)
+			return errCaseFailed
+		}
+		if rows := statementRows(t, handle); len(rows) != 1 {
+			t.Errorf("the delivered table holds %d statement row(s), want the committed write's alone: the "+
+				"rolled-back one goes with its statement's transaction", len(rows))
+		}
+		return nil
+	})
+}
+
+// A connection built with Open that reaches an audit table other than the
+// delivered one — another database on the delivered server, or another schema
+// of the delivered database through its search path — does not take the row,
+// which goes to the delivered table.
+//
+// The second case is what a comparison of the database alone would miss: one
+// database, and the table's name resolving to two relations in it.
+func TestPostgresAConnectionOpenedOntoAnotherAuditTableRecordsInTheDeliveredOne(t *testing.T) {
+	for _, target := range []struct {
+		name string
+		// build prepares the other table and returns the locator reaching it.
+		build func(t *testing.T, handle *gorm.DB, dsn string) string
+	}{
+		{name: "another database on the delivered server", build: func(t *testing.T, _ *gorm.DB, _ string) string {
+			return pgtest.Acquire(t)
+		}},
+		{name: "another schema of the delivered database", build: func(t *testing.T, handle *gorm.DB, dsn string) string {
+			if err := handle.Exec(`CREATE SCHEMA elsewhere`).Error; err != nil {
+				t.Fatalf("creating the other schema: %v", err)
+			}
+			return dsn + "&search_path=elsewhere"
+		}},
+	} {
+		t.Run(target.name, func(t *testing.T) {
+			assembledOnPostgres(t, func(ctx context.Context, reg *core.Registry, dsn string) error {
+				database, err := core.Resolve[db.Database](reg)
+				if err != nil {
+					t.Errorf("resolving the database capability: %v", err)
+					return errCaseFailed
+				}
+				handle := database.DB()
+				if createErr := handle.Exec(createOrders).Error; createErr != nil {
+					t.Errorf("creating the orders table: %v", createErr)
+					return errCaseFailed
+				}
+				elsewhere := target.build(t, handle, dsn)
+				other := connectPostgres(t, elsewhere)
+				if createErr := other.Exec(createOrders).Error; createErr != nil {
+					t.Errorf("creating the other orders table: %v", createErr)
+					return errCaseFailed
+				}
+				applyMigrations(t, other, pgDialect)
+				opened, err := database.Open(ctx, elsewhere)
+				if err != nil {
+					t.Errorf("building a second connection: %v", err)
+					return errCaseFailed
+				}
+				defer func() { _ = db.Close(opened) }()
+
+				if err := opened.WithContext(ctx).Create(&order{ID: "o1", Note: "elsewhere"}).Error; err != nil {
+					t.Errorf("a model write on a connection built with Open gave %v", err)
+					return errCaseFailed
+				}
+				if got := statementRows(t, other); len(got) != 0 {
+					t.Errorf("the other audit table took %d row(s), want none: the row belongs to the "+
+						"delivered one", len(got))
+				}
+				if got := statementRows(t, handle); len(got) != 1 {
+					t.Errorf("the delivered table holds %d statement row(s), want the one write", len(got))
+				}
+				return nil
+			})
+		})
+	}
 }
 
 // The migration adding the event column keeps a table the first one built.

@@ -184,48 +184,6 @@ func TestAWriteOnAnOpenedConnectionInsideTheCallersTransactionDoesNotWaitOnIt(t 
 	}
 }
 
-// A connection opened onto the delivered database itself holds that database's
-// write lock through its own statement, and the statement's row, which goes out
-// through the delivered handle, does not wait for it either.
-func TestAWriteOnAConnectionOpenedOntoTheDeliveredDatabaseDoesNotWaitOnItself(t *testing.T) {
-	locator := filepath.Join(t.TempDir(), "delivered.db")
-	assembledAt(t, locator, nil, func(ctx context.Context, reg *core.Registry) error {
-		database, err := core.Resolve[db.Database](reg)
-		if err != nil {
-			t.Errorf("resolving the database capability: %v", err)
-			return errCaseFailed
-		}
-		handle := database.DB()
-		if createErr := handle.Exec(createOrders).Error; createErr != nil {
-			t.Errorf("creating the orders table: %v", createErr)
-			return errCaseFailed
-		}
-		again, err := database.Open(ctx, locator)
-		if err != nil {
-			t.Errorf("opening the delivered database a second time: %v", err)
-			return errCaseFailed
-		}
-		defer func() { _ = db.Close(again) }()
-		busy := openedBusyTimeout(ctx, t, handle)
-
-		returned, err := within(selfWaitTimer, func() error {
-			return quietly(again).WithContext(context.Background()).Create(&order{ID: "o1", Note: "again"}).Error
-		})
-		if !returned {
-			t.Errorf("a write on a connection opened onto the delivered database was still waiting after %v",
-				selfWaitTimer)
-			return errCaseFailed
-		}
-		requireRefusedForWaiting(t, err)
-		var committed int64
-		if err := handle.Model(&order{}).Count(&committed).Error; err != nil || committed != 0 {
-			t.Errorf("the write was refused, but %d order(s) committed (%v)", committed, err)
-		}
-		requireBusyTimeoutsHandedBack(ctx, t, handle, busy)
-		return nil
-	})
-}
-
 // briefHold is how long another writer holds the delivered database in the
 // case below: far longer than an insert takes, well inside the bound.
 const briefHold = 200 * time.Millisecond
