@@ -3,6 +3,7 @@ package postgres
 import (
 	"context"
 	"errors"
+	"fmt"
 	"net/url"
 	"strings"
 	"sync"
@@ -266,6 +267,45 @@ func TestAnExpiryIsJudgedByTheClockThatSetIt(t *testing.T) {
 				t.Fatalf("Get on a key past its 20ms: present=%v err=%v", present, getErr)
 			}
 		})
+	}
+}
+
+// TestExpiredRowsAreReclaimedWithoutBeingReadAgain covers the storage a
+// long-running deployment accumulates. A rate limiter writes one key per
+// identity per window, an idempotency guard one per request, a cache one per
+// entry, and none of them reads a key again once it has expired: a table that
+// only hid expired rows would grow with every key ever written. The case writes
+// keys that expire at once through both writes that carry an expiry, keeps
+// writing as a live deployment does, and waits for the expired rows to go.
+func TestExpiredRowsAreReclaimedWithoutBeingReadAgain(t *testing.T) {
+	s := newStore(t)
+	ctx := context.Background()
+	for i := range 50 {
+		if err := s.Set(ctx, fmt.Sprintf("cached-%d", i), []byte("v"), time.Millisecond); err != nil {
+			t.Fatalf("Set: %v", err)
+		}
+		if _, err := s.IncrByFloatWithTTL(ctx, fmt.Sprintf("window-%d", i), 1, time.Millisecond); err != nil {
+			t.Fatalf("IncrByFloatWithTTL: %v", err)
+		}
+	}
+	time.Sleep(20 * time.Millisecond)
+	deadline := time.Now().Add(5 * time.Second)
+	for i := 0; ; i++ {
+		if _, err := s.IncrByFloatWithTTL(ctx, fmt.Sprintf("later-%d", i), 1, time.Hour); err != nil {
+			t.Fatalf("IncrByFloatWithTTL: %v", err)
+		}
+		var expired int
+		if err := s.pool.QueryRow(ctx,
+			`SELECT count(*) FROM `+table+` WHERE expires_at <= now()`).Scan(&expired); err != nil {
+			t.Fatalf("counting the expired rows: %v", err)
+		}
+		if expired == 0 {
+			return
+		}
+		if time.Now().After(deadline) {
+			t.Fatalf("%d expired rows are still in %s, and nothing will read them again", expired, table)
+		}
+		time.Sleep(100 * time.Millisecond)
 	}
 }
 

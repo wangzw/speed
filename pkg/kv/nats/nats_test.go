@@ -4,6 +4,7 @@ import (
 	"context"
 	"crypto/rand"
 	"encoding/hex"
+	"errors"
 	"fmt"
 	"strconv"
 	"strings"
@@ -148,9 +149,9 @@ func TestTheExpiryTravelsInsideTheValue(t *testing.T) {
 	if string(value) != "v" {
 		t.Fatalf("the value behind the header is %q, want %q", value, "v")
 	}
-	// Past the expiry, the entry is still in the bucket: it is this package
-	// that reports the key as absent, which is what makes a per-key expiry
-	// possible at all.
+	// Just past the expiry, the entry is still in the bucket — the server
+	// removes it only a margin later: it is this package that reports the key
+	// as absent, which is what makes a per-key expiry possible at all.
 	time.Sleep(ttl + 100*time.Millisecond)
 	if _, present, err := s.Get(ctx, "k"); err != nil || present {
 		t.Fatalf("Get past the ttl: present=%v err=%v", present, err)
@@ -253,6 +254,46 @@ func TestAnExistingBucketKeepsItsConfiguration(t *testing.T) {
 	}
 }
 
+// TestABucketWithoutMessageTTLTakesExpiringWrites covers a bucket this
+// implementation finds rather than creates — provisioned by an operator, or
+// created with nothing but its name. Its stream refuses a message carrying a
+// time-to-live, and every write with an expiry gives its message one so the
+// server can remove the entry once it has expired; opening has to switch the
+// setting on, or every such write would fail.
+func TestABucketWithoutMessageTTLTakesExpiringWrites(t *testing.T) {
+	url := natstest.URL(t)
+	ctx := context.Background()
+	bucket := bucketName()
+	nc, err := nats.Connect(url)
+	if err != nil {
+		t.Fatalf("connecting: %v", err)
+	}
+	t.Cleanup(nc.Close)
+	js, err := jetstream.New(nc)
+	if err != nil {
+		t.Fatalf("opening JetStream: %v", err)
+	}
+	if _, createErr := js.CreateKeyValue(ctx, jetstream.KeyValueConfig{Bucket: bucket}); createErr != nil {
+		t.Fatalf("provisioning the bucket: %v", createErr)
+	}
+
+	opened, err := open(ctx, &Config{URL: url, Bucket: bucket, Timeout: 10 * time.Second})
+	if err != nil {
+		t.Fatalf("open over a bucket without a per-message time-to-live: %v", err)
+	}
+	s := opened.(*store)
+	t.Cleanup(func() { _ = s.Close(ctx) })
+	if err := s.Set(ctx, "cached", []byte("v"), time.Minute); err != nil {
+		t.Fatalf("Set with a ttl: %v", err)
+	}
+	if _, err := s.IncrByFloatWithTTL(ctx, "window", 1, time.Minute); err != nil {
+		t.Fatalf("IncrByFloatWithTTL: %v", err)
+	}
+	if err := s.Delete(ctx, "cached"); err != nil {
+		t.Fatalf("Delete: %v", err)
+	}
+}
+
 // TestTheTimeoutBoundsAnOperation pins what the timeout item says it does: it
 // bounds connecting and one operation. An operation whose context carries no
 // deadline of its own is bounded by it, so a server that stops answering fails
@@ -278,6 +319,72 @@ func TestTheTimeoutBoundsAnOperation(t *testing.T) {
 	}
 	if elapsed > 4*timeout {
 		t.Fatalf("a Get the server never answered took %s to fail, with a timeout of %s", elapsed, timeout)
+	}
+}
+
+// TestExpiredAndDeletedEntriesLeaveTheBucket covers the storage a long-running
+// deployment accumulates. The expiry this package keeps in front of a value
+// hides an expired entry from every read, but the entry itself stays in the
+// bucket's stream until something writes its key again — and a rate limiter's
+// window keys, an idempotency guard's request keys and a cache's entries are
+// never written again once they expire. A delete leaves a marker in the stream
+// in the same way. A bucket that kept either would grow with every key ever
+// written.
+//
+// The case writes entries with a moment to live through both writes that
+// carry an expiry and deletes a third, then reads the bucket's stream below the
+// key-value layer.
+func TestExpiredAndDeletedEntriesLeaveTheBucket(t *testing.T) {
+	s := newStore(t)
+	ctx := context.Background()
+	if err := s.Set(ctx, "cached", []byte("v"), 10*time.Millisecond); err != nil {
+		t.Fatalf("Set: %v", err)
+	}
+	if _, err := s.IncrByFloatWithTTL(ctx, "window", 1, 10*time.Millisecond); err != nil {
+		t.Fatalf("IncrByFloatWithTTL: %v", err)
+	}
+	if err := s.Set(ctx, "deleted", []byte("v"), 0); err != nil {
+		t.Fatalf("Set: %v", err)
+	}
+	if err := s.Delete(ctx, "deleted"); err != nil {
+		t.Fatalf("Delete: %v", err)
+	}
+
+	js, err := jetstream.New(s.nc)
+	if err != nil {
+		t.Fatalf("opening JetStream: %v", err)
+	}
+	stream, err := js.Stream(ctx, "KV_"+s.bucket.Bucket())
+	if err != nil {
+		t.Fatalf("binding to the bucket's stream: %v", err)
+	}
+	subject := func(key string) string { return "$KV." + s.bucket.Bucket() + "." + encodeKey(key) }
+
+	// The delete's marker is what stays in the stream for a deleted key, so it
+	// has to carry an expiry of its own.
+	marker, err := stream.GetLastMsgForSubject(ctx, subject("deleted"))
+	if err != nil {
+		t.Fatalf("reading the deleted key's last message: %v", err)
+	}
+	if marker.Header.Get(jetstream.MsgTTLHeader) == "" {
+		t.Errorf("the delete left a marker with no expiry, which the stream keeps for good: headers %v",
+			marker.Header)
+	}
+
+	// The expired entries leave the stream; a marker the server puts in their
+	// place is not an entry, and ages out itself.
+	deadline := time.Now().Add(5 * time.Second)
+	for _, key := range []string{"cached", "window"} {
+		for {
+			if _, getErr := s.bucket.Get(ctx, encodeKey(key)); errors.Is(getErr, jetstream.ErrKeyNotFound) {
+				break
+			}
+			if time.Now().After(deadline) {
+				t.Errorf("the entry for %q is still in the bucket well past its expiry", key)
+				break
+			}
+			time.Sleep(100 * time.Millisecond)
+		}
 	}
 }
 

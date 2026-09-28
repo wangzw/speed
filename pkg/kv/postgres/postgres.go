@@ -26,6 +26,8 @@ import (
 	"fmt"
 	"strconv"
 	"strings"
+	"sync"
+	"sync/atomic"
 	"time"
 
 	"github.com/jackc/pgx/v5"
@@ -59,6 +61,10 @@ const (
 		value      BYTEA NOT NULL,
 		expires_at TIMESTAMPTZ
 	)`
+	// createExpiryIndex is what lets the sweep find expired rows without
+	// reading the table. Only rows with an expiry are in it.
+	createExpiryIndex = `CREATE INDEX IF NOT EXISTS ` + table + `_expires_at ON ` + table +
+		` (expires_at) WHERE expires_at IS NOT NULL`
 	// keyColumnType reads the type the table's key column has, resolving the
 	// table the way every other statement here does: through the search path.
 	keyColumnType = `SELECT format_type(atttypid, atttypmod) FROM pg_attribute
@@ -137,7 +143,8 @@ func open(ctx context.Context, cfg *pgpool.Config) (kv.KV, error) {
 		pool.Close()
 		return nil, fmt.Errorf("%s: creating %s: %w", ModuleName, table, prepareErr)
 	}
-	return &store{pool: pool}, nil
+	sweepCtx, stopSweeps := context.WithCancel(context.Background())
+	return &store{pool: pool, sweepCtx: sweepCtx, stopSweeps: stopSweeps}, nil
 }
 
 // schemaLock names the advisory lock that serialises this implementation's
@@ -185,18 +192,100 @@ func prepareTable(ctx context.Context, pool *pgxpool.Pool) error {
 	default:
 		return fmt.Errorf("the key column is %s, and this implementation stores keys as bytea", keyType)
 	}
+	if _, indexErr := tx.Exec(ctx, createExpiryIndex); indexErr != nil {
+		return fmt.Errorf("creating the expiry index: %w", indexErr)
+	}
 	return tx.Commit(ctx)
 }
 
 // store is the capability over one pool.
 type store struct {
 	pool *pgxpool.Pool
+
+	// sweepCtx bounds the sweeps running in the background, and stopSweeps
+	// ends them at Close.
+	sweepCtx   context.Context
+	stopSweeps context.CancelFunc
+	// sweeping is held by the one sweep that may run at a time, and
+	// nextSweep is the instant, in Unix nanoseconds, before which no new one
+	// starts.
+	sweeping  atomic.Bool
+	nextSweep atomic.Int64
+	// mu guards closed against a sweep being started while Close waits for
+	// the running ones.
+	mu     sync.Mutex
+	closed bool
+	sweeps sync.WaitGroup
 }
 
-// Close releases the pool.
+// Close waits for a running sweep to stop and releases the pool.
 func (s *store) Close(_ context.Context) error {
+	s.mu.Lock()
+	s.closed = true
+	s.mu.Unlock()
+	s.stopSweeps()
+	s.sweeps.Wait()
 	s.pool.Close()
 	return nil
+}
+
+// sweepBatch bounds the rows one sweep deletes, so a backlog is worked off in
+// steps rather than in one long statement holding its locks.
+const sweepBatch = 1000
+
+// sweepEvery is the least time between two sweeps, unless the last one
+// deleted a full batch and so may have left more behind.
+const sweepEvery = time.Second
+
+// sweepExpired deletes up to a batch of expired rows. The rows are locked with
+// SKIP LOCKED, so a sweep never waits for a write in progress, and two
+// replicas sweeping at once delete different rows. Locking re-checks the
+// expiry against the row as it is now, so a row a write replaced since the
+// statement began is left alone.
+const sweepExpired = `DELETE FROM ` + table + ` WHERE key IN (
+	SELECT key FROM ` + table + ` WHERE expires_at <= now()
+	ORDER BY expires_at LIMIT $1 FOR UPDATE SKIP LOCKED)`
+
+// afterExpiringWrite gives the sweep a turn after a write that carried an
+// expiry.
+//
+// Expiry is otherwise lazy — an expired row is hidden from every read and
+// replaced by the next write to its key — and a key nothing writes again stays
+// in the table for good. A rate limiter writes one key per identity per
+// window, an idempotency guard one per request, and neither touches a key
+// again once it has expired, so without the sweep the table would grow with
+// every key ever written. The writes that add expiring rows are the clock: a
+// sweep runs at most once per sweepEvery, or right away when the last one
+// found a full batch, so the sweeping keeps pace with the rate rows expire at.
+//
+// The sweep runs in the background, off the caller's path, one at a time per
+// store. A failed sweep is not reported: nothing the caller did failed, and the
+// next turn tries again.
+func (s *store) afterExpiringWrite() {
+	if time.Now().UnixNano() < s.nextSweep.Load() {
+		return
+	}
+	if !s.sweeping.CompareAndSwap(false, true) {
+		return
+	}
+	s.mu.Lock()
+	if s.closed {
+		s.mu.Unlock()
+		s.sweeping.Store(false)
+		return
+	}
+	s.sweeps.Add(1)
+	s.mu.Unlock()
+	go func() {
+		defer s.sweeps.Done()
+		defer s.sweeping.Store(false)
+		wait := sweepEvery
+		tag, err := s.pool.Exec(s.sweepCtx, sweepExpired, sweepBatch)
+		if err == nil && tag.RowsAffected() == sweepBatch {
+			wait = 0
+		}
+		s.nextSweep.Store(time.Now().Add(wait).UnixNano())
+	}()
 }
 
 // live is the predicate that makes an expired row read as absent. It is written
@@ -226,6 +315,9 @@ func (s *store) Set(ctx context.Context, key string, value []byte, ttl time.Dura
 		`INSERT INTO `+table+` (key, value, expires_at) VALUES ($1, $2, `+expiryFrom("$3")+`)
 		 ON CONFLICT (key) DO UPDATE SET value = EXCLUDED.value, expires_at = EXCLUDED.expires_at`,
 		spell(key), nonNull(value), ttlMicros(ttl))
+	if err == nil && ttl > 0 {
+		s.afterExpiringWrite()
+	}
 	return err
 }
 
@@ -319,6 +411,9 @@ func (s *store) increment(ctx context.Context, key string, delta float64, ttl ti
 	}
 	if commitErr := tx.Commit(ctx); commitErr != nil {
 		return 0, commitErr
+	}
+	if withTTL && ttl > 0 {
+		s.afterExpiringWrite()
 	}
 	return got, nil
 }

@@ -12,7 +12,11 @@
 //   - A bucket's time-to-live is one setting for the whole bucket, and the
 //     capability needs one per key and needs an increment to leave it alone. So
 //     the expiry is not the bucket's: it travels in front of the value, and
-//     this package decides from it whether a key is still there.
+//     this package decides from it whether a key is still there. Every write
+//     that carries an expiry also gives its message a time-to-live of its own,
+//     a moment past that expiry, and the server removes the entry then: the
+//     header decides when a key reads as absent, the message's time-to-live
+//     when its storage is reclaimed.
 //
 // Keys are respelled on the way in. JetStream's own key grammar excludes
 // characters and lengths the capability's keys may have, so a key is stored
@@ -154,11 +158,14 @@ func open(ctx context.Context, cfg *Config) (kv.KV, error) {
 		return nil, fmt.Errorf("%s: opening JetStream: %w", ModuleName, err)
 	}
 	bucket, err := bindBucket(ctx, js, cfg.Bucket)
+	if err == nil {
+		err = allowMessageTTL(ctx, js, cfg.Bucket)
+	}
 	if err != nil {
 		nc.Close()
 		return nil, fmt.Errorf("%s: opening the bucket %q: %w", ModuleName, cfg.Bucket, err)
 	}
-	return &store{nc: nc, bucket: bucket}, nil
+	return &store{nc: nc, js: js, bucket: bucket, subjects: "$KV." + cfg.Bucket + "."}, nil
 }
 
 // bindBucket binds to the bucket as it is, and creates it only when it is not
@@ -184,10 +191,128 @@ func bindBucket(ctx context.Context, js jetstream.JetStream, name string) (jetst
 	return bucket, err
 }
 
+// allowMessageTTL switches on the bucket stream's per-message time-to-live
+// when it is off.
+//
+// It is how an expired entry leaves the bucket. The expiry in front of a value
+// hides an expired entry from every read without removing it, and the entry
+// would stay in the stream until its key was written again — while the keys a
+// rate limiter, an idempotency guard or a cache write are never written again
+// once they have expired, so the bucket would grow with every key ever
+// written. Every write that carries an expiry therefore gives its message a
+// time-to-live as well, and the server refuses such a write on a stream that
+// does not allow one.
+//
+// This is the one setting this implementation changes on a bucket it finds,
+// and it changes nothing else in the bucket's configuration. It changes
+// nothing for an entry written without an expiry, and the server does not let
+// it be switched off again. The stream's name is the bucket's under the
+// key-value layer's own convention.
+func allowMessageTTL(ctx context.Context, js jetstream.JetStream, bucket string) error {
+	stream, err := js.Stream(ctx, "KV_"+bucket)
+	if err != nil {
+		return fmt.Errorf("reading the bucket's stream: %w", err)
+	}
+	cfg := stream.CachedInfo().Config
+	if cfg.AllowMsgTTL {
+		return nil
+	}
+	cfg.AllowMsgTTL = true
+	updated, err := js.UpdateStream(ctx, cfg)
+	if err != nil {
+		return fmt.Errorf("the bucket does not allow a per-message time-to-live, which this implementation "+
+			"needs to remove expired entries, and switching it on failed: %w", err)
+	}
+	if !updated.CachedInfo().Config.AllowMsgTTL {
+		return errors.New("the server kept the bucket's per-message time-to-live off, and this implementation " +
+			"needs it to remove expired entries; it takes NATS Server 2.11 or later")
+	}
+	return nil
+}
+
 // store is the capability over one bucket.
 type store struct {
 	nc     *nats.Conn
+	js     jetstream.JetStream
 	bucket jetstream.KeyValue
+	// subjects is the prefix of the subject each entry is published on,
+	// under the key-value layer's own convention. The writes that give a
+	// message a time-to-live publish on it directly, because the bucket's
+	// own Put and Update take no time-to-live.
+	subjects string
+}
+
+// reclaimMargin is how long past its expiry an entry stays in the bucket's
+// stream before the server removes it, and how long a delete's marker stays.
+//
+// The expiry in front of the value decides when a key reads as absent, and it
+// is judged by the reading replica's clock; the server's removal only reclaims
+// the storage. The margin keeps the removal behind the expiry for a reader
+// whose clock trails the writer's, and it is the server's shortest
+// time-to-live, which a message's own may not be under.
+const reclaimMargin = time.Second
+
+// reclaimAfter is the time-to-live a message gets when its entry expires at
+// expires, and zero for an entry with no expiry, which stays until it is
+// replaced.
+func reclaimAfter(expires time.Time) time.Duration {
+	if expires.IsZero() {
+		return 0
+	}
+	return max(time.Until(expires), 0) + reclaimMargin
+}
+
+// publishOpts carries the time-to-live that reclaims an entry expiring at
+// expires.
+func publishOpts(expires time.Time) []jetstream.PublishOpt {
+	if ttl := reclaimAfter(expires); ttl > 0 {
+		return []jetstream.PublishOpt{jetstream.WithMsgTTL(ttl)}
+	}
+	return nil
+}
+
+// errContended is a conditional write the server refused because another
+// writer got to the key first.
+var errContended = errors.New(ModuleName + ": another writer changed the key first")
+
+// contended turns the server's refusal of a conditional write into
+// errContended, and leaves every other error as it came.
+//
+// The refusal is a wrong-last-sequence answer, which a replicated stream gives
+// under a code of its own; the bucket's own Create reports either as the key
+// existing.
+func contended(err error) error {
+	var apiErr *jetstream.APIError
+	if errors.As(err, &apiErr) && (apiErr.ErrorCode == jetstream.JSErrCodeStreamWrongLastSequence ||
+		apiErr.ErrorCode == jetstream.JSErrCodeStreamWrongLastSequenceConstant) {
+		return errContended
+	}
+	return err
+}
+
+// put writes an entry whatever the key holds.
+func (s *store) put(ctx context.Context, encoded string, stored []byte, expires time.Time) error {
+	_, err := s.js.PublishMsg(ctx, &nats.Msg{Subject: s.subjects + encoded, Data: stored}, publishOpts(expires)...)
+	return err
+}
+
+// update writes an entry only while revision is the key's latest, and reports
+// errContended when it is not.
+func (s *store) update(ctx context.Context, encoded string, stored []byte, expires time.Time, revision uint64) error {
+	opts := append(publishOpts(expires), jetstream.WithExpectLastSequencePerSubject(revision))
+	_, err := s.js.PublishMsg(ctx, &nats.Msg{Subject: s.subjects + encoded, Data: stored}, opts...)
+	return contended(err)
+}
+
+// create writes an entry only when the key has none — a delete's marker counts
+// as none — and reports errContended when it has one.
+func (s *store) create(ctx context.Context, encoded string, stored []byte, expires time.Time) error {
+	var opts []jetstream.KVCreateOpt
+	if ttl := reclaimAfter(expires); ttl > 0 {
+		opts = append(opts, jetstream.KeyTTL(ttl))
+	}
+	_, err := s.bucket.Create(ctx, encoded, stored, opts...)
+	return contended(err)
 }
 
 // Close releases the connection.
@@ -214,13 +339,17 @@ func (s *store) Get(ctx context.Context, key string) ([]byte, bool, error) {
 
 // Set stores the value, replacing any existing one and its expiry.
 func (s *store) Set(ctx context.Context, key string, value []byte, ttl time.Duration) error {
-	_, err := s.bucket.Put(ctx, encodeKey(key), expiry.Wrap(value, expiry.Of(ttl)))
-	return err
+	expires := expiry.Of(ttl)
+	return s.put(ctx, encodeKey(key), expiry.Wrap(value, expires), expires)
 }
 
 // Delete removes the key, whether or not it was there.
+//
+// It purges rather than deletes: a purge drops every revision the bucket keeps
+// for the key, and its marker carries a time-to-live, so nothing the key held
+// stays in the stream. A plain delete's marker would stay for good.
 func (s *store) Delete(ctx context.Context, key string) error {
-	err := s.bucket.Delete(ctx, encodeKey(key))
+	err := s.bucket.Purge(ctx, encodeKey(key), jetstream.PurgeTTL(reclaimMargin))
 	if errors.Is(err, jetstream.ErrKeyNotFound) {
 		return nil
 	}
@@ -260,8 +389,8 @@ func (s *store) increment(ctx context.Context, key string, delta float64, ttl ti
 			if withTTL {
 				expires = expiry.Of(ttl)
 			}
-			if _, createErr := s.bucket.Create(ctx, encoded, expiry.Wrap([]byte(formatFloat(next)), expires)); createErr != nil {
-				if errors.Is(createErr, jetstream.ErrKeyExists) {
+			if createErr := s.create(ctx, encoded, expiry.Wrap([]byte(formatFloat(next)), expires), expires); createErr != nil {
+				if errors.Is(createErr, errContended) {
 					retry.Backoff(attempt)
 					continue
 				}
@@ -291,12 +420,11 @@ func (s *store) increment(ctx context.Context, key string, delta float64, ttl ti
 		if err := counter.CheckResult(ModuleName, key, next); err != nil {
 			return 0, err
 		}
-		if _, updateErr := s.bucket.Update(ctx, encoded, expiry.Wrap([]byte(formatFloat(next)), expires), entry.Revision()); updateErr != nil {
+		stored := expiry.Wrap([]byte(formatFloat(next)), expires)
+		if updateErr := s.update(ctx, encoded, stored, expires, entry.Revision()); updateErr != nil {
 			// A revision that no longer matches is what a lost race looks like
-			// here, and JetStream reports it as ErrKeyRevisionMismatch rather
-			// than as anything the key-exists sentinel covers.
-			if errors.Is(updateErr, jetstream.ErrKeyNotFound) ||
-				errors.Is(updateErr, jetstream.ErrKeyRevisionMismatch) {
+			// here.
+			if errors.Is(updateErr, errContended) {
 				retry.Backoff(attempt)
 				continue
 			}
@@ -315,8 +443,8 @@ func (s *store) CompareAndSwap(ctx context.Context, key string, old, newVal []by
 		if len(old) > 0 {
 			return false, nil
 		}
-		if _, createErr := s.bucket.Create(ctx, encoded, expiry.Wrap(newVal, time.Time{})); createErr != nil {
-			if errors.Is(createErr, jetstream.ErrKeyExists) {
+		if createErr := s.create(ctx, encoded, expiry.Wrap(newVal, time.Time{}), time.Time{}); createErr != nil {
+			if errors.Is(createErr, errContended) {
 				return false, nil
 			}
 			return false, createErr
@@ -333,12 +461,10 @@ func (s *store) CompareAndSwap(ctx context.Context, key string, old, newVal []by
 		if len(old) > 0 {
 			return false, nil
 		}
-		if _, err := s.bucket.Update(ctx, encoded, expiry.Wrap(newVal, time.Time{}), entry.Revision()); err != nil {
-			// Someone else wrote or removed it in between — both are a swap
-			// that did not happen rather than a failure, and JetStream reports
-			// the write case with a sentinel of its own.
-			if errors.Is(err, jetstream.ErrKeyNotFound) ||
-				errors.Is(err, jetstream.ErrKeyRevisionMismatch) {
+		if err := s.update(ctx, encoded, expiry.Wrap(newVal, time.Time{}), time.Time{}, entry.Revision()); err != nil {
+			// Someone else wrote or removed it in between, which is a swap
+			// that did not happen rather than a failure.
+			if errors.Is(err, errContended) {
 				return false, nil
 			}
 			return false, err
@@ -349,12 +475,10 @@ func (s *store) CompareAndSwap(ctx context.Context, key string, old, newVal []by
 		return false, nil
 	}
 	// The expiry is carried over rather than reset.
-	if _, updateErr := s.bucket.Update(ctx, encoded, expiry.Wrap(newVal, expires), entry.Revision()); updateErr != nil {
-		// Someone else wrote or removed it in between — both are a swap that
-		// did not happen rather than a failure, and JetStream reports the write
-		// case with a sentinel of its own.
-		if errors.Is(updateErr, jetstream.ErrKeyNotFound) ||
-			errors.Is(updateErr, jetstream.ErrKeyRevisionMismatch) {
+	if updateErr := s.update(ctx, encoded, expiry.Wrap(newVal, expires), expires, entry.Revision()); updateErr != nil {
+		// Someone else wrote or removed it in between, which is a swap that
+		// did not happen rather than a failure.
+		if errors.Is(updateErr, errContended) {
 			return false, nil
 		}
 		return false, updateErr
