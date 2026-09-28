@@ -18,9 +18,9 @@ import (
 // TestAnEntryDeliveredWhileStoppingIsMarked pins what the stop stage leaves
 // behind on this backend: the entry a subscriber was handling is marked for
 // this replica. The replica's identity is this process's, so an entry it left
-// unmarked is delivered on its behalf by no one — which is what a handler still
-// running when the drive's context was cancelled used to cause, its mark
-// written on a context already done.
+// unmarked is delivered on its behalf by no one. A handler still running when
+// the drive's context is cancelled is the case that would leave one, were its
+// mark written on a context already done.
 func TestAnEntryDeliveredWhileStoppingIsMarked(t *testing.T) {
 	dsn := pgtest.Acquire(t)
 	ctx := context.Background()
@@ -61,9 +61,9 @@ func TestAnEntryDeliveredWhileStoppingIsMarked(t *testing.T) {
 
 // TestAStopDuringTheRetentionPassReportsNothing pins that the stop stage is
 // not reported as a failure. The first retention pass runs as soon as the
-// reader starts, so a short-lived process stops in the middle of it, and the
-// pass cancelled by the stop used to be logged as a retention failure — an
-// error line on every ordinary shutdown.
+// reader starts, so a short-lived process stops in the middle of it; logging
+// the pass the stop cancelled as a retention failure would write an error line
+// on every ordinary shutdown.
 //
 // The stop lands at a slightly different moment on each round, so some rounds
 // cut the pass mid-statement.

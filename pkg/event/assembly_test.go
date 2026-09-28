@@ -59,8 +59,8 @@ func TestAnUnmetDeploymentPreconditionFailsTheStartup(t *testing.T) {
 }
 
 // TestAnUnpointedBackendFailsTheStartup is the same rule at a backend whose
-// premise is being pointed at a server. A missing address used to be how an
-// assembly said it did not want this backend; it now stops the startup, and the
+// premise is being pointed at a server. A missing address is not how an
+// assembly says it does not want this backend: it stops the startup, and the
 // way to say it is to leave the implementation out of the command tree.
 func TestAnUnpointedBackendFailsTheStartup(t *testing.T) {
 	_, err := prepare(t, declared{}, redis.ModuleName)

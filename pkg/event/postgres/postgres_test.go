@@ -169,10 +169,10 @@ func TestAClosedBusRefusesPublishes(t *testing.T) {
 	}
 }
 
-// TestRetireRunsAtMostOncePerInterval pins the pacing of the retention pass:
-// draining used to end in the pass on every round — two large DELETEs at the
-// poll interval, per replica, one of them an anti-join over the delivered
-// table — a standing load whose window is a day wide.
+// TestRetireRunsAtMostOncePerInterval pins the pacing of the retention pass: a
+// pass at the end of every drain would be two large DELETEs at the poll
+// interval, per replica, one of them an anti-join over the delivered table — a
+// standing load for a window a day wide.
 func TestRetireRunsAtMostOncePerInterval(t *testing.T) {
 	b := &bus{}
 	start := time.Now()

@@ -160,10 +160,10 @@ func open(ctx context.Context, cfg *pgpool.Config, logger *slog.Logger) (event.B
 	// subscription would sit idle and the query would wait on it.
 	//
 	// It is built from the pool's own parsed configuration rather than from the
-	// connection string again. The pool normalised that string before parsing
-	// it, and a second parse of the raw text is how a trailing newline failed
-	// the startup and leading whitespace — read as a keyword/value string
-	// naming nothing — sent the listening session to the libpq defaults, a
+	// connection string again. The pool normalises that string before parsing
+	// it; a second parse of the raw text would fail the startup on a trailing
+	// newline, and would read leading whitespace as a keyword/value string
+	// naming nothing, sending the listening session to the libpq defaults — a
 	// different server or database from the one every publish writes to.
 	listen, err := pgx.ConnectConfig(ctx, pool.Config().ConnConfig.Copy())
 	if err != nil {

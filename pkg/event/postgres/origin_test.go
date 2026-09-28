@@ -14,10 +14,10 @@ import (
 )
 
 // TestOpeningAReplicaWritesNothing pins what a replica costs to start: no rows.
-// A replica used to mark every entry already in the outbox as delivered to
-// itself, so each process start — every command that takes the bus in, a
-// short-lived one included — wrote one row per outbox entry, and those rows
-// stayed until their entries retired.
+// A replica that marked every entry already in the outbox as delivered to
+// itself would write one row per outbox entry on each process start — every
+// command that takes the bus in, a short-lived one included — and those rows
+// would stay until their entries retired.
 func TestOpeningAReplicaWritesNothing(t *testing.T) {
 	dsn := pgtest.Acquire(t)
 	ctx := context.Background()

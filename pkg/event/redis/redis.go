@@ -14,9 +14,15 @@
 //
 // An entry is acknowledged as soon as it has been handed to the local handlers,
 // whatever they returned. A failure has nowhere to go — no publisher is waiting
-// on a read that happens after its own call returned — and leaving the entry
-// pending would have it redelivered forever, which is a worse answer than
-// reporting it to the assembly's log once.
+// on a read that happens after its own call returned — and nothing in this
+// implementation reads or claims a pending entry again, so an entry left
+// pending would not be retried: it would only sit in the group's pending list
+// for good, one more for every failure. The failure is reported to the
+// assembly's log once instead.
+//
+// An entry is therefore delivered to a group at most once: one a reader took
+// and did not acknowledge — its process killed before the stop stage — is
+// delivered by no one.
 //
 // Publishing and reading draw on separate connection pools. The configured
 // pool carries the publishes; the readers — one per subscribed type, each
