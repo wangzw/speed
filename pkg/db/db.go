@@ -46,7 +46,8 @@ const (
 // in every stage, so the dependant's own Migrate runs after the migrations have
 // been applied. Its New does not: every module's New runs before the first
 // Migrate callback, so a dependant reading or writing its tables in New finds
-// them missing on a first start, and the tables are there from Init on.
+// them missing on a first start, and the tables are there from its own Migrate
+// on.
 //
 // Take it up with core.Resolve[db.Database](reg), and declare the dependency as
 // core.Requirement{Token: (*db.Database)(nil)}.

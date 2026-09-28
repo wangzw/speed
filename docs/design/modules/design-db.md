@@ -52,7 +52,7 @@ func Close(*gorm.DB) error
 
 实现子包的交付声明写作 `Provides: []core.Provision{{Token: (*Database)(nil), Exclusive: true}}`，排他即由此而来。
 
-取用写作 `core.Resolve[db.Database](reg)`。访问库的模块在 `Requires` 中声明 `(*db.Database)(nil)`，因而排在本模块之后构造，此后每个阶段也都排在本模块之后，它自己的 `Migrate` 回调在迁移施加之后运行。依赖方的 `New` 不在其列：全部模块的 `New` 都早于第一个 `Migrate` 回调（见 [core](design-core.md)），首次启动时在 `New` 里读写自己的表会碰上表还不存在，读写库的工作从 `Init` 起才有表可用。
+取用写作 `core.Resolve[db.Database](reg)`。访问库的模块在 `Requires` 中声明 `(*db.Database)(nil)`，因而排在本模块之后构造，此后每个阶段也都排在本模块之后，它自己的 `Migrate` 回调在迁移施加之后运行。依赖方的 `New` 不在其列：全部模块的 `New` 都早于第一个 `Migrate` 回调（见 [core](design-core.md)），首次启动时在 `New` 里读写自己的表会碰上表还不存在，读写库的工作要放在它自己的 `Migrate` 回调或其后的阶段里。
 
 **额外的连接**。配置给出的那个库经模块机制交付，是唯一能被 `Requires` 声明和 `Resolve` 取用的；访问别的库——只读副本、另一个系统的库、一次性的数据来源——用 `Open` 自建。
 
