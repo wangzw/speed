@@ -22,19 +22,26 @@ import (
 // The connectivity check is bound to ctx, which is the ctx the stage received:
 // a host that wants a bound on how long a startup may wait for the database
 // sets it on the context it hands Run, because the driver's own timeouts are
-// written in the locator rather than declared here as input items.
+// written in the locator rather than declared here as input items. It is the
+// first time the connection is reached. GORM's own check on open takes no
+// context, and against a host that accepts the connection and never answers
+// it waits for as long as the driver does — without a timeout in the locator,
+// for good — so it is switched off, and the check below is the one that runs.
 //
 // A failure reports ErrConnectFailed whatever the step — opening the driver,
 // reaching the pool behind the session, or the connectivity check — because
 // the host's response is the same for all three: look at the locator and at
 // the service behind it. The text names the dialect and the step that failed,
-// and never the locator: it carries credentials, and this error reaches the
-// startup diagnostics.
+// and never the locator itself: it carries credentials, and this error reaches
+// the startup diagnostics. The driver's own reason is kept, because it is the
+// diagnosis; on PostgreSQL it names the user, the database and the address it
+// tried, and never the password.
 func openHandle(ctx context.Context, spec Spec, cfg lockingConfig) (*gorm.DB, error) {
 	// The locator is normalised once, and the dialector is the only reader:
 	// the stance judged the trimmed text, so the driver has to be handed the
 	// same one rather than the text with its surrounding whitespace intact.
-	session, err := gorm.Open(spec.Dialector(strings.TrimSpace(cfg.DSN)), &gorm.Config{})
+	locator := strings.TrimSpace(cfg.DSN)
+	session, err := gorm.Open(spec.Dialector(locator), &gorm.Config{DisableAutomaticPing: true})
 	if err != nil {
 		return nil, fmt.Errorf("%w: opening a %s connection failed: %w",
 			ErrConnectFailed, spec.Dialect, err)

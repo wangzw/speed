@@ -85,7 +85,7 @@ type Database interface {
 	// read replica, another system's database or a one-off source. It is
 	// assembled like the delivered handle — same dialect, same declared
 	// plugins, same encryption serializer — and it shares the same connection
-	// pool parameters.
+	// pool parameters. The connection attempt is bound to ctx.
 	//
 	// It carries no migrations and this module does not hold it: the caller
 	// closes it with Close in its own Close stage. Leaking it leaks
