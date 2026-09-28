@@ -2,6 +2,7 @@ package settings
 
 import (
 	"context"
+	"errors"
 	"log/slog"
 	"strings"
 	"sync"
@@ -104,6 +105,46 @@ func TestStoppingTheRefreshWaitsAndReportsNoFailure(t *testing.T) {
 	time.Sleep(100 * time.Millisecond)
 	if lines := recorder.errors(); len(lines) != 0 {
 		t.Errorf("a refresh cut short by Stop was reported as a failure: %q", lines)
+	}
+}
+
+// A failed publish says how the other replicas will converge, and that depends
+// on whether the refresh runs.
+//
+// With the refresh on they read the change at their next tick. With it off
+// nothing will bring it but a later change's event or a restart, and a record
+// promising the next refresh would send whoever reads it to wait for one that
+// never comes.
+func TestAFailedPublishSaysHowTheOthersConverge(t *testing.T) {
+	cases := []struct {
+		name    string
+		refresh time.Duration
+		want    string
+		refused string
+	}{
+		{"refresh on", 5 * time.Minute, "next refresh (every 5m0s here)", "refresh is off"},
+		{"refresh off", 0, "refresh is off", "next refresh"},
+	}
+	for _, c := range cases {
+		t.Run(c.name, func(t *testing.T) {
+			bus := newRecordingBus()
+			bus.failWith = errors.New("the bus is unreachable")
+			store, _ := storeOf(t, demoTable(t), bus)
+			store.config.refresh = c.refresh
+			recorder := &levelRecorder{}
+			store.logger = slog.New(recorder)
+
+			if err := store.Set(context.Background(), Write{Layer: Global(), Key: "demo.limit", Value: 3}); err != nil {
+				t.Fatalf("writing: %v", err)
+			}
+			lines := recorder.errors()
+			if len(lines) != 1 {
+				t.Fatalf("want one error record for the failed publish, got %q", lines)
+			}
+			if !strings.Contains(lines[0], c.want) || strings.Contains(lines[0], c.refused) {
+				t.Errorf("the record reads %q, want it to say %q and not %q", lines[0], c.want, c.refused)
+			}
+		})
 	}
 }
 

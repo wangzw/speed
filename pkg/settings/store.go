@@ -385,7 +385,20 @@ func (s *settingsStore) publish(ctx context.Context, layer Layer, change Change)
 	if err := s.bus.Publish(ctx, evt); err != nil {
 		// Key and tenant only: a value never reaches a log line, which is why
 		// the sensitive marker has nothing to do here.
-		s.logger.Error("settings: publishing a change failed; other replicas converge on "+
-			"their next refresh", "key", change.Key, "tenant", tenant, "error", err)
+		s.logger.Error("settings: publishing a change failed; "+s.convergence(),
+			"key", change.Key, "tenant", tenant, "error", err)
 	}
+}
+
+// convergence says how the other replicas come to serve a change whose event
+// was never published: at their next refresh when it runs, and otherwise only
+// through a later change's event or a restart. The interval it names is this
+// replica's; each replica refreshes on its own configuration.
+func (s *settingsStore) convergence() string {
+	if s.config.refresh <= 0 {
+		return "the periodic refresh is off, so other replicas serve the change only after a " +
+			"later change's event reaches them or they restart"
+	}
+	return "other replicas serve the change at their next refresh (every " +
+		s.config.refresh.String() + " here)"
 }
