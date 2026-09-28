@@ -159,9 +159,11 @@ func TestCertificateFailureIsAListenFailure(t *testing.T) {
 	}
 }
 
-// TestStopClosesListenerSynchronously is the first beat: when Stop returns, the
-// endpoint has already stopped accepting and a new connection is refused, while
-// a request that was already in flight is still being served.
+// TestStopClosesListenerSynchronously is the first of an endpoint's two steps:
+// when stop returns, the endpoint has already stopped accepting and a new
+// connection is refused, while a request that was already in flight is still
+// being served. Waiting is the second step, so that the module can close every
+// endpoint's socket before it waits for any of them.
 func TestStopClosesListenerSynchronously(t *testing.T) {
 	gate := newGateHandler(t)
 	logger, _ := newRecordingLogger()
@@ -171,8 +173,8 @@ func TestStopClosesListenerSynchronously(t *testing.T) {
 	go func() { inFlight <- get("http://" + addr + "/") }()
 	waitFor(t, gate.entered, "the request to reach the handler")
 
-	// Stop is called with a deadline of its own: an implementation that
-	// drained inside Stop would otherwise park here until the whole binary
+	// stop is called with a deadline of its own: an implementation that
+	// drained inside stop would otherwise park here until the whole binary
 	// times out, and this assertion is exactly the one that tells the two
 	// shapes apart.
 	stopped := make(chan error, 1)
@@ -183,7 +185,8 @@ func TestStopClosesListenerSynchronously(t *testing.T) {
 			t.Fatalf("Stop: %v", err)
 		}
 	case <-time.After(waitDeadline):
-		t.Fatal("Stop did not return while a request was in flight; draining belongs to Close")
+		t.Fatal("stop did not return while a request was in flight; waiting for the drain " +
+			"belongs to close, or the module's other endpoints go on accepting meanwhile")
 	}
 
 	if l.isAccepting() {
@@ -196,7 +199,7 @@ func TestStopClosesListenerSynchronously(t *testing.T) {
 	}
 	select {
 	case <-gate.finished:
-		t.Error("Stop cut off a request that was in flight; draining belongs to Close")
+		t.Error("stop cut off a request that was in flight; the drain lets it finish")
 	default:
 	}
 
@@ -206,8 +209,8 @@ func TestStopClosesListenerSynchronously(t *testing.T) {
 	}
 }
 
-// TestCloseWaitsForDrain is the second beat, and the two tests only tell the
-// beats apart together: an implementation that drains inside Stop passes each
+// TestCloseWaitsForDrain is the second step, and the two tests only tell the
+// steps apart together: an implementation that drains inside stop passes each
 // of the "shuts down cleanly" assertions on its own.
 func TestCloseWaitsForDrain(t *testing.T) {
 	gate := newGateHandler(t)
@@ -425,9 +428,9 @@ func TestDoubleCloseOfTheSocketIsNotAFailure(t *testing.T) {
 }
 
 // TestDrainsOfSeveralEndpointsRunTogether pins where the drain is started, which
-// no single-endpoint assertion above can reach. Started in Close instead of in
-// Stop, every one of them still holds: Stop still returns while a request is in
-// flight, Close still waits, the expired budget is still reported. What changes
+// no single-endpoint assertion above can reach. Started in close instead of in
+// stop, every one of them still holds: stop still returns while a request is in
+// flight, close still waits, the expired budget is still reported. What changes
 // is that the endpoints then drain one after another — a shutdown costs the sum
 // of the budgets rather than the longest one, and the budget of the endpoint
 // waited on last only begins long after it stopped accepting.
@@ -451,8 +454,8 @@ func TestDrainsOfSeveralEndpointsRunTogether(t *testing.T) {
 	}
 
 	// Every endpoint stops before any of them is waited on, which is the
-	// order the lifecycle uses: the whole Stop stage runs before the Close
-	// stage begins.
+	// order the module's Stop uses: every socket is closed before any drain
+	// is waited for.
 	for _, l := range bound {
 		if err := l.stop(context.Background()); err != nil {
 			t.Fatalf("Stop: %v", err)
@@ -476,7 +479,7 @@ func TestDrainsOfSeveralEndpointsRunTogether(t *testing.T) {
 	if elapsed >= 2*budget {
 		t.Errorf("waiting on %d endpoints with a drain budget of %s each took %s, which is the "+
 			"cost of draining them one after another. Each drain has to have been running "+
-			"since its own Stop, so waiting on them in turn costs the longest budget",
+			"since its own socket closed, so waiting on them in turn costs the longest budget",
 			endpoints, budget, elapsed)
 	}
 }

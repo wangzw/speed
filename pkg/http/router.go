@@ -198,8 +198,8 @@ type endpoint struct {
 	routes []route
 	layers []layer
 
-	// socket carries everything that exists only between Serve and Close:
-	// the server, the listening socket and the drain.
+	// socket carries everything that exists only between Serve and the end
+	// of the shutdown: the server, the listening socket and the drain.
 	socket listener
 }
 

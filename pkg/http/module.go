@@ -289,9 +289,24 @@ func (r *router) serve() error {
 	return nil
 }
 
-// stop closes every endpoint's socket and leaves the drains running. It returns
-// as soon as no endpoint is accepting any more, which is the whole of what Stop
-// promises.
+// stop closes every endpoint's socket, then waits for every endpoint to finish
+// draining, and reports the failures together.
+//
+// It returns only once the drains are over, because the modules the shutdown
+// reaches after this callback are ones an in-flight request may still be
+// using. Stop runs module by module and Close follows the whole Stop stage, so
+// a request left draining behind this callback would find a module stopped
+// after this one refusing its work, and any module closed holding nothing it
+// can use: the audit trail it writes, the spans it produces, a handle its
+// handler reads through. The price is that a module stopped after this one
+// keeps taking work from sources other than this entry point for as long as
+// the drain lasts.
+//
+// Every socket is closed before any drain is waited for, so no endpoint goes
+// on accepting while another one drains. The endpoints are then waited on one
+// after another, which is the same as waiting on them together: each drain has
+// been running since that endpoint's socket closed, so one endpoint timing out
+// does not shorten the wait of any other.
 func (r *router) stop(ctx context.Context) error {
 	var failures []error
 	for _, name := range r.names {
@@ -299,15 +314,18 @@ func (r *router) stop(ctx context.Context) error {
 			failures = append(failures, err)
 		}
 	}
+	for _, name := range r.names {
+		if err := r.endpoints[name].socket.close(ctx); err != nil {
+			failures = append(failures, err)
+		}
+	}
 	return errors.Join(failures...)
 }
 
-// close waits for every endpoint to finish draining and reports the failures
-// together.
-//
-// The endpoints are waited on one after another, which is the same as waiting
-// on them together: each drain has been running since that endpoint's own Stop,
-// so one endpoint timing out does not shorten the wait of any other.
+// close releases whatever Stop left behind, which on the lifecycle's own path
+// is nothing: Stop has waited for every drain and reported what came of it. A
+// host driving the stages by hand may reach Close without Stop, and then the
+// sockets are closed and the drains waited for here.
 func (r *router) close(ctx context.Context) error {
 	var failures []error
 	for _, name := range r.names {

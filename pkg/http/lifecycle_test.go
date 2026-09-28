@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"net"
 	nethttp "net/http"
+	"strings"
 	"sync"
 	"testing"
 	"time"
@@ -90,58 +91,46 @@ func TestServeDoesNotBlockRun(t *testing.T) {
 	}
 }
 
-// TestStopDoesNotMakeLaterModulesWait pins the two beats at assembly level.
-// Stop closes the listener and returns; the drain it starts goes on in the
-// background, and the modules stopped after this one are not held behind it.
+// TestNoModuleIsReleasedUnderAnInFlightRequest pins what the drain is for: a
+// request that was in flight when the shutdown began finishes against a whole
+// assembly. The drain has to be over before any module stopped after this one
+// receives its Stop, and before any module at all receives its Close — an
+// in-flight request can reach any module in the process, and one that was
+// stopped refuses its work while one that was closed has released what the
+// request is using.
 //
-// The probe delivers the Logger capability this module optionally requires,
-// which is what constructs it first and therefore stops it last. What it sees
-// at that moment is the whole of the property: this module's Stop has run, the
-// endpoint takes nothing new, and the request still in flight has neither
-// finished nor been waited for.
-func TestStopDoesNotMakeLaterModulesWait(t *testing.T) {
+// Two probes watch from the two sides. The one delivering the Logger
+// capability this module optionally requires is constructed before it and
+// therefore stopped after it; the one requiring the Router is constructed after
+// it and closed with every other module once the Stop stage is over. Each
+// records whether the held request had finished by the time its own callback
+// ran. The request is let go a moment after the endpoint stops accepting, so a
+// module released while the drain is still running sees it unfinished.
+func TestNoModuleIsReleasedUnderAnInFlightRequest(t *testing.T) {
 	gate := newGateHandler(t)
-	serving := make(chan struct{}, 1)
-	stopped := make(chan struct{}, 1)
+	serving := make(chan *router, 1)
 
-	type observation struct {
-		accepting, httpStopped, draining, requestFinished bool
-	}
 	var (
-		mu   sync.Mutex
-		obs  observation
-		addr string
+		mu                        sync.Mutex
+		finishedAtStop, stopRan   bool
+		finishedAtClose, closeRan bool
 	)
+	requestFinished := func() bool { return len(gate.finished) > 0 }
 
 	logger, _ := newRecordingLogger()
-	later := &stageProbe{
+	stoppedAfter := &stageProbe{
 		name:     "probe.delivers-the-logger",
 		provides: []core.Provision{{Token: (*log.Logger)(nil)}},
 		product:  stubLogger{logger: logger},
-		onStop: func(reg *core.Registry) error {
-			r, err := routerFrom(reg)
-			if err != nil {
-				return err
-			}
-			e, ok := r.endpoints["public"]
-			if !ok {
-				return errors.New("endpoint \"public\" is not declared in this assembly")
-			}
-			httpStopped, draining := listenerState(&e.socket)
+		onStop: func(*core.Registry) error {
 			mu.Lock()
-			obs = observation{
-				accepting:       e.Accepting(),
-				httpStopped:     httpStopped,
-				draining:        draining,
-				requestFinished: len(gate.finished) > 0,
-			}
-			mu.Unlock()
-			stopped <- struct{}{}
+			defer mu.Unlock()
+			stopRan, finishedAtStop = true, requestFinished()
 			return nil
 		},
 	}
-	registrar := &stageProbe{
-		name:     "probe.registers-the-held-route",
+	constructedAfter := &stageProbe{
+		name:     "probe.requires-the-router",
 		requires: requiresRouter(),
 		onInit:   routeOn("public", "GET /things", gate),
 		onServe: func(reg *core.Registry) error {
@@ -149,64 +138,73 @@ func TestStopDoesNotMakeLaterModulesWait(t *testing.T) {
 			if err != nil {
 				return err
 			}
-			got, err := boundAddr(r, "public")
-			if err != nil {
-				return err
-			}
+			serving <- r
+			return nil
+		},
+		onClose: func(*core.Registry) error {
 			mu.Lock()
-			addr = got
-			mu.Unlock()
-			serving <- struct{}{}
+			defer mu.Unlock()
+			closeRan, finishedAtClose = true, requestFinished()
 			return nil
 		},
 	}
 
-	// Two seconds is long enough that the observation below is taken while
-	// the drain is still running, and short enough that a test failing
-	// before it releases the gate does not sit out the default of half a
-	// minute in its cleanup.
 	a := startAssembly(t,
-		endpointsAt(2*time.Second, "public"),
-		testModule(), later.module(), registrar.module())
-	// Registered after the assembly and therefore run before its cleanup:
-	// the cleanup waits for Run, and Run cannot finish while a request is
-	// still held.
-	t.Cleanup(gate.letGo)
+		endpointsAt(waitDeadline, "public"),
+		testModule(), stoppedAfter.module(), constructedAfter.module())
 
-	waitFor(t, serving, "the endpoint to bind")
-	mu.Lock()
-	at := addr
-	mu.Unlock()
-	go func() { _, _ = getStatus(context.Background(), at, "/things") }()
+	var r *router
+	select {
+	case r = <-serving:
+	case <-time.After(waitDeadline):
+		t.Fatalf("timed out after %s waiting for the endpoint to bind", waitDeadline)
+	}
+	addr, err := boundAddr(r, "public")
+	if err != nil {
+		t.Fatal(err)
+	}
+	answered := make(chan int, 1)
+	go func() {
+		status, _ := getStatus(context.Background(), addr, "/things")
+		answered <- status
+	}()
 	waitFor(t, gate.entered, "the held request to reach the handler")
 
 	a.cancel()
-	waitFor(t, stopped, "the Stop callback of the module stopped after http")
+	waitUntil(t, "the endpoint to stop accepting", func() bool { return !r.endpoints["public"].Accepting() })
+	// Long enough that a module released while the drain is still running is
+	// released inside it; the modules behind the endpoint are otherwise
+	// reached within microseconds of its Stop.
+	time.Sleep(200 * time.Millisecond)
+	gate.letGo()
+
+	if err := a.wait(t); err != nil {
+		t.Fatalf("a run whose in-flight request was released came back with %v", err)
+	}
+	select {
+	case status := <-answered:
+		if status != nethttp.StatusNoContent {
+			t.Errorf("the in-flight request was answered %d, not the %d its handler writes",
+				status, nethttp.StatusNoContent)
+		}
+	case <-time.After(waitDeadline):
+		t.Fatal("the in-flight request was never answered")
+	}
 
 	mu.Lock()
-	got := obs
-	mu.Unlock()
-	if !got.httpStopped {
-		t.Error("http's Stop had not run on the endpoint by the time the module behind it " +
-			"was stopped, so the order this test is built on did not hold")
+	defer mu.Unlock()
+	if !stopRan || !closeRan {
+		t.Fatalf("a probe callback did not run (Stop %v, Close %v), so the order this test is built on did not hold",
+			stopRan, closeRan)
 	}
-	if got.accepting {
-		t.Error("the endpoint was still accepting requests when the next module was stopped; " +
-			"Stop has to have closed the listener before it returns")
+	if !finishedAtStop {
+		t.Error("a module stopped after this one received its Stop while a request was still in " +
+			"flight; the drain has to be over before any module behind the entry point stops " +
+			"taking work, or the request loses what it reaches")
 	}
-	if !got.draining {
-		t.Error("the drain had already finished when the next module was stopped, so Stop " +
-			"waited for it. Draining belongs to Close: waiting for it in Stop holds back " +
-			"the \"stop taking new work\" of every module behind this one")
-	}
-	if got.requestFinished {
-		t.Error("the request held in the handler had finished by the time the next module " +
-			"was stopped, so this test never observed a drain in progress")
-	}
-
-	gate.letGo()
-	if err := a.wait(t); err != nil {
-		t.Errorf("a run whose in-flight request was released came back with %v", err)
+	if !finishedAtClose {
+		t.Error("a module received its Close while a request was still in flight; the drain has " +
+			"to be over before any module releases what the request may be using")
 	}
 }
 
@@ -370,11 +368,12 @@ func TestBindFailureRollsBackBoundEndpoints(t *testing.T) {
 	reopened.Close()
 }
 
-// TestCloseAggregatesPerEndpointDrainFailures pins that Close waits for every
-// endpoint and reports all of them. One endpoint timing out neither shortens
-// another's wait nor hides it: a shutdown report naming one of two stuck
-// endpoints sends its reader after the wrong configuration key.
-func TestCloseAggregatesPerEndpointDrainFailures(t *testing.T) {
+// TestShutdownAggregatesPerEndpointDrainFailures pins that the shutdown waits
+// for every endpoint and reports all of them, once each. One endpoint timing
+// out neither shortens another's wait nor hides it: a shutdown report naming
+// one of two stuck endpoints sends its reader after the wrong configuration
+// key, and one naming the same endpoint twice reads like two failures.
+func TestShutdownAggregatesPerEndpointDrainFailures(t *testing.T) {
 	gateA, gateB := newGateHandler(t), newGateHandler(t)
 	serving := make(chan struct{}, 1)
 	var (
@@ -432,6 +431,13 @@ func TestCloseAggregatesPerEndpointDrainFailures(t *testing.T) {
 	mustContain(t, runErr.Error(), "endpoint \"a\"", "the first endpoint that did not drain")
 	mustContain(t, runErr.Error(), "endpoint \"b\"", "the second endpoint that did not drain")
 	mustContain(t, runErr.Error(), "drain-timeout", "the key whose value the reader has to raise")
+	for _, name := range []string{"a", "b"} {
+		reported := fmt.Sprintf("endpoint %q still had requests in flight", name)
+		if got := strings.Count(runErr.Error(), reported); got != 1 {
+			t.Errorf("the drain timeout of endpoint %q is reported %d times, want once: %v",
+				name, got, runErr)
+		}
+	}
 }
 
 // TestMiddlewareCycleFailsARealAssembly pins that a cycle between two layers

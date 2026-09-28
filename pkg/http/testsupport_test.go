@@ -162,8 +162,8 @@ func (h *recordingHandler) at(level slog.Level) []string {
 }
 
 // gateHandler is a handler a test holds inside: it reports that a request
-// arrived and stays there until the test lets go. Two-beat shutdown is only
-// observable with a request in flight across the beats.
+// arrived and stays there until the test lets go. The drain is only observable
+// with a request in flight across the shutdown.
 type gateHandler struct {
 	entered  chan struct{}
 	release  chan struct{}
@@ -509,27 +509,6 @@ func boundAddr(r *router, name string) (string, error) {
 		return "", fmt.Errorf("endpoint %q never bound an address", name)
 	}
 	return addr.String(), nil
-}
-
-// listenerState reports what an endpoint's socket looks like at one moment of
-// the shutdown: whether Stop has run on it, and whether the drain that Stop
-// leaves running in the background is still going.
-//
-// The pair is what tells the two beats apart. A Stop that waited for its own
-// drain would be seen from a later module with the drain already finished.
-func listenerState(l *listener) (stopped, draining bool) {
-	l.mu.Lock()
-	stopping, drained := l.stopping, l.drained
-	l.mu.Unlock()
-	if drained == nil {
-		return stopping, false
-	}
-	select {
-	case <-drained:
-		return stopping, false
-	default:
-		return stopping, true
-	}
 }
 
 // getStatus issues one GET against a bound endpoint and reports the status it

@@ -15,11 +15,13 @@ import (
 )
 
 // listener is everything about one endpoint that exists only between Serve and
-// Close: the server, the socket, and the drain that outlives Stop.
+// the end of the shutdown: the server, the socket, and the drain.
 //
-// Its state is read by Accepting from any goroutine at any moment and written
-// by Serve, by Stop and by the background drain, so all of it is behind the
-// mutex.
+// Closing the socket and waiting for the drain are two steps, stop and close,
+// so that the module's Stop can close every endpoint's socket before it waits
+// for any of them. Its state is read by Accepting from any goroutine at any
+// moment and written by Serve, by those two steps and by the background drain,
+// so all of it is behind the mutex.
 type listener struct {
 	mu sync.Mutex
 	// name and drainTimeout are copied from the settings when the address is
@@ -43,10 +45,15 @@ type listener struct {
 	stopping bool
 
 	// drained is closed when the background drain has finished, and drainErr
-	// holds what it came back with. Close waits on the channel rather than
-	// draining itself, because the drain starts in Stop.
+	// holds what it came back with. close waits on the channel rather than
+	// draining itself, because the drain starts in stop.
 	drained  chan struct{}
 	drainErr error
+	// reported says drainErr has been handed to a caller already. The module's
+	// Stop waits for the drain and reports it, and its Close comes back to the
+	// same endpoint afterwards; a failure handed to both would reach the
+	// shutdown's aggregate twice.
+	reported bool
 
 	// logger is where this endpoint's own diagnostics go. It is the module's
 	// logger, not the one injected into a request context.
@@ -114,7 +121,7 @@ func (l *listener) start(s endpointSettings, h nethttp.Handler, logger *slog.Log
 		ErrorLog: slog.NewLogLogger(logger.Handler(), slog.LevelError),
 	}
 	// The socket is wrapped so that closing it twice is closing it once.
-	// Stop closes it and starts the Shutdown that follows straight away,
+	// stop closes it and starts the Shutdown that follows straight away,
 	// while the accept loop only stops tracking the socket once it has
 	// returned; the two overlap, and in that window Shutdown closes a socket
 	// Stop has already closed. Unwrapped, the second close answers "use of
@@ -163,12 +170,11 @@ func (l *listener) accept(server *nethttp.Server, socket net.Listener) {
 // stop closes the socket in the calling goroutine and leaves the drain running
 // in the background.
 //
-// Closing the socket is not put in the goroutine: when Stop returns, "no new
+// Closing the socket is not put in the goroutine: once this returns, "no new
 // request is accepted" has to be true already, and when a goroutine gets
-// scheduled is not up to the caller. Waiting for the drain is not done here
-// either: Stop is called on one module after another, so a drain of half a
-// minute inside an entry point would hold back the "stop taking new work" of
-// every module behind it — and those are still taking work while it waits.
+// scheduled is not up to the caller. Waiting for the drain is left to close, so
+// that every endpoint of the module stops accepting before the module waits
+// for any of them, and their drains overlap.
 func (l *listener) stop(ctx context.Context) error {
 	l.mu.Lock()
 	if !l.bound || l.stopping {
@@ -197,8 +203,8 @@ func (l *listener) stop(ctx context.Context) error {
 // The bound cannot come from the context: the one Stop and Close receive has
 // its cancellation stripped, precisely so that a drain honouring its context
 // does not return the instant the host cancels. The clock starts here, where
-// the draining really begins, so a slow Stop in some other module does not eat
-// into this endpoint's drain budget.
+// the draining really begins, so the time the module spends closing its other
+// endpoints does not eat into this endpoint's drain budget.
 func (l *listener) drain(ctx context.Context, server *nethttp.Server, drained chan struct{}, timeout time.Duration) {
 	if timeout > 0 {
 		var cancel context.CancelFunc
@@ -210,7 +216,7 @@ func (l *listener) drain(ctx context.Context, server *nethttp.Server, drained ch
 	switch {
 	case errors.Is(err, context.DeadlineExceeded):
 		// Shutdown gives up waiting but leaves the connections it was
-		// waiting for running. Close is what actually cuts them, and
+		// waiting for running. server.Close is what actually cuts them, and
 		// without it the caller is told the endpoint was cut while the
 		// requests carry on.
 		cutErr := server.Close()
@@ -233,13 +239,13 @@ func (l *listener) drain(ctx context.Context, server *nethttp.Server, drained ch
 }
 
 // close waits for this endpoint's drain to finish and reports what it came back
-// with. An endpoint that never bound returns nil, and so does one that drained
-// cleanly.
+// with, to the first caller only. An endpoint that never bound returns nil, and
+// so does one that drained cleanly or whose drain was reported already.
 //
-// A Close that was not preceded by a Stop starts the drain itself: rollback
-// runs Stop and Close over every constructed instance, but a host driving the
-// stages by hand may skip straight to Close, and an endpoint left listening
-// after that would outlive the process's shutdown.
+// A close that was not preceded by a stop starts the drain itself: the
+// module's Stop runs both, but a host driving the stages by hand may skip
+// straight to Close, and an endpoint left listening after that would outlive
+// the process's shutdown.
 func (l *listener) close(ctx context.Context) error {
 	l.mu.Lock()
 	bound, stopping := l.bound, l.stopping
@@ -260,6 +266,10 @@ func (l *listener) close(ctx context.Context) error {
 
 	l.mu.Lock()
 	defer l.mu.Unlock()
+	if l.reported {
+		return stopErr
+	}
+	l.reported = true
 	return errors.Join(stopErr, l.drainErr)
 }
 
@@ -282,7 +292,7 @@ func (l *listener) addr() net.Addr {
 }
 
 // onceCloser closes the wrapped listener once and hands the same result back
-// to every later call. Two closes race by construction here: Stop closes the
+// to every later call. Two closes race by construction here: stop closes the
 // socket and starts the drain, and the drain's Shutdown closes every listener
 // the server is still tracking, which this one is until the accept loop has
 // returned. The window is short and the failure it produces is intermittent,

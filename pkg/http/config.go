@@ -60,8 +60,9 @@ type endpointConfig struct {
 	// IdleTimeout bounds how long a kept-alive connection may sit idle, 0
 	// for no bound.
 	IdleTimeout *time.Duration `config:"idle-timeout"`
-	// DrainTimeout is how long Close waits for this endpoint's in-flight
-	// requests. It is the other duration that cannot be switched off: it is
+	// DrainTimeout is how long the shutdown waits for this endpoint's
+	// in-flight requests. It is the other duration that cannot be switched
+	// off: it is
 	// the only bound the drain has, because the context Stop and Close
 	// receive has its cancellation stripped.
 	DrainTimeout *time.Duration `config:"drain-timeout"`
@@ -206,7 +207,7 @@ func (e endpointConfig) resolve(name string) (endpointSettings, error) {
 		},
 		{
 			"drain-timeout", e.DrainTimeout, defaultDrainTimeout,
-			"without it Close waits for ever on an in-flight request that cannot " +
+			"without it the shutdown waits for ever on an in-flight request that cannot " +
 				"finish: the context Stop and Close receive has its cancellation " +
 				"stripped and the registry imposes no shutdown timeout of its own, so a " +
 				"host blocked in Run is left with nothing to interrupt it with",
