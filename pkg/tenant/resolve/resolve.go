@@ -22,6 +22,7 @@ import (
 	"sort"
 	"strings"
 	"sync"
+	"unicode"
 
 	"github.com/vislake/speed/pkg/authn"
 	"github.com/vislake/speed/pkg/config"
@@ -413,14 +414,17 @@ func (r *resolver) refuse(w nethttp.ResponseWriter, req *nethttp.Request, why, n
 }
 
 // checkExtractorName refuses a name no module could select from configuration.
+//
+// A blank is any character Unicode counts as space, wherever it stands: a
+// vertical tab or a no-break space is as invisible in a configuration file and
+// a startup line as a space is, and a name carrying one reads back as a
+// different name.
 func checkExtractorName(name string) error {
 	if name == "" {
 		return fmt.Errorf("%w: the name is empty", tenant.ErrInvalidExtractor)
 	}
-	for _, c := range name {
-		if c == ' ' || c == '\t' || c == '\n' || c == '\r' {
-			return fmt.Errorf("%w: %q carries a blank", tenant.ErrInvalidExtractor, name)
-		}
+	if strings.IndexFunc(name, unicode.IsSpace) >= 0 {
+		return fmt.Errorf("%w: %q carries a blank", tenant.ErrInvalidExtractor, name)
 	}
 	return nil
 }

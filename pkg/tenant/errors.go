@@ -49,7 +49,7 @@ var (
 	ErrExtractorConflict = errors.New("tenant: two extractors are registered under one name")
 
 	// ErrInvalidExtractor reports a registration whose own shape is wrong: a
-	// name that is empty or blanks alone, or a nil implementation.
+	// name that is empty or carries a blank anywhere, or a nil implementation.
 	ErrInvalidExtractor = errors.New("tenant: an extractor registration is not well formed")
 
 	// ErrRosterMissing reports that the roster table was not there when the

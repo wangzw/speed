@@ -4,6 +4,7 @@ import (
 	"errors"
 	nethttp "net/http"
 	"net/http/httptest"
+	"strconv"
 	"strings"
 	"testing"
 
@@ -161,6 +162,23 @@ func TestSealRefusesADuplicateName(t *testing.T) {
 
 	if err := r.seal(); err == nil {
 		t.Fatal("a duplicate registration was accepted")
+	}
+}
+
+// A name is free of blanks, and a blank is any character Unicode counts as
+// space, not the four ASCII ones alone: a name carrying one cannot be written
+// into configuration so that it reads back as the same name.
+func TestSealRefusesANameCarryingAnyBlank(t *testing.T) {
+	for _, name := range []string{"a b", "a\tb", "a\nb", "a\rb", "a\vb", "a\fb", "a\u00a0b", "a\u2028b", "\u3000"} {
+		t.Run(strconv.Quote(name), func(t *testing.T) {
+			r := newResolver(settings{extractor: HeaderExtractor}, nil)
+			r.open()
+			r.Register(HeaderExtractor, headerExtractor{name: "X-Tenant"})
+			r.Register(name, stub{name: "acme"})
+			if err := r.seal(); !errors.Is(err, tenant.ErrInvalidExtractor) {
+				t.Fatalf("registering %q gave %v at seal, want ErrInvalidExtractor", name, err)
+			}
+		})
 	}
 }
 
