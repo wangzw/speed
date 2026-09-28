@@ -43,7 +43,7 @@ func TestStageStringNamesTheCallbackItDrives(t *testing.T) {
 
 // TestDepthStopsEveryCallbackBeyondIt pins the whole of what a depth means:
 // the stages up to it run as they always do, the ones past it do not run at
-// all, and whatever was constructed on the way is released in reverse order
+// all, and whatever was constructed on the way is stopped and then closed
 // regardless.
 func TestDepthStopsEveryCallbackBeyondIt(t *testing.T) {
 	cases := []struct {

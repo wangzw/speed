@@ -21,10 +21,12 @@ var errNotAccepting = errors.New("the worker is not accepting work")
 // entryPoint admits one request in Serve and keeps it in flight until its Stop
 // begins; Stop then drains, returning only once that request's handler has.
 // It is the shape an HTTP module's Stop has: close the listener, then wait out
-// what is already inside.
+// what is already inside. An entry point whose Serve never ran admitted
+// nothing, and its Stop has nothing to wait for.
 type entryPoint struct {
 	mu      sync.Mutex
 	handler func(context.Context) error
+	served  bool
 	release chan struct{}
 	drained chan error
 }
@@ -70,6 +72,7 @@ func entryModule(p *probe, name string) core.Module {
 			e := instance.(*entryPoint)
 			e.mu.Lock()
 			handler := e.handler
+			e.served = true
 			e.mu.Unlock()
 			go func() {
 				<-e.release
@@ -81,6 +84,12 @@ func entryModule(p *probe, name string) core.Module {
 		Stop: func(_ context.Context, _ *core.Registry, instance any) error {
 			e := instance.(*entryPoint)
 			p.record("stop %s", name)
+			e.mu.Lock()
+			served := e.served
+			e.mu.Unlock()
+			if !served {
+				return nil
+			}
 			close(e.release)
 			if err := <-e.drained; err != nil {
 				p.record("in-flight request failed: %v", err)
@@ -153,6 +162,96 @@ func TestAnEntryPointDrainsBeforeAnyOtherModuleStops(t *testing.T) {
 					p.snapshot())
 			}
 			if p.indexOf(t, "stop "+c.worker) < p.indexOf(t, "in-flight request completed") {
+				t.Fatalf("the worker was stopped before the entry point drained; recorded %v",
+					p.snapshot())
+			}
+		})
+	}
+}
+
+// TestEveryWayOutOfADriveStopsTheEntryPointsFirst pins that the shutdown order
+// belongs to the drive and not to its ordinary end alone. A startup that fails
+// part-way and an action that fails leave through the same shutdown as a
+// cancelled run: the entry points are stopped before every other module, and a
+// request an entry point admitted before the failure still has its work taken
+// by the module it reaches.
+//
+// The worker requires the entry point's capability, so it is constructed after
+// it, and reverse construction order alone would stop it first. The startup
+// that fails in Start has served nothing, so there the order is all there is
+// to see; it is there to show that the failing stage does not change it.
+func TestEveryWayOutOfADriveStopsTheEntryPointsFirst(t *testing.T) {
+	failure := errors.New("the drive could not go on")
+	afterEntry := []core.Requirement{{Token: (*Intake)(nil)}}
+
+	cases := []struct {
+		name string
+		// admitted says whether the entry point served before the failure,
+		// which puts a request in flight when the shutdown begins.
+		admitted bool
+		drive    func(t *testing.T, p *probe) error
+	}{
+		{
+			name:     "a later entry point's Serve fails",
+			admitted: true,
+			drive: func(t *testing.T, p *probe) error {
+				reg := core.New()
+				register(reg, entryModule(p, "entry"), workerModule(p, "worker", afterEntry), core.Module{
+					Name:     "late-entry",
+					Requires: afterEntry,
+					Serve: func(context.Context, *core.Registry, any) error {
+						return failure
+					},
+				})
+				return runToFailure(t, reg)
+			},
+		},
+		{
+			name:     "the action fails",
+			admitted: true,
+			drive: func(t *testing.T, p *probe) error {
+				reg := core.New()
+				register(reg, entryModule(p, "entry"), workerModule(p, "worker", afterEntry))
+				return driveToEnd(t, reg, core.Drive{
+					Depth:        core.StageServe,
+					Participants: []string{"entry", "worker"},
+					Action: func(context.Context, *core.Registry) error {
+						return failure
+					},
+				})
+			},
+		},
+		{
+			name: "a Start fails before anything is served",
+			drive: func(t *testing.T, p *probe) error {
+				reg := core.New()
+				register(reg, entryModule(p, "entry"), workerModule(p, "worker", afterEntry), core.Module{
+					Name: "starter",
+					Start: func(context.Context, *core.Registry, any) error {
+						return failure
+					},
+				})
+				return runToFailure(t, reg)
+			},
+		},
+	}
+	for _, c := range cases {
+		t.Run(c.name, func(t *testing.T) {
+			p := &probe{}
+			if err := c.drive(t, p); !errors.Is(err, failure) {
+				t.Fatalf("the drive returned %v, want the failure that ended it", err)
+			}
+			if p.indexOf(t, "stop worker") < p.indexOf(t, "stop entry") {
+				t.Fatalf("the worker was stopped before the entry point; recorded %v", p.snapshot())
+			}
+			if !c.admitted {
+				return
+			}
+			if !p.has("in-flight request completed") {
+				t.Fatalf("the request in flight when the drive failed did not complete; recorded %v",
+					p.snapshot())
+			}
+			if p.indexOf(t, "stop worker") < p.indexOf(t, "in-flight request completed") {
 				t.Fatalf("the worker was stopped before the entry point drained; recorded %v",
 					p.snapshot())
 			}
