@@ -2,6 +2,7 @@ package db
 
 import (
 	"fmt"
+	"maps"
 	"reflect"
 	"slices"
 
@@ -17,9 +18,13 @@ const (
 	restoreWritesCallbackName = "db:restore-caller-values"
 )
 
-// restorationsSetting is the statement setting the sealed map values wait
-// under until the step that builds the SQL has read them.
-const restorationsSetting = "db:caller-values-to-restore"
+// The statement settings what was replaced waits under until the step that
+// builds the SQL has read the replacement: the values sealed into an insert's
+// maps, and the map an update was written from.
+const (
+	restorationsSetting = "db:caller-values-to-restore"
+	callerDestSetting   = "db:caller-dest-to-restore"
+)
 
 // restoration is one value this package replaced in a caller's map, and what
 // goes back once the statement no longer needs the replacement.
@@ -123,15 +128,23 @@ func sealUpdate(tx *gorm.DB) {
 		}
 		return
 	}
+	// An update's map is sealed in a copy the statement runs on, and the
+	// caller's map is never written. GORM only reads the map an update is
+	// written from, so a caller may hand one map to many updates at once; a
+	// seal written into it would be read by a concurrent update as the value
+	// to write and sealed a second time.
 	if values, ok := updatedMap(st.Dest); ok {
 		selectColumns, restricted := st.SelectAndOmitColumns(false, true)
-		restorations, err := sealMap(st, values, selectColumns, restricted)
+		copied := maps.Clone(values)
+		replaced, err := sealMap(st, copied, selectColumns, restricted)
 		if err != nil {
-			restore(restorations)
 			_ = tx.AddError(err)
 			return
 		}
-		keepForRestore(st, restorations)
+		if len(replaced) > 0 {
+			st.Settings.Store(callerDestSetting, st.Dest)
+			st.Dest = copied
+		}
 		return
 	}
 	if err := refuseUnsealedStruct(st, sealed); err != nil {
@@ -139,15 +152,20 @@ func sealUpdate(tx *gorm.DB) {
 	}
 }
 
-// restoreCallerValues puts back what sealMap replaced in the caller's maps,
-// once the step that builds the SQL has read the sealed values.
+// restoreCallerValues puts back what the sealing replaced, once the step that
+// builds the SQL has read the sealed values: the caller's own map as the
+// update's destination, and the values sealMap replaced in an insert's maps.
 //
-// The replacement is done in the caller's own map rather than in a copy
-// because GORM writes into that map after an insert — the key it generated,
-// the columns a RETURNING clause gave back — and a copy would take those away
-// from the caller. What the caller finds afterwards is the plaintext it put
-// there and whatever GORM added.
+// An insert's replacement is done in the caller's own map rather than in a
+// copy because GORM writes into that map after an insert — the key it
+// generated, the columns a RETURNING clause gave back — and a copy would take
+// those away from the caller. GORM's own write makes a map shared between
+// concurrent inserts unsafe with or without this package. What the caller
+// finds afterwards is the plaintext it put there and whatever GORM added.
 func restoreCallerValues(tx *gorm.DB) {
+	if dest, ok := tx.Statement.Settings.LoadAndDelete(callerDestSetting); ok {
+		tx.Statement.Dest = dest
+	}
 	pending, ok := tx.Statement.Settings.LoadAndDelete(restorationsSetting)
 	if !ok {
 		return

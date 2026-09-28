@@ -2,6 +2,7 @@ package db
 
 import (
 	"strings"
+	"sync"
 	"testing"
 
 	"gorm.io/gorm"
@@ -143,6 +144,61 @@ func TestAMapWriteLeavesTheCallersValuesInPlainText(t *testing.T) {
 	if _, ok := created["id"]; !ok {
 		t.Errorf("the caller's map carries no id after the insert, and GORM writes the key it generated "+
 			"back into the map it inserted from: %#v", created)
+	}
+}
+
+// TestAnUpdateMapSharedBetweenGoroutinesStaysReadOnly covers an assignment map
+// held as a value and handed to many updates at once — a fixed set of
+// redactions applied to whichever rows a request names. GORM only reads the map
+// an update is written from, so sharing one is safe, and the sealing must keep
+// it so: a seal written into the shared map would be read by a concurrent
+// update as the value to write, sealed a second time, and stored as a value
+// the model opens into ciphertext.
+func TestAnUpdateMapSharedBetweenGoroutinesStaysReadOnly(t *testing.T) {
+	const writers, rounds = 16, 4
+	product := assembleEncrypted(t, encryptedDSN(t), encryptedRootKeyItem)
+	createEncryptedTable(t, product)
+	ids := make([]uint, writers)
+	for i := range ids {
+		ids[i] = writtenRow(t, product).ID
+	}
+
+	const redacted = "redacted@example.com"
+	shared := map[string]any{"email": redacted}
+	var (
+		wg       sync.WaitGroup
+		mu       sync.Mutex
+		failures []error
+	)
+	for _, id := range ids {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			for range rounds {
+				if err := product.DB().Model(&encryptedModel{}).Where("id = ?", id).Updates(shared).Error; err != nil {
+					mu.Lock()
+					failures = append(failures, err)
+					mu.Unlock()
+				}
+			}
+		}()
+	}
+	wg.Wait()
+	for _, err := range failures {
+		t.Errorf("an update from the shared map failed: %v", err)
+	}
+	if shared["email"] != redacted {
+		t.Errorf("the shared map holds %#v after the updates, want the plaintext it was built with", shared["email"])
+	}
+	for _, id := range ids {
+		var read encryptedModel
+		if err := product.DB().First(&read, id).Error; err != nil {
+			t.Errorf("reading row %d back: %v", id, err)
+			continue
+		}
+		if read.Email != redacted {
+			t.Errorf("row %d reads back as %q, want %q: a concurrent update sealed a seal", id, read.Email, redacted)
+		}
 	}
 }
 
