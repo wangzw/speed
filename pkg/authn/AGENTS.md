@@ -115,9 +115,12 @@ can do on its own side is refuse to honour a late answer — a pass that arrives
 after the budget ends the request as an outage — and cap how many calls are
 inside a backend at once.
 
-`pkg/authn/static` is the worked example. It never answers `Unavailable`,
-because its table is in memory from startup and there is no moment at which it
-is present and unable to say.
+`pkg/authn/static` is the worked example. Its table is in memory from startup,
+so while its context holds there is no moment at which it is present and unable
+to say, and it answers `Unavailable` only for a context that ended before the
+password derivation began. The derivation is the standard library's, which
+takes no context, so that check before it is the one point at which this
+backend can honour its context.
 
 ## Running it
 

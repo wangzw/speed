@@ -76,8 +76,9 @@ func TestTheRightPasswordAuthenticatesAndTheWrongOneDoesNot(t *testing.T) {
 //
 // A refusal and an outage are the distinction every lockout, rate limiter and
 // alert rule is keyed off. This backend's table is in memory from startup, so
-// there is no moment at which it is present but unable to say — and so no case
-// in which it may answer as though there were.
+// while the context it was handed holds there is no moment at which it is
+// present but unable to say — and so no case in which it may answer as though
+// there were.
 func TestThisBackendNeverAnswersUnavailable(t *testing.T) {
 	b := tableWith(t, "local", map[string]string{"alice": "secret"})
 
@@ -107,6 +108,36 @@ func TestThisBackendNeverAnswersUnavailable(t *testing.T) {
 				t.Errorf("the verdict reads %v, want denied: this backend is never unable to "+
 					"say, so every no it gives is about the credential",
 					verdict.OutcomeOf(got))
+			}
+		})
+	}
+}
+
+// TestAContextThatHasEndedIsHonouredBeforeThePasswordIsDerived holds the one
+// point at which this backend can honour its context.
+//
+// Every backend is required to return once its context ends. The password
+// derivation takes no context and runs to completion once it has begun, so the
+// context is asked before it begins: a call whose time is already gone spends
+// no derivation and answers that it could not say, which is the truth — the
+// password was never checked.
+func TestAContextThatHasEndedIsHonouredBeforeThePasswordIsDerived(t *testing.T) {
+	b := tableWith(t, "local", map[string]string{"alice": "correct horse"})
+
+	cancelled, cancel := context.WithCancel(context.Background())
+	cancel()
+	expired, stop := context.WithTimeout(context.Background(), 0)
+	defer stop()
+
+	for name, ctx := range map[string]context.Context{"cancelled": cancelled, "expired": expired} {
+		t.Run(name, func(t *testing.T) {
+			got := b.Verify(ctx, "alice", basic("alice", "correct horse"))
+			if verdict.OutcomeOf(got) != verdict.Unavailable {
+				t.Errorf("the verdict reads %v, want unavailable: the call's time was gone "+
+					"before the password was derived", verdict.OutcomeOf(got))
+			}
+			if !errors.Is(verdict.CauseOf(got), ctx.Err()) {
+				t.Errorf("the verdict carries %v, want the context's own error", verdict.CauseOf(got))
 			}
 		})
 	}

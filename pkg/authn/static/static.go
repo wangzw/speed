@@ -180,11 +180,20 @@ func (b *backend) Claim() authn.Claim {
 
 // Verify checks one credential against the table.
 //
-// It never answers Unavailable. The table was read at startup and lives in
-// memory, so there is no moment at which this backend is present but unable to
-// say — which is the one thing that separates a refusal from an outage, and the
-// distinction every lockout and alert rule is keyed off.
-func (b *backend) Verify(_ context.Context, subject string, c authn.Credential) authn.Verdict {
+// It answers Unavailable in one case alone: the context it was handed has ended
+// before the password is derived. The table was read at startup and lives in
+// memory, so while the context holds there is no moment at which this backend
+// is present but unable to say — which is the one thing that separates a
+// refusal from an outage, and the distinction every lockout and alert rule is
+// keyed off.
+//
+// The context is asked before the derivation and not during it. The standard
+// library's derivation takes no context and runs to completion once begun, and
+// it is the implementation the FIPS 140 mode validates, so an interruptible one
+// written here would take this backend out of that mode's reach. What one
+// attempt costs once it has begun is therefore bounded by the iteration count
+// written into the table, not by the call budget.
+func (b *backend) Verify(ctx context.Context, subject string, c authn.Credential) authn.Verdict {
 	if !strings.EqualFold(c.Scheme, basicScheme) {
 		return authn.Denied(fmt.Errorf("%s: the credential uses the %q scheme, and this backend "+
 			"reads %q alone", ModuleName, c.Scheme, basicScheme))
@@ -208,6 +217,10 @@ func (b *backend) Verify(_ context.Context, subject string, c authn.Credential) 
 		// The gateway asks this backend about the subjects it claimed, so
 		// reaching here means the claim and the table have parted company.
 		return authn.Denied(fmt.Errorf("%s: %q is not in this backend's table", ModuleName, subject))
+	}
+	if ended := ctx.Err(); ended != nil {
+		return authn.Unavailable(fmt.Errorf("%s: the call ended before the password was derived: %w",
+			ModuleName, ended))
 	}
 	if !stored.matches(password) {
 		return authn.Denied(fmt.Errorf("%s: the password does not match", ModuleName))
