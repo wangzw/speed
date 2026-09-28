@@ -57,11 +57,11 @@ type ID string
 func (id ID) Value() (driver.Value, error) {
 	switch {
 	case id == "":
-		return string(id), fmt.Errorf("%w: a tenant column is being written empty",
+		return string(id), fmt.Errorf("%w: an empty tenant identifier is being bound into a statement",
 			ErrNoTenantInContext)
 	case !IsIdentifier(string(id)):
-		return string(id), fmt.Errorf("%w: a tenant column is being written with a blank "+
-			"or a control character", ErrInvalidTenant)
+		return string(id), fmt.Errorf("%w: a tenant identifier carrying a blank or a "+
+			"control character is being bound into a statement", ErrInvalidTenant)
 	}
 	return string(id), nil
 }
