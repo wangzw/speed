@@ -85,16 +85,17 @@ const (
 	// delivered table — into a standing load at the poll interval, while the
 	// window they enforce is a day wide.
 	retireEvery = time.Hour
-	// createTable is idempotent, and it is this package's own record of having
-	// been applied — this capability is below the database module in the
-	// dependency graph and has no migration machinery to borrow.
+	// createOutbox runs only when the outbox is missing, and the table being
+	// there is this package's own record of having created it — this capability
+	// is below the database module in the dependency graph and has no migration
+	// machinery to borrow.
 	//
 	// xact is the transaction that wrote the entry. It is what a replica tells
 	// an entry published before it opened from one published after by: see
 	// bus.origin. identifier is the event's own identifier, which every
 	// replica's subscribers receive; id is this table's row key and orders the
 	// reads.
-	createTable = `CREATE TABLE IF NOT EXISTS ` + table + ` (
+	createOutbox = `CREATE TABLE IF NOT EXISTS ` + table + ` (
 		id         BIGSERIAL PRIMARY KEY,
 		type       TEXT NOT NULL,
 		tenant     TEXT NOT NULL DEFAULT '',
@@ -102,13 +103,29 @@ const (
 		created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
 		xact       xid8 NOT NULL DEFAULT pg_current_xact_id(),
 		identifier TEXT NOT NULL DEFAULT ''
-	);
-	CREATE TABLE IF NOT EXISTS ` + deliveredTable + ` (
+	)`
+	// createDelivered runs only when the delivered table is missing.
+	createDelivered = `CREATE TABLE IF NOT EXISTS ` + deliveredTable + ` (
 		event_id BIGINT NOT NULL,
 		replica  TEXT NOT NULL,
 		PRIMARY KEY (event_id, replica)
-	);
-	CREATE INDEX IF NOT EXISTS ` + deliveredTable + `_replica ON ` + deliveredTable + ` (replica, event_id)`
+	)`
+	// replicaIndex is the delivered table's index by replica, which a replica
+	// reading what it has not marked goes through. createReplicaIndex runs only
+	// when it is missing.
+	replicaIndex       = deliveredTable + `_replica`
+	createReplicaIndex = `CREATE INDEX IF NOT EXISTS ` + replicaIndex + ` ON ` + deliveredTable + ` (replica, event_id)`
+	// tablePresent asks the catalog whether the table named by its parameter is
+	// there, and indexPresent whether the index named by its second is on the
+	// table named by its first. Both resolve a table the way every other
+	// statement here does: through the search path.
+	tablePresent = `SELECT to_regclass($1) IS NOT NULL`
+	indexPresent = `SELECT EXISTS (SELECT 1 FROM pg_index i JOIN pg_class c ON c.oid = i.indexrelid
+		WHERE i.indrelid = to_regclass($1) AND c.relname = $2)`
+	// columnPresent asks whether the table named by its first parameter has the
+	// column named by its second, resolving the table the same way.
+	columnPresent = `SELECT EXISTS (SELECT 1 FROM pg_attribute
+		WHERE attrelid = to_regclass($1) AND attname = $2 AND attnum > 0 AND NOT attisdropped)`
 	// schemaLock is the advisory lock the table creation runs under. Its value
 	// is the bytes of "speed_ev", so it is recognisable in pg_locks and does
 	// not collide with a lock another part of the assembly takes by number.
@@ -159,7 +176,7 @@ func open(ctx context.Context, cfg *pgpool.Config, logger *slog.Logger) (event.B
 	}
 	if createErr := createTables(ctx, pool); createErr != nil {
 		pool.Close()
-		return nil, fmt.Errorf("%s: creating %s: %w", ModuleName, table, createErr)
+		return nil, fmt.Errorf("%s: preparing %s and %s: %w", ModuleName, table, deliveredTable, createErr)
 	}
 	// The listening connection is outside the pool on purpose: a connection
 	// running LISTEN would otherwise be handed to an ordinary query, where the
@@ -201,7 +218,7 @@ func open(ctx context.Context, cfg *pgpool.Config, logger *slog.Logger) (event.B
 }
 
 // createTables makes sure this implementation's tables are there, one replica
-// at a time.
+// at a time, creating only what is missing.
 //
 // IF NOT EXISTS does not make concurrent creation safe: two sessions that both
 // find the table missing both go on to create it, and the one that commits
@@ -211,6 +228,14 @@ func open(ctx context.Context, cfg *pgpool.Config, logger *slog.Logger) (event.B
 // lock turns the creations into a queue: the first creates, and each after it
 // finds the tables there once it holds the lock. It is released with the
 // transaction, whatever becomes of it.
+//
+// The catalog is asked before anything is created, and nothing is created that
+// is there. PostgreSQL checks CREATE on the schema before it looks for the
+// table an IF NOT EXISTS names, and ownership of the table before it looks for
+// an index: a start that ran the statements regardless would need both
+// privileges on every start, and a service running under a role that may only
+// read and write rows would fail on a database whose tables are all there. The
+// lock and the catalog reads need no privilege of their own.
 func createTables(ctx context.Context, pool *pgxpool.Pool) error {
 	tx, err := pool.Begin(ctx)
 	if err != nil {
@@ -220,8 +245,25 @@ func createTables(ctx context.Context, pool *pgxpool.Pool) error {
 	if _, err := tx.Exec(ctx, `SELECT pg_advisory_xact_lock($1)`, schemaLock); err != nil {
 		return fmt.Errorf("waiting for the schema lock: %w", err)
 	}
-	if _, err := tx.Exec(ctx, createTable); err != nil {
-		return err
+	for _, object := range []struct {
+		what, create string
+		probe        string
+		args         []any
+	}{
+		{table, createOutbox, tablePresent, []any{table}},
+		{deliveredTable, createDelivered, tablePresent, []any{deliveredTable}},
+		{replicaIndex, createReplicaIndex, indexPresent, []any{deliveredTable, replicaIndex}},
+	} {
+		var present bool
+		if err := tx.QueryRow(ctx, object.probe, object.args...).Scan(&present); err != nil {
+			return fmt.Errorf("asking whether %s is there: %w", object.what, err)
+		}
+		if present {
+			continue
+		}
+		if _, err := tx.Exec(ctx, object.create); err != nil {
+			return fmt.Errorf("creating %s: %w", object.what, err)
+		}
 	}
 	if err := addMissingColumns(ctx, tx); err != nil {
 		return err
@@ -230,8 +272,8 @@ func createTables(ctx context.Context, pool *pgxpool.Pool) error {
 }
 
 // addedColumns are the outbox columns a table created before they existed
-// lacks, with the definition each is added with. CREATE TABLE IF NOT EXISTS
-// leaves such a table as it is, so without this every statement naming one of
+// lacks, with the definition each is added with. An outbox that is already
+// there is not created again, so without this every statement naming one of
 // them would fail on it.
 var addedColumns = []struct{ name, definition string }{
 	{"xact", "xid8 NOT NULL DEFAULT pg_current_xact_id()"},
@@ -241,17 +283,15 @@ var addedColumns = []struct{ name, definition string }{
 // addMissingColumns adds each of addedColumns the outbox lacks.
 //
 // The catalog is asked first rather than running ADD COLUMN IF NOT EXISTS on
-// every start: ALTER TABLE takes the table's strongest lock before it looks,
-// and that lock would queue behind every running publish and hold up every
-// publish behind it, once per replica start, for a change that is already
-// there.
+// every start, for two reasons. ALTER TABLE takes the table's strongest lock
+// before it looks, and that lock would queue behind every running publish and
+// hold up every publish behind it, once per replica start, for a change that is
+// already there. And it requires ownership of the table before it looks, which
+// a role that may only read and write rows does not have.
 func addMissingColumns(ctx context.Context, tx pgx.Tx) error {
 	for _, column := range addedColumns {
 		var present bool
-		if err := tx.QueryRow(ctx,
-			`SELECT EXISTS (SELECT 1 FROM information_schema.columns
-			 WHERE table_schema = current_schema() AND table_name = $1 AND column_name = $2)`,
-			table, column.name).Scan(&present); err != nil {
+		if err := tx.QueryRow(ctx, columnPresent, table, column.name).Scan(&present); err != nil {
 			return fmt.Errorf("reading the columns of %s: %w", table, err)
 		}
 		if present {

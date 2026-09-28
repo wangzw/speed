@@ -2,9 +2,16 @@ package postgres
 
 import (
 	"context"
+	"errors"
+	"strings"
 	"sync"
+	"sync/atomic"
 	"testing"
 
+	"github.com/jackc/pgx/v5/pgconn"
+
+	"github.com/vislake/speed/pkg/event"
+	"github.com/vislake/speed/pkg/event/internal/bussuite"
 	"github.com/vislake/speed/pkg/internal/pgpool"
 	"github.com/vislake/speed/pkg/internal/pgpool/pgtest"
 	"github.com/vislake/speed/pkg/log"
@@ -35,6 +42,80 @@ func TestTheListeningConnectionGoesWhereThePoolGoes(t *testing.T) {
 		_ = b.Close(context.Background())
 	}
 }
+
+// TestARoleThatMayOnlyWriteRowsStartsOnAPreparedDatabase pins the deployment
+// that splits the credentials: the tables created once by a role that may create
+// them, the service run by one that may only read and write rows. Every start
+// prepares the tables, and with the tables already there that preparation has
+// nothing to change — so it must not need a privilege that changes anything.
+// PostgreSQL checks CREATE on the schema before it looks for the table an
+// IF NOT EXISTS names, so a start that issues the statement regardless fails on
+// the role that has everything it will use.
+//
+// The role is then held to the whole round a replica makes — publish, read,
+// mark, and the retention pass — so a start that succeeds is not followed by a
+// first event that fails on a grant the deployment could not have known it
+// needed.
+func TestARoleThatMayOnlyWriteRowsStartsOnAPreparedDatabase(t *testing.T) {
+	dsn := pgtest.Acquire(t)
+	ctx := context.Background()
+	prepared, err := open(ctx, &pgpool.Config{DSN: dsn, MaxConns: 1}, log.Default())
+	if err != nil {
+		t.Fatalf("preparing the tables as their owner: %v", err)
+	}
+	_ = prepared.(*bus).Close(ctx)
+
+	roleDSN := pgtest.DMLRole(t, dsn)
+	opened, err := open(ctx, &pgpool.Config{DSN: roleDSN, MaxConns: 2}, log.Default())
+	if err != nil {
+		t.Fatalf("a role that may read and write rows could not start on a database whose tables are "+
+			"already there: %v", err)
+	}
+	b := opened.(*bus)
+	t.Cleanup(func() { _ = b.Close(ctx) })
+
+	var delivered atomic.Int32
+	b.Subscribe("t", func(context.Context, event.Event) error {
+		delivered.Add(1)
+		return nil
+	})
+	if err := b.begin(ctx); err != nil {
+		t.Fatalf("begin as the role: %v", err)
+	}
+	if err := b.Publish(ctx, event.Event{Type: "t"}); err != nil {
+		t.Fatalf("Publish as the role: %v", err)
+	}
+	bussuite.WaitFor(t, "the event published as the role to be delivered", func() bool { return delivered.Load() == 1 })
+	if err := b.runRetention(ctx); err != nil {
+		t.Errorf("the retention pass as the role: %v", err)
+	}
+}
+
+// TestARoleThatMayOnlyWriteRowsIsToldWhatIsMissing is the other side of the
+// same deployment: a database whose tables were never created. The start has to
+// create them, cannot, and fails saying which one it was creating and carrying
+// the server's refusal, so the failure says what the owning role has to create
+// and that a privilege is what stopped it.
+func TestARoleThatMayOnlyWriteRowsIsToldWhatIsMissing(t *testing.T) {
+	dsn := pgtest.Acquire(t)
+	roleDSN := pgtest.DMLRole(t, dsn)
+	opened, err := open(context.Background(), &pgpool.Config{DSN: roleDSN, MaxConns: 1}, log.Default())
+	if err == nil {
+		_ = opened.(*bus).Close(context.Background())
+		t.Fatal("a role that may create nothing started on a database without the tables")
+	}
+	if !strings.Contains(err.Error(), "creating "+table) {
+		t.Errorf("the failure does not say it was creating %s: %v", table, err)
+	}
+	var refusal *pgconn.PgError
+	if !errors.As(err, &refusal) || refusal.Code != insufficientPrivilege {
+		t.Errorf("the failure does not carry the server's refusal for want of a privilege: %v", err)
+	}
+}
+
+// insufficientPrivilege is the SQLSTATE the server refuses a statement with
+// when the role lacks a privilege it needs.
+const insufficientPrivilege = "42501"
 
 // TestReplicasStartingTogetherOnANewDatabaseAllStart pins what a rollout of
 // several replicas onto an empty database needs: every one of them starts.
