@@ -70,7 +70,7 @@ func TestAPaddedConnectionStringStillReachesTheServer(t *testing.T) {
 // TestStanceFailsTheStartupWithoutAConnectionString pins the rule that a module
 // named in the command tree has to start: this one reaches PostgreSQL at a
 // locator, so being named without one stops the startup and names the input it
-// stopped on. Under the stand-down it replaces, the process came up with the
+// stopped on. A stand-down in its place would bring the process up with the
 // capability silently missing.
 func TestStanceFailsTheStartupWithoutAConnectionString(t *testing.T) {
 	_, err := stance(&pgpool.Config{})

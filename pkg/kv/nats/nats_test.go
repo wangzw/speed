@@ -64,9 +64,9 @@ func TestConforms(t *testing.T) {
 
 // TestStanceFailsTheStartupWithoutAServer pins the rule that a module named in
 // the command tree has to start: this one reaches NATS at a server, so being
-// named without one stops the startup and names the input it stopped on. Under
-// the stand-down it replaces, the process came up with the capability silently
-// missing.
+// named without one stops the startup and names the input it stopped on. A
+// stand-down in its place would bring the process up with the capability
+// silently missing.
 func TestStanceFailsTheStartupWithoutAServer(t *testing.T) {
 	_, err := stance(&Config{})
 	if err == nil {
@@ -161,12 +161,12 @@ func TestTheExpiryTravelsInsideTheValue(t *testing.T) {
 	}
 }
 
-// TestALongKeyLeavesTheConnectionUsable covers the failure a long key used to
-// cause here, which reached far past the key itself. A key's spelling is part
-// of the subject every request carries, and a subject past the server's control
-// line limit makes the server drop the client: the connection closes for good,
-// and every later operation on every key fails until the process restarts. The
-// case writes a key well past that limit and then uses a short one on the same
+// TestALongKeyLeavesTheConnectionUsable covers a failure a long key can cause
+// that reaches far past the key itself. A key's spelling is part of the subject
+// every request carries, and a subject past the server's control line limit
+// makes the server drop the client: the connection closes for good, and every
+// later operation on every key fails until the process restarts. The case
+// writes a key well past that limit and then uses a short one on the same
 // connection.
 func TestALongKeyLeavesTheConnectionUsable(t *testing.T) {
 	s := newStore(t)

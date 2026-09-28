@@ -173,8 +173,8 @@ func (s *store) IncrByFloat(ctx context.Context, key string, delta float64) (flo
 // IncrByFloatWithTTL adds to the number under key and, when the key did not
 // exist, gives it the expiry in the same step.
 //
-// The whole operation is one critical section, which is the property the pair
-// of calls it replaces cannot have: an increment landing between a separate
+// The whole operation is one critical section, which is the property a pair of
+// separate calls cannot have: an increment landing between a separate
 // increment and a separate expiry attachment would be overwritten.
 func (s *store) IncrByFloatWithTTL(ctx context.Context, key string, delta float64, ttl time.Duration) (float64, error) {
 	return s.increment(ctx, key, delta, ttl, true)
