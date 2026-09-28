@@ -81,8 +81,8 @@ must not cross, and how to run it.
   attributes, both closed sets: the standard methods plus the folding value, and
   the status code. No route — this layer sits outside the routing engine and the
   request has not been dispatched — and no tenant: that dimension lives on
-  event-derived spans. The instrument's name and unit are equally fixed; a
-  dashboard reads them.
+  event-derived spans. The instrument's name, unit and bucket boundaries are
+  equally fixed; a dashboard reads them.
 - **An event-derived span's attributes are the payload's fields as published.**
   Every top-level field of the payload becomes one attribute, so the set is
   whatever publishers put in payloads and the module limits no attribute's

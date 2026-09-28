@@ -6,9 +6,11 @@ import (
 	"log/slog"
 	nethttp "net/http"
 	"net/http/httptest"
+	"slices"
 	"strings"
 	"sync"
 	"testing"
+	"time"
 
 	"go.opentelemetry.io/otel/attribute"
 	"go.opentelemetry.io/otel/codes"
@@ -123,6 +125,39 @@ func TestTheLayerRecordsTheSpanAndTheRequestDuration(t *testing.T) {
 	}
 	if got := attributeOf(t, point.Attributes, "http.response.status_code"); got != "418" {
 		t.Errorf("the status attribute is %q, want the code the handler wrote, 418", got)
+	}
+}
+
+// TestTheRequestDurationBucketsAreInSeconds pins the boundaries the histogram
+// counts into. The values are recorded in seconds, so boundaries meant for
+// milliseconds would put every request under five seconds into one bucket and
+// leave no percentile to read. Two requests an order of magnitude apart have to
+// land in different buckets, and the boundaries are the ones the design names.
+func TestTheRequestDurationBucketsAreInSeconds(t *testing.T) {
+	p, _, reader := layerUnderTest(t)
+	handler := p.instrument("api")(nethttp.HandlerFunc(func(w nethttp.ResponseWriter, r *nethttp.Request) {
+		if r.URL.Path == "/slow" {
+			time.Sleep(60 * time.Millisecond)
+		}
+	}))
+	for _, path := range []string{"/fast", "/slow"} {
+		handler.ServeHTTP(httptest.NewRecorder(), httptest.NewRequest(nethttp.MethodGet, "http://example.test"+path, nil))
+	}
+
+	point := durationPoint(t, reader)
+	want := []float64{0.005, 0.01, 0.025, 0.05, 0.075, 0.1, 0.25, 0.5, 0.75, 1, 2.5, 5, 7.5, 10}
+	if !slices.Equal(point.Bounds, want) {
+		t.Errorf("the histogram counts into %v, want the boundaries in seconds %v", point.Bounds, want)
+	}
+	occupied := 0
+	for _, count := range point.BucketCounts {
+		if count > 0 {
+			occupied++
+		}
+	}
+	if occupied != 2 {
+		t.Errorf("a request of microseconds and one of 60ms fill %d bucket(s) of %v, want 2",
+			occupied, point.BucketCounts)
 	}
 }
 

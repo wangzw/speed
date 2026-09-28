@@ -72,18 +72,31 @@ func methodOf(method string) string {
 	return otherMethod
 }
 
+// requestDurationBounds are the bucket boundaries the request histogram counts
+// into, in seconds: the ones the upstream semantic conventions give for this
+// instrument.
+//
+// They are written out because the upstream SDK's default boundaries are meant
+// for milliseconds — the first finite bucket ends at 5 — and a histogram
+// recorded in seconds would put every request under five seconds into one
+// bucket, leaving no percentile or latency objective to read from it. The
+// boundaries are part of the surface a dashboard reads, like the name and the
+// unit.
+var requestDurationBounds = []float64{0.005, 0.01, 0.025, 0.05, 0.075, 0.1, 0.25, 0.5, 0.75, 1, 2.5, 5, 7.5, 10}
+
 // newRequestDuration builds the instrument the layer records on.
 //
-// The name, the unit and the description are constants of this package, so the
-// error the upstream returns for an unusable instrument is a programming fault
-// rather than anything a host can act on; it is handed back rather than
-// panicked so that it reaches the startup failure like every other judgement
-// this module makes.
+// The name, the unit, the description and the boundaries are constants of this
+// package, so the error the upstream returns for an unusable instrument is a
+// programming fault rather than anything a host can act on; it is handed back
+// rather than panicked so that it reaches the startup failure like every other
+// judgement this module makes.
 func newRequestDuration(mp metric.MeterProvider) (metric.Float64Histogram, error) {
 	return mp.Meter(instrumentationName).Float64Histogram(
 		requestDurationName,
 		metric.WithUnit(requestDurationUnit),
 		metric.WithDescription("Duration of an inbound HTTP request, in seconds"),
+		metric.WithExplicitBucketBoundaries(requestDurationBounds...),
 	)
 }
 
