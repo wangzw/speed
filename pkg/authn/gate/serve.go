@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"log/slog"
 	nethttp "net/http"
+	"runtime/debug"
 	"sort"
 	"strings"
 	"sync"
@@ -94,6 +95,14 @@ type refusal struct {
 	bucket verdict.Outcome
 	// reason is the log line.
 	reason string
+	// level is what the log line is written at, and it follows who has
+	// something to do about it. A refusal is ordinary traffic and is written
+	// at Info; an outage is an operator's to look at and is written at Warn;
+	// a backend that returned without answering, or that panicked, is a
+	// defect somebody has to fix in code and is written at Error. The level
+	// is the first filter every log pipeline applies, so a signal written
+	// below the one a deployment keeps is a signal nobody receives.
+	level slog.Level
 	// backend is the name this is charged to, empty when the gateway
 	// produced the refusal itself.
 	backend string
@@ -108,6 +117,7 @@ func gatewayRefusal(reason string, attrs ...any) *refusal {
 		status: nethttp.StatusUnauthorized,
 		bucket: verdict.Denied,
 		reason: reason,
+		level:  slog.LevelInfo,
 		attrs:  attrs,
 	}
 }
@@ -119,20 +129,48 @@ func gatewayRefusal(reason string, attrs ...any) *refusal {
 // in-flight gate being full, is this module's own limit and is charged here —
 // the backend was never asked, and an operator chasing a 503 against a backend
 // that is perfectly healthy would be chasing the wrong thing.
+//
+// The cause decides the level too. An outage is written at Warn; a panic is a
+// defect rather than an outage, is written at Error, and carries the stack it
+// was raised on.
 func outage(backend, reason string, cause error, attrs ...any) *refusal {
 	if errors.Is(cause, errStopped) || errors.Is(cause, errSaturated) {
 		backend = ""
 	}
+	level := slog.LevelWarn
 	if cause != nil {
 		attrs = append(attrs, slog.String("cause", cause.Error()))
+	}
+	var panicked *backendPanic
+	if errors.As(cause, &panicked) {
+		level = slog.LevelError
+		attrs = append(attrs, slog.String("stack", string(panicked.stack)))
 	}
 	return &refusal{
 		status:  nethttp.StatusServiceUnavailable,
 		bucket:  verdict.Unavailable,
 		reason:  reason,
+		level:   level,
 		backend: backend,
 		attrs:   attrs,
 	}
+}
+
+// backendPanic is a panic caught at a backend call site. It travels as an
+// error, the way every other failure to answer does, and it keeps the stack:
+// that is what finds the defect, and it is gone once the recover has returned.
+type backendPanic struct {
+	message string
+	stack   []byte
+}
+
+func (p *backendPanic) Error() string { return p.message }
+
+// caught turns a recovered value into the failure the call site reports. It is
+// called from inside the deferred recover, which is the last point at which the
+// panicking goroutine's stack can still be read.
+func caught(format string, args ...any) *backendPanic {
+	return &backendPanic{message: fmt.Sprintf(format, args...), stack: debug.Stack()}
 }
 
 // middlewareFor builds the layer registered on one endpoint.
@@ -194,7 +232,8 @@ func (g *gateway) admit(endpoint, challenge string, w nethttp.ResponseWriter, r 
 			// happening.
 			log.FromContext(r.Context()).Error(ModuleName+": the gateway panicked while "+
 				"deciding this request",
-				slog.Any("panic", rec), slog.String("endpoint", endpoint))
+				slog.Any("panic", rec), slog.String("endpoint", endpoint),
+				slog.String("stack", string(debug.Stack())))
 			w.WriteHeader(nethttp.StatusInternalServerError)
 			passed, forwarded = false, nil
 		}
@@ -255,6 +294,7 @@ func (g *gateway) identify(r *nethttp.Request) (identity.Identity, *refusal) {
 			status:  nethttp.StatusUnauthorized,
 			bucket:  verdict.Denied,
 			reason:  ModuleName + ": the backend refused this credential",
+			level:   slog.LevelInfo,
 			backend: found.claimant.name,
 			attrs:   causeAttrs(answer),
 		}
@@ -267,11 +307,14 @@ func (g *gateway) identify(r *nethttp.Request) (identity.Identity, *refusal) {
 		// and is counted apart from one: a refusal says the credential
 		// does not hold, this says the backend returned without
 		// answering, and an operator needs to tell a wrong password
-		// from a broken plugin.
+		// from a broken plugin. It is written at Error for the same
+		// reason: it is a defect in the backend's code, and a line
+		// written at Info is one a production pipeline drops.
 		return identity.Identity{}, &refusal{
 			status:  nethttp.StatusUnauthorized,
 			bucket:  verdict.Unspoken,
 			reason:  ModuleName + ": the backend returned without answering",
+			level:   slog.LevelError,
 			backend: found.claimant.name,
 		}
 	}
@@ -287,11 +330,16 @@ func (g *gateway) identify(r *nethttp.Request) (identity.Identity, *refusal) {
 		// The one gateway-produced refusal that happens after a backend
 		// has answered. The judgement is the ownership table's, and the
 		// gateway built the table, so it is charged here rather than to
-		// the backend.
-		return identity.Identity{}, gatewayRefusal(ModuleName+": the backend returned a subject "+
+		// the backend. It is written at Error all the same: whoever is
+		// charged, a backend said something it had no authority to say,
+		// which is a defect in that backend or an overlap in this
+		// deployment, and either is somebody's to fix.
+		deny := gatewayRefusal(ModuleName+": the backend returned a subject "+
 			"that does not fall inside its own claim, so the pass is not honoured",
 			slog.String("backend", found.claimant.name),
 			slog.String("returned-subject", returned))
+		deny.level = slog.LevelError
+		return identity.Identity{}, deny
 	}
 	return identity.New(found.claimant.name, returned), nil
 }
@@ -308,8 +356,9 @@ func causeAttrs(v authn.Verdict) []any {
 }
 
 // conclude counts the conclusion and writes the log line that carries the
-// attribution. The response body is never written: this module writes a status
-// code and the headers that go with it, so attribution lives in the log alone.
+// attribution, at the level the refusal was built with. The response body is
+// never written: this module writes a status code and the headers that go with
+// it, so attribution lives in the log alone.
 func (g *gateway) conclude(r *nethttp.Request, endpoint string, deny *refusal) {
 	g.counts[deny.bucket].Add(1)
 
@@ -323,7 +372,7 @@ func (g *gateway) conclude(r *nethttp.Request, endpoint string, deny *refusal) {
 		slog.String("outcome", deny.bucket.String()),
 		slog.String("attributed-to", attributed),
 	}, deny.attrs...)
-	log.FromContext(r.Context()).Info(deny.reason, attrs...)
+	log.FromContext(r.Context()).Log(r.Context(), deny.level, deny.reason, attrs...)
 }
 
 // credentialOf reads the credential out of the request.
@@ -579,7 +628,7 @@ func (g *gateway) verify(ctx context.Context, c *claimant, subject string, cred 
 			// The panic is caught at the call site, so the process
 			// survives and every other ownership in it goes on
 			// answering.
-			err = fmt.Errorf("backend %q panicked while verifying a credential: %v", c.name, rec)
+			err = caught("backend %q panicked while verifying a credential: %v", c.name, rec)
 		}
 	}()
 
@@ -600,7 +649,7 @@ func (g *gateway) owns(ctx context.Context, c *claimant, subject string) (owns b
 	defer made.release()
 	defer func() {
 		if rec := recover(); rec != nil {
-			err = fmt.Errorf("backend %q panicked while answering whether %q is its own: %v",
+			err = caught("backend %q panicked while answering whether %q is its own: %v",
 				c.name, subject, rec)
 		}
 	}()
