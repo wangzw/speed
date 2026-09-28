@@ -181,10 +181,12 @@ type resolver struct {
 	extractors map[string]tenant.Extractor
 	faults     []error
 
-	// selected, guarded and logger are settled in seal and wire, which the
-	// driver runs in that order on one goroutine, and are read by request
-	// goroutines afterwards. The order is what makes them safe to read
-	// without a lock.
+	// guarded and logger are settled in wire and selected in seal, which the
+	// driver runs in that order on one goroutine; selected is read by request
+	// goroutines afterwards, and the order is what makes it safe to read
+	// without a lock. logger is for the records this module writes with no
+	// request behind them: a request's own records go through the logger its
+	// context carries.
 	selected tenant.Extractor
 	guarded  []string
 	logger   *slog.Logger
@@ -350,8 +352,8 @@ func (r *resolver) admit(w nethttp.ResponseWriter, req *nethttp.Request) *nethtt
 	if err != nil {
 		// The roster is in memory and loaded at startup, so reaching this
 		// means this module is not in a state it can answer from at all.
-		r.logger.Error(diagnosticPrefix+ModuleName+": the roster could not be read",
-			"error", err)
+		log.FromContext(req.Context()).Error(diagnosticPrefix+ModuleName+
+			": the roster could not be read", "error", err)
 		w.WriteHeader(nethttp.StatusInternalServerError)
 		return nil
 	}
@@ -376,12 +378,19 @@ func (r *resolver) admit(w nethttp.ResponseWriter, req *nethttp.Request) *nethtt
 //
 // The reason goes to the log and not to the caller, which is what keeps a name
 // that never existed from being told apart from one that was switched off.
+//
+// The record goes through the request's logger, not the one this module holds.
+// It is about one request, and the request's logger carries what the layers
+// outside bound — the trace, the subject the authentication layer settled —
+// so an authenticated caller trying tenant names is tied to its attempts. The
+// module's own logger carries none of that; it is for records with no request
+// behind them.
 func (r *resolver) refuse(w nethttp.ResponseWriter, req *nethttp.Request, why, name string) {
 	attrs := []any{"path", req.URL.Path, "reason", why}
 	if name != "" {
 		attrs = append(attrs, "name", name)
 	}
-	r.logger.Info(diagnosticPrefix+ModuleName+": request refused", attrs...)
+	log.FromContext(req.Context()).Info(diagnosticPrefix+ModuleName+": request refused", attrs...)
 	w.WriteHeader(nethttp.StatusNotFound)
 }
 

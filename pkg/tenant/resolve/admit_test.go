@@ -224,3 +224,43 @@ func TestAnAdmittedRequestCarriesTheIdentifier(t *testing.T) {
 		t.Fatalf("the handler's record lost the subject bound outside, got %q", got)
 	}
 }
+
+// A refusal is a record about one request, so it is written through the
+// request's logger: it carries what the layers outside bound — the subject the
+// authentication layer settled, the trace the tracing layer opened — which is
+// what ties an authenticated caller probing tenant names to the probes.
+func TestARefusalIsLoggedOnTheRequestsLogger(t *testing.T) {
+	cases := []struct {
+		name   string
+		roster fakeRoster
+		header string
+		level  slog.Level
+		reason string
+	}{
+		{"no name", standardRoster(), "", slog.LevelInfo, "the request carries no tenant name"},
+		{"off the roster", standardRoster(), "ghost", slog.LevelInfo, "the name is not on the roster"},
+		{"disabled", standardRoster(), "paused", slog.LevelInfo, "the tenant is not being served"},
+		{"unreadable roster", fakeRoster{err: tenant.ErrRosterMissing}, "acme", slog.LevelError, ""},
+	}
+	for _, c := range cases {
+		t.Run(c.name, func(t *testing.T) {
+			h := newHarness(t, c.roster, headerExtractor{name: "X-Tenant"})
+			h.serve(c.header)
+			if records := h.module.all(); len(records) != 0 {
+				t.Fatalf("the refusal went to the module's logger: %+v", records)
+			}
+			records := h.request.all()
+			if len(records) != 1 {
+				t.Fatalf("the request's logger holds %+v, want one record of the refusal", records)
+			}
+			got := records[0]
+			if got.level != c.level || got.attrs["subject"] != "alice" {
+				t.Fatalf("the refusal was recorded as %+v, want level %v carrying subject alice",
+					got, c.level)
+			}
+			if c.reason != "" && got.attrs["reason"] != c.reason {
+				t.Fatalf("the refusal gives reason %q, want %q", got.attrs["reason"], c.reason)
+			}
+		})
+	}
+}
