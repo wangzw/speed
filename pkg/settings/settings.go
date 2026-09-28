@@ -168,11 +168,19 @@ type Store interface {
 	// without touching anything; a failure to publish does not roll the write
 	// back and does not change the result.
 	//
-	// ctx bounds the statement. Once the row is written, the reload and the
-	// publish run whatever becomes of ctx, since they are this module's
-	// bookkeeping for a row already in the table: a caller that gives up at
-	// that point still leaves its value served here and announced to the
-	// other replicas.
+	// ctx bounds the wait for a connection and the statement. Once the row is
+	// written, the reload and the publish run whatever becomes of ctx, since
+	// they are this module's bookkeeping for a row already in the table: a
+	// caller that gives up at that point still leaves its value served here
+	// and announced to the other replicas.
+	//
+	// The write runs on a connection of its own from the delivered pool, never
+	// in a transaction the caller holds, and waits five seconds at most for
+	// that connection. Inside a transaction the caller holds on a database
+	// held to one connection, such as an in-memory SQLite one, the connection
+	// is the caller's, so the write fails there instead of waiting for it.
+	// Elsewhere it stays outside that transaction: rolling the transaction
+	// back does not undo a write that returned nil.
 	//
 	// The result is what happened to the row. An error means it was not
 	// changed, whatever point ctx was cancelled at; nil means the change is
@@ -182,8 +190,9 @@ type Store interface {
 	Set(ctx context.Context, w Write) error
 
 	// Delete removes the explicit row the selector names. Deleting a row that
-	// is not there is not an error. ctx bounds the statement and nothing after
-	// it, and the result is what happened to the row, both as for Set.
+	// is not there is not an error. ctx bounds the wait for a connection and
+	// the statement and nothing after it, the statement runs on a connection
+	// of its own, and the result is what happened to the row, all as for Set.
 	//
 	// Delete is the one operation that does not consult the key table: it is
 	// the cleanup path for rows left behind after a declaration is removed,
@@ -195,7 +204,8 @@ type Store interface {
 	// text under, so it is the same order on every dialect.
 	//
 	// It hands out the written rows rather than the values reads resolve to:
-	// nothing falls back here.
+	// nothing falls back here. It reads on a connection of its own, waited for
+	// as Set waits for its.
 	List(ctx context.Context, layer Layer) ([]Entry, error)
 
 	// Declared lists every declared setting item, ordered by the keys' bytes

@@ -2,6 +2,7 @@ package settings
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"log/slog"
 	"slices"
@@ -244,8 +245,13 @@ func (s *settingsStore) List(ctx context.Context, layer Layer) ([]Entry, error) 
 	tenant := tenantOf(layer)
 	sql := "SELECT tenant_id, key, value, version, updated_at FROM " + tableName +
 		" WHERE tenant_id = ?"
+	session, release, err := s.take(ctx)
+	if err != nil {
+		return nil, fmt.Errorf("settings: listing the rows of %s: %w", describeLayer(layer), err)
+	}
+	defer release()
 	var rows []listRow
-	if err := s.handle.WithContext(ctx).Raw(sql, tenant).Scan(&rows).Error; err != nil {
+	if err := session.Raw(sql, tenant).Scan(&rows).Error; err != nil {
 		return nil, fmt.Errorf("settings: listing the rows of %s: %w",
 			describeLayer(layer), err)
 	}
@@ -323,13 +329,80 @@ func (s *settingsStore) writeRow(ctx context.Context, layer Layer, key, text str
 // back, and one after it no longer reaches the commit. Either way the error
 // and the table agree.
 //
+// The connection the transaction runs on is taken first, under the caller's
+// cancellation and within connectionWait. Nothing has been written while it is
+// awaited, so giving up there leaves the row as it was, which is what the
+// error then says; a begin that took the connection itself would wait for it
+// with the caller's cancellation already dropped.
+//
 // The one outcome left unknown is a connection lost during the commit itself,
 // which only the database can settle.
 func (s *settingsStore) commit(ctx context.Context, statement func(tx *gorm.DB) error) error {
-	return s.handle.WithContext(landed(ctx)).Transaction(func(tx *gorm.DB) error {
+	session, release, err := s.take(ctx)
+	if err != nil {
+		return err
+	}
+	defer release()
+	return session.WithContext(landed(ctx)).Transaction(func(tx *gorm.DB) error {
 		return statement(tx.WithContext(ctx))
 	})
 }
+
+// take returns a session pinned to one connection of the delivered pool, and
+// the function that hands the connection back. The connection is waited for
+// until ctx ends, and for connectionWait at most.
+//
+// Every statement issued for a caller's call — a write's, a delete's, a
+// listing's — goes through it: none of them can run in a transaction the
+// caller holds, since the surface takes none, so each takes a connection of
+// its own. On a database held to a single connection that connection is the
+// one a caller holding a transaction on the delivered handle has, until after
+// the call returns. Waiting for it there is waiting for the caller itself:
+// nothing would end that wait under a context with no deadline, and the
+// database's only connection would stay held for as long as it lasted.
+//
+// A reload does not go through it. It is this module's own bookkeeping, and
+// the connection it waits for is never one its trigger holds: a write inside a
+// caller's transaction on such a database has been refused here before its
+// reload, the ticker holds no connection, and the change event, which an
+// in-process bus delivers on the publishing goroutine, is published after the
+// write's connection has gone back. A reload waiting for someone else's
+// connection holds the reload lock meanwhile, which is why a write takes its
+// connection before anything that waits on that lock.
+func (s *settingsStore) take(ctx context.Context) (*gorm.DB, func(), error) {
+	pool, err := s.handle.DB()
+	if err != nil {
+		return nil, nil, fmt.Errorf("the delivered handle has no connection pool: %w", err)
+	}
+	taking, cancel := context.WithTimeout(ctx, connectionWait)
+	defer cancel()
+	conn, err := pool.Conn(taking)
+	if err != nil {
+		if errors.Is(err, context.DeadlineExceeded) && ctx.Err() == nil {
+			return nil, nil, fmt.Errorf("no connection of the delivered database came free within %v; "+
+				"on a database held to one connection, a transaction the caller holds on the "+
+				"delivered handle keeps it until after this call returns: %w", connectionWait, err)
+		}
+		return nil, nil, err
+	}
+	// The session is built with a context of its own so that its statement is
+	// a copy: pointing the delivered handle's own statement at the connection
+	// would send every other user of the handle through it.
+	session := s.handle.Session(&gorm.Session{NewDB: true, Context: ctx})
+	session.Statement.ConnPool = conn
+	return session, func() { _ = conn.Close() }, nil
+}
+
+// connectionWait bounds the wait for a connection of the delivered pool, for
+// the statements a caller's call issues.
+//
+// It is the SQLite driver's default busy timeout, which is what the same write
+// waits for the write lock on a file database when a caller holds that lock in
+// its own transaction: on a database held to one connection the connection
+// plays the lock's part, and waiting for it as long keeps the two shapes of
+// one engine failing alike. A connection taken under load comes free in the
+// time a statement takes, far inside it.
+const connectionWait = 5 * time.Second
 
 // reload replaces the snapshot with a freshly loaded one.
 //

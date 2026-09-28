@@ -27,8 +27,10 @@ implementation subpackage to hold one backend apart from another.
   ([`adr-settings-propagation-2026-09-21.md`](../../docs/adr/adr-settings-propagation-2026-09-21.md)),
   where the history of a change lives
   ([`adr-settings-audit-2026-09-21.md`](../../docs/adr/adr-settings-audit-2026-09-21.md)),
-  and why the declared items are listed through the store
-  ([`adr-settings-declaration-2026-09-29.md`](../../docs/adr/adr-settings-declaration-2026-09-29.md)).
+  why the declared items are listed through the store
+  ([`adr-settings-declaration-2026-09-29.md`](../../docs/adr/adr-settings-declaration-2026-09-29.md)),
+  and why a call takes a connection of its own within a bound
+  ([`adr-settings-connection-2026-09-29.md`](../../docs/adr/adr-settings-connection-2026-09-29.md)).
 - The API itself: the godoc in this package.
 
 This file states only what neither of those states: the boundaries a change
@@ -129,6 +131,18 @@ here must not cross, and how to run it.
   from before its write. A change that mutated the map in place would be
   visible to a reader halfway through, which is what taking the pointer once
   avoids.
+- **A caller's call takes its connection through `take`, and a reload does
+  not.** The surface takes no transaction, so a write, a delete and a listing
+  each run on a connection of their own from the delivered pool; on a database
+  held to one connection, a caller that makes one of them inside its own
+  transaction on the delivered handle holds the only one. `take` waits for it
+  under the caller's cancellation and for `connectionWait` at most, so such a
+  call fails rather than waiting for the caller. A statement sent through the
+  handle directly waits for a connection as long as its context lasts, and a
+  write's transaction begins out of the caller's cancellation, so that is a
+  wait nothing ends. A reload's trigger never holds the connection it waits
+  for, but a reload holds the reload lock while it waits for someone else's,
+  so a write takes its connection before anything that waits on that lock.
 - **Before the first load there is no snapshot, not an empty one.** The store
   is delivered at `New` and the table is first read in `Init`, so a module
   initialised ahead of this one can reach it in between. An empty snapshot
