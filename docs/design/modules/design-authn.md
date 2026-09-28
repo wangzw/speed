@@ -487,6 +487,8 @@ sequenceDiagram
 | 网关模块与排他交付 | 已实现 | `pkg/authn/gate/gate.go` `Module` |
 | 认证中间件的登记与链上位置声明 | 已实现 | `pkg/authn/gate/serve.go` `middlewareFor` |
 | 凭据的取出与判决的收口 | 已实现 | `pkg/authn/gate/serve.go` `admit`、`identify` |
+| 收口记录的归因与级别 | 已实现 | `pkg/authn/gate/serve.go` `conclude`、`outage`、`gatewayRefusal` |
+| 401 的挑战头 | 已实现 | `pkg/authn/gate/gate.go` `challengeFor`、`quoteRealm` |
 | 归属表的建立、重叠检出与请求期判定 | 已实现 | `pkg/authn/gate/claims.go`；`serve.go` `resolveOwner` |
 | 出口绑定 | 已实现 | `pkg/authn/gate/serve.go` `exitBound` |
 | 判决的构造器与零值语义 | 已实现 | `pkg/authn/internal/verdict/verdict.go`；`pkg/authn/verdict.go` |
@@ -500,4 +502,4 @@ sequenceDiagram
 | 哨兵错误 | 已实现 | `pkg/authn/errors.go` |
 | 校验后端子包 | 已实现 | `pkg/authn/static/` |
 
-装配级的性质在 `examples/orders-host` 的 `e2e_test.go` 里从进程外守住：中间件的登记是否发生，在网关自己的包里观察不到。
+描述符各回调做了什么——`Init` 取到了什么、在哪些端上登记了中间件、`Stop` 之后是否还问后端、脱敏规则是否到了日志模块自己的输出——在网关自己的包里经真实的注册表驱动守住（`pkg/authn/gate/assembly_test.go`）。真实入口把链组装起来、经套接字答出的状态码，在 `examples/orders-host` 的 `e2e_test.go` 里从进程外守住。

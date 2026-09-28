@@ -142,7 +142,9 @@ go -C pkg/authn test -race ./...
 ```
 
 The tests bring up their own gateways and ask for no service, no database and
-no environment. `examples/orders-host` is where the assembly is held
+no environment. `gate/assembly_test.go` drives the gateway's own descriptor
+through a real registry, which is where what each callback takes up and
+registers is observed. `examples/orders-host` is where the assembly is held
 from outside the process: it starts a real binary, reaches it over a socket and
-checks the status codes, which is the only place the registration of the
-middleware layer is observable at all.
+checks the status codes, which is the only place the chain the real entry point
+assembles is observable at all.
