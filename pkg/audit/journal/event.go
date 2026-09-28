@@ -52,7 +52,7 @@ func (j *journal) handlerFor(typeName string) event.Handler {
 		// carries it so that a subscriber does not have to reconstruct it, and
 		// a subscription callback usually has no request context to read one
 		// from.
-		j.note(j.write(ctx, audit.SourceEvent, entry, evt.TenantID))
+		j.submit(ctx, audit.SourceEvent, entry, evt.TenantID)
 		return nil
 	}
 }

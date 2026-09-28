@@ -68,11 +68,11 @@ func (j *journal) Record(ctx context.Context, e audit.Entry) error {
 
 // write puts one entry in the table.
 //
-// The caller's context travels with the write, so a request that is cancelled
-// or has run out of time does not leave a goroutine waiting on a statement
-// nobody is going to read the answer to. That bound matters here more than
-// usual: this module's whole promise is that its failure does not become the
-// business's, and an unbounded wait on a busy pool would be exactly that.
+// The context travels with the write. Its values are where the actor and the
+// tenant are read from; its cancellation bounds the write, which on the seam is
+// the caller's to set — a caller that gives up on its own operation is told the
+// entry was not written. The paths this module drives detach from the
+// cancellation before they get here; see submit.
 //
 // tenantOverride carries the tenant an event was published under. The bus
 // carries it on the event precisely so that a subscriber does not have to
@@ -86,11 +86,21 @@ func (j *journal) write(ctx context.Context, src audit.Source, e audit.Entry, te
 // submit is how the capture paths this module drives record an entry: the
 // failure is reported and the caller carries on, because a request or an event
 // must not fail on account of the record of it.
-func (j *journal) submit(ctx context.Context, src audit.Source, e audit.Entry) {
+//
+// The write keeps the context's values and drops its cancellation. By the time
+// either path writes, the fact it records has happened — the handler has
+// returned, the event was published — while the context is one that ends with
+// its client or its publisher: net/http cancels a request's context when the
+// client closes the connection, and a process-local bus hands a subscriber the
+// publisher's own. Writing under that cancellation loses the row for a reason
+// that has nothing to do with the table, and reports a healthy table as failing.
+// The price is that nothing bounds the write but the database's own timeouts,
+// so a slow or locked table slows every request and event it records.
+func (j *journal) submit(ctx context.Context, src audit.Source, e audit.Entry, tenantOverride string) {
 	if !j.accepting.Load() {
 		return
 	}
-	j.note(j.write(ctx, src, e, ""))
+	j.note(j.write(context.WithoutCancel(ctx), src, e, tenantOverride))
 }
 
 // note routes one write's outcome to the failure signal.

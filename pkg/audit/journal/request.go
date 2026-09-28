@@ -83,7 +83,7 @@ func (j *journal) recordRequest(r *nethttp.Request, endpoint, pattern, outcome s
 			"endpoint": endpoint,
 			"path":     r.URL.Path,
 		},
-	})
+	}, "")
 }
 
 // statusRecorder remembers the status the inner chain answered with.

@@ -409,7 +409,7 @@ func TestTheSeamReturnsItsFailureAndACapturePathDoesNot(t *testing.T) {
 	// A capture path reports the failure without raising it. The signal is what
 	// makes that observable: without this assertion the case passes whether
 	// submit reports, swallows, or panics.
-	j.submit(context.Background(), audit.SourceRequest, audit.Entry{Action: "a"})
+	j.submit(context.Background(), audit.SourceRequest, audit.Entry{Action: "a"}, "")
 	if reported.Len() == 0 {
 		t.Error("a capture path's write failure was not reported anywhere")
 	}
