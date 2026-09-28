@@ -528,6 +528,74 @@ func AssertConforms(t *testing.T, newStore Factory) {
 		}
 	})
 
+	t.Run("an expired key is incremented from zero and takes the new expiry", func(t *testing.T) {
+		s := newStore(t)
+		ctx := context.Background()
+		for _, key := range []string{"plain", "with-ttl"} {
+			if err := s.Set(ctx, key, []byte("5"), shortTTL); err != nil {
+				t.Fatalf("Set: %v", err)
+			}
+		}
+		time.Sleep(ttlSettle)
+		if got, err := s.IncrByFloat(ctx, "plain", 1); err != nil || got != 1 {
+			t.Fatalf("IncrByFloat on an expired key: got=%v err=%v, want 1", got, err)
+		}
+		if got, err := s.IncrByFloatWithTTL(ctx, "with-ttl", 1, shortTTL); err != nil || got != 1 {
+			t.Fatalf("IncrByFloatWithTTL on an expired key: got=%v err=%v, want 1", got, err)
+		}
+		// The key the plain increment created again has no expiry, and the
+		// one the increment with a ttl created has the new one.
+		time.Sleep(ttlSettle)
+		if _, present, err := s.Get(ctx, "plain"); err != nil || !present {
+			t.Fatalf("the key IncrByFloat recreated kept the old expiry: present=%v err=%v", present, err)
+		}
+		if _, present, err := s.Get(ctx, "with-ttl"); err != nil || present {
+			t.Fatalf("the key IncrByFloatWithTTL recreated did not take its ttl: present=%v err=%v", present, err)
+		}
+	})
+
+	t.Run("concurrent increments with a ttl lose no update, on an absent key and on an expired one", func(t *testing.T) {
+		s := newStore(t)
+		ctx := context.Background()
+		if err := s.Set(ctx, "expired", []byte("100"), time.Millisecond); err != nil {
+			t.Fatalf("Set: %v", err)
+		}
+		time.Sleep(20 * time.Millisecond)
+		const goroutines, each = 20, 10
+		for _, key := range []string{"absent", "expired"} {
+			start := make(chan struct{})
+			var wg sync.WaitGroup
+			errs := make(chan error, goroutines)
+			for range goroutines {
+				wg.Add(1)
+				go func() {
+					defer wg.Done()
+					<-start
+					for range each {
+						if _, err := s.IncrByFloatWithTTL(ctx, key, 1, liveTTL); err != nil {
+							errs <- err
+							return
+						}
+					}
+				}()
+			}
+			close(start)
+			wg.Wait()
+			close(errs)
+			for err := range errs {
+				t.Fatalf("concurrent IncrByFloatWithTTL on the %s key: %v", key, err)
+			}
+			got, present, err := s.Get(ctx, key)
+			if err != nil || !present {
+				t.Fatalf("Get on the %s key: present=%v err=%v", key, present, err)
+			}
+			if want := strconv.Itoa(goroutines * each); string(got) != want {
+				t.Fatalf("the %s key counted to %s, want %s: increments were lost or the expired value was kept",
+					key, got, want)
+			}
+		}
+	})
+
 	t.Run("concurrent set-if-absent has exactly one winner", func(t *testing.T) {
 		s := newStore(t)
 		ctx := context.Background()
