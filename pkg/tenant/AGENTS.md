@@ -38,7 +38,17 @@ here must not cross, and how to run it.
   layer, once per request, and `Catalog.Enter`, for a path with no request
   behind it (`catalog/enter_test.go`). A third writer, or one that skips the
   roster, puts into a context a tenant the roster may not carry or serve, and
-  the filter, which reads no roster, would act on it.
+  the filter, which reads no roster, would act on it. Both writers go through
+  `tenantctx.Bind`, which binds the identifier on the context's logger too —
+  replacing one bound before — and leaves beside it the way to take it off,
+  which `CrossTenant` uses.
+- **The root package and `internal/tenantctx` import no module of this
+  repository, the logging module included.** A package that defines a model
+  imports the root package, and the logging module brings the configuration's
+  whole dependency set with it. The logger is reached through the logging
+  module's own functions, which the writers hand to `tenantctx.Bind` in a
+  `tenantctx.Logger`; `CrossTenant` calls the one `Bind` left in the context.
+  Importing `pkg/log` there to call it directly is the shape to reject.
 - **`CrossTenant` is the only way across tenants, and it marks rather than
   scopes.** A statement naming a tenant column value other than its context's
   is refused rather than honoured

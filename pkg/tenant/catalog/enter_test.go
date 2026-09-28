@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"log/slog"
+	"slices"
 	"sync"
 	"testing"
 
@@ -163,52 +164,136 @@ func TestEnterSeesADisableOnTheWritersReplica(t *testing.T) {
 	}
 }
 
-// fieldRecorder is a slog handler that keeps the attributes bound to it and
-// passed with each record.
+// fieldRecorder is a slog handler that keeps, for each record, every attribute
+// it carried — bound or passed, in order, a repeated key repeated — so that a
+// field bound twice is seen twice.
 type fieldRecorder struct {
-	mu     *sync.Mutex
-	fields *[]map[string]string
-	bound  []slog.Attr
+	mu      *sync.Mutex
+	records *[][]slog.Attr
+	bound   []slog.Attr
+}
+
+func newFieldRecorder() *fieldRecorder {
+	return &fieldRecorder{mu: &sync.Mutex{}, records: &[][]slog.Attr{}}
 }
 
 func (f *fieldRecorder) Enabled(context.Context, slog.Level) bool { return true }
 
 func (f *fieldRecorder) Handle(_ context.Context, rec slog.Record) error {
-	m := map[string]string{}
-	for _, a := range f.bound {
-		m[a.Key] = a.Value.String()
-	}
+	attrs := append([]slog.Attr(nil), f.bound...)
 	rec.Attrs(func(a slog.Attr) bool {
-		m[a.Key] = a.Value.String()
+		attrs = append(attrs, a)
 		return true
 	})
 	f.mu.Lock()
 	defer f.mu.Unlock()
-	*f.fields = append(*f.fields, m)
+	*f.records = append(*f.records, attrs)
 	return nil
 }
 
 func (f *fieldRecorder) WithAttrs(attrs []slog.Attr) slog.Handler {
-	return &fieldRecorder{mu: f.mu, fields: f.fields, bound: append(append([]slog.Attr(nil), f.bound...), attrs...)}
+	return &fieldRecorder{mu: f.mu, records: f.records, bound: append(append([]slog.Attr(nil), f.bound...), attrs...)}
 }
 
 func (f *fieldRecorder) WithGroup(string) slog.Handler { return f }
+
+// values lists what the one record written so far carries under a key, one
+// entry per time the key appears.
+func (f *fieldRecorder) values(t *testing.T, key string) []string {
+	t.Helper()
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	if len(*f.records) != 1 {
+		t.Fatalf("the logger holds %d records, want one", len(*f.records))
+	}
+	var out []string
+	for _, a := range (*f.records)[0] {
+		if a.Key == key {
+			out = append(out, a.Value.String())
+		}
+	}
+	return out
+}
+
+// loggedContext is a context whose logger writes into the recorder, with a
+// field bound outside the tenant's.
+func loggedContext() (context.Context, *fieldRecorder) {
+	rec := newFieldRecorder()
+	ctx := log.WithLogger(context.Background(), slog.New(rec))
+	return log.WithAttrs(ctx, slog.String("job", "reindex")), rec
+}
+
+// requireLogged asserts that the one record carries the tenant field these
+// times, with these values, and the field bound outside once.
+func requireLogged(t *testing.T, rec *fieldRecorder, want ...string) {
+	t.Helper()
+	if got := rec.values(t, tenantctx.LogField); !slices.Equal(got, want) {
+		t.Fatalf("the record carries %s %q, want %q", tenantctx.LogField, got, want)
+	}
+	if got := rec.values(t, "job"); !slices.Equal(got, []string{"reindex"}) {
+		t.Fatalf("the record carries job %q, want the one bound outside", got)
+	}
+}
 
 // A record written under the entered context is attributed to the tenant, the
 // way a record written under a resolved request is, beside what was bound
 // before.
 func TestEnterBindsTheTenantOnTheLogger(t *testing.T) {
 	r := enteringRoster(t)
-	fields := &[]map[string]string{}
-	base := log.WithLogger(context.Background(), slog.New(&fieldRecorder{mu: &sync.Mutex{}, fields: fields}))
-	base = log.WithAttrs(base, slog.String("job", "reindex"))
+	base, rec := loggedContext()
 	ctx, err := r.Enter(base, "t_acme")
 	if err != nil {
 		t.Fatalf("entering: %v", err)
 	}
 	log.FromContext(ctx).Info("working")
-	if len(*fields) != 1 || (*fields)[0][tenantctx.LogField] != "t_acme" || (*fields)[0]["job"] != "reindex" {
-		t.Fatalf("a record under the entered context carried %v, want %s=t_acme beside job=reindex",
-			*fields, tenantctx.LogField)
+	requireLogged(t, rec, "t_acme")
+}
+
+// Entering a tenant from a context that belonged to another one replaces the
+// tenant on the logger as it does in the context: the record names the entered
+// tenant, once.
+func TestEnterReplacesTheTenantOnTheLogger(t *testing.T) {
+	r := enteringRoster(t)
+	base, rec := loggedContext()
+	first, err := r.Enter(base, "t_globex")
+	if err != nil {
+		t.Fatalf("entering the first tenant: %v", err)
 	}
+	ctx, err := r.Enter(first, "t_acme")
+	if err != nil {
+		t.Fatalf("entering the second tenant: %v", err)
+	}
+	log.FromContext(ctx).Info("working")
+	requireLogged(t, rec, "t_acme")
+}
+
+// A refused entry hands back a context that belongs to no tenant, and its
+// records name none: the tenant the context carried before is off the logger
+// as it is out of the context.
+func TestARefusedEnterTakesTheTenantOffTheLogger(t *testing.T) {
+	r := enteringRoster(t)
+	base, rec := loggedContext()
+	entered, err := r.Enter(base, "t_acme")
+	if err != nil {
+		t.Fatalf("entering: %v", err)
+	}
+	refused, err := r.Enter(entered, "t_ghost")
+	if !errors.Is(err, tenant.ErrInvalidTenant) {
+		t.Fatalf("entering a tenant no row carries gave %v, want ErrInvalidTenant", err)
+	}
+	log.FromContext(refused).Info("working")
+	requireLogged(t, rec)
+}
+
+// Crossing tenants from an entered context gives the tenant up on the logger
+// with the context: a record about work across tenants does not name one.
+func TestCrossingFromAnEnteredContextTakesTheTenantOffTheLogger(t *testing.T) {
+	r := enteringRoster(t)
+	base, rec := loggedContext()
+	entered, err := r.Enter(base, "t_acme")
+	if err != nil {
+		t.Fatalf("entering: %v", err)
+	}
+	log.FromContext(tenant.CrossTenant(entered)).Info("working")
+	requireLogged(t, rec)
 }

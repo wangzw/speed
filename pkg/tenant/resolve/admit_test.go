@@ -11,6 +11,7 @@ import (
 
 	"github.com/vislake/speed/pkg/log"
 	"github.com/vislake/speed/pkg/tenant"
+	"github.com/vislake/speed/pkg/tenant/internal/tenantctx"
 )
 
 // The cases in this file drive the resolution layer the way the entry point
@@ -116,6 +117,17 @@ type harness struct {
 // through the request's logger.
 func newHarness(t *testing.T, roster tenant.Catalog, extractor tenant.Extractor) harness {
 	t.Helper()
+	return newHarnessWriting(t, roster, extractor, func(ctx context.Context) {
+		log.FromContext(ctx).Info("handled")
+	})
+}
+
+// newHarnessWriting is newHarness with the handler's record written by write,
+// from the request's context.
+func newHarnessWriting(t *testing.T, roster tenant.Catalog, extractor tenant.Extractor,
+	write func(ctx context.Context),
+) harness {
+	t.Helper()
 	r := newResolver(settings{header: "X-Tenant"}, roster)
 	r.selected = extractor
 	module := newRecorder()
@@ -126,7 +138,7 @@ func newHarness(t *testing.T, roster tenant.Catalog, extractor tenant.Extractor)
 	next := nethttp.HandlerFunc(func(w nethttp.ResponseWriter, req *nethttp.Request) {
 		reached = true
 		seen, _ = tenant.FromContext(req.Context())
-		log.FromContext(req.Context()).Info("handled")
+		write(req.Context())
 		w.WriteHeader(nethttp.StatusNoContent)
 	})
 	return harness{
@@ -221,11 +233,34 @@ func TestAnAdmittedRequestCarriesTheIdentifier(t *testing.T) {
 	if len(records) != 1 || records[0].msg != "handled" {
 		t.Fatalf("the request's logger holds %+v, want the handler's one record", records)
 	}
-	if got := records[0].attrs[tenantField]; got != "t_acme" {
-		t.Fatalf("the handler's record carries %s=%q, want t_acme", tenantField, got)
+	if got := records[0].attrs[tenantctx.LogField]; got != "t_acme" {
+		t.Fatalf("the handler's record carries %s=%q, want t_acme", tenantctx.LogField, got)
 	}
 	if got := records[0].attrs["subject"]; got != "alice" {
 		t.Fatalf("the handler's record lost the subject bound outside, got %q", got)
+	}
+}
+
+// A handler that crosses tenants from its request's context gives up the
+// tenant on the logger too: a record about work done across tenants does not
+// name the tenant the request belonged to, because that work does not belong
+// to it. What the layers outside bound stays.
+func TestCrossingFromAnAdmittedRequestTakesTheTenantOffTheLogger(t *testing.T) {
+	h := newHarnessWriting(t, standardRoster(), headerExtractor{name: "X-Tenant"}, func(ctx context.Context) {
+		log.FromContext(tenant.CrossTenant(ctx)).Info("crossed")
+	})
+	if w := h.serve("acme"); w.Code != nethttp.StatusNoContent {
+		t.Fatalf("an active tenant was answered %d, want the handler's 204", w.Code)
+	}
+	records := h.request.all()
+	if len(records) != 1 || records[0].msg != "crossed" {
+		t.Fatalf("the request's logger holds %+v, want the handler's one record", records)
+	}
+	if got, ok := records[0].attrs[tenantctx.LogField]; ok {
+		t.Fatalf("a record written across tenants carries %s=%q, want no tenant", tenantctx.LogField, got)
+	}
+	if got := records[0].attrs["subject"]; got != "alice" {
+		t.Fatalf("the crossing record lost the subject bound outside, got %q", got)
 	}
 }
 

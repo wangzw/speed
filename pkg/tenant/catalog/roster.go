@@ -239,14 +239,15 @@ func (r *roster) List(_ context.Context) ([]tenant.Tenant, error) {
 // fixes it needs.
 //
 // What it writes is what the resolving layer writes on admitting a request —
-// the identifier into the context and onto the logger — through the same
-// internal package, which is what keeps the writing side closed to everything
-// outside this capability directory. A refusal writes the empty identifier
-// instead, which lifts a cross-tenant mark the context carried: a caller that
-// drops the error and goes on with the context has its scoped statements
-// refused, not let across.
+// the identifier into the context and onto the logger, replacing a tenant the
+// context carried in both — through the same internal package, which is what
+// keeps the writing side closed to everything outside this capability
+// directory. A refusal writes the empty identifier instead, which lifts a
+// cross-tenant mark the context carried and takes a tenant bound on its logger
+// off: a caller that drops the error and goes on with the context has its
+// scoped statements refused, not let across, and its records name no tenant.
 func (r *roster) Enter(ctx context.Context, id tenant.ID) (context.Context, error) {
-	refused := tenantctx.WithID(ctx, "")
+	refused := tenantctx.Bind(ctx, "", contextLogger)
 	if err := checkField("identifier", string(id)); err != nil {
 		return refused, err
 	}
@@ -261,9 +262,11 @@ func (r *roster) Enter(ctx context.Context, id tenant.ID) (context.Context, erro
 	case t.Status != tenant.StatusActive:
 		return refused, fmt.Errorf("%w: tenant %q is %s", tenant.ErrTenantDisabled, id, t.Status)
 	}
-	entered := tenantctx.WithID(ctx, string(t.ID))
-	return log.WithAttrs(entered, slog.String(tenantctx.LogField, string(t.ID))), nil
+	return tenantctx.Bind(ctx, string(t.ID), contextLogger), nil
 }
+
+// contextLogger is how an entered tenant reaches the logger a context carries.
+var contextLogger = tenantctx.Logger{With: log.WithAttrs, Without: log.WithoutAttrs}
 
 // Put implements tenant.Catalog.
 //

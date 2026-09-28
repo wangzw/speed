@@ -37,10 +37,13 @@ func FromContext(ctx context.Context) (ID, bool) {
 // by a tenant nor made to fill the tenant column.
 //
 // The context it returns belongs to no tenant. Marking a context that carried
-// one gives that tenant up: FromContext reports none in the result. A crossing
-// statement belongs to no tenant, and a reader that took the marked context for
-// the one it was derived from — the audit journal filling its tenant column is
-// one — would file an unscoped statement under a scope it does not have.
+// one gives that tenant up: FromContext reports none in the result, and the
+// tenant field the resolving layer or Catalog.Enter bound on the context's
+// logger is taken off, so a record written across tenants names none. A
+// crossing statement belongs to no tenant, and a reader that took the marked
+// context for the one it was derived from — the audit journal filling its
+// tenant column is one — would file an unscoped statement under a scope it
+// does not have.
 //
 // What crossing lifts is the condition and the fill, not the column. A row
 // written across tenants still has to carry a tenant, so an insert under this

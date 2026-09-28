@@ -46,13 +46,15 @@ const ConfigNamespace = ModuleName
 // rather than the module, and the module follows it in the line itself.
 const diagnosticPrefix = "tenant: "
 
-// tenantField is the name the resolved identifier is bound to on the logger.
+// contextLogger is how the resolved identifier reaches the logger a request's
+// context carries.
 //
-// The field name is this capability directory's to choose — the logging
-// module knows no domain fields — and it is a contract once a dashboard reads
-// it. The roster binds the same field when a path enters a tenant, so the name
-// is the one both writers share rather than one fixed here.
-const tenantField = tenantctx.LogField
+// The field it is bound under is this capability directory's to choose — the
+// logging module knows no domain fields — and it is a contract once a
+// dashboard reads it. The roster binds the same field when a path enters a
+// tenant, so the name is the one both writers share, tenantctx.LogField,
+// rather than one fixed here.
+var contextLogger = tenantctx.Logger{With: log.WithAttrs, Without: log.WithoutAttrs}
 
 // middlewareOrder places this layer where the constraints leave a choice.
 //
@@ -385,9 +387,7 @@ func (r *resolver) admit(w nethttp.ResponseWriter, req *nethttp.Request) (resolv
 		r.refuse(w, req, "the tenant is not being served", name)
 		return nil
 	}
-	ctx := tenantctx.WithID(req.Context(), string(found.ID))
-	ctx = log.WithAttrs(ctx, slog.String(tenantField, string(found.ID)))
-	return req.WithContext(ctx)
+	return req.WithContext(tenantctx.Bind(req.Context(), string(found.ID), contextLogger))
 }
 
 // refuse writes the one status this layer answers with, and records why.

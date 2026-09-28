@@ -197,7 +197,7 @@ func CrossTenant(ctx context.Context) context.Context
 
 **这是跨租户的唯一途径**（[ADR-tenant-scoping-2026-09-21](../../adr/adr-tenant-scoping-2026-09-21.md)）。它是上下文事实而非语句事实，因而可以在一个函数的入口处建立，此后的每一条语句都落在它之下。
 
-**带标记的上下文不属于任何租户。** 建立标记的那一步同时交出上下文里的标识：在它里面 `FromContext` 第二个返回值为假，一个从请求上下文里建立标记的调用点把它那条请求的租户一并交出。跨租户的语句本就不受任何租户约束，把这样的上下文读成某个租户的，会让一条不受约束的语句在别处读起来像一条受约束的语句，审计行写下的租户列即是一例（见 [audit](design-audit.md) 的审计行的补全）。
+**带标记的上下文不属于任何租户。** 建立标记的那一步同时交出上下文里的标识：在它里面 `FromContext` 第二个返回值为假，一个从请求上下文里建立标记的调用点把它那条请求的租户一并交出。跨租户的语句本就不受任何租户约束，把这样的上下文读成某个租户的，会让一条不受约束的语句在别处读起来像一条受约束的语句，审计行写下的租户列即是一例（见 [audit](design-audit.md) 的审计行的补全）。**logger 上的 `tenant_id` 随之撤下**，日志记录因而不把跨租户做的事记在某个租户名下。根包不 import 日志模块（见依赖），撤下这个字段的办法由写进标识的那一方随标识一起留在上下文里：解析层与 `Enter` 绑上字段时，把日志模块按键解除的函数一并存进上下文，`CrossTenant` 找到它就调用；一个没有经过这两个写入者的上下文，logger 上也没有本模块绑的字段可撤。
 
 **跨租户解除的是条件与填列，不是那一列。** 跨租户写下的行照样要属于某个租户：带标记的插入，行里没写租户列的拒绝；带标记的写把租户列写成空串或 NULL 的，以 `ErrNoTenantInContext` 拒绝，写成含空白或控制字符的字面值的，以 `ErrInvalidTenant` 拒绝。那样的行不属于任何租户，此后没有一条受约束的语句够得着它。租户列写成调用方自己给出的表达式不在此列，跨租户本就允许调用方说明那一列变成什么。
 
@@ -211,8 +211,8 @@ func CrossTenant(ctx context.Context) context.Context
 
 - **进入之前读名册。** 名册上没有这个标识，或它不在取值域内，以 `ErrInvalidTenant` 拒绝；这个租户已停用，以 `ErrTenantDisabled` 拒绝。读的是解析层读的那份快照，一个租户在请求面与这条路径上因而给出同一个答案；快照发布之前以 `ErrRosterMissing` 拒绝。
 - **进入之后，上下文就是那个租户的**，与一条解析成功的请求相同：`FromContext` 答它，插件按它加条件、填列、核对，审计与限流读到它；标识以 `tenant_id` 绑上上下文里的 logger，与解析层绑的是同一个字段。
-- **交回的上下文不带跨租户标记，传入的上下文里的租户被替换。** 从跨租户的上下文进入，标记随之解除；从属于别的租户的上下文进入，以点名的那个租户为准。
-- **拒绝时交回的上下文既不属于任何租户，也不跨租户。** 丢掉错误照用它的调用方，受约束的语句一律以 `ErrNoTenantInContext` 被拒，失效方向是拒绝而不是放行。
+- **交回的上下文不带跨租户标记，传入的上下文里的租户被替换**，logger 上的也是：从跨租户的上下文进入，标记随之解除；从属于别的租户的上下文进入，以点名的那个租户为准，记录上的 `tenant_id` 只有这一个取值，而不是旧的在前、新的在后两个。
+- **拒绝时交回的上下文既不属于任何租户，也不跨租户**，logger 上原先绑的 `tenant_id` 也撤下。丢掉错误照用它的调用方，受约束的语句一律以 `ErrNoTenantInContext` 被拒，失效方向是拒绝而不是放行；它写出的记录也不点名任何租户。
 
 **事件的订阅者按事件里的租户标识进入，不依赖总线交来的上下文。** 进程内的总线在发布方的上下文上调用订阅者，租户随之而来；经传输的总线另起上下文，里面没有租户（见 [event](design-event.md) 的并发与事务边界）。同一段订阅代码要在两类总线上行为相同，它就从事件的租户标识字段进入，这时进程内总线交来的那个租户被替换为事件点名的租户。系统级事件的租户标识为空，它不属于任何租户，订阅者不进入。
 
@@ -285,13 +285,13 @@ func CrossTenant(ctx context.Context) context.Context
 
 解析子包 import 根包、`pkg/core`、`pkg/config`、`pkg/http` 与 `pkg/authn` 的根包。**指向认证功能标识的硬约束要写出 `(*authn.Gate)(nil)` 这个表达式，那个 import 因而不可避免**（[ADR-tenant-ordering-2026-09-21](../../adr/adr-tenant-ordering-2026-09-21.md)）。
 
-名册子包 import 根包、`pkg/core`、`pkg/config`、`pkg/db` 与 `pkg/log`；最后一个用于启动诊断，以及 `Enter` 把标识绑上 logger 的 `log.WithAttrs`。
+名册子包 import 根包、`pkg/core`、`pkg/config`、`pkg/db` 与 `pkg/log`；最后一个用于启动诊断，以及 `Enter` 把标识绑上 logger、或在拒绝时撤下的 `log.WithAttrs` 与 `log.WithoutAttrs`。
 
 **名册子包声明对数据库功能的构造期依赖**，它要建立那张表、并在 `Init` 中读它；表由它声明的迁移集建立，而迁移在 `Migrate` 阶段施加，整体早于 `Init`（见 [core](design-core.md) 的阶段表）。
 
 **解析子包声明对名册功能的构造期依赖**，判据是存在要排的序：名册在 `Init` 中装载快照，解析在 `Init` 中登记中间件并在请求期读那份快照，而 `Init` 按依赖序执行（[ADR-tenant-packaging-2026-09-21](../../adr/adr-tenant-packaging-2026-09-21.md)）。这与认证网关把 `Requires` 留空的情形相反，那里的判据正是"不存在要排的序"（[ADR-authn-wiring-2026-09-20](../../adr/adr-authn-wiring-2026-09-20.md)）。
 
-**日志功能不构成依赖。** 租户标识作为关联字段绑上去用的是 `log.WithAttrs`，包级函数，不经注册表。
+**日志功能不构成依赖。** 租户标识作为关联字段绑上去用的是 `log.WithAttrs`，撤下用的是 `log.WithoutAttrs`，都是包级函数，不经注册表。两个写入者把这两个函数交给内部包 `internal/tenantctx`，由它在写进标识的同时绑上字段，并把撤下的那一个留在上下文里供 `CrossTenant` 调用——根包与内部包因而不 import 日志模块，仍只依赖标准库。
 
 方向满足架构不变量：本功能目录位于 `core`、`config`、`log`、`db`、`http` 与 `authn` 之上，不被其中任何一个 import。权限模型与按租户取值的模块位于本模块之上，它们取用标识而本模块不认识它们。
 
@@ -467,7 +467,7 @@ flowchart TD
 
 **快照发布之前，名册以失败作答。** `Get`、`ByAlias` 与 `List` 在那之前一律报错，而不是答成"没有这个租户"：那是一条关于表的事实，只有一次发生过的读才说得出来，答空会让一个尚未装载的名册看上去像一个空名册。
 
-**解析成功的那一步做三件事**：把标识写进请求上下文，经 `log.WithAttrs` 把标识绑上 logger 作为关联字段，然后放行。字段名是 `tenant_id`。关联字段由产生它的模块在自己的注入点绑定（[ADR-log-context-2026-09-13](../../adr/adr-log-context-2026-09-13.md)），而 HTTP 中间件正是那条记录点名的注入点；这项字段除了本模块没有别人产得出，不绑上去，请求路径上的日志就无法归因到租户。**首次注入不由本模块做**——那是产生上下文那一步的事，中间件只做 `WithAttrs`（见 [log](design-log.md)）。
+**解析成功的那一步做三件事**：把标识写进请求上下文，经 `log.WithAttrs` 把标识绑上 logger 作为关联字段，然后放行。字段名是 `tenant_id`；同名字段后绑的替换先绑的（见 [log](design-log.md) 的上下文存取），`CrossTenant` 把它撤下（见跨租户）。关联字段由产生它的模块在自己的注入点绑定（[ADR-log-context-2026-09-13](../../adr/adr-log-context-2026-09-13.md)），而 HTTP 中间件正是那条记录点名的注入点；这项字段除了本模块没有别人产得出，不绑上去，请求路径上的日志就无法归因到租户。**首次注入不由本模块做**——那是产生上下文那一步的事，中间件只做 `WithAttrs`（见 [log](design-log.md)）。
 
 装载与刷新是同一条路径，区别只在失败时的处置。**`Init` 装载失败终止启动**，错误点名那张表与施加迁移的那条命令；**刷新失败保留上一份快照并记日志**——丢快照的失效形态是把全部请求拒掉，而一次刷新失败不构成那个理由。
 
@@ -643,10 +643,10 @@ flowchart TD
 | 受约束模型的约定与识别 | 已实现 | `pkg/tenant/model.go` `Model`；`pkg/tenant/catalog/plugin.go` `conventionFieldOf`、`embedsConvention` |
 | 隔离插件的三处作用点、四档判定与显式租户列的核对 | 已实现 | `pkg/tenant/catalog/plugin.go` `Initialize`、`scopeRead`、`scopeDelete`、`scopeUpdate`、`applyCondition`、`scopeTerm`、`grouped`、`fillKey`、`fillColumn`、`writeRows`、`assignedValues`、`upsertValues` |
 | 行链上的读、关联联接的条件与子查询的拒绝 | 已实现 | `pkg/tenant/catalog/plugin.go` `Initialize`、`scopedJoins`、`applyJoins`、`joinTerm`、`renderRefusal` |
-| 跨租户的上下文标记 | 已实现 | `pkg/tenant/scope.go` `CrossTenant`；`internal/tenantctx/tenantctx.go` |
-| 不经请求面的路径经名册进入单个租户 | 已实现 | `pkg/tenant/catalog/roster.go` `Enter`；`internal/tenantctx/tenantctx.go` `WithID`、`LogField` |
+| 跨租户的上下文标记 | 已实现 | `pkg/tenant/scope.go` `CrossTenant`；`internal/tenantctx/tenantctx.go` `WithCrossTenant` |
+| 不经请求面的路径经名册进入单个租户 | 已实现 | `pkg/tenant/catalog/roster.go` `Enter`；`internal/tenantctx/tenantctx.go` `Bind`、`LogField` |
 | 取值域之外的标识拒绝被绑定 | 已实现 | `pkg/tenant/tenant.go` `ID.Value` |
-| 租户标识作为关联字段绑上 logger | 已实现 | `pkg/tenant/resolve/resolve.go` `admit` |
+| 租户标识作为关联字段绑上 logger，替换与撤下 | 已实现 | `pkg/tenant/resolve/resolve.go` `admit`；`pkg/tenant/catalog/roster.go` `Enter`；`internal/tenantctx/tenantctx.go` `Bind`、`WithCrossTenant` |
 | 启动诊断：快照规模、状态分布与受守护的监听端 | 已实现 | `pkg/tenant/catalog/roster.go` `load`；`pkg/tenant/resolve/resolve.go` `seal` |
 | 哨兵错误 | 已实现 | `pkg/tenant/errors.go` |
 
