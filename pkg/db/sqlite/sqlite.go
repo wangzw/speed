@@ -5,8 +5,9 @@
 // input items hang under, and delivers the capability exclusively. The
 // connection, plugin, encryption and migration logic are pkg/db's, shared with
 // every other implementation; what is dialect-specific stops at the driver, the
-// namespace, how the driver reports a constraint refusal, and which locators
-// name a database private to one connection.
+// namespace, how the driver reports a constraint refusal, which locators name a
+// database private to one connection, and how a connection's wait for a lock
+// is bounded.
 //
 // Those locators — an in-memory database, a temporary one — are one database
 // per connection in SQLite, so a handle on one is held to a single connection
@@ -15,7 +16,9 @@
 // handle queues its statements: while a transaction or an open result set
 // holds the connection, another statement on the same handle waits for it,
 // until its context ends or for good, so a statement inside a transaction goes
-// through the transaction's handle.
+// through the transaction's handle. A module issuing statements of its own on
+// such a handle, where its caller may be holding the connection, takes one
+// through db.Connection, which bounds that wait.
 //
 // It supplies no cross-process migration mutex, and this is where it differs
 // from the PostgreSQL subpackage beyond the driver. A mutex orders replicas that
@@ -49,9 +52,13 @@
 package sqlite
 
 import (
+	"context"
+	"database/sql"
 	"errors"
+	"fmt"
 	"net/url"
 	"strings"
+	"time"
 
 	gosqlite "github.com/glebarez/go-sqlite"
 	sqlitedriver "github.com/glebarez/sqlite"
@@ -139,6 +146,34 @@ func connectionScoped(dsn string) bool {
 	return path == "" || path == ":memory:" || params.Get("mode") == "memory"
 }
 
+// boundLockWait holds how long a statement on conn waits for a lock another
+// connection holds to bound, through the connection's busy timeout, and
+// returns what puts the busy timeout it had back.
+//
+// SQLite waits for a lock inside the driver, retrying for as long as the busy
+// timeout, and a context that ends meanwhile does not cut that wait short: the
+// connection's busy timeout is the only bound there is. The driver gives every
+// connection one of 5 seconds, which a locator's _pragma=busy_timeout(n)
+// replaces.
+func boundLockWait(ctx context.Context, conn *sql.Conn, bound time.Duration) (func(context.Context) error, error) {
+	var taken int64
+	if err := conn.QueryRowContext(ctx, "PRAGMA busy_timeout").Scan(&taken); err != nil {
+		return nil, fmt.Errorf("reading the busy timeout: %w", err)
+	}
+	// Zero turns the busy handler off rather than bounding it, so a bound is
+	// at least a millisecond.
+	limit := max(bound.Milliseconds(), 1)
+	if _, err := conn.ExecContext(ctx, fmt.Sprintf("PRAGMA busy_timeout = %d", limit)); err != nil {
+		return nil, fmt.Errorf("setting the busy timeout: %w", err)
+	}
+	return func(ctx context.Context) error {
+		if _, err := conn.ExecContext(ctx, fmt.Sprintf("PRAGMA busy_timeout = %d", taken)); err != nil {
+			return fmt.Errorf("putting the busy timeout back: %w", err)
+		}
+		return nil
+	}, nil
+}
+
 // init registers this module with the process registry, so a host that imports
 // the package has this engine available as soon as its configuration names it.
 func init() { core.ProcessRegistry.Register(Module()) }
@@ -161,5 +196,6 @@ func Module() core.Module {
 		Dialector:           Dialector,
 		ConstraintViolation: constraintViolation,
 		ConnectionScoped:    connectionScoped,
+		BoundLockWait:       boundLockWait,
 	})
 }

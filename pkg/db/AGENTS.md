@@ -24,6 +24,8 @@ same capability exclusively.
   ([`adr-db-migration-2026-09-14.md`](../../docs/adr/adr-db-migration-2026-09-14.md)),
   how a constraint refusal is recognised
   ([`adr-db-errors-2026-09-28.md`](../../docs/adr/adr-db-errors-2026-09-28.md)),
+  how a module's own statements take a connection with bounded waits
+  ([`adr-db-waits-2026-09-29.md`](../../docs/adr/adr-db-waits-2026-09-29.md)),
   why this package's interface exposes GORM
   ([`adr-module-packaging-2026-09-14.md`](../../docs/adr/adr-module-packaging-2026-09-14.md)),
   and where a driver is allowed to live
@@ -90,6 +92,18 @@ must not cross, and how to run it.
   new statement, and `OpenedFrom` answering false there sends a plugin's row to
   a database no migration reached, with nothing reporting it. Installing it
   after the declared plugins leaves their `Initialize` unable to ask.
+- **The engine marker every handle carries lives in its plugin table too,
+  installed by `openHandle` before either caller installs the declared
+  plugins.** It holds the pool behind the handle and the engine's
+  `Spec.BoundLockWait`, and `Connection` reads it from whatever session it is
+  handed — a transaction, a `WithContext`, a connection built with `Open` —
+  which is how a plugin holding nothing but a session takes a bounded
+  connection of the right pool. A handle without it is one this package did not
+  open, and `Connection` refuses it rather than bounding only half the wait.
+- **A connection `Connection` bounded goes back to the pool with the lock-wait
+  setting it had, or not at all.** A connection handed back carrying the bound
+  cuts every later statement's lock wait short on it with nothing reporting
+  it, so a setting that cannot be put back closes the connection.
 - **Every wrap uses `%w`.** A `%v` leaves the text all but identical and makes
   the sentinel unreachable, which is the failure the note in `errors.go` exists
   to prevent; the error-chain cases hold each path to it.
@@ -112,7 +126,9 @@ func Module() core.Module {
 		Dialect:             Dialect,             // also the migration subdirectory
 		Dialector:           Dialector,           // the driver, and the only place it appears
 		ConstraintViolation: constraintViolation, // the driver's unique and foreign key refusals
-		// NewMigrationLock and DefaultMigrationLockTimeout only for an engine
+		BoundLockWait:       boundLockWait,       // bounds one connection's wait for a lock, and puts it back
+		// ConnectionScoped only for an engine with locators private to one
+		// connection; NewMigrationLock and DefaultMigrationLockTimeout only for an engine
 		// that appears in multi-replica deployments.
 	})
 }
@@ -150,5 +166,5 @@ gate. `internal/dbhost` is the test host the multi-process cases build and run;
 `pkg/internal/pgpool/pgtest` is the container fixture, shared with the key-value and
 event modules' postgres backends; `internal/dbsuite` holds the
 engine-neutral migration cases each engine's fixture is driven through, and the
-constraint-refusal and refused-commit cases each engine runs on the handle its
-module delivers.
+constraint-refusal, refused-commit and bounded-connection cases each engine runs
+on the handle its module delivers.

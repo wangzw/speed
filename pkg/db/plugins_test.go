@@ -66,13 +66,13 @@ func pluginModule(name string, plugins ...gorm.Plugin) core.Module {
 }
 
 // installedOn lists the declared plugins on a handle, sorted, so a case compares
-// sets rather than the map's iteration order. The mark a connection built with
-// Open carries in the same table is left out: it is this package's own, and no
-// module declared it.
+// sets rather than the map's iteration order. The marks this package keeps in
+// the same table — the one every handle carries, and the one on a connection
+// built with Open — are left out: they are its own, and no module declared them.
 func installedOn(handle *gorm.DB) []string {
 	names := make([]string, 0, len(handle.Plugins))
 	for name := range handle.Plugins {
-		if name == db.OpenedMarkerName {
+		if name == db.OpenedMarkerName || name == db.EngineMarkerName {
 			continue
 		}
 		names = append(names, name)

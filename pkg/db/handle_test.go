@@ -39,6 +39,7 @@ func sqliteSpec() db.Spec {
 		Dialect:             db.SQLite,
 		Dialector:           sqlite.Open,
 		ConstraintViolation: func(error) error { return nil },
+		BoundLockWait:       db.LeaveLockWait,
 	}
 }
 

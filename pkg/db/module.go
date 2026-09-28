@@ -2,6 +2,7 @@ package db
 
 import (
 	"context"
+	"database/sql"
 	"fmt"
 	"reflect"
 	"strings"
@@ -16,8 +17,10 @@ import (
 // Spec is what an implementation subpackage hands this package to become a
 // module. It is the whole of what an implementation contributes: a name, an
 // engine, the namespace its input items hang under, the driver binding, how
-// its driver reports a constraint refusal, and a cross-process migration
-// mutex when its engine appears in multi-replica deployments.
+// its driver reports a constraint refusal, which locators name a database
+// private to one connection, how a connection's wait for a lock is bounded,
+// and a cross-process migration mutex when its engine appears in
+// multi-replica deployments.
 //
 // Everything else — the input item declaration, the stance it states in
 // Prepare, the connection, the plugins, the encryption serializer, the
@@ -64,6 +67,17 @@ type Spec struct {
 	// locator it is handed is the trimmed one the driver receives. An
 	// implementation whose engine has no such locator leaves it nil.
 	ConnectionScoped func(dsn string) bool
+	// BoundLockWait holds how long a statement on one connection waits for a
+	// lock another connection holds to at most bound, and returns what puts
+	// back the setting it replaced. Connection calls it on the connection it
+	// takes, and calls the returned function before handing the connection
+	// back; an error from either closes the connection rather than letting it
+	// carry the bound on. Both run on the connection outside any transaction.
+	//
+	// It is mandatory: Connection bounds a lock wait on every engine, and on
+	// an engine whose lock wait a context does not end, the connection's own
+	// setting is the only bound there is.
+	BoundLockWait func(ctx context.Context, conn *sql.Conn, bound time.Duration) (func(context.Context) error, error)
 	// NewMigrationLock builds the cross-process mutex the migration run is
 	// held under, bounded by the configured timeout. An implementation whose
 	// engine does not appear in multi-replica deployments leaves it nil, and
@@ -159,6 +173,10 @@ func (s Spec) check() {
 		panic(fmt.Sprintf("db: module %q gives no ConstraintViolation, so its handles would report a "+
 			"unique or foreign key refusal as the driver's raw error while every other engine "+
 			"reports it through gorm.ErrDuplicatedKey and gorm.ErrForeignKeyViolated", s.ModuleName))
+	case s.BoundLockWait == nil:
+		panic(fmt.Sprintf("db: module %q gives no BoundLockWait, so Connection would bound the wait "+
+			"for a connection on its handles and leave the wait for a lock to its engine's default",
+			s.ModuleName))
 	case s.NewMigrationLock != nil && s.DefaultMigrationLockTimeout <= 0:
 		panic(fmt.Sprintf("db: module %q supplies a migration mutex and no default for %s.%s, "+
 			"so a run that configured none would give up on the mutex before waiting",
