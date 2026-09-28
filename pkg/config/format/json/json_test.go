@@ -1,8 +1,13 @@
 package json_test
 
 import (
+	"context"
+	"errors"
+	"math"
+	"net/url"
 	"os/exec"
 	"reflect"
+	"strconv"
 	"strings"
 	"testing"
 
@@ -32,16 +37,19 @@ func TestName(t *testing.T) {
 }
 
 // TestNestedObject pins the shape the conversion layer is written against:
-// nested objects become nested map[string]any and numbers arrive as float64.
+// nested objects become nested map[string]any, a number written as an integer
+// arrives as an int, as it does from YAML, and any other number as a float64.
 func TestNestedObject(t *testing.T) {
-	got, err := parser(t).Unmarshal([]byte(`{"cache":{"redis":{"pool-size":4,"addr":"localhost:6379"}}}`))
+	got, err := parser(t).Unmarshal([]byte(`{"cache":{"redis":{"pool-size":4,"ratio":0.5,"cap":1e3,"addr":"localhost:6379"}}}`))
 	if err != nil {
 		t.Fatalf("Unmarshal failed: %v", err)
 	}
 	want := map[string]any{
 		"cache": map[string]any{
 			"redis": map[string]any{
-				"pool-size": float64(4),
+				"pool-size": 4,
+				"ratio":     0.5,
+				"cap":       float64(1000),
 				"addr":      "localhost:6379",
 			},
 		},
@@ -129,13 +137,71 @@ func TestKeysAndValuesSurviveTheWalk(t *testing.T) {
 	}
 	want := map[string]any{
 		"a": map[string]any{
-			"b": []any{float64(1), "x", true, nil, map[string]any{"c": []any{}}},
+			"b": []any{1, "x", true, nil, map[string]any{"c": []any{}}},
 			"d": map[string]any{},
 		},
 		`e"f`: "g",
 	}
 	if !reflect.DeepEqual(got, want) {
 		t.Errorf("Unmarshal() = %#v, want %#v", got, want)
+	}
+}
+
+// memorySource hands the configuration module a fixed document as the primary
+// source, so a case can load it the way a host does.
+type memorySource struct{ data string }
+
+func (memorySource) Scheme() string { return "mem" }
+
+func (s memorySource) Fetch(context.Context, *url.URL) ([]byte, string, error) {
+	return []byte(s.data), "json", nil
+}
+
+// TestIntegersKeepEveryDigit pins that an integer a JSON document writes is the
+// integer a module decodes. Held as a float64 on the way through, anything
+// above 2^53 would be rounded before any field saw it, and a config file
+// writing 9007199254740993 would run with 9007199254740992; a value one past
+// the int64 range would reach the field as a float the range check can no
+// longer tell from the bound.
+func TestIntegersKeepEveryDigit(t *testing.T) {
+	type counters struct{ N int64 }
+	load := func(document string) (int64, error) {
+		t.Helper()
+		reg := core.New()
+		reg.Register(json.Module())
+		reg.Register(core.Module{Name: "host", Resources: []any{
+			config.HostIdentity{DefaultLocator: "mem:///config.json"},
+			memorySource{data: document},
+		}})
+		reg.Register(core.Module{Name: "counters", Resources: []any{config.Schema{
+			Namespace: "counters",
+			Mounts:    []config.Mount{{Value: &counters{}}},
+		}}})
+		r, err := config.Load(t.Context(), reg, nil)
+		if err != nil {
+			return 0, err
+		}
+		var got counters
+		err = r.Decode("counters", &got)
+		return got.N, err
+	}
+
+	for _, want := range []int64{9007199254740993, math.MaxInt64, math.MinInt64} {
+		got, err := load(`{"counters": {"n": ` + strconv.FormatInt(want, 10) + `}}`)
+		if err != nil {
+			t.Fatalf("loading %d failed: %v", want, err)
+		}
+		if got != want {
+			t.Errorf("the document wrote %d and the module decoded %d", want, got)
+		}
+	}
+	if got, err := load(`{"counters": {"n": 9223372036854775808}}`); !errors.Is(err, config.ErrTypeMismatch) {
+		t.Errorf("a value one past the int64 range decoded to %d with %v, want ErrTypeMismatch", got, err)
+	}
+	// A number written with a fraction or an exponent is still a number an
+	// integer field takes when it is whole.
+	if got, err := load(`{"counters": {"n": 1e3}}`); err != nil || got != 1000 {
+		t.Errorf("1e3 decoded to %d with %v, want 1000", got, err)
 	}
 }
 

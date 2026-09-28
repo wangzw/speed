@@ -15,6 +15,8 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"strconv"
+	"strings"
 
 	"github.com/vislake/speed/pkg/config"
 	"github.com/vislake/speed/pkg/core"
@@ -56,8 +58,9 @@ func (format) Name() string { return "json" }
 
 // Unmarshal decodes a JSON document into a tree of string-keyed maps. JSON has
 // string keys by construction, so the rule against non-string keys costs this
-// parser nothing; numbers arrive as float64, which is what the conversion
-// layer expects of a source that cannot tell 1 from 1.0.
+// parser nothing. A number written as an integer arrives as one, with every
+// digit it was written with; any other number arrives as a float64, which the
+// conversion layer writes into an integer field when it is whole.
 //
 // An object that gives one key twice is refused. The standard library keeps
 // the last of them, so a second section under one key would drop every setting
@@ -71,6 +74,7 @@ func (format) Name() string { return "json" }
 // it decide the values.
 func (format) Unmarshal(data []byte) (map[string]any, error) {
 	w := &walker{data: data, dec: stdjson.NewDecoder(bytes.NewReader(data))}
+	w.dec.UseNumber()
 	document, err := w.value()
 	if err != nil {
 		if errors.Is(err, io.EOF) {
@@ -116,9 +120,36 @@ func (w *walker) value() (any, error) {
 	case stdjson.Delim('['):
 		return w.array()
 	}
+	if n, isNumber := tok.(stdjson.Number); isNumber {
+		return number(n)
+	}
 	// A closing delimiter where a value belongs is a syntax error the
 	// decoder reports itself, so what arrives here is a scalar.
 	return tok, nil
+}
+
+// number gives a number the Go value that holds what the document wrote.
+//
+// An integer literal, one written with neither a fraction nor an exponent, is
+// held as an integer: an int when it fits one, which is how YAML resolves it
+// too, and otherwise the 64-bit type that holds it. Held as a float64 it would
+// be rounded to 53 bits before any field saw it, and a config file writing
+// 9007199254740993 would run with 9007199254740992. Any other number, and an
+// integer literal no 64-bit type holds, is a float64, which is all it can be.
+func number(n stdjson.Number) (any, error) {
+	text := n.String()
+	if !strings.ContainsAny(text, ".eE") {
+		if i, err := strconv.ParseInt(text, 10, 64); err == nil {
+			if i == int64(int(i)) {
+				return int(i), nil
+			}
+			return i, nil
+		}
+		if u, err := strconv.ParseUint(text, 10, 64); err == nil {
+			return u, nil
+		}
+	}
+	return n.Float64()
 }
 
 // object reads the members of an object whose opening brace has been read,
@@ -181,7 +212,7 @@ func describe(value any) string {
 		return "an array"
 	case string:
 		return "a string"
-	case float64:
+	case int, int64, uint64, float64:
 		return "a number"
 	case bool:
 		return "a boolean"

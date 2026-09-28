@@ -281,6 +281,34 @@ func TestFloatOverflowRejected(t *testing.T) {
 	}
 }
 
+// TestAWholeFloatIsHeldToTheIntegerRangeExactly pins the edges of the 64-bit
+// range for a whole number that arrives as a float, which is how a source
+// writing one with an exponent delivers it.
+//
+// The range is the target's own on every platform. Converting a float an
+// integer type cannot hold is implementation-defined in Go, and where it
+// saturates to the bound, 2^63 would become the largest int64 and pass a
+// check that converts first and compares after -- a value one past the range
+// accepted as a different value. For an unsigned field the same conversion
+// through int64 turns 2^63 into 2^63-1, and a value above it into a refusal
+// of a number the field holds.
+func TestAWholeFloatIsHeldToTheIntegerRangeExactly(t *testing.T) {
+	decodeRejects[int64](t, float64(1<<63))
+	decodeRejects[int64](t, math.Inf(1))
+	decodeRejects[int64](t, math.NaN())
+	if got := decodeTo[int64](t, float64(-1<<63)); got != math.MinInt64 {
+		t.Errorf("-2^63 converted to %d, want %d", got, int64(math.MinInt64))
+	}
+	if got := decodeTo[uint64](t, float64(1<<63)); got != 1<<63 {
+		t.Errorf("2^63 converted to %d for an unsigned field, want %d", got, uint64(1<<63))
+	}
+	if got := decodeTo[uint64](t, 1.8e19); got != 18_000_000_000_000_000_000 {
+		t.Errorf("1.8e19 converted to %d for an unsigned field, want 18000000000000000000", got)
+	}
+	decodeRejects[uint64](t, float64(1<<64))
+	decodeRejects[uint64](t, float64(-1))
+}
+
 // TestUnsignedAboveTheSignedRangeAccepted pins the upper end of an unsigned
 // field. A source can reach it -- YAML reads 18446744073709551615 as a uint64
 // -- and a field wide enough to hold it has to take it.

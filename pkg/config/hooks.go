@@ -222,12 +222,7 @@ func exactNumberHook(from, to reflect.Type, data any) (any, error) {
 		reflect.Uint, reflect.Uint8, reflect.Uint16, reflect.Uint32, reflect.Uint64:
 		switch from.Kind() {
 		case reflect.Float32, reflect.Float64:
-			f := v.Float()
-			n := int64(f)
-			if float64(n) != f {
-				return nil, fmt.Errorf("%v is not a whole number this field can hold", f)
-			}
-			return fitInteger(n, to)
+			return fitWholeFloat(v.Float(), to)
 		case reflect.Int, reflect.Int8, reflect.Int16, reflect.Int32, reflect.Int64:
 			return fitInteger(v.Int(), to)
 		case reflect.Uint, reflect.Uint8, reflect.Uint16, reflect.Uint32, reflect.Uint64:
@@ -240,6 +235,37 @@ func exactNumberHook(from, to reflect.Type, data any) (any, error) {
 		}
 	}
 	return data, nil
+}
+
+// fitWholeFloat writes a float into an integer field when it holds a whole
+// number the field's type can hold.
+//
+// The range is checked on the float, against the bounds of a 64-bit integer of
+// the target's signedness, before anything is converted. Converting a float an
+// integer type cannot hold is implementation-defined in Go: where it saturates,
+// 2^63 turns into the largest int64 and a check made after the conversion
+// passes a value that is out of range as one that is not. An unsigned target
+// is converted as unsigned, so the half of its range above the largest signed
+// value is reachable.
+func fitWholeFloat(f float64, to reflect.Type) (any, error) {
+	if f != math.Trunc(f) {
+		return nil, fmt.Errorf("%v is not a whole number this field can hold", f)
+	}
+	switch to.Kind() {
+	case reflect.Uint, reflect.Uint8, reflect.Uint16, reflect.Uint32, reflect.Uint64:
+		if f < 0 {
+			return nil, fmt.Errorf("%v is negative", f)
+		}
+		if f >= 1<<64 {
+			return nil, fmt.Errorf("%v does not fit", f)
+		}
+		return fitUnsigned(uint64(f), to)
+	default:
+		if f < -1<<63 || f >= 1<<63 {
+			return nil, fmt.Errorf("%v does not fit", f)
+		}
+		return fitInteger(int64(f), to)
+	}
 }
 
 // fitInteger writes a whole number into the target's own type, refusing a
