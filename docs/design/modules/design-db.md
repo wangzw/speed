@@ -96,6 +96,8 @@ func OpenedFrom(*gorm.DB) (*gorm.DB, bool)
 
 值落到哪一列，按数据库解析列名的方式判断，而不只按 GORM 认得的名字。GORM 按字段名、列名与命名策略解析 map 的键和赋值的列，解析不了的原样写进 SQL，随后决定它是哪一列的是数据库：SQLite 比较标识符不分大小写，PostgreSQL 把不带引号的标识符折成小写，已经带着引号的名字两者都按引号里的内容认。`Updates(map[string]any{"eMaIl": v})`、键写成带引号的列名、列为原样文本的 `SET` 子句，于是同样落到加密列上，本模块同样封装它们。判据是：列名去掉引号之后的最后一段，与某个加密列的列名在不分大小写时相同，就按那一列封装。这是 SQLite 的规则，PostgreSQL 解析到加密列的名字都在它之内。原样文本不是标识符的——表达式、函数调用、PostgreSQL 的 `U&"…"` 转义写法——本模块不解析 SQL，判断不了它落到哪一列，在带加密字段的模型上一律拒绝并点名那一列：它可能正是加密列，放行就是把明文写进去。以另一个结构体给出的 `Updates` 同样按它实际写出的列名判断，那个结构体的字段列名与加密列只差大小写时，照样被拒绝。
 
+模型自己也可能在加密字段之外另有一个不带标签的字段，列名被数据库读作那个加密列，例如只差大小写。经模型结构体的写入把这两个字段写成同一条语句里的两列，SQLite 插入时留第一个值、更新时留最后一个，哪个落进加密列取决于字段的声明次序，明文因而可能被存下。写出这样一个字段的模型写入——从模型插入（`ON CONFLICT` 在内）、`Save`、以模型类型的结构体为参数的 `Updates` 与 `UpdateColumns`——一律拒绝，并点名两个字段；`Select` 与 `Omit` 把它排除在外的照常执行，写出与否按 GORM 的取舍判断：插入写出每个未被排除的字段，默认值由数据库给出的字段只在有一行给了它值时写出；更新写出被 `Select` 点名的与值不为零的。以 map 按这个字段写入不在此列：那一列在语句里只有这一个值，按上面的判据封装。两个引擎上是同一条规则。
+
 读取侧，扫描进模型、或进一个对应字段带同一标签的结构体，由序列化器解密。查询链上目标在执行前已知的读取——`Find`、`First`、`Take`、`Pluck` 这一类——若会把加密列扫进 map、扫进对应字段不带标签的结构体、或扫进字符串这样的单值，就拒绝执行并点名字段。读不读这一列依据语句上写明的选择来判断：`Select`、`Omit` 与 `Pluck` 给出的列；避开加密列的读取照常执行。没写选择时，map 与另一个结构体按 GORM 的做法视为读取全部列。
 
 以别名、或在表达式里读到加密列时，结果列换了名字，GORM 按那个名字找接收它的字段：`Select("id, email AS email_index")` 把密文扫进模型自己那个不带标签的字段，扫进模型也不例外。选择里的这样一项，本模块按它的结果列可能叫的名字——调用方写下的别名，写不写 `AS` 都算，`clause.Column` 上单独给出的别名也算；以及函数名，那是 PostgreSQL 给不带别名的函数调用起的列名——在目标结构体上找字段，模型本身与另一个结构体都如此。找到的字段能装文本而不带同一标签时，拒绝并点名字段；装不了文本的字段——计数、长度、是否为 NULL——照常接收。
@@ -390,7 +392,7 @@ sequenceDiagram
 | 额外连接的来历 | 已实现 | `pkg/db/plugins.go` `OpenedFrom`、`markOpened` |
 | 软删除 | 已实现 | 由 GORM 提供，随 `pkg/db/handle.go` `(*database).DB` 交付 |
 | 字段级加密与盲索引 | 已实现 | `pkg/db/serializer.go` `installEncryption`、`pkg/db/crypto.go` `deriveSubkey`、`pkg/db/handle.go` `(*database).BlindIndex` |
-| 不经模型字段的读写 | 已实现 | `pkg/db/encryptedwrites.go` `sealUpdate`、`sealCreate`、`pkg/db/encryptedreads.go` `guardReads`、`guardRowReads`、`refuseRenamedRead`、`pkg/db/identifiers.go` `sealedTarget` |
+| 不经模型字段的读写 | 已实现 | `pkg/db/encryptedwrites.go` `sealUpdate`、`sealCreate`、`refuseUnsealedStruct`、`refuseSpelledInsert`、`pkg/db/encryptedreads.go` `guardReads`、`guardRowReads`、`refuseRenamedRead`、`pkg/db/identifiers.go` `sealedTarget` |
 | 约束拒绝的识别 | 已实现 | `pkg/db/constraints.go` `classifyingDialector`、`installRowClassification`、`pkg/db/sqlite/sqlite.go` `constraintViolation`、`pkg/db/postgres/postgres.go` `constraintViolation` |
 | SQLite 被拒提交的回滚 | 已实现 | `pkg/db/sqlite/commit.go` `endingTx` |
 | 插件的安装 | 已实现 | `pkg/db/plugins.go` `collectPlugins`、`installPlugins`、`pkg/db/handle.go` `newDatabase` |

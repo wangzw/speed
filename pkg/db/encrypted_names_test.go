@@ -1,6 +1,7 @@
 package db
 
 import (
+	"database/sql"
 	"strconv"
 	"strings"
 	"testing"
@@ -163,6 +164,158 @@ func TestAnUpdateFromAnotherStructIsJudgedByTheColumnItWrites(t *testing.T) {
 	}
 	if read.Email != "first@example.com" {
 		t.Errorf("the model reads the email back as %q after a refused update", read.Email)
+	}
+}
+
+// spelledFirstModel declares, before its sealed email, a field without the
+// serializer on the column EMAIL, which SQLite reads as email. GORM writes the
+// two fields as two columns of one statement; SQLite keeps the first value an
+// insert gives a column, so this model's insert stores the unsealed field.
+type spelledFirstModel struct {
+	ID     uint
+	Shadow string `gorm:"column:EMAIL"`
+	Email  string `gorm:"serializer:encrypted"`
+}
+
+// TableName is the one table the spelled models write into.
+func (spelledFirstModel) TableName() string { return "spelled_models" }
+
+// spelledLastModel declares the same two fields the other way round. SQLite
+// keeps the last value an update assigns a column, so this model's full update
+// stores the unsealed field.
+type spelledLastModel struct {
+	ID     uint
+	Email  string `gorm:"serializer:encrypted"`
+	Shadow string `gorm:"column:EMAIL"`
+}
+
+// TableName is the one table the spelled models write into.
+func (spelledLastModel) TableName() string { return "spelled_models" }
+
+// createSpelledTable brings up the table both spelled models write into: the
+// one email column their two fields reach. AutoMigrate cannot build it, since
+// SQLite refuses a table whose column names differ only in letter case.
+func createSpelledTable(t *testing.T, product *database) {
+	t.Helper()
+	if err := product.DB().Exec("CREATE TABLE spelled_models (id INTEGER PRIMARY KEY, email TEXT)").Error; err != nil {
+		t.Fatalf("creating the table the spelled models write into: %v", err)
+	}
+}
+
+// storedEmail is what the email column of one spelled row holds, read around
+// the model: "absent" when there is no such row.
+func storedEmail(t *testing.T, product *database, id uint) string {
+	t.Helper()
+	var stored []sql.NullString
+	if err := product.DB().Raw("SELECT email FROM spelled_models WHERE id = ?", id).Scan(&stored).Error; err != nil {
+		t.Fatalf("reading the email column with native SQL: %v", err)
+	}
+	if len(stored) == 0 {
+		return "absent"
+	}
+	return stored[0].String
+}
+
+// TestAWriteOfTheModelSpellingASealedColumnAnotherWayIsRefused covers a model
+// that declares, beside a sealed field, a field without the serializer whose
+// column the database reads as the sealed one. A write through the model's own
+// struct writes that column twice, once sealed and once in clear, and which of
+// the two the database keeps depends on the statement and on the order the
+// fields are declared in. Each write through the struct that writes the
+// unsealed field is refused, naming both fields, and the column keeps what it
+// held.
+func TestAWriteOfTheModelSpellingASealedColumnAnotherWayIsRefused(t *testing.T) {
+	const clear = "clear@example.com"
+	cases := []struct {
+		name  string
+		write func(h *gorm.DB) error
+	}{
+		{"an insert of the model", func(h *gorm.DB) error {
+			return h.Create(&spelledFirstModel{ID: 2, Shadow: clear, Email: "sealed@example.com"}).Error
+		}},
+		{"an insert leaving the unsealed field empty", func(h *gorm.DB) error {
+			return h.Create(&spelledFirstModel{ID: 2, Email: "sealed@example.com"}).Error
+		}},
+		{"an insert of several rows", func(h *gorm.DB) error {
+			return h.Create(&[]spelledFirstModel{{ID: 2, Shadow: clear}, {ID: 3, Shadow: clear}}).Error
+		}},
+		{"an insert of the other declaration order", func(h *gorm.DB) error {
+			return h.Create(&spelledLastModel{ID: 2, Email: "sealed@example.com", Shadow: clear}).Error
+		}},
+		{"an upsert of the model", func(h *gorm.DB) error {
+			return h.Clauses(clause.OnConflict{UpdateAll: true}).
+				Create(&spelledFirstModel{ID: 1, Shadow: clear, Email: "sealed@example.com"}).Error
+		}},
+		{"an update from the model's struct", func(h *gorm.DB) error {
+			return h.Model(&spelledFirstModel{ID: 1}).Updates(spelledFirstModel{Shadow: clear}).Error
+		}},
+		{"an update selecting the unsealed field", func(h *gorm.DB) error {
+			return h.Model(&spelledFirstModel{ID: 1}).Select("Shadow").Updates(spelledFirstModel{}).Error
+		}},
+		{"UpdateColumns from the model's struct", func(h *gorm.DB) error {
+			return h.Model(&spelledFirstModel{ID: 1}).UpdateColumns(spelledFirstModel{Shadow: clear}).Error
+		}},
+		{"a save of the other declaration order", func(h *gorm.DB) error {
+			return h.Save(&spelledLastModel{ID: 1, Email: "sealed@example.com", Shadow: clear}).Error
+		}},
+	}
+	for _, c := range cases {
+		t.Run(c.name, func(t *testing.T) {
+			product := assembleEncrypted(t, encryptedDSN(t), encryptedRootKeyItem)
+			createSpelledTable(t, product)
+			if err := product.DB().Omit("Shadow").Create(&spelledFirstModel{ID: 1, Email: "first@example.com"}).Error; err != nil {
+				t.Fatalf("writing the row the case starts from: %v", err)
+			}
+			before := storedEmail(t, product, 1)
+
+			err := c.write(product.DB())
+			if err == nil {
+				t.Fatalf("the write went through; the email column of row 1 holds %q and of row 2 %q",
+					storedEmail(t, product, 1), storedEmail(t, product, 2))
+			}
+			if !strings.Contains(err.Error(), "Shadow") || !strings.Contains(err.Error(), "Email") {
+				t.Errorf("the refusal does not name both fields: %v", err)
+			}
+			if after := storedEmail(t, product, 1); after != before {
+				t.Errorf("the email column of row 1 went from %q to %q under a refused write", before, after)
+			}
+			if stored := storedEmail(t, product, 2); stored != "absent" {
+				t.Errorf("a refused insert left a row 2 holding %q", stored)
+			}
+		})
+	}
+}
+
+// TestAWriteOfTheModelThatLeavesTheOtherSpellingOutGoesThrough keeps that
+// refusal to the writes it is about: one whose selection leaves the unsealed
+// field out, an update from the struct that leaves it empty, and a write by
+// key, which gives the column one value and is sealed like any key the
+// database reads as the sealed column.
+func TestAWriteOfTheModelThatLeavesTheOtherSpellingOutGoesThrough(t *testing.T) {
+	product := assembleEncrypted(t, encryptedDSN(t), encryptedRootKeyItem)
+	createSpelledTable(t, product)
+	h := product.DB()
+
+	if err := h.Omit("Shadow").Create(&spelledFirstModel{ID: 1, Shadow: "left out", Email: "one@example.com"}).Error; err != nil {
+		t.Fatalf("an insert leaving the unsealed field out was refused: %v", err)
+	}
+	var read spelledFirstModel
+	if err := h.First(&read, 1).Error; err != nil || read.Email != "one@example.com" {
+		t.Errorf("the model reads back %+v with %v, want the sealed email one@example.com", read, err)
+	}
+	if err := h.Model(&spelledFirstModel{ID: 1}).Updates(spelledFirstModel{Email: "two@example.com"}).Error; err != nil {
+		t.Fatalf("an update leaving the unsealed field empty was refused: %v", err)
+	}
+	if err := h.Model(&spelledFirstModel{ID: 1}).Updates(map[string]any{"Shadow": "three@example.com"}).Error; err != nil {
+		t.Fatalf("an update naming the unsealed field by key was refused: %v", err)
+	}
+	stored := storedEmail(t, product, 1)
+	if strings.Contains(stored, "@example.com") {
+		t.Errorf("the email column holds %q, which is in clear", stored)
+	}
+	read = spelledFirstModel{}
+	if err := h.First(&read, 1).Error; err != nil || read.Email != "three@example.com" {
+		t.Errorf("the model reads back %+v with %v, want the sealed email three@example.com", read, err)
 	}
 }
 

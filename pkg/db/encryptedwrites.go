@@ -60,19 +60,29 @@ func encryptedFields(s *schema.Schema) []*schema.Field {
 // would bind it as it stands: the values of a map the rows are inserted from,
 // and the assignments of an ON CONFLICT DO UPDATE.
 //
-// An insert from the model needs nothing here. GORM reads each field of the
+// An insert from the model needs no sealing here. GORM reads each field of the
 // model through the field's serializer, and that is the path the serializer
 // was written for; a map and an assignment list carry values that belong to no
 // field, so GORM binds them without it, and the plaintext would reach the
-// column with no error — leaving a row the model can no longer read.
+// column with no error — leaving a row the model can no longer read. What an
+// insert from the model can still do is write a sealed column a second time,
+// through a field of the model that spells it another way, and that insert is
+// refused (see refuseSpelledInsert).
 func sealCreate(tx *gorm.DB) {
 	st := tx.Statement
 	if tx.Error != nil || st.Schema == nil || len(encryptedFields(st.Schema)) == 0 {
 		return
 	}
 	selectColumns, restricted := st.SelectAndOmitColumns(true, false)
+	maps := insertedMaps(st.Dest)
+	if maps == nil {
+		if err := refuseSpelledInsert(st, selectColumns, restricted); err != nil {
+			_ = tx.AddError(err)
+			return
+		}
+	}
 	var restorations []restoration
-	for _, values := range insertedMaps(st.Dest) {
+	for _, values := range maps {
 		sealed, err := sealMap(st, values, selectColumns, restricted)
 		restorations = append(restorations, sealed...)
 		if err != nil {
@@ -105,6 +115,8 @@ func sealCreate(tx *gorm.DB) {
 // reads such a struct through its own schema, so a field without the
 // serializer there puts its plaintext into the model's sealed column; that
 // struct is the caller's to mark, and nothing here can know it was meant to be.
+// An update written from the model's own struct is refused as well when a field
+// of it spells a sealed column another way (see refuseUnsealedStruct).
 func sealUpdate(tx *gorm.DB) {
 	st := tx.Statement
 	if tx.Error != nil || st.Schema == nil || len(encryptedFields(st.Schema)) == 0 {
@@ -343,9 +355,9 @@ func unsealable(field *schema.Field, value any) error {
 		"clause.Column", fieldName(field), value)
 }
 
-// refuseUnsealedStruct refuses an update written from a struct that is not
-// the model when one of its fields would put a value into an encrypted column
-// of the model without the serializer.
+// refuseUnsealedStruct refuses an update written from a struct when one of its
+// fields would put a value into an encrypted column of the model without the
+// serializer.
 //
 // What the struct writes is found the way GORM finds it: for each column of
 // the model, the struct's field GORM resolves that column's name to, written
@@ -354,6 +366,11 @@ func unsealable(field *schema.Field, value any) error {
 // database resolves its name, so a field whose column differs from the sealed
 // one only in letter case reaches it as surely as one that matches it. A struct
 // that does not reach a sealed column has nothing to refuse.
+//
+// The struct may be the model itself. Its sealed fields are written through
+// the serializer, and what can reach a sealed column in clear is another of its
+// fields that spells the column another way, which the update then writes a
+// second time.
 func refuseUnsealedStruct(st *gorm.Statement) error {
 	updating := reflect.ValueOf(st.Dest)
 	for updating.Kind() == reflect.Pointer {
@@ -362,16 +379,20 @@ func refuseUnsealedStruct(st *gorm.Statement) error {
 		}
 		updating = updating.Elem()
 	}
-	if updating.Kind() != reflect.Struct || updating.Type() == st.Schema.ModelType {
+	if updating.Kind() != reflect.Struct {
 		return nil
 	}
-	other := &gorm.Statement{DB: st.DB}
-	if err := other.Parse(st.Dest); err != nil || other.Schema == nil {
-		return nil
+	written := st.Schema
+	if updating.Type() != st.Schema.ModelType {
+		other := &gorm.Statement{DB: st.DB}
+		if err := other.Parse(st.Dest); err != nil || other.Schema == nil {
+			return nil
+		}
+		written = other.Schema
 	}
 	selectColumns, restricted := st.SelectAndOmitColumns(false, true)
 	for _, column := range st.Schema.DBNames {
-		source := other.Schema.LookUpField(column)
+		source := written.LookUpField(column)
 		if source == nil || source.DBName == "" || isEncrypted(source) || !source.Updatable {
 			continue
 		}
@@ -389,10 +410,93 @@ func refuseUnsealedStruct(st *gorm.Statement) error {
 		if field == nil {
 			continue
 		}
+		if written == st.Schema {
+			return spelledTwice(st, field, source)
+		}
 		return fmt.Errorf("db: field %s is encrypted, and this update writes its column %q from %s.%s, "+
 			"which does not carry serializer:%s, so the value would be stored in clear: mark that "+
 			"field serializer:%s as well, or update through the model", fieldName(field), source.DBName,
-			other.Schema.Name, source.Name, encryptedSerializerName, encryptedSerializerName)
+			written.Name, source.Name, encryptedSerializerName, encryptedSerializerName)
 	}
 	return nil
+}
+
+// refuseSpelledInsert refuses an insert from the model's own rows when one of
+// the fields it writes spells a sealed column another way: a field without the
+// serializer whose column the database reads as the sealed one.
+//
+// GORM writes each field of the model as a column of its own, so such a model
+// writes the sealed column twice in one insert, once through the serializer and
+// once in clear, and SQLite keeps the first of the two: the declaration order
+// decides whether the plaintext is stored. Which fields an insert writes is
+// found the way GORM finds them — a field chosen by Select, or not left out by
+// Select or Omit, and a field whose default is the database's only when a row
+// gives it a value — and one of them that reaches a sealed column refuses the
+// insert.
+func refuseSpelledInsert(st *gorm.Statement, selectColumns map[string]bool, restricted bool) error {
+	rows := modelRows(st)
+	for _, source := range st.Schema.Fields {
+		if source.DBName == "" || isEncrypted(source) {
+			continue
+		}
+		chosen, named := selectColumns[source.DBName]
+		stamped := source.AutoCreateTime > 0 || source.AutoUpdateTime > 0
+		if (named && !chosen) || (!named && restricted && !stamped) {
+			continue
+		}
+		if source.HasDefaultValue && source.DefaultValueInterface == nil && !givesValue(st, source, rows) {
+			continue
+		}
+		field, judged := sealedTarget(st, clause.Column{Name: source.DBName})
+		if !judged {
+			return unjudgedColumn(st, source.DBName)
+		}
+		if field != nil {
+			return spelledTwice(st, field, source)
+		}
+	}
+	return nil
+}
+
+// modelRows lists the rows an insert from the model takes its values from, in
+// each shape GORM accepts them in: one struct, or a slice or an array of them,
+// by value or by pointer.
+func modelRows(st *gorm.Statement) []reflect.Value {
+	v := reflect.Indirect(st.ReflectValue)
+	switch v.Kind() {
+	case reflect.Struct:
+		return []reflect.Value{v}
+	case reflect.Slice, reflect.Array:
+		rows := make([]reflect.Value, 0, v.Len())
+		for i := range v.Len() {
+			if row := reflect.Indirect(v.Index(i)); row.Kind() == reflect.Struct {
+				rows = append(rows, row)
+			}
+		}
+		return rows
+	default:
+		return nil
+	}
+}
+
+// givesValue reports whether any row gives a field a value, which is when
+// GORM writes a field whose default is the database's.
+func givesValue(st *gorm.Statement, field *schema.Field, rows []reflect.Value) bool {
+	for _, row := range rows {
+		if _, zero := field.ValueOf(st.Context, row); !zero {
+			return true
+		}
+	}
+	return false
+}
+
+// spelledTwice is the refusal of a write through the model that writes a
+// sealed column a second time, through a field of the model without the
+// serializer whose column the database reads as the sealed one.
+func spelledTwice(st *gorm.Statement, sealed, source *schema.Field) error {
+	return fmt.Errorf("db: field %s is encrypted, and model %s also declares field %s on column %q, which "+
+		"the database reads as the same column %q, without serializer:%s: a write through the model "+
+		"writes that column twice, and the database may keep the value in clear. Give %s a column of its "+
+		"own, or leave it out of the write with Omit", fieldName(sealed), st.Schema.Name, source.Name,
+		source.DBName, sealed.DBName, encryptedSerializerName, source.Name)
 }
