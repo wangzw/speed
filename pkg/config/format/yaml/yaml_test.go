@@ -246,6 +246,19 @@ func TestMalformedDocumentRejected(t *testing.T) {
 	}
 }
 
+// TestModuleNameIsTheRegisteredName pins the constant a host writes on its
+// command tree to name this module, as in IncludeDeclarations: it is the name
+// the module registers under, so a rename changes both and every host that
+// wrote the constant follows.
+func TestModuleNameIsTheRegisteredName(t *testing.T) {
+	if got := yaml.Module().Name; got != yaml.ModuleName {
+		t.Errorf("the module registers as %q and exports %q as its name", got, yaml.ModuleName)
+	}
+	if _, registered := core.ProcessRegistry.Lookup(yaml.ModuleName); !registered {
+		t.Errorf("importing the package registers no module named %q", yaml.ModuleName)
+	}
+}
+
 // TestRegistersAsFormatResource proves the blank-import contract: importing
 // the package puts the parser in the process registry, where the
 // configuration module finds it by resource type alone.

@@ -22,10 +22,12 @@ import (
 	"github.com/vislake/speed/pkg/core"
 )
 
-// moduleName is the name this parser registers under. Transports and formats
+// ModuleName is the name this parser registers under. Transports and formats
 // are named after where they live, so a registry listing says what a module is
-// without anybody opening it.
-const moduleName = "config.format.json"
+// without anybody opening it. It is exported for the host's command tree, which
+// takes modules in by name: a constant a rename carries along rather than a
+// literal it leaves behind.
+const ModuleName = "config.format.json"
 
 // init registers the module with the process registry, which is what makes a
 // blank import of this package enough to have JSON config sources parsed.
@@ -39,7 +41,7 @@ func init() { core.ProcessRegistry.Register(Module()) }
 // lifecycle and delivers no capability. The configuration module collects it
 // with core.Resources and never imports this package.
 func Module() core.Module {
-	return core.Module{Name: moduleName, Resources: []any{format{}}}
+	return core.Module{Name: ModuleName, Resources: []any{format{}}}
 }
 
 // Compile-time proof that this parser satisfies the extension point it is

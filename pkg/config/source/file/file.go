@@ -23,10 +23,12 @@ import (
 	"github.com/vislake/speed/pkg/core"
 )
 
-// moduleName is the name this transport registers under. Transports and
+// ModuleName is the name this transport registers under. Transports and
 // formats are named after where they live, so a registry listing says what a
-// module is without anybody opening it.
-const moduleName = "config.source.file"
+// module is without anybody opening it. It is exported for the host's command
+// tree, which takes modules in by name: a constant a rename carries along
+// rather than a literal it leaves behind.
+const ModuleName = "config.source.file"
 
 // init registers the module with the process registry, which is what makes a
 // blank import of this package enough to have file:// locators served.
@@ -40,7 +42,7 @@ func init() { core.ProcessRegistry.Register(Module()) }
 // locators with no lifecycle and no capability to deliver. The configuration
 // module collects it with core.Resources and never imports this package.
 func Module() core.Module {
-	return core.Module{Name: moduleName, Resources: []any{source{}}}
+	return core.Module{Name: ModuleName, Resources: []any{source{}}}
 }
 
 // Compile-time proof that this transport satisfies the extension point it is
