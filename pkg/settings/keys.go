@@ -111,7 +111,16 @@ func buildKeyTable(reg *core.Registry) (*keyTable, error) {
 			return nil, err
 		}
 		for _, entry := range entries {
-			if earlier, taken := table.entries[entry.key]; taken {
+			earlier, taken := table.entries[entry.key]
+			if taken && earlier.module == entry.module {
+				// Two schemas of one module: the same defect as two mounts of
+				// one schema reaching one key, and no second party to name.
+				return nil, fmt.Errorf("%w: module %q reaches key %q from two of its schemas. "+
+					"Two declarations of one key name one thing, and which default it has "+
+					"would depend on the order they were collected in",
+					ErrInvalidDeclaration, entry.module, entry.key)
+			}
+			if taken {
 				return nil, fmt.Errorf("%w: key %q is declared by module %q and by module %q. "+
 					"One of them changes its key or its namespace",
 					ErrDeclarationConflict, entry.key, earlier.module, entry.module)

@@ -5,6 +5,8 @@ import (
 	"strings"
 	"testing"
 	"time"
+
+	"github.com/vislake/speed/pkg/core"
 )
 
 // derivation exercises every branch of the key rule: the config tag, the json
@@ -247,6 +249,29 @@ func TestOneDeclarationReachingAKeyTwiceIsInvalid(t *testing.T) {
 	_, err := buildKeyTable(reg)
 	if !errors.Is(err, ErrInvalidDeclaration) {
 		t.Fatalf("building the key table returned %v, want ErrInvalidDeclaration", err)
+	}
+}
+
+// Two schemas of one module reaching one key are that module's defect too.
+// A module may put more than one Schema in its Resources, and nothing about
+// the key changes when the two mounts come in two schemas rather than one: no
+// second party is involved, so reporting it as a conflict between the module
+// and itself would send the reader looking for a second declarer that does not
+// exist.
+func TestTwoSchemasOfOneModuleReachingOneKeyAreInvalid(t *testing.T) {
+	reg := registryWith(t, core.Module{Name: "crm", Resources: []any{
+		Schema{Namespace: "ns", Mounts: []Mount{{Value: &derivation{}}}},
+		Schema{Namespace: "ns", Mounts: []Mount{{Value: &derivation{}}}},
+	}})
+	_, err := buildKeyTable(reg)
+	if !errors.Is(err, ErrInvalidDeclaration) {
+		t.Fatalf("building the key table returned %v, want ErrInvalidDeclaration", err)
+	}
+	if errors.Is(err, ErrDeclarationConflict) {
+		t.Errorf("a single module's defect is reported as a conflict: %v", err)
+	}
+	if !strings.Contains(err.Error(), `"crm"`) {
+		t.Errorf("the failure does not name the module: %v", err)
 	}
 }
 

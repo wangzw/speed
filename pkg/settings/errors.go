@@ -39,12 +39,13 @@ var (
 	// for one of them to change its key or its namespace.
 	ErrDeclarationConflict = errors.New("settings: two declarations claim the same key")
 
-	// ErrInvalidDeclaration reports a declaration defective in itself: no
-	// second party is involved, and this one declaration is enough to judge it
-	// unusable. A key name outside the character set, a mount that is not a
+	// ErrInvalidDeclaration reports a module's declaration defective in
+	// itself: no second party is involved, and what this one module declared
+	// is enough to judge it unusable. A key name outside the character set, a mount that is not a
 	// struct pointer, a type cycle in the expansion, an Items key matching no
-	// leaf, and a declared type outside the closed type set are all of this
-	// class.
+	// leaf, a declared type outside the closed type set, and one module
+	// reaching one key twice — from two mounts of a schema or from two of its
+	// schemas — are all of this class.
 	//
 	// The message names the declaring module and the defect.
 	ErrInvalidDeclaration = errors.New("settings: declaration is invalid")
