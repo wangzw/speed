@@ -6,6 +6,9 @@ import (
 	"slices"
 	"strings"
 	"testing"
+	"time"
+
+	"gorm.io/gorm"
 )
 
 // These cases cover the reads that do not land a sealed column in a model field.
@@ -200,28 +203,81 @@ func TestARowReadOverTheModelThatReachesTheSealedColumnIsRefused(t *testing.T) {
 	}
 }
 
-// TestARowOverTheModelThatReachesTheSealedColumnPanicsWithTheRefusal covers
-// Row, which has no error to return: GORM hands back no row when a callback
-// fails, and scanning that nil row panics without a word about why. The
-// refusal is the panic instead, so the failure names the field at the call.
-func TestARowOverTheModelThatReachesTheSealedColumnPanicsWithTheRefusal(t *testing.T) {
+// TestARowOverTheModelThatReachesTheSealedColumnReportsTheRefusal covers Row,
+// which has no error of its own to return: what it hands back is the row, so
+// the row is where the refusal is reported — through its Scan and its Err, with
+// nothing scanned into the destination. GORM hands back no row at all when a
+// callback fails, and scanning that nil row panics without a word about why.
+func TestARowOverTheModelThatReachesTheSealedColumnReportsTheRefusal(t *testing.T) {
 	product := assembleEncrypted(t, encryptedDSN(t), encryptedRootKeyItem)
 	createEncryptedTable(t, product)
 	writtenRow(t, product)
 
-	var email string
-	recovered := func() (recovered any) {
-		defer func() { recovered = recover() }()
-		scanErr := product.DB().Model(&encryptedModel{}).Select("email").Row().Scan(&email)
-		t.Errorf("Row over the sealed column went through, scanning %q with %v", email, scanErr)
-		return nil
-	}()
-	err, ok := recovered.(error)
-	if !ok {
-		t.Fatalf("Row panicked with %#v, want the refusal as an error", recovered)
+	for _, c := range []struct {
+		name string
+		row  func() *sql.Row
+	}{
+		{"on the handle", func() *sql.Row {
+			return product.DB().Model(&encryptedModel{}).Select("email").Row()
+		}},
+		{"over every column", func() *sql.Row {
+			return product.DB().Model(&encryptedModel{}).Where("id = ?", 1).Row()
+		}},
+	} {
+		t.Run(c.name, func(t *testing.T) {
+			row := func() (row *sql.Row) {
+				defer func() {
+					if recovered := recover(); recovered != nil {
+						t.Fatalf("Row panicked with %v, want the refusal reported through the row", recovered)
+					}
+				}()
+				return c.row()
+			}()
+			if row == nil {
+				t.Fatal("Row handed back no row, and scanning it would panic")
+			}
+			email := "untouched"
+			err := row.Scan(&email)
+			if err == nil || !strings.Contains(err.Error(), "Email") {
+				t.Fatalf("Scan on the refused row gave %v, want the refusal naming the field", err)
+			}
+			if email != "untouched" {
+				t.Errorf("the refused row scanned %q into the destination", email)
+			}
+			if rowErr := row.Err(); rowErr == nil || rowErr.Error() != err.Error() {
+				t.Errorf("Err on the refused row gave %v, want the refusal Scan gave", rowErr)
+			}
+		})
 	}
-	if !strings.Contains(err.Error(), "Email") {
-		t.Errorf("the refusal does not name the field: %v", err)
+}
+
+// TestARefusedRowTakesNoConnection holds the refused row to reaching no
+// database: it is answered before any connection is taken. On a pool of one
+// connection, a Row issued outside the transaction that holds it would
+// otherwise wait for that transaction, which waits for the Row, and the caller
+// would be told its context ran out rather than what was wrong with the read.
+func TestARefusedRowTakesNoConnection(t *testing.T) {
+	product := assembleEncrypted(t, encryptedDSN(t), encryptedRootKeyItem,
+		`"max-open-conns":1`, `"max-idle-conns":1`)
+	createEncryptedTable(t, product)
+	writtenRow(t, product)
+
+	err := product.DB().Transaction(func(*gorm.DB) error {
+		waiting, cancel := context.WithTimeout(t.Context(), 2*time.Second)
+		defer cancel()
+		started := time.Now()
+		var email string
+		err := product.DB().WithContext(waiting).Model(&encryptedModel{}).Select("email").Row().Scan(&email)
+		if took := time.Since(started); took > time.Second {
+			t.Errorf("the refused Row took %v to answer, waiting for the connection the transaction holds", took)
+		}
+		if err == nil || !strings.Contains(err.Error(), "Email") {
+			t.Errorf("the refused Row gave %v, want the refusal naming the field", err)
+		}
+		return nil
+	})
+	if err != nil {
+		t.Fatalf("the transaction the Row was issued beside failed: %v", err)
 	}
 }
 

@@ -104,7 +104,7 @@ func OpenedFrom(*gorm.DB) (*gorm.DB, bool)
 
 `Row`、`Rows` 与 `Scan` 把结果集交给调用方自己挑的目标，挑目标发生在本模块最后一个回调之后，语句上看不出列会扫进哪里：扫进模型由序列化器解密，扫进字符串、map 或不带标签的结构体得到的是密文，而且都报告成功。这三个调用经过模型、又读到加密列时一律拒绝并点名字段，扫进模型本身也在其内；选择避开了加密列的照常执行，读不读依据的仍是语句上写明的选择，没写选择视为读取全部列。**采纳的读法**：看不见目标的路径上，读到加密列即拒绝。代价是经模型的 `Scan` 与 `Rows` 连扫进模型的读取也用不了，要改用 `Find`、`First`、`Take` 或 `FindInBatches`——它们在执行前就把目标放在语句上，由查询链上的判断核对。**考虑过而放弃的读法**：在这些路径上写明边界、照常执行；放弃的理由是那正是把密文当作值交出去而不报错的形态。**另一种考虑过而放弃的读法**：在这些目标上就地解密；放弃的理由是 map、接口值、各种扫描器类型这些目标形状是开放的，逐一改写等于在 GORM 的扫描之外另造一套，而拒绝把读取引回 GORM 为序列化器设计的那条路，并在报错里说出那条路。
 
-`Row` 没有报错的通道：回调失败时 GORM 交回一个空的 `*sql.Row`，对它调用 `Scan` 以空指针 panic，说不出原因。被拒绝的 `Row` 因此直接以拒绝的错误值 panic，失败在调用点上点名字段。
+`Row` 没有自己的错误返回值：它交回 GORM 行链那一步留在语句上的行，而语句已经失败时那一步不产出行，调用方的 `Scan` 对空指针取值而 panic，说不出原因。被拒绝的 `Row` 因此交回一行专门报出拒绝的结果：它的 `Scan` 与 `Err` 都以拒绝的错误失败并点名字段，扫描的目标不被写入。这一行不到达任何库，也不占连接池里的连接，只开一条连接的库在那条连接被占着时同样立即作答。**采纳的读法**：经交回的那一行报出。**考虑过而放弃的读法**：以拒绝的错误值 panic；放弃的理由是普通调用走得到的 panic 要每个调用点都 recover 才继续得下去，而同一个读取经 `Rows` 与 `Scan` 报的是错误。**另一种考虑过而放弃的读法**：把语句改写成一个绑定即失败的取值、交给 GORM 照常执行；放弃的理由是那样仍要从池里取一条连接，连接被调用方占着时拒绝要等到 `ctx` 到期才报出，报的还是超时而不是拒绝。
 
 不指明模型的语句在本模块够不到的地方：原生 SQL（`Raw`、`Exec`），以及只用 `Table` 给出表名的语句。本模块不解析 SQL，这些语句上也没有可查的模型，无从知道哪一列是加密列：读出的是库里存的密文，写入的是调用方给的值——`Table("contacts").Updates(map)` 把明文写进加密列，这一行此后经模型读不出来。读写加密列的语句因此要指明模型，用 `Model`，或以模型本身为参数。
 
@@ -354,7 +354,7 @@ sequenceDiagram
 
 每条错误的文本给出修复动作所需的信息。`ErrConnectFailed` 点名方言与失败的环节，**不回显定位符本身，也从不含口令**：它承载凭据，且会出现在诊断输出中。驱动给出的原因原样保留，那就是诊断；PostgreSQL 的驱动在其中写出它尝试的用户名、库名与地址，不写口令。这一条同样用于 `Open` 在运行期建立连接失败——补救动作与启动期相同，都是检查那个定位符与它指向的服务，因而不另立一条。`ErrMigrationFailed` 落在某一条迁移上时，点名声明它的模块与文件名——要修的是声明它的那个模块，而本模块无从知道该怎么改它；落在记录表的读写上时没有这样一条可点名，文本给出失败的操作。这些共用一条哨兵，因为宿主的补救动作同属一类。释放互斥失败时，文本要写明迁移已经全部施加、失败落在释放上——不这么写，操作者会照着这条哨兵去查迁移文件，而迁移根本没有问题。`ErrMigrationLockTimeout` 单列，是因为它的补救动作不同：要查的是另一个副本为何迟迟没有做完，或者这个时限给得是否太短，而不是去改哪一条迁移。
 
-以上都是启动期的失败。加解密在运行期发生：密钥缺失、密文损坏、密钥与密文不匹配，以及字段级加密一节拒绝的那些读写，都在那时暴露，由 GORM 把错误带回调用点；被拒绝的 `Row` 没有错误可带回，以 panic 暴露（见字段级加密一节）。本模块不为它们另立哨兵——启动期的哨兵表供宿主在启动失败时分类，而运行期的错误落在具体那一次查询上，由发出它的代码处理。约束拒绝也是运行期的错误，同样不进这张表：它落在 GORM 已有的两个哨兵上（见外部接口契约的约束拒绝）。
+以上都是启动期的失败。加解密在运行期发生：密钥缺失、密文损坏、密钥与密文不匹配，以及字段级加密一节拒绝的那些读写，都在那时暴露，由 GORM 把错误带回调用点；被拒绝的 `Row` 经它交回的那一行报出（见字段级加密一节）。本模块不为它们另立哨兵——启动期的哨兵表供宿主在启动失败时分类，而运行期的错误落在具体那一次查询上，由发出它的代码处理。约束拒绝也是运行期的错误，同样不进这张表：它落在 GORM 已有的两个哨兵上（见外部接口契约的约束拒绝）。
 
 `Migrate` 中途失败会留下已施加的部分。该部分不在回滚范围内，也无法回滚：注册表的回滚只驱动 `Stop` 与 `Close`，而数据变更不因此撤销。这是迁移这件事本身的性质。
 
@@ -392,7 +392,7 @@ sequenceDiagram
 | 额外连接的来历 | 已实现 | `pkg/db/plugins.go` `OpenedFrom`、`markOpened` |
 | 软删除 | 已实现 | 由 GORM 提供，随 `pkg/db/handle.go` `(*database).DB` 交付 |
 | 字段级加密与盲索引 | 已实现 | `pkg/db/serializer.go` `installEncryption`、`pkg/db/crypto.go` `deriveSubkey`、`pkg/db/handle.go` `(*database).BlindIndex` |
-| 不经模型字段的读写 | 已实现 | `pkg/db/encryptedwrites.go` `sealUpdate`、`sealCreate`、`refuseUnsealedStruct`、`refuseSpelledInsert`、`pkg/db/encryptedreads.go` `guardReads`、`guardRowReads`、`refuseRenamedRead`、`pkg/db/identifiers.go` `sealedTarget` |
+| 不经模型字段的读写 | 已实现 | `pkg/db/encryptedwrites.go` `sealUpdate`、`sealCreate`、`refuseUnsealedStruct`、`refuseSpelledInsert`、`pkg/db/encryptedreads.go` `guardReads`、`guardRowReads`、`refusedRow`、`refuseRenamedRead`、`pkg/db/identifiers.go` `sealedTarget` |
 | 约束拒绝的识别 | 已实现 | `pkg/db/constraints.go` `classifyingDialector`、`installRowClassification`、`pkg/db/sqlite/sqlite.go` `constraintViolation`、`pkg/db/postgres/postgres.go` `constraintViolation` |
 | SQLite 被拒提交的回滚 | 已实现 | `pkg/db/sqlite/commit.go` `endingTx` |
 | 插件的安装 | 已实现 | `pkg/db/plugins.go` `collectPlugins`、`installPlugins`、`pkg/db/handle.go` `newDatabase` |

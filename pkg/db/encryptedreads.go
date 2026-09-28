@@ -1,7 +1,9 @@
 package db
 
 import (
+	"context"
 	"database/sql"
+	"database/sql/driver"
 	"fmt"
 	"reflect"
 	"strings"
@@ -97,10 +99,14 @@ func guardReads(tx *gorm.DB) {
 // A statement that names no model — native SQL, or a table name alone — has no
 // schema to judge by, and it goes through: this package does not parse SQL.
 //
-// Row has no error to report through. When a callback fails, GORM hands back
-// no row at all, and scanning that nil row panics with nothing to say why; a
-// refused Row panics with the refusal instead, so the failure names the field
-// at the call that has to change.
+// Row has no error of its own to report through: what it hands back is the
+// row GORM's row step leaves on the statement, and when a callback fails that
+// step leaves none, so the caller's Scan would dereference nil with nothing to
+// say why. A refused Row hands back a row that reports the refusal through its
+// Scan and its Err instead (see refusedRow), so the failure names the field at
+// the call that has to change. That row reaches no database and takes no
+// connection of the pool, so the refusal is answered at once even where the
+// pool has no connection to spare.
 func guardRowReads(tx *gorm.DB) {
 	st := tx.Statement
 	if tx.Error != nil || st.Schema == nil || st.SQL.Len() > 0 {
@@ -117,16 +123,46 @@ func guardRowReads(tx *gorm.DB) {
 			"select around the column", fieldName(field), field.DBName, encryptedSerializerName)
 		// Rows and Scan set "rows" to true on the statement, Row sets it to
 		// false; that setting is how GORM's own row callback tells them
-		// apart.
+		// apart. The statement's error keeps that step from running, and
+		// Row hands back whatever row the statement then holds.
 		if setting, ok := tx.Get("rows"); ok {
 			if many, isBool := setting.(bool); isBool && !many {
-				panic(err)
+				st.Dest = refusedRow(err)
 			}
 		}
 		_ = tx.AddError(err)
 		return
 	}
 }
+
+// refusedRow is a row whose Scan and Err report err, and which reaches no
+// database.
+//
+// Only database/sql makes a *sql.Row that carries an error, and it makes one
+// when opening the result set fails. So the row is asked of a pool of this
+// package's own whose connector refuses every connection with err: the query
+// fails before it reaches a connection, and the row carries err as it was
+// given. The pool holds nothing once the row is made, and it is closed then.
+func refusedRow(err error) *sql.Row {
+	pool := sql.OpenDB(refusingConnector{err: err})
+	defer func() { _ = pool.Close() }()
+	return pool.QueryRowContext(context.Background(), "")
+}
+
+// refusingConnector answers every connection it is asked for with one error.
+type refusingConnector struct{ err error }
+
+// Connect refuses the connection with the connector's error.
+func (c refusingConnector) Connect(context.Context) (driver.Conn, error) { return nil, c.err }
+
+// Driver is the connector's driver, which opens nothing either.
+func (c refusingConnector) Driver() driver.Driver { return refusingDriver(c) }
+
+// refusingDriver is the driver behind refusingConnector.
+type refusingDriver struct{ err error }
+
+// Open refuses the connection with the driver's error.
+func (d refusingDriver) Open(string) (driver.Conn, error) { return nil, d.err }
 
 // refuseUnsealedRead is the guard's judgement over one statement.
 func refuseUnsealedRead(st *gorm.Statement, sealed []*schema.Field) error {
