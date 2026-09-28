@@ -18,6 +18,12 @@ import (
 
 // rosterOverPostgres is a roster over the PostgreSQL fixture, its table built
 // from the migration the module ships for that dialect.
+//
+// Its pool is held to a few connections. The cases over it race many writes at
+// once, and a handful of connections is enough for their transactions to
+// overlap; a connection per goroutine would crowd the fixture's connection
+// limit, which every package's cases share, and fail with the server's
+// refusal to connect rather than with anything the case is about.
 func rosterOverPostgres(t *testing.T) *roster {
 	t.Helper()
 	handle, err := gorm.Open(pgdriver.Open(pgtest.Acquire(t)),
@@ -30,6 +36,7 @@ func rosterOverPostgres(t *testing.T) *roster {
 		t.Fatalf("reaching the handle's pool: %v", err)
 	}
 	t.Cleanup(func() { pool.Close() })
+	pool.SetMaxOpenConns(racingConnections)
 	ddl, err := fs.ReadFile(migrationsFS, "postgres/0001_tenants.sql")
 	if err != nil {
 		t.Fatalf("reading the postgres migration: %v", err)
@@ -39,6 +46,9 @@ func rosterOverPostgres(t *testing.T) *roster {
 	}
 	return newRoster(settings{}, databaseOver{handle: handle})
 }
+
+// racingConnections bounds the pool of a roster over the PostgreSQL fixture.
+const racingConnections = 8
 
 // Two tenants put under one alias at once both find it free, and the second
 // insert meets the column's unique index. That is the same conflict the check
