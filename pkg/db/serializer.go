@@ -76,11 +76,12 @@ func keysInContext(ctx context.Context) (*keyRing, bool) {
 // context with WithContext takes that copy away, which is why the injection
 // stays the path every chain relies on.
 //
-// The injection is followed on the write and query chains by the callbacks in
-// encryptedwrites.go and encryptedreads.go. GORM applies a field's serializer
-// only where it reads the value from, or scans it into, a field of the parsed
-// model, so a map, an assignment list or a destination of another type would
-// otherwise carry the plaintext in or the ciphertext out with no error.
+// The injection is followed on the write, query and row chains by the
+// callbacks in encryptedwrites.go and encryptedreads.go. GORM applies a field's
+// serializer only where it reads the value from, or scans it into, a field of
+// the parsed model, so a map, an assignment list or a destination of another
+// type would otherwise carry the plaintext in or the ciphertext out with no
+// error.
 //
 // An assembly with no root key installs a nil ring all the same. The serializer
 // then reports which key is missing instead of reporting that the handle does
@@ -134,6 +135,8 @@ func installEncryption(session *gorm.DB, namespace string, cfg Config) error {
 			Register(restoreWritesCallbackName, restoreCallerValues),
 		cb.Query().Before("gorm:query").After(keyInjectionCallbackName).
 			Register(guardReadsCallbackName, guardReads),
+		cb.Row().Before("gorm:row").After(keyInjectionCallbackName).
+			Register(guardRowReadsCallbackName, guardRowReads),
 	)
 }
 

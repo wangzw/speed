@@ -12,9 +12,12 @@ import (
 	"gorm.io/gorm/schema"
 )
 
-// guardReadsCallbackName is the name the read guard is registered under on the
-// query chain of every handle this package opens.
-const guardReadsCallbackName = "db:guard-encrypted-reads"
+// The names the read guards are registered under on every handle this package
+// opens: one on the query chain, one on the row chain.
+const (
+	guardReadsCallbackName    = "db:guard-encrypted-reads"
+	guardRowReadsCallbackName = "db:guard-encrypted-row-reads"
+)
 
 // The destination types the guard tells apart without parsing them.
 var (
@@ -73,6 +76,55 @@ func guardReads(tx *gorm.DB) {
 	}
 	if err := refuseUnsealedRead(st, sealed); err != nil {
 		_ = tx.AddError(err)
+	}
+}
+
+// guardRowReads refuses a Row, Rows or Scan over the model that reads an
+// encrypted column.
+//
+// Those finishers hand the result set on after the last callback has run: to
+// database/sql's own Scan, or to GORM's ScanRows, neither of which runs a
+// callback. What the columns land in is therefore never on the statement, and a
+// read into the model — which the serializer opens — cannot be told from a read
+// into a string, a map or an untagged struct, each of which gets the
+// ciphertext and reports success. The one judgement left is over what the
+// statement reads, so a statement over the model that reads a sealed column is
+// refused whatever it was going to be scanned into. The cost is that a Scan or
+// a Rows over the model into the model itself is refused along with the rest;
+// Find, First, Take and FindInBatches read the same rows with the destination
+// on the statement, where the query guard can check it.
+//
+// A statement that names no model — native SQL, or a table name alone — has no
+// schema to judge by, and it goes through: this package does not parse SQL.
+//
+// Row has no error to report through. When a callback fails, GORM hands back
+// no row at all, and scanning that nil row panics with nothing to say why; a
+// refused Row panics with the refusal instead, so the failure names the field
+// at the call that has to change.
+func guardRowReads(tx *gorm.DB) {
+	st := tx.Statement
+	if tx.Error != nil || st.Schema == nil || st.SQL.Len() > 0 {
+		return
+	}
+	for _, field := range encryptedFields(st.Schema) {
+		if !reads(st, field, true) {
+			continue
+		}
+		err := fmt.Errorf("db: field %s is encrypted, and this statement reads its column %q through "+
+			"Row, Rows or Scan, which hand the result set to a destination this module never sees, "+
+			"so it could come back as the ciphertext: read it with Find, First, Take or FindInBatches "+
+			"into the model, or into a struct whose field for that column carries serializer:%s, or "+
+			"select around the column", fieldName(field), field.DBName, encryptedSerializerName)
+		// Rows and Scan set "rows" to true on the statement, Row sets it to
+		// false; that setting is how GORM's own row callback tells them
+		// apart.
+		if setting, ok := tx.Get("rows"); ok {
+			if many, isBool := setting.(bool); isBool && !many {
+				panic(err)
+			}
+		}
+		_ = tx.AddError(err)
+		return
 	}
 }
 

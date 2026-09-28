@@ -120,9 +120,24 @@ func TestEncryptedWritesSealOnThisEngine(t *testing.T) {
 	assertSealedOnThisEngine(t, capability, row.ID, "upserted@example.com")
 }
 
+// assertRowsRefused holds Rows over a statement to the refusal a sealed column
+// read that way gets.
+func assertRowsRefused(t *testing.T, statement *gorm.DB) {
+	t.Helper()
+	rows, err := statement.Rows()
+	if err != nil {
+		return
+	}
+	defer func() { _ = rows.Close() }()
+	for rows.Next() {
+	}
+	t.Errorf("Rows over the model reading the sealed column went through (iteration ended with %v)", rows.Err())
+}
+
 // TestEncryptedReadsOnThisEngine holds the read side to the same rules: a
-// read that would hand back the ciphertext is refused, and streaming rows with
-// ScanRows on the delivered handle opens the field.
+// read that would hand back the ciphertext is refused, whether its destination
+// is on the statement or picked after it, and streaming rows of native SQL
+// with ScanRows on the delivered handle opens the field.
 func TestEncryptedReadsOnThisEngine(t *testing.T) {
 	capability := encryptedAssembly(t)
 	handle := capability.DB()
@@ -135,8 +150,12 @@ func TestEncryptedReadsOnThisEngine(t *testing.T) {
 	if err := handle.Model(&contact{}).Pluck("email", &emails).Error; err == nil {
 		t.Errorf("plucking the sealed column went through and handed back %v", emails)
 	}
+	if err := handle.Model(&contact{}).Select("email").Scan(&emails).Error; err == nil {
+		t.Errorf("scanning the sealed column over the model went through and handed back %v", emails)
+	}
+	assertRowsRefused(t, handle.Model(&contact{}))
 
-	rows, err := handle.Model(&contact{}).Rows()
+	rows, err := handle.Raw("SELECT * FROM contacts").Rows()
 	if err != nil {
 		t.Fatalf("opening the result set: %v", err)
 	}

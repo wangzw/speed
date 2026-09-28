@@ -2,6 +2,8 @@ package db
 
 import (
 	"context"
+	"database/sql"
+	"slices"
 	"strings"
 	"testing"
 )
@@ -133,37 +135,206 @@ func TestAReadThatDoesNotReachTheSealedColumnGoesThrough(t *testing.T) {
 	}
 }
 
-// TestScanRowsOnTheDeliveredHandleOpensTheField covers streaming a result set
-// the way GORM documents it: Rows on one statement, ScanRows on the handle. The
-// scan runs no callback chain, so the key reaches it only if the handle itself
-// carries it.
-func TestScanRowsOnTheDeliveredHandleOpensTheField(t *testing.T) {
+// TestARowReadOverTheModelThatReachesTheSealedColumnIsRefused covers the
+// finishers that hand the result set to a destination chosen after the last
+// callback: Scan, Rows and Row. Nothing on the statement says where the
+// columns go, so a read into a string cannot be told from a read into the
+// model, and a statement over the model that reads a sealed column is refused
+// whatever it is scanned into. Scan into the model itself is among them: it is
+// the cost of refusing the others, and Find reads the same rows with the
+// destination in view.
+func TestARowReadOverTheModelThatReachesTheSealedColumnIsRefused(t *testing.T) {
+	product := assembleEncrypted(t, encryptedDSN(t), encryptedRootKeyItem)
+	createEncryptedTable(t, product)
+	writtenRow(t, product)
+
+	cases := []struct {
+		name string
+		read func() (any, error)
+	}{
+		{"Scan into strings", func() (any, error) {
+			var emails []string
+			err := product.DB().Model(&encryptedModel{}).Select("email").Scan(&emails).Error
+			return emails, err
+		}},
+		{"Scan into a string", func() (any, error) {
+			var email string
+			err := product.DB().Model(&encryptedModel{}).Select("email").Scan(&email).Error
+			return email, err
+		}},
+		{"Scan into maps", func() (any, error) {
+			var rows []map[string]any
+			err := product.DB().Model(&encryptedModel{}).Scan(&rows).Error
+			return rows, err
+		}},
+		{"Scan into a struct without the serializer", func() (any, error) {
+			var rows []emailView
+			err := product.DB().Model(&encryptedModel{}).Scan(&rows).Error
+			return rows, err
+		}},
+		{"Scan into the model", func() (any, error) {
+			var rows []encryptedModel
+			err := product.DB().Model(&encryptedModel{}).Scan(&rows).Error
+			return rows, err
+		}},
+		{"Rows over every column", func() (any, error) {
+			rows, err := product.DB().Model(&encryptedModel{}).Rows()
+			return closedRows(t, rows), err
+		}},
+		{"Rows selecting the column", func() (any, error) {
+			rows, err := product.DB().Model(&encryptedModel{}).Select("id, email").Rows()
+			return closedRows(t, rows), err
+		}},
+	}
+	for _, c := range cases {
+		t.Run(c.name, func(t *testing.T) {
+			got, err := c.read()
+			if err == nil {
+				t.Fatalf("the read went through and handed %v to a destination this module never "+
+					"sees, which gets the stored text of a sealed column rather than its value", got)
+			}
+			if !strings.Contains(err.Error(), "Email") {
+				t.Errorf("the refusal does not name the field: %v", err)
+			}
+		})
+	}
+}
+
+// TestARowOverTheModelThatReachesTheSealedColumnPanicsWithTheRefusal covers
+// Row, which has no error to return: GORM hands back no row when a callback
+// fails, and scanning that nil row panics without a word about why. The
+// refusal is the panic instead, so the failure names the field at the call.
+func TestARowOverTheModelThatReachesTheSealedColumnPanicsWithTheRefusal(t *testing.T) {
+	product := assembleEncrypted(t, encryptedDSN(t), encryptedRootKeyItem)
+	createEncryptedTable(t, product)
+	writtenRow(t, product)
+
+	var email string
+	recovered := func() (recovered any) {
+		defer func() { recovered = recover() }()
+		scanErr := product.DB().Model(&encryptedModel{}).Select("email").Row().Scan(&email)
+		t.Errorf("Row over the sealed column went through, scanning %q with %v", email, scanErr)
+		return nil
+	}()
+	err, ok := recovered.(error)
+	if !ok {
+		t.Fatalf("Row panicked with %#v, want the refusal as an error", recovered)
+	}
+	if !strings.Contains(err.Error(), "Email") {
+		t.Errorf("the refusal does not name the field: %v", err)
+	}
+}
+
+// TestARowReadThatDoesNotReachTheSealedColumnGoesThrough keeps that refusal to
+// the statements it is about: one over the model that selects or omits around
+// the sealed columns, and one that names no model — native SQL, or a table
+// name alone — which this module has no schema to judge by.
+func TestARowReadThatDoesNotReachTheSealedColumnGoesThrough(t *testing.T) {
 	product := assembleEncrypted(t, encryptedDSN(t), encryptedRootKeyItem)
 	createEncryptedTable(t, product)
 	row := writtenRow(t, product)
 
-	rows, err := product.DB().Model(&encryptedModel{}).Rows()
+	var ids []uint
+	if err := product.DB().Model(&encryptedModel{}).Select("id").Scan(&ids).Error; err != nil {
+		t.Errorf("scanning a column that is not sealed was refused: %v", err)
+	}
+	var count int64
+	if err := product.DB().Model(&encryptedModel{}).Select("count(*)").Row().Scan(&count); err != nil {
+		t.Errorf("a Row counting the rows failed: %v", err)
+	}
+	omitted, err := product.DB().Model(&encryptedModel{}).Omit("email", "nickname").Rows()
 	if err != nil {
-		t.Fatalf("opening the result set: %v", err)
+		t.Errorf("Rows omitting the sealed columns was refused: %v", err)
+	}
+	if columns := closedRows(t, omitted); slices.Contains(columns, "email") {
+		t.Errorf("Rows omitting the sealed columns read %v", columns)
+	}
+
+	var stored []string
+	if err = product.DB().Raw("SELECT email FROM encrypted_models").Scan(&stored).Error; err != nil {
+		t.Errorf("native SQL over the sealed column was refused: %v", err)
+	}
+	if len(stored) != 1 || stored[0] == row.Email {
+		t.Errorf("native SQL read %v, want the one stored seal", stored)
+	}
+	tabled, err := product.DB().Table("encrypted_models").Select("email").Rows()
+	if err != nil {
+		t.Errorf("Rows over a table name alone was refused: %v", err)
+	}
+	closedRows(t, tabled)
+}
+
+// closedRows drains and closes a result set a case opened only to see whether
+// it opened, and returns the columns it carried.
+func closedRows(t *testing.T, rows *sql.Rows) []string {
+	t.Helper()
+	if rows == nil {
+		return nil
 	}
 	defer func() {
 		if err := rows.Close(); err != nil {
 			t.Errorf("closing the result set: %v", err)
 		}
 	}()
-	var scanned []encryptedModel
+	columns, err := rows.Columns()
+	if err != nil {
+		t.Errorf("reading the result set's columns: %v", err)
+	}
 	for rows.Next() {
-		var one encryptedModel
-		if err := product.DB().ScanRows(rows, &one); err != nil {
-			t.Fatalf("scanning a row with the delivered handle: %v", err)
-		}
-		scanned = append(scanned, one)
 	}
 	if err := rows.Err(); err != nil {
-		t.Fatalf("iterating the result set: %v", err)
+		t.Errorf("iterating the result set: %v", err)
 	}
-	if len(scanned) != 1 || scanned[0].Email != row.Email {
-		t.Errorf("scanning with the delivered handle read %v, want the plaintext %q", scanned, row.Email)
+	return columns
+}
+
+// TestScanRowsOnTheDeliveredHandleOpensTheField covers streaming a result set
+// the way GORM documents it: Rows on one statement, ScanRows on the handle,
+// over a result set this module let through — native SQL, or a table name
+// alone. The scan runs no callback chain, so the key reaches it only if the
+// handle itself carries it.
+func TestScanRowsOnTheDeliveredHandleOpensTheField(t *testing.T) {
+	product := assembleEncrypted(t, encryptedDSN(t), encryptedRootKeyItem)
+	createEncryptedTable(t, product)
+	row := writtenRow(t, product)
+
+	sources := []struct {
+		name string
+		open func() (*sql.Rows, error)
+	}{
+		{"native SQL", func() (*sql.Rows, error) {
+			return product.DB().Raw("SELECT * FROM encrypted_models").Rows()
+		}},
+		{"a table name", func() (*sql.Rows, error) {
+			return product.DB().Table("encrypted_models").Rows()
+		}},
+	}
+	for _, source := range sources {
+		t.Run(source.name, func(t *testing.T) {
+			rows, err := source.open()
+			if err != nil {
+				t.Fatalf("opening the result set: %v", err)
+			}
+			defer func() {
+				if err := rows.Close(); err != nil {
+					t.Errorf("closing the result set: %v", err)
+				}
+			}()
+			var scanned []encryptedModel
+			for rows.Next() {
+				var one encryptedModel
+				if err := product.DB().ScanRows(rows, &one); err != nil {
+					t.Fatalf("scanning a row with the delivered handle: %v", err)
+				}
+				scanned = append(scanned, one)
+			}
+			if err := rows.Err(); err != nil {
+				t.Fatalf("iterating the result set: %v", err)
+			}
+			if len(scanned) != 1 || scanned[0].Email != row.Email {
+				t.Errorf("scanning with the delivered handle read %v, want the plaintext %q", scanned, row.Email)
+			}
+		})
 	}
 }
 
@@ -176,7 +347,7 @@ func TestScanRowsOnAReplacedContextSaysWhatToDo(t *testing.T) {
 	createEncryptedTable(t, product)
 	writtenRow(t, product)
 
-	rows, err := product.DB().Model(&encryptedModel{}).Rows()
+	rows, err := product.DB().Raw("SELECT * FROM encrypted_models").Rows()
 	if err != nil {
 		t.Fatalf("opening the result set: %v", err)
 	}
