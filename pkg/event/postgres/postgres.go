@@ -351,16 +351,52 @@ func (b *bus) read(reading, handling context.Context) {
 		// but it is the only signal that the notification path has degraded,
 		// and without a pause it would turn this loop into a spin against the
 		// database.
-		if waitErr != nil && reading.Err() == nil && !errors.Is(waitErr, context.DeadlineExceeded) {
+		if waitErr == nil || reading.Err() != nil || errors.Is(waitErr, context.DeadlineExceeded) {
+			continue
+		}
+		if b.listen.IsClosed() {
+			// The session is gone — terminated, or its network path dropped
+			// — and every wait on it fails at once from here on. Waiting on
+			// it again would leave this replica polling the table for the
+			// rest of the process's life, so a new one is taken, from the
+			// same configuration, and the loop goes straight back to reading
+			// the table, which covers whatever was published in between.
+			b.logger.Error("event/postgres: the listening connection was lost; taking a new one",
+				"err", waitErr)
+			if err := b.relisten(reading); err == nil {
+				continue
+			} else if reading.Err() == nil {
+				b.logger.Error("event/postgres: taking a new listening connection failed; polling the "+
+					"table until one is taken", "err", err)
+			}
+		} else {
 			b.logger.Error("event/postgres: waiting for a notification failed; carrying on "+
 				"by polling the table", "err", waitErr)
-			select {
-			case <-reading.Done():
-				return
-			case <-time.After(pollInterval):
-			}
+		}
+		select {
+		case <-reading.Done():
+			return
+		case <-time.After(pollInterval):
 		}
 	}
+}
+
+// relisten replaces a listening connection that was lost.
+//
+// Only the read goroutine calls it, and Close reads the field only once that
+// goroutine has returned, so the field needs no lock of its own.
+func (b *bus) relisten(ctx context.Context) error {
+	conn, err := pgx.ConnectConfig(ctx, b.pool.Config().ConnConfig.Copy())
+	if err != nil {
+		return err
+	}
+	if _, err := conn.Exec(ctx, "LISTEN "+channel); err != nil {
+		_ = conn.Close(ctx)
+		return err
+	}
+	_ = b.listen.Close(ctx)
+	b.listen = conn
+	return nil
 }
 
 // drain reads one batch this replica has not delivered and delivers it.
