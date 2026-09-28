@@ -5,6 +5,7 @@ import (
 	"context"
 	"database/sql"
 	"errors"
+	"fmt"
 	"path/filepath"
 	"strings"
 	"testing"
@@ -23,8 +24,8 @@ import (
 // selfWaitTimer is how long a case lets a write run before it counts the write
 // as waiting on itself. It is past the bound a row of a statement on a
 // connection built with Open waits within, with room for a loaded machine, and
-// short of the driver's default busy timeout, which is what a file database
-// would otherwise make the row wait for.
+// short of the busy timeout a file database would otherwise make the row wait
+// for: the driver's default, or the longer one deliveredBusyTimeout sets.
 const selfWaitTimer = 4 * time.Second
 
 // connectionTimer is the same for a row this module writes itself, which waits
@@ -106,6 +107,33 @@ func openedBusyTimeout(ctx context.Context, t *testing.T, handle *gorm.DB) int64
 	return busyTimeoutOf(ctx, t, conn)
 }
 
+// deliveredBusyTimeout is the busy timeout, in milliseconds, the delivered
+// locator sets in the cases that check it is handed back. It is not the
+// driver's default, so a connection handed back carrying the default instead of
+// what it was opened with is seen; and it is longer than selfWaitTimer, so a row
+// whose lock wait was left to it is seen waiting.
+const deliveredBusyTimeout = 7000
+
+// withBusyTimeout is a SQLite locator that opens every connection with
+// deliveredBusyTimeout.
+func withBusyTimeout(dsn string) string {
+	return fmt.Sprintf("%s?_pragma=busy_timeout(%d)", dsn, deliveredBusyTimeout)
+}
+
+// requireOpenedWithTheLocatorsBusyTimeout checks that the delivered pool opens
+// its connections with the busy timeout the case's locator set, and returns it.
+// A pool that opened them with the default would leave a hand-back that
+// restores the default indistinguishable from one that restores what it read.
+func requireOpenedWithTheLocatorsBusyTimeout(ctx context.Context, t *testing.T, handle *gorm.DB) int64 {
+	t.Helper()
+	busy := openedBusyTimeout(ctx, t, handle)
+	if busy != deliveredBusyTimeout {
+		t.Errorf("the delivered pool opens its connections with a busy timeout of %dms, want the %dms the "+
+			"locator sets", busy, deliveredBusyTimeout)
+	}
+	return busy
+}
+
 // quietly is a session that does not print the statement a case fails on
 // purpose.
 func quietly(handle *gorm.DB) *gorm.DB {
@@ -134,10 +162,14 @@ func requireRefusedForWaiting(t *testing.T, err error) {
 // the one connection on an in-memory one. Waiting for either is waiting for the
 // caller itself — until the busy timeout on a file, for good on an in-memory
 // database when the context carries no deadline, which none of these does.
+//
+// The row shortens the busy timeout of the delivered connection it takes, and
+// the locators set one of their own, so a connection handed back with anything
+// but what it carried is seen.
 func TestAWriteOnAnOpenedConnectionInsideTheCallersTransactionDoesNotWaitOnIt(t *testing.T) {
 	for _, shape := range []struct{ name, dsn string }{
-		{name: "a file database", dsn: filepath.Join(t.TempDir(), "delivered.db")},
-		{name: "an in-memory database", dsn: ":memory:"},
+		{name: "a file database", dsn: withBusyTimeout(filepath.Join(t.TempDir(), "delivered.db"))},
+		{name: "an in-memory database", dsn: withBusyTimeout(":memory:")},
 	} {
 		t.Run(shape.name, func(t *testing.T) {
 			assembledAt(t, shape.dsn, nil, func(ctx context.Context, reg *core.Registry) error {
@@ -156,7 +188,7 @@ func TestAWriteOnAnOpenedConnectionInsideTheCallersTransactionDoesNotWaitOnIt(t 
 					return err
 				}
 				defer func() { _ = db.Close(opened) }()
-				busy := openedBusyTimeout(ctx, t, handle)
+				busy := requireOpenedWithTheLocatorsBusyTimeout(ctx, t, handle)
 
 				returned, err := within(selfWaitTimer, func() error {
 					return quietly(handle).Transaction(func(tx *gorm.DB) error {
@@ -196,8 +228,8 @@ const briefHold = 200 * time.Millisecond
 // other request happened to be writing there.
 func TestAWriteOnAnOpenedConnectionWaitsOutAnotherWritersBriefHold(t *testing.T) {
 	for _, shape := range []struct{ name, dsn string }{
-		{name: "a file database", dsn: filepath.Join(t.TempDir(), "delivered.db")},
-		{name: "an in-memory database", dsn: ":memory:"},
+		{name: "a file database", dsn: withBusyTimeout(filepath.Join(t.TempDir(), "delivered.db"))},
+		{name: "an in-memory database", dsn: withBusyTimeout(":memory:")},
 	} {
 		t.Run(shape.name, func(t *testing.T) {
 			assembledAt(t, shape.dsn, nil, func(ctx context.Context, reg *core.Registry) error {
@@ -216,7 +248,7 @@ func TestAWriteOnAnOpenedConnectionWaitsOutAnotherWritersBriefHold(t *testing.T)
 					return err
 				}
 				defer func() { _ = db.Close(opened) }()
-				busy := openedBusyTimeout(ctx, t, handle)
+				busy := requireOpenedWithTheLocatorsBusyTimeout(ctx, t, handle)
 
 				held, released := make(chan struct{}), make(chan error, 1)
 				go func() {
