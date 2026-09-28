@@ -93,7 +93,11 @@ func encodeValue(entry keyEntry, value any) (string, error) {
 //     16777217 does not; a value outside the item type's range is refused.
 //   - A text goes into a type that decodes itself from text through that
 //     type's own UnmarshalText.
-//   - A text goes into a boolean or a numeric item when it parses as one.
+//   - A text goes into a boolean or a numeric item when it parses as one, and
+//     the number it parses as is held to the rule above. An integer item takes
+//     a decimal integer only, so "10.0" and "1e3" are refused where the numbers
+//     10.0 and 1e3 are not; a float item holds a text that parses as a whole
+//     number to the integer rule, so "16777217" does not go into a float32.
 //   - A string or a boolean goes into a defined type built on the same kind.
 //
 // Nothing else converts. A declaration is what the column is read back under,

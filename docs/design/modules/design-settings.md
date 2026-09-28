@@ -182,10 +182,10 @@ err := store.Get(settings.ForTenant(tenantID), "ratelimit.window", &opts.Window)
 **写入收下的值先按配置的取值纪律归到声明类型**，本模块不另立规则。下列各步按配置的判定次序排列，先命中者定，清单是完整的：
 
 - 已是声明类型的值原样接受。
-- `time.Duration` 只收 `time.ParseDuration` 可解的文本，裸数字判 `ErrTypeMismatch`：它的单位是纳秒，`300` 在写的人眼里是五分钟，存下来是三百纳秒。
+- `time.Duration` 只收 `time.ParseDuration` 可解的文本，裸数字判 `ErrTypeMismatch`：它的单位是纳秒，`300` 在写的人眼里是五分钟，存下来是三百纳秒。**这条按类型本身判定**：以它为底层定义的新类型（`type Timeout time.Duration`）在反射里只剩底层的 `int64`，按整数项处理，裸数字即纳秒，`"5m"` 判 `ErrTypeMismatch`，与配置对同一个类型的裁决相同（见 [config](design-config.md) 的取值与校验一节）。要让自己的类型按时长写入，给它实现文本编解码，或把设置项直接声明为 `time.Duration`。
 - 数值写入另一种 Go 类型的数值项：整数值的浮点可写进整数项，整数可写进目标类型能精确表示它的浮点项，浮点数写进 `float32` 项要求按 `float32` 最短写法读回仍是写入的那个数；带小数部分、超出目标类型范围或会被存成邻近值的判 `ErrTypeMismatch`，不做截断，也不做舍入。
 - 文本写入实现 `TextUnmarshaler` 的类型，由该类型自己的 `UnmarshalText` 解析。
-- 文本写入布尔与数值项，按常规文本解析。
+- 文本写入布尔与数值项，先按 Go 的常规写法解析，解出的数再受上一条的同一组约束。整数项只收十进制整数的写法：`"10"` 可以，`"10.0"` 与 `"1e3"` 判 `ErrTypeMismatch`，尽管同一个数以数值写入可以；超出目标类型范围的判 `ErrTypeMismatch`。浮点项收到能解成整数的文本时按整数处理，要求目标类型能精确表示它，其余按 `float64` 解析，写进 `float32` 项同样要求读回仍是那个数：`"16777217"` 写进 `float32` 判 `ErrTypeMismatch`。布尔项收 `strconv.ParseBool` 认的写法。
 - 字符串与布尔写入以同一底层种类定义的类型。
 
 其余一律不转换，判 `ErrTypeMismatch`。管理端点把请求体按 JSON 或 YAML 解出的值原样交给 `Set` 是这条纪律的常规用法：那些值正是配置源对同一项会给出的值。落库的文本一律是声明类型自己的写法，与调用方交来的形式无关，以 `"300s"` 写入的时长存为 `5m0s`。
