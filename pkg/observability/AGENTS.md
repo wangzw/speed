@@ -85,13 +85,22 @@ must not cross, and how to run it.
   equally fixed; a dashboard reads them. The server span carries the same two
   attributes, and a final server-error status marks it errored whether or not
   the handler panicked.
-- **An event-derived span's attributes are the payload's fields as published.**
-  Every top-level field of the payload becomes one attribute, in the type and
-  with the digits it was published with — a number is not read through a
-  float64 and printed back — so the set is whatever publishers put in payloads
-  and the module limits no attribute's cardinality. Keeping a credential out of
-  a payload is therefore the publisher's obligation: this module neither
-  inspects nor strips one.
+- **An event-derived span's attributes are the payload's fields as published,
+  plus the two the bus carries.** Every top-level field of the payload becomes
+  one attribute, in the type and with the digits it was published with — a
+  number is not read through a float64 and printed back — so the set is
+  whatever publishers put in payloads and the module limits no attribute's
+  cardinality. Keeping a credential out of a payload is therefore the
+  publisher's obligation: this module neither inspects nor strips one. The
+  event's identifier goes on as `messaging.message.id` and its tenant as
+  `tenant_id`, both after the payload's fields, so a payload field of the same
+  name cannot displace what the bus said.
+- **The identifier is what groups the spans of one event.** The bus promises no
+  delivery count: a transport-backed bus hands every event to every replica's
+  subscribers, a backend may redeliver and a publisher may publish the same
+  event again, so one fact can become several spans, each the root of its own
+  trace over a transport. Every one carries the same identifier, and a span
+  count is not a fact count until spans are grouped by it.
 - **An event-derived span's parent and kind come from the bus, not from this
   module.** The span starts on the context the handler was handed: the
   process-local bus hands the publisher's own context, so the span joins the

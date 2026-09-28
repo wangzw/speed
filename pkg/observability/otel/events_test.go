@@ -9,23 +9,30 @@ import (
 	"github.com/vislake/speed/pkg/event"
 )
 
-// TestTheBusTenantWinsOverAPayloadFieldOfTheSameName pins the order the two
+// TestTheBusFieldsWinOverPayloadFieldsOfTheSameName pins the order the two
 // sources are written in.
 //
-// Upstream attributes are last-value-wins, and a fact about a tenant very
-// easily carries a field of that name in its payload. Written the other way
+// Upstream attributes are last-value-wins, and a payload is free to carry a
+// top-level field under either name the bus's own fields are recorded under —
+// a fact about a tenant very easily carries a tenant_id. Written the other way
 // round, the payload's value would be the one the span reports — and a payload
 // is data a producer wrote, which may be stale, wrong, or absent, while the bus
-// is the authority on which tenant a fact belongs to. The failure would be a
-// fact recorded under the wrong tenant with nothing saying so.
-func TestTheBusTenantWinsOverAPayloadFieldOfTheSameName(t *testing.T) {
+// is the authority on which tenant a fact belongs to and on which event it is.
+// The failure would be a fact recorded under the wrong tenant, or under another
+// event's identifier, with nothing saying so.
+func TestTheBusFieldsWinOverPayloadFieldsOfTheSameName(t *testing.T) {
 	p, rec, _ := layerUnderTest(t)
 	handler := p.spanFor()
 
 	evt := event.Event{
+		ID:       "id-from-the-bus",
 		Type:     "order.placed",
 		TenantID: "from-the-bus",
-		Payload:  map[string]any{"tenant_id": "from-the-payload", "order": "42"},
+		Payload: map[string]any{
+			"tenant_id":            "from-the-payload",
+			"messaging.message.id": "id-from-the-payload",
+			"order":                "42",
+		},
 	}
 	if err := handler(context.Background(), evt); err != nil {
 		t.Fatalf("the handler returned %v", err)
@@ -40,8 +47,80 @@ func TestTheBusTenantWinsOverAPayloadFieldOfTheSameName(t *testing.T) {
 		t.Errorf("the span reports tenant_id %q, want the bus's value: a payload field must not "+
 			"overwrite the tenant the fact was published under", got)
 	}
+	if got := attributeOf(t, attrs, "messaging.message.id"); got != "id-from-the-bus" {
+		t.Errorf("the span reports messaging.message.id %q, want the bus's value: a payload field must "+
+			"not overwrite the identifier the event was delivered under", got)
+	}
 	if got := attributeOf(t, attrs, "order"); got != "42" {
 		t.Errorf("the payload's other fields are %q, want them carried through", got)
+	}
+}
+
+// TestEverySpanOfOneEventCarriesItsIdentifier pins what lets the spans of one
+// event be told from the spans of two.
+//
+// The bus promises no delivery count: a transport hands every event to every
+// replica's subscribers and a backend may redeliver, so one event can end up as
+// several spans, each a root of its own trace with nothing else linking them.
+// The identifier the bus carries is the same at every delivery, and it is the
+// one thing that groups them — a span that lacked it, or carried a value minted
+// here, would make two deliveries of one event indistinguishable from two
+// events. It must also sit beside the payload's own fields rather than take
+// their place: a payload with an "id" of its own is the ordinary case.
+func TestEverySpanOfOneEventCarriesItsIdentifier(t *testing.T) {
+	p, rec, _ := layerUnderTest(t)
+	handler := p.spanFor()
+
+	evt := event.Event{
+		ID:      "01890a5d-ac96-774b-bcce-b302099a8057",
+		Type:    "order.placed",
+		Payload: map[string]any{"id": "order-7"},
+	}
+	for range 2 {
+		if err := handler(context.Background(), evt); err != nil {
+			t.Fatalf("the handler returned %v", err)
+		}
+	}
+
+	spans := rec.recorded()
+	if len(spans) != 2 {
+		t.Fatalf("two deliveries produced %d spans, want 2", len(spans))
+	}
+	for i, span := range spans {
+		attrs := attribute.NewSet(span.Attributes()...)
+		got, ok := attrs.Value("messaging.message.id")
+		switch {
+		case !ok:
+			t.Errorf("span %d carries no messaging.message.id, so it cannot be told apart from the span of "+
+				"another event", i)
+		case got != attribute.StringValue(evt.ID):
+			t.Errorf("span %d carries messaging.message.id %s %q, want the string the bus delivered, %q",
+				i, got.Type(), got.String(), evt.ID)
+		}
+		if got := attributeOf(t, attrs, "id"); got != "order-7" {
+			t.Errorf("span %d reports the payload's id as %q, want the payload's own value", i, got)
+		}
+	}
+}
+
+// TestAnEventWithoutAnIdentifierRecordsNone pins the one case the bus never
+// delivers: an event with no identifier, which reaches only a handler called
+// outside a bus. An empty value recorded on each such span would group them all
+// as deliveries of one event.
+func TestAnEventWithoutAnIdentifierRecordsNone(t *testing.T) {
+	p, rec, _ := layerUnderTest(t)
+	handler := p.spanFor()
+
+	if err := handler(context.Background(), event.Event{Type: "order.placed", Payload: map[string]any{"order": "42"}}); err != nil {
+		t.Fatalf("the handler returned %v", err)
+	}
+	spans := rec.recorded()
+	if len(spans) != 1 {
+		t.Fatalf("the subscription produced %d spans, want 1", len(spans))
+	}
+	attrs := attribute.NewSet(spans[0].Attributes()...)
+	if got, ok := attrs.Value("messaging.message.id"); ok {
+		t.Errorf("an event without an identifier produced messaging.message.id %q, want none", got.String())
 	}
 }
 
@@ -108,14 +187,17 @@ func TestAPayloadFieldIsRecordedAsPublished(t *testing.T) {
 }
 
 // TestAnUnreadablePayloadIsDroppedWhole pins what happens to an event whose
-// payload cannot be read as an object: nothing. A span carrying only the type
-// would claim a fact was observed when nothing about it was.
+// payload cannot be read as an object: nothing. The event still carries
+// everything the bus gives every delivery — a type, an identifier, a tenant —
+// and a span carrying only those would claim a fact was observed when nothing
+// about it was.
 func TestAnUnreadablePayloadIsDroppedWhole(t *testing.T) {
 	p, rec, _ := layerUnderTest(t)
 	handler := p.spanFor()
 
 	for _, payload := range []any{nil, "not an object", 7} {
-		if err := handler(context.Background(), event.Event{Type: "order.placed", Payload: payload}); err != nil {
+		evt := event.Event{ID: event.NewID(), Type: "order.placed", TenantID: "acme", Payload: payload}
+		if err := handler(context.Background(), evt); err != nil {
 			t.Fatalf("the handler returned %v", err)
 		}
 	}

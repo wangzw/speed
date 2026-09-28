@@ -19,6 +19,19 @@ import (
 // signal in the process. On a span it costs one attribute per fact.
 const tenantIDKey = attribute.Key("tenant_id")
 
+// eventIDKey is the span attribute the bus's identifier for an event is
+// recorded under: the name upstream's semantic conventions give the identifier
+// a messaging system assigns a message, carried as a string.
+//
+// It is what groups the spans of one event. The bus promises no delivery count
+// — a transport-backed bus hands every event to every replica's subscribers, a
+// backend may redeliver, a publisher may publish the same event again — so one
+// fact can become several spans, and over a transport each is the root of a
+// trace of its own with nothing else linking them. The identifier is the same
+// at every delivery, which is what tells two deliveries of one event from two
+// events.
+const eventIDKey = attribute.Key("messaging.message.id")
+
 // spanFor builds the handler that turns one subscribed event type into a span.
 //
 // What comes out is a short span per fact, not a counter: a counter's name and
@@ -29,8 +42,9 @@ const tenantIDKey = attribute.Key("tenant_id")
 // transport delivered the same fact as decoded data.
 //
 // An event whose payload cannot be read as an object is dropped whole: there is
-// nothing to record about it but its type, and a span carrying only that would
-// claim a fact was observed when nothing about it was.
+// nothing to record about the fact but what the bus itself carries — its type,
+// identifier and tenant — and a span carrying only those would claim a fact was
+// observed when nothing about it was.
 func (p *providers) spanFor() event.Handler {
 	tracer := p.tp.Tracer(instrumentationName)
 	return func(ctx context.Context, evt event.Event) error {
@@ -46,12 +60,20 @@ func (p *providers) spanFor() event.Handler {
 		defer span.End()
 
 		span.SetAttributes(fields...)
-		// The tenant goes on last, after the payload's own fields. Upstream
+		// The bus's own fields go on last, after the payload's. Upstream
 		// attributes are last-value-wins, so a payload that happens to carry a
-		// field of the same name — which a fact about a tenant easily does —
-		// would otherwise overwrite what the bus said. The bus is the authority
-		// on which tenant a fact belongs to, and the payload is data a producer
-		// wrote.
+		// top-level field under one of their names — which a fact about a
+		// tenant easily does — would otherwise overwrite what the bus said. The
+		// bus is the authority on which event this is and which tenant it
+		// belongs to, and the payload is data a producer wrote.
+		//
+		// The bus assigns an identifier to every event its publisher left
+		// without one, so an empty one reaches only a handler called outside a
+		// bus; it is left off rather than recorded as a value that every such
+		// span would share.
+		if evt.ID != "" {
+			span.SetAttributes(eventIDKey.String(evt.ID))
+		}
 		if evt.TenantID != "" {
 			span.SetAttributes(tenantIDKey.String(evt.TenantID))
 		}
