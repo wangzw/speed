@@ -54,6 +54,12 @@ must not cross, and how to run it.
   provider's final export. The forwarding wrappers hold the providers' calls
   back, and the assembler releases every collected exporter after both
   providers have flushed (`releaseExporters`).
+- **The forwarding wrapper is the one report of a failed export, and it hands
+  the upstream no error back.** The upstream's processor and reader pass every
+  failed export to the process-level error handler, and the default one prints a
+  line per failed batch to standard error, outside the log chain and its
+  redaction. Returning the error from the wrapper brings those lines back, and
+  makes a failed final export at shutdown a failure of `Close`.
 - **The providers are never installed into the library's global state.** The
   global is a process-level singleton that the second assembly in one process
   overwrites, and architecture invariant 9 rules out handing instances around

@@ -21,18 +21,30 @@ import (
 // silent behaviour change rather than a compile error.
 //
 // Two calls are intercepted. The export call, because only it can fail in a way
-// an operator needs to hear about once. And Shutdown, because the release of the
-// backend is the assembler's to make rather than the provider's: see Shutdown.
+// an operator needs to hear about once, and this wrapper is where that is said.
+// And Shutdown, because the release of the backend is the assembler's to make
+// rather than the provider's: see Shutdown.
 type spanExporter struct {
 	sdktrace.SpanExporter
 	note *notifier
 }
 
-// ExportSpans forwards the batch and reports the outcome.
+// ExportSpans forwards the batch and reports the outcome, and hands the upstream
+// no error back.
+//
+// The report is the notifier's, and it is the only one. The upstream's batch
+// processor hands a failed export to the process-level error handler, and with
+// none installed — this module installs none, since the handler is a process
+// singleton a second assembly would overwrite — that handler prints a line to
+// standard error for every failed batch: outside the log chain, outside its
+// redaction, and without the first-failure-only restraint. Beyond that the
+// processor only returns the error from a forced flush, which nothing in this
+// module asks for; the batch is dropped either way, and retrying is the
+// exporter's own business. Absorbing it here therefore costs nothing but those
+// lines.
 func (w *spanExporter) ExportSpans(ctx context.Context, spans []sdktrace.ReadOnlySpan) error {
-	err := w.SpanExporter.ExportSpans(ctx, spans)
-	w.note.note(err)
-	return err
+	w.note.note(w.SpanExporter.ExportSpans(ctx, spans))
+	return nil
 }
 
 // Shutdown is where the tracer provider's processor releases the exporter it
@@ -58,11 +70,15 @@ type metricExporter struct {
 	note *notifier
 }
 
-// Export forwards the batch and reports the outcome.
+// Export forwards the batch and reports the outcome, and hands the upstream no
+// error back, for the reason the span side gives: the periodic reader would
+// print a line to standard error for every failed interval. The one caller that
+// does more with the error is the reader's final export at shutdown, which would
+// return it from Close — an export failure there is reported by the same line
+// as any other, and it is not a failure of the stop.
 func (w *metricExporter) Export(ctx context.Context, rm *metricdata.ResourceMetrics) error {
-	err := w.Exporter.Export(ctx, rm)
-	w.note.note(err)
-	return err
+	w.note.note(w.Exporter.Export(ctx, rm))
+	return nil
 }
 
 // Shutdown is where the meter provider's reader releases the exporter it holds,
