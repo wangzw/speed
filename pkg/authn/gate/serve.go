@@ -655,7 +655,8 @@ func (g *gateway) verify(ctx context.Context, c *claimant, subject string, cred 
 	}
 	// Only a report of not being able to answer is read against the
 	// request's context. A pass or a refusal is an answer about the
-	// credential, and it stands however late the caller's own deadline was.
+	// credential and the zero verdict is a defect of the backend's own, and
+	// each stands however late the caller's own deadline was.
 	if verdict.OutcomeOf(answer) == verdict.Unavailable {
 		if abandoned := made.abandoned(); abandoned != nil {
 			return authn.Verdict{}, abandoned

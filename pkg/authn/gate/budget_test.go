@@ -10,6 +10,7 @@ import (
 	"time"
 
 	"github.com/vislake/speed/pkg/authn"
+	"github.com/vislake/speed/pkg/authn/internal/verdict"
 )
 
 // TestAnAnswerThatArrivesAfterTheBudgetIsNotHonoured holds what the call budget
@@ -286,40 +287,166 @@ func TestDrainingGivesUpOnCallsThatOutlastTheBudget(t *testing.T) {
 	}
 }
 
-// TestACallerWithLessTimeThanTheBudgetIsNotABackendFailure holds the
-// attribution of a deadline the request arrived with.
+// endings are the two ways a request's own context comes to an end while a
+// backend is being asked, before this module's budget runs out: the caller goes
+// away, or the deadline the request arrived with fires first. inside is closed
+// once the backend is inside the call.
+var endings = []struct {
+	name string
+	end  func(inside chan struct{}) (context.Context, func())
+}{
+	{
+		name: "the caller went away",
+		end: func(inside chan struct{}) (context.Context, func()) {
+			ctx, cancel := context.WithCancel(context.Background())
+			go func() {
+				<-inside
+				cancel()
+			}()
+			return ctx, cancel
+		},
+	},
+	{
+		name: "the caller's deadline fired first",
+		end: func(chan struct{}) (context.Context, func()) {
+			return context.WithTimeout(context.Background(), 20*time.Millisecond)
+		},
+	},
+}
+
+// TestAnAnswerAboutTheCredentialStandsAfterTheCallersContextEnded holds which
+// late answers the request's own context may change, and which it may not.
 //
-// A deadline already on the request context is the caller's, and it is the one
-// that fires when it is the earlier of the two. Reading it as the backend
-// overrunning its budget would name a backend that answered perfectly well, and
-// send an operator to read the logs of a credential store that is fine.
-func TestACallerWithLessTimeThanTheBudgetIsNotABackendFailure(t *testing.T) {
-	unhurried := enumerating("local", "alice")
-	unhurried.verify = func(_ context.Context, subject string, _ authn.Credential) authn.Verdict {
-		time.Sleep(30 * time.Millisecond)
-		return authn.Authenticated(subject)
+// A context the caller ended is read against one answer alone: a backend's
+// report that it could not answer, which is what a backend returning on its
+// context has to say and which is therefore no fact about its health. A pass, a
+// refusal and a backend that returned without answering are each something the
+// backend said about the credential or about itself, and each concludes as it
+// would have with the caller still waiting. The refusal matters most: a wrong
+// password read as an outage leaves the 401 bucket every lockout and rate rule
+// keys on, and a backend that answers nothing stops being counted as a defect.
+//
+// The budget is ten seconds and never runs out, so what the case varies is the
+// caller's context alone; the backend answers only once that has ended.
+func TestAnAnswerAboutTheCredentialStandsAfterTheCallersContextEnded(t *testing.T) {
+	for _, answer := range []struct {
+		name    string
+		verdict func(subject string) authn.Verdict
+		// status and bucket are what the request concludes with; zero
+		// status means it is admitted.
+		status int
+		bucket verdict.Outcome
+		level  slog.Level
+	}{
+		{
+			name:    "a pass",
+			verdict: authn.Authenticated,
+		},
+		{
+			name:    "a refusal",
+			verdict: func(string) authn.Verdict { return authn.Denied(errors.New("wrong password")) },
+			status:  nethttp.StatusUnauthorized,
+			bucket:  verdict.Denied,
+			level:   slog.LevelInfo,
+		},
+		{
+			name:    "no answer at all",
+			verdict: func(string) authn.Verdict { return authn.Verdict{} },
+			status:  nethttp.StatusUnauthorized,
+			bucket:  verdict.Unspoken,
+			level:   slog.LevelError,
+		},
+	} {
+		for _, ending := range endings {
+			t.Run(answer.name+" after "+ending.name, func(t *testing.T) {
+				inside := make(chan struct{})
+				late := enumerating("local", "alice")
+				late.verify = func(ctx context.Context, subject string, _ authn.Credential) authn.Verdict {
+					close(inside)
+					<-ctx.Done()
+					return answer.verdict(subject)
+				}
+				g := gatewayWith(t, settings{
+					endpoints: []string{"public"},
+					budget:    10 * time.Second,
+					inFlight:  4,
+				}, late)
+				sealed(t, g, routerWith("public"))
+
+				ctx, cancel := ending.end(inside)
+				defer cancel()
+				r := withBasic(request("GET", "/orders"), "alice", "secret")
+
+				_, deny := g.identify(r.WithContext(ctx))
+				if answer.status == 0 {
+					if deny != nil {
+						t.Errorf("a pass that arrived after the caller's own context ended "+
+							"concluded as %d charged to %q; the budget was not exceeded, "+
+							"so the answer stands", deny.status, deny.backend)
+					}
+					return
+				}
+				if deny == nil {
+					t.Fatalf("%s that arrived after the caller's own context ended admitted "+
+						"the request", answer.name)
+				}
+				if deny.status != answer.status || deny.bucket != answer.bucket {
+					t.Errorf("%s that arrived after the caller's own context ended concluded "+
+						"as %d in the %v bucket, want %d in the %v bucket: only a report of "+
+						"not being able to answer is read against the caller's context",
+						answer.name, deny.status, deny.bucket, answer.status, answer.bucket)
+				}
+				if deny.backend != "local" {
+					t.Errorf("the conclusion is charged to %q, want the backend that gave it",
+						deny.backend)
+				}
+				if deny.level != answer.level {
+					t.Errorf("the conclusion is written at %v, want %v", deny.level, answer.level)
+				}
+			})
+		}
 	}
+}
 
-	g := gatewayWith(t, settings{
-		endpoints: []string{"public"},
-		budget:    10 * time.Second,
-		inFlight:  4,
-	}, unhurried)
-	sealed(t, g, routerWith("public"))
+// TestAnOpenClaimsAnswerStandsAfterTheCallersContextEnded holds the same rule
+// for the ownership question. An open claim that says a bare name is not its own
+// has answered, and the request is refused as unclaimed — a 401 charged to the
+// gateway — however late the caller's context ended; only a claim that could
+// not answer is read against that context.
+func TestAnOpenClaimsAnswerStandsAfterTheCallersContextEnded(t *testing.T) {
+	for _, ending := range endings {
+		t.Run(ending.name, func(t *testing.T) {
+			inside := make(chan struct{})
+			directory := openly("directory", func(ctx context.Context, _ string) (bool, error) {
+				close(inside)
+				<-ctx.Done()
+				return false, nil
+			})
+			g := gatewayWith(t, settings{
+				endpoints: []string{"public"},
+				budget:    10 * time.Second,
+				inFlight:  4,
+			}, directory)
+			sealed(t, g, routerWith("public"))
 
-	// The request arrives with far less time left than the budget allows.
-	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Millisecond)
-	defer cancel()
-	r := withBasic(request("GET", "/orders"), "alice", "secret")
+			ctx, cancel := ending.end(inside)
+			defer cancel()
+			r := withBasic(request("GET", "/orders"), "dave", "secret")
 
-	// The backend ignores the deadline and answers after the caller's has
-	// fired. The budget was never exceeded, so the answer is the backend's
-	// own and it stands: a caller's deadline is not the gateway's to turn
-	// into a verdict about anybody.
-	if _, deny := g.identify(r.WithContext(ctx)); deny != nil {
-		t.Errorf("a pass that arrived within the budget but after the caller's own deadline "+
-			"ended as %d charged to %q; the budget was not exceeded, so the answer stands",
-			deny.status, deny.backend)
+			_, deny := g.identify(r.WithContext(ctx))
+			if deny == nil {
+				t.Fatal("a bare name no open claim owns was admitted")
+			}
+			if deny.status != nethttp.StatusUnauthorized || deny.bucket != verdict.Denied {
+				t.Errorf("an open claim's answer that arrived after the caller's own context "+
+					"ended concluded as %d in the %v bucket, want %d in the %v bucket",
+					deny.status, deny.bucket, nethttp.StatusUnauthorized, verdict.Denied)
+			}
+			if deny.backend != "" {
+				t.Errorf("the conclusion is charged to %q, want the gateway, whose table found "+
+					"no owner", deny.backend)
+			}
+		})
 	}
 }
 
@@ -347,31 +474,8 @@ func honouring(inside chan struct{}) *fakeVerifier {
 // waiting for. It is charged to the gateway, as the other outages in which no
 // backend failed are.
 func TestABackendThatHonoursItsContextIsNotChargedForTheCallersDeadline(t *testing.T) {
-	for _, c := range []struct {
-		name string
-		// end brings the request's own context to an end once the
-		// backend is inside the call.
-		end func(t *testing.T, inside chan struct{}) (context.Context, func())
-	}{
-		{
-			name: "the caller went away",
-			end: func(_ *testing.T, inside chan struct{}) (context.Context, func()) {
-				ctx, cancel := context.WithCancel(context.Background())
-				go func() {
-					<-inside
-					cancel()
-				}()
-				return ctx, cancel
-			},
-		},
-		{
-			name: "the caller's deadline fired first",
-			end: func(_ *testing.T, _ chan struct{}) (context.Context, func()) {
-				return context.WithTimeout(context.Background(), 20*time.Millisecond)
-			},
-		},
-	} {
-		t.Run(c.name, func(t *testing.T) {
+	for _, ending := range endings {
+		t.Run(ending.name, func(t *testing.T) {
 			inside := make(chan struct{})
 			g := gatewayWith(t, settings{
 				endpoints: []string{"public"},
@@ -380,7 +484,7 @@ func TestABackendThatHonoursItsContextIsNotChargedForTheCallersDeadline(t *testi
 			}, honouring(inside))
 			sealed(t, g, routerWith("public"))
 
-			ctx, cancel := c.end(t, inside)
+			ctx, cancel := ending.end(inside)
 			defer cancel()
 			r := withBasic(request("GET", "/orders"), "alice", "secret")
 
