@@ -114,6 +114,11 @@ func (l *listener) start(s endpointSettings, h nethttp.Handler, logger *slog.Log
 		socket = tls.NewListener(socket, &tls.Config{
 			Certificates: []tls.Certificate{cert},
 			MinVersion:   tls.VersionTLS12,
+			// The protocols net/http's own ServeTLS offers. Building the
+			// listener here is for loading the certificate synchronously,
+			// not for choosing protocols; without this list ALPN offers
+			// nothing, and every client falls back to HTTP/1.1.
+			NextProtos: []string{"h2", "http/1.1"},
 		})
 	}
 
