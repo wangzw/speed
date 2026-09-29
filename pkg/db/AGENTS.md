@@ -147,10 +147,13 @@ must not cross, and how to run it.
   transaction, but refuses it outright on a connection whose `query_only` is
   on; `BeginTx` begins DEFERRED there, whatever mode the locator names, and
   asks the connection only when SQLite refused the BEGIN, since a statement can
-  turn `query_only` on for one connection of the pool. Reading `query_only`
-  out of the locator instead misses every spelling of the pragma and every
-  connection a statement changed. `readonly_test.go` runs a transaction on
-  each read-only shape.
+  turn `query_only` on for one connection of the pool. A connection that does
+  not answer is taken for one whose `query_only` is off, so the refusal it gave
+  stays the caller's error. Reading `query_only` out of the locator instead
+  misses every spelling of the pragma and every connection a statement changed.
+  `readonly_test.go` runs a transaction on each read-only shape, and
+  `transactions_test.go` holds the fallback to every answer a connection can
+  give.
 - **The GORM logger every handle carries writes no value a statement binds or
   reads** (`statementLogger`, `adr-db-logging-2026-09-29`). It answers GORM's
   `ParamsFilter` with no values, so the text GORM hands `Trace` keeps its

@@ -3,7 +3,11 @@ package sqlite
 import (
 	"context"
 	"database/sql"
+	"database/sql/driver"
+	"errors"
+	"io"
 	"path/filepath"
+	"slices"
 	"strings"
 	"testing"
 )
@@ -176,6 +180,143 @@ func TestABeginRefusedTheWriteLockIsReported(t *testing.T) {
 	}
 	if !strings.Contains(err.Error(), "SQLITE_BUSY") {
 		t.Errorf("the refused BEGIN gave %v, want SQLite's SQLITE_BUSY", err)
+	}
+}
+
+// stubConn is a driver connection as the SQLite driver's own behaves on a
+// connection whose query_only is on: it refuses BEGIN IMMEDIATE with refused
+// and runs every other statement, recording each one in the order it was run.
+type stubConn struct {
+	statements []string
+	refused    error
+}
+
+func (*stubConn) Prepare(string) (driver.Stmt, error) { return nil, driver.ErrSkip }
+func (*stubConn) Close() error                        { return nil }
+func (*stubConn) Begin() (driver.Tx, error)           { return nil, driver.ErrSkip }
+
+func (c *stubConn) ExecContext(_ context.Context, statement string, _ []driver.NamedValue) (driver.Result, error) {
+	c.statements = append(c.statements, statement)
+	if statement == "BEGIN IMMEDIATE" {
+		return nil, c.refused
+	}
+	return driver.RowsAffected(0), nil
+}
+
+// answeringConn is a stubConn that answers a query, the way a connection
+// answers PRAGMA query_only: with the one row it holds, with none, or with an
+// error.
+type answeringConn struct {
+	*stubConn
+	values []driver.Value
+	err    error
+}
+
+func (c answeringConn) QueryContext(context.Context, string, []driver.NamedValue) (driver.Rows, error) {
+	if c.err != nil {
+		return nil, c.err
+	}
+	return &stubRows{values: c.values}, nil
+}
+
+// stubRows is a result set of the one row a case gives it, or of no row.
+type stubRows struct {
+	values []driver.Value
+	read   bool
+}
+
+func (*stubRows) Columns() []string { return []string{"query_only"} }
+func (*stubRows) Close() error      { return nil }
+
+func (r *stubRows) Next(dest []driver.Value) error {
+	if r.read || len(r.values) == 0 {
+		return io.EOF
+	}
+	r.read = true
+	copy(dest, r.values)
+	return nil
+}
+
+// TestARefusedBeginIsRetriedOnlyWhenTheConnectionSaysQueryOnlyIsOn holds the
+// fallback for a BEGIN SQLite refused to the connection's answer about
+// query_only: a connection that answers that it is on begins the transaction
+// DEFERRED instead, and every other answer leaves the refusal as the error the
+// caller gets, with no second BEGIN run. The answers that are not "on" are the
+// connection that answers no query at all, the one whose read fails, the one
+// that reads no row, the one that answers something other than a number, and
+// the one that answers off.
+func TestARefusedBeginIsRetriedOnlyWhenTheConnectionSaysQueryOnlyIsOn(t *testing.T) {
+	refused := errors.New("attempt to write a readonly database (8)")
+	locator, _ := readLocator("")
+	cases := []struct {
+		name string
+		// answer wraps the stub the case's connection runs on; a stubConn as
+		// it is answers no query, so the connection implements no
+		// driver.QueryerContext.
+		answer         func(*stubConn) driver.Conn
+		wantStatements []string
+		wantRefused    bool
+	}{
+		{
+			name:           "a connection that answers no query",
+			answer:         func(c *stubConn) driver.Conn { return c },
+			wantStatements: []string{"BEGIN IMMEDIATE"},
+			wantRefused:    true,
+		},
+		{
+			name: "a connection whose query fails",
+			answer: func(c *stubConn) driver.Conn {
+				return answeringConn{stubConn: c, err: errors.New("the pragma could not be read")}
+			},
+			wantStatements: []string{"BEGIN IMMEDIATE"},
+			wantRefused:    true,
+		},
+		{
+			name:           "a connection that reads no row",
+			answer:         func(c *stubConn) driver.Conn { return answeringConn{stubConn: c} },
+			wantStatements: []string{"BEGIN IMMEDIATE"},
+			wantRefused:    true,
+		},
+		{
+			name: "a connection that answers something other than a number",
+			answer: func(c *stubConn) driver.Conn {
+				return answeringConn{stubConn: c, values: []driver.Value{"on"}}
+			},
+			wantStatements: []string{"BEGIN IMMEDIATE"},
+			wantRefused:    true,
+		},
+		{
+			name: "a connection that answers off",
+			answer: func(c *stubConn) driver.Conn {
+				return answeringConn{stubConn: c, values: []driver.Value{int64(0)}}
+			},
+			wantStatements: []string{"BEGIN IMMEDIATE"},
+			wantRefused:    true,
+		},
+		{
+			name: "a connection that answers on",
+			answer: func(c *stubConn) driver.Conn {
+				return answeringConn{stubConn: c, values: []driver.Value{int64(1)}}
+			},
+			wantStatements: []string{"BEGIN IMMEDIATE", "BEGIN DEFERRED"},
+		},
+	}
+	for _, c := range cases {
+		t.Run(c.name, func(t *testing.T) {
+			stub := &stubConn{refused: refused}
+			conn := c.answer(stub)
+			wrapped := transactionConn{Conn: conn, execer: conn.(driver.ExecerContext), locator: locator}
+			if _, err := wrapped.BeginTx(context.Background(), driver.TxOptions{}); c.wantRefused {
+				if !errors.Is(err, refused) {
+					t.Errorf("beginning the transaction gave %v, want the refusal of the BEGIN", err)
+				}
+			} else if err != nil {
+				t.Errorf("beginning the transaction gave %v, want the DEFERRED BEGIN to run it", err)
+			}
+			if !slices.Equal(stub.statements, c.wantStatements) {
+				t.Errorf("the connection ran %v, want %v", stub.statements, c.wantStatements)
+			}
+		})
 	}
 }
 
