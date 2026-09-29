@@ -20,6 +20,12 @@
 // narrow on purpose: a publish reports whether it reached the bus, never
 // whether a subscriber handled it. An implementation may promise more, in its
 // own documentation; a caller may not rely on it. See the Bus interface.
+//
+// A publish is apart from any transaction, and a refused one is not repeated.
+// A publisher announcing a write whose announcement must not be lost stages the
+// event in the write's transaction through pkg/event/outbox instead: it is
+// published once the transaction commits, never when it rolls back, and again
+// until the bus accepts it.
 package event
 
 import (

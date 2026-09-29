@@ -18,6 +18,7 @@ speed 是一个配置驱动的模块化应用程序框架，以 Go 库的形式�
 | [tenant](modules/design-tenant.md) | 租户：请求面的租户解析、名册与生命周期、共享表加租户列的语句过滤 |
 | [kv](modules/design-kv.md) | 键值原语：不透明字节的存取与过期、原子自增与比较并交换、按最弱后端设计的接口面 |
 | [event](modules/design-event.md) | 事件总线：按类型发布与订阅、载荷的结构化读取、投递承诺的下界 |
+| [outbox](modules/design-outbox.md) | 事务发件箱：在写入的事务里暂存事件、提交之后中继到事件总线、拒收后重发、多副本的有时限认领 |
 | [audit](modules/design-audit.md) | 审计：语句、事件、请求与记录接缝的捕获通路、审计表、明细的脱敏 |
 | [settings](modules/design-settings.md) | 设置：模块声明的运行期参数、三级回落、以快照读取、变更事件的发布与订阅 |
 | [ratelimit](modules/design-ratelimit.md) | 限流：租户内按身份串的请求速率限制、以设置读取额度与窗口、经键值原语按窗口计数 |

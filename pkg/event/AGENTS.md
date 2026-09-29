@@ -10,6 +10,12 @@ Concrete backends are subpackages — `memory`, `redis`, `postgres` and `nats` �
 each registers one module, binds its own client, and declares the same capability
 exclusively.
 
+`outbox` is a second capability inside this directory: the transactional outbox,
+which stages an event in the transaction of the write it announces and relays it
+to the bus once that transaction commits. Its interface package is `outbox`, its
+implementation `outbox/relay`, and its boundaries are in
+[`outbox/AGENTS.md`](outbox/AGENTS.md).
+
 ## Where the authority is
 
 - What this module is and why it is shaped this way:
@@ -70,6 +76,10 @@ must not cross, and how to run it.
   time — an implementation subpackage and the root package are one module — and
   the gate that stands in for it is `TestRootPackageImportsNoBackendClient` in
   `deps_test.go`.
+- **A publish stays apart from any transaction.** Tying an event to a write is
+  the outbox's, whose interface package takes the GORM session. The root package
+  gains no method or helper that takes one: every publisher imports it, and GORM
+  would enter the closure of every publisher that never stages an event.
 - **The root package does not import the tenant module.** The tenant identifier
   on an event is a string. Every publisher imports this package, so naming the
   tenant module's type here would make it import that module's interface

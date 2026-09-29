@@ -2,7 +2,7 @@
 
 ## 概览
 
-speed 以库的形式交付。`pkg` 是一个 Go module，其下每个目录是一个包；功能目录的根包承载该功能的接口与公共逻辑，该功能的多种实现拆为它的子包，每个实现子包各自绑定自己的第三方库并登记为一个模块（[ADR-module-packaging-2026-09-22](../adr/adr-module-packaging-2026-09-22.md)）。**并非每个顶层目录都承载功能**：`pkg/internal/` 不承载功能，封装第三方客户端或提供服务器夹具的共享单元住在它之下，供各实现子包共用，自身不登记模块（[ADR-shared-backend-unit-2026-09-21](../adr/adr-shared-backend-unit-2026-09-21.md)）。
+speed 以库的形式交付。`pkg` 是一个 Go module，其下每个目录是一个包；功能目录的根包承载该功能的接口与公共逻辑，该功能的多种实现拆为它的子包，每个实现子包各自绑定自己的第三方库并登记为一个模块（[ADR-module-packaging-2026-09-22](../adr/adr-module-packaging-2026-09-22.md)）。一个功能目录也可以容纳依附于该功能的另一项功能，它的接口包是这个目录下的子包，实现是那个子包的子包，事件目录里的事务发件箱即是（[ADR-outbox-packaging-2026-09-29](../adr/adr-outbox-packaging-2026-09-29.md)）。**并非每个顶层目录都承载功能**：`pkg/internal/` 不承载功能，封装第三方客户端或提供服务器夹具的共享单元住在它之下，供各实现子包共用，自身不登记模块（[ADR-shared-backend-unit-2026-09-21](../adr/adr-shared-backend-unit-2026-09-21.md)）。
 
 宿主编写自己的 `main`，import 所需的模块，驱动启动与停止。speed 不接管程序入口，也不规定应用的形态：HTTP 服务、gRPC 服务、不对外暴露入口的后台进程，都由模块与宿主自己组成（[ADR-core-scope-2026-09-13](../adr/adr-core-scope-2026-09-13.md)）。
 
@@ -207,6 +207,7 @@ speed 不引入进程边界。宿主是单一进程，注册表与全部模块�
 | [tenant](modules/design-tenant.md) | 已实现 |
 | [kv](modules/design-kv.md) | 已实现 |
 | [event](modules/design-event.md) | 已实现 |
+| [outbox](modules/design-outbox.md) | 已实现 |
 | [audit](modules/design-audit.md) | 已实现 |
 | [settings](modules/design-settings.md) | 已实现 |
 | [ratelimit](modules/design-ratelimit.md) | 已实现 |
