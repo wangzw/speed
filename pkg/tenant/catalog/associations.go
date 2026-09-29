@@ -176,25 +176,46 @@ func linkColumn(m *gormschema.Relationship, own bool, tenantField *gormschema.Fi
 	return ""
 }
 
-// keyHalves fills the tenant half of the keys a statement's conditions address
-// rows by, and collects the tenants other than the context's such a half
-// names.
+// keyHalves judges the conditions a statement carries on its tenant column,
+// fills the tenant half of the keys GORM's association mode wrote into them,
+// and collects the tenants other than the context's the conditions name.
 //
-// GORM's association mode addresses records by their whole primary key, and
-// writes the key into the statement's conditions as it reads it off the owner
-// and the records given — an IN over the key's columns, or an equality on one —
-// before any callback runs. A record the caller addressed by the rest of its
-// key leaves the tenant half empty, as a write addressed by a struct's key
-// does, and filling it from the context is that fill carried over to the key
-// GORM has already written out. A half is found by the column it is bound to
-// (at), and filled only where it is empty: a condition GORM derived from a
-// record that names its tenant keeps it.
+// GORM's association mode addresses records by their whole key, and writes the
+// key into the statement's conditions as it reads it off the owner and the
+// records given, before any callback runs: always an IN over a tuple of the
+// key's columns, each qualified by the name of the table the key addresses, one
+// tuple per record. A record the caller addressed by the rest of its key
+// leaves the tenant half of its tuple empty, as a write addressed by a struct's
+// key does, and filling it from the context is that fill carried over to the
+// key GORM has already written out. So a half is filled only in such a tuple:
+// over columns that are, named as GORM names them, a whole key of the table
+// (key), holding the tenant half empty beside another part of the key written.
+// A tuple whose other parts are all empty addresses nothing, and filling its
+// tenant half would turn it into one addressing the whole tenant, as it would
+// a struct's key.
+//
+// Every other condition on the tenant column is the caller's — a map, a
+// struct, an equality, an IN over the column alone, a tuple over columns that
+// are no key or are named otherwise — and is judged as written, never filled:
+// an empty value stays empty, so the statement reaches what the condition
+// selects, nothing, or is refused where the empty value is an identifier, which
+// refuses to be bound. Filling it would turn a write whose value came out empty
+// into a write over the whole tenant. A tuple the caller writes by hand exactly
+// as GORM writes a key is taken for a key: the filter reads the shape of a
+// condition, not who wrote it, and the fill addresses only what that key names
+// in the context's tenant.
+//
+// A half is found by the column it is bound to (at), and every value on the
+// tenant column is judged, filled or not: one naming another tenant is noted.
 //
 // The conditions are copied where a half is filled, never written into: the
 // expressions are the caller's, or GORM's built for this one call, and the same
 // statement run again under another context has to find them as they were.
 type keyHalves struct {
-	at    func(clause.Column) bool
+	at func(clause.Column) bool
+	// key reports whether a tuple of columns is a whole key of the table the
+	// conditions address.
+	key   func([]clause.Column) bool
 	id    string
 	named []string
 }
@@ -211,16 +232,17 @@ func (k *keyHalves) exprs(in []clause.Expression) []clause.Expression {
 	return out
 }
 
-// expr is one expression with every tenant half in it filled. The expressions
-// GORM writes a key in, and the groups it nests them in, are looked into;
-// anything else is left as it stands.
+// expr is one expression with every tenant half of a key in it filled. The
+// expressions a condition on a column is written in, and the groups they nest
+// in — a NOT among them, which GORM's association mode writes the records it
+// keeps in — are looked into; anything else is left as it stands.
 func (k *keyHalves) expr(e clause.Expression) clause.Expression {
 	switch v := e.(type) {
 	case clause.IN:
 		return k.in(v)
 	case clause.Eq:
 		if col, ok := v.Column.(clause.Column); ok && k.at(col) {
-			v.Value = k.value(v.Value)
+			k.judge(v.Value)
 		}
 		return v
 	case clause.Where:
@@ -235,19 +257,17 @@ func (k *keyHalves) expr(e clause.Expression) clause.Expression {
 	return e
 }
 
-// in fills the tenant half of each key an IN lists: a value of its own under
-// one column, or a tuple under several.
+// in judges the values an IN lists on the tenant column — a value of its own
+// under one column, or a tuple under several — and fills the tenant half of
+// each tuple that is a key.
 func (k *keyHalves) in(v clause.IN) clause.IN {
 	switch col := v.Column.(type) {
 	case clause.Column:
-		if !k.at(col) {
-			return v
+		if k.at(col) {
+			for _, x := range v.Values {
+				k.judge(x)
+			}
 		}
-		values := make([]interface{}, len(v.Values))
-		for i, x := range v.Values {
-			values[i] = k.value(x)
-		}
-		v.Values = values
 	case []clause.Column:
 		var halves []int
 		for i, c := range col {
@@ -258,51 +278,156 @@ func (k *keyHalves) in(v clause.IN) clause.IN {
 		if len(halves) == 0 {
 			return v
 		}
+		keyed := k.key(col)
 		values := make([]interface{}, len(v.Values))
 		for i, x := range v.Values {
+			values[i] = x
 			tuple, ok := x.([]interface{})
 			if !ok || len(tuple) != len(col) {
-				values[i] = x
 				continue
 			}
-			filled := slices.Clone(tuple)
 			for _, h := range halves {
-				filled[h] = k.value(tuple[h])
+				k.judge(tuple[h])
 			}
-			values[i] = filled
+			if keyed && otherPartWritten(tuple, halves) {
+				filled := slices.Clone(tuple)
+				for _, h := range halves {
+					filled[h] = k.filled(tuple[h])
+				}
+				values[i] = filled
+			}
 		}
 		v.Values = values
 	}
 	return v
 }
 
-// value is one tenant half: the context's identifier in place of an empty
-// one, of the same type, and anything else as it stands, a tenant other than
-// the context's noted.
-func (k *keyHalves) value(v any) any {
-	s, ok := stringValue(reflect.ValueOf(v))
-	switch {
-	case !ok:
-	case s == "":
-		t := reflect.TypeOf(v)
-		for t.Kind() == reflect.Pointer {
-			t = t.Elem()
-		}
-		return reflect.ValueOf(k.id).Convert(t).Interface()
-	case s != k.id:
+// judge notes a tenant half naming a tenant other than the context's.
+func (k *keyHalves) judge(v any) {
+	if s, ok := stringValue(reflect.ValueOf(v)); ok && s != "" && s != k.id {
 		k.named = append(k.named, s)
 	}
-	return v
+}
+
+// filled is one tenant half of a key: the context's identifier in place of an
+// empty one, of the same type, and anything else as it stands.
+func (k *keyHalves) filled(v any) any {
+	s, ok := stringValue(reflect.ValueOf(v))
+	if !ok || s != "" {
+		return v
+	}
+	t := reflect.TypeOf(v)
+	for t.Kind() == reflect.Pointer {
+		t = t.Elem()
+	}
+	return reflect.ValueOf(k.id).Convert(t).Interface()
+}
+
+// otherPartWritten reports whether a key's tuple holds a value in a part other
+// than its tenant halves.
+func otherPartWritten(tuple []interface{}, halves []int) bool {
+	for i, x := range tuple {
+		if slices.Contains(halves, i) {
+			continue
+		}
+		if rv := indirect(reflect.ValueOf(x)); rv.IsValid() && !rv.IsZero() {
+			return true
+		}
+	}
+	return false
 }
 
 // ownColumn reports whether a column is the statement's own tenant column,
-// named the way GORM names it in the key conditions it writes: unqualified, or
-// qualified by the statement's table or the current-table placeholder.
+// named the way GORM names a column of the statement's table in the conditions
+// it writes (ownTable).
 func ownColumn(st *gorm.Statement, field *gormschema.Field) func(clause.Column) bool {
 	return func(c clause.Column) bool {
-		return !c.Raw && c.Name == field.DBName &&
-			(c.Table == "" || c.Table == clause.CurrentTable || c.Table == st.Table)
+		return ownTable(st, c) && c.Name == field.DBName
 	}
+}
+
+// ownTable reports whether a column is named as a column of the statement's own
+// table: unqualified, or qualified by the statement's table or the
+// current-table placeholder. A column qualified by another table is another
+// table's, whatever its name.
+func ownTable(st *gorm.Statement, c clause.Column) bool {
+	return !c.Raw && (c.Table == "" || c.Table == clause.CurrentTable || c.Table == st.Table)
+}
+
+// wholeKey reports whether a tuple of columns is a whole key of the
+// statement's model, as GORM's association mode writes one: every column
+// qualified by the name of the statement's table, and the columns together the
+// model's primary key or the columns one side of an association binds its key
+// to on the model's table (keyColumns).
+//
+// GORM qualifies every column of a key it writes by the name of the table the
+// key addresses. A condition of the caller's names its columns as it likes —
+// bare, or by the current-table placeholder a map or a struct is written with —
+// and a tuple over the whole key written that way is the caller's, and left as
+// written.
+func wholeKey(st *gorm.Statement) func([]clause.Column) bool {
+	return func(cols []clause.Column) bool {
+		names := make([]string, 0, len(cols))
+		for _, c := range cols {
+			if c.Raw || st.Table == "" || c.Table != st.Table {
+				return false
+			}
+			names = append(names, c.Name)
+		}
+		slices.Sort(names)
+		for _, key := range keyColumns(st.Schema) {
+			if slices.Equal(key, names) {
+				return true
+			}
+		}
+		return false
+	}
+}
+
+// keyColumns lists the sets of columns a key of a model is written over on its
+// table, each sorted: its primary key, and for each association involving the
+// model the columns one side's key is bound to there — the foreign key of a
+// has-one or has-many reaching the model, of a belongs-to it declares, and of
+// each side of a many-to-many association the model is the join table of.
+//
+// These are the columns GORM's association mode writes a record's key over when
+// the model is the one its statement addresses. The associations are the ones
+// the model's schema carries — its own, and the back reference GORM writes into
+// it for a has-one or has-many reaching it — and the ones it is the join table
+// of (joinedBy); a key over columns none of them names is not one of these.
+func keyColumns(s *gormschema.Schema) [][]string {
+	if s == nil {
+		return nil
+	}
+	keys := [][]string{slices.Sorted(slices.Values(s.PrimaryFieldDBNames))}
+	s.Relationships.Mux.RLock()
+	rels := make([]*gormschema.Relationship, 0, len(s.Relationships.Relations))
+	for _, rel := range s.Relationships.Relations {
+		rels = append(rels, rel)
+	}
+	s.Relationships.Mux.RUnlock()
+	rels = append(rels, joinedBy(s)...)
+	for _, rel := range rels {
+		for _, own := range []bool{true, false} {
+			var names []string
+			complete := true
+			for _, ref := range rel.References {
+				if ref.OwnPrimaryKey != own || ref.PrimaryValue != "" {
+					continue
+				}
+				if ref.ForeignKey == nil || ref.ForeignKey.Schema == nil ||
+					ref.ForeignKey.Schema.ModelType != s.ModelType {
+					complete = false
+					break
+				}
+				names = append(names, ref.ForeignKey.DBName)
+			}
+			if complete && len(names) > 0 {
+				keys = append(keys, slices.Sorted(slices.Values(names)))
+			}
+		}
+	}
+	return keys
 }
 
 // identifierType is the type of the convention's field, and of the fields GORM
@@ -512,9 +637,20 @@ func applyFromJoins(st *gorm.Statement, joins []fromJoin, id string) {
 	from, _ := c.Expression.(clause.From)
 	rewritten := slices.Clone(from.Joins)
 	for _, fj := range joins {
-		halves := keyHalves{id: id, at: func(col clause.Column) bool {
-			return !col.Raw && col.Table == fj.table && col.Name == fj.column
-		}}
+		halves := keyHalves{
+			id: id,
+			at: func(col clause.Column) bool {
+				return !col.Raw && col.Table == fj.table && col.Name == fj.column
+			},
+			key: func(cols []clause.Column) bool {
+				for _, col := range cols {
+					if col.Raw || col.Table != fj.table {
+						return false
+					}
+				}
+				return true
+			},
+		}
 		rendered := append(halves.exprs(fj.written), clause.Eq{
 			Column: clause.Column{Table: fj.table, Name: fj.column}, Value: id,
 		})

@@ -275,7 +275,9 @@ func CrossTenant(ctx context.Context) context.Context
 
 **按关联写的联接，被联接那一侧同样加租户条件。** `Joins("Customer")` 读的是被联接模型的行，复合主键又允许两个租户复用同一个标识，只给主表加条件会把别的租户同标识的那一行联接进来。条件写进每一层联接的 ON 子句，逐层按那一层的模型判定，租户列按那一层模型自己的来源认：嵌套联接途经的全局表不加条件；一个全局模型经关联联接到受约束模型，同样要求上下文里有租户；联接到一个内嵌了约定却取不出租户列的模型，那条读与经这个模型的读一样被拒绝。以 SQL 文本写出的联接不在此列，见非保证。
 
-**关联模式写进条件的键，租户那一半由插件按上下文填上**（[ADR-tenant-isolation-2026-09-29](../../adr/adr-tenant-isolation-2026-09-29.md)）。`Association` 的 `Find`、`Count`、`Append`、`Replace`、`Delete` 与 `Clear` 在任何回调之前就把属主与所给记录的整个主键读出来，写成语句的条件——对键的各列取 `IN`，或一条列上的等值——宿主按标识的其余部分寻址时，租户那一半在条件里是空标识。插件在条件里找写在这条语句自己租户列上的那一段，空的填成上下文的标识，与按结构体主键寻址的写同理；写了别的租户的，写语句以 `ErrExplicitTenantMismatch` 拒绝，读语句照原样，读不到任何行。别的列上的标识类型取值不动，那是调用方自己的条件，不是 GORM 写下的键。
+**关联模式写进条件的键，租户那一半由插件按上下文填上**（[ADR-tenant-isolation-2026-09-29](../../adr/adr-tenant-isolation-2026-09-29.md)）。`Association` 的 `Find`、`Count`、`Append`、`Replace`、`Delete` 与 `Clear` 在任何回调之前就把属主与所给记录的整个键读出来，写成语句的条件，形状总是对键的各列取 `IN` 的元组，各列都以它所寻址的表的表名限定，每条记录一组，保留的记录写在 NOT 里；宿主按标识的其余部分寻址时，租户那一半在元组里是空标识。插件只填这种元组：各列都以这条语句自己的表名限定，合起来是这张表的一整个键——模型的主键，或一个关联在这张表上绑定某一侧键的那组列——租户那一位是空的、其余部分写了值。其余部分全空的元组什么也不指，填上租户那一半也只会让它改指整个租户，因而不填，与按结构体主键寻址的写同理。元组写在分组、OR 或 NOT 里也照样找得到。
+
+**调用方自己写在租户列上的条件照原样判定，从不填补。** 等值、只对租户列的 `IN`、不是整个键的元组、不以表名限定各列的元组——map、结构体、`clause.Eq`、`clause.IN` 与列表取值写出的都是这些——里的空值留作空值：以字符串写的，语句碰不到任何行；以 `ID` 写的，绑定时被拒绝（见租户与请求上下文）。一次取值意外为空的删除或更新因而什么也不做，而不是作用于整个租户。这样的条件照 GORM 的口径算作调用方的条件，除插件自己的条件之外没有条件的写照样拒绝（见核心算法与流程）。调用方亲手写出与关联模式一模一样的元组——以表名限定各列、覆盖一整个键——插件分不出，照键处理，填上的租户那一半只让它指向那个键在上下文租户里的行。条件——不论填没填——在这条语句自己的租户列上写了别的租户的，写语句以 `ErrExplicitTenantMismatch` 拒绝，读语句照原样，读不到任何行。以别的表限定的列是那张表的，别的列上的标识类型取值也不动，二者都是调用方自己的条件。
 
 **关联模式读多对多关联，以表名把连接表联接进另一侧的读。** `Find` 与 `Count` 读的是另一侧的模型，连接表写在 FROM 子句里，语句中没有它的模型；ON 把连接表的列与另一侧的键列相等，并以一个 `IN` 带上属主的键。插件从 ON 里认出连接表的租户列：ON 在那一列上绑定了标识类型的取值——属主键里租户那一半，约定的字段与 GORM 抄出的连接表字段都是这个类型——或把那一列与这条读自己的租户列相等。认出之后，插件填上键里空的租户那一半，并在 ON 里加上那一列等于上下文标识的条件，这条读因而与受约束模型的读一样要求上下文里有租户，一个写了别的租户的属主读不到任何行。ON 显示被联接的表把租户放在两列上，或受约束的这一侧只按键的其余部分联接一张看不出租户列的表，那条读被拒绝，理由与连接表自己的那三种相同（见受租户约束的模型）。
 
@@ -539,7 +541,7 @@ flowchart TD
 
 **调用方写下的条件整体成组，组内的意思就是 GORM 把它渲染成 WHERE 时的意思。** GORM 渲染 WHERE 时有两步改写：只含一个 AND 组的条件列表按组内内容渲染；以单个 OR 打头的列表，把第一个不是单个 OR 的条件挪到最前面，`Or(a).Where(b)` 因而读作 `b OR a`。成组时重做这两步，否则同一张列表会读成 `a AND b`。组尽量保持为 AND 组，因为 `FirstOrCreate` 与 `FirstOrInit` 在查不到时把 WHERE 里的等值条件抄回返回值，而它们只往 AND 组里看；只有单个条件且不是一条列上的等值时才另加括号。括号括住的是那个条件自己的渲染：一个嵌在条件列表里的 WHERE 交给 GORM 当作取值渲染时，会连同 `WHERE` 这个关键字一起写出，而关联模式删除关联行时写的条件正是这种形状。
 
-**插件自己的条件不算调用方的条件。** GORM 拒绝一条什么条件都没有的更新或删除（`gorm.ErrMissingWhereClause`），插件的条件若被算进去，这条拒绝就变成一条作用于整个租户的写。判定因而推迟到语句渲染的那一刻、GORM 自己的条件——按结构体主键派生的那一段、软删除谓词——都已加上之后，按 GORM 的口径把插件那一条除开来算：除它之外没有条件、调用方也没有声明全局写的更新或删除，以 `gorm.ErrMissingWhereClause` 失败；声明了全局写的，照常作用于本租户的全部行。
+**插件自己的条件不算调用方的条件。** GORM 拒绝一条什么条件都没有的更新或删除（`gorm.ErrMissingWhereClause`），插件的条件若被算进去，这条拒绝就变成一条作用于整个租户的写。判定因而推迟到语句渲染的那一刻、GORM 自己的条件——按结构体主键派生的那一段、软删除谓词——都已加上之后，按 GORM 的口径把插件那一条除开来算：除它之外没有条件、调用方也没有声明全局写的更新或删除，以 `gorm.ErrMissingWhereClause` 失败；声明了全局写的，照常作用于本租户的全部行。插件填补的只有关联模式写下的整键元组，填过之后键的其余部分仍在条件里；调用方写在租户列上的条件原样渲染，它算作一条条件，空值也不会被改写成只剩租户的条件，这条拒绝因而对每一种写法都成立。
 
 **按结构体主键寻址的更新与删除，主键里租户那一半由插件按上下文填上。** 复合主键下，删除把主键的每一段都写进条件，租户那一半没写的结构体指的是一行不属于任何租户的数据，删除因而打不到任何行却报告成功；更新只把主键里有值的那几段写进条件，填上租户那一半让被寻址的值与它写到的那一行一致。只在主键其余部分有值时才填：全零的主键什么也不指，给它填上租户那一半，等于把它变成指向整个租户的主键。主键里租户那一半写了别的租户，与显式写了别的租户的写同类，以 `ErrExplicitTenantMismatch` 失败。按值传入的结构体先复制一份再填，调用方交出的本来就是副本。租户列绑在主键之外的字段上时（见受租户约束的模型），GORM 按主键寻址不读那个字段，这一档不填它也不核对它；更新赋给它的值归赋值那一档核对。
 
@@ -566,7 +568,7 @@ flowchart TD
 
 **第四档的失败发生在语句构造处而非执行处**，因而一条落在其中的语句不会到达数据库。代价是判定要在回调里完成，而回调抛错改写了 GORM 默认的错误处理路径，具体形态见错误与失败语义。
 
-**这一层的代价与语句条数成正比**，每一条语句——经受约束模型的与经全局模型的都算——把模型的字段走一遍找约定的字段，规模是字段数，受约束模型另加一次映射查找。schema 里没有约定字段的模型，另把模型类型上的内嵌走一遍，规模是这些内嵌里的字段数。以结构体承载的插入与更新另把模型的列走一遍，找写到租户列上的每一种写法，规模是模型的列数，与 GORM 自己为这条语句构造行或赋值时走的那一遍同阶。每一条语句还把 schema 上的关系走一遍，看它是不是某个多对多关联的连接表，规模是关系数与两侧模型的多对多关联数；受约束的语句另把调用方的条件走一遍找键里租户那一半，带 FROM 联接的读另把每个联接的 ON 走一遍，规模都是条件的个数。
+**这一层的代价与语句条数成正比**，每一条语句——经受约束模型的与经全局模型的都算——把模型的字段走一遍找约定的字段，规模是字段数，受约束模型另加一次映射查找。schema 里没有约定字段的模型，另把模型类型上的内嵌走一遍，规模是这些内嵌里的字段数。以结构体承载的插入与更新另把模型的列走一遍，找写到租户列上的每一种写法，规模是模型的列数，与 GORM 自己为这条语句构造行或赋值时走的那一遍同阶。每一条语句还把 schema 上的关系走一遍，看它是不是某个多对多关联的连接表，规模是关系数与两侧模型的多对多关联数；受约束的语句另把条件走一遍找租户列上的取值，带 FROM 联接的读另把每个联接的 ON 走一遍，规模都是条件的个数；条件里出现租户列上的元组时，另把模型的关联走一遍求它的键，规模是关系数。
 
 ## 错误与失败语义
 
@@ -625,7 +627,7 @@ flowchart TD
 - **进入的放行读快照。** 另一个副本上刚停用的租户，在本副本下一次读名册之前仍经 `Enter` 进得去，时延与请求面相同。拒绝则读表作答：另一个副本上刚登记或刚重新启用的租户当即进得去。
 - **快照不放行的每一次进入多一次按主键的读。** 从未登记过的标识每进一次读一次表，一个把请求面的名字原样交给进入方法的 handler 因而为每一个伪造的标识付一次读；快照落后于表时另加一次整张名册的重读，同一个租户同时到达的多次进入合成一次。那一读另取交付连接池里的一条连接。
 - **名册的语句取连接至多等五秒，等锁照引擎自己的时限**（[ADR-tenant-directory-2026-09-29](../../adr/adr-tenant-directory-2026-09-29.md)）。繁忙但正常的库上，五秒之内取不到连接的调用同样以 `ErrNoConnection` 失败，即便调用方给的期限更长；连接池被别的调用方长时间占满时，名册的读表与写入失败，而不是排队等过去。等锁不在这个界内：SQLite 上每一条语句至多等连接的忙等时限，驱动默认 5 秒，定位符可改，一次读写失败之后为说明原因补发的读各自再等一个，调用方的上下文结束不了这段等待；PostgreSQL 上等到调用方的上下文结束，或会话的 `lock_timeout`、`statement_timeout` 结束它，都不设时一直等到锁放开。等锁到时，那次调用以引擎自己的错误失败。
-- **各条裁定本身带来的代价记在各自的记录里**：取值途径与请求面伪造见 [ADR-tenant-resolution-2026-09-21](../../adr/adr-tenant-resolution-2026-09-21.md)；与认证的先后及它换来的两处看不见见 [ADR-tenant-ordering-2026-09-21](../../adr/adr-tenant-ordering-2026-09-21.md)；标识与别名的两个概念见 [ADR-tenant-identifier-2026-09-21](../../adr/adr-tenant-identifier-2026-09-21.md)；停用的时延与名册在关键路径上见 [ADR-tenant-directory-2026-09-21](../../adr/adr-tenant-directory-2026-09-21.md)；隔离是一条条件而非边界、取代约定字段的字段要自己声明约定的两道防线、插入的选列要点名租户列见 [ADR-tenant-isolation-2026-09-21](../../adr/adr-tenant-isolation-2026-09-21.md)；GORM 默认的多对多写法在受约束模型之间被拒绝、外键含租户列的关联解除不了、只带属主租户的连接表跨租户读时的匹配见 [ADR-tenant-isolation-2026-09-29](../../adr/adr-tenant-isolation-2026-09-29.md)；跨租户途径可被滥用见 [ADR-tenant-scoping-2026-09-21](../../adr/adr-tenant-scoping-2026-09-21.md)。
+- **各条裁定本身带来的代价记在各自的记录里**：取值途径与请求面伪造见 [ADR-tenant-resolution-2026-09-21](../../adr/adr-tenant-resolution-2026-09-21.md)；与认证的先后及它换来的两处看不见见 [ADR-tenant-ordering-2026-09-21](../../adr/adr-tenant-ordering-2026-09-21.md)；标识与别名的两个概念见 [ADR-tenant-identifier-2026-09-21](../../adr/adr-tenant-identifier-2026-09-21.md)；停用的时延与名册在关键路径上见 [ADR-tenant-directory-2026-09-21](../../adr/adr-tenant-directory-2026-09-21.md)；隔离是一条条件而非边界、取代约定字段的字段要自己声明约定的两道防线、插入的选列要点名租户列见 [ADR-tenant-isolation-2026-09-21](../../adr/adr-tenant-isolation-2026-09-21.md)；GORM 默认的多对多写法在受约束模型之间被拒绝、外键含租户列的关联解除不了、只带属主租户的连接表跨租户读时的匹配、调用方写在租户列上的空值什么也碰不到见 [ADR-tenant-isolation-2026-09-29](../../adr/adr-tenant-isolation-2026-09-29.md)；跨租户途径可被滥用见 [ADR-tenant-scoping-2026-09-21](../../adr/adr-tenant-scoping-2026-09-21.md)。
 - **一个受守护的监听端上不能有不需要租户的路由。** 解析层按监听端守护，没有按路由的例外；探活与诊断这类路由要放到另一个监听端上。这一条是解析层按监听端守护换来的（[ADR-tenant-resolution-2026-09-21](../../adr/adr-tenant-resolution-2026-09-21.md)）。
 - **每一条请求多两次映射查找，每一条语句多走一遍模型的字段。** 解析层的开销是每请求两次映射查找，都是常数时间；插件的开销是每语句把模型的字段走一遍找约定的字段、把 schema 上的关系走一遍看它是不是连接表，经全局模型的语句也不例外，受约束模型另加一次映射查找与一遍条件，schema 里没有约定字段的模型另走一遍类型上的内嵌，以结构体承载的插入与更新另加一遍与模型列数成正比的查找（见核心算法与流程）。
 - **快照与库之间有一个窗口，且这个窗口只出现在别的副本上。** 写入方自己的副本在写成功之后立刻重载并发布，因而当即看到它；其余副本要等各自的下一次刷新，在这之前一个刚写入的租户在它们的请求面上不可见、一个刚被停用的租户在它们那里继续被服务。进入方法的拒绝读表，不在这个窗口里。
@@ -713,7 +715,7 @@ flowchart TD
 | 受约束模型的约定与按来源的识别，内嵌前缀改过的列照样认，填列与核对作用于 GORM 绑到租户列上的字段，取不出一个租户列的模型一律拒绝 | 已实现 | `pkg/tenant/model.go` `Model`；`pkg/tenant/catalog/plugin.go` `conventionFieldOf`、`isConvention`、`embedsConvention`、`unreadConvention`、`taggedEmbedded`、`scopeOf` |
 | 隔离插件的三处作用点、四档判定与显式租户列的核对，只核对 GORM 写出的字段，拒绝不带租户列的插入行 | 已实现 | `pkg/tenant/catalog/plugin.go` `Initialize`、`scopeRead`、`scopeDelete`、`scopeUpdate`、`applyCondition`、`scopeTerm`、`grouped`、`fillKey`、`inKey`、`fillColumn`、`writeRows`、`insertSelects`、`leftOut`、`otherSpellings`、`insertWrites`、`judgeSpellings`、`writeMap`、`assignedValues`、`destinationValues`、`upsertValues`、`keyReaches`、`keyColumn`、`targetReaches` |
 | 行链上的读、`Row` 经交回的行报出拒绝且不占连接、关联联接的条件与子查询的拒绝 | 已实现 | `pkg/tenant/catalog/plugin.go` `Initialize`、`scopeRow`、`refuseRead`、`refusedRow`、`refusingConnector`、`scopedJoins`、`applyJoins`、`joinTerm`、`renderRefusal` |
-| 关联模式写进条件的键按上下文填租户那一半，连接表按所连模型写进它的租户列判定、取不出一个租户列的拒绝，以表名联接连接表的读按 ON 判定 | 已实现 | `pkg/tenant/catalog/associations.go` `tenantFieldOf`、`joinedBy`、`joinTenantField`、`linkColumn`、`keyHalves`、`ownColumn`、`fromJoins`、`onReading`、`keyedOn`、`applyFromJoins`、`releaseFromJoins`；`pkg/tenant/catalog/plugin.go` `reached`、`applyCondition`、`keyNaming`、`parenthesized` |
+| 关联模式写下的整键元组按上下文填租户那一半，调用方写在租户列上的条件照原样判定，连接表按所连模型写进它的租户列判定、取不出一个租户列的拒绝，以表名联接连接表的读按 ON 判定 | 已实现 | `pkg/tenant/catalog/associations.go` `tenantFieldOf`、`joinedBy`、`joinTenantField`、`linkColumn`、`keyHalves`、`otherPartWritten`、`ownColumn`、`ownTable`、`wholeKey`、`keyColumns`、`fromJoins`、`onReading`、`keyedOn`、`applyFromJoins`、`releaseFromJoins`；`pkg/tenant/catalog/plugin.go` `reached`、`applyCondition`、`keyNaming`、`parenthesized` |
 | 跨租户的上下文标记 | 已实现 | `pkg/tenant/scope.go` `CrossTenant`；`internal/tenantctx/tenantctx.go` `WithCrossTenant` |
 | 不经请求面的路径经名册进入单个租户，放行读快照、拒绝读表并追平快照 | 已实现 | `pkg/tenant/catalog/roster.go` `Enter`、`enter`、`fromTable`、`catchUp`；`internal/tenantctx/tenantctx.go` `Bind`、`LogField` |
 | 停用期间的单租户工作进入那个租户 | 已实现 | `pkg/tenant/catalog/roster.go` `EnterRegistered`、`enter` |

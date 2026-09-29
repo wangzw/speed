@@ -208,10 +208,12 @@ func handsBackOneRow(tx *gorm.DB) bool {
 // joined to a model or a table no tenant column can be taken from is refused as
 // a read of that model would be.
 //
-// The tenant half of a key the read's conditions address rows by is filled
-// from the context, in its WHERE and in the ON of a join of its FROM clause
-// (keyHalves). A half naming another tenant is left as it stands: the read then
-// reaches nothing, as a read conditioned on another tenant does.
+// The tenant half of a key GORM's association mode wrote into the read's
+// conditions is filled from the context, in its WHERE and in the ON of a join
+// of its FROM clause (keyHalves); a condition of the caller's on the tenant
+// column is left as written. A value naming another tenant is left as it
+// stands: the read then reaches nothing, as a read conditioned on another
+// tenant does.
 func (f *filter) read(tx *gorm.DB, oneRow bool) {
 	st := tx.Statement
 	field, unjudged := tenantFieldOf(st.Schema)
@@ -494,8 +496,9 @@ func withoutJoinTerm(on *clause.Where) []clause.Expression {
 //
 // A key GORM has already written into the delete's conditions — the
 // association mode's, which addresses the links of a record by the record's
-// whole key — gets its tenant half filled the same way, and one naming another
-// tenant is refused as a struct's key naming one is.
+// whole key — gets its tenant half filled the same way, and a condition naming
+// another tenant on the tenant column, that key's or the caller's, is refused
+// as a struct's key naming one is.
 func (f *filter) scopeDelete(tx *gorm.DB) {
 	st := tx.Statement
 	field, unjudged := tenantFieldOf(st.Schema)
@@ -687,14 +690,16 @@ func narrowed(builder clause.Builder) bool {
 // wrote first makes the rendering `(a OR b) AND tenant = ?` whatever shape that
 // expression takes.
 //
-// What is rendered has the tenant half of every key in the caller's conditions
-// on the statement's own tenant column filled from the context (keyHalves),
-// and the term keeps the list as written, so a later execution fills it again
-// from its own context. The tenants other than the context's such a half names
-// are returned, for a write to refuse.
+// What is rendered has the tenant half of every key GORM's association mode
+// wrote into the conditions on the statement's own tenant column filled from
+// the context (keyHalves); a condition of the caller's on that column is
+// rendered as written. The term keeps the list as written, so a later
+// execution fills it again from its own context. The tenants other than the
+// context's the conditions name on that column are returned, for a write to
+// refuse.
 func applyCondition(st *gorm.Statement, field *gormschema.Field, id string, requireCondition bool) []string {
 	written := writtenConditions(st)
-	halves := keyHalves{at: ownColumn(st, field), id: id}
+	halves := keyHalves{at: ownColumn(st, field), key: wholeKey(st), id: id}
 	exprs := make([]clause.Expression, 0, 2)
 	if group := grouped(halves.exprs(written)); group != nil {
 		exprs = append(exprs, group)

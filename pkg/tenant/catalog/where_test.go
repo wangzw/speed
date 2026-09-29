@@ -6,6 +6,7 @@ import (
 	"testing"
 
 	"gorm.io/gorm"
+	"gorm.io/gorm/clause"
 
 	"github.com/vislake/speed/pkg/tenant"
 )
@@ -310,5 +311,45 @@ func TestAChainCarriedToAnotherContextIsJudgedAfresh(t *testing.T) {
 	err := q.WithContext(context.Background()).Find(&none).Error
 	if !errors.Is(err, tenant.ErrNoTenantInContext) {
 		t.Fatalf("a chain carried to no tenant gave %v, want ErrNoTenantInContext", err)
+	}
+}
+
+// byKey is a condition addressing a row by the whole key, in the form GORM's
+// association mode writes a record's key: an IN over a tuple of the key's
+// columns, each qualified by the table's name, with the tenant half left empty
+// and the rest written.
+func byKey(id string) clause.IN {
+	return clause.IN{
+		Column: []clause.Column{{Table: "orders", Name: "tenant_id"}, {Table: "orders", Name: "id"}},
+		Values: []any{[]any{tenant.ID(""), id}},
+	}
+}
+
+// A column qualified by another table is that table's, whatever its name: a
+// tuple reaching into another table's columns is no key of the statement's
+// own, but the caller's condition across the two, and its tenant half is left
+// as written. Filling it would give a condition that selects nothing the
+// context's tenant, and the rows the other table's columns then pick.
+func TestATupleOverAnotherTablesColumnIsNoKey(t *testing.T) {
+	handle := open(t)
+	seed(t, handle)
+	if err := handle.Exec("INSERT INTO memos (id, tenant_id, note) VALUES ('a', 'acme', 'for acme')").
+		Error; err != nil {
+		t.Fatalf("seeding a memo: %v", err)
+	}
+	joined := func() *gorm.DB {
+		return handle.WithContext(scopedContext("acme")).Model(&order{}).Joins("JOIN memos ON memos.id = orders.id")
+	}
+
+	var n int64
+	if err := joined().Where(clause.IN{
+		Column: []clause.Column{{Table: "orders", Name: "tenant_id"}, {Table: "memos", Name: "id"}},
+		Values: []any{[]any{"", "a"}},
+	}).Count(&n).Error; err != nil || n != 0 {
+		t.Fatalf("a read by the order's tenant and the memo's identifier, the tenant empty, gave %v and %d, "+
+			"want none", err, n)
+	}
+	if err := joined().Where(byKey("a")).Count(&n).Error; err != nil || n != 1 {
+		t.Fatalf("the same read keyed on the order's own columns gave %v and %d, want acme's a", err, n)
 	}
 }

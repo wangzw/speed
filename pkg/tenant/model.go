@@ -68,7 +68,8 @@ package tenant
 // statement, as a model embedding this where GORM does not read it is. The
 // association mode addresses the owner and the records it is given by their
 // whole key, and the tenant half of a key left unwritten is filled from the
-// context there as well.
+// context there as well; a condition the caller writes on the tenant column
+// itself is judged as written and never filled.
 //
 // One obligation stays with the module that declares the table, because this
 // one does not read other modules' models: the migration must declare the same

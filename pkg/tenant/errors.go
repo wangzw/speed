@@ -173,6 +173,7 @@ var (
 	// A write addressed by a key whose tenant half names another tenant is
 	// reported through it too: a struct's key, and the key GORM's association
 	// mode writes into a statement's conditions from the owner and the records
-	// it is given. The fix is to leave that half to the filter.
+	// it is given. The fix is to leave that half to the filter. So is a write
+	// whose own condition on the tenant column names another tenant.
 	ErrExplicitTenantMismatch = errors.New("tenant: a write names a tenant other than its context's")
 )

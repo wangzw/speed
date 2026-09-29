@@ -132,11 +132,21 @@ here must not cross, and how to run it.
 - **GORM's association mode is filtered as any statement is, and a join table
   by the tenant the association's keys put into it** (`catalog/associations.go`).
   The association mode writes the whole key of the owner and of the records it
-  is given into a statement's conditions before any callback runs, so the tenant
-  half a caller leaves unwritten is filled there from the context (`keyHalves`),
-  on the statement's own tenant column only — an empty identifier on another
-  column is the caller's condition, not a key GORM wrote — and a half naming
-  another tenant refuses a write. A join table's tenant column is the column a
+  is given into a statement's conditions before any callback runs, always as an
+  IN over a tuple of the key's columns, each qualified by the table's name, so
+  the tenant half a caller leaves unwritten is filled there from the context
+  (`keyHalves`) — in a tuple over a whole key of the statement's own table,
+  named that way (`wholeKey`, `keyColumns`), with another part of it written,
+  and nowhere else — and a half naming another tenant refuses a write. **A
+  condition the caller writes on the tenant column is judged and never
+  rewritten**: an equality, an IN over the column alone, a tuple over columns
+  that are no key or are named otherwise, whatever it is written through. Filling
+  one is the shape to reject: GORM's key and the caller's condition sit side by
+  side in the WHERE, and a caller's `tenant_id` that came out empty would turn
+  a write matching nothing into one over the whole tenant, past the refusal of
+  an unconditioned write, since that condition counts as the caller's
+  (`catalog/provenance_test.go`). A column qualified by another table is that
+  table's (`ownTable`). A join table's tenant column is the column a
   scoped side's key puts its tenant on (`joinTenantField`), found through the
   relationships GORM hangs on the join table's schema (`joinedBy`); the read that
   joins it into the other side by its table name is judged off its ON
@@ -319,7 +329,9 @@ shape of a many-to-many association is pinned the same way — its join table
 scoped, refused, or joined by name where the filter sees no tenant — with each
 statement of the association mode on an owner and records addressed by the rest
 of their keys, and where an association by the whole key and a deletion of
-links between loaded records are;
+links between loaded records are; `pkg/tenant/catalog/provenance_test.go` is where every shape a caller
+writes a condition on the tenant column in is judged as written, on both
+dialects, beside the one shape filled, a tuple over the whole key;
 `pkg/tenant/catalog/targets_test.go`
 is where an assignment's target is read the way each database reads it, on both
 dialects; `pkg/tenant/catalog/create_test.go` is where a registration that must
