@@ -73,11 +73,16 @@ type Resolution interface {
 //
 // The statements themselves run under the caller's context, and wait for a
 // lock another connection holds as the engine does, failing with the engine's
-// own error when it gives up. Inside a caller's transaction that has written to
-// the same SQLite database file, a write waits for the caller's write lock for
-// the connection's busy timeout and then fails: the database module begins the
-// write's transaction IMMEDIATE, asking for the write lock at its BEGIN, and the
-// caller holds that lock until its own call returns. On PostgreSQL, a write to
+// own error when it gives up. Inside a caller's transaction on the same SQLite
+// database file, a write waits for the caller's write lock for the
+// connection's busy timeout and then fails. A transaction the database module
+// begins other than DEFERRED — IMMEDIATE by default; one begun read-only, or
+// on a locator naming _txlock=deferred, begins DEFERRED — holds the write lock
+// from its BEGIN until its call returns, whether or not it has read or
+// written, and the write's own transaction asks for that lock at its BEGIN. A
+// caller's transaction begun DEFERRED fails a write the same way once it has
+// written, and in rollback-journal mode once it has read, since the write's
+// COMMIT then waits for it to finish reading. On PostgreSQL, a write to
 // a row the caller's own transaction has written waits for that transaction,
 // until the caller's context ends or the session's lock_timeout or
 // statement_timeout does, and with none of them for good. Get, ByAlias and
