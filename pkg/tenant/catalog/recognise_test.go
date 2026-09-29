@@ -266,6 +266,74 @@ type shapeTwice struct {
 
 func (shapeTwice) TableName() string { return "shape_twice" }
 
+// shapeDoubled embeds the convention directly and once more through an
+// exported base: two fields of the convention, on one column.
+type shapeDoubled struct {
+	tenant.Model
+	ShapeBase
+	ID   string `gorm:"column:id;primaryKey"`
+	Note string `gorm:"column:note"`
+}
+
+func (shapeDoubled) TableName() string { return "shape_doubled" }
+
+// shapeNamedUpper embeds the convention in a named field whose tag spells the
+// embedded setting in capitals, which GORM reads as it reads it in any case.
+type shapeNamedUpper struct {
+	Owner tenant.Model `gorm:"EMBEDDED"`
+	ID    string       `gorm:"column:id;primaryKey"`
+	Note  string       `gorm:"column:note"`
+}
+
+func (shapeNamedUpper) TableName() string { return "shape_named_upper" }
+
+// shapeUnexportedUpper embeds the convention in an unexported named field
+// tagged Embedded, which GORM does not read.
+type shapeUnexportedUpper struct {
+	owner tenant.Model `gorm:"Embedded"`
+	ID    string       `gorm:"column:id;primaryKey"`
+	Note  string       `gorm:"column:note"`
+}
+
+func (shapeUnexportedUpper) TableName() string { return "shape_unexported_upper" }
+
+// shapeShadowed carries, ahead of the convention, a field of its own on a
+// column the database may read as the tenant column: the same column on
+// SQLite, which compares names without regard to case, and one of its own on
+// PostgreSQL, which keeps the quoted capitals. GORM writes both.
+type shapeShadowed struct {
+	Owner string `gorm:"column:TENANT_ID"`
+	tenant.Model
+	ID   string `gorm:"column:id;primaryKey"`
+	Note string `gorm:"column:note"`
+}
+
+func (shapeShadowed) TableName() string { return "shape_shadowed" }
+
+// shapeDuplicated embeds a struct under a name that repeats the convention's
+// column exactly. GORM binds the column to the convention's field, declared
+// first, and never writes the embedded one.
+type shapeDuplicated struct {
+	tenant.Model
+	ID   string    `gorm:"column:id;primaryKey"`
+	Note string    `gorm:"column:note"`
+	Meta orderMeta `gorm:"embedded"`
+}
+
+func (shapeDuplicated) TableName() string { return "shape_duplicated" }
+
+// shapeDefaulted embeds a struct under a name that repeats the convention's
+// column exactly with a default the database supplies, which GORM writes
+// beside the convention's field whenever it holds a value.
+type shapeDefaulted struct {
+	tenant.Model
+	ID   string        `gorm:"column:id;primaryKey"`
+	Note string        `gorm:"column:note"`
+	Meta defaultedMeta `gorm:"embedded"`
+}
+
+func (shapeDefaulted) TableName() string { return "shape_defaulted" }
+
 // recognition is what the filter is to make of a declaration shape.
 type recognition int
 
@@ -286,14 +354,22 @@ type shape struct {
 	table  string
 	// column is the table's tenant column.
 	column string
-	// extra is the table's columns besides the tenant column, id and note.
-	extra string
+	// extra is the table's columns besides the tenant column, id and note,
+	// and extraPostgres the ones it has besides those on PostgreSQL alone.
+	extra, extraPostgres string
 	// keyOutside marks a model whose field on the tenant column is outside
 	// its key, so that a write addressed by the key does not read it.
 	keyOutside bool
 	// row is a row of the model with this identifier whose field on the
 	// tenant column holds owner, or is left unwritten when owner is empty.
 	row func(id, owner string) any
+	// unwritten, when set, is the row an insert under acme leaves the tenant
+	// column of to the filter, where row(id, "") writes a field GORM writes
+	// beside it.
+	unwritten func(id string) any
+	// stray, when set, is a row writing another tenant through a field GORM
+	// writes beside the tenant column, which row leaves unwritten.
+	stray func(id string) any
 }
 
 var shapes = []shape{
@@ -408,6 +484,46 @@ var shapes = []shape{
 		row:        func(id, owner string) any { return &shapePrefixedTaken{Holder: owner, ID: id} },
 	},
 	{
+		name: "embedded twice on one column", table: "shape_doubled", column: "tenant_id",
+		row: func(id, owner string) any {
+			return &shapeDoubled{Model: tenant.Model{TenantID: tenant.ID(owner)}, ID: id}
+		},
+	},
+	{
+		name: "as a named field tagged embedded in capitals", table: "shape_named_upper", column: "tenant_id",
+		row: func(id, owner string) any {
+			return &shapeNamedUpper{Owner: tenant.Model{TenantID: tenant.ID(owner)}, ID: id}
+		},
+	},
+	{
+		name:  "after a field of the model's own on another spelling of its column",
+		table: "shape_shadowed", column: "tenant_id", extraPostgres: `, "TENANT_ID" TEXT`,
+		row: func(id, owner string) any {
+			return &shapeShadowed{Owner: owner, Model: tenant.Model{TenantID: tenant.ID(owner)}, ID: id}
+		},
+		unwritten: func(id string) any { return &shapeShadowed{Owner: "acme", ID: id} },
+		stray:     func(id string) any { return &shapeShadowed{Owner: "globex", ID: id} },
+	},
+	{
+		name: "beside an embedding repeating its column that GORM never writes", table: "shape_duplicated",
+		column: "tenant_id",
+		row: func(id, owner string) any {
+			return &shapeDuplicated{
+				Model: tenant.Model{TenantID: tenant.ID(owner)}, ID: id, Meta: orderMeta{TenantID: "globex"},
+			}
+		},
+	},
+	{
+		name:  "beside an embedding repeating its column that GORM writes when it holds a value",
+		table: "shape_defaulted", column: "tenant_id",
+		row: func(id, owner string) any {
+			return &shapeDefaulted{Model: tenant.Model{TenantID: tenant.ID(owner)}, ID: id}
+		},
+		stray: func(id string) any {
+			return &shapeDefaulted{ID: id, Meta: defaultedMeta{TenantID: "globex"}}
+		},
+	},
+	{
 		name: "a lookalike of the convention through an exported base", expect: globalShape,
 		table: "shape_lookalike", column: "tenant_id",
 		row: func(id, owner string) any {
@@ -454,6 +570,13 @@ var shapes = []shape{
 		table: "shape_unexported_named", column: "tenant_id",
 		row: func(id, owner string) any {
 			return &shapeUnexportedNamed{owner: tenant.Model{TenantID: tenant.ID(owner)}, ID: id}
+		},
+	},
+	{
+		name: "as an unexported named field tagged embedded in another case", expect: refusedShape,
+		table: "shape_unexported_upper", column: "tenant_id",
+		row: func(id, owner string) any {
+			return &shapeUnexportedUpper{owner: tenant.Model{TenantID: tenant.ID(owner)}, ID: id}
 		},
 	},
 	{
@@ -558,11 +681,21 @@ func requireScopedShape(t *testing.T, handle *gorm.DB, s shape) {
 	}
 	requireShapeRows(t, handle, s, "b=globex")
 
-	if err := acme.Create(s.row("n", "")).Error; err != nil {
+	unwritten := s.row("n", "")
+	if s.unwritten != nil {
+		unwritten = s.unwritten("n")
+	}
+	if err := acme.Create(unwritten).Error; err != nil {
 		t.Errorf("an insert under acme with the tenant column unwritten gave %v", err)
 	}
 	if err := acme.Create(s.row("m", "globex")).Error; !errors.Is(err, tenant.ErrExplicitTenantMismatch) {
 		t.Errorf("an insert under acme naming globex gave %v, want ErrExplicitTenantMismatch", err)
+	}
+	if s.stray != nil {
+		if err := acme.Create(s.stray("s")).Error; !errors.Is(err, tenant.ErrExplicitTenantMismatch) {
+			t.Errorf("an insert under acme naming globex through a field GORM writes beside the tenant "+
+				"column gave %v, want ErrExplicitTenantMismatch", err)
+		}
 	}
 	requireShapeRows(t, handle, s, "b=globex n=acme")
 
@@ -661,8 +794,12 @@ func shapeIDs(rows any) string {
 // two tenants into it, past the filter.
 func createShapeTable(t *testing.T, handle *gorm.DB, s shape) {
 	t.Helper()
+	extra := s.extra
+	if handle.Name() == postgresDialector {
+		extra += s.extraPostgres
+	}
 	ddl := fmt.Sprintf("CREATE TABLE %s (%s TEXT NOT NULL, id TEXT NOT NULL, note TEXT%s, PRIMARY KEY (%s, id))",
-		s.table, s.column, s.extra, s.column)
+		s.table, s.column, extra, s.column)
 	if err := handle.Exec(ddl).Error; err != nil {
 		t.Fatalf("creating the table: %v", err)
 	}
