@@ -352,7 +352,7 @@ func TestAConnectionOpenedOntoTheDeliveredDatabaseRecordsOnItsOwnSession(t *test
 	} {
 		t.Run(spelling.name, func(t *testing.T) {
 			file := filepath.Join(t.TempDir(), "delivered.db")
-			assembledAt(t, file, nil, func(ctx context.Context, reg *core.Registry) error {
+			assembledAt(t, withBusyTimeout(file), nil, func(ctx context.Context, reg *core.Registry) error {
 				database, err := core.Resolve[db.Database](reg)
 				if err != nil {
 					t.Errorf("resolving the database capability: %v", err)
@@ -369,7 +369,6 @@ func TestAConnectionOpenedOntoTheDeliveredDatabaseRecordsOnItsOwnSession(t *test
 					return errCaseFailed
 				}
 				defer func() { _ = db.Close(again) }()
-				busy := openedBusyTimeout(ctx, t, handle)
 
 				returned, err := within(selfWaitTimer, func() error {
 					return quietly(again).WithContext(ctx).Create(&order{ID: "o1", Note: "committed"}).Error
@@ -403,7 +402,7 @@ func TestAConnectionOpenedOntoTheDeliveredDatabaseRecordsOnItsOwnSession(t *test
 				if err := handle.Model(&order{}).Count(&committed).Error; err != nil || committed != 1 {
 					t.Errorf("the delivered database holds %d order(s) (%v), want the committed one", committed, err)
 				}
-				requireBusyTimeoutsHandedBack(ctx, t, handle, busy)
+				requireBusyTimeoutsAsOpened(ctx, t, handle)
 				return nil
 			})
 		})

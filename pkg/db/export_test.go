@@ -9,7 +9,3 @@ const OpenedMarkerName = openedMarkerName
 // under in its plugin table, left out of a listing of the declared plugins by
 // this name for the same reason.
 const EngineMarkerName = engineMarkerName
-
-// LeaveLockWait is a Spec.BoundLockWait that leaves the connection's setting as
-// it is, for the external test package's implementations of the Spec shape.
-var LeaveLockWait = leaveLockWait

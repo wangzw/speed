@@ -211,10 +211,9 @@ func sharedCacheLocators(dir string) map[string]string {
 //
 // In that mode a connection waiting for a table lock another connection of the
 // cache holds is held by the driver until that connection's transaction ends,
-// and neither the busy timeout nor the statement's context ends the wait. No
-// bound db.Connection sets holds there: a module's statement issued from inside
-// its caller's transaction, on another connection of the cache, waits for that
-// caller for good.
+// and neither the busy timeout nor the statement's context ends the wait: a
+// module's statement issued from inside its caller's transaction, on another
+// connection of the cache, waits for that caller for good.
 func TestALocatorInSharedCacheModeIsRefused(t *testing.T) {
 	dir := t.TempDir()
 	instance := deliver(t, filepath.Join(dir, "delivered.db"))

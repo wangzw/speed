@@ -36,7 +36,6 @@ func probeSpec() Spec {
 		Dialect:             SQLite,
 		Dialector:           func(string) gorm.Dialector { return nil },
 		ConstraintViolation: func(error) error { return nil },
-		BoundLockWait:       leaveLockWait,
 	}
 }
 
@@ -203,7 +202,6 @@ func TestADefectiveSpecIsRefusedWhereItIsWritten(t *testing.T) {
 			"no constraint classification", func(s Spec) Spec { s.ConstraintViolation = nil; return s },
 			"ConstraintViolation",
 		},
-		{"no lock-wait bound", func(s Spec) Spec { s.BoundLockWait = nil; return s }, "BoundLockWait"},
 		{"a mutex with no default timeout", func(s Spec) Spec {
 			s.NewMigrationLock = func(time.Duration) MigrationLock { return nil }
 			return s

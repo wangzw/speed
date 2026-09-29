@@ -2,8 +2,9 @@
 // same cases run against every engine an implementation subpackage supports,
 // and carries the cases each engine's own tests run on the handle its module
 // delivers: the constraint refusals (see ConstraintRefusals), the COMMIT the
-// database refuses (see RefusedCommit and RefusedCommitBy), and the bounds
-// db.Connection holds its waits to (see ConnectionWait and LockWait).
+// database refuses (see RefusedCommit and RefusedCommitBy), and what
+// db.Connection does with a connection (see ConnectionWait and the cases beside
+// it).
 //
 // It does not import pkg/db. The migration engine's entry point is unexported,
 // so the cases that drive it live in pkg/db's own test package, and a package

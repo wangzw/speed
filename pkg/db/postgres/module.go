@@ -34,7 +34,6 @@ func spec() db.Spec {
 		Dialect:                     Dialect,
 		Dialector:                   Dialector,
 		ConstraintViolation:         constraintViolation,
-		BoundLockWait:               boundLockWait,
 		NewMigrationLock:            NewMigrationLock,
 		DefaultMigrationLockTimeout: DefaultMigrationLockTimeout,
 	}

@@ -94,17 +94,26 @@ func (j *journal) Record(ctx context.Context, e audit.Entry) error {
 // cancellation before they get here; see submit.
 //
 // The row goes out on a connection of its own, taken from the delivered pool
-// through db.Connection within connectionWait, which holds the wait for the
-// connection and the insert's wait for a lock another connection holds to that
-// one bound together. On a database held to a single connection — an in-memory
-// one — a caller that records or publishes inside its own transaction on the
-// delivered handle holds that connection until after this write returns; on a
-// file database, a caller that wrote in its own transaction holds the write lock
-// the insert waits for. Waiting for either is waiting for the caller itself:
+// through db.Connection within connectionWait. On a database held to a single
+// connection — an in-memory one — a caller that records or publishes inside its
+// own transaction on the delivered handle holds that connection until after
+// this write returns, and waiting for it is waiting for the caller itself:
 // under a context with no deadline, and on the paths that drop the cancellation
-// under any context, nothing else would end that wait, and on SQLite a context
-// does not end a lock wait at all. Past the bound the write fails with
-// ErrWriteFailed.
+// under any context, nothing else would end that wait. Past the bound the write
+// fails with ErrWriteFailed. The insert is then one statement, in the
+// transaction GORM opens around a write, as it would be on the handle itself.
+//
+// The insert waits for a lock another connection holds as the engine waits for
+// it, which the bound does not reach. On SQLite that is the connection's busy
+// timeout, the driver's five seconds unless the locator sets another: a caller
+// that wrote to the same database file in its own transaction holds the write
+// lock the insert waits for, and the insert fails once the busy timeout has
+// passed, whatever the context. On PostgreSQL it is until the context ends, or
+// the session's lock_timeout or statement_timeout does; an insert into the
+// audit table meets a lock there when something holds the table itself, or
+// when another insert of the same event's row has not yet committed.
+// A lock the engine gave up on fails the write with ErrWriteFailed and the
+// engine's refusal.
 func (j *journal) write(ctx context.Context, r row) error {
 	err := db.Connection(ctx, j.handle, connectionWait, func(session *gorm.DB) error {
 		return insert(session, r)
@@ -115,15 +124,10 @@ func (j *journal) write(ctx context.Context, r row) error {
 	return err
 }
 
-// connectionWait is the bound db.Connection holds the rows this module writes
-// itself to — the seam's, the request path's and the event path's: the wait
-// for a connection of the delivered pool and the insert's wait for a lock,
-// together.
-//
-// It is the SQLite driver's default busy timeout, which is what the same write
-// would wait for the write lock on a file database without the bound. A
-// connection or a lock taken under load comes free in the time a statement
-// takes, far inside it.
+// connectionWait is how long the rows this module writes itself — the seam's,
+// the request path's and the event path's — wait for a connection of the
+// delivered pool, through db.Connection. A connection taken under load comes
+// free in the time a statement takes, far inside it.
 const connectionWait = 5 * time.Second
 
 // submit is how the capture paths this module drives record a row: the failure
@@ -137,9 +141,12 @@ const connectionWait = 5 * time.Second
 // client closes the connection, and a process-local bus hands a subscriber the
 // publisher's own. Writing under that cancellation loses the row for a reason
 // that has nothing to do with the table, and reports a healthy table as failing.
-// The price is that connectionWait is the only bound on the write's waits and
-// the database's own timeouts the only bound on the insert itself, so a slow or
-// locked table slows every request and event it records, by up to that long.
+// The price is that connectionWait bounds the wait for a connection alone, and
+// the database's own timeouts are the only bound on the insert's wait for a
+// lock and on the insert itself: a slow or locked table slows every request and
+// event it records by as long as those let it wait — on SQLite the busy
+// timeout, and on PostgreSQL with neither a lock_timeout nor a
+// statement_timeout, for as long as the lock is held.
 func (j *journal) submit(ctx context.Context, r row) {
 	if !j.accepting.Load() {
 		return

@@ -7,13 +7,12 @@ handle it opened open until the test ends.
 
 It registers no module and delivers nothing to an assembly. It is a shared
 test fixture, neither a capability directory nor a program, and it exists
-because a module whose own statements go through `db.Connection` cannot be
-tested on a handle it opened itself: `Connection` refuses a handle the database
-module did not open, and such a handle carries none of what that module
-installs — the engine marker, the constraint classification, the field
-encryption — nor the pool shape it gives a locator. The tenant roster, the
-settings store and the audit journal are those modules; a copy of this fixture
-in each would differ in nothing and drift apart. Its placement follows
+because a handle a test opens itself is not what an assembly hands a module:
+it carries none of what the database module installs — the engine marker, the
+constraint classification, the field encryption — nor the pool shape it gives
+a locator, such as the one connection of an in-memory database. The tenant
+roster, the settings store and the audit journal are tested on it; a copy of
+this fixture in each would differ in nothing and drift apart. Its placement follows
 [`adr-shared-backend-unit-2026-09-21.md`](../../../docs/adr/adr-shared-backend-unit-2026-09-21.md):
 a fixture with no wrapper package of its own is a unit of its own under the
 `pkg` module's `internal/`.

@@ -5,6 +5,7 @@ import (
 	"errors"
 	"os"
 	"path/filepath"
+	"strings"
 	"sync/atomic"
 	"testing"
 	"time"
@@ -23,8 +24,8 @@ import (
 // roster's that waits for it is waiting for the caller. An in-process bus runs
 // a subscriber on its publisher's goroutine, inside whatever transaction the
 // publisher holds, and the subscriber enters the event's tenant. A lock another
-// connection holds on the database is the same wait, on a database of any
-// shape.
+// connection holds is waited for as the engine waits for it, which
+// connectionWait does not reach.
 
 // connectionTimer is how long a case waits for a call bounded by
 // connectionWait before it reports the call as still waiting.
@@ -240,36 +241,96 @@ func rosterOverALockedFile(t *testing.T, parameters string) *roster {
 	return r
 }
 
-// A statement of the roster's that meets a lock another connection holds waits
-// for it within connectionWait, however long the connection's own busy timeout
-// would let it wait, and ends with no answer: neither refusal, and not the
-// table's absence, since the table is there. A lock is what a statement of the
-// roster's waits for on a file database when a caller holds the database in
-// its own transaction.
-//
-// It is held on two locators: one leaving the driver's own busy timeout, which
-// ends the wait by itself about when the bound does, so that what the failure
-// says is seen; and one whose busy timeout is far past the bound, so that the
-// bound is seen ending the wait.
-func TestAStatementOfTheRostersWaitsForALockWithinTheBound(t *testing.T) {
-	t.Parallel()
-	locators := map[string]string{
-		"the driver's busy timeout": "",
-		"a longer busy timeout":     "?_pragma=busy_timeout(30000)",
-	}
-	calls := map[string]func(r *roster) error{
-		"Enter a tenant no row carries": func(r *roster) error {
+// lockedCalls are the calls of the roster's that read or write its table, each
+// with how many of its statements wait for a lock held on the whole database:
+// the statement that fails, and each read the call then makes to say what the
+// failure was — the conflict a write may have met, and the table's absence.
+func lockedCalls() map[string]struct {
+	call     func(r *roster) error
+	waitsFor int
+} {
+	return map[string]struct {
+		call     func(r *roster) error
+		waitsFor int
+	}{
+		"Enter a tenant no row carries": {func(r *roster) error {
 			_, err := r.Enter(context.Background(), "t_ghost")
 			return err
-		},
-		"Enter a disabled tenant": func(r *roster) error {
+		}, 2},
+		"Enter a disabled tenant": {func(r *roster) error {
 			_, err := r.Enter(context.Background(), "t_paused")
 			return err
-		},
-		"EnterRegistered a tenant no row carries": func(r *roster) error {
+		}, 2},
+		"EnterRegistered a tenant no row carries": {func(r *roster) error {
 			_, err := r.EnterRegistered(context.Background(), "t_ghost")
 			return err
-		},
+		}, 2},
+		"Put": {func(r *roster) error {
+			return r.Put(context.Background(), tenant.Tenant{ID: "t_new", Alias: "new", Status: tenant.StatusActive})
+		}, 3},
+		"Create": {func(r *roster) error {
+			return r.Create(context.Background(), tenant.Tenant{ID: "t_new", Alias: "new", Status: tenant.StatusActive})
+		}, 4},
+		"SetStatus": {func(r *roster) error {
+			return r.SetStatus(context.Background(), "t_paused", tenant.StatusActive)
+		}, 2},
+		"a reread of the whole roster": {func(r *roster) error { return r.read(context.Background()) }, 2},
+	}
+}
+
+// lockBusyTimeout is the busy timeout the locator in the case below sets: short
+// of the driver's default and of connectionWait, so that a lock wait held to
+// either is told apart from one held to the locator's.
+const lockBusyTimeout = time.Second
+
+// A statement of the roster's that meets a lock another connection holds on a
+// SQLite file waits for it for the connection's busy timeout, the one the
+// locator sets, whatever connectionWait is; so does each read the call makes to
+// say what the failure was. The call then ends with no answer: neither refusal,
+// and not the table's absence, since the table is there. connectionWait bounds
+// the wait for a connection only.
+func TestAStatementOfTheRostersWaitsForALockForTheBusyTimeout(t *testing.T) {
+	t.Parallel()
+	for name, c := range lockedCalls() {
+		t.Run(name, func(t *testing.T) {
+			t.Parallel()
+			r := rosterOverALockedFile(t, "?_pragma=busy_timeout(1000)")
+			most := time.Duration(c.waitsFor) * lockBusyTimeout
+			done := make(chan error, 1)
+			started := time.Now()
+			go func() { done <- c.call(r) }()
+			select {
+			case err := <-done:
+				requireNoAnswer(t, name, err)
+				if errors.Is(err, tenant.ErrNoConnection) {
+					t.Fatalf("%s gave %v, want the lock's failure rather than a connection's", name, err)
+				}
+				if !strings.Contains(err.Error(), "SQLITE_BUSY") {
+					t.Fatalf("%s gave %v, want SQLite's refusal of the lock", name, err)
+				}
+				took := time.Since(started)
+				if took < lockBusyTimeout {
+					t.Fatalf("%s gave up after %v, before the busy timeout of %v", name, took, lockBusyTimeout)
+				}
+				if limit := most + 2*time.Second; took > limit {
+					t.Fatalf("%s gave up after %v, past a busy timeout of %v for each of its %d statements",
+						name, took, lockBusyTimeout, c.waitsFor)
+				}
+			case <-time.After(most + connectionTimer):
+				t.Fatalf("%s was still waiting for the lock after %v", name, most+connectionTimer)
+			}
+		})
+	}
+}
+
+// Inside a caller's transaction that has written to the roster's SQLite file, a
+// write of the roster's fails at once with the engine's refusal and no answer,
+// and nothing is written: its first statement reads, and SQLite does not wait
+// to turn a read into a write while another connection holds the write lock.
+// An entry only reads, and answers from the table.
+func TestARosterWriteInsideTheCallersWriteTransactionOnAFileFailsAtOnce(t *testing.T) {
+	t.Parallel()
+	for name, write := range map[string]func(r *roster) error{
 		"Put": func(r *roster) error {
 			return r.Put(context.Background(), tenant.Tenant{ID: "t_new", Alias: "new", Status: tenant.StatusActive})
 		},
@@ -279,31 +340,42 @@ func TestAStatementOfTheRostersWaitsForALockWithinTheBound(t *testing.T) {
 		"SetStatus": func(r *roster) error {
 			return r.SetStatus(context.Background(), "t_paused", tenant.StatusActive)
 		},
-		"a reread of the whole roster": func(r *roster) error { return r.read(context.Background()) },
-	}
-	for locator, parameters := range locators {
-		for name, call := range calls {
-			t.Run(name+" with "+locator, func(t *testing.T) {
-				t.Parallel()
-				r := rosterOverALockedFile(t, parameters)
-				done := make(chan error, 1)
-				started := time.Now()
-				go func() { done <- call(r) }()
-				select {
-				case err := <-done:
-					requireNoAnswer(t, name, err)
-					if errors.Is(err, tenant.ErrNoConnection) {
-						t.Fatalf("%s gave %v, want the lock's failure rather than a connection's", name, err)
-					}
-					if took := time.Since(started); took < connectionWait {
-						t.Fatalf("%s gave up after %v, before the %v it waits for a lock", name, took,
-							connectionWait)
-					}
-				case <-time.After(connectionTimer):
-					t.Fatalf("%s was still waiting for the lock after %v", name, connectionTimer)
+	} {
+		t.Run(name, func(t *testing.T) {
+			t.Parallel()
+			r := enteringRoster(t)
+			var took time.Duration
+			var entered error
+			err := r.handle.Transaction(func(tx *gorm.DB) error {
+				if err := tx.Exec("UPDATE tenants SET alias = 'acme2' WHERE id = 't_acme'").Error; err != nil {
+					return err
 				}
+				started := time.Now()
+				werr := write(r)
+				took = time.Since(started)
+				_, entered = r.Enter(context.Background(), "t_paused")
+				return werr
 			})
-		}
+			requireNoAnswer(t, name, err)
+			if !strings.Contains(err.Error(), "SQLITE_BUSY") {
+				t.Fatalf("%s gave %v, want SQLite's refusal of the lock", name, err)
+			}
+			if took >= time.Second {
+				t.Fatalf("%s gave up after %v, want the refusal at once", name, took)
+			}
+			if !errors.Is(entered, tenant.ErrTenantDisabled) {
+				t.Fatalf("an entry inside the same transaction gave %v, want ErrTenantDisabled from the table", entered)
+			}
+			for id, want := range map[tenant.ID]bool{"t_new": false, "t_paused": false} {
+				held, err := lookUp(r.handle, "id", string(id))
+				if err != nil {
+					t.Fatalf("reading the table back: %v", err)
+				}
+				if served := len(held) > 0 && held[0].Status == int(tenant.StatusActive); served != want {
+					t.Fatalf("after a write that failed, table %s serves %s: %v", tableName, id, served)
+				}
+			}
+		})
 	}
 }
 

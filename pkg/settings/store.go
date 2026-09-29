@@ -329,10 +329,10 @@ func (s *settingsStore) writeRow(ctx context.Context, layer Layer, key, text str
 // cancellation and within connectionWait (onConnection). Nothing has been
 // written while it is awaited, so giving up there leaves the row as it was,
 // which is what the error then says; a begin that took the connection itself
-// would wait for it with the caller's cancellation already dropped. The same
-// bound holds the transaction's waits for a lock another connection holds —
-// the begin, the statement and the commit — so a write whose lock is held past
-// it fails, and is rolled back, rather than waiting on.
+// would wait for it with the caller's cancellation already dropped. A lock
+// another connection holds is waited for as the engine waits for it
+// (connectionWait), and a write whose lock the engine gives up on fails and is
+// rolled back.
 //
 // The one outcome left unknown is a connection lost during the commit itself,
 // which only the database can settle.
@@ -345,23 +345,18 @@ func (s *settingsStore) commit(ctx context.Context, statement func(tx *gorm.DB) 
 }
 
 // onConnection runs fn on a session pinned to one connection of the delivered
-// pool, taken through db.Connection within connectionWait: the wait for the
-// connection, which also ends with ctx, and every wait of fn's statements for
-// a lock another connection holds end, together, once connectionWait has
-// passed. No connection within it fails with an error wrapping
-// context.DeadlineExceeded while ctx has not ended; a lock the bound ran out on
-// fails its statement with the engine's own error.
+// pool, taken through db.Connection within connectionWait. No connection
+// within it fails with an error wrapping context.DeadlineExceeded while ctx has
+// not ended, and ctx ending first ends the wait with its own error.
 //
 // Every statement issued for a caller's call — a write's, a delete's, a
 // listing's — goes through it: none of them can run in a transaction the
 // caller holds, since the surface takes none, so each takes a connection of
 // its own. On a database held to a single connection that connection is the
 // one a caller holding a transaction on the delivered handle has, until after
-// the call returns; on a file database a caller that wrote in its own
-// transaction holds the lock a write waits for. Waiting for either there is
-// waiting for the caller itself: nothing would end that wait under a context
-// with no deadline, and the database's only connection would stay held for as
-// long as it lasted.
+// the call returns. Waiting for it there is waiting for the caller itself:
+// nothing would end that wait under a context with no deadline, and the
+// database's only connection would stay held for as long as it lasted.
 //
 // A reload does not go through it. It is this module's own bookkeeping, and
 // the connection it waits for is never one its trigger holds: a write inside a
@@ -375,14 +370,20 @@ func (s *settingsStore) onConnection(ctx context.Context, fn func(session *gorm.
 	return db.Connection(ctx, s.handle, connectionWait, fn)
 }
 
-// connectionWait is the bound db.Connection holds the statements a caller's call
-// issues to: their wait for a connection of the delivered pool and their waits
-// for a lock another connection holds, together.
+// connectionWait is how long the statements a caller's call issues wait for a
+// connection of the delivered pool, through db.Connection. A connection taken
+// under load comes free in the time a statement takes, far inside it.
 //
-// It is the SQLite driver's default busy timeout, which is what the same write
-// would wait for the write lock on a file database without the bound. A
-// connection or a lock taken under load comes free in the time a statement
-// takes, far inside it.
+// A lock another connection holds is waited for as the engine waits for it,
+// which the bound does not reach. On SQLite each statement — a write's begin,
+// its statement and its commit, a listing's read — waits for the connection's
+// busy timeout, the driver's five seconds unless the locator sets another; a
+// write inside a caller's transaction that has written to the same database
+// file waits on that caller for it, and then fails. On PostgreSQL a statement
+// waits until the caller's context ends, or the session's lock_timeout or
+// statement_timeout does; a write to a row the caller's own transaction has
+// written waits on that caller, and with neither timeout and no deadline it
+// waits for good.
 const connectionWait = 5 * time.Second
 
 // reload replaces the snapshot with a freshly loaded one.

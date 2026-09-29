@@ -119,7 +119,8 @@ func (c *capture) Initialize(handle *gorm.DB) error {
 // instance is shared by every registry in the process and holds nothing, so the
 // answer has to come from the session: a guess made here — the only journal
 // running, or whichever handle has the table — would hand one run's rows to
-// another's table. How long that row may wait is bounded; see recordOpened. A
+// another's table. How long that row may wait for a connection is bounded, and
+// how long it waits for a lock is the engine's; see recordOpened. A
 // connection built with Open onto the delivered database itself is no
 // exception: its statement's session reaches the delivered table, and the row
 // is written there; see reachesDeliveredTable.
@@ -202,35 +203,35 @@ func onOwnSession(tx *gorm.DB, r row) error {
 // databases rather than from their locators; see reachesDeliveredTable.
 //
 // Every other row goes out through the delivered handle. It needs a connection
-// of the delivered pool and, on an engine with one writer, the delivered
-// database's write lock, while the statement it records holds its own
-// transaction open on the other database. A caller inside a transaction on the
-// delivered handle holds both until after the statement returns. Nothing a
-// statement can see tells that from another writer's brief hold, so the wait is
-// bounded rather than recognised: the connection is taken through db.Connection
-// within openedRowWait, which holds the lock waits of the statements run on it
-// to what is left of that bound. Past the bound the statement fails with
-// ErrWriteFailed naming the wait — a record the statement could not have
-// without waiting on the caller is a record it does not get, and the write it
-// would record does not happen. The connection that tells which of the two ways
-// the row goes is taken within the same bound, and telling it waits for no
-// lock.
+// of the delivered pool while the statement it records holds its own
+// transaction open on the other database, and a caller inside a transaction on
+// the delivered handle of a database held to one connection holds that
+// connection until after the statement returns. Nothing a statement can see
+// tells that from another caller's brief hold, so the wait is bounded rather
+// than recognised: the connection is taken through db.Connection within
+// openedRowWait, and past it the statement fails with ErrWriteFailed naming the
+// wait — a record the statement could not have without waiting on the caller
+// is a record it does not get, and the write it would record does not happen.
+// The connection that tells which of the two ways the row goes is the same one,
+// and telling it waits for no lock.
 //
-// The insert itself runs under the statement's context, not the bound's: the
-// bound is on waiting for what another holds, and cutting a write short once it
-// is under way would leave it to the engine whether the row had been kept.
+// The insert then waits for a lock another connection holds on the delivered
+// database as the engine waits for it: on SQLite, whose one writer the caller's
+// write transaction on the delivered handle may be, for the busy timeout of the
+// delivered connection, after which the statement fails with ErrWriteFailed and
+// the engine's refusal; on PostgreSQL, until the statement's context ends or
+// the session's lock_timeout or statement_timeout does. It runs under the
+// statement's context, so cutting it short is that context's, as it is for the
+// statement itself.
 //
 // The session carries the statement's own logger. The row is part of the
 // statement's work, so a caller that gave its statement a logger of its own
 // gets the record's failure reported the way the statement's is.
 func recordOpened(tx, delivered *gorm.DB, r row) error {
 	ctx := tx.Statement.Context
-	// db.Connection ends a lock wait its bound cuts short no sooner than the
-	// bound after the call began, so a failure that came at or past this
-	// instant is one the bound ended.
-	bounded := time.Now().Add(openedRowWait)
-	var same, told bool
+	var ran, same, told bool
 	err := db.Connection(ctx, delivered, openedRowWait, func(session *gorm.DB) error {
+		ran = true
 		var err error
 		if same, err = reachesDeliveredTable(ctx, tx, session.Statement.ConnPool); err != nil {
 			return err
@@ -246,11 +247,11 @@ func recordOpened(tx, delivered *gorm.DB, r row) error {
 		return onOwnSession(tx, r)
 	case err == nil:
 		return nil
-	case ctx.Err() == nil && !time.Now().Before(bounded):
-		return fmt.Errorf("%w: the row of a statement on a connection built with Open was not "+
-			"written to the delivered database within %v, and the statement waits no longer: a "+
-			"transaction the caller holds on the delivered handle keeps what the row needs until "+
-			"after the statement returns: %w", audit.ErrWriteFailed, openedRowWait, err)
+	case !ran && ctx.Err() == nil && errors.Is(err, context.DeadlineExceeded):
+		return fmt.Errorf("%w: no connection of the delivered database came free within %v for the row of "+
+			"a statement on a connection built with Open, and the statement waits no longer: a "+
+			"transaction the caller holds on the delivered handle keeps the one connection a database "+
+			"held to one has until after the statement returns: %w", audit.ErrWriteFailed, openedRowWait, err)
 	case !told:
 		return fmt.Errorf("%w: telling whether a connection built with Open reaches the delivered "+
 			"database's audit table: %w", audit.ErrWriteFailed, err)
@@ -386,16 +387,16 @@ func samePostgresTable(ctx context.Context, own, delivered gorm.ConnPool) (bool,
 		ownRelation == deliveredRelation, nil
 }
 
-// openedRowWait is the bound db.Connection holds a row for a statement on a
-// connection built with Open to: the wait for a connection of the delivered
-// pool and the waits for the delivered database's locks, together.
+// openedRowWait is how long a row for a statement on a connection built with
+// Open waits for a connection of the delivered pool, through db.Connection.
 //
-// An insert into the audit table that the delivered database takes at all takes
-// it in milliseconds. Waiting longer only helps when another writer holds the
-// delivered database for longer than this, and every second of it keeps the
-// statement's own transaction open on the other database; inside a transaction
-// on the delivered handle no amount of waiting ends it, because what the row
-// waits for is the caller's.
+// A connection another caller holds under load comes free in milliseconds.
+// Waiting longer only helps when another caller holds the pool for longer than
+// this, and every second of it keeps the statement's own transaction open on
+// the other database; inside a transaction on the delivered handle of a
+// database held to one connection no amount of waiting ends it, because the
+// connection the row waits for is the caller's. The insert's wait for a lock is
+// the engine's (recordOpened).
 const openedRowWait = time.Second
 
 // targetTable is the table a statement writes to.

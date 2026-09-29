@@ -39,15 +39,7 @@ func sqliteSpec() Spec {
 		Dialect:             SQLite,
 		Dialector:           sqlite.Open,
 		ConstraintViolation: sqliteViolation,
-		BoundLockWait:       leaveLockWait,
 	}
-}
-
-// leaveLockWait is a Spec.BoundLockWait that bounds nothing and has nothing to
-// put back, for the implementations these cases build: what an engine's own
-// bound does is held by that engine's cases, on the handle its module delivers.
-func leaveLockWait(context.Context, *sql.Conn, time.Duration) (func(context.Context) error, error) {
-	return func(context.Context) error { return nil }, nil
 }
 
 // sqliteSection is the configuration this implementation runs on, with the

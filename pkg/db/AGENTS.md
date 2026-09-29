@@ -24,7 +24,7 @@ same capability exclusively.
   ([`adr-db-migration-2026-09-14.md`](../../docs/adr/adr-db-migration-2026-09-14.md)),
   how a constraint refusal is recognised
   ([`adr-db-errors-2026-09-28.md`](../../docs/adr/adr-db-errors-2026-09-28.md)),
-  how a module's own statements take a connection with bounded waits
+  how a module's own statements take a connection within a bounded wait
   ([`adr-db-waits-2026-09-29.md`](../../docs/adr/adr-db-waits-2026-09-29.md)),
   why this package's interface exposes GORM
   ([`adr-module-packaging-2026-09-14.md`](../../docs/adr/adr-module-packaging-2026-09-14.md)),
@@ -94,25 +94,29 @@ must not cross, and how to run it.
   after the declared plugins leaves their `Initialize` unable to ask.
 - **The engine marker every handle carries lives in its plugin table too,
   installed by `openHandle` before either caller installs the declared
-  plugins.** It holds the pool behind the handle and the engine's
-  `Spec.BoundLockWait`, and `Connection` reads it from whatever session it is
-  handed — a transaction, a `WithContext`, a connection built with `Open` —
-  which is how a plugin holding nothing but a session takes a bounded
-  connection of the right pool. A handle without it is one this package did not
-  open, and `Connection` refuses it rather than bounding only half the wait.
-- **A connection `Connection` bounded goes back to the pool with the lock-wait
-  setting it had, or not at all.** A connection handed back carrying the bound
-  cuts every later statement's lock wait short on it with nothing reporting
-  it, so a setting that cannot be put back closes the connection.
-- **`Connection`'s bound covers every statement `fn` issues, together.** Both
-  engines bound a statement by the setting in force when it begins, so the
-  session `fn` gets runs on a wrapper of the connection (`boundedConn`,
-  `boundedTx`) that sets the bound again, to what is left of the wait, before
-  each later statement — a transaction's begin and commit included. Setting it
-  once gives every statement the whole wait again, and a caller whose call
-  reads twice waits twice as long, past its own deadline on SQLite. What is left
-  is rounded up to the millisecond (`lockWaitBound`), which is what lets a
-  caller tell from the clock that a failure was the bound's.
+  plugins.** It holds the engine's dialect, which is how a callback holding
+  nothing but a statement reads the statement's identifiers by that engine's
+  rules (`namesColumn`).
+- **`Connection` bounds the wait for a connection, and nothing else.** It takes
+  a connection of whatever pool the handle it is handed is on — this package's
+  or a host's own — and runs `fn` on it under the caller's context; a handle
+  already on one connection (a transaction, a pinned session) runs `fn` on
+  itself. It reads, sets and restores no lock timeout: a statement in `fn`
+  waits for a lock as its engine makes it wait, for the connection's busy
+  timeout on SQLite and until the context, `lock_timeout` or
+  `statement_timeout` ends it on PostgreSQL. A wrapper that reset a timeout
+  before a statement would cost a round trip on every audited row and would
+  put a statement ahead of `ROLLBACK TO SAVEPOINT` inside a transaction
+  PostgreSQL has aborted (`adr-db-waits-2026-09-29`).
+- **What `fn` leaves open on the connection never holds its release up.** The
+  session is pinned to a wrapper of the connection (`pinnedConn`) that records
+  each transaction begun on it and ties each result set to the call's end:
+  when `fn` returns or panics, the transactions still open are rolled back on
+  the connection and the result sets closed, then the connection goes back.
+  Left to `database/sql`, a transaction under a context that never ends holds
+  the connection's close for good, and one it rolls back when a context ends
+  is rolled back on a goroutine of its own that asks for the connection to be
+  dropped — on `:memory:`, the database with it — racing the release.
 - **The SQLite subpackage refuses a locator in shared-cache mode**, delivered or
   opened: its `Dialector` fails to initialise (`sharesCache`). The driver waits
   for a shared-cache table lock through `sqlite3_unlock_notify`, which neither
@@ -146,7 +150,6 @@ func Module() core.Module {
 		Dialect:             Dialect,             // also the migration subdirectory
 		Dialector:           Dialector,           // the driver, and the only place it appears
 		ConstraintViolation: constraintViolation, // the driver's unique and foreign key refusals
-		BoundLockWait:       boundLockWait,       // bounds one connection's wait for a lock, and puts it back
 		// ConnectionScoped only for an engine with locators private to one
 		// connection; NewMigrationLock and DefaultMigrationLockTimeout only for an engine
 		// that appears in multi-replica deployments.
@@ -186,7 +189,7 @@ gate. `internal/dbhost` is the test host the multi-process cases build and run;
 `pkg/internal/pgpool/pgtest` is the container fixture, shared with the key-value and
 event modules' postgres backends; `internal/dbsuite` holds the
 engine-neutral migration cases each engine's fixture is driven through, and the
-constraint-refusal, refused-commit and bounded-connection cases each engine runs
+constraint-refusal, refused-commit and connection cases each engine runs
 on the handle its module delivers. `pkg/internal/dbtest` delivers this module's
-capability to other modules' tests, for the ones whose statements go through
-`Connection`, which refuses a handle this module did not open.
+capability to other modules' tests, for the ones that exercise what an assembly
+hands them.

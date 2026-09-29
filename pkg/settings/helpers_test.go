@@ -116,9 +116,10 @@ func open(t *testing.T) *gorm.DB {
 // it, which every connection of the handle's pool shares.
 //
 // It is the handle the database module delivers over a SQLite file, rather than
-// one opened here: every call of the store's takes its connection through
-// db.Connection, which refuses a handle the database module did not open. The
-// session handed back does not print the statements a case fails on purpose.
+// one opened here, so that the store runs over what an assembly hands it: the
+// constraint classification the module installs, and the pool shape it gives
+// the locator. The session handed back does not print the statements a case
+// fails on purpose.
 func openMemory(t *testing.T) *gorm.DB {
 	t.Helper()
 	return quietly(dbtest.SQLite(t, filepath.Join(t.TempDir(), "settings.db"), nil).DB())

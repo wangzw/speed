@@ -114,20 +114,21 @@ must not cross, and how to run it.
   and are the database module's to read; and taking "this connection has an
   audit table" for "this is the delivered one", which a copy or another run's
   database also has.
-- **A row that goes out on a connection of its own waits for the delivered
-  database only within a bound.** A caller holding a transaction on the
-  delivered handle holds that database's write lock — and, on a database held
-  to one connection, the connection itself — until after its own call returns,
-  so a row that waited for either without a bound would wait on the caller for
-  good. The connection is taken through `db.Connection`, whose bound covers the
-  wait for it and the insert's wait for a lock together: `openedRowWait` for a
-  statement's row on a connection built with `Open`, and `connectionWait` for
-  the rows this module writes itself. Nothing a row can see tells a caller's own
-  hold from another writer's brief one, which is why the wait is bounded rather
-  than recognised: a bound at zero fails such a write whenever anyone else is
-  writing, and no bound hangs. The bound on a lock wait is the database
-  module's to set — SQLite's busy timeout, which no context ends, PostgreSQL's
-  lock timeout — and this module writes no dialect code of its own for it.
+- **A row that goes out on a connection of its own waits for a connection of
+  the delivered pool only within a bound.** On a database held to one
+  connection, a caller holding a transaction on the delivered handle holds that
+  connection until after its own call returns, so a row that waited for it
+  without a bound would wait on the caller for good. The connection is taken
+  through `db.Connection`: within `openedRowWait` for a statement's row on a
+  connection built with `Open`, and `connectionWait` for the rows this module
+  writes itself. Nothing a row can see tells a caller's own hold from another
+  caller's brief one, which is why the wait is bounded rather than recognised:
+  a bound at zero fails such a write whenever anyone else holds the
+  connection, and no bound hangs. The insert's wait for a lock is the engine's
+  — SQLite's busy timeout, which no context ends and which a caller's write
+  transaction on the same file makes the row wait out, PostgreSQL's context,
+  `lock_timeout` or `statement_timeout` — and this module writes no dialect
+  code of its own for it.
   Telling which table a connection built with `Open` reaches waits for no lock:
   SQLite's main file is read with `PRAGMA database_list`, which takes none, not
   with its table-valued form, which is a query and waits for a shared lock a
@@ -171,8 +172,8 @@ GOWORK=off go -C pkg/audit build ./...   # the standalone leg, without the works
 
 Most cases bring up their own SQLite database, on the handle the database
 module delivers — from `pkg/internal/dbtest`, or through a whole assembly —
-because the rows this module writes itself take their connection through
-`db.Connection`, which refuses a handle opened around that module. The
+so that the journal meets what an assembly hands it, but for the case that
+runs it over a handle opened with `gorm.Open` (`journal/wait_test.go`). The
 PostgreSQL cases take a database of their own on the shared fixture in
 `pkg/internal/pgpool/pgtest`, which starts a container through the docker CLI:
 they skip on a machine without docker, and fail instead where `CI` is set.

@@ -5,11 +5,10 @@
 //
 // A handle a test opens with gorm.Open is not one the database module opened,
 // and it is not a stand-in for one: it carries none of what the module installs
-// on the handles it opens — the engine marker db.Connection reads, which it
-// refuses a handle without, the constraint classification, the field
-// encryption — and none of the pool shape the module gives a locator. A module
-// whose own statements go through db.Connection is exercised on a handle from
-// here.
+// on the handles it opens — the engine marker, the constraint classification,
+// the field encryption — and none of the pool shape the module gives a locator,
+// such as the one connection of an in-memory database. A module is exercised on
+// a handle from here where what it meets is what an assembly hands it.
 //
 // No migration is applied: only the engine's module takes part, and a test
 // builds the tables it needs.

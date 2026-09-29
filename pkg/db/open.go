@@ -54,9 +54,9 @@ import (
 // in, and the driver's own error stays in the chain beside it. A host maps a
 // duplicate to a conflict the same way on either engine.
 //
-// Every handle also carries, in its plugin table, the pool behind it and the
-// implementation's Spec.BoundLockWait, which is what Connection reads from any
-// session derived from the handle.
+// Every handle also carries, in its plugin table, the engine behind it, which is
+// how a callback holding only a statement reads the statement's identifiers by
+// that engine's rules.
 func openHandle(ctx context.Context, spec Spec, cfg lockingConfig) (*gorm.DB, error) {
 	// The locator is normalised once, and the dialector is the only reader:
 	// the stance judged the trimmed text, so the driver has to be handed the
@@ -108,8 +108,8 @@ func openHandle(ctx context.Context, spec Spec, cfg lockingConfig) (*gorm.DB, er
 		return nil, errors.Join(err, Close(session))
 	}
 	// The marker goes on before either caller installs the declared plugins,
-	// so a plugin's Initialize already finds what Connection reads.
-	if err := markEngine(session, spec, pool); err != nil {
+	// so a plugin's Initialize already finds it.
+	if err := markEngine(session, spec); err != nil {
 		return nil, errors.Join(err, Close(session))
 	}
 	return session, nil

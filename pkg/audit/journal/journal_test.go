@@ -123,10 +123,10 @@ func (b *recordingBus) Publish(ctx context.Context, evt event.Event) error {
 // connection of the handle's pool shares: the one the database module delivers
 // over a SQLite file, released when the case ends.
 //
-// It is the database module's handle rather than one opened here, because the
-// rows this module writes itself take their connection through db.Connection,
-// which refuses a handle the database module did not open. The session handed
-// back prints no statement a case fails on purpose.
+// It is the database module's handle rather than one opened here, so that the
+// journal runs over what an assembly hands it: the constraint classification
+// the module installs, and the pool shape it gives the locator. The session
+// handed back prints no statement a case fails on purpose.
 func sharedMemory(t *testing.T) *gorm.DB {
 	t.Helper()
 	return quietly(dbtest.SQLite(t, filepath.Join(t.TempDir(), "journal.db"), nil).DB())

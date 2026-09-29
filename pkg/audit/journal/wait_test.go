@@ -8,9 +8,11 @@ import (
 	"fmt"
 	"path/filepath"
 	"strings"
+	"sync/atomic"
 	"testing"
 	"time"
 
+	sqlitedriver "github.com/glebarez/sqlite"
 	"gorm.io/gorm"
 	"gorm.io/gorm/logger"
 
@@ -21,12 +23,17 @@ import (
 	"github.com/vislake/speed/pkg/internal/dbtest"
 )
 
+// deliveredBusyTimeout is the busy timeout the delivered locator sets in the
+// cases that meet the delivered database's lock. It is not the driver's
+// default, so a connection that carries anything but what its locator gave it
+// is seen; and it is short, so a row that waits for the lock for it gives up
+// well inside a case's timer.
+const deliveredBusyTimeout = 1500 * time.Millisecond
+
 // selfWaitTimer is how long a case lets a write run before it counts the write
-// as waiting on itself. It is past the bound a row of a statement on a
-// connection built with Open waits within, with room for a loaded machine, and
-// short of the busy timeout a file database would otherwise make the row wait
-// for: the driver's default, or the longer one deliveredBusyTimeout sets.
-const selfWaitTimer = 4 * time.Second
+// as waiting on itself: past the delivered connections' busy timeout and past
+// openedRowWait, with room for a loaded machine.
+const selfWaitTimer = deliveredBusyTimeout + 3*time.Second
 
 // connectionTimer is the same for a row this module writes itself, which waits
 // for a connection within connectionWait.
@@ -57,12 +64,11 @@ func busyTimeoutOf(ctx context.Context, t *testing.T, conn *sql.Conn) int64 {
 	return ms
 }
 
-// requireBusyTimeoutsHandedBack checks every idle connection of the handle's
-// pool for the busy timeout the pool's connections carry when they are opened.
-// A row for a statement on a connection built with Open shortens that timeout on
-// the connection it takes, and a connection handed back still carrying it would
-// make every later writer on it give up on the lock within that bound.
-func requireBusyTimeoutsHandedBack(ctx context.Context, t *testing.T, handle *gorm.DB, want int64) {
+// requireBusyTimeoutsAsOpened checks every idle connection of the handle's pool
+// for the busy timeout the pool's connections carry when they are opened: the
+// rows written through db.Connection leave the connection they take as they
+// found it.
+func requireBusyTimeoutsAsOpened(ctx context.Context, t *testing.T, handle *gorm.DB) {
 	t.Helper()
 	pool, err := handle.DB()
 	if err != nil {
@@ -82,56 +88,17 @@ func requireBusyTimeoutsHandedBack(ctx context.Context, t *testing.T, handle *go
 			return
 		}
 		taken = append(taken, conn)
-		if got := busyTimeoutOf(ctx, t, conn); got != want {
-			t.Errorf("a connection of the delivered pool was handed back with a busy timeout of %dms, want "+
-				"the %dms it was opened with", got, want)
+		if got := busyTimeoutOf(ctx, t, conn); got != deliveredBusyTimeout.Milliseconds() {
+			t.Errorf("a connection of the delivered pool carries a busy timeout of %dms, want the %v its "+
+				"locator gave it", got, deliveredBusyTimeout)
 		}
 	}
 }
 
-// openedBusyTimeout reads the busy timeout the delivered pool opens its
-// connections with.
-func openedBusyTimeout(ctx context.Context, t *testing.T, handle *gorm.DB) int64 {
-	t.Helper()
-	pool, err := handle.DB()
-	if err != nil {
-		t.Errorf("reaching the delivered pool: %v", err)
-		return 0
-	}
-	conn, err := pool.Conn(ctx)
-	if err != nil {
-		t.Errorf("taking a connection: %v", err)
-		return 0
-	}
-	defer func() { _ = conn.Close() }()
-	return busyTimeoutOf(ctx, t, conn)
-}
-
-// deliveredBusyTimeout is the busy timeout, in milliseconds, the delivered
-// locator sets in the cases that check it is handed back. It is not the
-// driver's default, so a connection handed back carrying the default instead of
-// what it was opened with is seen; and it is longer than selfWaitTimer, so a row
-// whose lock wait was left to it is seen waiting.
-const deliveredBusyTimeout = 7000
-
 // withBusyTimeout is a SQLite locator that opens every connection with
 // deliveredBusyTimeout.
 func withBusyTimeout(dsn string) string {
-	return fmt.Sprintf("%s?_pragma=busy_timeout(%d)", dsn, deliveredBusyTimeout)
-}
-
-// requireOpenedWithTheLocatorsBusyTimeout checks that the delivered pool opens
-// its connections with the busy timeout the case's locator set, and returns it.
-// A pool that opened them with the default would leave a hand-back that
-// restores the default indistinguishable from one that restores what it read.
-func requireOpenedWithTheLocatorsBusyTimeout(ctx context.Context, t *testing.T, handle *gorm.DB) int64 {
-	t.Helper()
-	busy := openedBusyTimeout(ctx, t, handle)
-	if busy != deliveredBusyTimeout {
-		t.Errorf("the delivered pool opens its connections with a busy timeout of %dms, want the %dms the "+
-			"locator sets", busy, deliveredBusyTimeout)
-	}
-	return busy
+	return fmt.Sprintf("%s?_pragma=busy_timeout(%d)", dsn, deliveredBusyTimeout.Milliseconds())
 }
 
 // quietly is a session that does not print the statement a case fails on
@@ -141,7 +108,8 @@ func quietly(handle *gorm.DB) *gorm.DB {
 }
 
 // requireRefusedForWaiting checks that a write on a connection built with Open
-// was refused for its record, and that the refusal names the wait.
+// was refused for its record, and that the refusal names the wait for a
+// connection.
 func requireRefusedForWaiting(t *testing.T, err error) {
 	t.Helper()
 	if !errors.Is(err, audit.ErrWriteFailed) {
@@ -153,22 +121,43 @@ func requireRefusedForWaiting(t *testing.T, err error) {
 	}
 }
 
+// requireRefusedForTheLock checks that a write whose row met the delivered
+// database's lock was refused with ErrWriteFailed and SQLite's refusal of the
+// lock, once the delivered connection's busy timeout had passed and not long
+// after.
+func requireRefusedForTheLock(t *testing.T, err error, took time.Duration) {
+	t.Helper()
+	if !errors.Is(err, audit.ErrWriteFailed) || !strings.Contains(err.Error(), "SQLITE_BUSY") {
+		t.Errorf("the write gave %v, want ErrWriteFailed with SQLite's refusal of the lock", err)
+	}
+	if took < deliveredBusyTimeout {
+		t.Errorf("the write failed after %v, before the delivered connection's busy timeout of %v",
+			took, deliveredBusyTimeout)
+	}
+	if limit := deliveredBusyTimeout + 2*time.Second; took > limit {
+		t.Errorf("the write failed after %v, well past the delivered connection's busy timeout of %v",
+			took, deliveredBusyTimeout)
+	}
+}
+
 // A write on a connection built with Open inside a transaction the caller holds
-// on the delivered handle fails within its row's bound rather than waiting on
-// the caller.
+// on the delivered handle fails rather than waiting on the caller for as long
+// as the caller waits on it.
 //
 // The row goes to the delivered database, and what it needs there is held by
-// the caller until after the write returns: the write lock on a file database,
-// the one connection on an in-memory one. Waiting for either is waiting for the
-// caller itself — until the busy timeout on a file, for good on an in-memory
-// database when the context carries no deadline, which none of these does.
-//
-// The row shortens the busy timeout of the delivered connection it takes, and
-// the locators set one of their own, so a connection handed back with anything
-// but what it carried is seen.
-func TestAWriteOnAnOpenedConnectionInsideTheCallersTransactionDoesNotWaitOnIt(t *testing.T) {
-	for _, shape := range []struct{ name, dsn string }{
-		{name: "a file database", dsn: withBusyTimeout(filepath.Join(t.TempDir(), "delivered.db"))},
+// the caller until after the write returns. On an in-memory database that is
+// the one connection, and the row gives up on it within openedRowWait, naming
+// the wait. On a file database it is the write lock, which the row's insert
+// waits for for the delivered connection's busy timeout before SQLite refuses
+// it. Either way the write it would record does not happen, and the delivered
+// connections carry the busy timeout they were opened with.
+func TestAWriteOnAnOpenedConnectionInsideTheCallersTransactionFails(t *testing.T) {
+	for _, shape := range []struct {
+		name string
+		dsn  string
+		lock bool
+	}{
+		{name: "a file database", dsn: withBusyTimeout(filepath.Join(t.TempDir(), "delivered.db")), lock: true},
 		{name: "an in-memory database", dsn: withBusyTimeout(":memory:")},
 	} {
 		t.Run(shape.name, func(t *testing.T) {
@@ -188,13 +177,15 @@ func TestAWriteOnAnOpenedConnectionInsideTheCallersTransactionDoesNotWaitOnIt(t 
 					return err
 				}
 				defer func() { _ = db.Close(opened) }()
-				busy := requireOpenedWithTheLocatorsBusyTimeout(ctx, t, handle)
 
+				var took time.Duration
 				returned, err := within(selfWaitTimer, func() error {
 					return quietly(handle).Transaction(func(tx *gorm.DB) error {
 						if heldErr := tx.Create(&order{ID: "d1", Note: "delivered"}).Error; heldErr != nil {
 							return heldErr
 						}
+						started := time.Now()
+						defer func() { took = time.Since(started) }()
 						return quietly(opened).WithContext(context.Background()).
 							Create(&order{ID: "o1", Note: "elsewhere"}).Error
 					})
@@ -204,12 +195,16 @@ func TestAWriteOnAnOpenedConnectionInsideTheCallersTransactionDoesNotWaitOnIt(t 
 						"handle was still waiting after %v", selfWaitTimer)
 					return errCaseFailed
 				}
-				requireRefusedForWaiting(t, err)
+				if shape.lock {
+					requireRefusedForTheLock(t, err, took)
+				} else {
+					requireRefusedForWaiting(t, err)
+				}
 				var committed int64
 				if err := opened.Model(&order{}).Count(&committed).Error; err != nil || committed != 0 {
 					t.Errorf("the write was refused, but %d order(s) committed on its database (%v)", committed, err)
 				}
-				requireBusyTimeoutsHandedBack(ctx, t, handle, busy)
+				requireBusyTimeoutsAsOpened(ctx, t, handle)
 				return nil
 			})
 		})
@@ -247,11 +242,11 @@ func holdTheDatabase(ctx context.Context, t *testing.T, database db.Database, fi
 }
 
 // A write on a connection built with Open while another connection holds the
-// whole delivered database fails within its row's bound, however long the
-// delivered connections' own busy timeout: telling that the connection does not
-// reach the delivered table waits for no lock, and the row's wait for the lock
-// is held to what is left of the bound.
-func TestAWriteOnAnOpenedConnectionWhileTheDeliveredDatabaseIsHeldFailsWithinTheBound(t *testing.T) {
+// whole delivered database fails once the delivered connection's busy timeout
+// has passed: telling that the connection does not reach the delivered table
+// waits for no lock, and the row's insert waits for the lock as SQLite makes it
+// wait.
+func TestAWriteOnAnOpenedConnectionWhileTheDeliveredDatabaseIsHeldFailsOnceTheBusyTimeoutPasses(t *testing.T) {
 	file := filepath.Join(t.TempDir(), "delivered.db")
 	assembledAt(t, withBusyTimeout(file), nil, func(ctx context.Context, reg *core.Registry) error {
 		database, err := core.Resolve[db.Database](reg)
@@ -265,23 +260,24 @@ func TestAWriteOnAnOpenedConnectionWhileTheDeliveredDatabaseIsHeldFailsWithinThe
 			return err
 		}
 		defer func() { _ = db.Close(opened) }()
-		busy := requireOpenedWithTheLocatorsBusyTimeout(ctx, t, handle)
 		release, err := holdTheDatabase(ctx, t, database, file)
 		if err != nil {
 			return err
 		}
 
+		started := time.Now()
 		returned, err := within(selfWaitTimer, func() error {
 			return quietly(opened).WithContext(context.Background()).Create(&order{ID: "o1", Note: "elsewhere"}).Error
 		})
+		took := time.Since(started)
 		release()
 		if !returned {
 			t.Errorf("a write on a connection built with Open while the delivered database was held was "+
 				"still waiting after %v", selfWaitTimer)
 			return errCaseFailed
 		}
-		requireRefusedForWaiting(t, err)
-		requireBusyTimeoutsHandedBack(ctx, t, handle, busy)
+		requireRefusedForTheLock(t, err, took)
+		requireBusyTimeoutsAsOpened(ctx, t, handle)
 		return nil
 	})
 }
@@ -336,15 +332,14 @@ func TestAConnectionOpenedOntoTheDeliveredDatabaseRecordsWhileItsTransactionHold
 }
 
 // briefHold is how long another writer holds the delivered database in the
-// case below: far longer than an insert takes, well inside the bound.
+// case below: far longer than an insert takes, well inside the busy timeout.
 const briefHold = 200 * time.Millisecond
 
 // A write on a connection built with Open while another writer briefly holds
 // the delivered database waits the hold out and is recorded.
 //
-// The bound is on waiting, not a refusal to wait: a row that gave up the moment
-// the delivered database was busy would fail every such write whenever any
-// other request happened to be writing there.
+// A row that gave up the moment the delivered database was busy would fail
+// every such write whenever any other request happened to be writing there.
 func TestAWriteOnAnOpenedConnectionWaitsOutAnotherWritersBriefHold(t *testing.T) {
 	for _, shape := range []struct{ name, dsn string }{
 		{name: "a file database", dsn: withBusyTimeout(filepath.Join(t.TempDir(), "delivered.db"))},
@@ -367,7 +362,6 @@ func TestAWriteOnAnOpenedConnectionWaitsOutAnotherWritersBriefHold(t *testing.T)
 					return err
 				}
 				defer func() { _ = db.Close(opened) }()
-				busy := requireOpenedWithTheLocatorsBusyTimeout(ctx, t, handle)
 
 				held, released := make(chan struct{}), make(chan error, 1)
 				go func() {
@@ -404,7 +398,7 @@ func TestAWriteOnAnOpenedConnectionWaitsOutAnotherWritersBriefHold(t *testing.T)
 					t.Errorf("the delivered table holds %d statement row(s), want the held write and the one "+
 						"on the second connection", len(got))
 				}
-				requireBusyTimeoutsHandedBack(ctx, t, handle, busy)
+				requireBusyTimeoutsAsOpened(ctx, t, handle)
 				return nil
 			})
 		})
@@ -433,10 +427,9 @@ func openSingle(t *testing.T) *gorm.DB {
 // transaction the caller holds on an in-memory database fails within the
 // connection bound instead of waiting for the caller's connection for good.
 //
-// The file database fails the same write when the driver's busy timeout ends
-// the wait for the caller's lock; the in-memory database's one connection plays
-// the lock's part and nothing else ends that wait. The event path drops the
-// publisher's cancellation, so there not even a deadline would.
+// The in-memory database's one connection plays the lock's part, and nothing
+// else ends that wait. The event path drops the publisher's cancellation, so
+// there not even a deadline would.
 func TestARowWrittenInsideTheCallersTransactionOnOneConnectionDoesNotWaitForIt(t *testing.T) {
 	t.Run("the seam", func(t *testing.T) {
 		handle := openSingle(t)
@@ -486,13 +479,13 @@ func TestARowWrittenInsideTheCallersTransactionOnOneConnectionDoesNotWaitForIt(t
 }
 
 // A row this module writes itself while another connection holds the whole
-// delivered database fails within connectionWait, however long the delivered
-// connections' own busy timeout would let it wait for the lock: the seam
-// returns ErrWriteFailed. A caller holding the database in its own transaction
-// on a file database is what the row waits for there.
-func TestARowWrittenWhileTheDeliveredDatabaseIsHeldFailsWithinTheBound(t *testing.T) {
+// delivered database waits for the lock for the delivered connection's busy
+// timeout, whatever connectionWait is, and then fails: the seam returns
+// ErrWriteFailed with SQLite's refusal. A caller holding the database in its
+// own transaction on a file database is what the row waits for there.
+func TestARowWrittenWhileTheDeliveredDatabaseIsHeldFailsOnceTheBusyTimeoutPasses(t *testing.T) {
 	file := filepath.Join(t.TempDir(), "delivered.db")
-	handle := quietly(dbtest.SQLite(t, file+"?_pragma=busy_timeout(30000)", nil).DB())
+	handle := quietly(dbtest.SQLite(t, withBusyTimeout(file), nil).DB())
 	if err := handle.Use(newCapture()); err != nil {
 		t.Fatalf("installing the capture plugin: %v", err)
 	}
@@ -521,12 +514,7 @@ func TestARowWrittenWhileTheDeliveredDatabaseIsHeldFailsWithinTheBound(t *testin
 	if !returned {
 		t.Fatalf("Record while the delivered database was held was still waiting after %v", connectionTimer)
 	}
-	if !errors.Is(err, audit.ErrWriteFailed) {
-		t.Errorf("Record while the delivered database was held gave %v, want ErrWriteFailed", err)
-	}
-	if took := time.Since(started); took < connectionWait {
-		t.Errorf("Record gave up after %v, before the %v it waits", took, connectionWait)
-	}
+	requireRefusedForTheLock(t, err, time.Since(started))
 }
 
 // A row this module writes itself while another writer briefly holds the one
@@ -561,5 +549,79 @@ func TestARowWrittenWhileAnotherWriterHoldsTheOneConnectionWaitsItOut(t *testing
 	}
 	if got := len(auditRows(t, handle)); got != 2 {
 		t.Errorf("the table holds %d row(s), want the held write's and the seam's", got)
+	}
+}
+
+// errRowPanicked is what the callback in the case below panics with.
+var errRowPanicked = errors.New("a callback panicked inside the audit row's transaction")
+
+// A callback that panics inside the transaction GORM opens around a row this
+// module writes, under a context that never ends, has the panic come out of
+// the call, the row rolled back and the connection handed back. On an
+// in-memory database held to one connection, the connection is the database:
+// one left waiting on its own transaction would hold every later statement,
+// and one dropped from the pool would take the tables with it.
+func TestAPanicWhileARowIsWrittenHandsTheConnectionBack(t *testing.T) {
+	handle := openSingle(t)
+	j := newTestJournal(handle, settings{})
+	var armed atomic.Bool
+	if err := handle.Callback().Create().After("gorm:create").Before("gorm:commit_or_rollback_transaction").
+		Register("test:panic-inside-the-row", func(tx *gorm.DB) {
+			if armed.Load() && tx.Statement.Table == tableName {
+				panic(errRowPanicked)
+			}
+		}); err != nil {
+		t.Fatalf("registering the callback that panics: %v", err)
+	}
+	armed.Store(true)
+	came := make(chan any, 1)
+	go func() {
+		defer func() { came <- recover() }()
+		_ = j.Record(context.Background(), audit.Entry{Action: "export", Object: "orders"})
+	}()
+	select {
+	case got := <-came:
+		if err, ok := got.(error); !ok || !errors.Is(err, errRowPanicked) {
+			t.Fatalf("Record gave %v, want the callback's panic carried up", got)
+		}
+	case <-time.After(connectionTimer):
+		t.Fatalf("Record was still handing its connection back %v after the callback panicked", connectionTimer)
+	}
+	armed.Store(false)
+	if got := len(auditRows(t, handle)); got != 0 {
+		t.Errorf("the table holds %d row(s) once the row's transaction panicked, want it rolled back", got)
+	}
+	if err := j.Record(context.Background(), audit.Entry{Action: "export", Object: "orders"}); err != nil {
+		t.Errorf("Record once the connection was handed back gave %v, want it written", err)
+	}
+}
+
+// The journal records over a handle the host opened itself with gorm.Open, as
+// it does over the one the database module delivers: a row this module writes
+// takes a connection of whatever pool the handle is on, and a statement's row
+// rides the statement's own session.
+func TestTheJournalWorksOverAHandleTheHostOpened(t *testing.T) {
+	handle, err := gorm.Open(sqlitedriver.Open(filepath.Join(t.TempDir(), "host.db")),
+		&gorm.Config{Logger: logger.Discard})
+	if err != nil {
+		t.Fatalf("opening a handle of the host's own: %v", err)
+	}
+	t.Cleanup(func() { _ = db.Close(handle) })
+	if err := handle.Use(newCapture()); err != nil {
+		t.Fatalf("installing the capture plugin: %v", err)
+	}
+	if err := handle.Exec(createOrders).Error; err != nil {
+		t.Fatalf("creating the orders table: %v", err)
+	}
+	applyMigrations(t, handle, auditDialect)
+	j := newTestJournal(handle, settings{})
+	if err := j.Record(context.Background(), audit.Entry{Action: "export", Object: "orders"}); err != nil {
+		t.Fatalf("Record over the host's handle: %v", err)
+	}
+	if err := handle.Create(&order{ID: "o1", Note: "host"}).Error; err != nil {
+		t.Fatalf("a write over the host's handle: %v", err)
+	}
+	if got := len(auditRows(t, handle)); got != 2 {
+		t.Errorf("the table holds %d row(s) over the host's handle, want the seam's and the statement's", got)
 	}
 }

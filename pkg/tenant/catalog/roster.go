@@ -211,12 +211,12 @@ func (r *roster) readHeld(ctx context.Context) error {
 // whether fn ran.
 //
 // The roster's statements never join a caller's transaction: its methods take a
-// context, which carries none. db.Connection bounds both waits a statement makes
-// before it runs, for the connection and for a lock another connection holds, so
-// a caller holding what the statement needs — the one connection of a database
-// held to one, a lock on the table — gets a failure once the bound has passed
-// rather than a statement that waits for it. The statements themselves run under
-// the caller's context.
+// context, which carries none. db.Connection bounds the wait for the
+// connection, so a caller holding the one connection of a database held to one
+// gets a failure once the bound has passed rather than a statement that waits
+// for it. The statements themselves run under the caller's context and wait for
+// a lock another connection holds as the engine makes them wait
+// (connectionWait).
 //
 // A connection that does not come free within the bound is reported with
 // ErrNoConnection, and a context that ends first with the context's own error;
@@ -242,12 +242,12 @@ func (r *roster) onConnection(ctx context.Context, fn func(session *gorm.DB) err
 // failure each their own way, so the failure alone does not say which it was.
 // The database is asked instead, on the same connection (tableAbsent): when it
 // has no table by this name, the failure carries ErrRosterMissing, whose repair
-// is the migration set. Every other failure — a lock the bound ran out on, a
-// connection lost, a permission refused — is reported as it stands, with no
-// sentinel, since there is no table missing to repair; so is one whose question
-// fails too, since nothing then says the table is not there. A statement whose
-// context ended is reported with the context's error. The statement's own
-// failure is kept in the chain and in the text either way.
+// is the migration set. Every other failure — a lock the engine gave up
+// waiting for, a connection lost, a permission refused — is reported as it
+// stands, with no sentinel, since there is no table missing to repair; so is
+// one whose question fails too, since nothing then says the table is not
+// there. A statement whose context ended is reported with the context's error.
+// The statement's own failure is kept in the chain and in the text either way.
 func failedStatement(ctx context.Context, session *gorm.DB, err error) error {
 	if ended := ctx.Err(); ended != nil {
 		return fmt.Errorf("a statement on table %s ended with its context (%w): %w", tableName, ended, err)
@@ -286,27 +286,33 @@ func tableAbsent(session *gorm.DB) bool {
 // postgresDialector is the name the PostgreSQL engine's GORM dialector answers.
 const postgresDialector = "postgres"
 
-// connectionWait is the bound db.Connection holds each of the roster's own
-// statements to — the reads of the whole table, an entry's read of one row, and
-// each write with the reads it makes: the wait for a connection of the delivered
-// pool and the wait for a lock another connection holds, together.
+// connectionWait is how long each of the roster's own reads and writes — the
+// reads of the whole table, an entry's read of one row, and each write with the
+// reads it makes — waits for a connection of the delivered pool, through
+// db.Connection.
 //
 // The roster's statements run on connections of their own, and a caller may be
 // holding what they need. On a database held to one connection — pkg/db holds
 // an in-memory SQLite database to one — a caller inside its own transaction on
-// the delivered handle holds that connection until its own call returns; on any
-// database, a caller that wrote the table in its own transaction holds the lock
-// a write of the roster's waits for. A statement of the roster's waiting for
-// either is waiting for the caller. An in-process bus is the ordinary shape of
-// it, running a subscriber on its publisher's goroutine inside whatever
-// transaction the publisher holds, and the subscriber enters the event's tenant.
-// Nothing a statement can see tells that hold from another caller's brief one,
-// so the wait is bounded rather than recognised.
-//
-// It is the SQLite driver's default busy timeout, which is what the same
-// statement would wait for a lock on a file database without the bound. A
-// connection or a lock taken under load comes free in the time a statement
+// the delivered handle holds that connection until its own call returns, and a
+// statement of the roster's waiting for it is waiting for the caller. An
+// in-process bus is the ordinary shape of it, running a subscriber on its
+// publisher's goroutine inside whatever transaction the publisher holds, and
+// the subscriber enters the event's tenant. Nothing a statement can see tells
+// that hold from another caller's brief one, so the wait is bounded rather than
+// recognised. A connection taken under load comes free in the time a statement
 // takes, far inside it.
+//
+// A lock another connection holds is waited for as the engine waits for it,
+// which the bound does not reach. On SQLite that is the connection's busy
+// timeout, the driver's five seconds unless the locator sets another; a
+// roster write inside a caller's transaction that has written to the same
+// database file meets that caller's write lock after its first read, and
+// SQLite then refuses it at once rather than waiting. On PostgreSQL it is until
+// the caller's context ends, or the session's lock_timeout or
+// statement_timeout does; a roster write to a row the caller's own transaction
+// has written waits on that caller, and with neither timeout and no deadline it
+// waits for good.
 const connectionWait = 5 * time.Second
 
 // checkRows refuses a read holding a tenant this module will not act on.
@@ -485,10 +491,11 @@ func (r *roster) fromTable(ctx context.Context, id tenant.ID) (tenant.Tenant, bo
 // Entries arriving together for one such tenant wait for one another on the
 // slot reads run in; the first to find the snapshot still behind rereads it,
 // and the rest find it caught up. An entry whose context ends while it waits
-// leaves the snapshot to the next reread. The wait for the slot is bounded
-// through the reads that hold it, each of which waits at most connectionWait
-// for its connection and a lock (onConnection). A failed reread is reported as
-// a failed refresh is, and the entry keeps the answer it read.
+// leaves the snapshot to the next reread. The wait for the slot is as long as
+// the reads that hold it take, each of which waits at most connectionWait for
+// its connection and for a lock as long as the engine waits for one
+// (connectionWait). A failed reread is reported as a failed refresh is, and the
+// entry keeps the answer it read.
 func (r *roster) catchUp(ctx context.Context, id tenant.ID, t tenant.Tenant, held bool) {
 	if agrees(r.snap.Load(), id, t, held) {
 		return

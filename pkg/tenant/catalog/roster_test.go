@@ -39,9 +39,9 @@ func rosterOver(t *testing.T, rows ...string) *roster {
 
 // openHandle is the handle a case builds its roster over: the one the database
 // module delivers over a SQLite file of the case's own, which every connection
-// of the pool shares. It is the module's handle rather than one opened here,
-// because the roster takes its connections through db.Connection, which refuses
-// a handle the database module did not open.
+// of the pool shares. It is the module's handle rather than one opened here, so
+// that the roster runs over what an assembly hands it: the constraint
+// classification the module installs, and the pool shape it gives the locator.
 //
 // The query log is silenced on the session handed back: a case that makes a
 // read fail on purpose asserts on the error that came back, and GORM's echo of

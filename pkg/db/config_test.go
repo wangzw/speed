@@ -38,7 +38,6 @@ func specWithMutex() Spec {
 		Dialect:                     Postgres,
 		Dialector:                   func(string) gorm.Dialector { return nil },
 		ConstraintViolation:         func(error) error { return nil },
-		BoundLockWait:               leaveLockWait,
 		NewMigrationLock:            func(time.Duration) MigrationLock { return nil },
 		DefaultMigrationLockTimeout: 5 * time.Minute,
 	}
@@ -53,7 +52,6 @@ func specWithoutMutex() Spec {
 		Dialect:             SQLite,
 		Dialector:           func(string) gorm.Dialector { return nil },
 		ConstraintViolation: func(error) error { return nil },
-		BoundLockWait:       leaveLockWait,
 	}
 }
 

@@ -6,9 +6,15 @@
 // its dialect owes the migration run, and registers the module that assembles
 // all of it. The connection, plugin, encryption and migration logic are
 // pkg/db's, shared with every other implementation; what is dialect-specific
-// stops at the driver, how the driver reports a constraint refusal, how a
-// connection's wait for a lock is bounded, the mutex, the namespace and the
-// module registration.
+// stops at the driver, how the driver reports a constraint refusal, the mutex,
+// the namespace and the module registration.
+//
+// A statement waits for a lock another connection holds until its context ends,
+// or until the session's lock_timeout or statement_timeout ends the wait first:
+// both are the server's settings, which a locator's runtime parameters, the
+// role's and the database's defaults and the server's configuration set, and
+// with neither the wait lasts for as long as the lock is held. Nothing in this
+// subpackage or in pkg/db changes them.
 //
 // The namespace is this engine's alone, and that is load-bearing rather than
 // tidy. The configuration manifest is collected from every registered module,
@@ -31,10 +37,7 @@
 package postgres
 
 import (
-	"context"
-	"database/sql"
 	"errors"
-	"fmt"
 	"time"
 
 	"github.com/jackc/pgx/v5/pgconn"
@@ -111,32 +114,4 @@ func constraintViolation(err error) error {
 	default:
 		return nil
 	}
-}
-
-// boundLockWait holds how long a statement on conn waits for a lock another
-// connection holds to bound, through the session's lock_timeout, and returns
-// what puts the lock_timeout it had back.
-//
-// PostgreSQL ends a lock wait when the statement's context ends, but the
-// statements Connection runs are under the caller's context, which the bound
-// is not to cut short once a statement is under way; lock_timeout ends the
-// wait alone. It applies to each lock a statement waits for, and zero turns it
-// off, so a bound is at least a millisecond. The setting read and put back is
-// the session's, which a locator's runtime parameters or the role's and the
-// database's defaults may have given it.
-func boundLockWait(ctx context.Context, conn *sql.Conn, bound time.Duration) (func(context.Context) error, error) {
-	var taken string
-	if err := conn.QueryRowContext(ctx, "SELECT current_setting('lock_timeout')").Scan(&taken); err != nil {
-		return nil, fmt.Errorf("reading lock_timeout: %w", err)
-	}
-	limit := fmt.Sprintf("%dms", max(bound.Milliseconds(), 1))
-	if _, err := conn.ExecContext(ctx, "SELECT set_config('lock_timeout', $1, false)", limit); err != nil {
-		return nil, fmt.Errorf("setting lock_timeout: %w", err)
-	}
-	return func(ctx context.Context) error {
-		if _, err := conn.ExecContext(ctx, "SELECT set_config('lock_timeout', $1, false)", taken); err != nil {
-			return fmt.Errorf("putting lock_timeout back: %w", err)
-		}
-		return nil
-	}, nil
 }

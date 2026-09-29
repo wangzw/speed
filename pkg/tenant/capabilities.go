@@ -65,17 +65,22 @@ type Resolution interface {
 // A method that reads the table or writes it — Put, Create, SetStatus, and an
 // entry the snapshot would refuse — runs its statements on a connection of the
 // delivered pool of its own, not in the caller's transaction, taken through the
-// database module's Connection with a bound of five seconds: its wait for the
-// connection and its statements' waits for a lock another connection holds end,
-// together, once the five seconds have passed. No connection within them fails
-// with ErrNoConnection, having done nothing; a lock the bound ran out on fails
-// the statement with the engine's own error. On a database held to one
+// database module's Connection within five seconds. No connection within them
+// fails with ErrNoConnection, having done nothing: on a database held to one
 // connection — an in-memory one — a caller inside its own transaction on the
-// delivered handle holds that connection until its own call returns, and on any
-// database a caller that wrote the table in its own transaction holds the lock
-// a write waits for, so such a call made inside that transaction fails once the
-// five seconds have passed. The statements themselves run under the caller's
-// context. Get, ByAlias and List read the snapshot and nothing else.
+// delivered handle holds that connection until its own call returns, so such a
+// call made inside that transaction fails once the five seconds have passed.
+//
+// The statements themselves run under the caller's context, and wait for a
+// lock another connection holds as the engine does, failing with the engine's
+// own error when it gives up. Inside a caller's transaction that has written to
+// the same SQLite database file, a write fails at once: its first statement
+// reads, and SQLite does not wait to turn a read into a write while another
+// connection holds the write lock. On PostgreSQL, a write to a row the caller's
+// own transaction has written waits for that transaction, until the caller's
+// context ends or the session's lock_timeout or statement_timeout does, and
+// with none of them for good. Get, ByAlias and List read the snapshot and
+// nothing else.
 //
 // Enter and EnterRegistered are the methods that put a tenant into a context,
 // and they are here rather than beside FromContext because the roster is what

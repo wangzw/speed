@@ -8,7 +8,9 @@ import (
 	"testing"
 	"time"
 
+	sqlitedriver "github.com/glebarez/sqlite"
 	"gorm.io/gorm"
+	"gorm.io/gorm/logger"
 
 	"github.com/vislake/speed/pkg/db"
 	"github.com/vislake/speed/pkg/internal/dbtest"
@@ -119,12 +121,18 @@ func TestACallInsideTheCallersTransactionOnOneConnectionGivesUp(t *testing.T) {
 	}
 }
 
+// lockBusyTimeout is the busy timeout the locator in the case below sets: short
+// of the driver's default and of connectionWait, so that a lock wait held to
+// either is told apart from one held to the locator's.
+const lockBusyTimeout = time.Second
+
 // A write, a delete and a listing that meet a lock another connection holds on
-// the database wait for it within connectionWait, however long the
-// connection's own busy timeout would let them wait, and leave the table as it
-// was. A lock is what the same call waits for on a file database when a caller
-// holds the database in its own transaction.
-func TestACallThatMeetsALockGivesUpWithinTheBound(t *testing.T) {
+// a SQLite file wait for it for the connection's busy timeout, the one the
+// locator sets, whatever connectionWait is, then fail with SQLite's refusal and
+// leave the table as it was. A lock is what the same call waits for on a file
+// database when a caller holds the database in its own transaction;
+// connectionWait bounds the wait for a connection only.
+func TestACallThatMeetsALockWaitsForTheBusyTimeout(t *testing.T) {
 	t.Parallel()
 	cases := map[string]func(s *settingsStore, ctx context.Context) error{
 		"a write": func(s *settingsStore, ctx context.Context) error {
@@ -142,7 +150,7 @@ func TestACallThatMeetsALockGivesUpWithinTheBound(t *testing.T) {
 		t.Run(name, func(t *testing.T) {
 			t.Parallel()
 			file := filepath.Join(t.TempDir(), "locked.db")
-			handle := quietly(dbtest.SQLite(t, file+"?_pragma=busy_timeout(30000)", nil).DB())
+			handle := quietly(dbtest.SQLite(t, file+"?_pragma=busy_timeout(1000)", nil).DB())
 			applyMigration(t, handle, "sqlite/0001_settings.sql")
 			bus := newRecordingBus()
 			s := storeOn(t, handle, db.SQLite, demoTable(t), bus)
@@ -167,11 +175,16 @@ func TestACallThatMeetsALockGivesUpWithinTheBound(t *testing.T) {
 			go func() { done <- call(s, context.Background()) }()
 			select {
 			case gave := <-done:
-				if gave == nil {
-					t.Errorf("%s went through while another connection held the database", name)
+				took := time.Since(started)
+				if gave == nil || !strings.Contains(gave.Error(), "SQLITE_BUSY") {
+					t.Errorf("%s gave %v while another connection held the database, want SQLite's refusal of "+
+						"the lock", name, gave)
 				}
-				if took := time.Since(started); took < connectionWait {
-					t.Errorf("%s gave up after %v, before the %v it waits for a lock", name, took, connectionWait)
+				if took < lockBusyTimeout {
+					t.Errorf("%s gave up after %v, before the busy timeout of %v", name, took, lockBusyTimeout)
+				}
+				if limit := lockBusyTimeout + 2*time.Second; took > limit {
+					t.Errorf("%s gave up after %v, well past the busy timeout of %v", name, took, lockBusyTimeout)
 				}
 			case <-time.After(connectionTimer):
 				t.Errorf("%s was still waiting for the lock after %v", name, connectionTimer)
@@ -189,6 +202,38 @@ func TestACallThatMeetsALockGivesUpWithinTheBound(t *testing.T) {
 				t.Errorf("the call that gave up published %+v", events[published:])
 			}
 		})
+	}
+}
+
+// The store writes, deletes and lists over a handle the host opened itself
+// with gorm.Open, as it does over the one the database module delivers: every
+// call takes a connection of whatever pool the handle is on.
+func TestTheStoreWorksOverAHandleTheHostOpened(t *testing.T) {
+	handle, err := gorm.Open(sqlitedriver.Open(filepath.Join(t.TempDir(), "host.db")),
+		&gorm.Config{Logger: logger.Discard})
+	if err != nil {
+		t.Fatalf("opening a handle of the host's own: %v", err)
+	}
+	t.Cleanup(func() { _ = db.Close(handle) })
+	applyMigration(t, handle, "sqlite/0001_settings.sql")
+	s := storeOn(t, handle, db.SQLite, demoTable(t), newRecordingBus())
+	ctx := context.Background()
+	if err = s.Set(ctx, Write{Layer: Global(), Key: "demo.limit", Value: 7}); err != nil {
+		t.Fatalf("Set over the host's handle: %v", err)
+	}
+	got, err := Get[int](s, Global(), "demo.limit")
+	if err != nil || got != 7 {
+		t.Fatalf("demo.limit reads %v (%v) over the host's handle, want 7", got, err)
+	}
+	entries, err := s.List(ctx, Global())
+	if err != nil || len(entries) != 1 || entries[0].Value != "7" {
+		t.Fatalf("List over the host's handle gave %+v (%v), want the one row 7", entries, err)
+	}
+	if err := s.Delete(ctx, Global(), "demo.limit", ""); err != nil {
+		t.Fatalf("Delete over the host's handle: %v", err)
+	}
+	if entries, err := s.List(ctx, Global()); err != nil || len(entries) != 0 {
+		t.Fatalf("List after the delete gave %+v (%v), want no row", entries, err)
 	}
 }
 
