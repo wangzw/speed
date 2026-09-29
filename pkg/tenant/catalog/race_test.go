@@ -8,10 +8,7 @@ import (
 	"sync"
 	"testing"
 
-	pgdriver "gorm.io/driver/postgres"
-	"gorm.io/gorm"
-	"gorm.io/gorm/logger"
-
+	"github.com/vislake/speed/pkg/internal/dbtest"
 	"github.com/vislake/speed/pkg/internal/pgpool/pgtest"
 	"github.com/vislake/speed/pkg/tenant"
 )
@@ -26,17 +23,9 @@ import (
 // refusal to connect rather than with anything the case is about.
 func rosterOverPostgres(t *testing.T) *roster {
 	t.Helper()
-	handle, err := gorm.Open(pgdriver.Open(pgtest.Acquire(t)),
-		&gorm.Config{Logger: logger.Default.LogMode(logger.Silent)})
-	if err != nil {
-		t.Fatalf("opening the handle: %v", err)
-	}
-	pool, err := handle.DB()
-	if err != nil {
-		t.Fatalf("reaching the handle's pool: %v", err)
-	}
-	t.Cleanup(func() { pool.Close() })
-	pool.SetMaxOpenConns(racingConnections)
+	handle := quiet(dbtest.Postgres(t, pgtest.Acquire(t), dbtest.Items{
+		"max-open-conns": racingConnections, "max-idle-conns": racingConnections,
+	}).DB())
 	ddl, err := fs.ReadFile(migrationsFS, "postgres/0001_tenants.sql")
 	if err != nil {
 		t.Fatalf("reading the postgres migration: %v", err)
@@ -49,6 +38,43 @@ func rosterOverPostgres(t *testing.T) *roster {
 
 // racingConnections bounds the pool of a roster over the PostgreSQL fixture.
 const racingConnections = 8
+
+// A table dropped since the load is told apart from any other failure on
+// PostgreSQL too, where a statement that fails inside a transaction leaves the
+// transaction taking nothing further: the question that tells them apart is
+// asked outside it, so a write over the dropped table reports ErrRosterMissing
+// as an entry and a reread of the whole roster do.
+func TestADroppedTableIsReportedMissingOnPostgres(t *testing.T) {
+	r := rosterOverPostgres(t)
+	if err := r.handle.Exec(insert("t_acme", "acme")).Error; err != nil {
+		t.Fatalf("writing a row: %v", err)
+	}
+	if err := r.read(context.Background()); err != nil {
+		t.Fatalf("reading the roster: %v", err)
+	}
+	if err := r.handle.Exec("DROP TABLE " + tableName).Error; err != nil {
+		t.Fatalf("dropping the table: %v", err)
+	}
+	ctx := context.Background()
+	for name, call := range map[string]func() error{
+		"Put": func() error {
+			return r.Put(ctx, tenant.Tenant{ID: "t_new", Alias: "new", Status: tenant.StatusActive})
+		},
+		"Create": func() error {
+			return r.Create(ctx, tenant.Tenant{ID: "t_new", Alias: "new", Status: tenant.StatusActive})
+		},
+		"SetStatus": func() error { return r.SetStatus(ctx, "t_acme", tenant.StatusDisabled) },
+		"Enter": func() error {
+			_, err := r.Enter(ctx, "t_ghost")
+			return err
+		},
+		"a reread of the whole roster": func() error { return r.read(ctx) },
+	} {
+		if err := call(); !errors.Is(err, tenant.ErrRosterMissing) {
+			t.Errorf("%s over a dropped table gave %v, want ErrRosterMissing", name, err)
+		}
+	}
+}
 
 // Two tenants put under one alias at once both find it free, and the second
 // insert meets the column's unique index. That is the same conflict the check

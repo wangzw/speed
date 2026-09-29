@@ -87,21 +87,33 @@ here must not cross, and how to run it.
   plugin registers callbacks; nothing in this module opens a database of its
   own or writes SQL. A table belongs to the module that declares it, and this
   module's one table comes from `catalog/migrations/`.
-- **Every statement of the roster's takes a connection of the delivered pool
-  within `connectionWait`, and runs under the caller's context once it has
-  one** (`catalog/roster.go` `held`). The roster's statements never join a
-  caller's transaction — its methods take a context, which carries none — and
-  on a database held to one connection a caller inside its own transaction on
-  the delivered handle holds that connection until its own call returns: an
-  in-process subscriber entering a disabled tenant inside its publisher's
-  transaction is the ordinary case. A read or a write that waits for the
-  connection with no bound waits for the caller itself, forever under a context
-  with no deadline.
-  Past the bound the call fails with `ErrNoConnection`, which is neither
-  refusal: answering an entry from the snapshot instead would drop work for a
-  tenant the table serves. A new statement of the roster's goes through `held`,
-  and the connection a write takes is given back before its reread takes one
-  (`catalog/wait_test.go`).
+- **Every statement of the roster's takes its connection of the delivered pool
+  through `db.Connection`, with `connectionWait` as the bound, and runs under
+  the caller's context** (`catalog/roster.go` `onConnection`). The database
+  module owns that bound — the wait for the connection and every lock wait of
+  the statements on it, together — and no second one is written here: a bound
+  of the roster's own would cover the connection and leave SQLite's lock wait,
+  which no context ends, to the busy timeout. The roster's statements never
+  join a caller's transaction — its methods take a context, which carries none
+  — and on a database held to one connection a caller inside its own
+  transaction on the delivered handle holds that connection until its own call
+  returns: an in-process subscriber entering a disabled tenant inside its
+  publisher's transaction is the ordinary case. Past the bound the call fails
+  with `ErrNoConnection` when no connection came, and with the engine's own
+  error when a lock did not; neither is a refusal, because answering an entry
+  from the snapshot instead would drop work for a tenant the table serves. A new
+  statement of the roster's goes through `onConnection`, and the connection a
+  write takes is given back before its reread takes one (`catalog/wait_test.go`).
+- **`ErrRosterMissing` means the roster table is not there, and nothing else.**
+  A statement that fails is followed, on its connection and outside any
+  transaction, by a listing of the database's tables (`failedStatement`,
+  `tableAbsent`); only a listing without the table gives the sentinel, whose
+  repair is the migration command. A lock the bound ran out on, a lost
+  connection or a refused permission is reported as it stands. The drivers word
+  a missing table each their own way, and this module imports no driver, so the
+  question is put to the database rather than to the error text; this
+  module's own answers — a conflict, a registration already there, an unknown
+  tenant — are not followed by it (`answered`).
 - **The roster table does not embed the convention.** It is the fact scoping is
   decided from, so a read of it that needed a tenant first would have nothing to
   read it with. It is not special-cased anywhere: it takes the same path through
@@ -222,10 +234,13 @@ go -C pkg/tenant test ./...
 go -C pkg/tenant test -race ./...
 ```
 
-The tests bring up their own in-memory database, except the cases that prove a
-refusal on the PostgreSQL driver as well: those take a database on the shared
+The tests bring up their own database, except the cases that prove a refusal
+on the PostgreSQL driver as well: those take a database on the shared
 container through `pkg/internal/pgpool/pgtest`, which skips them on a machine
-without docker and fails them under CI. `pkg/tenant/catalog/plugin_test.go` is where the filter's four
+without docker and fails them under CI. A roster is built over the handle the
+database module delivers, from `pkg/internal/dbtest`, because its statements
+take their connections through `db.Connection`, which refuses a handle opened
+around that module; the filter's own cases build theirs by hand. `pkg/tenant/catalog/plugin_test.go` is where the filter's four
 answers are pinned; `pkg/tenant/catalog/reach_test.go` is where the statements
 it has to reach beyond the query processor are — a scan, a Row whose refusal
 comes back through the row it hands back, an association join, a subquery
@@ -238,9 +253,13 @@ the order they read; `pkg/tenant/catalog/enter_test.go` is where entering a
 tenant is — a refusal taken from the table rather than the snapshot, what an
 entered context carries, the entry that admits a disabled tenant, and a table
 dropped under an entry or a write; `pkg/tenant/catalog/wait_test.go` is where
-the roster's wait for a connection is — bounded inside a caller's transaction
-on a database held to one connection, taken when it comes free inside the
-bound, and ended by the caller's context; `pkg/tenant/catalog/readonly_test.go`
+the roster's waits are — for a connection, bounded inside a caller's
+transaction on a database held to one connection, taken when it comes free
+inside the bound, and ended by the caller's context; for a lock another
+connection holds, bounded whatever the locator's busy timeout and answered as
+no missing table; and a connection that cannot be opened, answered as no
+missing table either — and `pkg/tenant/catalog/race_test.go` is where a dropped
+table is still told apart on PostgreSQL; `pkg/tenant/catalog/readonly_test.go`
 is where a read-only model's reads over a nullable tenant column are, on both
 dialects;
 `pkg/tenant/resolve/extract_test.go` is where the

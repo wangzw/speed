@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"log/slog"
+	"slices"
 	"sync"
 	"sync/atomic"
 	"time"
@@ -185,14 +186,18 @@ func (r *roster) release() { <-r.reading }
 
 // readHeld is read, run by a caller already holding the slot.
 func (r *roster) readHeld(ctx context.Context) error {
-	session, release, err := r.held(ctx)
-	if err != nil {
-		return fmt.Errorf("%s%s: table %s was not read: %w", diagnosticPrefix, ModuleName, tableName, err)
-	}
-	defer release()
 	var rows []row
-	if err := session.Model(&row{}).Find(&rows).Error; err != nil {
-		return unreadable(ctx, err)
+	ran, err := r.onConnection(ctx, func(session *gorm.DB) error {
+		if err := session.Model(&row{}).Find(&rows).Error; err != nil {
+			return failedStatement(ctx, session, err)
+		}
+		return nil
+	})
+	if err != nil {
+		if !ran {
+			return fmt.Errorf("%s%s: table %s was not read: %w", diagnosticPrefix, ModuleName, tableName, err)
+		}
+		return err
 	}
 	if err := checkRows(rows); err != nil {
 		return err
@@ -201,82 +206,92 @@ func (r *roster) readHeld(ctx context.Context) error {
 	return nil
 }
 
-// unreadable is the failure of a statement reading the roster table under ctx.
+// onConnection runs fn — the roster's own statements — on a connection of the
+// delivered pool taken through db.Connection, within connectionWait, and reports
+// whether fn ran.
 //
-// A table that is not there — never created, or dropped since — fails a read as
-// a read fails for any other reason, and the drivers word the failure each their
-// own way, so every read of the table that fails carries ErrRosterMissing, with
-// the failure the read met kept in the chain and in the text: the sentinel names
-// the likely repair, the text what happened. Two failures are told apart
-// because their cause is known: a read whose context ended, reported with the
-// context's error, and a read that never got a connection (held). Neither says
-// anything about the table.
-func unreadable(ctx context.Context, err error) error {
+// The roster's statements never join a caller's transaction: its methods take a
+// context, which carries none. db.Connection bounds both waits a statement makes
+// before it runs, for the connection and for a lock another connection holds, so
+// a caller holding what the statement needs — the one connection of a database
+// held to one, a lock on the table — gets a failure once the bound has passed
+// rather than a statement that waits for it. The statements themselves run under
+// the caller's context.
+//
+// A connection that does not come free within the bound is reported with
+// ErrNoConnection, and a context that ends first with the context's own error;
+// no statement ran, so neither says anything about the table. Any other
+// failure to take a connection is reported as it stands.
+func (r *roster) onConnection(ctx context.Context, fn func(session *gorm.DB) error) (bool, error) {
+	ran := false
+	err := db.Connection(ctx, r.handle, connectionWait, func(session *gorm.DB) error {
+		ran = true
+		return fn(session)
+	})
+	if err != nil && !ran && errors.Is(err, context.DeadlineExceeded) && ctx.Err() == nil {
+		return false, fmt.Errorf("%w: %w", tenant.ErrNoConnection, err)
+	}
+	return ran, err
+}
+
+// failedStatement is the failure of a statement of the roster's on its table,
+// under ctx, on the session it ran on.
+//
+// A table that is not there — never created, or dropped since — fails a
+// statement as a statement fails for any other reason, and the drivers word the
+// failure each their own way, so the failure alone does not say which it was.
+// The database is asked instead, on the same connection: when the tables it
+// lists hold none by this name, the failure carries ErrRosterMissing, whose
+// repair is the migration set. Every other failure — a lock the bound ran out
+// on, a connection lost, a permission refused — is reported as it stands, with
+// no sentinel, since there is no table missing to repair; so is one whose
+// listing fails too, since nothing then says the table is not there. A
+// statement whose context ended is reported with the context's error. The
+// statement's own failure is kept in the chain and in the text either way.
+func failedStatement(ctx context.Context, session *gorm.DB, err error) error {
 	if ended := ctx.Err(); ended != nil {
-		return fmt.Errorf("reading table %s ended with its context (%w): %w", tableName, ended, err)
+		return fmt.Errorf("a statement on table %s ended with its context (%w): %w", tableName, ended, err)
 	}
-	return fmt.Errorf(
-		"%w: reading table %s failed, and a table that is not there — never created, or dropped "+
-			"since — reads the same way: %w. This module's migration set creates it, and a command "+
-			"whose work is applying migrations collects that set only when the host reaches this "+
-			"module for its declarations",
-		tenant.ErrRosterMissing, tableName, err)
+	if tableAbsent(session) {
+		return fmt.Errorf(
+			"%w: a statement on table %s failed, and the database lists no table by that name: %w. "+
+				"This module's migration set creates it, and a command whose work is applying "+
+				"migrations collects that set only when the host reaches this module for its declarations",
+			tenant.ErrRosterMissing, tableName, err)
+	}
+	return fmt.Errorf("a statement on table %s failed: %w", tableName, err)
 }
 
-// held takes a connection of the delivered pool for the roster's own
-// statements, within connectionWait, and returns a session of the delivered
-// handle on it under the caller's context, with what gives the connection back.
-//
-// Only the wait for the connection is bounded. The statements run under the
-// caller's context, so its deadline and its cancellation end them as they end
-// the wait; a bound on a statement already under way would cut short a write the
-// database may be committing.
-//
-// A connection that does not come free within the bound is reported as that
-// wait, with ErrNoConnection, and a context that ends first as the context's
-// own error. Neither is a read of the table that failed, so neither carries
-// ErrRosterMissing.
-func (r *roster) held(ctx context.Context) (*gorm.DB, func(), error) {
-	pool, err := r.handle.DB()
-	if err != nil {
-		return nil, nil, fmt.Errorf("the delivered handle has no connection pool: %w", err)
-	}
-	taking, cancel := context.WithTimeout(ctx, connectionWait)
-	defer cancel()
-	conn, err := pool.Conn(taking)
-	if err != nil {
-		if errors.Is(err, context.DeadlineExceeded) && ctx.Err() == nil {
-			return nil, nil, fmt.Errorf("%w: none came free within %v; on a database held to one "+
-				"connection, a transaction the caller holds on the delivered handle keeps it until the "+
-				"caller's own call returns: %w", tenant.ErrNoConnection, connectionWait, err)
-		}
-		return nil, nil, fmt.Errorf("taking a connection of the delivered database: %w", err)
-	}
-	session := r.handle.Session(&gorm.Session{NewDB: true, Context: ctx})
-	session.Statement.ConnPool = conn
-	return session, func() { _ = conn.Close() }, nil
+// tableAbsent reports whether the database a session is on lists no table named
+// as the roster's, as GORM's migrator lists them — SQLite's main database,
+// PostgreSQL's current schema, which is where this module's migration creates
+// it. A listing that fails reports nothing absent.
+func tableAbsent(session *gorm.DB) bool {
+	tables, err := session.Migrator().GetTables()
+	return err == nil && !slices.Contains(tables, tableName)
 }
 
-// connectionWait bounds how long each of the roster's own statements waits for
-// a connection of the delivered pool: the reads of the whole table, an entry's
-// read of one row, and each write with the reads it makes.
+// connectionWait is the bound db.Connection holds each of the roster's own
+// statements to — the reads of the whole table, an entry's read of one row, and
+// each write with the reads it makes: the wait for a connection of the delivered
+// pool and the wait for a lock another connection holds, together.
 //
 // The roster's statements run on connections of their own, and a caller may be
-// holding the one they need. On a database held to one connection — pkg/db
-// holds an in-memory SQLite database to one — a caller inside its own
-// transaction on the delivered handle holds that connection until its own call
-// returns, so a statement of the roster's waiting for it is waiting for the
-// caller: under a context with no deadline, forever. An in-process bus is the
-// ordinary shape of it, running a subscriber on its publisher's goroutine inside
-// whatever transaction the publisher holds, and the subscriber enters the
-// event's tenant. Nothing a statement can see tells that hold from another
-// caller's brief one, so the wait is bounded rather than recognised.
+// holding what they need. On a database held to one connection — pkg/db holds
+// an in-memory SQLite database to one — a caller inside its own transaction on
+// the delivered handle holds that connection until its own call returns; on any
+// database, a caller that wrote the table in its own transaction holds the lock
+// a write of the roster's waits for. A statement of the roster's waiting for
+// either is waiting for the caller. An in-process bus is the ordinary shape of
+// it, running a subscriber on its publisher's goroutine inside whatever
+// transaction the publisher holds, and the subscriber enters the event's tenant.
+// Nothing a statement can see tells that hold from another caller's brief one,
+// so the wait is bounded rather than recognised.
 //
-// It is the SQLite driver's default busy timeout, which is how long the same
-// statement waits for a lock the caller holds on a file database: on a database
-// held to one connection the connection plays the lock's part, and the two
-// shapes of one engine fail alike. A connection taken under load comes free in
-// the time a statement takes, far inside it.
+// It is the SQLite driver's default busy timeout, which is what the same
+// statement would wait for a lock on a file database without the bound. A
+// connection or a lock taken under load comes free in the time a statement
+// takes, far inside it.
 const connectionWait = 5 * time.Second
 
 // checkRows refuses a read holding a tenant this module will not act on.
@@ -379,12 +394,13 @@ func (r *roster) EnterRegistered(ctx context.Context, id tenant.ID) (context.Con
 // The identifier's shape is judged first, because a value outside the domain
 // is no tenant's and the message says which of the two fixes it needs. A table
 // that cannot be read gives no answer, and the failure is reported as it
-// stands rather than as either refusal: a read that failed as ErrRosterMissing,
-// which a table no longer there fails as, and a connection that did not come
-// free within connectionWait as ErrNoConnection. The second is what an entry
-// inside a transaction the caller holds on a database held to one connection
-// meets, once the snapshot would refuse; an admission reads nothing, and is
-// not held up by it.
+// stands rather than as either refusal: with ErrRosterMissing when the table is
+// not there, with ErrNoConnection when no connection came free within
+// connectionWait, with the context's error when the caller's context ended, and
+// otherwise as the read failed (failedStatement). ErrNoConnection is what an
+// entry inside a transaction the caller holds on a database held to one
+// connection meets, once the snapshot would refuse; an admission reads nothing,
+// and is not held up by it.
 //
 // What it writes is what the resolving layer writes on admitting a request —
 // the identifier into the context and onto the logger, replacing a tenant the
@@ -421,22 +437,21 @@ func (r *roster) enter(ctx context.Context, id tenant.ID, anyStatus bool) (conte
 }
 
 // fromTable reads one tenant's row from the table, under the caller's context,
-// on a connection taken within connectionWait. A row this module will not act
-// on is refused as the read of the whole roster refuses it.
+// on a connection taken through onConnection. A row this module will not act on
+// is refused as the read of the whole roster refuses it.
 func (r *roster) fromTable(ctx context.Context, id tenant.ID) (tenant.Tenant, bool, error) {
-	noAnswer := func(err error) error {
-		return fmt.Errorf(
+	var held []row
+	_, err := r.onConnection(ctx, func(session *gorm.DB) error {
+		var err error
+		if held, err = lookUp(session, "id", string(id)); err != nil {
+			return failedStatement(ctx, session, err)
+		}
+		return nil
+	})
+	if err != nil {
+		return tenant.Tenant{}, false, fmt.Errorf(
 			"%s%s: this replica's snapshot does not admit tenant %q, and table %s could not be read "+
 				"for it, so there is no answer: %w", diagnosticPrefix, ModuleName, id, tableName, err)
-	}
-	session, release, err := r.held(ctx)
-	if err != nil {
-		return tenant.Tenant{}, false, noAnswer(err)
-	}
-	held, err := lookUp(session, "id", string(id))
-	release()
-	if err != nil {
-		return tenant.Tenant{}, false, noAnswer(err)
 	}
 	if len(held) == 0 {
 		return tenant.Tenant{}, false, nil
@@ -457,8 +472,8 @@ func (r *roster) fromTable(ctx context.Context, id tenant.ID) (tenant.Tenant, bo
 // and the rest find it caught up. An entry whose context ends while it waits
 // leaves the snapshot to the next reread. The wait for the slot is bounded
 // through the reads that hold it, each of which waits at most connectionWait
-// for its connection. A failed reread is reported as a failed refresh is, and
-// the entry keeps the answer it read.
+// for its connection and a lock (onConnection). A failed reread is reported as
+// a failed refresh is, and the entry keeps the answer it read.
 func (r *roster) catchUp(ctx context.Context, id tenant.ID, t tenant.Tenant, held bool) {
 	if agrees(r.snap.Load(), id, t, held) {
 		return
@@ -525,26 +540,41 @@ func (r *roster) Put(ctx context.Context, t tenant.Tenant) error {
 }
 
 // write runs one write of the roster in a transaction of its own, on a
-// connection taken within connectionWait; failed, when there is one, names what
-// a failed transaction ran into, reading on that same connection. The
+// connection taken through onConnection; failed, when there is one, names what
+// a failed transaction ran into, reading on that same connection outside the
+// transaction. A failure that is none of this module's answers about the tenant
+// is then reported as failedStatement reports it, on that connection too. The
 // connection is given back before the reread that follows a write takes its
 // own, which on a database held to one connection is the only one there is.
 func (r *roster) write(ctx context.Context, apply func(tx *gorm.DB) error,
 	failed func(session *gorm.DB, err error) error,
 ) error {
-	session, release, err := r.held(ctx)
+	ran, err := r.onConnection(ctx, func(session *gorm.DB) error {
+		err := session.Transaction(apply)
+		if err != nil && failed != nil {
+			err = failed(session, err)
+		}
+		if err != nil && !answered(err) {
+			err = failedStatement(ctx, session, err)
+		}
+		return err
+	})
 	if err != nil {
-		return fmt.Errorf("%s%s: nothing was written: %w", diagnosticPrefix, ModuleName, err)
-	}
-	err = session.Transaction(apply)
-	if err != nil && failed != nil {
-		err = failed(session, err)
-	}
-	release()
-	if err != nil {
+		if !ran {
+			return fmt.Errorf("%s%s: nothing was written: %w", diagnosticPrefix, ModuleName, err)
+		}
 		return err
 	}
 	return r.afterWrite(ctx)
+}
+
+// answered reports whether a write's failure is one of this module's answers
+// about the tenant — a conflict, a registration already there, an identifier no
+// row carries — which the table was read to give, rather than a statement that
+// failed.
+func answered(err error) bool {
+	return errors.Is(err, tenant.ErrAliasConflict) || errors.Is(err, tenant.ErrTenantExists) ||
+		errors.Is(err, tenant.ErrInvalidTenant)
 }
 
 // failedPut names the conflict a failed Put ran into when the alias turns out
@@ -666,14 +696,16 @@ func (r *roster) SetStatus(ctx context.Context, id tenant.ID, s tenant.Status) e
 // output as an error, outside the logging module — on every tenant a new alias
 // is put for, and on every status change naming a tenant that is not there.
 //
-// A read that fails is reported as every failed read of the table is
-// (unreadable), so an entry or a write over a table dropped since the load says
-// so as the reread of the whole table does.
+// A read that fails is returned as the driver reported it. Its caller reports
+// it as every failed statement of the roster's is (failedStatement), once it is
+// outside any transaction the read ran in: a PostgreSQL transaction a statement
+// failed in accepts no further statement, and telling a table that is not there
+// from any other failure takes one.
 func lookUp(tx *gorm.DB, column, value string) ([]row, error) {
 	var held []row
 	if err := tx.Where(clause.Eq{Column: clause.Column{Name: column}, Value: value}).
 		Limit(1).Find(&held).Error; err != nil {
-		return nil, unreadable(tx.Statement.Context, err)
+		return nil, err
 	}
 	return held, nil
 }

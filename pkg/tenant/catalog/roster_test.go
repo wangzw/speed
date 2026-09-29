@@ -4,15 +4,16 @@ import (
 	"context"
 	"errors"
 	"io/fs"
+	"path/filepath"
 	"strconv"
 	"strings"
 	"testing"
 
-	sqlitedriver "github.com/glebarez/sqlite"
 	"gorm.io/gorm"
 	"gorm.io/gorm/logger"
 
 	"github.com/vislake/speed/pkg/db"
+	"github.com/vislake/speed/pkg/internal/dbtest"
 	"github.com/vislake/speed/pkg/tenant"
 )
 
@@ -36,24 +37,30 @@ func rosterOver(t *testing.T, rows ...string) *roster {
 	return rosterOverDialect(t, "sqlite", rows...)
 }
 
-// openHandle opens the in-memory handle a case builds its roster over. The
-// driver's query log is silenced: a case that makes a read fail on purpose
-// asserts on the error that came back, and the driver's echo of that same
-// failure is output rather than a result.
+// openHandle is the handle a case builds its roster over: the one the database
+// module delivers over a SQLite file of the case's own, which every connection
+// of the pool shares. It is the module's handle rather than one opened here,
+// because the roster takes its connections through db.Connection, which refuses
+// a handle the database module did not open.
+//
+// The query log is silenced on the session handed back: a case that makes a
+// read fail on purpose asserts on the error that came back, and GORM's echo of
+// that same failure is output rather than a result.
 func openHandle(t *testing.T) *gorm.DB {
 	t.Helper()
-	handle, err := gorm.Open(
-		sqlitedriver.Open("file:"+t.Name()+"?mode=memory&cache=shared"),
-		&gorm.Config{Logger: logger.Default.LogMode(logger.Silent)})
-	if err != nil {
-		t.Fatalf("opening the handle: %v", err)
-	}
-	pool, err := handle.DB()
-	if err != nil {
-		t.Fatalf("reaching the handle's pool: %v", err)
-	}
-	t.Cleanup(func() { pool.Close() })
-	return handle
+	return openHandleAt(t, filepath.Join(t.TempDir(), "roster.db"))
+}
+
+// openHandleAt is openHandle over the SQLite locator dsn.
+func openHandleAt(t *testing.T, dsn string) *gorm.DB {
+	t.Helper()
+	return quiet(dbtest.SQLite(t, dsn, nil).DB())
+}
+
+// quiet is a session of a delivered handle whose failed statements GORM does
+// not print.
+func quiet(handle *gorm.DB) *gorm.DB {
+	return handle.Session(&gorm.Session{Logger: logger.Default.LogMode(logger.Silent)})
 }
 
 // rosterOverDialect is rosterOver with the dialect named, so that a case can
@@ -66,14 +73,16 @@ func openHandle(t *testing.T) *gorm.DB {
 // from the migration file itself, so a case cannot drift from the table the
 // module really reads.
 //
-// The pool is closed when the case ends. The handle is an in-memory database
-// shared by name, and a pool left open keeps that database alive past the case
-// — into the next run under -count, where the same name then finds the table
-// already there and the case dies at the fixture.
+// The database is a file of the case's own, and its pool is closed when the
+// case ends.
 func rosterOverDialect(t *testing.T, dialect string, rows ...string) *roster {
 	t.Helper()
-	handle := openHandle(t)
+	return rosterOn(t, openHandle(t), dialect, rows...)
+}
 
+// rosterOn is rosterOverDialect over a handle the case opened.
+func rosterOn(t *testing.T, handle *gorm.DB, dialect string, rows ...string) *roster {
+	t.Helper()
 	ddl, err := fs.ReadFile(migrationsFS, dialect+"/0001_tenants.sql")
 	if err != nil {
 		t.Fatalf("reading the %s migration: %v", dialect, err)

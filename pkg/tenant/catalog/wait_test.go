@@ -3,23 +3,28 @@ package catalog
 import (
 	"context"
 	"errors"
+	"os"
+	"path/filepath"
 	"sync/atomic"
 	"testing"
 	"time"
 
 	"gorm.io/gorm"
 
+	"github.com/vislake/speed/pkg/internal/dbtest"
 	"github.com/vislake/speed/pkg/tenant"
 	"github.com/vislake/speed/pkg/tenant/internal/tenantctx"
 )
 
 // The cases in this file are about how long the roster's own statements wait
-// for a connection. pkg/db holds an in-memory SQLite database to one
-// connection, and a caller inside its own transaction on the delivered handle
-// holds that connection until its own call returns: a statement of the
+// for a connection and for a lock. pkg/db holds an in-memory SQLite database to
+// one connection, and a caller inside its own transaction on the delivered
+// handle holds that connection until its own call returns: a statement of the
 // roster's that waits for it is waiting for the caller. An in-process bus runs
 // a subscriber on its publisher's goroutine, inside whatever transaction the
-// publisher holds, and the subscriber enters the event's tenant.
+// publisher holds, and the subscriber enters the event's tenant. A lock another
+// connection holds on the database is the same wait, on a database of any
+// shape.
 
 // connectionTimer is how long a case waits for a call bounded by
 // connectionWait before it reports the call as still waiting.
@@ -181,6 +186,155 @@ func TestARosterWriteInsideTheCallersTransactionOnOneConnectionEnds(t *testing.T
 				}
 			}
 		})
+	}
+}
+
+// A reread of the whole roster — the refresher's, a write's once it has
+// committed, an entry's bringing the snapshot up to the table — inside the
+// caller's transaction on a database held to one connection gives up once
+// connectionWait has passed, with ErrNoConnection, and the snapshot it would
+// have replaced stays in force.
+//
+// Each reread holds the one slot reads of the table run in while it waits, so
+// a reread that waited for the caller for good would hold every other reread,
+// and every entry catching the snapshot up, with it.
+func TestAReadOfTheWholeRosterInsideTheCallersTransactionOnOneConnectionEnds(t *testing.T) {
+	r := heldToOneConnection(t)
+	before := r.snap.Load()
+	took, err := insideTheCallersTransaction(t, r, func() error { return r.read(context.Background()) })
+	requireNoConnection(t, "the reread of the whole roster", err)
+	if took < connectionWait {
+		t.Fatalf("the reread gave up after %v, before the %v a connection is waited for", took, connectionWait)
+	}
+	if r.snap.Load() != before {
+		t.Fatal("a reread that read nothing replaced the snapshot")
+	}
+}
+
+// rosterOverALockedFile is enteringRoster's roster over a database file, the
+// locator's parameters given, with another connection holding the whole
+// database in a transaction until the case ends.
+func rosterOverALockedFile(t *testing.T, parameters string) *roster {
+	t.Helper()
+	file := filepath.Join(t.TempDir(), "locked.db")
+	r := rosterOn(t, openHandleAt(t, file+parameters), "sqlite",
+		insert("t_acme", "acme"), "INSERT INTO tenants (id, alias, status) VALUES ('t_paused', 'paused', 0)")
+	if err := r.read(context.Background()); err != nil {
+		t.Fatalf("reading the roster: %v", err)
+	}
+	other, err := dbtest.SQLite(t, file, nil).DB().DB()
+	if err != nil {
+		t.Fatalf("reaching the other pool: %v", err)
+	}
+	holder, err := other.Conn(context.Background())
+	if err != nil {
+		t.Fatalf("taking a connection of the other pool: %v", err)
+	}
+	if _, err := holder.ExecContext(context.Background(), "BEGIN EXCLUSIVE"); err != nil {
+		t.Fatalf("holding the database: %v", err)
+	}
+	t.Cleanup(func() {
+		_, _ = holder.ExecContext(context.Background(), "ROLLBACK")
+		_ = holder.Close()
+	})
+	return r
+}
+
+// A statement of the roster's that meets a lock another connection holds waits
+// for it within connectionWait, however long the connection's own busy timeout
+// would let it wait, and ends with no answer: neither refusal, and not the
+// table's absence, since the table is there. A lock is what a statement of the
+// roster's waits for on a file database when a caller holds the database in
+// its own transaction.
+//
+// It is held on two locators: one leaving the driver's own busy timeout, which
+// ends the wait by itself about when the bound does, so that what the failure
+// says is seen; and one whose busy timeout is far past the bound, so that the
+// bound is seen ending the wait.
+func TestAStatementOfTheRostersWaitsForALockWithinTheBound(t *testing.T) {
+	t.Parallel()
+	locators := map[string]string{
+		"the driver's busy timeout": "",
+		"a longer busy timeout":     "?_pragma=busy_timeout(30000)",
+	}
+	calls := map[string]func(r *roster) error{
+		"Enter a tenant no row carries": func(r *roster) error {
+			_, err := r.Enter(context.Background(), "t_ghost")
+			return err
+		},
+		"Enter a disabled tenant": func(r *roster) error {
+			_, err := r.Enter(context.Background(), "t_paused")
+			return err
+		},
+		"EnterRegistered a tenant no row carries": func(r *roster) error {
+			_, err := r.EnterRegistered(context.Background(), "t_ghost")
+			return err
+		},
+		"Put": func(r *roster) error {
+			return r.Put(context.Background(), tenant.Tenant{ID: "t_new", Alias: "new", Status: tenant.StatusActive})
+		},
+		"Create": func(r *roster) error {
+			return r.Create(context.Background(), tenant.Tenant{ID: "t_new", Alias: "new", Status: tenant.StatusActive})
+		},
+		"SetStatus": func(r *roster) error {
+			return r.SetStatus(context.Background(), "t_paused", tenant.StatusActive)
+		},
+		"a reread of the whole roster": func(r *roster) error { return r.read(context.Background()) },
+	}
+	for locator, parameters := range locators {
+		for name, call := range calls {
+			t.Run(name+" with "+locator, func(t *testing.T) {
+				t.Parallel()
+				r := rosterOverALockedFile(t, parameters)
+				done := make(chan error, 1)
+				started := time.Now()
+				go func() { done <- call(r) }()
+				select {
+				case err := <-done:
+					requireNoAnswer(t, name, err)
+					if errors.Is(err, tenant.ErrNoConnection) {
+						t.Fatalf("%s gave %v, want the lock's failure rather than a connection's", name, err)
+					}
+					if took := time.Since(started); took < connectionWait {
+						t.Fatalf("%s gave up after %v, before the %v it waits for a lock", name, took,
+							connectionWait)
+					}
+				case <-time.After(connectionTimer):
+					t.Fatalf("%s was still waiting for the lock after %v", name, connectionTimer)
+				}
+			})
+		}
+	}
+}
+
+// A connection the pool cannot open is no answer either, and not the table's
+// absence: nothing was read.
+func TestAConnectionThatCannotBeOpenedIsNotAMissingTable(t *testing.T) {
+	dir := filepath.Join(t.TempDir(), "roster")
+	if err := os.Mkdir(dir, 0o700); err != nil {
+		t.Fatalf("making the database's directory: %v", err)
+	}
+	r := rosterOn(t, openHandleAt(t, filepath.Join(dir, "roster.db")), "sqlite", insert("t_acme", "acme"))
+	if err := r.read(context.Background()); err != nil {
+		t.Fatalf("reading the roster: %v", err)
+	}
+	pool, err := r.handle.DB()
+	if err != nil {
+		t.Fatalf("reaching the pool: %v", err)
+	}
+	// With no connection kept idle, the next statement opens one, and the
+	// directory the file was in is a file now.
+	pool.SetMaxIdleConns(0)
+	if err = os.RemoveAll(dir); err != nil {
+		t.Fatalf("removing the database's directory: %v", err)
+	}
+	if err = os.WriteFile(dir, nil, 0o600); err != nil {
+		t.Fatalf("putting a file where the directory was: %v", err)
+	}
+	_, err = r.Enter(context.Background(), "t_ghost")
+	requireNoAnswer(t, "entering with no connection to be had", err)
+	if errors.Is(err, tenant.ErrNoConnection) {
+		t.Fatalf("entering with no connection to be had gave %v, want the failure to open one", err)
 	}
 }
 
