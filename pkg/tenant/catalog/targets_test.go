@@ -351,6 +351,83 @@ func TestAFieldOfTheModelWritingTheTenantColumnIsJudged(t *testing.T) {
 	})
 }
 
+// duplicated is a scoped model with a struct embedded under a name that
+// repeats the convention's column exactly. GORM binds the column to the
+// convention's field, declared first, and never writes the embedded one.
+type duplicated struct {
+	tenant.Model
+	ID   string    `gorm:"column:id;primaryKey"`
+	Note string    `gorm:"column:note"`
+	Meta orderMeta `gorm:"embedded"`
+}
+
+func (duplicated) TableName() string { return "orders" }
+
+// A field GORM never writes is not a spelling of the tenant column: an insert
+// binds each column from the one field GORM binds it to, so a field repeating
+// the column exactly — whatever it holds — does not reach the table, and
+// judging it would refuse an insert that writes the context's tenant.
+func TestAFieldGORMNeverWritesIsNotJudged(t *testing.T) {
+	for name, row := range map[string]*duplicated{
+		"left unwritten":        {ID: "x"},
+		"naming another tenant": {ID: "x", Meta: orderMeta{TenantID: "globex"}},
+	} {
+		t.Run(name, func(t *testing.T) {
+			handle := open(t)
+			seed(t, handle)
+			if err := handle.WithContext(scopedContext("acme")).Create(row).Error; err != nil {
+				t.Fatalf("an insert whose repeated column GORM does not write gave %v, want it written", err)
+			}
+			requireRowTenant(t, handle, "x", "acme")
+		})
+	}
+
+	t.Run("across tenants", func(t *testing.T) {
+		handle := open(t)
+		seed(t, handle)
+		row := &duplicated{Model: tenant.Model{TenantID: "globex"}, ID: "x"}
+		if err := handle.WithContext(crossContext()).Create(row).Error; err != nil {
+			t.Fatalf("an insert across tenants naming its tenant gave %v, want it written", err)
+		}
+		requireRowTenant(t, handle, "x", "globex")
+	})
+}
+
+// defaultedMeta repeats the convention's column exactly, with a default the
+// database supplies.
+type defaultedMeta struct {
+	TenantID string `gorm:"default:(-)"`
+}
+
+// defaultedRepeat is a scoped model embedding it under a name. GORM binds the
+// column to the convention's field, and writes the embedded one as well
+// whenever it holds a value, because its default is the database's.
+type defaultedRepeat struct {
+	tenant.Model
+	ID   string        `gorm:"column:id;primaryKey"`
+	Note string        `gorm:"column:note"`
+	Meta defaultedMeta `gorm:"embedded"`
+}
+
+func (defaultedRepeat) TableName() string { return "orders" }
+
+// A field repeating the tenant column exactly is judged when GORM writes it: an
+// insert carries a field whose default is the database's, and that holds a
+// value, as a column of its own beside the one the column is bound to.
+func TestARepeatedFieldGORMWritesIsJudged(t *testing.T) {
+	handle := open(t)
+	seed(t, handle)
+	acme := handle.WithContext(scopedContext("acme"))
+	requireMismatch(t, acme.Create(&defaultedRepeat{ID: "x", Meta: defaultedMeta{TenantID: "globex"}}).Error)
+	if rows := tenantsOf(t, handle)["x"]; len(rows) != 0 {
+		t.Fatalf("a refused insert left rows %v", rows)
+	}
+	if err := acme.Create(&defaultedRepeat{ID: "y"}).Error; err != nil {
+		t.Fatalf("an insert whose repeat holds nothing, and is not written, gave %v", err)
+	}
+	requireRowTenant(t, handle, "y", "acme")
+}
+
 // stamping is a scoped model carrying a field that GORM stamps with the update
 // time, under another spelling of the tenant column.
 type stamping struct {

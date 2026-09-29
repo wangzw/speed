@@ -21,13 +21,20 @@ const callbackName = "tenant:scope"
 
 // conventionField is the Go field tenant.Model contributes. GORM flattens an
 // embedded struct, so the field appears on the model's own schema under this
-// name. The column it lands in is read off the field, not assumed.
+// name.
 const conventionField = "TenantID"
 
 // conventionType is the embedded type that marks a model as scoped. Comparing
 // against it is what distinguishes a model that embedded the convention from
 // one that happens to carry a field of the same name.
 var conventionType = reflect.TypeOf(tenant.Model{})
+
+// conventionColumn is the column the convention declares, read off its field's
+// tag the way GORM reads it rather than written out a second time here.
+var conventionColumn = func() string {
+	f, _ := conventionType.FieldByName(conventionField)
+	return gormschema.ParseTagSetting(f.Tag.Get("gorm"), ";")["COLUMN"]
+}()
 
 // whereKey is the clause this plugin reads and replaces. It is written out
 // rather than taken from clause.Where{}.Name() so that a reader sees the one
@@ -120,8 +127,9 @@ const (
 )
 
 // scopeOf settles whether this statement is this plugin's business, and
-// returns the convention's field and the tenant the statement belongs to when
-// it has one, or the refusal when it has none.
+// returns the field the model's tenant column is bound to (conventionFieldOf)
+// and the tenant the statement belongs to when it has one, or the refusal when
+// it has none.
 //
 // The answers are ordered, and the order is load-bearing. Recognising the model
 // comes first, so a statement that is not scoped is left alone whatever its
@@ -712,14 +720,28 @@ func rawColumn(column interface{}) bool {
 // other part of the key is written, because a key that is all zero addresses
 // nothing, and filling its tenant half would turn it into one addressing the
 // whole tenant.
+//
+// A tenant column bound to a field outside the key — a field of the model's own
+// that takes the convention's column over without declaring it part of the
+// key — is no part of what GORM addresses the write by, and is left alone here;
+// what an update assigns to it is judged with the rest of the assignments.
 func fillKey(st *gorm.Statement, field *gormschema.Field, id string, values ...reflect.Value) error {
+	if !inKey(st.Schema, field) {
+		return nil
+	}
 	for _, rv := range values {
 		for _, v := range structValues(rv, st.Schema.ModelType) {
 			written, isZero := field.ValueOf(st.Context, v)
 			if !isZero {
-				if s, ok := stringValue(reflect.ValueOf(written)); !ok || s != id {
-					return fmt.Errorf("%w: %s is addressed by a key naming tenant %v",
-						tenant.ErrExplicitTenantMismatch, st.Schema.Name, written)
+				s, ok := stringValue(reflect.ValueOf(written))
+				switch {
+				case !ok:
+					return fmt.Errorf("%w: %s is addressed by a key whose tenant half is %s, which "+
+						"cannot be read as the context's tenant", tenant.ErrExplicitTenantMismatch,
+						st.Schema.Name, describe(written))
+				case s != id:
+					return fmt.Errorf("%w: %s is addressed by a key naming tenant %q",
+						tenant.ErrExplicitTenantMismatch, st.Schema.Name, s)
 				}
 				continue
 			}
@@ -732,6 +754,16 @@ func fillKey(st *gorm.Statement, field *gormschema.Field, id string, values ...r
 		}
 	}
 	return nil
+}
+
+// inKey reports whether a field is one of the model's primary fields.
+func inKey(s *gormschema.Schema, field *gormschema.Field) bool {
+	for _, key := range s.PrimaryFields {
+		if key == field {
+			return true
+		}
+	}
+	return false
 }
 
 // otherKeyWritten reports whether any primary field besides the tenant's holds
@@ -898,11 +930,12 @@ func judgeEach(values []any, judge func(any) error) error {
 // over by pointer or by value — and a struct or an array handed over by value is
 // copied first so that there is somewhere to write.
 //
-// A field of the model besides the convention's whose column the database reads
-// as the tenant column is another spelling of that column, and GORM writes it
-// beside the tenant column; SQLite keeps the first value an insert gives one
-// column, so the spelling declared first decides the row's tenant. What such a
-// field binds is judged as the tenant column's value is.
+// A field the insert writes, besides the one bound to the tenant column, whose
+// column the database reads as the tenant column is another spelling of that
+// column, and GORM writes it beside the tenant column; SQLite keeps the first
+// value an insert gives one column, so the spelling declared first decides the
+// row's tenant. What such a field binds is judged as the tenant column's value
+// is. A field GORM does not write is not judged (insertWrites).
 func writeRows(st *gorm.Statement, field *gormschema.Field, id string, fill bool, judge func(any) error) error {
 	if maps, ok := insertedMaps(st.Dest); ok {
 		for _, m := range maps {
@@ -942,17 +975,37 @@ func writeRows(st *gorm.Statement, field *gormschema.Field, id string, fill bool
 	return nil
 }
 
-// otherSpellings lists the model's fields besides the convention's whose column
-// the database may read as the tenant column.
+// otherSpellings lists the fields an insert writes, besides the tenant column's
+// own, to a column the database may read as the tenant column.
 func otherSpellings(st *gorm.Statement, field *gormschema.Field) []*gormschema.Field {
 	var out []*gormschema.Field
 	for _, f := range st.Schema.Fields {
-		if f != field && f.DBName != "" &&
+		if f != field && f.DBName != "" && insertWrites(st.Schema, f) &&
 			targetReaches(st, clause.Column{Name: f.DBName}, field) == tenantColumn {
 			out = append(out, f)
 		}
 	}
 	return out
+}
+
+// insertWrites reports whether GORM builds an insert's row from this field.
+//
+// GORM writes each of the model's columns from the one field it binds the
+// column to, and beside those, every field whose default is the database's and
+// that holds a value — a field repeating another's column included. A field
+// that repeats a column exactly and is neither is never written, and judging
+// what it holds would refuse an insert over a value that never reaches the
+// table.
+func insertWrites(s *gormschema.Schema, f *gormschema.Field) bool {
+	if s.FieldsByDBName[f.DBName] == f {
+		return true
+	}
+	for _, d := range s.FieldsWithDefaultDBValue {
+		if d == f {
+			return true
+		}
+	}
+	return false
 }
 
 // judgeSpellings judges what an insert binds, for one row, under each of these
@@ -1264,7 +1317,7 @@ func keyColumn(st *gorm.Statement, key string) string {
 //
 // A raw target that is not one column name, possibly qualified and quoted, is
 // SQL the filter does not parse, and is unread. A name the model's schema
-// resolves to the convention's field is taken for the tenant column as well,
+// resolves to a field on the tenant column is taken for that column as well,
 // although GORM does not resolve a clause's column through the schema: the
 // database rejects such a name if it is not the column, so reading it as the
 // column refuses nothing that would have run.
@@ -1448,22 +1501,48 @@ func stringValue(v reflect.Value) (string, bool) {
 	return v.String(), true
 }
 
-// conventionFieldOf returns the field the convention contributes to a model's
-// schema, or nil when the model is not scoped.
+// conventionFieldOf returns the field a scoped model's tenant column is bound
+// to, or nil when the model is not scoped.
 //
-// The check is on where the field comes from rather than on the column it
-// lands in, so a model carrying a field named like the convention's is not
-// swept up by it. What makes a model scoped is embedding the convention, and
-// nothing else is allowed to mean that.
+// What makes a model scoped is embedding the convention, and nothing else is
+// allowed to mean that. The check is on where a field comes from rather than on
+// its name or the column it lands in, so a model carrying a field named like
+// the convention's, on the convention's column, is not swept up by it.
+//
+// The field returned is the one GORM binds the column to, which need not be the
+// convention's own. GORM binds each column to one field of the model — the one
+// reached by the shortest path, the first declared among equals — and reads and
+// writes that field alone, under its name and under the column's. A model that
+// embeds the convention and declares a field of its own on the column, or
+// reaches one first through another embedding, has that field read and written
+// in place of the convention's. Such a model is still scoped: taking the
+// convention's field for the column would leave the filter judging a field GORM
+// never writes, and looking the column up by the convention's field name would
+// find the other field and take the model for a global table. The convention's
+// field is looked for among all of the model's fields only when the one bound
+// to the column is not it.
 func conventionFieldOf(s *gormschema.Schema) *gormschema.Field {
 	if s == nil {
 		return nil
 	}
-	field := s.LookUpField(conventionField)
-	if field == nil || !embedsConvention(s.ModelType, field.StructField.Index) {
+	bound := s.FieldsByDBName[conventionColumn]
+	if bound == nil {
 		return nil
 	}
-	return field
+	if isConvention(s.ModelType, bound) {
+		return bound
+	}
+	for _, f := range s.Fields {
+		if f.DBName == conventionColumn && isConvention(s.ModelType, f) {
+			return bound
+		}
+	}
+	return nil
+}
+
+// isConvention reports whether a field of the model is the convention's own.
+func isConvention(modelType reflect.Type, f *gormschema.Field) bool {
+	return f.StructField.Name == conventionField && embedsConvention(modelType, f.StructField.Index)
 }
 
 // embedsConvention reports whether the field at this index path of the model is

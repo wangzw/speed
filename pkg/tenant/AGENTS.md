@@ -70,7 +70,10 @@ here must not cross, and how to run it.
   column rather than the first, an upsert's
   assignments (`catalog/targets_test.go`). The reading is the widest of the dialects', and a
   raw target that is not one column name is refused under any context: reading
-  too narrowly is a row carried into another tenant. A value the filter cannot
+  too narrowly is a row carried into another tenant. What is judged is what
+  GORM writes: a field repeating a column exactly that GORM never writes is not
+  judged, because refusing it refuses an insert that lands in the context's
+  tenant. A value the filter cannot
   read as the context's identifier is refused like another tenant's. The mark
   itself lifts the condition and the fill, not the column: a write under it that
   leaves the tenant column empty or null is refused, because that row would
@@ -166,6 +169,17 @@ filter recognises the field by the struct it comes from, not by its name
 (`catalog/recognise_test.go`). A base struct of an unexported type is skipped
 by GORM altogether, so the convention inside one is not on the model at all.
 
+A field the model declares on the convention's column — named like the
+convention's, named otherwise and tagged with the column, or reached first
+through another embedding — takes the column over: GORM binds a column to one
+field and reads and writes that one alone. The model stays scoped, and the
+filter fills and judges the field GORM binds, never the convention's field it
+no longer writes (`catalog/recognise_test.go`). Finding the convention by its
+field name is the shape to reject: the name then finds the other field, and the
+model reads as a global table. The key half and the refusal to be bound empty
+come with the convention's field, so a field that takes the column over carries
+them only when it is tagged `primaryKey` and typed `ID`.
+
 ```go
 type Order struct {
 	tenant.Model
@@ -207,9 +221,11 @@ module declares and writes carries neither obligation above** — the audit tabl
 is one such table. The tenant-led key and the NOT NULL bind the side that
 creates the table and writes it, because what they keep out is a write. Through
 such a model a tenant's read never reaches a row whose tenant column is null; a
-read across tenants does, and reads that column as the empty identifier with no
-error, so a reader that has to tell those rows apart uses a type whose tenant
-field can hold a null (`catalog/readonly_test.go`). **Such a model issues reads
+read across tenants does, and reads that column into the convention's field as
+the empty identifier with no error, so a reader that has to tell those rows
+apart uses a tenant field that can hold a null — on a type that does not embed
+the convention, or as a pointer field of the read-only model's own that takes
+the column over, which a tenant's read still scopes (`catalog/readonly_test.go`). **Such a model issues reads
 only.** A write through it is filled and checked, but that table's key does not
 lead with the tenant column, so an upsert by its key can reach another tenant's
 row, and the table is its declaring module's to write. The filter cannot tell a
@@ -244,7 +260,10 @@ around that module; the filter's own cases build theirs by hand. `pkg/tenant/cat
 answers are pinned; `pkg/tenant/catalog/reach_test.go` is where the statements
 it has to reach beyond the query processor are — a scan, a Row whose refusal
 comes back through the row it hands back, an association join, a subquery
-rendered into another statement; `pkg/tenant/catalog/targets_test.go`
+rendered into another statement;
+`pkg/tenant/catalog/recognise_test.go` is where the models the filter takes for
+scoped are, a field taking the convention's column over included;
+`pkg/tenant/catalog/targets_test.go`
 is where an assignment's target is read the way each database reads it, on both
 dialects; `pkg/tenant/catalog/create_test.go` is where a registration that must
 not overwrite is refused against the table rather than the snapshot, where

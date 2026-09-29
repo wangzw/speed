@@ -24,6 +24,16 @@ package tenant
 // unexported type, so a base struct that is not exported carries no column onto
 // the model, and the model is a global table.
 //
+// A model that declares a field of its own on this column — one named like this
+// type's field, one of another name tagged with the column, or one another
+// embedding reaches first — takes the column over. GORM binds a column to one
+// field, the one reached by the shortest path and the first declared among
+// equals, and reads and writes that field alone. The model is still scoped, and
+// the filter fills and judges the field that took the column over. What this
+// type's field brings with it is then that field's to declare: the tenant half
+// of the key only when it is tagged primaryKey, and the refusal to be bound
+// empty only when its type is ID.
+//
 // The column is declared not null and part of the primary key, and the second
 // half is load-bearing rather than tidy. A unique constraint that does not lead
 // with the tenant column — an id generated globally, a business key unique on
@@ -54,9 +64,12 @@ package tenant
 // that creates the table and writes it, and what they keep out is a write. The
 // filter puts the tenant condition on every read through such a model, so a
 // row whose tenant column is null belongs to no tenant and no tenant's read
-// reaches it. A read across tenants does, and reads that column as the empty
-// identifier with no error; a reader that has to tell those rows apart reads
-// them into a type whose tenant field can hold a null. Such a model issues
+// reaches it. A read across tenants does, and reads that column into this
+// type's field as the empty identifier with no error; a reader that has to tell
+// those rows apart reads them into a tenant field that can hold a null — on a
+// type that does not embed this one, or on the read-only model itself, as a
+// pointer field of its own that takes the column over, which a tenant's read
+// still scopes. Such a model issues
 // reads only. A write through it is filled and checked like any other, but the
 // table's key does not lead with the tenant column, so an upsert by its key can
 // reach another tenant's row, and the table is its declaring module's to write.
