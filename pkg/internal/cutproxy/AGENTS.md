@@ -29,7 +29,8 @@ a fixture with no wrapper package of its own is a unit of its own under the
 ## Running it
 
 It is exercised by its own case and through its callers, which
-`grep -rl --include='*_test.go' pkg/internal/cutproxy pkg` lists:
+`grep -rl --include='*_test.go' cutproxy pkg` lists — the callers by their
+import of the unit, its own case by its package clause:
 
 ```
 go -C pkg test ./internal/cutproxy/ ./event/nats/... ./kv/nats/...
