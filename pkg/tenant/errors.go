@@ -56,13 +56,14 @@ var (
 	// created when the snapshot is loaded, or dropped since, as found by the
 	// reread of the whole table, an entry's read of one row, or a write. A
 	// statement on the table failed, and the database, asked on the same
-	// connection, lists no table by its name; the statement's own failure is
-	// kept in the chain. A statement that failed for any other reason — a lock
-	// it waited for past its bound, a connection lost, a permission refused —
-	// does not carry it, nor does one that never ran because its context ended
-	// or no connection came free (ErrNoConnection). A roster not yet read is
-	// refused with it as well: until its table has been read, this process has
-	// no roster.
+	// connection, has no table by its name where the statement looked for one;
+	// the statement's own failure is kept in the chain. A statement that
+	// failed for any other reason — a lock it waited for past its bound, a
+	// connection lost, a permission refused — does not carry it, nor does one
+	// that never ran because its context ended or no connection came free
+	// (ErrNoConnection). A roster not yet read is refused with it as well:
+	// until its table has been read, this process has no roster, which is what
+	// a call reaching the roster before its module's Init has run meets.
 	//
 	// The fix is to write the roster subpackage's module name into the
 	// command that applies migrations, so that its migration set is

@@ -111,10 +111,13 @@ here must not cross, and how to run it.
   write takes is given back before its reread takes one (`catalog/wait_test.go`).
 - **`ErrRosterMissing` means the roster table is not there, and nothing else.**
   A statement that fails is followed, on its connection and outside any
-  transaction, by a listing of the database's tables (`failedStatement`,
-  `tableAbsent`); only a listing without the table gives the sentinel, whose
-  repair is the migration command. A lock the bound ran out on, a lost
-  connection or a refused permission is reported as it stands. The drivers word
+  transaction, by a question to the database whether it has the table
+  (`failedStatement`, `tableAbsent`); only an answer that it has none gives the
+  sentinel, whose repair is the migration command. On PostgreSQL the question
+  resolves the name, which takes no privilege on the table, where a listing of
+  the information schema leaves out the tables a role may not read. A lock the
+  bound ran out on, a lost connection or a refused permission is reported as it
+  stands. The drivers word
   a missing table each their own way, and this module imports no driver, so the
   question is put to the database rather than to the error text; this
   module's own answers — a conflict, a registration already there, an unknown
@@ -280,7 +283,8 @@ inside the bound, and ended by the caller's context; for a lock another
 connection holds, bounded whatever the locator's busy timeout and answered as
 no missing table; and a connection that cannot be opened, answered as no
 missing table either — and `pkg/tenant/catalog/race_test.go` is where a dropped
-table is still told apart on PostgreSQL; `pkg/tenant/catalog/readonly_test.go`
+table is still told apart on PostgreSQL, and `catalog/handles_test.go` where a
+refused permission is not taken for one; `pkg/tenant/catalog/readonly_test.go`
 is where a read-only model's reads over a nullable tenant column are, on both
 dialects;
 `pkg/tenant/resolve/extract_test.go` is where the

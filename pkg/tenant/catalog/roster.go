@@ -240,21 +240,21 @@ func (r *roster) onConnection(ctx context.Context, fn func(session *gorm.DB) err
 // A table that is not there — never created, or dropped since — fails a
 // statement as a statement fails for any other reason, and the drivers word the
 // failure each their own way, so the failure alone does not say which it was.
-// The database is asked instead, on the same connection: when the tables it
-// lists hold none by this name, the failure carries ErrRosterMissing, whose
-// repair is the migration set. Every other failure — a lock the bound ran out
-// on, a connection lost, a permission refused — is reported as it stands, with
-// no sentinel, since there is no table missing to repair; so is one whose
-// listing fails too, since nothing then says the table is not there. A
-// statement whose context ended is reported with the context's error. The
-// statement's own failure is kept in the chain and in the text either way.
+// The database is asked instead, on the same connection (tableAbsent): when it
+// has no table by this name, the failure carries ErrRosterMissing, whose repair
+// is the migration set. Every other failure — a lock the bound ran out on, a
+// connection lost, a permission refused — is reported as it stands, with no
+// sentinel, since there is no table missing to repair; so is one whose question
+// fails too, since nothing then says the table is not there. A statement whose
+// context ended is reported with the context's error. The statement's own
+// failure is kept in the chain and in the text either way.
 func failedStatement(ctx context.Context, session *gorm.DB, err error) error {
 	if ended := ctx.Err(); ended != nil {
 		return fmt.Errorf("a statement on table %s ended with its context (%w): %w", tableName, ended, err)
 	}
 	if tableAbsent(session) {
 		return fmt.Errorf(
-			"%w: a statement on table %s failed, and the database lists no table by that name: %w. "+
+			"%w: a statement on table %s failed, and the database has no table by that name: %w. "+
 				"This module's migration set creates it, and a command whose work is applying "+
 				"migrations collects that set only when the host reaches this module for its declarations",
 			tenant.ErrRosterMissing, tableName, err)
@@ -262,14 +262,29 @@ func failedStatement(ctx context.Context, session *gorm.DB, err error) error {
 	return fmt.Errorf("a statement on table %s failed: %w", tableName, err)
 }
 
-// tableAbsent reports whether the database a session is on lists no table named
-// as the roster's, as GORM's migrator lists them — SQLite's main database,
-// PostgreSQL's current schema, which is where this module's migration creates
-// it. A listing that fails reports nothing absent.
+// tableAbsent reports whether the database a session is on has no table named
+// as the roster's where the roster's statements look for it, and reports
+// nothing absent when the question itself fails.
+//
+// On PostgreSQL the name is resolved as the statement resolved it, through the
+// search path, which is where this module's migration creates the table.
+// Resolving a name takes no privilege on the table, where a listing would: the
+// information schema lists only the tables the role holds a privilege on, and
+// a table the role may not read would read as one that is not there. On SQLite,
+// which has no privileges, the tables GORM's migrator lists — the main
+// database's — are asked.
 func tableAbsent(session *gorm.DB) bool {
+	if session.Name() == postgresDialector {
+		var absent bool
+		err := session.Raw("SELECT to_regclass(?) IS NULL", tableName).Scan(&absent).Error
+		return err == nil && absent
+	}
 	tables, err := session.Migrator().GetTables()
 	return err == nil && !slices.Contains(tables, tableName)
 }
+
+// postgresDialector is the name the PostgreSQL engine's GORM dialector answers.
+const postgresDialector = "postgres"
 
 // connectionWait is the bound db.Connection holds each of the roster's own
 // statements to — the reads of the whole table, an entry's read of one row, and
