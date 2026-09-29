@@ -79,6 +79,55 @@ func TestConnectionTakesAConnectionOfAHandleThisModuleDidNotOpen(t *testing.T) {
 	}
 }
 
+// namingPool is a host's wrapper of its pool that names the pool it wraps
+// through gorm.GetDBConnector.
+type namingPool struct{ *sql.DB }
+
+// GetDBConn is the pool the wrapper wraps.
+func (p namingPool) GetDBConn() (*sql.DB, error) { return p.DB, nil }
+
+// opaquePool is a host's wrapper of its pool that names no pool.
+type opaquePool struct{ *sql.DB }
+
+// TestConnectionReadsAWrappedPoolOnlyWhenItNamesThePool covers a handle whose
+// ConnPool is a host's wrapper of a pool. One answering gorm.GetDBConnector is
+// a handle on the pool it names, and fn runs on a connection taken from it;
+// one answering neither that nor *sql.DB gives Connection no pool to take a
+// connection from, and fn runs on the handle itself, with nothing bounding the
+// wait for a connection.
+func TestConnectionReadsAWrappedPoolOnlyWhenItNamesThePool(t *testing.T) {
+	pool, err := sql.Open(sqlite.DriverName, filepath.Join(t.TempDir(), "wrapped.db"))
+	if err != nil {
+		t.Fatalf("opening the pool the wrappers wrap: %v", err)
+	}
+	t.Cleanup(func() { _ = pool.Close() })
+	for _, c := range []struct {
+		name   string
+		conn   gorm.ConnPool
+		pinned bool
+	}{
+		{"a wrapper answering GetDBConn", namingPool{pool}, true},
+		{"a wrapper answering neither", opaquePool{pool}, false},
+	} {
+		t.Run(c.name, func(t *testing.T) {
+			handle, err := gorm.Open(sqlite.Dialector{Conn: c.conn}, &gorm.Config{Logger: logger.Discard})
+			if err != nil {
+				t.Fatalf("opening a handle on the wrapper: %v", err)
+			}
+			var pinned bool
+			if err := Connection(t.Context(), handle, time.Second, func(session *gorm.DB) error {
+				_, pinned = session.Statement.ConnPool.(*pinnedConn)
+				return session.Exec("SELECT 1").Error
+			}); err != nil {
+				t.Fatalf("Connection on the handle: %v", err)
+			}
+			if pinned != c.pinned {
+				t.Errorf("fn ran on a connection Connection took: %v, want %v", pinned, c.pinned)
+			}
+		})
+	}
+}
+
 // TestConnectionHandsFnsErrorBackAsItIs covers fn's own failure: a caller
 // classifies it as it would the statement's, so it arrives unwrapped.
 func TestConnectionHandsFnsErrorBackAsItIs(t *testing.T) {

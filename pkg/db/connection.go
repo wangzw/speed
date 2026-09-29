@@ -35,18 +35,28 @@ import (
 // and with neither for as long as the lock is held. Nothing here reads or
 // changes those settings.
 //
-// The session fn receives is pinned to the connection, and so is everything
-// derived from it, a transaction included; its Statement.ConnPool is this
-// package's wrapper of the connection, not the *sql.Conn. When fn returns, or
-// panics, every transaction it left open on the connection is rolled back and
-// every result set it left open is closed, and the connection goes back to the
-// pool; a panic then carries on up to the caller. fn's own error is returned as
-// it is.
+// The session fn receives is pinned to the connection, and so are the sessions
+// and transactions derived from it — WithContext, Session, Begin, Transaction
+// and a transaction's savepoints; its Statement.ConnPool is this package's
+// wrapper of the connection, not the *sql.Conn. What GORM builds on the pool
+// the handle was opened on is not pinned: a session derived with PrepareStmt,
+// and the *sql.DB a transaction's DB reports. Their statements take a
+// connection of that pool as any statement on the handle does, with nothing
+// bounding the wait, and on a database held to one connection they wait for
+// the one fn holds. When fn returns, or panics, every transaction it left open
+// on the connection is rolled back and every result set it left open is
+// closed, and the connection goes back to the pool; a panic then carries on up
+// to the caller. fn's own error is returned as it is.
 //
-// A handle that is not on a pool has no connection to hand out: a transaction,
-// or a session already pinned to one connection, fn's own among them. fn then
-// runs on the handle itself, under ctx, and nothing is waited for. A handle on
-// a pool is any other, whether this module opened it or not.
+// A handle on a pool is one whose ConnPool is a *sql.DB or answers
+// gorm.GetDBConnector, as GORM's prepared-statement pool does, whether this
+// module opened it or not. Any other handle gives Connection no connection to
+// hand out: a transaction, or a session already pinned to one connection, fn's
+// own among them, and a ConnPool that wraps a pool without naming it through
+// GetDBConnector. fn then runs on the handle itself, under ctx, and nothing is
+// waited for — on a wrapped pool, the wait for a connection its statements
+// make is not bounded either, so a host that wraps its pool answers GetDBConn
+// to have Connection bound it.
 //
 // No connection within wait reports an error that wraps
 // context.DeadlineExceeded while ctx itself has not ended; that is how a caller
@@ -91,7 +101,8 @@ func Connection(ctx context.Context, handle *gorm.DB, wait time.Duration, fn fun
 
 // pooledOn is the pool a handle's statements take their connection from, or
 // false for a handle already on one connection — a transaction, a session
-// pinned to a connection — or on nothing this package knows to take one from.
+// pinned to a connection — or on a ConnPool that is neither a *sql.DB nor a
+// gorm.GetDBConnector naming one, which this package knows no pool behind.
 func pooledOn(handle *gorm.DB) (*sql.DB, bool) {
 	on := handle.ConnPool
 	if handle.Statement != nil && handle.Statement.ConnPool != nil {

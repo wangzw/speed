@@ -98,10 +98,12 @@ must not cross, and how to run it.
   nothing but a statement reads the statement's identifiers by that engine's
   rules (`namesColumn`).
 - **`Connection` bounds the wait for a connection, and nothing else.** It takes
-  a connection of whatever pool the handle it is handed is on — this package's
-  or a host's own — and runs `fn` on it under the caller's context; a handle
-  already on one connection (a transaction, a pinned session) runs `fn` on
-  itself. It reads, sets and restores no lock timeout: a statement in `fn`
+  a connection of the pool the handle it is handed is on — this package's or a
+  host's own, a `ConnPool` that is a `*sql.DB` or names one through
+  `gorm.GetDBConnector` — and runs `fn` on it under the caller's context; a
+  handle already on one connection (a transaction, a pinned session), or on a
+  wrapper naming no pool, runs `fn` on itself (`pooledOn`). It reads, sets and
+  restores no lock timeout: a statement in `fn`
   waits for a lock as its engine makes it wait, for the connection's busy
   timeout on SQLite and until the context, `lock_timeout` or
   `statement_timeout` ends it on PostgreSQL. A wrapper that reset a timeout
