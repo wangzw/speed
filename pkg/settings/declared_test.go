@@ -304,3 +304,75 @@ func TestAListingDrivesAnAdministrativeSurfaceOnEveryDialect(t *testing.T) {
 		})
 	}
 }
+
+// listingNested is a carrier of every shape the key rule expands rather than
+// takes as a leaf: an embedded struct inlined, a nested struct and a pointer to
+// one under a segment of their own, a segment named by a tag, a field kept out.
+// The embedded type is exported: an unexported one is skipped whole, by
+// configuration as by this module.
+type listingNested struct {
+	ListingBase
+	Retry    listingRetry
+	Backup   *listingRetry `config:"fallback"`
+	MaxConns int           `json:"max-conns"`
+	Scratch  string        `config:"-"`
+}
+
+type ListingBase struct{ Region string }
+
+type listingRetry struct {
+	Attempts int
+	Backoff  time.Duration
+}
+
+// Declared lists the keys a carrier's expansion derives, however deep the
+// carrier is, with each key's own type and marker: the listing is the key
+// table's, not a second derivation of it. A surface that restated the key rule
+// to find another module's keys would have to follow every one of these
+// shapes, and a sensitive marker given to a nested item is what it would need
+// to mask that item's rows.
+func TestDeclaredListsTheKeysOfANonFlatCarrier(t *testing.T) {
+	carrier := listingNested{
+		ListingBase: ListingBase{Region: "eu"},
+		Retry:       listingRetry{Attempts: 3, Backoff: time.Second},
+		Backup:      &listingRetry{Attempts: 1, Backoff: time.Minute},
+		MaxConns:    8,
+	}
+	keys := tableOf(t, declaring("test.nested", Schema{
+		Namespace: "nested",
+		Mounts:    []Mount{{Path: "pool", Value: &carrier}},
+		Items:     map[string]Item{"pool.retry.attempts": {Sensitive: true}},
+	}))
+	store, _ := storeOf(t, keys, newRecordingBus())
+
+	want := map[string]struct {
+		typ       reflect.Type
+		def       string
+		sensitive bool
+	}{
+		"nested.pool.region":            {reflect.TypeFor[string](), "eu", false},
+		"nested.pool.retry.attempts":    {reflect.TypeFor[int](), "", true},
+		"nested.pool.retry.backoff":     {reflect.TypeFor[time.Duration](), "1s", false},
+		"nested.pool.fallback.attempts": {reflect.TypeFor[int](), "1", false},
+		"nested.pool.fallback.backoff":  {reflect.TypeFor[time.Duration](), "1m0s", false},
+		"nested.pool.max-conns":         {reflect.TypeFor[int](), "8", false},
+	}
+	listed := store.Declared()
+	if len(listed) != len(want) {
+		t.Fatalf("Declared lists %d items, want %d: %+v", len(listed), len(want), listed)
+	}
+	for _, item := range listed {
+		w, ok := want[item.Key]
+		if !ok {
+			t.Errorf("Declared lists %q, which the carrier does not derive", item.Key)
+			continue
+		}
+		if item.Type != w.typ || item.Default != w.def || item.Sensitive != w.sensitive {
+			t.Errorf("%q is listed as %v with default %q (sensitive %v), want %v, %q, %v",
+				item.Key, item.Type, item.Default, item.Sensitive, w.typ, w.def, w.sensitive)
+		}
+		if err := store.Get(Global(), item.Key, reflect.New(item.Type).Interface()); err != nil {
+			t.Errorf("reading the listed %q under its listed type: %v", item.Key, err)
+		}
+	}
+}
