@@ -47,6 +47,15 @@ modules in reverse dependency order; once every stop has returned, every module
 is closed in reverse dependency order. The account it serves is `alice` with
 the password `s3cret`.
 
+`examples/crm-host` is the larger host: a multi-tenant CRM that assembles the
+whole module set on five deployment stacks — in-memory SQLite, and four
+combinations of PostgreSQL, Redis, NATS and Memcached — and drives the same
+end-to-end cases against each, so every implementation of the database,
+key-value, event and telemetry capabilities runs the same product-shaped
+traffic. It exists to evaluate the modules, and a defect it runs into is fixed
+in the module rather than worked around; its `AGENTS.md` says what it needs to
+run (`examples/crm-host/AGENTS.md`).
+
 `make help` lists the other entry points. The toolchain versions the
 checks need are pinned in `.mise.toml`.
 
@@ -55,7 +64,7 @@ checks need are pinned in `.mise.toml`.
 | Path | What it is |
 |---|---|
 | `pkg/` | The modules: one capability directory each, in a single Go module. |
-| `examples/` | A host that assembles modules into a running program. |
+| `examples/` | Hosts that assemble modules into running programs. |
 | `docs/` | The design documents and decision records. |
 | `tools/` | Repository self-checks. |
 | `go.work` | The module roster every command derives its module set from. |
