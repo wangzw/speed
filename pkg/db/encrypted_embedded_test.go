@@ -1,6 +1,7 @@
 package db
 
 import (
+	"database/sql"
 	"strings"
 	"testing"
 
@@ -65,17 +66,17 @@ func createEmbeddingTable(t *testing.T, product *database) {
 // around the model: "absent" when there is no such row.
 func embeddedEmail(t *testing.T, product *database, id uint) string {
 	t.Helper()
-	var stored []*string
+	var stored []sql.NullString
 	if err := product.DB().Raw("SELECT email FROM embedding_models WHERE id = ?", id).Scan(&stored).Error; err != nil {
 		t.Fatalf("reading the email column with native SQL: %v", err)
 	}
 	switch {
 	case len(stored) == 0:
 		return "absent"
-	case stored[0] == nil:
+	case !stored[0].Valid:
 		return "NULL"
 	default:
-		return *stored[0]
+		return stored[0].String
 	}
 }
 
@@ -187,6 +188,56 @@ func TestAnEmbeddedFieldGORMWritesAsWellIsJudged(t *testing.T) {
 	var read defaultedEmbeddingModel
 	if err := h.First(&read, 1).Error; err != nil || read.Email != "sealed@example.com" {
 		t.Errorf("the model reads back %+v with %v, want the sealed email sealed@example.com", read, err)
+	}
+}
+
+// TestAnEmbeddedFieldTheSelectionLeavesOutIsNotJudged keeps that refusal to
+// what Select and Omit leave GORM writing: the embedded field whose default is
+// the database's is written when Select names its column or nothing leaves it
+// out, and not otherwise, whatever value the row gives it. An insert that
+// leaves the column out goes through and writes nothing into it.
+func TestAnEmbeddedFieldTheSelectionLeavesOutIsNotJudged(t *testing.T) {
+	row := func() *defaultedEmbeddingModel {
+		return &defaultedEmbeddingModel{
+			ID:      1,
+			Email:   "sealed@example.com",
+			Contact: defaultedDetails{Email: "clear@example.com"},
+		}
+	}
+	for _, c := range []struct {
+		name    string
+		insert  func(h *gorm.DB) error
+		refused bool
+	}{
+		{"Omit leaving its column out", func(h *gorm.DB) error { return h.Omit("email").Create(row()).Error }, false},
+		{"Select choosing only another column", func(h *gorm.DB) error {
+			return h.Select("id").Create(row()).Error
+		}, false},
+		{"Select naming its column", func(h *gorm.DB) error {
+			return h.Select("id", "email").Create(row()).Error
+		}, true},
+		{"Omit leaving another column out", func(h *gorm.DB) error { return h.Omit("note").Create(row()).Error }, true},
+	} {
+		t.Run(c.name, func(t *testing.T) {
+			product := assembleEncrypted(t, encryptedDSN(t), encryptedRootKeyItem)
+			createEmbeddingTable(t, product)
+			err := c.insert(product.DB())
+			switch {
+			case c.refused && err == nil:
+				t.Fatalf("an insert writing the email column twice went through; it holds %q",
+					embeddedEmail(t, product, 1))
+			case c.refused:
+				if !strings.Contains(err.Error(), "defaultedEmbeddingModel.Contact.Email") {
+					t.Errorf("the refusal does not name the embedded field: %v", err)
+				}
+			case err != nil:
+				t.Fatalf("an insert that leaves the email column out was refused: %v", err)
+			default:
+				if stored := embeddedEmail(t, product, 1); stored != "NULL" {
+					t.Errorf("the email column of an insert that leaves it out holds %q, want NULL", stored)
+				}
+			}
+		})
 	}
 }
 
