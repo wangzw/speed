@@ -10,30 +10,18 @@ import (
 	"gorm.io/gorm"
 
 	"github.com/vislake/speed/pkg/db"
-	"github.com/vislake/speed/pkg/db/postgres"
 	"github.com/vislake/speed/pkg/event"
+	"github.com/vislake/speed/pkg/internal/dbtest"
 	"github.com/vislake/speed/pkg/internal/pgpool/pgtest"
 )
 
-// openPostgres hands back a handle on a PostgreSQL database of this test's
-// own, opened through the dialector the PostgreSQL implementation of the
-// database module uses, with this module's PostgreSQL migration applied. It
-// skips on a machine without docker, and fails instead where CI is set.
+// openPostgres hands back the handle the PostgreSQL implementation of the
+// database module delivers over a database of this test's own, with this
+// module's PostgreSQL migration applied. It skips on a machine without docker,
+// and fails instead where CI is set.
 func openPostgres(t *testing.T) *gorm.DB {
 	t.Helper()
-	handle, err := gorm.Open(postgres.Dialector(pgtest.Acquire(t)), quiet())
-	if err != nil {
-		t.Fatalf("opening the PostgreSQL fixture: %v", err)
-	}
-	pool, err := handle.DB()
-	if err != nil {
-		t.Fatalf("reaching the fixture's connection pool: %v", err)
-	}
-	t.Cleanup(func() {
-		if err := pool.Close(); err != nil {
-			t.Errorf("closing the fixture: %v", err)
-		}
-	})
+	handle := quietly(dbtest.Postgres(t, pgtest.Acquire(t), nil).DB())
 	applyMigration(t, handle, "postgres/0001_settings.sql")
 	return handle
 }

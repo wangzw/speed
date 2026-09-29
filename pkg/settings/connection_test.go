@@ -3,42 +3,27 @@ package settings
 import (
 	"context"
 	"errors"
+	"path/filepath"
 	"strings"
 	"testing"
 	"time"
 
-	sqlitedriver "github.com/glebarez/sqlite"
 	"gorm.io/gorm"
 
 	"github.com/vislake/speed/pkg/db"
+	"github.com/vislake/speed/pkg/internal/dbtest"
 )
 
 // connectionTimer is how long a case waits for a call that should give up on
 // a connection within connectionWait, before reporting it as still waiting.
 const connectionTimer = connectionWait + 3*time.Second
 
-// storeOnOneConnection builds a loaded store over an in-memory database held to
-// a single connection, the shape the database module delivers a
-// connection-scoped SQLite locator in, and seeds demo.limit's global row with 3.
+// storeOnOneConnection builds a loaded store over the in-memory database the
+// database module delivers for :memory:, which it holds to a single connection,
+// and seeds demo.limit's global row with 3.
 func storeOnOneConnection(t *testing.T) (*settingsStore, *gorm.DB, *recordingBus) {
 	t.Helper()
-	handle, err := gorm.Open(sqlitedriver.Open(":memory:"), quiet())
-	if err != nil {
-		t.Fatalf("opening the handle: %v", err)
-	}
-	pool, err := handle.DB()
-	if err != nil {
-		t.Fatalf("reaching the handle's connection pool: %v", err)
-	}
-	pool.SetMaxOpenConns(1)
-	pool.SetMaxIdleConns(1)
-	pool.SetConnMaxLifetime(0)
-	pool.SetConnMaxIdleTime(0)
-	t.Cleanup(func() {
-		if err := pool.Close(); err != nil {
-			t.Errorf("closing the handle: %v", err)
-		}
-	})
+	handle := quietly(dbtest.SQLite(t, ":memory:", nil).DB())
 	applyMigration(t, handle, "sqlite/0001_settings.sql")
 	bus := newRecordingBus()
 	s := newSettingsStore(demoTable(t), stubDatabase{handle: handle, dialect: db.SQLite}, bus, moduleSettings{})
@@ -129,6 +114,79 @@ func TestACallInsideTheCallersTransactionOnOneConnectionGivesUp(t *testing.T) {
 			}
 			if events := bus.events(); len(events) != published {
 				t.Errorf("the refused call published %+v", events[published:])
+			}
+		})
+	}
+}
+
+// A write, a delete and a listing that meet a lock another connection holds on
+// the database wait for it within connectionWait, however long the
+// connection's own busy timeout would let them wait, and leave the table as it
+// was. A lock is what the same call waits for on a file database when a caller
+// holds the database in its own transaction.
+func TestACallThatMeetsALockGivesUpWithinTheBound(t *testing.T) {
+	t.Parallel()
+	cases := map[string]func(s *settingsStore, ctx context.Context) error{
+		"a write": func(s *settingsStore, ctx context.Context) error {
+			return s.Set(ctx, Write{Layer: Global(), Key: "demo.limit", Value: 7})
+		},
+		"a delete": func(s *settingsStore, ctx context.Context) error {
+			return s.Delete(ctx, Global(), "demo.limit", "")
+		},
+		"a listing": func(s *settingsStore, ctx context.Context) error {
+			_, err := s.List(ctx, Global())
+			return err
+		},
+	}
+	for name, call := range cases {
+		t.Run(name, func(t *testing.T) {
+			t.Parallel()
+			file := filepath.Join(t.TempDir(), "locked.db")
+			handle := quietly(dbtest.SQLite(t, file+"?_pragma=busy_timeout(30000)", nil).DB())
+			applyMigration(t, handle, "sqlite/0001_settings.sql")
+			bus := newRecordingBus()
+			s := storeOn(t, handle, db.SQLite, demoTable(t), bus)
+			if err := s.Set(context.Background(), Write{Layer: Global(), Key: "demo.limit", Value: 3}); err != nil {
+				t.Fatalf("seeding the row: %v", err)
+			}
+			published := len(bus.events())
+
+			other, err := dbtest.SQLite(t, file, nil).DB().DB()
+			if err != nil {
+				t.Fatalf("reaching the other pool: %v", err)
+			}
+			holder, err := other.Conn(context.Background())
+			if err != nil {
+				t.Fatalf("taking a connection of the other pool: %v", err)
+			}
+			if _, err = holder.ExecContext(context.Background(), "BEGIN EXCLUSIVE"); err != nil {
+				t.Fatalf("holding the database: %v", err)
+			}
+			done := make(chan error, 1)
+			started := time.Now()
+			go func() { done <- call(s, context.Background()) }()
+			select {
+			case gave := <-done:
+				if gave == nil {
+					t.Errorf("%s went through while another connection held the database", name)
+				}
+				if took := time.Since(started); took < connectionWait {
+					t.Errorf("%s gave up after %v, before the %v it waits for a lock", name, took, connectionWait)
+				}
+			case <-time.After(connectionTimer):
+				t.Errorf("%s was still waiting for the lock after %v", name, connectionTimer)
+				_, _ = holder.ExecContext(context.Background(), "ROLLBACK")
+				<-done
+			}
+			_, _ = holder.ExecContext(context.Background(), "ROLLBACK")
+			_ = holder.Close()
+
+			entries, err := s.List(context.Background(), Global())
+			if err != nil || len(entries) != 1 || entries[0].Value != "3" {
+				t.Errorf("the table holds %+v (%v) after the call that gave up, want the one row 3", entries, err)
+			}
+			if events := bus.events(); len(events) != published {
+				t.Errorf("the call that gave up published %+v", events[published:])
 			}
 		})
 	}

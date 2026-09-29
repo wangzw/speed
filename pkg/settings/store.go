@@ -2,7 +2,6 @@ package settings
 
 import (
 	"context"
-	"errors"
 	"fmt"
 	"log/slog"
 	"slices"
@@ -13,6 +12,7 @@ import (
 
 	"gorm.io/gorm"
 
+	"github.com/vislake/speed/pkg/db"
 	"github.com/vislake/speed/pkg/event"
 )
 
@@ -245,15 +245,11 @@ func (s *settingsStore) List(ctx context.Context, layer Layer) ([]Entry, error) 
 	tenant := tenantOf(layer)
 	sql := "SELECT tenant_id, key, value, version, updated_at FROM " + tableName +
 		" WHERE tenant_id = ?"
-	session, release, err := s.take(ctx)
-	if err != nil {
-		return nil, fmt.Errorf("settings: listing the rows of %s: %w", describeLayer(layer), err)
-	}
-	defer release()
 	var rows []listRow
-	if err := session.Raw(sql, tenant).Scan(&rows).Error; err != nil {
-		return nil, fmt.Errorf("settings: listing the rows of %s: %w",
-			describeLayer(layer), err)
+	if err := s.onConnection(ctx, func(session *gorm.DB) error {
+		return session.Raw(sql, tenant).Scan(&rows).Error
+	}); err != nil {
+		return nil, fmt.Errorf("settings: listing the rows of %s: %w", describeLayer(layer), err)
 	}
 	entries := make([]Entry, 0, len(rows))
 	for _, r := range rows {
@@ -330,36 +326,42 @@ func (s *settingsStore) writeRow(ctx context.Context, layer Layer, key, text str
 // and the table agree.
 //
 // The connection the transaction runs on is taken first, under the caller's
-// cancellation and within connectionWait. Nothing has been written while it is
-// awaited, so giving up there leaves the row as it was, which is what the
-// error then says; a begin that took the connection itself would wait for it
-// with the caller's cancellation already dropped.
+// cancellation and within connectionWait (onConnection). Nothing has been
+// written while it is awaited, so giving up there leaves the row as it was,
+// which is what the error then says; a begin that took the connection itself
+// would wait for it with the caller's cancellation already dropped. The same
+// bound holds the transaction's waits for a lock another connection holds —
+// the begin, the statement and the commit — so a write whose lock is held past
+// it fails, and is rolled back, rather than waiting on.
 //
 // The one outcome left unknown is a connection lost during the commit itself,
 // which only the database can settle.
 func (s *settingsStore) commit(ctx context.Context, statement func(tx *gorm.DB) error) error {
-	session, release, err := s.take(ctx)
-	if err != nil {
-		return err
-	}
-	defer release()
-	return session.WithContext(landed(ctx)).Transaction(func(tx *gorm.DB) error {
-		return statement(tx.WithContext(ctx))
+	return s.onConnection(ctx, func(session *gorm.DB) error {
+		return session.WithContext(landed(ctx)).Transaction(func(tx *gorm.DB) error {
+			return statement(tx.WithContext(ctx))
+		})
 	})
 }
 
-// take returns a session pinned to one connection of the delivered pool, and
-// the function that hands the connection back. The connection is waited for
-// until ctx ends, and for connectionWait at most.
+// onConnection runs fn on a session pinned to one connection of the delivered
+// pool, taken through db.Connection within connectionWait: the wait for the
+// connection, which also ends with ctx, and every wait of fn's statements for
+// a lock another connection holds end, together, once connectionWait has
+// passed. No connection within it fails with an error wrapping
+// context.DeadlineExceeded while ctx has not ended; a lock the bound ran out on
+// fails its statement with the engine's own error.
 //
 // Every statement issued for a caller's call — a write's, a delete's, a
 // listing's — goes through it: none of them can run in a transaction the
 // caller holds, since the surface takes none, so each takes a connection of
 // its own. On a database held to a single connection that connection is the
 // one a caller holding a transaction on the delivered handle has, until after
-// the call returns. Waiting for it there is waiting for the caller itself:
-// nothing would end that wait under a context with no deadline, and the
-// database's only connection would stay held for as long as it lasted.
+// the call returns; on a file database a caller that wrote in its own
+// transaction holds the lock a write waits for. Waiting for either there is
+// waiting for the caller itself: nothing would end that wait under a context
+// with no deadline, and the database's only connection would stay held for as
+// long as it lasted.
 //
 // A reload does not go through it. It is this module's own bookkeeping, and
 // the connection it waits for is never one its trigger holds: a write inside a
@@ -369,39 +371,18 @@ func (s *settingsStore) commit(ctx context.Context, statement func(tx *gorm.DB) 
 // write's connection has gone back. A reload waiting for someone else's
 // connection holds the reload lock meanwhile, which is why a write takes its
 // connection before anything that waits on that lock.
-func (s *settingsStore) take(ctx context.Context) (*gorm.DB, func(), error) {
-	pool, err := s.handle.DB()
-	if err != nil {
-		return nil, nil, fmt.Errorf("the delivered handle has no connection pool: %w", err)
-	}
-	taking, cancel := context.WithTimeout(ctx, connectionWait)
-	defer cancel()
-	conn, err := pool.Conn(taking)
-	if err != nil {
-		if errors.Is(err, context.DeadlineExceeded) && ctx.Err() == nil {
-			return nil, nil, fmt.Errorf("no connection of the delivered database came free within %v; "+
-				"on a database held to one connection, a transaction the caller holds on the "+
-				"delivered handle keeps it until after this call returns: %w", connectionWait, err)
-		}
-		return nil, nil, err
-	}
-	// The session is built with a context of its own so that its statement is
-	// a copy: pointing the delivered handle's own statement at the connection
-	// would send every other user of the handle through it.
-	session := s.handle.Session(&gorm.Session{NewDB: true, Context: ctx})
-	session.Statement.ConnPool = conn
-	return session, func() { _ = conn.Close() }, nil
+func (s *settingsStore) onConnection(ctx context.Context, fn func(session *gorm.DB) error) error {
+	return db.Connection(ctx, s.handle, connectionWait, fn)
 }
 
-// connectionWait bounds the wait for a connection of the delivered pool, for
-// the statements a caller's call issues.
+// connectionWait is the bound db.Connection holds the statements a caller's call
+// issues to: their wait for a connection of the delivered pool and their waits
+// for a lock another connection holds, together.
 //
 // It is the SQLite driver's default busy timeout, which is what the same write
-// waits for the write lock on a file database when a caller holds that lock in
-// its own transaction: on a database held to one connection the connection
-// plays the lock's part, and waiting for it as long keeps the two shapes of
-// one engine failing alike. A connection taken under load comes free in the
-// time a statement takes, far inside it.
+// would wait for the write lock on a file database without the bound. A
+// connection or a lock taken under load comes free in the time a statement
+// takes, far inside it.
 const connectionWait = 5 * time.Second
 
 // reload replaces the snapshot with a freshly loaded one.

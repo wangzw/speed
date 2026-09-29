@@ -131,18 +131,23 @@ here must not cross, and how to run it.
   from before its write. A change that mutated the map in place would be
   visible to a reader halfway through, which is what taking the pointer once
   avoids.
-- **A caller's call takes its connection through `take`, and a reload does
-  not.** The surface takes no transaction, so a write, a delete and a listing
-  each run on a connection of their own from the delivered pool; on a database
-  held to one connection, a caller that makes one of them inside its own
-  transaction on the delivered handle holds the only one. `take` waits for it
-  under the caller's cancellation and for `connectionWait` at most, so such a
-  call fails rather than waiting for the caller. A statement sent through the
-  handle directly waits for a connection as long as its context lasts, and a
-  write's transaction begins out of the caller's cancellation, so that is a
-  wait nothing ends. A reload's trigger never holds the connection it waits
-  for, but a reload holds the reload lock while it waits for someone else's,
-  so a write takes its connection before anything that waits on that lock.
+- **A caller's call takes its connection through `db.Connection`
+  (`onConnection`), and a reload does not.** The surface takes no transaction,
+  so a write, a delete and a listing each run on a connection of their own from
+  the delivered pool; on a database held to one connection, a caller that makes
+  one of them inside its own transaction on the delivered handle holds the
+  only one, and on a file database a caller that wrote in its own transaction
+  holds the lock a write waits for. `db.Connection` holds the wait for the
+  connection, which also ends with the caller's cancellation, and every lock
+  wait of the call's statements to `connectionWait` together, so such a call
+  fails rather than waiting for the caller; the bound is the database module's,
+  and no second one is written here. A statement sent through the handle
+  directly waits for a connection as long as its context lasts and for a lock
+  as long as the busy timeout, and a write's transaction begins out of the
+  caller's cancellation, so that is a wait nothing ends. A reload's trigger
+  never holds the connection it waits for, but a reload holds the reload lock
+  while it waits for someone else's, so a write takes its connection before
+  anything that waits on that lock.
 - **Before the first load there is no snapshot, not an empty one.** The store
   is delivered at `New` and the table is first read in `Init`, so a module
   initialised ahead of this one can reach it in between. An empty snapshot
@@ -182,9 +187,12 @@ go -C pkg/settings test -race ./...
 GOWORK=off go -C pkg/settings build ./...   # the standalone leg, without the workspace
 ```
 
-Most cases bring up their own in-memory SQLite database and ask for no
-service. The cases that run the statements against PostgreSQL take a database
-of their own on the shared container `pkg/internal/pgpool/pgtest` starts:
-they skip on a machine without docker, and fail instead where `CI` is set. The
+Most cases bring up their own SQLite database and ask for no service. The
+cases that run the statements against PostgreSQL take a database of their own
+on the shared container `pkg/internal/pgpool/pgtest` starts: they skip on a
+machine without docker, and fail instead where `CI` is set. Either way the
+handle is the one the database module delivers, from `pkg/internal/dbtest`,
+because a call's statements take their connection through `db.Connection`,
+which refuses a handle opened around that module. The
 event bus the cases use is a stub in `helpers_test.go` rather than the memory
 module, whose bus constructor is unexported.

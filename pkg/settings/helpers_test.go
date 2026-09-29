@@ -4,18 +4,19 @@ import (
 	"context"
 	"io/fs"
 	"log/slog"
+	"path/filepath"
 	"slices"
 	"strings"
 	"sync"
 	"testing"
 
-	sqlitedriver "github.com/glebarez/sqlite"
 	"gorm.io/gorm"
 	"gorm.io/gorm/logger"
 
 	"github.com/vislake/speed/pkg/core"
 	"github.com/vislake/speed/pkg/db"
 	"github.com/vislake/speed/pkg/event"
+	"github.com/vislake/speed/pkg/internal/dbtest"
 )
 
 // stubDatabase is the database capability, backed by a real handle.
@@ -111,31 +112,21 @@ func open(t *testing.T) *gorm.DB {
 	return handle
 }
 
-// openMemory builds a handle on an in-memory database of the case's own, with
-// no table in it.
+// openMemory builds a handle on a database of the case's own, with no table in
+// it, which every connection of the handle's pool shares.
 //
-// The database is named after the case and shared across the handle's
-// connections, and SQLite keeps such a database for as long as any connection
-// to it is open. The handle's pool is therefore closed when the case ends: a
-// pool left open carries the database — its table and its rows — into the next
-// run of the same case under -count, which then finds the table already there
-// and rows it never wrote.
+// It is the handle the database module delivers over a SQLite file, rather than
+// one opened here: every call of the store's takes its connection through
+// db.Connection, which refuses a handle the database module did not open. The
+// session handed back does not print the statements a case fails on purpose.
 func openMemory(t *testing.T) *gorm.DB {
 	t.Helper()
-	handle, err := gorm.Open(sqlitedriver.Open("file:"+t.Name()+"?mode=memory&cache=shared"), quiet())
-	if err != nil {
-		t.Fatalf("opening the handle: %v", err)
-	}
-	pool, err := handle.DB()
-	if err != nil {
-		t.Fatalf("reaching the handle's connection pool: %v", err)
-	}
-	t.Cleanup(func() {
-		if err := pool.Close(); err != nil {
-			t.Errorf("closing the handle: %v", err)
-		}
-	})
-	return handle
+	return quietly(dbtest.SQLite(t, filepath.Join(t.TempDir(), "settings.db"), nil).DB())
+}
+
+// quietly is a session of a delivered handle that prints no failed statement.
+func quietly(handle *gorm.DB) *gorm.DB {
+	return handle.Session(&gorm.Session{Logger: quiet().Logger})
 }
 
 // applyMigration runs one of the module's own migration files.
