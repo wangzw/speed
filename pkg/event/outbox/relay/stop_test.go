@@ -44,10 +44,28 @@ func dueUnclaimed(t *testing.T, database db.Database, r *relay) int64 {
 	return n
 }
 
+// stopDuring stops r while its bus holds the publish under way, and lets that
+// publish go once the stop stage has begun.
+func stopDuring(t *testing.T, r *relay, hold chan struct{}) {
+	t.Helper()
+	stopped := make(chan error, 1)
+	go func() { stopped <- r.stop(context.Background()) }()
+	if !eventually(r.isStopping) {
+		t.Fatalf("the stop stage never began")
+	}
+	close(hold)
+	if err := <-stopped; err != nil {
+		t.Fatalf("stopping the relay: %v", err)
+	}
+}
+
 // The stop stage lets the publish under way finish, publishes nothing more, and
 // gives every row the relay still held back, due at once: the next relay
 // publishes them without waiting for a claim to run out, and every staged event
 // is published once.
+//
+// The stopping relay claims for an hour, so the next relay publishes the rest
+// within the case only because they were given back.
 func TestTheRelayStopsWithoutLosingStagedRows(t *testing.T) {
 	onEachEngine(t, func(t *testing.T, e engine, dsn string) {
 		database := migrated(t, e, dsn)
@@ -55,7 +73,9 @@ func TestTheRelayStopsWithoutLosingStagedRows(t *testing.T) {
 		bus := newRecordingBus("stopping", l)
 		hold, held := make(chan struct{}), make(chan event.Event, 1)
 		bus.hold, bus.held = hold, held
-		stopping := newQuick(t, database, bus, quick)
+		long := quick
+		long.claim = time.Hour
+		stopping := newQuick(t, database, bus, long)
 		stopping.start(t.Context())
 
 		ids := stageBacklog(t, database, stopping, 3)
@@ -64,15 +84,7 @@ func TestTheRelayStopsWithoutLosingStagedRows(t *testing.T) {
 		case <-time.After(settle):
 			t.Fatalf("the relay never began publishing the backlog")
 		}
-		stopped := make(chan error, 1)
-		go func() { stopped <- stopping.stop(context.Background()) }()
-		// The stop stage waits for the publish under way, which the bus lets
-		// go a moment after the stop began.
-		time.Sleep(50 * time.Millisecond)
-		close(hold)
-		if err := <-stopped; err != nil {
-			t.Fatalf("stopping the relay: %v", err)
-		}
+		stopDuring(t, stopping, hold)
 		if got := idsOf(l.events()); len(got) != 1 || got[0] != ids[0] {
 			t.Fatalf("the stopping relay published %v, want the one under way, %s", got, ids[0])
 		}
@@ -85,10 +97,8 @@ func TestTheRelayStopsWithoutLosingStagedRows(t *testing.T) {
 
 		next := newQuick(t, e.open(t, dsn), newRecordingBus("next", l), quick)
 		next.start(t.Context())
-		// Well inside the claim the stopped relay would otherwise still hold.
-		deadline := time.Now().Add(quick.claim / 2)
-		for l.count() < len(ids) && time.Now().Before(deadline) {
-			time.Sleep(5 * time.Millisecond)
+		if !eventually(func() bool { return l.count() >= len(ids) && stagedRows(t, database) == 0 }) {
+			t.Fatalf("the relays published %v across the stop, want every one of %v", idsOf(l.events()), ids)
 		}
 		seen := map[string]int{}
 		for _, evt := range l.events() {
@@ -98,6 +108,57 @@ func TestTheRelayStopsWithoutLosingStagedRows(t *testing.T) {
 			if seen[id] != 1 {
 				t.Errorf("event %s was published %d times across the stop, want once", id, seen[id])
 			}
+		}
+	})
+}
+
+// The stop stage gives back the rows the stopping relay holds and no other
+// relay's: a row another replica's relay is publishing stays claimed by it and
+// not due, so no relay takes it over and publishes it a second time.
+func TestTheStopStageGivesBackTheRelaysOwnRowsAlone(t *testing.T) {
+	onEachEngine(t, func(t *testing.T, e engine, dsn string) {
+		database := migrated(t, e, dsn)
+		l := &ledger{}
+		bus := newRecordingBus("stopping", l)
+		hold, held := make(chan struct{}), make(chan event.Event, 1)
+		bus.hold, bus.held = hold, held
+		stopping := newQuick(t, database, bus, quick)
+		ids := stageBacklog(t, database, stopping, 3)
+
+		// Another replica's relay has claimed the first row and is publishing
+		// it.
+		busy := quick
+		busy.batch, busy.claim = 1, time.Hour
+		other := newQuick(t, e.open(t, dsn), newRecordingBus("other", &ledger{}), busy)
+		taken, err := other.claim()
+		if err != nil || len(taken) != 1 || taken[0].eventID != ids[0] {
+			t.Fatalf("the other relay claimed %+v (%v), want the first row", taken, err)
+		}
+
+		stopping.start(t.Context())
+		select {
+		case evt := <-held:
+			if evt.ID != ids[1] {
+				t.Fatalf("the stopping relay began publishing %s, want %s", evt.ID, ids[1])
+			}
+		case <-time.After(settle):
+			t.Fatalf("the relay never began publishing the rows no other relay holds")
+		}
+		stopDuring(t, stopping, hold)
+
+		if met := refusalOf(t, database, ids[0]); met.claimedBy != other.token || met.dueIn <= 0 {
+			t.Errorf("after another relay stopped, the row this one is publishing is claimed by %q and falls "+
+				"due in %v, want it still held by %q", met.claimedBy, met.dueIn, other.token)
+		}
+		if n := claimedBy(t, database, stopping.token); n != 0 {
+			t.Errorf("the stopped relay still holds %d rows", n)
+		}
+		if n := dueUnclaimed(t, database, stopping); n != 1 {
+			t.Errorf("%d rows are due and unclaimed after the stop, want the one the stopped relay held and "+
+				"never published", n)
+		}
+		if got := idsOf(l.events()); len(got) != 1 || got[0] != ids[1] {
+			t.Errorf("the stopping relay published %v, want the one under way, %s", got, ids[1])
 		}
 	})
 }

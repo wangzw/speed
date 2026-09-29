@@ -68,7 +68,9 @@ must not cross, and how to run it.
   that holds this is `TestASteadyStreamOfStagingsNeverStarvesTheRelay`.
 - **A refused row is never dropped.** There is no dead letter and no attempt
   limit; the row carries its refusals and the last reason, and waits a growing
-  delay.
+  delay. A bus that errs, panics or outlasts the publish bound has refused; the
+  refusal gives back only a row the relay still holds. The cases that hold this
+  are in `relay/refusal_test.go`.
 - **The identifier is assigned through `dispatch.Stamp` and the payload decoded
   through `dispatch.Payload`**, the code every bus implementation uses. A second
   copy here would let a subscriber see one shape from a direct publish and
@@ -76,7 +78,9 @@ must not cross, and how to run it.
 - **`tableName` is one constant in two places**: `relay/statements.go` and every
   migration file of both dialects.
 - **The stop stage gives back every row the relay holds**, due at once, so the
-  next relay does not wait for a claim to run out.
+  next relay does not wait for a claim to run out — and no other relay's row:
+  one another relay is publishing, made due, is published again by a third.
+  The case that holds this is `TestTheStopStageGivesBackTheRelaysOwnRowsAlone`.
 
 ## How a module stages an event
 
