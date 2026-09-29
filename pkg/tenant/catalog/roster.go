@@ -307,8 +307,9 @@ const postgresDialector = "postgres"
 // which the bound does not reach. On SQLite that is the connection's busy
 // timeout, the driver's five seconds unless the locator sets another; a
 // roster write inside a caller's transaction that has written to the same
-// database file meets that caller's write lock after its first read, and
-// SQLite then refuses it at once rather than waiting. On PostgreSQL it is until
+// database file meets that caller's write lock at its transaction's BEGIN,
+// which the database module issues IMMEDIATE, and waits there for the busy
+// timeout before SQLite refuses it. On PostgreSQL it is until
 // the caller's context ends, or the session's lock_timeout or
 // statement_timeout does; a roster write to a row the caller's own transaction
 // has written waits on that caller, and with neither timeout and no deadline it

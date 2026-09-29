@@ -324,11 +324,15 @@ func TestAStatementOfTheRostersWaitsForALockForTheBusyTimeout(t *testing.T) {
 }
 
 // Inside a caller's transaction that has written to the roster's SQLite file, a
-// write of the roster's fails at once with the engine's refusal and no answer,
-// and nothing is written: its first statement reads, and SQLite does not wait
-// to turn a read into a write while another connection holds the write lock.
-// An entry only reads, and answers from the table.
-func TestARosterWriteInsideTheCallersWriteTransactionOnAFileFailsAtOnce(t *testing.T) {
+// write of the roster's waits for the caller's write lock for the connection's
+// busy timeout, the one the locator sets, and then fails with the engine's
+// refusal and no answer, and nothing is written: the database module begins
+// the write's transaction IMMEDIATE, so it asks for the write lock at its BEGIN,
+// and the caller holds that lock until its own call returns. Only the BEGIN
+// waits; the reads the write then makes to say what the failure was do not,
+// since the caller holds no lock that stops a reader. An entry only reads, and
+// answers from the table.
+func TestARosterWriteInsideTheCallersWriteTransactionOnAFileWaitsForTheBusyTimeout(t *testing.T) {
 	t.Parallel()
 	for name, write := range map[string]func(r *roster) error{
 		"Put": func(r *roster) error {
@@ -343,7 +347,11 @@ func TestARosterWriteInsideTheCallersWriteTransactionOnAFileFailsAtOnce(t *testi
 	} {
 		t.Run(name, func(t *testing.T) {
 			t.Parallel()
-			r := enteringRoster(t)
+			r := rosterOn(t, openHandleAt(t, filepath.Join(t.TempDir(), "roster.db")+"?_pragma=busy_timeout(1000)"),
+				"sqlite", insert("t_acme", "acme"), "INSERT INTO tenants (id, alias, status) VALUES ('t_paused', 'paused', 0)")
+			if err := r.read(context.Background()); err != nil {
+				t.Fatalf("reading the roster: %v", err)
+			}
 			var took time.Duration
 			var entered error
 			err := r.handle.Transaction(func(tx *gorm.DB) error {
@@ -360,8 +368,12 @@ func TestARosterWriteInsideTheCallersWriteTransactionOnAFileFailsAtOnce(t *testi
 			if !strings.Contains(err.Error(), "SQLITE_BUSY") {
 				t.Fatalf("%s gave %v, want SQLite's refusal of the lock", name, err)
 			}
-			if took >= time.Second {
-				t.Fatalf("%s gave up after %v, want the refusal at once", name, took)
+			if took < lockBusyTimeout {
+				t.Fatalf("%s gave up after %v, before the busy timeout of %v", name, took, lockBusyTimeout)
+			}
+			if limit := lockBusyTimeout + 2*time.Second; took > limit {
+				t.Fatalf("%s gave up after %v, past the one busy timeout of %v its BEGIN waits for",
+					name, took, lockBusyTimeout)
 			}
 			if !errors.Is(entered, tenant.ErrTenantDisabled) {
 				t.Fatalf("an entry inside the same transaction gave %v, want ErrTenantDisabled from the table", entered)

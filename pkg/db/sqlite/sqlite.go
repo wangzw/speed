@@ -6,8 +6,8 @@
 // connection, plugin, encryption and migration logic are pkg/db's, shared with
 // every other implementation; what is dialect-specific stops at the driver, the
 // namespace, how the driver reports a constraint refusal, which locators name a
-// database private to one connection, and which locators it does not open at
-// all.
+// database private to one connection, which locators it does not open at all,
+// and how a transaction begins.
 //
 // Those locators — an in-memory database, a temporary one — are one database
 // per connection in SQLite, so a handle on one is held to a single connection
@@ -25,6 +25,16 @@
 // seconds, which a locator's _pragma=busy_timeout(n) replaces, and an ending
 // context does not cut the wait short. Nothing in this subpackage or in pkg/db
 // changes it.
+//
+// A transaction begins IMMEDIATE: it takes the database's write lock at its
+// BEGIN, waiting for it there within the busy timeout, so one that reads before
+// it writes waits out a concurrent writer as it would on PostgreSQL. SQLite's
+// own default, DEFERRED, takes the lock at the first write and refuses it at
+// once, without that wait, to a transaction that has read while another
+// connection holds it. The locator's _txlock parameter names another mode for
+// its transactions; one naming none that opens the database read-only
+// (mode=ro) begins them DEFERRED, and so does every transaction begun
+// read-only.
 //
 // It supplies no cross-process migration mutex, and this is where it differs
 // from the PostgreSQL subpackage beyond the driver. A mutex orders replicas that
@@ -89,7 +99,8 @@ const Dialect = db.SQLite
 // The driver appears here and nowhere in the capability's surface, which is
 // what lets a host move between engines without touching a line of the code
 // that uses the database. Its connections are opened through the wrapper in
-// commit.go, which rolls a transaction back when SQLite refuses to commit it.
+// transactions.go, which begins each transaction in the mode the locator gives
+// (beginStatement) and rolls one back when SQLite refuses to commit it.
 //
 // A locator that puts its connections in SQLite's shared-cache mode is refused:
 // the dialector returned for it fails to initialise, so nothing is opened on it,

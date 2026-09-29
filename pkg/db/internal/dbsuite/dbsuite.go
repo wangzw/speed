@@ -2,7 +2,8 @@
 // same cases run against every engine an implementation subpackage supports,
 // and carries the cases each engine's own tests run on the handle its module
 // delivers: the constraint refusals (see ConstraintRefusals), the COMMIT the
-// database refuses (see RefusedCommit and RefusedCommitBy), and what
+// database refuses (see RefusedCommit and RefusedCommitBy), concurrent
+// transactions that read before they write (see ReadThenWriteCommits), and what
 // db.Connection does with a connection (see ConnectionWait and the cases beside
 // it).
 //

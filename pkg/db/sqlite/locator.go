@@ -2,6 +2,7 @@ package sqlite
 
 import (
 	"bytes"
+	"fmt"
 	"net/url"
 	"strings"
 )
@@ -51,9 +52,12 @@ type sqliteLocator struct {
 	// vfs is the VFS it is opened through: the last vfs parameter of a file:
 	// URI, or else the one the driver reads from the query, or else none.
 	vfs string
-	// sharedCache and memory are what a file: URI's last cache and mode
-	// parameters make of it; both are false outside a file: URI.
-	sharedCache, memory bool
+	// sharedCache, memory and readOnly are what a file: URI's last cache and
+	// mode parameters make of it; all are false outside a file: URI.
+	sharedCache, memory, readOnly bool
+	// txlock is the driver's _txlock parameter as the driver reads it, the
+	// first one the query gives, and empty when there is none.
+	txlock string
 }
 
 // readLocator reads a locator the way the driver and SQLite read it, and
@@ -82,6 +86,7 @@ func readLocator(dsn string) (sqliteLocator, bool) {
 			l.vfs = vfs
 		}
 		l.vfs, _, _ = strings.Cut(l.vfs, "\x00")
+		l.txlock = query.Get("_txlock")
 		if !strings.HasPrefix(dsn, "file:") {
 			name = dsn[:at]
 		}
@@ -110,9 +115,49 @@ func readLocator(dsn string) (sqliteLocator, bool) {
 				return l, false
 			}
 			l.memory = value == "memory"
+			l.readOnly = value == "ro"
 		}
 	}
 	return l, true
+}
+
+// beginStatement is the statement a transaction on a connection to the locator
+// begins with, and an error for a _txlock parameter the driver does not know.
+//
+// A transaction begins IMMEDIATE, holding the database's write lock and
+// waiting for it within the connection's busy timeout. SQLite's default,
+// DEFERRED, takes that lock at the first write, and a transaction that has read
+// before it writes is refused it at once, without the busy timeout's wait,
+// while another connection holds it, so a check followed by a write — the
+// shape most transactions take — would fail under any concurrent writer. The
+// locator's _txlock parameter names another mode instead, read the way the
+// driver documents it — the first one, deferred, immediate or exclusive in any
+// letter case — whatever else the locator carries; the driver itself drops it
+// when the locator gives _time_format. A locator naming no mode whose last mode
+// parameter is ro begins its transactions DEFERRED: they never write, and
+// IMMEDIATE would hold the write lock against every other connection of the
+// file. A transaction database/sql begins read-only begins DEFERRED whatever
+// the locator says, as the driver begins one.
+func beginStatement(l sqliteLocator, readOnly bool) (string, error) {
+	mode := "IMMEDIATE"
+	if l.txlock != "" {
+		switch strings.ToLower(l.txlock) {
+		case "deferred":
+			mode = "DEFERRED"
+		case "immediate":
+			mode = "IMMEDIATE"
+		case "exclusive":
+			mode = "EXCLUSIVE"
+		default:
+			return "", fmt.Errorf("unknown _txlock %q", l.txlock)
+		}
+	} else if l.readOnly {
+		mode = "DEFERRED"
+	}
+	if readOnly {
+		mode = "DEFERRED"
+	}
+	return "BEGIN " + mode, nil
 }
 
 // The parts of a file: URI sqliteURI reads, in the order they come.

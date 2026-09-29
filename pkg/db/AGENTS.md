@@ -131,6 +131,14 @@ must not cross, and how to run it.
   reading that differs from SQLite's opens a shape nothing bounds, or a private
   database under a pool. The cases in `scope_test.go` hold both readings to
   what two real connections observe.
+- **The SQLite subpackage begins every transaction itself**
+  (`transactionConn.BeginTx`, `beginStatement`): IMMEDIATE, unless the
+  locator's `_txlock` names another mode; DEFERRED for one begun read-only, and
+  on a `mode=ro` locator naming no mode. Under SQLite's DEFERRED default a transaction that
+  read first is refused the write lock at once under any concurrent writer,
+  and the driver's own begin drops `_txlock` whenever the locator gives
+  `_time_format` (`adr-db-waits-2026-09-29`). `transactions_test.go` holds the
+  mode to the lock a second connection observes.
 - **Every wrap uses `%w`.** A `%v` leaves the text all but identical and makes
   the sentinel unreachable, which is the failure the note in `errors.go` exists
   to prevent; the error-chain cases hold each path to it.
@@ -192,7 +200,7 @@ gate. `internal/dbhost` is the test host the multi-process cases build and run;
 `pkg/internal/pgpool/pgtest` is the container fixture, shared with the key-value and
 event modules' postgres backends; `internal/dbsuite` holds the
 engine-neutral migration cases each engine's fixture is driven through, and the
-constraint-refusal, refused-commit and connection cases each engine runs
-on the handle its module delivers. `pkg/internal/dbtest` delivers this module's
+constraint-refusal, refused-commit, concurrent read-then-write and connection
+cases each engine runs on the handle its module delivers. `pkg/internal/dbtest` delivers this module's
 capability to other modules' tests, for the ones that exercise what an assembly
 hands them.
