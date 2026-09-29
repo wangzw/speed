@@ -29,6 +29,12 @@ Their own test suites run together, from the repository root:
 make tools-test
 ```
 
+`test_makefile.py` runs there as well. It is not a script's suite: it holds
+the root `Makefile`'s legs that loop over the modules or the gates to running
+every item and failing at the end, driving the real `Makefile` over scratch
+directories with stand-ins for `go` and `golangci-lint` first on `PATH`, so
+it needs `make` and nothing else.
+
 ## The scripts
 
 `check_toolchain.py` — fails when a version pinned in the root

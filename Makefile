@@ -20,6 +20,16 @@ GATES := $(wildcard tools/check_*.py)
 
 PYTHON ?= python3
 
+# Every leg that loops over a list -- the modules, or the gates -- runs each
+# item even after an earlier one failed, so one module's red result does not
+# hide another's, and fails at the end naming each item that failed.
+# `$(call each,<items>,<heading>,<command>)` runs <command> once per item
+# with $$it naming the item; `$(each-end)` fails the recipe if any run
+# failed. A recipe starts from `failed=;` and keeps every loop and the end
+# on one shell line, so several loops in it report together.
+each = for it in $(1); do echo "==> $(2) $$it"; $(3) || failed="$${failed:+$$failed; }$(2) $$it"; done
+each-end = if [ -n "$$failed" ]; then echo "failed: $$failed" >&2; exit 1; fi
+
 .PHONY: help modules build test test-race fmt lint tidy tidy-check repo-check tools-test check python-version modules-present
 
 help: ## List the entry points
@@ -29,23 +39,24 @@ modules: modules-present ## Print the module directories derived from go.work
 	@for m in $(MODULES); do echo $$m; done
 
 build: modules-present ## Build every module, both in the workspace and standalone
-	@for m in $(MODULES); do echo "==> build $$m"; go -C $$m build ./... || exit 1; done
-	@for m in $(MODULES); do echo "==> build standalone $$m"; GOWORK=off go -C $$m build ./... || exit 1; done
+	@failed=; $(call each,$(MODULES),build,go -C $$it build ./...); \
+	  $(call each,$(MODULES),build standalone,GOWORK=off go -C $$it build ./...); $(each-end)
 
 test: modules-present ## Test every module
-	@for m in $(MODULES); do echo "==> test $$m"; go -C $$m test ./... || exit 1; done
+	@failed=; $(call each,$(MODULES),test,go -C $$it test ./...); $(each-end)
 
 test-race: modules-present ## Test every module under the race detector
-	@for m in $(MODULES); do echo "==> test -race $$m"; go -C $$m test -race ./... || exit 1; done
+	@failed=; $(call each,$(MODULES),test -race,go -C $$it test -race ./...); $(each-end)
 
 fmt: modules-present ## Format every module in place
-	@for m in $(MODULES); do echo "==> fmt $$m"; env -C $$m golangci-lint fmt ./... || exit 1; done
+	@failed=; $(call each,$(MODULES),fmt,env -C $$it golangci-lint fmt ./...); $(each-end)
 
 lint: modules-present ## Report formatting drift and static-analysis findings
-	@for m in $(MODULES); do echo "==> lint $$m"; env -C $$m golangci-lint fmt --diff ./... || exit 1; env -C $$m golangci-lint run ./... || exit 1; done
+	@failed=; $(call each,$(MODULES),lint fmt --diff,env -C $$it golangci-lint fmt --diff ./...); \
+	  $(call each,$(MODULES),lint run,env -C $$it golangci-lint run ./...); $(each-end)
 
 tidy: modules-present ## Tidy every module's go.mod and go.sum in place
-	@for m in $(MODULES); do echo "==> tidy $$m"; GOWORK=off go -C $$m mod tidy || exit 1; done
+	@failed=; $(call each,$(MODULES),tidy,GOWORK=off go -C $$it mod tidy); $(each-end)
 
 # `go mod tidy -diff` reports what tidying would change without writing
 # anything, so the judgement is the dependency files themselves. Judging
@@ -53,10 +64,10 @@ tidy: modules-present ## Tidy every module's go.mod and go.sum in place
 # untidy file (tidying restores the committed bytes, leaving the tree
 # clean) and fails on any unrelated edit to a go.mod.
 tidy-check: modules-present ## Verify the dependency files are tidy, leaving the tree unchanged
-	@for m in $(MODULES); do echo "==> tidy-check $$m"; GOWORK=off go -C $$m mod tidy -diff || exit 1; done
+	@failed=; $(call each,$(MODULES),tidy-check,GOWORK=off go -C $$it mod tidy -diff); $(each-end)
 
 repo-check: python-version ## Run the gates in tools/ over this tree
-	@for g in $(GATES); do echo "==> $$g"; $(PYTHON) $$g || exit 1; done
+	@failed=; $(call each,$(GATES),gate,$(PYTHON) $$it); $(each-end)
 
 tools-test: python-version ## Run the test suites of the scripts in tools/
 	@$(PYTHON) -m unittest discover -s tools -t tools -p 'test_*.py'
