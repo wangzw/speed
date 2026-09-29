@@ -1,0 +1,183 @@
+{
+  "openapi": "3.1.0",
+  "info": {"title": "crm-host contacts", "version": "0.1.0"},
+  "paths": {
+    "/contacts": {
+      "get": {
+        "summary": "List the tenant's contacts at one account, with one email, or both; the email is matched through its blind index",
+        "parameters": [
+          {"$ref": "#/components/parameters/Tenant"},
+          {"name": "account_id", "in": "query", "required": false, "schema": {"type": "string"}},
+          {"name": "email", "in": "query", "required": false, "schema": {"type": "string"}, "description": "Compared without regard to case or surrounding blanks"}
+        ],
+        "responses": {
+          "200": {"description": "The contacts, by name and then identifier", "content": {"application/json": {"schema": {"$ref": "#/components/schemas/ContactList"}}}},
+          "422": {"description": "The listing names neither an account nor an email", "content": {"application/json": {"schema": {"$ref": "#/components/schemas/Error"}}}}
+        }
+      },
+      "post": {
+        "summary": "Create a contact at one of the tenant's accounts; a rep or above",
+        "parameters": [{"$ref": "#/components/parameters/Tenant"}],
+        "requestBody": {"required": true, "content": {"application/json": {"schema": {"$ref": "#/components/schemas/ContactCreate"}}}},
+        "responses": {
+          "201": {"description": "The contact", "content": {"application/json": {"schema": {"$ref": "#/components/schemas/Contact"}}}},
+          "400": {"description": "The body is not JSON of this shape: empty, null, an unknown member, a member spelled in another case, or one given twice", "content": {"application/json": {"schema": {"$ref": "#/components/schemas/Error"}}}},
+          "403": {"description": "The caller's role is below rep", "content": {"application/json": {"schema": {"$ref": "#/components/schemas/Error"}}}},
+          "409": {"description": "The tenant already holds a contact under this identifier, or a live contact with this email", "content": {"application/json": {"schema": {"$ref": "#/components/schemas/Error"}}}},
+          "422": {"description": "A field is missing or malformed, or the tenant holds no such account", "content": {"application/json": {"schema": {"$ref": "#/components/schemas/Error"}}}}
+        }
+      }
+    },
+    "/contacts/{id}": {
+      "get": {
+        "summary": "Read one contact",
+        "parameters": [{"$ref": "#/components/parameters/Tenant"}, {"$ref": "#/components/parameters/ContactID"}],
+        "responses": {
+          "200": {"description": "The contact", "content": {"application/json": {"schema": {"$ref": "#/components/schemas/Contact"}}}},
+          "404": {"description": "The tenant holds no such contact", "content": {"application/json": {"schema": {"$ref": "#/components/schemas/Error"}}}}
+        }
+      },
+      "patch": {
+        "summary": "Change the named fields of a contact; a rep or above. An empty phone clears it",
+        "parameters": [{"$ref": "#/components/parameters/Tenant"}, {"$ref": "#/components/parameters/ContactID"}],
+        "requestBody": {"required": true, "content": {"application/json": {"schema": {"$ref": "#/components/schemas/ContactPatch"}}}},
+        "responses": {
+          "200": {"description": "The contact as it now stands", "content": {"application/json": {"schema": {"$ref": "#/components/schemas/Contact"}}}},
+          "400": {"description": "The body is not JSON of this shape: empty, null, an unknown member, a member spelled in another case, or one given twice", "content": {"application/json": {"schema": {"$ref": "#/components/schemas/Error"}}}},
+          "403": {"description": "The caller's role is below rep", "content": {"application/json": {"schema": {"$ref": "#/components/schemas/Error"}}}},
+          "404": {"description": "The tenant holds no such contact", "content": {"application/json": {"schema": {"$ref": "#/components/schemas/Error"}}}},
+          "409": {"description": "Another live contact of the tenant has the new email", "content": {"application/json": {"schema": {"$ref": "#/components/schemas/Error"}}}},
+          "422": {"description": "The change names nothing, empties the name, or gives a malformed email", "content": {"application/json": {"schema": {"$ref": "#/components/schemas/Error"}}}}
+        }
+      },
+      "delete": {
+        "summary": "Soft-delete a contact; an admin or above",
+        "parameters": [{"$ref": "#/components/parameters/Tenant"}, {"$ref": "#/components/parameters/ContactID"}],
+        "responses": {
+          "204": {"description": "Deleted"},
+          "403": {"description": "The caller's role is below admin", "content": {"application/json": {"schema": {"$ref": "#/components/schemas/Error"}}}},
+          "404": {"description": "The tenant holds no such contact", "content": {"application/json": {"schema": {"$ref": "#/components/schemas/Error"}}}}
+        }
+      }
+    },
+    "/contacts/upsert": {
+      "post": {
+        "summary": "Find the tenant's contact with the body's email, or create it from the body; a rep or above",
+        "parameters": [{"$ref": "#/components/parameters/Tenant"}],
+        "requestBody": {"required": true, "content": {"application/json": {"schema": {"$ref": "#/components/schemas/ContactCreate"}}}},
+        "responses": {
+          "200": {"description": "The contact that already had the email, unchanged", "content": {"application/json": {"schema": {"$ref": "#/components/schemas/Contact"}}}},
+          "201": {"description": "The contact created", "content": {"application/json": {"schema": {"$ref": "#/components/schemas/Contact"}}}},
+          "400": {"description": "The body is not JSON of this shape: empty, null, an unknown member, a member spelled in another case, or one given twice", "content": {"application/json": {"schema": {"$ref": "#/components/schemas/Error"}}}},
+          "403": {"description": "The caller's role is below rep", "content": {"application/json": {"schema": {"$ref": "#/components/schemas/Error"}}}},
+          "409": {"description": "Another contact of the tenant holds this identifier, or one with this email was written at the same time", "content": {"application/json": {"schema": {"$ref": "#/components/schemas/Error"}}}},
+          "422": {"description": "A field is missing or malformed, or the tenant holds no such account", "content": {"application/json": {"schema": {"$ref": "#/components/schemas/Error"}}}}
+        }
+      }
+    },
+    "/contacts/export": {
+      "get": {
+        "summary": "Export the tenant's contacts as CSV: id, account_id, name, title, created_at",
+        "parameters": [{"$ref": "#/components/parameters/Tenant"}],
+        "responses": {
+          "200": {"description": "The contacts, by account, name and identifier", "content": {"text/csv": {"schema": {"type": "string"}}}}
+        }
+      }
+    },
+    "/contacts/autocomplete": {
+      "get": {
+        "summary": "The distinct names of the tenant's contacts that start with a prefix, compared without regard to case",
+        "parameters": [
+          {"$ref": "#/components/parameters/Tenant"},
+          {"name": "prefix", "in": "query", "required": false, "schema": {"type": "string"}}
+        ],
+        "responses": {
+          "200": {"description": "At most ten names, in order", "content": {"application/json": {"schema": {"$ref": "#/components/schemas/ContactNames"}}}}
+        }
+      }
+    },
+    "/contacts/directory": {
+      "get": {
+        "summary": "Every contact of the tenant beside the name of its account",
+        "parameters": [{"$ref": "#/components/parameters/Tenant"}],
+        "responses": {
+          "200": {"description": "The entries, by contact name and then identifier", "content": {"application/json": {"schema": {"$ref": "#/components/schemas/ContactDirectory"}}}}
+        }
+      }
+    }
+  },
+  "components": {
+    "parameters": {
+      "Tenant": {"name": "X-Tenant", "in": "header", "required": true, "schema": {"type": "string"}, "description": "The alias of the tenant the request is scoped to"},
+      "ContactID": {"name": "id", "in": "path", "required": true, "schema": {"type": "string"}, "description": "The contact's identifier within the tenant"}
+    },
+    "schemas": {
+      "Contact": {
+        "type": "object",
+        "properties": {
+          "tenant_id": {"type": "string"},
+          "id": {"type": "string"},
+          "account_id": {"type": "string"},
+          "name": {"type": "string"},
+          "email": {"type": "string"},
+          "phone": {"type": ["string", "null"]},
+          "title": {"type": "string"},
+          "created_at": {"type": "string", "format": "date-time"}
+        },
+        "required": ["tenant_id", "id", "account_id", "name", "email", "phone", "title", "created_at"]
+      },
+      "ContactCreate": {
+        "type": "object",
+        "properties": {
+          "id": {"type": "string", "description": "1 to 64 letters, digits, '-' or '_'; drawn when absent"},
+          "account_id": {"type": "string"},
+          "name": {"type": "string"},
+          "email": {"type": "string"},
+          "phone": {"type": "string"},
+          "title": {"type": "string"}
+        },
+        "required": ["account_id", "name", "email"]
+      },
+      "ContactPatch": {
+        "type": "object",
+        "properties": {"name": {"type": "string"}, "email": {"type": "string"}, "phone": {"type": "string"}, "title": {"type": "string"}}
+      },
+      "ContactList": {
+        "type": "object",
+        "properties": {"contacts": {"type": "array", "items": {"$ref": "#/components/schemas/Contact"}}},
+        "required": ["contacts"]
+      },
+      "ContactNames": {
+        "type": "object",
+        "properties": {"names": {"type": "array", "items": {"type": "string"}}},
+        "required": ["names"]
+      },
+      "ContactDirectory": {
+        "type": "object",
+        "properties": {
+          "entries": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "id": {"type": "string"},
+                "name": {"type": "string"},
+                "title": {"type": "string"},
+                "account_id": {"type": "string"},
+                "account_name": {"type": "string"},
+                "account_owner": {"type": "string", "description": "The display name of the member who owns the account"}
+              },
+              "required": ["id", "name", "title", "account_id", "account_name", "account_owner"]
+            }
+          }
+        },
+        "required": ["entries"]
+      },
+      "Error": {
+        "type": "object",
+        "properties": {"error": {"type": "string"}},
+        "required": ["error"]
+      }
+    }
+  }
+}

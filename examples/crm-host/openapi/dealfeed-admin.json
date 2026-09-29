@@ -1,0 +1,47 @@
+{
+  "openapi": "3.1.0",
+  "info": {"title": "crm-host deal feed", "version": "0.1.0"},
+  "paths": {
+    "/deal-events": {
+      "post": {
+        "summary": "Publish a deal.won for a tenant under an identifier the caller may choose; a platform operator only, and served only when dealfeed.enabled is true",
+        "description": "Hands the deal.won consumers what the deals module never publishes: one identifier twice, one identifier in two tenants, and a tenant the consumers do not serve. The payload is the deal event contract's, with object, outcome and won_at filled here. The tenant is not checked against the roster: the consumers refuse a disabled or unknown tenant themselves. dealfeed.enabled is false unless a deployment sets it, and this fragment is declared whatever it says, so a deployment that leaves it off lists this operation without serving it.",
+        "requestBody": {"required": true, "content": {"application/json": {"schema": {"$ref": "#/components/schemas/DealFeedEvent"}}}},
+        "responses": {
+          "202": {"description": "The bus accepted the event", "content": {"application/json": {"schema": {"$ref": "#/components/schemas/DealFeedEnvelope"}}}},
+          "403": {"description": "The caller is not a platform operator", "content": {"application/json": {"schema": {"$ref": "#/components/schemas/Error"}}}},
+          "422": {"description": "The envelope or the payload is not well formed", "content": {"application/json": {"schema": {"$ref": "#/components/schemas/Error"}}}},
+          "503": {"description": "The bus did not accept the event", "content": {"application/json": {"schema": {"$ref": "#/components/schemas/Error"}}}}
+        }
+      }
+    }
+  },
+  "components": {
+    "schemas": {
+      "DealFeedEvent": {
+        "type": "object",
+        "properties": {
+          "tenant_id": {"type": "string"},
+          "id": {"type": "string", "description": "The event identifier; minted by the feed when absent"},
+          "deal_id": {"type": "string"},
+          "account_id": {"type": "string"},
+          "stage": {"type": "string"},
+          "amount": {"type": "integer", "format": "int64", "minimum": 0, "description": "In the currency's minor units"},
+          "currency": {"type": "string", "pattern": "^[A-Z]{3}$"},
+          "owner_id": {"type": "string"}
+        },
+        "required": ["tenant_id", "deal_id", "currency"]
+      },
+      "DealFeedEnvelope": {
+        "type": "object",
+        "properties": {"id": {"type": "string"}, "type": {"type": "string"}, "tenant_id": {"type": "string"}},
+        "required": ["id", "type", "tenant_id"]
+      },
+      "Error": {
+        "type": "object",
+        "properties": {"error": {"type": "string"}},
+        "required": ["error"]
+      }
+    }
+  }
+}

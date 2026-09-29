@@ -1,0 +1,47 @@
+{
+  "openapi": "3.1.0",
+  "info": {"title": "crm-host account", "version": "0.1.0"},
+  "paths": {
+    "/me": {
+      "get": {
+        "summary": "Who the caller is and which tenants they belong to",
+        "responses": {
+          "200": {
+            "description": "The caller",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "identity": {"type": "string", "description": "The owner-qualified identity, for example users/u_..."},
+                    "user": {
+                      "type": ["object", "null"],
+                      "properties": {"id": {"type": "string"}, "email": {"type": "string"}, "display_name": {"type": "string"}}
+                    },
+                    "tenants": {
+                      "type": "array",
+                      "items": {
+                        "type": "object",
+                        "properties": {
+                          "id": {"type": "string"},
+                          "alias": {"type": "string"},
+                          "status": {"type": "string", "enum": ["active", "disabled"]},
+                          "role": {"$ref": "#/components/schemas/Role"}
+                        }
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    }
+  },
+  "components": {
+    "schemas": {
+      "Role": {"type": "string", "enum": ["owner", "admin", "rep", "viewer"]}
+    }
+  }
+}

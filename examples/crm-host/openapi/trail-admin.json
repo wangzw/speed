@@ -1,0 +1,68 @@
+{
+  "openapi": "3.1.0",
+  "info": {"title": "crm-host audit rows across tenants", "version": "0.1.0"},
+  "paths": {
+    "/audit-entries": {
+      "get": {
+        "summary": "Read every tenant's audit rows across tenants, or one tenant's by entering it whatever its status, newest first; the read is recorded with its purpose before it runs",
+        "parameters": [
+          {"name": "tenant", "in": "query", "required": false, "schema": {"type": "string"}, "description": "Only this tenant's rows, by identifier; the tenant is entered, served or disabled"},
+          {"$ref": "#/components/parameters/TrailAction"},
+          {"$ref": "#/components/parameters/TrailSince"},
+          {"$ref": "#/components/parameters/TrailUntil"},
+          {"$ref": "#/components/parameters/TrailLimit"}
+        ],
+        "responses": {
+          "200": {"description": "One page of rows", "content": {"application/json": {"schema": {"$ref": "#/components/schemas/TrailPage"}}}},
+          "404": {"description": "No tenant on the roster has the identifier", "content": {"application/json": {"schema": {"$ref": "#/components/schemas/Error"}}}},
+          "422": {"description": "A parameter is unknown or malformed", "content": {"application/json": {"schema": {"$ref": "#/components/schemas/Error"}}}}
+        }
+      }
+    }
+  },
+  "components": {
+    "parameters": {
+      "TrailAction": {"name": "action", "in": "query", "required": false, "schema": {"type": "array", "items": {"type": "string"}}, "style": "form", "explode": true, "description": "Only rows carrying one of these actions"},
+      "TrailSince": {"name": "since", "in": "query", "required": false, "schema": {"type": "string", "format": "date-time"}, "description": "Only rows written at or after this time"},
+      "TrailUntil": {"name": "until", "in": "query", "required": false, "schema": {"type": "string", "format": "date-time"}, "description": "Only rows written before this time"},
+      "TrailLimit": {"name": "limit", "in": "query", "required": false, "schema": {"type": "integer", "minimum": 1, "maximum": 500, "default": 100}}
+    },
+    "schemas": {
+      "TrailEntry": {
+        "type": "object",
+        "properties": {
+          "id": {"type": "integer"},
+          "tenant": {"type": "string", "description": "Absent for a row the platform wrote with no tenant"},
+          "occurred_at": {"type": "string", "format": "date-time"},
+          "actor": {"type": "string"},
+          "source": {"type": "string", "enum": ["statement", "request", "event", "seam"]},
+          "action": {"type": "string"},
+          "object": {"type": "string"},
+          "outcome": {"type": "string"},
+          "purpose": {"type": "string"},
+          "detail": {"type": "object", "additionalProperties": {"type": "string"}}
+        },
+        "required": ["id", "occurred_at", "actor", "source", "action", "object", "outcome", "detail"]
+      },
+      "TrailPage": {
+        "type": "object",
+        "properties": {
+          "tenant": {"type": "string"},
+          "total": {"type": "integer", "description": "How many rows match the query"},
+          "entries": {"type": "array", "items": {"$ref": "#/components/schemas/TrailEntry"}},
+          "actions": {
+            "type": "array",
+            "description": "How many rows carry each action, under the query's time bounds",
+            "items": {"type": "object", "properties": {"action": {"type": "string"}, "entries": {"type": "integer"}}}
+          }
+        },
+        "required": ["total", "entries", "actions"]
+      },
+      "Error": {
+        "type": "object",
+        "properties": {"error": {"type": "string"}},
+        "required": ["error"]
+      }
+    }
+  }
+}

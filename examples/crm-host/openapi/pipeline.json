@@ -1,0 +1,83 @@
+{
+  "openapi": "3.1.0",
+  "info": {"title": "crm-host pipeline", "version": "0.1.0"},
+  "paths": {
+    "/pipeline/stages": {
+      "get": {
+        "summary": "List the stages of the tenant's pipeline, in pipeline order",
+        "parameters": [{"$ref": "#/components/parameters/Tenant"}],
+        "responses": {
+          "200": {"description": "The stages", "content": {"application/json": {"schema": {"$ref": "#/components/schemas/StageList"}}}}
+        }
+      },
+      "post": {
+        "summary": "Define a stage of the tenant's pipeline, or find it defined with the same attributes; an owner or an admin only",
+        "parameters": [{"$ref": "#/components/parameters/Tenant"}],
+        "requestBody": {"required": true, "content": {"application/json": {"schema": {"$ref": "#/components/schemas/StageDefinition"}}}},
+        "responses": {
+          "201": {"description": "The stage, created", "content": {"application/json": {"schema": {"$ref": "#/components/schemas/Stage"}}}},
+          "200": {"description": "The stage, already defined with these attributes", "content": {"application/json": {"schema": {"$ref": "#/components/schemas/Stage"}}}},
+          "403": {"description": "The caller does not define this tenant's pipeline", "content": {"application/json": {"schema": {"$ref": "#/components/schemas/Error"}}}},
+          "409": {"description": "A stage with this key exists with other attributes", "content": {"application/json": {"schema": {"$ref": "#/components/schemas/Error"}}}},
+          "422": {"description": "A value of the definition is not accepted", "content": {"application/json": {"schema": {"$ref": "#/components/schemas/Error"}}}}
+        }
+      }
+    },
+    "/pipeline/stages/{key}": {
+      "patch": {
+        "summary": "Change a stage's probability; an owner or an admin only",
+        "parameters": [
+          {"$ref": "#/components/parameters/Tenant"},
+          {"name": "key", "in": "path", "required": true, "schema": {"type": "string"}}
+        ],
+        "requestBody": {"required": true, "content": {"application/json": {"schema": {
+          "type": "object", "properties": {"probability": {"type": "integer", "minimum": 0, "maximum": 100}}, "required": ["probability"]
+        }}}},
+        "responses": {
+          "200": {"description": "The stage as changed", "content": {"application/json": {"schema": {"$ref": "#/components/schemas/Stage"}}}},
+          "404": {"description": "The pipeline has no stage with this key", "content": {"application/json": {"schema": {"$ref": "#/components/schemas/Error"}}}}
+        }
+      }
+    }
+  },
+  "components": {
+    "parameters": {
+      "Tenant": {"name": "X-Tenant", "in": "header", "required": true, "schema": {"type": "string"}, "description": "The alias of the tenant the request is scoped to"}
+    },
+    "schemas": {
+      "StageKind": {"type": "string", "enum": ["open", "won", "lost"]},
+      "StageDefinition": {
+        "type": "object",
+        "properties": {
+          "key": {"type": "string", "pattern": "^[a-z][a-z0-9-]{0,39}$"},
+          "name": {"type": "string"},
+          "position": {"type": "integer", "minimum": 0},
+          "probability": {"type": "integer", "minimum": 0, "maximum": 100},
+          "kind": {"$ref": "#/components/schemas/StageKind"}
+        },
+        "required": ["key", "name", "probability", "kind"]
+      },
+      "Stage": {
+        "type": "object",
+        "properties": {
+          "key": {"type": "string"},
+          "name": {"type": "string"},
+          "position": {"type": "integer"},
+          "probability": {"type": "integer"},
+          "kind": {"$ref": "#/components/schemas/StageKind"}
+        },
+        "required": ["key", "name", "position", "probability", "kind"]
+      },
+      "StageList": {
+        "type": "object",
+        "properties": {"stages": {"type": "array", "items": {"$ref": "#/components/schemas/Stage"}}},
+        "required": ["stages"]
+      },
+      "Error": {
+        "type": "object",
+        "properties": {"error": {"type": "string"}},
+        "required": ["error"]
+      }
+    }
+  }
+}

@@ -1,0 +1,45 @@
+{
+  "openapi": "3.1.0",
+  "info": {"title": "crm-host sessions", "version": "0.1.0"},
+  "paths": {
+    "/login": {
+      "post": {
+        "summary": "Sign a CRM user in with a Basic credential and issue a bearer token",
+        "security": [{"basic": []}],
+        "responses": {
+          "201": {"description": "The session", "content": {"application/json": {"schema": {"$ref": "#/components/schemas/Session"}}}},
+          "401": {"description": "The credential does not sign a user in", "content": {"application/json": {"schema": {"$ref": "#/components/schemas/Error"}}}}
+        }
+      }
+    },
+    "/logout": {
+      "post": {
+        "summary": "End the bearer session that authenticated the request",
+        "security": [{"bearer": []}],
+        "responses": {
+          "204": {"description": "The session is ended"},
+          "400": {"description": "The request was not authenticated by a bearer session", "content": {"application/json": {"schema": {"$ref": "#/components/schemas/Error"}}}}
+        }
+      }
+    }
+  },
+  "components": {
+    "schemas": {
+      "Session": {
+        "type": "object",
+        "properties": {
+          "token": {"type": "string"},
+          "token_type": {"type": "string", "const": "Bearer"},
+          "expires_in": {"type": "integer", "description": "Seconds until the token expires"},
+          "user_id": {"type": "string"}
+        },
+        "required": ["token", "token_type", "expires_in", "user_id"]
+      },
+      "Error": {
+        "type": "object",
+        "properties": {"error": {"type": "string"}},
+        "required": ["error"]
+      }
+    }
+  }
+}

@@ -1,0 +1,110 @@
+{
+  "openapi": "3.1.0",
+  "info": {"title": "crm-host platform settings", "version": "0.1.0"},
+  "paths": {
+    "/global-settings": {
+      "get": {
+        "summary": "List the global layer of every setting the host serves",
+        "responses": {
+          "200": {"description": "The global layer", "content": {"application/json": {"schema": {"$ref": "#/components/schemas/PreferenceList"}}}}
+        }
+      }
+    },
+    "/global-settings/{key}": {
+      "put": {
+        "summary": "Write a value into the global layer, which every tenant without a value of its own reads",
+        "parameters": [{"$ref": "#/components/parameters/PreferenceKey"}],
+        "requestBody": {"required": true, "content": {"application/json": {"schema": {"$ref": "#/components/schemas/PreferenceWrite"}}}},
+        "responses": {
+          "200": {"description": "The setting as it now stands", "content": {"application/json": {"schema": {"$ref": "#/components/schemas/PreferenceSetting"}}}},
+          "400": {"description": "The body is not a JSON object this route reads", "content": {"application/json": {"schema": {"$ref": "#/components/schemas/Error"}}}},
+          "404": {"description": "No setting the host serves has the key", "content": {"application/json": {"schema": {"$ref": "#/components/schemas/Error"}}}},
+          "422": {"description": "The value does not convert to the setting's declared type, or the body carries none", "content": {"application/json": {"schema": {"$ref": "#/components/schemas/Error"}}}}
+        }
+      },
+      "delete": {
+        "summary": "Remove the global value of a setting",
+        "parameters": [{"$ref": "#/components/parameters/PreferenceKey"}],
+        "responses": {
+          "200": {"description": "The setting as it now resolves", "content": {"application/json": {"schema": {"$ref": "#/components/schemas/PreferenceSetting"}}}},
+          "404": {"description": "No setting the host serves has the key", "content": {"application/json": {"schema": {"$ref": "#/components/schemas/Error"}}}}
+        }
+      }
+    },
+    "/tenants/{id}/settings": {
+      "get": {
+        "summary": "List one tenant's layer of every setting the host serves",
+        "parameters": [{"$ref": "#/components/parameters/TenantID"}],
+        "responses": {
+          "200": {"description": "The tenant's layer", "content": {"application/json": {"schema": {"$ref": "#/components/schemas/PreferenceList"}}}},
+          "404": {"description": "No tenant on the roster has the identifier", "content": {"application/json": {"schema": {"$ref": "#/components/schemas/Error"}}}},
+          "422": {"description": "The identifier is malformed", "content": {"application/json": {"schema": {"$ref": "#/components/schemas/Error"}}}}
+        }
+      }
+    },
+    "/tenants/{id}/settings/{key}": {
+      "put": {
+        "summary": "Write a value into one tenant's layer, such as the tenant's rate limit",
+        "parameters": [{"$ref": "#/components/parameters/TenantID"}, {"$ref": "#/components/parameters/PreferenceKey"}],
+        "requestBody": {"required": true, "content": {"application/json": {"schema": {"$ref": "#/components/schemas/PreferenceWrite"}}}},
+        "responses": {
+          "200": {"description": "The setting as it now stands", "content": {"application/json": {"schema": {"$ref": "#/components/schemas/PreferenceSetting"}}}},
+          "400": {"description": "The body is not a JSON object this route reads", "content": {"application/json": {"schema": {"$ref": "#/components/schemas/Error"}}}},
+          "404": {"description": "No tenant has the identifier, or no setting the host serves has the key", "content": {"application/json": {"schema": {"$ref": "#/components/schemas/Error"}}}},
+          "422": {"description": "The value does not convert to the setting's declared type, the body carries none, or the identifier is malformed", "content": {"application/json": {"schema": {"$ref": "#/components/schemas/Error"}}}}
+        }
+      },
+      "delete": {
+        "summary": "Remove one tenant's value of a setting",
+        "parameters": [{"$ref": "#/components/parameters/TenantID"}, {"$ref": "#/components/parameters/PreferenceKey"}],
+        "responses": {
+          "200": {"description": "The setting as it now resolves", "content": {"application/json": {"schema": {"$ref": "#/components/schemas/PreferenceSetting"}}}},
+          "404": {"description": "No tenant has the identifier, or no setting the host serves has the key", "content": {"application/json": {"schema": {"$ref": "#/components/schemas/Error"}}}},
+          "422": {"description": "The identifier is malformed", "content": {"application/json": {"schema": {"$ref": "#/components/schemas/Error"}}}}
+        }
+      }
+    }
+  },
+  "components": {
+    "parameters": {
+      "TenantID": {"name": "id", "in": "path", "required": true, "schema": {"type": "string"}},
+      "PreferenceKey": {"name": "key", "in": "path", "required": true, "schema": {"type": "string"}, "description": "The full path of the setting, such as deals.default-currency"}
+    },
+    "schemas": {
+      "PreferenceSetting": {
+        "type": "object",
+        "properties": {
+          "key": {"type": "string"},
+          "type": {"type": "string", "enum": ["string", "integer", "duration"]},
+          "description": {"type": "string"},
+          "tenant_editable": {"type": "boolean"},
+          "sensitive": {"type": "boolean", "description": "The value is not shown: written and value read ******** where one is set, and default is null"},
+          "default": {"type": ["string", "null"], "description": "The declared default in the declared type's text form; null for a sensitive setting, whose default is withheld"},
+          "written": {"type": ["string", "null"], "description": "The text the layer's own row holds, null when it holds none"},
+          "value": {"description": "The value a read in the layer resolves to; a duration as its text"}
+        },
+        "required": ["key", "type", "description", "tenant_editable", "sensitive", "default", "written", "value"]
+      },
+      "PreferenceList": {
+        "type": "object",
+        "properties": {
+          "tenant": {"type": "string", "description": "The tenant whose layer is listed; absent for the global layer"},
+          "settings": {"type": "array", "items": {"$ref": "#/components/schemas/PreferenceSetting"}}
+        },
+        "required": ["settings"]
+      },
+      "PreferenceWrite": {
+        "type": "object",
+        "properties": {
+          "value": {"description": "The value, in the form a configuration source gives it: a duration as text such as \"5m\", a number for an integer"}
+        },
+        "required": ["value"]
+      },
+      "Error": {
+        "type": "object",
+        "properties": {"error": {"type": "string"}},
+        "required": ["error"]
+      }
+    }
+  }
+}
