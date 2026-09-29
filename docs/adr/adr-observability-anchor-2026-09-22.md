@@ -6,11 +6,11 @@
 
 ## 背景
 
-中间件的排序按功能标识建图：一层用 `Provides` 声明它在链上代表什么，别的层用 `After` 或 `Before` 指向那个标识（[ADR-http-middleware-2026-09-14](adr-http-middleware-2026-09-14.md)）。`pkg/http` 的登记面把一层的名字与它声称代表的功能分开。`http.Middleware` 的 `Name` 字段只用于诊断，写在 panic 文本与启动时列出的链里；指向功能的是同一结构上的 `Provides`，其元素是 `core.Token`（`pkg/core/module.go`）。登记面拿不到登记方的身份——`http.Endpoint` 不带它——因此 `pkg/http` 不校验 `Provides` 与登记方描述符里交付面的一致性，一层可以声称代表一个它所属模块并不交付的功能（见 [http](../design/modules/design-http.md) 的中间件一节）。
+中间件的排序按功能标识建图：一层用 `Provides` 声明它在链上代表什么，别的层用 `After` 或 `Before` 指向那个标识（[ADR-http-middleware-2026-09-14](adr-http-middleware-2026-09-14.md)）。`pkg/http` 的登记面把一层的名字与它声称代表的功能分开。`http.Middleware` 的 `Name` 字段只用于诊断，写在 panic 文本与启动时列出的链里；指向功能的是同一结构上的 `Provides`，其元素是 `core.Token`（`pkg/core/module.go`）。登记面拿不到登记方的身份——`http.Endpoint` 不带它——因此 `pkg/http` 不校验 `Provides` 与登记方描述符里交付面的一致性，一层可以声称代表一个它所属模块并不交付的功能（见 `http` 设计文档的中间件一节）。
 
-入口模块的 panic 兜底由它内建，位于全部登记层之外（见 [http](../design/modules/design-http.md) 的兜底层一节、[ADR-http-recovery-2026-09-22](adr-http-recovery-2026-09-22.md)）。内层抛出的 panic 因此先穿过登记层，才到兜底层。
+入口模块的 panic 兜底由它内建，位于全部登记层之外（见 `http` 设计文档的兜底层一节、[ADR-http-recovery-2026-09-22](adr-http-recovery-2026-09-22.md)）。内层抛出的 panic 因此先穿过登记层，才到兜底层。
 
-HTTP 的响应写出者可实现的若干可选接口（`Flusher`、`Hijacker` 等）在包装之后不再直接可见，须由包住写出者的层显式转发或用 `Unwrap` 暴露；采集层正是这样一层（见 [http](../design/modules/design-http.md) 的中间件一节）。
+HTTP 的响应写出者可实现的若干可选接口（`Flusher`、`Hijacker` 等）在包装之后不再直接可见，须由包住写出者的层显式转发或用 `Unwrap` 暴露；采集层正是这样一层（见 `http` 设计文档的中间件一节）。
 
 ## 考虑过的选项
 
