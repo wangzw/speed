@@ -12,11 +12,20 @@ import (
 	"strings"
 )
 
-// The password hash format this backend stores and reads.
+// The password hash format this backend stores and reads:
 //
-// It is written out rather than borrowed so that a table stays readable without
-// this package: scheme, iteration count, salt and derived key, separated by '$'
-// and base64 encoded without padding.
+//	pbkdf2-sha256$<iterations>$<salt>$<key>
+//
+// The iteration count is a positive whole number in decimal, and the salt and
+// the key are standard base64 without padding. The key is 32 bytes of PBKDF2
+// with HMAC-SHA-256 over the password and the salt at that count; Hash and
+// HashAt draw a 16-byte salt.
+//
+// The format is a stable contract, not an implementation detail. A table sits
+// in a configuration file and outlives the binary that reads it, and the format
+// is written out rather than borrowed so that a table stays readable, and
+// writable, without this package: an entry another tool writes to it is read
+// like one this package wrote.
 const (
 	hashScheme    = "pbkdf2-sha256"
 	hashSeparator = "$"
@@ -24,15 +33,17 @@ const (
 	keyLength     = 32
 )
 
-// hashIterations is what Hash produces today. The count travels inside every
-// hash it writes, so raising it does not invalidate the tables already written:
-// an existing entry keeps verifying at the count it was made with, and is
-// brought up to date by being written again.
+// hashIterations is the count Hash derives at, the figure OWASP's password
+// storage guidance gives for PBKDF2 with HMAC-SHA-256. The count travels inside
+// every hash, so raising it does not invalidate the tables already written: an
+// existing entry keeps verifying at the count it was made with, and is brought
+// up to date by being written again.
 const hashIterations = 600_000
 
-// ErrMalformedHash reports a password hash this package cannot read. It is
-// judged here rather than in the interface package: the format is this
-// backend's own, and no other module has an opinion about it.
+// ErrMalformedHash reports a password hash this package cannot read, and the
+// iteration count HashAt refuses to write one at because no startup would read
+// the result. It is judged here rather than in the interface package: the
+// format is this backend's own, and no other module has an opinion about it.
 var ErrMalformedHash = errors.New("authn/static: password hash is not in a readable format")
 
 // hashEncoding is padding-free so that a hash carries no '=' — a character
@@ -46,23 +57,41 @@ type hashed struct {
 	key        []byte
 }
 
-// Hash derives a storable hash of a password, for writing into the subject
-// table. A host exposes it through whatever command it uses to add an account;
-// this package deliberately offers no such command of its own, since where
-// accounts come from is the host's question.
+// Hash derives a storable hash of a password at 600,000 iterations, for writing
+// into the subject table. A host exposes it through whatever command it uses to
+// add an account; this package deliberately offers no such command of its own,
+// since where accounts come from is the host's question. HashAt writes the same
+// format at a count its caller chooses.
 //
 // Two calls on the same password produce different hashes: the salt is drawn
 // fresh each time, which is what stops one table entry from confirming another.
 func Hash(password string) (string, error) {
+	return HashAt(password, hashIterations)
+}
+
+// HashAt derives a storable hash of a password at the given iteration count, in
+// the format Hash writes and ParseHash reads, with a salt drawn fresh on every
+// call. It is for a writer that chooses the cost: a test that cannot afford the
+// default on every entry, or a host whose own policy sets the count.
+//
+// Every positive count is written, since every positive count is one ParseHash
+// reads; what an entry costs to verify is its writer's choice, and this package
+// sets no floor under it. A count below one is refused with ErrMalformedHash
+// rather than written, since no startup would read the entry.
+func HashAt(password string, iterations int) (string, error) {
+	if iterations < 1 {
+		return "", fmt.Errorf("%w: an entry at %d iteration(s) is not one this backend reads, "+
+			"and the count has to be a positive whole number", ErrMalformedHash, iterations)
+	}
 	salt := make([]byte, saltLength)
 	if _, err := rand.Read(salt); err != nil {
 		return "", fmt.Errorf("%s: drawing a salt: %w", ModuleName, err)
 	}
-	return encode(hashIterations, salt, password)
+	return encode(iterations, salt, password)
 }
 
-// encode derives and renders a hash at a given cost. Hash goes through it, and
-// so does anything that has to produce one cheaply.
+// encode derives and renders a hash at a given cost over a given salt. HashAt
+// goes through it, and so do the cases that need the salt fixed.
 func encode(iterations int, salt []byte, password string) (string, error) {
 	key, err := pbkdf2.Key(sha256.New, password, salt, iterations, keyLength)
 	if err != nil {

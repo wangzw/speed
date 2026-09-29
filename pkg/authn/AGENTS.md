@@ -13,7 +13,7 @@ credential backend, whose subject table comes from configuration.
   [`docs/adr/`](../../docs/adr/) — `adr-authn-scope-2026-09-20`,
   `adr-authn-packaging-2026-09-20`, `adr-authn-wiring-2026-09-20`,
   `adr-authn-ownership-2026-09-20`, `adr-authn-verdict-2026-09-20`,
-  `adr-authn-guarantees-2026-09-20`.
+  `adr-authn-guarantees-2026-09-20`, `adr-authn-static-hash-2026-09-29`.
 - The API itself: the godoc in this package. Read `Verdict`'s constructors and
   `Claim`'s field comments before writing a backend.
 
@@ -55,6 +55,15 @@ here must not cross, and how to run it.
   as the `authn.gate.conclusions` counter, one `outcome` attribute value per
   bucket; the bucket names, the counter's name and the attribute's name are
   all fixed once a dashboard reads them.
+- **The static backend's entry format is a contract with whoever writes the
+  table.** `pkg/authn/static/hash.go` states it. A table sits in a
+  configuration file and outlives the binary that reads it, and tools other
+  than this package write entries to it, so renaming the scheme, changing the
+  separator or the base64 variant, or deriving another key length breaks every
+  table already written. Another derivation goes in beside it under a scheme
+  name of its own. `TestTheStoredFormatIsTheOneTheDesignStates` holds the
+  format in literals, and a change that has to edit those literals is the shape
+  to reject.
 
 ## Shape of a backend
 

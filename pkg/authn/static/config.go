@@ -101,7 +101,7 @@ func schema() config.Schema {
 				Required:  true,
 				Sensitive: true,
 				Description: "the subjects this backend is the authority for, each mapped to " +
-					"its password hash as produced by Hash",
+					"its password hash as Hash or HashAt writes it",
 			},
 		},
 	}

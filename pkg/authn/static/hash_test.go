@@ -1,9 +1,12 @@
 package static
 
 import (
+	"bytes"
 	"crypto/pbkdf2"
 	"crypto/sha256"
+	"encoding/base64"
 	"errors"
+	"math"
 	"os"
 	"os/exec"
 	"strings"
@@ -241,4 +244,138 @@ func TestTheDefaultCostIsTheOneThatGetsWritten(t *testing.T) {
 	if len(parsed.key) != keyLength {
 		t.Errorf("Hash wrote a key of %d byte(s), want %d", len(parsed.key), keyLength)
 	}
+}
+
+// TestAHashAtAGivenCountIsDerivedAtThatCount holds what HashAt is for: a host
+// or a test that chooses the cost gets an entry at that cost, and one that
+// verifies the password it was made from and no other.
+//
+// Reading the count back and verifying are both needed. A writer that ignored
+// the count would read back at the default; one that wrote the count asked for
+// and derived at another would read back right and never verify, since
+// verification derives at the count the entry carries.
+func TestAHashAtAGivenCountIsDerivedAtThatCount(t *testing.T) {
+	for _, iterations := range []int{1, 3, 1_000} {
+		encoded, err := HashAt("correct horse", iterations)
+		if err != nil {
+			t.Fatalf("deriving a hash at %d iteration(s): %v", iterations, err)
+		}
+		parsed, err := ParseHash(encoded)
+		if err != nil {
+			t.Fatalf("reading back the hash HashAt wrote at %d iteration(s): %v", iterations, err)
+		}
+		if parsed.iterations != iterations {
+			t.Errorf("HashAt was asked for %d iteration(s) and wrote %d", iterations,
+				parsed.iterations)
+		}
+		if len(parsed.salt) != saltLength {
+			t.Errorf("HashAt wrote a salt of %d byte(s), want %d", len(parsed.salt), saltLength)
+		}
+		if !parsed.matches("correct horse") {
+			t.Errorf("the hash HashAt wrote at %d iteration(s) does not verify the password it "+
+				"was derived from", iterations)
+		}
+		if parsed.matches("correct hors") {
+			t.Errorf("the hash HashAt wrote at %d iteration(s) verifies a password it was not "+
+				"derived from", iterations)
+		}
+	}
+}
+
+// TestTwoHashesAtOneCountDiffer holds the salt for HashAt as
+// TestTwoHashesOfOnePasswordDiffer holds it for Hash: a writer that takes the
+// cost from its caller still draws the salt itself, fresh on every call.
+func TestTwoHashesAtOneCountDiffer(t *testing.T) {
+	first, err := HashAt("shared", 2)
+	if err != nil {
+		t.Fatalf("deriving the first hash: %v", err)
+	}
+	second, err := HashAt("shared", 2)
+	if err != nil {
+		t.Fatalf("deriving the second hash: %v", err)
+	}
+	if first == second {
+		t.Error("two hashes of one password at one count are identical, so the salt is not " +
+			"being drawn fresh")
+	}
+}
+
+// TestACountNoEntryCanCarryIsRefusedRatherThanWritten holds HashAt to what
+// ParseHash reads. The standard library's derivation takes a count below one
+// as one and does not complain, so without this refusal HashAt would hand back
+// an entry that every startup reading the table then turns away.
+func TestACountNoEntryCanCarryIsRefusedRatherThanWritten(t *testing.T) {
+	for _, iterations := range []int{0, -1, math.MinInt} {
+		encoded, err := HashAt("correct horse", iterations)
+		if !errors.Is(err, ErrMalformedHash) {
+			t.Errorf("HashAt at %d iteration(s) gave %v, want a failure wrapping %v",
+				iterations, err, ErrMalformedHash)
+		}
+		if encoded != "" {
+			t.Errorf("HashAt at %d iteration(s) handed back an entry alongside its failure",
+				iterations)
+		}
+	}
+}
+
+// TestTheStoredFormatIsTheOneTheDesignStates holds the format from both sides,
+// written out here in literals rather than through this package's constants.
+// A table in a configuration file outlives the binary that reads it, and an
+// entry may come from a tool other than this package, so the format is a
+// contract: renaming the scheme, changing the separator or the base64 variant,
+// or deriving another key length breaks every table already written, and this
+// case is what goes red when one of them changes.
+func TestTheStoredFormatIsTheOneTheDesignStates(t *testing.T) {
+	const password = "correct horse"
+
+	t.Run("an entry written to the format elsewhere is read and verifies", func(t *testing.T) {
+		salt := []byte("sixteen byte slt")
+		key, err := pbkdf2.Key(sha256.New, password, salt, 7, 32)
+		if err != nil {
+			t.Fatalf("deriving the key: %v", err)
+		}
+		entry := "pbkdf2-sha256$7$" + base64.RawStdEncoding.EncodeToString(salt) + "$" +
+			base64.RawStdEncoding.EncodeToString(key)
+
+		parsed, err := ParseHash(entry)
+		if err != nil {
+			t.Fatalf("an entry in the stated format read back with %v", err)
+		}
+		if !parsed.matches(password) {
+			t.Error("an entry in the stated format does not verify the password it was " +
+				"derived from")
+		}
+	})
+
+	t.Run("what HashAt writes is the format", func(t *testing.T) {
+		entry, err := HashAt(password, 7)
+		if err != nil {
+			t.Fatalf("deriving a hash: %v", err)
+		}
+		fields := strings.Split(entry, "$")
+		if len(fields) != 4 {
+			t.Fatalf("HashAt wrote %d '$'-separated field(s), want 4", len(fields))
+		}
+		if fields[0] != "pbkdf2-sha256" || fields[1] != "7" {
+			t.Errorf("HashAt wrote the scheme %q and the count %q, want %q and %q",
+				fields[0], fields[1], "pbkdf2-sha256", "7")
+		}
+		salt, err := base64.RawStdEncoding.DecodeString(fields[2])
+		if err != nil || len(salt) != 16 {
+			t.Fatalf("the salt HashAt wrote is not unpadded base64 of 16 bytes: %d byte(s), %v",
+				len(salt), err)
+		}
+		key, err := base64.RawStdEncoding.DecodeString(fields[3])
+		if err != nil {
+			t.Fatalf("the key HashAt wrote is not unpadded base64: %v", err)
+		}
+		want, err := pbkdf2.Key(sha256.New, password, salt, 7, 32)
+		if err != nil {
+			t.Fatalf("deriving the key independently: %v", err)
+		}
+		if !bytes.Equal(key, want) {
+			t.Error("the key HashAt wrote is not PBKDF2-HMAC-SHA-256 of the password over the " +
+				"salt it wrote, at the count it wrote, 32 bytes long")
+		}
+	})
 }
