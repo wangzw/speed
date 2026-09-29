@@ -2,6 +2,7 @@ package relay
 
 import (
 	"context"
+	"database/sql"
 	"errors"
 	"fmt"
 	"io"
@@ -222,8 +223,6 @@ type recordingBus struct {
 	mu sync.Mutex
 	// refuse decides whether an event is refused; nil accepts every one.
 	refuse func(event.Event) error
-	// refusals counts the publishes refused.
-	refusals int
 	// hold, when set, is waited on by every publish before it is accepted,
 	// or until its context ends; held is told each time one starts waiting.
 	hold chan struct{}
@@ -246,9 +245,6 @@ func (b *recordingBus) Publish(ctx context.Context, evt event.Event) error {
 	b.mu.Unlock()
 	if refuse != nil {
 		if err := refuse(evt); err != nil {
-			b.mu.Lock()
-			b.refusals++
-			b.mu.Unlock()
 			return err
 		}
 	}
@@ -275,13 +271,6 @@ func (b *recordingBus) setRefuse(refuse func(event.Event) error) {
 	b.mu.Unlock()
 }
 
-// refused is how many publishes the bus has refused.
-func (b *recordingBus) refused() int {
-	b.mu.Lock()
-	defer b.mu.Unlock()
-	return b.refusals
-}
-
 // errRefused is what a steered bus refuses with.
 var errRefused = errors.New("the bus refuses this event for now")
 
@@ -305,6 +294,40 @@ func stagedRows(t *testing.T, database db.Database) int64 {
 		t.Fatalf("counting the staged rows: %v", err)
 	}
 	return n
+}
+
+// refusal is what one staged row records of the refusals it met, and of its
+// claim.
+type refusal struct {
+	attempts  int
+	lastError string
+	claimedBy string
+	// dueIn is how long until the row falls due, by the database's clock;
+	// zero or less when it is due now.
+	dueIn time.Duration
+}
+
+// refusalOf reads the row staged under eventID.
+func refusalOf(t *testing.T, database db.Database, eventID string) refusal {
+	t.Helper()
+	stmts, err := statementsFor(database.Dialect())
+	if err != nil {
+		t.Fatalf("the statements of %s: %v", database.Dialect(), err)
+	}
+	var (
+		row       refusal
+		lastError sql.NullString
+		claimedBy sql.NullString
+		dueIn     int64
+	)
+	query := `SELECT attempts, last_error, claimed_by, available_at - ` + stmts.now + ` FROM ` + tableName +
+		` WHERE event_id = ?`
+	if err := database.DB().Raw(query, eventID).Row().Scan(&row.attempts, &lastError, &claimedBy, &dueIn); err != nil {
+		t.Fatalf("reading the row staged under %s: %v", eventID, err)
+	}
+	row.lastError, row.claimedBy = lastError.String, claimedBy.String
+	row.dueIn = time.Duration(dueIn) * time.Millisecond
+	return row
 }
 
 // order is one row of the orders table.

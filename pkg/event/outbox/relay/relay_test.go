@@ -146,18 +146,15 @@ func TestABusThatRefusesForAWhileDelaysTheEventButNeverLosesIt(t *testing.T) {
 		if err := placeOrder(t.Context(), database, r, "o1", id, false); err != nil {
 			t.Fatalf("placing the order: %v", err)
 		}
-		if !eventually(func() bool { return bus.refused() >= 3 }) {
-			t.Fatalf("the relay tried the refused event %d times, want it tried again after each refusal",
-				bus.refused())
+		// A refusal reaches the row after the bus's Publish has returned, so
+		// the row is what the case waits on, not the bus.
+		var met refusal
+		if !eventually(func() bool { met = refusalOf(t, database, id); return met.attempts >= 3 }) {
+			t.Fatalf("the refused row carries %d attempts, want the event tried again after each refusal",
+				met.attempts)
 		}
-		var attempts int
-		var lastError string
-		if err := database.DB().Raw(`SELECT attempts, last_error FROM `+tableName+` WHERE event_id = ?`, id).
-			Row().Scan(&attempts, &lastError); err != nil {
-			t.Fatalf("reading the refused row: %v", err)
-		}
-		if attempts < 3 || lastError != errRefused.Error() {
-			t.Errorf("the refused row carries %d attempts and %q, want the refusals it met", attempts, lastError)
+		if met.lastError != errRefused.Error() {
+			t.Errorf("the refused row carries %q, want the refusal it met, %q", met.lastError, errRefused)
 		}
 
 		bus.setRefuse(nil)
