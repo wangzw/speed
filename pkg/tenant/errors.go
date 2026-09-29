@@ -149,15 +149,20 @@ var (
 	//
 	// So is every statement, under any context, through a model or a
 	// many-to-many join table no one tenant column can be taken from, and a
-	// read joining such a join table by its name: no row through it can
-	// reach one tenant. The message names the model or the table and why, and
-	// the fix is in the declaration — the convention embedded where GORM reads
-	// it, and once, or an association joining its scoped models by keys whose
-	// tenant halves land on one column of the join table. And so is every
-	// statement through a scoped model declaring a many-to-many association
-	// with a global model whose read cannot be held to a tenant — one joining
-	// the model by the rest of its key, or through a tenant field that is not
-	// an ID — whose fix is the whole key, or the field declared as an ID.
+	// read of a scoped model joined by its name to such a table where the ON
+	// shows the scoped side joined by a key without its tenant column, or the
+	// table carrying tenants on two columns: no row through it can reach one
+	// tenant. The message names the model or the table and why, and the fix is
+	// in the declaration — the convention embedded where
+	// GORM reads it, and once, or an association joining its scoped models by
+	// keys whose tenant halves land on one column of the join table. And so is
+	// every statement through a scoped model declaring a many-to-many
+	// association with a global model whose read cannot be held to a tenant —
+	// one joining the model by the rest of its key, or through a tenant field
+	// that is not an ID — whose fix is the whole key, or the field declared as
+	// an ID. The association mode's own read of that other side, with the owner
+	// in no statement of it, is not among them: it carries nothing of the owner,
+	// and nothing in it holds the read to a tenant.
 	ErrNoTenantInContext = errors.New("tenant: a scoped statement has no tenant in its context")
 
 	// ErrExplicitTenantMismatch reports a write that names a tenant column

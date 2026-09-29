@@ -18,8 +18,9 @@ import (
 // column itself. The filter judges it and never rewrites it: the statement
 // reaches the rows the condition selects as written, within the context's
 // tenant, and a write whose condition names another tenant may be refused
-// instead. Filling a tenant half belongs to the key GORM's association mode
-// writes out of a record, never to a condition of the caller's.
+// instead. Filling a tenant half belongs to a key — the shape GORM's
+// association mode writes out of a record, whoever wrote it — and to no other
+// shape of condition.
 
 // provOrder is the scoped model the caller's conditions are written against.
 type provOrder struct {
@@ -238,11 +239,11 @@ var provStatements = []struct {
 // value, which an identifier refuses to be bound as — and a write carrying no
 // condition of the caller's at all is refused, as GORM refuses one. Across
 // tenants the condition is the whole of it, and with no tenant every statement
-// is refused. Nothing is filled into the caller's condition, so an empty value
-// never widens into the context's tenant. The one shape filled is the one GORM
-// writes a record's key in, a tuple over the whole key with each column
-// qualified by the table's name and the rest of it written, and it reaches the
-// row its key names in the context's tenant and no other.
+// is refused. Nothing else is filled into the caller's condition, so an empty
+// value never widens into the context's tenant. The one shape filled is the
+// one GORM writes a record's key in, a tuple over the whole key with each
+// column qualified by the table's name and the rest of it written, and it
+// reaches the row its key names in the context's tenant and no other.
 func TestACallersConditionOnTheTenantColumnIsJudgedAsWritten(t *testing.T) {
 	for _, d := range []struct {
 		name string

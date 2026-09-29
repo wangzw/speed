@@ -748,3 +748,74 @@ func TestAnAssociationWhoseReadCannotBeHeldToATenantRefusesItsOwner(t *testing.T
 		})
 	}
 }
+
+// The read GORM's association mode makes of such an association's other side
+// carries nothing of the owner: the join table is joined into it by its table
+// name, the owner's key is written into the ON, and neither the owner's model
+// nor its schema appears in the statement. Nothing in that read holds it to a
+// tenant, which is why the design writes it as a non-guarantee; the case pins
+// what that statement says. On the declaration joining by the rest of its key,
+// the join table carries no tenant and the read reaches the links of every
+// tenant holding that key, under any context. On the declaration whose tenant
+// field is a string, the value that field holds decides which tenant's links
+// are read. A build that closes the read changes this case and the
+// non-guarantee together.
+func TestAnAssociationReadWithNoOwnerInTheStatementStaysGlobal(t *testing.T) {
+	for name, open := range map[string]func(*testing.T) *gorm.DB{
+		"sqlite": openShapesOnSQLite, "postgres": openShapesOnPostgres,
+	} {
+		t.Run(name, func(t *testing.T) {
+			handle := open(t)
+			createAssociationSides(t, handle)
+			for _, stmt := range []string{
+				"CREATE TABLE assoc_loose_tags (deal_id TEXT, tag_id TEXT)",
+				"INSERT INTO assoc_loose_tags (deal_id, tag_id) VALUES ('twin', 'a'), ('twin', 'b')",
+				"CREATE TABLE assoc_text_tags (tenant_id TEXT NOT NULL, deal_id TEXT NOT NULL, tag_id TEXT NOT NULL)",
+				"INSERT INTO assoc_text_tags (tenant_id, deal_id, tag_id) VALUES ('acme', 'twin', 'a'), " +
+					"('globex', 'twin', 'b')",
+			} {
+				if err := handle.Exec(stmt).Error; err != nil {
+					t.Fatalf("preparing the join tables: %v", err)
+				}
+			}
+			for _, c := range []struct {
+				name string
+				ctx  context.Context
+			}{
+				{"acme", scopedContext("acme")},
+				{"no tenant", context.Background()},
+				{"across tenants", tenant.CrossTenant(context.Background())},
+			} {
+				db := handle.WithContext(c.ctx)
+				found := &[]assocTag{}
+				if err := db.Model(&assocLooseDeal{ID: "twin"}).Association("Tags").Find(found); err != nil ||
+					namedTargets(found) != "a,b" {
+					t.Errorf("a read of the association joining by the rest of its key under %s gave %v and %q, "+
+						"want the key's links in every tenant, a,b", c.name, err, namedTargets(found))
+				}
+				counted := db.Model(&assocLooseDeal{ID: "twin"}).Association("Tags")
+				if n := counted.Count(); counted.Error != nil || n != 2 {
+					t.Errorf("a count of that association under %s gave %v and %d, want 2", c.name, counted.Error, n)
+				}
+			}
+			for _, c := range []struct {
+				name  string
+				ctx   context.Context
+				owner string
+				want  string
+			}{
+				{"acme naming acme", scopedContext("acme"), "acme", "a"},
+				{"acme naming globex", scopedContext("acme"), "globex", "b"},
+				{"no tenant naming globex", context.Background(), "globex", "b"},
+			} {
+				found := &[]assocTag{}
+				owner := &assocTextDeal{TenantID: c.owner, ID: "twin"}
+				if err := handle.WithContext(c.ctx).Model(owner).Association("Tags").Find(found); err != nil ||
+					namedTargets(found) != c.want {
+					t.Errorf("a read of the association through a tenant field under %s gave %v and %q, want %s",
+						c.name, err, namedTargets(found), c.want)
+				}
+			}
+		})
+	}
+}

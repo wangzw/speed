@@ -339,10 +339,12 @@ scoped or refused — with each
 statement of the association mode on an owner and records addressed by the rest
 of their keys, and where an association by the whole key, a deletion of
 links between loaded records, a replacement keeping records GORM did not save,
-and an owner refused for an association whose read cannot be held to a tenant
-are; `pkg/tenant/catalog/provenance_test.go` is where every shape a caller
+an owner refused for an association whose read cannot be held to a tenant, and
+the read itself, which stays global, are;
+`pkg/tenant/catalog/provenance_test.go` is where every shape a caller
 writes a condition on the tenant column in is judged as written, on both
-dialects, beside the one shape filled, a tuple over the whole key;
+dialects, beside the one shape filled, a tuple over the whole key qualified by
+the statement's table's name, whoever wrote it;
 `pkg/tenant/catalog/targets_test.go`
 is where an assignment's target is read the way each database reads it, on both
 dialects; `pkg/tenant/catalog/create_test.go` is where a registration that must
