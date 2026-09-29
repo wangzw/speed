@@ -229,7 +229,7 @@ func refuseRenamedRead(st *gorm.Statement, dest *schema.Schema, sealed []*schema
 			continue
 		}
 		for _, field := range sealed {
-			if !mentions(st.Schema, item.text, field) {
+			if !mentions(st, item, field) {
 				continue
 			}
 			for _, name := range resultNames(item) {
@@ -353,7 +353,7 @@ func reads(st *gorm.Statement, field *schema.Field, unknownReads bool) bool {
 		return unknownReads
 	}
 	for _, item := range items {
-		if mentions(st.Schema, item.text, field) {
+		if mentions(st, item, field) {
 			return true
 		}
 	}
@@ -361,16 +361,22 @@ func reads(st *gorm.Statement, field *schema.Field, unknownReads bool) bool {
 }
 
 // selected is one item of a statement's selection: the text it is written in,
-// and the name the caller set apart for its result column, if any.
+// the name the caller set apart for its result column, if any, and the item
+// as GORM writes it into the statement.
 type selected struct {
 	text  string
 	alias string
+	sql   string
 }
 
 // selection collects the items a statement's selection is written in, and
 // reports whether it carries one that can be read. A text naming several
 // items is cut at its top-level commas. Native SQL carries none: the statement
 // is the caller's text, and this package does not parse SQL.
+//
+// Each item carries the text GORM puts into the statement for it: a column of
+// a SELECT clause quoted unless it is raw, a Select entry that names a field
+// or a column as that column quoted, and anything else as it was written.
 func selection(st *gorm.Statement) ([]selected, bool) {
 	if st.SQL.Len() > 0 {
 		return nil, false
@@ -382,7 +388,7 @@ func selection(st *gorm.Statement) ([]selected, bool) {
 			return nil, false
 		}
 		for _, column := range sel.Columns {
-			items = append(items, selected{text: column.Name, alias: column.Alias})
+			items = append(items, selected{text: column.Name, alias: column.Alias, sql: writtenText(st, column)})
 		}
 		if sel.Expression != nil {
 			expr, ok := sel.Expression.(clause.Expr)
@@ -390,31 +396,36 @@ func selection(st *gorm.Statement) ([]selected, bool) {
 				return nil, false
 			}
 			for _, text := range splitSelection(expr.SQL) {
-				items = append(items, selected{text: text})
+				items = append(items, selected{text: text, sql: text})
 			}
 		}
 	}
 	for _, written := range st.Selects {
+		if field := st.Schema.LookUpField(written); field != nil && field.DBName != "" {
+			items = append(items, selected{text: written, sql: writtenText(st, clause.Column{Name: field.DBName})})
+			continue
+		}
 		for _, text := range splitSelection(written) {
-			items = append(items, selected{text: text})
+			items = append(items, selected{text: text, sql: text})
 		}
 	}
 	return items, len(items) > 0
 }
 
-// mentions reports whether one selection text reads a field's column: a
-// wildcard, the field or column named on its own, or the column name standing
-// as a word inside an expression. The last is a lexical test and not a parse —
-// it finds `email` in `lower(email)` and in `contacts.email` and does not find
-// it in `email_index` — and it errs towards reading, which is the direction
-// that refuses rather than leaks.
-func mentions(s *schema.Schema, text string, field *schema.Field) bool {
-	text = strings.TrimSpace(text)
+// mentions reports whether one selection item reads a field's column: a
+// wildcard, a column reference the statement's engine resolves to that column
+// (see namesColumn), or the column name standing as a word inside an
+// expression. The last is a lexical test and not a parse — it finds `email` in
+// `lower(email)` and in `email AS e`, and does not find it in `email_index` —
+// and it errs towards reading, which is the direction that refuses rather than
+// leaks.
+func mentions(st *gorm.Statement, item selected, field *schema.Field) bool {
+	text := strings.TrimSpace(item.sql)
 	if text == "*" || strings.HasSuffix(text, ".*") {
 		return true
 	}
-	if s.LookUpField(text) == field {
-		return true
+	if name, quoted, ok := lastIdentifier(text); ok {
+		return namesColumn(st, name, quoted, field.DBName)
 	}
 	return containsWord(strings.ToLower(text), strings.ToLower(field.DBName))
 }

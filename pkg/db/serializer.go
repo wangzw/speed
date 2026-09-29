@@ -290,10 +290,12 @@ func setPlaintext(ctx context.Context, field *schema.Field, dst reflect.Value, p
 
 // fieldName names a field the way the model declares it, so that a failure
 // points at the declaration rather than at a column name the caller never
-// wrote.
+// wrote: the model's name and the field names that lead to the field, which
+// tells a field of an embedded struct apart from a field of the model with the
+// same name.
 func fieldName(field *schema.Field) string {
 	if field.Schema != nil && field.Schema.Name != "" {
-		return field.Schema.Name + "." + field.Name
+		return field.Schema.Name + "." + field.BindName()
 	}
-	return field.Name
+	return field.BindName()
 }

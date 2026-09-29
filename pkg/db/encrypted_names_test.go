@@ -13,10 +13,12 @@ import (
 // These cases hold the sealing and the read guard to the column a name reaches
 // in the database rather than to the name as GORM resolves it. GORM writes a
 // name it cannot resolve as it stands, and the database then decides which
-// column it is: SQLite matches identifiers without regard to letter case, and
-// either engine takes a name that arrives already quoted as its quoted content.
+// column it is: SQLite matches identifiers without regard to the case of ASCII
+// letters, and takes a name that arrives already quoted as its quoted content.
 // A key GORM leaves unresolved can therefore still reach a sealed column, and a
 // write that sealed only what GORM resolved would store that value in clear.
+// The cases in pkg/db/postgres hold the same judgement to PostgreSQL's
+// resolution, which differs.
 
 // TestAKeyTheDatabaseResolvesToTheSealedColumnIsSealed covers every write path
 // whose column is named by the caller, with a name GORM does not resolve and
@@ -316,6 +318,50 @@ func TestAWriteOfTheModelThatLeavesTheOtherSpellingOutGoesThrough(t *testing.T) 
 	read = spelledFirstModel{}
 	if err := h.First(&read, 1).Error; err != nil || read.Email != "three@example.com" {
 		t.Errorf("the model reads back %+v with %v, want the sealed email three@example.com", read, err)
+	}
+}
+
+// accentedModel declares a sealed column and an unsealed one whose names differ
+// only in the case of a letter outside ASCII. SQLite folds the case of ASCII
+// letters alone, so the two are two columns of the table.
+type accentedModel struct {
+	ID     uint
+	Shadow string `gorm:"column:ÉMAIL"`
+	Email  string `gorm:"column:émail;serializer:encrypted"`
+}
+
+// TestNamesThatDifferOutsideASCIIAreTwoColumnsOnSQLite holds the judgement to
+// SQLite's own rule: a write of the model writes each of the two columns once
+// and goes through, a value written by the unsealed field's name reaches its
+// column in clear, and a read of that column alone goes through.
+func TestNamesThatDifferOutsideASCIIAreTwoColumnsOnSQLite(t *testing.T) {
+	product := assembleEncrypted(t, encryptedDSN(t), encryptedRootKeyItem)
+	h := product.DB()
+	if err := h.AutoMigrate(&accentedModel{}); err != nil {
+		t.Fatalf("creating the model's table: %v", err)
+	}
+
+	if err := h.Create(&accentedModel{ID: 1, Shadow: "shadow-1", Email: "sealed@example.com"}).Error; err != nil {
+		t.Fatalf("an insert of the model was refused: %v", err)
+	}
+	if err := h.Model(&accentedModel{ID: 1}).Updates(map[string]any{"Shadow": "shadow-2"}).Error; err != nil {
+		t.Fatalf("an update naming the unsealed field by key failed: %v", err)
+	}
+	var stored struct{ Shadow, Email string }
+	if err := h.Raw("SELECT `ÉMAIL` AS shadow, `émail` AS email FROM accented_models WHERE id = 1").
+		Scan(&stored).Error; err != nil {
+		t.Fatalf("reading the two columns with native SQL: %v", err)
+	}
+	if stored.Shadow != "shadow-2" || strings.Contains(stored.Email, "@example.com") {
+		t.Errorf("the columns hold %+v, want ÉMAIL in clear as shadow-2 and émail sealed", stored)
+	}
+	var read accentedModel
+	if err := h.First(&read, 1).Error; err != nil || read.Shadow != "shadow-2" || read.Email != "sealed@example.com" {
+		t.Errorf("the model reads back %+v with %v, want shadow-2 and sealed@example.com", read, err)
+	}
+	var shadows []map[string]any
+	if err := h.Model(&accentedModel{}).Select("Shadow").Find(&shadows).Error; err != nil {
+		t.Errorf("reading the unsealed column into a map was refused: %v", err)
 	}
 }
 

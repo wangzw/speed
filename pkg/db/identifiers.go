@@ -3,6 +3,7 @@ package db
 import (
 	"fmt"
 	"strings"
+	"unicode/utf8"
 
 	"gorm.io/gorm"
 	"gorm.io/gorm/clause"
@@ -12,21 +13,21 @@ import (
 // sqlWhitespace is what SQL text separates tokens with.
 const sqlWhitespace = " \t\r\n\f\v"
 
+// postgresIdentifierBytes is how much of an identifier PostgreSQL keeps: a
+// longer one is cut to this many bytes, at a character boundary, wherever it
+// appears.
+const postgresIdentifierBytes = 63
+
 // sealedTarget reports which encrypted field of the model a column written into
 // a statement names, and whether the name could be judged at all.
 //
 // A column reaches the database as text, and the database, not GORM, decides
 // which column that text is. GORM resolves a name by field name, by column name
 // and through its naming strategy, and writes whatever it cannot resolve as it
-// stands — quoted, unless the column is raw. SQLite then matches identifiers
-// without regard to letter case, quoted or not; PostgreSQL folds an unquoted one
-// to lower case; and a name that arrives already quoted is taken as its quoted
-// content by both. So the judgement is made on the text the statement will
-// carry: the column is the one GORM resolves the name to when that is an
-// encrypted field, and otherwise the encrypted column whose name the text's
-// last identifier matches, letters compared without regard to case. That is
-// SQLite's rule, and it covers PostgreSQL's, which never matches a name SQLite
-// would not.
+// stands — quoted, unless the column is raw. So the judgement is made on the
+// text the statement will carry: the column is the one GORM resolves the name
+// to when that is an encrypted field, and otherwise the encrypted column the
+// text's last identifier names on the statement's engine (see namesColumn).
 //
 // Text that is not an identifier — an expression, a function call, an escape
 // form — cannot be judged here, because this package does not parse SQL, and
@@ -35,22 +36,97 @@ func sealedTarget(st *gorm.Statement, column clause.Column) (*schema.Field, bool
 	if field := st.Schema.LookUpField(column.Name); field != nil && field.DBName != "" && isEncrypted(field) {
 		return field, true
 	}
-	text := column.Name
-	if !column.Raw {
-		var quoted strings.Builder
-		st.QuoteTo(&quoted, clause.Column{Name: column.Name})
-		text = quoted.String()
-	}
-	name, ok := columnName(text)
+	name, quoted, ok := lastIdentifier(writtenText(st, column))
 	if !ok {
 		return nil, false
 	}
 	for _, field := range encryptedFields(st.Schema) {
-		if strings.EqualFold(name, field.DBName) {
+		if namesColumn(st, name, quoted, field.DBName) {
+			if bound := st.Schema.FieldsByDBName[field.DBName]; bound != nil && isEncrypted(bound) {
+				return bound, true
+			}
 			return field, true
 		}
 	}
 	return nil, true
+}
+
+// writtenText is a column as GORM writes it into a statement, its alias left
+// off: quoted by the engine's dialect, unless it is raw.
+func writtenText(st *gorm.Statement, column clause.Column) string {
+	var written strings.Builder
+	st.QuoteTo(&written, clause.Column{Table: column.Table, Name: column.Name, Raw: column.Raw})
+	return written.String()
+}
+
+// namesColumn reports whether an identifier, as the statement carries it,
+// names column on the statement's engine. column is a column of the model,
+// which GORM always writes quoted, so it stands for itself.
+//
+// SQLite matches identifiers without regard to the letter case of ASCII
+// letters, quoted or not. PostgreSQL folds the ASCII letters of an unquoted
+// identifier to lower case, takes a quoted one as it is written, and keeps the
+// first 63 bytes of either: two names PostgreSQL resolves apart are two
+// columns there, where SQLite may read them as one. An engine the switch does
+// not name — a Dialect value added without a rule here — is judged by both
+// rules at once, which matches every name either engine would.
+func namesColumn(st *gorm.Statement, name string, quoted bool, column string) bool {
+	switch engineDialect(st) {
+	case SQLite:
+		return sqliteNames(name, column)
+	case Postgres:
+		return postgresNames(name, quoted, column)
+	default:
+		return sqliteNames(name, column) || postgresNames(name, quoted, column)
+	}
+}
+
+// engineDialect is the engine behind a statement, as the engine marker on its
+// handle records it, and "" for a handle without one.
+func engineDialect(st *gorm.Statement) Dialect {
+	if engine, ok := engineOf(st.DB); ok {
+		return engine.dialect
+	}
+	return ""
+}
+
+// sqliteNames is SQLite's rule: letters compared without regard to case, and
+// only the ASCII ones folded.
+func sqliteNames(name, column string) bool {
+	return asciiLower(name) == asciiLower(column)
+}
+
+// postgresNames is PostgreSQL's rule: an unquoted name folded to lower case,
+// and either name cut to the bytes PostgreSQL keeps.
+func postgresNames(name string, quoted bool, column string) bool {
+	if !quoted {
+		name = asciiLower(name)
+	}
+	return postgresKept(name) == postgresKept(column)
+}
+
+// postgresKept is what PostgreSQL keeps of an identifier.
+func postgresKept(name string) string {
+	if len(name) <= postgresIdentifierBytes {
+		return name
+	}
+	cut := postgresIdentifierBytes
+	for cut > 0 && !utf8.RuneStart(name[cut]) {
+		cut--
+	}
+	return name[:cut]
+}
+
+// asciiLower folds the ASCII letters of a name to lower case and leaves every
+// other byte as it is.
+func asciiLower(name string) string {
+	folded := []byte(name)
+	for i, b := range folded {
+		if b >= 'A' && b <= 'Z' {
+			folded[i] = b + ('a' - 'A')
+		}
+	}
+	return string(folded)
 }
 
 // unjudgedColumn is the refusal of a write whose column this package cannot
@@ -66,35 +142,42 @@ func unjudgedColumn(st *gorm.Statement, column string) error {
 // or quoted, optionally qualified by the names before it, with whitespace around
 // the dots. It returns the last identifier with its quoting removed, and false
 // for text of any other shape.
+func columnName(text string) (string, bool) {
+	name, _, ok := lastIdentifier(text)
+	return name, ok
+}
+
+// lastIdentifier is columnName that also reports whether the identifier it
+// returns was quoted, which is what PostgreSQL resolves a name by.
 //
 // The quoting read is the union of what the two engines accept — double quotes,
 // backticks and square brackets, a doubled closing quote standing for itself —
 // so a form one engine rejects is read the way the other would resolve it.
-func columnName(text string) (string, bool) {
+func lastIdentifier(text string) (name string, quoted, ok bool) {
 	rest := strings.Trim(text, sqlWhitespace)
 	for {
-		part, remainder, ok := identifierPart(rest)
+		part, wasQuoted, remainder, ok := identifierPart(rest)
 		if !ok {
-			return "", false
+			return "", false, false
 		}
 		remainder = strings.TrimLeft(remainder, sqlWhitespace)
 		if remainder == "" {
-			return part, true
+			return part, wasQuoted, true
 		}
 		if remainder[0] != '.' {
-			return "", false
+			return "", false, false
 		}
 		rest = strings.TrimLeft(remainder[1:], sqlWhitespace)
 	}
 }
 
 // identifierPart reads one identifier from the start of text, and returns it
-// unquoted along with the text after it.
-func identifierPart(text string) (part, rest string, ok bool) {
+// unquoted, whether it was quoted, and the text after it.
+func identifierPart(text string) (part string, quoted bool, rest string, ok bool) {
 	if text == "" {
-		return "", "", false
+		return "", false, "", false
 	}
-	if closing, quoted := closingQuote(text[0]); quoted {
+	if closing, isQuote := closingQuote(text[0]); isQuote {
 		var name strings.Builder
 		for i := 1; i < len(text); i++ {
 			if text[i] != closing {
@@ -106,18 +189,18 @@ func identifierPart(text string) (part, rest string, ok bool) {
 				i++
 				continue
 			}
-			return name.String(), text[i+1:], name.Len() > 0
+			return name.String(), true, text[i+1:], name.Len() > 0
 		}
-		return "", "", false
+		return "", false, "", false
 	}
 	end := 0
 	for end < len(text) && bareIdentifierByte(text[end]) {
 		end++
 	}
 	if end == 0 {
-		return "", "", false
+		return "", false, "", false
 	}
-	return text[:end], text[end:], true
+	return text[:end], false, text[end:], true
 }
 
 // closingQuote is the character that closes an identifier quoted by open.
@@ -165,7 +248,7 @@ func trailingAlias(text string) (string, bool) {
 	if strings.Trim(text[:start], sqlWhitespace) == "" {
 		return "", false
 	}
-	part, rest, ok := identifierPart(text[start:])
+	part, _, rest, ok := identifierPart(text[start:])
 	if !ok || rest != "" {
 		return "", false
 	}

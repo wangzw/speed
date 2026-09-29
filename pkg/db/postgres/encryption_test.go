@@ -218,6 +218,191 @@ func TestNamesThisEngineResolvesToTheSealedColumn(t *testing.T) {
 	assertSealedOnThisEngine(t, capability, row.ID, "raw@example.com")
 }
 
+// caseSpelledContact declares, beside its sealed email, an unsealed field on
+// the column EMAIL. GORM quotes every column of a model, and this engine keeps
+// a quoted name as it is written, so the two fields are two columns of the
+// table here, where SQLite would read them as one.
+type caseSpelledContact struct {
+	ID     uint
+	Shadow string `gorm:"column:EMAIL"`
+	Email  string `gorm:"serializer:encrypted"`
+}
+
+// caseSpelledColumns reads both columns of one caseSpelledContact row with
+// native SQL.
+func caseSpelledColumns(t *testing.T, capability db.Database, id uint) (shadow, email string) {
+	t.Helper()
+	row := capability.DB().Raw(`SELECT "EMAIL", email FROM case_spelled_contacts WHERE id = ?`, id).Row()
+	if err := row.Scan(&shadow, &email); err != nil {
+		t.Fatalf("reading the two columns with native SQL: %v", err)
+	}
+	return shadow, email
+}
+
+// assertCaseSpelled holds one caseSpelledContact row to what its two columns
+// should carry: EMAIL the plaintext of the unsealed field, email a seal the
+// model reads back as the plaintext.
+func assertCaseSpelled(t *testing.T, capability db.Database, id uint, wantShadow, wantEmail string) {
+	t.Helper()
+	shadow, email := caseSpelledColumns(t, capability, id)
+	if shadow != wantShadow {
+		t.Errorf("the EMAIL column holds %q, want %q in clear", shadow, wantShadow)
+	}
+	if strings.Contains(email, "@example.com") {
+		t.Errorf("the email column holds %q, which is in clear", email)
+	}
+	var read caseSpelledContact
+	if err := capability.DB().First(&read, id).Error; err != nil {
+		t.Fatalf("reading the row back through the model: %v", err)
+	}
+	if read.Shadow != wantShadow || read.Email != wantEmail {
+		t.Errorf("the model reads back %+v, want Shadow %q and Email %q", read, wantShadow, wantEmail)
+	}
+}
+
+// TestColumnsThatDifferInLetterCaseAreTwoColumnsOnThisEngine covers a model
+// whose unsealed column differs from its sealed one only in letter case. On
+// this engine each field has a column of its own, so a write of the model
+// writes each column once and goes through; a value named by the unsealed
+// field or its column reaches that column in clear; and a raw column this
+// engine folds to lower case reaches the sealed one and is sealed. The reads
+// follow the same resolution.
+func TestColumnsThatDifferInLetterCaseAreTwoColumnsOnThisEngine(t *testing.T) {
+	capability := encryptedAssembly(t)
+	handle := capability.DB()
+	if err := handle.AutoMigrate(&caseSpelledContact{}); err != nil {
+		t.Fatalf("creating the table: %v", err)
+	}
+
+	row := caseSpelledContact{Shadow: "shadow-1", Email: "sealed-1@example.com"}
+	if err := handle.Create(&row).Error; err != nil {
+		t.Fatalf("an insert of the model was refused: %v", err)
+	}
+	assertCaseSpelled(t, capability, row.ID, "shadow-1", "sealed-1@example.com")
+
+	if err := handle.Save(&caseSpelledContact{ID: row.ID, Shadow: "shadow-2", Email: "sealed-2@example.com"}).Error; err != nil {
+		t.Fatalf("a save of the model was refused: %v", err)
+	}
+	assertCaseSpelled(t, capability, row.ID, "shadow-2", "sealed-2@example.com")
+
+	if err := handle.Model(&row).Updates(caseSpelledContact{Shadow: "shadow-3", Email: "sealed-3@example.com"}).Error; err != nil {
+		t.Fatalf("an update from the model's struct was refused: %v", err)
+	}
+	assertCaseSpelled(t, capability, row.ID, "shadow-3", "sealed-3@example.com")
+
+	if err := handle.Model(&row).UpdateColumns(caseSpelledContact{Shadow: "shadow-4", Email: "sealed-4@example.com"}).Error; err != nil {
+		t.Fatalf("UpdateColumns from the model's struct was refused: %v", err)
+	}
+	assertCaseSpelled(t, capability, row.ID, "shadow-4", "sealed-4@example.com")
+
+	if err := handle.Model(&row).Updates(map[string]any{"Shadow": "shadow-5"}).Error; err != nil {
+		t.Fatalf("an update naming the unsealed field by key failed: %v", err)
+	}
+	assertCaseSpelled(t, capability, row.ID, "shadow-5", "sealed-4@example.com")
+
+	if err := handle.Model(&row).Updates(map[string]any{"EMAIL": "shadow-6"}).Error; err != nil {
+		t.Fatalf("an update naming the unsealed column by key failed: %v", err)
+	}
+	assertCaseSpelled(t, capability, row.ID, "shadow-6", "sealed-4@example.com")
+
+	if err := handle.Model(&caseSpelledContact{}).Where("id = ?", row.ID).
+		Clauses(clause.Set{{Column: clause.Column{Name: `"EMAIL"`, Raw: true}, Value: "shadow-7"}}).
+		Updates(map[string]any{}).Error; err != nil {
+		t.Fatalf("a SET clause on the quoted unsealed column failed: %v", err)
+	}
+	assertCaseSpelled(t, capability, row.ID, "shadow-7", "sealed-4@example.com")
+
+	if err := handle.Model(&caseSpelledContact{}).Where("id = ?", row.ID).
+		Clauses(clause.Set{{Column: clause.Column{Name: "EMAIL", Raw: true}, Value: "folded@example.com"}}).
+		Updates(map[string]any{}).Error; err != nil {
+		t.Fatalf("a SET clause on a raw column this engine folds to the sealed one failed: %v", err)
+	}
+	assertCaseSpelled(t, capability, row.ID, "shadow-7", "folded@example.com")
+
+	var shadows []string
+	if err := handle.Model(&caseSpelledContact{}).Pluck("Shadow", &shadows).Error; err != nil {
+		t.Errorf("plucking the unsealed field was refused: %v", err)
+	} else if len(shadows) != 1 || shadows[0] != "shadow-7" {
+		t.Errorf("plucking the unsealed field gave %v, want [shadow-7]", shadows)
+	}
+	var columns []map[string]any
+	if err := handle.Model(&caseSpelledContact{}).Select("EMAIL").Find(&columns).Error; err != nil {
+		t.Errorf("reading the unsealed column into a map was refused: %v", err)
+	} else if len(columns) != 1 || columns[0]["EMAIL"] != "shadow-7" {
+		t.Errorf("reading the unsealed column into a map gave %v, want its plaintext", columns)
+	}
+	var folded []map[string]any
+	if err := handle.Model(&caseSpelledContact{}).Select("id, EMAIL").Find(&folded).Error; err == nil {
+		t.Errorf("reading a raw column this engine folds to the sealed one into a map went through and "+
+			"handed back %v", folded)
+	}
+}
+
+// longColumn is a column name longer than the 63 bytes this engine keeps of
+// an identifier; longSpelling is another name with the same first 63 bytes.
+const (
+	longColumn   = "a_sealed_column_whose_name_runs_on_past_what_this_engine_keeps_of_it"
+	longSpelling = "a_sealed_column_whose_name_runs_on_past_what_this_engine_keeps_another_way"
+)
+
+// longNamedContact seals a column whose name this engine cuts short.
+type longNamedContact struct {
+	ID     uint
+	Secret string `gorm:"column:a_sealed_column_whose_name_runs_on_past_what_this_engine_keeps_of_it;serializer:encrypted"`
+}
+
+// longNamedView declares the sealed column under the name this engine keeps of
+// it, which is the name this engine gives the column in a result: GORM cannot
+// scan the column back into longNamedContact, whose field carries the whole
+// name, so a case reads the row through this struct.
+type longNamedView struct {
+	ID     uint
+	Secret string `gorm:"column:a_sealed_column_whose_name_runs_on_past_what_this_engine_keeps_;serializer:encrypted"`
+}
+
+// TestANameThisEngineCutsShortToTheSealedColumnIsSealed covers a name that
+// reaches the sealed column only because this engine keeps the first 63 bytes
+// of an identifier: GORM writes it as it stands, and the value would be stored
+// in clear under a name that only matches once cut short. A write under such a
+// name is sealed, and a read of it is judged as a read of the sealed column.
+func TestANameThisEngineCutsShortToTheSealedColumnIsSealed(t *testing.T) {
+	if len(longColumn) <= 63 || len(longSpelling) <= 63 || longColumn[:63] != longSpelling[:63] {
+		t.Fatalf("the two names have to share their first 63 bytes and run past them")
+	}
+	capability := encryptedAssembly(t)
+	handle := capability.DB()
+	if err := handle.AutoMigrate(&longNamedContact{}); err != nil {
+		t.Fatalf("creating the table: %v", err)
+	}
+	row := longNamedContact{Secret: "first@example.com"}
+	if err := handle.Create(&row).Error; err != nil {
+		t.Fatalf("creating the row: %v", err)
+	}
+
+	if err := handle.Model(&row).Updates(map[string]any{longSpelling: "second@example.com"}).Error; err != nil {
+		t.Fatalf("updating through the other spelling failed: %v", err)
+	}
+	var stored string
+	if err := handle.Raw(`SELECT "`+longColumn[:63]+`" FROM long_named_contacts WHERE id = ?`, row.ID).
+		Row().Scan(&stored); err != nil {
+		t.Fatalf("reading the column with native SQL: %v", err)
+	}
+	if strings.Contains(stored, "@example.com") {
+		t.Errorf("the sealed column holds %q, which is in clear", stored)
+	}
+	var read longNamedView
+	if err := handle.Table("long_named_contacts").First(&read, row.ID).Error; err != nil ||
+		read.Secret != "second@example.com" {
+		t.Errorf("the row reads back %+v with %v, want second@example.com", read, err)
+	}
+
+	var columns []map[string]any
+	if err := handle.Model(&longNamedContact{}).Select(longSpelling).Find(&columns).Error; err == nil {
+		t.Errorf("reading the sealed column under the other spelling into a map went through and handed "+
+			"back %v", columns)
+	}
+}
+
 // lowerView takes the result column this engine names after an unaliased
 // function call.
 type lowerView struct {
