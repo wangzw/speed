@@ -1,6 +1,7 @@
 package postgres_test
 
 import (
+	"bytes"
 	"os"
 	"os/exec"
 	"testing"
@@ -25,9 +26,13 @@ func TestNoBoundValueReachesTheOutput(t *testing.T) {
 }
 
 // rerun runs the calling test again, alone, in a copy of this test binary
-// whose environment carries variable as well, and returns its output.
-func rerun(t *testing.T, variable string) ([]byte, error) {
+// whose environment carries variable as well, and returns what the copy wrote
+// to its standard output and to its standard error, apart.
+func rerun(t *testing.T, variable string) (stdout, stderr []byte, err error) {
 	child := exec.Command(os.Args[0], "-test.run=^"+t.Name()+"$", "-test.count=1")
 	child.Env = append(os.Environ(), variable)
-	return child.CombinedOutput()
+	var out, errOut bytes.Buffer
+	child.Stdout, child.Stderr = &out, &errOut
+	err = child.Run()
+	return out.Bytes(), errOut.Bytes(), err
 }

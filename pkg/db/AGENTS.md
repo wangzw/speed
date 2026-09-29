@@ -159,8 +159,8 @@ must not cross, and how to run it.
   wrapping GORM's own to change what it writes reports its own file as every
   line's call site, since GORM names the first frame outside its source; each
   method here asks `utils.FileWithLineNum` itself for that reason. The logging
-  case in `internal/dbsuite` reads a child process's real standard output on
-  both engines.
+  case in `internal/dbsuite` reads the two streams of a child process apart on
+  both engines, and holds every statement to standard output.
 - **Every wrap uses `%w`.** A `%v` leaves the text all but identical and makes
   the sentinel unreachable, which is the failure the note in `errors.go` exists
   to prevent; the error-chain cases hold each path to it.

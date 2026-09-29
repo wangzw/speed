@@ -34,41 +34,53 @@ type loggedRow struct {
 func (loggedRow) TableName() string { return "logged_rows" }
 
 // BoundValuesReachNoOutput holds the GORM logger on a handle an engine's
-// module opens to what it writes: a statement that fails, one that finds no
-// row, one whose rows fail to scan, and every statement of a Debug session are
-// written with their text and without a value any of them binds or reads. It
-// also holds the logger to writing them at all, so a logger that writes
-// nothing does not pass.
+// module opens to what it writes and where: a statement that fails, one that
+// finds no row, one whose rows fail to scan, and every statement of a Debug
+// session are written to the process's standard output, the stream a host
+// reads them on, with their text and without a value any of them binds or
+// reads. It also holds the logger to writing them at all, so a logger that
+// writes nothing does not pass.
 //
 // The logger writes to the process's standard output, which only another
-// process can read whole, so the case has the calling test run again alone in
-// a copy of the test binary: locate gives the parent a database for the
-// child; rerun starts the copy with the environment variable it is handed
-// added, and returns what the copy wrote to its standard output and error;
+// process can read apart from its standard error, so the case has the calling
+// test run again alone in a copy of the test binary: locate gives the parent a
+// database for the child; rerun starts the copy with the environment variable
+// it is handed added, and returns what the copy wrote to each stream, apart;
 // open gives the child a handle the engine's module opened on the database.
 func BoundValuesReachNoOutput(t *testing.T, locate func(t *testing.T) string,
-	rerun func(t *testing.T, variable string) ([]byte, error), open func(t *testing.T, dsn string) *gorm.DB,
+	rerun func(t *testing.T, variable string) (stdout, stderr []byte, err error),
+	open func(t *testing.T, dsn string) *gorm.DB,
 ) {
 	t.Helper()
 	if dsn, child := os.LookupEnv(LoggingChild); child {
 		issueLoggedStatements(t, open(t, dsn))
 		return
 	}
-	out, err := rerun(t, LoggingChild+"="+locate(t))
+	stdout, stderr, err := rerun(t, LoggingChild+"="+locate(t))
 	if err != nil {
-		t.Fatalf("the statements failed in the child process: %v\n%s", err, out)
+		t.Fatalf("the statements failed in the child process: %v\nstdout:\n%s\nstderr:\n%s", err, stdout, stderr)
 	}
-	output := string(out)
-	for _, value := range []string{boundKey, boundNote, boundMissing, readNote, boundCast, boundDebug} {
-		for _, line := range strings.Split(output, "\n") {
-			if strings.Contains(line, value) {
-				t.Errorf("the output carries the value %q: %s", value, line)
+	streams := []struct {
+		name   string
+		output []byte
+	}{{"standard output", stdout}, {"standard error", stderr}}
+	for _, stream := range streams {
+		for _, value := range []string{boundKey, boundNote, boundMissing, readNote, boundCast, boundDebug} {
+			for _, line := range strings.Split(string(stream.output), "\n") {
+				if strings.Contains(line, value) {
+					t.Errorf("the child's %s carries the value %q: %s", stream.name, value, line)
+				}
 			}
 		}
 	}
-	if strings.Count(output, "logged_rows") < 4 {
-		t.Errorf("the output names logged_rows fewer than four times, so the failed, missing, "+
-			"unscanned and debugged statements were not all written:\n%s", output)
+	if strings.Count(string(stdout), "logged_rows") < 4 {
+		t.Errorf("the child's standard output names logged_rows fewer than four times, so the failed, missing, "+
+			"unscanned and debugged statements were not all written to standard output:\nstdout:\n%s\nstderr:\n%s",
+			stdout, stderr)
+	}
+	if strings.Contains(string(stderr), "logged_rows") {
+		t.Errorf("a statement was written to the child's standard error, and every statement the module's "+
+			"logger writes goes to standard output:\nstderr:\n%s", stderr)
 	}
 }
 
