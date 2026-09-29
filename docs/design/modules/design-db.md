@@ -193,9 +193,9 @@ type Plugin struct {
 
 需要跨进程互斥的实现另有一项 `migration-lock-timeout`，默认 5 分钟，含义见迁移的应用一节；不需要互斥的实现不声明它。它必须为正：零或负的时限让等待只尝试一次，首次启动时除了拿到互斥的那个副本，其余都立即放弃，`Prepare` 因此拒绝它并点名该键。
 
-连接池参数作用于本模块打开的每一个连接，只有一种例外：定位符指向的库只属于打开它的那条连接，SQLite 的内存库与临时库都是如此。这样的句柄只开一条连接、永不替换，不管池参数怎么写。池里每条连接打开的会是各自的库，迁移落在钉住的那一条上，其余连接上的请求找不到表；只开一条是这种定位符唯一说得通的形状。代价是这个句柄上的语句排成一队：那条连接被一个事务或一个没关闭的结果集占着时，同一句柄上的另一条语句要等它归还。在事务回调里、或在迭代 `Rows` 的循环里经外层句柄再发一条语句，因此会一直等到那条语句的 `ctx` 到期，没有时限就一直等下去；事务里的语句要走事务句柄。模块替调用方发出的语句不知道调用方是否正占着这条连接，经 `Connection` 取连接，等不到时在界内失败（见外部接口契约的有界的连接）。认出这类定位符是方言的事，由实现子包经 `Spec.ConnectionScoped` 交给本模块；SQLite 实现按 SQLite 自己的读法读 `file:` URI 的参数：同名参数取最后一个，名字与取值里的 `%HH` 先解码，转义出的 NUL 截断它所在的名字或取值。
+连接池参数作用于本模块打开的每一个连接，只有一种例外：定位符指向的库只属于打开它的那条连接，SQLite 的内存库与临时库都是如此。这样的句柄只开一条连接、永不替换，不管池参数怎么写。池里每条连接打开的会是各自的库，迁移落在钉住的那一条上，其余连接上的请求找不到表；只开一条是这种定位符唯一说得通的形状。代价是这个句柄上的语句排成一队：那条连接被一个事务或一个没关闭的结果集占着时，同一句柄上的另一条语句要等它归还。在事务回调里、或在迭代 `Rows` 的循环里经外层句柄再发一条语句，因此会一直等到那条语句的 `ctx` 到期，没有时限就一直等下去；事务里的语句要走事务句柄。模块替调用方发出的语句不知道调用方是否正占着这条连接，经 `Connection` 取连接，等不到时在界内失败（见外部接口契约的有界的连接）。认出这类定位符是方言的事，由实现子包经 `Spec.ConnectionScoped` 交给本模块。SQLite 实现照驱动交给 SQLite 的样子、照 SQLite 自己解析 URI 的方式读定位符：驱动把第一个问号之后当作自己的参数，不是 `file:` URI 的定位符在那里截断，`file:` URI 整个交给 SQLite；SQLite 读到 `#` 为止，名字、参数名与取值里的 `%HH` 先解码，转义出的 NUL 截断它所在的部分，名字为空的参数连同取值跳过，同名参数取最后一个，经哪个 VFS 打开看 URI 的 `vfs` 参数，没有时看驱动参数里的。只属于打开它的那条连接的库按这个读法是：空文件名的临时库；不在共享缓存模式下的内存库，即 `:memory:`（`%3Amemory%3A` 解码后同样是）或 `mode=memory`；不在共享缓存模式下、经 `memdb` VFS 以不以斜杠开头的名字打开的库。以斜杠开头的 `memdb` 库在进程里的连接之间共用，照配置开池。
 
-**SQLite 实现拒绝把连接放进共享缓存模式的定位符**（[ADR-db-waits-2026-09-29](../../adr/adr-db-waits-2026-09-29.md)）：`cache` 参数按上面的读法为 `shared` 的 `file:` URI，内存库（`file::memory:?cache=shared`）与文件都在其内；不是 `file:` URI 的定位符，参数由驱动截掉，不进共享缓存。交付的库与 `Open` 自建的连接一样，都以 `ErrConnectFailed` 失败，错误点明共享缓存模式而不回显定位符。共享缓存里，一条连接等缓存里另一条连接占着的表锁，驱动经 `sqlite3_unlock_notify` 一直等到那条连接的事务结束，忙等时限与上下文都结束不了这段等待，`Connection` 的界在那里不成立：替调用方发出的语句在调用方的事务之外取了另一条连接，就会一直等调用方。只属于进程自己的内存库写 `:memory:`，本模块只为它开一条连接；多条连接共用的库用文件。
+**SQLite 实现拒绝把连接放进共享缓存模式的定位符**（[ADR-db-waits-2026-09-29](../../adr/adr-db-waits-2026-09-29.md)）：按上面的读法最后一个 `cache` 参数为 `shared` 的 `file:` URI，内存库（`file::memory:?cache=shared`）、`memdb` 库与文件都在其内，写在 `#` 之后的参数不算；临时库不进共享缓存，不在其内；不是 `file:` URI 的定位符，参数由驱动截掉，不进共享缓存。交付的库与 `Open` 自建的连接一样，都以 `ErrConnectFailed` 失败，错误点明共享缓存模式而不回显定位符。共享缓存里，一条连接等缓存里另一条连接占着的表锁，驱动经 `sqlite3_unlock_notify` 一直等到那条连接的事务结束，忙等时限与上下文都结束不了这段等待，任何界在那里都不成立：替调用方发出的语句在调用方的事务之外取了另一条连接，就会一直等调用方。只属于进程自己的内存库写 `:memory:`，本模块只为它开一条连接；多条连接共用的库用文件。
 
 `dsn` 不写入日志，帮助输出也不回显——它承载凭据。各方言的 `dsn` 形态本就不同，服务器地址与文件路径不是一回事，键名随实现分开与此一致。
 
@@ -415,8 +415,8 @@ sequenceDiagram
 | 能力 | 状态 | 代码 |
 |---|---|---|
 | 连接的建立与关闭 | 已实现 | `pkg/db/open.go` `openHandle`、`pkg/db/db.go` `Close` |
-| 只属于单条连接的库 | 已实现 | `pkg/db/module.go` `Spec.ConnectionScoped`、`pkg/db/sqlite/sqlite.go` `connectionScoped`、`uriParameters` |
-| 共享缓存定位符的拒绝 | 已实现 | `pkg/db/sqlite/sqlite.go` `Dialector`、`sharesCache`、`refusedDialector` |
+| 只属于单条连接的库 | 已实现 | `pkg/db/module.go` `Spec.ConnectionScoped`、`pkg/db/sqlite/locator.go` `connectionScoped`、`readLocator`、`sqliteURI` |
+| 共享缓存定位符的拒绝 | 已实现 | `pkg/db/sqlite/sqlite.go` `Dialector`、`sharesCache`、`refusedDialector`、`pkg/db/sqlite/locator.go` `readLocator` |
 | 额外连接的自建 | 已实现 | `pkg/db/handle.go` `(*database).Open` |
 | 额外连接的来历 | 已实现 | `pkg/db/plugins.go` `OpenedFrom`、`markOpened` |
 | 有界的连接 | 已实现 | `pkg/db/connection.go` `Connection`、`lockBound`、`boundedConn`、`boundedTx`、`lockWaitBound`、`markEngine`、`pkg/db/sqlite/sqlite.go` `boundLockWait`、`pkg/db/postgres/postgres.go` `boundLockWait` |

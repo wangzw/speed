@@ -121,7 +121,10 @@ func TestAnInMemoryLocatorIsOneDatabaseForTheWholeHandle(t *testing.T) {
 		t.Errorf("the delivered handle sees %d rows, want the %d written", count, rows)
 	}
 
-	for _, locator := range []string{":memory:", "file::memory:", "file:scratch?mode=memory"} {
+	for _, locator := range []string{
+		":memory:", "file::memory:", "file:scratch?mode=memory", "file:%3Amemory%3A",
+		"file:scratch?vfs=memdb", "scratch?vfs=memdb", "file:scratch?mode=memory#&mode=rwc",
+	} {
 		opened, err := instance.Open(t.Context(), locator)
 		if err != nil {
 			t.Fatalf("Open(%q): %v", locator, err)
@@ -197,6 +200,8 @@ func sharedCacheLocators(dir string) map[string]string {
 		"a named in-memory database":             "file:scratch?mode=memory&cache=shared",
 		"a file":                                 file + "?cache=shared",
 		"a file whose last cache parameter wins": file + "?cache=private&cache=shared",
+		"a file whose URI a number sign ends":    file + "?cache=shared#&cache=private",
+		"a named in-memory database of memdb's":  "file:/scratch?vfs=memdb&cache=shared",
 	}
 }
 

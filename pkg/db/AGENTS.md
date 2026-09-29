@@ -116,11 +116,14 @@ must not cross, and how to run it.
 - **The SQLite subpackage refuses a locator in shared-cache mode**, delivered or
   opened: its `Dialector` fails to initialise (`sharesCache`). The driver waits
   for a shared-cache table lock through `sqlite3_unlock_notify`, which neither
-  the busy timeout nor a context ends, so no bound holds there. The locator is
-  read as SQLite reads a URI (`uriParameters`) — the last of a repeated
-  parameter, `%HH` decoded, an escaped NUL ending the name or value — and so is
-  the one `connectionScoped` reads; a reading narrower than SQLite's opens a
-  shape nothing bounds, or a private database under a pool.
+  the busy timeout nor a context ends. The locator is read as the driver hands
+  it to SQLite and as SQLite parses it (`readLocator`, `sqliteURI`) — the URI
+  ending at a `#`, `%HH` decoded in the name and the parameters, an escaped NUL
+  ending the part it is in, an empty parameter name skipped, the last of a
+  repeated parameter taken, the VFS the URI or the driver names — and so is
+  the one `connectionScoped` reads; a reading that differs from SQLite's opens a
+  shape nothing bounds, or a private database under a pool. The cases in
+  `scope_test.go` hold both readings to what two real connections observe.
 - **Every wrap uses `%w`.** A `%v` leaves the text all but identical and makes
   the sentinel unreachable, which is the failure the note in `errors.go` exists
   to prevent; the error-chain cases hold each path to it.

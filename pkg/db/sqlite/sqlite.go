@@ -56,8 +56,6 @@ import (
 	"database/sql"
 	"errors"
 	"fmt"
-	"net/url"
-	"strings"
 	"time"
 
 	gosqlite "github.com/glebarez/go-sqlite"
@@ -124,12 +122,13 @@ type refusedDialector struct{ *sqlitedriver.Dialector }
 func (refusedDialector) Initialize(*gorm.DB) error { return errSharedCache }
 
 // sharesCache reports whether a locator puts its connections in SQLite's
-// shared-cache mode: a file: URI whose cache parameter, read as SQLite reads it,
-// is shared. Outside a file: URI the parameters are the driver's, cut off before
-// SQLite sees the name, so they share nothing.
+// shared-cache mode, reading it as the driver and SQLite do (readLocator): a
+// file: URI whose last cache parameter is shared, naming any database but a
+// temporary one, which SQLite never shares. Outside a file: URI the parameters
+// are the driver's, cut off before SQLite sees the name, so they share nothing.
 func sharesCache(dsn string) bool {
-	params, uri := uriParameters(dsn)
-	return uri && params("cache") == "shared"
+	l, ok := readLocator(dsn)
+	return ok && l.sharedCache && l.name != ""
 }
 
 // constraintViolation classifies a refusal this engine's driver reports by its
@@ -156,65 +155,6 @@ func constraintViolation(err error) error {
 	default:
 		return nil
 	}
-}
-
-// connectionScoped reports whether a locator names a database that belongs to
-// the one connection opening it: :memory:, an empty file name, or a file: URI
-// naming either or asking for mode=memory, unless that URI shares the cache.
-// SQLite gives each connection that opens such a locator a database of its own,
-// so pkg/db holds a handle on one to a single connection.
-//
-// The reading follows the driver's. A locator that is not a file: URI is a
-// file name followed by the driver's own parameters, which are cut off at the
-// first question mark; a file: URI is SQLite's, parameters included, and
-// cache=shared is what makes an in-memory database one for every connection
-// of the process — a locator Dialector refuses.
-func connectionScoped(dsn string) bool {
-	name, _, _ := strings.Cut(dsn, "?")
-	path, uri := strings.CutPrefix(name, "file:")
-	if !uri {
-		return name == "" || name == ":memory:"
-	}
-	params, parsed := uriParameters(dsn)
-	if !parsed || params("cache") == "shared" {
-		return false
-	}
-	return path == "" || path == ":memory:" || params("mode") == "memory"
-}
-
-// uriParameters reads the query of a file: URI the way SQLite does, and reports
-// false for a locator that is not one, or whose query the driver refuses.
-//
-// SQLite takes a parameter named more than once from its last occurrence,
-// decodes %HH escapes in names and values alike, leaves a plus sign as it
-// stands, and ends a name or a value at an escaped NUL. A reading that took the
-// first occurrence, or matched the text before decoding, would take
-// file:x?mode=rwc&mode=memory for a file every connection shares when each
-// connection opens a database of its own, or miss a shared cache spelled
-// cach%65=shared. The driver parses the query with net/url before SQLite sees
-// it and refuses the connection when that fails, so such a query opens nothing
-// and there is nothing here to read.
-func uriParameters(dsn string) (func(name string) string, bool) {
-	name, query, _ := strings.Cut(dsn, "?")
-	if !strings.HasPrefix(name, "file:") {
-		return nil, false
-	}
-	if _, err := url.ParseQuery(query); err != nil {
-		return nil, false
-	}
-	values := map[string]string{}
-	for pair := range strings.SplitSeq(query, "&") {
-		key, value, _ := strings.Cut(pair, "=")
-		key, keyErr := url.PathUnescape(key)
-		value, valueErr := url.PathUnescape(value)
-		if keyErr != nil || valueErr != nil {
-			return nil, false
-		}
-		key, _, _ = strings.Cut(key, "\x00")
-		value, _, _ = strings.Cut(value, "\x00")
-		values[key] = value
-	}
-	return func(name string) string { return values[name] }, true
 }
 
 // boundLockWait holds how long a statement on conn waits for a lock another
