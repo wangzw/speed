@@ -169,6 +169,11 @@ func refuseUnsealedRead(st *gorm.Statement, sealed []*schema.Field) error {
 	into, typ := destinationOf(st)
 	switch into {
 	case intoModel:
+		for _, field := range sealed {
+			if bound := shadowingField(st, field); bound != nil && reads(st, field, true) {
+				return shadowedSeal(st, field, bound)
+			}
+		}
 		return refuseRenamedRead(st, st.Schema, sealed)
 	case intoStruct:
 		view := &gorm.Statement{DB: st.DB}
@@ -346,7 +351,10 @@ func reads(st *gorm.Statement, field *schema.Field, unknownReads bool) bool {
 	items, known := selection(st)
 	if !known {
 		for _, omitted := range st.Omits {
-			if omitted == field.DBName || st.Schema.LookUpField(omitted) == field {
+			if omitted == field.DBName {
+				return false
+			}
+			if named := st.Schema.LookUpField(omitted); named != nil && named.DBName == field.DBName {
 				return false
 			}
 		}
