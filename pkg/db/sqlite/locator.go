@@ -135,9 +135,17 @@ func readLocator(dsn string) (sqliteLocator, bool) {
 // letter case — whatever else the locator carries; the driver itself drops it
 // when the locator gives _time_format. A locator naming no mode whose last mode
 // parameter is ro begins its transactions DEFERRED: they never write, and
-// IMMEDIATE would hold the write lock against every other connection of the
-// file. A transaction database/sql begins read-only begins DEFERRED whatever
-// the locator says, as the driver begins one.
+// SQLite begins an IMMEDIATE one on a read-only database as a read transaction
+// holding the database's read lock from its BEGIN, which in rollback-journal
+// mode keeps another connection's write from committing before the
+// transaction has read anything. A transaction database/sql begins read-only
+// begins DEFERRED whatever the locator says, as the driver begins one; one
+// that holds the write lock from its BEGIN would keep every other writer of
+// the file waiting while it reads.
+//
+// A connection whose query_only is on is the one read-only shape the locator
+// does not decide: transactionConn.BeginTx begins DEFERRED there when SQLite
+// refuses the statement this gives.
 func beginStatement(l sqliteLocator, readOnly bool) (string, error) {
 	mode := "IMMEDIATE"
 	if l.txlock != "" {
@@ -155,10 +163,14 @@ func beginStatement(l sqliteLocator, readOnly bool) (string, error) {
 		mode = "DEFERRED"
 	}
 	if readOnly {
-		mode = "DEFERRED"
+		return deferredBegin, nil
 	}
 	return "BEGIN " + mode, nil
 }
+
+// deferredBegin begins a transaction that takes no lock until its first
+// statement.
+const deferredBegin = "BEGIN DEFERRED"
 
 // The parts of a file: URI sqliteURI reads, in the order they come.
 const (

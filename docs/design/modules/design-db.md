@@ -398,7 +398,7 @@ sequenceDiagram
 
 **一条语句执行之前的等待，各段由不同的东西结束。** 它先等池里的一条连接，这段等待由语句的 `ctx` 界定，没有时限就一直等；只开一条连接的库上，调用方的事务或未关闭的结果集占着那条连接时，同一句柄上的另一条语句等的是它们（见配置一节）。它再等别的连接占着的锁：SQLite 在驱动里按连接上的忙等时限反复重试，驱动给每条连接设 5 秒，定位符里的 `_pragma=busy_timeout(n)` 可改；语句的 `ctx` 到期打断不了这段等待，驱动在上下文结束时发出的中断到不了忙等的重试，语句等满忙等时限才以 `SQLITE_BUSY` 失败。忙等时限按一条语句计，一条语句里先后等的锁都在它之内；一次调用发几条语句，就可能各等一个。共享缓存模式下的表锁连忙等时限也不看，SQLite 实现因而不打开那种定位符（见配置一节）。PostgreSQL 的等锁随 `ctx` 结束，会话的 `lock_timeout` 另给每一把锁一个界，一条先后等几把锁的语句各等一个；`statement_timeout` 给整条语句一个界；两者来自定位符、角色与库的默认值或服务端配置，服务端默认都不设。本模块不改动这些设置：`Connection` 只给取连接设界，它的语句照上面的规矩等锁（见外部接口契约的有界的连接）。
 
-**SQLite 实现以 `IMMEDIATE` 开启事务**（[ADR-db-waits-2026-09-29](../../adr/adr-db-waits-2026-09-29.md)）。事务在开启时就要写锁，照忙等时限等，先读后写的事务因此在别的连接写着时等待，与 PostgreSQL 上同样的事务一样，全部提交或等满忙等时限才失败，不会因为先读过而当即失败。开启的语句由实现子包发出，不经驱动。定位符的 `_txlock` 参数指明别的开启方式时照它：取第一个，`deferred`、`immediate`、`exclusive` 不分大小写，不认得的值拒绝打开，定位符带不带 `_time_format` 都如此。以只读方式开启的事务（`sql.TxOptions{ReadOnly: true}`）以 `DEFERRED` 开启，不论定位符怎么写；最后一个 `mode` 参数为 `ro`、又没写 `_txlock` 的 `file:` 定位符上的事务同样以 `DEFERRED` 开启。以 `IMMEDIATE` 开启的事务只读不写也占着写锁，同一个文件库上两个这样的事务一个等另一个结束；只读的工作以只读方式开启事务，或者不开事务。以 `DEFERRED` 开启的事务读过之后再写，写锁在别的连接手里时 SQLite 不等，当即以 `SQLITE_BUSY` 拒绝，WAL 日志模式下同样如此。GORM 为一次写入开的事务里，开启时等别的写者放开写锁，回滚日志模式下提交时还要等读者读完，一次写入因此至多等两个忙等时限。
+**SQLite 实现以 `IMMEDIATE` 开启事务**（[ADR-db-waits-2026-09-29](../../adr/adr-db-waits-2026-09-29.md)）。事务在开启时就要写锁，照忙等时限等，先读后写的事务因此在别的连接写着时等待，与 PostgreSQL 上同样的事务一样，全部提交或等满忙等时限才失败，不会因为先读过而当即失败。开启的语句由实现子包发出，不经驱动。定位符的 `_txlock` 参数指明别的开启方式时照它：取第一个，`deferred`、`immediate`、`exclusive` 不分大小写，不认得的值拒绝打开，定位符带不带 `_time_format` 都如此。以只读方式开启的事务（`sql.TxOptions{ReadOnly: true}`）以 `DEFERRED` 开启，不论定位符怎么写；最后一个 `mode` 参数为 `ro`、又没写 `_txlock` 的 `file:` 定位符上的事务同样以 `DEFERRED` 开启。连接写不了库的定位符上，事务照常开启、照常读，其中的写入与这条连接上别的写入一样被 SQLite 拒绝：SQLite 把它以只读方式打开的库——`mode=ro`、`immutable=1`、进程没有写权限的文件——上的 `IMMEDIATE` 与 `EXCLUSIVE` 开启当作读事务开启；`query_only` 开着的连接上它拒绝这两种开启，实现在那里改以 `DEFERRED` 开启，不论定位符写的是哪种方式，`query_only` 由定位符的 `_pragma` 打开还是由一条语句在这条连接上打开都一样。以 `IMMEDIATE` 开启的事务只读不写也占着写锁，同一个文件库上两个这样的事务一个等另一个结束；只读的工作以只读方式开启事务，或者不开事务。以 `DEFERRED` 开启的事务读过之后再写，写锁在别的连接手里时 SQLite 不等，当即以 `SQLITE_BUSY` 拒绝，WAL 日志模式下同样如此。GORM 为一次写入开的事务里，开启时等别的写者放开写锁，回滚日志模式下提交时还要等读者读完，一次写入因此至多等两个忙等时限。
 
 迁移的事务边界见迁移的应用一节：一条迁移的执行与记录同属一个事务，条与条之间不是。进程之间的协调也在那里——同一个库上同时启动的多个进程，其迁移过程互斥。
 
@@ -426,7 +426,7 @@ sequenceDiagram
 | 字段级加密与盲索引 | 已实现 | `pkg/db/serializer.go` `installEncryption`、`pkg/db/crypto.go` `deriveSubkey`、`pkg/db/handle.go` `(*database).BlindIndex` |
 | 不经模型字段的读写 | 已实现 | `pkg/db/encryptedwrites.go` `sealUpdate`、`sealCreate`、`refuseUnsealedStruct`、`refuseSpelledInsert`、`insertWrites`、`shadowingField`、`pkg/db/encryptedreads.go` `guardReads`、`guardRowReads`、`refusedRow`、`refuseRenamedRead`、`mentions`、`pkg/db/identifiers.go` `sealedTarget`、`namesColumn` |
 | 约束拒绝的识别 | 已实现 | `pkg/db/constraints.go` `classifyingDialector`、`installRowClassification`、`pkg/db/sqlite/sqlite.go` `constraintViolation`、`pkg/db/postgres/postgres.go` `constraintViolation` |
-| SQLite 事务的开启方式 | 已实现 | `pkg/db/sqlite/transactions.go` `transactionConn.BeginTx`、`pkg/db/sqlite/locator.go` `beginStatement` |
+| SQLite 事务的开启方式 | 已实现 | `pkg/db/sqlite/transactions.go` `transactionConn.BeginTx`、`transactionConn.queryOnly`、`pkg/db/sqlite/locator.go` `beginStatement` |
 | SQLite 被拒提交的回滚 | 已实现 | `pkg/db/sqlite/transactions.go` `transaction.Commit` |
 | 插件的安装 | 已实现 | `pkg/db/plugins.go` `collectPlugins`、`installPlugins`、`pkg/db/handle.go` `newDatabase` |
 | 迁移的收齐与应用 | 已实现 | `pkg/db/migrate.go` `collectMigrations`、`applyMigrations` |

@@ -36,6 +36,14 @@
 // (mode=ro) begins them DEFERRED, and so does every transaction begun
 // read-only.
 //
+// A transaction runs on every locator whose connections cannot write, and a
+// write in it is refused as every write there is. SQLite begins an IMMEDIATE
+// or EXCLUSIVE transaction on a database it opened read-only — mode=ro,
+// immutable=1, a file the process may not write — as a read transaction, and
+// refuses one outright on a connection whose query_only is on, whether a
+// locator's _pragma or a statement turned it on; on such a connection a
+// transaction begins DEFERRED, whatever mode the locator names.
+//
 // It supplies no cross-process migration mutex, and this is where it differs
 // from the PostgreSQL subpackage beyond the driver. A mutex orders replicas that
 // reach the first migration at once, and several processes sharing one SQLite

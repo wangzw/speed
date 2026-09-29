@@ -83,6 +83,8 @@ func TestATransactionBeginsInTheModeItsLocatorGives(t *testing.T) {
 		{"deferred beside _time_format", "?_time_format=sqlite&_txlock=deferred", nil, holdsNothing},
 		{"exclusive beside _time_format", "?_time_format=sqlite&_txlock=exclusive", nil, holdsExclusive},
 		{"a transaction begun read-only", "", &sql.TxOptions{ReadOnly: true}, holdsNothing},
+		{"a locator turning query_only on", "?_pragma=query_only(1)", nil, holdsNothing},
+		{"query_only beside exclusive", "?_pragma=query_only(1)&_txlock=exclusive", nil, holdsNothing},
 	}
 	for i, c := range cases {
 		t.Run(c.name, func(t *testing.T) {
@@ -138,6 +140,43 @@ func observeBegin(t *testing.T, file, dsn string, options *sql.TxOptions) string
 		return holdsWriteLock
 	}
 	return holdsNothing
+}
+
+// TestABeginRefusedTheWriteLockIsReported holds the DEFERRED begin to the
+// connections whose query_only is on: on any other connection a BEGIN SQLite
+// refuses — here for the write lock another connection holds, with no busy
+// timeout to wait it out — is the error the caller gets, and no transaction
+// is begun in its place.
+func TestABeginRefusedTheWriteLockIsReported(t *testing.T) {
+	ctx := context.Background()
+	file := filepath.Join(t.TempDir(), "held.db")
+	holder, err := sql.Open(driverName, file)
+	if err != nil {
+		t.Fatalf("opening the holder on %s: %v", file, err)
+	}
+	t.Cleanup(func() { _ = holder.Close() })
+	if _, err = holder.ExecContext(ctx, "CREATE TABLE held (id INTEGER)"); err != nil {
+		t.Fatalf("creating the table on %s: %v", file, err)
+	}
+	held, err := holder.BeginTx(ctx, nil)
+	if err != nil {
+		t.Fatalf("taking the write lock on %s: %v", file, err)
+	}
+	defer func() { _ = held.Rollback() }()
+
+	pool, err := sql.Open(driverName, file+"?_pragma=busy_timeout(0)")
+	if err != nil {
+		t.Fatalf("opening the pool on %s: %v", file, err)
+	}
+	t.Cleanup(func() { _ = pool.Close() })
+	tx, err := pool.BeginTx(ctx, nil)
+	if err == nil {
+		_ = tx.Rollback()
+		t.Fatal("a transaction began while another connection held the write lock, want the BEGIN refused")
+	}
+	if !strings.Contains(err.Error(), "SQLITE_BUSY") {
+		t.Errorf("the refused BEGIN gave %v, want SQLite's SQLITE_BUSY", err)
+	}
 }
 
 // TestALocatorWithATxlockTheDriverDoesNotKnowIsNotOpened covers the one

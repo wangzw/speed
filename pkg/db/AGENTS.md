@@ -139,6 +139,16 @@ must not cross, and how to run it.
   and the driver's own begin drops `_txlock` whenever the locator gives
   `_time_format` (`adr-db-waits-2026-09-29`). `transactions_test.go` holds the
   mode to the lock a second connection observes.
+- **A transaction runs on every locator whose connections cannot write.**
+  SQLite begins an IMMEDIATE transaction on a database it opened read-only
+  (`mode=ro`, `immutable=1`, a file the process may not write) as a read
+  transaction, but refuses it outright on a connection whose `query_only` is
+  on; `BeginTx` begins DEFERRED there, whatever mode the locator names, and
+  asks the connection only when SQLite refused the BEGIN, since a statement can
+  turn `query_only` on for one connection of the pool. Reading `query_only`
+  out of the locator instead misses every spelling of the pragma and every
+  connection a statement changed. `readonly_test.go` runs a transaction on
+  each read-only shape.
 - **Every wrap uses `%w`.** A `%v` leaves the text all but identical and makes
   the sentinel unreachable, which is the failure the note in `errors.go` exists
   to prevent; the error-chain cases hold each path to it.

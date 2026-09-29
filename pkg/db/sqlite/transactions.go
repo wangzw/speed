@@ -37,7 +37,8 @@ func registeredDriver() driver.Driver {
 // A transaction begins in the mode beginStatement gives the locator —
 // IMMEDIATE unless the locator names another — so that one reading before it
 // writes waits for a concurrent writer within the busy timeout instead of
-// being refused the write lock at once.
+// being refused the write lock at once. On a connection whose query_only is
+// on, which SQLite refuses every BEGIN but a deferred one, it begins DEFERRED.
 //
 // SQLite keeps a transaction open when it refuses to commit it — a deferred
 // foreign key that the COMMIT finds violated is the ordinary case — so that
@@ -101,6 +102,14 @@ func (c transactionConn) Begin() (driver.Tx, error) {
 // BeginTx begins a transaction with the statement beginStatement gives, run
 // under no context as the driver runs its own; database/sql rolls the
 // transaction back when ctx ends.
+//
+// SQLite begins an IMMEDIATE or EXCLUSIVE transaction on a database it opened
+// read-only as a read transaction, but refuses one outright on a connection
+// whose query_only is on. Such a connection writes nothing in any transaction,
+// so when that is why the BEGIN was refused, the transaction begins DEFERRED
+// instead, whatever mode the locator names. The connection is asked only then:
+// a locator's _pragma turns query_only on for every connection opened on it,
+// and a statement turns it on or off for the one it runs on.
 func (c transactionConn) BeginTx(_ context.Context, opts driver.TxOptions) (driver.Tx, error) {
 	statement, err := beginStatement(c.locator, opts.ReadOnly)
 	if err != nil {
@@ -108,9 +117,35 @@ func (c transactionConn) BeginTx(_ context.Context, opts driver.TxOptions) (driv
 	}
 	tx := transaction{execer: c.execer}
 	if err := tx.run(statement); err != nil {
-		return nil, err
+		if statement == deferredBegin || !c.queryOnly() {
+			return nil, err
+		}
+		if err := tx.run(deferredBegin); err != nil {
+			return nil, err
+		}
 	}
 	return tx, nil
+}
+
+// queryOnly reports whether the connection's query_only is on. A connection
+// that does not answer is taken for one whose query_only is off, so the BEGIN
+// it was refused is the error the caller gets.
+func (c transactionConn) queryOnly() bool {
+	queryer, ok := c.Conn.(driver.QueryerContext)
+	if !ok {
+		return false
+	}
+	rows, err := queryer.QueryContext(context.Background(), "PRAGMA query_only", nil)
+	if err != nil {
+		return false
+	}
+	defer func() { _ = rows.Close() }()
+	value := make([]driver.Value, 1)
+	if rows.Next(value) != nil {
+		return false
+	}
+	on, ok := value[0].(int64)
+	return ok && on != 0
 }
 
 // PrepareContext prepares a statement.
