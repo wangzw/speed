@@ -285,6 +285,64 @@ func PanicReleasesTheConnection(t *testing.T, handle *gorm.DB, connect Connect) 
 	}
 }
 
+// ReturnReleasesTheConnection holds Connection to handing its connection back
+// when fn returns normally under a context that never ends, whatever fn left
+// open on it — a transaction it began and did not end, a result set it never
+// closed: Connection comes back with fn's own answer, what the transaction
+// wrote is rolled back, and the connection is back in the pool. Under a
+// context that never ends, database/sql itself would end neither of them, and
+// handing the connection back would wait on them for good.
+//
+// The handle's pool must be held to one connection, as for
+// PanicReleasesTheConnection.
+func ReturnReleasesTheConnection(t *testing.T, handle *gorm.DB, connect Connect) {
+	t.Helper()
+	if err := handle.Exec("CREATE TABLE return_rows (id INTEGER PRIMARY KEY)").Error; err != nil {
+		t.Fatalf("creating the table the case writes into: %v", err)
+	}
+	quiet := handle.Session(&gorm.Session{Logger: logger.Discard})
+	for _, c := range []struct {
+		name string
+		fn   func(session *gorm.DB) error
+	}{
+		{"a transaction fn began and did not end", func(session *gorm.DB) error {
+			return session.Begin().Exec("INSERT INTO return_rows (id) VALUES (1)").Error
+		}},
+		{"a result set fn left open", func(session *gorm.DB) error {
+			rows, err := session.Raw("SELECT id FROM return_rows").Rows()
+			if err != nil {
+				return err
+			}
+			leaveOpen(rows)
+			return nil
+		}},
+	} {
+		t.Run(c.name, func(t *testing.T) {
+			came := make(chan error, 1)
+			go func() { came <- connect(context.Background(), quiet, answeredWithin, c.fn) }()
+			select {
+			case err := <-came:
+				if err != nil {
+					t.Fatalf("Connection gave %v, want the nil fn returned", err)
+				}
+			case <-time.After(answeredWithin):
+				t.Fatalf("Connection was still handing its connection back %v after fn returned", answeredWithin)
+			}
+			var rows int64
+			settled, cancel := context.WithTimeout(t.Context(), answeredWithin)
+			defer cancel()
+			if err := handle.WithContext(settled).Raw("SELECT count(*) FROM return_rows").Scan(&rows).Error; err != nil {
+				t.Fatalf("reading the table once fn had returned: %v; the connection is not back in the pool, "+
+					"or the database it held is gone", err)
+			}
+			if rows != 0 {
+				t.Errorf("the table holds %d rows once fn returned, want what its open transaction wrote rolled back",
+					rows)
+			}
+		})
+	}
+}
+
 // SavepointRecovers holds a transaction fn runs through Connection to GORM's
 // nested transactions: a nested transaction whose statement fails rolls back to
 // its savepoint, and the outer transaction carries on and commits. PostgreSQL

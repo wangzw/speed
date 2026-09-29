@@ -46,6 +46,28 @@ func TestConnectionBoundsTheWaitOnAHandleThisModuleDidNotOpen(t *testing.T) {
 	dbsuite.ConnectionWait(t, handle, db.Connection)
 }
 
+// TestConnectionBoundsTheWaitOnAHandleThatPreparesItsStatements runs it on a
+// handle a host opened with PrepareStmt, whose pool GORM keeps behind a
+// prepared-statement pool that answers gorm.GetDBConnector: Connection takes
+// its connection from the pool behind that, as from any other.
+func TestConnectionBoundsTheWaitOnAHandleThatPreparesItsStatements(t *testing.T) {
+	handle, err := gorm.Open(sqlitedriver.Open(filepath.Join(t.TempDir(), "prepared.db")),
+		&gorm.Config{Logger: logger.Discard, PrepareStmt: true})
+	if err != nil {
+		t.Fatalf("opening a handle of the host's own: %v", err)
+	}
+	t.Cleanup(func() { _ = db.Close(handle) })
+	if _, prepared := handle.ConnPool.(*gorm.PreparedStmtDB); !prepared {
+		t.Fatalf("a handle opened with PrepareStmt is on %T, want GORM's prepared-statement pool", handle.ConnPool)
+	}
+	pool, err := handle.DB()
+	if err != nil {
+		t.Fatalf("reaching the host's pool: %v", err)
+	}
+	pool.SetMaxOpenConns(1)
+	dbsuite.ConnectionWait(t, handle, db.Connection)
+}
+
 // busyTimeout is the busy timeout the cases below give their locators: not the
 // driver's default of five seconds, and far short of the wait they give
 // Connection.
@@ -105,6 +127,12 @@ func TestConnectionRunsFnOnATransactionItIsHanded(t *testing.T) {
 // handle to: a connection dropped from the pool takes the database with it.
 func TestAPanicInFnHandsTheConnectionBack(t *testing.T) {
 	dbsuite.PanicReleasesTheConnection(t, deliver(t, ":memory:").DB(), db.Connection)
+}
+
+// TestAReturnFromFnHandsTheConnectionBack runs the engine-neutral case on an
+// in-memory database, for the reason the panic case above does.
+func TestAReturnFromFnHandsTheConnectionBack(t *testing.T) {
+	dbsuite.ReturnReleasesTheConnection(t, deliver(t, ":memory:").DB(), db.Connection)
 }
 
 // TestANestedTransactionThroughConnectionRollsBackToItsSavepoint runs the

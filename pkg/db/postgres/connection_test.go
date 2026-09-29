@@ -52,6 +52,27 @@ func TestConnectionBoundsTheWaitOnAHandleThisModuleDidNotOpen(t *testing.T) {
 	dbsuite.ConnectionWait(t, handle, db.Connection)
 }
 
+// TestConnectionBoundsTheWaitOnAHandleThatPreparesItsStatements runs it on a
+// handle a host opened with PrepareStmt, whose pool GORM keeps behind a
+// prepared-statement pool that answers gorm.GetDBConnector: Connection takes
+// its connection from the pool behind that, as from any other.
+func TestConnectionBoundsTheWaitOnAHandleThatPreparesItsStatements(t *testing.T) {
+	handle, err := gorm.Open(pgdriver.Open(pgtest.Acquire(t)), &gorm.Config{Logger: logger.Discard, PrepareStmt: true})
+	if err != nil {
+		t.Fatalf("opening a handle of the host's own: %v", err)
+	}
+	t.Cleanup(func() { _ = db.Close(handle) })
+	if _, prepared := handle.ConnPool.(*gorm.PreparedStmtDB); !prepared {
+		t.Fatalf("a handle opened with PrepareStmt is on %T, want GORM's prepared-statement pool", handle.ConnPool)
+	}
+	pool, err := handle.DB()
+	if err != nil {
+		t.Fatalf("reaching the host's pool: %v", err)
+	}
+	pool.SetMaxOpenConns(1)
+	dbsuite.ConnectionWait(t, handle, db.Connection)
+}
+
 // lockTimeout is the lock_timeout the case below gives its locator: far short
 // of the wait it gives Connection, and something where the server's default is
 // none.
@@ -117,6 +138,12 @@ func TestConnectionRunsFnOnATransactionItIsHanded(t *testing.T) {
 // whose pool the configuration holds to one connection.
 func TestAPanicInFnHandsTheConnectionBack(t *testing.T) {
 	dbsuite.PanicReleasesTheConnection(t, deliveredOnOneConnection(t), db.Connection)
+}
+
+// TestAReturnFromFnHandsTheConnectionBack runs the engine-neutral case on a
+// handle whose pool the configuration holds to one connection.
+func TestAReturnFromFnHandsTheConnectionBack(t *testing.T) {
+	dbsuite.ReturnReleasesTheConnection(t, deliveredOnOneConnection(t), db.Connection)
 }
 
 // TestANestedTransactionThroughConnectionRollsBackToItsSavepoint runs the
