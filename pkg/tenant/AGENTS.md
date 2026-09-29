@@ -138,13 +138,17 @@ here must not cross, and how to run it.
   (`keyHalves`) — in a tuple over a whole key of the statement's own table,
   named that way (`wholeKey`, `keyColumns`), with another part of it written,
   and nowhere else — and a half naming another tenant refuses a write. **A
-  condition the caller writes on the tenant column is judged and never
-  rewritten**: an equality, an IN over the column alone, a tuple over columns
-  that are no key or are named otherwise, whatever it is written through. Filling
-  one is the shape to reject: GORM's key and the caller's condition sit side by
-  side in the WHERE, and a caller's `tenant_id` that came out empty would turn
-  a write matching nothing into one over the whole tenant, past the refusal of
-  an unconditioned write, since that condition counts as the caller's
+  condition is judged by its shape, never by who wrote it**: the shape filled is
+  the tuple above — a whole key of the statement's own table, every column named
+  that way — and it is filled whoever wrote it, a caller's hand-written tuple of
+  that shape included, because nothing in a statement says who wrote one. Every
+  other shape — an equality, an IN over the column alone, a tuple over columns
+  that are no key or are named otherwise, whatever it is written through — is
+  the caller's, and is left as written. Filling one of those is the shape to
+  reject: GORM's key and the caller's condition sit side by side in the WHERE,
+  and a caller's `tenant_id` that came out empty would turn a write matching
+  nothing into one over the whole tenant, past the refusal of an unconditioned
+  write, since that condition counts as the caller's
   (`catalog/provenance_test.go`). A column qualified by another table is that
   table's (`ownTable`). A join table's tenant column is the column a
   scoped side's key puts its tenant on (`joinTenantField`), found through the
