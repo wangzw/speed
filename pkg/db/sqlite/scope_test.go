@@ -57,6 +57,20 @@ func TestConnectionScopedReadsTheLocatorTheWayTheDriverDoes(t *testing.T) {
 		{"file:scratch#?vfs=memdb", true},
 		{"scratch?vfs=memdb", true},
 		{"/scratch?vfs=memdb", false},
+		// A name shared under memdb is longer than one character, and begins
+		// with a backslash as well as with a slash.
+		{"file:/?vfs=memdb", true},
+		{"/?vfs=memdb", true},
+		{`\scratch?vfs=memdb`, false},
+		// The driver hands its VFS to SQLite as a C string, which ends at a
+		// NUL, escaped or not.
+		{"scratch?vfs=memdb%00", true},
+		{"scratch?vfs=memdb\x00", true},
+		{"file:scratch#?vfs=memdb%00", true},
+		{"/scratch?vfs=memdb%00", false},
+		// It hands a file: URI to SQLite as a C string too.
+		{"file:scratch?mode=memory\x00&mode=rwc", true},
+		{"file:scratch?mode=rwc\x00&mode=memory", false},
 		// A temporary database is its connection's even in shared-cache mode.
 		{"file:?cache=shared", true},
 	}
@@ -99,6 +113,10 @@ func TestSharesCacheReadsTheLocatorTheWayTheDriverDoes(t *testing.T) {
 		{"file:/var/lib/app/app.db?cache=shared#&cache=private", true},
 		{"file:/var/lib/app/app.db?cache=shared#x", true},
 		{"file:/var/lib/app/app.db#?cache=shared", false},
+		// The driver hands a file: URI to SQLite as a C string, which ends at
+		// a NUL: what follows one neither adds to a value nor overrides one.
+		{"file:/var/lib/app/app.db?cache=shared\x00x\x00y&cache=private", true},
+		{"file:/var/lib/app/app.db?cache=private\x00&cache=shared", false},
 		// A parameter with an empty name is skipped with its value.
 		{"file:/var/lib/app/app.db?=private&cache=shared", true},
 		// An authority of localhost is dropped; any other refuses the URI.
@@ -151,6 +169,14 @@ func TestTheLocatorReadingAgreesWithTheDriver(t *testing.T) {
 		"file:" + memory() + "#?vfs=memdb",
 		memory() + "?vfs=memdb",
 		"/" + memory() + "?vfs=memdb",
+		"file:/?vfs=memdb",
+		"/?vfs=memdb",
+		`\` + memory() + "?vfs=memdb",
+		memory() + "?vfs=memdb%00",
+		memory() + "?vfs=memdb\x00",
+		"file:" + memory() + "#?vfs=memdb%00",
+		"/" + memory() + "?vfs=memdb%00",
+		"file:" + memory() + "?mode=memory\x00&mode=rwc",
 		file("plain.db"),
 		file("driver-parameters.db") + "?cache=shared",
 		"file:" + file("uri.db"),
@@ -161,6 +187,8 @@ func TestTheLocatorReadingAgreesWithTheDriver(t *testing.T) {
 		"file:" + file("last-shared.db") + "?cache=private&cache=shared",
 		"file:" + file("escaped.db") + "?cach%65=shar%65d",
 		"file:" + file("empty-name.db") + "?=private&cache=shared",
+		"file:" + file("raw-nul.db") + "?cache=shared\x00x\x00y&cache=private",
+		"file:" + file("raw-nul-private.db") + "?cache=private\x00&cache=shared",
 		"file://localhost" + file("authority.db") + "?cache=shared",
 		"file:" + file("before-fragment.db") + "#?cache=shared",
 	} {

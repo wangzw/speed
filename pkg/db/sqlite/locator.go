@@ -10,12 +10,13 @@ import (
 // the one connection opening it, reading it as the driver and SQLite do
 // (readLocator): a temporary database, which an empty name opens; an in-memory
 // one — :memory:, or mode=memory on a file: URI — outside shared-cache mode;
-// and one SQLite's memdb VFS opens under a name that does not begin with a
-// slash, outside shared-cache mode too. SQLite gives each connection that opens
-// such a locator a database of its own, so pkg/db holds a handle on one to a
-// single connection. A memdb name that begins with a slash is one database for
-// every connection of the process, and so is anything in shared-cache mode, a
-// locator Dialector refuses.
+// and one SQLite's memdb VFS opens under a name of one character or one that
+// begins with neither a slash nor a backslash, outside shared-cache mode too.
+// SQLite gives each connection that opens such a locator a database of its
+// own, so pkg/db holds a handle on one to a single connection. A longer memdb
+// name that begins with either is one database for every connection of the
+// process (memdbShared), and so is anything in shared-cache mode, a locator
+// Dialector refuses.
 func connectionScoped(dsn string) bool {
 	l, ok := readLocator(dsn)
 	switch {
@@ -61,11 +62,11 @@ type sqliteLocator struct {
 //
 // The driver takes everything past the first question mark as its query,
 // refuses one net/url cannot parse or one naming two VFSes, and hands the VFS
-// it names to SQLite as the default. It cuts the query off a locator that is
-// not a file: URI and hands a file: URI to SQLite whole, as a C string, which
-// ends at a NUL. SQLite reads a file: URI with its own parser (sqliteURI), and
-// takes a parameter given more than once from its last occurrence; a cache or
-// mode parameter it does not know fails the open.
+// it names to SQLite as the default, as a C string, which ends at a NUL. It
+// cuts the query off a locator that is not a file: URI and hands a file: URI
+// to SQLite whole, as a C string too. SQLite reads a file: URI with its own
+// parser (sqliteURI), and takes a parameter given more than once from its last
+// occurrence; a cache or mode parameter it does not know fails the open.
 func readLocator(dsn string) (sqliteLocator, bool) {
 	var l sqliteLocator
 	name := dsn
@@ -80,6 +81,7 @@ func readLocator(dsn string) (sqliteLocator, bool) {
 			}
 			l.vfs = vfs
 		}
+		l.vfs, _, _ = strings.Cut(l.vfs, "\x00")
 		if !strings.HasPrefix(dsn, "file:") {
 			name = dsn[:at]
 		}

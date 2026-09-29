@@ -124,10 +124,11 @@ must not cross, and how to run it.
   it to SQLite and as SQLite parses it (`readLocator`, `sqliteURI`) — the URI
   ending at a `#`, `%HH` decoded in the name and the parameters, an escaped NUL
   ending the part it is in, an empty parameter name skipped, the last of a
-  repeated parameter taken, the VFS the URI or the driver names — and so is
-  the one `connectionScoped` reads; a reading that differs from SQLite's opens a
-  shape nothing bounds, or a private database under a pool. The cases in
-  `scope_test.go` hold both readings to what two real connections observe.
+  repeated parameter taken, the VFS the URI or the driver names, the driver's
+  as a C string ending at a NUL — and so is the one `connectionScoped` reads; a
+  reading that differs from SQLite's opens a shape nothing bounds, or a private
+  database under a pool. The cases in `scope_test.go` hold both readings to
+  what two real connections observe.
 - **Every wrap uses `%w`.** A `%v` leaves the text all but identical and makes
   the sentinel unreachable, which is the failure the note in `errors.go` exists
   to prevent; the error-chain cases hold each path to it.
