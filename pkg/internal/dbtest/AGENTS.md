@@ -11,8 +11,10 @@ because a handle a test opens itself is not what an assembly hands a module:
 it carries none of what the database module installs — the engine marker, the
 constraint classification, the field encryption — nor the pool shape it gives
 a locator, such as the one connection of an in-memory database. The tenant
-roster, the settings store and the audit journal are tested on it; a copy of
-this fixture in each would differ in nothing and drift apart. Its placement follows
+roster, the settings store, the audit journal and the outbox relay are tested
+on it, and so are the rate limiter's domain cases, which drive the settings
+module over it; a copy of this fixture in each would differ in nothing and
+drift apart. Its placement follows
 [`adr-shared-backend-unit-2026-09-21.md`](../../../docs/adr/adr-shared-backend-unit-2026-09-21.md):
 a fixture with no wrapper package of its own is a unit of its own under the
 `pkg` module's `internal/`.
@@ -33,7 +35,13 @@ a fixture with no wrapper package of its own is a unit of its own under the
 
 ## Running it
 
-It is exercised through its callers — `go -C pkg test ./tenant/... ./settings/...
-./audit/...` — and needs nothing but the Go toolchain for SQLite, and the docker
-CLI for the PostgreSQL cases, which `pgtest` skips on a machine without docker
-unless `CI` is set.
+It is exercised through its callers, the packages whose tests import it, which
+`grep -rl --include='*_test.go' pkg/internal/dbtest pkg` lists:
+
+```
+go -C pkg test ./tenant/... ./settings/... ./ratelimit/... ./audit/... ./event/outbox/...
+```
+
+It needs nothing but the Go toolchain for SQLite, and the docker CLI for the
+PostgreSQL cases, which `pgtest` skips on a machine without docker unless `CI`
+is set.
