@@ -56,6 +56,20 @@ package tenant
 // keyed by its tenant alone, which is a modelling mistake rather than something
 // worth guarding against.
 //
+// A many-to-many association of a model that embeds this goes through a join
+// table, and the join table is scoped by the tenant the association's keys
+// write into it, whether GORM builds its model or SetupJoinTable names one, and
+// whether or not that model embeds this: a scoped side joined by its whole key
+// puts its tenant into the link, and the column that tenant lands on is the
+// join table's tenant column. The tenants the scoped sides put there have to
+// land on one column — joinForeignKey and joinReferences naming the tenant
+// column first on both sides — and a join table where they land on two
+// columns, or where no scoped side puts its tenant at all, is refused on every
+// statement, as a model embedding this where GORM does not read it is. The
+// association mode addresses the owner and the records it is given by their
+// whole key, and the tenant half of a key left unwritten is filled from the
+// context there as well.
+//
 // One obligation stays with the module that declares the table, because this
 // one does not read other modules' models: the migration must declare the same
 // key this type does. Column order, type and the NOT NULL are the rest of it.

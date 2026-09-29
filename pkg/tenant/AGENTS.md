@@ -16,7 +16,7 @@ keeps the roster and filters statements to the tenant they carry.
   `adr-tenant-directory-2026-09-21`, `adr-tenant-isolation-2026-09-21`,
   `adr-tenant-scoping-2026-09-21`, `adr-tenant-guarantees-2026-09-21`,
   `adr-tenant-scoping-2026-09-28`, `adr-tenant-scoping-2026-09-29`,
-  `adr-tenant-directory-2026-09-29`.
+  `adr-tenant-directory-2026-09-29`, `adr-tenant-isolation-2026-09-29`.
 - The API itself: the godoc in this package. Read `Model`'s comment and
   `CrossTenant`'s before writing a scoped model.
 
@@ -129,6 +129,22 @@ here must not cross, and how to run it.
   question is put to the database rather than to the error text; this
   module's own answers — a conflict, a registration already there, an unknown
   tenant — are not followed by it (`answered`).
+- **GORM's association mode is filtered as any statement is, and a join table
+  by the tenant the association's keys put into it** (`catalog/associations.go`).
+  The association mode writes the whole key of the owner and of the records it
+  is given into a statement's conditions before any callback runs, so the tenant
+  half a caller leaves unwritten is filled there from the context (`keyHalves`),
+  on the statement's own tenant column only — an empty identifier on another
+  column is the caller's condition, not a key GORM wrote — and a half naming
+  another tenant refuses a write. A join table's tenant column is the column a
+  scoped side's key puts its tenant on (`joinTenantField`), found through the
+  relationships GORM hangs on the join table's schema (`joinedBy`); the read that
+  joins it into the other side by its table name is judged off its ON
+  (`fromJoins`). Taking the join model's own convention for the tenant column is
+  the shape to reject: GORM builds a join model of its own that embeds nothing,
+  and the read joining by name never sees the model. Two tenant columns, or a
+  scoped side and none, is refused rather than filtered twice or passed as
+  global.
 - **The roster table does not embed the convention.** It is the fact scoping is
   decided from, so a read of it that needed a tenant first would have nothing to
   read it with. It is not special-cased anywhere: it takes the same path through
@@ -229,6 +245,21 @@ tenant half to the filter and conflicts on the context tenant's own row; a save
 that must stay a save writes the tenant half itself, from `FromContext`
 (`catalog/writes_test.go`).
 
+A many-to-many association between scoped models names one tenant column for
+both keys in its join table, and needs no join model of its own for it:
+
+```go
+Contacts []Contact `gorm:"many2many:deal_contacts;joinForeignKey:TenantID,DealID;joinReferences:TenantID,ContactID"`
+```
+
+Without the two tags GORM gives each side a tenant column of its own in the join
+table, and every statement through it is refused. An association by a foreign
+key carrying the tenant column — a has-many by `foreignKey:TenantID,DealID` —
+reads and adds within the tenant, and its removal is refused: GORM takes a
+record off its owner by writing a null into every column of the foreign key,
+the tenant column among them. The unscoped removal, which deletes the record,
+stays in the tenant (`catalog/associations_test.go`).
+
 A model that should be scoped and does not embed this reads exactly like a table
 that is global on purpose, and nothing says which it is. That is the one failure
 this convention cannot catch, and it is why the design writes it as a
@@ -283,7 +314,12 @@ association join, a subquery rendered into another statement;
 convention is pinned in one matrix on both dialects — the shapes scoped, a
 prefixed column and a field taking the column over included, the shapes
 refused, and the lookalikes left global — and where a join is recognised as
-the model it reaches;
+the model it reaches; `pkg/tenant/catalog/associations_test.go` is where every
+shape of a many-to-many association is pinned the same way — its join table
+scoped, refused, or joined by name where the filter sees no tenant — with each
+statement of the association mode on an owner and records addressed by the rest
+of their keys, and where an association by the whole key and a deletion of
+links between loaded records are;
 `pkg/tenant/catalog/targets_test.go`
 is where an assignment's target is read the way each database reads it, on both
 dialects; `pkg/tenant/catalog/create_test.go` is where a registration that must

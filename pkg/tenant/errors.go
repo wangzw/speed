@@ -146,6 +146,14 @@ var (
 	// column empty or null, and an empty identifier bound into a statement
 	// on a handle no filter is installed on. The context of either carries
 	// no tenant, and the fix is the same — name one.
+	//
+	// So is every statement, under any context, through a model or a
+	// many-to-many join table no one tenant column can be taken from, and a
+	// read joining such a join table by its name: no row through it can
+	// reach one tenant. The message names the model or the table and why, and
+	// the fix is in the declaration — the convention embedded where GORM reads
+	// it, and once, or an association joining its scoped models by keys whose
+	// tenant halves land on one column of the join table.
 	ErrNoTenantInContext = errors.New("tenant: a scoped statement has no tenant in its context")
 
 	// ErrExplicitTenantMismatch reports a write that names a tenant column
@@ -161,5 +169,10 @@ var (
 	// under any context, crossing tenants included: it may be the tenant
 	// column, and what it writes there cannot be told. The fix is to name the
 	// column alone.
+	//
+	// A write addressed by a key whose tenant half names another tenant is
+	// reported through it too: a struct's key, and the key GORM's association
+	// mode writes into a statement's conditions from the owner and the records
+	// it is given. The fix is to leave that half to the filter.
 	ErrExplicitTenantMismatch = errors.New("tenant: a write names a tenant other than its context's")
 )
