@@ -22,7 +22,10 @@ type timing struct {
 	// burst is how soon the loop reads the table after a row was staged here.
 	// The row is staged inside the caller's transaction and is visible from
 	// its commit on, which nothing reports, so the loop reads again after
-	// burst, twice burst, and so on until the interval reaches poll.
+	// burst, twice burst, and so on until the interval reaches poll. A
+	// staging brings the next read forward to burst from then and never puts
+	// off one due sooner, so under a steady stream of stagings the loop
+	// still reads at least every burst.
 	burst time.Duration
 	// claim is how long a relay holds the rows it claimed. Another relay takes
 	// a row whose claim has run out, which is how the rows a replica held when
@@ -82,15 +85,18 @@ type staged struct {
 // lastErrorLimit bounds the refusal text a row keeps, in bytes.
 const lastErrorLimit = 2000
 
-// run is the loop. It reads the table at start, whenever a staging here was
-// followed by the burst schedule, when the next row falls due, and at least
-// every poll; on its way out it gives back every row it still holds.
+// run is the loop. It reads the table at start; after a staging here, on the
+// burst schedule; when the next row falls due; and, while the table can be
+// read, at least every poll. On its way out it gives back every row it still
+// holds.
 func (r *relay) run() {
 	defer close(r.done)
 	defer r.releaseAll()
 
 	timer := time.NewTimer(0)
 	defer timer.Stop()
+	// due is when the timer fires, which is when the loop next reads.
+	due := time.Now()
 	var burst time.Duration
 	failures := 0
 	for {
@@ -99,9 +105,14 @@ func (r *relay) run() {
 			return
 		case <-r.nudges:
 			// The row is not visible until its transaction commits, so the
-			// first read waits the burst rather than happening now.
+			// first read waits the burst rather than happening now. The
+			// read is brought forward and never put off: stagings closer
+			// together than the burst would otherwise put it off for good.
 			burst = r.timing.burst
-			timer.Reset(burst)
+			if soon := time.Now().Add(burst); soon.Before(due) {
+				timer.Reset(burst)
+				due = soon
+			}
 			continue
 		case <-timer.C:
 		}
@@ -129,6 +140,7 @@ func (r *relay) run() {
 			}
 		}
 		timer.Reset(delay)
+		due = time.Now().Add(delay)
 	}
 }
 

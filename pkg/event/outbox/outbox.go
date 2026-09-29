@@ -57,8 +57,8 @@ var ErrOtherDatabase = errors.New("outbox: the transaction is not on the deliver
 // transaction rolled back is never published. Publication follows the commit
 // rather than happening inside it, so a consumer hears of the write after the
 // write is visible, and within the time the relay takes to reach the row —
-// promptly on the replica that staged it, within the relay's polling interval
-// on any other.
+// promptly on the replica that staged it, however steadily that replica goes
+// on staging, and within the relay's polling interval on any other.
 //
 // At least once is the most a relay can promise: a relay that loses its claim
 // on a row, or cannot remove a row the bus has accepted, leaves it to be

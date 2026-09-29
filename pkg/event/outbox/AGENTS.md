@@ -62,6 +62,10 @@ must not cross, and how to run it.
   `TestAClaimSkipsTheRowsAnotherClaimIsTaking`.
 - **A row is handed to the bus only while its claim outlasts one publish.** Past
   that point another relay may be taking it over, and both would publish it.
+- **A staging brings the relay's next read forward and never puts it off.** A
+  read put off by every staging never comes while stagings keep arriving closer
+  together than the burst, and nothing is published until they pause. The case
+  that holds this is `TestASteadyStreamOfStagingsNeverStarvesTheRelay`.
 - **A refused row is never dropped.** There is no dead letter and no attempt
   limit; the row carries its refusals and the last reason, and waits a growing
   delay.
