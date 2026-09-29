@@ -57,13 +57,18 @@ import (
 // Every handle also carries, in its plugin table, the engine behind it, which is
 // how a callback holding only a statement reads the statement's identifiers by
 // that engine's rules.
+//
+// Every handle logs through statementLogger, which writes a failed or slow
+// statement to standard output without a value the statement binds or reads.
 func openHandle(ctx context.Context, spec Spec, cfg lockingConfig) (*gorm.DB, error) {
 	// The locator is normalised once, and the dialector is the only reader:
 	// the stance judged the trimmed text, so the driver has to be handed the
 	// same one rather than the text with its surrounding whitespace intact.
 	locator := strings.TrimSpace(cfg.DSN)
 	dialector := classifyingDialector{Dialector: spec.Dialector(locator), classify: spec.ConstraintViolation}
-	session, err := gorm.Open(dialector, &gorm.Config{DisableAutomaticPing: true, TranslateError: true})
+	session, err := gorm.Open(dialector, &gorm.Config{
+		DisableAutomaticPing: true, TranslateError: true, Logger: standardOutput(),
+	})
 	if err != nil {
 		return nil, fmt.Errorf("%w: opening a %s connection failed: %w",
 			ErrConnectFailed, spec.Dialect, err)

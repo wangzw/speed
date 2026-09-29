@@ -26,6 +26,8 @@ same capability exclusively.
   ([`adr-db-errors-2026-09-28.md`](../../docs/adr/adr-db-errors-2026-09-28.md)),
   how a module's own statements take a connection within a bounded wait
   ([`adr-db-waits-2026-09-29.md`](../../docs/adr/adr-db-waits-2026-09-29.md)),
+  why the GORM logger a handle carries writes no statement's values
+  ([`adr-db-logging-2026-09-29.md`](../../docs/adr/adr-db-logging-2026-09-29.md)),
   why this package's interface exposes GORM
   ([`adr-module-packaging-2026-09-14.md`](../../docs/adr/adr-module-packaging-2026-09-14.md)),
   and where a driver is allowed to live
@@ -149,6 +151,16 @@ must not cross, and how to run it.
   out of the locator instead misses every spelling of the pragma and every
   connection a statement changed. `readonly_test.go` runs a transaction on
   each read-only shape.
+- **The GORM logger every handle carries writes no value a statement binds or
+  reads** (`statementLogger`, `adr-db-logging-2026-09-29`). It answers GORM's
+  `ParamsFilter` with no values, so the text GORM hands `Trace` keeps its
+  placeholders, and it writes a failed statement's error classes
+  (`failureClasses`) instead of its text, which can quote a value. A logger
+  wrapping GORM's own to change what it writes reports its own file as every
+  line's call site, since GORM names the first frame outside its source; each
+  method here asks `utils.FileWithLineNum` itself for that reason. The logging
+  case in `internal/dbsuite` reads a child process's real standard output on
+  both engines.
 - **Every wrap uses `%w`.** A `%v` leaves the text all but identical and makes
   the sentinel unreachable, which is the failure the note in `errors.go` exists
   to prevent; the error-chain cases hold each path to it.
@@ -210,7 +222,7 @@ gate. `internal/dbhost` is the test host the multi-process cases build and run;
 `pkg/internal/pgpool/pgtest` is the container fixture, shared with the key-value and
 event modules' postgres backends; `internal/dbsuite` holds the
 engine-neutral migration cases each engine's fixture is driven through, and the
-constraint-refusal, refused-commit, concurrent read-then-write and connection
-cases each engine runs on the handle its module delivers. `pkg/internal/dbtest` delivers this module's
+constraint-refusal, refused-commit, concurrent read-then-write, connection and
+logging cases each engine runs on the handle its module delivers. `pkg/internal/dbtest` delivers this module's
 capability to other modules' tests, for the ones that exercise what an assembly
 hands them.

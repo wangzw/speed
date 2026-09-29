@@ -528,11 +528,14 @@ func divide(t *testing.T, results []replicaRun) (applier, noop replicaRun) {
 			t.Errorf("%s exited %d, and both replicas have to start successfully:\nstdout:\n%s\nstderr:\n%s",
 				result.role, result.exit, result.stdout, result.stderr)
 		}
-		// Both streams, because the driver's own report of the collision does
-		// not travel the way this host's errors do: GORM's default logger is
-		// what writes a failed statement out, and it writes to standard
-		// output, on the same stream the markers arrive on.
-		if strings.Contains(result.stderr+result.stdout, "already exists") {
+		// Both streams: the driver's report of the collision reaches standard
+		// error with the startup failure it causes, and the database
+		// module's logger writes the failed statement to standard output, on
+		// the stream the markers arrive on, with its SQLSTATE in place of the
+		// driver's text — 42P07 for a table that already exists, 42710 for
+		// another object.
+		if strings.Contains(result.stderr+result.stdout, "already exists") ||
+			strings.Contains(result.stdout, "SQLSTATE 42P07") || strings.Contains(result.stdout, "SQLSTATE 42710") {
 			t.Errorf("%s failed on an object that already exists, which is the collision the migration "+
 				"mutex is there to prevent:\nstdout:\n%s\nstderr:\n%s",
 				result.role, result.stdout, result.stderr)

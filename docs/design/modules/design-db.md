@@ -211,9 +211,11 @@ type Plugin struct {
 
 只含空白字符的 `dsn` 等同未提供，同样启动失败并点名该键。**采纳的读法**：空白即未提供。**考虑过而放弃的读法**：把空白串算作提供了；放弃的理由是失败会挪到驱动，报出来的是驱动自己的语法错误，而不是那个被写空的键——操作者拿到的线索指向了错误的地方。
 
-**日志**。交付的句柄与自建的连接都携带 GORM 的默认 logger。**采纳的读法**：维持默认 logger。**考虑过而放弃的读法**：把 GORM 的 logger 接到 [log](design-log.md) 模块上，或把它作为一项配置交出去；放弃的理由：维持现状是在知悉下列代价之后作出的取舍，本模块不为它另编技术理由。
+**日志**。交付的句柄与自建的连接都携带本模块装上的 GORM logger，它写出的内容里没有语句绑定的或读出的值，两个引擎上相同（[ADR-db-logging-2026-09-29](../../adr/adr-db-logging-2026-09-29.md)）。失败的语句与慢于 200ms 的语句经标准库 `log` 写**标准输出**，`LogMode(logger.Info)` 派生的会话——`Debug` 即是——写出它的每一条语句。语句照 GORM 为日志渲染的文本写出，占位符不填：口令哈希、邮箱、密文这些绑定到占位符上的值一个也不写，PostgreSQL 的占位符照 GORM 的渲染写作 `$1$`。失败的语句不写错误文本，只写错误带着的、文本固定的类别：GORM 的查不到行与两个约束哨兵，上下文的取消与到期，PostgreSQL 的 SQLSTATE、SQLite 的结果码；错误文本可能引用值——PostgreSQL 拒绝格式不对的输入时引用那个输入，database/sql 扫描不了一个读出的值时引用那个值——完整的错误原样交给调用方。每一行报出发出语句的调用点。
 
-代价原样写在这里：SQL 错误与慢 SQL（阈值 200ms）经标准库 `log` 写**标准输出**，绕过日志模块；`First`、`Take`、`Last` 查不到行也按错误打印，连同整条语句；慢 SQL 把整条语句连同注释原文照发，一次并发迁移中，施加方的标准输出上出现过整份迁移文件的正文。本模块不交出替换它的口子，`gorm.Config` 在 `openHandle` 里构造。依赖方可以在自己的语句上换掉它：`DB().Session(&gorm.Session{Logger: ...})` 只作用于由这个会话派生的语句。直接改交付句柄上的 `Logger` 不受支持：那份配置由每个模块的语句共用，交付之后再改，会与在途的语句竞争，也与此后句柄只读相悖。
+语句文本里本来就有的东西照写：调用方写进 SQL 的字面量、拼进文本的值、迁移文件的正文都是文本而不是绑定值。GORM 自己的消息——回调的增删、迁移器解析不了的模型——照 GORM 的格式写出。
+
+代价原样写在这里：日志绕过日志模块，写标准输出；`First`、`Take`、`Last` 查不到行也按失败写出，连同整条语句；慢 SQL 把整条语句连同注释原文照发，一次并发迁移中，施加方的标准输出上出现过整份迁移文件的正文；日志里只有失败的类别，约束名与错误原文在调用方拿到的错误里。本模块不交出替换它的口子，`gorm.Config` 在 `openHandle` 里构造。依赖方可以在自己的语句上换掉它：`DB().Session(&gorm.Session{Logger: ...})` 只作用于由这个会话派生的语句。直接改交付句柄上的 `Logger` 不受支持：那份配置由每个模块的语句共用，交付之后再改，会与在途的语句竞争，也与此后句柄只读相悖。
 
 ## 依赖
 
@@ -429,6 +431,7 @@ sequenceDiagram
 | 不经模型字段的读写 | 已实现 | `pkg/db/encryptedwrites.go` `sealUpdate`、`sealCreate`、`refuseUnsealedStruct`、`refuseSpelledInsert`、`insertWrites`、`shadowingField`、`pkg/db/encryptedreads.go` `guardReads`、`guardRowReads`、`refusedRow`、`refuseRenamedRead`、`mentions`、`pkg/db/identifiers.go` `sealedTarget`、`namesColumn` |
 | 约束拒绝的识别 | 已实现 | `pkg/db/constraints.go` `classifyingDialector`、`installRowClassification`、`pkg/db/sqlite/sqlite.go` `constraintViolation`、`pkg/db/postgres/postgres.go` `constraintViolation` |
 | SQLite 事务的开启方式 | 已实现 | `pkg/db/sqlite/transactions.go` `transactionConn.BeginTx`、`transactionConn.queryOnly`、`pkg/db/sqlite/locator.go` `beginStatement` |
+| 不带值的语句日志 | 已实现 | `pkg/db/logger.go` `statementLogger`、`failureClasses`、`pkg/db/open.go` `openHandle` |
 | SQLite 被拒提交的回滚 | 已实现 | `pkg/db/sqlite/transactions.go` `transaction.Commit` |
 | 插件的安装 | 已实现 | `pkg/db/plugins.go` `collectPlugins`、`installPlugins`、`pkg/db/handle.go` `newDatabase` |
 | 迁移的收齐与应用 | 已实现 | `pkg/db/migrate.go` `collectMigrations`、`applyMigrations` |
