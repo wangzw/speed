@@ -45,7 +45,11 @@ must not cross, and how to run it.
   a publisher cannot tell apart, and the one action the floor exists to support —
   treating the error as "this did not get out" — would silently become wrong.
   An implementation may promise more than the floor and says so in its own
-  documentation; a caller may rely on the floor alone.
+  documentation; a caller may rely on the floor alone. The floor has one window
+  no implementation reached over a connection can close: a request the server
+  took, whose reply was lost on the way back. The call returns an error with the
+  event stored, and no client can tell that from a request that never arrived
+  ([`docs/design/modules/design-event.md`](../../docs/design/modules/design-event.md)).
 - **A subscriber cannot name a publisher's type.** The payload is read through
   the helpers in this package, by field spelling. An implementation that
   type-asserts a payload has stopped being an implementation of this interface,

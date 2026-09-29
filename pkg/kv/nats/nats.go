@@ -138,9 +138,19 @@ func open(ctx context.Context, cfg *Config) (kv.KV, error) {
 		// client's default gives up after sixty attempts two seconds apart
 		// and closes the connection for good, so an outage of a few minutes
 		// would leave every operation failing until the process restarted,
-		// long after the server was back. An operation during the outage
-		// fails on its own deadline either way.
-		nats.MaxReconnects(-1))
+		// long after the server was back. An operation issued during the
+		// outage fails rather than waiting the outage out.
+		nats.MaxReconnects(-1),
+		// The client's buffer of outgoing data during a reconnect is off, so a
+		// write it cannot reach the server with fails at once instead of being
+		// sent once the connection came back. The capability hands a failed
+		// write to the caller as one that did not happen, and the caller
+		// decides by the operation's own idempotence whether to retry it; a
+		// write carried out after that decision is a count taken twice, which
+		// is what the capability rules out for the client library to do on its
+		// own. The library spells "off" as -1; zero is read as "unset" and
+		// puts its eight-megabyte default back.
+		nats.ReconnectBufSize(-1))
 	if err != nil {
 		return nil, fmt.Errorf("%s: connecting: %w", ModuleName, err)
 	}

@@ -205,6 +205,14 @@ func open(ctx context.Context, cfg *Config, logger *slog.Logger) (event.Bus, err
 		// closed for good: every publish and every fetch would fail until the
 		// process restarted, whenever the server came back.
 		nats.MaxReconnects(-1),
+		// The client's buffer of outgoing data during a reconnect is off, so a
+		// publish it cannot reach the server with fails at once. Held in that
+		// buffer, the publish would be sent once the connection came back —
+		// after the caller had been told the bus refused it, which is the one
+		// thing design-event's lower bound rules out. The library spells "off"
+		// as -1; zero is read as "unset" and puts its eight-megabyte default
+		// back.
+		nats.ReconnectBufSize(-1),
 		// Losing the server and getting it back are the only signals of a bus
 		// that cannot deliver, so both reach the assembly's log. A clean close
 		// reports no error and says nothing.
@@ -343,6 +351,14 @@ func (b *bus) ensureStream(ctx context.Context, eventType string) error {
 func (b *bus) Subscribe(eventType string, h event.Handler) { b.table.Subscribe(eventType, h) }
 
 // Publish writes the event to its stream.
+//
+// A non-nil return means the event was not stored. The connection holds no
+// queue of outgoing data across a reconnect, so a publish issued while the
+// server is unreachable fails then and there rather than being sent once the
+// connection is back. The one window this leaves is a request already on its
+// way when the link broke: its acknowledgement can be lost on the way back,
+// and the server may have stored the event although the call returned an
+// error.
 //
 // The stream is created on demand, because JetStream has no equivalent of the
 // automatic creation a Redis stream gets from its first append: without this a
