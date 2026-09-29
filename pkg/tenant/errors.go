@@ -153,7 +153,11 @@ var (
 	// reach one tenant. The message names the model or the table and why, and
 	// the fix is in the declaration — the convention embedded where GORM reads
 	// it, and once, or an association joining its scoped models by keys whose
-	// tenant halves land on one column of the join table.
+	// tenant halves land on one column of the join table. And so is every
+	// statement through a scoped model declaring a many-to-many association
+	// with a global model whose read cannot be held to a tenant — one joining
+	// the model by the rest of its key, or through a tenant field that is not
+	// an ID — whose fix is the whole key, or the field declared as an ID.
 	ErrNoTenantInContext = errors.New("tenant: a scoped statement has no tenant in its context")
 
 	// ErrExplicitTenantMismatch reports a write that names a tenant column

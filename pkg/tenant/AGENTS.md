@@ -154,7 +154,12 @@ here must not cross, and how to run it.
   the shape to reject: GORM builds a join model of its own that embeds nothing,
   and the read joining by name never sees the model. Two tenant columns, or a
   scoped side and none, is refused rather than filtered twice or passed as
-  global.
+  global. That read carries nothing of the owner, so where the other side is
+  global and the owner's key puts no identifier into its ON — joined by the
+  rest of its key, or through a tenant field that is not an `ID` — the owner is
+  refused on every statement (`unjudgedRead`). The read itself, on an owner no
+  statement goes through, is the design's non-guarantee; reaching GORM's
+  unexported schema cache to judge it is the shape to reject.
 - **The roster table does not embed the convention.** It is the fact scoping is
   decided from, so a read of it that needed a tenant first would have nothing to
   read it with. It is not special-cased anywhere: it takes the same path through
@@ -263,7 +268,11 @@ Contacts []Contact `gorm:"many2many:deal_contacts;joinForeignKey:TenantID,DealID
 ```
 
 Without the two tags GORM gives each side a tenant column of its own in the join
-table, and every statement through it is refused. An association by a foreign
+table, and every statement through it is refused. A many-to-many association
+with a global model joins by the whole key too, `joinForeignKey:TenantID,DealID`,
+and needs the field bound to the tenant column to be an `ID`: otherwise its read
+cannot be held to a tenant, and the model declaring it is refused on every
+statement. An association by a foreign
 key carrying the tenant column — a has-many by `foreignKey:TenantID,DealID` —
 reads and adds within the tenant, and its removal is refused: GORM takes a
 record off its owner by writing a null into every column of the foreign key,
@@ -326,10 +335,11 @@ prefixed column and a field taking the column over included, the shapes
 refused, and the lookalikes left global — and where a join is recognised as
 the model it reaches; `pkg/tenant/catalog/associations_test.go` is where every
 shape of a many-to-many association is pinned the same way — its join table
-scoped, refused, or joined by name where the filter sees no tenant — with each
+scoped or refused — with each
 statement of the association mode on an owner and records addressed by the rest
-of their keys, and where an association by the whole key and a deletion of
-links between loaded records are; `pkg/tenant/catalog/provenance_test.go` is where every shape a caller
+of their keys, and where an association by the whole key, a deletion of
+links between loaded records, and an owner refused for an association whose read cannot be held to a tenant
+are; `pkg/tenant/catalog/provenance_test.go` is where every shape a caller
 writes a condition on the tenant column in is judged as written, on both
 dialects, beside the one shape filled, a tuple over the whole key;
 `pkg/tenant/catalog/targets_test.go`

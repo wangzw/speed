@@ -27,7 +27,9 @@ import (
 // joins as well (joinTenantField), whether GORM built its model or
 // SetupJoinTable named one, and whether or not that model embeds the
 // convention: a link row names one row of each side, and a scoped side puts its
-// tenant into the link.
+// tenant into the link. A scoped model declaring an association whose read the
+// filter cannot hold to a tenant is refused as a model no tenant column can be
+// taken from is (unjudgedRead).
 func tenantFieldOf(s *gormschema.Schema) (*gormschema.Field, error) {
 	if s == nil {
 		return nil, nil
@@ -35,7 +37,76 @@ func tenantFieldOf(s *gormschema.Schema) (*gormschema.Field, error) {
 	if joined := joinedBy(s); len(joined) > 0 {
 		return joinTenantField(s, joined)
 	}
-	return conventionFieldOf(s)
+	field, err := conventionFieldOf(s)
+	if err != nil || field == nil {
+		return field, err
+	}
+	if err := unjudgedRead(s, field); err != nil {
+		return nil, err
+	}
+	return field, nil
+}
+
+// unjudgedRead is the refusal of a scoped model declaring a many-to-many
+// association with a global model whose read the filter cannot hold to a
+// tenant, given the field its tenant column is bound to; nil when it declares
+// none.
+//
+// GORM's association mode reads a many-to-many association as a read of the
+// other side, with the join table joined in by its table name, and nothing of
+// the owner reaches that read — not its model, its schema, nor the association:
+// only the ON does, with the owner's key GORM writes there. Where the other
+// side is scoped, the read is held to the tenant by its own model, and the ON
+// ties the join table to that model's key (fromJoins). Where it is global, the
+// tenant half of the owner's key in the ON is all that says which tenant the
+// read is of, and the filter recognises it by its type (onReading). Two
+// declarations leave it out:
+//
+//   - the owner joined by the rest of its key, so that the join table carries
+//     no tenant and the ON binds none;
+//   - the owner's tenant column bound to a field of its own that is not of the
+//     identifier type, whose value in the ON is a plain value like any other.
+//
+// The read of such an association cannot be judged, and reads the links of
+// every tenant. The association is the owner's declaration, so the owner is
+// what is refused: on every statement through it, under any context, as a
+// model embedding the convention where GORM does not read it is. The read on
+// an owner the caller builds by its key goes through no statement of the
+// owner's, and stays out of reach; the design writes it as a non-guarantee.
+func unjudgedRead(s *gormschema.Schema, field *gormschema.Field) error {
+	for _, m := range s.Relationships.Many2Many {
+		if m.Schema != s || m.JoinTable == nil || m.FieldSchema == nil {
+			continue
+		}
+		if other, err := conventionFieldOf(m.FieldSchema); err != nil || other != nil {
+			continue
+		}
+		switch {
+		case linkColumn(m, true, field) == "":
+			return fmt.Errorf("%w: model %s declares %s, a many-to-many association with %s, a global model, "+
+				"through join table %s, and joins it by its key without its tenant column: the read of the "+
+				"association joins that table by name and names no tenant, so it reaches the links of every "+
+				"tenant holding the key; join by the whole key, the tenant column included",
+				tenant.ErrNoTenantInContext, s.Name, m.Name, m.FieldSchema.Name, m.JoinTable.Table)
+		case !identifierField(field):
+			return fmt.Errorf("%w: model %s declares %s, a many-to-many association with %s, a global model, "+
+				"through join table %s, and binds its tenant column to field %s, which is not a tenant.ID: the "+
+				"read of the association joins that table by name and carries the tenant only as that field's "+
+				"value, which the filter cannot tell from any other; declare the field as tenant.ID",
+				tenant.ErrNoTenantInContext, s.Name, m.Name, m.FieldSchema.Name, m.JoinTable.Table, field.Name)
+		}
+	}
+	return nil
+}
+
+// identifierField reports whether a field is of the identifier type, directly
+// or through pointers.
+func identifierField(f *gormschema.Field) bool {
+	t := f.FieldType
+	for t != nil && t.Kind() == reflect.Pointer {
+		t = t.Elem()
+	}
+	return t == identifierType
 }
 
 // joinedBy lists the many-to-many associations a schema is the join table of,

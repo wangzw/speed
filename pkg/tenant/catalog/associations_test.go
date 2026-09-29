@@ -64,7 +64,6 @@ type assocDeal struct {
 	Loose     []assocContact `gorm:"many2many:assoc_loose;foreignKey:ID;joinForeignKey:DealID;references:ID;joinReferences:ContactID"`
 	Stamped   []assocContact `gorm:"many2many:assoc_stamped;foreignKey:ID;joinForeignKey:DealID;references:ID;joinReferences:ContactID"`
 	Misplaced []assocContact `gorm:"many2many:assoc_misplaced;joinForeignKey:TenantID,DealID;joinReferences:TenantID,ContactID"`
-	LooseTags []assocTag     `gorm:"many2many:assoc_loose_tags;foreignKey:ID;joinForeignKey:DealID;joinReferences:TagID"`
 
 	Notes []assocNote `gorm:"foreignKey:TenantID,DealID;references:TenantID,ID"`
 }
@@ -123,11 +122,6 @@ const (
 	joinedInTenant byName = iota
 	// joinRefused is a read refused whatever its context.
 	joinRefused
-	// joinUnseen is a read whose join shows the filter no tenant: the owner's
-	// key names no tenant column, and the other side is global. The join
-	// table's own statements are refused, so no row reaches it through the
-	// filter; the design writes this read as a non-guarantee.
-	joinUnseen
 )
 
 // assocShape is one way of declaring a many-to-many association between a
@@ -225,12 +219,6 @@ var assocShapes = []assocShape{
 		tenant:  "tenant_id", target: "contact_id",
 		seed: "(link_tenant_id, tenant_id, deal_id, contact_id) VALUES ('acme', 'acme', 'twin', 'a'), " +
 			"('globex', 'globex', 'twin', 'b')",
-	},
-	{
-		name: "to a global model, through a join table carrying no tenant", field: "LooseTags",
-		table: "assoc_loose_tags", global: true, expect: refusedShape, byName: joinUnseen,
-		columns: "deal_id TEXT, tag_id TEXT", tenant: "'-'", target: "tag_id",
-		seed: "(deal_id, tag_id) VALUES ('twin', 'a'), ('twin', 'b')",
 	},
 }
 
@@ -619,5 +607,116 @@ func requireNotes(t *testing.T, handle *gorm.DB, want string) {
 	}
 	if strings.Join(got, " ") != want {
 		t.Errorf("the notes are %q, want %q", strings.Join(got, " "), want)
+	}
+}
+
+// assocLooseDeal is a scoped model with a many-to-many association to a global
+// model that joins the deal by the rest of its key, through a join table that
+// carries no tenant.
+type assocLooseDeal struct {
+	tenant.Model
+	ID   string     `gorm:"column:id;primaryKey"`
+	Tags []assocTag `gorm:"many2many:assoc_loose_tags;foreignKey:ID;joinForeignKey:DealID;joinReferences:TagID"`
+}
+
+func (assocLooseDeal) TableName() string { return "assoc_deals" }
+
+// assocTextDeal is a scoped model whose tenant column a string field of its own
+// takes over, with a many-to-many association to a global model by its whole
+// key.
+type assocTextDeal struct {
+	tenant.Model
+	TenantID string     `gorm:"column:tenant_id;primaryKey"`
+	ID       string     `gorm:"column:id;primaryKey"`
+	Tags     []assocTag `gorm:"many2many:assoc_text_tags;joinForeignKey:TenantID,DealID;joinReferences:TagID"`
+}
+
+func (assocTextDeal) TableName() string { return "assoc_deals" }
+
+// GORM's association mode reads a many-to-many association as a read of the
+// other side with the join table joined in by name, and nothing of the owner
+// reaches that read: where the other side is global, the tenant half of the
+// owner's key, recognised by its type, is all that could hold it to a tenant.
+// A scoped model declaring such an association without that half — joining by
+// the rest of its key, or through a tenant field that is not an identifier —
+// is refused on every statement through it, under any context, and nothing is
+// written. The read itself, on an owner no statement goes through, is the
+// design's non-guarantee.
+func TestAnAssociationWhoseReadCannotBeHeldToATenantRefusesItsOwner(t *testing.T) {
+	for name, open := range map[string]func(*testing.T) *gorm.DB{
+		"sqlite": openShapesOnSQLite, "postgres": openShapesOnPostgres,
+	} {
+		t.Run(name, func(t *testing.T) {
+			handle := open(t)
+			createAssociationSides(t, handle)
+			for _, stmt := range []string{
+				"CREATE TABLE assoc_loose_tags (deal_id TEXT, tag_id TEXT)",
+				"INSERT INTO assoc_loose_tags (deal_id, tag_id) VALUES ('twin', 'a'), ('twin', 'b')",
+				"CREATE TABLE assoc_text_tags (tenant_id TEXT NOT NULL, deal_id TEXT NOT NULL, tag_id TEXT NOT NULL)",
+				"INSERT INTO assoc_text_tags (tenant_id, deal_id, tag_id) VALUES ('acme', 'twin', 'a'), " +
+					"('globex', 'twin', 'b')",
+			} {
+				if err := handle.Exec(stmt).Error; err != nil {
+					t.Fatalf("preparing the join tables: %v", err)
+				}
+			}
+			owners := []struct {
+				name, table string
+				model       func() any
+				keyed       func() any
+				all         func() any
+			}{
+				{
+					"joining by the rest of its key", "assoc_loose_tags",
+					func() any { return &assocLooseDeal{} },
+					func() any { return &assocLooseDeal{ID: "twin"} },
+					func() any { return &[]assocLooseDeal{} },
+				},
+				{
+					"through a tenant field that is a string", "assoc_text_tags",
+					func() any { return &assocTextDeal{} },
+					func() any { return &assocTextDeal{ID: "twin"} },
+					func() any { return &[]assocTextDeal{} },
+				},
+			}
+			for _, o := range owners {
+				for _, c := range []struct {
+					name string
+					ctx  context.Context
+				}{
+					{"no tenant", context.Background()},
+					{"acme", scopedContext("acme")},
+					{"across tenants", tenant.CrossTenant(context.Background())},
+				} {
+					db := handle.WithContext(c.ctx)
+					for what, err := range map[string]error{
+						"Find":    db.Find(o.all()).Error,
+						"Create":  db.Create(o.keyed()).Error,
+						"Update":  db.Model(o.model()).Where("id = ?", "twin").Update("id", "twin").Error,
+						"Delete":  db.Where("id = ?", "none").Delete(o.model()).Error,
+						"Preload": db.Preload("Tags").Find(o.all()).Error,
+						"Append":  db.Model(o.keyed()).Association("Tags").Append(&assocTag{ID: "c"}),
+					} {
+						switch {
+						case !errors.Is(err, tenant.ErrNoTenantInContext):
+							t.Errorf("%s through a deal %s under %s gave %v, want ErrNoTenantInContext",
+								what, o.name, c.name, err)
+						case !strings.Contains(err.Error(), "Tags") || !strings.Contains(err.Error(), o.table):
+							t.Errorf("%s through a deal %s under %s gave %q, which names neither the association "+
+								"nor its join table", what, o.name, c.name, err)
+						}
+					}
+				}
+			}
+			var deals int64
+			if err := handle.WithContext(crossContext()).Raw("SELECT count(*) FROM assoc_deals").
+				Scan(&deals).Error; err != nil || deals != 2 {
+				t.Errorf("the deals are %d (%v), want the two seeded", deals, err)
+			}
+			requireLinks(t, handle, assocShape{table: "assoc_loose_tags", tenant: "'-'", target: "tag_id"},
+				"acme:a globex:b")
+			requireLinks(t, handle, assocShape{table: "assoc_text_tags", tenant: "tenant_id", target: "tag_id"},
+				"acme:a globex:b")
+		})
 	}
 }
