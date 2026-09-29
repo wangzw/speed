@@ -2,10 +2,7 @@ package nats
 
 import (
 	"context"
-	"io"
-	"net"
 	"strings"
-	"sync"
 	"testing"
 	"time"
 
@@ -13,123 +10,9 @@ import (
 	"github.com/nats-io/nats.go/jetstream"
 
 	"github.com/vislake/speed/pkg/event"
+	"github.com/vislake/speed/pkg/internal/cutproxy"
 	"github.com/vislake/speed/pkg/internal/natstest"
 )
-
-// cutProxy is a TCP proxy in front of the NATS server that can cut every link
-// it carries and refuse new ones. A cut link is what an operator's cut between
-// the bus and its server looks like from the client's side: the connections
-// are gone, and nothing answers until the link is restored.
-type cutProxy struct {
-	listener net.Listener
-	upstream string
-
-	mu    sync.Mutex
-	cut   bool
-	conns []net.Conn
-	wg    sync.WaitGroup
-}
-
-func startCutProxy(t *testing.T, upstream string) *cutProxy {
-	t.Helper()
-	listener, err := net.Listen("tcp", "127.0.0.1:0")
-	if err != nil {
-		t.Fatalf("listening: %v", err)
-	}
-	p := &cutProxy{listener: listener, upstream: upstream}
-	p.wg.Add(1)
-	go p.serve()
-	t.Cleanup(p.stop)
-	return p
-}
-
-// url is the proxy's address in the form the client takes.
-func (p *cutProxy) url() string { return "nats://" + p.listener.Addr().String() }
-
-func (p *cutProxy) stop() {
-	p.mu.Lock()
-	p.cut = false
-	for _, c := range p.conns {
-		_ = c.Close()
-	}
-	p.conns = nil
-	p.mu.Unlock()
-	_ = p.listener.Close()
-	p.wg.Wait()
-}
-
-func (p *cutProxy) serve() {
-	defer p.wg.Done()
-	for {
-		client, err := p.listener.Accept()
-		if err != nil {
-			return
-		}
-		p.attach(client)
-	}
-}
-
-// attach pairs a client link with the server and copies between them, unless
-// the link is cut, in which case the client is closed at once — a reconnect
-// attempt against a cut link reaches nothing.
-func (p *cutProxy) attach(client net.Conn) {
-	p.mu.Lock()
-	if p.cut {
-		p.mu.Unlock()
-		_ = client.Close()
-		return
-	}
-	server, err := net.Dial("tcp", p.upstream)
-	if err != nil {
-		p.mu.Unlock()
-		_ = client.Close()
-		return
-	}
-	p.conns = append(p.conns, client, server)
-	p.mu.Unlock()
-	p.wg.Add(2)
-	go func() {
-		defer p.wg.Done()
-		_, _ = io.Copy(server, client)
-		_ = server.Close()
-	}()
-	go func() {
-		defer p.wg.Done()
-		_, _ = io.Copy(client, server)
-		_ = client.Close()
-	}()
-}
-
-// cut breaks every link and refuses new ones until restore.
-func (p *cutProxy) cutAll() {
-	p.mu.Lock()
-	p.cut = true
-	conns := p.conns
-	p.conns = nil
-	p.mu.Unlock()
-	for _, c := range conns {
-		_ = c.Close()
-	}
-}
-
-func (p *cutProxy) restore() {
-	p.mu.Lock()
-	p.cut = false
-	p.mu.Unlock()
-}
-
-// await polls cond until it holds or bound passes.
-func await(t *testing.T, bound time.Duration, what string, cond func() bool) {
-	t.Helper()
-	deadline := time.Now().Add(bound)
-	for time.Now().Before(deadline) {
-		if cond() {
-			return
-		}
-		time.Sleep(20 * time.Millisecond)
-	}
-	t.Fatalf("waited %s for %s", bound, what)
-}
 
 // TestAPublishTheCutLinkRefusesIsNotStoredLater is the case for what a failed
 // publish means here, the lower bound design-event states: a publish that
@@ -144,8 +27,8 @@ func await(t *testing.T, bound time.Duration, what string, cond func() bool) {
 // of its own: nothing of that publish may be in it.
 func TestAPublishTheCutLinkRefusesIsNotStoredLater(t *testing.T) {
 	server := natstest.URL(t)
-	proxy := startCutProxy(t, strings.TrimPrefix(server, "nats://"))
-	bus := openBus(t, proxy.url(), "")
+	proxy := cutproxy.Start(t, strings.TrimPrefix(server, "nats://"))
+	bus := openBus(t, "nats://"+proxy.Addr(), "")
 	eventType := nextType()
 	delivered := make(chan event.Event, 8)
 	bus.Subscribe(eventType, func(_ context.Context, evt event.Event) error {
@@ -195,8 +78,8 @@ func TestAPublishTheCutLinkRefusesIsNotStoredLater(t *testing.T) {
 	// down: that is the state in which the client library would otherwise hold
 	// the message in its reconnect buffer and send it once the server
 	// answered again.
-	proxy.cutAll()
-	await(t, 30*time.Second, "the client to notice the cut link", bus.nc.IsReconnecting)
+	proxy.Cut()
+	cutproxy.Await(t, 30*time.Second, "the client to notice the cut link", bus.nc.IsReconnecting)
 
 	// The deadline is shorter than the library's wait between reconnect
 	// attempts (two seconds), so the publish is decided while the link is
@@ -207,8 +90,8 @@ func TestAPublishTheCutLinkRefusesIsNotStoredLater(t *testing.T) {
 		t.Fatalf("a publish issued while the link was cut was accepted")
 	}
 
-	proxy.restore()
-	await(t, 30*time.Second, "the connection to come back", bus.nc.IsConnected)
+	proxy.Restore()
+	cutproxy.Await(t, 30*time.Second, "the connection to come back", bus.nc.IsConnected)
 	// Give a client that kept the publish the moment it needs to send what it
 	// kept, so a kept publish cannot pass this case by arriving late.
 	time.Sleep(time.Second)
