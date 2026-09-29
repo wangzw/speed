@@ -281,6 +281,86 @@ func TestFloatOverflowRejected(t *testing.T) {
 	}
 }
 
+// TestTheLargestFloat32GoesInAsItIsWritten pins where a float32 field's range
+// ends.
+//
+// float32's shortest text for math.MaxFloat32 is 3.4028235e+38, and that text
+// names a number a little above the value itself. It is still a number the
+// field holds by the round-trip rule: its nearest float32 is math.MaxFloat32,
+// which float32 writes as the same text. So a config file, a variable or a
+// flag giving that text sets the field to its largest value. A number whose
+// nearest float32 is an infinity, and one the field would hold as its largest
+// value while writing it as a different number, are refused as every other
+// neighbour is; the infinities themselves pass, as every float type holds
+// them.
+func TestTheLargestFloat32GoesInAsItIsWritten(t *testing.T) {
+	for _, c := range []struct {
+		raw  any
+		want float32
+	}{
+		{3.4028235e38, math.MaxFloat32},
+		{"3.4028235e+38", math.MaxFloat32},
+		{-3.4028235e38, -math.MaxFloat32},
+		{"-3.4028235e+38", -math.MaxFloat32},
+		{float64(math.MaxFloat32), math.MaxFloat32},
+		{math.Inf(1), float32(math.Inf(1))},
+		{math.Inf(-1), float32(math.Inf(-1))},
+	} {
+		if got := decodeTo[float32](t, c.raw); got != c.want {
+			t.Errorf("%v converted to %v, want %v", c.raw, got, c.want)
+		}
+	}
+
+	halfway := 0x1p128 - 0x1p103 // between math.MaxFloat32 and the next power of two
+	for _, raw := range []any{
+		3.40282356e38, "3.40282356e+38",
+		math.Nextafter(halfway, 0), halfway,
+		3.4028236e38, "3.4028236e+38",
+		-1e39, "-1e39",
+	} {
+		decodeRejects[float32](t, raw)
+	}
+}
+
+// TestAFloat32DefaultAtItsLargestTypesBack pins the same line where the help
+// output meets it. The default column writes a float32 field at its own width,
+// so a field declared at math.MaxFloat32 shows 3.4028235e+38, and a reader who
+// copies that onto the command line gets the declared default back rather
+// than a refusal.
+func TestAFloat32DefaultAtItsLargestTypesBack(t *testing.T) {
+	defaults := struct {
+		Ceiling float32
+		Floor   float32
+	}{Ceiling: math.MaxFloat32, Floor: -math.MaxFloat32}
+	for name, want := range map[string]string{"ceiling": "3.4028235e+38", "floor": "-3.4028235e+38"} {
+		t.Run(name, func(t *testing.T) {
+			l := loadOver(t, declaring("edge", Schema{
+				Namespace: "edge",
+				Mounts:    []Mount{{Value: &defaults}},
+				Items: map[string]Item{
+					"ceiling": {Origins: OriginFlag, FlagName: "ceiling"},
+					"floor":   {Origins: OriginFlag, FlagName: "floor"},
+				},
+			}))
+			item := corpusItem(t, l, name)
+			typed := shellWord(t, formatDefault(item))
+			if typed != want {
+				t.Fatalf("--%s renders its default as %q, want float32's own %q", name, typed, want)
+			}
+			if err := giveFlags(t, l, []string{"edge"}, "--"+name+"="+typed); err != nil {
+				t.Fatalf("--%s does not take %q back: %v", name, typed, err)
+			}
+			out := reflect.New(item.typ).Elem()
+			if err := decodeInto(item.path, l.v.Get(item.path), out); err != nil {
+				t.Fatalf("--%s does not take %q back: %v", name, typed, err)
+			}
+			if got := out.Interface(); got != item.def {
+				t.Fatalf("--%s=%s reads back as %#v while the default is %#v", name, typed, got, item.def)
+			}
+		})
+	}
+}
+
 // TestANumberIntoAFloatFieldIsNeverRounded pins that a float field takes only
 // a number it reads back as the one the source gave.
 //

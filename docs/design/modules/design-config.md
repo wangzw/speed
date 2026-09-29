@@ -612,7 +612,7 @@ kv.redis.pool-size   ->   MYAPP_KV__REDIS__POOL_SIZE
 - **实现了 `encoding.TextUnmarshaler` 的类型交由它自己解析**，`time.Time` 因此按它自己的约定处理，无需本机制另立规则。
 - **`time.Duration` 只接受 `time.ParseDuration` 可解的字符串**，`"5m"` 可以，裸数字 `300` 判 `ErrTypeMismatch`。`Duration` 的底层是 `int64` 纳秒，接受裸数字就等于让 `300` 在人眼里是五分钟、在机器上是三百纳秒，而它并不实现 `TextUnmarshaler`，这条规则只能由本机制给出。**这条规则按类型本身判定**：以它为底层定义的新类型（`type Timeout time.Duration`）在反射里只剩底层的 `int64`，与任何一个整数新类型无从区分，因而按整数项处理，裸数字即纳秒，`"5m"` 判 `ErrTypeMismatch`。要让自己的类型按时长解析，给它实现 `encoding.TextUnmarshaler`，它随即成为标量叶子、由它自己解析；或者直接把输入项声明为 `time.Duration`。
 - **数值写入整数字段要求无损**。JSON 格式把写成整数的数按整数交出，一位不丢，与 YAML 解出的类型一致——按 `float64` 交出的话，2^53 以上的整数在任何字段见到它之前就已被舍入；写成小数或带指数的数按 `float64` 交出，写进整数字段是正常用法，`1e3` 即 1000。带小数部分或超出目标宽度的值判 `ErrTypeMismatch`，不做截断。**宽度按目标类型判定，与平台无关**：浮点数超出整数类型的范围时，Go 的转换结果由实现决定，先转换再比较会在截到边界的平台上把越界一位的值当作边界值放过，因此范围在转换之前按浮点数本身判定。
-- **数值写入浮点字段同样不做舍入**。整数要求目标类型能精确表示它：`16777217` 写进 `float32`、`2^53+1` 写进 `float64`，存下的都会是它的邻居，判 `ErrTypeMismatch`。浮点数写进 `float32` 要求按 `float32` 最短的十进制写法读回仍是来源给的那个数：`0.1` 可以，`16777217.0` 读回是 `16777216`、`1e-50` 读回是零，都判 `ErrTypeMismatch`；写进 `float64` 的浮点数原样保存，它就是来源交出的那个值。NaN 与无穷照原样写入。环境变量与命令行只给文本，文本按写法归类：能解成整数的按整数处理，其余按 `float64` 处理，与主配置源解出的类型一致，同一个值从哪一层来都得到同一个裁决。
+- **数值写入浮点字段同样不做舍入**。整数要求目标类型能精确表示它：`16777217` 写进 `float32`、`2^53+1` 写进 `float64`，存下的都会是它的邻居，判 `ErrTypeMismatch`。浮点数写进 `float32` 要求按 `float32` 最短的十进制写法读回仍是来源给的那个数：`0.1` 可以，`16777217.0` 读回是 `16777216`、`1e-50` 读回是零，都判 `ErrTypeMismatch`；写进 `float64` 的浮点数原样保存，它就是来源交出的那个值。NaN 与无穷照原样写入。**`float32` 的范围止于最近的 `float32` 变成无穷之处**，而不是最大有限值本身：最大有限值的最短写法 `3.4028235e+38` 比它略大，最近的 `float32` 仍是它，按读回的规则照收；默认值取最大有限值的字段，帮助输出写的正是这段文本，照抄回命令行得到的仍是默认值。最近的 `float32` 为无穷的有限数判 `ErrTypeMismatch`，在转换之前判定：浮点数超出目标类型的范围时，Go 的转换结果由实现决定。环境变量与命令行只给文本，文本按写法归类：能解成整数的按整数处理，其余按 `float64` 处理，与主配置源解出的类型一致，同一个值从哪一层来都得到同一个裁决。
 
 **容器叶子内部的键按同一条字段名规则映射**：`config` tag 优先，其次 `json` tag，否则字段名转小写短横线。结构体列表整体替换，但把它解成目标类型仍然需要一条键到字段的规则，两处用同一条，配置文件里的写法才不分内外。
 
@@ -691,6 +691,6 @@ kv.redis.pool-size   ->   MYAPP_KV__REDIS__POOL_SIZE
 | JSON 格式实现 | 已实现 | `pkg/config/format/json` |
 | YAML 格式实现 | 已实现 | `pkg/config/format/yaml` |
 | 层叠与配置数据的产出 | 已实现 | `pkg/config/loader.go`；值来自哪一层由 `pkg/config/provenance.go` 自行维持，主配置源的未知键校验在 `pkg/config/data.go` |
-| 取值与类型转换 | 已实现 | `pkg/config/hooks.go` |
+| 取值与类型转换 | 已实现 | `pkg/config/hooks.go` `decodeInto`、`durationHook`、`exactNumberHook`、`fitFloat`、`textScalarHook` |
 | 按路径取值 | 已实现 | `pkg/config/decode.go` |
 | 哨兵错误 | 已实现 | `pkg/config/errors.go` |

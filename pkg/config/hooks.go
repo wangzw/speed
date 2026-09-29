@@ -334,9 +334,17 @@ func fitUnsigned(u uint64, to reflect.Type) (any, error) {
 // float half of the rule the integer fields follow: a value is never stored as
 // its neighbour. NaN and the infinities pass as they are, since every float
 // type holds them.
+//
+// A float whose nearest float32 is an infinity is refused before it is
+// converted, since Go leaves the result of converting a float the target type
+// cannot hold to the implementation. The line is where the nearest float32
+// stops being finite, not math.MaxFloat32 itself: float32 writes its largest
+// value as 3.4028235e+38, a number a little above it whose nearest float32 is
+// that value, so a source giving that text sets the field to its largest value
+// rather than being refused.
 func fitFloat(f float64, to reflect.Type) (any, error) {
 	out := reflect.New(to).Elem()
-	if out.OverflowFloat(f) {
+	if to.Kind() == reflect.Float32 && math.Abs(f) >= float32Infinite && !math.IsInf(f, 0) {
 		return nil, fmt.Errorf("%v does not fit", f)
 	}
 	out.SetFloat(f)
@@ -346,6 +354,11 @@ func fitFloat(f float64, to reflect.Type) (any, error) {
 	}
 	return out.Interface(), nil
 }
+
+// float32Infinite is the smallest magnitude whose nearest float32 is an
+// infinity: halfway between math.MaxFloat32 and 2^128, the next step up, where
+// rounding to nearest even goes to the step, since math.MaxFloat32 is odd.
+const float32Infinite = 0x1p128 - 0x1p103
 
 // readsBackAs reports whether a float held at a narrower precision, written in
 // that precision's shortest form, reads back as want.
