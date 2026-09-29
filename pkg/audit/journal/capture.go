@@ -3,7 +3,6 @@ package journal
 import (
 	"context"
 	"database/sql"
-	"database/sql/driver"
 	"errors"
 	"fmt"
 	"os"
@@ -208,12 +207,14 @@ func onOwnSession(tx *gorm.DB, r row) error {
 // transaction open on the other database. A caller inside a transaction on the
 // delivered handle holds both until after the statement returns. Nothing a
 // statement can see tells that from another writer's brief hold, so the wait is
-// bounded rather than recognised: the connection is taken within openedRowWait,
-// and the lock is waited for only as long as what remains of it. Past the bound
-// the statement fails with ErrWriteFailed naming the wait — a record the
-// statement could not have without waiting on the caller is a record it does not
-// get, and the write it would record does not happen. The connection that tells
-// which of the two ways the row goes is taken within the same bound.
+// bounded rather than recognised: the connection is taken through db.Connection
+// within openedRowWait, which holds the lock waits of the statements run on it
+// to what is left of that bound. Past the bound the statement fails with
+// ErrWriteFailed naming the wait — a record the statement could not have
+// without waiting on the caller is a record it does not get, and the write it
+// would record does not happen. The connection that tells which of the two ways
+// the row goes is taken within the same bound, and telling it waits for no
+// lock.
 //
 // The insert itself runs under the statement's context, not the bound's: the
 // bound is on waiting for what another holds, and cutting a write short once it
@@ -224,47 +225,38 @@ func onOwnSession(tx *gorm.DB, r row) error {
 // gets the record's failure reported the way the statement's is.
 func recordOpened(tx, delivered *gorm.DB, r row) error {
 	ctx := tx.Statement.Context
-	bounded, cancel := context.WithTimeout(ctx, openedRowWait)
-	defer cancel()
-	failed := func(err error) error {
-		if errors.Is(bounded.Err(), context.DeadlineExceeded) && ctx.Err() == nil {
-			return fmt.Errorf("%w: the row of a statement on a connection built with Open was not "+
-				"written to the delivered database within %v, and the statement waits no longer: a "+
-				"transaction the caller holds on the delivered handle keeps what the row needs until "+
-				"after the statement returns: %w", audit.ErrWriteFailed, openedRowWait, err)
+	// db.Connection ends a lock wait its bound cuts short no sooner than the
+	// bound after the call began, so a failure that came at or past this
+	// instant is one the bound ended.
+	bounded := time.Now().Add(openedRowWait)
+	var same, told bool
+	err := db.Connection(ctx, delivered, openedRowWait, func(session *gorm.DB) error {
+		var err error
+		if same, err = reachesDeliveredTable(ctx, tx, session.Statement.ConnPool); err != nil {
+			return err
 		}
-		return fmt.Errorf("%w: %w", audit.ErrWriteFailed, err)
-	}
-
-	pool, err := delivered.DB()
-	if err != nil {
-		return fmt.Errorf("%w: the delivered handle has no connection pool: %w", audit.ErrWriteFailed, err)
-	}
-	conn, err := pool.Conn(bounded)
-	if err != nil {
-		return failed(err)
-	}
-	same, err := reachesDeliveredTable(ctx, bounded, tx, conn)
-	if err != nil {
-		_ = conn.Close()
+		told = true
+		if same {
+			return nil
+		}
+		return create(session.Session(&gorm.Session{Logger: tx.Logger}), r)
+	})
+	switch {
+	case err == nil && same:
+		return onOwnSession(tx, r)
+	case err == nil:
+		return nil
+	case ctx.Err() == nil && !time.Now().Before(bounded):
+		return fmt.Errorf("%w: the row of a statement on a connection built with Open was not "+
+			"written to the delivered database within %v, and the statement waits no longer: a "+
+			"transaction the caller holds on the delivered handle keeps what the row needs until "+
+			"after the statement returns: %w", audit.ErrWriteFailed, openedRowWait, err)
+	case !told:
 		return fmt.Errorf("%w: telling whether a connection built with Open reaches the delivered "+
 			"database's audit table: %w", audit.ErrWriteFailed, err)
-	}
-	if same {
-		_ = conn.Close()
-		return onOwnSession(tx, r)
-	}
-	release, err := boundLockWait(delivered, conn, bounded)
-	defer release()
-	if err != nil {
+	default:
 		return fmt.Errorf("%w: %w", audit.ErrWriteFailed, err)
 	}
-	session := delivered.Session(&gorm.Session{NewDB: true, Context: ctx, Logger: tx.Logger})
-	session.Statement.ConnPool = conn
-	if err := create(session, r); err != nil {
-		return failed(err)
-	}
-	return nil
 }
 
 // reachesDeliveredTable reports whether the statement's own session reaches the
@@ -277,43 +269,75 @@ func recordOpened(tx, delivered *gorm.DB, r row) error {
 // main database in, PostgreSQL by the server run, the database and the relation
 // the table's name resolves to on that connection. The statement's side is asked
 // on the statement's own connection, which it already holds; the delivered side
-// on a connection of the delivered pool, which is only ever read.
+// on a connection of the delivered pool, which is only ever read. Neither
+// question waits for a lock another connection holds, so the answer comes even
+// while the statement's own transaction, or another writer, holds the database.
 //
 // A database with no file behind it — SQLite's in-memory and temporary ones —
-// is never taken for the delivered one. A private one belongs to its own
-// connection and cannot be; one in a shared cache has no name the engine
-// reports, so it is not recognised. On an engine this plugin knows no question
-// for, the answer is no, which sends the row through the delivered handle.
-func reachesDeliveredTable(ctx, bounded context.Context, tx *gorm.DB, delivered *sql.Conn) (bool, error) {
+// is never taken for the delivered one: it belongs to its own connection. On an
+// engine this plugin knows no question for, the answer is no, which sends the
+// row through the delivered handle.
+func reachesDeliveredTable(ctx context.Context, tx *gorm.DB, delivered gorm.ConnPool) (bool, error) {
 	own := tx.Statement.ConnPool
 	switch tx.Name() {
 	case sqliteDialector:
-		return sameSQLiteFile(ctx, bounded, own, delivered)
+		return sameSQLiteFile(ctx, own, delivered)
 	case postgresDialector:
-		return samePostgresTable(ctx, bounded, own, delivered)
+		return samePostgresTable(ctx, own, delivered)
 	default:
 		return false, nil
 	}
 }
 
-// sqliteMainFile is the file SQLite keeps a connection's main database in, as
-// the engine resolved it, links followed; it is empty for a database with no
+// sqliteDialector is the name the SQLite engine's GORM dialector answers, which
+// is how a plugin holding nothing but a session tells that engine apart.
+const sqliteDialector = "sqlite"
+
+// sqliteMainFile reads the file SQLite keeps a connection's main database in,
+// as the engine resolved it, links followed; it is empty for a database with no
 // file behind it.
-const sqliteMainFile = "SELECT file FROM pragma_database_list WHERE name = 'main'"
+//
+// It is the pragma rather than its table-valued form, which reads the same
+// list: the table-valued form is a query, and a query waits for a shared lock
+// that a writer committing, or a transaction holding the database, keeps from
+// it; the pragma takes no lock.
+func sqliteMainFile(ctx context.Context, conn gorm.ConnPool) (string, error) {
+	rows, err := conn.QueryContext(ctx, "PRAGMA database_list")
+	if err != nil {
+		return "", err
+	}
+	defer func() { _ = rows.Close() }()
+	for rows.Next() {
+		var seq int64
+		var name string
+		var file sql.NullString
+		if err := rows.Scan(&seq, &name, &file); err != nil {
+			return "", err
+		}
+		if name == "main" {
+			return file.String, rows.Err()
+		}
+	}
+	if err := rows.Err(); err != nil {
+		return "", err
+	}
+	return "", errors.New("the connection lists no main database")
+}
 
 // sameSQLiteFile reports whether two SQLite connections keep their main
 // database in one file. The engine's own path decides, links resolved, and a
 // second name of one file the engine does not resolve to the same path — a hard
 // link — is recognised by the file system.
-func sameSQLiteFile(ctx, bounded context.Context, own gorm.ConnPool, delivered *sql.Conn) (bool, error) {
-	var ownFile, deliveredFile string
-	if err := own.QueryRowContext(ctx, sqliteMainFile).Scan(&ownFile); err != nil {
+func sameSQLiteFile(ctx context.Context, own, delivered gorm.ConnPool) (bool, error) {
+	ownFile, err := sqliteMainFile(ctx, own)
+	if err != nil {
 		return false, fmt.Errorf("reading the statement's database file: %w", err)
 	}
 	if ownFile == "" {
 		return false, nil
 	}
-	if err := delivered.QueryRowContext(bounded, sqliteMainFile).Scan(&deliveredFile); err != nil {
+	deliveredFile, err := sqliteMainFile(ctx, delivered)
+	if err != nil {
 		return false, fmt.Errorf("reading the delivered database file: %w", err)
 	}
 	if deliveredFile == "" {
@@ -344,7 +368,7 @@ var postgresTable = fmt.Sprintf(
 // table the name reaches. The server run is when the server started, which two
 // servers holding copies of one database — a restored backup, a promoted
 // standby — do not share.
-func samePostgresTable(ctx, bounded context.Context, own gorm.ConnPool, delivered *sql.Conn) (bool, error) {
+func samePostgresTable(ctx context.Context, own, delivered gorm.ConnPool) (bool, error) {
 	var ownStarted, deliveredStarted time.Time
 	var ownDatabase, deliveredDatabase string
 	var ownRelation, deliveredRelation sql.NullInt64
@@ -354,7 +378,7 @@ func samePostgresTable(ctx, bounded context.Context, own gorm.ConnPool, delivere
 	if !ownRelation.Valid {
 		return false, nil
 	}
-	if err := delivered.QueryRowContext(bounded, postgresTable).
+	if err := delivered.QueryRowContext(ctx, postgresTable).
 		Scan(&deliveredStarted, &deliveredDatabase, &deliveredRelation); err != nil {
 		return false, fmt.Errorf("reading which audit table the delivered connection reaches: %w", err)
 	}
@@ -362,9 +386,9 @@ func samePostgresTable(ctx, bounded context.Context, own gorm.ConnPool, delivere
 		ownRelation == deliveredRelation, nil
 }
 
-// openedRowWait bounds the wait of a row for a statement on a connection built
-// with Open: for a connection of the delivered pool, and for the delivered
-// database's write lock.
+// openedRowWait is the bound db.Connection holds a row for a statement on a
+// connection built with Open to: the wait for a connection of the delivered
+// pool and the waits for the delivered database's locks, together.
 //
 // An insert into the audit table that the delivered database takes at all takes
 // it in milliseconds. Waiting longer only helps when another writer holds the
@@ -373,53 +397,6 @@ func samePostgresTable(ctx, bounded context.Context, own gorm.ConnPool, delivere
 // on the delivered handle no amount of waiting ends it, because what the row
 // waits for is the caller's.
 const openedRowWait = time.Second
-
-// lockWaitMargin is how far past the bound the lock wait runs, so that a write
-// refused for the lock is refused once the bound has passed and is reported as
-// the wait it was.
-const lockWaitMargin = 50 * time.Millisecond
-
-// sqliteDialector is the name the SQLite engine's GORM dialector answers, which
-// is how a plugin holding nothing but a handle tells that engine apart.
-const sqliteDialector = "sqlite"
-
-// boundLockWait holds the wait for the delivered database's write lock on conn
-// to what remains of the bound, where the engine makes one connection's write
-// wait for another's, and returns what hands the connection back to the pool as
-// it was taken.
-//
-// SQLite waits for the lock inside the driver, for the busy timeout the
-// connection carries, and a context that ends meanwhile does not cut that wait
-// short; the connection's own busy timeout is therefore the only bound there
-// is, and it is set for this write and put back after it. A connection whose
-// busy timeout cannot be put back is discarded rather than handed on with this
-// write's bound. An engine without a database-wide write lock needs none of
-// this: its insert into the audit table waits for no other connection.
-func boundLockWait(delivered *gorm.DB, conn *sql.Conn, bounded context.Context) (func(), error) {
-	handBack := func() { _ = conn.Close() }
-	// Name is the dialector's, reached through the handle's configuration.
-	if delivered.Name() != sqliteDialector {
-		return handBack, nil
-	}
-	settle := context.WithoutCancel(bounded)
-	var taken int64
-	if err := conn.QueryRowContext(settle, "PRAGMA busy_timeout").Scan(&taken); err != nil {
-		return handBack, fmt.Errorf("reading the busy timeout of a connection of the delivered database: %w", err)
-	}
-	remaining := lockWaitMargin
-	if deadline, ok := bounded.Deadline(); ok {
-		remaining += max(time.Until(deadline), 0)
-	}
-	if _, err := conn.ExecContext(settle, fmt.Sprintf("PRAGMA busy_timeout = %d", remaining.Milliseconds())); err != nil {
-		return handBack, fmt.Errorf("bounding the lock wait of a connection of the delivered database: %w", err)
-	}
-	return func() {
-		if _, err := conn.ExecContext(settle, fmt.Sprintf("PRAGMA busy_timeout = %d", taken)); err != nil {
-			_ = conn.Raw(func(any) error { return driver.ErrBadConn })
-		}
-		_ = conn.Close()
-	}, nil
-}
 
 // targetTable is the table a statement writes to.
 //

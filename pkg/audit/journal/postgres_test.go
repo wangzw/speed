@@ -9,7 +9,6 @@ import (
 	"testing"
 
 	"github.com/jackc/pgx/v5/pgconn"
-	pgdriver "gorm.io/driver/postgres"
 	"gorm.io/gorm"
 
 	"github.com/vislake/speed/pkg/audit"
@@ -17,6 +16,7 @@ import (
 	"github.com/vislake/speed/pkg/db"
 	dbpostgres "github.com/vislake/speed/pkg/db/postgres"
 	"github.com/vislake/speed/pkg/event"
+	"github.com/vislake/speed/pkg/internal/dbtest"
 	"github.com/vislake/speed/pkg/internal/pgpool/pgtest"
 )
 
@@ -53,19 +53,12 @@ func openPostgresReplicas(t *testing.T) (*gorm.DB, *gorm.DB) {
 	return first, second
 }
 
-// connectPostgres opens a handle with the capture plugin installed on the
-// database the locator names, released when the case ends.
+// connectPostgres is the handle the database module delivers over the database
+// the locator names, released when the case ends, with the capture plugin
+// installed. Each call is a pool of its own, as a replica's is.
 func connectPostgres(t *testing.T, dsn string) *gorm.DB {
 	t.Helper()
-	handle, err := gorm.Open(pgdriver.Open(dsn), quiet())
-	if err != nil {
-		t.Fatalf("opening the handle: %v", err)
-	}
-	t.Cleanup(func() {
-		if pool, err := handle.DB(); err == nil {
-			_ = pool.Close()
-		}
-	})
+	handle := quietly(dbtest.Postgres(t, dsn, nil).DB())
 	if err := handle.Use(newCapture()); err != nil {
 		t.Fatalf("installing the capture plugin: %v", err)
 	}

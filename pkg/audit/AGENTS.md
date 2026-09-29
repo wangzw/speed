@@ -119,19 +119,19 @@ must not cross, and how to run it.
   delivered handle holds that database's write lock — and, on a database held
   to one connection, the connection itself — until after its own call returns,
   so a row that waited for either without a bound would wait on the caller for
-  good. The bound is `openedRowWait` for a statement's row on a connection built
-  with `Open`, and `connectionWait` on taking a connection for the rows this
-  module writes itself. Nothing a row can see tells a caller's own hold from
-  another writer's brief one, which is why the wait is bounded rather than
-  recognised: a bound at zero fails such a write whenever anyone else is
-  writing, and no bound hangs. On SQLite the lock wait happens inside the
-  driver and an ending context does not cut it short, so `boundLockWait` sets
-  the busy timeout of the connection the row takes and puts it back afterwards;
-  a connection whose busy timeout cannot be put back is discarded, never handed
-  back to the pool carrying the row's bound. On a SQLite in-memory database in a
-  shared cache the driver waits for a table lock with neither the busy timeout
-  nor the context ending it, so none of these bounds holds there; the design
-  document carries that as a non-guarantee.
+  good. The connection is taken through `db.Connection`, whose bound covers the
+  wait for it and the insert's wait for a lock together: `openedRowWait` for a
+  statement's row on a connection built with `Open`, and `connectionWait` for
+  the rows this module writes itself. Nothing a row can see tells a caller's own
+  hold from another writer's brief one, which is why the wait is bounded rather
+  than recognised: a bound at zero fails such a write whenever anyone else is
+  writing, and no bound hangs. The bound on a lock wait is the database
+  module's to set — SQLite's busy timeout, which no context ends, PostgreSQL's
+  lock timeout — and this module writes no dialect code of its own for it.
+  Telling which table a connection built with `Open` reaches waits for no lock:
+  SQLite's main file is read with `PRAGMA database_list`, which takes none, not
+  with its table-valued form, which is a query and waits for a shared lock a
+  writer committing keeps from it.
 - **The event column is unique, and the event path's insert yields on it.** A
   broadcast bus hands every event to every replica, every replica writes into
   the one table, and the event's identifier is the same on every delivery, so
@@ -169,7 +169,10 @@ go -C pkg/audit test -race ./...
 GOWORK=off go -C pkg/audit build ./...   # the standalone leg, without the workspace
 ```
 
-Most cases bring up their own in-memory database. The PostgreSQL cases take a
-database of their own on the shared fixture in `pkg/internal/pgpool/pgtest`,
-which starts a container through the docker CLI: they skip on a machine without
-docker, and fail instead where `CI` is set.
+Most cases bring up their own SQLite database, on the handle the database
+module delivers — from `pkg/internal/dbtest`, or through a whole assembly —
+because the rows this module writes itself take their connection through
+`db.Connection`, which refuses a handle opened around that module. The
+PostgreSQL cases take a database of their own on the shared fixture in
+`pkg/internal/pgpool/pgtest`, which starts a container through the docker CLI:
+they skip on a machine without docker, and fail instead where `CI` is set.

@@ -11,7 +11,6 @@ import (
 	"testing"
 	"time"
 
-	sqlitedriver "github.com/glebarez/sqlite"
 	"gorm.io/gorm"
 	"gorm.io/gorm/logger"
 
@@ -19,6 +18,7 @@ import (
 	"github.com/vislake/speed/pkg/core"
 	"github.com/vislake/speed/pkg/db"
 	"github.com/vislake/speed/pkg/event"
+	"github.com/vislake/speed/pkg/internal/dbtest"
 )
 
 // selfWaitTimer is how long a case lets a write run before it counts the write
@@ -216,6 +216,125 @@ func TestAWriteOnAnOpenedConnectionInsideTheCallersTransactionDoesNotWaitOnIt(t 
 	}
 }
 
+// holdTheDatabase begins a transaction that holds the whole of the SQLite
+// database at file, on a pool of its own, and returns what lets it go.
+func holdTheDatabase(ctx context.Context, t *testing.T, database db.Database, file string) (func(), error) {
+	t.Helper()
+	holding, err := database.Open(ctx, file)
+	if err != nil {
+		t.Errorf("opening a pool to hold the database with: %v", err)
+		return nil, errCaseFailed
+	}
+	pool, err := holding.DB()
+	if err != nil {
+		t.Errorf("reaching the holding pool: %v", err)
+		return nil, errors.Join(errCaseFailed, db.Close(holding))
+	}
+	conn, err := pool.Conn(ctx)
+	if err != nil {
+		t.Errorf("taking a connection of the holding pool: %v", err)
+		return nil, errors.Join(errCaseFailed, db.Close(holding))
+	}
+	if _, err := conn.ExecContext(ctx, "BEGIN EXCLUSIVE"); err != nil {
+		t.Errorf("holding the database: %v", err)
+		return nil, errors.Join(errCaseFailed, conn.Close(), db.Close(holding))
+	}
+	return func() {
+		_, _ = conn.ExecContext(context.WithoutCancel(ctx), "ROLLBACK")
+		_ = conn.Close()
+		_ = db.Close(holding)
+	}, nil
+}
+
+// A write on a connection built with Open while another connection holds the
+// whole delivered database fails within its row's bound, however long the
+// delivered connections' own busy timeout: telling that the connection does not
+// reach the delivered table waits for no lock, and the row's wait for the lock
+// is held to what is left of the bound.
+func TestAWriteOnAnOpenedConnectionWhileTheDeliveredDatabaseIsHeldFailsWithinTheBound(t *testing.T) {
+	file := filepath.Join(t.TempDir(), "delivered.db")
+	assembledAt(t, withBusyTimeout(file), nil, func(ctx context.Context, reg *core.Registry) error {
+		database, err := core.Resolve[db.Database](reg)
+		if err != nil {
+			t.Errorf("resolving the database capability: %v", err)
+			return errCaseFailed
+		}
+		handle := database.DB()
+		opened, err := openElsewhere(ctx, t, database)
+		if err != nil {
+			return err
+		}
+		defer func() { _ = db.Close(opened) }()
+		busy := requireOpenedWithTheLocatorsBusyTimeout(ctx, t, handle)
+		release, err := holdTheDatabase(ctx, t, database, file)
+		if err != nil {
+			return err
+		}
+
+		returned, err := within(selfWaitTimer, func() error {
+			return quietly(opened).WithContext(context.Background()).Create(&order{ID: "o1", Note: "elsewhere"}).Error
+		})
+		release()
+		if !returned {
+			t.Errorf("a write on a connection built with Open while the delivered database was held was "+
+				"still waiting after %v", selfWaitTimer)
+			return errCaseFailed
+		}
+		requireRefusedForWaiting(t, err)
+		requireBusyTimeoutsHandedBack(ctx, t, handle, busy)
+		return nil
+	})
+}
+
+// A write on a connection built with Open onto the delivered database itself is
+// recorded on the statement's own session while that connection's own
+// transaction holds the whole database: telling that the connection reaches the
+// delivered table waits for no lock, so it is not left waiting on the lock its
+// own statement holds.
+func TestAConnectionOpenedOntoTheDeliveredDatabaseRecordsWhileItsTransactionHoldsTheDatabase(t *testing.T) {
+	file := filepath.Join(t.TempDir(), "delivered.db")
+	assembledAt(t, withBusyTimeout(file), nil, func(ctx context.Context, reg *core.Registry) error {
+		database, err := core.Resolve[db.Database](reg)
+		if err != nil {
+			t.Errorf("resolving the database capability: %v", err)
+			return errCaseFailed
+		}
+		handle := database.DB()
+		if createErr := handle.Exec(createOrders).Error; createErr != nil {
+			t.Errorf("creating the orders table: %v", createErr)
+			return errCaseFailed
+		}
+		// Every transaction on this connection begins by taking the whole
+		// database.
+		again, err := database.Open(ctx, file+"?_txlock=exclusive")
+		if err != nil {
+			t.Errorf("opening the delivered database a second time: %v", err)
+			return errCaseFailed
+		}
+		defer func() { _ = db.Close(again) }()
+
+		returned, err := within(selfWaitTimer, func() error {
+			return quietly(again).WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+				return tx.Create(&order{ID: "o1", Note: "held"}).Error
+			})
+		})
+		if !returned {
+			t.Errorf("a write in a transaction holding the delivered database, on a connection opened onto "+
+				"it, was still waiting after %v", selfWaitTimer)
+			return errCaseFailed
+		}
+		if err != nil {
+			t.Errorf("a write in a transaction holding the delivered database, on a connection opened onto "+
+				"it, gave %v, want it written and recorded", err)
+			return errCaseFailed
+		}
+		if rows := statementRows(t, handle); len(rows) != 1 || rows[0].Object != "orders" {
+			t.Errorf("the delivered table holds the statement rows %+v, want the one write", rows)
+		}
+		return nil
+	})
+}
+
 // briefHold is how long another writer holds the delivered database in the
 // case below: far longer than an insert takes, well inside the bound.
 const briefHold = 200 * time.Millisecond
@@ -292,21 +411,13 @@ func TestAWriteOnAnOpenedConnectionWaitsOutAnotherWritersBriefHold(t *testing.T)
 	}
 }
 
-// openSingle builds a handle on an in-memory database held to one connection,
-// the shape the database module gives a locator private to its connection,
-// with the capture plugin installed and both tables created.
+// openSingle builds a handle on an in-memory database held to one connection —
+// the one the database module delivers for :memory:, the shape it gives a
+// locator private to its connection — with the capture plugin installed and
+// both tables created.
 func openSingle(t *testing.T) *gorm.DB {
 	t.Helper()
-	handle, err := gorm.Open(sqlitedriver.Open(":memory:"), quiet())
-	if err != nil {
-		t.Fatalf("opening the handle: %v", err)
-	}
-	pool, err := handle.DB()
-	if err != nil {
-		t.Fatalf("reaching the pool: %v", err)
-	}
-	pool.SetMaxOpenConns(1)
-	t.Cleanup(func() { _ = pool.Close() })
+	handle := quietly(dbtest.SQLite(t, ":memory:", nil).DB())
 	if err := handle.Use(newCapture()); err != nil {
 		t.Fatalf("installing the capture plugin: %v", err)
 	}
@@ -372,6 +483,50 @@ func TestARowWrittenInsideTheCallersTransactionOnOneConnectionDoesNotWaitForIt(t
 			t.Errorf("the lost row was not reported through the failure signal: %q", reported.String())
 		}
 	})
+}
+
+// A row this module writes itself while another connection holds the whole
+// delivered database fails within connectionWait, however long the delivered
+// connections' own busy timeout would let it wait for the lock: the seam
+// returns ErrWriteFailed. A caller holding the database in its own transaction
+// on a file database is what the row waits for there.
+func TestARowWrittenWhileTheDeliveredDatabaseIsHeldFailsWithinTheBound(t *testing.T) {
+	file := filepath.Join(t.TempDir(), "delivered.db")
+	handle := quietly(dbtest.SQLite(t, file+"?_pragma=busy_timeout(30000)", nil).DB())
+	if err := handle.Use(newCapture()); err != nil {
+		t.Fatalf("installing the capture plugin: %v", err)
+	}
+	applyMigrations(t, handle, auditDialect)
+	j := newTestJournal(handle, settings{})
+	holding, err := dbtest.SQLite(t, file, nil).DB().DB()
+	if err != nil {
+		t.Fatalf("reaching the holding pool: %v", err)
+	}
+	holder, err := holding.Conn(t.Context())
+	if err != nil {
+		t.Fatalf("taking a connection of the holding pool: %v", err)
+	}
+	if _, err = holder.ExecContext(t.Context(), "BEGIN EXCLUSIVE"); err != nil {
+		t.Fatalf("holding the database: %v", err)
+	}
+	defer func() {
+		_, _ = holder.ExecContext(context.Background(), "ROLLBACK")
+		_ = holder.Close()
+	}()
+
+	started := time.Now()
+	returned, err := within(connectionTimer, func() error {
+		return j.Record(context.Background(), audit.Entry{Action: "export", Object: "orders"})
+	})
+	if !returned {
+		t.Fatalf("Record while the delivered database was held was still waiting after %v", connectionTimer)
+	}
+	if !errors.Is(err, audit.ErrWriteFailed) {
+		t.Errorf("Record while the delivered database was held gave %v, want ErrWriteFailed", err)
+	}
+	if took := time.Since(started); took < connectionWait {
+		t.Errorf("Record gave up after %v, before the %v it waits", took, connectionWait)
+	}
 }
 
 // A row this module writes itself while another writer briefly holds the one

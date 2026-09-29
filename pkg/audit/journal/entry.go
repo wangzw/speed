@@ -12,6 +12,7 @@ import (
 
 	"github.com/vislake/speed/pkg/audit"
 	"github.com/vislake/speed/pkg/authn"
+	"github.com/vislake/speed/pkg/db"
 	"github.com/vislake/speed/pkg/tenant"
 )
 
@@ -93,47 +94,36 @@ func (j *journal) Record(ctx context.Context, e audit.Entry) error {
 // cancellation before they get here; see submit.
 //
 // The row goes out on a connection of its own, taken from the delivered pool
-// within connectionWait. That wait is the one the database bounds nowhere else:
-// a lock is waited for as long as the driver's busy timeout, a connection for as
-// long as the context lasts. On a database held to a single connection — an
-// in-memory one — the connection is the lock, and a caller that records or
-// publishes inside its own transaction on the delivered handle holds it until
-// after this write returns. Waiting for it there is waiting for the caller
-// itself: under a context with no deadline, and on the paths that drop the
-// cancellation under any context, nothing else would end that wait. Bounded, it
-// fails the way the same write fails on a file database, where the busy timeout
-// ends the wait for the caller's lock.
+// through db.Connection within connectionWait, which holds the wait for the
+// connection and the insert's wait for a lock another connection holds to that
+// one bound together. On a database held to a single connection — an in-memory
+// one — a caller that records or publishes inside its own transaction on the
+// delivered handle holds that connection until after this write returns; on a
+// file database, a caller that wrote in its own transaction holds the write lock
+// the insert waits for. Waiting for either is waiting for the caller itself:
+// under a context with no deadline, and on the paths that drop the cancellation
+// under any context, nothing else would end that wait, and on SQLite a context
+// does not end a lock wait at all. Past the bound the write fails with
+// ErrWriteFailed.
 func (j *journal) write(ctx context.Context, r row) error {
-	pool, err := j.handle.DB()
-	if err != nil {
-		return fmt.Errorf("%w: the delivered handle has no connection pool: %w", audit.ErrWriteFailed, err)
-	}
-	taking, cancel := context.WithTimeout(ctx, connectionWait)
-	conn, err := pool.Conn(taking)
-	cancel()
-	if err != nil {
-		if errors.Is(err, context.DeadlineExceeded) && ctx.Err() == nil {
-			return fmt.Errorf("%w: no connection of the delivered database came free within %v; on a "+
-				"database held to one connection, a transaction the caller holds on the delivered handle "+
-				"keeps it until after this write returns: %w", audit.ErrWriteFailed, connectionWait, err)
-		}
+	err := db.Connection(ctx, j.handle, connectionWait, func(session *gorm.DB) error {
+		return insert(session, r)
+	})
+	if err != nil && !errors.Is(err, audit.ErrWriteFailed) {
 		return fmt.Errorf("%w: %w", audit.ErrWriteFailed, err)
 	}
-	defer func() { _ = conn.Close() }()
-	session := j.handle.Session(&gorm.Session{NewDB: true, Context: ctx})
-	session.Statement.ConnPool = conn
-	return insert(session, r)
+	return err
 }
 
-// connectionWait bounds the wait for a connection of the delivered pool, for
-// the rows this module writes itself: the seam's, the request path's and the
-// event path's.
+// connectionWait is the bound db.Connection holds the rows this module writes
+// itself to — the seam's, the request path's and the event path's: the wait
+// for a connection of the delivered pool and the insert's wait for a lock,
+// together.
 //
 // It is the SQLite driver's default busy timeout, which is what the same write
-// already waits for the write lock on a file database: on a database held to
-// one connection the connection plays the lock's part, and waiting for it as
-// long keeps the two shapes of one engine failing alike. A connection taken
-// under load comes free in the time a statement takes, far inside it.
+// would wait for the write lock on a file database without the bound. A
+// connection or a lock taken under load comes free in the time a statement
+// takes, far inside it.
 const connectionWait = 5 * time.Second
 
 // submit is how the capture paths this module drives record a row: the failure
@@ -147,9 +137,9 @@ const connectionWait = 5 * time.Second
 // client closes the connection, and a process-local bus hands a subscriber the
 // publisher's own. Writing under that cancellation loses the row for a reason
 // that has nothing to do with the table, and reports a healthy table as failing.
-// The price is that nothing bounds the write but the database's own timeouts
-// and connectionWait, so a slow or locked table slows every request and event
-// it records.
+// The price is that connectionWait is the only bound on the write's waits and
+// the database's own timeouts the only bound on the insert itself, so a slow or
+// locked table slows every request and event it records, by up to that long.
 func (j *journal) submit(ctx context.Context, r row) {
 	if !j.accepting.Load() {
 		return

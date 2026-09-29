@@ -5,26 +5,24 @@ import (
 	"bytes"
 	"context"
 	"errors"
-	"fmt"
 	"io"
 	"io/fs"
 	"log/slog"
 	"net"
 	nethttp "net/http"
 	"net/http/httptest"
+	"path/filepath"
 	"strings"
 	"sync"
-	"sync/atomic"
 	"testing"
 	"time"
 
-	sqlitedriver "github.com/glebarez/sqlite"
 	"gorm.io/gorm"
-	"gorm.io/gorm/logger"
 
 	"github.com/vislake/speed/pkg/audit"
 	"github.com/vislake/speed/pkg/core"
 	"github.com/vislake/speed/pkg/event"
+	"github.com/vislake/speed/pkg/internal/dbtest"
 	"github.com/vislake/speed/pkg/log"
 )
 
@@ -121,39 +119,17 @@ func (b *recordingBus) Publish(ctx context.Context, evt event.Event) error {
 	return nil
 }
 
-// quiet is the configuration every handle in these tests opens with. GORM
-// prints a statement that failed, and two of these cases fail a statement on
-// purpose; the failure is the point, and the output would only be noise.
-func quiet() *gorm.Config {
-	return &gorm.Config{Logger: logger.Default.LogMode(logger.Silent)}
-}
-
-// sharedMemories numbers the in-memory databases sharedMemory opens in this
-// process.
-var sharedMemories atomic.Int64
-
-// sharedMemory opens a handle on an in-memory database of this call's own,
-// which every connection of the handle's pool shares, and closes the pool when
-// the case ends.
+// sharedMemory is a handle on a database of this call's own, which every
+// connection of the handle's pool shares: the one the database module delivers
+// over a SQLite file, released when the case ends.
 //
-// An in-memory database in a shared cache lives as long as a connection to it
-// is open, and is reached again by any connection that names it. The name is
-// therefore this call's alone — a case run a second time in one process, under
-// -count, gets an empty database rather than the tables and rows the first run
-// left — and the pool is closed, so the database goes with the case.
+// It is the database module's handle rather than one opened here, because the
+// rows this module writes itself take their connection through db.Connection,
+// which refuses a handle the database module did not open. The session handed
+// back prints no statement a case fails on purpose.
 func sharedMemory(t *testing.T) *gorm.DB {
 	t.Helper()
-	name := fmt.Sprintf("file:%s-%d?mode=memory&cache=shared", t.Name(), sharedMemories.Add(1))
-	handle, err := gorm.Open(sqlitedriver.Open(name), quiet())
-	if err != nil {
-		t.Fatalf("opening the handle: %v", err)
-	}
-	pool, err := handle.DB()
-	if err != nil {
-		t.Fatalf("reaching the pool: %v", err)
-	}
-	t.Cleanup(func() { _ = pool.Close() })
-	return handle
+	return quietly(dbtest.SQLite(t, filepath.Join(t.TempDir(), "journal.db"), nil).DB())
 }
 
 // open builds a handle with the capture plugin installed and both tables
