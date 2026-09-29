@@ -135,6 +135,14 @@ type Handler func(ctx context.Context, evt Event) error
 //     subscriber failed.
 //   - A subscriber's failure never reaches the publisher.
 //
+// The second of those parts is not exact once a call crosses a connection, and
+// no implementation can make it exact: a request that reached its backend and
+// lost the reply on the way back may have been stored although Publish returned
+// an error, because telling "the backend took it" from "the request never
+// arrived" costs another round trip over the channel that just failed. The
+// identifier is what keeps a subscriber from counting such a repeat twice, so a
+// publisher that may have to repeat one sets it itself; see Event.ID.
+//
 // An implementation may promise more, and says so in its own documentation. The
 // process-local bus, for one, delivers to every subscriber on the publisher's
 // own goroutine, so by the time Publish returns they have all run; a caller must
