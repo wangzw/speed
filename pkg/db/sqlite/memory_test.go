@@ -2,9 +2,11 @@ package sqlite_test
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"os"
 	"path/filepath"
+	"strings"
 	"sync"
 	"testing"
 	"testing/fstest"
@@ -158,11 +160,12 @@ func TestAnInMemoryDatabaseOutlivesThePoolParameters(t *testing.T) {
 }
 
 // TestAShareableLocatorKeepsTheConfiguredPool keeps the single connection to
-// the locators that need it. A file, and an in-memory database opened with a
-// shared cache, are one database for every connection, so the pool keeps the
-// shape the configuration gave it.
+// the locators that need it. A file is one database for every connection, so
+// the pool keeps the shape the configuration gave it, whether the file is named
+// as a path or as a file: URI.
 func TestAShareableLocatorKeepsTheConfiguredPool(t *testing.T) {
-	instance := deliver(t, filepath.Join(t.TempDir(), "shared.db"))
+	dir := t.TempDir()
+	instance := deliver(t, filepath.Join(dir, "shared.db"))
 	pool, err := instance.DB().DB()
 	if err != nil {
 		t.Fatalf("reaching the delivered pool: %v", err)
@@ -170,16 +173,78 @@ func TestAShareableLocatorKeepsTheConfiguredPool(t *testing.T) {
 	if got := pool.Stats().MaxOpenConnections; got <= 1 {
 		t.Errorf("a file database holds at most %d connection, want the configured pool", got)
 	}
-	shared, err := instance.Open(t.Context(), "file::memory:?cache=shared")
+	opened, err := instance.Open(t.Context(), "file:"+filepath.Join(dir, "opened.db")+"?mode=rwc")
 	if err != nil {
-		t.Fatalf("Open on a shared in-memory database: %v", err)
+		t.Fatalf("Open on a file named as a file: URI: %v", err)
 	}
-	t.Cleanup(func() { _ = db.Close(shared) })
-	sharedPool, err := shared.DB()
+	t.Cleanup(func() { _ = db.Close(opened) })
+	openedPool, err := opened.DB()
 	if err != nil {
-		t.Fatalf("reaching the shared pool: %v", err)
+		t.Fatalf("reaching the opened pool: %v", err)
 	}
-	if got := sharedPool.Stats().MaxOpenConnections; got <= 1 {
-		t.Errorf("a shared in-memory database holds at most %d connection, want the configured pool", got)
+	if got := openedPool.Stats().MaxOpenConnections; got <= 1 {
+		t.Errorf("a file named as a file: URI holds at most %d connection, want the configured pool", got)
 	}
+}
+
+// sharedCacheLocators are locators that put their connections in SQLite's
+// shared-cache mode, an in-memory database and a file among them, by what each
+// one is.
+func sharedCacheLocators(dir string) map[string]string {
+	file := "file:" + filepath.Join(dir, "cached.db")
+	return map[string]string{
+		"the unnamed in-memory database":         "file::memory:?cache=shared",
+		"a named in-memory database":             "file:scratch?mode=memory&cache=shared",
+		"a file":                                 file + "?cache=shared",
+		"a file whose last cache parameter wins": file + "?cache=private&cache=shared",
+	}
+}
+
+// TestALocatorInSharedCacheModeIsRefused pins what this engine does with a
+// locator that puts its connections in SQLite's shared-cache mode: it opens
+// nothing, as the delivered locator and through Open alike.
+//
+// In that mode a connection waiting for a table lock another connection of the
+// cache holds is held by the driver until that connection's transaction ends,
+// and neither the busy timeout nor the statement's context ends the wait. No
+// bound db.Connection sets holds there: a module's statement issued from inside
+// its caller's transaction, on another connection of the cache, waits for that
+// caller for good.
+func TestALocatorInSharedCacheModeIsRefused(t *testing.T) {
+	dir := t.TempDir()
+	instance := deliver(t, filepath.Join(dir, "delivered.db"))
+	for name, locator := range sharedCacheLocators(dir) {
+		t.Run("Open on "+name, func(t *testing.T) {
+			handle, err := instance.Open(t.Context(), locator)
+			if err == nil {
+				_ = db.Close(handle)
+				t.Fatalf("Open(%q) returned a handle", locator)
+			}
+			if !errors.Is(err, db.ErrConnectFailed) || !strings.Contains(err.Error(), "shared-cache") {
+				t.Errorf("Open(%q) gave %v, want ErrConnectFailed naming the shared-cache mode", locator, err)
+			}
+		})
+		t.Run("delivered on "+name, func(t *testing.T) {
+			err := assemblingOver(t, locator)
+			if !errors.Is(err, db.ErrConnectFailed) || !strings.Contains(err.Error(), "shared-cache") {
+				t.Errorf("an assembly over %q gave %v, want ErrConnectFailed naming the shared-cache mode",
+					locator, err)
+			}
+		})
+	}
+}
+
+// assemblingOver drives this engine's module through New over a delivered
+// locator, and returns what the drive returned.
+func assemblingOver(t *testing.T, dsn string) error {
+	t.Helper()
+	body := fmt.Sprintf(`{"db":{"sqlite":{"dsn":%q}}}`, dsn)
+	reader, err := load(t, body, sqlite.Module())
+	if err != nil {
+		t.Fatalf("loading the configuration over %q: %v", dsn, err)
+	}
+	reg := core.New()
+	reg.Register(sqlite.Module())
+	reg.Supply((*config.Reader)(nil), reader)
+	return reg.Drive(t.Context(), core.Drive{Depth: core.StageNew, Participants: []string{sqlite.ModuleName}})
 }

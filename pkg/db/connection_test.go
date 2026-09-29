@@ -95,8 +95,8 @@ func TestConnectionPinsTheSessionToTheConnectionItTook(t *testing.T) {
 	bounded, cancel := context.WithTimeout(t.Context(), 3*time.Second)
 	defer cancel()
 	err := Connection(bounded, product.DB(), time.Second, func(session *gorm.DB) error {
-		if _, pinned := session.Statement.ConnPool.(*sql.Conn); !pinned {
-			t.Errorf("fn's session runs on %T, want the connection Connection took", session.Statement.ConnPool)
+		if _, pooled := session.Statement.ConnPool.(*sql.DB); pooled {
+			t.Errorf("fn's session runs on the pool, want the connection Connection took")
 		}
 		if err := session.Exec("CREATE TABLE pinned (id INTEGER PRIMARY KEY)").Error; err != nil {
 			return err
@@ -201,6 +201,125 @@ func TestConnectionBoundsTheLockWaitToWhatRemainsAndPutsItBack(t *testing.T) {
 	}
 	if bound <= 0 || bound > wait {
 		t.Errorf("the lock wait was bounded to %v, want at most the wait of %v and more than nothing", bound, wait)
+	}
+}
+
+// TestTheLockWaitIsBoundedToWhatTheConnectionWaitLeft covers the two waits
+// sharing one bound: a connection that came free only after part of the wait
+// had passed leaves the lock wait what was left of it, not the whole wait over
+// again. The bound is a whole number of milliseconds, the unit both engines
+// take it in, and no less than what was left, so a lock wait it cuts short ends
+// once the wait has passed and not before.
+func TestTheLockWaitIsBoundedToWhatTheConnectionWaitLeft(t *testing.T) {
+	const (
+		wait = 2 * time.Second
+		held = 600 * time.Millisecond
+	)
+	var bound, least time.Duration
+	var started time.Time
+	spec := sqliteSpec()
+	spec.BoundLockWait = func(_ context.Context, _ *sql.Conn, d time.Duration) (func(context.Context) error, error) {
+		bound = d
+		// The call began no later than started, so what remained of its
+		// wait when it bounded the lock wait is at least this.
+		least = time.Until(started.Add(wait))
+		return func(context.Context) error { return nil }, nil
+	}
+	product := assembledWith(t, spec, filepath.Join(t.TempDir(), "remaining.db"),
+		`"max-open-conns":1`, `"max-idle-conns":1`)
+	pool, err := product.DB().DB()
+	if err != nil {
+		t.Fatalf("reaching the pool: %v", err)
+	}
+	taken, err := pool.Conn(t.Context())
+	if err != nil {
+		t.Fatalf("taking the one connection: %v", err)
+	}
+	go func() {
+		time.Sleep(held)
+		_ = taken.Close()
+	}()
+
+	started = time.Now()
+	if err := Connection(t.Context(), product.DB(), wait, func(*gorm.DB) error { return nil }); err != nil {
+		t.Fatalf("Connection once the connection came free: %v", err)
+	}
+	if bound%time.Millisecond != 0 {
+		t.Errorf("the lock wait was bounded to %v, want a whole number of milliseconds", bound)
+	}
+	if bound < least {
+		t.Errorf("the lock wait was bounded to %v, less than the %v that was left of the wait", bound, least)
+	}
+	if limit := wait - held + time.Millisecond; bound > limit {
+		t.Errorf("the lock wait was bounded to %v after the connection took %v to come free, want at "+
+			"most the %v left of the wait of %v", bound, held, limit, wait)
+	}
+}
+
+// TestTheLockWaitIsBoundedAgainBeforeEachLaterStatement covers fn issuing more
+// than one statement: the engine holds each statement to the setting in force
+// when it begins, so before a later statement the bound is set again to what is
+// left of the wait — before the statements of a transaction and its commit as
+// well as before a statement on its own — and what fn returns with puts back the
+// setting the connection had when it was taken, once.
+func TestTheLockWaitIsBoundedAgainBeforeEachLaterStatement(t *testing.T) {
+	const (
+		wait  = 2 * time.Second
+		pause = 300 * time.Millisecond
+	)
+	var bounds []time.Duration
+	restores := 0
+	spec := sqliteSpec()
+	spec.BoundLockWait = func(_ context.Context, _ *sql.Conn, d time.Duration) (func(context.Context) error, error) {
+		bounds = append(bounds, d)
+		return func(context.Context) error { restores++; return nil }, nil
+	}
+	product := assembledWith(t, spec, filepath.Join(t.TempDir(), "again.db"))
+
+	setBeforeFn := 0
+	started := time.Now()
+	err := Connection(t.Context(), product.DB(), wait, func(session *gorm.DB) error {
+		setBeforeFn = len(bounds)
+		if err := session.Exec("CREATE TABLE again (id INTEGER PRIMARY KEY)").Error; err != nil {
+			return err
+		}
+		time.Sleep(pause)
+		if err := session.Exec("INSERT INTO again (id) VALUES (1)").Error; err != nil {
+			return err
+		}
+		time.Sleep(pause)
+		return session.Transaction(func(tx *gorm.DB) error {
+			time.Sleep(pause)
+			return tx.Exec("INSERT INTO again (id) VALUES (2)").Error
+		})
+	})
+	if err != nil {
+		t.Fatalf("Connection: %v", err)
+	}
+	if setBeforeFn != 1 {
+		t.Errorf("the bound was set %d times before fn ran, want once, when the connection was taken",
+			setBeforeFn)
+	}
+	// The second statement, the begin and the statement in the transaction
+	// each came a pause after the one before it, and each set the bound again.
+	if len(bounds) < 4 {
+		t.Fatalf("the bound was set %d times over fn's statements (%v), want it set again before each "+
+			"statement that began once part of the wait had gone", len(bounds), bounds)
+	}
+	for i := 1; i < len(bounds); i++ {
+		if bounds[i] >= bounds[i-1] {
+			t.Errorf("the bound set before a later statement was %v, not less than the %v before it",
+				bounds[i], bounds[i-1])
+		}
+	}
+	if last, most := bounds[len(bounds)-1], wait-3*pause+time.Millisecond; last > most {
+		t.Errorf("the last bound set was %v, more than the %v left of the wait after three pauses", last, most)
+	}
+	if took := time.Since(started); took > wait {
+		t.Fatalf("fn took %v, past the wait of %v the case needs it to finish within", took, wait)
+	}
+	if restores != 1 {
+		t.Errorf("the setting was put back %d times, want once, as fn returned", restores)
 	}
 }
 

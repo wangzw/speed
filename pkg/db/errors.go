@@ -20,10 +20,11 @@ import "errors"
 // which every handle this package opens attaches beside the driver's error
 // (see classifyingDialector); a sentinel here would be a second name for each.
 var (
-	// ErrConnectFailed reports that the driver would not open, or that the
-	// connectivity check did not pass. Its text names the dialect and the
-	// step that failed, and never echoes the locator: a DSN carries
-	// credentials and this error reaches the startup diagnostics.
+	// ErrConnectFailed reports that the driver would not open — a locator the
+	// engine refuses to open, such as SQLite's in shared-cache mode, included
+	// — or that the connectivity check did not pass. Its text names the
+	// dialect and the step that failed, and never echoes the locator: a DSN
+	// carries credentials and this error reaches the startup diagnostics.
 	//
 	// Open reports the same sentinel when it fails at run time. The fixing
 	// action is identical — check that locator and the service behind it —

@@ -44,6 +44,43 @@ func TestConnectionBoundsTheWaitForALock(t *testing.T) {
 	dbsuite.LockWait(t, capability.DB(), other, db.Connection)
 }
 
+// TestConnectionBoundsTheLockWaitsOfEveryStatement runs the engine-neutral case
+// for two statements of fn's that each meet a lock, where a second pool's
+// transaction holds the row lock they need.
+func TestConnectionBoundsTheLockWaitsOfEveryStatement(t *testing.T) {
+	dsn := pgtest.Acquire(t)
+	capability, err := runAssemblyWith(t, context.Background(), map[string]any{"dsn": dsn})
+	if err != nil {
+		t.Fatalf("starting a host on this engine: %v", err)
+	}
+	other, err := capability.Open(t.Context(), dsn)
+	if err != nil {
+		t.Fatalf("opening a second pool on the database: %v", err)
+	}
+	t.Cleanup(func() { _ = db.Close(other) })
+	dbsuite.LockWaitAcrossStatements(t, capability.DB(), other, db.Connection)
+}
+
+// TestConnectionBoundsBothWaitsTogether runs the engine-neutral case for a
+// statement that waited for part of its wait to get its connection and then
+// meets a lock, on a handle whose pool the configuration holds to one
+// connection.
+func TestConnectionBoundsBothWaitsTogether(t *testing.T) {
+	dsn := pgtest.Acquire(t)
+	capability, err := runAssemblyWith(t, context.Background(), map[string]any{
+		"dsn": dsn, "max-open-conns": 1, "max-idle-conns": 1,
+	})
+	if err != nil {
+		t.Fatalf("starting a host on this engine: %v", err)
+	}
+	other, err := capability.Open(t.Context(), dsn)
+	if err != nil {
+		t.Fatalf("opening a second pool on the database: %v", err)
+	}
+	t.Cleanup(func() { _ = db.Close(other) })
+	dbsuite.LockWaitAfterConnectionWait(t, capability.DB(), other, db.Connection)
+}
+
 // TestConnectionHandsTheConnectionBackWithItsLockTimeout holds the bound to the
 // connection Connection took: inside fn the session's lock_timeout is at most
 // the wait, and the connection goes back to the pool with the one its locator

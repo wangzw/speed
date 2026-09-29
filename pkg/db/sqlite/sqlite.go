@@ -6,8 +6,8 @@
 // connection, plugin, encryption and migration logic are pkg/db's, shared with
 // every other implementation; what is dialect-specific stops at the driver, the
 // namespace, how the driver reports a constraint refusal, which locators name a
-// database private to one connection, and how a connection's wait for a lock
-// is bounded.
+// database private to one connection, which locators it does not open at all,
+// and how a connection's wait for a lock is bounded.
 //
 // Those locators — an in-memory database, a temporary one — are one database
 // per connection in SQLite, so a handle on one is held to a single connection
@@ -90,8 +90,46 @@ const Dialect = db.SQLite
 // what lets a host move between engines without touching a line of the code
 // that uses the database. Its connections are opened through the wrapper in
 // commit.go, which rolls a transaction back when SQLite refuses to commit it.
+//
+// A locator that puts its connections in SQLite's shared-cache mode is refused:
+// the dialector returned for it fails to initialise, so nothing is opened on it,
+// neither the delivered handle nor a connection built with Open. In that mode a
+// connection waiting for a table lock another connection of the cache holds is
+// held by the driver until that connection's transaction ends — through
+// sqlite3_unlock_notify, which neither the busy timeout nor an ending context
+// reaches — so no bound db.Connection sets holds there, and a statement waiting
+// on its own caller's transaction waits for good.
 func Dialector(dsn string) gorm.Dialector {
-	return &sqlitedriver.Dialector{DriverName: driverName, DSN: dsn}
+	dialector := &sqlitedriver.Dialector{DriverName: driverName, DSN: dsn}
+	if sharesCache(dsn) {
+		return refusedDialector{Dialector: dialector}
+	}
+	return dialector
+}
+
+// errSharedCache is why a locator in shared-cache mode is not opened. It names
+// the mode rather than the locator, which may carry a path a host keeps out of
+// its diagnostics.
+var errSharedCache = errors.New("db: SQLite is not opened in shared-cache mode (a file: locator with " +
+	"cache=shared): the driver waits for a table lock another connection of the cache holds until that " +
+	"connection's transaction ends, and neither the busy timeout nor a context ends that wait. An " +
+	"in-memory database of the process's own is :memory:, which this module holds to one connection; " +
+	"a database several connections share is a file")
+
+// refusedDialector is the driver's dialector for a locator this engine does not
+// open: initialising it fails before any connection is made.
+type refusedDialector struct{ *sqlitedriver.Dialector }
+
+// Initialize refuses the locator.
+func (refusedDialector) Initialize(*gorm.DB) error { return errSharedCache }
+
+// sharesCache reports whether a locator puts its connections in SQLite's
+// shared-cache mode: a file: URI whose cache parameter, read as SQLite reads it,
+// is shared. Outside a file: URI the parameters are the driver's, cut off before
+// SQLite sees the name, so they share nothing.
+func sharesCache(dsn string) bool {
+	params, uri := uriParameters(dsn)
+	return uri && params("cache") == "shared"
 }
 
 // constraintViolation classifies a refusal this engine's driver reports by its
@@ -130,20 +168,53 @@ func constraintViolation(err error) error {
 // file name followed by the driver's own parameters, which are cut off at the
 // first question mark; a file: URI is SQLite's, parameters included, and
 // cache=shared is what makes an in-memory database one for every connection
-// of the process.
+// of the process — a locator Dialector refuses.
 func connectionScoped(dsn string) bool {
-	name, query, _ := strings.Cut(dsn, "?")
+	name, _, _ := strings.Cut(dsn, "?")
 	path, uri := strings.CutPrefix(name, "file:")
 	if !uri {
 		return name == "" || name == ":memory:"
 	}
-	// A query the URI cannot be parsed from is refused by the driver when it
-	// opens the connection, so there is no database here to scope.
-	params, err := url.ParseQuery(query)
-	if err != nil || params.Get("cache") == "shared" {
+	params, parsed := uriParameters(dsn)
+	if !parsed || params("cache") == "shared" {
 		return false
 	}
-	return path == "" || path == ":memory:" || params.Get("mode") == "memory"
+	return path == "" || path == ":memory:" || params("mode") == "memory"
+}
+
+// uriParameters reads the query of a file: URI the way SQLite does, and reports
+// false for a locator that is not one, or whose query the driver refuses.
+//
+// SQLite takes a parameter named more than once from its last occurrence,
+// decodes %HH escapes in names and values alike, leaves a plus sign as it
+// stands, and ends a name or a value at an escaped NUL. A reading that took the
+// first occurrence, or matched the text before decoding, would take
+// file:x?mode=rwc&mode=memory for a file every connection shares when each
+// connection opens a database of its own, or miss a shared cache spelled
+// cach%65=shared. The driver parses the query with net/url before SQLite sees
+// it and refuses the connection when that fails, so such a query opens nothing
+// and there is nothing here to read.
+func uriParameters(dsn string) (func(name string) string, bool) {
+	name, query, _ := strings.Cut(dsn, "?")
+	if !strings.HasPrefix(name, "file:") {
+		return nil, false
+	}
+	if _, err := url.ParseQuery(query); err != nil {
+		return nil, false
+	}
+	values := map[string]string{}
+	for pair := range strings.SplitSeq(query, "&") {
+		key, value, _ := strings.Cut(pair, "=")
+		key, keyErr := url.PathUnescape(key)
+		value, valueErr := url.PathUnescape(value)
+		if keyErr != nil || valueErr != nil {
+			return nil, false
+		}
+		key, _, _ = strings.Cut(key, "\x00")
+		value, _, _ = strings.Cut(value, "\x00")
+		values[key] = value
+	}
+	return func(name string) string { return values[name] }, true
 }
 
 // boundLockWait holds how long a statement on conn waits for a lock another

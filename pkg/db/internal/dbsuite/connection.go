@@ -151,3 +151,136 @@ func LockWait(t *testing.T, handle, other *gorm.DB, connect Connect) {
 		t.Errorf("the statement once the lock was given up: %v", err)
 	}
 }
+
+// LockWaitAcrossStatements holds Connection, on a handle an engine's module
+// delivered, to one bound over every statement fn issues: two statements that
+// each meet a lock another connection holds end, together, once the wait has
+// passed — the second failing as soon as it meets the lock — rather than after a
+// wait each.
+//
+// other is a second pool on the same database, whose transaction holds the
+// lock.
+func LockWaitAcrossStatements(t *testing.T, handle, other *gorm.DB, connect Connect) {
+	t.Helper()
+	for _, statement := range []string{
+		"CREATE TABLE across_rows (id INTEGER PRIMARY KEY, n INTEGER)",
+		"INSERT INTO across_rows (id, n) VALUES (1, 0)",
+	} {
+		if err := handle.Exec(statement).Error; err != nil {
+			t.Fatalf("creating the table the case writes into: %v", err)
+		}
+	}
+	holder := other.Begin()
+	if err := holder.Error; err != nil {
+		t.Fatalf("beginning the transaction that holds the lock: %v", err)
+	}
+	defer func() { _ = holder.Rollback() }()
+	if err := holder.Exec("UPDATE across_rows SET n = 1 WHERE id = 1").Error; err != nil {
+		t.Fatalf("taking the lock: %v", err)
+	}
+
+	var first, second error
+	answer := make(chan error, 1)
+	started := time.Now()
+	go func() {
+		answer <- connect(context.Background(), handle, sharedWait, func(session *gorm.DB) error {
+			first = session.Exec("UPDATE across_rows SET n = 2 WHERE id = 1").Error
+			second = session.Exec("UPDATE across_rows SET n = 3 WHERE id = 1").Error
+			return errors.Join(first, second)
+		})
+	}()
+	select {
+	case <-answer:
+		took := time.Since(started)
+		if first == nil || second == nil {
+			t.Errorf("the statements gave %v and %v while another connection held the lock they need",
+				first, second)
+		}
+		if took < sharedWait {
+			t.Errorf("the statements failed after %v, before their wait of %v had passed", took, sharedWait)
+		}
+		if limit := sharedWait + sharedWait/2; took > limit {
+			t.Errorf("the two statements failed after %v, with a wait of %v: the second waited for the "+
+				"lock as if the wait had been its own", took, sharedWait)
+		}
+	case <-time.After(answeredWithin):
+		t.Errorf("the statements were still waiting after %v, with a wait of %v", answeredWithin, sharedWait)
+		_ = holder.Rollback()
+		<-answer
+	}
+}
+
+// The waits the case below gives Connection: the whole of it, and how much of it
+// the connection is held for before it comes free.
+const (
+	sharedWait     = time.Second
+	connectionHeld = 600 * time.Millisecond
+)
+
+// LockWaitAfterConnectionWait holds Connection, on a handle an engine's module
+// delivered, to one bound over both waits: a statement whose connection came
+// free only after part of the wait, and which then meets a lock another
+// connection holds, fails once the wait has passed since the call began — not
+// sooner, and not after a second wait of the same length for the lock.
+//
+// The handle must be held to one connection, which the case holds for
+// connectionHeld; other is a second pool on the same database, whose
+// transaction holds the lock.
+func LockWaitAfterConnectionWait(t *testing.T, handle, other *gorm.DB, connect Connect) {
+	t.Helper()
+	for _, statement := range []string{
+		"CREATE TABLE shared_bound_rows (id INTEGER PRIMARY KEY, n INTEGER)",
+		"INSERT INTO shared_bound_rows (id, n) VALUES (1, 0)",
+	} {
+		if err := handle.Exec(statement).Error; err != nil {
+			t.Fatalf("creating the table the case writes into: %v", err)
+		}
+	}
+	holder := other.Begin()
+	if err := holder.Error; err != nil {
+		t.Fatalf("beginning the transaction that holds the lock: %v", err)
+	}
+	defer func() { _ = holder.Rollback() }()
+	if err := holder.Exec("UPDATE shared_bound_rows SET n = 1 WHERE id = 1").Error; err != nil {
+		t.Fatalf("taking the lock: %v", err)
+	}
+	pool, err := handle.DB()
+	if err != nil {
+		t.Fatalf("reaching the pool: %v", err)
+	}
+	taken, err := pool.Conn(t.Context())
+	if err != nil {
+		t.Fatalf("taking the handle's one connection: %v", err)
+	}
+	go func() {
+		time.Sleep(connectionHeld)
+		_ = taken.Close()
+	}()
+
+	answer := make(chan error, 1)
+	started := time.Now()
+	go func() {
+		answer <- connect(context.Background(), handle, sharedWait, func(session *gorm.DB) error {
+			return session.Exec("UPDATE shared_bound_rows SET n = 2 WHERE id = 1").Error
+		})
+	}()
+	select {
+	case err := <-answer:
+		took := time.Since(started)
+		if err == nil {
+			t.Error("the statement went through while another connection held the lock it needs")
+		}
+		if took < sharedWait {
+			t.Errorf("the statement failed after %v, before its wait of %v had passed", took, sharedWait)
+		}
+		if limit := sharedWait + connectionHeld/2; took > limit {
+			t.Errorf("the statement failed after %v: the %v its connection took left the lock wait "+
+				"%v, and it waited as if the whole wait were still to come", took, connectionHeld,
+				sharedWait-connectionHeld)
+		}
+	case <-time.After(answeredWithin):
+		t.Errorf("the statement was still waiting after %v, with a wait of %v", answeredWithin, sharedWait)
+		_ = holder.Rollback()
+		<-answer
+	}
+}

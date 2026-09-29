@@ -41,6 +41,35 @@ func TestConnectionBoundsTheWaitForALock(t *testing.T) {
 	dbsuite.LockWait(t, capability.DB(), other, db.Connection)
 }
 
+// TestConnectionBoundsTheLockWaitsOfEveryStatement runs the engine-neutral case
+// for two statements of fn's that each meet a lock, on a database file where a
+// second pool's transaction holds the write lock.
+func TestConnectionBoundsTheLockWaitsOfEveryStatement(t *testing.T) {
+	dsn := filepath.Join(t.TempDir(), "every-statement.db")
+	capability := deliver(t, dsn)
+	other, err := capability.Open(t.Context(), dsn)
+	if err != nil {
+		t.Fatalf("opening a second pool on the file: %v", err)
+	}
+	t.Cleanup(func() { _ = db.Close(other) })
+	dbsuite.LockWaitAcrossStatements(t, capability.DB(), other, db.Connection)
+}
+
+// TestConnectionBoundsBothWaitsTogether runs the engine-neutral case for a
+// statement that waited for part of its wait to get its connection and then
+// meets a lock, on a database file whose pool the configuration holds to one
+// connection.
+func TestConnectionBoundsBothWaitsTogether(t *testing.T) {
+	dsn := filepath.Join(t.TempDir(), "both-waits.db")
+	capability := deliver(t, dsn, `"max-open-conns":1`, `"max-idle-conns":1`)
+	other, err := capability.Open(t.Context(), dsn)
+	if err != nil {
+		t.Fatalf("opening a second pool on the file: %v", err)
+	}
+	t.Cleanup(func() { _ = db.Close(other) })
+	dbsuite.LockWaitAfterConnectionWait(t, capability.DB(), other, db.Connection)
+}
+
 // TestConnectionHandsTheConnectionBackWithItsBusyTimeout holds the bound to the
 // connection Connection took: inside fn the busy timeout is at most the wait,
 // and the connection goes back to the pool with the one its locator gave it.

@@ -104,6 +104,23 @@ must not cross, and how to run it.
   setting it had, or not at all.** A connection handed back carrying the bound
   cuts every later statement's lock wait short on it with nothing reporting
   it, so a setting that cannot be put back closes the connection.
+- **`Connection`'s bound covers every statement `fn` issues, together.** Both
+  engines bound a statement by the setting in force when it begins, so the
+  session `fn` gets runs on a wrapper of the connection (`boundedConn`,
+  `boundedTx`) that sets the bound again, to what is left of the wait, before
+  each later statement — a transaction's begin and commit included. Setting it
+  once gives every statement the whole wait again, and a caller whose call
+  reads twice waits twice as long, past its own deadline on SQLite. What is left
+  is rounded up to the millisecond (`lockWaitBound`), which is what lets a
+  caller tell from the clock that a failure was the bound's.
+- **The SQLite subpackage refuses a locator in shared-cache mode**, delivered or
+  opened: its `Dialector` fails to initialise (`sharesCache`). The driver waits
+  for a shared-cache table lock through `sqlite3_unlock_notify`, which neither
+  the busy timeout nor a context ends, so no bound holds there. The locator is
+  read as SQLite reads a URI (`uriParameters`) — the last of a repeated
+  parameter, `%HH` decoded, an escaped NUL ending the name or value — and so is
+  the one `connectionScoped` reads; a reading narrower than SQLite's opens a
+  shape nothing bounds, or a private database under a pool.
 - **Every wrap uses `%w`.** A `%v` leaves the text all but identical and makes
   the sentinel unreachable, which is the failure the note in `errors.go` exists
   to prevent; the error-chain cases hold each path to it.
@@ -167,4 +184,6 @@ gate. `internal/dbhost` is the test host the multi-process cases build and run;
 event modules' postgres backends; `internal/dbsuite` holds the
 engine-neutral migration cases each engine's fixture is driven through, and the
 constraint-refusal, refused-commit and bounded-connection cases each engine runs
-on the handle its module delivers.
+on the handle its module delivers. `pkg/internal/dbtest` delivers this module's
+capability to other modules' tests, for the ones whose statements go through
+`Connection`, which refuses a handle this module did not open.
