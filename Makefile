@@ -42,11 +42,15 @@ build: modules-present ## Build every module, both in the workspace and standalo
 	@failed=; $(call each,$(MODULES),build,go -C $$it build ./...); \
 	  $(call each,$(MODULES),build standalone,GOWORK=off go -C $$it build ./...); $(each-end)
 
+# A test binary's own deadline bounds how long one module's suite may run; go
+# test's default is ten minutes, which the example hosts' end-to-end legs
+# exceed under the race detector on a loaded machine. The bound is generous on
+# purpose: it is there to end a hung run, not to pace a slow one.
 test: modules-present ## Test every module
-	@failed=; $(call each,$(MODULES),test,go -C $$it test ./...); $(each-end)
+	@failed=; $(call each,$(MODULES),test,go -C $$it test -timeout 30m ./...); $(each-end)
 
 test-race: modules-present ## Test every module under the race detector
-	@failed=; $(call each,$(MODULES),test -race,go -C $$it test -race ./...); $(each-end)
+	@failed=; $(call each,$(MODULES),test -race,go -C $$it test -race -timeout 60m ./...); $(each-end)
 
 fmt: modules-present ## Format every module in place
 	@failed=; $(call each,$(MODULES),fmt,env -C $$it golangci-lint fmt ./...); $(each-end)
