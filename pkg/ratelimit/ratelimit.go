@@ -94,6 +94,19 @@ var defaults = options{
 	Limit:  100,
 }
 
+// windowInDomain and limitInDomain are the two settings' domains: the values
+// this layer acts on.
+//
+// Each is the one statement of its domain, and it is judged in two places.
+// The settings declaration carries it, so the settings store refuses a write
+// outside it before the row is written; thresholds applies it to what a
+// decision reads, since a row stored before the domain was declared, or
+// written around the store, is served as it is, and the layer stands aside on
+// such a value rather than act on it.
+func windowInDomain(window time.Duration) bool { return window > 0 && window <= maxWindow }
+
+func limitInDomain(limit int) bool { return limit > 0 }
+
 // schema declares this module's input items.
 func schema() config.Schema {
 	return config.Schema{
@@ -108,17 +121,23 @@ func schema() config.Schema {
 	}
 }
 
-// settingsSchema declares this module's runtime parameters.
+// settingsSchema declares this module's runtime parameters, each with the
+// domain this layer acts on.
 func settingsSchema() settings.Schema {
 	return settings.Schema{
 		Namespace: ConfigNamespace,
 		Mounts:    []settings.Mount{{Value: &defaults}},
 		Items: map[string]settings.Item{
-			windowKey: {Description: "the length of one counting window, which must be positive " +
-				"and short enough for two of them to fit in a duration"},
+			windowKey: {
+				Description: "the length of one counting window, which must be positive " +
+					"and short enough for two of them to fit in a duration",
+				Domain: settings.DomainOf("the positive durations up to "+maxWindow.String()+
+					", the longest whose double a duration holds", windowInDomain),
+			},
 			limitKey: {
 				Description: "the requests one identity string may make in one window " +
 					"within one tenant, which must be positive",
+				Domain: settings.DomainOf("the positive integers", limitInDomain),
 			},
 		},
 	}

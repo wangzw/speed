@@ -88,8 +88,16 @@ here must not cross, and how to run it.
   zero leaves the window index undefined; a window too long to double leaves
   the counting key written with a non-positive expiry, which the key-value
   contract reads as "no expiry", so the key never disappears. None of the three
-  is a value this layer acts on, and the settings module does not judge values
-  on this module's behalf.
+  is a value this layer acts on. `windowInDomain` and `limitInDomain` are the
+  one statement of each domain, and both judgements go through them: the
+  settings declaration carries them as the items' domains, so the settings
+  store refuses a write outside either before the row is written, and
+  `thresholds` applies them to what a decision reads, since a read hands out
+  whatever a row holds — one stored before the domain was declared, or written
+  around the store. A second statement of either domain, in the declaration or
+  in the decision, is a second place the two can drift apart
+  (`TestAThresholdOutsideItsDomainIsRefusedWhereItIsWritten` drives one table
+  of values through both).
 - **The layer's `Provides` carries `(*Limiter)(nil)`**, the same token the
   descriptor delivers under. That is the only anchor another layer has for
   placing itself inside or outside rate limiting, so the two must not drift.
@@ -134,5 +142,7 @@ go -C pkg test ./ratelimit/...
 go -C pkg test -race ./ratelimit/...
 ```
 
-The tests ask for no service and no environment: they bring their own counter
-store and settings store.
+The tests ask for no service and no environment. They bring their own counter
+store, and a settings store of their own: a stand-in for the decision's cases,
+and for the domain's the settings module itself, driven over a SQLite database
+of the case's own that `pkg/internal/dbtest` delivers.

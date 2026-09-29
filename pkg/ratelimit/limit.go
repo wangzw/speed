@@ -206,6 +206,10 @@ const maxWindow = time.Duration(math.MaxInt64) / 2
 // Both reads go to the settings module's memory snapshot, one key at a time:
 // the two values can therefore come from different snapshots, and a decision
 // may pair a window with a limit that were never in force together.
+//
+// The settings store refuses a write outside either domain, and a read still
+// hands out whatever a row holds: a row stored before the domain was declared,
+// or written around the store, reaches this check, which is why it stays.
 func (l *limiter) thresholds(layer settings.Layer, d *decision) (time.Duration, int) {
 	d.evaluated = append(d.evaluated, reasonThresholdRead)
 
@@ -221,7 +225,7 @@ func (l *limiter) thresholds(layer settings.Layer, d *decision) (time.Duration, 
 	}
 
 	d.evaluated = append(d.evaluated, reasonThresholdDomain)
-	if window <= 0 || window > maxWindow || limit <= 0 {
+	if !windowInDomain(window) || !limitInDomain(limit) {
 		// A limit of zero would refuse every request that carries an identity
 		// string, since the increment happens before the decision and the
 		// current count is at least one; a window of zero leaves the window
