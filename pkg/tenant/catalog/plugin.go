@@ -1,6 +1,8 @@
 package catalog
 
 import (
+	"context"
+	"database/sql"
 	"database/sql/driver"
 	"fmt"
 	"reflect"
@@ -201,29 +203,33 @@ func (f *filter) read(tx *gorm.DB, oneRow bool) {
 
 // refuseRead fails a read that has no tenant to be scoped to.
 //
-// Two reads cannot report a refusal put on the statement, and both are
-// rendered instead as a select of one value whose binding fails with the
-// refusal, so that the refusal travels with the statement that does run.
+// Two reads cannot report a refusal put on the statement, and each is given a
+// form of its own that reaches the caller.
 //
 // A read refused while being rendered rather than run is a subquery: GORM
 // renders one into the statement it is part of and drops its error on the way,
 // so the refusal would reach nobody and the subquery would render as nothing —
 // an empty set on one dialect, a syntax error unrelated to the cause on the
-// other.
+// other. It is rendered instead as a select of one value whose binding fails
+// with the refusal, so that the refusal travels with the statement that does
+// run, and fails it when that statement binds its arguments.
 //
 // A Row has no error of its own to return: it hands back the row GORM's row
-// step produced, and that step produces none once the statement has failed, so
-// the caller's Scan would dereference nil. A refused Row is rendered in place of
-// whatever SQL it carried, GORM's step runs it, nothing reaches a table, and
-// the row handed back reports the refusal through its Scan and its Err. A Row
-// that has already failed for some other reason is left to GORM's own answer.
+// step leaves on the statement, and that step leaves none once the statement
+// has failed, so the caller's Scan would dereference nil. A refused Row fails
+// the statement and leaves a row of its own there instead, one whose Scan and
+// Err report the refusal (refusedRow). That row reaches no database and takes
+// no connection of the pool, so the refusal is answered at once even where the
+// pool has no connection to spare — a statement rendered to fail at binding
+// would first wait for one, and report the caller's deadline rather than the
+// refusal. A Row that has already failed for some other reason is left to
+// GORM's own answer.
 func refuseRead(tx *gorm.DB, refusal error, oneRow bool) {
 	st := tx.Statement
 	switch {
 	case oneRow && tx.Error == nil && !tx.DryRun:
-		st.SQL.Reset()
-		st.Vars = nil
-		renderRefusal(st, refusal)
+		_ = tx.AddError(refusal)
+		st.Dest = refusedRow(refusal)
 	case tx.DryRun && st.SQL.Len() == 0:
 		// The return value is the statement's accumulated error, which the
 		// statement now holds; the subquery carries all of it.
@@ -234,8 +240,8 @@ func refuseRead(tx *gorm.DB, refusal error, oneRow bool) {
 	}
 }
 
-// renderRefusal writes a refused read as a select of one value that refuses to
-// be bound.
+// renderRefusal writes a refused subquery as a select of one value that refuses
+// to be bound.
 func renderRefusal(st *gorm.Statement, err error) {
 	st.SQL.WriteString("SELECT ")
 	st.AddVar(&st.SQL, refusal{err: err})
@@ -246,6 +252,35 @@ type refusal struct{ err error }
 
 // Value implements driver.Valuer.
 func (r refusal) Value() (driver.Value, error) { return nil, r.err }
+
+// refusedRow is a row whose Scan and Err report err, and which reaches no
+// database.
+//
+// Only database/sql makes a *sql.Row that carries an error, and it makes one
+// when opening the result set fails. So the row is asked of a pool of this
+// package's own whose connector refuses every connection with err: the query
+// fails before it reaches a connection, and the row carries err as it was
+// given. The pool holds nothing once the row is made, and it is closed then.
+func refusedRow(err error) *sql.Row {
+	pool := sql.OpenDB(refusingConnector{err: err})
+	defer func() { _ = pool.Close() }()
+	return pool.QueryRowContext(context.Background(), "")
+}
+
+// refusingConnector answers every connection it is asked for with one error.
+type refusingConnector struct{ err error }
+
+// Connect refuses the connection with the connector's error.
+func (c refusingConnector) Connect(context.Context) (driver.Conn, error) { return nil, c.err }
+
+// Driver is the connector's driver, which opens nothing either.
+func (c refusingConnector) Driver() driver.Driver { return refusingDriver(c) }
+
+// refusingDriver is the driver behind refusingConnector.
+type refusingDriver struct{ err error }
+
+// Open refuses the connection with the driver's error.
+func (d refusingDriver) Open(string) (driver.Conn, error) { return nil, d.err }
 
 // scopedJoin is one association join of a read that reaches a scoped model,
 // with what its ON clause needs to render the condition at each level of the

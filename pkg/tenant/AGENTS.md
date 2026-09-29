@@ -261,8 +261,8 @@ take their connections through `db.Connection`, which refuses a handle opened
 around that module; the filter's own cases build theirs by hand. `pkg/tenant/catalog/plugin_test.go` is where the filter's four
 answers are pinned; `pkg/tenant/catalog/reach_test.go` is where the statements
 it has to reach beyond the query processor are — a scan, a Row whose refusal
-comes back through the row it hands back, an association join, a subquery
-rendered into another statement;
+comes back through the row it hands back without taking a connection, an
+association join, a subquery rendered into another statement;
 `pkg/tenant/catalog/recognise_test.go` is where the models the filter takes for
 scoped are, a field taking the convention's column over included;
 `pkg/tenant/catalog/targets_test.go`

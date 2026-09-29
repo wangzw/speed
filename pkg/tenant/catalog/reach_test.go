@@ -6,6 +6,7 @@ import (
 	"errors"
 	"strings"
 	"testing"
+	"time"
 
 	"gorm.io/gorm"
 
@@ -93,16 +94,19 @@ func TestARowWithoutATenantReportsTheRefusalThroughItsScanOnPostgres(t *testing.
 	requireRowRefusal(t, handle)
 }
 
+// refusedRows are the two shapes a Row with no tenant is refused in.
+var refusedRows = map[string]func(tx *gorm.DB) *sql.Row{
+	"a read of the model": func(tx *gorm.DB) *sql.Row {
+		return tx.Model(&order{}).Select("count(*)").Row()
+	},
+	"statement text written over the model": func(tx *gorm.DB) *sql.Row {
+		return tx.Model(&order{}).Raw("SELECT count(*) FROM orders").Row()
+	},
+}
+
 func requireRowRefusal(t *testing.T, handle *gorm.DB) {
 	t.Helper()
-	for name, row := range map[string]func(tx *gorm.DB) *sql.Row{
-		"a read of the model": func(tx *gorm.DB) *sql.Row {
-			return tx.Model(&order{}).Select("count(*)").Row()
-		},
-		"statement text written over the model": func(tx *gorm.DB) *sql.Row {
-			return tx.Model(&order{}).Raw("SELECT count(*) FROM orders").Row()
-		},
-	} {
+	for name, row := range refusedRows {
 		t.Run(name, func(t *testing.T) {
 			n := -1
 			err := noPanic(t, func() error { return row(handle.WithContext(context.Background())).Scan(&n) })
@@ -111,6 +115,55 @@ func requireRowRefusal(t *testing.T, handle *gorm.DB) {
 			}
 			if !strings.Contains(err.Error(), "order") {
 				t.Fatalf("the refusal %q does not name the model", err)
+			}
+		})
+	}
+}
+
+// A refused Row reaches no table, and it takes no connection of the pool
+// either: on a pool whose one connection is held, the refusal is answered at
+// once rather than when the caller's deadline ends, as a timeout.
+func TestARefusedRowTakesNoConnection(t *testing.T) {
+	handle := open(t)
+	seed(t, handle)
+	requireRowRefusedWithoutAConnection(t, handle)
+}
+
+func TestARefusedRowTakesNoConnectionOnPostgres(t *testing.T) {
+	handle := openFilteredPostgres(t)
+	seed(t, handle)
+	requireRowRefusedWithoutAConnection(t, handle)
+}
+
+func requireRowRefusedWithoutAConnection(t *testing.T, handle *gorm.DB) {
+	t.Helper()
+	pool, err := handle.DB()
+	if err != nil {
+		t.Fatalf("reaching the handle's pool: %v", err)
+	}
+	pool.SetMaxOpenConns(1)
+	held, err := pool.Conn(context.Background())
+	if err != nil {
+		t.Fatalf("holding the pool's one connection: %v", err)
+	}
+	defer func() { _ = held.Close() }()
+
+	const deadline = 2 * time.Second
+	for name, row := range refusedRows {
+		t.Run(name, func(t *testing.T) {
+			ctx, cancel := context.WithTimeout(context.Background(), deadline)
+			defer cancel()
+			n := -1
+			start := time.Now()
+			err := noPanic(t, func() error { return row(handle.WithContext(ctx)).Scan(&n) })
+			took := time.Since(start)
+			if !errors.Is(err, tenant.ErrNoTenantInContext) {
+				t.Fatalf("a Row with no tenant on a held pool gave %v after %s, want ErrNoTenantInContext",
+					err, took)
+			}
+			if took >= deadline/2 {
+				t.Fatalf("the refused Row took %s to answer, want it answered without waiting for a connection",
+					took)
 			}
 		})
 	}

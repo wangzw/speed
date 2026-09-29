@@ -255,11 +255,11 @@ func CrossTenant(ctx context.Context) context.Context
 
 **读语句在 GORM 里分两条处理链，两条都挂。** `Find`、`First`、`Count`、`Pluck` 走查询链，`Scan`、`Row`、`Rows` 走行链；只挂查询链，后一类读在没有租户的上下文里读出全部租户的行而不报错，报表与投影到另一种结构体的写法恰好都用它。
 
-**被拒绝的 `Row` 经它交回的那一行报出拒绝。** `Row` 没有自己的错误返回值，只交回 GORM 行链那一步产出的行，而语句已经失败时那一步不产出任何行，调用方的 `Scan` 会对一个空指针取值而 panic。被拒绝的 `Row` 因而不把拒绝记在语句上，而是与被拒绝的子查询一样渲染成一个绑定即失败的取值，替换它原先带着的 SQL：GORM 照常执行它，没有任何一张表被读到，交回的那一行在 `Scan` 与 `Err` 上以同一个哨兵失败，点名模型。`Rows` 与 `Scan` 有错误返回值，照查询链的方式拒绝。
+**被拒绝的 `Row` 经它交回的那一行报出拒绝。** `Row` 没有自己的错误返回值，只交回 GORM 行链那一步留在语句上的行，而语句已经失败时那一步不产出任何行，调用方的 `Scan` 会对一个空指针取值而 panic。被拒绝的 `Row` 因而在拒绝语句的同时，在语句上留下一行专门报出拒绝的结果：它的 `Scan` 与 `Err` 以同一个哨兵失败，点名模型。**这一行不到达任何库，也不占连接池里的连接**：只开一条连接的库在那条连接被调用方占着时，拒绝同样立即报出，而不是等到调用方的期限、报成超时。`Rows` 与 `Scan` 有错误返回值，照查询链的方式拒绝。
 
 **按关联写的联接，被联接那一侧同样加租户条件。** `Joins("Customer")` 读的是被联接模型的行，复合主键又允许两个租户复用同一个标识，只给主表加条件会把别的租户同标识的那一行联接进来。条件写进每一层联接的 ON 子句，逐层按那一层的模型判定：嵌套联接途经的全局表不加条件；一个全局模型经关联联接到受约束模型，同样要求上下文里有租户。以 SQL 文本写出的联接不在此列，见非保证。
 
-**子查询的拒绝随外层语句报出。** GORM 在渲染外层语句时执行子查询，并丢弃子查询自己的错误——一条建在没有租户的句柄上的子查询因而会渲染成空，在一种方言上读成空集，在另一种方言上报一个与成因无关的语法错误。被拒绝的子查询于是渲染成一个绑定即失败的取值，外层语句执行时以同一个哨兵失败。
+**子查询的拒绝随外层语句报出。** GORM 在渲染外层语句时执行子查询，并丢弃子查询自己的错误——一条建在没有租户的句柄上的子查询因而会渲染成空，在一种方言上读成空集，在另一种方言上报一个与成因无关的语法错误。被拒绝的子查询于是渲染成一个绑定即失败的取值，外层语句执行时以同一个哨兵失败。GORM 渲染外层语句与执行它是同一步，插件插不进两者之间，这个哨兵因而在外层语句取到连接、绑定参数时才报出：连接池的连接都被占着时，外层语句与任何一条语句一样等连接，调用方的期限先到就报超时。
 
 **插件不持有任何随运行而变的状态。** 它的判据全部来自两处：编译期常量（那一列的名字），以及每一条语句的上下文。这一点是刻意的。插件实例随描述符在 `init` 期冻结，而一个进程要执行两条命令就建两个注册表，两个装配共用描述符上那一个实例；插件的 `Initialize` 又由数据库模块在自己的 `New` 中调用，早于名册模块的构造，也早于任何一次快照装载。**把快照或配置装进插件实例的写法，在第二个注册表上会覆盖第一个的取值**，而先建的那个装配此后每条语句都按后者的取值判定。本模块因此不设这条通路。
 
@@ -686,7 +686,7 @@ flowchart TD
 | 请求期的解析、日志字段绑定与收口 | 已实现 | `pkg/tenant/resolve/resolve.go` `admit`、`refuse`、`middlewareFor` |
 | 受约束模型的约定与识别，填列与核对作用于 GORM 绑到租户列上的字段 | 已实现 | `pkg/tenant/model.go` `Model`；`pkg/tenant/catalog/plugin.go` `conventionColumn`、`conventionFieldOf`、`isConvention`、`embedsConvention` |
 | 隔离插件的三处作用点、四档判定与显式租户列的核对，只核对 GORM 写出的字段，拒绝不带租户列的插入行 | 已实现 | `pkg/tenant/catalog/plugin.go` `Initialize`、`scopeRead`、`scopeDelete`、`scopeUpdate`、`applyCondition`、`scopeTerm`、`grouped`、`fillKey`、`inKey`、`fillColumn`、`writeRows`、`insertSelects`、`leftOut`、`otherSpellings`、`insertWrites`、`judgeSpellings`、`writeMap`、`assignedValues`、`destinationValues`、`upsertValues`、`keyReaches`、`keyColumn`、`targetReaches` |
-| 行链上的读、`Row` 经交回的行报出拒绝、关联联接的条件与子查询的拒绝 | 已实现 | `pkg/tenant/catalog/plugin.go` `Initialize`、`scopeRow`、`refuseRead`、`scopedJoins`、`applyJoins`、`joinTerm`、`renderRefusal` |
+| 行链上的读、`Row` 经交回的行报出拒绝且不占连接、关联联接的条件与子查询的拒绝 | 已实现 | `pkg/tenant/catalog/plugin.go` `Initialize`、`scopeRow`、`refuseRead`、`refusedRow`、`refusingConnector`、`scopedJoins`、`applyJoins`、`joinTerm`、`renderRefusal` |
 | 跨租户的上下文标记 | 已实现 | `pkg/tenant/scope.go` `CrossTenant`；`internal/tenantctx/tenantctx.go` `WithCrossTenant` |
 | 不经请求面的路径经名册进入单个租户，放行读快照、拒绝读表并追平快照 | 已实现 | `pkg/tenant/catalog/roster.go` `Enter`、`enter`、`fromTable`、`catchUp`；`internal/tenantctx/tenantctx.go` `Bind`、`LogField` |
 | 停用期间的单租户工作进入那个租户 | 已实现 | `pkg/tenant/catalog/roster.go` `EnterRegistered`、`enter` |
