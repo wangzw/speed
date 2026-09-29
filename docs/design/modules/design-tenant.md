@@ -560,7 +560,7 @@ flowchart TD
 | `ErrNoExtractor` | `Start` 关窗后，配置选定的取法名没有任何一条登记 | 点名该名字与本模块内建的三个名字；改配置，或登记一个取法 |
 | `ErrExtractorConflict` | `Start` 关窗后，两条登记用了同一个名字 | 点名那个名字与两处登记的实现类型。**登记面拿不到登记方的身份**，因而点不到模块名——与认证的豁免登记同形（见 [authn](design-authn.md)） |
 | `ErrInvalidExtractor` | `Start` 关窗后，一条登记的名字为空或含空白——任何一个 Unicode 算作空白的字符，出现在哪里都算——或者实现为空 | 点名那个名字与实现类型；实现为空时类型打不出来，错误文本点明"有一条实现为空的登记" |
-| `ErrRosterMissing` | 名册表不在：`Init` 装载时它还没建，或此后被删。名册自己的一条语句——整张名册的读、进入方法按标识的那一读、写入与写入里的核对读——失败之后，在同一条连接上、事务之外问库里有没有这张表，没有时以它作答，那条语句的错误留在错误链里（[ADR-tenant-directory-2026-09-29](../../adr/adr-tenant-directory-2026-09-29.md)）。别的原因失败的语句——引擎放弃了等锁、连接断开、没有权限——不以它作答，这一问本身失败时也不；语句因调用方的上下文结束、或因取不到连接而没有执行的，同样不以它作答。快照尚未发布时名册被读或被进入，也以它作答 | 点名那张表与施加迁移的那条命令；把它写进那条命令的声明集 |
+| `ErrRosterMissing` | 名册表不在：`Init` 装载时它还没建，或此后被删。名册自己的一条语句——整张名册的读、进入方法按标识的那一读、写入与写入里的核对读——失败之后，在同一条连接上、事务之外问库里有没有这张表，没有时以它作答，那条语句的错误留在错误链里（[ADR-tenant-directory-2026-09-29](../../adr/adr-tenant-directory-2026-09-29.md)）。别的原因失败的语句——引擎放弃了等锁、连接断开、对表或对表所在模式没有权限——不以它作答，这一问本身失败时也不；语句因调用方的上下文结束、或因取不到连接而没有执行的，同样不以它作答。快照尚未发布时名册被读或被进入，也以它作答 | 点名那张表与施加迁移的那条命令；把它写进那条命令的声明集 |
 | `ErrNoConnection` | 名册自己的一条语句在数据库模块的 `Connection` 给的五秒之内没有从交付连接池取到连接，那次读或写因而没有发生（[ADR-tenant-directory-2026-09-29](../../adr/adr-tenant-directory-2026-09-29.md)）；只开一条连接的库上，调用方在交付句柄上的事务里调用名册即是这一档 | 点明是在等连接与那个界；把这次调用挪到那个事务之外，事件在提交之后发布；连接池被别的调用方长时间占满时，按负载给池扩容。它不是拒绝：表没有读，对那个租户没有答案 |
 | `ErrInvalidTenant` | 一个本模块不予处置的租户：`Put` 或 `Create` 的标识或别名为空、含空白或控制字符；`SetStatus`、`Enter` 或 `EnterRegistered` 给的标识在名册表里没有任何一行，或本身不在取值域内；或者装载与刷新读到的某一行本身就是这样一个租户；或者这样一个标识被写进租户列——跨租户的写给了含空白或控制字符的字面值，或者它在任何句柄上被绑定进语句 | 点名那个字段、那个标识或那张表。**字段为空与字段含空白或控制字符是两档，文本上分开说**：前者要补一个值，后者要改掉那个值，改法不同。哨兵仍只有一个——调用方对这一类的处置相同，都是检查它传进来的那个值 |
 | `ErrAliasConflict` | 两个租户抢同一个别名，经 `Put` 或 `Create` | 点名该别名与占有它的那个标识；改掉其中一个 |
@@ -661,7 +661,7 @@ flowchart TD
 
 **名册自己的每一次读写经数据库模块的 `Connection` 取交付连接池里的一条连接，取连接的界为五秒**（[ADR-tenant-directory-2026-09-29](../../adr/adr-tenant-directory-2026-09-29.md)、[ADR-db-waits-2026-09-29](../../adr/adr-db-waits-2026-09-29.md)）：整张名册的读、进入方法按标识的那一读、写入与写入里的核对读都是。调用方占着的连接，名册等多久都等不到——只开一条连接的库上，调用方在交付句柄上开着的事务占着那条连接，要到它自己的调用返回之后才放开——而一条语句分不出这种占用与别的调用方的短暂占用，因而给等待设界，而不是去识别它。五秒与审计模块自己写的行取同一个界（见 [audit](design-audit.md) 的写入的等待）。五秒之内取不到连接以 `ErrNoConnection` 作答，什么也没做；调用方的上下文先于这个界结束时，以上下文的错误作答。**界只管取连接**：每一条语句等别的连接占着的锁照引擎自己的设置等（见 [db](design-db.md) 的有界的连接），SQLite 上至多一个忙等时限，已经开始的这段等待不随调用方的上下文结束；PostgreSQL 上随上下文，或由 `lock_timeout`、`statement_timeout` 结束。引擎放弃等锁时，那条语句以引擎自己的错误失败，不带哨兵。语句本身照调用方的上下文执行，一次写取到的那条连接承载它的整个事务与失败之后的核对读，并在写之后的那次重读之前放回，重读另取一条。
 
-**一条语句失败之后，名册在同一条连接上、事务之外问库里有没有名册表**：SQLite 上看 GORM 迁移器列出的主库的表；PostgreSQL 上按搜索路径解析这个名字，与那条语句找表的路径相同，本模块的迁移就把表建在那里。解析名字不看对表的权限，而信息模式只列出角色有权限的表，列表会把角色读不了的表当成不在。没有名册表时以 `ErrRosterMissing` 作答；有、或这一问本身失败时，那条语句的失败原样交出。这一问放在事务之外，因为 PostgreSQL 上一条语句失败的事务不再接受任何语句；它同样照引擎的规矩等锁，SQLite 上整个库被占着时再等一个忙等时限。整表读一次只有一个在进行，等槽位的一方等到占着它的读结束：那次读至多等五秒取连接，再照引擎的时限等锁。
+**一条语句失败之后，名册在同一条连接上、事务之外问库里有没有名册表**：SQLite 上看 GORM 迁移器列出的主库的表；PostgreSQL 上读系统目录，看会话的搜索路径列出的模式里有没有这个名字的关系，那是那条语句找表的地方，本模块的迁移也把表建在那里（[ADR-tenant-directory-2026-09-29](../../adr/adr-tenant-directory-2026-09-29.md)）。搜索路径按 PostgreSQL 切分标识符列表的规则读出，`$user` 换成会话当前的角色；角色没有 USAGE 的模式照样算，PostgreSQL 不经列出也搜索的系统目录与会话的临时模式一并算上。读系统目录不看对表与模式的权限：信息模式只列出角色有权限的表，按语句的路径解析名字又会跳过角色没有 USAGE 的模式——PostgreSQL 把这样的模式从生效的路径里去掉——两者都会把一张在的表当成不在，把一次权限不足答成要迁移。没有名册表时以 `ErrRosterMissing` 作答；有、或这一问本身失败时，那条语句的失败原样交出。这一问放在事务之外，因为 PostgreSQL 上一条语句失败的事务不再接受任何语句；它同样照引擎的规矩等锁，SQLite 上整个库被占着时再等一个忙等时限。整表读一次只有一个在进行，等槽位的一方等到占着它的读结束：那次读至多等五秒取连接，再照引擎的时限等锁。
 
 ## 扩展点
 
@@ -684,7 +684,7 @@ flowchart TD
 | 解析模块、名册模块与各自的排他交付 | 已实现 | `pkg/tenant/resolve/resolve.go` `Module`、`pkg/tenant/catalog/catalog.go` `Module` |
 | 名册表与它的迁移集 | 已实现 | `pkg/tenant/catalog/migrations/`；`catalog.go` `migrationsFS` |
 | 名册的读写面与两个索引的快照 | 已实现 | `pkg/tenant/catalog/roster.go` `Get`、`ByAlias`、`Put`、`Create`、`SetStatus`、`List`、`afterWrite`；`snapshot.go` `buildSnapshot` |
-| 名册的语句经 `Connection` 取交付连接，表不在、取不到连接与其余失败分开作答 | 已实现 | `pkg/tenant/catalog/roster.go` `onConnection`、`connectionWait`、`failedStatement`、`tableAbsent`、`answered`、`lookUp`；`pkg/tenant/errors.go` `ErrNoConnection`、`ErrRosterMissing` |
+| 名册的语句经 `Connection` 取交付连接，表不在、取不到连接与其余失败分开作答，PostgreSQL 上在搜索路径列出的模式里读系统目录 | 已实现 | `pkg/tenant/catalog/roster.go` `onConnection`、`connectionWait`、`failedStatement`、`tableAbsent`、`namedSchemas`、`searchPath`、`quotedName`、`answered`、`lookUp`；`pkg/tenant/errors.go` `ErrNoConnection`、`ErrRosterMissing` |
 | 快照的周期刷新与 `Stop` 取消，整表读一次一个、按读的先后发布 | 已实现 | `pkg/tenant/catalog/roster.go` `start`、`stop`、`refreshOnce`、`read`、`acquire` |
 | 三种内建取法 | 已实现 | `pkg/tenant/resolve/extract.go` `headerExtractor`、`subdomainExtractor`、`pathExtractor` |
 | 取法的登记面与冻结 | 已实现 | `pkg/tenant/resolve/resolve.go` `Register`、`open`、`seal` |

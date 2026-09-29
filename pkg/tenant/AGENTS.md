@@ -109,15 +109,22 @@ here must not cross, and how to run it.
   serves. A new statement of the roster's goes through `onConnection`, and the
   connection a write takes is given back before its reread takes one
   (`catalog/wait_test.go`).
-- **`ErrRosterMissing` means the roster table is not there, and nothing else.**
-  A statement that fails is followed, on its connection and outside any
-  transaction, by a question to the database whether it has the table
-  (`failedStatement`, `tableAbsent`); only an answer that it has none gives the
-  sentinel, whose repair is the migration command. On PostgreSQL the question
-  resolves the name, which takes no privilege on the table, where a listing of
-  the information schema leaves out the tables a role may not read. A lock the
-  engine gave up on, a lost connection or a refused permission is reported as
-  it stands. The drivers word
+- **`ErrRosterMissing` means the roster table is not where the roster's
+  statements look for it, or has not been read yet.** A statement that fails is
+  followed, on its connection and outside any transaction, by a question to the
+  database whether it has the table (`failedStatement`, `tableAbsent`); only an
+  answer that it has none gives the sentinel, whose repair is the migration
+  command. A roster whose snapshot is not published yet — a call reaching it
+  before this module's `Init` — is refused with it as well (`current`). On
+  PostgreSQL the question reads the system catalog for the name in the schemas
+  the session's search path names, a schema the role holds no USAGE on
+  included, and in the ones PostgreSQL searches without their being named
+  (`namedSchemas`, `searchPath`): resolving the name as a statement does skips
+  a schema the role may not use, and the information schema leaves out the
+  tables a role may not read, so either would answer a refused permission with
+  the migration. A lock the engine gave up on, a lost connection, a refused
+  permission — on the table or on its schema — and a question that fails too
+  are reported as they stand. The drivers word
   a missing table each their own way, and this module imports no driver, so the
   question is put to the database rather than to the error text; this
   module's own answers — a conflict, a registration already there, an unknown
@@ -293,7 +300,11 @@ connection holds, the locator's busy timeout for each statement and answered
 as no missing table; and a connection that cannot be opened, answered as no
 missing table either — and `pkg/tenant/catalog/race_test.go` is where a dropped
 table is still told apart on PostgreSQL, and `catalog/handles_test.go` where a
-refused permission is not taken for one; `pkg/tenant/catalog/readonly_test.go`
+refused permission — on the table or on its schema — and a lost connection are
+not taken for one, where the table is looked for in the schemas the search path
+names, and where the search path is read as PostgreSQL reads it;
+`pkg/tenant/catalog/quiet_test.go` is where the roster's own answers are
+followed by no question to the table; `pkg/tenant/catalog/readonly_test.go`
 is where a read-only model's reads over a nullable tenant column are, on both
 dialects;
 `pkg/tenant/resolve/extract_test.go` is where the

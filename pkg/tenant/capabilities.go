@@ -142,8 +142,9 @@ type Catalog interface {
 	// in-process subscriber entering a disabled or unknown tenant meets inside
 	// its publisher's transaction on a database held to one connection; the
 	// context's error when the caller's context ended; and any other failure
-	// of the read — a lock it waited for past the bound among them — as it
-	// stands. None of them is an answer about the tenant. An admission comes
+	// of the read — a lock the engine gave up waiting for, as its own timeouts
+	// decide, and a lost connection among them — as it stands. None of them is
+	// an answer about the tenant. An admission comes
 	// from the snapshot and reads nothing, so a tenant disabled on another
 	// replica is still entered here until this replica next rereads the
 	// roster.

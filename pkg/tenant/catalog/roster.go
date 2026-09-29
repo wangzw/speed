@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"log/slog"
 	"slices"
+	"strings"
 	"sync"
 	"sync/atomic"
 	"time"
@@ -266,21 +267,130 @@ func failedStatement(ctx context.Context, session *gorm.DB, err error) error {
 // as the roster's where the roster's statements look for it, and reports
 // nothing absent when the question itself fails.
 //
-// On PostgreSQL the name is resolved as the statement resolved it, through the
-// search path, which is where this module's migration creates the table.
-// Resolving a name takes no privilege on the table, where a listing would: the
-// information schema lists only the tables the role holds a privilege on, and
-// a table the role may not read would read as one that is not there. On SQLite,
-// which has no privileges, the tables GORM's migrator lists — the main
-// database's — are asked.
+// On SQLite, which has no privileges, the tables GORM's migrator lists — the
+// main database's — are asked.
+//
+// On PostgreSQL the schemas asked are the ones the session's search path
+// names (namedSchemas), which is where the statement looked and where this
+// module's migration creates the table, and the ones the effective path adds
+// without their being named — the system catalog and the session's temporary
+// schema. The system catalog is read for a relation of that name in any of
+// them, which takes no privilege, where the alternatives do: the information
+// schema lists only the tables the role holds a privilege on, and resolving the
+// name as a statement does skips a schema the role holds no USAGE on, since
+// PostgreSQL drops such a schema from the path it searches. Either way a table
+// that is there would read as one that is not, and a refused permission would
+// be answered with the migration.
 func tableAbsent(session *gorm.DB) bool {
-	if session.Name() == postgresDialector {
-		var absent bool
-		err := session.Raw("SELECT to_regclass(?) IS NULL", tableName).Scan(&absent).Error
-		return err == nil && absent
+	if session.Name() != postgresDialector {
+		tables, err := session.Migrator().GetTables()
+		return err == nil && !slices.Contains(tables, tableName)
 	}
-	tables, err := session.Migrator().GetTables()
-	return err == nil && !slices.Contains(tables, tableName)
+	named, err := namedSchemas(session)
+	if err != nil {
+		return false
+	}
+	var absent bool
+	err = session.Raw(`SELECT NOT EXISTS (SELECT 1 FROM pg_catalog.pg_class c
+		JOIN pg_catalog.pg_namespace n ON n.oid = c.relnamespace
+		WHERE c.relname = ? AND (n.nspname IN ? OR n.nspname = ANY (pg_catalog.current_schemas(true))))`,
+		tableName, named).Scan(&absent).Error
+	return err == nil && absent
+}
+
+// namedSchemas lists the schemas a PostgreSQL session's search path names,
+// read as PostgreSQL reads the setting (searchPath), with "$user" standing for
+// the session's current role. A schema the role holds no USAGE on, or that
+// does not exist, is kept: the question is where a statement would look for
+// the table, not whether the role may reach it. The schemas PostgreSQL searches
+// without their being named — the system catalog, and the session's temporary
+// schema when it has one — are the effective path's, which tableAbsent asks
+// beside these.
+func namedSchemas(session *gorm.DB) ([]string, error) {
+	var setting struct {
+		Path string
+		User string
+	}
+	if err := session.Raw(`SELECT pg_catalog.current_setting('search_path') AS path, current_user AS "user"`).
+		Scan(&setting).Error; err != nil {
+		return nil, err
+	}
+	var schemas []string
+	for _, name := range searchPath(setting.Path) {
+		if name == "$user" {
+			name = setting.User
+		}
+		if !slices.Contains(schemas, name) {
+			schemas = append(schemas, name)
+		}
+	}
+	return schemas, nil
+}
+
+// blanks are the characters PostgreSQL skips around an item of an identifier
+// list.
+const blanks = " \t\n\r\f\v"
+
+// searchPath reads the names a PostgreSQL search_path setting lists, as
+// PostgreSQL splits an identifier list: separated by commas, the blanks around
+// each item dropped, a name in double quotes taken as written with a doubled
+// quote standing for one, and any other name folded to lower case in its ASCII
+// letters.
+func searchPath(setting string) []string {
+	var names []string
+	rest := setting
+	for {
+		rest = strings.TrimLeft(rest, blanks)
+		var name string
+		if strings.HasPrefix(rest, `"`) {
+			name, rest = quotedName(rest)
+		} else {
+			end := strings.IndexByte(rest, ',')
+			if end < 0 {
+				end = len(rest)
+			}
+			name, rest = asciiLower(strings.TrimRight(rest[:end], blanks)), rest[end:]
+		}
+		if name != "" {
+			names = append(names, name)
+		}
+		rest = strings.TrimLeft(rest, blanks)
+		if !strings.HasPrefix(rest, ",") {
+			return names
+		}
+		rest = rest[1:]
+	}
+}
+
+// quotedName reads a double-quoted name off the front of s, a doubled quote
+// inside it standing for one, and returns it with what follows the closing
+// quote.
+func quotedName(s string) (name, rest string) {
+	var b strings.Builder
+	for i := 1; i < len(s); i++ {
+		if s[i] != '"' {
+			b.WriteByte(s[i])
+			continue
+		}
+		if i+1 < len(s) && s[i+1] == '"' {
+			b.WriteByte('"')
+			i++
+			continue
+		}
+		return b.String(), s[i+1:]
+	}
+	return b.String(), ""
+}
+
+// asciiLower folds the ASCII letters of a name to lower case, as PostgreSQL
+// folds an unquoted identifier in a multibyte encoding.
+func asciiLower(s string) string {
+	return strings.Map(func(r rune) rune {
+		if 'A' <= r && r <= 'Z' {
+			return r + ('a' - 'A')
+		}
+		return r
+	}, s)
 }
 
 // postgresDialector is the name the PostgreSQL engine's GORM dialector answers.
