@@ -170,9 +170,15 @@ A scoped model embeds `tenant.Model`. That one act declares the model and
 supplies the column; there is no second thing to remember and no interface to
 implement. Embedding counts however GORM flattens it — directly, through an
 exported base struct, by pointer, or in a field tagged `embedded` — and the
-filter recognises the field by the struct it comes from, not by its name
-(`catalog/recognise_test.go`). A base struct of an unexported type is skipped
-by GORM altogether, so the convention inside one is not on the model at all.
+tenant column is the column GORM parsed the convention's field onto, which an
+`embeddedPrefix` renames. The filter finds that field by the struct it comes
+from, never by its name or by the column's name (`catalog/recognise_test.go`):
+a prefix moves the column off `tenant_id`, and a field of the model's own named
+`TenantID` takes the name. Two declarations are refused on every statement,
+under any context, with `ErrNoTenantInContext` rather than read as a global
+table: the convention embedded where GORM does not read it — through an
+unexported struct or field, or a field tagged `-` — which leaves the column
+off the model, and the convention embedded twice on two columns.
 
 A field the model declares on the convention's column — named like the
 convention's, named otherwise and tagged with the column, or reached first
@@ -266,8 +272,11 @@ answers are pinned; `pkg/tenant/catalog/reach_test.go` is where the statements
 it has to reach beyond the query processor are — a scan, a Row whose refusal
 comes back through the row it hands back without taking a connection, an
 association join, a subquery rendered into another statement;
-`pkg/tenant/catalog/recognise_test.go` is where the models the filter takes for
-scoped are, a field taking the convention's column over included;
+`pkg/tenant/catalog/recognise_test.go` is where every declaration shape of the
+convention is pinned in one matrix on both dialects — the shapes scoped, a
+prefixed column and a field taking the column over included, the shapes
+refused, and the lookalikes left global — and where a join is recognised as
+the model it reaches;
 `pkg/tenant/catalog/targets_test.go`
 is where an assignment's target is read the way each database reads it, on both
 dialects; `pkg/tenant/catalog/create_test.go` is where a registration that must

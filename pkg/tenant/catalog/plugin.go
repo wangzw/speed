@@ -6,6 +6,7 @@ import (
 	"database/sql/driver"
 	"fmt"
 	"reflect"
+	"slices"
 	"strings"
 
 	"gorm.io/gorm"
@@ -22,21 +23,14 @@ import (
 const callbackName = "tenant:scope"
 
 // conventionField is the Go field tenant.Model contributes. GORM flattens an
-// embedded struct, so the field appears on the model's own schema under this
-// name.
+// embedded struct, so the field appears among the model's own fields under this
+// Go name, on whatever column the embedding gives it.
 const conventionField = "TenantID"
 
 // conventionType is the embedded type that marks a model as scoped. Comparing
 // against it is what distinguishes a model that embedded the convention from
 // one that happens to carry a field of the same name.
 var conventionType = reflect.TypeOf(tenant.Model{})
-
-// conventionColumn is the column the convention declares, read off its field's
-// tag the way GORM reads it rather than written out a second time here.
-var conventionColumn = func() string {
-	f, _ := conventionType.FieldByName(conventionField)
-	return gormschema.ParseTagSetting(f.Tag.Get("gorm"), ";")["COLUMN"]
-}()
 
 // whereKey is the clause this plugin reads and replaces. It is written out
 // rather than taken from clause.Where{}.Name() so that a reader sees the one
@@ -49,8 +43,9 @@ const whereKey = "WHERE"
 // at init time, database hands that one instance to every handle it builds, and
 // a process driving two commands builds two registries that share it — so
 // anything learned per run would be the other registry's value on the second
-// run. Everything this plugin judges comes from the model GORM has already
-// parsed and from the statement's context, and it keeps neither.
+// run. Everything this plugin judges comes from the statement's model — the
+// schema GORM has already parsed and the model's type — and from the
+// statement's context, and it keeps none of them.
 //
 // It also does not consult the roster, so it cannot tell a tenant that does not
 // exist from one that was disabled from one that was simply never put in the
@@ -120,9 +115,11 @@ const (
 	// neither conditioned nor filled, and what it writes into the tenant
 	// column is still judged.
 	crossing
-	// refused is a scoped statement whose context carries no tenant. The
-	// refusal comes back beside it, for the caller to put on the statement in
-	// the form that statement can report.
+	// refused is a scoped statement whose context carries no tenant, or a
+	// statement through a model that embeds the convention where no one
+	// tenant column can be taken from it. The refusal comes back beside it,
+	// for the caller to put on the statement in the form that statement can
+	// report.
 	refused
 	// tenanted is a scoped statement whose context carries a tenant.
 	tenanted
@@ -135,9 +132,10 @@ const (
 //
 // The answers are ordered, and the order is load-bearing. Recognising the model
 // comes first, so a statement that is not scoped is left alone whatever its
-// context says. The cross-tenant mark comes next, so a statement that means to
-// cross is not refused for lacking the very thing it means to lack. Only then
-// is the identifier looked for.
+// context says, and one through a model no tenant column can be taken from is
+// refused whatever its context says. The cross-tenant mark comes next, so a
+// statement that means to cross is not refused for lacking the very thing it
+// means to lack. Only then is the identifier looked for.
 //
 // A statement that is scoped but not to be filtered gives up any condition an
 // earlier execution of it left behind: a chain first run under one tenant and
@@ -148,7 +146,12 @@ const (
 // association joins reaches a model that is: it reads that model's rows. The
 // field is nil for such a read, which carries no condition of its own.
 func scopeOf(st *gorm.Statement, joins []scopedJoin) (*gormschema.Field, string, scope, error) {
-	field := conventionFieldOf(st.Schema)
+	field, unjudged := conventionFieldOf(st.Schema)
+	if unjudged != nil {
+		releaseCondition(st)
+		releaseJoins(st, joins)
+		return nil, "", refused, unjudged
+	}
 	if field == nil && len(joins) == 0 {
 		return nil, "", unscoped, nil
 	}
@@ -161,7 +164,7 @@ func scopeOf(st *gorm.Statement, joins []scopedJoin) (*gormschema.Field, string,
 	if !ok {
 		releaseCondition(st)
 		releaseJoins(st, joins)
-		return field, "", refused, noTenant(st, joins)
+		return field, "", refused, noTenant(st, field, joins)
 	}
 	return field, id, tenanted, nil
 }
@@ -182,10 +185,17 @@ func handsBackOneRow(tx *gorm.DB) bool {
 	return ok && isBool && !many
 }
 
-// read scopes one read, or refuses it in the form it can report.
+// read scopes one read, or refuses it in the form it can report. A read
+// joined to a model no tenant column can be taken from is refused as a read of
+// that model would be.
 func (f *filter) read(tx *gorm.DB, oneRow bool) {
 	st := tx.Statement
-	joins := scopedJoins(st)
+	joins, unjudged := scopedJoins(st)
+	if unjudged != nil {
+		releaseCondition(st)
+		refuseRead(tx, unjudged, oneRow)
+		return
+	}
 	field, id, s, refusal := scopeOf(st, joins)
 	switch s {
 	case tenanted:
@@ -305,10 +315,11 @@ type scopedJoin struct {
 // scopedJoins lists the association joins of this read that reach a scoped
 // model. A join GORM renders from the caller's own expression, or a join
 // written as SQL text, names its tables in text the plugin does not parse, and
-// is not among them.
-func scopedJoins(st *gorm.Statement) []scopedJoin {
+// is not among them. A join reaching a model that embeds the convention where
+// no tenant column can be taken from it returns that model's refusal.
+func scopedJoins(st *gorm.Statement) ([]scopedJoin, error) {
 	if st.Schema == nil || len(st.Joins) == 0 {
-		return nil
+		return nil, nil
 	}
 	var out []scopedJoin
 	for i, j := range st.Joins {
@@ -330,13 +341,17 @@ func scopedJoins(st *gorm.Statement) []scopedJoin {
 			if level == len(chain)-1 && j.Alias != "" {
 				alias = j.Alias
 			}
-			if f := conventionFieldOf(rel.FieldSchema); f != nil {
+			f, unjudged := conventionFieldOf(rel.FieldSchema)
+			switch {
+			case unjudged != nil:
+				return nil, unjudged
+			case f != nil:
 				sj.columns[alias] = f.DBName
 				sj.fallback = f.DBName
 				if sj.model == "" {
 					sj.model = rel.FieldSchema.Name
 				}
-			} else {
+			default:
 				sj.unscoped[alias] = true
 			}
 			parent = current
@@ -345,7 +360,7 @@ func scopedJoins(st *gorm.Statement) []scopedJoin {
 			out = append(out, sj)
 		}
 	}
-	return out
+	return out, nil
 }
 
 // relationChain resolves a join's name to the relationships it follows, the way
@@ -1565,13 +1580,22 @@ func stringValue(v reflect.Value) (string, bool) {
 	return v.String(), true
 }
 
-// conventionFieldOf returns the field a scoped model's tenant column is bound
-// to, or nil when the model is not scoped.
+// conventionFieldOf returns the field GORM binds a scoped model's tenant column
+// to, nil when the model is not scoped, or the refusal of a model that embeds
+// the convention where no one tenant column can be taken from it.
 //
 // What makes a model scoped is embedding the convention, and nothing else is
-// allowed to mean that. The check is on where a field comes from rather than on
-// its name or the column it lands in, so a model carrying a field named like
-// the convention's, on the convention's column, is not swept up by it.
+// allowed to mean that. The tenant column is found by where it comes from: it
+// is the column GORM parsed the convention's own field onto (isConvention),
+// however the model embeds the convention — directly, by pointer, through an
+// exported base struct, in a field tagged embedded — and whatever that column
+// is called, since an embedded prefix renames it. Neither the column's name nor
+// the convention's field name is looked up. A prefix moves the column off the
+// name the convention declares, so a lookup by that name takes the model for a
+// global table; and a field of the model's own named like the convention's
+// takes that name, so a lookup by it finds that field and does the same. A
+// model carrying a field named like the convention's, on the convention's
+// column, without embedding the convention, is not swept up either.
 //
 // The field returned is the one GORM binds the column to, which need not be the
 // convention's own. GORM binds each column to one field of the model — the one
@@ -1579,29 +1603,45 @@ func stringValue(v reflect.Value) (string, bool) {
 // writes that field alone, under its name and under the column's. A model that
 // embeds the convention and declares a field of its own on the column, or
 // reaches one first through another embedding, has that field read and written
-// in place of the convention's. Such a model is still scoped: taking the
-// convention's field for the column would leave the filter judging a field GORM
-// never writes, and looking the column up by the convention's field name would
-// find the other field and take the model for a global table. The convention's
-// field is looked for among all of the model's fields only when the one bound
-// to the column is not it.
-func conventionFieldOf(s *gormschema.Schema) *gormschema.Field {
+// in place of the convention's. Such a model is still scoped, and taking the
+// convention's field for the column would leave the filter judging a field
+// GORM never writes.
+//
+// Two declarations leave no one tenant column to judge, and a model declared
+// either way is refused rather than read as a global table. The convention
+// embedded where GORM does not read it — through an unexported struct or field,
+// or in a field tagged to be ignored — puts no field on the model, so GORM
+// neither reads the column into the model nor writes it into a row
+// (unreadConvention). The convention embedded twice on two columns names two,
+// and a row belongs to one tenant.
+func conventionFieldOf(s *gormschema.Schema) (*gormschema.Field, error) {
 	if s == nil {
-		return nil
+		return nil, nil
 	}
-	bound := s.FieldsByDBName[conventionColumn]
-	if bound == nil {
-		return nil
-	}
-	if isConvention(s.ModelType, bound) {
-		return bound
-	}
+	var convention *gormschema.Field
 	for _, f := range s.Fields {
-		if f.DBName == conventionColumn && isConvention(s.ModelType, f) {
-			return bound
+		if !isConvention(s.ModelType, f) {
+			continue
+		}
+		switch {
+		case convention == nil:
+			convention = f
+		case f.DBName != convention.DBName:
+			return nil, fmt.Errorf("%w: model %s embeds tenant.Model on two columns, %s and %s, and a "+
+				"scoped model has one tenant column; embed the convention once", tenant.ErrNoTenantInContext,
+				s.Name, convention.DBName, f.DBName)
 		}
 	}
-	return nil
+	if convention != nil {
+		return s.FieldsByDBName[convention.DBName], nil
+	}
+	if path, ok := unreadConvention(s.ModelType, nil); ok {
+		return nil, fmt.Errorf("%w: model %s embeds tenant.Model through %s, which GORM does not read — "+
+			"an unexported struct or field, or one tagged to be ignored — so the model carries no tenant "+
+			"column and no statement through it can be given one; embed the convention where GORM reads it",
+			tenant.ErrNoTenantInContext, s.Name, path)
+	}
+	return nil, nil
 }
 
 // isConvention reports whether a field of the model is the convention's own.
@@ -1643,14 +1683,80 @@ func embedsConvention(modelType reflect.Type, path []int) bool {
 	return len(path) > 1 && t == conventionType
 }
 
+// unreadConvention reports whether a struct embeds the convention anywhere
+// along its embeddings, and the Go path of fields that reaches it. It is asked
+// only of a model GORM parsed no convention field for, so an embedding it
+// finds is one GORM does not read.
+//
+// Every embedding is followed, read by GORM or not — an anonymous field, or one
+// tagged embedded, exported or not, by value or by pointer — because a base
+// GORM reads can itself embed the convention through one it does not. The
+// structs on the path so far are carried along, so that a struct embedding a
+// pointer to itself ends the walk rather than repeating it.
+//
+// The walk reads the model's type rather than the schema GORM cached, which
+// holds nothing of what GORM did not read. It runs for statements through a
+// model that carries no convention field, and its cost is the number of fields
+// along the model's embeddings.
+func unreadConvention(t reflect.Type, visiting []reflect.Type) (string, bool) {
+	for t.Kind() == reflect.Pointer {
+		t = t.Elem()
+	}
+	if t.Kind() != reflect.Struct || slices.Contains(visiting, t) {
+		return "", false
+	}
+	visiting = append(visiting, t)
+	for i := 0; i < t.NumField(); i++ {
+		f := t.Field(i)
+		if !f.Anonymous && !taggedEmbedded(f.Tag.Get("gorm")) {
+			continue
+		}
+		inner := f.Type
+		for inner.Kind() == reflect.Pointer {
+			inner = inner.Elem()
+		}
+		if inner == conventionType {
+			return f.Name, true
+		}
+		if path, ok := unreadConvention(inner, visiting); ok {
+			return f.Name + "." + path, true
+		}
+	}
+	return "", false
+}
+
+// embeddedSetting is the key GORM reads the embedded setting of a field under.
+const embeddedSetting = "EMBEDDED"
+
+// taggedEmbedded reports whether a field's gorm tag carries the embedded
+// setting, read as GORM reads its settings. A tag that does not mention the
+// word at all, in any case, is passed over without being parsed.
+func taggedEmbedded(tag string) bool {
+	if !containsFold(tag, embeddedSetting) {
+		return false
+	}
+	_, ok := gormschema.ParseTagSetting(tag, ";")[embeddedSetting]
+	return ok
+}
+
+// containsFold reports whether sub occurs in s without regard to case.
+func containsFold(s, sub string) bool {
+	for i := 0; i+len(sub) <= len(s); i++ {
+		if strings.EqualFold(s[i:i+len(sub)], sub) {
+			return true
+		}
+	}
+	return false
+}
+
 // noTenant names the model a refused statement was against. The model is what
 // the caller has to look at to see why no tenant reached it, and it is the one
 // thing this side knows. A read refused for a scoped model it reaches through a
 // join names that model.
-func noTenant(st *gorm.Statement, joins []scopedJoin) error {
+func noTenant(st *gorm.Statement, field *gormschema.Field, joins []scopedJoin) error {
 	name := "a scoped model"
 	switch {
-	case conventionFieldOf(st.Schema) != nil:
+	case field != nil:
 		name = st.Schema.Name
 	case len(joins) > 0:
 		name = joins[0].model

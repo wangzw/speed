@@ -11,6 +11,7 @@ import (
 	"gorm.io/gorm"
 
 	"github.com/vislake/speed/pkg/tenant"
+	"github.com/vislake/speed/pkg/tenant/internal/tenantctx"
 )
 
 // The cases in this file are about which statements the filter reaches: a
@@ -122,7 +123,8 @@ func requireRowRefusal(t *testing.T, handle *gorm.DB) {
 
 // A refused Row reaches no table, and it takes no connection of the pool
 // either: on a pool whose one connection is held, the refusal is answered at
-// once rather than when the caller's deadline ends, as a timeout.
+// once rather than when the caller's deadline ends, as a timeout. That holds for
+// a Row refused for its model as for one refused for its context.
 func TestARefusedRowTakesNoConnection(t *testing.T) {
 	handle := open(t)
 	seed(t, handle)
@@ -148,8 +150,18 @@ func requireRowRefusedWithoutAConnection(t *testing.T, handle *gorm.DB) {
 	}
 	defer func() { _ = held.Close() }()
 
-	const deadline = 2 * time.Second
+	rows := map[string]func(tx *gorm.DB) *sql.Row{
+		"a read under a tenant of a model no tenant column can be taken from": func(tx *gorm.DB) *sql.Row {
+			return tx.WithContext(tenantctx.WithID(tx.Statement.Context, "acme")).
+				Model(&shapeUnexportedBase{}).Select("count(*)").Row()
+		},
+	}
 	for name, row := range refusedRows {
+		rows[name] = row
+	}
+
+	const deadline = 2 * time.Second
+	for name, row := range rows {
 		t.Run(name, func(t *testing.T) {
 			ctx, cancel := context.WithTimeout(context.Background(), deadline)
 			defer cancel()
@@ -158,7 +170,7 @@ func requireRowRefusedWithoutAConnection(t *testing.T, handle *gorm.DB) {
 			err := noPanic(t, func() error { return row(handle.WithContext(ctx)).Scan(&n) })
 			took := time.Since(start)
 			if !errors.Is(err, tenant.ErrNoTenantInContext) {
-				t.Fatalf("a Row with no tenant on a held pool gave %v after %s, want ErrNoTenantInContext",
+				t.Fatalf("a refused Row on a held pool gave %v after %s, want ErrNoTenantInContext",
 					err, took)
 			}
 			if took >= deadline/2 {

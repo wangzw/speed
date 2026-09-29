@@ -11,7 +11,10 @@ package tenant
 // column, or it declines the model and the statement reads across tenants.
 // Embedding removes that class rather than detecting it.
 //
-// The column name is fixed here because the filter has to find it. A model that
+// The column name is fixed here, and an embedded prefix is the one thing that
+// renames it. The filter does not look the column up by that name: the tenant
+// column of a model is the column GORM parsed this type's field onto, found by
+// the struct the field comes from, whatever the column is called. A model that
 // embeds this is scoped; a model that does not is untouched by this capability
 // directory, which is also what keeps a single-tenant host from carrying any of
 // this. The other direction is not checkable: a model that should be scoped and
@@ -20,9 +23,14 @@ package tenant
 //
 // Embedding is whatever GORM flattens into the model: this type embedded
 // directly, through an exported base struct the model embeds, by pointer, or in
-// a field tagged embedded. GORM does not read an embedded struct of an
-// unexported type, so a base struct that is not exported carries no column onto
-// the model, and the model is a global table.
+// a field tagged embedded, with or without an embedded prefix. Two declarations
+// give the filter no one tenant column, and every statement through a model
+// declared either way is refused, under any context, rather than read as a
+// global table. GORM does not read an embedded struct of an unexported type, an
+// unexported field, or a field tagged to be ignored, so this type embedded
+// through one of those carries no column onto the model: GORM would neither
+// read the tenant column nor write it. And this type embedded twice on two
+// columns names two, where a row belongs to one tenant.
 //
 // A model that declares a field of its own on this column — one named like this
 // type's field, one of another name tagged with the column, or one another

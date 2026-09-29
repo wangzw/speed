@@ -3,135 +3,62 @@ package catalog
 import (
 	"context"
 	"errors"
+	"fmt"
+	"reflect"
+	"strings"
 	"testing"
 
+	sqlitedriver "github.com/glebarez/sqlite"
+	pgdriver "gorm.io/driver/postgres"
+	"gorm.io/gorm"
+	"gorm.io/gorm/logger"
+
+	"github.com/vislake/speed/pkg/internal/pgpool/pgtest"
 	"github.com/vislake/speed/pkg/tenant"
+	"github.com/vislake/speed/pkg/tenant/internal/tenantctx"
 )
 
 // The cases in this file are about which models the filter recognises as
-// scoped. Embedding the convention is the declaration, and GORM flattens an
-// embedded struct however it is reached: through a base struct the model
-// embeds, through a pointer, or through a field tagged embedded. Each of those
-// carries the convention's column onto the model, and each has to be scoped.
+// scoped, and on which column. Embedding the convention is the declaration,
+// and the tenant column is the column GORM parsed the convention's field onto,
+// however the convention is embedded and whatever else the model declares. A
+// model that embeds the convention where no one tenant column can be taken
+// from it is refused, whatever the context; a model that does not embed it is
+// left alone.
 
-// OwnedBase is a base struct an application's models share. It is exported, as
-// such a base is: GORM does not read an embedded struct of an unexported type.
-type OwnedBase struct {
+// ShapeBase is a base struct an application's models share. It is exported, as
+// GORM needs it to be to read it.
+type ShapeBase struct {
 	tenant.Model
 }
 
-// nestedOrder reaches the convention through a base struct.
-type nestedOrder struct {
-	OwnedBase
-	ID   string `gorm:"column:id;primaryKey"`
-	Note string `gorm:"column:note"`
+// shapeBase is the same base, unexported: GORM does not read an embedded
+// struct of an unexported type.
+type shapeBase struct {
+	tenant.Model
 }
 
-func (nestedOrder) TableName() string { return "orders" }
-
-// pointerOrder embeds the convention by pointer.
-type pointerOrder struct {
-	*tenant.Model
-	ID   string `gorm:"column:id;primaryKey"`
-	Note string `gorm:"column:note"`
+// ShapeOuter is an exported base struct that GORM reads, embedding the
+// convention through one it does not.
+type ShapeOuter struct {
+	shapeBase
 }
 
-func (pointerOrder) TableName() string { return "orders" }
-
-// taggedOrder carries the convention in a named field GORM is told to embed.
-type taggedOrder struct {
-	Owner tenant.Model `gorm:"embedded"`
-	ID    string       `gorm:"column:id;primaryKey"`
-	Note  string       `gorm:"column:note"`
+// shapeLoop embeds a pointer to itself, which a walk over embeddings has to end
+// at rather than follow.
+type shapeLoop struct {
+	*shapeLoop
 }
 
-func (taggedOrder) TableName() string { return "orders" }
-
-// lookalike carries a field shaped like the convention's without being it.
-type lookalike struct {
+// ShapeLike carries a field shaped like the convention's without being it.
+type ShapeLike struct {
 	TenantID tenant.ID `gorm:"column:tenant_id;not null"`
 }
 
-// lookalikeMemo embeds lookalike, and is global: the declaration is embedding
-// the convention, not having a field of its name and type.
-type lookalikeMemo struct {
-	lookalike
-	ID   string `gorm:"column:id;primaryKey"`
-	Note string `gorm:"column:note"`
-}
-
-func (lookalikeMemo) TableName() string { return "memos" }
-
-func TestTheConventionIsRecognisedHoweverItIsEmbedded(t *testing.T) {
-	cases := []struct {
-		name  string
-		many  func() any
-		one   func(id string) any
-		count func(any) int
-	}{
-		{
-			name:  "through a base struct",
-			many:  func() any { return &[]nestedOrder{} },
-			one:   func(id string) any { return &nestedOrder{ID: id} },
-			count: func(v any) int { return len(*v.(*[]nestedOrder)) },
-		},
-		{
-			name:  "by pointer",
-			many:  func() any { return &[]pointerOrder{} },
-			one:   func(id string) any { return &pointerOrder{ID: id} },
-			count: func(v any) int { return len(*v.(*[]pointerOrder)) },
-		},
-		{
-			name:  "as a field tagged embedded",
-			many:  func() any { return &[]taggedOrder{} },
-			one:   func(id string) any { return &taggedOrder{ID: id} },
-			count: func(v any) int { return len(*v.(*[]taggedOrder)) },
-		},
-	}
-	for _, c := range cases {
-		t.Run(c.name, func(t *testing.T) {
-			handle := open(t)
-			seed(t, handle)
-
-			refused := c.many()
-			err := handle.WithContext(context.Background()).Find(refused).Error
-			if !errors.Is(err, tenant.ErrNoTenantInContext) {
-				t.Fatalf("a read with no tenant gave %v (%d rows), want ErrNoTenantInContext",
-					err, c.count(refused))
-			}
-
-			got := c.many()
-			if err := handle.WithContext(scopedContext("acme")).Find(got).Error; err != nil {
-				t.Fatalf("reading: %v", err)
-			}
-			if n := c.count(got); n != 1 {
-				t.Fatalf("a scoped read returned %d rows, want acme's one", n)
-			}
-
-			if err := handle.WithContext(scopedContext("acme")).Create(c.one("n")).Error; err != nil {
-				t.Fatalf("inserting: %v", err)
-			}
-			requireRowTenant(t, handle, "n", "acme")
-		})
-	}
-}
-
-// A field of the identifier's type, under the convention's column name, does
-// not make a model scoped when it is not the convention's own field.
-func TestALookalikeOfTheConventionStaysGlobal(t *testing.T) {
-	handle := open(t)
-	if err := handle.WithContext(crossContext()).Exec(
-		"INSERT INTO memos (id, tenant_id, note) VALUES ('m1', 'acme', 'x'), ('m2', 'globex', 'y')").
-		Error; err != nil {
-		t.Fatalf("seeding: %v", err)
-	}
-	var got []lookalikeMemo
-	if err := handle.WithContext(context.Background()).Find(&got).Error; err != nil {
-		t.Fatalf("a global read gave %v, want it left alone", err)
-	}
-	if len(got) != 2 {
-		t.Fatalf("a global read returned %d rows, want both", len(got))
-	}
+// shapeLike is the same lookalike, unexported, so GORM does not read it
+// either.
+type shapeLike struct {
+	TenantID tenant.ID `gorm:"column:tenant_id;not null"`
 }
 
 // orderMeta is a struct a model embeds under a name, carrying a column the
@@ -140,146 +67,742 @@ type orderMeta struct {
 	TenantID string
 }
 
-// nullableOrder embeds the convention and declares, beside it, a field of its
-// own on the convention's column. Go's shadowing and GORM's parse agree: the
-// model's own field is the one GORM reads and writes.
-type nullableOrder struct {
+type shapeValue struct {
+	tenant.Model
+	ID   string `gorm:"column:id;primaryKey"`
+	Note string `gorm:"column:note"`
+}
+
+func (shapeValue) TableName() string { return "shape_value" }
+
+type shapePointer struct {
+	*tenant.Model
+	ID   string `gorm:"column:id;primaryKey"`
+	Note string `gorm:"column:note"`
+}
+
+func (shapePointer) TableName() string { return "shape_pointer" }
+
+type shapeBaseValue struct {
+	ShapeBase
+	ID   string `gorm:"column:id;primaryKey"`
+	Note string `gorm:"column:note"`
+}
+
+func (shapeBaseValue) TableName() string { return "shape_base" }
+
+type shapeBasePointer struct {
+	*ShapeBase
+	ID   string `gorm:"column:id;primaryKey"`
+	Note string `gorm:"column:note"`
+}
+
+func (shapeBasePointer) TableName() string { return "shape_base_pointer" }
+
+type shapeNamed struct {
+	Owner tenant.Model `gorm:"embedded"`
+	ID    string       `gorm:"column:id;primaryKey"`
+	Note  string       `gorm:"column:note"`
+}
+
+func (shapeNamed) TableName() string { return "shape_named" }
+
+type shapeNamedPointer struct {
+	Owner *tenant.Model `gorm:"embedded"`
+	ID    string        `gorm:"column:id;primaryKey"`
+	Note  string        `gorm:"column:note"`
+}
+
+func (shapeNamedPointer) TableName() string { return "shape_named_pointer" }
+
+type shapePrefixed struct {
+	Owner tenant.Model `gorm:"embedded;embeddedPrefix:owner_"`
+	ID    string       `gorm:"column:id;primaryKey"`
+	Note  string       `gorm:"column:note"`
+}
+
+func (shapePrefixed) TableName() string { return "shape_prefixed" }
+
+type shapePrefixedValue struct {
+	tenant.Model `gorm:"embeddedPrefix:owner_"`
+	ID           string `gorm:"column:id;primaryKey"`
+	Note         string `gorm:"column:note"`
+}
+
+func (shapePrefixedValue) TableName() string { return "shape_prefixed_value" }
+
+type shapePrefixedBase struct {
+	Base ShapeBase `gorm:"embedded;embeddedPrefix:owner_"`
+	ID   string    `gorm:"column:id;primaryKey"`
+	Note string    `gorm:"column:note"`
+}
+
+func (shapePrefixedBase) TableName() string { return "shape_prefixed_base" }
+
+type shapeOwnTenantID struct {
 	tenant.Model
 	TenantID *string `gorm:"column:tenant_id"`
 	ID       string  `gorm:"column:id;primaryKey"`
 	Note     string  `gorm:"column:note"`
 }
 
-func (nullableOrder) TableName() string { return "orders" }
+func (shapeOwnTenantID) TableName() string { return "shape_own_tenant_id" }
 
-// renamedOrder declares its own TenantID ahead of the convention, under the
-// column GORM's naming gives it, which is the convention's.
-type renamedOrder struct {
+type shapeTenantIDFirst struct {
 	TenantID string `json:"tenant"`
 	tenant.Model
 	ID   string `gorm:"column:id;primaryKey"`
 	Note string `gorm:"column:note"`
 }
 
-func (renamedOrder) TableName() string { return "orders" }
+func (shapeTenantIDFirst) TableName() string { return "shape_tenant_id_first" }
 
-// ownerOrder binds the convention's column to a field of another name.
-type ownerOrder struct {
+type shapeColumnTagged struct {
 	tenant.Model
 	Owner string `gorm:"column:tenant_id"`
 	ID    string `gorm:"column:id;primaryKey"`
 	Note  string `gorm:"column:note"`
 }
 
-func (ownerOrder) TableName() string { return "orders" }
+func (shapeColumnTagged) TableName() string { return "shape_column_tagged" }
 
-// metaOrder reaches the convention's column first through a struct embedded
-// under a name, at the same depth as the convention: GORM binds the column to
-// the one declared first.
-type metaOrder struct {
+type shapeEmbeddingFirst struct {
 	Meta orderMeta `gorm:"embedded"`
 	tenant.Model
 	ID   string `gorm:"column:id;primaryKey"`
 	Note string `gorm:"column:note"`
 }
 
-func (metaOrder) TableName() string { return "orders" }
+func (shapeEmbeddingFirst) TableName() string { return "shape_embedding_first" }
 
-// A model that embeds the convention is scoped whatever else it declares on the
-// convention's column. When another field of the model takes that column —
-// declared on the model itself, under another name, or reached through an
-// embedding GORM puts first — GORM reads and writes that field in place of the
-// convention's, and the filter fills and judges the field GORM binds.
-func TestAModelThatEmbedsTheConventionIsScopedWhateverTakesItsColumn(t *testing.T) {
-	cases := []struct {
-		name  string
-		many  func() any
-		count func(any) int
-		// row is a row with this identifier whose field on the tenant
-		// column holds owner, or is left unwritten when owner is empty.
-		row func(id, owner string) any
+type shapePrefixedBeside struct {
+	Owner    tenant.Model `gorm:"embedded;embeddedPrefix:owner_"`
+	TenantID string       `gorm:"column:tenant_id"`
+	ID       string       `gorm:"column:id;primaryKey"`
+	Note     string       `gorm:"column:note"`
+}
+
+func (shapePrefixedBeside) TableName() string { return "shape_prefixed_beside" }
+
+type shapePrefixedTaken struct {
+	Owner  tenant.Model `gorm:"embedded;embeddedPrefix:owner_"`
+	Holder string       `gorm:"column:owner_tenant_id"`
+	ID     string       `gorm:"column:id;primaryKey"`
+	Note   string       `gorm:"column:note"`
+}
+
+func (shapePrefixedTaken) TableName() string { return "shape_prefixed_taken" }
+
+type shapeLookalike struct {
+	ShapeLike
+	ID   string `gorm:"column:id;primaryKey"`
+	Note string `gorm:"column:note"`
+}
+
+func (shapeLookalike) TableName() string { return "shape_lookalike" }
+
+type shapeUnexportedLookalike struct {
+	shapeLike
+	ID   string `gorm:"column:id;primaryKey"`
+	Note string `gorm:"column:note"`
+}
+
+func (shapeUnexportedLookalike) TableName() string { return "shape_unexported_lookalike" }
+
+type shapeOwnColumn struct {
+	TenantID tenant.ID `gorm:"column:tenant_id;not null"`
+	ID       string    `gorm:"column:id;primaryKey"`
+	Note     string    `gorm:"column:note"`
+}
+
+func (shapeOwnColumn) TableName() string { return "shape_own_column" }
+
+type shapeUnexportedBase struct {
+	shapeBase
+	ID   string `gorm:"column:id;primaryKey"`
+	Note string `gorm:"column:note"`
+}
+
+func (shapeUnexportedBase) TableName() string { return "shape_unexported_base" }
+
+type shapeOuterBase struct {
+	ShapeOuter
+	ID   string `gorm:"column:id;primaryKey"`
+	Note string `gorm:"column:note"`
+}
+
+func (shapeOuterBase) TableName() string { return "shape_outer_base" }
+
+type shapeSelfEmbedding struct {
+	shapeLoop
+	ID   string `gorm:"column:id;primaryKey"`
+	Note string `gorm:"column:note"`
+}
+
+func (shapeSelfEmbedding) TableName() string { return "shape_self_embedding" }
+
+type shapeUnexportedNamed struct {
+	owner tenant.Model `gorm:"embedded"`
+	ID    string       `gorm:"column:id;primaryKey"`
+	Note  string       `gorm:"column:note"`
+}
+
+func (shapeUnexportedNamed) TableName() string { return "shape_unexported_named" }
+
+type shapeIgnored struct {
+	tenant.Model `gorm:"-"`
+	ID           string `gorm:"column:id;primaryKey"`
+	Note         string `gorm:"column:note"`
+}
+
+func (shapeIgnored) TableName() string { return "shape_ignored" }
+
+type shapeTwice struct {
+	Seller tenant.Model `gorm:"embedded;embeddedPrefix:seller_"`
+	Buyer  tenant.Model `gorm:"embedded;embeddedPrefix:buyer_"`
+	ID     string       `gorm:"column:id;primaryKey"`
+	Note   string       `gorm:"column:note"`
+}
+
+func (shapeTwice) TableName() string { return "shape_twice" }
+
+// recognition is what the filter is to make of a declaration shape.
+type recognition int
+
+const (
+	// scopedShape is a model the filter scopes on the column named.
+	scopedShape recognition = iota
+	// globalShape is a model that does not embed the convention.
+	globalShape
+	// refusedShape is a model that embeds the convention where no one
+	// tenant column can be taken from it.
+	refusedShape
+)
+
+// shape is one way of declaring a model, with the table it reads.
+type shape struct {
+	name   string
+	expect recognition
+	table  string
+	// column is the table's tenant column.
+	column string
+	// extra is the table's columns besides the tenant column, id and note.
+	extra string
+	// keyOutside marks a model whose field on the tenant column is outside
+	// its key, so that a write addressed by the key does not read it.
+	keyOutside bool
+	// row is a row of the model with this identifier whose field on the
+	// tenant column holds owner, or is left unwritten when owner is empty.
+	row func(id, owner string) any
+}
+
+var shapes = []shape{
+	{
+		name: "embedded by value", table: "shape_value", column: "tenant_id",
+		row: func(id, owner string) any {
+			return &shapeValue{Model: tenant.Model{TenantID: tenant.ID(owner)}, ID: id}
+		},
+	},
+	{
+		name: "embedded by pointer", table: "shape_pointer", column: "tenant_id",
+		row: func(id, owner string) any {
+			o := &shapePointer{ID: id}
+			if owner != "" {
+				o.Model = &tenant.Model{TenantID: tenant.ID(owner)}
+			}
+			return o
+		},
+	},
+	{
+		name: "through an exported base", table: "shape_base", column: "tenant_id",
+		row: func(id, owner string) any {
+			return &shapeBaseValue{ShapeBase: ShapeBase{Model: tenant.Model{TenantID: tenant.ID(owner)}}, ID: id}
+		},
+	},
+	{
+		name: "through an exported base by pointer", table: "shape_base_pointer", column: "tenant_id",
+		row: func(id, owner string) any {
+			o := &shapeBasePointer{ID: id}
+			if owner != "" {
+				o.ShapeBase = &ShapeBase{Model: tenant.Model{TenantID: tenant.ID(owner)}}
+			}
+			return o
+		},
+	},
+	{
+		name: "as a named field tagged embedded", table: "shape_named", column: "tenant_id",
+		row: func(id, owner string) any {
+			return &shapeNamed{Owner: tenant.Model{TenantID: tenant.ID(owner)}, ID: id}
+		},
+	},
+	{
+		name: "as a named pointer field tagged embedded", table: "shape_named_pointer", column: "tenant_id",
+		row: func(id, owner string) any {
+			o := &shapeNamedPointer{ID: id}
+			if owner != "" {
+				o.Owner = &tenant.Model{TenantID: tenant.ID(owner)}
+			}
+			return o
+		},
+	},
+	{
+		name: "as a named field under an embedded prefix", table: "shape_prefixed", column: "owner_tenant_id",
+		row: func(id, owner string) any {
+			return &shapePrefixed{Owner: tenant.Model{TenantID: tenant.ID(owner)}, ID: id}
+		},
+	},
+	{
+		name: "embedded by value under an embedded prefix", table: "shape_prefixed_value", column: "owner_tenant_id",
+		row: func(id, owner string) any {
+			return &shapePrefixedValue{Model: tenant.Model{TenantID: tenant.ID(owner)}, ID: id}
+		},
+	},
+	{
+		name: "through an exported base under an embedded prefix", table: "shape_prefixed_base",
+		column: "owner_tenant_id",
+		row: func(id, owner string) any {
+			return &shapePrefixedBase{Base: ShapeBase{Model: tenant.Model{TenantID: tenant.ID(owner)}}, ID: id}
+		},
+	},
+	{
+		name: "beside a field of the model's own named TenantID", table: "shape_own_tenant_id", column: "tenant_id",
+		keyOutside: true,
+		row: func(id, owner string) any {
+			o := &shapeOwnTenantID{ID: id}
+			if owner != "" {
+				o.TenantID = &owner
+			}
+			return o
+		},
+	},
+	{
+		name: "after a field named TenantID", table: "shape_tenant_id_first", column: "tenant_id",
+		keyOutside: true,
+		row:        func(id, owner string) any { return &shapeTenantIDFirst{TenantID: owner, ID: id} },
+	},
+	{
+		name: "beside a field of another name tagged with its column", table: "shape_column_tagged",
+		column:     "tenant_id",
+		keyOutside: true,
+		row:        func(id, owner string) any { return &shapeColumnTagged{Owner: owner, ID: id} },
+	},
+	{
+		name: "after an embedding GORM binds its column to first", table: "shape_embedding_first",
+		column:     "tenant_id",
+		keyOutside: true,
+		row: func(id, owner string) any {
+			return &shapeEmbeddingFirst{Meta: orderMeta{TenantID: owner}, ID: id}
+		},
+	},
+	{
+		name:  "under an embedded prefix beside a field named TenantID on another column",
+		table: "shape_prefixed_beside", column: "owner_tenant_id", extra: ", tenant_id TEXT",
+		row: func(id, owner string) any {
+			return &shapePrefixedBeside{Owner: tenant.Model{TenantID: tenant.ID(owner)}, TenantID: "unjudged", ID: id}
+		},
+	},
+	{
+		name:  "under an embedded prefix beside a field tagged with the prefixed column",
+		table: "shape_prefixed_taken", column: "owner_tenant_id",
+		keyOutside: true,
+		row:        func(id, owner string) any { return &shapePrefixedTaken{Holder: owner, ID: id} },
+	},
+	{
+		name: "a lookalike of the convention through an exported base", expect: globalShape,
+		table: "shape_lookalike", column: "tenant_id",
+		row: func(id, owner string) any {
+			return &shapeLookalike{ShapeLike: ShapeLike{TenantID: tenant.ID(owner)}, ID: id}
+		},
+	},
+	{
+		name: "a lookalike of the convention through an unexported base", expect: globalShape,
+		table: "shape_unexported_lookalike", column: "tenant_id",
+		row: func(id, owner string) any {
+			return &shapeUnexportedLookalike{shapeLike: shapeLike{TenantID: tenant.ID(owner)}, ID: id}
+		},
+	},
+	{
+		name: "embedding a struct that embeds a pointer to itself", expect: globalShape,
+		table: "shape_self_embedding", column: "tenant_id",
+		row: func(id, _ string) any {
+			return &shapeSelfEmbedding{shapeLoop: shapeLoop{shapeLoop: &shapeLoop{}}, ID: id}
+		},
+	},
+	{
+		name: "a field of the model's own on the convention's column", expect: globalShape,
+		table: "shape_own_column", column: "tenant_id",
+		row: func(id, owner string) any { return &shapeOwnColumn{TenantID: tenant.ID(owner), ID: id} },
+	},
+	{
+		name: "through an unexported base", expect: refusedShape, table: "shape_unexported_base",
+		column: "tenant_id",
+		row: func(id, owner string) any {
+			return &shapeUnexportedBase{shapeBase: shapeBase{Model: tenant.Model{TenantID: tenant.ID(owner)}}, ID: id}
+		},
+	},
+	{
+		name: "through an exported base that embeds an unexported one", expect: refusedShape,
+		table: "shape_outer_base", column: "tenant_id",
+		row: func(id, owner string) any {
+			return &shapeOuterBase{
+				ShapeOuter: ShapeOuter{shapeBase: shapeBase{Model: tenant.Model{TenantID: tenant.ID(owner)}}}, ID: id,
+			}
+		},
+	},
+	{
+		name: "as an unexported named field tagged embedded", expect: refusedShape,
+		table: "shape_unexported_named", column: "tenant_id",
+		row: func(id, owner string) any {
+			return &shapeUnexportedNamed{owner: tenant.Model{TenantID: tenant.ID(owner)}, ID: id}
+		},
+	},
+	{
+		name: "embedded and tagged for GORM to ignore", expect: refusedShape, table: "shape_ignored",
+		column: "tenant_id",
+		row: func(id, owner string) any {
+			return &shapeIgnored{Model: tenant.Model{TenantID: tenant.ID(owner)}, ID: id}
+		},
+	},
+	{
+		name: "embedded twice on two columns", expect: refusedShape, table: "shape_twice",
+		column: "seller_tenant_id", extra: ", buyer_tenant_id TEXT",
+		row: func(id, owner string) any {
+			return &shapeTwice{
+				Seller: tenant.Model{TenantID: tenant.ID(owner)},
+				Buyer:  tenant.Model{TenantID: tenant.ID(owner)}, ID: id,
+			}
+		},
+	},
+}
+
+// Every declaration shape is recognised the same way on both dialects: a
+// shape that embeds the convention where GORM reads it is scoped on the column
+// GORM parsed the convention's field onto — its reads conditioned, its writes
+// filled and checked, and every statement refused with no tenant — one that
+// embeds it where no one tenant column can be taken from it is refused
+// whatever the context, and one that does not embed it is a global table.
+func TestEveryDeclarationOfTheConventionIsRecognised(t *testing.T) {
+	dialects := []struct {
+		name string
+		open func(*testing.T) *gorm.DB
 	}{
-		{
-			name:  "a field of the model's own named like the convention's",
-			many:  func() any { return &[]nullableOrder{} },
-			count: func(v any) int { return len(*v.(*[]nullableOrder)) },
-			row: func(id, owner string) any {
-				o := &nullableOrder{ID: id}
-				if owner != "" {
-					o.TenantID = &owner
-				}
-				return o
-			},
-		},
-		{
-			name:  "a field declared ahead of the convention",
-			many:  func() any { return &[]renamedOrder{} },
-			count: func(v any) int { return len(*v.(*[]renamedOrder)) },
-			row:   func(id, owner string) any { return &renamedOrder{TenantID: owner, ID: id} },
-		},
-		{
-			name:  "a field of another name on the column",
-			many:  func() any { return &[]ownerOrder{} },
-			count: func(v any) int { return len(*v.(*[]ownerOrder)) },
-			row:   func(id, owner string) any { return &ownerOrder{Owner: owner, ID: id} },
-		},
-		{
-			name:  "an embedding GORM puts ahead of the convention",
-			many:  func() any { return &[]metaOrder{} },
-			count: func(v any) int { return len(*v.(*[]metaOrder)) },
-			row:   func(id, owner string) any { return &metaOrder{Meta: orderMeta{TenantID: owner}, ID: id} },
-		},
+		{"sqlite", openShapesOnSQLite},
+		{"postgres", openShapesOnPostgres},
 	}
-	for _, c := range cases {
-		t.Run(c.name, func(t *testing.T) {
-			handle := open(t)
-			seed(t, handle)
-			acme := handle.WithContext(scopedContext("acme"))
+	for _, d := range dialects {
+		t.Run(d.name, func(t *testing.T) {
+			handle := d.open(t)
+			for _, s := range shapes {
+				t.Run(s.name, func(t *testing.T) {
+					createShapeTable(t, handle, s)
+					switch s.expect {
+					case scopedShape:
+						requireScopedShape(t, handle, s)
+					case globalShape:
+						requireGlobalShape(t, handle, s)
+					case refusedShape:
+						requireRefusedShape(t, handle, s)
+					}
+				})
+			}
+		})
+	}
+}
 
-			refused := c.many()
-			err := handle.WithContext(context.Background()).Find(refused).Error
+func requireScopedShape(t *testing.T, handle *gorm.DB, s shape) {
+	none := handle.WithContext(context.Background())
+	acme := handle.WithContext(tenantctx.WithID(context.Background(), "acme"))
+	across := handle.WithContext(tenant.CrossTenant(context.Background()))
+
+	for what, err := range everyStatement(t, none, s) {
+		if !errors.Is(err, tenant.ErrNoTenantInContext) {
+			t.Errorf("%s with no tenant gave %v, want ErrNoTenantInContext", what, err)
+		}
+	}
+	requireShapeRows(t, handle, s, "a=acme b=globex")
+
+	got := shapeRows(s)
+	if err := acme.Find(got).Error; err != nil || shapeIDs(got) != "a" {
+		t.Errorf("a read under acme gave %v and rows %q, want acme's a", err, shapeIDs(got))
+	}
+	var n int64
+	if err := acme.Model(s.row("", "")).Count(&n).Error; err != nil || n != 1 {
+		t.Errorf("a count under acme gave %v and %d, want 1", err, n)
+	}
+	all := shapeRows(s)
+	if err := across.Find(all).Error; err != nil || shapeIDs(all) != "a,b" {
+		t.Errorf("a read across tenants gave %v and rows %q, want both", err, shapeIDs(all))
+	}
+
+	updated := acme.Model(s.row("", "")).Where("1 = 1").Update("note", "changed")
+	if updated.Error != nil || updated.RowsAffected != 1 {
+		t.Errorf("an update of every row under acme gave %v, affecting %d rows, want acme's one",
+			updated.Error, updated.RowsAffected)
+	}
+	if note := shapeNote(t, handle, s, "b"); note != "for globex" {
+		t.Errorf("an update under acme left globex's note %q", note)
+	}
+	moved := acme.Model(s.row("", "")).Where("id = ?", "a").Updates(s.row("", "globex")).Error
+	if !errors.Is(moved, tenant.ErrExplicitTenantMismatch) {
+		t.Errorf("an update under acme moving a row to globex gave %v, want ErrExplicitTenantMismatch", moved)
+	}
+	keyed := acme.Delete(s.row("b", ""))
+	if keyed.Error != nil || keyed.RowsAffected != 0 {
+		t.Errorf("a delete under acme of globex's row by its key gave %v, affecting %d rows, want none",
+			keyed.Error, keyed.RowsAffected)
+	}
+	deleted := acme.Where("1 = 1").Delete(s.row("", ""))
+	if deleted.Error != nil || deleted.RowsAffected != 1 {
+		t.Errorf("a delete of every row under acme gave %v, affecting %d rows, want acme's one",
+			deleted.Error, deleted.RowsAffected)
+	}
+	requireShapeRows(t, handle, s, "b=globex")
+
+	if err := acme.Create(s.row("n", "")).Error; err != nil {
+		t.Errorf("an insert under acme with the tenant column unwritten gave %v", err)
+	}
+	if err := acme.Create(s.row("m", "globex")).Error; !errors.Is(err, tenant.ErrExplicitTenantMismatch) {
+		t.Errorf("an insert under acme naming globex gave %v, want ErrExplicitTenantMismatch", err)
+	}
+	requireShapeRows(t, handle, s, "b=globex n=acme")
+
+	byKey := acme.Delete(s.row("n", "globex"))
+	switch {
+	case s.keyOutside && (byKey.Error != nil || byKey.RowsAffected != 1):
+		t.Errorf("a delete under acme by a key, the tenant field outside it naming globex, gave %v, "+
+			"affecting %d rows, want acme's n", byKey.Error, byKey.RowsAffected)
+	case !s.keyOutside && !errors.Is(byKey.Error, tenant.ErrExplicitTenantMismatch):
+		t.Errorf("a delete under acme by a key naming globex gave %v, want ErrExplicitTenantMismatch", byKey.Error)
+	}
+}
+
+func requireGlobalShape(t *testing.T, handle *gorm.DB, s shape) {
+	none := handle.WithContext(context.Background())
+	acme := handle.WithContext(tenantctx.WithID(context.Background(), "acme"))
+
+	for name, db := range map[string]*gorm.DB{"no tenant": none, "acme": acme} {
+		got := shapeRows(s)
+		if err := db.Find(got).Error; err != nil || shapeIDs(got) != "a,b" {
+			t.Errorf("a read under %s gave %v and rows %q, want both, unconditioned", name, err, shapeIDs(got))
+		}
+	}
+	updated := acme.Model(s.row("", "")).Where("1 = 1").Update("note", "changed")
+	if updated.Error != nil || updated.RowsAffected != 2 {
+		t.Errorf("an update of every row under acme gave %v, affecting %d rows, want both, unconditioned",
+			updated.Error, updated.RowsAffected)
+	}
+	requireShapeRows(t, handle, s, "a=acme b=globex")
+}
+
+func requireRefusedShape(t *testing.T, handle *gorm.DB, s shape) {
+	contexts := map[string]context.Context{
+		"no tenant":      context.Background(),
+		"acme":           tenantctx.WithID(context.Background(), "acme"),
+		"across tenants": tenant.CrossTenant(context.Background()),
+	}
+	for name, ctx := range contexts {
+		for what, err := range everyStatement(t, handle.WithContext(ctx), s) {
 			if !errors.Is(err, tenant.ErrNoTenantInContext) {
-				t.Fatalf("a read with no tenant gave %v (%d rows), want ErrNoTenantInContext",
-					err, c.count(refused))
+				t.Errorf("%s under %s gave %v, want ErrNoTenantInContext", what, name, err)
+				continue
+			}
+			if !strings.Contains(err.Error(), reflect.TypeOf(s.row("", "")).Elem().Name()) {
+				t.Errorf("%s under %s gave %q, which does not name the model", what, name, err)
+			}
+		}
+	}
+	requireShapeRows(t, handle, s, "a=acme b=globex")
+}
+
+// everyStatement runs one statement of each kind through the model, each
+// reaching every row it can, and returns what each gave.
+func everyStatement(t *testing.T, db *gorm.DB, s shape) map[string]error {
+	t.Helper()
+	var n int64
+	return map[string]error{
+		"Find":  db.Find(shapeRows(s)).Error,
+		"Count": db.Model(s.row("", "")).Count(&n).Error,
+		"Row": withoutPanic(t, func() error {
+			return db.Model(s.row("", "")).Select("count(*)").Row().Scan(&n)
+		}),
+		"Create": db.Create(s.row("z", "acme")).Error,
+		"Update": db.Model(s.row("", "")).Where("1 = 1").Update("note", "z").Error,
+		"Delete": db.Where("1 = 1").Delete(s.row("", "")).Error,
+	}
+}
+
+// withoutPanic runs fn, reporting a panic as its error.
+func withoutPanic(t *testing.T, fn func() error) (err error) {
+	t.Helper()
+	defer func() {
+		if r := recover(); r != nil {
+			err = fmt.Errorf("panicked: %v", r)
+		}
+	}()
+	return fn()
+}
+
+// shapeRows is a pointer to an empty slice of the shape's model.
+func shapeRows(s shape) any {
+	return reflect.New(reflect.SliceOf(reflect.TypeOf(s.row("", "")).Elem())).Interface()
+}
+
+// shapeIDs lists the identifiers of the rows a read returned, in order.
+func shapeIDs(rows any) string {
+	v := reflect.ValueOf(rows).Elem()
+	ids := make([]string, 0, v.Len())
+	for i := 0; i < v.Len(); i++ {
+		ids = append(ids, v.Index(i).FieldByName("ID").String())
+	}
+	return strings.Join(ids, ",")
+}
+
+// createShapeTable creates the shape's table and writes one row for each of
+// two tenants into it, past the filter.
+func createShapeTable(t *testing.T, handle *gorm.DB, s shape) {
+	t.Helper()
+	ddl := fmt.Sprintf("CREATE TABLE %s (%s TEXT NOT NULL, id TEXT NOT NULL, note TEXT%s, PRIMARY KEY (%s, id))",
+		s.table, s.column, s.extra, s.column)
+	if err := handle.Exec(ddl).Error; err != nil {
+		t.Fatalf("creating the table: %v", err)
+	}
+	if err := handle.Exec(fmt.Sprintf("INSERT INTO %s (%s, id, note) VALUES "+
+		"('acme', 'a', 'for acme'), ('globex', 'b', 'for globex')", s.table, s.column)).Error; err != nil {
+		t.Fatalf("seeding the table: %v", err)
+	}
+}
+
+// requireShapeRows asserts the table's rows, each written as id=tenant.
+func requireShapeRows(t *testing.T, handle *gorm.DB, s shape, want string) {
+	t.Helper()
+	var rows []struct {
+		Tenant string
+		ID     string
+	}
+	if err := handle.WithContext(tenant.CrossTenant(context.Background())).
+		Raw(fmt.Sprintf("SELECT %s AS tenant, id FROM %s ORDER BY id", s.column, s.table)).
+		Scan(&rows).Error; err != nil {
+		t.Fatalf("reading the table back: %v", err)
+	}
+	got := make([]string, 0, len(rows))
+	for _, r := range rows {
+		got = append(got, r.ID+"="+r.Tenant)
+	}
+	if strings.Join(got, " ") != want {
+		t.Errorf("the table holds %q, want %q", strings.Join(got, " "), want)
+	}
+}
+
+// shapeNote reads one row's note past the filter.
+func shapeNote(t *testing.T, handle *gorm.DB, s shape, id string) string {
+	t.Helper()
+	var note string
+	if err := handle.WithContext(tenant.CrossTenant(context.Background())).
+		Raw(fmt.Sprintf("SELECT note FROM %s WHERE id = ?", s.table), id).
+		Row().Scan(&note); err != nil {
+		t.Fatalf("reading a note back: %v", err)
+	}
+	return note
+}
+
+// openShapesOnSQLite is an empty in-memory SQLite database with the filter
+// installed. The pool is closed when the case ends, so that a rerun under
+// -count finds the database gone.
+func openShapesOnSQLite(t *testing.T) *gorm.DB {
+	t.Helper()
+	return filteredShapes(t, sqlitedriver.Open("file:"+t.Name()+"?mode=memory&cache=shared"))
+}
+
+// openShapesOnPostgres is an empty database of the PostgreSQL fixture with the
+// filter installed.
+func openShapesOnPostgres(t *testing.T) *gorm.DB {
+	t.Helper()
+	return filteredShapes(t, pgdriver.Open(pgtest.Acquire(t)))
+}
+
+func filteredShapes(t *testing.T, dialector gorm.Dialector) *gorm.DB {
+	t.Helper()
+	handle, err := gorm.Open(dialector, &gorm.Config{Logger: logger.Default.LogMode(logger.Silent)})
+	if err != nil {
+		t.Fatalf("opening the handle: %v", err)
+	}
+	pool, err := handle.DB()
+	if err != nil {
+		t.Fatalf("reaching the handle's pool: %v", err)
+	}
+	t.Cleanup(func() { _ = pool.Close() })
+	if err := handle.Use(newFilter()); err != nil {
+		t.Fatalf("installing the filter: %v", err)
+	}
+	return handle
+}
+
+// shapeHolder is a global model that reaches two of the shapes through
+// associations.
+type shapeHolder struct {
+	ID       string              `gorm:"column:id;primaryKey"`
+	ItemID   string              `gorm:"column:item_id"`
+	Item     shapePrefixed       `gorm:"foreignKey:ItemID;references:ID"`
+	HiddenID string              `gorm:"column:hidden_id"`
+	Hidden   shapeUnexportedBase `gorm:"foreignKey:HiddenID;references:ID"`
+}
+
+func (shapeHolder) TableName() string { return "shape_holders" }
+
+// A join is recognised as the model it reaches is: a join reaching a model
+// scoped on a column an embedded prefix renamed is held to the context's
+// tenant on that column, and a join reaching a model no tenant column can be
+// taken from refuses the read, whatever its context.
+func TestAJoinIsRecognisedAsTheModelItReaches(t *testing.T) {
+	dialects := []struct {
+		name string
+		open func(*testing.T) *gorm.DB
+	}{
+		{"sqlite", openShapesOnSQLite},
+		{"postgres", openShapesOnPostgres},
+	}
+	for _, d := range dialects {
+		t.Run(d.name, func(t *testing.T) {
+			handle := d.open(t)
+			for _, s := range shapes {
+				if s.table == "shape_prefixed" || s.table == "shape_unexported_base" {
+					createShapeTable(t, handle, s)
+				}
+			}
+			for _, stmt := range []string{
+				"CREATE TABLE shape_holders (id TEXT PRIMARY KEY, item_id TEXT, hidden_id TEXT)",
+				"INSERT INTO shape_holders (id, item_id, hidden_id) VALUES ('h1', 'a', 'a'), ('h2', 'b', 'b')",
+			} {
+				if err := handle.Exec(stmt).Error; err != nil {
+					t.Fatalf("preparing the holders: %v", err)
+				}
+			}
+			acme := handle.WithContext(tenantctx.WithID(context.Background(), "acme"))
+
+			var got []shapeHolder
+			if err := acme.Joins("Item").Order("shape_holders.id").Find(&got).Error; err != nil {
+				t.Fatalf("a read joined to the prefixed model under acme gave %v", err)
+			}
+			if len(got) != 2 || got[0].Item.ID != "a" || got[1].Item.ID != "" {
+				t.Fatalf("a read joined to the prefixed model under acme returned %+v, "+
+					"want h1 joined to acme's a and h2 joined to nothing", got)
+			}
+			var refused []shapeHolder
+			err := handle.WithContext(context.Background()).Joins("Item").Find(&refused).Error
+			if !errors.Is(err, tenant.ErrNoTenantInContext) {
+				t.Fatalf("a read joined to the prefixed model with no tenant gave %v, want ErrNoTenantInContext", err)
 			}
 
-			got := c.many()
-			if err := acme.Find(got).Error; err != nil {
-				t.Fatalf("reading: %v", err)
-			}
-			if n := c.count(got); n != 1 {
-				t.Fatalf("a scoped read returned %d rows, want acme's one", n)
-			}
-
-			if err := acme.Create(c.row("x", "")).Error; err != nil {
-				t.Fatalf("inserting a row with its tenant column unwritten: %v", err)
-			}
-			requireRowTenant(t, handle, "x", "acme")
-
-			requireMismatch(t, acme.Create(c.row("y", "globex")).Error)
-			if rows := tenantsOf(t, handle)["y"]; len(rows) != 0 {
-				t.Fatalf("a refused insert left rows %v", rows)
-			}
-
-			requireMismatch(t, acme.Model(c.row("", "")).Where("id = ?", "a").
-				Updates(c.row("", "globex")).Error)
-			requireRowTenant(t, handle, "a", "acme")
-
-			// The field is outside the model's key, and GORM addresses a
-			// delete by the key alone: what the field holds is not read.
-			keyed := acme.Delete(c.row("a", "globex"))
-			if keyed.Error != nil || keyed.RowsAffected != 1 {
-				t.Fatalf("a scoped delete addressed by a key gave %v, affecting %d rows, want acme's a",
-					keyed.Error, keyed.RowsAffected)
-			}
-
-			deleted := acme.Where("1 = 1").Delete(c.row("", ""))
-			if deleted.Error != nil || deleted.RowsAffected != 1 {
-				t.Fatalf("a scoped delete of every row gave %v, affecting %d rows, want acme's one left",
-					deleted.Error, deleted.RowsAffected)
-			}
-			if got := tenantsOf(t, handle); len(got) != 1 || len(got["b"]) != 1 || got["b"][0] != "globex" {
-				t.Fatalf("the scoped deletes left %v, want globex's b alone", got)
+			for name, ctx := range map[string]context.Context{
+				"acme":           tenantctx.WithID(context.Background(), "acme"),
+				"across tenants": tenant.CrossTenant(context.Background()),
+			} {
+				var hidden []shapeHolder
+				err := handle.WithContext(ctx).Joins("Hidden").Find(&hidden).Error
+				if !errors.Is(err, tenant.ErrNoTenantInContext) || !strings.Contains(err.Error(), "shapeUnexportedBase") {
+					t.Errorf("a read under %s joined to a model embedding the convention where GORM does not "+
+						"read it gave %v (rows %+v), want its refusal", name, err, hidden)
+				}
 			}
 		})
 	}
