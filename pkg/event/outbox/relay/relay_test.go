@@ -200,7 +200,10 @@ func TestARefusedEventHoldsBackNoOther(t *testing.T) {
 		if !eventually(func() bool { return l.count() == len(later) }) {
 			t.Fatalf("the bus accepted %d of the %d events staged after a refused one", l.count(), len(later))
 		}
-		if stagedRows(t, database) != 1 {
+		// A published row leaves the table after the bus's Publish has
+		// returned, so the row count is what the case waits on, not the
+		// bus's count.
+		if !eventually(func() bool { return stagedRows(t, database) == 1 }) {
 			t.Errorf("the table holds %d rows, want the refused one alone", stagedRows(t, database))
 		}
 	})
