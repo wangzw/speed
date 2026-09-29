@@ -148,7 +148,9 @@ type Store interface {
 	// fallback at the global row, which is also where it ends.
 	//
 	// An undeclared key is ErrUnknownKey. A value already written that does not
-	// decode under the declared type is ErrTypeMismatch, naming the key. A read
+	// decode under the declared type is ErrTypeMismatch, naming the key; one
+	// that decodes and lies outside the item's declared domain is handed out
+	// as it is, since the domain is judged when a value is written. A read
 	// before this module's Init has loaded the snapshot is ErrNotLoaded rather
 	// than the declared default: a module that reads in its own Init declares
 	// Requires (*Store)(nil) so that it is initialised after this one. A
@@ -164,9 +166,12 @@ type Store interface {
 	// w.Layer names. A successful write publishes a settings.changed event.
 	//
 	// It validates, writes the row, reloads this replica's snapshot and
-	// publishes, in that order. A failure before the row is written returns
-	// without touching anything; a failure to reload or to publish does not
-	// roll the write back and does not change the result.
+	// publishes, in that order. Validating holds the value to the declared
+	// type (ErrTypeMismatch), then to the item's declared domain and to the
+	// size limit (ErrInvalidValue, naming the key and the rule it breaks). A
+	// failure before the row is written returns without touching anything; a
+	// failure to reload or to publish does not roll the write back and does
+	// not change the result.
 	//
 	// ctx bounds the wait for a connection and the statement. Once the row is
 	// written, the reload and the publish run whatever becomes of ctx, since
@@ -212,10 +217,11 @@ type Store interface {
 
 	// Declared lists every declared setting item, ordered by the keys' bytes
 	// as List is: its key, the module that declared it, its declared type,
-	// its default and the metadata its declaration gave. It is what lets a
-	// surface over the settings — an administrative endpoint, a command that
-	// prints them — name every item, its type and its default without
-	// restating another module's declaration.
+	// its default and the metadata its declaration gave, the rule of its
+	// domain among it. It is what lets a surface over the settings — an
+	// administrative endpoint, a command that prints them — name every item,
+	// its type, its default and the values it takes without restating another
+	// module's declaration.
 	//
 	// It reads the key table, which is built before Init and never changes,
 	// so it takes no context, starts no IO and answers before the snapshot
@@ -284,7 +290,8 @@ type DeclaredItem struct {
 	// item, whatever the declaration holds.
 	Default string
 	// Item is the metadata the declaration gave. Its Sensitive also says that
-	// Default was withheld.
+	// Default was withheld, and its Domain's Rule states the values a write
+	// of the key may store.
 	Item
 }
 
@@ -322,6 +329,73 @@ type Item struct {
 	// event for a sensitive item carries neither the old nor the new value,
 	// and the listing carries no default for it.
 	Sensitive bool
+	// Domain is the set of values of the declared type a write may store.
+	// The zero Domain admits every value of the type; DomainOf builds one
+	// that admits fewer.
+	Domain Domain
+}
+
+// Domain is the value domain a declaring module gives one of its items: a
+// predicate over values of the declared type, and the rule the predicate
+// states, in words.
+//
+// It is judged when a value is written and nowhere else. Set holds the value
+// to the declared type first, then to the domain, and refuses a value outside
+// it with ErrInvalidValue naming the key and the rule, before anything is
+// written. A read hands out what a row holds, whether or not that lies in the
+// domain: a row stored before the domain was declared, or written around this
+// module, is served as it is, so a consumer that cannot act on a value outside
+// the domain still judges what it reads.
+//
+// The declaration is held to its domain when the key table is built: a domain
+// over a type other than the item's declared type, one with no rule or no
+// predicate, and a declared default the domain does not admit are all
+// declaration defects, ErrInvalidDeclaration. The last is one because a
+// default is a value a write has to be able to store back.
+//
+// The zero value is the domain of every value. A Domain is comparable, and so
+// is an Item carrying one: two Domains are equal when they are the zero value
+// or come from the same call to DomainOf.
+type Domain struct {
+	judge *domainJudge
+}
+
+// domainJudge is what DomainOf records: the type its predicate takes, the
+// predicate over a value of that type, and the rule the refusal names.
+type domainJudge struct {
+	typ    reflect.Type
+	admits func(value any) bool
+	rule   string
+}
+
+// DomainOf builds the domain of an item declared as T: the values admits
+// reports true for. rule states that set in words, as a noun phrase the
+// refusal of a value outside it names — "the positive integers", "the
+// durations from one second to one hour" — and Declared reports.
+//
+// admits receives a value of exactly the declared type, after the write has
+// been held to it, and is called on the writer's goroutine, on several at once
+// when writes run concurrently: it is to be a function of its argument alone,
+// since the same value is judged the same way on every replica. It is called
+// once more, on the declared default, when the key table is built.
+func DomainOf[T any](rule string, admits func(value T) bool) Domain {
+	judge := &domainJudge{typ: reflect.TypeFor[T](), rule: rule}
+	if admits != nil {
+		judge.admits = func(value any) bool {
+			typed, ok := value.(T)
+			return ok && admits(typed)
+		}
+	}
+	return Domain{judge: judge}
+}
+
+// Rule is the domain's rule, as DomainOf was given it. It is empty for the
+// zero Domain, which admits every value of the declared type.
+func (d Domain) Rule() string {
+	if d.judge == nil {
+		return ""
+	}
+	return d.judge.rule
 }
 
 // Change is the payload of a change event. The tenant the change applies to

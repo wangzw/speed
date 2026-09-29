@@ -331,8 +331,55 @@ func (e *expander) leaf(key string, fv reflect.Value, ft reflect.Type) error {
 		return fmt.Errorf("%w: module %q declares %q: %w", ErrInvalidDeclaration, e.module, key, err)
 	}
 	entry.defText = text
+	if defect := domainDefect(entry); defect != "" {
+		return fmt.Errorf("%w: module %q declares %q: %s", ErrInvalidDeclaration, e.module, key, defect)
+	}
 	e.entries = append(e.entries, entry)
 	return nil
+}
+
+// domainDefect reports why an item's declared domain is not one a write can
+// be held to, or "" when it is. The zero Domain, which admits every value of
+// the declared type, is one.
+//
+// A domain is judged against the item it is declared for: it has to take the
+// declared type itself, since a write hands the predicate a value of exactly
+// that type; it has to state a rule, since a refusal names it; and it has to
+// admit the declared default. A default outside the domain is a value no
+// write could store back once a row has replaced it, and DeclaredItem.Default
+// is promised to be text Set accepts. The default is judged as a read of it
+// hands it out, decoded from its text. A sensitive item's default is withheld
+// from the message.
+func domainDefect(entry keyEntry) string {
+	judge := entry.item.Domain.judge
+	switch {
+	case judge == nil:
+		return ""
+	case judge.typ != entry.typ:
+		return fmt.Sprintf("its domain is built over %s, and the item is declared as %s. A write "+
+			"hands the domain a value of the declared type, so it is built with DomainOf[%s]",
+			typeName(judge.typ), typeName(entry.typ), typeName(entry.typ))
+	case judge.rule == "":
+		return "its domain states no rule. A write outside the domain is refused naming the rule, " +
+			"so DomainOf is given the set it admits in words"
+	case judge.admits == nil:
+		return "its domain has no predicate, so no value written could be judged against it"
+	}
+	value, err := decodeValue(entry, entry.defText)
+	if err != nil {
+		// Unreachable: defaultText has already read a text-form default back,
+		// and the scalar kinds read back what their formatters write.
+		return "its default does not read back as its declared type"
+	}
+	if judge.admits(value) {
+		return ""
+	}
+	if entry.item.Sensitive {
+		return fmt.Sprintf("its default is outside its own domain, %s, so no write could store it "+
+			"back. The default is withheld: the item is marked sensitive", judge.rule)
+	}
+	return fmt.Sprintf("its default, %q, is outside its own domain, %s, so no write could store "+
+		"it back", entry.defText, judge.rule)
 }
 
 // defaultText writes a declared default in the declared type's own text form,

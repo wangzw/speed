@@ -29,6 +29,9 @@ implementation subpackage to hold one backend apart from another.
   ([`adr-settings-audit-2026-09-21.md`](../../docs/adr/adr-settings-audit-2026-09-21.md)),
   why the declared items are listed through the store
   ([`adr-settings-declaration-2026-09-29.md`](../../docs/adr/adr-settings-declaration-2026-09-29.md)),
+  why a declaring module states the domain of an item's value and a write is
+  held to it
+  ([`adr-settings-domain-2026-09-29.md`](../../docs/adr/adr-settings-domain-2026-09-29.md)),
   and why a call takes a connection of its own within a bound
   ([`adr-settings-connection-2026-09-29.md`](../../docs/adr/adr-settings-connection-2026-09-29.md)).
 - The API itself: the godoc in this package.
@@ -81,6 +84,21 @@ here must not cross, and how to run it.
   table of YAML values through configuration's real loading path and through
   this module's encoder, so a rule changed on one side and not the other fails
   there.
+- **A declared domain is judged at a write and when the key table is built,
+  and nowhere else.** `admit`, the last step of `encodeValue`, holds a
+  written value to it after the type discipline, so the number 0, the text
+  `"0"` and a 0 decoded from JSON meet the predicate as one value of the
+  declared type — `admit` copies a value only assignable to that type into one
+  of it first, since the predicate `DomainOf` builds takes exactly that type.
+  `domainDefect` holds the declaration to its domain: the domain's type, its
+  rule, its predicate, and the default, which has to be a value a write could
+  store back. The snapshot load does not judge it, and that is the decision,
+  not a gap: a row stored before the domain was declared, or written around
+  this module, is served as it is, and a consumer that cannot act on such a
+  value judges what it reads (`pkg/ratelimit` does). A load that refused
+  those rows would turn a release that narrowed a domain into a read failure
+  of every row it narrowed, on every replica at once. A refusal names the
+  rule the declaration states and never quotes a sensitive item's value.
 - **A pointer leaf is refused, and that is deliberate.** Settings answer "was
   this ever written" through the layers, so the third state a pointer would
   express — set to nothing — has no reader. `classifyLeaf` refusing it is what

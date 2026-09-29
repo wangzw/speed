@@ -28,10 +28,13 @@ var (
 	// write a legal value, or to reconcile the declaration with the old value.
 	ErrTypeMismatch = errors.New("settings: value does not match the declared type")
 
-	// ErrInvalidValue reports a value that is disqualified: a written text
-	// over the size limit, or a negative refresh interval in configuration.
+	// ErrInvalidValue reports a value that is disqualified: a written value
+	// outside the domain its item's declaration gives, a written text over the
+	// size limit, or a negative refresh interval in configuration.
 	//
-	// The message names the key and the reason.
+	// The message names the key and the reason: for a value outside its
+	// domain, the rule the declaration states. The fixing action is to write a
+	// value the rule admits; nothing was written.
 	ErrInvalidValue = errors.New("settings: value is not acceptable")
 
 	// ErrDeclarationConflict reports two modules declaring the same key. The
@@ -41,9 +44,11 @@ var (
 
 	// ErrInvalidDeclaration reports a module's declaration defective in
 	// itself: no second party is involved, and what this one module declared
-	// is enough to judge it unusable. A key name outside the character set, a mount that is not a
-	// struct pointer, a type cycle in the expansion, an Items key matching no
-	// leaf, a declared type outside the closed type set, and one module
+	// is enough to judge it unusable. A key name outside the character set, a
+	// mount that is not a struct pointer, a type cycle in the expansion, an
+	// Items key matching no leaf, a declared type outside the closed type set,
+	// a domain over another type than the item's or with no rule or no
+	// predicate, a default its own domain does not admit, and one module
 	// reaching one key twice — from two mounts of a schema or from two of its
 	// schemas — are all of this class.
 	//

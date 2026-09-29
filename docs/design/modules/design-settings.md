@@ -13,7 +13,7 @@
 - **不承载启动必须项。** 判据见划界：够得到"数据库可用之前"的值全部落在配置一侧（[ADR-config-scope-2026-09-13](../../adr/adr-config-scope-2026-09-13.md)）。
 - **不做权限判定。** 谁能改一项设置归权限模型；写面的调用点是宿主自己的代码或它写出的管理命令（[ADR-settings-scope-2026-09-21](../../adr/adr-settings-scope-2026-09-21.md)）。
 - **不认识租户模块。** 租户标识是字符串，本模块不校验它在不在名册、不读请求上下文、不产生标识（[ADR-settings-scope-2026-09-21](../../adr/adr-settings-scope-2026-09-21.md)）。
-- **不解释值的内容。** 通知模板在本模块是一段字符串；渲染、校验与转义归消费方。
+- **不解释值的内容。** 通知模板在本模块是一段字符串；渲染与转义归消费方。一个值合不合声明方的用途，判据由声明方以取值域给出，本模块只在写入时执行它（见写入面），自己不为任何设置项定判据（[ADR-settings-domain-2026-09-29](../../adr/adr-settings-domain-2026-09-29.md)）。
 - **不承载容器类型。** 映射与列表不在声明的类型集合里，需要它们的消费方把 JSON 文本存进字符串项自行解码（[ADR-settings-declaration-2026-09-21](../../adr/adr-settings-declaration-2026-09-21.md)）。
 - **不保存变更历史。** 变更事实经事件发布，历史的记录归审计模块，而审计不提供查询面（见 [audit](design-audit.md)），检索与导出的承载单元要另立（[ADR-settings-audit-2026-09-21](../../adr/adr-settings-audit-2026-09-21.md)）。
 - **不做事件总线。** 广播与投递由事件模块承担，本模块只发布与订阅（[ADR-settings-propagation-2026-09-21](../../adr/adr-settings-propagation-2026-09-21.md)）。
@@ -108,7 +108,7 @@ type DeclaredItem struct {
     Module  string       // 声明方模块
     Type    reflect.Type // 声明类型：reflect.New(Type) 即 Get 接受的目标
     Default string       // 声明类型自己的文本形式；敏感项为空
-    Item                 // 声明给出的说明与敏感标记
+    Item                 // 声明给出的说明、敏感标记与取值域
 }
 ```
 
@@ -136,8 +136,20 @@ type Mount struct {
 
 type Item struct {
     Description string
-    Sensitive   bool // 变更事件不携带该键的值
+    Sensitive   bool   // 变更事件不携带该键的值
+    Domain      Domain // 写入可以存下的值；零值接受声明类型的每一个值
 }
+
+// Domain 是声明方给一个设置项的取值域：声明类型上的一个谓词，连同说出这个集合的规则文本。
+// 可比较；零值接受声明类型的每一个值。
+type Domain struct{ /* 未导出 */ }
+
+// DomainOf 构造声明类型为 T 的设置项的取值域：admits 判一个值在不在域内，
+// rule 以一个名词短语说出这个集合，拒绝与列表都报出它。
+func DomainOf[T any](rule string, admits func(value T) bool) Domain
+
+// Rule 是构造时给出的规则文本；零值为空。
+func (d Domain) Rule() string
 ```
 
 一个模块的声明：
@@ -149,7 +161,10 @@ settings.Schema{
     Namespace: "ratelimit",
     Mounts:    []settings.Mount{{Value: &defaults}},
     Items: map[string]settings.Item{
-        "limit": {Description: "窗口内允许的请求数"},
+        "limit": {
+            Description: "窗口内允许的请求数",
+            Domain:      settings.DomainOf("the positive integers", func(v int) bool { return v > 0 }),
+        },
     },
 }
 
@@ -161,6 +176,8 @@ err := store.Get(settings.ForTenant(tenantID), "ratelimit.window", &opts.Window)
 **键的路径派生与 `pkg/config` 是同一套规则**：优先 `config` tag，其次 `json` tag，都没有则字段名转小写短横线；匿名字段内联；tag 写作 `-` 的字段跳过；实现了 `encoding.TextUnmarshaler` 的类型按标量叶子处理；不可解码的字段自动跳过（判据与清单见 [config](design-config.md) 的名字的派生与映射一节，本模块不另立规则）。从配置迁往设置的一个参数，键名与承载结构体因此都不变。
 
 **类型集合是封闭的**：字符串、布尔、整数、浮点、时长，以及自带文本形式的类型——它以 `UnmarshalText` 从文本解码，也以 `MarshalText` 编码回文本，两个方法声明在值上还是指针上都可以（`math/big.Int` 声明在指针上）。只能解码、不能编码回文本的类型不在集合里：写入存下的是声明类型自己写出的文本，这样一个键没有一次写入能存得下，收集期即判声明缺陷。容器不在其中（见非职责）。取值纪律与配置相同，本模块不另立规则：实现 `TextUnmarshaler` 的类型按它自己的约定往返，`time.Duration` 只接受 `time.ParseDuration` 可解的文本，浮点写入整数字段要求可无损转换。
+
+**取值域由声明方随设置项给出**（[ADR-settings-domain-2026-09-29](../../adr/adr-settings-domain-2026-09-29.md)）：`Item.Domain` 由 `DomainOf[T]` 构造，`T` 恰为这一项的声明类型，谓词收到的就是这个类型的值；规则文本是拒绝与列表报出的那一句。取值域在收集期先判一次：类型与声明类型不同、规则为空、谓词为空、声明的默认值不在域内，都是声明自身的缺陷——默认值是 `Set` 要收得回去的值（见列出设置项）。不给取值域的设置项接受声明类型的每一个值。写入时怎样判见写入面。
 
 **声明的收集取自可用集**：来源是 `core.Resources[settings.Schema](reg)` 的全体；判据是键的有效性跟着二进制走，比任何一次命令长寿，因而未运行、消解落选与只被静态级纳入的模块，其声明一律在键表里。**取可用集的消费点不做减法**（架构不变量 15）：一份参数声明不是由哪一次运行产生的，减法会让同一个键在一条命令下合法、在另一条下非法，而声明本身没变。两个模块声明同一个键是收集期的冲突，终止启动并点名冲突双方；单个模块的声明自身的缺陷（判据：不涉及第二方，仅凭这个模块声明的内容即可判定不可用）同样是启动失败，判据与示例归 `ErrInvalidDeclaration`。
 
@@ -179,6 +196,8 @@ err := store.Get(settings.ForTenant(tenantID), "ratelimit.window", &opts.Window)
 **读取从层选指名的那一层开始**：指名全局层时回落直接落在全局行上。层选由 `Global()` 或 `ForTenant(id)` 构造，接口上不存在"空租户"这个值（[ADR-settings-layer-2026-09-21](../../adr/adr-settings-layer-2026-09-21.md)）。
 
 **快照装载之前的读取报 `ErrNotLoaded`**，不回落到声明默认值。快照在本模块的 `Init` 装载，此前没有从表里读过任何一行，回落到默认值就是不论表里写着什么都答默认值，而读取方会拿它当真值用下去、没有任何一处报出来。功能在 `New` 之后即可取用，在别的模块自己的 `Init` 里读设置因而取决于构造次序：没有声明依赖的模块按名字排序，名字排在 `settings` 之前就先于它初始化。修复动作是读取方声明 `Requires (*settings.Store)(nil)`，或者让驱动至少推进到 `Init`；写入不受此限——`Set` 与 `Delete` 直接作用于表，写后的重载会把快照装上。
+
+**读取不判取值域。** 一行解得成声明类型、却落在声明给出的取值域之外——它写在取值域声明之前，或是绕过本模块写进表的——读取照原样交出它，不报错，也不回落到下一级。按读到的值行事的消费方要判它读到的值，限流即如此（[ADR-settings-domain-2026-09-29](../../adr/adr-settings-domain-2026-09-29.md)）。
 
 **值在快照装载时按声明预解码**，标量种类的读取路径上没有文本转换。**自带文本形式的类型每次读取由文本重新解码**，那一行的文本，或声明默认值的文本：这类类型的拷贝之间可能共享存储而反射看不透——`net.IP` 底层是切片，`math/big.Int` 的方法原地改写拷贝共享的数位——读取方拿读到的值做运算，改掉的就是声明默认值或快照里的值，进程内其余读取方随之读到它。重新解码交出的值与本模块的存储无关。解码失败的行单独记下（键与层到错误的映射），读取命中它时报 `ErrTypeMismatch` 并点名键；其余键照常可用。装载因此不因一行坏值而失败——坏值的作用面限于读它的代码路径，进程照常启动，其余设置照常可用。
 
@@ -203,17 +222,19 @@ err := store.Get(settings.ForTenant(tenantID), "ratelimit.window", &opts.Window)
 
 **两处陈述由同一张取值表约束**：配置模块不导出它的转换规则，本模块在 `pkg/settings/codec.go` 的 `coerce` 里复述了一遍；`pkg/settings/discipline_test.go` 的 `TestTheWriteDisciplineAgreesWithConfiguration` 把同一份 YAML 文档里的值分别送进配置的装载路径与本模块的编码路径，要求两侧同拒，或同收且得到同一个值。
 
+**归到声明类型之后，值再按声明给出的取值域判定**，落在域外即 `ErrInvalidValue`，错误点名键、规则与这个值将要存下的文本，不落库，快照与事件都不动（[ADR-settings-domain-2026-09-29](../../adr/adr-settings-domain-2026-09-29.md)）。判定的对象是归一化之后、恰为声明类型的值：`0`、`"0"` 与 JSON 解出的 `0.0` 写进同一个整数项，得到同一个裁决；只可赋值给声明类型的值（`[]string` 之于以它为底层的类型）先拷成声明类型再交给谓词。敏感项的拒绝不带值，只点名键与规则。类型本身就不收的值仍是 `ErrTypeMismatch`，轮不到取值域。
+
 **值的文本上限是 1 MiB**，超过即 `ErrInvalidValue`，不落库。上限服务的对象是快照：全部已写入行常驻内存，一个失控的写入不该把整个进程的内存拖垮。
 
 **版本在数据库端递增**：`version = version + 1`，新行为 1。两个并发写入同一个键时结果是后到的那一个，版本号仍逐次递增——本模块不做比较并交换，丢更新写进非保证。
 
-**写入的次序**：校验、落库、重载本进程快照、发布事件；发布失败不回滚、不改变返回值，见事件一节。**删除**只删指定的层，被删的键此后回落到下一级；**`Delete` 不过键表**——它是声明被删之后留在库中的旧行的清理路径，而读取与 `Set` 都被键表拦住；`List` 交出的是显式行，不是回落后的有效值。**`List` 的次序是键的字节序，由本模块排好**，不交给语句：数据库按排序规则比较文本，SQLite 逐字节比较，PostgreSQL 取建库时的排序规则，而常见的默认规则在第一级忽略标点，`a-b` 排在 `ab` 旁边而不是 `aa` 之前——交给语句，同一批行的次序就随命令所在的方言变化。
+**写入的次序**：校验（声明类型、取值域、文本上限）、落库、重载本进程快照、发布事件；发布失败不回滚、不改变返回值，见事件一节。**删除**只删指定的层，被删的键此后回落到下一级；**`Delete` 不过键表**——它是声明被删之后留在库中的旧行的清理路径，而读取与 `Set` 都被键表拦住；`List` 交出的是显式行，不是回落后的有效值。**`List` 的次序是键的字节序，由本模块排好**，不交给语句：数据库按排序规则比较文本，SQLite 逐字节比较，PostgreSQL 取建库时的排序规则，而常见的默认规则在第一级忽略标点，`a-b` 排在 `ab` 旁边而不是 `aa` 之前——交给语句，同一批行的次序就随命令所在的方言变化。
 
 **敏感项的值不进入本模块的任何日志与错误文本**。本模块的日志只写键与租户，不写值；敏感标记的作用面是事件载荷（见下）与设置项的列表（见列出设置项）。
 
 ### 列出设置项
 
-`Declared` 按键的字节序列出键表中的全部设置项，与 `List` 同一种次序（[ADR-settings-declaration-2026-09-29](../../adr/adr-settings-declaration-2026-09-29.md)）。每一项带着键、声明方模块、声明类型、默认值与声明给出的元信息；它为管理面这类宿主代码而设，那里要列出别的模块声明的每一项，又不该复述它们的声明。
+`Declared` 按键的字节序列出键表中的全部设置项，与 `List` 同一种次序（[ADR-settings-declaration-2026-09-29](../../adr/adr-settings-declaration-2026-09-29.md)）。每一项带着键、声明方模块、声明类型、默认值与声明给出的元信息，取值域的规则也在其中，经 `Item.Domain.Rule()` 读出，没有取值域的项为空；它为管理面这类宿主代码而设，那里要列出别的模块声明的每一项，又不该复述它们的声明。
 
 **它只读键表**：键表在 `New` 建立、此后不变，`Declared` 因而不收上下文、不发起 IO，快照装载之前即可用——这一点与读取不同，读取在装载之前报 `ErrNotLoaded`。返回值是调用方自己的一份，改动它够不着键表，也够不着下一个调用方。
 
@@ -281,7 +302,7 @@ type Change struct {
 
 ### 稳定性承诺
 
-`Layer`、`Global`、`ForTenant`、`Store`、`Get`、`Write`、`Entry`、`DeclaredItem`、`Schema`、`Mount`、`Item`、`Change`、`ChangedEventType`、`ModuleName` 与哨兵错误是本模块与其他模块之间的契约。键的路径派生规则与配置共用一条，改它同时改变两个模块的键名。变更事件的类型名与载荷字段名是发布方与订阅方之间的约定，改一个字段名会静默断开订阅方的读取（[event](design-event.md) 记有同一条）。
+`Layer`、`Global`、`ForTenant`、`Store`、`Get`、`Write`、`Entry`、`DeclaredItem`、`Schema`、`Mount`、`Item`、`Domain`、`DomainOf`、`Change`、`ChangedEventType`、`ModuleName` 与哨兵错误是本模块与其他模块之间的契约。一个设置项的取值域是声明方的契约：给它声明或收窄取值域，以前写得进去的值随之被拒绝。键的路径派生规则与配置共用一条，改它同时改变两个模块的键名。变更事件的类型名与载荷字段名是发布方与订阅方之间的约定，改一个字段名会静默断开订阅方的读取（[event](design-event.md) 记有同一条）。
 
 表名、列名与迁移文件的组织是内部实现，不在契约面上。
 
@@ -307,7 +328,7 @@ type Change struct {
 
 ## UML 图
 
-下图给出契约面上的类型与模块内部的结构。图中画不出的约束：键表在装配期建立后只读，`Declared` 交出的是它那份列表的拷贝；快照在 `Init` 与 `Start` 各装载一次，此后由写入重载、事件重载与周期刷新替换，替换是对整份的原子指针交换；层选由 `Global` 与 `ForTenant` 两个构造器产生，零值不是一个层。
+下图给出契约面上的类型与模块内部的结构。图中画不出的约束：键表在装配期建立后只读，`Declared` 交出的是它那份列表的拷贝；`Domain` 只由 `DomainOf` 构造，它的谓词只在写入与建表时被调用；快照在 `Init` 与 `Start` 各装载一次，此后由写入重载、事件重载与周期刷新替换，替换是对整份的原子指针交换；层选由 `Global` 与 `ForTenant` 两个构造器产生，零值不是一个层。
 
 ```mermaid
 classDiagram
@@ -334,6 +355,14 @@ classDiagram
         +string Namespace
         +[]Mount Mounts
         +map Items
+    }
+    class Item {
+        +string Description
+        +bool Sensitive
+        +Domain Domain
+    }
+    class Domain {
+        +Rule() string
     }
     class Write {
         +Layer Layer
@@ -379,6 +408,9 @@ classDiagram
     Store ..> Entry : 交出
     Store ..> DeclaredItem : 列出
     keyTable --> DeclaredItem : 建表时排好
+    Schema --> Item : 逐项元信息
+    DeclaredItem --> Item : 内嵌
+    Item --> Domain : 携带
     settingsStore ..> Change : 发布
 ```
 
@@ -393,7 +425,7 @@ sequenceDiagram
     participant R as 其他副本
 
     C->>S: Set(ctx, w)
-    S->>S: 键在册校验、按声明编码
+    S->>S: 键在册校验、按声明编码、判取值域
     S->>G: 写入或覆盖该行，版本递增
     S->>S: 重载本进程快照
     S->>B: Publish(settings.changed)
@@ -465,7 +497,7 @@ flowchart TD
 
 收集在 `New` 内完成，来源是 `core.Resources[settings.Schema](reg)` 的全体；键的有效性跟着二进制走，比任何一次命令长寿，未运行与只被静态级纳入的模块，其声明因而一律在键表里。**取可用集的消费点不做减法**（架构不变量 15）。
 
-每个声明贡献一组键：命名空间与挂载路径与字段路径逐段拼接，展开规则与配置的名字派生一致。聚合时逐键检查唯一性，两个模块的声明落在同一个键上即 `ErrDeclarationConflict`，终止启动并点名两个声明方；单个模块自身的缺陷即 `ErrInvalidDeclaration`，判据是不涉及第二方，下列是示例而非全集：键名违反字符集、挂载值不是结构体指针、展开出现类型环、`Items` 的键不对应任何叶子、声明的类型不在集合内（包括只能从文本解码、不能编码回文本的类型）、默认值编码不成文本或编出的文本读不回来、同一个模块的两处挂载落在同一个键上（无论两处挂载在一份声明里还是分属它的两份声明）。默认值那一条的依据是文本往返：默认值写不成文本，一旦有行覆盖了它，就没有一次写入能把它写回去；敏感项的这一类报错不带默认值的文本，也不带类型自己给出的原因。两类判据与配置的输入项清单一节所列的判据同源（[config](design-config.md)）。
+每个声明贡献一组键：命名空间与挂载路径与字段路径逐段拼接，展开规则与配置的名字派生一致。聚合时逐键检查唯一性，两个模块的声明落在同一个键上即 `ErrDeclarationConflict`，终止启动并点名两个声明方；单个模块自身的缺陷即 `ErrInvalidDeclaration`，判据是不涉及第二方，下列是示例而非全集：键名违反字符集、挂载值不是结构体指针、展开出现类型环、`Items` 的键不对应任何叶子、声明的类型不在集合内（包括只能从文本解码、不能编码回文本的类型）、默认值编码不成文本或编出的文本读不回来、取值域建在别的类型上或缺规则、缺谓词、默认值落在自己的取值域之外、同一个模块的两处挂载落在同一个键上（无论两处挂载在一份声明里还是分属它的两份声明）。默认值那几条的依据相同，都是写回：默认值写不成文本，或不在自己的取值域内，一旦有行覆盖了它，就没有一次写入能把它写回去；敏感项的这一类报错不带默认值的文本，也不带类型自己给出的原因。两类判据与配置的输入项清单一节所列的判据同源（[config](design-config.md)）。
 
 **同一功能的互斥实现各自划分键的命名空间**，与配置对互斥实现的同一条要求：清单收集自全部已注册模块，两个实现即便不同时运行，声明仍然同时在册，同键即冲突、进程起不来。
 
@@ -491,7 +523,7 @@ flowchart TD
 
 ### 写入路径
 
-写入的步骤依次是：键在册校验、按声明类型编码、值上限检查、落库（插入或覆盖该层该键的行、版本递增、刷新 `updated_at`，并取回写入后的版本号）、重载本进程快照、发布变更事件。任一步在落库之前失败即返回错误，不触碰任何行。
+写入的步骤依次是：键在册校验、按声明类型编码、取值域判定、值上限检查、落库（插入或覆盖该层该键的行、版本递增、刷新 `updated_at`，并取回写入后的版本号）、重载本进程快照、发布变更事件。任一步在落库之前失败即返回错误，不触碰任何行。
 
 **调用方的上下文只约束取连接与落库那条语句。** 语句提交之后的重载与发布是本模块为一行已在库里的值做的收尾，不是调用方的工作，它们在去掉了取消信号、保留了其余值（追踪信息在内）的上下文上跑完：请求恰在提交之后结束——客户端断开、截止时刻到了——这次写入照样在本副本生效、照样通知其余副本，而不是返回成功之后本副本继续服务旧值、其余副本也无从得知。`Delete` 同一条。
 
@@ -511,7 +543,7 @@ flowchart TD
 |---|---|---|
 | `ErrUnknownKey` | 读取或写入一个没有任何声明覆盖的键 | 点名该键；补一份声明，或改掉调用点的键 |
 | `ErrTypeMismatch` | 值无法按声明类型往返：写入值编码失败，或该键的已写入值解码失败 | 点名键与声明类型；写入一个合法的值，或修正声明与旧值的错配 |
-| `ErrInvalidValue` | 值不合格：写入的文本超过上限，或配置的刷新间隔为负 | 点名该键与不合格的原因 |
+| `ErrInvalidValue` | 值不合格：写入的值落在声明给出的取值域之外、写入的文本超过上限，或配置的刷新间隔为负 | 点名该键与不合格的原因，越域时是声明给出的规则；写入一个规则接受的值，这一次什么都没有写 |
 | `ErrDeclarationConflict` | 两个模块声明了同一个键 | 点名该键与两个声明方；其中一方改键或改命名空间 |
 | `ErrInvalidDeclaration` | 单个模块的声明自身的缺陷：不涉及第二方，仅凭这个模块声明的内容即可判定不可用 | 点名声明方与缺陷；判据与示例见声明的收集与键表的建立 |
 | `ErrTableMissing` | `Init` 装载时数据库报告设置表不存在 | 点名那张表与施加迁移的命令；把本模块写进那条命令的声明集 |
@@ -536,6 +568,7 @@ flowchart TD
 - **不保证并发写入的结果。** 两个写入同时作用于一个键时结果是后到的那一个，本模块不做比较并交换；需要在并发写入中确定赢家时，由调用方在一侧串行化写入。
 - **不保证 `Set` 事件里的 `Old` 是库中的上一个值。** 它取自发起写入的副本的快照，可能落后于库——另一个副本刚写过而本副本尚未刷新。删除事件的 `Old` 由删除语句取回，不在此列。
 - **不保证两层之间的一致性快照。** 读取按层取值，两次读取之间任何一层都可能改变；把多个键拼成一个自洽的观察不是本模块的承诺。
+- **不保证库里的行落在取值域内。** 取值域只在写入时判：它声明之前写下的行、绕过本模块写进表的行照原样读出，判不判它们由消费方决定（[ADR-settings-domain-2026-09-29](../../adr/adr-settings-domain-2026-09-29.md)）。滚动发布期间新旧两版的副本各按自己的声明判，同一个值可能在一个副本上被拒、在另一个副本上写进去。
 - **不保证租户标识在册。** 写入一个不在名册上的标识不会被拒绝，它留下的行没有租户读它；本模块不认识名册。
 - **不保证写入面被鉴权。** 访问控制由宿主负责（[ADR-settings-scope-2026-09-21](../../adr/adr-settings-scope-2026-09-21.md)）。
 - **不保证写入与调用方的事务同进退。** 写入另取一条连接提交，调用方的事务回滚不撤销它（[ADR-settings-connection-2026-09-29](../../adr/adr-settings-connection-2026-09-29.md)）。
@@ -544,7 +577,7 @@ flowchart TD
 
 ### 接受的代价
 
-**各条裁定本身带来的代价记在各自的记录里**：值模型的边界见 [ADR-settings-declaration-2026-09-21](../../adr/adr-settings-declaration-2026-09-21.md)；对事件总线的构造期依赖见 [ADR-settings-propagation-2026-09-21](../../adr/adr-settings-propagation-2026-09-21.md)；变更历史的存否与敏感项的记录见 [ADR-settings-audit-2026-09-21](../../adr/adr-settings-audit-2026-09-21.md)；全局行的共享性、读取的额外一级、接口收层选与零值不可用见 [ADR-settings-layer-2026-09-21](../../adr/adr-settings-layer-2026-09-21.md)；消费方对"没有租户"一档的处理与裸字符串标识见 [ADR-settings-scope-2026-09-21](../../adr/adr-settings-scope-2026-09-21.md)。
+**各条裁定本身带来的代价记在各自的记录里**：值模型的边界见 [ADR-settings-declaration-2026-09-21](../../adr/adr-settings-declaration-2026-09-21.md)；取值域只在写入时判、谓词不能序列化见 [ADR-settings-domain-2026-09-29](../../adr/adr-settings-domain-2026-09-29.md)；对事件总线的构造期依赖见 [ADR-settings-propagation-2026-09-21](../../adr/adr-settings-propagation-2026-09-21.md)；变更历史的存否与敏感项的记录见 [ADR-settings-audit-2026-09-21](../../adr/adr-settings-audit-2026-09-21.md)；全局行的共享性、读取的额外一级、接口收层选与零值不可用见 [ADR-settings-layer-2026-09-21](../../adr/adr-settings-layer-2026-09-21.md)；消费方对"没有租户"一档的处理与裸字符串标识见 [ADR-settings-scope-2026-09-21](../../adr/adr-settings-scope-2026-09-21.md)。
 
 设计本身带来的代价如下：**每一条读取多一次映射查找**（租户行未命中时的全局行查找），装载时的一次预解码换来标量种类读取路径上的零转换；**自带文本形式的项每次读取多一次解码**，换来读取方拿到的值与模块存储互不牵连，读取频繁的参数宜声明为标量；**快照常驻内存**，规模是全部已写入行——稀疏使用下可控，把设置当高频数据写会把这份内存放大。
 
@@ -570,7 +603,8 @@ flowchart TD
 
 | 能力 | 状态 | 代码 |
 |---|---|---|
-| 接口与数据类型 | 已实现 | `pkg/settings/settings.go` `Layer`、`Global`、`ForTenant`、`Store`、`Write`、`Entry`、`DeclaredItem`、`Schema`、`Mount`、`Item`、`Change`、`ChangedEventType`、`Get` |
+| 接口与数据类型 | 已实现 | `pkg/settings/settings.go` `Layer`、`Global`、`ForTenant`、`Store`、`Write`、`Entry`、`DeclaredItem`、`Schema`、`Mount`、`Item`、`Domain`、`DomainOf`、`Change`、`ChangedEventType`、`Get` |
+| 取值域的收集期判定与写入判定 | 已实现 | `pkg/settings/keys.go` `domainDefect`；`pkg/settings/codec.go` `encodeValue`、`admit` |
 | 声明面与键表 | 已实现 | `pkg/settings/keys.go` `buildKeyTable`、`expandSchema`、`classifyLeaf`、`encodesToText`、`defaultText`、`fieldName`、`camelToKebab` |
 | 读取的三级回落与泛型封装 | 已实现 | `pkg/settings/store.go` `Get`；`pkg/settings/snapshot.go` `value`、`layer`；`pkg/settings/codec.go` `decodeValue`、`assignTarget` |
 | 写入面与版本递增 | 已实现 | `pkg/settings/store.go` `Set`、`writeRow`、`commit`、`landed`、`Delete`、`List`、`onConnection`、`connectionWait`；`pkg/settings/codec.go` `encodeValue`、`coerce`、`fitFloat`、`textOf`、`marshalText` |

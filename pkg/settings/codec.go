@@ -23,9 +23,12 @@ import (
 // encodeValue turns a declared value into the text to store.
 //
 // The value is first held to the declared type under configuration's value
-// discipline (coerce), and the text is then written in the declared type's own
-// form. What is stored is therefore always that form, whatever the caller
-// handed in: a duration written as "300s" is stored as "5m0s".
+// discipline (coerce), the text is then written in the declared type's own
+// form, and the value is last held to the item's declared domain (admit). What
+// is stored is therefore always that form, whatever the caller handed in: a
+// duration written as "300s" is stored as "5m0s". The domain is judged on the
+// value held to the declared type rather than on the form it arrived in, so
+// the number 0, the text "0" and a 0 decoded from JSON are one value to it.
 func encodeValue(entry keyEntry, value any) (string, error) {
 	rv, err := coerce(value, entry)
 	if err != nil {
@@ -36,7 +39,37 @@ func encodeValue(entry keyEntry, value any) (string, error) {
 		return "", fmt.Errorf("%w: key %q as %s: %w",
 			ErrTypeMismatch, entry.key, typeName(entry.typ), err)
 	}
+	if err := admit(entry, rv, text); err != nil {
+		return "", err
+	}
 	return text, nil
+}
+
+// admit holds a value already held to the declared type to the item's
+// declared domain, and refuses one outside it with ErrInvalidValue naming the
+// key and the rule. The zero Domain admits every value.
+//
+// The predicate is handed a value of exactly the declared type. coerce may
+// pass a value that is only assignable to it — an unnamed slice for a type
+// defined over one — so the value is first copied into one of the declared
+// type. The refusal quotes the text the value would have been stored as, the
+// form List reports it in, unless the item is sensitive.
+func admit(entry keyEntry, rv reflect.Value, text string) error {
+	judge := entry.item.Domain.judge
+	if judge == nil {
+		return nil
+	}
+	held := reflect.New(entry.typ).Elem()
+	held.Set(rv)
+	if judge.admits(held.Interface()) {
+		return nil
+	}
+	if entry.item.Sensitive {
+		return fmt.Errorf("%w: key %q takes %s, and the value written is not one of them. The "+
+			"value is withheld: the item is marked sensitive", ErrInvalidValue, entry.key, judge.rule)
+	}
+	return fmt.Errorf("%w: key %q takes %s, and the value written, %q, is not one of them",
+		ErrInvalidValue, entry.key, judge.rule, text)
 }
 
 // textOf writes a value of the declared type in that type's own text form,
