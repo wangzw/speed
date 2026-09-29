@@ -458,3 +458,74 @@ func TestACrossTenantUpdateEmptyingTheTenantColumnIsRefused(t *testing.T) {
 	}
 	requireRowTenant(t, handle, "a", "globex")
 }
+
+// readOnlyTenantOrder binds the tenant column to a field of its own that GORM
+// only reads.
+type readOnlyTenantOrder struct {
+	tenant.Model
+	TenantID *string `gorm:"column:tenant_id;->"`
+	ID       string  `gorm:"column:id;primaryKey"`
+	Note     string  `gorm:"column:note"`
+}
+
+// An insert GORM builds without the tenant column — its selection or its
+// omission leaves the column out, or the field bound to it is one GORM does not
+// write — puts no tenant on the row whatever the filter fills or the caller
+// wrote: the row belongs to no tenant where the column takes a null, and fails
+// on the constraint where it does not. It is refused, and nothing is written.
+func TestAnInsertLeavingTheTenantColumnOutIsRefused(t *testing.T) {
+	handle := open(t)
+	if err := handle.Exec("CREATE TABLE loose (tenant_id TEXT NULL, id TEXT NOT NULL, note TEXT)").Error; err != nil {
+		t.Fatalf("creating the table: %v", err)
+	}
+	acme := func() *gorm.DB { return handle.WithContext(scopedContext("acme")).Table("loose") }
+	across := func() *gorm.DB { return handle.WithContext(crossContext()).Table("loose") }
+	for name, write := range map[string]func() error{
+		"a selection naming other columns": func() error {
+			return acme().Select("ID", "Note").Create(&order{ID: "x", Note: "n"}).Error
+		},
+		"an omission of the column": func() error {
+			return acme().Omit("tenant_id").Create(&order{ID: "x", Note: "n"}).Error
+		},
+		"a map under a selection naming other columns": func() error {
+			return acme().Model(&order{}).Select("id", "note").
+				Create(map[string]any{"id": "x", "note": "n"}).Error
+		},
+		"a map naming the column under a selection leaving it out": func() error {
+			return acme().Model(&order{}).Select("id").
+				Create(map[string]any{"id": "x", "tenant_id": "acme"}).Error
+		},
+		"a field GORM only reads": func() error {
+			return acme().Create(&readOnlyTenantOrder{ID: "x", Note: "n"}).Error
+		},
+		"across tenants, a row naming its tenant under a selection leaving it out": func() error {
+			return across().Select("ID", "Note").
+				Create(&order{Model: tenant.Model{TenantID: "globex"}, ID: "x"}).Error
+		},
+	} {
+		t.Run(name, func(t *testing.T) {
+			err := noPanic(t, write)
+			if !errors.Is(err, tenant.ErrNoTenantInContext) {
+				t.Fatalf("an insert leaving the tenant column out gave %v, want ErrNoTenantInContext", err)
+			}
+			var n int64
+			if err := handle.WithContext(crossContext()).Raw("SELECT count(*) FROM loose").Scan(&n).Error; err != nil {
+				t.Fatalf("counting: %v", err)
+			}
+			if n != 0 {
+				t.Fatalf("a refused insert left %d rows", n)
+			}
+		})
+	}
+
+	t.Run("a selection naming the column", func(t *testing.T) {
+		if err := acme().Select("ID", "Note", "TenantID").Create(&order{ID: "y", Note: "n"}).Error; err != nil {
+			t.Fatalf("an insert selecting the tenant column: %v", err)
+		}
+		var owner *string
+		if err := handle.WithContext(crossContext()).Raw("SELECT tenant_id FROM loose WHERE id = 'y'").
+			Scan(&owner).Error; err != nil || owner == nil || *owner != "acme" {
+			t.Fatalf("the row selecting the tenant column belongs to %v (%v), want acme", owner, err)
+		}
+	})
+}

@@ -529,6 +529,7 @@ flowchart TD
 **写进租户列的取值按 GORM 自己读取它的方式去读，写到哪一列按数据库解析列名的方式去认。** GORM 接受的每一种写法都要覆盖到，漏掉一种，那一种就是一条绕过核对的路：
 
 - 插入的行从 GORM 解析出的目标值上读：结构体、结构体切片与指针切片，按指针传入与按值传入都算；按值传入的结构体或数组先复制一份再填。以 map 或 map 切片插入的，按键找租户列，键怎么认见下文，没写这一列的 map 由插件补上。**map 的一个键有没有被选中，按 GORM 写出它的那一列去判**：模型的 schema 解析得到的键——按字段的 Go 名或按它的列名——看那个字段的列，解析不到的键看键本身；`Select` 点名的是一个以租户列另一种写法为列的字段时，写到租户列上的正是它，照样核对。插入写出的字段里，除绑在租户列上的那一个之外、写到的列被数据库读成租户列的字段——同一列的另一种写法——GORM 与租户列并排写出，而 SQLite 对插入里重复的列取第一个，那一行的租户因而由先声明的那种写法决定；这样的字段按 GORM 构造那一行的方式取值（选列与省列、默认值、创建时间），与租户列同样核对。**GORM 不写的字段不核对**：GORM 从每一列绑上的那个字段写出插入的行，另把默认值由数据库给出、又有值的字段并排写出；一个与别的字段同列、两样都不是的字段——经内嵌重复了某一列的字段即是——从不到达表里，按它的取值拒绝，拒绝的是一条照常落进上下文租户的插入。
+- **GORM 构造出的行不带租户列的插入一律拒绝**，以 `ErrNoTenantInContext` 失败，上下文跨不跨租户都如此：选列没有点名那一列、省列点了它，或者绑在那一列上的字段不在插入时写出，插件填进去的与调用方写下的都只留在值里，到不了表。那一行在租户列可空的表上不属于任何租户，在非空的表上撞约束。
 - 更新的赋值：显式的 SET 子句与目标值两处都读——目标值产出赋值时 GORM 渲染的是它们、不是调用方写的 SET 子句，产不出时才轮到 SET 子句，只读其中一处，另一处就是绕过核对的路；map 按键读；结构体按 GORM 从结构体构造赋值的方式读：对模型的每一列，GORM 在承载赋值的那个类型——模型自己，或另一种类型——上按这一列的名字找字段，这一步也按 Go 字段名找得到，再把找到的那个字段自己的列写进赋值。写到租户列上的因而是这些列里数据库读成租户列的那几列，而不是那个类型上恰好以租户列命名的字段：模型有一列名叫 `Note`，补丁类型的 `Note` 字段标着租户列的另一种写法，写出的就是那种写法。选列与省列决定哪些列被赋值，被选中的零值也算赋值，map 的键按插入那一条的规则判选列。GORM 还给模型上每一个带更新时间戳、而 map 没有写到的字段写进当前时间，除非选列把它排除在外；这样一个字段的列是租户列的另一种写法时，写进租户列的就是那个时间，照样核对。被寻址的那个值自己的主键字段是条件而不是赋值，归主键那一档核对。**落到租户列上的赋值不止一条时，每一条都核对**：SQLite 对更新里重复的列取最后一个，只核对第一条，排在后面的另一种写法就能把行改到别的租户。
 - upsert 在冲突时对冲突行的赋值：以 GORM 自己写出的形式赋成将要插入的那一行自己的租户列——`excluded` 下的那一列、按原名——不算写别的租户，其余一律核对；另一种写法可能被数据库读成将要插入那一行的别的列，把它抄进租户列。
 
@@ -560,7 +561,7 @@ flowchart TD
 | `ErrAliasConflict` | 两个租户抢同一个别名，经 `Put` 或 `Create` | 点名该别名与占有它的那个标识；改掉其中一个 |
 | `ErrTenantExists` | `Create` 给的标识名册表里已经有一行，无论本副本的快照里有没有它；什么也没写 | 点名那个标识；要开一个新租户就换一个标识，要改既有的那一个走 `Put` 或 `SetStatus` |
 | `ErrTenantDisabled` | `Enter` 给的标识在名册表里，但那个租户已停用 | 点名那个标识与它的状态；这不是调用点的缺陷，要做的事等租户恢复服务，或者丢弃；停用期间仍属于那个租户的工作改走 `EnterRegistered`。与 `ErrInvalidTenant` 分开，因为两者的处置不同；请求面把二者收成同一个 404 的理由——不向进程外的调用方暴露名册——在这里不成立，这里的读者是进程自己的代码 |
-| `ErrNoTenantInContext` | 受约束模型的语句在上下文中没有标识；跨租户的写把租户列写成空串或 NULL，或插入的行没写租户列；空标识在任何句柄上被绑定进语句 | 点名模型；由调用方给出租户——经受守护的监听端，或不经请求面时经 `Enter`——或显式标为跨租户并在行上写明租户 |
+| `ErrNoTenantInContext` | 受约束模型的语句在上下文中没有标识；跨租户的写把租户列写成空串或 NULL，或插入的行没写租户列；GORM 构造出的插入行不带租户列——选列、省列，或绑在那一列上的字段插入时不写；空标识在任何句柄上被绑定进语句 | 点名模型；由调用方给出租户——经受守护的监听端，或不经请求面时经 `Enter`——或显式标为跨租户并在行上写明租户；租户列被选列或省列排除的，把它点名进选列 |
 | `ErrExplicitTenantMismatch` | 一条写语句显式给出的租户列取值与上下文里的标识不同，或是一个读不出是不是那个标识的取值（表达式、子查询、NULL）——租户列按数据库的读法去认，键与列名的任何写法都算；或者一条按结构体主键寻址的写，主键里租户那一半写了别的租户；或者一条写的赋值目标是认不出是哪一列的原样 SQL，无论上下文跨不跨租户 | 点名该模型与写下的取值，目标认不出时点名那段原样文本；删掉显式写下的那个，或者改用 `CrossTenant`；目标认不出的，把它写成单独一个列名 |
 
 取不到配置读取面时，本模块把 `core` 的 `ErrMissingProvider` 原样外传，不另立哨兵：补救动作是宿主在驱动开始之前把读取面交进注册表（见 [core](design-core.md)），与本模块自己判定出的缺陷不同类。**"对方模块不在场"这一档同样由它承担**：两个模块各自声明了构造期依赖，依赖解析在任何模块构造之前完成，零个提供者与提供者被消解禁用都在那里以 `ErrMissingProvider` 终止，错误文本的成因由注册表区分（见 [core](design-core.md) 的哨兵表）。本模块不为它另立哨兵——立了也是一条走不到的条款。
@@ -599,7 +600,7 @@ flowchart TD
 - **进入的放行读快照。** 另一个副本上刚停用的租户，在本副本下一次读名册之前仍经 `Enter` 进得去，时延与请求面相同。拒绝则读表作答：另一个副本上刚登记或刚重新启用的租户当即进得去。
 - **快照不放行的每一次进入多一次按主键的读。** 从未登记过的标识每进一次读一次表，一个把请求面的名字原样交给进入方法的 handler 因而为每一个伪造的标识付一次读；快照落后于表时另加一次整张名册的重读，同一个租户同时到达的多次进入合成一次。那一读另取交付连接池里的一条连接。
 - **名册的语句取连接与等锁合计至多五秒**（[ADR-tenant-directory-2026-09-29](../../adr/adr-tenant-directory-2026-09-29.md)）。繁忙但正常的库上，五秒之内取不到连接的调用同样以 `ErrNoConnection` 失败，五秒之内等不到锁的调用以引擎自己的错误失败，即便调用方给的期限更长；连接池被别的调用方长时间占满、或名册表被别的写者长时间锁住时，名册的读表与写入失败，而不是排队等过去。
-- **各条裁定本身带来的代价记在各自的记录里**：取值途径与请求面伪造见 [ADR-tenant-resolution-2026-09-21](../../adr/adr-tenant-resolution-2026-09-21.md)；与认证的先后及它换来的两处看不见见 [ADR-tenant-ordering-2026-09-21](../../adr/adr-tenant-ordering-2026-09-21.md)；标识与别名的两个概念见 [ADR-tenant-identifier-2026-09-21](../../adr/adr-tenant-identifier-2026-09-21.md)；停用的时延与名册在关键路径上见 [ADR-tenant-directory-2026-09-21](../../adr/adr-tenant-directory-2026-09-21.md)；隔离是一条条件而非边界、取代约定字段的字段要自己声明约定的两道防线见 [ADR-tenant-isolation-2026-09-21](../../adr/adr-tenant-isolation-2026-09-21.md)；跨租户途径可被滥用见 [ADR-tenant-scoping-2026-09-21](../../adr/adr-tenant-scoping-2026-09-21.md)。
+- **各条裁定本身带来的代价记在各自的记录里**：取值途径与请求面伪造见 [ADR-tenant-resolution-2026-09-21](../../adr/adr-tenant-resolution-2026-09-21.md)；与认证的先后及它换来的两处看不见见 [ADR-tenant-ordering-2026-09-21](../../adr/adr-tenant-ordering-2026-09-21.md)；标识与别名的两个概念见 [ADR-tenant-identifier-2026-09-21](../../adr/adr-tenant-identifier-2026-09-21.md)；停用的时延与名册在关键路径上见 [ADR-tenant-directory-2026-09-21](../../adr/adr-tenant-directory-2026-09-21.md)；隔离是一条条件而非边界、取代约定字段的字段要自己声明约定的两道防线、插入的选列要点名租户列见 [ADR-tenant-isolation-2026-09-21](../../adr/adr-tenant-isolation-2026-09-21.md)；跨租户途径可被滥用见 [ADR-tenant-scoping-2026-09-21](../../adr/adr-tenant-scoping-2026-09-21.md)。
 - **一个受守护的监听端上不能有不需要租户的路由。** 解析层按监听端守护，没有按路由的例外；探活与诊断这类路由要放到另一个监听端上。这一条是解析层按监听端守护换来的（[ADR-tenant-resolution-2026-09-21](../../adr/adr-tenant-resolution-2026-09-21.md)）。
 - **每一条请求多两次映射查找，每一条受约束语句多一次字段查找与一次映射查找。** 解析层的开销是每请求两次映射查找，插件的开销是每语句一次字段查找与一次映射查找，都是常数时间；那一列绑在约定之外的字段上、或带着那一列却不受约束的模型另走一遍字段，以结构体承载的插入与更新另加一遍与模型列数成正比的查找（见核心算法与流程）。
 - **快照与库之间有一个窗口，且这个窗口只出现在别的副本上。** 写入方自己的副本在写成功之后立刻重载并发布，因而当即看到它；其余副本要等各自的下一次刷新，在这之前一个刚写入的租户在它们的请求面上不可见、一个刚被停用的租户在它们那里继续被服务。进入方法的拒绝读表，不在这个窗口里。
@@ -684,7 +685,7 @@ flowchart TD
 | 取法的登记面与冻结 | 已实现 | `pkg/tenant/resolve/resolve.go` `Register`、`open`、`seal` |
 | 请求期的解析、日志字段绑定与收口 | 已实现 | `pkg/tenant/resolve/resolve.go` `admit`、`refuse`、`middlewareFor` |
 | 受约束模型的约定与识别，填列与核对作用于 GORM 绑到租户列上的字段 | 已实现 | `pkg/tenant/model.go` `Model`；`pkg/tenant/catalog/plugin.go` `conventionColumn`、`conventionFieldOf`、`isConvention`、`embedsConvention` |
-| 隔离插件的三处作用点、四档判定与显式租户列的核对，只核对 GORM 写出的字段 | 已实现 | `pkg/tenant/catalog/plugin.go` `Initialize`、`scopeRead`、`scopeDelete`、`scopeUpdate`、`applyCondition`、`scopeTerm`、`grouped`、`fillKey`、`inKey`、`fillColumn`、`writeRows`、`otherSpellings`、`insertWrites`、`judgeSpellings`、`writeMap`、`assignedValues`、`destinationValues`、`upsertValues`、`keyReaches`、`keyColumn`、`targetReaches` |
+| 隔离插件的三处作用点、四档判定与显式租户列的核对，只核对 GORM 写出的字段，拒绝不带租户列的插入行 | 已实现 | `pkg/tenant/catalog/plugin.go` `Initialize`、`scopeRead`、`scopeDelete`、`scopeUpdate`、`applyCondition`、`scopeTerm`、`grouped`、`fillKey`、`inKey`、`fillColumn`、`writeRows`、`insertSelects`、`leftOut`、`otherSpellings`、`insertWrites`、`judgeSpellings`、`writeMap`、`assignedValues`、`destinationValues`、`upsertValues`、`keyReaches`、`keyColumn`、`targetReaches` |
 | 行链上的读、`Row` 经交回的行报出拒绝、关联联接的条件与子查询的拒绝 | 已实现 | `pkg/tenant/catalog/plugin.go` `Initialize`、`scopeRow`、`refuseRead`、`scopedJoins`、`applyJoins`、`joinTerm`、`renderRefusal` |
 | 跨租户的上下文标记 | 已实现 | `pkg/tenant/scope.go` `CrossTenant`；`internal/tenantctx/tenantctx.go` `WithCrossTenant` |
 | 不经请求面的路径经名册进入单个租户，放行读快照、拒绝读表并追平快照 | 已实现 | `pkg/tenant/catalog/roster.go` `Enter`、`enter`、`fromTable`、`catchUp`；`internal/tenantctx/tenantctx.go` `Bind`、`LogField` |

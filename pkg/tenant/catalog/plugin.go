@@ -936,21 +936,32 @@ func judgeEach(values []any, judge func(any) error) error {
 // value an insert gives one column, so the spelling declared first decides the
 // row's tenant. What such a field binds is judged as the tenant column's value
 // is. A field GORM does not write is not judged (insertWrites).
+//
+// A row GORM builds without the tenant column is refused before anything is
+// filled: the statement's selection or omission leaves the column out, or the
+// field bound to it is one GORM does not write on insert, and whatever the
+// filter fills or the caller wrote then stays in the value and never reaches
+// the table. The row would belong to no tenant where the column takes a null,
+// and fail on the constraint where it does not.
 func writeRows(st *gorm.Statement, field *gormschema.Field, id string, fill bool, judge func(any) error) error {
+	selected, restricted := st.SelectAndOmitColumns(true, false)
 	if maps, ok := insertedMaps(st.Dest); ok {
 		for _, m := range maps {
-			if err := writeMap(st, field, m, id, fill, judge); err != nil {
+			if err := writeMap(st, field, m, id, fill, judge, selected, restricted); err != nil {
 				return err
 			}
 		}
 		return nil
+	}
+	if !insertSelects(field, selected, restricted) {
+		return leftOut(st)
 	}
 	if fill {
 		makeAddressable(st)
 	}
 	spellings := otherSpellings(st, field)
 	for _, v := range structValues(st.ReflectValue, st.Schema.ModelType) {
-		if err := judgeSpellings(st, spellings, v, judge); err != nil {
+		if err := judgeSpellings(st, spellings, v, judge, selected, restricted); err != nil {
 			return err
 		}
 		written, isZero := field.ValueOf(st.Context, v)
@@ -1013,15 +1024,11 @@ func insertWrites(s *gormschema.Schema, f *gormschema.Field) bool {
 // field left out by selection or omission binds nothing, a zero value gives way
 // to the field's default or its creation time, and a zero value of a field whose
 // default is the database's binds nothing.
-func judgeSpellings(st *gorm.Statement, spellings []*gormschema.Field, v reflect.Value, judge func(any) error) error {
-	if len(spellings) == 0 {
-		return nil
-	}
-	selected, restricted := st.SelectAndOmitColumns(true, false)
+func judgeSpellings(st *gorm.Statement, spellings []*gormschema.Field, v reflect.Value, judge func(any) error,
+	selected map[string]bool, restricted bool,
+) error {
 	for _, f := range spellings {
-		sel, explicit := selected[f.DBName]
-		stamped := f.AutoCreateTime > 0 || f.AutoUpdateTime > 0
-		if inSelection := (explicit && sel) || (!explicit && (!restricted || stamped)); !inSelection {
+		if !insertSelects(f, selected, restricted) {
 			continue
 		}
 		value, isZero := f.ValueOf(st.Context, v)
@@ -1031,7 +1038,7 @@ func judgeSpellings(st *gorm.Statement, spellings []*gormschema.Field, v reflect
 			value = f.DefaultValueInterface
 		case f.HasDefaultValue:
 			continue
-		case stamped:
+		case f.AutoCreateTime > 0 || f.AutoUpdateTime > 0:
 			value = st.NowFunc()
 		}
 		if err := judge(value); err != nil {
@@ -1041,37 +1048,59 @@ func judgeSpellings(st *gorm.Statement, spellings []*gormschema.Field, v reflect
 	return nil
 }
 
+// insertSelects reports whether the row GORM builds for an insert from a struct
+// carries a field's column, as GORM decides it: a column the statement selects,
+// or any column when it selects none, and a column stamped with the creation or
+// update time even when it selects others — unless the statement omits it, or
+// the field is one GORM does not write on insert, which GORM's selection holds
+// as an omission.
+func insertSelects(f *gormschema.Field, selected map[string]bool, restricted bool) bool {
+	sel, explicit := selected[f.DBName]
+	stamped := f.AutoCreateTime > 0 || f.AutoUpdateTime > 0
+	return (explicit && sel) || (!explicit && (!restricted || stamped))
+}
+
+// leftOut is the refusal of an insert whose row GORM builds without the tenant
+// column.
+func leftOut(st *gorm.Statement) error {
+	return fmt.Errorf("%w: %s is inserted with its tenant column left out of the row — by the "+
+		"statement's selection or omission, or because the field bound to it is not written on "+
+		"insert — so the row would belong to no tenant", tenant.ErrNoTenantInContext, st.Schema.Name)
+}
+
 // writeMap fills and judges the tenant column of one row an insert binds from a
 // map.
 //
 // Adding the column writes into the caller's map, as filling a struct writes
 // into the caller's struct.
 //
-// A key's value is judged when GORM inserts it, which it decides under the
-// column the key is written as (keyColumn).
+// A key's value is written, and judged, when GORM inserts it, which it decides
+// under the column the key is written as (keyColumn). A map none of whose keys
+// GORM writes to the tenant column gets the column added under a tenant, and is
+// refused across tenants; one that selection or omission keeps the added column
+// out of is refused either way, because the row would reach the table with no
+// tenant.
 func writeMap(st *gorm.Statement, field *gormschema.Field, m map[string]interface{},
-	id string, fill bool, judge func(any) error,
+	id string, fill bool, judge func(any) error, selected map[string]bool, restricted bool,
 ) error {
 	if m == nil {
 		return nil
 	}
-	selected, restricted := st.SelectAndOmitColumns(true, false)
-	named := false
+	written := false
 	for key, v := range m {
-		if !keyReaches(st, key, field) {
+		if !keyReaches(st, key, field) || !assigned(selected, restricted, keyColumn(st, key)) {
 			continue
 		}
-		named = true
-		if !assigned(selected, restricted, keyColumn(st, key)) {
-			continue
-		}
+		written = true
 		if err := judge(v); err != nil {
 			return err
 		}
 	}
 	switch {
-	case named:
+	case written:
 		return nil
+	case !assigned(selected, restricted, field.DBName):
+		return leftOut(st)
 	case !fill:
 		return unnamedAcross(st)
 	}
