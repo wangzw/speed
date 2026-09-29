@@ -338,7 +338,8 @@ shape of a many-to-many association is pinned the same way — its join table
 scoped or refused — with each
 statement of the association mode on an owner and records addressed by the rest
 of their keys, and where an association by the whole key, a deletion of
-links between loaded records, and an owner refused for an association whose read cannot be held to a tenant
+links between loaded records, a replacement keeping records GORM did not save,
+and an owner refused for an association whose read cannot be held to a tenant
 are; `pkg/tenant/catalog/provenance_test.go` is where every shape a caller
 writes a condition on the tenant column in is judged as written, on both
 dialects, beside the one shape filled, a tuple over the whole key;

@@ -527,6 +527,34 @@ func TestALinkDeletionOfLoadedRecordsRuns(t *testing.T) {
 	}
 }
 
+// A replacement keeps the links to the records it is given and removes the
+// rest, and GORM writes the keys of the kept records inside a NOT. Where the
+// records are not saved first — their upsert omitted — nothing fills their
+// tenant half before GORM reads it, and the filter fills it inside the NOT:
+// the link to the record kept stays, and only the others go.
+func TestAReplacementKeepsTheRecordsItIsGivenInTheirTenant(t *testing.T) {
+	for name, open := range map[string]func(*testing.T) *gorm.DB{
+		"sqlite": openShapesOnSQLite, "postgres": openShapesOnPostgres,
+	} {
+		t.Run(name, func(t *testing.T) {
+			handle := open(t)
+			createAssociationSides(t, handle)
+			s := assocShapes[0]
+			createJoinTable(t, handle, s)
+			acme := handle.WithContext(scopedContext("acme"))
+			kept := &assocContact{ID: "c"}
+			err := acme.Model(keyedDeal()).Omit(s.field + ".*").Association(s.field).Replace(kept)
+			if err != nil {
+				t.Fatalf("replacing the links with c under acme gave %v", err)
+			}
+			if kept.TenantID != "" {
+				t.Fatalf("the record kept was saved and given tenant %q, so this case keys nothing empty", kept.TenantID)
+			}
+			requireLinks(t, handle, s, "acme:c globex:b")
+		})
+	}
+}
+
 // A deal has many notes by its whole key, and each note belongs to its deal by
 // it. The association mode reads and adds notes of a deal addressed by the rest
 // of its key within the context's tenant, and finds a note's deal the same way.

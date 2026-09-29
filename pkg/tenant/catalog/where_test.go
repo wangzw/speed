@@ -325,6 +325,26 @@ func byKey(id string) clause.IN {
 	}
 }
 
+// A key whose tenant half was filled under one tenant is filled again under the
+// next: the filter keeps the conditions as they were written, so a chain
+// carried to another context addresses that tenant's row, not the first
+// tenant's.
+func TestAKeyFilledUnderOneTenantIsFilledAfreshUnderAnother(t *testing.T) {
+	handle := open(t)
+	seedSharedID(t, handle)
+
+	q := handle.WithContext(scopedContext("acme")).Model(&order{}).Where(byKey("a"))
+	var first []order
+	if err := q.Find(&first).Error; err != nil || len(first) != 1 || first[0].TenantID != "acme" {
+		t.Fatalf("a read by key under acme gave %v and %v, want acme's a", err, first)
+	}
+	var second []order
+	if err := q.WithContext(scopedContext("globex")).Find(&second).Error; err != nil ||
+		len(second) != 1 || second[0].TenantID != "globex" {
+		t.Fatalf("the same read carried to globex gave %v and %v, want globex's a", err, second)
+	}
+}
+
 // A column qualified by another table is that table's, whatever its name: a
 // tuple reaching into another table's columns is no key of the statement's
 // own, but the caller's condition across the two, and its tenant half is left
@@ -352,4 +372,21 @@ func TestATupleOverAnotherTablesColumnIsNoKey(t *testing.T) {
 	if err := joined().Where(byKey("a")).Count(&n).Error; err != nil || n != 1 {
 		t.Fatalf("the same read keyed on the order's own columns gave %v and %d, want acme's a", err, n)
 	}
+}
+
+// A write conditioned on another table's tenant column names no tenant of the
+// statement's own: the filter leaves the condition to the database, which
+// refuses a column the statement cannot reach, rather than refusing the write
+// as one naming another tenant.
+func TestAWriteConditionedOnAnotherTablesTenantColumnIsNotJudged(t *testing.T) {
+	handle := open(t)
+	seed(t, handle)
+
+	err := handle.WithContext(scopedContext("acme")).Model(&order{}).
+		Where(clause.Eq{Column: clause.Column{Table: "memos", Name: "tenant_id"}, Value: "globex"}).
+		Update("note", "touched").Error
+	if err == nil || errors.Is(err, tenant.ErrExplicitTenantMismatch) {
+		t.Fatalf("an update conditioned on the memos' tenant column gave %v, want the database's own refusal", err)
+	}
+	requireRowTenant(t, handle, "a", "acme")
 }
