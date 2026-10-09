@@ -42,7 +42,7 @@
 
 ## 后果
 
-在途请求排空结束之前，任何模块都没有收到 `Close`，不声明 `Serve` 的模块也都没有收到 `Stop`：先后由 [ADR-lifecycle-stages-2026-09-28](adr-lifecycle-stages-2026-09-28.md) 给出，排空由本记录的决策放进 `Stop`。
+本模块各端的在途请求排空结束之前，任何模块都没有收到 `Close`，不声明 `Serve` 的模块也都没有收到 `Stop`：先后由 [ADR-lifecycle-stages-2026-09-28](adr-lifecycle-stages-2026-09-28.md) 给出，排空由本记录的决策放进 `Stop`。
 
 排空时限由本模块自己的配置承载，满足回调必须有界的要求。
 

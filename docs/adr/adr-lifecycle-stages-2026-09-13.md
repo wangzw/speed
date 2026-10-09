@@ -43,7 +43,7 @@
 
 其中几处划分各自解决一个具体问题：
 
-- **`Prepare` 对本次命令纳入的模块执行，阶段内不保证顺序。** 配置在装配开始之前已经就位（[ADR-assembly-bootstrap-2026-09-20](adr-assembly-bootstrap-2026-09-20.md)），纳入的范围由命令树给出（不写命令树的调用方走 `Run` 入口时，它是注册表里已登记的每一个模块，见 [ADR-drive-entry-2026-09-21](adr-drive-entry-2026-09-21.md)）（[ADR-command-tree-2026-09-20](adr-command-tree-2026-09-20.md)），各模块依据自己的配置表态自己与他人的排他主张如何相让，不能启动的报故障；注册表据此消解得出启用集（[ADR-module-enablement-2026-09-21](adr-module-enablement-2026-09-21.md)）。该阶段内模块之间没有先后依赖。
+- **`Prepare` 对本次命令纳入的模块执行，阶段内不保证顺序。** 配置在装配开始之前已经就位（[ADR-assembly-bootstrap-2026-09-20](adr-assembly-bootstrap-2026-09-20.md)），纳入的范围由命令树给出（不写命令树的调用方走 `Run` 入口时，它是注册表里已登记的每一个模块，见 [ADR-drive-entry-2026-09-21](adr-drive-entry-2026-09-21.md)）（[ADR-command-tree-2026-09-20](adr-command-tree-2026-09-20.md)），各模块依据自己的配置表态自己与他人的排他主张如何相让，不能启动的报故障；预置了实例的模块不执行 `Prepare`，表态固定为启用（[ADR-supplied-instance-2026-10-08](adr-supplied-instance-2026-10-08.md)）；注册表据此消解得出启用集（[ADR-module-enablement-2026-09-21](adr-module-enablement-2026-09-21.md)）。该阶段内模块之间没有先后依赖。
 - **`New` 与 `Init` 拆开。** `New` 按拓扑序构造，其依赖必须无环；`Init` 运行时全部实例均已存在，相互引用在此成立。存在环的引用不在依赖声明中出现，改由 `Init` 阶段动态取得。
 - **`Serve` 独立于 `Start`。** `Start` 按依赖序启动模块自身的服务，不接外部流量；`Serve` 在全体 `Start` 完成之后运行，入口在此开始接受流量。依赖序表达的是"在其依赖之后"，而入口需要的是"在所有人之后"。
 

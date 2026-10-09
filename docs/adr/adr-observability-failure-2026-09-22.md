@@ -10,7 +10,7 @@
 
 上游的导出器按惰性连接构造：构造不与端点建立连接，投递失败由库自行重试与缓冲（`go.opentelemetry.io/otel/sdk/trace` 的 `SpanExporter` 契约把重试放在实现之内）。端点是否可达因而是运行期的事实，不做探测时装配阶段确定不了它。
 
-`pkg/core` 的 `Prepare` 阶段对本次命令纳入的每个模块执行，包括只取表态、不构造任何东西的浅深度命令（`core.StagePrepare` 见 `pkg/core/stage.go`，`Module.Prepare` 见 `pkg/core/module.go`）。把一个网络往返放进这个阶段，这些命令也要承担它。
+`pkg/core` 的 `Prepare` 阶段对本次命令纳入的每个模块执行（预置了实例的模块除外），包括只取表态、不构造任何东西的浅深度命令（`core.StagePrepare` 见 `pkg/core/stage.go`，`Module.Prepare` 见 `pkg/core/module.go`）。把一个网络往返放进这个阶段，这些命令也要承担它。
 
 一个内部计数要不要转为对外可读的观测面，仓库里有两处处置相反的先例。`pkg/audit/journal/signal.go` 的 `signal` 把计数留在内部、不对外暴露，并把「宿主无从观察」记为可察觉性上的一个缺口；`authn` 的收口计数走了相反的路，桶名按「一旦被看板引用就改不动」的理由冻结。两处计数的对象不同：一处记写入失败，一处是请求收口的结果分桶。
 

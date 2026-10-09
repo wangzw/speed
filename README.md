@@ -12,9 +12,15 @@ the framework's.
 
 A module declares what it provides, what it requires and what
 configuration it accepts. Which modules exist in a binary is settled by
-what is imported; which of them run is settled by each module's own
-reading of the configuration. There is no central list of modules to keep
-in step.
+what is imported; which of them run is settled by the host — the modules
+the selected command takes in at run level, together with the
+non-exclusive providers of what they require and, in turn, of what those
+providers require (optional requirements are not followed), plus any
+module the host supplies an instance for — and by resolving exclusive
+claims among them. Under a command tree, a provider that claims its
+capability exclusively takes part only where the command names it or the
+host supplies an instance for it. A host that writes no command tree takes
+in every registered module. The configuration holds no list of modules.
 
 ## Getting started
 
