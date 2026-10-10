@@ -41,10 +41,11 @@ var offTheList = map[string]string{
 // list set beside them, New writes exactly one warning over either protocol,
 // in plaintext and over TLS, through a logger asked for under this module's
 // name; it names each overridden variable and the item to set instead, or that
-// the setting is fixed, names none of the variables off the list, and repeats
-// no value: a header variable carries a credential. The values are ones the
-// upstream accepts, the certificates loading as a pair, so that it reports
-// nothing of its own.
+// the setting is fixed, a certificate variable's item together with insecure
+// false, which the item requires; it names none of the variables off the list,
+// and repeats no value: a header variable carries a credential. The values are
+// ones the upstream accepts, the certificates loading as a pair, so that it
+// reports nothing of its own.
 func TestASetStandardVariableThisModuleOverridesIsNamedOnce(t *testing.T) {
 	ca := newAuthority(t)
 	client := ca.issue(t, "client", x509.ExtKeyUsageClientAuth)
@@ -56,9 +57,12 @@ func TestASetStandardVariableThisModuleOverridesIsNamedOnce(t *testing.T) {
 			variable{prefix + "ENDPOINT", "http://endpoint-token-6d2f.example:4318", endpointKey},
 			variable{prefix + "HEADERS", "x-header-token-6d2f=header-value-6d2f", ModuleName + ".headers"},
 			variable{prefix + "INSECURE", "true", insecureKey},
-			variable{prefix + "CERTIFICATE", ca.file, caFileKey},
-			variable{prefix + "CLIENT_CERTIFICATE", client.certFile, clientCertFileKey},
-			variable{prefix + "CLIENT_KEY", client.keyFile, clientKeyFileKey},
+			variable{prefix + "CERTIFICATE", ca.file, caFileKey + ", with " + insecureKey + " false"},
+			variable{
+				prefix + "CLIENT_CERTIFICATE", client.certFile,
+				clientCertFileKey + ", with " + insecureKey + " false",
+			},
+			variable{prefix + "CLIENT_KEY", client.keyFile, clientKeyFileKey + ", with " + insecureKey + " false"},
 		)
 	}
 	overridden = append(overridden,

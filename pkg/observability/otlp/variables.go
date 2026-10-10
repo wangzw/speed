@@ -18,6 +18,14 @@ type overriddenVariable struct {
 // shape this module documents and no input item changes it.
 const fixedByThisModule = "none, fixed by this module"
 
+// overTLS names a certificate item together with insecure, which loadTLS
+// requires to be false wherever a certificate item is set. The upstream reads
+// its certificate variables as TLS settings, while insecure is true by default
+// here, so the item alone would fail the preparation.
+func overTLS(item string) string {
+	return item + ", with " + insecureKey + " false"
+}
+
 // overriddenVariables are the standard variables that have no effect under
 // this module, in the order the warning names them.
 //
@@ -44,15 +52,15 @@ var overriddenVariables = []overriddenVariable{
 	{"OTEL_EXPORTER_OTLP_INSECURE", insecureKey},
 	{"OTEL_EXPORTER_OTLP_TRACES_INSECURE", insecureKey},
 	{"OTEL_EXPORTER_OTLP_METRICS_INSECURE", insecureKey},
-	{"OTEL_EXPORTER_OTLP_CERTIFICATE", caFileKey},
-	{"OTEL_EXPORTER_OTLP_TRACES_CERTIFICATE", caFileKey},
-	{"OTEL_EXPORTER_OTLP_METRICS_CERTIFICATE", caFileKey},
-	{"OTEL_EXPORTER_OTLP_CLIENT_CERTIFICATE", clientCertFileKey},
-	{"OTEL_EXPORTER_OTLP_TRACES_CLIENT_CERTIFICATE", clientCertFileKey},
-	{"OTEL_EXPORTER_OTLP_METRICS_CLIENT_CERTIFICATE", clientCertFileKey},
-	{"OTEL_EXPORTER_OTLP_CLIENT_KEY", clientKeyFileKey},
-	{"OTEL_EXPORTER_OTLP_TRACES_CLIENT_KEY", clientKeyFileKey},
-	{"OTEL_EXPORTER_OTLP_METRICS_CLIENT_KEY", clientKeyFileKey},
+	{"OTEL_EXPORTER_OTLP_CERTIFICATE", overTLS(caFileKey)},
+	{"OTEL_EXPORTER_OTLP_TRACES_CERTIFICATE", overTLS(caFileKey)},
+	{"OTEL_EXPORTER_OTLP_METRICS_CERTIFICATE", overTLS(caFileKey)},
+	{"OTEL_EXPORTER_OTLP_CLIENT_CERTIFICATE", overTLS(clientCertFileKey)},
+	{"OTEL_EXPORTER_OTLP_TRACES_CLIENT_CERTIFICATE", overTLS(clientCertFileKey)},
+	{"OTEL_EXPORTER_OTLP_METRICS_CLIENT_CERTIFICATE", overTLS(clientCertFileKey)},
+	{"OTEL_EXPORTER_OTLP_CLIENT_KEY", overTLS(clientKeyFileKey)},
+	{"OTEL_EXPORTER_OTLP_TRACES_CLIENT_KEY", overTLS(clientKeyFileKey)},
+	{"OTEL_EXPORTER_OTLP_METRICS_CLIENT_KEY", overTLS(clientKeyFileKey)},
 	{"OTEL_EXPORTER_OTLP_METRICS_TEMPORALITY_PREFERENCE", fixedByThisModule},
 	{"OTEL_EXPORTER_OTLP_METRICS_DEFAULT_HISTOGRAM_AGGREGATION", fixedByThisModule},
 }

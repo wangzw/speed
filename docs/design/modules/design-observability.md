@@ -235,9 +235,9 @@ type Config struct {
 
 时长为零使该处失去意义而不是关闭它：批处理的超时为零意味着每一批都立即失败，导出周期为零意味着读数的间隔不存在。两个整型项的零留给「取上游默认」，而本模块不写下那个默认：上游把零读成容量为零的队列，不是读成默认，因此装配器把上游自己导出的默认常量代入，本模块里没有第二份 2048 与 512。
 
-**`endpoints` 默认是单个星号，指入口模块声明的每一个端。** 星号是入口模块保留的端名（见 [http](design-http.md)，[ADR-http-enumeration-2026-10-10](../../adr/adr-http-enumeration-2026-10-10.md)），在这份清单里只能是整份清单：写具体端名就只在这些端登记，写成空清单就一个都不登记，星号与清单里的任何别的条目并列（包括再写一次星号）则 `Prepare` 以 `ErrWildcardBesideEndpointNames` 失败，错误点名 `observability.otel.endpoints` 并给出正确写法（星号单写，或只写端名）。空清单是一个给定的值而不是缺席：文件里的空数组与值为空的环境变量都解码为空清单，不回到默认的星号。值为 null（YAML 里键后面留空或写 `~`，JSON 里写 `null`）按缺席处理，保留默认的星号；要清空须写空数组。`events` 的默认仍是空，不订阅任何事件类型。清单决定的取用见[装配器的各阶段](#装配器的各阶段)；默认覆盖而对入口模块不设必需依赖的取舍见 [ADR-observability-coverage-2026-09-22](../../adr/adr-observability-coverage-2026-09-22.md)。
+**`endpoints` 默认是单个星号，指入口模块声明的每一个端。** 星号是入口模块保留的端名（见 [http](design-http.md)，[ADR-http-enumeration-2026-10-10](../../adr/adr-http-enumeration-2026-10-10.md)），在这份清单里只能是整份清单：写具体端名就只在这些端登记，写成空清单就一个都不登记，星号与清单里的任何别的条目并列（包括再写一次星号）则 `Prepare` 以 `ErrWildcardBesideEndpointNames` 失败，错误点名 `observability.otel.endpoints` 并给出正确写法（星号单写，或只写端名）。空清单是一个给定的值而不是缺席：文件里的空数组与值为空的环境变量都解码为空清单，不回到默认的星号。值为 null（YAML 里键后面留空或写 `~`，JSON 里写 `null`）按缺席处理，保留默认的星号；要清空须写空数组。`events` 的默认是空清单，不订阅任何事件类型。清单决定的取用见[装配器的各阶段](#装配器的各阶段)；默认覆盖而对入口模块不设必需依赖的取舍见 [ADR-observability-coverage-2026-09-22](../../adr/adr-observability-coverage-2026-09-22.md)。
 
-**`service-name` 不是必填项，没配时服务名交给上游。** 键缺席与显式写成空串解码到同一个值，两者都按没配处理，都不是故障。没配时本模块不给出 `service.name`，服务名由上游按[provider 的构造次序](#provider-的构造次序)一节写明的次序定下；该次序里的「环境变量」指 `OTEL_SERVICE_NAME` 与 `OTEL_RESOURCE_ATTRIBUTES` 两个变量，不止前者。留空的后果由[非保证](#非保证)一节的「服务名」一条承接。
+**`service-name` 不是必填项，没配时服务名交给上游。** 键缺席与显式写成空串解码到同一个值，两者都按没配处理，都不是故障。没配时本模块不给出 `service.name`，服务名由上游按[provider 的构造次序](#provider-的构造次序)一节写明的次序定下；该次序里的「环境变量」指 `OTEL_SERVICE_NAME` 与 `OTEL_RESOURCE_ATTRIBUTES` 两个变量，不只是 `OTEL_SERVICE_NAME`。留空的后果由[非保证](#非保证)一节的「服务名」一条承接。
 
 导出后端的配置，`observability.otlp`：
 
@@ -271,7 +271,7 @@ type Config struct {
 
 **上游的环境变量不是这些输入项的第二个来源。** 上游的 OTLP 导出器对没有显式给出的设置读取标准的 `OTEL_EXPORTER_OTLP_*` 变量，并且先应用变量、后应用选项。导出后端因而把配置声明的每一项、以及本文写明的线上形态逐项显式交给上游——端点与它的路径（`/v1/traces`、`/v1/metrics`）、明文与 TLS 的开关及其证书、头部、编码（protobuf）、指标的时间性与聚合——即便显式的取值就是上游的默认值。少给一项，那个变量就成了本模块前缀之外、诊断之外、敏感标记之外的又一个来源：一个头部变量能注入配置从未给出的凭据，一个 insecure 变量能在要求 TLS 的配置下把它关掉，一个证书变量能让明文配置的导出器在构造时就失败。TLS 一侧的根证书与客户端证书只来自 `ca-file`、`client-cert-file` 与 `client-key-file`：证书项都没给时用主机的根证书、不出示客户端证书，与上游什么都不给时相同；上游的证书变量（`OTEL_EXPORTER_OTLP_CERTIFICATE`、`OTEL_EXPORTER_OTLP_CLIENT_CERTIFICATE`、`OTEL_EXPORTER_OTLP_CLIENT_KEY` 及其按信号区分的变体）既不替换配置给出的证书，也不补上配置没给的那一项。配置交给库的传输细节——压缩、单次请求的超时、重试与退避——仍归上游，连同设置它们的变量。
 
-**设置了不起作用的变量，OTLP 导出后端在 `New` 里写一行告警。** 这些变量是上游导出器对上面逐项给出的设置读取的那些：端点、头部、协议、insecure、根证书、客户端证书与私钥，各连同按信号区分的 `TRACES` 与 `METRICS` 变体（指标导出器不读协议变量；协议变量在 HTTP 一侧由编码选项盖过，在 gRPC 一侧上游读入后不使用），以及指标的时间性偏好与直方图聚合；清单在 `pkg/observability/otlp/variables.go` 的 `overriddenVariables`，依据是上游 `otlptracegrpc`、`otlptracehttp` 的 `internal/otlpconfig/envconfig.go` 与 `otlpmetricgrpc`、`otlpmetrichttp` 的 `internal/oconf/envconfig.go`，`pkg/observability/otlp/upstream_variables_test.go` 的 `TestNoUpstreamVariableIsLeftOffTheOverriddenList` 把两者对齐。这一行点名每个已设置的变量与该改用的输入项，时间性与聚合两个变量没有对应的输入项，写明由本模块定死；只写变量名，不复述取值——头部变量承载凭据。取值去掉两端空白之后为空的变量按没有设置处理，与上游导出器的读法相同；一个都没设置时不写。超时与压缩的变量仍然起作用，不在其中。它与明文头部的告警一样经可选的日志依赖写出（见[依赖](#依赖)）。
+**设置了不起作用的变量，OTLP 导出后端在 `New` 里写一行告警。** 这些变量是上游导出器对上面逐项给出的设置读取的那些：端点、头部、协议、insecure、根证书、客户端证书与私钥，各连同按信号区分的 `TRACES` 与 `METRICS` 变体（指标导出器不读协议变量；协议变量在 HTTP 一侧由编码选项盖过，在 gRPC 一侧上游读入后不使用），以及指标的时间性偏好与直方图聚合；清单在 `pkg/observability/otlp/variables.go` 的 `overriddenVariables`，依据是上游 `otlptracegrpc`、`otlptracehttp` 的 `internal/otlpconfig/envconfig.go` 与 `otlpmetricgrpc`、`otlpmetrichttp` 的 `internal/oconf/envconfig.go`，`pkg/observability/otlp/upstream_variables_test.go` 的 `TestNoUpstreamVariableIsLeftOffTheOverriddenList` 把两者对齐。这一行点名每个已设置的变量与该改用的输入项，时间性与聚合两个变量没有对应的输入项，写明由本模块定死；证书变量的条目在证书项之外同时点名 `insecure` 须为 `false`：上游把这些变量读作 TLS 设置，而本模块的 `insecure` 默认为真，只设证书项会以 `ErrCertificateOverPlaintext` 启动失败；只写变量名，不复述取值——头部变量承载凭据。取值去掉两端空白之后为空的变量按没有设置处理，与上游导出器的读法相同；一个都没设置时不写。超时与压缩的变量仍然起作用，不在其中。它与明文头部的告警一样经可选的日志依赖写出（见[依赖](#依赖)）。
 
 `observability.stdout` 的配置只有一个布尔项 `pretty`，默认 `false`。它写的是进程的 `os.Stdout`，与日志模块标准输出的写入者是同一个文件对象；一个跨度、一批指标各是一次写入，而标准库对同一个文件对象的每次写入整体加锁，管道上分段写出的一条也不会被另一条插进来，两者因而不在字节层面交错。这是标准库的实现性质，不是它文档里的承诺；fd 1 上另开文件对象的写入方不受它保护。
 
@@ -314,14 +314,14 @@ type Config struct {
 
 包装必须先于 provider 构造：provider 在构造时持有导出器，构造之后再包一层，那一层不在导出路径上，转发包装的日志行永远不会写。第 2 步与第 3 步之间没有次序要求。
 
-**provider 的构造选项同样逐项显式给出。** 采样器、批处理的四个参数、导出周期与它的超时都由配置给定，上游对应的标准变量（`OTEL_TRACES_SAMPLER` 与 `OTEL_TRACES_SAMPLER_ARG`、`OTEL_BSP_*`、`OTEL_METRIC_EXPORT_*`）因此不起作用；本模块不配置的那些——跨度的属性与事件上限、指标的样例筛选与基数上限——留给上游 SDK，连同它们的标准变量。设置了不起作用的变量，装配器在 `New` 里写一行告警，点名每个已设置的变量与该改用的输入项，不复述取值；判定已设置的规则与导出后端的同一行告警相同（见[核心数据结构](#核心数据结构)里导出后端告警一段），上游 SDK 对空白取值的读法因变量而异，不改变配置给出的取值生效。清单在 `pkg/observability/otel/variables.go` 的 `overriddenVariables`，依据是上游 `go.opentelemetry.io/otel/sdk` 的 `trace/sampler_env.go`、`trace/internal/env/env.go` 与 `go.opentelemetry.io/otel/sdk/metric` 的 `env.go`；`pkg/observability/otel/upstream_variables_test.go` 的 `TestNoUpstreamVariableIsLeftOffTheOverriddenList` 读取这些文件，另读 `sdk` 的 `resource/env.go` 与 `sdk/metric` 的 `config.go` 以对照其中仍然起作用的变量，把清单与上游对齐，`TestNoUpstreamVariableOverridesTheProviderConfiguration` 与 `TestNoUpstreamVariableOverridesTheMetricTimeout` 钉住这些变量确实不起作用。`OTEL_SERVICE_NAME` 与 `OTEL_RESOURCE_ATTRIBUTES` 不在其中：它们在没有配置 `service-name` 时决定服务名，并给出本模块属性之外的资源属性（见下表）；与本模块给出的属性同名的那些——`service.instance.id`，以及配置了 `service-name` 时的服务名——被覆盖，这一种不告警。
+**provider 的构造选项同样逐项显式给出。** 采样器、批处理的各参数（`batch` 下的每一项）、导出周期与它的超时都由配置给定，上游对应的标准变量（`OTEL_TRACES_SAMPLER` 与 `OTEL_TRACES_SAMPLER_ARG`、`OTEL_BSP_*`、`OTEL_METRIC_EXPORT_*`）因此不起作用；本模块不配置的那些——跨度的属性与事件上限、指标的样例筛选与基数上限——留给上游 SDK，连同它们的标准变量。设置了不起作用的变量，装配器在 `New` 里写一行告警，点名每个已设置的变量与该改用的输入项，不复述取值；判定已设置的规则与导出后端的同一行告警相同（见[核心数据结构](#核心数据结构)里导出后端告警一段），上游 SDK 对空白取值的读法因变量而异，不改变配置给出的取值生效。清单在 `pkg/observability/otel/variables.go` 的 `overriddenVariables`，依据是上游 `go.opentelemetry.io/otel/sdk` 的 `trace/sampler_env.go`、`trace/internal/env/env.go` 与 `go.opentelemetry.io/otel/sdk/metric` 的 `env.go`；`pkg/observability/otel/upstream_variables_test.go` 的 `TestNoUpstreamVariableIsLeftOffTheOverriddenList` 读取这些文件，另读 `sdk` 的 `resource/env.go` 与 `sdk/metric` 的 `config.go` 以对照其中仍然起作用的变量，把清单与上游对齐，`TestNoUpstreamVariableOverridesTheProviderConfiguration` 与 `TestNoUpstreamVariableOverridesTheMetricTimeout` 钉住这些变量确实不起作用。`OTEL_SERVICE_NAME` 与 `OTEL_RESOURCE_ATTRIBUTES` 不在其中：它们在没有配置 `service-name` 时决定服务名，并给出本模块属性之外的资源属性（见下表）；与本模块给出的属性同名的那些——`service.instance.id`，以及配置了 `service-name` 时的服务名——被覆盖，这一种不告警。
 
 **两个 provider 共用一份资源，由下表的各层自下而上叠成，后一层覆盖前一层。**
 
 | 层 | 内容 |
 |---|---|
 | 上游的默认资源 | `telemetry.sdk.name`、`telemetry.sdk.language` 与 `telemetry.sdk.version`；没有任何一层给出服务名时的兜底名 `unknown_service:<可执行文件名>` |
-| 当前的环境变量 | `OTEL_RESOURCE_ATTRIBUTES` 给出的属性，平台借它写下副本运行在哪里；`OTEL_SERVICE_NAME`，在服务名上优先于前者 |
+| 当前的环境变量 | `OTEL_RESOURCE_ATTRIBUTES` 给出的属性，平台借它写下副本运行在哪里；`OTEL_SERVICE_NAME`，在服务名上优先于 `OTEL_RESOURCE_ATTRIBUTES` 里的 `service.name` |
 | 本模块的属性 | `service.instance.id`，总是给出；`service.name`，只在配置了 `service-name` 时给出 |
 
 `telemetry.sdk.*` 与兜底名都由最底下的默认资源带来。服务名按下列次序定：配置的 `service-name`、`OTEL_SERVICE_NAME`、`OTEL_RESOURCE_ATTRIBUTES` 里的 `service.name`、`unknown_service:<可执行文件名>`。配置给了服务名就以配置为准，环境变量改不动它；配置没给，服务名由上游的变量与兜底名决定，本模块不替上游再定一个默认。
@@ -454,7 +454,7 @@ type Config struct {
 | `ErrInvalidDuration` | `observability.otlp` | `probe-timeout` 为零或负 |
 | `ErrExporterUnreachable` | `observability.otlp` | 启用了启动探测而端点不可达 |
 
-`ErrInvalidSampleRatio`、`ErrUnknownProtocol` 与 `ErrInvalidHeader` 的文本要列出合法取值或形状，取值都在闭集内，列出它即给出修复动作；`ErrInvalidHeader` 另按位置点名元素、说明逗号分隔的写法，不复述元素的内容。`ErrWildcardBesideEndpointNames` 与 `ErrInvalidEndpoint` 的文本点名键并给出正确写法，后者不复述取值。`ErrUnreadableCertificate`、`ErrUnpairedClientCertificate` 与 `ErrCertificateOverPlaintext` 的文本点名涉及的输入项与原因，不复述文件内容；`ErrCertificateOverPlaintext` 另点名 `observability.otlp.insecure` 并给出修复动作：把它设为 `false`，或去掉证书项。`service-name` 没有对应的哨兵：它不是必填项，缺席与空串都不是故障。
+`ErrInvalidSampleRatio`、`ErrUnknownProtocol` 与 `ErrInvalidHeader` 的文本要列出合法取值或形状，取值都在闭集内，列出它即给出修复动作；`ErrInvalidHeader` 另按位置点名元素、说明逗号分隔的写法，不复述元素的内容。`ErrWildcardBesideEndpointNames` 与 `ErrInvalidEndpoint` 的文本点名键并给出正确写法，`ErrInvalidEndpoint` 不复述取值。`ErrUnreadableCertificate`、`ErrUnpairedClientCertificate` 与 `ErrCertificateOverPlaintext` 的文本点名涉及的输入项与原因，不复述文件内容；`ErrCertificateOverPlaintext` 另点名 `observability.otlp.insecure` 并给出修复动作：把它设为 `false`，或去掉证书项。`service-name` 没有对应的哨兵：它不是必填项，缺席与空串都不是故障。
 
 不另造哨兵的失败：配置读取面缺席（`core.ErrMissingProvider`）、入口模块取不到（`core.ErrMissingProvider`，或取用无从选择的 `core.ErrAmbiguousProvider`）、端名未在配置里声明（`http.ErrUnknownEndpoint`）、事件点名而总线功能取不到（`core.ErrMissingProvider`）、资源叠合时上游报出的模式地址冲突（`resource.ErrSchemaURLConflict`）。哨兵都是别处的，包装保留它们，`errors.Is` 照常判别。入口模块、端名与总线的包装文本点名 `observability.otel.endpoints` 或 `observability.otel.events` 并给出修复动作，读到启动失败的人不必从别的模块的哨兵文本反推该改本模块的哪一项配置。
 

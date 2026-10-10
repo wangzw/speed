@@ -246,7 +246,9 @@ must not cross, and how to run it.
 - **A standard variable set for a setting this capability gives explicitly
   gets one warning line per module, in `New`.** `otel` and `otlp` each keep
   the variables they override in `overriddenVariables` (`variables.go`), with
-  the item to set instead; `warnIgnoredVariables` names the ones set, by name
+  the item to set instead — a certificate variable's item together with
+  `insecure` false (`overTLS`), since a certificate item with `insecure` true
+  fails `Prepare`; `warnIgnoredVariables` names the ones set, by name
   only — a header variable carries a credential — and writes nothing when none
   is. A value that is blank once trimmed is not set, as the upstream exporters
   read it; what the SDK makes of a blank value differs by variable. The
@@ -295,7 +297,8 @@ must not cross, and how to run it.
   is not a number included. Over gRPC a URL builds an exporter that never
   delivers, which is why the check exists; gRPC's own target forms (`dns:///`,
   `passthrough:///`, `unix://`) would deliver and are refused with it. An empty
-  host is the local system, and counts as loopback. The port is optional, and
+  host (`:4317`) is accepted, but it is not a loopback host to
+  `warnPlaintextHeaders`, and neither is `0.0.0.0`. The port is optional, and
   the probe dials an endpoint without one at the port the exporters fall back
   to (`dialAddress`). `http/protobuf` is read as `http` in `read`, so `build`
   knows two protocols only.
