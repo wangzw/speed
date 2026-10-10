@@ -184,12 +184,42 @@ must not cross, and how to run it.
   reads** (`statementLogger`, `adr-db-logging-2026-09-29`). It answers GORM's
   `ParamsFilter` with no values, so the text GORM hands `Trace` keeps its
   placeholders, and it writes a failed statement's error classes
-  (`failureClasses`) instead of its text, which can quote a value. A logger
-  wrapping GORM's own to change what it writes reports its own file as every
-  line's call site, since GORM names the first frame outside its source; each
-  method here asks `utils.FileWithLineNum` itself for that reason. The logging
-  case in `internal/dbsuite` reads the two streams of a child process apart on
-  both engines, and holds every statement to standard output.
+  (`failureClasses`) instead of its text, which can quote a value. **A statement
+  run through GORM's `Scan` finisher, `(*gorm.DB).Scan`, is written without its
+  text.** The finisher swaps the handle's logger for GORM's recorder, whose
+  `ParamsFilter` hands every value back, and gives the real logger the finished
+  text through `Trace` alone, so the values are in it before this logger is
+  asked anything. `Trace` recognises that call by its caller's run-time name
+  (`scanFinisher`) and, when the finisher handed it a text, writes
+  `withheldStatement` in the text's place, keeping the error classes, the time,
+  the rows and the call site; a `Scan` whose statement was never built, its
+  handle having carried an error before the chain built one, hands over an
+  empty text and is written without one. Nothing else is recognised: `Row`,
+  `Rows` and the generics API's `Scan` (`gorm.G[T]`, which runs through `Find`)
+  swap no logger, and their statements are written with their placeholders. The
+  recognition happens inside `Trace` and sets no GORM package variable,
+  `logger.RecorderParamsFilter` included: those are shared by every handle in
+  the process, a host's own among them. A GORM that renames the finisher leaves
+  its statements written with their values, and nothing but the logging cases
+  reports it. A logger put in front of this one is outside the guarantee: one
+  that embeds `logger.Interface` without exposing `ParamsFilter`, as the logger
+  GORM's migrator installs under `DryRun` (`printSQLLogger`) does and a host's
+  `Session(&gorm.Session{Logger: …})` wrapper may, makes GORM fill the values
+  into every statement it relays, and one that relays `Trace` from a method of
+  its own is the caller `Trace` sees in the finisher's place; nothing in this
+  repository installs either. A logger wrapping GORM's own to change what it
+  writes reports its own file as every line's call site, since GORM names the
+  first frame outside its source; each method here asks `utils.FileWithLineNum`
+  itself for that reason, and `Trace` asks it in its own body: the call skips
+  the frame it is made from, so one made from a helper would report `Trace`'s
+  own file. The logging case in `internal/dbsuite` reads the two streams of a
+  child process apart on both engines, and holds every statement to standard
+  output, the `Scan` ones included, and the line of the refused `Scan`
+  statement to the classes of its refusal, GORM's sentinel and the engine's own
+  code, which each engine's test hands in; `logger_test.go` holds each line of
+  that path to its call site, its error classes and the withheld text, with a
+  `Row` statement as the control, and holds the package to leaving
+  `logger.RecorderParamsFilter` as GORM has it.
 - **Every wrap uses `%w`.** A `%v` leaves the text all but identical and makes
   the sentinel unreachable, which is the failure the note in `errors.go` exists
   to prevent; the error-chain cases hold each path to it.

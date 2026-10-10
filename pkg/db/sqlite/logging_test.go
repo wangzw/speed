@@ -13,9 +13,10 @@ import (
 )
 
 // TestNoBoundValueReachesTheOutput runs the engine-neutral logging case on the
-// handle this engine's module delivers.
+// handle this engine's module delivers. The code the logger writes for the
+// refusal of a unique key is SQLite's result code.
 func TestNoBoundValueReachesTheOutput(t *testing.T) {
-	dbsuite.BoundValuesReachNoOutput(t,
+	dbsuite.BoundValuesReachNoOutput(t, "result code 2067",
 		func(t *testing.T) string { return filepath.Join(t.TempDir(), "logged.db") },
 		rerun,
 		func(t *testing.T, dsn string) *gorm.DB { return deliver(t, dsn).DB() })

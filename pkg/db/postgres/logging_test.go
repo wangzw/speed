@@ -14,9 +14,10 @@ import (
 
 // TestNoBoundValueReachesTheOutput runs the engine-neutral logging case on the
 // handle this engine's module delivers. It is the engine whose refusal of a
-// malformed value quotes the value in its message.
+// malformed value quotes the value in its message, and whose code for the
+// refusal of a unique key is the SQLSTATE the logger writes in its place.
 func TestNoBoundValueReachesTheOutput(t *testing.T) {
-	dbsuite.BoundValuesReachNoOutput(t, pgtest.Acquire, rerun, func(t *testing.T, dsn string) *gorm.DB {
+	dbsuite.BoundValuesReachNoOutput(t, "SQLSTATE 23505", pgtest.Acquire, rerun, func(t *testing.T, dsn string) *gorm.DB {
 		capability, err := runAssembly(t, dsn)
 		if err != nil {
 			t.Fatalf("starting a host on this engine: %v", err)
