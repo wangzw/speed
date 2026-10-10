@@ -3,6 +3,7 @@ package otel
 import (
 	"fmt"
 	"math"
+	"slices"
 	"time"
 
 	"github.com/vislake/speed/pkg/config"
@@ -47,9 +48,14 @@ type Config struct {
 	// cancellation stripped, so a bound cannot be expressed there.
 	ShutdownTimeout time.Duration `config:"shutdown-timeout"`
 	// Endpoints names the listening endpoints the request layer is registered
-	// on. Empty means none, and the module then takes no route registration
-	// surface up at all — a process without an entry point is a shape this
-	// framework supports and this module must not break.
+	// on. The default is the single name "*", which stands for every endpoint
+	// the entry module declares, and which is also fine for a process that has
+	// no entry module: the module then registers nothing and fails nothing. A
+	// list of names registers on exactly those, and a name the entry module did
+	// not declare is a startup failure. An empty list means none, and the
+	// module then takes no route registration surface up at all. "*" is valid
+	// only as the whole list; written beside any other entry, a second "*"
+	// included, it is refused.
 	Endpoints []string `config:"endpoints"`
 	// Events names the event types that are turned into spans. Empty means no
 	// subscription, and the module then takes no bus up.
@@ -85,6 +91,11 @@ type Metric struct {
 	Timeout time.Duration `config:"timeout"`
 }
 
+// allEndpoints is the endpoint name that stands for every endpoint the entry
+// module declares. The entry module reserves it, so no declared endpoint can
+// collide with it.
+const allEndpoints = "*"
+
 // Defaults for the durations. The two integer items have no entry here: their
 // default is the upstream's, and this module does not restate it.
 const (
@@ -110,6 +121,7 @@ func prototype() *Config {
 			Timeout:  defaultMetricTimeout,
 		},
 		ShutdownTimeout: defaultShutdownTimeout,
+		Endpoints:       []string{allEndpoints},
 	}
 }
 
@@ -158,7 +170,8 @@ func read(reg *core.Registry) (*Config, error) {
 //
 // Every judgement here is about a value that would otherwise produce a running
 // module doing nothing useful: a ratio that samples nothing without saying so,
-// a queue that cannot hold a span.
+// a queue that cannot hold a span. The endpoint list is judged for a different
+// reason: "*" beside any other entry says something other than what it reads as.
 func (c *Config) validate() error {
 	// NaN is outside [0,1] and yet compares false against both bounds, so the
 	// interval test alone lets it through. A NaN ratio is worth refusing here
@@ -171,6 +184,10 @@ func (c *Config) validate() error {
 	if c.Batch.MaxQueueSize < 0 || c.Batch.MaxExportBatchSize < 0 {
 		return fmt.Errorf("%w: queue size %d, export batch size %d; zero takes the upstream default",
 			ErrInvalidBatchParam, c.Batch.MaxQueueSize, c.Batch.MaxExportBatchSize)
+	}
+	if len(c.Endpoints) > 1 && slices.Contains(c.Endpoints, allEndpoints) {
+		return fmt.Errorf("%w: got %q; write [%q] alone for every declared endpoint, or list the endpoint "+
+			"names without %q", ErrWildcardBesideEndpointNames, c.Endpoints, allEndpoints, allEndpoints)
 	}
 	durations := []struct {
 		name  string

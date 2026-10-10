@@ -5,6 +5,8 @@ import (
 	"math"
 	"os"
 	"path/filepath"
+	"slices"
+	"strings"
 	"testing"
 
 	"github.com/vislake/speed/pkg/config"
@@ -61,9 +63,13 @@ func TestThePrototypeCarriesTheDefaults(t *testing.T) {
 	if cfg.ShutdownTimeout <= 0 {
 		t.Error("shutdown-timeout has no default, so a Close would have no bound")
 	}
-	if len(cfg.Endpoints) != 0 || len(cfg.Events) != 0 {
-		t.Error("the endpoint and event lists default to non-empty, so an unconfigured module would claim " +
-			"an entry module and a bus it was never told about")
+	if !slices.Equal(cfg.Endpoints, []string{"*"}) {
+		t.Errorf("the endpoint list defaults to %q, want the single name \"*\": an unconfigured module "+
+			"instruments every endpoint the entry module declares", cfg.Endpoints)
+	}
+	if len(cfg.Events) != 0 {
+		t.Error("the event list defaults to non-empty, so an unconfigured module would claim a bus it was " +
+			"never told about")
 	}
 }
 
@@ -124,6 +130,10 @@ func TestValidateNamesEachFailure(t *testing.T) {
 		{"a zero metric interval", func(c *Config) { c.Metric.Interval = 0 }, ErrInvalidDuration},
 		{"a zero metric timeout", func(c *Config) { c.Metric.Timeout = 0 }, ErrInvalidDuration},
 		{"a zero shutdown timeout", func(c *Config) { c.ShutdownTimeout = 0 }, ErrInvalidDuration},
+		{"a star beside a name", func(c *Config) { c.Endpoints = []string{"*", "api"} }, ErrWildcardBesideEndpointNames},
+		{"a name beside a star", func(c *Config) { c.Endpoints = []string{"api", "*"} }, ErrWildcardBesideEndpointNames},
+		{"a star written twice", func(c *Config) { c.Endpoints = []string{"*", "*"} }, ErrWildcardBesideEndpointNames},
+		{"a star between two names", func(c *Config) { c.Endpoints = []string{"api", "*", "admin"} }, ErrWildcardBesideEndpointNames},
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
@@ -149,6 +159,96 @@ func TestValidateAcceptsWhatTheDesignCallsLegal(t *testing.T) {
 	if err := cfg.validate(); err != nil {
 		t.Fatalf("validate refused a legal configuration: %v", err)
 	}
+}
+
+// TestValidateAcceptsEachLegalEndpointList pins the three shapes the list may
+// take: the star alone, names, and nothing.
+func TestValidateAcceptsEachLegalEndpointList(t *testing.T) {
+	for _, list := range [][]string{{"*"}, {"api", "admin"}, {}, nil} {
+		cfg := prototype()
+		cfg.Endpoints = list
+		if err := cfg.validate(); err != nil {
+			t.Errorf("validate refused the endpoint list %q: %v", list, err)
+		}
+	}
+}
+
+// TestAStarBesideANameNamesTheKeyAndTheCorrectWriting pins what the refusal
+// tells its reader: which key, and what to write instead.
+func TestAStarBesideANameNamesTheKeyAndTheCorrectWriting(t *testing.T) {
+	cfg := prototype()
+	cfg.Endpoints = []string{"*", "api"}
+	err := cfg.validate()
+	if err == nil {
+		t.Fatal("validate accepted a star beside a name")
+	}
+	for _, want := range []string{"observability.otel.endpoints", `["*"] alone`, "without"} {
+		if !strings.Contains(err.Error(), want) {
+			t.Errorf("the refusal %q lacks %q", err, want)
+		}
+	}
+}
+
+// TestAnEmptyEndpointListIsNotTheDefault pins that the empty list survives
+// decoding, whichever source wrote it, instead of being read as an absent item
+// that keeps the prototype's star: the document's empty array and an
+// environment variable whose value is empty both mean "none". A null is the
+// other way round: it is read as an absent item.
+func TestAnEmptyEndpointListIsNotTheDefault(t *testing.T) {
+	t.Run("a document", func(t *testing.T) {
+		reader := readThrough(t, `{"observability": {"otel": {"endpoints": []}}}`)
+		cfg := prototype()
+		if err := reader.Decode(ModuleName, cfg); err != nil {
+			t.Fatalf("decoding: %v", err)
+		}
+		if len(cfg.Endpoints) != 0 {
+			t.Errorf("an empty array decoded to %q, want an empty list", cfg.Endpoints)
+		}
+	})
+	t.Run("an environment variable", func(t *testing.T) {
+		t.Setenv("OTELTEST_OBSERVABILITY__OTEL__ENDPOINTS", "")
+		reader := readThrough(t, `{"observability": {"otel": {"sample-ratio": 0.5}}}`)
+		cfg := prototype()
+		if err := reader.Decode(ModuleName, cfg); err != nil {
+			t.Fatalf("decoding: %v", err)
+		}
+		if len(cfg.Endpoints) != 0 {
+			t.Errorf("an empty variable decoded to %q, want an empty list", cfg.Endpoints)
+		}
+	})
+	t.Run("a list of names", func(t *testing.T) {
+		reader := readThrough(t, `{"observability": {"otel": {"endpoints": ["public", "ops"]}}}`)
+		cfg := prototype()
+		if err := reader.Decode(ModuleName, cfg); err != nil {
+			t.Fatalf("decoding: %v", err)
+		}
+		if want := []string{"public", "ops"}; !slices.Equal(cfg.Endpoints, want) {
+			t.Errorf("a list of names decoded to %q, want exactly %q: the source's list replaces the default star instead of joining it", cfg.Endpoints, want)
+		}
+		if err := cfg.validate(); err != nil {
+			t.Errorf("the decoded list of names does not validate: %v", err)
+		}
+	})
+	t.Run("a null", func(t *testing.T) {
+		reader := readThrough(t, `{"observability": {"otel": {"endpoints": null}}}`)
+		cfg := prototype()
+		if err := reader.Decode(ModuleName, cfg); err != nil {
+			t.Fatalf("decoding: %v", err)
+		}
+		if !slices.Equal(cfg.Endpoints, []string{"*"}) {
+			t.Errorf("a null item decoded to %q, want the default star: null is an absent item, not an empty list", cfg.Endpoints)
+		}
+	})
+	t.Run("nothing", func(t *testing.T) {
+		reader := readThrough(t, `{"observability": {"otel": {"sample-ratio": 0.5}}}`)
+		cfg := prototype()
+		if err := reader.Decode(ModuleName, cfg); err != nil {
+			t.Fatalf("decoding: %v", err)
+		}
+		if !slices.Equal(cfg.Endpoints, []string{"*"}) {
+			t.Errorf("an absent item decoded to %q, want the default star", cfg.Endpoints)
+		}
+	})
 }
 
 // TestZeroBatchSizesTakeTheUpstreamDefault pins the substitution that keeps the

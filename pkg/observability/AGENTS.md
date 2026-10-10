@@ -89,9 +89,17 @@ must not cross, and how to run it.
   empty string instead would report an empty one.
   `TestAnUnnamedServiceTakesItsNameFromTheUpstream` and
   `TestALaterLayerOverridesAnEarlierOne` hold the order.
-- **The assembler reaches an entry module and a bus only when configuration
-  names one.** An empty `endpoints` or `events` list must leave the process free
-  of both: a background worker carries this module and has neither.
+- **The assembler reaches an entry module only when `endpoints` is not empty,
+  and a bus only when `events` is not.** An empty list must leave the process
+  free of the one it would reach: a background worker carries this module and
+  has neither. The `endpoints` default is `*`, every endpoint the entry module
+  declares, and for that value alone a missing entry module is skipped, told
+  apart from every other failure of the lookup by `errors.Is` against
+  `core.ErrMissingProvider`; a list of names fails without one, and so does any
+  other lookup failure, such as two router providers that neither declare
+  exclusivity (the entry module declares it, so a second provider beside it never
+  reaches `wire`: the registry refuses the pair first). Each failure names the
+  input item that asked and wraps the sentinel it came with.
 - **The probe lives in `New`, never in `Prepare`.** `Prepare` runs for every
   module a command took in (except one the host supplied an instance for),
   including a command that collects stances and constructs nothing; a round trip

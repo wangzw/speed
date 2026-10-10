@@ -12,6 +12,7 @@ package otel
 import (
 	"context"
 	"errors"
+	"fmt"
 
 	"github.com/vislake/speed/pkg/core"
 	"github.com/vislake/speed/pkg/event"
@@ -23,6 +24,13 @@ import (
 // ModuleName is this module's name in the registry, and the namespace its input
 // items are mounted under.
 const ModuleName = "observability.otel"
+
+// The input items whose lists make wire take another module up, spelled as the
+// error text names them.
+const (
+	endpointsKey = ModuleName + ".endpoints"
+	eventsKey    = ModuleName + ".events"
+)
 
 // init registers this module with the process registry, so a host that imports
 // the package has it available.
@@ -85,12 +93,24 @@ func prepare(_ context.Context, reg *core.Registry) (core.Enablement, error) {
 // wire registers the request layer on each configured endpoint and subscribes
 // to each configured event type.
 //
-// Neither is attempted when its list is empty, so a process with no listening
+// The entry module is taken up only when the endpoint list is not empty and
+// the bus only when the event list is not empty, so a process with no listening
 // endpoint and no event bus — a background worker — carries this module
-// without requiring an entry module or a bus to be present. A name that is
-// configured and cannot be taken up is a startup failure, handed back as it
-// came: the sentinel for a missing provider is core's, the one for an undeclared
-// endpoint is the entry module's, and neither gets a second name here.
+// without either being present. The endpoint list defaults to "*", every
+// endpoint the entry module declares, and for that one value a missing entry
+// module is not a failure: nothing in the configuration named an endpoint, so
+// nothing asked for one. Only the missing-provider sentinel is read that way.
+// Any other failure of the lookup, such as two router providers that neither
+// declare exclusivity and that the registry cannot choose between, is handed
+// back, because skipping it would leave a process serving requests with no layer
+// on any of them.
+//
+// A list of names asks for those endpoints and nothing else, so an entry module
+// that is absent, or a name it never declared, is a startup failure. So is a
+// bus that is absent for a configured event type. Each such failure wraps the
+// sentinel it came with, which stays matchable by errors.Is, and names the
+// input item that asked, so the reader of the line is told which setting to
+// clear or which module to take in.
 //
 // It acts on this module's own product only. An instance the host supplied for
 // the module is not one this module built, and it is left alone: no layer is
@@ -101,29 +121,80 @@ func wire(ctx context.Context, reg *core.Registry, instance any) error {
 	if !ok {
 		return nil
 	}
-	if len(p.cfg.Endpoints) > 0 {
-		router, err := core.Resolve[http.Router](reg)
-		if err != nil {
-			return err
-		}
-		for _, name := range p.distinct("endpoints", p.cfg.Endpoints) {
-			ep, err := router.Endpoint(name)
-			if err != nil {
-				return err
-			}
-			ep.Use(p.layer(name))
-		}
+	if err := p.wireEndpoints(reg); err != nil {
+		return err
 	}
 	if len(p.cfg.Events) > 0 {
 		bus, err := core.Resolve[event.Bus](reg)
 		if err != nil {
-			return err
+			return busFailure(err)
 		}
 		for _, evt := range p.distinct("events", p.cfg.Events) {
 			bus.Subscribe(evt, p.spanFor())
 		}
 	}
 	return nil
+}
+
+// wireEndpoints registers the request layer on the endpoints the configuration
+// asks for: every declared endpoint for "*", exactly the listed names
+// otherwise, and nothing for an empty list.
+func (p *providers) wireEndpoints(reg *core.Registry) error {
+	listed := p.cfg.Endpoints
+	if len(listed) == 0 {
+		return nil
+	}
+	every := len(listed) == 1 && listed[0] == allEndpoints
+	router, err := core.Resolve[http.Router](reg)
+	if err != nil {
+		if every && errors.Is(err, core.ErrMissingProvider) {
+			return nil
+		}
+		return routerFailure(err)
+	}
+	names := router.Endpoints()
+	if !every {
+		names = p.distinct("endpoints", listed)
+	}
+	for _, name := range names {
+		ep, err := router.Endpoint(name)
+		if err != nil && every {
+			return fmt.Errorf("%s: the entry module listed the endpoint %q and then did not provide it: %w",
+				ModuleName, name, err)
+		}
+		if err != nil {
+			return fmt.Errorf("%s: %s lists the endpoint %q, and the entry module did not provide it. "+
+				"Change one of two things: this list, to declared endpoints only or to none, "+
+				"or the entry module's own configuration, to declare %q: %w",
+				ModuleName, endpointsKey, name, name, err)
+		}
+		ep.Use(p.layer(name))
+	}
+	return nil
+}
+
+// routerFailure names the input item behind a failed lookup of the entry module.
+//
+// Clearing the list is a way out of any failure here, so it is always offered;
+// taking the entry module in is offered only for the failure it cures.
+func routerFailure(err error) error {
+	fix := "clear the list to register on no endpoint"
+	if errors.Is(err, core.ErrMissingProvider) {
+		fix += ", or take the entry module in on the command tree"
+	}
+	return fmt.Errorf("%s: %s asks for endpoints, and the entry module could not be taken up; %s: %w",
+		ModuleName, endpointsKey, fix, err)
+}
+
+// busFailure names the input item behind a failed lookup of the bus, with the
+// same two ways out routerFailure offers.
+func busFailure(err error) error {
+	fix := "clear the list to subscribe to no event type"
+	if errors.Is(err, core.ErrMissingProvider) {
+		fix += ", or take the event bus in on the command tree"
+	}
+	return fmt.Errorf("%s: %s names event types, and the event bus could not be taken up; %s: %w",
+		ModuleName, eventsKey, fix, err)
 }
 
 // distinct drops repeated names from one of the configured lists, keeping the

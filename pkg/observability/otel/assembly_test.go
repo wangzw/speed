@@ -109,12 +109,13 @@ func TestTheAssemblerStartsWithNoBackendAndSaysSo(t *testing.T) {
 	}
 }
 
-// TestTheAssemblerTouchesNoEntryModuleAndNoBusWhenNeitherIsNamed is the shape a
-// background process has: this module is taken in, no listening endpoint and no
-// event type is configured, and neither capability is registered in the
-// assembly at all. Reaching for either would fail the startup of a process that
-// legitimately has neither.
-func TestTheAssemblerTouchesNoEntryModuleAndNoBusWhenNeitherIsNamed(t *testing.T) {
+// TestTheAssemblerStartsOnItsDefaultsWithNoEntryModuleAndNoBus is the shape a
+// background process has: this module is taken in on its default configuration,
+// whose endpoint list asks for every endpoint the entry module declares, and
+// the assembly holds neither an entry module nor a bus. Nothing in that
+// configuration asked for a particular endpoint or event type, so the missing
+// entry module is not a failure and no bus is reached for.
+func TestTheAssemblerStartsOnItsDefaultsWithNoEntryModuleAndNoBus(t *testing.T) {
 	if _, _, err := assemble(t, otel.ModuleName); err != nil {
 		t.Fatalf("a process with no entry module and no bus could not start this module: %v", err)
 	}

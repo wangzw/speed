@@ -231,9 +231,12 @@ claim there has its case in `e2e_test.go` or a slice's own test file, or in
   lists, or name the bus on the groups with that cost written down.
 - **A worker shares the serving configuration and empties two endpoint lists.**
   The journal and the telemetry assembler take the HTTP entry point up when
-  their endpoint lists are not empty, and the worker runs none; the harness
-  starts it with `CRM_AUDIT__JOURNAL__ENDPOINTS=` and
-  `CRM_OBSERVABILITY__OTEL__ENDPOINTS=`.
+  their endpoint lists name endpoints, and the serving configuration writes
+  names into both while the worker runs no entry point; the harness starts it
+  with `CRM_AUDIT__JOURNAL__ENDPOINTS=` and
+  `CRM_OBSERVABILITY__OTEL__ENDPOINTS=`. Emptying the telemetry list is needed
+  because the serving configuration lists names: the assembler's default list,
+  `*`, is skipped when no entry point is present.
 - **Keep the demonstrated claims and their cases together.** A claim the
   package comment makes and no case covers is one the next reader cannot trust.
 

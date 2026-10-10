@@ -212,7 +212,7 @@ type Config struct {
     } `config:"metric"`
 
     ShutdownTimeout time.Duration `config:"shutdown-timeout"`
-    Endpoints       []string       `config:"endpoints"`   // 在哪些监听端登记采集层
+    Endpoints       []string       `config:"endpoints"`   // 在哪些监听端登记采集层；默认 ["*"]，即入口模块声明的每一个端
     Events          []string       `config:"events"`      // 订阅哪些事件类型
 }
 ```
@@ -232,6 +232,8 @@ type Config struct {
 | `shutdown-timeout` | 10s | 拒绝，启动失败 |
 
 时长为零使该处失去意义而不是关闭它：批处理的超时为零意味着每一批都立即失败，导出周期为零意味着读数的间隔不存在。两个整型项的零留给「取上游默认」，而本模块不写下那个默认：上游把零读成容量为零的队列，不是读成默认，因此装配器把上游自己导出的默认常量代入，本模块里没有第二份 2048 与 512。
+
+**`endpoints` 默认是单个星号，指入口模块声明的每一个端。** 星号是入口模块保留的端名（见 [http](design-http.md)，[ADR-http-enumeration-2026-10-10](../../adr/adr-http-enumeration-2026-10-10.md)），在这份清单里只能是整份清单：写具体端名就只在这些端登记，写成空清单就一个都不登记，星号与清单里的任何别的条目并列（包括再写一次星号）则 `Prepare` 以 `ErrWildcardBesideEndpointNames` 失败，错误点名 `observability.otel.endpoints` 并给出正确写法（星号单写，或只写端名）。空清单是一个给定的值而不是缺席：文件里的空数组与值为空的环境变量都解码为空清单，不回到默认的星号。值为 null（YAML 里键后面留空或写 `~`，JSON 里写 `null`）按缺席处理，保留默认的星号；要清空须写空数组。`events` 的默认仍是空，不订阅任何事件类型。清单决定的取用见[装配器的各阶段](#装配器的各阶段)；默认覆盖而对入口模块不设必需依赖的取舍见 [ADR-observability-coverage-2026-09-22](../../adr/adr-observability-coverage-2026-09-22.md)。
 
 **`service-name` 不是必填项，没配时服务名交给上游。** 键缺席与显式写成空串解码到同一个值，两者都按没配处理，都不是故障。没配时本模块不给出 `service.name`，服务名由上游按[provider 的构造次序](#provider-的构造次序)一节写明的次序定下；该次序里的「环境变量」指 `OTEL_SERVICE_NAME` 与 `OTEL_RESOURCE_ATTRIBUTES` 两个变量，不止前者。留空的后果由[非保证](#非保证)一节的「服务名」一条承接。
 
@@ -265,14 +267,18 @@ type Config struct {
 | `Prepare` | 取配置读取面（取不到即以包裹 `core.ErrMissingProvider` 的错误返回），解码自己的命名空间，校验取值，表态 `StateEnabled` |
 | `New` | 取 logger；经注册表收全部导出器；按[构造次序](#provider-的构造次序)建两个 provider；返回同时实现两个 provider 接口的产物 |
 | `Migrate`、`Start`、`Serve`、`Stop` | 无动作 |
-| `Init` | 配置点名了监听端时取路由登记面并逐端登记采集层；点名了事件类型时取总线的功能并逐类型订阅。两份清单里的重名各只生效一次，见下 |
+| `Init` | `endpoints` 为星号时取路由登记面，对它列出的每个端登记采集层，本次运行没有入口模块时什么也不登记；写了具体端名时取路由登记面并逐名登记，取不到或端名未声明即启动失败；为空时不取。`events` 非空时取总线的功能并逐类型订阅。两份清单里的重名各只生效一次，见下 |
 | `Close` | 以 `shutdown-timeout` 为上界依次关停两个 provider，失败聚合后返回 |
 
 `Prepare` 只经读取面（`config` 模块的预置实例）读自己那份配置，不读任何别的模块的 `Prepare` 结果。`New` 取到的 logger 长期持有，用于导出失败的日志行；它写的是配置的目的地，不是进程根 logger 那条只写标准输出的链。
 
 **两份清单里的重名各只生效一次。** 入口模块的登记面按调用逐次追加、不去重，总线也一样，所以照清单逐个调用会把同一层装两遍：那个端的每条请求因此开两个服务端跨度、在直方图里记两次，从外面看是流量翻倍；同一个事件类型订两遍则每个事实派两个跨度。重名的意图是那一个名字，重复的条目因而被丢掉，并写一行说明——一份与自述不符的配置没有别的途径能被宿主发现。
 
-`Init` 里的取用**只在配置点名了对象时才发生**：`endpoints` 为空时不取路由登记面，`events` 为空时不取总线的功能。一个不暴露任何监听端的后台进程因此不会因为装配了本模块而要求一个入口模块在场。点名了而该功能在本次运行取不到，即启动失败，错误原样外传，本模块不为它另造名字。
+`Init` 里的取用**由清单决定**：`endpoints` 为空时不取路由登记面，`events` 为空时不取总线的功能。
+
+`endpoints` 为星号时取路由登记面，取不到的原因若是本次运行没有入口模块（`core.ErrMissingProvider`），本模块什么也不登记、也不失败：一个不暴露任何监听端的后台进程在默认配置下照常装配本模块，不要求入口模块在场。区分靠 `errors.Is` 对这一个哨兵；别的取用失败照常返回，例如两个都不声明排他的 `Router` 提供者并存、让取用无从选择（`core.ErrAmbiguousProvider`），吞掉它会让进程在没有任何一个端挂着采集层的情况下开始服务。入口模块交付 `Router` 是排他的，任何别的提供者与它并存都由注册表在解析阶段判成独占冲突，到不了这里。`endpoints` 写了具体端名时，取不到入口模块与端名未声明都是启动失败：写下端名就是要求那个端被采集。`events` 点名了而总线的功能取不到，同样启动失败。
+
+这些启动失败都包一层再返回，包装保留原哨兵（`core.ErrMissingProvider`、`http.ErrUnknownEndpoint`、`core.ErrAmbiguousProvider` 仍可用 `errors.Is` 判别），文本点名 `observability.otel.endpoints` 或 `observability.otel.events`，并给出修复动作：清空那份清单，端名未声明时另可在入口模块的配置里声明该端；失败的原因是没有提供者时，另给出在命令树上纳入入口模块或总线这一条。本模块不另造哨兵，包装的文本则是它自己的。
 
 转发的排序：`pkg/log` 的 logger 与导出器都要在装配器之前构造完成。前者的顺序由描述符上的必需依赖给出，后者由标注 `Optional` 的导出器依赖给出——它们在场时照常参与构造定序，缺席时不构成错误。
 
@@ -395,21 +401,22 @@ type Config struct {
 
 ## 错误与失败语义
 
-装配期的错误一律终止启动。哨兵如下，未列出的失败原样外传、不另造名字。
+装配期的错误一律终止启动。哨兵如下，未列出的失败保留原哨兵向外传，不另造名字。
 
 | 哨兵错误 | 所在模块 | 触发条件 |
 |---|---|---|
 | `ErrInvalidSampleRatio` | `observability.otel` | `sample-ratio` 不是 `[0,1]` 内的有限数 |
 | `ErrInvalidBatchParam` | `observability.otel` | 批处理的两个整型项为负 |
 | `ErrInvalidDuration` | `observability.otel` | 上表规定「拒绝零」的时长为零或负 |
+| `ErrWildcardBesideEndpointNames` | `observability.otel` | `endpoints` 里的星号与别的条目并列 |
 | `ErrUnknownProtocol` | `observability.otlp` | `protocol` 不是 `grpc` 或 `http` |
 | `ErrInvalidHeader` | `observability.otlp` | `headers` 的元素不是 `k=v` |
 | `ErrInvalidDuration` | `observability.otlp` | `probe-timeout` 为零或负 |
 | `ErrExporterUnreachable` | `observability.otlp` | 启用了启动探测而端点不可达 |
 
-`ErrInvalidSampleRatio`、`ErrUnknownProtocol` 与 `ErrInvalidHeader` 的文本要列出合法取值或形状，取值都在闭集内，列出它即给出修复动作。`service-name` 没有对应的哨兵：它不是必填项，缺席与空串都不是故障。
+`ErrInvalidSampleRatio`、`ErrUnknownProtocol` 与 `ErrInvalidHeader` 的文本要列出合法取值或形状，取值都在闭集内，列出它即给出修复动作；`ErrWildcardBesideEndpointNames` 的文本点名键并给出正确写法。`service-name` 没有对应的哨兵：它不是必填项，缺席与空串都不是故障。
 
-原样外传的失败：配置读取面缺席（`core.ErrMissingProvider`）、端名未在配置里声明（`http` 的哨兵）、事件点名而总线功能取不到（`core.ErrMissingProvider`）、资源叠合时上游报出的模式地址冲突（`resource.ErrSchemaURLConflict`）。
+不另造哨兵的失败：配置读取面缺席（`core.ErrMissingProvider`）、入口模块取不到（`core.ErrMissingProvider`，或取用无从选择的 `core.ErrAmbiguousProvider`）、端名未在配置里声明（`http.ErrUnknownEndpoint`）、事件点名而总线功能取不到（`core.ErrMissingProvider`）、资源叠合时上游报出的模式地址冲突（`resource.ErrSchemaURLConflict`）。哨兵都是别处的，包装保留它们，`errors.Is` 照常判别。入口模块、端名与总线的包装文本点名 `observability.otel.endpoints` 或 `observability.otel.events` 并给出修复动作，读到启动失败的人不必从别的模块的哨兵文本反推该改本模块的哪一项配置。
 
 排他冲突不由本模块判定：第二个仍然启用的 provider 提供者出现时，由注册表在消解中判冲突并点名双方。
 
@@ -425,10 +432,11 @@ type Config struct {
 
 - **一个导出后端都没有。** 装配器照常启动，两个 provider 照常交出，跨度与指标不落到任何目的地。本模块向日志写一行说明：一个不产出任何数据的观测装配与一个故障的观测装配从外部看无从分辨，而这一行是唯一把它们分开的东西。
 - **采样率为零。** 本进程不再开始任何一条追踪，指标照常上报；带着已采样父跨度的请求仍被记录（见[采集层的跨度](#采集层的跨度)的采样一段）。本模块向日志写一行说明，理由与上一条相同。
-- **某个监听端没被点名。** 那个端上没有采集层，该端的请求不产生跨度与计量，启动期不失败、诊断里也没有一行。
+- **`endpoints` 写了具体端名而没有点某个端。** 默认的星号覆盖入口模块声明的每一个端，不会漏；一份写了端名的清单只覆盖这些，没点名的那个端上没有采集层，该端的请求不产生跨度与计量，启动期不失败、诊断里也没有一行。
+- **`endpoints` 为空，或为星号而本次运行没有入口模块。** 本模块不登记采集层，不失败，也没有一行说明。空清单是配置写下的，星号而无入口模块是后台进程的正常形态；信号缺席只能从采集端看出。
 - **事件类型名写错。** 订阅静默不中，类型名与发布方之间的对应没有编译期联系。
 
-**以上任一情形的察觉途径都不是启动诊断**：诊断覆盖的是启用集之外的模块，而这里每一个都是「模块在场、配置使然」。
+**以上任一情形的察觉途径都不是启动诊断**：诊断覆盖的是启用集之外的模块，而这里每一个都是「模块在场，由配置或由本次运行的装配使然」。
 
 ### 非保证
 
@@ -436,7 +444,7 @@ type Config struct {
 
 - **存在。** 本模块未被本次命令纳入、也没有预置实例时，两种信号都不存在，没有一层会拦下，也不进启动诊断——诊断不覆盖「已登记而未被本次命令纳入、也没有预置实例」这一档。察觉途径是注册表的按名查询：它对这样的名字给出禁用，原因写明它不在这条命令的参与集里。
 - **宿主为本模块预置的实例不是本模块的产物时，采集层与事件订阅不存在，而注册表答本模块在场。** `Init` 对这样的实例不做任何事（见[关停时的刷出](#关停时的刷出)）：不登记采集层，不订阅事件；经那个实例是否还有信号产生，由预置的一方决定。按名查询答启用，查不出这一档。采集层缺席的察觉途径是各端组装时写出的链清单里没有采集层；事件订阅缺席没有察觉途径：链清单不列订阅，只订阅事件、不暴露监听端的进程连链清单也没有。
-- **覆盖面。** 受采集的监听端由配置点名。漏写一个端不失败、不进诊断。察觉途径是各端组装时写出的链清单：漏挂的那一行少一个层名。按名查询的启用结果在这一档上没有判别力——它答的是模块的状态，不是某份声明挂在哪个端上。
+- **覆盖面。** 默认的星号覆盖入口模块声明的每一个端，本次运行没有入口模块时它什么也不登记，不失败也不进诊断。清单写了具体端名时，受采集的监听端由名单点名，漏写一个端不失败、不进诊断。察觉途径是各端组装时写出的链清单：漏挂的那一行少一个层名。按名查询的启用结果在这一档上没有判别力——它答的是模块的状态，不是某份声明挂在哪个端上。
 - **位置。** 采集层不是链上最外层：以 `Before` 指向本功能的层，以及 `Order` 更小而约束已经满足的层，都排在它之外，那一段的耗时与其中抛出的 panic 都不进跨度。察觉途径同上，链清单给出组装后的次序。
 - **事件流完整。** 经总线取得的领域事实可能缺样，且缺样不可判定；反过来一条事实也可能派出多个跨度，跨度数不等于事实数，按事件标识归并之后才是观测到的事实数（见[事件订阅](#事件订阅)）。事件派生的跨度还落在消费时间轴上，不与产生它的业务跨度对齐。
 - **采样。** `sample-ratio` 只决定本进程开始的追踪；带父跨度的请求由调用方的采样标志决定，而调用方不经认证即可写下它。一次请求有没有跨度因而不只取决于配置，这一档没有察觉途径。
@@ -464,7 +472,7 @@ type Config struct {
 
 **新增一种导出目的地**是新增一个实现子包：它登记一个模块，`Provides` 交出 `(*observability.SpanExporter)(nil)` 与 `(*observability.MetricExporter)(nil)`，在 `New` 中按自己的配置构造导出器。装配器经注册表收全部导出器，不需要认识任何后端。宿主在命令树上点名要哪些后端，或为某个后端预置实例。
 
-**拉取式指标**（一个由宿主挂到路由上的处理器）列为将来的扩展点：它交付一个非排他的功能，方法返回一个 `net/http` 的处理器，由宿主经适配挂到自己的路由上（登记面的 handler 是 `gin.HandlerFunc`，见 [http](design-http.md)）。本模块不自己挂：监听端的集合来自配置，模块枚举不出端名，猜一个端名即静默不生效。
+**拉取式指标**（一个由宿主挂到路由上的处理器）列为将来的扩展点：它交付一个非排他的功能，方法返回一个 `net/http` 的处理器，由宿主经适配挂到自己的路由上（登记面的 handler 是 `gin.HandlerFunc`，见 [http](design-http.md)）。本模块不自己挂：端名能由入口模块的登记面列出，但拉取端点是一条路由，路由属于宿主，采集层只登记中间件；替宿主挑一个端、定一个路径，就是替它决定哪个端对外暴露指标。
 
 **数据库语句级跨度**列为将来的扩展点：走一个包装 `database/sql` 驱动接口的实现子包，那里拿得到真实耗时，也不必让本模块声明对数据库功能的构造期依赖。
 
@@ -474,7 +482,7 @@ type Config struct {
 |---|---|---|
 | 接口包的类型别名与字段名常量 | 已实现 | `pkg/observability/observability.go` `TracerProvider`、`MeterProvider`、`SpanExporter`、`MetricExporter`、`TraceIDKey`、`SpanIDKey` |
 | 传播器与出站注入工具 | 已实现 | `pkg/observability/observability.go` `Propagator`、`pkg/observability/transport.go` `Transport` |
-| 装配器的描述符与各阶段行为 | 已实现 | `pkg/observability/otel/module.go` `Module`、`prepare`、`wire`、`shutdown` |
+| 装配器的描述符与各阶段行为 | 已实现 | `pkg/observability/otel/module.go` `Module`、`prepare`、`wire`、`wireEndpoints`、`routerFailure`、`busFailure`、`shutdown` |
 | provider 的构造、资源与导出器的释放 | 已实现 | `pkg/observability/otel/providers.go` `newProviders`、`newResource`、`layered`、`newInstanceID`、`queueSize`、`releaseExporters` |
 | 转发包装、导出失败的上报与关闭的截留 | 已实现 | `pkg/observability/otel/wrapper.go` `spanExporter`、`metricExporter`、`notifier` |
 | 请求路径的采集层 | 已实现 | `pkg/observability/otel/layer.go` `(*providers).layer`、`instrument`、`answeredWith` |

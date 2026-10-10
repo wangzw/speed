@@ -56,8 +56,8 @@ func journalledRoutes() []string {
 
 // workerEnv empties the two endpoint lists a process without the HTTP entry
 // point cannot honour. The journal and the telemetry assembler take the entry
-// point up in Init whenever their list is not empty, and the lists are the
-// serving configuration's; an empty variable is a given value, and an empty
+// point up in Init whenever their list names endpoints, and the serving
+// configuration's lists do; an empty variable is a given value, and an empty
 // list.
 //
 // The variable names are spelled out rather than built from envPrefix: a case

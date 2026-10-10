@@ -794,11 +794,12 @@ func addStack(root *config.Command, s stack) {
 	// HTTP entry point, and the host's modules that name it.
 	//
 	// The journal and the telemetry assembler take the entry point up in
-	// their Init when their endpoint lists are not empty, and those lists are
-	// configuration shared with serve. A worker started on the serving
-	// configuration is therefore given both lists empty through the
-	// environment; with them left as serve's it stops at startup, naming the
-	// capability it has no provider for.
+	// their Init when their endpoint lists name endpoints, and serve's
+	// configuration writes names into both. A worker started on it is
+	// therefore given both lists empty through the environment; with them
+	// left as serve's it stops at startup, naming the capability it has no
+	// provider for. The assembler's default list, "*", would not stop it, but
+	// the list serve writes is not the default.
 	worker := node.Sub(workerCommand)
 	worker.Include(
 		catalog.ModuleName,
