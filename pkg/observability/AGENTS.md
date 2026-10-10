@@ -223,7 +223,30 @@ must not cross, and how to run it.
   a credential are additionally marked sensitive, and an error about one never
   repeats its content: a header element is reported by position, because an
   element with no separator has no key to name and a key is not reliably the
-  harmless half either.
+  harmless half either. Whitespace around an element, its key and its value is
+  trimmed — the environment's list is split at the commas and nothing more — and
+  a key with whitespace left inside is refused by position like any other
+  element. The endpoint error does not repeat the value: one written as a URL
+  can carry userinfo.
+- **`otlp` checks the endpoint's shape in `Prepare`, not its host.** A host and
+  an optional port, an IPv6 address in brackets; empty, a scheme, a path or
+  whitespace is `ErrInvalidEndpoint`, and nothing else is refused, a port that
+  is not a number included. Over gRPC a URL builds an exporter that never
+  delivers, which is why the check exists; gRPC's own target forms (`dns:///`,
+  `passthrough:///`, `unix://`) would deliver and are refused with it. An empty
+  host is the local system, and counts as loopback. The port is optional, and
+  the probe dials an endpoint without one at the port the exporters fall back
+  to (`dialAddress`). `http/protobuf` is read as `http` in `read`, so `build`
+  knows two protocols only.
+- **`otlp` takes the logger as an optional dependency, for one warning.** Headers
+  sent over plaintext to a host that is not a loopback one get a line in `New`
+  that names no header, no value and no endpoint (`warnPlaintextHeaders`). The
+  requirement is declared so that a constructed logging module is ordered
+  ahead, and optional because its absence is a legal configuration: a command
+  that takes this backend in without the logging module still assembles rather
+  than failing for a missing provider. Without a logger the line is not written,
+  never written through the process root logger. The assembler requires the
+  logger, so wherever exporters are driven it is present.
 - **A new export backend is a subpackage that delivers both exporter
   capabilities, non-exclusively.** The assembler collects exporters through the
   registry and knows no destination, so adding one is adding a module and naming

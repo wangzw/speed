@@ -1,11 +1,13 @@
 package otlp
 
 import (
+	"bytes"
 	"context"
 	"encoding/pem"
 	"errors"
 	"fmt"
 	"io"
+	"log/slog"
 	"net"
 	nethttp "net/http"
 	"net/http/httptest"
@@ -24,6 +26,7 @@ import (
 
 	"github.com/vislake/speed/pkg/config"
 	"github.com/vislake/speed/pkg/core"
+	"github.com/vislake/speed/pkg/log"
 	"github.com/vislake/speed/pkg/observability"
 )
 
@@ -230,6 +233,228 @@ func TestTheExportersDeliverOverEachProtocol(t *testing.T) {
 	}
 }
 
+// TestTheSpecificationsNameForHTTPExportsOverHTTP pins that http/protobuf is
+// read as http all the way to the wire: accepted and then sent over gRPC, the
+// exporters would build and an HTTP collector would never see a request.
+func TestTheSpecificationsNameForHTTPExportsOverHTTP(t *testing.T) {
+	rec := httpReceiver(t)
+	exporters, err := exportersFor(t, Config{
+		Endpoint:     rec.endpoint,
+		Protocol:     "http/protobuf",
+		Insecure:     true,
+		ProbeTimeout: defaultProbeTimeout,
+	})
+	if err != nil {
+		t.Fatalf("New: %v", err)
+	}
+	if spanErr, metricErr := exportOnce(exporters); spanErr != nil || metricErr != nil {
+		t.Fatalf("the exports failed: spans %v, metrics %v", spanErr, metricErr)
+	}
+	seen := rec.requests()
+	if got := paths(seen); len(got) != 2 || got[0] != httpTracesPath || got[1] != httpMetricsPath {
+		t.Fatalf("the receiver was asked for %v, want %s then %s", got, httpTracesPath, httpMetricsPath)
+	}
+	for _, s := range seen {
+		if got := s.header.Get("Content-Type"); !strings.HasPrefix(got, "application/x-protobuf") {
+			t.Errorf("the request to %s was %q, want application/x-protobuf", s.path, got)
+		}
+	}
+}
+
+// stubLogger is the logging capability over a logger the case reads back, and
+// it records the names a logger was asked for under.
+type stubLogger struct {
+	lg    *slog.Logger
+	names *[]string
+}
+
+func (s stubLogger) Named(name string) *slog.Logger {
+	*s.names = append(*s.names, name)
+	return s.lg
+}
+func (s stubLogger) Redaction() log.Redaction { return nil }
+
+// The header a case configures to tell whether a line repeats it: a key and a
+// value nothing else in a line would contain.
+const (
+	markedHeaderKey   = "x-marker-key-5d1c"
+	markedHeaderValue = "marker-value-9e2b"
+)
+
+// exportersLogging builds this module's product the way New does, with a
+// logger in the registry, and hands back what was logged and the names the
+// logger was asked for under.
+func exportersLogging(t *testing.T, cfg Config) (logged string, names []string) {
+	t.Helper()
+	buf := &bytes.Buffer{}
+	reg := core.New()
+	reg.Register(config.Module())
+	reg.Register(log.Module())
+	reg.Supply(fixedReader{cfg: cfg}, config.ModuleName)
+	reg.Supply(stubLogger{lg: slog.New(slog.NewTextHandler(buf, nil)), names: &names}, log.ModuleName)
+	product, err := newExporters(context.Background(), reg)
+	if err != nil {
+		t.Fatalf("New: %v", err)
+	}
+	exporters, ok := product.(*observability.Exporters)
+	if !ok {
+		t.Fatalf("New delivered %T, want *observability.Exporters", product)
+	}
+	t.Cleanup(func() { _ = exporters.Shutdown(context.Background()) })
+	return buf.String(), names
+}
+
+// TestHeadersOverPlaintextToANonLoopbackHostAreWarnedAbout pins the line that
+// says a credential is about to cross a network in the clear, and that the line
+// carries none of it: no header name, no value, and not the endpoint. An
+// address literal that is not a loopback one is warned about like a host name,
+// and so is a name that only looks like a loopback one: the match is on the
+// whole host, not on a prefix.
+func TestHeadersOverPlaintextToANonLoopbackHostAreWarnedAbout(t *testing.T) {
+	for _, endpoint := range []struct{ value, host string }{
+		{"collector-7a41.example:4317", "collector-7a41"},
+		{"10.0.0.7:4317", "10.0.0.7"},
+		{"0.0.0.0:4317", "0.0.0.0"},
+		{"[2001:db8::1]:4317", "2001:db8::1"},
+		{"localhost.collector-7a41.example:4317", "collector-7a41"},
+		{"127.collector-7a41.example:4317", "collector-7a41"},
+		{"mylocalhost:4317", "mylocalhost"},
+		{":4317", ":4317"},
+	} {
+		for _, protocol := range []string{ProtocolGRPC, ProtocolHTTP} {
+			t.Run(endpoint.value+" over "+protocol, func(t *testing.T) {
+				logged, names := exportersLogging(t, Config{
+					Endpoint:     endpoint.value,
+					Protocol:     protocol,
+					Insecure:     true,
+					Headers:      []string{markedHeaderKey + "=" + markedHeaderValue},
+					ProbeTimeout: defaultProbeTimeout,
+				})
+				lines := strings.Split(strings.TrimSpace(logged), "\n")
+				if len(lines) != 1 || !strings.Contains(lines[0], "level=WARN") {
+					t.Fatalf("the module logged %q, want one warning line", logged)
+				}
+				if len(names) != 1 || names[0] != ModuleName {
+					t.Errorf("the logger was asked for under %q, want %q alone", names, ModuleName)
+				}
+				if !strings.Contains(lines[0], "plaintext") || !strings.Contains(lines[0], ModuleName+".insecure") {
+					t.Errorf("the line is %q, want it to say the headers go over plaintext and that %s.insecure "+
+						"set to false is the fix", lines[0], ModuleName)
+				}
+				for _, leaked := range []string{markedHeaderKey, markedHeaderValue, endpoint.host} {
+					if strings.Contains(logged, leaked) {
+						t.Errorf("the line is %q, and it repeats %q", lines[0], leaked)
+					}
+				}
+			})
+		}
+	}
+}
+
+// TestNoPlaintextWarningWhereNothingCrossesANetworkInTheClear pins the cases the
+// warning is not for: a loopback collector, TLS, and no headers at all.
+func TestNoPlaintextWarningWhereNothingCrossesANetworkInTheClear(t *testing.T) {
+	headers := []string{markedHeaderKey + "=" + markedHeaderValue}
+	for name, cfg := range map[string]Config{
+		"localhost":             {Endpoint: "localhost:4317", Insecure: true, Headers: headers},
+		"localhost in capitals": {Endpoint: "LOCALHOST:4317", Insecure: true, Headers: headers},
+		"an IPv4 loopback":      {Endpoint: "127.0.0.1:4317", Insecure: true, Headers: headers},
+		"another IPv4 loopback": {Endpoint: "127.8.9.10", Insecure: true, Headers: headers},
+		"the IPv6 loopback":     {Endpoint: "[::1]:4317", Insecure: true, Headers: headers},
+		"the bare IPv6 host":    {Endpoint: "[::1]", Insecure: true, Headers: headers},
+		"TLS":                   {Endpoint: "collector.example:4317", Insecure: false, Headers: headers},
+		"no headers":            {Endpoint: "collector.example:4317", Insecure: true},
+	} {
+		t.Run(name, func(t *testing.T) {
+			cfg.Protocol = ProtocolGRPC
+			cfg.ProbeTimeout = defaultProbeTimeout
+			if logged, _ := exportersLogging(t, cfg); logged != "" {
+				t.Errorf("the module logged %q, want nothing", logged)
+			}
+		})
+	}
+}
+
+// TestTheLoggerIsAnOptionalDependency pins how this module takes a logger. The
+// requirement is declared, because the edge is what orders a constructed
+// logging module ahead of this one; it is optional, so a command that runs this
+// module without the logging module still assembles and the warning is not
+// written, the process root logger included; and a logger in the participating
+// set is the one the warning goes through.
+//
+// The case replaces the process default logger, so it does not run in
+// parallel.
+func TestTheLoggerIsAnOptionalDependency(t *testing.T) {
+	declared := false
+	for _, req := range Module().Requires {
+		if _, ok := req.Token.(*log.Logger); ok {
+			declared = true
+			if !req.Optional {
+				t.Error("the logger is a required dependency, so a command without the logging module " +
+					"would fail over a warning this module can do without")
+			}
+		}
+	}
+	if !declared {
+		t.Error("the logger is not declared, so nothing orders a constructed logging module ahead of " +
+			"this one and New may find no logger to warn through")
+	}
+
+	cfg := Config{
+		Endpoint:     "collector.example:4317",
+		Protocol:     ProtocolGRPC,
+		Insecure:     true,
+		Headers:      []string{markedHeaderKey + "=" + markedHeaderValue},
+		ProbeTimeout: defaultProbeTimeout,
+	}
+	release := func(_ context.Context, reg *core.Registry) error {
+		exporters, err := core.Resolve[observability.SpanExporter](reg)
+		if err != nil {
+			return err
+		}
+		return exporters.Shutdown(context.Background())
+	}
+
+	root := &bytes.Buffer{}
+	previous := slog.Default()
+	slog.SetDefault(slog.New(slog.NewTextHandler(root, nil)))
+	t.Cleanup(func() { slog.SetDefault(previous) })
+
+	without := core.New()
+	without.Register(config.Module())
+	without.Register(Module())
+	without.Supply(fixedReader{cfg: cfg}, config.ModuleName)
+	if err := without.Drive(context.Background(), core.Drive{
+		Depth:        core.StageNew,
+		Participants: []string{ModuleName},
+		Action:       release,
+	}); err != nil {
+		t.Errorf("a command without the logging module failed: %v", err)
+	}
+	if root.Len() != 0 {
+		t.Errorf("without a logger the module wrote %q through the process root logger, want nothing", root)
+	}
+
+	logged := &bytes.Buffer{}
+	var names []string
+	with := core.New()
+	with.Register(config.Module())
+	with.Register(log.Module())
+	with.Register(Module())
+	with.Supply(fixedReader{cfg: cfg}, config.ModuleName)
+	with.Supply(stubLogger{lg: slog.New(slog.NewTextHandler(logged, nil)), names: &names}, log.ModuleName)
+	if err := with.Drive(context.Background(), core.Drive{
+		Depth:        core.StageNew,
+		Participants: []string{ModuleName},
+		Action:       release,
+	}); err != nil {
+		t.Fatalf("a command with the logging module failed: %v", err)
+	}
+	if !strings.Contains(logged.String(), "plaintext") {
+		t.Errorf("the module logged %q, want the warning through the logger in the participating set", logged)
+	}
+}
+
 // certificateFile writes a certificate a server really presents to a file, so
 // that a variable naming a certificate names one that loads.
 func certificateFile(t *testing.T) string {
@@ -418,6 +643,64 @@ func TestTheProbeFailsTheStartupWhenNothingListens(t *testing.T) {
 	}
 	if !strings.Contains(err.Error(), endpoint) {
 		t.Errorf("the failure %q does not name the endpoint it could not reach", err)
+	}
+}
+
+// TestTheProbeDialsTheFallbackPortOfAnEndpointWithoutOne pins the probe of an
+// endpoint the shape check lets through without a port: it dials the port the
+// exporters fall back to, here 80 for http over plaintext, rather than failing
+// for the port that is missing, which would refuse a reachable collector.
+func TestTheProbeDialsTheFallbackPortOfAnEndpointWithoutOne(t *testing.T) {
+	_, err := exportersFor(t, Config{
+		Endpoint:       "127.0.0.1",
+		Protocol:       ProtocolHTTP,
+		Insecure:       true,
+		ProbeAtStartup: true,
+		ProbeTimeout:   time.Second,
+	})
+	// A listener on port 80 of this host lets the probe pass, which is the
+	// property as well.
+	if err == nil {
+		return
+	}
+	if !errors.Is(err, ErrExporterUnreachable) {
+		t.Fatalf("a probe of 127.0.0.1 gave %v, want %v", err, ErrExporterUnreachable)
+	}
+	var dial *net.OpError
+	if !errors.As(err, &dial) || dial.Addr == nil || dial.Addr.String() != "127.0.0.1:80" {
+		t.Fatalf("a probe of 127.0.0.1 gave %v, want the failure of a dial of 127.0.0.1:80", err)
+	}
+	// The text names the address dialed, not the endpoint as written; the
+	// wrapped dial error names it as well, so the prefix is what tells them
+	// apart.
+	if want := ErrExporterUnreachable.Error() + ": 127.0.0.1:80: "; !strings.HasPrefix(err.Error(), want) {
+		t.Errorf("the text is %q, want it to start %q", err, want)
+	}
+}
+
+// TestTheProbeAddressFallsBackToTheUpstreamsPort pins the port the probe adds
+// to an endpoint written without one, which is the port the exporters connect
+// to: gRPC's resolver falls back to 443 whatever the transport security, and
+// HTTP to the scheme's own port.
+func TestTheProbeAddressFallsBackToTheUpstreamsPort(t *testing.T) {
+	for _, c := range []struct {
+		endpoint, protocol string
+		insecure           bool
+		want               string
+	}{
+		{"collector.example", ProtocolGRPC, true, "collector.example:443"},
+		{"collector.example", ProtocolGRPC, false, "collector.example:443"},
+		{"collector.example", ProtocolHTTP, true, "collector.example:80"},
+		{"collector.example", ProtocolHTTP, false, "collector.example:443"},
+		{"[2001:db8::1]", ProtocolGRPC, false, "[2001:db8::1]:443"},
+		{"collector.example:4318", ProtocolHTTP, true, "collector.example:4318"},
+		{"[::1]:4317", ProtocolGRPC, true, "[::1]:4317"},
+	} {
+		cfg := &Config{Endpoint: c.endpoint, Protocol: c.protocol, Insecure: c.insecure}
+		if got := dialAddress(cfg); got != c.want {
+			t.Errorf("the probe of %q over %s (insecure %v) dials %q, want %q",
+				c.endpoint, c.protocol, c.insecure, got, c.want)
+		}
 	}
 }
 

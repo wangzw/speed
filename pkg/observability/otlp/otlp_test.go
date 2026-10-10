@@ -1,11 +1,13 @@
 package otlp
 
 import (
+	"context"
 	"errors"
 	"strings"
 	"testing"
 
 	"github.com/vislake/speed/pkg/config"
+	"github.com/vislake/speed/pkg/core"
 )
 
 // configured is the prototype with the one required item filled in.
@@ -36,7 +38,9 @@ func TestThePrototypeCarriesTheDefaults(t *testing.T) {
 	}
 }
 
-// TestValidateNamesEachFailure walks the failures this module judges.
+// TestValidateNamesEachFailure walks the failures this module judges, one case
+// of each sentinel; the shapes behind ErrInvalidEndpoint and ErrInvalidHeader are
+// walked by the endpoint and header cases below.
 func TestValidateNamesEachFailure(t *testing.T) {
 	unknownProtocol := configured()
 	unknownProtocol.Protocol = "carrier-pigeon"
@@ -58,6 +62,12 @@ func TestValidateNamesEachFailure(t *testing.T) {
 	badProbe.ProbeTimeout = 0
 	if err := badProbe.validate(); !errors.Is(err, ErrInvalidDuration) {
 		t.Errorf("a zero probe timeout gave %v, want %v", err, ErrInvalidDuration)
+	}
+
+	badEndpoint := configured()
+	badEndpoint.Endpoint = "http://collector.example:4318"
+	if err := badEndpoint.validate(); !errors.Is(err, ErrInvalidEndpoint) {
+		t.Errorf("an endpoint written as a URL gave %v, want %v", err, ErrInvalidEndpoint)
 	}
 }
 
@@ -88,6 +98,166 @@ func TestAnUnreadableHeaderNeverPutsTheCredentialInTheError(t *testing.T) {
 		t.Fatalf("an empty key gave %v, want %v", err, ErrInvalidHeader)
 	} else if strings.Contains(err.Error(), "sk-live-do-not-print") {
 		t.Errorf("the error text is %q, and it carries the credential", err)
+	}
+}
+
+// prepareWith runs Prepare over a registry whose reading face hands this module
+// one configuration.
+func prepareWith(t *testing.T, cfg *Config) error {
+	t.Helper()
+	reg := core.New()
+	reg.Register(config.Module())
+	reg.Supply(fixedReader{cfg: *cfg}, config.ModuleName)
+	_, err := prepare(context.Background(), reg)
+	return err
+}
+
+// TestAnEndpointWithASchemeAPathOrWhitespaceFailsThePreparation pins the shape
+// check. A URL builds a gRPC exporter that never delivers, and a scheme or a
+// path fails the HTTP one in New with the upstream's text, so the check is what
+// turns both into a failure that names the item, says which rule the value
+// breaks, and says what to write. The value itself stays out of the text: a URL
+// can carry userinfo.
+func TestAnEndpointWithASchemeAPathOrWhitespaceFailsThePreparation(t *testing.T) {
+	for name, c := range map[string]struct{ endpoint, defect string }{
+		"a scheme":          {"http://collector.example:4318", "observability.otlp.endpoint carries a scheme"},
+		"a TLS scheme":      {"https://user:sk-live-do-not-print@collector.example", "carries a scheme"},
+		"a gRPC dns target": {"dns:///collector.example:4317", "carries a scheme"},
+		"a unix socket":     {"unix:///tmp/otel.sock", "carries a scheme"},
+		"a path":            {"collector.example:4318/v1/traces", "observability.otlp.endpoint carries a path"},
+		"nothing":           {"", "observability.otlp.endpoint is empty"},
+		"a space":           {"collector.example :4317", "observability.otlp.endpoint contains whitespace"},
+		"a trailing tab":    {"collector.example:4317\t", "contains whitespace"},
+		"a bare path-slash": {"collector.example/", "carries a path"},
+	} {
+		t.Run(name, func(t *testing.T) {
+			cfg := configured()
+			cfg.Endpoint = c.endpoint
+			err := prepareWith(t, cfg)
+			if !errors.Is(err, ErrInvalidEndpoint) {
+				t.Fatalf("the endpoint %q gave %v, want %v", c.endpoint, err, ErrInvalidEndpoint)
+			}
+			text := err.Error()
+			for _, want := range []string{c.defect, "host:port", "no scheme", "no path"} {
+				if !strings.Contains(text, want) {
+					t.Errorf("the text is %q, want it to carry %q: it names the item and the form to write", text, want)
+				}
+			}
+			if strings.Contains(text, "sk-live-do-not-print") {
+				t.Errorf("the text is %q, and it repeats the endpoint's userinfo", text)
+			}
+		})
+	}
+}
+
+// TestAHostWithAnOptionalPortPassesThePreparation pins the forms the shape check
+// lets through: a host and port, a host alone — the upstream's fallback port,
+// the ordinary way to write a collector behind a TLS load balancer — and an
+// IPv6 address in brackets with or without a port.
+func TestAHostWithAnOptionalPortPassesThePreparation(t *testing.T) {
+	for _, endpoint := range []string{
+		"collector.example:4317",
+		"collector.example",
+		"10.0.0.7:4318",
+		"[::1]:4317",
+		"[2001:db8::1]",
+	} {
+		cfg := configured()
+		cfg.Endpoint = endpoint
+		if err := prepareWith(t, cfg); err != nil {
+			t.Errorf("the endpoint %q failed the preparation: %v", endpoint, err)
+		}
+	}
+}
+
+// TestTheSpecificationsNameForHTTPIsAccepted pins http/protobuf, the name the
+// OTLP specification gives the HTTP transport, as a second spelling of http,
+// and the error text that lists it among the accepted names.
+func TestTheSpecificationsNameForHTTPIsAccepted(t *testing.T) {
+	cfg := configured()
+	cfg.Protocol = "http/protobuf"
+	if err := prepareWith(t, cfg); err != nil {
+		t.Errorf("http/protobuf failed the preparation: %v", err)
+	}
+
+	unknown := configured()
+	unknown.Protocol = "http/json"
+	err := prepareWith(t, unknown)
+	if !errors.Is(err, ErrUnknownProtocol) {
+		t.Fatalf("http/json gave %v, want %v", err, ErrUnknownProtocol)
+	}
+	if !strings.Contains(err.Error(), "http/protobuf") {
+		t.Errorf("the text is %q, want it to list http/protobuf among the accepted names", err)
+	}
+}
+
+// TestHeaderElementsAreReadWithoutTheirSurroundingWhitespace pins the reading of
+// a list written the way a person writes one. The environment's list is split
+// at the commas and nothing more, so "a=1, b=2" arrives with a space in front
+// of the second element; read as written, that space would be part of the key
+// and the collector would see a header name nobody meant.
+func TestHeaderElementsAreReadWithoutTheirSurroundingWhitespace(t *testing.T) {
+	cfg := configured()
+	cfg.Headers = []string{"authorization=Bearer token", " x-tenant=acme", "x-region = eu-west ", "\tx-empty="}
+	got, err := cfg.headerMap()
+	if err != nil {
+		t.Fatalf("headerMap: %v", err)
+	}
+	want := map[string]string{
+		"authorization": "Bearer token",
+		"x-tenant":      "acme",
+		"x-region":      "eu-west",
+		"x-empty":       "",
+	}
+	if len(got) != len(want) {
+		t.Errorf("headerMap read %q, want %q", got, want)
+	}
+	for key, value := range want {
+		if v, ok := got[key]; !ok || v != value {
+			t.Errorf("headerMap read %q, want %q: the key %q is missing or its value differs", got, want, key)
+		}
+	}
+}
+
+// TestAHeaderKeyWithWhitespaceInsideIsRefusedByPosition pins the other half of
+// the trimming: whitespace left inside a key once the ends are trimmed is not a
+// header name. The refusal is by position, like every other header failure, and
+// the text says how the list is written, because a value with a comma in it,
+// split by the environment's list syntax, is the usual way to get here. It also
+// states the rule on the key, which is the only rule such an element breaks.
+func TestAHeaderKeyWithWhitespaceInsideIsRefusedByPosition(t *testing.T) {
+	for name, element := range map[string]string{
+		"a space": "x api key=sk-live-do-not-print",
+		"a tab":   "x\tkey=sk-live-do-not-print",
+	} {
+		t.Run(name, func(t *testing.T) {
+			cfg := configured()
+			cfg.Headers = []string{"x-tenant=acme", element}
+			err := cfg.validate()
+			if !errors.Is(err, ErrInvalidHeader) {
+				t.Fatalf("a key with %s inside gave %v, want %v", name, err, ErrInvalidHeader)
+			}
+			text := err.Error()
+			if !strings.Contains(text, "element 2") {
+				t.Errorf("the text is %q, want it to name element 2", text)
+			}
+			for _, leaked := range []string{"sk-live-do-not-print", "x api key", "x\tkey", "x-tenant", "acme"} {
+				if strings.Contains(text, leaked) {
+					t.Errorf("the text is %q, and it repeats %q from the headers", text, leaked)
+				}
+			}
+			for _, want := range []string{"commas", "main configuration source"} {
+				if !strings.Contains(text, want) {
+					t.Errorf("the text is %q, want it to carry %q: it says how the list is separated and "+
+						"where a value with a comma goes", text, want)
+				}
+			}
+			// The element is literally key=value, so without the rule on the key
+			// the text names no shape the element breaks.
+			if !strings.Contains(text, "no whitespace") {
+				t.Errorf("the text is %q, want it to say a key has no whitespace in it", text)
+			}
+		})
 	}
 }
 

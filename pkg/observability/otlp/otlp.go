@@ -18,9 +18,11 @@ import (
 	"fmt"
 	"strings"
 	"time"
+	"unicode"
 
 	"github.com/vislake/speed/pkg/config"
 	"github.com/vislake/speed/pkg/core"
+	"github.com/vislake/speed/pkg/log"
 	"github.com/vislake/speed/pkg/observability"
 )
 
@@ -35,17 +37,32 @@ const (
 	ProtocolGRPC = "grpc"
 	// ProtocolHTTP sends over HTTP with protobuf payloads.
 	ProtocolHTTP = "http"
+	// ProtocolHTTPProtobuf is the name the OTLP specification gives the same
+	// transport as ProtocolHTTP. It is accepted as written and read as
+	// ProtocolHTTP.
+	ProtocolHTTPProtobuf = "http/protobuf"
 )
+
+// endpointKey is the endpoint item as the error text names it.
+const endpointKey = ModuleName + ".endpoint"
 
 // The failures this module judges for itself.
 var (
 	// ErrUnknownProtocol reports a protocol name outside the closed set. The
 	// text lists the accepted names, which is the whole of the fix.
-	ErrUnknownProtocol = errors.New("observability.otlp: protocol must be grpc or http")
+	ErrUnknownProtocol = errors.New("observability.otlp: protocol must be grpc, http or http/protobuf")
 
-	// ErrInvalidHeader reports a header element that is not key=value. Only the
-	// key is named: a header carries a credential.
-	ErrInvalidHeader = errors.New("observability.otlp: a header must be written key=value")
+	// ErrInvalidEndpoint reports an endpoint the shape check refuses: one that
+	// is empty, or carries a scheme, a path or whitespace. Other malformed
+	// values, a port that is not a number among them, pass the check.
+	ErrInvalidEndpoint = errors.New("observability.otlp: the endpoint is a host and an optional port, " +
+		"with no scheme and no path")
+
+	// ErrInvalidHeader reports a header element that is not key=value, or whose
+	// key is empty or contains whitespace. Nothing of the element is repeated:
+	// a header carries a credential.
+	ErrInvalidHeader = errors.New("observability.otlp: a header must be written key=value, " +
+		"with a key that is not empty and has no whitespace in it")
 
 	// ErrExporterUnreachable reports that the startup probe could not open a
 	// connection. It is only ever returned when the probe was asked for.
@@ -62,19 +79,24 @@ const defaultProbeTimeout = 3 * time.Second
 
 // Config is what this module accepts from configuration.
 type Config struct {
-	// Endpoint is the collector's host and port, without a scheme — the form
-	// the upstream option takes. It is required, which is what catches a
-	// deployment that forgot it; a wrong endpoint is a different problem, and
-	// reachability is what the probe below is for.
+	// Endpoint is the collector's host and optional port, without a scheme or
+	// a path — the form the upstream option takes. An IPv6 address is written
+	// in brackets. A port left out is the one the upstream falls back to: 443,
+	// or 80 for http over plaintext. It is required, which is what catches a
+	// deployment that forgot it, and validateEndpoint refuses a scheme, a path
+	// and whitespace; a wrong host is a different problem, and reachability is
+	// what the probe below is for.
 	Endpoint string `config:"endpoint"`
-	// Protocol selects the transport.
+	// Protocol selects the transport. http/protobuf is read as http.
 	Protocol string `config:"protocol"`
 	// Insecure sends over plaintext rather than TLS. It defaults to true
 	// because the collector usually sits beside the process, on a network the
-	// operator controls.
+	// operator controls. Headers sent this way to a host that is not a
+	// loopback one are reported with a warning line.
 	Insecure bool `config:"insecure"`
 	// Headers are extra headers sent with every request, each written
-	// key=value. This is where a collector's credentials go, which is why the
+	// key=value; whitespace around an element, its key and its value is
+	// dropped. This is where a collector's credentials go, which is why the
 	// item is marked sensitive: it keeps the values out of diagnostics and out
 	// of the help output's default column, and the item takes no command-line
 	// origin, so a value cannot reach the process list.
@@ -106,6 +128,15 @@ func init() { core.ProcessRegistry.Register(Module()) }
 func Module() core.Module {
 	return core.Module{
 		Name: ModuleName,
+		Requires: []core.Requirement{
+			// Optional: the logger carries one warning, about headers sent over
+			// plaintext, and nothing here needs it to export. The assembler
+			// requires it, so in an assembly that exports at all it is present
+			// and ordered ahead of this module; without it the warning is not
+			// written, rather than written through the process root logger,
+			// where it would miss the destinations configuration named.
+			{Token: (*log.Logger)(nil), Optional: true},
+		},
 		Provides: []core.Provision{
 			// Not exclusive: a destination is not a choice among mutually
 			// exclusive implementations, and a host may export to several.
@@ -117,13 +148,15 @@ func Module() core.Module {
 			Mounts:    []config.Mount{{Value: prototype()}},
 			Items: map[string]config.Item{
 				"endpoint": {
-					Required:    true,
-					Description: "the collector's host and port, without a scheme",
-					Placeholder: "collector.example:4317",
+					Required: true,
+					Description: "the collector's host and optional port, without a scheme or a path; a collector " +
+						"listens on 4317 for grpc and on 4318 for http, so the port goes with protocol",
+					Placeholder: "HOST:4317|HOST:4318",
 				},
 				"headers": {
-					Sensitive:   true,
-					Description: "extra request headers, each written key=value",
+					Sensitive: true,
+					Description: "extra request headers, each written key=value and separated by commas; " +
+						"a header whose value contains a comma is written in the main configuration source",
 				},
 			},
 		}},
@@ -163,11 +196,19 @@ func read(reg *core.Registry) (*Config, error) {
 	if err := reader.Decode(ModuleName, cfg); err != nil {
 		return nil, err
 	}
+	// The specification's name for the HTTP transport is read as this
+	// module's, so that everything past here knows two protocols.
+	if cfg.Protocol == ProtocolHTTPProtobuf {
+		cfg.Protocol = ProtocolHTTP
+	}
 	return cfg, nil
 }
 
 // validate reports the values this module cannot start with.
 func (c *Config) validate() error {
+	if err := validateEndpoint(c.Endpoint); err != nil {
+		return err
+	}
 	switch c.Protocol {
 	case ProtocolGRPC, ProtocolHTTP:
 	default:
@@ -178,6 +219,48 @@ func (c *Config) validate() error {
 	}
 	_, err := c.headerMap()
 	return err
+}
+
+// validateEndpoint refuses the shapes of an endpoint that are not a host and an
+// optional port: the empty string, a scheme, a path and whitespace.
+//
+// Over gRPC the exporters hand the value to the client as its target. A URL,
+// http:// or https://, names no resolver the client has, so the client falls
+// back to its default one, which looks the URL up as a host name; the exporter
+// builds and never delivers, and with the startup probe off, its default,
+// nothing at startup catches it. gRPC's own target forms, dns:///,
+// passthrough:/// and unix://, would deliver, and they are refused with the
+// rest: the item takes one form under both protocols. Over HTTP the URL built
+// from a scheme or a path does not parse, and the construction fails in New
+// with the upstream's own text, which names neither the item nor the form to
+// write. Checking here fails both in Prepare, with the fix. The port is not
+// required: left out, the upstream uses 443, or 80 for http over plaintext,
+// which over TLS is an ordinary way to write a collector behind a load
+// balancer.
+//
+// The check is of those shapes and no more. A port that is not a number or is
+// empty, or an IPv6 address with a port and no brackets, passes, and is left
+// to the upstream, which fails it in New or in the exports.
+//
+// The value is not repeated in the text. An endpoint is not sensitive, but one
+// written as a URL, which is the form refused here, can carry userinfo, and
+// the rule broken is enough to find the mistake.
+func validateEndpoint(endpoint string) error {
+	var defect string
+	switch {
+	case endpoint == "":
+		defect = "is empty"
+	case strings.Contains(endpoint, "://"):
+		defect = "carries a scheme"
+	case strings.Contains(endpoint, "/"):
+		defect = "carries a path"
+	case strings.IndexFunc(endpoint, unicode.IsSpace) >= 0:
+		defect = "contains whitespace"
+	default:
+		return nil
+	}
+	return fmt.Errorf("%w: %s %s; write it host:port, such as collector.example:4317, with the port "+
+		"that goes with protocol and an IPv6 address in brackets", ErrInvalidEndpoint, endpointKey, defect)
 }
 
 // headerMap parses the header list.
@@ -195,6 +278,11 @@ func (c *Config) validate() error {
 // harmless half either, which is the same reason the redaction design does not
 // treat a key as content-free. The position is enough to find the element in a
 // configuration file or an environment variable.
+//
+// Whitespace around an element, its key and its value is dropped, so that a
+// list written in an environment variable as "a=1, b=2" reads as it looks. A
+// key that still contains whitespace is not a header name, and it is reported
+// like any other element that does not parse.
 func (c *Config) headerMap() (map[string]string, error) {
 	if len(c.Headers) == 0 {
 		return nil, nil
@@ -202,11 +290,14 @@ func (c *Config) headerMap() (map[string]string, error) {
 	headers := make(map[string]string, len(c.Headers))
 	for i, item := range c.Headers {
 		key, value, ok := strings.Cut(item, "=")
-		if !ok || key == "" {
-			return nil, fmt.Errorf("%w: element %d of headers does not parse, and the element is left "+
-				"out of this text because a header carries a credential", ErrInvalidHeader, i+1)
+		key = strings.TrimSpace(key)
+		if !ok || key == "" || strings.IndexFunc(key, unicode.IsSpace) >= 0 {
+			return nil, fmt.Errorf("%w: element %d of headers does not parse. The elements are separated "+
+				"by commas, so a header whose value contains a comma has to be written in the main "+
+				"configuration source; the element is left out of this text because a header carries "+
+				"a credential", ErrInvalidHeader, i+1)
 		}
-		headers[key] = value
+		headers[key] = strings.TrimSpace(value)
 	}
 	return headers, nil
 }

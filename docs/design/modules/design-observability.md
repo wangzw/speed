@@ -14,7 +14,7 @@
 
 ### 非职责
 
-- **不提供日志这一种信号。** 结构化日志归 [log](design-log.md)。本模块只往日志上下文里绑关联字段，并为自己的一处失败写日志行；不定义日志字段的语义，不拥有日志的装配面。
+- **不提供日志这一种信号。** 结构化日志归 [log](design-log.md)。本模块只往日志上下文里绑关联字段，并为自己的失败与配置上的隐患写日志行；不定义日志字段的语义，不拥有日志的装配面。
 - **不接管启动诊断。** 它发生在本模块构造之前，固定写标准错误。
 - **不提供请求路径的 panic 兜底。** 兜底归 [http](design-http.md) 内建。本模块的采集层自带一次 `recover` 只为给跨度记错，记完原样抛出，见[采集层的跨度](#采集层的跨度)。
 - **不判定健康。** 就绪与否是装配决策，本模块不提供探活路由，也不定义健康的含义。
@@ -104,9 +104,11 @@ const ModuleName = "observability.stdout"   // pkg/observability/stdout
 
 根包只 import 上游的追踪 API、指标 API、两个 SDK 导出接口所在的包。它不 import 本仓库的任何模块：类型别名不需要 `core`，两条工具函数不收也不交任何模块产物（功能标识由写 `Provides` 的那一方构造，`(*TracerProvider)(nil)` 指向的就是别名本身）。它同样不 import `pkg/config`（不声明配置）与 `pkg/log`（只给出字段名常量，不取 logger、不写记录）。
 
-各实现子包 import `pkg/core`（`init` 中登记）、`pkg/config`（声明并读取自己的配置）、根包，以及自己所绑的后端。装配器另 import `pkg/log`（取 logger 用于导出失败的日志行）、`pkg/http`（在监听端上登记采集层）与 gin（采集层是一个 `gin.HandlerFunc`；gin 已在 `pkg/http` 的依赖闭包里，装配器不为宿主另增依赖）。
+各实现子包 import `pkg/core`（`init` 中登记）、`pkg/config`（声明并读取自己的配置）、根包，以及自己所绑的后端。`otlp` 另 import `pkg/log`（取 logger 用于明文头部的告警）。装配器另 import `pkg/log`（取 logger 用于导出失败的日志行）、`pkg/http`（在监听端上登记采集层）与 gin（采集层是一个 `gin.HandlerFunc`；gin 已在 `pkg/http` 的依赖闭包里，装配器不为宿主另增依赖）。
 
 **装配器对日志功能的依赖是必需的。** 日志模块排他交付它的功能，而排他交付的提供者不被依赖闭包展开，因此运行级纳入装配器的命令都必须在命令树上点名日志模块或为它预置实例，否则启动以缺提供者失败。代价是命令树上多一行；换来的是一条能定位的启动失败，而不是日志静默落到进程根 logger 那条只写标准输出的链上。
+
+**`otlp` 后端对日志功能的依赖是可选的。** 它只为明文头部的告警取 logger，导出不需要它。声明这条依赖，是为了日志模块在场时排在本后端之前构造；标注 `Optional`，是因为日志模块缺席是合法的配置：纳入本后端而没有日志模块的命令照常装配，不以缺提供者失败。取不到 logger 时这一行不写，不回退到进程根 logger，理由同装配器对日志功能的必需依赖：进程根 logger 那条链只写标准输出。装配器对日志功能的依赖是必需的，运行级纳入装配器的命令里日志功能因而总在场；只纳入导出后端而不纳入装配器的命令没有任何一方驱动导出器，告警缺席不改变它送出的东西。
 
 **依赖预算按包分档判定，按包级 import 清单比对。** 根包的预算是标准库、本仓库的模块，加上上游追踪 API、指标 API 与 SDK 导出接口所在的包；实现子包的预算另加自己所绑的库，装配器另含 gin 的当前闭包。判定不区分别名与普通使用——那不是依赖扫描能判的性质。分档与[打包](#打包)一节所列的目录结构一致。
 
@@ -241,16 +243,26 @@ type Config struct {
 
 ```go
 type Config struct {
-    Endpoint       string        `config:"endpoint"`        // 必填，不含凭据
-    Protocol       string        `config:"protocol"`        // grpc / http
-    Insecure       bool          `config:"insecure"`
-    Headers        []string      `config:"headers"`         // 形如 k=v
+    Endpoint       string        `config:"endpoint"`        // 必填，不含凭据；主机加可选端口，不带 scheme 与路径
+    Protocol       string        `config:"protocol"`        // grpc / http / http/protobuf，http/protobuf 读作 http
+    Insecure       bool          `config:"insecure"`        // 默认 true
+    Headers        []string      `config:"headers"`         // 每个元素形如 k=v
     ProbeAtStartup bool          `config:"probe-at-startup"`
     ProbeTimeout   time.Duration `config:"probe-timeout"`
 }
 ```
 
 `headers` 的元素承载凭据，因此它只接受主配置源与环境变量两个来源，不进命令行——命令行参数会出现在进程列表里。这一条适用于配置里承载凭据的每一项（[ADR-observability-config-2026-09-22](../../adr/adr-observability-config-2026-09-22.md)）。
+
+**`endpoint` 写成主机加可选端口**，即 `host:port`，IPv6 地址写成方括号形式（`[::1]:4317`）。gRPC 导出器把它原样交给客户端作为连接目标：写成 `http://` 或 `https://` 开头的 URL 时，客户端没有对应这个 scheme 的解析器，回退到默认解析器把整个 URL 当主机名查找，导出器构造得出，却永远投递不出；http 导出器由带 scheme 或路径的写法拼出的 URL 解析不了，构造在 `New` 里以上游自己的文本失败，那段文本既不点名输入项，也不给写法。`Prepare` 因而拒绝空串、含 `://`、含斜杠、含空白的写法，以 `ErrInvalidEndpoint` 失败，错误点名 `observability.otlp.endpoint`，说明不接受 scheme 与路径，并给出正确写法 `host:port`；错误文本不复述取值，写成 URL 的端点可能带着用户信息。代价是 gRPC 自己的连接目标写法（`dns:///`、`passthrough:///`、经 unix 套接字的 `unix://`）上游能投递，本模块一并拒绝：同一个输入项在两种协议下只认一种写法。端口不强制：省略时上游取 443，明文的 http 取 80；TLS 下省略端口即连到 443，负载均衡之后的采集端可以这样写。采集端默认在 4317 上收 gRPC、在 4318 上收 http，端口要与 `protocol` 成对。输入项的说明与占位符写明这一点，但本模块的输入项不声明命令行来源，说明与占位符因而不进任何帮助输出；错误文本只给出一个 gRPC 端口的示例 `collector.example:4317` 并要求端口与 `protocol` 成对，操作者看得到的输出里只有这个示例，完整的配对关系写在本文与输入项的说明里。
+
+形态校验只拒绝空串、含 scheme、含路径、含空白这几种写法，下列错误不在校验之内：端口与协议不成对；端口不是数字或为空、未加方括号又带端口的 IPv6 地址这类别的畸形写法，它们交给上游，在 `New` 里以上游的文本失败，或在导出时投递不出；主机写错，那是探测的事（见[端点不可达](#端点不可达)）。
+
+**`protocol` 另接受 `http/protobuf`**，即 OTLP 规范给 http 传输起的名字。解码之后它读作 `http`，此后只认 `grpc` 与 `http`。其余取值以 `ErrUnknownProtocol` 失败，文本列出全部合法取值。
+
+**`headers` 的每个元素形如 `k=v`。** 元素、键与值两端的空白都去掉：环境变量里的字符串列表以逗号分隔（见 [config](design-config.md)），切出的元素保留两端的空白，`a=1, b=2` 的第二个元素带着前导空格，原样读入就成了一个带前导空格的头部名。没有 `=`、键为空、键去掉两端空白之后仍含空白的元素，`Prepare` 以 `ErrInvalidHeader` 失败。错误按位置点名元素，不复述元素的任何部分：没有分隔符的元素无键可点，整串照抄就带出了凭据，键也不能当作一定无害的那一半。错误文本另说明元素以逗号分隔，值里含逗号的头部要写在主配置源里——逗号分隔的写法不支持转义。
+
+**头部经明文发往非回环的主机时，导出后端在 `New` 里写一行告警。** 下列条件同时成立时写：`headers` 非空，`insecure` 为真，`endpoint` 的主机不是回环地址（`localhost`、`127.0.0.0/8`、`::1`）。回环只认这几个写法：主机为空的写法（`:4317`）与未指定地址（`0.0.0.0`）不算，形似回环的主机名（`localhost.collector.example`）也不算，比对的是整个主机。这一行说明头部将经明文发送、应把 `insecure` 设为 `false`，不含任何头部的名字或取值，也不含端点。它是告警而不是失败：`insecure` 默认为真，为的是进程旁边的采集端，而操作者自己控制的网络与别的网络在本模块看来分不开。告警经日志功能写出，导出后端对它的依赖是可选的（见[依赖](#依赖)）。
 
 **上游的环境变量不是这些输入项的第二个来源。** 上游的 OTLP 导出器对没有显式给出的设置读取标准的 `OTEL_EXPORTER_OTLP_*` 变量，并且先应用变量、后应用选项。导出后端因而把配置声明的每一项、以及本文写明的线上形态逐项显式交给上游——端点与它的路径（`/v1/traces`、`/v1/metrics`）、明文与 TLS 的开关及其证书、头部、编码（protobuf）、指标的时间性与聚合——即便显式的取值就是上游的默认值。少给一项，那个变量就成了本模块前缀之外、诊断之外、敏感标记之外的又一个来源：一个头部变量能注入配置从未给出的凭据，一个 insecure 变量能在要求 TLS 的配置下把它关掉，一个证书变量能让明文配置的导出器在构造时就失败。TLS 一侧用主机的根证书，与上游什么都不给时相同。配置交给库的传输细节——压缩、单次请求的超时、重试与退避——仍归上游，连同设置它们的变量。
 
@@ -392,8 +404,8 @@ type Config struct {
 
 | 阶段 | 行为 |
 |---|---|
-| `Prepare` | 取配置读取面，解码自己的命名空间，校验协议名与头部元素的形状，表态 `StateEnabled` |
-| `New` | 按协议构造两个导出器并交出；`probe-at-startup` 为真时先做一次有界连通性探测 |
+| `Prepare` | 取配置读取面，解码自己的命名空间，校验端点的形态、协议名与头部元素的形状，表态 `StateEnabled` |
+| `New` | 头部经明文发往非回环的主机时写一行告警；按协议构造两个导出器并交出；`probe-at-startup` 为真时先做一次有界连通性探测 |
 | `Init`、`Start`、`Serve`、`Stop` | 无动作 |
 | `Close` | 无动作 |
 
@@ -413,12 +425,13 @@ type Config struct {
 | `ErrInvalidBatchParam` | `observability.otel` | 批处理的两个整型项为负 |
 | `ErrInvalidDuration` | `observability.otel` | 上表规定「拒绝零」的时长为零或负 |
 | `ErrWildcardBesideEndpointNames` | `observability.otel` | `endpoints` 里的星号与别的条目并列 |
-| `ErrUnknownProtocol` | `observability.otlp` | `protocol` 不是 `grpc` 或 `http` |
-| `ErrInvalidHeader` | `observability.otlp` | `headers` 的元素不是 `k=v` |
+| `ErrInvalidEndpoint` | `observability.otlp` | `endpoint` 为空，或含 scheme、路径、空白 |
+| `ErrUnknownProtocol` | `observability.otlp` | `protocol` 不是 `grpc`、`http` 或 `http/protobuf` |
+| `ErrInvalidHeader` | `observability.otlp` | `headers` 的元素不是 `k=v`，或键为空、键内含空白 |
 | `ErrInvalidDuration` | `observability.otlp` | `probe-timeout` 为零或负 |
 | `ErrExporterUnreachable` | `observability.otlp` | 启用了启动探测而端点不可达 |
 
-`ErrInvalidSampleRatio`、`ErrUnknownProtocol` 与 `ErrInvalidHeader` 的文本要列出合法取值或形状，取值都在闭集内，列出它即给出修复动作；`ErrWildcardBesideEndpointNames` 的文本点名键并给出正确写法。`service-name` 没有对应的哨兵：它不是必填项，缺席与空串都不是故障。
+`ErrInvalidSampleRatio`、`ErrUnknownProtocol` 与 `ErrInvalidHeader` 的文本要列出合法取值或形状，取值都在闭集内，列出它即给出修复动作；`ErrInvalidHeader` 另按位置点名元素、说明逗号分隔的写法，不复述元素的内容。`ErrWildcardBesideEndpointNames` 与 `ErrInvalidEndpoint` 的文本点名键并给出正确写法，后者不复述取值。`service-name` 没有对应的哨兵：它不是必填项，缺席与空串都不是故障。
 
 不另造哨兵的失败：配置读取面缺席（`core.ErrMissingProvider`）、入口模块取不到（`core.ErrMissingProvider`，或取用无从选择的 `core.ErrAmbiguousProvider`）、端名未在配置里声明（`http.ErrUnknownEndpoint`）、事件点名而总线功能取不到（`core.ErrMissingProvider`）、资源叠合时上游报出的模式地址冲突（`resource.ErrSchemaURLConflict`）。哨兵都是别处的，包装保留它们，`errors.Is` 照常判别。入口模块、端名与总线的包装文本点名 `observability.otel.endpoints` 或 `observability.otel.events` 并给出修复动作，读到启动失败的人不必从别的模块的哨兵文本反推该改本模块的哪一项配置。
 
@@ -428,7 +441,7 @@ type Config struct {
 
 **默认不是启动失败。** 导出器是惰性连接，构造成功即认为装配成功；端点不可达与投递失败都在运行期由上游 SDK 自行重试与缓冲，缓冲溢出即丢弃；采集端不可达对停机耗时的影响见[关停时的刷出](#关停时的刷出)。启动期不降级判的是模块在启动期能确定的失败，而惰性连接是上游库自己的契约，探测它等于发明一个库没有的语义，并会拒掉采集端后起的正常部署。
 
-**探测是一个配置开关。** `probe-at-startup` 为真时，导出后端在 `New` 中做一次有界连通性探测，不可达即返回 `ErrExporterUnreachable` 终止启动。这把「端点不可达算部署前提不具备还是运行期偶发」的判据交回配置作者。配置里 `endpoint` 是必填项，它挡住的是「忘了配」，不是「配错了」。
+**探测是一个配置开关。** `probe-at-startup` 为真时，导出后端在 `New` 中做一次有界连通性探测，不可达即返回 `ErrExporterUnreachable` 终止启动。端点省略端口时，探测拨的是导出器回退到的那个端口。这把「端点不可达算部署前提不具备还是运行期偶发」的判据交回配置作者。配置里 `endpoint` 是必填项，它挡住的是「忘了配」；形态校验挡住的是带 scheme、路径这类写法上的错，主机或端口写错不在其内。
 
 ### 不产出数据与不完整
 
@@ -454,6 +467,7 @@ type Config struct {
 - **采样。** `sample-ratio` 只决定本进程开始的追踪；带父跨度的请求由调用方的采样标志决定，而调用方不经认证即可写下它。一次请求有没有跨度因而不只取决于配置，这一档没有察觉途径。
 - **服务名。** 没有配置 `service-name`，环境变量（`OTEL_SERVICE_NAME`，以及 `OTEL_RESOURCE_ATTRIBUTES` 里的 `service.name`）也没有给出服务名时，服务名是 `unknown_service:<可执行文件名>`：这是上游表示「没有命名」的约定值，同一个可执行文件承载的不同服务在采集端同名。本模块不为这一档写启动说明；察觉途径是采集端看到的服务名带 `unknown_service:` 前缀。
 - **导出。** 零导出后端与零采样率各写一行说明；端点写错主机名在默认配置下不产生任何信号；导出失败只有转发包装写出的首次与恢复两行日志，关停时读数器最后一次导出的失败与 `Close` 里被截断的导出也不例外，而那两行经日志模块的链写出——链本身可以被配置成不输出任何记录。
+- **头部经明文发送。** 察觉途径只有导出后端在 `New` 里写的那一行告警，它在下列情形缺席：取不到 logger，即命令没有纳入日志模块、也没有为它预置实例；日志模块的链被配置成不输出告警级的记录。判定只看 `endpoint` 的主机是否为回环地址，不解析主机名：经私网发往采集端的明文头部同样告警。
 - **停机。** 刷出排在全部 `Stop` 之后，覆盖不到的是更晚的记录：在本模块之后关闭的模块在自己的 `Close` 里记下的跨度与指标，入口排空超时之后仍在运行的处理函数此后产生的跨度，以及宿主为入口模块预置的、不是它的产物的实例放进来的请求在刷出之后产生的跨度，都不被导出。刷出的上界是两个 provider 与它们各自的导出器共用的一份，一个目的地刷得慢就让其余几个的末批数据一并被取消；采集端不可达时，关停对导出的等待至多到截断点，截断点上仍未送达的跨度与指标被丢弃；导出器无视上下文时，截断够不着它：跨度一侧 `Close` 以超时错误返回，指标一侧关停等到那次导出返回，排在它后面的读数器以超时错误返回，见[关停时的刷出](#关停时的刷出)。
 - **出站传播。** `Transport` 不被任何一层自动接管，未使用它的调用点会让跨进程的链路从客户端一侧断开，不产生信号。
 - **属性不在脱敏覆盖内。** 跨度与指标属性不经日志的处理链；请求直方图的属性是闭集，事件派生的跨度写的是载荷字段的原样，把凭据挡在载荷之外由发布方负责。
@@ -493,8 +507,8 @@ type Config struct {
 | 请求路径的采集层 | 已实现 | `pkg/observability/otel/layer.go` `(*providers).layer`、`instrument`、`answeredWith` |
 | 请求时长的计量 | 已实现 | `pkg/observability/otel/layer.go` `newRequestDuration` |
 | 事件订阅 | 已实现 | `pkg/observability/otel/events.go` `spanFor`、`payloadAttributes`、`fieldAttribute`、`eventIDKey`、`tenantIDKey` |
-| 配置声明与解读 | 已实现 | `pkg/observability/otel/config.go` `Config`、`schema`、`pkg/observability/otlp/otlp.go` `Config`、`pkg/observability/stdout/stdout.go` `Config` |
-| OTLP 导出后端 | 已实现 | `pkg/observability/otlp/exporters.go` `newExporters`、`build`、`clientTLS`、`probe` |
+| 配置声明与解读 | 已实现 | `pkg/observability/otel/config.go` `Config`、`schema`、`pkg/observability/otlp/otlp.go` `Config`、`read`、`validateEndpoint`、`headerMap`、`pkg/observability/stdout/stdout.go` `Config` |
+| OTLP 导出后端 | 已实现 | `pkg/observability/otlp/exporters.go` `newExporters`、`warnPlaintextHeaders`、`loopbackHost`、`build`、`clientTLS`、`probe`、`dialAddress` |
 | 标准输出导出后端 | 已实现 | `pkg/observability/stdout/exporters.go` `newExporters` |
-| 哨兵错误 | 已实现 | `pkg/observability/otel/errors.go`、`pkg/observability/otlp/otlp.go` `ErrUnknownProtocol`、`ErrInvalidHeader`、`ErrExporterUnreachable`、`ErrInvalidDuration` |
+| 哨兵错误 | 已实现 | `pkg/observability/otel/errors.go`、`pkg/observability/otlp/otlp.go` `ErrInvalidEndpoint`、`ErrUnknownProtocol`、`ErrInvalidHeader`、`ErrExporterUnreachable`、`ErrInvalidDuration` |
 | 依赖预算的判定 | 已实现 | `pkg/observability/deps_test.go` `TestTheInterfacePackageReachesNoBackendLibrary`、`TestTheAssemblerStaysInsideItsDependencyBudget`、`TestTheAssemblerReachesNoBackendTransport` |

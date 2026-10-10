@@ -5,7 +5,7 @@ import (
 	"crypto/tls"
 	"fmt"
 	"net"
-	"time"
+	"strings"
 
 	"go.opentelemetry.io/otel/exporters/otlp/otlpmetric/otlpmetricgrpc"
 	"go.opentelemetry.io/otel/exporters/otlp/otlpmetric/otlpmetrichttp"
@@ -17,6 +17,7 @@ import (
 	"google.golang.org/grpc/credentials/insecure"
 
 	"github.com/vislake/speed/pkg/core"
+	"github.com/vislake/speed/pkg/log"
 	"github.com/vislake/speed/pkg/observability"
 )
 
@@ -40,8 +41,9 @@ func newExporters(ctx context.Context, reg *core.Registry) (any, error) {
 	if err != nil {
 		return nil, err
 	}
+	warnPlaintextHeaders(reg, cfg, headers)
 	if cfg.ProbeAtStartup {
-		if err = probe(ctx, cfg.Endpoint, cfg.ProbeTimeout); err != nil {
+		if err = probe(ctx, cfg); err != nil {
 			return nil, err
 		}
 	}
@@ -51,6 +53,48 @@ func newExporters(ctx context.Context, reg *core.Registry) (any, error) {
 		return nil, err
 	}
 	return &observability.Exporters{Span: span, Metric: metric}, nil
+}
+
+// warnPlaintextHeaders writes one line when the headers would cross a network
+// in the clear: there are headers, the exporters are insecure, and the
+// endpoint's host is not a loopback one.
+//
+// It is a warning and not a failure because insecure defaults to true for a
+// collector beside the process, and a collector reached over a network the
+// operator controls is a deployment this module cannot tell apart from one it
+// does not. The headers are where a collector's credential goes, so the line
+// names neither a header nor a value, and not the endpoint either: the line
+// says what to change, and the configuration says where.
+//
+// The logger is an optional dependency. Without one the line is not written,
+// rather than written through the process root logger.
+func warnPlaintextHeaders(reg *core.Registry, cfg *Config, headers map[string]string) {
+	if len(headers) == 0 || !cfg.Insecure || loopbackHost(cfg.Endpoint) {
+		return
+	}
+	logger, err := core.Resolve[log.Logger](reg)
+	if err != nil {
+		return
+	}
+	logger.Named(ModuleName).Warn("headers are sent to the collector over plaintext; set " +
+		ModuleName + ".insecure to false to send them over TLS")
+}
+
+// loopbackHost reports whether an endpoint's host is localhost or a loopback
+// address. The port is optional, and an IPv6 address is in brackets either way.
+// Only those names count: an empty host, as in ":4317", or an unspecified
+// address such as 0.0.0.0 is not one of them, and is warned about.
+func loopbackHost(endpoint string) bool {
+	host := endpoint
+	if h, _, err := net.SplitHostPort(endpoint); err == nil {
+		host = h
+	}
+	host = strings.TrimSuffix(strings.TrimPrefix(host, "["), "]")
+	if strings.EqualFold(host, "localhost") {
+		return true
+	}
+	ip := net.ParseIP(host)
+	return ip != nil && ip.IsLoopback()
 }
 
 // The paths a collector serves the two signals at over OTLP/HTTP.
@@ -166,12 +210,32 @@ func clientTLS() *tls.Config {
 // the deployment premise holds. Whether the collector accepts what is sent is a
 // different question, and one this module cannot answer at startup without
 // inventing a request the transport does not otherwise make.
-func probe(ctx context.Context, endpoint string, timeout time.Duration) error {
-	dialer := net.Dialer{Timeout: timeout}
-	conn, err := dialer.DialContext(ctx, "tcp", endpoint)
+//
+// The address dialed is the one the exporters connect to, so an endpoint
+// written without a port is probed at the port the upstream falls back to.
+func probe(ctx context.Context, cfg *Config) error {
+	address := dialAddress(cfg)
+	dialer := net.Dialer{Timeout: cfg.ProbeTimeout}
+	conn, err := dialer.DialContext(ctx, "tcp", address)
 	if err != nil {
-		return fmt.Errorf("%w: %s: %w", ErrExporterUnreachable, endpoint, err)
+		return fmt.Errorf("%w: %s: %w", ErrExporterUnreachable, address, err)
 	}
 	_ = conn.Close()
 	return nil
+}
+
+// dialAddress is the endpoint with the port the upstream connects to when none
+// is written: 443 over gRPC, whose resolver falls back to it whatever the
+// transport security, and over HTTP the scheme's own port, 80 over plaintext
+// and 443 over TLS. An endpoint with a port is returned as written.
+func dialAddress(cfg *Config) string {
+	if _, _, err := net.SplitHostPort(cfg.Endpoint); err == nil {
+		return cfg.Endpoint
+	}
+	port := "443"
+	if cfg.Protocol == ProtocolHTTP && cfg.Insecure {
+		port = "80"
+	}
+	host := strings.TrimSuffix(strings.TrimPrefix(cfg.Endpoint, "["), "]")
+	return net.JoinHostPort(host, port)
 }
