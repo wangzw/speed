@@ -328,6 +328,7 @@ func exportersLogging(t *testing.T, cfg Config) (logged string, names []string) 
 // and so is a name that only looks like a loopback one: the match is on the
 // whole host, not on a prefix.
 func TestHeadersOverPlaintextToANonLoopbackHostAreWarnedAbout(t *testing.T) {
+	withoutOverriddenVariables(t)
 	for _, endpoint := range []struct{ value, host string }{
 		{"collector-7a41.example:4317", "collector-7a41"},
 		{"10.0.0.7:4317", "10.0.0.7"},
@@ -371,6 +372,7 @@ func TestHeadersOverPlaintextToANonLoopbackHostAreWarnedAbout(t *testing.T) {
 // TestNoPlaintextWarningWhereNothingCrossesANetworkInTheClear pins the cases the
 // warning is not for: a loopback collector, TLS, and no headers at all.
 func TestNoPlaintextWarningWhereNothingCrossesANetworkInTheClear(t *testing.T) {
+	withoutOverriddenVariables(t)
 	headers := []string{markedHeaderKey + "=" + markedHeaderValue}
 	for name, cfg := range map[string]Config{
 		"localhost":             {Endpoint: "localhost:4317", Insecure: true, Headers: headers},
@@ -395,13 +397,16 @@ func TestNoPlaintextWarningWhereNothingCrossesANetworkInTheClear(t *testing.T) {
 // TestTheLoggerIsAnOptionalDependency pins how this module takes a logger. The
 // requirement is declared, because the edge is what orders a constructed
 // logging module ahead of this one; it is optional, so a command that runs this
-// module without the logging module still assembles and the warning is not
+// module without the logging module still assembles and neither warning is
 // written, the process root logger included; and a logger in the participating
-// set is the one the warning goes through.
+// set is the one the warnings go through. The configuration and the
+// environment are ones both warnings are written for.
 //
 // The case replaces the process default logger, so it does not run in
 // parallel.
 func TestTheLoggerIsAnOptionalDependency(t *testing.T) {
+	withoutOverriddenVariables(t)
+	t.Setenv("OTEL_EXPORTER_OTLP_HEADERS", markedHeaderKey+"="+markedHeaderValue)
 	declared := false
 	for _, req := range Module().Requires {
 		if _, ok := req.Token.(*log.Logger); ok {
@@ -467,8 +472,11 @@ func TestTheLoggerIsAnOptionalDependency(t *testing.T) {
 	}); err != nil {
 		t.Fatalf("a command with the logging module failed: %v", err)
 	}
-	if !strings.Contains(logged.String(), "plaintext") {
-		t.Errorf("the module logged %q, want the warning through the logger in the participating set", logged)
+	for _, phrase := range []string{"plaintext", ignoredLineText} {
+		if !strings.Contains(logged.String(), phrase) {
+			t.Errorf("the module logged %q, want a warning saying %q through the logger in the participating set",
+				logged, phrase)
+		}
 	}
 }
 

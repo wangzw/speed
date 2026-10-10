@@ -5,6 +5,7 @@ import (
 	"crypto/tls"
 	"fmt"
 	"net"
+	"os"
 	"strings"
 
 	"go.opentelemetry.io/otel/exporters/otlp/otlpmetric/otlpmetricgrpc"
@@ -43,6 +44,7 @@ func newExporters(ctx context.Context, reg *core.Registry) (any, error) {
 		return nil, err
 	}
 	warnPlaintextHeaders(reg, cfg, headers)
+	warnIgnoredVariables(reg, os.LookupEnv)
 	if cfg.ProbeAtStartup {
 		if err = probe(ctx, cfg); err != nil {
 			return nil, err
@@ -116,7 +118,9 @@ const (
 // metric temporality and aggregation would each have a second source outside
 // this module's prefix, its diagnostics and its sensitive marking — a header
 // variable injecting a credential the configuration never gave, an insecure
-// variable turning TLS off under a configuration that asked for it.
+// variable turning TLS off under a configuration that asked for it. Each
+// variable these options keep out is on overriddenVariables, and one that is
+// set is named by warnIgnoredVariables.
 //
 // What the configuration leaves to the library stays the library's, variables
 // included: compression, the per-request timeout, retry and backoff.

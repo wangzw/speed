@@ -6,7 +6,9 @@
 // retry, backoff, compression, the per-request timeout — are the library's
 // rather than this module's, and so are the standard OTEL_EXPORTER_OTLP_*
 // variables that set them. What the configuration declares is given to the
-// upstream explicitly, so none of those variables reaches it.
+// upstream explicitly, so the standard variables for those settings have no
+// effect, and one of them that is set gets a line at assembly naming it and
+// the item to set instead.
 //
 // It delivers both exporter capabilities, non-exclusively, so that a host can
 // export to a collector and somewhere else at the same time.
@@ -46,10 +48,12 @@ const (
 	ProtocolHTTPProtobuf = "http/protobuf"
 )
 
-// The items as the error text names them.
+// The items as the error text and the warnings name them.
 const (
 	endpointKey       = ModuleName + ".endpoint"
+	protocolKey       = ModuleName + ".protocol"
 	insecureKey       = ModuleName + ".insecure"
+	headersKey        = ModuleName + ".headers"
 	caFileKey         = ModuleName + ".ca-file"
 	clientCertFileKey = ModuleName + ".client-cert-file"
 	clientKeyFileKey  = ModuleName + ".client-key-file"
@@ -166,10 +170,11 @@ func Module() core.Module {
 	return core.Module{
 		Name: ModuleName,
 		Requires: []core.Requirement{
-			// Optional: the logger carries one warning, about headers sent over
-			// plaintext, and nothing here needs it to export. The assembler
+			// Optional: the logger carries two warnings, about headers sent over
+			// plaintext and about standard variables that are set and have no
+			// effect, and nothing here needs it to export. The assembler
 			// requires it, so in an assembly that exports at all it is present
-			// and ordered ahead of this module; without it the warning is not
+			// and ordered ahead of this module; without it neither warning is
 			// written, rather than written through the process root logger,
 			// where it would miss the destinations configuration named.
 			{Token: (*log.Logger)(nil), Optional: true},

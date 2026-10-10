@@ -225,6 +225,42 @@ must not cross, and how to run it.
   `TestNoUpstreamVariableOverridesTheConfiguration`,
   `TestNoUpstreamVariableTurnsTLSOff` and
   `TestNoUpstreamCertificateVariableStandsInForTheConfiguration` hold it.
+- **A standard variable set for a setting this capability gives explicitly
+  gets one warning line per module, in `New`.** `otel` and `otlp` each keep
+  the variables they override in `overriddenVariables` (`variables.go`), with
+  the item to set instead; `warnIgnoredVariables` names the ones set, by name
+  only — a header variable carries a credential — and writes nothing when none
+  is. A value that is blank once trimmed is not set, as the upstream exporters
+  read it; what the SDK makes of a blank value differs by variable. The
+  variables that still apply are not on the lists: `OTEL_SERVICE_NAME` where
+  `service-name` is not configured, `OTEL_RESOURCE_ATTRIBUTES` beneath the
+  attributes this module gives, the span limits, the exemplar filter, the
+  cardinality limit, and the exporters' timeout and compression. An attribute
+  `OTEL_SERVICE_NAME` or `OTEL_RESOURCE_ATTRIBUTES` gives that this module
+  also gives — `service.instance.id`, and the service name under a configured
+  `service-name` — is replaced, and that is not warned about.
+  `TestNoUpstreamVariableOverridesTheProviderConfiguration` and
+  `TestNoUpstreamVariableOverridesTheMetricTimeout` hold that the `otel` list
+  has no effect; for `otlp`, `TestNoUpstreamVariableOverridesTheConfiguration`,
+  `TestNoUpstreamVariableTurnsTLSOff` and the certificate cases in `tls_test.go`
+  hold it for a sample of the list, and build giving each setting explicitly
+  holds it for the rest. `TestNoUpstreamVariableIsLeftOffTheOverriddenList` in each
+  package reads the upstream files its `upstreamSources` names — the ones the
+  list rests on, and for `otel` also those of the variables left to the
+  upstream — from the module directory `go list -m` reports, and fails when a
+  variable named there is neither on the list nor left to the upstream, or a
+  listed one is no longer read: an upgrade is where the list goes stale. A
+  variable an upgrade starts reading in a file outside `upstreamSources` is
+  outside its reach.
+- **The environment is a source only under the host's prefix.** Every
+  variable name is derived from `config.HostIdentity.Prefix` and the item's
+  path (the derivation section of `docs/design/modules/design-config.md` for
+  the spelling, its locator section for what an absent prefix leaves), so a
+  host that declares no prefix gives these items no environment name at all:
+  they come from the primary source alone, an unprefixed
+  `OBSERVABILITY__OTEL__SERVICE_NAME` is read by nothing and reported by
+  nothing, and the upstream's variables for these settings are kept out
+  besides.
 - **No input item takes its value from the command line.** The endpoint locator
   and the headers would then be readable from the process list. Items that carry
   a credential are additionally marked sensitive, and an error about one never
@@ -258,14 +294,17 @@ must not cross, and how to run it.
   configured file is missing or does not parse. The certificate items are
   paths and are not marked sensitive; an error names the item and never
   repeats what a file holds.
-- **`otlp` takes the logger as an optional dependency, for one warning.** Headers
-  sent over plaintext to a host that is not a loopback one get a line in `New`
-  that names no header, no value and no endpoint (`warnPlaintextHeaders`). The
+- **`otlp` takes the logger as an optional dependency, for two warnings.**
+  Headers sent over plaintext to a host that is not a loopback one get a line
+  in `New` that names no header, no value and no endpoint
+  (`warnPlaintextHeaders`), and the standard variables it overrides get one,
+  when any is set, that names them and none of their values
+  (`warnIgnoredVariables`). The
   requirement is declared so that a constructed logging module is ordered
   ahead, and optional because its absence is a legal configuration: a command
   that takes this backend in without the logging module still assembles rather
-  than failing for a missing provider. Without a logger the line is not written,
-  never written through the process root logger. The assembler requires the
+  than failing for a missing provider. Without a logger neither line is
+  written, never through the process root logger. The assembler requires the
   logger, so wherever exporters are driven it is present.
 - **A new export backend is a subpackage that delivers both exporter
   capabilities, non-exclusively.** The assembler collects exporters through the

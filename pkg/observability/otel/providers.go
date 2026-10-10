@@ -6,6 +6,7 @@ import (
 	"errors"
 	"fmt"
 	"log/slog"
+	"os"
 	"time"
 
 	"go.opentelemetry.io/otel/attribute"
@@ -224,6 +225,9 @@ func newProviders(ctx context.Context, reg *core.Registry) (any, error) {
 	if cfg.SampleRatio == 0 {
 		lg.Warn("sample-ratio is 0: no trace is started here, and a request whose caller sampled its trace is still recorded")
 	}
+	// A standard variable set for a setting given above is not an error
+	// either: the configured value is in force, and the line says so.
+	warnIgnoredVariables(lg, os.LookupEnv)
 
 	mp := sdkmetric.NewMeterProvider(metricOpts...)
 	duration, err := newRequestDuration(mp)

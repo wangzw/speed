@@ -104,11 +104,11 @@ const ModuleName = "observability.stdout"   // pkg/observability/stdout
 
 根包只 import 上游的追踪 API、指标 API、两个 SDK 导出接口所在的包。它不 import 本仓库的任何模块：类型别名不需要 `core`，两条工具函数不收也不交任何模块产物（功能标识由写 `Provides` 的那一方构造，`(*TracerProvider)(nil)` 指向的就是别名本身）。它同样不 import `pkg/config`（不声明配置）与 `pkg/log`（只给出字段名常量，不取 logger、不写记录）。
 
-各实现子包 import `pkg/core`（`init` 中登记）、`pkg/config`（声明并读取自己的配置）、根包，以及自己所绑的后端。`otlp` 另 import `pkg/log`（取 logger 用于明文头部的告警）。装配器另 import `pkg/log`（取 logger 用于导出失败的日志行）、`pkg/http`（在监听端上登记采集层）与 gin（采集层是一个 `gin.HandlerFunc`；gin 已在 `pkg/http` 的依赖闭包里，装配器不为宿主另增依赖）。
+各实现子包 import `pkg/core`（`init` 中登记）、`pkg/config`（声明并读取自己的配置）、根包，以及自己所绑的后端。`otlp` 另 import `pkg/log`（取 logger 用于明文头部的告警与被忽略的标准变量的告警）。装配器另 import `pkg/log`（取 logger 用于导出失败的日志行）、`pkg/http`（在监听端上登记采集层）与 gin（采集层是一个 `gin.HandlerFunc`；gin 已在 `pkg/http` 的依赖闭包里，装配器不为宿主另增依赖）。
 
 **装配器对日志功能的依赖是必需的。** 日志模块排他交付它的功能，而排他交付的提供者不被依赖闭包展开，因此运行级纳入装配器的命令都必须在命令树上点名日志模块或为它预置实例，否则启动以缺提供者失败。代价是命令树上多一行；换来的是一条能定位的启动失败，而不是日志静默落到进程根 logger 那条只写标准输出的链上。
 
-**`otlp` 后端对日志功能的依赖是可选的。** 它只为明文头部的告警取 logger，导出不需要它。声明这条依赖，是为了日志模块在场时排在本后端之前构造；标注 `Optional`，是因为日志模块缺席是合法的配置：纳入本后端而没有日志模块的命令照常装配，不以缺提供者失败。取不到 logger 时这一行不写，不回退到进程根 logger，理由同装配器对日志功能的必需依赖：进程根 logger 那条链只写标准输出。装配器对日志功能的依赖是必需的，运行级纳入装配器的命令里日志功能因而总在场；只纳入导出后端而不纳入装配器的命令没有任何一方驱动导出器，告警缺席不改变它送出的东西。
+**`otlp` 后端对日志功能的依赖是可选的。** 它只为明文头部的告警与被忽略的标准变量的告警取 logger，导出不需要它。声明这条依赖，是为了日志模块在场时排在本后端之前构造；标注 `Optional`，是因为日志模块缺席是合法的配置：纳入本后端而没有日志模块的命令照常装配，不以缺提供者失败。取不到 logger 时这些告警都不写，不回退到进程根 logger，理由同装配器对日志功能的必需依赖：进程根 logger 那条链只写标准输出。装配器对日志功能的依赖是必需的，运行级纳入装配器的命令里日志功能因而总在场；只纳入导出后端而不纳入装配器的命令没有任何一方驱动导出器，告警缺席不改变它送出的东西。
 
 **依赖预算按包分档判定，按包级 import 清单比对。** 根包的预算是标准库、本仓库的模块，加上上游追踪 API、指标 API 与 SDK 导出接口所在的包；实现子包的预算另加自己所绑的库，装配器另含 gin 的当前闭包。判定不区分别名与普通使用——那不是依赖扫描能判的性质。分档与[打包](#打包)一节所列的目录结构一致。
 
@@ -271,9 +271,13 @@ type Config struct {
 
 **上游的环境变量不是这些输入项的第二个来源。** 上游的 OTLP 导出器对没有显式给出的设置读取标准的 `OTEL_EXPORTER_OTLP_*` 变量，并且先应用变量、后应用选项。导出后端因而把配置声明的每一项、以及本文写明的线上形态逐项显式交给上游——端点与它的路径（`/v1/traces`、`/v1/metrics`）、明文与 TLS 的开关及其证书、头部、编码（protobuf）、指标的时间性与聚合——即便显式的取值就是上游的默认值。少给一项，那个变量就成了本模块前缀之外、诊断之外、敏感标记之外的又一个来源：一个头部变量能注入配置从未给出的凭据，一个 insecure 变量能在要求 TLS 的配置下把它关掉，一个证书变量能让明文配置的导出器在构造时就失败。TLS 一侧的根证书与客户端证书只来自 `ca-file`、`client-cert-file` 与 `client-key-file`：证书项都没给时用主机的根证书、不出示客户端证书，与上游什么都不给时相同；上游的证书变量（`OTEL_EXPORTER_OTLP_CERTIFICATE`、`OTEL_EXPORTER_OTLP_CLIENT_CERTIFICATE`、`OTEL_EXPORTER_OTLP_CLIENT_KEY` 及其按信号区分的变体）既不替换配置给出的证书，也不补上配置没给的那一项。配置交给库的传输细节——压缩、单次请求的超时、重试与退避——仍归上游，连同设置它们的变量。
 
+**设置了不起作用的变量，OTLP 导出后端在 `New` 里写一行告警。** 这些变量是上游导出器对上面逐项给出的设置读取的那些：端点、头部、协议、insecure、根证书、客户端证书与私钥，各连同按信号区分的 `TRACES` 与 `METRICS` 变体（指标导出器不读协议变量；协议变量在 HTTP 一侧由编码选项盖过，在 gRPC 一侧上游读入后不使用），以及指标的时间性偏好与直方图聚合；清单在 `pkg/observability/otlp/variables.go` 的 `overriddenVariables`，依据是上游 `otlptracegrpc`、`otlptracehttp` 的 `internal/otlpconfig/envconfig.go` 与 `otlpmetricgrpc`、`otlpmetrichttp` 的 `internal/oconf/envconfig.go`，`pkg/observability/otlp/upstream_variables_test.go` 的 `TestNoUpstreamVariableIsLeftOffTheOverriddenList` 把两者对齐。这一行点名每个已设置的变量与该改用的输入项，时间性与聚合两个变量没有对应的输入项，写明由本模块定死；只写变量名，不复述取值——头部变量承载凭据。取值去掉两端空白之后为空的变量按没有设置处理，与上游导出器的读法相同；一个都没设置时不写。超时与压缩的变量仍然起作用，不在其中。它与明文头部的告警一样经可选的日志依赖写出（见[依赖](#依赖)）。
+
 `observability.stdout` 的配置只有一个布尔项 `pretty`，默认 `false`。它写的是进程的 `os.Stdout`，与日志模块标准输出的写入者是同一个文件对象；一个跨度、一批指标各是一次写入，而标准库对同一个文件对象的每次写入整体加锁，管道上分段写出的一条也不会被另一条插进来，两者因而不在字节层面交错。这是标准库的实现性质，不是它文档里的承诺；fd 1 上另开文件对象的写入方不受它保护。
 
 各命名空间的输入项一律**只接受主配置源与环境变量**，不声明命令行来源。取值描述的是部署形态（身份、目的地、凭据），环境变量正是部署工具使用的层；而命令行名在配置库里是全局平铺的命名空间，声明它就要为每一项起一个带前缀的长名，换不来这一侧用得上的东西。
+
+**环境变量这一来源要求宿主声明前缀。** 各输入项的环境变量名由宿主身份的前缀与输入项的路径派生（`observability.otlp.endpoint` 在前缀 `MYAPP` 下是 `MYAPP_OBSERVABILITY__OTLP__ENDPOINT`），派生规则与前缀缺席时的处理见 [config](design-config.md) 的名字的派生与映射一节与配置定位符一节。宿主没有声明 `HostIdentity.Prefix` 时，这些输入项没有环境变量名，只能来自主配置源：不带前缀的 `OBSERVABILITY__OTEL__SERVICE_NAME` 这类变量不被读取，未认领变量的诊断只扫前缀之下，也不列出它们；上游的标准变量又对本模块给出的设置不起作用，这样的宿主里这些输入项在环境变量一侧没有入口；`OTEL_SERVICE_NAME`、`OTEL_RESOURCE_ATTRIBUTES` 与导出器的超时、压缩变量不在此列，它们照常起作用。
 
 ## 核心算法与流程
 
@@ -282,7 +286,7 @@ type Config struct {
 | 阶段 | 行为 |
 |---|---|
 | `Prepare` | 取配置读取面（取不到即以包裹 `core.ErrMissingProvider` 的错误返回），解码自己的命名空间，校验取值，表态 `StateEnabled` |
-| `New` | 取 logger；经注册表收全部导出器；按[构造次序](#provider-的构造次序)建两个 provider；返回同时实现两个 provider 接口的产物 |
+| `New` | 取 logger；经注册表收全部导出器；没有导出后端、采样率为零、设置了不起作用的标准变量时各写一行告警；按[构造次序](#provider-的构造次序)建两个 provider；返回同时实现两个 provider 接口的产物 |
 | `Migrate`、`Start`、`Serve`、`Stop` | 无动作 |
 | `Init` | `endpoints` 为星号时取路由登记面，对它列出的每个端登记采集层，本次运行没有入口模块时什么也不登记；写了具体端名时取路由登记面并逐名登记，取不到或端名未声明即启动失败；为空时不取。`events` 非空时取总线的功能并逐类型订阅。两份清单里的重名各只生效一次，见下 |
 | `Close` | 以 `shutdown-timeout` 为上界依次关停两个 provider，其间的导出在截断点截断，再以自己的上界释放导出器，失败聚合后返回 |
@@ -310,7 +314,7 @@ type Config struct {
 
 包装必须先于 provider 构造：provider 在构造时持有导出器，构造之后再包一层，那一层不在导出路径上，转发包装的日志行永远不会写。第 2 步与第 3 步之间没有次序要求。
 
-**provider 的构造选项同样逐项显式给出。** 采样器、批处理的四个参数、导出周期与它的超时都由配置给定，上游对应的标准变量（`OTEL_TRACES_SAMPLER`、`OTEL_BSP_*`、`OTEL_METRIC_EXPORT_*`）因此不起作用；本模块不配置的那些——跨度的属性与事件上限、指标的样例筛选与基数上限——留给上游 SDK，连同它们的标准变量。
+**provider 的构造选项同样逐项显式给出。** 采样器、批处理的四个参数、导出周期与它的超时都由配置给定，上游对应的标准变量（`OTEL_TRACES_SAMPLER` 与 `OTEL_TRACES_SAMPLER_ARG`、`OTEL_BSP_*`、`OTEL_METRIC_EXPORT_*`）因此不起作用；本模块不配置的那些——跨度的属性与事件上限、指标的样例筛选与基数上限——留给上游 SDK，连同它们的标准变量。设置了不起作用的变量，装配器在 `New` 里写一行告警，点名每个已设置的变量与该改用的输入项，不复述取值；判定已设置的规则与导出后端的同一行告警相同（见[核心数据结构](#核心数据结构)里导出后端告警一段），上游 SDK 对空白取值的读法因变量而异，不改变配置给出的取值生效。清单在 `pkg/observability/otel/variables.go` 的 `overriddenVariables`，依据是上游 `go.opentelemetry.io/otel/sdk` 的 `trace/sampler_env.go`、`trace/internal/env/env.go` 与 `go.opentelemetry.io/otel/sdk/metric` 的 `env.go`；`pkg/observability/otel/upstream_variables_test.go` 的 `TestNoUpstreamVariableIsLeftOffTheOverriddenList` 读取这些文件，另读 `sdk` 的 `resource/env.go` 与 `sdk/metric` 的 `config.go` 以对照其中仍然起作用的变量，把清单与上游对齐，`TestNoUpstreamVariableOverridesTheProviderConfiguration` 与 `TestNoUpstreamVariableOverridesTheMetricTimeout` 钉住这些变量确实不起作用。`OTEL_SERVICE_NAME` 与 `OTEL_RESOURCE_ATTRIBUTES` 不在其中：它们在没有配置 `service-name` 时决定服务名，并给出本模块属性之外的资源属性（见下表）；与本模块给出的属性同名的那些——`service.instance.id`，以及配置了 `service-name` 时的服务名——被覆盖，这一种不告警。
 
 **两个 provider 共用一份资源，由下表的各层自下而上叠成，后一层覆盖前一层。**
 
@@ -410,7 +414,7 @@ type Config struct {
 | 阶段 | 行为 |
 |---|---|
 | `Prepare` | 取配置读取面，解码自己的命名空间，校验端点的形态、协议名、头部元素的形状与证书项的文件，表态 `StateEnabled` |
-| `New` | 头部经明文发往非回环的主机时写一行告警；按协议构造两个导出器并交出；`probe-at-startup` 为真时先做一次有界连通性探测 |
+| `New` | 头部经明文发往非回环的主机时写一行告警；设置了不起作用的标准变量时写一行告警；按协议构造两个导出器并交出；`probe-at-startup` 为真时先做一次有界连通性探测 |
 | `Init`、`Start`、`Serve`、`Stop` | 无动作 |
 | `Close` | 无动作 |
 
@@ -476,6 +480,7 @@ type Config struct {
 - **服务名。** 没有配置 `service-name`，环境变量（`OTEL_SERVICE_NAME`，以及 `OTEL_RESOURCE_ATTRIBUTES` 里的 `service.name`）也没有给出服务名时，服务名是 `unknown_service:<可执行文件名>`：这是上游表示「没有命名」的约定值，同一个可执行文件承载的不同服务在采集端同名。本模块不为这一档写启动说明；察觉途径是采集端看到的服务名带 `unknown_service:` 前缀。
 - **导出。** 零导出后端与零采样率各写一行说明；端点写错主机名在默认配置下不产生任何信号；导出失败只有转发包装写出的首次与恢复两行日志，关停时读数器最后一次导出的失败与 `Close` 里被截断的导出也不例外，而那两行经日志模块的链写出——链本身可以被配置成不输出任何记录。
 - **头部经明文发送。** 察觉途径只有导出后端在 `New` 里写的那一行告警，它在下列情形缺席：取不到 logger，即命令没有纳入日志模块、也没有为它预置实例；日志模块的链被配置成不输出告警级的记录。判定只看 `endpoint` 的主机是否为回环地址，不解析主机名：经私网发往采集端的明文头部同样告警。
+- **被忽略的标准变量。** 察觉途径只有装配器与 OTLP 导出后端各自在 `New` 里写的那一行告警，它在下列情形缺席：OTLP 导出后端取不到 logger；日志模块的链被配置成不输出告警级的记录；上游升级后新读的变量还不在清单里——在钉住测试读取的上游文件（两个包各自的 `upstreamSources`）里新读的，由 `pkg/observability/otel/upstream_variables_test.go` 与 `pkg/observability/otlp/upstream_variables_test.go` 各自的 `TestNoUpstreamVariableIsLeftOffTheOverriddenList` 在升级时判出，不在运行期判，在这些文件之外新读的判不出；`OTEL_SERVICE_NAME` 与 `OTEL_RESOURCE_ATTRIBUTES` 给出的属性被本模块给出的同名属性覆盖。仍然起作用的上游变量不告警，它们对本模块留给上游的设置有效（见[provider 的构造次序](#provider-的构造次序)与[核心数据结构](#核心数据结构)）。宿主没有声明前缀时，不带前缀的写法（`OBSERVABILITY__OTEL__SERVICE_NAME` 这类）既不被读取，也没有任何一行提示（见[核心数据结构](#核心数据结构)里环境变量来源一段）。
 - **停机。** 刷出排在全部 `Stop` 之后，覆盖不到的是更晚的记录：在本模块之后关闭的模块在自己的 `Close` 里记下的跨度与指标，入口排空超时之后仍在运行的处理函数此后产生的跨度，以及宿主为入口模块预置的、不是它的产物的实例放进来的请求在刷出之后产生的跨度，都不被导出。刷出的上界是两个 provider 与它们各自的导出器共用的一份，一个目的地刷得慢就让其余几个的末批数据一并被取消；采集端不可达时，关停对导出的等待至多到截断点，截断点上仍未送达的跨度与指标被丢弃；导出器无视上下文时，截断够不着它：跨度一侧 `Close` 以超时错误返回，指标一侧关停等到那次导出返回，排在它后面的读数器以超时错误返回，见[关停时的刷出](#关停时的刷出)。
 - **出站传播。** `Transport` 不被任何一层自动接管，未使用它的调用点会让跨进程的链路从客户端一侧断开，不产生信号。
 - **属性不在脱敏覆盖内。** 跨度与指标属性不经日志的处理链；请求直方图的属性是闭集，事件派生的跨度写的是载荷字段的原样，把凭据挡在载荷之外由发布方负责。
@@ -511,6 +516,7 @@ type Config struct {
 | 传播器与出站注入工具 | 已实现 | `pkg/observability/observability.go` `Propagator`、`pkg/observability/transport.go` `Transport` |
 | 装配器的描述符与各阶段行为 | 已实现 | `pkg/observability/otel/module.go` `Module`、`prepare`、`wire`、`wireEndpoints`、`routerFailure`、`busFailure`、`shutdown` |
 | provider 的构造、资源与导出器的释放 | 已实现 | `pkg/observability/otel/providers.go` `newProviders`、`newResource`、`layered`、`newInstanceID`、`queueSize`、`releaseExporters`、`releaseTimeout`、`exportCutoff`、`cutoffMarginDivisor` |
+| 被忽略的标准变量的告警 | 已实现 | `pkg/observability/otel/variables.go` `overriddenVariables`、`ignoredVariables`、`warnIgnoredVariables`、`pkg/observability/otlp/variables.go` `overriddenVariables`、`ignoredVariables`、`warnIgnoredVariables` |
 | 转发包装、导出失败的上报、停机时的截断与关闭的截留 | 已实现 | `pkg/observability/otel/wrapper.go` `spanExporter`、`metricExporter`、`cutoff`、`notifier` |
 | 请求路径的采集层 | 已实现 | `pkg/observability/otel/layer.go` `(*providers).layer`、`instrument`、`answeredWith` |
 | 请求时长的计量 | 已实现 | `pkg/observability/otel/layer.go` `newRequestDuration` |
@@ -520,3 +526,5 @@ type Config struct {
 | 标准输出导出后端 | 已实现 | `pkg/observability/stdout/exporters.go` `newExporters` |
 | 哨兵错误 | 已实现 | `pkg/observability/otel/errors.go`、`pkg/observability/otlp/otlp.go` `ErrInvalidEndpoint`、`ErrUnknownProtocol`、`ErrInvalidHeader`、`ErrUnreadableCertificate`、`ErrUnpairedClientCertificate`、`ErrCertificateOverPlaintext`、`ErrExporterUnreachable`、`ErrInvalidDuration` |
 | 依赖预算的判定 | 已实现 | `pkg/observability/deps_test.go` `TestTheInterfacePackageReachesNoBackendLibrary`、`TestTheAssemblerStaysInsideItsDependencyBudget`、`TestTheAssemblerReachesNoBackendTransport` |
+| 被忽略变量的清单与上游源码的对齐 | 已实现 | `pkg/observability/otel/upstream_variables_test.go` `TestNoUpstreamVariableIsLeftOffTheOverriddenList`、`pkg/observability/otlp/upstream_variables_test.go` `TestNoUpstreamVariableIsLeftOffTheOverriddenList` |
+| 被覆盖的 SDK 变量不起作用的判定 | 已实现 | `pkg/observability/otel/variables_test.go` `TestNoUpstreamVariableOverridesTheProviderConfiguration`、`TestNoUpstreamVariableOverridesTheMetricTimeout` |
