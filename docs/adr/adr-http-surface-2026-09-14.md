@@ -42,7 +42,7 @@
 
 登记面用 echo 的 `HandlerFunc` 与 `MiddlewareFunc` 表达，绑定、校验与集中的错误处理接缝由 echo 提供。
 
-**否决**：判据取使用者与维护者的熟悉程度（同 [ADR-config-parsing-2026-09-20](adr-config-parsing-2026-09-20.md)），gin 是 Go 生态中使用面最广的 HTTP 框架。echo v5 带有集中的错误处理接缝，v5.4.0 起另有 RFC 9457 的响应形状，gin 两者都没有，选 gin 即由入口模块自备这一块（[ADR-http-errors-2026-10-10](adr-http-errors-2026-10-10.md)）；这笔代价已计入，没有因此改变判据。
+**否决**：判据取使用者与维护者的熟悉程度（同 [ADR-config-parsing-2026-09-20](adr-config-parsing-2026-09-20.md)），熟悉程度以 pkg.go.dev 上引用该模块的包数衡量：gin 约 19 万，echo v4 约 3.2 万、fiber v2 约 3.1 万、chi v5 约 1.7 万，echo v5 约 1600，gin 在候选的 HTTP 框架中居首。echo v5 带有集中的错误处理接缝，v5.4.0 起另有 RFC 9457 的响应形状（`ProblemDetailsHTTPErrorHandler`），gin 两者都没有，选 gin 即由入口模块自备这一块（[ADR-http-errors-2026-10-10](adr-http-errors-2026-10-10.md)）；这笔代价已计入，没有因此改变判据。
 
 ### 锚定 fasthttp 系的框架
 

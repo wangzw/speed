@@ -132,7 +132,7 @@ var ErrNotAccepting = errors.New("audit: the module is not accepting records")
 
 请求级通路登记的那一层以 `(*Audit)(nil)` 作为自己的 `Provides`，与描述符里那条交付声明取同一个标识。**这是别的层把自己排在审计之内或之外的唯一锚点**，因而是本模块对外的稳定契约面。锚定它的写法与代价见 [ADR-audit-anchor-2026-09-21](../../adr/adr-audit-anchor-2026-09-21.md)。
 
-该层用 `After` 指向 `(*authn.Gate)(nil)` 与 `(*tenant.Resolution)(nil)`：它要取主体与租户。**这两条 `After` 只在被指的那一层在场时才有边**——入口模块在指着的那一层缺席时丢弃该边并把它列进启动诊断，不构成失败（见 [http](design-http.md)）。因而它们不是位置保证：认证或租户不在场时，本层落在哪里由 `Order` 决定，写出的审计行主体与租户为空。
+该层用 `After` 指向 `(*authn.Gate)(nil)` 与 `(*tenant.Resolution)(nil)`：它要取主体与租户。**这两条 `After` 只在被指的那一层在场时才有边**——入口模块在指着的那一层缺席时丢弃该边并把它列进启动诊断，不构成失败（见 [http](design-http.md)）。因而它们不是位置保证：认证或租户不在场时，本层落在哪里由 `Order` 决定，写出的审计行主体与租户为空。本层的 `Order` 取正值：没有 `After` 或 `Before` 排定位置、也不声明 `Order`（零值）的层，落在本层之外。
 
 ### 配置
 

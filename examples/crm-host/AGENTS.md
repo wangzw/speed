@@ -170,8 +170,11 @@ claim there has its case in `e2e_test.go` or a slice's own test file, or in
   two-backend shape, not something the host corrects.
 - **A layer that must see the journal or the rate limiter anchors on them.**
   The membership layer declares `After` on the gateway, resolution, the journal
-  and the limiter. Anchoring on the first two alone lands it outside the other
-  two, and its refusals would be neither recorded nor counted.
+  and the limiter. Anchoring on the gateway and resolution alone leaves it
+  unordered against the journal and the limiter: its own zero `Order` is
+  smaller than the journal's, so it lands outside the journal, and outside the
+  limiter, which sits inside the journal. Its refusals would be neither
+  recorded nor counted.
 - **The journal covers the account and admin endpoints, which resolve no
   tenant.** Its layer anchors after resolution on every endpoint it is
   registered on, so each serving start lists that anchor on those two

@@ -254,10 +254,12 @@ classDiagram
         +Use(handlers HandlerFunc)
     }
     class listener {
-        -addr string
+        -name string
         -server Server
-        -handler Handler
+        -socket Listener
+        -draining chan
         -drained chan
+        -handlers inFlight
     }
     Router "1" --> "*" Endpoint : 按端名取得
     Endpoint "1" --> "*" Middleware : 登记
@@ -268,7 +270,7 @@ classDiagram
     ErrorResponder ..> Problem : 接收
 ```
 
-`Spec` 与 `Endpoint` 之间是虚线：`Spec` 只按端名指向一个监听端，不参与该端的组装。`listener` 未导出，`Serve` 阶段由它持有服务器、组装好的 handler 与排空信号；`GinEngine` 是该端的 gin 引擎，同样未导出，`Serve` 阶段路由与登记层挂到它上面。`ErrorResponder` 由其他模块交付，`Problem` 是它接收的内容。
+`Spec` 与 `Endpoint` 之间是虚线：`Spec` 只按端名指向一个监听端，不参与该端的组装。`listener` 未导出，`Serve` 阶段由它持有服务器、套接字、开始排空信号与排空结束信号，以及在途 handler 的计数，组装好的 handler 挂在服务器上；`GinEngine` 是该端的 gin 引擎，同样未导出，`Serve` 阶段路由与登记层挂到它上面。`ErrorResponder` 由其他模块交付，`Problem` 是它接收的内容。
 
 一次装配中跨模块的交互：
 
@@ -312,7 +314,7 @@ stateDiagram-v2
 
 ## 核心数据结构
 
-登记面在登记窗口内积累的是声明，不是成品：每个监听端持有一张按登记先后排列的路由表与一张中间件表。路由表与登记层在 `Serve` 阶段挂到该端的 gin 引擎上；引擎之外还有不经登记面的层：兜底层与请求体上限、请求上下文的建立（见兜底层一节）。此后监听端只持有组装好的 handler。
+登记面在登记窗口内积累的是声明，不是成品：每个监听端持有一张按登记先后排列的路由表与一张中间件表。路由表与登记层在 `Serve` 阶段挂到该端的 gin 引擎上；引擎之外还有不经登记面的层：兜底层与请求体上限、请求上下文的建立（见兜底层一节）。组装好的 handler 交给该端的服务器。
 
 中间件表的每一项是一个 `Middleware` 值。`After` 与 `Before` 中的功能标识指代功能而非实例，与 `Requires` 中的写法一致（[ADR-capability-token-2026-09-13](../../adr/adr-capability-token-2026-09-13.md)）。本模块不解析这些标识的含义，只用它们建图。
 
