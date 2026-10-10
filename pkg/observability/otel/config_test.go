@@ -3,15 +3,44 @@ package otel
 import (
 	"errors"
 	"math"
+	"os"
+	"path/filepath"
 	"testing"
+
+	"github.com/vislake/speed/pkg/config"
+	jsonformat "github.com/vislake/speed/pkg/config/format/json"
+	filesource "github.com/vislake/speed/pkg/config/source/file"
+	"github.com/vislake/speed/pkg/core"
 )
 
-// named is the prototype with the one required item filled in, so that a case
-// about some other field is not answered by the service name first.
-func named() *Config {
-	cfg := prototype()
-	cfg.ServiceName = "orders"
-	return cfg
+// readThrough loads a JSON document through the real configuration path and
+// hands back the reader this module's own section decodes from.
+//
+// The declaration this module registers is what is exercised: whether an item
+// is required is the loader's judgement, made from the schema, and a stub reader
+// would prove nothing about it.
+func readThrough(t *testing.T, document string) config.Reader {
+	t.Helper()
+
+	path := filepath.Join(t.TempDir(), "config.json")
+	if err := os.WriteFile(path, []byte(document), 0o600); err != nil {
+		t.Fatalf("writing the config document: %v", err)
+	}
+
+	reg := core.New()
+	reg.Register(jsonformat.Module())
+	reg.Register(filesource.Module())
+	reg.Register(core.Module{
+		Name:      "host",
+		Resources: []any{config.HostIdentity{Prefix: "OTELTEST", DefaultLocator: "file:" + path}},
+	})
+	reg.Register(core.Module{Name: "reader", Resources: []any{schema()}})
+
+	reader, err := config.Load(t.Context(), reg, nil)
+	if err != nil {
+		t.Fatalf("loading the configuration: %v", err)
+	}
+	return reader
 }
 
 // TestThePrototypeCarriesTheDefaults pins what an absent item decodes to. The
@@ -38,6 +67,41 @@ func TestThePrototypeCarriesTheDefaults(t *testing.T) {
 	}
 }
 
+// TestTheServiceNameIsNotRequired pins that a configuration which never names
+// the service decodes and validates. Decode refuses a required item no source
+// gave before this module's own checks run, so the declaration is what has to
+// let it through; and the name that comes out is empty, which is how the module
+// knows to leave the choice to the upstream.
+func TestTheServiceNameIsNotRequired(t *testing.T) {
+	reader := readThrough(t, `{"observability": {"otel": {"sample-ratio": 0.5}}}`)
+
+	cfg := prototype()
+	if err := reader.Decode(ModuleName, cfg); err != nil {
+		t.Fatalf("decoding a configuration with no service-name: %v", err)
+	}
+	if cfg.ServiceName != "" {
+		t.Errorf("the service name decoded as %q, want none: nothing gave one", cfg.ServiceName)
+	}
+	if err := cfg.validate(); err != nil {
+		t.Errorf("validate refused a configuration with no service name: %v", err)
+	}
+}
+
+// TestAServiceNameWrittenAsEmptyIsAbsent pins the other way of not naming the
+// service. A source that gives the empty string decodes to the same value as no
+// source at all, and neither is a failure.
+func TestAServiceNameWrittenAsEmptyIsAbsent(t *testing.T) {
+	reader := readThrough(t, `{"observability": {"otel": {"service-name": ""}}}`)
+
+	cfg := prototype()
+	if err := reader.Decode(ModuleName, cfg); err != nil {
+		t.Fatalf("decoding an empty service-name: %v", err)
+	}
+	if err := cfg.validate(); err != nil {
+		t.Errorf("validate refused an empty service name: %v", err)
+	}
+}
+
 // TestValidateNamesEachFailure walks the sentinels one at a time. Each case
 // perturbs exactly one field of an otherwise valid carrier, so a case that
 // starts failing for another reason shows up as the wrong sentinel rather than
@@ -48,7 +112,6 @@ func TestValidateNamesEachFailure(t *testing.T) {
 		mutate func(*Config)
 		want   error
 	}{
-		{"an empty service name", func(c *Config) { c.ServiceName = "" }, ErrEmptyServiceName},
 		{"a ratio below zero", func(c *Config) { c.SampleRatio = -0.01 }, ErrInvalidSampleRatio},
 		{"a ratio above one", func(c *Config) { c.SampleRatio = 1.01 }, ErrInvalidSampleRatio},
 		// NaN is neither below zero nor above one, so the interval comparisons
@@ -64,7 +127,7 @@ func TestValidateNamesEachFailure(t *testing.T) {
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
-			cfg := named()
+			cfg := prototype()
 			tc.mutate(cfg)
 			err := cfg.validate()
 			if !errors.Is(err, tc.want) {
@@ -79,7 +142,7 @@ func TestValidateNamesEachFailure(t *testing.T) {
 // announces rather than refusing, and a zero batch size means the upstream
 // default rather than a queue that holds nothing.
 func TestValidateAcceptsWhatTheDesignCallsLegal(t *testing.T) {
-	cfg := named()
+	cfg := prototype()
 	cfg.SampleRatio = 0
 	cfg.Batch.MaxQueueSize = 0
 	cfg.Batch.MaxExportBatchSize = 0

@@ -74,6 +74,21 @@ must not cross, and how to run it.
   the process root logger.** A line written through the root logger goes to
   standard output instead of the destinations configuration named, and nothing
   would report the difference.
+- **The resource is layered upstream default, environment, this module's own
+  attributes, and a later layer overrides an earlier one.** The upstream default
+  is computed once per process and keeps the environment it first read, so the
+  environment layer in `newResource` matters only where the environment changes
+  after that, as in a test: a variable set later is seen only through a fresh
+  read, and a variable removed later stays in the default. In production the
+  environment is constant and the layer coincides with the default.
+  `service.name` is this module's attribute only when `service-name` is
+  configured; leaving it out when it is not is what lets the upstream settle the
+  name from `OTEL_SERVICE_NAME`, the `service.name` in `OTEL_RESOURCE_ATTRIBUTES`
+  and its `unknown_service:` fallback, in the order the resource section of
+  `docs/design/modules/design-observability.md` gives, and setting it to the
+  empty string instead would report an empty one.
+  `TestAnUnnamedServiceTakesItsNameFromTheUpstream` and
+  `TestALaterLayerOverridesAnEarlierOne` hold the order.
 - **The assembler reaches an entry module and a bus only when configuration
   names one.** An empty `endpoints` or `events` list must leave the process free
   of both: a background worker carries this module and has neither.

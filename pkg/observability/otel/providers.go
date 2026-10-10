@@ -47,6 +47,53 @@ func newInstanceID() string {
 	return fmt.Sprintf("%x-%x-%x-%x-%x", b[0:4], b[4:6], b[6:8], b[8:10], b[10:16])
 }
 
+// newResource builds the resource both providers carry, in three layers, each
+// overriding the one before it: the upstream's default resource, the environment
+// as it is now, and the attributes this module gives.
+//
+// The default resource is the base because it is where telemetry.sdk.* and the
+// name of a service nobody named — unknown_service:<executable name> — come
+// from. Handing the providers only this module's attributes would leave both
+// out. The service name is this module's own attribute only when configuration
+// gave one; otherwise the layers below settle it, and the environment's
+// OTEL_SERVICE_NAME, or the service.name in OTEL_RESOURCE_ATTRIBUTES, outranks
+// the fallback name. The instance identity is always this module's, so no
+// environment variable can give two replicas one.
+//
+// The environment is layered here even though the default resource already
+// carries it. The default resource is computed once per process and keeps what
+// the environment held then, so only a fresh read shows a variable set after
+// that. A process whose environment does not change gets nothing from the layer,
+// which is the production shape; it matters where the environment moves between
+// two builds, as in a test. A variable removed after the first computation is
+// not undone either, since its value stays in the default resource.
+func newResource(serviceName string) (*resource.Resource, error) {
+	own := []attribute.KeyValue{serviceInstanceIDKey.String(newInstanceID())}
+	if serviceName != "" {
+		own = append(own, serviceNameKey.String(serviceName))
+	}
+	return layered(resource.Default(), resource.Environment(), resource.NewSchemaless(own...))
+}
+
+// layered merges the resources so that each overrides the ones before it.
+//
+// A merge that finds two different schema URLs returns an error along with a
+// resource the upstream says may carry attributes from the wrong convention
+// version, and leaves the verdict to the caller. The verdict here is a failure,
+// as for any provider that cannot be built. With today's inputs it cannot arise:
+// the environment and this module's attributes carry no schema URL, so only an
+// upstream change reaches it.
+func layered(layers ...*resource.Resource) (*resource.Resource, error) {
+	merged := resource.Empty()
+	for _, layer := range layers {
+		var err error
+		if merged, err = resource.Merge(merged, layer); err != nil {
+			return nil, err
+		}
+	}
+	return merged, nil
+}
+
 // providers is this module's product.
 //
 // It carries both capabilities, because the two are built together and handed
@@ -110,6 +157,13 @@ func newProviders(ctx context.Context, reg *core.Registry) (any, error) {
 	}
 	lg := logger.Named(ModuleName)
 
+	// The resource does not depend on the exporters, so it is built before they
+	// are collected: a failure here has nothing to release.
+	res, err := newResource(cfg.ServiceName)
+	if err != nil {
+		return nil, fmt.Errorf("%s: building the resource both providers carry: %w", ModuleName, err)
+	}
+
 	spanExporters := core.ResolveAll[observability.SpanExporter](reg)
 	metricExporters := core.ResolveAll[observability.MetricExporter](reg)
 	exporters := make([]releasable, 0, len(spanExporters)+len(metricExporters))
@@ -119,11 +173,6 @@ func newProviders(ctx context.Context, reg *core.Registry) (any, error) {
 	for _, e := range metricExporters {
 		exporters = append(exporters, e)
 	}
-
-	res := resource.NewSchemaless(
-		serviceNameKey.String(cfg.ServiceName),
-		serviceInstanceIDKey.String(newInstanceID()),
-	)
 
 	traceOpts := []sdktrace.TracerProviderOption{
 		sdktrace.WithResource(res),

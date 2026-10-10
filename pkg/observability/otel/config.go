@@ -23,9 +23,13 @@ import (
 // one by one rather than replaced wholesale. A pointer would have to be told
 // apart from nil at every use to say the same thing.
 type Config struct {
-	// ServiceName is the upstream service.name resource attribute, and the
-	// required item of this namespace. An unset service name makes every signal
-	// arriving at a collector ambiguous about which process sent it.
+	// ServiceName is the upstream service.name resource attribute. An empty
+	// value, whether no source gave one or a source gave the empty string, is
+	// not a name this module sets: the resource then carries the name the
+	// upstream settles on without it, from the environment variables it reads
+	// (OTEL_SERVICE_NAME and OTEL_RESOURCE_ATTRIBUTES) or, when they give none,
+	// its unknown_service:<executable name> fallback. The two empties cannot be
+	// told apart after decoding, and nothing here needs them to be.
 	ServiceName string `config:"service-name"`
 	// SampleRatio is the fraction of the traces this process starts that are
 	// recorded, in [0,1]. A request that arrives with a parent follows the
@@ -111,20 +115,22 @@ func prototype() *Config {
 
 // schema declares this module's input items.
 //
-// Only the required item is described here. The origins of every other item are
-// the ordinary pair — primary source and environment — which is what the zero
-// value of config.Item stands for, and no item of this namespace takes a value
-// from the command line: the endpoint locator and the headers would then appear
-// in the process list, and the rest describe a deployment, which is what the
-// environment layer is for.
+// Only the service name is described here, because what it falls back to is not
+// readable from its default. The origins of every item are the ordinary pair —
+// primary source and environment — which is what the zero value of config.Item
+// stands for, and no item of this namespace takes a value from the command line:
+// the endpoint locator and the headers would then appear in the process list,
+// and the rest describe a deployment, which is what the environment layer is
+// for.
 func schema() config.Schema {
 	return config.Schema{
 		Namespace: ModuleName,
 		Mounts:    []config.Mount{{Value: prototype()}},
 		Items: map[string]config.Item{
 			"service-name": {
-				Required:    true,
-				Description: "the service.name reported to the telemetry backend",
+				Description: "the service.name reported to the telemetry backend; when unset, " +
+					"the upstream settles the name from OTEL_SERVICE_NAME and OTEL_RESOURCE_ATTRIBUTES, " +
+					"else unknown_service:<executable name>",
 			},
 		},
 	}
@@ -151,12 +157,9 @@ func read(reg *core.Registry) (*Config, error) {
 // validate reports the values this module cannot start with.
 //
 // Every judgement here is about a value that would otherwise produce a running
-// module doing nothing useful: a service with no name, a ratio that samples
-// nothing without saying so, a queue that cannot hold a span.
+// module doing nothing useful: a ratio that samples nothing without saying so,
+// a queue that cannot hold a span.
 func (c *Config) validate() error {
-	if c.ServiceName == "" {
-		return ErrEmptyServiceName
-	}
 	// NaN is outside [0,1] and yet compares false against both bounds, so the
 	// interval test alone lets it through. A NaN ratio is worth refusing here
 	// because it is not the zero the sampler switch-off path announces: it

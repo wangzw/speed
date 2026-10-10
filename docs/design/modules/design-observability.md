@@ -196,7 +196,7 @@ sequenceDiagram
 
 ```go
 type Config struct {
-    ServiceName string   `config:"service-name"`   // 上游的 service.name，必填
+    ServiceName string   `config:"service-name"`   // 上游的 service.name；没配时由上游决定
     SampleRatio float64  `config:"sample-ratio"`   // 一个 [0,1] 内的有限数
 
     Batch struct {
@@ -232,6 +232,8 @@ type Config struct {
 | `shutdown-timeout` | 10s | 拒绝，启动失败 |
 
 时长为零使该处失去意义而不是关闭它：批处理的超时为零意味着每一批都立即失败，导出周期为零意味着读数的间隔不存在。两个整型项的零留给「取上游默认」，而本模块不写下那个默认：上游把零读成容量为零的队列，不是读成默认，因此装配器把上游自己导出的默认常量代入，本模块里没有第二份 2048 与 512。
+
+**`service-name` 不是必填项，没配时服务名交给上游。** 键缺席与显式写成空串解码到同一个值，两者都按没配处理，都不是故障。没配时本模块不给出 `service.name`，服务名由上游按[provider 的构造次序](#provider-的构造次序)一节写明的次序定下；该次序里的「环境变量」指 `OTEL_SERVICE_NAME` 与 `OTEL_RESOURCE_ATTRIBUTES` 两个变量，不止前者。留空的后果由[非保证](#非保证)一节的「服务名」一条承接。
 
 导出后端的配置，`observability.otlp`：
 
@@ -287,9 +289,21 @@ type Config struct {
 
 **provider 的构造选项同样逐项显式给出。** 采样器、批处理的四个参数、导出周期与它的超时都由配置给定，上游对应的标准变量（`OTEL_TRACES_SAMPLER`、`OTEL_BSP_*`、`OTEL_METRIC_EXPORT_*`）因此不起作用；本模块不配置的那些——跨度的属性与事件上限、指标的样例筛选与基数上限——留给上游 SDK，连同它们的标准变量。
 
-**两个 provider 共用一份资源，本模块给出其中两个属性**：`service.name` 取配置的 `service-name`；`service.instance.id` 是这一次装配在 `New` 中生成的随机 UUID（版本 4，上游语义约定推荐的形式）。同一服务的多个副本导出的指标流名字与属性都相同，资源只带服务名时，两个副本的累计流在采集端或指标存储里是同一条序列，取值在两个副本之间来回跳；实例标识把它们分开。它每次启动都变，这正是「实例」的含义；它由本模块生成而不来自配置，因为副本之间的配置没有可以区分彼此的地方。
+**两个 provider 共用一份资源，由下表的各层自下而上叠成，后一层覆盖前一层。**
 
-上游在构造 provider 时把 `OTEL_RESOURCE_ATTRIBUTES` 给出的属性并入这份资源，平台借它写下副本运行在哪里；两者同名时以本模块给出的为准，这个变量与 `OTEL_SERVICE_NAME` 都改不动服务名，也不能让两个副本共用一个实例标识。
+| 层 | 内容 |
+|---|---|
+| 上游的默认资源 | `telemetry.sdk.name`、`telemetry.sdk.language` 与 `telemetry.sdk.version`；没有任何一层给出服务名时的兜底名 `unknown_service:<可执行文件名>` |
+| 当前的环境变量 | `OTEL_RESOURCE_ATTRIBUTES` 给出的属性，平台借它写下副本运行在哪里；`OTEL_SERVICE_NAME`，在服务名上优先于前者 |
+| 本模块的属性 | `service.instance.id`，总是给出；`service.name`，只在配置了 `service-name` 时给出 |
+
+`telemetry.sdk.*` 与兜底名都由最底下的默认资源带来。服务名按下列次序定：配置的 `service-name`、`OTEL_SERVICE_NAME`、`OTEL_RESOURCE_ATTRIBUTES` 里的 `service.name`、`unknown_service:<可执行文件名>`。配置给了服务名就以配置为准，环境变量改不动它；配置没给，服务名由上游的变量与兜底名决定，本模块不替上游再定一个默认。
+
+**环境变量这一层由本模块自己叠入，尽管上游的默认资源已经含有环境变量。** 上游的默认资源每个进程只算一次，保留的是第一次计算时的环境。环境只有在默认资源算出之后才发生变化时，才需要本模块再读一次：之后才设置的变量重新读一次才看得到；之后被删的变量则不然，其值仍残留在默认资源里，重新读也去不掉它。生产里环境在进程内恒定，这一层与默认资源重合，上述差异主要出现在测试里。
+
+叠合遇到两个不同的模式地址（`schema URL`）时，上游返回错误，并附一份可能混着另一版语义约定的属性的资源，是否采用交给调用方；本模块不采用，装配以失败结束。环境与本模块的属性不带模式地址，上游的默认资源内部一致，现有的上游版本因此触发不到它。
+
+**`service.instance.id` 是这一次装配在 `New` 中生成的随机 UUID**（版本 4，上游语义约定推荐的形式）。同一服务的多个副本导出的指标流名字与属性都相同，资源只带服务名时，两个副本的累计流在采集端或指标存储里是同一条序列，取值在两个副本之间来回跳；实例标识把它们分开。它每次启动都变，这正是「实例」的含义；它由本模块生成而不来自配置，因为副本之间的配置没有可以区分彼此的地方。它在最上一层，`OTEL_RESOURCE_ATTRIBUTES` 里的同名属性因而不能让两个副本共用一个实例标识。
 
 **转发包装以内嵌的方式转发到内层，只截下两个调用。** 包装内嵌导出器接口，导出与关闭之外的每一个方法——包括与导出数据无关的那些：指标的时间性、聚合选择、强制刷出——都原样传到内层。手写的转发要维护一份与上游接口对齐的清单：漏掉一个，指标的时间性与聚合会静默回到上游默认值；上游在这两个接口上新增方法时，那份清单还要跟着改。内嵌没有这份清单可漏。截下的一个是导出调用，为的是下面那两行日志；另一个是关闭调用：provider 关停时对它持有的导出器发出的关闭不传到后端，后端由装配器在两个 provider 都关停之后释放，理由见[关停时的刷出](#关停时的刷出)。
 
@@ -385,7 +399,6 @@ type Config struct {
 
 | 哨兵错误 | 所在模块 | 触发条件 |
 |---|---|---|
-| `ErrEmptyServiceName` | `observability.otel` | `service-name` 有值但为空串 |
 | `ErrInvalidSampleRatio` | `observability.otel` | `sample-ratio` 不是 `[0,1]` 内的有限数 |
 | `ErrInvalidBatchParam` | `observability.otel` | 批处理的两个整型项为负 |
 | `ErrInvalidDuration` | `observability.otel` | 上表规定「拒绝零」的时长为零或负 |
@@ -394,9 +407,9 @@ type Config struct {
 | `ErrInvalidDuration` | `observability.otlp` | `probe-timeout` 为零或负 |
 | `ErrExporterUnreachable` | `observability.otlp` | 启用了启动探测而端点不可达 |
 
-`ErrInvalidSampleRatio`、`ErrUnknownProtocol` 与 `ErrInvalidHeader` 的文本要列出合法取值或形状，取值都在闭集内，列出它即给出修复动作。`service-name` 缺值走配置的必填判定，本模块不另立名字；有值而为空串是另一种输入，由本模块自己的哨兵承接。
+`ErrInvalidSampleRatio`、`ErrUnknownProtocol` 与 `ErrInvalidHeader` 的文本要列出合法取值或形状，取值都在闭集内，列出它即给出修复动作。`service-name` 没有对应的哨兵：它不是必填项，缺席与空串都不是故障。
 
-原样外传的失败：配置读取面缺席（`core.ErrMissingProvider`）、端名未在配置里声明（`http` 的哨兵）、事件点名而总线功能取不到（`core.ErrMissingProvider`）。
+原样外传的失败：配置读取面缺席（`core.ErrMissingProvider`）、端名未在配置里声明（`http` 的哨兵）、事件点名而总线功能取不到（`core.ErrMissingProvider`）、资源叠合时上游报出的模式地址冲突（`resource.ErrSchemaURLConflict`）。
 
 排他冲突不由本模块判定：第二个仍然启用的 provider 提供者出现时，由注册表在消解中判冲突并点名双方。
 
@@ -427,6 +440,7 @@ type Config struct {
 - **位置。** 采集层不是链上最外层：以 `Before` 指向本功能的层，以及 `Order` 更小而约束已经满足的层，都排在它之外，那一段的耗时与其中抛出的 panic 都不进跨度。察觉途径同上，链清单给出组装后的次序。
 - **事件流完整。** 经总线取得的领域事实可能缺样，且缺样不可判定；反过来一条事实也可能派出多个跨度，跨度数不等于事实数，按事件标识归并之后才是观测到的事实数（见[事件订阅](#事件订阅)）。事件派生的跨度还落在消费时间轴上，不与产生它的业务跨度对齐。
 - **采样。** `sample-ratio` 只决定本进程开始的追踪；带父跨度的请求由调用方的采样标志决定，而调用方不经认证即可写下它。一次请求有没有跨度因而不只取决于配置，这一档没有察觉途径。
+- **服务名。** 没有配置 `service-name`，环境变量（`OTEL_SERVICE_NAME`，以及 `OTEL_RESOURCE_ATTRIBUTES` 里的 `service.name`）也没有给出服务名时，服务名是 `unknown_service:<可执行文件名>`：这是上游表示「没有命名」的约定值，同一个可执行文件承载的不同服务在采集端同名。本模块不为这一档写启动说明；察觉途径是采集端看到的服务名带 `unknown_service:` 前缀。
 - **导出。** 零导出后端与零采样率各写一行说明；端点写错主机名在默认配置下不产生任何信号；导出失败只有转发包装写出的首次与恢复两行日志，关停时最后一次导出的失败也不例外，而那两行经日志模块的链写出——链本身可以被配置成不输出任何记录。
 - **停机。** 刷出排在全部 `Stop` 之后，覆盖不到的是更晚的记录：在本模块之后关闭的模块在自己的 `Close` 里记下的跨度与指标，入口排空超时之后仍在运行的处理函数此后产生的跨度，以及宿主为入口模块预置的、不是它的产物的实例放进来的请求在刷出之后产生的跨度，都不被导出。刷出的上界是两个 provider 与它们各自的导出器共用的一份，一个目的地刷得慢就让其余几个的末批数据一并被取消，见[关停时的刷出](#关停时的刷出)。
 - **出站传播。** `Transport` 不被任何一层自动接管，未使用它的调用点会让跨进程的链路从客户端一侧断开，不产生信号。
@@ -461,7 +475,7 @@ type Config struct {
 | 接口包的类型别名与字段名常量 | 已实现 | `pkg/observability/observability.go` `TracerProvider`、`MeterProvider`、`SpanExporter`、`MetricExporter`、`TraceIDKey`、`SpanIDKey` |
 | 传播器与出站注入工具 | 已实现 | `pkg/observability/observability.go` `Propagator`、`pkg/observability/transport.go` `Transport` |
 | 装配器的描述符与各阶段行为 | 已实现 | `pkg/observability/otel/module.go` `Module`、`prepare`、`wire`、`shutdown` |
-| provider 的构造、资源与导出器的释放 | 已实现 | `pkg/observability/otel/providers.go` `newProviders`、`newInstanceID`、`queueSize`、`releaseExporters` |
+| provider 的构造、资源与导出器的释放 | 已实现 | `pkg/observability/otel/providers.go` `newProviders`、`newResource`、`layered`、`newInstanceID`、`queueSize`、`releaseExporters` |
 | 转发包装、导出失败的上报与关闭的截留 | 已实现 | `pkg/observability/otel/wrapper.go` `spanExporter`、`metricExporter`、`notifier` |
 | 请求路径的采集层 | 已实现 | `pkg/observability/otel/layer.go` `(*providers).layer`、`instrument`、`answeredWith` |
 | 请求时长的计量 | 已实现 | `pkg/observability/otel/layer.go` `newRequestDuration` |
