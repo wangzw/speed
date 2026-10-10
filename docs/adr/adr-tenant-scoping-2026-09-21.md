@@ -12,7 +12,7 @@
 
 数据库模块把物理删除留给 `Unscoped().Delete`，理由是"谁可以物理删除是权限问题"（见 `db` 设计文档的非职责）。`Unscoped` 是 GORM 为软删除提供的开关，它在 `Statement` 上是一个可读的字段。
 
-认证为零值判决立过同一条防线：判决的零值读作"没答"而非"通过"，导出注入口等于让链上任何一层改写身份（[ADR-authn-verdict-2026-09-20](adr-authn-verdict-2026-09-20.md)、[ADR-authn-packaging-2026-09-20](adr-authn-packaging-2026-09-20.md)）。本记录是这条防线在数据一侧的对应物。
+认证为零值判决立过同一条防线：判决的零值读作"没答"而非"通过"，导出注入口等于让链上任何一层改写身份（[ADR-authn-verdict-2026-10-10](adr-authn-verdict-2026-10-10.md)、[ADR-authn-packaging-2026-10-10](adr-authn-packaging-2026-10-10.md)）。本记录是这条防线在数据一侧的对应物。
 
 ## 考虑过的选项
 

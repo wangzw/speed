@@ -1,0 +1,497 @@
+# authn/sms
+
+## 职责
+
+本模块持有短信验证码的**全部状态机**：写挑战行、发放预算、尝试次数、消费、入队与发送。短信验证码按用途区分，用途是封闭集：`login`（作第一因素）、`mfa`（作第二因素）、`enroll`（登记手机或短信因素时证明号码归属）。各用途对挑战的要求相同：一次性消费、尝试次数上限、发送预算，所以挑战状态只有一处持有，使用方是 `authn.login.sms`（用途 `login`）、`authn.mfa.sms`（用途 `mfa`、`enroll`）与登录引擎的手机号验证路由（用途 `enroll`），它们不持有挑战状态（[ADR-authn-sms-2026-10-10](../../adr/adr-authn-sms-2026-10-10.md)）。
+
+本功能包括下列部分：
+
+- **`SMSCodes`**：由 `authn.sms` 排他交付，挑战状态机的唯一入口。验证码明文从不离开本模块：不写库、不写日志、不进事件与指标，只存在于入队项与交给发送方的调用参数里。
+- **`SMSSender`**：发送方接缝，由厂商适配模块排他交付，宿主在命令树上选定一个。厂商适配只做构造请求、调用、把响应与错误归入哨兵。
+- **账户清理**：`authn.sms` 实现 `AccountLifecycle`，账户删除之后抹除该账户的挑战行，并按周期清扫过了预算统计窗口的挑战行。
+
+### 非职责
+
+- **不挂路由，不写 HTTP。** 短信登录与短信因素的路由、请求与响应形状归登录引擎与 MFA 编排（见 [design-authn-login](design-authn-login.md)、[design-authn-mfa](design-authn-mfa.md)）。本模块只回答「这条挑战发出去了没有、这个码对不对」。
+- **不判定号码是否已登记，不解析账户。** `SendCode.Deliver` 由调用方依据号码的登记状态与注册开关决定；本模块对 `Deliver` 为假的请求写抑制行，不探知为什么为假。手机标识的写入（`verified_via = sms-code`）归 `authn.account`（见 [design-authn-account](design-authn-account.md)）。
+- **不持有失败退避。** 退避状态在 `authn.account` 交付的 `Throttle` 里，由使用方在答复阶段施加，施加的方式见「失败退避的施加」；本模块不依赖 `Throttle`，只管每条挑战自己的尝试次数。
+- **不持有流程记录，不核对每流程的发送上限。** 流程记录的 `sends` 在 kv 里，由登录引擎在调用 `Send` 之前核对（见 [design-authn-login](design-authn-login.md)）。
+- **不定保障等级。** 单凭短信码只算一个因素，等级只在 `authn.mfa` 一处合成。
+- **不规范化号码。** `SendCode.Phone` 由调用方规范化为 E.164；`BlindIndex` 对输入原样计算，不规范化（见 [design-db](design-db.md)）。
+- **不托管厂商侧验证码，不重试厂商调用。** 生成、校验、重放与失败计数的规则全在本模块；适配器从不自行重发。
+- **不承载邮件或其他渠道。** `SMSSender` 是短信专用接缝；邮件通道不在 authn 的范围内。
+- **不认识租户。** 账户全局，`authn` 的任何子包都不 import `pkg/tenant`。
+
+## 术语表
+
+下列术语的含义限于本文档与 [ADR-authn-sms-2026-10-10](../../adr/adr-authn-sms-2026-10-10.md)，以及它所指向的认证主题决策记录。
+
+| 术语 | 适用范围 | 定义 |
+|---|---|---|
+| 挑战 | 本文档与 ADR-authn-sms-2026-10-10 | 一次短信验证码的发放记录，落在表 `authn_challenges` 的一行：号码与验证码都只以带密钥摘要留存，附尝试次数与期限。它与校验后端在拒绝响应里发出的质询（`WWW-Authenticate`、`Challenger`）无关。 |
+| 抑制行 | 本文档与 ADR-authn-sms-2026-10-10 | `suppressed` 为真的挑战行：号码未登记且注册关闭时写入，不入队、不发送，但与真实行走同一条计数路径，计入全部预算，对外应答与「已发送」同形。 |
+
+## 外部接口契约
+
+### 登记单元与名字
+
+| 包 | 模块名 | 交付 | 排他 | 构造期依赖 | 其余取用（缺席合法） | 表 |
+|---|---|---|---|---|---|---|
+| `pkg/authn/sms` | `authn.sms` | `SMSCodes`；`AccountLifecycle` | `SMSCodes` 排他 | `db.Database`、`SMSSender` | `settings.Store`、`event.Bus`、`audit.Audit` | `authn_challenges` |
+| `pkg/authn/sms/aliyun` | `authn.sms.aliyun` | `SMSSender` | 排他 | 无 | 无 | 无 |
+| `pkg/authn/sms/tencent` | `authn.sms.tencent` | `SMSSender` | 排他 | 无 | 无 | 无 |
+
+`SMSCodes` 与 `SMSSender` 的接口定义在 `pkg/authn` 根包，根包自身不登记模块。每个登记模块的包导出 `ModuleName`，配置命名空间取同一个取值。阿里云与腾讯云是厂商适配的封闭集；`authn.sms.aliyun` 与 `authn.sms.tencent` 同时纳入时，在消解阶段以排他冲突失败，宿主选其一。每个适配叶子包整个撤掉而不影响其他模块。
+
+**命名空间约束。** `authn.sms` 的配置与设置叶子不得叫 `aliyun`、`tencent`，否则与厂商适配模块的命名空间相撞（见 [design-authn-config](design-authn-config.md)）。
+
+### SMSSender：发送方接缝
+
+```go
+type SMS struct {
+	To       string            // E.164
+	Template string            // 本模块一侧的模板键：login、mfa、enroll；适配层映射到厂商模板编号
+	Params   map[string]string // 键集固定为 code、ttl_minutes
+	Locale   string            // zh-CN、en-US
+	DedupeID string            // 稳定标识，取挑战标识；适配层不得对同一标识重发
+}
+type SendReceipt struct{ ProviderID string }
+
+type SMSSender interface {
+	Name() string
+	// 返回的错误取自封闭集：ErrSMSThrottled、ErrSMSRejected、ErrSMSUncertain。
+	Send(ctx context.Context, m SMS) (SendReceipt, error)
+}
+```
+
+`SMSSender` 的实现受以下约束，约束的主体是每个交付 `SMSSender` 的模块：
+
+- 响应 `ctx`；任何一次调用都不在适配层内重试。
+- 对同一个 `DedupeID` 至多调用厂商一次。
+- 把厂商的响应与错误归入 `ErrSMSThrottled`、`ErrSMSRejected`、`ErrSMSUncertain` 之一；没有明确归入 `ErrSMSThrottled` 或 `ErrSMSRejected` 的错误，与全部超时、网络错误，一律归 `ErrSMSUncertain`。
+- `Params` 里的验证码与厂商凭据不写日志、不进错误文本、不进指标属性。
+- 构造期核对 `templates` 覆盖（用途，语言）的全部组合，缺任何一个组合即 `ErrInvalidConfig`。
+
+### SMSCodes：挑战状态机
+
+```go
+type SendCode struct {
+	Purpose string    // login、mfa、enroll
+	Phone   string    // E.164，已规范化
+	Account AccountID // mfa、enroll 必填；login 不填，也不按它计数
+	Locale  string    // zh-CN、en-US，由调用方填入；空读作 zh-CN
+	Deliver bool      // 为假：只写抑制行并计入全部预算，不入队不发送
+}
+
+type SMSCodes interface {
+	// 校验放行表与全部预算，写挑战行，把发送交给有界工作池，立即返回；
+	// 响应时间与厂商延迟无关。
+	// 错误取自 ErrUnsupportedRegion、ErrThrottled（带 RetryAfter）、ErrUnavailable。
+	Send(ctx context.Context, in SendCode) (challengeID string, err error)
+	// 先对挑战行做条件的尝试次数加一，再比对带密钥摘要，通过则条件更新消费时间；
+	// 一切不通过的情形统一返回 ErrInvalidCredentials。
+	Verify(ctx context.Context, challengeID, code string) error
+}
+```
+
+契约的内容如下：
+
+- **`Send` 的调用方责任。** `Purpose` 取自封闭集，`Phone` 已规范化，`mfa` 与 `enroll` 的 `Account` 非空；违反即调用方缺陷，`Send` 返回普通错误，不属于哨兵集。每流程发送上限由调用方在 `Send` 之前核对。
+- **`Send` 对 `Deliver` 为真与为假的调用走同一条路径。** 应答只有 `challengeID` 一种形状，调用方无法从返回值、状态码或错误形态区分抑制行与真实行（耗时见「非保证」）。
+- **`Locale` 的来源与取值。** 本模块不读 HTTP，也不解析 `Accept-Language`。`Locale` 由登录引擎在发起流程的请求上对 `Accept-Language` 做闭集映射得出（取不到或不在闭集内读作 `zh-CN`），存入流程记录，经方法与因素的入参交给调用方，调用方原样填入 `SendCode.Locale`；映射本身归 [design-authn-login](design-authn-login.md)。`Locale` 非空且不在 `zh-CN`、`en-US` 内属调用方缺陷，`Send` 返回普通错误。`SMS.Locale` 取 `SendCode.Locale`，适配层按（用途，语言）选厂商模板。
+- **`Verify` 不回传号码与账户。** 通过只证明持有该挑战标识的调用方出示了正确的码；码发往哪个号码，由调用方在自己的流程记录里保存，以发起时的号码为准。
+- **`Verify` 对抑制行恒返回 `ErrInvalidCredentials`**，照样计数并做一次诱饵比对。
+- **方法名核对。** 同一模块交付的各能力接口方法名两两不相交的规则见 [design-authn](design-authn.md#扩展点)。`authn.sms` 交付的 `SMSCodes` 的方法（`Send`、`Verify`）与 `AccountLifecycle` 的方法（`AccountDisabled`、`AccountDeleted`、`ServiceSecretRevoked`）互不重名；`SMSSender` 的 `Send` 与 `SMSCodes` 的 `Send` 同名异签，二者由不同模块交付，不会落在同一个类型上。
+
+### 输入项的语义
+
+输入项的完整表（取值、缺省、范围、敏感标记）只在 [design-authn-config](design-authn-config.md) 给出，本节写语义。分界判据是该值是否在数据库可用之前就被需要（[ADR-authn-settings-and-secrets-2026-10-10](../../adr/adr-authn-settings-and-secrets-2026-10-10.md)）。
+
+| 归属 | 项 | 语义 |
+|---|---|---|
+| 配置，`authn.sms` | `workers`、`queue-size` | 异步发送工作池的协程数与队列容量，构造时分配 |
+| 配置，`authn.sms.aliyun`、`authn.sms.tencent` | 厂商凭据、`sign-name`、`templates` 等 | 厂商接入参数；`templates` 把（用途，语言）映射到厂商模板编号，键写作 `用途/语言`；凭据值登记为日志的字面量脱敏匹配器 |
+| 设置，`authn.sms` | `allowed-prefixes` | 放行表：允许发送的 E.164 号码前缀；缺省为空，空即一律拒绝 |
+| 设置，`authn.sms` | `code-length`、`code-ttl`、`code-attempts` | 验证码位数、有效期、每码尝试上限 |
+| 设置，`authn.sms` | `resend-interval`、`per-phone-hourly`、`per-phone-daily` | 同号码的重发间隔与每小时、每日发放上限 |
+| 设置，`authn.sms` | `global-hourly-login`、`global-hourly-mfa`、`global-hourly-enroll` | 按用途分设的全局每小时上限 |
+| 设置，`authn.sms` | `per-flow-sends`、`per-account-hourly` | 每流程发送上限（由调用方核对）与每账户每小时上限（只对 `mfa`、`enroll` 计） |
+
+`allowed-prefixes` 与预算项是设置，改到更宽松的取值时，本模块写一行 `Warn` 并经审计接缝记一条尽力档记录，事前不拦（[ADR-authn-settings-and-secrets-2026-10-10](../../adr/adr-authn-settings-and-secrets-2026-10-10.md)）。
+
+### 稳定性承诺
+
+- `SMSCodes`、`SMSSender`、`SendCode`、`SMS` 的字段与方法集，以及用途、模板键、`Locale` 取值与错误哨兵这几个封闭集，是本模块对使用方与厂商适配的契约。增删封闭集的成员，等同修改契约，使用方与适配模块一并复核。
+- 挑战表的列与索引是本模块私有的存储形状，不属于契约：其他模块不读 `authn_challenges`，只经 `SMSCodes` 与 `AccountLifecycle` 交互。
+- 单个厂商适配叶子包可替换、可撤掉，不改变 `SMSCodes` 的行为。
+
+## 依赖
+
+| 依赖 | 方式 | 用途 | 缺席时 |
+|---|---|---|---|
+| `db.Database` | `Requires` | 挑战表的读写；`BlindIndex` 计算带密钥摘要；迁移集 | 构造失败 |
+| `SMSSender` | `Requires`（排他功能） | 取得发送方；缺失或多个同时纳入在消解阶段失败 | 构造失败 |
+| `settings.Store` | 取用，缺席合法 | 放行表、预算与验证码参数 | 各项取声明的缺省值；放行表缺省为空，所以没有设置模块的装配里短信一律不发 |
+| `event.Bus` | 取用，缺席合法 | 订阅 `authn.account.deleted` 与 `settings.changed` | 只剩同步钩子，没有事件补偿；不影响正确性底线 |
+| `audit.Audit` | 取用，缺席合法 | 放宽设置的尽力档审计 | 只写 `Warn` |
+| `log.Logger` | 取用，缺席合法 | 脱敏规则登记、日志 | 无日志 |
+
+厂商适配模块不依赖任何其他 authn 模块，只绑定各自的厂商 SDK，所以 SDK 只进 import 了该叶子包的宿主的依赖闭包（[ADR-authn-packaging-2026-10-10](../../adr/adr-authn-packaging-2026-10-10.md)）。
+
+依赖方向满足架构不变量：
+
+- `Requires` 只写排他功能，并立功能一律经 `ResolveAll` 取用（[ADR-authn-wiring-2026-10-10](../../adr/adr-authn-wiring-2026-10-10.md)）。`AccountLifecycle` 是并立功能，`authn.account` 在 `Init` 里 `ResolveAll[AccountLifecycle]` 取到本模块的实例；`authn.account` 在运行期调用本模块，编译期与构造期都不 import 它，所以不构成环。
+- `authn.login.sms`、`authn.mfa.sms` 依赖 `SMSCodes`，本模块不依赖它们。失败退避由使用方经 `Throttle` 施加（「失败退避的施加」一节），所以 `authn.login.sms` 另依赖 `Throttle`，本模块不依赖。
+- 本模块不用 kv：挑战行的丢失会放宽预算，状态放置的判据要求进 db（[ADR-authn-state-placement-2026-10-10](../../adr/adr-authn-state-placement-2026-10-10.md)）。
+- 构造阶段（`New`）不读写自己的表，首次启动时表尚未建立；需要读表的初始化与清扫协程放在 `Start`。
+
+## UML 图
+
+### 结构
+
+类图固定能力与使用方的关系：`SmsEngine` 是 `authn.sms` 的产物，同时实现 `SMSCodes` 与 `AccountLifecycle`，并以构造期依赖持有 `SMSSender`；厂商适配只实现 `SMSSender`；使用方只认 `SMSCodes`。
+
+```mermaid
+classDiagram
+    class SMSCodes {
+        <<interface>>
+        +Send(ctx, in) challengeID
+        +Verify(ctx, challengeID, code) error
+    }
+    class SMSSender {
+        <<interface>>
+        +Name() string
+        +Send(ctx, m) SendReceipt
+    }
+    class AccountLifecycle {
+        <<interface>>
+        +AccountDisabled(ctx, id) error
+        +AccountDeleted(ctx, id) error
+        +ServiceSecretRevoked(ctx, id, credentialID) error
+    }
+    class SendCode {
+        +Purpose string
+        +Phone string
+        +Account AccountID
+        +Locale string
+        +Deliver bool
+    }
+    class SMS {
+        +To string
+        +Template string
+        +Params map
+        +Locale string
+        +DedupeID string
+    }
+    class SmsEngine
+    class AliyunSender
+    class TencentSender
+    class LoginSms
+    class MfaSms
+    SmsEngine ..|> SMSCodes
+    SmsEngine ..|> AccountLifecycle
+    SmsEngine ..> SMSSender : Requires
+    AliyunSender ..|> SMSSender
+    TencentSender ..|> SMSSender
+    LoginSms ..> SMSCodes : purpose login
+    MfaSms ..> SMSCodes : purpose mfa and enroll
+    SMSCodes ..> SendCode
+    SMSSender ..> SMS
+```
+
+### 发送的交互
+
+时序图固定一次发送涉及的模块与同步边界：写挑战行与应答在请求内完成，厂商调用在工作池里异步完成，应答不等它。
+
+```mermaid
+sequenceDiagram
+    participant C as 调用方 login 或 mfa
+    participant S as authn.sms
+    participant D as db.Database
+    participant P as 工作池
+    participant V as SMSSender
+    C->>S: Send(SendCode)
+    S->>S: 放行表与队列容量
+    S->>D: 统计预算
+    S->>D: 作废旧行并写新行
+    alt Deliver 为真
+        S->>P: 入队 SMS
+    else Deliver 为假
+        Note over S,P: 抑制行不入队
+    end
+    S-->>C: challengeID
+    P->>V: Send(SMS)
+    V-->>P: SendReceipt 或哨兵错误
+    Note over P: 结果只记指标与日志，不回写请求
+```
+
+### 挑战行的生命周期
+
+状态图固定挑战行的去向。状态由列推出：消费与作废在存储上同样表现为 `consumed_at` 非空；用尽与过期不改行，由尝试次数与 `expires_at` 推出。
+
+```mermaid
+stateDiagram-v2
+    state "有效" as active
+    state "抑制" as suppressed
+    state "已消费" as consumed
+    state "已作废" as voided
+    state "失效" as dead
+    state "已清除" as gone
+    [*] --> active : Send 且 Deliver 为真
+    [*] --> suppressed : Send 且 Deliver 为假
+    active --> consumed : Verify 通过
+    active --> voided : 同号码同用途重发
+    active --> dead : 尝试次数达上限或过期
+    suppressed --> voided : 同号码同用途重发
+    suppressed --> dead : 尝试次数达上限或过期
+    active --> gone : AccountDeleted
+    consumed --> gone : 清扫
+    voided --> gone : 清扫
+    dead --> gone : 清扫
+    suppressed --> gone : 清扫
+```
+
+## 核心数据结构
+
+### authn_challenges
+
+表由 `authn.sms` 拥有，迁移集随模块，`postgres/` 与 `sqlite/` 各一份同名文件。表之间与对其他模块的表都不建外键，不嵌入 `tenant.Model`；时间一律经 `internal/clock` 取、一律 `.UTC()`，SQLite 把时间存成文本并按字符串比较，非 UTC 的值会使窗口统计判错。
+
+| 列 | 类型 | 含义 |
+|---|---|---|
+| `id` | 文本，主键 | 挑战标识，随机、不可推测；也是 `SMS.DedupeID` |
+| `purpose` | 文本 | `login`、`mfa`、`enroll` |
+| `phone_mac` | 文本 | 规范化号码的带密钥摘要，用于预算统计与关联；号码本身不在表里留存 |
+| `account_id` | 文本，可空 | `mfa`、`enroll` 用途填，每账户预算与账户删除的清理凭它；`login` 不填 |
+| `suppressed` | 布尔，缺省假 | 抑制行标记 |
+| `code_mac` | 文本 | 带密钥摘要，覆盖挑战标识与验证码 |
+| `attempts` | 整数，缺省 0 | 已计数的比对次数 |
+| `max_attempts` | 整数 | 写入时取设置的每码尝试上限 |
+| `created_at` | 时间戳 | 发放时刻；预算统计的时间轴 |
+| `expires_at` | 时间戳 | 写入时取设置的有效期 |
+| `consumed_at` | 时间戳，可空 | 消费或作废的时刻 |
+
+索引：`(phone_mac, created_at)` 服务于号码维度的预算统计与重发间隔；`expires_at` 上的索引服务于清扫。账户维度与用途维度的统计走 `created_at` 范围，行数上界由预算与清扫共同给出。
+
+**摘要。** 验证码空间只有百万量级，不带密钥的摘要等于明文，所以 `code_mac` 与 `phone_mac` 都经 `db.Database.BlindIndex`（HMAC-SHA256，密钥由 db 根密钥派生）计算：`code_mac` 的输入是 `<挑战标识>|<验证码>`，`phone_mac` 的输入是规范化后的 E.164 号码。`BlindIndex` 在没有根密钥时 panic，所以 `Start` 里做一次包 `recover` 的自检，缺根密钥即以 `ErrNoEncryptionKey` 终止启动，不降级为无密钥摘要。
+
+**验证码。** 取自 `crypto/rand` 的均匀十进制数字，位数、有效期、每码尝试上限取设置；`SMS.Params` 的键集固定为 `code` 与 `ttl_minutes`。
+
+### 入队项
+
+发送工作池的队列元素是一条完整的 `SMS`，其 `Params` 带验证码明文。队列在进程内，容量有界，元素不落库；这是明文唯一的停留处，进程退出即丢失。
+
+## 核心算法与流程
+
+### 发送
+
+下列判定按顺序执行，同一请求落在多项上时只报第一项。已登记与未登记的号码、`Deliver` 为真与为假的请求，走的是同一条路径，只在入队这一步分叉。
+
+```mermaid
+flowchart TD
+    A["Send(SendCode)"] --> B{"前缀在放行表内"}
+    B -- 否 --> E1["ErrUnsupportedRegion 不写行"]
+    B -- 是 --> Q{"队列有空位"}
+    Q -- 否 --> E2["ErrUnavailable 不写行"]
+    Q -- 是 --> C{"预算未超"}
+    C -- 间隔或号码维度超 --> E3["ErrThrottled 不写行"]
+    C -- 全局维度超 --> E2
+    C -- 账户维度超 --> E3
+    C -- 是 --> G["生成验证码与挑战标识 计算 phone_mac 与 code_mac"]
+    G --> H["事务 作废旧行并写新行"]
+    H --> I{"Deliver"}
+    I -- 真 --> J["非阻塞入队"]
+    I -- 假 --> K["suppressed 为真 不入队"]
+    J --> R["返回 challengeID"]
+    K --> R
+```
+
+1. **放行表。** 规范化后的号码前缀不在放行表内，返回 `ErrUnsupportedRegion`，不写行。判定只看前缀，与号码是否登记无关；放行表缺省为空，不明确放行就不发。
+2. **队列容量。** 队列已满，返回 `ErrUnavailable`，不写行、不作废旧行。这一步对真实行与抑制行同样执行，使「队列满」不成为区分已登记与未登记号码的观察点。
+3. **预算。** 依据 `authn_challenges` 的行数统计，见下表；统计包含抑制行、已消费行与已作废行，只有清扫才使行退出统计。被拒绝的请求不写行。
+4. **生成与写入。** 生成验证码与挑战标识，计算 `phone_mac` 与 `code_mac`；在一个事务里把同（`phone_mac`，用途）下尚未消费且未过期的旧行作废（条件更新 `consumed_at`），再写新行，`suppressed` 取 `Deliver` 的反。
+5. **入队。** `Deliver` 为真时非阻塞入队；`Deliver` 为假时不入队。事务提交与入队之间队列恰被填满时，该发送被丢弃并计入 `dropped`（见「结果与指标」），`Send` 仍返回 `challengeID`，用户走重发。
+
+### 预算维度
+
+预算全由 `authn_challenges` 的行数得出。维度是封闭集；窗口自 `created_at` 起算，口径一律含抑制行。一个维度的已有行数达到上限时，再发即超限，所以窗口内至多发放上限条。
+
+| 维度 | 统计口径 | 适用用途 | 超限的结果 |
+|---|---|---|---|
+| 重发间隔（`resend-interval`） | 同 `phone_mac` 最近一行距今 | 全部 | `ErrThrottled`，`RetryAfter` 为间隔的剩余时间 |
+| 每号码每小时（`per-phone-hourly`） | 同 `phone_mac` 近一小时的行数 | 全部 | `ErrThrottled` |
+| 每号码每日（`per-phone-daily`） | 同 `phone_mac` 近一日的行数 | 全部 | `ErrThrottled` |
+| 全局每小时，按用途分设（`global-hourly-login`、`global-hourly-mfa`、`global-hourly-enroll`） | 同用途近一小时的行数 | 各自的用途 | `ErrUnavailable` |
+| 每账户每小时（`per-account-hourly`） | 同 `account_id` 近一小时的行数 | 只对 `mfa`、`enroll` 计 | `ErrThrottled` |
+| 每流程发送数（`per-flow-sends`） | 流程记录的 `sends` | 全部 | 由调用方核对，不在本模块 |
+
+约束的理由如下：
+
+- **全局预算按用途分设。** 匿名流量耗尽 `login` 的预算，不挤占已通过口令的第二因素与登记的发送。
+- **账户维度只对 `mfa` 与 `enroll` 计。** 判据是账户不得由手机号推出：这两种用途的账户由第一因素或会话确定；`login` 用途若按账户计，已登记号码有账户可计、未登记号码没有，应答随之不同。
+- **号码维度跨用途累计。** 同一号码换一个用途不能绕开另一个用途的重发间隔与小时、日上限。
+
+### 抑制行与应答同形
+
+号码未登记且注册关闭时，调用方传 `Deliver = false`。本模块照常通过放行表、队列容量与全部预算，照常生成验证码、计算摘要、写一行 `suppressed` 为真的挑战行，只是不入队。随后的 `Verify` 对该行照样条件计数并做一次比对，恒返回 `ErrInvalidCredentials`。判据是：真实发送与否是已登记与未登记号码之间唯一的差别，且不可从应答观察到（[ADR-authn-sms-2026-10-10](../../adr/adr-authn-sms-2026-10-10.md)，枚举防护的总体规则见 [ADR-authn-throttling-2026-10-10](../../adr/adr-authn-throttling-2026-10-10.md)）。
+
+### 重发与作废
+
+重发即再调一次 `Send`：写新挑战行并作废同（`phone_mac`，用途）下尚有效的旧行。作废的表示是把旧行的 `consumed_at` 置为当前时刻（条件为该列仍空），校验对 `consumed_at` 非空的行恒失败，所以作废与消费在校验看来是同一状态。**重发不清零失败计数**：失败计数的载体是 `Throttle` 里的退避键（`login`、`enroll` 用途是 `ScopePhone` 键，`mfa` 用途是 `ScopeFactor` 键，见「失败退避的施加」），它不随挑战行而变，重发写新行并不触及它；每行自己的 `attempts` 随新行从零起算，上界由退避键与预算共同给出。
+
+### 校验
+
+`Verify` 的步骤如下，每一步失败都返回 `ErrInvalidCredentials`，不区分成因；对不存在的行、已过期或已消费的行，同样做一次诱饵比对，使耗时形态不随成因而变。
+
+1. 条件更新 `attempts = attempts + 1`，条件是该行存在、`consumed_at` 为空、未过期、`attempts < max_attempts`；受影响行数为零即失败。**先计数再比对**，并发提交因此无法绕过上限。
+2. 比对 `BlindIndex(<挑战标识>|<验证码>)` 与 `code_mac`，常量时间比较；`suppressed` 为真的行恒不通过。
+3. 条件更新 `consumed_at`，条件是它仍为空；受影响行数为一才算消费成功，并发的第二次提交败于此处。
+
+### 失败退避的施加
+
+退避的算法与表归 `authn.account`（见 [design-authn-account](design-authn-account.md)），本模块不依赖它。`Verify` 只数每条挑战自己的尝试，跨挑战的失败累计由使用方在调用 `Verify` 前后施加，所以这是对使用方的约束，约束的主体是 `SMSCodes` 的每个使用方：
+
+| 用途 | 使用方 | 退避范围与键 | 判据 |
+|---|---|---|---|
+| `login` | `authn.login.sms` | `ScopePhone`，键为规范化 E.164 号码的 SHA-256 十六进制 | 登录时没有账户也没有因素标识，号码是唯一稳定的键 |
+| `enroll` | `authn.mfa.sms` 与登录引擎的手机号验证路由 | `ScopePhone`，键同上 | 登记时因素尚未存在，同样只有号码可作键 |
+| `mfa` | `authn.mfa.sms` | `ScopeFactor`，键为因素标识，由 `authn.mfa` 的统一收口施加 | 因素标识在发码前已确定；不另计 `ScopePhone`，使登录一侧对号码的错误提交不锁住已通过第一因素的第二因素 |
+
+施加的次序是：`Verify` 之前 `Throttle.Check`，退避中不调用 `Verify`；`Verify` 返回 `ErrInvalidCredentials` 时 `Throttle.Fail`，返回 `nil` 时 `Throttle.Succeed`。对 `Deliver` 为假的挑战同样施加：使用方不区分行的真假，所以未登记号码与已登记号码的退避累计路径一致。`Verify` 返回 `ErrUnavailable` 时既不 `Fail` 也不 `Succeed`。
+
+### 发送工作池与失败归类
+
+工作池在 `Start` 起固定个数的协程，从有界队列取 `SMS` 调 `SMSSender.Send`。`Send` 立即返回，响应时间与厂商延迟无关。厂商调用的结果只记指标与日志，不回写请求，也不改挑战行：
+
+| 结果 | 处置 |
+|---|---|
+| 成功 | 记指标 |
+| `ErrSMSUncertain` | 当作已发送，不盲目重发；用户走重发，该次计入预算；记 `Warn` 与指标 |
+| `ErrSMSThrottled`、`ErrSMSRejected` | 当作未送达，不重发；用户收不到码，重新请求时再发；记 `Warn` 与指标 |
+
+`Stop` 以自带的 5 秒为界排空队列（`Stop` 收到的上下文已去掉取消）；超出的发送被丢弃，进程在入队之后、发送之前退出同样丢失队列里的发送，这些情形下用户都只能重发。
+
+### 结果与指标
+
+指标 `authn.sms.sends` 的属性 `outcome` 取值的全表在 [design-authn-events](design-authn-events.md)；本节写本模块的每种结果记哪个取值。每次 `Send` 调用至多记一次：被拒绝与丢弃的在调用内记，入队成功的由工作池在厂商调用返回后记。
+
+| 结果 | `outcome` | 说明 |
+|---|---|---|
+| 号码前缀不在放行表 | `unsupported-region` | `ErrUnsupportedRegion`，不写行 |
+| 队列已满（`Send` 起始处的预检） | `dropped` | `ErrUnavailable`，不写行 |
+| 全局预算耗尽 | `budget-exhausted` | `ErrUnavailable`，不写行 |
+| 重发间隔、每号码、每账户任一维度超限 | `budget-exhausted` | `ErrThrottled`，不写行 |
+| `Deliver` 为假，写抑制行 | `suppressed` | 返回 `challengeID`，不入队 |
+| 事务提交与入队之间队列被填满 | `dropped` | 返回 `challengeID`，行已写且计入预算，发送被丢弃 |
+| 厂商调用成功 | `sent` | 工作池记 |
+| `ErrSMSUncertain` | `uncertain` | 工作池记 |
+| `ErrSMSThrottled` | `throttled` | 工作池记 |
+| `ErrSMSRejected` | `rejected` | 工作池记 |
+
+`dropped` 只表示本进程的队列没有容量，不分预检与提交之后；`throttled` 与 `rejected` 只表示厂商的答复，号码与账户维度的超限归 `budget-exhausted`。`Stop` 排空超时丢弃的与进程退出时丢失的发送不记指标，进程已无法记录。
+
+### 厂商适配
+
+适配只做下列事：按（用途，语言）选厂商模板编号并构造请求、调用、把响应与错误归入哨兵。没有真实凭据无法在线验证，适配层测试用 `httptest` 起假端点校验请求形状。
+
+| 项 | 阿里云 `authn.sms.aliyun` | 腾讯云 `authn.sms.tencent` |
+|---|---|---|
+| SDK | `github.com/alibabacloud-go/dysmsapi-20170525/v5` | `github.com/tencentcloud/tencentcloud-sdk-go/tencentcloud/sms/v20210111` |
+| 调用 | `SendSmsWithContext` | `SendSmsWithContext` |
+| 请求字段 | `SignName`、`TemplateCode`、`TemplateParam`（`Params` 的 JSON） | `SignName`、`TemplateId`、`TemplateParamSet`（位置参数，按 `code`、`ttl_minutes` 的次序） |
+| 归 `ErrSMSThrottled` | 没有已核实的错误码 | `LimitExceeded.*` 错误码 |
+| 归 `ErrSMSRejected` | 没有已核实的错误码 | `TemplateParamSetNotMatchApprovedTemplate` |
+| 归 `ErrSMSUncertain` | 超时、网络错误与全部错误码 | 超时、网络错误与表中未列出的错误码 |
+
+两家 SDK 的发送调用都不幂等，超时之后调用方无从知道短信是否已发出，所以超时归 `ErrSMSUncertain`，适配层从不重试。阿里云的错误码到 `ErrSMSThrottled`、`ErrSMSRejected` 的归类未经核实（见「假设与守住它们的测试」），在核实之前阿里云适配把全部错误码归 `ErrSMSUncertain`：这个方向只多计一次预算、不盲目重发，不会把未确认的失败当作确定的限流或拒绝。国内厂商只收预先审核通过的签名加模板，不收自由文本，模板按语言分别审核，所以语言是模板的一个维度。
+
+### 账户生命周期与清扫
+
+- **`AccountDisabled`**：不动挑战行，返回 `nil`；账户重新启用后挑战行仍属于账户。
+- **`AccountDeleted`**：删除该账户的挑战行（`account_id` 非空的 `mfa`、`enroll` 行）；`login` 行不带账户，由清扫回收，号码本身不在表里留存。幂等：没有行可删时返回 `nil`。
+- **`ServiceSecretRevoked`**：与短信无关，返回 `nil`。
+- **事件补偿。** `event.Bus` 在场时，本模块在 `Init` 里订阅 `authn.account.deleted`，按 `Event.ID` 去重，处理函数幂等，重做 `AccountDeleted` 的清理。钩子失败计入 `authn.cleanup.failures`（`hook` 取 `sms`）。钩子是同步的清理，事件是补偿，两者都不是正确性的底线：校验后端每次建立身份时另行核对账户状态与 `valid_after`，残留的挑战行不能单独换出身份（[ADR-authn-account-lifecycle-2026-10-10](../../adr/adr-authn-account-lifecycle-2026-10-10.md)）。
+- **清扫。** 本模块是 `authn_challenges` 的持有者，在 `Start` 起一个有界协程，每 10 分钟一轮，删除 `created_at` 早于当前时刻 25 小时的行。25 小时是预算统计窗口的最长一日加一小时余量，所以窗口内的行不会被提前清走、预算不会少计。一轮以一批至多 1000 行为单位（`DELETE … WHERE id IN (SELECT id … LIMIT 1000)`，各方言通用）连续删到不足一批为止；每个副本都跑，条件删除互不冲突；`Stop` 以自带的 5 秒为界等它退出。全部清扫表见 [design-authn-account](design-authn-account.md)。
+
+## 错误与失败语义
+
+### 哨兵
+
+下表只列本模块产生或归类的哨兵；全部哨兵的判据与状态码在 [design-authn-failure](design-authn-failure.md)。
+
+| 哨兵 | 产生处 | 含义 | 对外 |
+|---|---|---|---|
+| `ErrUnsupportedRegion` | `Send` | 号码前缀不在放行表 | 400 `unsupported-region` |
+| `ErrThrottled`（`ThrottledError` 带 `RetryAfter`） | `Send` | 重发间隔、号码维度或账户维度超限 | 429 与 `Retry-After` |
+| `ErrUnavailable` | `Send`、`Verify` | 队列已满、该用途的全局预算耗尽、db 不可用 | 503 |
+| `ErrInvalidCredentials` | `Verify` | 码不对、已过期、已消费、已作废、尝试次数用尽、抑制行；不区分成因 | 统一 `login-failed` |
+| `ErrSMSThrottled` | `SMSSender.Send` | 发送方限流 | 不外露，只记指标与日志 |
+| `ErrSMSRejected` | `SMSSender.Send` | 模板、签名或号码被厂商拒绝 | 不外露，只记指标与日志 |
+| `ErrSMSUncertain` | `SMSSender.Send` | 发送后超时，不知是否送达；不得盲目重发 | 视为已发送 |
+| `ErrInvalidConfig` | 构造 | `templates` 缺（用途，语言）组合 | 启动失败，点名缺的组合 |
+| `ErrNoEncryptionKey` | `Start` | db 没有根密钥 | 启动失败 |
+
+`ErrSMSThrottled`、`ErrSMSRejected`、`ErrSMSUncertain` 是 `SMSSender` 可返回错误的封闭集。厂商的错误在工作池里已脱离请求，所以它们不会改变触发这次发送的那个请求的应答。
+
+### 失败方向
+
+- **依赖不可用时拒绝。** db 不可用时，`Send` 与 `Verify` 返回 `ErrUnavailable`，不发送、不放行，也不以 401 应答。
+- **发送方不可用。** 工作池记 `Warn` 与指标，用户收不到码；入队时队列满则 `Send` 返回 `ErrUnavailable`。
+- **缺省拒绝。** 放行表为空时一律拒绝，缺根密钥时启动失败。
+
+### 幂等
+
+`Send` 不是幂等的：每次成功调用写一行、计入预算、发放一条短信。`Verify` 对同一挑战至多一次通过，之后的调用败于消费；每次调用都使 `attempts` 加一。钩子与清扫幂等。
+
+### 非保证
+
+下列是不保证的事项，按判据例举，不是封闭集；判据是该情形由本模块的取舍或外部系统的性质造成、本模块不为它设防，符合判据的新情形归入非保证，不为此修订列举。各项的代价与取舍见 [ADR-authn-sms-2026-10-10](../../adr/adr-authn-sms-2026-10-10.md)：
+
+- **统一应答隐藏失败。** 号码未登记、厂商故障、发送丢失时用户看不到失败，只能重试。
+- **预算是软上限。** 统计与写行不在同一条语句里，并发请求可使实际发放超出上限，超出量以同时在途的请求数为界。
+- **号码维度的预算可被用来拒绝服务。** 对任一已知号码连续请求即可使它在窗口内得到 429，并使该号码在途的验证码被作废；对该号码的错误提交同样触发 `ScopePhone` 键的退避，退避期内该号码的短信登录与登记被拒。受害者可改用口令、社交、SSO 或通行密钥登录。
+- **全局预算耗尽即拒绝该用途的合法请求。** 分设使各用途互不挤占，不使各自的耗尽消失。
+- **抑制行把写放大交给匿名请求。** 未登记号码也写一行，行数上界由预算给出。
+- **注册开放时未知号码也真实发送。** 此时没有可隐藏的差别，成本由预算承担。
+- **根密钥轮换使在途挑战失效，也使 `phone_mac` 与旧值不再相等。** 轮换之后至多一日的窗口内，号码维度的预算按新摘要从空窗口计起，旧行在清扫之前仍占表。
+- **耗时只能证否，不能证真。** 抑制行与真实行的耗时差由统一路径压到最小，对照不出差别不构成证明。
+- **短信是受限认证器。** SIM 劫持与号码携转使短信弱于 TOTP 与通行密钥，号码被回收后新持有者可用短信登录旧账户；发送前的风险信号检查不做（[design-authn-threats](design-authn-threats.md)）。
+
+### 假设与守住它们的测试
+
+以下行为未经运行核实。依赖它们的断言写作假设，对应的测试失败即视为该断言的前提不成立：
+
+- **阿里云错误码归类。** 假设阿里云有确定表示限流或拒绝的错误码，可以对照 SDK 与厂商文档逐码核实后归入 `ErrSMSThrottled` 或 `ErrSMSRejected`；核实之前该适配的全部错误码归 `ErrSMSUncertain`。适配层测试用 `httptest` 起假端点，断言任一错误码与超时、网络错误都落入 `ErrSMSUncertain`；某个错误码经核实归入另外两个哨兵时，同一测试按码改写断言。
+- **腾讯云限流码。** 假设 `LimitExceeded.*` 全是按号码的限流，归 `ErrSMSThrottled` 不会误吞其他含义的限流。适配层测试逐码断言。
+- **编译兼容。** 假设阿里云与腾讯云的 SDK 与 TOTP、WebAuthn、SAML、go-oidc 的库在同一个 `pkg` 模块里编译兼容。构建检查把全部厂商适配叶子包与那些库一起编译。
+- **应答同形。** 假设已登记号码与「未登记且注册关闭」的号码，其 `Send` 在返回值、错误与预算计数增量上相同。契约测试对已登记号码与抑制号码各发一轮，断言应答同形、计数路径一致。
+- **时区无关。** 假设窗口统计在非 UTC 的 `time.Time` 写入下结果仍正确。SQLite 夹具在 `TZ=America/New_York` 下断言预算统计的条件。
+
+## 并发与事务边界
+
+- **挑战行的写走原生 SQL。** 作废与写新行在一个事务里；`Verify` 的条件更新是带竞争语义的单语句更新。它们不产生语句级审计行，也不被租户插件触及。
+- **一次性消费靠条件更新。** 并发提交同一个正确的码，只有 `consumed_at` 仍为空的那条更新受影响一行；败者得到 `ErrInvalidCredentials`。
+- **不跨模块传递事务。** `pkg/db` 没有跨模块的事务通道，本模块只在自己的事务里写自己的表，对账户事务不可见，账户的停用与删除经 `AccountLifecycle` 钩子与事件触达这里。
+- **时钟。** 窗口统计与期限都用写入副本的时钟记 `created_at` 与 `expires_at`，读取副本比较；期限在副本之间偏移同样的偏差，偏差应远小于有效期。
+- **多副本。** 挑战行在 db，所有副本共享预算；队列在进程内，各副本各有一份，排空与丢失按进程计；清扫每个副本都跑。
+- **协程的生命周期。** 工作池与清扫协程在 `Start` 起，退出各自带时限（`Stop` 与 `Close` 的上下文已去掉取消）；对 db 与发送方的每个调用都带请求上下文并受预算约束。
+
+## 扩展点
+
+- **新增厂商。** 新增一个叶子包，注册一个排他交付 `SMSSender` 的模块，满足「SMSSender：发送方接缝」一节的全部约束；`authn.sms` 与使用方不改动。
+- **新增用途与新增渠道不是扩展点。** 用途是封闭集，增加即修改契约；邮件通道若引入，是与 `SMSSender` 对称的另一个接缝与另一套使用方，不改本模块。
+
+## 实现状态
+
+`pkg/authn` 下没有 `sms` 目录，根包也没有 `SMSCodes`、`SMSSender` 与短信哨兵。
+
+| 能力 | 状态 | 代码 |
+|---|---|---|
+| 根包接口：`SMSCodes`、`SMSSender`、`SendCode`、`SMS` 与短信哨兵 | 未实现 | — |
+| `authn.sms` 引擎：挑战状态机、预算、抑制行 | 未实现 | — |
+| `authn_challenges` 迁移集 | 未实现 | — |
+| 发送工作池 | 未实现 | — |
+| `AccountLifecycle` 钩子与事件补偿 | 未实现 | — |
+| `authn_challenges` 清扫 | 未实现 | — |
+| 阿里云适配 `authn.sms.aliyun` | 未实现 | — |
+| 腾讯云适配 `authn.sms.tencent` | 未实现 | — |

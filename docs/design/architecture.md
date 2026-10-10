@@ -68,6 +68,52 @@ graph TD
 
 配置源与功能实现在结构上同形，都是接口包加实现子包，配置源因而不需要独立于模块机制的引入方式。配置的加载在装配开始之前完成，产出的读取面是 `config` 模块的预置实例：`pkg/config` 的根包登记这个模块，它只声明交付读取面，没有 `New`，实例由宿主在驱动之前预置（[ADR-assembly-bootstrap-2026-09-20](../adr/adr-assembly-bootstrap-2026-09-20.md)、[ADR-supplied-instance-2026-10-08](../adr/adr-supplied-instance-2026-10-08.md)）。
 
+**认证与租户之间的依赖方向。** 上图按层次画出全部模块共有的收敛方向；认证与租户两个功能目录之间的方向另画一张，节点是包的归类，不逐包罗列。
+
+```mermaid
+graph TD
+  subgraph authn["pkg/authn"]
+    aroot["根包<br/>接口与数据类型"]
+    aleaf["子包<br/>网关、账户、会话、令牌、登录、多因素、<br/>短信、企业 SSO、冒充、管理面"]
+  end
+  subgraph tenant["pkg/tenant"]
+    troot["根包<br/>租户标识与上下文"]
+    resolve["resolve<br/>租户解析"]
+    admission["admission<br/>租户准入"]
+    catalog["catalog<br/>名册与隔离插件"]
+  end
+  http["pkg/http"]
+  audit["pkg/audit"]
+  ratelimit["pkg/ratelimit"]
+  lower["pkg/db、pkg/kv、pkg/settings、<br/>pkg/event、pkg/observability、pkg/log"]
+
+  aleaf --> aroot
+  aleaf --> http
+  aleaf --> audit
+  aleaf --> lower
+  resolve --> aroot
+  resolve --> troot
+  resolve --> http
+  admission --> aroot
+  admission --> troot
+  admission --> http
+  admission --> audit
+  admission --> ratelimit
+  catalog --> troot
+  catalog --> lower
+  audit --> aroot
+  audit --> troot
+  ratelimit --> aroot
+  ratelimit --> troot
+  ratelimit --> audit
+```
+
+箭头表示 import。
+
+图中没有从 `aleaf` 或 `aroot` 指向租户任何包的边，方向是租户指向认证（不变量 17）。租户的解析与准入子包、审计与限流读身份，只经 `pkg/authn` 根包，不 import 认证的任何子包；根包只放接口与数据类型，非测试代码只依赖标准库与自己的内部包，因而被它们 import 不把认证的任何第三方库带进它们的闭包（[ADR-authn-packaging-2026-10-10](../adr/adr-authn-packaging-2026-10-10.md)）。
+
+认证的叶子包各自 import 它取用的功能所在的接口包（图中归为 `pkg/http`、`pkg/audit` 与下层各包）；每个叶子包取用哪些功能、哪些必需哪些可选，由 [authn](modules/design-authn.md) 的模块清单承载。
+
 ## 逻辑部署架构
 
 ```mermaid
@@ -76,6 +122,7 @@ graph TD
   primary[("主配置源<br/>文件或远程配置中心")]
   client["外部调用方"]
   backend[("外部后端<br/>数据库、键值存储、对象存储")]
+  remote[("外部身份与消息服务<br/>企业 IdP、社交登录提供方、短信厂商")]
 
   subgraph proc["宿主进程"]
     main["main：宿主代码"]
@@ -83,6 +130,7 @@ graph TD
     registry["注册表"]
     cfg["配置读取面"]
     entry["入口模块"]
+    chain["中间件链<br/>网关、租户解析、审计、限流、租户准入"]
     instances["功能模块实例"]
     main -->|写出命令树| exec
     main -->|预置读取面，调用 Run| registry
@@ -93,24 +141,27 @@ graph TD
     registry --> instances
     cfg --> instances
     cfg --> entry
-    entry --> instances
+    entry --> chain
+    chain --> instances
+    instances -.->|启动期登记层与路由| entry
   end
 
   cli --> exec
   primary --> exec
   client --> entry
   instances --> backend
+  instances --> remote
 ```
 
 speed 不引入进程边界。宿主是单一进程，注册表与全部模块实例都在该进程内，模块之间的调用是进程内的直接调用，不经过序列化、网络或服务发现。
 
-图中的箭头不表示 import：`cli` 与 `primary` 指向命令树的执行表示数据在装配开始之前流入，`main` 指向它表示宿主写出命令树并交其执行，`main` 直接指向注册表表示不写命令树的宿主自己预置读取面、再调用 `Run`——两条边是同一个宿主二选一的入口，走 `Run` 那条边时不经过命令树的执行，读取面由宿主自己生成；命令树的执行指向 `cfg` 表示加载产出读取面、指向注册表表示预置读取面并发起驱动，`cfg` 指向注册表表示读取面是预置给 `config` 模块的实例，`registry` 指向各模块表示驱动其生命周期，`cfg` 指向其余模块表示提供配置，`entry` 与 `instances` 之间是运行期调用。
+图中的箭头不表示 import：`cli` 与 `primary` 指向命令树的执行表示数据在装配开始之前流入，`main` 指向它表示宿主写出命令树并交其执行，`main` 直接指向注册表表示不写命令树的宿主自己预置读取面、再调用 `Run`——两条边是同一个宿主二选一的入口，走 `Run` 那条边时不经过命令树的执行，读取面由宿主自己生成；命令树的执行指向 `cfg` 表示加载产出读取面、指向注册表表示预置读取面并发起驱动，`cfg` 指向注册表表示读取面是预置给 `config` 模块的实例，`registry` 指向各模块表示驱动其生命周期，`cfg` 指向其余模块表示提供配置，`entry` 指向 `chain` 表示请求期入口模块按次序把请求交给链上各层，`chain` 指向 `instances` 表示链内放行后进入 handler 与各模块挂出的路由，虚线表示启动期的方向相反的登记：模块实例把自己的层与路由登记到入口模块，登记不是请求期调用，也不经过 `registry`。链上各层的次序由各层的 `After` 与 `Order` 声明推得，认证相关层的次序与锚点见 [authn](modules/design-authn.md)。
 
 命令行、环境变量与主配置源在装配开始之前由命令树的执行读入（[ADR-assembly-bootstrap-2026-09-20](../adr/adr-assembly-bootstrap-2026-09-20.md)）。写出命令树那条入口里，产出的读取面随即指名预置给 `config` 模块，装配开始时它已经在注册表里，`Prepare` 阶段即可取用（[ADR-supplied-instance-2026-10-08](../adr/adr-supplied-instance-2026-10-08.md)）。**发起驱动有两个入口。** 写出命令树的宿主由选中的那条命令发起：宿主把深度与动作写在命令树上，由命令带进驱动，读取面也由它预置。不写命令树的宿主——嵌入式宿主、包外测试——直接调用 `Run`：注册表把全部已登记模块作为参与集，深度钉在 `StageServe`，没有动作。这一类宿主不经命令树，也没有配置加载这一步，读取面因此要由它自己预置：`config` 模块一经登记便在 `Run` 的参与集里，而它没有 `New`，漏掉预置即启动失败——有模块在轮到 `config` 模块构造之前取用读取面时报 `ErrMissingProvider`，否则轮到它构造时报 `ErrUndeliveredCapability`（[ADR-drive-entry-2026-09-21](../adr/adr-drive-entry-2026-09-21.md)）。注册表不认识配置，也不认识命令：它只知道某个已登记模块的实例由宿主预置，以及这一次驱动的参数——运行级纳入连同依赖闭包展开出的名字清单、深度与动作。
 
 外部调用方只经由入口模块进入。入口是否存在、是 HTTP 还是 gRPC，都由宿主 import 了哪些模块决定：不含任何入口模块的进程就是一个纯后台应用（[ADR-core-scope-2026-09-13](../adr/adr-core-scope-2026-09-13.md)）。
 
-进程的外部依赖是启动期读取的主配置源，以及模块实例在运行期访问的外部后端。主配置源在启动期读取一次后不再访问（[ADR-config-lifecycle-2026-09-13](../adr/adr-config-lifecycle-2026-09-13.md)）。
+进程的外部依赖是启动期读取的主配置源，模块实例在运行期访问的外部后端，以及认证模块在登录与校验时访问的外部身份与消息服务（企业 IdP、社交登录提供方、短信厂商）；后一类只在装配了对应模块时才会被访问。主配置源在启动期读取一次后不再访问（[ADR-config-lifecycle-2026-09-13](../adr/adr-config-lifecycle-2026-09-13.md)）。
 
 主配置源可以没有。配置是默认值、主配置源、环境变量与命令行逐层叠加的结果，缺了这一层，其余各层照常给出配置，只用内存实现的进程因此可以不依赖任何外部配置来源。装配由配置驱动，不由配置源驱动。
 
@@ -168,7 +219,23 @@ speed 不引入进程边界。宿主是单一进程，注册表与全部模块�
 
 **审计的覆盖面同样是装配与配置的结果，不是框架的承诺。** 审计的各条捕获通路分别依赖在场的模块，以及配置里点名的类型与请求模式。一个类型名与一个端名都不点名时，任一条通路缺席都不会被任何一层拦下，也不进启动诊断；点了名而对应的模块取不到，则是启动失败（[audit](modules/design-audit.md)）。
 
-**请求路径的 panic 兜底是这条取向的一处例外：它是入口模块的承诺。** 兜底层由 [http](modules/design-http.md) 内建、每端唯一，不装任何别的模块的进程同样有它。判据是这条能力不需要任何产生于依赖图上层的概念——不要主体、不要租户、不要操作者，只要接住一次调用并写出一次错误响应（形状由默认的 `application/problem+json` 或已交付的 `ErrorResponder` 决定），因而按横切归属的判据落在持有拦截点的模块（[ADR-http-recovery-2026-09-22](../adr/adr-http-recovery-2026-09-22.md)、[ADR-http-errors-2026-10-10](../adr/adr-http-errors-2026-10-10.md)）。宿主为入口模块预置的实例不是它的产物时，这份承诺不随之而来，那个实例怎样对外提供服务由预置的一方负责（见 [http](modules/design-http.md)）。
+**请求路径的 panic 兜底是这条取向的一处例外：它是入口模块的承诺。** 兜底层由 [http](modules/design-http.md) 内建、每端唯一，不装任何别的模块的进程同样有它。判据是这条能力不需要任何产生于依赖图上层的概念——不要身份、不要租户、不要执行变更的一方，只要接住一次调用并写出一次错误响应（形状由默认的 `application/problem+json` 或已交付的 `ErrorResponder` 决定），这里的“执行变更的一方”泛指发出调用的一方，与[认证](modules/design-authn.md)身份上的实际操作者不是同一个词义，该文术语表有界定。因而按横切归属的判据落在持有拦截点的模块（[ADR-http-recovery-2026-09-22](../adr/adr-http-recovery-2026-09-22.md)、[ADR-http-errors-2026-10-10](../adr/adr-http-errors-2026-10-10.md)）。宿主为入口模块预置的实例不是它的产物时，这份承诺不随之而来，那个实例怎样对外提供服务由预置的一方负责（见 [http](modules/design-http.md)）。
+
+### 认证与授权边界
+
+认证交付身份系统：登录、会话、令牌、多因素、企业 SSO、冒充与账户存储；授权另立，两者之间只有判定接缝一处相连（[ADR-authn-scope-2026-10-10](../adr/adr-authn-scope-2026-10-10.md)、[ADR-authn-decision-seam-2026-10-10](../adr/adr-authn-decision-seam-2026-10-10.md)）。归属认证的判据是判定所需的输入：只需要凭据、账户、标识、会话、令牌、因素、IdP 配置与冒充记录这类认证事实的归认证，还需要资源、动作与策略的归授权。判定接缝 `Decider` 缺席即全拒：认证自己的管理面与冒充的开始都不在它缺席时放行。网关与 `tenant.admission` 不写 403，认证强度不足答 401，非成员与冒充范围不符答 404，403 只出现在认证自己的处理器里（[authn](modules/design-authn.md)、[authn-failure](modules/design-authn-failure.md)）。
+
+**身份由网关盖章。** 校验后端只交出判决，不写请求上下文；网关在出口检查全部成立之后才把身份写进上下文，注入口不导出（[ADR-authn-verdict-2026-10-10](../adr/adr-authn-verdict-2026-10-10.md)）。身份的实际操作者 `Actor()` 是真正动手的账户，冒充时与生效账户 `Account()` 不同；限流、审计与设置的归责一律取责任键 `Key()`，即实际操作者（[ADR-authn-identity-2026-10-10](../adr/adr-authn-identity-2026-10-10.md)）。
+
+**会话与令牌的撤销面只有登录会话。** 登录会话权威存放在 db，撤销以会话行的撤销标记为准；刷新令牌与冒充记录挂在会话上，撤销会话即撤销它们；访问令牌不另设撤销清单，校验时核对它所属的会话与账户的 `valid_after`。账户停用与删除经认证模块自己的事务、`AccountLifecycle` 钩子与事件补偿清理，清理没做完时，`valid_after` 与账户状态兜底，残留的行不能用于认证（[ADR-authn-session-2026-10-10](../adr/adr-authn-session-2026-10-10.md)、[ADR-authn-account-lifecycle-2026-10-10](../adr/adr-authn-account-lifecycle-2026-10-10.md)）。撤销在各副本上的生效有上界，上界取自校验缓存的有效期，属于下文有界放宽的一部分。
+
+**认证在依赖不可用时拒绝，放宽只有一份有界的封闭集。** db、kv、签名密钥、短信发送方与 IdP 不可用时，对应路径答 503，不答 200，也不答 401。放宽限于校验缓存的有效期、`check-session` 的显式放宽、设置变更的传播延迟与 IdP 元数据的证书陈旧窗口，各自带设置与上界，清单与取值见 [authn-failure](modules/design-authn-failure.md)（[ADR-authn-failure-2026-10-10](../adr/adr-authn-failure-2026-10-10.md)）。放宽开关只取主配置源，不放进设置：设置的写入面没有访问控制，持有设置写权限的主体能在运行期放宽它们。设置被改到放宽的方向时，认证不阻止，只写警告并经审计接缝留痕，记录只含键名与方向（[authn-config](modules/design-authn-config.md)、[ADR-authn-settings-and-secrets-2026-10-10](../adr/adr-authn-settings-and-secrets-2026-10-10.md)）。
+
+**秘密只以封闭的几种形态存放。** 认证自己持有的机密只以哈希、数据库加密列与文件这几种形态存放，这是封闭集：口令、令牌、验证码与服务密钥存哈希，因素种子与 IdP 客户端密钥存加密列，JWT 签名私钥与 SAML 私钥存文件。提供方发给宿主的客户端密钥与厂商密钥是启动必须项，存在配置的敏感项里。秘密不进命令行、不进设置，也不进日志、事件、审计与指标；配置的 `Sensitive` 不向日志登记脱敏，持有秘密配置值的模块各自把该值登记为日志的字面量匹配器。签名私钥不放 db，使 db 根密钥这个单点不连带令牌的签名（[authn-config](modules/design-authn-config.md)）。
+
+**冒充与审计绑定在一起。** 冒充开始之前先写强制档审计，写不成功冒充不开始；`authn.impersonation` 与 `authn.admin` 把审计功能当必需依赖，装配里没有审计即启动失败。冒充期间的请求级与语句级审计行，`actor` 列取发起冒充的管理员，明细带被冒充者、冒充范围与会话。冒充限定在一个租户内，由下列执行点合起来保证：冒充模块在装配期必需租户准入层交付的 `ScopeGuard`，网关只放冒充身份进准入层所守的端与登记为可冒充的路由，准入层核对冒充身份的范围等于请求的租户。缺任何一个执行点，换一个不带租户解析的端就越过了（[ADR-authn-impersonation-2026-10-10](../adr/adr-authn-impersonation-2026-10-10.md)、[authn-impersonation](modules/design-authn-impersonation.md)）。
+
+**成员准入的覆盖面同样是装配的结果，不是认证的承诺。** 账户是全局的、可属多个租户，租户仍取自请求面、不从身份派生；账户是不是租户成员由租户目录里的准入层判定，认证只存成员关系。不装准入层的装配没有任何一层核对成员关系与冒充范围，是开放的越权路径，没有一层会报错（[ADR-tenant-admission-2026-10-10](../adr/adr-tenant-admission-2026-10-10.md)、[tenant-admission](modules/design-tenant-admission.md)）。认证网关的覆盖面也是装配与配置的结果：它默认守入口模块声明的全部端，显式收窄的清单之外的端没有认证层，成因与察觉手段见 [authn](modules/design-authn.md) 的非保证。
 
 ### 性能与容量目标
 
@@ -193,6 +260,8 @@ speed 不引入进程边界。宿主是单一进程，注册表与全部模块�
 13. **`core` 不认识配置，也不按名称识别任何模块。** 注册表里没有针对哪个具体模块名的分支，也没有模块享有隐含的被依赖关系。配置在装配开始之前由宿主加载，产出的读取面是 `config` 模块的预置实例：命令树的执行预置它时指名 `config` 模块，名字由 `pkg/config` 给出，注册表按名字找到登记项的做法对任何模块都相同；注册表只知道某个已登记模块的实例由宿主预置，不知道那是配置。任何已登记模块都可被预置：宿主给出模块名时以名字为准，否则按实例认领；`config` 模块不享有特殊处理，注册表中也没有独立于模块机制的预置通道（[ADR-assembly-bootstrap-2026-09-20](../adr/adr-assembly-bootstrap-2026-09-20.md)、[ADR-supplied-instance-2026-10-08](../adr/adr-supplied-instance-2026-10-08.md)）。
 14. **配置只承载启动必须项。** 判据为该值是否在数据库可用之前就被需要（[ADR-config-scope-2026-09-13](../adr/adr-config-scope-2026-09-13.md)）。
 15. **每一处按类型收集资源的消费点自行裁定取材域，并把它写在该消费点所属模块的设计文档里。** 取材域在可用集、声明集、参与集与启用集之间选定：只校验声明而不让它生效的消费点取可用集；让声明生效的，判据是这份声明所描述之物的生命周期跟着这个二进制、跟着这次命令还是跟着这次运行，其中跟着这次命令的，按只被静态级纳入的模块是否同样携带该声明分取声明集与参与集。**减法只属于这样的消费点：这份声明所描述之物由这次运行产生或改写**：取材域之内，消解落选的模块其声明退出——那是本次装配给出的否定；只被静态级纳入的模块没有表态，不因此退出。**取可用集的消费点不做减法**：它读的是这个二进制的一份静态事实（形状，或一份与命令树无关的清单），减法会让同一个声明在一条命令下合法、在另一条下非法，而声明本身没变。未被本次命令纳入、也没有预置实例的模块由取材域决定去留，不在减法这一步表达：取声明集的消费点它不进来，取可用集的消费点它照常进来。同一种资源在不同消费点上可以有不同的取材域。`core` 不代任何消费点过滤：`Resources` 遍历全部已登记模块，它不解释资源，也就无从知道某一种该按哪个集合裁断（不变量 2）。未写明取材域的消费点，以及与所写不符的实现，都是缺陷（[ADR-module-resources-2026-09-21](../adr/adr-module-resources-2026-09-21.md)）。**宿主可以越过这一裁定**：命令树上带 `AllResources` 的静态级纳入，令所列模块的全部声明当作在册处理，消费点读到它时越过自己那个取材域。这一覆盖只对不在参与集里的静态级纳入模块生效：同时被运行级纳入的与预置了实例的都在参与集里，一律不生效；它不改写取材域，与消费点自己那份裁定并存。
+16. **凡丢失之后会使身份认定或准入校验比没有它时更宽的状态，一律放在 `pkg/db`。** 丢失只会让一次流程失败的状态才可放 `pkg/kv`，并带有界有效期；丢失只让一次计算或一次读取重做的状态只放进程内存，只作缓存、不作依据；方向无法判定的按会放宽处理，放进 `pkg/db`。本条约束的是身份认定与准入所依赖的状态——撤销标记、失败退避计数、验证码尝试计数与断言标识去重集属于它；不属于身份认定与准入的防滥用计数不在此列，放置与失败方向由各自模块的设计文档承载（[ratelimit](modules/design-ratelimit.md)）。判据落在丢失的方向，不落在存活期的长短，原因是 `pkg/kv` 的接口按最弱后端设计，内存与 Memcached 实现会无声丢键，持久性没有统一的声明（[ADR-authn-state-placement-2026-10-10](../adr/adr-authn-state-placement-2026-10-10.md)）。
+17. **`pkg/authn` 的任何子包都不 import `pkg/tenant`，方向是租户指向认证。** 认证根包只依赖标准库与自己的内部包；租户的解析与准入子包 import 认证根包，不 import 认证的任何子包；授权位于准入层之上，认证不 import 授权。需要同时读身份与租户上下文的层放在租户目录，不放进认证目录（[ADR-authn-scope-2026-10-10](../adr/adr-authn-scope-2026-10-10.md)、[ADR-tenant-admission-2026-10-10](../adr/adr-tenant-admission-2026-10-10.md)）。
 
 ## 实现状态
 
@@ -204,8 +273,23 @@ speed 不引入进程边界。宿主是单一进程，注册表与全部模块�
 | [db](modules/design-db.md) | 已实现 |
 | [http](modules/design-http.md) | 已实现 |
 | [http-cors](modules/design-http-cors.md) | 已实现 |
-| [authn](modules/design-authn.md) | 已实现 |
+| [authn](modules/design-authn.md) | 部分实现 — 已有网关、口令表后端、判决与身份的上下文承载；缺类型化的账户与实际操作者、按载体认领与出口检查，以及账户存储、登录会话、令牌、登录、多因素、短信、企业 SSO、冒充、判定接缝与管理面、挂路由口；各方面的状态见各自的文档 |
+| [authn-gate](modules/design-authn-gate.md) | 部分实现 — 缺按载体整条认领与 cookie 凭据、可选认证与可冒充登记、出口检查、冒充范围核对、`endpoints` 缺省守全部端、挂路由口；网关、`Exempt` 登记与口令表后端的旧写法已在 |
+| [authn-account](modules/design-authn-account.md) | 部分实现 — 缺账户存储的全部表、接口、生命周期与退避；只有口令表的旧写法条目已在 |
+| [authn-login](modules/design-authn-login.md) | 未实现 |
+| [authn-sms](modules/design-authn-sms.md) | 未实现 |
+| [authn-mfa](modules/design-authn-mfa.md) | 未实现 |
+| [authn-session](modules/design-authn-session.md) | 未实现 |
+| [authn-token](modules/design-authn-token.md) | 未实现 |
+| [authn-sso](modules/design-authn-sso.md) | 未实现 |
+| [authn-impersonation](modules/design-authn-impersonation.md) | 未实现 |
+| [authn-admin](modules/design-authn-admin.md) | 未实现 |
+| [authn-config](modules/design-authn-config.md) | 部分实现 — 缺账户、会话、令牌、登录、多因素、短信、SSO 与准入层的配置项，全部设置项，放宽变更的监视与加密列自检；网关与口令表的现有配置项已在 |
+| [authn-events](modules/design-authn-events.md) | 部分实现 — 缺事件的类型与发布、接缝级审计、放宽变更的审计与其余仪器；审计的记录接缝与网关的收口日志已在 |
+| [authn-failure](modules/design-authn-failure.md) | 部分实现 — 缺运行期哨兵表、可选认证路由上的失败方向、出口检查的补充校验与依赖不可用的方向表；网关的启动期哨兵与收口已在 |
+| [authn-threats](modules/design-authn-threats.md) | 部分实现 — 缺默认守全部端与出口检查，以及会话、令牌、SSO、冒充、短信与多因素各自的对策；网关的失败即拒绝、判决不可字面构造与口令表的旧写法已在 |
 | [tenant](modules/design-tenant.md) | 已实现 |
+| [tenant-admission](modules/design-tenant-admission.md) | 未实现 |
 | [kv](modules/design-kv.md) | 已实现 |
 | [event](modules/design-event.md) | 已实现 |
 | [outbox](modules/design-outbox.md) | 已实现 |

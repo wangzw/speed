@@ -10,13 +10,21 @@ credential backend, whose subject table comes from configuration.
 - What this module is and why it is shaped this way:
   [`docs/design/modules/design-authn.md`](../../docs/design/modules/design-authn.md).
 - The decisions behind it, one file per decision:
-  [`docs/adr/`](../../docs/adr/) — `adr-authn-scope-2026-09-20`,
-  `adr-authn-packaging-2026-09-20`, `adr-authn-wiring-2026-09-20`,
-  `adr-authn-ownership-2026-09-20`, `adr-authn-verdict-2026-09-20`,
-  `adr-authn-guarantees-2026-09-20`, `adr-authn-exemption-2026-10-10`,
-  `adr-authn-static-hash-2026-09-29`.
+  [`docs/adr/`](../../docs/adr/) — `adr-authn-scope-2026-10-10`,
+  `adr-authn-packaging-2026-10-10`, `adr-authn-wiring-2026-10-10`,
+  `adr-authn-credential-dispatch-2026-10-10`, `adr-authn-verdict-2026-10-10`,
+  `adr-authn-guarantees-2026-10-10`, `adr-authn-exemption-2026-10-10`,
+  `adr-authn-password-hash-2026-10-10`, `adr-authn-identity-2026-10-10`,
+  `adr-authn-accounts-2026-10-10`. The list is an excerpt: the design's
+  per-topic documents link the rest.
 - The API itself: the godoc in this package. Read `Verdict`'s constructors and
   `Claim`'s field comments before writing a backend.
+- What is implemented and what is not: the implementation-status section of the
+  design. The boundaries and the backend shape below describe the code as it
+  stands; where the status section lists the credential seam, the identity
+  fields or the password table entry as partly implemented, the design's shape
+  is the one a change moves toward, and these sentences change together with
+  that code.
 
 This file states only what neither of those states: the boundaries a change
 here must not cross, and how to run it.
