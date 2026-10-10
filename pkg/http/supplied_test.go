@@ -24,6 +24,10 @@ func (f *foreignRouter) Endpoint(name string) (Endpoint, error) {
 	return nil, fmt.Errorf("%w: %q (%s)", ErrUnknownEndpoint, name, f.label)
 }
 
+// Endpoints reports no names, which is what a router that hands out no endpoint
+// declares.
+func (f *foreignRouter) Endpoints() []string { return nil }
+
 var _ Router = (*foreignRouter)(nil)
 
 // wrappedRouter is a Router a host wrote around the router this module builds:

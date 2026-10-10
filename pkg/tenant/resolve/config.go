@@ -42,11 +42,11 @@ var configDefaults = moduleConfig{
 // moduleConfig is the set of input items this module accepts.
 type moduleConfig struct {
 	// Endpoints names the listening endpoints this module guards. The names
-	// are the entry point's, and there is no way to ask it for the set: its
-	// surface takes an endpoint by name and enumerates none. So the list is
-	// this module's own input rather than something followed from the entry
-	// point's configuration, which would tie this module's configuration
-	// shape to another module's.
+	// are the entry point's. Its surface can list the endpoints it declares,
+	// and this module does not take that list to choose what to guard: the
+	// list is this module's own input rather than something followed from the
+	// entry point's configuration, which would tie this module's
+	// configuration shape to another module's.
 	Endpoints []string `config:"endpoints"`
 	// Extractor names the extractor this module resolves names with, out of
 	// the ones registered. Exactly one is in force: two ways to read a name

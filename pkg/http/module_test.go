@@ -8,6 +8,7 @@ import (
 	"reflect"
 	"slices"
 	"strconv"
+	"strings"
 	"testing"
 
 	"github.com/gin-gonic/gin"
@@ -47,6 +48,33 @@ func TestPrepareFailsWhenNoEndpointIsConfigured(t *testing.T) {
 			"start and serve nothing")
 	}
 	mustContain(t, err.Error(), "http.endpoints", "the configuration key to write")
+}
+
+// TestPrepareRefusesAnEndpointNamedWithTheWildcard pins where the reserved name
+// is caught: in Prepare, with the rest of the configuration's checks, not in
+// Serve once the stages have run. A configuration whose only entry is named "*"
+// is the sharpest case, because an implementation that skipped the entry would
+// fall through to the no-endpoint failure instead, which is a different error
+// pointing at a different mistake.
+func TestPrepareRefusesAnEndpointNamedWithTheWildcard(t *testing.T) {
+	for name, cfg := range map[string]moduleConfig{
+		"alone": oneEndpoint("*"),
+		"beside another": {Endpoints: map[string]endpointConfig{
+			"public": {Address: "127.0.0.1:0"}, "*": {Address: "127.0.0.1:0"},
+		}},
+	} {
+		t.Run(name, func(t *testing.T) {
+			stance, err := prepare(&stubReader{cfg: cfg}, nil)
+			if err == nil {
+				t.Fatalf("Prepare accepted an endpoint named \"*\" and stated %v", stance.State)
+			}
+			mustContain(t, err.Error(), `"*"`, "the endpoint whose name is refused")
+			mustContain(t, err.Error(), "reserves", "that the name is refused as a reserved one")
+			if strings.Contains(err.Error(), "no listening endpoint is configured") {
+				t.Errorf("the entry named \"*\" was read as no endpoint at all: %v", err)
+			}
+		})
+	}
 }
 
 // TestPrepareValidatesSpecsBeforeTheEndpointPremise pins the order inside

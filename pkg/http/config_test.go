@@ -169,6 +169,38 @@ func TestAMisspelledKeyInAnEndpointIsAStartupFailure(t *testing.T) {
 	}
 }
 
+// TestTheWildcardIsNotAnEndpointName pins the one name an endpoint cannot carry.
+// A list of endpoint names elsewhere writes "*" for every declared endpoint, so
+// an endpoint called that could not be told from the wildcard. The entry is read
+// through the real configuration path, where "*" is an ordinary key of the
+// container leaf, and refused while the endpoints are resolved; it is refused
+// whether it stands alone or beside endpoints that are fine.
+func TestTheWildcardIsNotAnEndpointName(t *testing.T) {
+	for name, document := range map[string]string{
+		"alone":       `{"http":{"endpoints":{"*":{"address":":8080"}}}}`,
+		"beside more": `{"http":{"endpoints":{"public":{"address":":8080"},"*":{"address":":9090"}}}}`,
+	} {
+		t.Run(name, func(t *testing.T) {
+			got, decodeErr, runErr := readThrough(t, document, schema())
+			if runErr != nil || decodeErr != nil {
+				t.Fatalf("the section did not decode: %v", errors.Join(runErr, decodeErr))
+			}
+			if _, ok := got.Endpoints["*"]; !ok {
+				t.Fatalf("the entry named \"*\" did not reach the carrier: %v", got.Endpoints)
+			}
+
+			_, err := got.resolve()
+			if err == nil {
+				t.Fatal("an endpoint named \"*\" resolved, and the name is the one every list of " +
+					"endpoint names writes for all of them")
+			}
+			mustContain(t, err.Error(), `"*"`, "the endpoint whose name is refused")
+			mustContain(t, err.Error(), "reserves", "that the name is refused as a reserved one")
+			mustContain(t, err.Error(), "http.endpoints", "the key the entry is written under")
+		})
+	}
+}
+
 // TestDurationItemRejectsBareNumber pins config's rule for a duration, which
 // this module's field types opt into: a bare 300 reads as five minutes to a
 // person and means three hundred nanoseconds to the machine, so only the string

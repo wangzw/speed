@@ -96,6 +96,17 @@ func (r *router) Endpoint(name string) (Endpoint, error) {
 	return e, nil
 }
 
+// Endpoints returns the declared endpoint names in ascending order, in a slice
+// built for the call. The set is fixed at construction, so it is not behind the
+// gate and needs no lock: a caller may ask in any stage.
+//
+// The order is sorted here rather than taken from names, which holds the order
+// the settings arrived in: a caller reading the set gets one order whatever
+// order the endpoints were declared in.
+func (r *router) Endpoints() []string {
+	return slices.Sorted(slices.Values(r.names))
+}
+
 // declaredNames renders the endpoint names for a message, saying so plainly
 // when there are none: "the endpoints are " followed by nothing reads as a
 // truncated message rather than as the state it describes.
@@ -103,11 +114,7 @@ func (r *router) declaredNames() string {
 	if len(r.names) == 0 {
 		return "none: the configuration declares no endpoint at all"
 	}
-	quoted := make([]string, 0, len(r.names))
-	for _, name := range slices.Sorted(slices.Values(r.names)) {
-		quoted = append(quoted, fmt.Sprintf("%q", name))
-	}
-	return strings.Join(quoted, ", ")
+	return quotedList(r.Endpoints())
 }
 
 // open lets registrations through. It is called from this module's Migrate

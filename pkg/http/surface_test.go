@@ -44,6 +44,7 @@ var exportedSurface = []string{
 	"method Endpoint.Use",
 	"method ErrorResponder.RespondError",
 	"method Router.Endpoint",
+	"method Router.Endpoints",
 	"type Endpoint",
 	"type ErrorResponder",
 	"type Middleware",

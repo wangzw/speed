@@ -42,6 +42,9 @@
 type Router interface {
     // Endpoint 取得一个已声明的监听端。任何阶段都可以调用。
     Endpoint(name string) (Endpoint, error)
+    // Endpoints 返回已声明的全部端名，升序，每次调用返回一份新切片。
+    // 任何阶段都可以调用。
+    Endpoints() []string
 }
 
 // Endpoint 是一个监听端上的登记面。
@@ -56,11 +59,11 @@ type Endpoint interface {
 
 `nethttp` 是 `net/http` 在本包内的别名——本包自身叫 `http`，引用标准库时要区分开；`gin` 是 `github.com/gin-gonic/gin`。
 
-`Endpoint` 在端名未声明时返回错误，因为端的集合来自配置这份数据。`Route` 与 `Use` 不返回错误：登记不上的只有调用点的编程错误，它们当场 panic，与 `core` 对非法功能标识、对重名登记的处理同类（见 [core](design-core.md)）。`Handler` 为 `nil`、`Route` 没有 handler 或其中有 `nil`、`Provides`、`After` 与 `Before` 中出现非法的功能标识、不是 gin 规整后写法的路径、以及 gin 判为非法的方法或路径，都属于这一类——方法与路径是代码里写死的字符串，写错它们与数据无关。gin 接受 `nil` 的 handler 而要到请求到来时才崩，本模块因而在登记点拦下。登记时用一台独占的 gin 引擎单独试挂即可把非法的路径与冲突分开。
+`Endpoint` 在端名未声明时返回错误，因为端的集合来自配置这份数据。`Endpoints` 不返回错误：它读的是同一份已声明的集合。`Route` 与 `Use` 不返回错误：登记不上的只有调用点的编程错误，它们当场 panic，与 `core` 对非法功能标识、对重名登记的处理同类（见 [core](design-core.md)）。`Handler` 为 `nil`、`Route` 没有 handler 或其中有 `nil`、`Provides`、`After` 与 `Before` 中出现非法的功能标识、不是 gin 规整后写法的路径、以及 gin 判为非法的方法或路径，都属于这一类——方法与路径是代码里写死的字符串，写错它们与数据无关。gin 接受 `nil` 的 handler 而要到请求到来时才崩，本模块因而在登记点拦下。登记时用一台独占的 gin 引擎单独试挂即可把非法的路径与冲突分开。
 
 **路径须已是 gin 规整后的写法**：以 `/` 起头，不含多余的斜杠与 `.`、`..` 段，末尾的斜杠按原样保留。gin 把路径接到引擎的根上时会规整它，`c.FullPath()` 报出的是规整后的结果；登记的路径与它逐字相同，按（方法，`c.FullPath()`）与登记写法比对的层（认证的豁免、审计的匹配）才不会因为写法不同而永不命中。
 
-**端的集合在本模块的配置里封闭，登记面不提供枚举。** 登记面只有按名取端一个方法，因而没有一处能把某个模块声明的端名清单与端的全集互相比对：一个模块漏写一个端，那个端上就不会出现它的任何一层，启动期既不失败，也没有一行诊断指向它。这一档与宿主在命令树上漏写一个模块同源，起于装配的决定而不是意外（见 [architecture](../architecture.md) 的可观测性）。察觉它靠 `Serve` 组装时逐端写出的链清单：每个已声明的端一行，行内按组装后的次序列出该端的各登记层，每一层连同它在 `Provides` 里声明的功能标识；不经登记面、也没有功能标识的那些层（请求体上限与请求上下文的建立、兜底层）同样列在这一行里，只有名字。功能标识是登记面能就「这一层代表什么」说出的唯一一件事，也是 `After` 与 `Before` 据以建图的那一样东西；`Middleware.Name` 只用于诊断，不是一个可被比对的标识，因而「某功能在这个端上的链里无人代表」只在这一行里读得出来。
+**端的集合在本模块的配置里封闭，登记面按名取端，也列出全部端名。** 登记面的读方法是 `Endpoint` 与 `Endpoints`：`Endpoint` 按名取一个端，`Endpoints` 返回已声明的全部端名，按升序排列，调用方改动返回的切片不影响登记面（[ADR-http-enumeration-2026-10-10](../../adr/adr-http-enumeration-2026-10-10.md)）。列出的只是端名：一个端上登记了哪些路由与层，登记面不提供枚举。模块能把自己声明的端名清单与端的全集互相比对，也能对每个已声明的端登记同一层；比对不是登记面做的，也不会让缺失自动失败。一个模块只在自己清单点名的端上登记，漏写一个端，那个端上就不会出现它的任何一层，启动期既不失败，也没有一行诊断指向它，除非那个模块自己拿全集比对并报错。这一档与宿主在命令树上漏写一个模块同源，起于装配的决定而不是意外（见 [architecture](../architecture.md) 的可观测性）。察觉它靠 `Serve` 组装时逐端写出的链清单：每个已声明的端一行，行内按组装后的次序列出该端的各登记层，每一层连同它在 `Provides` 里声明的功能标识；不经登记面、也没有功能标识的那些层（请求体上限与请求上下文的建立、兜底层）同样列在这一行里，只有名字。功能标识是登记面能就「这一层代表什么」说出的唯一一件事，也是 `After` 与 `Before` 据以建图的那一样东西；`Middleware.Name` 只用于诊断，不是一个可被比对的标识，因而「某功能在这个端上的链里无人代表」只在这一行里读得出来。
 
 同一个端上的路由**冲突**不属于这一类：登记只记录声明，两条路由是否冲突要到 `Serve` 组装、挂到该端的引擎上时才谈得上，那时 gin 以 panic 拒绝，本模块捕获它并报成启动失败。
 
@@ -149,6 +152,8 @@ type Spec struct {
 
 **配置**。本模块以 `config.Schema` 资源声明自己的输入项。每个监听端各有地址、各项超时、请求体上限与可选的 TLS 证书位置；排空时限也按端配置，`Stop` 以它为界等待在途请求走完。端的集合由配置给出：一个端都没有声明时本模块无法启动，启动失败，错误点名缺的是监听端的声明。纳入本模块即承诺装配它，配好至少一个端因而不可省——无论由宿主在命令树上点名，还是不写命令树的调用方走 `Run` 入口。
 
+**端名 `*` 是保留的。** 配置里写一个名为 `*` 的端，`Prepare` 即失败，错误点名该端与应改的键，与未知键、缺地址的判定同在读配置这一步。保留它，是为了让别的模块的端名清单能以 `*` 表示全部已声明的端，而不与某个真实端名相撞（[ADR-http-enumeration-2026-10-10](../../adr/adr-http-enumeration-2026-10-10.md)）。
+
 **各项的默认值**：读取请求头的时限 10 秒，读取与写出的时限各 30 秒，空闲连接 120 秒，排空时限 30 秒，请求体上限 1 MiB。请求体上限对每个端无声地生效，超限的请求体在读到它的地方被截断，`0` 表示不设上限。
 
 **端条目里的每个键都要是一个端认得的键，认不出即启动失败。** 端的集合是一个容器叶子，其内部的键不参与配置的未知键校验（见 [config](design-config.md)）：一个拼错的排空时限或请求体上限会被静默丢掉、默认值照样生效，而配置它的人以为这个端已按所写的生效。本模块因而自己查这些键，错误点名那个端、认不出的键与一个端可用的全部键。
@@ -219,6 +224,7 @@ classDiagram
     class Router {
         <<interface>>
         +Endpoint(name string) Endpoint, error
+        +Endpoints() []string
     }
     class Endpoint {
         <<interface>>
@@ -391,7 +397,7 @@ stateDiagram-v2
 
 | 阶段 | 行为 |
 |---|---|
-| `Prepare` | 读配置，校验各模块声明的 `Spec` 的形状；一个监听端都没有声明时启动失败，错误点名缺的是监听端的声明。 |
+| `Prepare` | 读配置，校验各模块声明的 `Spec` 的形状；一个监听端都没有声明时启动失败，错误点名缺的是监听端的声明，端名取了保留的 `*` 时同样启动失败。 |
 | `New` | 按配置构造各监听端的状态，不绑定地址。登记面此时尚不接受写入。 |
 | `Migrate` | 打开登记面的写入闸门。 |
 | `Init` | 登记面接受写入。本模块自身不在此阶段登记任何东西。 |
@@ -466,6 +472,7 @@ gin 的 `*gin.Context` 只在它所属那次请求的处理期间有效：handle
 | 能力 | 状态 | 代码 |
 |---|---|---|
 | 登记面与写入闸门 | 已实现 | `pkg/http/surface.go` `Router`、`Endpoint`、`Middleware`，`pkg/http/router.go` `(*router).open`、`(*router).seal`、`(*router).write`、`(*endpoint).Route`、`(*endpoint).Use` |
+| 端名的列出与保留端名 | 已实现 | `pkg/http/router.go` `(*router).Endpoints`，`pkg/http/config.go` `reservedEndpointName`、`endpointConfig.resolve` |
 | 入口模块的登记 | 已实现 | `pkg/http/module.go` `ModuleName`、`Module` |
 | gin 引擎的建立与设定 | 已实现 | `pkg/http/assemble.go` `newEngine`、`holdAllow`、`setReleaseMode` |
 | 中间件排序与链组装 | 已实现 | `pkg/http/order.go` `orderLayers`、`unplacedCause`，`pkg/http/assemble.go` `(*endpoint).assemble`、`(*endpoint).mount`、`(*endpoint).conflictError`、`reportUnlanded`、`unlandedCause.level` |

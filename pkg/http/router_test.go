@@ -1,6 +1,7 @@
 package http
 
 import (
+	"context"
 	"errors"
 	"fmt"
 	nethttp "net/http"
@@ -8,6 +9,7 @@ import (
 	"strings"
 	"sync"
 	"testing"
+	"time"
 
 	"github.com/gin-gonic/gin"
 
@@ -145,6 +147,132 @@ func TestUnknownEndpointWithNoEndpointsSaysSo(t *testing.T) {
 		t.Fatalf("the error is not ErrUnknownEndpoint: %v", err)
 	}
 	mustContain(t, err.Error(), "declares no endpoint at all", "the state the message describes")
+}
+
+// TestEndpointsListsEveryDeclaredNameInAscendingOrder pins the set and its
+// order. The router is built from names declared out of order, so an answer in
+// declaration order is told apart from one a reader can rely on; and every name
+// listed resolves through Endpoint, which ties the list to the set a registrant
+// can actually take an endpoint from.
+func TestEndpointsListsEveryDeclaredNameInAscendingOrder(t *testing.T) {
+	r := testRouter("public", "admin", "metrics")
+
+	got := r.Endpoints()
+
+	if want := []string{"admin", "metrics", "public"}; !equalStrings(got, want) {
+		t.Errorf("the router lists the endpoints %v, want %v in ascending order", got, want)
+	}
+	for _, name := range got {
+		if _, err := r.Endpoint(name); err != nil {
+			t.Errorf("the router lists %q and Endpoint does not hand it out: %v", name, err)
+		}
+	}
+}
+
+// TestEndpointsReturnsASliceOfItsOwn pins that a caller changing the list it was
+// handed changes nothing in the router. The list is read to decide which
+// endpoints to register on, and one caller overwriting an element must not turn
+// the next caller's answer into something else.
+func TestEndpointsReturnsASliceOfItsOwn(t *testing.T) {
+	r := testRouter("public", "admin", "metrics")
+
+	first := r.Endpoints()
+	first[0], first[len(first)-1] = "tampered", "extra"
+
+	if want := []string{"admin", "metrics", "public"}; !equalStrings(r.Endpoints(), want) {
+		t.Errorf("after a caller changed the list it was given, the router lists %v, want %v",
+			r.Endpoints(), want)
+	}
+	for _, name := range []string{"admin", "metrics", "public"} {
+		if _, err := r.Endpoint(name); err != nil {
+			t.Errorf("after a caller changed the list it was given, Endpoint(%q) failed: %v", name, err)
+		}
+	}
+}
+
+// TestEndpointsOfARouterWithNoEndpointsListsNone pins the empty set as a plain
+// answer rather than a failure: a router built from a configuration that
+// declares nothing lists no name.
+func TestEndpointsOfARouterWithNoEndpointsListsNone(t *testing.T) {
+	if got := testRouter().Endpoints(); len(got) != 0 {
+		t.Errorf("a router with no endpoint lists %v", got)
+	}
+}
+
+// TestEndpointsIsReadableInEveryStage pins that the list, like Endpoint and
+// unlike Route and Use, is not behind the registration gate. A registrant may
+// ask which endpoints exist before the gate opens, inside the window and after
+// it has closed, and gets the same set each time; a read that panicked outside
+// the window would turn a harmless question into a startup failure.
+func TestEndpointsIsReadableInEveryStage(t *testing.T) {
+	m := Module()
+	product := testProduct(t, endpointsAt(5*time.Second, "public", "admin"))
+	ctx := context.Background()
+	t.Cleanup(func() { _ = m.Close(ctx, nil, product) })
+	want := []string{"admin", "public"}
+
+	check := func(stage string) {
+		t.Helper()
+		if got := product.Endpoints(); !equalStrings(got, want) {
+			t.Errorf("%s: the router lists %v, want %v", stage, got, want)
+		}
+	}
+
+	check("before the gate opened")
+	if err := m.Migrate(ctx, nil, product); err != nil {
+		t.Fatalf("Migrate: %v", err)
+	}
+	check("with the gate open")
+	if err := m.Start(ctx, nil, product); err != nil {
+		t.Fatalf("Start: %v", err)
+	}
+	check("after the gate closed")
+	if err := m.Serve(ctx, nil, product); err != nil {
+		t.Fatalf("Serve: %v", err)
+	}
+	check("while serving")
+	if err := m.Stop(ctx, nil, product); err != nil {
+		t.Fatalf("Stop: %v", err)
+	}
+	check("after Stop")
+}
+
+// TestEndpointsReachesARegistrantThroughTheCapability pins the list on the path
+// a registrant takes: the Router taken up through the registry, inside Init,
+// answers with the names configuration declared.
+func TestEndpointsReachesARegistrantThroughTheCapability(t *testing.T) {
+	listed := make(chan []string, 1)
+	served := make(chan struct{}, 1)
+	probe := &stageProbe{
+		name:     "probe.lists-the-endpoints",
+		requires: requiresRouter(),
+		onInit: func(reg *core.Registry) error {
+			delivered, err := core.Resolve[Router](reg)
+			if err != nil {
+				return err
+			}
+			listed <- delivered.Endpoints()
+			return nil
+		},
+		onServe: func(*core.Registry) error {
+			served <- struct{}{}
+			return nil
+		},
+	}
+	a := startAssembly(t, endpointsAt(5*time.Second, "public", "admin", "metrics"), Module(), probe.module())
+	a.waitForOrEnd(t, served, "the Serve callback of the module that lists the endpoints")
+
+	select {
+	case got := <-listed:
+		if want := []string{"admin", "metrics", "public"}; !equalStrings(got, want) {
+			t.Errorf("the Router taken up through the registry lists %v, want %v", got, want)
+		}
+	default:
+		t.Fatal("the module behind the entry point listed nothing in Init")
+	}
+	if err := a.stop(t); err != nil {
+		t.Errorf("the run came back with %v", err)
+	}
 }
 
 // TestNilHandlerFieldPanics pins the layer that would do nothing. Handing back

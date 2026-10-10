@@ -5,8 +5,10 @@ import (
 	"errors"
 	"io"
 	"log/slog"
+	"maps"
 	nethttp "net/http"
 	"net/http/httptest"
+	"slices"
 	"strings"
 	"sync/atomic"
 	"testing"
@@ -122,6 +124,8 @@ func (r *fakeRouter) Endpoint(name string) (speedhttp.Endpoint, error) {
 	}
 	return e, nil
 }
+
+func (r *fakeRouter) Endpoints() []string { return slices.Sorted(maps.Keys(r.endpoints)) }
 
 // quiet is a logger that writes nowhere, so that a test asserting on a
 // conclusion does not also print it.

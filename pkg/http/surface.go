@@ -15,11 +15,19 @@ import (
 // "take them all out" means nothing for a registration, so the conflict is
 // named during resolution rather than showing up at run time as a route nobody
 // can reach.
+//
+// The name "*" is reserved: configuration cannot declare an endpoint by it, so
+// that a list of endpoint names can write it to mean every declared endpoint
+// without colliding with one.
 type Router interface {
 	// Endpoint returns a declared endpoint. It may be called in any stage.
 	// An undeclared name is an error wrapping ErrUnknownEndpoint, because
 	// the set of endpoints comes from configuration, which is data.
 	Endpoint(name string) (Endpoint, error)
+	// Endpoints returns the name of every endpoint this assembly declared, in
+	// ascending order. Each call returns a slice of its own, so a caller may
+	// change it without affecting the Router. It may be called in any stage.
+	Endpoints() []string
 }
 
 // Endpoint is the registration surface of one listening endpoint.

@@ -27,6 +27,11 @@ const configPath = configNamespace
 // told which key to write.
 const endpointsItem = "endpoints"
 
+// reservedEndpointName is the endpoint name configuration cannot declare. A
+// list of endpoint names elsewhere writes it to mean every declared endpoint,
+// and an endpoint of that name would be indistinguishable from the wildcard.
+const reservedEndpointName = "*"
+
 // moduleConfig is the set of input items this module accepts. It is not
 // exported: the surface carries net/http's types and this package's own, and a
 // configuration struct on it would make a host's file shape part of the API.
@@ -172,6 +177,13 @@ func (c moduleConfig) resolve() ([]endpointSettings, error) {
 // to change: a startup failure that only says "missing address" leaves the host
 // to work out which of its endpoints it came from.
 func (e endpointConfig) resolve(name string) (endpointSettings, error) {
+	if name == reservedEndpointName {
+		return endpointSettings{}, fmt.Errorf(
+			"http: endpoint %q carries a name this module reserves: a list of endpoint names "+
+				"elsewhere writes it to mean every declared endpoint, so no endpoint can be "+
+				"called that. Rename the entry %q under %s.%s",
+			name, name, configNamespace, endpointsItem)
+	}
 	if len(e.Unknown) > 0 {
 		unknown := slices.Sorted(maps.Keys(e.Unknown))
 		return endpointSettings{}, fmt.Errorf(
