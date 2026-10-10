@@ -6,6 +6,7 @@ import (
 	"testing"
 
 	"github.com/vislake/speed/pkg/core"
+	"github.com/vislake/speed/pkg/log"
 )
 
 // This file pins the one ordering both consumers read: the migration sets and
@@ -58,6 +59,36 @@ func TestTheOrderComesFromRequiresNotFromNames(t *testing.T) {
 	inDependencyOrder(rank, names)
 	if want := []string{"zeta", "alpha"}; !slices.Equal(names, want) {
 		t.Errorf("the modules come out as %v, want %v", names, want)
+	}
+}
+
+// TestTheLoggingModuleIsPlacedAheadOfTheDatabaseModuleThatTakesItUp pins the
+// edge the database module's optional requirement of the logging capability
+// puts in the order.
+//
+// Without it nothing orders the two but their names, and "db.probe" sorts ahead
+// of "log": the database module would be constructed first, find no logger, and
+// write every statement through the process default one, with nothing to say
+// the configured destinations were bypassed. The dependant is named "app" so
+// that it too sorts ahead of both: where it lands is then the edges' doing and
+// not the names'. It requires the database capability, so it is placed behind
+// the database module, and the database module behind the logging module.
+func TestTheLoggingModuleIsPlacedAheadOfTheDatabaseModuleThatTakesItUp(t *testing.T) {
+	app := core.Module{
+		Name:     "app",
+		Requires: []core.Requirement{{Token: (*Database)(nil)}},
+	}
+
+	rank := dependencyRank(registryOf(app, NewModule(probeSpec()), log.Module()))
+
+	if len(rank) != 3 {
+		t.Fatalf("the ordering placed %d of the 3 registered modules: %v", len(rank), rank)
+	}
+	names := []string{"app", probeNamespace, log.ModuleName}
+	inDependencyOrder(rank, names)
+	if want := []string{log.ModuleName, probeNamespace, "app"}; !slices.Equal(names, want) {
+		t.Errorf("the modules come out as %v, want %v: the logging module first, the database module "+
+			"that takes its logger up second, and the module that requires the database last", names, want)
 	}
 }
 

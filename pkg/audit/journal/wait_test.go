@@ -101,8 +101,8 @@ func withBusyTimeout(dsn string) string {
 	return fmt.Sprintf("%s?_pragma=busy_timeout(%d)", dsn, deliveredBusyTimeout.Milliseconds())
 }
 
-// quietly is a session that does not print the statement a case fails on
-// purpose.
+// quietly is a session that keeps the record of a statement a case fails on
+// purpose out of the run's output.
 func quietly(handle *gorm.DB) *gorm.DB {
 	return handle.Session(&gorm.Session{Logger: logger.Discard})
 }

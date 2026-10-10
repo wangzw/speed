@@ -10,6 +10,11 @@
 // such as the one connection of an in-memory database. A module is exercised on
 // a handle from here where what it meets is what an assembly hands it.
 //
+// A handle delivered here comes out of an assembly of the engine's module and
+// the config module only, with no log module in it, so its statement records go
+// through the process default logger, to standard output at the bootstrap level,
+// stamped with the engine module's name as the module attribute.
+//
 // No migration is applied: only the engine's module takes part, beside the
 // config module the reader is supplied to, and a test builds the tables it
 // needs.

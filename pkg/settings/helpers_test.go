@@ -118,14 +118,15 @@ func open(t *testing.T) *gorm.DB {
 // It is the handle the database module delivers over a SQLite file, rather than
 // one opened here, so that the store runs over what an assembly hands it: the
 // constraint classification the module installs, and the pool shape it gives
-// the locator. The session handed back does not print the statements a case
-// fails on purpose.
+// the locator. The session handed back writes no record of the statements a
+// case fails on purpose.
 func openMemory(t *testing.T) *gorm.DB {
 	t.Helper()
 	return quietly(dbtest.SQLite(t, filepath.Join(t.TempDir(), "settings.db"), nil).DB())
 }
 
-// quietly is a session of a delivered handle that prints no failed statement.
+// quietly is a session of a delivered handle that writes no record of a failed
+// statement.
 func quietly(handle *gorm.DB) *gorm.DB {
 	return handle.Session(&gorm.Session{Logger: quiet().Logger})
 }

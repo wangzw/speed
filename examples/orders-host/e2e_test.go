@@ -151,7 +151,7 @@ func (r record) is(msg string, attrs ...string) bool {
 
 // parseTextRecord reads one line of the text format, reporting false for a line
 // that is not a record at all: the startup diagnostics share the stream with
-// the records, and so does the database module's own statement logging.
+// the records.
 func parseTextRecord(line string) (record, bool) {
 	rec := record{}
 	rest := strings.TrimRight(line, " ")

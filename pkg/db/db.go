@@ -3,10 +3,14 @@
 // the connection, plugin, encryption and migration logic the implementation
 // subpackages share.
 //
-// This package registers no module. The implementations do: pkg/db/postgres and
-// pkg/db/sqlite each register one, bind their own dialect's driver, and declare
-// the same capability exclusively. A host imports the one it deploys on, or
-// several, and the configuration decides which of them runs.
+// This package registers no module of its own. The implementations do:
+// pkg/db/postgres and pkg/db/sqlite each register one, bind their own dialect's
+// driver, and declare the same capability exclusively. A host imports the one
+// it deploys on, or several, and the configuration decides which of them runs.
+// The package does import pkg/log, whose initialisation registers the module
+// named log, so every binary that imports it carries that registered module,
+// which takes part where a command tree names it and on entries that take every
+// registered module.
 //
 // The calling surface is GORM's *gorm.DB. This package wraps GORM rather than
 // abstracting it, so query building, model mapping, association loading and
@@ -96,9 +100,11 @@ type Database interface {
 	// Open establishes an additional connection to another database, for a
 	// read replica, another system's database or a one-off source. It is
 	// assembled like the delivered handle — same dialect, same declared
-	// plugins, same encryption serializer — and it shares the same connection
-	// pool parameters, except that a locator naming a database private to one
-	// connection, such as SQLite's :memory:, gets a pool of one. The connection
+	// plugins, same encryption serializer, same logger for its statements —
+	// and it shares the same connection pool parameters, except that a locator
+	// naming a database private to one connection, such as SQLite's :memory:,
+	// gets a pool of one. Its statements are therefore written where the
+	// delivered handle's are, and without the values they bind. The connection
 	// attempt is bound to ctx. A blank locator is refused with
 	// ErrConnectFailed: a driver handed one connects to a database nobody
 	// named rather than failing.

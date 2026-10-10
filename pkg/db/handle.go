@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"log/slog"
 	"strings"
 
 	"gorm.io/gorm"
@@ -16,15 +17,24 @@ import (
 //
 // It keeps the Spec and the section it was assembled from, so that a second
 // connection a caller builds with Open is put together the same way the
-// delivered one was — same engine, same pool shape. The Spec is also how a
-// product says whose New built it: Migrate accepts an instance of this type that
-// carries the name of its own module, and no other. Everything on it is fixed
-// at construction and the handle underneath is safe for concurrent use, so the
-// product carries no lock of its own.
+// delivered one was — same engine, same pool shape, same logger. The Spec is
+// also how a product says whose New built it: Migrate accepts an instance of
+// this type that carries the name of its own module, and no other. Everything
+// on it is fixed at construction and the handle underneath is safe for
+// concurrent use, so the product carries no lock of its own.
 type database struct {
 	spec   Spec
 	cfg    lockingConfig
 	handle *gorm.DB
+	// logger is what the statements of every handle this product opens are
+	// written through: the delivered one, and each one Open builds. It is the
+	// logger the registry gave the module when this product was built, named
+	// for the module, or the process default logger stamped with the module's
+	// name when the assembly has none; a product built in another registry
+	// keeps that registry's. Open hands it on rather than asking again, so that
+	// a statement run on a connection a caller moved to another database is
+	// written where the delivered handle's are.
+	logger *slog.Logger
 	// plugins is what the assembly declared, in the order it installs them.
 	// The product keeps the list rather than reading the registry again so
 	// that a connection built with Open carries the same set as the
@@ -50,13 +60,17 @@ var _ Database = (*database)(nil)
 // It takes a config.Reader rather than the registry, so the descriptor's
 // callback does nothing but resolve and delegate; the plugins arrive collected,
 // because the collection is the descriptor's to make and this function's to
-// install.
-func (s Spec) newDatabase(ctx context.Context, reader config.Reader, plugins []pluginInstall) (*database, error) {
+// install, and the logger arrives taken up, because the lookup is the
+// descriptor's too: this function only hands it to every handle the product
+// opens.
+func (s Spec) newDatabase(ctx context.Context, reader config.Reader, plugins []pluginInstall,
+	logger *slog.Logger,
+) (*database, error) {
 	cfg, err := s.read(reader)
 	if err != nil {
 		return nil, err
 	}
-	handle, err := openHandle(ctx, s, cfg)
+	handle, err := openHandle(ctx, s, cfg, logger)
 	if err != nil {
 		return nil, err
 	}
@@ -82,6 +96,7 @@ func (s Spec) newDatabase(ctx context.Context, reader config.Reader, plugins []p
 		spec:    s,
 		cfg:     cfg,
 		handle:  handle,
+		logger:  logger,
 		plugins: plugins,
 		digest:  digest,
 	}, nil
@@ -113,13 +128,18 @@ func (d *database) BlindIndex(plaintext string) string {
 // Open establishes another connection, to the database the locator names.
 //
 // The connection is assembled the way the delivered one is — same engine, same
-// pool parameters, and the same declared plugins installed before it is
-// returned. A caller that moved a query to another database would otherwise
-// lose whatever the plugins do to it, and losing tenant filtering or auditing
-// is not something the query's result shows. Each handle is installed into
-// separately, so GORM calls every plugin's Initialize once more on this one;
-// the instances are the declared ones, and the declaration is what this module
-// installs.
+// pool parameters, the same logger for its statements, and the same declared
+// plugins installed before it is returned. A caller that moved a query to
+// another database would otherwise lose whatever the plugins do to it, and
+// losing tenant filtering or auditing is not something the query's result
+// shows. Each handle is installed into separately, so GORM calls every plugin's
+// Initialize once more on this one; the instances are the declared ones, and
+// the declaration is what this module installs.
+//
+// The logger is the delivered handle's own, so the statements of this
+// connection are written where that handle's are, under the same module name,
+// and without the values they bind: a query is not logged anywhere else, or
+// under another name, for having moved to another database.
 //
 // It also carries the one thing the delivered handle does not: a mark naming
 // the delivered handle it was opened from, which OpenedFrom reads. It goes on
@@ -145,7 +165,7 @@ func (d *database) Open(ctx context.Context, dsn string) (*gorm.DB, error) {
 	}
 	cfg := d.cfg
 	cfg.DSN = dsn
-	handle, err := openHandle(ctx, d.spec, cfg)
+	handle, err := openHandle(ctx, d.spec, cfg, d.logger)
 	if err != nil {
 		return nil, err
 	}

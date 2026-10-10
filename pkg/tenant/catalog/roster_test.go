@@ -57,8 +57,8 @@ func openHandleAt(t *testing.T, dsn string) *gorm.DB {
 	return quiet(dbtest.SQLite(t, dsn, nil).DB())
 }
 
-// quiet is a session of a delivered handle whose failed statements GORM does
-// not print.
+// quiet is a session of a delivered handle that writes no record of a failed
+// statement.
 func quiet(handle *gorm.DB) *gorm.DB {
 	return handle.Session(&gorm.Session{Logger: logger.Default.LogMode(logger.Silent)})
 }

@@ -4,6 +4,9 @@ import (
 	"context"
 	"database/sql"
 	"errors"
+	"io/fs"
+	"log/slog"
+	"os"
 	"path/filepath"
 	"strings"
 	"testing"
@@ -53,6 +56,11 @@ func sqliteSection(dsn string) lockingConfig {
 	}}
 }
 
+// discardingLogger is the logger a case hands to openHandle or newDatabase when
+// it does not read what the handle writes: one over slog.DiscardHandler, which
+// accepts every record and keeps none.
+func discardingLogger() *slog.Logger { return slog.New(slog.DiscardHandler) }
+
 // unopenableDSN is a locator the driver refuses: the directory it names does
 // not exist. The secret stands where a locator carries its credentials.
 func unopenableDSN(t *testing.T) string {
@@ -84,7 +92,7 @@ func releaseAtEnd(t *testing.T, pool *sql.DB) {
 // TestConnectFailureIsErrConnectFailed pins the sentinel a locator the driver
 // cannot open reports.
 func TestConnectFailureIsErrConnectFailed(t *testing.T) {
-	_, err := openHandle(t.Context(), sqliteSpec(), sqliteSection(unopenableDSN(t)))
+	_, err := openHandle(t.Context(), sqliteSpec(), sqliteSection(unopenableDSN(t)), discardingLogger())
 	if !errors.Is(err, ErrConnectFailed) {
 		t.Fatalf("opening a locator the driver refuses gave %v, want ErrConnectFailed", err)
 	}
@@ -98,7 +106,7 @@ func TestConnectFailureIsErrConnectFailed(t *testing.T) {
 // them the reader knows a connection failed and nothing about which one or
 // where to look.
 func TestConnectFailureDoesNotEchoTheLocator(t *testing.T) {
-	_, err := openHandle(t.Context(), sqliteSpec(), sqliteSection(unopenableDSN(t)))
+	_, err := openHandle(t.Context(), sqliteSpec(), sqliteSection(unopenableDSN(t)), discardingLogger())
 	if err == nil {
 		t.Fatal("opening a locator whose directory does not exist succeeded")
 	}
@@ -129,7 +137,7 @@ func TestConnectFailureNamesTheConnectivityStep(t *testing.T) {
 	ctx, cancel := context.WithCancel(t.Context())
 	cancel()
 
-	_, err := openHandle(ctx, sqliteSpec(), sqliteSection(filepath.Join(t.TempDir(), "cancelled.db")))
+	_, err := openHandle(ctx, sqliteSpec(), sqliteSection(filepath.Join(t.TempDir(), "cancelled.db")), discardingLogger())
 	if !errors.Is(err, ErrConnectFailed) {
 		t.Fatalf("connecting under a cancelled context gave %v, want ErrConnectFailed", err)
 	}
@@ -155,7 +163,7 @@ func TestTheLocatorReachesTheDriverTrimmed(t *testing.T) {
 		seen = dsn
 		return sqlite.Open(dsn)
 	}
-	handle, err := openHandle(t.Context(), spec, sqliteSection(" "+path+" "))
+	handle, err := openHandle(t.Context(), spec, sqliteSection(" "+path+" "), discardingLogger())
 	if err != nil {
 		t.Fatalf("opening against a padded locator: %v", err)
 	}
@@ -179,7 +187,7 @@ func TestPoolParametersReachTheConnection(t *testing.T) {
 	cfg := sqliteSection(filepath.Join(t.TempDir(), "pool.db"))
 	cfg.MaxOpenConns = 7
 
-	handle, err := openHandle(t.Context(), sqliteSpec(), cfg)
+	handle, err := openHandle(t.Context(), sqliteSpec(), cfg, discardingLogger())
 	if err != nil {
 		t.Fatalf("connecting: %v", err)
 	}
@@ -208,7 +216,7 @@ func TestIdleConnectionsReachTheConnection(t *testing.T) {
 	cfg.MaxOpenConns = 8
 	cfg.MaxIdleConns = 3
 
-	handle, err := openHandle(ctx, sqliteSpec(), cfg)
+	handle, err := openHandle(ctx, sqliteSpec(), cfg, discardingLogger())
 	if err != nil {
 		t.Fatalf("connecting: %v", err)
 	}
@@ -245,7 +253,7 @@ func TestConnMaxLifetimeReachesTheConnection(t *testing.T) {
 	cfg := sqliteSection(filepath.Join(t.TempDir(), "lifetime.db"))
 	cfg.ConnMaxLifetime = time.Nanosecond
 
-	handle, err := openHandle(ctx, sqliteSpec(), cfg)
+	handle, err := openHandle(ctx, sqliteSpec(), cfg, discardingLogger())
 	if err != nil {
 		t.Fatalf("connecting: %v", err)
 	}
@@ -260,5 +268,91 @@ func TestConnMaxLifetimeReachesTheConnection(t *testing.T) {
 	if got := pool.Stats().MaxLifetimeClosed; got == 0 {
 		t.Error("no connection was replaced once its lifetime had passed, so conn-max-lifetime " +
 			"never reached the pool")
+	}
+}
+
+// openedValue is the value the statements of the case below bind: a mark the
+// records are searched for.
+const openedValue = "logged-value-opened"
+
+// TestAHandleWritesItsStatementsThroughTheLoggerItIsOpenedWith holds the one
+// place that builds the statement logger to building it over the logger it is
+// handed. A statement of the handle that fails is a record of that logger's
+// handler, with the classes of the error the handle reports — for a duplicate
+// key, the sentinel and the engine's result code, since the handle is opened
+// with the engine's classification of what it refuses — and without the value it
+// bound; a statement that ran as any other is not written at the level a handle
+// is opened at, which is Warn.
+func TestAHandleWritesItsStatementsThroughTheLoggerItIsOpenedWith(t *testing.T) {
+	rec := &recordingHandler{}
+	handle, err := openHandle(t.Context(), sqliteSpec(), sqliteSection(filepath.Join(t.TempDir(), "logged.db")),
+		slog.New(rec))
+	if err != nil {
+		t.Fatalf("opening the handle: %v", err)
+	}
+	t.Cleanup(func() {
+		if err := Close(handle); err != nil {
+			t.Errorf("releasing the handle: %v", err)
+		}
+	})
+
+	if err := handle.Exec("CREATE TABLE logged_codes (code TEXT NOT NULL UNIQUE)").Error; err != nil {
+		t.Fatalf("creating the table: %v", err)
+	}
+	if err := handle.Exec("INSERT INTO logged_codes (code) VALUES (?)", openedValue).Error; err != nil {
+		t.Fatalf("writing the row: %v", err)
+	}
+	if records := rec.written(); len(records) != 0 {
+		t.Fatalf("statements that ran as any other were written at the level a handle is opened at:\n%s",
+			everythingOf(records))
+	}
+
+	if err := handle.Exec("INSERT INTO logged_codes (code) VALUES (?)", openedValue).Error; !errors.Is(err,
+		gorm.ErrDuplicatedKey) {
+		t.Fatalf("a second row under the unique value gave %v, want gorm.ErrDuplicatedKey in its chain", err)
+	}
+	records := rec.written()
+	assertNoneCarries(t, records, openedValue)
+	if len(records) != 1 {
+		t.Fatalf("the refused statement was written as %d records, want one:\n%s", len(records), everythingOf(records))
+	}
+	attrs := attributesOf(t, records[0])
+	if records[0].Message != "statement failed" || records[0].Level != slog.LevelError {
+		t.Errorf("the refused statement is written as %q at %s, want \"statement failed\" at ERROR",
+			records[0].Message, records[0].Level)
+	}
+	if classes, _ := textOf(attrs, "classes"); classes != "duplicated key not allowed, result code 2067" {
+		t.Errorf("the refused statement is written with the classes %q, want the sentinel and the engine's code",
+			classes)
+	}
+	if statement, _ := textOf(attrs, "statement"); statement != "INSERT INTO logged_codes (code) VALUES (?)" {
+		t.Errorf("the refused statement is written as %q, want its text with the placeholder", statement)
+	}
+}
+
+// TestAHandleOpenedWithNoLoggerIsRefusedBeforeAnythingIsOpened holds openHandle
+// to refusing a nil logger with a message. A handle whose statements went
+// nowhere would work and say nothing, and every caller hands the logger it took
+// up, so a nil one is a defect in this repository's own code. The refusal comes
+// before the connection is made: the locator names a file the driver creates
+// when it connects, and none exists once the refusal has been reported.
+func TestAHandleOpenedWithNoLoggerIsRefusedBeforeAnythingIsOpened(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "unlogged.db")
+
+	var reported any
+	func() {
+		defer func() { reported = recover() }()
+		_, _ = openHandle(t.Context(), sqliteSpec(), sqliteSection(path), nil)
+	}()
+
+	if reported == nil {
+		t.Fatal("openHandle accepted a nil logger")
+	}
+	if text, ok := reported.(string); !ok || text == "" {
+		t.Errorf("openHandle panicked with %v (%T), want a message", reported, reported)
+	}
+	if _, err := os.Stat(path); !errors.Is(err, fs.ErrNotExist) {
+		t.Errorf("the database file exists after the refusal, or cannot be told not to (%v): the connection was "+
+			"made before the logger was judged", err)
 	}
 }

@@ -15,6 +15,8 @@ import (
 	"testing"
 	"time"
 
+	"github.com/vislake/speed/pkg/db/internal/dbsuite"
+	"github.com/vislake/speed/pkg/db/postgres"
 	"github.com/vislake/speed/pkg/internal/pgpool/pgtest"
 )
 
@@ -302,11 +304,15 @@ func TestNoEngineNamedIsMissingProvider(t *testing.T) {
 
 // TestARefusedConnectionIsReportedOnceOnTheDiagnosticStream starts on a server
 // that refuses the login. The startup fails with the database module's own
-// error on standard error, and nothing else reports it: GORM's logger writes to
-// standard output from inside gorm.Open when its own connectivity check fails,
-// which puts a second copy of the driver's reason — the user, the database and
-// the address it tried — on the stream a host's log pipeline reads. Neither
-// stream carries the password.
+// error on standard error, and nothing else reports it: a connectivity check of
+// GORM's own, which gorm.Open runs unless told not to, reports its failure
+// through the handle's logger, and the module's logger writes that as a "gorm
+// error" record on standard output, with the driver's reason in its detail — the
+// user, the database and the address it tried — on the stream a host's log
+// pipeline reads. The module opens its handles without that check, and standard
+// output is searched for the words of GORM's message and of the driver's reason,
+// whichever attribute of a record would carry them. Neither stream carries the
+// password.
 func TestARefusedConnectionIsReportedOnceOnTheDiagnosticStream(t *testing.T) {
 	parsed, err := url.Parse(pgtest.Acquire(t))
 	if err != nil {
@@ -518,6 +524,24 @@ func runReplica(role, locator, rendezvous string) replicaRun {
 	return run
 }
 
+// refusedStatements are the records on a replica's standard output of a
+// statement the database refused, the "statement failed" records, whatever
+// classes they carry. A correct run refuses none: the migration mutex lets one
+// replica apply the migration while the other waits, so a statement that fails
+// is the collision the mutex is there to prevent. Without the mutex the failure
+// is whichever the race produces, a duplicate key in the catalogue as often as
+// an object that already exists, so no one SQLSTATE stands for it.
+func refusedStatements(t *testing.T, run replicaRun) []dbsuite.Record {
+	t.Helper()
+	var refused []dbsuite.Record
+	for _, record := range dbsuite.Records(t, run.role+"'s standard output", run.stdout) {
+		if record.Message == "statement failed" {
+			refused = append(refused, record)
+		}
+	}
+	return refused
+}
+
 // divide sorts the replicas by what they reported, and fails when the pair did
 // not come out as exactly one applier and one no-op.
 func divide(t *testing.T, results []replicaRun) (applier, noop replicaRun) {
@@ -528,17 +552,24 @@ func divide(t *testing.T, results []replicaRun) (applier, noop replicaRun) {
 			t.Errorf("%s exited %d, and both replicas have to start successfully:\nstdout:\n%s\nstderr:\n%s",
 				result.role, result.exit, result.stdout, result.stderr)
 		}
-		// Both streams: the driver's report of the collision reaches standard
-		// error with the startup failure it causes, and the database
-		// module's logger writes the failed statement to standard output, on
-		// the stream the markers arrive on, with its SQLSTATE in place of the
-		// driver's text — 42P07 for a table that already exists, 42710 for
-		// another object.
-		if strings.Contains(result.stderr+result.stdout, "already exists") ||
-			strings.Contains(result.stdout, "SQLSTATE 42P07") || strings.Contains(result.stdout, "SQLSTATE 42710") {
+		// Each stream is read for what it carries of the collision. The driver's
+		// report of it, the words "already exists", reaches standard error with
+		// the startup failure it causes. The database module's logger writes
+		// the failed statement to standard output, on the stream the markers
+		// arrive on, as a "statement failed" record: this assembly names no
+		// log module, so the records go through the process default logger,
+		// which writes to standard output. A correct run has no such record,
+		// so any one is the collision, whatever the classes it carries.
+		if strings.Contains(result.stderr, "already exists") {
 			t.Errorf("%s failed on an object that already exists, which is the collision the migration "+
 				"mutex is there to prevent:\nstdout:\n%s\nstderr:\n%s",
 				result.role, result.stdout, result.stderr)
+		}
+		if refused := refusedStatements(t, result); len(refused) > 0 {
+			t.Errorf("%s had %d statement(s) refused by the database, and a correct run has none: a refused "+
+				"statement is the collision the migration mutex is there to prevent, the first being %s\n"+
+				"stdout:\n%s\nstderr:\n%s",
+				result.role, len(refused), refused[0].Line, result.stdout, result.stderr)
 		}
 		switch {
 		case result.marked(markApplied):
@@ -554,7 +585,31 @@ func divide(t *testing.T, results []replicaRun) (applier, noop replicaRun) {
 		t.Fatalf("%d replicas applied the migration and %d found it already applied, and exactly one of "+
 			"each is what the migration mutex has to produce", len(appliers), len(noops))
 	}
+	requireSlowMigrationRecord(t, appliers[0])
 	return appliers[0], noops[0]
+}
+
+// requireSlowMigrationRecord asserts that the replica that applied the migration
+// wrote the migration as a "slow statement" record on standard output, stamped
+// with the module that ran it. The file holds the replica's session for the
+// seconds it sleeps, far beyond the logger's threshold, so the record is there on
+// every run.
+//
+// It is what gives the search for refused statements in divide something to
+// find: a correct run has none, so a logger that wrote its records to another
+// stream, or in another form, would leave that search reading nothing and a run
+// that collided would look the same as one that did not.
+func requireSlowMigrationRecord(t *testing.T, applier replicaRun) {
+	t.Helper()
+	for _, record := range dbsuite.Records(t, applier.role+"'s standard output", applier.stdout) {
+		if record.Level == "WARN" && record.Message == "slow statement" &&
+			record.Attrs["module"] == postgres.ModuleName && strings.Contains(record.Attrs["statement"], "pg_sleep") {
+			return
+		}
+	}
+	t.Errorf("%s applied the migration and left no \"slow statement\" record of it, stamped with module=%s, on "+
+		"standard output, so the records this case reads are not where it reads them:\nstdout:\n%s",
+		applier.role, postgres.ModuleName, applier.stdout)
 }
 
 // TestConcurrentFirstMigrationElectsOneApplier is the hard gate on the

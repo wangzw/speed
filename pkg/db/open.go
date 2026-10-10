@@ -5,6 +5,7 @@ import (
 	"database/sql"
 	"errors"
 	"fmt"
+	"log/slog"
 	"strings"
 
 	"gorm.io/gorm"
@@ -58,16 +59,20 @@ import (
 // how a callback holding only a statement reads the statement's identifiers by
 // that engine's rules.
 //
-// Every handle logs through statementLogger, which writes a failed or slow
-// statement to standard output without a value the statement binds or reads.
-func openHandle(ctx context.Context, spec Spec, cfg lockingConfig) (*gorm.DB, error) {
+// Every handle logs through statementLogger over the logger it is handed: a
+// failed or slow statement, and every statement of a Debug session, is written
+// as a record of that logger, without a value the statement binds or reads, and
+// that logger's configuration decides where the record goes and from which
+// level. The logger is mandatory: a nil one is a defect in the caller, and
+// openHandle panics on it before anything is opened.
+func openHandle(ctx context.Context, spec Spec, cfg lockingConfig, logger *slog.Logger) (*gorm.DB, error) {
 	// The locator is normalised once, and the dialector is the only reader:
 	// the stance judged the trimmed text, so the driver has to be handed the
 	// same one rather than the text with its surrounding whitespace intact.
 	locator := strings.TrimSpace(cfg.DSN)
 	dialector := classifyingDialector{Dialector: spec.Dialector(locator), classify: spec.ConstraintViolation}
 	session, err := gorm.Open(dialector, &gorm.Config{
-		DisableAutomaticPing: true, TranslateError: true, Logger: standardOutput(),
+		DisableAutomaticPing: true, TranslateError: true, Logger: newStatementLogger(logger),
 	})
 	if err != nil {
 		return nil, fmt.Errorf("%w: opening a %s connection failed: %w",

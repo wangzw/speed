@@ -45,7 +45,7 @@ type uniqueRow struct {
 func constrainedHandle(t *testing.T) *gorm.DB {
 	t.Helper()
 	dsn := filepath.Join(t.TempDir(), "constraints.db") + "?_pragma=foreign_keys(1)"
-	handle, err := openHandle(t.Context(), sqliteSpec(), sqliteSection(dsn))
+	handle, err := openHandle(t.Context(), sqliteSpec(), sqliteSection(dsn), discardingLogger())
 	if err != nil {
 		t.Fatalf("opening the handle: %v", err)
 	}

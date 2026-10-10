@@ -78,7 +78,7 @@ func encryptedDSN(t *testing.T) string {
 func assembleEncrypted(t *testing.T, dsn string, items ...string) *database {
 	t.Helper()
 	spec := sqliteSpec()
-	product, err := spec.newDatabase(t.Context(), readerFor(t, spec, sectionBody(dsn, items...)), nil)
+	product, err := spec.newDatabase(t.Context(), readerFor(t, spec, sectionBody(dsn, items...)), nil, discardingLogger())
 	if err != nil {
 		t.Fatalf("assembling over %s: %v", sectionBody(dsn, items...), err)
 	}
@@ -415,7 +415,7 @@ func TestABlankRootKeyFailsTheAssembly(t *testing.T) {
 	for _, c := range cases {
 		spec := sqliteSpec()
 		body := sectionBody(encryptedDSN(t), c.item)
-		product, err := spec.newDatabase(t.Context(), readerFor(t, spec, body), nil)
+		product, err := spec.newDatabase(t.Context(), readerFor(t, spec, body), nil, discardingLogger())
 		if err == nil {
 			_ = Close(product.DB())
 			t.Errorf("an assembly over %s went ahead, sealing under a key of whitespace", body)
@@ -437,7 +437,7 @@ func TestAShortRootKeyFailsTheAssembly(t *testing.T) {
 	for _, key := range []string{"k", "thirteen-byte"} {
 		spec := sqliteSpec()
 		body := sectionBody(encryptedDSN(t), `"encryption-key":"`+key+`"`)
-		product, err := spec.newDatabase(t.Context(), readerFor(t, spec, body), nil)
+		product, err := spec.newDatabase(t.Context(), readerFor(t, spec, body), nil, discardingLogger())
 		if err == nil {
 			_ = Close(product.DB())
 			t.Errorf("an assembly over %s went ahead, sealing under a %d-byte root key", body, len(key))

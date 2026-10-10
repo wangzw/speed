@@ -805,11 +805,13 @@ const (
 // serving process's output.
 //
 // The database module keeps a logger on the handle it delivers, and that
-// logger prints a statement that failed to standard output without the values
-// bound into it, so the refused insert is printed neither with the hash nor
-// with the address. The host does not route its statements around the logger
-// the delivered handle carries: the claim is the module's, and this case
-// holds it.
+// logger writes a statement that failed as a record, through the logging
+// module and without the values bound into it, so the refused insert is
+// recorded neither with the hash nor with the address. The host does not route
+// its statements around the logger the delivered handle carries: the claim is
+// the module's, and this case holds it. The record is looked for before the
+// output is searched, so an output the database wrote nothing of the refused
+// insert to does not pass for one that holds it without the values.
 func TestAPasswordHashReachesNoOutput(t *testing.T) {
 	forEachStack(t, func(t *testing.T, c *crmCase) {
 		c.migrate()
@@ -833,6 +835,18 @@ func TestAPasswordHashReachesNoOutput(t *testing.T) {
 		out := h.output()
 		if _, ok := findRecord(out, "creating a user"); !ok {
 			t.Fatalf("the serving process recorded no failure of the refused creation, so the refusal was never met")
+		}
+		// The database's own record of the refused insert has to be there, or the scan
+		// below reads a stream that never held the statement and says nothing about
+		// what the module's logger leaves out of it.
+		recorded := slices.ContainsFunc(records(out), func(rec record) bool {
+			return rec.is("statement failed", "level", "ERROR", "module", c.stack.engine) &&
+				strings.Contains(rec["statement"], "INSERT INTO") && strings.Contains(rec["statement"], "users")
+		})
+		if !recorded {
+			t.Fatalf("the serving process's output carries no \"statement failed\" record at ERROR, stamped "+
+				"with module=%s, for an insert into users, so the database module recorded nothing of the "+
+				"refused insert:\n%s", c.stack.engine, tail(out))
 		}
 		for _, line := range strings.Split(out, "\n") {
 			if strings.Contains(line, hashScheme+"$") {

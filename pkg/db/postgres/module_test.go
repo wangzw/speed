@@ -17,6 +17,7 @@ import (
 	filesource "github.com/vislake/speed/pkg/config/source/file"
 	"github.com/vislake/speed/pkg/core"
 	"github.com/vislake/speed/pkg/db"
+	"github.com/vislake/speed/pkg/db/internal/dbsuite"
 	"github.com/vislake/speed/pkg/db/postgres"
 	"github.com/vislake/speed/pkg/internal/pgpool/pgtest"
 )
@@ -44,7 +45,9 @@ var sharedItems = []string{
 // mounted, and a shared one conflicts with the neighbour's declaration before
 // exclusivity is ever resolved; and the migration-lock-timeout item is declared
 // if and only if the mutex was handed over, so its absence is how a forgotten
-// mutex would read.
+// mutex would read. The optional requirement of the log capability is what has
+// the logging module constructed ahead of the database in an assembly that took
+// it in.
 func TestPostgresModuleShape(t *testing.T) {
 	module := postgres.Module()
 
@@ -69,6 +72,7 @@ func TestPostgresModuleShape(t *testing.T) {
 			"configured two engines would get one of them silently and find half its tables in a " +
 			"database nobody mentioned")
 	}
+	dbsuite.RequireOptionalLogging(t, "the module this subpackage builds", module)
 
 	schema := schemaOf(t, module)
 	if schema.Namespace != "db.postgres" {
@@ -130,7 +134,9 @@ func TestPostgresModuleShape(t *testing.T) {
 // field by content. The name is deliberately not asserted: a lookup by a name
 // returns the descriptor filed under it, so its name equals that key by
 // construction and an assertion about it would hold for any registration,
-// including one that registered something else entirely.
+// including one that registered something else entirely. The optional
+// requirement of the log capability is held to its shape on the registered
+// descriptor itself, since that is the one a host's database is ordered by.
 func TestTheProcessRegistrationCarriesTheModule(t *testing.T) {
 	registered, ok := core.ProcessRegistry.Lookup(postgres.ModuleName)
 	if !ok {
@@ -142,6 +148,7 @@ func TestTheProcessRegistrationCarriesTheModule(t *testing.T) {
 		t.Errorf("the registered descriptor delivers %v, and Module builds %v: the registration is the "+
 			"descriptor hosts actually run on", registered.Provides, built.Provides)
 	}
+	dbsuite.RequireOptionalLogging(t, "the module this subpackage registers", registered)
 	registeredSchema, builtSchema := schemaOf(t, registered), schemaOf(t, built)
 	if !reflect.DeepEqual(registeredSchema, builtSchema) {
 		t.Errorf("the registration mounts its input items on %q and Module builds the declaration for "+

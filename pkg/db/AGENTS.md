@@ -26,8 +26,9 @@ same capability exclusively.
   ([`adr-db-errors-2026-09-28.md`](../../docs/adr/adr-db-errors-2026-09-28.md)),
   how a module's own statements take a connection within a bounded wait
   ([`adr-db-waits-2026-09-29.md`](../../docs/adr/adr-db-waits-2026-09-29.md)),
-  why the GORM logger a handle carries writes no statement's values
-  ([`adr-db-logging-2026-09-29.md`](../../docs/adr/adr-db-logging-2026-09-29.md)),
+  why the GORM logger a handle carries writes through the log module and writes
+  no statement's values
+  ([`adr-db-logging-2026-10-10.md`](../../docs/adr/adr-db-logging-2026-10-10.md)),
   why `Migrate` accepts only an instance this module's own `New` built
   ([`adr-db-scope-2026-10-08.md`](../../docs/adr/adr-db-scope-2026-10-08.md)),
   what an instance a host supplies for a module is
@@ -54,12 +55,15 @@ must not cross, and how to run it.
   compiler behind this is recorded in `adr-module-packaging-2026-09-22`.
 - **A driver belongs to the subpackage that binds it.** The root package reaches
   an engine only through the `Spec.Dialector` an implementation hands it.
-- **The root package registers no module.** Each engine's subpackage does it in
-  its own `init`, so a host that imports an engine has it available as soon as a
-  command names it on its tree. The command has to name it: the capability is
-  delivered exclusively and the dependency closure does not pull an exclusive
-  provider in on its own, so leaving every engine out of the tree is how an
-  assembly runs without a database.
+- **The root package registers no module of its own.** Each engine's subpackage
+  does it in its own `init`, so a host that imports an engine has it available
+  as soon as a command names it on its tree. The command has to name it: the
+  capability is delivered exclusively and the dependency closure does not pull
+  an exclusive provider in on its own, so leaving every engine out of the tree
+  is how an assembly runs without a database. The root package does import
+  `pkg/log`, whose initialisation registers the module named `log`, so a binary
+  that imports it carries that registered module, which takes part where a
+  command tree names it and on entries that take every registered module.
 - **The stance fails the startup; it does not stand the module down.** A named
   implementation whose locator is absent or blank returns an error naming the
   key, because a module taken in at run level has to start. `StateDisabled` is
@@ -180,46 +184,176 @@ must not cross, and how to run it.
   `readonly_test.go` runs a transaction on each read-only shape, and
   `transactions_test.go` holds the fallback to every answer a connection can
   give.
-- **The GORM logger every handle carries writes no value a statement binds or
-  reads** (`statementLogger`, `adr-db-logging-2026-09-29`). It answers GORM's
-  `ParamsFilter` with no values, so the text GORM hands `Trace` keeps its
+- **The GORM logger every handle carries writes through the log module, and
+  writes no value a statement binds or reads** (`statementLogger`,
+  `adr-db-logging-2026-10-10`). It writes through the `*slog.Logger` its
+  module's `New` took up (`Spec.logger`): the log capability's `Named` logger,
+  so that every record carries the module's own name, `module=db.sqlite` or
+  `module=db.postgres`, or, when the assembly delivers none, the log package's
+  process default logger with that attribute stamped on it. It is never read
+  from a statement's context (`log.FromContext`): a context given attributes and
+  no logger answers with a logger derived from the process default one, which
+  the log package's public interface cannot tell from an injected logger, and an
+  injected logger's `module` is its injector's. The guarantees of no bound or read value, no error
+  text and no `Scan` text are those of a statement's record. GORM's own
+  messages, `gorm info`, `gorm warning` and `gorm error`, are GORM's text with
+  its data formatted in, `detail`: the error text GORM reports and, for a model
+  the migrator cannot parse, the model value the caller handed over, with the
+  reason. Where a record goes, in what format, from which level and with what
+  masked is that logger's configuration and none of this module's to decide: an
+  empty output list writes none, and a
+  level above Info writes no statement of a `Debug` session, because GORM's
+  Info, Warn and Error are written at slog's levels of those names and those
+  statements are Info records. The messages, levels and attributes of the
+  records are the design document's vocabulary and the cases pin them, because
+  operators search the output for them and `internal/dbhost` counts the
+  failed statements' records on a replica's output. The messages are
+  fixed words and whatever varies is an attribute — the statement is
+  `statement`, GORM's own text `detail` — because the log module's redaction
+  judges the attributes of a record and not its message. The logger answers
+  GORM's `ParamsFilter` with no values, so the text GORM hands `Trace` keeps its
   placeholders, and it writes a failed statement's error classes
-  (`failureClasses`) instead of its text, which can quote a value. **A statement
-  run through GORM's `Scan` finisher, `(*gorm.DB).Scan`, is written without its
-  text.** The finisher swaps the handle's logger for GORM's recorder, whose
-  `ParamsFilter` hands every value back, and gives the real logger the finished
-  text through `Trace` alone, so the values are in it before this logger is
-  asked anything. `Trace` recognises that call by its caller's run-time name
-  (`scanFinisher`) and, when the finisher handed it a text, writes
-  `withheldStatement` in the text's place, keeping the error classes, the time,
-  the rows and the call site; a `Scan` whose statement was never built, its
-  handle having carried an error before the chain built one, hands over an
-  empty text and is written without one. Nothing else is recognised: `Row`,
-  `Rows` and the generics API's `Scan` (`gorm.G[T]`, which runs through `Find`)
-  swap no logger, and their statements are written with their placeholders. The
-  recognition happens inside `Trace` and sets no GORM package variable,
-  `logger.RecorderParamsFilter` included: those are shared by every handle in
-  the process, a host's own among them. A GORM that renames the finisher leaves
-  its statements written with their values, and nothing but the logging cases
-  reports it. A logger put in front of this one is outside the guarantee: one
-  that embeds `logger.Interface` without exposing `ParamsFilter`, as the logger
-  GORM's migrator installs under `DryRun` (`printSQLLogger`) does and a host's
-  `Session(&gorm.Session{Logger: …})` wrapper may, makes GORM fill the values
-  into every statement it relays, and one that relays `Trace` from a method of
-  its own is the caller `Trace` sees in the finisher's place; nothing in this
-  repository installs either. A logger wrapping GORM's own to change what it
-  writes reports its own file as every line's call site, since GORM names the
-  first frame outside its source; each method here asks `utils.FileWithLineNum`
-  itself for that reason, and `Trace` asks it in its own body: the call skips
-  the frame it is made from, so one made from a helper would report `Trace`'s
-  own file. The logging case in `internal/dbsuite` reads the two streams of a
-  child process apart on both engines, and holds every statement to standard
-  output, the `Scan` ones included, and the line of the refused `Scan`
-  statement to the classes of its refusal, GORM's sentinel and the engine's own
-  code, which each engine's test hands in; `logger_test.go` holds each line of
-  that path to its call site, its error classes and the withheld text, with a
-  `Row` statement as the control, and holds the package to leaving
-  `logger.RecorderParamsFilter` as GORM has it.
+  (`failureClasses`) in place of its error, whose text can quote a value. The
+  guarantee does not rest on that redaction, whose rule set starts empty and
+  which masks by a key or by a shape someone registered: a value GORM has filled
+  into a statement's text is under no key and has no such shape.
+  These groups of cases hold it. The logging case in `internal/dbsuite` runs on
+  both engines in a copy of the test binary whose assembly has no log module, so
+  that its records are the process default logger's and arrive on standard
+  output, and reads the copy's two streams apart. Each statement it holds is
+  written as exactly one record, with the level and message the design document
+  gives, the engine's module name and a call site in the file that ran it; a
+  statement that succeeds outside a `Debug` session is not written as a
+  `statement` record; standard error carries no record of the logger; and
+  neither stream carries a value any statement binds or reads. `logger_test.go`
+  drives the logger over a recording handler and holds every record it writes
+  to the design document's vocabulary — its level, its message, the attributes
+  of its kind and no others — and a failure's classes to their spelling.
+  `logrouting_test.go` runs the module under the real log module writing JSON
+  to a file and holds a statement that fails, one in a `Debug` session, a slow
+  one and one that fails through `Scan` to one record each, from the delivered
+  handle and from one built with `Open`, and what the log configuration decides
+  — a level of warn or error, an empty `outputs`, a redaction rule someone
+  registered — to the records it governs.
+- **A statement run through GORM's `Scan` finisher, `(*gorm.DB).Scan`, is
+  written without its text.** The finisher swaps the handle's logger for GORM's
+  recorder, whose `ParamsFilter` hands every value back, and gives the real
+  logger the finished text through `Trace` alone, so the values are in it before
+  this logger is asked anything: the dialect renders the text with its values
+  whether or not a record is then written, and the record that is written drops
+  the text. `Trace` recognises that call by its caller's
+  run-time name (`scanFinisher`) and, when the finisher handed it a text, writes
+  `withheldStatement` as the record's `statement` in the text's place, keeping
+  the classes, the time, the rows and the call site; a `Scan` whose statement
+  was never built, its handle having carried an error before the chain built
+  one, hands over an empty text, and its record has no `statement`. Nothing else
+  is recognised: `Row`, `Rows` and the generics API's `Scan` (`gorm.G[T]`, which
+  runs through `Find`) swap no logger, and their statements are written with
+  their placeholders. The recognition happens inside `Trace` and sets no GORM
+  package variable, `logger.RecorderParamsFilter` included: those are shared by
+  every handle in the process, a host's own among them. A GORM that renames the
+  finisher leaves its statements written with their values, and nothing but the
+  logging cases reports it. A logger put in front of this one is outside the
+  guarantee: one that embeds `logger.Interface` without exposing
+  `ParamsFilter`, as the logger GORM's migrator installs under `DryRun`
+  (`printSQLLogger`) does and a host's `Session(&gorm.Session{Logger: …})`
+  wrapper may, makes GORM fill the values into every statement it relays, and
+  one that relays `Trace` from a method of its own is the caller `Trace` sees in
+  the finisher's place; nothing in this repository installs either. The logging
+  case in `internal/dbsuite` issues a refused `Scan` statement and one in a
+  `Debug` session and holds both to the withheld text in place of the statement
+  and the first to the classes of its refusal, GORM's sentinel and the engine's
+  own code, which each engine's test hands in; `logger_test.go` holds each
+  record of this path to its call site, its classes and the withheld text, with
+  a `Row` statement as the control, a `Scan` that built no statement to a record
+  without one, and the package to leaving `logger.RecorderParamsFilter` as GORM
+  has it.
+- **Some routes of GORM write without any handle's logger, and so ignore the
+  log configuration and the redaction.** The schema parser reports a model it
+  cannot parse, and a hook whose signature is mistyped, through the
+  package-level `logger.Default`; the recorder GORM puts in the handle's place
+  while `DB.Scan` runs hands its `Warn` and `Error` to `logger.Default` too (it
+  writes from Warn up, so an `Info` is dropped there); and the migrator under `DryRun` prints the statements it would run with
+  `fmt.Println`. These reach standard output through the standard library,
+  outside `statementLogger`, so this logger is not the only way GORM writes
+  there, and nothing here replaces or silences them: `logger.Default` is shared
+  by every handle in the process, a host's own among them.
+- **The logger judges a record before it builds one, and each method GORM calls
+  finds the call site itself.** Each of them judges GORM's own level, then asks
+  the held logger whether it writes the record's level, then reads the call
+  site, and `Trace` calls `fc` for the statement last, so a record that is
+  filtered out renders no SQL, except that a `Scan` has the dialect render its
+  text, values included, before the logger is asked, and drops it (the boundary
+  before this one). The level question is this logger's to ask: the
+  record goes to the handler directly, and the log module's level layer does not
+  judge a level again in `Handle`, so a record built without asking is written
+  whatever level the log configuration sets. Every record carries the call site
+  GORM's own logger reports — the first frame outside GORM's source — as its
+  program counter, which a handler that adds the source to its output reads, and
+  as the attribute `caller`, because the chain the log module assembles never
+  adds the source. `utils.CallerFrame` skips the frame it is called from, so it
+  is asked in the body of the method GORM calls and never in a helper: a helper
+  would be the frame, and every record would name `logger.go`. `write` builds
+  the record with `slog.NewRecord` over that frame's program counter plus one and
+  hands it to the held logger's handler, because the logger's own methods would
+  stamp the file of the call that made them. A frame's counter is that of the
+  call instruction, while the counter a record carries is the return address
+  `runtime.Callers` reports, one past it, and a handler resolving it with
+  `runtime.CallersFrames` steps back one. The handler's error is dropped, and a panic in the handler chain
+  behind the held logger is not caught: nothing else that writes a record through the
+  same logger catches one. The context GORM hands over goes to the handler as it
+  is, a nil one replaced by `context.Background()`. `logger_test.go`
+  holds the order with a recording handler that, like the log module's level
+  layer, does not judge a level in `Handle`: the held logger is asked only about
+  what GORM's own level lets through, a record it will not write is neither
+  rendered nor handed over, and one it will write is rendered after the
+  question and before the delivery. It holds every record's program counter,
+  resolved as a handler resolves it, to the line of the call that caused the
+  record in `logger_test.go`, its `caller` to that same line, and neither to
+  `logger.go`.
+- **The requirement on the log capability is optional and stays declared, and
+  every handle shares the logger `New` took up.** `NewModule` requires
+  `*log.Logger` with `Optional` set, and neither half of that is to be dropped.
+  Optional, because the database has to work in an assembly that never took
+  logging in: the log module delivers `Logger` exclusively, so the closure does
+  not take it in on the engine's behalf, and a hard requirement fails a command
+  that names the engine and not the log module with `ErrMissingProvider` — the
+  example hosts' `migrate` commands are such commands. Declared, because an
+  assembly that did take it in has to have it constructed first: without the
+  edge nothing orders `db.*` and `log`, ties go by module name, both engines
+  sort ahead of `log`, and `New` looks for a logger before the log module has an
+  instance. The lookup is then answered `ErrMissingProvider`, which is also how
+  an absence reads, so `New` takes the fallback and the records of a host that
+  configured logging go to the standard output of the process default logger,
+  with nothing to say they should have gone elsewhere. Only that answer is an
+  absence: `Spec.logger` returns any other failure of the lookup, two providers
+  of the capability among them, with the module's name and `%w`, and the startup
+  fails, and so does a provider whose `Named` gives no logger, with the
+  module's name. The logger is taken up in `New`: `Prepare` runs before any module is
+  constructed, so a lookup there finds only an instance a host supplied. The
+  product keeps the logger, and `Open` hands it to the connection it builds
+  rather than asking again, so a query moved to another database is written
+  where the delivered handle's are, under the same module name; a product a host
+  built with this module's own `New` in a registry of its own and supplied keeps
+  that registry's logger, not the one the run it is supplied to delivers. The
+  logger is mandatory: `newStatementLogger` panics on a nil one, which
+  `logger_test.go` holds, and `openHandle` is handed one by both callers. A
+  database that loses the edge still starts and still writes, only somewhere
+  else, so nothing but the cases reports it. The descriptor cases hold
+  `Requires` to exactly that one optional requirement, on the descriptor a
+  `Spec` builds and on each engine's own module; `depsorder_test.go` holds the
+  order `log`, the database module, then a module that requires the database;
+  and `logrouting_test.go` holds the rest through a log provider the registry
+  constructs, whose name sorts after the database's, because a supplied
+  instance exists before any `New` runs and shows no order: the provider
+  receives a failed statement's record under the database's own module name,
+  `Named` is called once, a failed statement on a handle built with `Open` is
+  written to the same logger, and two providers of the capability fail the
+  startup with `ErrAmbiguousProvider`. The fallback is held twice: a host with
+  no log module starts and delivers a working handle, and, in a copy of the
+  test binary, writes its statements to standard output as one line each,
+  stamped with the module's name, as does the logging case in
+  `internal/dbsuite` on each engine.
 - **Every wrap uses `%w`.** A `%v` leaves the text all but identical and makes
   the sentinel unreachable, which is the failure the note in `errors.go` exists
   to prevent; the error-chain cases hold each path to it.
@@ -228,9 +362,10 @@ must not cross, and how to run it.
 
 A subpackage binds its driver, fixes its namespace, and registers the module this
 package builds from its `Spec`. The connection, the plugins, the encryption, the
-migration run and the release of the pool all stay here, shared with every other
-implementation, so that no engine drifts from its neighbour in the behaviour a
-host sees.
+statement logging, the migration run and the release of the pool all stay here,
+shared with every other implementation, so that no engine drifts from its
+neighbour in the behaviour a host sees. The requirement on the log capability is
+declared by `NewModule` for every engine, and no `Spec` field carries a logger.
 
 ```go
 func init() { core.ProcessRegistry.Register(Module()) }
@@ -287,6 +422,10 @@ gate. `internal/dbhost` is the test host the multi-process cases build and run;
 event modules' postgres backends; `internal/dbsuite` holds the
 engine-neutral migration cases each engine's fixture is driven through, and the
 constraint-refusal, refused-commit, concurrent read-then-write, connection and
-logging cases each engine runs on the handle its module delivers. `pkg/internal/dbtest` delivers this module's
+logging cases each engine runs on the handle its module delivers. The logging
+case runs its statements in a copy of the test binary, which is how it reads
+standard output apart from standard error; the white-box cases of the logger are
+in `logger_test.go`, and the ones that run the module under the real log module
+in `logrouting_test.go`. `pkg/internal/dbtest` delivers this module's
 capability to other modules' tests, for the ones that exercise what an assembly
 hands them.

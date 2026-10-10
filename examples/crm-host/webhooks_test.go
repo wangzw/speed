@@ -1239,10 +1239,9 @@ func TestATenantConfiguresItsWebhookThroughTheSettings(t *testing.T) {
 		if err := rows.Err(); err != nil {
 			t.Fatalf("reading the journal: %v", err)
 		}
-		// The records are what the logging module writes. The database
-		// module's own statement lines, which GORM's default logger prints for
-		// a failed or a slow statement with its values, are not records and
-		// are not read here (design-db.md, 日志).
+		// Every record the serving process wrote is read, the database
+		// module's statement records among them: its logger writes no value a
+		// statement binds (design-db.md, 日志).
 		for _, rec := range records(w.h.output()) {
 			for key, value := range rec {
 				for _, secret := range []string{first, second} {

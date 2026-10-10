@@ -14,6 +14,7 @@ import (
 	"github.com/vislake/speed/pkg/config"
 	"github.com/vislake/speed/pkg/core"
 	"github.com/vislake/speed/pkg/db"
+	"github.com/vislake/speed/pkg/db/internal/dbsuite"
 	"github.com/vislake/speed/pkg/db/sqlite"
 )
 
@@ -106,7 +107,7 @@ func TestSQLiteDeclaresNoMigrationLockTimeout(t *testing.T) {
 
 // TestSQLiteModuleShape pins what this subpackage registers: the name, the
 // namespace its input items hang under, the capability it delivers exclusively,
-// and the stages it is driven through.
+// the capability it takes up optionally, and the stages it is driven through.
 //
 // The four stage callbacks come from pkg/db's module factory rather than from
 // this subpackage, and a descriptor written out by hand here would leave a host
@@ -148,6 +149,7 @@ func TestSQLiteModuleShape(t *testing.T) {
 		t.Error("this module does not claim the database capability exclusively, so a host that " +
 			"configured two engines would silently get one of them")
 	}
+	dbsuite.RequireOptionalLogging(t, "the module this subpackage builds", module)
 
 	stages := []struct {
 		name string
@@ -177,6 +179,7 @@ func TestSQLiteModuleShape(t *testing.T) {
 			"subpackage builds: it delivers nothing, or does not claim the capability exclusively, "+
 			"or applies no migrations", module.Name)
 	}
+	dbsuite.RequireOptionalLogging(t, "the module this subpackage registers", registered)
 }
 
 // TestSQLiteDoesNotImportThePostgresDriver is the manual gate on the boundary

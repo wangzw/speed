@@ -119,8 +119,16 @@ var _ config.Reader = (*failingReader)(nil)
 
 // TestTheDescriptorIsTheShapeTheDesignGivesIt pins what a subpackage gets for
 // handing over a Spec: its own name, the database capability claimed
-// exclusively, its input item declaration, and the stage callbacks this
-// package fills in for every implementation.
+// exclusively, the logging capability required as an optional one, its input
+// item declaration, and the stage callbacks this package fills in for every
+// implementation.
+//
+// The logging requirement is the whole of Requires, and it is optional. The
+// edge is what orders the logging module ahead of this one in an assembly that
+// took it in, and without it nothing orders the two but their names, which put
+// this module first; that it is optional is what lets an assembly that never
+// took logging in start. The reading face is the config module's instance,
+// which the host supplies before assembly begins, so it is no requirement.
 //
 // Stop is deliberately absent. Draining in-flight work belongs to the modules
 // doing it, and the connections are released once, in Close.
@@ -142,11 +150,10 @@ func TestTheDescriptorIsTheShapeTheDesignGivesIt(t *testing.T) {
 		t.Errorf("the database capability is not claimed exclusively, so a second configured " +
 			"engine would be settled by resolution instead of failing the startup")
 	}
-	if len(module.Requires) != 0 {
-		t.Errorf("the module requires %v; the reading face is the config module's instance, which the "+
-			"host supplies before assembly begins and which exists from then on, and nothing "+
-			"else is taken up at construction", module.Requires)
-	}
+	// The reading face is the config module's instance, which the host supplies
+	// before assembly begins, so the log capability is the one requirement and
+	// there is no edge to the reader.
+	dbsuite.RequireOptionalLogging(t, "the module", module)
 	if module.Stop != nil {
 		t.Errorf("the module carries a Stop callback, and the design gives it no work there")
 	}

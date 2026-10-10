@@ -5,7 +5,9 @@
 // database refuses (see RefusedCommit and RefusedCommitBy), concurrent
 // transactions that read before they write (see ReadThenWriteCommits), and what
 // db.Connection does with a connection (see ConnectionWait and the cases beside
-// it).
+// it), what the module's logger writes and where (see
+// BoundValuesReachNoOutput), and the shape of a descriptor's logging requirement
+// (see RequireOptionalLogging).
 //
 // It does not import pkg/db. The migration engine's entry point is unexported,
 // so the cases that drive it live in pkg/db's own test package, and a package

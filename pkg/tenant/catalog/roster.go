@@ -825,9 +825,9 @@ func (r *roster) SetStatus(ctx context.Context, id tenant.ID, s tenant.Status) e
 //
 // Finding none is an answer, and it is read as one: an empty result rather than
 // the not-found failure GORM's First reports. That failure reaches GORM's
-// logger as a failed statement, which its default logger prints to standard
-// output as an error, outside the logging module — on every tenant a new alias
-// is put for, and on every status change naming a tenant that is not there.
+// logger as a failed statement, which the database module's logger writes as an
+// error record — on every tenant a new alias is put for, and on every status
+// change naming a tenant that is not there.
 //
 // A read that fails is returned as the driver reported it. Its caller reports
 // it as every failed statement of the roster's is (failedStatement), once it is

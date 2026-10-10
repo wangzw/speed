@@ -2,7 +2,9 @@ package db
 
 import (
 	"context"
+	"errors"
 	"fmt"
+	"log/slog"
 	"reflect"
 	"strings"
 	"time"
@@ -11,6 +13,7 @@ import (
 
 	"github.com/vislake/speed/pkg/config"
 	"github.com/vislake/speed/pkg/core"
+	"github.com/vislake/speed/pkg/log"
 )
 
 // Spec is what an implementation subpackage hands this package to become a
@@ -21,12 +24,13 @@ import (
 // engine appears in multi-replica deployments.
 //
 // Everything else — the input item declaration, the stance it states in
-// Prepare, the connection, the plugins, the encryption serializer, the
-// migration run and the release of the pool — is this package's, shared by
-// every implementation. That split is what keeps the implementations from
-// drifting apart in the behaviour a host sees: an engine that put its own
-// Prepare together would be one edit away from failing the startup on a
-// different condition than its neighbour.
+// Prepare, the connection, the plugins, the encryption serializer, the logging
+// of statements (the logger the statements of the implementation's handles are
+// written through, taken up in New), the migration run and the release of the
+// pool — is this package's, shared by every implementation. That split is what
+// keeps the implementations from drifting apart in the behaviour a host sees:
+// an engine that put its own Prepare together would be one edit away from
+// failing the startup on a different condition than its neighbour.
 type Spec struct {
 	// ModuleName is this implementation's name in the registry: its identity
 	// in the startup diagnostics and in an enablement lookup. It is also what
@@ -95,19 +99,40 @@ type Spec struct {
 // The reading face the callbacks take up is absent from Requires, and that is
 // the rule rather than an omission: it is the instance of the config module,
 // which the host supplies before assembly begins, so it exists before the first
-// Prepare runs and an edge to it would have nothing to order.
+// Prepare runs and an edge to it would have nothing to order. What Requires
+// does carry is the logging capability, as an optional requirement. It is
+// optional because a database has to work in an assembly that never took
+// logging in. It is declared because an assembly that did take it in has to have
+// it constructed first, so that New finds the logger every statement of the
+// handles it opens is written through. Prepare does not take it up: it opens no
+// handle, and a logging module that is constructed has no instance until its own
+// New has run.
 //
 // A host may supply an instance for this module in place of the one its New
 // builds, and neither Prepare nor New then runs. Migrate accepts such an
 // instance only when this module's own New built it, and refuses any other with
 // ErrForeignInstance: the plugins and the encryption serializer are installed in
-// New, so a handle that did not come through it has none of them. Close releases
-// the pool behind the handle any instance reports, and leaves alone one that
-// gives it no pool to release.
+// New, so a handle that did not come through it has none of them. An instance
+// built by this module's New in another registry keeps the logger that registry
+// gave it: its statements, and those of the connections its Open builds, are
+// written through that one and not through the logger of the registry the
+// instance is supplied to. Once that registry's log module has been released,
+// the records the instance writes are dropped by the log module and reach
+// neither that registry's destinations nor those of the registry that received
+// it. Close releases the pool behind the handle any
+// instance reports, and leaves alone one that gives it no pool to release.
 func NewModule(spec Spec) core.Module {
 	spec.check()
 	return core.Module{
 		Name: spec.ModuleName,
+		// Optional, because a database has to work in an assembly that never
+		// took logging in, and the example hosts' migrate commands name only
+		// the engine; declared, because an assembly that did take it in has to
+		// have it constructed first. Without the edge nothing orders the two
+		// but their names, which put the database ahead of the logging module,
+		// and the lookup in New would find no logger and fall back to the
+		// process default without a sign.
+		Requires: []core.Requirement{{Token: (*log.Logger)(nil), Optional: true}},
 		// Exclusive, because two engines behind one capability is not a
 		// configuration this module could serve: the dependants would each
 		// take up whichever one resolution happened to leave standing, and
@@ -127,14 +152,19 @@ func NewModule(spec Spec) core.Module {
 			if err != nil {
 				return nil, err
 			}
-			// The declarations are read before the connection is opened:
-			// reading them is not a database action, so a defective one
-			// fails the startup with nothing yet opened to release.
+			// The declarations and the logger are taken up before the
+			// connection is opened: taking them up is not a database action,
+			// so a defective declaration or a failed lookup fails the startup
+			// with nothing yet opened to release.
 			plugins, err := collectPlugins(reg)
 			if err != nil {
 				return nil, err
 			}
-			return spec.newDatabase(ctx, reader, plugins)
+			logger, err := spec.logger(reg)
+			if err != nil {
+				return nil, err
+			}
+			return spec.newDatabase(ctx, reader, plugins, logger)
 		},
 		Migrate: func(ctx context.Context, reg *core.Registry, instance any) error {
 			// The instance is judged before anything else is read or issued:
@@ -197,6 +227,37 @@ func (s Spec) reader(reg *core.Registry, what string) (config.Reader, error) {
 			s.ModuleName, what, config.ModuleName, err)
 	}
 	return reader, nil
+}
+
+// logger takes up the logger the statements of this implementation's handles
+// are written through: the logging capability's, named after this module, when
+// the assembly delivers one, and the process default logger otherwise.
+//
+// The absence of the capability is a legal assembly and is told apart from a
+// failed lookup by the sentinel: anything other than "no provider" is the
+// lookup itself failing, two providers of the capability among them, and that,
+// like a provider that names no logger, terminates the startup rather than quietly sending the statements somewhere
+// the host did not configure.
+//
+// The fallback carries the module attribute Named would have bound. The
+// records this module writes — "statement", "slow statement", "gorm warning" —
+// are common words that name no writer on their own, so a record that reached
+// the process default without the attribute would be anonymous.
+func (s Spec) logger(reg *core.Registry) (*slog.Logger, error) {
+	delivered, err := core.Resolve[log.Logger](reg)
+	if err != nil {
+		if errors.Is(err, core.ErrMissingProvider) {
+			return log.Default().With(log.ModuleAttrKey, s.ModuleName), nil
+		}
+		return nil, fmt.Errorf("%s: taking up the logger the statements of this implementation's handles "+
+			"are written through: %w", s.ModuleName, err)
+	}
+	named := delivered.Named(s.ModuleName)
+	if named == nil {
+		return nil, fmt.Errorf("%s: the provider of the log capability gave no logger when asked to name one for "+
+			"this module, and the statements of this implementation's handles have nowhere to be written", s.ModuleName)
+	}
+	return named, nil
 }
 
 // prepare states this implementation's stance, or reports what it cannot start

@@ -15,9 +15,9 @@ import (
 )
 
 // traceRecorder is a GORM logger that keeps every error a statement ended with
-// and every message logged at error level. GORM's default logger prints each of
-// those to standard output as an error, outside the logging module, so a roster
-// path that hands GORM one writes an error line into the process's output.
+// and every message logged at error level. The database module's logger writes
+// each of those as an error record, so a roster path that hands GORM one writes
+// an error record.
 type traceRecorder struct {
 	mu     sync.Mutex
 	errors []string

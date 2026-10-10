@@ -123,7 +123,7 @@ func (b *recordingBus) Publish(ctx context.Context, evt event.Event) error {
 // It is the database module's handle rather than one opened here, so that the
 // journal runs over what an assembly hands it: the constraint classification
 // the module installs, and the pool shape it gives the locator. The session
-// handed back prints no statement a case fails on purpose.
+// handed back writes no record of a statement a case fails on purpose.
 func sharedMemory(t *testing.T) *gorm.DB {
 	t.Helper()
 	return quietly(dbtest.SQLite(t, filepath.Join(t.TempDir(), "journal.db"), nil).DB())

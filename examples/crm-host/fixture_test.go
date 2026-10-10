@@ -415,8 +415,7 @@ func (c *crmCase) mustRun(stdin string, words ...string) commandResult {
 }
 
 // resultOf decodes what a command answered with: the last JSON line of its
-// standard output. Records and the database module's own lines share the
-// stream, and neither is a line of JSON.
+// standard output. The records share the stream, and none is a line of JSON.
 func (c *crmCase) resultOf(res commandResult, v any) {
 	c.t.Helper()
 	lines := strings.Split(strings.TrimSpace(res.stdout), "\n")

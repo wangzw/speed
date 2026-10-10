@@ -10,13 +10,15 @@ import (
 	"gorm.io/gorm"
 
 	"github.com/vislake/speed/pkg/db/internal/dbsuite"
+	"github.com/vislake/speed/pkg/db/sqlite"
 )
 
 // TestNoBoundValueReachesTheOutput runs the engine-neutral logging case on the
-// handle this engine's module delivers. The code the logger writes for the
-// refusal of a unique key is SQLite's result code.
+// handle this engine's module delivers. Every record the logger writes carries
+// this module's name as its module, and the code it writes for the refusal of a
+// unique key is SQLite's result code.
 func TestNoBoundValueReachesTheOutput(t *testing.T) {
-	dbsuite.BoundValuesReachNoOutput(t, "result code 2067",
+	dbsuite.BoundValuesReachNoOutput(t, sqlite.ModuleName, "result code 2067",
 		func(t *testing.T) string { return filepath.Join(t.TempDir(), "logged.db") },
 		rerun,
 		func(t *testing.T, dsn string) *gorm.DB { return deliver(t, dsn).DB() })

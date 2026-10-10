@@ -359,7 +359,9 @@ func TestAnOpenedConnectionsWriteFailsWithItsRecord(t *testing.T) {
 			return errCaseFailed
 		}
 
-		// GORM prints a failed statement, and this one fails on purpose.
+		// The delivered handle's logger writes a statement that fails as a record,
+		// and this one fails on purpose, so the session keeps that record out of the
+		// run's output.
 		quietly := opened.Session(&gorm.Session{Logger: logger.Discard}).WithContext(ctx)
 		if err := quietly.Create(&order{ID: "o1", Note: "no trail"}).Error; !errors.Is(err, audit.ErrWriteFailed) {
 			t.Errorf("the write gave %v, want ErrWriteFailed", err)

@@ -10,7 +10,11 @@ test fixture, neither a capability directory nor a program, and it exists
 because a handle a test opens itself is not what an assembly hands a module:
 it carries none of what the database module installs — the engine marker, the
 constraint classification, the field encryption — nor the pool shape it gives
-a locator, such as the one connection of an in-memory database. The tenant
+a locator, such as the one connection of an in-memory database. A handle
+delivered here comes out of an assembly of the engine's module and the `config`
+module only, with no `log` module in it, so its statement records go through the
+process default logger — standard output, at the bootstrap level — stamped with
+the engine module's name as the `module` attribute. The tenant
 roster, the settings store, the audit journal and the outbox relay are tested
 on it, and so are the rate limiter's domain cases, which drive the settings
 module over it; a copy of this fixture in each would differ in nothing and
