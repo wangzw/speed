@@ -233,11 +233,35 @@ func (p *providers) distinct(list string, names []string) []string {
 //
 // The bound comes from configuration because a Close callback receives a
 // context with its cancellation stripped, and it must be bounded because the
-// registry does not impose a timeout of its own. A shutdown that reaches the
-// bound stops waiting and returns the deadline, so the drive fails and the host
-// sees that the stop did not complete; what was still in flight is lost, and
-// which records those were is not reported — the module's documentation states
-// that as a cost rather than promising otherwise.
+// registry does not impose a timeout of its own. A tracer provider's shutdown
+// that reaches the bound stops waiting and returns the deadline, so the drive
+// fails and the host sees that the stop did not complete; what was still in
+// flight is lost, and which records those were is not reported — the module's
+// documentation states that as a cost rather than promising otherwise. The
+// meter provider's shutdown does not stop at the bound while a reader exports:
+// the reader makes its final export in line and returns once that export has.
+// A reader whose turn comes after the bound has gone, used up by the tracer
+// provider or by a reader before it, makes no final export and returns the
+// deadline, which fails the stop as well.
+//
+// The exports are held to the bound as well. At exportCutoff of the bound the
+// cutoff ends, and every export the wrappers forward that is still running then
+// or begins after, the one in flight when Close began and the final ones alike,
+// is cut short; the wrapper reports and absorbs the failure, and the provider
+// has the rest of the bound to return in. Without it the batch processor's
+// final export, which runs under batch.export-timeout rather than under this
+// bound, would outlast the bound whenever it retries against an unreachable
+// collector, and the tracer provider's shutdown would fail with the deadline. The tracer provider's
+// shutdown can still reach the bound for a reason the cutoff does not touch,
+// such as a span exporter that ignores its context, and that fails the stop. A
+// metric exporter that ignores its context holds the meter provider's shutdown
+// until its export returns; the stop then succeeds only if no reader comes
+// after it.
+//
+// The bound covers the two providers and their final exports, and not the
+// release of the exporters: a provider's shutdown may have used up the bound,
+// and the release that follows would find the context already expired and fail
+// for that alone. The release is bounded on its own.
 //
 // Every shape the drive can hand it is tolerated. A startup that failed
 // part-way closes every module whatever stage it reached, so this runs on an
@@ -249,14 +273,16 @@ func shutdown(ctx context.Context, _ *core.Registry, instance any) error {
 	if !ok {
 		return nil
 	}
-	ctx, cancel := context.WithTimeout(ctx, p.cfg.ShutdownTimeout)
+	flushCtx, cancel := context.WithTimeout(ctx, p.cfg.ShutdownTimeout)
 	defer cancel()
+	disarm := p.cut.arm(exportCutoff(p.cfg.ShutdownTimeout))
+	defer disarm()
 
 	var errs []error
-	if err := p.tp.Shutdown(ctx); err != nil {
+	if err := p.tp.Shutdown(flushCtx); err != nil {
 		errs = append(errs, err)
 	}
-	if err := p.mp.Shutdown(ctx); err != nil {
+	if err := p.mp.Shutdown(flushCtx); err != nil {
 		errs = append(errs, err)
 	}
 	if err := releaseExporters(ctx, p.exporters); err != nil {

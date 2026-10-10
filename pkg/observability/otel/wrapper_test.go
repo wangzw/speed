@@ -8,6 +8,7 @@ import (
 	"strings"
 	"sync"
 	"testing"
+	"time"
 
 	sdkmetric "go.opentelemetry.io/otel/sdk/metric"
 	"go.opentelemetry.io/otel/sdk/metric/metricdata"
@@ -184,5 +185,91 @@ func TestTheWrappersHoldTheProvidersShutdownBack(t *testing.T) {
 	if spans.shutdowns != 0 || metrics.shutdowns != 0 {
 		t.Errorf("a provider's shutdown reached the backend (%d span, %d metric), want neither: the "+
 			"backend is released by the assembler once both providers have flushed", spans.shutdowns, metrics.shutdowns)
+	}
+}
+
+// contextSeen is what an export saw of the context it was handed: whether it
+// had already ended, and the deadline it carried.
+type contextSeen struct {
+	err      error
+	deadline time.Time
+}
+
+func see(ctx context.Context) contextSeen {
+	deadline, _ := ctx.Deadline()
+	return contextSeen{err: ctx.Err(), deadline: deadline}
+}
+
+// seeingSpans and seeingMetrics record the context of their one export and
+// answer with its error, the way an exporter cut short does.
+type seeingSpans struct{ seen contextSeen }
+
+func (s *seeingSpans) ExportSpans(ctx context.Context, _ []sdktrace.ReadOnlySpan) error {
+	s.seen = see(ctx)
+	return s.seen.err
+}
+
+func (*seeingSpans) Shutdown(context.Context) error { return nil }
+
+type seeingMetrics struct {
+	stubMetricExporter
+	seen contextSeen
+}
+
+func (s *seeingMetrics) Export(ctx context.Context, _ *metricdata.ResourceMetrics) error {
+	s.seen = see(ctx)
+	return s.seen.err
+}
+
+// TestAnExportBeforeTheStopRunsOnTheContextItWasGiven pins that the cutoff
+// changes nothing while the process serves: both wrappers hand the exporter a
+// context that has not ended and carries the deadline the upstream set, which
+// is batch.export-timeout or metric.timeout, so the exporter's own retry and
+// timeout apply as they would without the wrapper.
+func TestAnExportBeforeTheStopRunsOnTheContextItWasGiven(t *testing.T) {
+	lg, _ := logBuffer()
+	cut := newCutoff()
+	ctx, cancel := context.WithTimeout(context.Background(), time.Hour)
+	defer cancel()
+	want, _ := ctx.Deadline()
+
+	spans := &seeingSpans{}
+	_ = (&spanExporter{SpanExporter: spans, note: &notifier{lg: lg}, cut: cut}).ExportSpans(ctx, nil)
+	metrics := &seeingMetrics{}
+	_ = (&metricExporter{Exporter: metrics, note: &notifier{lg: lg}, cut: cut}).Export(ctx, nil)
+
+	for signal, seen := range map[string]contextSeen{"span": spans.seen, "metric": metrics.seen} {
+		if seen.err != nil {
+			t.Errorf("the %s export before the stop was handed a context that had ended with %v", signal, seen.err)
+		}
+		if !seen.deadline.Equal(want) {
+			t.Errorf("the %s export before the stop carried the deadline %v, want the upstream's %v", signal, seen.deadline, want)
+		}
+	}
+}
+
+// TestAnExportPastTheCutoffIsCutBeforeItStarts pins the cutoff on both wrappers:
+// once it has ended, an export is handed a context that has ended already, so a
+// final export made after the cutoff gives up at once instead of retrying until
+// the provider's bound, and the wrapper writes its line for it.
+func TestAnExportPastTheCutoffIsCutBeforeItStarts(t *testing.T) {
+	lg, buf := logBuffer()
+	cut := newCutoff()
+	disarm := cut.arm(0)
+	defer disarm()
+	<-cut.ctx.Done()
+
+	spans := &seeingSpans{}
+	_ = (&spanExporter{SpanExporter: spans, note: &notifier{lg: lg}, cut: cut}).ExportSpans(context.Background(), nil)
+	metrics := &seeingMetrics{}
+	_ = (&metricExporter{Exporter: metrics, note: &notifier{lg: lg}, cut: cut}).Export(context.Background(), nil)
+
+	for signal, seen := range map[string]contextSeen{"span": spans.seen, "metric": metrics.seen} {
+		if !errors.Is(seen.err, context.Canceled) {
+			t.Errorf("the %s export past the cutoff was handed a context with error %v, want it cancelled", signal, seen.err)
+		}
+	}
+	if got := strings.Count(buf.String(), "telemetry export failed"); got != 2 {
+		t.Errorf("the cut exports wrote %d failure lines, want one from each wrapper", got)
 	}
 }

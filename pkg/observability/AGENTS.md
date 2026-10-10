@@ -42,7 +42,9 @@ must not cross, and how to run it.
   `TestTheAssemblerReachesNoBackendTransport` in `deps_test.go`. The assembler's
   budget is the root package's, the upstream packages it binds itself, and the
   current closure of gin, which the request layer is written against; the closure
-  is read from the module graph, never written down.
+  is read from the module graph, never written down. The gates read the
+  non-test imports only: the assembler's external tests import `otlp` to hold
+  the stop against a real exporter.
 - **The two provider interfaces cannot be implemented outside the upstream
   library.** Both embed an internal interface whose method is unexported, so a
   product satisfies them only by embedding them as fields. Writing the two
@@ -58,12 +60,46 @@ must not cross, and how to run it.
   provider's final export. The forwarding wrappers hold the providers' calls
   back, and the assembler releases every collected exporter after both
   providers have flushed (`releaseExporters`).
+- **The release of the exporters runs under a bound of its own, not the
+  flush's.** `releaseExporters` derives it from the context the callback
+  received, keeping the values and dropping the cancellation, and gives every
+  exporter the one fixed `releaseTimeout`. When an export ran to the cutoff the
+  flush leaves at most the cutoff's margin of `shutdown-timeout`, and none once
+  a provider's shutdown used up the bound, and the upstream exporters answer an
+  expired context with its error, which would fail the stop. The bound holds a
+  release that waits on its context; one that ignores it is called in line and
+  is not bounded.
+- **The exports are held to `shutdown-timeout` too, by the forwarding
+  wrappers.** The batch processor runs every export, its final one included, on
+  a context of its own bounded by `batch.export-timeout`, which the shutdown
+  bound does not cancel, and the gRPC exporter retries a refused connection
+  until its context ends, its own timeout passes, or its retry budget runs out,
+  none of which is shorter than `shutdown-timeout` by default; the HTTP exporter
+  waits the same way on a collector that does not answer. `shutdown` therefore
+  arms the `cutoff` a tenth of the bound before the bound ends (`exportCutoff`),
+  and each wrapper joins every export with it (`cutoff.join`): an export still
+  running when the cutoff ends, the one in flight when `Close` began and a
+  final one alike, and every export begun after it end there, fail, and are
+  reported and absorbed like any other, so each provider returns inside the
+  bound. An export that ends before the cutoff is untouched, a final one
+  included (`TestAFinalExportThatFitsBeforeTheCutoffIsDelivered`,
+  `TestAFinalMetricExportThatFitsBeforeTheCutoffIsDelivered`). An exporter
+  that ignores its context is not reached by the cutoff: with a span exporter
+  the tracer provider's shutdown returns the deadline at the bound and fails
+  `Close` (`TestAShutdownPastItsBoundFailsTheStop`); a metric exporter holds
+  the meter provider's shutdown until its final export returns, since the
+  reader makes that export in line, unbounded, and a reader after it then
+  finds the context expired, makes no final export, and fails `Close` with the
+  deadline. With several metric readers the cutoff is what lets `Close` succeed: an export
+  waiting for its context would otherwise use up the bound for the readers
+  after it (`TestAStopOverTwoMetricBackendsThatWaitIsCutInsideTheBound`).
 - **The forwarding wrapper is the one report of a failed export, and it hands
   the upstream no error back.** The upstream's processor and reader pass every
   failed export to the process-level error handler, and the default one prints a
   line per failed batch to standard error, outside the log chain and its
   redaction. Returning the error from the wrapper brings those lines back, and
-  makes a failed final export at shutdown a failure of `Close`.
+  makes a failed final export of the reader at shutdown, a cut one included, a
+  failure of `Close`.
 - **The providers are never installed into the library's global state.** The
   global is a process-level singleton that the second assembly in one process
   overwrites, and architecture invariant 9 rules out handing instances around

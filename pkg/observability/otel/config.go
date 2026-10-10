@@ -43,9 +43,11 @@ type Config struct {
 	Batch Batch `config:"batch"`
 	// Metric configures the metric reader period.
 	Metric Metric `config:"metric"`
-	// ShutdownTimeout bounds the flush of both providers at Close. It has to
-	// come from configuration: the context a Close callback receives has its
-	// cancellation stripped, so a bound cannot be expressed there.
+	// ShutdownTimeout bounds the flush of both providers at Close, the exports
+	// made from the start of Close included, and not the release of the
+	// exporters after it, which has a bound of its own. It has to come from
+	// configuration: the context a Close callback receives has its cancellation
+	// stripped, so a bound cannot be expressed there.
 	ShutdownTimeout time.Duration `config:"shutdown-timeout"`
 	// Endpoints names the listening endpoints the request layer is registered
 	// on. The default is the single name "*", which stands for every endpoint
@@ -79,7 +81,8 @@ type Batch struct {
 	MaxExportBatchSize int `config:"max-export-batch-size"`
 	// BatchTimeout is how long a batch may wait before it is sent.
 	BatchTimeout time.Duration `config:"batch-timeout"`
-	// ExportTimeout bounds one export call.
+	// ExportTimeout bounds one export call. Once Close has begun, the cutoff
+	// inside ShutdownTimeout may end the call sooner.
 	ExportTimeout time.Duration `config:"export-timeout"`
 }
 
@@ -87,7 +90,8 @@ type Batch struct {
 type Metric struct {
 	// Interval is the time between exports.
 	Interval time.Duration `config:"interval"`
-	// Timeout bounds one export call.
+	// Timeout bounds one export call. Once Close has begun, the cutoff inside
+	// ShutdownTimeout may end the call sooner.
 	Timeout time.Duration `config:"timeout"`
 }
 

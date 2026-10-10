@@ -6,6 +6,7 @@ import (
 	"errors"
 	"fmt"
 	"log/slog"
+	"time"
 
 	"go.opentelemetry.io/otel/attribute"
 	"go.opentelemetry.io/otel/metric"
@@ -123,6 +124,8 @@ type providers struct {
 	// exporters are the backends' exporters as collected, unwrapped, which
 	// Close releases once both providers have flushed through them.
 	exporters []releasable
+	// cut is the cutoff every wrapper joins its exports with, which Close arms.
+	cut *cutoff
 	// lg is the logger this module was given, held for the lines the wiring
 	// stage writes about a configuration that names the same thing twice.
 	lg *slog.Logger
@@ -185,9 +188,10 @@ func newProviders(ctx context.Context, reg *core.Registry) (any, error) {
 		// extracts ahead of authentication, so that caller is anyone.
 		sdktrace.WithSampler(sdktrace.ParentBased(sdktrace.TraceIDRatioBased(cfg.SampleRatio))),
 	}
+	cut := newCutoff()
 	for _, e := range spanExporters {
 		traceOpts = append(traceOpts, sdktrace.WithBatcher(
-			&spanExporter{SpanExporter: e, note: &notifier{lg: lg}},
+			&spanExporter{SpanExporter: e, note: &notifier{lg: lg}, cut: cut},
 			sdktrace.WithMaxQueueSize(queueSize(cfg.Batch.MaxQueueSize, sdktrace.DefaultMaxQueueSize)),
 			sdktrace.WithMaxExportBatchSize(queueSize(cfg.Batch.MaxExportBatchSize, sdktrace.DefaultMaxExportBatchSize)),
 			sdktrace.WithBatchTimeout(cfg.Batch.BatchTimeout),
@@ -198,7 +202,7 @@ func newProviders(ctx context.Context, reg *core.Registry) (any, error) {
 	metricOpts := []sdkmetric.Option{sdkmetric.WithResource(res)}
 	for _, e := range metricExporters {
 		metricOpts = append(metricOpts, sdkmetric.WithReader(sdkmetric.NewPeriodicReader(
-			&metricExporter{Exporter: e, note: &notifier{lg: lg}},
+			&metricExporter{Exporter: e, note: &notifier{lg: lg}, cut: cut},
 			sdkmetric.WithInterval(cfg.Metric.Interval),
 			sdkmetric.WithTimeout(cfg.Metric.Timeout),
 		)))
@@ -239,6 +243,7 @@ func newProviders(ctx context.Context, reg *core.Registry) (any, error) {
 		tp:             tp,
 		mp:             mp,
 		exporters:      exporters,
+		cut:            cut,
 		lg:             lg,
 		duration:       duration,
 	}, nil
@@ -256,6 +261,28 @@ func queueSize(configured, upstreamDefault int) int {
 		return upstreamDefault
 	}
 	return configured
+}
+
+// releaseTimeout bounds the release of every exporter the assembler collected.
+// The bound is there so that a release waiting on its context, as one closing
+// a connection with an export still in flight does, cannot hold the stop. A
+// release that ignores its context is not bounded by it: the release is called
+// in line. It is not a setting because no fact about a deployment says what it
+// ought to be.
+const releaseTimeout = 3 * time.Second
+
+// cutoffMarginDivisor places a stop's cutoff inside shutdown-timeout: the
+// exports are cut a tenth of the bound before the bound ends (exportCutoff).
+// The margin is the time a provider has to return in once its exports are cut,
+// so that its shutdown ends inside the bound rather than at it. It follows the
+// bound rather than being a fixed length so that it stays inside a short bound,
+// and it is not a setting for the reason releaseTimeout gives.
+const cutoffMarginDivisor = 10
+
+// exportCutoff is how long after Close begins the exports are cut, for a
+// shutdown bound of the given length.
+func exportCutoff(bound time.Duration) time.Duration {
+	return bound - bound/cutoffMarginDivisor
 }
 
 // releasable is the one method both exporter interfaces share, and the one the
@@ -276,7 +303,22 @@ type releasable interface {
 // A product collected under both capabilities appears here twice. An
 // observability.Exporters value releases its pair once and answers the second
 // call with the result of the first, which is what the backends hand over.
+//
+// The release runs under a bound of its own, shared by every exporter, and not
+// under the context the providers flushed with. That context may have expired
+// by now, as it does when a provider's shutdown overran the bound, and the
+// upstream exporters answer a context that is already done with its error,
+// closing their connection all the same: the release would fail for the wait
+// that preceded it. Only the values of ctx are kept, so a context that is
+// cancelled does not cut the release short either.
+//
+// The bound is shared, so an exporter that holds the release until it ends
+// leaves the exporters after it a context that is already done: they are
+// released, and answer with its error.
 func releaseExporters(ctx context.Context, exporters []releasable) error {
+	ctx, cancel := context.WithTimeout(context.WithoutCancel(ctx), releaseTimeout)
+	defer cancel()
+
 	var errs []error
 	for _, e := range exporters {
 		if err := e.Shutdown(ctx); err != nil {
