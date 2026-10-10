@@ -2,8 +2,9 @@ package journal
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
-	"fmt"
+	"maps"
 	"os"
 	"path/filepath"
 	"testing"
@@ -56,16 +57,65 @@ func assembledOn(t *testing.T, database core.Module, engine, dsn string, extra [
 	action func(ctx context.Context, reg *core.Registry) error,
 ) {
 	t.Helper()
-	dir := t.TempDir()
-	// The log chain writes to a file of the case's own, so the records the
-	// modules write at startup stay out of the test's output.
-	body := fmt.Sprintf(`{"db":{%q:{"dsn":%q}},"log":{"outputs":[{"to":"file","format":"json","path":%q}]}}`,
-		engine, dsn, filepath.Join(dir, "log.json"))
-	locator := filepath.Join(dir, "config.json")
-	if err := os.WriteFile(locator, []byte(body), 0o600); err != nil {
-		t.Fatalf("writing the primary config source: %v", err)
+	run := assembly{
+		database: database,
+		engine:   engine,
+		dsn:      dsn,
+		extra:    extra,
+		dir:      t.TempDir(),
+		depth:    core.StageStart,
 	}
-	modules := append([]core.Module{database, log.Module(), Module()}, extra...)
+	if err := run.drive(t, action); err != nil {
+		t.Fatalf("driving the assembly: %v", err)
+	}
+}
+
+// assembly is one run of the module over a database: the engine and the
+// database it sits on, the modules that take part beside the three every case
+// has, the configuration sections beside the db and log ones, and the stage the
+// run advances to.
+type assembly struct {
+	database core.Module
+	engine   string
+	dsn      string
+	extra    []core.Module
+	// sections are the further top-level sections of the configuration, each
+	// under the first segment of its namespace: "http", or "audit" for the
+	// namespace this module is mounted under.
+	sections map[string]any
+	// dir is where the configuration and the log file are written.
+	dir   string
+	depth core.Stage
+}
+
+// logFile is where the log module of the run writes. The chain writes to a file
+// of the case's own, so the records the modules write at startup stay out of the
+// test's output, and the case can read them from there.
+func (a assembly) logFile() string { return filepath.Join(a.dir, "log.json") }
+
+// drive loads the configuration the way a host loads it, drives a registry to
+// the run's depth, runs action there and hands back what the drive ended with.
+//
+// A configuration that cannot be loaded fails the case, because that is the
+// case's own mistake; what the drive itself fails with is the caller's to read.
+func (a assembly) drive(t *testing.T, action func(ctx context.Context, reg *core.Registry) error) error {
+	t.Helper()
+	document := map[string]any{
+		"db": map[string]any{a.engine: map[string]any{"dsn": a.dsn}},
+		"log": map[string]any{"outputs": []any{
+			map[string]any{"to": "file", "format": "json", "path": a.logFile()},
+		}},
+	}
+	maps.Copy(document, a.sections)
+	body, err := json.Marshal(document)
+	if err != nil {
+		t.Fatalf("encoding the configuration: %v", err)
+	}
+	locator := filepath.Join(a.dir, "config.json")
+	if writeErr := os.WriteFile(locator, body, 0o600); writeErr != nil {
+		t.Fatalf("writing the primary config source: %v", writeErr)
+	}
+	modules := append([]core.Module{a.database, log.Module(), Module()}, a.extra...)
 
 	// The loader reads its own registry. The command line is given as empty
 	// and the prefix is one no machine carries variables under, so nothing
@@ -96,13 +146,11 @@ func assembledOn(t *testing.T, database core.Module, engine, dsn string, extra [
 	// leaves it out.
 	reg.Register(config.Module())
 	reg.Supply(reader, config.ModuleName)
-	if err := reg.Drive(t.Context(), core.Drive{
-		Depth:        core.StageStart,
+	return reg.Drive(t.Context(), core.Drive{
+		Depth:        a.depth,
 		Participants: names,
 		Action:       action,
-	}); err != nil {
-		t.Fatalf("driving the assembly: %v", err)
-	}
+	})
 }
 
 // errCaseFailed ends a drive whose case has already reported what went wrong.

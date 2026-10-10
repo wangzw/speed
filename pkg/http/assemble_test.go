@@ -12,32 +12,33 @@ import (
 	"sync"
 	"testing"
 
+	"github.com/gin-gonic/gin"
+
 	"github.com/vislake/speed/pkg/core"
 	"github.com/vislake/speed/pkg/log"
 )
 
 // assembleEndpoint registers through the real surface and assembles the chain
-// the way Serve does, so what these tests exercise is the path a run takes. Its
-// engine is the bare multiplexer, an engine that answers no attribution.
+// the way Serve does, so what these tests exercise is the path a run takes. It
+// delivers no ErrorResponder.
 func assembleEndpoint(t *testing.T, s endpointSettings, injected, logger *slog.Logger,
 	register func(Endpoint),
 ) (nethttp.Handler, error) {
 	t.Helper()
-	return assembleEndpointOn(t, nethttp.NewServeMux(), s, injected, logger, nil, register)
+	return assembleEndpointWith(t, s, injected, logger, nil, register)
 }
 
-// assembleEndpointOn is assembleEndpoint with the engine and the panic
-// responder under the test's control, for the tests whose subject is what the
-// assembly asks the engine or what the fallback writes.
-func assembleEndpointOn(t *testing.T, engine Engine, s endpointSettings, injected, logger *slog.Logger,
-	responder PanicResponder, register func(Endpoint),
+// assembleEndpointWith is assembleEndpoint with the ErrorResponder under the
+// test's control, for the tests whose subject is the shape of an error response.
+func assembleEndpointWith(t *testing.T, s endpointSettings, injected, logger *slog.Logger,
+	responder ErrorResponder, register func(Endpoint),
 ) (nethttp.Handler, error) {
 	t.Helper()
-	r := newRouter([]endpointSettings{s}, func() Engine { return nethttp.NewServeMux() })
+	r := newRouter([]endpointSettings{s})
 	r.open()
 	register(endpointOf(t, r, s.name))
 	r.seal()
-	return r.endpoints[s.name].assemble(engine, injected, logger, responder)
+	return r.endpoints[s.name].assemble(injected, logger, responder)
 }
 
 // mustAssemble is assembleEndpoint for the tests whose subject is the chain
@@ -72,102 +73,171 @@ func (tr *trace) seen() []string {
 }
 
 // noteLayer builds a layer that records that it ran and passes the request on.
-func noteLayer(tr *trace, name string) func(nethttp.Handler) nethttp.Handler {
-	return func(next nethttp.Handler) nethttp.Handler {
-		return nethttp.HandlerFunc(func(w nethttp.ResponseWriter, r *nethttp.Request) {
-			tr.note(name)
-			next.ServeHTTP(w, r)
+func noteLayer(tr *trace, name string) gin.HandlerFunc {
+	return func(c *gin.Context) {
+		tr.note(name)
+		c.Next()
+	}
+}
+
+// noteHandler builds a route handler that records that it ran.
+func noteHandler(tr *trace, name string) gin.HandlerFunc {
+	return func(*gin.Context) { tr.note(name) }
+}
+
+// TestRouteConflictIsStartupFailure pins the conversion at the mounting point.
+// gin reports a clash by panicking, and left alone that takes the process down
+// with a stack trace during a stage whose failures are supposed to end the
+// startup in an orderly way.
+func TestRouteConflictIsStartupFailure(t *testing.T) {
+	logger, _ := newRecordingLogger()
+	_, err := assembleEndpoint(t, testSettings("public"), nil, logger, func(e Endpoint) {
+		e.Route("GET", "/things", filler)
+		e.Route("GET", "/things", filler)
+	})
+	if !errors.Is(err, ErrRouteConflict) {
+		t.Fatalf("two registrations of one method and path did not report ErrRouteConflict: %v", err)
+	}
+	mustContain(t, err.Error(), `"GET /things" and "GET /things"`, "the registration the second one repeats")
+	mustContain(t, err.Error(), `endpoint "public"`, "the endpoint the clash is on")
+}
+
+// TestEveryClashGinRefusesIsARouteConflict pins the classes of clash the design
+// lists, each as a startup failure of its own: the same position given two
+// parameter names, a method and path registered twice, and a catch-all beside a
+// static segment or a parameter, in whichever order the two were registered.
+//
+// The two routes in a row are different strings wherever the clash allows it,
+// which is what makes the naming assertion discriminating: with one route
+// registered twice, naming only the one being mounted would read the same as
+// naming both. The fragment asserted is the pair standing together in this
+// module's own sentence, not merely both appearing somewhere in a message that
+// ends with gin's own words.
+func TestEveryClashGinRefusesIsARouteConflict(t *testing.T) {
+	for _, c := range []struct {
+		name          string
+		first, second [2]string
+	}{
+		{"a parameter named differently", [2]string{"GET", "/things/:id"}, [2]string{"GET", "/things/:name"}},
+		{"a method and path twice", [2]string{"POST", "/things"}, [2]string{"POST", "/things"}},
+		{"a catch-all after a static segment", [2]string{"GET", "/files/a"}, [2]string{"GET", "/files/*rest"}},
+		{"a static segment after a catch-all", [2]string{"GET", "/files/*rest"}, [2]string{"GET", "/files/a"}},
+		{"a catch-all after a parameter", [2]string{"GET", "/files/:name"}, [2]string{"GET", "/files/*rest"}},
+		{"a parameter after a catch-all", [2]string{"GET", "/files/*rest"}, [2]string{"GET", "/files/:name"}},
+	} {
+		t.Run(c.name, func(t *testing.T) {
+			logger, _ := newRecordingLogger()
+			_, err := assembleEndpoint(t, testSettings("public"), nil, logger, func(e Endpoint) {
+				e.Route(c.first[0], c.first[1], filler)
+				e.Route(c.second[0], c.second[1], filler)
+			})
+			if !errors.Is(err, ErrRouteConflict) {
+				t.Fatalf("the clash did not report ErrRouteConflict: %v", err)
+			}
+			pair := `"` + c.first[0] + " " + c.first[1] + `" and "` + c.second[0] + " " + c.second[1] + `"`
+			mustContain(t, err.Error(), pair, "both routes, named together, which is the whole of the way "+
+				"back to the two calls")
+			mustContain(t, err.Error(), `endpoint "public"`, "the endpoint the clash is on")
 		})
 	}
 }
 
-// TestRouteConflictIsStartupFailure pins the conversion at the mounting point.
-// The engines this seam is built for report a clash by panicking, and left
-// alone that takes the process down with a stack trace during a stage whose
-// failures are supposed to end the startup in an orderly way.
-func TestRouteConflictIsStartupFailure(t *testing.T) {
+// TestRoutesGinAcceptsBesideEachOtherAreServed pins the three pairings that are
+// not conflicts, by what the assembled endpoint answers for each: a static
+// segment beside a parameter, and one path under two methods, with the parameter
+// named differently under each. A check that refused any two routes on the same
+// path would turn all of these into startup failures.
+func TestRoutesGinAcceptsBesideEachOtherAreServed(t *testing.T) {
 	logger, _ := newRecordingLogger()
-	_, err := assembleEndpoint(t, testSettings("public"), nil, logger, func(e Endpoint) {
-		e.Route("GET /things", nethttp.NotFoundHandler())
-		e.Route("GET /things", nethttp.NotFoundHandler())
+	handler := mustAssemble(t, testSettings("public"), nil, logger, func(e Endpoint) {
+		e.Route("GET", "/files/a", func(c *gin.Context) { c.String(nethttp.StatusOK, "static") })
+		e.Route("GET", "/files/:name", func(c *gin.Context) { c.String(nethttp.StatusOK, "param:"+c.Param("name")) })
+		e.Route("POST", "/files/:id", func(c *gin.Context) { c.String(nethttp.StatusOK, "post:"+c.Param("id")) })
 	})
-	if !errors.Is(err, ErrRouteConflict) {
-		t.Fatalf("two registrations of one pattern did not report ErrRouteConflict: %v", err)
+
+	for _, c := range []struct{ method, target, want string }{
+		{nethttp.MethodGet, "/files/a", "static"},
+		{nethttp.MethodGet, "/files/b", "param:b"},
+		{nethttp.MethodPost, "/files/a", "post:a"},
+	} {
+		recorder := serveOnce(handler, c.method, c.target)
+		if got := recorder.Body.String(); got != c.want {
+			t.Errorf("%s %s answered %q, want %q", c.method, c.target, got, c.want)
+		}
 	}
-	mustContain(t, err.Error(), "GET /things", "the pattern the registrations clash on")
-	mustContain(t, err.Error(), `"public"`, "the endpoint the clash is on")
 }
 
-// TestRouteConflictNamesBothPatternsAndTheEndpoint pins what the failure has to
-// carry. The registration surface does not know who registered either pattern,
-// so the patterns themselves are the only route back to the two calls, and one
-// of them alone sends the reader looking for a second registration they cannot
-// find.
-//
-// The two patterns here are different strings, which is what makes the
-// assertion discriminating: with one pattern registered twice, naming only the
-// one being mounted would read the same as naming both. The fragment asserted
-// is the pair standing together in this module's own sentence, not merely both
-// appearing somewhere in a message that ends with the engine's own words.
-//
-// The engine answers the attribution, which every engine the seam is made for
-// is asked for; an assembly that did not ask would fall to the one-pattern
-// failure this test is here to rule out.
-func TestRouteConflictNamesBothPatternsAndTheEndpoint(t *testing.T) {
+// TestARouteRunsItsHandlersInOrder pins that a route's several handlers run one
+// after another, in the order they were given and after the layers, and that the
+// last one is what serves the request.
+func TestARouteRunsItsHandlersInOrder(t *testing.T) {
+	tr := &trace{}
 	logger, _ := newRecordingLogger()
-	engine := attributingEngine{nethttp.NewServeMux()}
-	_, err := assembleEndpointOn(t, engine, testSettings("public"), nil, logger, nil, func(e Endpoint) {
-		e.Route("GET /things/{id}", nethttp.NotFoundHandler())
-		e.Route("GET /things/{name}", nethttp.NotFoundHandler())
+	handler := mustAssemble(t, testSettings("public"), nil, logger, func(e Endpoint) {
+		e.Use(Middleware{Name: "layer", Handler: noteLayer(tr, "layer")})
+		e.Route("GET", "/things",
+			func(c *gin.Context) { tr.note("first"); c.Next() },
+			func(c *gin.Context) { tr.note("second"); c.Next() },
+			func(c *gin.Context) { tr.note("third"); c.String(nethttp.StatusTeapot, "served") },
+		)
 	})
-	if !errors.Is(err, ErrRouteConflict) {
-		t.Fatalf("two patterns matching the same requests did not report ErrRouteConflict: %v", err)
+
+	recorder := serveOnce(handler, nethttp.MethodGet, "/things")
+
+	if got, want := tr.seen(), []string{"layer", "first", "second", "third"}; !slices.Equal(got, want) {
+		t.Errorf("the request went through %v, want %v", got, want)
 	}
-	mustContain(t, err.Error(), `"GET /things/{id}" and "GET /things/{name}"`,
-		"both patterns, named together, which is the whole of the way back to the two calls")
-	mustContain(t, err.Error(), `endpoint "public"`, "the endpoint the clash is on")
+	if recorder.Code != nethttp.StatusTeapot || recorder.Body.String() != "served" {
+		t.Errorf("the last handler's answer was %d %q, want %d %q", recorder.Code,
+			recorder.Body.String(), nethttp.StatusTeapot, "served")
+	}
 }
 
-// TestConflictWithoutAttributionSaysSo pins the failure for an engine that
-// refuses a mount and answers no attribution: it has to say the refusal was
-// not attributed, rather than name the one pattern this module is sure about as
-// though that were the verdict.
-//
-// The discriminating assertion is that sentence. The engine here is the bare
-// multiplexer, which answers nothing; an assembly that worked the pair out on
-// its own, replaying the patterns on engines of its own instead of asking the
-// one it was given, writes the pair instead and fails here, while an
-// implementation that reads the engine's own complaint fails on the pattern it
-// names.
-func TestConflictWithoutAttributionSaysSo(t *testing.T) {
+// TestAbortInARouteHandlerStopsTheHandlersAfterIt pins what c.Abort does to a
+// route's own chain, which is what lets the first handler of a route act as a
+// guard for the rest.
+func TestAbortInARouteHandlerStopsTheHandlersAfterIt(t *testing.T) {
+	tr := &trace{}
 	logger, _ := newRecordingLogger()
-	_, err := assembleEndpoint(t, testSettings("public"), nil, logger, func(e Endpoint) {
-		e.Route("GET /things/{id}", nethttp.NotFoundHandler())
-		e.Route("GET /things/{name}", nethttp.NotFoundHandler())
+	handler := mustAssemble(t, testSettings("public"), nil, logger, func(e Endpoint) {
+		e.Route("GET", "/things",
+			func(c *gin.Context) { tr.note("guard"); c.AbortWithStatus(nethttp.StatusForbidden) },
+			noteHandler(tr, "guarded"),
+		)
 	})
-	if !errors.Is(err, ErrRouteConflict) {
-		t.Fatalf("two patterns matching the same requests did not report ErrRouteConflict: %v", err)
+
+	recorder := serveOnce(handler, nethttp.MethodGet, "/things")
+
+	if got, want := tr.seen(), []string{"guard"}; !slices.Equal(got, want) {
+		t.Errorf("the handlers that ran were %v, want only %v: Abort ends the chain", got, want)
 	}
-	mustContain(t, err.Error(), "did not attribute the refusal", "that the engine named no pair")
-	mustContain(t, err.Error(), `"GET /things/{name}"`, "the pattern the engine refused")
-	mustContain(t, err.Error(), `endpoint "public"`, "the endpoint the clash is on")
+	if recorder.Code != nethttp.StatusForbidden {
+		t.Errorf("the guard's status was %d, want %d", recorder.Code, nethttp.StatusForbidden)
+	}
 }
 
-// TestConflictAnsweredWithNoPairSaysSo is the same statement for the engine
-// that does take the attribution on and comes back with nothing: an empty
-// answer is no pair either, and the failure must not present it as one.
-func TestConflictAnsweredWithNoPairSaysSo(t *testing.T) {
+// TestALayerReadsTheOutcomeAfterNext pins what the surface offers a layer that
+// wants to see how the request ended: the status, whether anything was written
+// and how many bytes, read off the context's writer once the rest of the chain
+// has run. No layer has to put a writer of its own around the response for it.
+func TestALayerReadsTheOutcomeAfterNext(t *testing.T) {
+	var status, size int
+	var written bool
 	logger, _ := newRecordingLogger()
-	engine := unattributableEngine{nethttp.NewServeMux()}
-	_, err := assembleEndpointOn(t, engine, testSettings("public"), nil, logger, nil, func(e Endpoint) {
-		e.Route("GET /things/{id}", nethttp.NotFoundHandler())
-		e.Route("GET /things/{name}", nethttp.NotFoundHandler())
+	handler := mustAssemble(t, testSettings("public"), nil, logger, func(e Endpoint) {
+		e.Use(Middleware{Name: "observer", Handler: func(c *gin.Context) {
+			c.Next()
+			status, size, written = c.Writer.Status(), c.Writer.Size(), c.Writer.Written()
+		}})
+		e.Route("GET", "/things", func(c *gin.Context) { c.String(nethttp.StatusCreated, "abc") })
 	})
-	if !errors.Is(err, ErrRouteConflict) {
-		t.Fatalf("two patterns matching the same requests did not report ErrRouteConflict: %v", err)
+
+	serveOnce(handler, nethttp.MethodGet, "/things")
+
+	if status != nethttp.StatusCreated || size != 3 || !written {
+		t.Errorf("the layer read status %d, size %d, written %v after Next; the handler wrote "+
+			"%d and 3 bytes", status, size, written, nethttp.StatusCreated)
 	}
-	mustContain(t, err.Error(), "did not attribute the refusal", "that no pair was named")
-	mustContain(t, err.Error(), `"GET /things/{name}"`, "the pattern the engine refused")
 }
 
 // TestConstraintThroughUseOrdersAgainstItsProvider pins that a constraint
@@ -187,21 +257,21 @@ func TestConstraintThroughUseOrdersAgainstItsProvider(t *testing.T) {
 			Name:     "auth",
 			Order:    10,
 			Provides: []core.Token{(*capAuth)(nil)},
-			Wrap:     noteLayer(tr, "auth"),
+			Handler:  noteLayer(tr, "auth"),
 		})
 		e.Use(Middleware{
-			Name:  "tenant",
-			Order: 0,
-			After: []core.Token{(*capAuth)(nil)},
-			Wrap:  noteLayer(tr, "tenant"),
+			Name:    "tenant",
+			Order:   0,
+			After:   []core.Token{(*capAuth)(nil)},
+			Handler: noteLayer(tr, "tenant"),
 		})
-		e.Route("GET /things", nethttp.NotFoundHandler())
+		e.Route("GET", "/things", filler)
 	})
 
-	handler.ServeHTTP(httptest.NewRecorder(), httptest.NewRequest(nethttp.MethodGet, "/things", nil))
+	serveOnce(handler, nethttp.MethodGet, "/things")
 
 	want := []string{"auth", "tenant"}
-	if got := tr.seen(); !equalStrings(got, want) {
+	if got := tr.seen(); !slices.Equal(got, want) {
 		t.Errorf("the chain ran in the order %v, want %v: After outranks Order, and %v is what "+
 			"comes out when the constraint finds nothing to bind to", got, want,
 			[]string{"tenant", "auth"})
@@ -216,20 +286,20 @@ func TestEmptyProvidesStaysLegal(t *testing.T) {
 	tr := &trace{}
 	logger, _ := newRecordingLogger()
 	handler := mustAssemble(t, testSettings("public"), nil, logger, func(e Endpoint) {
-		e.Use(Middleware{Name: "anonymous", Order: 0, Wrap: noteLayer(tr, "anonymous")})
+		e.Use(Middleware{Name: "anonymous", Order: 0, Handler: noteLayer(tr, "anonymous")})
 		e.Use(Middleware{
 			Name:     "auth",
 			Order:    10,
 			Provides: []core.Token{(*capAuth)(nil)},
-			Wrap:     noteLayer(tr, "auth"),
+			Handler:  noteLayer(tr, "auth"),
 		})
-		e.Route("GET /things", nethttp.NotFoundHandler())
+		e.Route("GET", "/things", filler)
 	})
 
-	handler.ServeHTTP(httptest.NewRecorder(), httptest.NewRequest(nethttp.MethodGet, "/things", nil))
+	serveOnce(handler, nethttp.MethodGet, "/things")
 
 	want := []string{"anonymous", "auth"}
-	if got := tr.seen(); !equalStrings(got, want) {
+	if got := tr.seen(); !slices.Equal(got, want) {
 		t.Errorf("the chain ran in the order %v, want %v: a layer that names no capability of "+
 			"its own is still ordered and still runs", got, want)
 	}
@@ -258,25 +328,25 @@ func TestUnlandedConstraintIsReported(t *testing.T) {
 		e.Use(Middleware{
 			Name:     "auth",
 			Provides: []core.Token{(*capAuth)(nil)},
-			Wrap:     passThrough,
+			Handler:  passThrough,
 		})
 		e.Use(Middleware{
-			Name:  "tenant",
-			After: []core.Token{(*capAuth)(nil)},
-			Wrap:  passThrough,
+			Name:    "tenant",
+			After:   []core.Token{(*capAuth)(nil)},
+			Handler: passThrough,
 		})
 		e.Use(Middleware{
-			Name:  "audit",
-			After: []core.Token{(*capQuota)(nil)},
-			Wrap:  passThrough,
+			Name:    "audit",
+			After:   []core.Token{(*capQuota)(nil)},
+			Handler: passThrough,
 		})
 		e.Use(Middleware{
 			Name:     "recover",
 			Provides: []core.Token{(*capRecovery)(nil)},
 			After:    []core.Token{(*capRecovery)(nil)},
-			Wrap:     passThrough,
+			Handler:  passThrough,
 		})
-		e.Route("GET /things", nethttp.NotFoundHandler())
+		e.Route("GET", "/things", filler)
 	})
 	if err != nil {
 		t.Fatalf("a constraint that placed nothing must not fail the assembly: %v", err)
@@ -337,14 +407,14 @@ func TestALegalAssemblyStartsWithoutAWarning(t *testing.T) {
 		e.Use(Middleware{
 			Name:     "gate",
 			Provides: []core.Token{(*capAuth)(nil)},
-			Wrap:     passThrough,
+			Handler:  passThrough,
 		})
 		e.Use(Middleware{
-			Name:  "journal",
-			After: []core.Token{(*capAuth)(nil), (*capTenant)(nil)},
-			Wrap:  passThrough,
+			Name:    "journal",
+			After:   []core.Token{(*capAuth)(nil), (*capTenant)(nil)},
+			Handler: passThrough,
 		})
-		e.Route("GET /tenants", nethttp.NotFoundHandler())
+		e.Route("GET", "/tenants", filler)
 	})
 	if err != nil {
 		t.Fatalf("a legal assembly failed: %v", err)
@@ -402,15 +472,15 @@ func TestCycleThroughUseFailsTheAssembly(t *testing.T) {
 			Name:     "a",
 			Provides: []core.Token{(*capAuth)(nil)},
 			After:    []core.Token{(*capTenant)(nil)},
-			Wrap:     passThrough,
+			Handler:  passThrough,
 		})
 		e.Use(Middleware{
 			Name:     "b",
 			Provides: []core.Token{(*capTenant)(nil)},
 			After:    []core.Token{(*capAuth)(nil)},
-			Wrap:     passThrough,
+			Handler:  passThrough,
 		})
-		e.Route("GET /things", nethttp.NotFoundHandler())
+		e.Route("GET", "/things", filler)
 	})
 	if !errors.Is(err, ErrMiddlewareCycle) {
 		t.Fatalf("two layers each declaring itself inside the other did not fail the assembly: %v", err)
@@ -420,34 +490,52 @@ func TestCycleThroughUseFailsTheAssembly(t *testing.T) {
 	mustContain(t, err.Error(), `endpoint "public"`, "the endpoint the cycle is on")
 }
 
-// TestChainOrderIsOutermostFirst pins that the chain is wrapped in the order
-// the ordering gives, rather than in registration order or its reverse.
+// TestChainOrderIsOutermostFirst pins that the chain runs in the order the
+// ordering gives, rather than in registration order or its reverse.
 func TestChainOrderIsOutermostFirst(t *testing.T) {
 	tr := &trace{}
 	logger, _ := newRecordingLogger()
 	handler := mustAssemble(t, testSettings("public"), nil, logger, func(e Endpoint) {
 		// Registered innermost-first and with the preferences deciding, so
-		// an implementation wrapping in registration order gets the
+		// an implementation running them in registration order gets the
 		// opposite of the right answer.
-		e.Use(Middleware{Name: "inner", Order: 10, Wrap: noteLayer(tr, "inner")})
-		e.Use(Middleware{Name: "middle", Order: 0, Wrap: noteLayer(tr, "middle")})
-		e.Use(Middleware{Name: "outer", Order: -10, Wrap: noteLayer(tr, "outer")})
-		e.Route("GET /things", nethttp.HandlerFunc(func(nethttp.ResponseWriter, *nethttp.Request) {
-			tr.note("handler")
-		}))
+		e.Use(Middleware{Name: "inner", Order: 10, Handler: noteLayer(tr, "inner")})
+		e.Use(Middleware{Name: "middle", Order: 0, Handler: noteLayer(tr, "middle")})
+		e.Use(Middleware{Name: "outer", Order: -10, Handler: noteLayer(tr, "outer")})
+		e.Route("GET", "/things", noteHandler(tr, "handler"))
 	})
 
-	handler.ServeHTTP(httptest.NewRecorder(), httptest.NewRequest(nethttp.MethodGet, "/things", nil))
+	serveOnce(handler, nethttp.MethodGet, "/things")
 
 	want := []string{"outer", "middle", "inner", "handler"}
-	if got := tr.seen(); !equalStrings(got, want) {
+	if got := tr.seen(); !slices.Equal(got, want) {
 		t.Errorf("the chain ran in the order %v, and the ordering gives %v", got, want)
 	}
 }
 
+// TestALayerRegisteredAfterTheRoutesStillRunsForThem pins the order the engine
+// is built in. gin combines the engine's handlers into a route's chain when the
+// route is added, so a layer handed to the engine after the routes would reach
+// none of them; the registration order here puts every Use after every Route.
+func TestALayerRegisteredAfterTheRoutesStillRunsForThem(t *testing.T) {
+	tr := &trace{}
+	logger, _ := newRecordingLogger()
+	handler := mustAssemble(t, testSettings("public"), nil, logger, func(e Endpoint) {
+		e.Route("GET", "/things", noteHandler(tr, "handler"))
+		e.Use(Middleware{Name: "late", Handler: noteLayer(tr, "late")})
+	})
+
+	serveOnce(handler, nethttp.MethodGet, "/things")
+
+	if got, want := tr.seen(), []string{"late", "handler"}; !slices.Equal(got, want) {
+		t.Errorf("the request went through %v, want %v: a layer applies to every route of the "+
+			"endpoint whatever order the registrations arrived in", got, want)
+	}
+}
+
 // TestBodyLimitAppliedOutsideEveryLayer pins where the limit is imposed. Put in
-// Decode, it would not hold for a layer reading the body, nor for a handler
-// that parses the body itself.
+// a handler's own reading, it would not hold for a layer reading the body, nor
+// for a handler that parses the body itself.
 func TestBodyLimitAppliedOutsideEveryLayer(t *testing.T) {
 	logger, _ := newRecordingLogger()
 	s := testSettings("public")
@@ -456,13 +544,11 @@ func TestBodyLimitAppliedOutsideEveryLayer(t *testing.T) {
 	var readErr error
 	var read []byte
 	handler := mustAssemble(t, s, nil, logger, func(e Endpoint) {
-		e.Use(Middleware{Name: "outermost", Order: -100, Wrap: func(next nethttp.Handler) nethttp.Handler {
-			return nethttp.HandlerFunc(func(w nethttp.ResponseWriter, r *nethttp.Request) {
-				read, readErr = io.ReadAll(r.Body)
-				next.ServeHTTP(w, r)
-			})
+		e.Use(Middleware{Name: "outermost", Order: -100, Handler: func(c *gin.Context) {
+			read, readErr = io.ReadAll(c.Request.Body)
+			c.Next()
 		}})
-		e.Route("POST /things", nethttp.NotFoundHandler())
+		e.Route("POST", "/things", filler)
 	})
 
 	body := strings.NewReader(strings.Repeat("x", 64))
@@ -479,6 +565,51 @@ func TestBodyLimitAppliedOutsideEveryLayer(t *testing.T) {
 	}
 }
 
+// TestAnOversizedBodyBindsAsAMaxBytesError pins what a handler sees when it
+// binds a body through gin: the limit the endpoint imposes comes back from
+// ShouldBindJSON as an *http.MaxBytesError, which errors.As reaches, and not as
+// a decoding error that would read as a malformed body. A caller that wants to
+// answer 413 tells the two apart this way.
+//
+// The body is valid JSON that is longer than the limit, so the only thing wrong
+// with it is its size; and a body inside the limit binds, which is what keeps
+// the first half from being a binder that fails on everything.
+func TestAnOversizedBodyBindsAsAMaxBytesError(t *testing.T) {
+	logger, _ := newRecordingLogger()
+	s := testSettings("public")
+	s.maxBodyBytes = 32
+
+	var bound struct {
+		Name string `json:"name"`
+	}
+	var bindErr error
+	handler := mustAssemble(t, s, nil, logger, func(e Endpoint) {
+		e.Route("POST", "/things", func(c *gin.Context) { bindErr = c.ShouldBindJSON(&bound) })
+	})
+
+	send := func(body string) {
+		bound.Name, bindErr = "", nil
+		handler.ServeHTTP(httptest.NewRecorder(),
+			httptest.NewRequest(nethttp.MethodPost, "/things", strings.NewReader(body)))
+	}
+
+	send(`{"name":"` + strings.Repeat("x", 64) + `"}`)
+	var tooLarge *nethttp.MaxBytesError
+	if !errors.As(bindErr, &tooLarge) {
+		t.Fatalf("binding a body over the limit returned %v, want an error errors.As reaches as "+
+			"*http.MaxBytesError", bindErr)
+	}
+	if tooLarge.Limit != s.maxBodyBytes {
+		t.Errorf("the limit the error carries is %d, and the endpoint is configured with %d",
+			tooLarge.Limit, s.maxBodyBytes)
+	}
+
+	send(`{"name":"within"}`)
+	if bindErr != nil || bound.Name != "within" {
+		t.Errorf("a body inside the limit bound as %q with error %v", bound.Name, bindErr)
+	}
+}
+
 // TestNoBodyLimitIsLeftUnlimited pins the switch-off: an explicit 0 means no
 // limit, so the body arrives whole.
 func TestNoBodyLimitIsLeftUnlimited(t *testing.T) {
@@ -489,9 +620,7 @@ func TestNoBodyLimitIsLeftUnlimited(t *testing.T) {
 	var read []byte
 	var readErr error
 	handler := mustAssemble(t, s, nil, logger, func(e Endpoint) {
-		e.Route("POST /things", nethttp.HandlerFunc(func(_ nethttp.ResponseWriter, r *nethttp.Request) {
-			read, readErr = io.ReadAll(r.Body)
-		}))
+		e.Route("POST", "/things", func(c *gin.Context) { read, readErr = io.ReadAll(c.Request.Body) })
 	})
 
 	body := strings.NewReader(strings.Repeat("x", 64))
@@ -512,16 +641,14 @@ func TestLoggerInjectedOutsideEveryLayer(t *testing.T) {
 
 	var seen *slog.Logger
 	handler := mustAssemble(t, testSettings("public"), injected, logger, func(e Endpoint) {
-		e.Use(Middleware{Name: "outermost", Order: -100, Wrap: func(next nethttp.Handler) nethttp.Handler {
-			return nethttp.HandlerFunc(func(w nethttp.ResponseWriter, r *nethttp.Request) {
-				seen = log.FromContext(r.Context())
-				next.ServeHTTP(w, r)
-			})
+		e.Use(Middleware{Name: "outermost", Order: -100, Handler: func(c *gin.Context) {
+			seen = log.FromContext(c.Request.Context())
+			c.Next()
 		}})
-		e.Route("GET /things", nethttp.NotFoundHandler())
+		e.Route("GET", "/things", filler)
 	})
 
-	handler.ServeHTTP(httptest.NewRecorder(), httptest.NewRequest(nethttp.MethodGet, "/things", nil))
+	serveOnce(handler, nethttp.MethodGet, "/things")
 
 	if seen != injected {
 		t.Fatal("the outermost layer did not take the injected logger out of the request context")
@@ -541,12 +668,10 @@ func TestNoLoggerModuleLeavesContextUntouched(t *testing.T) {
 
 	var seen *slog.Logger
 	handler := mustAssemble(t, testSettings("public"), nil, logger, func(e Endpoint) {
-		e.Route("GET /things", nethttp.HandlerFunc(func(_ nethttp.ResponseWriter, r *nethttp.Request) {
-			seen = log.FromContext(r.Context())
-		}))
+		e.Route("GET", "/things", func(c *gin.Context) { seen = log.FromContext(c.Request.Context()) })
 	})
 
-	handler.ServeHTTP(httptest.NewRecorder(), httptest.NewRequest(nethttp.MethodGet, "/things", nil))
+	serveOnce(handler, nethttp.MethodGet, "/things")
 
 	if seen != log.Default() {
 		t.Error("something was injected into the request context although no module delivers Logger")
@@ -554,54 +679,36 @@ func TestNoLoggerModuleLeavesContextUntouched(t *testing.T) {
 }
 
 // TestAssembledChainIsListed pins that the chain a run really serves is written
-// down at startup, in the order it runs. A process whose layer order can only
-// be worked out by sending a request through it is one where a mis-ordered
-// chain is found by the request that goes wrong.
+// down at startup, in the order it runs, with the capabilities each registered
+// layer stands for. A process whose layer order can only be worked out by
+// sending a request through it is one where a mis-ordered chain is found by the
+// request that goes wrong, and a chain listing with the names alone cannot say
+// that a capability has no representative on the endpoint.
+//
+// The two layers this module puts around the registered ones are in the line as
+// well, by name: they are on no registration surface and stand for no
+// capability, and a reader comparing the line with the code would otherwise find
+// the body limit, the logger and the panic fallback applied by something the
+// line does not mention.
 func TestAssembledChainIsListed(t *testing.T) {
 	logger, records := newRecordingLogger()
 	mustAssemble(t, testSettings("public"), nil, logger, func(e Endpoint) {
-		e.Use(Middleware{Name: "inner", Order: 10, Wrap: passThrough})
-		e.Use(Middleware{Name: "outer", Order: -10, Wrap: passThrough})
-		e.Route("GET /things", nethttp.NotFoundHandler())
+		e.Use(Middleware{Name: "inner", Order: 10, Handler: passThrough})
+		e.Use(Middleware{
+			Name:     "outer",
+			Order:    -10,
+			Provides: []core.Token{(*capAuth)(nil), (*capTenant)(nil)},
+			Handler:  passThrough,
+		})
+		e.Route("GET", "/things", filler)
 	})
 
+	outer := "outer(" + typeName(reflect.TypeFor[capAuth]()) + ", " + typeName(reflect.TypeFor[capTenant]()) + ")"
 	written := strings.Join(records.at(slog.LevelInfo), "\n")
-	mustContain(t, written, "chain=http:base -> http:fallback -> outer -> inner", "the chain in the order it runs")
+	mustContain(t, written, "chain=http:base -> http:fallback -> "+outer+" -> inner",
+		"the chain in the order it runs, each registered layer with the capabilities it stands for")
 	mustContain(t, written, "endpoint=public", "the endpoint the chain belongs to")
-}
-
-// TestWrapReturningNilFailsTheAssembly pins the hole a layer can leave in the
-// chain, and how it is reported. Left alone the request would die on a nil
-// handler with nothing to say which layer produced it.
-//
-// It is a startup failure and not a panic, and both halves are asserted here.
-// Assembly runs in Serve: a panic there unwinds past the registry, which then
-// never runs the rollback, so the endpoints bound before this one keep their
-// sockets and their accept goroutines with nobody left to close them. A
-// returned error ends the startup the ordinary way and the rollback runs.
-func TestWrapReturningNilFailsTheAssembly(t *testing.T) {
-	logger, _ := newRecordingLogger()
-
-	var err error
-	func() {
-		defer func() {
-			if raised := recover(); raised != nil {
-				t.Fatalf("assembling panicked with %v; in Serve a panic skips the registry's "+
-					"rollback and strands the endpoints already bound", raised)
-			}
-		}()
-		_, err = assembleEndpoint(t, testSettings("public"), nil, logger, func(e Endpoint) {
-			e.Use(Middleware{Name: "hollow", Wrap: func(nethttp.Handler) nethttp.Handler { return nil }})
-			e.Route("GET /things", nethttp.NotFoundHandler())
-		})
-	}()
-
-	if !errors.Is(err, ErrChainAssembly) {
-		t.Fatalf("a layer whose Wrap returned nil reported %v, want an error wrapping "+
-			"ErrChainAssembly", err)
-	}
-	mustContain(t, err.Error(), `"hollow"`, "the layer that returned nothing")
-	mustContain(t, err.Error(), `endpoint "public"`, "the endpoint whose chain has the hole")
+	mustContain(t, written, "routes=1", "the number of routes mounted")
 }
 
 // equalStrings compares two sequences element by element.

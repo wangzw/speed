@@ -611,7 +611,7 @@ flowchart TD
 | 状态码 | 判据 | 归入其中的情形 |
 |---|---|---|
 | 404 | 这条请求不属于任何正被服务的租户 | 取法读不出别名；别名不在名册上；租户已停用 |
-| 500 | 本模块自身的缺陷 | 解析层自己的 panic，由它自己 recover 后收口 |
+| 500 | 本模块自身的缺陷 | 名册读不出；解析层自己的 panic，由它自己 recover 后收口 |
 
 **三种情形收口同一个状态码。** "这个租户不存在"与"这个租户已停用"对调用方是同一件事——这条请求此刻不属于任何正被服务的租户——分开表述会让调用方分得出一个名字对应的是一个从未存在的租户还是一个被停用的租户，而那是一台存在性预言机。两者在日志里分开记，运维面据它排查。
 
@@ -722,7 +722,7 @@ flowchart TD
 | 快照的周期刷新与 `Stop` 取消，整表读一次一个、按读的先后发布 | 已实现 | `pkg/tenant/catalog/roster.go` `start`、`stop`、`refreshOnce`、`read`、`acquire` |
 | 三种内建取法 | 已实现 | `pkg/tenant/resolve/extract.go` `headerExtractor`、`subdomainExtractor`、`pathExtractor` |
 | 取法的登记面与冻结 | 已实现 | `pkg/tenant/resolve/resolve.go` `Register`、`open`、`seal` |
-| 请求期的解析、日志字段绑定与收口 | 部分实现：解析与日志字段绑定已有；层仍写成 `net/http` 的 `Wrap`，404 与 500 仍由本层直接写状态码；缺 `gin.HandlerFunc` 形态的 `Handler`，缺经 `Fail` 写出 404 与 500 | `pkg/tenant/resolve/resolve.go` `admit`、`refuse`、`middlewareFor` |
+| 请求期的解析、日志字段绑定与收口 | 已实现 | `pkg/tenant/resolve/resolve.go` `handle`、`admit`、`refuse`、`middlewareFor` |
 | 受约束模型的约定与按来源的识别，内嵌前缀改过的列照样认，填列与核对作用于 GORM 绑到租户列上的字段，取不出一个租户列的模型一律拒绝 | 已实现 | `pkg/tenant/model.go` `Model`；`pkg/tenant/catalog/plugin.go` `conventionFieldOf`、`isConvention`、`embedsConvention`、`unreadConvention`、`taggedEmbedded`、`scopeOf` |
 | 隔离插件的三处作用点、四档判定与显式租户列的核对，只核对 GORM 写出的字段，拒绝不带租户列的插入行 | 已实现 | `pkg/tenant/catalog/plugin.go` `Initialize`、`scopeRead`、`scopeDelete`、`scopeUpdate`、`applyCondition`、`scopeTerm`、`grouped`、`fillKey`、`inKey`、`fillColumn`、`writeRows`、`insertSelects`、`leftOut`、`otherSpellings`、`insertWrites`、`judgeSpellings`、`writeMap`、`assignedValues`、`destinationValues`、`upsertValues`、`keyReaches`、`keyColumn`、`targetReaches` |
 | 行链上的读、`Row` 经交回的行报出拒绝且不占连接、关联联接的条件与子查询的拒绝 | 已实现 | `pkg/tenant/catalog/plugin.go` `Initialize`、`scopeRow`、`refuseRead`、`refusedRow`、`refusingConnector`、`scopedJoins`、`applyJoins`、`joinTerm`、`renderRefusal` |

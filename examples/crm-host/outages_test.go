@@ -467,7 +467,7 @@ func TestTheJournalFailsOpenOnRequestsAndClosedOnStatements(t *testing.T) {
 			tenants := func() response { return h.get(t, adminEndpoint, "/tenants", "", operator()) }
 			expect(t, "the operator listing the tenants", tenants(), nethttp.StatusOK)
 			c.awaitJournal("the listing before the cut", func(r auditRow) bool {
-				return r.source == "request" && r.object == listTenantsRoute && r.outcome == "200"
+				return r.requestOn(listTenantsRoute) && r.outcome == "200"
 			})
 			c.requireCarried(databaseLink)
 

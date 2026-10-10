@@ -427,7 +427,7 @@ sequenceDiagram
 
 | 状态码 | 判据 | 归入其中的情形 | 归因 |
 |---|---|---|---|
-| 401 | 这条请求没有出示一条成立的凭据 | 没有 `Authorization` 头；无人整条认领的 scheme 下读不出主体；无人权威认领该主体；通过的判决交回了不归它的主体；多于一个开放认领同时认领；判决为拒绝；判决为零值即“没答”，另计一次缺陷 | 网关自产的拒绝记在网关名下，不记到任何后端头上：没有 `Authorization` 头、读不出主体、无人权威认领该主体、通过的判决交回了不归它的主体。多于一个开放认领同时认领时同样记在网关名下——判定出自网关自己建的归属表——日志另点名冲突的各方。判决为拒绝与判决为零值记在作答的那个后端名下 |
+| 401 | 这条请求没有出示一条成立的凭据 | 没有 `Authorization` 头，或头出现多于一个、为空白，一律读作没有凭据；无人整条认领的 scheme 下读不出主体；无人权威认领该主体；通过的判决交回了不归它的主体；多于一个开放认领同时认领；判决为拒绝；判决为零值即“没答”，另计一次缺陷 | 网关自产的拒绝记在网关名下，不记到任何后端头上：没有 `Authorization` 头、读不出主体、无人权威认领该主体、通过的判决交回了不归它的主体。多于一个开放认领同时认领时同样记在网关名下——判定出自网关自己建的归属表——日志另点名冲突的各方。判决为拒绝与判决为零值记在作答的那个后端名下 |
 | 503 | 本模块此刻答不了，而不是这条凭据不成立 | 后端自报故障；调用超出预算；后端 panic；开放认领在回答归属时出错或 panic；**网关已停止接受后端调用**；**在飞闸门已满**；**请求自己的 context 在后端作答之前结束**（它带来的 deadline 先到，或调用方断开） | 后端答不出来的那些记在被问到的那个后端名下。**网关停止接受调用、在飞闸门已满、请求自己的 context 先结束，这几种记在网关名下**：前两种情形下后端一次都没被问到；请求自己的 context 先结束时，后端要么没被问到，要么正在做它被要求做的事——context 结束即返回，并如实报告自己答不了。把它们算到后端头上会把操作者送去查一个完全正常的凭据来源。判据是成因出自哪一侧，不是状态码 |
 | 500 | 本模块自身的缺陷 | 网关自己的 panic，由它自己 recover 后收口 | 网关 |
 
@@ -448,7 +448,7 @@ sequenceDiagram
 - **归属本身带来的代价记在 [ADR-authn-ownership-2026-09-20](../../adr/adr-authn-ownership-2026-09-20.md)**：权威后端不可用的那段窗口收口 503 而非 401、归属判定构成一台可枚举用户名的存在性预言机、归属名与子包模块名的一致只靠约定。它们出自归属的裁定本身，被否的替代做法与各自的理由记在那份记录里。
 - **开放认领的后端病了会拖慢全部裸名。** 裸名是日常路径，而它要问遍全部开放认领。预算与在飞闸门给出的是本模块这一侧协程与延迟的上界，不含后端自己攥着的连接。
 - **越界的豁免登记以 panic 拒绝，而注册表从不接 panic。** 一个登记方从自己的协程里迟到写一次，跑着的进程当场崩。这与入口模块的登记闸门是同一类代价。
-- **未认证的调用方分不清路径写错与没带凭据。** 未命中豁免的请求一律 401，404 与 405 都到不了它。探活与诊断路由要靠豁免显式开出来。
+- **未认证的调用方分不清路径写错与没带凭据。** 未命中豁免的请求一律 401，404 与 405 都到不了它。探活与诊断路由要靠豁免显式开出来。豁免路由本身是公开的，且照常进入租户解析层：没有租户名的请求在豁免路由上得到租户解析层的 404，在别处得到 401，调用方凭这个差别能列出豁免路由（[ADR-tenant-ordering-2026-09-21](../../adr/adr-tenant-ordering-2026-09-21.md)）。
 - **豁免路由上没有身份。** 带着正确凭据访问一条豁免路由，`FromContext` 仍然返回假。“登录可选”的页面走不了豁免这条路。
 - **每请求多一次豁免表的查询，每条豁免在启动期多一次校验。** 查询在请求路径上，校验是启动期一次性的。
 - **`pkg/authn/static` 的一次校验开始之后不受调用预算约束。** 它的口令派生取自标准库，不收 context，开始之后跑完为止；那是 FIPS 140 模式所验证的实现，在本模块里另写一份可中断的派生会让这个后端脱离该模式。它因而只在派生开始之前响应 context，已结束即答故障；一次尝试开始之后占着一格在飞闸门与一个核心多久，由表里那条哈希写的迭代次数决定。迭代次数由写表的人选定，本模块不为它设上界：一次派生能否落在预算之内取决于网关的预算，那不是后端读得到的输入项，而写死一个上界只是在猜别处的配置。
@@ -515,22 +515,22 @@ sequenceDiagram
 | 能力 | 状态 | 代码 |
 |---|---|---|
 | 网关模块与排他交付 | 已实现 | `pkg/authn/gate/gate.go` `Module` |
-| 认证中间件的登记与链上位置声明 | 部分实现：位置声明已有；缺 `Middleware.Handler` 为 `gin.HandlerFunc`，现在登记的是 `Wrap`，放行用 `c.Next()` | `pkg/authn/gate/serve.go` `middlewareFor` |
-| 凭据的取出与判决的收口 | 部分实现：判定序列已有；缺拒绝与网关自身 panic 的 500 经 `Fail` 写出，现在直接 `WriteHeader`，以及身份经 `c.Request = c.Request.WithContext(...)` 交给下游 | `pkg/authn/gate/serve.go` `admit`、`identify` |
+| 认证中间件的登记与链上位置声明 | 已实现 | `pkg/authn/gate/serve.go` `middlewareFor` |
+| 凭据的取出与判决的收口 | 已实现 | `pkg/authn/gate/serve.go` `admit`、`identify` |
 | 收口记录的归因与级别 | 已实现 | `pkg/authn/gate/serve.go` `conclude`、`outage`、`gatewayRefusal` |
 | 401 的挑战头 | 已实现 | `pkg/authn/gate/gate.go` `challengeFor`、`quoteRealm` |
 | 归属表的建立、重叠检出与请求期判定 | 已实现 | `pkg/authn/gate/claims.go`；`serve.go` `resolveOwner` |
 | 出口绑定 | 已实现 | `pkg/authn/gate/serve.go` `exitBound` |
 | 判决的构造器与零值语义 | 已实现 | `pkg/authn/internal/verdict/verdict.go`；`pkg/authn/verdict.go` |
 | 身份的上下文承载 | 已实现 | `pkg/authn/internal/identity/identity.go`；`pkg/authn/identity.go` |
-| 豁免的三态闸门与登记面 | 部分实现：闸门已有；缺 `Exempt(endpoint, method, path string)` 的形状，现在是 `Exempt(endpoint, pattern string)` | `pkg/authn/gate/exempt.go` `Exempt`、`open`，`pkg/authn/authn.go` `Gate` |
-| 豁免的启动期校验与请求期比对 | 部分实现：端名与守备的校验已有；缺（请求方法，`c.FullPath()`）与（方法，路径）的逐字比对，现在由 `newMatcher` 建出的 `ServeMux` 匹配器判定 | `pkg/authn/gate/exempt.go` `seal`、`newMatcher`、`(*matcher).exempts` |
+| 豁免的三态闸门与登记面 | 已实现 | `pkg/authn/gate/exempt.go` `Exempt`、`open`，`pkg/authn/authn.go` `Gate` |
+| 豁免的启动期校验与请求期比对 | 已实现 | `pkg/authn/gate/exempt.go` `seal`、`(*gateway).exempts` |
 | 后端调用的预算、在飞闸门与 recover | 已实现 | `pkg/authn/gate/serve.go` `enter`、`verify`、`owns` |
 | 脱敏规则的登记与主体的关联字段绑定 | 已实现 | `pkg/authn/gate/redact.go` `registerRedaction`、`credentialMatcher`；`serve.go` `admit` |
 | 收口计数经指标功能报出 | 已实现 | `pkg/authn/gate/metrics.go` `takeMeter` |
-| 启动诊断：豁免表与到场后端名单 | 部分实现：到场后端名单已有；缺豁免表按端名、方法与路径写出，现在写出的是模式串 | `pkg/authn/gate/gate.go` `wire`、`freeze`、`exemptionAttrs` |
-| 哨兵错误 | 部分实现：缺去掉 `ErrUnmatchablePattern`，它在表里仍有 | `pkg/authn/errors.go` |
+| 启动诊断：豁免表与到场后端名单 | 已实现 | `pkg/authn/gate/gate.go` `wire`、`freeze`、`exemptionAttrs` |
+| 哨兵错误 | 已实现 | `pkg/authn/errors.go` |
 | 校验后端子包 | 已实现 | `pkg/authn/static/` |
 | 内置口令表的条目格式与按默认、给定次数写出 | 已实现 | `pkg/authn/static/hash.go` `Hash`、`HashAt`、`ParseHash` |
 
-描述符各回调做了什么——`Init` 取到了什么、在哪些端上登记了中间件、`Stop` 之后是否还问后端、脱敏规则是否到了日志模块自己的输出——在网关自己的包里经真实的注册表驱动守住（`pkg/authn/gate/assembly_test.go`）。真实入口把链组装起来、经套接字答出的状态码，在 `examples/orders-host` 的 `e2e_test.go` 里从进程外守住。
+描述符各回调做了什么——`Init` 取到了什么、在哪些端上登记了中间件、`Stop` 之后是否还问后端、脱敏规则是否到了日志模块自己的输出——在网关自己的包里经真实的注册表驱动守住（`pkg/authn/gate/assembly_test.go`）。豁免对已匹配路由的比对、无匹配路由与方法不允许时先于入口模块的应答、拒绝响应的形状与后端 panic 的收口，在网关自己的包里经真实的入口模块与回环端口驱动守住（`pkg/authn/gate/live_test.go`、`pkg/authn/gate/exempt_test.go`、`pkg/authn/gate/response_test.go`）。真实入口把链组装起来、经套接字答出的状态码，在 `examples/orders-host` 的 `e2e_test.go` 里从进程外守住。

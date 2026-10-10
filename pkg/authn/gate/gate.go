@@ -69,10 +69,10 @@ type gateway struct {
 	router speedhttp.Router
 	// table is built in Init and read-only afterwards.
 	table *ownership
-	// matchers are built in Start, one per endpoint that carries an
-	// exemption, and read-only afterwards. An endpoint with no exemption
-	// has no entry, and the nil matcher exempts nothing.
-	matchers map[string]*matcher
+	// exempted is frozen in Start, one set of routes per endpoint that
+	// carries an exemption, and read-only afterwards. An endpoint with no
+	// exemption has no entry, and a lookup in the missing set finds nothing.
+	exempted map[string]map[route]struct{}
 
 	// logger is where the startup diagnostics go. Request-path records go
 	// to the logger the entry point injected into the request context
@@ -380,31 +380,32 @@ func (g *gateway) takeLogger(reg *core.Registry) {
 }
 
 // freeze runs in Start: it shuts the registration window, validates what was
-// registered and builds the matchers, then writes the frozen table out.
+// registered and freezes the exemption table, then writes the table out.
 func (g *gateway) freeze() error {
 	if err := g.seal(g.router); err != nil {
 		return err
 	}
-	g.logger.Info(diagnosticPrefix+"the exemption table, frozen", exemptionAttrs(g.matchers)...)
+	g.logger.Info(diagnosticPrefix+"the exemption table, frozen", exemptionAttrs(g.exempted)...)
 	return nil
 }
 
-// exemptionAttrs renders the frozen table for the diagnostics. It is written
-// unconditionally on the success path: a route that is public is worth saying
-// out loud once at startup, whether or not anyone registered one.
-func exemptionAttrs(matchers map[string]*matcher) []any {
-	if len(matchers) == 0 {
+// exemptionAttrs renders the frozen table for the diagnostics, one attribute per
+// endpoint named by the endpoint, listing its routes as method and path. It is
+// written unconditionally on the success path: a route that is public is worth
+// saying out loud once at startup, whether or not anyone registered one.
+func exemptionAttrs(exempted map[string]map[route]struct{}) []any {
+	if len(exempted) == 0 {
 		return []any{slog.String("exemptions", "none: every route on every guarded endpoint "+
 			"requires a credential")}
 	}
-	attrs := make([]any, 0, len(matchers))
-	names := make([]string, 0, len(matchers))
-	for name := range matchers {
+	attrs := make([]any, 0, len(exempted))
+	names := make([]string, 0, len(exempted))
+	for name := range exempted {
 		names = append(names, name)
 	}
 	sort.Strings(names)
 	for _, name := range names {
-		attrs = append(attrs, slog.String(name, strings.Join(matchers[name].patterns, ", ")))
+		attrs = append(attrs, slog.String(name, strings.Join(routesOf(exempted[name]), ", ")))
 	}
 	return attrs
 }

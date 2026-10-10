@@ -9,6 +9,8 @@ import (
 	"sync"
 	"testing"
 
+	"github.com/gin-gonic/gin"
+
 	"github.com/vislake/speed/pkg/core"
 )
 
@@ -19,7 +21,7 @@ func testRouter(names ...string) *router {
 	for _, name := range names {
 		settings = append(settings, testSettings(name))
 	}
-	return newRouter(settings, func() Engine { return nethttp.NewServeMux() })
+	return newRouter(settings)
 }
 
 // endpointOf takes an endpoint out, failing the test if it is not there.
@@ -49,7 +51,7 @@ func TestRouteBeforeGateOpensPanics(t *testing.T) {
 	e := endpointOf(t, r, "public")
 
 	text := wantPanic(t, "Route before the gate opened", func() {
-		e.Route("GET /things", nethttp.NotFoundHandler())
+		e.Route("GET", "/things", filler)
 	})
 	mustContain(t, text, "public", "the endpoint the call was made on")
 	mustContain(t, text, "before the registration gate opened", "which side of the window the call fell on")
@@ -68,7 +70,7 @@ func TestUseBeforeGateOpensPanics(t *testing.T) {
 	e := endpointOf(t, r, "public")
 
 	text := wantPanic(t, "Use before the gate opened", func() {
-		e.Use(Middleware{Name: "trace", Wrap: passThrough})
+		e.Use(Middleware{Name: "trace", Handler: passThrough})
 	})
 	mustContain(t, text, "Use", "the call that was refused")
 	mustContain(t, text, "before the registration gate opened", "which side of the window the call fell on")
@@ -81,11 +83,11 @@ func TestRegistrationInsideInitSucceeds(t *testing.T) {
 	e := endpointOf(t, r, "public")
 	r.open()
 
-	e.Route("GET /things", nethttp.NotFoundHandler())
-	e.Use(Middleware{Name: "trace", Wrap: passThrough})
+	e.Route("GET", "/things", filler)
+	e.Use(Middleware{Name: "trace", Handler: passThrough})
 
 	inner := r.endpoints["public"]
-	if len(inner.routes) != 1 || inner.routes[0].pattern != "GET /things" {
+	if len(inner.routes) != 1 || inner.routes[0].method != "GET" || inner.routes[0].path != "/things" {
 		t.Errorf("the route was not recorded: %+v", inner.routes)
 	}
 	if len(inner.layers) != 1 || inner.layers[0].mw.Name != "trace" {
@@ -104,13 +106,13 @@ func TestRegistrationAfterSealPanics(t *testing.T) {
 	r.seal()
 
 	text := wantPanic(t, "Route after the gate was sealed", func() {
-		e.Route("GET /things", nethttp.NotFoundHandler())
+		e.Route("GET", "/things", filler)
 	})
 	mustContain(t, text, "after the registration gate closed", "which side of the window the call fell on")
 	mustContain(t, text, "assembled once in Serve", "why a late registration reaches nothing")
 
 	useText := wantPanic(t, "Use after the gate was sealed", func() {
-		e.Use(Middleware{Name: "trace", Wrap: passThrough})
+		e.Use(Middleware{Name: "trace", Handler: passThrough})
 	})
 	mustContain(t, useText, "after the registration gate closed", "which side of the window the call fell on")
 }
@@ -145,80 +147,184 @@ func TestUnknownEndpointWithNoEndpointsSaysSo(t *testing.T) {
 	mustContain(t, err.Error(), "declares no endpoint at all", "the state the message describes")
 }
 
-// TestNilWrapPanics pins the layer that would wrap nothing. Handing back an
-// error instead would let a registrant drop it and carry on believing the layer
-// is in the chain.
-func TestNilWrapPanics(t *testing.T) {
+// TestNilHandlerFieldPanics pins the layer that would do nothing. Handing back
+// an error instead would let a registrant drop it and carry on believing the
+// layer is in the chain, and gin itself accepts a nil handler and crashes when a
+// request reaches it.
+func TestNilHandlerFieldPanics(t *testing.T) {
 	r := testRouter("public")
 	e := endpointOf(t, r, "public")
 	r.open()
 
-	text := wantPanic(t, "Use with a nil Wrap", func() {
+	text := wantPanic(t, "Use with a nil Handler", func() {
 		e.Use(Middleware{Name: "trace"})
 	})
 	mustContain(t, text, "trace", "the layer that was registered")
-	mustContain(t, text, "nil Wrap", "what was wrong with it")
-	mustContain(t, text, "func(http.Handler) http.Handler", "the shape Wrap has to have")
+	mustContain(t, text, "nil Handler", "what was wrong with it")
+	mustContain(t, text, `endpoint "public"`, "the endpoint it was registered on")
+
+	if len(r.endpoints["public"].layers) != 0 {
+		t.Error("the layer with no Handler was recorded anyway")
+	}
 }
 
-// TestNilHandlerPanics is the same class on the route side.
-func TestNilHandlerPanics(t *testing.T) {
+// TestRouteWithoutAHandlerPanics pins a route that binds nothing. The call is
+// legal as far as the signature goes, and a route that was registered without a
+// handler would answer nothing for ever without a word.
+func TestRouteWithoutAHandlerPanics(t *testing.T) {
 	r := testRouter("public")
 	e := endpointOf(t, r, "public")
 	r.open()
 
-	text := wantPanic(t, "Route with a nil handler", func() { e.Route("GET /things", nil) })
-	mustContain(t, text, "GET /things", "the pattern that was registered")
+	text := wantPanic(t, "Route with no handler", func() { e.Route("GET", "/things") })
+	mustContain(t, text, `Route("GET", "/things")`, "the call that bound nothing")
+	mustContain(t, text, `endpoint "public"`, "the endpoint it was registered on")
+	mustContain(t, text, "no handler", "what was wrong with it")
+
+	if len(r.endpoints["public"].routes) != 0 {
+		t.Error("the route with no handler was recorded anyway")
+	}
 }
 
-// TestMalformedPatternPanicsAtTheCall pins that a pattern the engine refuses on
-// its own is the call-site mistake it is, named where it was written.
-//
-// It is knowable from this one registration, with nothing else mounted, which
-// is what separates it from a conflict: a conflict is a property of the set and
-// only exists once the chain is assembled. Left to be discovered in Serve, a
-// malformed pattern comes back as a clash between two registrations, so a
-// caller reading ErrRouteConflict goes looking for a second registration that
-// is not there.
-func TestMalformedPatternPanicsAtTheCall(t *testing.T) {
+// TestRouteWithANilHandlerPanics pins the nil handler gin accepts and crashes on
+// at request time, wherever in the list it stands: a check on the first position
+// alone passes the second row.
+func TestRouteWithANilHandlerPanics(t *testing.T) {
 	for _, c := range []struct {
-		pattern string
-		reason  string
+		name     string
+		handlers []gin.HandlerFunc
+		at       string
 	}{
-		{"/{", "bad wildcard segment"},
-		{"GET /things/{id}/{id}", `duplicate wildcard name "id"`},
-		{"", "invalid pattern"},
+		{"alone", []gin.HandlerFunc{nil}, "position 0"},
+		{"after a handler", []gin.HandlerFunc{filler, nil}, "position 1"},
+		{"before a handler", []gin.HandlerFunc{nil, filler}, "position 0"},
 	} {
-		t.Run(c.pattern, func(t *testing.T) {
+		t.Run(c.name, func(t *testing.T) {
 			r := testRouter("public")
 			e := endpointOf(t, r, "public")
 			r.open()
 
-			text := wantPanic(t, "Route with a malformed pattern", func() {
-				e.Route(c.pattern, nethttp.NotFoundHandler())
+			text := wantPanic(t, "Route with a nil handler", func() {
+				e.Route("GET", "/things", c.handlers...)
 			})
-			mustContain(t, text, fmt.Sprintf("%q", c.pattern), "the pattern that was registered")
-			mustContain(t, text, `endpoint "public"`, "the endpoint it was registered on")
-			mustContain(t, text, c.reason, "what the engine said is wrong with it")
+			mustContain(t, text, `Route("GET", "/things")`, "the call that carried the nil")
+			mustContain(t, text, "nil handler", "what was wrong with it")
+			mustContain(t, text, c.at, "which position held it")
+
+			if len(r.endpoints["public"].routes) != 0 {
+				t.Error("the route with a nil handler was recorded anyway")
+			}
 		})
 	}
 }
 
-// TestMalformedPatternIsNotARouteConflict is the other half of the
-// classification: a single malformed registration must not reach the assembly
-// as a clash between two of them.
-func TestMalformedPatternIsNotARouteConflict(t *testing.T) {
-	r := testRouter("public")
-	e := endpointOf(t, r, "public")
-	r.open()
+// TestRouteWithAPathNotInGinsFormPanics pins the path forms gin rewrites. The
+// engine joins a registered path onto its root and cleans it, so Context.FullPath
+// reports the cleaned form; a layer comparing (method, FullPath) with the
+// registered (method, path) would never match a route registered in any other
+// writing, and nothing would say so.
+//
+// Each row is a path with a different thing wrong with it, and the message has
+// to carry the form to write instead.
+func TestRouteWithAPathNotInGinsFormPanics(t *testing.T) {
+	for _, c := range []struct {
+		path string
+		form string
+	}{
+		{"x", "/x"},
+		{"/a//b", "/a/b"},
+		{"/a/../b", "/b"},
+		{"/a/./b", "/a/b"},
+		{"/a/b//", "/a/b/"},
+		{"", "/"},
+	} {
+		t.Run(fmt.Sprintf("%q", c.path), func(t *testing.T) {
+			r := testRouter("public")
+			e := endpointOf(t, r, "public")
+			r.open()
 
-	wantPanic(t, "Route with a malformed pattern", func() {
-		e.Route("/{", nethttp.NotFoundHandler())
-	})
-	r.seal()
+			text := wantPanic(t, "Route with a path not in gin's form", func() {
+				e.Route("GET", c.path, filler)
+			})
+			mustContain(t, text, fmt.Sprintf("Route(%q, %q)", "GET", c.path), "the call that was refused")
+			mustContain(t, text, `endpoint "public"`, "the endpoint it was registered on")
+			mustContain(t, text, fmt.Sprintf("Write the path as %q", c.form), "the form to write instead")
 
-	if got := len(r.endpoints["public"].routes); got != 0 {
-		t.Fatalf("a refused pattern was recorded on the endpoint: %d routes", got)
+			if len(r.endpoints["public"].routes) != 0 {
+				t.Error("the route with a path in another form was recorded anyway")
+			}
+		})
+	}
+}
+
+// TestRouteWithAMethodOrPathGinRefusesPanics pins that what gin rejects on its
+// own is the call-site mistake it is, named where it was written.
+//
+// It is knowable from this one registration, with nothing else mounted, which
+// is what separates it from a conflict: a conflict is a property of the set and
+// only exists once the chain is assembled. Left to be discovered in Serve, a
+// malformed registration comes back as a clash between two registrations, so a
+// caller reading ErrRouteConflict goes looking for a second registration that is
+// not there.
+func TestRouteWithAMethodOrPathGinRefusesPanics(t *testing.T) {
+	for _, c := range []struct {
+		name   string
+		method string
+		path   string
+	}{
+		{"a method with a space", "BAD METHOD", "/x"},
+		{"an empty method", "", "/x"},
+		{"a catch-all that does not end the path", "GET", "/a/*p/b"},
+		{"a parameter with no name", "GET", "/a/:"},
+	} {
+		t.Run(c.name, func(t *testing.T) {
+			r := testRouter("public")
+			e := endpointOf(t, r, "public")
+			r.open()
+
+			text := wantPanic(t, "Route gin refuses", func() {
+				e.Route(c.method, c.path, filler)
+			})
+			mustContain(t, text, fmt.Sprintf("Route(%q, %q)", c.method, c.path), "the call that was refused")
+			mustContain(t, text, `endpoint "public"`, "the endpoint it was registered on")
+			mustContain(t, text, "refuses on its own", "that gin refused it by itself, with nothing else mounted")
+
+			r.seal()
+			if got := len(r.endpoints["public"].routes); got != 0 {
+				t.Fatalf("a refused registration was recorded on the endpoint: %d routes", got)
+			}
+		})
+	}
+}
+
+// TestRouteAcceptsGinsWritings pins the other side of those checks: the forms a
+// route is legitimately written in are accepted and recorded exactly as written.
+// A trailing slash is kept, because "/x/" and "/x" are two different routes on
+// an engine that does not redirect, and a parameter and a catch-all are gin's
+// own spelling of a path segment.
+func TestRouteAcceptsGinsWritings(t *testing.T) {
+	for _, path := range []string{
+		"/",
+		"/things",
+		"/things/",
+		"/things/:id",
+		"/things/:id/",
+		"/things/:id/parts/:part",
+		"/files/*rest",
+		"/things/:id/files/*rest",
+	} {
+		t.Run(path, func(t *testing.T) {
+			r := testRouter("public")
+			e := endpointOf(t, r, "public")
+			r.open()
+
+			e.Route("GET", path, filler)
+
+			routes := r.endpoints["public"].routes
+			if len(routes) != 1 || routes[0].path != path {
+				t.Errorf("the path %q was recorded as %+v", path, routes)
+			}
+		})
 	}
 }
 
@@ -232,11 +338,34 @@ func TestIllegalConstraintTokenPanicsAtTheRegistration(t *testing.T) {
 	r.open()
 
 	text := wantPanic(t, "Use with an untyped nil in After", func() {
-		e.Use(Middleware{Name: "trace", After: []any{nil}, Wrap: passThrough})
+		e.Use(Middleware{Name: "trace", After: []any{nil}, Handler: passThrough})
 	})
 	mustContain(t, text, `endpoint "public"`, "the endpoint the declaration was made on")
 	mustContain(t, text, `middleware "trace"`, "the layer that declared it")
 	mustContain(t, text, "After[0]", "which declaration in which field")
+
+	if len(r.endpoints["public"].layers) != 0 {
+		t.Error("the layer with the illegal declaration was recorded anyway")
+	}
+}
+
+// TestIllegalBeforeTokenPanicsAtTheRegistration is the same statement for
+// Before: it is read at the registration like After and Provides, naming the
+// declaration, and the layer that wrote it is not recorded. A layer registered
+// with a Before that designates nothing would otherwise be placed against a
+// capability nobody can name, with the panic coming from Serve long after the
+// call that wrote it.
+func TestIllegalBeforeTokenPanicsAtTheRegistration(t *testing.T) {
+	r := testRouter("public")
+	e := endpointOf(t, r, "public")
+	r.open()
+
+	text := wantPanic(t, "Use with an untyped nil in Before", func() {
+		e.Use(Middleware{Name: "trace", Before: []any{nil}, Handler: passThrough})
+	})
+	mustContain(t, text, `endpoint "public"`, "the endpoint the declaration was made on")
+	mustContain(t, text, `middleware "trace"`, "the layer that declared it")
+	mustContain(t, text, "Before[0]", "which declaration in which field")
 
 	if len(r.endpoints["public"].layers) != 0 {
 		t.Error("the layer with the illegal declaration was recorded anyway")
@@ -273,7 +402,7 @@ func TestIllegalProvidesTokenPanicsNamingTheDeclaration(t *testing.T) {
 				e.Use(Middleware{
 					Name:     "trace",
 					Provides: []core.Token{(*probe)(nil), c.token},
-					Wrap:     passThrough,
+					Handler:  passThrough,
 				})
 			})
 			mustContain(t, text, `endpoint "public"`, "the endpoint the declaration was made on")
@@ -297,7 +426,7 @@ func TestProvidesIsRecordedOnTheLayer(t *testing.T) {
 	e := endpointOf(t, r, "public")
 	r.open()
 
-	e.Use(Middleware{Name: "auth", Provides: []core.Token{(*probe)(nil)}, Wrap: passThrough})
+	e.Use(Middleware{Name: "auth", Provides: []core.Token{(*probe)(nil)}, Handler: passThrough})
 
 	layers := r.endpoints["public"].layers
 	if len(layers) != 1 {
@@ -309,6 +438,26 @@ func TestProvidesIsRecordedOnTheLayer(t *testing.T) {
 	}
 	if got := capabilityKey(layers[0].provides[0], "the recorded layer"); got != reflect.TypeOf((*probe)(nil)).Elem() {
 		t.Errorf("the recorded layer stands for %s, and the registration named probe", got)
+	}
+}
+
+// TestRouteKeepsItsHandlersWhenTheCallersSliceChanges pins that a registration
+// records the handlers it was given and not the caller's slice. A registrant may
+// build the list once and change it afterwards, or pass the same backing array
+// to a second registration; the route is what was registered, whatever happens
+// to the slice after the call returns.
+func TestRouteKeepsItsHandlersWhenTheCallersSliceChanges(t *testing.T) {
+	logger, _ := newRecordingLogger()
+	handler := mustAssemble(t, testSettings("public"), nil, logger, func(e Endpoint) {
+		handlers := []gin.HandlerFunc{func(c *gin.Context) { c.String(nethttp.StatusOK, "original") }}
+		e.Route("GET", "/things", handlers...)
+		handlers[0] = func(c *gin.Context) { c.String(nethttp.StatusOK, "replaced") }
+	})
+
+	recorder := serveOnce(handler, nethttp.MethodGet, "/things")
+
+	if got := recorder.Body.String(); got != "original" {
+		t.Errorf("the route served %q, want the handler it was registered with", got)
 	}
 }
 
@@ -332,8 +481,8 @@ func TestConcurrentRegistrationIsSafe(t *testing.T) {
 		go func() {
 			defer wg.Done()
 			for j := range each {
-				e.Route(fmt.Sprintf("GET /things/%d/%d", i, j), nethttp.NotFoundHandler())
-				e.Use(Middleware{Name: fmt.Sprintf("layer-%d-%d", i, j), Wrap: passThrough})
+				e.Route("GET", fmt.Sprintf("/things/%d/%d", i, j), filler)
+				e.Use(Middleware{Name: fmt.Sprintf("layer-%d-%d", i, j), Handler: passThrough})
 			}
 		}()
 	}

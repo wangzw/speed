@@ -38,8 +38,10 @@ const (
 const tenantHeader = "X-Tenant"
 
 // journalledRoutes are the routes whose requests the journal captures: every
-// route an application module registers as worth a journal row, so a module
-// added to the host has its requests captured without an edit here.
+// route an application module registers as worth a journal row, each as the
+// method and the path it is registered under, which is the form the journal's
+// requests item takes. A module added to the host has its requests captured
+// without an edit here.
 func journalledRoutes() []string {
 	var routes []string
 	for _, a := range applications {
@@ -729,6 +731,23 @@ type auditRow struct {
 	object  string
 	outcome string
 	purpose string
+}
+
+// requestOn reports whether a journal row is the record of a request on a route:
+// a request row whose action is the route's method and whose object is its path,
+// written as the route was registered.
+func requestOn(route, source, action, object string) bool {
+	method, path := splitRoute(route)
+	return source == "request" && action == method && object == path
+}
+
+// requestOn reports whether the row is the record of a request on the route.
+func (r auditRow) requestOn(route string) bool { return requestOn(route, r.source, r.action, r.object) }
+
+// routePath is the path of a route, written as the route was registered.
+func routePath(route string) string {
+	_, path := splitRoute(route)
+	return path
 }
 
 // journal reads every row of the journal's table, oldest first.

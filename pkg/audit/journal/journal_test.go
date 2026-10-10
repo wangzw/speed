@@ -1,15 +1,12 @@
 package journal
 
 import (
-	"bufio"
 	"bytes"
 	"context"
 	"errors"
 	"io"
 	"io/fs"
 	"log/slog"
-	"net"
-	nethttp "net/http"
 	"net/http/httptest"
 	"path/filepath"
 	"strings"
@@ -338,52 +335,6 @@ func TestAssembleCopiesTheCallersDetail(t *testing.T) {
 	}
 }
 
-// A configured pattern matches the way the routing engine matches it.
-func TestMatcherReadsPatternsLikeTheEngine(t *testing.T) {
-	m, err := newMatcher([]string{"GET /things", "POST /things/{id}"})
-	if err != nil {
-		t.Fatalf("building the matcher: %v", err)
-	}
-	cases := []struct {
-		method, path string
-		want         string
-		matched      bool
-	}{
-		{"GET", "/things", "GET /things", true},
-		{"GET", "/things/1", "", false},
-		{"POST", "/things/1", "POST /things/{id}", true},
-		{"GET", "/things/1", "", false},
-		{"DELETE", "/things", "", false},
-	}
-	for _, c := range cases {
-		got, ok := m.match(httptest.NewRequest(c.method, c.path, nil))
-		if ok != c.matched || got != c.want {
-			t.Errorf("%s %s matched (%q, %v), want (%q, %v)", c.method, c.path, got, ok, c.want, c.matched)
-		}
-	}
-}
-
-// A pattern the matcher cannot read is refused at build time rather than at
-// some later request.
-func TestMatcherRefusesAPatternItCannotRead(t *testing.T) {
-	if _, err := newMatcher([]string{"GET /{"}); !errors.Is(err, ErrUnmatchablePattern) {
-		t.Fatalf("building a matcher over a malformed pattern gave %v, want ErrUnmatchablePattern", err)
-	}
-}
-
-// A repeated pattern is one pattern. Passing the duplicate through to the
-// router would panic, and a panic in the Init stage skips the registry's
-// rollback.
-func TestMatcherAcceptsARepeatedPattern(t *testing.T) {
-	m, err := newMatcher([]string{"GET /things", "GET /things"})
-	if err != nil {
-		t.Fatalf("building the matcher: %v", err)
-	}
-	if _, ok := m.match(httptest.NewRequest("GET", "/things", nil)); !ok {
-		t.Fatal("the repeated pattern did not match")
-	}
-}
-
 // One fault produces one line, and its end produces one more.
 func TestSignalReportsOncePerFault(t *testing.T) {
 	var buf bytes.Buffer
@@ -463,76 +414,29 @@ func TestTheSeamIsBehindTheGate(t *testing.T) {
 	}
 }
 
-// The request path writes what the design says it writes: the method as the
-// action, the matched pattern as the object, and the answer as the outcome.
-func TestMatchedRequestRecordsTheOutcome(t *testing.T) {
+// The request path is behind the same gate as the paths the module drives: a
+// row for a request that finishes after Stop is not written. The control is the
+// same call while the journal is accepting, which writes it.
+func TestARequestRowIsNotWrittenOnceTheJournalStoppedAccepting(t *testing.T) {
 	handle := open(t)
-	j := newJournal(settings{}, handle, nil)
-	j.signal = &signal{out: io.Discard}
-	j.accepting.Store(true)
-	m, err := newMatcher([]string{"GET /things"})
-	if err != nil {
-		t.Fatalf("building the matcher: %v", err)
-	}
-	j.matcher = m
+	j := newTestJournal(handle, settings{})
+	request := httptest.NewRequest("GET", "/x", nil)
 
-	inner := nethttp.HandlerFunc(func(w nethttp.ResponseWriter, _ *nethttp.Request) {
-		w.WriteHeader(nethttp.StatusTeapot)
-	})
-	layer := j.middlewareFor("public").Wrap(inner)
-	layer.ServeHTTP(httptest.NewRecorder(), httptest.NewRequest("GET", "/things", nil))
+	j.recordRequest(request, "public", "/x", "200")
+	if got := len(auditRows(t, handle)); got != 1 {
+		t.Fatalf("an accepting journal wrote %d request row(s), want 1", got)
+	}
 
-	rows := auditRows(t, handle)
-	if len(rows) != 1 {
-		t.Fatalf("want one row, got %d", len(rows))
-	}
-	got := rows[0]
-	if got.Source != string(audit.SourceRequest) || got.Action != "GET" ||
-		got.Object != "GET /things" || got.Outcome != "418" {
-		t.Errorf("unexpected row: %+v", got)
-	}
-	if !strings.Contains(got.Detail, `"endpoint":"public"`) {
-		t.Errorf("the endpoint is not in the detail: %s", got.Detail)
+	j.accepting.Store(false)
+	j.recordRequest(request, "public", "/x", "200")
+	if got := len(auditRows(t, handle)); got != 1 {
+		t.Errorf("a stopped journal wrote a request row: %d row(s), want the one written while accepting", got)
 	}
 }
 
-// A handler that panics is still recorded, and the panic is still thrown.
-func TestPanickingHandlerIsRecordedAndRethrown(t *testing.T) {
-	handle := open(t)
-	j := newJournal(settings{}, handle, nil)
-	j.signal = &signal{out: io.Discard}
-	j.accepting.Store(true)
-	m, err := newMatcher([]string{"GET /things"})
-	if err != nil {
-		t.Fatalf("building the matcher: %v", err)
-	}
-	j.matcher = m
-
-	inner := nethttp.HandlerFunc(func(nethttp.ResponseWriter, *nethttp.Request) {
-		panic("the handler fell over")
-	})
-	layer := j.middlewareFor("public").Wrap(inner)
-
-	func() {
-		defer func() {
-			if recover() == nil {
-				t.Error("the panic was swallowed rather than thrown again")
-			}
-		}()
-		layer.ServeHTTP(httptest.NewRecorder(), httptest.NewRequest("GET", "/things", nil))
-	}()
-
-	rows := auditRows(t, handle)
-	if len(rows) != 1 {
-		t.Fatalf("want the panicking request recorded, got %d row(s)", len(rows))
-	}
-	if rows[0].Outcome != panicOutcome {
-		t.Errorf("outcome is %q, want %q", rows[0].Outcome, panicOutcome)
-	}
-}
-
-// The capture layer is not registered when nothing names its requests, and the
-// two After edges are the ones other layers anchor against.
+// The capture layer stands for the audit capability on the chain and sits after
+// authentication and tenant resolution: the token and the two After edges are
+// what other layers place themselves against.
 func TestMiddlewareCarriesTheAuditToken(t *testing.T) {
 	j := newJournal(settings{}, nil, nil)
 	mw := j.middlewareFor("public")
@@ -545,8 +449,8 @@ func TestMiddlewareCarriesTheAuditToken(t *testing.T) {
 	if len(mw.After) != 2 {
 		t.Errorf("the layer sits after %v, want authentication and tenant resolution", mw.After)
 	}
-	if mw.Wrap == nil {
-		t.Error("the layer has no Wrap")
+	if mw.Handler == nil {
+		t.Error("the layer has no Handler")
 	}
 }
 
@@ -666,136 +570,6 @@ func TestStatementCaptureRecordsUpdateAndDelete(t *testing.T) {
 	}
 }
 
-// A panic on a request this layer does not record is not this layer's business.
-//
-// The contrast with the case above is the point: a panic is recorded because the
-// request matched, not because it panicked. A layer that recorded every panic it
-// saw would be a different thing, and one that decided after the fact could not
-// know which endpoint the request belonged to.
-func TestPanicOnAnUnmatchedRequestIsNotRecorded(t *testing.T) {
-	handle := open(t)
-	j := newTestJournal(handle, settings{})
-	m, err := newMatcher([]string{"GET /things"})
-	if err != nil {
-		t.Fatalf("building the matcher: %v", err)
-	}
-	j.matcher = m
-
-	inner := nethttp.HandlerFunc(func(nethttp.ResponseWriter, *nethttp.Request) {
-		panic("the handler fell over")
-	})
-	layer := j.middlewareFor("public").Wrap(inner)
-
-	func() {
-		defer func() {
-			if recover() == nil {
-				t.Error("the panic was swallowed rather than thrown again")
-			}
-		}()
-		layer.ServeHTTP(httptest.NewRecorder(), httptest.NewRequest("GET", "/other", nil))
-	}()
-
-	if got := len(auditRows(t, handle)); got != 0 {
-		t.Fatalf("an unmatched request's panic was recorded: %d row(s)", got)
-	}
-}
-
-// The layer leaves the response writer's optional interfaces reachable.
-//
-// Wrapping a writer hides them, and a streaming handler reaches for one by type
-// assertion. Without the forwarding the assertion fails, nothing is flushed, and
-// the client sees no frame until the response ends — with nothing saying why.
-func TestTheLayerForwardsFlushing(t *testing.T) {
-	handle := open(t)
-	j := newTestJournal(handle, settings{})
-	m, err := newMatcher([]string{"GET /things"})
-	if err != nil {
-		t.Fatalf("building the matcher: %v", err)
-	}
-	j.matcher = m
-
-	var couldFlush bool
-	inner := nethttp.HandlerFunc(func(w nethttp.ResponseWriter, _ *nethttp.Request) {
-		flusher, ok := w.(nethttp.Flusher)
-		couldFlush = ok
-		if ok {
-			flusher.Flush()
-		}
-	})
-	layer := j.middlewareFor("public").Wrap(inner)
-
-	rec := httptest.NewRecorder()
-	layer.ServeHTTP(rec, httptest.NewRequest("GET", "/things", nil))
-
-	if !couldFlush {
-		t.Fatal("the handler could not reach the flusher through the layer")
-	}
-	if !rec.Flushed {
-		t.Fatal("the flush did not reach the writer underneath")
-	}
-}
-
-// hijackable is a writer that carries the optional interface an upgrade needs,
-// so that the layer's forwarding of it can be asked about directly.
-type hijackable struct {
-	nethttp.ResponseWriter
-	hijacked bool
-}
-
-func (h *hijackable) Hijack() (net.Conn, *bufio.ReadWriter, error) {
-	h.hijacked = true
-	return nil, nil, nil
-}
-
-// The same forwarding, for the interface an upgrade to another protocol needs,
-// and the answer a writer without it gives.
-func TestTheLayerForwardsHijacking(t *testing.T) {
-	inner := &hijackable{ResponseWriter: httptest.NewRecorder()}
-	wrapped := &statusRecorder{ResponseWriter: inner, status: nethttp.StatusOK}
-
-	hijacker, ok := nethttp.ResponseWriter(wrapped).(nethttp.Hijacker)
-	if !ok {
-		t.Fatal("the hijacker is not reachable through the layer")
-	}
-	if _, _, err := hijacker.Hijack(); err != nil {
-		t.Fatalf("hijacking gave %v, want the writer underneath to answer", err)
-	}
-	if !inner.hijacked {
-		t.Fatal("the hijack did not reach the writer underneath")
-	}
-
-	plain := &statusRecorder{ResponseWriter: httptest.NewRecorder(), status: nethttp.StatusOK}
-	hijacker, ok = nethttp.ResponseWriter(plain).(nethttp.Hijacker)
-	if !ok {
-		t.Fatal("the hijacker is not reachable through the layer")
-	}
-	if _, _, err := hijacker.Hijack(); !errors.Is(err, nethttp.ErrNotSupported) {
-		t.Fatalf("hijacking a plain writer gave %v, want ErrNotSupported", err)
-	}
-}
-
-// A request that matches no configured pattern is passed through untouched and
-// records nothing, which is what makes an unwritten endpoint silent rather than
-// noisy.
-func TestUnmatchedRequestIsPassedThrough(t *testing.T) {
-	var served bool
-	j := newJournal(settings{}, nil, nil)
-	j.signal = &signal{out: io.Discard}
-	m, err := newMatcher([]string{"GET /things"})
-	if err != nil {
-		t.Fatalf("building the matcher: %v", err)
-	}
-	j.matcher = m
-
-	inner := nethttp.HandlerFunc(func(nethttp.ResponseWriter, *nethttp.Request) { served = true })
-	layer := j.middlewareFor("public").Wrap(inner)
-	layer.ServeHTTP(httptest.NewRecorder(), httptest.NewRequest("GET", "/other", nil))
-
-	if !served {
-		t.Error("the inner handler never ran")
-	}
-}
-
 // A failing Prepare hands back the zero Enablement.
 //
 // Only a Prepare that returned no error has its stance read, so what travels
@@ -896,27 +670,11 @@ func TestWireFailsWhenEndpointsAreNamedAndNoRouterIsInTheRun(t *testing.T) {
 	}
 }
 
-// A request pattern the matcher cannot read fails the startup, and the failure
-// names the input item the pattern came from.
-func TestWireFailsWhenARequestPatternCannotBeRead(t *testing.T) {
-	j := newTestJournal(open(t), settings{requests: []string{"/a/{b"}})
-	err := j.wire(context.Background(), core.New())
-	if err == nil {
-		t.Fatal("wiring accepted a request pattern the matcher cannot read")
-	}
-	if !strings.Contains(err.Error(), requestsItem) {
-		t.Errorf("the failure does not name the %s input item: %v", requestsItem, err)
-	}
-}
-
-// A configuration naming nothing wires cleanly and builds no matcher: the
-// control the three failures above are read against.
+// A configuration naming nothing wires cleanly: the control the two failures
+// above are read against.
 func TestWireSucceedsWhenNothingIsNamed(t *testing.T) {
 	j := newTestJournal(open(t), settings{})
 	if err := j.wire(context.Background(), core.New()); err != nil {
 		t.Fatalf("wiring a configuration that names nothing: %v", err)
-	}
-	if j.matcher != nil {
-		t.Error("a matcher was built for a configuration that names no request")
 	}
 }

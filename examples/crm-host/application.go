@@ -5,11 +5,14 @@ import (
 	"crypto/rand"
 	"crypto/sha256"
 	"encoding/hex"
+	"errors"
 	"fmt"
 	"log/slog"
 	nethttp "net/http"
 	"slices"
 	"strings"
+
+	"github.com/gin-gonic/gin"
 
 	"github.com/vislake/speed/pkg/core"
 	speedhttp "github.com/vislake/speed/pkg/http"
@@ -44,8 +47,10 @@ type application struct {
 	models []any
 
 	// journalled are the routes the module binds whose requests a deployment
-	// records in the journal. The journal captures the requests its
-	// configuration lists, and the harness writes that list from these.
+	// records in the journal, each written as a method and a path in gin's
+	// grammar, the way the route is registered. The journal captures the
+	// requests its configuration lists, and the harness writes that list from
+	// these.
 	journalled []string
 }
 
@@ -136,16 +141,57 @@ func recordClose(_ context.Context, _ *core.Registry, instance any) error {
 	return nil
 }
 
-// apiError is the body every refusal and failure this host writes carries. The
-// shape is the host's own: the HTTP module defines no error body, so the module
-// that provides an API decides what its errors look like.
+// apiError is the body every refusal and failure a handler of this host writes
+// carries. The shape is the host's own: the HTTP module's error responses cover
+// what its layers and its router refuse, and the module that provides an API
+// decides what the errors of its own handlers look like.
 type apiError struct {
 	Error string `json:"error"`
 }
 
-// writeError answers with a status and a JSON error body.
-func writeError(w nethttp.ResponseWriter, status int, message string) {
-	_ = speedhttp.WriteJSON(w, status, apiError{Error: message})
+// writeError answers with a status and a JSON error body, and ends the chain: a
+// layer that refuses a request this way lets nothing inside it run.
+func writeError(c *gin.Context, status int, message string) {
+	c.AbortWithStatusJSON(status, apiError{Error: message})
+}
+
+// bindBody reads the request's body as JSON into dst, then calls dst's own
+// Validate when it has one. It answers the refusal itself and reports false:
+// 413 for a body past the endpoint's limit, 400 for one that is not a JSON
+// value dst can hold, and 422 for one dst's Validate refuses — the first two say
+// the bytes cannot be read as this shape, the third says the shape is right and
+// a value in it is not allowed.
+func bindBody(c *gin.Context, dst any) bool {
+	if err := c.ShouldBindJSON(dst); err != nil {
+		status := nethttp.StatusBadRequest
+		var tooLarge *nethttp.MaxBytesError
+		if errors.As(err, &tooLarge) {
+			status = nethttp.StatusRequestEntityTooLarge
+		}
+		writeError(c, status, err.Error())
+		return false
+	}
+	if v, ok := dst.(interface{ Validate() error }); ok {
+		if err := v.Validate(); err != nil {
+			writeError(c, nethttp.StatusUnprocessableEntity, err.Error())
+			return false
+		}
+	}
+	return true
+}
+
+// splitRoute separates a route written as a method, a space and a path in gin's
+// grammar — the form the journal's requests item takes — into the method and
+// the path.
+func splitRoute(route string) (method, path string) {
+	method, path, _ = strings.Cut(route, " ")
+	return method, path
+}
+
+// mount binds a route's handlers on an endpoint.
+func mount(endpoint speedhttp.Endpoint, route string, handlers ...gin.HandlerFunc) {
+	method, path := splitRoute(route)
+	endpoint.Route(method, path, handlers...)
 }
 
 // newID generates an application identifier: a prefix naming what it

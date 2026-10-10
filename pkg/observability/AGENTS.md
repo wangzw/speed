@@ -37,8 +37,12 @@ must not cross, and how to run it.
   besides; a transport belongs to the export backend that binds it. Nothing
   enforces that at compile time — the whole capability is one Go module, so its
   dependency list carries every backend whichever one a host deploys on — and
-  the gate that stands in for it is `TestTheInterfacePackageReachesNoBackendLibrary`
-  and `TestTheAssemblerReachesNoBackendTransport` in `deps_test.go`.
+  the gates that stand in for it are `TestTheInterfacePackageReachesNoBackendLibrary`,
+  `TestTheAssemblerStaysInsideItsDependencyBudget` and
+  `TestTheAssemblerReachesNoBackendTransport` in `deps_test.go`. The assembler's
+  budget is the root package's, the upstream packages it binds itself, and the
+  current closure of gin, which the request layer is written against; the closure
+  is read from the module graph, never written down.
 - **The two provider interfaces cannot be implemented outside the upstream
   library.** Both embed an internal interface whose method is unexported, so a
   product satisfies them only by embedding them as fields. Writing the two
@@ -80,12 +84,12 @@ must not cross, and how to run it.
   send to.
 - **The attribute surface of the request histogram is a contract.** Two
   attributes, both closed sets: the standard methods plus the folding value, and
-  the status code. No route — this layer sits outside the routing engine and the
-  request has not been dispatched — and no tenant: that dimension lives on
-  event-derived spans. The instrument's name, unit and bucket boundaries are
-  equally fixed; a dashboard reads them. The server span carries the same two
-  attributes, and a final server-error status marks it errored whether or not
-  the handler panicked.
+  the status code. No route — the matched route is readable on the chain, but it
+  is whatever hosts register, and a dimension a dashboard has read cannot be taken
+  back — and no tenant: that dimension lives on event-derived spans. The
+  instrument's name, unit and bucket boundaries are equally fixed; a dashboard
+  reads them. The server span carries the same two attributes, and a final
+  server-error status marks it errored whether or not the handler panicked.
 - **An event-derived span's attributes are the payload's fields as published,
   plus the two the bus carries.** Every top-level field of the payload becomes
   one attribute, in the type and with the digits it was published with — a
@@ -116,23 +120,28 @@ must not cross, and how to run it.
   attribute and the span name both fold anything outside the nine standard
   methods into one value. Narrowing the cardinality on one side only moves it to
   the other: a backend indexes a span name just as it indexes a dimension.
-- **The recorder is the only place the response is observed, so it owes two
-  things.** It keeps the *first* final status the handler wrote, because the
-  server ignores a second `WriteHeader` and answers with the first — reporting
-  the last would report a code no caller saw. An informational code other than
-  101 is not a final one: the server sends it ahead of the response and the
-  handler still writes the real status afterwards. And it forwards flushing and
-  hijacking, because a handler type-asserts the writer it was given, which is
-  this type, and never reaches the writer underneath.
+- **The layer is a `gin.HandlerFunc` and leaves `c.Writer` in place.** It hands
+  the span's context down with `c.Request = c.Request.WithContext(...)` and reads
+  the outcome from `c.Writer.Status()` and `Written()` after `c.Next()`; it wraps
+  nothing. The writer already carries `Flusher`, `Hijacker` and `Unwrap`, so a
+  wrapper here would only have to forward them, and one that forgot a method
+  would degrade every instrumented endpoint with nothing said. The status the
+  writer holds is the one the caller is answered with — gin keeps the code it
+  will commit, a second `WriteHeader` before the commit replaces it and one
+  after is ignored — with one exception: an informational code other than 101 is
+  not a final one. The server sends it ahead of the response and answers with
+  the 200 it supplies, while the writer goes on reporting the informational
+  code, so `answeredWith` reads it as that 200.
 - **A handler that abandons its connection is recorded as a defect.** A handler
   panicking with `net/http`'s `ErrAbortHandler` asks for its connection to be
   dropped; the entry module's fallback lets that value past without answering or
   logging, and this layer sits inside it. The layer cannot tell the two apart, so
   it does what it does for any panic: marks the span errored and records the
   fallback's default status, for a response the caller never received. Reporting
-  the recorder's untouched default instead would file every panicking request
-  under success, so the misreport stays — the design document carries it as a
-  non-guarantee.
+  the status the writer holds instead would file every panicking request under
+  success, so the misreport stays — the design document carries it as a
+  non-guarantee. The status the writer holds is read only once the response has
+  started: before that it is no answer, and the fallback's internal error is.
 - **A name written twice in `endpoints` or `events` is registered once.** Both
   loops register unconditionally and neither the entry module nor the bus
   dedupes, so a repeat would double every request in the histogram and open two

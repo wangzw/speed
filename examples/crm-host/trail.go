@@ -13,6 +13,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/gin-gonic/gin"
 	"gorm.io/gorm"
 
 	"github.com/vislake/speed/pkg/audit"
@@ -34,7 +35,7 @@ const trailTable = "audit_entries"
 // platform's operators.
 const (
 	listTrailRoute  = "GET /audit"
-	trailEntryRoute = "GET /audit/{id}"
+	trailEntryRoute = "GET /audit/:id"
 	crossTrailRoute = "GET /audit-entries"
 )
 
@@ -359,58 +360,58 @@ type trailProduct struct {
 }
 
 // listTrail answers the trail of the tenant the request names.
-func (p *trailProduct) listTrail(w nethttp.ResponseWriter, r *nethttp.Request) {
-	self, ok := memberWith(w, r, roleAdmin)
+func (p *trailProduct) listTrail(c *gin.Context) {
+	self, ok := memberWith(c, roleAdmin)
 	if !ok {
 		return
 	}
-	q, err := parseTrailQuery(r.URL.Query())
+	q, err := parseTrailQuery(c.Request.URL.Query())
 	if err != nil {
-		writeError(w, nethttp.StatusUnprocessableEntity, err.Error())
+		writeError(c, nethttp.StatusUnprocessableEntity, err.Error())
 		return
 	}
-	ctx := r.Context()
+	ctx := c.Request.Context()
 	page, err := readTrail[trailEntry](ctx, p.db.DB(), q)
 	if err != nil {
 		log.FromContext(ctx).Error("reading the audit trail", "error", err)
-		writeError(w, nethttp.StatusServiceUnavailable, "the audit trail cannot be read")
+		writeError(c, nethttp.StatusServiceUnavailable, "the audit trail cannot be read")
 		return
 	}
 	page.Tenant = string(self.TenantID)
-	_ = speedhttp.WriteJSON(w, nethttp.StatusOK, page)
+	c.JSON(nethttp.StatusOK, page)
 }
 
 // trailEntryByID answers one row of the tenant's trail. The lookup names the
 // row's identifier alone, and a row of another tenant is not found, because the
 // filter conditions the statement on this one.
-func (p *trailProduct) trailEntryByID(w nethttp.ResponseWriter, r *nethttp.Request) {
-	if _, ok := memberWith(w, r, roleAdmin); !ok {
+func (p *trailProduct) trailEntryByID(c *gin.Context) {
+	if _, ok := memberWith(c, roleAdmin); !ok {
 		return
 	}
-	id, err := strconv.ParseInt(r.PathValue("id"), 10, 64)
+	id, err := strconv.ParseInt(c.Param("id"), 10, 64)
 	if err != nil {
-		writeError(w, nethttp.StatusUnprocessableEntity, errBadTrailEntryID.Error())
+		writeError(c, nethttp.StatusUnprocessableEntity, errBadTrailEntryID.Error())
 		return
 	}
-	ctx := r.Context()
+	ctx := c.Request.Context()
 	var row trailEntry
 	err = p.db.DB().WithContext(ctx).Take(&row, "id = ?", id).Error
 	switch {
 	case errors.Is(err, gorm.ErrRecordNotFound):
-		writeError(w, nethttp.StatusNotFound, "this tenant's trail holds no such entry")
+		writeError(c, nethttp.StatusNotFound, "this tenant's trail holds no such entry")
 		return
 	case err != nil:
 		log.FromContext(ctx).Error("reading an audit row", "error", err)
-		writeError(w, nethttp.StatusServiceUnavailable, "the audit trail cannot be read")
+		writeError(c, nethttp.StatusServiceUnavailable, "the audit trail cannot be read")
 		return
 	}
 	v, err := trailViewOf(row)
 	if err != nil {
 		log.FromContext(ctx).Error("rendering an audit row", "error", err)
-		writeError(w, nethttp.StatusInternalServerError, "the audit row cannot be read")
+		writeError(c, nethttp.StatusInternalServerError, "the audit row cannot be read")
 		return
 	}
-	_ = speedhttp.WriteJSON(w, nethttp.StatusOK, v)
+	c.JSON(nethttp.StatusOK, v)
 }
 
 // crossTrail answers audit rows for an operator: every tenant's and the
@@ -432,18 +433,18 @@ func (p *trailProduct) trailEntryByID(w nethttp.ResponseWriter, r *nethttp.Reque
 // operator's read of tenants' rows with no trace is what the seam is there to
 // prevent. The record of a read of one tenant is written in that tenant's
 // context, so it is in that tenant's own trail.
-func (p *trailProduct) crossTrail(w nethttp.ResponseWriter, r *nethttp.Request) {
-	ctx := r.Context()
-	values := r.URL.Query()
+func (p *trailProduct) crossTrail(c *gin.Context) {
+	ctx := c.Request.Context()
+	values := c.Request.URL.Query()
 	q, err := parseTrailQuery(values, trailTenantParam)
 	if err != nil {
-		writeError(w, nethttp.StatusUnprocessableEntity, err.Error())
+		writeError(c, nethttp.StatusUnprocessableEntity, err.Error())
 		return
 	}
 	scope, purpose := tenant.CrossTenant(ctx), trailQueryPurpose
 	named := values.Get(trailTenantParam)
 	if named != "" {
-		entered, ok := p.enterNamed(w, r, named)
+		entered, ok := p.enterNamed(c, named)
 		if !ok {
 			return
 		}
@@ -462,17 +463,17 @@ func (p *trailProduct) crossTrail(w nethttp.ResponseWriter, r *nethttp.Request) 
 		},
 	}); err != nil {
 		log.FromContext(ctx).Error("recording an operator's read of the trail", "error", err)
-		writeError(w, nethttp.StatusInternalServerError, "the read could not be recorded, so it was not made")
+		writeError(c, nethttp.StatusInternalServerError, "the read could not be recorded, so it was not made")
 		return
 	}
 	page, err := readOperatorTrail(scope, p.db.DB(), q)
 	if err != nil {
 		log.FromContext(ctx).Error("reading audit rows for an operator", "error", err)
-		writeError(w, nethttp.StatusServiceUnavailable, "the audit trail cannot be read")
+		writeError(c, nethttp.StatusServiceUnavailable, "the audit trail cannot be read")
 		return
 	}
 	page.Tenant = named
-	_ = speedhttp.WriteJSON(w, nethttp.StatusOK, page)
+	c.JSON(nethttp.StatusOK, page)
 }
 
 // enterNamed enters the tenant an operator's query names, served or disabled,
@@ -482,19 +483,19 @@ func (p *trailProduct) crossTrail(w nethttp.ResponseWriter, r *nethttp.Request) 
 // row of its table carries is not found. An identifier this replica's snapshot
 // does not hold is read from the table, so a tenant another replica registered
 // is entered at once.
-func (p *trailProduct) enterNamed(w nethttp.ResponseWriter, r *nethttp.Request, named string) (context.Context, bool) {
+func (p *trailProduct) enterNamed(c *gin.Context, named string) (context.Context, bool) {
 	if !tenant.IsIdentifier(named) {
-		writeError(w, nethttp.StatusUnprocessableEntity, errNoTenantID.Error())
+		writeError(c, nethttp.StatusUnprocessableEntity, errNoTenantID.Error())
 		return nil, false
 	}
-	entered, err := p.roster.EnterRegistered(r.Context(), tenant.ID(named))
+	entered, err := p.roster.EnterRegistered(c.Request.Context(), tenant.ID(named))
 	switch {
 	case errors.Is(err, tenant.ErrInvalidTenant):
-		writeError(w, nethttp.StatusNotFound, errNoSuchTenant.Error())
+		writeError(c, nethttp.StatusNotFound, errNoSuchTenant.Error())
 		return nil, false
 	case err != nil:
-		log.FromContext(r.Context()).Error("entering the tenant an operator named", "error", err)
-		writeError(w, nethttp.StatusServiceUnavailable, "the roster cannot be read")
+		log.FromContext(c.Request.Context()).Error("entering the tenant an operator named", "error", err)
+		writeError(c, nethttp.StatusServiceUnavailable, "the roster cannot be read")
 		return nil, false
 	}
 	return entered, true
@@ -576,9 +577,9 @@ func trailModule() core.Module {
 			if err != nil {
 				return err
 			}
-			api.Route(listTrailRoute, nethttp.HandlerFunc(product.listTrail))
-			api.Route(trailEntryRoute, nethttp.HandlerFunc(product.trailEntryByID))
-			admin.Route(crossTrailRoute, nethttp.HandlerFunc(product.crossTrail))
+			mount(api, listTrailRoute, product.listTrail)
+			mount(api, trailEntryRoute, product.trailEntryByID)
+			mount(admin, crossTrailRoute, product.crossTrail)
 			return nil
 		},
 

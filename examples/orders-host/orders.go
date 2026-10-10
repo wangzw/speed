@@ -3,10 +3,12 @@ package main
 import (
 	"context"
 	"embed"
-	"encoding/json"
+	"errors"
 	"io/fs"
 	"log/slog"
 	nethttp "net/http"
+
+	"github.com/gin-gonic/gin"
 
 	"github.com/vislake/speed/pkg/authn"
 	"github.com/vislake/speed/pkg/core"
@@ -22,16 +24,20 @@ import (
 // under.
 const ordersModuleName = "orders"
 
-// The routes. The listing is guarded and reads a scoped table; the placement is
-// guarded too and is the write a case watches the bus and the journal for; the
-// status route sits on the guarded endpoint and is exempted from the credential
-// by the module that owns it, which is the only way a route is reached without
-// one; the health check is on the endpoint neither guard covers.
+// The route paths, in gin's spelling. The listing is guarded and reads a scoped
+// table; the placement is guarded too, shares the listing's path and is the write
+// a case watches the bus and the journal for; the status route sits on the
+// guarded endpoint and is exempted from the credential by the module that owns
+// it, which is the only way a route is reached without one; the health check is
+// on the endpoint neither guard covers.
+//
+// The exemption and the journal's request entries name a route by its method and
+// this spelling, and a request is compared with them character for character, so
+// the path a route is registered under is the path they are written with.
 const (
-	healthRoute = "GET /health"
-	statusRoute = "GET /status"
-	ordersRoute = "GET /orders"
-	placeRoute  = "POST /orders"
+	healthPath = "/health"
+	statusPath = "/status"
+	ordersPath = "/orders"
 )
 
 // orderTable is the table the scoped model maps to.
@@ -190,9 +196,9 @@ func ordersModule() core.Module {
 				return err
 			}
 
-			public.Route(ordersRoute, listOrders(database, set))
-			public.Route(placeRoute, placeOrder(database, bus))
-			ops.Route(healthRoute, nethttp.HandlerFunc(reportHealth))
+			public.Route(nethttp.MethodGet, ordersPath, listOrders(database, set))
+			public.Route(nethttp.MethodPost, ordersPath, placeOrder(database, bus))
+			ops.Route(nethttp.MethodGet, healthPath, reportHealth)
 
 			// The status route sits on the guarded endpoint and is reached
 			// without a credential, because the module that owns the route
@@ -206,8 +212,8 @@ func ordersModule() core.Module {
 			// exception, so this route still needs a tenant name. The health
 			// check is the one that needs neither, and it is on the endpoint
 			// neither guard covers rather than exempted from both.
-			public.Route(statusRoute, nethttp.HandlerFunc(reportStatus))
-			gateway.Exempt(publicEndpoint, statusRoute)
+			public.Route(nethttp.MethodGet, statusPath, reportStatus)
+			gateway.Exempt(publicEndpoint, nethttp.MethodGet, statusPath)
 			return nil
 		},
 
@@ -262,20 +268,20 @@ type placement struct {
 
 // reportHealth answers the route on the endpoint neither guard covers. It reads
 // no identity and no tenant, because on this endpoint there are none.
-func reportHealth(w nethttp.ResponseWriter, _ *nethttp.Request) {
-	_ = speedhttp.WriteJSON(w, nethttp.StatusOK, health{Status: "ok"})
+func reportHealth(c *gin.Context) {
+	c.JSON(nethttp.StatusOK, health{Status: "ok"})
 }
 
 // reportStatus answers the exempted route. It needs no credential and does need
 // a tenant, which is what tells the two guards' reach apart: the exemption is
 // about one of them and neither has a per-route exception for the other.
-func reportStatus(w nethttp.ResponseWriter, r *nethttp.Request) {
-	id, ok := tenant.FromContext(r.Context())
+func reportStatus(c *gin.Context) {
+	id, ok := tenant.FromContext(c.Request.Context())
 	if !ok {
-		w.WriteHeader(nethttp.StatusInternalServerError)
+		c.Status(nethttp.StatusInternalServerError)
 		return
 	}
-	_ = speedhttp.WriteJSON(w, nethttp.StatusOK, health{Status: "ok: " + string(id)})
+	c.JSON(nethttp.StatusOK, health{Status: "ok: " + string(id)})
 }
 
 // listOrders answers the guarded listing.
@@ -285,9 +291,9 @@ func reportStatus(w nethttp.ResponseWriter, r *nethttp.Request) {
 // two values it echoes come from the settings surface, one written and one
 // never written, so the same response shows both a written layer and the
 // declaration.
-func listOrders(database db.Database, set settings.Store) nethttp.HandlerFunc {
-	return func(w nethttp.ResponseWriter, r *nethttp.Request) {
-		ctx := r.Context()
+func listOrders(database db.Database, set settings.Store) gin.HandlerFunc {
+	return func(c *gin.Context) {
+		ctx := c.Request.Context()
 		caller, ok := authn.FromContext(ctx)
 		if !ok {
 			// Unreachable behind the gateway, and worth failing loudly
@@ -295,15 +301,15 @@ func listOrders(database db.Database, set settings.Store) nethttp.HandlerFunc {
 			// handler on a guarded route that finds no identity has been
 			// reached by a path that skipped authentication.
 			log.FromContext(ctx).Error("a guarded route was reached with no identity",
-				"route", ordersRoute)
-			w.WriteHeader(nethttp.StatusInternalServerError)
+				"route", c.FullPath())
+			c.Status(nethttp.StatusInternalServerError)
 			return
 		}
 		id, ok := tenant.FromContext(ctx)
 		if !ok {
 			log.FromContext(ctx).Error("a guarded route was reached with no tenant",
-				"route", ordersRoute)
-			w.WriteHeader(nethttp.StatusInternalServerError)
+				"route", c.FullPath())
+			c.Status(nethttp.StatusInternalServerError)
 			return
 		}
 		// The read falls back tenant row, global row, declared default, and
@@ -313,26 +319,26 @@ func listOrders(database db.Database, set settings.Store) nethttp.HandlerFunc {
 		limit, err := settings.Get[int](set, layer, pageSizeSetting)
 		if err != nil {
 			log.FromContext(ctx).Error("reading the page size", "error", err)
-			w.WriteHeader(nethttp.StatusInternalServerError)
+			c.Status(nethttp.StatusInternalServerError)
 			return
 		}
 		retention, err := settings.Get[int](set, layer, retentionSetting)
 		if err != nil {
 			log.FromContext(ctx).Error("reading the retention", "error", err)
-			w.WriteHeader(nethttp.StatusInternalServerError)
+			c.Status(nethttp.StatusInternalServerError)
 			return
 		}
 		var found []Order
 		if err := database.DB().WithContext(ctx).Order("id").Limit(limit).Find(&found).Error; err != nil {
 			log.FromContext(ctx).Error("reading the orders", "error", err)
-			w.WriteHeader(nethttp.StatusInternalServerError)
+			c.Status(nethttp.StatusInternalServerError)
 			return
 		}
 		items := make([]string, 0, len(found))
 		for _, o := range found {
 			items = append(items, o.Item)
 		}
-		_ = speedhttp.WriteJSON(w, nethttp.StatusOK, listing{
+		c.JSON(nethttp.StatusOK, listing{
 			Caller:        caller.Key(),
 			Tenant:        string(id),
 			PageSize:      limit,
@@ -348,28 +354,28 @@ func listOrders(database db.Database, set settings.Store) nethttp.HandlerFunc {
 // consumers. The bus it publishes on is the capability, not an implementation,
 // and whether anything is subscribed at all is not a question this call site can
 // ask.
-func placeOrder(database db.Database, bus event.Bus) nethttp.HandlerFunc {
-	return func(w nethttp.ResponseWriter, r *nethttp.Request) {
-		ctx := r.Context()
+func placeOrder(database db.Database, bus event.Bus) gin.HandlerFunc {
+	return func(c *gin.Context) {
+		ctx := c.Request.Context()
 		id, ok := tenant.FromContext(ctx)
 		if !ok {
 			log.FromContext(ctx).Error("a guarded route was reached with no tenant",
-				"route", placeRoute)
-			w.WriteHeader(nethttp.StatusInternalServerError)
+				"route", c.FullPath())
+			c.Status(nethttp.StatusInternalServerError)
 			return
 		}
 		var body struct {
 			ID   string `json:"id"`
 			Item string `json:"item"`
 		}
-		if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
-			w.WriteHeader(nethttp.StatusBadRequest)
+		if err := c.ShouldBindJSON(&body); err != nil {
+			c.Status(bindFailureStatus(err))
 			return
 		}
 		order := Order{Model: tenant.Model{TenantID: id}, ID: body.ID, Item: body.Item}
 		if err := database.DB().WithContext(ctx).Create(&order).Error; err != nil {
 			log.FromContext(ctx).Error("writing the order", "error", err)
-			w.WriteHeader(nethttp.StatusInternalServerError)
+			c.Status(nethttp.StatusInternalServerError)
 			return
 		}
 		if err := bus.Publish(ctx, event.Event{
@@ -378,9 +384,21 @@ func placeOrder(database db.Database, bus event.Bus) nethttp.HandlerFunc {
 			Payload:  map[string]string{"id": body.ID, "item": body.Item},
 		}); err != nil {
 			log.FromContext(ctx).Error("publishing the order", "error", err)
-			w.WriteHeader(nethttp.StatusInternalServerError)
+			c.Status(nethttp.StatusInternalServerError)
 			return
 		}
-		_ = speedhttp.WriteJSON(w, nethttp.StatusCreated, placement{ID: body.ID})
+		c.JSON(nethttp.StatusCreated, placement{ID: body.ID})
 	}
+}
+
+// bindFailureStatus is the status a body that could not be bound is answered
+// with. A body the endpoint's limit cut off is too large, and every other body
+// that does not read as the JSON object the route takes — empty, malformed, a
+// member of the wrong type — is a bad request.
+func bindFailureStatus(err error) int {
+	var tooLarge *nethttp.MaxBytesError
+	if errors.As(err, &tooLarge) {
+		return nethttp.StatusRequestEntityTooLarge
+	}
+	return nethttp.StatusBadRequest
 }

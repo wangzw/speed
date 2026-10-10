@@ -899,7 +899,7 @@ func TestTheDealStatementsStayInTheirTenant(t *testing.T) {
 				actor := sessionActor(side.user)
 				for _, write := range side.writes {
 					sub.awaitJournal(write.route+" answered "+write.outcome+" in "+side.ref.ID, func(r auditRow) bool {
-						return r.source == "request" && r.object == write.route && r.outcome == write.outcome &&
+						return r.requestOn(write.route) && r.outcome == write.outcome &&
 							r.tenant == side.ref.ID && r.actor == actor
 					})
 				}
@@ -1435,17 +1435,18 @@ func TestTwoWritersNamingOneVersionAreOneSuccessAndOnePreconditionFailure(t *tes
 	})
 }
 
-// TestADealChangeNamesItsMembersExactly is the case for how a change to a deal
-// is read. A member a change leaves out leaves that attribute as it is, so a
-// member read other than as the client wrote it would change the deal silently
-// or not at all. A body that is null, one naming a member a change does not
-// have, one spelling a member in another case and one repeating a member are
-// refused as malformed; a change naming nothing, or a value the deal does not
-// take, is refused as invalid; and none of them changes the deal.
+// TestADealChangeIsReadAsTheBinderReadsIt is the case for how a change to a deal
+// is read, which is how the HTTP module's JSON binder reads a body: a member the
+// change does not have is passed over, a member spelled in another case is read
+// as the one it resembles, and of a member given twice the last value stands. A
+// body that is null and one carrying no member the change has are a change
+// naming nothing, which is refused as invalid like a value the deal does not
+// take, and those leave the deal as it was; a spelling in another case and a
+// repeated member change the deal as the binder read them.
 //
 // The property is the reading of the body, which no backend takes part in, so
 // it runs on the stack that runs everywhere.
-func TestADealChangeNamesItsMembersExactly(t *testing.T) {
+func TestADealChangeIsReadAsTheBinderReadsIt(t *testing.T) {
 	c := newCase(t, stackNamed(t, localStack))
 	w := startDeals(t, c, nil)
 	acme, alice := w.acme, w.asAlice
@@ -1453,24 +1454,32 @@ func TestADealChangeNamesItsMembersExactly(t *testing.T) {
 	deal := w.createDeal(t, acme, alice, map[string]any{
 		"account_id": "acc-1", "title": "exact", "amount": 100, "stage": "qualify",
 	})
+	change := func(body any, version int) response {
+		return w.h.sendWith(t, api(nethttp.MethodPatch, "/deals/"+deal.ID, acme, alice, body),
+			headers{"If-Match": `"` + strconv.Itoa(version) + `"`})
+	}
 	for _, attempt := range []struct {
-		what   string
-		body   any
-		status int
+		what string
+		body any
 	}{
-		{"a null body", json.RawMessage(`null`), nethttp.StatusBadRequest},
-		{"a member a change does not have", map[string]any{"stage": "won"}, nethttp.StatusBadRequest},
-		{"a member spelled in another case", map[string]any{"Amount": 5}, nethttp.StatusBadRequest},
-		{"a member given twice", json.RawMessage(`{"amount":5,"amount":6}`), nethttp.StatusBadRequest},
-		{"a change naming nothing", map[string]any{}, nethttp.StatusUnprocessableEntity},
-		{"a negative amount", map[string]any{"amount": -1}, nethttp.StatusUnprocessableEntity},
+		{"a null body", json.RawMessage(`null`)},
+		{"a member a change does not have", map[string]any{"stage": "won"}},
+		{"a change naming nothing", map[string]any{}},
+		{"a negative amount", map[string]any{"amount": -1}},
 	} {
-		resp := w.h.sendWith(t, api(nethttp.MethodPatch, "/deals/"+deal.ID, acme, alice, attempt.body),
-			headers{"If-Match": `"1"`})
-		expect(t, "a change with "+attempt.what, resp, attempt.status)
+		expect(t, "a change with "+attempt.what, change(attempt.body, 1), nethttp.StatusUnprocessableEntity)
 	}
 	if got := w.getDeal(t, acme, alice, deal.ID); got.Amount != 100 || got.Title != "exact" || got.Version != 1 {
 		t.Errorf("the refused changes left the deal at %+v, want it as created", got)
+	}
+
+	expect(t, "a change spelling the amount member in another case", change(map[string]any{"Amount": 5}, 1), nethttp.StatusOK)
+	if got := w.getDeal(t, acme, alice, deal.ID); got.Amount != 5 || got.Version != 2 {
+		t.Errorf("a change spelling the amount in another case left the deal at %+v, want the amount 5 at version 2", got)
+	}
+	expect(t, "a change giving the amount member twice", change(json.RawMessage(`{"amount":7,"amount":6}`), 2), nethttp.StatusOK)
+	if got := w.getDeal(t, acme, alice, deal.ID); got.Amount != 6 || got.Version != 3 {
+		t.Errorf("a change giving the amount twice left the deal at %+v, want the last value 6 at version 3", got)
 	}
 }
 
@@ -1899,7 +1908,7 @@ func TestAMovesEventsReachTheirConsumersAsTheMoveRecordedThem(t *testing.T) {
 			{moveDealRoute, "200"},
 		} {
 			c.awaitJournal(route.pattern, func(r auditRow) bool {
-				return r.source == "request" && r.object == route.pattern && r.outcome == route.outcome &&
+				return r.requestOn(route.pattern) && r.outcome == route.outcome &&
 					r.tenant == acme.ID && r.actor == sessionActor(w.alice)
 			})
 		}

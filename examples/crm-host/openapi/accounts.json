@@ -21,7 +21,7 @@
         "requestBody": {"required": true, "content": {"application/json": {"schema": {"$ref": "#/components/schemas/AccountCreate"}}}},
         "responses": {
           "201": {"description": "The account", "content": {"application/json": {"schema": {"$ref": "#/components/schemas/Account"}}}},
-          "400": {"description": "The body is not JSON of this shape: empty, null, an unknown member, a member spelled in another case, or one given twice", "content": {"application/json": {"schema": {"$ref": "#/components/schemas/Error"}}}},
+          "400": {"description": "The body is not JSON of this shape: empty, not valid JSON, or a member of another type than the one it takes", "content": {"application/json": {"schema": {"$ref": "#/components/schemas/Error"}}}},
           "403": {"description": "The caller's role is below rep", "content": {"application/json": {"schema": {"$ref": "#/components/schemas/Error"}}}},
           "409": {"description": "The tenant already holds an account under this identifier", "content": {"application/json": {"schema": {"$ref": "#/components/schemas/Error"}}}},
           "422": {"description": "The name is empty, the identifier is malformed, or the owner is not a member", "content": {"application/json": {"schema": {"$ref": "#/components/schemas/Error"}}}}
@@ -43,7 +43,7 @@
         "requestBody": {"required": true, "content": {"application/json": {"schema": {"$ref": "#/components/schemas/AccountPatch"}}}},
         "responses": {
           "200": {"description": "The account as it now stands", "content": {"application/json": {"schema": {"$ref": "#/components/schemas/Account"}}}},
-          "400": {"description": "The body is not JSON of this shape: empty, null, an unknown member, a member spelled in another case, or one given twice", "content": {"application/json": {"schema": {"$ref": "#/components/schemas/Error"}}}},
+          "400": {"description": "The body is not JSON of this shape: empty, not valid JSON, or a member of another type than the one it takes", "content": {"application/json": {"schema": {"$ref": "#/components/schemas/Error"}}}},
           "403": {"description": "The caller's role is below rep", "content": {"application/json": {"schema": {"$ref": "#/components/schemas/Error"}}}},
           "404": {"description": "The tenant holds no such account", "content": {"application/json": {"schema": {"$ref": "#/components/schemas/Error"}}}},
           "422": {"description": "The change names nothing or empties the name", "content": {"application/json": {"schema": {"$ref": "#/components/schemas/Error"}}}}
@@ -66,7 +66,7 @@
         "requestBody": {"required": true, "content": {"application/json": {"schema": {"$ref": "#/components/schemas/AccountOwner"}}}},
         "responses": {
           "200": {"description": "The account as it now stands", "content": {"application/json": {"schema": {"$ref": "#/components/schemas/Account"}}}},
-          "400": {"description": "The body is not JSON of this shape: empty, null, an unknown member, a member spelled in another case, or one given twice", "content": {"application/json": {"schema": {"$ref": "#/components/schemas/Error"}}}},
+          "400": {"description": "The body is not JSON of this shape: empty, not valid JSON, or a member of another type than the one it takes", "content": {"application/json": {"schema": {"$ref": "#/components/schemas/Error"}}}},
           "403": {"description": "The caller's role is below rep", "content": {"application/json": {"schema": {"$ref": "#/components/schemas/Error"}}}},
           "404": {"description": "The tenant holds no such account", "content": {"application/json": {"schema": {"$ref": "#/components/schemas/Error"}}}},
           "422": {"description": "The owner is empty or not a member of the tenant", "content": {"application/json": {"schema": {"$ref": "#/components/schemas/Error"}}}}

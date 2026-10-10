@@ -13,13 +13,22 @@ import (
 	"testing"
 	"time"
 
+	"github.com/gin-gonic/gin"
+
 	"github.com/vislake/speed/pkg/audit"
 	"github.com/vislake/speed/pkg/authn"
 	"github.com/vislake/speed/pkg/config"
 	"github.com/vislake/speed/pkg/core"
+	speedhttp "github.com/vislake/speed/pkg/http"
 	"github.com/vislake/speed/pkg/settings"
 	"github.com/vislake/speed/pkg/tenant"
 )
+
+func init() {
+	// gin prints a warning to standard output when an engine is made in its debug
+	// mode, and the cases that build a context make one each.
+	gin.SetMode(gin.TestMode)
+}
 
 // pinnedAt is the instant the pinned clock stands at: the start of a window,
 // where the previous window weighs one. The weight a decision applies depends
@@ -187,6 +196,47 @@ func TestCountCarriesThePreviousWindowOver(t *testing.T) {
 	}
 }
 
+// The previous window weighs by the part of this window that has not elapsed,
+// not by one and not by nothing. The clock stands three quarters into the
+// window, so the previous window's ten requests weigh 2.5 and, with this
+// request, the estimate is 3.5: a limit of four lets it through, and a limit of
+// three refuses it. A previous window weighed as one, or by the part that has
+// elapsed, refuses the first; one weighed as nothing lets the second through.
+// The seconds left in the window are read at the same instant.
+func TestCountWeighsThePreviousWindowByWhatHasNotElapsed(t *testing.T) {
+	const window = time.Minute
+	width := int64(window)
+	start := pinnedAt.UnixNano() / width * width
+
+	cases := []struct {
+		limit int
+		want  bool
+	}{
+		{4, true},
+		{3, false},
+	}
+	for _, c := range cases {
+		kv := newFakeKV()
+		l := pinned()
+		l.counters = kv
+		l.now = func() time.Time { return time.Unix(0, start+3*width/4) }
+		kv.seed(countKey("acme", "local/bob", start/width-1), 10)
+
+		var d decision
+		allowed, retry := l.count(context.Background(), "local/bob", "acme", window, c.limit, &d)
+		if d.tripped != "" {
+			t.Fatalf("limit %d: tripped %q", c.limit, d.tripped)
+		}
+		if allowed != c.want {
+			t.Errorf("limit %d: allowed = %v, want %v: the estimate is 3.5 (ten requests weighing a quarter, plus this one)",
+				c.limit, allowed, c.want)
+		}
+		if retry != 15 {
+			t.Errorf("limit %d: retryAfter = %d, want the 15 seconds left of the window", c.limit, retry)
+		}
+	}
+}
+
 func TestCountStandsAsideWhenTheReadFails(t *testing.T) {
 	l := newLimiter(nil)
 	l.counters = &fakeKV{readErr: errors.New("backend down")}
@@ -328,72 +378,180 @@ func TestThresholdsStandsAsideOutsideTheDomain(t *testing.T) {
 
 // --- the decision ----------------------------------------------------------
 
-func TestDecideLetsARequestWithoutAnIdentityThrough(t *testing.T) {
-	l := newLimiter(nil)
-	l.counters = newFakeKV()
+// An exempt route, a command with no authentication module and a layer whose
+// After edge did not land all arrive with no identity. The layer the module's
+// own descriptor registers, which reads the identity off the request's context,
+// lets such a request through without counting it. The limit here is zero, so a
+// layer that counted the request would trip the domain check and write a line.
+func TestARequestWithoutAnIdentityIsLetThroughAndNotCounted(t *testing.T) {
+	counters := newFakeKV()
+	var out lockedBuffer
+	l := pinned("public")
+	l.counters = counters
 	l.store = &fakeStore{values: map[string]any{windowPath: time.Minute, limitPath: 0}}
+	l.signal = newSignalTo(&out)
+	h := startHost(t, hostOptions{limiter: l, viaModule: true})
 
-	reached := false
-	next := nethttp.HandlerFunc(func(nethttp.ResponseWriter, *nethttp.Request) { reached = true })
-	rec := newRecorder()
-
-	if d := l.decide(rec, newRequest(), next, authn.Identity{}, false); d.tripped != "" {
-		t.Fatalf("tripped %q", d.tripped)
+	if got := h.get(t, "/things"); got.status != nethttp.StatusNoContent {
+		t.Fatalf("a request with no identity was answered %d, want the route's 204", got.status)
 	}
-	if !reached {
-		t.Fatal("the request was not passed on")
+	if got := h.reached.count(); got != 1 {
+		t.Fatalf("the route served %d requests, want 1", got)
 	}
-	if rec.status != nethttp.StatusOK {
-		t.Fatalf("status = %d", rec.status)
+	// A request that matches no route has no identity either, and the layer is
+	// as indifferent to it.
+	requireProblem(t, h.get(t, "/nowhere"), nethttp.StatusNotFound)
+	if got := counters.size(); got != 0 {
+		t.Fatalf("the layer counted a request with no identity: %d keys written", got)
+	}
+	if out.String() != "" {
+		t.Fatalf("the layer reported on a request it had nothing to decide on: %q", out.String())
 	}
 }
 
-func TestDecideAnswersTooManyRequestsWithRetryAfter(t *testing.T) {
-	l := pinned()
+// A request past the limit is refused in the entry point's error shape, with
+// Retry-After on the response: the header is set before the response is written
+// and survives it. The clock stands at the start of a window, so the whole
+// window is what is left.
+func TestARequestPastTheLimitIsAnsweredTooManyRequestsWithRetryAfter(t *testing.T) {
+	l := pinned("public")
 	l.counters = newFakeKV()
 	l.store = &fakeStore{values: map[string]any{windowPath: time.Minute, limitPath: 1}}
-
-	reached := false
-	next := nethttp.HandlerFunc(func(nethttp.ResponseWriter, *nethttp.Request) { reached = true })
+	h := startHost(t, hostOptions{limiter: l})
 
 	// The first request spends the window.
-	rec := newRecorder()
-	l.decide(rec, newRequest(), next, authn.Identity{}, true)
-	if !reached {
-		t.Fatal("the first request was not passed on")
+	if got := h.get(t, "/things"); got.status != nethttp.StatusNoContent {
+		t.Fatalf("the first request was answered %d, want the route's 204", got.status)
 	}
 
-	reached = false
-	rec = newRecorder()
-	if d := l.decide(rec, newRequest(), next, authn.Identity{}, true); d.tripped != "" {
-		t.Fatalf("tripped %q", d.tripped)
+	refused := h.get(t, "/things")
+	requireProblem(t, refused, nethttp.StatusTooManyRequests)
+	if got := requireRetryAfter(t, refused); got != 60 {
+		t.Fatalf("Retry-After is %d, want the 60 seconds left of the window", got)
 	}
-	if reached {
-		t.Fatal("the request past the limit reached the inner chain")
+	if got := h.reached.count(); got != 1 {
+		t.Fatalf("the route served %d requests, want only the first", got)
 	}
-	if rec.status != nethttp.StatusTooManyRequests {
-		t.Fatalf("status = %d, want 429", rec.status)
-	}
-	if got := rec.header.Get("Retry-After"); got == "" || got == "0" {
-		t.Fatalf("Retry-After = %q", got)
+	for i, d := range h.decisions.all() {
+		if d.tripped != "" {
+			t.Fatalf("decision %d tripped %q", i, d.tripped)
+		}
 	}
 }
 
-func TestDecideLetsThroughWhenTheThresholdsAreUnreadable(t *testing.T) {
-	l := pinned()
+// When a module delivers the ErrorResponder capability the shape of the refusal
+// is its own, and what the layer hands it is the status and nothing else. The
+// Retry-After the layer set before asking for the response is still on it.
+func TestADeliveredErrorResponderDecidesTheShapeOfTheRefusal(t *testing.T) {
+	responder := &capturingResponder{}
+	l := pinned("public")
+	l.counters = newFakeKV()
+	l.store = &fakeStore{values: map[string]any{windowPath: time.Minute, limitPath: 1}}
+	h := startHost(t, hostOptions{limiter: l, responder: responder})
+
+	h.get(t, "/things")
+	refused := h.get(t, "/things")
+
+	if refused.status != nethttp.StatusTooManyRequests {
+		t.Fatalf("the refusal is %d, want 429", refused.status)
+	}
+	if ct := refused.header.Get("Content-Type"); ct != customMediaType {
+		t.Fatalf("the refusal's media type is %q, want the responder's %q", ct, customMediaType)
+	}
+	if refused.body != `{"code":429}` {
+		t.Fatalf("the refusal's body is %q, want the responder's", refused.body)
+	}
+	if got := requireRetryAfter(t, refused); got != 60 {
+		t.Fatalf("Retry-After is %d, want the 60 seconds left of the window", got)
+	}
+	handed := responder.handed()
+	if len(handed) != 1 || handed[0] != (speedhttp.Problem{Status: nethttp.StatusTooManyRequests}) {
+		t.Fatalf("the responder was handed %+v, want one Problem carrying the status 429 alone", handed)
+	}
+}
+
+// The layer does not read the route, so a request that matches none is counted
+// like any other, and the one past the limit is refused by the layer where the
+// entry point would have answered 404. The decisions come to the same as for a
+// request with a route: reading no route is not a failure of any class.
+func TestARequestMatchingNoRouteIsCountedAndRefusedLikeAnyOther(t *testing.T) {
+	counters := newFakeKV()
+	var out lockedBuffer
+	l := pinned("public")
+	l.counters = counters
+	l.store = &fakeStore{values: map[string]any{windowPath: time.Minute, limitPath: 1}}
+	l.signal = newSignalTo(&out)
+	h := startHost(t, hostOptions{limiter: l})
+
+	requireProblem(t, h.get(t, "/nowhere"), nethttp.StatusNotFound)
+	refused := h.get(t, "/nowhere")
+
+	requireProblem(t, refused, nethttp.StatusTooManyRequests)
+	requireRetryAfter(t, refused)
+	index := pinnedAt.UnixNano() / int64(time.Minute)
+	if got := counters.value(countKey("", authn.Identity{}.Key(), index)); got != 2 {
+		t.Fatalf("the window holds a count of %v, want both requests counted", got)
+	}
+	if got := h.reached.count(); got != 0 {
+		t.Fatalf("a request that matches no route reached the route's handler %d times", got)
+	}
+	for i, d := range h.decisions.all() {
+		if d.tripped != "" {
+			t.Fatalf("decision %d tripped %q", i, d.tripped)
+		}
+	}
+	if out.String() != "" {
+		t.Fatalf("the layer reported a failure while counting requests that match no route: %q", out.String())
+	}
+}
+
+// A path that exists with another method is counted like any other request, and
+// the one past the limit is refused by the layer in place of the entry point's
+// 405. The request let through gets the entry point's 405 with its Allow header;
+// the refusal carries none, because a refusal that listed the methods of the
+// path would tell a caller who is over its limit what the path accepts.
+func TestARequestWhoseMethodIsNotAllowedIsCountedAndRefusedLikeAnyOther(t *testing.T) {
+	l := pinned("public")
+	l.counters = newFakeKV()
+	l.store = &fakeStore{values: map[string]any{windowPath: time.Minute, limitPath: 1}}
+	h := startHost(t, hostOptions{limiter: l})
+
+	allowed := h.send(t, nethttp.MethodPost, "/things", nil)
+	requireProblem(t, allowed, nethttp.StatusMethodNotAllowed)
+	if allow := allowed.header.Get("Allow"); !strings.Contains(allow, nethttp.MethodGet) {
+		t.Fatalf("the 405 carries Allow %q, want it to list GET", allow)
+	}
+	refused := h.send(t, nethttp.MethodPost, "/things", nil)
+
+	requireProblem(t, refused, nethttp.StatusTooManyRequests)
+	requireRetryAfter(t, refused)
+	if allow := refused.header.Get("Allow"); allow != "" {
+		t.Fatalf("the refusal carries Allow %q, which lists what the path accepts", allow)
+	}
+}
+
+// An unreadable threshold lets the request through: the route serves it, and
+// the class is reported.
+func TestARequestIsLetThroughWhenTheThresholdsAreUnreadable(t *testing.T) {
+	var out lockedBuffer
+	l := pinned("public")
 	l.counters = newFakeKV()
 	l.store = &fakeStore{err: settings.ErrTypeMismatch}
-	l.signal = newSignalTo(&bytes.Buffer{})
+	l.signal = newSignalTo(&out)
+	h := startHost(t, hostOptions{limiter: l})
 
-	reached := false
-	next := nethttp.HandlerFunc(func(nethttp.ResponseWriter, *nethttp.Request) { reached = true })
-	rec := newRecorder()
-
-	if d := l.decide(rec, newRequest(), next, authn.Identity{}, true); d.tripped != reasonThresholdRead {
-		t.Fatalf("tripped %q, want %q", d.tripped, reasonThresholdRead)
+	if got := h.get(t, "/things"); got.status != nethttp.StatusNoContent {
+		t.Fatalf("an unreadable threshold answered the request %d, want the route's 204", got.status)
 	}
-	if !reached {
-		t.Fatal("an unreadable threshold refused the request")
+	if got := h.reached.count(); got != 1 {
+		t.Fatalf("the route served %d requests, want 1", got)
+	}
+	decided := h.decisions.all()
+	if len(decided) != 1 || decided[0].tripped != reasonThresholdRead {
+		t.Fatalf("the decisions are %+v, want one that tripped %q", decided, reasonThresholdRead)
+	}
+	if !containsLine(out.String(), "letting requests through", string(reasonThresholdRead)) {
+		t.Fatalf("the class was not reported: %q", out.String())
 	}
 }
 
@@ -588,6 +746,9 @@ func TestInitWiresOnlyThisModulesOwnProduct(t *testing.T) {
 func TestMiddlewareCarriesTheAnchorsItNeeds(t *testing.T) {
 	mw := newLimiter(nil).middleware()
 
+	if mw.Handler == nil {
+		t.Fatal("the layer has no handler")
+	}
 	if len(mw.Provides) != 1 || mw.Provides[0] != core.Token((*Limiter)(nil)) {
 		t.Fatalf("Provides = %v, want the Limiter token", mw.Provides)
 	}
@@ -602,6 +763,40 @@ func TestMiddlewareCarriesTheAnchorsItNeeds(t *testing.T) {
 	}
 	if mw.Name != ModuleName {
 		t.Errorf("Name = %q, want %q", mw.Name, ModuleName)
+	}
+}
+
+// The layer's place on the chain comes from what it declares: it sits inside
+// the layers that stand for authentication, tenant resolution and audit. The
+// layers it is checked against carry an Order that would put them inside it, so
+// only the declared constraints can produce the order the entry point lists.
+func TestTheLayerSitsInsideAuthenticationTenantResolutionAndAudit(t *testing.T) {
+	l := pinned("public")
+	l.counters = newFakeKV()
+	l.store = &fakeStore{values: map[string]any{windowPath: time.Minute, limitPath: 10}}
+	standingFor := func(name string, token core.Token) speedhttp.Middleware {
+		return speedhttp.Middleware{
+			Name:     name,
+			Provides: []core.Token{token},
+			Order:    1000,
+			Handler:  func(c *gin.Context) { c.Next() },
+		}
+	}
+	h := startHost(t, hostOptions{limiter: l, register: func(ep speedhttp.Endpoint) {
+		ep.Use(standingFor("gate", (*authn.Gate)(nil)))
+		ep.Use(standingFor("resolution", (*tenant.Resolution)(nil)))
+		ep.Use(standingFor("audit", (*audit.Audit)(nil)))
+	}})
+
+	limiting := strings.Index(h.chain, ModuleName+"(")
+	if limiting < 0 {
+		t.Fatalf("the chain %q lists no limiting layer", h.chain)
+	}
+	for _, outer := range []string{"gate(", "resolution(", "audit("} {
+		at := strings.Index(h.chain, outer)
+		if at < 0 || at >= limiting {
+			t.Errorf("the chain is %q, want %s ahead of the limiting layer", h.chain, outer)
+		}
 	}
 }
 
@@ -622,7 +817,6 @@ func TestProductDeliversTheLimiter(t *testing.T) {
 // that class's shared flag, so the next real backend failure would write
 // nothing.
 func TestDecideReportsNothingForACancelledContext(t *testing.T) {
-	next := nethttp.HandlerFunc(func(nethttp.ResponseWriter, *nethttp.Request) {})
 	cases := []struct {
 		name     string
 		counters *fakeKV
@@ -639,8 +833,7 @@ func TestDecideReportsNothingForACancelledContext(t *testing.T) {
 
 		ctx, cancel := context.WithCancel(context.Background())
 		cancel()
-		d := l.decide(newRecorder(), newRequest().WithContext(ctx), next, authn.Identity{}, true)
-		l.signal.settle(d)
+		d := decideOnce(l, ctx)
 
 		if d.tripped != "" {
 			t.Errorf("%s: tripped %q, want the empty reason", c.name, d.tripped)
@@ -676,15 +869,12 @@ func TestDiagnosticsNameTheModuleOnce(t *testing.T) {
 func TestDecideClearsOnlyTheClassesItEvaluated(t *testing.T) {
 	var out bytes.Buffer
 	l := pinned()
-	next := nethttp.HandlerFunc(func(nethttp.ResponseWriter, *nethttp.Request) {})
 	var clock *pinnedClock
 	l.signal, clock = signalOnAPinnedClock(&out)
 
-	// One request through the layer, its class accounted for as wrap does.
+	// One request through the layer, its class accounted for as handle does.
 	step := func() reason {
-		d := l.decide(newRecorder(), newRequest(), next, authn.Identity{}, true)
-		l.signal.settle(d)
-		return d.tripped
+		return decideOnce(l, context.Background()).tripped
 	}
 
 	// The counter read fails, so its class is reported.
@@ -752,21 +942,19 @@ func containsLine(out, first, second string) bool {
 
 // --- helpers ---------------------------------------------------------------
 
-type recorder struct {
-	header nethttp.Header
-	status int
-}
-
-func newRecorder() *recorder {
-	return &recorder{header: make(nethttp.Header), status: nethttp.StatusOK}
-}
-
-func (r *recorder) Header() nethttp.Header      { return r.header }
-func (r *recorder) WriteHeader(code int)        { r.status = code }
-func (r *recorder) Write(b []byte) (int, error) { return len(b), nil }
-
-func newRequest() *nethttp.Request {
-	return httptest.NewRequest(nethttp.MethodGet, "/things", nil)
+// decideOnce runs one decision with the zero identity on a context gin makes for
+// a test, carrying a request on ctx, and accounts for it as the layer's handler
+// does.
+//
+// The context has no chain behind it and no route, so what a case using it reads
+// is the decision and the signal. Whether a request went on, and what it was
+// answered with, is read off a real assembly by the cases that serve one.
+func decideOnce(l *limiter, ctx context.Context) decision {
+	c, _ := gin.CreateTestContext(httptest.NewRecorder())
+	c.Request = httptest.NewRequest(nethttp.MethodGet, "/things", nil).WithContext(ctx)
+	d := l.decide(c, authn.Identity{}, true)
+	l.signal.settle(d)
+	return d
 }
 
 // declaredSettingsSchema picks this module's settings declaration out of its
@@ -930,6 +1118,13 @@ func (k *fakeKV) ttlOf(key string) time.Duration {
 	k.mu.Lock()
 	defer k.mu.Unlock()
 	return k.ttls[key]
+}
+
+// size is the number of keys the store holds.
+func (k *fakeKV) size() int {
+	k.mu.Lock()
+	defer k.mu.Unlock()
+	return len(k.values) + len(k.raw)
 }
 
 func (k *fakeKV) seed(key string, value float64) {

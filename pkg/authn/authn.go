@@ -27,16 +27,24 @@ import "context"
 // provider either — the gateway delivers Gate exclusively, which is a claim the
 // resolution closure does not follow into a command.
 type Gate interface {
-	// Exempt registers one route as needing no credential. The pattern is
-	// the string the registrant passed to Endpoint.Route, method included;
-	// this package invents no syntax of its own for it.
+	// Exempt registers one route as needing no credential. The method and
+	// the path are the pair the registrant passed to Endpoint.Route, in the
+	// same spelling: a request is exempt when its method and the path the
+	// entry point matched it to are, character for character, a registered
+	// pair. This package invents no syntax of its own for it and does not
+	// interpret the path, so a route carrying a parameter or a catch-all is
+	// exempted by writing it as it was registered.
+	//
+	// A pair that no registered route carries never matches, and nothing
+	// reports it. A request that matches no route, or whose method the
+	// matched path does not allow, matches no exemption.
 	//
 	// Registration holds from the gateway's Migrate callback until its
 	// Start callback, a window that contains the whole Init stage and
 	// reaches beyond it at both ends. A call outside that window is a
 	// mistake at the call site rather than a condition to report, and it
 	// panics, as the entry point's own registration surface does.
-	Exempt(endpoint, pattern string)
+	Exempt(endpoint, method, path string)
 }
 
 // Credential is one credential to be verified, as it arrived.

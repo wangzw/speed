@@ -6,6 +6,8 @@ import (
 	nethttp "net/http"
 	"strconv"
 
+	"github.com/gin-gonic/gin"
+
 	"github.com/vislake/speed/pkg/core"
 	"github.com/vislake/speed/pkg/event"
 	speedhttp "github.com/vislake/speed/pkg/http"
@@ -18,8 +20,8 @@ import (
 // registered under.
 const inventoryModuleName = "inventory"
 
-// inventoryRoute is the guarded route that reports the counter.
-const inventoryRoute = "GET /inventory"
+// inventoryPath is the path of the guarded route that reports the counter.
+const inventoryPath = "/inventory"
 
 // placedCounter is the key the placement count lives under. The capability
 // stores opaque bytes under an opaque key, so the spelling of this name is the
@@ -86,7 +88,7 @@ func inventoryModule() core.Module {
 			// that arrived later would miss every event published before it
 			// and nothing would report the gap.
 			bus.Subscribe(placedEventType, countPlacement(store, product.log))
-			public.Route(inventoryRoute, reportCount(store))
+			public.Route(nethttp.MethodGet, inventoryPath, reportCount(store))
 			return nil
 		},
 
@@ -148,20 +150,20 @@ func countPlacement(store kv.KV, logger *slog.Logger) event.Handler {
 // A key that was never written counts as zero rather than as an error, so a run
 // that placed nothing answers zero — which is the shape this route has before
 // its first placement, and not a case to special-case.
-func reportCount(store kv.KV) nethttp.HandlerFunc {
-	return func(w nethttp.ResponseWriter, r *nethttp.Request) {
-		ctx := r.Context()
+func reportCount(store kv.KV) gin.HandlerFunc {
+	return func(c *gin.Context) {
+		ctx := c.Request.Context()
 		id, ok := tenant.FromContext(ctx)
 		if !ok {
 			log.FromContext(ctx).Error("a guarded route was reached with no tenant",
-				"route", inventoryRoute)
-			w.WriteHeader(nethttp.StatusInternalServerError)
+				"route", c.FullPath())
+			c.Status(nethttp.StatusInternalServerError)
 			return
 		}
 		raw, present, err := store.Get(ctx, placedCounter)
 		if err != nil {
 			log.FromContext(ctx).Error("reading the counter", "error", err)
-			w.WriteHeader(nethttp.StatusInternalServerError)
+			c.Status(nethttp.StatusInternalServerError)
 			return
 		}
 		var total float64
@@ -171,10 +173,10 @@ func reportCount(store kv.KV) nethttp.HandlerFunc {
 			total, err = strconv.ParseFloat(string(raw), 64)
 			if err != nil {
 				log.FromContext(ctx).Error("parsing the counter", "error", err)
-				w.WriteHeader(nethttp.StatusInternalServerError)
+				c.Status(nethttp.StatusInternalServerError)
 				return
 			}
 		}
-		_ = speedhttp.WriteJSON(w, nethttp.StatusOK, inventory{Tenant: string(id), Placed: total})
+		c.JSON(nethttp.StatusOK, inventory{Tenant: string(id), Placed: total})
 	}
 }

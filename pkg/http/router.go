@@ -3,10 +3,12 @@ package http
 import (
 	"fmt"
 	"log/slog"
-	nethttp "net/http"
+	pathpkg "path"
 	"slices"
 	"strings"
 	"sync"
+
+	"github.com/gin-gonic/gin"
 )
 
 // phase is the state of the registration gate. It is one gate for the whole
@@ -46,18 +48,12 @@ type router struct {
 	// assembled, bound and stopped in.
 	names []string
 
-	// newEngine builds the routing engine of one endpoint. One engine per
-	// endpoint: a shared one would carry every endpoint's routes, and the
-	// separation of a management endpoint from a public one is the whole
-	// point of having several.
-	newEngine func() Engine
 	// injected is the logger put into each request's context, nil when no
 	// module delivers the Logger capability.
 	injected *slog.Logger
-	// responder is what decides the shape of the response a request path's
-	// panic fallback writes, nil when no module delivers the PanicResponder
-	// capability.
-	responder PanicResponder
+	// responder is what decides the shape of the error responses this module
+	// writes, nil when no module delivers the ErrorResponder capability.
+	responder ErrorResponder
 	// logger is where this module's own diagnostics go. Unlike injected it
 	// is never nil: with no Logger capability it is the process default.
 	logger *slog.Logger
@@ -68,11 +64,11 @@ var _ Router = (*router)(nil)
 // newRouter builds the endpoints from configuration. Nothing is bound here:
 // the address is bound in Serve, and until then an endpoint is a registration
 // surface with no listener behind it.
-func newRouter(settings []endpointSettings, newEngine func() Engine) *router {
-	r := &router{
-		endpoints: make(map[string]*endpoint, len(settings)),
-		newEngine: newEngine,
-	}
+func newRouter(settings []endpointSettings) *router {
+	// The registration surface tries each route on an engine of its own, so
+	// gin's process-wide mode is settled before the first one exists.
+	setReleaseMode()
+	r := &router{endpoints: make(map[string]*endpoint, len(settings))}
 	for _, s := range settings {
 		r.endpoints[s.name] = &endpoint{settings: s, gate: r}
 		r.names = append(r.names, s.name)
@@ -179,13 +175,18 @@ func (r *router) write(endpoint, call string, record func()) {
 	}
 }
 
-// route is one pattern bound to a handler, as the registration recorded it.
-// Whether two patterns conflict is the routing engine's judgement and is made
-// when they are mounted in Serve, not here.
+// route is one method and path bound to a chain of handlers, as the
+// registration recorded it. Whether two routes conflict is gin's judgement and
+// is made when they are mounted in Serve, not here.
 type route struct {
-	pattern string
-	handler nethttp.Handler
+	method   string
+	path     string
+	handlers []gin.HandlerFunc
 }
+
+// String renders a route the way a diagnostic names it: the method and the
+// path as they were registered.
+func (r route) String() string { return r.method + " " + r.path }
 
 // endpoint is one listening endpoint: the registration surface modules write
 // to, and the listener the chain is served from once Serve has bound it.
@@ -205,60 +206,86 @@ type endpoint struct {
 
 var _ Endpoint = (*endpoint)(nil)
 
-// Route binds h to a pattern on this endpoint.
+// Route binds handlers to a method and a path on this endpoint.
 //
-// The pattern's grammar is the routing engine's, and the engine is asked here
-// whether it takes this pattern at all. A pattern the engine refuses on its own
-// is a mistake in this one call, knowable from this one registration, which is
-// the class of failure the surface panics for, alongside a nil handler and an
-// illegal capability token.
+// What can be known from this one registration is checked here, and a failure
+// panics, which is the class the surface panics for alongside an illegal
+// capability token: no handler or a nil one, which gin accepts and which would
+// only crash when a request arrives; a path that is not in the form gin keeps
+// it in, which would leave a layer that compares Context.FullPath with the
+// registered path forever unmatched; and a method or path gin refuses on its
+// own.
 //
-// A conflict between two patterns is not of that class and is not judged here:
+// A conflict between two routes is not of that class and is not judged here:
 // a registration records a declaration, and whether the set of them conflicts
-// is a property of the assembled set, reported as a startup failure when the
+// is a property of the mounted set, reported as a startup failure when the
 // chain is built.
-func (e *endpoint) Route(pattern string, h nethttp.Handler) {
-	if h == nil {
-		panic(fmt.Sprintf("http: endpoint %q: Route(%q, nil) has no handler to bind. "+
-			"Pass the handler this route is served by", e.settings.name, pattern))
+func (e *endpoint) Route(method, path string, handlers ...gin.HandlerFunc) {
+	if len(handlers) == 0 {
+		panic(fmt.Sprintf("http: endpoint %q: Route(%q, %q) has no handler to bind. "+
+			"Pass the handler this route is served by", e.settings.name, method, path))
 	}
-	if refused := patternRefusal(e.gate.newEngine, pattern, h); refused != nil {
-		panic(fmt.Sprintf("http: endpoint %q: Route(%q, ...) was given a pattern the routing "+
-			"engine refuses on its own: %v. The grammar is the engine's, not this "+
-			"package's; correct the pattern at this call", e.settings.name, pattern, refused))
+	for i, h := range handlers {
+		if h == nil {
+			panic(fmt.Sprintf("http: endpoint %q: Route(%q, %q) was given a nil handler at "+
+				"position %d, which gin accepts and which would crash when a request "+
+				"reaches it. Pass a handler at every position", e.settings.name, method, path, i))
+		}
+	}
+	if normal := ginPath(path); normal != path {
+		panic(fmt.Sprintf("http: endpoint %q: Route(%q, %q) was given a path that is not in "+
+			"the form gin keeps it in, which is %q. Context.FullPath reports that form, so a "+
+			"layer comparing it with the registered path would never match this route. "+
+			"Write the path as %q", e.settings.name, method, path, normal, normal))
+	}
+	if refused := routeRefusal(method, path, handlers); refused != nil {
+		panic(fmt.Sprintf("http: endpoint %q: Route(%q, %q) was given a method or a path gin "+
+			"refuses on its own: %v. The grammar is gin's, not this package's; correct it "+
+			"at this call", e.settings.name, method, path, refused))
 	}
 	e.gate.write(e.settings.name, "Route", func() {
-		e.routes = append(e.routes, route{pattern: pattern, handler: h})
+		e.routes = append(e.routes, route{method: method, path: path, handlers: slices.Clone(handlers)})
 	})
 }
 
-// patternRefusal offers the pattern to an engine of its own and reports what
-// the engine raised, or nil when it took it. The engines this seam is made for
-// refuse a pattern by panicking, whether the pattern is malformed or clashes
-// with another one, and the two are told apart by what else is on the engine:
-// nothing is on this one, so anything raised here is about this pattern alone.
+// ginPath is the form gin keeps a route's path in. Joining the path onto the
+// engine's root cleans it, and a trailing slash the registrant wrote is kept
+// as written.
+func ginPath(path string) string {
+	cleaned := pathpkg.Join("/", path)
+	if strings.HasSuffix(path, "/") && !strings.HasSuffix(cleaned, "/") {
+		cleaned += "/"
+	}
+	return cleaned
+}
+
+// routeRefusal offers the route to an engine of its own and reports what gin
+// raised, or nil when it took it. gin refuses a route by panicking, whether
+// the method or path is malformed or the route clashes with another one, and
+// the two are told apart by what else is on the engine: nothing is on this
+// one, so anything raised here is about this route alone.
 //
 // The engine is thrown away with the call, so it costs one engine per route
 // registered.
-func patternRefusal(newEngine func() Engine, pattern string, h nethttp.Handler) (raised any) {
+func routeRefusal(method, path string, handlers []gin.HandlerFunc) (raised any) {
 	defer func() { raised = recover() }()
-	newEngine().Handle(pattern, h)
+	gin.New().Handle(method, path, handlers...)
 	return nil
 }
 
 // Use registers a middleware layer on this endpoint. The layer applies to every
-// route on the endpoint; a layer that should apply to some of them is wrapped
-// around those handlers by their own registrant, or those routes are moved to
-// another endpoint.
+// request on the endpoint, including one that matches no route; a layer that
+// should apply to some routes only is passed as one of the handlers of those
+// routes.
 //
 // The declaration is checked here rather than when the chain is ordered, so an
 // illegal capability token names the call that wrote it while that call is
 // still on the stack.
 func (e *endpoint) Use(mw Middleware) {
-	if mw.Wrap == nil {
-		panic(fmt.Sprintf("http: endpoint %q: Use registered middleware %q with a nil Wrap, "+
-			"so the layer would wrap nothing. Give Wrap the func(http.Handler) http.Handler "+
-			"this layer is made of", e.settings.name, mw.Name))
+	if mw.Handler == nil {
+		panic(fmt.Sprintf("http: endpoint %q: Use registered middleware %q with a nil Handler, "+
+			"so the layer would do nothing. Give Handler the gin handler this layer is made "+
+			"of", e.settings.name, mw.Name))
 	}
 	for j, token := range mw.Provides {
 		capabilityKey(token, declarationSite(e.settings.name, mw.Name, "Provides", j))

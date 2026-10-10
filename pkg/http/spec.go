@@ -30,8 +30,8 @@ func validateSpecs(specs []core.Resource[Spec]) error {
 }
 
 // validateSpec checks that one fragment has a usable shape. It does not check
-// the fragment against the OpenAPI grammar: that needs a parsing library, and
-// this package's surface carries no third-party type. What is caught here is
+// the fragment against the OpenAPI grammar: that needs a parsing library, which
+// this module does not bring in. What is caught here is
 // the class that would otherwise break a reader's merge long after startup,
 // where nothing connects the crash back to the module that declared the
 // fragment.

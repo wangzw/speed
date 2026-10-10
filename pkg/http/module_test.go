@@ -6,27 +6,23 @@ import (
 	"net"
 	nethttp "net/http"
 	"reflect"
+	"slices"
+	"strconv"
 	"testing"
+
+	"github.com/gin-gonic/gin"
 
 	"github.com/vislake/speed/pkg/config"
 	"github.com/vislake/speed/pkg/core"
 	"github.com/vislake/speed/pkg/log"
 )
 
-// testEngine builds the engine the descriptor is driven with. The standard
-// library's multiplexer is what the shipped subpackage binds, so the tests here
-// exercise the same seam a run does.
-func testEngine() Engine { return nethttp.NewServeMux() }
-
-// testModule is the descriptor under test.
-func testModule() core.Module { return Module("http", testEngine) }
-
 // testProduct builds the product the stage callbacks are driven with, from a
 // stubbed reader.
 func testProduct(t *testing.T, cfg moduleConfig) *router {
 	t.Helper()
 	logger, _ := newRecordingLogger()
-	r, err := newModule(&stubReader{cfg: cfg}, testEngine, nil, nil)
+	r, err := newModule(&stubReader{cfg: cfg}, nil, nil)
 	if err != nil {
 		t.Fatalf("building the product: %v", err)
 	}
@@ -105,7 +101,7 @@ func TestPrepareAndNewReadOneSection(t *testing.T) {
 		t.Fatalf("Prepare: %v", err)
 	}
 	product := &stubReader{cfg: oneEndpoint("public")}
-	if _, err := newModule(product, testEngine, nil, nil); err != nil {
+	if _, err := newModule(product, nil, nil); err != nil {
 		t.Fatalf("New: %v", err)
 	}
 	if stance.path != configPath || product.path != configPath {
@@ -119,7 +115,7 @@ func TestPrepareAndNewReadOneSection(t *testing.T) {
 // with, and the exclusive claim is what turns that into a named conflict rather
 // than a route nobody can reach.
 func TestModuleProvidesRouterExclusively(t *testing.T) {
-	provides := testModule().Provides
+	provides := Module().Provides
 	if len(provides) != 1 {
 		t.Fatalf("the module declares %d capabilities: %+v", len(provides), provides)
 	}
@@ -134,16 +130,16 @@ func TestModuleProvidesRouterExclusively(t *testing.T) {
 // TestDeclaredDependenciesAreOptional pins both declared dependencies. Without
 // the Optional flag, a host assembling no module for either would fail to start
 // over a dependency this module states a default behaviour for: the process
-// default logger, and a fallback response that is the status alone.
+// default logger, and the default shape of an error response.
 //
 // The absence of each is asked for here rather than assumed, because a lookup
 // that failed for a reason other than "no provider" has to terminate the
 // startup instead, and the two are told apart by the sentinel.
 func TestDeclaredDependenciesAreOptional(t *testing.T) {
-	requires := testModule().Requires
+	requires := Module().Requires
 	want := []reflect.Type{
 		reflect.TypeFor[*log.Logger](),
-		reflect.TypeFor[*PanicResponder](),
+		reflect.TypeFor[*ErrorResponder](),
 	}
 	if len(requires) != len(want) {
 		t.Fatalf("the module declares %d requirements: %+v", len(requires), requires)
@@ -165,12 +161,12 @@ func TestDeclaredDependenciesAreOptional(t *testing.T) {
 		t.Error("a logger was produced although no module delivers the capability")
 	}
 
-	responder, err := panicResponder(core.New())
+	responder, err := errorResponder(core.New())
 	if err != nil {
-		t.Fatalf("taking up the panic responder from a registry that has none: %v", err)
+		t.Fatalf("taking up the error responder from a registry that has none: %v", err)
 	}
 	if responder != nil {
-		t.Error("a panic responder was produced although no module delivers the capability")
+		t.Error("an error responder was produced although no module delivers the capability")
 	}
 }
 
@@ -195,7 +191,7 @@ func TestDeclaredDependenciesAreOptional(t *testing.T) {
 // right descriptor there. The descriptor and a Prepare over a registry without a
 // reader are the only places either can be caught.
 func TestTheReaderIsUndeclaredAndStillRequired(t *testing.T) {
-	m := testModule()
+	m := Module()
 	for i, req := range m.Requires {
 		if reflect.TypeOf(req.Token) == reflect.TypeFor[*config.Reader]() {
 			t.Errorf("Requires[%d] declares the configuration reader, which this module takes up "+
@@ -234,7 +230,7 @@ func TestTheReaderIsUndeclaredAndStillRequired(t *testing.T) {
 // to write. A Prepare that did not read through the registry's reader would give
 // the same answer for both.
 func TestPrepareTakesUpTheSuppliedReader(t *testing.T) {
-	m := testModule()
+	m := Module()
 
 	reg := core.New()
 	supplyConfig(reg, oneEndpoint("public"))
@@ -281,12 +277,34 @@ func TestImportingThisPackageCarriesALoggingModule(t *testing.T) {
 		"package pulls pkg/log in and that registers itself")
 }
 
-// TestModuleWithoutAnEngineIsACallSiteError pins the seam's one requirement.
-// Left to fail later, the nil would surface as a panic inside Serve, naming
-// nothing about the subpackage that forgot to pass an engine.
-func TestModuleWithoutAnEngineIsACallSiteError(t *testing.T) {
-	text := wantPanic(t, "Module with no engine", func() { Module("http", nil) })
-	mustContain(t, text, "engine", "what is missing")
+// TestTheModuleIsRegisteredWithTheProcessRegistryUnderItsName pins the
+// registration this package performs when it is initialised: a module named
+// "http", delivering Router exclusively, which is what a host takes into a
+// command of its tree by name. The name is exported as ModuleName so that the
+// host writes that and not a literal.
+func TestTheModuleIsRegisteredWithTheProcessRegistryUnderItsName(t *testing.T) {
+	if ModuleName != "http" {
+		t.Errorf("ModuleName is %q, and the module is named %q", ModuleName, "http")
+	}
+	if got := Module().Name; got != ModuleName {
+		t.Errorf("the descriptor is named %q, and ModuleName is %q", got, ModuleName)
+	}
+
+	var registered []core.Module
+	for _, m := range core.ProcessRegistry.Modules() {
+		if m.Name == ModuleName {
+			registered = append(registered, m)
+		}
+	}
+	if len(registered) != 1 {
+		t.Fatalf("the process registry holds %d modules named %q, want exactly the one this "+
+			"package registers", len(registered), ModuleName)
+	}
+	provides := registered[0].Provides
+	if len(provides) != 1 || reflect.TypeOf(provides[0].Token) != reflect.TypeFor[*Router]() ||
+		!provides[0].Exclusive {
+		t.Errorf("the registered module provides %+v, want Router, exclusively", provides)
+	}
 }
 
 // TestGateOpensInMigrateAndSealsInStart pins the two borrowed stages, which are
@@ -299,13 +317,13 @@ func TestModuleWithoutAnEngineIsACallSiteError(t *testing.T) {
 // accept registrations through the whole Start stage and through every Serve
 // callback ordered ahead of this module, none of which reach a chain.
 func TestGateOpensInMigrateAndSealsInStart(t *testing.T) {
-	m := testModule()
+	m := Module()
 	product := testProduct(t, oneEndpoint("public"))
 	e := endpointOf(t, product, "public")
 	ctx := context.Background()
 
 	wantPanic(t, "a registration before Migrate", func() {
-		e.Route("GET /before", nethttp.NotFoundHandler())
+		e.Route("GET", "/before", filler)
 	})
 
 	if err := m.Migrate(ctx, nil, product); err != nil {
@@ -314,13 +332,13 @@ func TestGateOpensInMigrateAndSealsInStart(t *testing.T) {
 	// This stands for a module whose own Init runs before this one's: the
 	// gate is open for the whole of the Init stage, not from this module's
 	// own Init callback onwards.
-	e.Route("GET /during", nethttp.NotFoundHandler())
+	e.Route("GET", "/during", filler)
 
 	if err := m.Start(ctx, nil, product); err != nil {
 		t.Fatalf("Start: %v", err)
 	}
 	wantPanic(t, "a registration during the Start stage", func() {
-		e.Route("GET /after", nethttp.NotFoundHandler())
+		e.Route("GET", "/after", filler)
 	})
 }
 
@@ -328,7 +346,7 @@ func TestGateOpensInMigrateAndSealsInStart(t *testing.T) {
 // what comes out the other end really answers requests, with the chain and the
 // routes that were registered.
 func TestServeBindsAndTheEndpointServes(t *testing.T) {
-	m := testModule()
+	m := Module()
 	product := testProduct(t, oneEndpoint("public"))
 	ctx := context.Background()
 	t.Cleanup(func() { _ = m.Close(ctx, nil, product) })
@@ -337,9 +355,7 @@ func TestServeBindsAndTheEndpointServes(t *testing.T) {
 		t.Fatalf("Migrate: %v", err)
 	}
 	e := endpointOf(t, product, "public")
-	e.Route("GET /things", nethttp.HandlerFunc(func(w nethttp.ResponseWriter, _ *nethttp.Request) {
-		w.WriteHeader(nethttp.StatusTeapot)
-	}))
+	e.Route("GET", "/things", func(c *gin.Context) { c.Status(nethttp.StatusTeapot) })
 	if err := m.Start(ctx, nil, product); err != nil {
 		t.Fatalf("Start: %v", err)
 	}
@@ -382,7 +398,7 @@ func TestBindFailureReleasesTheEndpointsAlreadyBound(t *testing.T) {
 	}
 	defer taken.Close()
 
-	m := testModule()
+	m := Module()
 	// The endpoints are bound in name order, so "a" comes up and "b" fails.
 	product := testProduct(t, moduleConfig{Endpoints: map[string]endpointConfig{
 		"a": {Address: "127.0.0.1:0"},
@@ -426,7 +442,7 @@ func TestBindFailureReleasesTheEndpointsAlreadyBound(t *testing.T) {
 // obligation from the other side: a startup that fails before Serve still runs
 // both callbacks over this module's product.
 func TestStopAndCloseToleranceOnAnInstanceThatNeverServed(t *testing.T) {
-	m := testModule()
+	m := Module()
 	product := testProduct(t, oneEndpoint("public"))
 	ctx := context.Background()
 
@@ -443,7 +459,7 @@ func TestStopAndCloseToleranceOnAnInstanceThatNeverServed(t *testing.T) {
 // returned a product, and the instance a host supplied for this module is any
 // type that delivers Router, which is not this module's product either.
 func TestStageCallbacksTolerateAForeignInstance(t *testing.T) {
-	m := testModule()
+	m := Module()
 	ctx := context.Background()
 	for name, call := range map[string]func(any) error{
 		"Migrate": func(i any) error { return m.Migrate(ctx, nil, i) },
@@ -457,5 +473,149 @@ func TestStageCallbacksTolerateAForeignInstance(t *testing.T) {
 				t.Errorf("%s on the instance %#v: %v", name, instance, err)
 			}
 		}
+	}
+}
+
+// TestAnErrorResponderDeliveredByAModuleDecidesTheShape pins the optional
+// dependency over a whole assembly, on a real connection: with a module
+// delivering ErrorResponder in the registry, what a handler refuses with, the
+// answer to a path that matches no route and the answer to a panic are all
+// written in that module's shape, and none of them in the default one.
+//
+// The three are three different places this module writes a response from — the
+// error entry point, the engine's no-route answer and the fallback outside the
+// engine — and an implementation that handed the responder to two of them and
+// forgot the third is the failure this is for. The same routes without a
+// responder are in the next test.
+func TestAnErrorResponderDeliveredByAModuleDecidesTheShape(t *testing.T) {
+	responder := &recordingResponder{}
+	addr, _ := serveRoutes(t, responder, func(e Endpoint) {
+		e.Route("GET", "/refuse", failWith(Problem{Status: nethttp.StatusConflict}))
+		e.Route("GET", "/boom", panicking("boom"))
+	})
+
+	for _, c := range []struct {
+		name   string
+		path   string
+		status int
+	}{
+		{"a refusal through Fail", "/refuse", nethttp.StatusConflict},
+		{"a path that matches no route", "/nowhere", nethttp.StatusNotFound},
+		{"a panic", "/boom", nethttp.StatusInternalServerError},
+	} {
+		got, err := getResponse(context.Background(), addr, c.path)
+		if err != nil {
+			t.Fatalf("%s: the request failed: %v", c.name, err)
+		}
+		if got.status != c.status {
+			t.Errorf("%s: the status was %d, want %d", c.name, got.status, c.status)
+		}
+		if got.header.Get("Content-Type") != customMediaType {
+			t.Errorf("%s: the media type was %q, want the responder's %q", c.name,
+				got.header.Get("Content-Type"), customMediaType)
+		}
+		if want := customBody + strconv.Itoa(c.status); got.body != want {
+			t.Errorf("%s: the body was %q, want the responder's %q", c.name, got.body, want)
+		}
+	}
+	if responder.calls() != 3 {
+		t.Errorf("the responder was asked %d times for three failures, want once for each", responder.calls())
+	}
+}
+
+// TestWithoutAnErrorResponderTheDefaultShapeIsWritten is the same three
+// failures in an assembly where no module delivers the capability, which is the
+// ordinary case: each is a problem details object, and the startup did not fail
+// for the missing dependency.
+func TestWithoutAnErrorResponderTheDefaultShapeIsWritten(t *testing.T) {
+	addr, _ := serveRoutes(t, nil, func(e Endpoint) {
+		e.Route("GET", "/refuse", failWith(Problem{Status: nethttp.StatusConflict}))
+		e.Route("GET", "/boom", panicking("boom"))
+	})
+
+	for _, path := range []string{"/refuse", "/nowhere", "/boom"} {
+		got, err := getResponse(context.Background(), addr, path)
+		if err != nil {
+			t.Fatalf("%s: the request failed: %v", path, err)
+		}
+		if got.header.Get("Content-Type") != "application/problem+json" {
+			t.Errorf("%s: the media type was %q, want %q", path, got.header.Get("Content-Type"),
+				"application/problem+json")
+		}
+	}
+}
+
+// TestTwoErrorRespondersFailTheStartup pins what delivering the capability from
+// two modules does: the lookup is ambiguous, which this module reports as a
+// startup failure rather than picking one. Which module's shape the API's errors
+// take is not a choice this module can make for the host.
+func TestTwoErrorRespondersFailTheStartup(t *testing.T) {
+	deliver := func(name string) core.Module {
+		return (&stageProbe{
+			name:     name,
+			provides: []core.Provision{{Token: (*ErrorResponder)(nil)}},
+			product:  &recordingResponder{},
+		}).module()
+	}
+
+	a := startAssembly(t, oneEndpoint("public"), Module(), deliver("probe.shape-one"), deliver("probe.shape-two"))
+
+	runErr := a.stop(t)
+	if !errors.Is(runErr, core.ErrAmbiguousProvider) {
+		t.Fatalf("two modules delivering ErrorResponder came back with %v, want a startup failure "+
+			"wrapping core.ErrAmbiguousProvider", runErr)
+	}
+	mustContain(t, runErr.Error(), "probe.shape-one", "one of the two deliverers")
+	mustContain(t, runErr.Error(), "probe.shape-two", "the other deliverer")
+}
+
+// TestTwoLoggersFailTheStartup is the same statement for the Logger capability:
+// the dependency is optional, and the only lookup result this module reads as
+// "no logger" is that nobody delivers it. Two deliverers are a failure of the
+// lookup itself, and an implementation that took any failed lookup for an absent
+// logger would start with the request path's records going to the process
+// default, without a signal that the assembly is ambiguous.
+func TestTwoLoggersFailTheStartup(t *testing.T) {
+	logger, _ := newRecordingLogger()
+	deliver := func(name string) core.Module {
+		return (&stageProbe{
+			name:     name,
+			provides: []core.Provision{{Token: (*log.Logger)(nil)}},
+			product:  stubLogger{logger: logger},
+		}).module()
+	}
+
+	a := startAssembly(t, oneEndpoint("public"), Module(), deliver("probe.log-one"), deliver("probe.log-two"))
+
+	runErr := a.stop(t)
+	if !errors.Is(runErr, core.ErrAmbiguousProvider) {
+		t.Fatalf("two modules delivering Logger came back with %v, want a startup failure wrapping "+
+			"core.ErrAmbiguousProvider", runErr)
+	}
+	mustContain(t, runErr.Error(), "probe.log-one", "one of the two deliverers")
+	mustContain(t, runErr.Error(), "probe.log-two", "the other deliverer")
+}
+
+// TestTheLoggerInjectedIntoRequestsIsNamedAfterTheModule pins the name this module
+// asks the delivered Logger for. The logger it injects into every request context
+// is the one the logging module names after its caller, and the records of the
+// request path carry that name; asking for another is a request path whose
+// records say they came from a module that is not this one.
+func TestTheLoggerInjectedIntoRequestsIsNamedAfterTheModule(t *testing.T) {
+	logger, _ := newRecordingLogger()
+	delivering := &namingLogger{stubLogger: stubLogger{logger: logger}}
+	deliverer := &stageProbe{
+		name:     "probe.delivers-the-logger",
+		provides: []core.Provision{{Token: (*log.Logger)(nil)}},
+		product:  delivering,
+	}
+
+	a := startAssembly(t, oneEndpoint("public"), Module(), deliverer.module())
+	if err := a.stop(t); err != nil {
+		t.Fatalf("a run that served and was then cancelled came back with %v", err)
+	}
+
+	if got, want := delivering.asked(), []string{ModuleName}; !slices.Equal(got, want) {
+		t.Errorf("the module asked the Logger capability for the names %v, want %v", got, want)
 	}
 }

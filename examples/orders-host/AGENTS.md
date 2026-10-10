@@ -49,7 +49,13 @@ The things no module's own suite can hold:
   what it is handed without reading the payload or importing the publisher.
 - **A refusal happens before a handler runs, and before resolution.**
   Authentication sits outside resolution on the endpoint's chain, so a request
-  without a credential is refused without a roster lookup ever happening.
+  without a credential is refused without a roster lookup ever happening. The
+  entry point runs the same layers on a request that matches no route and on one
+  whose method the matched path does not allow, so the 404 and the 405 reach only
+  a caller the guards let through, and a caller without a credential learns from
+  neither which paths exist. Every refusal a layer or the entry point writes is a
+  problem details document (`application/problem+json`); the host's own handlers
+  answer their failures with a bare status.
 - **A command reaches a module for its declarations without running it.**
   `migrate` runs the engine and nothing else, and the application module's
   table, the journal's and the settings surface's are built anyway.
@@ -99,6 +105,16 @@ The things no module's own suite can hold:
   a `Save` or an `OnConflict` produces conflict on another tenant's row and
   update that row into the writer's tenant. Nothing in that statement names
   another tenant, so there is no refusal to be had — the key is what stops it.
+- **A route is spelled one way everywhere it is named.** The handlers are gin
+  handlers registered with `Route(method, path, ...)`, the path in gin's spelling
+  (`/orders`, `/orders/:id`). The gateway's exemption and the journal's `requests`
+  entries (`METHOD /path`, one string each) name a route by that method and
+  that path, and a request is compared with them character for character. A
+  spelling that differs is well formed and never matches, and nothing reports it:
+  an exemption that never matches leaves the route guarded, and a request entry
+  that never matches leaves the journal without the row. Each case that expects
+  one of those rows has to see it. The journal's object for a request row is the
+  route path, with the method in the action column.
 - **An example stays an example.** Nothing here is imported by a released
   module, and nothing here is a place to put code the modules should carry: if a
   host would have to write it again, it belongs in a module.

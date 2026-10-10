@@ -11,6 +11,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/gin-gonic/gin"
 	"gorm.io/gorm"
 	"gorm.io/gorm/clause"
 
@@ -32,9 +33,9 @@ const contactTable = "contacts"
 const (
 	createContactRoute    = "POST /contacts"
 	listContactsRoute     = "GET /contacts"
-	getContactRoute       = "GET /contacts/{id}"
-	patchContactRoute     = "PATCH /contacts/{id}"
-	deleteContactRoute    = "DELETE /contacts/{id}"
+	getContactRoute       = "GET /contacts/:id"
+	patchContactRoute     = "PATCH /contacts/:id"
+	deleteContactRoute    = "DELETE /contacts/:id"
 	upsertContactRoute    = "POST /contacts/upsert"
 	exportContactsRoute   = "GET /contacts/export"
 	autocompleteRoute     = "GET /contacts/autocomplete"
@@ -217,19 +218,19 @@ func (p *contactsProduct) underLiveAccount(ctx context.Context, accountID string
 // database module marks either refusal with gorm.ErrDuplicatedKey, and names
 // the constraint only in the driver's error, which the host does not read, so
 // the answer names both.
-func answerWriteFailure(w nethttp.ResponseWriter, r *nethttp.Request, err error, doing string) {
-	ctx := r.Context()
+func answerWriteFailure(c *gin.Context, err error, doing string) {
+	ctx := c.Request.Context()
 	switch {
 	case errors.Is(err, errUnknownAccount):
-		writeError(w, nethttp.StatusUnprocessableEntity, errUnknownAccount.Error())
+		writeError(c, nethttp.StatusUnprocessableEntity, errUnknownAccount.Error())
 	case errors.Is(err, gorm.ErrDuplicatedKey):
-		writeError(w, nethttp.StatusConflict, errContactTaken.Error())
+		writeError(c, nethttp.StatusConflict, errContactTaken.Error())
 	case errors.Is(err, errAccountUnread):
 		log.FromContext(ctx).Error("reading the contact's account", "error", err)
-		writeError(w, nethttp.StatusServiceUnavailable, "the account table cannot be read")
+		writeError(c, nethttp.StatusServiceUnavailable, "the account table cannot be read")
 	default:
 		log.FromContext(ctx).Error(doing, "error", err)
-		writeError(w, nethttp.StatusInternalServerError, "the contact could not be written")
+		writeError(c, nethttp.StatusInternalServerError, "the contact could not be written")
 	}
 }
 
@@ -305,45 +306,44 @@ func logWritten(ctx context.Context, msg string, c Contact) {
 // answered as a conflict (see answerWriteFailure). The insert runs after the
 // check that the account is a live account of the tenant, in the same
 // transaction.
-func (p *contactsProduct) createContact(w nethttp.ResponseWriter, r *nethttp.Request) {
-	ctx := r.Context()
-	if _, ok := memberWith(w, r, roleRep); !ok {
+func (p *contactsProduct) createContact(c *gin.Context) {
+	ctx := c.Request.Context()
+	if _, ok := memberWith(c, roleRep); !ok {
 		return
 	}
 	var body contactRequest
-	if err := speedhttp.Decode(r, &body); err != nil {
-		writeError(w, speedhttp.StatusFor(err), err.Error())
+	if !bindBody(c, &body) {
 		return
 	}
 	contact, err := p.newContact(body)
 	if err != nil {
 		log.FromContext(ctx).Error("drawing a contact identifier", "error", err)
-		writeError(w, nethttp.StatusInternalServerError, "no identifier could be drawn")
+		writeError(c, nethttp.StatusInternalServerError, "no identifier could be drawn")
 		return
 	}
 	err = p.underLiveAccount(ctx, body.AccountID, func(tx *gorm.DB) error {
 		return tx.Create(&contact).Error
 	})
 	if err != nil {
-		answerWriteFailure(w, r, err, "writing a contact")
+		answerWriteFailure(c, err, "writing a contact")
 		return
 	}
 	logWritten(ctx, "contact created", contact)
-	_ = speedhttp.WriteJSON(w, nethttp.StatusCreated, contactViewOf(contact))
+	c.JSON(nethttp.StatusCreated, contactViewOf(contact))
 }
 
 // listContacts answers the tenant's contacts at one account, those with one
 // email, or those matching both. The email is matched through its blind index,
 // the one column an equality on a sealed value can meet.
-func (p *contactsProduct) listContacts(w nethttp.ResponseWriter, r *nethttp.Request) {
-	ctx := r.Context()
-	if _, ok := memberWith(w, r, roleViewer); !ok {
+func (p *contactsProduct) listContacts(c *gin.Context) {
+	ctx := c.Request.Context()
+	if _, ok := memberWith(c, roleViewer); !ok {
 		return
 	}
-	query := r.URL.Query()
+	query := c.Request.URL.Query()
 	account, email := query.Get("account_id"), strings.TrimSpace(query.Get("email"))
 	if account == "" && email == "" {
-		writeError(w, nethttp.StatusUnprocessableEntity, errNoLookup.Error())
+		writeError(c, nethttp.StatusUnprocessableEntity, errNoLookup.Error())
 		return
 	}
 	stmt := p.db.DB().WithContext(ctx).Order("name").Order("id")
@@ -356,36 +356,36 @@ func (p *contactsProduct) listContacts(w nethttp.ResponseWriter, r *nethttp.Requ
 	var found []Contact
 	if err := stmt.Find(&found).Error; err != nil {
 		log.FromContext(ctx).Error("reading the contacts", "error", err)
-		writeError(w, nethttp.StatusServiceUnavailable, "the contact table cannot be read")
+		writeError(c, nethttp.StatusServiceUnavailable, "the contact table cannot be read")
 		return
 	}
 	out := contactList{Contacts: []contactView{}}
 	for _, c := range found {
 		out.Contacts = append(out.Contacts, contactViewOf(c))
 	}
-	_ = speedhttp.WriteJSON(w, nethttp.StatusOK, out)
+	c.JSON(nethttp.StatusOK, out)
 }
 
 // getContact answers one contact, in the clear.
-func (p *contactsProduct) getContact(w nethttp.ResponseWriter, r *nethttp.Request) {
-	ctx := r.Context()
-	if _, ok := memberWith(w, r, roleViewer); !ok {
+func (p *contactsProduct) getContact(c *gin.Context) {
+	ctx := c.Request.Context()
+	if _, ok := memberWith(c, roleViewer); !ok {
 		return
 	}
-	id := r.PathValue("id")
+	id := c.Param("id")
 	if !validRecordID(id) {
-		writeError(w, nethttp.StatusNotFound, errNoSuchContact.Error())
+		writeError(c, nethttp.StatusNotFound, errNoSuchContact.Error())
 		return
 	}
 	contact, found, err := p.contactByID(ctx, id)
 	switch {
 	case err != nil:
 		log.FromContext(ctx).Error("reading a contact", "error", err)
-		writeError(w, nethttp.StatusServiceUnavailable, "the contact table cannot be read")
+		writeError(c, nethttp.StatusServiceUnavailable, "the contact table cannot be read")
 	case !found:
-		writeError(w, nethttp.StatusNotFound, errNoSuchContact.Error())
+		writeError(c, nethttp.StatusNotFound, errNoSuchContact.Error())
 	default:
-		_ = speedhttp.WriteJSON(w, nethttp.StatusOK, contactViewOf(contact))
+		c.JSON(nethttp.StatusOK, contactViewOf(contact))
 	}
 }
 
@@ -435,19 +435,18 @@ func (c contactPatch) Validate() error {
 // gorm.ErrDuplicatedKey, and it is answered as a conflict. The statement
 // writes no key column, so the index on the email is the one that can refuse
 // it.
-func (p *contactsProduct) patchContact(w nethttp.ResponseWriter, r *nethttp.Request) {
-	ctx := r.Context()
-	if _, ok := memberWith(w, r, roleRep); !ok {
+func (p *contactsProduct) patchContact(c *gin.Context) {
+	ctx := c.Request.Context()
+	if _, ok := memberWith(c, roleRep); !ok {
 		return
 	}
-	id := r.PathValue("id")
+	id := c.Param("id")
 	var body contactPatch
-	if err := speedhttp.Decode(r, &body); err != nil {
-		writeError(w, speedhttp.StatusFor(err), err.Error())
+	if !bindBody(c, &body) {
 		return
 	}
 	if !validRecordID(id) {
-		writeError(w, nethttp.StatusNotFound, errNoSuchContact.Error())
+		writeError(c, nethttp.StatusNotFound, errNoSuchContact.Error())
 		return
 	}
 	changes := map[string]any{}
@@ -468,48 +467,48 @@ func (p *contactsProduct) patchContact(w nethttp.ResponseWriter, r *nethttp.Requ
 	res := p.db.DB().WithContext(ctx).Model(&Contact{}).Where("id = ?", id).Updates(changes)
 	switch {
 	case errors.Is(res.Error, gorm.ErrDuplicatedKey):
-		writeError(w, nethttp.StatusConflict, errEmailInUse.Error())
+		writeError(c, nethttp.StatusConflict, errEmailInUse.Error())
 		return
 	case res.Error != nil:
 		log.FromContext(ctx).Error("updating a contact", "error", res.Error)
-		writeError(w, nethttp.StatusInternalServerError, "the contact could not be written")
+		writeError(c, nethttp.StatusInternalServerError, "the contact could not be written")
 		return
 	case res.RowsAffected == 0:
-		writeError(w, nethttp.StatusNotFound, errNoSuchContact.Error())
+		writeError(c, nethttp.StatusNotFound, errNoSuchContact.Error())
 		return
 	}
 	contact, found, err := p.contactByID(ctx, id)
 	if err != nil || !found {
 		log.FromContext(ctx).Error("reading a contact back", "error", err, "found", found)
-		writeError(w, nethttp.StatusServiceUnavailable, "the contact table cannot be read")
+		writeError(c, nethttp.StatusServiceUnavailable, "the contact table cannot be read")
 		return
 	}
 	logWritten(ctx, "contact updated", contact)
-	_ = speedhttp.WriteJSON(w, nethttp.StatusOK, contactViewOf(contact))
+	c.JSON(nethttp.StatusOK, contactViewOf(contact))
 }
 
 // deleteContact soft-deletes one contact; an admin or above. The statement
 // addresses the row by its model's key, whose tenant half the filter fills from
 // the request.
-func (p *contactsProduct) deleteContact(w nethttp.ResponseWriter, r *nethttp.Request) {
-	ctx := r.Context()
-	if _, ok := memberWith(w, r, roleAdmin); !ok {
+func (p *contactsProduct) deleteContact(c *gin.Context) {
+	ctx := c.Request.Context()
+	if _, ok := memberWith(c, roleAdmin); !ok {
 		return
 	}
-	id := r.PathValue("id")
+	id := c.Param("id")
 	if !validRecordID(id) {
-		writeError(w, nethttp.StatusNotFound, errNoSuchContact.Error())
+		writeError(c, nethttp.StatusNotFound, errNoSuchContact.Error())
 		return
 	}
 	res := p.db.DB().WithContext(ctx).Delete(&Contact{ID: id})
 	switch {
 	case res.Error != nil:
 		log.FromContext(ctx).Error("deleting a contact", "error", res.Error)
-		writeError(w, nethttp.StatusInternalServerError, "the contact could not be deleted")
+		writeError(c, nethttp.StatusInternalServerError, "the contact could not be deleted")
 	case res.RowsAffected == 0:
-		writeError(w, nethttp.StatusNotFound, errNoSuchContact.Error())
+		writeError(c, nethttp.StatusNotFound, errNoSuchContact.Error())
 	default:
-		w.WriteHeader(nethttp.StatusNoContent)
+		c.Status(nethttp.StatusNoContent)
 	}
 }
 
@@ -521,20 +520,19 @@ func (p *contactsProduct) deleteContact(w nethttp.ResponseWriter, r *nethttp.Req
 // create that follows a miss starts from it; the rest of the row comes from
 // Attrs, which only a create reads. Both run after the check that the account
 // the body names is a live account of the tenant, in the same transaction.
-func (p *contactsProduct) upsertContact(w nethttp.ResponseWriter, r *nethttp.Request) {
-	ctx := r.Context()
-	if _, ok := memberWith(w, r, roleRep); !ok {
+func (p *contactsProduct) upsertContact(c *gin.Context) {
+	ctx := c.Request.Context()
+	if _, ok := memberWith(c, roleRep); !ok {
 		return
 	}
 	var body contactRequest
-	if err := speedhttp.Decode(r, &body); err != nil {
-		writeError(w, speedhttp.StatusFor(err), err.Error())
+	if !bindBody(c, &body) {
 		return
 	}
 	fresh, err := p.newContact(body)
 	if err != nil {
 		log.FromContext(ctx).Error("drawing a contact identifier", "error", err)
-		writeError(w, nethttp.StatusInternalServerError, "no identifier could be drawn")
+		writeError(c, nethttp.StatusInternalServerError, "no identifier could be drawn")
 		return
 	}
 	var contact Contact
@@ -553,7 +551,7 @@ func (p *contactsProduct) upsertContact(w nethttp.ResponseWriter, r *nethttp.Req
 		return res.Error
 	})
 	if err != nil {
-		answerWriteFailure(w, r, err, "finding or creating a contact")
+		answerWriteFailure(c, err, "finding or creating a contact")
 		return
 	}
 	status := nethttp.StatusOK
@@ -561,7 +559,7 @@ func (p *contactsProduct) upsertContact(w nethttp.ResponseWriter, r *nethttp.Req
 		status = nethttp.StatusCreated
 		logWritten(ctx, "contact created", contact)
 	}
-	_ = speedhttp.WriteJSON(w, status, contactViewOf(contact))
+	c.JSON(status, contactViewOf(contact))
 }
 
 // exportedContact is one line of the export.
@@ -580,9 +578,9 @@ type exportedContact struct {
 // the handle that carries the statement's context. Once the first line is
 // written the status is sent, so a failure after it ends the body early and is
 // logged rather than answered.
-func (p *contactsProduct) exportContacts(w nethttp.ResponseWriter, r *nethttp.Request) {
-	ctx := r.Context()
-	if _, ok := memberWith(w, r, roleViewer); !ok {
+func (p *contactsProduct) exportContacts(c *gin.Context) {
+	ctx := c.Request.Context()
+	if _, ok := memberWith(c, roleViewer); !ok {
 		return
 	}
 	stmt := p.db.DB().WithContext(ctx).Model(&Contact{}).
@@ -590,13 +588,13 @@ func (p *contactsProduct) exportContacts(w nethttp.ResponseWriter, r *nethttp.Re
 	rows, err := stmt.Rows()
 	if err != nil {
 		log.FromContext(ctx).Error("reading the contacts to export", "error", err)
-		writeError(w, nethttp.StatusServiceUnavailable, "the contact table cannot be read")
+		writeError(c, nethttp.StatusServiceUnavailable, "the contact table cannot be read")
 		return
 	}
 	defer func() { _ = rows.Close() }()
-	w.Header().Set("Content-Type", "text/csv; charset=utf-8")
-	w.Header().Set("Content-Disposition", `attachment; filename="contacts.csv"`)
-	out := csv.NewWriter(w)
+	c.Header("Content-Type", "text/csv; charset=utf-8")
+	c.Header("Content-Disposition", `attachment; filename="contacts.csv"`)
+	out := csv.NewWriter(c.Writer)
 	if err := out.Write(exportColumns); err != nil {
 		log.FromContext(ctx).Warn("the export's reader went away", "error", err)
 		return
@@ -631,12 +629,12 @@ type autocompleteView struct {
 
 // autocomplete answers the distinct names of the tenant's contacts that start
 // with a prefix, compared without regard to case, in order.
-func (p *contactsProduct) autocomplete(w nethttp.ResponseWriter, r *nethttp.Request) {
-	ctx := r.Context()
-	if _, ok := memberWith(w, r, roleViewer); !ok {
+func (p *contactsProduct) autocomplete(c *gin.Context) {
+	ctx := c.Request.Context()
+	if _, ok := memberWith(c, roleViewer); !ok {
 		return
 	}
-	prefix := strings.ToLower(strings.TrimSpace(r.URL.Query().Get("prefix")))
+	prefix := strings.ToLower(strings.TrimSpace(c.Query("prefix")))
 	out := autocompleteView{Names: []string{}}
 	err := p.db.DB().WithContext(ctx).Model(&Contact{}).
 		Where("LOWER(name) LIKE ? ESCAPE '"+likeEscape+"'", likePrefixed(prefix)).
@@ -644,10 +642,10 @@ func (p *contactsProduct) autocomplete(w nethttp.ResponseWriter, r *nethttp.Requ
 		Pluck("name", &out.Names).Error
 	if err != nil {
 		log.FromContext(ctx).Error("reading the contact names", "error", err)
-		writeError(w, nethttp.StatusServiceUnavailable, "the contact table cannot be read")
+		writeError(c, nethttp.StatusServiceUnavailable, "the contact table cannot be read")
 		return
 	}
-	_ = speedhttp.WriteJSON(w, nethttp.StatusOK, out)
+	c.JSON(nethttp.StatusOK, out)
 }
 
 // directoryEntry is one contact with the name of its account and of the
@@ -677,9 +675,9 @@ type directoryView struct {
 // middle level of the path rather than by a join of its own. It is a scoped
 // table all the same, and the filter conditions it; the owner's table, at the
 // end of the path, is global.
-func (p *contactsProduct) directory(w nethttp.ResponseWriter, r *nethttp.Request) {
-	ctx := r.Context()
-	if _, ok := memberWith(w, r, roleViewer); !ok {
+func (p *contactsProduct) directory(c *gin.Context) {
+	ctx := c.Request.Context()
+	if _, ok := memberWith(c, roleViewer); !ok {
 		return
 	}
 	out := directoryView{Entries: []directoryEntry{}}
@@ -689,10 +687,10 @@ func (p *contactsProduct) directory(w nethttp.ResponseWriter, r *nethttp.Request
 		Scan(&out.Entries).Error
 	if err != nil {
 		log.FromContext(ctx).Error("reading the contact directory", "error", err)
-		writeError(w, nethttp.StatusServiceUnavailable, "the contact table cannot be read")
+		writeError(c, nethttp.StatusServiceUnavailable, "the contact table cannot be read")
 		return
 	}
-	_ = speedhttp.WriteJSON(w, nethttp.StatusOK, out)
+	c.JSON(nethttp.StatusOK, out)
 }
 
 // init registers the contacts module. It runs on serve, where its routes sit on
@@ -760,15 +758,15 @@ func contactsModule() core.Module {
 			if err != nil {
 				return err
 			}
-			api.Route(createContactRoute, nethttp.HandlerFunc(product.createContact))
-			api.Route(listContactsRoute, nethttp.HandlerFunc(product.listContacts))
-			api.Route(getContactRoute, nethttp.HandlerFunc(product.getContact))
-			api.Route(patchContactRoute, nethttp.HandlerFunc(product.patchContact))
-			api.Route(deleteContactRoute, nethttp.HandlerFunc(product.deleteContact))
-			api.Route(upsertContactRoute, nethttp.HandlerFunc(product.upsertContact))
-			api.Route(exportContactsRoute, nethttp.HandlerFunc(product.exportContacts))
-			api.Route(autocompleteRoute, nethttp.HandlerFunc(product.autocomplete))
-			api.Route(contactDirectoryRoute, nethttp.HandlerFunc(product.directory))
+			mount(api, createContactRoute, product.createContact)
+			mount(api, listContactsRoute, product.listContacts)
+			mount(api, getContactRoute, product.getContact)
+			mount(api, patchContactRoute, product.patchContact)
+			mount(api, deleteContactRoute, product.deleteContact)
+			mount(api, upsertContactRoute, product.upsertContact)
+			mount(api, exportContactsRoute, product.exportContacts)
+			mount(api, autocompleteRoute, product.autocomplete)
+			mount(api, contactDirectoryRoute, product.directory)
 			return nil
 		},
 

@@ -112,11 +112,28 @@ here must not cross, and how to run it.
 - **`Order` stays at zero.** Every position this layer needs is fixed by the
   `After` entries, so a numeric preference would only decide where it lands
   when those entries do not land — a case worth not tuning for.
+- **A refusal sets `Retry-After` first and then goes through `speedhttp.Fail`,
+  with the status as the only member of the `Problem`.** The shape of the body
+  is the entry point's — `application/problem+json` unless a module delivers an
+  `ErrorResponder` — and the layer writes no status of its own. The order is
+  load-bearing: `Fail` writes the response, and a header set after it never
+  reaches the client. A member beyond the status in the `Problem` would be this
+  layer choosing the body of one kind of refusal, and that choice belongs to the
+  entry point
+  ([`adr-ratelimit-verdict-2026-09-22.md`](../../docs/adr/adr-ratelimit-verdict-2026-09-22.md)).
+- **The layer does not read the route.** It runs for every request on the
+  endpoint, including one that matches no route and one whose method the path
+  does not allow, and counts them like any other; a branch on `c.FullPath()`
+  would let the requests the entry point answers itself escape the limit.
 - **Reading the identity is the one step a test here cannot drive.** Go keeps
   the package that writes an identity to the authentication capability
-  directory, so `decide` takes the identity as an argument and `wrap` is the
+  directory, so `decide` takes the identity as an argument and `handle` is the
   only place that calls `authn.FromContext`. Everything below that call is
   exercisable in this package; keep it that way when changing the signature.
+  `host_test.go` reaches the layer in the two ways that leaves: through the
+  module's descriptor with the product supplied, where the real `handle` runs on
+  requests that carry no identity, and through the layer registered with the
+  metadata `middleware` declares in front of a handler that fixes the identity.
 - **Time is read through `l.now`, never `time.Now` directly.** The weight a
   decision applies depends on where in the window the request lands, so a test
   letting the clock run would pass or fail with the time of day.
@@ -145,4 +162,7 @@ go -C pkg test -race ./ratelimit/...
 The tests ask for no service and no environment. They bring their own counter
 store, and a settings store of their own: a stand-in for the decision's cases,
 and for the domain's the settings module itself, driven over a SQLite database
-of the case's own that `pkg/internal/dbtest` delivers.
+of the case's own that `pkg/internal/dbtest` delivers. The cases that read what
+a request is answered with run the entry point module itself, listening on a
+loopback port the system picks, and read the response off the socket
+(`host_test.go`); none of them stands a router of its own in for it.

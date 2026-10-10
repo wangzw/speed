@@ -3,91 +3,266 @@ package http
 import (
 	"errors"
 	"fmt"
-	nethttp "net/http"
 	"strings"
 	"testing"
+
+	"github.com/gin-gonic/gin"
+
+	"github.com/vislake/speed/pkg/core"
 )
 
-// setwiseEngine is a routing engine that judges the set it is joining rather
-// than one pattern beside another: it holds at most room patterns and refuses
-// whatever arrives once the set is that size, which says nothing about which of
-// the mounted ones it cannot stand beside.
+// TestAClashIsAttributedToTheMountedRouteItClashesWith pins the pair a conflict
+// names. The routes mounted before the refused one include several that have
+// nothing to do with it, and one that does; the failure has to name that one.
 //
-// It is the shape the design's ruling on attribution exists for. The standard
-// library's multiplexer judges pairs, so it can name the pattern a refusal
-// clashes with; the seam has to hold for an engine that judges the whole set,
-// which may only be able to say that a pattern does not fit. Nothing here
-// answers the attribution the seam asks of an implementation subpackage, so a
-// refusal of this engine is one that cannot be attributed at all.
-type setwiseEngine struct {
-	held map[string]bool
-	room int
-}
-
-func newSetwiseEngine(room int) *setwiseEngine {
-	return &setwiseEngine{held: make(map[string]bool, room), room: room}
-}
-
-func (e *setwiseEngine) ServeHTTP(w nethttp.ResponseWriter, r *nethttp.Request) {
-	nethttp.NotFoundHandler().ServeHTTP(w, r)
-}
-
-func (e *setwiseEngine) Handle(pattern string, h nethttp.Handler) {
-	if len(e.held) >= e.room {
-		panic(fmt.Sprintf("the pattern %q does not fit beside the %d already mounted",
-			pattern, len(e.held)))
-	}
-	e.held[pattern] = true
-}
-
-var _ Engine = (*setwiseEngine)(nil)
-
-// TestRefusalNoSetwiseEngineCanAttributeSaysSo pins the failure the ruling on
-// attribution is about: a mount the engine refused, and no pair of patterns
-// that reproduces the refusal, so there is no second pattern this module could
-// name.
-//
-// The engine takes two patterns and refuses the third, so every pair of them
-// mounts on an engine of its own: the refusal is a judgement about the set, not
-// about any pair in it. Working a pair out here would be this module answering
-// for the engine — the shape the design rules out, because the mounting point
-// sees only that a mount was refused and how the engine reached that verdict is
-// the engine's own business.
-//
-// What the failure has to carry is therefore that the refusal went
-// unattributed, and that the attribution is the seam's requirement on the layer
-// binding the engine. The assertion on the pair is the other half: naming two
-// patterns here would present a guess as the engine's verdict, and it is the
-// observation an implementation that fell back to naming the pattern it was
-// mounting would move.
-func TestRefusalNoSetwiseEngineCanAttributeSaysSo(t *testing.T) {
+// The refused route is "GET /things/:name", and "GET /things/:id" is the one it
+// clashes with. "POST /things/:id" is on the same path under another method and
+// "GET /a" and "GET /b" are elsewhere, so a pair picked by the first or the last
+// route mounted, or by the path alone, comes out different from the right one.
+func TestAClashIsAttributedToTheMountedRouteItClashesWith(t *testing.T) {
 	logger, _ := newRecordingLogger()
-	_, err := assembleEndpointOn(t, newSetwiseEngine(2), testSettings("public"), nil, logger, nil,
-		func(e Endpoint) {
-			e.Route("GET /one", nethttp.NotFoundHandler())
-			e.Route("GET /two", nethttp.NotFoundHandler())
-			e.Route("GET /three", nethttp.NotFoundHandler())
-		})
+	_, err := assembleEndpoint(t, testSettings("public"), nil, logger, func(e Endpoint) {
+		e.Route("GET", "/a", filler)
+		e.Route("POST", "/things/:id", filler)
+		e.Route("GET", "/things/:id", filler)
+		e.Route("GET", "/b", filler)
+		e.Route("GET", "/things/:name", filler)
+	})
+	if !errors.Is(err, ErrRouteConflict) {
+		t.Fatalf("the clash did not report ErrRouteConflict: %v", err)
+	}
+	mustContain(t, err.Error(), `the routes "GET /things/:id" and "GET /things/:name" cannot both be mounted`,
+		"the pair that reproduces the refusal on an engine of its own")
+	mustContain(t, err.Error(), `endpoint "public"`, "the endpoint the clash is on")
+	for _, other := range []string{`"GET /a"`, `"GET /b"`, `"POST /things/:id"`} {
+		if strings.Contains(err.Error(), other) {
+			t.Errorf("the failure names %s, which the refused route does not clash with.\nThe message was: %s",
+				other, err.Error())
+		}
+	}
+}
+
+// TestAClashUnderOneMethodIsNotAttributedToAnotherMethod is the same statement
+// the other way round: the refused route is under POST, and the route with the
+// same path under GET was mounted first. The two do not clash, because gin keeps
+// a tree per method, and the partner is the POST route.
+func TestAClashUnderOneMethodIsNotAttributedToAnotherMethod(t *testing.T) {
+	logger, _ := newRecordingLogger()
+	_, err := assembleEndpoint(t, testSettings("public"), nil, logger, func(e Endpoint) {
+		e.Route("GET", "/things/:id", filler)
+		e.Route("POST", "/things/:id", filler)
+		e.Route("POST", "/things/:name", filler)
+	})
+	if !errors.Is(err, ErrRouteConflict) {
+		t.Fatalf("the clash did not report ErrRouteConflict: %v", err)
+	}
+	mustContain(t, err.Error(), `the routes "POST /things/:id" and "POST /things/:name" cannot both be mounted`,
+		"the pair under the one method both of them are registered for")
+}
+
+// handlersOf is n route handlers.
+func handlersOf(n int) []gin.HandlerFunc {
+	handlers := make([]gin.HandlerFunc, n)
+	for i := range handlers {
+		handlers[i] = filler
+	}
+	return handlers
+}
+
+// ginHandlerLimit is the most handlers gin takes on one route registered on an
+// engine of its own, found by trying rather than written down: the limit is
+// gin's, and the test only needs a route that sits at it.
+func ginHandlerLimit(t *testing.T) int {
+	t.Helper()
+	// The routes are tried on engines the test builds, and gin's debug output
+	// for each of them goes to standard output unless the mode is settled.
+	gin.SetMode(gin.ReleaseMode)
+	for n := 1; n < 1000; n++ {
+		if routeRefusal("GET", "/probe", handlersOf(n)) != nil {
+			return n - 1
+		}
+	}
+	t.Fatal("gin took a route of a thousand handlers, so there is no limit to sit a route at")
+	return 0
+}
+
+// TestARefusalNoPairReproducesSaysSo pins the failure for a refusal that cannot
+// be pinned on a pair of routes, which has to say so rather than name the one
+// route this module is sure about as though that were the verdict.
+//
+// gin refuses a route whose handlers, with the endpoint's layers in front of
+// them, exceed its limit. The route is accepted on an engine of its own, as it
+// is when it is registered, and it is refused only in the company of the layer,
+// so offering it with each mounted route in turn on an engine with no layers
+// reproduces nothing. The route is the third mounted and the two before it are
+// ordinary, which makes the count in the message meaningful.
+//
+// The discriminating assertions are the sentence that says the refusal was not
+// attributed and the absence of the pair sentence: an implementation that falls
+// back to pairing the refused route with the first or the last mounted one
+// writes the pair instead.
+func TestARefusalNoPairReproducesSaysSo(t *testing.T) {
+	atTheLimit := handlersOf(ginHandlerLimit(t))
+
+	logger, _ := newRecordingLogger()
+	_, err := assembleEndpoint(t, testSettings("public"), nil, logger, func(e Endpoint) {
+		e.Use(Middleware{Name: "layer", Handler: passThrough})
+		e.Route("GET", "/one", filler)
+		e.Route("GET", "/two", filler)
+		e.Route("GET", "/heavy", atTheLimit...)
+	})
 	if !errors.Is(err, ErrRouteConflict) {
 		t.Fatalf("a refused mount did not report ErrRouteConflict: %v", err)
 	}
-	mustContain(t, err.Error(), "did not attribute the refusal",
+	mustContain(t, err.Error(), "could not be attributed to a pair of routes",
 		"that no pair was named for this refusal")
-	mustContain(t, err.Error(), "the engine seam asks of an implementation subpackage",
-		"that naming the pair is what the seam requires of the layer that binds the engine, "+
-			"which is what this failure says is missing")
-	mustContain(t, err.Error(), `"GET /three"`,
-		"the pattern the engine refused, which is the one thing the mounting point knows")
+	mustContain(t, err.Error(), `"GET /heavy"`,
+		"the route gin refused, which is the one thing the mounting point knows")
+	mustContain(t, err.Error(), "beside the 2 already mounted", "how many routes the refusal was weighed against")
 	mustContain(t, err.Error(), `endpoint "public"`, "the endpoint the refusal is on")
 
-	for _, pair := range []string{
-		`"GET /one" and "GET /three"`,
-		`"GET /two" and "GET /three"`,
-	} {
-		if strings.Contains(err.Error(), pair) {
-			t.Errorf("the failure states the pair %s, and no pair reproduces this refusal: "+
-				"naming one would present a guess as the engine's verdict.\nThe message was: %s",
-				pair, err.Error())
+	if strings.Contains(err.Error(), "cannot both be mounted") {
+		t.Errorf("the failure states a pair, and no pair reproduces this refusal: naming one would "+
+			"present a guess as the verdict.\nThe message was: %s", err.Error())
+	}
+	for _, partner := range []string{`"GET /one"`, `"GET /two"`} {
+		if strings.Contains(err.Error(), partner) {
+			t.Errorf("the failure names %s, and no mounted route is the refused route's partner.\n"+
+				"The message was: %s", partner, err.Error())
 		}
 	}
+}
+
+// TestTheRefusalNoPairReproducesIsAMatterOfTheHandlerCount is the control for the
+// test above: the same route with fewer handlers assembles under the same layer.
+// What made the refusal is the number of handlers in the chain, the route's own
+// and the endpoint's in front of them, and not the route's path or its method,
+// which is what puts the refusal outside every pair of routes.
+func TestTheRefusalNoPairReproducesIsAMatterOfTheHandlerCount(t *testing.T) {
+	limit := ginHandlerLimit(t)
+
+	assembles := func(handlers int) bool {
+		logger, _ := newRecordingLogger()
+		_, err := assembleEndpoint(t, testSettings("public"), nil, logger, func(e Endpoint) {
+			e.Use(Middleware{Name: "layer", Handler: passThrough})
+			e.Route("GET", "/heavy", handlersOf(handlers)...)
+		})
+		return err == nil
+	}
+
+	if !assembles(1) {
+		t.Fatal("a route of one handler under one layer failed to assemble")
+	}
+	if assembles(limit) {
+		t.Fatalf("a route of %d handlers, the most gin takes on a route alone, assembled under a layer: "+
+			"the refusal the test above is built on does not happen", limit)
+	}
+}
+
+// assembleWithCounts assembles an endpoint with that many layers and one route of
+// that many handlers, and returns what assembling answered. A panic that gets out
+// of the assembly fails the test where it is raised: in Serve a panic skips the
+// registry's rollback and strands every endpoint already bound, so a chain gin
+// has no room for has to come back as an error.
+func assembleWithCounts(t *testing.T, layers, handlers int) error {
+	t.Helper()
+	defer func() {
+		if raised := recover(); raised != nil {
+			t.Fatalf("assembling %d layers and a route of %d handlers panicked with %v; in Serve a "+
+				"panic skips the registry's rollback and strands the endpoints already bound",
+				layers, handlers, raised)
+		}
+	}()
+	logger, _ := newRecordingLogger()
+	_, err := assembleEndpoint(t, testSettings("public"), nil, logger, func(e Endpoint) {
+		for i := range layers {
+			e.Use(Middleware{Name: fmt.Sprintf("layer-%d", i), Handler: passThrough})
+		}
+		e.Route("GET", "/things", handlersOf(handlers)...)
+	})
+	return err
+}
+
+// layerLimit is the most layers an endpoint takes with a route of one handler,
+// found by trying: what gin holds in a chain is gin's, and what the endpoint's own
+// engine puts in it is this module's, so the number is read off the assembly
+// rather than written down.
+func layerLimit(t *testing.T) int {
+	t.Helper()
+	for n := 1; n < 500; n++ {
+		if err := assembleWithCounts(t, n, 1); err != nil {
+			if !errors.Is(err, ErrRouteConflict) {
+				t.Fatalf("%d layers failed the assembly with %v, which is not ErrRouteConflict", n, err)
+			}
+			return n - 1
+		}
+	}
+	t.Fatal("an endpoint took five hundred layers, so there is no limit to go over")
+	return 0
+}
+
+// TestTooManyLayersFailTheAssembly pins what an endpoint does with more layers
+// than a chain holds. gin refuses them by panicking as they are handed to its
+// Use, which happens in Serve; the refusal comes back as a startup failure
+// carrying ErrRouteConflict, naming the endpoint and the number of layers, and
+// the fix: fewer layers on the endpoint, or some of them on another one.
+//
+// It is read in a whole assembly as well, where a panic in Serve would take the
+// process down with every endpoint already bound still listening.
+func TestTooManyLayersFailTheAssembly(t *testing.T) {
+	limit := layerLimit(t)
+
+	err := assembleWithCounts(t, limit+1, 1)
+	if !errors.Is(err, ErrRouteConflict) {
+		t.Fatalf("%d layers, one more than the endpoint takes, came back with %v, want a failure "+
+			"wrapping ErrRouteConflict", limit+1, err)
+	}
+	mustContain(t, err.Error(), fmt.Sprintf("%d registered layers", limit+1), "how many layers were handed over")
+	mustContain(t, err.Error(), `endpoint "public"`, "the endpoint that holds them")
+	mustContain(t, err.Error(), "register fewer layers", "the fixing action")
+
+	layers := make([]func(*core.Registry) error, 0, limit+1)
+	for i := range limit + 1 {
+		layers = append(layers, useLayer("public", Middleware{Name: fmt.Sprintf("layer-%d", i), Handler: passThrough}))
+	}
+	probe := &stageProbe{name: "probe.registers-every-layer", requires: requiresRouter(), onInit: inOrder(layers...)}
+	a := startAssembly(t, oneEndpoint("public"), Module(), probe.module())
+	if runErr := a.stop(t); !errors.Is(runErr, ErrRouteConflict) {
+		t.Errorf("an assembly whose registrants handed one more layer than the endpoint takes came "+
+			"back with %v, want a startup failure wrapping ErrRouteConflict", runErr)
+	}
+}
+
+// TestLayersAndARouteTogetherOverTheLimitFailTheAssembly pins the other way a
+// chain outgrows what gin holds: every layer fits and the route fits alone, and
+// the two together do not. The route is the one that is refused, in the company
+// of the layers, which no pair of routes reproduces, so the failure says the
+// refusal could not be attributed to a pair, and it is again an error and not a
+// panic.
+//
+// The route's size is found by trying, with one layer fewer than the limit:
+// the largest route that assembles there is the control, and the route one
+// handler longer is the case.
+func TestLayersAndARouteTogetherOverTheLimitFailTheAssembly(t *testing.T) {
+	layers := layerLimit(t) - 1
+
+	largest := 0
+	for handlers := 1; handlers <= ginHandlerLimit(t); handlers++ {
+		if err := assembleWithCounts(t, layers, handlers); err != nil {
+			break
+		}
+		largest = handlers
+	}
+	if largest < 1 || largest >= ginHandlerLimit(t) {
+		t.Fatalf("with %d layers the largest route that assembles has %d handlers, so there is no route "+
+			"the layers leave too little room for", layers, largest)
+	}
+
+	err := assembleWithCounts(t, layers, largest+1)
+	if !errors.Is(err, ErrRouteConflict) {
+		t.Fatalf("a route of %d handlers under %d layers came back with %v, want a failure wrapping "+
+			"ErrRouteConflict", largest+1, layers, err)
+	}
+	mustContain(t, err.Error(), "could not be attributed to a pair of routes", "that no pair was named")
+	mustContain(t, err.Error(), `"GET /things"`, "the route gin refused")
 }

@@ -11,6 +11,8 @@ import (
 	"strings"
 	"time"
 
+	"github.com/gin-gonic/gin"
+
 	"github.com/vislake/speed/pkg/core"
 	"github.com/vislake/speed/pkg/db"
 	speedhttp "github.com/vislake/speed/pkg/http"
@@ -30,7 +32,7 @@ const stageTable = "pipeline_stages"
 const (
 	listStagesRoute  = "GET /pipeline/stages"
 	createStageRoute = "POST /pipeline/stages"
-	patchStageRoute  = "PATCH /pipeline/stages/{key}"
+	patchStageRoute  = "PATCH /pipeline/stages/:key"
 )
 
 // The three kinds of stage. A deal in an open stage is being worked; one in a
@@ -138,22 +140,22 @@ type stageList struct {
 
 // listStages answers the tenant's stages in pipeline order. The query carries no
 // tenant condition; the filter puts it there.
-func (p *pipelineProduct) listStages(w nethttp.ResponseWriter, r *nethttp.Request) {
-	ctx := r.Context()
-	if _, ok := memberOf(w, r, listStagesRoute); !ok {
+func (p *pipelineProduct) listStages(c *gin.Context) {
+	ctx := c.Request.Context()
+	if _, ok := memberOf(c, listStagesRoute); !ok {
 		return
 	}
 	var stages []PipelineStage
 	if err := p.db.DB().WithContext(ctx).Order("position, key").Find(&stages).Error; err != nil {
 		log.FromContext(ctx).Error("reading the pipeline", "error", err)
-		writeError(w, nethttp.StatusServiceUnavailable, "the pipeline cannot be read")
+		writeError(c, nethttp.StatusServiceUnavailable, "the pipeline cannot be read")
 		return
 	}
 	out := stageList{Stages: make([]stageView, 0, len(stages))}
 	for _, s := range stages {
 		out.Stages = append(out.Stages, viewOfStage(s))
 	}
-	_ = speedhttp.WriteJSON(w, nethttp.StatusOK, out)
+	c.JSON(nethttp.StatusOK, out)
 }
 
 // stageRequest is the body of a stage definition.
@@ -195,19 +197,18 @@ func (s stageRequest) Validate() error {
 // attributes answers as it is, so defining a pipeline twice is harmless; one
 // with other attributes is a conflict, since a definition is not how a stage is
 // changed.
-func (p *pipelineProduct) createStage(w nethttp.ResponseWriter, r *nethttp.Request) {
-	ctx := r.Context()
-	self, ok := memberOf(w, r, createStageRoute)
+func (p *pipelineProduct) createStage(c *gin.Context) {
+	ctx := c.Request.Context()
+	self, ok := memberOf(c, createStageRoute)
 	if !ok {
 		return
 	}
 	if !canAdminister(self.Role) {
-		writeError(w, nethttp.StatusForbidden, errNotAdministered.Error())
+		writeError(c, nethttp.StatusForbidden, errNotAdministered.Error())
 		return
 	}
 	var body stageRequest
-	if err := speedhttp.Decode(r, &body); err != nil {
-		writeError(w, speedhttp.StatusFor(err), err.Error())
+	if !bindBody(c, &body) {
 		return
 	}
 	want := PipelineStage{
@@ -220,17 +221,17 @@ func (p *pipelineProduct) createStage(w nethttp.ResponseWriter, r *nethttp.Reque
 	result := p.db.DB().WithContext(ctx).Where(PipelineStage{Key: body.Key}).Attrs(want).FirstOrCreate(&stage)
 	if result.Error != nil {
 		log.FromContext(ctx).Error("defining a stage", "error", result.Error)
-		writeError(w, nethttp.StatusInternalServerError, "the stage could not be written")
+		writeError(c, nethttp.StatusInternalServerError, "the stage could not be written")
 		return
 	}
 	switch {
 	case result.RowsAffected == 1:
-		_ = speedhttp.WriteJSON(w, nethttp.StatusCreated, viewOfStage(stage))
+		c.JSON(nethttp.StatusCreated, viewOfStage(stage))
 	case stage.Name == want.Name && stage.Position == want.Position &&
 		stage.Probability == want.Probability && stage.Kind == want.Kind:
-		_ = speedhttp.WriteJSON(w, nethttp.StatusOK, viewOfStage(stage))
+		c.JSON(nethttp.StatusOK, viewOfStage(stage))
 	default:
-		writeError(w, nethttp.StatusConflict, errStageDiffers.Error())
+		writeError(c, nethttp.StatusConflict, errStageDiffers.Error())
 	}
 }
 
@@ -256,39 +257,38 @@ func (s stagePatch) Validate() error {
 //
 // The stage is addressed by the key half of its primary key; the tenant half is
 // the filter's to fill from the request, as the condition it adds is.
-func (p *pipelineProduct) patchStage(w nethttp.ResponseWriter, r *nethttp.Request) {
-	ctx := r.Context()
-	self, ok := memberOf(w, r, patchStageRoute)
+func (p *pipelineProduct) patchStage(c *gin.Context) {
+	ctx := c.Request.Context()
+	self, ok := memberOf(c, patchStageRoute)
 	if !ok {
 		return
 	}
 	if !canAdminister(self.Role) {
-		writeError(w, nethttp.StatusForbidden, errNotAdministered.Error())
+		writeError(c, nethttp.StatusForbidden, errNotAdministered.Error())
 		return
 	}
 	var body stagePatch
-	if err := speedhttp.Decode(r, &body); err != nil {
-		writeError(w, speedhttp.StatusFor(err), err.Error())
+	if !bindBody(c, &body) {
 		return
 	}
-	key := r.PathValue("key")
+	key := c.Param("key")
 	result := p.db.DB().WithContext(ctx).Model(&PipelineStage{Key: key}).Update("probability", *body.Probability)
 	if result.Error != nil {
 		log.FromContext(ctx).Error("changing a stage", "error", result.Error)
-		writeError(w, nethttp.StatusInternalServerError, "the stage could not be written")
+		writeError(c, nethttp.StatusInternalServerError, "the stage could not be written")
 		return
 	}
 	if result.RowsAffected == 0 {
-		writeError(w, nethttp.StatusNotFound, "the pipeline has no stage with this key")
+		writeError(c, nethttp.StatusNotFound, "the pipeline has no stage with this key")
 		return
 	}
 	stage, found, err := stageByKey(ctx, p.db, key)
 	if err != nil || !found {
 		log.FromContext(ctx).Error("reading a stage back", "error", err, "found", found)
-		writeError(w, nethttp.StatusServiceUnavailable, "the stage cannot be read")
+		writeError(c, nethttp.StatusServiceUnavailable, "the stage cannot be read")
 		return
 	}
-	_ = speedhttp.WriteJSON(w, nethttp.StatusOK, viewOfStage(stage))
+	c.JSON(nethttp.StatusOK, viewOfStage(stage))
 }
 
 // init registers the pipeline module. It runs on serve: its routes sit on the
@@ -348,9 +348,9 @@ func pipelineModule() core.Module {
 			if err != nil {
 				return fmt.Errorf("binding the pipeline routes: %w", err)
 			}
-			api.Route(listStagesRoute, nethttp.HandlerFunc(product.listStages))
-			api.Route(createStageRoute, nethttp.HandlerFunc(product.createStage))
-			api.Route(patchStageRoute, nethttp.HandlerFunc(product.patchStage))
+			mount(api, listStagesRoute, product.listStages)
+			mount(api, createStageRoute, product.createStage)
+			mount(api, patchStageRoute, product.patchStage)
 			return nil
 		},
 

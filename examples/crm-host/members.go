@@ -10,6 +10,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/gin-gonic/gin"
 	"gorm.io/gorm/clause"
 
 	"github.com/vislake/speed/pkg/audit"
@@ -187,11 +188,11 @@ func memberFrom(ctx context.Context) (member, bool) {
 // memberOf reads the member the membership layer established for a route on
 // the API endpoint, answering 500 when there is none: a route there reached
 // without the layer came by a path that skipped it.
-func memberOf(w nethttp.ResponseWriter, r *nethttp.Request, route string) (member, bool) {
-	self, ok := memberFrom(r.Context())
+func memberOf(c *gin.Context, route string) (member, bool) {
+	self, ok := memberFrom(c.Request.Context())
 	if !ok {
-		log.FromContext(r.Context()).Error("a member route was reached without the membership layer", "route", route)
-		writeError(w, nethttp.StatusInternalServerError, "the request carries no membership")
+		log.FromContext(c.Request.Context()).Error("a member route was reached without the membership layer", "route", route)
+		writeError(c, nethttp.StatusInternalServerError, "the request carries no membership")
 	}
 	return self, ok
 }
@@ -216,13 +217,13 @@ func roleRank(role string) int {
 // the request with 403 when the member's role is below the least one the route
 // takes. It writes the refusal itself; a false answer is the end of the
 // handler.
-func memberWith(w nethttp.ResponseWriter, r *nethttp.Request, least string) (member, bool) {
-	self, ok := memberOf(w, r, r.Pattern)
+func memberWith(c *gin.Context, least string) (member, bool) {
+	self, ok := memberOf(c, c.FullPath())
 	if !ok {
 		return member{}, false
 	}
 	if roleRank(self.Role) < roleRank(least) {
-		writeError(w, nethttp.StatusForbidden, "this takes the "+least+" role or above in this tenant")
+		writeError(c, nethttp.StatusForbidden, "this takes the "+least+" role or above in this tenant")
 		return member{}, false
 	}
 	return self, true
@@ -273,7 +274,7 @@ func (p *membersProduct) layer() speedhttp.Middleware {
 			(*audit.Audit)(nil),
 			(*ratelimit.Limiter)(nil),
 		},
-		Wrap: p.admit,
+		Handler: p.admit,
 	}
 }
 
@@ -282,44 +283,43 @@ func (p *membersProduct) layer() speedhttp.Middleware {
 // The lookup is issued with the request's context, so the tenant filter scopes
 // it: the statement names the user and nothing else, and a membership in
 // another tenant is not a row it can see.
-func (p *membersProduct) admit(next nethttp.Handler) nethttp.Handler {
-	return nethttp.HandlerFunc(func(w nethttp.ResponseWriter, r *nethttp.Request) {
-		ctx := r.Context()
-		caller, ok := authn.FromContext(ctx)
-		if !ok {
-			// Unreachable behind the gateway, and refused loudly rather than
-			// read as anonymous: a request that reached this layer without
-			// an identity came by a path that skipped authentication.
-			log.FromContext(ctx).Error("the membership layer was reached with no identity")
-			writeError(w, nethttp.StatusInternalServerError, "the request carries no identity")
-			return
-		}
-		id, ok := tenant.FromContext(ctx)
-		if !ok {
-			log.FromContext(ctx).Error("the membership layer was reached with no tenant")
-			writeError(w, nethttp.StatusInternalServerError, "the request carries no tenant")
-			return
-		}
-		userID, isUser := userIDOf(caller)
-		if !isUser {
-			// An operator, or any identity no CRM backend issued, belongs to
-			// no tenant and is refused like a stranger.
-			writeError(w, nethttp.StatusForbidden, "the caller is not a member of this tenant")
-			return
-		}
-		var found []Membership
-		if err := p.db.DB().WithContext(ctx).Where("user_id = ?", userID).Limit(1).Find(&found).Error; err != nil {
-			log.FromContext(ctx).Error("reading the caller's membership", "error", err)
-			writeError(w, nethttp.StatusServiceUnavailable, "the membership table cannot be read")
-			return
-		}
-		if len(found) == 0 {
-			writeError(w, nethttp.StatusForbidden, "the caller is not a member of this tenant")
-			return
-		}
-		ctx = context.WithValue(ctx, memberKey{}, member{UserID: userID, TenantID: id, Role: found[0].Role})
-		next.ServeHTTP(w, r.WithContext(ctx))
-	})
+func (p *membersProduct) admit(c *gin.Context) {
+	ctx := c.Request.Context()
+	caller, ok := authn.FromContext(ctx)
+	if !ok {
+		// Unreachable behind the gateway, and refused loudly rather than
+		// read as anonymous: a request that reached this layer without
+		// an identity came by a path that skipped authentication.
+		log.FromContext(ctx).Error("the membership layer was reached with no identity")
+		writeError(c, nethttp.StatusInternalServerError, "the request carries no identity")
+		return
+	}
+	id, ok := tenant.FromContext(ctx)
+	if !ok {
+		log.FromContext(ctx).Error("the membership layer was reached with no tenant")
+		writeError(c, nethttp.StatusInternalServerError, "the request carries no tenant")
+		return
+	}
+	userID, isUser := userIDOf(caller)
+	if !isUser {
+		// An operator, or any identity no CRM backend issued, belongs to
+		// no tenant and is refused like a stranger.
+		writeError(c, nethttp.StatusForbidden, "the caller is not a member of this tenant")
+		return
+	}
+	var found []Membership
+	if err := p.db.DB().WithContext(ctx).Where("user_id = ?", userID).Limit(1).Find(&found).Error; err != nil {
+		log.FromContext(ctx).Error("reading the caller's membership", "error", err)
+		writeError(c, nethttp.StatusServiceUnavailable, "the membership table cannot be read")
+		return
+	}
+	if len(found) == 0 {
+		writeError(c, nethttp.StatusForbidden, "the caller is not a member of this tenant")
+		return
+	}
+	ctx = context.WithValue(ctx, memberKey{}, member{UserID: userID, TenantID: id, Role: found[0].Role})
+	c.Request = c.Request.WithContext(ctx)
+	c.Next()
 }
 
 // memberView is one membership as the API shows it.
@@ -341,18 +341,18 @@ type memberList struct {
 // listMembers answers the tenant's membership list. The query carries no tenant
 // condition, and the rows that come back are this tenant's because the filter
 // put the condition there.
-func (p *membersProduct) listMembers(w nethttp.ResponseWriter, r *nethttp.Request) {
-	ctx := r.Context()
+func (p *membersProduct) listMembers(c *gin.Context) {
+	ctx := c.Request.Context()
 	self, ok := memberFrom(ctx)
 	if !ok {
 		log.FromContext(ctx).Error("a member route was reached without the membership layer", "route", listMembersRoute)
-		writeError(w, nethttp.StatusInternalServerError, "the request carries no membership")
+		writeError(c, nethttp.StatusInternalServerError, "the request carries no membership")
 		return
 	}
 	var rows []Membership
 	if err := p.db.DB().WithContext(ctx).Order("user_id").Find(&rows).Error; err != nil {
 		log.FromContext(ctx).Error("reading the memberships", "error", err)
-		writeError(w, nethttp.StatusServiceUnavailable, "the membership table cannot be read")
+		writeError(c, nethttp.StatusServiceUnavailable, "the membership table cannot be read")
 		return
 	}
 	ids := make([]string, 0, len(rows))
@@ -362,7 +362,7 @@ func (p *membersProduct) listMembers(w nethttp.ResponseWriter, r *nethttp.Reques
 	people, err := usersByID(ctx, p.db, ids)
 	if err != nil {
 		log.FromContext(ctx).Error("reading the members' users", "error", err)
-		writeError(w, nethttp.StatusServiceUnavailable, "the user table cannot be read")
+		writeError(c, nethttp.StatusServiceUnavailable, "the user table cannot be read")
 		return
 	}
 	caller, _ := authn.FromContext(ctx)
@@ -373,7 +373,7 @@ func (p *membersProduct) listMembers(w nethttp.ResponseWriter, r *nethttp.Reques
 			UserID: m.UserID, Email: u.Email, DisplayName: u.DisplayName, Role: m.Role,
 		})
 	}
-	_ = speedhttp.WriteJSON(w, nethttp.StatusOK, out)
+	c.JSON(nethttp.StatusOK, out)
 }
 
 // grantRequest is the body of a membership grant.
@@ -402,40 +402,39 @@ type grantView struct {
 
 // grantMember gives an existing user a role in the caller's tenant. Only an
 // owner or an admin of the tenant may.
-func (p *membersProduct) grantMember(w nethttp.ResponseWriter, r *nethttp.Request) {
-	ctx := r.Context()
+func (p *membersProduct) grantMember(c *gin.Context) {
+	ctx := c.Request.Context()
 	self, ok := memberFrom(ctx)
 	if !ok {
 		log.FromContext(ctx).Error("a member route was reached without the membership layer", "route", grantMemberRoute)
-		writeError(w, nethttp.StatusInternalServerError, "the request carries no membership")
+		writeError(c, nethttp.StatusInternalServerError, "the request carries no membership")
 		return
 	}
 	if self.Role != roleOwner && self.Role != roleAdmin {
-		writeError(w, nethttp.StatusForbidden, "only an owner or an admin of this tenant grants a membership")
+		writeError(c, nethttp.StatusForbidden, "only an owner or an admin of this tenant grants a membership")
 		return
 	}
 	var body grantRequest
-	if err := speedhttp.Decode(r, &body); err != nil {
-		writeError(w, speedhttp.StatusFor(err), err.Error())
+	if !bindBody(c, &body) {
 		return
 	}
 	user, found, err := userByEmail(ctx, p.db, body.Email)
 	if err != nil {
 		log.FromContext(ctx).Error("reading the user to grant", "error", err)
-		writeError(w, nethttp.StatusServiceUnavailable, "the user table cannot be read")
+		writeError(c, nethttp.StatusServiceUnavailable, "the user table cannot be read")
 		return
 	}
 	if !found {
-		writeError(w, nethttp.StatusNotFound, "no user has this email")
+		writeError(c, nethttp.StatusNotFound, "no user has this email")
 		return
 	}
 	granted, err := grantHere(ctx, p.db, user.ID, body.Role)
 	if err != nil {
 		log.FromContext(ctx).Error("granting a membership", "error", err)
-		writeError(w, nethttp.StatusInternalServerError, "the membership could not be written")
+		writeError(c, nethttp.StatusInternalServerError, "the membership could not be written")
 		return
 	}
-	_ = speedhttp.WriteJSON(w, nethttp.StatusOK, grantView{
+	c.JSON(nethttp.StatusOK, grantView{
 		TenantID: string(granted.TenantID), UserID: granted.UserID, Role: granted.Role,
 	})
 }
@@ -473,25 +472,25 @@ type meView struct {
 // to go around it. The only condition is the caller's own user identifier,
 // taken from the identity the gateway established rather than from anything
 // the request says.
-func (p *membersProduct) me(w nethttp.ResponseWriter, r *nethttp.Request) {
-	ctx := r.Context()
+func (p *membersProduct) me(c *gin.Context) {
+	ctx := c.Request.Context()
 	caller, ok := authn.FromContext(ctx)
 	if !ok {
 		log.FromContext(ctx).Error("a guarded route was reached with no identity", "route", meRoute)
-		writeError(w, nethttp.StatusInternalServerError, "the request carries no identity")
+		writeError(c, nethttp.StatusInternalServerError, "the request carries no identity")
 		return
 	}
 	out := meView{Identity: caller.Key(), Tenants: []meTenant{}}
 	userID, isUser := userIDOf(caller)
 	if !isUser {
 		// An operator is a caller with no CRM user and no tenant.
-		_ = speedhttp.WriteJSON(w, nethttp.StatusOK, out)
+		c.JSON(nethttp.StatusOK, out)
 		return
 	}
 	user, found, err := userByID(ctx, p.db, userID)
 	if err != nil {
 		log.FromContext(ctx).Error("reading the caller's user", "error", err)
-		writeError(w, nethttp.StatusServiceUnavailable, "the user table cannot be read")
+		writeError(c, nethttp.StatusServiceUnavailable, "the user table cannot be read")
 		return
 	}
 	if found {
@@ -500,14 +499,14 @@ func (p *membersProduct) me(w nethttp.ResponseWriter, r *nethttp.Request) {
 	rows, err := membershipsOfUser(tenant.CrossTenant(ctx), p.db, userID)
 	if err != nil {
 		log.FromContext(ctx).Error("reading the caller's memberships", "error", err)
-		writeError(w, nethttp.StatusServiceUnavailable, "the membership table cannot be read")
+		writeError(c, nethttp.StatusServiceUnavailable, "the membership table cannot be read")
 		return
 	}
 	for _, m := range rows {
 		t, known, err := p.roster.Get(ctx, m.TenantID)
 		if err != nil {
 			log.FromContext(ctx).Error("reading the roster", "error", err)
-			writeError(w, nethttp.StatusServiceUnavailable, "the roster cannot be read")
+			writeError(c, nethttp.StatusServiceUnavailable, "the roster cannot be read")
 			return
 		}
 		if !known {
@@ -517,7 +516,7 @@ func (p *membersProduct) me(w nethttp.ResponseWriter, r *nethttp.Request) {
 			ID: string(t.ID), Alias: t.Alias, Status: t.Status.String(), Role: m.Role,
 		})
 	}
-	_ = speedhttp.WriteJSON(w, nethttp.StatusOK, out)
+	c.JSON(nethttp.StatusOK, out)
 }
 
 // init registers the members module. It runs on serve: its layer and routes sit
@@ -606,9 +605,9 @@ func membersModule() core.Module {
 				return err
 			}
 			api.Use(product.layer())
-			api.Route(listMembersRoute, nethttp.HandlerFunc(product.listMembers))
-			api.Route(grantMemberRoute, nethttp.HandlerFunc(product.grantMember))
-			account.Route(meRoute, nethttp.HandlerFunc(product.me))
+			mount(api, listMembersRoute, product.listMembers)
+			mount(api, grantMemberRoute, product.grantMember)
+			mount(account, meRoute, product.me)
 			return nil
 		},
 

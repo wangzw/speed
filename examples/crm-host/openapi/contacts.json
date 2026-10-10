@@ -21,7 +21,7 @@
         "requestBody": {"required": true, "content": {"application/json": {"schema": {"$ref": "#/components/schemas/ContactCreate"}}}},
         "responses": {
           "201": {"description": "The contact", "content": {"application/json": {"schema": {"$ref": "#/components/schemas/Contact"}}}},
-          "400": {"description": "The body is not JSON of this shape: empty, null, an unknown member, a member spelled in another case, or one given twice", "content": {"application/json": {"schema": {"$ref": "#/components/schemas/Error"}}}},
+          "400": {"description": "The body is not JSON of this shape: empty, not valid JSON, or a member of another type than the one it takes", "content": {"application/json": {"schema": {"$ref": "#/components/schemas/Error"}}}},
           "403": {"description": "The caller's role is below rep", "content": {"application/json": {"schema": {"$ref": "#/components/schemas/Error"}}}},
           "409": {"description": "The tenant already holds a contact under this identifier, or a live contact with this email", "content": {"application/json": {"schema": {"$ref": "#/components/schemas/Error"}}}},
           "422": {"description": "A field is missing or malformed, or the tenant holds no such account", "content": {"application/json": {"schema": {"$ref": "#/components/schemas/Error"}}}}
@@ -43,7 +43,7 @@
         "requestBody": {"required": true, "content": {"application/json": {"schema": {"$ref": "#/components/schemas/ContactPatch"}}}},
         "responses": {
           "200": {"description": "The contact as it now stands", "content": {"application/json": {"schema": {"$ref": "#/components/schemas/Contact"}}}},
-          "400": {"description": "The body is not JSON of this shape: empty, null, an unknown member, a member spelled in another case, or one given twice", "content": {"application/json": {"schema": {"$ref": "#/components/schemas/Error"}}}},
+          "400": {"description": "The body is not JSON of this shape: empty, not valid JSON, or a member of another type than the one it takes", "content": {"application/json": {"schema": {"$ref": "#/components/schemas/Error"}}}},
           "403": {"description": "The caller's role is below rep", "content": {"application/json": {"schema": {"$ref": "#/components/schemas/Error"}}}},
           "404": {"description": "The tenant holds no such contact", "content": {"application/json": {"schema": {"$ref": "#/components/schemas/Error"}}}},
           "409": {"description": "Another live contact of the tenant has the new email", "content": {"application/json": {"schema": {"$ref": "#/components/schemas/Error"}}}},
@@ -68,7 +68,7 @@
         "responses": {
           "200": {"description": "The contact that already had the email, unchanged", "content": {"application/json": {"schema": {"$ref": "#/components/schemas/Contact"}}}},
           "201": {"description": "The contact created", "content": {"application/json": {"schema": {"$ref": "#/components/schemas/Contact"}}}},
-          "400": {"description": "The body is not JSON of this shape: empty, null, an unknown member, a member spelled in another case, or one given twice", "content": {"application/json": {"schema": {"$ref": "#/components/schemas/Error"}}}},
+          "400": {"description": "The body is not JSON of this shape: empty, not valid JSON, or a member of another type than the one it takes", "content": {"application/json": {"schema": {"$ref": "#/components/schemas/Error"}}}},
           "403": {"description": "The caller's role is below rep", "content": {"application/json": {"schema": {"$ref": "#/components/schemas/Error"}}}},
           "409": {"description": "Another contact of the tenant holds this identifier, or one with this email was written at the same time", "content": {"application/json": {"schema": {"$ref": "#/components/schemas/Error"}}}},
           "422": {"description": "A field is missing or malformed, or the tenant holds no such account", "content": {"application/json": {"schema": {"$ref": "#/components/schemas/Error"}}}}

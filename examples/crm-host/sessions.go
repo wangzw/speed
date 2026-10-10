@@ -12,6 +12,8 @@ import (
 	"strings"
 	"time"
 
+	"github.com/gin-gonic/gin"
+
 	"github.com/vislake/speed/pkg/authn"
 	"github.com/vislake/speed/pkg/core"
 	"github.com/vislake/speed/pkg/db"
@@ -160,30 +162,30 @@ type issued struct {
 // login takes the Basic credential of a CRM user and answers with a bearer
 // token. The route is exempt, so nothing has checked the credential before this
 // handler runs; it is checked here by the same code the users backend runs.
-func (b *sessionsBackend) login(w nethttp.ResponseWriter, r *nethttp.Request) {
-	ctx := r.Context()
-	email, password, ok := r.BasicAuth()
+func (b *sessionsBackend) login(c *gin.Context) {
+	ctx := c.Request.Context()
+	email, password, ok := c.Request.BasicAuth()
 	if !ok {
-		w.Header().Set("WWW-Authenticate", `Basic realm="`+accountEndpoint+`"`)
-		writeError(w, nethttp.StatusUnauthorized, "a login takes the Basic credential of a CRM user")
+		c.Header("WWW-Authenticate", `Basic realm="`+accountEndpoint+`"`)
+		writeError(c, nethttp.StatusUnauthorized, "a login takes the Basic credential of a CRM user")
 		return
 	}
 	email = strings.TrimPrefix(email, usersBackendName+authn.Separator)
 	user, err := authenticate(ctx, b.db, b.passwords, email, password)
 	switch {
 	case errors.Is(err, errBadCredentials), errors.Is(err, errUserDisabled):
-		w.Header().Set("WWW-Authenticate", `Basic realm="`+accountEndpoint+`"`)
-		writeError(w, nethttp.StatusUnauthorized, "the credential does not sign a user in")
+		c.Header("WWW-Authenticate", `Basic realm="`+accountEndpoint+`"`)
+		writeError(c, nethttp.StatusUnauthorized, "the credential does not sign a user in")
 		return
 	case err != nil:
 		log.FromContext(ctx).Error("checking a login", "error", err)
-		writeError(w, nethttp.StatusServiceUnavailable, "the user table cannot be read")
+		writeError(c, nethttp.StatusServiceUnavailable, "the user table cannot be read")
 		return
 	}
 	ttl, err := settings.Get[time.Duration](b.settings, settings.Global(), ttlSetting)
 	if err != nil {
 		log.FromContext(ctx).Error("reading the session lifetime", "error", err)
-		writeError(w, nethttp.StatusInternalServerError, "the session lifetime cannot be read")
+		writeError(c, nethttp.StatusInternalServerError, "the session lifetime cannot be read")
 		return
 	}
 	// The key-value store keeps a value with a lifetime that is not positive
@@ -193,21 +195,21 @@ func (b *sessionsBackend) login(w nethttp.ResponseWriter, r *nethttp.Request) {
 	if ttl <= 0 {
 		log.FromContext(ctx).Error("the session lifetime is not positive, so no session is issued",
 			"setting", ttlSetting, "value", ttl.String())
-		writeError(w, nethttp.StatusInternalServerError, "the session lifetime is misconfigured")
+		writeError(c, nethttp.StatusInternalServerError, "the session lifetime is misconfigured")
 		return
 	}
 	token, err := newToken()
 	if err != nil {
 		log.FromContext(ctx).Error("drawing a token", "error", err)
-		writeError(w, nethttp.StatusInternalServerError, "no token could be drawn")
+		writeError(c, nethttp.StatusInternalServerError, "no token could be drawn")
 		return
 	}
 	if err := b.store.Set(ctx, sessionKey(token), []byte(user.ID), ttl); err != nil {
 		log.FromContext(ctx).Error("storing a session", "error", err)
-		writeError(w, nethttp.StatusServiceUnavailable, "the session store cannot be written")
+		writeError(c, nethttp.StatusServiceUnavailable, "the session store cannot be written")
 		return
 	}
-	_ = speedhttp.WriteJSON(w, nethttp.StatusCreated, issued{
+	c.JSON(nethttp.StatusCreated, issued{
 		Token:     token,
 		TokenType: "Bearer",
 		ExpiresIn: int64(ttl / time.Second),
@@ -218,27 +220,27 @@ func (b *sessionsBackend) login(w nethttp.ResponseWriter, r *nethttp.Request) {
 // logout ends the session whose token authenticated the request. A request
 // authenticated some other way carries no session to end, and is told so
 // rather than answered as though one had been ended.
-func (b *sessionsBackend) logout(w nethttp.ResponseWriter, r *nethttp.Request) {
-	ctx := r.Context()
+func (b *sessionsBackend) logout(c *gin.Context) {
+	ctx := c.Request.Context()
 	caller, ok := authn.FromContext(ctx)
 	if !ok {
 		// Unreachable behind the gateway: a guarded route that finds no
 		// identity has been reached by a path that skipped authentication.
 		log.FromContext(ctx).Error("a guarded route was reached with no identity", "route", logoutRoute)
-		writeError(w, nethttp.StatusInternalServerError, "the request carries no identity")
+		writeError(c, nethttp.StatusInternalServerError, "the request carries no identity")
 		return
 	}
-	token, isBearer := bearerToken(r)
+	token, isBearer := bearerToken(c.Request)
 	if caller.Owner() != sessionsBackendName || !isBearer {
-		writeError(w, nethttp.StatusBadRequest, "a logout ends a bearer session, and this request was not authenticated by one")
+		writeError(c, nethttp.StatusBadRequest, "a logout ends a bearer session, and this request was not authenticated by one")
 		return
 	}
 	if err := b.store.Delete(ctx, sessionKey(token)); err != nil {
 		log.FromContext(ctx).Error("ending a session", "error", err)
-		writeError(w, nethttp.StatusServiceUnavailable, "the session store cannot be written")
+		writeError(c, nethttp.StatusServiceUnavailable, "the session store cannot be written")
 		return
 	}
-	w.WriteHeader(nethttp.StatusNoContent)
+	c.Status(nethttp.StatusNoContent)
 }
 
 // bearerToken reads the token out of a request's Authorization header.
@@ -343,9 +345,10 @@ func sessionsModule() core.Module {
 			// exemption table freezes when the gateway starts, so a route
 			// registered without its exemption in the same stage stays
 			// guarded, and nothing reports the difference.
-			account.Route(loginRoute, nethttp.HandlerFunc(backend.login))
-			gateway.Exempt(accountEndpoint, loginRoute)
-			account.Route(logoutRoute, nethttp.HandlerFunc(backend.logout))
+			mount(account, loginRoute, backend.login)
+			method, path := splitRoute(loginRoute)
+			gateway.Exempt(accountEndpoint, method, path)
+			mount(account, logoutRoute, backend.logout)
 			return nil
 		},
 

@@ -269,15 +269,20 @@ func TestATenantAdministersItsSettings(t *testing.T) {
 			}
 			expect(t, "a body whose value is null",
 				writeTenantSettingAs(t, h, acme.Alias, basic(ann), "accounts.page-size", nil), nethttp.StatusUnprocessableEntity)
+			// A member spelled in another case is read as the one it
+			// resembles, as the HTTP module's binder reads a body. The page
+			// size is put back for the steps that follow.
 			expect(t, "a body naming the member in another case",
 				h.send(t, request{
 					method: nethttp.MethodPut, endpoint: apiEndpoint, path: "/settings/accounts.page-size",
 					tenant: acme.Alias, cred: basic(ann), body: map[string]any{"Value": 41},
 				}),
-				nethttp.StatusBadRequest)
-			if got, _ := sub.settingRow(acme.ID, "accounts.page-size"); got != "40" {
-				t.Errorf("a refused body left the page size row holding %q, want 40", got)
+				nethttp.StatusOK)
+			if got, _ := sub.settingRow(acme.ID, "accounts.page-size"); got != "41" {
+				t.Errorf("a body naming the value member in another case left the page size row holding %q, want 41", got)
 			}
+			expect(t, "the page size written back",
+				writeTenantSettingAs(t, h, acme.Alias, basic(ann), "accounts.page-size", 40), nethttp.StatusOK)
 		})
 
 		t.Run("a delete falls back to the global value and then to the declared default", func(t *testing.T) {
@@ -449,15 +454,15 @@ func TestATenantAdministersItsSettings(t *testing.T) {
 					"/tenants/{id}/settings/{key}", nil, nethttp.StatusUnprocessableEntity,
 				},
 				{
-					"writing the global layer with a member a write does not take", nethttp.MethodPut,
+					"writing the global layer with a body that is not an object", nethttp.MethodPut,
 					"/global-settings/deals.idempotency-ttl", "/global-settings/{key}",
-					map[string]any{"value": "2h", "layer": "tenant"},
+					[]string{"2h"},
 					nethttp.StatusBadRequest,
 				},
 				{
-					"writing globex's layer naming the member in another case", nethttp.MethodPut,
+					"writing globex's layer with a body that is not an object", nethttp.MethodPut,
 					"/tenants/" + globex.ID + "/settings/deals.idempotency-ttl", "/tenants/{id}/settings/{key}",
-					map[string]any{"Value": "2h"},
+					[]string{"2h"},
 					nethttp.StatusBadRequest,
 				},
 			} {
@@ -492,6 +497,14 @@ type trailRow struct {
 	outcome string
 	purpose string
 	detail  string
+}
+
+// requestOn reports whether the row is the record of a request on the route.
+func (r trailRow) requestOn(route string) bool { return requestOn(route, r.source, r.action, r.object) }
+
+// requestOn reports whether the entry is the record of a request on the route.
+func (e trailView) requestOn(route string) bool {
+	return requestOn(route, e.Source, e.Action, e.Object)
 }
 
 // rowDetail decodes a row's detail, the JSON object text the journal writes.
@@ -657,7 +670,7 @@ func TestATenantReadsItsOwnAuditTrail(t *testing.T) {
 			sub := c.in(t)
 			owner := owners[ref.ID]
 			sub.awaitTrailRow(ref.ID, "the currency write's request", func(r trailRow) bool {
-				return r.source == "request" && r.object == writeSettingRoute && r.outcome == "200" && r.actor == userKey(owner)
+				return r.requestOn(writeSettingRoute) && r.outcome == "200" && r.actor == userKey(owner)
 			})
 			sub.awaitTrailRow(ref.ID, "the currency write's seam row", func(r trailRow) bool {
 				return r.source == "seam" && r.action == settingWriteAction && r.object == "settings/deals.default-currency"
@@ -669,11 +682,11 @@ func TestATenantReadsItsOwnAuditTrail(t *testing.T) {
 				return r.source == "statement" && r.object == membershipTable
 			})
 			sub.awaitTrailRow(ref.ID, "the grant's request", func(r trailRow) bool {
-				return r.source == "request" && r.object == grantMemberRoute && r.outcome == "200"
+				return r.requestOn(grantMemberRoute) && r.outcome == "200"
 			})
 		}
 		c.awaitTrailRow(acme.ID, "the membership layer's refusal of sid", func(r trailRow) bool {
-			return r.source == "request" && r.object == listMembersRoute && r.outcome == "403" && r.actor == userKey(sid)
+			return r.requestOn(listMembersRoute) && r.outcome == "403" && r.actor == userKey(sid)
 		})
 
 		t.Run("each tenant's trail holds its own rows and no other", func(t *testing.T) {
@@ -708,7 +721,7 @@ func TestATenantReadsItsOwnAuditTrail(t *testing.T) {
 				match func(trailView) bool
 			}{
 				{"the currency write's request", func(e trailView) bool {
-					return e.Source == "request" && e.Action == nethttp.MethodPut && e.Object == writeSettingRoute &&
+					return e.requestOn(writeSettingRoute) &&
 						e.Outcome == "200" && e.Actor == userKey(ann) && e.Detail["path"] == "/settings/deals.default-currency"
 				}},
 				{"the currency write's seam row", func(e trailView) bool {
@@ -723,7 +736,7 @@ func TestATenantReadsItsOwnAuditTrail(t *testing.T) {
 					return e.Source == "statement" && e.Object == membershipTable && e.Actor == userKey(ann)
 				}},
 				{"the membership layer's refusal of a stranger", func(e trailView) bool {
-					return e.Source == "request" && e.Object == listMembersRoute && e.Outcome == "403" && e.Actor == userKey(sid)
+					return e.requestOn(listMembersRoute) && e.Outcome == "403" && e.Actor == userKey(sid)
 				}},
 			} {
 				if _, ok := entryWith(page, want.match); !ok {
@@ -1022,6 +1035,7 @@ func TestAnOperatorLowersATenantsRateLimit(t *testing.T) {
 		}
 		refused := h.get(t, apiEndpoint, "/members", acme.Alias, basic(ann))
 		expect(t, "ann's request past acme's limit", refused, nethttp.StatusTooManyRequests)
+		requireProblem(t, "the limiter's refusal", refused)
 		retryAfterWithin(t, refused, time.Hour)
 
 		// The limiter keeps a bucket per caller and tenant, so globex is

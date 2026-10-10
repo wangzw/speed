@@ -8,6 +8,8 @@ import (
 	"strconv"
 	"time"
 
+	"github.com/gin-gonic/gin"
+
 	"github.com/vislake/speed/pkg/audit"
 	"github.com/vislake/speed/pkg/authn"
 	"github.com/vislake/speed/pkg/core"
@@ -99,16 +101,19 @@ func (l *limiter) middleware() speedhttp.Middleware {
 			(*tenant.Resolution)(nil),
 			(*audit.Audit)(nil),
 		},
-		Order: 0,
-		Wrap:  l.wrap,
+		Order:   0,
+		Handler: l.handle,
 	}
 }
 
-func (l *limiter) wrap(next nethttp.Handler) nethttp.Handler {
-	return nethttp.HandlerFunc(func(w nethttp.ResponseWriter, r *nethttp.Request) {
-		identity, identified := authn.FromContext(r.Context())
-		l.signal.settle(l.decide(w, r, next, identity, identified))
-	})
+// handle is the layer. It reads the identity the authentication layer settled
+// and accounts for the decision that request produced.
+//
+// The layer does not read the route, so a request that matched none and one
+// whose method the path does not allow are counted like any other.
+func (l *limiter) handle(c *gin.Context) {
+	identity, identified := authn.FromContext(c.Request.Context())
+	l.signal.settle(l.decide(c, identity, identified))
 }
 
 // decision is what one request's pass through this layer produced: the class of
@@ -135,46 +140,53 @@ type decision struct {
 	tenant string
 }
 
-// decide runs one request through the count and answers it.
+// decide runs one request through the count and answers it: it hands the
+// request on with c.Next, or refuses it with a 429.
 //
 // The identity arrives as an argument rather than being taken out of the
 // context in here: Go keeps the package that writes an identity to the
 // authentication capability directory, so reading one is the single step of
 // this layer a test in this package cannot drive. Everything below it can.
 //
+// The refusal carries Retry-After, which is set before the response is
+// written: a header set after Fail would reach a response already on its way
+// out. The shape of the body is the entry point's, so the Problem carries the
+// status and nothing else.
+//
 // The returned decision names the class of failure that made this layer stand
 // aside, if any, and the classes it evaluated; the caller accounts for it.
 // Every failing path lets the request through: a refusal would turn one bad
 // backend or one bad row into a refusal of the whole endpoint, and rate
 // limiting here is an abuse surface rather than a data boundary.
-func (l *limiter) decide(w nethttp.ResponseWriter, r *nethttp.Request, next nethttp.Handler, identity authn.Identity, identified bool) decision {
+func (l *limiter) decide(c *gin.Context, identity authn.Identity, identified bool) decision {
 	if !identified {
 		// No identity means nothing to count against. An exempt route, a host
 		// that took no authentication module into the command, and a layer
 		// whose After edge did not land all arrive here.
-		next.ServeHTTP(w, r)
+		c.Next()
 		return decision{}
 	}
 
-	layer, tenantSegment := l.scopeOf(r.Context())
+	ctx := c.Request.Context()
+	layer, tenantSegment := l.scopeOf(ctx)
 	d := decision{tenant: tenantSegment}
 	window, limit := l.thresholds(layer, &d)
 	if d.tripped != "" {
-		next.ServeHTTP(w, r)
+		c.Next()
 		return d
 	}
 
-	allowed, retryAfter := l.count(r.Context(), identity.Key(), tenantSegment, window, limit, &d)
+	allowed, retryAfter := l.count(ctx, identity.Key(), tenantSegment, window, limit, &d)
 	if d.tripped != "" {
-		next.ServeHTTP(w, r)
+		c.Next()
 		return d
 	}
 	if !allowed {
-		w.Header().Set("Retry-After", strconv.Itoa(retryAfter))
-		w.WriteHeader(nethttp.StatusTooManyRequests)
+		c.Header("Retry-After", strconv.Itoa(retryAfter))
+		speedhttp.Fail(c, speedhttp.Problem{Status: nethttp.StatusTooManyRequests})
 		return d
 	}
-	next.ServeHTTP(w, r)
+	c.Next()
 	return d
 }
 

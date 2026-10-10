@@ -179,14 +179,14 @@
 | 记录 | 日期 | 状态 |
 |---|---|---|
 | [遥测模块只装配上游 SDK 的 provider，不定义信号语义](adr-observability-scope-2026-09-22.md) | 2026-09-22 | 已接受 |
-| [选库为 OpenTelemetry，接口包暴露其 API 与 SDK 导出器类型](adr-observability-library-2026-09-22.md) | 2026-09-22 | 已接受 |
+| [选库为 OpenTelemetry](adr-observability-library-2026-09-22.md) | 2026-09-22 | 已接受 |
 | [根包是接口包且不登记模块，装配器排他、导出后端非排他](adr-observability-packaging-2026-09-22.md) | 2026-09-22 | 已接受 |
-| [provider 不装成上游的全局，取用一律经注册表](adr-observability-provider-2026-09-22.md) | 2026-09-22 | 已接受 |
-| [采样、批处理、导出周期、停机上界与两份清单归配置，输入项不接受命令行来源](adr-observability-config-2026-09-22.md) | 2026-09-22 | 已接受 |
+| [provider 经注册表交付，不装成上游的全局，也不装进程级的错误处理器](adr-observability-provider-2026-09-22.md) | 2026-09-22 | 已接受 |
+| [采样、批处理、导出周期、停机上界与采集面清单归配置，输入项不接受命令行来源](adr-observability-config-2026-09-22.md) | 2026-09-22 | 已接受 |
 | [请求侧只产一个时长直方图，属性只取方法与状态码](adr-observability-instruments-2026-09-22.md) | 2026-09-22 | 已接受 |
 | [订阅事件总线取领域事实，类型名由配置点名且只转成短跨度](adr-observability-events-2026-09-22.md) | 2026-09-22 | 已接受 |
 | [传播器单点定义，入站提取在采集层、出站注入由调用点选用的工具承载](adr-observability-propagation-2026-09-22.md) | 2026-09-22 | 已接受 |
-| [端点不可达默认是运行期事实，探测是配置开关且落在构造阶段](adr-observability-failure-2026-09-22.md) | 2026-09-22 | 已接受 |
+| [端点不可达默认是运行期事实，探测是配置开关，导出失败不暴露为观测面](adr-observability-failure-2026-09-22.md) | 2026-09-22 | 已接受 |
 | [刷出落在关闭阶段，以配置的上界为界](adr-observability-shutdown-2026-09-22.md) | 2026-09-22 | 已接受 |
 | [采集层的锚点用本模块交付的功能，本层自带记录后重抛](adr-observability-anchor-2026-09-22.md) | 2026-09-22 | 已接受 |
 | [存在与覆盖面是装配与配置的结果，不是框架的承诺](adr-observability-coverage-2026-09-22.md) | 2026-09-22 | 已接受 |

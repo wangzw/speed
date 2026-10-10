@@ -1,6 +1,7 @@
 package main
 
 import (
+	"encoding/json"
 	"go/ast"
 	"go/parser"
 	"go/token"
@@ -20,6 +21,7 @@ import (
 	"github.com/vislake/speed/pkg/core"
 	"github.com/vislake/speed/pkg/db"
 	"github.com/vislake/speed/pkg/event"
+	speedhttp "github.com/vislake/speed/pkg/http"
 	"github.com/vislake/speed/pkg/kv"
 	"github.com/vislake/speed/pkg/log"
 	"github.com/vislake/speed/pkg/observability"
@@ -524,4 +526,65 @@ func ordersAfter(dependent, provider core.Module) bool {
 		}
 	}
 	return false
+}
+
+// openAPIPath writes a path in gin's grammar the way an OpenAPI document writes
+// it: each ":name" segment is "{name}".
+func openAPIPath(path string) string {
+	segments := strings.Split(path, "/")
+	for i, segment := range segments {
+		if name, ok := strings.CutPrefix(segment, ":"); ok {
+			segments[i] = "{" + name + "}"
+		}
+	}
+	return strings.Join(segments, "/")
+}
+
+// TestEveryJournalledRouteIsAnOperationItsModuleDocuments is the case for the one
+// mistake a journal entry can make silently. The journal compares a request's
+// method and the path of the route it was matched to with each entry of its
+// requests item, character for character, so an entry that equals no
+// registered route is well formed and never matches: the rows it was written to
+// bring never appear, and nothing says so. A module's OpenAPI fragments document
+// the operations its routes serve, under the OpenAPI spelling of each path, so
+// an entry that names no documented operation names no route; and an entry
+// still written in the OpenAPI spelling is documented under its own text and
+// reaches no route either, which is why it is refused outright.
+func TestEveryJournalledRouteIsAnOperationItsModuleDocuments(t *testing.T) {
+	var checked int
+	for _, a := range applications {
+		documented := map[string]bool{}
+		for _, res := range a.module.Resources {
+			spec, ok := res.(speedhttp.Spec)
+			if !ok {
+				continue
+			}
+			var part fragment
+			if err := json.Unmarshal(spec.Document, &part); err != nil {
+				t.Fatalf("reading the fragment %s declares for %s: %v", a.module.Name, spec.Endpoint, err)
+			}
+			for path, item := range part.Paths {
+				for method := range item {
+					documented[strings.ToUpper(method)+" "+path] = true
+				}
+			}
+		}
+		for _, route := range a.journalled {
+			checked++
+			if strings.ContainsAny(route, "{}") {
+				t.Errorf("%s hands the journal %q, which writes the path in the OpenAPI spelling; "+
+					"the journal compares the path as the route was registered, with :name for a parameter",
+					a.module.Name, route)
+				continue
+			}
+			method, path := splitRoute(route)
+			if !documented[method+" "+openAPIPath(path)] {
+				t.Errorf("%s hands the journal %q, and none of its OpenAPI fragments documents %s %s",
+					a.module.Name, route, method, openAPIPath(path))
+			}
+		}
+	}
+	if checked == 0 {
+		t.Fatal("no module hands the journal a route, so this case checks nothing")
+	}
 }

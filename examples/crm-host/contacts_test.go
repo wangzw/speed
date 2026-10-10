@@ -391,14 +391,17 @@ func TestContactsStayInTheirTenant(t *testing.T) {
 			requireNames(t, "globex's contacts at the old address",
 				contactIDs(get(t, gus, "/contacts?email=ada@example.test")), []string{"con-1@" + globex})
 
-			// A member spelled in another case is refused as a malformed body
-			// rather than read as the field it resembles, and writes nothing.
+			// A member spelled in another case is read as the field it
+			// resembles, as the HTTP module's binder reads a body, so the
+			// update writes that field. The address is put back for the steps
+			// that follow.
 			expect(t, "an update spelling the email member in another case",
 				rita.send(t, nethttp.MethodPatch, "/contacts/con-1", map[string]any{"Email": "mallory@example.test"}),
-				nethttp.StatusBadRequest)
-			if now := sub.storedContacts("con-1")[acme]; now != after[acme] {
-				t.Errorf("a refused update changed acme's con-1 to %+v, was %+v", now, after[acme])
-			}
+				nethttp.StatusOK)
+			requireNames(t, "acme's contacts at the address the other-case member named",
+				contactIDs(get(t, rita, "/contacts?email=mallory@example.test")), []string{"con-1@" + acme})
+			rita.must(t, nethttp.MethodPatch, "/contacts/con-1", map[string]any{"email": "ada@analytical.test"},
+				nethttp.StatusOK)
 
 			// An empty phone clears it.
 			rita.must(t, nethttp.MethodPatch, "/contacts/con-1", map[string]any{"phone": ""}, nethttp.StatusOK).
@@ -492,16 +495,16 @@ func TestContactsStayInTheirTenant(t *testing.T) {
 				source, action, object, outcome string
 				who                             actor
 			}{
-				{"the viewer's refused creation", "request", "POST", createContactRoute, "403", vera},
-				{"the viewer's refused update", "request", "PATCH", patchContactRoute, "403", vera},
-				{"the viewer's refused find-or-create", "request", "POST", upsertContactRoute, "403", vera},
-				{"the viewer's refused delete", "request", "DELETE", deleteContactRoute, "403", vera},
-				{"the rep's refused delete", "request", "DELETE", deleteContactRoute, "403", rita},
-				{"the rep's creation", "request", "POST", createContactRoute, "201", rita},
-				{"the rep's update", "request", "PATCH", patchContactRoute, "200", rita},
-				{"the rep's find-or-create", "request", "POST", upsertContactRoute, "201", rita},
-				{"the admin's delete", "request", "DELETE", deleteContactRoute, "204", ivan},
-				{"the other tenant's creation", "request", "POST", createContactRoute, "201", gus},
+				{"the viewer's refused creation", "request", "POST", routePath(createContactRoute), "403", vera},
+				{"the viewer's refused update", "request", "PATCH", routePath(patchContactRoute), "403", vera},
+				{"the viewer's refused find-or-create", "request", "POST", routePath(upsertContactRoute), "403", vera},
+				{"the viewer's refused delete", "request", "DELETE", routePath(deleteContactRoute), "403", vera},
+				{"the rep's refused delete", "request", "DELETE", routePath(deleteContactRoute), "403", rita},
+				{"the rep's creation", "request", "POST", routePath(createContactRoute), "201", rita},
+				{"the rep's update", "request", "PATCH", routePath(patchContactRoute), "200", rita},
+				{"the rep's find-or-create", "request", "POST", routePath(upsertContactRoute), "201", rita},
+				{"the admin's delete", "request", "DELETE", routePath(deleteContactRoute), "204", ivan},
+				{"the other tenant's creation", "request", "POST", routePath(createContactRoute), "201", gus},
 				{"the statement of the rep's creation", "statement", "create", contactTable, "", rita},
 				{"the statement of the rep's update", "statement", "update", contactTable, "", rita},
 				{"the statement of the admin's delete", "statement", "delete", contactTable, "", ivan},

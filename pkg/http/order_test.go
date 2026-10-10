@@ -2,11 +2,12 @@ package http
 
 import (
 	"errors"
-	nethttp "net/http"
 	"reflect"
 	"slices"
 	"strings"
 	"testing"
+
+	"github.com/gin-gonic/gin"
 
 	"github.com/vislake/speed/pkg/core"
 )
@@ -21,9 +22,9 @@ type (
 	capQuota    interface{ quota() }
 )
 
-// passThrough is a layer body. The ordering never calls it; a registration
-// carries one, so the fixtures do too.
-func passThrough(h nethttp.Handler) nethttp.Handler { return h }
+// passThrough is a layer body that hands the request on. The ordering never
+// calls it; a registration carries one, so the fixtures do too.
+func passThrough(c *gin.Context) { c.Next() }
 
 // registered builds one layer the way Use records one: the declaration and the
 // capabilities it stands for, which are the registration's own Provides.
@@ -39,7 +40,7 @@ func registered(name string, order int, provides, after, before []core.Token) la
 		After:    after,
 		Before:   before,
 		Order:    order,
-		Wrap:     passThrough,
+		Handler:  passThrough,
 	})
 }
 

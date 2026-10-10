@@ -12,6 +12,8 @@ import (
 	"testing"
 	"time"
 
+	"github.com/gin-gonic/gin"
+
 	"github.com/vislake/speed/pkg/authn"
 	"github.com/vislake/speed/pkg/authn/internal/configreader"
 	"github.com/vislake/speed/pkg/config"
@@ -87,14 +89,17 @@ func passes(f *fakeVerifier) *fakeVerifier {
 	return f
 }
 
-// fakeEndpoint records what was registered on one endpoint.
+// fakeEndpoint records what was registered on one endpoint. It stands in for the
+// entry point in the cases about what the descriptor registers and which
+// endpoint names it accepts; what a real chain does with a request is held
+// against the real entry point instead.
 type fakeEndpoint struct {
 	middleware []speedhttp.Middleware
 }
 
-func (e *fakeEndpoint) Route(string, nethttp.Handler) {}
-func (e *fakeEndpoint) Use(mw speedhttp.Middleware)   { e.middleware = append(e.middleware, mw) }
-func (e *fakeEndpoint) Accepting() bool               { return true }
+func (e *fakeEndpoint) Route(string, string, ...gin.HandlerFunc) {}
+func (e *fakeEndpoint) Use(mw speedhttp.Middleware)              { e.middleware = append(e.middleware, mw) }
+func (e *fakeEndpoint) Accepting() bool                          { return true }
 
 // fakeRouter hands out the endpoints it was built with and reports every other
 // name the way the entry point does.

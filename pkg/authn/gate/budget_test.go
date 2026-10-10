@@ -166,9 +166,7 @@ func TestAnAnswerWithinTheBudgetIsHonoured(t *testing.T) {
 // A backend that has stopped answering must not be able to take every goroutine
 // the server has. Past the gate a request ends as an outage straight away rather
 // than waiting, so the number of goroutines parked inside a broken backend is
-// exactly the gate's width, and everything that does not need a backend goes on
-// being served — the exempt routes above all, which is what lets a health check
-// answer while the credential store is down.
+// exactly the gate's width.
 func TestTheInFlightGateRefusesRatherThanQueues(t *testing.T) {
 	admitted := make(chan struct{})
 	release := make(chan struct{})
@@ -185,7 +183,6 @@ func TestTheInFlightGateRefusesRatherThanQueues(t *testing.T) {
 		budget:    2 * time.Second,
 		inFlight:  1,
 	}, blocking)
-	g.Exempt("public", "GET /health")
 	sealed(t, g, routerWith("public"))
 
 	go run(g, "public", withBasic(request("GET", "/orders"), "alice", "secret"))
@@ -208,12 +205,54 @@ func TestTheInFlightGateRefusesRatherThanQueues(t *testing.T) {
 		t.Errorf("the request waited %s before being refused; past the gate it has to end "+
 			"straight away rather than queue behind a backend that stopped answering", waited)
 	}
+}
 
-	if health, _ := run(g, "public", request("GET", "/health")); health.Code != nethttp.StatusOK {
-		t.Errorf("an exempt route answered %d while the in-flight gate was full, want %d: an "+
-			"exempt route reaches no backend, so a saturated gate cannot touch it",
-			health.Code, nethttp.StatusOK)
+// TestAnExemptRouteStillAnswersWhileTheInFlightGateIsFull holds what the gate
+// leaves alone: everything that needs no backend goes on being served, the
+// exempt routes above all, which is what lets a health check answer while the
+// credential store is down.
+func TestAnExemptRouteStillAnswersWhileTheInFlightGateIsFull(t *testing.T) {
+	admitted := make(chan struct{})
+	release := make(chan struct{})
+	blocking := enumerating("local", "alice")
+	blocking.verify = func(context.Context, string, authn.Credential) authn.Verdict {
+		close(admitted)
+		<-release
+		return authn.Denied(nil)
 	}
+
+	var refused, health reply
+	liveAssembly{
+		backends: []authn.Verifier{blocking},
+		routes: []liveRoute{
+			{endpoint: "public", method: "GET", path: "/orders"},
+			{endpoint: "public", method: "GET", path: "/health"},
+		},
+		exempt:   []liveRoute{{endpoint: "public", method: "GET", path: "/health"}},
+		inFlight: 1,
+	}.serve(t, func(l *live) {
+		// The one slot is taken by a request that stays inside the backend
+		// until the case lets it go.
+		held := make(chan reply, 1)
+		go func() { held <- l.send("public", "GET", "/orders", asAlice) }()
+		select {
+		case <-admitted:
+		case <-time.After(waitBound):
+			t.Error("no request reached the backend, so the gate was never full")
+			close(release)
+			<-held
+			return
+		}
+
+		refused = l.send("public", "GET", "/orders", asAlice)
+		health = l.send("public", "GET", "/health")
+
+		close(release)
+		<-held
+	})
+
+	requireStatus(t, "a request past the full in-flight gate", refused, nethttp.StatusServiceUnavailable)
+	requireStatus(t, "an exempt route while the in-flight gate is full", health, nethttp.StatusOK)
 }
 
 // TestASaturatedGateIsNotChargedToTheBackend holds the attribution of that

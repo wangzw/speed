@@ -1,18 +1,20 @@
 package otel
 
 import (
-	"bytes"
 	"context"
-	"log/slog"
+	"encoding/json"
+	"errors"
+	"io"
 	nethttp "net/http"
-	"net/http/httptest"
 	"slices"
 	"strconv"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"testing"
 	"time"
 
+	"github.com/gin-gonic/gin"
 	"go.opentelemetry.io/otel/attribute"
 	"go.opentelemetry.io/otel/codes"
 	sdkmetric "go.opentelemetry.io/otel/sdk/metric"
@@ -20,7 +22,10 @@ import (
 	sdktrace "go.opentelemetry.io/otel/sdk/trace"
 	"go.opentelemetry.io/otel/trace"
 
+	"github.com/vislake/speed/pkg/core"
+	speedhttp "github.com/vislake/speed/pkg/http"
 	"github.com/vislake/speed/pkg/log"
+	"github.com/vislake/speed/pkg/observability"
 )
 
 // recordingSpanExporter keeps what the layer ended.
@@ -63,9 +68,8 @@ func layerUnderTest(t *testing.T) (*providers, *recordingSpanExporter, *sdkmetri
 	return &providers{cfg: prototype(), tp: tp, mp: mp, duration: duration}, rec, reader
 }
 
-// durationPoint collects the one histogram the layer records and returns its
-// data point.
-func durationPoint(t *testing.T, reader *sdkmetric.ManualReader) metricdata.HistogramDataPoint[float64] {
+// durationHistogram collects the one histogram the layer records.
+func durationHistogram(t *testing.T, reader *sdkmetric.ManualReader) metricdata.Histogram[float64] {
 	t.Helper()
 	var rm metricdata.ResourceMetrics
 	if err := reader.Collect(context.Background(), &rm); err != nil {
@@ -80,14 +84,35 @@ func durationPoint(t *testing.T, reader *sdkmetric.ManualReader) metricdata.Hist
 			if !ok {
 				t.Fatalf("%s carries %T, want a float64 histogram", requestDurationName, m.Data)
 			}
-			if len(hist.DataPoints) != 1 {
-				t.Fatalf("%s has %d data points, want 1", requestDurationName, len(hist.DataPoints))
-			}
-			return hist.DataPoints[0]
+			return hist
 		}
 	}
 	t.Fatalf("no %s was recorded", requestDurationName)
-	return metricdata.HistogramDataPoint[float64]{}
+	return metricdata.Histogram[float64]{}
+}
+
+// durationPoint returns the histogram's data point, for a case that sent
+// requests which all carry the same attributes.
+func durationPoint(t *testing.T, reader *sdkmetric.ManualReader) metricdata.HistogramDataPoint[float64] {
+	t.Helper()
+	hist := durationHistogram(t, reader)
+	if len(hist.DataPoints) != 1 {
+		t.Fatalf("%s has %d data points, want 1", requestDurationName, len(hist.DataPoints))
+	}
+	return hist.DataPoints[0]
+}
+
+// durationPoints returns the histogram's data points keyed by the method and the
+// status code they carry, written "GET 404".
+func durationPoints(t *testing.T, reader *sdkmetric.ManualReader) map[string]metricdata.HistogramDataPoint[float64] {
+	t.Helper()
+	points := map[string]metricdata.HistogramDataPoint[float64]{}
+	for _, point := range durationHistogram(t, reader).DataPoints {
+		key := attributeOf(t, point.Attributes, "http.request.method") + " " +
+			attributeOf(t, point.Attributes, "http.response.status_code")
+		points[key] = point
+	}
+	return points
 }
 
 func attributeOf(t *testing.T, attrs attribute.Set, key string) string {
@@ -99,15 +124,29 @@ func attributeOf(t *testing.T, attrs attribute.Set, key string) string {
 	return v.String()
 }
 
+// routes registers one handler per route, on the endpoint the layer is on.
+type routes map[[2]string]gin.HandlerFunc
+
+func (r routes) register(ep speedhttp.Endpoint) {
+	for route, handler := range r {
+		ep.Route(route[0], route[1], handler)
+	}
+}
+
 // TestTheLayerRecordsTheSpanAndTheRequestDuration covers the ordinary path: one
 // span named for the endpoint and the method, one data point carrying the
-// method and the status code the handler actually wrote.
+// method and the status code the handler actually wrote, and nothing else. The
+// route is parameterised so that an attribute carrying the matched route would
+// have a value to carry.
 func TestTheLayerRecordsTheSpanAndTheRequestDuration(t *testing.T) {
 	p, rec, reader := layerUnderTest(t)
-	handler := p.instrument("api")(nethttp.HandlerFunc(func(w nethttp.ResponseWriter, r *nethttp.Request) {
-		w.WriteHeader(nethttp.StatusTeapot)
-	}))
-	handler.ServeHTTP(httptest.NewRecorder(), httptest.NewRequest(nethttp.MethodGet, "http://example.test/x", nil))
+	serve(t, p, routes{
+		{nethttp.MethodGet, "/orders/:id"}: func(c *gin.Context) { c.Status(nethttp.StatusTeapot) },
+	}.register, func(h *entryHost) {
+		if got := h.status(t, nethttp.MethodGet, "/orders/7"); got != nethttp.StatusTeapot {
+			t.Fatalf("the client was answered %d, want the 418 the handler wrote", got)
+		}
+	})
 
 	spans := rec.recorded()
 	if len(spans) != 1 {
@@ -127,6 +166,14 @@ func TestTheLayerRecordsTheSpanAndTheRequestDuration(t *testing.T) {
 	if got := attributeOf(t, point.Attributes, "http.response.status_code"); got != "418" {
 		t.Errorf("the status attribute is %q, want the code the handler wrote, 418", got)
 	}
+	if got := point.Attributes.Len(); got != 2 {
+		t.Errorf("the data point carries %d attributes, %v, want the method and the status code alone: a "+
+			"route attribute would make the dimension grow with what hosts register",
+			got, point.Attributes.ToSlice())
+	}
+	if point.Count != 1 {
+		t.Errorf("the data point counts %d requests, want 1", point.Count)
+	}
 }
 
 // TestTheRequestDurationBucketsAreInSeconds pins the boundaries the histogram
@@ -136,14 +183,14 @@ func TestTheLayerRecordsTheSpanAndTheRequestDuration(t *testing.T) {
 // land in different buckets, and the boundaries are the ones the design names.
 func TestTheRequestDurationBucketsAreInSeconds(t *testing.T) {
 	p, _, reader := layerUnderTest(t)
-	handler := p.instrument("api")(nethttp.HandlerFunc(func(w nethttp.ResponseWriter, r *nethttp.Request) {
-		if r.URL.Path == "/slow" {
-			time.Sleep(60 * time.Millisecond)
+	serve(t, p, routes{
+		{nethttp.MethodGet, "/fast"}: func(*gin.Context) {},
+		{nethttp.MethodGet, "/slow"}: func(*gin.Context) { time.Sleep(60 * time.Millisecond) },
+	}.register, func(h *entryHost) {
+		for _, path := range []string{"/fast", "/slow"} {
+			h.status(t, nethttp.MethodGet, path)
 		}
-	}))
-	for _, path := range []string{"/fast", "/slow"} {
-		handler.ServeHTTP(httptest.NewRecorder(), httptest.NewRequest(nethttp.MethodGet, "http://example.test"+path, nil))
-	}
+	})
 
 	point := durationPoint(t, reader)
 	want := []float64{0.005, 0.01, 0.025, 0.05, 0.075, 0.1, 0.25, 0.5, 0.75, 1, 2.5, 5, 7.5, 10}
@@ -162,19 +209,71 @@ func TestTheRequestDurationBucketsAreInSeconds(t *testing.T) {
 	}
 }
 
-// TestTheLayerRecordsTheStatusEvenWhenTheHandlerNeverWritesOne pins the default
-// the recorder starts from: a handler that only writes a body has answered 200,
-// and the attribute has to say so rather than report a zero.
-func TestTheLayerRecordsTheStatusEvenWhenTheHandlerNeverWritesOne(t *testing.T) {
+// TestTheRequestDurationInstrumentKeepsItsNameUnitAndSeconds pins the rest of
+// the surface a dashboard reads: the instrument's name, its unit, and the unit
+// the value is really in. The name and the unit are looked for as the literals a
+// dashboard writes, not through the constants the layer is built from, because a
+// constant changed along with its uses would still agree with itself. A request
+// of 30ms is recorded as 0.03, and the same request counted in milliseconds
+// would be 30 under a unit that still says seconds.
+func TestTheRequestDurationInstrumentKeepsItsNameUnitAndSeconds(t *testing.T) {
 	p, _, reader := layerUnderTest(t)
-	handler := p.instrument("api")(nethttp.HandlerFunc(func(w nethttp.ResponseWriter, r *nethttp.Request) {
-		_, _ = w.Write([]byte("body"))
-	}))
-	handler.ServeHTTP(httptest.NewRecorder(), httptest.NewRequest(nethttp.MethodPost, "http://example.test/x", nil))
+	serve(t, p, routes{
+		{nethttp.MethodGet, "/slow"}: func(c *gin.Context) {
+			time.Sleep(30 * time.Millisecond)
+			c.Status(nethttp.StatusOK)
+		},
+	}.register, func(h *entryHost) {
+		h.status(t, nethttp.MethodGet, "/slow")
+	})
 
-	point := durationPoint(t, reader)
-	if got := attributeOf(t, point.Attributes, "http.response.status_code"); got != "200" {
-		t.Errorf("the status attribute is %q, want 200", got)
+	var rm metricdata.ResourceMetrics
+	if err := reader.Collect(context.Background(), &rm); err != nil {
+		t.Fatalf("collect: %v", err)
+	}
+	var found *metricdata.Metrics
+	for _, sm := range rm.ScopeMetrics {
+		for i := range sm.Metrics {
+			if sm.Metrics[i].Name == "http.server.request.duration" {
+				found = &sm.Metrics[i]
+			}
+		}
+	}
+	if found == nil {
+		t.Fatalf("no instrument is named http.server.request.duration, so a dashboard reading it finds nothing")
+	}
+	if found.Unit != "s" {
+		t.Errorf("the unit is %q, want s", found.Unit)
+	}
+	hist, ok := found.Data.(metricdata.Histogram[float64])
+	if !ok || len(hist.DataPoints) != 1 {
+		t.Fatalf("the instrument carries %T with %d data points, want one float64 histogram point", found.Data, len(hist.DataPoints))
+	}
+	if sum := hist.DataPoints[0].Sum; sum < 0.03 || sum > 5 {
+		t.Errorf("a request of 30ms was recorded as %v, want between 0.03 and 5: the value is in seconds", sum)
+	}
+}
+
+// TestTheLayerRecordsTheStatusEvenWhenTheHandlerNeverWritesOne pins the default
+// the response starts from: a handler that only writes a body, or writes nothing
+// at all, has answered 200, and the attribute has to say so rather than report a
+// zero.
+func TestTheLayerRecordsTheStatusEvenWhenTheHandlerNeverWritesOne(t *testing.T) {
+	for name, handler := range map[string]gin.HandlerFunc{
+		"a body and no status":      func(c *gin.Context) { _, _ = c.Writer.WriteString("body") },
+		"neither a body nor status": func(*gin.Context) {},
+	} {
+		t.Run(name, func(t *testing.T) {
+			p, _, reader := layerUnderTest(t)
+			serve(t, p, routes{{nethttp.MethodPost, "/x"}: handler}.register, func(h *entryHost) {
+				h.status(t, nethttp.MethodPost, "/x")
+			})
+
+			point := durationPoint(t, reader)
+			if got := attributeOf(t, point.Attributes, "http.response.status_code"); got != "200" {
+				t.Errorf("the status attribute is %q, want 200", got)
+			}
+		})
 	}
 }
 
@@ -184,12 +283,32 @@ func TestTheLayerRecordsTheStatusEvenWhenTheHandlerNeverWritesOne(t *testing.T) 
 // is meant to be cheap.
 func TestTheLayerFoldsMethodsOutsideTheStandardSet(t *testing.T) {
 	p, _, reader := layerUnderTest(t)
-	handler := p.instrument("api")(nethttp.HandlerFunc(func(nethttp.ResponseWriter, *nethttp.Request) {}))
-	handler.ServeHTTP(httptest.NewRecorder(), httptest.NewRequest("PURGE", "http://example.test/x", nil))
+	serve(t, p, routes{{"PURGE", "/x"}: func(*gin.Context) {}}.register, func(h *entryHost) {
+		h.status(t, "PURGE", "/x")
+	})
 
 	point := durationPoint(t, reader)
 	if got := attributeOf(t, point.Attributes, "http.request.method"); got != otherMethod {
 		t.Errorf("a non-standard method is recorded as %q, want %q", got, otherMethod)
+	}
+}
+
+// TestEveryStandardMethodKeepsItsName is the other half of the folding: the nine
+// standard methods are the closed set, and each of them is recorded as itself. A
+// set that lost one would fold that method into the value meant for the unknown
+// ones, and the method dimension would stop telling it apart.
+func TestEveryStandardMethodKeepsItsName(t *testing.T) {
+	standard := []string{
+		nethttp.MethodConnect, nethttp.MethodDelete, nethttp.MethodGet, nethttp.MethodHead, nethttp.MethodOptions,
+		nethttp.MethodPatch, nethttp.MethodPost, nethttp.MethodPut, nethttp.MethodTrace,
+	}
+	for _, method := range standard {
+		if got := methodOf(method); got != method {
+			t.Errorf("methodOf(%q) is %q, want the method itself", method, got)
+		}
+	}
+	if len(standardMethods) != len(standard) {
+		t.Errorf("the standard set holds %d methods, want the nine of net/http", len(standardMethods))
 	}
 }
 
@@ -199,12 +318,10 @@ func TestTheLayerFoldsMethodsOutsideTheStandardSet(t *testing.T) {
 // stops at the hop.
 func TestTheLayerContinuesTheCallersTrace(t *testing.T) {
 	p, rec, _ := layerUnderTest(t)
-	handler := p.instrument("api")(nethttp.HandlerFunc(func(nethttp.ResponseWriter, *nethttp.Request) {}))
-
-	const incoming = "00-4bf92f3577b34da6a3ce929d0e0e4736-00f067aa0ba902b7-01"
-	req := httptest.NewRequest(nethttp.MethodGet, "http://example.test/x", nil)
-	req.Header.Set("traceparent", incoming)
-	handler.ServeHTTP(httptest.NewRecorder(), req)
+	serve(t, p, routes{{nethttp.MethodGet, "/x"}: func(*gin.Context) {}}.register, func(h *entryHost) {
+		const incoming = "00-4bf92f3577b34da6a3ce929d0e0e4736-00f067aa0ba902b7-01"
+		h.status(t, nethttp.MethodGet, "/x", "traceparent", incoming)
+	})
 
 	spans := rec.recorded()
 	if len(spans) != 1 {
@@ -219,46 +336,68 @@ func TestTheLayerContinuesTheCallersTrace(t *testing.T) {
 // and the fact that they are bound rather than injected. A record written
 // downstream has to carry the trace it belongs to, or a log and a span cannot
 // be put together — and the names are this module's contract with whoever
-// reads them.
+// reads them. The logger is the one the entry module injects; the layer adds
+// the fields to the request context the handler reads it from.
 func TestTheLayerBindsTheCorrelationFieldsForDownstreamLogs(t *testing.T) {
-	p, _, _ := layerUnderTest(t)
-	buf := &bytes.Buffer{}
-	lg := slog.New(slog.NewJSONHandler(buf, nil))
+	p, rec, _ := layerUnderTest(t)
+	var logs *syncBuffer
+	serve(t, p, routes{
+		{nethttp.MethodGet, "/x"}: func(c *gin.Context) { log.FromContext(c.Request.Context()).Info("downstream") },
+	}.register, func(h *entryHost) {
+		h.status(t, nethttp.MethodGet, "/x")
+		logs = h.logs
+	})
 
-	var downstream context.Context
-	handler := p.instrument("api")(nethttp.HandlerFunc(func(_ nethttp.ResponseWriter, r *nethttp.Request) {
-		downstream = r.Context()
-	}))
-	req := httptest.NewRequest(nethttp.MethodGet, "http://example.test/x", nil)
-	handler.ServeHTTP(httptest.NewRecorder(), req.WithContext(log.WithLogger(req.Context(), lg)))
-
-	if downstream == nil {
-		t.Fatal("the handler was not reached")
+	spans := rec.recorded()
+	if len(spans) != 1 {
+		t.Fatalf("the layer ended %d spans, want 1", len(spans))
 	}
-	log.FromContext(downstream).Info("downstream")
-	line := buf.String()
-	if !strings.Contains(line, `"trace_id"`) || !strings.Contains(line, `"span_id"`) {
-		t.Errorf("a record written downstream is %s, want it to carry trace_id and span_id", line)
+	var record map[string]any
+	for line := range strings.SplitSeq(logs.String(), "\n") {
+		var candidate map[string]any
+		if json.Unmarshal([]byte(line), &candidate) == nil && candidate["msg"] == "downstream" {
+			record = candidate
+		}
+	}
+	if record == nil {
+		t.Fatalf("the handler's record is not in the log, so nothing here was checked:\n%s", logs.String())
+	}
+	if got, want := record[observability.TraceIDKey], spans[0].SpanContext().TraceID().String(); got != want {
+		t.Errorf("a record written downstream carries %s=%v, want the trace of the span %s",
+			observability.TraceIDKey, got, want)
+	}
+	if got, want := record[observability.SpanIDKey], spans[0].SpanContext().SpanID().String(); got != want {
+		t.Errorf("a record written downstream carries %s=%v, want the span %s",
+			observability.SpanIDKey, got, want)
 	}
 }
 
 // TestTheLayerRecordsAPanicAndLetsItThrough pins both halves of the recovery
 // the layer does: the span says the request failed, and the panic goes on to
-// whatever handles it outside this layer. Swallowing it would take over a
-// promise that belongs to the entry module.
+// the entry module's fallback, outside the engine. Swallowing it would take over
+// a promise that belongs to the entry module, and what the client is answered
+// with says which happened: a swallowed panic ends the handler as a request that
+// returned, which is a 200, while the fallback answers an internal error.
 func TestTheLayerRecordsAPanicAndLetsItThrough(t *testing.T) {
 	p, rec, _ := layerUnderTest(t)
-	handler := p.instrument("api")(nethttp.HandlerFunc(func(nethttp.ResponseWriter, *nethttp.Request) {
-		panic("handler gave up")
-	}))
+	var answered *nethttp.Response
+	serve(t, p, routes{
+		{nethttp.MethodGet, "/boom"}: func(*gin.Context) { panic("handler gave up") },
+	}.register, func(h *entryHost) {
+		resp, err := h.do(t, nethttp.MethodGet, "/boom")
+		if err != nil {
+			t.Fatalf("the request got no response: %v", err)
+		}
+		_ = resp.Body.Close()
+		answered = resp
+	})
 
-	var raised any
-	func() {
-		defer func() { raised = recover() }()
-		handler.ServeHTTP(httptest.NewRecorder(), httptest.NewRequest(nethttp.MethodGet, "http://example.test/x", nil))
-	}()
-	if raised == nil {
-		t.Fatal("the layer swallowed the panic instead of letting the entry module handle it")
+	if answered.StatusCode != nethttp.StatusInternalServerError {
+		t.Errorf("the client was answered %d, want the fallback's 500: the panic did not reach it",
+			answered.StatusCode)
+	}
+	if got := answered.Header.Get("Content-Type"); got != "application/problem+json" {
+		t.Errorf("the response is a %q, want the fallback's problem response", got)
 	}
 
 	spans := rec.recorded()
@@ -268,31 +407,107 @@ func TestTheLayerRecordsAPanicAndLetsItThrough(t *testing.T) {
 	if got := spans[0].Status().Code; got != codes.Error {
 		t.Errorf("the span's status is %v, want Error: a panicking request must not be reported as a success", got)
 	}
+	// The panic is recorded on the span as an exception event, which is where a
+	// trace backend shows what went wrong; a status alone says only that
+	// something did.
+	if !slices.ContainsFunc(spans[0].Events(), func(e sdktrace.Event) bool { return e.Name == "exception" }) {
+		t.Errorf("the span of a panicking request carries the events %v, want an exception event: the "+
+			"panic was not recorded on it", spans[0].Events())
+	}
 }
 
-// TestTheLayerReportsAPanicAsAnInternalErrorOutcome pins what the histogram
-// says about a request the handler abandoned.
+// TestTheLayerReportsAPanicWithTheStatusTheCallerReceives pins what the
+// histogram says about a request the handler abandoned.
 //
-// The recorder's status is untouched when nothing was written, so reporting it
-// reports the 200 it started from — putting every panicking request into the
-// success bucket, which is the one place an operator most needs it not to be.
-// The response the caller ends up with is the entry module's, whose recovery
-// layer answers a panicking handler with an internal error.
-func TestTheLayerReportsAPanicAsAnInternalErrorOutcome(t *testing.T) {
-	p, _, reader := layerUnderTest(t)
-	handler := p.instrument("api")(nethttp.HandlerFunc(func(nethttp.ResponseWriter, *nethttp.Request) {
-		panic("handler gave up")
-	}))
+// A response that has not started has no status yet. The one the writer holds is
+// the 200 it starts from, or whatever the handler had set before it gave up, so
+// reporting it would put a panicking request into the success bucket — the one
+// place an operator most needs it not to be. The caller is answered with the
+// fallback's internal error. A response that has already started is the other
+// way round: the status is on the wire and the fallback's answer cannot change
+// it, so the status the caller received is the committed one. Each case holds
+// the histogram to what the client was told.
+func TestTheLayerReportsAPanicWithTheStatusTheCallerReceives(t *testing.T) {
+	for _, tc := range []struct {
+		name    string
+		handler gin.HandlerFunc
+		want    int
+	}{
+		{
+			name:    "nothing written",
+			handler: func(*gin.Context) { panic("handler gave up") },
+			want:    nethttp.StatusInternalServerError,
+		},
+		{
+			name: "a status set and nothing written",
+			handler: func(c *gin.Context) {
+				c.Status(nethttp.StatusAccepted)
+				panic("handler gave up")
+			},
+			want: nethttp.StatusInternalServerError,
+		},
+		{
+			name: "a status already committed",
+			handler: func(c *gin.Context) {
+				c.Status(nethttp.StatusCreated)
+				c.Writer.WriteHeaderNow()
+				panic("handler gave up")
+			},
+			want: nethttp.StatusCreated,
+		},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			p, _, reader := layerUnderTest(t)
+			serve(t, p, routes{{nethttp.MethodGet, "/boom"}: tc.handler}.register, func(h *entryHost) {
+				if got := h.status(t, nethttp.MethodGet, "/boom"); got != tc.want {
+					t.Fatalf("the client was answered %d, want %d, so this case does not hold the "+
+						"status the caller receives", got, tc.want)
+				}
+			})
 
-	func() {
-		defer func() { _ = recover() }()
-		handler.ServeHTTP(httptest.NewRecorder(), httptest.NewRequest(nethttp.MethodGet, "http://example.test/x", nil))
-	}()
+			point := durationPoint(t, reader)
+			if got, want := attributeOf(t, point.Attributes, "http.response.status_code"), strconv.Itoa(tc.want); got != want {
+				t.Errorf("a panicking request is recorded as %q, want %s, the status the caller received",
+					got, want)
+			}
+		})
+	}
+}
 
+// TestTheLayerRecordsAnAbandonedConnectionAndLetsItThrough covers the panic
+// value net/http gives a handler to drop its connection with. The entry module's
+// fallback recognises it and throws it again, so the client sees a connection
+// that was abandoned, not an answer. This layer sits inside the fallback and
+// reads that value as it reads any panic: the span is marked and the histogram
+// records the internal error, which is the documented misreport. What it must
+// not do is answer for the fallback — swallow the value, which would leave the
+// client a 200, or throw something else, which the fallback would answer as an
+// ordinary defect with a 500.
+func TestTheLayerRecordsAnAbandonedConnectionAndLetsItThrough(t *testing.T) {
+	p, rec, reader := layerUnderTest(t)
+	serve(t, p, routes{
+		{nethttp.MethodGet, "/abandon"}: func(*gin.Context) { panic(nethttp.ErrAbortHandler) },
+	}.register, func(h *entryHost) {
+		resp, err := h.do(t, nethttp.MethodGet, "/abandon")
+		if err == nil {
+			_ = resp.Body.Close()
+			t.Fatalf("the client was answered %d, want the connection abandoned", resp.StatusCode)
+		}
+		if !errors.Is(err, io.EOF) {
+			t.Errorf("the client failed with %v, want the end of a connection the server dropped", err)
+		}
+	})
+
+	spans := rec.recorded()
+	if len(spans) != 1 {
+		t.Fatalf("the layer ended %d spans, want the abandoned request to have ended one", len(spans))
+	}
+	if got := spans[0].Status().Code; got != codes.Error {
+		t.Errorf("the span's status is %v, want Error", got)
+	}
 	point := durationPoint(t, reader)
 	if got := attributeOf(t, point.Attributes, "http.response.status_code"); got != "500" {
-		t.Errorf("a panicking request is recorded as %q, want the internal error the caller is left "+
-			"with", got)
+		t.Errorf("an abandoned request is recorded as %q, want the fallback's default, 500", got)
 	}
 }
 
@@ -303,8 +518,9 @@ func TestTheLayerReportsAPanicAsAnInternalErrorOutcome(t *testing.T) {
 // cardinality from the signal that was guarded to the one that was not.
 func TestTheLayerFoldsTheMethodInTheSpanNameToo(t *testing.T) {
 	p, rec, _ := layerUnderTest(t)
-	handler := p.instrument("api")(nethttp.HandlerFunc(func(nethttp.ResponseWriter, *nethttp.Request) {}))
-	handler.ServeHTTP(httptest.NewRecorder(), httptest.NewRequest("PURGE", "http://example.test/x", nil))
+	serve(t, p, routes{{"PURGE", "/x"}: func(*gin.Context) {}}.register, func(h *entryHost) {
+		h.status(t, "PURGE", "/x")
+	})
 
 	spans := rec.recorded()
 	if len(spans) != 1 {
@@ -316,21 +532,108 @@ func TestTheLayerFoldsTheMethodInTheSpanNameToo(t *testing.T) {
 	}
 }
 
-// TestTheLayerKeepsTheFirstStatusWritten pins which WriteHeader counts. The
-// server ignores a second one and answers with the first, so a recorder that
-// took the last would report a status no caller ever saw.
-func TestTheLayerKeepsTheFirstStatusWritten(t *testing.T) {
+// TestTheStatusAttributeIsTheOneTheCallerReceives pins which WriteHeader counts.
+// The writer keeps the status it will commit: a second WriteHeader before the
+// commit replaces it, and one after the commit is ignored by the server, which
+// answers with the first. Either way the attribute has to be the code the
+// client was answered with, not the first or the last one the handler wrote.
+func TestTheStatusAttributeIsTheOneTheCallerReceives(t *testing.T) {
+	for name, handler := range map[string]gin.HandlerFunc{
+		"a second status before the commit replaces the first": func(c *gin.Context) {
+			c.Status(nethttp.StatusOK)
+			c.Status(nethttp.StatusInternalServerError)
+		},
+		"a second status after the commit is ignored": func(c *gin.Context) {
+			c.Status(nethttp.StatusOK)
+			c.Writer.WriteHeaderNow()
+			c.Status(nethttp.StatusInternalServerError)
+		},
+	} {
+		t.Run(name, func(t *testing.T) {
+			p, _, reader := layerUnderTest(t)
+			var received int
+			serve(t, p, routes{{nethttp.MethodGet, "/x"}: handler}.register, func(h *entryHost) {
+				received = h.status(t, nethttp.MethodGet, "/x")
+			})
+
+			point := durationPoint(t, reader)
+			if got, want := attributeOf(t, point.Attributes, "http.response.status_code"), strconv.Itoa(received); got != want {
+				t.Errorf("the status attribute is %q, want %s, the code the caller received", got, want)
+			}
+		})
+	}
+}
+
+// TestTheLayerSkipsAnInformationalStatus pins the one kind of code a handler may
+// write before its final one. An informational response — 103 Early Hints, say —
+// is sent ahead of the response and does not stop the handler from writing the
+// final status, so it is not what the caller was answered with. A handler that
+// goes on to write a body is answered 200, and one that writes a status is
+// answered with it; the writer, though, goes on reporting the informational
+// code. Each case holds the attribute to the code the client received.
+func TestTheLayerSkipsAnInformationalStatus(t *testing.T) {
+	for name, handler := range map[string]gin.HandlerFunc{
+		"a body after the hints": func(c *gin.Context) {
+			c.Writer.WriteHeader(nethttp.StatusEarlyHints)
+			_, _ = c.Writer.WriteString("body")
+		},
+		"hints sent before a body": func(c *gin.Context) {
+			c.Writer.WriteHeader(nethttp.StatusEarlyHints)
+			c.Writer.WriteHeaderNow()
+			_, _ = c.Writer.WriteString("body")
+		},
+		"an explicit final status": func(c *gin.Context) {
+			c.Writer.WriteHeader(nethttp.StatusEarlyHints)
+			c.Writer.WriteHeader(nethttp.StatusCreated)
+		},
+	} {
+		t.Run(name, func(t *testing.T) {
+			p, _, reader := layerUnderTest(t)
+			var received int
+			serve(t, p, routes{{nethttp.MethodGet, "/x"}: handler}.register, func(h *entryHost) {
+				received = h.status(t, nethttp.MethodGet, "/x")
+			})
+			if received < 200 {
+				t.Fatalf("the client was answered %d, want a final status", received)
+			}
+
+			point := durationPoint(t, reader)
+			if got, want := attributeOf(t, point.Attributes, "http.response.status_code"), strconv.Itoa(received); got != want {
+				t.Errorf("the status attribute is %q, want the final code %s the caller was answered with", got, want)
+			}
+		})
+	}
+}
+
+// TestTheLayerKeepsASwitchingProtocolsStatus pins the informational code that is
+// a final one. 101 is the last thing written on a connection before it changes
+// hands, so a handler that answers an upgrade request with it has been answered
+// 101 and the attribute says so.
+func TestTheLayerKeepsASwitchingProtocolsStatus(t *testing.T) {
 	p, _, reader := layerUnderTest(t)
-	handler := p.instrument("api")(nethttp.HandlerFunc(func(w nethttp.ResponseWriter, _ *nethttp.Request) {
-		w.WriteHeader(nethttp.StatusOK)
-		w.WriteHeader(nethttp.StatusInternalServerError)
-	}))
-	handler.ServeHTTP(httptest.NewRecorder(), httptest.NewRequest(nethttp.MethodGet, "http://example.test/x", nil))
+	serve(t, p, routes{{nethttp.MethodGet, "/upgrade"}: func(c *gin.Context) {
+		c.Writer.WriteHeader(nethttp.StatusSwitchingProtocols)
+		conn, rw, err := c.Writer.Hijack()
+		if err != nil {
+			return
+		}
+		_, _ = rw.WriteString("HTTP/1.1 101 Switching Protocols\r\nUpgrade: test\r\nConnection: Upgrade\r\n\r\n")
+		_ = rw.Flush()
+		_ = conn.Close()
+	}}.register, func(h *entryHost) {
+		resp, err := h.do(t, nethttp.MethodGet, "/upgrade", "Connection", "Upgrade", "Upgrade", "test")
+		if err != nil {
+			t.Fatalf("the upgrade request got no response: %v", err)
+		}
+		_ = resp.Body.Close()
+		if resp.StatusCode != nethttp.StatusSwitchingProtocols {
+			t.Fatalf("the client was answered %d, want 101, so this case does not hold the upgrade", resp.StatusCode)
+		}
+	})
 
 	point := durationPoint(t, reader)
-	if got := attributeOf(t, point.Attributes, "http.response.status_code"); got != "200" {
-		t.Errorf("the status attribute is %q, want the first code written, which is the one the caller "+
-			"received", got)
+	if got := attributeOf(t, point.Attributes, "http.response.status_code"); got != "101" {
+		t.Errorf("the status attribute is %q, want 101: it is the final code of an upgrade", got)
 	}
 }
 
@@ -353,10 +656,10 @@ func TestTheServerSpanCarriesTheOutcome(t *testing.T) {
 	} {
 		t.Run(strconv.Itoa(tc.code), func(t *testing.T) {
 			p, rec, _ := layerUnderTest(t)
-			handler := p.instrument("api")(nethttp.HandlerFunc(func(w nethttp.ResponseWriter, _ *nethttp.Request) {
-				w.WriteHeader(tc.code)
-			}))
-			handler.ServeHTTP(httptest.NewRecorder(), httptest.NewRequest("PURGE", "http://example.test/x", nil))
+			serve(t, p, routes{{"PURGE", "/x"}: func(c *gin.Context) { c.Status(tc.code) }}.register,
+				func(h *entryHost) {
+					h.status(t, "PURGE", "/x")
+				})
 
 			spans := rec.recorded()
 			if len(spans) != 1 {
@@ -377,101 +680,201 @@ func TestTheServerSpanCarriesTheOutcome(t *testing.T) {
 	}
 }
 
-// TestTheLayerSkipsAnInformationalStatus pins the one kind of code a handler may
-// write before its final one. An informational response — 103 Early Hints, say —
-// is sent ahead of the response and does not stop the handler from writing the
-// final status, so it is not what the caller was answered with. The final code
-// is the one recorded, whether the handler wrote it explicitly or only wrote a
-// body afterwards.
-//
-// The case runs a real server and reads the code the client received: the
-// standard library's own test recorder keeps the first code it is given, 1xx
-// included, and would agree with a recorder that got this wrong.
-func TestTheLayerSkipsAnInformationalStatus(t *testing.T) {
-	for name, final := range map[string]func(nethttp.ResponseWriter){
-		"an explicit final status": func(w nethttp.ResponseWriter) { w.WriteHeader(nethttp.StatusCreated) },
-		"a body after the hints":   func(w nethttp.ResponseWriter) { _, _ = w.Write([]byte("body")) },
-	} {
-		t.Run(name, func(t *testing.T) {
-			p, _, reader := layerUnderTest(t)
-			server := httptest.NewServer(p.instrument("api")(nethttp.HandlerFunc(
-				func(w nethttp.ResponseWriter, _ *nethttp.Request) {
-					w.WriteHeader(nethttp.StatusEarlyHints)
-					final(w)
-				})))
-			defer server.Close()
+// TestTheLayerSeesARequestThatMatchesNoRouteAndOneTheMethodDoesNotAllow pins that
+// the layer covers every request the endpoint takes, not only the ones a route
+// serves, and that the status it reads is the one the engine's own answer wrote.
+// The 404 and the 405 are written after the layers have been entered, so a layer
+// that reported a status of its own making, or only the one a route's handler
+// set, would miss both.
+func TestTheLayerSeesARequestThatMatchesNoRouteAndOneTheMethodDoesNotAllow(t *testing.T) {
+	p, rec, reader := layerUnderTest(t)
+	serve(t, p, routes{{nethttp.MethodGet, "/x"}: func(*gin.Context) {}}.register, func(h *entryHost) {
+		if got := h.status(t, nethttp.MethodGet, "/missing"); got != nethttp.StatusNotFound {
+			t.Fatalf("a request matching no route was answered %d, want 404", got)
+		}
+		if got := h.status(t, nethttp.MethodPost, "/x"); got != nethttp.StatusMethodNotAllowed {
+			t.Fatalf("a request whose method the path does not allow was answered %d, want 405", got)
+		}
+	})
 
-			resp, err := server.Client().Get(server.URL + "/x")
-			if err != nil {
-				t.Fatalf("the request failed: %v", err)
-			}
-			_ = resp.Body.Close()
-			if resp.StatusCode < 200 {
-				t.Fatalf("the client was answered %d, want a final status", resp.StatusCode)
-			}
-
-			point := durationPoint(t, reader)
-			want := strconv.Itoa(resp.StatusCode)
-			if got := attributeOf(t, point.Attributes, "http.response.status_code"); got != want {
-				t.Errorf("the status attribute is %q, want the final code %s the caller was answered with", got, want)
-			}
-		})
-	}
-}
-
-// TestTheLayerForwardsTheOptionalInterfaces pins the two the standard library
-// names. A handler that type-asserts the writer makes the assertion against
-// this layer, never against the writer underneath, so without the forwarding
-// its streaming branch is skipped and the endpoint degrades with nothing said.
-func TestTheLayerForwardsTheOptionalInterfaces(t *testing.T) {
-	p, _, _ := layerUnderTest(t)
-	var flushed bool
-	sentinel := &flushRecorder{header: nethttp.Header{}, flushes: &flushed}
-	handler := p.instrument("api")(nethttp.HandlerFunc(func(w nethttp.ResponseWriter, _ *nethttp.Request) {
-		f, ok := w.(nethttp.Flusher)
+	points := durationPoints(t, reader)
+	for _, want := range []string{"GET 404", "POST 405"} {
+		point, ok := points[want]
 		if !ok {
-			t.Error("the writer does not satisfy http.Flusher, so a streaming handler would skip its flush")
-			return
+			t.Errorf("the histogram has no data point for %q, it has %d: the layer did not see the request",
+				want, len(points))
+			continue
 		}
-		f.Flush()
-	}))
-	handler.ServeHTTP(sentinel, httptest.NewRequest(nethttp.MethodGet, "http://example.test/x", nil))
-	if !flushed {
-		t.Error("Flush did not reach the writer underneath")
+		if point.Count != 1 {
+			t.Errorf("the data point for %q counts %d requests, want 1", want, point.Count)
+		}
+		if got := point.Attributes.Len(); got != 2 {
+			t.Errorf("the data point for %q carries %d attributes, want the method and the status code alone", want, got)
+		}
+	}
+
+	spans := rec.recorded()
+	if len(spans) != 2 {
+		t.Fatalf("the layer ended %d spans, want one for each of the two requests", len(spans))
+	}
+	for _, span := range spans {
+		if span.Status().Code == codes.Error {
+			t.Errorf("the span %q is marked failed, want a client error left unset", span.Name())
+		}
 	}
 }
 
-// flushRecorder is a writer that can flush and says so.
-type flushRecorder struct {
-	header  nethttp.Header
-	flushes *bool
+// TestTheLayerLeavesTheResponseWriterInPlace pins that the layer does not
+// replace c.Writer. A layer outside this one and a handler inside it see the same
+// writer, and the optional interfaces the writer carries reach the connection
+// through the layer: a flush puts the first bytes on the wire while the handler
+// is still running, and a hijack hands the handler the connection. A writer
+// replaced by a wrapper that forwarded nothing would still satisfy the types and
+// would fail the observations, and a wrapper that forwarded everything would
+// still fail the identity.
+func TestTheLayerLeavesTheResponseWriterInPlace(t *testing.T) {
+	p, _, _ := layerUnderTest(t)
+
+	// streamed is what a streaming handler reports once it has flushed, and the
+	// gate keeps its response open until the case has read what was flushed.
+	type streamed struct {
+		writer   gin.ResponseWriter
+		flushErr error
+		gate     chan struct{}
+	}
+	outside := make(chan gin.ResponseWriter, 1)
+	flushed := make(chan streamed, 1)
+	stream := func(flush func(c *gin.Context) error) gin.HandlerFunc {
+		return func(c *gin.Context) {
+			gate := make(chan struct{})
+			_, _ = c.Writer.WriteString("first")
+			flushed <- streamed{writer: c.Writer, flushErr: flush(c), gate: gate}
+			select {
+			case <-gate:
+			case <-c.Request.Context().Done():
+			}
+		}
+	}
+	serve(t, p, func(ep speedhttp.Endpoint) {
+		ep.Use(speedhttp.Middleware{
+			Name:   "test.outside",
+			Before: []core.Token{(*observability.TracerProvider)(nil)},
+			Handler: func(c *gin.Context) {
+				outside <- c.Writer
+				c.Next()
+			},
+		})
+		ep.Route(nethttp.MethodGet, "/flush", stream(func(c *gin.Context) error {
+			c.Writer.Flush()
+			return nil
+		}))
+		ep.Route(nethttp.MethodGet, "/controller", stream(func(c *gin.Context) error {
+			return nethttp.NewResponseController(c.Writer).Flush()
+		}))
+		ep.Route(nethttp.MethodGet, "/hijack", func(c *gin.Context) {
+			conn, rw, err := nethttp.NewResponseController(c.Writer).Hijack()
+			if err != nil {
+				c.Writer.Header().Set("X-Hijack-Error", err.Error())
+				return
+			}
+			_, _ = rw.WriteString("HTTP/1.1 202 Accepted\r\nContent-Length: 0\r\nConnection: close\r\n\r\n")
+			_ = rw.Flush()
+			_ = conn.Close()
+		})
+	}, func(h *entryHost) {
+		for _, path := range []string{"/flush", "/controller"} {
+			// The response comes back while the handler is still held, which is
+			// only possible when the flush put its first bytes on the wire.
+			resp, err := h.do(t, nethttp.MethodGet, path)
+			if err != nil {
+				t.Fatalf("GET %s got no response while the handler was still running: %v: what the "+
+					"handler flushed did not reach the client", path, err)
+			}
+			first := make([]byte, len("first"))
+			_, readErr := io.ReadFull(resp.Body, first)
+			res := <-flushed
+			close(res.gate)
+			_ = resp.Body.Close()
+
+			if res.flushErr != nil {
+				t.Errorf("GET %s: the flush failed: %v", path, res.flushErr)
+			}
+			if readErr != nil || string(first) != "first" {
+				t.Errorf("GET %s read %q and %v before the handler finished, want the flushed bytes",
+					path, first, readErr)
+			}
+			if before := <-outside; before != res.writer {
+				t.Errorf("GET %s: the layer outside sees the writer %p and the handler inside it sees %p, "+
+					"want the same writer: this layer replaced it", path, before, res.writer)
+			}
+		}
+
+		resp, err := h.do(t, nethttp.MethodGet, "/hijack")
+		if err != nil {
+			t.Fatalf("GET /hijack got no response: %v", err)
+		}
+		_ = resp.Body.Close()
+		if msg := resp.Header.Get("X-Hijack-Error"); msg != "" {
+			t.Errorf("the handler could not take the connection over: %s", msg)
+		}
+		if resp.StatusCode != nethttp.StatusAccepted {
+			t.Errorf("GET /hijack was answered %d, want the 202 the handler wrote on the connection it took",
+				resp.StatusCode)
+		}
+		<-outside
+	})
 }
 
-func (f *flushRecorder) Header() nethttp.Header { return f.header }
-
-func (f *flushRecorder) Write(b []byte) (int, error) { return len(b), nil }
-
-func (f *flushRecorder) WriteHeader(int) {}
-
-func (f *flushRecorder) Flush() { *f.flushes = true }
-
-// TestTheLayerExposesTheWriterUnderneath pins the Unwrap. A handler that
-// asserts the writer for flushing or hijacking reaches the real one through it;
-// without it, such a handler fails on every instrumented endpoint and nothing
-// says so.
-func TestTheLayerExposesTheWriterUnderneath(t *testing.T) {
+// TestTheLayerStandsForExactlyTheTwoProvidersThisModuleDelivers pins what another
+// layer's After or Before can point at. The layer stands for the two capabilities
+// the module really delivers: a constraint naming either lands on it, and a
+// capability invented for this layer alone would be one no module delivers. A
+// layer missing one of them silently drops the constraints that point at it, and
+// the only trace is an Info line in the startup diagnostics.
+func TestTheLayerStandsForExactlyTheTwoProvidersThisModuleDelivers(t *testing.T) {
 	p, _, _ := layerUnderTest(t)
-	var inner nethttp.ResponseWriter
-	handler := p.instrument("api")(nethttp.HandlerFunc(func(w nethttp.ResponseWriter, _ *nethttp.Request) {
-		if u, ok := w.(interface{ Unwrap() nethttp.ResponseWriter }); ok {
-			inner = u.Unwrap()
+	provides := p.layer("api").Provides
+	for _, want := range []core.Token{
+		(*observability.TracerProvider)(nil),
+		(*observability.MeterProvider)(nil),
+	} {
+		if !slices.Contains(provides, want) {
+			t.Errorf("the layer stands for %v, which lacks %T", provides, want)
 		}
-	}))
-	sentinel := httptest.NewRecorder()
-	handler.ServeHTTP(sentinel, httptest.NewRequest(nethttp.MethodGet, "http://example.test/x", nil))
+	}
+	if len(provides) != 2 {
+		t.Errorf("the layer stands for %d capabilities, %v, want only the two this module delivers", len(provides), provides)
+	}
+}
 
-	if inner != sentinel {
-		t.Errorf("the writer underneath is %v, want the one the server handed the layer: a flushing "+
-			"handler would not reach it", inner)
+// TestTheLayerSitsOutsideLayersThatStateNoPlace pins the preference the layer is
+// registered with. It is the outermost layer unless another layer asks to be
+// further out, so that the time every other layer spends is in the span. A layer
+// that states no order, and one that states a slightly smaller one than the
+// default, both end up inside it: the second is what tells an order only a little
+// below the default from the layer's own.
+func TestTheLayerSitsOutsideLayersThatStateNoPlace(t *testing.T) {
+	p, _, _ := layerUnderTest(t)
+	var inside [2]atomic.Bool
+	serve(t, p, func(ep speedhttp.Endpoint) {
+		for i, order := range []int{0, -1} {
+			ep.Use(speedhttp.Middleware{
+				Name:  "test.probe",
+				Order: order,
+				Handler: func(c *gin.Context) {
+					inside[i].Store(trace.SpanFromContext(c.Request.Context()).SpanContext().IsValid())
+					c.Next()
+				},
+			})
+		}
+		ep.Route(nethttp.MethodGet, "/x", func(c *gin.Context) { c.Status(nethttp.StatusOK) })
+	}, func(h *entryHost) {
+		h.status(t, nethttp.MethodGet, "/x")
+	})
+
+	for i, order := range []int{0, -1} {
+		if !inside[i].Load() {
+			t.Errorf("a layer with order %d ran outside the instrumentation layer: the time it spends is not in the span", order)
+		}
 	}
 }

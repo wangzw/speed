@@ -3,7 +3,6 @@ package http
 import (
 	"log/slog"
 	nethttp "net/http"
-	"net/http/httptest"
 	"reflect"
 	"strings"
 	"testing"
@@ -46,9 +45,9 @@ func TestSelfReferentialConstraintIsReportedUnderItsOwnCause(t *testing.T) {
 			Name:     "recover",
 			Provides: []core.Token{(*capRecovery)(nil)},
 			After:    []core.Token{(*capRecovery)(nil)},
-			Wrap:     noteLayer(tr, "recover"),
+			Handler:  noteLayer(tr, "recover"),
 		})
-		e.Route("GET /things", nethttp.NotFoundHandler())
+		e.Route("GET", "/things", filler)
 	})
 
 	var reported []string
@@ -69,7 +68,7 @@ func TestSelfReferentialConstraintIsReportedUnderItsOwnCause(t *testing.T) {
 	mustContain(t, reported[0], "After[0]", "which declaration on that layer placed nothing")
 	mustContain(t, reported[0], "endpoint=public", "the endpoint the declaration was made on")
 
-	handler.ServeHTTP(httptest.NewRecorder(), httptest.NewRequest(nethttp.MethodGet, "/things", nil))
+	serveOnce(handler, nethttp.MethodGet, "/things")
 	if got := tr.seen(); !equalStrings(got, []string{"recover"}) {
 		t.Errorf("the chain ran %v, and a constraint that placed nothing leaves the layer "+
 			"running where Order puts it", got)
@@ -98,15 +97,15 @@ func TestSelfReferentialConstraintWithAnotherProviderIsNotReported(t *testing.T)
 			Order:    0,
 			Provides: []core.Token{(*capAuth)(nil)},
 			After:    []core.Token{(*capAuth)(nil)},
-			Wrap:     noteLayer(tr, "warden"),
+			Handler:  noteLayer(tr, "warden"),
 		})
 		e.Use(Middleware{
 			Name:     "auth",
 			Order:    10,
 			Provides: []core.Token{(*capAuth)(nil)},
-			Wrap:     noteLayer(tr, "auth"),
+			Handler:  noteLayer(tr, "auth"),
 		})
-		e.Route("GET /things", nethttp.NotFoundHandler())
+		e.Route("GET", "/things", filler)
 	})
 
 	reported := unlandedLines(append(records.at(slog.LevelInfo), records.at(slog.LevelWarn)...))
@@ -118,7 +117,7 @@ func TestSelfReferentialConstraintWithAnotherProviderIsNotReported(t *testing.T)
 		}
 	}
 
-	handler.ServeHTTP(httptest.NewRecorder(), httptest.NewRequest(nethttp.MethodGet, "/things", nil))
+	serveOnce(handler, nethttp.MethodGet, "/things")
 	if got, want := tr.seen(), []string{"auth", "warden"}; !equalStrings(got, want) {
 		t.Errorf("the chain ran %v, want %v: warden declared itself inside the capability it "+
 			"shares with auth, so the constraint places it there however Order would order the two",

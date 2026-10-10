@@ -1,10 +1,11 @@
 package journal
 
 import (
-	"bufio"
-	"net"
 	nethttp "net/http"
+	"slices"
 	"strconv"
+
+	"github.com/gin-gonic/gin"
 
 	"github.com/vislake/speed/pkg/audit"
 	"github.com/vislake/speed/pkg/authn"
@@ -25,44 +26,84 @@ import (
 // edge whose capability no layer stands for and lists the drop in the startup
 // diagnostics, so an assembly without authentication runs this layer with an
 // entry whose actor — and, without tenant resolution, whose tenant — is empty.
+//
+// The layer runs inside the engine, after the route is matched, so it compares
+// what the engine settled and builds no reading of route syntax of its own. It
+// puts nothing in the writer's place: the status it records is the one the
+// engine's writer holds, and the writer's own optional interfaces are the
+// handlers' to reach as they are.
 func (j *journal) middlewareFor(endpoint string) speedhttp.Middleware {
 	return speedhttp.Middleware{
 		Name:     ModuleName,
 		Provides: []core.Token{(*audit.Audit)(nil)},
 		After:    []core.Token{(*authn.Gate)(nil), (*tenant.Resolution)(nil)},
 		Order:    middlewareOrder,
-		Wrap: func(next nethttp.Handler) nethttp.Handler {
-			return nethttp.HandlerFunc(func(w nethttp.ResponseWriter, r *nethttp.Request) {
-				pattern, matched := j.matcher.match(r)
-				if !matched {
-					next.ServeHTTP(w, r)
-					return
+		Handler: func(c *gin.Context) {
+			route := c.FullPath()
+			if !j.requested(c.Request.Method, route) {
+				c.Next()
+				return
+			}
+			// The request is the one this layer received: its context carries
+			// the identity and the tenant the layers outside this one settled,
+			// and a layer inside may hand the chain another request in its
+			// place.
+			r := c.Request
+			// The row is written after the inner chain has returned, because
+			// the outcome does not exist before then. A layer that wrote on the
+			// way in could fill that column with a constant and nothing else,
+			// and a result column holding a constant is worth nothing to
+			// whoever reads it.
+			returned := false
+			defer func() {
+				// A chain that did not return is a request an audit trail least
+				// wants to lose: a handler that panicked, one that stopped its
+				// goroutine with runtime.Goexit, and one that panicked with nil
+				// under GODEBUG=panicnil=1 all end here with no status to read,
+				// and a status code would be a guess. Nothing is recovered, so
+				// whatever is unwinding the stack goes on exactly as it was: this
+				// layer's job is to record what happened, not to change what
+				// happens. The entry point's fallback, outside the engine,
+				// answers it.
+				if !returned {
+					j.recordRequest(r, endpoint, route, panicOutcome)
 				}
-				// The row is written after the inner chain has returned,
-				// because the outcome does not exist before then. A layer that
-				// wrote on the way in could fill that column with a constant
-				// and nothing else, and a result column holding a constant is
-				// worth nothing to whoever reads it.
-				rec := &statusRecorder{ResponseWriter: w, status: nethttp.StatusOK}
-				outcome := ""
-				defer func() {
-					// A handler that panics never returns, and a panic is the
-					// request an audit trail least wants to lose. The value is
-					// recorded and then thrown again rather than swallowed:
-					// this layer's job is to record what happened, not to
-					// change what happens.
-					if thrown := recover(); thrown != nil {
-						outcome = panicOutcome
-						j.recordRequest(r, endpoint, pattern, outcome)
-						panic(thrown)
-					}
-					j.recordRequest(r, endpoint, pattern, outcome)
-				}()
-				next.ServeHTTP(rec, r)
-				outcome = strconv.Itoa(rec.status)
-			})
+			}()
+			c.Next()
+			returned = true
+			j.recordRequest(r, endpoint, route, strconv.Itoa(answeredWith(c.Writer.Status())))
 		},
 	}
+}
+
+// requested reports whether a request is one the configuration names: its
+// method and the route path it was dispatched under equal the method and the
+// path of an entry of the requests input item.
+//
+// The route path is empty when the engine matched no route — a path nothing is
+// registered on, or a method the matched path does not allow — and no entry has
+// an empty path, so such a request is never recorded.
+func (j *journal) requested(method, route string) bool {
+	return slices.Contains(j.settings.requests, requestItem{method: method, path: route})
+}
+
+// answeredWith is the final status a caller is answered with, given the one the
+// writer holds.
+//
+// An informational status the handler set — 103 Early Hints, say — is not a
+// final one: net/http sends it ahead of the response and answers with the status
+// that follows. The writer holds the status until the header is committed and
+// then hands it on as an interim response, so a handler that goes on to write a
+// body is answered with the 200 net/http supplies while the writer still reports
+// the informational status. A status the handler writes before the commit
+// replaces the one in the writer, and is the one reported. 101 Switching
+// Protocols is the exception net/http makes as well: it is the last thing
+// written before the connection changes hands, so it is the final status.
+func answeredWith(status int) int {
+	if status >= 100 && status < 200 && status != nethttp.StatusSwitchingProtocols {
+		return nethttp.StatusOK
+	}
+	return status
 }
 
 // panicOutcome is what the result column holds for a request whose handler
@@ -71,79 +112,19 @@ const panicOutcome = "panic"
 
 // recordRequest writes the row for one matched request.
 //
-// The endpoint name goes into the detail rather than into a column of its own:
-// it is not one of the entry's fields, and the layer does know which endpoint
-// it was registered on.
-func (j *journal) recordRequest(r *nethttp.Request, endpoint, pattern, outcome string) {
+// The action is the method and the object is the route path: which kind of
+// request it was. The path the client asked for names which one, and goes into
+// the detail beside the endpoint name, because neither is one of the entry's
+// fields and the layer does know where it was registered and what was asked.
+func (j *journal) recordRequest(r *nethttp.Request, endpoint, route, outcome string) {
 	ctx := r.Context()
 	j.submit(ctx, assemble(ctx, audit.SourceRequest, audit.Entry{
 		Action:  r.Method,
-		Object:  pattern,
+		Object:  route,
 		Outcome: outcome,
 		Detail: map[string]string{
 			"endpoint": endpoint,
 			"path":     r.URL.Path,
 		},
 	}, ""))
-}
-
-// statusRecorder remembers the status the inner chain answered with.
-//
-// A handler that never calls WriteHeader answers 200, which is why that is the
-// initial value rather than something read off a zero int.
-type statusRecorder struct {
-	nethttp.ResponseWriter
-	status  int
-	written bool
-}
-
-func (s *statusRecorder) WriteHeader(code int) {
-	if !s.written && !informational(code) {
-		s.status = code
-		s.written = true
-	}
-	s.ResponseWriter.WriteHeader(code)
-}
-
-// informational reports a status that comes ahead of the answer rather than
-// being it. net/http sends a 1xx response at once and lets the handler go on to
-// send more of them and then the final status, so the first status written is
-// not the outcome when it is one of these — 103 Early Hints ahead of the real
-// response is the common case. Switching protocols is the exception: the
-// connection passes to another protocol and no other status follows it.
-func informational(code int) bool {
-	return code >= 100 && code < 200 && code != nethttp.StatusSwitchingProtocols
-}
-
-func (s *statusRecorder) Write(b []byte) (int, error) {
-	s.written = true
-	return s.ResponseWriter.Write(b)
-}
-
-// Unwrap lets http.ResponseController reach the writer underneath, so a handler
-// that flushes or hijacks the connection still can.
-func (s *statusRecorder) Unwrap() nethttp.ResponseWriter { return s.ResponseWriter }
-
-// Flush forwards to the writer underneath.
-//
-// Wrapping a writer hides whatever optional interfaces it carries, and a
-// handler that reaches for one by type assertion is the ordinary way to write a
-// streaming response. Without this, a server-sent-events route on a guarded
-// endpoint would buffer every frame until the handler returned — the client
-// would see nothing until the end, and nothing would say why. The two that
-// change what a client receives are forwarded here; the rest are reachable
-// through Unwrap.
-func (s *statusRecorder) Flush() {
-	if flusher, ok := s.ResponseWriter.(nethttp.Flusher); ok {
-		flusher.Flush()
-	}
-}
-
-// Hijack forwards to the writer underneath, which is what an upgrade to a
-// protocol of its own needs.
-func (s *statusRecorder) Hijack() (net.Conn, *bufio.ReadWriter, error) {
-	if hijacker, ok := s.ResponseWriter.(nethttp.Hijacker); ok {
-		return hijacker.Hijack()
-	}
-	return nil, nil, nethttp.ErrNotSupported
 }

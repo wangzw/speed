@@ -8,18 +8,18 @@ import (
 	"log/slog"
 	"net"
 	"net/http"
-	"net/http/httptest"
 	"os"
 	"path/filepath"
-	"strings"
+	"sync"
 	"time"
+
+	"github.com/gin-gonic/gin"
 
 	"github.com/vislake/speed/pkg/config"
 	jsonformat "github.com/vislake/speed/pkg/config/format/json"
 	filesource "github.com/vislake/speed/pkg/config/source/file"
 	"github.com/vislake/speed/pkg/core"
 	speedhttp "github.com/vislake/speed/pkg/http"
-	"github.com/vislake/speed/pkg/http/stdmux"
 	"github.com/vislake/speed/pkg/log"
 )
 
@@ -32,10 +32,11 @@ import (
 // here: net/http keeps its own name and the parent package takes the alias,
 // which is what the package documentation gives an external file.
 //
-// The entry point it assembles is the shipped subpackage's, which is where a
-// host gets one: importing pkg/http/stdmux registers the module its engine is
-// bound to, and an example that built the descriptor by hand would be teaching
-// a shape the module does not have.
+// The entry point it assembles is this package's own module, speedhttp.Module,
+// taken into the registry the way a host takes a module in. Importing the
+// package registers the same descriptor with the process registry, and a host
+// that builds its command tree from that registry names it by
+// speedhttp.ModuleName.
 
 // exampleDocument is the configuration every example runs on: one listening
 // endpoint named public, on an address the operating system picks.
@@ -105,7 +106,7 @@ func startExample(registrant func(*core.Registry) error, extra ...core.Module) (
 		Resources: []any{config.HostIdentity{Prefix: "EXAMPLE", DefaultLocator: "file:" + document}},
 	})
 	reg.Register(exampleLoggerModule())
-	reg.Register(stdmux.Module())
+	reg.Register(speedhttp.Module())
 	for _, module := range extra {
 		reg.Register(module)
 	}
@@ -154,6 +155,51 @@ func (h *anExampleHost) stop() error {
 	err := <-h.result
 	_ = os.RemoveAll(h.dir)
 	return err
+}
+
+// answer is one response as an example prints it: the status, the media type and
+// the body.
+type answer struct {
+	status    int
+	mediaType string
+	body      string
+}
+
+// get sends a GET to the endpoint the example's host bound and returns the
+// response. The address is the one the endpoint's own record reported, since the
+// examples listen on port 0.
+func (h *anExampleHost) get(path string) (answer, error) {
+	response, err := http.Get("http://" + boundAddress.read() + path)
+	if err != nil {
+		return answer{}, err
+	}
+	defer func() { _ = response.Body.Close() }()
+	body, err := io.ReadAll(response.Body)
+	if err != nil {
+		return answer{}, err
+	}
+	return answer{status: response.StatusCode, mediaType: response.Header.Get("Content-Type"), body: string(body)}, nil
+}
+
+// boundAddress is the address the last endpoint to bind reported. The examples
+// run one after another, each with one endpoint.
+var boundAddress addressBox
+
+type addressBox struct {
+	mu    sync.Mutex
+	value string
+}
+
+func (a *addressBox) write(value string) {
+	a.mu.Lock()
+	defer a.mu.Unlock()
+	a.value = value
+}
+
+func (a *addressBox) read() string {
+	a.mu.Lock()
+	defer a.mu.Unlock()
+	return a.value
 }
 
 // exampleLoggerModule delivers the Logger capability over a logger that writes
@@ -205,6 +251,7 @@ func (exampleHandler) Handle(_ context.Context, r slog.Record) error {
 	r.Attrs(func(a slog.Attr) bool {
 		value := fmt.Sprint(a.Value.Any())
 		if a.Key == "address" {
+			boundAddress.write(value)
 			if host, _, err := net.SplitHostPort(value); err == nil {
 				value = net.JoinHostPort(host, "<port>")
 			}
@@ -220,8 +267,11 @@ func (exampleHandler) WithAttrs([]slog.Attr) slog.Handler { return exampleHandle
 func (exampleHandler) WithGroup(string) slog.Handler      { return exampleHandler{} }
 
 // ExampleEndpoint_Route registers a route: what a module does in its Init
-// callback. It takes the Router capability up, looks an endpoint up by the
-// name configuration gave it, and binds a pattern to a handler.
+// callback. It takes the Router capability up, looks an endpoint up by the name
+// configuration gave it, and binds a method and a path to a handler. The path is
+// written the way gin writes it, and the handler is a gin handler, so
+// everything gin offers a handler — binding a body, rendering a response — is
+// there without this package in between.
 func ExampleEndpoint_Route() {
 	host, err := startExample(func(reg *core.Registry) error {
 		router, err := core.Resolve[speedhttp.Router](reg)
@@ -232,9 +282,9 @@ func ExampleEndpoint_Route() {
 		if err != nil {
 			return err
 		}
-		endpoint.Route("GET /things", http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
-			_ = speedhttp.WriteJSON(w, speedhttp.StatusFor(nil), map[string]string{"id": "1"})
-		}))
+		endpoint.Route(http.MethodGet, "/things/:id", func(c *gin.Context) {
+			c.JSON(http.StatusOK, gin.H{"id": c.Param("id")})
+		})
 		return nil
 	})
 	if err != nil {
@@ -243,9 +293,17 @@ func ExampleEndpoint_Route() {
 	}
 	defer func() { _ = host.stop() }()
 
+	response, err := host.get("/things/7")
+	if err != nil {
+		fmt.Println("the request failed:", err)
+		return
+	}
+	fmt.Println(response.status, response.body)
+
 	// Output:
 	// INFO an HTTP endpoint's chain is assembled endpoint=public routes=1 chain=http:base -> http:fallback
 	// INFO an HTTP endpoint is listening endpoint=public address=127.0.0.1:<port> configured=127.0.0.1:0 tls=false
+	// 200 {"id":"7"}
 }
 
 // ExampleEndpoint_Use registers two middleware layers on one endpoint.
@@ -255,6 +313,9 @@ func ExampleEndpoint_Route() {
 // inside the middleware of that capability. The constraint reaches whichever
 // layer declares the capability in its own Provides, so a capability no layer
 // declares places nothing.
+//
+// A layer is a gin handler: it hands the request on with c.Next and ends the
+// chain with c.Abort.
 func ExampleEndpoint_Use() {
 	// The capabilities the two layers name. A real layer points at a
 	// capability some module delivers; what matters here is that the layer
@@ -281,14 +342,14 @@ func ExampleEndpoint_Use() {
 			Provides: []core.Token{(*tracing)(nil)},
 			After:    []core.Token{(*spans)(nil)},
 			Order:    -100,
-			Wrap:     func(next http.Handler) http.Handler { return next },
+			Handler:  func(c *gin.Context) { c.Next() },
 		})
 		// span stands for spans itself, so trace's constraint lands on it
 		// and nowhere else.
 		endpoint.Use(speedhttp.Middleware{
 			Name:     "span",
 			Provides: []core.Token{(*spans)(nil)},
-			Wrap:     func(next http.Handler) http.Handler { return next },
+			Handler:  func(c *gin.Context) { c.Next() },
 		})
 		return nil
 	})
@@ -303,83 +364,102 @@ func ExampleEndpoint_Use() {
 	// INFO an HTTP endpoint is listening endpoint=public address=127.0.0.1:<port> configured=127.0.0.1:0 tls=false
 }
 
-// ExampleDecode decodes a request body in a handler.
+// ExampleFail refuses a request from a handler. The response is the default
+// error shape, a problem details object of RFC 9457, and the chain behind the
+// handler does not run. A layer that refuses a request does the same, setting
+// the response headers the refusal needs — WWW-Authenticate for a 401,
+// Retry-After for a 429 — before it calls Fail.
 //
-// Decode rejects a field the type does not declare — a misspelled name and a
-// field from another version of the API are the same thing to it — and it
-// calls the value's own Validate when the type has one. StatusFor turns what
-// it reports into a status code: 400 for a body that is not the shape this API
-// reads, 422 for a body its own rules reject, and the caller writes whatever
-// error body its API specifies.
-func ExampleDecode() {
-	handler := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		var o order
-		if err := speedhttp.Decode(r, &o); err != nil {
-			_ = speedhttp.WriteJSON(w, speedhttp.StatusFor(err), map[string]string{"error": "the request body was rejected"})
+// The same shape is what the endpoint answers for a path that matches no route,
+// which goes through every layer first.
+func ExampleFail() {
+	host, err := startExample(func(reg *core.Registry) error {
+		router, err := core.Resolve[speedhttp.Router](reg)
+		if err != nil {
+			return err
+		}
+		endpoint, err := router.Endpoint("public")
+		if err != nil {
+			return err
+		}
+		endpoint.Route(http.MethodGet, "/things/:id", func(c *gin.Context) {
+			speedhttp.Fail(c, speedhttp.Problem{
+				Status: http.StatusNotFound,
+				Detail: "there is no thing " + c.Param("id"),
+			})
+		})
+		return nil
+	})
+	if err != nil {
+		fmt.Println("startup failed:", err)
+		return
+	}
+	defer func() { _ = host.stop() }()
+
+	for _, path := range []string{"/things/7", "/nowhere"} {
+		response, err := host.get(path)
+		if err != nil {
+			fmt.Println("the request failed:", err)
 			return
 		}
-		_ = speedhttp.WriteJSON(w, speedhttp.StatusFor(nil), o)
+		fmt.Println(response.status, response.mediaType)
+		fmt.Println(response.body)
+	}
+
+	// Output:
+	// INFO an HTTP endpoint's chain is assembled endpoint=public routes=1 chain=http:base -> http:fallback
+	// INFO an HTTP endpoint is listening endpoint=public address=127.0.0.1:<port> configured=127.0.0.1:0 tls=false
+	// 404 application/problem+json
+	// {"type":"about:blank","title":"Not Found","status":404,"detail":"there is no thing 7"}
+	// 404 application/problem+json
+	// {"type":"about:blank","title":"Not Found","status":404}
+}
+
+// problemShape is an error shape of an API's own, delivered as the
+// ErrorResponder capability.
+type problemShape struct{}
+
+// RespondError writes every error response of the process in this module's one
+// shape: a JSON object with a code and a message, under the status the Problem
+// asks for.
+func (problemShape) RespondError(w http.ResponseWriter, _ *http.Request, p speedhttp.Problem) {
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(p.Status)
+	_, _ = fmt.Fprintf(w, `{"code":%d,"message":%q}`, p.Status, http.StatusText(p.Status))
+}
+
+// ExampleErrorResponder replaces the shape of every error response. A module
+// that owns an API's error shape delivers the ErrorResponder capability, and
+// from then on the responses this module writes — what Fail writes, the answer
+// to a path that matches no route, the answer to a panic — take that shape. The
+// default shape is not written beside it.
+func ExampleErrorResponder() {
+	host, err := startExample(func(*core.Registry) error { return nil }, core.Module{
+		Name:     "errorshape",
+		Provides: []core.Provision{{Token: (*speedhttp.ErrorResponder)(nil)}},
+		New: func(context.Context, *core.Registry) (any, error) {
+			return problemShape{}, nil
+		},
 	})
-
-	// A body the type accepts, one its own rule rejects, and one carrying a
-	// field it never declares.
-	for _, body := range []string{
-		`{"quantity":2}`,
-		`{"quantity":0}`,
-		`{"quantity":2,"unit":"box"}`,
-	} {
-		recorder := httptest.NewRecorder()
-		handler.ServeHTTP(recorder, httptest.NewRequest(http.MethodPost, "/orders", strings.NewReader(body)))
-		fmt.Println(recorder.Code, recorder.Body.String())
-	}
-
-	// Output:
-	// 200 {"quantity":2}
-	// 422 {"error":"the request body was rejected"}
-	// 400 {"error":"the request body was rejected"}
-}
-
-// order is the request body of the example above. A body type checks itself:
-// this package provides the mechanism and no rules at all.
-type order struct {
-	Quantity int `json:"quantity"`
-}
-
-func (o order) Validate() error {
-	if o.Quantity < 1 {
-		return errors.New("quantity must be at least 1")
-	}
-	return nil
-}
-
-// ExampleWriteJSON writes a response.
-//
-// Encoding happens before anything is written, so a value that cannot be
-// encoded leaves the response untouched. StatusFor(nil) is 200, which is what
-// lets the success path and the failure path write the same way.
-func ExampleWriteJSON() {
-	recorder := httptest.NewRecorder()
-	if err := speedhttp.WriteJSON(recorder, speedhttp.StatusFor(nil), map[string]int{"count": 3}); err != nil {
-		fmt.Println("writing the response failed:", err)
-		return
-	}
-
-	response := recorder.Result()
-	defer func() { _ = response.Body.Close() }()
-	body, err := io.ReadAll(response.Body)
 	if err != nil {
-		fmt.Println("reading the response back failed:", err)
+		fmt.Println("startup failed:", err)
 		return
 	}
+	defer func() { _ = host.stop() }()
 
-	fmt.Println(response.Status)
-	fmt.Println(response.Header.Get("Content-Type"))
-	fmt.Println(string(body))
+	response, err := host.get("/nowhere")
+	if err != nil {
+		fmt.Println("the request failed:", err)
+		return
+	}
+	fmt.Println(response.status, response.mediaType)
+	fmt.Println(response.body)
 
 	// Output:
-	// 200 OK
-	// application/json; charset=utf-8
-	// {"count":3}
+	// INFO an HTTP endpoint's chain is assembled endpoint=public routes=0 chain=http:base -> http:fallback
+	// INFO an HTTP endpoint is listening endpoint=public address=127.0.0.1:<port> configured=127.0.0.1:0 tls=false
+	// 404 application/json
+	// {"code":404,"message":"Not Found"}
 }
 
 // ExampleSpec declares an OpenAPI fragment as a resource.

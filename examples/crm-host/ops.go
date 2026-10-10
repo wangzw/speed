@@ -9,6 +9,8 @@ import (
 	"slices"
 	"strings"
 
+	"github.com/gin-gonic/gin"
+
 	"github.com/vislake/speed/pkg/core"
 	"github.com/vislake/speed/pkg/db"
 	speedhttp "github.com/vislake/speed/pkg/http"
@@ -77,14 +79,14 @@ type readiness struct {
 }
 
 // reportHealth answers that the process is alive. It reads nothing.
-func reportHealth(w nethttp.ResponseWriter, _ *nethttp.Request) {
-	_ = speedhttp.WriteJSON(w, nethttp.StatusOK, health{Status: "ok"})
+func reportHealth(c *gin.Context) {
+	c.JSON(nethttp.StatusOK, health{Status: "ok"})
 }
 
 // reportReady answers whether this process can serve: every endpoint accepting
 // and the database answering. Each failure is named, so a probe's log says
 // which half was down.
-func (p *opsProduct) reportReady(w nethttp.ResponseWriter, r *nethttp.Request) {
+func (p *opsProduct) reportReady(c *gin.Context) {
 	var failures []string
 	for _, name := range servedEndpoints {
 		endpoint, err := p.router.Endpoint(name)
@@ -94,21 +96,19 @@ func (p *opsProduct) reportReady(w nethttp.ResponseWriter, r *nethttp.Request) {
 	}
 	if pool, err := p.db.DB().DB(); err != nil {
 		failures = append(failures, "the database handle has no pool: "+err.Error())
-	} else if err := pool.PingContext(r.Context()); err != nil {
+	} else if err := pool.PingContext(c.Request.Context()); err != nil {
 		failures = append(failures, "the database does not answer: "+err.Error())
 	}
 	if len(failures) > 0 {
-		_ = speedhttp.WriteJSON(w, nethttp.StatusServiceUnavailable, readiness{Status: "unavailable", Failures: failures})
+		c.JSON(nethttp.StatusServiceUnavailable, readiness{Status: "unavailable", Failures: failures})
 		return
 	}
-	_ = speedhttp.WriteJSON(w, nethttp.StatusOK, readiness{Status: "ready"})
+	c.JSON(nethttp.StatusOK, readiness{Status: "ready"})
 }
 
 // serveDocument answers the merged OpenAPI document.
-func (p *opsProduct) serveDocument(w nethttp.ResponseWriter, _ *nethttp.Request) {
-	w.Header().Set("Content-Type", "application/json; charset=utf-8")
-	w.WriteHeader(nethttp.StatusOK)
-	_, _ = w.Write(p.document)
+func (p *opsProduct) serveDocument(c *gin.Context) {
+	c.Data(nethttp.StatusOK, "application/json; charset=utf-8", p.document)
 }
 
 // fragment is the part of a declared OpenAPI fragment the merge reads: its
@@ -291,9 +291,9 @@ func opsModule() core.Module {
 			}
 			product.router = router
 			product.document = document
-			ops.Route(healthRoute, nethttp.HandlerFunc(reportHealth))
-			ops.Route(readyRoute, nethttp.HandlerFunc(product.reportReady))
-			ops.Route(openAPIRoute, nethttp.HandlerFunc(product.serveDocument))
+			mount(ops, healthRoute, reportHealth)
+			mount(ops, readyRoute, product.reportReady)
+			mount(ops, openAPIRoute, product.serveDocument)
 			return nil
 		},
 

@@ -168,7 +168,7 @@ classDiagram
     Assembler --> MetricExporter : 经注册表收取
 ```
 
-一次入站请求的处理次序。采集层位于请求上下文建立那一层之内、全部登记层之外由 `http` 内建的兜底层之内；跨度覆盖它之内的每一层与 handler。
+一次入站请求的处理次序。采集层是一个登记层，位于请求上下文建立那一层与由 `http` 内建的兜底层之内，二者都在 gin 引擎之外；它的 `Order` 偏外，没有约束把别的层排到它之外时，它在登记层里最靠外。跨度覆盖它之内的每一层与 handler。
 
 ```mermaid
 sequenceDiagram
@@ -299,13 +299,13 @@ type Config struct {
 
 ### 采集层的跨度
 
-采集层在被登记的监听端上包在全部登记层之外、请求上下文建立那一层的内侧，因此它看得到该端每一条请求，也看得到它之内每一层的耗时。它的动作按序如下：
+采集层在被登记的监听端上是一个登记层，`Order` 偏外，没有约束把别的层排到它之外时包在它们之外，位于请求上下文建立那一层与兜底层的内侧；它因此看得到该端每一条请求，也看得到它之内每一层的耗时。它的动作按序如下：
 
 1. **提取**：用本模块的传播器从入站头部取出父跨度上下文。取不到就当作没有父跨度，请求照常处理。
 2. **开始跨度**：以提取结果（或空上下文）为父，开始一个服务端跨度，名称取该端与方法。方法按与计量同一个折叠规则处理，理由也相同：跨度名与指标维度一样被后端索引，只在指标一侧收窄基数，等于把基数从一个信号挪到另一个。
 3. **绑定关联字段**：把跨度与跨度的标识经 `log.WithAttrs` 写回上下文，键名是本模块导出的两个常量。这一步只做绑定，不做注入——日志上下文里的 logger 由产生上下文的那一方注入（见 [log](design-log.md) 的首次注入归属）。
 4. **转交**：把带跨度的上下文放进请求（`c.Request = c.Request.WithContext(...)`，下游可见），调用 `c.Next` 交给其后各层。
-5. **结束与计时**：`c.Next` 返回后记一次请求时长，属性取自下表；跨度带上同样的两个属性后结束。状态码从 `c.Writer.Status()` 读。最终状态码是服务端错误（`5xx`）时跨度标为错误，与 handler 是否抛 panic 无关——有意写出的 `500` 与兜底层写出的一样是本端的失败，不标的话按状态筛选追踪的后端会把它归进成功；客户端错误（`4xx`）是调用方的错，跨度状态不设，这也是上游对服务端跨度的约定。handler 抛 panic 而响应尚未写出（`c.Writer.Written()` 为假）时，记的是入口模块的兜底层随后会写出的那个 `500`：panic 穿过本层时响应还没有写出，此刻从写出者读到的状态不是调用方将收到的。
+5. **结束与计时**：`c.Next` 返回后记一次请求时长，属性取自下表；跨度带上同样的两个属性后结束。状态码从 `c.Writer.Status()` 读；处理器只设了 1xx（101 除外）就写出响应体时，写出者记下的仍是那个 1xx，而调用方收到的最终状态是 200，层把它读作 200。最终状态码是服务端错误（`5xx`）时跨度标为错误，与 handler 是否抛 panic 无关——有意写出的 `500` 与兜底层写出的一样是本端的失败，不标的话按状态筛选追踪的后端会把它归进成功；客户端错误（`4xx`）是调用方的错，跨度状态不设，这也是上游对服务端跨度的约定。handler 抛 panic 而响应尚未写出（`c.Writer.Written()` 为假）时，记的是入口模块的兜底层随后会写出的那个 `500`：panic 穿过本层时响应还没有写出，此刻从写出者读到的状态不是调用方将收到的。
 
 **采样跟随父跨度。** 采样器以父跨度的决定为先，没有父跨度时才按 `sample-ratio` 判定：带着父跨度的请求照入站头部里的采样标志走，两个方向都是——调用方标记已采样的，采样率为零也记录；标记未采样的，采样率为一也不记录。各进程各按自己的采样率判定，同一条追踪就会在一部分节点上有跨度、另一部分没有，从哪一侧看都是断的。代价落在信任上：本层包在认证之外，入站头部可以由任何调用方写下，调用方因而能让自己的请求被记录或不被记录；`sample-ratio` 约束的只是本进程开始的追踪。
 
@@ -424,7 +424,7 @@ type Config struct {
 - **存在。** 本模块未被本次命令纳入、也没有预置实例时，两种信号都不存在，没有一层会拦下，也不进启动诊断——诊断不覆盖「已登记而未被本次命令纳入、也没有预置实例」这一档。察觉途径是注册表的按名查询：它对这样的名字给出禁用，原因写明它不在这条命令的参与集里。
 - **宿主为本模块预置的实例不是本模块的产物时，采集层与事件订阅不存在，而注册表答本模块在场。** `Init` 对这样的实例不做任何事（见[关停时的刷出](#关停时的刷出)）：不登记采集层，不订阅事件；经那个实例是否还有信号产生，由预置的一方决定。按名查询答启用，查不出这一档。采集层缺席的察觉途径是各端组装时写出的链清单里没有采集层；事件订阅缺席没有察觉途径：链清单不列订阅，只订阅事件、不暴露监听端的进程连链清单也没有。
 - **覆盖面。** 受采集的监听端由配置点名。漏写一个端不失败、不进诊断。察觉途径是各端组装时写出的链清单：漏挂的那一行少一个层名。按名查询的启用结果在这一档上没有判别力——它答的是模块的状态，不是某份声明挂在哪个端上。
-- **位置。** 采集层不是链上最外层：任何 `Order` 更小、或不指向本功能的层都排在它之外，那一段的耗时与其中抛出的 panic 都不进跨度。察觉途径同上，链清单给出组装后的次序。
+- **位置。** 采集层不是链上最外层：任何 `Order` 更小、或以 `Before` 指向本功能的层都排在它之外，那一段的耗时与其中抛出的 panic 都不进跨度。察觉途径同上，链清单给出组装后的次序。
 - **事件流完整。** 经总线取得的领域事实可能缺样，且缺样不可判定；反过来一条事实也可能派出多个跨度，跨度数不等于事实数，按事件标识归并之后才是观测到的事实数（见[事件订阅](#事件订阅)）。事件派生的跨度还落在消费时间轴上，不与产生它的业务跨度对齐。
 - **采样。** `sample-ratio` 只决定本进程开始的追踪；带父跨度的请求由调用方的采样标志决定，而调用方不经认证即可写下它。一次请求有没有跨度因而不只取决于配置，这一档没有察觉途径。
 - **导出。** 零导出后端与零采样率各写一行说明；端点写错主机名在默认配置下不产生任何信号；导出失败只有转发包装写出的首次与恢复两行日志，关停时最后一次导出的失败也不例外，而那两行经日志模块的链写出——链本身可以被配置成不输出任何记录。
@@ -463,11 +463,11 @@ type Config struct {
 | 装配器的描述符与各阶段行为 | 已实现 | `pkg/observability/otel/module.go` `Module`、`prepare`、`wire`、`shutdown` |
 | provider 的构造、资源与导出器的释放 | 已实现 | `pkg/observability/otel/providers.go` `newProviders`、`newInstanceID`、`queueSize`、`releaseExporters` |
 | 转发包装、导出失败的上报与关闭的截留 | 已实现 | `pkg/observability/otel/wrapper.go` `spanExporter`、`metricExporter`、`notifier` |
-| 请求路径的采集层 | 部分实现：层现为 `net/http` 一级的 `func(nethttp.Handler) nethttp.Handler`，经 `Middleware.Wrap` 登记，自带包住写出者的 `recorder`；缺 `gin.HandlerFunc` 形态的层——经 `Middleware.Handler` 登记，状态读 `c.Writer`，经 `c.Request` 放入上下文并以 `c.Next` 转交 | `pkg/observability/otel/layer.go` `(*providers).layer`、`instrument`、`recorder` |
+| 请求路径的采集层 | 已实现 | `pkg/observability/otel/layer.go` `(*providers).layer`、`instrument`、`answeredWith` |
 | 请求时长的计量 | 已实现 | `pkg/observability/otel/layer.go` `newRequestDuration` |
 | 事件订阅 | 已实现 | `pkg/observability/otel/events.go` `spanFor`、`payloadAttributes`、`fieldAttribute`、`eventIDKey`、`tenantIDKey` |
 | 配置声明与解读 | 已实现 | `pkg/observability/otel/config.go` `Config`、`schema`、`pkg/observability/otlp/otlp.go` `Config`、`pkg/observability/stdout/stdout.go` `Config` |
 | OTLP 导出后端 | 已实现 | `pkg/observability/otlp/exporters.go` `newExporters`、`build`、`clientTLS`、`probe` |
 | 标准输出导出后端 | 已实现 | `pkg/observability/stdout/exporters.go` `newExporters` |
 | 哨兵错误 | 已实现 | `pkg/observability/otel/errors.go`、`pkg/observability/otlp/otlp.go` `ErrUnknownProtocol`、`ErrInvalidHeader`、`ErrExporterUnreachable`、`ErrInvalidDuration` |
-| 依赖预算的两种判定 | 已实现 | `pkg/observability/deps_test.go` `TestTheInterfacePackageReachesNoBackendLibrary`、`TestTheAssemblerReachesNoBackendTransport` |
+| 依赖预算的判定 | 已实现 | `pkg/observability/deps_test.go` `TestTheInterfacePackageReachesNoBackendLibrary`、`TestTheAssemblerStaysInsideItsDependencyBudget`、`TestTheAssemblerReachesNoBackendTransport` |

@@ -200,13 +200,12 @@ type journal struct {
 	handle    *gorm.DB
 	logger    *slog.Logger
 	signal    *signal
-	matcher   *matcher
 	accepting atomic.Bool
 }
 
 // newJournal builds the product. It holds configuration and nothing derived
-// from it: the matcher and the capture layer are both built in Init, once the
-// capabilities they need have been taken up.
+// from it: the capture layer is built in Init, once the capabilities it needs
+// have been taken up.
 func newJournal(set settings, handle *gorm.DB, logger *slog.Logger) *journal {
 	return &journal{
 		settings: set,
@@ -225,15 +224,6 @@ func newJournal(set settings, handle *gorm.DB, logger *slog.Logger) *journal {
 // host that names nothing gets neither path and a journal that still captures
 // statements.
 func (j *journal) wire(_ context.Context, reg *core.Registry) error {
-	if len(j.settings.requests) > 0 {
-		m, err := newMatcher(j.settings.requests)
-		if err != nil {
-			return fmt.Errorf("%s%s: the %s input item: %w",
-				diagnosticPrefix, ModuleName, requestsItem, err)
-		}
-		j.matcher = m
-	}
-
 	if len(j.settings.endpoints) > 0 {
 		router, err := core.Resolve[speedhttp.Router](reg)
 		if err != nil {
@@ -293,12 +283,10 @@ func productOf(instance any) (*journal, bool) {
 
 // unique drops repeated names, keeping the order they were first written in.
 //
-// A name written twice is the same request written twice, and passing it
-// through is not harmless: a second layer on one endpoint records every request
-// twice and stands for the audit capability a second time, and a second
-// subscription to one event type delivers it twice. The matcher does the same
-// for its patterns, for the same reason and one more — the router it is built
-// on panics on a repeated registration.
+// A name written twice is the same name written twice, and passing it through
+// is not harmless: a second layer on one endpoint records every request twice
+// and stands for the audit capability a second time, and a second subscription
+// to one event type delivers it twice.
 func unique(names []string) []string {
 	if len(names) < 2 {
 		return names

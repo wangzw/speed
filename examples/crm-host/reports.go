@@ -9,6 +9,8 @@ import (
 	"strconv"
 	"time"
 
+	"github.com/gin-gonic/gin"
+
 	"github.com/vislake/speed/pkg/core"
 	"github.com/vislake/speed/pkg/db"
 	"github.com/vislake/speed/pkg/event"
@@ -167,16 +169,16 @@ type pipelineReport struct {
 // columns neither grouped nor aggregated. The statement names no tenant: the
 // filter puts the tenant condition on the deals and on the joined stages, so a
 // deal is not paired with the other tenant's stage of the same key.
-func (p *reportsProduct) pipeline(w nethttp.ResponseWriter, r *nethttp.Request) {
-	ctx := r.Context()
-	self, ok := memberOf(w, r, pipelineReportRoute)
+func (p *reportsProduct) pipeline(c *gin.Context) {
+	ctx := c.Request.Context()
+	self, ok := memberOf(c, pipelineReportRoute)
 	if !ok {
 		return
 	}
 	ttl, err := settings.Get[time.Duration](p.settings, settings.ForTenant(string(self.TenantID)), reportsCacheTTLSetting)
 	if err != nil {
 		log.FromContext(ctx).Error("reading the report cache lifetime", "error", err)
-		writeError(w, nethttp.StatusInternalServerError, "the report cache lifetime cannot be read")
+		writeError(c, nethttp.StatusInternalServerError, "the report cache lifetime cannot be read")
 		return
 	}
 	// The generation is read before the table, so a report computed from rows
@@ -185,7 +187,7 @@ func (p *reportsProduct) pipeline(w nethttp.ResponseWriter, r *nethttp.Request) 
 	generation, err := currentGeneration(ctx, p.store, self.TenantID)
 	if err != nil {
 		log.FromContext(ctx).Error("reading the report generation", "error", err)
-		writeError(w, nethttp.StatusServiceUnavailable, "the report cache cannot be read")
+		writeError(c, nethttp.StatusServiceUnavailable, "the report cache cannot be read")
 		return
 	}
 	key := pipelineKey(self.TenantID, generation)
@@ -197,11 +199,11 @@ func (p *reportsProduct) pipeline(w nethttp.ResponseWriter, r *nethttp.Request) 
 		cached, hit, err = p.store.Get(ctx, key)
 		if err != nil {
 			log.FromContext(ctx).Error("reading the cached report", "error", err)
-			writeError(w, nethttp.StatusServiceUnavailable, "the report cache cannot be read")
+			writeError(c, nethttp.StatusServiceUnavailable, "the report cache cannot be read")
 			return
 		}
 		if hit {
-			writeRawJSON(w, cached)
+			writeRawJSON(c, cached)
 			return
 		}
 	}
@@ -216,7 +218,7 @@ func (p *reportsProduct) pipeline(w nethttp.ResponseWriter, r *nethttp.Request) 
 		Scan(&rows).Error
 	if err != nil {
 		log.FromContext(ctx).Error("computing the pipeline report", "error", err)
-		writeError(w, nethttp.StatusServiceUnavailable, "the deal table cannot be read")
+		writeError(c, nethttp.StatusServiceUnavailable, "the deal table cannot be read")
 		return
 	}
 	report := pipelineReport{Tenant: string(self.TenantID), AsOf: time.Now().UTC(), Stages: rows}
@@ -226,7 +228,7 @@ func (p *reportsProduct) pipeline(w nethttp.ResponseWriter, r *nethttp.Request) 
 	body, err := json.Marshal(report)
 	if err != nil {
 		log.FromContext(ctx).Error("encoding the pipeline report", "error", err)
-		writeError(w, nethttp.StatusInternalServerError, "the report cannot be encoded")
+		writeError(c, nethttp.StatusInternalServerError, "the report cannot be encoded")
 		return
 	}
 	if ttl > 0 {
@@ -234,22 +236,20 @@ func (p *reportsProduct) pipeline(w nethttp.ResponseWriter, r *nethttp.Request) 
 			log.FromContext(ctx).Error("caching the pipeline report; it is answered and not cached", "error", err)
 		}
 	}
-	writeRawJSON(w, body)
+	writeRawJSON(c, body)
 }
 
 // writeRawJSON answers with a JSON body already encoded, so a report from the
 // cache and one just computed reach the client as the same bytes.
-func writeRawJSON(w nethttp.ResponseWriter, body []byte) {
-	w.Header().Set("Content-Type", "application/json")
-	w.WriteHeader(nethttp.StatusOK)
-	_, _ = w.Write(body)
+func writeRawJSON(c *gin.Context, body []byte) {
+	c.Data(nethttp.StatusOK, "application/json", body)
 }
 
 // currencyOf reads the currency a report is asked for.
-func currencyOf(w nethttp.ResponseWriter, r *nethttp.Request) (string, bool) {
-	currency := r.URL.Query().Get("currency")
+func currencyOf(c *gin.Context) (string, bool) {
+	currency := c.Query("currency")
 	if !currencyPattern.MatchString(currency) {
-		writeError(w, nethttp.StatusBadRequest, "the currency query parameter is not a three-letter ISO 4217 code")
+		writeError(c, nethttp.StatusBadRequest, "the currency query parameter is not a three-letter ISO 4217 code")
 		return "", false
 	}
 	return currency, true
@@ -278,13 +278,13 @@ type leaderboardView struct {
 // the users table carries no tenant, and is joined by a condition written as
 // text. The statement names no tenant: the deals are the scoped side, and the
 // filter puts the condition on them and on their stages.
-func (p *reportsProduct) leaderboard(w nethttp.ResponseWriter, r *nethttp.Request) {
-	ctx := r.Context()
-	self, ok := memberOf(w, r, leaderboardRoute)
+func (p *reportsProduct) leaderboard(c *gin.Context) {
+	ctx := c.Request.Context()
+	self, ok := memberOf(c, leaderboardRoute)
 	if !ok {
 		return
 	}
-	currency, ok := currencyOf(w, r)
+	currency, ok := currencyOf(c)
 	if !ok {
 		return
 	}
@@ -301,13 +301,13 @@ func (p *reportsProduct) leaderboard(w nethttp.ResponseWriter, r *nethttp.Reques
 		Scan(&rows).Error
 	if err != nil {
 		log.FromContext(ctx).Error("computing the leaderboard", "error", err)
-		writeError(w, nethttp.StatusServiceUnavailable, "the deal table cannot be read")
+		writeError(c, nethttp.StatusServiceUnavailable, "the deal table cannot be read")
 		return
 	}
 	if rows == nil {
 		rows = []leader{}
 	}
-	_ = speedhttp.WriteJSON(w, nethttp.StatusOK, leaderboardView{Tenant: string(self.TenantID), Currency: currency, Leaders: rows})
+	c.JSON(nethttp.StatusOK, leaderboardView{Tenant: string(self.TenantID), Currency: currency, Leaders: rows})
 }
 
 // revenueView is one currency's line of a tenant's won revenue.
@@ -324,22 +324,22 @@ type revenueList struct {
 
 // revenue answers the tenant's won revenue by currency, as the revenue
 // projection has counted it. The read names no tenant; the filter scopes it.
-func (p *reportsProduct) revenue(w nethttp.ResponseWriter, r *nethttp.Request) {
-	ctx := r.Context()
-	if _, ok := memberOf(w, r, revenueRoute); !ok {
+func (p *reportsProduct) revenue(c *gin.Context) {
+	ctx := c.Request.Context()
+	if _, ok := memberOf(c, revenueRoute); !ok {
 		return
 	}
 	var rows []WonRevenue
 	if err := p.db.DB().WithContext(ctx).Order("currency").Find(&rows).Error; err != nil {
 		log.FromContext(ctx).Error("reading the won revenue", "error", err)
-		writeError(w, nethttp.StatusServiceUnavailable, "the revenue table cannot be read")
+		writeError(c, nethttp.StatusServiceUnavailable, "the revenue table cannot be read")
 		return
 	}
 	out := revenueList{Revenue: make([]revenueView, 0, len(rows))}
 	for _, row := range rows {
 		out.Revenue = append(out.Revenue, revenueView{Currency: row.Currency, Deals: row.Deals, Amount: row.Amount})
 	}
-	_ = speedhttp.WriteJSON(w, nethttp.StatusOK, out)
+	c.JSON(nethttp.StatusOK, out)
 }
 
 // deliveryView is one webhook delivery as the API shows it.
@@ -361,15 +361,15 @@ type deliveriesView struct {
 // deliveries answers the tenant's most recent webhook deliveries. The table is
 // the webhooks module's; this module reads it on the tenant's behalf, and the
 // filter scopes the read.
-func (p *reportsProduct) deliveries(w nethttp.ResponseWriter, r *nethttp.Request) {
-	ctx := r.Context()
-	if _, ok := memberOf(w, r, deliveriesRoute); !ok {
+func (p *reportsProduct) deliveries(c *gin.Context) {
+	ctx := c.Request.Context()
+	if _, ok := memberOf(c, deliveriesRoute); !ok {
 		return
 	}
 	var rows []WebhookDelivery
 	if err := p.db.DB().WithContext(ctx).Order("created_at DESC, event_id").Limit(deliveriesPage).Find(&rows).Error; err != nil {
 		log.FromContext(ctx).Error("reading the webhook deliveries", "error", err)
-		writeError(w, nethttp.StatusServiceUnavailable, "the deliveries cannot be read")
+		writeError(c, nethttp.StatusServiceUnavailable, "the deliveries cannot be read")
 		return
 	}
 	out := deliveriesView{Deliveries: []deliveryView{}}
@@ -379,7 +379,7 @@ func (p *reportsProduct) deliveries(w nethttp.ResponseWriter, r *nethttp.Request
 			Attempts: d.Attempts, ResponseCode: d.ResponseCode, UpdatedAt: d.UpdatedAt,
 		})
 	}
-	_ = speedhttp.WriteJSON(w, nethttp.StatusOK, out)
+	c.JSON(nethttp.StatusOK, out)
 }
 
 // dropPipeline is the module's handler for every deal event: each follows a
@@ -476,10 +476,10 @@ func reportsModule() core.Module {
 			if err != nil {
 				return err
 			}
-			api.Route(pipelineReportRoute, nethttp.HandlerFunc(product.pipeline))
-			api.Route(leaderboardRoute, nethttp.HandlerFunc(product.leaderboard))
-			api.Route(revenueRoute, nethttp.HandlerFunc(product.revenue))
-			api.Route(deliveriesRoute, nethttp.HandlerFunc(product.deliveries))
+			mount(api, pipelineReportRoute, product.pipeline)
+			mount(api, leaderboardRoute, product.leaderboard)
+			mount(api, revenueRoute, product.revenue)
+			mount(api, deliveriesRoute, product.deliveries)
 			for _, eventType := range dealEventTypes {
 				bus.Subscribe(eventType, product.dropPipeline)
 			}

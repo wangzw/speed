@@ -6,14 +6,19 @@ import (
 	"go/ast"
 	"go/parser"
 	"go/token"
+	"io"
 	"log/slog"
 	nethttp "net/http"
 	"net/http/httptest"
+	"net/http/httptrace"
+	"net/textproto"
 	"os"
 	"strings"
 	"sync"
 	"testing"
 	"time"
+
+	"github.com/gin-gonic/gin"
 
 	"github.com/vislake/speed/pkg/config"
 	"github.com/vislake/speed/pkg/core"
@@ -51,15 +56,10 @@ func parseProductionFiles(t *testing.T) (*token.FileSet, []*ast.File) {
 	return fset, files
 }
 
-// postWithBody builds a request carrying body, the shape a handler sees.
-func postWithBody(body string) *nethttp.Request {
-	return httptest.NewRequest(nethttp.MethodPost, "/things", strings.NewReader(body))
-}
-
 // spyWriter is a nethttp.ResponseWriter that records what was actually done to
 // it. A httptest.ResponseRecorder cannot tell "WriteHeader was never called"
-// from "WriteHeader(200) was called", and that is exactly the distinction
-// WriteJSON's failure path turns on.
+// from "WriteHeader(200) was called", and that is the distinction a test of what
+// the fallback wrote turns on.
 type spyWriter struct {
 	header      nethttp.Header
 	status      int
@@ -210,6 +210,10 @@ func (g *gateHandler) ServeHTTP(w nethttp.ResponseWriter, _ *nethttp.Request) {
 	g.finished <- struct{}{}
 }
 
+// gin is the same handler as a route's: it holds the request on the gin
+// context's writer, which is the one a registered handler is given.
+func (g *gateHandler) gin(c *gin.Context) { g.ServeHTTP(c.Writer, c.Request) }
+
 // letGo releases every request being held, once, however often it is called.
 func (g *gateHandler) letGo() {
 	select {
@@ -294,6 +298,30 @@ type stubLogger struct{ logger *slog.Logger }
 
 func (s stubLogger) Named(string) *slog.Logger { return s.logger }
 func (s stubLogger) Redaction() log.Redaction  { return noRedaction{} }
+
+// namingLogger is stubLogger that keeps the name each Named call asked for, so a
+// test can read what a module called itself when it took the logger up.
+type namingLogger struct {
+	stubLogger
+	mu    sync.Mutex
+	names []string
+}
+
+func (n *namingLogger) Named(name string) *slog.Logger {
+	n.mu.Lock()
+	defer n.mu.Unlock()
+	n.names = append(n.names, name)
+	return n.logger
+}
+
+// asked is the names Named was called with, in order.
+func (n *namingLogger) asked() []string {
+	n.mu.Lock()
+	defer n.mu.Unlock()
+	return append([]string(nil), n.names...)
+}
+
+var _ log.Logger = (*namingLogger)(nil)
 
 // noRedaction takes registrations and masks nothing. What an assembly test
 // observes of the Logger capability is the ordering it causes, not the masking.
@@ -403,13 +431,13 @@ func inOrder(steps ...func(*core.Registry) error) func(*core.Registry) error {
 
 // routeOn is the stage callback that registers one route through the public
 // surface, the path a real registrant takes.
-func routeOn(endpoint, pattern string, h nethttp.Handler) func(*core.Registry) error {
+func routeOn(endpoint, method, path string, handlers ...gin.HandlerFunc) func(*core.Registry) error {
 	return func(reg *core.Registry) error {
 		e, err := endpointFrom(reg, endpoint)
 		if err != nil {
 			return err
 		}
-		e.Route(pattern, h)
+		e.Route(method, path, handlers...)
 		return nil
 	}
 }
@@ -566,57 +594,86 @@ func boundAddr(r *router, name string) (string, error) {
 // answered with. Unlike get, which only needs a request to be in flight, this
 // one is for the assertions that turn on what the chain actually answered.
 func getStatus(ctx context.Context, addr, path string) (int, error) {
+	resp, err := getResponse(ctx, addr, path)
+	if err != nil {
+		return 0, err
+	}
+	return resp.status, nil
+}
+
+// answer is what a client got back over a socket: the status line, the headers
+// and the body read to its end.
+type answer struct {
+	status int
+	header nethttp.Header
+	body   string
+	// bodyErr is what reading the body ended with. A response the server cut
+	// short surfaces here rather than as an error from the request.
+	bodyErr error
+}
+
+// getResponse issues one GET against a bound endpoint over a connection of its
+// own, so that what a server does to its connection is seen by this request and
+// by no other. The client asks for no compression and decodes none, so the
+// headers and the body are what the server sent. An error is a request that got
+// no response at all.
+func getResponse(ctx context.Context, addr, path string) (answer, error) {
 	req, err := nethttp.NewRequestWithContext(ctx, nethttp.MethodGet, "http://"+addr+path, nil)
 	if err != nil {
-		return 0, err
+		return answer{}, err
 	}
-	client := &nethttp.Client{Timeout: waitDeadline}
+	client := &nethttp.Client{
+		Timeout:   waitDeadline,
+		Transport: &nethttp.Transport{DisableKeepAlives: true, DisableCompression: true},
+	}
 	resp, err := client.Do(req)
 	if err != nil {
-		return 0, err
+		return answer{}, err
 	}
 	defer resp.Body.Close()
-	return resp.StatusCode, nil
+	body, bodyErr := io.ReadAll(resp.Body)
+	return answer{status: resp.StatusCode, header: resp.Header, body: string(body), bodyErr: bodyErr}, nil
 }
 
-// attributingEngine is the standard library's multiplexer carrying the
-// attribution the seam asks of an implementation subpackage, answered the way
-// that multiplexer can answer it: by offering the pair to an engine of its own.
-//
-// The engine the module really ships with lives in pkg/http/stdmux, which this
-// package's tests cannot import without dragging a cycle in. This stands in for
-// it, so what the tests here pin is what the assembly does with an answer; the
-// answer itself is pinned in that subpackage's own tests.
-type attributingEngine struct{ *nethttp.ServeMux }
-
-func (attributingEngine) AttributeRefusal(refused string, mounted []string) (string, bool) {
-	for _, candidate := range mounted {
-		mux := nethttp.NewServeMux()
-		if refusedByMux(mux, candidate) {
-			continue
-		}
-		if refusedByMux(mux, refused) {
-			return candidate, true
-		}
+// getTracingInterim is getResponse that also reports the informational statuses
+// the client saw before the final response: a 103 Early Hints is the one a
+// handler sends.
+func getTracingInterim(t *testing.T, addr, path string) ([]int, answer) {
+	t.Helper()
+	var interim []int
+	trace := &httptrace.ClientTrace{Got1xxResponse: func(code int, _ textproto.MIMEHeader) error {
+		interim = append(interim, code)
+		return nil
+	}}
+	request, err := nethttp.NewRequestWithContext(httptrace.WithClientTrace(context.Background(), trace),
+		nethttp.MethodGet, "http://"+addr+path, nil)
+	if err != nil {
+		t.Fatal(err)
 	}
-	return "", false
+	client := &nethttp.Client{
+		Timeout:   waitDeadline,
+		Transport: &nethttp.Transport{DisableKeepAlives: true, DisableCompression: true},
+	}
+	resp, err := client.Do(request)
+	if err != nil {
+		t.Fatalf("GET %s failed: %v", path, err)
+	}
+	defer resp.Body.Close()
+	body, bodyErr := io.ReadAll(resp.Body)
+	return interim, answer{status: resp.StatusCode, header: resp.Header, body: string(body), bodyErr: bodyErr}
 }
 
-// unattributableEngine refuses a mount the way the real engine does and answers
-// the attribution with nothing: a refusal it cannot pin on a single mounted
-// pattern. The assembly has to say that rather than present an empty pair as
-// the verdict.
-type unattributableEngine struct{ *nethttp.ServeMux }
-
-func (unattributableEngine) AttributeRefusal(string, []string) (string, bool) { return "", false }
-
-// refusedByMux mounts the pattern on the multiplexer and reports whether the
-// engine refused it.
-func refusedByMux(mux *nethttp.ServeMux, pattern string) (refused bool) {
-	defer func() { refused = recover() != nil }()
-	mux.Handle(pattern, nethttp.NotFoundHandler())
-	return false
+// serveOnce sends one request through an assembled handler and returns what it
+// wrote, for the tests whose subject is the chain and not the socket.
+func serveOnce(h nethttp.Handler, method, target string) *httptest.ResponseRecorder {
+	recorder := httptest.NewRecorder()
+	h.ServeHTTP(recorder, httptest.NewRequest(method, target, nil))
+	return recorder
 }
+
+// filler is a route's handler for the tests that need a route to exist and do
+// not care what it answers.
+func filler(c *gin.Context) { c.Status(nethttp.StatusNoContent) }
 
 // endpointsAt is a configuration with one endpoint per name, each on a
 // loopback port the operating system picks, sharing one drain timeout.
@@ -626,4 +683,62 @@ func endpointsAt(drain time.Duration, names ...string) moduleConfig {
 		cfg.Endpoints[name] = endpointConfig{Address: "127.0.0.1:0", DrainTimeout: &drain}
 	}
 	return cfg
+}
+
+// serveRoutes runs a real assembly with one endpoint, "public", and the routes
+// the test registers on it, and returns the address it bound together with the
+// records the assembly wrote. What it exercises is the socket: the connection
+// handling of net/http, which no recorder reproduces.
+//
+// A module delivering the Logger capability over a recording logger takes part,
+// so that the records this module writes for a request — and the ones net/http
+// writes for itself, which this module hands to the same logger — are readable.
+// responder, when non-nil, is delivered as the ErrorResponder capability.
+func serveRoutes(t *testing.T, responder ErrorResponder, register func(Endpoint)) (string, *recordingHandler) {
+	t.Helper()
+	logger, records := newRecordingLogger()
+	modules := []core.Module{
+		Module(),
+		(&stageProbe{
+			name:     "probe.delivers-the-logger",
+			provides: []core.Provision{{Token: (*log.Logger)(nil)}},
+			product:  stubLogger{logger: logger},
+		}).module(),
+	}
+	if responder != nil {
+		modules = append(modules, (&stageProbe{
+			name:     "probe.delivers-the-responder",
+			provides: []core.Provision{{Token: (*ErrorResponder)(nil)}},
+			product:  responder,
+		}).module())
+	}
+	serving := make(chan struct{})
+	modules = append(modules, (&stageProbe{
+		name:     "probe.registers-the-routes",
+		requires: requiresRouter(),
+		onInit: func(reg *core.Registry) error {
+			e, err := endpointFrom(reg, "public")
+			if err != nil {
+				return err
+			}
+			register(e)
+			return nil
+		},
+		onServe: func(*core.Registry) error {
+			close(serving)
+			return nil
+		},
+	}).module())
+
+	a := startAssembly(t, oneEndpoint("public"), modules...)
+	a.waitForOrEnd(t, serving, "the endpoint to be served")
+	r, err := routerFrom(a.reg)
+	if err != nil {
+		t.Fatalf("taking this module's product out of the registry: %v", err)
+	}
+	addr, err := boundAddr(r, "public")
+	if err != nil {
+		t.Fatalf("finding the address the endpoint bound: %v", err)
+	}
+	return addr, records
 }

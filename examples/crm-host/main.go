@@ -75,6 +75,14 @@
 //   - A request with no credential is refused before resolution, so it never
 //     reaches a roster lookup. A tenant that is disabled and one that was never
 //     registered get the same answer.
+//   - What the HTTP module and the layers refuse is answered as problem
+//     details: the gateway's 401, resolution's 404 and the limiter's 429, a
+//     path no route serves and a method a path does not take. The layers run
+//     before the module answers a request no route matches, so a caller with
+//     no credential asking for a path nothing serves reads 401, not 404, and
+//     the methods a path takes, which the module lists with its 405, reach no
+//     caller a layer turned away. A handler of this host answers in the
+//     host's own error body.
 //   - An operator on the admin endpoint registers a tenant, creates a user and
 //     grants a membership, and the tenant is usable at once; the cross-tenant
 //     grant states its purpose through the seam. Disabling the tenant there
@@ -163,7 +171,8 @@
 //     the host fills over the normalised address, finds only the caller's
 //     tenant's contact, although two tenants' rows for one address carry the
 //     same digest. An update whose body spells a member in another case is
-//     refused and writes nothing.
+//     read as the member it resembles, as the HTTP module's binder reads a
+//     body.
 //   - The export streams through Rows and ScanRows and selects the columns it
 //     writes, none of them sealed; the autocomplete plucks distinct names and
 //     nothing else.
@@ -263,10 +272,12 @@
 //     update is conditioned on it: of two changes, and of two moves, naming
 //     one version exactly one succeeds and the other's precondition fails, and
 //     a write naming no version is refused.
-//   - A change reads its members exactly as the client wrote them. A null body
-//     and a member it does not have, spells in another case or repeats are
-//     refused as malformed, a change naming nothing as invalid, and none
-//     changes the deal.
+//   - A change reads its members as the HTTP module's binder reads a body: a
+//     member the change does not have is passed over, one spelled in another
+//     case is read as the member it resembles, and of one given twice the last
+//     value stands. A null body and a body carrying no member the change has
+//     are a change naming nothing, refused as invalid like a value the deal
+//     does not take, and those leave the deal as it was.
 //   - A stage move and its stage-change activity are one transaction, both
 //     ways round: a move whose activity cannot be written leaves the deal as
 //     it was, publishes nothing and leaves no statement row; a move whose
@@ -586,7 +597,7 @@ import (
 	"github.com/vislake/speed/pkg/authn/static"
 	"github.com/vislake/speed/pkg/config"
 	"github.com/vislake/speed/pkg/core"
-	"github.com/vislake/speed/pkg/http/stdmux"
+	speedhttp "github.com/vislake/speed/pkg/http"
 	"github.com/vislake/speed/pkg/log"
 	"github.com/vislake/speed/pkg/ratelimit"
 	"github.com/vislake/speed/pkg/settings"
@@ -756,7 +767,7 @@ func addStack(root *config.Command, s stack) {
 
 	serve := node.Sub(serveCommand)
 	serve.Include(
-		stdmux.ModuleName,
+		speedhttp.ModuleName,
 		gate.ModuleName,
 		static.ModuleName,
 		resolve.ModuleName,
@@ -840,7 +851,7 @@ func addStack(root *config.Command, s stack) {
 var groupPlatform = []string{
 	catalog.ModuleName,
 	journal.ModuleName,
-	stdmux.ModuleName,
+	speedhttp.ModuleName,
 	log.ModuleName,
 	cliModuleName,
 }

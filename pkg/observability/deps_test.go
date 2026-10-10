@@ -2,6 +2,7 @@ package observability_test
 
 import (
 	"os/exec"
+	"slices"
 	"strings"
 	"testing"
 )
@@ -76,22 +77,93 @@ func TestTheInterfacePackageReachesNoBackendLibrary(t *testing.T) {
 	}
 }
 
-// TestTheAssemblerReachesNoBackendTransport is the same rule one level in. The
-// assembler builds the providers and hands them exporters collected from the
-// registry, so it knows no backend — and a host that takes it in together with
-// its own choice of destination must not have been made to compile the others.
+// assemblerUpstream is what the assembler binds beyond the four packages the
+// interface package re-exports: the API and SDK packages it builds the providers
+// and the request instrument with. The budget holds each of them with its
+// closure.
+var assemblerUpstream = []string{
+	"go.opentelemetry.io/otel/attribute",
+	"go.opentelemetry.io/otel/codes",
+	"go.opentelemetry.io/otel/propagation",
+	"go.opentelemetry.io/otel/sdk/metric/metricdata",
+	"go.opentelemetry.io/otel/sdk/resource",
+}
+
+// ginPackage is the package the request layer is written against: the layer is
+// a gin.HandlerFunc, so the assembler imports it, and its closure is part of the
+// assembler's budget.
+const ginPackage = "github.com/gin-gonic/gin"
+
+// TestTheAssemblerStaysInsideItsDependencyBudget is the same rule one level in.
+// The assembler's budget is the interface package's, the library packages it
+// binds itself, and the current closure of gin. The closure is read from the
+// module graph and not written down, so a gin release that reaches further moves
+// the budget with it, while a package the assembler starts importing that is in
+// none of these closures is a failure.
+//
+// What is compared is the assembler's own import list, which is the package-level
+// declaration. The third-party packages this repository's own modules reach are
+// those modules' business and are held by their tests.
+func TestTheAssemblerStaysInsideItsDependencyBudget(t *testing.T) {
+	imports := importsOf(t, "./otel")
+	// The positive controls: the layer is a gin handler and the assembler sits on
+	// the interface package, so a listing without either came from a load that did
+	// not happen, and every assertion below would pass on an empty list.
+	for _, pkg := range []string{ginPackage, repoPrefix + "pkg/observability"} {
+		if !imports[pkg] {
+			t.Fatalf("the import list does not hold %s, which the assembler imports: what is checked "+
+				"below is not its import list", pkg)
+		}
+	}
+
+	budget := map[string]bool{}
+	for _, root := range slices.Concat(exportedUpstream, assemblerUpstream, []string{ginPackage}) {
+		for reached := range dependenciesOf(t, root) {
+			budget[reached] = true
+		}
+	}
+	// The negative control: if the budget carried a backend's transport, the loop
+	// below could not tell an assembler that imports one from one that does not.
+	for _, backend := range backendTransports {
+		if budget[backend] {
+			t.Fatalf("the budget includes %s, so this check cannot catch an assembler that imports it", backend)
+		}
+	}
+
+	for pkg := range imports {
+		switch {
+		case stdlibPackage(pkg), strings.HasPrefix(pkg, repoPrefix), budget[pkg]:
+			continue
+		}
+		t.Errorf("the assembler imports %s, which is in the closure of none of the packages its budget is "+
+			"made of. It binds the upstream API and SDK, and gin for the request layer: anything else "+
+			"is a dependency every host that takes the assembler in would compile", pkg)
+	}
+}
+
+// backendTransports are the packages a destination's transport is made of, which
+// only the export backend that binds it may reach.
+var backendTransports = []string{
+	"google.golang.org/grpc",
+	"go.opentelemetry.io/otel/exporters/otlp/otlptrace/otlptracegrpc",
+	"go.opentelemetry.io/otel/exporters/stdout/stdouttrace",
+}
+
+// TestTheAssemblerReachesNoBackendTransport holds the same split over everything
+// the assembler reaches, this repository's own modules included. The assembler
+// builds the providers and hands them exporters collected from the registry, so
+// it knows no backend — and a host that takes it in together with its own choice
+// of destination must not have been made to compile the others.
+//
+// The protobuf runtime is not among them: gin binds it for request bodies, so it
+// is in the assembler's closure whichever destination a host chooses.
 func TestTheAssemblerReachesNoBackendTransport(t *testing.T) {
 	deps := dependenciesOf(t, "./otel")
 	if !deps[repoPrefix+"pkg/observability"] {
 		t.Fatalf("the dependency list does not hold the interface package: a listing without it came from " +
 			"a load that did not happen")
 	}
-	for _, backend := range []string{
-		"google.golang.org/grpc",
-		"google.golang.org/protobuf",
-		"go.opentelemetry.io/otel/exporters/otlp/otlptrace/otlptracegrpc",
-		"go.opentelemetry.io/otel/exporters/stdout/stdouttrace",
-	} {
+	for _, backend := range backendTransports {
 		if deps[backend] {
 			t.Errorf("the assembler depends on %s. It collects exporters through the registry and knows "+
 				"no destination: reaching one here would make every host compile the backends it did "+
@@ -103,20 +175,33 @@ func TestTheAssemblerReachesNoBackendTransport(t *testing.T) {
 // dependenciesOf lists the packages a `go list -deps` target reaches.
 func dependenciesOf(t *testing.T, target string) map[string]bool {
 	t.Helper()
-	out, err := exec.Command("go", "list", "-deps", target).CombinedOutput()
+	return listPackages(t, "-deps", target)
+}
+
+// importsOf lists the packages a target imports itself, test files left out.
+func importsOf(t *testing.T, target string) map[string]bool {
+	t.Helper()
+	return listPackages(t, "-f", "{{join .Imports \"\\n\"}}", target)
+}
+
+// listPackages runs `go list` with the arguments given and reads one package
+// path from each line it prints.
+func listPackages(t *testing.T, args ...string) map[string]bool {
+	t.Helper()
+	out, err := exec.Command("go", append([]string{"list"}, args...)...).CombinedOutput()
 	if err != nil {
-		t.Fatalf("go list -deps %s failed: %v\n%s", target, err, out)
+		t.Fatalf("go list %s failed: %v\n%s", strings.Join(args, " "), err, out)
 	}
-	reached := make(map[string]bool)
+	listed := make(map[string]bool)
 	for line := range strings.SplitSeq(strings.TrimSpace(string(out)), "\n") {
 		if pkg := strings.TrimSpace(line); pkg != "" {
-			reached[pkg] = true
+			listed[pkg] = true
 		}
 	}
-	if len(reached) == 0 {
-		t.Fatalf("go list -deps %s listed nothing, so there is no dependency face to check", target)
+	if len(listed) == 0 {
+		t.Fatalf("go list %s listed nothing, so there is no dependency face to check", strings.Join(args, " "))
 	}
-	return reached
+	return listed
 }
 
 // stdlibPackage reports whether a package path names a package of the standard

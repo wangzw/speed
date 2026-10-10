@@ -8,8 +8,6 @@ import (
 	"strings"
 	"testing"
 	"time"
-
-	"github.com/vislake/speed/pkg/authn"
 )
 
 // A backend that gives up on a call of its own accord answers with the
@@ -20,40 +18,43 @@ import (
 // caller's cancellation apart.
 func TestABackendTimeoutIsReportedWhileTheRequestIsLive(t *testing.T) {
 	timedOut := fmt.Errorf("the backend's own call bound: %w", context.DeadlineExceeded)
-	next := nethttp.HandlerFunc(func(nethttp.ResponseWriter, *nethttp.Request) {})
-	failingIncrement := newFakeKV()
-	failingIncrement.incrementErr = timedOut
 	cases := []struct {
 		name     string
-		counters *fakeKV
+		counters func() *fakeKV
 		want     reason
 	}{
-		{"the read", &fakeKV{readErr: timedOut}, reasonCounterRead},
-		{"the increment", failingIncrement, reasonCounterIncrement},
-		{"a cancellation the backend reports", &fakeKV{readErr: context.Canceled}, reasonCounterRead},
+		{"the read", func() *fakeKV { return &fakeKV{readErr: timedOut} }, reasonCounterRead},
+		{"the increment", func() *fakeKV {
+			failing := newFakeKV()
+			failing.incrementErr = timedOut
+			return failing
+		}, reasonCounterIncrement},
+		{"a cancellation the backend reports", func() *fakeKV { return &fakeKV{readErr: context.Canceled} }, reasonCounterRead},
 	}
 	for _, c := range cases {
-		var out bytes.Buffer
-		l := pinned()
-		l.counters = c.counters
-		l.store = &fakeStore{values: map[string]any{windowPath: time.Minute, limitPath: 10}}
-		l.signal = newSignalTo(&out)
+		t.Run(c.name, func(t *testing.T) {
+			var out lockedBuffer
+			l := pinned("public")
+			l.counters = c.counters()
+			l.store = &fakeStore{values: map[string]any{windowPath: time.Minute, limitPath: 10}}
+			l.signal = newSignalTo(&out)
+			h := startHost(t, hostOptions{limiter: l})
 
-		reached := false
-		d := l.decide(newRecorder(), newRequest(), nethttp.HandlerFunc(
-			func(w nethttp.ResponseWriter, r *nethttp.Request) { reached = true; next.ServeHTTP(w, r) }),
-			authn.Identity{}, true)
-		l.signal.settle(d)
+			if got := h.get(t, "/things"); got.status != nethttp.StatusNoContent {
+				t.Fatalf("the request was answered %d, want it let through to the route's 204", got.status)
+			}
 
-		if d.tripped != c.want {
-			t.Errorf("%s: tripped %q, want %q", c.name, d.tripped, c.want)
-		}
-		if !containsLine(out.String(), "letting requests through", string(c.want)) {
-			t.Errorf("%s: no failure line was written: %q", c.name, out.String())
-		}
-		if !reached {
-			t.Errorf("%s: the request was not let through", c.name)
-		}
+			if got := h.reached.count(); got != 1 {
+				t.Errorf("the route served %d requests, want the one let through", got)
+			}
+			decided := h.decisions.all()
+			if len(decided) != 1 || decided[0].tripped != c.want {
+				t.Errorf("the decisions are %+v, want one that tripped %q", decided, c.want)
+			}
+			if !containsLine(out.String(), "letting requests through", string(c.want)) {
+				t.Errorf("no failure line was written: %q", out.String())
+			}
+		})
 	}
 }
 

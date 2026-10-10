@@ -11,23 +11,30 @@ import (
 	"github.com/vislake/speed/pkg/log"
 )
 
-// Module is the descriptor an implementation subpackage registers. name is the
-// module's name in the registry, and newEngine builds the routing engine one
-// endpoint's routes are mounted on. That function is the seam between this
-// package and an implementation subpackage, and it is what keeps the engine's
-// own type off this package's surface; a module that registers routes goes
-// through Endpoint and never meets an engine.
+// ModuleName is this module's name in the registry. It is also the name a host
+// writes to take this module into a command of its tree, and that is why it is
+// exported: a command takes a module in by name, and a literal spread over a
+// host's commands is one a rename leaves behind with nothing to catch it.
 //
-// The root package registers nothing by itself. A host chooses an entry point
-// by importing the subpackage that binds the engine it wants, and importing
-// this package alone brings in the registration surface and the request
-// helpers without opening a port.
+// The configuration namespace is the same word, "http", and a different thing:
+// input items hang from the namespace a schema declares and the module name
+// takes no part in those paths.
+const ModuleName = "http"
+
+// init registers this module with the process registry, the way pkg/log does,
+// so a host that imports this package can take it into a command by name.
+// Importing it alone opens no port: a registered module is available, and only
+// the ones a command names take part in a run.
+func init() { core.ProcessRegistry.Register(Module()) }
+
+// Module is this module's descriptor, exported for the registries that do not
+// inherit the process-level registrations.
 //
 // The capability is delivered exclusively and the stance is StateEnabled. The
 // pair is deliberate: resolution only stands a provider down when it claims
-// exclusivity and states StateAuto, so a second entry point implementation
-// fails the startup instead of quietly taking the registrations that were meant
-// for this one.
+// exclusivity and states StateAuto, so a second entry point module fails the
+// startup instead of quietly taking the registrations that were meant for this
+// one.
 //
 // Three packages are depended on. core carries the capability tokens, the
 // declared resources and the instance lookups; config is where the endpoints
@@ -53,11 +60,11 @@ import (
 // it holds is released are its owner's to answer, and the requests it takes in
 // are outside the drain this module waits for.
 //
-// The dependency on PanicResponder is declared optional too, and its absence
+// The dependency on ErrorResponder is declared optional too, and its absence
 // is the ordinary case rather than a state only a hand-built registry reaches:
-// which shape a defect's response takes is the business of whichever module
-// owns that API, and most assemblies have none. With no provider the fallback
-// writes the status alone.
+// which shape an API's error responses take is the business of whichever module
+// owns that API, and most assemblies have none. With no provider the responses
+// take the default shape, a problem details object.
 //
 // The dependency on Logger is declared optional, and that declaration is a
 // statement of contract rather than a branch a host reaches. This package
@@ -67,17 +74,12 @@ import (
 // which is how the tests here reach it: nothing is injected into the request
 // context, and the request path's records reach the process default logger's
 // destination rather than the configured one.
-func Module(name string, newEngine func() Engine) core.Module {
-	if newEngine == nil {
-		panic(fmt.Sprintf("http: Module(%q, nil) has no engine to build. Pass the function that "+
-			"builds one routing engine per endpoint; it is what binds the engine to this "+
-			"module without putting its type on the surface", name))
-	}
+func Module() core.Module {
 	return core.Module{
-		Name: name,
+		Name: ModuleName,
 		Requires: []core.Requirement{
 			{Token: (*log.Logger)(nil), Optional: true},
-			{Token: (*PanicResponder)(nil), Optional: true},
+			{Token: (*ErrorResponder)(nil), Optional: true},
 		},
 		Provides:  []core.Provision{{Token: (*Router)(nil), Exclusive: true}},
 		Resources: []any{schema()},
@@ -99,15 +101,15 @@ func Module(name string, newEngine func() Engine) core.Module {
 					"configuration, and no reader was handed to the registry before "+
 					"the assembly began: %w", err)
 			}
-			injected, err := requestLogger(reg, name)
+			injected, err := requestLogger(reg, ModuleName)
 			if err != nil {
 				return nil, err
 			}
-			responder, err := panicResponder(reg)
+			responder, err := errorResponder(reg)
 			if err != nil {
 				return nil, err
 			}
-			return newModule(reader, newEngine, injected, responder)
+			return newModule(reader, injected, responder)
 		},
 
 		// The gate is opened in Migrate and sealed in Start, the two
@@ -224,14 +226,12 @@ func readSettings(reader config.Reader) ([]endpointSettings, error) {
 
 // newModule builds the product: one endpoint per configured entry, with the
 // gate still shut. Nothing is bound here — the address is bound in Serve.
-func newModule(reader config.Reader, newEngine func() Engine, injected *slog.Logger,
-	responder PanicResponder,
-) (*router, error) {
+func newModule(reader config.Reader, injected *slog.Logger, responder ErrorResponder) (*router, error) {
 	settings, err := readSettings(reader)
 	if err != nil {
 		return nil, err
 	}
-	r := newRouter(settings, newEngine)
+	r := newRouter(settings)
 	r.injected = injected
 	r.responder = responder
 	r.logger = injected
@@ -263,21 +263,22 @@ func requestLogger(reg *core.Registry, name string) (*slog.Logger, error) {
 	return delivered.Named(name), nil
 }
 
-// panicResponder takes up the optional PanicResponder capability and returns
-// what decides the fallback's response shape, or nil when no module delivers
-// it.
+// errorResponder takes up the optional ErrorResponder capability and returns
+// what decides the shape of the error responses, or nil when no module
+// delivers it.
 //
 // Absence is told apart from a real failure the same way, and for the same
 // reason: it is the ordinary case, because most assemblies have no module that
-// owns an API's error shape.
-func panicResponder(reg *core.Registry) (PanicResponder, error) {
-	delivered, err := core.Resolve[PanicResponder](reg)
+// owns an API's error shape. More than one provider is a failure of the lookup
+// itself, so the startup ends rather than one of them being picked.
+func errorResponder(reg *core.Registry) (ErrorResponder, error) {
+	delivered, err := core.Resolve[ErrorResponder](reg)
 	if err != nil {
 		if errors.Is(err, core.ErrMissingProvider) {
 			return nil, nil
 		}
-		return nil, fmt.Errorf("http: taking up the responder that decides the panic fallback's "+
-			"response shape: %w", err)
+		return nil, fmt.Errorf("http: taking up the responder that decides the shape of error "+
+			"responses: %w", err)
 	}
 	return delivered, nil
 }
@@ -292,7 +293,7 @@ func panicResponder(reg *core.Registry) (PanicResponder, error) {
 func (r *router) serve() error {
 	for _, name := range r.names {
 		e := r.endpoints[name]
-		handler, err := e.assemble(r.newEngine(), r.injected, r.logger, r.responder)
+		handler, err := e.assemble(r.injected, r.logger, r.responder)
 		if err != nil {
 			return err
 		}

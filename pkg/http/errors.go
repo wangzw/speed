@@ -18,32 +18,27 @@ var (
 	// because that is the fixing action; there is no fallback to a default
 	// endpoint.
 	ErrUnknownEndpoint = errors.New("http: endpoint name was never declared")
-	// ErrRouteConflict reports two route patterns on one endpoint that the
-	// routing engine judged to be in conflict. It surfaces while the chain
-	// is assembled in Serve, not at registration: a registration records a
-	// declaration, and conflict is a property of the assembled set.
+	// ErrRouteConflict reports a route on one endpoint that gin refused to
+	// mount beside the others: two routes that conflict, or a refusal that
+	// no single mounted route reproduces, such as a chain of handlers longer
+	// than gin accepts once the endpoint's layers are counted. It surfaces
+	// while the routes are mounted in Serve, not at registration: a
+	// registration records a declaration, and conflict is a property of the
+	// mounted set.
 	//
-	// The text names both patterns and the endpoint they are on, and not
-	// the registrants: the registration surface does not know who called
-	// it, the same reason a layer has to declare its own Provides. A
-	// pattern is a literal in the source, so naming it locates the call.
-	ErrRouteConflict = errors.New("http: two route patterns on one endpoint conflict")
+	// The text names both routes, each as its method and path, and the
+	// endpoint they are on, and not the registrants: the registration
+	// surface does not know who called it, the same reason a layer has to
+	// declare its own Provides. A method and a path are literals in the
+	// source, so naming them locates the call. When the refusal cannot be
+	// attributed to a pair, the text says so instead of naming one route as
+	// though that were the verdict.
+	ErrRouteConflict = errors.New("http: two routes on one endpoint conflict")
 	// ErrMiddlewareCycle reports that the After and Before constraints of
 	// an endpoint's middleware form a cycle, so no order satisfies them.
 	// The text names every member of the cycle along with its own
 	// declarations.
 	ErrMiddlewareCycle = errors.New("http: middleware constraints form a cycle")
-	// ErrChainAssembly reports that an endpoint's middleware chain could
-	// not be built out of the layers registered on it. A Wrap that hands
-	// back a nil handler is that class: the layer would leave a hole in the
-	// chain, and the request would die on a nil handler with nothing naming
-	// the layer that produced it. The text names the layer and the endpoint.
-	//
-	// It is a startup failure and not a panic, although the mistake is at
-	// the call site: assembly runs in Serve, where a panic would skip the
-	// registry's rollback and leave the sockets and goroutines of the
-	// endpoints already bound with nobody to release them.
-	ErrChainAssembly = errors.New("http: endpoint's middleware chain could not be assembled")
 	// ErrInvalidSpec reports a declared OpenAPI fragment whose shape is not
 	// usable: empty, not UTF-8, not JSON, not an object at the top level, or
 	// an object without an openapi field. The content beyond that shape is
@@ -57,16 +52,4 @@ var (
 	// finished when its configured drain timeout expired. The connections
 	// still open at that moment are cut.
 	ErrDrainTimeout = errors.New("http: endpoint did not drain within its timeout")
-	// ErrMalformedBody reports a request body Decode could not read as the
-	// target type: not JSON, an unknown field, trailing data.
-	ErrMalformedBody = errors.New("http: request body is not usable as the target type")
-	// ErrBodyTooLarge reports a request body that exceeded the endpoint's
-	// configured limit. The limit is imposed by the outermost layer of the
-	// chain, so it applies to every handler on the endpoint, including the
-	// ones that never call Decode.
-	ErrBodyTooLarge = errors.New("http: request body exceeds the endpoint's limit")
-	// ErrValidation reports that the decoded value's own Validate rejected
-	// it. The error Validate returned is wrapped inside, so the caller can
-	// reach its own type back out with errors.As.
-	ErrValidation = errors.New("http: request body failed its own validation")
 )

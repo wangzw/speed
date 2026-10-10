@@ -7,10 +7,10 @@ import (
 	"slices"
 	"strings"
 
+	"github.com/gin-gonic/gin"
 	"gorm.io/gorm"
 	"gorm.io/gorm/clause"
 
-	speedhttp "github.com/vislake/speed/pkg/http"
 	"github.com/vislake/speed/pkg/log"
 )
 
@@ -133,22 +133,21 @@ func distinctIDs(ids []string) []string {
 // filter confines them, so another tenant's contact under a named identifier is
 // no contact here. The replacement is GORM's: it links the contacts not yet
 // linked and removes the links to the rest, on the join table alone.
-func (p *dealsProduct) setStakeholders(w nethttp.ResponseWriter, r *nethttp.Request) {
-	ctx := r.Context()
-	self, ok := memberOf(w, r, setStakeholdersRoute)
+func (p *dealsProduct) setStakeholders(c *gin.Context) {
+	ctx := c.Request.Context()
+	self, ok := memberOf(c, setStakeholdersRoute)
 	if !ok {
 		return
 	}
 	if !canWriteDeals(self.Role) {
-		writeError(w, nethttp.StatusForbidden, errReadOnlyRole.Error())
+		writeError(c, nethttp.StatusForbidden, errReadOnlyRole.Error())
 		return
 	}
 	var body stakeholderSet
-	if err := speedhttp.Decode(r, &body); err != nil {
-		writeError(w, speedhttp.StatusFor(err), err.Error())
+	if !bindBody(c, &body) {
 		return
 	}
-	id := r.PathValue("id")
+	id := c.Param("id")
 	ids := distinctIDs(*body.ContactIDs)
 	err := p.db.DB().WithContext(ctx).Transaction(func(tx *gorm.DB) error {
 		deal, found, err := liveDealRow(tx.Clauses(shareLock), id)
@@ -164,28 +163,27 @@ func (p *dealsProduct) setStakeholders(w nethttp.ResponseWriter, r *nethttp.Requ
 		}
 		return tx.Model(&deal).Association("Stakeholders").Replace(contacts)
 	})
-	p.answerStakeholders(w, r, id, err, "replacing a deal's stakeholders")
+	p.answerStakeholders(c, id, err, "replacing a deal's stakeholders")
 }
 
 // addStakeholder links one contact to a deal, which is a no-op when the two are
 // linked already. It reads the deal and the contact as setStakeholders does,
 // and appends the contact it read to the association on the deal it read.
-func (p *dealsProduct) addStakeholder(w nethttp.ResponseWriter, r *nethttp.Request) {
-	ctx := r.Context()
-	self, ok := memberOf(w, r, addStakeholderRoute)
+func (p *dealsProduct) addStakeholder(c *gin.Context) {
+	ctx := c.Request.Context()
+	self, ok := memberOf(c, addStakeholderRoute)
 	if !ok {
 		return
 	}
 	if !canWriteDeals(self.Role) {
-		writeError(w, nethttp.StatusForbidden, errReadOnlyRole.Error())
+		writeError(c, nethttp.StatusForbidden, errReadOnlyRole.Error())
 		return
 	}
 	var body stakeholderAddition
-	if err := speedhttp.Decode(r, &body); err != nil {
-		writeError(w, speedhttp.StatusFor(err), err.Error())
+	if !bindBody(c, &body) {
 		return
 	}
-	id := r.PathValue("id")
+	id := c.Param("id")
 	err := p.db.DB().WithContext(ctx).Transaction(func(tx *gorm.DB) error {
 		deal, found, err := liveDealRow(tx.Clauses(shareLock), id)
 		switch {
@@ -200,33 +198,33 @@ func (p *dealsProduct) addStakeholder(w nethttp.ResponseWriter, r *nethttp.Reque
 		}
 		return tx.Model(&deal).Association("Stakeholders").Append(&contacts[0])
 	})
-	p.answerStakeholders(w, r, id, err, "adding a deal's stakeholder")
+	p.answerStakeholders(c, id, err, "adding a deal's stakeholder")
 }
 
 // answerStakeholders answers a write of a deal's stakeholders with the deal as
 // it now reads.
-func (p *dealsProduct) answerStakeholders(w nethttp.ResponseWriter, r *nethttp.Request, id string, err error, doing string) {
-	ctx := r.Context()
+func (p *dealsProduct) answerStakeholders(c *gin.Context, id string, err error, doing string) {
+	ctx := c.Request.Context()
 	switch {
 	case errors.Is(err, errDealNotFound):
-		writeError(w, nethttp.StatusNotFound, err.Error())
+		writeError(c, nethttp.StatusNotFound, err.Error())
 		return
 	case errors.Is(err, errUnknownStakeholder):
-		writeError(w, nethttp.StatusUnprocessableEntity, err.Error())
+		writeError(c, nethttp.StatusUnprocessableEntity, err.Error())
 		return
 	case err != nil:
 		log.FromContext(ctx).Error(doing, "error", err)
-		writeError(w, nethttp.StatusInternalServerError, "the stakeholders could not be written")
+		writeError(c, nethttp.StatusInternalServerError, "the stakeholders could not be written")
 		return
 	}
 	deal, found, err := dealByID(ctx, p.db, id)
 	if err != nil || !found {
 		log.FromContext(ctx).Error("reading a deal back", "error", err, "found", found)
-		writeError(w, nethttp.StatusInternalServerError, errDealUnresolvable.Error())
+		writeError(c, nethttp.StatusInternalServerError, errDealUnresolvable.Error())
 		return
 	}
-	w.Header().Set("ETag", etagOf(deal.Version))
-	_ = speedhttp.WriteJSON(w, nethttp.StatusOK, viewOfDeal(deal))
+	c.Header("ETag", etagOf(deal.Version))
+	c.JSON(nethttp.StatusOK, viewOfDeal(deal))
 }
 
 // removeStakeholder unlinks one contact from a deal, and answers 204 whether or
@@ -237,31 +235,31 @@ func (p *dealsProduct) answerStakeholders(w nethttp.ResponseWriter, r *nethttp.R
 // addresses a deal, and the tenant half is the filter's to fill from the
 // request: the association is given the contact the path names, and the
 // deletion is GORM's, on the join table alone.
-func (p *dealsProduct) removeStakeholder(w nethttp.ResponseWriter, r *nethttp.Request) {
-	ctx := r.Context()
-	self, ok := memberOf(w, r, removeStakeholderRoute)
+func (p *dealsProduct) removeStakeholder(c *gin.Context) {
+	ctx := c.Request.Context()
+	self, ok := memberOf(c, removeStakeholderRoute)
 	if !ok {
 		return
 	}
 	if !canWriteDeals(self.Role) {
-		writeError(w, nethttp.StatusForbidden, errReadOnlyRole.Error())
+		writeError(c, nethttp.StatusForbidden, errReadOnlyRole.Error())
 		return
 	}
 	database := p.db.DB().WithContext(ctx)
-	deal, found, err := liveDealRow(database, r.PathValue("id"))
+	deal, found, err := liveDealRow(database, c.Param("id"))
 	switch {
 	case err != nil:
 		log.FromContext(ctx).Error("reading a deal", "error", err)
-		writeError(w, nethttp.StatusServiceUnavailable, "the deal table cannot be read")
+		writeError(c, nethttp.StatusServiceUnavailable, "the deal table cannot be read")
 		return
 	case !found:
-		writeError(w, nethttp.StatusNotFound, errDealNotFound.Error())
+		writeError(c, nethttp.StatusNotFound, errDealNotFound.Error())
 		return
 	}
-	if err := database.Model(&deal).Association("Stakeholders").Delete(&Contact{ID: r.PathValue("contact")}); err != nil {
+	if err := database.Model(&deal).Association("Stakeholders").Delete(&Contact{ID: c.Param("contact")}); err != nil {
 		log.FromContext(ctx).Error("removing a deal's stakeholder", "error", err)
-		writeError(w, nethttp.StatusInternalServerError, "the stakeholder could not be removed")
+		writeError(c, nethttp.StatusInternalServerError, "the stakeholder could not be removed")
 		return
 	}
-	w.WriteHeader(nethttp.StatusNoContent)
+	c.Status(nethttp.StatusNoContent)
 }

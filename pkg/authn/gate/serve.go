@@ -12,6 +12,8 @@ import (
 	"strings"
 	"sync"
 
+	"github.com/gin-gonic/gin"
+
 	"github.com/vislake/speed/pkg/authn"
 	"github.com/vislake/speed/pkg/authn/internal/identity"
 	"github.com/vislake/speed/pkg/authn/internal/verdict"
@@ -212,74 +214,72 @@ func (g *gateway) middlewareFor(endpoint string) speedhttp.Middleware {
 		Name:     ModuleName,
 		Provides: []core.Token{(*authn.Gate)(nil)},
 		Order:    middlewareOrder,
-		Wrap: func(next nethttp.Handler) nethttp.Handler {
-			return nethttp.HandlerFunc(func(w nethttp.ResponseWriter, r *nethttp.Request) {
-				passed, forwarded := g.admit(endpoint, challenge, w, r)
-				if !passed {
-					return
-				}
-				next.ServeHTTP(w, forwarded)
-			})
+		Handler: func(c *gin.Context) {
+			if g.admit(endpoint, challenge, c) {
+				c.Next()
+			}
 		},
 	}
 }
 
 // admit runs the whole authentication decision for one request and reports
-// whether it passes. When it does not, the status code has already been written.
+// whether it passes. When it does not, the response has already been written
+// through the entry point and the chain is ended.
 //
 // The call to the next layer is deliberately outside this function. The recover
-// below is for this module's own defects, and the entry point states plainly
-// that it does not catch a handler's panic; catching one here would quietly
-// change that contract for every route behind the gateway.
-func (g *gateway) admit(endpoint, challenge string, w nethttp.ResponseWriter, r *nethttp.Request) (
-	passed bool, forwarded *nethttp.Request,
-) {
+// below is for this module's own defects; a panic in a layer or a handler behind
+// this one belongs to the entry point's fallback, and catching it here would
+// answer for code this module does not own.
+func (g *gateway) admit(endpoint, challenge string, c *gin.Context) (passed bool) {
 	defer func() {
 		if rec := recover(); rec != nil {
 			// The gateway's own defect. It is counted in none of the
 			// four buckets: those count judgements about a credential,
 			// and this is not one.
 			//
-			// Recovering at all is not optional. The entry point does
-			// not catch a handler's panic, and the shape of not
-			// recovering here is not a 500 — it is the connection being
-			// dropped with no status code reaching the caller at all,
-			// which every status-code-based monitor sees as nothing
-			// happening.
-			log.FromContext(r.Context()).Error(ModuleName+": the gateway panicked while "+
+			// The entry point's fallback would answer a panic here with
+			// a 500 as well, and could not say which layer it was
+			// raised in. Recovering is what puts this one on this
+			// module's name, with the endpoint and the stack.
+			log.FromContext(c.Request.Context()).Error(ModuleName+": the gateway panicked while "+
 				"deciding this request",
 				slog.Any("panic", rec), slog.String("endpoint", endpoint),
 				slog.String("stack", string(debug.Stack())))
-			w.WriteHeader(nethttp.StatusInternalServerError)
-			passed, forwarded = false, nil
+			speedhttp.Fail(c, speedhttp.Problem{Status: nethttp.StatusInternalServerError})
+			passed = false
 		}
 	}()
 
 	// The exemption is judged before the Authorization header is read, so
 	// no backend is reached on an exempt route whatever the request carries.
-	if g.matchers[endpoint].exempts(r) {
-		return true, r
+	if g.exempts(endpoint, c) {
+		return true
 	}
 
-	id, deny := g.identify(r)
+	id, deny := g.identify(c.Request)
 	if deny != nil {
-		g.conclude(r, endpoint, deny)
+		g.conclude(c.Request, endpoint, deny)
 		if deny.status == nethttp.StatusUnauthorized {
 			// A 401 carrying no challenge tells a caller it needs a
 			// credential without saying what kind, which is the one
-			// thing RFC 7235 does not allow a 401 to do. This module
-			// writes no response body, so the header is the whole of
-			// what a caller has to go on.
-			w.Header().Set(challengeHeader, challenge)
+			// thing RFC 7235 does not allow a 401 to do. The entry point
+			// decides the shape of the body, and it is not this module's
+			// to carry the answer in, so the header is the whole of what
+			// a caller can rely on. It is set before the response is
+			// written, and the entry point keeps it.
+			c.Header(challengeHeader, challenge)
 		}
-		w.WriteHeader(deny.status)
-		return false, nil
+		// The problem carries the status alone. What the refusal was for,
+		// and whose it was, reaches the log and no further.
+		speedhttp.Fail(c, speedhttp.Problem{Status: deny.status})
+		return false
 	}
 
 	g.counts[verdict.Authenticated].Add(1)
-	ctx := identity.With(r.Context(), id)
+	ctx := identity.With(c.Request.Context(), id)
 	ctx = log.WithAttrs(ctx, slog.String("subject", id.Key()))
-	return true, r.WithContext(ctx)
+	c.Request = c.Request.WithContext(ctx)
+	return true
 }
 
 // identify runs the ownership sequence, the backend call and exit binding,
@@ -372,9 +372,9 @@ func causeAttrs(v authn.Verdict) []any {
 }
 
 // conclude counts the conclusion and writes the log line that carries the
-// attribution, at the level the refusal was built with. The response body is
-// never written: this module writes a status code and the headers that go with
-// it, so attribution lives in the log alone.
+// attribution, at the level the refusal was built with. The response carries a
+// status code and the headers that go with it and nothing of why, so attribution
+// lives in the log alone.
 func (g *gateway) conclude(r *nethttp.Request, endpoint string, deny *refusal) {
 	g.counts[deny.bucket].Add(1)
 

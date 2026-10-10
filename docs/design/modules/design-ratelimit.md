@@ -360,7 +360,7 @@ sequenceDiagram
 | 接口、配置与模块登记 | 已实现 | `pkg/ratelimit/ratelimit.go` `Limiter`、`Config`；`module.go` `Module` |
 | 设置面与键表声明 | 已实现 | `pkg/ratelimit/ratelimit.go` `settingsSchema`、`defaults` |
 | 取值域的声明与读时判定 | 已实现 | `pkg/ratelimit/ratelimit.go` `windowInDomain`、`limitInDomain`、`settingsSchema`；`pkg/ratelimit/limit.go` `thresholds` |
-| 中间件的登记与链上位置声明，超限时写出 429 | 部分实现：位置声明已有，层仍写成 `net/http` 的 `Wrap`，429 仍由本层直接写状态码；缺 `gin.HandlerFunc` 形态的 `Handler`，缺经 `Fail` 写出 429 | `pkg/ratelimit/limit.go` `middleware`、`wire`、`wrap`、`decide` |
+| 中间件的登记与链上位置声明，超限时写出 429 | 已实现 | `pkg/ratelimit/limit.go` `middleware`、`wire`、`handle`、`decide` |
 | 窗口编号、权重与判定 | 已实现 | `pkg/ratelimit/limit.go` `count`、`retryAfterSeconds` |
 | 键的构造与转义 | 已实现 | `pkg/ratelimit/key.go` `countKey`、`escape` |
 | 失败信号与共享计数 | 已实现 | `pkg/ratelimit/signal.go` `signal`、`settle`、`recoveryQuiet`、`whereSeen` |

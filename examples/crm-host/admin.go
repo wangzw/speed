@@ -7,6 +7,8 @@ import (
 	"fmt"
 	nethttp "net/http"
 
+	"github.com/gin-gonic/gin"
+
 	"github.com/vislake/speed/pkg/audit"
 	"github.com/vislake/speed/pkg/authn"
 	"github.com/vislake/speed/pkg/core"
@@ -32,10 +34,10 @@ const operatorOwner = "ops"
 const (
 	listTenantsRoute   = "GET /tenants"
 	createTenantRoute  = "POST /tenants"
-	disableTenantRoute = "POST /tenants/{id}/disable"
-	enableTenantRoute  = "POST /tenants/{id}/enable"
+	disableTenantRoute = "POST /tenants/:id/disable"
+	enableTenantRoute  = "POST /tenants/:id/enable"
 	createUserRoute    = "POST /users"
-	grantTenantRoute   = "POST /tenants/{id}/members"
+	grantTenantRoute   = "POST /tenants/:id/members"
 )
 
 //go:embed openapi/admin.json
@@ -67,20 +69,18 @@ func (p *adminProduct) layer() speedhttp.Middleware {
 		Name:     adminModuleName,
 		Provides: []core.Token{(*operatorLayer)(nil)},
 		After:    []core.Token{(*authn.Gate)(nil), (*audit.Audit)(nil)},
-		Wrap: func(next nethttp.Handler) nethttp.Handler {
-			return nethttp.HandlerFunc(func(w nethttp.ResponseWriter, r *nethttp.Request) {
-				caller, ok := authn.FromContext(r.Context())
-				if !ok {
-					log.FromContext(r.Context()).Error("the operator check was reached with no identity")
-					writeError(w, nethttp.StatusInternalServerError, "the request carries no identity")
-					return
-				}
-				if caller.Owner() != operatorOwner {
-					writeError(w, nethttp.StatusForbidden, "the admin endpoint serves the platform's operators")
-					return
-				}
-				next.ServeHTTP(w, r)
-			})
+		Handler: func(c *gin.Context) {
+			caller, ok := authn.FromContext(c.Request.Context())
+			if !ok {
+				log.FromContext(c.Request.Context()).Error("the operator check was reached with no identity")
+				writeError(c, nethttp.StatusInternalServerError, "the request carries no identity")
+				return
+			}
+			if caller.Owner() != operatorOwner {
+				writeError(c, nethttp.StatusForbidden, "the admin endpoint serves the platform's operators")
+				return
+			}
+			c.Next()
 		},
 	}
 }
@@ -98,18 +98,18 @@ func viewOf(t tenant.Tenant) tenantView {
 }
 
 // listTenants answers the whole roster.
-func (p *adminProduct) listTenants(w nethttp.ResponseWriter, r *nethttp.Request) {
-	all, err := p.roster.List(r.Context())
+func (p *adminProduct) listTenants(c *gin.Context) {
+	all, err := p.roster.List(c.Request.Context())
 	if err != nil {
-		log.FromContext(r.Context()).Error("reading the roster", "error", err)
-		writeError(w, nethttp.StatusServiceUnavailable, "the roster cannot be read")
+		log.FromContext(c.Request.Context()).Error("reading the roster", "error", err)
+		writeError(c, nethttp.StatusServiceUnavailable, "the roster cannot be read")
 		return
 	}
 	out := make([]tenantView, 0, len(all))
 	for _, t := range all {
 		out = append(out, viewOf(t))
 	}
-	_ = speedhttp.WriteJSON(w, nethttp.StatusOK, out)
+	c.JSON(nethttp.StatusOK, out)
 }
 
 // tenantRequest is the body of a tenant registration.
@@ -187,48 +187,47 @@ func setTenantStatus(ctx context.Context, roster tenant.Catalog, id string, stat
 // moment as another, and that text names the constraint and the engine's code:
 // it differs between the engines and between the two ways one conflict is
 // found, and tells the caller nothing the conflict does not.
-func (p *adminProduct) createTenant(w nethttp.ResponseWriter, r *nethttp.Request) {
+func (p *adminProduct) createTenant(c *gin.Context) {
 	var body tenantRequest
-	if err := speedhttp.Decode(r, &body); err != nil {
-		writeError(w, speedhttp.StatusFor(err), err.Error())
+	if !bindBody(c, &body) {
 		return
 	}
-	t, err := registerTenant(r.Context(), p.roster, body.ID, body.Alias)
+	t, err := registerTenant(c.Request.Context(), p.roster, body.ID, body.Alias)
 	switch {
 	case errors.Is(err, tenant.ErrTenantExists):
-		writeError(w, nethttp.StatusConflict, tenant.ErrTenantExists.Error())
+		writeError(c, nethttp.StatusConflict, tenant.ErrTenantExists.Error())
 		return
 	case errors.Is(err, tenant.ErrAliasConflict):
-		writeError(w, nethttp.StatusConflict, tenant.ErrAliasConflict.Error())
+		writeError(c, nethttp.StatusConflict, tenant.ErrAliasConflict.Error())
 		return
 	case errors.Is(err, tenant.ErrInvalidTenant):
-		writeError(w, nethttp.StatusUnprocessableEntity, err.Error())
+		writeError(c, nethttp.StatusUnprocessableEntity, err.Error())
 		return
 	case err != nil:
-		log.FromContext(r.Context()).Error("registering a tenant", "error", err)
-		writeError(w, nethttp.StatusInternalServerError, "the roster could not be written")
+		log.FromContext(c.Request.Context()).Error("registering a tenant", "error", err)
+		writeError(c, nethttp.StatusInternalServerError, "the roster could not be written")
 		return
 	}
-	_ = speedhttp.WriteJSON(w, nethttp.StatusCreated, viewOf(t))
+	c.JSON(nethttp.StatusCreated, viewOf(t))
 }
 
 // changeStatus answers a disable or an enable.
-func (p *adminProduct) changeStatus(status tenant.Status) nethttp.HandlerFunc {
-	return func(w nethttp.ResponseWriter, r *nethttp.Request) {
-		t, err := setTenantStatus(r.Context(), p.roster, r.PathValue("id"), status)
+func (p *adminProduct) changeStatus(status tenant.Status) gin.HandlerFunc {
+	return func(c *gin.Context) {
+		t, err := setTenantStatus(c.Request.Context(), p.roster, c.Param("id"), status)
 		switch {
 		case errors.Is(err, errNoTenantID):
-			writeError(w, nethttp.StatusUnprocessableEntity, err.Error())
+			writeError(c, nethttp.StatusUnprocessableEntity, err.Error())
 			return
 		case errors.Is(err, tenant.ErrInvalidTenant):
-			writeError(w, nethttp.StatusNotFound, errNoSuchTenant.Error())
+			writeError(c, nethttp.StatusNotFound, errNoSuchTenant.Error())
 			return
 		case err != nil:
-			log.FromContext(r.Context()).Error("changing a tenant's status", "error", err)
-			writeError(w, nethttp.StatusInternalServerError, "the roster could not be written")
+			log.FromContext(c.Request.Context()).Error("changing a tenant's status", "error", err)
+			writeError(c, nethttp.StatusInternalServerError, "the roster could not be written")
 			return
 		}
-		_ = speedhttp.WriteJSON(w, nethttp.StatusOK, viewOf(t))
+		c.JSON(nethttp.StatusOK, viewOf(t))
 	}
 }
 
@@ -253,26 +252,25 @@ func userViewOf(u User) userView {
 }
 
 // createUserHandler answers a user creation.
-func (p *adminProduct) createUserHandler(w nethttp.ResponseWriter, r *nethttp.Request) {
+func (p *adminProduct) createUserHandler(c *gin.Context) {
 	var body userRequest
-	if err := speedhttp.Decode(r, &body); err != nil {
-		writeError(w, speedhttp.StatusFor(err), err.Error())
+	if !bindBody(c, &body) {
 		return
 	}
-	user, err := createUser(r.Context(), p.db, p.passwords, body.Email, body.DisplayName, body.Password)
+	user, err := createUser(c.Request.Context(), p.db, p.passwords, body.Email, body.DisplayName, body.Password)
 	switch {
 	case errors.Is(err, errEmailTaken):
-		writeError(w, nethttp.StatusConflict, errEmailTaken.Error())
+		writeError(c, nethttp.StatusConflict, errEmailTaken.Error())
 		return
 	case errors.Is(err, errInvalidEmail), errors.Is(err, errInvalidName), errors.Is(err, errWeakPassword):
-		writeError(w, nethttp.StatusUnprocessableEntity, err.Error())
+		writeError(c, nethttp.StatusUnprocessableEntity, err.Error())
 		return
 	case err != nil:
-		log.FromContext(r.Context()).Error("creating a user", "error", err)
-		writeError(w, nethttp.StatusInternalServerError, "the user could not be written")
+		log.FromContext(c.Request.Context()).Error("creating a user", "error", err)
+		writeError(c, nethttp.StatusInternalServerError, "the user could not be written")
 		return
 	}
-	_ = speedhttp.WriteJSON(w, nethttp.StatusCreated, userViewOf(user))
+	c.JSON(nethttp.StatusCreated, userViewOf(user))
 }
 
 // grantAcross gives a user a role in the tenant the path names, from an
@@ -291,36 +289,35 @@ func (p *adminProduct) createUserHandler(w nethttp.ResponseWriter, r *nethttp.Re
 // rereads the roster: within the refresh period on a deployment that sets one,
 // and not before a restart on one that sets none. That lag is the roster's
 // stated window, and a deployment of several replicas sets a refresh period.
-func (p *adminProduct) grantAcross(w nethttp.ResponseWriter, r *nethttp.Request) {
-	ctx := r.Context()
+func (p *adminProduct) grantAcross(c *gin.Context) {
+	ctx := c.Request.Context()
 	var body grantRequest
-	if err := speedhttp.Decode(r, &body); err != nil {
-		writeError(w, speedhttp.StatusFor(err), err.Error())
+	if !bindBody(c, &body) {
 		return
 	}
-	id := tenant.ID(r.PathValue("id"))
+	id := tenant.ID(c.Param("id"))
 	if _, found, err := p.roster.Get(ctx, id); err != nil {
 		log.FromContext(ctx).Error("reading the roster", "error", err)
-		writeError(w, nethttp.StatusServiceUnavailable, "the roster cannot be read")
+		writeError(c, nethttp.StatusServiceUnavailable, "the roster cannot be read")
 		return
 	} else if !found {
-		writeError(w, nethttp.StatusNotFound, errNoSuchTenant.Error())
+		writeError(c, nethttp.StatusNotFound, errNoSuchTenant.Error())
 		return
 	}
 	user, found, err := userByEmail(ctx, p.db, body.Email)
 	if err != nil {
 		log.FromContext(ctx).Error("reading the user to grant", "error", err)
-		writeError(w, nethttp.StatusServiceUnavailable, "the user table cannot be read")
+		writeError(c, nethttp.StatusServiceUnavailable, "the user table cannot be read")
 		return
 	}
 	if !found {
-		writeError(w, nethttp.StatusNotFound, "no user has this email")
+		writeError(c, nethttp.StatusNotFound, "no user has this email")
 		return
 	}
 	granted, err := grantIn(tenant.CrossTenant(ctx), p.db, id, user.ID, body.Role)
 	if err != nil {
 		log.FromContext(ctx).Error("granting a membership", "error", err)
-		writeError(w, nethttp.StatusInternalServerError, "the membership could not be written")
+		writeError(c, nethttp.StatusInternalServerError, "the membership could not be written")
 		return
 	}
 	if err := p.recorder.Record(ctx, audit.Entry{
@@ -335,10 +332,10 @@ func (p *adminProduct) grantAcross(w nethttp.ResponseWriter, r *nethttp.Request)
 		// no record is what the seam exists to prevent, so the caller is
 		// told the operation did not complete as asked.
 		log.FromContext(ctx).Error("recording a cross-tenant grant", "error", err)
-		writeError(w, nethttp.StatusInternalServerError, "the membership was written and its audit record was not")
+		writeError(c, nethttp.StatusInternalServerError, "the membership was written and its audit record was not")
 		return
 	}
-	_ = speedhttp.WriteJSON(w, nethttp.StatusOK, grantView{
+	c.JSON(nethttp.StatusOK, grantView{
 		TenantID: string(granted.TenantID), UserID: granted.UserID, Role: granted.Role,
 	})
 }
@@ -422,12 +419,12 @@ func adminModule() core.Module {
 				return err
 			}
 			admin.Use(product.layer())
-			admin.Route(listTenantsRoute, nethttp.HandlerFunc(product.listTenants))
-			admin.Route(createTenantRoute, nethttp.HandlerFunc(product.createTenant))
-			admin.Route(disableTenantRoute, product.changeStatus(tenant.StatusDisabled))
-			admin.Route(enableTenantRoute, product.changeStatus(tenant.StatusActive))
-			admin.Route(createUserRoute, nethttp.HandlerFunc(product.createUserHandler))
-			admin.Route(grantTenantRoute, nethttp.HandlerFunc(product.grantAcross))
+			mount(admin, listTenantsRoute, product.listTenants)
+			mount(admin, createTenantRoute, product.createTenant)
+			mount(admin, disableTenantRoute, product.changeStatus(tenant.StatusDisabled))
+			mount(admin, enableTenantRoute, product.changeStatus(tenant.StatusActive))
+			mount(admin, createUserRoute, product.createUserHandler)
+			mount(admin, grantTenantRoute, product.grantAcross)
 			return nil
 		},
 

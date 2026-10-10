@@ -61,12 +61,6 @@ var (
 	// swallowed: the direction is closed, but nothing would say so.
 	ErrExemptionUnguarded = errors.New("authn: exemption lands on an endpoint this gateway does not guard")
 
-	// ErrUnmatchablePattern reports a pattern the matcher will not take.
-	// The engine and the matcher are two parsers, and a pattern the engine
-	// accepts is only known to be one the matcher accepts when the matcher
-	// is built.
-	ErrUnmatchablePattern = errors.New("authn: exemption pattern is not one the matcher accepts")
-
 	// ErrDrainTimeout reports that Close had waited the call budget for the
 	// calls inside a backend and some were still there. The calls go on
 	// running; what Close gives up is the wait, so that a backend which has

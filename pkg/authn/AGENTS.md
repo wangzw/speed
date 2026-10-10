@@ -13,7 +13,8 @@ credential backend, whose subject table comes from configuration.
   [`docs/adr/`](../../docs/adr/) — `adr-authn-scope-2026-09-20`,
   `adr-authn-packaging-2026-09-20`, `adr-authn-wiring-2026-09-20`,
   `adr-authn-ownership-2026-09-20`, `adr-authn-verdict-2026-09-20`,
-  `adr-authn-guarantees-2026-09-20`, `adr-authn-static-hash-2026-09-29`.
+  `adr-authn-guarantees-2026-09-20`, `adr-authn-exemption-2026-10-10`,
+  `adr-authn-static-hash-2026-09-29`.
 - The API itself: the godoc in this package. Read `Verdict`'s constructors and
   `Claim`'s field comments before writing a backend.
 
@@ -151,9 +152,13 @@ go -C pkg/authn test -race ./...
 ```
 
 The tests bring up their own gateways and ask for no service, no database and
-no environment. `gate/assembly_test.go` drives the gateway's own descriptor
-through a real registry, which is where what each callback takes up and
-registers is observed. `examples/orders-host` is where the assembly is held
-from outside the process: it starts a real binary, reaches it over a socket and
-checks the status codes, which is the only place the chain the real entry point
-assembles is observable at all.
+no environment beyond loopback ports. `gate/assembly_test.go` drives the
+gateway's own descriptor through a real registry, which is where what each
+callback takes up and registers is observed. `gate/live_test.go` drives the
+descriptor together with the real entry point, `pkg/http`, on loopback ports and
+sends it real requests: which route a request is matched to, what an exemption
+covers, which layer answers a request that matches no route, and the shape of a
+refusal are all decided by the entry point, so a case about any of them stays on
+that harness — a router written for the test answers what the test decided.
+`examples/orders-host` holds the whole assembly from outside the process: it
+starts a real binary, reaches it over a socket and checks the status codes.

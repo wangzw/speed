@@ -15,6 +15,10 @@ import (
 
 // recorder is a slog handler that keeps every record written to it, so that a
 // case can read the level and the attributes a conclusion was logged with.
+//
+// Attributes bound to a logger made from it, with With or through log.WithAttrs,
+// are on the records that logger writes, as they are with any handler: a case
+// about what a layer bound on the request's logger reads them there.
 type recorder struct {
 	mu      sync.Mutex
 	records []slog.Record
@@ -29,8 +33,32 @@ func (h *recorder) Handle(_ context.Context, r slog.Record) error {
 	return nil
 }
 
-func (h *recorder) WithAttrs([]slog.Attr) slog.Handler { return h }
-func (h *recorder) WithGroup(string) slog.Handler      { return h }
+func (h *recorder) WithAttrs(attrs []slog.Attr) slog.Handler {
+	return boundRecorder{parent: h, attrs: attrs}
+}
+
+func (h *recorder) WithGroup(string) slog.Handler { return h }
+
+// boundRecorder is a recorder with attributes bound: it writes each record to
+// the parent with them added.
+type boundRecorder struct {
+	parent *recorder
+	attrs  []slog.Attr
+}
+
+func (boundRecorder) Enabled(context.Context, slog.Level) bool { return true }
+
+func (b boundRecorder) Handle(ctx context.Context, r slog.Record) error {
+	bound := r.Clone()
+	bound.AddAttrs(b.attrs...)
+	return b.parent.Handle(ctx, bound)
+}
+
+func (b boundRecorder) WithAttrs(attrs []slog.Attr) slog.Handler {
+	return boundRecorder{parent: b.parent, attrs: append(append([]slog.Attr(nil), b.attrs...), attrs...)}
+}
+
+func (b boundRecorder) WithGroup(string) slog.Handler { return b }
 
 // only returns the one record written, failing the case when there is not
 // exactly one: every conclusion writes one line, and a second would be a second

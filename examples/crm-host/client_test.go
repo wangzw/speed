@@ -145,6 +145,23 @@ func expect(t *testing.T, what string, got response, status int) {
 	}
 }
 
+// problemMediaType is the media type of the error responses the HTTP module
+// writes, its own and the ones its layers write through it: the refusal of a
+// request that matches no route, of one whose method the matched path does not
+// take, and of one the gateway, the resolution or the limiter turns away. The
+// error body of a handler of this host is the host's own, JSON with an error
+// member.
+const problemMediaType = "application/problem+json"
+
+// requireProblem fails the case unless an error response the HTTP module or one
+// of its layers wrote carries the problem details media type.
+func requireProblem(t *testing.T, what string, got response) {
+	t.Helper()
+	if mediaType := got.header.Get("Content-Type"); mediaType != problemMediaType {
+		t.Errorf("%s was answered with the media type %q, want %s; body %q", what, mediaType, problemMediaType, got.body)
+	}
+}
+
 // login signs a user in on the account endpoint and returns the bearer token.
 func (h *crmHost) login(t *testing.T, u userRef) string {
 	t.Helper()

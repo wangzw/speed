@@ -2,250 +2,266 @@ package resolve
 
 import (
 	"context"
-	"errors"
 	"log/slog"
 	nethttp "net/http"
-	"net/http/httptest"
+	"strconv"
+	"strings"
 	"sync"
 	"testing"
 
+	"github.com/gin-gonic/gin"
+
+	"github.com/vislake/speed/pkg/authn"
+	"github.com/vislake/speed/pkg/core"
+	speedhttp "github.com/vislake/speed/pkg/http"
 	"github.com/vislake/speed/pkg/log"
 	"github.com/vislake/speed/pkg/tenant"
 	"github.com/vislake/speed/pkg/tenant/internal/tenantctx"
 )
 
-// The cases in this file drive the resolution layer the way the entry point
-// does — through the middleware it registers — against a roster whose answers
-// the case chooses, and read what it answered and what it logged.
+// The cases in this file drive the resolution layer the way a request reaches
+// it: over a socket, through the entry point's chain, against a roster whose
+// answers the case chooses. They read what the layer answered and what it
+// logged.
 
-// fakeRoster answers ByAlias from a fixed table, or with a fixed error. The
-// resolution layer calls nothing else on the roster.
-type fakeRoster struct {
-	byAlias map[string]tenant.Tenant
-	err     error
+// sighting is what the layer just inside the resolution layer saw of one
+// request.
+type sighting struct {
+	path     string
+	fullPath string
+	id       tenant.ID
+	tenanted bool
 }
 
-func (f fakeRoster) ByAlias(_ context.Context, alias string) (tenant.Tenant, bool, error) {
-	if f.err != nil {
-		return tenant.Tenant{}, false, f.err
+// probe is what a case registers on the guarded endpoint, and what it noted
+// about the requests that reached it. Three things are registered: a layer
+// outside the resolution layer that binds the subject the way the
+// authentication layer does, a layer just inside it, and one route.
+type probe struct {
+	// write is the record the route's handler writes through its request's
+	// logger. Nil writes one record, "handled".
+	write func(ctx context.Context)
+	// extractors are registered through the resolution module's own seam, in
+	// the registrant's Init.
+	extractors map[string]tenant.Extractor
+
+	mu      sync.Mutex
+	handled []tenant.ID
+	seen    []sighting
+}
+
+// register is the registrant's Init: what a real module does with the entry
+// point.
+func (p *probe) register(reg *core.Registry, ep speedhttp.Endpoint) error {
+	if len(p.extractors) > 0 {
+		resolution, err := core.Resolve[tenant.Resolution](reg)
+		if err != nil {
+			return err
+		}
+		for name, e := range p.extractors {
+			resolution.Register(name, e)
+		}
 	}
-	t, ok := f.byAlias[alias]
-	return t, ok, nil
-}
-
-func (fakeRoster) Get(context.Context, tenant.ID) (tenant.Tenant, bool, error) {
-	return tenant.Tenant{}, false, errors.New("not used by the resolution layer")
-}
-
-func (fakeRoster) Put(context.Context, tenant.Tenant) error {
-	return errors.New("not used by the resolution layer")
-}
-
-func (fakeRoster) Create(context.Context, tenant.Tenant) error {
-	return errors.New("not used by the resolution layer")
-}
-
-func (fakeRoster) SetStatus(context.Context, tenant.ID, tenant.Status) error {
-	return errors.New("not used by the resolution layer")
-}
-
-func (fakeRoster) List(context.Context) ([]tenant.Tenant, error) {
-	return nil, errors.New("not used by the resolution layer")
-}
-
-func (fakeRoster) Enter(ctx context.Context, _ tenant.ID) (context.Context, error) {
-	return ctx, errors.New("not used by the resolution layer")
-}
-
-func (fakeRoster) EnterRegistered(ctx context.Context, _ tenant.ID) (context.Context, error) {
-	return ctx, errors.New("not used by the resolution layer")
-}
-
-// record is one log record as a case reads it: the level, the message, and
-// every attribute, bound or passed, rendered as text.
-type record struct {
-	level slog.Level
-	msg   string
-	attrs map[string]string
-}
-
-// recorder is a slog handler that keeps what it is handed.
-type recorder struct {
-	mu      *sync.Mutex
-	records *[]record
-	bound   []slog.Attr
-}
-
-func newRecorder() *recorder {
-	return &recorder{mu: &sync.Mutex{}, records: &[]record{}}
-}
-
-func (r *recorder) Enabled(context.Context, slog.Level) bool { return true }
-
-func (r *recorder) Handle(_ context.Context, rec slog.Record) error {
-	attrs := make(map[string]string, len(r.bound)+rec.NumAttrs())
-	for _, a := range r.bound {
-		attrs[a.Key] = a.Value.String()
-	}
-	rec.Attrs(func(a slog.Attr) bool {
-		attrs[a.Key] = a.Value.String()
-		return true
-	})
-	r.mu.Lock()
-	defer r.mu.Unlock()
-	*r.records = append(*r.records, record{level: rec.Level, msg: rec.Message, attrs: attrs})
+	ep.Use(subjectLayer())
+	ep.Use(p.witness())
+	ep.Route(nethttp.MethodGet, "/orders", p.orders)
 	return nil
 }
 
-func (r *recorder) WithAttrs(attrs []slog.Attr) slog.Handler {
-	bound := append(append([]slog.Attr(nil), r.bound...), attrs...)
-	return &recorder{mu: r.mu, records: r.records, bound: bound}
+// subjectLayer stands for the authentication layer: it points at no one, claims
+// the capability the resolution layer points at, and binds the subject onto the
+// request's logger. Its Order is the largest of the layers on the chain, so the
+// resolution layer sits inside it only because of the constraint it declares.
+func subjectLayer() speedhttp.Middleware {
+	return speedhttp.Middleware{
+		Name:     "subject",
+		Provides: []core.Token{(*authn.Gate)(nil)},
+		Order:    1000,
+		Handler: func(c *gin.Context) {
+			c.Request = c.Request.WithContext(log.WithAttrs(c.Request.Context(), slog.String("subject", "alice")))
+			c.Next()
+		},
+	}
 }
 
-func (r *recorder) WithGroup(string) slog.Handler { return r }
+// witness is a layer that notes what a request looks like on the inside of the
+// resolution layer. It points at the capability the resolution layer claims and
+// carries the smallest Order, so it sits inside the resolution layer only
+// because of the constraint it declares.
+func (p *probe) witness() speedhttp.Middleware {
+	return speedhttp.Middleware{
+		Name:  "witness",
+		After: []core.Token{(*tenant.Resolution)(nil)},
+		Order: -1000,
+		Handler: func(c *gin.Context) {
+			id, ok := tenant.FromContext(c.Request.Context())
+			p.mu.Lock()
+			p.seen = append(p.seen, sighting{
+				path: c.Request.URL.Path, fullPath: c.FullPath(), id: id, tenanted: ok,
+			})
+			p.mu.Unlock()
+			c.Next()
+		},
+	}
+}
 
-func (r *recorder) all() []record {
+// orders is the route: it notes the tenant it read, writes its record and
+// answers 204.
+func (p *probe) orders(c *gin.Context) {
+	ctx := c.Request.Context()
+	id, _ := tenant.FromContext(ctx)
+	p.mu.Lock()
+	p.handled = append(p.handled, id)
+	p.mu.Unlock()
+	if p.write != nil {
+		p.write(ctx)
+	} else {
+		log.FromContext(ctx).Info("handled")
+	}
+	c.Status(nethttp.StatusNoContent)
+}
+
+func (p *probe) handledIDs() []tenant.ID {
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	return append([]tenant.ID(nil), p.handled...)
+}
+
+func (p *probe) sightings() []sighting {
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	return append([]sighting(nil), p.seen...)
+}
+
+// requireNothingInside asserts no request got past the resolution layer: neither
+// the layer just inside it nor the route saw one.
+func (p *probe) requireNothingInside(t *testing.T) {
+	t.Helper()
+	if got := p.sightings(); len(got) != 0 {
+		t.Fatalf("a refused request reached the layer inside the resolution layer: %+v", got)
+	}
+	if got := p.handledIDs(); len(got) != 0 {
+		t.Fatalf("a refused request reached the handler: %v", got)
+	}
+}
+
+// capturingResponder is an ErrorResponder that keeps the Problems it is asked to
+// write, and writes a shape of its own: a media type and a body the default
+// shape never produces.
+type capturingResponder struct {
+	mu       sync.Mutex
+	problems []speedhttp.Problem
+}
+
+const customMediaType = "application/x.test-error+json"
+
+func (r *capturingResponder) RespondError(w nethttp.ResponseWriter, _ *nethttp.Request, p speedhttp.Problem) {
+	r.mu.Lock()
+	r.problems = append(r.problems, p)
+	r.mu.Unlock()
+	w.Header().Set("Content-Type", customMediaType)
+	w.WriteHeader(p.Status)
+	_, _ = w.Write([]byte(`{"code":` + strconv.Itoa(p.Status) + `}`))
+}
+
+func (r *capturingResponder) handed() []speedhttp.Problem {
 	r.mu.Lock()
 	defer r.mu.Unlock()
-	return append([]record(nil), *r.records...)
+	return append([]speedhttp.Problem(nil), r.problems...)
 }
 
-// harness is one resolution layer, the logger the module holds, and the
-// logger the request arrives with.
-type harness struct {
-	layer   nethttp.Handler
-	module  *recorder
-	request *recorder
-	reached *bool
-	seen    *tenant.ID
-}
-
-// newHarness builds the layer over this roster, with the header extractor in
-// force, in front of a handler that notes it was reached and writes one record
-// through the request's logger.
-func newHarness(t *testing.T, roster tenant.Catalog, extractor tenant.Extractor) harness {
-	t.Helper()
-	return newHarnessWriting(t, roster, extractor, func(ctx context.Context) {
-		log.FromContext(ctx).Info("handled")
-	})
-}
-
-// newHarnessWriting is newHarness with the handler's record written by write,
-// from the request's context.
-func newHarnessWriting(t *testing.T, roster tenant.Catalog, extractor tenant.Extractor,
-	write func(ctx context.Context),
-) harness {
-	t.Helper()
-	r := newResolver(settings{header: "X-Tenant"}, roster)
-	r.selected = extractor
-	module := newRecorder()
-	r.logger = slog.New(module)
-
-	reached := false
-	var seen tenant.ID
-	next := nethttp.HandlerFunc(func(w nethttp.ResponseWriter, req *nethttp.Request) {
-		reached = true
-		seen, _ = tenant.FromContext(req.Context())
-		write(req.Context())
-		w.WriteHeader(nethttp.StatusNoContent)
-	})
-	return harness{
-		layer:   r.middlewareFor().Wrap(next),
-		module:  module,
-		request: newRecorder(),
-		reached: &reached,
-		seen:    &seen,
+// sameAnswer reports whether two responses are indistinguishable to a client:
+// the status, the body and every header the server does not stamp with the time.
+func sameAnswer(a, b response) bool {
+	if a.status != b.status || a.body != b.body || len(a.header) != len(b.header) {
+		return false
 	}
-}
-
-// serve sends one request carrying this tenant header, on a context whose
-// logger already carries the subject the authentication layer bound.
-func (h harness) serve(header string) *httptest.ResponseRecorder {
-	ctx := log.WithLogger(context.Background(), slog.New(h.request))
-	ctx = log.WithAttrs(ctx, slog.String("subject", "alice"))
-	req := httptest.NewRequest(nethttp.MethodGet, "/orders", nil).WithContext(ctx)
-	if header != "" {
-		req.Header.Set("X-Tenant", header)
+	for k, av := range a.header {
+		if k == "Date" {
+			continue
+		}
+		bv := b.header[k]
+		if len(av) != len(bv) {
+			return false
+		}
+		for i := range av {
+			if av[i] != bv[i] {
+				return false
+			}
+		}
 	}
-	w := httptest.NewRecorder()
-	h.layer.ServeHTTP(w, req)
-	return w
-}
-
-func standardRoster() fakeRoster {
-	return fakeRoster{byAlias: map[string]tenant.Tenant{
-		"acme":   {ID: "t_acme", Alias: "acme", Status: tenant.StatusActive},
-		"paused": {ID: "t_paused", Alias: "paused", Status: tenant.StatusDisabled},
-	}}
-}
-
-// requireRefused asserts a 404 with no body that did not reach the handler.
-func requireRefused(t *testing.T, h harness, w *httptest.ResponseRecorder) {
-	t.Helper()
-	if w.Code != nethttp.StatusNotFound {
-		t.Fatalf("the layer answered %d, want 404", w.Code)
-	}
-	if w.Body.Len() != 0 {
-		t.Fatalf("the layer wrote a body %q, want none", w.Body.String())
-	}
-	if *h.reached {
-		t.Fatal("a refused request reached the handler")
-	}
+	return true
 }
 
 func TestARequestWithNoTenantNameIsNotFound(t *testing.T) {
-	h := newHarness(t, standardRoster(), headerExtractor{name: "X-Tenant"})
-	requireRefused(t, h, h.serve(""))
+	p := &probe{}
+	h := startHost(t, hostOptions{roster: standardRoster(), register: p.register})
+
+	requireProblem(t, h.get(t, "/orders", ""), nethttp.StatusNotFound)
+	p.requireNothingInside(t)
 }
 
 func TestANameOffTheRosterAndADisabledTenantAnswerAlike(t *testing.T) {
-	unknown := newHarness(t, standardRoster(), headerExtractor{name: "X-Tenant"})
-	wu := unknown.serve("ghost")
-	requireRefused(t, unknown, wu)
+	p := &probe{}
+	h := startHost(t, hostOptions{roster: standardRoster(), register: p.register})
 
-	disabled := newHarness(t, standardRoster(), headerExtractor{name: "X-Tenant"})
-	wd := disabled.serve("paused")
-	requireRefused(t, disabled, wd)
-
-	if len(wu.Header()) != len(wd.Header()) {
-		t.Fatalf("an unknown and a disabled tenant were answered with different headers: %v and %v",
-			wu.Header(), wd.Header())
+	unknown := h.get(t, "/orders", "ghost")
+	disabled := h.get(t, "/orders", "paused")
+	nameless := h.get(t, "/orders", "")
+	for _, got := range []response{unknown, disabled, nameless} {
+		requireProblem(t, got, nethttp.StatusNotFound)
 	}
+	if !sameAnswer(unknown, disabled) {
+		t.Fatalf("an unknown and a disabled tenant were answered differently: %+v and %+v", unknown, disabled)
+	}
+	if !sameAnswer(unknown, nameless) {
+		t.Fatalf("a request with no tenant name was answered differently from an unknown tenant: %+v and %+v",
+			nameless, unknown)
+	}
+	p.requireNothingInside(t)
 }
 
 func TestAnUnreadableRosterIsAnInternalError(t *testing.T) {
-	h := newHarness(t, fakeRoster{err: tenant.ErrRosterMissing}, headerExtractor{name: "X-Tenant"})
-	w := h.serve("acme")
-	if w.Code != nethttp.StatusInternalServerError {
-		t.Fatalf("the layer answered %d over an unreadable roster, want 500", w.Code)
+	p := &probe{}
+	h := startHost(t, hostOptions{roster: fakeRoster{err: tenant.ErrRosterMissing}, register: p.register})
+
+	got := h.get(t, "/orders", "acme")
+	requireProblem(t, got, nethttp.StatusInternalServerError)
+	if strings.Contains(strings.ToLower(got.body), "roster") {
+		t.Fatalf("the cause of a 500 reached the client: %q", got.body)
 	}
-	if *h.reached {
-		t.Fatal("a request the roster could not answer reached the handler")
-	}
+	p.requireNothingInside(t)
 }
 
 // An admitted request carries the identifier, not the alias, both in the
-// context and on the logger the handler writes through, beside what the
-// layers outside it bound.
+// context and on the logger the handler writes through, beside what the layers
+// outside it bound.
 func TestAnAdmittedRequestCarriesTheIdentifier(t *testing.T) {
-	h := newHarness(t, standardRoster(), headerExtractor{name: "X-Tenant"})
-	w := h.serve("acme")
-	if w.Code != nethttp.StatusNoContent || !*h.reached {
-		t.Fatalf("an active tenant was answered %d (handler reached: %v), want the handler's 204",
-			w.Code, *h.reached)
+	p := &probe{}
+	h := startHost(t, hostOptions{roster: standardRoster(), register: p.register})
+
+	got := h.get(t, "/orders", "acme")
+	if got.status != nethttp.StatusNoContent {
+		t.Fatalf("an active tenant was answered %d, want the handler's 204", got.status)
 	}
-	if *h.seen != "t_acme" {
-		t.Fatalf("the handler read tenant %q, want the identifier t_acme", *h.seen)
+	if ids := p.handledIDs(); len(ids) != 1 || ids[0] != "t_acme" {
+		t.Fatalf("the handler read tenants %v, want the identifier t_acme once", ids)
 	}
-	records := h.request.all()
-	if len(records) != 1 || records[0].msg != "handled" {
-		t.Fatalf("the request's logger holds %+v, want the handler's one record", records)
+	if seen := p.sightings(); len(seen) != 1 || seen[0].id != "t_acme" || !seen[0].tenanted {
+		t.Fatalf("the layer inside the resolution layer saw %+v, want the identifier t_acme", seen)
+	}
+	records := h.logs.withMessage("handled")
+	if len(records) != 1 {
+		t.Fatalf("the handler's record was written %d times, want once: %+v", len(records), records)
 	}
 	if got := records[0].attrs[tenantctx.LogField]; got != "t_acme" {
 		t.Fatalf("the handler's record carries %s=%q, want t_acme", tenantctx.LogField, got)
 	}
 	if got := records[0].attrs["subject"]; got != "alice" {
 		t.Fatalf("the handler's record lost the subject bound outside, got %q", got)
+	}
+	if got := records[0].attrs["logger"]; got != speedhttp.ModuleName {
+		t.Fatalf("the handler's record went through the logger %q, want the entry point's request logger", got)
 	}
 }
 
@@ -254,15 +270,17 @@ func TestAnAdmittedRequestCarriesTheIdentifier(t *testing.T) {
 // name the tenant the request belonged to, because that work does not belong
 // to it. What the layers outside bound stays.
 func TestCrossingFromAnAdmittedRequestTakesTheTenantOffTheLogger(t *testing.T) {
-	h := newHarnessWriting(t, standardRoster(), headerExtractor{name: "X-Tenant"}, func(ctx context.Context) {
+	p := &probe{write: func(ctx context.Context) {
 		log.FromContext(tenant.CrossTenant(ctx)).Info("crossed")
-	})
-	if w := h.serve("acme"); w.Code != nethttp.StatusNoContent {
-		t.Fatalf("an active tenant was answered %d, want the handler's 204", w.Code)
+	}}
+	h := startHost(t, hostOptions{roster: standardRoster(), register: p.register})
+
+	if got := h.get(t, "/orders", "acme"); got.status != nethttp.StatusNoContent {
+		t.Fatalf("an active tenant was answered %d, want the handler's 204", got.status)
 	}
-	records := h.request.all()
-	if len(records) != 1 || records[0].msg != "crossed" {
-		t.Fatalf("the request's logger holds %+v, want the handler's one record", records)
+	records := h.logs.withMessage("crossed")
+	if len(records) != 1 {
+		t.Fatalf("the crossing record was written %d times, want once: %+v", len(records), records)
 	}
 	if got, ok := records[0].attrs[tenantctx.LogField]; ok {
 		t.Fatalf("a record written across tenants carries %s=%q, want no tenant", tenantctx.LogField, got)
@@ -275,39 +293,147 @@ func TestCrossingFromAnAdmittedRequestTakesTheTenantOffTheLogger(t *testing.T) {
 // A refusal is a record about one request, so it is written through the
 // request's logger: it carries what the layers outside bound — the subject the
 // authentication layer settled, the trace the tracing layer opened — which is
-// what ties an authenticated caller probing tenant names to the probes.
+// what ties an authenticated caller probing tenant names to the probes. The
+// module's own logger carries none of that.
 func TestARefusalIsLoggedOnTheRequestsLogger(t *testing.T) {
 	cases := []struct {
-		name   string
-		roster fakeRoster
-		header string
-		level  slog.Level
-		reason string
+		name    string
+		roster  fakeRoster
+		header  string
+		message string
+		level   slog.Level
+		reason  string
 	}{
-		{"no name", standardRoster(), "", slog.LevelInfo, "the request carries no tenant name"},
-		{"off the roster", standardRoster(), "ghost", slog.LevelInfo, "the name is not on the roster"},
-		{"disabled", standardRoster(), "paused", slog.LevelInfo, "the tenant is not being served"},
-		{"unreadable roster", fakeRoster{err: tenant.ErrRosterMissing}, "acme", slog.LevelError, ""},
+		{"no name", standardRoster(), "", "request refused", slog.LevelInfo, "the request carries no tenant name"},
+		{"off the roster", standardRoster(), "ghost", "request refused", slog.LevelInfo, "the name is not on the roster"},
+		{"disabled", standardRoster(), "paused", "request refused", slog.LevelInfo, "the tenant is not being served"},
+		{"unreadable roster", fakeRoster{err: tenant.ErrRosterMissing}, "acme", "the roster could not be read", slog.LevelError, ""},
 	}
 	for _, c := range cases {
 		t.Run(c.name, func(t *testing.T) {
-			h := newHarness(t, c.roster, headerExtractor{name: "X-Tenant"})
-			h.serve(c.header)
-			if records := h.module.all(); len(records) != 0 {
-				t.Fatalf("the refusal went to the module's logger: %+v", records)
-			}
-			records := h.request.all()
+			p := &probe{}
+			h := startHost(t, hostOptions{roster: c.roster, register: p.register})
+			h.get(t, "/orders", c.header)
+
+			records := h.logs.withMessage(diagnosticPrefix + ModuleName + ": " + c.message)
 			if len(records) != 1 {
-				t.Fatalf("the request's logger holds %+v, want one record of the refusal", records)
+				t.Fatalf("the layer wrote %d records of the refusal, want one: %+v", len(records), records)
 			}
 			got := records[0]
 			if got.level != c.level || got.attrs["subject"] != "alice" {
-				t.Fatalf("the refusal was recorded as %+v, want level %v carrying subject alice",
-					got, c.level)
+				t.Fatalf("the refusal was recorded as %+v, want level %v carrying subject alice", got, c.level)
+			}
+			if got.attrs["logger"] != speedhttp.ModuleName {
+				t.Fatalf("the refusal went through the logger %q, want the request's, which is the entry point's",
+					got.attrs["logger"])
 			}
 			if c.reason != "" && got.attrs["reason"] != c.reason {
 				t.Fatalf("the refusal gives reason %q, want %q", got.attrs["reason"], c.reason)
 			}
+			if c.header != "" && c.reason != "" && got.attrs["name"] != c.header {
+				t.Fatalf("the refusal names %q, want the name tried, %q", got.attrs["name"], c.header)
+			}
 		})
+	}
+}
+
+// A refusal and a failure are written through the entry point's error response
+// and carry nothing but their status: the reason is the log's, and a response
+// that carried it would tell a name that never existed from one that was
+// switched off.
+func TestRefusalsAreProblemDetailsResponses(t *testing.T) {
+	cases := []struct {
+		name   string
+		roster fakeRoster
+		header string
+		status int
+	}{
+		{"no name", standardRoster(), "", nethttp.StatusNotFound},
+		{"off the roster", standardRoster(), "ghost", nethttp.StatusNotFound},
+		{"disabled", standardRoster(), "paused", nethttp.StatusNotFound},
+		{"unreadable roster", fakeRoster{err: tenant.ErrRosterMissing}, "acme", nethttp.StatusInternalServerError},
+	}
+	for _, c := range cases {
+		t.Run(c.name, func(t *testing.T) {
+			h := startHost(t, hostOptions{roster: c.roster, register: (&probe{}).register})
+			requireProblem(t, h.get(t, "/orders", c.header), c.status)
+		})
+	}
+}
+
+// When a module delivers the ErrorResponder capability the shape is its own, for
+// every answer this layer gives, and what the layer hands it is the status and
+// nothing else.
+func TestADeliveredErrorResponderDecidesTheShape(t *testing.T) {
+	cases := []struct {
+		name   string
+		roster fakeRoster
+		header string
+		status int
+	}{
+		{"no name", standardRoster(), "", nethttp.StatusNotFound},
+		{"off the roster", standardRoster(), "ghost", nethttp.StatusNotFound},
+		{"disabled", standardRoster(), "paused", nethttp.StatusNotFound},
+		{"unreadable roster", fakeRoster{err: tenant.ErrRosterMissing}, "acme", nethttp.StatusInternalServerError},
+	}
+	for _, c := range cases {
+		t.Run(c.name, func(t *testing.T) {
+			responder := &capturingResponder{}
+			h := startHost(t, hostOptions{roster: c.roster, responder: responder, register: (&probe{}).register})
+
+			got := h.get(t, "/orders", c.header)
+			if got.status != c.status {
+				t.Fatalf("the response is %d, want %d", got.status, c.status)
+			}
+			if ct := got.header.Get("Content-Type"); ct != customMediaType {
+				t.Fatalf("the response's media type is %q, want the responder's %q", ct, customMediaType)
+			}
+			if want := `{"code":` + strconv.Itoa(c.status) + `}`; got.body != want {
+				t.Fatalf("the response body is %q, want the responder's %q", got.body, want)
+			}
+			handed := responder.handed()
+			if len(handed) != 1 || handed[0] != (speedhttp.Problem{Status: c.status}) {
+				t.Fatalf("the responder was handed %+v, want one Problem carrying the status %d alone",
+					handed, c.status)
+			}
+		})
+	}
+}
+
+// The layer's place on the chain comes from what it declares: it stands for the
+// resolution capability, and it sits inside the layer that stands for
+// authentication. The layers it is checked against carry Orders that would put
+// them on the other side of it, so only the declared constraints can produce
+// the order the chain listing shows.
+func TestTheLayerSitsInsideAuthenticationAndOutsideWhatPointsAtIt(t *testing.T) {
+	h := startHost(t, hostOptions{roster: standardRoster(), register: (&probe{}).register})
+
+	listed := h.logs.withMessage("an HTTP endpoint's chain is assembled")
+	if len(listed) != 1 {
+		t.Fatalf("the entry point listed %d chains, want one: %+v", len(listed), listed)
+	}
+	chain := listed[0].attrs["chain"]
+	subject := strings.Index(chain, "subject")
+	resolution := strings.Index(chain, ModuleName)
+	witness := strings.Index(chain, "witness")
+	if subject < 0 || resolution < 0 || witness < 0 || subject >= resolution || resolution >= witness {
+		t.Fatalf("the chain is %q, want subject, then %s, then witness", chain, ModuleName)
+	}
+}
+
+func TestTheDescriptorOfTheLayerStandsForResolutionInsideAuthentication(t *testing.T) {
+	mw := newResolver(settings{header: "X-Tenant"}, nil).middlewareFor()
+
+	if mw.Handler == nil {
+		t.Fatal("the layer has no handler")
+	}
+	if len(mw.Provides) != 1 || mw.Provides[0] != core.Token((*tenant.Resolution)(nil)) {
+		t.Fatalf("Provides = %v, want the Resolution token", mw.Provides)
+	}
+	if len(mw.After) != 1 || mw.After[0] != core.Token((*authn.Gate)(nil)) {
+		t.Fatalf("After = %v, want the authentication gate's token", mw.After)
+	}
+	if mw.Name != ModuleName {
+		t.Fatalf("Name = %q, want %q", mw.Name, ModuleName)
 	}
 }

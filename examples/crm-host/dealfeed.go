@@ -9,6 +9,8 @@ import (
 	"strconv"
 	"time"
 
+	"github.com/gin-gonic/gin"
+
 	"github.com/vislake/speed/pkg/config"
 	"github.com/vislake/speed/pkg/core"
 	"github.com/vislake/speed/pkg/event"
@@ -132,11 +134,10 @@ type dealFeedProduct struct {
 // publish hands one deal.won to the bus. The identifier is the operator's when
 // the request carries one; otherwise it is minted here, so the answer can name
 // it.
-func (p *dealFeedProduct) publish(w nethttp.ResponseWriter, r *nethttp.Request) {
-	ctx := r.Context()
+func (p *dealFeedProduct) publish(c *gin.Context) {
+	ctx := c.Request.Context()
 	var body dealFeedRequest
-	if err := speedhttp.Decode(r, &body); err != nil {
-		writeError(w, speedhttp.StatusFor(err), err.Error())
+	if !bindBody(c, &body) {
 		return
 	}
 	id := body.ID
@@ -146,10 +147,10 @@ func (p *dealFeedProduct) publish(w nethttp.ResponseWriter, r *nethttp.Request) 
 	evt := event.Event{ID: id, Type: dealWonEvent, TenantID: body.TenantID, Payload: body.won(time.Now().UTC())}
 	if err := p.bus.Publish(ctx, evt); err != nil {
 		log.FromContext(ctx).Error("publishing a deal event", "event_id", id, "error", err)
-		writeError(w, nethttp.StatusServiceUnavailable, "the event was not accepted by the bus")
+		writeError(c, nethttp.StatusServiceUnavailable, "the event was not accepted by the bus")
 		return
 	}
-	_ = speedhttp.WriteJSON(w, nethttp.StatusAccepted, dealFeedView{ID: id, Type: evt.Type, TenantID: evt.TenantID})
+	c.JSON(nethttp.StatusAccepted, dealFeedView{ID: id, Type: evt.Type, TenantID: evt.TenantID})
 }
 
 // init registers the deal feed. It runs on serve, where the admin endpoint is.
@@ -214,7 +215,7 @@ func dealFeedModule() core.Module {
 			if err != nil {
 				return err
 			}
-			admin.Route(publishDealEventRoute, nethttp.HandlerFunc(product.publish))
+			mount(admin, publishDealEventRoute, product.publish)
 			return nil
 		},
 

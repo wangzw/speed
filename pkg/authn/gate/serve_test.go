@@ -11,9 +11,19 @@ import (
 	"testing"
 	"time"
 
+	"github.com/gin-gonic/gin"
+
 	"github.com/vislake/speed/pkg/authn"
 	"github.com/vislake/speed/pkg/authn/internal/identity"
+	"github.com/vislake/speed/pkg/log"
 )
+
+func init() {
+	// gin prints a debug banner for every engine it builds in debug mode, and
+	// the entry point's own engines run in release mode; the engines these
+	// cases build do the same.
+	gin.SetMode(gin.ReleaseMode)
+}
 
 // arrival is what the layer behind the gateway saw.
 type arrival struct {
@@ -25,9 +35,9 @@ type arrival struct {
 // run puts one request through the gateway's layer on an endpoint and reports
 // the response together with what reached the layer behind it.
 func run(g *gateway, endpoint string, r *nethttp.Request) (*httptest.ResponseRecorder, *arrival) {
-	handler, seen := layerOn(g, endpoint)
+	engine, seen := layerOn(g, endpoint)
 	w := httptest.NewRecorder()
-	handler.ServeHTTP(w, r)
+	engine.ServeHTTP(w, r)
 	return w, seen
 }
 
@@ -35,49 +45,31 @@ func run(g *gateway, endpoint string, r *nethttp.Request) (*httptest.ResponseRec
 // anything through it yet. The layer is assembled in Init, where the ownership
 // table exists, so a case that wants to break the gateway's state has to build
 // the layer first and break it afterwards.
-func layerOn(g *gateway, endpoint string) (nethttp.Handler, *arrival) {
-	seen := &arrival{}
-	handler := g.middlewareFor(endpoint).Wrap(nethttp.HandlerFunc(
-		func(_ nethttp.ResponseWriter, passed *nethttp.Request) {
-			seen.reached = true
-			seen.id, seen.carried = identity.From(passed.Context())
-		}))
-	return handler, seen
+func layerOn(g *gateway, endpoint string) (*gin.Engine, *arrival) {
+	return engineWith(g.middlewareFor(endpoint).Handler)
 }
 
-// TestAnExemptRouteReachesNoBackendAtAll holds the ordering the whole exemption
-// mechanism rests on.
+// engineWith is a gin engine carrying one layer, with a handler behind it that
+// records what it was handed. The handler answers every request, whatever its
+// path, so the cases that are about who is let through and not about routing
+// need no routes. A request that matches no route reaches the layers all the
+// same, which is the case the entry point's own engine shares.
 //
-// The exemption is judged before the Authorization header is read. Were it
-// judged after, a public health check would consume a backend call on every
-// probe, and a backend that is down would take the health check down with it —
-// the one route that must answer when everything else cannot.
-func TestAnExemptRouteReachesNoBackendAtAll(t *testing.T) {
-	var asked atomic.Int64
-	backend := enumerating("local", "alice")
-	backend.asked = &asked
-
-	g := testGateway(t, []string{"public"}, backend)
-	g.Exempt("public", "GET /health")
-	sealed(t, g, routerWith("public"))
-
-	// The request carries a credential, so that what is being held is the
-	// ordering and not merely the absence of a header.
-	w, seen := run(g, "public", withBasic(request("GET", "/health"), "alice", "secret"))
-
-	if w.Code != nethttp.StatusOK {
-		t.Errorf("an exempt route answered %d, want %d", w.Code, nethttp.StatusOK)
-	}
-	if !seen.reached {
-		t.Error("the layer behind the gateway was not reached on an exempt route")
-	}
-	if asked.Load() != 0 {
-		t.Errorf("a backend was asked %d time(s) on an exempt route, want none: the exemption is "+
-			"judged before the credential is read", asked.Load())
-	}
-	if seen.carried {
-		t.Error("an exempt request carries an identity, but nothing authenticated it")
-	}
+// What a real chain does with a route — the path a request is matched to, the
+// order of the layers, the shape of a refusal the entry point writes — is not
+// held here: those cases run against the real entry point, in live_test.go.
+func engineWith(layer gin.HandlerFunc) (*gin.Engine, *arrival) {
+	seen := &arrival{}
+	engine := gin.New()
+	engine.Use(layer)
+	engine.NoRoute(func(c *gin.Context) {
+		seen.reached = true
+		seen.id, seen.carried = identity.From(c.Request.Context())
+		// A handler that writes nothing leaves the engine's own answer to a
+		// request with no route, a 404 and its body, in place.
+		c.Status(nethttp.StatusOK)
+	})
+	return engine, seen
 }
 
 // TestARequestWithNoUsableCredentialIsRefusedByTheGateway holds the refusals
@@ -791,13 +783,53 @@ func TestAPassingRequestCarriesTheIdentityTheGatewayStamped(t *testing.T) {
 	}
 }
 
+// TestAPassBindsTheSubjectOnTheLoggerOfTheLayersBehindTheGateway holds the
+// correlation field the gateway puts on the request's logger.
+//
+// The subject is settled here and nowhere else, so a record written by any layer
+// or handler behind the gateway can be attributed to its caller only if the
+// gateway bound it. The field is the owner-qualified identity, the same string
+// the identity's own Key reads, and it is on the logger the request carries, not
+// only on the identity.
+func TestAPassBindsTheSubjectOnTheLoggerOfTheLayersBehindTheGateway(t *testing.T) {
+	g := testGateway(t, []string{"public"}, passes(enumerating("local", "alice")))
+	sealed(t, g, routerWith("public"))
+
+	engine := gin.New()
+	engine.Use(g.middlewareFor("public").Handler)
+	engine.NoRoute(func(c *gin.Context) {
+		log.FromContext(c.Request.Context()).Info("a record from behind the gateway")
+		c.Status(nethttp.StatusOK)
+	})
+
+	h := &recorder{}
+	w := httptest.NewRecorder()
+	engine.ServeHTTP(w, withBasic(recorded(h, "GET", "/orders"), "alice", "secret"))
+
+	if w.Code != nethttp.StatusOK {
+		t.Fatalf("the request answered %d, want %d, so nothing was written behind the gateway",
+			w.Code, nethttp.StatusOK)
+	}
+	subject, bound := attr(h.only(t), "subject")
+	if !bound {
+		t.Fatal("a record written behind the gateway carries no subject field, so the request's " +
+			"log lines cannot be attributed to its caller")
+	}
+	if got, want := subject.String(), "local"+authn.Separator+"alice"; got != want {
+		t.Errorf("the subject field reads %q, want the owner-qualified identity %q", got, want)
+	}
+}
+
 // TestTheGatewaysOwnDefectBecomesAStatusCode holds the recover the gateway does
 // for itself.
 //
-// The entry point states plainly that it does not catch a handler's panic. The
-// shape of not recovering here is therefore not a 500 — it is the connection
-// being dropped with no status code reaching the caller at all, which every
-// status-code-based monitor sees as nothing having happened.
+// The entry point's fallback would answer the panic with a 500 as well, and it
+// could not say which layer raised it: the response is the same whoever crashed.
+// The gateway recovering is what answers it as its own defect — counted in none
+// of the four buckets, logged with the endpoint and the stack — and what writes
+// that answer through the entry point's error response like any other refusal.
+// The engine here carries no fallback, so a panic that was not recovered would
+// leave ServeHTTP altogether.
 func TestTheGatewaysOwnDefectBecomesAStatusCode(t *testing.T) {
 	g := testGateway(t, []string{"public"}, passes(enumerating("local", "alice")))
 	sealed(t, g, routerWith("public"))
@@ -806,15 +838,19 @@ func TestTheGatewaysOwnDefectBecomesAStatusCode(t *testing.T) {
 	// broken afterwards: a table that went missing under a running server is
 	// a defect of this module, and it is the cheapest way to reach the panic
 	// path without a backend being involved.
-	handler, seen := layerOn(g, "public")
+	engine, seen := layerOn(g, "public")
 	g.table = nil
 
 	w := httptest.NewRecorder()
-	handler.ServeHTTP(w, withBasic(request("GET", "/orders"), "alice", "secret"))
+	engine.ServeHTTP(w, withBasic(request("GET", "/orders"), "alice", "secret"))
 
 	if w.Code != nethttp.StatusInternalServerError {
 		t.Errorf("the gateway's own panic answered %d, want %d", w.Code,
 			nethttp.StatusInternalServerError)
+	}
+	if got := w.Header().Get("Content-Type"); got != "application/problem+json" {
+		t.Errorf("the gateway's own panic answered with the media type %q, want the entry "+
+			"point's error response", got)
 	}
 	if seen.reached {
 		t.Error("the layer behind the gateway was reached after the gateway panicked")
@@ -963,9 +999,10 @@ func TestABackendIsHandedTheSchemeFolded(t *testing.T) {
 // TestARefusalTellsTheCallerWhatCredentialToSend holds the one header a 401 may
 // not leave out.
 //
-// This module writes no response body, so the challenge is the whole of what a
-// caller has to go on; a 401 carrying none says "you need a credential" without
-// saying what kind, which is the one thing RFC 7235 does not allow a 401 to do.
+// The shape of the body is the entry point's, so the challenge is the whole of
+// what a caller can rely on to learn what kind of credential to send; a 401
+// carrying none says "you need a credential" without saying what kind, which is
+// the one thing RFC 7235 does not allow a 401 to do.
 func TestARefusalTellsTheCallerWhatCredentialToSend(t *testing.T) {
 	g := testGateway(t, []string{"public"},
 		enumerating("local", "alice"), claimingScheme("issuer", "Bearer"))

@@ -9,6 +9,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/gin-gonic/gin"
 	"gorm.io/gorm"
 	"gorm.io/gorm/clause"
 
@@ -32,11 +33,11 @@ const accountTable = "accounts"
 const (
 	createAccountRoute = "POST /accounts"
 	listAccountsRoute  = "GET /accounts"
-	getAccountRoute    = "GET /accounts/{id}"
-	patchAccountRoute  = "PATCH /accounts/{id}"
-	deleteAccountRoute = "DELETE /accounts/{id}"
-	ownerAccountRoute  = "POST /accounts/{id}/owner"
-	purgeAccountRoute  = "POST /accounts/{id}/purge"
+	getAccountRoute    = "GET /accounts/:id"
+	patchAccountRoute  = "PATCH /accounts/:id"
+	deleteAccountRoute = "DELETE /accounts/:id"
+	ownerAccountRoute  = "POST /accounts/:id/owner"
+	purgeAccountRoute  = "POST /accounts/:id/purge"
 )
 
 // pageSizeSetting is the setting the listing's page size is read from, under
@@ -222,15 +223,14 @@ func (a accountRequest) Validate() error {
 // decide, and nothing looks first. The database module marks the key's refusal
 // with gorm.ErrDuplicatedKey on either engine, and it is answered as the
 // conflict it is.
-func (p *accountsProduct) createAccount(w nethttp.ResponseWriter, r *nethttp.Request) {
-	ctx := r.Context()
-	self, ok := memberWith(w, r, roleRep)
+func (p *accountsProduct) createAccount(c *gin.Context) {
+	ctx := c.Request.Context()
+	self, ok := memberWith(c, roleRep)
 	if !ok {
 		return
 	}
 	var body accountRequest
-	if err := speedhttp.Decode(r, &body); err != nil {
-		writeError(w, speedhttp.StatusFor(err), err.Error())
+	if !bindBody(c, &body) {
 		return
 	}
 	owner := self.UserID
@@ -238,11 +238,11 @@ func (p *accountsProduct) createAccount(w nethttp.ResponseWriter, r *nethttp.Req
 		belongs, err := isMember(ctx, p.db, body.Owner)
 		if err != nil {
 			log.FromContext(ctx).Error("reading the owner's membership", "error", err)
-			writeError(w, nethttp.StatusServiceUnavailable, "the membership table cannot be read")
+			writeError(c, nethttp.StatusServiceUnavailable, "the membership table cannot be read")
 			return
 		}
 		if !belongs {
-			writeError(w, nethttp.StatusUnprocessableEntity, errOwnerNotMember.Error())
+			writeError(c, nethttp.StatusUnprocessableEntity, errOwnerNotMember.Error())
 			return
 		}
 		owner = body.Owner
@@ -250,7 +250,7 @@ func (p *accountsProduct) createAccount(w nethttp.ResponseWriter, r *nethttp.Req
 	id, err := recordID(body.ID, "acc_")
 	if err != nil {
 		log.FromContext(ctx).Error("drawing an account identifier", "error", err)
-		writeError(w, nethttp.StatusInternalServerError, "no identifier could be drawn")
+		writeError(c, nethttp.StatusInternalServerError, "no identifier could be drawn")
 		return
 	}
 	now := time.Now().UTC()
@@ -266,14 +266,14 @@ func (p *accountsProduct) createAccount(w nethttp.ResponseWriter, r *nethttp.Req
 	err = p.db.DB().WithContext(ctx).Create(&account).Error
 	switch {
 	case errors.Is(err, gorm.ErrDuplicatedKey):
-		writeError(w, nethttp.StatusConflict, errAccountExists.Error())
+		writeError(c, nethttp.StatusConflict, errAccountExists.Error())
 		return
 	case err != nil:
 		log.FromContext(ctx).Error("writing an account", "error", err)
-		writeError(w, nethttp.StatusInternalServerError, "the account could not be written")
+		writeError(c, nethttp.StatusInternalServerError, "the account could not be written")
 		return
 	}
-	_ = speedhttp.WriteJSON(w, nethttp.StatusCreated, accountViewOf(account))
+	c.JSON(nethttp.StatusCreated, accountViewOf(account))
 }
 
 // listAccounts answers one page of the tenant's accounts, ordered by name and
@@ -285,17 +285,17 @@ func (p *accountsProduct) createAccount(w nethttp.ResponseWriter, r *nethttp.Req
 // answers it: the tenant's own row, else the global row, else the declared
 // default. The count and the page are two statements, each built from the
 // request's context, and neither names a tenant.
-func (p *accountsProduct) listAccounts(w nethttp.ResponseWriter, r *nethttp.Request) {
-	ctx := r.Context()
-	self, ok := memberWith(w, r, roleViewer)
+func (p *accountsProduct) listAccounts(c *gin.Context) {
+	ctx := c.Request.Context()
+	self, ok := memberWith(c, roleViewer)
 	if !ok {
 		return
 	}
 	page := 1
-	if raw := r.URL.Query().Get("page"); raw != "" {
+	if raw := c.Query("page"); raw != "" {
 		n, err := strconv.Atoi(raw)
 		if err != nil || n < 1 || n > maxPage {
-			writeError(w, nethttp.StatusUnprocessableEntity, errBadPage.Error())
+			writeError(c, nethttp.StatusUnprocessableEntity, errBadPage.Error())
 			return
 		}
 		page = n
@@ -303,7 +303,7 @@ func (p *accountsProduct) listAccounts(w nethttp.ResponseWriter, r *nethttp.Requ
 	size, err := settings.Get[int](p.settings, settings.ForTenant(string(self.TenantID)), pageSizeSetting)
 	if err != nil {
 		log.FromContext(ctx).Error("reading the page size", "error", err)
-		writeError(w, nethttp.StatusInternalServerError, "the page size cannot be read")
+		writeError(c, nethttp.StatusInternalServerError, "the page size cannot be read")
 		return
 	}
 	// The settings surface holds whatever was written under the declared
@@ -311,10 +311,10 @@ func (p *accountsProduct) listAccounts(w nethttp.ResponseWriter, r *nethttp.Requ
 	if size <= 0 {
 		log.FromContext(ctx).Error("the page size is not positive, so no page is answered",
 			"setting", pageSizeSetting, "value", size)
-		writeError(w, nethttp.StatusInternalServerError, "the page size is misconfigured")
+		writeError(c, nethttp.StatusInternalServerError, "the page size is misconfigured")
 		return
 	}
-	search := strings.ToLower(strings.TrimSpace(r.URL.Query().Get("q")))
+	search := strings.ToLower(strings.TrimSpace(c.Query("q")))
 	matching := func() *gorm.DB {
 		stmt := p.db.DB().WithContext(ctx).Model(&Account{})
 		if search != "" {
@@ -325,31 +325,31 @@ func (p *accountsProduct) listAccounts(w nethttp.ResponseWriter, r *nethttp.Requ
 	out := accountPage{Accounts: []accountView{}, Page: page, PageSize: size}
 	if err := matching().Count(&out.Total).Error; err != nil {
 		log.FromContext(ctx).Error("counting the accounts", "error", err)
-		writeError(w, nethttp.StatusServiceUnavailable, "the account table cannot be read")
+		writeError(c, nethttp.StatusServiceUnavailable, "the account table cannot be read")
 		return
 	}
 	var rows []Account
 	if err := matching().Order("name").Order("id").Offset((page - 1) * size).Limit(size).Find(&rows).Error; err != nil {
 		log.FromContext(ctx).Error("reading the accounts", "error", err)
-		writeError(w, nethttp.StatusServiceUnavailable, "the account table cannot be read")
+		writeError(c, nethttp.StatusServiceUnavailable, "the account table cannot be read")
 		return
 	}
 	for _, a := range rows {
 		out.Accounts = append(out.Accounts, accountViewOf(a))
 	}
-	_ = speedhttp.WriteJSON(w, nethttp.StatusOK, out)
+	c.JSON(nethttp.StatusOK, out)
 }
 
 // getAccount answers one account with its contacts, which the preload reads in
 // a statement of its own on the same context.
-func (p *accountsProduct) getAccount(w nethttp.ResponseWriter, r *nethttp.Request) {
-	ctx := r.Context()
-	if _, ok := memberWith(w, r, roleViewer); !ok {
+func (p *accountsProduct) getAccount(c *gin.Context) {
+	ctx := c.Request.Context()
+	if _, ok := memberWith(c, roleViewer); !ok {
 		return
 	}
-	id := r.PathValue("id")
+	id := c.Param("id")
 	if !validRecordID(id) {
-		writeError(w, nethttp.StatusNotFound, errNoSuchAccount.Error())
+		writeError(c, nethttp.StatusNotFound, errNoSuchAccount.Error())
 		return
 	}
 	var account Account
@@ -358,18 +358,18 @@ func (p *accountsProduct) getAccount(w nethttp.ResponseWriter, r *nethttp.Reques
 		Where("id = ?", id).First(&account).Error
 	switch {
 	case errors.Is(err, gorm.ErrRecordNotFound):
-		writeError(w, nethttp.StatusNotFound, errNoSuchAccount.Error())
+		writeError(c, nethttp.StatusNotFound, errNoSuchAccount.Error())
 		return
 	case err != nil:
 		log.FromContext(ctx).Error("reading an account", "error", err)
-		writeError(w, nethttp.StatusServiceUnavailable, "the account table cannot be read")
+		writeError(c, nethttp.StatusServiceUnavailable, "the account table cannot be read")
 		return
 	}
 	out := accountDetail{accountView: accountViewOf(account), Contacts: []contactView{}}
 	for _, c := range account.Contacts {
 		out.Contacts = append(out.Contacts, contactViewOf(c))
 	}
-	_ = speedhttp.WriteJSON(w, nethttp.StatusOK, out)
+	c.JSON(nethttp.StatusOK, out)
 }
 
 // accountPatch is the body of a partial update: a member that is present is
@@ -396,19 +396,18 @@ func (a accountPatch) Validate() error {
 // The update is written from the model: Select names the columns the body
 // carries, so a member given as empty is written as empty rather than skipped
 // the way a zero field of the struct would be.
-func (p *accountsProduct) patchAccount(w nethttp.ResponseWriter, r *nethttp.Request) {
-	ctx := r.Context()
-	if _, ok := memberWith(w, r, roleRep); !ok {
+func (p *accountsProduct) patchAccount(c *gin.Context) {
+	ctx := c.Request.Context()
+	if _, ok := memberWith(c, roleRep); !ok {
 		return
 	}
-	id := r.PathValue("id")
+	id := c.Param("id")
 	var body accountPatch
-	if err := speedhttp.Decode(r, &body); err != nil {
-		writeError(w, speedhttp.StatusFor(err), err.Error())
+	if !bindBody(c, &body) {
 		return
 	}
 	if !validRecordID(id) {
-		writeError(w, nethttp.StatusNotFound, errNoSuchAccount.Error())
+		writeError(c, nethttp.StatusNotFound, errNoSuchAccount.Error())
 		return
 	}
 	columns := []string{"updated_at"}
@@ -423,7 +422,7 @@ func (p *accountsProduct) patchAccount(w nethttp.ResponseWriter, r *nethttp.Requ
 		columns, values.Industry = append(columns, "industry"), strings.TrimSpace(*body.Industry)
 	}
 	res := p.db.DB().WithContext(ctx).Model(&Account{}).Where("id = ?", id).Select(columns).Updates(values)
-	p.answerChanged(w, r, id, res, "updating an account")
+	p.answerChanged(c, id, res, "updating an account")
 }
 
 // ownerRequest is the body of an ownership change.
@@ -441,76 +440,75 @@ func (o ownerRequest) Validate() error {
 
 // changeOwner hands one account to another member of the tenant; a rep or
 // above. It writes the one column.
-func (p *accountsProduct) changeOwner(w nethttp.ResponseWriter, r *nethttp.Request) {
-	ctx := r.Context()
-	if _, ok := memberWith(w, r, roleRep); !ok {
+func (p *accountsProduct) changeOwner(c *gin.Context) {
+	ctx := c.Request.Context()
+	if _, ok := memberWith(c, roleRep); !ok {
 		return
 	}
-	id := r.PathValue("id")
+	id := c.Param("id")
 	var body ownerRequest
-	if err := speedhttp.Decode(r, &body); err != nil {
-		writeError(w, speedhttp.StatusFor(err), err.Error())
+	if !bindBody(c, &body) {
 		return
 	}
 	if !validRecordID(id) {
-		writeError(w, nethttp.StatusNotFound, errNoSuchAccount.Error())
+		writeError(c, nethttp.StatusNotFound, errNoSuchAccount.Error())
 		return
 	}
 	belongs, err := isMember(ctx, p.db, body.Owner)
 	if err != nil {
 		log.FromContext(ctx).Error("reading the owner's membership", "error", err)
-		writeError(w, nethttp.StatusServiceUnavailable, "the membership table cannot be read")
+		writeError(c, nethttp.StatusServiceUnavailable, "the membership table cannot be read")
 		return
 	}
 	if !belongs {
-		writeError(w, nethttp.StatusUnprocessableEntity, errOwnerNotMember.Error())
+		writeError(c, nethttp.StatusUnprocessableEntity, errOwnerNotMember.Error())
 		return
 	}
 	res := p.db.DB().WithContext(ctx).Model(&Account{}).Where("id = ?", id).Update("owner", body.Owner)
-	p.answerChanged(w, r, id, res, "changing an account's owner")
+	p.answerChanged(c, id, res, "changing an account's owner")
 }
 
 // answerChanged answers an update of one account: 404 when it matched no row,
 // otherwise the account as it now stands.
-func (p *accountsProduct) answerChanged(w nethttp.ResponseWriter, r *nethttp.Request, id string, res *gorm.DB, doing string) {
-	ctx := r.Context()
+func (p *accountsProduct) answerChanged(c *gin.Context, id string, res *gorm.DB, doing string) {
+	ctx := c.Request.Context()
 	switch {
 	case res.Error != nil:
 		log.FromContext(ctx).Error(doing, "error", res.Error)
-		writeError(w, nethttp.StatusInternalServerError, "the account could not be written")
+		writeError(c, nethttp.StatusInternalServerError, "the account could not be written")
 		return
 	case res.RowsAffected == 0:
-		writeError(w, nethttp.StatusNotFound, errNoSuchAccount.Error())
+		writeError(c, nethttp.StatusNotFound, errNoSuchAccount.Error())
 		return
 	}
 	var account Account
 	if err := p.db.DB().WithContext(ctx).Where("id = ?", id).First(&account).Error; err != nil {
 		log.FromContext(ctx).Error("reading an account back", "error", err)
-		writeError(w, nethttp.StatusServiceUnavailable, "the account table cannot be read")
+		writeError(c, nethttp.StatusServiceUnavailable, "the account table cannot be read")
 		return
 	}
-	_ = speedhttp.WriteJSON(w, nethttp.StatusOK, accountViewOf(account))
+	c.JSON(nethttp.StatusOK, accountViewOf(account))
 }
 
 // deleteAccount soft-deletes one account and its contacts; an admin or above.
 // Both rows stay in their tables with the deletion time set, and every read
 // through the models leaves them out from then on. The statements are one
 // transaction, so an account is never deleted with its contacts left showing.
-func (p *accountsProduct) deleteAccount(w nethttp.ResponseWriter, r *nethttp.Request) {
-	if _, ok := memberWith(w, r, roleAdmin); !ok {
+func (p *accountsProduct) deleteAccount(c *gin.Context) {
+	if _, ok := memberWith(c, roleAdmin); !ok {
 		return
 	}
-	p.removeAccount(w, r, false, "deleting an account")
+	p.removeAccount(c, false, "deleting an account")
 }
 
 // purgeAccount removes one account and its contacts from their tables,
 // deleted or not; an owner only. The contacts go first, because their rows
 // reference the account's.
-func (p *accountsProduct) purgeAccount(w nethttp.ResponseWriter, r *nethttp.Request) {
-	if _, ok := memberWith(w, r, roleOwner); !ok {
+func (p *accountsProduct) purgeAccount(c *gin.Context) {
+	if _, ok := memberWith(c, roleOwner); !ok {
 		return
 	}
-	p.removeAccount(w, r, true, "purging an account")
+	p.removeAccount(c, true, "purging an account")
 }
 
 // removeAccount is the transaction a delete and a purge share. A purge runs it
@@ -546,11 +544,11 @@ func (p *accountsProduct) purgeAccount(w nethttp.ResponseWriter, r *nethttp.Requ
 // names either is the references' to decide, and nothing looks first. The
 // database module marks a reference's refusal with gorm.ErrForeignKeyViolated
 // on either engine, and it is answered as the conflict it is.
-func (p *accountsProduct) removeAccount(w nethttp.ResponseWriter, r *nethttp.Request, purge bool, doing string) {
-	ctx := r.Context()
-	id := r.PathValue("id")
+func (p *accountsProduct) removeAccount(c *gin.Context, purge bool, doing string) {
+	ctx := c.Request.Context()
+	id := c.Param("id")
 	if !validRecordID(id) {
-		writeError(w, nethttp.StatusNotFound, errNoSuchAccount.Error())
+		writeError(c, nethttp.StatusNotFound, errNoSuchAccount.Error())
 		return
 	}
 	err := p.db.DB().WithContext(ctx).Transaction(func(tx *gorm.DB) error {
@@ -587,17 +585,17 @@ func (p *accountsProduct) removeAccount(w nethttp.ResponseWriter, r *nethttp.Req
 	})
 	switch {
 	case errors.Is(err, errNoSuchAccount):
-		writeError(w, nethttp.StatusNotFound, errNoSuchAccount.Error())
+		writeError(c, nethttp.StatusNotFound, errNoSuchAccount.Error())
 		return
 	case errors.Is(err, gorm.ErrForeignKeyViolated):
-		writeError(w, nethttp.StatusConflict, errAccountNamed.Error())
+		writeError(c, nethttp.StatusConflict, errAccountNamed.Error())
 		return
 	case err != nil:
 		log.FromContext(ctx).Error(doing, "error", err)
-		writeError(w, nethttp.StatusInternalServerError, "the account could not be removed")
+		writeError(c, nethttp.StatusInternalServerError, "the account could not be removed")
 		return
 	}
-	w.WriteHeader(nethttp.StatusNoContent)
+	c.Status(nethttp.StatusNoContent)
 }
 
 // accountSettings is the carrier of this module's setting item. A field's value
@@ -691,13 +689,13 @@ func accountsModule() core.Module {
 			if err != nil {
 				return err
 			}
-			api.Route(createAccountRoute, nethttp.HandlerFunc(product.createAccount))
-			api.Route(listAccountsRoute, nethttp.HandlerFunc(product.listAccounts))
-			api.Route(getAccountRoute, nethttp.HandlerFunc(product.getAccount))
-			api.Route(patchAccountRoute, nethttp.HandlerFunc(product.patchAccount))
-			api.Route(deleteAccountRoute, nethttp.HandlerFunc(product.deleteAccount))
-			api.Route(ownerAccountRoute, nethttp.HandlerFunc(product.changeOwner))
-			api.Route(purgeAccountRoute, nethttp.HandlerFunc(product.purgeAccount))
+			mount(api, createAccountRoute, product.createAccount)
+			mount(api, listAccountsRoute, product.listAccounts)
+			mount(api, getAccountRoute, product.getAccount)
+			mount(api, patchAccountRoute, product.patchAccount)
+			mount(api, deleteAccountRoute, product.deleteAccount)
+			mount(api, ownerAccountRoute, product.changeOwner)
+			mount(api, purgeAccountRoute, product.purgeAccount)
 			return nil
 		},
 

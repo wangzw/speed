@@ -15,50 +15,89 @@ const repoPrefix = "github.com/vislake/speed/"
 // configuration through it.
 const configPackage = repoPrefix + "pkg/config"
 
-// TestHTTPAddsNoThirdPartyDependency is the executable form of the design's
-// surface statement: the registration surface carries net/http's types and
-// this package's types and nothing else, so a host that registers a route
-// takes on no routing library. It is also what keeps the Spec check to a shape
-// check — an OpenAPI parsing library would land here the moment one is
-// imported, and so would a routing library behind the seam.
+// ginPackage is the package this module is a wrapper of, and whose closure a
+// host that takes this module up therefore takes up too.
+const ginPackage = "github.com/gin-gonic/gin"
+
+// openAPILibraries are the module paths of libraries that parse OpenAPI
+// documents. The module checks the shape of a fragment and nothing more, and
+// parsing one would need a library from this list or one like it.
+var openAPILibraries = []string{
+	"github.com/getkin/kin-openapi",
+	"github.com/go-openapi/",
+	"github.com/pb33f/libopenapi",
+	"github.com/oapi-codegen/",
+	"github.com/swaggo/",
+	"github.com/google/gnostic",
+}
+
+// TestHTTPAddsNoDependencyBeyondItsAnchors is the executable form of the
+// design's dependency statement: this module is a wrapper of gin and reads its
+// configuration through pkg/config, so a host that takes it up takes on the
+// closure of both, and that is all it takes on. It is also what keeps the Spec
+// check to a shape check — an OpenAPI parsing library would land here the
+// moment one is imported.
 //
-// The budget is the standard library, this repository's modules, and the
-// closure of pkg/config. This package declares its input items to config and
-// reads its endpoints through config's reader, and taking configuration up is
-// taking up the tools config parses it with: they reach a host from there,
-// through this package, and the cost is recorded in
-// ADR-config-parsing-2026-09-20. What still holds, and what is checked here,
-// is that this package adds nothing of its own to that.
+// The budget is the standard library, this repository's modules, the closure of
+// pkg/config and the closure of gin. This package declares its input items to
+// config and reads its endpoints through config's reader, which brings the
+// tools config parses configuration with, and the cost is recorded in
+// ADR-config-parsing-2026-09-20; it builds on gin, which brings gin's
+// dependencies, and the cost is recorded in ADR-http-surface-2026-09-14. What
+// still holds, and what is checked here, is that this package adds nothing of
+// its own to either.
 //
-// The budget is config's closure as it stands rather than a written-out list
-// of library names. config exchanging one indirect dependency for another
+// Both closures are read as they stand rather than written out as lists of
+// library names. gin or config exchanging one indirect dependency for another
 // changes nothing about this package's face, and a written-out list would turn
 // every such exchange into an edit here.
 //
-// The scan is over ./... rather than the root package alone, so an
-// implementation subpackage cannot bind an engine from a routing library
-// without this case seeing it either.
-func TestHTTPAddsNoThirdPartyDependency(t *testing.T) {
+// The scan is over ./... rather than the root package alone, so a package added
+// under this directory cannot bring a library in without this case seeing it
+// either.
+func TestHTTPAddsNoDependencyBeyondItsAnchors(t *testing.T) {
 	scanned := dependenciesOf(t, "./...")
-	// The positive control. This package is in its own dependency listing,
+	// The positive controls. This package is in its own dependency listing,
 	// and a listing that lost it came from a load that did not happen —
-	// every judgement below would then pass on an empty set.
+	// every judgement below would then pass on an empty set. It reaches gin
+	// as well: a package that stopped importing gin would leave the gin half
+	// of the budget standing for nothing.
 	if !scanned[repoPrefix+"pkg/http"] {
 		t.Fatalf("the scan does not hold %spkg/http, so what it read is not this module's "+
 			"dependency face", repoPrefix)
 	}
+	if !scanned[ginPackage] {
+		t.Fatalf("the scan does not hold %s, so this module is not what the budget below says it is: "+
+			"a wrapper of gin", ginPackage)
+	}
 
-	withinBudget := dependenciesOf(t, configPackage)
+	budget := dependenciesOf(t, configPackage)
+	for pkg := range dependenciesOf(t, ginPackage) {
+		budget[pkg] = true
+	}
+
+	// The budget is built out of two closures, and a closure could one day
+	// contain a parser: it would then be inside the budget and no dependency
+	// check could ever object to it.
+	for pkg := range budget {
+		for _, library := range openAPILibraries {
+			if strings.HasPrefix(pkg, library) {
+				t.Errorf("%s is inside the budget, through the closure of %s or of %s. An OpenAPI "+
+					"parsing library there makes the shape check of a Spec the thing it is not "+
+					"allowed to be", pkg, configPackage, ginPackage)
+			}
+		}
+	}
+
 	for pkg := range scanned {
 		switch {
-		case stdlibPackage(pkg), strings.HasPrefix(pkg, repoPrefix), withinBudget[pkg]:
+		case stdlibPackage(pkg), strings.HasPrefix(pkg, repoPrefix), budget[pkg]:
 			continue
 		}
 		t.Errorf("this module depends on %s, which is neither the standard library, nor a "+
 			"module of this repository, nor part of what reading configuration through "+
-			"pkg/config costs. The surface here is net/http's types and this package's "+
-			"own, and the engine behind it is bound by an implementation subpackage that "+
-			"brings its own library with it", pkg)
+			"pkg/config costs, nor part of gin's closure. This module is a wrapper of gin and "+
+			"adds no dependency of its own to what gin and pkg/config bring", pkg)
 	}
 }
 

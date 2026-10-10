@@ -11,6 +11,8 @@ import (
 	"testing"
 	"time"
 
+	"github.com/gin-gonic/gin"
+
 	"github.com/vislake/speed/pkg/core"
 	"github.com/vislake/speed/pkg/log"
 )
@@ -46,10 +48,9 @@ func TestServeDoesNotBlockRun(t *testing.T) {
 	after := &stageProbe{
 		name:     "probe.requires-the-router",
 		requires: requiresRouter(),
-		onInit: routeOn("public", "GET /things", nethttp.HandlerFunc(
-			func(w nethttp.ResponseWriter, _ *nethttp.Request) {
-				w.WriteHeader(nethttp.StatusTeapot)
-			})),
+		onInit: routeOn("public", "GET", "/things", func(c *gin.Context) {
+			c.Status(nethttp.StatusTeapot)
+		}),
 		onServe: func(reg *core.Registry) error {
 			r, err := routerFrom(reg)
 			if err != nil {
@@ -72,7 +73,7 @@ func TestServeDoesNotBlockRun(t *testing.T) {
 		},
 	}
 
-	a := startAssembly(t, oneEndpoint("public"), testModule(), after.module())
+	a := startAssembly(t, oneEndpoint("public"), Module(), after.module())
 	waitFor(t, served, "the Serve callback of the module that requires the Router")
 
 	mu.Lock()
@@ -132,7 +133,7 @@ func TestNoModuleIsReleasedUnderAnInFlightRequest(t *testing.T) {
 	constructedAfter := &stageProbe{
 		name:     "probe.requires-the-router",
 		requires: requiresRouter(),
-		onInit:   routeOn("public", "GET /things", gate),
+		onInit:   routeOn("public", "GET", "/things", gate.gin),
 		onServe: func(reg *core.Registry) error {
 			r, err := routerFrom(reg)
 			if err != nil {
@@ -151,7 +152,7 @@ func TestNoModuleIsReleasedUnderAnInFlightRequest(t *testing.T) {
 
 	a := startAssembly(t,
 		endpointsAt(waitDeadline, "public"),
-		testModule(), stoppedAfter.module(), constructedAfter.module())
+		Module(), stoppedAfter.module(), constructedAfter.module())
 
 	var r *router
 	select {
@@ -225,10 +226,10 @@ func TestRegistrationOutsideInitPanicsInAssembly(t *testing.T) {
 	// registerLate makes one registration and hands back the panic text
 	// instead of letting it take the assembly down.
 	//
-	// The two calls use patterns of their own, so that an implementation
+	// The two calls use paths of their own, so that an implementation
 	// letting both through is caught by the two assertions below rather
-	// than by the route conflict one repeated pattern would raise.
-	registerLate := func(reg *core.Registry, pattern string) (text string, err error) {
+	// than by the route conflict one repeated path would raise.
+	registerLate := func(reg *core.Registry, path string) (text string, err error) {
 		e, err := endpointFrom(reg, "public")
 		if err != nil {
 			return "", err
@@ -238,7 +239,7 @@ func TestRegistrationOutsideInitPanicsInAssembly(t *testing.T) {
 				text = fmt.Sprint(raised)
 			}
 		}()
-		e.Route(pattern, nethttp.NotFoundHandler())
+		e.Route("GET", path, filler)
 		return "", nil
 	}
 
@@ -246,7 +247,7 @@ func TestRegistrationOutsideInitPanicsInAssembly(t *testing.T) {
 		name:     "probe.registers-outside-init",
 		requires: requiresRouter(),
 		onNew: func(reg *core.Registry) error {
-			text, err := registerLate(reg, "GET /from-new")
+			text, err := registerLate(reg, "/from-new")
 			if err != nil {
 				return err
 			}
@@ -256,7 +257,7 @@ func TestRegistrationOutsideInitPanicsInAssembly(t *testing.T) {
 			return nil
 		},
 		onStart: func(reg *core.Registry) error {
-			text, err := registerLate(reg, "GET /from-start")
+			text, err := registerLate(reg, "/from-start")
 			if err != nil {
 				return err
 			}
@@ -267,7 +268,7 @@ func TestRegistrationOutsideInitPanicsInAssembly(t *testing.T) {
 		},
 	}
 
-	a := startAssembly(t, oneEndpoint("public"), testModule(), outside.module())
+	a := startAssembly(t, oneEndpoint("public"), Module(), outside.module())
 	if err := a.stop(t); err != nil {
 		t.Fatalf("the assembly failed instead of carrying on past the two recovered "+
 			"registrations: %v", err)
@@ -334,7 +335,7 @@ func TestBindFailureRollsBackBoundEndpoints(t *testing.T) {
 		"a": {Address: "127.0.0.1:0"},
 		"b": {Address: taken.Addr().String()},
 	}}
-	a := startAssembly(t, cfg, testModule(), watch.module())
+	a := startAssembly(t, cfg, Module(), watch.module())
 
 	// stop rather than wait: a startup that fails comes back on its own, so
 	// the cancellation changes nothing here, while an implementation that
@@ -385,8 +386,8 @@ func TestShutdownAggregatesPerEndpointDrainFailures(t *testing.T) {
 		name:     "probe.holds-a-request-on-each-endpoint",
 		requires: requiresRouter(),
 		onInit: inOrder(
-			routeOn("a", "GET /things", gateA),
-			routeOn("b", "GET /things", gateB),
+			routeOn("a", "GET", "/things", gateA.gin),
+			routeOn("b", "GET", "/things", gateB.gin),
 		),
 		onServe: func(reg *core.Registry) error {
 			r, err := routerFrom(reg)
@@ -411,7 +412,7 @@ func TestShutdownAggregatesPerEndpointDrainFailures(t *testing.T) {
 
 	a := startAssembly(t,
 		endpointsAt(100*time.Millisecond, "a", "b"),
-		testModule(), hold.module())
+		Module(), hold.module())
 	waitFor(t, serving, "both endpoints to bind")
 
 	mu.Lock()
@@ -459,7 +460,7 @@ func TestMiddlewareCycleFailsARealAssembly(t *testing.T) {
 			Name:     "layer-a",
 			Provides: []core.Token{(*capA)(nil)},
 			After:    []core.Token{(*capB)(nil)},
-			Wrap:     passThrough,
+			Handler:  passThrough,
 		}),
 	}
 	second := &stageProbe{
@@ -471,12 +472,12 @@ func TestMiddlewareCycleFailsARealAssembly(t *testing.T) {
 			Name:     "layer-b",
 			Provides: []core.Token{(*capB)(nil)},
 			After:    []core.Token{(*capA)(nil)},
-			Wrap:     passThrough,
+			Handler:  passThrough,
 		}),
 	}
 
 	a := startAssembly(t, oneEndpoint("public"),
-		testModule(), first.module(), second.module())
+		Module(), first.module(), second.module())
 
 	// stop rather than wait, for the reason given in the bind failure test:
 	// an assembly that wrongly comes up then reports the nil it returned.
@@ -515,17 +516,14 @@ func TestConstraintLandsOnItsProviderInARealAssembly(t *testing.T) {
 		provides: []core.Provision{{Token: (*capA)(nil)}},
 		product:  deliveredA{},
 		onInit: inOrder(
-			routeOn("public", "GET /things", nethttp.HandlerFunc(
-				func(w nethttp.ResponseWriter, _ *nethttp.Request) {
-					w.WriteHeader(nethttp.StatusNoContent)
-				})),
+			routeOn("public", "GET", "/things", filler),
 			useLayer("public", Middleware{
 				Name:     "outer-by-constraint",
 				Provides: []core.Token{(*capA)(nil)},
 				// A large Order asks for the innermost
 				// position, which the constraint denies it.
-				Order: 100,
-				Wrap:  noteLayer(tr, "outer-by-constraint"),
+				Order:   100,
+				Handler: noteLayer(tr, "outer-by-constraint"),
 			}),
 		),
 	}
@@ -539,8 +537,8 @@ func TestConstraintLandsOnItsProviderInARealAssembly(t *testing.T) {
 			Provides: []core.Token{(*capB)(nil)},
 			After:    []core.Token{(*capA)(nil)},
 			// A small Order asks for the outermost position.
-			Order: -100,
-			Wrap:  noteLayer(tr, "inner-by-constraint"),
+			Order:   -100,
+			Handler: noteLayer(tr, "inner-by-constraint"),
 		}),
 		onServe: func(reg *core.Registry) error {
 			r, err := routerFrom(reg)
@@ -560,7 +558,7 @@ func TestConstraintLandsOnItsProviderInARealAssembly(t *testing.T) {
 	}
 
 	a := startAssembly(t, oneEndpoint("public"),
-		testModule(), provider.module(), constrained.module())
+		Module(), provider.module(), constrained.module())
 	waitFor(t, serving, "the endpoint to bind")
 
 	mu.Lock()
@@ -584,4 +582,96 @@ func TestConstraintLandsOnItsProviderInARealAssembly(t *testing.T) {
 	if err := a.stop(t); err != nil {
 		t.Errorf("a run that served and was then cancelled came back with %v", err)
 	}
+}
+
+// TestAGinHandlerLearnsTheDrainHasBegun pins that the drain signal reaches a
+// handler through the gin context. The handler passes its *gin.Context to
+// Draining as the context it is, and the signal is there because the gin
+// context falls back to the request's context for values; a stream that waits
+// on it ends when the shutdown begins, and the shutdown does not run out its
+// drain-timeout waiting for a stream that never heard.
+//
+// The endpoint's drain-timeout is the wait deadline, so a handler that is never
+// told leaves the run reporting a drain that ran out of time, or not returning
+// before the deadline, and either is what this fails on.
+func TestAGinHandlerLearnsTheDrainHasBegun(t *testing.T) {
+	entered := make(chan struct{}, 1)
+	told := make(chan bool, 1)
+	serving := make(chan struct{})
+	stream := &stageProbe{
+		name:     "probe.registers-a-stream",
+		requires: requiresRouter(),
+		onInit: routeOn("public", "GET", "/stream", func(c *gin.Context) {
+			signal := Draining(c)
+			c.Status(nethttp.StatusOK)
+			c.Writer.WriteHeaderNow()
+			c.Writer.Flush()
+			entered <- struct{}{}
+			select {
+			case <-signal:
+				told <- signal != nil
+			case <-time.After(waitDeadline):
+				told <- false
+			}
+		}),
+		onServe: func(*core.Registry) error {
+			close(serving)
+			return nil
+		},
+	}
+
+	a := startAssembly(t, endpointsAt(waitDeadline, "public"), Module(), stream.module())
+	a.waitForOrEnd(t, serving, "the endpoint to be served")
+	r, err := routerFrom(a.reg)
+	if err != nil {
+		t.Fatal(err)
+	}
+	addr, err := boundAddr(r, "public")
+	if err != nil {
+		t.Fatal(err)
+	}
+	go func() { _, _ = getStatus(context.Background(), addr, "/stream") }()
+	a.waitForOrEnd(t, entered, "the stream to begin")
+
+	started := time.Now()
+	if err := a.stop(t); err != nil {
+		t.Fatalf("a run whose stream ends on the drain signal came back with %v", err)
+	}
+	if !<-told {
+		t.Error("the handler was never told that the drain had begun")
+	}
+	if waited := time.Since(started); waited >= waitDeadline {
+		t.Errorf("the shutdown took %s, as long as the stream's own deadline, so the signal did not end it", waited)
+	}
+}
+
+// TestRouteConflictFailsARealAssembly pins that a clash between two routes
+// registered by two modules ends the startup. Each probe registers its own
+// route through the public surface; neither registration fails, since a clash
+// is not knowable from one of them, and the assembly's Serve is where gin
+// refuses the second and the refusal becomes a startup failure that names both
+// routes.
+func TestRouteConflictFailsARealAssembly(t *testing.T) {
+	first := &stageProbe{
+		name:     "probe.registers-by-id",
+		requires: requiresRouter(),
+		onInit:   routeOn("public", "GET", "/things/:id", filler),
+	}
+	second := &stageProbe{
+		name:     "probe.registers-by-name",
+		requires: requiresRouter(),
+		onInit:   routeOn("public", "GET", "/things/:name", filler),
+	}
+
+	a := startAssembly(t, oneEndpoint("public"), Module(), first.module(), second.module())
+
+	// stop rather than wait: an assembly that wrongly comes up reports the nil it
+	// returned instead of sitting out the deadline with nothing to say.
+	runErr := a.stop(t)
+	if !errors.Is(runErr, ErrRouteConflict) {
+		t.Fatalf("two routes gin cannot mount together started up with %v; the startup has to end", runErr)
+	}
+	mustContain(t, runErr.Error(), `"GET /things/:id"`, "one of the two routes")
+	mustContain(t, runErr.Error(), `"GET /things/:name"`, "the other route")
+	mustContain(t, runErr.Error(), `endpoint "public"`, "the endpoint they are on")
 }

@@ -60,9 +60,18 @@
 //   - A configuration that names no endpoint to guard stops the startup rather
 //     than serving the guarded routes unguarded.
 //   - An unauthenticated request for a route nobody registered is refused as
-//     unauthenticated rather than as not found: the gateway runs outside the
-//     routing engine, so a caller who never authenticated learns nothing about
-//     which paths exist.
+//     unauthenticated rather than as not found: the entry point runs every
+//     layer on a request that matches no route before it answers the 404, so a
+//     caller who never authenticated learns nothing about which paths exist. A
+//     request whose method the matched path does not allow is answered the same
+//     way, and the methods the path does allow reach only a caller that got past
+//     the layers.
+//   - Every refusal a layer or the entry point writes — authentication, tenant
+//     resolution, the rate limit, a route that is not there, a method the route
+//     does not allow — is a problem details document, so a client reads one
+//     media type for all of them. The placement handler binds its body with the
+//     framework's binder: a body it cannot bind is a bad request, and one the
+//     endpoint's limit cut off is too large.
 //   - A request naming a tenant that is on the roster reaches a handler with that
 //     tenant in its context, and the handler issues a query with no condition and
 //     gets back only that tenant's rows.
@@ -118,7 +127,7 @@ import (
 	"github.com/vislake/speed/pkg/core"
 	"github.com/vislake/speed/pkg/db"
 	"github.com/vislake/speed/pkg/db/sqlite"
-	"github.com/vislake/speed/pkg/http/stdmux"
+	speedhttp "github.com/vislake/speed/pkg/http"
 	"github.com/vislake/speed/pkg/log"
 	"github.com/vislake/speed/pkg/ratelimit"
 	"github.com/vislake/speed/pkg/settings"
@@ -254,7 +263,7 @@ func commandTree(reg *core.Registry) *config.App {
 	// assembled side by side.
 	serve := app.Root().Sub("serve")
 	serve.Include(
-		stdmux.ModuleName,
+		speedhttp.ModuleName,
 		gate.ModuleName,
 		static.ModuleName,
 		resolve.ModuleName,

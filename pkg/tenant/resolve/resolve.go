@@ -24,6 +24,8 @@ import (
 	"sync"
 	"unicode"
 
+	"github.com/gin-gonic/gin"
+
 	"github.com/vislake/speed/pkg/authn"
 	"github.com/vislake/speed/pkg/config"
 	"github.com/vislake/speed/pkg/core"
@@ -332,20 +334,27 @@ func (r *resolver) middlewareFor() speedhttp.Middleware {
 		Provides: []core.Token{(*tenant.Resolution)(nil)},
 		After:    []core.Token{(*authn.Gate)(nil)},
 		Order:    middlewareOrder,
-		Wrap: func(next nethttp.Handler) nethttp.Handler {
-			return nethttp.HandlerFunc(func(w nethttp.ResponseWriter, req *nethttp.Request) {
-				resolved := r.admit(w, req)
-				if resolved == nil {
-					return
-				}
-				next.ServeHTTP(w, resolved)
-			})
-		},
+		Handler:  r.handle,
 	}
 }
 
-// admit resolves one request, returning it with the tenant in its context, or
-// nil once a status has been written.
+// handle is the layer. A request that resolves goes on to the layers inside
+// with the tenant in its context; one that does not is answered by admit and
+// the chain ends there.
+func (r *resolver) handle(c *gin.Context) {
+	if !r.admit(c) {
+		return
+	}
+	c.Next()
+}
+
+// admit resolves one request and puts the tenant into its context, reporting
+// whether the chain may go on. A false result means a response has been written
+// through speedhttp.Fail, which has also ended the chain.
+//
+// The layer does not read the route: it answers which tenant a request belongs
+// to, and a request that matched no route and one whose method the path does
+// not allow are resolved like any other.
 //
 // The three ways to fail close with one status and are told apart in the log.
 // "No such tenant" and "that tenant is disabled" are the same thing to a
@@ -356,25 +365,26 @@ func (r *resolver) middlewareFor() speedhttp.Middleware {
 // A panic inside this function is this module's own defect — an extractor
 // registered through the seam runs here — and is recovered here, answered with
 // a 500 and recorded under this module's name. Left to propagate it reaches the
-// entry point, whose answer does not say which layer failed. The call to the
-// next layer is deliberately outside this function: the handler's panic is not
-// this layer's to catch, and catching it here would change what every route
-// behind the layer does on one.
-func (r *resolver) admit(w nethttp.ResponseWriter, req *nethttp.Request) (resolved *nethttp.Request) {
+// entry point's fallback, whose answer does not say which layer failed. The call
+// to the next layer is deliberately outside this function: the handler's panic
+// is not this layer's to catch, and catching it here would change what every
+// route behind the layer does on one.
+func (r *resolver) admit(c *gin.Context) (admitted bool) {
+	req := c.Request
 	defer func() {
 		if rec := recover(); rec != nil {
 			log.FromContext(req.Context()).Error(diagnosticPrefix+ModuleName+
 				": the resolution layer panicked while resolving this request",
 				slog.Any("panic", rec))
-			w.WriteHeader(nethttp.StatusInternalServerError)
-			resolved = nil
+			speedhttp.Fail(c, speedhttp.Problem{Status: nethttp.StatusInternalServerError})
+			admitted = false
 		}
 	}()
 
 	name, ok := r.selected.Extract(req)
 	if !ok {
-		r.refuse(w, req, "the request carries no tenant name", "")
-		return nil
+		r.refuse(c, "the request carries no tenant name", "")
+		return false
 	}
 	found, present, err := r.roster.ByAlias(req.Context(), name)
 	if err != nil {
@@ -382,25 +392,26 @@ func (r *resolver) admit(w nethttp.ResponseWriter, req *nethttp.Request) (resolv
 		// means this module is not in a state it can answer from at all.
 		log.FromContext(req.Context()).Error(diagnosticPrefix+ModuleName+
 			": the roster could not be read", "error", err)
-		w.WriteHeader(nethttp.StatusInternalServerError)
-		return nil
+		speedhttp.Fail(c, speedhttp.Problem{Status: nethttp.StatusInternalServerError})
+		return false
 	}
 	if !present {
-		r.refuse(w, req, "the name is not on the roster", name)
-		return nil
+		r.refuse(c, "the name is not on the roster", name)
+		return false
 	}
 	if found.Status != tenant.StatusActive {
-		r.refuse(w, req, "the tenant is not being served", name)
-		return nil
+		r.refuse(c, "the tenant is not being served", name)
+		return false
 	}
-	return req.WithContext(tenantctx.Bind(req.Context(), string(found.ID), contextLogger))
+	c.Request = req.WithContext(tenantctx.Bind(req.Context(), string(found.ID), contextLogger))
+	return true
 }
 
-// refuse writes the one status this layer answers with, and records why.
+// refuse answers the one status this layer refuses with, and records why.
 //
-// No body is written. The status says the request belongs to no tenant being
-// served; what that means for the API is the module that provides it, and this
-// layer does not know which one that is.
+// The response carries the status and nothing else. It says the request belongs
+// to no tenant being served; what that means for the API is the module that
+// provides it, and the shape of the response is the entry point's.
 //
 // The reason goes to the log and not to the caller, which is what keeps a name
 // that never existed from being told apart from one that was switched off.
@@ -411,13 +422,13 @@ func (r *resolver) admit(w nethttp.ResponseWriter, req *nethttp.Request) (resolv
 // so an authenticated caller trying tenant names is tied to its attempts. The
 // module's own logger carries none of that; it is for records with no request
 // behind them.
-func (r *resolver) refuse(w nethttp.ResponseWriter, req *nethttp.Request, why, name string) {
-	attrs := []any{"path", req.URL.Path, "reason", why}
+func (r *resolver) refuse(c *gin.Context, why, name string) {
+	attrs := []any{"path", c.Request.URL.Path, "reason", why}
 	if name != "" {
 		attrs = append(attrs, "name", name)
 	}
-	log.FromContext(req.Context()).Info(diagnosticPrefix+ModuleName+": request refused", attrs...)
-	w.WriteHeader(nethttp.StatusNotFound)
+	log.FromContext(c.Request.Context()).Info(diagnosticPrefix+ModuleName+": request refused", attrs...)
+	speedhttp.Fail(c, speedhttp.Problem{Status: nethttp.StatusNotFound})
 }
 
 // checkExtractorName refuses a name no module could select from configuration.

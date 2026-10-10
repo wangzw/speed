@@ -9,6 +9,8 @@ import (
 	"reflect"
 	"time"
 
+	"github.com/gin-gonic/gin"
+
 	"github.com/vislake/speed/pkg/audit"
 	"github.com/vislake/speed/pkg/authn"
 	"github.com/vislake/speed/pkg/core"
@@ -28,16 +30,16 @@ const preferencesModuleName = "preferences"
 // the layer of the tenant the path names, for the platform's operators.
 const (
 	listSettingsRoute  = "GET /settings"
-	writeSettingRoute  = "PUT /settings/{key}"
-	deleteSettingRoute = "DELETE /settings/{key}"
+	writeSettingRoute  = "PUT /settings/:key"
+	deleteSettingRoute = "DELETE /settings/:key"
 
 	listGlobalSettingsRoute  = "GET /global-settings"
-	writeGlobalSettingRoute  = "PUT /global-settings/{key}"
-	deleteGlobalSettingRoute = "DELETE /global-settings/{key}"
+	writeGlobalSettingRoute  = "PUT /global-settings/:key"
+	deleteGlobalSettingRoute = "DELETE /global-settings/:key"
 
-	listTenantSettingsRoute  = "GET /tenants/{id}/settings"
-	writeTenantSettingRoute  = "PUT /tenants/{id}/settings/{key}"
-	deleteTenantSettingRoute = "DELETE /tenants/{id}/settings/{key}"
+	listTenantSettingsRoute  = "GET /tenants/:id/settings"
+	writeTenantSettingRoute  = "PUT /tenants/:id/settings/:key"
+	deleteTenantSettingRoute = "DELETE /tenants/:id/settings/:key"
 )
 
 // The seam actions a settings change is recorded under.
@@ -413,8 +415,8 @@ func (p *preferencesProduct) record(ctx context.Context, action string, v settin
 }
 
 // writeSettingFailure answers with a refusal or a failure.
-func writeSettingFailure(w nethttp.ResponseWriter, f *settingFailure) {
-	writeError(w, f.status, f.message)
+func writeSettingFailure(c *gin.Context, f *settingFailure) {
+	writeError(c, f.status, f.message)
 }
 
 // settingsLayerOf is the layer of the tenant the request names. The identifier
@@ -423,102 +425,101 @@ func writeSettingFailure(w nethttp.ResponseWriter, f *settingFailure) {
 func settingsLayerOf(self member) settings.Layer { return settings.ForTenant(string(self.TenantID)) }
 
 // listSettings answers the settings a tenant edits.
-func (p *preferencesProduct) listSettings(w nethttp.ResponseWriter, r *nethttp.Request) {
-	self, ok := memberWith(w, r, roleAdmin)
+func (p *preferencesProduct) listSettings(c *gin.Context) {
+	self, ok := memberWith(c, roleAdmin)
 	if !ok {
 		return
 	}
-	views, f := p.view(r.Context(), settingsLayerOf(self), p.on(true))
+	views, f := p.view(c.Request.Context(), settingsLayerOf(self), p.on(true))
 	if f != nil {
-		writeSettingFailure(w, f)
+		writeSettingFailure(c, f)
 		return
 	}
-	_ = speedhttp.WriteJSON(w, nethttp.StatusOK, settingsList{Tenant: string(self.TenantID), Settings: views})
+	c.JSON(nethttp.StatusOK, settingsList{Tenant: string(self.TenantID), Settings: views})
 }
 
 // writeSetting writes a value into the layer of the tenant the request names.
 // The actor the change event carries is the member's user identifier.
-func (p *preferencesProduct) writeSetting(w nethttp.ResponseWriter, r *nethttp.Request) {
-	self, ok := memberWith(w, r, roleAdmin)
+func (p *preferencesProduct) writeSetting(c *gin.Context) {
+	self, ok := memberWith(c, roleAdmin)
 	if !ok {
 		return
 	}
-	k, listed := p.lookup(r.PathValue("key"), true)
+	k, listed := p.lookup(c.Param("key"), true)
 	if !listed {
-		writeError(w, nethttp.StatusNotFound, errNotTenantEditable.Error())
+		writeError(c, nethttp.StatusNotFound, errNotTenantEditable.Error())
 		return
 	}
 	var body settingWrite
-	if err := speedhttp.Decode(r, &body); err != nil {
-		writeError(w, speedhttp.StatusFor(err), err.Error())
+	if !bindBody(c, &body) {
 		return
 	}
-	ctx := r.Context()
+	ctx := c.Request.Context()
 	v, f := p.write(ctx, settingsLayerOf(self), k, body.Value, self.UserID)
 	if f == nil {
 		f = p.record(ctx, settingWriteAction, v, "", nil)
 	}
 	if f != nil {
-		writeSettingFailure(w, f)
+		writeSettingFailure(c, f)
 		return
 	}
-	_ = speedhttp.WriteJSON(w, nethttp.StatusOK, v)
+	c.JSON(nethttp.StatusOK, v)
 }
 
 // deleteSetting removes the tenant's own row for a key, which reverts it to the
 // global value or the declared default.
-func (p *preferencesProduct) deleteSetting(w nethttp.ResponseWriter, r *nethttp.Request) {
-	self, ok := memberWith(w, r, roleAdmin)
+func (p *preferencesProduct) deleteSetting(c *gin.Context) {
+	self, ok := memberWith(c, roleAdmin)
 	if !ok {
 		return
 	}
-	k, listed := p.lookup(r.PathValue("key"), true)
+	k, listed := p.lookup(c.Param("key"), true)
 	if !listed {
-		writeError(w, nethttp.StatusNotFound, errNotTenantEditable.Error())
+		writeError(c, nethttp.StatusNotFound, errNotTenantEditable.Error())
 		return
 	}
-	ctx := r.Context()
+	ctx := c.Request.Context()
 	v, f := p.remove(ctx, settingsLayerOf(self), k, self.UserID)
 	if f == nil {
 		f = p.record(ctx, settingDeleteAction, v, "", nil)
 	}
 	if f != nil {
-		writeSettingFailure(w, f)
+		writeSettingFailure(c, f)
 		return
 	}
-	_ = speedhttp.WriteJSON(w, nethttp.StatusOK, v)
+	c.JSON(nethttp.StatusOK, v)
 }
 
 // operatorActor is the owner and subject of the operator calling an admin route.
 // The operator check sits on the admin endpoint's chain, so an identity is
 // always there; its absence means a path that skipped the gateway.
-func operatorActor(w nethttp.ResponseWriter, r *nethttp.Request, route string) (string, bool) {
-	caller, ok := authn.FromContext(r.Context())
+func operatorActor(c *gin.Context, route string) (string, bool) {
+	caller, ok := authn.FromContext(c.Request.Context())
 	if !ok {
-		log.FromContext(r.Context()).Error("a guarded route was reached with no identity", "route", route)
-		writeError(w, nethttp.StatusInternalServerError, "the request carries no identity")
+		log.FromContext(c.Request.Context()).Error("a guarded route was reached with no identity", "route", route)
+		writeError(c, nethttp.StatusInternalServerError, "the request carries no identity")
 		return "", false
 	}
 	return caller.Key(), true
 }
 
 // pathSettingKey reads the path's key against every key the host lists.
-func (p *preferencesProduct) pathSettingKey(w nethttp.ResponseWriter, r *nethttp.Request) (servedSetting, bool) {
-	k, listed := p.lookup(r.PathValue("key"), false)
+func (p *preferencesProduct) pathSettingKey(c *gin.Context) (servedSetting, bool) {
+	k, listed := p.lookup(c.Param("key"), false)
 	if !listed {
-		writeError(w, nethttp.StatusNotFound, errNoSuchSetting.Error())
+		writeError(c, nethttp.StatusNotFound, errNoSuchSetting.Error())
 	}
 	return k, listed
 }
 
 // listGlobalSettings answers the global layer of every key the host lists.
-func (p *preferencesProduct) listGlobalSettings(w nethttp.ResponseWriter, r *nethttp.Request) {
-	views, f := p.view(r.Context(), settings.Global(), p.on(false))
+func (p *preferencesProduct) listGlobalSettings(c *gin.Context) {
+	views, f := p.view(c.Request.Context(), settings.Global(), p.on(false))
 	if f != nil {
-		writeSettingFailure(w, f)
+		writeSettingFailure(c, f)
 		return
 	}
-	_ = speedhttp.WriteJSON(w, nethttp.StatusOK, settingsList{Settings: views})
+	c.JSON(nethttp.StatusOK, settingsList{Settings: views})
 }
 
 // globalSettingDetail names the layer on the seam row of a global change.
@@ -526,52 +527,51 @@ func globalSettingDetail() map[string]string { return map[string]string{"layer":
 
 // writeGlobalSetting writes a value into the global layer, which every tenant
 // without a row of its own reads.
-func (p *preferencesProduct) writeGlobalSetting(w nethttp.ResponseWriter, r *nethttp.Request) {
-	actor, ok := operatorActor(w, r, writeGlobalSettingRoute)
+func (p *preferencesProduct) writeGlobalSetting(c *gin.Context) {
+	actor, ok := operatorActor(c, writeGlobalSettingRoute)
 	if !ok {
 		return
 	}
-	k, ok := p.pathSettingKey(w, r)
+	k, ok := p.pathSettingKey(c)
 	if !ok {
 		return
 	}
 	var body settingWrite
-	if err := speedhttp.Decode(r, &body); err != nil {
-		writeError(w, speedhttp.StatusFor(err), err.Error())
+	if !bindBody(c, &body) {
 		return
 	}
-	ctx := r.Context()
+	ctx := c.Request.Context()
 	v, f := p.write(ctx, settings.Global(), k, body.Value, actor)
 	if f == nil {
 		f = p.record(ctx, settingWriteAction, v, "", globalSettingDetail())
 	}
 	if f != nil {
-		writeSettingFailure(w, f)
+		writeSettingFailure(c, f)
 		return
 	}
-	_ = speedhttp.WriteJSON(w, nethttp.StatusOK, v)
+	c.JSON(nethttp.StatusOK, v)
 }
 
 // deleteGlobalSetting removes the global row for a key.
-func (p *preferencesProduct) deleteGlobalSetting(w nethttp.ResponseWriter, r *nethttp.Request) {
-	actor, ok := operatorActor(w, r, deleteGlobalSettingRoute)
+func (p *preferencesProduct) deleteGlobalSetting(c *gin.Context) {
+	actor, ok := operatorActor(c, deleteGlobalSettingRoute)
 	if !ok {
 		return
 	}
-	k, ok := p.pathSettingKey(w, r)
+	k, ok := p.pathSettingKey(c)
 	if !ok {
 		return
 	}
-	ctx := r.Context()
+	ctx := c.Request.Context()
 	v, f := p.remove(ctx, settings.Global(), k, actor)
 	if f == nil {
 		f = p.record(ctx, settingDeleteAction, v, "", globalSettingDetail())
 	}
 	if f != nil {
-		writeSettingFailure(w, f)
+		writeSettingFailure(c, f)
 		return
 	}
-	_ = speedhttp.WriteJSON(w, nethttp.StatusOK, v)
+	c.JSON(nethttp.StatusOK, v)
 }
 
 // crossTenantSettingPurpose is what the seam row of an operator's change to a
@@ -587,20 +587,20 @@ const crossTenantSettingPurpose = "a platform operator changed a tenant's settin
 // A disabled tenant is still on the roster, and an operator still configures
 // it. The read is this replica's snapshot, so a tenant another replica
 // registered is found once this replica has reread the roster.
-func (p *preferencesProduct) pathTenant(w nethttp.ResponseWriter, r *nethttp.Request) (tenant.Tenant, bool) {
-	id := r.PathValue("id")
+func (p *preferencesProduct) pathTenant(c *gin.Context) (tenant.Tenant, bool) {
+	id := c.Param("id")
 	if !tenant.IsIdentifier(id) {
-		writeError(w, nethttp.StatusUnprocessableEntity, errNoTenantID.Error())
+		writeError(c, nethttp.StatusUnprocessableEntity, errNoTenantID.Error())
 		return tenant.Tenant{}, false
 	}
-	t, found, err := p.roster.Get(r.Context(), tenant.ID(id))
+	t, found, err := p.roster.Get(c.Request.Context(), tenant.ID(id))
 	switch {
 	case err != nil:
-		log.FromContext(r.Context()).Error("reading the roster", "error", err)
-		writeError(w, nethttp.StatusServiceUnavailable, "the roster cannot be read")
+		log.FromContext(c.Request.Context()).Error("reading the roster", "error", err)
+		writeError(c, nethttp.StatusServiceUnavailable, "the roster cannot be read")
 		return tenant.Tenant{}, false
 	case !found:
-		writeError(w, nethttp.StatusNotFound, errNoSuchTenant.Error())
+		writeError(c, nethttp.StatusNotFound, errNoSuchTenant.Error())
 		return tenant.Tenant{}, false
 	}
 	return t, true
@@ -622,77 +622,76 @@ func tenantSettingDetail(t tenant.Tenant) map[string]string {
 }
 
 // listTenantSettings answers one tenant's layer of every key the host lists.
-func (p *preferencesProduct) listTenantSettings(w nethttp.ResponseWriter, r *nethttp.Request) {
-	t, ok := p.pathTenant(w, r)
+func (p *preferencesProduct) listTenantSettings(c *gin.Context) {
+	t, ok := p.pathTenant(c)
 	if !ok {
 		return
 	}
-	views, f := p.view(r.Context(), settings.ForTenant(string(t.ID)), p.on(false))
+	views, f := p.view(c.Request.Context(), settings.ForTenant(string(t.ID)), p.on(false))
 	if f != nil {
-		writeSettingFailure(w, f)
+		writeSettingFailure(c, f)
 		return
 	}
-	_ = speedhttp.WriteJSON(w, nethttp.StatusOK, settingsList{Tenant: string(t.ID), Settings: views})
+	c.JSON(nethttp.StatusOK, settingsList{Tenant: string(t.ID), Settings: views})
 }
 
 // writeTenantSetting writes a value into the layer of the tenant the path
 // names: a platform key such as the tenant's rate limit, or one the tenant
 // edits itself.
-func (p *preferencesProduct) writeTenantSetting(w nethttp.ResponseWriter, r *nethttp.Request) {
-	actor, ok := operatorActor(w, r, writeTenantSettingRoute)
+func (p *preferencesProduct) writeTenantSetting(c *gin.Context) {
+	actor, ok := operatorActor(c, writeTenantSettingRoute)
 	if !ok {
 		return
 	}
-	t, ok := p.pathTenant(w, r)
+	t, ok := p.pathTenant(c)
 	if !ok {
 		return
 	}
-	k, ok := p.pathSettingKey(w, r)
+	k, ok := p.pathSettingKey(c)
 	if !ok {
 		return
 	}
 	var body settingWrite
-	if err := speedhttp.Decode(r, &body); err != nil {
-		writeError(w, speedhttp.StatusFor(err), err.Error())
+	if !bindBody(c, &body) {
 		return
 	}
-	ctx := r.Context()
+	ctx := c.Request.Context()
 	v, f := p.write(ctx, settings.ForTenant(string(t.ID)), k, body.Value, actor)
 	if f == nil {
 		f = p.record(ctx, settingWriteAction, v, crossTenantSettingPurpose, tenantSettingDetail(t))
 	}
 	if f != nil {
-		writeSettingFailure(w, f)
+		writeSettingFailure(c, f)
 		return
 	}
-	_ = speedhttp.WriteJSON(w, nethttp.StatusOK, v)
+	c.JSON(nethttp.StatusOK, v)
 }
 
 // deleteTenantSetting removes the row the tenant the path names holds for a
 // key.
-func (p *preferencesProduct) deleteTenantSetting(w nethttp.ResponseWriter, r *nethttp.Request) {
-	actor, ok := operatorActor(w, r, deleteTenantSettingRoute)
+func (p *preferencesProduct) deleteTenantSetting(c *gin.Context) {
+	actor, ok := operatorActor(c, deleteTenantSettingRoute)
 	if !ok {
 		return
 	}
-	t, ok := p.pathTenant(w, r)
+	t, ok := p.pathTenant(c)
 	if !ok {
 		return
 	}
-	k, ok := p.pathSettingKey(w, r)
+	k, ok := p.pathSettingKey(c)
 	if !ok {
 		return
 	}
-	ctx := r.Context()
+	ctx := c.Request.Context()
 	v, f := p.remove(ctx, settings.ForTenant(string(t.ID)), k, actor)
 	if f == nil {
 		f = p.record(ctx, settingDeleteAction, v, crossTenantSettingPurpose, tenantSettingDetail(t))
 	}
 	if f != nil {
-		writeSettingFailure(w, f)
+		writeSettingFailure(c, f)
 		return
 	}
-	_ = speedhttp.WriteJSON(w, nethttp.StatusOK, v)
+	c.JSON(nethttp.StatusOK, v)
 }
 
 // init registers the preferences module. It runs on serve: its routes sit on the
@@ -783,15 +782,15 @@ func preferencesModule() core.Module {
 			if err != nil {
 				return err
 			}
-			api.Route(listSettingsRoute, nethttp.HandlerFunc(product.listSettings))
-			api.Route(writeSettingRoute, nethttp.HandlerFunc(product.writeSetting))
-			api.Route(deleteSettingRoute, nethttp.HandlerFunc(product.deleteSetting))
-			admin.Route(listGlobalSettingsRoute, nethttp.HandlerFunc(product.listGlobalSettings))
-			admin.Route(writeGlobalSettingRoute, nethttp.HandlerFunc(product.writeGlobalSetting))
-			admin.Route(deleteGlobalSettingRoute, nethttp.HandlerFunc(product.deleteGlobalSetting))
-			admin.Route(listTenantSettingsRoute, nethttp.HandlerFunc(product.listTenantSettings))
-			admin.Route(writeTenantSettingRoute, nethttp.HandlerFunc(product.writeTenantSetting))
-			admin.Route(deleteTenantSettingRoute, nethttp.HandlerFunc(product.deleteTenantSetting))
+			mount(api, listSettingsRoute, product.listSettings)
+			mount(api, writeSettingRoute, product.writeSetting)
+			mount(api, deleteSettingRoute, product.deleteSetting)
+			mount(admin, listGlobalSettingsRoute, product.listGlobalSettings)
+			mount(admin, writeGlobalSettingRoute, product.writeGlobalSetting)
+			mount(admin, deleteGlobalSettingRoute, product.deleteGlobalSetting)
+			mount(admin, listTenantSettingsRoute, product.listTenantSettings)
+			mount(admin, writeTenantSettingRoute, product.writeTenantSetting)
+			mount(admin, deleteTenantSettingRoute, product.deleteTenantSetting)
 			return nil
 		},
 

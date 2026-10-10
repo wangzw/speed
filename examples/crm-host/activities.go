@@ -10,6 +10,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/gin-gonic/gin"
 	"gorm.io/gorm"
 
 	"github.com/vislake/speed/pkg/core"
@@ -28,8 +29,8 @@ const activityTable = "activities"
 // The activity routes, on the API endpoint.
 const (
 	createActivityRoute = "POST /activities"
-	deleteActivityRoute = "DELETE /activities/{id}"
-	dealTimelineRoute   = "GET /deals/{id}/timeline"
+	deleteActivityRoute = "DELETE /activities/:id"
+	dealTimelineRoute   = "GET /deals/:id/timeline"
 )
 
 // What an activity is about. A deal is the one subject so far; the column is a
@@ -175,37 +176,36 @@ func activityByID(ctx context.Context, database db.Database, id string) (Activit
 // names no tenant; the filter fills it, and the subject has to be a deal of the
 // same tenant, which the read below answers and the composite reference
 // enforces.
-func (p *activitiesProduct) createActivity(w nethttp.ResponseWriter, r *nethttp.Request) {
-	ctx := r.Context()
+func (p *activitiesProduct) createActivity(c *gin.Context) {
+	ctx := c.Request.Context()
 	logger := log.FromContext(ctx)
-	self, ok := memberOf(w, r, createActivityRoute)
+	self, ok := memberOf(c, createActivityRoute)
 	if !ok {
 		return
 	}
 	if !canWriteDeals(self.Role) {
-		writeError(w, nethttp.StatusForbidden, errReadOnlyRole.Error())
+		writeError(c, nethttp.StatusForbidden, errReadOnlyRole.Error())
 		return
 	}
 	var body activityRequest
-	if err := speedhttp.Decode(r, &body); err != nil {
-		writeError(w, speedhttp.StatusFor(err), err.Error())
+	if !bindBody(c, &body) {
 		return
 	}
 	_, found, err := dealByID(ctx, p.db, body.SubjectID)
 	if err != nil {
 		logger.Error("reading an activity's subject", "error", err)
-		writeError(w, nethttp.StatusServiceUnavailable, "the deal table cannot be read")
+		writeError(c, nethttp.StatusServiceUnavailable, "the deal table cannot be read")
 		return
 	}
 	if !found {
-		writeError(w, nethttp.StatusUnprocessableEntity, errUnknownSubject.Error())
+		writeError(c, nethttp.StatusUnprocessableEntity, errUnknownSubject.Error())
 		return
 	}
 	id := body.ID
 	if id == "" {
 		if id, err = newID("a_"); err != nil {
 			logger.Error("drawing an activity identifier", "error", err)
-			writeError(w, nethttp.StatusInternalServerError, "no identifier could be drawn")
+			writeError(c, nethttp.StatusInternalServerError, "no identifier could be drawn")
 			return
 		}
 	} else {
@@ -216,11 +216,11 @@ func (p *activitiesProduct) createActivity(w nethttp.ResponseWriter, r *nethttp.
 		_, exists, err = activityByID(ctx, p.db, id)
 		if err != nil {
 			logger.Error("reading an activity", "error", err)
-			writeError(w, nethttp.StatusServiceUnavailable, "the activity table cannot be read")
+			writeError(c, nethttp.StatusServiceUnavailable, "the activity table cannot be read")
 			return
 		}
 		if exists {
-			writeError(w, nethttp.StatusConflict, errActivityExists.Error())
+			writeError(c, nethttp.StatusConflict, errActivityExists.Error())
 			return
 		}
 	}
@@ -241,50 +241,50 @@ func (p *activitiesProduct) createActivity(w nethttp.ResponseWriter, r *nethttp.
 	switch {
 	case errors.Is(err, gorm.ErrDuplicatedKey):
 		// The database module marks the key's refusal on either engine.
-		writeError(w, nethttp.StatusConflict, errActivityExists.Error())
+		writeError(c, nethttp.StatusConflict, errActivityExists.Error())
 		return
 	case err != nil:
 		logger.Error("writing an activity", "error", err)
-		writeError(w, nethttp.StatusInternalServerError, "the activity could not be written")
+		writeError(c, nethttp.StatusInternalServerError, "the activity could not be written")
 		return
 	}
-	_ = speedhttp.WriteJSON(w, nethttp.StatusCreated, viewOfActivity(activity))
+	c.JSON(nethttp.StatusCreated, viewOfActivity(activity))
 }
 
 // deleteActivity removes an activity a member recorded. A stage change is
 // refused: it is the record of a move, and the deal's history would no longer
 // say how it reached its stage.
-func (p *activitiesProduct) deleteActivity(w nethttp.ResponseWriter, r *nethttp.Request) {
-	ctx := r.Context()
+func (p *activitiesProduct) deleteActivity(c *gin.Context) {
+	ctx := c.Request.Context()
 	logger := log.FromContext(ctx)
-	self, ok := memberOf(w, r, deleteActivityRoute)
+	self, ok := memberOf(c, deleteActivityRoute)
 	if !ok {
 		return
 	}
 	if !canWriteDeals(self.Role) {
-		writeError(w, nethttp.StatusForbidden, errReadOnlyRole.Error())
+		writeError(c, nethttp.StatusForbidden, errReadOnlyRole.Error())
 		return
 	}
-	id := r.PathValue("id")
+	id := c.Param("id")
 	result := p.db.DB().WithContext(ctx).Where("id = ? AND kind <> ?", id, activityStageChange).Delete(&Activity{})
 	if result.Error != nil {
 		logger.Error("deleting an activity", "error", result.Error)
-		writeError(w, nethttp.StatusInternalServerError, "the activity could not be deleted")
+		writeError(c, nethttp.StatusInternalServerError, "the activity could not be deleted")
 		return
 	}
 	if result.RowsAffected == 1 {
-		w.WriteHeader(nethttp.StatusNoContent)
+		c.Status(nethttp.StatusNoContent)
 		return
 	}
 	_, exists, err := activityByID(ctx, p.db, id)
 	switch {
 	case err != nil:
 		logger.Error("reading an activity", "error", err)
-		writeError(w, nethttp.StatusServiceUnavailable, "the activity table cannot be read")
+		writeError(c, nethttp.StatusServiceUnavailable, "the activity table cannot be read")
 	case exists:
-		writeError(w, nethttp.StatusConflict, errStageHistory.Error())
+		writeError(c, nethttp.StatusConflict, errStageHistory.Error())
 	default:
-		writeError(w, nethttp.StatusNotFound, errNoActivity.Error())
+		writeError(c, nethttp.StatusNotFound, errNoActivity.Error())
 	}
 }
 
@@ -297,21 +297,21 @@ type timeline struct {
 // dealTimeline answers a deal's activities in the order they occurred. Neither
 // statement names a tenant: the deal is one of the request's tenant's, and so
 // are the activities the second finds.
-func (p *activitiesProduct) dealTimeline(w nethttp.ResponseWriter, r *nethttp.Request) {
-	ctx := r.Context()
+func (p *activitiesProduct) dealTimeline(c *gin.Context) {
+	ctx := c.Request.Context()
 	logger := log.FromContext(ctx)
-	if _, ok := memberOf(w, r, dealTimelineRoute); !ok {
+	if _, ok := memberOf(c, dealTimelineRoute); !ok {
 		return
 	}
-	id := r.PathValue("id")
+	id := c.Param("id")
 	_, found, err := dealByID(ctx, p.db, id)
 	if err != nil {
 		logger.Error("reading a deal", "error", err)
-		writeError(w, nethttp.StatusServiceUnavailable, "the deal table cannot be read")
+		writeError(c, nethttp.StatusServiceUnavailable, "the deal table cannot be read")
 		return
 	}
 	if !found {
-		writeError(w, nethttp.StatusNotFound, errDealNotFound.Error())
+		writeError(c, nethttp.StatusNotFound, errDealNotFound.Error())
 		return
 	}
 	var activities []Activity
@@ -321,14 +321,14 @@ func (p *activitiesProduct) dealTimeline(w nethttp.ResponseWriter, r *nethttp.Re
 		Find(&activities).Error
 	if err != nil {
 		logger.Error("reading a deal's activities", "error", err)
-		writeError(w, nethttp.StatusServiceUnavailable, "the activity table cannot be read")
+		writeError(c, nethttp.StatusServiceUnavailable, "the activity table cannot be read")
 		return
 	}
 	out := timeline{DealID: id, Activities: make([]activityView, 0, len(activities))}
 	for _, a := range activities {
 		out.Activities = append(out.Activities, viewOfActivity(a))
 	}
-	_ = speedhttp.WriteJSON(w, nethttp.StatusOK, out)
+	c.JSON(nethttp.StatusOK, out)
 }
 
 // init registers the activities module. It runs on serve: its routes sit on the
@@ -387,9 +387,9 @@ func activitiesModule() core.Module {
 			if err != nil {
 				return fmt.Errorf("binding the activity routes: %w", err)
 			}
-			api.Route(createActivityRoute, nethttp.HandlerFunc(product.createActivity))
-			api.Route(deleteActivityRoute, nethttp.HandlerFunc(product.deleteActivity))
-			api.Route(dealTimelineRoute, nethttp.HandlerFunc(product.dealTimeline))
+			mount(api, createActivityRoute, product.createActivity)
+			mount(api, deleteActivityRoute, product.deleteActivity)
+			mount(api, dealTimelineRoute, product.dealTimeline)
 			return nil
 		},
 

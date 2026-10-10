@@ -491,7 +491,7 @@ func TestAccountsStayInTheirTenant(t *testing.T) {
 			expect(t, "a delete of acme's acc-7, marked deleted with its contact live",
 				ivan.send(t, nethttp.MethodDelete, "/accounts/acc-7", nil), nethttp.StatusNotFound)
 			sub.awaitJournal("the delete that found no account", func(r auditRow) bool {
-				return r.source == "request" && r.object == deleteAccountRoute && r.outcome == "404" &&
+				return r.requestOn(deleteAccountRoute) && r.outcome == "404" &&
 					r.tenant == cr.acme.ID && r.actor == ivan.sessionActor()
 			})
 
@@ -515,19 +515,19 @@ func TestAccountsStayInTheirTenant(t *testing.T) {
 				source, action, object, outcome string
 				who                             actor
 			}{
-				{"the viewer's refused creation", "request", "POST", createAccountRoute, "403", vera},
-				{"the viewer's refused update", "request", "PATCH", patchAccountRoute, "403", vera},
-				{"the viewer's refused ownership change", "request", "POST", ownerAccountRoute, "403", vera},
-				{"the viewer's refused delete", "request", "DELETE", deleteAccountRoute, "403", vera},
-				{"the rep's refused delete", "request", "DELETE", deleteAccountRoute, "403", rita},
-				{"the rep's refused purge", "request", "POST", purgeAccountRoute, "403", rita},
-				{"the admin's refused purge", "request", "POST", purgeAccountRoute, "403", ivan},
-				{"the rep's creation", "request", "POST", createAccountRoute, "201", rita},
-				{"the owner's creation in globex", "request", "POST", createAccountRoute, "201", aliceGlobex},
-				{"the owner's update", "request", "PATCH", patchAccountRoute, "200", aliceAcme},
-				{"the owner's ownership change", "request", "POST", ownerAccountRoute, "200", aliceAcme},
-				{"the admin's delete", "request", "DELETE", deleteAccountRoute, "204", ivan},
-				{"the owner's purge", "request", "POST", purgeAccountRoute, "204", aliceAcme},
+				{"the viewer's refused creation", "request", "POST", routePath(createAccountRoute), "403", vera},
+				{"the viewer's refused update", "request", "PATCH", routePath(patchAccountRoute), "403", vera},
+				{"the viewer's refused ownership change", "request", "POST", routePath(ownerAccountRoute), "403", vera},
+				{"the viewer's refused delete", "request", "DELETE", routePath(deleteAccountRoute), "403", vera},
+				{"the rep's refused delete", "request", "DELETE", routePath(deleteAccountRoute), "403", rita},
+				{"the rep's refused purge", "request", "POST", routePath(purgeAccountRoute), "403", rita},
+				{"the admin's refused purge", "request", "POST", routePath(purgeAccountRoute), "403", ivan},
+				{"the rep's creation", "request", "POST", routePath(createAccountRoute), "201", rita},
+				{"the owner's creation in globex", "request", "POST", routePath(createAccountRoute), "201", aliceGlobex},
+				{"the owner's update", "request", "PATCH", routePath(patchAccountRoute), "200", aliceAcme},
+				{"the owner's ownership change", "request", "POST", routePath(ownerAccountRoute), "200", aliceAcme},
+				{"the admin's delete", "request", "DELETE", routePath(deleteAccountRoute), "204", ivan},
+				{"the owner's purge", "request", "POST", routePath(purgeAccountRoute), "204", aliceAcme},
 				{"the statement of the rep's creation", "statement", "create", accountTable, "", rita},
 				{"the statement of the owner's creation in globex", "statement", "create", accountTable, "", aliceGlobex},
 				{"the statement of the owner's updates", "statement", "update", accountTable, "", aliceAcme},

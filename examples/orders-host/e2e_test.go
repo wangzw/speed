@@ -98,6 +98,16 @@ const (
 // item's path.
 const gateConfigNamespace = gate.ConfigNamespace
 
+// problemMediaType is the media type of the error responses the entry point
+// writes, for itself and on behalf of the layers on its chain: the refusals of
+// authentication, tenant resolution and the limiter, and the answers to a request
+// that matches no route and to one whose method the route does not allow.
+const problemMediaType = "application/problem+json"
+
+// maxBodyBytes is the request body limit an endpoint carries when its
+// configuration names none, which is the one every fixture here runs under.
+const maxBodyBytes = 1 << 20
+
 func TestMain(m *testing.M) {
 	dir, err := os.MkdirTemp("", "orders-host")
 	if err != nil {
@@ -612,6 +622,17 @@ func send(t *testing.T, r *nethttp.Request) (int, nethttp.Header, string) {
 	return resp.StatusCode, resp.Header, body.String()
 }
 
+// requireProblem asserts that a response carries the entry point's error media
+// type. The body is left alone: its members are the entry point's to define, and
+// what a case asserts about a refusal is its status and that the entry point
+// wrote it.
+func requireProblem(t *testing.T, what string, header nethttp.Header) {
+	t.Helper()
+	if got := header.Get("Content-Type"); got != problemMediaType {
+		t.Errorf("%s was answered with media type %q, want %q", what, got, problemMediaType)
+	}
+}
+
 // decode unmarshals a body into v, failing the case when it cannot.
 func decode(t *testing.T, body string, v any) {
 	t.Helper()
@@ -801,17 +822,19 @@ func TestAuthenticationRefusesBeforeResolution(t *testing.T) {
 
 	// The same request with no credential at all, naming a tenant that is
 	// not on the roster either.
-	status, _ := call(t, run.public, "/orders", "nobody", "")
+	status, header, _ := send(t, get(t, run.public, "/orders", "nobody", ""))
 	if status != nethttp.StatusUnauthorized {
 		t.Errorf("a request with no credential answered %d, want %d: authentication runs outside resolution",
 			status, nethttp.StatusUnauthorized)
 	}
+	requireProblem(t, "the refusal by authentication", header)
 
-	status, _ = call(t, run.public, "/orders", "nobody", subject)
+	status, header, _ = send(t, get(t, run.public, "/orders", "nobody", subject))
 	if status != nethttp.StatusNotFound {
 		t.Errorf("an authenticated request naming an unknown tenant answered %d, want %d",
 			status, nethttp.StatusNotFound)
 	}
+	requireProblem(t, "the refusal by resolution", header)
 }
 
 // TestTheTwoTenantRefusalsAreOneAnswer is the case for the roster not being
@@ -827,8 +850,8 @@ func TestTheTwoTenantRefusalsAreOneAnswer(t *testing.T) {
 	f.migrate(t)
 	run := f.start(t)
 
-	disabledStatus, disabledBody := call(t, run.public, "/orders", initech, subject)
-	unknownStatus, unknownBody := call(t, run.public, "/orders", "nobody", subject)
+	disabledStatus, disabledHeader, disabledBody := send(t, get(t, run.public, "/orders", initech, subject))
+	unknownStatus, unknownHeader, unknownBody := send(t, get(t, run.public, "/orders", "nobody", subject))
 
 	if disabledStatus != nethttp.StatusNotFound {
 		t.Errorf("a request naming a disabled tenant answered %d, want %d",
@@ -838,12 +861,15 @@ func TestTheTwoTenantRefusalsAreOneAnswer(t *testing.T) {
 		t.Errorf("a disabled tenant answered %d and an unknown one %d; telling them apart enumerates the roster",
 			disabledStatus, unknownStatus)
 	}
-	// Both bodies are empty, and that emptiness is the property rather than
-	// an accident of this implementation: a refusal that explained itself —
-	// "that tenant exists but is disabled" — is exactly the enumeration the
-	// two answers have to be indistinguishable against.
-	if disabledBody != "" || unknownBody != "" {
-		t.Errorf("the refusals carry bodies (%q and %q); a refusal that says why is how a roster becomes enumerable",
+	requireProblem(t, "the refusal of a disabled tenant", disabledHeader)
+	requireProblem(t, "the refusal of an unknown tenant", unknownHeader)
+	// The two bodies are the same bytes, and that sameness is the property
+	// rather than an accident of this implementation: a refusal that explained
+	// itself — "that tenant exists but is disabled" — would differ between the
+	// two and is exactly the enumeration the answers have to be
+	// indistinguishable against.
+	if disabledBody != unknownBody {
+		t.Errorf("the refusals carry different bodies (%q and %q); a refusal that says why is how a roster becomes enumerable",
 			disabledBody, unknownBody)
 	}
 
@@ -865,26 +891,96 @@ func TestARequestNamingNoTenantIsRefused(t *testing.T) {
 	f.migrate(t)
 	run := f.start(t)
 
-	status, body := call(t, run.public, "/orders", "", subject)
+	status, header, body := send(t, get(t, run.public, "/orders", "", subject))
 	if status != nethttp.StatusNotFound {
 		t.Errorf("a request naming no tenant answered %d, want %d: resolution refuses it before the handler runs; body %q",
 			status, nethttp.StatusNotFound, body)
 	}
+	requireProblem(t, "the refusal of a request naming no tenant", header)
 }
 
 // TestAnUnregisteredRouteIsRefusedAsUnauthenticated is the case for where the
-// gateway sits relative to the routing engine. A caller who never authenticated
-// learns nothing about which paths exist: a route nobody registered is refused
-// as unauthenticated rather than as not found.
+// gateway sits relative to the engine's answer for a request that matches no
+// route. A caller who never authenticated learns nothing about which paths
+// exist: the entry point runs every layer on such a request before it answers
+// the 404, so a route nobody registered is refused as unauthenticated rather than
+// as not found.
 func TestAnUnregisteredRouteIsRefusedAsUnauthenticated(t *testing.T) {
 	f := writeFixture(t)
 	f.migrate(t)
 	run := f.start(t)
 
-	status, _ := call(t, run.public, "/nothing-here", acme, "")
+	status, header, _ := send(t, get(t, run.public, "/nothing-here", acme, ""))
 	if status != nethttp.StatusUnauthorized {
-		t.Errorf("an unauthenticated request for an unregistered route answered %d, want %d: the gateway runs outside the engine, so a caller learns nothing about which paths exist",
+		t.Errorf("an unauthenticated request for an unregistered route answered %d, want %d: every layer runs on a request that matches no route, so a caller learns nothing about which paths exist",
 			status, nethttp.StatusUnauthorized)
+	}
+	requireProblem(t, "the refusal by authentication", header)
+}
+
+// TestAnAuthenticatedRequestForAnUnregisteredRouteIsNotFound is the other half:
+// a caller that gets past both guards is told the route is not there, by the
+// entry point and in its error media type. It names a tenant on the roster so
+// that resolution lets it through, which is what makes the 404 the engine's and
+// not resolution's.
+func TestAnAuthenticatedRequestForAnUnregisteredRouteIsNotFound(t *testing.T) {
+	f := writeFixture(t)
+	f.migrate(t)
+	run := f.start(t)
+
+	status, header, body := send(t, get(t, run.public, "/nothing-here", acme, subject))
+	if status != nethttp.StatusNotFound {
+		t.Errorf("an authenticated request for an unregistered route answered %d, want %d: %s",
+			status, nethttp.StatusNotFound, body)
+	}
+	requireProblem(t, "the answer to a request that matches no route", header)
+}
+
+// TestAMethodTheRouteDoesNotAllowIsAnsweredAfterTheGuards is the case for the
+// 405 sharing the 404's place on the chain. The orders path allows GET and POST,
+// and a PUT to it is answered by the entry point with the methods the path allows
+// — but only to a caller the guards let through: the allowed methods are a fact
+// about which paths exist, so a caller without a credential gets the 401 and no
+// Allow header.
+func TestAMethodTheRouteDoesNotAllowIsAnsweredAfterTheGuards(t *testing.T) {
+	f := writeFixture(t)
+	f.migrate(t)
+	run := f.start(t)
+
+	put := func(tenantName, credential string) *nethttp.Request {
+		r, err := nethttp.NewRequest(nethttp.MethodPut, run.public+"/orders", nil)
+		if err != nil {
+			t.Fatalf("building the request: %v", err)
+		}
+		if tenantName != "" {
+			r.Header.Set("X-Tenant", tenantName)
+		}
+		if credential != "" {
+			r.SetBasicAuth(credential, password)
+		}
+		return r
+	}
+
+	status, header, body := send(t, put(acme, ""))
+	if status != nethttp.StatusUnauthorized {
+		t.Errorf("an unauthenticated request with a method the path does not allow answered %d, want %d: %s",
+			status, nethttp.StatusUnauthorized, body)
+	}
+	if allow := header.Get("Allow"); allow != "" {
+		t.Errorf("the refusal by authentication carries Allow %q, which tells a caller with no credential which methods the path takes", allow)
+	}
+
+	status, header, body = send(t, put(acme, subject))
+	if status != nethttp.StatusMethodNotAllowed {
+		t.Fatalf("an authenticated request with a method the path does not allow answered %d, want %d: %s",
+			status, nethttp.StatusMethodNotAllowed, body)
+	}
+	requireProblem(t, "the answer to a method the path does not allow", header)
+	allow := header.Get("Allow")
+	for _, method := range []string{nethttp.MethodGet, nethttp.MethodPost} {
+		if !strings.Contains(allow, method) {
+			t.Errorf("the 405 carries Allow %q, which does not list %s, a method the path takes", allow, method)
+		}
 	}
 }
 
@@ -1000,10 +1096,10 @@ func TestTheStartupDiagnosticsListWhatWasFrozen(t *testing.T) {
 	}
 	// An empty table is reported under one key and a populated one under
 	// the endpoint each entry belongs to, so the assertion is on the
-	// endpoint's own attribute.
-	if got := frozen[publicEndpoint]; !strings.Contains(got, statusRoute) {
-		t.Errorf("the frozen exemption table lists %q for %q, which does not name the route that was registered",
-			got, publicEndpoint)
+	// endpoint's own attribute. Each entry is the method and the path.
+	if got, want := frozen[publicEndpoint], nethttp.MethodGet+" "+statusPath; !strings.Contains(got, want) {
+		t.Errorf("the frozen exemption table lists %q for %q, which does not name the route %q that was registered",
+			got, publicEndpoint, want)
 	}
 }
 
@@ -1061,6 +1157,79 @@ func TestAPlacementIsPublishedAndCounted(t *testing.T) {
 			t.Fatalf("the counter stayed at %v after a placement was published", before)
 		}
 		time.Sleep(20 * time.Millisecond)
+	}
+}
+
+// placeBody makes one placement with the body exactly as given, which is how a
+// case sends the bodies place's encoder would never produce.
+func placeBody(t *testing.T, base, tenantName, credential string, body io.Reader) (int, string) {
+	t.Helper()
+	r, err := nethttp.NewRequest(nethttp.MethodPost, base+"/orders", body)
+	if err != nil {
+		t.Fatalf("building the request: %v", err)
+	}
+	r.Header.Set("Content-Type", "application/json")
+	r.Header.Set("X-Tenant", tenantName)
+	r.SetBasicAuth(credential, password)
+	status, _, text := send(t, r)
+	return status, text
+}
+
+// orderRows counts the rows of the orders table, every tenant's.
+func (f *fixture) orderRows(t *testing.T) int {
+	t.Helper()
+	var rows int
+	if err := f.open(t).QueryRow("SELECT COUNT(*) FROM orders").Scan(&rows); err != nil {
+		t.Fatalf("counting the orders: %v", err)
+	}
+	return rows
+}
+
+// TestAPlacementBodyThatIsNotAnOrderIsABadRequest is the case for the answer to a
+// body the handler cannot bind. An empty body, one that is not JSON and one whose
+// member has the wrong type are each a bad request, and none of them reaches the
+// table: the handler stops at the bind, before it writes anything.
+func TestAPlacementBodyThatIsNotAnOrderIsABadRequest(t *testing.T) {
+	f := writeFixture(t)
+	f.migrate(t)
+	run := f.start(t)
+
+	before := f.orderRows(t)
+	for _, c := range []struct{ what, body string }{
+		{"an empty body", ""},
+		{"a body that is not JSON", `{"id": "b1", "item": `},
+		{"a body whose member has the wrong type", `{"id": 7, "item": "a widget"}`},
+	} {
+		status, body := placeBody(t, run.public, acme, subject, strings.NewReader(c.body))
+		if status != nethttp.StatusBadRequest {
+			t.Errorf("a placement with %s answered %d, want %d: %s",
+				c.what, status, nethttp.StatusBadRequest, body)
+		}
+	}
+	if after := f.orderRows(t); after != before {
+		t.Errorf("the orders table went from %d to %d row(s) across placements that could not be bound", before, after)
+	}
+}
+
+// TestAPlacementBodyPastTheEndpointLimitIsTooLarge is the case for the one bind
+// failure that is not the client's malformed JSON: the endpoint's limit cuts the
+// body off, the bind reports it as an oversized body, and the handler answers it
+// as one rather than as a bad request. The body is a well-formed document, so
+// size is the only thing wrong with it.
+func TestAPlacementBodyPastTheEndpointLimitIsTooLarge(t *testing.T) {
+	f := writeFixture(t)
+	f.migrate(t)
+	run := f.start(t)
+
+	before := f.orderRows(t)
+	oversized := `{"id": "b2", "item": "` + strings.Repeat("x", maxBodyBytes) + `"}`
+	status, body := placeBody(t, run.public, acme, subject, strings.NewReader(oversized))
+	if status != nethttp.StatusRequestEntityTooLarge {
+		t.Errorf("a placement of %d bytes answered %d, want %d: the endpoint's limit is %d bytes; %s",
+			len(oversized), status, nethttp.StatusRequestEntityTooLarge, maxBodyBytes, body)
+	}
+	if after := f.orderRows(t); after != before {
+		t.Errorf("the orders table went from %d to %d row(s) across a placement the limit cut off", before, after)
 	}
 }
 
@@ -1148,9 +1317,12 @@ func TestTheJournalCapturesEveryPath(t *testing.T) {
 	// The request path is configured for the read and the write, and the
 	// write is the one that carries the placement: asserting on the method
 	// is what tells that path apart from a capture that only ever saw reads.
+	// The row names the route by its method and the path it was registered
+	// under, and the configuration entry that selected it is spelled the same
+	// way, so a row for the placement is also what shows the entry matched.
 	var carried bool
 	for _, row := range f.journal(t) {
-		if row.source == "request" && strings.HasPrefix(row.object, nethttp.MethodPost) {
+		if row.source == "request" && row.action == nethttp.MethodPost && row.object == ordersPath {
 			carried = true
 		}
 	}
@@ -1295,6 +1467,7 @@ func TestTheLimitingLayerRefusesPastTheLimit(t *testing.T) {
 	if got := header.Get("Retry-After"); got == "" || got == "0" {
 		t.Errorf("the refusal carries Retry-After %q, want a positive number of seconds", got)
 	}
+	requireProblem(t, "the refusal by the limiter", header)
 
 	// The request row is written once the inner chain has returned, so the
 	// table is read until the refusal turns up rather than once.
@@ -1302,7 +1475,7 @@ func TestTheLimitingLayerRefusesPastTheLimit(t *testing.T) {
 	for {
 		var captured bool
 		for _, row := range f.journal(t) {
-			if row.source == "request" && row.object == ordersRoute &&
+			if row.source == "request" && row.action == nethttp.MethodGet && row.object == ordersPath &&
 				row.outcome == strconv.Itoa(nethttp.StatusTooManyRequests) &&
 				row.tenant == limitedTenant {
 				captured = true
@@ -1312,8 +1485,8 @@ func TestTheLimitingLayerRefusesPastTheLimit(t *testing.T) {
 			return
 		}
 		if time.Now().After(deadline) {
-			t.Fatalf("the journal captured no request row for the refusal of %s on %s",
-				limitedTenant, ordersRoute)
+			t.Fatalf("the journal captured no request row for the refusal of %s on %s %s",
+				limitedTenant, nethttp.MethodGet, ordersPath)
 		}
 		time.Sleep(20 * time.Millisecond)
 	}

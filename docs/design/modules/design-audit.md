@@ -150,6 +150,8 @@ var ErrNotAccepting = errors.New("audit: the module is not accepting records")
 
 **本模块不在启动期校验一个请求项是否对应某条已登记的路由。** 入口模块的登记面不提供枚举，没有一处能把 `requests` 与已登记的路由互相比对。写错的请求项——路径与登记时的写法有一字之差，参数名不同即是一例——永不命中，启动期不失败，也不产生诊断。
 
+**写法不成一对（方法，路径）的请求项在读配置时即启动失败。** 请求项是一个非空的方法、一个空格，与一条以 `/` 起头的路径；没有空格、方法为空、路径不以 `/` 起头的项，错误点名那一项并给出正确的写法，例如 `GET /contacts/:id`。这与上一段不矛盾：失败的是不成形的写法，不是一对写得合乎形态却对不上路由的请求项。
+
 **端名清单只能是本模块自己的输入项**：入口模块的登记面只有按名取端一个方法，枚举不出来（判据同认证网关与租户解析，见 [authn](design-authn.md)）。
 
 **配置列出了一个类型名或一个端名，而对应的模块在本次运行中取不到时，启动失败。** 取不到的情形包括它没被装配、被禁用，以及在场却没被启用——判据是 `Resolve` 取不到已有的实例，取「登记」的一侧会让一个被禁用的提供者通过检查，而那正是本条要拦下的「以为有保护而实际没有」（[ADR-audit-reach-2026-09-21](../../adr/adr-audit-reach-2026-09-21.md)）。什么都不列时本模块照常运行。
@@ -344,13 +346,15 @@ sequenceDiagram
 
 **内层 panic 时同样写一行，结果一列填常量 `panic`，随后把 panic 原样抛出。** 状态码从未到达，填任何状态码都是猜测；这一行与正常返回那一行共用同一个记录点，只在结果一列的取值上不同。捕获 panic 不是本层的职责——本层在 gin 引擎之内，panic 穿过它，由入口模块包在 gin 引擎之外的兜底层接住（见 [http](design-http.md) 的兜底层；gin 自带的恢复中间件不装），本层只是把这次请求记下来。
 
+**handler 既没有返回、也没有抛出值时同样写一行，结果一列同样填 `panic`。** 这是 handler 调用了 `runtime.Goexit`，或在 `GODEBUG=panicnil=1` 下 `panic(nil)`，两者在本层分不开；协程随后照常结束，本层不吞它。这与入口模块的兜底层对同一情形的处置同类（见 [http](design-http.md) 的兜底层）。
+
 **这一档包含被有意放弃的连接。** handler 用 `net/http` 的 `ErrAbortHandler` 放弃连接时，本层读不出它与缺陷的区别，同样填 `panic`；而入口模块的兜底层认得那个值、原样抛出、不写响应（见 [http](design-http.md) 的兜底层），调用方因而什么也没收到，却留下一条结果列为 `panic` 的审计行。本层要记的是「发生过什么」，连接是不是被有意丢掉不在它能读到的信息里。
 
 **匹配是与登记写法的逐字比对。** 路由匹配在这一层运行之前已经由 gin 完成，层读的是它的结果，比的是它登记时的写法。启动期不能与已登记的路由对照：登记面不提供枚举，写错的请求项永不命中，不报错（见配置）。
 
 **动作与对象由端名、方法与路由路径填**：动作取请求方法，对象取路由路径，即 `c.FullPath()` 给出的路径写法，与路由登记时的相同。端名与请求路径进明细，请求路径取 `c.Request.URL.Path`——它们不在 `Entry` 的字段里，而中间件确实知道自己落在哪个端上、这次请求的是哪条路径。路由路径说的是哪一类请求，请求路径说的是哪一个对象，例如路由路径 `/contacts/:id` 之下的请求路径 `/contacts/c1`。
 
-**结果取内层写出的最终状态码**：层在 `c.Next()` 返回之后读 `c.Writer.Status()`；内层从未写状态时为 200。层不替换 `c.Writer`，写出者携带的可选接口不受它影响。gin 的写出者记下的是响应开始写出时的状态码：处理器先设 103 再设 200，客户端收不到那个 103，读到的是 200；响应开始写出之后再设置的状态码不改变它。这里因而没有「先于最终状态的信息性响应」这一档。
+**结果取内层写出的最终状态码**：层在 `c.Next()` 返回之后读 `c.Writer.Status()`；内层从未写状态时为 200。层不替换 `c.Writer`，写出者携带的可选接口不受它影响。gin 的写出者记下的是响应开始写出时的状态码：处理器先设 103 再设 200，客户端收不到那个 103，读到的是 200；响应开始写出之后再设置的状态码不改变它。处理器只设了 103 就写出响应体时，写出者记下的仍是 103，而调用方收到的最终状态是 200，103 只是先到的信息性响应；层把非 101 的 1xx 读作 200，与 `net/http` 对信息性状态码的划分一致。
 
 **该层不做归责判定。** 一次拒答出自哪一层不由它回答。
 
@@ -502,13 +506,13 @@ sequenceDiagram
 | 能力 | 状态 | 代码 |
 |---|---|---|
 | 接口与数据类型 | 已实现 | `pkg/audit/audit.go` `Audit`、`Entry`、`Source` |
-| 哨兵 | 部分实现：实现子包里多出 `ErrUnmatchablePattern`，它随自持匹配器一并去掉 | `pkg/audit/audit.go` `ErrWriteFailed`、`ErrNotAccepting`；`pkg/audit/journal/errors.go` `ErrUnmatchablePattern` |
+| 哨兵 | 已实现 | `pkg/audit/audit.go` `ErrWriteFailed`、`ErrNotAccepting` |
 | 审计表与迁移 | 已实现 | `pkg/audit/journal/entry.go` `row`；`pkg/audit/journal/migrations/<方言>/0001_audit_entries.sql`、`0002_audit_entries_event_id.sql` |
 | 语句级捕获 | 已实现 | `pkg/audit/journal/capture.go` `capture`、`captureOne`、`record` |
 | 额外连接上的行经交付连接写出 | 已实现 | `pkg/audit/journal/capture.go` `recordOpened`；`pkg/db/plugins.go` `OpenedFrom` |
 | 连着交付库那张审计表的额外连接写在语句自己的会话上 | 已实现 | `pkg/audit/journal/capture.go` `reachesDeliveredTable`、`sameSQLiteFile`、`sqliteMainFile`、`samePostgresTable`、`onOwnSession` |
 | 写入的等待 | 已实现 | `pkg/audit/journal/capture.go` `recordOpened`、`openedRowWait`；`pkg/audit/journal/entry.go` `connectionWait`、`write`；`pkg/db/connection.go` `Connection` |
-| 请求级捕获 | 部分实现：层仍以 `net/http` 形状的 `Wrap` 登记，请求由自持的匹配器比对并在 `Init` 校验，结果取自包住写出者的 `statusRecorder`；缺以 `gin.HandlerFunc` 登记、取（方法，`c.FullPath()`）与请求项逐字比对、在 `c.Next()` 之后读 `c.Writer.Status()`；匹配器及其在 `Init` 里的校验要去掉 | `pkg/audit/journal/request.go` `middlewareFor`、`statusRecorder`；`pkg/audit/journal/matcher.go` `newMatcher`；`pkg/audit/journal/journal.go` `(*journal).wire` |
+| 请求级捕获 | 已实现 | `pkg/audit/journal/request.go` `middlewareFor`、`requested`、`recordRequest`；`pkg/audit/journal/config.go` `requestItem`、`parseRequestItem`；`pkg/audit/journal/journal.go` `(*journal).wire` |
 | 事件级捕获 | 已实现 | `pkg/audit/journal/event.go` `subscribe`、`handlerFor` |
 | 事件级按事件标识去重 | 已实现 | `pkg/audit/journal/event.go` `eventIDOf`；`pkg/audit/journal/entry.go` `insert` |
 | 记录接缝 | 已实现 | `pkg/audit/journal/entry.go` `Record` |

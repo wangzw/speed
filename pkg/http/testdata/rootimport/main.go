@@ -3,14 +3,14 @@
 // pkg/core comes along for the registry handle the report is read through.
 //
 // It reports its own process registry as one JSON object on standard output —
-// every module name in it, and the names of the modules delivering Router.
-// Registration happens in an implementation subpackage, so a program that
-// imported nothing from pkg/http but the root package has no entry point in
-// its registry; the test reads that and not the absence of a message.
+// every module name in it, the names of the modules delivering Router, and
+// whether that delivery is exclusive. The root package registers its module when
+// it is initialised, so a program that imported nothing from pkg/http but the
+// root package has the entry point in its registry; the test reads that and not
+// the absence of an error.
 //
-// The import list is the fixture. Adding anything else from this module —
-// pkg/http/stdmux above all — changes what the program observes, which is what
-// makes it evidence.
+// The import list is the fixture. Adding anything else from this module changes
+// what the program observes, which is what makes it evidence.
 package main
 
 import (
@@ -28,21 +28,26 @@ import (
 type observation struct {
 	// Modules is every module name the registry holds.
 	Modules []string `json:"modules"`
-	// Routers is the names of the modules delivering Router. An entry point
-	// subpackage registers one of these.
+	// Routers is the names of the modules delivering Router.
 	Routers []string `json:"routers"`
+	// Exclusive is true when every one of those deliveries claims Router
+	// exclusively, and false when there is none.
+	Exclusive bool `json:"exclusive"`
 }
 
 func main() {
 	seen := observation{Modules: []string{}, Routers: []string{}}
+	exclusive := true
 	for _, module := range core.ProcessRegistry.Modules() {
 		seen.Modules = append(seen.Modules, module.Name)
 		for _, provision := range module.Provides {
 			if reflect.TypeOf(provision.Token) == reflect.TypeFor[*speedhttp.Router]() {
 				seen.Routers = append(seen.Routers, module.Name)
+				exclusive = exclusive && provision.Exclusive
 			}
 		}
 	}
+	seen.Exclusive = exclusive && len(seen.Routers) > 0
 	sort.Strings(seen.Modules)
 	sort.Strings(seen.Routers)
 

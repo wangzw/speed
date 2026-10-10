@@ -17,13 +17,9 @@ var sentinels = map[string]error{
 	"ErrUnknownEndpoint": ErrUnknownEndpoint,
 	"ErrRouteConflict":   ErrRouteConflict,
 	"ErrMiddlewareCycle": ErrMiddlewareCycle,
-	"ErrChainAssembly":   ErrChainAssembly,
 	"ErrInvalidSpec":     ErrInvalidSpec,
 	"ErrListen":          ErrListen,
 	"ErrDrainTimeout":    ErrDrainTimeout,
-	"ErrMalformedBody":   ErrMalformedBody,
-	"ErrBodyTooLarge":    ErrBodyTooLarge,
-	"ErrValidation":      ErrValidation,
 }
 
 // TestSentinelsAreDistinct checks that no two of them are interchangeable,

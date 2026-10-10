@@ -151,9 +151,6 @@ func TestCertificateFailureIsAListenFailure(t *testing.T) {
 		{"ErrMiddlewareCycle", ErrMiddlewareCycle},
 		{"ErrInvalidSpec", ErrInvalidSpec},
 		{"ErrDrainTimeout", ErrDrainTimeout},
-		{"ErrMalformedBody", ErrMalformedBody},
-		{"ErrBodyTooLarge", ErrBodyTooLarge},
-		{"ErrValidation", ErrValidation},
 	}
 	for _, other := range others {
 		if errors.Is(err, other.sentinel) {

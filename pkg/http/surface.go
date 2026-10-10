@@ -1,7 +1,7 @@
 package http
 
 import (
-	nethttp "net/http"
+	"github.com/gin-gonic/gin"
 
 	"github.com/vislake/speed/pkg/core"
 )
@@ -10,11 +10,11 @@ import (
 // registry, written core.Resolve[http.Router](reg), and it hands out the
 // endpoints configuration declared.
 //
-// The module delivers it exclusively. Two entry point implementations running
-// at once would leave a registrant unable to tell which one it registered
-// with, and "take them all out" means nothing for a registration, so the
-// conflict is named during resolution rather than showing up at run time as a
-// route nobody can reach.
+// The module delivers it exclusively. Two entry point modules running at once
+// would leave a registrant unable to tell which one it registered with, and
+// "take them all out" means nothing for a registration, so the conflict is
+// named during resolution rather than showing up at run time as a route nobody
+// can reach.
 type Router interface {
 	// Endpoint returns a declared endpoint. It may be called in any stage.
 	// An undeclared name is an error wrapping ErrUnknownEndpoint, because
@@ -30,16 +30,23 @@ type Router interface {
 // Init stage. They return nothing: the only way a registration can fail is a
 // programming error at the call site, and handing back an error a registrant
 // is free to drop would leave a route silently unbound. A conflict between two
-// route patterns is not of that kind — it can only be judged once the chain is
-// assembled in Serve, and it is reported there as a startup failure.
+// routes is not of that kind — it can only be judged once the routes are
+// mounted in Serve, and it is reported there as a startup failure.
 //
 // Reads are not behind that gate: Accepting may be called in any stage.
 type Endpoint interface {
-	// Route binds h to a pattern on this endpoint. The pattern's grammar is
-	// the routing engine's, not this package's.
-	Route(pattern string, h nethttp.Handler)
+	// Route binds handlers to a method and a path on this endpoint. The path
+	// is written in gin's grammar — ":name" for a parameter, "*name" for a
+	// catch-all — and has to be in the form gin keeps it in, which is the
+	// form Context.FullPath reports: it begins with a slash, carries no
+	// repeated slash and no "." or ".." segment, and keeps a trailing slash
+	// as written. The handlers run in order and the last one serves the
+	// request, so a route can carry a chain of its own beside the layers
+	// registered with Use.
+	Route(method, path string, handlers ...gin.HandlerFunc)
 	// Use registers a middleware layer on this endpoint. The layer applies
-	// to every route on the endpoint; there is no route-scoped middleware.
+	// to every request on the endpoint, including one that matches no route
+	// and one whose method the matched path does not allow.
 	Use(mw Middleware)
 	// Accepting reports whether this endpoint is still taking requests. It
 	// returns false before the address is bound and after Stop, and it is
@@ -91,11 +98,10 @@ type Middleware struct {
 	// smaller value sits further out. Layers with equal Order and no
 	// constraint between them keep their registration order.
 	Order int
-	// Wrap is the layer itself. A nil Wrap panics at registration; a Wrap
-	// that hands back a nil handler is a chain assembly failure in Serve,
-	// wrapping ErrChainAssembly, because a panic there would skip the
-	// registry's rollback.
-	Wrap func(nethttp.Handler) nethttp.Handler
+	// Handler is the layer itself. It hands the request on with c.Next and
+	// ends the chain with c.Abort, as any gin handler does. A nil Handler
+	// panics at registration.
+	Handler gin.HandlerFunc
 }
 
 // Spec is the resource type a module declares its own OpenAPI fragment as.
@@ -114,36 +120,4 @@ type Spec struct {
 	// Document is the OpenAPI fragment, as JSON. A module usually reads its
 	// own openapi.json in with //go:embed.
 	Document []byte
-}
-
-// Engine is the seam an implementation subpackage fills: a routing engine that
-// takes pattern registrations and answers as a handler. The standard library's
-// *nethttp.ServeMux satisfies it as it stands.
-//
-// The engine's own type never appears on this package's surface, which keeps a
-// routing library out of the go.mod of every module that registers a route, and
-// out of its build. The go.sum and the `go mod tidy` fetch are not held to that
-// face — they follow the test closures of the imported packages — and
-// whole-graph reads see every library an implementation binds
-// (ADR-module-packaging-2026-09-22).
-//
-// The seam asks one thing of an implementation subpackage beyond this
-// interface: when the engine refuses to mount a pattern beside the others, the
-// subpackage has to attribute that refusal to a pair — the refused pattern and
-// the mounted one it cannot stand beside — because only the layer holding the
-// engine can ask it. The subpackage's engine answers
-// AttributeRefusal(refused string, mounted []string) (string, bool). An engine
-// that does not answer leaves the startup failure saying the refusal was not
-// attributed, rather than naming one pattern as though that were the verdict:
-// a diagnostic that holds for one engine alone goes quietly wrong on the next
-// one.
-type Engine interface {
-	nethttp.Handler
-	// Handle binds h to a pattern. The engine refuses a pattern however it
-	// sees fit, including by panicking, and the caller catches that at both
-	// moments it asks: a pattern offered alone at registration, where a
-	// refusal is a malformed pattern and panics at the call, and a pattern
-	// mounted beside the others in Serve, where a refusal is a conflict and
-	// becomes a startup failure wrapping ErrRouteConflict.
-	Handle(pattern string, h nethttp.Handler)
 }

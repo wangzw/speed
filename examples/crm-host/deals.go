@@ -14,6 +14,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/gin-gonic/gin"
 	"gorm.io/gorm"
 
 	"github.com/vislake/speed/pkg/core"
@@ -39,14 +40,14 @@ const dealTable = "deals"
 const (
 	createDealRoute = "POST /deals"
 	listDealsRoute  = "GET /deals"
-	getDealRoute    = "GET /deals/{id}"
-	patchDealRoute  = "PATCH /deals/{id}"
-	moveDealRoute   = "POST /deals/{id}/stage"
-	deleteDealRoute = "DELETE /deals/{id}"
+	getDealRoute    = "GET /deals/:id"
+	patchDealRoute  = "PATCH /deals/:id"
+	moveDealRoute   = "POST /deals/:id/stage"
+	deleteDealRoute = "DELETE /deals/:id"
 
-	setStakeholdersRoute   = "PUT /deals/{id}/stakeholders"
-	addStakeholderRoute    = "POST /deals/{id}/stakeholders"
-	removeStakeholderRoute = "DELETE /deals/{id}/stakeholders/{contact}"
+	setStakeholdersRoute   = "PUT /deals/:id/stakeholders"
+	addStakeholderRoute    = "POST /deals/:id/stakeholders"
+	removeStakeholderRoute = "DELETE /deals/:id/stakeholders/:contact"
 )
 
 // The settings this module declares, under their full paths: the namespace, a
@@ -277,17 +278,17 @@ func etagOf(version int64) string { return `"` + strconv.FormatInt(version, 10) 
 // A request without one is answered 428, since a write that names no version
 // is one a concurrent writer can silently undo; one naming anything other than
 // a single strong tag this API issued matches no version and is answered 412.
-func ifMatchVersion(w nethttp.ResponseWriter, r *nethttp.Request) (int64, bool) {
-	raw := strings.TrimSpace(r.Header.Get("If-Match"))
+func ifMatchVersion(c *gin.Context) (int64, bool) {
+	raw := strings.TrimSpace(c.GetHeader("If-Match"))
 	if raw == "" {
-		writeError(w, nethttp.StatusPreconditionRequired, errNoPrecondition.Error())
+		writeError(c, nethttp.StatusPreconditionRequired, errNoPrecondition.Error())
 		return 0, false
 	}
 	unquoted, quoted := strings.CutPrefix(raw, `"`)
 	unquoted, closed := strings.CutSuffix(unquoted, `"`)
 	version, err := strconv.ParseInt(unquoted, 10, 64)
 	if !quoted || !closed || err != nil || version < 1 {
-		writeError(w, nethttp.StatusPreconditionFailed, errBadIfMatch.Error())
+		writeError(c, nethttp.StatusPreconditionFailed, errBadIfMatch.Error())
 		return 0, false
 	}
 	return version, true
@@ -404,14 +405,14 @@ func refusal(status int, message string) answer {
 }
 
 // write sends an answer.
-func (a answer) write(w nethttp.ResponseWriter) {
+func (a answer) write(c *gin.Context) {
 	if a.etag != "" {
-		w.Header().Set("ETag", a.etag)
+		c.Header("ETag", a.etag)
 	}
 	if a.replayed {
-		w.Header().Set(idempotentReplayHeader, "true")
+		c.Header(idempotentReplayHeader, "true")
 	}
-	_ = speedhttp.WriteJSON(w, a.status, json.RawMessage(a.body))
+	c.JSON(a.status, json.RawMessage(a.body))
 }
 
 // idempotencyRecord is what a key's claim holds: the digest of the request
@@ -454,31 +455,30 @@ func idempotencyStoreKey(self member, key string) string {
 // still being answered, and 422 when the bodies differ. A request that claimed
 // the key and was then refused gives the claim up, so the client can send a
 // corrected request under the same key.
-func (p *dealsProduct) createDeal(w nethttp.ResponseWriter, r *nethttp.Request) {
-	ctx := r.Context()
-	self, ok := memberOf(w, r, createDealRoute)
+func (p *dealsProduct) createDeal(c *gin.Context) {
+	ctx := c.Request.Context()
+	self, ok := memberOf(c, createDealRoute)
 	if !ok {
 		return
 	}
 	if !canWriteDeals(self.Role) {
-		writeError(w, nethttp.StatusForbidden, errReadOnlyRole.Error())
+		writeError(c, nethttp.StatusForbidden, errReadOnlyRole.Error())
 		return
 	}
 	var body dealRequest
-	if err := speedhttp.Decode(r, &body); err != nil {
-		writeError(w, speedhttp.StatusFor(err), err.Error())
+	if !bindBody(c, &body) {
 		return
 	}
-	key, keyed := r.Header[nethttp.CanonicalHeaderKey(idempotencyKeyHeader)]
+	key, keyed := c.Request.Header[nethttp.CanonicalHeaderKey(idempotencyKeyHeader)]
 	if !keyed {
-		p.insertDeal(ctx, self, body).write(w)
+		p.insertDeal(ctx, self, body).write(c)
 		return
 	}
 	if len(key) != 1 || strings.TrimSpace(key[0]) == "" || len(key[0]) > maxIdempotencyKey {
-		writeError(w, nethttp.StatusBadRequest, errBadIdempotency.Error())
+		writeError(c, nethttp.StatusBadRequest, errBadIdempotency.Error())
 		return
 	}
-	p.createOnce(ctx, self, key[0], body).write(w)
+	p.createOnce(ctx, self, key[0], body).write(c)
 }
 
 // createOnce is the keyed half of createDeal.
@@ -766,17 +766,17 @@ type dealList struct {
 // model. The owner's table is global and is joined as it is. The stakeholders
 // are two statements more, on the join table and on the contacts, both scoped
 // models, for every deal of the page at once.
-func (p *dealsProduct) listDeals(w nethttp.ResponseWriter, r *nethttp.Request) {
-	ctx := r.Context()
-	if _, ok := memberOf(w, r, listDealsRoute); !ok {
+func (p *dealsProduct) listDeals(c *gin.Context) {
+	ctx := c.Request.Context()
+	if _, ok := memberOf(c, listDealsRoute); !ok {
 		return
 	}
-	query := r.URL.Query()
+	query := c.Request.URL.Query()
 	limit := defaultDealPage
 	if text := query.Get("limit"); text != "" {
 		n, err := strconv.Atoi(text)
 		if err != nil || n < 1 || n > maxDealPage {
-			writeError(w, nethttp.StatusBadRequest, fmt.Sprintf("limit is not a number from 1 to %d", maxDealPage))
+			writeError(c, nethttp.StatusBadRequest, fmt.Sprintf("limit is not a number from 1 to %d", maxDealPage))
 			return
 		}
 		limit = n
@@ -792,7 +792,7 @@ func (p *dealsProduct) listDeals(w nethttp.ResponseWriter, r *nethttp.Request) {
 	var total int64
 	if err := chain.Count(&total).Error; err != nil {
 		log.FromContext(ctx).Error("counting deals", "error", err)
-		writeError(w, nethttp.StatusServiceUnavailable, "the deal table cannot be read")
+		writeError(c, nethttp.StatusServiceUnavailable, "the deal table cannot be read")
 		return
 	}
 	var deals []Deal
@@ -806,34 +806,34 @@ func (p *dealsProduct) listDeals(w nethttp.ResponseWriter, r *nethttp.Request) {
 		Find(&deals).Error
 	if err != nil {
 		log.FromContext(ctx).Error("reading deals", "error", err)
-		writeError(w, nethttp.StatusServiceUnavailable, "the deal table cannot be read")
+		writeError(c, nethttp.StatusServiceUnavailable, "the deal table cannot be read")
 		return
 	}
 	out := dealList{Total: total, Deals: make([]dealView, 0, len(deals))}
 	for _, d := range deals {
 		out.Deals = append(out.Deals, viewOfDeal(d))
 	}
-	_ = speedhttp.WriteJSON(w, nethttp.StatusOK, out)
+	c.JSON(nethttp.StatusOK, out)
 }
 
 // getDeal answers one deal, with its version as the ETag a write conditions on.
-func (p *dealsProduct) getDeal(w nethttp.ResponseWriter, r *nethttp.Request) {
-	ctx := r.Context()
-	if _, ok := memberOf(w, r, getDealRoute); !ok {
+func (p *dealsProduct) getDeal(c *gin.Context) {
+	ctx := c.Request.Context()
+	if _, ok := memberOf(c, getDealRoute); !ok {
 		return
 	}
-	deal, found, err := dealByID(ctx, p.db, r.PathValue("id"))
+	deal, found, err := dealByID(ctx, p.db, c.Param("id"))
 	if err != nil {
 		log.FromContext(ctx).Error("reading a deal", "error", err)
-		writeError(w, nethttp.StatusServiceUnavailable, "the deal table cannot be read")
+		writeError(c, nethttp.StatusServiceUnavailable, "the deal table cannot be read")
 		return
 	}
 	if !found {
-		writeError(w, nethttp.StatusNotFound, errDealNotFound.Error())
+		writeError(c, nethttp.StatusNotFound, errDealNotFound.Error())
 		return
 	}
-	w.Header().Set("ETag", etagOf(deal.Version))
-	_ = speedhttp.WriteJSON(w, nethttp.StatusOK, viewOfDeal(deal))
+	c.Header("ETag", etagOf(deal.Version))
+	c.JSON(nethttp.StatusOK, viewOfDeal(deal))
 }
 
 // dealPatch is the body of a change to a deal. A member left out is left as it
@@ -907,50 +907,49 @@ func (d dealPatch) changes() map[string]any {
 // account is checked before the transaction and again inside it, once the
 // update has matched the version. The change's deal.changed is staged in the
 // same transaction, so it is published if and only if the change commits.
-func (p *dealsProduct) patchDeal(w nethttp.ResponseWriter, r *nethttp.Request) {
-	ctx := r.Context()
+func (p *dealsProduct) patchDeal(c *gin.Context) {
+	ctx := c.Request.Context()
 	logger := log.FromContext(ctx)
-	self, ok := memberOf(w, r, patchDealRoute)
+	self, ok := memberOf(c, patchDealRoute)
 	if !ok {
 		return
 	}
 	if !canWriteDeals(self.Role) {
-		writeError(w, nethttp.StatusForbidden, errReadOnlyRole.Error())
+		writeError(c, nethttp.StatusForbidden, errReadOnlyRole.Error())
 		return
 	}
-	version, ok := ifMatchVersion(w, r)
+	version, ok := ifMatchVersion(c)
 	if !ok {
 		return
 	}
 	var body dealPatch
-	if err := speedhttp.Decode(r, &body); err != nil {
-		writeError(w, speedhttp.StatusFor(err), err.Error())
+	if !bindBody(c, &body) {
 		return
 	}
 	if body.OwnerID != nil {
 		belongs, err := isMember(ctx, p.db, *body.OwnerID)
 		if err != nil {
 			logger.Error("reading the owner's membership", "error", err)
-			writeError(w, nethttp.StatusServiceUnavailable, "the membership table cannot be read")
+			writeError(c, nethttp.StatusServiceUnavailable, "the membership table cannot be read")
 			return
 		}
 		if !belongs {
-			writeError(w, nethttp.StatusUnprocessableEntity, errOwnerNotMember.Error())
+			writeError(c, nethttp.StatusUnprocessableEntity, errOwnerNotMember.Error())
 			return
 		}
 	}
 	if body.AccountID != nil {
 		switch err := requireAccount(p.db.DB().WithContext(ctx), strings.TrimSpace(*body.AccountID)); {
 		case errors.Is(err, errUnknownAccount):
-			writeError(w, nethttp.StatusUnprocessableEntity, err.Error())
+			writeError(c, nethttp.StatusUnprocessableEntity, err.Error())
 			return
 		case err != nil:
 			logger.Error("reading the deal's account", "error", err)
-			writeError(w, nethttp.StatusServiceUnavailable, "the account table cannot be read")
+			writeError(c, nethttp.StatusServiceUnavailable, "the account table cannot be read")
 			return
 		}
 	}
-	id := r.PathValue("id")
+	id := c.Param("id")
 	changes := body.changes()
 	changes["version"] = version + 1
 	var updated Deal
@@ -981,17 +980,17 @@ func (p *dealsProduct) patchDeal(w nethttp.ResponseWriter, r *nethttp.Request) {
 	})
 	switch {
 	case errors.Is(err, errDealNotFound):
-		writeError(w, nethttp.StatusNotFound, err.Error())
+		writeError(c, nethttp.StatusNotFound, err.Error())
 	case errors.Is(err, errVersionMismatch):
-		writeError(w, nethttp.StatusPreconditionFailed, err.Error())
+		writeError(c, nethttp.StatusPreconditionFailed, err.Error())
 	case errors.Is(err, errUnknownAccount):
-		writeError(w, nethttp.StatusUnprocessableEntity, err.Error())
+		writeError(c, nethttp.StatusUnprocessableEntity, err.Error())
 	case err != nil:
 		logger.Error("changing a deal", "error", err)
-		writeError(w, nethttp.StatusInternalServerError, "the deal could not be written")
+		writeError(c, nethttp.StatusInternalServerError, "the deal could not be written")
 	default:
-		w.Header().Set("ETag", etagOf(updated.Version))
-		_ = speedhttp.WriteJSON(w, nethttp.StatusOK, viewOfDeal(updated))
+		c.Header("ETag", etagOf(updated.Version))
+		c.JSON(nethttp.StatusOK, viewOfDeal(updated))
 	}
 }
 
@@ -1029,34 +1028,33 @@ type moveView struct {
 // activity row, which is what traces an event a consumer received back to the
 // write; the relay publishes an event under the identifier it was staged with
 // every time.
-func (p *dealsProduct) moveDeal(w nethttp.ResponseWriter, r *nethttp.Request) {
-	ctx := r.Context()
+func (p *dealsProduct) moveDeal(c *gin.Context) {
+	ctx := c.Request.Context()
 	logger := log.FromContext(ctx)
-	self, ok := memberOf(w, r, moveDealRoute)
+	self, ok := memberOf(c, moveDealRoute)
 	if !ok {
 		return
 	}
 	if !canWriteDeals(self.Role) {
-		writeError(w, nethttp.StatusForbidden, errReadOnlyRole.Error())
+		writeError(c, nethttp.StatusForbidden, errReadOnlyRole.Error())
 		return
 	}
-	version, ok := ifMatchVersion(w, r)
+	version, ok := ifMatchVersion(c)
 	if !ok {
 		return
 	}
 	var body moveRequest
-	if err := speedhttp.Decode(r, &body); err != nil {
-		writeError(w, speedhttp.StatusFor(err), err.Error())
+	if !bindBody(c, &body) {
 		return
 	}
 	target, found, err := stageByKey(ctx, p.db, body.Stage)
 	if err != nil {
 		logger.Error("reading a stage", "error", err)
-		writeError(w, nethttp.StatusServiceUnavailable, "the pipeline cannot be read")
+		writeError(c, nethttp.StatusServiceUnavailable, "the pipeline cannot be read")
 		return
 	}
 	if !found {
-		writeError(w, nethttp.StatusUnprocessableEntity, errUnknownStage.Error())
+		writeError(c, nethttp.StatusUnprocessableEntity, errUnknownStage.Error())
 		return
 	}
 
@@ -1066,21 +1064,21 @@ func (p *dealsProduct) moveDeal(w nethttp.ResponseWriter, r *nethttp.Request) {
 	// the update below is conditioned on that version: a writer that got in
 	// between makes it match no row. The transaction therefore starts with its
 	// write.
-	id := r.PathValue("id")
+	id := c.Param("id")
 	current, found, err := dealByID(ctx, p.db, id)
 	switch {
 	case err != nil:
 		logger.Error("reading a deal", "error", err)
-		writeError(w, nethttp.StatusServiceUnavailable, "the deal table cannot be read")
+		writeError(c, nethttp.StatusServiceUnavailable, "the deal table cannot be read")
 		return
 	case !found:
-		writeError(w, nethttp.StatusNotFound, errDealNotFound.Error())
+		writeError(c, nethttp.StatusNotFound, errDealNotFound.Error())
 		return
 	case current.Version != version:
-		writeError(w, nethttp.StatusPreconditionFailed, errVersionMismatch.Error())
+		writeError(c, nethttp.StatusPreconditionFailed, errVersionMismatch.Error())
 		return
 	case current.StageKey == target.Key:
-		writeError(w, nethttp.StatusConflict, errAlreadyInStage.Error())
+		writeError(c, nethttp.StatusConflict, errAlreadyInStage.Error())
 		return
 	}
 	from := current.StageKey
@@ -1154,16 +1152,16 @@ func (p *dealsProduct) moveDeal(w nethttp.ResponseWriter, r *nethttp.Request) {
 	})
 	switch {
 	case errors.Is(err, errVersionMismatch):
-		writeError(w, nethttp.StatusPreconditionFailed, err.Error())
+		writeError(c, nethttp.StatusPreconditionFailed, err.Error())
 		return
 	case err != nil:
 		logger.Error("moving a deal", "error", err)
-		writeError(w, nethttp.StatusInternalServerError, "the stage move could not be written")
+		writeError(c, nethttp.StatusInternalServerError, "the stage move could not be written")
 		return
 	}
 
-	w.Header().Set("ETag", etagOf(moved.Version))
-	_ = speedhttp.WriteJSON(w, nethttp.StatusOK, moveView{Deal: viewOfDeal(moved), Activity: viewOfActivity(activity)})
+	c.Header("ETag", etagOf(moved.Version))
+	c.JSON(nethttp.StatusOK, moveView{Deal: viewOfDeal(moved), Activity: viewOfActivity(activity)})
 }
 
 // stageWrite stages the event of a creation, a change or a deletion in the
@@ -1182,17 +1180,17 @@ func (p *dealsProduct) stageWrite(tx *gorm.DB, self member, eventType, outcome, 
 // It is addressed by the identifier half of its primary key; the tenant half is
 // the filter's to fill from the request. A deletion that removed a deal stages
 // deal.deleted in its transaction, and one that found no deal stages nothing.
-func (p *dealsProduct) deleteDeal(w nethttp.ResponseWriter, r *nethttp.Request) {
-	ctx := r.Context()
-	self, ok := memberOf(w, r, deleteDealRoute)
+func (p *dealsProduct) deleteDeal(c *gin.Context) {
+	ctx := c.Request.Context()
+	self, ok := memberOf(c, deleteDealRoute)
 	if !ok {
 		return
 	}
 	if !canWriteDeals(self.Role) {
-		writeError(w, nethttp.StatusForbidden, errReadOnlyRole.Error())
+		writeError(c, nethttp.StatusForbidden, errReadOnlyRole.Error())
 		return
 	}
-	id := r.PathValue("id")
+	id := c.Param("id")
 	err := p.db.DB().WithContext(ctx).Transaction(func(tx *gorm.DB) error {
 		result := tx.Delete(&Deal{ID: id})
 		switch {
@@ -1205,12 +1203,12 @@ func (p *dealsProduct) deleteDeal(w nethttp.ResponseWriter, r *nethttp.Request) 
 	})
 	switch {
 	case errors.Is(err, errDealNotFound):
-		writeError(w, nethttp.StatusNotFound, err.Error())
+		writeError(c, nethttp.StatusNotFound, err.Error())
 	case err != nil:
 		log.FromContext(ctx).Error("deleting a deal", "error", err)
-		writeError(w, nethttp.StatusInternalServerError, "the deal could not be deleted")
+		writeError(c, nethttp.StatusInternalServerError, "the deal could not be deleted")
 	default:
-		w.WriteHeader(nethttp.StatusNoContent)
+		c.Status(nethttp.StatusNoContent)
 	}
 }
 
@@ -1310,15 +1308,15 @@ func dealsModule() core.Module {
 			if err != nil {
 				return fmt.Errorf("binding the deal routes: %w", err)
 			}
-			api.Route(createDealRoute, nethttp.HandlerFunc(product.createDeal))
-			api.Route(listDealsRoute, nethttp.HandlerFunc(product.listDeals))
-			api.Route(getDealRoute, nethttp.HandlerFunc(product.getDeal))
-			api.Route(patchDealRoute, nethttp.HandlerFunc(product.patchDeal))
-			api.Route(moveDealRoute, nethttp.HandlerFunc(product.moveDeal))
-			api.Route(deleteDealRoute, nethttp.HandlerFunc(product.deleteDeal))
-			api.Route(setStakeholdersRoute, nethttp.HandlerFunc(product.setStakeholders))
-			api.Route(addStakeholderRoute, nethttp.HandlerFunc(product.addStakeholder))
-			api.Route(removeStakeholderRoute, nethttp.HandlerFunc(product.removeStakeholder))
+			mount(api, createDealRoute, product.createDeal)
+			mount(api, listDealsRoute, product.listDeals)
+			mount(api, getDealRoute, product.getDeal)
+			mount(api, patchDealRoute, product.patchDeal)
+			mount(api, moveDealRoute, product.moveDeal)
+			mount(api, deleteDealRoute, product.deleteDeal)
+			mount(api, setStakeholdersRoute, product.setStakeholders)
+			mount(api, addStakeholderRoute, product.addStakeholder)
+			mount(api, removeStakeholderRoute, product.removeStakeholder)
 			return nil
 		},
 

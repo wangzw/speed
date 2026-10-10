@@ -453,3 +453,42 @@ func TestNoEndpointIsNotAFailure(t *testing.T) {
 		t.Errorf("an empty endpoint set resolved to %d endpoints", len(settings))
 	}
 }
+
+// TestMaxBodyBytesHasThreeStatesAndRefusesANegativeOne pins the body limit as an
+// optional item in the states the surface documents. Absent takes the default;
+// an explicit 0 removes the limit, which is the one way to ask for no limit; any
+// other positive number is taken as given. A negative number is none of those: it
+// is a typo and a startup failure, not a limit nobody can meet.
+//
+// The explicit 0 is the row that tells a limit read as "0 means the default" or
+// "0 is refused" from the right reading, and the negative row the one that tells a
+// check that accepts anything non-zero.
+func TestMaxBodyBytesHasThreeStatesAndRefusesANegativeOne(t *testing.T) {
+	zero, given, negative := int64(0), int64(7), int64(-1)
+	settings, err := moduleConfig{Endpoints: map[string]endpointConfig{
+		"absent": {Address: "127.0.0.1:0"},
+		"off":    {Address: "127.0.0.1:0", MaxBodyBytes: &zero},
+		"given":  {Address: "127.0.0.1:0", MaxBodyBytes: &given},
+	}}.resolve()
+	if err != nil {
+		t.Fatalf("resolving the three states: %v", err)
+	}
+	limits := map[string]int64{}
+	for _, s := range settings {
+		limits[s.name] = s.maxBodyBytes
+	}
+	for name, want := range map[string]int64{"absent": defaultMaxBodyBytes, "off": 0, "given": 7} {
+		if limits[name] != want {
+			t.Errorf("the endpoint with max-body-bytes %s resolved to %d, want %d", name, limits[name], want)
+		}
+	}
+
+	_, err = moduleConfig{Endpoints: map[string]endpointConfig{
+		"public": {Address: "127.0.0.1:0", MaxBodyBytes: &negative},
+	}}.resolve()
+	if err == nil {
+		t.Fatal("a negative max-body-bytes was accepted")
+	}
+	mustContain(t, err.Error(), "max-body-bytes", "the item that was refused")
+	mustContain(t, err.Error(), `endpoint "public"`, "the endpoint that gave it")
+}

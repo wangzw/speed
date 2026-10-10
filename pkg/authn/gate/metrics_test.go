@@ -2,7 +2,6 @@ package gate
 
 import (
 	"context"
-	nethttp "net/http"
 	"net/http/httptest"
 	"testing"
 
@@ -68,11 +67,10 @@ func TestTheConclusionCountsReachTheMetricCapability(t *testing.T) {
 			instance: provider,
 		}},
 	}.drive(t, func(ctx context.Context, _ *core.Registry) error {
-		handler := router.endpoints["public"].middleware[0].Wrap(nethttp.HandlerFunc(
-			func(nethttp.ResponseWriter, *nethttp.Request) {}))
-		handler.ServeHTTP(httptest.NewRecorder(), withBasic(request("GET", "/orders"), "alice", "secret"))
-		handler.ServeHTTP(httptest.NewRecorder(), request("GET", "/orders"))
-		handler.ServeHTTP(httptest.NewRecorder(), request("GET", "/orders"))
+		engine, _ := engineWith(router.endpoints["public"].middleware[0].Handler)
+		engine.ServeHTTP(httptest.NewRecorder(), withBasic(request("GET", "/orders"), "alice", "secret"))
+		engine.ServeHTTP(httptest.NewRecorder(), request("GET", "/orders"))
+		engine.ServeHTTP(httptest.NewRecorder(), request("GET", "/orders"))
 
 		var rm metricdata.ResourceMetrics
 		if err := collected.Collect(ctx, &rm); err != nil {

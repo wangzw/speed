@@ -269,13 +269,13 @@ func TestAfterStopNoRequestReachesABackend(t *testing.T) {
 		t.Fatalf("the drive failed: %v", err)
 	}
 
-	handler := router.endpoints["public"].middleware[0].Wrap(nethttp.HandlerFunc(
-		func(nethttp.ResponseWriter, *nethttp.Request) {
-			t.Error("the handler was reached after the gateway had stopped")
-		}))
+	engine, seen := engineWith(router.endpoints["public"].middleware[0].Handler)
 	w := httptest.NewRecorder()
-	handler.ServeHTTP(w, withBasic(request("GET", "/orders"), "alice", "secret"))
+	engine.ServeHTTP(w, withBasic(request("GET", "/orders"), "alice", "secret"))
 
+	if seen.reached {
+		t.Error("the handler was reached after the gateway had stopped")
+	}
 	if w.Code != nethttp.StatusServiceUnavailable {
 		t.Errorf("a request after Stop answered %d, want %d", w.Code, nethttp.StatusServiceUnavailable)
 	}
@@ -301,7 +301,7 @@ func (c *countingVerifier) Verify(ctx context.Context, subject string, cred auth
 // capability and is not a gateway.
 type foreignGate struct{}
 
-func (foreignGate) Exempt(string, string) {}
+func (foreignGate) Exempt(string, string, string) {}
 
 // TestTheCallbacksPassByAnInstanceSuppliedForTheGateway holds what the
 // descriptor does with an instance this module did not build: nothing. The

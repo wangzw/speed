@@ -45,7 +45,7 @@ var _ Router = wrappedRouter{}
 // what the other modules take up as the Router, which is how New not having run
 // shows: a router built from this configuration would be the answer otherwise.
 func TestASuppliedInstanceTakesThePlaceOfPrepareAndNew(t *testing.T) {
-	control := startAssembly(t, moduleConfig{}, testModule())
+	control := startAssembly(t, moduleConfig{}, Module())
 	controlErr := control.stop(t)
 	if controlErr == nil {
 		t.Fatal("an assembly whose configuration declares no endpoint started up, so the run " +
@@ -73,7 +73,7 @@ func TestASuppliedInstanceTakesThePlaceOfPrepareAndNew(t *testing.T) {
 		},
 	}
 
-	entry := testModule()
+	entry := Module()
 	reg := core.New()
 	supplyConfig(reg, moduleConfig{})
 	reg.Register(entry)
@@ -107,7 +107,7 @@ func TestASuppliedInstanceTakesThePlaceOfPrepareAndNew(t *testing.T) {
 // observation is made on a router nobody else has touched, so a change in it can
 // only have come from the callback just called.
 func TestCallbacksLeaveAWrappedProductAlone(t *testing.T) {
-	m := testModule()
+	m := Module()
 	ctx := context.Background()
 	inner := testProduct(t, oneEndpoint("public"))
 	wrapped := wrappedRouter{inner}
@@ -156,11 +156,11 @@ func TestASuppliedInstanceThatIsNotTheProductIsLeftToItsOwner(t *testing.T) {
 	ctx := context.Background()
 
 	owned := testProduct(t, endpointsAt(100*time.Millisecond, "public"))
-	owner := testModule()
+	owner := Module()
 	if err := owner.Migrate(ctx, nil, owned); err != nil {
 		t.Fatalf("the owner opening the gate of its router: %v", err)
 	}
-	endpointOf(t, owned, "public").Route("GET /held", gate)
+	endpointOf(t, owned, "public").Route("GET", "/held", gate.gin)
 	if err := owner.Start(ctx, nil, owned); err != nil {
 		t.Fatalf("the owner sealing the gate of its router: %v", err)
 	}
@@ -185,7 +185,7 @@ func TestASuppliedInstanceThatIsNotTheProductIsLeftToItsOwner(t *testing.T) {
 			return nil
 		},
 	}
-	entry := testModule()
+	entry := Module()
 	reg := core.New()
 	supplyConfig(reg, moduleConfig{})
 	reg.Register(entry)

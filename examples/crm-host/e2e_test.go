@@ -155,8 +155,9 @@ func TestEveryStackServesTheSamePath(t *testing.T) {
 
 		// The login route is exempt, so a credential that does not sign
 		// anyone in is answered by the login handler, with its error body,
-		// rather than by the gateway, whose refusals carry none. The frozen
-		// exemption table the gateway lists at startup names the route.
+		// rather than by the gateway, whose refusals are problem details
+		// with no error member. The frozen exemption table the gateway
+		// lists at startup names the route.
 		wrong := h.post(t, accountEndpoint, "/login", "", basicCredential{user: alice.Email, password: "not it"}, nil)
 		expect(t, "a login with the wrong password", wrong, nethttp.StatusUnauthorized)
 		var refusal apiError
@@ -354,6 +355,33 @@ func TestASessionEndsWhenItsLifetimeLapses(t *testing.T) {
 	})
 }
 
+// TestALoginAndALogoutAreJournalled is the case for the two routes the sessions
+// module hands the journal, on the local stack: a login and a logout each leave
+// a request row, the action the method and the object the route as it was
+// registered, with the status the route answered. The login route is exempt
+// from the gateway and the logout is guarded, and both are journalled all the
+// same; a route dropped from the module's list is the entry that goes on
+// looking well formed and never brings a row.
+func TestALoginAndALogoutAreJournalled(t *testing.T) {
+	c := newCase(t, stackNamed(t, localStack))
+	c.migrate()
+	alice := c.createUser("alice")
+	h := c.serve()
+
+	token := h.login(t, alice)
+	expect(t, "a logout with the token", h.post(t, accountEndpoint, "/logout", "", bearer(token), nil),
+		nethttp.StatusNoContent)
+
+	for _, want := range []struct{ route, outcome string }{
+		{loginRoute, "201"},
+		{logoutRoute, "204"},
+	} {
+		c.awaitJournal(want.route+" answered "+want.outcome, func(r auditRow) bool {
+			return r.requestOn(want.route) && r.outcome == want.outcome
+		})
+	}
+}
+
 // TestALifetimeThatIsNotPositiveIssuesNoSession is the case for the lifetime a
 // store cannot keep. The key-value capability stores a value whose lifetime is
 // not positive with no expiry at all, so a login that passed such a lifetime on
@@ -514,7 +542,7 @@ func TestTheRequestSurfaceKeepsTenantsApart(t *testing.T) {
 			// row: the route, the status, the tenant the request named and
 			// the caller who named it.
 			sub.awaitJournal("the membership layer's refusal", func(r auditRow) bool {
-				return r.source == "request" && r.object == listMembersRoute && r.outcome == "403" &&
+				return r.requestOn(listMembersRoute) && r.outcome == "403" &&
 					r.tenant == globex.ID && r.actor == usersBackendName+"/"+alice.ID
 			})
 		})
@@ -522,13 +550,15 @@ func TestTheRequestSurfaceKeepsTenantsApart(t *testing.T) {
 		t.Run("a request with no credential is refused before resolution", func(t *testing.T) {
 			sub := c.in(t)
 			unknown := sub.tenantNamed("nosuch").Alias
-			expect(t, "no credential naming an unknown tenant",
-				h.get(t, apiEndpoint, "/members", unknown, noCredential{}), nethttp.StatusUnauthorized)
+			unauthenticated := h.get(t, apiEndpoint, "/members", unknown, noCredential{})
+			expect(t, "no credential naming an unknown tenant", unauthenticated, nethttp.StatusUnauthorized)
+			requireProblem(t, "the gateway's refusal", unauthenticated)
 			// The same tenant with a credential is resolution's to refuse,
 			// which is what tells the two layers apart by the answer: a
 			// gateway inside resolution would have answered 404 above.
-			expect(t, "a credential naming an unknown tenant",
-				h.get(t, apiEndpoint, "/members", unknown, basic(alice)), nethttp.StatusNotFound)
+			unresolved := h.get(t, apiEndpoint, "/members", unknown, basic(alice))
+			expect(t, "a credential naming an unknown tenant", unresolved, nethttp.StatusNotFound)
+			requireProblem(t, "resolution's refusal", unresolved)
 		})
 
 		t.Run("a disabled tenant and an unknown one get the same answer", func(t *testing.T) {
@@ -609,7 +639,7 @@ func TestTheRequestSurfaceKeepsTenantsApart(t *testing.T) {
 			// knocking on the admin endpoint leaves a request row with the
 			// caller named.
 			sub.awaitJournal("the operator check's refusal", func(r auditRow) bool {
-				return r.source == "request" && r.object == listTenantsRoute && r.outcome == "403" &&
+				return r.requestOn(listTenantsRoute) && r.outcome == "403" &&
 					r.actor == usersBackendName+"/"+alice.ID
 			})
 			token := h.login(t, alice)
@@ -1061,8 +1091,8 @@ func TestTheMembershipLayerSitsInsideTheJournalAndTheLimiter(t *testing.T) {
 }
 
 // chainLayers splits a chain listing into its layers' names, outermost first:
-// "http:base -> authn.gate(github.com/...) -> ..." reads as
-// ["http:base", "authn.gate", ...].
+// "http:base -> http:fallback -> authn.gate(github.com/...) -> ..." reads as
+// ["http:base", "http:fallback", "authn.gate", ...].
 func chainLayers(chain string) []string {
 	var names []string
 	for part := range strings.SplitSeq(chain, " -> ") {
@@ -1176,8 +1206,10 @@ func holdRequest(t *testing.T, h *crmHost, what, method, path string, ref tenant
 func (c *crmCase) answeredAt(ref tenantRef, route string) (time.Time, bool) {
 	c.t.Helper()
 	var at time.Time
+	method, path := splitRoute(route)
 	err := c.sql().QueryRow(c.rebind("SELECT occurred_at FROM audit_entries "+
-		"WHERE source = 'request' AND tenant_id = ? AND object = ? ORDER BY id DESC LIMIT 1"), ref.ID, route).Scan(&at)
+		"WHERE source = 'request' AND tenant_id = ? AND action = ? AND object = ? ORDER BY id DESC LIMIT 1"),
+		ref.ID, method, path).Scan(&at)
 	switch {
 	case errors.Is(err, sql.ErrNoRows):
 		return time.Time{}, false
@@ -1316,9 +1348,9 @@ func TestAnInterruptDrainsRequestsInFlight(t *testing.T) {
 		counts := map[string]int{}
 		for _, r := range c.journal() {
 			switch {
-			case r.source == "request" && r.object == createDealRoute && r.tenant == w.acme.ID && r.outcome == "201":
+			case r.requestOn(createDealRoute) && r.tenant == w.acme.ID && r.outcome == "201":
 				counts["the creation's request row"]++
-			case r.source == "request" && r.object == writeSettingRoute && r.tenant == w.acme.ID && r.outcome == "200":
+			case r.requestOn(writeSettingRoute) && r.tenant == w.acme.ID && r.outcome == "200":
 				counts["the settings write's request row"]++
 			case r.source == "seam" && r.action == settingWriteAction && r.object == "settings/deals.default-currency":
 				counts["the settings write's seam row"]++
@@ -1727,6 +1759,66 @@ func TestABodyPastTheEndpointsLimitIsRefused(t *testing.T) {
 	}
 	expect(t, "a contact within the body limit",
 		h.send(t, api(nethttp.MethodPost, "/contacts", acme, token, contact("con-1", "Ann"))), nethttp.StatusCreated)
+}
+
+// TestARequestNoRouteServesIsRefusedAsAProblem is the case for the answers the
+// HTTP module writes itself, on the local stack: a path no route serves and a
+// method the path does not take. Both are problem details, and both pass
+// through the layers first, so on a guarded endpoint the gateway answers a
+// request with no credential before the module answers that its path has no
+// route, and the Allow header the module sets for a method the path does not
+// take reaches no caller a layer turned away. A HEAD request is a method a path
+// serving GET alone does not take.
+func TestARequestNoRouteServesIsRefusedAsAProblem(t *testing.T) {
+	c := newCase(t, stackNamed(t, localStack))
+	c.migrate()
+	h := c.serve()
+	acme := c.tenantNamed("acme")
+	ann := h.adminCreateUser(t, c.userNamed("ann"))
+	h.adminCreateTenant(t, acme)
+	h.adminGrant(t, acme, ann, roleOwner)
+
+	unrouted := h.get(t, opsEndpoint, "/nosuch", "", noCredential{})
+	expect(t, "a path no route serves on the unguarded endpoint", unrouted, nethttp.StatusNotFound)
+	requireProblem(t, "the answer to a path no route serves", unrouted)
+
+	wrongMethod := h.send(t, request{method: nethttp.MethodPost, endpoint: opsEndpoint, path: "/health"})
+	expect(t, "a method the health path does not take", wrongMethod, nethttp.StatusMethodNotAllowed)
+	requireProblem(t, "the answer to a method the path does not take", wrongMethod)
+	if allow := wrongMethod.header.Get("Allow"); allow != nethttp.MethodGet {
+		t.Errorf("the answer to POST /health allows %q, want %s", allow, nethttp.MethodGet)
+	}
+	// The router sends a HEAD request only to a route registered for HEAD, so
+	// a path that serves GET alone does not take it.
+	head := h.send(t, request{method: nethttp.MethodHead, endpoint: opsEndpoint, path: "/health"})
+	expect(t, "a HEAD request to the health path", head, nethttp.StatusMethodNotAllowed)
+
+	member := h.get(t, apiEndpoint, "/nosuch", acme.Alias, basic(ann))
+	expect(t, "a member asking for a path no route serves", member, nethttp.StatusNotFound)
+	requireProblem(t, "the answer to a member asking for a path no route serves", member)
+
+	deleteMembers := h.send(t, request{
+		method: nethttp.MethodDelete, endpoint: apiEndpoint, path: "/members", tenant: acme.Alias, cred: basic(ann),
+	})
+	expect(t, "a member deleting the member list", deleteMembers, nethttp.StatusMethodNotAllowed)
+	requireProblem(t, "the answer to a member using a method the members path does not take", deleteMembers)
+	if allow := deleteMembers.header.Get("Allow"); allow != "GET, POST" {
+		t.Errorf("the answer to DELETE /members allows %q, want \"GET, POST\"", allow)
+	}
+
+	anonymous := h.get(t, apiEndpoint, "/nosuch", acme.Alias, noCredential{})
+	expect(t, "no credential asking for a path no route serves", anonymous, nethttp.StatusUnauthorized)
+	requireProblem(t, "the gateway's answer to a path no route serves", anonymous)
+
+	anonymousDelete := h.send(t, request{
+		method: nethttp.MethodDelete, endpoint: apiEndpoint, path: "/members", tenant: acme.Alias, cred: noCredential{},
+	})
+	expect(t, "no credential using a method the members path does not take", anonymousDelete, nethttp.StatusUnauthorized)
+	requireProblem(t, "the gateway's answer to a method the members path does not take", anonymousDelete)
+	if allow := anonymousDelete.header.Get("Allow"); allow != "" {
+		t.Errorf("the gateway's refusal of DELETE /members carries Allow %q, which tells a caller with no credential "+
+			"which methods the path takes", allow)
+	}
 }
 
 // TestAnInProcessBackendRefusesADeploymentOfSeveralReplicas is the case for the

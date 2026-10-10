@@ -42,7 +42,7 @@ claim there has its case in `e2e_test.go` or a slice's own test file, or in
 |---|---|
 | `main.go` | The package comment, the stack table and the command tree, with the platform modules each command runs. |
 | `host.go` | The host identity (prefix `CRM`) and the endpoint names. |
-| `application.go` | The registration table every host module goes through, the release records, the error body, identifiers. |
+| `application.go` | The registration table every host module goes through, the release records, the error body, the route and request-body helpers, identifiers. |
 | `users.go` | The global users table, password hashing at the cost `users.password-iterations` gives — a hash at another cost is derived again at it on its user's next sign-in — and the credential backend for Basic credentials of CRM users (an open claim). |
 | `sessions.go` | The bearer backend (the `bearer` scheme claimed whole), sessions in the key-value store, the `sessions.ttl` setting, and `POST /login`, `POST /logout` on the account endpoint. |
 | `members.go` | The scoped memberships table, the membership layer on the API endpoint, `GET`/`POST /members`, and `GET /me` on the account endpoint. |
@@ -73,6 +73,26 @@ claim there has its case in `e2e_test.go` or a slice's own test file, or in
   statement shape chosen because the first misbehaves. A case that goes red
   because a module misbehaves stays red — never skipped, never weakened —
   until the module is fixed.
+- **A route is one string, `METHOD /path`, with the path in gin's grammar.**
+  `:name` is a parameter and `*name` a catch-all, and the path is in the form
+  gin keeps it in: a leading slash, no repeated slash. `mount` splits the
+  string for `Endpoint.Route`, a module's `journalled` list hands it to the
+  journal's `requests` item as it is, and the gateway's exemption takes the
+  same method and path. The journal and the gateway compare the request's
+  method and the matched route's path with that pair character for character,
+  so a spelling no route carries is a well-formed entry that never matches and
+  reports nothing: a case that expects a route's row reads that row. The
+  journal's row has the method as its action and the path as registered as its
+  object — `/contacts/:id`, not the path the client sent, which is in its
+  detail.
+- **A request body is bound with `bindBody`, and the host adds no strictness to
+  what the binder reads.** It is gin's `ShouldBindJSON` followed by the body
+  type's own `Validate`; a body past the endpoint's limit answers 413, one the
+  type cannot hold 400, and one `Validate` refuses 422. A member the type does
+  not have is passed over, member names match without regard to case, the last
+  of a repeated member stands, and a JSON null leaves the target as it was;
+  where a case depends on any of these, it says so and asserts the binder's
+  reading rather than a stricter one the host would have to bring back.
 - **The command tree is the host's.** `main.go` names the platform modules
   each command runs; each host module names the commands it runs on in its
   registration, and the tree takes it in by name. `IncludeAll` is not used,
@@ -110,8 +130,8 @@ claim there has its case in `e2e_test.go` or a slice's own test file, or in
 - **Every module that holds a logger requires `log.Logger`.** Each application
   module with a product holds a Named logger for its release records.
 - **An application module stops after the requests in flight are answered.**
-  The registry stops every module that declares `Serve` first — `http.stdmux`
-  is this host's one, and its Stop returns once its drain is over — then every
+  The registry stops every module that declares `Serve` first — `http` is
+  this host's one, and its Stop returns once its drain is over — then every
   other module, then closes them all, each in reverse construction order. So
   an application module's Stop and Close follow the drain wherever it was
   constructed, and a Stop may stop taking work without refusing a request

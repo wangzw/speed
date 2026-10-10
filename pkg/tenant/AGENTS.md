@@ -187,6 +187,24 @@ here must not cross, and how to run it.
   writes around the product carries every one of them, and the callbacks would
   act on the product inside it (`catalog/supplied_test.go`,
   `resolve/supplied_test.go`).
+- **The resolution layer refuses through the entry point's `Fail`, with the
+  status as the only member of the `Problem`.** A request that carries no
+  tenant, names none on the roster or names a disabled one gets the same 404,
+  and a roster that cannot be read or a panic of the layer's own gets a 500; the
+  shape of the body is the entry point's, and the reason goes to the request's
+  logger. A member beyond the status — the reason above all — would let a caller
+  tell a name that never existed from one that was switched off.
+- **The resolution layer does not read the route.** It runs for every request on
+  the endpoint, including one that matches no route and one whose method the
+  path does not allow: a request that carries a tenant goes on to the entry
+  point's own 404 or 405, and one that carries none is refused by this layer
+  before the entry point could tell the two apart. A branch on `c.FullPath()`
+  would let those requests reach the layers inside with no tenant.
+- **The layer recovers the panic of its own work and not the handler's.** An
+  extractor registered through the seam runs inside `admit`, which recovers and
+  answers 500 under this module's name; `handle` calls `c.Next` outside it, so a
+  panic of a route behind the layer reaches the entry point's fallback
+  (`resolve/panic_test.go`).
 - **The endpoint list is a set, judged at startup.** The entry point's surface
   takes an endpoint by name and appends the layer without deduplicating, so a
   name written twice would put the resolution layer on that endpoint twice and
@@ -384,9 +402,13 @@ is where a read-only model's reads over a nullable tenant column are, on both
 dialects;
 `pkg/tenant/resolve/extract_test.go` is where the
 registration window's behaviour under a duplicate or a late registration is;
-`pkg/tenant/resolve/admit_test.go` and `panic_test.go` are where the layer's
-answers to a request are — the four statuses, what an admitted request
-carries, which logger a refusal goes to, and whose panic the layer recovers;
+`pkg/tenant/resolve/admit_test.go`, `unmatched_test.go` and `panic_test.go` are
+where the layer's answers to a request are — each refusal and the 500, in the
+entry point's error shape or a delivered responder's, what an admitted request
+carries, which logger a refusal goes to, the requests that match no route or
+whose method is not allowed, and whose panic the layer recovers. They run the
+entry point module itself on a loopback port the system picks, and read the
+response off the socket (`resolve/host_test.go`);
 `pkg/tenant/resolve/config_test.go` is where the judgement over this module's
 own configuration is pinned — a missing key, an empty list or name, and an
 endpoint named twice; `pkg/tenant/catalog/roster_test.go` is where the

@@ -4,10 +4,10 @@ import (
 	"go/ast"
 	"go/token"
 	"go/types"
-	nethttp "net/http"
-	"net/http/httptest"
 	"slices"
 	"testing"
+
+	"github.com/gin-gonic/gin"
 )
 
 // exportedSurface is the package's exported surface, written out. Every entry
@@ -17,49 +17,56 @@ import (
 // The list is here rather than derived because deriving it would only restate
 // whatever the code happens to say. Pinned, a new exported symbol has to be
 // added here by hand, and the entry is where the reader asks whether it
-// belongs on the surface at all. A "lenient decoding" switch is exactly that
-// kind of addition: the design says unknown fields are rejected with no switch,
-// and an exported knob for it would fail this test the moment it appeared.
+// belongs on the surface at all. A knob that changes how a request body is
+// decoded is exactly that kind of addition: body binding is gin's, and an
+// exported option for it would fail this test the moment it appeared.
 var exportedSurface = []string{
-	"embed Engine.nethttp.Handler",
+	"const ModuleName",
 	"field Middleware.After",
 	"field Middleware.Before",
+	"field Middleware.Handler",
 	"field Middleware.Name",
 	"field Middleware.Order",
 	"field Middleware.Provides",
-	"field Middleware.Wrap",
+	"field Problem.Cause",
+	"field Problem.Detail",
+	"field Problem.Instance",
+	"field Problem.Status",
+	"field Problem.Title",
+	"field Problem.Type",
 	"field Spec.Document",
 	"field Spec.Endpoint",
-	"func Decode",
 	"func Draining",
+	"func Fail",
 	"func Module",
-	"func StatusFor",
-	"func WriteJSON",
 	"method Endpoint.Accepting",
 	"method Endpoint.Route",
 	"method Endpoint.Use",
-	"method Engine.Handle",
-	"method PanicResponder.RespondPanic",
+	"method ErrorResponder.RespondError",
 	"method Router.Endpoint",
-	"method Validator.Validate",
 	"type Endpoint",
-	"type Engine",
+	"type ErrorResponder",
 	"type Middleware",
-	"type PanicResponder",
+	"type Problem",
 	"type Router",
 	"type Spec",
-	"type Validator",
-	"var ErrBodyTooLarge",
-	"var ErrChainAssembly",
 	"var ErrDrainTimeout",
 	"var ErrInvalidSpec",
 	"var ErrListen",
-	"var ErrMalformedBody",
 	"var ErrMiddlewareCycle",
 	"var ErrRouteConflict",
 	"var ErrUnknownEndpoint",
-	"var ErrValidation",
 }
+
+// The registration surface is expressed in gin's types: a route takes
+// gin.HandlerFuncs, a layer is one, and the error entry point takes the gin
+// context. The names above would stay put through a change of anchor; these
+// declarations stop compiling.
+var (
+	_ func(Endpoint, string, string, ...gin.HandlerFunc) = Endpoint.Route
+	_ func(*gin.Context, Problem)                        = Fail
+	_ gin.HandlerFunc                                    = Middleware{}.Handler
+)
 
 // TestExportedSurfaceIsPinned compares the declarations the source really
 // exports with the list above, in both directions: a symbol added to the code
@@ -182,21 +189,4 @@ func exportedMembers(s *ast.TypeSpec) []string {
 		}
 	}
 	return out
-}
-
-// TestStandardServeMuxSatisfiesEngine pins the seam the package documentation
-// claims: the standard library's multiplexer fits Engine as it stands, which
-// is what lets an implementation subpackage that binds no routing library
-// exist at all. A method added to Engine that ServeMux does not have would
-// break that claim silently until the subpackage is compiled.
-func TestStandardServeMuxSatisfiesEngine(t *testing.T) {
-	var engine Engine = nethttp.NewServeMux()
-	engine.Handle("GET /things", nethttp.NotFoundHandler())
-
-	recorder := httptest.NewRecorder()
-	engine.ServeHTTP(recorder, httptest.NewRequest(nethttp.MethodGet, "/things", nil))
-	if recorder.Code != nethttp.StatusNotFound {
-		t.Errorf("the multiplexer answered %d through the seam, and the handler bound writes %d",
-			recorder.Code, nethttp.StatusNotFound)
-	}
 }

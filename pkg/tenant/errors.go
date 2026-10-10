@@ -22,9 +22,10 @@ import "errors"
 // capability directory judged.
 var (
 	// ErrNoRouter reports that Init found no HTTP entry point to register a
-	// layer on. The fix is to write the entry implementation's module name
-	// into this command: a command that resolves tenants and has no entry
-	// point has nothing to resolve them for.
+	// layer on. The fix is to write the entry point module's name, the one
+	// pkg/http exports as ModuleName, into this command: a command that
+	// resolves tenants and has no entry point has nothing to resolve them
+	// for.
 	ErrNoRouter = errors.New("tenant: no HTTP entry point in this command")
 
 	// ErrUnknownEndpoint reports that the configured endpoint list names an

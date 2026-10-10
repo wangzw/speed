@@ -8,6 +8,7 @@ import (
 	nethttp "net/http"
 	"time"
 
+	"github.com/gin-gonic/gin"
 	"gorm.io/gorm"
 	"gorm.io/gorm/clause"
 
@@ -142,19 +143,19 @@ type flowList struct {
 // deal moved between. The lines are found through the model into a type of
 // their own, which selects the columns that type has; the statement names no
 // tenant, and the filter scopes it by the model.
-func (p *flowProduct) listFlow(w nethttp.ResponseWriter, r *nethttp.Request) {
-	ctx := r.Context()
-	if _, ok := memberOf(w, r, flowRoute); !ok {
+func (p *flowProduct) listFlow(c *gin.Context) {
+	ctx := c.Request.Context()
+	if _, ok := memberOf(c, flowRoute); !ok {
 		return
 	}
 	lines := []flowView{}
 	err := p.db.DB().WithContext(ctx).Model(&StageFlow{}).Order("from_stage, to_stage").Find(&lines).Error
 	if err != nil {
 		log.FromContext(ctx).Error("reading the stage flow", "error", err)
-		writeError(w, nethttp.StatusServiceUnavailable, "the stage flow cannot be read")
+		writeError(c, nethttp.StatusServiceUnavailable, "the stage flow cannot be read")
 		return
 	}
-	_ = speedhttp.WriteJSON(w, nethttp.StatusOK, flowList{Flow: lines})
+	c.JSON(nethttp.StatusOK, flowList{Flow: lines})
 }
 
 // init registers the flow module. It runs on serve, where the stage moves that
@@ -230,7 +231,7 @@ func flowModule() core.Module {
 			if err != nil {
 				return fmt.Errorf("binding the flow route: %w", err)
 			}
-			api.Route(flowRoute, nethttp.HandlerFunc(product.listFlow))
+			mount(api, flowRoute, product.listFlow)
 			return nil
 		},
 

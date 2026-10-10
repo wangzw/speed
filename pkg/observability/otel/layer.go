@@ -1,12 +1,11 @@
 package otel
 
 import (
-	"bufio"
 	"fmt"
-	"net"
 	nethttp "net/http"
 	"time"
 
+	"github.com/gin-gonic/gin"
 	"go.opentelemetry.io/otel/attribute"
 	"go.opentelemetry.io/otel/codes"
 	"go.opentelemetry.io/otel/metric"
@@ -43,9 +42,9 @@ const (
 
 // The two attributes the request histogram and the server span carry. Both are
 // closed sets — the standard methods plus otherMethod, and the status codes —
-// so neither grows with traffic. A route attribute is not among them: this layer sits outside
-// the routing engine and the request has not been dispatched yet, so the only
-// way to fill it would be to invent a source.
+// so neither grows with traffic. A route attribute is not among them: the routes
+// are whatever the hosts register, so the dimension would grow with them and a
+// dashboard that reads it could no longer be changed.
 var (
 	attrRequestMethod = attribute.Key("http.request.method")
 	attrResponseCode  = attribute.Key("http.response.status_code")
@@ -113,162 +112,115 @@ func (p *providers) layer(endpoint string) http.Middleware {
 			(*observability.TracerProvider)(nil),
 			(*observability.MeterProvider)(nil),
 		},
-		Order: layerOrder,
-		Wrap:  p.instrument(endpoint),
+		Order:   layerOrder,
+		Handler: p.instrument(endpoint),
 	}
 }
 
-// instrument builds the wrapping function for one endpoint.
+// instrument builds the gin handler for one endpoint.
 //
 // The endpoint name is captured here because it is the only place that knows
 // it: the registration surface hands out one endpoint at a time, and nothing
 // downstream can recover which one a request arrived on.
-func (p *providers) instrument(endpoint string) func(nethttp.Handler) nethttp.Handler {
+func (p *providers) instrument(endpoint string) gin.HandlerFunc {
 	tracer := p.tp.Tracer(instrumentationName)
 	duration := p.duration
-	return func(next nethttp.Handler) nethttp.Handler {
-		return nethttp.HandlerFunc(func(w nethttp.ResponseWriter, r *nethttp.Request) {
-			// Extraction first: the span this request continues, if the caller
-			// sent one, is what decides sampling and what the trace looks like
-			// from the other side.
-			ctx := observability.Propagator().Extract(r.Context(), propagation.HeaderCarrier(r.Header))
-			ctx, span := tracer.Start(ctx, endpoint+" "+methodOf(r.Method), trace.WithSpanKind(trace.SpanKindServer))
+	return func(c *gin.Context) {
+		method := methodOf(c.Request.Method)
 
-			// The attribute keys are this module's, bound here and read by the
-			// log module without it knowing what they mean. The logger itself is
-			// injected upstream, by whoever built this context.
-			ctx = log.WithAttrs(ctx,
-				observability.TraceIDKey, span.SpanContext().TraceID().String(),
-				observability.SpanIDKey, span.SpanContext().SpanID().String(),
-			)
+		// Extraction first: the span this request continues, if the caller
+		// sent one, is what decides sampling and what the trace looks like
+		// from the other side.
+		ctx := observability.Propagator().Extract(c.Request.Context(), propagation.HeaderCarrier(c.Request.Header))
+		ctx, span := tracer.Start(ctx, endpoint+" "+method, trace.WithSpanKind(trace.SpanKindServer))
 
-			rec := &recorder{ResponseWriter: w, status: nethttp.StatusOK}
-			start := time.Now()
-			defer func() {
-				raised := recover()
-				elapsed := time.Since(start)
+		// The attribute keys are this module's, bound here and read by the
+		// log module without it knowing what they mean. The logger itself is
+		// injected upstream, by whoever built this context.
+		ctx = log.WithAttrs(ctx,
+			observability.TraceIDKey, span.SpanContext().TraceID().String(),
+			observability.SpanIDKey, span.SpanContext().SpanID().String(),
+		)
+		c.Request = c.Request.WithContext(ctx)
 
-				code := rec.status
-				if raised != nil {
-					span.RecordError(fmt.Errorf("%v", raised))
-					span.SetStatus(codes.Error, "handler panicked")
-					// Nothing was written, so the status the caller sees is the
-					// one the entry module's recovery layer writes, and that
-					// layer's default is an internal error. Reporting the
-					// recorder's untouched default instead would put every
-					// panicking request into the 200 bucket, which is the one
-					// place an operator most needs it not to be. A module that
-					// delivered a PanicResponder can write something else, and
-					// this layer cannot see that decision — the module's
-					// documentation states it as one of the things it does not
-					// guarantee.
-					if !rec.wroteHeader {
-						code = nethttp.StatusInternalServerError
-					}
+		start := time.Now()
+		defer func() {
+			raised := recover()
+			elapsed := time.Since(start)
+
+			// The writer is gin's own and this layer leaves it in place, so
+			// what it reports is what the caller is answered with: gin keeps
+			// the status it will commit, and a second WriteHeader before the
+			// commit replaces it while one after the commit is ignored.
+			code := c.Writer.Status()
+			if raised != nil {
+				span.RecordError(fmt.Errorf("%v", raised))
+				span.SetStatus(codes.Error, "handler panicked")
+				// While nothing has been written, the status the caller will
+				// see is the one the entry module's fallback writes, and the
+				// default of that response is an internal error. The status the
+				// writer holds is no answer yet — it is whatever the handler
+				// had set or the 200 the writer starts from — and reporting it
+				// would put every panicking request into the 200 bucket, which
+				// is the one place an operator most needs it not to be. A module
+				// that delivered an ErrorResponder can write another status, and
+				// this layer cannot see that decision — the module's
+				// documentation states it as one of the things it does not
+				// guarantee.
+				if !c.Writer.Written() {
+					code = nethttp.StatusInternalServerError
 				}
-				outcome := []attribute.KeyValue{
-					attrRequestMethod.String(methodOf(r.Method)),
-					attrResponseCode.Int(code),
-				}
-				duration.Record(ctx, elapsed.Seconds(), metric.WithAttributes(outcome...))
+			}
+			code = answeredWith(code)
+			outcome := []attribute.KeyValue{
+				attrRequestMethod.String(method),
+				attrResponseCode.Int(code),
+			}
+			duration.Record(ctx, elapsed.Seconds(), metric.WithAttributes(outcome...))
 
-				// The span carries the same outcome the histogram does, and a
-				// server error marks it failed whether or not the handler
-				// panicked: a 500 written on purpose is as much this endpoint's
-				// failure as one written by the recovery layer, and a span left
-				// unmarked files it with the successes wherever traces are
-				// filtered by status. A client error is the caller's, and the
-				// status stays unset for it, which is the upstream convention
-				// for a server span.
-				span.SetAttributes(outcome...)
-				if raised == nil && code >= nethttp.StatusInternalServerError {
-					span.SetStatus(codes.Error, "")
-				}
-				span.End()
+			// The span carries the same outcome the histogram does, and a
+			// server error marks it failed whether or not the handler
+			// panicked: a 500 written on purpose is as much this endpoint's
+			// failure as one written by the fallback, and a span left
+			// unmarked files it with the successes wherever traces are
+			// filtered by status. A client error is the caller's, and the
+			// status stays unset for it, which is the upstream convention
+			// for a server span.
+			span.SetAttributes(outcome...)
+			if raised == nil && code >= nethttp.StatusInternalServerError {
+				span.SetStatus(codes.Error, "")
+			}
+			span.End()
 
-				// The panic goes on to the entry module's own recovery layer,
-				// which sits outside this one. Swallowing it here would take
-				// over a promise that is not this module's, and writing a
-				// response is not this layer's job either.
-				if raised != nil {
-					panic(raised)
-				}
-			}()
+			// The panic goes on to the entry module's own fallback, which
+			// sits outside the engine this layer runs in. Swallowing it here
+			// would take over a promise that is not this module's, and
+			// writing a response is not this layer's job either.
+			if raised != nil {
+				panic(raised)
+			}
+		}()
 
-			next.ServeHTTP(rec, r.WithContext(ctx))
-		})
+		c.Next()
 	}
 }
 
-// recorder remembers what the handler answered and keeps the writer's optional
-// interfaces reachable.
+// answeredWith is the final status a caller is answered with, given the one the
+// writer holds.
 //
-// The status it keeps is the first final code the handler wrote, not the last:
-// a second WriteHeader is ignored by the server, which answers with the first,
-// so a recorder that took the last one would report a status no caller ever
-// saw. An informational code is passed on and not kept, since the final status
-// still follows it. A body written without a header is the implicit 200 the
-// status starts from.
-//
-// The two optional interfaces net/http has a name for — flushing and hijacking
-// — are forwarded explicitly rather than left to Unwrap. Unwrap is what
-// http.ResponseController follows, and a handler using it is served either way;
-// a handler that type-asserts the writer is not, because the assertion is made
-// against this type and never reaches the writer underneath. It would fail, the
-// handler's streaming branch would be skipped, and the endpoint would degrade
-// with nothing said. Forwarding makes the assertion succeed, and a writer
-// underneath that cannot do the thing is the same no-op it was before this
-// layer existed.
-type recorder struct {
-	nethttp.ResponseWriter
-	status      int
-	wroteHeader bool
-}
-
-// WriteHeader records the first final code and passes every code on.
-//
-// An informational code is not a final one. net/http sends it ahead of the
-// response and lets the handler go on to write the real status, so a 103 Early
-// Hints followed by a 200 answered the caller with the 200; keeping the 103 as
-// the first code would report a status that ends no request. 101 Switching
+// An informational code the handler set — 103 Early Hints, say — is not a final
+// one: net/http sends it ahead of the response and answers with the status that
+// follows. The writer holds the code until the header is committed and then hands
+// it on as an interim response, so a handler that goes on to write a body is
+// answered with the 200 net/http supplies while the writer still reports the
+// informational code. Recording that would put a status that ends no request into
+// a closed set it is not part of. A status the handler writes before the commit
+// replaces the code in the writer, and is the one reported. 101 Switching
 // Protocols is the exception the server makes too: it is the last thing written
 // on the connection before it changes hands, so it is the final code.
-func (r *recorder) WriteHeader(code int) {
-	if !r.wroteHeader && !informational(code) {
-		r.wroteHeader = true
-		r.status = code
+func answeredWith(status int) int {
+	if status >= 100 && status < 200 && status != nethttp.StatusSwitchingProtocols {
+		return nethttp.StatusOK
 	}
-	r.ResponseWriter.WriteHeader(code)
+	return status
 }
-
-// informational reports whether a code is sent ahead of the final response
-// rather than as it.
-func informational(code int) bool {
-	return code >= 100 && code < 200 && code != nethttp.StatusSwitchingProtocols
-}
-
-// Write passes the body on, counting it as the implicit 200 the status starts
-// from.
-func (r *recorder) Write(body []byte) (int, error) {
-	r.wroteHeader = true
-	return r.ResponseWriter.Write(body)
-}
-
-// Flush forwards to the writer underneath when it can flush.
-func (r *recorder) Flush() {
-	if f, ok := r.ResponseWriter.(nethttp.Flusher); ok {
-		f.Flush()
-	}
-}
-
-// Hijack forwards to the writer underneath when it can be taken over.
-func (r *recorder) Hijack() (net.Conn, *bufio.ReadWriter, error) {
-	if h, ok := r.ResponseWriter.(nethttp.Hijacker); ok {
-		return h.Hijack()
-	}
-	return nil, nil, nethttp.ErrNotSupported
-}
-
-// Unwrap exposes the writer this one wraps, which is what http.ResponseController
-// follows for the optional interfaces beyond the two above.
-func (r *recorder) Unwrap() nethttp.ResponseWriter { return r.ResponseWriter }

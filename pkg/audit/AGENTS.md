@@ -84,6 +84,35 @@ must not cross, and how to run it.
 - **The layer's `Provides` carries `(*audit.Audit)(nil)`**, the same token the
   descriptor delivers under. That is the only anchor another layer has for
   placing itself inside or outside audit, so the two must not drift.
+- **A request item is compared with what the engine matched, character for
+  character, and this module reads no route syntax of its own.** The layer runs
+  inside the engine after the route is matched, takes the method and
+  `c.FullPath()` — the path the route was registered under — and looks for the
+  pair among the items. A second reading of route syntax would be a second
+  parser that can part from the engine's without anything reporting it, and
+  asking the engine is the one way to get its answer. A request with no matched
+  route has an empty `FullPath` and equals no item: the 404 and the 405 are not
+  recorded, and neither is a HEAD request to a route registered for GET. Nothing
+  can check an item against the routes an endpoint has, so an item that is off by
+  a character never matches, with no error; the only startup failure is an entry
+  that is not a method, a space and a path beginning with a slash, which
+  `readSettings` refuses.
+- **The layer puts nothing in the writer's place.** The outcome is
+  `c.Writer.Status()` read after `c.Next()`. The engine's writer already records
+  the status and carries `Flush`, `Hijack` and `Unwrap`, so a recorder of this
+  module's would only be a second copy of the status that can disagree with the
+  first. An informational status the writer still holds when the handler only
+  set it — 103, with a body written after — is read as 200, which is what
+  `net/http` answers with after sending it; 101 is final and stays. After a
+  takeover of the connection the status line is the handler's, on a connection
+  the layer cannot read, and the row holds the status the writer held.
+- **The layer recovers nothing.** It notes whether the chain returned, and any
+  exit that is not a return — a panic, a panic of nil under
+  `GODEBUG=panicnil=1`, `runtime.Goexit` — writes the row with the outcome
+  `panic` while the unwinding goes on untouched. Catching the value in order to
+  throw it again would clear a nil panic and cut a `Goexit` short, and a layer
+  that wrote its row only for a value it had caught would leave a handler that
+  ended its goroutine without a row.
 - **A request whose handler abandons its connection is recorded as a panic.**
   `net/http`'s `ErrAbortHandler` is a handler asking for its connection to be
   dropped, not a defect; the entry point's fallback lets that value past
@@ -174,6 +203,11 @@ Most cases bring up their own SQLite database, on the handle the database
 module delivers — from `pkg/internal/dbtest`, or through a whole assembly —
 so that the journal meets what an assembly hands it, but for the case that
 runs it over a handle opened with `gorm.Open` (`journal/wait_test.go`). The
+request-level cases (`journal/request_test.go`) assemble the real entry point
+beside the journal and send requests to the port it listens on, because what
+they observe — the route a request was dispatched to, the status a client
+received, a connection a handler gave up — is the engine's, and a router built
+by hand would only show what the case built. The
 PostgreSQL cases take a database of their own on the shared fixture in
 `pkg/internal/pgpool/pgtest`, which starts a container through the docker CLI:
 they skip on a machine without docker, and fail instead where `CI` is set.

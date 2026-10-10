@@ -13,9 +13,9 @@ import (
 )
 
 // configNamespace is where this module's input items are mounted in the config
-// data. It is a constant rather than the module name: the name is a parameter
-// of the descriptor, and a section that moved with it would rename a host's
-// configuration file whenever the implementation subpackage changed.
+// data. It is a constant of its own rather than the module name: input items
+// hang from the namespace a schema declares, and the module name takes no part
+// in those paths.
 const configNamespace = "http"
 
 // configPath is the complete path of the carrier struct, which is what Decode
@@ -72,7 +72,7 @@ type endpointConfig struct {
 
 	// MaxBodyBytes is the request body limit the outermost layer of the
 	// chain imposes, 0 for no limit. It applies to every handler on the
-	// endpoint, including the ones that never call Decode.
+	// endpoint, whatever way a handler reads the body.
 	MaxBodyBytes *int64 `config:"max-body-bytes"`
 
 	// TLSCertFile and TLSKeyFile are where the certificate and its key are
