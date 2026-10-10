@@ -2,7 +2,10 @@ package otlp
 
 import (
 	"context"
+	"crypto/x509"
 	"errors"
+	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 
@@ -304,5 +307,214 @@ func TestNoInputItemTakesItsValueFromTheCommandLine(t *testing.T) {
 	if headers.Description == "" {
 		t.Error("headers is sensitive without a description, which the configuration layer refuses: a " +
 			"reader whose default is not echoed has nothing else to go on")
+	}
+}
+
+// fileHolding writes content to a file of its own and returns the path.
+func fileHolding(t *testing.T, content string) string {
+	t.Helper()
+	path := filepath.Join(t.TempDir(), "file.pem")
+	if err := os.WriteFile(path, []byte(content), 0o600); err != nil {
+		t.Fatalf("writing the file: %v", err)
+	}
+	return path
+}
+
+// TestACertificateItemThatCannotLoadFailsThePreparation pins the certificate
+// items' check, which runs in Prepare so that a file that does not load fails
+// the startup rather than every handshake after it: each failure carries its
+// sentinel, names the items involved, and repeats nothing a file holds.
+func TestACertificateItemThatCannotLoadFailsThePreparation(t *testing.T) {
+	ca := newAuthority(t)
+	client := ca.issue(t, "client", x509.ExtKeyUsageClientAuth)
+	other := ca.issue(t, "other", x509.ExtKeyUsageClientAuth)
+	const marker = "marker-content-3f7a"
+	notPEM := fileHolding(t, marker)
+	// PEM whose block type is the marker: the upstream's error for a pair that
+	// does not load lists the block types it skipped.
+	labelled := fileHolding(t, "-----BEGIN "+marker+"-----\nAAAA\n-----END "+marker+"-----\n")
+	missing := filepath.Join(t.TempDir(), "absent.pem")
+
+	for name, c := range map[string]struct {
+		set      func(*Config)
+		sentinel error
+		named    []string
+	}{
+		"a client certificate without its key": {
+			func(c *Config) { c.ClientCertFile = client.certFile },
+			ErrUnpairedClientCertificate,
+			[]string{"observability.otlp.client-cert-file is set and observability.otlp.client-key-file is not"},
+		},
+		"a client key without its certificate": {
+			func(c *Config) { c.ClientKeyFile = client.keyFile },
+			ErrUnpairedClientCertificate,
+			[]string{"observability.otlp.client-key-file is set and observability.otlp.client-cert-file is not"},
+		},
+		"a ca-file that does not exist": {
+			func(c *Config) { c.CAFile = missing },
+			ErrUnreadableCertificate,
+			[]string{"observability.otlp.ca-file", "cannot be read"},
+		},
+		"a ca-file that is not PEM": {
+			func(c *Config) { c.CAFile = notPEM },
+			ErrUnreadableCertificate,
+			[]string{"observability.otlp.ca-file", "no PEM certificate"},
+		},
+		"a client certificate file that does not exist": {
+			func(c *Config) { c.ClientCertFile, c.ClientKeyFile = missing, client.keyFile },
+			ErrUnreadableCertificate,
+			[]string{"observability.otlp.client-cert-file", "cannot be read"},
+		},
+		"a client key file that does not exist": {
+			func(c *Config) { c.ClientCertFile, c.ClientKeyFile = client.certFile, missing },
+			ErrUnreadableCertificate,
+			[]string{"observability.otlp.client-key-file", "cannot be read"},
+		},
+		"a client certificate that is not PEM": {
+			func(c *Config) { c.ClientCertFile, c.ClientKeyFile = notPEM, client.keyFile },
+			ErrUnreadableCertificate,
+			[]string{"observability.otlp.client-cert-file", "observability.otlp.client-key-file"},
+		},
+		"a client certificate whose PEM block is of another type": {
+			func(c *Config) { c.ClientCertFile, c.ClientKeyFile = labelled, client.keyFile },
+			ErrUnreadableCertificate,
+			[]string{"observability.otlp.client-cert-file", "observability.otlp.client-key-file"},
+		},
+		"a client key whose PEM block is of another type": {
+			func(c *Config) { c.ClientCertFile, c.ClientKeyFile = client.certFile, labelled },
+			ErrUnreadableCertificate,
+			[]string{"observability.otlp.client-cert-file", "observability.otlp.client-key-file"},
+		},
+		"a client key that is not PEM": {
+			func(c *Config) { c.ClientCertFile, c.ClientKeyFile = client.certFile, notPEM },
+			ErrUnreadableCertificate,
+			[]string{"observability.otlp.client-cert-file", "observability.otlp.client-key-file"},
+		},
+		"a client certificate with another certificate's key": {
+			func(c *Config) { c.ClientCertFile, c.ClientKeyFile = client.certFile, other.keyFile },
+			ErrUnreadableCertificate,
+			[]string{"observability.otlp.client-cert-file", "observability.otlp.client-key-file"},
+		},
+	} {
+		t.Run(name, func(t *testing.T) {
+			cfg := configured()
+			cfg.Insecure = false
+			c.set(cfg)
+			err := prepareWith(t, cfg)
+			if !errors.Is(err, c.sentinel) {
+				t.Fatalf("Prepare gave %v, want %v", err, c.sentinel)
+			}
+			for _, want := range c.named {
+				if !strings.Contains(err.Error(), want) {
+					t.Errorf("the text is %q, want it to carry %q", err, want)
+				}
+			}
+			if strings.Contains(err.Error(), marker) {
+				t.Errorf("the text is %q, and it repeats what the file holds", err)
+			}
+		})
+	}
+}
+
+// TestACertificateItemOverPlaintextFailsThePreparation pins the contradiction:
+// the certificate items configure TLS and insecure turns it off, so setting
+// any of them with insecure true fails Prepare, naming every item set and
+// insecure, whether or not the file would load.
+func TestACertificateItemOverPlaintextFailsThePreparation(t *testing.T) {
+	ca := newAuthority(t)
+	client := ca.issue(t, "client", x509.ExtKeyUsageClientAuth)
+	for name, c := range map[string]struct {
+		set   func(*Config)
+		named []string
+	}{
+		"ca-file": {
+			func(c *Config) { c.CAFile = ca.file },
+			[]string{"observability.otlp.ca-file"},
+		},
+		"a client key pair": {
+			func(c *Config) { c.ClientCertFile, c.ClientKeyFile = client.certFile, client.keyFile },
+			[]string{"observability.otlp.client-cert-file", "observability.otlp.client-key-file"},
+		},
+		"client-key-file": {
+			func(c *Config) { c.ClientKeyFile = client.keyFile },
+			[]string{"observability.otlp.client-key-file"},
+		},
+		"all three": {
+			func(c *Config) {
+				c.CAFile, c.ClientCertFile, c.ClientKeyFile = ca.file, client.certFile, client.keyFile
+			},
+			[]string{
+				"observability.otlp.ca-file",
+				"observability.otlp.client-cert-file",
+				"observability.otlp.client-key-file",
+			},
+		},
+	} {
+		t.Run(name, func(t *testing.T) {
+			cfg := configured()
+			cfg.Insecure = true
+			c.set(cfg)
+			err := prepareWith(t, cfg)
+			if !errors.Is(err, ErrCertificateOverPlaintext) {
+				t.Fatalf("Prepare gave %v, want %v", err, ErrCertificateOverPlaintext)
+			}
+			for _, want := range append(c.named, "observability.otlp.insecure") {
+				if !strings.Contains(err.Error(), want) {
+					t.Errorf("the text is %q, want it to carry %q", err, want)
+				}
+			}
+		})
+	}
+}
+
+// TestCertificateItemsThatLoadPassThePreparation pins the accepted shapes: an
+// authority alone, a client certificate alone with the host's root
+// certificates, and both.
+func TestCertificateItemsThatLoadPassThePreparation(t *testing.T) {
+	ca := newAuthority(t)
+	client := ca.issue(t, "client", x509.ExtKeyUsageClientAuth)
+	for name, set := range map[string]func(*Config){
+		"ca-file":           func(c *Config) { c.CAFile = ca.file },
+		"a client key pair": func(c *Config) { c.ClientCertFile, c.ClientKeyFile = client.certFile, client.keyFile },
+		"ca-file and a pair": func(c *Config) {
+			c.CAFile, c.ClientCertFile, c.ClientKeyFile = ca.file, client.certFile, client.keyFile
+		},
+	} {
+		cfg := configured()
+		cfg.Insecure = false
+		set(cfg)
+		if err := prepareWith(t, cfg); err != nil {
+			t.Errorf("%s failed the preparation: %v", name, err)
+		}
+	}
+}
+
+// TestTheCertificateItemsArePathsRatherThanCredentials pins their declaration:
+// each is declared, takes no command-line origin, and is not marked
+// sensitive, because what it holds is where a file is, not what is in it.
+func TestTheCertificateItemsArePathsRatherThanCredentials(t *testing.T) {
+	schema, ok := Module().Resources[0].(config.Schema)
+	if !ok {
+		t.Fatalf("the descriptor declares %T as its resource, want a config.Schema", Module().Resources[0])
+	}
+	for _, key := range []string{"ca-file", "client-cert-file", "client-key-file"} {
+		item, ok := schema.Items[key]
+		if !ok {
+			t.Errorf("%s is not declared", key)
+			continue
+		}
+		if item.Sensitive {
+			t.Errorf("%s is marked sensitive, and it holds a path", key)
+		}
+		origins := item.Origins
+		if origins == 0 {
+			origins = config.OriginPrimary | config.OriginEnv
+		}
+		if origins&config.OriginFlag != 0 {
+			t.Errorf("%s accepts a command-line origin", key)
+		}
+		if origins&config.OriginPrimary == 0 || origins&config.OriginEnv == 0 {
+			t.Errorf("%s does not take both the primary source and the environment", key)
+		}
 	}
 }

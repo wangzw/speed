@@ -214,10 +214,17 @@ must not cross, and how to run it.
   it is not given, and applies them before the options, so an option that
   looks redundant because it passes the upstream default is what keeps a
   variable out: the endpoint's path, the TLS switch and its certificates, the
-  headers, the encoding, and the metric temporality and aggregation. Removing
-  one reopens a second environment surface outside this module's prefix and
-  its sensitive marking. `TestNoUpstreamVariableOverridesTheConfiguration` and
-  `TestNoUpstreamVariableTurnsTLSOff` hold it.
+  headers, the encoding, and the metric temporality and aggregation. The
+  certificates are the ones `ca-file`, `client-cert-file` and
+  `client-key-file` load to, and with none of them set the host's root
+  certificates and no client certificate: the TLS configuration is given in
+  full either way (`clientTLS`), so a certificate variable neither replaces a
+  configured certificate nor fills in one the configuration left out.
+  Removing one of these options reopens a second environment surface outside
+  this module's prefix and its sensitive marking.
+  `TestNoUpstreamVariableOverridesTheConfiguration`,
+  `TestNoUpstreamVariableTurnsTLSOff` and
+  `TestNoUpstreamCertificateVariableStandsInForTheConfiguration` hold it.
 - **No input item takes its value from the command line.** The endpoint locator
   and the headers would then be readable from the process list. Items that carry
   a credential are additionally marked sensitive, and an error about one never
@@ -238,6 +245,19 @@ must not cross, and how to run it.
   the probe dials an endpoint without one at the port the exporters fall back
   to (`dialAddress`). `http/protobuf` is read as `http` in `read`, so `build`
   knows two protocols only.
+- **`otlp` loads the certificate files in `Prepare`, and fails where the
+  upstream ignores.** `loadTLS` gives `ca-file`, `client-cert-file` and
+  `client-key-file` the upstream's semantics for its certificate variables —
+  the CA file replaces the host's root certificates rather than adding to
+  them, and the client pair loads as `tls.X509KeyPair` takes it — but a file
+  that does not load, half a pair, or any of them with `insecure` true is a
+  startup failure. The upstream goes on without a file it cannot load after a
+  line to its own internal logger, and without half a pair in silence. Reading
+  the files in `Prepare` is an accepted cost: every command this backend is
+  part of, a shallow one that only prints a version included, fails where a
+  configured file is missing or does not parse. The certificate items are
+  paths and are not marked sensitive; an error names the item and never
+  repeats what a file holds.
 - **`otlp` takes the logger as an optional dependency, for one warning.** Headers
   sent over plaintext to a host that is not a loopback one get a line in `New`
   that names no header, no value and no endpoint (`warnPlaintextHeaders`). The

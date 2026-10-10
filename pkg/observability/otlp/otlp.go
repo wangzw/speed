@@ -14,8 +14,11 @@ package otlp
 
 import (
 	"context"
+	"crypto/tls"
+	"crypto/x509"
 	"errors"
 	"fmt"
+	"os"
 	"strings"
 	"time"
 	"unicode"
@@ -43,8 +46,14 @@ const (
 	ProtocolHTTPProtobuf = "http/protobuf"
 )
 
-// endpointKey is the endpoint item as the error text names it.
-const endpointKey = ModuleName + ".endpoint"
+// The items as the error text names them.
+const (
+	endpointKey       = ModuleName + ".endpoint"
+	insecureKey       = ModuleName + ".insecure"
+	caFileKey         = ModuleName + ".ca-file"
+	clientCertFileKey = ModuleName + ".client-cert-file"
+	clientKeyFileKey  = ModuleName + ".client-key-file"
+)
 
 // The failures this module judges for itself.
 var (
@@ -63,6 +72,23 @@ var (
 	// a header carries a credential.
 	ErrInvalidHeader = errors.New("observability.otlp: a header must be written key=value, " +
 		"with a key that is not empty and has no whitespace in it")
+
+	// ErrUnreadableCertificate reports a certificate item whose file cannot be
+	// read or does not parse: a ca-file with no PEM certificate in it, or a
+	// client certificate and key that do not load as a pair. The text names
+	// the item and the reason, and repeats nothing the file holds.
+	ErrUnreadableCertificate = errors.New("observability.otlp: a certificate file could not be loaded")
+
+	// ErrUnpairedClientCertificate reports a client certificate given without
+	// its key, or a key without its certificate.
+	ErrUnpairedClientCertificate = errors.New("observability.otlp: client-cert-file and client-key-file " +
+		"are given together or not at all")
+
+	// ErrCertificateOverPlaintext reports a certificate item set while
+	// insecure is true: the files configure TLS, and insecure sends without
+	// it.
+	ErrCertificateOverPlaintext = errors.New("observability.otlp: ca-file, client-cert-file and " +
+		"client-key-file configure TLS, and insecure sends over plaintext")
 
 	// ErrExporterUnreachable reports that the startup probe could not open a
 	// connection. It is only ever returned when the probe was asked for.
@@ -101,6 +127,17 @@ type Config struct {
 	// of the help output's default column, and the item takes no command-line
 	// origin, so a value cannot reach the process list.
 	Headers []string `config:"headers"`
+	// CAFile is a PEM file of the certificates a collector's certificate is
+	// verified against, in place of the host's root certificates rather than
+	// beside them. Empty is the host's root certificates.
+	CAFile string `config:"ca-file"`
+	// ClientCertFile and ClientKeyFile are the PEM certificate and key the
+	// exporters present to a collector that asks for one. They are given
+	// together or not at all. The certificate files are TLS settings, so
+	// setting one with Insecure true fails the preparation. They are paths rather
+	// than credentials, and are not marked sensitive.
+	ClientCertFile string `config:"client-cert-file"`
+	ClientKeyFile  string `config:"client-key-file"`
 	// ProbeAtStartup makes reachability a deployment premise rather than a
 	// runtime fact. It is off by default: a collector that starts after the
 	// process does is an ordinary deployment, and failing the startup over it
@@ -158,6 +195,21 @@ func Module() core.Module {
 					Description: "extra request headers, each written key=value and separated by commas; " +
 						"a header whose value contains a comma is written in the main configuration source",
 				},
+				"ca-file": {
+					Description: "a PEM file of the certificates the collector's certificate is verified " +
+						"against, in place of the host's root certificates; requires insecure false",
+					Placeholder: "PATH",
+				},
+				"client-cert-file": {
+					Description: "a PEM client certificate presented to the collector; given together " +
+						"with client-key-file, and requires insecure false",
+					Placeholder: "PATH",
+				},
+				"client-key-file": {
+					Description: "the PEM key of client-cert-file; given together with it, and requires " +
+						"insecure false",
+					Placeholder: "PATH",
+				},
 			},
 		}},
 		Prepare: prepare,
@@ -206,19 +258,118 @@ func read(reg *core.Registry) (*Config, error) {
 
 // validate reports the values this module cannot start with.
 func (c *Config) validate() error {
+	_, err := c.checked()
+	return err
+}
+
+// checked is validate that also hands back what the certificate items loaded
+// to, so that New reads the files once rather than once to judge them and once
+// to use them.
+func (c *Config) checked() (tlsMaterial, error) {
 	if err := validateEndpoint(c.Endpoint); err != nil {
-		return err
+		return tlsMaterial{}, err
 	}
 	switch c.Protocol {
 	case ProtocolGRPC, ProtocolHTTP:
 	default:
-		return fmt.Errorf("%w: got %q", ErrUnknownProtocol, c.Protocol)
+		return tlsMaterial{}, fmt.Errorf("%w: got %q", ErrUnknownProtocol, c.Protocol)
 	}
 	if c.ProbeTimeout <= 0 {
-		return fmt.Errorf("%w: got %v", ErrInvalidDuration, c.ProbeTimeout)
+		return tlsMaterial{}, fmt.Errorf("%w: got %v", ErrInvalidDuration, c.ProbeTimeout)
 	}
-	_, err := c.headerMap()
-	return err
+	if _, err := c.headerMap(); err != nil {
+		return tlsMaterial{}, err
+	}
+	return c.loadTLS()
+}
+
+// tlsMaterial is what the certificate items load to.
+type tlsMaterial struct {
+	// roots verifies the collector's certificate; nil is the host's root
+	// certificates.
+	roots *x509.CertPool
+	// client is presented to a collector that asks for a certificate; nil is
+	// none.
+	client *tls.Certificate
+}
+
+// loadTLS reads and parses the certificate items.
+//
+// The semantics are the upstream's for OTEL_EXPORTER_OTLP_CERTIFICATE,
+// OTEL_EXPORTER_OTLP_CLIENT_CERTIFICATE and OTEL_EXPORTER_OTLP_CLIENT_KEY,
+// which this module keeps out: the CA file becomes a pool of its own, which
+// replaces the host's root certificates rather than adding to them, and needs
+// one PEM certificate that parses; the client certificate and key load as a
+// pair, as tls.X509KeyPair takes them. The upstream ignores a file it cannot
+// load after a line to its own internal logger, and one of the pair given
+// without the other in silence; here both fail the preparation, naming the
+// item.
+//
+// The files are TLS settings, so any of them set with insecure true is a
+// contradiction rather than something to ignore. The text names the items and
+// the reason and repeats nothing a file holds; the reason for a file that
+// cannot be read carries its path, which is not a credential.
+func (c *Config) loadTLS() (tlsMaterial, error) {
+	if c.Insecure {
+		var set []string
+		for _, item := range []struct{ key, path string }{
+			{caFileKey, c.CAFile},
+			{clientCertFileKey, c.ClientCertFile},
+			{clientKeyFileKey, c.ClientKeyFile},
+		} {
+			if item.path != "" {
+				set = append(set, item.key)
+			}
+		}
+		if len(set) > 0 {
+			return tlsMaterial{}, fmt.Errorf("%w: %s set while %s is true; set %s to false to send "+
+				"over TLS, or leave the files out", ErrCertificateOverPlaintext, strings.Join(set, " and "),
+				insecureKey, insecureKey)
+		}
+		return tlsMaterial{}, nil
+	}
+	switch {
+	case c.ClientCertFile != "" && c.ClientKeyFile == "":
+		return tlsMaterial{}, fmt.Errorf("%w: %s is set and %s is not", ErrUnpairedClientCertificate,
+			clientCertFileKey, clientKeyFileKey)
+	case c.ClientCertFile == "" && c.ClientKeyFile != "":
+		return tlsMaterial{}, fmt.Errorf("%w: %s is set and %s is not", ErrUnpairedClientCertificate,
+			clientKeyFileKey, clientCertFileKey)
+	}
+
+	var m tlsMaterial
+	if c.CAFile != "" {
+		data, err := os.ReadFile(c.CAFile)
+		if err != nil {
+			return tlsMaterial{}, fmt.Errorf("%w: %s cannot be read: %w", ErrUnreadableCertificate, caFileKey, err)
+		}
+		m.roots = x509.NewCertPool()
+		if !m.roots.AppendCertsFromPEM(data) {
+			return tlsMaterial{}, fmt.Errorf("%w: %s holds no PEM certificate that parses",
+				ErrUnreadableCertificate, caFileKey)
+		}
+	}
+	if c.ClientCertFile != "" {
+		cert, err := os.ReadFile(c.ClientCertFile)
+		if err != nil {
+			return tlsMaterial{}, fmt.Errorf("%w: %s cannot be read: %w", ErrUnreadableCertificate,
+				clientCertFileKey, err)
+		}
+		key, err := os.ReadFile(c.ClientKeyFile)
+		if err != nil {
+			return tlsMaterial{}, fmt.Errorf("%w: %s cannot be read: %w", ErrUnreadableCertificate,
+				clientKeyFileKey, err)
+		}
+		// The upstream's text is left out: it can quote a PEM block's type
+		// label, which is the file's content.
+		pair, err := tls.X509KeyPair(cert, key)
+		if err != nil {
+			return tlsMaterial{}, fmt.Errorf("%w: %s and %s do not load as a PEM certificate and its key",
+				ErrUnreadableCertificate, clientCertFileKey, clientKeyFileKey)
+		}
+		m.client = &pair
+	}
+	return m, nil
 }
 
 // validateEndpoint refuses the shapes of an endpoint that are not a host and an

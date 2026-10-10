@@ -34,7 +34,8 @@ func newExporters(ctx context.Context, reg *core.Registry) (any, error) {
 	if err != nil {
 		return nil, err
 	}
-	if err = cfg.validate(); err != nil {
+	material, err := cfg.checked()
+	if err != nil {
 		return nil, err
 	}
 	headers, err := cfg.headerMap()
@@ -48,7 +49,7 @@ func newExporters(ctx context.Context, reg *core.Registry) (any, error) {
 		}
 	}
 
-	span, metric, err := build(ctx, cfg, headers)
+	span, metric, err := build(ctx, cfg, headers, material)
 	if err != nil {
 		return nil, err
 	}
@@ -120,10 +121,13 @@ const (
 // What the configuration leaves to the library stays the library's, variables
 // included: compression, the per-request timeout, retry and backoff.
 //
+// Both exporters of either protocol carry the one TLS configuration the
+// certificate items loaded to.
+//
 // An exporter that was built before its pair failed is released here rather
 // than left open: the failure returns from New, so no provider exists to shut
 // it down later, and nothing else holds a reference to it.
-func build(ctx context.Context, cfg *Config, headers map[string]string) (sdktrace.SpanExporter, sdkmetric.Exporter, error) {
+func build(ctx context.Context, cfg *Config, headers map[string]string, material tlsMaterial) (sdktrace.SpanExporter, sdkmetric.Exporter, error) {
 	// A nil map would leave the header variables in force; an empty one
 	// replaces them with nothing.
 	if headers == nil {
@@ -135,7 +139,7 @@ func build(ctx context.Context, cfg *Config, headers map[string]string) (sdktrac
 		// way; the endpoint is then given verbatim, and the TLS configuration is
 		// replaced outright — with none at all over plaintext, where a
 		// certificate variable would otherwise fail the construction.
-		scheme, tlsConfig := "https", clientTLS()
+		scheme, tlsConfig := "https", clientTLS(material)
 		if cfg.Insecure {
 			scheme, tlsConfig = "http", nil
 		}
@@ -171,7 +175,7 @@ func build(ctx context.Context, cfg *Config, headers map[string]string) (sdktrac
 		// own can say plaintext and mean it.
 		creds := insecure.NewCredentials()
 		if !cfg.Insecure {
-			creds = credentials.NewTLS(clientTLS())
+			creds = credentials.NewTLS(clientTLS(material))
 		}
 		span, err := otlptracegrpc.New(ctx,
 			otlptracegrpc.WithEndpoint(cfg.Endpoint),
@@ -197,10 +201,16 @@ func build(ctx context.Context, cfg *Config, headers map[string]string) (sdktrac
 }
 
 // clientTLS is the TLS configuration an exporter that is not insecure uses: the
-// host's root certificates, which is what the upstream uses when it is given
-// nothing, stated here so that a certificate variable cannot replace them.
-func clientTLS() *tls.Config {
-	return &tls.Config{MinVersion: tls.VersionTLS12}
+// roots and the client certificate the certificate items loaded to, and with
+// none configured the host's root certificates and no client certificate,
+// which is what the upstream uses when it is given nothing. It is given even
+// then so that a certificate variable cannot replace it.
+func clientTLS(material tlsMaterial) *tls.Config {
+	cfg := &tls.Config{MinVersion: tls.VersionTLS12, RootCAs: material.roots}
+	if material.client != nil {
+		cfg.Certificates = []tls.Certificate{*material.client}
+	}
+	return cfg
 }
 
 // probe opens a TCP connection to the endpoint and closes it again.

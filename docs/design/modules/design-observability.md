@@ -243,10 +243,13 @@ type Config struct {
 
 ```go
 type Config struct {
-    Endpoint       string        `config:"endpoint"`        // 必填，不含凭据；主机加可选端口，不带 scheme 与路径
-    Protocol       string        `config:"protocol"`        // grpc / http / http/protobuf，http/protobuf 读作 http
-    Insecure       bool          `config:"insecure"`        // 默认 true
-    Headers        []string      `config:"headers"`         // 每个元素形如 k=v
+    Endpoint       string        `config:"endpoint"`         // 必填，不含凭据；主机加可选端口，不带 scheme 与路径
+    Protocol       string        `config:"protocol"`         // grpc / http / http/protobuf，http/protobuf 读作 http
+    Insecure       bool          `config:"insecure"`         // 默认 true
+    Headers        []string      `config:"headers"`          // 每个元素形如 k=v
+    CAFile         string        `config:"ca-file"`          // PEM 根证书文件，代替主机的根证书；默认空
+    ClientCertFile string        `config:"client-cert-file"` // PEM 客户端证书文件，与私钥成对给出；默认空
+    ClientKeyFile  string        `config:"client-key-file"`  // PEM 私钥文件；默认空
     ProbeAtStartup bool          `config:"probe-at-startup"`
     ProbeTimeout   time.Duration `config:"probe-timeout"`
 }
@@ -264,7 +267,9 @@ type Config struct {
 
 **头部经明文发往非回环的主机时，导出后端在 `New` 里写一行告警。** 下列条件同时成立时写：`headers` 非空，`insecure` 为真，`endpoint` 的主机不是回环地址（`localhost`、`127.0.0.0/8`、`::1`）。回环只认这几个写法：主机为空的写法（`:4317`）与未指定地址（`0.0.0.0`）不算，形似回环的主机名（`localhost.collector.example`）也不算，比对的是整个主机。这一行说明头部将经明文发送、应把 `insecure` 设为 `false`，不含任何头部的名字或取值，也不含端点。它是告警而不是失败：`insecure` 默认为真，为的是进程旁边的采集端，而操作者自己控制的网络与别的网络在本模块看来分不开。告警经日志功能写出，导出后端对它的依赖是可选的（见[依赖](#依赖)）。
 
-**上游的环境变量不是这些输入项的第二个来源。** 上游的 OTLP 导出器对没有显式给出的设置读取标准的 `OTEL_EXPORTER_OTLP_*` 变量，并且先应用变量、后应用选项。导出后端因而把配置声明的每一项、以及本文写明的线上形态逐项显式交给上游——端点与它的路径（`/v1/traces`、`/v1/metrics`）、明文与 TLS 的开关及其证书、头部、编码（protobuf）、指标的时间性与聚合——即便显式的取值就是上游的默认值。少给一项，那个变量就成了本模块前缀之外、诊断之外、敏感标记之外的又一个来源：一个头部变量能注入配置从未给出的凭据，一个 insecure 变量能在要求 TLS 的配置下把它关掉，一个证书变量能让明文配置的导出器在构造时就失败。TLS 一侧用主机的根证书，与上游什么都不给时相同。配置交给库的传输细节——压缩、单次请求的超时、重试与退避——仍归上游，连同设置它们的变量。
+**`ca-file`、`client-cert-file`、`client-key-file` 给出私有证书机构与客户端证书。** 这些证书项都是文件路径，默认为空，语义取上游对 `OTEL_EXPORTER_OTLP_CERTIFICATE`、`OTEL_EXPORTER_OTLP_CLIENT_CERTIFICATE`、`OTEL_EXPORTER_OTLP_CLIENT_KEY` 的处理：`ca-file` 是 PEM 证书文件，读入后自成一个根证书池，校验采集端的证书时用它代替主机的根证书，不追加在主机的根证书之上；`client-cert-file` 与 `client-key-file` 是一对 PEM 证书与私钥，按 `tls.X509KeyPair` 的规则配对，采集端要求客户端证书时出示，校验采集端用的仍是 `ca-file` 或主机的根证书。两种协议下，追踪与指标两个导出器带同一份 TLS 配置。失败的处理与上游不同：上游对读不进或解析不了的文件经它自己的内部日志器写一行，然后当作没给，对只给了一半的证书与私钥不作任何提示、直接当作没给；本模块在 `Prepare` 里校验——文件读不进、`ca-file` 里没有一张能解析的 PEM 证书、证书与私钥配不成一对，以 `ErrUnreadableCertificate` 失败；只给了证书或只给了私钥，以 `ErrUnpairedClientCertificate` 失败；`insecure` 为真而证书项中任一项有取值，两者互相矛盾，以 `ErrCertificateOverPlaintext` 失败。错误点名涉及的输入项与原因，不复述文件内容，读不进时的原因里带着文件路径。校验在 `Prepare` 里读文件，代价是纳入本后端的每条命令——连只取表态的浅深度命令在内——都要求证书项给出的文件可读、能解析，文件缺席的环境里一条只打印版本的命令也会失败。证书文件在装配时读入，进程运行期间不再读：文件内容的变更，证书轮换在内，要到进程重启才生效，与上游对证书变量的处理相同。证书项承载的是路径而不是凭据，不标注敏感；私钥文件本身的保护归部署。
+
+**上游的环境变量不是这些输入项的第二个来源。** 上游的 OTLP 导出器对没有显式给出的设置读取标准的 `OTEL_EXPORTER_OTLP_*` 变量，并且先应用变量、后应用选项。导出后端因而把配置声明的每一项、以及本文写明的线上形态逐项显式交给上游——端点与它的路径（`/v1/traces`、`/v1/metrics`）、明文与 TLS 的开关及其证书、头部、编码（protobuf）、指标的时间性与聚合——即便显式的取值就是上游的默认值。少给一项，那个变量就成了本模块前缀之外、诊断之外、敏感标记之外的又一个来源：一个头部变量能注入配置从未给出的凭据，一个 insecure 变量能在要求 TLS 的配置下把它关掉，一个证书变量能让明文配置的导出器在构造时就失败。TLS 一侧的根证书与客户端证书只来自 `ca-file`、`client-cert-file` 与 `client-key-file`：证书项都没给时用主机的根证书、不出示客户端证书，与上游什么都不给时相同；上游的证书变量（`OTEL_EXPORTER_OTLP_CERTIFICATE`、`OTEL_EXPORTER_OTLP_CLIENT_CERTIFICATE`、`OTEL_EXPORTER_OTLP_CLIENT_KEY` 及其按信号区分的变体）既不替换配置给出的证书，也不补上配置没给的那一项。配置交给库的传输细节——压缩、单次请求的超时、重试与退避——仍归上游，连同设置它们的变量。
 
 `observability.stdout` 的配置只有一个布尔项 `pretty`，默认 `false`。它写的是进程的 `os.Stdout`，与日志模块标准输出的写入者是同一个文件对象；一个跨度、一批指标各是一次写入，而标准库对同一个文件对象的每次写入整体加锁，管道上分段写出的一条也不会被另一条插进来，两者因而不在字节层面交错。这是标准库的实现性质，不是它文档里的承诺；fd 1 上另开文件对象的写入方不受它保护。
 
@@ -404,7 +409,7 @@ type Config struct {
 
 | 阶段 | 行为 |
 |---|---|
-| `Prepare` | 取配置读取面，解码自己的命名空间，校验端点的形态、协议名与头部元素的形状，表态 `StateEnabled` |
+| `Prepare` | 取配置读取面，解码自己的命名空间，校验端点的形态、协议名、头部元素的形状与证书项的文件，表态 `StateEnabled` |
 | `New` | 头部经明文发往非回环的主机时写一行告警；按协议构造两个导出器并交出；`probe-at-startup` 为真时先做一次有界连通性探测 |
 | `Init`、`Start`、`Serve`、`Stop` | 无动作 |
 | `Close` | 无动作 |
@@ -428,10 +433,13 @@ type Config struct {
 | `ErrInvalidEndpoint` | `observability.otlp` | `endpoint` 为空，或含 scheme、路径、空白 |
 | `ErrUnknownProtocol` | `observability.otlp` | `protocol` 不是 `grpc`、`http` 或 `http/protobuf` |
 | `ErrInvalidHeader` | `observability.otlp` | `headers` 的元素不是 `k=v`，或键为空、键内含空白 |
+| `ErrUnreadableCertificate` | `observability.otlp` | 证书项的文件读不进，`ca-file` 里没有能解析的 PEM 证书，或客户端证书与私钥配不成一对 |
+| `ErrUnpairedClientCertificate` | `observability.otlp` | `client-cert-file` 与 `client-key-file` 只给了其中一项 |
+| `ErrCertificateOverPlaintext` | `observability.otlp` | `insecure` 为真而证书项中任一项有取值 |
 | `ErrInvalidDuration` | `observability.otlp` | `probe-timeout` 为零或负 |
 | `ErrExporterUnreachable` | `observability.otlp` | 启用了启动探测而端点不可达 |
 
-`ErrInvalidSampleRatio`、`ErrUnknownProtocol` 与 `ErrInvalidHeader` 的文本要列出合法取值或形状，取值都在闭集内，列出它即给出修复动作；`ErrInvalidHeader` 另按位置点名元素、说明逗号分隔的写法，不复述元素的内容。`ErrWildcardBesideEndpointNames` 与 `ErrInvalidEndpoint` 的文本点名键并给出正确写法，后者不复述取值。`service-name` 没有对应的哨兵：它不是必填项，缺席与空串都不是故障。
+`ErrInvalidSampleRatio`、`ErrUnknownProtocol` 与 `ErrInvalidHeader` 的文本要列出合法取值或形状，取值都在闭集内，列出它即给出修复动作；`ErrInvalidHeader` 另按位置点名元素、说明逗号分隔的写法，不复述元素的内容。`ErrWildcardBesideEndpointNames` 与 `ErrInvalidEndpoint` 的文本点名键并给出正确写法，后者不复述取值。`ErrUnreadableCertificate`、`ErrUnpairedClientCertificate` 与 `ErrCertificateOverPlaintext` 的文本点名涉及的输入项与原因，不复述文件内容；`ErrCertificateOverPlaintext` 另点名 `observability.otlp.insecure` 并给出修复动作：把它设为 `false`，或去掉证书项。`service-name` 没有对应的哨兵：它不是必填项，缺席与空串都不是故障。
 
 不另造哨兵的失败：配置读取面缺席（`core.ErrMissingProvider`）、入口模块取不到（`core.ErrMissingProvider`，或取用无从选择的 `core.ErrAmbiguousProvider`）、端名未在配置里声明（`http.ErrUnknownEndpoint`）、事件点名而总线功能取不到（`core.ErrMissingProvider`）、资源叠合时上游报出的模式地址冲突（`resource.ErrSchemaURLConflict`）。哨兵都是别处的，包装保留它们，`errors.Is` 照常判别。入口模块、端名与总线的包装文本点名 `observability.otel.endpoints` 或 `observability.otel.events` 并给出修复动作，读到启动失败的人不必从别的模块的哨兵文本反推该改本模块的哪一项配置。
 
@@ -507,8 +515,8 @@ type Config struct {
 | 请求路径的采集层 | 已实现 | `pkg/observability/otel/layer.go` `(*providers).layer`、`instrument`、`answeredWith` |
 | 请求时长的计量 | 已实现 | `pkg/observability/otel/layer.go` `newRequestDuration` |
 | 事件订阅 | 已实现 | `pkg/observability/otel/events.go` `spanFor`、`payloadAttributes`、`fieldAttribute`、`eventIDKey`、`tenantIDKey` |
-| 配置声明与解读 | 已实现 | `pkg/observability/otel/config.go` `Config`、`schema`、`pkg/observability/otlp/otlp.go` `Config`、`read`、`validateEndpoint`、`headerMap`、`pkg/observability/stdout/stdout.go` `Config` |
+| 配置声明与解读 | 已实现 | `pkg/observability/otel/config.go` `Config`、`schema`、`pkg/observability/otlp/otlp.go` `Config`、`read`、`validateEndpoint`、`headerMap`、`loadTLS`、`tlsMaterial`、`pkg/observability/stdout/stdout.go` `Config` |
 | OTLP 导出后端 | 已实现 | `pkg/observability/otlp/exporters.go` `newExporters`、`warnPlaintextHeaders`、`loopbackHost`、`build`、`clientTLS`、`probe`、`dialAddress` |
 | 标准输出导出后端 | 已实现 | `pkg/observability/stdout/exporters.go` `newExporters` |
-| 哨兵错误 | 已实现 | `pkg/observability/otel/errors.go`、`pkg/observability/otlp/otlp.go` `ErrInvalidEndpoint`、`ErrUnknownProtocol`、`ErrInvalidHeader`、`ErrExporterUnreachable`、`ErrInvalidDuration` |
+| 哨兵错误 | 已实现 | `pkg/observability/otel/errors.go`、`pkg/observability/otlp/otlp.go` `ErrInvalidEndpoint`、`ErrUnknownProtocol`、`ErrInvalidHeader`、`ErrUnreadableCertificate`、`ErrUnpairedClientCertificate`、`ErrCertificateOverPlaintext`、`ErrExporterUnreachable`、`ErrInvalidDuration` |
 | 依赖预算的判定 | 已实现 | `pkg/observability/deps_test.go` `TestTheInterfacePackageReachesNoBackendLibrary`、`TestTheAssemblerStaysInsideItsDependencyBudget`、`TestTheAssemblerReachesNoBackendTransport` |

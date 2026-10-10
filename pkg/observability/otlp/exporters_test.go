@@ -68,29 +68,21 @@ func (r *receiver) requests() []seenRequest {
 	return append([]seenRequest(nil), r.seen...)
 }
 
-// httpReceiver serves OTLP over HTTP: a success is a 200 with an empty
+// httpHandler answers OTLP over HTTP: a success is a 200 with an empty
 // protobuf body.
-func httpReceiver(t *testing.T) *receiver {
-	t.Helper()
-	rec := &receiver{}
-	srv := httptest.NewServer(nethttp.HandlerFunc(func(w nethttp.ResponseWriter, req *nethttp.Request) {
+func httpHandler(rec *receiver) nethttp.Handler {
+	return nethttp.HandlerFunc(func(w nethttp.ResponseWriter, req *nethttp.Request) {
 		rec.record(req)
 		w.Header().Set("Content-Type", "application/x-protobuf")
 		w.WriteHeader(nethttp.StatusOK)
-	}))
-	t.Cleanup(srv.Close)
-	rec.endpoint = srv.Listener.Addr().String()
-	return rec
+	})
 }
 
-// grpcReceiver serves OTLP over gRPC, which is HTTP/2 without TLS here: a
-// success is an empty message frame followed by a zero grpc-status trailer.
-// The standard library's server speaks unencrypted HTTP/2, so no gRPC server
-// is needed to stand in for a collector.
-func grpcReceiver(t *testing.T) *receiver {
-	t.Helper()
-	rec := &receiver{}
-	srv := httptest.NewUnstartedServer(nethttp.HandlerFunc(func(w nethttp.ResponseWriter, req *nethttp.Request) {
+// grpcHandler answers OTLP over gRPC: a success is an empty message frame
+// followed by a zero grpc-status trailer. The standard library's server speaks
+// HTTP/2, so no gRPC server is needed to stand in for a collector.
+func grpcHandler(rec *receiver) nethttp.Handler {
+	return nethttp.HandlerFunc(func(w nethttp.ResponseWriter, req *nethttp.Request) {
 		rec.record(req)
 		w.Header().Set("Content-Type", "application/grpc")
 		w.Header().Set("Trailer", "Grpc-Status, Grpc-Message")
@@ -98,7 +90,24 @@ func grpcReceiver(t *testing.T) *receiver {
 		_, _ = w.Write([]byte{0, 0, 0, 0, 0})
 		w.Header().Set("Grpc-Status", "0")
 		w.Header().Set("Grpc-Message", "")
-	}))
+	})
+}
+
+// httpReceiver serves OTLP over HTTP without TLS.
+func httpReceiver(t *testing.T) *receiver {
+	t.Helper()
+	rec := &receiver{}
+	srv := httptest.NewServer(httpHandler(rec))
+	t.Cleanup(srv.Close)
+	rec.endpoint = srv.Listener.Addr().String()
+	return rec
+}
+
+// grpcReceiver serves OTLP over gRPC, which is HTTP/2 without TLS here.
+func grpcReceiver(t *testing.T) *receiver {
+	t.Helper()
+	rec := &receiver{}
+	srv := httptest.NewUnstartedServer(grpcHandler(rec))
 	srv.Config.Protocols = new(nethttp.Protocols)
 	srv.Config.Protocols.SetUnencryptedHTTP2(true)
 	srv.Start()
@@ -151,12 +160,17 @@ func exportOnce(exporters *observability.Exporters) (spanErr, metricErr error) {
 	return exportWithin(exporters, 3*time.Second)
 }
 
-// exportWithin is exportOnce under a bound of the caller's choosing.
+// exportWithin is exportOnce under a bound of the caller's choosing. Each
+// signal gets a bound of its own: an exporter that retries until its bound
+// runs out would otherwise hand the other one a context that has already
+// expired, and that one would fail without ever dialing.
 func exportWithin(exporters *observability.Exporters, bound time.Duration) (spanErr, metricErr error) {
-	ctx, cancel := context.WithTimeout(context.Background(), bound)
-	defer cancel()
-	spanErr = exporters.ExportSpans(ctx, tracetest.SpanStubs{{Name: "place"}}.Snapshots())
-	metricErr = exporters.Export(ctx, oneMetric())
+	spanCtx, cancelSpan := context.WithTimeout(context.Background(), bound)
+	defer cancelSpan()
+	spanErr = exporters.ExportSpans(spanCtx, tracetest.SpanStubs{{Name: "place"}}.Snapshots())
+	metricCtx, cancelMetric := context.WithTimeout(context.Background(), bound)
+	defer cancelMetric()
+	metricErr = exporters.Export(metricCtx, oneMetric())
 	return spanErr, metricErr
 }
 
@@ -164,6 +178,7 @@ func exportWithin(exporters *observability.Exporters, bound time.Duration) (span
 type wire struct {
 	protocol    string
 	receiver    func(*testing.T) *receiver
+	handler     func(*receiver) nethttp.Handler
 	contentType string
 	spanPath    string
 	metricPath  string
@@ -173,6 +188,7 @@ var wires = []wire{
 	{
 		protocol:    ProtocolHTTP,
 		receiver:    httpReceiver,
+		handler:     httpHandler,
 		contentType: "application/x-protobuf",
 		spanPath:    "/v1/traces",
 		metricPath:  "/v1/metrics",
@@ -180,6 +196,7 @@ var wires = []wire{
 	{
 		protocol:    ProtocolGRPC,
 		receiver:    grpcReceiver,
+		handler:     grpcHandler,
 		contentType: "application/grpc",
 		spanPath:    "/opentelemetry.proto.collector.trace.v1.TraceService/Export",
 		metricPath:  "/opentelemetry.proto.collector.metrics.v1.MetricsService/Export",
