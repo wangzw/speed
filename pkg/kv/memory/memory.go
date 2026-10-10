@@ -11,13 +11,13 @@
 // It is the capability's default implementation in the sense core's resolution
 // gives that word. It claims the capability exclusively while stating
 // StateAuto, so it runs until another provider is enabled and then stands down.
-// The stand-down takes a host that names that provider in the command tree: an
-// exclusive provider is not pulled in by the dependency closure, so one left
-// unnamed enters no participant set and this implementation never yields — the
-// assembly then runs on this one while the host believes it is running the
-// other, and nothing reports the difference. It is also the test double every
-// consistency run is written against, so it needs no third-party dependency and
-// no container.
+// The stand-down takes a host that names that provider in the command tree or
+// supplies an instance for it: an exclusive provider is not pulled in by the
+// dependency closure, so one that is neither named nor supplied enters no
+// participant set and this implementation never yields — the assembly then runs
+// on this one while the host believes it is running the other, and nothing
+// reports the difference. It is also the test double every consistency run is
+// written against, so it needs no third-party dependency and no container.
 package memory
 
 import (
@@ -89,10 +89,10 @@ func Module() core.Module {
 // Otherwise the stance is StateAuto rather than StateEnabled. This is the
 // capability's zero-configuration implementation, and StateAuto is what lets a
 // host import it alongside a real backend and have it stand down once that
-// backend is enabled. The host naming that backend in the command tree is what
-// makes the stand-down possible at all: an exclusive provider the command tree
-// leaves out enters no participant set, so there is nothing for this one to
-// yield to.
+// backend is enabled. The host naming that backend in the command tree, or
+// supplying an instance for it, is what makes the stand-down possible at all: an
+// exclusive provider the command tree leaves out, and the host supplied nothing
+// for, enters no participant set, so there is nothing for this one to yield to.
 func stance(cfg *Config) (core.Enablement, error) {
 	if cfg.Replicas > 1 {
 		return core.Enablement{}, fmt.Errorf("%s.%s is %d, and this implementation keeps every value "+

@@ -281,9 +281,11 @@ func readerOf(reg *core.Registry) (config.Reader, error) {
 	return reader, nil
 }
 
-// productOf narrows an instance to this module's product. A product of another
-// shape means the registry handed this callback something it did not build,
-// which is not something a host can cause.
+// productOf narrows an instance to this module's product. The callbacks are
+// also handed an instance a host supplied for this module, which can be any
+// value that delivers the audit capability. They act on this module's own
+// product and leave a supplied instance as it is, so what such an instance
+// holds stays with the host that supplied it.
 func productOf(instance any) (*journal, bool) {
 	j, ok := instance.(*journal)
 	return j, ok

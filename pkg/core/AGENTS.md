@@ -11,7 +11,7 @@ through, and the lifecycle driver.
 - The decisions behind it, one file per decision:
   [`docs/adr/`](../../docs/adr/) — its scope, module registration, module
   resources, capability tokens, dependency resolution, module enablement,
-  the lifecycle stages, packaging.
+  the lifecycle stages, the supplied instance, packaging.
 - The API itself: the godoc in this package. Read `core.Module`'s field
   comments before adding a callback or a declaration seat.
 
@@ -39,6 +39,17 @@ change here must not cross, and how to run it.
   strictly ordered and callbacks within a stage run one at a time. How far
   a drive advances is a parameter of that drive; the order of the stages it
   does advance through is not.
+- **An instance the host supplies is a module's instance, not a second way
+  into the registry.** `Supply` assigns it to one registered module and it
+  goes into the same instance table as a constructed one, so lookups,
+  dependency planning and ordering have no rule of their own for it. The
+  driver's own handling is limited to three things: the module joins the
+  participating set when the drive begins, `Prepare` and `New` do not run for
+  it, and shutdown releases it from the start of the drive, including when the
+  drive never reached its construction. A failure text may say that a module's
+  instance was supplied where that changes what the reader can do about it; that
+  is wording, and decides nothing. A rule for supplied instances anywhere else
+  is the shape to reject.
 
 ## Shape of a module
 

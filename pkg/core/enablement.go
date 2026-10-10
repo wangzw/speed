@@ -7,12 +7,17 @@ import (
 	"strings"
 )
 
-// stance pairs a descriptor with the enablement its Prepare stated. Only the
-// modules this drive includes take a stance, so resolution runs over the
-// participating set and the enabled set is a subset of it.
+// stance pairs a descriptor with the enablement its Prepare stated, or with
+// StateEnabled for a module the host supplied an instance for, whose Prepare
+// does not run. Every module in the participating set takes a stance, so
+// resolution runs over that set and the enabled set is a subset of it.
 type stance struct {
 	module Module
 	state  Enablement
+	// supplied marks a module the host supplied an instance for. Resolution
+	// treats its stance like any other; the mark is only there for a failure to
+	// say which party it applies to.
+	supplied bool
 }
 
 // resolveEnablement turns the stances into the final verdict per module.
@@ -34,10 +39,10 @@ type stance struct {
 // so propagation leaves it alone; disabling it too would let a doomed
 // exclusive default drag down the non-exclusive defaults beside it.
 //
-// Every stance here belongs to a module this drive took in at run level, and
-// such a module has to start. A stance of StateDisabled is therefore refused
-// rather than honoured: the module is misusing the API, and the startup stops
-// with that named, where any other premise it cannot meet would stop it.
+// Every stance here belongs to a module in the participating set, and such a
+// module has to start. A stance of StateDisabled is therefore refused rather
+// than honoured: the module is misusing the API, and the startup stops with that
+// named, where any other premise it cannot meet would stop it.
 func resolveEnablement(stances []stance) (map[string]Enablement, error) {
 	stances = slices.SortedFunc(slices.Values(stances), func(a, b stance) int {
 		return strings.Compare(a.module.Name, b.module.Name)
@@ -103,7 +108,7 @@ func resolveEnablement(stances []stance) (map[string]Enablement, error) {
 	// the providers still enabled, not the shape of their stances: a
 	// provider propagation disabled no longer claims anything.
 	for _, ct := range contested {
-		var remaining, exclusive []string
+		var remaining, exclusive, supplied []string
 		for _, s := range providers[ct] {
 			if _, down := standDown[s.module.Name]; down {
 				continue
@@ -112,15 +117,19 @@ func resolveEnablement(stances []stance) (map[string]Enablement, error) {
 			if claimsExclusive(s.module, ct) {
 				exclusive = append(exclusive, s.module.Name)
 			}
+			if s.supplied {
+				supplied = append(supplied, s.module.Name)
+			}
 		}
 		if len(remaining) > 1 && len(exclusive) > 0 {
 			return nil, fmt.Errorf("%w: capability %s is still delivered by %s after "+
 				"resolution, while %s claims it exclusively. Disable all but one provider, "+
 				"or have the default implementation declare the capability Exclusive so it "+
-				"stands down when another provider is explicitly enabled",
+				"stands down when another provider is explicitly enabled%s",
 				ErrExclusiveViolated, typeName(ct),
 				strings.Join(quoteAll(remaining), " and "),
-				strings.Join(quoteAll(exclusive), " and "))
+				strings.Join(quoteAll(exclusive), " and "),
+				suppliedPartiesNote(supplied))
 		}
 	}
 
@@ -136,6 +145,27 @@ func resolveEnablement(stances []stance) (map[string]Enablement, error) {
 		final[s.module.Name] = Enablement{State: StateEnabled}
 	}
 	return final, nil
+}
+
+// suppliedPartiesNote is what the failure over an exclusive conflict adds when
+// some of its parties are modules the host supplied an instance for, and nothing
+// when none is. Such a module has its stance fixed at StateEnabled, so it never
+// stands down, and leaving it out of the command tree does not take it out of
+// the command: the advice that fits the other parties does not reach it, and the
+// way out that does is to supply it no instance.
+func suppliedPartiesNote(supplied []string) string {
+	if len(supplied) == 0 {
+		return ""
+	}
+	have := "has"
+	if len(supplied) > 1 {
+		have = "each have"
+	}
+	return fmt.Sprintf(". %s %s a supplied instance, which fixes the stance of its module at "+
+		"StateEnabled: the module does not stand down, and leaving it out of the command tree "+
+		"does not take it out of this command. Of the providers that are not to stay, stop "+
+		"supplying an instance to each that has one and leave the others out of this command",
+		strings.Join(quoteAll(supplied), " and "), have)
 }
 
 // declaredCapabilities lists the capability types a module delivers, without

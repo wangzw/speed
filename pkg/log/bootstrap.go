@@ -11,7 +11,8 @@ import "log/slog"
 // Default() is used for the whole life of the process, so records written
 // through it after a module has registered its keys are covered too. What this
 // layer cannot cover is the first assembly's Prepare — registering goes
-// through this module's product, and that does not exist until New.
+// through this module's product, which does not exist until New unless the host
+// built it with New itself and supplied it before the drive.
 var bootstrapChain = newBootstrapChain()
 
 // defaultLogger is the process default logger. It is a singleton: callers

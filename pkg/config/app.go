@@ -37,11 +37,21 @@ type App struct {
 // writes it on Root, and the root command is named after the program.
 //
 // The registry is the one the run assembles. core.ProcessRegistry is the one
-// every module registers itself with, and the one a host passes.
+// every module registers itself with, and the one a host passes. It has to hold
+// the config module, which Execute supplies the reader to: the process registry
+// has it from this package's init, and a registry made with core.New registers
+// Module by hand first. NewApp panics when it is not there, so the omission shows
+// where the tree is started rather than after the command line has been read.
 func NewApp(reg *core.Registry) *App {
 	if reg == nil {
 		panic("config: NewApp was given no registry. The tree assembles the modules of a " +
 			"registry, which for a program is core.ProcessRegistry")
+	}
+	if _, registered := reg.Lookup(ModuleName); !registered {
+		panic(fmt.Sprintf("config: NewApp was given a registry with no module named %q. Execute "+
+			"supplies the reader it loads to that module, so the module is registered first: "+
+			"reg.Register(config.Module()). core.ProcessRegistry has it from this package's "+
+			"init, and a registry made with core.New does not inherit that", ModuleName))
 	}
 	return &App{
 		reg:    reg,
@@ -58,15 +68,31 @@ func NewApp(reg *core.Registry) *App {
 func (a *App) Root() *Command { return a.root }
 
 // Execute runs the tree: it assembles the commands, reads the command line,
-// loads the configuration of the selected command, hands the registry the
-// reader and drives the lifecycle as that command asked.
+// loads the configuration of the selected command, supplies the reader to the
+// config module and drives the lifecycle as that command asked.
 //
-// The reader reaches the modules as a supplied product, so a module takes it
-// up the way it takes up anything else and declares no requirement for it:
-// it exists before the first module is constructed.
+// The reader is the config module's instance. It is supplied under that
+// module's name, so which module it belongs to does not depend on what else the
+// registry holds, and it exists before the first module's Prepare runs: a
+// module takes it up with core.Resolve in Prepare as in New, and declares no
+// requirement to be ordered after it. The command tree does not have to take
+// the module in, since a module whose instance was supplied takes part in every
+// drive.
+//
+// The supply is made after the command line and the primary source have been
+// read, so a failure of either comes back as the error it is. A registry that
+// cannot take the reader makes the supply panic: one that has been driven
+// already, one whose config module already has an instance, and one where the
+// module registered under that name declares what the reader does not
+// implement.
 //
 // Help is the command-line library's, and asking for it is not a failure: the
-// library answers, no command runs, and the result is nil.
+// library answers, no command runs, and the result is nil. That answer, and a
+// command line, a primary source or a validation that failed, end the run before
+// the drive begins: Execute has supplied no reader and driven nothing, yet it
+// returns as it does when a drive ended. An instance the host supplied before
+// Execute is then still the host's to release, and Participating on the module
+// it belongs to tells the cases apart: it is true once the drive has begun.
 //
 // The lifecycle is driven once, so a tree is run once.
 func (a *App) Execute(ctx context.Context) error {
@@ -144,7 +170,8 @@ func (a *App) reportEarly(err error) error {
 }
 
 // run is what a command does once the library has parsed the whole of its
-// path: load this command's configuration, hand it to the registry, drive.
+// path: load this command's configuration, supply it to the config module,
+// drive.
 //
 // The primary source is read here and nowhere else. Its locator comes from the
 // host's default, the environment and the reserved argument, and the argument
@@ -157,11 +184,14 @@ func (a *App) run(ctx context.Context, l *loader, p *plan, node *planNode) error
 	}
 	l.ReportUnclaimed()
 
-	// Releasing a supplied product is the business of whoever supplied it,
-	// and a drive closes only what it constructed. This one holds the
-	// values of the run and has nothing to release; anything added to it
-	// that does will have to be released here.
-	a.reg.Supply((*Reader)(nil), l.ReaderFor(node.participants))
+	// The module is named, so the owner of the reader does not depend on what
+	// else the registry holds: a registry with another module delivering
+	// Reader takes the call as well. From the start of the drive the instance
+	// counts as constructed and the drive runs the module's Stop and Close on
+	// it. The module declares neither, because the reader holds the values of
+	// the run and nothing to release; a reader that held something would need
+	// the module to declare the Close that releases it.
+	a.reg.Supply(l.ReaderFor(node.participants), ModuleName)
 
 	return a.reg.Drive(ctx, core.Drive{
 		Depth:         node.decl.depth,

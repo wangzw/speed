@@ -177,6 +177,16 @@ here must not cross, and how to run it.
   module registering an extractor declares no dependency on this one, so it may
   legally register from an `Init` that runs first. Opening it in `Init` would
   turn a legal registration into a panic.
+- **The callbacks act on this module's own product and on nothing else.** The
+  roster and the resolver each recognise the one type they build
+  (`productOf` in `catalog/catalog.go` and `resolve/resolve.go`), and an
+  instance of any other type is a host's own, supplied for the module: no
+  snapshot is loaded for it, no window opened and no layer registered, and what
+  it holds is released by whoever supplied it. Taking whatever carries the
+  product's methods for the product is the shape to reject: a wrapper a host
+  writes around the product carries every one of them, and the callbacks would
+  act on the product inside it (`catalog/supplied_test.go`,
+  `resolve/supplied_test.go`).
 - **The endpoint list is a set, judged at startup.** The entry point's surface
   takes an endpoint by name and appends the layer without deduplicating, so a
   name written twice would put the resolution layer on that endpoint twice and

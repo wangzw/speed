@@ -194,10 +194,14 @@ func open(ctx context.Context, cfg *Config, logger *slog.Logger) (event.Bus, err
 // The readers start here rather than in Subscribe because the table is not
 // complete until every module has had its Init: a reader started on the first
 // subscription would begin delivering to a table still being filled.
+//
+// It takes up this implementation's own bus and refuses any other: a bus the
+// host supplied for the module has no table here to freeze and no readers here
+// to start.
 func start(ctx context.Context, b event.Bus) error {
 	local, ok := b.(*bus)
 	if !ok {
-		return fmt.Errorf("%s: the bus handed to the start stage is %T", ModuleName, b)
+		return dispatch.ForeignBus(ModuleName, b)
 	}
 	return local.begin(ctx)
 }

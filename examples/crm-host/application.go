@@ -185,8 +185,9 @@ func keyDigest(value string) string {
 }
 
 // errForeignInstance reports a callback handed an instance its module did not
-// build, which the registry does not do: it is the failure a checked narrowing
-// reports instead of panicking.
+// build. Such an instance is one a host supplied for the module, which the
+// registry hands to the callbacks as it hands the product, and a checked
+// narrowing reports it with this error instead of panicking.
 func errForeignInstance(module string, instance any) error {
 	return fmt.Errorf("module %q was handed an instance of type %T, which it did not build", module, instance)
 }

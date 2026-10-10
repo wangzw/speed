@@ -16,7 +16,9 @@ import (
 //
 // It keeps the Spec and the section it was assembled from, so that a second
 // connection a caller builds with Open is put together the same way the
-// delivered one was — same engine, same pool shape. Everything on it is fixed
+// delivered one was — same engine, same pool shape. The Spec is also how a
+// product says whose New built it: Migrate accepts an instance of this type that
+// carries the name of its own module, and no other. Everything on it is fixed
 // at construction and the handle underneath is safe for concurrent use, so the
 // product carries no lock of its own.
 type database struct {

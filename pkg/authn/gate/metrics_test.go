@@ -62,7 +62,11 @@ func TestTheConclusionCountsReachTheMetricCapability(t *testing.T) {
 		body:     guarding("public"),
 		backends: []authn.Verifier{passes(enumerating("local", "alice"))},
 		router:   router,
-		supplied: []supply{{token: (*observability.MeterProvider)(nil), product: provider}},
+		supplied: []supply{{
+			module:   "stand-in.meter",
+			token:    (*observability.MeterProvider)(nil),
+			instance: provider,
+		}},
 	}.drive(t, func(ctx context.Context, _ *core.Registry) error {
 		handler := router.endpoints["public"].middleware[0].Wrap(nethttp.HandlerFunc(
 			func(nethttp.ResponseWriter, *nethttp.Request) {}))

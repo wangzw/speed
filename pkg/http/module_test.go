@@ -175,36 +175,88 @@ func TestDeclaredDependenciesAreOptional(t *testing.T) {
 }
 
 // TestTheReaderIsUndeclaredAndStillRequired pins the one thing this module
-// takes up without declaring. The configuration reader is handed to the
-// registry before the first module is constructed, so there is nothing to
-// order this module against and a Requires entry for it would name a
-// capability no module delivers.
+// takes up without declaring. The configuration reader is the instance of the
+// config module, supplied by the host before the drive, so it exists from that
+// call on and Prepare and New find it whatever order they run in: a Requires
+// entry would put this module after the config module for a reader that neither
+// Stop nor Close reads.
 //
 // Undeclared is not optional. The endpoints are read through the reader and
-// there is nothing to serve without them, so a Prepare reaching a registry
-// that was handed none fails and says so. One that swallowed the absence, or
-// fell back to an empty endpoint set, would send such a host down the "no
-// endpoint configured" failure instead, naming a configuration key rather than
-// the reader nobody handed in — the wrong premise, and a misleading one.
+// there is nothing to serve without them, so a Prepare reaching a registry with
+// no reader to give fails and says so, whether the config module is not
+// registered at all or is registered and was supplied nothing. One that
+// swallowed the absence, or fell back to an empty endpoint set, would send such
+// a host down the "no endpoint configured" failure instead, naming a
+// configuration key rather than the reader nobody supplied — the wrong premise,
+// and a misleading one.
 //
-// Neither half shows itself at run time: a missing declaration and a
-// superfluous one both behave exactly like the right one in an assembly that
-// has a reader. The descriptor and a Prepare over an empty registry are the
-// only places either can be caught.
+// Neither half shows itself in an assembly that has a reader: a Requires entry
+// for it and a Prepare that tolerated its absence both behave exactly like the
+// right descriptor there. The descriptor and a Prepare over a registry without a
+// reader are the only places either can be caught.
 func TestTheReaderIsUndeclaredAndStillRequired(t *testing.T) {
 	m := testModule()
 	for i, req := range m.Requires {
 		if reflect.TypeOf(req.Token) == reflect.TypeFor[*config.Reader]() {
-			t.Errorf("Requires[%d] declares the configuration reader, which is in the registry "+
-				"before construction begins and is delivered by no module", i)
+			t.Errorf("Requires[%d] declares the configuration reader, which this module takes up "+
+				"in Prepare and New, where the instance the host supplied already exists, and "+
+				"reads nowhere later: the entry would only order this module after the "+
+				"config module", i)
 		}
 	}
 
-	_, err := m.Prepare(context.Background(), core.New())
-	if !errors.Is(err, core.ErrMissingProvider) {
-		t.Fatalf("Prepare against a registry that was handed no reader: %v", err)
+	for _, c := range []struct {
+		name     string
+		registry func() *core.Registry
+	}{
+		{"no config module is registered", core.New},
+		{"the config module is registered and was supplied nothing", func() *core.Registry {
+			reg := core.New()
+			reg.Register(config.Module())
+			return reg
+		}},
+	} {
+		t.Run(c.name, func(t *testing.T) {
+			_, err := m.Prepare(context.Background(), c.registry())
+			if !errors.Is(err, core.ErrMissingProvider) {
+				t.Fatalf("Prepare against a registry with no reader to give: %v", err)
+			}
+			mustContain(t, err.Error(), "configuration", "what the startup is missing")
+		})
 	}
-	mustContain(t, err.Error(), "configuration", "what the startup is missing")
+}
+
+// TestPrepareTakesUpTheSuppliedReader pins that the reader a host supplied is
+// the one Prepare reads, in the stage that runs before any module is
+// constructed. The two registries differ in the configuration their reader
+// hands back and in nothing else: one declares an endpoint and the module
+// states its stance, the other declares none and the module fails naming the key
+// to write. A Prepare that did not read through the registry's reader would give
+// the same answer for both.
+func TestPrepareTakesUpTheSuppliedReader(t *testing.T) {
+	m := testModule()
+
+	reg := core.New()
+	supplyConfig(reg, oneEndpoint("public"))
+	stance, err := m.Prepare(context.Background(), reg)
+	if err != nil {
+		t.Fatalf("Prepare with a supplied reader declaring an endpoint: %v", err)
+	}
+	if stance.State != core.StateEnabled {
+		t.Errorf("the stance is %v and has to be %v", stance.State, core.StateEnabled)
+	}
+
+	empty := core.New()
+	supplyConfig(empty, moduleConfig{})
+	_, err = m.Prepare(context.Background(), empty)
+	if err == nil {
+		t.Fatal("Prepare with a supplied reader declaring no endpoint succeeded, so it did not " +
+			"read the reader the host supplied")
+	}
+	if errors.Is(err, core.ErrMissingProvider) {
+		t.Fatalf("Prepare did not find the reader that was supplied: %v", err)
+	}
+	mustContain(t, err.Error(), "http.endpoints", "the configuration key to write")
 }
 
 // TestImportingThisPackageCarriesALoggingModule pins the half of the optional
@@ -388,7 +440,8 @@ func TestStopAndCloseToleranceOnAnInstanceThatNeverServed(t *testing.T) {
 
 // TestStageCallbacksTolerateAForeignInstance pins the same obligation for the
 // instance itself: rollback runs the callbacks on modules whose New never
-// returned a product.
+// returned a product, and the instance a host supplied for this module is any
+// type that delivers Router, which is not this module's product either.
 func TestStageCallbacksTolerateAForeignInstance(t *testing.T) {
 	m := testModule()
 	ctx := context.Background()
@@ -399,7 +452,7 @@ func TestStageCallbacksTolerateAForeignInstance(t *testing.T) {
 		"Stop":    func(i any) error { return m.Stop(ctx, nil, i) },
 		"Close":   func(i any) error { return m.Close(ctx, nil, i) },
 	} {
-		for _, instance := range []any{nil, (*router)(nil), "not a router"} {
+		for _, instance := range []any{nil, (*router)(nil), "not a router", &foreignRouter{}} {
 			if err := call(instance); err != nil {
 				t.Errorf("%s on the instance %#v: %v", name, instance, err)
 			}

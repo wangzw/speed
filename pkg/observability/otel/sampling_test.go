@@ -39,8 +39,10 @@ func sampledAt(t *testing.T, ratio float64) ([]string, string) {
 	d := &destination{}
 	var module bytes.Buffer
 	reg := core.New()
-	reg.Supply((*config.Reader)(nil), ratioConfig{ratio: ratio})
-	reg.Supply((*log.Logger)(nil), stubLogger{lg: slog.New(slog.NewTextHandler(&module, nil))})
+	reg.Register(config.Module())
+	reg.Register(log.Module())
+	reg.Supply(ratioConfig{ratio: ratio}, config.ModuleName)
+	reg.Supply(stubLogger{lg: slog.New(slog.NewTextHandler(&module, nil))}, log.ModuleName)
 	reg.Register(otel.Module())
 	reg.Register(backendModule("observability.test-backend", d))
 	err := reg.Drive(context.Background(), core.Drive{

@@ -3,6 +3,7 @@ package core
 import (
 	"errors"
 	"maps"
+	"reflect"
 	"slices"
 	"strings"
 	"testing"
@@ -60,6 +61,95 @@ func TestBothExclusiveAutoViolates(t *testing.T) {
 		if !strings.Contains(err.Error(), name) {
 			t.Errorf("error %q does not name %s", err, name)
 		}
+	}
+}
+
+// TestAnExclusiveConflictWithoutASuppliedPartySaysNothingOfSupply pins the text
+// of the failure in full when no party to it has a supplied instance: the note
+// about a supplied instance is there when one is a party, and not otherwise.
+func TestAnExclusiveConflictWithoutASuppliedPartySaysNothingOfSupply(t *testing.T) {
+	_, err := resolveEnablement([]stance{
+		stated("memory", StateAuto, "", exclusive((*cacheCap)(nil))),
+		stated("remote", StateAuto, "", exclusive((*cacheCap)(nil))),
+	})
+
+	want := ErrExclusiveViolated.Error() + ": capability " + typeName(reflect.TypeFor[cacheCap]()) +
+		` is still delivered by "memory" and "remote" after resolution, while "memory" and "remote" ` +
+		"claims it exclusively. Disable all but one provider, or have the default implementation " +
+		"declare the capability Exclusive so it stands down when another provider is explicitly enabled"
+	if err == nil || err.Error() != want {
+		t.Fatalf("resolution returned %v, want the failure to read\n%s", err, want)
+	}
+}
+
+// suppliedStance is the stance of a module the host supplied an instance for:
+// StateEnabled, whatever the module's Prepare would have said.
+func suppliedStance(name string, provs ...Provision) stance {
+	s := stated(name, StateEnabled, "", provs...)
+	s.supplied = true
+	return s
+}
+
+// TestAnExclusiveConflictSaysWhichPartyHasASuppliedInstance pins what the failure
+// adds for a party whose instance the host supplied. Its stance is fixed at
+// StateEnabled, so it never stands down, and leaving it out of the command tree
+// does not take it out of the command: the advice that fits every other party
+// does not reach it, and the way out that does -- supply it no instance -- is
+// the one the text has to give. Only the parties that have one are named.
+func TestAnExclusiveConflictSaysWhichPartyHasASuppliedInstance(t *testing.T) {
+	for _, c := range []struct {
+		name    string
+		stances []stance
+		says    []string
+		omits   []string
+	}{
+		{
+			name: "one party",
+			stances: []stance{
+				suppliedStance("memory", exclusive((*cacheCap)(nil))),
+				stated("remote", StateEnabled, "", exclusive((*cacheCap)(nil))),
+			},
+			says: []string{
+				`"memory" has a supplied instance`, "fixes the stance of its module at StateEnabled",
+				"stop supplying an instance",
+			},
+			omits: []string{`"remote" has`, `"remote" each`},
+		},
+		{
+			name: "the party that does not claim the capability",
+			stances: []stance{
+				suppliedStance("memory", shared((*cacheCap)(nil))),
+				stated("remote", StateEnabled, "", exclusive((*cacheCap)(nil))),
+			},
+			says:  []string{`"memory" has a supplied instance`, "stop supplying an instance"},
+			omits: []string{`"remote" has`, `"remote" each`},
+		},
+		{
+			name: "both parties",
+			stances: []stance{
+				suppliedStance("memory", exclusive((*cacheCap)(nil))),
+				suppliedStance("remote", exclusive((*cacheCap)(nil))),
+			},
+			says: []string{`"memory" and "remote" each have a supplied instance`, "stop supplying an instance"},
+		},
+	} {
+		t.Run(c.name, func(t *testing.T) {
+			_, err := resolveEnablement(c.stances)
+
+			if !errors.Is(err, ErrExclusiveViolated) {
+				t.Fatalf("resolution returned %v, want ErrExclusiveViolated", err)
+			}
+			for _, want := range c.says {
+				if !strings.Contains(err.Error(), want) {
+					t.Errorf("error %q does not say %q", err, want)
+				}
+			}
+			for _, wrong := range c.omits {
+				if strings.Contains(err.Error(), wrong) {
+					t.Errorf("error %q says %q of a party with no supplied instance", err, wrong)
+				}
+			}
+		})
 	}
 }
 

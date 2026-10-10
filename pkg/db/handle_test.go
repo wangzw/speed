@@ -160,12 +160,23 @@ func (h *host) finish(t *testing.T) {
 // set — without this helper having to grow a parameter per declaration kind.
 func startHost(t *testing.T, spec db.Spec, body string, extra ...core.Module) (*host, error) {
 	t.Helper()
+	return startHostWith(t, spec, body, nil, extra...)
+}
+
+// startHostWith is startHost with a say in what the registry holds when the
+// command tree is started: before is called on it with every module registered,
+// which is where a case supplies an instance for one of them.
+func startHostWith(t *testing.T, spec db.Spec, body string, before func(*core.Registry),
+	extra ...core.Module,
+) (*host, error) {
+	t.Helper()
 	locator := filepath.Join(t.TempDir(), "config.json")
 	if err := os.WriteFile(locator, []byte(body), 0o600); err != nil {
 		t.Fatalf("writing the primary configuration source: %v", err)
 	}
 
 	reg := core.New()
+	reg.Register(config.Module())
 	reg.Register(jsonformat.Module())
 	reg.Register(filesource.Module())
 	reg.Register(core.Module{
@@ -178,6 +189,9 @@ func startHost(t *testing.T, spec db.Spec, body string, extra ...core.Module) (*
 	}
 	p := newProbe()
 	reg.Register(p.module())
+	if before != nil {
+		before(reg)
+	}
 
 	// The command line is the process's, and a test binary carries arguments
 	// of its own, so they are taken away while the tree reads them. The cases

@@ -18,6 +18,11 @@ import (
 // wants the values and has no lifecycle to drive, a test of a module outside
 // its own package among them.
 //
+// The reader is returned and not supplied. A caller that drives the registry
+// supplies it itself, as the instance of the config module: a registry made with
+// core.New registers Module first, and naming the module with ModuleName leaves
+// no doubt which one the reader belongs to, whatever else the registry holds.
+//
 // The environment is the process's own, read once when the call begins: the
 // <PREFIX>_CONFIG that selects the primary source is read from that snapshot,
 // and so are the values. A caller that steers a variable writes it into the

@@ -99,11 +99,37 @@ func (p *probe) module(name string) core.Module {
 	}
 }
 
+// count returns how many times the event was recorded.
+func (p *probe) count(event string) int {
+	n := 0
+	for _, recorded := range p.snapshot() {
+		if recorded == event {
+			n++
+		}
+	}
+	return n
+}
+
+// eventsOf returns what was recorded for one module, in order. Every event the
+// recording modules write ends in the module's name.
+func (p *probe) eventsOf(name string) []string {
+	var events []string
+	for _, recorded := range p.snapshot() {
+		if strings.HasSuffix(recorded, " "+name) {
+			events = append(events, recorded)
+		}
+	}
+	return events
+}
+
+// readerFace names the module that carries the reading face in a registry
+// assembled by hand.
+const readerFace = "reader-face"
+
 // probeReader is a configuration reader a host builds itself and hands in
 // with Supply. It carries the shutdown shape a module's product is driven
-// through, so a drive that reached a supplied product leaves a record.
-// Nothing in core calls either one: a supplied product is released by the
-// party that supplied it.
+// through, and the module that owns it calls the two from its Stop and Close,
+// so a drive that reached the supplied instance leaves a record.
 type probeReader struct{ p *probe }
 
 func (r probeReader) Value(key string) string { return "value:" + key }
@@ -119,9 +145,27 @@ func (r probeReader) Close() error {
 }
 
 // supplyReader hands the reader in the way a host does: built before the
-// drive begins, under the capability it stands for, and not a module.
+// drive begins, to the module that declares the capability. That module has no
+// New, so the reader is the only way it gets an instance, and its Stop and
+// Close pass the instance on to the shutdown shape the reader carries.
 func (p *probe) supplyReader(reg *core.Registry) {
-	reg.Supply((*Reader)(nil), probeReader{p: p})
+	reg.Register(core.Module{
+		Name:     readerFace,
+		Provides: []core.Provision{{Token: (*Reader)(nil)}},
+		Stop: func(ctx context.Context, _ *core.Registry, instance any) error {
+			if r, ok := instance.(probeReader); ok {
+				return r.Stop(ctx)
+			}
+			return nil
+		},
+		Close: func(_ context.Context, _ *core.Registry, instance any) error {
+			if r, ok := instance.(probeReader); ok {
+				return r.Close()
+			}
+			return nil
+		},
+	})
+	reg.Supply(probeReader{p: p}, readerFace)
 }
 
 func register(reg *core.Registry, mods ...core.Module) {
@@ -433,8 +477,8 @@ func TestRollbackCoversAllConstructedInstances(t *testing.T) {
 
 // TestDependencyFailureConstructsNothing pins that resolution is the
 // preliminary to construction rather than a step inside it: an unmet
-// requirement stops the drive with no instance in existence, so there is
-// nothing for the rollback to reach.
+// requirement stops the drive before anything is constructed, so the only
+// instance the rollback has to reach is the one the host supplied.
 func TestDependencyFailureConstructsNothing(t *testing.T) {
 	p := &probe{}
 	reg := core.New()
@@ -450,6 +494,12 @@ func TestDependencyFailureConstructsNothing(t *testing.T) {
 	for _, event := range p.snapshot() {
 		if strings.HasPrefix(event, "new ") {
 			t.Fatalf("a module was constructed after dependency resolution failed: %v", p.snapshot())
+		}
+	}
+	for _, want := range []string{"stop supplied", "close supplied"} {
+		if got := p.count(want); got != 1 {
+			t.Errorf("%q was recorded %d times, want the supplied instance released once; recorded %v",
+				want, got, p.snapshot())
 		}
 	}
 }
@@ -523,10 +573,10 @@ func TestUndeliveredCapability(t *testing.T) {
 	}
 }
 
-// TestSuppliedProductIsAvailableInPrepare pins the bootstrap: the host hands
+// TestASuppliedInstanceIsAvailableInPrepare pins the bootstrap: the host hands
 // the configuration reader in before the drive, so every module reads its own
 // configuration while stating whether it is enabled.
-func TestSuppliedProductIsAvailableInPrepare(t *testing.T) {
+func TestASuppliedInstanceIsAvailableInPrepare(t *testing.T) {
 	p := &probe{}
 	reg := core.New()
 	p.supplyReader(reg)
@@ -550,11 +600,11 @@ func TestSuppliedProductIsAvailableInPrepare(t *testing.T) {
 	}
 }
 
-// TestSuppliedProductIsNotRolledBack pins that a drive releases what it
-// constructed and nothing else. The reader was built by the host and is the
-// host's to release; the product carries the shutdown shape so that a drive
-// which reached it would say so.
-func TestSuppliedProductIsNotRolledBack(t *testing.T) {
+// TestTheDriveStopsAndClosesASuppliedInstance pins that a supplied instance
+// leaves through the same shutdown as one the drive constructed: its module's
+// Stop runs once, after every Serve, and its Close runs once, after every
+// Stop.
+func TestTheDriveStopsAndClosesASuppliedInstance(t *testing.T) {
 	p := &probe{}
 	reg := core.New()
 	p.supplyReader(reg)
@@ -563,15 +613,22 @@ func TestSuppliedProductIsNotRolledBack(t *testing.T) {
 	if err := runUntilServed(t, reg, p, "serve aaa", "serve zzz"); err != nil {
 		t.Fatalf("Run returned %v", err)
 	}
-	events := p.snapshot()
-	for _, unwanted := range []string{"stop supplied", "close supplied"} {
-		if slices.Contains(events, unwanted) {
-			t.Fatalf("the rollback reached the supplied product: %v", events)
+	for _, want := range []string{"stop supplied", "close supplied"} {
+		if got := p.count(want); got != 1 {
+			t.Fatalf("%q was recorded %d times, want once; recorded %v", want, got, p.snapshot())
 		}
 	}
-	if events[len(events)-1] != "close aaa" {
-		t.Fatalf("the last event is %q, want the reverse-order close of the first module: %v",
-			events[len(events)-1], events)
+	stop := p.indexOf(t, "stop supplied")
+	for _, serve := range []string{"serve aaa", "serve zzz"} {
+		if p.indexOf(t, serve) > stop {
+			t.Errorf("the supplied instance was stopped before %q: %v", serve, p.snapshot())
+		}
+	}
+	closed := p.indexOf(t, "close supplied")
+	for _, stopped := range []string{"stop aaa", "stop zzz", "stop supplied"} {
+		if p.indexOf(t, stopped) > closed {
+			t.Errorf("the supplied instance was closed before %q: %v", stopped, p.snapshot())
+		}
 	}
 }
 
@@ -585,6 +642,47 @@ func TestRegistryWithNothingSuppliedStillRuns(t *testing.T) {
 
 	if err := runUntilServed(t, reg, p, "serve alone"); err != nil {
 		t.Fatalf("Run returned %v, want a registry with nothing supplied to run", err)
+	}
+}
+
+// TestRunDrivesASuppliedModuleThroughEveryStageButPrepareAndNew pins the
+// sequence a module takes when the host built its instance: the same stages as
+// any other, minus the two that produce the instance. The module is not named
+// anywhere, and Run takes in every registered module.
+func TestRunDrivesASuppliedModuleThroughEveryStageButPrepareAndNew(t *testing.T) {
+	p := &probe{}
+	reg := core.New()
+	register(reg, preparing(p, "only"))
+	reg.Supply(&box{id: "host"}, "only")
+
+	if err := runUntilServed(t, reg, p, "serve only"); err != nil {
+		t.Fatalf("Run returned %v", err)
+	}
+	want := []string{"migrate only", "init only", "start only", "serve only", "stop only", "close only"}
+	if got := p.snapshot(); !slices.Equal(got, want) {
+		t.Fatalf("the driver ran %v, want %v", got, want)
+	}
+}
+
+// TestRunFailsWhenTheHostSuppliedNothingToAModuleThatHasNoNew pins what Run
+// leaves to its caller. It takes in every registered module and loads nothing,
+// so a module that declares a capability and builds no instance of it — the
+// shape of the configuration module — fails the startup naming the one way to
+// give it an instance, until the caller supplies one. Which sentinel comes
+// first depends on whether anything took the capability up before the module's
+// turn to be constructed.
+func TestRunFailsWhenTheHostSuppliedNothingToAModuleThatHasNoNew(t *testing.T) {
+	reg := core.New()
+	register(reg, placeholder(readerFace, (*Reader)(nil)))
+
+	err := runToFailure(t, reg)
+	if !errors.Is(err, core.ErrMissingProvider) && !errors.Is(err, core.ErrUndeliveredCapability) {
+		t.Fatalf("Run returned %v, want ErrMissingProvider or ErrUndeliveredCapability", err)
+	}
+	for _, want := range []string{readerFace, "Reader", "Supply"} {
+		if !strings.Contains(err.Error(), want) {
+			t.Errorf("error %q does not mention %q", err, want)
+		}
 	}
 }
 
@@ -611,7 +709,8 @@ func TestNothingSuppliedYieldsMissingProviderOnReader(t *testing.T) {
 }
 
 // TestModuleWithoutNewGetsNilInstance pins the contract for a module that only
-// declares resources: every later stage receives nil.
+// declares resources and was handed no instance: every later stage receives
+// nil.
 func TestModuleWithoutNewGetsNilInstance(t *testing.T) {
 	p := &probe{}
 	reg := core.New()
@@ -645,8 +744,8 @@ func TestModuleWithoutNewGetsNilInstance(t *testing.T) {
 }
 
 // TestPrepareSeesNoModuleProductButSeesSuppliedOnes pins the two halves of
-// what a stance can reach: no module's product exists yet, while a supplied
-// product was there before the drive began.
+// what a stance can reach: no instance a module constructs exists yet, while a
+// supplied instance was there before the drive began.
 func TestPrepareSeesNoModuleProductButSeesSuppliedOnes(t *testing.T) {
 	p := &probe{}
 	reg := core.New()
@@ -738,9 +837,10 @@ func TestRunEmitsDiagnosticsAfterResolution(t *testing.T) {
 
 // TestProvidesWithoutNewFailsUndelivered pins the consequence of the two rules
 // meeting: a module with no New has nil for its instance in every later stage,
-// so one that declares Provides delivers nothing and must fail. A module
-// carrying resources alone cannot declare a capability on the side, because
-// what is delivered is the instance and it builds none.
+// so one that declares Provides delivers nothing and must fail unless the host
+// supplied an instance for it. A module carrying resources alone cannot
+// declare a capability on the side, because what is delivered is the instance
+// and it builds none. The text names the one way out the module has.
 func TestProvidesWithoutNewFailsUndelivered(t *testing.T) {
 	reg := core.New()
 	register(reg, core.Module{
@@ -753,7 +853,7 @@ func TestProvidesWithoutNewFailsUndelivered(t *testing.T) {
 	if !errors.Is(err, core.ErrUndeliveredCapability) {
 		t.Fatalf("Run returned %v, want ErrUndeliveredCapability", err)
 	}
-	for _, want := range []string{"resources-only", "Reader", "New"} {
+	for _, want := range []string{"resources-only", "Reader", "New", "Supply"} {
 		if !strings.Contains(err.Error(), want) {
 			t.Errorf("error %q does not mention %q", err, want)
 		}

@@ -86,9 +86,10 @@ func init() { core.ProcessRegistry.Register(Module()) }
 // The declaration does not take the roster in, though. The roster delivers its
 // capability exclusively, and the dependency closure never pulls an exclusive
 // provider into a command on its own, so a host that writes this module's name
-// and not the roster's is left with no provider for the capability this module
-// requires — which ends the run at dependency resolution, before anything is
-// constructed. The two module names go into the command together.
+// and not the roster's, and supplies no instance for the roster either, is left
+// with no provider for the capability this module requires — which ends the run
+// at dependency resolution, before anything is constructed. The two module names
+// go into the command together.
 func Module() core.Module {
 	return core.Module{
 		Name:      ModuleName,
@@ -159,13 +160,18 @@ func Module() core.Module {
 }
 
 // readerOf takes up the configuration reader. A reader that is not there means
-// the host never supplied one, which is the host's omission and is carried out
-// as it stands rather than read as "nothing was configured".
+// the host never supplied one as the instance of the config module, which is the
+// host's omission and is carried out as it stands rather than read as "nothing
+// was configured".
 func readerOf(reg *core.Registry) (config.Reader, error) {
 	return core.Resolve[config.Reader](reg)
 }
 
-// productOf narrows an instance to this module's product.
+// productOf narrows an instance to this module's product. An instance of another
+// shape is one the host supplied for this module, and the callbacks leave it
+// alone: no registration window is opened or sealed for it and no layer is
+// registered on any endpoint, and what it holds is released by whoever supplied
+// it.
 func productOf(instance any) (*resolver, bool) {
 	r, ok := instance.(*resolver)
 	return r, ok

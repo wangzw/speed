@@ -169,22 +169,27 @@ func (s Spec[C]) read(reg *core.Registry) (*C, error) {
 	return cfg, nil
 }
 
-// closer is what an implementation's product implements to release what it
+// closer is what an implementation's instance implements to release what it
 // opened. An implementation whose backend holds nothing open — the in-memory one
 // — does not implement it, and release leaves it alone.
 type closer interface {
 	Close(ctx context.Context) error
 }
 
-// release closes an implementation's backend, when it has one to close.
+// release closes an implementation's backend, when its instance has one to
+// close.
 //
-// Every shape a rollback can hand it is tolerated. A startup that failed
+// Every shape the shutdown can hand it is tolerated. A startup that failed
 // part-way closes every module whatever stage it reached, so this runs on a
-// module whose New never returned a product; and a product of an unrelated type
-// would be a defect in this package rather than something a host could act on.
-// Reporting an error on either would bury the failure that started the rollback
-// under one about the cleanup. An unguarded type assertion would instead panic
-// there and lose it outright, which is why the assertion is the checked form.
+// module whose New never returned an instance, and reporting an error on that
+// would bury the failure that started the rollback under one about the cleanup.
+// It also runs on an instance the host supplied for the module, which Open did
+// not build and which can be any type that delivers KV: one that implements
+// closer is closed here, and what the others hold, or what a Close leaves held,
+// is the supplying host's to release, since nothing in this package knows what
+// it is. An unguarded type assertion would panic on either shape, and on the
+// first lose the failure that started the rollback outright, which is why the
+// assertion is the checked form.
 func release(ctx context.Context, instance any) error {
 	c, ok := instance.(closer)
 	if !ok {

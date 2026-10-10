@@ -229,9 +229,11 @@ type ordersProduct struct {
 	log *slog.Logger
 }
 
-// ordersOf narrows an instance to this module's product. A product of another
-// shape means the registry handed a callback something this module did not
-// build, which a host cannot cause.
+// ordersOf narrows an instance to this module's product. An instance of another
+// shape is one a host supplied for this module, which the registry accepts for a
+// module that declares no capability and hands to the callbacks as it hands the
+// product. This host supplies none for it, so one is a defect in whatever did,
+// and the narrowing panics on it with the type named.
 func ordersOf(instance any) *ordersProduct {
 	//nolint:errcheck // the doc comment above says why the panic is the report.
 	return instance.(*ordersProduct)

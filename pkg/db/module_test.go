@@ -143,9 +143,9 @@ func TestTheDescriptorIsTheShapeTheDesignGivesIt(t *testing.T) {
 			"engine would be settled by resolution instead of failing the startup")
 	}
 	if len(module.Requires) != 0 {
-		t.Errorf("the module requires %v; the reading face is a product the host supplies before "+
-			"assembly begins, which no module declares, and nothing else is taken up at "+
-			"construction", module.Requires)
+		t.Errorf("the module requires %v; the reading face is the config module's instance, which the "+
+			"host supplies before assembly begins and which exists from then on, and nothing "+
+			"else is taken up at construction", module.Requires)
 	}
 	if module.Stop != nil {
 		t.Errorf("the module carries a Stop callback, and the design gives it no work there")
@@ -237,9 +237,10 @@ func TestAWorkingSpecWithAMutexIsAccepted(t *testing.T) {
 	}
 }
 
-// stubDatabase is a product of the shape this module delivers: a handle and
-// the engine behind it. The two methods the later work items fill in are not
-// reached from the stages wired here.
+// stubDatabase is an implementation of Database that the host wrote: a handle
+// and the engine behind it. It is not a product of this module's New, which is
+// what makes it the instance Migrate refuses and Close still releases. The two
+// methods it fills in with nothing are not reached from the stages wired here.
 type stubDatabase struct {
 	handle  *gorm.DB
 	dialect Dialect
@@ -257,15 +258,38 @@ func (d *stubDatabase) Open(context.Context, string) (*gorm.DB, error) {
 
 var _ Database = (*stubDatabase)(nil)
 
+// partialDatabase is the stand-in a test writes by embedding the interface and
+// answering only the methods the case reads: every method it leaves out is the
+// embedded nil interface's, and calling one panics. DB is one it leaves out.
+type partialDatabase struct{ Database }
+
+func (partialDatabase) Dialect() Dialect { return SQLite }
+
+// panickingDatabase is an implementation of Database whose DB panics with a
+// value of its own, not with a runtime error.
+type panickingDatabase struct{ partialDatabase }
+
+func (panickingDatabase) DB() *gorm.DB { panic("the stand-in has no handle to give") }
+
 // TestCloseToleratesNilAndForeignInstance pins what the rollback path may hand
 // the Close callback.
 //
 // A startup that failed part-way closes every module whatever stage it
 // reached, so this callback runs on a module whose New never returned a
-// product — and, if that New has a defect, on a nil product of its own type.
-// An unguarded type assertion is green on every normal path and panics only
-// there, in the middle of a rollback, replacing the failure that caused the
-// rollback with a panic about the cleanup.
+// product — and, if that New has a defect, on a nil product of its own type. It
+// also runs on an instance the host supplied that this module's New did not
+// build, which a typed nil pointer of the host's own type is one of, and so is
+// a stand-in whose DB cannot answer: one that embeds the interface and
+// overrides only other methods, or one whose DB panics. So is a stand-in whose
+// handle has no pool: a zero-valued handle, which panics when asked for one,
+// and a handle with a configuration and no pool, as one opened on a driver that
+// reaches no database is.
+// An unguarded type assertion or method call is green on every normal path and
+// panics only there, in the middle of a rollback, replacing the failure that
+// caused the rollback with a panic about the cleanup. A handle with no pool has
+// nothing to release, so it is not a failure to report either: a drive that
+// stopped early over such a stand-in would end with an error of the rollback's
+// own making.
 func TestCloseToleratesNilAndForeignInstance(t *testing.T) {
 	closeCallback := NewModule(probeSpec()).Close
 	for _, c := range []struct {
@@ -273,11 +297,25 @@ func TestCloseToleratesNilAndForeignInstance(t *testing.T) {
 		instance any
 	}{
 		{"nothing was constructed", nil},
-		{"a nil product of this module's own type", (*stubDatabase)(nil)},
+		{"a nil product of this module's own type", (*database)(nil)},
+		{"a typed nil of the host's own implementation of Database", (*stubDatabase)(nil)},
+		{"an implementation of Database that reports no handle", &stubDatabase{}},
+		{"a stand-in embedding a nil Database, by value", partialDatabase{}},
+		{"a stand-in embedding a nil Database, by pointer", &partialDatabase{}},
+		{"an implementation of Database whose DB panics", panickingDatabase{}},
+		{"an implementation of Database whose handle is a zero value", &stubDatabase{handle: &gorm.DB{}}},
+		{"an implementation of Database whose handle has no pool", &stubDatabase{handle: &gorm.DB{Config: &gorm.Config{}}}},
 		{"a product of another module", struct{ other int }{}},
 		{"a typed nil of another kind", (*gorm.DB)(nil)},
 	} {
 		t.Run(c.name, func(t *testing.T) {
+			// A panic out of the callback is the failure under test, and it
+			// would otherwise abort the binary with the cases that follow.
+			defer func() {
+				if recovered := recover(); recovered != nil {
+					t.Errorf("closing %s panicked: %v", c.name, recovered)
+				}
+			}()
 			if err := closeCallback(t.Context(), core.New(), c.instance); err != nil {
 				t.Errorf("closing %s reported %v, want no error", c.name, err)
 			}
@@ -285,34 +323,53 @@ func TestCloseToleratesNilAndForeignInstance(t *testing.T) {
 	}
 }
 
-// TestCloseReleasesTheDeliveredPool is the other half: tolerating everything
-// is easy to get by doing nothing at all, and a module that never released its
-// connections leaks a pool per failed startup.
-func TestCloseReleasesTheDeliveredPool(t *testing.T) {
-	handle := dbsuite.OpenSQLite(t)
-	pool, err := handle.DB()
-	if err != nil {
-		t.Fatalf("taking the connection pool of the fixture: %v", err)
-	}
-	if err := pool.Ping(); err != nil {
-		t.Fatalf("the fixture is not usable before the close: %v", err)
-	}
+// TestCloseReleasesThePoolBehindAnyInstanceOfTheCapability is the other half:
+// tolerating everything is easy to get by doing nothing at all, and a module
+// that never released its connections leaks a pool per failed startup.
+//
+// It is not only the module's own product that is released. A drive that
+// refused an instance the host supplied rolls back with Close, and the pool
+// behind that instance has no other releaser once the drive has begun.
+func TestCloseReleasesThePoolBehindAnyInstanceOfTheCapability(t *testing.T) {
+	for _, c := range []struct {
+		name     string
+		instance func(handle *gorm.DB) any
+	}{
+		{"a product this module's New built", func(handle *gorm.DB) any {
+			return &database{spec: probeSpec(), handle: handle}
+		}},
+		{"an implementation of Database the host wrote", func(handle *gorm.DB) any {
+			return &stubDatabase{handle: handle, dialect: SQLite}
+		}},
+	} {
+		t.Run(c.name, func(t *testing.T) {
+			handle := dbsuite.OpenSQLite(t)
+			pool, err := handle.DB()
+			if err != nil {
+				t.Fatalf("taking the connection pool of the fixture: %v", err)
+			}
+			if err := pool.Ping(); err != nil {
+				t.Fatalf("the fixture is not usable before the close: %v", err)
+			}
 
-	instance := &stubDatabase{handle: handle, dialect: SQLite}
-	if err := NewModule(probeSpec()).Close(t.Context(), core.New(), instance); err != nil {
-		t.Fatalf("closing a delivered product reported %v", err)
-	}
-	if err := pool.Ping(); err == nil {
-		t.Errorf("the connection pool still answers after Close, so it was never released")
+			if err := NewModule(probeSpec()).Close(t.Context(), core.New(), c.instance(handle)); err != nil {
+				t.Fatalf("closing %s reported %v", c.name, err)
+			}
+			if err := pool.Ping(); err == nil {
+				t.Errorf("the connection pool still answers after Close, so it was never released")
+			}
+		})
 	}
 }
 
 // migrateThrough drives the Migrate stage the way the registry would, with the
-// configuration this implementation reads its mutex timeout from.
+// configuration this implementation reads its mutex timeout from, over a handle
+// wrapped in the product this implementation's New builds around the one it
+// opens.
 func migrateThrough(t *testing.T, spec Spec, body string, handle *gorm.DB, modules ...core.Module) error {
 	t.Helper()
-	instance := &stubDatabase{handle: handle, dialect: spec.Dialect}
-	return spec.migrate(t.Context(), settledRegistry(t, modules...), readerFor(t, spec, body), instance)
+	product := &database{spec: spec, handle: handle}
+	return spec.migrate(t.Context(), settledRegistry(t, modules...), readerFor(t, spec, body), product)
 }
 
 // TestMigrateAppliesTheDeclaredSetsToTheDeliveredHandle pins that the stage
@@ -414,21 +471,6 @@ func TestAnImplementationWithoutAMutexRunsWithoutOne(t *testing.T) {
 	}
 }
 
-// TestMigrateReportsAProductItCannotApplyOn keeps a defect in this package
-// from reaching the engine as a nil dereference. Every constructed module
-// reaches this stage, and this one delivers the database capability, so a
-// product that is not one is a fault here.
-func TestMigrateReportsAProductItCannotApplyOn(t *testing.T) {
-	spec := probeSpec()
-	err := spec.migrate(t.Context(), core.New(), &pathRecordingReader{}, struct{ other int }{})
-	if !errors.Is(err, ErrMigrationFailed) {
-		t.Fatalf("a product that is not a database gave %v, want ErrMigrationFailed", err)
-	}
-	if !strings.Contains(err.Error(), probeNamespace) {
-		t.Errorf("the failure does not name the module it came from: %v", err)
-	}
-}
-
 // startupOver drives a real lifecycle over the given modules, with the
 // configuration loader reading body. It is how a case reaches a verdict that
 // only exists after resolution: the stance of every module is taken first, and
@@ -446,6 +488,7 @@ func startupOver(t *testing.T, body string, modules ...core.Module) error {
 	locator := writeConfig(t, body)
 
 	reg := core.New()
+	reg.Register(config.Module())
 	reg.Register(jsonformat.Module())
 	reg.Register(filesource.Module())
 	reg.Register(core.Module{

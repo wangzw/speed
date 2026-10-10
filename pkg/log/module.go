@@ -27,6 +27,10 @@ const ModuleName = "log"
 // the value the loggers already handed out filter by is the one that has to
 // change. Its own reads and writes are atomic, so it is not covered by the
 // root mutex.
+//
+// Prepare is the only writer. An instance a host supplies for this module takes
+// the place of Prepare and New, so the level then stays where an earlier writer
+// left it, which is Info in a process with none.
 var bootstrapLevel = new(slog.LevelVar)
 
 // init registers this module with the process registry, so a host that imports
@@ -44,12 +48,19 @@ func init() { core.ProcessRegistry.Register(Module()) }
 // dependants would take up the other implementation while the configured
 // destinations, formats and rotation parameters lose their only consumer.
 //
-// The reader this module reads through is a product the host supplies to the
-// registry before the drive begins, so it is there before the first module is
-// constructed. That is why Requires does not name it: there is no provider to
-// be ordered after, and no module is constructed ahead of the others by name.
-// Its absence is still a startup failure — Prepare returns rather than falling
-// back to anything.
+// The reader this module reads through is the instance of the config module,
+// supplied before the drive begins. A supplied instance exists from that call
+// on, so Prepare finds it as New does, and it is there before the first module
+// is constructed. That is why Requires does not name it: the config module has
+// no New to be ordered after. Its absence is still a startup failure — Prepare
+// returns rather than falling back to anything.
+//
+// A host can also supply an instance for this module itself. It takes the place
+// of Prepare and New, so neither runs: the bootstrap chain's level is not set
+// from configuration and no formal chain is assembled. Close runs on the
+// instance all the same and gives up the references of this module's own
+// product, which is what a host holds when it called New itself; an instance of
+// any other type is left as it is, and whoever supplied it releases it.
 func Module() core.Module {
 	return core.Module{
 		Name:      ModuleName,
@@ -178,7 +189,9 @@ func newLogger(reader config.Reader) (*logger, error) {
 //
 // A nil instance is tolerated, and so is one of another type: a startup that
 // fails part-way rolls back every module whatever stage it reached, so Close
-// runs on modules whose New never returned a product.
+// runs on modules whose New never returned a product. An instance of another
+// type is one the host supplied for this module, and what it holds is
+// released by whoever supplied it.
 func closeLogger(instance any) error {
 	product, ok := instance.(*logger)
 	if !ok || product == nil {

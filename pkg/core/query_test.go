@@ -131,6 +131,11 @@ func TestResolveBeforeAnyProductExistsSaysSo(t *testing.T) {
 	cases := map[string]struct {
 		lookup func(t *testing.T) error
 		says   string
+		// supplied is the part of the explanation that says an instance the
+		// host supplied is the one thing that does exist at that moment. A
+		// reader told only that nothing is built would look for a way to
+		// build it, where the way is to supply it.
+		supplied string
 	}{
 		"before the drive": {
 			lookup: func(t *testing.T) error {
@@ -139,7 +144,8 @@ func TestResolveBeforeAnyProductExistsSaysSo(t *testing.T) {
 				_, err := reg.Resolve((*cacheCap)(nil))
 				return err
 			},
-			says: "no drive has started",
+			says:     "no drive has started",
+			supplied: "unless the host supplied it",
 		},
 		"in Prepare": {
 			lookup: func(t *testing.T) error {
@@ -158,7 +164,8 @@ func TestResolveBeforeAnyProductExistsSaysSo(t *testing.T) {
 				}
 				return err
 			},
-			says: "Prepare",
+			says:     "Prepare",
+			supplied: "only an instance the host supplied can be taken up there",
 		},
 		"in the action of a drive that constructs nothing": {
 			lookup: func(t *testing.T) error {
@@ -177,7 +184,8 @@ func TestResolveBeforeAnyProductExistsSaysSo(t *testing.T) {
 				}
 				return err
 			},
-			says: "StagePrepare",
+			says:     "StagePrepare",
+			supplied: "only an instance the host supplied exists in it",
 		},
 	}
 	for name, c := range cases {
@@ -188,6 +196,9 @@ func TestResolveBeforeAnyProductExistsSaysSo(t *testing.T) {
 			}
 			if !strings.Contains(err.Error(), `"provider"`) || !strings.Contains(err.Error(), c.says) {
 				t.Errorf("error %q does not name the provider and say %q", err, c.says)
+			}
+			if !strings.Contains(err.Error(), c.supplied) {
+				t.Errorf("error %q does not say %q", err, c.supplied)
 			}
 			if strings.Contains(err.Error(), "constructed later") {
 				t.Errorf("error %q blames the construction order, and nothing is being constructed", err)
@@ -202,24 +213,234 @@ func TestResolveBeforeAnyProductExistsSaysSo(t *testing.T) {
 // implementation rather than sending it after an import it already has.
 func TestResolveNamesTheExclusiveFix(t *testing.T) {
 	reg := New()
-	reg.Register(Module{
-		Name:     "memory",
-		Provides: []Provision{{Token: (*cacheCap)(nil), Exclusive: true}},
-	})
-	reg.Register(Module{
-		Name:     "redis",
-		Provides: []Provision{{Token: (*cacheCap)(nil), Exclusive: true}},
-	})
+	reg.Register(building("memory", exclusive((*cacheCap)(nil))))
+	reg.Register(building("redis", exclusive((*cacheCap)(nil))))
 	reg.participating = map[string]bool{}
 
 	_, err := reg.Resolve((*cacheCap)(nil))
 	if !errors.Is(err, ErrMissingProvider) {
 		t.Fatalf("Resolve returned %v, want ErrMissingProvider", err)
 	}
-	for _, want := range []string{"memory", "redis", "claimed exclusively", "name one implementation"} {
+	for _, want := range []string{
+		"memory", "redis", "claimed exclusively", "name one implementation",
+		"hand an instance of one of them in with Supply",
+	} {
 		if !strings.Contains(err.Error(), want) {
 			t.Errorf("error %q does not mention %q", err, want)
 		}
+	}
+}
+
+// TestResolveFindsASuppliedInstanceFromSupplyOn pins that a supplied instance is
+// the instance of its module in the registry's own table, so a lookup finds it
+// with no drive running, and that it is found by the module's declaration: the
+// host named no capability.
+func TestResolveFindsASuppliedInstanceFromSupplyOn(t *testing.T) {
+	reg := New()
+	reg.Register(Module{Name: "host-built", Provides: provides((*cacheCap)(nil))})
+	want := &product{id: "from the host"}
+	reg.Supply(want)
+
+	got, err := reg.Resolve((*cacheCap)(nil))
+	if err != nil {
+		t.Fatalf("Resolve failed for a capability whose module has a supplied instance: %v", err)
+	}
+	if got != any(want) {
+		t.Fatalf("Resolve returned %#v, want the supplied instance %#v", got, want)
+	}
+	if all := reg.ResolveAll((*cacheCap)(nil)); len(all) != 1 || all[0] != any(want) {
+		t.Fatalf("ResolveAll returned %#v, want the supplied instance alone", all)
+	}
+}
+
+// TestResolveAllPutsSuppliedAndBuiltInstancesInOneNameOrder pins that a supplied
+// instance is not a second kind of source with a place of its own in the
+// result: it takes the place its module's name gives it among the instances the
+// drive constructed.
+func TestResolveAllPutsSuppliedAndBuiltInstancesInOneNameOrder(t *testing.T) {
+	reg := New()
+	seed(t, reg, Module{Name: "alpha", Provides: provides((*cacheCap)(nil))}, &product{id: "alpha"})
+	reg.Register(Module{Name: "zeta", Provides: provides((*cacheCap)(nil))})
+	reg.Register(Module{Name: "mid", Provides: provides((*cacheCap)(nil))})
+	reg.Supply(&product{id: "zeta"}, "zeta")
+	reg.Supply(&product{id: "mid"}, "mid")
+
+	var got []string
+	for _, v := range reg.ResolveAll((*cacheCap)(nil)) {
+		got = append(got, v.(cacheCap).cacheID())
+	}
+	if want := []string{"alpha", "mid", "zeta"}; !slices.Equal(got, want) {
+		t.Fatalf("ResolveAll returned %v, want %v", got, want)
+	}
+}
+
+// TestResolveIsAmbiguousBetweenASuppliedAndABuiltInstance pins the single-valued
+// rule across the two origins. Nothing special-cases a supplied instance, so one
+// capability with a supplied instance and a constructed one has two providers
+// with an instance, and a single-valued lookup is ambiguous like any other.
+func TestResolveIsAmbiguousBetweenASuppliedAndABuiltInstance(t *testing.T) {
+	reg := New()
+	seed(t, reg, Module{Name: "built", Provides: provides((*cacheCap)(nil))}, &product{id: "built"})
+	reg.Register(Module{Name: "supplied", Provides: provides((*cacheCap)(nil))})
+	reg.Supply(&product{id: "supplied"}, "supplied")
+
+	_, err := reg.Resolve((*cacheCap)(nil))
+	if !errors.Is(err, ErrAmbiguousProvider) {
+		t.Fatalf("Resolve returned %v, want ErrAmbiguousProvider", err)
+	}
+	for _, name := range []string{"built", "supplied"} {
+		if !strings.Contains(err.Error(), name) {
+			t.Errorf("error %q does not name provider %s", err, name)
+		}
+	}
+}
+
+// TestResolveForAModuleWithoutNewSaysSupplyAtEveryMoment pins the cause that
+// outranks the timing ones. A module that declares the capability and has no New
+// callback never builds an instance, so telling the caller that nothing is built
+// yet, or that the provider is constructed later, sends it after a fix that
+// changes nothing: the instance can only come from the host.
+//
+// It outranks the module's place in the drive as well. A module the command did
+// not include, and one it reached for its declarations alone, are no better off:
+// including it, or taking it in at run level, gives it no instance either, so
+// the advice to do so is as empty as the timing ones.
+func TestResolveForAModuleWithoutNewSaysSupplyAtEveryMoment(t *testing.T) {
+	hostOnly := Module{Name: "host-only", Provides: provides((*cacheCap)(nil))}
+	cases := map[string]struct {
+		lookup   func(t *testing.T) error
+		declarer string
+	}{
+		"before the drive": {
+			declarer: "host-only",
+			lookup: func(t *testing.T) error {
+				reg := New()
+				reg.Register(hostOnly)
+				_, err := reg.Resolve((*cacheCap)(nil))
+				return err
+			},
+		},
+		"in Prepare": {
+			declarer: "host-only",
+			lookup: func(t *testing.T) error {
+				reg := New()
+				reg.Register(hostOnly)
+				var err error
+				reg.Register(Module{
+					Name: "early",
+					Prepare: func(_ context.Context, r *Registry) (Enablement, error) {
+						_, err = r.Resolve((*cacheCap)(nil))
+						return Enablement{}, nil
+					},
+				})
+				if drove := reg.Drive(t.Context(), Drive{Depth: StagePrepare, Participants: []string{"early", "host-only"}}); drove != nil {
+					t.Fatalf("the drive failed: %v", drove)
+				}
+				return err
+			},
+		},
+		"in the action of a drive that constructs nothing": {
+			declarer: "host-only",
+			lookup: func(t *testing.T) error {
+				reg := New()
+				reg.Register(hostOnly)
+				var err error
+				if drove := reg.Drive(t.Context(), Drive{
+					Depth:        StagePrepare,
+					Participants: []string{"host-only"},
+					Action: func(_ context.Context, r *Registry) error {
+						_, err = r.Resolve((*cacheCap)(nil))
+						return nil
+					},
+				}); drove != nil {
+					t.Fatalf("the drive failed: %v", drove)
+				}
+				return err
+			},
+		},
+		"after construction began": {
+			declarer: "later",
+			lookup: func(t *testing.T) error {
+				reg := New()
+				var err error
+				reg.Register(Module{
+					Name: "early",
+					New: func(_ context.Context, r *Registry) (any, error) {
+						_, err = r.Resolve((*cacheCap)(nil))
+						return nil, nil
+					},
+				})
+				reg.Register(Module{Name: "later", Provides: provides((*cacheCap)(nil))})
+				// The drive fails when it reaches the module that delivers
+				// nothing; what the earlier module's lookup saw is what is
+				// measured.
+				_ = reg.Drive(t.Context(), Drive{Depth: StageNew, Participants: []string{"early", "later"}})
+				return err
+			},
+		},
+		"a module the command did not include": {
+			declarer: "host-only",
+			lookup: func(t *testing.T) error {
+				reg := New()
+				reg.Register(hostOnly)
+				reg.Register(Module{Name: "other"})
+				var err error
+				if drove := reg.Drive(t.Context(), Drive{
+					Depth:        StagePrepare,
+					Participants: []string{"other"},
+					Action: func(_ context.Context, r *Registry) error {
+						_, err = r.Resolve((*cacheCap)(nil))
+						return nil
+					},
+				}); drove != nil {
+					t.Fatalf("the drive failed: %v", drove)
+				}
+				return err
+			},
+		},
+		"a module taken in for its declarations alone": {
+			declarer: "host-only",
+			lookup: func(t *testing.T) error {
+				reg := New()
+				reg.Register(hostOnly)
+				reg.Register(Module{Name: "other"})
+				var err error
+				if drove := reg.Drive(t.Context(), Drive{
+					Depth:         StagePrepare,
+					Participants:  []string{"other"},
+					DeclaringOnly: []Declaration{{Name: "host-only"}},
+					Action: func(_ context.Context, r *Registry) error {
+						_, err = r.Resolve((*cacheCap)(nil))
+						return nil
+					},
+				}); drove != nil {
+					t.Fatalf("the drive failed: %v", drove)
+				}
+				return err
+			},
+		},
+	}
+	for name, c := range cases {
+		t.Run(name, func(t *testing.T) {
+			err := c.lookup(t)
+			if !errors.Is(err, ErrMissingProvider) {
+				t.Fatalf("Resolve returned %v, want ErrMissingProvider", err)
+			}
+			for _, want := range []string{`"` + c.declarer + `"`, "no New callback", "supplied no instance", "Supply"} {
+				if !strings.Contains(err.Error(), want) {
+					t.Errorf("error %q does not mention %q", err, want)
+				}
+			}
+			for _, wrong := range []string{
+				"constructed later", "no drive has started", "StagePrepare",
+				"Requires", "does not include it", "declarations alone",
+			} {
+				if strings.Contains(err.Error(), wrong) {
+					t.Errorf("error %q carries %q, a timing fix for a module that no timing "+
+						"gives an instance", err, wrong)
+				}
+			}
+		})
 	}
 }
 

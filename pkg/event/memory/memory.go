@@ -126,11 +126,14 @@ func open(_ context.Context, _ *Config, logger *slog.Logger) (event.Bus, error) 
 // complete until the stage after them; freezing it there is what turns a
 // subscription registered later into a defect at its call site rather than a
 // subscriber that silently receives nothing published before it.
+//
+// It takes up this implementation's own bus and refuses any other. A bus the
+// host supplied for the module is not the one open built and has no table here
+// to freeze, so a drive that carries one to this stage fails.
 func start(ctx context.Context, b event.Bus) error {
 	local, ok := b.(*bus)
 	if !ok {
-		return fmt.Errorf("%s: the bus handed to the start stage is %T, and every constructed module "+
-			"reaches this stage with the capability it delivers", ModuleName, b)
+		return dispatch.ForeignBus(ModuleName, b)
 	}
 	local.table.Freeze(ctx)
 	return nil

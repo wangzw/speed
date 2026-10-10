@@ -91,7 +91,11 @@ func assembledOn(t *testing.T, database core.Module, engine, dsn string, extra [
 		reg.Register(m)
 		names = append(names, m.Name)
 	}
-	reg.Supply((*config.Reader)(nil), reader)
+	// The reader is the instance of the config module, which has no New. A module
+	// with a supplied instance takes part without being named, so the list above
+	// leaves it out.
+	reg.Register(config.Module())
+	reg.Supply(reader, config.ModuleName)
 	if err := reg.Drive(t.Context(), core.Drive{
 		Depth:        core.StageStart,
 		Participants: names,

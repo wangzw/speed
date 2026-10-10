@@ -59,20 +59,23 @@ func TestTheConsumerDeclaresTheCapabilitiesItTakesUp(t *testing.T) {
 	}
 }
 
-// The opposite assertion for the one capability that is not a module's product,
-// and the two do not contradict each other: a logger is delivered by a module,
-// so a module that takes one has to say so and be ordered around the module
-// that makes it, while the reading surface is a product the host supplies
-// before the first construction and there is no module to be ordered around.
+// The opposite assertion for the one capability whose instance is supplied and
+// not built, and the two do not contradict each other: a logger is built by its
+// module's New, so a module that takes one has to say so and be ordered around
+// the module that makes it, while the reading surface is the config module's
+// supplied instance. Execute supplies it before the drive begins, so it exists
+// before the first Prepare, and the module it belongs to has no callback to be
+// ordered around.
 //
-// Declaring it would not be a harmless extra line. Nothing in the registry
-// delivers the reading capability, so a Requires naming it is a requirement
-// with no provider, and the run fails at startup.
+// Declaring it would be an extra line that does nothing. core.Resolve takes the
+// instance whatever a module requires, and the config module takes part in every
+// drive Execute starts whether or not any module requires what it delivers.
 func TestNoModuleDeclaresTheConfigReaderRequirement(t *testing.T) {
 	for _, module := range []core.Module{ordersModule(), inventoryModule(), hostModule()} {
 		if requiresCapability(module, (*config.Reader)(nil)) {
-			t.Errorf("module %q declares a requirement on the %T capability, which no module delivers: "+
-				"the reading surface is supplied by the host before the first module is constructed",
+			t.Errorf("module %q declares a requirement on the %T capability, which no module needs to declare: "+
+				"the reading surface is the config module's supplied instance, and it exists before the first "+
+				"module is prepared",
 				module.Name, (*config.Reader)(nil))
 		}
 	}

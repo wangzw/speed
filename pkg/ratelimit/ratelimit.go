@@ -48,10 +48,12 @@ const (
 // Limiter is the capability this module delivers. A layer writes it into its
 // own After or Before to place itself inside or outside rate limiting.
 //
-// The method is unexported, so no type outside this package satisfies the
-// interface: the identifier only ever appears as (*Limiter)(nil), and a caller
-// that takes the instance up out of the registry can do nothing with it. The
-// decision is made in the middleware and nowhere else.
+// The method is unexported, so a caller that takes the instance up out of the
+// registry can do nothing with it, and the identifier appears as
+// (*Limiter)(nil), the token. The decision is made in the middleware and
+// nowhere else. A type outside this package satisfies the interface by
+// embedding it, which is how an instance the host supplies for this module
+// delivers the capability.
 type Limiter interface {
 	limit()
 }

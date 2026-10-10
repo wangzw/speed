@@ -86,8 +86,10 @@ func TestAnExportFailureIsReportedOnlyByTheWrapper(t *testing.T) {
 
 	var module bytes.Buffer
 	reg := core.New()
-	reg.Supply((*config.Reader)(nil), tunedConfig{serviceName: "orders", period: 10 * time.Millisecond})
-	reg.Supply((*log.Logger)(nil), stubLogger{lg: slog.New(slog.NewTextHandler(&module, nil))})
+	reg.Register(config.Module())
+	reg.Register(log.Module())
+	reg.Supply(tunedConfig{serviceName: "orders", period: 10 * time.Millisecond}, config.ModuleName)
+	reg.Supply(stubLogger{lg: slog.New(slog.NewTextHandler(&module, nil))}, log.ModuleName)
 	reg.Register(otel.Module())
 	reg.Register(core.Module{
 		Name: "observability.test-unreachable",

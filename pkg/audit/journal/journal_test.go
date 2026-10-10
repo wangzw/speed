@@ -820,6 +820,56 @@ func TestPrepareReturnsZeroEnablementWhenItCannotStart(t *testing.T) {
 	}
 }
 
+// suppliedAudit is a value a host can supply for this module: it delivers the
+// audit capability and is not the module's product.
+type suppliedAudit struct{}
+
+func (suppliedAudit) Record(context.Context, audit.Entry) error { return nil }
+
+// The callbacks that act on the module's product leave an instance a host
+// supplied for the module as it is.
+//
+// The registry hands a callback whatever instance the module has, and a host can
+// supply any value that delivers the audit capability. A callback that took its
+// instance for the journal would panic on it, or fail the startup for it. The
+// contrast is the module's own product, which the same callbacks act on in the
+// same registry: Init fails for it, because the configuration names an endpoint
+// and the registry has no entry point to serve it, and Start and Stop switch what
+// it accepts.
+func TestTheCallbacksLeaveASuppliedInstanceAlone(t *testing.T) {
+	ctx := context.Background()
+	module := Module()
+	reg := core.New()
+
+	for _, callback := range []struct {
+		name string
+		call func(context.Context, *core.Registry, any) error
+	}{
+		{"Init", module.Init},
+		{"Start", module.Start},
+		{"Stop", module.Stop},
+		{"Close", module.Close},
+	} {
+		if err := callback.call(ctx, reg, suppliedAudit{}); err != nil {
+			t.Errorf("%s on an instance the host supplied gave %v, want it left alone", callback.name, err)
+		}
+	}
+
+	own := newJournal(settings{endpoints: []string{"public"}}, nil, slog.New(slog.NewTextHandler(io.Discard, nil)))
+	if err := module.Init(ctx, reg, own); err == nil {
+		t.Error("Init on the module's own product gave no error in a registry with no entry point, " +
+			"so the calls above show nothing about what Init does to an instance")
+	}
+	if err := module.Start(ctx, reg, own); err != nil || !own.accepting.Load() {
+		t.Errorf("Start on the module's own product gave %v with accepting %v, want it accepting",
+			err, own.accepting.Load())
+	}
+	if err := module.Stop(ctx, reg, own); err != nil || own.accepting.Load() {
+		t.Errorf("Stop on the module's own product gave %v with accepting %v, want it stopped",
+			err, own.accepting.Load())
+	}
+}
+
 // A configuration naming event types fails the startup when the run carries no
 // bus, and the failure names the input item that asked for it.
 func TestWireFailsWhenEventsAreNamedAndNoBusIsInTheRun(t *testing.T) {

@@ -320,7 +320,7 @@ sequenceDiagram
 
 拒收落在 `Migrate`：它是本模块在 `New` 之后按阶段顺序推进的第一个回调，预置跳过了 `Prepare` 与 `New`，推进经过的回调里它就是第一个经手预置实例的。核对之前的取用不受它约束，这是接受的代价（[ADR-db-scope-2026-10-08](../../adr/adr-db-scope-2026-10-08.md)）：推进不到 `Migrate` 的驱动全程都在核对之前，它的回调与动作照常取得到外来的实例；推进得更深的驱动里，先于本模块 `Migrate` 执行的回调——别的模块的 `Prepare` 与 `New` 即是——同样取得到它（见 [core](design-core.md) 的预置实例）；驱动在 `Migrate` 之前就结束时，先经手预置实例的是回滚的 `Close`，它不核对来历。
 
-`Close` 收到的可能不是本模块构造的实例，`Migrate` 拒收之后的回滚即是：它只经 `Database` 取出句柄来关，关掉它背后的连接池，取不出句柄的实例不处理。驱动开始之后，预置实例的句柄背后连接池的释放归驱动。
+`Close` 收到的可能不是本模块构造的实例，`Migrate` 拒收之后的回滚即是：它只经 `Database` 取出句柄来关，关掉它背后的连接池，取不出句柄的实例、句柄背后没有可达连接池的实例不处理。驱动开始之后，预置实例的句柄背后连接池的释放归驱动。
 
 ### 插件的安装
 
@@ -450,7 +450,7 @@ sequenceDiagram
 | 不带值的语句日志 | 已实现 | `pkg/db/logger.go` `statementLogger`、`failureClasses`、`pkg/db/open.go` `openHandle` |
 | SQLite 被拒提交的回滚 | 已实现 | `pkg/db/sqlite/transactions.go` `transaction.Commit` |
 | 插件的安装 | 已实现 | `pkg/db/plugins.go` `collectPlugins`、`installPlugins`、`pkg/db/handle.go` `newDatabase` |
-| 预置实例的拒收与 `ErrForeignInstance` | 未实现 | — |
+| 预置实例的拒收与 `ErrForeignInstance` | 已实现 | `pkg/db/module.go` `NewModule`、`Spec.ownProduct`、`closeInstance`、`deliveredHandle`、`pkg/db/errors.go` `ErrForeignInstance` |
 | 迁移的收齐与应用 | 已实现 | `pkg/db/migrate.go` `collectMigrations`、`applyMigrations` |
 | 迁移的跨进程互斥 | 已实现 | `pkg/db/migrate.go` `MigrationLock`、`pkg/db/postgres/lock.go` `NewMigrationLock` |
 | PostgreSQL 实现子包 | 已实现 | `pkg/db/postgres/module.go` `Module` |

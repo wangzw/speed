@@ -119,9 +119,9 @@ func load(t *testing.T, body string, modules ...core.Module) (config.Reader, err
 	return config.Load(t.Context(), assembly(t, body, modules...), nil)
 }
 
-// assembly builds the registry a case runs on: the transports the primary
-// source arrives through, the host identity that locates it, and the modules
-// the case adds.
+// assembly builds the registry a case runs on: the config module the command
+// tree supplies the reader to, the transports the primary source arrives
+// through, the host identity that locates it, and the modules the case adds.
 func assembly(t *testing.T, body string, modules ...core.Module) *core.Registry {
 	t.Helper()
 	locator := filepath.Join(t.TempDir(), "config.json")
@@ -130,6 +130,7 @@ func assembly(t *testing.T, body string, modules ...core.Module) *core.Registry 
 	}
 
 	reg := core.New()
+	reg.Register(config.Module())
 	reg.Register(jsonformat.Module())
 	reg.Register(filesource.Module())
 	reg.Register(core.Module{

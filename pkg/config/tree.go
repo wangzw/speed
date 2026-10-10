@@ -271,8 +271,9 @@ func declarationsAt(c *Command, mods []core.Module) []collectedModule {
 // The expansion belongs here, where the tree is written: what the drive
 // receives is then always a literal list, and core never has to answer a
 // question about which command took what in. Modules carrying resources alone
-// are in it -- available means available -- and they bring no arguments with
-// them, so nothing the user has not heard of appears on the command line.
+// are in it, and so is the config module, which carries none -- available means
+// available. None of them brings an argument with it, so nothing the user has
+// not heard of appears on the command line.
 //
 // Naming modules and taking all of them in are not in conflict: everything
 // available is a superset of anything listed.

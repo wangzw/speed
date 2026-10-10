@@ -1,9 +1,10 @@
 // Package dispatch is the part of an event bus every implementation of
-// pkg/event shares: the subscription table and its freeze, the stage that
-// decides whether a publish is accepted, running a subscriber isolated from
-// the others, and — for an implementation that reads from a transport — the
-// lifetime of its readers and the bounded wait for the subscribers still
-// running when the bus stops.
+// pkg/event shares: the subscription table and its freeze, the start stage's
+// refusal of a bus its implementation did not open, the stage that decides
+// whether a publish is accepted, running a subscriber isolated from the others,
+// and — for an implementation that reads from a transport — the lifetime of its
+// readers and the bounded wait for the subscribers still running when the bus
+// stops.
 //
 // The implementations differ in how an event travels. They must not differ in
 // any of this, since each of these is a promise the capability makes whatever
@@ -145,6 +146,22 @@ func (t *Table) Accepting() error {
 	default:
 		return nil
 	}
+}
+
+// ForeignBus is the error an implementation's start stage returns for a bus
+// that is not the product its own Open built.
+//
+// What the stage freezes and starts is the state of that product, and a bus
+// built elsewhere has none of it, so the stage refuses the bus rather than start
+// it as if it had. The text names the module and the type of the bus and says
+// what to supply instead. It is one text for every implementation, so the way
+// out does not depend on which backend the host chose.
+func ForeignBus(module string, b event.Bus) error {
+	return fmt.Errorf("%s: the bus handed to the start stage is %T, which this implementation did not "+
+		"open: the stage takes up its own product only, so a bus supplied for the module cannot be "+
+		"started here. Supply a bus built by the New of module %q, or supply none for it; a test that "+
+		"needs a stand-in for the event capability registers a placeholder module that declares only "+
+		"event.Bus and supplies the stand-in to that one", module, b, module)
 }
 
 // Stamp gives evt the identifier Publish assigns when the publisher left it

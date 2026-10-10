@@ -17,8 +17,9 @@ import "errors"
 // ErrMissingProvider. A sentinel here would be a clause nothing can reach.
 //
 // The second is taking up the configuration reader, which is core's
-// ErrMissingProvider too: it means the host never supplied one, which is the
-// host's omission rather than a defect this capability directory judged.
+// ErrMissingProvider too: it means the host never supplied one as the instance
+// of the config module, which is the host's omission rather than a defect this
+// capability directory judged.
 var (
 	// ErrNoRouter reports that Init found no HTTP entry point to register a
 	// layer on. The fix is to write the entry implementation's module name

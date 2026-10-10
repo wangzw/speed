@@ -27,7 +27,7 @@ import (
 // and what is read is the tree under the error that came back: the class that
 // matches, the classes that must not, and the error from below.
 //
-// The four classes are the whole of the sentinel table, and each is reached the
+// The five classes are the whole of the sentinel table, and each is reached the
 // way a host reaches it — through the lifecycle, from a module that was really
 // assembled and really failed.
 func TestEveryFailurePathKeepsTheChain(t *testing.T) {
@@ -93,6 +93,15 @@ func TestEveryFailurePathKeepsTheChain(t *testing.T) {
 			t.Errorf("the tree under %v does not hold the error the mutex reported, so what the "+
 				"mutex said did not travel", err)
 		}
+	})
+
+	t.Run("foreign instance", func(t *testing.T) {
+		// An implementation of Database the host wrote, supplied for the module,
+		// and a startup that gets as far as Migrate. No error lies under the
+		// sentinel: the instance is refused for what it is, and nothing below
+		// reported anything.
+		_, _, err := startWithForeignInstance(t)
+		assertReportsOnly(t, err, "ErrForeignInstance")
 	})
 }
 

@@ -142,13 +142,18 @@ func TestPrepareFailsOnAnEmptyExtractorName(t *testing.T) {
 }
 
 // TestPrepareTellsTheTwoAbsencesApart pins the distinction the design draws
-// between the two ways Prepare can find nothing: a registry the host never
-// handed a reader, and a section missing a key. The first is the host's
-// omission and carries core's ErrMissingProvider out as it stands; the second
-// is this module's own configuration and names the key. Merging the two would
-// point the operator at the wrong end.
+// between the two ways Prepare can find nothing: a registry whose config module
+// the host never supplied a reader to, and a section missing a key. The first is
+// the host's omission and carries core's ErrMissingProvider out as it stands;
+// the second is this module's own configuration and names the key. Merging the
+// two would point the operator at the wrong end.
+//
+// The config module is registered and has no instance, which is what the
+// omission leaves behind.
 func TestPrepareTellsTheTwoAbsencesApart(t *testing.T) {
-	stance, err := Module().Prepare(t.Context(), core.New())
+	reg := core.New()
+	reg.Register(config.Module())
+	stance, err := Module().Prepare(t.Context(), reg)
 	if !errors.Is(err, core.ErrMissingProvider) {
 		t.Fatalf("prepare over a registry with no reader = %v, want ErrMissingProvider", err)
 	}

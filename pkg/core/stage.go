@@ -9,17 +9,19 @@ import "context"
 // Stop and Close are not values here. They are the two beats of shutting
 // down, run at the end of every drive whatever depth it asked for; making
 // them depths to stop at would let a drive declare that it does not release
-// what it built.
+// its instances, the ones it built and the ones the host supplied.
 type Stage uint8
 
 const (
 	// StagePrepare is the stance stage: every participating module states
 	// its stance on its exclusive claims, and one that cannot start returns
-	// an error here, ending the advance. It is the zero value, so a Drive
-	// that leaves Depth out advances no further than this.
+	// an error here, ending the advance. A module the host supplied an
+	// instance for states none: its stance is StateEnabled. It is the zero
+	// value, so a Drive that leaves Depth out advances no further than this.
 	StagePrepare Stage = iota
 	// StageNew constructs the products of the enabled set, in dependency
-	// order.
+	// order. A module the host supplied an instance for is passed over: it
+	// has its instance already.
 	StageNew
 	// StageMigrate applies the migrations collected from the enabled set.
 	StageMigrate

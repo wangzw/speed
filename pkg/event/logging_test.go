@@ -133,8 +133,15 @@ func TestASubscriberFailureIsWrittenThroughTheAssemblysLogging(t *testing.T) {
 		t.Run(c.module, func(t *testing.T) {
 			logger := &recordingLogger{}
 			reg := core.New()
-			reg.Supply((*config.Reader)(nil), c.point(t))
-			reg.Supply((*log.Logger)(nil), logger)
+			// The reading face and the recorder are the instances of the config
+			// and log modules. The recorder stands where the log module's own
+			// product would: that module's Prepare and New do not run for it, and
+			// its Close, the only later callback the module declares, leaves an
+			// instance that is not its own alone.
+			reg.Register(config.Module())
+			reg.Supply(c.point(t), config.ModuleName)
+			reg.Register(log.Module())
+			reg.Supply(logger, log.ModuleName)
 			reg.Register(memory.Module())
 			reg.Register(eventredis.Module())
 			reg.Register(eventpostgres.Module())

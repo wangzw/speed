@@ -70,16 +70,18 @@ func treeModule(run *treeRun, name string, shape core.Module) core.Module {
 	return m
 }
 
-// treeRegistry is the fixture the command-tree cases run over: a host
-// identity, a transport and a format standing in for the primary source, a
-// module delivering the fixture capability, one requiring it, and one
-// unrelated to both.
+// treeRegistry is the fixture the command-tree cases run over: the config
+// module the reader is supplied to, a host identity, a transport and a format
+// standing in for the primary source, a module delivering the fixture
+// capability, one requiring it, and one unrelated to both.
 //
-// The first three carry resources alone. They are what "every available
-// module" has to reach past the ones a host would think to list.
+// The config module and the next three carry nothing a command constructs. They
+// are what "every available module" has to reach past the ones a host would
+// think to list.
 func treeRegistry(t *testing.T, run *treeRun, content map[string]any) *core.Registry {
 	t.Helper()
 	reg := core.New()
+	reg.Register(Module())
 	reg.Register(identifying("host", HostIdentity{Prefix: "MYAPP"}))
 	reg.Register(providing("source", fakeSource{scheme: "file", data: []byte("x"), format: "yaml"}))
 	reg.Register(providing("format", fakeFormat{name: "yaml", content: content}))
@@ -184,9 +186,9 @@ func TestParticipantsExpandTheDependencyClosure(t *testing.T) {
 }
 
 // TestIncludeAllTakesInEveryAvailableModule pins that "every module" means the
-// registry's whole roster, the modules carrying resources alone among them.
-// They contribute no argument, so nothing the reader has not heard of turns up
-// on the command line.
+// registry's whole roster, the config module and the modules carrying resources
+// alone among them. They contribute no argument, so nothing the reader has not
+// heard of turns up on the command line.
 func TestIncludeAllTakesInEveryAvailableModule(t *testing.T) {
 	a, _, _ := treeApp(treeRegistry(t, &treeRun{}, nil))
 	all := a.Root().Sub("all")
@@ -194,7 +196,7 @@ func TestIncludeAllTakesInEveryAvailableModule(t *testing.T) {
 	all.Do(core.StagePrepare, nil)
 
 	got := planOf(t, a).selected([]string{"all"}).participants
-	want := []string{"cache", "format", "greeter", "host", "logging", "source"}
+	want := []string{"cache", "config", "format", "greeter", "host", "logging", "source"}
 	if !slices.Equal(got, want) {
 		t.Fatalf("the command assembles %v, want every registered module %v", got, want)
 	}

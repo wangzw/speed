@@ -540,6 +540,49 @@ func TestPrepareAcceptsAConfiguredEndpoint(t *testing.T) {
 	}
 }
 
+// hostLimiter is a type the host writes for itself. It embeds Limiter, so the
+// interface's unexported method reaches it through the embedding and it
+// delivers the capability without being this module's product.
+type hostLimiter struct{ Limiter }
+
+// Init wires this module's own product and leaves any other instance alone. An
+// instance the host supplied has only to deliver Limiter; when it is not this
+// module's product nothing is wired, so no layer is registered and the drive
+// asks for no entry point, settings store or key-value primitives. The registry
+// here holds none of them, so the second case, this module's own product
+// supplied the same way, ends the drive on the entry point. That is what shows
+// the first case passes because nothing was wired, not because wiring could not
+// fail.
+func TestInitWiresOnlyThisModulesOwnProduct(t *testing.T) {
+	cases := []struct {
+		name     string
+		instance any
+		wired    bool
+	}{
+		{"an instance of the host's own shape", hostLimiter{}, false},
+		{"this module's own product", newLimiter([]string{"public"}), true},
+	}
+	for _, c := range cases {
+		t.Run(c.name, func(t *testing.T) {
+			reg := core.New()
+			reg.Register(Module())
+			reg.Supply(c.instance, ModuleName)
+
+			err := reg.Drive(context.Background(), core.Drive{Depth: core.StageInit})
+
+			if !c.wired {
+				if err != nil {
+					t.Fatalf("driving to Init returned %v, want an instance of another shape left alone", err)
+				}
+				return
+			}
+			if !errors.Is(err, core.ErrMissingProvider) || !strings.Contains(err.Error(), "the entry point") {
+				t.Fatalf("driving to Init returned %v, want the wiring to fail taking up the entry point", err)
+			}
+		})
+	}
+}
+
 // --- the layer -------------------------------------------------------------
 
 func TestMiddlewareCarriesTheAnchorsItNeeds(t *testing.T) {
@@ -916,12 +959,13 @@ func (r fakeReader) Decode(_ string, target any) error {
 // registryWith hands back a registry holding a configuration reader, so that
 // Prepare reaches the endpoint checks.
 //
-// The reader is supplied rather than registered as a module: nothing is
-// constructed at Prepare, and the configuration reader is a bootstrap product
-// the host puts in before the drive begins.
+// The reader is the supplied instance of the config module, the way a host's
+// run hands in the reader it loaded. A supplied instance exists from the Supply
+// call on, so Prepare finds it although nothing has been constructed.
 func registryWith(t *testing.T, endpoints []string) *core.Registry {
 	t.Helper()
 	reg := core.New()
-	reg.Supply((*config.Reader)(nil), fakeReader{endpoints})
+	reg.Register(config.Module())
+	reg.Supply(fakeReader{endpoints}, config.ModuleName)
 	return reg
 }

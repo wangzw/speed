@@ -27,11 +27,13 @@ func (d declared) Decode(_ string, target any) error {
 // prepare drives an assembly of the named participants to its stances, which is
 // as far as the stages need to go for a premise to be judged: Prepare is where a
 // module that cannot start reports it, and nothing is constructed before it
-// returns.
+// returns. The reading face is supplied as the instance of the config module,
+// which takes part in the drive beside the named participants.
 func prepare(t *testing.T, decl declared, participants ...string) (*core.Registry, error) {
 	t.Helper()
 	reg := core.New()
-	reg.Supply((*config.Reader)(nil), decl)
+	reg.Register(config.Module())
+	reg.Supply(decl, config.ModuleName)
 	reg.Register(memory.Module())
 	reg.Register(redis.Module())
 	return reg, reg.Drive(context.Background(), core.Drive{

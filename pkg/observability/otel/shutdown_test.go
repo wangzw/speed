@@ -121,17 +121,54 @@ func backendModule(name string, d *destination) core.Module {
 	}
 }
 
+// placeholderBackend is a module that declares the two exporter capabilities and
+// nothing else, so an instance supplied for it stands where a backend's own
+// module would. It has no New to build an instance and no Close to release one.
+func placeholderBackend(name string) core.Module {
+	return core.Module{
+		Name: name,
+		Provides: []core.Provision{
+			{Token: (*observability.SpanExporter)(nil)},
+			{Token: (*observability.MetricExporter)(nil)},
+		},
+	}
+}
+
+// recordOneOfEach is the action the cases here run while the assembly is up: it
+// records one span and one metric. The configured intervals are the defaults, a
+// batch timeout of seconds and a metric interval of a minute, so nothing is
+// exported while it runs: whatever reaches a destination got there through the
+// shutdown.
+func recordOneOfEach(ctx context.Context, reg *core.Registry) error {
+	mp, err := core.Resolve[observability.MeterProvider](reg)
+	if err != nil {
+		return err
+	}
+	counter, err := mp.Meter("orders").Int64Counter("orders.placed")
+	if err != nil {
+		return err
+	}
+	counter.Add(ctx, 1)
+
+	tp, err := core.Resolve[observability.TracerProvider](reg)
+	if err != nil {
+		return err
+	}
+	_, span := tp.Tracer("orders").Start(ctx, "place")
+	span.End()
+	return nil
+}
+
 // driveAndRecord runs one command through Init with the given backends, records
 // one span and one metric while it is up, and returns what the drive returned.
-// The configured intervals are the defaults, a batch timeout of seconds and a
-// metric interval of a minute, so nothing is exported while the action runs:
-// whatever reaches a destination got there through the shutdown.
 func driveAndRecord(t *testing.T, backends map[string]*destination) (*bytes.Buffer, error) {
 	t.Helper()
 	buf := &bytes.Buffer{}
 	reg := core.New()
-	reg.Supply((*config.Reader)(nil), fixedConfig{serviceName: "orders"})
-	reg.Supply((*log.Logger)(nil), stubLogger{lg: slog.New(slog.NewTextHandler(buf, nil))})
+	reg.Register(config.Module())
+	reg.Register(log.Module())
+	reg.Supply(fixedConfig{serviceName: "orders"}, config.ModuleName)
+	reg.Supply(stubLogger{lg: slog.New(slog.NewTextHandler(buf, nil))}, log.ModuleName)
 	reg.Register(otel.Module())
 	participants := []string{otel.ModuleName}
 	for name, d := range backends {
@@ -141,25 +178,7 @@ func driveAndRecord(t *testing.T, backends map[string]*destination) (*bytes.Buff
 	err := reg.Drive(context.Background(), core.Drive{
 		Depth:        core.StageInit,
 		Participants: participants,
-		Action: func(ctx context.Context, reg *core.Registry) error {
-			mp, err := core.Resolve[observability.MeterProvider](reg)
-			if err != nil {
-				return err
-			}
-			counter, err := mp.Meter("orders").Int64Counter("orders.placed")
-			if err != nil {
-				return err
-			}
-			counter.Add(ctx, 1)
-
-			tp, err := core.Resolve[observability.TracerProvider](reg)
-			if err != nil {
-				return err
-			}
-			_, span := tp.Tracer("orders").Start(ctx, "place")
-			span.End()
-			return nil
-		},
+		Action:       recordOneOfEach,
 	})
 	return buf, err
 }
@@ -216,6 +235,52 @@ func TestCloseDeliversTheLastBatchToEveryBackend(t *testing.T) {
 	}
 }
 
+// TestASuppliedBackendIsReleasedByTheAssembler is the same promise for a backend
+// whose instance the host supplies instead of naming its module on the command
+// tree. The placeholder module the instance is supplied for has no Close and no
+// New, so the assembler is the only thing that can release what the host
+// supplied: it has to collect the exporters from the supplied instance, make its
+// final export of both signals through them, and release them after that.
+func TestASuppliedBackendIsReleasedByTheAssembler(t *testing.T) {
+	const backend = "observability.test-supplied"
+	d := &destination{}
+	buf := &bytes.Buffer{}
+	reg := core.New()
+	reg.Register(config.Module())
+	reg.Register(log.Module())
+	reg.Supply(fixedConfig{serviceName: "orders"}, config.ModuleName)
+	reg.Supply(stubLogger{lg: slog.New(slog.NewTextHandler(buf, nil))}, log.ModuleName)
+	reg.Register(otel.Module())
+	reg.Register(placeholderBackend(backend))
+	reg.Supply(&observability.Exporters{Span: destinationSpans{d}, Metric: destinationMetrics{d}}, backend)
+
+	err := reg.Drive(context.Background(), core.Drive{
+		Depth:        core.StageInit,
+		Participants: []string{otel.ModuleName},
+		Action:       recordOneOfEach,
+	})
+	if err != nil {
+		t.Fatalf("a graceful stop over a backend the host supplied failed: %v\nthe module logged:\n%s", err, buf)
+	}
+
+	d.mu.Lock()
+	defer d.mu.Unlock()
+	if len(d.spans) != 1 || d.spans[0] != "place" {
+		t.Errorf("the supplied destination received spans %v, want the one span ended before the stop", d.spans)
+	}
+	if !contains(d.metrics, "orders.placed") {
+		t.Errorf("the supplied destination received metrics %v, want orders.placed: the final collection "+
+			"of the meter provider is the only export the metric reached", d.metrics)
+	}
+	if d.late != 0 {
+		t.Errorf("%d export(s) reached the supplied destination after it was released", d.late)
+	}
+	if !d.isReleased("span") || !d.isReleased("metric") {
+		t.Errorf("the supplied destination released %v, want both halves released by the stop: nothing but "+
+			"the assembler releases an instance the host supplied for a module with no Close", d.released)
+	}
+}
+
 // boundedConfig gives this module a service name and a short shutdown bound.
 type boundedConfig struct{ bound time.Duration }
 
@@ -244,8 +309,10 @@ func (stuckSpans) Shutdown(context.Context) error { return nil }
 // complete. What was lost is not reported.
 func TestAShutdownPastItsBoundFailsTheStop(t *testing.T) {
 	reg := core.New()
-	reg.Supply((*config.Reader)(nil), boundedConfig{bound: 50 * time.Millisecond})
-	reg.Supply((*log.Logger)(nil), stubLogger{lg: slog.New(slog.NewTextHandler(&bytes.Buffer{}, nil))})
+	reg.Register(config.Module())
+	reg.Register(log.Module())
+	reg.Supply(boundedConfig{bound: 50 * time.Millisecond}, config.ModuleName)
+	reg.Supply(stubLogger{lg: slog.New(slog.NewTextHandler(&bytes.Buffer{}, nil))}, log.ModuleName)
 	reg.Register(otel.Module())
 	reg.Register(core.Module{
 		Name:     "observability.test-stuck",

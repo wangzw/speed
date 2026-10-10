@@ -216,9 +216,12 @@ func Module() core.Module {
 }
 
 // productOf recovers this module's product from what the registry hands back.
-// A nil instance, or one of another type, is tolerated rather than asserted: a
-// startup that fails part-way runs Stop and Close over every constructed
-// instance whatever stage it reached.
+// A nil instance, or one of another type, is tolerated rather than asserted.
+// The host may have supplied an instance of its own for this module, one that is
+// not a gateway, and every callback does nothing for it: no layer is registered,
+// no window opens or shuts, and what the instance holds is released by whoever
+// supplied it. A startup that fails part-way also runs Stop and Close over every
+// constructed instance whatever stage it reached.
 func productOf(instance any) (*gateway, bool) {
 	g, ok := instance.(*gateway)
 	return g, ok && g != nil

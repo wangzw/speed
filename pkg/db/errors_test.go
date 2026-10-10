@@ -24,12 +24,14 @@ var sentinels = map[string]error{
 	"ErrPluginFailed":         db.ErrPluginFailed,
 	"ErrMigrationFailed":      db.ErrMigrationFailed,
 	"ErrMigrationLockTimeout": db.ErrMigrationLockTimeout,
+	"ErrForeignInstance":      db.ErrForeignInstance,
 }
 
-// TestSentinelsAreDistinct checks that the four classes are actually four. A
+// TestSentinelsAreDistinct checks that the five classes are actually five. A
 // sentinel defined in terms of another, or two names bound to one value, would
 // collapse two classes a host is meant to tell apart — a locked migration and a
-// broken one call for different responses.
+// broken one call for different responses, and a refused instance calls for a
+// change to the host's supply where neither does.
 func TestSentinelsAreDistinct(t *testing.T) {
 	names := slices.Sorted(maps.Keys(sentinels))
 	for _, a := range names {
@@ -51,7 +53,7 @@ func TestSentinelsAreDistinct(t *testing.T) {
 	}
 }
 
-// TestSentinelTableHasNoFifthEntry reads the package's own source rather than
+// TestSentinelTableHasNoSixthEntry reads the package's own source rather than
 // the list above, so that a sentinel added to the package without a ruling
 // behind it fails here instead of quietly widening the contract. Checking the
 // list against itself would observe nothing.
@@ -59,7 +61,7 @@ func TestSentinelsAreDistinct(t *testing.T) {
 // Run-time failures of encryption and decryption are the case this guards: they
 // belong to the query that hit them, not to a startup classification table, and
 // a sentinel for them is the shape to reject.
-func TestSentinelTableHasNoFifthEntry(t *testing.T) {
+func TestSentinelTableHasNoSixthEntry(t *testing.T) {
 	declared, err := exportedErrVars(".")
 	if err != nil {
 		t.Fatalf("reading the package source: %v", err)

@@ -320,6 +320,7 @@ func startedRun(t *testing.T, body string, modules ...core.Module) error {
 	locator := writeConfig(t, body)
 
 	reg := core.New()
+	reg.Register(config.Module())
 	reg.Register(jsonformat.Module())
 	reg.Register(filesource.Module())
 	reg.Register(core.Module{

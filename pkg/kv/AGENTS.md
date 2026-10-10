@@ -61,8 +61,8 @@ must not cross, and how to run it.
   cannot serve — returns an error naming that input, and the startup fails with
   it. `StateDisabled` is not a stance an implementation may take: it is
   resolution's verdict on a provider that stood down over an exclusive claim, and
-  the answer the enablement query gives for a module this command did not take in
-  at run level.
+  the answer the enablement query gives for a module outside this command's
+  participating set.
 - **A deployment precondition is declared, never inferred.** An implementation
   whose backend cannot serve the assembly it finds itself in says so in its
   `Stance`, as an error naming the input item and what it read. It does not

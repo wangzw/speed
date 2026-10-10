@@ -81,6 +81,14 @@ type Spec[C any] struct {
 	// rather than a subscriber that silently receives nothing published before
 	// it.
 	//
+	// bus is whatever instance the drive holds for the module: the one Open
+	// built, or one the host supplied for the module, for which Open never ran.
+	// An implementation takes up its own product and returns an error for any
+	// other bus, since what it freezes and starts is the state of the product
+	// Open builds, and a bus built elsewhere has none of it. A drive that
+	// carries a supplied bus to this stage therefore fails here, and a drive
+	// that stops short of it does not.
+	//
 	// A nil one leaves this implementation without that stage.
 	Start func(ctx context.Context, bus Bus) error
 }
@@ -135,9 +143,9 @@ func NewModule[C any](spec Spec[C]) core.Module {
 		m.Start = func(ctx context.Context, _ *core.Registry, instance any) error {
 			bus, ok := instance.(Bus)
 			if !ok {
-				return fmt.Errorf("event: module %q reached the start stage carrying %T, and every "+
-					"constructed module reaches this stage with the capability it delivers",
-					spec.ModuleName, instance)
+				return fmt.Errorf("event: module %q reached the start stage carrying %T, which is not "+
+					"a Bus, and the registry asserts the capability of every instance, constructed "+
+					"or supplied, before this stage runs", spec.ModuleName, instance)
 			}
 			return spec.Start(ctx, bus)
 		}
@@ -254,6 +262,10 @@ type closer interface {
 // module whose New never returned a product. Reporting an error there would
 // bury the failure that started the rollback under one about the cleanup, and
 // an unguarded type assertion would panic and lose it outright.
+//
+// The instance may also be a bus the host supplied for the module, of whatever
+// type. It is closed through the Close it has and left alone when it has none;
+// what it holds that its Close does not release is the host's to release.
 func release(ctx context.Context, instance any) error {
 	c, ok := instance.(closer)
 	if !ok {

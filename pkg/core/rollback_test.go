@@ -211,3 +211,249 @@ func TestRollbackCallsNeverInitializedInstances(t *testing.T) {
 		t.Fatalf("rollback ran %v, want %v with no Init in sight", rec.calls, want)
 	}
 }
+
+// suppliedCloser registers a module that records its Stop and Close together
+// with the id of the instance each receives, and supplies an instance for it,
+// the way a host does before a drive. The module has no New callback, so what
+// reaches its callbacks is what the host handed in.
+func suppliedCloser(t *testing.T, rec *recorder, reg *Registry, name string, adjust ...func(*Module)) Module {
+	t.Helper()
+	idOf := func(instance any) string {
+		if p, ok := instance.(*product); ok {
+			return p.id
+		}
+		return fmt.Sprintf("%v", instance)
+	}
+	m := Module{
+		Name: name,
+		Stop: func(_ context.Context, _ *Registry, instance any) error {
+			rec.note("stop %s (%s)", name, idOf(instance))
+			return nil
+		},
+		Close: func(_ context.Context, _ *Registry, instance any) error {
+			rec.note("close %s (%s)", name, idOf(instance))
+			return nil
+		},
+	}
+	for _, f := range adjust {
+		f(&m)
+	}
+	reg.Register(m)
+	reg.Supply(&product{id: "supplied-" + name}, name)
+	return m
+}
+
+// TestShutdownReleasesASuppliedInstanceTheDriveNeverReached pins the rule that
+// makes a drive answerable for an instance it did not build: the instance counts
+// as constructed from the start of the drive, so a drive that ends before
+// construction reaches its module -- one that fails in Prepare, one that stops at
+// StagePrepare, one that fails while constructing an earlier module -- still
+// stops and closes it. It is released as though constructed last, so before the
+// modules the drive did construct, and what its callbacks receive is the instance
+// the host supplied.
+func TestShutdownReleasesASuppliedInstanceTheDriveNeverReached(t *testing.T) {
+	rec := &recorder{}
+	reg := New()
+	suppliedCloser(t, rec, reg, "supplied")
+	constructAll(t, reg, closer(rec, "built", nil, nil))
+
+	if err := reg.shutdown(t.Context(), nil); err != nil {
+		t.Fatalf("a clean shutdown returned %v", err)
+	}
+	want := []string{
+		"stop supplied (supplied-supplied)", "stop built",
+		"close supplied (supplied-supplied)", "close built",
+	}
+	if !slices.Equal(rec.calls, want) {
+		t.Fatalf("shutdown ran %v, want %v", rec.calls, want)
+	}
+}
+
+// TestShutdownReleasesSuppliedInstancesInDependencyOrder pins how the instances
+// the drive never reached are ordered among themselves: by Requires and
+// Provides, like construction, so the module that requires another is released
+// before it. The names are chosen against that, so that releasing by name, which
+// is what an order nobody thought about would come to, gives the other answer.
+func TestShutdownReleasesSuppliedInstancesInDependencyOrder(t *testing.T) {
+	rec := &recorder{}
+	reg := New()
+	suppliedCloser(t, rec, reg, "zzz-provider", func(m *Module) {
+		m.Provides = provides((*cacheCap)(nil))
+	})
+	suppliedCloser(t, rec, reg, "aaa-requirer", func(m *Module) {
+		m.Requires = needs((*cacheCap)(nil))
+	})
+
+	if err := reg.shutdown(t.Context(), nil); err != nil {
+		t.Fatalf("a clean shutdown returned %v", err)
+	}
+	want := []string{
+		"stop aaa-requirer (supplied-aaa-requirer)", "stop zzz-provider (supplied-zzz-provider)",
+		"close aaa-requirer (supplied-aaa-requirer)", "close zzz-provider (supplied-zzz-provider)",
+	}
+	if !slices.Equal(rec.calls, want) {
+		t.Fatalf("shutdown ran %v, want the requirer released before the module it requires: %v",
+			rec.calls, want)
+	}
+}
+
+// TestShutdownReleasesSuppliedInstancesOnACycleAlike pins that a dependency cycle
+// among instances nobody constructed does not keep them from being released.
+// Planning is what fails over a cycle, and a drive that fails there has
+// constructed nothing: the instances the host supplied are still the drive's to
+// release, and a drive that never got as far as looking for the cycle holds them
+// just the same. The order among the modules on the cycle is not promised, so
+// only that each runs once is checked.
+func TestShutdownReleasesSuppliedInstancesOnACycleAlike(t *testing.T) {
+	rec := &recorder{}
+	reg := New()
+	suppliedCloser(t, rec, reg, "x", func(m *Module) {
+		m.Requires = needs((*storeCap)(nil))
+		m.Provides = provides((*cacheCap)(nil))
+	})
+	suppliedCloser(t, rec, reg, "y", func(m *Module) {
+		m.Requires = needs((*cacheCap)(nil))
+		m.Provides = provides((*storeCap)(nil))
+	})
+
+	if err := reg.shutdown(t.Context(), nil); err != nil {
+		t.Fatalf("a clean shutdown returned %v", err)
+	}
+	got := slices.Clone(rec.calls)
+	slices.Sort(got)
+	want := []string{
+		"close x (supplied-x)", "close y (supplied-y)",
+		"stop x (supplied-x)", "stop y (supplied-y)",
+	}
+	if !slices.Equal(got, want) {
+		t.Fatalf("shutdown ran %v, want each module on the cycle stopped and closed once: %v", rec.calls, want)
+	}
+}
+
+// TestShutdownReleasesASuppliedInstanceOnceWhereConstructionPutIt pins that an
+// instance the drive did reach is not released a second time as one it did not:
+// it entered the lifecycle when construction got to its module, and it is
+// released from there, between the modules constructed before and after it.
+func TestShutdownReleasesASuppliedInstanceOnceWhereConstructionPutIt(t *testing.T) {
+	rec := &recorder{}
+	reg := New()
+	constructAll(t, reg, closer(rec, "first", nil, nil))
+	supplied := suppliedCloser(t, rec, reg, "middle")
+	if err := reg.construct(t.Context(), supplied); err != nil {
+		t.Fatalf("constructing the module with a supplied instance failed: %v", err)
+	}
+	constructAll(t, reg, closer(rec, "last", nil, nil))
+
+	if err := reg.shutdown(t.Context(), nil); err != nil {
+		t.Fatalf("a clean shutdown returned %v", err)
+	}
+	want := []string{
+		"stop last", "stop middle (supplied-middle)", "stop first",
+		"close last", "close middle (supplied-middle)", "close first",
+	}
+	if !slices.Equal(rec.calls, want) {
+		t.Fatalf("shutdown ran %v, want %v", rec.calls, want)
+	}
+}
+
+// TestShutdownStopsASuppliedEntryPointWithTheEntryPoints pins that the
+// entry-point grouping reads the descriptor and nothing else: a module the host
+// supplied an instance for that declares Serve is stopped ahead of the other
+// modules, wherever it sits in the construction order, and closed in the
+// order construction gives it.
+func TestShutdownStopsASuppliedEntryPointWithTheEntryPoints(t *testing.T) {
+	rec := &recorder{}
+	reg := New()
+	constructAll(t, reg, closer(rec, "first", nil, nil))
+	entry := suppliedCloser(t, rec, reg, "entry", func(m *Module) {
+		m.Serve = func(context.Context, *Registry, any) error { return nil }
+	})
+	if err := reg.construct(t.Context(), entry); err != nil {
+		t.Fatalf("constructing the module with a supplied instance failed: %v", err)
+	}
+	constructAll(t, reg, closer(rec, "last", nil, nil))
+
+	if err := reg.shutdown(t.Context(), nil); err != nil {
+		t.Fatalf("a clean shutdown returned %v", err)
+	}
+	want := []string{
+		"stop entry (supplied-entry)", "stop last", "stop first",
+		"close last", "close entry (supplied-entry)", "close first",
+	}
+	if !slices.Equal(rec.calls, want) {
+		t.Fatalf("shutdown ran %v, want %v", rec.calls, want)
+	}
+}
+
+// TestConstructLeavesAModuleWithASuppliedInstanceAlone pins what construction
+// does for such a module: its New does not run, the instance it already has is
+// the one the lifecycle and the later stages carry, and the module still enters
+// the lifecycle, so the delivery assertion and the release both see it.
+func TestConstructLeavesAModuleWithASuppliedInstanceAlone(t *testing.T) {
+	built := false
+	reg := New()
+	m := Module{
+		Name:     "supplied",
+		Provides: provides((*cacheCap)(nil)),
+		New: func(context.Context, *Registry) (any, error) {
+			built = true
+			return &product{id: "built"}, nil
+		},
+	}
+	reg.Register(m)
+	want := &product{id: "supplied"}
+	reg.Supply(want)
+
+	if err := reg.construct(t.Context(), m); err != nil {
+		t.Fatalf("constructing failed: %v", err)
+	}
+	if built {
+		t.Error("New ran for a module whose instance the host supplied")
+	}
+	if got := reg.instanceOf("supplied"); got != any(want) {
+		t.Errorf("the module's instance is %#v after construction, want the supplied one %#v", got, want)
+	}
+	if !slices.Equal(reg.lifecycle, []string{"supplied"}) {
+		t.Errorf("the lifecycle is %v, want the module in it", reg.lifecycle)
+	}
+}
+
+// TestPrepareStatesEnabledForAModuleWithASuppliedInstance pins the stance stage
+// for such a module: its Prepare does not run, and the stance that goes into
+// resolution is StateEnabled, as though that callback returned it. Another
+// module's Prepare is untouched by it.
+func TestPrepareStatesEnabledForAModuleWithASuppliedInstance(t *testing.T) {
+	var ran []string
+	prepared := func(name string) Module {
+		return Module{
+			Name: name,
+			Prepare: func(context.Context, *Registry) (Enablement, error) {
+				ran = append(ran, name)
+				return Enablement{State: StateAuto}, nil
+			},
+		}
+	}
+	reg := New()
+	supplied, ordinary := prepared("supplied"), prepared("ordinary")
+	reg.Register(supplied)
+	reg.Register(ordinary)
+	reg.Supply(&product{id: "supplied"}, "supplied")
+
+	stances, err := reg.prepare(t.Context(), []Module{ordinary, supplied})
+	if err != nil {
+		t.Fatalf("prepare failed: %v", err)
+	}
+	if !slices.Equal(ran, []string{"ordinary"}) {
+		t.Errorf("Prepare ran for %v, want the module nobody supplied for alone", ran)
+	}
+	got := map[string]EnablementState{}
+	for _, s := range stances {
+		got[s.module.Name] = s.state.State
+	}
+	if got["supplied"] != StateEnabled {
+		t.Errorf("the stance of the module with a supplied instance is %v, want StateEnabled", got["supplied"])
+	}
+	if got["ordinary"] != StateAuto {
+		t.Errorf("the stance of the other module is %v, want the one its Prepare stated", got["ordinary"])
+	}
+}

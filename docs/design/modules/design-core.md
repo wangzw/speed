@@ -747,15 +747,15 @@ flowchart LR
 
 | 功能 | 状态 | 代码 |
 |---|---|---|
-| 描述符与注册 | 部分实现：`Register` 对已按功能标识预置的功能 panic，而契约里的登记不检查预置实例（见预置实例一行） | `pkg/core/module.go` `Module`，`pkg/core/registry.go` `(*Registry).Register` |
+| 描述符与注册 | 已实现 | `pkg/core/module.go` `Module`，`pkg/core/registry.go` `(*Registry).Register` |
 | 功能标识与校验 | 已实现 | `pkg/core/token.go` |
-| 描述符与实例查询 | 部分实现：`Resolve` 与 `ResolveAll` 各有一个先查按功能标识存放的预置实例的分支，那些实例不属于任何模块；缺把预置实例当作所属模块的已有实例计入匹配域，以及取不到时的时机说明改指预置实例 | `pkg/core/query.go` `(*Registry).Resolve`、`(*Registry).ResolveAll`、`(*Registry).nothingBuiltLocked`，`pkg/core/generic.go` `Resolve`、`ResolveAll` |
+| 描述符与实例查询 | 已实现 | `pkg/core/query.go` `(*Registry).Resolve`、`(*Registry).ResolveAll`、`(*Registry).instancedAmongLocked`、`(*Registry).nothingBuiltLocked`，`pkg/core/generic.go` `Resolve`、`ResolveAll` |
 | 资源查询 | 已实现 | `pkg/core/query.go` |
-| 预置实例 | 部分实现：`Supply` 按功能标识收下实例，存进按功能类型建的表，实例不归属任何模块。缺按实例认领（功能清单，候选不止一个时比登记包）与可选的模块名、按模块名存放预置实例、一个实例只对应一个模块的检查，以及完整的 panic 条件。预置实例在登记、取用、消解、依赖解析、驱动、回滚与参与结果查询上的缺项见各行 | `pkg/core/supply.go` `(*Registry).Supply`，`pkg/core/registry.go` `Registry` |
-| 启用表态与排他消解 | 部分实现：缺预置了实例的模块跳过 `Prepare`、表态固定为 `StateEnabled` | `pkg/core/run.go` `(*Registry).prepare`，`pkg/core/enablement.go` `resolveEnablement` |
-| 依赖解析与顺序 | 部分实现：`planConstruction` 把按功能标识预置的功能视为已满足、不为它排序；缺预置了实例的模块按普通模块进入依赖序、`ErrMissingProvider` 对没有 `New` 的声明者与有预置实例的需求方给出的成因与修法，以及该错误对未被点名的排他声明者补上为其中一个预置实例的修法 | `pkg/core/depgraph.go` `(*Registry).Closure`、`planConstruction`、`missingProviderError`、`fixingActions` |
-| 生命周期驱动与回滚 | 部分实现：缺驱动开始时把预置了实例的模块并入参与名单、构造阶段对它跳过 `New` 而保留交付断言、`ErrUndeliveredCapability` 的文本对漏预置的指向，以及回滚覆盖预置实例 | `pkg/core/run.go` `(*Registry).Drive`、`(*Registry).advance`、`(*Registry).construct`、`assertDelivered`，`pkg/core/stage.go` `callbackFor`，`pkg/core/rollback.go` `(*Registry).shutdown` |
-| 停机先后：入口先停，`Close` 在全部 `Stop` 之后 | 部分实现：缺关闭时把没有走到构造的预置实例按最后构造补进构造序、彼此按依赖序排列 | `pkg/core/rollback.go` `(*Registry).shutdown`、`(*Registry).entryPointsFirst` |
+| 预置实例 | 已实现 | `pkg/core/supply.go` `(*Registry).Supply`、`(*Registry).namedModuleLocked`、`(*Registry).claimedModuleLocked`、`typePackage`、`objectOf`，`pkg/core/registry.go` `Registry` |
+| 启用表态与排他消解 | 已实现 | `pkg/core/run.go` `(*Registry).prepare`、`(*Registry).isSupplied`，`pkg/core/enablement.go` `resolveEnablement` |
+| 依赖解析与顺序 | 已实现 | `pkg/core/depgraph.go` `(*Registry).Closure`、`planConstruction`、`newDependencyGraph`、`missingProviderError`、`fixingActions`、`lackingNewAmong`，`pkg/core/registry.go` `(*Registry).origins` |
+| 生命周期驱动与回滚 | 已实现 | `pkg/core/run.go` `(*Registry).Drive`、`(*Registry).advance`、`(*Registry).withSupplied`、`(*Registry).construct`、`assertDelivered`，`pkg/core/stage.go` `callbackFor`，`pkg/core/rollback.go` `(*Registry).shutdown`、`(*Registry).constructionOrder` |
+| 停机先后：入口先停，`Close` 在全部 `Stop` 之后 | 已实现 | `pkg/core/rollback.go` `(*Registry).shutdown`、`(*Registry).constructionOrder`、`(*Registry).entryPointsFirst`，`pkg/core/depgraph.go` `dependencyOrder` |
 | 启动诊断 | 已实现 | `pkg/core/diagnostics.go` |
 | 哨兵错误 | 已实现 | `pkg/core/errors.go` |
-| 纳入分级与参与结果查询 | 部分实现：缺预置了实例的模块在驱动开始时记入参与集、`Participating` 与 `Declaring` 对它答真，以及它的静态级纳入按运行级处置、`AllResourcesInForce` 对它答假 | `pkg/core/query.go` `(*Registry).Participating`、`(*Registry).Declaring`、`(*Registry).AllResourcesInForce`，`pkg/core/run.go` `(*Registry).recordDeclarationSets` |
+| 纳入分级与参与结果查询 | 已实现 | `pkg/core/query.go` `(*Registry).Participating`、`(*Registry).Declaring`、`(*Registry).AllResourcesInForce`，`pkg/core/run.go` `(*Registry).recordDeclarationSets`、`(*Registry).withSupplied` |

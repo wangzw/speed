@@ -89,7 +89,10 @@ import (
 
 const (
 	// ModuleName is this implementation's name in the registry: its identity
-	// in the startup diagnostics and in an enablement lookup.
+	// in the startup diagnostics and in an enablement lookup. It is also the name
+	// a host gives Supply for an instance of this module: both engines' products
+	// are one type, defined in pkg/db, so a host that imports both names the
+	// module to say which of them an instance belongs to.
 	ModuleName = "db.sqlite"
 	// ConfigNamespace is where this implementation's input items are mounted
 	// in the config data. It is the module name, and it is disjoint from

@@ -3,11 +3,14 @@ package postgres_test
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"os"
 	"path/filepath"
 	"reflect"
 	"testing"
 	"testing/fstest"
+
+	"gorm.io/gorm"
 
 	"github.com/vislake/speed/pkg/config"
 	jsonformat "github.com/vislake/speed/pkg/config/format/json"
@@ -238,6 +241,16 @@ func runAssembly(t *testing.T, dsn string) (db.Database, error) {
 // whole startup, the way a host bounds one.
 func runAssemblyWith(t *testing.T, parent context.Context, section map[string]any) (db.Database, error) {
 	t.Helper()
+	return runAssemblySupplying(t, parent, section, nil)
+}
+
+// runAssemblySupplying is runAssemblyWith with a say in what the registry holds
+// when the command tree is started: before is called on it with every module
+// registered, which is where a case supplies an instance for the module.
+func runAssemblySupplying(t *testing.T, parent context.Context, section map[string]any,
+	before func(*core.Registry),
+) (db.Database, error) {
+	t.Helper()
 	body, err := json.Marshal(map[string]any{
 		"db": map[string]any{"postgres": section},
 	})
@@ -250,6 +263,7 @@ func runAssemblyWith(t *testing.T, parent context.Context, section map[string]an
 	}
 
 	reg := core.New()
+	reg.Register(config.Module())
 	reg.Register(jsonformat.Module())
 	reg.Register(filesource.Module())
 	reg.Register(core.Module{
@@ -259,6 +273,9 @@ func runAssemblyWith(t *testing.T, parent context.Context, section map[string]an
 	reg.Register(postgres.Module())
 	d := &dependant{delivered: make(chan db.Database, 1), migrated: make(chan struct{})}
 	reg.Register(d.module())
+	if before != nil {
+		before(reg)
+	}
 
 	// The command line is the process's and a test binary carries arguments
 	// of its own, so they are taken away while the tree reads them. The cases
@@ -352,5 +369,38 @@ func TestTheRegisteredModuleAppliesThisEnginesMigrations(t *testing.T) {
 		t.Errorf("the record table holds %v, and this run should have recorded one migration, %s/%s: "+
 			"the table being there without its record means the table above came from somewhere else",
 			records, dependantName, dependantFile)
+	}
+}
+
+// hostDatabase is an implementation of db.Database that the host wrote. It
+// carries no handle: the case it serves is about what the module does with an
+// instance it did not build, which needs no database behind it.
+type hostDatabase struct{}
+
+func (hostDatabase) DB() *gorm.DB                       { return nil }
+func (hostDatabase) Dialect() db.Dialect                { return postgres.Dialect }
+func (hostDatabase) BlindIndex(plaintext string) string { return plaintext }
+
+func (hostDatabase) Open(context.Context, string) (*gorm.DB, error) {
+	return nil, errors.New("the host's own implementation opens no further connection")
+}
+
+var _ db.Database = hostDatabase{}
+
+// TestAForeignInstanceSuppliedForThisModuleFailsTheStartup holds this engine's
+// module to the refusal the root package gives every implementation: an
+// implementation of db.Database the host wrote, supplied under the name this
+// package exports, fails the startup with db.ErrForeignInstance.
+//
+// The configuration names no locator, so no database is involved and the case
+// needs no server: a Prepare or a New that ran for the module would have failed
+// on the missing key before the refusal was reached.
+func TestAForeignInstanceSuppliedForThisModuleFailsTheStartup(t *testing.T) {
+	_, err := runAssemblySupplying(t, context.Background(), map[string]any{}, func(reg *core.Registry) {
+		reg.Supply(hostDatabase{}, postgres.ModuleName)
+	})
+	if !errors.Is(err, db.ErrForeignInstance) {
+		t.Fatalf("a startup over an implementation of db.Database the host wrote ended with %v, "+
+			"want db.ErrForeignInstance", err)
 	}
 }

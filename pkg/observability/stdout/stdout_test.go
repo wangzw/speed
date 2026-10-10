@@ -26,7 +26,8 @@ func (noConfig) Decode(string, any) error { return nil }
 // showing up as a capability nobody can take up.
 func TestTheModuleDeliversBothExportersFromOneProduct(t *testing.T) {
 	reg := core.New()
-	reg.Supply((*config.Reader)(nil), noConfig{})
+	reg.Register(config.Module())
+	reg.Supply(noConfig{}, config.ModuleName)
 	reg.Register(stdout.Module())
 
 	err := reg.Drive(context.Background(), core.Drive{

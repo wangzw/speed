@@ -14,7 +14,8 @@ transports and formats are subpackages: `source/file`, `format/json`,
 - What this module is and why it is shaped this way:
   [`docs/design/modules/design-config.md`](../../docs/design/modules/design-config.md).
 - The decisions behind it: [`docs/adr/`](../../docs/adr/) — its scope, the
-  source extension point, the lifecycle position, the assembly bootstrap.
+  source extension point, the lifecycle position, the assembly bootstrap, the
+  supplied instance.
 - The API itself: the godoc in this package and in each subpackage.
 
 This file states only what neither of those states: the boundaries a
@@ -47,10 +48,17 @@ import _ "github.com/vislake/speed/pkg/config/format/yaml"
 - **The command tree is the host's.** Nothing here names a subcommand, and
   no module contributes one: which commands exist, and which modules each
   one includes, is written in the host's `main`.
-- **The root package registers no module.** Loading runs before assembly and
-  hands the reader to the registry as a supplied product, so nothing here
-  needs a descriptor, a stance or a lifecycle callback. Transports and
-  formats still register one each, carrying only `Resources`.
+- **The root package registers one module, `config`, and it declares only
+  the delivery of the reader** (`pkg/config/module.go`): no callback, so no
+  `New` and no `Prepare`, no `Resources` and no `Exclusive` claim. Loading
+  runs before assembly, so `Execute` supplies the reader to it by name,
+  `ModuleName`, before the drive begins. Without an exclusive claim the
+  closure of a module that requires the reader takes it in, so a reader
+  nobody supplied fails the startup, saying the module has no `New` and was
+  handed no instance. A registry made with `core.New` registers
+  `config.Module()` by hand ahead of `NewApp`, which panics without it.
+  Transports and formats register one module each, carrying only
+  `Resources`.
 - **No value is interpreted on a module's behalf.** The declaring module
   gets its own values back and decides what they mean.
 

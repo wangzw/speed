@@ -248,7 +248,8 @@ func assemblingOver(t *testing.T, dsn string) error {
 		t.Fatalf("loading the configuration over %q: %v", dsn, err)
 	}
 	reg := core.New()
+	reg.Register(config.Module())
 	reg.Register(sqlite.Module())
-	reg.Supply((*config.Reader)(nil), reader)
+	reg.Supply(reader, config.ModuleName)
 	return reg.Drive(t.Context(), core.Drive{Depth: core.StageNew, Participants: []string{sqlite.ModuleName}})
 }

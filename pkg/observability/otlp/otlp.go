@@ -137,9 +137,10 @@ func Module() core.Module {
 // prepare reads this module's own configuration and states that it starts.
 //
 // The probe does not happen here. Prepare runs for every module this command
-// took in, including a command that only collects stances and builds nothing,
-// and a network round trip in this stage would make such a command fail over an
-// endpoint it was never going to use.
+// took in (except one the host supplied an instance for), including a command
+// that only collects stances and builds nothing, and a network round trip in
+// this stage would make such a command fail over an endpoint it was never going
+// to use.
 func prepare(_ context.Context, reg *core.Registry) (core.Enablement, error) {
 	cfg, err := read(reg)
 	if err != nil {

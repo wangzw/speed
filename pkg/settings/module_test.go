@@ -77,7 +77,8 @@ func TestTheModuleDrivesAndServes(t *testing.T) {
 	handle := open(t)
 	bus := newRecordingBus()
 	reg := core.New()
-	reg.Supply((*config.Reader)(nil), noConfig{})
+	reg.Register(config.Module())
+	reg.Supply(noConfig{}, config.ModuleName)
 	reg.Register(providingDB(handle))
 	reg.Register(providingBus(bus))
 	reg.Register(declarerNamed("test.declarer", demoNamespace))
@@ -157,7 +158,8 @@ func TestAReadBeforeTheLoadIsRefused(t *testing.T) {
 		t.Fatalf("planting a row: %v", err)
 	}
 	reg := core.New()
-	reg.Supply((*config.Reader)(nil), noConfig{})
+	reg.Register(config.Module())
+	reg.Supply(noConfig{}, config.ModuleName)
 	reg.Register(providingDB(handle))
 	reg.Register(providingBus(newRecordingBus()))
 	reg.Register(declarerNamed("test.declarer", demoNamespace))
@@ -228,7 +230,8 @@ func (eventsOnly) Decode(namespace string, target any) error {
 func TestAChangeBeforeTheBusStartsIsNotLost(t *testing.T) {
 	handle := open(t)
 	reg := core.New()
-	reg.Supply((*config.Reader)(nil), eventsOnly{})
+	reg.Register(config.Module())
+	reg.Supply(eventsOnly{}, config.ModuleName)
 	reg.Register(providingDB(handle))
 	// The recording bus delivers nothing unless a case drives it, which is
 	// what a transport bus does with an event published before it started.
@@ -285,7 +288,8 @@ func TestAChangeBeforeTheBusStartsIsNotLost(t *testing.T) {
 func TestEveryRegisteredDeclarationStaysInTheKeyTable(t *testing.T) {
 	handle := open(t)
 	reg := core.New()
-	reg.Supply((*config.Reader)(nil), noConfig{})
+	reg.Register(config.Module())
+	reg.Supply(noConfig{}, config.ModuleName)
 	reg.Register(providingDB(handle))
 	reg.Register(providingBus(newRecordingBus()))
 	reg.Register(contesting("test.loser", "loser", false))
@@ -328,5 +332,101 @@ func TestEveryRegisteredDeclarationStaysInTheKeyTable(t *testing.T) {
 		if _, found := keys.lookup(c.key); found != c.want {
 			t.Errorf("key %q present = %v, want %v", c.key, found, c.want)
 		}
+	}
+}
+
+// suppliedStore is a settings store the host builds itself, the way a
+// consumer's test does, rather than one this module constructed. It satisfies
+// the capability through the embedded interface, and no call is meant to reach
+// it.
+type suppliedStore struct{ Store }
+
+// driveWithSupplied drives a registry holding this module, with store supplied
+// as its instance, as far as Start, and returns what the capability resolves
+// to there.
+//
+// This module's Prepare and New do not run for a supplied instance, so no
+// configuration reader is involved. The module is not named in the drive,
+// because a module with a supplied instance takes part in every drive, but the
+// two providers it requires are: its requirements are resolved as they are for
+// any module.
+func driveWithSupplied(t *testing.T, handle *gorm.DB, bus event.Bus, store Store) Store {
+	t.Helper()
+	reg := core.New()
+	reg.Register(providingDB(handle))
+	reg.Register(providingBus(bus))
+	reg.Register(Module())
+	reg.Supply(store, ModuleName)
+
+	var resolved Store
+	err := reg.Drive(context.Background(), core.Drive{
+		Depth:        core.StageStart,
+		Participants: []string{"test.database", "test.event"},
+		Action: func(_ context.Context, reg *core.Registry) error {
+			var err error
+			resolved, err = core.Resolve[Store](reg)
+			return err
+		},
+	})
+	if err != nil {
+		t.Fatalf("driving with a supplied store: %v", err)
+	}
+	return resolved
+}
+
+// subscribersTo counts the handlers subscribed to an event type.
+func subscribersTo(bus *recordingBus, eventType string) int {
+	bus.mu.Lock()
+	defer bus.mu.Unlock()
+	return len(bus.handlers[eventType])
+}
+
+// A store the host supplies for this module, one this module did not build, is
+// the instance the capability resolves to and is left alone by the module's
+// callbacks: nothing is subscribed for it.
+//
+// The drive reaches Init, Start and Stop with the stand-in in hand. A callback
+// that took its instance for this module's own store without checking would
+// panic there, and one that subscribed on its own account would leave a handler
+// on the bus.
+func TestAStandInSuppliedForTheModuleIsLeftAlone(t *testing.T) {
+	bus := newRecordingBus()
+	standIn := &suppliedStore{}
+
+	got := driveWithSupplied(t, open(t), bus, standIn)
+
+	if got != Store(standIn) {
+		t.Errorf("the capability resolves to %T, want the supplied stand-in", got)
+	}
+	if n := subscribersTo(bus, ChangedEventType); n != 0 {
+		t.Errorf("%d handlers subscribed to %q for an instance this module did not build, want none",
+			n, ChangedEventType)
+	}
+}
+
+// A store this module built and the host supplied for it is acted on as one the
+// module constructed itself: it is subscribed to the change event and loaded.
+//
+// It is the control for the stand-in's case. Callbacks that skipped every
+// supplied instance would pass that case without having decided anything about
+// the stand-in, and fail this one.
+func TestTheModulesOwnStoreSuppliedForItIsSubscribedAndLoaded(t *testing.T) {
+	handle := open(t)
+	bus := newRecordingBus()
+	own := newSettingsStore(demoTable(t), stubDatabase{handle: handle, dialect: db.SQLite}, bus, moduleSettings{})
+	own.logger = discardLogger()
+
+	got := driveWithSupplied(t, handle, bus, own)
+
+	if got != Store(own) {
+		t.Errorf("the capability resolves to %T, want the supplied store", got)
+	}
+	if n := subscribersTo(bus, ChangedEventType); n != 1 {
+		t.Errorf("%d handlers subscribed to %q, want the one this module's own store gets", n, ChangedEventType)
+	}
+	// A store that has not loaded refuses a read, so a value at all says the
+	// load ran.
+	if value, err := Get[int](own, Global(), "demo.limit"); err != nil || value != 100 {
+		t.Errorf("read %v (%v) from the supplied store, want the declared 100 of a loaded one", value, err)
 	}
 }

@@ -208,12 +208,12 @@ func (s *settingsStore) load(ctx context.Context) error {
 
 // readerOf takes up the configuration reader.
 //
-// A reader that is not there means the host never supplied one, which is the
-// host's omission rather than something to read as "nothing was configured".
-// The failure names this module, since a run can carry several modules each
-// wanting a reader. The name stands in for the capability directory here as
-// well: this one registers from its own root package, so the two are the same
-// string and writing both would say it twice.
+// A reader that is not there means the host never supplied one as the instance
+// of the config module, which is the host's omission rather than something to
+// read as "nothing was configured". The failure names this module, since a run
+// can carry several modules each wanting a reader. The name stands in for the
+// capability directory here as well: this one registers from its own root
+// package, so the two are the same string and writing both would say it twice.
 func readerOf(reg *core.Registry) (config.Reader, error) {
 	reader, err := core.Resolve[config.Reader](reg)
 	if err != nil {
@@ -222,9 +222,11 @@ func readerOf(reg *core.Registry) (config.Reader, error) {
 	return reader, nil
 }
 
-// productOf narrows an instance to this module's product. A product of another
-// shape means the registry handed a callback something this module did not
-// build, which a host cannot cause.
+// productOf narrows an instance to this module's product. An instance of
+// another shape is one the host supplied for this module, such as a stand-in
+// store built for a test, and the callbacks leave it alone: nothing is
+// subscribed, loaded, started or stopped for it, and what it holds is released
+// by whoever supplied it.
 func productOf(instance any) (*settingsStore, bool) {
 	s, ok := instance.(*settingsStore)
 	return s, ok

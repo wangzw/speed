@@ -29,8 +29,8 @@ import (
 // the modules it depends on.
 //
 // It closes every drive, whatever depth that drive asked for and whether it
-// arrived or failed on the way: the instances a drive built are the
-// instances it releases.
+// arrived or failed on the way: the instances a drive built, and the instances
+// the host supplied, are the instances it releases.
 //
 // Every constructed instance is covered whatever stage the failure happened
 // in. Rolling back only the modules that completed the failing stage would
@@ -38,9 +38,10 @@ import (
 // connections and goroutines nobody releases. That is also why Stop and Close
 // have to tolerate an instance that was never initialised or started.
 //
-// A supplied product is not in range. It was constructed by the party that
-// handed it in, never entered the lifecycle list, and is released by that
-// same party; closing it here would shut down something the host still holds.
+// An instance the host supplied counts as constructed from the start of the
+// drive, so it is in range even when the drive ended before construction
+// reached its module (see constructionOrder). What the module's Stop and Close
+// do with an instance its own New did not construct is the module's to decide.
 //
 // Stop and Close run on a context stripped of cancellation. On the normal
 // path shutdown is reached because the host's context was cancelled, and a
@@ -60,9 +61,7 @@ import (
 func (r *Registry) shutdown(ctx context.Context, primary error) error {
 	ctx = context.WithoutCancel(ctx)
 
-	r.mu.RLock()
-	order := slices.Clone(r.lifecycle)
-	r.mu.RUnlock()
+	order := r.constructionOrder()
 	slices.Reverse(order)
 
 	failures := []error{primary}
@@ -87,6 +86,31 @@ func (r *Registry) shutdown(ctx context.Context, primary error) error {
 	return errors.Join(failures...)
 }
 
+// constructionOrder lists the modules whose instances the drive answers for, in
+// the order they were constructed. A module whose instance the host supplied
+// that construction never reached comes last, as though it had been constructed
+// after all the others: the drive ended in Prepare, or failed before it got that
+// far, or stopped short of New. Release runs the list backwards, so an instance
+// the drive never built is closed first.
+//
+// Those modules are ordered among themselves by the rule construction follows,
+// and only by their own Requires and Provides: what they require of a module
+// outside the list is not checked, because nothing here fails over it. A cycle
+// among them does not keep them out. A module in one is released all the same,
+// and the order among those on it is not promised.
+func (r *Registry) constructionOrder() []string {
+	r.mu.RLock()
+	defer r.mu.RUnlock()
+	order := slices.Clone(r.lifecycle)
+	var unreached []Module
+	for _, name := range sortedKeys(r.supplied) {
+		if !slices.Contains(order, name) {
+			unreached = append(unreached, r.mods[name].module)
+		}
+	}
+	return append(order, dependencyOrder(unreached)...)
+}
+
 // entryPointsFirst moves the modules that declare a Serve callback ahead of
 // every other module, keeping the given order within each group.
 func (r *Registry) entryPointsFirst(order []string) []string {
@@ -102,8 +126,8 @@ func (r *Registry) entryPointsFirst(order []string) []string {
 	return append(entries, rest...)
 }
 
-// instanceOf returns the product a module was constructed with, or nil for a
-// module that has no New callback.
+// instanceOf returns the instance a module has, whether its New constructed it
+// or the host supplied it, or nil for a module that has neither.
 func (r *Registry) instanceOf(name string) any {
 	r.mu.RLock()
 	defer r.mu.RUnlock()

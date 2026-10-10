@@ -66,8 +66,10 @@ func runReplica(t *testing.T) *resourceRecorder {
 	t.Helper()
 	rec := &resourceRecorder{}
 	reg := core.New()
-	reg.Supply((*config.Reader)(nil), fixedConfig{serviceName: "orders"})
-	reg.Supply((*log.Logger)(nil), stubLogger{lg: slog.New(slog.NewTextHandler(&bytes.Buffer{}, nil))})
+	reg.Register(config.Module())
+	reg.Register(log.Module())
+	reg.Supply(fixedConfig{serviceName: "orders"}, config.ModuleName)
+	reg.Supply(stubLogger{lg: slog.New(slog.NewTextHandler(&bytes.Buffer{}, nil))}, log.ModuleName)
 	reg.Register(otel.Module())
 	reg.Register(core.Module{
 		Name: "observability.test-resource",

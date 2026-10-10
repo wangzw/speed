@@ -74,9 +74,10 @@ must not cross, and how to run it.
   names one.** An empty `endpoints` or `events` list must leave the process free
   of both: a background worker carries this module and has neither.
 - **The probe lives in `New`, never in `Prepare`.** `Prepare` runs for every
-  module a command took in, including one that collects stances and constructs
-  nothing; a round trip there would make such a command fail over an endpoint it
-  was never going to send to.
+  module a command took in (except one the host supplied an instance for),
+  including a command that collects stances and constructs nothing; a round trip
+  there would make such a command fail over an endpoint it was never going to
+  send to.
 - **The attribute surface of the request histogram is a contract.** Two
   attributes, both closed sets: the standard methods plus the folding value, and
   the status code. No route — this layer sits outside the routing engine and the
@@ -158,9 +159,10 @@ must not cross, and how to run it.
 - **A new export backend is a subpackage that delivers both exporter
   capabilities, non-exclusively.** The assembler collects exporters through the
   registry and knows no destination, so adding one is adding a module and naming
-  it on the command tree. What it built is released by the assembler: a backend
-  has no `Close` callback of its own, and giving it one would shut the same
-  exporter down twice, possibly ahead of the final export.
+  it on the command tree, or supplying an instance for it. What the registry
+  holds for a backend, built by its `New` or supplied by the host, is released by
+  the assembler: a backend has no `Close` callback of its own, and giving it one
+  would shut the same exporter down twice, possibly ahead of the final export.
 - **A backend returns `observability.Exporters` from its `New`.** That type is
   where the two exporters become one product, and it lives in the interface
   package rather than in each backend because two copies is how the two would

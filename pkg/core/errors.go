@@ -10,8 +10,8 @@ var (
 	// that can be taken up.
 	ErrMissingProvider = errors.New("core: capability has no available provider")
 	// ErrAmbiguousProvider reports that a single-valued lookup found more
-	// than one constructed provider.
-	ErrAmbiguousProvider = errors.New("core: capability has more than one constructed provider")
+	// than one provider with an instance.
+	ErrAmbiguousProvider = errors.New("core: capability has more than one provider with an instance")
 	// ErrExclusiveViolated reports that a capability kept more than one
 	// enabled provider through resolution while at least one of them claims
 	// exclusivity.
@@ -27,8 +27,9 @@ var (
 	// ErrDependencyCycle reports a cycle in the graph the Requires
 	// declarations form.
 	ErrDependencyCycle = errors.New("core: module dependency graph has a cycle")
-	// ErrUndeliveredCapability reports a module whose product does not
-	// implement a capability it declared in Provides.
+	// ErrUndeliveredCapability reports a module whose instance does not
+	// implement a capability it declared in Provides, which includes a module
+	// with no New callback that the host supplied no instance for.
 	ErrUndeliveredCapability = errors.New("core: module did not deliver a declared capability")
 	// ErrUnknownParticipant reports a name a drive was assembled from --
 	// in its participating set, its declaring set, or the closure either

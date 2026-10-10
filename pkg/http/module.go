@@ -31,15 +31,27 @@ import (
 //
 // Three packages are depended on. core carries the capability tokens, the
 // declared resources and the instance lookups; config is where the endpoints
-// are read from, over a reader the host hands the registry before the drive
-// begins; log supplies the token of the optional dependency below and the
-// context accessors the base layer injects through.
+// are read from, through the reader its module delivers; log supplies the
+// token of the optional dependency below and the context accessors the base
+// layer injects through.
 //
-// That reader is not delivered by a module. It is in the registry before the
-// first module is constructed, so it is taken up with a lookup and declared in
-// no Requires: there is nothing to order this module against. Its absence is
-// still a startup failure — the endpoints are read through it and there is
-// nothing to serve without them.
+// That reader is the instance of the config module, which the host supplies
+// before the drive begins. It exists from that call on, so Prepare and New take
+// it up with a lookup and this module declares it in no Requires: there is
+// nothing to order this module against, and neither Stop nor Close reads it. Its
+// absence is still a startup failure — the endpoints are read through it and
+// there is nothing to serve without them.
+//
+// A host can supply an instance for this module too, to stand where its New
+// would have put the router. Prepare and New do not run for it, so the checks
+// Prepare makes are not made: the endpoint premise, and the shape of the
+// fragments the modules declared. Only the router this module builds is acted
+// on. An instance of any other type, one the host wrote or one it wrapped around
+// a router, is left alone by every callback from Migrate to Close: the gate
+// neither opens nor seals, Serve assembles no chain and binds no address, and
+// Stop and Close drain nothing and release nothing. How it serves and when what
+// it holds is released are its owner's to answer, and the requests it takes in
+// are outside the drain this module waits for.
 //
 // The dependency on PanicResponder is declared optional too, and its absence
 // is the ordinary case rather than a state only a hand-built registry reaches:
@@ -160,7 +172,9 @@ func Module(name string, newEngine func() Engine) core.Module {
 // productOf recovers this module's product from what the registry hands back.
 // A nil instance, or one of another type, is tolerated rather than asserted:
 // a startup that fails part-way rolls back every constructed instance, so the
-// later callbacks run on modules whose New never returned a product.
+// later callbacks run on modules whose New never returned a product, and the
+// instance a host supplied for this module is any type that delivers Router.
+// What is not this module's product is left alone.
 func productOf(instance any) (*router, bool) {
 	r, ok := instance.(*router)
 	return r, ok && r != nil

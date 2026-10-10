@@ -12,8 +12,8 @@ import (
 )
 
 // readerFrom takes the run's configuration up the way a module takes it up:
-// it is a supplied product, so it answers a lookup for the capability and
-// needs no declaration.
+// it is the config module's supplied instance, so it answers a lookup for the
+// capability as any provider's instance does and needs no declaration.
 func readerFrom(t *testing.T, reg *core.Registry) Reader {
 	t.Helper()
 	found, err := reg.Resolve((*Reader)(nil))
@@ -31,6 +31,20 @@ func decodeAddr(t *testing.T, r Reader, module string) string {
 		t.Fatalf("decoding %q failed: %v", module, err)
 	}
 	return got.Addr
+}
+
+// executesWithoutPanicking runs the tree and returns what Execute returned. A
+// case that expects a result reports a panic as its own failure: left to
+// propagate, it would end the whole test binary where one case failing is what
+// is meant.
+func executesWithoutPanicking(t *testing.T, a *App) error {
+	t.Helper()
+	defer func() {
+		if raised := recover(); raised != nil {
+			t.Fatalf("Execute panicked: %v", raised)
+		}
+	}()
+	return a.Execute(t.Context())
 }
 
 // TestExecuteDrivesTheSelectedCommand pins the whole of what a run comes to:
@@ -675,6 +689,515 @@ func TestNewAppWithoutARegistryIsAProgrammingError(t *testing.T) {
 	panicsWith(t, "NewApp(nil)", func() { NewApp(nil) })
 }
 
+// TestNewAppWithoutTheConfigModuleIsAProgrammingError pins where a missing
+// registration is found, and that the message says what to do about it.
+//
+// Execute supplies the reader to the config module, and a registry made with
+// core.New does not inherit the registration the package makes in init. Left to
+// Execute, the omission would surface after the command line and the primary
+// source had been read, as the registry's account of a module that is not
+// registered; at NewApp the message is the call that has to be made.
+//
+// The module is looked for by its name. Another module delivering Reader is no
+// stand-in, since the name is what Execute supplies the reader under.
+func TestNewAppWithoutTheConfigModuleIsAProgrammingError(t *testing.T) {
+	standIn := core.New()
+	standIn.Register(core.Module{
+		Name:     "mirror",
+		Provides: []core.Provision{{Token: (*Reader)(nil)}},
+	})
+	for _, c := range []struct {
+		name string
+		reg  *core.Registry
+	}{
+		{"an empty registry", core.New()},
+		{"a registry whose only reader provider is another module", standIn},
+	} {
+		t.Run(c.name, func(t *testing.T) {
+			message := panicsWith(t, "NewApp", func() { NewApp(c.reg) })
+			if !strings.Contains(message, "reg.Register(config.Module())") {
+				t.Errorf("the panic reads %q, which does not say how to register the module", message)
+			}
+		})
+	}
+
+	// Registering the module is the whole of the cure: what panics above is the
+	// missing module and nothing else about the registry.
+	cured := core.New()
+	cured.Register(Module())
+	NewApp(cured)
+}
+
+// TestExecuteSuppliesTheReaderToTheConfigModuleByName pins how the owner of the
+// reader is settled.
+//
+// A second module delivers Reader here, so claiming the reader by what it
+// implements would find two candidates registered from the one package and could
+// not tell them apart. Execute names the module instead, and what the name
+// decides is observable twice over: the run does not fail, and the module that
+// takes part is the config module, not the one that merely declares the same
+// capability.
+func TestExecuteSuppliesTheReaderToTheConfigModuleByName(t *testing.T) {
+	reg := treeRegistry(t, &treeRun{}, nil)
+	reg.Register(core.Module{
+		Name:     "mirror",
+		Provides: []core.Provision{{Token: (*Reader)(nil)}},
+	})
+	a, _, _ := treeApp(reg, "serve")
+	acted := false
+	serve := a.Root().Sub("serve")
+	serve.Include("cache")
+	serve.Do(core.StagePrepare, func(_ context.Context, reg *core.Registry) error {
+		acted = true
+		if !reg.Participating(ModuleName) {
+			t.Errorf("the reader was supplied and module %q does not take part", ModuleName)
+		}
+		if reg.Participating("mirror") {
+			t.Error("module \"mirror\" takes part, so the reader was supplied to the module that " +
+				"merely declares the same capability")
+		}
+		if got := decodeAddr(t, readerFrom(t, reg), "cache"); got != "cache:default" {
+			t.Errorf("cache.addr reads %q through the supplied reader, want the declared default", got)
+		}
+		return nil
+	})
+
+	// Claiming the reader by what it implements is refused with a panic, which is
+	// what a failure of this case looks like.
+	if err := executesWithoutPanicking(t, a); err != nil {
+		t.Fatalf("the run failed: %v", err)
+	}
+	if !acted {
+		t.Fatal("the drive reached its depth without running the command's action")
+	}
+}
+
+// TestExecuteSuppliesTheReaderOnlyAfterTheRunHasLoaded pins where the supply
+// sits in a run.
+//
+// The reader does not exist before the command line and the primary source have
+// been read, so the supply is the first step of a run that the registry can
+// refuse, and it comes after every step the user's input can fail. A command
+// line or a locator that is wrong therefore comes back as the error it is,
+// whatever the registry stands at. A registry that cannot take the reader is
+// found out by a run that got as far as the supply, with a panic that says why:
+// the call is wrong, not the data.
+func TestExecuteSuppliesTheReaderOnlyAfterTheRunHasLoaded(t *testing.T) {
+	// A registry whose config module already has an instance, which the host
+	// supplied ahead of Execute: a further supply to the module is refused.
+	holdingAReader := func(t *testing.T) (*core.Registry, Reader) {
+		t.Helper()
+		reg := treeRegistry(t, &treeRun{}, nil)
+		reader, err := Load(t.Context(), reg, nil)
+		if err != nil {
+			t.Fatalf("loading the host's own reader failed: %v", err)
+		}
+		reg.Supply(reader, ModuleName)
+		return reg, reader
+	}
+	versionApp := func(reg *core.Registry, args ...string) *App {
+		a, _, _ := treeApp(reg, args...)
+		a.Root().Sub("version").Do(core.StagePrepare, nil)
+		return a
+	}
+
+	t.Run("a command line the library rejects comes back as that error", func(t *testing.T) {
+		reg, _ := holdingAReader(t)
+		a := versionApp(reg, "version", "--no-such-argument")
+		if err := executesWithoutPanicking(t, a); !errors.Is(err, ErrUnknownKey) {
+			t.Fatalf("an argument no item declares returned %v, want %v", err, ErrUnknownKey)
+		}
+	})
+
+	t.Run("a locator no transport takes comes back as that error", func(t *testing.T) {
+		reg, _ := holdingAReader(t)
+		a := versionApp(reg, "version", "--config=nosuchscheme://x")
+		if err := executesWithoutPanicking(t, a); !errors.Is(err, ErrUnknownScheme) {
+			t.Fatalf("a locator whose scheme no transport takes returned %v, want %v",
+				err, ErrUnknownScheme)
+		}
+	})
+
+	t.Run("a module that already has an instance refuses the reader", func(t *testing.T) {
+		reg, hosts := holdingAReader(t)
+		a := versionApp(reg, "version")
+		panicsWith(t, "Execute", func() { _ = a.Execute(t.Context()) })
+
+		// Refused, not replaced: the instance the host supplied stays in force.
+		found, err := reg.Resolve((*Reader)(nil))
+		if err != nil || found != hosts {
+			t.Errorf("after the refusal the registry hands out %v (%v), want the reader the host supplied",
+				found, err)
+		}
+	})
+
+	t.Run("a registry that was driven already refuses the reader", func(t *testing.T) {
+		reg := treeRegistry(t, &treeRun{}, nil)
+		drive := core.Drive{Depth: core.StagePrepare, Participants: []string{}}
+		if err := reg.Drive(t.Context(), drive); err != nil {
+			t.Fatalf("driving the registry ahead of Execute failed: %v", err)
+		}
+		a := versionApp(reg, "version")
+		message := panicsWith(t, "Execute", func() { _ = a.Execute(t.Context()) })
+		if !strings.Contains(strings.ToLower(message), "drive") {
+			t.Errorf("the panic reads %q, which does not say the drive had begun", message)
+		}
+		if _, err := reg.Resolve((*Reader)(nil)); !errors.Is(err, core.ErrMissingProvider) {
+			t.Errorf("looking the reader up after the refusal returned %v, want %v: nothing was supplied",
+				err, core.ErrMissingProvider)
+		}
+	})
+
+	t.Run("a module of that name the reader does not satisfy refuses it", func(t *testing.T) {
+		// NewApp looks the module up by its name alone, so a registry whose module
+		// of that name declares something else gets as far as the supply.
+		reg := core.New()
+		reg.Register(identifying("host", HostIdentity{Prefix: "MYAPP"}))
+		reg.Register(core.Module{
+			Name:     ModuleName,
+			Provides: []core.Provision{{Token: (*treeSink)(nil)}},
+		})
+		a := versionApp(reg, "version")
+		panicsWith(t, "Execute", func() { _ = a.Execute(t.Context()) })
+	})
+}
+
+// TestTheConfigModuleTakesPartInEveryDrive pins that a command tree does not
+// have to name the config module. A module whose instance was supplied takes
+// part in every drive, with its stance fixed at StateEnabled, and Execute
+// supplies the reader for every command, so a command that takes nothing in has
+// the module all the same.
+func TestTheConfigModuleTakesPartInEveryDrive(t *testing.T) {
+	a, _, _ := treeApp(treeRegistry(t, &treeRun{}, nil), "version")
+	acted := false
+	a.Root().Sub("version").Do(core.StagePrepare, func(_ context.Context, reg *core.Registry) error {
+		acted = true
+		if !reg.Participating(ModuleName) {
+			t.Errorf("module %q does not take part in a drive of a command that takes nothing in",
+				ModuleName)
+		}
+		enablement, known := reg.Enablement(ModuleName)
+		if !known || enablement.State != core.StateEnabled {
+			t.Errorf("the verdict on module %q is %+v (known: %v), want StateEnabled: its stance is "+
+				"fixed, so resolution cannot stand it down", ModuleName, enablement, known)
+		}
+		return nil
+	})
+
+	if err := a.Execute(t.Context()); err != nil {
+		t.Fatalf("the run failed: %v", err)
+	}
+	if !acted {
+		t.Fatal("the drive reached its depth without running the command's action")
+	}
+}
+
+// TestTakingTheConfigModuleInIsHarmless pins that a tree which names the module
+// itself, or takes every module in and so names it without meaning to, runs as
+// one that does not. The module is a participant by the command tree and by the
+// supplied reader both, and takes part once.
+func TestTakingTheConfigModuleInIsHarmless(t *testing.T) {
+	for _, c := range []struct {
+		name  string
+		write func(*Command)
+	}{
+		{"by name", func(c *Command) { c.Include(ModuleName) }},
+		{"with every module", func(c *Command) { c.IncludeAll() }},
+	} {
+		t.Run(c.name, func(t *testing.T) {
+			a, _, _ := treeApp(treeRegistry(t, &treeRun{}, nil), "serve")
+			acted := false
+			serve := a.Root().Sub("serve")
+			c.write(serve)
+			serve.Do(core.StagePrepare, func(_ context.Context, reg *core.Registry) error {
+				acted = true
+				if !reg.Participating(ModuleName) {
+					t.Errorf("module %q does not take part", ModuleName)
+				}
+				return nil
+			})
+
+			if err := a.Execute(t.Context()); err != nil {
+				t.Fatalf("the run failed: %v", err)
+			}
+			if !acted {
+				t.Fatal("the drive reached its depth without running the command's action")
+			}
+		})
+	}
+}
+
+// suppliedOnlyApp starts a tree over a registry in which the module greeter,
+// whose one argument is required, takes part in every drive because the host
+// supplied an instance for it. No command takes it in until a case writes one.
+func suppliedOnlyApp(t *testing.T, args ...string) (*App, *strings.Builder) {
+	t.Helper()
+	reg := core.New()
+	reg.Register(Module())
+	reg.Register(identifying("host", HostIdentity{Prefix: "MYAPP"}))
+	reg.Register(declaring("greeter", Schema{
+		Namespace: "greeter",
+		Mounts:    []Mount{{Value: &treeAddr{}}},
+		Items: map[string]Item{"addr": {
+			Origins:     OriginPrimary | OriginEnv | OriginFlag,
+			FlagName:    "greeter-addr",
+			Placeholder: "HOST:PORT",
+			Description: "the address of the greeting service",
+			Required:    true,
+		}},
+	}))
+	reg.Supply(&treeProduct{name: "greeter"}, "greeter")
+	a, stdout, _ := treeApp(reg, args...)
+	return a, stdout
+}
+
+// TestAModuleTakingPartOnlyBySupplyIsOutsideTheConfigurationInterface pins what
+// the command tree decides and a supplied instance does not. The command line,
+// the help output and the required items follow the participating set the tree
+// settles before the drive begins, and a module that joins the drive only
+// because its instance was supplied is not in it: the command line has no
+// argument for it, the help does not list it, and decoding its path does not
+// judge a required item nobody gave.
+func TestAModuleTakingPartOnlyBySupplyIsOutsideTheConfigurationInterface(t *testing.T) {
+	t.Run("help does not list its argument", func(t *testing.T) {
+		a, stdout := suppliedOnlyApp(t, "--help")
+		a.Root().Sub("version").Do(core.StagePrepare, nil)
+		if err := a.Execute(t.Context()); err != nil {
+			t.Fatalf("asking for help returned %v", err)
+		}
+		if help := stdout.String(); strings.Contains(help, "--greeter-addr") {
+			t.Errorf("the help reads %q, which lists the argument of a module no command takes in", help)
+		}
+	})
+
+	t.Run("the command line has no argument for it", func(t *testing.T) {
+		a, _ := suppliedOnlyApp(t, "version", "--greeter-addr=:1")
+		a.Root().Sub("version").Do(core.StagePrepare, nil)
+		err := a.Execute(t.Context())
+		if !errors.Is(err, ErrUnknownKey) {
+			t.Fatalf("an argument of a module no command takes in returned %v, want %v", err, ErrUnknownKey)
+		}
+		if !strings.Contains(err.Error(), "does not take that module in") {
+			t.Errorf("the rejection reads %q, which does not say the module is outside this command", err)
+		}
+	})
+
+	t.Run("its required item is not judged", func(t *testing.T) {
+		a, _ := suppliedOnlyApp(t, "version")
+		reached := false
+		var decoded error
+		a.Root().Sub("version").Do(core.StagePrepare, func(_ context.Context, reg *core.Registry) error {
+			reached = true
+			if !reg.Participating("greeter") {
+				t.Error("the module whose instance was supplied does not take part")
+			}
+			var got treeAddr
+			decoded = readerFrom(t, reg).Decode("greeter", &got)
+			return nil
+		})
+		if err := a.Execute(t.Context()); err != nil {
+			t.Fatalf("the run failed: %v", err)
+		}
+		if !reached {
+			t.Fatal("the drive reached its depth without running the command's action")
+		}
+		if decoded != nil {
+			t.Errorf("decoding the module's path returned %v, and a module that takes part only by "+
+				"supply has no required item judged", decoded)
+		}
+	})
+}
+
+// TestASuppliedModuleTakenInForItsDeclarationsIsStaticToTheTree pins the two
+// halves of what it means to write a module at declaration level when the host
+// supplied its instance.
+//
+// The tree does not know about the supply, so it handles the module as the level
+// it was written at says: WithFlags puts the argument on the command line, and
+// the required item is not judged. The registry knows, and runs the module
+// whatever the tree wrote: it takes part, and the AllResources adjustment, which
+// belongs to a module reached for its declarations alone, lapses. The same
+// module taken in at run level is the control: its required item is judged, so
+// the absence of a verdict in the other cases is the level's doing.
+func TestASuppliedModuleTakenInForItsDeclarationsIsStaticToTheTree(t *testing.T) {
+	declared := func(c *Command) { c.IncludeDeclarations("greeter").WithFlags().AllResources() }
+	for _, c := range []struct {
+		name        string
+		write       func(*Command)
+		args        []string
+		wantAddr    string
+		wantMissing bool
+	}{
+		{
+			name:     "declaration level, the argument given",
+			write:    declared,
+			args:     []string{"version", "--greeter-addr=:1"},
+			wantAddr: ":1",
+		},
+		{
+			name:  "declaration level, the argument left out",
+			write: declared,
+			args:  []string{"version"},
+		},
+		{
+			name:        "run level, the argument left out",
+			write:       func(c *Command) { c.Include("greeter") },
+			args:        []string{"version"},
+			wantMissing: true,
+		},
+	} {
+		t.Run(c.name, func(t *testing.T) {
+			a, _ := suppliedOnlyApp(t, c.args...)
+			version := a.Root().Sub("version")
+			c.write(version)
+			reached := false
+			version.Do(core.StagePrepare, func(_ context.Context, reg *core.Registry) error {
+				reached = true
+				if !reg.Participating("greeter") {
+					t.Error("the module whose instance was supplied does not take part")
+				}
+				if reg.AllResourcesInForce("greeter") {
+					t.Error("AllResources is in force for a module that takes part: the registry " +
+						"handles it as a participant, and the adjustment lapses")
+				}
+
+				var got treeAddr
+				err := readerFrom(t, reg).Decode("greeter", &got)
+				if c.wantMissing {
+					if !errors.Is(err, ErrMissingRequired) {
+						t.Errorf("decoding the path of a module the tree runs returned %v, want %v",
+							err, ErrMissingRequired)
+					}
+					return nil
+				}
+				if err != nil {
+					t.Errorf("decoding the path of a module the tree reaches for its declarations "+
+						"alone returned %v, and its required item is not judged", err)
+				}
+				if got.Addr != c.wantAddr {
+					t.Errorf("greeter.addr reads %q, want %q", got.Addr, c.wantAddr)
+				}
+				return nil
+			})
+
+			if err := a.Execute(t.Context()); err != nil {
+				t.Fatalf("the run failed: %v", err)
+			}
+			if !reached {
+				t.Fatal("the drive reached its depth without running the command's action")
+			}
+		})
+	}
+}
+
+// TestAModuleReadsItsValuesInPrepareAndInNew pins that the reader is there
+// before the first module is asked for a stance. A module judges whether it can
+// start by its own configuration, so a reader that appeared only after Prepare
+// would leave every one of them with nothing to read.
+func TestAModuleReadsItsValuesInPrepareAndInNew(t *testing.T) {
+	var inPrepare, inNew string
+	read := func(reg *core.Registry) string {
+		r, err := core.Resolve[Reader](reg)
+		if err != nil {
+			t.Errorf("the reader could not be taken up: %v", err)
+			return ""
+		}
+		return decodeAddr(t, r, "reading")
+	}
+	reading := treeModule(&treeRun{}, "reading", core.Module{})
+	reading.Prepare = func(_ context.Context, reg *core.Registry) (core.Enablement, error) {
+		inPrepare = read(reg)
+		return core.Enablement{State: core.StateEnabled}, nil
+	}
+	reading.New = func(_ context.Context, reg *core.Registry) (any, error) {
+		inNew = read(reg)
+		return treeProduct{name: "reading"}, nil
+	}
+	reg := treeRegistry(t, &treeRun{}, nil)
+	reg.Register(reading)
+
+	a, _, _ := treeApp(reg, "serve", "--reading-addr=given")
+	serve := a.Root().Sub("serve")
+	serve.Include("reading")
+	serve.Do(core.StageNew, nil)
+
+	if err := a.Execute(t.Context()); err != nil {
+		t.Fatalf("the run failed: %v", err)
+	}
+	if inPrepare != "given" {
+		t.Errorf("Prepare read reading.addr as %q, want the command line's value", inPrepare)
+	}
+	if inNew != "given" {
+		t.Errorf("New read reading.addr as %q, want the command line's value", inNew)
+	}
+}
+
+// treeLedger is a capability whose instance the host supplies ahead of Execute,
+// which is the case the return value cannot answer for: whether the drive
+// began, and with it who releases the instance.
+type treeLedger interface{ record() }
+
+type treeLedgerBook struct{ entries int }
+
+func (b *treeLedgerBook) record() { b.entries++ }
+
+// TestParticipatingTellsWhetherTheDriveBegan pins the two ends of what Execute
+// leaves behind. Help is answered by the command-line library: no command runs,
+// nothing is supplied, and the result is nil, as it is for a drive that ran to
+// its end. The host that supplied an instance of its own before Execute then
+// asks the module the instance belongs to whether it takes part: not yet, and
+// the instance is still the host's to release; or it does, and the drive has
+// already run the module's Close on it.
+func TestParticipatingTellsWhetherTheDriveBegan(t *testing.T) {
+	for _, c := range []struct {
+		name  string
+		args  []string
+		began bool
+	}{
+		{"help is answered and no command runs", []string{"--help"}, false},
+		{"a command runs", []string{"version"}, true},
+	} {
+		t.Run(c.name, func(t *testing.T) {
+			closes := 0
+			reg := treeRegistry(t, &treeRun{}, nil)
+			reg.Register(core.Module{
+				Name:     "ledger",
+				Provides: []core.Provision{{Token: (*treeLedger)(nil)}},
+				Close: func(context.Context, *core.Registry, any) error {
+					closes++
+					return nil
+				},
+			})
+			reg.Supply(&treeLedgerBook{}, "ledger")
+
+			a, _, _ := treeApp(reg, c.args...)
+			a.Root().Sub("version").Do(core.StagePrepare, nil)
+			if err := a.Execute(t.Context()); err != nil {
+				t.Fatalf("the run failed: %v", err)
+			}
+
+			for _, name := range []string{ModuleName, "ledger"} {
+				if got := reg.Participating(name); got != c.began {
+					t.Errorf("Participating(%q) is %v, want %v", name, got, c.began)
+				}
+			}
+			wantCloses := 0
+			if c.began {
+				wantCloses = 1
+			}
+			if closes != wantCloses {
+				t.Errorf("the supplied instance was closed %d times, want %d", closes, wantCloses)
+			}
+			if !c.began {
+				if _, err := reg.Resolve((*Reader)(nil)); !errors.Is(err, core.ErrMissingProvider) {
+					t.Errorf("the reader was supplied (%v) although no drive began: nothing in the "+
+						"registry is the driver's to release before then", err)
+				}
+			}
+		})
+	}
+}
+
 // TestBooleanOnAMiddleLayerDoesNotHideTheSubcommand pins that a boolean
 // argument introduced by a middle command does not swallow the subcommand
 // name that follows it.
@@ -700,6 +1223,7 @@ func TestBooleanOnAMiddleLayerDoesNotHideTheSubcommand(t *testing.T) {
 				DryRun bool `config:"dry-run"`
 			}
 			reg := core.New()
+			reg.Register(Module())
 			reg.Register(identifying("host", HostIdentity{Prefix: "TL"}))
 			reg.Register(declaring("dbmod", Schema{
 				Namespace: "dbmod",
@@ -741,6 +1265,7 @@ func requiredArgumentApp(t *testing.T, write func(*App), args ...string) (string
 	t.Helper()
 	defaults := &treeAddr{}
 	reg := core.New()
+	reg.Register(Module())
 	reg.Register(identifying("host", HostIdentity{Prefix: "MYAPP"}))
 	reg.Register(declaring("greeter", Schema{
 		Namespace: "greeter",

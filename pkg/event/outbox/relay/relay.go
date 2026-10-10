@@ -80,6 +80,10 @@ func init() { core.ProcessRegistry.Register(Module()) }
 // delivered database, and a relay with no bus has nothing to hand an event to;
 // a run missing either fails its resolution rather than staging events nothing
 // will publish. Logging is optional, as it is for the bus.
+//
+// An instance the host supplies for this module stands where the relay would be,
+// and the start, stop and close callbacks act on a relay and on nothing else: any
+// other instance is left alone, and what it holds is the host's to release.
 func Module() core.Module {
 	return core.Module{
 		Name: ModuleName,

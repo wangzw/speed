@@ -115,10 +115,14 @@ func TestEveryModuleThatLogsDeclaresTheLoggingDependency(t *testing.T) {
 	}
 }
 
-// The opposite assertion for the one capability that is not a module's
-// product. The reading surface is supplied by the host before the first module
-// is constructed, and nothing delivers it, so a requirement naming it has no
-// provider and the run fails at startup.
+// The opposite assertion for the one capability whose instance is supplied and
+// not built by a module's New. The reading surface is the config module's
+// supplied instance: Execute supplies it before the drive begins, so it exists
+// before any module is prepared, and core.Resolve takes it whatever a module
+// declares. A requirement naming it would order the module after the config
+// module, which has no callback, and take that module in, which every drive
+// does already, so it adds nothing: a module that reads configuration resolves
+// the surface and declares nothing for it.
 func TestNoModuleDeclaresTheConfigReaderRequirement(t *testing.T) {
 	modules := []core.Module{hostModule()}
 	for _, a := range applications {
@@ -126,7 +130,8 @@ func TestNoModuleDeclaresTheConfigReaderRequirement(t *testing.T) {
 	}
 	for _, module := range modules {
 		if requiresCapability(module, (*config.Reader)(nil)) {
-			t.Errorf("module %q declares a requirement on %T, which no module delivers",
+			t.Errorf("module %q declares a requirement on %T, which no module needs to declare: "+
+				"the reading surface is the config module's supplied instance and exists before any module is prepared",
 				module.Name, (*config.Reader)(nil))
 		}
 	}

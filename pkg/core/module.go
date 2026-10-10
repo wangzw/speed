@@ -1,7 +1,8 @@
 // Package core carries the module mechanism: the module descriptor, the
 // registry that holds registrations and instances, the queries modules use to
 // reach each other, and the lifecycle driver that advances the fixed stages
-// as far as the drive asks and then releases what it built.
+// as far as the drive asks and then releases the instances it built and the
+// ones the host supplied.
 //
 // core interprets no resource and knows no capability. It has no third-party
 // dependency, because every module imports it and its dependencies would land
@@ -34,7 +35,9 @@ type Module struct {
 	// Requires declares construction-time dependencies on capabilities. The
 	// graph they form must be acyclic.
 	Requires []Requirement
-	// Provides declares the capabilities this module delivers.
+	// Provides declares the capabilities this module delivers. The module's
+	// instance has to implement every one of them, whether its New constructed
+	// it or the host supplied it, and the registry checks that it does.
 	Provides []Provision
 	// Resources declares read-only metadata. core stores it as given and
 	// never interprets it; the module that defines a resource type is the
@@ -43,20 +46,35 @@ type Module struct {
 
 	// Prepare states the module's stance on its exclusive claims, judging by
 	// its own configuration. The stage runs for the modules this drive
-	// includes and guarantees no order within itself: no module's product
-	// exists at this point, and the only thing to take up is what the host
-	// supplied before the drive began. A module that cannot start — a
+	// includes and guarantees no order within itself: no module's New has
+	// run at this point, and the only instances to take up are the ones the
+	// host supplied before the drive began. A module that cannot start — a
 	// setting is missing, a premise does not hold — returns an error saying
 	// what is absent; being taken in at run level, it has no way to stand
 	// itself down. The stance of a call that failed is not read, so a
 	// failing Prepare returns the zero Enablement with its error.
+	//
+	// Prepare does not run for a module the host supplied an instance for.
+	// Its stance is fixed at StateEnabled, as though its Prepare returned
+	// that without condition.
 	Prepare func(ctx context.Context, reg *Registry) (Enablement, error)
 	// New constructs the module's product. It runs in dependency order. A
 	// module without this callback takes part in the later stages with a nil
-	// instance.
+	// instance, unless the host supplied one for it.
+	//
+	// New does not run for a module the host supplied an instance for: that
+	// instance is the module's product from the moment it is supplied, and
+	// every later stage hands the module that one. A module that declares
+	// Provides and has no New is one whose instance can only be supplied.
 	New func(ctx context.Context, reg *Registry) (any, error)
 	// Migrate applies migrations, after every product is constructed and
 	// before any module starts working. Dependency order.
+	//
+	// This callback and every one after it receives the module's instance: the
+	// product of its New, or the instance the host supplied for it. The callback
+	// is not told which of the two it was handed. A callback that cannot work
+	// with an instance its own New did not construct leaves it alone, or returns
+	// an error that fails the stage.
 	Migrate func(ctx context.Context, reg *Registry, instance any) error
 	// Init wires modules together and publishes. Every instance exists by
 	// now, so mutual references resolve here. Dependency order.
@@ -83,7 +101,9 @@ type Module struct {
 	//
 	// Stop may be called on an instance that was never initialised or
 	// started: a startup failure rolls back every constructed instance
-	// whatever stage it had reached. Tolerating that is part of the
+	// whatever stage it had reached, and an instance the host supplied counts
+	// as constructed from the start of the drive, so it is reached even when
+	// construction never got to its module. Tolerating that is part of the
 	// contract.
 	Stop func(ctx context.Context, reg *Registry, instance any) error
 	// Close releases resources, once every Stop has returned. Reverse
@@ -144,13 +164,15 @@ const (
 	// StateAuto enables the module unless it loses a resolution. It is the
 	// zero value, so a module without a Prepare callback states it.
 	StateAuto EnablementState = iota
-	// StateEnabled enables the module explicitly.
+	// StateEnabled enables the module explicitly. It is the stance of a module
+	// the host supplied an instance for, whose Prepare does not run to state
+	// another.
 	StateEnabled
 	// StateDisabled is not a stance a module may state: one taken in at run
 	// level must start, so stating this fails the startup. It is the verdict
 	// resolution gives when a provider stands down over an exclusive claim,
-	// and what Enablement reports for a module a drive did not take in at
-	// run level.
+	// and what Enablement reports for a module outside a drive's participating
+	// set.
 	StateDisabled
 )
 

@@ -706,7 +706,7 @@ kv.redis.pool-size   ->   MYAPP_KV__REDIS__POOL_SIZE
 | 冲突判据 | 已实现 | `pkg/config/conflict.go` |
 | 命令树与参与集 | 已实现 | `pkg/config/app.go`、`pkg/config/command.go`、`pkg/config/tree.go` |
 | 纳入分级与两个修饰 | 已实现 | `pkg/config/command.go` `IncludeDeclarations`、`IncludeAllDeclarations`，`pkg/config/tree.go` `setsOf` |
-| 读取面交付 | 部分实现：代码按功能标识预置读取面，根包不登记模块；缺 `config` 模块的登记（`ModuleName`、`Module`、`init`）、`NewApp` 对该模块的登记检查、`Execute` 以模块名指名预置 | `pkg/config/load.go` `Load`，`pkg/config/app.go` `NewApp`、`(*App).run` |
+| 读取面交付 | 已实现 | `pkg/config/module.go` `ModuleName`、`Module`、`init`，`pkg/config/load.go` `Load`，`pkg/config/app.go` `NewApp`、`(*App).run` |
 | 配置定位符 | 已实现 | `pkg/config/locator.go` |
 | 命令行与命令树 | 已实现 | `pkg/config/flagbind.go`、`pkg/config/flagvalue.go`、`pkg/config/tree.go` |
 | 环境变量层 | 已实现 | `pkg/config/envbind.go` |

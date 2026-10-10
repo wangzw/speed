@@ -270,10 +270,14 @@ func open(ctx context.Context, cfg *Config, logger *slog.Logger) (event.Bus, err
 }
 
 // start freezes the table, opens the bus to publishing, and begins fetching.
+//
+// It takes up this implementation's own bus and refuses any other: a bus the
+// host supplied for the module has no table here to freeze and no readers here
+// to start.
 func start(ctx context.Context, b event.Bus) error {
 	local, ok := b.(*bus)
 	if !ok {
-		return fmt.Errorf("%s: the bus handed to the start stage is %T", ModuleName, b)
+		return dispatch.ForeignBus(ModuleName, b)
 	}
 	return local.begin(ctx)
 }

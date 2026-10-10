@@ -148,15 +148,17 @@ func Module() core.Module {
 }
 
 // readerOf takes up the configuration reader. A reader that is not there means
-// the host never supplied one, which is the host's omission and is carried out
-// as it stands rather than read as "nothing was configured".
+// the host never supplied one as the instance of the config module, which is the
+// host's omission and is carried out as it stands rather than read as "nothing
+// was configured".
 func readerOf(reg *core.Registry) (config.Reader, error) {
 	return core.Resolve[config.Reader](reg)
 }
 
-// productOf narrows an instance to this module's product. A product of another
-// shape means the registry handed this callback something it did not build,
-// which is not something a host can cause.
+// productOf narrows an instance to this module's product. An instance of another
+// shape is one the host supplied for this module, and the callbacks leave it
+// alone: no snapshot is loaded for it and no refresher is started or stopped,
+// and what it holds is released by whoever supplied it.
 func productOf(instance any) (*roster, bool) {
 	r, ok := instance.(*roster)
 	return r, ok

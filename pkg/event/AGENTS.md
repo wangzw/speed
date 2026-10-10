@@ -113,6 +113,14 @@ must not cross, and how to run it.
   after the freeze does not cover anything published before it: an
   implementation may refuse it at the call site; one that accepts it leaves the
   subscriber missing everything published first.
+- **A backend's `Start` callback takes up its own product and refuses any other
+  bus, through `dispatch.ForeignBus`.** A bus the host supplied for the module
+  has no table of the backend's to freeze and no readers to start, so a drive
+  that carries it to that stage fails, and one that stops short of it does not.
+  The refusal is each backend's own code, and it comes before the callback
+  touches anything else, so `TestASuppliedBusIsRefusedAtTheStartStage` holds
+  every backend to it without a server; a new backend is added to that test's
+  list.
 - **A publish is accepted between the start stage and the stop stage, and
   nowhere else.** Before `Start` the table is still being filled, so a publish
   would reach part of it; from `Stop` on no reader is left to deliver it. Both

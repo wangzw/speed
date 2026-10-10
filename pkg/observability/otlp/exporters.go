@@ -25,9 +25,9 @@ import (
 //
 // The probe is here rather than in Prepare because New runs only for a command
 // that actually builds this module, while Prepare runs for every module a
-// command took in — including one that collects stances and constructs nothing.
-// A round trip in Prepare would make such a command fail over an endpoint it
-// was never going to send to.
+// command took in (except one the host supplied an instance for) — including a
+// command that collects stances and constructs nothing. A round trip in Prepare
+// would make such a command fail over an endpoint it was never going to send to.
 func newExporters(ctx context.Context, reg *core.Registry) (any, error) {
 	cfg, err := read(reg)
 	if err != nil {

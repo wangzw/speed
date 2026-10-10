@@ -90,9 +90,10 @@ func (s *spyWriter) Write(p []byte) (int, error) {
 var _ nethttp.ResponseWriter = (*spyWriter)(nil)
 
 // stubReader is a config.Reader handing back a moduleConfig the test wrote.
-// The real reader is built by config's own New, which reads os.Args
-// unconditionally and refuses the arguments go test passes to a test binary,
-// so the callbacks are driven through the interface instead.
+// The real reader is the one config loads from documents and arguments, and
+// readThrough takes a test down that path; the tests that drive the callbacks
+// state the configuration as a value instead, so none of them writes a document
+// or depends on the arguments a test binary is started with.
 type stubReader struct {
 	cfg moduleConfig
 	err error
@@ -270,17 +271,19 @@ func testSettings(name string) endpointSettings {
 // dependency order leaves open is its own implementation choice, so no fixture
 // here and no test built on one may read an order out of module names.
 
-// supplyConfig hands the registry the reader the assembly reads its endpoints
-// through, the way a host does: a supplied product, in place before the first
-// module is constructed and answering every lookup for the capability.
+// supplyConfig gives the registry the reader the assembly reads its endpoints
+// through, the way a host does: the reader is the instance of the config module,
+// supplied to it before the drive, so it exists from this call on and answers
+// every lookup for the capability, Prepare's included.
 //
-// It is not a module, and it cannot be one here: the capability is supplied,
-// so a registered module declaring it in Provides would be a second answer to
-// the same lookup. What it hands back is the configuration the test wrote,
-// which is what a real load over the arguments go test passes a test binary
-// could not produce.
+// A registry made with core.New does not hold the config module the process
+// registry has from the config package's init, and an instance can only be
+// supplied to a module that is registered, so the module is registered here.
+// The call names it, so the reader belongs to it whatever else a test registers.
+// What the reader hands back is the configuration the test wrote.
 func supplyConfig(reg *core.Registry, cfg moduleConfig) {
-	reg.Supply((*config.Reader)(nil), &stubReader{cfg: cfg})
+	reg.Register(config.Module())
+	reg.Supply(&stubReader{cfg: cfg}, config.ModuleName)
 }
 
 // stubLogger delivers the Logger capability over a logger the test holds. A
@@ -437,13 +440,14 @@ type assembly struct {
 	err      error
 }
 
-// startAssembly supplies the reader over cfg, registers the modules, starts
-// Run and hands back the handle. The reader goes in first, which is the order
-// a host works in: it is there before anything is registered and long before
-// the drive begins.
+// startAssembly registers the config module with the reader over cfg supplied to
+// it, registers the modules, starts Run and hands back the handle. The reader
+// goes in first, which is the order a host works in: it is there before anything
+// else is registered and long before the drive begins.
 //
-// The run is ended and waited for whatever the test does, so a failing
-// assertion leaves no registry serving for the rest of the binary.
+// A test that has to supply an instance to one of the modules puts the registry
+// together itself and hands it to runAssembly: the supply comes after that
+// module is registered and before the drive.
 func startAssembly(t *testing.T, cfg moduleConfig, modules ...core.Module) *assembly {
 	t.Helper()
 	reg := core.New()
@@ -451,6 +455,16 @@ func startAssembly(t *testing.T, cfg moduleConfig, modules ...core.Module) *asse
 	for _, m := range modules {
 		reg.Register(m)
 	}
+	return runAssembly(t, reg)
+}
+
+// runAssembly starts Run on a registry the caller has put together and hands
+// back the handle.
+//
+// The run is ended and waited for whatever the test does, so a failing
+// assertion leaves no registry serving for the rest of the binary.
+func runAssembly(t *testing.T, reg *core.Registry) *assembly {
+	t.Helper()
 	ctx, cancel := context.WithCancel(context.Background())
 	a := &assembly{reg: reg, cancel: cancel, result: make(chan error, 1)}
 	go func() { a.result <- reg.Run(ctx) }()
@@ -477,6 +491,24 @@ func (a *assembly) wait(t *testing.T) error {
 	case <-time.After(waitDeadline):
 		t.Fatalf("timed out after %s waiting for Run to return", waitDeadline)
 		return nil
+	}
+}
+
+// waitForOrEnd takes one value from ch, failing the test with what Run came back
+// with if Run ends first: a startup that failed would otherwise show only as a
+// wait that ran out its deadline, with nothing saying why. The result is kept as
+// wait keeps it.
+func (a *assembly) waitForOrEnd(t *testing.T, ch <-chan struct{}, what string) {
+	t.Helper()
+	select {
+	case <-ch:
+	case err := <-a.result:
+		a.mu.Lock()
+		a.finished, a.err = true, err
+		a.mu.Unlock()
+		t.Fatalf("Run came back with %v before %s", err, what)
+	case <-time.After(waitDeadline):
+		t.Fatalf("timed out after %s waiting for %s", waitDeadline, what)
 	}
 }
 

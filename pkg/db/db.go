@@ -42,6 +42,14 @@ const (
 // concrete type and cannot designate a capability; the handle comes out of it
 // through DB.
 //
+// A host can implement it itself and supply that implementation for an engine's
+// module, but only a drive that stops before Migrate carries it that far:
+// Migrate accepts an instance only when the module's own New built it, and
+// refuses any other with ErrForeignInstance, because the plugins and the
+// serializer that DB's handle is promised to carry are installed in New. A test
+// that needs a stand-in supplies it to a module that declares only this
+// capability.
+//
 // Declaring a dependency on it orders the dependant after the database module
 // in every stage, so the dependant's own Migrate runs after the migrations have
 // been applied. Its New does not: every module's New runs before the first

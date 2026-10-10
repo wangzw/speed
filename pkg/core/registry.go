@@ -2,8 +2,8 @@ package core
 
 import (
 	"fmt"
-	"reflect"
 	"runtime"
+	"strconv"
 	"strings"
 	"sync"
 )
@@ -12,7 +12,7 @@ import (
 // land here, so the available set is decided by what the binary imports.
 var ProcessRegistry = New()
 
-// Registry holds registrations, the instances built from them, and the
+// Registry holds registrations, the instances of the registered modules, and the
 // lifecycle driver.
 //
 // The descriptor part is written before Run and read-only afterwards. The
@@ -24,31 +24,35 @@ type Registry struct {
 	order []string                 // registration order
 	mods  map[string]*registration // by module name
 
-	instances map[string]any // constructed products, by module name
+	// instances holds each module's instance by module name: the product its
+	// New constructed, or the instance the host supplied for it. A module with
+	// neither has no entry, and a lookup finds nothing for it.
+	instances map[string]any
+	// supplied records, by module name, the instances the host handed in
+	// before the drive. The instance itself is in instances from the moment
+	// it is supplied; this keeps what a later conflict has to name, and tells
+	// the drive which modules never run Prepare and New.
+	supplied map[string]suppliedInstance
+	// suppliedObjects maps the identity of each supplied object to the module
+	// it was supplied for, which is how one object supplied twice is found.
+	suppliedObjects map[objectKey]string
 	// lifecycle lists the modules that entered construction, in the order
-	// they did. Rollback walks it backwards.
+	// they did. Rollback walks it backwards. A module whose instance the host
+	// supplied enters it when construction reaches the module, and one the
+	// drive never reached is released as though it had entered last (see
+	// constructionOrder).
 	lifecycle []string
-
-	// supplied holds the products the host handed in before the drive,
-	// by the capability each was supplied under, and suppliedSites the
-	// package that handed each one in, so a conflict can name both
-	// parties. They stay out of instances, out of order and out of
-	// lifecycle: a supplied product has no module name to be indexed by,
-	// and borrowing one would leak it into Modules, into Enablement and
-	// into the rollback, where the design keeps it from appearing.
-	supplied      map[reflect.Type]any
-	suppliedSites map[reflect.Type]string
 
 	// enablement holds the verdict resolution reached, keyed by module name.
 	// It is nil until resolution has run.
 	enablement map[string]Enablement
 
-	// participating holds the modules this drive took in at run level,
-	// keyed by name. It is settled when the drive begins, ahead of the
-	// stances, because the command tree already knows it; nil until then.
-	// It is deliberately not the same thing as the key set of enablement,
-	// which resolution fills later and which reports a module the drive
-	// left out as disabled rather than absent.
+	// participating holds the modules this drive took in at run level and the
+	// modules the host supplied an instance for, keyed by name. It is settled
+	// when the drive begins, ahead of the stances, because the command tree
+	// already knows it; nil until then. It is deliberately not the same thing
+	// as the key set of enablement, which resolution fills later and which
+	// reports a module the drive left out as disabled rather than absent.
 	participating map[string]bool
 	// declaringOnly holds the modules this drive reached for their
 	// declarations alone, keyed by name, with the adjustments the host
@@ -59,7 +63,7 @@ type Registry struct {
 
 	running bool
 	// constructing records that this drive has begun constructing. Until it
-	// has, no module's product exists, and a lookup that finds none is not
+	// has, no module's New has run, and a lookup that finds no instance is not
 	// a matter of construction order.
 	constructing bool
 }
@@ -78,10 +82,10 @@ type registration struct {
 // of modules in a test.
 func New() *Registry {
 	return &Registry{
-		mods:          make(map[string]*registration),
-		instances:     make(map[string]any),
-		supplied:      make(map[reflect.Type]any),
-		suppliedSites: make(map[reflect.Type]string),
+		mods:            make(map[string]*registration),
+		instances:       make(map[string]any),
+		supplied:        make(map[string]suppliedInstance),
+		suppliedObjects: make(map[objectKey]string),
 	}
 }
 
@@ -89,14 +93,15 @@ func New() *Registry {
 //
 // A duplicate name panics, and so does an illegal token in Requires or
 // Provides: both are programming errors, and both surface at the moment of
-// registration rather than somewhere downstream. So does a module that
-// declares a capability the host has already supplied. Supply checks the same
-// conflict from its side, and both sides have to, or the supply-then-register
-// order slips through — and that is the order a registry assembled by hand
-// runs in. So, finally, does a call made once the drive has started, from a
-// stage, from the action or after the drive returned: descriptors and the
-// resources they carry are fixed before the drive, and a query answered
-// during it would otherwise change under the run that asked.
+// registration rather than somewhere downstream. So does a call made once the
+// drive has started, from a stage, from the action or after the drive
+// returned: descriptors and the resources they carry are fixed before the
+// drive, and a query answered during it would otherwise change under the run
+// that asked.
+//
+// Register does not look at the instances already supplied. An instance
+// belongs to the module it was assigned to when Supply ran, and a module
+// registered afterwards takes no part in that.
 func (r *Registry) Register(m Module) {
 	site := callerPackage(3)
 	if m.Name == "" {
@@ -125,33 +130,29 @@ func (r *Registry) Register(m Module) {
 			"pulled in by a dependency rather than by the host itself",
 			m.Name, existing.site, site))
 	}
-	for _, ct := range declaredCapabilities(m) {
-		supplySite, ok := r.suppliedSites[ct]
-		if !ok {
-			continue
-		}
-		panic(fmt.Sprintf("core: module %q registered from %s declares capability %s in "+
-			"Provides, and that capability was already supplied from %s. A supplied "+
-			"product does not go through construction, so the two cannot both answer a "+
-			"lookup for it; the available set is decided by imports, so this module may "+
-			"have been pulled in by a dependency rather than by the host itself",
-			m.Name, site, typeName(ct), supplySite))
-	}
 	r.mods[m.Name] = &registration{module: m, site: site}
 	r.order = append(r.order, m.Name)
 }
 
-// registrationSites maps each registered module to the package that called
-// Register for it. A failure that names a module the host never wrote down can
-// say where it came in, which the name alone does not.
-func (r *Registry) registrationSites() map[string]string {
+// origin is what the registry recorded about a module besides its descriptor:
+// the package that called Register for it, and whether the host supplied its
+// instance. A failure that names a module the host never wrote down can say
+// where it came in, which the name alone does not.
+type origin struct {
+	site     string
+	supplied bool
+}
+
+// origins maps each registered module to its origin.
+func (r *Registry) origins() map[string]origin {
 	r.mu.RLock()
 	defer r.mu.RUnlock()
-	sites := make(map[string]string, len(r.mods))
+	out := make(map[string]origin, len(r.mods))
 	for name, reg := range r.mods {
-		sites[name] = reg.site
+		_, supplied := r.supplied[name]
+		out[name] = origin{site: reg.site, supplied: supplied}
 	}
-	return sites
+	return out
 }
 
 // Modules gives the full set of descriptors. A capability with a single
@@ -192,15 +193,48 @@ func callerPackage(skip int) string {
 	if frame.Function == "" {
 		return "unknown package"
 	}
-	// frame.Function reads like "pkg/path.Func" or "pkg/path.(*T).Method";
-	// the package path ends at the first dot after the last slash.
-	fn := frame.Function
-	dir := ""
-	if i := strings.LastIndex(fn, "/"); i >= 0 {
-		dir, fn = fn[:i+1], fn[i+1:]
+	return packageOf(frame.Function)
+}
+
+// packageOf extracts the import path of the package from a runtime function
+// name, which reads like "pkg/path.Func", "pkg/path.(*T).Method" or
+// "pkg/path.Func[...]". The path ends at the first dot after the last slash:
+// the linker writes a dot in the last element of the path as %2e, so that dot
+// is the separator and none is inside the path.
+//
+// The path comes back as it is written in an import, with those escapes undone.
+// That is the form reflect.Type.PkgPath reports, which a registration site is
+// compared with when an instance is claimed by the package of its type, and the
+// form a message shows: the same package reads the same wherever it appears.
+func packageOf(function string) string {
+	dir, rest := "", function
+	if i := strings.LastIndex(function, "/"); i >= 0 {
+		dir, rest = function[:i+1], function[i+1:]
 	}
-	if i := strings.Index(fn, "."); i >= 0 {
-		return dir + fn[:i]
+	if i := strings.Index(rest, "."); i >= 0 {
+		rest = rest[:i]
 	}
-	return dir + fn
+	return unescapeSymbol(dir + rest)
+}
+
+// unescapeSymbol undoes the %xx escapes the linker writes into a symbol name
+// for a dot in the last element of a package path, and for a space, a control
+// byte, a quote, a percent sign and any byte outside ASCII.
+func unescapeSymbol(s string) string {
+	if !strings.Contains(s, "%") {
+		return s
+	}
+	var b strings.Builder
+	b.Grow(len(s))
+	for i := 0; i < len(s); i++ {
+		if s[i] == '%' && i+2 < len(s) {
+			if c, err := strconv.ParseUint(s[i+1:i+3], 16, 8); err == nil {
+				b.WriteByte(byte(c))
+				i += 2
+				continue
+			}
+		}
+		b.WriteByte(s[i])
+	}
+	return b.String()
 }

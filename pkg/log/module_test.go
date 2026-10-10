@@ -41,6 +41,23 @@ func (s *stubReader) Decode(path string, target any) error {
 
 var _ config.Reader = (*stubReader)(nil)
 
+// registryWithoutReader is what a host that forgot to supply the reader leaves
+// behind: the config module is registered, as the process registry has it from
+// the config package's init, and holds no instance.
+func registryWithoutReader() *core.Registry {
+	reg := core.New()
+	reg.Register(config.Module())
+	return reg
+}
+
+// registryWithReader is that registry with the reader supplied to the config
+// module by name, the way Execute supplies the one it loads.
+func registryWithReader(reader config.Reader) *core.Registry {
+	reg := registryWithoutReader()
+	reg.Supply(reader, config.ModuleName)
+	return reg
+}
+
 // keepBootstrapLevel restores the bootstrap level after a test that sets it.
 // The variable is process-level and shared with every other test in the binary.
 func keepBootstrapLevel(t *testing.T) {
@@ -126,12 +143,12 @@ func TestPrepareFailsWhenTheReaderFails(t *testing.T) {
 // back to a default here would hide an assembly that cannot read any
 // configuration at all.
 //
-// A bare registry is the whole of the setup: the reader is a supplied product,
-// so there is nothing to leave out but the supplying.
+// The config module is registered and has no instance, so the supply is the one
+// thing left out: the reader is that module's instance.
 func TestNoSuppliedReaderFailsPrepare(t *testing.T) {
 	keepBootstrapLevel(t)
 	m := Module()
-	if _, err := m.Prepare(context.Background(), core.New()); !errors.Is(err, core.ErrMissingProvider) {
+	if _, err := m.Prepare(context.Background(), registryWithoutReader()); !errors.Is(err, core.ErrMissingProvider) {
 		t.Fatalf("Prepare on a registry nobody supplied a reader to gave %v, "+
 			"want core.ErrMissingProvider", err)
 	}
@@ -157,9 +174,9 @@ func TestDescriptorDeclaresExclusiveLoggerAndSchema(t *testing.T) {
 			"be settled by taking one of them rather than by failing the startup")
 	}
 	if len(m.Requires) != 0 {
-		t.Errorf("the descriptor requires %v; the reader is a supplied product that is in the "+
-			"registry before the drive begins, and this module needs nothing else at "+
-			"construction time", m.Requires)
+		t.Errorf("the descriptor requires %v; the reader is the supplied instance of the config "+
+			"module, which is in the registry before the drive begins, and this module "+
+			"needs nothing else at construction time", m.Requires)
 	}
 	if len(m.Resources) != 1 {
 		t.Fatalf("the descriptor declares %d resources, want the config schema alone", len(m.Resources))
@@ -335,8 +352,31 @@ func TestNewRejectsAConfigurationDefect(t *testing.T) {
 // registry nobody supplied a reader to has no configuration, and this module
 // says so rather than assembling something the host did not ask for.
 func TestNoSuppliedReaderFailsNew(t *testing.T) {
-	if _, err := Module().New(context.Background(), core.New()); !errors.Is(err, core.ErrMissingProvider) {
+	if _, err := Module().New(context.Background(), registryWithoutReader()); !errors.Is(err, core.ErrMissingProvider) {
 		t.Fatalf("New on a registry nobody supplied a reader to gave %v, "+
 			"want core.ErrMissingProvider", err)
+	}
+}
+
+// TestNewAssemblesFromTheReaderTheHostSupplied is the control of the case
+// above: the same registry with the reader supplied to the config module, which
+// New takes up and builds the chain from. The record written through the
+// product's logger lands in the file the supplied configuration names.
+func TestNewAssemblesFromTheReaderTheHostSupplied(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "supplied.log")
+	instance, err := Module().New(context.Background(), registryWithReader(&stubReader{cfg: fileConfig(path)}))
+	if err != nil {
+		t.Fatalf("New on a registry the reader was supplied to failed: %v", err)
+	}
+	product, ok := instance.(*logger)
+	if !ok {
+		t.Fatalf("New delivered %T, want this module's own product", instance)
+	}
+	t.Cleanup(product.release)
+
+	product.Named("http").Info("served")
+
+	if out := read(t, path); !strings.Contains(out, "served") {
+		t.Errorf("the destination the supplied configuration names took nothing: %q", out)
 	}
 }

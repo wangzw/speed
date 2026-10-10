@@ -39,11 +39,50 @@ func (p enabledProvider) Module() core.Module {
 	})
 }
 
+// suppliedProvider stands in for a backend whose instance the host supplies. The
+// instance takes the place of what its stance would state and its constructor
+// would build, so both fail on purpose: a drive that took the stance or ran the
+// constructor stops on that failure.
+type suppliedProvider struct{ name string }
+
+func (p suppliedProvider) Module() core.Module {
+	cfg := struct{}{}
+	return kv.NewModule(kv.Spec[struct{}]{
+		ModuleName:      p.name,
+		ConfigNamespace: p.name,
+		Config:          &cfg,
+		Stance: func(*struct{}) (core.Enablement, error) {
+			return core.Enablement{}, errors.New("the stance of a module whose instance the host supplied was taken")
+		},
+		Open: func(context.Context, *struct{}) (kv.KV, error) {
+			return nil, errors.New("a module whose instance the host supplied constructed its own")
+		},
+	})
+}
+
+// stubKV is the instance a host supplies for a backend's module. It embeds the
+// interface to deliver the capability without implementing an operation: no case
+// here calls one. It has no Close, so it holds nothing this package can release.
+type stubKV struct{ kv.KV }
+
+// closingKV is a supplied instance with a Close. It counts each Close it is asked
+// for into closed, which is how a case sees the shutdown release it.
+type closingKV struct {
+	kv.KV
+	closed *int
+}
+
+func (c closingKV) Close(context.Context) error {
+	*c.closed++
+	return nil
+}
+
 // prepare drives a fresh assembly to its stances and hands the registry back.
 func prepare(t *testing.T, participants ...string) (*core.Registry, error) {
 	t.Helper()
 	reg := core.New()
-	reg.Supply((*config.Reader)(nil), noConfig{})
+	reg.Register(config.Module())
+	reg.Supply(noConfig{}, config.ModuleName)
 	reg.Register(memory.Module())
 	reg.Register(enabledProvider{name: "kv.other-backend"}.Module())
 	return reg, reg.Drive(context.Background(), core.Drive{
@@ -75,8 +114,9 @@ func TestTheInMemoryImplementationStandsAloneWhenNothingElseRuns(t *testing.T) {
 // stating StateAuto: a host that imports it as a fallback and then configures a
 // real backend must get that backend, not a startup failure. Naming that
 // backend in the command tree is part of the premise rather than a detail of
-// the case: an exclusive provider the command tree leaves out enters no
-// participant set, so this case would have nothing to stand down for.
+// the case: an exclusive provider the command tree leaves out, with no instance
+// supplied for it, enters no participant set, so this case would have nothing to
+// stand down for.
 func TestTheInMemoryImplementationStandsDownForAConfiguredBackend(t *testing.T) {
 	reg, err := prepare(t, "kv.memory", "kv.other-backend")
 	if err != nil {
@@ -95,6 +135,93 @@ func TestTheInMemoryImplementationStandsDownForAConfiguredBackend(t *testing.T) 
 	}
 }
 
+// TestTheInMemoryImplementationStandsDownForASuppliedBackend pins the other way
+// a backend gets into the assembly: the host supplies its instance instead of
+// pointing the command at it. The command tree names only the in-memory
+// implementation, and the supplied backend takes part all the same with its
+// stance fixed at StateEnabled, so the in-memory implementation yields to it
+// exactly as it does to a named one.
+//
+// The supplied backend's own stance and constructor both fail, and the drive goes
+// as far as construction: one that took the stance, or ran the constructor
+// instead of using the supplied instance, stops on that error.
+func TestTheInMemoryImplementationStandsDownForASuppliedBackend(t *testing.T) {
+	const supplied = "kv.supplied-backend"
+	reg := core.New()
+	reg.Register(config.Module())
+	reg.Supply(noConfig{}, config.ModuleName)
+	reg.Register(memory.Module())
+	reg.Register(suppliedProvider{name: supplied}.Module())
+	reg.Supply(stubKV{}, supplied)
+	err := reg.Drive(context.Background(), core.Drive{
+		Depth:        core.StageNew,
+		Participants: []string{memory.ModuleName},
+	})
+	if err != nil {
+		t.Fatalf("drive: %v", err)
+	}
+	if !reg.Participating(supplied) {
+		t.Fatalf("%s is outside the participating set, though the host supplied its instance and "+
+			"the command tree did not need to name it", supplied)
+	}
+	won, _ := reg.Enablement(supplied)
+	if won.State != core.StateEnabled {
+		t.Fatalf("%s is %v, want enabled: a supplied instance states no stance, it is enabled", supplied, won.State)
+	}
+	stood, _ := reg.Enablement(memory.ModuleName)
+	if stood.State != core.StateDisabled {
+		t.Fatalf("kv.memory is %v beside a supplied backend, want disabled", stood.State)
+	}
+	if stood.Reason == "" {
+		t.Fatal("the stand-down carries no reason, and the reason reaches the startup diagnostics")
+	}
+}
+
+// TestASuppliedBackendIsClosedWhenItHasSomethingToClose pins what the shutdown
+// does with the instance a host supplied for an implementation: the module's
+// Close runs on it as it does on one the constructor built, and closes it. It
+// runs at two depths. A drive to Prepare constructs nothing, so the shutdown
+// releases the instance as though it had been built last; a drive to New reaches
+// the module in construction order and releases it there.
+//
+// No reading face is supplied and none is needed: a supplied backend runs
+// neither the Prepare nor the New that read configuration, so a drive that
+// reached either would stop on the missing reader.
+func TestASuppliedBackendIsClosedWhenItHasSomethingToClose(t *testing.T) {
+	for _, depth := range []core.Stage{core.StagePrepare, core.StageNew} {
+		t.Run(depth.String(), func(t *testing.T) {
+			closed := 0
+			reg := core.New()
+			reg.Register(memory.Module())
+			reg.Supply(closingKV{closed: &closed}, memory.ModuleName)
+			if err := reg.Drive(context.Background(), core.Drive{Depth: depth}); err != nil {
+				t.Fatalf("drive: %v", err)
+			}
+			if closed != 1 {
+				t.Fatalf("the supplied instance was closed %d times, want once: the module's Close is "+
+					"what releases it", closed)
+			}
+		})
+	}
+}
+
+// TestASuppliedBackendWithNothingToCloseIsLeftAlone pins the other shape of a
+// supplied instance. One without a Close(ctx) holds nothing this package can
+// release, so the shutdown reports no error for it: what it holds is the
+// supplying host's to release.
+func TestASuppliedBackendWithNothingToCloseIsLeftAlone(t *testing.T) {
+	for _, depth := range []core.Stage{core.StagePrepare, core.StageNew} {
+		t.Run(depth.String(), func(t *testing.T) {
+			reg := core.New()
+			reg.Register(memory.Module())
+			reg.Supply(stubKV{}, memory.ModuleName)
+			if err := reg.Drive(context.Background(), core.Drive{Depth: depth}); err != nil {
+				t.Fatalf("drive: %v", err)
+			}
+		})
+	}
+}
+
 // TestAnImplementationWithoutItsInputFailsTheStartup pins the rule a module
 // named in the command tree lives under: the name is a commitment to run it, so
 // one that was pointed at nothing stops the startup and says which input was
@@ -107,7 +234,8 @@ func TestTheInMemoryImplementationStandsDownForAConfiguredBackend(t *testing.T) 
 // stance is read, and the error has to survive that wiring.
 func TestAnImplementationWithoutItsInputFailsTheStartup(t *testing.T) {
 	reg := core.New()
-	reg.Supply((*config.Reader)(nil), noConfig{})
+	reg.Register(config.Module())
+	reg.Supply(noConfig{}, config.ModuleName)
 	reg.Register(redis.Module())
 	err := reg.Drive(context.Background(), core.Drive{
 		Depth:        core.StagePrepare,
@@ -128,7 +256,8 @@ func TestAnImplementationWithoutItsInputFailsTheStartup(t *testing.T) {
 // that half its data went somewhere it did not name.
 func TestTwoConfiguredBackendsFailTheStartup(t *testing.T) {
 	reg := core.New()
-	reg.Supply((*config.Reader)(nil), noConfig{})
+	reg.Register(config.Module())
+	reg.Supply(noConfig{}, config.ModuleName)
 	reg.Register(enabledProvider{name: "kv.backend-a"}.Module())
 	reg.Register(enabledProvider{name: "kv.backend-b"}.Module())
 	err := reg.Drive(context.Background(), core.Drive{

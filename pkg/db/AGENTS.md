@@ -28,6 +28,10 @@ same capability exclusively.
   ([`adr-db-waits-2026-09-29.md`](../../docs/adr/adr-db-waits-2026-09-29.md)),
   why the GORM logger a handle carries writes no statement's values
   ([`adr-db-logging-2026-09-29.md`](../../docs/adr/adr-db-logging-2026-09-29.md)),
+  why `Migrate` accepts only an instance this module's own `New` built
+  ([`adr-db-scope-2026-10-08.md`](../../docs/adr/adr-db-scope-2026-10-08.md)),
+  what an instance a host supplies for a module is
+  ([`adr-supplied-instance-2026-10-08.md`](../../docs/adr/adr-supplied-instance-2026-10-08.md)),
   why this package's interface exposes GORM
   ([`adr-module-packaging-2026-09-14.md`](../../docs/adr/adr-module-packaging-2026-09-14.md)),
   and where a driver is allowed to live
@@ -79,13 +83,35 @@ must not cross, and how to run it.
   applies them and writes none of its own: a table belongs to whoever declares
   it, and the record table is the one exception because reading it is how a run
   learns what is already applied.
-- **The sentinel table is closed at four entries and there is no fifth.**
+- **The sentinel table is closed at five entries and there is no sixth.**
   Encryption and decryption failures are run-time errors that belong to the
   statement that hit them and get no sentinel here; a new class of startup
-  failure is a decision, not an addition. A constraint refusal is a run-time
+  failure is a decision, not an addition, and `ErrForeignInstance` is one that
+  was decided (`adr-db-scope-2026-10-08`). A constraint refusal is a run-time
   error too, and it is classified with GORM's own `gorm.ErrDuplicatedKey` and
   `gorm.ErrForeignKeyViolated`, attached beside the driver's error rather than
   in its place (`adr-db-errors-2026-09-28`).
+- **`Migrate` accepts only an instance this module's own `New` built.** A host
+  may supply an instance for the module, and neither `Prepare` nor `New` then
+  runs; the plugins and the encryption serializer are installed in `New`, so a
+  handle that did not come through it has none of them, and nothing later would
+  say so. `ownProduct` judges the origin — the product type and the module name
+  it carries, not what its handle carries — before the configuration is read,
+  the mutex is taken or a statement is issued, and refuses anything else with
+  `ErrForeignInstance`: the host's own implementation of `Database`, a test's
+  stand-in, another implementation's product. A host that wants to supply a
+  database builds it with this module's own `New` in a registry of its own.
+  `Close` is the other direction: it releases the pool behind whatever instance
+  reports a handle with one through `Database`, a refused one included, because
+  the rollback after the refusal reaches it and nothing else releases it once
+  the drive has begun. An instance that gives it no pool to release — a typed
+  nil pointer, one whose `DB` panics, one whose handle has no pool to reach or
+  panics when asked for it — is left alone: a pool the host's own code holds
+  behind it is the host's, and a panic or an error out of the cleanup would
+  replace or bury the error the rollback is carrying. A test that needs a
+  stand-in for the capability supplies it to a placeholder module that declares
+  only `db.Database`, since a drive that reaches `Migrate` refuses it for an
+  engine.
 - **The mark `Open` installs lives in the connection's plugin table, ahead of
   the declared plugins.** It names the delivered handle, and `OpenedFrom` reads
   it. The plugin table is the one piece of a handle every derived session — a
@@ -192,6 +218,11 @@ func Module() core.Module {
 	})
 }
 ```
+
+The `ModuleName` the subpackage exports is also the name a host gives `Supply`
+for an instance of this engine. The products of both engines are one type,
+defined here, so a host that imports both names the module to say which of them
+an instance belongs to.
 
 ## Running it
 

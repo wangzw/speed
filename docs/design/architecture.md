@@ -198,10 +198,10 @@ speed 不引入进程边界。宿主是单一进程，注册表与全部模块�
 
 | 模块 | 状态 |
 |---|---|
-| [core](modules/design-core.md) | 部分实现：预置实例 |
-| [config](modules/design-config.md) | 部分实现：读取面交付 |
+| [core](modules/design-core.md) | 已实现 |
+| [config](modules/design-config.md) | 已实现 |
 | [log](modules/design-log.md) | 已实现 |
-| [db](modules/design-db.md) | 部分实现：预置实例的拒收 |
+| [db](modules/design-db.md) | 已实现 |
 | [http](modules/design-http.md) | 已实现 |
 | [authn](modules/design-authn.md) | 已实现 |
 | [tenant](modules/design-tenant.md) | 已实现 |

@@ -105,8 +105,9 @@ func (m *ordersModule) events() []event.Event {
 // assembled drives a real registry to Start and runs action there: the stack's
 // engine and bus, the log module, this module and the orders module, each
 // through its own descriptor, with the configuration loaded the way a host
-// loads it. The engine applies this module's migrations; the drive stops every
-// module once the action returns.
+// loads it and supplied as the instance of the config module. The engine
+// applies this module's migrations; the drive stops every module once the
+// action returns.
 func assembled(t *testing.T, s stack, orders *ordersModule, action func(ctx context.Context, reg *core.Registry) error) {
 	t.Helper()
 	dir := t.TempDir()
@@ -142,12 +143,13 @@ func assembled(t *testing.T, s stack, orders *ordersModule, action func(ctx cont
 	}
 
 	reg := core.New()
+	reg.Register(config.Module())
 	names := make([]string, 0, len(modules))
 	for _, m := range modules {
 		reg.Register(m)
 		names = append(names, m.Name)
 	}
-	reg.Supply((*config.Reader)(nil), reader)
+	reg.Supply(reader, config.ModuleName)
 	if err := reg.Drive(t.Context(), core.Drive{
 		Depth:        core.StageStart,
 		Participants: names,

@@ -37,13 +37,15 @@ func Module() core.Module {
 			// Required: this module writes log lines, and a line written through
 			// the process root logger would leave configuration's destinations
 			// without knowing it. The logger module delivers exclusively, so a
-			// command that runs this module names it too.
+			// command that runs this module names it too, or the host supplies an
+			// instance for it.
 			{Token: (*log.Logger)(nil)},
 			// Optional, and load-bearing rather than a formality: the exporters
 			// are collected in New, and a dependency edge is what puts a present
 			// provider ahead of this module. Marking them optional also keeps the
 			// closure from pulling a backend in on its own — which one to export
-			// to is the host's decision, written on the command tree.
+			// to is the host's decision, written on the command tree or made by
+			// supplying an instance for the backend.
 			{Token: (*observability.SpanExporter)(nil), Optional: true},
 			{Token: (*observability.MetricExporter)(nil), Optional: true},
 		},
@@ -66,7 +68,9 @@ func Module() core.Module {
 // prepare reads this module's own configuration and states that it starts.
 //
 // It reads nothing else, and in particular not another module's stance: no
-// module's product exists yet at this point, and the stage promises no order.
+// module's New has run at this point, so the registry holds only the instances
+// the host supplied, the configuration reader among them, and the stage
+// promises no order.
 func prepare(_ context.Context, reg *core.Registry) (core.Enablement, error) {
 	cfg, err := read(reg)
 	if err != nil {
@@ -87,6 +91,11 @@ func prepare(_ context.Context, reg *core.Registry) (core.Enablement, error) {
 // configured and cannot be taken up is a startup failure, handed back as it
 // came: the sentinel for a missing provider is core's, the one for an undeclared
 // endpoint is the entry module's, and neither gets a second name here.
+//
+// It acts on this module's own product only. An instance the host supplied for
+// the module is not one this module built, and it is left alone: no layer is
+// registered and no event type is subscribed for it, and whether it produces
+// any signal is the supplier's concern.
 func wire(ctx context.Context, reg *core.Registry, instance any) error {
 	p, ok := instance.(*providers)
 	if !ok {
@@ -159,9 +168,11 @@ func (p *providers) distinct(list string, names []string) []string {
 // which records those were is not reported — the module's documentation states
 // that as a cost rather than promising otherwise.
 //
-// Every shape a rollback can hand it is tolerated: a startup that failed
+// Every shape the drive can hand it is tolerated. A startup that failed
 // part-way closes every module whatever stage it reached, so this runs on an
-// instance whose New never returned.
+// instance whose New never returned. An instance the host supplied for this
+// module is not this module's product either, and it is left alone: what it
+// holds is released by whoever supplied it.
 func shutdown(ctx context.Context, _ *core.Registry, instance any) error {
 	p, ok := instance.(*providers)
 	if !ok {

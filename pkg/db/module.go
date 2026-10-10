@@ -29,7 +29,10 @@ import (
 // different condition than its neighbour.
 type Spec struct {
 	// ModuleName is this implementation's name in the registry: its identity
-	// in the startup diagnostics and in an enablement lookup.
+	// in the startup diagnostics and in an enablement lookup. It is also what
+	// marks a product as this implementation's own: a product carries the name
+	// of the Spec its New was built from, and Migrate accepts an instance that
+	// carries this one.
 	ModuleName string
 	// ConfigNamespace is where this implementation's input items are mounted
 	// in the config data. Implementations give it the module name, so a
@@ -90,9 +93,17 @@ type Spec struct {
 // the same reason.
 //
 // The reading face the callbacks take up is absent from Requires, and that is
-// the rule rather than an omission: it is a product the host hands into the
-// registry before assembly begins, so it exists before the first module is
-// constructed and there is no provider to be ordered against.
+// the rule rather than an omission: it is the instance of the config module,
+// which the host supplies before assembly begins, so it exists before the first
+// Prepare runs and an edge to it would have nothing to order.
+//
+// A host may supply an instance for this module in place of the one its New
+// builds, and neither Prepare nor New then runs. Migrate accepts such an
+// instance only when this module's own New built it, and refuses any other with
+// ErrForeignInstance: the plugins and the encryption serializer are installed in
+// New, so a handle that did not come through it has none of them. Close releases
+// the pool behind the handle any instance reports, and leaves alone one that
+// gives it no pool to release.
 func NewModule(spec Spec) core.Module {
 	spec.check()
 	return core.Module{
@@ -126,11 +137,19 @@ func NewModule(spec Spec) core.Module {
 			return spec.newDatabase(ctx, reader, plugins)
 		},
 		Migrate: func(ctx context.Context, reg *core.Registry, instance any) error {
+			// The instance is judged before anything else is read or issued:
+			// a refusal is about what the host supplied, and a registry that
+			// also lacks the reading face should be told about the instance,
+			// which is the mistake to undo first.
+			product, err := spec.ownProduct(instance)
+			if err != nil {
+				return err
+			}
 			reader, err := spec.reader(reg, "the bound on waiting for the migration mutex")
 			if err != nil {
 				return err
 			}
-			return spec.migrate(ctx, reg, reader, instance)
+			return spec.migrate(ctx, reg, reader, product)
 		},
 		Close: func(_ context.Context, _ *core.Registry, instance any) error {
 			return closeInstance(instance)
@@ -168,14 +187,14 @@ func (s Spec) check() {
 }
 
 // reader takes up the configuration. what names the thing being read, so a
-// host that handed in no reading face is told which of this module's decisions
+// host that supplied no reading face is told which of this module's decisions
 // it broke rather than that something was unavailable.
 func (s Spec) reader(reg *core.Registry, what string) (config.Reader, error) {
 	reader, err := core.Resolve[config.Reader](reg)
 	if err != nil {
-		return nil, fmt.Errorf("%s: %s is read from configuration, and the host handed no "+
-			"reading face into the registry before assembly began: %w",
-			s.ModuleName, what, err)
+		return nil, fmt.Errorf("%s: %s is read from configuration, and no reading face had been "+
+			"supplied to the %s module before assembly began: %w",
+			s.ModuleName, what, config.ModuleName, err)
 	}
 	return reader, nil
 }
@@ -221,24 +240,51 @@ func (s Spec) prepare(reader config.Reader) (core.Enablement, error) {
 	return core.Enablement{State: core.StateEnabled}, nil
 }
 
-// migrate applies the declared migration sets to the delivered handle, under
-// this implementation's mutex when it has one.
+// ownProduct returns the instance as the product of this module's own New, or
+// refuses it with ErrForeignInstance.
 //
-// The timeout is read here rather than carried over from New because the
-// capability hands out a handle and a dialect, not the section it was built
-// from, and re-reading a snapshot that cannot change costs nothing.
-func (s Spec) migrate(ctx context.Context, reg *core.Registry, reader config.Reader, instance any) error {
-	handle, ok := deliveredHandle(instance)
-	if !ok {
-		return fmt.Errorf("%w: module %q has no handle to apply migrations on, its product is "+
-			"%T; every constructed module reaches this stage, and this one delivers the "+
-			"database capability", ErrMigrationFailed, s.ModuleName, instance)
+// What is judged is where the instance came from, not what its handle carries.
+// New is the one place that installs plugins on a handle and registers the
+// encryption serializer, so an instance it built is the only kind this module
+// vouches for. An implementation of Database the host wrote, a test's stand-in
+// and the product of another implementation's New are all refused, and the name
+// a product carries is what says whose New built it. A typed nil pointer is not
+// something New returns, so it is refused with the rest rather than dereferenced.
+//
+// The plugins on the handle are not compared with what this run declares: an
+// instance built in another registry carries what that registry declared, and
+// answering for that registry is the host's, who built the instance.
+func (s Spec) ownProduct(instance any) (*database, error) {
+	product, ok := instance.(*database)
+	if ok && product != nil && product.spec.ModuleName == s.ModuleName {
+		return product, nil
 	}
+
+	what := fmt.Sprintf("an instance of type %T", instance)
+	if ok && product != nil {
+		what += fmt.Sprintf(", built by the New of module %q", product.spec.ModuleName)
+	}
+	return nil, fmt.Errorf("%w: module %q was supplied %s, and its Migrate accepts only an instance "+
+		"built by its own New, the one place that installs plugins on a handle, tenant filtering and "+
+		"statement auditing among them. No migration was applied. Supply an instance built by the New "+
+		"of module %q, or supply none for it; a test that needs a stand-in for the database capability "+
+		"registers a placeholder module that declares only db.Database and supplies the stand-in to "+
+		"that one", ErrForeignInstance, s.ModuleName, what, s.ModuleName)
+}
+
+// migrate applies the declared migration sets to the handle of a product this
+// module's New built, under this implementation's mutex when it has one.
+//
+// The timeout is read here, from the reader of the run being migrated, rather
+// than taken from the section the product was built from: a product the host
+// built in another registry carries that registry's section, and the bound on
+// waiting for the mutex belongs to this run.
+func (s Spec) migrate(ctx context.Context, reg *core.Registry, reader config.Reader, product *database) error {
 	cfg, err := s.read(reader)
 	if err != nil {
 		return err
 	}
-	return applyMigrations(ctx, reg, handle, s.Dialect, s.lock(cfg))
+	return applyMigrations(ctx, reg, product.handle, s.Dialect, s.lock(cfg))
 }
 
 // lock builds the mutex the migration run is held under, or reports none.
@@ -249,16 +295,24 @@ func (s Spec) lock(cfg lockingConfig) MigrationLock {
 	return s.NewMigrationLock(cfg.MigrationLockTimeout)
 }
 
-// closeInstance releases the connection pool behind a delivered product.
+// closeInstance releases the connection pool behind an instance of the
+// capability, whoever built it.
 //
-// Every shape a rollback can hand it is tolerated. A startup that failed
-// part-way closes every module whatever stage it reached, so this runs on a
-// module whose New never returned a product and on one that returned a nil
-// product of its own type; and an instance of an unrelated type would be a
-// defect in this package rather than something a host could act on. Reporting
-// an error on any of them would bury the failure that started the rollback
-// under one about the cleanup — and an unguarded type assertion would panic
-// there and lose it outright.
+// A rollback hands it more than this module's own product. A startup that
+// failed part-way closes every module whatever stage it reached, so this runs
+// on a module whose New never returned a product and on one that returned a nil
+// product of its own type. It also runs on an instance the host supplied that
+// this module's New did not build: Migrate refuses such an instance and the
+// rollback that follows reaches Close with it, as does a drive that ended
+// before Migrate. The pool behind the handle it reports through Database is
+// released, since the drive has begun and nothing else will release it. An
+// instance that reports no handle, or a handle with no pool to reach, is left
+// alone, and so is one whose DB, or whose handle when asked for its pool,
+// panics: none of them gives this module a pool to release, and a pool the
+// host's own code holds behind them is the host's. Reporting an error on any of
+// them would bury the failure that started the rollback under one about the
+// cleanup — and an unguarded type assertion or method call would panic there
+// and lose it outright.
 func closeInstance(instance any) error {
 	handle, ok := deliveredHandle(instance)
 	if !ok {
@@ -267,19 +321,44 @@ func closeInstance(instance any) error {
 	return Close(handle)
 }
 
-// deliveredHandle takes the handle out of a product of this module, and
-// reports whether there was one to take.
+// deliveredHandle takes the handle out of an instance of the capability, and
+// reports whether there is a pool behind it to release.
 //
 // The nil test is by reflection because a typed nil pointer in an interface is
-// not the nil interface: a product that came back as a nil pointer of its own
+// not the nil interface: an instance that came back as a nil pointer of its own
 // type satisfies the assertion and panics on the method call.
-func deliveredHandle(instance any) (*gorm.DB, bool) {
-	product, ok := instance.(Database)
-	if !ok {
+//
+// An instance this module's New did not build runs the host's code in DB, and
+// that code may panic: a stand-in that embeds the interface and overrides only
+// some of its methods has a nil interface behind the rest, DB among them. The
+// handle it reports is the host's too, built however the host built it: one
+// written as a literal has no configuration to ask for a pool, and one opened on
+// a driver that reaches no database has a configuration and no pool. So the
+// handle is asked for its pool here, under the same guard as DB, and only a
+// handle that answers is handed to Close. A DB or a handle that panics, and a
+// handle with no pool, are an instance with nothing to release, and the panic
+// goes no further: the rollback this runs in is already carrying the error the
+// host has to read, and a panic out of the cleanup would take that error with
+// it.
+func deliveredHandle(instance any) (handle *gorm.DB, ok bool) {
+	product, isDatabase := instance.(Database)
+	if !isDatabase {
 		return nil, false
 	}
 	if v := reflect.ValueOf(product); v.Kind() == reflect.Pointer && v.IsNil() {
 		return nil, false
 	}
-	return product.DB(), true
+	defer func() {
+		if recover() != nil {
+			handle, ok = nil, false
+		}
+	}()
+	handle = product.DB()
+	if handle == nil {
+		return nil, false
+	}
+	if _, err := handle.DB(); err != nil {
+		return nil, false
+	}
+	return handle, true
 }

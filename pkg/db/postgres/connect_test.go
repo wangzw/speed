@@ -88,6 +88,7 @@ func startupAgainst(t *testing.T, parent context.Context, section map[string]any
 		t.Fatalf("writing the primary configuration source: %v", err)
 	}
 	reg := core.New()
+	reg.Register(config.Module())
 	reg.Register(jsonformat.Module())
 	reg.Register(filesource.Module())
 	reg.Register(core.Module{

@@ -266,6 +266,31 @@ func TestLoadTakesEveryRegisteredModuleIn(t *testing.T) {
 	}
 }
 
+// TestLoadReturnsTheReaderWithoutSupplyingIt pins that loading and supplying are
+// two steps. The reader comes back and the registry holds nothing of it: a
+// caller that drives the registry supplies it, and in a registry where the
+// config module is the one module delivering Reader the call needs no name.
+func TestLoadReturnsTheReaderWithoutSupplyingIt(t *testing.T) {
+	reg := treeRegistry(t, &treeRun{}, nil)
+	r, err := Load(t.Context(), reg, nil)
+	if err != nil {
+		t.Fatalf("loading failed: %v", err)
+	}
+	if _, err = reg.Resolve((*Reader)(nil)); !errors.Is(err, core.ErrMissingProvider) {
+		t.Fatalf("looking the reader up after loading returned %v, want %v: Load supplies nothing",
+			err, core.ErrMissingProvider)
+	}
+
+	reg.Supply(r)
+	found, err := reg.Resolve((*Reader)(nil))
+	if err != nil {
+		t.Fatalf("the reader was supplied and cannot be taken up: %v", err)
+	}
+	if found != r {
+		t.Errorf("the registry hands out %v, want the reader that was supplied", found)
+	}
+}
+
 // TestPrimarySourceReadTwiceIsAProgrammingError pins the guard on the one
 // primary source a run has. The layering tool merges rather than replaces, so
 // a second read would stack on the first instead of being refused.

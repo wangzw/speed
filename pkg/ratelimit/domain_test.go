@@ -167,15 +167,19 @@ func heldAsDeclared(v thresholdValue) (any, bool) {
 // delivers in an assembly that holds this module's declaration, over a SQLite
 // database the database module opened. This module is registered for its
 // declaration alone, the way the key table reads every registered module's:
-// it does not take part in the drive.
+// it does not take part in the drive. The configuration reader and the logger
+// are supplied to the modules that deliver them, and those take part in the
+// drive without being named.
 func withDeliveredStore(t *testing.T, body func(ctx context.Context, store settings.Store)) {
 	t.Helper()
 	database := dbtest.SQLite(t, filepath.Join(t.TempDir(), "settings.db"), nil)
 	applySettingsMigrations(t, database.DB())
 
 	reg := core.New()
-	reg.Supply((*config.Reader)(nil), decodesNothing{})
-	reg.Supply((*log.Logger)(nil), discardingLogger{})
+	reg.Register(config.Module())
+	reg.Supply(decodesNothing{}, config.ModuleName)
+	reg.Register(log.Module())
+	reg.Supply(discardingLogger{}, log.ModuleName)
 	reg.Register(core.Module{
 		Name:     "test.database",
 		Provides: []core.Provision{{Token: (*db.Database)(nil), Exclusive: true}},

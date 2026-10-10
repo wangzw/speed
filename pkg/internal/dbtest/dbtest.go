@@ -10,8 +10,9 @@
 // such as the one connection of an in-memory database. A module is exercised on
 // a handle from here where what it meets is what an assembly hands it.
 //
-// No migration is applied: only the engine's module takes part, and a test
-// builds the tables it needs.
+// No migration is applied: only the engine's module takes part, beside the
+// config module the reader is supplied to, and a test builds the tables it
+// needs.
 package dbtest
 
 import (
@@ -66,8 +67,9 @@ func deliver(t testing.TB, module core.Module, namespace, dsn string, items Item
 	t.Helper()
 	reader := load(t, module, namespace, dsn, items)
 	reg := core.New()
+	reg.Register(config.Module())
 	reg.Register(module)
-	reg.Supply((*config.Reader)(nil), reader)
+	reg.Supply(reader, config.ModuleName)
 
 	delivered := make(chan db.Database, 1)
 	release := make(chan struct{})

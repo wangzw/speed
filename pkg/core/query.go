@@ -7,18 +7,21 @@ import (
 	"strings"
 )
 
-// Resolve returns the instance of the one source that delivers a capability.
+// Resolve returns the instance of the one module that delivers a capability.
 //
 // The matching domain is the set of modules that declared the capability in
-// Provides, together with the products the host supplied. A product that
+// Provides. Of those, the ones with an instance count: one their New
+// constructed, or one the host supplied, which exists from Supply on and which
+// a lookup does not tell apart from a constructed one. An instance that
 // happens to implement a capability its module never declared is invisible
 // here: the declaration is the sole authority, so assembly-time validation
-// and run-time lookup face the same set. A supplied product comes from no
-// module and states the capability it stands for as it is handed in.
+// and run-time lookup face the same set.
 //
 // Nothing to take up is ErrMissingProvider, which is also how an optional
-// dependency reads its own absence. More than one constructed provider is
-// ErrAmbiguousProvider.
+// dependency reads its own absence. More than one provider with an instance is
+// ErrAmbiguousProvider. In Prepare only the supplied instances exist, so a
+// lookup that finds the one there can meet this error later, once construction
+// has given another provider of the capability its instance.
 //
 // Lookup does not filter by Requires. A dependency of a dependency never
 // appears in one's own declarations, and taking it up is legal; Requires
@@ -30,40 +33,28 @@ func (r *Registry) Resolve(t Token) (any, error) {
 	r.mu.RLock()
 	defer r.mu.RUnlock()
 
-	// A supplied product and a declaring module cannot both hold the same
-	// capability: Supply and Register reject that pair where it is made.
-	// The two sources therefore never mix, and there is no second
-	// ambiguity rule to state.
-	if instance, ok := r.supplied[ct]; ok {
-		return instance, nil
-	}
-
 	declarers := r.declarersLocked(ct)
-	constructed := r.constructedAmongLocked(declarers)
-	switch len(constructed) {
+	instanced := r.instancedAmongLocked(declarers)
+	switch len(instanced) {
 	case 1:
-		return r.instances[constructed[0]], nil
+		return r.instances[instanced[0]], nil
 	case 0:
 		running, declaringOnly, left := r.splitDeclarersLocked(declarers)
 		return nil, missingProviderError(ct, running, declaringOnly, left,
-			r.exclusiveAmongLocked(left, ct), r.enablement, "", "", r.nothingBuiltLocked())
+			r.exclusiveAmongLocked(left, ct), r.lackingNewAmongLocked(declarers), r.enablement,
+			"", origin{}, r.nothingBuiltLocked())
 	default:
 		return nil, fmt.Errorf("%w: capability %s is delivered by %s, and a single-valued "+
 			"lookup cannot choose between them. Take them up together with ResolveAll, or "+
 			"let the providers declare the capability Exclusive so the conflict is resolved "+
 			"before construction",
-			ErrAmbiguousProvider, typeName(ct), strings.Join(quoteAll(constructed), " and "))
+			ErrAmbiguousProvider, typeName(ct), strings.Join(quoteAll(instanced), " and "))
 	}
 }
 
-// ResolveAll returns every constructed instance that delivers a capability, in
-// module-name order. The matching domain is the same as Resolve's. No provider
-// is an empty slice, not an error.
-//
-// A capability held by a supplied product yields that one product. Name order
-// says nothing about it and does not have to: the two kinds of source cannot
-// hold the same capability, so a supplied product is never ordered against a
-// module's.
+// ResolveAll returns every instance that delivers a capability, in module-name
+// order. The matching domain is the same as Resolve's. No provider is an empty
+// slice, not an error.
 //
 // The instances do not carry module names: routing by name needs a name that
 // is a domain concept, and the capability interface itself is where that
@@ -74,11 +65,7 @@ func (r *Registry) ResolveAll(t Token) []any {
 	r.mu.RLock()
 	defer r.mu.RUnlock()
 
-	if instance, ok := r.supplied[ct]; ok {
-		return []any{instance}
-	}
-
-	names := r.constructedAmongLocked(r.declarersLocked(ct))
+	names := r.instancedAmongLocked(r.declarersLocked(ct))
 	out := make([]any, 0, len(names))
 	for _, name := range names {
 		out = append(out, r.instances[name])
@@ -158,7 +145,9 @@ func (r *Registry) Enablement(name string) (Enablement, bool) {
 // the host's own writing rather than a surprise.
 const notIncludedReason = "not in this command's participating set"
 
-// Participating reports whether this drive took the module in at run level.
+// Participating reports whether the module is in this drive's participating
+// set: taken in at run level, pulled in by the dependency closure beside a
+// module that was, or one the host supplied an instance for.
 //
 // It is false for a module the drive reached for its declarations alone: that
 // module is not running, and this query is about running. It is false for a
@@ -180,8 +169,8 @@ func (r *Registry) Participating(name string) bool {
 
 // Declaring reports whether the module's declarations are within reach of
 // this drive. It is true for a participant, for a module the dependency
-// closure pulled in beside one, and for a module the drive reached for its
-// declarations alone.
+// closure pulled in beside one, for a module the host supplied an instance
+// for, and for a module the drive reached for its declarations alone.
 //
 // This is the query a consumption point whose domain is the declaring set
 // filters by. One whose domain is the enabled set asks Enablement, and one
@@ -204,7 +193,9 @@ func (r *Registry) Declaring(name string) bool {
 
 // AllResourcesInForce reports whether this drive took the module in with
 // every declaration in force, overriding the domain a consumption point would
-// otherwise read.
+// otherwise read. It is false for every module in the participating set, a
+// module the host supplied an instance for included: the override belongs to a
+// module that is reached for its declarations alone.
 //
 // It is the host's override of a decision this package does not make: which
 // set a declaration is collected from belongs to the consumption point, and
@@ -218,27 +209,28 @@ func (r *Registry) AllResourcesInForce(name string) bool {
 	return r.declaringOnly[name].AllResources
 }
 
-// nothingBuiltLocked says why no module's product exists at the moment of a
+// nothingBuiltLocked says why no module's New has run at the moment of a
 // lookup, or returns "" once construction has begun.
 //
-// A lookup made before construction finds every declarer unconstructed, and
-// the order of construction has nothing to do with it: Requires orders
-// construction and none is under way. Three moments come to this, and each has
-// a fix of its own. The caller holds the lock.
+// A lookup made before construction finds no instance but the ones the host
+// supplied, and the order of construction has nothing to do with it: Requires
+// orders construction and none is under way. Three moments come to this, and
+// each has a fix of its own. The caller holds the lock.
 func (r *Registry) nothingBuiltLocked() string {
 	switch {
 	case r.constructing:
 		return ""
 	case !r.running:
-		return "no drive has started, so no module's product exists yet: products are " +
-			"constructed in New, during a drive"
+		return "no drive has started, so no module's New has run yet: an instance is " +
+			"constructed in New, during a drive, unless the host supplied it before the drive"
 	case r.enablement == nil:
-		return "the lookup is made in Prepare, before any module's product is constructed: " +
-			"only a supplied product can be taken up there, so take this one up in New or " +
+		return "the lookup is made in Prepare, before any module's New has run: only an " +
+			"instance the host supplied can be taken up there, so take this one up in New or " +
 			"later, where declaring the capability in Requires orders its provider first"
 	default:
-		return "this drive constructs nothing, since it stops at StagePrepare: a command that " +
-			"takes the capability up drives to StageNew or deeper"
+		return "this drive constructs nothing, since it stops at StagePrepare: only an instance " +
+			"the host supplied exists in it, and a command that takes the capability up from a " +
+			"constructed one drives to StageNew or deeper"
 	}
 }
 
@@ -319,10 +311,26 @@ func (r *Registry) declarersLocked(ct reflect.Type) []string {
 	return names
 }
 
-func (r *Registry) constructedAmongLocked(names []string) []string {
+// instancedAmongLocked filters module names down to the ones that have an
+// instance, whether the module's New constructed it or the host supplied it.
+// The caller holds the lock.
+func (r *Registry) instancedAmongLocked(names []string) []string {
 	var out []string
 	for _, name := range names {
 		if _, ok := r.instances[name]; ok {
+			out = append(out, name)
+		}
+	}
+	return out
+}
+
+// lackingNewAmongLocked filters module names down to the ones that declare no
+// New callback. A module like that builds no instance, so the one it has can only
+// have come from the host. The caller holds the lock.
+func (r *Registry) lackingNewAmongLocked(names []string) []string {
+	var out []string
+	for _, name := range names {
+		if r.mods[name].module.New == nil {
 			out = append(out, name)
 		}
 	}

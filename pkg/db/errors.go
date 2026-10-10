@@ -10,7 +10,7 @@ import "errors"
 // uses %w. A %v would leave the message almost unchanged and make the sentinel
 // unreachable, which is the failure this note exists to prevent.
 //
-// The table has four entries and there is no fifth. Encryption and decryption
+// The table has five entries and there is no sixth. Encryption and decryption
 // fail at run time — a missing key, a damaged ciphertext, a key that does not
 // match its ciphertext all surface on the query that hit them, carried back by
 // GORM — and they get no sentinel here: this table is for classifying a startup
@@ -53,4 +53,17 @@ var (
 	// another replica is taking so long, or whether the limit is too short,
 	// not which migration to fix.
 	ErrMigrationLockTimeout = errors.New("db: migration mutex was not acquired before the timeout")
+	// ErrForeignInstance reports that Migrate was handed an instance this
+	// module's own New did not build: the host's own implementation of Database,
+	// a test's stand-in, or the product of another implementation's New. The
+	// handle on such an instance was not assembled here, so none of the plugins
+	// this module installs is on it, and nothing later would say so.
+	//
+	// The instance is refused before the migration mutex is taken and before a
+	// statement is issued on it, so no migration was applied; the text says so,
+	// names the type of the instance, and gives the way out. It is separate from
+	// ErrMigrationFailed because the response differs: it is the host's supply
+	// that has to change — supply nothing for this module, or an instance its
+	// New built — and no migration file is at fault.
+	ErrForeignInstance = errors.New("db: supplied instance was not built by this module's New")
 )

@@ -429,6 +429,85 @@ func TestTheSetsAreUnsettledUntilADriveSettlesThem(t *testing.T) {
 	}
 }
 
+// TestTheSetsAreFinalFromTheFirstPrepareCallback pins when the participating and
+// declaring sets can be asked about: from the first Prepare callback on, with the
+// answer the action gets later, and not only once the stances are in and
+// resolution has run. A module's Prepare reads them to tell what its drive is
+// made of before it states anything.
+//
+// Four modules stand for the four things a module can be to a drive: one taken
+// in at run level, which does the asking in its Prepare; one the host supplied an
+// instance for and no command names; one reached for its declarations alone; and
+// one nothing takes in. The verdict is not among the answers that are final, since
+// it is resolution's and resolution follows the last Prepare.
+func TestTheSetsAreFinalFromTheFirstPrepareCallback(t *testing.T) {
+	type answers struct{ participating, declaring, verdict bool }
+	names := []string{"aa-asking", "bb-supplied", "cc-declared", "dd-left-out"}
+	ask := func(r *core.Registry) map[string]answers {
+		got := make(map[string]answers, len(names))
+		for _, name := range names {
+			_, verdict := r.Enablement(name)
+			got[name] = answers{r.Participating(name), r.Declaring(name), verdict}
+		}
+		return got
+	}
+
+	var inPrepare, inAction map[string]answers
+	prepares := 0
+	reg := core.New()
+	register(reg,
+		core.Module{
+			Name: "aa-asking",
+			Prepare: func(_ context.Context, r *core.Registry) (core.Enablement, error) {
+				prepares++
+				inPrepare = ask(r)
+				return core.Enablement{}, nil
+			},
+		},
+		core.Module{Name: "bb-supplied"},
+		core.Module{Name: "cc-declared"},
+		core.Module{Name: "dd-left-out"},
+	)
+	reg.Supply(&box{id: "host"}, "bb-supplied")
+
+	err := driveToEnd(t, reg, core.Drive{
+		Depth:         core.StagePrepare,
+		Participants:  []string{"aa-asking"},
+		DeclaringOnly: []core.Declaration{{Name: "cc-declared"}},
+		Action: func(_ context.Context, r *core.Registry) error {
+			inAction = ask(r)
+			return nil
+		},
+	})
+	if err != nil {
+		t.Fatalf("Drive returned %v", err)
+	}
+	if prepares != 1 {
+		t.Fatalf("the asking module's Prepare ran %d times, want once", prepares)
+	}
+
+	for _, c := range []struct {
+		name string
+		// The sets, as they stand in Prepare and in the action alike.
+		participating, declaring bool
+	}{
+		{"aa-asking", true, true},
+		{"bb-supplied", true, true},
+		{"cc-declared", false, true},
+		{"dd-left-out", false, false},
+	} {
+		// No stance has been resolved when Prepare runs, and every one has by the
+		// action, a module left out of the drive included: it is reported as
+		// disabled there.
+		if got, want := inPrepare[c.name], (answers{c.participating, c.declaring, false}); got != want {
+			t.Errorf("in Prepare, %s is answered %+v, want %+v", c.name, got, want)
+		}
+		if got, want := inAction[c.name], (answers{c.participating, c.declaring, true}); got != want {
+			t.Errorf("in the action, %s is answered %+v, want %+v", c.name, got, want)
+		}
+	}
+}
+
 // TestAllResourcesInForceFollowsTheHostsAdjustment pins the override the host
 // can set, and that it is off unless set.
 //
@@ -902,3 +981,675 @@ type (
 func (closureRouterImpl) route() {}
 
 func (closureTracerImpl) trace() {}
+
+// providing declares that m delivers the capabilities the tokens designate.
+func providing(m core.Module, tokens ...core.Token) core.Module {
+	for _, token := range tokens {
+		m.Provides = append(m.Provides, core.Provision{Token: token})
+	}
+	return m
+}
+
+// receiving wraps the callbacks of m that take an instance so that each one
+// fails the test unless it is handed want.
+func receiving(t *testing.T, m core.Module, want any) core.Module {
+	t.Helper()
+	wrap := func(stage string, next func(context.Context, *core.Registry, any) error) func(context.Context, *core.Registry, any) error {
+		return func(ctx context.Context, r *core.Registry, got any) error {
+			if got != want {
+				t.Errorf("%s of %s was handed %#v, want the instance the host supplied", stage, m.Name, got)
+			}
+			return next(ctx, r, got)
+		}
+	}
+	m.Migrate = wrap("Migrate", m.Migrate)
+	m.Init = wrap("Init", m.Init)
+	m.Start = wrap("Start", m.Start)
+	m.Serve = wrap("Serve", m.Serve)
+	m.Stop = wrap("Stop", m.Stop)
+	m.Close = wrap("Close", m.Close)
+	return m
+}
+
+// rival builds a recording module that delivers Cache, claims it exclusively
+// or not, and states the given stance.
+func rival(p *probe, name string, exclusive bool, state core.EnablementState) core.Module {
+	m := preparing(p, name)
+	m.Provides = []core.Provision{{Token: (*Cache)(nil), Exclusive: exclusive}}
+	m.Prepare = func(context.Context, *core.Registry) (core.Enablement, error) {
+		p.record("prepare %s", name)
+		return core.Enablement{State: state}, nil
+	}
+	return m
+}
+
+// TestASuppliedModuleTakesPartWithoutBeingNamed pins the way a supplied module
+// joins a drive: it is in the participating set from the start, whatever the
+// list of participants says, and takes the stages from Migrate on with Prepare
+// and New left out. A module that was neither named nor supplied an instance
+// takes no part.
+func TestASuppliedModuleTakesPartWithoutBeingNamed(t *testing.T) {
+	want := []string{"migrate only", "init only", "start only", "serve only", "stop only", "close only"}
+	for _, c := range []struct {
+		name         string
+		participants []string
+	}{
+		{"no participants", nil},
+		{"an empty list of participants", []string{}},
+		{"another module named", []string{"named"}},
+		{"the supplied module named as well", []string{"only"}},
+	} {
+		t.Run(c.name, func(t *testing.T) {
+			p := &probe{}
+			reg := core.New()
+			register(reg, preparing(p, "only"), preparing(p, "named"), preparing(p, "bystander"))
+			reg.Supply(&box{id: "host"}, "only")
+
+			err := driveToEnd(t, reg, core.Drive{
+				Depth:        core.StageServe,
+				Participants: c.participants,
+				Action:       noAction,
+			})
+			if err != nil {
+				t.Fatalf("Drive returned %v", err)
+			}
+			if got := p.eventsOf("only"); !slices.Equal(got, want) {
+				t.Errorf("the supplied module ran %v, want %v", got, want)
+			}
+			if got := p.eventsOf("bystander"); len(got) != 0 {
+				t.Errorf("a module that was neither named nor supplied ran %v", got)
+			}
+		})
+	}
+}
+
+// TestADriveLeavesTheListOfParticipantsAsTheCallerWroteIt pins that adding the
+// supplied modules to the participants does not write into the list the caller
+// gave. The list is the host's, and one with room to spare would otherwise come
+// back carrying the name of a module the host never listed.
+func TestADriveLeavesTheListOfParticipantsAsTheCallerWroteIt(t *testing.T) {
+	p := &probe{}
+	reg := core.New()
+	register(reg, preparing(p, "named"), preparing(p, "supplied"))
+	reg.Supply(&box{id: "host"}, "supplied")
+	listed := make([]string, 1, 4)
+	listed[0] = "named"
+
+	err := driveToEnd(t, reg, core.Drive{Depth: core.StageNew, Participants: listed, Action: noAction})
+	if err != nil {
+		t.Fatalf("Drive returned %v", err)
+	}
+
+	if got, want := listed[:cap(listed)], []string{"named", "", "", ""}; !slices.Equal(got, want) {
+		t.Fatalf("the drive left the list it was given as %q, want %q", got, want)
+	}
+	if !reg.Participating("supplied") {
+		t.Fatal("the supplied module did not take part, so the drive never had a name to add")
+	}
+}
+
+// TestASuppliedModuleNeverRunsItsPrepareOrNew pins that the instance the host
+// built stands in for what the module's Prepare and New produce: a Prepare
+// that would fail or state StateDisabled and a New that would fail leave the
+// drive untouched, because neither runs.
+func TestASuppliedModuleNeverRunsItsPrepareOrNew(t *testing.T) {
+	ran := errors.New("the module's own Prepare or New ran")
+	for _, c := range []struct {
+		name    string
+		prepare func(context.Context, *core.Registry) (core.Enablement, error)
+	}{
+		{"a Prepare that fails", func(context.Context, *core.Registry) (core.Enablement, error) {
+			return core.Enablement{}, ran
+		}},
+		{"a Prepare that states it is disabled", func(context.Context, *core.Registry) (core.Enablement, error) {
+			return core.Enablement{State: core.StateDisabled}, nil
+		}},
+	} {
+		t.Run(c.name, func(t *testing.T) {
+			p := &probe{}
+			reg := core.New()
+			m := preparing(p, "only")
+			m.Prepare = c.prepare
+			m.New = func(context.Context, *core.Registry) (any, error) { return nil, ran }
+			register(reg, m)
+			reg.Supply(&box{id: "host"}, "only")
+
+			err := driveToEnd(t, reg, core.Drive{Depth: core.StageServe, Action: noAction})
+			if err != nil {
+				t.Fatalf("Drive returned %v, want the module's Prepare and New not to run", err)
+			}
+			if got, ok := reg.Enablement("only"); !ok || got.State != core.StateEnabled {
+				t.Errorf("Enablement reported %+v/%v, want the fixed stance StateEnabled", got, ok)
+			}
+		})
+	}
+}
+
+// TestEveryCallbackOfASuppliedModuleReceivesTheSuppliedInstance pins what the
+// callbacks that take an instance are handed: the instance the host supplied,
+// at every stage the module declares, Stop and Close included. The sequence
+// asserted at the end shows that each callback ran and so was checked.
+func TestEveryCallbackOfASuppliedModuleReceivesTheSuppliedInstance(t *testing.T) {
+	p := &probe{}
+	reg := core.New()
+	handed := &box{id: "host"}
+	register(reg, receiving(t, preparing(p, "only"), handed))
+	reg.Supply(handed, "only")
+
+	if err := driveToEnd(t, reg, core.Drive{Depth: core.StageServe, Action: noAction}); err != nil {
+		t.Fatalf("Drive returned %v", err)
+	}
+	want := []string{"migrate only", "init only", "start only", "serve only", "stop only", "close only"}
+	if got := p.eventsOf("only"); !slices.Equal(got, want) {
+		t.Fatalf("the supplied module ran %v, want %v", got, want)
+	}
+}
+
+// TestADepthStopsASuppliedModuleLikeAnyOther pins what a depth means for a
+// module whose instance already exists: the stages past it do not run, and the
+// instance is stopped and then closed at every depth. StagePrepare ends before
+// construction reaches the module and StageNew ends right after it, so at those
+// two depths Stop and Close are the only callbacks of the module that run.
+func TestADepthStopsASuppliedModuleLikeAnyOther(t *testing.T) {
+	cases := []struct {
+		depth core.Stage
+		want  []string
+	}{
+		{core.StagePrepare, []string{"stop only", "close only"}},
+		{core.StageNew, []string{"stop only", "close only"}},
+		{core.StageMigrate, []string{"migrate only", "stop only", "close only"}},
+		{core.StageInit, []string{"migrate only", "init only", "stop only", "close only"}},
+		{core.StageStart, []string{"migrate only", "init only", "start only", "stop only", "close only"}},
+		{core.StageServe, []string{
+			"migrate only", "init only", "start only", "serve only", "stop only", "close only",
+		}},
+	}
+	for _, c := range cases {
+		t.Run(c.depth.String(), func(t *testing.T) {
+			p := &probe{}
+			reg := core.New()
+			register(reg, preparing(p, "only"))
+			reg.Supply(&box{id: "host"}, "only")
+
+			err := driveToEnd(t, reg, core.Drive{Depth: c.depth, Action: noAction})
+			if err != nil {
+				t.Fatalf("Drive returned %v", err)
+			}
+			if got := p.snapshot(); !slices.Equal(got, c.want) {
+				t.Fatalf("a drive to %s ran %v, want %v", c.depth, got, c.want)
+			}
+		})
+	}
+}
+
+// TestASuppliedModuleIsInEverySetAndStatesEnabled pins what the queries say of
+// a supplied module. Nothing is settled before a drive, so every answer is
+// negative then, supplied or not; once the drive has settled the sets the module
+// is a participant and in the declaring set, its stance is the fixed
+// StateEnabled, and the host's adjustment does not apply to it.
+func TestASuppliedModuleIsInEverySetAndStatesEnabled(t *testing.T) {
+	p := &probe{}
+	reg := core.New()
+	register(reg, preparing(p, "only"), preparing(p, "bystander"))
+	reg.Supply(&box{id: "host"}, "only")
+
+	if _, ok := reg.Enablement("only"); ok {
+		t.Error("Enablement answered for a supplied module before a drive resolved anything")
+	}
+	if reg.Participating("only") || reg.Declaring("only") {
+		t.Error("a supplied module counted as a participant before a drive settled the sets")
+	}
+
+	if err := driveToEnd(t, reg, core.Drive{Depth: core.StagePrepare}); err != nil {
+		t.Fatalf("Drive returned %v", err)
+	}
+	if got, ok := reg.Enablement("only"); !ok || got.State != core.StateEnabled {
+		t.Errorf("Enablement reported %+v/%v, want StateEnabled", got, ok)
+	}
+	if !reg.Participating("only") {
+		t.Error("Participating denied a supplied module")
+	}
+	if !reg.Declaring("only") {
+		t.Error("Declaring denied a supplied module")
+	}
+	if reg.AllResourcesInForce("only") {
+		t.Error("AllResourcesInForce answered true for a module that is a participant")
+	}
+	if got, ok := reg.Enablement("bystander"); !ok || got.State != core.StateDisabled {
+		t.Errorf("Enablement reported %+v/%v for a module that was neither named nor supplied, "+
+			"want StateDisabled", got, ok)
+	}
+	if reg.Participating("bystander") || reg.Declaring("bystander") {
+		t.Error("a module that was neither named nor supplied counted as taking part")
+	}
+}
+
+// TestANameAtDeclarationLevelDoesNotMakeASuppliedModuleDeclarationOnly pins
+// that a supplied module is always a participant: the command tree names it at
+// the static level knowing nothing of the supply, and the registry treats it
+// at run level, where the host's adjustment lapses.
+func TestANameAtDeclarationLevelDoesNotMakeASuppliedModuleDeclarationOnly(t *testing.T) {
+	want := []string{"migrate only", "init only", "start only", "serve only", "stop only", "close only"}
+	for _, c := range []struct {
+		name         string
+		participants []string
+	}{
+		{"at declaration level alone", nil},
+		{"at both levels", []string{"only"}},
+	} {
+		t.Run(c.name, func(t *testing.T) {
+			p := &probe{}
+			reg := core.New()
+			register(reg, preparing(p, "only"))
+			reg.Supply(&box{id: "host"}, "only")
+
+			err := driveToEnd(t, reg, core.Drive{
+				Depth:         core.StageServe,
+				Participants:  c.participants,
+				DeclaringOnly: []core.Declaration{{Name: "only", AllResources: true}},
+				Action:        noAction,
+			})
+			if err != nil {
+				t.Fatalf("Drive returned %v", err)
+			}
+			if !reg.Participating("only") {
+				t.Error("Participating denied a supplied module the command tree named at declaration level")
+			}
+			if !reg.Declaring("only") {
+				t.Error("Declaring denied a supplied module the command tree named at declaration level")
+			}
+			if reg.AllResourcesInForce("only") {
+				t.Error("AllResourcesInForce answered true for a participant, whose adjustment lapses")
+			}
+			if got := p.eventsOf("only"); !slices.Equal(got, want) {
+				t.Errorf("the supplied module ran %v, want %v", got, want)
+			}
+		})
+	}
+}
+
+// TestASuppliedProviderMeetsARivalUnderTheOrdinaryResolutionRules pins that a
+// supplied module has no rules of its own in resolution beyond its fixed
+// stance. Its stance is StateEnabled, so an exclusive rival that states
+// StateAuto stands down, and any other meeting that leaves two providers
+// enabled with an exclusive claim among them fails the startup.
+func TestASuppliedProviderMeetsARivalUnderTheOrdinaryResolutionRules(t *testing.T) {
+	type outcome int
+	const (
+		standsDown outcome = iota
+		violated
+		coexist
+	)
+	cases := []struct {
+		name              string
+		rivalExclusive    bool
+		rivalState        core.EnablementState
+		suppliedExclusive bool
+		want              outcome
+	}{
+		{"an exclusive default that states auto", true, core.StateAuto, false, standsDown},
+		{"an exclusive default that states auto, against an exclusive supplied provider", true, core.StateAuto, true, standsDown},
+		{"an exclusive rival that states enabled", true, core.StateEnabled, false, violated},
+		{"an exclusive rival that states enabled, against an exclusive supplied provider", true, core.StateEnabled, true, violated},
+		{"a rival that claims nothing, against an exclusive supplied provider", false, core.StateAuto, true, violated},
+		{"an enabled rival that claims nothing, against an exclusive supplied provider", false, core.StateEnabled, true, violated},
+		{"neither claims the capability", false, core.StateAuto, false, coexist},
+		{"neither claims it and the rival states enabled", false, core.StateEnabled, false, coexist},
+	}
+	for _, c := range cases {
+		t.Run(c.name, func(t *testing.T) {
+			p := &probe{}
+			reg := core.New()
+			fake := preparing(p, "fake")
+			fake.Provides = []core.Provision{{Token: (*Cache)(nil), Exclusive: c.suppliedExclusive}}
+			register(reg, rival(p, "backend", c.rivalExclusive, c.rivalState), fake)
+			reg.Supply(&box{id: "fake"}, "fake")
+
+			var served string
+			var lookup error
+			var all []string
+			var err error
+			text := captureStderr(t, func() {
+				err = driveToEnd(t, reg, core.Drive{
+					Depth:        core.StageInit,
+					Participants: []string{"backend"},
+					Action: func(_ context.Context, r *core.Registry) error {
+						if cache, resolveErr := core.Resolve[Cache](r); resolveErr == nil {
+							served = cache.CacheID()
+						} else {
+							lookup = resolveErr
+						}
+						for _, cache := range core.ResolveAll[Cache](r) {
+							all = append(all, cache.CacheID())
+						}
+						return nil
+					},
+				})
+			})
+
+			switch c.want {
+			case violated:
+				if !errors.Is(err, core.ErrExclusiveViolated) {
+					t.Fatalf("Drive returned %v, want ErrExclusiveViolated", err)
+				}
+				for _, name := range []string{"backend", "fake"} {
+					if !strings.Contains(err.Error(), name) {
+						t.Errorf("error %q does not name the conflicting module %q", err, name)
+					}
+				}
+				// The supplied provider cannot be disabled from the command tree
+				// and does not stand down, so the failure says which party it is
+				// and that taking its instance away is the way out; the rival has
+				// no instance of this kind and is not described as having one.
+				for _, want := range []string{`"fake" has a supplied instance`, "stop supplying an instance"} {
+					if !strings.Contains(err.Error(), want) {
+						t.Errorf("error %q does not say %q", err, want)
+					}
+				}
+				if strings.Contains(err.Error(), `"backend" has`) {
+					t.Errorf("error %q says the rival has a supplied instance, which nobody supplied for it", err)
+				}
+				if p.has("new backend") {
+					t.Errorf("a module was constructed although the startup failed in resolution: %v", p.snapshot())
+				}
+			case standsDown:
+				if err != nil {
+					t.Fatalf("Drive returned %v", err)
+				}
+				if served != "fake" {
+					t.Errorf("the capability was served by %q, want the supplied instance", served)
+				}
+				if got, ok := reg.Enablement("backend"); !ok || got.State != core.StateDisabled {
+					t.Errorf("Enablement reported %+v/%v for the rival that stood down", got, ok)
+				}
+				if p.has("new backend") {
+					t.Errorf("a rival that stood down was constructed: %v", p.snapshot())
+				}
+				if !strings.Contains(text, "backend") {
+					t.Errorf("stderr %q does not report the module that stood down", text)
+				}
+			case coexist:
+				if err != nil {
+					t.Fatalf("Drive returned %v", err)
+				}
+				if !errors.Is(lookup, core.ErrAmbiguousProvider) {
+					t.Errorf("a single-valued lookup returned %v, want ErrAmbiguousProvider once both exist", lookup)
+				}
+				if want := []string{"backend", "fake"}; !slices.Equal(all, want) {
+					t.Errorf("ResolveAll returned %v, want both providers in module-name order %v", all, want)
+				}
+			}
+			if got, ok := reg.Enablement("fake"); err == nil && (!ok || got.State != core.StateEnabled) {
+				t.Errorf("Enablement reported %+v/%v for the supplied module", got, ok)
+			}
+		})
+	}
+}
+
+// TestAnInstanceSuppliedToOneProviderIsTheOnlyOneUntilTheOthersAreConstructed
+// pins how a single-valued lookup changes as the drive builds the other
+// providers of a capability that is not exclusive. A Prepare sees the supplied
+// instance alone, since nothing else exists yet, and succeeds; once the other
+// provider is constructed the same lookup has two instances to choose from and
+// fails as any lookup does with two.
+func TestAnInstanceSuppliedToOneProviderIsTheOnlyOneUntilTheOthersAreConstructed(t *testing.T) {
+	p := &probe{}
+	reg := core.New()
+	var inPrepare string
+	var afterwards error
+	watcher := preparing(p, "watcher")
+	watcher.Prepare = func(_ context.Context, r *core.Registry) (core.Enablement, error) {
+		cache, err := core.Resolve[Cache](r)
+		if err != nil {
+			return core.Enablement{}, err
+		}
+		inPrepare = cache.CacheID()
+		return core.Enablement{}, nil
+	}
+	register(reg, watcher, rival(p, "backend", false, core.StateAuto), providing(preparing(p, "fake"), (*Cache)(nil)))
+	reg.Supply(&box{id: "fake"}, "fake")
+
+	err := driveToEnd(t, reg, core.Drive{
+		Depth:        core.StageInit,
+		Participants: []string{"watcher", "backend"},
+		Action: func(_ context.Context, r *core.Registry) error {
+			_, afterwards = core.Resolve[Cache](r)
+			return nil
+		},
+	})
+	if err != nil {
+		t.Fatalf("Drive returned %v", err)
+	}
+	if inPrepare != "fake" {
+		t.Errorf("the lookup in Prepare returned %q, want the supplied instance", inPrepare)
+	}
+	if !errors.Is(afterwards, core.ErrAmbiguousProvider) {
+		t.Errorf("the lookup after construction returned %v, want ErrAmbiguousProvider", afterwards)
+	}
+}
+
+// TestARequirerFollowsASuppliedModuleAndWhatItRequiresPrecedesIt pins that a
+// supplied module takes its place in the dependency order like any other: after
+// what it requires, before what requires it, at every stage that is ordered and
+// in the reverse at shutdown. The names run against the order the
+// requirements give, and so does the order of registration, so neither can pass
+// for it.
+func TestARequirerFollowsASuppliedModuleAndWhatItRequiresPrecedesIt(t *testing.T) {
+	p := &probe{}
+	reg := core.New()
+	top := preparing(p, "aa-top")
+	top.Requires = []core.Requirement{{Token: (*Cache)(nil)}}
+	middle := providing(preparing(p, "mm-supplied"), (*Cache)(nil))
+	middle.Requires = []core.Requirement{{Token: (*Store)(nil)}}
+	base := providing(preparing(p, "zz-base"), (*Store)(nil))
+	register(reg, top, middle, base)
+	reg.Supply(&box{id: "host"}, "mm-supplied")
+
+	err := driveToEnd(t, reg, core.Drive{
+		Depth:        core.StageServe,
+		Participants: []string{"zz-base", "aa-top"},
+		Action:       noAction,
+	})
+	if err != nil {
+		t.Fatalf("Drive returned %v", err)
+	}
+	for _, stage := range []string{"migrate", "init", "start", "serve"} {
+		atBase := p.indexOf(t, stage+" zz-base")
+		atMiddle := p.indexOf(t, stage+" mm-supplied")
+		atTop := p.indexOf(t, stage+" aa-top")
+		if atBase > atMiddle || atMiddle > atTop {
+			t.Errorf("%s ran out of dependency order: %v", stage, p.snapshot())
+		}
+	}
+	for _, stage := range []string{"stop", "close"} {
+		atBase := p.indexOf(t, stage+" zz-base")
+		atMiddle := p.indexOf(t, stage+" mm-supplied")
+		atTop := p.indexOf(t, stage+" aa-top")
+		if atTop > atMiddle || atMiddle > atBase {
+			t.Errorf("%s ran out of reverse dependency order: %v", stage, p.snapshot())
+		}
+	}
+}
+
+// TestSuppliedModulesAreOrderedByWhatTheyRequireOfEachOther pins the
+// dependency order for a drive in which no module is constructed at all: every
+// instance is supplied, and the requirement alone orders them at each stage and
+// at shutdown. The names run against that order.
+func TestSuppliedModulesAreOrderedByWhatTheyRequireOfEachOther(t *testing.T) {
+	p := &probe{}
+	reg := core.New()
+	user := preparing(p, "aa-user")
+	user.Requires = []core.Requirement{{Token: (*Cache)(nil)}}
+	register(reg, user, providing(preparing(p, "zz-base"), (*Cache)(nil)))
+	reg.Supply(&box{id: "user"}, "aa-user")
+	reg.Supply(&box{id: "base"}, "zz-base")
+
+	err := driveToEnd(t, reg, core.Drive{Depth: core.StageServe, Action: noAction})
+	if err != nil {
+		t.Fatalf("Drive returned %v", err)
+	}
+	for _, stage := range []string{"migrate", "init", "start", "serve"} {
+		if p.indexOf(t, stage+" zz-base") > p.indexOf(t, stage+" aa-user") {
+			t.Errorf("%s ran the module that requires before the one it requires: %v", stage, p.snapshot())
+		}
+	}
+	for _, stage := range []string{"stop", "close"} {
+		if p.indexOf(t, stage+" aa-user") > p.indexOf(t, stage+" zz-base") {
+			t.Errorf("%s released the module that is required before the one that requires it: %v",
+				stage, p.snapshot())
+		}
+	}
+}
+
+// TestASuppliedModulesRequirementsAreNotPulledIn pins that the registry adds
+// the supplied module to the participating set and nothing more. What it
+// requires has to be in the set already, by being named or by being supplied,
+// or the dependency resolution fails naming the module; a requirement marked
+// Optional is skipped when nothing provides it and orders the module as usual
+// when something does.
+func TestASuppliedModulesRequirementsAreNotPulledIn(t *testing.T) {
+	cases := []struct {
+		name         string
+		optional     bool
+		participants []string
+		wantErr      error
+		keeperRuns   bool
+	}{
+		{"a required provider nobody named", false, nil, core.ErrMissingProvider, false},
+		{"the same provider, named", false, []string{"keeper"}, nil, true},
+		{"an optional provider nobody named", true, nil, nil, false},
+		{"an optional provider, named", true, []string{"keeper"}, nil, true},
+	}
+	for _, c := range cases {
+		t.Run(c.name, func(t *testing.T) {
+			p := &probe{}
+			reg := core.New()
+			needy := providing(preparing(p, "needy"), (*Reader)(nil))
+			needy.Requires = []core.Requirement{{Token: (*Cache)(nil), Optional: c.optional}}
+			register(reg, needy, providing(preparing(p, "keeper"), (*Cache)(nil)))
+			reg.Supply(reader{}, "needy")
+
+			err := driveToEnd(t, reg, core.Drive{
+				Depth:        core.StageInit,
+				Participants: c.participants,
+				Action:       noAction,
+			})
+
+			if c.wantErr != nil {
+				if !errors.Is(err, c.wantErr) {
+					t.Fatalf("Drive returned %v, want %v", err, c.wantErr)
+				}
+				for _, want := range []string{"needy", "Cache"} {
+					if !strings.Contains(err.Error(), want) {
+						t.Errorf("error %q does not mention %q", err, want)
+					}
+				}
+				if !strings.Contains(strings.ToLower(err.Error()), "suppl") {
+					t.Errorf("error %q does not say that the module has a supplied instance, which "+
+						"changes how it is taken out of the command", err)
+				}
+				return
+			}
+			if err != nil {
+				t.Fatalf("Drive returned %v", err)
+			}
+			if got := p.has("migrate keeper"); got != c.keeperRuns {
+				t.Errorf("the provider ran: %v, want %v; recorded %v", got, c.keeperRuns, p.snapshot())
+			}
+			if c.keeperRuns && p.indexOf(t, "migrate keeper") > p.indexOf(t, "migrate needy") {
+				t.Errorf("the provider was not ordered ahead of the module that requires it: %v", p.snapshot())
+			}
+		})
+	}
+}
+
+// TestClosureTreatsASuppliedModuleLikeAnyOther pins that expansion knows
+// nothing of supplies: a module that requires a capability brings in every
+// provider of it, the supplied one among them, and a supplied module that
+// itself requires something is expanded as any module is.
+func TestClosureTreatsASuppliedModuleLikeAnyOther(t *testing.T) {
+	reg := core.New()
+	register(reg,
+		core.Module{Name: "consumer", Requires: []core.Requirement{{Token: (*Cache)(nil)}}},
+		core.Module{Name: "alpha", Provides: []core.Provision{{Token: (*Cache)(nil)}}},
+		core.Module{Name: "bravo", Provides: []core.Provision{{Token: (*Cache)(nil)}}},
+		core.Module{
+			Name:     "needy",
+			Requires: []core.Requirement{{Token: (*Store)(nil)}},
+			Provides: []core.Provision{{Token: (*Reader)(nil)}},
+		},
+		core.Module{Name: "keeper", Provides: []core.Provision{{Token: (*Store)(nil)}}},
+	)
+	reg.Supply(&box{id: "host"}, "alpha")
+	reg.Supply(reader{}, "needy")
+
+	got, err := reg.Closure([]string{"consumer", "needy"})
+	if err != nil {
+		t.Fatalf("Closure returned %v", err)
+	}
+	if want := []string{"alpha", "bravo", "consumer", "keeper", "needy"}; !slices.Equal(got, want) {
+		t.Fatalf("Closure gave %v, want %v", got, want)
+	}
+}
+
+// TestASuppliedExclusiveProviderMeetsAConsumerThatNamesNoImplementation pins
+// the supplied way out of a capability whose providers all claim it
+// exclusively. The closure brings in none of them, and the module that has an
+// instance supplied joins the participating set by itself, so the requirement
+// has its provider and the other implementation is left out.
+func TestASuppliedExclusiveProviderMeetsAConsumerThatNamesNoImplementation(t *testing.T) {
+	p := &probe{}
+	reg := core.New()
+	app := p.module("app")
+	app.Requires = []core.Requirement{{Token: (*Cache)(nil)}}
+	memory := p.module("memory")
+	memory.Provides = []core.Provision{{Token: (*Cache)(nil), Exclusive: true}}
+	redis := p.module("redis")
+	redis.Provides = []core.Provision{{Token: (*Cache)(nil), Exclusive: true}}
+	register(reg, app, memory, redis)
+	reg.Supply(&box{id: "memory"}, "memory")
+
+	participants, err := reg.Closure([]string{"app"})
+	if err != nil {
+		t.Fatalf("Closure returned %v", err)
+	}
+	if want := []string{"app"}; !slices.Equal(participants, want) {
+		t.Fatalf("Closure gave %v, want %v: no exclusive provider is brought in", participants, want)
+	}
+	err = driveToEnd(t, reg, core.Drive{
+		Depth:        core.StageInit,
+		Participants: participants,
+		Action:       noAction,
+	})
+	if err != nil {
+		t.Fatalf("Drive returned %v", err)
+	}
+	if p.indexOf(t, "migrate memory") > p.indexOf(t, "migrate app") {
+		t.Errorf("the supplied provider was not ordered ahead of its consumer: %v", p.snapshot())
+	}
+	if got := p.eventsOf("redis"); len(got) != 0 {
+		t.Errorf("the implementation nobody named or supplied ran %v", got)
+	}
+}
+
+// TestRunTakesInEveryRegisteredModuleAtRunLevel pins the sets Run settles:
+// every registered module is a participant and so in the declaring set, and the
+// host's adjustment has nothing to apply to, because no module is taken in at
+// the static level.
+func TestRunTakesInEveryRegisteredModuleAtRunLevel(t *testing.T) {
+	p := &probe{}
+	reg := core.New()
+	register(reg, preparing(p, "alpha"), preparing(p, "bravo"))
+
+	if err := runUntilServed(t, reg, p, "serve alpha", "serve bravo"); err != nil {
+		t.Fatalf("Run returned %v", err)
+	}
+	for _, name := range []string{"alpha", "bravo"} {
+		if !reg.Participating(name) || !reg.Declaring(name) {
+			t.Errorf("%s is not in the participating and declaring sets after Run", name)
+		}
+		if reg.AllResourcesInForce(name) {
+			t.Errorf("AllResourcesInForce answered true for %s under Run", name)
+		}
+	}
+}

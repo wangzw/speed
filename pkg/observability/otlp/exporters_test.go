@@ -109,7 +109,8 @@ func grpcReceiver(t *testing.T) *receiver {
 func exportersFor(t *testing.T, cfg Config) (*observability.Exporters, error) {
 	t.Helper()
 	reg := core.New()
-	reg.Supply((*config.Reader)(nil), fixedReader{cfg: cfg})
+	reg.Register(config.Module())
+	reg.Supply(fixedReader{cfg: cfg}, config.ModuleName)
 	product, err := newExporters(context.Background(), reg)
 	if err != nil {
 		return nil, err

@@ -96,9 +96,12 @@ func configOf(reg *core.Registry) (Config, error) {
 	return cfg, nil
 }
 
-// productOf narrows an instance to this module's product. A product of another
-// shape means the registry handed this callback something it did not build,
-// which is not something a host can cause.
+// productOf narrows an instance to this module's product. An instance of
+// another shape is one the host supplied: a type of the host's own delivers
+// Limiter by embedding it, and the registry takes that as this module's
+// instance. Init leaves such an instance alone, so no layer is registered for
+// it, and the module declares neither Stop nor Close, so whatever the instance
+// holds is released by the host that supplied it.
 func productOf(instance any) (*limiter, bool) {
 	l, ok := instance.(*limiter)
 	return l, ok

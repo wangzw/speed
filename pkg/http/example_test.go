@@ -97,6 +97,7 @@ func startExample(registrant func(*core.Registry) error, extra ...core.Module) (
 
 	served := make(chan struct{})
 	reg := core.New()
+	reg.Register(config.Module())
 	reg.Register(jsonformat.Module())
 	reg.Register(filesource.Module())
 	reg.Register(core.Module{
@@ -122,8 +123,9 @@ func startExample(registrant func(*core.Registry) error, extra ...core.Module) (
 
 	// The host's command tree: one command, every available module in it,
 	// driven to the end of the lifecycle. The reader every module reads its
-	// configuration through comes from here, which is why nothing above
-	// registers a module to deliver it.
+	// configuration through is loaded here and supplied to the config module
+	// registered first above. A registry made with core.New does not inherit that
+	// registration from the process registry, and NewApp panics on one without it.
 	app := config.NewApp(reg)
 	app.Root().IncludeAll()
 	app.Root().Do(core.StageServe, nil)
