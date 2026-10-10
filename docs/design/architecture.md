@@ -168,7 +168,7 @@ speed 不引入进程边界。宿主是单一进程，注册表与全部模块�
 
 **审计的覆盖面同样是装配与配置的结果，不是框架的承诺。** 审计的各条捕获通路分别依赖在场的模块，以及配置里点名的类型与请求模式。一个类型名与一个端名都不点名时，任一条通路缺席都不会被任何一层拦下，也不进启动诊断；点了名而对应的模块取不到，则是启动失败（[audit](modules/design-audit.md)）。
 
-**请求路径的 panic 兜底是这条取向的一处例外：它是入口模块的承诺。** 兜底层由 [http](modules/design-http.md) 内建、每端唯一，不装任何别的模块的进程同样有它。判据是这条能力不需要任何产生于依赖图上层的概念——不要主体、不要租户、不要操作者，只要接住一次调用并写一个状态码，因而按横切归属的判据落在持有拦截点的模块（[ADR-http-recovery-2026-09-22](../adr/adr-http-recovery-2026-09-22.md)）。宿主为入口模块预置的实例不是它的产物时，这份承诺不随之而来，那个实例怎样对外提供服务由预置的一方负责（见 [http](modules/design-http.md)）。
+**请求路径的 panic 兜底是这条取向的一处例外：它是入口模块的承诺。** 兜底层由 [http](modules/design-http.md) 内建、每端唯一，不装任何别的模块的进程同样有它。判据是这条能力不需要任何产生于依赖图上层的概念——不要主体、不要租户、不要操作者，只要接住一次调用并写出一次错误响应（形状由默认的 `application/problem+json` 或已交付的 `ErrorResponder` 决定），因而按横切归属的判据落在持有拦截点的模块（[ADR-http-recovery-2026-09-22](../adr/adr-http-recovery-2026-09-22.md)、[ADR-http-errors-2026-10-10](../adr/adr-http-errors-2026-10-10.md)）。宿主为入口模块预置的实例不是它的产物时，这份承诺不随之而来，那个实例怎样对外提供服务由预置的一方负责（见 [http](modules/design-http.md)）。
 
 ### 性能与容量目标
 
@@ -202,13 +202,13 @@ speed 不引入进程边界。宿主是单一进程，注册表与全部模块�
 | [config](modules/design-config.md) | 已实现 |
 | [log](modules/design-log.md) | 已实现 |
 | [db](modules/design-db.md) | 已实现 |
-| [http](modules/design-http.md) | 已实现 |
-| [authn](modules/design-authn.md) | 已实现 |
-| [tenant](modules/design-tenant.md) | 已实现 |
+| [http](modules/design-http.md) | 部分实现 |
+| [authn](modules/design-authn.md) | 部分实现 |
+| [tenant](modules/design-tenant.md) | 部分实现 |
 | [kv](modules/design-kv.md) | 已实现 |
 | [event](modules/design-event.md) | 已实现 |
 | [outbox](modules/design-outbox.md) | 已实现 |
-| [audit](modules/design-audit.md) | 已实现 |
+| [audit](modules/design-audit.md) | 部分实现 |
 | [settings](modules/design-settings.md) | 已实现 |
-| [ratelimit](modules/design-ratelimit.md) | 已实现 |
-| [observability](modules/design-observability.md) | 已实现 |
+| [ratelimit](modules/design-ratelimit.md) | 部分实现 |
+| [observability](modules/design-observability.md) | 部分实现 |

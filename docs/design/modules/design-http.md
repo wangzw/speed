@@ -4,24 +4,23 @@
 
 - 依据配置打开各监听端，在 `Serve` 阶段绑定地址并开始接受请求。
 - 提供路由与中间件的登记面，写入闸门借用 `Migrate` 与 `Start` 阶段位，框住全局 `Init` 阶段。
-- 按各中间件声明的约束与数值组装每个监听端的链。
+- 按各中间件声明的约束与数值组装每个监听端的链，交给该端的 gin 引擎。
 - 接住各登记层与 handler 抛出的 panic，收口一次响应并记一行日志（[ADR-http-recovery-2026-09-22](../../adr/adr-http-recovery-2026-09-22.md)）。
 - 建立请求上下文，把日志模块的 logger 注入其中，供链上各层与 handler 取用。
 - 停机时由 `Stop` 关闭各端的监听器，并等在途请求排空结束才返回（[ADR-http-shutdown-2026-09-14](../../adr/adr-http-shutdown-2026-09-14.md)）；排空开始时向不会自行结束的响应发出信号。
 - 报告各监听端是否仍在接受请求。
 - 定义资源类型 `Spec`，供模块声明自己的 OpenAPI 文档片段，并在启动时校验其形状。
-- 提供请求体解码、校验与 JSON 响应的工具，供 handler 取用。
+- 定义默认的错误响应形状，经可选接缝接受定制，并提供写出它的入口，供各层与 handler 取用（[ADR-http-errors-2026-10-10](../../adr/adr-http-errors-2026-10-10.md)）。
 
-登记面用 `net/http` 的类型表达，中间件写作 `func(http.Handler) http.Handler`。**本模块的接口包不暴露任何第三方类型**：路由引擎由实现子包绑定，它的类型到不了登记面，取用本模块的宿主因而不承受任何路由库的依赖——路由库不进它的 `go.mod`，`go.sum` 与实际下载则会经被 import 包的测试闭包带上它，只有读整图的操作会看到它（[ADR-http-surface-2026-09-14](../../adr/adr-http-surface-2026-09-14.md)、[ADR-module-packaging-2026-09-22](../../adr/adr-module-packaging-2026-09-22.md)）。
+登记面用 gin 的类型表达：路由的 handler 与中间件的 `Handler` 都是 `gin.HandlerFunc`。**本模块是 gin 的封装**（[ADR-http-surface-2026-09-14](../../adr/adr-http-surface-2026-09-14.md)、[ADR-module-packaging-2026-09-14](../../adr/adr-module-packaging-2026-09-14.md)）：路由匹配与路径的语法、中间件的调度、请求体的绑定与校验、响应的渲染都由 gin 提供，本模块不在其上另设一层，也不包装它们；它承担的是装配。取用本模块的宿主因而承受 gin 的依赖闭包。
 
 ### 非职责
 
-- **不提供声明式的校验规则。** 工具调用类型自身的校验，规则由该类型自己实现。
-- **不提供 JSON 之外的请求体格式。** 别的格式由 handler 自己解析，工具不设格式协商。
+- **不提供请求体绑定、校验与响应渲染。** 它们是 gin 的，handler 直接用 `gin.Context` 的方法；本模块不包装它们，也不提供替代品。
+- **不改动 gin 绑定与校验器的进程级设置。** 那些设置对同一进程里的全部 gin 引擎生效，归宿主决定。
 - **不认识任何具体功能。** 认证（[authn](design-authn.md)）、租户、限流是各自模块的事，本模块只按它们声明的约束排序，不知道任何一层做什么（[ADR-http-middleware-2026-09-14](../../adr/adr-http-middleware-2026-09-14.md)）。
-- **不定义统一的错误响应形状。** 响应体的约定属于 API 的设计，由提供该 API 的模块决定；handler 正常产生输出时，本模块不拦截它。handler 因 panic 中断、尚未写出任何输出的那一次不在此列：那一次的形状由本模块的默认格式或已交付的 `PanicResponder` 决定（见外部接口契约）。
+- **不为 handler 自己写出的响应定形状。** 默认的错误响应形状只覆盖本模块写出的响应与经写出入口写出的响应（见外部接口契约）；handler 用 gin 自己写出的响应，本模块不拦截。
 - **不决定哪些路由免于认证。** 路由的认证策略归实现认证的那个模块（[authn](design-authn.md)），它以中间件的形式接入。
-- **不提供路由级中间件。** `Use` 登记的层作用于该端的全部路由。只对一部分路由生效的层，由那些路由的 handler 自己包，或者把它们分到另一个监听端。
 - **不判定监听端是否健康。** 本模块报告它是否仍在接受请求，把这个事实解读成健康与否归读取方，本模块不定义健康的含义，也不提供探活路由。
 - **不合并 OpenAPI 片段，也不发布它们。** 本模块保存各模块声明的片段并校验其形状，把它们合成一份完整规格、或挂一条路由把它提供出去，都归读取方。
 - **不签发或轮换 TLS 证书。** 监听端的配置承载证书的位置，证书从哪里来、何时更换不在本模块范围内。
@@ -35,7 +34,7 @@
 
 ## 外部接口契约
 
-本模块交付一个功能，定义一种资源类型供其他模块声明，另有一组供 handler 取用的工具，另有一个供其他模块实现的可选接缝 `PanicResponder`。
+本模块交付一个功能，定义一种资源类型供其他模块声明，另有写出错误响应的入口与排空信号供 handler 与各层取用，另有一个供其他模块实现的可选接缝 `ErrorResponder`。
 
 **交付的功能**。功能标识的元素类型必须是接口，取用写作 `core.Resolve[http.Router](reg)`：
 
@@ -47,27 +46,31 @@ type Router interface {
 
 // Endpoint 是一个监听端上的登记面。
 type Endpoint interface {
-    Route(pattern string, h nethttp.Handler)
+    // Route 登记一条路由：method 是 HTTP 方法，path 取 gin 的写法，
+    // handlers 依次运行，最后一个处理本次请求。
+    Route(method, path string, handlers ...gin.HandlerFunc)
     Use(mw Middleware)
     Accepting() bool
 }
 ```
 
-`nethttp` 是 `net/http` 在本包内的别名——本包自身叫 `http`，引用标准库时要区分开。
+`nethttp` 是 `net/http` 在本包内的别名——本包自身叫 `http`，引用标准库时要区分开；`gin` 是 `github.com/gin-gonic/gin`。
 
-`Endpoint` 在端名未声明时返回错误，因为端的集合来自配置这份数据。`Route` 与 `Use` 不返回错误：登记不上的只有调用点的编程错误，它们当场 panic，与 `core` 对非法功能标识、对重名登记的处理同类（见 [core](design-core.md)）。`Wrap` 为 `nil`、`Provides`、`After` 与 `Before` 中出现非法的功能标识、以及路由引擎判为非法的模式，都属于这一类——模式是代码里写死的字符串，写错它与数据无关。登记时用一台独占的引擎单独试挂即可把它与冲突分开。
+`Endpoint` 在端名未声明时返回错误，因为端的集合来自配置这份数据。`Route` 与 `Use` 不返回错误：登记不上的只有调用点的编程错误，它们当场 panic，与 `core` 对非法功能标识、对重名登记的处理同类（见 [core](design-core.md)）。`Handler` 为 `nil`、`Route` 没有 handler 或其中有 `nil`、`Provides`、`After` 与 `Before` 中出现非法的功能标识、不是 gin 规整后写法的路径、以及 gin 判为非法的方法或路径，都属于这一类——方法与路径是代码里写死的字符串，写错它们与数据无关。gin 接受 `nil` 的 handler 而要到请求到来时才崩，本模块因而在登记点拦下。登记时用一台独占的 gin 引擎单独试挂即可把非法的路径与冲突分开。
+
+**路径须已是 gin 规整后的写法**：以 `/` 起头，不含多余的斜杠与 `.`、`..` 段，末尾的斜杠按原样保留。gin 把路径接到引擎的根上时会规整它，`c.FullPath()` 报出的是规整后的结果；登记的路径与它逐字相同，按（方法，`c.FullPath()`）与登记写法比对的层（认证的豁免、审计的匹配）才不会因为写法不同而永不命中。
 
 **端的集合在本模块的配置里封闭，登记面不提供枚举。** 登记面只有按名取端一个方法，因而没有一处能把某个模块声明的端名清单与端的全集互相比对：一个模块漏写一个端，那个端上就不会出现它的任何一层，启动期既不失败，也没有一行诊断指向它。这一档与宿主在命令树上漏写一个模块同源，起于装配的决定而不是意外（见 [architecture](../architecture.md) 的可观测性）。察觉它靠 `Serve` 组装时逐端写出的链清单：每个已声明的端一行，行内按组装后的次序列出该端的各登记层，每一层连同它在 `Provides` 里声明的功能标识；不经登记面、也没有功能标识的那些层（请求体上限与请求上下文的建立、兜底层）同样列在这一行里，只有名字。功能标识是登记面能就「这一层代表什么」说出的唯一一件事，也是 `After` 与 `Before` 据以建图的那一样东西；`Middleware.Name` 只用于诊断，不是一个可被比对的标识，因而「某功能在这个端上的链里无人代表」只在这一行里读得出来。
 
-同一个端上的模式**冲突**不属于这一类：登记只记录声明，两条模式是否冲突要到 `Serve` 组装时才谈得上，那时报出的是启动失败。
+同一个端上的路由**冲突**不属于这一类：登记只记录声明，两条路由是否冲突要到 `Serve` 组装、挂到该端的引擎上时才谈得上，那时 gin 以 panic 拒绝，本模块捕获它并报成启动失败。
 
 功能标识是否合法，判据与 `core` 的同一条（元素类型必须是接口）。`core` 未导出它的判定，本模块自建一份，并以一条测试比对两者的结论——拿 `core` 的公开行为当基准，两份规则漂移时那条测试会红。
 
 **`core` 不会导出这个判定**：它导出的包级函数受架构不变量约束，限于注册表的构造函数、进程级注册表变量、哨兵错误与需要类型参数的泛型封装，判定函数不在其中。本模块这份判定与那条比对测试因而是常设的，不是等上游补齐的临时措施。
 
-本模块排他地交付 `(*Router)(nil)`：两个入口实现同时启用时，登记方无从知道自己登记到了哪一个，而"只能整体取出"对登记没有意义。**入口实现因此由宿主在命令树上点名**：它排他交付，依赖闭包不替宿主挑，宿主没有写下的入口实现不进参与集，为它预置了实例的除外（见 [core](design-core.md)）。
+本模块排他地交付 `(*Router)(nil)`：两个入口模块同时启用时，登记方无从知道自己登记到了哪一个，而"只能整体取出"对登记没有意义。本模块由根包在包初始化时登记，模块名是 `http`（导出为 `ModuleName`），**宿主在命令树上以这个名字点名它**：它排他交付，依赖闭包不替宿主挑，宿主没有写下的入口模块不进参与集，为它预置了实例的除外（见 [core](design-core.md)）。
 
-**排他声明多数时候并不是冲突真正暴露的地方。** 两个实现子包共用 `http` 这个配置命名空间，同名输入项在 `config` 收集清单时就会失败，走不到消解阶段；同名登记更早，`core.Register` 在 `init` 期即 panic。排他声明因而是一条契约陈述，它在两个实现各自声明了不相交输入项这种情形下才是实际的拦截点。
+**排他声明多数时候并不是冲突真正暴露的地方。** 另一个交付 `Router` 的模块若同样使用 `http` 这个配置命名空间，同名输入项在 `config` 收集清单时就会失败，走不到消解阶段；同名登记更早，`core.Register` 在 `init` 期即 panic。排他声明因而是一条契约陈述，它在两个入口模块各自声明了不相交输入项这种情形下才是实际的拦截点。
 
 **登记面在借用自 `Migrate` 与 `Start` 的阶段窗口内接受写入**，窗口之外的写入一律 panic。窗口以本模块的 `Migrate` 回调为起点、`Start` 回调为终点：阶段逐个推进，全局 `Init` 阶段整体落在这个区间之内，区间两端还各含 `Migrate` 与 `Start` 阶段中本模块之外的回调（见阶段行为一节）。最终 handler 在 `Serve` 阶段组装一次，此后不变（[ADR-http-routing-2026-09-14](../../adr/adr-http-routing-2026-09-14.md)）。
 
@@ -77,18 +80,18 @@ type Endpoint interface {
 
 ```go
 type Middleware struct {
-    Name     string       // 只用于诊断：panic 文本与启动时列出的链
-    Provides []core.Token // 本层在链上代表哪些功能，供他人指向
-    After    []core.Token // 本层位于这些功能的中间件之内
-    Before   []core.Token // 本层位于这些功能的中间件之外
-    Order    int          // 约束未定之处的偏好，小者靠外
-    Wrap     func(nethttp.Handler) nethttp.Handler
+    Name     string          // 只用于诊断：panic 文本与启动时列出的链
+    Provides []core.Token    // 本层在链上代表哪些功能，供他人指向
+    After    []core.Token    // 本层位于这些功能的中间件之内
+    Before   []core.Token    // 本层位于这些功能的中间件之外
+    Order    int             // 约束未定之处的偏好，小者靠外
+    Handler  gin.HandlerFunc // 本层本身：c.Next 交给其后各层，c.Abort 终止链
 }
 ```
 
 `After` 与 `Before` 是硬约束，`Order` 只在硬约束未定的自由度内起作用，两者因而不会冲突（[ADR-http-middleware-2026-09-14](../../adr/adr-http-middleware-2026-09-14.md)）。
 
-**包住响应写出者的中间件必须把原来那个写出者携带的可选接口转发出去。** 包装之后，`Flusher`、`Hijacker` 这类接口不再直接可见：包装的层要么显式转发它们，要么用 `Unwrap` 把它暴露出来，否则一个对这些接口做类型断言的处理器在该端点上静默失效——流式响应与协议升级随之失效，且不报错。这条要求归本模块，因为链的组装与写出者的归属都在这里；装配里任何一层包住写出者都受它约束。
+**写出者携带的可选接口不得因包装而丢失。** gin 的链上，一层读响应的状态、是否已写出与已写出的字节数，用 `c.Writer` 的 `Status`、`Written` 与 `Size`，不必包装写出者；gin 的写出者本身携带 `Flusher`、`Hijacker` 与 `Unwrap`，`http.NewResponseController` 经它可用。替换 `c.Writer` 的层，以及本模块在 `net/http` 一级包住写出者的层（请求体上限与请求上下文的建立、兜底层），都要把原来那个写出者携带的可选接口转发出去，或用 `Unwrap` 把它暴露出来，否则一个对这些接口做类型断言的处理器在该端点上静默失效——流式响应与协议升级随之失效，且不报错。这条要求归本模块，因为链的组装与写出者的归属都在这里；装配里任何一层包住写出者都受它约束。
 
 **`Provides` 是约束能够落地的前提**：`After` 与 `Before` 指向功能，而链上哪一层代表哪个功能，只能由那一层自己声明。登记面拿不到登记方的身份——`Endpoint` 不带它，`core` 不提供「当前正在 `Init` 的模块」这样的查询，而本模块允许在协程里登记，调用栈也就不成立。`Provides` 为空是合法的，代价是无人能指向这一层。
 
@@ -102,7 +105,7 @@ ep.Use(http.Middleware{
     Name:     "observability",
     Provides: []core.Token{(*observability.TracerProvider)(nil), (*observability.MeterProvider)(nil)},
     Order:    -10,
-    Wrap:     instrument,
+    Handler:  instrument,
 })
 
 // 另一个模块的层：本层代表审计，示例把它排在遥测层之内
@@ -110,43 +113,20 @@ ep.Use(http.Middleware{
     Name:     "audit",
     Provides: []core.Token{(*audit.Audit)(nil)},
     After:    []core.Token{(*observability.TracerProvider)(nil)},
-    Wrap:     capture,
+    Handler:  capture,
 })
 ```
 
-**引擎接缝**。实现子包把自己的路由引擎交进来的席位，只出现 `net/http` 的类型：
+**路由引擎**。每个监听端由本模块建一台 gin 引擎，不带 gin 的默认中间件。引擎是本模块的内部，登记方经 `Endpoint` 登记，拿不到它。引擎有如下设定：
 
-```go
-type Engine interface {
-    nethttp.Handler
-    Handle(pattern string, h nethttp.Handler)
-}
-```
+- **关闭尾斜杠重定向。** gin 默认把 `/x/` 重定向到 `/x`，而重定向发生在全局中间件之前，一个被重定向的请求不经过认证、限流、审计与遥测的任何一层。
+- **开启对不允许的方法的识别。** 路径存在而方法不在其中时答 405 并带 `Allow` 头，不答 404。
+- **开启上下文回落。** `*gin.Context` 作为 `context.Context` 使用时回落到请求上下文取值，`log.FromContext(c)` 与 `log.FromContext(c.Request.Context())` 取到同一个 logger。
+- **无匹配路由与方法不允许经错误响应的入口写出**（见下）。两者与有匹配的请求一样经过全部登记层，认证因而在路径不存在时同样先于 404。
+- **不信任任何代理头。** gin 默认采信任何来源发来的 `X-Forwarded-For`，`c.ClientIP()` 因而可以被客户端伪造；引擎不信任任何代理，`c.ClientIP()` 只返回连接的对端地址。
+- **gin 处于发布模式，调试输出不写到标准输出。** 运行模式与输出是 gin 的进程级设置：路由登记时的调试打印不经日志模块，本模块因而在构造时把它们关掉。
 
-它是接口包与实现子包之间的契约，不是给登记方用的：业务模块经 `Endpoint` 登记，不碰 `Engine`。
-
-**接缝要求实现子包把挂载的拒绝归因到一对模式**：被拒的那一条，以及已挂载的哪一条与它冲突。根包只看得见"挂载被拒"这一个事实，引擎按什么判定它无从知道；归因只有绑定引擎的那一层做得了。标准库那一支可以把已挂载的每条与被拒的那条两两放到一台独占的引擎上复现，别的引擎用它自己的途径。
-
-**归因不出来时错误要说明这一点，不退化成只点名被拒的那条。** 那不是正常路径，而是实现子包没有满足接缝的要求。`Engine` 存在的理由就是换实现，一条只对某一个引擎成立的诊断承诺，换了实现就会悄悄失效。
-
-**这条义务由一个可选接口承载**：实现子包的引擎**可以额外满足**下面这个方法，根包在挂载被拒时用类型断言取用，取不到就走上一条路径。
-
-```go
-type refusalAttributor interface {
-    // AttributeRefusal 返回被拒的模式与哪一条已挂载的模式冲突，答不出时 ok 为假
-    AttributeRefusal(refused string, mounted []string) (conflicting string, ok bool)
-}
-```
-
-语义三条：
-
-- 实现了它，就由它把拒绝归因到一对模式——被拒的那条，以及已挂载的哪一条与它冲突——根包据此点名两条；
-- 没实现，或实现了但答不出（`ok` 为假），根包说明归因失败本身，不退化成只点名被拒的那条；
-- 它是**可选**的：`Engine` 上不出现这个方法。
-
-**归因不进 `Engine`，也不作为接缝之外的第二个参数。** `Engine` 必须继续被 `*nethttp.ServeMux` 原样满足——标准库那一支正是这条接缝存在的意义的直接体现，往 `Engine` 上加一个方法，等于把标准库的 `ServeMux` 判成不合法的引擎。改 `Module(name, newEngine)` 的签名、再挂一个归因参数同样不行：入口工厂的签名要为一件事改动，而这件事只对成对判定的引擎谈得上。在接缝之外单独传一个归因器，则让归因器与它所描述的引擎成为两个可以各自漂移的东西——归因对不对，只有绑定引擎的那一层知道。
-
-**承载形态的残余代价是它只能写在散文里**：把 `Engine` 的代码块读一遍看不到这个方法。兜底在于根包**在归因缺失时会说出来**，所以这条要求的失效形态是「报出归因失败」，不是静默。
+**路由冲突在 `Serve` 组装时报成启动失败，并归因到一对路由。** gin 在挂载时以 panic 拒绝冲突：同一位置上的路径参数名不一致、同一方法同一路径重复登记、通配与静态段或参数并存都在其列；静态段与参数并存则被接受，不同方法上的同一路径互不冲突。本模块捕获这个 panic，点名被拒的那一条，以及已挂载的哪一条与它冲突。归因的做法是把已挂载的每一条与被拒的那条两两放到一台独占的引擎上复现，复现出拒绝的那一对即是。**归因不出来时错误要说明这一点，不退化成只点名被拒的那条**：一条只对部分冲突成立的诊断承诺，会在遇到它答不出的那一类时悄悄失效。
 
 **API 声明资源**。模块声明自己那一份 OpenAPI 文档，本模块保存供查询：
 
@@ -165,7 +145,7 @@ type Spec struct {
 
 一个 `Spec` 对应一个端，API 分布在多个端的模块把多个 `Spec` 放进自己的 `Resources`。`Spec.Endpoint` 指向一个未声明的端时本模块不报错：资源是静态声明，本模块只保存并供查询，不解释它描述的内容。
 
-**本模块校验文档的形状，不校验它的内容。** 空的 `Document`、不是合法 JSON、顶层没有 `openapi` 字段，各是一类启动失败。完整的 OpenAPI 语法校验要引入解析库，而本模块的接口包不暴露任何第三方类型；这里挡住的是会让下游的合并在启动之后才崩掉的那一类。
+**本模块校验文档的形状，不校验它的内容。** 空的 `Document`、不是合法 JSON、顶层没有 `openapi` 字段，各是一类启动失败。完整的 OpenAPI 语法校验要引入解析库，本模块不引入它；这里挡住的是会让下游的合并在启动之后才崩掉的那一类。
 
 **配置**。本模块以 `config.Schema` 资源声明自己的输入项。每个监听端各有地址、各项超时、请求体上限与可选的 TLS 证书位置；排空时限也按端配置，`Stop` 以它为界等待在途请求走完。端的集合由配置给出：一个端都没有声明时本模块无法启动，启动失败，错误点名缺的是监听端的声明。纳入本模块即承诺装配它，配好至少一个端因而不可省——无论由宿主在命令树上点名，还是不写命令树的调用方走 `Run` 入口。
 
@@ -173,38 +153,37 @@ type Spec struct {
 
 **时长项的零值不统一，判据是关掉它的后果由谁承担。** 多数时长项显式 0 表示关闭该项，后果限于配置者自己那个端。两项例外，显式 0 一律拒绝并给出理由：读取请求头的时限关掉之后，一个不发完头部的连接可以无限占住资源；排空时限关掉之后 `Stop` 会无限等一个卡不动的在途请求，而此时 context 已被剥掉取消、注册表也不施加停机超时，宿主阻塞在驱动里再无可打断的途径——排空时限正是 [ADR-http-shutdown-2026-09-14](../../adr/adr-http-shutdown-2026-09-14.md) 指定用来满足「回调必须有界」的那一项。
 
-**请求处理工具**。handler 里重复出现的解码、校验与响应写出，由本包的一组函数承担。它们不参与装配，取用它们不必经注册表：
+**请求体与响应**。handler 里的请求体绑定、校验与响应渲染直接用 `gin.Context` 的方法，本模块不包装它们。请求体的大小上限由该端的配置在链最外层施加，对该端的每个 handler 一律生效；超限的请求体经 gin 的绑定以 `*nethttp.MaxBytesError` 返回，调用方用 `errors.As` 判别。
+
+**错误响应**。本模块写出的错误响应有一个默认形状，可由一个可选接缝整体替换；供各层与 handler 写出错误响应的入口与它们共用同一处决定形状（[ADR-http-errors-2026-10-10](../../adr/adr-http-errors-2026-10-10.md)）：
 
 ```go
-// Decode 解析 JSON 请求体，随后在 dst 实现了 Validator 时调用它。
-// 未知字段一律拒绝。
-func Decode(r *nethttp.Request, dst any) error
-
-// Validator 由请求体类型自己实现。
-type Validator interface {
-    Validate() error
+// Problem 是一次错误响应的内容，字段取自 RFC 9457。
+type Problem struct {
+    Type     string // 缺省为 "about:blank"
+    Title    string // 缺省为状态码的标准说明
+    Status   int
+    Detail   string
+    Instance string
+    Cause    error // 不写入默认响应体，供定制的 ErrorResponder 读取
 }
 
-// WriteJSON 以给定状态码写出 JSON 响应。
-func WriteJSON(w nethttp.ResponseWriter, status int, v any) error
+// ErrorResponder 决定本模块写出的全部错误响应的形状。
+type ErrorResponder interface {
+    RespondError(w nethttp.ResponseWriter, r *nethttp.Request, p Problem)
+}
 
-// StatusFor 把 Decode 返回的错误映射到状态码，其余错误映射到 500。
-func StatusFor(err error) int
+// Fail 把一次拒绝或失败写成错误响应，并中止其后的 handler。
+func Fail(c *gin.Context, p Problem)
 ```
 
-**空请求体归入请求体不合法**，不单设一类：调用 `Decode` 就是声明这个 handler 需要请求体，而调用方对空体与格式错误的补救是同一件事。不需要请求体的 handler 不调用它。**整个请求体是 JSON 的 `null` 同样归入这一类**：标准库把 `null` 解进指针目标时不报错、原样留下目标，handler 于是带着客户端从未发送的零值往下走，这是空体的另一种写法。文档内部某个字段上的 `null` 不在此列，那是该字段的一个取值。
+没有模块交付 `ErrorResponder` 时用默认形状：以 `Problem.Status` 为状态码，不是合法状态码时写 500；响应体是 `application/problem+json`，内容为 `Type`、`Title`、`Status`、`Detail` 与 `Instance` 中的非空字段，`Cause` 不写入。交付者替换的是整个形状：它须按 `Problem.Status` 写出状态码，响应体与媒体类型由它决定。
 
-**解码失败映射 400，校验未通过映射 422。** 这个区分对调用方有用：解码失败说的是这段字节不是本 API 能解析的形状，校验未通过说的是形状对而取值不合法，客户端的修法不同。`StatusFor(nil)` 返回 200——`nil` 不是错误，让 `WriteJSON(w, StatusFor(err), v)` 在没有错误时也成立。**`Decode` 写不进目标时不归入这些类别**：目标不是非 `nil` 指针，是调用它的 handler 的缺陷，与客户端发了什么无关，`StatusFor` 因而给出 500；归入请求体不合法会让一个发了合法请求体的客户端去改它。
+**经这处决定形状的响应**是：`Fail` 写出的；兜底层接住 panic 后写出的，状态码 500，`Cause` 是一个包着 panic 值的错误；无匹配路由的 404；方法不允许的 405。handler 用 gin 自己写出的响应不经它。
 
-**本模块提供校验的机制，不提供任何规则**，与脱敏那一处同构（见 [log](design-log.md)）：`Decode` 保证实现了 `Validator` 的类型一定被校验过，校验什么由该类型自己决定。tag 驱动的规则声明要引入第三方校验库，而本模块的接口包不暴露任何第三方类型（[ADR-http-surface-2026-09-14](../../adr/adr-http-surface-2026-09-14.md)）。
+**`Fail` 之前设置的响应头保留。** 认证层的 `WWW-Authenticate`、限流层的 `Retry-After` 由各层在调用 `Fail` 前设好，形状的决定者不丢弃它们。响应已经开始流出去时，`Fail` 不写入，只中止其后的 handler，已提交的状态码与响应体不被改写。
 
-**未知字段一律拒绝，没有开关。** 客户端把字段名拼错时，宽松解码会静默地把它当成没传，而请求看起来是成功的——这正是本项目一贯要避免的失效形态。需要宽松解析的 handler 直接用标准库。
-
-**成员名要与字段名逐字相同，一个对象里的同名成员只许出现一次。** 标准库不区分大小写地匹配字段，`NAME` 会填进 `name`；同名成员写了两次时它留下最后一个值、丢掉其余的。前者把一个 API 没有的名字读成它有的那个，后者静默丢掉客户端发来的一个值，两者还让同一段请求体在本进程与在它之前经手的网关、过滤层或签名校验那里读出不同的意思。两者都归入请求体不合法，错误点名那个成员。在任何大小写下都不是字段名的成员仍按未知字段拒绝。映射与无类型的值只查同名：两个仅大小写不同的键在那里是两个键。自己解析 JSON 的类型（实现了 `json.Unmarshaler` 或 `encoding.TextUnmarshaler`）的内部不在此列，那归该类型自己。**代价**：请求体在解码之前要按目标类型再走一遍，逐个检查成员名。
-
-**工具只返回错误，不写错误响应。** 响应体的形状归提供该 API 的模块，`StatusFor` 给出的是状态码而非响应体，工具因而不定义任何错误响应的结构。兜底层写出的那次响应不由工具产生，也不构成对任何 API 响应形状的定义。
-
-请求体的大小不由 `Decode` 限制：该端配置的上限由链最外层施加，对该端的每个 handler 一律生效，包括不用 `Decode` 的那些。
+**写出入口取得的 `ErrorResponder` 由请求上下文的建立那一层放进请求上下文**，与 logger 同途，`Fail` 从 `c.Request.Context()` 取它。请求上下文里没有它时（没有经过本模块的链，例如测试里单独构造的上下文）用默认形状。
 
 **排空信号**。不会自行结束的响应——服务端事件流、长轮询、被接管去跑别的协议的连接——要知道停机已经开始，才能自己收尾：
 
@@ -215,30 +194,17 @@ func Draining(ctx context.Context) <-chan struct{}
 
 **排空不取消在途请求的 context**：普通请求要能对着一个完整的系统走完，取消它的 context 会让它中途失败。只看自己 context 的长连接 handler 因而得不到任何通知，一直跑到排空时限把它切断，停机随之报排空超时；这个信号与请求的 context 分开，正是为此。它由监听端的服务器放进每个请求的上下文，不经登记面，也不占链上的位置。**不是派生自请求上下文的 context 取不到它**，返回 `nil`，一个永远不会就绪的通道。
 
-**兜底层写出的响应形状由一个可选接缝决定。** 它是一个功能接口，本模块对它声明可选依赖，取法与 `Logger` 同形：
-
-```go
-// PanicResponder 决定兜底层接住 panic 之后写出什么。
-type PanicResponder interface {
-    RespondPanic(w nethttp.ResponseWriter, r *nethttp.Request, thrown any)
-}
-```
-
-没有模块交付这个功能时，兜底层用默认格式：handler 尚未写出任何输出时写出状态码 500，不写响应体；已经写出部分输出的那一档状态码改不动，见错误与失败语义。默认格式不定义任何 API 的响应形状——提供该 API 的模块要给出自己的形状，交付一个 `PanicResponder` 即可。
-
 ## 依赖
 
-`pkg/http` 根包 import `pkg/core`、`pkg/config` 与 `pkg/log`：`core` 提供功能标识的类型与资源、实例的查询，`config` 用于声明输入项，`log` 提供可选依赖的功能标识与上下文存取。接口面上除标准库与本包自己的类型之外，只出现 `core` 的功能标识类型，不出现任何第三方类型。
+`pkg/http` 根包 import `pkg/core`、`pkg/config`、`pkg/log` 与 gin：`core` 提供功能标识的类型与资源、实例的查询，`config` 用于声明输入项，`log` 提供可选依赖的功能标识与上下文存取，gin 提供登记面的 handler 类型与路由、绑定、渲染。接口面上除标准库与本包自己的类型之外，出现 `core` 的功能标识类型与 gin 的 `gin.HandlerFunc`、`*gin.Context`。
 
-**本模块自身不引入第三方依赖，但取用配置即承受 `pkg/config` 的解析工具依赖。** 声明输入项与读取配置都经由 `pkg/config`，它解析配置所用的那些库因而落在本模块的传递闭包里，凡 import 本模块的宿主都随之承受，这是 [ADR-config-parsing-2026-09-20](../../adr/adr-config-parsing-2026-09-20.md) 记下的代价。守住的那一条是本模块不在其上新增：`pkg/http/deps_test.go` 以「标准库 ∪ 本仓库模块 ∪ `pkg/config` 的当前闭包」为预算扫描本模块的全部包，预算之外的一个包即失败，路由库与 OpenAPI 解析库因而仍然进不来。
-
-实现子包 import 根包与自己那个路由引擎。引擎不出现在接口面上，换一个实现子包不改变任何依赖方的代码。
+**本模块封装 gin，取用本模块的宿主因而承受 gin 的依赖闭包，另承受 `pkg/config` 的解析工具依赖。** 声明输入项与读取配置都经由 `pkg/config`，它解析配置所用的那些库因而落在本模块的传递闭包里，这是 [ADR-config-parsing-2026-09-20](../../adr/adr-config-parsing-2026-09-20.md) 记下的代价；gin 与它的传递依赖落在其中，是 [ADR-http-surface-2026-09-14](../../adr/adr-http-surface-2026-09-14.md) 记下的代价。守住的那一条是本模块不在其上新增：`pkg/http/deps_test.go` 以「标准库 ∪ 本仓库模块 ∪ `pkg/config` 的当前闭包 ∪ gin 的当前闭包」为预算扫描本模块的全部包，预算之外的一个包即失败，OpenAPI 解析库因而仍然进不来。
 
 本模块声明对 `Logger` 功能的可选依赖：日志模块在场时注入它的 logger，不在场时不注入。可选依赖的缺失是一种合法配置，模块按文档所载的默认行为继续运行，这是架构允许的唯一降级形态（[ADR-dependency-resolution-2026-09-13](../../adr/adr-dependency-resolution-2026-09-13.md)）。**代价**：没有日志模块时，请求路径上的日志照常写出，但进的是进程根 logger 的目的地即标准输出，而不是配置的目的地，且这不产生任何失败信号（[ADR-log-context-2026-09-13](../../adr/adr-log-context-2026-09-13.md)）。
 
-本模块另声明对 `PanicResponder` 功能的可选依赖：有模块交付它时，兜底层写出的响应形状由它决定；没有时用默认格式。这一项缺席的代价止于响应体为空，状态码与日志不受影响。
-
 **这条代价在真实宿主里到得了。** 根包 import `pkg/log`，而它在包初始化时把自己注册进进程级注册表，于是凡 import 了本模块的宿主都传递地拿到一个**已登记**的日志模块。已登记不等于在场：取用只认已有的实例，一条只运行级纳入本模块与业务模块、没有列举 `log.ModuleName` 也没有预置日志实例的命令里，日志模块不进参与集、不构造，本模块也就真的取不到它。这一支的表现与手工构造注册表时相同——请求路径上的日志进进程根 logger 的目的地，而不是配置的目的地，且不产生失败信号。
+
+本模块另声明对 `ErrorResponder` 功能的可选依赖：有模块交付它时，本模块写出的全部错误响应的形状由它决定；没有时用默认形状。这一项缺席不丢失信息，默认形状带着状态码与标题。多个模块交付它时取用以 `ErrAmbiguousProvider` 失败，启动随之失败。
 
 方向满足架构不变量：本功能目录位于 `core` 与 `config` 之上、全部登记路由的模块之下，不 import 其中任何一个。中间件的相对位置以功能标识声明，标识由声明方给出，本模块因而不 import 任何贡献中间件的模块。
 
@@ -254,7 +220,7 @@ classDiagram
     }
     class Endpoint {
         <<interface>>
-        +Route(pattern string, h Handler)
+        +Route(method string, path string, handlers HandlerFunc)
         +Use(mw Middleware)
         +Accepting() bool
     }
@@ -264,16 +230,26 @@ classDiagram
         +After []Token
         +Before []Token
         +Order int
-        +Wrap func
+        +Handler HandlerFunc
     }
     class Spec {
         +Endpoint string
         +Document []byte
     }
-    class Engine {
+    class ErrorResponder {
         <<interface>>
-        +ServeHTTP(w, r)
-        +Handle(pattern string, h Handler)
+        +RespondError(w, r, p Problem)
+    }
+    class Problem {
+        +Type string
+        +Title string
+        +Status int
+        +Detail string
+        +Instance string
+        +Cause error
+    }
+    class GinEngine {
+        +Use(handlers HandlerFunc)
     }
     class listener {
         -addr string
@@ -284,11 +260,13 @@ classDiagram
     Router "1" --> "*" Endpoint : 按端名取得
     Endpoint "1" --> "*" Middleware : 登记
     Endpoint "1" --> "1" listener : 组装进
-    listener "1" --> "1" Engine : 路由分发交给
+    Endpoint "1" --> "1" GinEngine : 路由与登记层挂到
+    listener "1" --> "1" GinEngine : 请求分发交给
     Spec ..> Endpoint : 按端名指向
+    ErrorResponder ..> Problem : 接收
 ```
 
-`Spec` 与 `Endpoint` 之间是虚线：`Spec` 只按端名指向一个监听端，不参与该端的组装。`listener` 未导出，`Serve` 阶段由它持有服务器、组装好的 handler 与排空信号。
+`Spec` 与 `Endpoint` 之间是虚线：`Spec` 只按端名指向一个监听端，不参与该端的组装。`listener` 未导出，`Serve` 阶段由它持有服务器、组装好的 handler 与排空信号；`GinEngine` 是该端的 gin 引擎，同样未导出，`Serve` 阶段路由与登记层挂到它上面。`ErrorResponder` 由其他模块交付，`Problem` 是它接收的内容。
 
 一次装配中跨模块的交互：
 
@@ -303,7 +281,7 @@ sequenceDiagram
     入口->>入口: 读配置，建立各监听端
     注册表->>业务: Init
     业务->>入口: Endpoint("public")
-    业务->>入口: Route(pattern, handler)
+    业务->>入口: Route(method, path, handlers)
     注册表->>横切: Init
     横切->>入口: Use(middleware)
     注册表->>入口: Serve
@@ -332,7 +310,7 @@ stateDiagram-v2
 
 ## 核心数据结构
 
-登记面在登记窗口内积累的是声明，不是成品：每个监听端持有一张按登记先后排列的路由表与一张中间件表。登记层在 `Serve` 阶段由这两张表算出，此外还有一层不经登记面的兜底层包在其外（见兜底层一节），此后监听端只持有组装好的 handler。
+登记面在登记窗口内积累的是声明，不是成品：每个监听端持有一张按登记先后排列的路由表与一张中间件表。路由表与登记层在 `Serve` 阶段挂到该端的 gin 引擎上；引擎之外还有不经登记面的两层，兜底层与请求体上限、请求上下文的建立（见兜底层一节）。此后监听端只持有组装好的 handler。
 
 中间件表的每一项是一个 `Middleware` 值。`After` 与 `Before` 中的功能标识指代功能而非实例，与 `Requires` 中的写法一致（[ADR-capability-token-2026-09-13](../../adr/adr-capability-token-2026-09-13.md)）。本模块不解析这些标识的含义，只用它们建图。
 
@@ -342,10 +320,10 @@ stateDiagram-v2
 
 每个监听端各组装一次，自内向外：
 
-1. 该端的路由表挂到路由引擎。同一个端上的模式冲突在此暴露，启动失败并点名冲突的两条模式与它们所在的监听端。是否冲突由路由引擎判定，本模块不自己比对；冲突落在哪两条上，由实现子包按引擎接缝的要求归因。
-2. 中间件按下面的排序结果包在引擎之外，因而每一层都作用于该端的全部路由。
-3. 请求体上限与请求上下文的建立包在最外层，链上每一层与每个 handler 都能取到 logger，超限的请求体在任何一层读到它之前就被截断。
-4. 兜底层包在请求体上限与请求上下文的建立那一层的内侧、全部登记层之外（见兜底层一节）。
+1. 该端的路由表挂到该端的 gin 引擎。同一个端上的路由冲突在此暴露，启动失败并点名冲突的两条路由与它们所在的监听端。是否冲突由 gin 判定，本模块不自己比对；冲突落在哪两条上，按路由引擎一节所述归因。
+2. 中间件按下面的排序结果依次交给引擎的 `Use`，因而每一层都作用于该端的全部路由，包括无匹配路由与方法不允许的响应。
+3. 兜底层包在引擎之外（见兜底层一节）。
+4. 请求体上限与请求上下文的建立包在最外层，链上每一层与每个 handler 都能取到 logger，超限的请求体在任何一层读到它之前就被截断。
 
 组装完成后绑定地址。组装与绑定都在 `Serve` 的同步部分完成，其中任何一步失败都是启动失败。
 
@@ -379,17 +357,21 @@ stateDiagram-v2
 
 日志模块缺失时不注入，下游的 `log.FromContext` 回落到进程根 logger。
 
+请求上下文里同时放着 `ErrorResponder`，写出错误响应的入口从那里取它（见外部接口契约）。
+
 ### 兜底层
 
-**兜底层包在请求体上限与请求上下文的建立那一层的内侧、全部登记层之外，每端唯一。** 它接住的是该端各登记层与 handler 抛出的 panic：接住之后当次请求结束，进程继续服务其余连接。请求上下文此时已经建立，被接住的那一次因而能在配置的目的地上写出一条记录；而它拿不到链上各层在内层绑定的关联字段——那些字段绑在派生出的上下文里，兜底层手里的是建链时的那一个（见并发与事务边界）。它不在登记面上：`Endpoint` 的方法集里没有它，它不参与中间件的排序，也不改任何一层的先后（[ADR-http-recovery-2026-09-22](../../adr/adr-http-recovery-2026-09-22.md)）。
+**兜底层是 `net/http` 一级的一层，包在每端的 gin 引擎之外、请求体上限与请求上下文的建立那一层的内侧，每端唯一。** 登记层与路由的 handler 都在引擎之内，它接住的是它们抛出的 panic：接住之后当次请求结束，进程继续服务其余连接。请求上下文此时已经建立，被接住的那一次因而能在配置的目的地上写出一条记录；而它拿不到链上各层在内层绑定的关联字段——那些字段绑在派生出的上下文里，兜底层手里的是建链时的那一个（见并发与事务边界）。它不在登记面上：`Endpoint` 的方法集里没有它，它不参与中间件的排序，也不改任何一层的先后（[ADR-http-recovery-2026-09-22](../../adr/adr-http-recovery-2026-09-22.md)）。
 
-**写出的响应取默认格式，或在有模块交付 `PanicResponder` 时取它给出的形状**（见外部接口契约）。接住之后不再向下或向上传递；handler 已经写出部分输出的那一档状态码改不动，见错误与失败语义。
+**写出的响应经错误响应的接缝决定**（见外部接口契约）：状态码 500，`Problem.Cause` 是包着 panic 值的错误，默认形状不把它写进响应体。接住之后不再向下或向上传递；handler 已经写出部分输出的那一档状态码改不动，见错误与失败语义。
 
 **panic 未发生时它原样转交**，不读请求也不碰响应；handler 正常产生输出时，任何结果都不经它改变。
 
+**gin 自带的恢复中间件不装。** 它吞掉 `http.ErrAbortHandler`，响应以空体的 200 收口，一次有意的连接放弃于是读作成功（[ADR-http-recovery-2026-09-22](../../adr/adr-http-recovery-2026-09-22.md)）。引擎之内没有任何一层接 panic，panic 穿过引擎到达兜底层。
+
 **它不覆盖跨协程的 panic。** 一个模块在自己起的协程里 panic，只有那个协程自己接得住；兜底层覆盖的是请求路径所在的这一次调用（同一条界限见 [authn](design-authn.md)）。
 
-**handler 既没有返回、也没有抛出值时，它照样收口并记一行，但不称其为 panic。** 这是 handler 调用了 `runtime.Goexit`，或在 `GODEBUG=panicnil=1` 下 `panic(nil)`，两者在兜底层分不开；行内写明是这种情形与它的堆栈，交给 `PanicResponder` 的是一个说明同一件事的错误值，不是 `nil`。`runtime.Goexit` 之后协程随即结束，那次响应到不了连接，协议层把连接关掉。
+**handler 既没有返回、也没有抛出值时，它照样收口并记一行，但不称其为 panic。** 这是 handler 调用了 `runtime.Goexit`，或在 `GODEBUG=panicnil=1` 下 `panic(nil)`，两者在兜底层分不开；行内写明是这种情形与它的堆栈，`Problem.Cause` 是一个说明同一件事的错误值，不是 `nil`。`runtime.Goexit` 之后协程随即结束，那次响应到不了连接，协议层把连接关掉。
 
 **`net/http` 的 `ErrAbortHandler` 不被它接住。** 那个值是处理器在请求放弃这条连接，不是缺陷：本层原样抛出，让协议层按既有处置关掉连接，既不写状态码也不记一行。答成一次响应，会给一条已被处理器判定为坏掉的连接写状态码，并为一次客户端中途离开记一条错误。
 
@@ -438,24 +420,24 @@ stateDiagram-v2
 
 ## 错误与失败语义
 
-启动期的失败一律终止启动。本模块为自己判定出的每一类失败提供哨兵错误，调用方以 `errors.Is` 判别，错误文本承载定位所需的信息：端名未声明、同一个端上的路由模式冲突、中间件约束成环、链组装失败、`Spec` 的文档形状不合法、监听端绑定失败各是一类。包裹一律用 `%w`，底层的 `net` 错误链保持完好。
+启动期的失败一律终止启动。本模块为自己判定出的每一类失败提供哨兵错误，调用方以 `errors.Is` 判别，错误文本承载定位所需的信息：端名未声明、同一个端上的路由冲突、中间件约束成环、`Spec` 的文档形状不合法、监听端绑定失败各是一类。包裹一律用 `%w`，底层的 `net` 错误链保持完好。
 
 哨兵表对本模块自己产生的失败是封闭的：新判定出一类确定失败，要么并入既有哨兵，要么补一条。经由本模块返回的其他失败不在此列——handler 与中间件的失败由它们自己定义，本模块不为它们发明名字。
 
-每一类启动期失败给出修复动作：端名未声明时点名可用的端，路由模式冲突时点名冲突的两条模式与它们所在的端，约束成环时点名环上各成员并给出它们各自的声明，链组装失败时点名那一层，文档形状不合法时点名声明它的模块与不合法之处，绑定失败时带上地址与底层原因。
+每一类启动期失败给出修复动作：端名未声明时点名可用的端，路由冲突时点名冲突的两条路由（方法与路径）与它们所在的端，约束成环时点名环上各成员并给出它们各自的声明，文档形状不合法时点名声明它的模块与不合法之处，绑定失败时带上地址与底层原因。
 
-**冲突报错不点名登记者**：登记面不知道调用它的是谁，这一点与中间件的 `Provides` 同源。模式本身是代码里写死的字符串，足以定位到登记它的地方。
+**冲突报错不点名登记者**：登记面不知道调用它的是谁，这一点与中间件的 `Provides` 同源。方法与路径本身是代码里写死的字符串，足以定位到登记它们的地方。
 
 **TLS 证书装载失败并入监听端绑定失败**，不另设哨兵。判据是宿主的补救动作：证书路径写错与地址被占用，补救都是改配置重启，而具体原因由错误文本承载。
 
-**某一层的 `Wrap` 返回 `nil` 是链组装失败**，不是 panic。`Wrap` 字段本身为 `nil` 在登记时就 panic，而返回值要到 `Serve` 组装时才看得到——那里 panic 会绕过注册表的回滚，让已经建立的连接与协程无人释放。做成启动失败则走正常回滚，暴露程度不因此降低。
+**`Handler` 为 `nil` 在登记时 panic**，`Route` 没有 handler 或其中有 `nil` 同样。gin 接受 `nil` 的 handler，要到请求到来时才崩，那时崩在请求路径上，已经没有启动失败这条路。
 
 **运行期的失败由本模块自己定义行为**，启动期不降级这条规则到此为止。
 
 - **接受循环异常退出**：记入日志，该端此后不再接受请求，`Accepting` 随之返回 `false`。绑定已在 `Serve` 的同步部分成功，此后的退出不再有终止启动这条路；`Run` 此刻阻塞等待宿主取消，本模块没有唤醒它的途径（[ADR-lifecycle-stages-2026-09-13](../../adr/adr-lifecycle-stages-2026-09-13.md)）。本模块不判定这是否构成不健康，那归读取 `Accepting` 的一方。**接受的代价**：进程活着但该端不再接受请求，察觉它要靠有人去读这个状态，而不是靠进程退出。
 - **排空时限到期**：仍在途的请求被切断，失败在 `Stop` 阶段报出。
-- **工具返回的错误**：`Decode` 为请求体不合法、超出上限、校验未通过各提供一条哨兵，调用方以 `errors.Is` 判别，或交给 `StatusFor` 得到状态码。校验未通过时，类型自己的 `Validate` 返回的错误以 `%w` 包在其中，调用方能取到它。
-- **各登记层与 handler 的 panic**：兜底层接住它并记一行日志，该请求随后结束，同一进程的其余连接照常服务。响应那一侧分两档：handler 尚未写出任何输出时，写出默认格式的状态码 500，或在有模块交付 `PanicResponder` 时写出它给出的形状；头部已经提交之后再 panic 时状态码无法改写，该请求以已提交的形状结束，日志照写。
+- **错误响应的写出**：响应已经开始流出去时，`Fail` 不写入，只中止其后的 handler，已提交的状态码与响应体不被改写。
+- **各登记层与 handler 的 panic**：兜底层接住它并记一行日志，该请求随后结束，同一进程的其余连接照常服务。响应那一侧分两档：handler 尚未写出任何输出时，经错误响应的接缝写出一次 500；头部已经提交之后再 panic 时状态码无法改写，该请求以已提交的形状结束，日志照写。
 
 ## 并发与事务边界
 
@@ -467,15 +449,11 @@ stateDiagram-v2
 
 本模块不为 handler 与中间件的调用加锁，也不保证它们的调用来自单一协程：每个请求各占一个协程，这是 `net/http` 的形态。
 
+gin 的 `*gin.Context` 只在它所属那次请求的处理期间有效：handler 把它交给自己另起的协程时要先 `Copy`。
+
 ## 扩展点
 
-**路由引擎**以实现子包接入。接口包定义登记面与生命周期行为，子包提供路由的匹配与分发，对外以 `nethttp.Handler` 收口。
-
-| 子包 | 路由引擎 | 引擎带来的第三方依赖 |
-|---|---|---|
-| `http/stdmux` | 标准库 `ServeMux` | 无，标准库 |
-
-实现子包登记的模块名形如 `http.stdmux`，即功能目录名加子包名。标准库的 `ServeMux` 支持方法匹配、路径参数与明确的优先级规则，引擎这一侧不带来任何第三方依赖。需要路由分组与子路由挂载时，另一个子包可以换用别的引擎，登记面不变。
+**错误响应的形状**经可选接缝接入：交付 `ErrorResponder` 的模块整体替换默认形状，不需要修改本模块（[ADR-http-errors-2026-10-10](../../adr/adr-http-errors-2026-10-10.md)）。
 
 **中间件**由各模块自己贡献，经登记面接入。新增一种横切机制不修改本模块：它声明自己相对哪些功能的位置，本模块按声明排序而不认识它做什么。**本模块自带的兜底层是这条的一个例外**：它是内建行为，不是一次登记——它不加 `Endpoint` 的方法，不加配置键，也不出现在任何一层的位置声明里（[ADR-http-recovery-2026-09-22](../../adr/adr-http-recovery-2026-09-22.md)）。
 
@@ -483,13 +461,13 @@ stateDiagram-v2
 
 | 能力 | 状态 | 代码 |
 |---|---|---|
-| 登记面与写入闸门 | 已实现 | `pkg/http/surface.go` `Router`、`Endpoint`、`Middleware`、`pkg/http/router.go` `(*router).open`、`(*router).seal`、`(*router).write` |
-| 中间件排序与链组装 | 已实现 | `pkg/http/order.go` `orderLayers`、`unplacedCause`、`pkg/http/assemble.go` `(*endpoint).assemble`、`reportUnlanded`、`unlandedCause.level` |
+| 登记面与写入闸门 | 部分实现：闸门与 `Router`、`Endpoint`、`Middleware` 的形状已有，登记面的类型仍是 `net/http` 的；缺 `Route(method, path, handlers...)` 与 `Middleware.Handler`，以及登记点对 `nil` handler 的拦截 | `pkg/http/surface.go` `Router`、`Endpoint`、`Middleware`，`pkg/http/router.go` `(*router).open`、`(*router).seal`、`(*router).write` |
+| 入口模块的登记 | 部分实现：模块由实现子包按名字登记；缺根包在包初始化时登记名为 `http` 的模块与导出的 `ModuleName` | `pkg/http/module.go` `Module`，`pkg/http/stdmux/stdmux.go` `Module` |
+| gin 引擎的建立与设定 | 未实现 | 无 |
+| 中间件排序与链组装 | 部分实现：排序已有；缺按排序结果交给 gin 引擎的 `Use`、引擎的设定，以及用两两试挂归因路由冲突 | `pkg/http/order.go` `orderLayers`、`unplacedCause`，`pkg/http/assemble.go` `(*endpoint).assemble`、`reportUnlanded`、`unlandedCause.level` |
 | 监听端的绑定与停机排空 | 已实现 | `pkg/http/listener.go` `(*listener).start`、`(*listener).stop`、`(*listener).close`、`(*listener).track`、`inFlight`、`pkg/http/module.go` `(*router).stop` |
-| 请求上下文的建立 | 已实现 | `pkg/http/assemble.go` `(*endpoint).base` |
-| 请求路径的 panic 兜底 | 已实现 | `pkg/http/recovery.go` `fallback`、`writePanicResponse`、`stackTrace` |
-| `PanicResponder` 可选接缝 | 已实现 | `pkg/http/recovery.go` `PanicResponder`、`pkg/http/module.go` `panicResponder` |
+| 请求上下文的建立 | 部分实现：缺把 `ErrorResponder` 放进请求上下文 | `pkg/http/assemble.go` `(*endpoint).base` |
+| 请求路径的 panic 兜底 | 部分实现：缺经 `ErrorResponder` 与 `Problem` 的默认形状写出响应，现在写状态码 500 而不写响应体 | `pkg/http/recovery.go` `fallback`、`writePanicResponse`、`stackTrace` |
+| 错误响应的形状与写出入口 | 未实现 | 无 |
 | `Spec` 资源、形状校验与查询 | 已实现 | `pkg/http/surface.go` `Spec`、`pkg/http/spec.go` `validateSpecs`、`validateSpec` |
-| 请求处理工具 | 已实现 | `pkg/http/decode.go` `Decode`、`pkg/http/members.go` `checkMembers`、`jsonFields`、`pkg/http/respond.go` `WriteJSON`、`StatusFor` |
 | 排空信号 | 已实现 | `pkg/http/draining.go` `Draining`、`pkg/http/listener.go` `(*listener).start`、`(*listener).stop` |
-| 标准库路由引擎子包 | 已实现 | `pkg/http/stdmux/stdmux.go` `Module` |

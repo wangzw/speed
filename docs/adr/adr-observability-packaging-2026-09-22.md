@@ -6,7 +6,7 @@
 
 ## 背景
 
-`pkg` 是一个 Go module，功能在其中按包划分：功能目录的根包承载接口与公共逻辑，实现位于子包；模块名由实现子包导出，形如 `http.stdmux`（[ADR-module-packaging-2026-09-22](adr-module-packaging-2026-09-22.md)，常量见 `pkg/http/stdmux` 的 `ModuleName`）。
+`pkg` 是一个 Go module，功能在其中按包划分：功能目录的根包承载接口与公共逻辑，实现位于子包；模块名由实现子包导出，形如 `observability.otel`（[ADR-module-packaging-2026-09-22](adr-module-packaging-2026-09-22.md)，常量见 `pkg/observability/otel` 的 `ModuleName`）。
 
 同一横切能力的多条通路同属一个登记单元，判据是它们共用一份数据形状与一份写入面，拆开会让这份共用变成跨模块的契约（[ADR-audit-packaging-2026-09-21](adr-audit-packaging-2026-09-21.md)）。
 

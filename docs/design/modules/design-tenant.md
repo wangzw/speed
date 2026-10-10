@@ -335,7 +335,7 @@ func CrossTenant(ctx context.Context) context.Context
 
 根包不 import 本仓的任何模块，接口面上只出现标准库与本包自己的类型。**根包不依赖 `pkg/db`**：模型约定是一个只有一项字段与一条标签的结构体，不引用数据库模块的任何类型，`gorm` 这个包名只出现在标签字符串里。这与认证接口包的自我约束同形、同源——一个只要租户解析、或者只要在自己的模型上带一列的应用，不该因此承受数据库依赖（[ADR-authn-packaging-2026-09-20](../../adr/adr-authn-packaging-2026-09-20.md)）：它的 `go.mod` 不含数据库实现所绑的那串第三方库，`go.sum` 与实际下载则会经被 import 包的测试闭包带上它们，只有读整图的操作会看到全部实现所绑的库（[ADR-module-packaging-2026-09-22](../../adr/adr-module-packaging-2026-09-22.md)）。插件与迁移所需的一切留在名册子包里。
 
-解析子包 import 根包、`pkg/core`、`pkg/config`、`pkg/http` 与 `pkg/authn` 的根包。**指向认证功能标识的硬约束要写出 `(*authn.Gate)(nil)` 这个表达式，那个 import 因而不可避免**（[ADR-tenant-ordering-2026-09-21](../../adr/adr-tenant-ordering-2026-09-21.md)）。
+解析子包 import 根包、`pkg/core`、`pkg/config`、`pkg/http` 与 `pkg/authn` 的根包，以及 gin：登记的层是 `gin.HandlerFunc`，gin 已在 `pkg/http` 的依赖闭包里，解析子包不为宿主另增依赖。**指向认证功能标识的硬约束要写出 `(*authn.Gate)(nil)` 这个表达式，那个 import 因而不可避免**（[ADR-tenant-ordering-2026-09-21](../../adr/adr-tenant-ordering-2026-09-21.md)）。
 
 名册子包 import 根包、`pkg/core`、`pkg/config`、`pkg/db` 与 `pkg/log`；最后一个用于启动诊断，以及两个进入方法把标识绑上 logger、或在拒绝时撤下的 `log.WithAttrs` 与 `log.WithoutAttrs`。
 
@@ -424,21 +424,21 @@ sequenceDiagram
         A->>R: 转交
         R->>R: 选定取法读出别名
         alt 读不出别名
-            R-->>C: 404
+            R-->>C: 经 Fail 写出 404
         else 读出别名
             R->>S: 按别名查找
             alt 不在名册，或已停用
                 S-->>R: 查不到
-                R-->>C: 404
+                R-->>C: 经 Fail 写出 404
             else 在册
                 S-->>R: 标识
-                R->>H: 标识写进上下文并绑上日志字段后放行
+                R->>H: 标识写进请求上下文并绑上日志字段后 c.Next() 放行
             end
         end
     end
 ```
 
-认证层的收口与豁免的匹配不在本图内，它们归认证模块（见 [authn](design-authn.md)）。解析层自身 panic 时由它自己 recover 并收口 500——这一档要归到解析层名下就得在这里接住，入口模块的兜底层在默认格式下写出的同样是 500 而不区分崩的是哪一层（见 [http](design-http.md)）；这条路径不经过名册，图中不画。
+认证层的收口与豁免的匹配不在本图内，它们归认证模块（见 [authn](design-authn.md)）。解析层自身 panic 时由它自己 recover 并经 `Fail` 收口 500——这一档要归到解析层名下就得在这里接住，入口模块的兜底层接住 panic 后写出的同样是 500，而不区分崩的是哪一层（见 [http](design-http.md)）；这条路径不经过名册，图中不画。
 
 一个租户有生命周期，因而画状态图。状态取值是一个封闭集合，停用可逆且不是终态。
 
@@ -524,7 +524,7 @@ flowchart TD
 
 **快照发布之前，名册以失败作答。** `Get`、`ByAlias` 与 `List` 在那之前一律报错，而不是答成"没有这个租户"：那是一条关于表的事实，只有一次发生过的读才说得出来，答空会让一个尚未装载的名册看上去像一个空名册。
 
-**解析成功的那一步做三件事**：把标识写进请求上下文，经 `log.WithAttrs` 把标识绑上 logger 作为关联字段，然后放行。字段名是 `tenant_id`；经 `WithAttrs` 绑定的字段按键替换，同名字段后绑的替换先绑的（见 [log](design-log.md) 的外部接口契约），`CrossTenant` 把它撤下（见跨租户）。关联字段由产生它的模块在自己的注入点绑定（[ADR-log-context-2026-09-13](../../adr/adr-log-context-2026-09-13.md)），而 HTTP 中间件正是那条记录点名的注入点；这项字段除了本模块没有别人产得出，不绑上去，请求路径上的日志就无法归因到租户。**首次注入不由本模块做**——那是产生上下文那一步的事，中间件只做 `WithAttrs`（见 [log](design-log.md)）。
+**解析成功的那一步做三件事**：把标识写进请求上下文，经 `log.WithAttrs` 把标识绑上 logger 作为关联字段，然后放行。写进上下文用 `c.Request = c.Request.WithContext(...)`，下游各层与 handler 经 `c.Request.Context()` 读到它；放行是 `c.Next()`。字段名是 `tenant_id`；经 `WithAttrs` 绑定的字段按键替换，同名字段后绑的替换先绑的（见 [log](design-log.md) 的外部接口契约），`CrossTenant` 把它撤下（见跨租户）。关联字段由产生它的模块在自己的注入点绑定（[ADR-log-context-2026-09-13](../../adr/adr-log-context-2026-09-13.md)），而 HTTP 中间件正是那条记录点名的注入点；这项字段除了本模块没有别人产得出，不绑上去，请求路径上的日志就无法归因到租户。**首次注入不由本模块做**——那是产生上下文那一步的事，中间件只做 `WithAttrs`（见 [log](design-log.md)）。
 
 装载与刷新是同一条路径，区别只在失败时的处置。**`Init` 装载失败终止启动**，错误点名那张表，表读不出时还点名施加迁移的那条命令；**刷新失败保留上一份快照并记日志**——丢快照的失效形态是把全部请求拒掉，而一次刷新失败不构成那个理由。
 
@@ -585,7 +585,7 @@ flowchart TD
 
 | 哨兵错误 | 触发条件 | 修复动作 |
 |---|---|---|
-| `ErrNoRouter` | 解析模块在 `Init` 里取不到路由功能 | 错误文本点明"纳入了租户解析却没纳入任何 HTTP 入口"；把入口实现子包的模块名写进这条命令 |
+| `ErrNoRouter` | 解析模块在 `Init` 里取不到路由功能 | 错误文本点明"纳入了租户解析却没纳入任何 HTTP 入口"；把入口模块的模块名写进这条命令 |
 | `ErrUnknownEndpoint` | 配置里的监听端名在入口模块的配置里不存在 | 点名该端名；改端名，或在入口模块的配置里声明这个端 |
 | `ErrDuplicateEndpoint` | 配置的监听端清单里同一个端名出现两次 | 点名该端名；删掉重复的那一条 |
 | `ErrNoExtractor` | `Start` 关窗后，配置选定的取法名没有任何一条登记 | 点名该名字与本模块内建的三个名字；改配置，或登记一个取法 |
@@ -606,7 +606,7 @@ flowchart TD
 
 ### 请求期的收口
 
-**以下档位只在推进到 `StageServe`、且解析模块在参与集里的命令下发生。**
+**以下档位只在推进到 `StageServe`、且解析模块在参与集里的命令下发生。** 这些档位都经入口模块的错误响应入口 `Fail` 写出（见 [http](design-http.md) 的错误响应）。
 
 | 状态码 | 判据 | 归入其中的情形 |
 |---|---|---|
@@ -619,7 +619,7 @@ flowchart TD
 
 **不存在"无租户但放行"这一档。** 一条落在受守护监听端上的请求，若解析层读不出别名，它不进入 handler；受约束语句的拒绝因而只在 handler 之外的路径上出现——后台任务、管理面、宿主的自检代码。
 
-本模块不写响应体，只写状态码。**404 不区分路由不存在与租户不存在**：本模块读不到路由表，它答的是"这条请求属于哪个租户"，答不出来即 404，而一个路由确实不存在的请求在 handler 之前就到不了。
+响应的形状由入口模块决定，本模块经 `Fail` 写出状态码，不直接写响应。**404 不区分路由不存在与租户不存在**：本模块读不到路由表，它答的是"这条请求属于哪个租户"，答不出来即 404，而一个路由确实不存在的请求在 handler 之前就到不了。
 
 ### 语句期的失败
 
@@ -722,7 +722,7 @@ flowchart TD
 | 快照的周期刷新与 `Stop` 取消，整表读一次一个、按读的先后发布 | 已实现 | `pkg/tenant/catalog/roster.go` `start`、`stop`、`refreshOnce`、`read`、`acquire` |
 | 三种内建取法 | 已实现 | `pkg/tenant/resolve/extract.go` `headerExtractor`、`subdomainExtractor`、`pathExtractor` |
 | 取法的登记面与冻结 | 已实现 | `pkg/tenant/resolve/resolve.go` `Register`、`open`、`seal` |
-| 请求期的解析、日志字段绑定与收口 | 已实现 | `pkg/tenant/resolve/resolve.go` `admit`、`refuse`、`middlewareFor` |
+| 请求期的解析、日志字段绑定与收口 | 部分实现：解析与日志字段绑定已有；层仍写成 `net/http` 的 `Wrap`，404 与 500 仍由本层直接写状态码；缺 `gin.HandlerFunc` 形态的 `Handler`，缺经 `Fail` 写出 404 与 500 | `pkg/tenant/resolve/resolve.go` `admit`、`refuse`、`middlewareFor` |
 | 受约束模型的约定与按来源的识别，内嵌前缀改过的列照样认，填列与核对作用于 GORM 绑到租户列上的字段，取不出一个租户列的模型一律拒绝 | 已实现 | `pkg/tenant/model.go` `Model`；`pkg/tenant/catalog/plugin.go` `conventionFieldOf`、`isConvention`、`embedsConvention`、`unreadConvention`、`taggedEmbedded`、`scopeOf` |
 | 隔离插件的三处作用点、四档判定与显式租户列的核对，只核对 GORM 写出的字段，拒绝不带租户列的插入行 | 已实现 | `pkg/tenant/catalog/plugin.go` `Initialize`、`scopeRead`、`scopeDelete`、`scopeUpdate`、`applyCondition`、`scopeTerm`、`grouped`、`fillKey`、`inKey`、`fillColumn`、`writeRows`、`insertSelects`、`leftOut`、`otherSpellings`、`insertWrites`、`judgeSpellings`、`writeMap`、`assignedValues`、`destinationValues`、`upsertValues`、`keyReaches`、`keyColumn`、`targetReaches` |
 | 行链上的读、`Row` 经交回的行报出拒绝且不占连接、关联联接的条件与子查询的拒绝 | 已实现 | `pkg/tenant/catalog/plugin.go` `Initialize`、`scopeRow`、`refuseRead`、`refusedRow`、`refusingConnector`、`scopedJoins`、`applyJoins`、`joinTerm`、`renderRefusal` |

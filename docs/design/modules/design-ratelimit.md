@@ -12,9 +12,9 @@
 ### 非职责
 
 - **不做配额与计费**（[ADR-ratelimit-scope-2026-09-22](../../adr/adr-ratelimit-scope-2026-09-22.md)）。速率是单位时间内的频次，配额是一段时间内的总量；配额要读受约束表里每个租户的数据量，那是应用自己的领域动作（见 [tenant](design-tenant.md) 的非职责）。本模块只回答一个主体此刻是不是发得太快。
-- **不定义错误响应体。** 响应的形状归提供该 API 的模块（见 [http](design-http.md) 的非职责）。本模块写出状态码与 `Retry-After`，不写响应体。
+- **不定义错误响应的形状。** 形状由入口模块决定：默认是 `application/problem+json`，交付了 `ErrorResponder` 的模块整体替换它（见 [http](design-http.md) 的错误响应）。本模块先设好 `Retry-After`，再经入口模块的写出入口 `Fail` 写出 429，不自己写状态码与响应体。
 - **不认证，不解析租户。** 主体由认证模块交付、租户由租户模块交付，两者都不在本模块内产生。
-- **不提供路由级限流。** 入口模块的 `Use` 作用于该端的全部路由；只对一部分路由生效的层由那些路由的 handler 自己包（见 [http](design-http.md) 的非职责）。
+- **不提供路由级限流。** 入口模块的 `Use` 作用于该端的全部路由；只对一部分路由生效的层，由登记那些路由的一方在 `Route` 的 handler 序列里自己带上（见 [http](design-http.md) 的外部接口契约）。
 - **不提供指标。** 本仓没有指标机制，日志模块明文不承接（见 [log](design-log.md)）。本模块产生的信号只有那一行标准错误。
 - **不重试，不降级到进程内计数。** 计数后端不可达即放行；回落到进程内计数会让每个副本各算一份，与「计数经共享原语」相悖，且失效形态是无声的。
 - **不维护可用性策略。** 一个主体被持续拒绝之后要不要升级处置，不在本模块内决定。
@@ -104,6 +104,7 @@ type Config struct {
 | `pkg/core` | 注册描述符、交付功能、声明资源 | 编译期 |
 | `pkg/config` | 声明并读取本模块的输入项 | 声明在编译期，读取在 `Prepare` |
 | `pkg/http` | 登记中间件 | `Init` 期经注册表取用 |
+| gin | 层是一个 `gin.HandlerFunc`，读写 `*gin.Context`；已在 `pkg/http` 的依赖闭包里，不为宿主另增依赖 | 编译期 |
 | `pkg/settings` | 读取额度与窗口 | `Init` 期经注册表取用 |
 | `pkg/kv` | 计数 | `Init` 期经注册表取用 |
 | `pkg/audit` | 链上定序 | 标识类型 |
@@ -125,8 +126,8 @@ speedhttp.Middleware{
         (*tenant.Resolution)(nil),            // 取租户
         (*audit.Audit)(nil),                  // 排在审计的请求级捕获层之内
     },
-    Order: 0,                                 // 约束全部由 After 承载
-    Wrap:  limit,
+    Order:   0,                               // 约束全部由 After 承载
+    Handler: limit,                           // gin.HandlerFunc
 }
 ```
 
@@ -154,15 +155,16 @@ sequenceDiagram
     participant T as tenant.FromContext
     participant S as settings.Store
     participant K as kv.KV
+    participant F as http.Fail
 
-    C->>R: ServeHTTP(w, r)
-    R->>A: FromContext(r.Context())
+    C->>R: Handler(c)
+    R->>A: FromContext(c.Request.Context())
     A-->>R: 身份串
     alt 取不到身份串
         Note over R: 放行，不计入任何计数
-        R->>C: next.ServeHTTP(w, r)
+        R->>C: c.Next()
     else 取到身份串
-        R->>T: FromContext(r.Context())
+        R->>T: FromContext(c.Request.Context())
         T-->>R: 租户标识
         R->>S: Get(layer, "ratelimit.window")
         S-->>R: 窗口
@@ -170,7 +172,7 @@ sequenceDiagram
         S-->>R: 额度
         alt 读不出可用值
             Note over R: 放行并报信号
-            R->>C: next.ServeHTTP(w, r)
+            R->>C: c.Next()
         else 读到可用值
             R->>K: Get(上一窗口的键)
             K-->>R: 上一窗口的计数或不存在
@@ -178,9 +180,11 @@ sequenceDiagram
             K-->>R: 当前窗口的计数
             Note over R: 估计值 = 当前计数 + 上一计数 × 权重
             alt 不超过额度
-                R->>C: next.ServeHTTP(w, r)
+                R->>C: c.Next()
             else 超过额度
-                R-->>C: 429 与 Retry-After
+                Note over R: 先设好 Retry-After
+                R->>F: Fail(c, 429)
+                F-->>C: 错误响应，中止其后的 handler
             end
         end
     end
@@ -207,9 +211,9 @@ sequenceDiagram
 5. 读上一窗口的计数。键不存在是正常情形，按零计；读失败不是，按失败处置。
 6. 自增当前窗口的计数，过期时间取两倍窗口长度。
 7. 估计值取「当前窗口计数 ＋ 上一窗口计数 × 权重」，与额度比较。
-8. 超过额度即写出 429 与 `Retry-After`，本请求到此结束；不超过则交回链上更内层的层。
+8. 超过额度即先设好 `Retry-After`，再经入口模块的写出入口 `Fail` 写出 429，`Fail` 同时中止其后的 handler，本请求到此结束；不超过则 `c.Next()` 交给链上更内层的层。
 
-**`Retry-After` 取当前窗口的剩余秒数，向上取整且不小于一。** 剩余不足一秒时也给一，一个零会让调用方立即重试。它不指示调用方何时一定能通过，判据与代价见 [ADR-ratelimit-verdict-2026-09-22](../../adr/adr-ratelimit-verdict-2026-09-22.md)。
+**`Retry-After` 取当前窗口的剩余秒数，向上取整且不小于一。** 剩余不足一秒时也给一，一个零会让调用方立即重试。它不指示调用方何时一定能通过，判据与代价见 [ADR-ratelimit-verdict-2026-09-22](../../adr/adr-ratelimit-verdict-2026-09-22.md)。它由本层在调用 `Fail` 之前设好；`Fail` 之前设置的响应头保留（见 [http](design-http.md) 的错误响应）。
 
 **自增发生在判定之前**：被判超限的请求也计入当前窗口。判据见 [ADR-ratelimit-algorithm-2026-09-22](../../adr/adr-ratelimit-algorithm-2026-09-22.md)。
 
@@ -356,7 +360,7 @@ sequenceDiagram
 | 接口、配置与模块登记 | 已实现 | `pkg/ratelimit/ratelimit.go` `Limiter`、`Config`；`module.go` `Module` |
 | 设置面与键表声明 | 已实现 | `pkg/ratelimit/ratelimit.go` `settingsSchema`、`defaults` |
 | 取值域的声明与读时判定 | 已实现 | `pkg/ratelimit/ratelimit.go` `windowInDomain`、`limitInDomain`、`settingsSchema`；`pkg/ratelimit/limit.go` `thresholds` |
-| 中间件的登记与链上位置声明 | 已实现 | `pkg/ratelimit/limit.go` `middleware`、`wire` |
+| 中间件的登记与链上位置声明，超限时写出 429 | 部分实现：位置声明已有，层仍写成 `net/http` 的 `Wrap`，429 仍由本层直接写状态码；缺 `gin.HandlerFunc` 形态的 `Handler`，缺经 `Fail` 写出 429 | `pkg/ratelimit/limit.go` `middleware`、`wire`、`wrap`、`decide` |
 | 窗口编号、权重与判定 | 已实现 | `pkg/ratelimit/limit.go` `count`、`retryAfterSeconds` |
 | 键的构造与转义 | 已实现 | `pkg/ratelimit/key.go` `countKey`、`escape` |
 | 失败信号与共享计数 | 已实现 | `pkg/ratelimit/signal.go` `signal`、`settle`、`recoveryQuiet`、`whereSeen` |
