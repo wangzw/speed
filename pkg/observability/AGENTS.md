@@ -18,7 +18,8 @@ capabilities.
   ([`adr-observability-scope-2026-09-22.md`](../../docs/adr/adr-observability-scope-2026-09-22.md)),
   the library it wraps and the types it re-exports
   ([`adr-observability-library-2026-09-22.md`](../../docs/adr/adr-observability-library-2026-09-22.md)),
-  the attribute surface of the request histogram
+  the attribute surface of the request histogram and the server span's name
+  and attributes
   ([`adr-observability-instruments-2026-09-22.md`](../../docs/adr/adr-observability-instruments-2026-09-22.md)),
   and what happens when the endpoint is unreachable
   ([`adr-observability-failure-2026-09-22.md`](../../docs/adr/adr-observability-failure-2026-09-22.md)).
@@ -149,6 +150,19 @@ must not cross, and how to run it.
   instrument's name, unit and bucket boundaries are equally fixed; a dashboard
   reads them. The server span carries the same two attributes, and a final
   server-error status marks it errored whether or not the handler panicked.
+- **The server span is named for the method and the route template, and carries
+  both the route and the endpoint.** When the span ends, a non-empty
+  `c.FullPath()` names it for the method and the template — `GET /orders/:id`
+  for one — and goes on as `http.route`; an empty
+  one — no route matched, a 404 or a 405 alike — leaves the name the method
+  alone and adds no `http.route`, because the path such a request asked for is
+  whatever the caller wrote. The template's values are bounded by the routes
+  registered, not by traffic, and the span is outside the histogram's fixed
+  surface, so the route goes on the span and stays off the histogram. The
+  endpoint name goes on as `speed.endpoint.name` from the start, a value the
+  configuration lists: it is the only place the span records the endpoint. The
+  rename does not reach sampling, which reads the parent and the trace
+  identifier, not the name.
 - **An event-derived span's attributes are the payload's fields as published,
   plus the two the bus carries.** Every top-level field of the payload becomes
   one attribute, in the type and with the digits it was published with — a
@@ -176,9 +190,13 @@ must not cross, and how to run it.
   handler serves both backend shapes, and a transport-backed bus does receive
   from a broker.
 - **The method dimension is folded in both signals.** The histogram's method
-  attribute and the span name both fold anything outside the nine standard
-  methods into one value. Narrowing the cardinality on one side only moves it to
-  the other: a backend indexes a span name just as it indexes a dimension.
+  attribute and the span name, with or without a route, both fold anything
+  outside the nine standard methods into one value. Narrowing the cardinality
+  on one side only moves it to the other: a backend indexes a span name just as
+  it indexes a dimension. The folded value is `_OTHER` in the name as well, where
+  the upstream convention writes `HTTP` for a method it does not know and
+  `QUERY` for the method it lists as in development, so only a standard method's
+  span name takes the upstream form.
 - **The layer is a `gin.HandlerFunc` and leaves `c.Writer` in place.** It hands
   the span's context down with `c.Request = c.Request.WithContext(...)` and reads
   the outcome from `c.Writer.Status()` and `Written()` after `c.Next()`; it wraps

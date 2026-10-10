@@ -12,6 +12,7 @@ import (
 	"time"
 
 	"github.com/gin-gonic/gin"
+	"go.opentelemetry.io/otel/attribute"
 	sdkmetric "go.opentelemetry.io/otel/sdk/metric"
 	"go.opentelemetry.io/otel/sdk/metric/metricdata"
 
@@ -108,7 +109,8 @@ func (f endpointConfig) Decode(namespace string, target any) error {
 }
 
 // served is what an endpointCase left at the export backend, and the failure the
-// drive ended with.
+// drive ended with. Each span is written as the endpoint it says it was served
+// on and its name, "api GET /ping".
 type served struct {
 	err   error
 	spans []string
@@ -195,7 +197,9 @@ func (c endpointCase) run(t *testing.T) served {
 	})
 	out := served{err: err, count: metrics.counted()}
 	for _, span := range spans.recorded() {
-		out.spans = append(out.spans, span.Name())
+		attrs := attribute.NewSet(span.Attributes()...)
+		endpoint, _ := attrs.Value(attrEndpointName)
+		out.spans = append(out.spans, endpoint.AsString()+" "+span.Name())
 	}
 	slices.Sort(out.spans)
 	return out
@@ -216,7 +220,7 @@ func TestTheDefaultRegistersTheLayerOnEveryDeclaredEndpoint(t *testing.T) {
 	if got.err != nil {
 		t.Fatalf("drive: %v", got.err)
 	}
-	if want := []string{"admin GET", "api GET"}; !slices.Equal(got.spans, want) {
+	if want := []string{"admin GET /ping", "api GET /ping"}; !slices.Equal(got.spans, want) {
 		t.Errorf("the backend received the spans %v, want %v: an endpoint the entry module declares went uninstrumented", got.spans, want)
 	}
 	if got.count != 2 {
@@ -291,7 +295,7 @@ func TestAListOfNamesRegistersOnThoseAndNoOthers(t *testing.T) {
 	if got.err != nil {
 		t.Fatalf("drive: %v", got.err)
 	}
-	if want := []string{"admin GET"}; !slices.Equal(got.spans, want) {
+	if want := []string{"admin GET /ping"}; !slices.Equal(got.spans, want) {
 		t.Errorf("the backend received the spans %v, want only %v", got.spans, want)
 	}
 	if got.count != 1 {
@@ -408,7 +412,7 @@ func TestAListedNameWrittenTwiceRegistersTheLayerOnce(t *testing.T) {
 	if got.err != nil {
 		t.Fatalf("drive: %v", got.err)
 	}
-	if want := []string{"api GET"}; !slices.Equal(got.spans, want) {
+	if want := []string{"api GET /ping"}; !slices.Equal(got.spans, want) {
 		t.Errorf("the backend received the spans %v, want exactly %v", got.spans, want)
 	}
 	if got.count != 1 {

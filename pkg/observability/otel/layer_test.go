@@ -134,9 +134,11 @@ func (r routes) register(ep speedhttp.Endpoint) {
 }
 
 // TestTheLayerRecordsTheSpanAndTheRequestDuration covers the ordinary path: one
-// span named for the endpoint and the method, one data point carrying the
-// method and the status code the handler actually wrote, and nothing else. The
-// route is parameterised so that an attribute carrying the matched route would
+// span named for the method and the route the request matched, carrying the
+// route and the endpoint, and one data point carrying the method and the status
+// code the handler actually wrote, and nothing else. The route is
+// parameterised, so the span name holds the template rather than the path the
+// request asked for, and a histogram attribute carrying the matched route would
 // have a value to carry.
 func TestTheLayerRecordsTheSpanAndTheRequestDuration(t *testing.T) {
 	p, rec, reader := layerUnderTest(t)
@@ -152,11 +154,18 @@ func TestTheLayerRecordsTheSpanAndTheRequestDuration(t *testing.T) {
 	if len(spans) != 1 {
 		t.Fatalf("the layer ended %d spans, want 1", len(spans))
 	}
-	if got := spans[0].Name(); got != "api GET" {
-		t.Errorf("the span is named %q, want the endpoint and the method", got)
+	if got := spans[0].Name(); got != "GET /orders/:id" {
+		t.Errorf("the span is named %q, want the method and the route template, GET /orders/:id", got)
 	}
 	if got := spans[0].SpanKind(); got != trace.SpanKindServer {
 		t.Errorf("the span is a %v, want a server span", got)
+	}
+	attrs := attribute.NewSet(spans[0].Attributes()...)
+	if got := attributeOf(t, attrs, "http.route"); got != "/orders/:id" {
+		t.Errorf("the span's route attribute is %q, want the template /orders/:id", got)
+	}
+	if got := attributeOf(t, attrs, "speed.endpoint.name"); got != entryName {
+		t.Errorf("the span's endpoint attribute is %q, want the endpoint the request arrived on, %s", got, entryName)
 	}
 
 	point := durationPoint(t, reader)
@@ -377,14 +386,16 @@ func TestTheLayerBindsTheCorrelationFieldsForDownstreamLogs(t *testing.T) {
 // the entry module's fallback, outside the engine. Swallowing it would take over
 // a promise that belongs to the entry module, and what the client is answered
 // with says which happened: a swallowed panic ends the handler as a request that
-// returned, which is a 200, while the fallback answers an internal error.
+// returned, which is a 200, while the fallback answers an internal error. The
+// panic leaves the route matched, so the span is named and attributed for it
+// as any served request's is.
 func TestTheLayerRecordsAPanicAndLetsItThrough(t *testing.T) {
 	p, rec, _ := layerUnderTest(t)
 	var answered *nethttp.Response
 	serve(t, p, routes{
-		{nethttp.MethodGet, "/boom"}: func(*gin.Context) { panic("handler gave up") },
+		{nethttp.MethodGet, "/boom/:id"}: func(*gin.Context) { panic("handler gave up") },
 	}.register, func(h *entryHost) {
-		resp, err := h.do(t, nethttp.MethodGet, "/boom")
+		resp, err := h.do(t, nethttp.MethodGet, "/boom/3")
 		if err != nil {
 			t.Fatalf("the request got no response: %v", err)
 		}
@@ -406,6 +417,14 @@ func TestTheLayerRecordsAPanicAndLetsItThrough(t *testing.T) {
 	}
 	if got := spans[0].Status().Code; got != codes.Error {
 		t.Errorf("the span's status is %v, want Error: a panicking request must not be reported as a success", got)
+	}
+	if got := spans[0].Name(); got != "GET /boom/:id" {
+		t.Errorf("the span of a panicking request is named %q, want the method and the route it matched, "+
+			"GET /boom/:id", got)
+	}
+	if got := attributeOf(t, attribute.NewSet(spans[0].Attributes()...), "http.route"); got != "/boom/:id" {
+		t.Errorf("the span of a panicking request carries the route %q, want the template it matched, /boom/:id",
+			got)
 	}
 	// The panic is recorded on the span as an exception event, which is where a
 	// trace backend shows what went wrong; a status alone says only that
@@ -515,20 +534,116 @@ func TestTheLayerRecordsAnAbandonedConnectionAndLetsItThrough(t *testing.T) {
 // closed in both signals. The histogram folds anything outside the standard set
 // precisely because it is unbounded otherwise, and a span name is indexed by a
 // backend just as a dimension is; leaving the span out of that would move the
-// cardinality from the signal that was guarded to the one that was not.
+// cardinality from the signal that was guarded to the one that was not. The
+// folded method is the one the name carries whether a route matched or not.
 func TestTheLayerFoldsTheMethodInTheSpanNameToo(t *testing.T) {
 	p, rec, _ := layerUnderTest(t)
 	serve(t, p, routes{{"PURGE", "/x"}: func(*gin.Context) {}}.register, func(h *entryHost) {
 		h.status(t, "PURGE", "/x")
+		h.status(t, "PURGE", "/missing")
+	})
+
+	var names []string
+	for _, span := range rec.recorded() {
+		names = append(names, span.Name())
+	}
+	slices.Sort(names)
+	if want := []string{otherMethod, otherMethod + " /x"}; !slices.Equal(names, want) {
+		t.Errorf("the spans are named %q, want %q: an unfolded method would let a caller grow the span "+
+			"name one verb at a time", names, want)
+	}
+}
+
+// TestASpanOfAnUnmatchedRequestIsNamedForTheMethodAlone pins the name and the
+// attributes of a span no route matched. A request that matches no route and
+// one whose method the path does not allow are answered by the engine, with no
+// template to name them by; the path they asked for is whatever the caller
+// wrote, so naming the span for it or carrying it as the route would let a
+// caller grow both one path at a time.
+func TestASpanOfAnUnmatchedRequestIsNamedForTheMethodAlone(t *testing.T) {
+	p, rec, _ := layerUnderTest(t)
+	serve(t, p, routes{{nethttp.MethodGet, "/x"}: func(*gin.Context) {}}.register, func(h *entryHost) {
+		if got := h.status(t, nethttp.MethodGet, "/missing"); got != nethttp.StatusNotFound {
+			t.Fatalf("a request matching no route was answered %d, want 404", got)
+		}
+		if got := h.status(t, nethttp.MethodPost, "/x"); got != nethttp.StatusMethodNotAllowed {
+			t.Fatalf("a request whose method the path does not allow was answered %d, want 405", got)
+		}
 	})
 
 	spans := rec.recorded()
-	if len(spans) != 1 {
-		t.Fatalf("the layer ended %d spans, want 1", len(spans))
+	if len(spans) != 2 {
+		t.Fatalf("the layer ended %d spans, want one for each of the two requests", len(spans))
 	}
-	if got, want := spans[0].Name(), "api "+otherMethod; got != want {
-		t.Errorf("the span is named %q, want %q: an unfolded method would let a caller grow the span "+
-			"name one verb at a time", got, want)
+	var names []string
+	for _, span := range spans {
+		names = append(names, span.Name())
+		attrs := attribute.NewSet(span.Attributes()...)
+		if route, ok := attrs.Value(attrRoute); ok {
+			t.Errorf("the span %q carries the route %q, want none for a request no route matched",
+				span.Name(), route.AsString())
+		}
+		if got, _ := attrs.Value(attrEndpointName); got.AsString() != entryName {
+			t.Errorf("the span %q carries the endpoint %q, want %s", span.Name(), got.AsString(), entryName)
+		}
+	}
+	slices.Sort(names)
+	if want := []string{nethttp.MethodGet, nethttp.MethodPost}; !slices.Equal(names, want) {
+		t.Errorf("the spans are named %q, want the methods alone, %q", names, want)
+	}
+}
+
+// TestASpanOfAMatchedRouteKeepsItsRouteWhateverTheHandlerAnswers pins that the
+// route goes by the match, not by the status. A handler that answers 404 for a
+// resource it does not hold, or 405 of its own accord, still served a
+// registered template, and its span is named and attributed for it just as a
+// 200 would be.
+func TestASpanOfAMatchedRouteKeepsItsRouteWhateverTheHandlerAnswers(t *testing.T) {
+	for _, code := range []int{nethttp.StatusNotFound, nethttp.StatusMethodNotAllowed} {
+		t.Run(strconv.Itoa(code), func(t *testing.T) {
+			p, rec, _ := layerUnderTest(t)
+			serve(t, p, routes{{nethttp.MethodGet, "/orders/:id"}: func(c *gin.Context) { c.Status(code) }}.register,
+				func(h *entryHost) {
+					if got := h.status(t, nethttp.MethodGet, "/orders/7"); got != code {
+						t.Fatalf("the route's handler was answered %d, want %d", got, code)
+					}
+				})
+
+			spans := rec.recorded()
+			if len(spans) != 1 {
+				t.Fatalf("the layer ended %d spans, want 1", len(spans))
+			}
+			if got := spans[0].Name(); got != "GET /orders/:id" {
+				t.Errorf("a %d the route's handler wrote ended a span named %q, want GET /orders/:id", code, got)
+			}
+			attrs := attribute.NewSet(spans[0].Attributes()...)
+			if got, _ := attrs.Value(attrRoute); got.AsString() != "/orders/:id" {
+				t.Errorf("a %d the route's handler wrote left the route attribute %q, want /orders/:id",
+					code, got.AsString())
+			}
+		})
+	}
+}
+
+// TestTwoPathsOfOneRouteShareTheSpanName pins that the name is drawn from the
+// template, not from the path a request asked for. Two requests to one
+// parameterised route are one operation, and a name carrying the path would
+// grow with every identifier a caller sends.
+func TestTwoPathsOfOneRouteShareTheSpanName(t *testing.T) {
+	p, rec, _ := layerUnderTest(t)
+	serve(t, p, routes{{nethttp.MethodGet, "/orders/:id"}: func(*gin.Context) {}}.register, func(h *entryHost) {
+		h.status(t, nethttp.MethodGet, "/orders/7")
+		h.status(t, nethttp.MethodGet, "/orders/8")
+	})
+
+	spans := rec.recorded()
+	if len(spans) != 2 {
+		t.Fatalf("the layer ended %d spans, want one for each of the two requests", len(spans))
+	}
+	for _, span := range spans {
+		if got := span.Name(); got != "GET /orders/:id" {
+			t.Errorf("a request to the route ended a span named %q, want GET /orders/:id", got)
+		}
 	}
 }
 

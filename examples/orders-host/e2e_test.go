@@ -1801,17 +1801,17 @@ func TestAServedRequestProducesASpan(t *testing.T) {
 
 	// The batch processor hands the span over on its own schedule, so the case
 	// waits for the line rather than reading it straight away. The span is
-	// named for the endpoint and the method the layer observed, which is a
-	// string nothing else in this run writes.
+	// named for the method and the route the layer observed, and read as the
+	// name of an exported span, which nothing else in this run writes.
+	spanName := `"Name":"` + nethttp.MethodGet + " " + ordersPath + `"`
 	deadline := time.Now().Add(settleLimit)
 	for time.Now().Before(deadline) {
-		if strings.Contains(run.output(), publicEndpoint+" GET") {
+		if strings.Contains(run.output(), spanName) {
 			return
 		}
 		time.Sleep(20 * time.Millisecond)
 	}
-	t.Fatalf("no span named for the endpoint and the method reached the export backend; the run wrote:\n%s",
-		run.output())
+	t.Fatalf("no span named %s reached the export backend; the run wrote:\n%s", spanName, run.output())
 }
 
 // contains reports whether a string slice holds a value.

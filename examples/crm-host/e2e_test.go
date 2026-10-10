@@ -281,19 +281,19 @@ func requireRefusalCause(t *testing.T, h *crmHost, backend string, cause error) 
 // requireSpanExported waits for the API requests' server span to leave through
 // the export backend the stack names: the in-process receiver for the OTLP
 // backend, which decodes it, the run's standard output for the stdout one. The
-// span is named for the endpoint and the method the telemetry layer observed,
-// which is a string nothing else in the run writes.
+// span is named for the method and the route the telemetry layer observed, and
+// read as the name of an exported span, which nothing else in the run writes.
 func requireSpanExported(t *testing.T, c *crmCase, h *crmHost) {
 	t.Helper()
+	name := nethttp.MethodGet + " /members"
 	if c.receiver != nil {
-		name := apiEndpoint + " " + nethttp.MethodGet
 		if !eventually(settleLimit, func() bool { return len(c.receiver.spansNamed(name)) > 0 }) {
 			t.Errorf("no span named %s reached the OTLP receiver after the requests were served", name)
 		}
 		c.receiver.requireDecoded(t)
 		return
 	}
-	spanName := `"Name":"` + apiEndpoint + ` GET"`
+	spanName := `"Name":"` + name + `"`
 	if !eventually(settleLimit, func() bool { return strings.Contains(h.output(), spanName) }) {
 		t.Errorf("no span named %s reached the run's standard output; it wrote:\n%s", spanName, h.outputForReport())
 	}

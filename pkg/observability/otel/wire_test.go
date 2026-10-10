@@ -140,7 +140,7 @@ func TestTheAssemblerPutsTheLayerOnTheEndpointsTheConfigurationNames(t *testing.
 	for _, span := range spans.recorded() {
 		names = append(names, span.Name())
 	}
-	if want := []string{entryName + " GET"}; !slices.Equal(names, want) {
+	if want := []string{"GET /ping"}; !slices.Equal(names, want) {
 		t.Errorf("the backend received the spans %v, want %v: the layer was not on the endpoint", names, want)
 	}
 	metrics.mu.Lock()

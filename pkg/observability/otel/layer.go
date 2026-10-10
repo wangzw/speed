@@ -42,12 +42,25 @@ const (
 
 // The two attributes the request histogram and the server span carry. Both are
 // closed sets — the standard methods plus otherMethod, and the status codes —
-// so neither grows with traffic. A route attribute is not among them: the routes
-// are whatever the hosts register, so the dimension would grow with them and a
-// dashboard that reads it could no longer be changed.
+// so neither grows with traffic. A route attribute is not among the histogram's:
+// the routes are whatever the hosts register, so the dimension would grow with
+// them and a dashboard that reads it could no longer be changed.
 var (
 	attrRequestMethod = attribute.Key("http.request.method")
 	attrResponseCode  = attribute.Key("http.response.status_code")
+)
+
+// The two attributes the server span carries beyond the outcome. The route is
+// the template a request matched, as c.FullPath reports it, so its values are
+// bounded by the routes registered and do not grow with traffic. The span's name
+// and attributes are outside the fixed surface the histogram's name, unit,
+// boundaries and attributes form, so the constraint that keeps the route off the
+// histogram does not reach them. The endpoint name is the one the configuration
+// lists, and is the only place the span records the endpoint: the name is the
+// method and the route.
+var (
+	attrRoute        = attribute.Key("http.route")
+	attrEndpointName = attribute.Key("speed.endpoint.name")
 )
 
 // standardMethods is the closed set the method attribute is drawn from.
@@ -132,7 +145,14 @@ func (p *providers) instrument(endpoint string) gin.HandlerFunc {
 		// sent one, is what decides sampling and what the trace looks like
 		// from the other side.
 		ctx := observability.Propagator().Extract(c.Request.Context(), propagation.HeaderCarrier(c.Request.Header))
-		ctx, span := tracer.Start(ctx, endpoint+" "+method, trace.WithSpanKind(trace.SpanKindServer))
+		// The span starts under the method alone and takes its route with the
+		// outcome, before it ends. The name does not reach the sampling
+		// decision: the sampler follows the parent and otherwise reads the
+		// trace identifier.
+		ctx, span := tracer.Start(ctx, method,
+			trace.WithSpanKind(trace.SpanKindServer),
+			trace.WithAttributes(attrEndpointName.String(endpoint)),
+		)
 
 		// The attribute keys are this module's, bound here and read by the
 		// log module without it knowing what they mean. The logger itself is
@@ -187,6 +207,12 @@ func (p *providers) instrument(endpoint string) gin.HandlerFunc {
 			// status stays unset for it, which is the upstream convention
 			// for a server span.
 			span.SetAttributes(outcome...)
+			// A request that matched no route, a 404 or a 405, has an empty
+			// full path: its span keeps the method alone and carries no route.
+			if route := c.FullPath(); route != "" {
+				span.SetName(method + " " + route)
+				span.SetAttributes(attrRoute.String(route))
+			}
 			if raised == nil && code >= nethttp.StatusInternalServerError {
 				span.SetStatus(codes.Error, "")
 			}

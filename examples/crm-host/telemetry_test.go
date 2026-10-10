@@ -235,14 +235,14 @@ func otlpStack(t *testing.T) stack {
 // What arrived is held to what the telemetry module states. Every export names
 // the configured service, and each replica its own version 4 instance
 // identifier, so the two replicas' exports are two sets. The served route is a
-// server span named for the endpoint and the method, carrying the method and
-// the status. The webhook's traceparent names an exported client span of the
-// delivery. Each replica derives a consumer span from the deal.won the bus
-// handed it, carrying the event's identifier as the move recorded it, the
-// tenant, and the amount as the integer it was, which a payload decoded into
-// floats would round to 2^53. The request duration is a histogram in seconds
-// whose bucket bounds are the fourteen the module fixes, which the SDK's
-// millisecond defaults are not.
+// server span named for the method and the route, carrying the method, the
+// status, the route and the endpoint. The webhook's traceparent names an
+// exported client span of the delivery. Each replica derives a consumer span
+// from the deal.won the bus handed it, carrying the event's identifier as the
+// move recorded it, the tenant, and the amount as the integer it was, which a
+// payload decoded into floats would round to 2^53. The request duration is a
+// histogram in seconds whose bucket bounds are the fourteen the module fixes,
+// which the SDK's millisecond defaults are not.
 func TestTheOTLPExportCarriesWhatEachReplicaMeasured(t *testing.T) {
 	c := newCase(t, otlpStack(t))
 	c.config.set("observability.otel.events", []string{dealWonEvent})
@@ -288,8 +288,8 @@ func TestTheOTLPExportCarriesWhatEachReplicaMeasured(t *testing.T) {
 		}
 	})
 
-	t.Run("a served route is a server span with its method and status", func(t *testing.T) {
-		name := apiEndpoint + " " + nethttp.MethodGet
+	t.Run("a served route is a server span with its method, status, route and endpoint", func(t *testing.T) {
+		name := nethttp.MethodGet + " /members"
 		servers := map[string]bool{}
 		for _, s := range c.receiver.spansNamed(name) {
 			if s.span.GetKind() != tracepb.Span_SPAN_KIND_SERVER {
@@ -297,13 +297,15 @@ func TestTheOTLPExportCarriesWhatEachReplicaMeasured(t *testing.T) {
 				continue
 			}
 			if s.attr("http.request.method").GetStringValue() == nethttp.MethodGet &&
-				s.attr("http.response.status_code").GetIntValue() == nethttp.StatusOK {
+				s.attr("http.response.status_code").GetIntValue() == nethttp.StatusOK &&
+				s.attr("http.route").GetStringValue() == "/members" &&
+				s.attr("speed.endpoint.name").GetStringValue() == apiEndpoint {
 				servers[s.resource["service.instance.id"].GetStringValue()] = true
 			}
 		}
 		if len(servers) != len(w.hosts) {
-			t.Errorf("%d replicas exported a %q server span of a GET answered 200, want every one of the %d",
-				len(servers), name, len(w.hosts))
+			t.Errorf("%d replicas exported a %q server span of a GET answered 200 on the route /members of %s, "+
+				"want every one of the %d", len(servers), name, apiEndpoint, len(w.hosts))
 		}
 	})
 
