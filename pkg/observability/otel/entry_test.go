@@ -141,7 +141,7 @@ func serve(t *testing.T, p *providers, register func(ep speedhttp.Endpoint), fn 
 			if err != nil {
 				return err
 			}
-			ep.Use(p.layer(entryName))
+			p.attach(ep, entryName)
 			register(ep)
 			return nil
 		},

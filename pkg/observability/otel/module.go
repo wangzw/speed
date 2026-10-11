@@ -149,7 +149,7 @@ func (p *providers) wireEndpoints(reg *core.Registry) error {
 				"or the entry module's own configuration, to declare %q: %w",
 				ModuleName, endpointsKey, name, name, err)
 		}
-		ep.Use(p.layer(name))
+		p.attach(ep, name)
 	}
 	return nil
 }

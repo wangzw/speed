@@ -94,22 +94,30 @@ var assemblerUpstream = []string{
 // assembler's budget.
 const ginPackage = "github.com/gin-gonic/gin"
 
+// otelGinPackage is the package the request layer takes its instrumentation from:
+// the layer wraps the handler chain with its middleware, so the assembler imports
+// it. It is bound deliberately, as gin is, and it is in the closure of none of the
+// other roots, so its closure is part of the assembler's budget as a root of its
+// own.
+const otelGinPackage = "go.opentelemetry.io/contrib/instrumentation/github.com/gin-gonic/gin/otelgin"
+
 // TestTheAssemblerStaysInsideItsDependencyBudget is the same rule one level in.
 // The assembler's budget is the interface package's, the library packages it
-// binds itself, and the current closure of gin. The closure is read from the
-// module graph and not written down, so a gin release that reaches further moves
-// the budget with it, while a package the assembler starts importing that is in
-// none of these closures is a failure.
+// binds itself, and the current closure of gin and of otelgin. The closures are
+// read from the module graph and not written down, so a gin or otelgin release
+// that reaches further moves the budget with it, while a package the assembler
+// starts importing that is in none of these closures is a failure.
 //
 // What is compared is the assembler's own import list, which is the package-level
 // declaration. The third-party packages this repository's own modules reach are
 // those modules' business and are held by their tests.
 func TestTheAssemblerStaysInsideItsDependencyBudget(t *testing.T) {
 	imports := importsOf(t, "./otel")
-	// The positive controls: the layer is a gin handler and the assembler sits on
-	// the interface package, so a listing without either came from a load that did
-	// not happen, and every assertion below would pass on an empty list.
-	for _, pkg := range []string{ginPackage, repoPrefix + "pkg/observability"} {
+	// The positive controls: the layer is a gin handler instrumented by otelgin and
+	// the assembler sits on the interface package, so a listing without any of the
+	// three came from a load that did not happen, and every assertion below would
+	// pass on an empty list.
+	for _, pkg := range []string{ginPackage, otelGinPackage, repoPrefix + "pkg/observability"} {
 		if !imports[pkg] {
 			t.Fatalf("the import list does not hold %s, which the assembler imports: what is checked "+
 				"below is not its import list", pkg)
@@ -117,7 +125,7 @@ func TestTheAssemblerStaysInsideItsDependencyBudget(t *testing.T) {
 	}
 
 	budget := map[string]bool{}
-	for _, root := range slices.Concat(exportedUpstream, assemblerUpstream, []string{ginPackage}) {
+	for _, root := range slices.Concat(exportedUpstream, assemblerUpstream, []string{ginPackage, otelGinPackage}) {
 		for reached := range dependenciesOf(t, root) {
 			budget[reached] = true
 		}
@@ -136,8 +144,8 @@ func TestTheAssemblerStaysInsideItsDependencyBudget(t *testing.T) {
 			continue
 		}
 		t.Errorf("the assembler imports %s, which is in the closure of none of the packages its budget is "+
-			"made of. It binds the upstream API and SDK, and gin for the request layer: anything else "+
-			"is a dependency every host that takes the assembler in would compile", pkg)
+			"made of. It binds the upstream API and SDK, and gin and otelgin for the request layer: "+
+			"anything else is a dependency every host that takes the assembler in would compile", pkg)
 	}
 }
 

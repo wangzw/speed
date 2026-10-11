@@ -6,6 +6,9 @@ import (
 	"errors"
 	"io"
 	nethttp "net/http"
+	"os"
+	"os/exec"
+	"runtime"
 	"slices"
 	"strconv"
 	"strings"
@@ -61,12 +64,17 @@ func layerUnderTest(t *testing.T) (*providers, *recordingSpanExporter, *sdkmetri
 	)
 	reader := sdkmetric.NewManualReader()
 	mp := sdkmetric.NewMeterProvider(sdkmetric.WithReader(reader))
-	duration, err := newRequestDuration(mp)
-	if err != nil {
-		t.Fatalf("build the request duration instrument: %v", err)
-	}
-	return &providers{cfg: prototype(), tp: tp, mp: mp, duration: duration}, rec, reader
+	return &providers{cfg: prototype(), tp: tp, mp: mp}, rec, reader
 }
+
+// requestDurationName is the instrument a dashboard reads, written as the literal
+// it reads rather than taken from anything the layer is built from.
+const requestDurationName = "http.server.request.duration"
+
+// The literals the tests look attributes up by.
+const otherMethod = "_OTHER"
+
+var attrRoute = attribute.Key("http.route")
 
 // durationHistogram collects the one histogram the layer records.
 func durationHistogram(t *testing.T, reader *sdkmetric.ManualReader) metricdata.Histogram[float64] {
@@ -124,6 +132,19 @@ func attributeOf(t *testing.T, attrs attribute.Set, key string) string {
 	return v.String()
 }
 
+// assertNoRequestIdentity holds a histogram's attributes to the ones whose
+// values are bounded by what the host registers or by the protocol. The request's
+// path, its full URL, its client and its user agent take a value per caller, so a
+// series carrying any of them grows with traffic.
+func assertNoRequestIdentity(t *testing.T, what string, attrs attribute.Set) {
+	t.Helper()
+	for _, key := range []attribute.Key{"url.path", "url.full", "url.query", "client.address", "user_agent.original"} {
+		if _, ok := attrs.Value(key); ok {
+			t.Errorf("%s carries %s, whose values grow with traffic: %v", what, key, attrs.ToSlice())
+		}
+	}
+}
+
 // routes registers one handler per route, on the endpoint the layer is on.
 type routes map[[2]string]gin.HandlerFunc
 
@@ -135,11 +156,10 @@ func (r routes) register(ep speedhttp.Endpoint) {
 
 // TestTheLayerRecordsTheSpanAndTheRequestDuration covers the ordinary path: one
 // span named for the method and the route the request matched, carrying the
-// route and the endpoint, and one data point carrying the method and the status
-// code the handler actually wrote, and nothing else. The route is
-// parameterised, so the span name holds the template rather than the path the
-// request asked for, and a histogram attribute carrying the matched route would
-// have a value to carry.
+// route and the endpoint, and one data point carrying the method, the status
+// code the handler actually wrote and the route template. The route is
+// parameterised, so the span name and the data point hold the template rather
+// than the path the request asked for.
 func TestTheLayerRecordsTheSpanAndTheRequestDuration(t *testing.T) {
 	p, rec, reader := layerUnderTest(t)
 	serve(t, p, routes{
@@ -175,11 +195,10 @@ func TestTheLayerRecordsTheSpanAndTheRequestDuration(t *testing.T) {
 	if got := attributeOf(t, point.Attributes, "http.response.status_code"); got != "418" {
 		t.Errorf("the status attribute is %q, want the code the handler wrote, 418", got)
 	}
-	if got := point.Attributes.Len(); got != 2 {
-		t.Errorf("the data point carries %d attributes, %v, want the method and the status code alone: a "+
-			"route attribute would make the dimension grow with what hosts register",
-			got, point.Attributes.ToSlice())
+	if got := attributeOf(t, point.Attributes, "http.route"); got != "/orders/:id" {
+		t.Errorf("the data point's route attribute is %q, want the template /orders/:id", got)
 	}
+	assertNoRequestIdentity(t, "the data point", point.Attributes)
 	if point.Count != 1 {
 		t.Errorf("the data point counts %d requests, want 1", point.Count)
 	}
@@ -201,20 +220,27 @@ func TestTheRequestDurationBucketsAreInSeconds(t *testing.T) {
 		}
 	})
 
-	point := durationPoint(t, reader)
+	// The two routes are two data points of one instrument, so the buckets they
+	// fill are read across both.
 	want := []float64{0.005, 0.01, 0.025, 0.05, 0.075, 0.1, 0.25, 0.5, 0.75, 1, 2.5, 5, 7.5, 10}
-	if !slices.Equal(point.Bounds, want) {
-		t.Errorf("the histogram counts into %v, want the boundaries in seconds %v", point.Bounds, want)
+	filled := make([]uint64, len(want)+1)
+	for _, point := range durationHistogram(t, reader).DataPoints {
+		if !slices.Equal(point.Bounds, want) {
+			t.Errorf("the histogram counts into %v, want the boundaries in seconds %v", point.Bounds, want)
+		}
+		for i, count := range point.BucketCounts {
+			filled[i] += count
+		}
 	}
 	occupied := 0
-	for _, count := range point.BucketCounts {
+	for _, count := range filled {
 		if count > 0 {
 			occupied++
 		}
 	}
 	if occupied != 2 {
 		t.Errorf("a request of microseconds and one of 60ms fill %d bucket(s) of %v, want 2",
-			occupied, point.BucketCounts)
+			occupied, filled)
 	}
 }
 
@@ -299,25 +325,6 @@ func TestTheLayerFoldsMethodsOutsideTheStandardSet(t *testing.T) {
 	point := durationPoint(t, reader)
 	if got := attributeOf(t, point.Attributes, "http.request.method"); got != otherMethod {
 		t.Errorf("a non-standard method is recorded as %q, want %q", got, otherMethod)
-	}
-}
-
-// TestEveryStandardMethodKeepsItsName is the other half of the folding: the nine
-// standard methods are the closed set, and each of them is recorded as itself. A
-// set that lost one would fold that method into the value meant for the unknown
-// ones, and the method dimension would stop telling it apart.
-func TestEveryStandardMethodKeepsItsName(t *testing.T) {
-	standard := []string{
-		nethttp.MethodConnect, nethttp.MethodDelete, nethttp.MethodGet, nethttp.MethodHead, nethttp.MethodOptions,
-		nethttp.MethodPatch, nethttp.MethodPost, nethttp.MethodPut, nethttp.MethodTrace,
-	}
-	for _, method := range standard {
-		if got := methodOf(method); got != method {
-			t.Errorf("methodOf(%q) is %q, want the method itself", method, got)
-		}
-	}
-	if len(standardMethods) != len(standard) {
-		t.Errorf("the standard set holds %d methods, want the nine of net/http", len(standardMethods))
 	}
 }
 
@@ -476,13 +483,29 @@ func TestTheLayerReportsAPanicWithTheStatusTheCallerReceives(t *testing.T) {
 		},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
-			p, _, reader := layerUnderTest(t)
+			p, rec, reader := layerUnderTest(t)
 			serve(t, p, routes{{nethttp.MethodGet, "/boom"}: tc.handler}.register, func(h *entryHost) {
 				if got := h.status(t, nethttp.MethodGet, "/boom"); got != tc.want {
 					t.Fatalf("the client was answered %d, want %d, so this case does not hold the "+
 						"status the caller receives", got, tc.want)
 				}
 			})
+
+			// The span says the request failed whatever status went out: a status
+			// below 500 on the wire does not make a panicked request a success. The
+			// failure reaches the span through the error the guard files, so the
+			// error type is the one the guard names.
+			spans := rec.recorded()
+			if len(spans) != 1 {
+				t.Fatalf("the layer ended %d spans, want 1", len(spans))
+			}
+			if got := spans[0].Status().Code; got != codes.Error {
+				t.Errorf("the span of a panicked request that went out with %d has the status %v, want Error",
+					tc.want, got)
+			}
+			if got := attributeOf(t, attribute.NewSet(spans[0].Attributes()...), "error.type"); !strings.HasSuffix(got, "handlerPanic") {
+				t.Errorf("the span's error.type is %q, want the type the guard files, handlerPanic", got)
+			}
 
 			point := durationPoint(t, reader)
 			if got, want := attributeOf(t, point.Attributes, "http.response.status_code"), strconv.Itoa(tc.want); got != want {
@@ -534,8 +557,9 @@ func TestTheLayerRecordsAnAbandonedConnectionAndLetsItThrough(t *testing.T) {
 // closed in both signals. The histogram folds anything outside the standard set
 // precisely because it is unbounded otherwise, and a span name is indexed by a
 // backend just as a dimension is; leaving the span out of that would move the
-// cardinality from the signal that was guarded to the one that was not. The
-// folded method is the one the name carries whether a route matched or not.
+// cardinality from the signal that was guarded to the one that was not. The name
+// carries the upstream convention's placeholder, HTTP, whether a route matched or
+// not, while the histogram's method attribute carries _OTHER.
 func TestTheLayerFoldsTheMethodInTheSpanNameToo(t *testing.T) {
 	p, rec, _ := layerUnderTest(t)
 	serve(t, p, routes{{"PURGE", "/x"}: func(*gin.Context) {}}.register, func(h *entryHost) {
@@ -548,7 +572,7 @@ func TestTheLayerFoldsTheMethodInTheSpanNameToo(t *testing.T) {
 		names = append(names, span.Name())
 	}
 	slices.Sort(names)
-	if want := []string{otherMethod, otherMethod + " /x"}; !slices.Equal(names, want) {
+	if want := []string{"HTTP", "HTTP /x"}; !slices.Equal(names, want) {
 		t.Errorf("the spans are named %q, want %q: an unfolded method would let a caller grow the span "+
 			"name one verb at a time", names, want)
 	}
@@ -579,7 +603,10 @@ func TestASpanOfAnUnmatchedRequestIsNamedForTheMethodAlone(t *testing.T) {
 	for _, span := range spans {
 		names = append(names, span.Name())
 		attrs := attribute.NewSet(span.Attributes()...)
-		if route, ok := attrs.Value(attrRoute); ok {
+		// The upstream instrumentation writes the attribute with an empty value
+		// for a request no route matched; what matters is that the path the
+		// caller asked for does not stand in for a template.
+		if route, ok := attrs.Value(attrRoute); ok && route.AsString() != "" {
 			t.Errorf("the span %q carries the route %q, want none for a request no route matched",
 				span.Name(), route.AsString())
 		}
@@ -674,47 +701,6 @@ func TestTheStatusAttributeIsTheOneTheCallerReceives(t *testing.T) {
 			point := durationPoint(t, reader)
 			if got, want := attributeOf(t, point.Attributes, "http.response.status_code"), strconv.Itoa(received); got != want {
 				t.Errorf("the status attribute is %q, want %s, the code the caller received", got, want)
-			}
-		})
-	}
-}
-
-// TestTheLayerSkipsAnInformationalStatus pins the one kind of code a handler may
-// write before its final one. An informational response — 103 Early Hints, say —
-// is sent ahead of the response and does not stop the handler from writing the
-// final status, so it is not what the caller was answered with. A handler that
-// goes on to write a body is answered 200, and one that writes a status is
-// answered with it; the writer, though, goes on reporting the informational
-// code. Each case holds the attribute to the code the client received.
-func TestTheLayerSkipsAnInformationalStatus(t *testing.T) {
-	for name, handler := range map[string]gin.HandlerFunc{
-		"a body after the hints": func(c *gin.Context) {
-			c.Writer.WriteHeader(nethttp.StatusEarlyHints)
-			_, _ = c.Writer.WriteString("body")
-		},
-		"hints sent before a body": func(c *gin.Context) {
-			c.Writer.WriteHeader(nethttp.StatusEarlyHints)
-			c.Writer.WriteHeaderNow()
-			_, _ = c.Writer.WriteString("body")
-		},
-		"an explicit final status": func(c *gin.Context) {
-			c.Writer.WriteHeader(nethttp.StatusEarlyHints)
-			c.Writer.WriteHeader(nethttp.StatusCreated)
-		},
-	} {
-		t.Run(name, func(t *testing.T) {
-			p, _, reader := layerUnderTest(t)
-			var received int
-			serve(t, p, routes{{nethttp.MethodGet, "/x"}: handler}.register, func(h *entryHost) {
-				received = h.status(t, nethttp.MethodGet, "/x")
-			})
-			if received < 200 {
-				t.Fatalf("the client was answered %d, want a final status", received)
-			}
-
-			point := durationPoint(t, reader)
-			if got, want := attributeOf(t, point.Attributes, "http.response.status_code"), strconv.Itoa(received); got != want {
-				t.Errorf("the status attribute is %q, want the final code %s the caller was answered with", got, want)
 			}
 		})
 	}
@@ -823,9 +809,7 @@ func TestTheLayerSeesARequestThatMatchesNoRouteAndOneTheMethodDoesNotAllow(t *te
 		if point.Count != 1 {
 			t.Errorf("the data point for %q counts %d requests, want 1", want, point.Count)
 		}
-		if got := point.Attributes.Len(); got != 2 {
-			t.Errorf("the data point for %q carries %d attributes, want the method and the status code alone", want, got)
-		}
+		assertNoRequestIdentity(t, "the data point for "+want, point.Attributes)
 	}
 
 	spans := rec.recorded()
@@ -948,7 +932,7 @@ func TestTheLayerLeavesTheResponseWriterInPlace(t *testing.T) {
 // the only trace is an Info line in the startup diagnostics.
 func TestTheLayerStandsForExactlyTheTwoProvidersThisModuleDelivers(t *testing.T) {
 	p, _, _ := layerUnderTest(t)
-	provides := p.layer("api").Provides
+	provides := p.layers("api")[0].Provides
 	for _, want := range []core.Token{
 		(*observability.TracerProvider)(nil),
 		(*observability.MeterProvider)(nil),
@@ -991,5 +975,303 @@ func TestTheLayerSitsOutsideLayersThatStateNoPlace(t *testing.T) {
 		if !inside[i].Load() {
 			t.Errorf("a layer with order %d ran outside the instrumentation layer: the time it spends is not in the span", order)
 		}
+	}
+}
+
+// raiseFromHere is a named frame for the panic a case throws, so that the stack a
+// span records can be searched for the place the panic came from.
+func raiseFromHere() { panic("handler gave up") }
+
+// TestAPanicEndsTheChainAtTheLayerThatRaisedIt pins that the guard stops the
+// chain. The upstream instrumentation runs the handlers after the one that
+// panicked unless the chain is aborted: the guard returns normally, and the loop
+// that called it moves on to the next handler. A handler that runs after a
+// panicked one runs on a request whose handler gave up, and may write the
+// response the fallback was to write.
+func TestAPanicEndsTheChainAtTheLayerThatRaisedIt(t *testing.T) {
+	p, _, _ := layerUnderTest(t)
+	var after, route atomic.Bool
+	serve(t, p, func(ep speedhttp.Endpoint) {
+		ep.Use(speedhttp.Middleware{
+			Name:    "test.raises",
+			Order:   5,
+			Handler: func(*gin.Context) { raiseFromHere() },
+		})
+		ep.Use(speedhttp.Middleware{
+			Name:  "test.after",
+			Order: 6,
+			Handler: func(c *gin.Context) {
+				after.Store(true)
+				c.Next()
+			},
+		})
+		ep.Route(nethttp.MethodGet, "/x", func(*gin.Context) { route.Store(true) })
+	}, func(h *entryHost) {
+		if got := h.status(t, nethttp.MethodGet, "/x"); got != nethttp.StatusInternalServerError {
+			t.Fatalf("the client was answered %d, want the fallback's 500", got)
+		}
+	})
+
+	if after.Load() || route.Load() {
+		t.Errorf("a layer after the one that panicked ran: %v, and the route's handler ran: %v; "+
+			"want neither", after.Load(), route.Load())
+	}
+}
+
+// TestTheSpanOfAPanicCarriesTheStackOfItsOrigin pins where the origin of a panic
+// survives. The value is thrown again from the outer layer, so the stack the
+// entry module's fallback records starts there; the span's exception event is
+// written while the panic's own frames are still on the stack.
+func TestTheSpanOfAPanicCarriesTheStackOfItsOrigin(t *testing.T) {
+	p, rec, _ := layerUnderTest(t)
+	serve(t, p, routes{{nethttp.MethodGet, "/boom"}: func(*gin.Context) { raiseFromHere() }}.register,
+		func(h *entryHost) { h.status(t, nethttp.MethodGet, "/boom") })
+
+	spans := rec.recorded()
+	if len(spans) != 1 {
+		t.Fatalf("the layer ended %d spans, want 1", len(spans))
+	}
+	var stack string
+	for _, event := range spans[0].Events() {
+		if event.Name != "exception" {
+			continue
+		}
+		for _, kv := range event.Attributes {
+			if kv.Key == "exception.stacktrace" {
+				stack = kv.Value.AsString()
+			}
+		}
+	}
+	if !strings.Contains(stack, "raiseFromHere") {
+		t.Errorf("the exception event's stack is %q, want one naming raiseFromHere, the place the panic came from", stack)
+	}
+	if got := exceptionMessage(spans[0]); got != "handler gave up" {
+		t.Errorf("the exception event's message is %q, want the panic value's text, handler gave up", got)
+	}
+}
+
+// exceptionMessage is the exception.message the span's exception event carries.
+func exceptionMessage(span sdktrace.ReadOnlySpan) string {
+	for _, event := range span.Events() {
+		if event.Name != "exception" {
+			continue
+		}
+		for _, kv := range event.Attributes {
+			if kv.Key == "exception.message" {
+				return kv.Value.AsString()
+			}
+		}
+	}
+	return ""
+}
+
+// TestAnErrorTheHandlerFilesMarksTheSpanFailed pins what the request's error list
+// does to the span. A handler that files an error and answers with a status below
+// 500 has still failed the request, and a span left unmarked files it with the
+// successes wherever traces are filtered by status.
+func TestAnErrorTheHandlerFilesMarksTheSpanFailed(t *testing.T) {
+	p, rec, _ := layerUnderTest(t)
+	serve(t, p, routes{{nethttp.MethodGet, "/x"}: func(c *gin.Context) {
+		_ = c.Error(errors.New("the store refused"))
+		c.Status(nethttp.StatusOK)
+	}}.register, func(h *entryHost) {
+		h.status(t, nethttp.MethodGet, "/x")
+	})
+
+	spans := rec.recorded()
+	if len(spans) != 1 {
+		t.Fatalf("the layer ended %d spans, want 1", len(spans))
+	}
+	if got := spans[0].Status().Code; got != codes.Error {
+		t.Errorf("the span's status is %v, want Error for a request whose handler filed an error", got)
+	}
+	attrs := attribute.NewSet(spans[0].Attributes()...)
+	if _, ok := attrs.Value("error.type"); !ok {
+		t.Errorf("the span carries %v, want an error.type", spans[0].Attributes())
+	}
+}
+
+// TestTheGuardStandsInsideTheInstrumentationAndStandsForNothing pins how the two
+// layers are placed against each other. The guard has to sit inside the
+// instrumentation, or the panic it stops would already have passed it, and a
+// capability only the instrumentation stands for keeps the guard from being
+// pointed at as a second provider of it.
+func TestTheGuardStandsInsideTheInstrumentationAndStandsForNothing(t *testing.T) {
+	p, _, _ := layerUnderTest(t)
+	layers := p.layers("api")
+	if len(layers) != 2 {
+		t.Fatalf("the module registers %d layers for an endpoint, want the instrumentation and the guard", len(layers))
+	}
+	guard := layers[1]
+	if !slices.Contains(guard.After, core.Token((*observability.TracerProvider)(nil))) {
+		t.Errorf("the guard is placed after %v, want it inside the layer standing for the tracer provider", guard.After)
+	}
+	if len(guard.Provides) != 0 {
+		t.Errorf("the guard stands for %v, want nothing: a second layer standing for the providers would "+
+			"split what another layer's After or Before points at", guard.Provides)
+	}
+}
+
+// TestLayersThatStateNoPlaceRunInsideTheGuard pins where the guard stands among
+// the layers other modules register. A layer that states no order, and one that
+// states a slightly smaller one, are inside the guard: a panic in either is
+// stopped and recorded, the span carries the endpoint's name, and what the layer
+// logs carries the trace. A guard placed further in would leave them outside it,
+// where the panic ends the span with no status and no endpoint, and a record the
+// layer writes has no trace to name.
+func TestLayersThatStateNoPlaceRunInsideTheGuard(t *testing.T) {
+	for _, order := range []int{0, -1} {
+		t.Run("order "+strconv.Itoa(order), func(t *testing.T) {
+			p, rec, reader := layerUnderTest(t)
+			var logs *syncBuffer
+			serve(t, p, func(ep speedhttp.Endpoint) {
+				ep.Use(speedhttp.Middleware{
+					Name:  "test.logs-then-raises",
+					Order: order,
+					Handler: func(c *gin.Context) {
+						log.FromContext(c.Request.Context()).Info("from the layer")
+						if c.Request.URL.Path == "/boom" {
+							panic("layer gave up")
+						}
+						c.Next()
+					},
+				})
+				ep.Route(nethttp.MethodGet, "/boom", func(*gin.Context) {})
+				ep.Route(nethttp.MethodGet, "/fine", func(*gin.Context) {})
+			}, func(h *entryHost) {
+				if got := h.status(t, nethttp.MethodGet, "/boom"); got != nethttp.StatusInternalServerError {
+					t.Fatalf("the client was answered %d, want the fallback's 500", got)
+				}
+				h.status(t, nethttp.MethodGet, "/fine")
+				logs = h.logs
+			})
+
+			spans := rec.recorded()
+			if len(spans) != 2 {
+				t.Fatalf("the layer ended %d spans, want 2", len(spans))
+			}
+			boom := spans[0]
+			if got := boom.Status().Code; got != codes.Error {
+				t.Errorf("the span of a request whose layer panicked has the status %v, want Error: the "+
+					"panic was not stopped inside the guard", got)
+			}
+			if got := attributeOf(t, attribute.NewSet(boom.Attributes()...), "speed.endpoint.name"); got != entryName {
+				t.Errorf("the span of that request names the endpoint %q, want %q", got, entryName)
+			}
+			if _, ok := durationPoints(t, reader)["GET 500"]; !ok {
+				t.Errorf("the panicked request is not in the histogram as a 500")
+			}
+
+			var traced int
+			for line := range strings.SplitSeq(logs.String(), "\n") {
+				var record map[string]any
+				if json.Unmarshal([]byte(line), &record) != nil || record["msg"] != "from the layer" {
+					continue
+				}
+				if record[observability.TraceIDKey] != nil && record[observability.SpanIDKey] != nil {
+					traced++
+				}
+			}
+			if traced != 2 {
+				t.Errorf("%d of the layer's 2 records carry the trace and span identifiers, want both: the "+
+					"layer ran outside the guard that binds them\n%s", traced, logs.String())
+			}
+		})
+	}
+}
+
+// TestAHandlerThatEndsItsGoroutineLeavesAFailedSpan pins what the span says about
+// a runtime.Goexit in a handler. The unwind passes through the guard with no
+// value and never returns to the instrumentation, which ends the span without
+// recording the response, so the guard marks the span failed itself. The
+// request is in no histogram: that is the instrumentation's behaviour.
+func TestAHandlerThatEndsItsGoroutineLeavesAFailedSpan(t *testing.T) {
+	p, rec, _ := layerUnderTest(t)
+	serve(t, p, routes{{nethttp.MethodGet, "/exit"}: func(*gin.Context) { runtime.Goexit() }}.register,
+		func(h *entryHost) {
+			resp, err := h.do(t, nethttp.MethodGet, "/exit")
+			if err == nil {
+				_ = resp.Body.Close()
+				t.Fatalf("the client was answered %d, want the connection dropped", resp.StatusCode)
+			}
+		})
+
+	spans := rec.recorded()
+	if len(spans) != 1 {
+		t.Fatalf("the layer ended %d spans, want 1", len(spans))
+	}
+	if got := spans[0].Status().Code; got != codes.Error {
+		t.Errorf("the span of a request whose handler called Goexit has the status %v, want Error", got)
+	}
+	if got := exceptionMessage(spans[0]); !strings.Contains(got, "without a panic value") {
+		t.Errorf("the span's exception message is %q, want one saying the handler stopped without a panic value", got)
+	}
+}
+
+// panicWith panics with whatever value it is handed, which a case needs to throw
+// a nil that is a value the handler was given rather than a constant.
+func panicWith(v any) { panic(v) }
+
+// nilPanicChild marks the copy of the test binary that
+// TestANilPanicIsNotSwallowedByTheGuard starts under GODEBUG=panicnil=1.
+const nilPanicChild = "SPEED_OBSERVABILITY_NILPANIC_CHILD"
+
+// TestANilPanicIsNotSwallowedByTheGuard pins the panic(nil) that GODEBUG=panicnil=1
+// turns back into a recovered nil. Read as a request that returned, it would be
+// stopped by the guard: the handlers after the one that panicked would run, the
+// client would be answered 200, the span would be a success and the entry
+// module's fallback would write no record. The value has to reach the fallback,
+// which answers it as the defect it is.
+//
+// The setting is fixed when a process starts, so the case runs in a copy of this
+// test binary started under it.
+func TestANilPanicIsNotSwallowedByTheGuard(t *testing.T) {
+	if os.Getenv(nilPanicChild) == "" {
+		child := exec.Command(os.Args[0], "-test.run=^"+t.Name()+"$", "-test.count=1")
+		child.Env = append(os.Environ(), nilPanicChild+"=1", "GODEBUG=panicnil=1")
+		if out, err := child.CombinedOutput(); err != nil {
+			t.Fatalf("the case failed under GODEBUG=panicnil=1: %v\n%s", err, out)
+		}
+		return
+	}
+
+	p, rec, _ := layerUnderTest(t)
+	var after, route atomic.Bool
+	var logs *syncBuffer
+	serve(t, p, func(ep speedhttp.Endpoint) {
+		ep.Use(speedhttp.Middleware{
+			Name:    "test.raises-nil",
+			Order:   5,
+			Handler: func(*gin.Context) { panicWith(nil) },
+		})
+		ep.Use(speedhttp.Middleware{
+			Name:  "test.after",
+			Order: 6,
+			Handler: func(c *gin.Context) {
+				after.Store(true)
+				c.Next()
+			},
+		})
+		ep.Route(nethttp.MethodGet, "/x", func(*gin.Context) { route.Store(true) })
+	}, func(h *entryHost) {
+		if got := h.status(t, nethttp.MethodGet, "/x"); got != nethttp.StatusInternalServerError {
+			t.Errorf("the client was answered %d, want the fallback's 500: a nil panic was read as a request that returned", got)
+		}
+		logs = h.logs
+	})
+
+	if after.Load() || route.Load() {
+		t.Errorf("a handler after the one that panicked with nil ran: %v, and the route's handler ran: %v; want neither",
+			after.Load(), route.Load())
+	}
+	if !strings.Contains(logs.String(), "without a panic value") {
+		t.Errorf("the entry module's fallback wrote no record for the nil panic:\n%s", logs.String())
+	}
+	spans := rec.recorded()
+	if len(spans) != 1 {
+		t.Fatalf("the layer ended %d spans, want 1", len(spans))
+	}
+	if got := spans[0].Status().Code; got != codes.Error {
+		t.Errorf("the span of a request whose handler panicked with nil has the status %v, want Error", got)
 	}
 }

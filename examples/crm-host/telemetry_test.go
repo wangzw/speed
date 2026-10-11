@@ -38,9 +38,10 @@ type otlpReceiver struct {
 }
 
 // receivedSpan is one exported span, with the resource of the process that
-// exported it.
+// exported it and the name of the instrumentation scope that produced it.
 type receivedSpan struct {
 	resource map[string]*commonpb.AnyValue
+	scope    string
 	span     *tracepb.Span
 }
 
@@ -55,9 +56,10 @@ func (s receivedSpan) traceID() string { return hex.EncodeToString(s.span.GetTra
 func (s receivedSpan) spanID() string  { return hex.EncodeToString(s.span.GetSpanId()) }
 
 // receivedMetric is one exported metric, with the resource of the process that
-// exported it.
+// exported it and the name of the instrumentation scope that produced it.
 type receivedMetric struct {
 	resource map[string]*commonpb.AnyValue
+	scope    string
 	metric   *metricspb.Metric
 }
 
@@ -124,7 +126,7 @@ func decodeExport(req *nethttp.Request) ([]receivedSpan, []receivedMetric, error
 			resource := attributesOf(rs.GetResource().GetAttributes())
 			for _, scope := range rs.GetScopeSpans() {
 				for _, span := range scope.GetSpans() {
-					out = append(out, receivedSpan{resource: resource, span: span})
+					out = append(out, receivedSpan{resource: resource, scope: scope.GetScope().GetName(), span: span})
 				}
 			}
 		}
@@ -139,7 +141,7 @@ func decodeExport(req *nethttp.Request) ([]receivedSpan, []receivedMetric, error
 			resource := attributesOf(rm.GetResource().GetAttributes())
 			for _, scope := range rm.GetScopeMetrics() {
 				for _, metric := range scope.GetMetrics() {
-					out = append(out, receivedMetric{resource: resource, metric: metric})
+					out = append(out, receivedMetric{resource: resource, scope: scope.GetScope().GetName(), metric: metric})
 				}
 			}
 		}
@@ -208,6 +210,11 @@ func (r *otlpReceiver) requireDecoded(t *testing.T) {
 	}
 }
 
+// otelGinScope is the instrumentation scope the request layer's spans and
+// instruments carry: the scope of the library the layer takes its
+// instrumentation from, which is not this repository's.
+const otelGinScope = "go.opentelemetry.io/contrib/instrumentation/github.com/gin-gonic/gin/otelgin"
+
 // uuidV4Pattern is the shape of a version 4 UUID, which the telemetry module
 // gives each assembly as its service.instance.id.
 var uuidV4Pattern = regexp.MustCompile(`^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$`)
@@ -235,10 +242,13 @@ func otlpStack(t *testing.T) stack {
 // the configured service, and each replica its own version 4 instance
 // identifier, so the two replicas' exports are two sets. The served route is a
 // server span named for the method and the route, carrying the method, the
-// status, the route and the endpoint. The webhook's traceparent names an
-// exported client span of the delivery. The request duration is a histogram in
-// seconds whose bucket bounds are the fourteen the module fixes, which the
-// SDK's millisecond defaults are not.
+// status, the route and the endpoint, under the instrumentation scope of the
+// library the layer takes its instrumentation from. The webhook's traceparent
+// names an exported client span of the delivery. The request duration is a
+// histogram in seconds whose bucket bounds are the fourteen the instrumentation
+// library fixes, which the SDK's millisecond defaults are not, and whose
+// attributes are that library's: the request and the response size are exported
+// beside it, all three under the library's scope.
 func TestTheOTLPExportCarriesWhatEachReplicaMeasured(t *testing.T) {
 	c := newCase(t, otlpStack(t))
 	receiver := startWebhookReceiver(t)
@@ -290,6 +300,10 @@ func TestTheOTLPExportCarriesWhatEachReplicaMeasured(t *testing.T) {
 				t.Errorf("a %q span is of kind %v, want a server span", name, s.span.GetKind())
 				continue
 			}
+			if s.scope != otelGinScope {
+				t.Errorf("a %q span is exported under the scope %q, want the instrumentation library's %q",
+					name, s.scope, otelGinScope)
+			}
 			if s.attr("http.request.method").GetStringValue() == nethttp.MethodGet &&
 				s.attr("http.response.status_code").GetIntValue() == nethttp.StatusOK &&
 				s.attr("http.route").GetStringValue() == "/members" &&
@@ -325,6 +339,10 @@ func TestTheOTLPExportCarriesWhatEachReplicaMeasured(t *testing.T) {
 			t.Fatal("no export carried http.server.request.duration")
 		}
 		for _, m := range exports {
+			if m.scope != otelGinScope {
+				t.Errorf("the request duration is exported under the scope %q, want the instrumentation library's %q",
+					m.scope, otelGinScope)
+			}
 			if m.metric.GetUnit() != "s" {
 				t.Errorf("the request duration is exported in %q, want s", m.metric.GetUnit())
 			}
@@ -338,6 +356,21 @@ func TestTheOTLPExportCarriesWhatEachReplicaMeasured(t *testing.T) {
 					t.Errorf("a data point of the request duration has the bounds %v, want %v",
 						point.GetExplicitBounds(), requestDurationBounds)
 				}
+				keys := make([]string, 0, len(point.GetAttributes()))
+				for _, kv := range point.GetAttributes() {
+					keys = append(keys, kv.GetKey())
+				}
+				if err := requestDurationAttributeError(keys); err != nil {
+					t.Errorf("a data point of the request duration: %v", err)
+				}
+			}
+		}
+	})
+
+	t.Run("the request and the response size are exported beside the duration", func(t *testing.T) {
+		for _, name := range []string{"http.server.request.body.size", "http.server.response.body.size"} {
+			if len(c.receiver.metricsNamed(name)) == 0 {
+				t.Errorf("no export carried %s, which the instrumentation library records beside the duration", name)
 			}
 		}
 	})

@@ -17,7 +17,10 @@ backends, each registering one module that delivers both exporter capabilities.
   ([`adr-observability-scope-2026-09-22.md`](../../docs/adr/adr-observability-scope-2026-09-22.md)),
   the library it wraps and the types it re-exports
   ([`adr-observability-library-2026-09-22.md`](../../docs/adr/adr-observability-library-2026-09-22.md)),
-  the attribute surface of the request histogram and the server span's name
+  the request path's instrumentation built on the upstream gin
+  instrumentation
+  ([`adr-observability-request-layer-2026-10-11.md`](../../docs/adr/adr-observability-request-layer-2026-10-11.md)),
+  the attribute surface of the request instruments and the server span's name
   and attributes
   ([`adr-observability-instruments-2026-09-22.md`](../../docs/adr/adr-observability-instruments-2026-09-22.md)),
   and what happens when the endpoint is unreachable
@@ -41,8 +44,9 @@ must not cross, and how to run it.
   `TestTheAssemblerStaysInsideItsDependencyBudget` and
   `TestTheAssemblerReachesNoBackendTransport` in `deps_test.go`. The assembler's
   budget is the root package's, the upstream packages it binds itself, and the
-  current closure of gin, which the request layer is written against; the closure
-  is read from the module graph, never written down. The gates read the
+  current closures of gin, which the request layers are written against, and of
+  the upstream gin instrumentation (`otelgin`), which supplies the outer layer's
+  middleware; the closures are read from the module graph, never written down. The gates read the
   non-test imports only: the assembler's external tests import `otlp` to hold
   the stop against a real exporter.
 - **The two provider interfaces cannot be implemented outside the upstream
@@ -141,57 +145,105 @@ must not cross, and how to run it.
   including a command that collects stances and constructs nothing; a round trip
   there would make such a command fail over an endpoint it was never going to
   send to.
-- **The attribute surface of the request histogram is a contract.** Two
-  attributes, both closed sets: the standard methods plus the folding value, and
-  the status code. No route — the matched route is readable on the chain, but it
-  is whatever hosts register, and a dimension a dashboard has read cannot be taken
-  back — and no tenant, whose values grow with the number of tenants. The
-  instrument's name, unit and bucket boundaries are equally fixed; a dashboard
-  reads them. The server span carries the same two attributes, and a final
-  server-error status marks it errored whether or not the handler panicked.
-- **The server span is named for the method and the route template, and carries
-  both the route and the endpoint.** When the span ends, a non-empty
-  `c.FullPath()` names it for the method and the template — `GET /orders/:id`
-  for one — and goes on as `http.route`; an empty
-  one — no route matched, a 404 or a 405 alike — leaves the name the method
-  alone and adds no `http.route`, because the path such a request asked for is
-  whatever the caller wrote. The template's values are bounded by the routes
-  registered, not by traffic, and the span is outside the histogram's fixed
-  surface, so the route goes on the span and stays off the histogram. The
-  endpoint name goes on as `speed.endpoint.name` from the start, a value the
-  configuration lists: it is the only place the span records the endpoint. The
-  rename does not reach sampling, which reads the parent and the trace
-  identifier, not the name.
-- **The method dimension is folded in both signals.** The histogram's method
-  attribute and the span name, with or without a route, both fold anything
-  outside the nine standard methods into one value. Narrowing the cardinality
-  on one side only moves it to the other: a backend indexes a span name just as
-  it indexes a dimension. The folded value is `_OTHER` in the name as well, where
-  the upstream convention writes `HTTP` for a method it does not know and
-  `QUERY` for the method it lists as in development, so only a standard method's
-  span name takes the upstream form.
-- **The layer is a `gin.HandlerFunc` and leaves `c.Writer` in place.** It hands
-  the span's context down with `c.Request = c.Request.WithContext(...)` and reads
-  the outcome from `c.Writer.Status()` and `Written()` after `c.Next()`; it wraps
-  nothing. The writer already carries `Flusher`, `Hijacker` and `Unwrap`, so a
-  wrapper here would only have to forward them, and one that forgot a method
-  would degrade every instrumented endpoint with nothing said. The status the
-  writer holds is the one the caller is answered with — gin keeps the code it
-  will commit, a second `WriteHeader` before the commit replaces it and one
-  after is ignored — with one exception: an informational code other than 101 is
-  not a final one. The server sends it ahead of the response and answers with
-  the 200 it supplies, while the writer goes on reporting the informational
-  code, so `answeredWith` reads it as that 200.
+- **The request instruments and the server span are the upstream gin
+  instrumentation's, and this module changes none of it.** The outer layer is
+  `otelgin.Middleware` configured with this module's tracer provider, meter
+  provider and propagator and an empty server name; the one attribute this module
+  puts on the span is `speed.endpoint.name`; on a panic the guard also records an
+  `exception` event. No OpenTelemetry View, no
+  `c.Writer` wrapper, no `WriteHeaderNow` trick and no span-name formatter
+  override: each would put a copy of the upstream's behaviour here, to be kept in
+  step with it. The attribute set is the upstream's and is not closed:
+  `http.route` takes the templates the host registers, and `server.address`
+  takes the `Host` the caller wrote. The duration histogram's name, unit and
+  bucket boundaries are pinned (`TestTheRequestDurationBucketsAreInSeconds`,
+  `TestTheRequestDurationInstrumentKeepsItsNameUnitAndSeconds`); the attribute
+  set and the `http.server.request.body.size` and `http.server.response.body.size`
+  instruments are not, so a new version of the upstream
+  instrumentation changes what hosts' dashboards read and is read against its
+  release notes. The spans and instruments carry the upstream's scope name, not
+  this module's, and the upstream's body-size histograms are exported beside the
+  duration histogram.
+- **The server span is named by the upstream: the method and the route
+  template, `GET /orders/:id`, or the method alone when no route matched.** The
+  name is decided when the span starts, from `c.FullPath()`. A request that
+  matched no route carries `http.route` with an empty value and the path the
+  caller wrote in `url.path`, never in the name. The endpoint name goes on as
+  `speed.endpoint.name` from the guard, a value the configuration lists: it is
+  the only place the span records the endpoint, and it is not in the name. The
+  sampler reads the parent and the trace identifier, not the name or the
+  attributes.
+- **A non-standard method is written two ways.** The histograms' and the span's
+  `http.request.method` attribute carry `_OTHER` (the original method is on the
+  span as `http.request.method_original`), and the span name carries `HTTP`,
+  which is what the upstream instrumentation does; `QUERY`, which the upstream
+  convention lists as in development, is folded the same way. The two are not
+  made to agree here.
+- **The request layers are `gin.HandlerFunc`s, and neither wraps `c.Writer`.**
+  The outer layer (`instrumentation`) is the upstream middleware followed by a
+  throw again of the panic value the guard left on the context (`raisedKey`),
+  once the upstream has recorded the request. The guard (`guard`) stands inside
+  it: it writes `speed.endpoint.name`, binds the trace and span identifiers into
+  the request context for the log module, and recovers a panic from the handlers
+  inside it. The upstream reads the outcome from `c.Writer.Status()` and
+  `Size()` after `c.Next()`; the guard reads `Written()`. The writer already
+  carries `Flusher`, `Hijacker` and `Unwrap`, so a wrapper here would only have
+  to forward them, and one that forgot a method would degrade every instrumented
+  endpoint with nothing said. The status recorded is whatever the writer holds,
+  with no folding: gin keeps the code it will commit, a second `WriteHeader`
+  before the commit replaces it and one after is ignored, and an informational
+  code other than 101 is not a final one — the server sends it ahead of the
+  response and answers with the 200 it supplies, while the writer goes on
+  reporting the informational code, so the span and the histograms record that
+  code. The design document carries it as a non-guarantee.
+- **The guard stands inside the outer layer by `After`, not by adjacency, and
+  `layerOrder` is a preference.** The guard carries `After` the tracer-provider
+  capability and provides nothing; the outer layer provides both capabilities.
+  `Order` only chooses among the positions the constraints leave: a layer that
+  states `After` the tracer provider and an `Order` below the guard's, or an
+  equal one and an earlier registration, is placed between the two, and a panic
+  raised in it is not stopped by the guard. It passes through the upstream
+  middleware, which ends the span with an `exception` event that has no stack
+  and no status, records the request in no histogram, and lets the panic go to
+  the entry module's fallback. A second layer standing for the providers would
+  split what other layers' `After` and `Before` point at, which is why the guard
+  provides nothing (`TestTheGuardStandsInsideTheInstrumentationAndStandsForNothing`).
+- **A panic's origin is on the span, not in the fallback's log line.** The guard
+  recovers, so the outer layer throws the value again from a stack that no longer
+  holds the frames of the handler; the stack the entry module's fallback logs
+  starts at that throw. The span's `exception` event is written while the
+  frames are still on the stack, and its `exception.stacktrace` carries them
+  (`TestTheSpanOfAPanicCarriesTheStackOfItsOrigin`). That is a cost of
+  recovering inside the upstream middleware, and the design document states it.
+- **A chain that stops with no return and no panic value is a failure, not a
+  return.** `recover` gives `nil` both for `runtime.Goexit` and for `panic(nil)`
+  under `GODEBUG=panicnil=1`, so the guard tracks whether `c.Next` returned. A
+  `panic(nil)` is handled as a panic (error filed, 500, chain aborted) and the
+  outer layer throws a `nil` for the entry module's fallback to record
+  (`TestANilPanicIsNotSwallowedByTheGuard`, which runs in a child process because
+  the setting is fixed at process start). A `Goexit` never reaches the outer layer
+  and the upstream middleware records nothing on its way out: the guard marks the
+  still-open span failed (`TestAHandlerThatEndsItsGoroutineLeavesAFailedSpan`),
+  and the request is in no histogram, which is a non-guarantee.
+- **The upstream defects stay as they are.** The response-body-size histogram
+  records `-1` for a request that wrote no body — an empty `200`, a `204`, a
+  panicked request — because gin's `Writer.Size()` is `-1` until a write, so its
+  sum can go negative, while the span leaves `http.response.body.size` off; the
+  request-body-size histogram records the request's `ContentLength`, `-1` when
+  unknown; a request matching no route gets `http.route` with an empty value on
+  the span. Repairing any of them here would take a View or a wrapper, which is
+  a change of the decision (`adr-observability-request-layer-2026-10-11.md`),
+  not a repair.
 - **A handler that abandons its connection is recorded as a defect.** A handler
   panicking with `net/http`'s `ErrAbortHandler` asks for its connection to be
   dropped; the entry module's fallback lets that value past without answering or
-  logging, and this layer sits inside it. The layer cannot tell the two apart, so
-  it does what it does for any panic: marks the span errored and records the
-  fallback's default status, for a response the caller never received. Reporting
-  the status the writer holds instead would file every panicking request under
-  success, so the misreport stays — the design document carries it as a
-  non-guarantee. The status the writer holds is read only once the response has
-  started: before that it is no answer, and the fallback's internal error is.
+  logging, and the guard sits inside it. The guard cannot tell the two apart, so
+  it does what it does for any panic: the span is marked errored and `500` is
+  recorded, for a response the caller never received. The guard sets `500` only
+  when nothing has been written (`Written()` is false): before that the status
+  the writer holds is no answer, and reporting it would file every panicking
+  request under success, while a status already committed stands. The misreport
+  stays — the design document carries it as a non-guarantee.
 - **A name written twice in `endpoints` is registered once.** The loop
   registers unconditionally and the entry module does not dedupe, so a repeat
   would double every request in the histogram and open two spans for it. The

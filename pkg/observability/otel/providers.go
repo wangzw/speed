@@ -10,7 +10,6 @@ import (
 	"time"
 
 	"go.opentelemetry.io/otel/attribute"
-	"go.opentelemetry.io/otel/metric"
 	sdkmetric "go.opentelemetry.io/otel/sdk/metric"
 	"go.opentelemetry.io/otel/sdk/resource"
 	sdktrace "go.opentelemetry.io/otel/sdk/trace"
@@ -130,10 +129,6 @@ type providers struct {
 	// lg is the logger this module was given, held for the lines the wiring
 	// stage writes about a configuration that names the same thing twice.
 	lg *slog.Logger
-	// duration is the one instrument this module records on. It is built here
-	// rather than at registration because building an instrument can report an
-	// error, and New is the stage where an error can still be returned.
-	duration metric.Float64Histogram
 }
 
 // newProviders collects the exporters, wraps them, and builds the two
@@ -230,15 +225,6 @@ func newProviders(ctx context.Context, reg *core.Registry) (any, error) {
 	warnIgnoredVariables(lg, os.LookupEnv)
 
 	mp := sdkmetric.NewMeterProvider(metricOpts...)
-	duration, err := newRequestDuration(mp)
-	if err != nil {
-		// The meter provider is running its readers, and nothing holds it or
-		// the exporters: this failure returns from New, so no product exists
-		// for Close to release them through.
-		_ = mp.Shutdown(ctx)
-		_ = releaseExporters(ctx, exporters)
-		return nil, err
-	}
 	tp := sdktrace.NewTracerProvider(traceOpts...)
 	return &providers{
 		cfg:            cfg,
@@ -249,7 +235,6 @@ func newProviders(ctx context.Context, reg *core.Registry) (any, error) {
 		exporters:      exporters,
 		cut:            cut,
 		lg:             lg,
-		duration:       duration,
 	}, nil
 }
 

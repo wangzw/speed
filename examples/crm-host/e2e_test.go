@@ -5,6 +5,7 @@ import (
 	"database/sql"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"io"
 	"log/slog"
 	"maps"
@@ -1617,8 +1618,40 @@ func TestTheSubdomainNamesTheTenant(t *testing.T) {
 }
 
 // requestDurationBounds are the bucket bounds of the request duration, in
-// seconds, as the telemetry module fixes them.
+// seconds, as the instrumentation library the request layer is built on fixes
+// them.
 var requestDurationBounds = []float64{0.005, 0.01, 0.025, 0.05, 0.075, 0.1, 0.25, 0.5, 0.75, 1, 2.5, 5, 7.5, 10}
+
+// requestDurationRequired and requestDurationOptional are the attribute keys a
+// data point of the request duration carries: the library's whole surface, not a
+// closed pair. The first are on every point; the second depend on the request,
+// the port and the route being known, and on an error having been seen. A key in
+// neither, a tenant or a user among them, is not the library's.
+var (
+	requestDurationRequired = []string{"http.request.method", "http.response.status_code", "server.address", "url.scheme"}
+	requestDurationOptional = []string{
+		"error.type", "http.route", "network.protocol.name", "network.protocol.version", "server.port",
+	}
+)
+
+// requestDurationAttributeError holds the keys of one data point of the request
+// duration to the library's surface: all of the required ones, and no key
+// outside the required and the optional ones. It returns nil when they hold.
+func requestDurationAttributeError(keys []string) error {
+	for _, want := range requestDurationRequired {
+		if !slices.Contains(keys, want) {
+			return fmt.Errorf("carries the attributes %v, which lack the %s the library records on every request",
+				slices.Sorted(slices.Values(keys)), want)
+		}
+	}
+	for _, key := range keys {
+		if !slices.Contains(requestDurationRequired, key) && !slices.Contains(requestDurationOptional, key) {
+			return fmt.Errorf("carries the attribute %s, which is not among the library's: %v", key,
+				slices.Sorted(slices.Values(keys)))
+		}
+	}
+	return nil
+}
 
 // standardMethods are the methods the request duration carries by name; any
 // other is folded into _OTHER.
@@ -1642,9 +1675,12 @@ type exportedHistogramPoint struct {
 
 // exportedMetric is one metric as the stdout export backend writes it.
 type exportedMetric struct {
-	Name string `json:"Name"`
-	Unit string `json:"Unit"`
-	Data struct {
+	// Scope is the name of the instrumentation scope the metric was exported under;
+	// it is read from the scope that carried the metric, not from the metric.
+	Scope string `json:"-"`
+	Name  string `json:"Name"`
+	Unit  string `json:"Unit"`
+	Data  struct {
 		DataPoints []exportedHistogramPoint `json:"DataPoints"`
 	} `json:"Data"`
 }
@@ -1662,6 +1698,9 @@ func lastExportedMetric(out, name string) (exportedMetric, bool) {
 		}
 		var export struct {
 			ScopeMetrics []struct {
+				Scope struct {
+					Name string `json:"Name"`
+				} `json:"Scope"`
 				Metrics []exportedMetric `json:"Metrics"`
 			} `json:"ScopeMetrics"`
 		}
@@ -1671,6 +1710,7 @@ func lastExportedMetric(out, name string) (exportedMetric, bool) {
 		for _, scope := range export.ScopeMetrics {
 			for _, m := range scope.Metrics {
 				if m.Name == name {
+					m.Scope = scope.Scope.Name
 					found, ok = m, true
 				}
 			}
@@ -1679,13 +1719,19 @@ func lastExportedMetric(out, name string) (exportedMetric, bool) {
 	return found, ok
 }
 
-// TestTheRequestDurationKeepsItsFixedShape is the case for the request
-// duration histogram, whose name, unit, bucket bounds and attributes are a
-// fixed public surface, on the local stack, whose metrics leave through
-// standard output. Requests on the API endpoint are measured under their
-// method and status alone — no route and no tenant — and a method outside the
-// standard nine is folded into _OTHER rather than carried by name.
-func TestTheRequestDurationKeepsItsFixedShape(t *testing.T) {
+// TestTheRequestDurationCarriesTheInstrumentationLibrarysSurface is the case for
+// the request duration histogram on the local stack, whose metrics leave through
+// standard output. The request layer is built on the gin instrumentation
+// library and adds no instrument of its own, so the histogram is that library's:
+// its name, its unit, its bucket bounds, and its whole attribute surface, which
+// is the method, the status, the scheme, the server address and the route among
+// others and is not closed to a pair. What the layer does not put there is
+// anything of the request's tenant or user. The method is the library's
+// standardised one, so a method outside the standard nine is folded into _OTHER,
+// and a route a request matched is carried as its pattern. The instruments are
+// exported under the library's scope, and the request and response sizes beside
+// the duration.
+func TestTheRequestDurationCarriesTheInstrumentationLibrarysSurface(t *testing.T) {
 	c := newCase(t, stackNamed(t, localStack))
 	c.migrate()
 	h := c.serve()
@@ -1710,6 +1756,19 @@ func TestTheRequestDurationKeepsItsFixedShape(t *testing.T) {
 	if metric.Unit != "s" {
 		t.Errorf("the request duration is exported in %q, want s", metric.Unit)
 	}
+	if metric.Scope != otelGinScope {
+		t.Errorf("the request duration is exported under the scope %q, want the instrumentation library's %q",
+			metric.Scope, otelGinScope)
+	}
+	for _, name := range []string{"http.server.request.body.size", "http.server.response.body.size"} {
+		sized, ok := lastExportedMetric(h.output(), name)
+		if !ok {
+			t.Errorf("the run exported no %s, which the instrumentation library records beside the duration", name)
+		} else if sized.Scope != otelGinScope {
+			t.Errorf("%s is exported under the scope %q, want the instrumentation library's %q", name, sized.Scope,
+				otelGinScope)
+		}
+	}
 	var gets, others uint64
 	for _, point := range metric.Data.DataPoints {
 		if !slices.Equal(point.Bounds, requestDurationBounds) {
@@ -1720,9 +1779,8 @@ func TestTheRequestDurationKeepsItsFixedShape(t *testing.T) {
 			values[attr.Key] = attr.Value.Value
 		}
 		keys := slices.Sorted(maps.Keys(values))
-		if !slices.Equal(keys, []string{"http.request.method", "http.response.status_code"}) {
-			t.Errorf("a data point of the request duration carries the attributes %v, want the method and the status alone",
-				keys)
+		if err := requestDurationAttributeError(keys); err != nil {
+			t.Errorf("a data point of the request duration %v", err)
 			continue
 		}
 		method, _ := values["http.request.method"].(string)
@@ -1731,6 +1789,9 @@ func TestTheRequestDurationKeepsItsFixedShape(t *testing.T) {
 		}
 		switch status, _ := values["http.response.status_code"].(float64); {
 		case method == nethttp.MethodGet && status == nethttp.StatusOK:
+			if route, _ := values["http.route"].(string); route != "/members" {
+				t.Errorf("a data point of the GETs answered 200 carries the route %q, want /members", route)
+			}
 			gets += point.Count
 		case method == "_OTHER" && int(status) == purge.status:
 			others += point.Count

@@ -26,10 +26,13 @@
 //     users and grant memberships at the command line, serve, sign in — and
 //     answers the same way, and a served request's span leaves through the
 //     export backend the stack names.
-//   - The request duration keeps its fixed shape on the stack whose metrics
-//     leave through standard output: seconds, the fourteen bucket bounds the
-//     telemetry module fixes, and the method and the status as its only
-//     attributes, a method outside the standard nine folded into _OTHER.
+//   - On the stack whose metrics leave through standard output, the request
+//     duration is the instrumentation library's histogram: seconds, the
+//     library's bucket bounds, its whole attribute surface (method, status,
+//     scheme, server address, the matched route and others) and nothing of the
+//     tenant or the user, a method outside the standard nine folded into
+//     _OTHER; the request and response body sizes are exported beside it, all
+//     under the library's scope.
 //   - `migrate` runs the engine alone and reaches every other module for its
 //     declarations, and every table is built. The commands that drive past
 //     Migrate carry the same declarations, so each applies the same migration
@@ -580,8 +583,9 @@
 //     route is a server span named for its method and route, carrying the
 //     method, the status, the route and the endpoint; a webhook's traceparent
 //     names an exported client span of its delivery; and the request duration
-//     is a histogram in seconds with the fourteen bounds the telemetry module
-//     fixes.
+//     is a histogram in seconds with the fourteen bounds the instrumentation
+//     library fixes, with the library's attribute surface, under the library's
+//     scope.
 package main
 
 import (

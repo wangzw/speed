@@ -1,15 +1,14 @@
 package otel
 
 import (
+	"errors"
 	"fmt"
 	nethttp "net/http"
-	"time"
 
 	"github.com/gin-gonic/gin"
+	"go.opentelemetry.io/contrib/instrumentation/github.com/gin-gonic/gin/otelgin"
 	"go.opentelemetry.io/otel/attribute"
 	"go.opentelemetry.io/otel/codes"
-	"go.opentelemetry.io/otel/metric"
-	"go.opentelemetry.io/otel/propagation"
 	"go.opentelemetry.io/otel/trace"
 
 	"github.com/vislake/speed/pkg/core"
@@ -19,234 +18,177 @@ import (
 )
 
 const (
-	// instrumentationName identifies this module as the source of the
-	// instrumentation, in the sense the upstream API gives that argument.
-	instrumentationName = ModuleName
-
-	// requestDurationName is the one instrument this module owns. Its name and
-	// its unit are part of the surface a dashboard or an alert reads, so they
-	// are fixed here rather than derived.
-	requestDurationName = "http.server.request.duration"
-	requestDurationUnit = "s"
-
 	// layerOrder places the layer outside the layers it should time. It is a
 	// preference, not a guarantee: a layer registered with a smaller order, or
 	// one nothing points at, ends up outside this one, and the time it spends
 	// is then not in the span.
 	layerOrder = -10
 
-	// otherMethod is where request methods outside the standard set are folded,
-	// keeping the method dimension a closed set.
-	otherMethod = "_OTHER"
+	// raisedKey is the gin context key under which the guard hands a recovered
+	// panic value to the outer layer, which throws it again once the upstream
+	// instrumentation has recorded the request.
+	raisedKey = "speed.observability.raised"
 )
 
-// The two attributes the request histogram and the server span carry. Both are
-// closed sets — the standard methods plus otherMethod, and the status codes —
-// so neither grows with traffic. A route attribute is not among the histogram's:
-// the routes are whatever the hosts register, so the dimension would grow with
-// them and a dashboard that reads it could no longer be changed.
-var (
-	attrRequestMethod = attribute.Key("http.request.method")
-	attrResponseCode  = attribute.Key("http.response.status_code")
-)
+// attrEndpointName is the one attribute the server span carries that the
+// upstream instrumentation does not: the endpoint name the configuration lists,
+// the only place the span records which endpoint a request arrived on.
+var attrEndpointName = attribute.Key("speed.endpoint.name")
 
-// The two attributes the server span carries beyond the outcome. The route is
-// the template a request matched, as c.FullPath reports it, so its values are
-// bounded by the routes registered and do not grow with traffic. The span's name
-// and attributes are outside the fixed surface the histogram's name, unit,
-// boundaries and attributes form, so the constraint that keeps the route off the
-// histogram does not reach them. The endpoint name is the one the configuration
-// lists, and is the only place the span records the endpoint: the name is the
-// method and the route.
-var (
-	attrRoute        = attribute.Key("http.route")
-	attrEndpointName = attribute.Key("speed.endpoint.name")
-)
+// handlerPanic is the error the guard files against a request whose handler
+// panicked. The upstream instrumentation reads the request's errors to mark the
+// span failed and to set its error type, so the type's name is what an operator
+// filters on. The panic value is not carried: it reaches the span as an event and
+// the log through the entry module's fallback, and a status description would
+// copy it into every system that renders one.
+type handlerPanic struct{}
 
-// standardMethods is the closed set the method attribute is drawn from.
-var standardMethods = map[string]struct{}{
-	nethttp.MethodConnect: {},
-	nethttp.MethodDelete:  {},
-	nethttp.MethodGet:     {},
-	nethttp.MethodHead:    {},
-	nethttp.MethodOptions: {},
-	nethttp.MethodPatch:   {},
-	nethttp.MethodPost:    {},
-	nethttp.MethodPut:     {},
-	nethttp.MethodTrace:   {},
+func (handlerPanic) Error() string { return "handler panicked" }
+
+// errUnwound is the text the span's exception event carries for a chain that
+// stopped without a panic value.
+var errUnwound = errors.New("the handler stopped without returning and without a panic value")
+
+// layers describes the two layers this module registers for one endpoint, in the
+// order they are registered: the instrumentation, then the guard inside it.
+//
+// The two are separate because the upstream instrumentation ends its span as a
+// panic passes through it and records nothing on the way. Whatever has to stop
+// the panic before it reaches the instrumentation has to sit inside it, and the
+// handler that binds the log fields needs the span the instrumentation started,
+// so it sits inside as well.
+func (p *providers) layers(endpoint string) []http.Middleware {
+	return []http.Middleware{p.instrumentation(), p.guard(endpoint)}
 }
 
-// methodOf folds a request method into the closed set.
-func methodOf(method string) string {
-	if _, ok := standardMethods[method]; ok {
-		return method
+// attach registers both layers on the endpoint.
+func (p *providers) attach(ep http.Endpoint, endpoint string) {
+	for _, layer := range p.layers(endpoint) {
+		ep.Use(layer)
 	}
-	return otherMethod
 }
 
-// requestDurationBounds are the bucket boundaries the request histogram counts
-// into, in seconds: the ones the upstream semantic conventions give for this
-// instrument.
-//
-// They are written out because the upstream SDK's default boundaries are meant
-// for milliseconds — the first finite bucket ends at 5 — and a histogram
-// recorded in seconds would put every request under five seconds into one
-// bucket, leaving no percentile or latency objective to read from it. The
-// boundaries are part of the surface a dashboard reads, like the name and the
-// unit.
-var requestDurationBounds = []float64{0.005, 0.01, 0.025, 0.05, 0.075, 0.1, 0.25, 0.5, 0.75, 1, 2.5, 5, 7.5, 10}
-
-// newRequestDuration builds the instrument the layer records on.
-//
-// The name, the unit, the description and the boundaries are constants of this
-// package, so the error the upstream returns for an unusable instrument is a
-// programming fault rather than anything a host can act on; it is handed back
-// rather than panicked so that it reaches the startup failure like every other
-// judgement this module makes.
-func newRequestDuration(mp metric.MeterProvider) (metric.Float64Histogram, error) {
-	return mp.Meter(instrumentationName).Float64Histogram(
-		requestDurationName,
-		metric.WithUnit(requestDurationUnit),
-		metric.WithDescription("Duration of an inbound HTTP request, in seconds"),
-		metric.WithExplicitBucketBoundaries(requestDurationBounds...),
-	)
-}
-
-// layer describes the one layer this module registers, for one endpoint.
+// instrumentation is the outer layer: the upstream gin instrumentation, plus the
+// throw that gives the panic back once the request has been recorded.
 //
 // Provides names the capabilities this module actually delivers rather than a
 // name invented for the layer: another layer's After or Before has to match
 // what a module really hands out, or the constraint lands nowhere and only a
 // warning says so.
-func (p *providers) layer(endpoint string) http.Middleware {
+//
+// The providers and the propagator are handed over rather than left to the
+// upstream's global defaults: the globals are whatever the process set last, and
+// this module's product is the one the registry delivered. The server name is
+// empty, which the upstream reads as "take it from the request's host".
+func (p *providers) instrumentation() http.Middleware {
+	record := otelgin.Middleware("",
+		otelgin.WithTracerProvider(p.tp),
+		otelgin.WithMeterProvider(p.mp),
+		otelgin.WithPropagators(observability.Propagator()),
+	)
 	return http.Middleware{
 		Name: ModuleName,
 		Provides: []core.Token{
 			(*observability.TracerProvider)(nil),
 			(*observability.MeterProvider)(nil),
 		},
-		Order:   layerOrder,
-		Handler: p.instrument(endpoint),
-	}
-}
-
-// instrument builds the gin handler for one endpoint.
-//
-// The endpoint name is captured here because it is the only place that knows
-// it: the registration surface hands out one endpoint at a time, and nothing
-// downstream can recover which one a request arrived on.
-func (p *providers) instrument(endpoint string) gin.HandlerFunc {
-	tracer := p.tp.Tracer(instrumentationName)
-	duration := p.duration
-	return func(c *gin.Context) {
-		method := methodOf(c.Request.Method)
-
-		// Extraction first: the span this request continues, if the caller
-		// sent one, is what decides sampling and what the trace looks like
-		// from the other side.
-		ctx := observability.Propagator().Extract(c.Request.Context(), propagation.HeaderCarrier(c.Request.Header))
-		// The span starts under the method alone and takes its route with the
-		// outcome, before it ends. The name does not reach the sampling
-		// decision: the sampler follows the parent and otherwise reads the
-		// trace identifier.
-		ctx, span := tracer.Start(ctx, method,
-			trace.WithSpanKind(trace.SpanKindServer),
-			trace.WithAttributes(attrEndpointName.String(endpoint)),
-		)
-
-		// The attribute keys are this module's, bound here and read by the
-		// log module without it knowing what they mean. The logger itself is
-		// injected upstream, by whoever built this context.
-		ctx = log.WithAttrs(ctx,
-			observability.TraceIDKey, span.SpanContext().TraceID().String(),
-			observability.SpanIDKey, span.SpanContext().SpanID().String(),
-		)
-		c.Request = c.Request.WithContext(ctx)
-
-		start := time.Now()
-		defer func() {
-			raised := recover()
-			elapsed := time.Since(start)
-
-			// The writer is gin's own and this layer leaves it in place, so
-			// what it reports is what the caller is answered with: gin keeps
-			// the status it will commit, and a second WriteHeader before the
-			// commit replaces it while one after the commit is ignored.
-			code := c.Writer.Status()
-			if raised != nil {
-				span.RecordError(fmt.Errorf("%v", raised))
-				span.SetStatus(codes.Error, "handler panicked")
-				// While nothing has been written, the status the caller will
-				// see is the one the entry module's fallback writes, and the
-				// default of that response is an internal error. The status the
-				// writer holds is no answer yet — it is whatever the handler
-				// had set or the 200 the writer starts from — and reporting it
-				// would put every panicking request into the 200 bucket, which
-				// is the one place an operator most needs it not to be. A module
-				// that delivered an ErrorResponder can write another status, and
-				// this layer cannot see that decision — the module's
-				// documentation states it as one of the things it does not
-				// guarantee.
-				if !c.Writer.Written() {
-					code = nethttp.StatusInternalServerError
-				}
-			}
-			code = answeredWith(code)
-			outcome := []attribute.KeyValue{
-				attrRequestMethod.String(method),
-				attrResponseCode.Int(code),
-			}
-			duration.Record(ctx, elapsed.Seconds(), metric.WithAttributes(outcome...))
-
-			// The span carries the same outcome the histogram does, and a
-			// server error marks it failed whether or not the handler
-			// panicked: a 500 written on purpose is as much this endpoint's
-			// failure as one written by the fallback, and a span left
-			// unmarked files it with the successes wherever traces are
-			// filtered by status. A client error is the caller's, and the
-			// status stays unset for it, which is the upstream convention
-			// for a server span.
-			span.SetAttributes(outcome...)
-			// A request that matched no route, a 404 or a 405, has an empty
-			// full path: its span keeps the method alone and carries no route.
-			if route := c.FullPath(); route != "" {
-				span.SetName(method + " " + route)
-				span.SetAttributes(attrRoute.String(route))
-			}
-			if raised == nil && code >= nethttp.StatusInternalServerError {
-				span.SetStatus(codes.Error, "")
-			}
-			span.End()
+		Order: layerOrder,
+		Handler: func(c *gin.Context) {
+			record(c)
 
 			// The panic goes on to the entry module's own fallback, which
 			// sits outside the engine this layer runs in. Swallowing it here
 			// would take over a promise that is not this module's, and
 			// writing a response is not this layer's job either.
-			if raised != nil {
+			if raised, ok := c.Get(raisedKey); ok {
+				// A recovered nil is stored as a nil and so thrown as one: the
+				// fallback tells that from a request that returned and gives
+				// it its own record. After a Goexit this line is never reached.
 				panic(raised)
 			}
-		}()
-
-		c.Next()
+		},
 	}
 }
 
-// answeredWith is the final status a caller is answered with, given the one the
-// writer holds.
+// guard is the inner layer. It stands between the upstream instrumentation and
+// the rest of the chain and does three things the instrumentation does not.
 //
-// An informational code the handler set — 103 Early Hints, say — is not a final
-// one: net/http sends it ahead of the response and answers with the status that
-// follows. The writer holds the code until the header is committed and then hands
-// it on as an interim response, so a handler that goes on to write a body is
-// answered with the 200 net/http supplies while the writer still reports the
-// informational code. Recording that would put a status that ends no request into
-// a closed set it is not part of. A status the handler writes before the commit
-// replaces the code in the writer, and is the one reported. 101 Switching
-// Protocols is the exception the server makes too: it is the last thing written
-// on the connection before it changes hands, so it is the final code.
-func answeredWith(status int) int {
-	if status >= 100 && status < 200 && status != nethttp.StatusSwitchingProtocols {
-		return nethttp.StatusOK
+// It binds the span's identifiers into the request context for the log module.
+// The attribute keys are this module's, bound here and read by the log module
+// without it knowing what they mean. The logger itself is injected upstream, by
+// whoever built this context.
+//
+// It names the endpoint on the span. The endpoint name is captured here because
+// it is the only place that knows it: the registration surface hands out one
+// endpoint at a time, and nothing downstream can recover which one a request
+// arrived on.
+//
+// It stops a panic from the handlers inside it, so the instrumentation returns
+// normally and records the request. The status the instrumentation reads is the
+// one the writer holds, and while nothing has been written that is no answer yet:
+// it is whatever the handler had set or the 200 the writer starts from, and
+// reporting it would put every panicking request into the 200 bucket, which is the
+// one place an operator most needs it not to be. The status the entry module's
+// fallback writes for a panic is an internal error, so that is what the writer is
+// given. A module that delivered an ErrorResponder can write another status, and
+// this layer cannot see that decision — the module's documentation states it as
+// one of the things it does not guarantee.
+//
+// The recovered value goes to the outer layer, which throws it again, and the
+// chain is aborted so that no handler after the one that panicked runs.
+//
+// A chain that stops without returning and without a value is handled as a
+// panic too. recover returns nil for a panic(nil) under GODEBUG=panicnil=1, and
+// reading that as a request that returned would stop the panic here: the handlers
+// after it would run, the client would get a 200, and the fallback would never
+// write its record. A runtime.Goexit also reads as nil, but it keeps unwinding
+// after the deferred function returns, so the outer layer never runs and the
+// instrumentation records nothing on its way out. The guard marks the span failed
+// on the still-open span; the request is then in no histogram, which is the
+// instrumentation's own behaviour.
+func (p *providers) guard(endpoint string) http.Middleware {
+	return http.Middleware{
+		Name:  ModuleName + ":guard",
+		After: []core.Token{(*observability.TracerProvider)(nil)},
+		Order: layerOrder,
+		Handler: func(c *gin.Context) {
+			finished := false
+			ctx := c.Request.Context()
+			span := trace.SpanFromContext(ctx)
+			span.SetAttributes(attrEndpointName.String(endpoint))
+			ctx = log.WithAttrs(ctx,
+				observability.TraceIDKey, span.SpanContext().TraceID().String(),
+				observability.SpanIDKey, span.SpanContext().SpanID().String(),
+			)
+			c.Request = c.Request.WithContext(ctx)
+
+			defer func() {
+				raised := recover()
+				cause := error(nil)
+				if raised == nil {
+					if finished {
+						return
+					}
+					cause = errUnwound
+					span.SetStatus(codes.Error, handlerPanic{}.Error())
+				} else {
+					cause = fmt.Errorf("%v", raised)
+				}
+				// The stack is taken here, while the frames of the panic are
+				// still on it: once the value is thrown again from the outer
+				// layer, the stack the entry module's fallback records starts
+				// there. The span is where the origin survives.
+				span.RecordError(cause, trace.WithStackTrace(true))
+				c.Set(raisedKey, raised)
+				_ = c.Error(handlerPanic{})
+				if !c.Writer.Written() {
+					c.Status(nethttp.StatusInternalServerError)
+				}
+				c.Abort()
+			}()
+
+			c.Next()
+			finished = true
+		},
 	}
-	return status
 }
