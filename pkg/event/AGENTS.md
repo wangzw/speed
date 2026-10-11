@@ -2,8 +2,8 @@
 
 The event-bus module: it lets one module publish a domain fact under a type name
 and another subscribe to that name, without either knowing the other. It is how
-cross-cutting capabilities — audit, observability — reach domain facts they
-would otherwise have to couple themselves to every producer for.
+cross-cutting capabilities such as audit reach domain facts they would
+otherwise have to couple themselves to every producer for.
 
 The root package carries the interface, the event type and the payload helpers.
 Concrete backends are subpackages — `memory`, `redis`, `postgres` and `nats` — and
@@ -57,9 +57,10 @@ must not cross, and how to run it.
   published.
 - **A publisher keeps credentials out of a payload, and the bus does not
   help.** A subscriber reads a payload by field name and may write what it read
-  straight onto its own signal surface — observability writes every top-level
-  field as a span attribute — while the bus neither inspects nor strips a
-  payload. A credential put in a payload reaches that surface.
+  straight into its own records — audit writes the top-level scalar fields
+  into an entry's detail, masking only a closed set of key names — while the
+  bus neither inspects nor strips a payload. A credential in a top-level
+  scalar field under any other key reaches those records.
 - **The context a handler receives is the implementation's, and a subscriber's
   span parentage follows from it.** The process-local bus calls a handler on the
   publisher's own context, so a span started there joins the trace that produced

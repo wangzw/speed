@@ -3,10 +3,9 @@ package otel
 import "errors"
 
 // The failures this module judges for itself. A failure to take up the entry
-// module or the bus, and an undeclared endpoint name, are not among them: they
-// are core's and the entry module's sentinels, wrapped with the input item that
-// asked for them and still matchable by errors.Is, so neither gets a second
-// name here.
+// module, and an undeclared endpoint name, are not among them: they are core's
+// and the entry module's sentinels, wrapped with the input item that asked for
+// them and still matchable by errors.Is, so neither gets a second name here.
 var (
 	// ErrInvalidSampleRatio reports a ratio that is not a finite number within
 	// [0,1]. The text names the accepted interval, which is the whole of what a

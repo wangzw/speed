@@ -6,9 +6,9 @@
 // implementation subpackages, each binding one backend and each delivering this
 // capability exclusively.
 //
-// It is the entry point through which cross-cutting capabilities — audit,
-// observability — take up domain facts. They subscribe to the bus and receive
-// what every module publishes, without any of those modules depending on them.
+// It is the entry point through which cross-cutting capabilities such as audit
+// take up domain facts. They subscribe to the bus and receive what every module
+// publishes, without any of those modules depending on them.
 //
 // A subscriber usually cannot name a publisher's type: importing it would
 // invert the module dependency, and two modules cannot share a type without a

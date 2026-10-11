@@ -315,9 +315,7 @@ observability:
       batch-timeout: 200ms
     endpoints:
       - public
-    events:
-      - %q
-`, public, ops, dbPath, subject, hashed, placedEventType, placedEventType)
+`, public, ops, dbPath, subject, hashed, placedEventType)
 
 	configPath := filepath.Join(dir, "config.yaml")
 	if err := os.WriteFile(configPath, []byte(body), 0o600); err != nil {

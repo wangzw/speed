@@ -579,11 +579,9 @@
 //     service and each replica its own version 4 instance identifier; a served
 //     route is a server span named for its method and route, carrying the
 //     method, the status, the route and the endpoint; a webhook's traceparent
-//     names an exported client span of its delivery; each replica
-//     derives a consumer span from a deal.won, carrying the event's
-//     identifier, the tenant and an amount past 2^53 as the exact integer; and
-//     the request duration is a histogram in seconds with the fourteen bounds
-//     the telemetry module fixes.
+//     names an exported client span of its delivery; and the request duration
+//     is a histogram in seconds with the fourteen bounds the telemetry module
+//     fixes.
 package main
 
 import (

@@ -109,15 +109,14 @@ func TestTheAssemblerStartsWithNoBackendAndSaysSo(t *testing.T) {
 	}
 }
 
-// TestTheAssemblerStartsOnItsDefaultsWithNoEntryModuleAndNoBus is the shape a
+// TestTheAssemblerStartsOnItsDefaultsWithNoEntryModule is the shape a
 // background process has: this module is taken in on its default configuration,
 // whose endpoint list asks for every endpoint the entry module declares, and
-// the assembly holds neither an entry module nor a bus. Nothing in that
-// configuration asked for a particular endpoint or event type, so the missing
-// entry module is not a failure and no bus is reached for.
-func TestTheAssemblerStartsOnItsDefaultsWithNoEntryModuleAndNoBus(t *testing.T) {
+// the assembly holds no entry module. Nothing in that configuration asked for a
+// particular endpoint, so the missing entry module is not a failure.
+func TestTheAssemblerStartsOnItsDefaultsWithNoEntryModule(t *testing.T) {
 	if _, _, err := assemble(t, otel.ModuleName); err != nil {
-		t.Fatalf("a process with no entry module and no bus could not start this module: %v", err)
+		t.Fatalf("a process with no entry module could not start this module: %v", err)
 	}
 }
 
@@ -180,9 +179,8 @@ func (p suppliedProviders) Shutdown(context.Context) error {
 	return nil
 }
 
-// namingConfig is a reading face whose configuration names an endpoint and an
-// event type, which is what makes the assembler reach for an entry module and a
-// bus.
+// namingConfig is a reading face whose configuration names an endpoint, which
+// is what makes the assembler reach for an entry module.
 type namingConfig struct{}
 
 func (namingConfig) Decode(namespace string, target any) error {
@@ -190,19 +188,18 @@ func (namingConfig) Decode(namespace string, target any) error {
 		cfg := target.(*otel.Config)
 		cfg.ServiceName = "orders"
 		cfg.Endpoints = []string{"api"}
-		cfg.Events = []string{"order.placed"}
 	}
 	return nil
 }
 
 // TestAnInstanceSuppliedForTheAssemblerIsLeftAlone pins what the assembler's
 // callbacks do with an instance that is not its own product. The configuration
-// names an endpoint and an event type while the registry holds neither an entry
-// module nor a bus, so a wiring stage that acted on the supplied instance would
-// fail the startup for want of both. Nothing is registered or subscribed, the
-// stop that follows leaves the instance as it is, and what a consumer resolves
-// is the instance the host supplied. The module writes no line: its New is the
-// one that does, and New does not run for a supplied instance.
+// names an endpoint while the registry holds no entry module, so a wiring stage
+// that acted on the supplied instance would fail the startup for want of one.
+// Nothing is registered, the stop that follows leaves the instance as it is,
+// and what a consumer resolves is the instance the host supplied. The module
+// writes no line: its New is the one that does, and New does not run for a
+// supplied instance.
 func TestAnInstanceSuppliedForTheAssemblerIsLeftAlone(t *testing.T) {
 	logged := &bytes.Buffer{}
 	shutdowns := 0

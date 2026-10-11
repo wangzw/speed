@@ -59,9 +59,6 @@ type Config struct {
 	// only as the whole list; written beside any other entry, a second "*"
 	// included, it is refused.
 	Endpoints []string `config:"endpoints"`
-	// Events names the event types that are turned into spans. Empty means no
-	// subscription, and the module then takes no bus up.
-	Events []string `config:"events"`
 }
 
 // Batch configures the span batch processor.

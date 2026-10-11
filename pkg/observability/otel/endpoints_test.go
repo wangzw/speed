@@ -70,8 +70,6 @@ type endpointCase struct {
 	// whether it gives one at all: a case that leaves it out is the default.
 	listed  []string
 	setList bool
-	// events is the event list the configuration gives.
-	events []string
 	// declared names the endpoints the entry module declares. Nothing declared
 	// means no entry module in the assembly, which is a background process.
 	declared []string
@@ -95,7 +93,6 @@ func (f endpointConfig) Decode(namespace string, target any) error {
 		if f.c.setList {
 			cfg.Endpoints = f.c.listed
 		}
-		cfg.Events = f.c.events
 		return nil
 	}
 	doc := `{"endpoints":{`
@@ -331,20 +328,6 @@ func TestAListOfNamesWithNoEntryModuleFailsTheStartupAndNamesTheKey(t *testing.T
 		t.Fatalf("the drive ended with %v, want the missing-provider failure", got.err)
 	}
 	for _, want := range []string{"observability.otel.endpoints", "clear the list", "command tree"} {
-		if !strings.Contains(got.err.Error(), want) {
-			t.Errorf("the failure %q lacks %q", got.err, want)
-		}
-	}
-}
-
-// TestAnEventTypeWithNoBusFailsTheStartupAndNamesTheKey pins the same for the
-// bus, which is taken up only when an event type is named.
-func TestAnEventTypeWithNoBusFailsTheStartupAndNamesTheKey(t *testing.T) {
-	got := endpointCase{events: []string{"order.placed"}}.run(t)
-	if !errors.Is(got.err, core.ErrMissingProvider) {
-		t.Fatalf("the drive ended with %v, want the missing-provider failure", got.err)
-	}
-	for _, want := range []string{"observability.otel.events", "clear the list", "command tree"} {
 		if !strings.Contains(got.err.Error(), want) {
 			t.Errorf("the failure %q lacks %q", got.err, want)
 		}

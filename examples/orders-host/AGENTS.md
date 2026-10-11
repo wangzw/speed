@@ -188,8 +188,6 @@ observability:
     service-name: orders-host
     endpoints:
       - public
-    events:
-      - order.placed
 ```
 
 Each module hangs under its own capability directory's heading — `authn.gate`

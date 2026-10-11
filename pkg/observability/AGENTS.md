@@ -5,9 +5,8 @@ serves. Logs are not here — they are their own module and their own signal.
 
 The root package carries the interface and the two helpers. `otel` registers the
 assembler: it builds the two providers, collects the exporters the registry
-holds, and instruments the request path and the event bus. `otlp` and `stdout`
-are export backends, each registering one module that delivers both exporter
-capabilities.
+holds, and instruments the request path. `otlp` and `stdout` are export
+backends, each registering one module that delivers both exporter capabilities.
 
 ## Where the authority is
 
@@ -126,17 +125,17 @@ must not cross, and how to run it.
   empty string instead would report an empty one.
   `TestAnUnnamedServiceTakesItsNameFromTheUpstream` and
   `TestALaterLayerOverridesAnEarlierOne` hold the order.
-- **The assembler reaches an entry module only when `endpoints` is not empty,
-  and a bus only when `events` is not.** An empty list must leave the process
-  free of the one it would reach: a background worker carries this module and
-  has neither. The `endpoints` default is `*`, every endpoint the entry module
-  declares, and for that value alone a missing entry module is skipped, told
-  apart from every other failure of the lookup by `errors.Is` against
-  `core.ErrMissingProvider`; a list of names fails without one, and so does any
-  other lookup failure, such as two router providers that neither declare
-  exclusivity (the entry module declares it, so a second provider beside it never
-  reaches `wire`: the registry refuses the pair first). Each failure names the
-  input item that asked and wraps the sentinel it came with.
+- **The assembler reaches an entry module only when `endpoints` is not
+  empty.** An empty list must leave the process free of it: a background
+  worker carries this module and has none. The `endpoints` default is `*`,
+  every endpoint the entry module declares, and for that value alone a missing
+  entry module is skipped, told apart from every other failure of the lookup by
+  `errors.Is` against `core.ErrMissingProvider`; a list of names fails without
+  one, and so does any other lookup failure, such as two router providers that
+  neither declare exclusivity (the entry module declares it, so a second
+  provider beside it never reaches `wire`: the registry refuses the pair first).
+  Each failure names the input item that asked and wraps the sentinel it came
+  with.
 - **The probe lives in `New`, never in `Prepare`.** `Prepare` runs for every
   module a command took in (except one the host supplied an instance for),
   including a command that collects stances and constructs nothing; a round trip
@@ -146,7 +145,7 @@ must not cross, and how to run it.
   attributes, both closed sets: the standard methods plus the folding value, and
   the status code. No route — the matched route is readable on the chain, but it
   is whatever hosts register, and a dimension a dashboard has read cannot be taken
-  back — and no tenant: that dimension lives on event-derived spans. The
+  back — and no tenant, whose values grow with the number of tenants. The
   instrument's name, unit and bucket boundaries are equally fixed; a dashboard
   reads them. The server span carries the same two attributes, and a final
   server-error status marks it errored whether or not the handler panicked.
@@ -163,32 +162,6 @@ must not cross, and how to run it.
   configuration lists: it is the only place the span records the endpoint. The
   rename does not reach sampling, which reads the parent and the trace
   identifier, not the name.
-- **An event-derived span's attributes are the payload's fields as published,
-  plus the two the bus carries.** Every top-level field of the payload becomes
-  one attribute, in the type and with the digits it was published with — a
-  number is not read through a float64 and printed back — so the set is
-  whatever publishers put in payloads and the module limits no attribute's
-  cardinality. Keeping a credential out of a payload is therefore the
-  publisher's obligation: this module neither inspects nor strips one. The
-  event's identifier goes on as `messaging.message.id` and its tenant as
-  `tenant_id`, both after the payload's fields, so a payload field of the same
-  name cannot displace what the bus said.
-- **The identifier is what groups the spans of one event.** The bus promises no
-  delivery count: a transport-backed bus hands every event to every replica's
-  subscribers, a backend may redeliver and a publisher may publish the same
-  event again, so one fact can become several spans, each the root of its own
-  trace over a transport. Every one carries the same identifier, and a span
-  count is not a fact count until spans are grouped by it.
-- **An event-derived span's parent and kind come from the bus, not from this
-  module.** The span starts on the context the handler was handed: the
-  process-local bus hands the publisher's own context, so the span joins the
-  trace that produced the fact, while a transport-backed bus hands one of its
-  own, leaving the span a root. The kind is `consumer`, the value upstream
-  defines for receiving a message from a broker; a locally-subscribed fact
-  crosses no such boundary, so the kind upstream defines for an in-application
-  operation — `internal` — is the closer fit. It stays `consumer` because one
-  handler serves both backend shapes, and a transport-backed bus does receive
-  from a broker.
 - **The method dimension is folded in both signals.** The histogram's method
   attribute and the span name, with or without a route, both fold anything
   outside the nine standard methods into one value. Narrowing the cardinality
@@ -219,10 +192,10 @@ must not cross, and how to run it.
   success, so the misreport stays — the design document carries it as a
   non-guarantee. The status the writer holds is read only once the response has
   started: before that it is no answer, and the fallback's internal error is.
-- **A name written twice in `endpoints` or `events` is registered once.** Both
-  loops register unconditionally and neither the entry module nor the bus
-  dedupes, so a repeat would double every request in the histogram and open two
-  spans for it. The repeat is dropped and a line says so.
+- **A name written twice in `endpoints` is registered once.** The loop
+  registers unconditionally and the entry module does not dedupe, so a repeat
+  would double every request in the histogram and open two spans for it. The
+  repeat is dropped and a line says so.
 - **`TraceIDKey` and `SpanIDKey` are a contract with whoever reads a log line**,
   not an implementation detail. They are bound here and the log module carries
   them without knowing what they mean.

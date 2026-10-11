@@ -227,25 +227,20 @@ func otlpStack(t *testing.T) stack {
 // TestTheOTLPExportCarriesWhatEachReplicaMeasured is the case for the telemetry
 // the OTLP backend exports, decoded, on the stack that exports through it.
 //
-// Two replicas serve, and the telemetry module derives a span from every
-// deal.won. Each replica serves a member listing, one of them a move into won
-// of a deal whose amount is past what a float64 holds, and the webhook of the
-// won deal is posted; then both are stopped, which flushes what they held.
+// Two replicas serve. Each replica serves a member listing, one of them a move
+// into won, and the webhook of the won deal is posted; once every replica has
+// handled the deal.won both are stopped, which flushes what they held.
 //
 // What arrived is held to what the telemetry module states. Every export names
 // the configured service, and each replica its own version 4 instance
 // identifier, so the two replicas' exports are two sets. The served route is a
 // server span named for the method and the route, carrying the method, the
 // status, the route and the endpoint. The webhook's traceparent names an
-// exported client span of the delivery. Each replica derives a consumer span
-// from the deal.won the bus handed it, carrying the event's identifier as the
-// move recorded it, the tenant, and the amount as the integer it was, which a
-// payload decoded into floats would round to 2^53. The request duration is a
-// histogram in seconds whose bucket bounds are the fourteen the module fixes,
-// which the SDK's millisecond defaults are not.
+// exported client span of the delivery. The request duration is a histogram in
+// seconds whose bucket bounds are the fourteen the module fixes, which the
+// SDK's millisecond defaults are not.
 func TestTheOTLPExportCarriesWhatEachReplicaMeasured(t *testing.T) {
 	c := newCase(t, otlpStack(t))
-	c.config.set("observability.otel.events", []string{dealWonEvent})
 	receiver := startWebhookReceiver(t)
 	w := startDealsOn(t, c, 2, func(w *dealsWorld) {
 		c.configureWebhook(receiver, w.acme, "the secret acme signs with")
@@ -256,11 +251,10 @@ func TestTheOTLPExportCarriesWhatEachReplicaMeasured(t *testing.T) {
 		expect(t, "listing acme's members on "+h.name, h.get(t, apiEndpoint, "/members", acme.Alias, alice),
 			nethttp.StatusOK)
 	}
-	won := winDeal(t, w.h, acme, alice, "traced", "JPY", pastFloat)
+	won := winDeal(t, w.h, acme, alice, "traced", "JPY", 12500)
 	calls := receiver.awaitCalls(t, webhookPath(acme), 1)
-	// Every replica is handed the deal.won; once each has written what its
-	// projection did with it, the span derived from it has been started, and
-	// the stop flushes it.
+	// Every replica is handed the deal.won, and none is stopped before its
+	// projection has written what it did with it.
 	runs := make([]*process, 0, len(w.hosts))
 	for _, h := range w.hosts {
 		runs = append(runs, h.process)
@@ -323,31 +317,6 @@ func TestTheOTLPExportCarriesWhatEachReplicaMeasured(t *testing.T) {
 			}
 		}
 		t.Errorf("the traceparent %q names no exported webhooks POST span", calls[0].header.Get("Traceparent"))
-	})
-
-	t.Run("each replica derives a span from the deal.won, with the event's identifier and the exact amount", func(t *testing.T) {
-		derived := map[string]bool{}
-		for _, s := range c.receiver.spansNamed(dealWonEvent) {
-			id := s.attr("messaging.message.id").GetStringValue()
-			if id != *won.WonEventID {
-				continue
-			}
-			if s.span.GetKind() != tracepb.Span_SPAN_KIND_CONSUMER {
-				t.Errorf("the deal.won span is of kind %v, want a consumer span", s.span.GetKind())
-			}
-			if got := s.attr("tenant_id").GetStringValue(); got != acme.ID {
-				t.Errorf("the deal.won span carries the tenant %q, want %q", got, acme.ID)
-			}
-			amount := s.attr("amount")
-			if _, isInt := amount.GetValue().(*commonpb.AnyValue_IntValue); !isInt || amount.GetIntValue() != pastFloat {
-				t.Errorf("the deal.won span carries the amount %v, want the integer %d", amount, pastFloat)
-			}
-			derived[s.resource["service.instance.id"].GetStringValue()] = true
-		}
-		if len(derived) != len(w.hosts) {
-			t.Errorf("%d replicas derived a span from the deal.won %s, want every one of the %d the bus handed it to",
-				len(derived), *won.WonEventID, len(w.hosts))
-		}
 	})
 
 	t.Run("the request duration is a histogram in seconds with the fixed bounds", func(t *testing.T) {

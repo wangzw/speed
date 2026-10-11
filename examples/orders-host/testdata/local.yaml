@@ -48,5 +48,3 @@ observability:
     service-name: orders-host
     endpoints:
       - public
-    events:
-      - order.placed

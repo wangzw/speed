@@ -1,5 +1,5 @@
 // Package otel assembles the two telemetry providers from the export backends
-// a host took in, and instruments the request path and the event bus.
+// a host took in, and instruments the request path.
 //
 // It is the only module of this capability that builds a provider. The export
 // backends each deliver an exporter and know nothing about how one is driven;
@@ -15,7 +15,6 @@ import (
 	"fmt"
 
 	"github.com/vislake/speed/pkg/core"
-	"github.com/vislake/speed/pkg/event"
 	"github.com/vislake/speed/pkg/http"
 	"github.com/vislake/speed/pkg/log"
 	"github.com/vislake/speed/pkg/observability"
@@ -25,12 +24,9 @@ import (
 // items are mounted under.
 const ModuleName = "observability.otel"
 
-// The input items whose lists make wire take another module up, spelled as the
-// error text names them.
-const (
-	endpointsKey = ModuleName + ".endpoints"
-	eventsKey    = ModuleName + ".events"
-)
+// endpointsKey is the input item whose list makes wire take the entry module
+// up, spelled as the error text names it.
+const endpointsKey = ModuleName + ".endpoints"
 
 // init registers this module with the process registry, so a host that imports
 // the package has it available.
@@ -90,13 +86,11 @@ func prepare(_ context.Context, reg *core.Registry) (core.Enablement, error) {
 	return core.Enablement{State: core.StateEnabled}, nil
 }
 
-// wire registers the request layer on each configured endpoint and subscribes
-// to each configured event type.
+// wire registers the request layer on each configured endpoint.
 //
-// The entry module is taken up only when the endpoint list is not empty and
-// the bus only when the event list is not empty, so a process with no listening
-// endpoint and no event bus — a background worker — carries this module
-// without either being present. The endpoint list defaults to "*", every
+// The entry module is taken up only when the endpoint list is not empty, so a
+// process with no listening endpoint — a background worker — carries this
+// module without one being present. The endpoint list defaults to "*", every
 // endpoint the entry module declares, and for that one value a missing entry
 // module is not a failure: nothing in the configuration named an endpoint, so
 // nothing asked for one. Only the missing-provider sentinel is read that way.
@@ -106,34 +100,21 @@ func prepare(_ context.Context, reg *core.Registry) (core.Enablement, error) {
 // on any of them.
 //
 // A list of names asks for those endpoints and nothing else, so an entry module
-// that is absent, or a name it never declared, is a startup failure. So is a
-// bus that is absent for a configured event type. Each such failure wraps the
-// sentinel it came with, which stays matchable by errors.Is, and names the
-// input item that asked, so the reader of the line is told which setting to
-// clear or which module to take in.
+// that is absent, or a name it never declared, is a startup failure. Each such
+// failure wraps the sentinel it came with, which stays matchable by errors.Is,
+// and names the input item that asked, so the reader of the line is told which
+// setting to clear or which module to take in.
 //
 // It acts on this module's own product only. An instance the host supplied for
 // the module is not one this module built, and it is left alone: no layer is
-// registered and no event type is subscribed for it, and whether it produces
-// any signal is the supplier's concern.
-func wire(ctx context.Context, reg *core.Registry, instance any) error {
+// registered for it, and whether it produces any signal is the supplier's
+// concern.
+func wire(_ context.Context, reg *core.Registry, instance any) error {
 	p, ok := instance.(*providers)
 	if !ok {
 		return nil
 	}
-	if err := p.wireEndpoints(reg); err != nil {
-		return err
-	}
-	if len(p.cfg.Events) > 0 {
-		bus, err := core.Resolve[event.Bus](reg)
-		if err != nil {
-			return busFailure(err)
-		}
-		for _, evt := range p.distinct("events", p.cfg.Events) {
-			bus.Subscribe(evt, p.spanFor())
-		}
-	}
-	return nil
+	return p.wireEndpoints(reg)
 }
 
 // wireEndpoints registers the request layer on the endpoints the configuration
@@ -186,25 +167,13 @@ func routerFailure(err error) error {
 		ModuleName, endpointsKey, fix, err)
 }
 
-// busFailure names the input item behind a failed lookup of the bus, with the
-// same two ways out routerFailure offers.
-func busFailure(err error) error {
-	fix := "clear the list to subscribe to no event type"
-	if errors.Is(err, core.ErrMissingProvider) {
-		fix += ", or take the event bus in on the command tree"
-	}
-	return fmt.Errorf("%s: %s names event types, and the event bus could not be taken up; %s: %w",
-		ModuleName, eventsKey, fix, err)
-}
-
-// distinct drops repeated names from one of the configured lists, keeping the
-// order they were written in.
+// distinct drops repeated names from a configured list, keeping the order they
+// were written in.
 //
 // A name written twice is not two registrations anyone means. The entry module
 // appends a layer per call and does not dedupe, so a repeated endpoint carries
 // two identical layers: every request on it opens two server spans and counts
-// twice in the histogram, which reads from outside as twice the traffic. A
-// repeated event type subscribes twice and produces two spans per fact.
+// twice in the histogram, which reads from outside as twice the traffic.
 //
 // The intent of a repeated name is the single name, so that is what it gets,
 // and the line reports that the configuration was not quite what it said — a

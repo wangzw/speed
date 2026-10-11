@@ -23,6 +23,17 @@ import (
 // would prove nothing about it.
 func readThrough(t *testing.T, document string) config.Reader {
 	t.Helper()
+	reader, err := loadThrough(t, document)
+	if err != nil {
+		t.Fatalf("loading the configuration: %v", err)
+	}
+	return reader
+}
+
+// loadThrough is readThrough with the load's failure handed back rather than
+// failing the case.
+func loadThrough(t *testing.T, document string) (config.Reader, error) {
+	t.Helper()
 
 	path := filepath.Join(t.TempDir(), "config.json")
 	if err := os.WriteFile(path, []byte(document), 0o600); err != nil {
@@ -38,11 +49,7 @@ func readThrough(t *testing.T, document string) config.Reader {
 	})
 	reg.Register(core.Module{Name: "reader", Resources: []any{schema()}})
 
-	reader, err := config.Load(t.Context(), reg, nil)
-	if err != nil {
-		t.Fatalf("loading the configuration: %v", err)
-	}
-	return reader
+	return config.Load(t.Context(), reg, nil)
 }
 
 // TestThePrototypeCarriesTheDefaults pins what an absent item decodes to. The
@@ -67,9 +74,20 @@ func TestThePrototypeCarriesTheDefaults(t *testing.T) {
 		t.Errorf("the endpoint list defaults to %q, want the single name \"*\": an unconfigured module "+
 			"instruments every endpoint the entry module declares", cfg.Endpoints)
 	}
-	if len(cfg.Events) != 0 {
-		t.Error("the event list defaults to non-empty, so an unconfigured module would claim a bus it was " +
-			"never told about")
+}
+
+// TestAnEventListIsAnUnknownKey pins that this module declares no event list:
+// it subscribes to no event type, so a primary source that names one under this
+// namespace is refused at load as a key no module declares, rather than read
+// and left to do nothing.
+func TestAnEventListIsAnUnknownKey(t *testing.T) {
+	_, err := loadThrough(t, `{"observability": {"otel": {"events": ["order.placed"]}}}`)
+	if !errors.Is(err, config.ErrUnknownKey) {
+		t.Fatalf("loading a configuration with observability.otel.events returned %v, want the unknown-key "+
+			"failure", err)
+	}
+	if !strings.Contains(err.Error(), "observability.otel.events") {
+		t.Errorf("the failure %q does not name the key", err)
 	}
 }
 
