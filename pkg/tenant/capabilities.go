@@ -47,6 +47,22 @@ type Resolution interface {
 	Register(name string, e Extractor)
 }
 
+// Admission is the capability the admission subpackage delivers: the layer that
+// decides whether an identified caller may enter the tenant a request resolved
+// to. It is an ordering anchor and not a surface: a layer that has to sit
+// inside admission, an authorization layer above all, names
+// (*tenant.Admission)(nil) in its After and calls nothing on it.
+//
+// The marker method is exported, and that is not a style choice. The interface
+// is defined here and delivered by a type in another package, and a type of
+// another package cannot implement an interface whose method is unexported, so
+// the delivery check would fail for the one implementation there is. A package
+// importing this one for the anchor needs nothing else of it.
+type Admission interface {
+	// AdmissionLayer marks the implementation. It does nothing.
+	AdmissionLayer()
+}
+
 // Catalog is the capability the roster subpackage delivers: the roster's read
 // and write surface.
 //

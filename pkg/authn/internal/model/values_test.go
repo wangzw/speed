@@ -70,7 +70,7 @@ func fullProof() Proof {
 		Account:    "acct",
 		Identifier: &Identifier{ID: "i", Kind: IdentifierPhone, Value: "+86", VerifiedAt: at, VerifiedVia: "sms-code"},
 		External:   &ext, Methods: []Method{MethodSMS}, UserVerified: true, IDPAsserted: true, Provider: "prov",
-		Aliases: []ExternalLink{{Provider: "p", Subject: "s", Email: "e", EmailVerified: true}},
+		Aliases: []ExternalLink{{Provider: "p", Subject: "s", Email: "e", EmailVerified: true}}, PasswordChanged: true,
 	}
 }
 
@@ -97,7 +97,7 @@ func TestCloneCarriesEveryField(t *testing.T) {
 
 	// The other polarity of every flag: a Clone that forces one true fails here.
 	pr = fullProof()
-	pr.UserVerified, pr.IDPAsserted = false, false
+	pr.UserVerified, pr.IDPAsserted, pr.PasswordChanged = false, false, false
 	pr.External.EmailVerified, pr.Aliases[0].EmailVerified = false, false
 	ex.EmailVerified = false
 	p.IDPAssured = false

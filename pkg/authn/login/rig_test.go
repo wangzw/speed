@@ -1,0 +1,576 @@
+package login
+
+import (
+	"context"
+	"errors"
+	"fmt"
+	"log/slog"
+	"net/http"
+	"net/http/httptest"
+	"strings"
+	"sync"
+	"sync/atomic"
+	"testing"
+	"time"
+
+	"github.com/gin-gonic/gin"
+
+	"github.com/vislake/speed/pkg/audit"
+	"github.com/vislake/speed/pkg/authn"
+	"github.com/vislake/speed/pkg/authn/authntest"
+	"github.com/vislake/speed/pkg/authn/internal/mount/mounttest"
+	"github.com/vislake/speed/pkg/authn/login/internal/resolve"
+)
+
+// fakeKV is an in-memory kv.KV that records failures a case can arm.
+type fakeKV struct {
+	mu      sync.Mutex
+	m       map[string][]byte
+	exp     map[string]time.Time
+	failing bool
+}
+
+func newKV() *fakeKV {
+	return &fakeKV{m: map[string][]byte{}, exp: map[string]time.Time{}}
+}
+
+var errKV = errors.New("kv is unavailable")
+
+func (k *fakeKV) live(key string) bool {
+	e, ok := k.exp[key]
+	if !ok {
+		return true
+	}
+	if time.Now().After(e) {
+		delete(k.m, key)
+		delete(k.exp, key)
+		return false
+	}
+	return true
+}
+
+func (k *fakeKV) Get(_ context.Context, key string) ([]byte, bool, error) {
+	k.mu.Lock()
+	defer k.mu.Unlock()
+	if k.failing {
+		return nil, false, errKV
+	}
+	if !k.live(key) {
+		return nil, false, nil
+	}
+	v, ok := k.m[key]
+	return append([]byte(nil), v...), ok, nil
+}
+
+func (k *fakeKV) Set(_ context.Context, key string, value []byte, ttl time.Duration) error {
+	k.mu.Lock()
+	defer k.mu.Unlock()
+	if k.failing {
+		return errKV
+	}
+	k.m[key] = append([]byte(nil), value...)
+	if ttl > 0 {
+		k.exp[key] = time.Now().Add(ttl)
+	} else {
+		delete(k.exp, key)
+	}
+	return nil
+}
+
+func (k *fakeKV) Delete(_ context.Context, key string) error {
+	k.mu.Lock()
+	defer k.mu.Unlock()
+	if k.failing {
+		return errKV
+	}
+	delete(k.m, key)
+	delete(k.exp, key)
+	return nil
+}
+
+func (k *fakeKV) CompareAndSwap(_ context.Context, key string, old, newVal []byte) (bool, error) {
+	k.mu.Lock()
+	defer k.mu.Unlock()
+	if k.failing {
+		return false, errKV
+	}
+	cur, ok := k.m[key]
+	if !ok {
+		if len(old) != 0 {
+			return false, nil
+		}
+	} else if string(cur) != string(old) {
+		return false, nil
+	}
+	k.m[key] = append([]byte(nil), newVal...)
+	return true, nil
+}
+
+func (k *fakeKV) SetIfAbsent(_ context.Context, key string, value []byte, ttl time.Duration) (bool, error) {
+	k.mu.Lock()
+	defer k.mu.Unlock()
+	if k.failing {
+		return false, errKV
+	}
+	if k.live(key) {
+		if _, ok := k.m[key]; ok {
+			return false, nil
+		}
+	}
+	k.m[key] = append([]byte(nil), value...)
+	if ttl > 0 {
+		k.exp[key] = time.Now().Add(ttl)
+	}
+	return true, nil
+}
+
+func (k *fakeKV) IncrByFloat(_ context.Context, key string, delta float64) (float64, error) {
+	return k.IncrByFloatWithTTL(context.Background(), key, delta, 0)
+}
+
+func (k *fakeKV) IncrByFloatWithTTL(_ context.Context, key string, delta float64, ttl time.Duration) (float64, error) {
+	k.mu.Lock()
+	defer k.mu.Unlock()
+	if k.failing {
+		return 0, errKV
+	}
+	var cur float64
+	if k.live(key) {
+		if v, ok := k.m[key]; ok {
+			fmt.Sscanf(string(v), "%g", &cur)
+		}
+	}
+	cur += delta
+	k.m[key] = []byte(strings.TrimRight(strings.TrimRight(fmt.Sprintf("%g", cur), "0"), "."))
+	if _, ok := k.exp[key]; !ok && ttl > 0 {
+		k.exp[key] = time.Now().Add(ttl)
+	}
+	return cur, nil
+}
+
+// fakeMethod is a login method whose answers a case scripts per call.
+type fakeMethod struct {
+	name  string
+	calls int
+	begin func(s authn.Start) (authn.Step, error)
+	ans   func(f authn.FlowState, in authn.StepInput) (authn.Step, error)
+}
+
+func (m *fakeMethod) Name() string { return m.name }
+func (m *fakeMethod) Begin(_ context.Context, s authn.Start) (authn.Step, error) {
+	m.calls++
+	if m.begin == nil {
+		return authn.Step{}, nil
+	}
+	return m.begin(s)
+}
+
+func (m *fakeMethod) Answer(_ context.Context, f authn.FlowState, in authn.StepInput) (authn.Step, error) {
+	m.calls++
+	if m.ans == nil {
+		return authn.Step{}, nil
+	}
+	return m.ans(f, in)
+}
+
+// fakeMFA is the multi-factor module's behaviour a case scripts.
+type fakeMFA struct {
+	authn.MFA // the methods a case does not script panic if reached
+	outcome   authn.MFAOutcome
+	offered   []authn.FactorRecord
+	assurance authn.MFAResult
+	verify    func(factorID string) authn.Step
+	reason    error
+	factors   []authn.FactorRecord
+	enroll    func(kind authn.FactorKind, in authn.StepInput) authn.Step
+	enrolls   []authn.StepInput
+}
+
+func (m *fakeMFA) Require(context.Context, authn.AccountID, authn.Proof) (authn.MFAOutcome, []authn.FactorRecord, error) {
+	return m.outcome, m.offered, m.reason
+}
+
+func (m *fakeMFA) Factors(context.Context, authn.AccountID) ([]authn.FactorRecord, error) {
+	return m.factors, m.reason
+}
+func (m *fakeMFA) Assurance(authn.Proof, *authn.Pass) authn.MFAResult { return m.assurance }
+func (m *fakeMFA) Challenge(context.Context, authn.FlowState, string) (authn.Step, error) {
+	return authn.StepPrompt("code", nil, authn.Field{Name: "code", Kind: authn.FieldCode, Required: true}), nil
+}
+
+func (m *fakeMFA) Verify(_ context.Context, _ authn.FlowState, factorID string, _ authn.StepInput) (authn.Step, error) {
+	if m.verify != nil {
+		return m.verify(factorID), nil
+	}
+	return authn.StepPassed(authn.Pass{Methods: []authn.Method{authn.MethodTOTP}}), nil
+}
+
+func (m *fakeMFA) Enroll(_ context.Context, _ authn.FlowState, kind authn.FactorKind, in authn.StepInput) (authn.Step, error) {
+	m.enrolls = append(m.enrolls, in)
+	if m.enroll != nil {
+		return m.enroll(kind, in), nil
+	}
+	return authn.StepEnrolled(authn.FactorRecord{ID: "f1", Kind: authn.FactorTOTP, Status: authn.FactorActive}), nil
+}
+func (m *fakeMFA) Kinds() []authn.FactorKind { return []authn.FactorKind{authn.FactorTOTP} }
+
+// fakeAccounts answers for a fixed set of accounts and the external bindings a
+// case registers.
+type fakeAccounts struct {
+	authn.Accounts
+	byID   map[authn.AccountID]authn.Account
+	byExt  map[string]authn.AccountID
+	ident  map[authn.AccountID][]authn.Identifier
+	lookup map[string]authn.AccountID
+}
+
+func (a *fakeAccounts) Get(_ context.Context, id authn.AccountID) (authn.Account, error) {
+	if acct, ok := a.byID[id]; ok {
+		return acct, nil
+	}
+	return authn.Account{}, authn.ErrAccountNotFound
+}
+
+// ByExternal answers for the external bindings a case registers; with none, an
+// identity is bound to no account.
+func (a *fakeAccounts) ByExternal(_ context.Context, provider, subject string) (authn.AccountID, error) {
+	if id, ok := a.byExt[provider+"\x00"+subject]; ok {
+		return id, nil
+	}
+	return "", authn.ErrAccountNotFound
+}
+
+// Identifiers answers for the identifiers a case registers.
+func (a *fakeAccounts) Identifiers(_ context.Context, id authn.AccountID) ([]authn.Identifier, error) {
+	return a.ident[id], nil
+}
+
+// Lookup answers for the identifiers a case registers by kind and value.
+func (a *fakeAccounts) Lookup(_ context.Context, kind authn.IdentifierKind, value string) (authn.AccountID, error) {
+	if id, ok := a.lookup[string(kind)+"\x00"+value]; ok {
+		return id, nil
+	}
+	return "", authn.ErrAccountNotFound
+}
+
+// fakeSessions records the sessions made, reports the status a case configures
+// for the completion review, and records the elevation.
+type fakeSessions struct {
+	authn.Sessions
+	created    []authn.NewSession
+	made       []authn.Issued
+	revoked    []authn.SessionID
+	status     authn.SessionStatus
+	statusErr  error
+	elevated   []authn.Elevation
+	revokedAll int
+	except     authn.SessionID
+	rec        *recorder
+}
+
+func (s *fakeSessions) Create(_ context.Context, in authn.NewSession) (authn.Issued, error) {
+	s.rec.add("create")
+	s.created = append(s.created, in)
+	issued := authn.Issued{ID: "sid-1", Token: "tok-1", ExpiresAt: time.Now().Add(time.Hour)}
+	s.made = append(s.made, issued)
+	return issued, nil
+}
+func (s *fakeSessions) SetCookie(http.ResponseWriter, authn.Issued) {}
+func (s *fakeSessions) Current(*http.Request) (authn.SessionID, bool, error) {
+	return "", false, nil
+}
+
+func (s *fakeSessions) Revoke(_ context.Context, id authn.SessionID, _ string) error {
+	s.revoked = append(s.revoked, id)
+	return nil
+}
+
+func (s *fakeSessions) RevokeAccount(_ context.Context, _ authn.AccountID, except authn.SessionID, _ string) (int, error) {
+	s.rec.add("revoke:" + string(except))
+	s.revokedAll++
+	s.except = except
+	return 1, nil
+}
+
+func (s *fakeSessions) StatusFresh(context.Context, authn.SessionID) (authn.SessionStatus, error) {
+	if s.statusErr != nil {
+		return authn.SessionStatus{}, s.statusErr
+	}
+	if !s.status.Active {
+		return authn.SessionStatus{}, authn.ErrSessionNotFound
+	}
+	return s.status, nil
+}
+
+func (s *fakeSessions) Elevate(_ context.Context, id authn.SessionID, e authn.Elevation) (authn.Issued, error) {
+	s.elevated = append(s.elevated, e)
+	return authn.Issued{ID: id, Token: "tok-2", ExpiresAt: time.Now().Add(time.Hour)}, nil
+}
+
+// fakeAdmin records the external links made and answers for no other write.
+type fakeAdmin struct {
+	authn.AccountAdmin
+	links []authn.ExternalLink
+	touch int
+}
+
+func (a *fakeAdmin) LinkExternal(_ context.Context, _ authn.AccountID, l authn.ExternalLink) error {
+	a.links = append(a.links, l)
+	return nil
+}
+
+func (a *fakeAdmin) Touch(context.Context, authn.AccountID, time.Time) error {
+	a.touch++
+	return nil
+}
+
+// auditing is an audit sink that records the acting account of the context each
+// row was written under, so a case can see which identity reached it.
+type auditing struct {
+	audit.Audit
+	mu   sync.Mutex
+	acts []string // the account string of each row's identity; "" when there was none
+}
+
+func (a *auditing) Record(ctx context.Context, _ audit.Entry) error {
+	account := ""
+	if id, ok := authn.FromContext(ctx); ok {
+		account = string(id.Account())
+	}
+	a.mu.Lock()
+	defer a.mu.Unlock()
+	a.acts = append(a.acts, account)
+	return nil
+}
+
+func (a *auditing) identities() []string {
+	a.mu.Lock()
+	defer a.mu.Unlock()
+	return append([]string(nil), a.acts...)
+}
+
+// stub types satisfy an interface with a nil method set, for the dependencies a
+// case's path does not reach.
+type (
+	stubMemberships struct{ authn.Memberships }
+	stubPasswords   struct{ authn.Passwords }
+	stubThrottle    struct{ authn.Throttle }
+)
+
+// rig is a login product wired to fakes and mounted through the test mounter.
+type rig struct {
+	t        *testing.T
+	m        *mounttest.Mounter
+	kv       *fakeKV
+	mfa      *fakeMFA
+	sessions *fakeSessions
+	accounts *fakeAccounts
+	admin    *fakeAdmin
+	p        *product
+
+	// watchCtx arms the request-context probe and leaked records what it saw. A
+	// case sets watchCtx on a request whose route carries no identity, so that an
+	// identity left on the request's own context can only have come from a
+	// handler that wrote one back.
+	watchCtx atomic.Bool
+	leaked   atomic.Bool
+}
+
+// newRig builds a rig with one password method and a multi-factor module whose
+// policy requires nothing.
+func newRig(t *testing.T, m *fakeMethod) *rig {
+	return newRigMethod(t, m)
+}
+
+// newRigMethod builds a rig whose single method is any authn.LoginMethod, for a
+// case that needs a method shaped other than fakeMethod.
+func newRigMethod(t *testing.T, m authn.LoginMethod) *rig {
+	t.Helper()
+	kv := newKV()
+	mfa := &fakeMFA{outcome: authn.MFANone, assurance: authn.MFAResult{Assurance: authn.AssuranceSingle}}
+	accounts := &fakeAccounts{
+		byID:   map[authn.AccountID]authn.Account{},
+		byExt:  map[string]authn.AccountID{},
+		ident:  map[authn.AccountID][]authn.Identifier{},
+		lookup: map[string]authn.AccountID{},
+	}
+	sessions := &fakeSessions{}
+	admin := &fakeAdmin{}
+	mounter := mounttest.New(t)
+
+	p := &product{
+		mounter:        mounter,
+		kv:             kv,
+		accounts:       accounts,
+		admin:          admin,
+		passwords:      stubPasswords{},
+		memberships:    stubMemberships{},
+		throttle:       stubThrottle{},
+		sessions:       sessions,
+		mfa:            mfa,
+		methods:        map[string]authn.LoginMethod{},
+		settings:       newReader(nil, slog.New(slog.NewTextHandler(ioDiscard{}, nil))),
+		logger:         slog.New(slog.NewTextHandler(ioDiscard{}, nil)),
+		trustedOrigins: []string{"https://app.example.org"},
+		allowInsecure:  true,
+	}
+	p.methods[m.Name()] = m
+	p.methodNames = []string{m.Name()}
+
+	r, err := resolve.New(resolve.Config{Accounts: accounts, Admin: admin, Memberships: stubMemberships{}})
+	if err != nil {
+		t.Fatalf("building the resolver: %v", err)
+	}
+	p.resolver = r
+
+	rig := &rig{t: t, m: mounter, kv: kv, mfa: mfa, sessions: sessions, accounts: accounts, admin: admin, p: p}
+	// The probe goes in before the routes are mounted, so it runs inside every
+	// route's chain and sees the request's own context after the handler.
+	mounter.Engine().Use(rig.watchRequestContext)
+	p.mountRoutes()
+
+	return rig
+}
+
+// watchRequestContext records whether a handler left an identity on the request's
+// own context. The gateway stamps an identity or an access level and never both,
+// so on a route a case armed with no identity an identity there was written back
+// by a handler. It is a no-op until a case arms it.
+func (r *rig) watchRequestContext(c *gin.Context) {
+	c.Next()
+	if !r.watchCtx.Load() {
+		return
+	}
+	if _, ok := authn.FromContext(c.Request.Context()); ok {
+		r.leaked.Store(true)
+	}
+}
+
+// loginAsAuthenticated puts an identity in the request context, as the gateway
+// does for a guarded route, and configures the session status the completion
+// review reads.
+func (r *rig) loginAsAuthenticated(account authn.AccountID, session authn.SessionID) {
+	r.t.Helper()
+	now := time.Now()
+	r.m.As(
+		authntest.WithAccount(account),
+		authntest.WithSession(session),
+		authntest.WithMethods(authn.MethodPassword),
+		authntest.WithAssurance(authn.AssuranceSingle),
+		authntest.WithAuthTime(now),
+	)
+	r.sessions.status = authn.SessionStatus{
+		Active: true, Account: account, Kind: authn.SessionBrowser,
+		Methods: []authn.Method{authn.MethodPassword}, Assurance: authn.AssuranceSingle, AuthTime: now,
+	}
+}
+
+type ioDiscard struct{}
+
+func (ioDiscard) Write(b []byte) (int, error) { return len(b), nil }
+
+// allow puts an active account in the fake store.
+func (r *rig) allow(id authn.AccountID) {
+	r.accounts.byID[id] = authn.Account{ID: id, Kind: authn.KindUser, Status: authn.StatusActive}
+}
+
+// send issues one request through the mounted routes.
+func (r *rig) send(method, path, body string, hdr ...string) *httptest.ResponseRecorder {
+	r.t.Helper()
+	var reader *strings.Reader
+	if body != "" {
+		reader = strings.NewReader(body)
+	}
+	var req *http.Request
+	if reader != nil {
+		req = httptest.NewRequest(method, path, reader)
+		req.Header.Set("Content-Type", "application/json")
+	} else {
+		req = httptest.NewRequest(method, path, nil)
+	}
+	req.Header.Set("Sec-Fetch-Site", "same-origin")
+	for i := 0; i+1 < len(hdr); i += 2 {
+		req.Header.Set(hdr[i], hdr[i+1])
+	}
+	return r.m.Do(req)
+}
+
+// flowCookie is the flow cookie a start reply set, as the "name=value" pair to
+// send back.
+func flowCookie(t *testing.T, rec *httptest.ResponseRecorder) string {
+	t.Helper()
+	for _, c := range rec.Result().Cookies() {
+		if strings.Contains(c.Name, "authn-flow") {
+			return c.Name + "=" + c.Value
+		}
+	}
+	t.Fatalf("the reply set no flow cookie; headers %v", rec.Header())
+	return ""
+}
+
+// recorder is a shared ordered log of the calls a case cares about the order of.
+// Its methods are nil-safe, so a fake that was not given one records nothing.
+type recorder struct {
+	mu    sync.Mutex
+	steps []string
+}
+
+func (r *recorder) add(s string) {
+	if r == nil {
+		return
+	}
+	r.mu.Lock()
+	r.steps = append(r.steps, s)
+	r.mu.Unlock()
+}
+
+func (r *recorder) all() []string {
+	if r == nil {
+		return nil
+	}
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	return append([]string(nil), r.steps...)
+}
+
+// recordingPasswords records the Clear call so a case can see where it falls.
+type recordingPasswords struct {
+	authn.Passwords
+	rec *recorder
+}
+
+func (p *recordingPasswords) Clear(context.Context, authn.AccountID) error {
+	p.rec.add("clear")
+	return nil
+}
+
+// fakeTokens issues token pairs a case reads back.
+type fakeTokens struct {
+	authn.Tokens
+	issued []authn.IssueToken
+}
+
+func (t *fakeTokens) Issue(_ context.Context, in authn.IssueToken) (authn.AccessToken, error) {
+	t.issued = append(t.issued, in)
+	return authn.AccessToken{Value: "access-1", ExpiresAt: time.Now().Add(time.Hour)}, nil
+}
+
+func (t *fakeTokens) NewRefresh(_ context.Context, _ authn.SessionID) (authn.RefreshToken, error) {
+	return authn.RefreshToken{Value: "refresh-1"}, nil
+}
+
+// withAutoLink rebuilds the resolver with the automatic link of A4 turned on, so
+// a social login whose verified address is on an existing account merges.
+func (r *rig) withAutoLink() {
+	r.t.Helper()
+	res, err := resolve.New(resolve.Config{
+		Accounts:    r.accounts,
+		Admin:       r.admin,
+		Memberships: stubMemberships{},
+		AutoLink:    resolve.AutoLinkVerifiedEmail,
+	})
+	if err != nil {
+		r.t.Fatalf("building the resolver: %v", err)
+	}
+	r.p.resolver = res
+}

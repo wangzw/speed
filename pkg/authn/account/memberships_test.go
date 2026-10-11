@@ -1,0 +1,201 @@
+package account
+
+import (
+	"context"
+	"errors"
+	"strings"
+	"sync"
+	"testing"
+
+	"github.com/vislake/speed/pkg/authn"
+)
+
+// A suspended membership is found but reads as no member: the zero value of the
+// row's status is suspended.
+func TestAMembershipIsSuspendedResumedAndReadAsAMember(t *testing.T) {
+	forEachDialect(t, func(t *testing.T, h *harness) {
+		ctx := context.Background()
+		id := h.user("joiner", "")
+		if err := h.p.Put(ctx, authn.Membership{Account: id, Tenant: "acme", Active: true, Source: "admin"}); err != nil {
+			t.Fatalf("joining: %v", err)
+		}
+		if member, err := h.p.IsMember(ctx, id, "acme"); err != nil || !member {
+			t.Errorf("an active member reads %v (%v), want a member", member, err)
+		}
+		if err := h.p.Put(ctx, authn.Membership{Account: id, Tenant: "acme", Active: false, Source: "admin"}); err != nil {
+			t.Fatalf("suspending: %v", err)
+		}
+		got, found, err := h.p.Membership(ctx, "acme", id)
+		if err != nil || !found || got.Active {
+			t.Errorf("a suspended membership reads %+v (found %v, %v), want it found and suspended", got, found, err)
+		}
+		if member, err := h.p.IsMember(ctx, id, "acme"); err != nil || member {
+			t.Errorf("a suspended member reads %v (%v), want no member", member, err)
+		}
+		if n := h.count(tableMemberships, "account_id = ? AND tenant_id = ?", id.String(), "acme"); n != 1 {
+			t.Errorf("suspending left %d rows, want the one row", n)
+		}
+	})
+}
+
+// A member of no tenant, and a subject of the static table, are no member.
+func TestAMemberOfNothingIsNoMember(t *testing.T) {
+	forEachDialect(t, func(t *testing.T, h *harness) {
+		ctx := context.Background()
+		id := h.user("stranger", "")
+		if member, err := h.p.IsMember(ctx, id, "acme"); err != nil || member {
+			t.Errorf("a stranger reads %v (%v), want no member", member, err)
+		}
+		if member, err := h.p.IsMember(ctx, authn.AccountID("static.bob"), "acme"); err != nil || member {
+			t.Errorf("a static subject reads %v (%v), want no member", member, err)
+		}
+	})
+}
+
+// Put is idempotent: writing the same membership again changes nothing, and
+// writing it many times at once leaves one row.
+func TestPutIsIdempotent(t *testing.T) {
+	forEachDialect(t, func(t *testing.T, h *harness) {
+		ctx := context.Background()
+		id := h.user("idem", "")
+		m := authn.Membership{Account: id, Tenant: "acme", Active: true, Source: "admin"}
+		const callers = 8
+		var wg sync.WaitGroup
+		start := make(chan struct{})
+		for range callers {
+			wg.Add(1)
+			go func() {
+				defer wg.Done()
+				<-start
+				if err := h.p.Put(ctx, m); err != nil {
+					t.Errorf("a concurrent Put returned %v", err)
+				}
+			}()
+		}
+		close(start)
+		wg.Wait()
+		if n := h.count(tableMemberships, "account_id = ? AND tenant_id = ?", id.String(), "acme"); n != 1 {
+			t.Errorf("%d rows for one membership written %d times together, want one", n, callers)
+		}
+	})
+}
+
+// Put on an account that is not there, or that is a tombstone, is
+// ErrAccountNotFound: no foreign key holds the membership to one.
+func TestPutOnAnAccountThatIsNotThereIsNotFound(t *testing.T) {
+	forEachDialect(t, func(t *testing.T, h *harness) {
+		ctx := context.Background()
+		if err := h.p.Put(ctx, authn.Membership{Account: "nobody-here", Tenant: "acme", Active: true}); !errors.Is(err, authn.ErrAccountNotFound) {
+			t.Errorf("joining as a stranger gave %v, want ErrAccountNotFound", err)
+		}
+		id := h.user("gone", "")
+		if err := h.p.Delete(ctx, id, authn.ReasonAdmin); err != nil {
+			t.Fatalf("deleting: %v", err)
+		}
+		if err := h.p.Put(ctx, authn.Membership{Account: id, Tenant: "acme", Active: true}); !errors.Is(err, authn.ErrAccountNotFound) {
+			t.Errorf("joining as a tombstone gave %v, want ErrAccountNotFound", err)
+		}
+	})
+}
+
+// A subject of the static table has no membership row and cannot be given one.
+func TestPutOnAStaticSubjectIsRefused(t *testing.T) {
+	forEachDialect(t, func(t *testing.T, h *harness) {
+		err := h.p.Put(context.Background(), authn.Membership{Account: "static.bob", Tenant: "acme", Active: true})
+		if !errors.Is(err, authn.ErrAccountNotFound) {
+			t.Errorf("joining as a static subject gave %v, want ErrAccountNotFound", err)
+		}
+	})
+}
+
+// Members lists a tenant's members a page at a time, by the account identifier.
+func TestMembersPagesByAccount(t *testing.T) {
+	forEachDialect(t, func(t *testing.T, h *harness) {
+		ctx := context.Background()
+		for _, name := range []string{"m-one", "m-two", "m-three"} {
+			id := h.user(name, "")
+			if err := h.p.Put(ctx, authn.Membership{Account: id, Tenant: "acme", Active: true, Source: "admin"}); err != nil {
+				t.Fatalf("joining %s: %v", name, err)
+			}
+		}
+		first, err := h.p.Members(ctx, "acme", authn.Page{Limit: 2})
+		if err != nil || len(first) != 2 {
+			t.Fatalf("the first page is %d rows (%v), want two", len(first), err)
+		}
+		second, err := h.p.Members(ctx, "acme", authn.Page{After: first[len(first)-1].Account.String(), Limit: 2})
+		if err != nil || len(second) != 1 {
+			t.Fatalf("the second page is %d rows (%v), want one", len(second), err)
+		}
+		if first[0].Account.String() >= first[1].Account.String() {
+			t.Error("the first page is not in the order of the account identifiers")
+		}
+	})
+}
+
+// Every statement of a per-tenant operation names the tenant, so that nothing
+// reads or writes across tenants by accident.
+func TestEveryPerTenantStatementNamesTheTenant(t *testing.T) {
+	forEachDialect(t, func(t *testing.T, h *harness) {
+		ctx := context.Background()
+		id := h.user("tenant-scoped", "")
+		rec := h.recordSQL()
+		if err := h.p.Put(ctx, authn.Membership{Account: id, Tenant: "acme", Active: true, Source: "admin"}); err != nil {
+			t.Fatalf("joining: %v", err)
+		}
+		if _, _, err := h.p.Membership(ctx, "acme", id); err != nil {
+			t.Fatalf("reading a membership: %v", err)
+		}
+		if _, err := h.p.Members(ctx, "acme", authn.Page{}); err != nil {
+			t.Fatalf("listing members: %v", err)
+		}
+		if err := h.p.Remove(ctx, id, "acme"); err != nil {
+			t.Fatalf("removing: %v", err)
+		}
+		for _, statement := range rec.take() {
+			if !strings.Contains(statement, tableMemberships) {
+				continue
+			}
+			if !strings.Contains(statement, "tenant_id") {
+				t.Errorf("a membership statement names no tenant: %s", statement)
+			}
+		}
+	})
+}
+
+// Removing a membership, and removing one that is not there, both leave the
+// account without it.
+func TestRemoveLeavesNoMembership(t *testing.T) {
+	forEachDialect(t, func(t *testing.T, h *harness) {
+		ctx := context.Background()
+		id := h.user("leaver", "")
+		if err := h.p.Put(ctx, authn.Membership{Account: id, Tenant: "acme", Active: true, Source: "admin"}); err != nil {
+			t.Fatalf("joining: %v", err)
+		}
+		if err := h.p.Remove(ctx, id, "acme"); err != nil {
+			t.Fatalf("removing: %v", err)
+		}
+		if n := h.count(tableMemberships, "account_id = ?", id.String()); n != 0 {
+			t.Errorf("%d row(s) left after removing", n)
+		}
+		if err := h.p.Remove(ctx, id, "acme"); err != nil {
+			t.Errorf("removing a membership that is not there gave %v, want nil", err)
+		}
+	})
+}
+
+// The tenants an account belongs to are listed across tenants, in tenant order.
+func TestTenantsListsEveryMembershipOfAnAccount(t *testing.T) {
+	forEachDialect(t, func(t *testing.T, h *harness) {
+		ctx := context.Background()
+		id := h.user("multi", "")
+		for _, tenant := range []string{"beta", "alpha"} {
+			if err := h.p.Put(ctx, authn.Membership{Account: id, Tenant: tenant, Active: true, Source: "admin"}); err != nil {
+				t.Fatalf("joining %s: %v", tenant, err)
+			}
+		}
+		got, err := h.p.Tenants(ctx, id)
+		if err != nil || len(got) != 2 || got[0].Tenant != "alpha" || got[1].Tenant != "beta" {
+			t.Errorf("Tenants gave %+v (%v), want alpha then beta", got, err)
+		}
+	})
+}

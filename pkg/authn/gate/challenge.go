@@ -3,6 +3,8 @@ package gate
 import (
 	"sort"
 	"strings"
+
+	"github.com/vislake/speed/pkg/authn/internal/mount"
 )
 
 // cookieChallengeScheme is the scheme name a 401 carries when no backend takes
@@ -42,7 +44,7 @@ type challenge struct {
 // With no challenge to write, which is the case when no backend takes a scheme,
 // the value is the cookie challenge, so a 401 never goes out bare.
 func newChallenge(d *dispatch, endpoint string) *challenge {
-	realm := quoteRealm(endpoint)
+	realm := mount.QuoteRealm(endpoint)
 	parts := make(map[*backend][]string, len(d.backends))
 	rejectedParts := make(map[*backend][]string)
 	for _, b := range d.backends {
@@ -120,27 +122,6 @@ func joinChallenges(all []string) string {
 	}
 	sort.Strings(out)
 	return strings.Join(out, ", ")
-}
-
-// quoteRealm escapes what goes inside the quoted realm string. An endpoint name
-// comes from configuration, and a quote or a backslash in one would otherwise
-// end the quoted string early and let the rest of the name be read as further
-// challenge parameters.
-func quoteRealm(name string) string {
-	var b strings.Builder
-	for i := 0; i < len(name); i++ {
-		switch c := name[i]; c {
-		case '"', '\\':
-			b.WriteByte('\\')
-			b.WriteByte(c)
-		case '\r', '\n':
-			// A line ending would not be an escape but a second
-			// header; it is dropped rather than escaped.
-		default:
-			b.WriteByte(c)
-		}
-	}
-	return b.String()
 }
 
 // canonicalScheme renders a folded scheme name the way a challenge writes it.

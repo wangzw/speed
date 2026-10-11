@@ -117,6 +117,8 @@ type SMSCodes interface {
 | 设置，`authn.sms` | `global-hourly-login`、`global-hourly-mfa`、`global-hourly-enroll` | 按用途分设的全局每小时上限 |
 | 设置，`authn.sms` | `per-flow-sends`、`per-account-hourly` | 每流程发送上限（由调用方核对）与每账户每小时上限（只对 `mfa`、`enroll` 计） |
 
+这些键由本模块声明，读它们的是使用方。本模块尚未实现，在其落地之前：`code-ttl` 与 `resend-interval` 由登录模块的手机号自助路由读（构成记录的有效期与应答里的 `resend_after`，见 [design-authn-login](design-authn-login.md) 的「手机号验证」），`per-flow-sends` 由登录引擎读（构成交给方法与因素的 `SendsLeft`），各经设置存储从全局层读，读取出错或取值越出取值域时取声明的缺省。本模块落地后这些键由本模块读。
+
 `allowed-prefixes` 与预算项是设置，改到更宽松的取值时，本模块写一行 `Warn` 并经审计接缝记一条尽力档记录，事前不拦（[ADR-authn-settings-and-secrets-2026-10-10](../../adr/adr-authn-settings-and-secrets-2026-10-10.md)）。
 
 ### 稳定性承诺
@@ -483,11 +485,11 @@ flowchart TD
 
 ## 实现状态
 
-`pkg/authn` 下没有 `sms` 目录，根包也没有 `SMSCodes`、`SMSSender` 与短信哨兵。
+`pkg/authn` 下没有 `sms` 目录，根包没有 `SMSSender` 与 `SMS`。
 
 | 能力 | 状态 | 代码 |
 |---|---|---|
-| 根包接口：`SMSCodes`、`SMSSender`、`SendCode`、`SMS` 与短信哨兵 | 未实现 | — |
+| 根包接口：`SMSCodes`、`SMSSender`、`SendCode`、`SMS` 与短信哨兵 | 部分实现 — 缺 `SMSSender` 与 `SMS`；其余已在 | `pkg/authn/sms.go` `SMSCodes`；`pkg/authn/internal/model/sms.go` `SendCode`；`pkg/authn/errors.go` `ErrUnsupportedRegion`、`ErrSMSThrottled`、`ErrSMSRejected`、`ErrSMSUncertain` |
 | `authn.sms` 引擎：挑战状态机、预算、抑制行 | 未实现 | — |
 | `authn_challenges` 迁移集 | 未实现 | — |
 | 发送工作池 | 未实现 | — |

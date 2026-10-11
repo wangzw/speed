@@ -49,30 +49,27 @@
 //   - The command groups run no event backend, so a one-shot command never pays
 //     for a bus; a configuration that asks the journal to capture events stops
 //     them at startup, naming the journal's event list.
-//   - A CRM user signs in on the account endpoint with a Basic credential and
-//     gets a bearer token; the token reaches the guarded routes, and the user's
-//     Basic credential reaches no backend there, since the one scheme belongs to
-//     the operators' table, which answers it 401 with the Basic challenge. The
-//     identity a token authenticates is the user's account, the user
-//     identifier, so the journal and the rate limiter name the user by it.
-//     The account endpoint answers who the caller is and which tenants they
-//     belong to. The login route is exempt from the
-//     gateway through the gateway's own surface, and a logout ends the token.
-//     The ended token's refusal is logged with the cause the backend gave:
-//     the gateway masks a word after a scheme name anywhere in a record,
-//     unless it is one of the fixed prose words its rule leaves alone, and the
-//     causes this host refuses with put no word after one.
-//   - A session lives as long as the sessions.ttl setting says, read from the
-//     settings surface at login, and a token is refused once it lapses on
-//     every key-value backend. A lifetime that is not positive is refused at
-//     login rather than stored as one that never ends.
-//   - A member reaches their own tenant. A member naming another tenant is
-//     refused by the membership layer, and the refusal is in the journal: the
-//     layer sits inside the journal and the rate limiter, which the chain
-//     listing shows. The only constraints the startup reports as landing on
-//     no layer are the journal's anchors on resolution, on the two endpoints
-//     that resolve no tenant, and it reports them at Info, since no layer on
-//     those endpoints stands for resolution.
+//   - A CRM user logs in through the login flow on the account endpoint, under
+//     `authn.gate.mount.base-path`, and carries the session cookie the
+//     completion set; the cookie reaches the guarded routes, and the user's
+//     Basic credential reaches no backend there, since the one scheme belongs
+//     to the operators' table. The identity the cookie authenticates is the
+//     account the flow resolved, so the journal and the rate limiter name the
+//     user by it. The account endpoint answers who the caller is and which
+//     tenants they belong to. A logout ends the session.
+//   - A session lives as long as the session module's settings say, read from
+//     the settings surface, and is refused once it lapses. The account and the
+//     session are the identity system's, so the host keeps neither a users
+//     table nor a password derivation of its own.
+//   - A member reaches their own tenant. A caller that is not a member of the
+//     tenant its request names, the operator included, is answered the same 404
+//     the admission layer answers an unknown tenant, and the refusal is in the
+//     journal: the layer sits inside the journal and the rate limiter, which the
+//     chain listing shows. The host keeps only the role (`member_roles`), which
+//     admission does not know. The only constraints the startup reports as
+//     landing on no layer are the journal's anchors on resolution, on the two
+//     endpoints that resolve no tenant, and it reports them at Info, since no
+//     layer on those endpoints stands for resolution.
 //   - A tenant's owner grants an existing user a role from the API, inside the
 //     tenant the request names: the row the grant writes names no tenant, and
 //     the filter fills it from the request. The grant is an upsert by the
@@ -97,27 +94,27 @@
 //     user on the admin endpoint is refused, and so is another subject of the
 //     operators' table: the check serves one account, and the refusal is in the
 //     journal, because the operator check sits inside it. The operator's
-//     account belongs to no tenant, so the membership layer refuses it as a
-//     stranger to the tenant it names.
+//     account belongs to no tenant, so the admission layer refuses it as a
+//     stranger to the tenant it names, with the same 404 it answers a
+//     non-member.
 //   - Two creations of one email at once are answered with one success and one
 //     conflict: the unique constraint decides, and the look-up before the
 //     insert only answers the ordinary case sooner.
-//   - A disabled user is refused on the next request with a token issued
+//   - A disabled account is refused on the next request with a session issued
 //     before, and at a new login.
-//   - A CRM user's password is derived at the cost users.password-iterations
-//     gives when the user is created, at the command line and on the admin
-//     endpoint alike. Each hash carries its count, so a user created at one
-//     count signs in once the deployment gives another, and that sign-in,
-//     with a login, stores the hash again at the count now given; a count that
-//     is not positive stops the serving command at startup, naming the item. A
-//     login naming no user is checked against a decoy derived at the configured
-//     count, so it costs what a login of a user at that count does; until every
-//     user has signed in since a change of the count, the time a login takes
-//     tells a user still at the old count from an address no user has.
-//   - A CRM user's password hash is written to the users table and nowhere
-//     else: a creation the database refuses leaves neither the hash nor the
-//     address in the serving process's output, because the module's logger
-//     writes a refused statement without the values bound into it.
+//   - A CRM user's password is derived at the policy the account module holds.
+//     The served deployment's policy comes from the settings store, so a user
+//     created at the admin endpoint stores the combination the deployment
+//     configured; the hash carries its parameters, so a user created under one
+//     policy signs in once the deployment gives another. A command-line creation
+//     runs no settings store and derives at the module's declared defaults. A
+//     login naming no account is checked against a decoy, so it costs what a
+//     login of an account does.
+//   - A CRM user's password hash is written to the account store's credential
+//     column and nowhere else: a creation the database refuses leaves neither
+//     the hash nor the address in the serving process's output, because the
+//     module's logger writes a refused statement without the values bound into
+//     it.
 //   - A configuration file and an environment variable reach the same input
 //     item, and the environment wins. The configuration written as JSON
 //     reaches the same items as the YAML one, with its locator given on the
@@ -350,10 +347,10 @@
 //   - The pipeline report groups the tenant's deals by stage and currency, in
 //     the order of the tenant's stages, and scans the sums into a row type of
 //     its own; the leaderboard adds up, by owner, the tenant's deals in a stage
-//     of kind won, joined with the global users table. Both join the deals to
-//     their stages through the relation, and the filter scopes each scan and
-//     each join, so neither counts the other tenant's twin; a deleted deal
-//     leaves both.
+//     of kind won, the owners' names read through the account store. Both join
+//     the deals to their stages through the relation, and the filter scopes each
+//     scan and each join, so neither counts the other tenant's twin; a deleted
+//     deal leaves both.
 //   - The pipeline report is served from the key-value store under a key
 //     carrying its tenant: on a stack whose store several processes share, a
 //     report one replica cached is the one another replica serves while the
@@ -476,7 +473,7 @@
 //     a single row. With the same actions taken in two tenants, each trail
 //     holds exactly its own rows, newest first, and narrows by action and by
 //     time; a row of the other tenant is not found. It shows the tenant's
-//     writes, the membership layer's refusal of a stranger, the seam rows and
+//     writes, the admission layer's refusal of a stranger, the seam rows and
 //     the settings changes the journal captured from the bus. A member in a
 //     lesser role is refused the page and a single row. Nothing is written
 //     through that model, nor through the one an operator's read uses: each
@@ -496,7 +493,7 @@
 //     it does not serve.
 //   - An operator lowers one tenant's rate limit through its settings layer.
 //     Driving past it answers 429 with Retry-After, another tenant is
-//     unaffected, and the membership layer's refusals count toward the limit,
+//     unaffected, and the admission layer's refusals count toward the limit,
 //     since that layer sits inside the limiter.
 //   - A setting written through one replica is read on another within a bound,
 //     and so is its delete, with the settings module's periodic reload off: the
@@ -514,7 +511,7 @@
 // # Replicas and lifecycle
 //
 //   - Replicas on a stack whose backends several processes share are started
-//     together, as a rollout starts them, and share their sessions: a token
+//     together, as a rollout starts them, and share their sessions: a session
 //     one replica issues is honoured by another, and a logout on one ends it
 //     on both.
 //   - An operator's status change is made against the roster's table, so it
@@ -548,11 +545,11 @@
 // connection, through a proxy the case holds (links_test.go), on every stack
 // where that link exists.
 //
-//   - A bearer token presented while the key-value store is cut is answered
-//     503, attributed to the sessions backend, and not 401: the backend cannot
-//     say whether the session is live, which is not the token failing. The
-//     operator's Basic credential, checked against a table in memory, is
-//     answered all along, and the token again once the store is back.
+//   - A session presented while the database is cut is answered 503, attributed
+//     to the session backend, and not 401: the backend cannot say whether the
+//     session is live, which is not the session failing. The operator's Basic
+//     credential, checked against a table in memory, is answered all along, and
+//     the session again once the database is back.
 //   - While the key-value store is cut the rate limiter lets requests past the
 //     limit through, and says so once on standard error however many it lets
 //     through; once the store is back and a minute has passed since the last
@@ -603,7 +600,13 @@ import (
 	"syscall"
 
 	"github.com/vislake/speed/pkg/audit/journal"
+	"github.com/vislake/speed/pkg/authn/account"
 	"github.com/vislake/speed/pkg/authn/gate"
+	"github.com/vislake/speed/pkg/authn/login"
+	loginpassword "github.com/vislake/speed/pkg/authn/login/password"
+	"github.com/vislake/speed/pkg/authn/mfa"
+	authnmount "github.com/vislake/speed/pkg/authn/mount"
+	"github.com/vislake/speed/pkg/authn/session"
 	"github.com/vislake/speed/pkg/authn/static"
 	"github.com/vislake/speed/pkg/config"
 	"github.com/vislake/speed/pkg/core"
@@ -611,6 +614,7 @@ import (
 	"github.com/vislake/speed/pkg/log"
 	"github.com/vislake/speed/pkg/ratelimit"
 	"github.com/vislake/speed/pkg/settings"
+	"github.com/vislake/speed/pkg/tenant/admission"
 	"github.com/vislake/speed/pkg/tenant/catalog"
 	"github.com/vislake/speed/pkg/tenant/resolve"
 
@@ -780,6 +784,21 @@ func addStack(root *config.Command, s stack) {
 		speedhttp.ModuleName,
 		gate.ModuleName,
 		static.ModuleName,
+		// The identity system's own modules, each named one by one. Every
+		// exclusive provider a command runs is named, since the dependency
+		// closure never picks one: mount carries the route mounter the login,
+		// session and multi-factor modules mount through; account delivers the
+		// account store, its write surface and the membership store; session
+		// delivers the session store and the cookie backend; login and its
+		// password method deliver the flow routes; mfa delivers the factor
+		// register and policy; admission holds the member check on the API.
+		authnmount.ModuleName,
+		account.ModuleName,
+		session.ModuleName,
+		login.ModuleName,
+		loginpassword.ModuleName,
+		mfa.ModuleName,
+		admission.ModuleName,
 		resolve.ModuleName,
 		catalog.ModuleName,
 		journal.ModuleName,
@@ -831,6 +850,7 @@ func addStack(root *config.Command, s stack) {
 	for _, g := range commandGroups {
 		group := node.Sub(g.word)
 		group.Include(groupPlatform...)
+		group.Include(g.platform...)
 		group.Include(modulesOn(g.word)...)
 		for _, c := range g.commands {
 			group.Sub(c.use).Do(c.depth, c.action)
@@ -883,7 +903,8 @@ func untilCancelled(command string) config.Action {
 // hashCommand reads a password from standard input and writes its hash to
 // standard output, for pasting into the operators' subject table. The hash is
 // the static backend's, a PHC string, since that backend holds the operators; a
-// CRM user's password is hashed by the users module when the user is created.
+// CRM user's password is hashed by the account module (authn.account) when the
+// account is created.
 func hashCommand(_ context.Context, _ *core.Registry) error {
 	password, err := readSecret(os.Stdin)
 	if err != nil {

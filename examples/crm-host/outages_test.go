@@ -63,54 +63,51 @@ func recordWith(text string, attrs ...string) bool {
 	return false
 }
 
-// TestABearerTokenIsUnavailableWhileTheStoreIsCut is the case for the sessions
-// backend while the key-value store it keeps the sessions in cannot be reached,
-// on every stack whose store is reached over a connection.
+// TestASessionIsUnavailableWhileTheDatabaseIsCut is the case for the session
+// backend while the database it keeps the sessions in cannot be reached, on
+// every stack whose database is reached over a connection.
 //
-// The backend cannot say whether the token names a live session, and that is
-// not the token failing: it answers that it cannot answer, and the gateway
-// answers 503 and attributes the answer to the backend. A backend that read a
-// failed look-up as a missing session would have the token refused with 401,
-// and every client signed out, for as long as the store is away. The
-// operator's Basic credential, which the store has no part in, is answered all
-// along, and once
-// the link is back the same token is answered again.
-//
-// On the NATS store the read does not fail while the client reconnects; it
-// waits until the gateway's budget for the call has run out, which the
-// gateway answers the same way and charges to the backend. There the case
-// holds the answer and not the backend's own reading of the failure, which
-// the other three stores show.
-func TestABearerTokenIsUnavailableWhileTheStoreIsCut(t *testing.T) {
-	forEachLinkedStack(t, reachesStore, func(t *testing.T, c *crmCase) {
+// The backend cannot say whether the session names a live one, and that is not
+// the session failing: it answers that it cannot answer, and the gateway answers
+// 503 and attributes the answer to the backend. A backend that read a failed
+// look-up as a missing session would have the session refused with 401, and
+// every client signed out, for as long as the database is away. The operator's
+// Basic credential, which the static table in memory checks without the
+// database, is answered all along, and once the link is back the same session is
+// answered again.
+func TestASessionIsUnavailableWhileTheDatabaseIsCut(t *testing.T) {
+	forEachLinkedStack(t, reachesDatabase, func(t *testing.T, c *crmCase) {
 		c.migrate()
 		acme := c.createTenant("acme")
 		ann := c.createUser("ann")
 		c.grant(acme, ann, roleOwner)
+		// No node-local caching of the session status, so the cut is seen on
+		// the next request rather than after the cache's lifetime.
+		c.setGlobal(sessionCheckTTLSetting, "0s")
 		h := c.serve()
 		token := bearer(h.login(t, ann))
-		expect(t, "ann asking who she is with her token", h.get(t, accountEndpoint, "/me", "", token), nethttp.StatusOK)
-		c.requireCarried(storeLink)
+		expect(t, "ann asking who she is with her session", h.get(t, accountEndpoint, "/me", "", token), nethttp.StatusOK)
+		c.requireCarried(databaseLink)
 
-		c.cut(storeLink)
+		c.cut(databaseLink)
 		if resp := h.get(t, accountEndpoint, "/me", "", token); resp.status != nethttp.StatusServiceUnavailable {
-			t.Errorf("ann's token answered %d %s while the store is cut, want 503", resp.status, resp.body)
+			t.Errorf("ann's session answered %d %s while the database is cut, want 503", resp.status, resp.body)
 		}
 		if !eventually(settleLimit, func() bool {
-			return recordWith(h.output(), "status", "503", "outcome", "unavailable", "attributed_to", sessionsBackendName)
+			return recordWith(h.output(), "status", "503", "outcome", "unavailable", "attributed_to", sessionBackendName)
 		}) {
-			t.Errorf("no record attributes a 503 to the %s backend", sessionsBackendName)
+			t.Errorf("no record attributes a 503 to the %s backend", sessionBackendName)
 		}
-		expect(t, "the operator listing the tenants with the Basic credential the static table checks, while the store is cut",
+		expect(t, "the operator listing the tenants with the Basic credential the static table checks, while the database is cut",
 			h.get(t, adminEndpoint, "/tenants", "", operator()), nethttp.StatusOK)
 
-		c.restore(storeLink)
+		c.restore(databaseLink)
 		var last response
 		if !pollEvery(recoveryLimit, recoveryPoll, func() bool {
 			last = h.get(t, accountEndpoint, "/me", "", token)
 			return last.status == nethttp.StatusOK
 		}) {
-			t.Errorf("ann's token answered %d %s %s after the store's link was restored, want 200",
+			t.Errorf("ann's session answered %d %s %s after the database's link was restored, want 200",
 				last.status, last.body, recoveryLimit)
 		}
 	})
@@ -158,15 +155,15 @@ func TestTheLimiterLetsRequestsThroughWhileItsStoreIsCut(t *testing.T) {
 		const limit = 3
 		limitTenant(t, h, acme, limit)
 		awaitLimit(t, h, acme, limit)
-		// The requests are the operator's. A CRM user's token is checked against
-		// the key-value store, which is the link this case cuts, so the gateway
-		// would answer it 503 before the limiter ran; the operator's credential is
-		// checked against a table in memory. The membership layer behind the
-		// limiter refuses the operator as a stranger to the tenant, and that 403 is
-		// what a request the limiter let through is answered with.
+		// The requests are the operator's. A CRM user's session is checked against
+		// the map of the session store, so a cut link would answer it 503 before
+		// the limiter ran; the operator's credential is checked against a table in
+		// memory. The admission layer behind the limiter refuses the operator as a
+		// stranger to the tenant, and that 404 is what a request the limiter let
+		// through is answered with.
 		members := func() response { return h.get(t, apiEndpoint, "/members", acme.Alias, operator()) }
 		for i := 1; i <= limit; i++ {
-			expect(t, fmt.Sprintf("the operator's request %d in acme", i), members(), nethttp.StatusForbidden)
+			expect(t, fmt.Sprintf("the operator's request %d in acme", i), members(), nethttp.StatusNotFound)
 		}
 		expect(t, "the operator's request past acme's limit", members(), nethttp.StatusTooManyRequests)
 		c.requireCarried(storeLink)
@@ -175,9 +172,9 @@ func TestTheLimiterLetsRequestsThroughWhileItsStoreIsCut(t *testing.T) {
 		var lastLetThrough time.Time
 		for i := 1; i <= limit+2; i++ {
 			lastLetThrough = time.Now()
-			if resp := members(); resp.status != nethttp.StatusForbidden {
-				t.Errorf("the operator's request %d past the limit while the store is cut answered %d %s, want 403 "+
-					"from the membership layer behind the limiter", i, resp.status, resp.body)
+			if resp := members(); resp.status != nethttp.StatusNotFound {
+				t.Errorf("the operator's request %d past the limit while the store is cut answered %d %s, want 404 "+
+					"from the admission layer behind the limiter", i, resp.status, resp.body)
 			}
 		}
 		if n := lines(h.output(), limiterLetThrough); n != 1 {

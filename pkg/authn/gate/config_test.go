@@ -60,6 +60,7 @@ func TestAConfigurationThisGatewayCannotRunOnIsRefused(t *testing.T) {
 		{"a base path with a trailing slash", func(m *moduleConfig) { m.Mount.BasePath = "/auth/" }, authn.ErrInvalidConfig, mountBasePathItem},
 		{"a base path with a wildcard", func(m *moduleConfig) { m.Mount.BasePath = "/auth/*all" }, authn.ErrInvalidConfig, mountBasePathItem},
 		{"a base path with a parameter", func(m *moduleConfig) { m.Mount.BasePath = "/:tenant/auth" }, authn.ErrInvalidConfig, mountBasePathItem},
+		{"a base path with a brace pattern", func(m *moduleConfig) { m.Mount.BasePath = "/auth/{tenant}" }, authn.ErrInvalidConfig, mountBasePathItem},
 		{"a base path with a query", func(m *moduleConfig) { m.Mount.BasePath = "/auth?x=1" }, authn.ErrInvalidConfig, mountBasePathItem},
 		{"a base path with a repeated slash", func(m *moduleConfig) { m.Mount.BasePath = "/a//b" }, authn.ErrInvalidConfig, mountBasePathItem},
 		{"a base path with a dot segment", func(m *moduleConfig) { m.Mount.BasePath = "/a/../b" }, authn.ErrInvalidConfig, mountBasePathItem},

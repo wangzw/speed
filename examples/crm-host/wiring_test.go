@@ -492,6 +492,16 @@ func TestATableReferencingAnotherModulesTableIsOrderedAfterIt(t *testing.T) {
 		for p, body := range declared[a.module.Name] {
 			for _, match := range referencesTable.FindAllStringSubmatch(body, -1) {
 				table := strings.ToLower(match[1])
+				// A host migration names no foreign key into the identity
+				// system's own tables: those live in another module, a
+				// cross-module reference would couple the two migrations'
+				// order, and the account identifiers are checked through the
+				// interfaces rather than by the database.
+				if strings.HasPrefix(table, "authn_") {
+					t.Errorf("module %q's migration %s references %s, an identity-system table; "+
+						"the host's own migrations carry no foreign key into it", a.module.Name, p, table)
+					continue
+				}
 				owner, ok := owners[table]
 				switch {
 				case !ok:

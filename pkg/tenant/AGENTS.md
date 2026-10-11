@@ -2,8 +2,10 @@
 
 The tenancy capability directory: the interface package a model embeds and a
 handler reads a tenant from, `pkg/tenant/resolve` — the module that reads a
-tenant name off the request surface — and `pkg/tenant/catalog`, the module that
-keeps the roster and filters statements to the tenant they carry.
+tenant name off the request surface — `pkg/tenant/catalog`, the module that
+keeps the roster and filters statements to the tenant they carry — and
+`pkg/tenant/admission`, the module that decides whether an identified caller may
+enter the tenant its request resolved to.
 
 ## Where the authority is
 
@@ -31,6 +33,16 @@ here must not cross, and how to run it.
   either. Registration lives in the subpackages: importing
   `pkg/tenant/catalog` is what decides that a binary has tenants at all, and
   importing `pkg/tenant/resolve` is what decides that its requests are scoped.
+- **`Admission`'s marker method is exported, and that is not a style choice.**
+  `Admission` is `interface{ AdmissionLayer() }`, defined here and delivered by
+  the admission subpackage's type. A type of another package cannot implement an
+  interface whose method is unexported, so an unexported marker — the shape
+  `pkg/ratelimit`'s `Limiter` uses, where interface and implementation share a
+  package and the outside embeds it — would fail the registry's delivery check
+  for the one implementation there is. The interface is an ordering anchor and
+  not a surface: a layer that has to sit inside admission, an authorization layer
+  above all, names `(*tenant.Admission)(nil)` in its `After` and calls nothing on
+  it, and importing this root package for the anchor needs nothing else of it.
 - **The identifier's injection point is closed.** `internal/tenantctx` is where
   a tenant is written into a context, and the compiler is what keeps every
   other package out of it. Exporting a writer — or moving the key into this

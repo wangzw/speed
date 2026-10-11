@@ -110,7 +110,7 @@ type Sessions interface {
 - `cookie-domain` 非空时 cookie 名改为 `__Secure-sid`，写出 `Domain` 属性；`__Host-` 前缀所保证的「子域不可写」随之失去，启动诊断为此写一行 Warn。改动 `cookie-domain` 或 `allow-insecure` 会更换 cookie 名：同时带着旧名与新名两个被认领 cookie 的浏览器，网关整体答 401，既不择一校验也不清除其中任何一个，所以切换要先让旧 cookie 过期，再启用新名（见 [design-authn-gate](design-authn-gate.md)）。
 - `same-site` 取 `lax` 或 `strict`；取 `none` 是 `ErrInsecureConfig`。
 
-cookie 的 `Secure` 没有独立开关。`public-url` 不是 https（回环主机除外）而未开 `authn.gate.mount.allow-insecure` 是 `ErrInsecureConfig`；回环主机的 http 基址按 https 处理，保留 `__Host-` 前缀与 `Secure`，不写 Warn；`allow-insecure`（仅开发）同时去掉 `__Host-` 前缀与 `Secure`，启动诊断为此写一行 Warn。`public-url`、`allow-insecure` 与 `trusted-origins` 由 `authn.gate` 声明，本模块在 `Prepare` 里读取（[design-authn-gate](design-authn-gate.md)）。
+cookie 的 `Secure` 没有独立开关。`public-url` 不是 https（回环主机除外）而未开 `authn.gate.mount.allow-insecure` 是 `ErrInsecureConfig`；回环主机的 http 基址按 https 处理，保留 `__Host-` 前缀与 `Secure`，不写 Warn；`allow-insecure`（仅开发）同时去掉 `__Host-` 前缀与 `Secure`，启动诊断为此写一行 Warn。`public-url` 与 `allow-insecure` 由 `authn.gate` 声明，本模块在 `Prepare` 里读取，它们决定 cookie 名、前缀与 `Secure`（[design-authn-gate](design-authn-gate.md)）。`trusted-origins` 同样由 `authn.gate` 声明，但本模块不读它：消费它的是网关与 `authn.mount` 建的跨源检查，本模块用不到该值。
 
 ### 设置面
 
@@ -631,24 +631,24 @@ stateDiagram-v2
 
 ## 实现状态
 
-下表逐项列出本模块的能力。本模块没有模块代码，除校验后端读取的账户快照缓存外，每一项都是未实现。
+下表逐项列出本模块的能力。本模块已实现，逐项状态与代码如下。
 
 | 能力 | 状态 | 代码 |
 |---|---|---|
-| `Sessions` 接缝与根包值类型（`SessionKind`、`NewSession`、`Issued`、`SessionInfo`、`SessionStatus`、`Elevation`、`ClientInfo`） | 未实现 | — |
-| 模块 `authn.session` 的登记与阶段行为（`Prepare`、`New`、`Migrate`、`Init`、`Start`、`Stop`），含 `var _` 编译期断言与 `assembly_test` | 未实现 | — |
-| 表 `authn_sessions` 与按方言的迁移集 | 未实现 | — |
-| scs 的适配：存储适配器、JSON 编码器与适配规则 | 未实现 | — |
-| 会话的创建、读取、列出、撤销与按账户批量撤销 | 未实现 | — |
-| 令牌轮换、提权与冒充挂接 | 未实现 | — |
-| cookie 的写出、清除、读取与启动校验 | 未实现 | — |
-| `Verifier`：cookie 校验、会话校验缓存、账户核对与冒充记录缓存 | 未实现 | — |
-| 账户快照的进程内缓存 `internal/acctcache`，供会话校验后端核对账户 | 部分实现 — 缓存已在，有效期、容量上限、按键与整体清除、`Epoch` 与 `PutIfEpoch` 可用；缺会话校验后端对它的读取、会话模块自己维护的 `sid` 索引，以及按 `authn.account.status-changed` 与 `authn.account.deleted` 清除的订阅 | `pkg/authn/internal/acctcache/acctcache.go` `Cache`、`New`、`Invalidate`、`Purge` |
-| `CookieClearer` | 未实现 | — |
-| `service` 种：`ForCredential` 与 `RevokeCredential` | 未实现 | — |
-| `AccountLifecycle` 钩子与事件补偿订阅 | 未实现 | — |
-| 自助路由 `B/session`、`B/logout`、`B/sessions` | 未实现 | — |
-| 到期行的清扫协程 | 未实现 | — |
-| `authn.session.revoked` 事件的发布与订阅、`authn.impersonation.ended` 的订阅、`authn.session.operations` 指标 | 未实现 | — |
+| `Sessions` 接缝与根包值类型（`SessionKind`、`NewSession`、`Issued`、`SessionInfo`、`SessionStatus`、`Elevation`、`ClientInfo`） | 已实现 — 载荷里 `idp.*` 的分项上限与检查在 `internal/model`，会话模块写载荷时引用它们 | `pkg/authn/session.go` `Sessions`；`pkg/authn/internal/model/session.go` `SessionKind`、`NewSession`、`Issued`、`SessionInfo`、`SessionStatus`、`Elevation`、`ClientInfo`；`pkg/authn/internal/model/bounds.go` `CheckIDPAttributes`、`SessionIDPAttributesMax`、`TruncateUTF8` |
+| 模块 `authn.session` 的登记与阶段行为（`Prepare`、`New`、`Migrate`、`Init`、`Start`、`Stop`），含 `var _` 编译期断言与 `assembly_test` | 已实现 | `pkg/authn/session/session.go` `Module`、`(*product)` 的编译期断言；`pkg/authn/session/assembly_test.go` |
+| 表 `authn_sessions` 与按方言的迁移集 | 已实现 | `pkg/authn/session/store.go`；`pkg/authn/session/migrations/postgres`、`pkg/authn/session/migrations/sqlite` |
+| scs 的适配：存储适配器、JSON 编码器与适配规则 | 已实现 | `pkg/authn/session/adapter.go` `storeAdapter`；`pkg/authn/session/payload.go` `jsonCodec` |
+| 会话的创建、读取、列出、撤销与按账户批量撤销 | 已实现 | `pkg/authn/session/sessions.go` `Create`、`Get`、`List`、`Revoke`、`RevokeAccount` |
+| 令牌轮换、提权与冒充挂接 | 已实现 | `pkg/authn/session/sessions.go` `Rotate`、`Elevate`、`SetImpersonation` |
+| cookie 的写出、清除、读取与启动校验 | 已实现 — cookie 名与属性取自网关的 `public-url` 与 `allow-insecure`，不可运行的配置在 `Prepare` 里以 `ErrInsecureConfig` 终止 | `pkg/authn/session/sessions.go` `SetCookie`、`ClearCookie`；`pkg/authn/session/config.go` |
+| `Verifier`：cookie 校验、会话校验缓存、账户核对与冒充记录缓存 | 已实现 | `pkg/authn/session/verify.go` `Verify`、`Accepts`、`Name`；`pkg/authn/session/cache.go` |
+| 账户快照的进程内缓存 `internal/acctcache`，供会话校验后端核对账户 | 已实现 — 会话模块以 `sid` 二级键维护自己的索引，账户快照缓存按账户标识读 | `pkg/authn/internal/acctcache/acctcache.go` `Cache`、`Epoch`、`PutIfEpoch`；`pkg/authn/session/cache.go` |
+| `CookieClearer` | 已实现 | `pkg/authn/session/sessions.go` `ClearCookie`；`pkg/authn/session.go` `CookieClearer` |
+| `service` 种：`ForCredential` 与 `RevokeCredential` | 已实现 | `pkg/authn/session/sessions.go` `ForCredential`、`RevokeCredential` |
+| `AccountLifecycle` 钩子与事件补偿订阅 | 已实现 | `pkg/authn/session/lifecycle.go` `AccountDisabled`、`AccountDeleted`、`ServiceSecretRevoked` |
+| 自助路由 `B/session`、`B/logout`、`B/sessions` | 已实现 — 经 `mount.Mounter` 挂载并成对登记访问级别 | `pkg/authn/session/routes.go` |
+| 到期行的清扫协程 | 已实现 | `pkg/authn/session/sweep.go` |
+| `authn.session.revoked` 事件的发布与订阅、`authn.impersonation.ended` 的订阅、`authn.session.operations` 指标 | 已实现 | `pkg/authn/session/lifecycle.go`；`pkg/authn/session/status.go` |
 
 浏览器自行附带的凭据下的跨源检查由网关执行，它的实现状态由 [design-authn-gate](design-authn-gate.md) 承载。

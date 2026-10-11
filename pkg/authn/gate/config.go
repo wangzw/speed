@@ -40,7 +40,7 @@ var configDefaults = moduleConfig{
 	Endpoints:  []string{allEndpoints},
 	CallBudget: 5 * time.Second,
 	InFlight:   64,
-	Mount:      mountConfig{BasePath: "/auth"},
+	Mount:      mountConfig{BasePath: mount.DefaultBasePath},
 }
 
 // moduleConfig is the set of input items this module accepts.
@@ -196,7 +196,7 @@ func checkBasePath(p string) error {
 		return fmt.Errorf("%w: %s.%s is %q, which ends with a slash or is the root. Write the "+
 			"path without a trailing slash, such as /auth", authn.ErrInvalidConfig, ConfigNamespace,
 			mountBasePathItem, clip(p))
-	case strings.ContainsAny(p, "*:?#"):
+	case strings.ContainsAny(p, "*:?#{}"):
 		return fmt.Errorf("%w: %s.%s is %q, which carries a wildcard, a parameter, a query or a "+
 			"fragment, and routes are mounted under a literal path", authn.ErrInvalidConfig,
 			ConfigNamespace, mountBasePathItem, clip(p))

@@ -37,6 +37,10 @@ type Proof struct {
 	IDPAsserted bool
 	Provider    string         // the enterprise SSO provider
 	Aliases     []ExternalLink // keys the same external identity may earlier have been bound under
+	// PasswordChanged: the method replaced the account's password while proving
+	// it, which is what a credential carrying must_change makes it do. The engine
+	// revokes the account's other sessions once the new session exists.
+	PasswordChanged bool
 }
 
 // Clone returns a copy that shares no slice, map or pointer with p.

@@ -61,3 +61,28 @@ type Requirement struct {
 	MaxAge    time.Duration // the most the time since AuthTime may be
 	Local     bool          // when true, an assurance only an IdP declared does not count
 }
+
+// firstFreshness is how recent a first factor must be for an action that asks
+// for a fresh one. It is fixed and no setting.
+const firstFreshness = 5 * time.Minute
+
+// FreshFirstFactor is the requirement of an action that wants a recently proven
+// first factor: at least a single factor, proven within five minutes, from any
+// source. The five minutes are fixed, so that the login engine, the account
+// self-service routes, the factor routes and the admission layer do not each
+// write them.
+func FreshFirstFactor() Requirement {
+	return Requirement{Assurance: AssuranceSingle, MaxAge: firstFreshness}
+}
+
+// FreshLocalMulti is the requirement of an account-security action on an account
+// that has factors: multi-factor, proven within window, and proven here, so that
+// an assurance only an IdP declared does not count. A window that is not
+// positive is outside every setting's domain and reads as a requirement nobody
+// satisfies, never as one that asks for no freshness: a zero MaxAge would.
+func FreshLocalMulti(window time.Duration) Requirement {
+	if window <= 0 {
+		window = -1
+	}
+	return Requirement{Assurance: AssuranceMulti, MaxAge: window, Local: true}
+}

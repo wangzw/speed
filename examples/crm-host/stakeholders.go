@@ -135,7 +135,7 @@ func distinctIDs(ids []string) []string {
 // linked and removes the links to the rest, on the join table alone.
 func (p *dealsProduct) setStakeholders(c *gin.Context) {
 	ctx := c.Request.Context()
-	self, ok := memberOf(c, setStakeholdersRoute)
+	self, ok := memberOf(c, p.db, setStakeholdersRoute)
 	if !ok {
 		return
 	}
@@ -171,7 +171,7 @@ func (p *dealsProduct) setStakeholders(c *gin.Context) {
 // and appends the contact it read to the association on the deal it read.
 func (p *dealsProduct) addStakeholder(c *gin.Context) {
 	ctx := c.Request.Context()
-	self, ok := memberOf(c, addStakeholderRoute)
+	self, ok := memberOf(c, p.db, addStakeholderRoute)
 	if !ok {
 		return
 	}
@@ -224,7 +224,7 @@ func (p *dealsProduct) answerStakeholders(c *gin.Context, id string, err error, 
 		return
 	}
 	c.Header("ETag", etagOf(deal.Version))
-	c.JSON(nethttp.StatusOK, viewOfDeal(deal))
+	c.JSON(nethttp.StatusOK, viewOfDeal(deal, p.ownerName(ctx, deal.OwnerID)))
 }
 
 // removeStakeholder unlinks one contact from a deal, and answers 204 whether or
@@ -237,7 +237,7 @@ func (p *dealsProduct) answerStakeholders(c *gin.Context, id string, err error, 
 // deletion is GORM's, on the join table alone.
 func (p *dealsProduct) removeStakeholder(c *gin.Context) {
 	ctx := c.Request.Context()
-	self, ok := memberOf(c, removeStakeholderRoute)
+	self, ok := memberOf(c, p.db, removeStakeholderRoute)
 	if !ok {
 		return
 	}

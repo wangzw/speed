@@ -13,8 +13,8 @@
                 "schema": {
                   "type": "object",
                   "properties": {
-                    "identity": {"type": "string", "description": "The caller's account identifier: the user identifier for a CRM user, and static.<subject> for an operator"},
-                    "user": {
+                    "identity": {"type": "string", "description": "The caller's account identifier: the account identifier for a CRM user, and static.<subject> for an operator"},
+                    "account": {
                       "type": ["object", "null"],
                       "properties": {"id": {"type": "string"}, "email": {"type": "string"}, "display_name": {"type": "string"}}
                     },

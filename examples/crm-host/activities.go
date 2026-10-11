@@ -179,7 +179,7 @@ func activityByID(ctx context.Context, database db.Database, id string) (Activit
 func (p *activitiesProduct) createActivity(c *gin.Context) {
 	ctx := c.Request.Context()
 	logger := log.FromContext(ctx)
-	self, ok := memberOf(c, createActivityRoute)
+	self, ok := memberOf(c, p.db, createActivityRoute)
 	if !ok {
 		return
 	}
@@ -234,7 +234,7 @@ func (p *activitiesProduct) createActivity(c *gin.Context) {
 		SubjectID:   body.SubjectID,
 		Kind:        body.Kind,
 		Body:        body.Body,
-		ActorID:     self.UserID,
+		ActorID:     string(self.Account),
 		OccurredAt:  occurred,
 	}
 	err = p.db.DB().WithContext(ctx).Create(&activity).Error
@@ -257,7 +257,7 @@ func (p *activitiesProduct) createActivity(c *gin.Context) {
 func (p *activitiesProduct) deleteActivity(c *gin.Context) {
 	ctx := c.Request.Context()
 	logger := log.FromContext(ctx)
-	self, ok := memberOf(c, deleteActivityRoute)
+	self, ok := memberOf(c, p.db, deleteActivityRoute)
 	if !ok {
 		return
 	}
@@ -300,7 +300,7 @@ type timeline struct {
 func (p *activitiesProduct) dealTimeline(c *gin.Context) {
 	ctx := c.Request.Context()
 	logger := log.FromContext(ctx)
-	if _, ok := memberOf(c, dealTimelineRoute); !ok {
+	if _, ok := memberOf(c, p.db, dealTimelineRoute); !ok {
 		return
 	}
 	id := c.Param("id")
@@ -337,16 +337,17 @@ func init() {
 	registerApplication(application{
 		module:     activitiesModule(),
 		runsOn:     []string{serveCommand},
-		models:     []any{Activity{}, Deal{}, PipelineStage{}, User{}},
+		models:     []any{Activity{}, Deal{}, PipelineStage{}},
 		journalled: []string{createActivityRoute, deleteActivityRoute},
 	})
 }
 
 // activitiesModule declares the activities table and binds the activity routes.
 //
-// The activities table references the deals table and the users table, so the
-// module requires those two modules' table tokens, optionally, for the order of
-// the migrations alone: it reads the deals table through the database handle.
+// The activities table references the deals table, so the module requires that
+// module's table token, optionally, for the order of the migrations alone: it
+// reads the deals table through the database handle. The actor column is an
+// account identifier and names no foreign key.
 func activitiesModule() core.Module {
 	return core.Module{
 		Name: activitiesModuleName,
@@ -355,7 +356,6 @@ func activitiesModule() core.Module {
 			{Token: (*db.Database)(nil)},
 			{Token: (*tenant.Catalog)(nil)},
 			{Token: (*dealsTable)(nil), Optional: true},
-			{Token: (*usersTable)(nil), Optional: true},
 		},
 		Resources: []any{
 			db.Migrations{FS: activitiesMigrations},

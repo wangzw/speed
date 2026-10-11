@@ -14,6 +14,14 @@
 // host may supply a Gate of its own, so each builds an instance from the same
 // rule.
 //
+// The package also holds what every handler mounted through it shares, so that
+// each module writes none of it again: the closed set of problem codes and the
+// writers that answer with them (Fail, Unauthorized, StepUpRequired, Forbidden,
+// Throttled, Unavailable, Busy), the request body decoder (Decode), the wrapper
+// every registration goes through (Wrap) and the bypass of the cross-origin check
+// for a callback (AllowCallback). The mounttest package is a Mounter for the tests
+// of those modules.
+//
 // The package is internal to pkg/authn. The modules that mount routes require
 // the capability by this interface, and a host reaches it only through the
 // modules, never by the type.
@@ -24,6 +32,13 @@ import (
 
 	"github.com/gin-gonic/gin"
 )
+
+// DefaultBasePath is the base path the capability's routes are mounted under
+// without a configured one. The gateway declares it as the default of
+// mount.base-path and the module that mounts routes reads it back the same way;
+// it is written once here so a host-supplied gateway and the module cannot come
+// to disagree on where the routes are.
+const DefaultBasePath = "/auth"
 
 // Mounter registers routes under the capability's base path together with the
 // access level the gateway is to apply to each.
@@ -49,6 +64,10 @@ type Mounter interface {
 	Callback(methods []string, rel string, h gin.HandlerFunc)
 	// Base is the base path every rel is joined to.
 	Base() string
+	// Endpoint is the name of the endpoint the routes are mounted on. A handler
+	// that answers 401 itself writes it as the realm of its challenge, the name
+	// of the protection space being the endpoint, as the gateway's own is.
+	Endpoint() string
 	// PublicURL is the origin the deployment is reached at from outside,
 	// without a path.
 	PublicURL() string

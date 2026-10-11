@@ -148,7 +148,7 @@ func FromContext(ctx context.Context) (Identity, bool) // 无回落
 
 **`FromContext` 无回落，注入口不导出，写入方是一份封闭名单。** 这一对约定与 [log](design-log.md) 的形态反着来：那里 `WithLogger` 是导出的注入口，`FromContext` 在上下文里没有 logger 时回落到进程根 logger（[ADR-log-context-2026-09-13](../../adr/adr-log-context-2026-09-13.md)）。反过来的理由是两者要承载的东西不同：logger 有默认值而身份没有，回落等于把一个匿名请求读成某个主体；导出注入口等于让链上任何一层改写身份，而认证的全部意义就是这件事只发生一次、只由一个地方决定。
 
-**写入方名单。** `internal/identity` 的 `With` 与 `WithAccess` 是仅有的注入口，非测试文件里 import `internal/identity` 的包限于下列几个，名单是封闭的：根包只转出读取面，不转出注入口；`authn/gate` 是请求链上唯一的写入方，写之前先过出口检查；`authn/login` 为登录审计行派生一个携带新认定身份的上下文，只交给那一次 `Audit.Record`，不交给任何处理器或流程的下一步，所以它不进请求链、不被授权读取，也不经出口检查；`authn/authntest` 是测试构造口，非测试代码不得 import 它（见下）。`pkg/authn/deps_test.go` 对 `pkg` 模块里每个包断言这份名单：名单之外的包在非测试文件里 import `internal/identity` 即失败，并有一棵违反它的树作反例。编译器只拦得住 `pkg/authn` 之外的包，树内的校验后端、会话与登录方法各包由这条断言拦。名单只约束 `internal/identity` 的注入口：`internal/verdict` 与 `internal/step` 的读取函数（`OutcomeOf`、`PrincipalOf`、`CauseOf`，以及 `Step` 的读取函数）不限定 importer，`pkg/authn` 之下的包都可以用，因为它们只读，读取者做不出构造器做不出的判决与步骤；判决与步骤的不可字面构造靠字段不导出与构造器，不靠名单。
+**写入方名单。** `internal/identity` 的 `With` 与 `WithAccess` 是仅有的注入口，非测试文件里 import `internal/identity` 的包限于下列几个，名单是封闭的：根包只转出读取面，不转出注入口；`authn/gate` 是请求链上唯一的写入方，写之前先过出口检查；`authn/login` 为登录审计行派生一个携带新认定身份的上下文，只交给那一次 `Audit.Record`，不交给任何处理器或流程的下一步，所以它不进请求链、不被授权读取，也不经出口检查（`pkg/authn/login/identity.go` 的派生点，`pkg/authn/login/engine_test.go` `TestTheLoginAuditIsWrittenUnderADerivedIdentity` 守住它只交给那次 `Record`）；`authn/authntest` 是测试构造口，非测试代码不得 import 它（见下）。`pkg/authn/deps_test.go` 对 `pkg` 模块里每个包断言这份名单：名单之外的包在非测试文件里 import `internal/identity` 即失败，并有一棵违反它的树作反例，名单里已存在的包都要确有 import（`identityWriters`、`TestTheListOfWritersIsHeldToTheCodeBehindIt`）。编译器只拦得住 `pkg/authn` 之外的包，树内的校验后端、会话与登录方法各包由这条断言拦。名单只约束 `internal/identity` 的注入口：`internal/verdict` 与 `internal/step` 的读取函数（`OutcomeOf`、`PrincipalOf`、`CauseOf`，以及 `Step` 的读取函数）不限定 importer，`pkg/authn` 之下的包都可以用，因为它们只读，读取者做不出构造器做不出的判决与步骤；判决与步骤的不可字面构造靠字段不导出与构造器，不靠名单。
 
 下游必须自己处理第二个返回值为假的那一档。以下是它为假的全部情形：请求命中 `Exempt` 登记的路由；命中 `Optional` 登记的路由且没有凭据；请求所在的端不在网关所守的集合内；进程里没有网关；预置的网关不是网关模块的产物。`AccessFromContext` 让消费者区分这几种成因，不靠 `FromContext` 的真假去猜：
 
@@ -303,6 +303,8 @@ type Requirement struct {
 | `authn/admin` | `authn.admin` | 无（只挂 `/auth/admin/*` 下的路由） | — | `mount.Mounter`、`Accounts`、`AccountAdmin`、`Memberships`、`audit.Audit` | `Sessions` ○、`MFA` ○、`SSOProviders` ○、全部 `SSOMetadataRefresher`、`Impersonation` ○、`Tokens` ○、`Decider` ○（缺席即全拒）；每组路由随对应能力在场才挂 | 无 |
 
 `authn/guard` 与 `authn/authntest` 不登记模块：`guard.Require` 返回加强认证的 gin 处理器，`authntest` 是测试构造口。
+
+租户准入层不在本表：它是 `pkg/tenant` 下的模块 `tenant.admission`，排他交付定序锚点 `tenant.Admission` 与根包的 `ScopeGuard`，方向是它 import 本功能目录的根包（[design-tenant-admission](design-tenant-admission.md)）。登录引擎把两块内容放在 `pkg/authn/login/internal` 下：`resolve` 把 `Proof` 解析成账户（开户、绑定、并入外部身份），`selfservice` 挂账户自助路由；两者不登记模块，只被登录引擎构造与调用（[design-authn-login](design-authn-login.md)）。
 
 **排他与并立。** 排他的是“必须恰有一个”的功能；并立的是可以有零个到多个、由消费方在 `Init` 里 `ResolveAll` 取用的功能。并立功能的集合是封闭的：`Verifier`、`LoginMethod`、`Factor`、`SSOMetadataRefresher`、`AccountLifecycle`、`ClaimsContributor`，各自一个模块，一律不排他、不局部违反；其余功能都排他，包括租户准入层交付的 `ScopeGuard`。判定接缝 `Decider`（排他）与首登开户钩子 `Provisioner`（非排他）由宿主或授权模块交付，取用方一律以可选取用对待。
 
@@ -485,7 +487,7 @@ flowchart LR
     auditj[pkg/audit/journal] --> R
 ```
 
-除上文只依赖标准库的 `internal/model`、`internal/identity`、`internal/verdict`、`internal/step` 外，`pkg/authn/internal` 下还有下列包，它们与上述内部包合起来是内部包的封闭名册：`internal/password` 放 PHC 编解码、派生、校验缓存、进程内退避与并发和内存预算，`internal/egress` 放受限的出站 `http.Client`，`internal/mount` 放 `Mounter` 接口与路由登记选项，`internal/acctcache` 放按键有界、带有效期的进程内缓存（值类型是参数，账户快照与口令校验缓存各自取用），`internal/clock` 放写入数据库或绑定为查询参数的时间的来源（一律 UTC），`internal/literal` 放日志脱敏字面量匹配器的登记构造 `Register`（依赖 `pkg/log`，所以只依赖标准库的值类型包不能放它），持有秘密配置值的模块在自己的 `New` 里调用；只做进程内时长比较的计时（口令校验缓存、失败退避、账户快照缓存的默认时钟）可以直接取单调时钟，并允许测试注入。没有 `internal/configreader`：读取器的构造由 `authntest` 的 `ConfigReader` 承担。内部包名册里的各包都只能被 `pkg/authn` 之下的包 import。
+除上文只依赖标准库的 `internal/model`、`internal/identity`、`internal/verdict`、`internal/step` 外，`pkg/authn/internal` 下还有下列包，它们与上述内部包合起来是内部包的封闭名册：`internal/password` 放 PHC 编解码、派生、校验缓存、进程内退避与并发和内存预算，`internal/egress` 放受限的出站 `http.Client`，`internal/mount` 放 `Mounter` 接口、路由登记选项与挂路由模块共用的路由部件（问题码与 `Fail` 一族、请求体解码 `Decode`、每条登记都经过的 `Wrap`、回跳旁路 `AllowCallback`，以及挂载端与可信来源规则 `Endpoint`、`TrustedOrigins`、`CrossOrigin`），`internal/mount/mounttest` 放测试用的 `Mounter`，`internal/acctcache` 放按键有界、带有效期的进程内缓存（值类型是参数，账户快照与口令校验缓存各自取用），`internal/clock` 放写入数据库或绑定为查询参数的时间的来源（一律 UTC），`internal/literal` 放日志脱敏字面量匹配器的登记构造 `Register`（依赖 `pkg/log`，所以只依赖标准库的值类型包不能放它），持有秘密配置值的模块在自己的 `New` 里调用；只做进程内时长比较的计时（口令校验缓存、失败退避、账户快照缓存的默认时钟）可以直接取单调时钟，并允许测试注入。没有 `internal/configreader`：读取器的构造由 `authntest` 的 `ConfigReader` 承担。内部包名册里的各包都只能被 `pkg/authn` 之下的包 import。
 
 ## 核心数据结构
 
@@ -666,22 +668,26 @@ type Provisioner interface {
 | 网关与校验后端接缝（含路由登记、出口检查、挂路由口、内置口令表后端） | 部分实现 — 分项状态由 [design-authn-gate](design-authn-gate.md) 的实现状态承载 | `pkg/authn/gate/gate.go` `Module` |
 | 判决不可字面构造与零值读作没答 | 已实现 | `pkg/authn/internal/verdict/verdict.go` `Verdict`、`OutcomeOf`；`pkg/authn/verdict.go` |
 | 判决携带 `Principal` | 已实现 | `pkg/authn/verdict.go` `Authenticated`；`pkg/authn/internal/verdict/verdict.go` `NewAuthenticated`、`PrincipalOf`；`pkg/authn/internal/model/principal.go` `Principal` |
-| 值类型的落点与根包别名：`AccountID`、`SessionID`、`Method`、`Assurance`、`Access`、`Requirement`、`Principal`，以及登录、因素、标识与外部绑定的值类型 | 已实现 | `pkg/authn/internal/model`；`pkg/authn/ids.go` |
+| 值类型的落点与根包别名：`AccountID`、`SessionID`、`Method`、`Assurance`、`Access`、`Requirement`、`Principal`，以及登录、因素、标识、外部绑定、账户、成员关系、会话、令牌、冒充、短信与 SSO 提供方的值类型 | 已实现 | `pkg/authn/internal/model`；`pkg/authn/ids.go` |
+| 接缝的根包声明：`Accounts`、`AccountAdmin`、`Passwords`、`Memberships`、`AccountLifecycle`、`Provisioner`、`Sessions`、`LoginMethod`、`Factor`、`MFA`、`Decider`、`Impersonation`、`Tokens`、`SMSCodes`、`SSOProviders`，事件类型与载荷，哨兵 | 部分实现 — 缺 `ClaimsContributor`、`SMSSender`、`SMS`、`SSOMetadataRefresher` | `pkg/authn/account.go`；`pkg/authn/membership.go`；`pkg/authn/lifecycle.go`；`pkg/authn/provision.go`；`pkg/authn/session.go`；`pkg/authn/login.go`；`pkg/authn/factor.go`；`pkg/authn/decide.go`；`pkg/authn/impersonation.go`；`pkg/authn/token.go`；`pkg/authn/sms.go`；`pkg/authn/sso.go`；`pkg/authn/events.go`；`pkg/authn/errors.go`；`pkg/authn/surface_test.go` `exportedSurface` |
+| 属性集的分项上限与检查，账户与会话载荷各一份上限，合计低于盖章处的总上限 | 已实现 | `pkg/authn/internal/model/bounds.go` `CheckAccountAttributes`、`CheckIDPAttributes`、`TruncateUTF8`；`pkg/authn/gate/attribute_bounds_test.go` |
+| 路由共用部件：问题码与 `Fail` 一族、`Decode`、`Wrap`、`AllowCallback`，与测试用的 `Mounter` | 已实现 | `pkg/authn/internal/mount/problem.go`；`pkg/authn/internal/mount/decode.go`；`pkg/authn/internal/mount/wrap.go`；`pkg/authn/internal/mount/mounttest/mounttest.go` |
 | 身份的类型化字段与责任键 | 已实现 | `pkg/authn/internal/identity/identity.go` `Identity`、`New`、`Key`、`Satisfies`；`pkg/authn/identity.go` `Identity` |
 | 身份的上下文承载：无回落、注入口不导出 | 已实现 | `pkg/authn/internal/identity/identity.go` `With`、`From`；`pkg/authn/identity.go` `FromContext` |
 | 访问级别 `Access` 的承载与 `AccessFromContext` | 已实现 — 网关在放行时写入 | `pkg/authn/internal/identity/identity.go` `WithAccess`、`AccessFrom`；`pkg/authn/identity.go` `AccessFromContext`；`pkg/authn/gate/serve.go` `admit` |
-| 根包依赖守卫 `deps_test.go` | 已实现 — 根包的 import 断言、值类型包只依赖标准库与 `internal/model` 的断言、非测试代码不 import `authntest` 的断言、`internal/identity` 只被写入方名单内的包 import 的断言 | `pkg/authn/deps_test.go`；`pkg/authn/internal/model/deps_test.go` |
+| 根包依赖守卫 `deps_test.go` | 已实现 — 根包的 import 断言、值类型包只依赖标准库与 `internal/model` 的断言、非测试代码不 import `authntest` 与 `mounttest` 的断言（`mounttest` 是唯一在非测试文件里 import `authntest` 的包）、`internal/identity` 只被写入方名单内的包 import 的断言，以及名单内已存在的包都确有 import 的反向断言 | `pkg/authn/deps_test.go`；`pkg/authn/internal/model/deps_test.go` |
 | 根包导出面清单 | 已实现 — 根包的每个导出声明（含别名带出的字段与方法集）逐条写在测试里，新增导出必须手工登记；导出面不含归属模型的名字 | `pkg/authn/surface_test.go` `exportedSurface`、`TestExportedSurfaceIsPinned`、`TestTheSurfaceHoldsNoNameOfTheOwnershipModel` |
-| 测试构造口 `authntest` | 已实现 — 防线只有依赖测试：`pkg` 模块里的 `deps_test.go` 与各宿主模块自带的同形断言，类型上没有屏障；不检查出口检查里需要网关时钟或后端声明的几项（认证时刻的 120 秒偏移、`static.` 以外的账户命名空间、`Accepts` 声明的能力、保留的属性前缀）；形状与界限常量与出口检查各持一份，由网关包的对拍测试守住 | `pkg/authn/authntest`；`pkg/authn/deps_test.go`；`pkg/authn/gate/exitcheck_parity_test.go` `TestAuthntestAndTheExitCheckAgreeOnEveryShapeAndBound`；`examples/orders-host/authntest_test.go`；`examples/crm-host/authntest_test.go` |
-| 账户存储 `authn.account` | 未实现 | — |
-| 登录会话 `authn.session` | 未实现 | — |
+| 测试构造口 `authntest` | 已实现 — 防线只有依赖测试：`pkg` 模块里的 `deps_test.go` 与各宿主模块自带的同形断言，类型上没有屏障；不检查出口检查里需要网关时钟或后端声明的几项（认证时刻的 120 秒偏移、`static.` 以外的账户命名空间、`Accepts` 声明的能力、保留的属性前缀）；属性集的总上限与键、值长度取自 `internal/model/bounds.go`，其余形状与界限常量与出口检查各持一份，由网关包的对拍测试守住 | `pkg/authn/authntest`；`pkg/authn/deps_test.go`；`pkg/authn/gate/exitcheck_parity_test.go` `TestAuthntestAndTheExitCheckAgreeOnEveryShapeAndBound`；`examples/orders-host/authntest_test.go`；`examples/crm-host/authntest_test.go` |
+| 挂路由口 `authn.mount` 与 `mount.Mounter` | 已实现 — 模块挂路由并成对登记访问级别，触发 `ErrRoutesUnconfigured` | `pkg/authn/mount/mount.go` `Module`；`pkg/authn/internal/mount/mount.go` `Mounter`；`pkg/authn/internal/mount/mounttest/mounttest.go` |
+| 账户存储 `authn.account` | 已实现 | `pkg/authn/account/account.go` `Module` |
+| 登录会话 `authn.session` | 已实现 | `pkg/authn/session/session.go` `Module` |
 | 访问令牌、刷新令牌与服务账户 `authn.token` | 未实现 | — |
-| 登录引擎 `authn.login` 与全部登录方式 | 未实现 | — |
-| 多因素编排 `authn.mfa` 与全部因素 | 未实现 | — |
+| 登录引擎 `authn.login` 与全部登录方式 | 部分实现 — 引擎与口令方法 `authn.login.password` 已实现；缺短信、Google、GitHub、微信与 SAML/OIDC 登录方式 | `pkg/authn/login/login.go` `Module`；`pkg/authn/login/password/password.go` `Module` |
+| 多因素编排 `authn.mfa` 与全部因素 | 部分实现 — 登记簿与编排已实现；缺 TOTP、短信、WebAuthn 三种因素种类 | `pkg/authn/mfa/mfa.go` `Module` |
 | 短信验证码 `authn.sms` 与短信发送方 | 未实现 | — |
 | 企业 SSO `authn.sso` 与 SAML、企业 OIDC | 未实现 | — |
 | 冒充 `authn.impersonation` | 未实现 | — |
-| 判定接缝与管理面 `authn.admin` | 未实现 | — |
+| 判定接缝与管理面 `authn.admin` | 部分实现 — 接缝 `Decider`、`Decision`、`Action` 已在；缺管理面 `authn.admin` | `pkg/authn/decide.go` `Decider`、`Decision`、`Action` |
 | 加强认证处理器 `authn/guard` | 未实现 | — |
-| 租户准入层 `tenant.admission` | 未实现 | — |
-| 链上次序的装配测试 | 未实现 | — |
+| 租户准入层 `tenant.admission` | 已实现 | `pkg/tenant/admission/admission.go` `Module`；`pkg/tenant/capabilities.go` `Admission` |
+| 链上次序的装配测试 | 部分实现 — 准入层的链上次序与端点在 `pkg/tenant/admission/assembly_test.go` 与 `pkg/tenant/admission/live_test.go` 里从真实注册表与回环端守住；缺与全部六期模块齐全的链上次序汇总 | `pkg/tenant/admission/assembly_test.go`；`pkg/tenant/admission/live_test.go` |

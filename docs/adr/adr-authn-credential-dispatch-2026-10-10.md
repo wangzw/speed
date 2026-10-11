@@ -130,6 +130,7 @@ cookie 与一份名单里的 `Authorization` scheme 过检查，名单列出浏�
 
 - 凭据载体可能由浏览器自己附带的请求，方法不是 `GET`、`HEAD`、`OPTIONS` 时，在调用后端之前过跨源检查。cookie 与 `Authorization` 头里 `Bearer` 以外的 scheme 在其内；`Bearer` 头由页面自己的脚本写，不在其内。
 - 网关为此按名认得 `Bearer`，这是「网关不解释凭据」的唯一例外：它按载体的附带方式判，不读凭据里的内容，分派也不因此改变。`Bearer` 以外的 scheme 一律受检，包括网关不认得的：无从判断一个未列的 scheme 浏览器会不会自己处理时，漏判的方向取多拒绝。
+- `authn.mount` 在自己的挂载路由上另跑一次跨源检查（`Mounter.CSRF()` 的独立实例，宿主可预置 `Gate` 而 `Wrap` 拿不到网关的实例）。不过时 `Wrap` 写的 401 的 realm 取该端端名，挑战只带 `Bearer` 与 `Cookie`，不带 `Basic`，也不带问题码：这不是在要求 `Basic` 凭据，同源页面的 `fetch` 收到带 `Basic` 的 401 会让浏览器弹出原生口令框。处理器自己答的 401 沿用同一取舍。
 
 **接缝缩小。**
 

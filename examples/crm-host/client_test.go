@@ -11,6 +11,25 @@ import (
 	"time"
 )
 
+// sessionCookieName is the name the session cookie carries under the case's
+// configuration: the public URL is https, so the session module writes the
+// __Host- prefixed cookie. The cases set the Cookie header by hand, since a bare
+// client over a loopback address would not manage a Secure host-only cookie.
+const sessionCookieName = "__Host-sid"
+
+// flowCookieName is the cookie a login flow is bound to under the case's
+// configuration: the public URL is https, so the flow module writes the __Host-
+// prefixed cookie.
+const flowCookieName = "__Host-authn-flow"
+
+// The authentication routes the cases drive, under the base path the case
+// configures for them.
+const (
+	loginFlowPath   = "/auth/flows"
+	loginAnswerPath = "/auth/flows/answer"
+	logoutPath      = "/auth/logout"
+)
+
 // credential is what a request authenticates with.
 type credential interface {
 	apply(r *nethttp.Request)
@@ -29,40 +48,40 @@ type basicCredential struct {
 
 func (b basicCredential) apply(r *nethttp.Request) { r.SetBasicAuth(b.user, b.password) }
 
-// bearerCredential sends a bearer token.
-type bearerCredential string
+// cookieCredential sends the session cookie the login flow issued.
+type cookieCredential string
 
-func (b bearerCredential) apply(r *nethttp.Request) {
-	r.Header.Set("Authorization", "Bearer "+string(b))
+func (c cookieCredential) apply(r *nethttp.Request) {
+	r.Header.Add("Cookie", sessionCookieName+"="+string(c))
 }
 
-// basic is a CRM user's Basic credential, by email. The gateway hands Basic to
-// the operators' table, so the only route a CRM user's Basic credential reaches
-// is the login, which reads the header itself.
+// basic is the operator's Basic credential, by subject. The gateway hands Basic
+// to the one backend that takes it, the operators' static table; a CRM user's
+// password reaches the login flow, not the gateway.
 func basic(u userRef) credential { return basicCredential{user: u.Email, password: u.Password} }
 
 // sessionCredential is a CRM user signed in: the first request it authenticates
-// logs the user in on the replica it is sent to and sends the bearer token the
-// login issued, and every later request to that replica sends the same one. A
-// CRM user's requests are authenticated by a token, since a Basic credential
-// reaches no backend of the users'.
+// logs the user in on the replica it is sent to and sends the session cookie the
+// login issued, and every later request to that replica sends the same one.
 type sessionCredential struct{ user userRef }
 
-// apply is never reached: the replica swaps this credential for the bearer token
-// before it builds the request, because the swap needs the replica's address.
+// apply is never reached: the replica swaps this credential for the session
+// cookie before it builds the request, because the swap needs the replica's
+// address.
 func (sessionCredential) apply(*nethttp.Request) {
 	panic("crm-host: a session credential is resolved by the replica it is sent to")
 }
 
-// signedIn is a CRM user's credential: the bearer token of a login the replica
+// signedIn is a CRM user's credential: the session cookie of a login the replica
 // makes for the user when the request is sent.
 func signedIn(u userRef) credential { return sessionCredential{user: u} }
 
 // operator is the platform operator's Basic credential.
 func operator() credential { return basicCredential{user: operatorSubject, password: operatorPassword} }
 
-// bearer is a session token.
-func bearer(token string) credential { return bearerCredential(token) }
+// bearer is a session cookie, as a case that carries one from one replica to
+// another names it.
+func bearer(token string) credential { return cookieCredential(token) }
 
 // request is one request a case makes: where it goes, which tenant it names,
 // what it authenticates with and what it carries.
@@ -73,6 +92,9 @@ type request struct {
 	tenant   string // an alias; empty sends no tenant header
 	cred     credential
 	body     any // encoded as JSON; nil sends no body
+	// header carries extra request headers a raw client sets, such as the flow
+	// token a header-bound login travels in.
+	header map[string]string
 }
 
 // response is what came back.
@@ -127,6 +149,9 @@ func (h *crmHost) do(req request) (response, error) {
 	if req.tenant != "" {
 		r.Header.Set(tenantHeader, req.tenant)
 	}
+	for name, value := range req.header {
+		r.Header.Set(name, value)
+	}
 	if req.cred != nil {
 		if authErr := h.authorize(req.cred, r); authErr != nil {
 			return response{}, authErr
@@ -145,7 +170,7 @@ func (h *crmHost) do(req request) (response, error) {
 }
 
 // authorize puts a credential on a request, signing a signed-in user in first
-// when the replica holds no token for the user yet.
+// when the replica holds no session for the user yet.
 func (h *crmHost) authorize(cred credential, r *nethttp.Request) error {
 	resolved, err := h.resolve(cred)
 	if err != nil {
@@ -155,9 +180,9 @@ func (h *crmHost) authorize(cred credential, r *nethttp.Request) error {
 	return nil
 }
 
-// resolve turns a signed-in user's credential into the bearer token the
+// resolve turns a signed-in user's credential into the session cookie the
 // replica issued for the user, logging the user in the first time and keeping
-// the token for the rest of the replica's life.
+// the cookie for the rest of the replica's life.
 func (h *crmHost) resolve(cred credential) (credential, error) {
 	session, ok := cred.(sessionCredential)
 	if !ok {
@@ -165,24 +190,92 @@ func (h *crmHost) resolve(cred credential) (credential, error) {
 	}
 	h.tokensMu.Lock()
 	defer h.tokensMu.Unlock()
-	if token, held := h.tokens[session.user.Email]; held {
-		return bearer(token), nil
+	if cookie, held := h.tokens[session.user.Email]; held {
+		return cookieCredential(cookie), nil
 	}
-	resp, err := h.do(request{
-		method: nethttp.MethodPost, endpoint: accountEndpoint, path: "/login", cred: basic(session.user),
-	})
+	cookie, err := h.signIn(session.user)
 	if err != nil {
-		return nil, fmt.Errorf("signing %s in: %w", session.user.Email, err)
-	}
-	var got issued
-	if resp.status != nethttp.StatusCreated || json.Unmarshal(resp.body, &got) != nil || got.Token == "" {
-		return nil, fmt.Errorf("signing %s in answered %d with %q, want a token", session.user.Email, resp.status, resp.body)
+		return nil, err
 	}
 	if h.tokens == nil {
 		h.tokens = map[string]string{}
 	}
-	h.tokens[session.user.Email] = got.Token
-	return bearer(got.Token), nil
+	h.tokens[session.user.Email] = cookie
+	return cookieCredential(cookie), nil
+}
+
+// signIn runs the two-step password login flow and returns the session cookie
+// the completion set. The flow is cookie-bound: the start answer sets the flow
+// cookie, and the answer request carries it back; the completion then sets the
+// session cookie.
+func (h *crmHost) signIn(u userRef) (string, error) {
+	start, err := h.do(request{
+		method: nethttp.MethodPost, endpoint: accountEndpoint, path: loginFlowPath,
+		body: map[string]any{
+			"method":   "password",
+			"delivery": "session",
+			"input":    map[string]string{"identifier": u.Email, "password": u.Password},
+		},
+	})
+	if err != nil {
+		return "", fmt.Errorf("starting a login for %s: %w", u.Email, err)
+	}
+	if start.status != nethttp.StatusOK {
+		return "", fmt.Errorf("starting a login for %s answered %d with %q", u.Email, start.status, start.body)
+	}
+	var flow loginFlowReply
+	if json.Unmarshal(start.body, &flow) != nil {
+		return "", fmt.Errorf("decoding the login start for %s: %q", u.Email, start.body)
+	}
+	if flow.Next.Kind != "complete" {
+		return "", fmt.Errorf("a password login for %s answered next %q, want complete", u.Email, flow.Next.Kind)
+	}
+	flowCookie, ok := cookieOf(start.header, flowCookieName)
+	if !ok {
+		return "", fmt.Errorf("starting a login for %s set no %s cookie", u.Email, flowCookieName)
+	}
+	answer, err := h.do(request{
+		method: nethttp.MethodPost, endpoint: accountEndpoint, path: loginAnswerPath,
+		header: map[string]string{"Cookie": flowCookieName + "=" + flowCookie},
+		body:   map[string]any{"seq": flow.Seq, "step": "complete"},
+	})
+	if err != nil {
+		return "", fmt.Errorf("completing a login for %s: %w", u.Email, err)
+	}
+	if answer.status != nethttp.StatusOK {
+		return "", fmt.Errorf("completing a login for %s answered %d with %q", u.Email, answer.status, answer.body)
+	}
+	cookie, ok := cookieOf(answer.header, sessionCookieName)
+	if !ok {
+		return "", fmt.Errorf("completing a login for %s set no %s cookie", u.Email, sessionCookieName)
+	}
+	return cookie, nil
+}
+
+// cookieOf reads one cookie's value out of a response's Set-Cookie headers.
+func cookieOf(header nethttp.Header, name string) (string, bool) {
+	for _, line := range header.Values("Set-Cookie") {
+		prefix := name + "="
+		if !strings.HasPrefix(line, prefix) {
+			continue
+		}
+		value, _, _ := strings.Cut(line[len(prefix):], ";")
+		if value != "" {
+			return value, true
+		}
+	}
+	return "", false
+}
+
+// loginFlowReply is the body of a flow step, decoded by the cases that drive the
+// login flow directly.
+type loginFlowReply struct {
+	Seq       int    `json:"seq"`
+	State     string `json:"state"`
+	FlowToken string `json:"flow_token"`
+	Next      struct {
+		Kind string `json:"kind"`
+	} `json:"next"`
 }
 
 // get makes one GET request.
@@ -224,17 +317,14 @@ func requireProblem(t *testing.T, what string, got response) {
 	}
 }
 
-// login signs a user in on the account endpoint and returns the bearer token.
+// login signs a user in on the account endpoint and returns the session cookie.
 func (h *crmHost) login(t *testing.T, u userRef) string {
 	t.Helper()
-	resp := h.post(t, accountEndpoint, "/login", "", basic(u), nil)
-	expect(t, "a login with the user's Basic credential", resp, nethttp.StatusCreated)
-	var got issued
-	resp.decode(t, &got)
-	if got.Token == "" || got.UserID != u.ID {
-		t.Fatalf("the login answered %+v, want a token for %s", got, u.ID)
+	cookie, err := h.signIn(u)
+	if err != nil {
+		t.Fatalf("signing %s in: %v", u.Email, err)
 	}
-	return got.Token
+	return cookie
 }
 
 // adminCreateTenant registers an active tenant through the admin endpoint, as
@@ -281,7 +371,7 @@ func (h *crmHost) adminGrant(t *testing.T, ref tenantRef, u userRef, role string
 	expect(t, "the operator granting "+u.Email+" a role in "+ref.ID, resp, nethttp.StatusOK)
 	var got grantView
 	resp.decode(t, &got)
-	if got.TenantID != ref.ID || got.UserID != u.ID || got.Role != role {
+	if got.TenantID != ref.ID || got.AccountID != u.ID || got.Role != role {
 		t.Fatalf("the admin endpoint granted %+v, want %s in %s as %s", got, u.ID, ref.ID, role)
 	}
 }

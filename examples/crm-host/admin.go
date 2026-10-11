@@ -28,7 +28,7 @@ const adminModuleName = "admin"
 // authenticates them, and every one of them is refused here, which is the
 // direction a mismatch between the table and this name has to fail in.
 const (
-	operatorSubject = "root"
+	operatorSubject = "ops"
 	operatorAccount = authn.AccountID(authn.StaticPrefix + operatorSubject)
 )
 
@@ -62,10 +62,12 @@ type operatorLayer interface{ operatorLayer() }
 // adminProduct is the admin module's product.
 type adminProduct struct {
 	released
-	db        db.Database
-	roster    tenant.Catalog
-	recorder  audit.Audit
-	passwords passwords
+	db          db.Database
+	roster      tenant.Catalog
+	recorder    audit.Audit
+	accounts    authn.Accounts
+	admin       authn.AccountAdmin
+	memberships authn.Memberships
 }
 
 // layer is the operator check. It sits in the authorizing stage, so it runs
@@ -85,12 +87,13 @@ func (p *adminProduct) layer() speedhttp.Middleware {
 				return
 			}
 			// A platform operator is the subject of the operators' table named
-			// operatorSubject. Its account carries the static prefix, which no
-			// other backend may hand back: the gateway holds every backend to
-			// the namespace it declared. A CRM user's account is a user
-			// identifier, and another subject of the table is an account under
-			// the same prefix and is not this one.
-			if caller.Account() != operatorAccount {
+			// operatorSubject. Its account carries the static prefix and equals
+			// the full identifier static.<subject>: judging by the prefix alone
+			// would let every other subject of that table in, so the whole
+			// identifier is compared. A CRM user's account is a library
+			// identifier and matches neither.
+			account := caller.Account()
+			if !account.IsStatic() || account != operatorAccount {
 				// The record carries the caller's account and the backend
 				// that verified it, which the gateway puts on the context.
 				log.FromContext(c.Request.Context()).Info(adminRefusal)
@@ -256,7 +259,7 @@ type userRequest struct {
 }
 
 // userView is a user as the admin endpoint and the command line show one. It
-// never carries the hash.
+// never carries a hash.
 type userView struct {
 	ID          string `json:"id"`
 	Email       string `json:"email"`
@@ -264,8 +267,30 @@ type userView struct {
 	Disabled    bool   `json:"disabled"`
 }
 
-func userViewOf(u User) userView {
-	return userView{ID: u.ID, Email: u.Email, DisplayName: u.DisplayName, Disabled: u.Disabled}
+// userViewOf renders an account for the admin endpoint and the command line.
+// The email is the address the identifier was written under, read through the
+// account store.
+func userViewOf(a authn.Account, email string) userView {
+	return userView{
+		ID:          string(a.ID),
+		Email:       email,
+		DisplayName: a.DisplayName,
+		Disabled:    a.Status == authn.StatusDisabled,
+	}
+}
+
+// createUser creates an account through the account module's write surface. The
+// email is written as an administrator's assertion (verified via admin), never a
+// proof of ownership, and the password goes through the policy.
+func (p *adminProduct) createAccount(ctx context.Context, email, displayName, password string) (authn.Account, error) {
+	return p.admin.Create(ctx, authn.CreateAccount{
+		Kind:             authn.KindUser,
+		DisplayName:      displayName,
+		Email:            email,
+		EmailVerifiedVia: authn.Verification{Via: authn.VerifiedViaAdmin},
+		Password:         password,
+		Via:              "admin",
+	})
 }
 
 // createUserHandler answers a user creation.
@@ -274,12 +299,13 @@ func (p *adminProduct) createUserHandler(c *gin.Context) {
 	if !bindBody(c, &body) {
 		return
 	}
-	user, err := createUser(c.Request.Context(), p.db, p.passwords, body.Email, body.DisplayName, body.Password)
+	account, err := p.createAccount(c.Request.Context(), body.Email, body.DisplayName, body.Password)
 	switch {
-	case errors.Is(err, errEmailTaken):
-		writeError(c, nethttp.StatusConflict, errEmailTaken.Error())
+	case errors.Is(err, authn.ErrAccountExists):
+		writeError(c, nethttp.StatusConflict, err.Error())
 		return
-	case errors.Is(err, errInvalidEmail), errors.Is(err, errInvalidName), errors.Is(err, errWeakPassword):
+	case errors.Is(err, authn.ErrInvalidIdentifier), errors.Is(err, authn.ErrInvalidArgument),
+		errors.Is(err, authn.ErrPasswordPolicy):
 		writeError(c, nethttp.StatusUnprocessableEntity, err.Error())
 		return
 	case err != nil:
@@ -287,10 +313,10 @@ func (p *adminProduct) createUserHandler(c *gin.Context) {
 		writeError(c, nethttp.StatusInternalServerError, "the user could not be written")
 		return
 	}
-	c.JSON(nethttp.StatusCreated, userViewOf(user))
+	c.JSON(nethttp.StatusCreated, userViewOf(account, body.Email))
 }
 
-// grantAcross gives a user a role in the tenant the path names, from an
+// grantAcross gives an account a role in the tenant the path names, from an
 // endpoint that resolves no tenant.
 //
 // The write crosses tenants: it happens outside any request scoped to the
@@ -321,17 +347,25 @@ func (p *adminProduct) grantAcross(c *gin.Context) {
 		writeError(c, nethttp.StatusNotFound, errNoSuchTenant.Error())
 		return
 	}
-	user, found, err := userByEmail(ctx, p.db, body.Email)
+	account, found, err := p.accountByEmail(ctx, body.Email)
 	if err != nil {
-		log.FromContext(ctx).Error("reading the user to grant", "error", err)
-		writeError(c, nethttp.StatusServiceUnavailable, "the user table cannot be read")
+		log.FromContext(ctx).Error("reading the account to grant", "error", err)
+		writeError(c, nethttp.StatusServiceUnavailable, "the account store cannot be read")
 		return
 	}
 	if !found {
-		writeError(c, nethttp.StatusNotFound, "no user has this email")
+		writeError(c, nethttp.StatusNotFound, "no account has this email")
 		return
 	}
-	granted, err := grantIn(tenant.CrossTenant(ctx), p.db, id, user.ID, body.Role)
+	putErr := p.memberships.Put(tenant.CrossTenant(ctx), authn.Membership{
+		Account: account, Tenant: string(id), Active: true, Source: "admin",
+	})
+	if putErr != nil {
+		log.FromContext(ctx).Error("granting a membership", "error", putErr)
+		writeError(c, nethttp.StatusInternalServerError, "the membership could not be written")
+		return
+	}
+	granted, err := grantIn(tenant.CrossTenant(ctx), p.db, id, account, body.Role)
 	if err != nil {
 		log.FromContext(ctx).Error("granting a membership", "error", err)
 		writeError(c, nethttp.StatusInternalServerError, "the membership could not be written")
@@ -339,7 +373,7 @@ func (p *adminProduct) grantAcross(c *gin.Context) {
 	}
 	if err := p.recorder.Record(ctx, audit.Entry{
 		Action:  "membership.grant",
-		Object:  membershipTable + "/" + string(id) + "/" + user.ID,
+		Object:  memberRoleTable + "/" + string(id) + "/" + string(account),
 		Outcome: "ok",
 		Purpose: "a platform operator granted a membership in a tenant from the admin endpoint, " +
 			"outside any request scoped to that tenant",
@@ -353,8 +387,21 @@ func (p *adminProduct) grantAcross(c *gin.Context) {
 		return
 	}
 	c.JSON(nethttp.StatusOK, grantView{
-		TenantID: string(granted.TenantID), UserID: granted.UserID, Role: granted.Role,
+		TenantID: string(granted.TenantID), AccountID: granted.AccountID, Role: granted.Role,
 	})
+}
+
+// accountByEmail finds the account an address is bound to, through the account
+// module's look-up.
+func (p *adminProduct) accountByEmail(ctx context.Context, email string) (authn.AccountID, bool, error) {
+	id, err := p.accounts.Lookup(ctx, authn.IdentifierEmail, email)
+	if errors.Is(err, authn.ErrAccountNotFound) {
+		return "", false, nil
+	}
+	if err != nil {
+		return "", false, err
+	}
+	return id, true, nil
 }
 
 // init registers the admin module. It runs on serve: its layer and routes sit on
@@ -363,7 +410,7 @@ func init() {
 	registerApplication(application{
 		module: adminModule(),
 		runsOn: []string{serveCommand},
-		models: []any{Membership{}, User{}},
+		models: []any{MemberRole{}},
 		journalled: []string{
 			listTenantsRoute, createTenantRoute, disableTenantRoute, enableTenantRoute,
 			createUserRoute, grantTenantRoute,
@@ -373,11 +420,11 @@ func init() {
 
 // adminModule binds the admin endpoint's routes and its operator check.
 //
-// It requires the roster and the audit seam, which it takes up, and the roster
-// requirement is the guard the members module states as well: this module
-// writes the scoped memberships table, and a command running it without the
-// roster would write it unscoped with nothing said. It requires the users
-// module's derivation, which a new user's password goes through.
+// It requires the roster and the audit seam, which it takes up, and the account
+// module's read, write and membership capabilities. The roster requirement is
+// the guard the members module states as well: this module writes the scoped
+// role table, and a command running it without the roster would write it
+// unscoped with nothing said.
 func adminModule() core.Module {
 	return core.Module{
 		Name: adminModuleName,
@@ -386,7 +433,9 @@ func adminModule() core.Module {
 			{Token: (*db.Database)(nil)},
 			{Token: (*tenant.Catalog)(nil)},
 			{Token: (*audit.Audit)(nil)},
-			{Token: (*passwords)(nil)},
+			{Token: (*authn.Accounts)(nil)},
+			{Token: (*authn.AccountAdmin)(nil)},
+			{Token: (*authn.Memberships)(nil)},
 		},
 		Resources: []any{
 			speedhttp.Spec{Endpoint: adminEndpoint, Document: adminOpenAPI},
@@ -409,16 +458,21 @@ func adminModule() core.Module {
 			if err != nil {
 				return nil, err
 			}
-			derivation, err := core.Resolve[passwords](reg)
+			accounts, err := core.Resolve[authn.Accounts](reg)
+			if err != nil {
+				return nil, err
+			}
+			admin, err := core.Resolve[authn.AccountAdmin](reg)
+			if err != nil {
+				return nil, err
+			}
+			memberships, err := core.Resolve[authn.Memberships](reg)
 			if err != nil {
 				return nil, err
 			}
 			return &adminProduct{
-				released:  released{log: logger},
-				db:        database,
-				roster:    roster,
-				recorder:  recorder,
-				passwords: derivation,
+				released: released{log: logger}, db: database, roster: roster, recorder: recorder,
+				accounts: accounts, admin: admin, memberships: memberships,
 			}, nil
 		},
 

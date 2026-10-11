@@ -584,7 +584,7 @@ service 种访问令牌的撤销是无操作：该会话行由同一密钥签出
 
 | 能力 | 状态 | 代码 |
 |---|---|---|
-| 令牌接缝与数据类型：`Tokens`、`IssueToken`、`AccessToken`、`RefreshToken`、`ClaimsContributor` 与令牌类哨兵 | 未实现 | —；`pkg/authn` 根包里没有这些符号，`errors.go` 里没有 `ErrNoSigningKey`、`ErrInvalidGrant`、`ErrRefreshReuse`、`ErrTokenInvalid`、`ErrReservedClaim`、`ErrInvalidKey` |
+| 令牌接缝与数据类型：`Tokens`、`IssueToken`、`AccessToken`、`RefreshToken`、`ClaimsContributor` 与令牌类哨兵 | 部分实现 — 缺 `ClaimsContributor`；其余已在 | `pkg/authn/token.go` `Tokens`；`pkg/authn/internal/model/token.go` `IssueToken`、`AccessToken`、`RefreshToken`；`pkg/authn/errors.go` `ErrNoSigningKey`、`ErrInvalidGrant`、`ErrRefreshReuse`、`ErrTokenInvalid`、`ErrReservedClaim`、`ErrInvalidKey` |
 | 模块 `authn.token` 的登记与交付 | 未实现 | —；`pkg/authn/token` 包不存在 |
 | 访问令牌签发与声明集 | 未实现 | — |
 | 校验后端与校验次序（含冒充令牌与 `check-session`） | 未实现 | — |
@@ -594,7 +594,7 @@ service 种访问令牌的撤销是无操作：该会话行由同一密钥签出
 | 令牌端点 `POST B/token` 与 OAuth 错误形状 | 未实现 | — |
 | 刷新令牌表、轮换与重用检测 | 未实现 | —；迁移与 `authn_refresh_tokens` 不存在 |
 | 撤销 `Tokens.Revoke` 与 `POST B/token/revoke` | 未实现 | — |
-| 服务账户的 `client_credentials` | 未实现 | —；依赖 `Passwords.VerifyServiceSecret`、`Sessions.ForCredential`、`Throttle` 的 `ScopeClient`，这些接缝所在的 `authn.account` 与 `authn.session` 同样不存在 |
+| 服务账户的 `client_credentials` | 未实现 | —；依赖 `Passwords.VerifyServiceSecret`、`Sessions.ForCredential`、`Throttle` 的 `ScopeClient`，这些接缝所在的 `authn.account` 与 `authn.session` 已实现 |
 | 刷新令牌表的清扫协程 | 未实现 | — |
 | 指标 `authn.token.operations`、事件 `authn.token.reuse-detected`、审计 `authn.token.refresh-reuse` | 未实现 | — |
 | `pkg/go.mod` 对 `go-jose` 的下限要求与 `UnsafeClaimsWithoutVerification` 的静态检查 | 未实现 | —；`pkg/go.mod` 尚无 `go-jose` |

@@ -415,7 +415,7 @@ flowchart TD
     K -- 否 --> F["取声明默认值并记 Error"]
 ```
 
-强制类开关读不出来按拒绝：它们的声明默认值是「不强制」「不关闭」，回落到默认值就等于放行。强制类开关是封闭集合：`tenant.admission.require-mfa`、`tenant.admission.require-sso`、`authn.login.disabled-methods`。其余设置项属调参类，读不出来取声明默认值并记 `Error`：超时、预算与次数类（含缺省为 0 即关闭的 `authn.login.ip-limit`）回落到默认值只是用了起点。请求期的读取走内存快照，读取出错只在编程错误时出现，所以 `Error` 日志指向代码缺陷，不指向运维。
+强制类开关读不出来按拒绝：它们的声明默认值是「不强制」「不关闭」，回落到默认值就等于放行。强制类开关是封闭集合：`tenant.admission.require-mfa`、`tenant.admission.require-sso`、`authn.login.disabled-methods`、`authn.mfa.global-required`。其余设置项属调参类，读不出来取声明默认值并记 `Error`：超时、预算与次数类（含缺省为 0 即关闭的 `authn.login.ip-limit`）回落到默认值只是用了起点。请求期的读取走内存快照，读取出错只在编程错误时出现，所以 `Error` 日志指向代码缺陷，不指向运维。
 
 设置缺席是合法的装配，不是读取出错：缺席时全部取声明默认值，不记 `Error`，也不按拒绝。
 
@@ -535,14 +535,14 @@ flowchart TD
 |---|---|---|
 | 网关的配置项 | 已实现 — `endpoints` 缺省 `["*"]`、空清单与混写是 `ErrInvalidConfig`；`mount.*`、`trusted-origins`、`call-budget` 与 `in-flight` 及其判定 | `pkg/authn/gate/config.go` `schema`、`moduleConfig`、`(moduleConfig).resolve` |
 | 口令表后端的配置项与设置 | 已实现 — `subjects`（必填、敏感、仅主配置源、PHC 与遗留写法）、`cache-size`、`concurrency`，设置 `cache-ttl`、`free-attempts`、`fail-window`、`max-backoff` 及其取值域；`name` 键已删除 | `pkg/authn/static/config.go` `schema`、`settingsSchema`、`(moduleConfig).resolve` |
-| 账户、会话、令牌、登录方式、多因素、短信、SSO 与租户准入的配置项 | 未实现 | — |
-| 全部设置项的声明与取值域 | 部分实现 — 口令表后端的 `cache-ttl`、`free-attempts`、`fail-window`、`max-backoff` 及其取值域已声明；缺其余模块的设置项 | `pkg/authn/static/config.go` `settingsSchema` |
-| 设置缺席的降级与读取出错的方向 | 部分实现 — 口令表后端已实现：设置缺席取声明的默认值，读取出错或取值越出取值域时取默认值并记 `Error`；缺其余模块的设置项 | `pkg/authn/static/static.go` `readSetting`、`(*backend).reportSetting` |
-| 放宽开关与决定守护面的清单只取主配置源 | 部分实现 — 网关的 `endpoints`、`trusted-origins` 与 `mount.allow-insecure` 已仅取主配置源；其余放宽开关与 `tenant.admission.endpoints` 未声明 | `pkg/authn/gate/config.go` `schema` |
+| 账户、会话、令牌、登录方式、多因素、短信、SSO 与租户准入的配置项 | 部分实现 — 账户（`authn.account`，含 `signup`、`auto-link` 与口令参数）、会话（`authn.session`）、多因素（`authn.mfa`，五项设置）、登录（`authn.login`，含 `disabled-methods`、`delivery-modes`、`flow-ttl`、`call-budget`）、挂载（`authn.mount`）与租户准入（`tenant.admission`，`endpoints` 必填）的键已声明；缺令牌、短信、SSO | `pkg/authn/account/config.go` `schema`、`settingsSchema`；`pkg/authn/session/config.go`；`pkg/authn/mfa/settings.go` `settingsSchema`；`pkg/authn/login/config.go`；`pkg/authn/mount/config.go`；`pkg/tenant/admission/config.go` |
+| 全部设置项的声明与取值域 | 部分实现 — 账户（口令与失败退避参数）、会话（`idle-timeout`、`absolute-timeout`、`token-absolute-timeout`、`sso-absolute-timeout`、`touch-interval`、`check-ttl`、`max-per-account`、`retention`；`cookie-domain` 与 `same-site` 是配置项，见配置项表）、多因素（`global-required`、`recent-window`、`max-per-kind`、`pending-ttl`、`sensitive-min-age`）、登录（`flow-ttl`、`call-budget`、`default-return-to`、`disabled-methods`、`delivery-modes`、`ip-limit`）、准入（`require-mfa`、`require-sso`、`check-ttl`）与口令表后端的设置项已声明；缺令牌、短信、SSO 的设置项 | `pkg/authn/account/config.go` `settingsSchema`；`pkg/authn/session/settings.go`；`pkg/authn/mfa/settings.go`；`pkg/authn/login/config.go`；`pkg/tenant/admission/config.go`；`pkg/authn/static/config.go` `settingsSchema` |
+| 设置缺席的降级与读取出错的方向 | 部分实现 — 账户、会话、多因素、登录与口令表后端已实现：调整类设置缺席取声明的默认值，读取出错或取值越出取值域时取默认值并按故障只记一次；强制开关（`authn.mfa.global-required`、`authn.login.disabled-methods`、`tenant.admission` 的两项）读不到是拒绝；缺短信、令牌与 SSO | `pkg/authn/account/relax.go`、`pkg/authn/account/params.go`；`pkg/authn/session/settings.go`；`pkg/authn/mfa/settings.go`；`pkg/tenant/admission/config.go` |
+| 放宽开关与决定守护面的清单只取主配置源 | 部分实现 — 网关的 `endpoints`、`trusted-origins` 与 `mount.allow-insecure`，账户的 `signup` 与 `auto-link`，以及 `tenant.admission.endpoints` 已仅取主配置源 | `pkg/authn/gate/config.go` `schema`；`pkg/authn/account/config.go` `schema`；`pkg/tenant/admission/config.go` |
 | 放宽变更的监视与 `authn.settings.relaxed` | 未实现 | — |
 | 日志字面量匹配器的登记 | 部分实现 — 缺各模块持有的秘密配置值的字面量，共用的构造 `literal.Register` 已在、尚无模块调用；键名、值形状与按 scheme 的值形状规则已在 | `pkg/authn/gate/redact.go` `registerNewRules`、`registerValueRule`；`pkg/authn/internal/literal/literal.go` `Register` |
-| 启动期自检 | 部分实现 — 网关的 `endpoints`、`call-budget`、`in-flight`、`mount.*` 与 `trusted-origins` 判定、`Start` 对挂载端的核对，口令表条目的解析与 `cache-size`、`concurrency` 的取值域已在；缺其余自检与对应哨兵 | `pkg/authn/gate/config.go` `(moduleConfig).resolve`；`pkg/authn/gate/gate.go` `checkMount`；`pkg/authn/static/config.go` `(moduleConfig).resolve`；`pkg/authn/errors.go` |
+| 启动期自检 | 部分实现 — 网关的 `endpoints`、`call-budget`、`in-flight`、`mount.*` 与 `trusted-origins` 判定、`Start` 对挂载端的核对，账户与口令的取值域、会话的 cookie 与期限域、多因素的取值域、准入的 `endpoints` 必填，口令表条目的解析与 `cache-size`、`concurrency` 的取值域已在；缺令牌、短信与 SSO 的自检 | `pkg/authn/gate/config.go` `(moduleConfig).resolve`；`pkg/authn/account/config.go` `(moduleConfig).resolve`；`pkg/authn/session/config.go`；`pkg/authn/mfa/settings.go`；`pkg/tenant/admission/config.go`；`pkg/authn/static/config.go` `(moduleConfig).resolve`；`pkg/authn/errors.go` |
 | 加密列往返自检 | 未实现 | — |
-| 启动诊断 | 部分实现 — 缺其余常规行；网关的到场后端与其认领、展开后的受守端、各类登记开出的路由、冒充可达的端与放宽项的 `Warn` 行，不带 `__Host-` 前缀的 cookie 名的 `Warn` 行，口令表里弱条目、遗留写法条目与大小写共用退避的 `Warn` 行已在 | `pkg/authn/gate/gate.go` `diagnose`、`freeze` |
+| 启动诊断 | 部分实现 — 缺其余常规行；网关的到场后端与其认领、展开后的受守端、各类登记开出的路由、冒充可达的端与放宽项的 `Warn` 行，账户、会话、多因素、登录与准入各自写出模块名与受守/挂了哪些路由的行，不带 `__Host-` 前缀的 cookie 名的 `Warn` 行，口令表里弱条目、遗留写法条目与大小写共用退避的 `Warn` 行已在 | `pkg/authn/gate/gate.go` `diagnose`、`freeze`；`pkg/authn/mount/mount.go`；`pkg/tenant/admission/admission.go`；`pkg/authn/mfa/mfa.go` |
 | 秘密的存放 | 部分实现 — 口令表的 PHC 条目与遗留写法已在；缺加密列、签名与 SAML 私钥文件 | `pkg/authn/static/hash.go` `Hash`、`HashPBKDF2`、`ParseHash`；`pkg/authn/internal/password/phc.go` `Parse` |
-| `AGENTS.md` 对设置写权限的硬要求 | 未实现 | — |
+| `AGENTS.md` 对设置写权限的硬要求 | 已实现 — `pkg/authn/AGENTS.md` 写明 `authn.*` 与 `tenant.admission.*` 的设置不得对租户或普通管理员开放写权限；authn 不检查宿主是否遵守 | `pkg/authn/AGENTS.md` |

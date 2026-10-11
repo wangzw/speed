@@ -24,6 +24,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"net/url"
 	"os"
 	"path/filepath"
 	"strings"
@@ -139,7 +140,7 @@ func load(t testing.TB, module core.Module, namespace, dsn string, items Items) 
 	loading.Register(filesource.Module())
 	loading.Register(core.Module{
 		Name:      "host",
-		Resources: []any{config.HostIdentity{Prefix: hostPrefix, DefaultLocator: "file://" + locator}},
+		Resources: []any{config.HostIdentity{Prefix: hostPrefix, DefaultLocator: defaultLocator(locator)}},
 	})
 	loading.Register(module)
 	reader, err := config.Load(context.Background(), loading, nil)
@@ -147,4 +148,13 @@ func load(t testing.TB, module core.Module, namespace, dsn string, items Items) 
 		t.Fatalf("loading the %s section: %v", namespace, err)
 	}
 	return reader
+}
+
+// defaultLocator renders the primary source's location as a file URL. The path
+// is escaped rather than concatenated: testing.TempDir embeds the subtest name
+// in the directory, a name written twice makes it append "#01", and url.Parse
+// reads a bare "#" or "?" as the start of a fragment or query, leaving a
+// truncated path that names a directory and not the config file.
+func defaultLocator(path string) string {
+	return (&url.URL{Scheme: "file", Path: path}).String()
 }

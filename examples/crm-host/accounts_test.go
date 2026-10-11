@@ -39,7 +39,7 @@ type crew struct {
 
 // setUpCrew registers the two tenants and the five users through the admin
 // endpoint, grants the roles and signs each user in once. Every request after
-// that carries a bearer token, so the password derivation is paid once per
+// that carries a session cookie, so the password derivation is paid once per
 // user rather than once per request.
 func setUpCrew(t *testing.T, c *crmCase, h *crmHost) crew {
 	t.Helper()
@@ -77,7 +77,7 @@ func (cr crew) as(h *crmHost, u userRef, in tenantRef) actor {
 }
 
 // sessionActor is how the journal names an actor who authenticated with a
-// bearer token: by the account, which is the user identifier.
+// session cookie: by the account, which is the account identifier.
 func (a actor) sessionActor() string { return a.user.ID }
 
 // send makes one request as the actor.

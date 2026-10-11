@@ -34,6 +34,22 @@ const operatorPassword = "operator-secret"
 // tenantHeader is the request header the configuration names for resolution.
 const tenantHeader = "X-Tenant"
 
+// sessionBackendName is the name the session module's cookie backend reports;
+// the gateway stamps it on every identity a session cookie authenticates.
+const sessionBackendName = "session"
+
+// admissionModuleName is the name the tenant admission layer reports, both in
+// the registry and in the chain listing.
+const admissionModuleName = "tenant.admission"
+
+// staticModuleName is the name the password-table backend reports; it is the
+// module field of the startup lines it writes about its entries.
+const staticModuleName = "authn.static"
+
+// lifetimeSlack is how far either side of a lifetime the case's observation of
+// a lapse may land.
+const lifetimeSlack = time.Second
+
 // journalledRoutes are the routes whose requests the journal captures: every
 // route an application module registers as worth a journal row, each as the
 // method and the path it is registered under, which is the form the journal's
@@ -206,28 +222,17 @@ func layOutCase(t *testing.T, s stack, linked bool) *crmCase {
 	return c
 }
 
-// caseHashIterations is the PBKDF2 cost of every password the cases derive for
-// the CRM users, through users.password-iterations.
-//
-// Each user created and each sign-in derives a password once, and at the
-// production cost a derivation takes over a second in a binary built with the
-// race detector, which put a -race run of this package far past go test's
-// default timeout. The hash carries its count and is verified at it, so what a
-// case shows does not rest on the count; a case whose property rests on how long
-// a derivation takes sets the production cost itself.
-const caseHashIterations = 1_000
-
 // operatorHash is the operator's entry of the static backend's subject table,
-// written at the backend's own production cost through its contract function. The
-// backend remembers a check that held for its cache lifetime, so a case pays for
-// one derivation of it per serving process rather than one per request, and an
-// entry at the cost the backend holds an entry to leaves its startup nothing to
-// warn about: a cheaper entry would be named at Warn in every case's output. The
-// entry `hash` writes is held to that backend's own derivation by
-// TestAnOperatorSignsInWithWhatHashWrote, and every operator request of every
-// case to this one.
+// written at a low cost through the backend's own HashPBKDF2, so a case pays
+// little for the derivation the backend runs when its check is cold. The backend
+// remembers a check that held for its cache lifetime, so that derivation is one
+// per serving process rather than one per request. An entry below what OWASP
+// recommends is named at Warn on startup;
+// TestTheStartupNamesTheWeakOperatorEntry holds that line rather than suppressing
+// it. The entry `hash` writes is held to the backend's own derivation by
+// TestAnOperatorSignsInWithWhatHashWrote.
 func operatorHash() (string, error) {
-	return static.Hash(operatorPassword)
+	return static.HashPBKDF2(operatorPassword, casePBKDF2Iterations)
 }
 
 // writeBaseConfig writes everything that does not depend on the stack.
@@ -244,12 +249,17 @@ func (c *crmCase) writeBaseConfig() {
 	guarded := []string{apiEndpoint, accountEndpoint, adminEndpoint}
 	c.config.set(logLevelPath, runLogLevel)
 	c.config.set("authn.gate.endpoints", guarded)
+	// The authentication routes are mounted on the account endpoint, and the
+	// public URL is https, so the session cookie keeps its __Host- prefix; the
+	// cases craft the Cookie header by hand.
+	c.config.set("authn.gate.mount.endpoint", accountEndpoint)
+	c.config.set("authn.gate.mount.public-url", "https://"+hostName+".test")
 	c.config.set("authn.static.subjects", map[string]string{operatorSubject: hashed})
-	c.config.set("users.password-iterations", caseHashIterations)
 	c.config.set("tenant.resolve.endpoints", []string{apiEndpoint})
 	c.config.set("tenant.resolve.extractor", "header")
 	c.config.set("tenant.resolve.header-name", tenantHeader)
 	c.config.set("tenant.catalog.refresh-period", "0s")
+	c.config.set("tenant.admission.endpoints", []string{apiEndpoint})
 	c.config.set("audit.journal.endpoints", guarded)
 	c.config.set("audit.journal.requests", journalledRoutes())
 	c.config.set("ratelimit.endpoints", []string{apiEndpoint})
@@ -415,6 +425,15 @@ func (c *crmCase) resultOf(res commandResult, v any) {
 	c.t.Fatalf("the command answered with no JSON line:\n%s", res.combined())
 }
 
+// casePBKDF2Iterations is the iteration count a case writes its imported
+// password entries at, low enough that a derivation of one is cheap under the
+// race detector. The account module's own derivation settings carry a floor, so
+// the cost a creation or a sign-in derives at cannot be lowered through them;
+// an imported entry is read and bounded, not judged, so importing one is what
+// makes a creation cheap. The first check that holds re-hashes the entry to the
+// module's current cost, which is the cost a later sign-in pays.
+const casePBKDF2Iterations = 1000
+
 // migrate runs the stack's migrate command.
 func (c *crmCase) migrate() {
 	c.t.Helper()
@@ -467,13 +486,20 @@ func (c *crmCase) userNamed(name string) userRef {
 	return userRef{Email: name + "@" + c.suffix + ".crm.test", Password: name + " has a password " + c.suffix}
 }
 
-// createUser creates a CRM user through the command line, the password going
-// in on standard input.
+// createUser creates a CRM user through the command line, importing a low-cost
+// PBKDF2 entry for its password on standard input. The entry is written by
+// static.HashPBKDF2, the module's own writer, and handed to the create path as
+// PasswordHash, so the creation pays no derivation of its own; the first sign-in
+// that checks it re-hashes it to the module's current cost.
 func (c *crmCase) createUser(name string) userRef {
 	c.t.Helper()
 	ref := c.userNamed(name)
+	entry, err := static.HashPBKDF2(ref.Password, casePBKDF2Iterations)
+	if err != nil {
+		c.t.Fatalf("deriving %s's password entry: %v", ref.Email, err)
+	}
 	var got userView
-	c.resultOf(c.mustRun(ref.Password+"\n", "user", "create", "--email", ref.Email, "--display-name", name), &got)
+	c.resultOf(c.mustRun(entry+"\n", "user", "create", "--email", ref.Email, "--display-name", name, "--password-hash"), &got)
 	if got.ID == "" || got.Email != ref.Email {
 		c.t.Fatalf("user create answered %+v for %s", got, ref.Email)
 	}
@@ -486,7 +512,7 @@ func (c *crmCase) grant(ref tenantRef, user userRef, role string) {
 	c.t.Helper()
 	var got grantView
 	c.resultOf(c.mustRun("", "user", "grant", "--tenant-id", ref.ID, "--email", user.Email, "--role", role), &got)
-	if got.TenantID != ref.ID || got.UserID != user.ID || got.Role != role {
+	if got.TenantID != ref.ID || got.AccountID != user.ID || got.Role != role {
 		c.t.Fatalf("user grant answered %+v, want %s in %s as %s", got, user.ID, ref.ID, role)
 	}
 }
@@ -498,6 +524,7 @@ func (c *crmCase) grant(ref tenantRef, user userRef, role string) {
 // time.Duration writes.
 func (c *crmCase) setGlobal(key, value string) {
 	c.t.Helper()
+	c.exec("DELETE FROM settings WHERE tenant_id = '' AND key = ?", key)
 	c.exec("INSERT INTO settings (tenant_id, key, value, version, updated_at) VALUES ('', ?, ?, 1, ?)",
 		key, value, time.Now().UTC())
 }
@@ -516,7 +543,7 @@ type crmHost struct {
 	replica int
 	urls    map[string]string
 
-	// tokens are the bearer tokens this replica issued to the users a case
+	// tokens are the session cookies this replica issued to the users a case
 	// signed in with signedIn, by email, and tokensMu guards them.
 	tokensMu sync.Mutex
 	tokens   map[string]string

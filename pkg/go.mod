@@ -4,12 +4,14 @@ go 1.26.0
 
 require (
 	github.com/alexedwards/argon2id v1.0.0
+	github.com/alexedwards/scs/v2 v2.9.0
 	github.com/bradfitz/gomemcache v0.0.0-20260422231931-4d751bb6e37c
 	github.com/gin-contrib/cors v1.7.3
 	github.com/gin-gonic/gin v1.12.0
 	github.com/glebarez/go-sqlite v1.21.2
 	github.com/glebarez/sqlite v1.11.0
 	github.com/go-viper/mapstructure/v2 v2.5.0
+	github.com/google/uuid v1.6.0
 	github.com/jackc/pgx/v5 v5.11.0
 	github.com/nats-io/nats.go v1.54.0
 	github.com/redis/go-redis/v9 v9.22.0
@@ -33,6 +35,8 @@ require (
 	google.golang.org/grpc v1.83.2
 	golang.org/x/crypto v0.57.0
 	golang.org/x/sync v0.23.0
+	golang.org/x/text v0.42.0
+	google.golang.org/grpc v1.83.1
 	gorm.io/driver/postgres v1.6.0
 	gorm.io/gorm v1.31.2
 	modernc.org/sqlite v1.23.1
@@ -56,7 +60,6 @@ require (
 	github.com/go-playground/validator/v10 v10.30.5 // indirect
 	github.com/goccy/go-json v0.11.2 // indirect
 	github.com/goccy/go-yaml v1.19.2 // indirect
-	github.com/google/uuid v1.6.0 // indirect
 	github.com/grpc-ecosystem/grpc-gateway/v2 v2.30.0 // indirect
 	github.com/inconshreveable/mousetrap v1.1.0 // indirect
 	github.com/jackc/pgpassfile v1.0.0 // indirect

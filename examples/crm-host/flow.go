@@ -145,7 +145,7 @@ type flowList struct {
 // tenant, and the filter scopes it by the model.
 func (p *flowProduct) listFlow(c *gin.Context) {
 	ctx := c.Request.Context()
-	if _, ok := memberOf(c, flowRoute); !ok {
+	if _, ok := memberOf(c, p.db, flowRoute); !ok {
 		return
 	}
 	lines := []flowView{}

@@ -1,0 +1,296 @@
+package account
+
+import (
+	"context"
+	"errors"
+	"strings"
+	"sync"
+	"testing"
+
+	"github.com/vislake/speed/pkg/authn"
+	"github.com/vislake/speed/pkg/authn/internal/password"
+)
+
+// mustChangeAccount creates a user account with a password that has to be
+// changed at the next login.
+func (h *harness) mustChangeAccount(name, plaintext string) authn.AccountID {
+	h.t.Helper()
+	created, err := h.p.Create(context.Background(), authn.CreateAccount{
+		Username: name, Password: plaintext, MustChangePassword: true, Via: "admin",
+	})
+	if err != nil {
+		h.t.Fatalf("creating %s: %v", name, err)
+	}
+	return created.ID
+}
+
+// legacyEntry is an entry in the form without a leading dollar sign, built from a
+// PHC one so that the same password verifies against both.
+func legacyEntry(t testing.TB, plaintext string, iterations int) string {
+	t.Helper()
+	phc, err := password.Params{Algorithm: password.PBKDF2SHA256, PBKDF2Iterations: iterations}.
+		Hash(password.Normalize(plaintext))
+	if err != nil {
+		t.Fatalf("writing a pbkdf2 entry: %v", err)
+	}
+	parts := strings.Split(phc, "$")
+	// parts[2] is "i=<iterations>,l=<length>".
+	return "pbkdf2-sha256$" + strings.TrimPrefix(strings.Split(parts[2], ",")[0], "i=") + "$" + parts[3] + "$" + parts[4]
+}
+
+// A correct password for an enabled account returns the account, and a credential
+// that has to be changed says so.
+func TestVerifySucceedsAndReportsMustChange(t *testing.T) {
+	forEachDialect(t, func(t *testing.T, h *harness) {
+		ctx := context.Background()
+		id := h.mustChangeAccount("changed", "correct horse battery")
+		got, result, err := h.p.Verify(ctx, "changed", "correct horse battery")
+		if err != nil || got != id || !result.MustChange {
+			t.Errorf("Verify gave %q, %+v, %v; want the account and must-change", got, result, err)
+		}
+	})
+}
+
+// An unknown name, a disabled account, an account with no password and a wrong
+// password all answer the one sentinel, and each costs a derivation against the
+// decoy, which is what keeps them from being told apart by anything but time.
+func TestEnumerationAnswersTheOneSentinelAndDerivesAgainstTheDecoy(t *testing.T) {
+	forEachDialect(t, func(t *testing.T, h *harness) {
+		ctx := context.Background()
+		meters := h.withMeters()
+		known := h.user("known", "correct horse battery")
+		noPassword := h.user("nopassword", "")
+
+		before := meters.histogramCount(deriveInstrument, nil)
+		for _, c := range []struct {
+			name       string
+			identifier string
+			password   string
+		}{
+			{"an unknown name", "nobody", "whatever twelve"},
+			{"a wrong password", "known", "wrong wrong wrong"},
+			{"an account with no password", "nopassword", "whatever twelve"},
+		} {
+			if _, _, err := h.p.Verify(ctx, c.identifier, c.password); !errors.Is(err, authn.ErrInvalidCredentials) {
+				t.Errorf("%s gave %v, want ErrInvalidCredentials", c.name, err)
+			}
+		}
+		// A disabled account answers the same sentinel.
+		_ = h.p.SetStatus(ctx, known, authn.StatusDisabled, authn.ReasonAdmin)
+		if _, _, err := h.p.Verify(ctx, "known", "correct horse battery"); !errors.Is(err, authn.ErrInvalidCredentials) {
+			t.Errorf("a disabled account gave %v, want ErrInvalidCredentials", err)
+		}
+		_ = noPassword
+		if after := meters.histogramCount(deriveInstrument, nil); after <= before {
+			t.Errorf("the derivations went from %d to %d, want each refused check to derive", before, after)
+		}
+	})
+}
+
+// The account-level back-off is silent: past its threshold even the right
+// password under another spelling is refused with ErrInvalidCredentials and not a
+// 429, so that a changed spelling does not tell an attacker the account exists.
+// The identifier-level back-off is visible as a *ThrottledError.
+func TestTheAccountThrottleIsSilentAndTheIdentifierThrottleIsVisible(t *testing.T) {
+	forEachDialect(t, func(t *testing.T, h *harness) {
+		ctx := context.Background()
+		h.user("alice", "correct horse battery")
+		for i := 0; i <= defaults.ThrottleFreeAttempts; i++ {
+			if _, _, err := h.p.Verify(ctx, "alice", "the wrong password"); !errors.Is(err, authn.ErrInvalidCredentials) {
+				t.Fatalf("failure %d gave %v, want ErrInvalidCredentials", i, err)
+			}
+		}
+		// Another spelling of the same account's identifier: the account-level
+		// back-off holds it, and the answer is the ordinary refusal, not a 429.
+		_, _, err := h.p.Verify(ctx, "alice@example.com", "correct horse battery")
+		if !errors.Is(err, authn.ErrInvalidCredentials) || errors.Is(err, authn.ErrThrottled) {
+			t.Errorf("the right password under another spelling gave %v, want the silent ErrInvalidCredentials", err)
+		}
+		// The spelling that failed is held visibly, with a Retry-After.
+		_, _, err = h.p.Verify(ctx, "alice", "correct horse battery")
+		var throttled *authn.ThrottledError
+		if !errors.As(err, &throttled) || throttled.RetryAfter <= 0 {
+			t.Errorf("the failing spelling gave %v, want a *ThrottledError with a positive RetryAfter", err)
+		}
+	})
+}
+
+// Set judges a new password by the policy, normalizes it, and refuses one that is
+// the account's own identifier in any of its forms.
+func TestSetJudgesThePolicyAndNormalizes(t *testing.T) {
+	forEachDialect(t, func(t *testing.T, h *harness) {
+		ctx := context.Background()
+		id := h.user("policed", "")
+		for _, c := range []struct {
+			name     string
+			password string
+			want     error
+		}{
+			{"too short", "short", authn.ErrPasswordPolicy},
+			{"the username", "POLICED", authn.ErrPasswordPolicy},
+			{"the email address", "policed@example.com", authn.ErrPasswordPolicy},
+			{"a good one", "correct horse battery", nil},
+		} {
+			err := h.p.Set(ctx, id, c.password, authn.SetPasswordOptions{})
+			if !errors.Is(err, c.want) {
+				t.Errorf("%s: Set gave %v, want %v", c.name, err, c.want)
+			}
+		}
+		// The stored password verifies after normalization of the input.
+		if _, _, err := h.p.Verify(ctx, "policed", "correct horse battery"); err != nil {
+			t.Errorf("the password just set does not verify: %v", err)
+		}
+	})
+}
+
+// A call that carries the current password checks it: a wrong one is
+// ErrInvalidCredentials and is counted, and the password is set only when it is
+// right and different.
+func TestSetChecksTheCurrentPasswordWhenCarried(t *testing.T) {
+	forEachDialect(t, func(t *testing.T, h *harness) {
+		ctx := context.Background()
+		id := h.user("carrier", "correct horse battery")
+		err := h.p.Set(ctx, id, "another good phrase", authn.SetPasswordOptions{Current: "the wrong one"})
+		if !errors.Is(err, authn.ErrInvalidCredentials) {
+			t.Fatalf("a wrong current password gave %v, want ErrInvalidCredentials", err)
+		}
+		if _, _, verr := h.p.Verify(ctx, "carrier", "correct horse battery"); verr != nil {
+			t.Errorf("the password changed on a wrong current one: %v", verr)
+		}
+		if err := h.p.Set(ctx, id, "another good phrase", authn.SetPasswordOptions{Current: "correct horse battery"}); err != nil {
+			t.Fatalf("setting with the right current password: %v", err)
+		}
+		if _, _, verr := h.p.Verify(ctx, "carrier", "another good phrase"); verr != nil {
+			t.Errorf("the new password does not verify: %v", verr)
+		}
+	})
+}
+
+// A stored entry that cannot be read, as one written around the module would be,
+// is answered as a wrong password, reported without any of its text, and never
+// derived from.
+func TestACorruptStoredRowIsRefusedAndReportedWithoutItsText(t *testing.T) {
+	forEachDialect(t, func(t *testing.T, h *harness) {
+		ctx := context.Background()
+		id := h.user("corrupt", "")
+		err := h.handle.Exec("INSERT INTO "+tableCredentials+" (account_id, phc, changed_at, must_change) VALUES (?, ?, ?, ?)",
+			id.String(), "$argon2id$v=19$m=999999999,t=1,p=1$AAAAAAAAAAA$AAAAAAAAAAAAAAAAAAAAAA", h.clock.read(), false).Error
+		if err != nil {
+			t.Fatalf("writing the corrupt row: %v", err)
+		}
+		if _, _, err := h.p.Verify(ctx, "corrupt", "correct horse battery"); !errors.Is(err, authn.ErrInvalidCredentials) {
+			t.Errorf("a corrupt stored row gave %v, want ErrInvalidCredentials", err)
+		}
+		if lines := h.logs.lines("cannot be read"); len(lines) == 0 {
+			t.Errorf("no Error reports the corrupt row: %s", h.logs.String())
+		}
+		if strings.Contains(h.logs.String(), "999999999") {
+			t.Error("the report echoes the stored entry")
+		}
+	})
+}
+
+// ImportHash takes a legacy entry, writes the same bytes in the PHC shell, and
+// the password verifies against it.
+func TestImportHashTakesALegacyEntryAndRewritesIt(t *testing.T) {
+	forEachDialect(t, func(t *testing.T, h *harness) {
+		ctx := context.Background()
+		const plaintext = "legacy horse battery"
+		legacy := legacyEntry(t, plaintext, 4096)
+		id := h.user("legacy", "")
+		if err := h.p.ImportHash(ctx, id, legacy, false); err != nil {
+			t.Fatalf("importing a legacy entry: %v", err)
+		}
+		var row struct{ PHC string }
+		if err := h.handle.Raw("SELECT phc FROM "+tableCredentials+" WHERE account_id = ?", id.String()).Scan(&row).Error; err != nil {
+			t.Fatalf("reading the credential: %v", err)
+		}
+		if !strings.HasPrefix(row.PHC, "$pbkdf2-sha256$") {
+			t.Errorf("the imported entry is stored as %q, want the PHC shell", row.PHC)
+		}
+		if _, _, err := h.p.Verify(ctx, "legacy", plaintext); err != nil {
+			t.Errorf("the imported password does not verify: %v", err)
+		}
+	})
+}
+
+// An entry that cannot be read is refused without any of its text.
+func TestImportHashRefusesWhatItCannotRead(t *testing.T) {
+	forEachDialect(t, func(t *testing.T, h *harness) {
+		ctx := context.Background()
+		id := h.user("badimport", "")
+		for _, entry := range []string{
+			"$argon2id$v=19$m=999999999,t=1,p=1$AAAAAAAAAAA$AAAAAAAAAAAAAAAAAAAAAA",
+			"not a hash at all",
+			"$scrypt$nope",
+		} {
+			err := h.p.ImportHash(ctx, id, entry, false)
+			if !errors.Is(err, authn.ErrInvalidCredentials) {
+				t.Errorf("importing %q gave %v, want ErrInvalidCredentials", entry, err)
+			}
+			if err != nil && strings.Contains(err.Error(), "argon2id$") {
+				t.Errorf("the refusal echoes the entry: %v", err)
+			}
+		}
+	})
+}
+
+// A check that holds rewrites a stored entry weaker than the current cost, and
+// the rewrite is a compare-and-swap on the old entry, so two checks that both
+// found it weak write it once.
+func TestAWeakEntryIsRewrittenOnceUnderConcurrentChecks(t *testing.T) {
+	forEachDialect(t, func(t *testing.T, h *harness) {
+		ctx := context.Background()
+		id := h.user("weak", "")
+		if err := h.p.ImportHash(ctx, id, cheapHash(t, "correct horse battery"), false); err != nil {
+			t.Fatalf("importing a weak entry: %v", err)
+		}
+		var before struct{ PHC string }
+		_ = h.handle.Raw("SELECT phc FROM "+tableCredentials+" WHERE account_id = ?", id.String()).Scan(&before).Error
+
+		meters := h.withMeters()
+		const callers = 4
+		var wg sync.WaitGroup
+		start := make(chan struct{})
+		for range callers {
+			wg.Add(1)
+			go func() {
+				defer wg.Done()
+				<-start
+				if _, _, err := h.p.Verify(ctx, "weak", "correct horse battery"); err != nil {
+					t.Errorf("a concurrent verify returned %v", err)
+				}
+			}()
+		}
+		close(start)
+		wg.Wait()
+
+		var after struct{ PHC string }
+		if err := h.handle.Raw("SELECT phc FROM "+tableCredentials+" WHERE account_id = ?", id.String()).Scan(&after).Error; err != nil {
+			t.Fatalf("reading the credential: %v", err)
+		}
+		if after.PHC == before.PHC {
+			t.Error("a weak entry was not rewritten after a successful check")
+		}
+		if upgraded := meters.counter(verificationsInstrument, map[string]string{outcomeAttribute: outcomeUpgraded}); upgraded != 1 {
+			t.Errorf("the upgrades are %d, want the compare-and-swap to write once", upgraded)
+		}
+	})
+}
+
+// Clear removes the credential, so that the account has none and has to set one.
+func TestClearRemovesTheCredential(t *testing.T) {
+	forEachDialect(t, func(t *testing.T, h *harness) {
+		ctx := context.Background()
+		id := h.user("cleared", "correct horse battery")
+		if err := h.p.Clear(ctx, id); err != nil {
+			t.Fatalf("clearing: %v", err)
+		}
+		if n := h.count(tableCredentials, "account_id = ?", id.String()); n != 0 {
+			t.Errorf("%d credential row(s) left, want none", n)
+		}
+		if _, _, err := h.p.Verify(ctx, "cleared", "correct horse battery"); !errors.Is(err, authn.ErrInvalidCredentials) {
+			t.Errorf("verifying a cleared account gave %v, want ErrInvalidCredentials", err)
+		}
+	})
+}

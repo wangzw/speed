@@ -14,6 +14,7 @@ import (
 	"github.com/vislake/speed/pkg/audit"
 	"github.com/vislake/speed/pkg/authn"
 	"github.com/vislake/speed/pkg/core"
+	"github.com/vislake/speed/pkg/db"
 	speedhttp "github.com/vislake/speed/pkg/http"
 	"github.com/vislake/speed/pkg/log"
 	"github.com/vislake/speed/pkg/settings"
@@ -124,9 +125,10 @@ const hiddenSetting = "********"
 // sensitive — is its declaration's, and the settings module reports it through
 // Store.Declared; the host states none of it again.
 //
-// sessions.ttl is not listed. The sessions module reads it in the global layer
-// alone, at sign-in, where no tenant is resolved, and the admin routes write
-// every listed key in any tenant's layer as well, where nothing would read it.
+// The session module's own settings (authn.session.*) are not listed. It reads
+// them in the global layer alone, at sign-in and on every request, where no
+// tenant is resolved, and the admin routes write every listed key in any
+// tenant's layer as well, where nothing would read it.
 var servedKeys = []servedKey{
 	{pageSizeSetting, true},
 	{defaultCurrencySetting, true},
@@ -263,6 +265,7 @@ func (s settingWrite) Validate() error {
 // its API serves, joined to its declaration when the module is built.
 type preferencesProduct struct {
 	released
+	db       db.Database
 	store    settings.Store
 	roster   tenant.Catalog
 	recorder audit.Audit
@@ -426,7 +429,7 @@ func settingsLayerOf(self member) settings.Layer { return settings.ForTenant(str
 
 // listSettings answers the settings a tenant edits.
 func (p *preferencesProduct) listSettings(c *gin.Context) {
-	self, ok := memberWith(c, roleAdmin)
+	self, ok := memberWith(c, p.db, roleAdmin)
 	if !ok {
 		return
 	}
@@ -439,9 +442,9 @@ func (p *preferencesProduct) listSettings(c *gin.Context) {
 }
 
 // writeSetting writes a value into the layer of the tenant the request names.
-// The actor the change event carries is the member's user identifier.
+// The actor the change event carries is the member's account identifier.
 func (p *preferencesProduct) writeSetting(c *gin.Context) {
-	self, ok := memberWith(c, roleAdmin)
+	self, ok := memberWith(c, p.db, roleAdmin)
 	if !ok {
 		return
 	}
@@ -455,7 +458,7 @@ func (p *preferencesProduct) writeSetting(c *gin.Context) {
 		return
 	}
 	ctx := c.Request.Context()
-	v, f := p.write(ctx, settingsLayerOf(self), k, body.Value, self.UserID)
+	v, f := p.write(ctx, settingsLayerOf(self), k, body.Value, string(self.Account))
 	if f == nil {
 		f = p.record(ctx, settingWriteAction, v, "", nil)
 	}
@@ -469,7 +472,7 @@ func (p *preferencesProduct) writeSetting(c *gin.Context) {
 // deleteSetting removes the tenant's own row for a key, which reverts it to the
 // global value or the declared default.
 func (p *preferencesProduct) deleteSetting(c *gin.Context) {
-	self, ok := memberWith(c, roleAdmin)
+	self, ok := memberWith(c, p.db, roleAdmin)
 	if !ok {
 		return
 	}
@@ -479,7 +482,7 @@ func (p *preferencesProduct) deleteSetting(c *gin.Context) {
 		return
 	}
 	ctx := c.Request.Context()
-	v, f := p.remove(ctx, settingsLayerOf(self), k, self.UserID)
+	v, f := p.remove(ctx, settingsLayerOf(self), k, string(self.Account))
 	if f == nil {
 		f = p.record(ctx, settingDeleteAction, v, "", nil)
 	}
@@ -500,7 +503,7 @@ func operatorActor(c *gin.Context, route string) (string, bool) {
 		writeError(c, nethttp.StatusInternalServerError, "the request carries no identity")
 		return "", false
 	}
-	return caller.Key(), true
+	return string(caller.Account()), true
 }
 
 // pathSettingKey reads the path's key against every key the host lists.
@@ -718,12 +721,13 @@ func init() {
 // and the requirement is what fails a command that names this module and
 // forgets it at resolution. The admin routes sit behind the operator check the
 // admin module registers on that endpoint, and the API routes behind the
-// membership layer.
+// admission layer.
 func preferencesModule() core.Module {
 	return core.Module{
 		Name: preferencesModuleName,
 		Requires: []core.Requirement{
 			{Token: (*log.Logger)(nil)},
+			{Token: (*db.Database)(nil)},
 			{Token: (*settings.Store)(nil)},
 			{Token: (*tenant.Catalog)(nil)},
 			{Token: (*audit.Audit)(nil)},
@@ -735,6 +739,10 @@ func preferencesModule() core.Module {
 
 		New: func(_ context.Context, reg *core.Registry) (any, error) {
 			logger, err := namedLogger(reg, preferencesModuleName)
+			if err != nil {
+				return nil, err
+			}
+			database, err := core.Resolve[db.Database](reg)
 			if err != nil {
 				return nil, err
 			}
@@ -758,6 +766,7 @@ func preferencesModule() core.Module {
 			}
 			return &preferencesProduct{
 				released: released{log: logger},
+				db:       database,
 				store:    store,
 				roster:   roster,
 				recorder: recorder,

@@ -72,19 +72,23 @@ func DefaultAuthTime() time.Time {
 	return time.Date(2026, time.October, 1, 8, 0, 0, 0, time.UTC)
 }
 
-// Bounds the gateway holds an identity to, repeated here because authntest is
-// not the gateway and imports none of it. They are the same numbers as the
-// gateway's exit check, and a change to one is a change to the other.
+// Bounds the gateway holds an identity to, read from the model package, which is
+// where the numbers of the attribute set are declared once: the totals the exit
+// check stamps and the longest key and value an entry may have. authntest is not
+// the gateway and imports none of it, so the exit check keeps constants of its
+// own, and gate/attribute_bounds_test.go holds them equal to the model's and the
+// two writers' sub-bounds under them. The number of authentication methods is
+// the gateway's alone.
 const (
 	maxMethods       = 8
-	maxAttributes    = 32
-	maxAttributeSize = 4 << 10
-	maxValueLen      = 256
+	maxAttributes    = model.IdentityAttributesMax
+	maxAttributeSize = model.IdentityAttributeBytesMax
+	maxValueLen      = model.AccountAttributeValueMax
 )
 
 var (
 	backendName  = regexp.MustCompile(`^[a-z0-9][a-z0-9.-]*$`)
-	attributeKey = regexp.MustCompile(`^[a-z0-9][a-z0-9._-]{0,63}$`)
+	attributeKey = regexp.MustCompile(fmt.Sprintf(`^[a-z0-9][a-z0-9._-]{0,%d}$`, model.AttributeKeyMax-1))
 	// uuidText is the canonical spelling alone, lower case, because a provider
 	// identifier is compared as a string wherever it is read.
 	uuidText = regexp.MustCompile(`^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$`)

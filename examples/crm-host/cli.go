@@ -11,6 +11,7 @@ import (
 	"strings"
 
 	"github.com/vislake/speed/pkg/audit"
+	"github.com/vislake/speed/pkg/authn"
 	"github.com/vislake/speed/pkg/config"
 	"github.com/vislake/speed/pkg/core"
 	"github.com/vislake/speed/pkg/db"
@@ -43,11 +44,12 @@ const cliNamespace = "cli"
 // flag-only schema its module declares under a namespace of its own, with flag
 // names no other item in the binary uses.
 type cliInput struct {
-	TenantID    string `config:"tenant-id"`
-	TenantAlias string `config:"tenant-alias"`
-	Email       string `config:"email"`
-	DisplayName string `config:"display-name"`
-	Role        string `config:"role"`
+	TenantID     string `config:"tenant-id"`
+	TenantAlias  string `config:"tenant-alias"`
+	Email        string `config:"email"`
+	DisplayName  string `config:"display-name"`
+	Role         string `config:"role"`
+	PasswordHash bool   `config:"password-hash"`
 }
 
 // cliSchema declares the command-line items.
@@ -64,11 +66,12 @@ func cliSchema() config.Schema {
 		Namespace: cliNamespace,
 		Mounts:    []config.Mount{{Value: &cliInput{}}},
 		Items: map[string]config.Item{
-			"tenant-id":    flag("tenant-id", "ID", "the tenant's immutable identifier"),
-			"tenant-alias": flag("tenant-alias", "ALIAS", "the name requests use to name the tenant"),
-			"email":        flag("email", "EMAIL", "the email address of a CRM user"),
-			"display-name": flag("display-name", "NAME", "the name a CRM user is shown under"),
-			"role":         flag("role", "ROLE", "one of "+strings.Join(roles, ", ")),
+			"tenant-id":     flag("tenant-id", "ID", "the tenant's immutable identifier"),
+			"tenant-alias":  flag("tenant-alias", "ALIAS", "the name requests use to name the tenant"),
+			"email":         flag("email", "EMAIL", "the email address of a CRM user"),
+			"display-name":  flag("display-name", "NAME", "the name a CRM user is shown under"),
+			"role":          flag("role", "ROLE", "one of "+strings.Join(roles, ", ")),
+			"password-hash": flag("password-hash", "", "read a password entry to import from standard input instead of a plaintext password"),
 		},
 	}
 }
@@ -101,10 +104,12 @@ type cliCommand struct {
 
 // commandGroup is a word under every stack whose leaves are one-shot commands:
 // tenant, user, and whatever a feature slice adds. The group node takes in the
-// platform the command line runs on and the host modules that name the word in
-// their registration, and each leaf inherits them.
+// platform the command line runs on, the modules its own actions use, and the
+// host modules that name the word in their registration, and each leaf inherits
+// them.
 type commandGroup struct {
 	word     string
+	platform []string // named beside groupPlatform, for this group's actions
 	commands []cliCommand
 }
 
@@ -130,12 +135,16 @@ var (
 		{use: "enable", depth: core.StageStart, action: statusCommand("tenant enable", tenant.StatusActive)},
 		{use: "list", depth: core.StageInit, action: listTenantsCommand},
 	}}
-	userGroup = commandGroup{word: "user", commands: []cliCommand{
+	userGroup = commandGroup{word: "user", platform: []string{accountModuleName}, commands: []cliCommand{
 		{use: "create", depth: core.StageStart, action: createUserCommand},
 		{use: "grant", depth: core.StageStart, action: grantCommand},
 		{use: "list", depth: core.StageInit, action: listUsersCommand},
 	}}
 )
+
+// accountModuleName is the run-level name of the account store, written into the
+// commands whose actions create accounts or write memberships.
+const accountModuleName = "authn.account"
 
 // cliPurpose is the purpose every command-line write records. The command line
 // carries no identity and no tenant, so the seam row is the one place the
@@ -260,9 +269,13 @@ func listTenantsCommand(ctx context.Context, reg *core.Registry) error {
 	return printResult(out)
 }
 
-// createUserCommand adds a CRM user. The password is read from standard input
+// createUserCommand adds a CRM user. The credential is read from standard input
 // rather than taken as a flag, so it does not land in the shell history or in
-// the process list of every other user on the machine.
+// the process list of every other user on the machine. Ordinary use hands a
+// plaintext password, which the account module derives and judges; with
+// --password-hash the input is an entry already in the account module's PHC form,
+// imported as it is, which is how a caller creates an account without paying a
+// derivation of its own.
 func createUserCommand(ctx context.Context, reg *core.Registry) error {
 	const command = "user create"
 	tools, err := toolsOf(reg)
@@ -272,28 +285,37 @@ func createUserCommand(ctx context.Context, reg *core.Registry) error {
 	if tools.in.Email == "" || tools.in.DisplayName == "" {
 		return errMissingFlag(command, "email", "display-name")
 	}
-	password, err := readSecret(os.Stdin)
+	credential, err := readSecret(os.Stdin)
 	if err != nil {
 		return err
 	}
-	// The users module runs on this group for its derivation alone, and
-	// delivers it exclusively, so it is taken up here rather than required
-	// by the command-line module every group runs.
-	derivation, err := core.Resolve[passwords](reg)
+	admin, err := core.Resolve[authn.AccountAdmin](reg)
 	if err != nil {
 		return err
 	}
-	user, err := createUser(ctx, tools.db, derivation, tools.in.Email, tools.in.DisplayName, password)
+	in := authn.CreateAccount{
+		Kind:             authn.KindUser,
+		DisplayName:      tools.in.DisplayName,
+		Email:            tools.in.Email,
+		EmailVerifiedVia: authn.Verification{Via: authn.VerifiedViaAdmin},
+		Via:              "admin",
+	}
+	if tools.in.PasswordHash {
+		in.PasswordHash = credential
+	} else {
+		in.Password = credential
+	}
+	account, err := admin.Create(ctx, in)
 	if err != nil {
 		return err
 	}
-	if err := tools.record(ctx, command, "user.create", userTable+"/"+user.ID, nil); err != nil {
+	if err := tools.record(ctx, command, "user.create", "accounts/"+string(account.ID), nil); err != nil {
 		return err
 	}
-	return printResult(userViewOf(user))
+	return printResult(userViewOf(account, tools.in.Email))
 }
 
-// grantCommand gives a user a role in a tenant.
+// grantCommand gives an account a role in a tenant.
 //
 // Like the admin endpoint's grant it crosses tenants — nothing on the command
 // line is scoped to the tenant it writes into — so it says so with
@@ -308,6 +330,12 @@ func grantCommand(ctx context.Context, reg *core.Registry) error {
 	if tools.in.TenantID == "" || tools.in.Email == "" || tools.in.Role == "" {
 		return errMissingFlag(command, "tenant-id", "email", "role")
 	}
+	// The role is judged before anything is written, so a grant that names no
+	// known role leaves no half-written membership behind. The HTTP grant judges
+	// it the same way, in its request body's validation, before it writes.
+	if !validRole(tools.in.Role) {
+		return errUnknownRole
+	}
 	id := tenant.ID(tools.in.TenantID)
 	_, registered, err := tools.roster.Get(ctx, id)
 	if err != nil {
@@ -316,22 +344,36 @@ func grantCommand(ctx context.Context, reg *core.Registry) error {
 	if !registered {
 		return fmt.Errorf("%s: %w", tools.in.TenantID, errNoSuchTenant)
 	}
-	user, found, err := userByEmail(ctx, tools.db, tools.in.Email)
+	accounts, err := core.Resolve[authn.Accounts](reg)
 	if err != nil {
 		return err
 	}
-	if !found {
-		return fmt.Errorf("%s: no user has this email", tools.in.Email)
+	memberships, err := core.Resolve[authn.Memberships](reg)
+	if err != nil {
+		return err
 	}
-	granted, err := grantIn(tenant.CrossTenant(ctx), tools.db, id, user.ID, tools.in.Role)
+	account, err := accounts.Lookup(ctx, authn.IdentifierEmail, tools.in.Email)
+	if errors.Is(err, authn.ErrAccountNotFound) {
+		return fmt.Errorf("%s: no account has this email", tools.in.Email)
+	}
+	if err != nil {
+		return err
+	}
+	putErr := memberships.Put(tenant.CrossTenant(ctx), authn.Membership{
+		Account: account, Tenant: string(id), Active: true, Source: "admin",
+	})
+	if putErr != nil {
+		return putErr
+	}
+	granted, err := grantIn(tenant.CrossTenant(ctx), tools.db, id, account, tools.in.Role)
 	if err != nil {
 		return err
 	}
 	if err := tools.record(ctx, command, "membership.grant",
-		membershipTable+"/"+string(id)+"/"+user.ID, map[string]string{"role": granted.Role}); err != nil {
+		memberRoleTable+"/"+string(id)+"/"+string(account), map[string]string{"role": granted.Role}); err != nil {
 		return err
 	}
-	return printResult(grantView{TenantID: string(granted.TenantID), UserID: granted.UserID, Role: granted.Role})
+	return printResult(grantView{TenantID: string(granted.TenantID), AccountID: granted.AccountID, Role: granted.Role})
 }
 
 // userListing is one user as user list prints it, with the tenants they belong
@@ -341,31 +383,52 @@ type userListing struct {
 	Memberships []grantView `json:"memberships"`
 }
 
-// listUsersCommand prints every user and their memberships. The membership
-// read crosses tenants, as the question does.
+// listUsersCommand prints every user and their memberships. The membership read
+// crosses tenants, as the question does.
 func listUsersCommand(ctx context.Context, reg *core.Registry) error {
-	tools, err := toolsOf(reg)
+	if _, err := toolsOf(reg); err != nil {
+		return err
+	}
+	accounts, err := core.Resolve[authn.Accounts](reg)
 	if err != nil {
 		return err
 	}
-	people, err := listUsers(ctx, tools.db)
+	memberships, err := core.Resolve[authn.Memberships](reg)
+	if err != nil {
+		return err
+	}
+	people, _, err := accounts.List(ctx, authn.AccountQuery{Kind: authn.KindUser})
 	if err != nil {
 		return err
 	}
 	out := make([]userListing, 0, len(people))
-	for _, u := range people {
-		rows, err := membershipsOfUser(tenant.CrossTenant(ctx), tools.db, u.ID)
+	for _, a := range people {
+		rows, err := memberships.Tenants(ctx, a.ID)
 		if err != nil {
 			return err
 		}
-		entry := userListing{userView: userViewOf(u), Memberships: []grantView{}}
+		entry := userListing{userView: userViewOf(a, emailOf(ctx, accounts, a.ID)), Memberships: []grantView{}}
 		for _, m := range rows {
 			entry.Memberships = append(entry.Memberships,
-				grantView{TenantID: string(m.TenantID), UserID: m.UserID, Role: m.Role})
+				grantView{TenantID: m.Tenant, AccountID: string(a.ID)})
 		}
 		out = append(out, entry)
 	}
 	return printResult(out)
+}
+
+// emailOf reads the email identifier of an account, empty when it has none.
+func emailOf(ctx context.Context, accounts authn.Accounts, id authn.AccountID) string {
+	identifiers, err := accounts.Identifiers(ctx, id)
+	if err != nil {
+		return ""
+	}
+	for _, ident := range identifiers {
+		if ident.Kind == authn.IdentifierEmail {
+			return ident.Value
+		}
+	}
+	return ""
 }
 
 // readSecret reads one line from a reader and drops its line ending. A secret
@@ -386,8 +449,13 @@ func readSecret(r io.Reader) (string, error) {
 // actions are here. The module names no command of its own: the command tree
 // takes it into every command group, because every group's actions read the
 // shared flags.
+// userCommandsModuleName is the name the user command group's requirement
+// module is registered under.
+const userCommandsModuleName = "user-commands"
+
 func init() {
-	registerApplication(application{module: cliModule(), models: []any{Membership{}, User{}}})
+	registerApplication(application{module: cliModule(), models: []any{MemberRole{}}})
+	registerApplication(application{module: userCommandsModule(), runsOn: []string{userGroup.word}})
 	registerCommandGroup(tenantGroup)
 	registerCommandGroup(userGroup)
 }
@@ -398,11 +466,9 @@ func init() {
 // It has no New: an action is not a module and has no product, and the module
 // exists so that its input items reach the command line of the commands that
 // take it in, and so that those commands answer for what the actions use. The
-// roster requirement is the guard every writer of the scoped memberships table
-// states — without the roster module in the command its filter is not
-// installed and user grant would write the table unscoped — and the audit
-// requirement fails a command that forgot the journal rather than letting it
-// write with no seam row.
+// roster requirement is the guard every writer of the scoped role table states,
+// and the audit requirement fails a command that forgot the journal rather than
+// letting it write with no seam row.
 func cliModule() core.Module {
 	return core.Module{
 		Name: cliModuleName,
@@ -412,5 +478,21 @@ func cliModule() core.Module {
 			{Token: (*audit.Audit)(nil)},
 		},
 		Resources: []any{cliSchema()},
+	}
+}
+
+// userCommandsModule carries the account capabilities the user command group's
+// actions use, and nothing else. It runs on the user group alone, so the tenant
+// group is not made to carry the account store for actions that never touch it.
+// Each capability is delivered exclusively, so a command naming a capability
+// the closure does not pick fails here rather than at the first create.
+func userCommandsModule() core.Module {
+	return core.Module{
+		Name: userCommandsModuleName,
+		Requires: []core.Requirement{
+			{Token: (*authn.Accounts)(nil)},
+			{Token: (*authn.AccountAdmin)(nil)},
+			{Token: (*authn.Memberships)(nil)},
+		},
 	}
 }

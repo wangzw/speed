@@ -3,12 +3,16 @@
 The authentication capability directory: the interface package a backend
 implements and a handler reads an identity from, `pkg/authn/gate` — the gateway
 module that guards listening endpoints — `pkg/authn/static`, the first
-credential backend, whose subject table comes from configuration, and
-`pkg/authn/authntest`, which builds the context a gateway would have left on a
-request, and the configuration reader a backend's tests need, for the tests of
-modules that read an identity. The value types and the
-units the modules share live in `pkg/authn/internal/`, which only this directory
-can import.
+credential backend, whose subject table comes from configuration,
+`pkg/authn/mount`, which mounts a module's routes under the base path with the
+access level the gateway applies to each, the modules of the identity system —
+`pkg/authn/account`, `pkg/authn/session`, `pkg/authn/mfa` and the login packages
+under `pkg/authn/login` — and `pkg/authn/authntest`, which builds the context a
+gateway would have left on a request, and the configuration reader a backend's
+tests need, for the tests of modules that read an identity. The value types and
+the units the modules share live in `pkg/authn/internal/`, which only this
+directory can import; among them `internal/mount/mounttest` is a `Mounter` for
+the tests of the modules that mount routes.
 
 ## Where the authority is
 
@@ -90,6 +94,21 @@ here must not cross, and how to run it.
   `model` or `identity` would run on every `Identity` built anywhere, test
   fixtures included. `deps_test.go` holds the import lines of the root package
   and of those four.
+- **The sub-bounds of an attribute set are declared once, in
+  `internal/model/bounds.go`.** An identity's attributes come from two writers:
+  the account module, which stores the host-writable set, and the login engine,
+  which puts the `idp.*` entries of one login into the session payload. Each is
+  held to bounds of its own, and the two together to less than the totals the
+  gateway stamps; the account module holds its set to `CheckAccountAttributes`,
+  the session module holds a session payload to `CheckIDPAttributes` and cuts the
+  client fields with `TruncateUTF8`, and the login engine writes its `idp.*`
+  snapshot to the model's own numbers (`SessionIDPAttributesMax`,
+  `SessionIDPKeyMax`, `SessionIDPValueMax`), cutting each value at a character
+  boundary to the value bound; none of the three writes a number of its own. A
+  set the checks refuse is `ErrInvalidArgument`. The totals are the gateway's,
+  kept in `gate/exitcheck.go`, and `gate/attribute_bounds_test.go` holds them
+  equal to the model's copy and puts the largest set of each writer, merged, to
+  the exit check.
 - **An account lies in the namespace its backend declared.** `Accepts.Accounts`
   is a prefix. The empty one is the library namespace, for the backends that
   answer for accounts the account module keeps; a backend that is not for
@@ -162,6 +181,11 @@ here must not cross, and how to run it.
   through the packages outside the directory that it imports.
   `gate/deps_test.go` holds the gateway's closure to the same and, beyond it, to
   no store, no key-value primitive, no event bus and no settings module.
+  `mount/deps_test.go` holds the mount module's closure to no gateway, no
+  credential backend, no store, no key-value primitive, no event bus, no settings
+  module and no tenant: it reaches the gateway through the interface alone, so
+  that a host's own gateway takes it in and importing its package registers no
+  gateway with every binary that imports this one.
 - **The capability interfaces one module delivers have pairwise disjoint method
   names.** A module has one instance and `core.Resolve` asserts it against each
   delivered interface, so two interfaces whose methods share a name with
@@ -169,19 +193,49 @@ here must not cross, and how to run it.
   capability interface is checked against the module's other interfaces for a
   clash before it is added, and each module carries a compile-time
   `var _ authn.X = (*product)(nil)` assertion for everything it delivers.
+- **A setting of `authn.*` or `tenant.admission.*` is never writable through a
+  surface a tenant or an ordinary administrator can reach.** A holder of a
+  settings write permission could relax a back-off, a budget, a prefix list or a
+  session period at runtime, and `authn` offers only the retrospective `Warn`
+  and audit row, never a block; the requirement is therefore on the host's own
+  management surface, and `authn` does not check that a host honours it. The
+  switches that open a check rather than tighten it are configuration, read from
+  the primary source alone and not settings for the same reason: the account
+  module's `signup` and `auto-link`, the gateway's `endpoints` and
+  `mount.allow-insecure`, and the admission layer's `endpoints`.
 - **Which endpoint the routes go on and which origins the cross-origin check
   trusts are each decided in one place.** `internal/mount` holds `Endpoint` and
-  `TrustedOrigins` with `CrossOrigin`. The gateway is the only caller today; the
-  module that mounts routes does not exist yet, and when it does it calls the
-  same functions. The gateway cannot hand its check to the Mounter, because a
-  host may supply a `Gate` of its own, so each builds an instance from the same
-  rule. Every trusted origin is held in the form a browser sends it, and an entry
-  that cannot be turned into one is a startup failure, never skipped. A module
-  that derives the trusted set again, or picks a default endpoint by a rule of
-  its own, is the shape to reject. The gateway judges the
+  `TrustedOrigins` with `CrossOrigin`. The gateway and the module that mounts
+  routes both call the same functions: `pkg/authn/mount` reads the same keys and
+  builds its registrations from them. The gateway cannot hand its check to the
+  Mounter, because a host may supply a `Gate` of its own, so each builds an
+  instance from the same rule. Every trusted origin is held in the form a browser
+  sends it, and an entry that cannot be turned into one is a startup failure,
+  never skipped. A module that derives the trusted set again, or picks a default
+  endpoint by a rule of its own, is the shape to reject. The gateway judges the
   endpoint the routes go on — known, guarded, outside the admission layer and
   outside `tenant.resolve.endpoints` — when the key names one, and when it is
   empty only if a module that mounts routes delivers a `Mounter`.
+- **What every handler mounted through a `Mounter` shares is in
+  `internal/mount`, written once.** The closed set of problem codes, each with
+  the one status it is answered in, and the writers that answer in them: `Fail`
+  for the 400s, the 409s and the 415, `Unauthorized` and `StepUpRequired` for the
+  401s, `Forbidden`, `Throttled`, `Unavailable` and `Busy`. The request body
+  decoder `Decode`, which takes only `application/json` and holds a body to 64
+  KiB, a body over it being a 400 `bad-request` like every other body that is
+  not one object. The wrapper `Wrap`, which every registration passes through: it
+  puts `Cache-Control: no-store` on the response from the start and holds an
+  unsafe method that is not a callback to the cross-origin check before the
+  handler is called. `AllowCallback`, which puts the bypass for a redirect back
+  on the `Mounter`'s own check and never on the gateway's. A handler that writes
+  a problem body, reads a JSON body or checks the origin in a way of its own is
+  the shape to reject. A 401 that a handler or `Wrap` writes offers `Bearer` and
+  `Cookie` and never `Basic`, so that a page's `fetch` cannot make the browser
+  open its own password prompt, and its realm is the endpoint's name,
+  `Mounter.Endpoint()`, which is the realm the gateway writes on that endpoint.
+  `mounttest` is the `Mounter` for the tests of those modules: it puts every
+  registration through the real `Wrap`, records the kind of each, and gives a
+  request the identity a test chose.
 - **A request to a URL an outside party chose goes through `internal/egress`.**
   The client it builds judges every connection attempt on the address actually
   connected to, speaks https only, follows no redirect, caps a response body,
@@ -252,14 +306,23 @@ here must not cross, and how to run it.
   authentication time, the account namespaces other than `static.`, the
   capabilities a backend declares in `Accepts` and the reserved attribute prefixes
   need the gateway's clock or the backends it holds and are not checked. The
-  shapes and bounds it does restate are a second copy of the gateway's, and a
-  change to one is a change to the other;
+  totals of an identity's attribute set and the longest key and value an entry
+  may have are not copied: it reads them from `internal/model/bounds.go`, and
+  `gate/attribute_bounds_test.go` holds the exit check's own constants equal to
+  them. The other shapes and bounds it restates, the method count, the account
+  format, the backend name and the provider's UUID text, are a second copy of the
+  gateway's, and a change to one is a change to the other;
   `TestAuthntestAndTheExitCheckAgreeOnEveryShapeAndBound` in
-  `gate/exitcheck_parity_test.go` is the only thing that holds the two
+  `gate/exitcheck_parity_test.go` is the only thing that holds those two
   together. A `testing.TB` is no barrier to
   production code, since a value that nobody runs is a valid one. The only
   defence is the dependency test in this directory, which fails `go test` for any
-  package of the `pkg` module that imports it in a file that is not a test. That
+  package of the `pkg` module that imports it in a file that is not a test, with
+  one exception: `internal/mount/mounttest`, which builds the identity of each
+  request it serves with `authntest`, is the only package besides `authntest`
+  that imports it outside a test file. The same test holds `mounttest` to the
+  rule: a package that imports it outside a test file registers routes that no
+  gateway guards. That
   guard covers the `pkg` module only: the example hosts are separate modules in
   `go.work`, so every module there that imports `authn` carries its own copy of
   the check (`examples/orders-host/authntest_test.go` and

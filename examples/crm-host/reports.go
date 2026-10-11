@@ -11,6 +11,7 @@ import (
 
 	"github.com/gin-gonic/gin"
 
+	"github.com/vislake/speed/pkg/authn"
 	"github.com/vislake/speed/pkg/core"
 	"github.com/vislake/speed/pkg/db"
 	"github.com/vislake/speed/pkg/event"
@@ -132,6 +133,7 @@ type reportsProduct struct {
 	db       db.Database
 	store    kv.KV
 	settings settings.Store
+	accounts authn.Accounts
 }
 
 // stageTotal is one row of the pipeline report: how many of the tenant's deals
@@ -171,7 +173,7 @@ type pipelineReport struct {
 // deal is not paired with the other tenant's stage of the same key.
 func (p *reportsProduct) pipeline(c *gin.Context) {
 	ctx := c.Request.Context()
-	self, ok := memberOf(c, pipelineReportRoute)
+	self, ok := memberOf(c, p.db, pipelineReportRoute)
 	if !ok {
 		return
 	}
@@ -273,14 +275,14 @@ type leaderboardView struct {
 // leaderboard answers who won the most, in one currency: the tenant's deals in
 // a stage of kind won, grouped by owner, with the owners' names.
 //
-// Two joins meet in the statement. The stages are joined through the deal's
-// relation, which is how the filter knows to put the tenant condition on them;
-// the users table carries no tenant, and is joined by a condition written as
-// text. The statement names no tenant: the deals are the scoped side, and the
-// filter puts the condition on them and on their stages.
+// The stages are joined through the deal's relation, which is how the filter
+// knows to put the tenant condition on them. The owner is an account identifier
+// and names no foreign key; its display name is read through the account store,
+// one lookup per leader. The statement names no tenant: the deals are the
+// scoped side, and the filter puts the condition on them and on their stages.
 func (p *reportsProduct) leaderboard(c *gin.Context) {
 	ctx := c.Request.Context()
-	self, ok := memberOf(c, leaderboardRoute)
+	self, ok := memberOf(c, p.db, leaderboardRoute)
 	if !ok {
 		return
 	}
@@ -291,12 +293,11 @@ func (p *reportsProduct) leaderboard(c *gin.Context) {
 	handle := p.db.DB().WithContext(ctx)
 	var rows []leader
 	err := handle.Model(&Deal{}).
-		Select(dealTable+".owner_id AS owner_id, users.display_name AS display_name, COUNT(*) AS won, "+
+		Select(dealTable+".owner_id AS owner_id, COUNT(*) AS won, "+
 			"CAST(SUM("+dealTable+".amount) AS BIGINT) AS amount").
 		InnerJoins("Stage", handle.Omit("*")).
-		Joins("JOIN users ON users.id = "+dealTable+".owner_id").
 		Where(`"Stage".kind = ? AND `+dealTable+".currency = ?", stageWon, currency).
-		Group(dealTable + ".owner_id, users.display_name").
+		Group(dealTable + ".owner_id").
 		Order("amount DESC, owner_id").
 		Scan(&rows).Error
 	if err != nil {
@@ -304,10 +305,26 @@ func (p *reportsProduct) leaderboard(c *gin.Context) {
 		writeError(c, nethttp.StatusServiceUnavailable, "the deal table cannot be read")
 		return
 	}
+	for i := range rows {
+		rows[i].DisplayName = p.ownerName(ctx, rows[i].OwnerID)
+	}
 	if rows == nil {
 		rows = []leader{}
 	}
 	c.JSON(nethttp.StatusOK, leaderboardView{Tenant: string(self.TenantID), Currency: currency, Leaders: rows})
+}
+
+// ownerName reads the display name of an account identifier through the account
+// store, empty when it is empty or the account is gone.
+func (p *reportsProduct) ownerName(ctx context.Context, id string) string {
+	if id == "" {
+		return ""
+	}
+	account, err := p.accounts.Get(ctx, authn.AccountID(id))
+	if err != nil {
+		return ""
+	}
+	return account.DisplayName
 }
 
 // revenueView is one currency's line of a tenant's won revenue.
@@ -326,7 +343,7 @@ type revenueList struct {
 // projection has counted it. The read names no tenant; the filter scopes it.
 func (p *reportsProduct) revenue(c *gin.Context) {
 	ctx := c.Request.Context()
-	if _, ok := memberOf(c, revenueRoute); !ok {
+	if _, ok := memberOf(c, p.db, revenueRoute); !ok {
 		return
 	}
 	var rows []WonRevenue
@@ -363,7 +380,7 @@ type deliveriesView struct {
 // filter scopes the read.
 func (p *reportsProduct) deliveries(c *gin.Context) {
 	ctx := c.Request.Context()
-	if _, ok := memberOf(c, deliveriesRoute); !ok {
+	if _, ok := memberOf(c, p.db, deliveriesRoute); !ok {
 		return
 	}
 	var rows []WebhookDelivery
@@ -413,7 +430,7 @@ func init() {
 	registerApplication(application{
 		module: reportsModule(),
 		runsOn: []string{serveCommand},
-		models: []any{Deal{}, PipelineStage{}, User{}, WonRevenue{}, WebhookDelivery{}},
+		models: []any{Deal{}, PipelineStage{}, WonRevenue{}, WebhookDelivery{}},
 	})
 }
 
@@ -433,6 +450,7 @@ func reportsModule() core.Module {
 			{Token: (*kv.KV)(nil)},
 			{Token: (*settings.Store)(nil)},
 			{Token: (*event.Bus)(nil)},
+			{Token: (*authn.Accounts)(nil)},
 		},
 		Resources: []any{
 			reportsSettingsSchema(),
@@ -456,7 +474,13 @@ func reportsModule() core.Module {
 			if err != nil {
 				return nil, err
 			}
-			return &reportsProduct{released: released{log: logger}, db: database, store: store, settings: surface}, nil
+			accounts, err := core.Resolve[authn.Accounts](reg)
+			if err != nil {
+				return nil, err
+			}
+			return &reportsProduct{
+				released: released{log: logger}, db: database, store: store, settings: surface, accounts: accounts,
+			}, nil
 		},
 
 		Init: func(_ context.Context, reg *core.Registry, instance any) error {

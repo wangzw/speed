@@ -19,6 +19,7 @@ func (*fake) Optional(string, string, gin.HandlerFunc, ...Option) {}
 func (*fake) Guarded(string, string, gin.HandlerFunc, ...Option)  {}
 func (*fake) Callback([]string, string, gin.HandlerFunc)          {}
 func (*fake) Base() string                                        { return "" }
+func (*fake) Endpoint() string                                    { return "" }
 func (*fake) PublicURL() string                                   { return "" }
 func (*fake) CSRF() *http.CrossOriginProtection                   { return nil }
 
@@ -36,7 +37,7 @@ func TestMounterHasExactlyTheMethodsTheDesignNames(t *testing.T) {
 	}
 	slices.Sort(got)
 
-	want := []string{"Base", "CSRF", "Callback", "Guarded", "Optional", "Public", "PublicURL"}
+	want := []string{"Base", "CSRF", "Callback", "Endpoint", "Guarded", "Optional", "Public", "PublicURL"}
 	if !slices.Equal(got, want) {
 		t.Errorf("Mounter methods = %v, want %v", got, want)
 	}

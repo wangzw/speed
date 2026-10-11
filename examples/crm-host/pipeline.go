@@ -142,7 +142,7 @@ type stageList struct {
 // tenant condition; the filter puts it there.
 func (p *pipelineProduct) listStages(c *gin.Context) {
 	ctx := c.Request.Context()
-	if _, ok := memberOf(c, listStagesRoute); !ok {
+	if _, ok := memberOf(c, p.db, listStagesRoute); !ok {
 		return
 	}
 	var stages []PipelineStage
@@ -199,7 +199,7 @@ func (s stageRequest) Validate() error {
 // changed.
 func (p *pipelineProduct) createStage(c *gin.Context) {
 	ctx := c.Request.Context()
-	self, ok := memberOf(c, createStageRoute)
+	self, ok := memberOf(c, p.db, createStageRoute)
 	if !ok {
 		return
 	}
@@ -259,7 +259,7 @@ func (s stagePatch) Validate() error {
 // the filter's to fill from the request, as the condition it adds is.
 func (p *pipelineProduct) patchStage(c *gin.Context) {
 	ctx := c.Request.Context()
-	self, ok := memberOf(c, patchStageRoute)
+	self, ok := memberOf(c, p.db, patchStageRoute)
 	if !ok {
 		return
 	}

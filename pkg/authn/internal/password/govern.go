@@ -134,3 +134,12 @@ func (g *Governor) Hash(ctx context.Context, p Params, password string, wait tim
 	defer release()
 	return p.Hash(password)
 }
+
+// Hold takes the capacity one derivation of memoryKiB would take and keeps it
+// until the returned release is called, with nothing derived. It waits for the
+// capacity as a derivation does and is refused in the same ways. A caller that
+// has to keep a share across steps takes it here, and a case that has to find
+// the Governor full holds it.
+func (g *Governor) Hold(ctx context.Context, memoryKiB int64, wait time.Duration) (release func(), err error) {
+	return g.acquire(ctx, memoryKiB, wait)
+}

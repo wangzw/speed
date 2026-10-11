@@ -110,7 +110,7 @@ func api(method, path string, tenant tenantRef, cred credential, body any) reque
 //
 // The owners sign in once and send every request of a case with the session
 // token they get, as a client does. A login costs a password derivation, which
-// is the users module's doing and not what these cases are about, and under
+// is the account module's doing and not what these cases are about, and under
 // load that cost is what the gate's call budget runs out on.
 type dealsWorld struct {
 	c              *crmCase
@@ -176,7 +176,7 @@ func openAccount(t *testing.T, h *crmHost, ref tenantRef, cred credential, id st
 }
 
 // sessionActor is how the journal names a user who sent a request with a
-// session token: by the account, which is the user identifier.
+// session cookie: by the account, which is the account identifier.
 func sessionActor(u userRef) string { return u.ID }
 
 // stageDef is a stage as a client defines it.

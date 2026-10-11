@@ -9,8 +9,8 @@
 -- is therefore refused by the database as well as by the look-up the module
 -- makes first. The references need the pipeline and accounts migrations
 -- applied first, and the deals module declares a requirement on each of those
--- modules' table tokens for that alone; the owner's reference to the users
--- table is ordered the same way, through the users module's token.
+-- modules' table tokens for that alone. The owner is an account identifier and
+-- names no foreign key.
 --
 -- The amount is in the currency's minor units, as a 64-bit integer, so every
 -- amount a client can send is stored exactly. version is the deal's revision:
@@ -24,7 +24,7 @@ CREATE TABLE deals (
     amount         BIGINT    NOT NULL CHECK (amount >= 0),
     currency       TEXT      NOT NULL,
     stage_key      TEXT      NOT NULL,
-    owner_id       TEXT      NOT NULL REFERENCES users (id),
+    owner_id       TEXT      NOT NULL,
     version        BIGINT    NOT NULL CHECK (version >= 1),
     expected_close DATE,
     closed_at      DATETIME,

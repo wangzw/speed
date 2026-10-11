@@ -420,8 +420,8 @@ flowchart TD
 
 | 能力 | 状态 | 代码 |
 |---|---|---|
-| 根包的 `Decider`、`Decision`、`Action` 常量 | 未实现 | `pkg/authn/decide.go` `Decider`、`Decision`、`Action`。缺：全部 |
-| 根包的 `ScopeGuard` | 部分实现 — 接口与网关对它的可选取用已在；交付方 `tenant.admission` 归 [tenant.admission](design-tenant-admission.md) | `pkg/authn/scope.go` `ScopeGuard`；`pkg/authn/gate/gate.go` `wire` |
+| 根包的 `Decider`、`Decision`、`Action` 常量 | 已实现 | `pkg/authn/decide.go` `Decider`、`Decision`、`Action` |
+| 根包的 `ScopeGuard` | 已实现 — 接口、网关对它的可选取用与交付方 `tenant.admission` 都已在 | `pkg/authn/scope.go` `ScopeGuard`；`pkg/authn/gate/gate.go` `wire`；`pkg/tenant/admission/admission.go` `(*layer).Covers` |
 | `authn.admin` 模块：注册、必需与可选依赖、缺审计的启动失败、路由组的挂出与启动诊断 | 未实现 | `pkg/authn/admin` `Module`、`Prepare`、`Init`、`Start`。缺：全部 |
 | 处理器的判定顺序：冒充检查、`Decider` 取用、强度核验、强制审计、失败补行 | 未实现 | `pkg/authn/admin` `authorize`、`mandatoryAudit`。缺：全部 |
 | `Decision` 的归属解析 | 未实现 | `pkg/authn/admin` `resolveOwner`。缺：全部 |

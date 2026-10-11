@@ -13,6 +13,7 @@ import (
 	"gorm.io/gorm"
 	"gorm.io/gorm/clause"
 
+	"github.com/vislake/speed/pkg/authn"
 	"github.com/vislake/speed/pkg/core"
 	"github.com/vislake/speed/pkg/db"
 	speedhttp "github.com/vislake/speed/pkg/http"
@@ -75,6 +76,11 @@ var accountsMigrations = subtree(accountsMigrationRoot, "migrations/accounts")
 // convention, and every statement this host issues on it from a request names
 // no tenant.
 //
+// This Account is the CRM's customer company and is not the identity system's
+// account (authn.Account): the two share the word and nothing else. What names
+// one of these is the row's own identifier; what names a person is the
+// identity system's account identifier, which the owner column carries.
+//
 // Contacts is the association the detail preloads. It names the account column
 // alone, and the tenant half of the reference is the filter's: the filter puts
 // the tenant condition on the preloaded rows as on every read of a scoped
@@ -82,18 +88,19 @@ var accountsMigrations = subtree(accountsMigrationRoot, "migrations/accounts")
 // reference carries both columns, which is what the database enforces.
 type Account struct {
 	tenant.Model
-	ID        string         `gorm:"column:id;primaryKey"`
-	Name      string         `gorm:"column:name;not null"`
-	Domain    string         `gorm:"column:domain;not null"`
-	Industry  string         `gorm:"column:industry;not null"`
+	ID       string `gorm:"column:id;primaryKey"`
+	Name     string `gorm:"column:name;not null"`
+	Domain   string `gorm:"column:domain;not null"`
+	Industry string `gorm:"column:industry;not null"`
+	// Owner is the account identifier of the member who owns this record. It
+	// carries no foreign key: the accounts of the identity system live in
+	// another module's tables, and a cross-module reference would couple the
+	// two migrations' order.
 	Owner     string         `gorm:"column:owner;not null"`
 	CreatedAt time.Time      `gorm:"column:created_at;not null"`
 	UpdatedAt time.Time      `gorm:"column:updated_at;not null"`
 	DeletedAt gorm.DeletedAt `gorm:"column:deleted_at"`
 	Contacts  []Contact      `gorm:"foreignKey:AccountID;references:ID"`
-	// OwnerUser is the CRM user the owner column names, read by a join. The
-	// users table is global.
-	OwnerUser User `gorm:"foreignKey:Owner;references:ID"`
 }
 
 // TableName fixes the table this model maps to.
@@ -185,8 +192,9 @@ type accountPage struct {
 // accountsProduct is the accounts module's product.
 type accountsProduct struct {
 	released
-	db       db.Database
-	settings settings.Store
+	db          db.Database
+	settings    settings.Store
+	memberships authn.Memberships
 }
 
 // accountsTable marks the product as the accounts module's.
@@ -225,7 +233,7 @@ func (a accountRequest) Validate() error {
 // conflict it is.
 func (p *accountsProduct) createAccount(c *gin.Context) {
 	ctx := c.Request.Context()
-	self, ok := memberWith(c, roleRep)
+	self, ok := memberWith(c, p.db, roleRep)
 	if !ok {
 		return
 	}
@@ -233,9 +241,9 @@ func (p *accountsProduct) createAccount(c *gin.Context) {
 	if !bindBody(c, &body) {
 		return
 	}
-	owner := self.UserID
+	owner := string(self.Account)
 	if body.Owner != "" {
-		belongs, err := isMember(ctx, p.db, body.Owner)
+		belongs, err := isMember(ctx, p.memberships, authn.AccountID(body.Owner), self.TenantID)
 		if err != nil {
 			log.FromContext(ctx).Error("reading the owner's membership", "error", err)
 			writeError(c, nethttp.StatusServiceUnavailable, "the membership table cannot be read")
@@ -287,7 +295,7 @@ func (p *accountsProduct) createAccount(c *gin.Context) {
 // request's context, and neither names a tenant.
 func (p *accountsProduct) listAccounts(c *gin.Context) {
 	ctx := c.Request.Context()
-	self, ok := memberWith(c, roleViewer)
+	self, ok := memberWith(c, p.db, roleViewer)
 	if !ok {
 		return
 	}
@@ -344,7 +352,7 @@ func (p *accountsProduct) listAccounts(c *gin.Context) {
 // a statement of its own on the same context.
 func (p *accountsProduct) getAccount(c *gin.Context) {
 	ctx := c.Request.Context()
-	if _, ok := memberWith(c, roleViewer); !ok {
+	if _, ok := memberWith(c, p.db, roleViewer); !ok {
 		return
 	}
 	id := c.Param("id")
@@ -398,7 +406,7 @@ func (a accountPatch) Validate() error {
 // the way a zero field of the struct would be.
 func (p *accountsProduct) patchAccount(c *gin.Context) {
 	ctx := c.Request.Context()
-	if _, ok := memberWith(c, roleRep); !ok {
+	if _, ok := memberWith(c, p.db, roleRep); !ok {
 		return
 	}
 	id := c.Param("id")
@@ -442,7 +450,7 @@ func (o ownerRequest) Validate() error {
 // above. It writes the one column.
 func (p *accountsProduct) changeOwner(c *gin.Context) {
 	ctx := c.Request.Context()
-	if _, ok := memberWith(c, roleRep); !ok {
+	if _, ok := memberWith(c, p.db, roleRep); !ok {
 		return
 	}
 	id := c.Param("id")
@@ -454,7 +462,8 @@ func (p *accountsProduct) changeOwner(c *gin.Context) {
 		writeError(c, nethttp.StatusNotFound, errNoSuchAccount.Error())
 		return
 	}
-	belongs, err := isMember(ctx, p.db, body.Owner)
+	tenantID, _ := tenant.FromContext(ctx)
+	belongs, err := isMember(ctx, p.memberships, authn.AccountID(body.Owner), tenantID)
 	if err != nil {
 		log.FromContext(ctx).Error("reading the owner's membership", "error", err)
 		writeError(c, nethttp.StatusServiceUnavailable, "the membership table cannot be read")
@@ -495,7 +504,7 @@ func (p *accountsProduct) answerChanged(c *gin.Context, id string, res *gorm.DB,
 // through the models leaves them out from then on. The statements are one
 // transaction, so an account is never deleted with its contacts left showing.
 func (p *accountsProduct) deleteAccount(c *gin.Context) {
-	if _, ok := memberWith(c, roleAdmin); !ok {
+	if _, ok := memberWith(c, p.db, roleAdmin); !ok {
 		return
 	}
 	p.removeAccount(c, false, "deleting an account")
@@ -505,7 +514,7 @@ func (p *accountsProduct) deleteAccount(c *gin.Context) {
 // deleted or not; an owner only. The contacts go first, because their rows
 // reference the account's.
 func (p *accountsProduct) purgeAccount(c *gin.Context) {
-	if _, ok := memberWith(c, roleOwner); !ok {
+	if _, ok := memberWith(c, p.db, roleOwner); !ok {
 		return
 	}
 	p.removeAccount(c, true, "purging an account")
@@ -622,7 +631,7 @@ func init() {
 	registerApplication(application{
 		module: accountsModule(),
 		runsOn: []string{serveCommand},
-		models: []any{Account{}, Contact{}, Membership{}},
+		models: []any{Account{}, Contact{}, MemberRole{}},
 		journalled: []string{
 			createAccountRoute, patchAccountRoute, deleteAccountRoute, ownerAccountRoute, purgeAccountRoute,
 		},
@@ -635,9 +644,10 @@ func init() {
 // It requires the roster, which installs the filter the accounts, contacts and
 // memberships statements are scoped by, so a command running this module
 // without it fails at resolution rather than running unscoped. It requires the
-// settings surface for the page size, and the users module's table token,
-// optionally, because the accounts table references the users table: the
-// requirement is what orders the two migrations.
+// settings surface for the page size, and the membership store for the owner
+// check. The accounts table's owner column names an account of the identity
+// system's store and carries no foreign key to it, so no table token orders
+// this module's migration after another's.
 //
 // It is built after the roster, and so after the HTTP entry module; it releases
 // nothing (see recordClose).
@@ -649,7 +659,7 @@ func accountsModule() core.Module {
 			{Token: (*db.Database)(nil)},
 			{Token: (*tenant.Catalog)(nil)},
 			{Token: (*settings.Store)(nil)},
-			{Token: (*usersTable)(nil), Optional: true},
+			{Token: (*authn.Memberships)(nil)},
 		},
 		Provides: []core.Provision{
 			{Token: (*accountsTable)(nil), Exclusive: true},
@@ -673,7 +683,13 @@ func accountsModule() core.Module {
 			if err != nil {
 				return nil, err
 			}
-			return &accountsProduct{released: released{log: logger}, db: database, settings: surface}, nil
+			memberships, err := core.Resolve[authn.Memberships](reg)
+			if err != nil {
+				return nil, err
+			}
+			return &accountsProduct{
+				released: released{log: logger}, db: database, settings: surface, memberships: memberships,
+			}, nil
 		},
 
 		Init: func(_ context.Context, reg *core.Registry, instance any) error {

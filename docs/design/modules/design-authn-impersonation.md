@@ -558,12 +558,12 @@ flowchart TD
 
 ## 实现状态
 
-下表逐项列出本模块的能力。`pkg/authn/impersonation` 包不存在；根包里与冒充有关的只有 `ScopeGuard`、`Identity.Impersonating` 与网关的范围规则，其余每一项都是未实现。
+下表逐项列出本模块的能力。`pkg/authn/impersonation` 包不存在；根包里与冒充有关的是接缝与值类型、哨兵、`ScopeGuard`、`Identity.Impersonating` 与网关的范围规则，其余每一项都是未实现。
 
 | 能力 | 状态 | 代码 |
 |---|---|---|
-| 根包的接缝与值类型：`Impersonation`、`ImpersonationRequest`、`ImpersonationGrant`、`GrantQuery` | 未实现 | — |
-| 冒充的哨兵：`ErrImpersonationRestricted`、`ErrImpersonationActive`、`ErrNotImpersonating`、`ErrImpersonationNeedsSession` | 未实现 | — |
+| 根包的接缝与值类型：`Impersonation`、`ImpersonationRequest`、`ImpersonationGrant`、`GrantQuery` | 已实现 | `pkg/authn/impersonation.go` `Impersonation`；`pkg/authn/internal/model/impersonation.go` `ImpersonationRequest`、`ImpersonationGrant`、`GrantQuery` |
+| 冒充的哨兵：`ErrImpersonationRestricted`、`ErrImpersonationActive`、`ErrNotImpersonating`、`ErrImpersonationNeedsSession` | 已实现 | `pkg/authn/errors.go` `ErrImpersonationRestricted`、`ErrImpersonationActive`、`ErrNotImpersonating`、`ErrImpersonationNeedsSession` |
 | `ScopeGuard` 的根包接口 | 已实现 — 网关对它的可选取用与冒充范围规则也已在 | `pkg/authn/scope.go` `ScopeGuard`；`pkg/authn/gate/serve.go` `impersonationAdmitted` |
 | 模块 `authn.impersonation` 的登记与阶段行为（`Prepare`、`New`、`Migrate`、`Init`、`Start`、`Stop`），含 `var _` 编译期断言 | 未实现 | — |
 | 表 `authn_impersonations`、部分唯一索引与按方言的迁移集 | 未实现 | — |

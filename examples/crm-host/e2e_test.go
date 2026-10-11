@@ -5,15 +5,15 @@ import (
 	"database/sql"
 	"encoding/json"
 	"errors"
-	"fmt"
 	"io"
+	"log/slog"
 	"maps"
 	nethttp "net/http"
 	"os"
 	"path/filepath"
+	"reflect"
 	"slices"
 	"sort"
-	"strconv"
 	"strings"
 	"sync"
 	"testing"
@@ -109,21 +109,19 @@ func (c *crmCase) requireTables(after string) {
 // only what it runs would build the roster's and the journal's tables here and
 // leave the users, memberships and settings tables unbuilt.
 //
-// The memberships table references the users table, and its migration is
-// applied after the users one because the members module requires the users
-// module's table token; the migration would fail on PostgreSQL otherwise, since
-// "members" sorts before "users". A membership naming no user is refused
-// through the locator the host reads the database with, on SQLite as on
-// PostgreSQL.
+// The role table leads its key with the tenant column and refuses an empty one,
+// which is the write a statement issued without the tenant filter would make.
+// The membership relation itself is the account module's own table, migrated
+// with that module.
 func TestMigrateBuildsEveryDeclaredTable(t *testing.T) {
 	forEachStack(t, func(t *testing.T, c *crmCase) {
 		c.migrate()
 		c.requireTables("migrate")
 
-		_, err := c.sql().Exec(c.rebind("INSERT INTO memberships (tenant_id, user_id, role, granted_at) VALUES (?, ?, ?, ?)"),
-			c.tenantNamed("acme").ID, "u_nobody", roleRep, time.Now().UTC())
+		_, err := c.sql().Exec(c.rebind("INSERT INTO member_roles (tenant_id, account_id, role, granted_at) VALUES (?, ?, ?, ?)"),
+			"", "u_nobody", roleRep, time.Now().UTC())
 		if err == nil {
-			t.Errorf("a membership naming no user was written: the reference to the users table is not enforced")
+			t.Errorf("a member role with an empty tenant was written: the scoped key is not enforced")
 		}
 
 		other := newCase(t, c.stack)
@@ -152,54 +150,40 @@ func TestEveryStackServesTheSamePath(t *testing.T) {
 		c.grant(globex, bob, roleRep)
 		h := c.serve()
 
-		// The login route is exempt, so a credential that does not sign
-		// anyone in is answered by the login handler, with its error body,
-		// rather than by the gateway, whose refusals are problem details
-		// with no error member. The frozen exemption table the gateway
-		// lists at startup names the route.
-		wrong := h.post(t, accountEndpoint, "/login", "", basicCredential{user: alice.Email, password: "not it"}, nil)
+		// A login runs through the flow routes, which are public: they are
+		// mounted at the base path on the account endpoint, and a login that
+		// completes sets the session cookie. A credential that does not sign
+		// anyone in is answered by the flow handler, not the gateway.
+		wrong := h.post(t, accountEndpoint, loginFlowPath, "", noCredential{},
+			map[string]any{"method": "password", "input": map[string]string{"identifier": alice.Email, "password": "not it"}})
 		expect(t, "a login with the wrong password", wrong, nethttp.StatusUnauthorized)
-		var refusal apiError
-		wrong.decode(t, &refusal)
-		if refusal.Error == "" {
-			t.Errorf("the login's refusal carries no error text, so the gateway answered it: %q", wrong.body)
-		}
-		if _, ok := findRecord(h.output(), "authn: the exempt routes, frozen", accountEndpoint, loginRoute); !ok {
-			t.Errorf("the frozen exemption table does not list %s on %s; the run wrote:\n%s",
-				loginRoute, accountEndpoint, h.outputForReport())
-		}
 
 		token := h.login(t, alice)
 
-		viaToken := h.members(t, acme.Alias, bearer(token))
+		viaSession := h.members(t, acme.Alias, bearer(token))
 		// The context carries the identifier, never the alias the request
 		// named: renaming a tenant rewrites no row.
-		if viaToken.Tenant != acme.ID {
+		if viaSession.Tenant != acme.ID {
 			t.Errorf("the listing ran in tenant %q, want the identifier %q behind the alias %q",
-				viaToken.Tenant, acme.ID, acme.Alias)
+				viaSession.Tenant, acme.ID, acme.Alias)
 		}
-		if want := alice.ID; viaToken.Caller != want {
-			t.Errorf("a bearer request was answered for %q, want %q", viaToken.Caller, want)
-		}
-		if viaToken.Role != roleOwner {
-			t.Errorf("the caller's role reads %q, want %q", viaToken.Role, roleOwner)
-		}
-		requireMembers(t, viaToken, alice)
-
-		// A CRM user's Basic credential reaches the login and nothing else: the
-		// gateway hands Basic to the one backend that takes it, the operators'
-		// table, which does not know the user and refuses the credential.
-		expect(t, "a CRM user's Basic credential on the API",
-			h.get(t, apiEndpoint, "/members", acme.Alias, basic(alice)), nethttp.StatusUnauthorized)
-		viaSession := h.members(t, acme.Alias, signedIn(alice))
 		if want := alice.ID; viaSession.Caller != want {
 			t.Errorf("a signed-in request was answered for %q, want %q: one person is one identity", viaSession.Caller, want)
 		}
+		if viaSession.Role != roleOwner {
+			t.Errorf("the caller's role reads %q, want %q", viaSession.Role, roleOwner)
+		}
 		requireMembers(t, viaSession, alice)
 
+		// A CRM user's Basic credential reaches no backend: the gateway hands
+		// Basic to the one backend that takes it, the operators' table, which
+		// does not know the user and refuses the credential.
+		expect(t, "a CRM user's Basic credential on the API",
+			h.get(t, apiEndpoint, "/members", acme.Alias, basic(alice)), nethttp.StatusUnauthorized)
+
 		me := h.me(t, bearer(token))
-		if me.User == nil || me.User.ID != alice.ID || me.User.Email != alice.Email {
-			t.Errorf("GET /me answered user %+v, want %s (%s)", me.User, alice.ID, alice.Email)
+		if me.Account == nil || me.Account.ID != alice.ID || me.Account.Email != alice.Email {
+			t.Errorf("GET /me answered account %+v, want %s (%s)", me.Account, alice.ID, alice.Email)
 		}
 		wantTenants := []meTenant{{ID: acme.ID, Alias: acme.Alias, Status: "active", Role: roleOwner}}
 		if !slices.Equal(me.Tenants, wantTenants) {
@@ -215,7 +199,7 @@ func TestEveryStackServesTheSamePath(t *testing.T) {
 		// A subtest of its own, so that what it finds does not end the
 		// rest of the path.
 		t.Run("the owner grants from the API, and a second grant rewrites the role", func(t *testing.T) {
-			// The row the grant writes names no tenant: the filter fills
+			// The role row the grant writes names no tenant: the filter fills
 			// it from the request's context. The first grant inserts the
 			// row and the second rewrites the role on it. The roles differ
 			// from the one bob holds in globex, so a grant whose conflict
@@ -226,7 +210,7 @@ func TestEveryStackServesTheSamePath(t *testing.T) {
 				expect(t, "alice granting bob "+role+" in acme", granted, nethttp.StatusOK)
 				var got grantView
 				granted.decode(t, &got)
-				if got.TenantID != acme.ID || got.UserID != bob.ID || got.Role != role {
+				if got.TenantID != acme.ID || got.AccountID != bob.ID || got.Role != role {
 					t.Errorf("the grant answered %+v, want %s in %s as %s", got, bob.ID, acme.ID, role)
 				}
 			}
@@ -250,170 +234,44 @@ func TestEveryStackServesTheSamePath(t *testing.T) {
 
 		requireSpanExported(t, c, h)
 
-		expect(t, "a logout with the token", h.post(t, accountEndpoint, "/logout", "", bearer(token), nil),
+		expect(t, "a logout with the session", h.post(t, accountEndpoint, logoutPath, "", bearer(token), nil),
 			nethttp.StatusNoContent)
-		expect(t, "the token after its logout", h.get(t, accountEndpoint, "/me", "", bearer(token)),
+		expect(t, "the session after its logout", h.get(t, accountEndpoint, "/me", "", bearer(token)),
 			nethttp.StatusUnauthorized)
-		requireRefusalCause(t, h, sessionsBackendName, errUnknownSession)
 	})
-}
-
-// requireRefusalCause waits for the gateway's record of a refusal by one
-// backend and holds its cause to the text the backend refused with. The record
-// is how an operator learns why a credential was turned away; a cause that
-// reaches it masked tells them nothing.
-func requireRefusalCause(t *testing.T, h *crmHost, backend string, cause error) {
-	t.Helper()
-	var causes []string
-	if !eventually(settleLimit, func() bool {
-		causes = causes[:0]
-		for _, rec := range records(h.output()) {
-			if rec["attributed_to"] == backend && rec["outcome"] == "denied" {
-				causes = append(causes, rec["cause"])
-				if rec["cause"] == cause.Error() {
-					return true
-				}
-			}
-		}
-		return false
-	}) {
-		t.Errorf("no refusal by %s is recorded with the cause %q; the refusals it made are recorded with %q",
-			backend, cause.Error(), causes)
-	}
 }
 
 // requireSpanExported waits for the API requests' server span to leave through
 // the export backend the stack names: the in-process receiver for the OTLP
 // backend, which decodes it, the run's standard output for the stdout one. The
-// span is named for the method and the route the telemetry layer observed, and
-// read as the name of an exported span, which nothing else in the run writes.
+// span is named for the endpoint and the method the telemetry layer observed,
+// which is a string nothing else in the run writes.
 func requireSpanExported(t *testing.T, c *crmCase, h *crmHost) {
 	t.Helper()
-	name := nethttp.MethodGet + " /members"
 	if c.receiver != nil {
+		name := apiEndpoint + " " + nethttp.MethodGet
 		if !eventually(settleLimit, func() bool { return len(c.receiver.spansNamed(name)) > 0 }) {
 			t.Errorf("no span named %s reached the OTLP receiver after the requests were served", name)
 		}
 		c.receiver.requireDecoded(t)
 		return
 	}
-	spanName := `"Name":"` + name + `"`
+	spanName := `"Name":"` + apiEndpoint + ` GET"`
 	if !eventually(settleLimit, func() bool { return strings.Contains(h.output(), spanName) }) {
 		t.Errorf("no span named %s reached the run's standard output; it wrote:\n%s", spanName, h.outputForReport())
 	}
 }
 
-// sessionLifetime is the lifetime the session case writes, and lifetimeSlack
-// how far either side of it the refusal may land. The slack covers the clocks
-// the backends judge an expiry by — the store's own, or the writer's and the
-// reader's — and a second-granular expiry.
-const (
-	sessionLifetime = 3 * time.Second
-	lifetimeSlack   = time.Second
-)
-
-// TestASessionEndsWhenItsLifetimeLapses is the case for the session lifetime:
-// the setting the sessions module declares, read from the settings surface at
-// login, and honoured by the key-value backend the stack names.
-//
-// The lifetime is written as a global row before the run starts, the login
-// answers with it, and the token is honoured at once and refused once the
-// lifetime has passed — neither never, which is a store keeping it for ever,
-// nor well before, which is a store reading the lifetime in another unit.
-func TestASessionEndsWhenItsLifetimeLapses(t *testing.T) {
-	forEachStack(t, func(t *testing.T, c *crmCase) {
-		c.migrate()
-		alice := c.createUser("alice")
-		c.setGlobal(ttlSetting, sessionLifetime.String())
-		h := c.serve()
-
-		issuedAt := time.Now()
-		resp := h.post(t, accountEndpoint, "/login", "", basic(alice), nil)
-		expect(t, "a login", resp, nethttp.StatusCreated)
-		var got issued
-		resp.decode(t, &got)
-		if got.ExpiresIn != int64(sessionLifetime/time.Second) {
-			t.Errorf("the login answered expires_in %d, want the %s %s holds", got.ExpiresIn, sessionLifetime, ttlSetting)
-		}
-		expect(t, "the token at once", h.get(t, accountEndpoint, "/me", "", bearer(got.Token)), nethttp.StatusOK)
-
-		// Polled on the account endpoint, which the rate limiter does not
-		// guard, and no faster than a person would retry.
-		const every = 100 * time.Millisecond
-		var refusedAt time.Time
-		for time.Since(issuedAt) < sessionLifetime+5*lifetimeSlack {
-			if h.get(t, accountEndpoint, "/me", "", bearer(got.Token)).status == nethttp.StatusUnauthorized {
-				refusedAt = time.Now()
-				break
-			}
-			time.Sleep(every)
-		}
-		switch lived := refusedAt.Sub(issuedAt); {
-		case refusedAt.IsZero():
-			t.Errorf("the token was still honoured %s after a login whose lifetime is %s",
-				time.Since(issuedAt).Round(time.Millisecond), sessionLifetime)
-		case lived < sessionLifetime-lifetimeSlack:
-			t.Errorf("the token was refused %s after the login, before its lifetime of %s had passed",
-				lived.Round(time.Millisecond), sessionLifetime)
-		}
-	})
-}
-
-// TestALoginAndALogoutAreJournalled is the case for the two routes the sessions
-// module hands the journal, on the local stack: a login and a logout each leave
-// a request row, the action the method and the object the route as it was
-// registered, with the status the route answered. The login route is exempt
-// from the gateway and the logout is guarded, and both are journalled all the
-// same; a route dropped from the module's list is the entry that goes on
-// looking well formed and never brings a row.
-func TestALoginAndALogoutAreJournalled(t *testing.T) {
-	c := newCase(t, stackNamed(t, localStack))
-	c.migrate()
-	alice := c.createUser("alice")
-	h := c.serve()
-
-	token := h.login(t, alice)
-	expect(t, "a logout with the token", h.post(t, accountEndpoint, "/logout", "", bearer(token), nil),
-		nethttp.StatusNoContent)
-
-	for _, want := range []struct{ route, outcome string }{
-		{loginRoute, "201"},
-		{logoutRoute, "204"},
-	} {
-		c.awaitJournal(want.route+" answered "+want.outcome, func(r auditRow) bool {
-			return r.requestOn(want.route) && r.outcome == want.outcome
-		})
-	}
-}
-
-// TestALifetimeThatIsNotPositiveIssuesNoSession is the case for the lifetime a
-// store cannot keep. The key-value capability stores a value whose lifetime is
-// not positive with no expiry at all, so a login that passed such a lifetime on
-// would issue a token that never ends; the login refuses instead, and the
-// record it writes names the setting.
-func TestALifetimeThatIsNotPositiveIssuesNoSession(t *testing.T) {
-	c := newCase(t, stackNamed(t, localStack))
-	c.migrate()
-	alice := c.createUser("alice")
-	c.setGlobal(ttlSetting, (0 * time.Second).String())
-	h := c.serve()
-
-	resp := h.post(t, accountEndpoint, "/login", "", basic(alice), nil)
-	expect(t, "a login while "+ttlSetting+" is zero", resp, nethttp.StatusInternalServerError)
-	if !eventually(settleLimit, func() bool {
-		_, ok := findRecord(h.output(), "the session lifetime is not positive, so no session is issued",
-			"setting", ttlSetting)
-		return ok
-	}) {
-		t.Errorf("no record names %s as the reason the login was refused; the run wrote:\n%s",
-			ttlSetting, h.outputForReport())
-	}
-}
+// sessionCheckTTLSetting is the session module's status-cache lifetime. A case
+// that changes an account's row and reads the change on the next request sets
+// it to zero, so nothing is cached.
+const sessionCheckTTLSetting = "authn.session.check-ttl"
 
 // TestTwoReplicasShareTheirSessions is the case for replicas on shared
 // backends. The two are started together against one database and one
-// key-value store, as a rollout starts them; a token one replica issues is
-// honoured by the other, because the session lives in the store and not in the
+// key-value store, as a rollout starts them; a session cookie one replica
+// issues is honoured by the other, because the session lives in the store and
+// not in the
 // process, and a logout on the second ends the session on the first.
 func TestTwoReplicasShareTheirSessions(t *testing.T) {
 	forEachSharedStack(t, func(t *testing.T, c *crmCase) {
@@ -427,11 +285,11 @@ func TestTwoReplicasShareTheirSessions(t *testing.T) {
 		token := first.login(t, alice)
 		list := second.members(t, acme.Alias, bearer(token))
 		if want := alice.ID; list.Caller != want {
-			t.Errorf("the second replica answered a token the first issued for %q, want %q", list.Caller, want)
+			t.Errorf("the second replica answered a session the first issued for %q, want %q", list.Caller, want)
 		}
 		expect(t, "a logout on the second replica",
-			second.post(t, accountEndpoint, "/logout", "", bearer(token), nil), nethttp.StatusNoContent)
-		expect(t, "the token on the first replica after the logout on the second",
+			second.post(t, accountEndpoint, logoutPath, "", bearer(token), nil), nethttp.StatusNoContent)
+		expect(t, "the session on the first replica after the logout on the second",
 			first.get(t, accountEndpoint, "/me", "", bearer(token)), nethttp.StatusUnauthorized)
 	})
 }
@@ -506,7 +364,7 @@ func requireMembers(t *testing.T, got memberList, want ...userRef) {
 	t.Helper()
 	var ids, wantIDs []string
 	for _, m := range got.Members {
-		ids = append(ids, m.UserID)
+		ids = append(ids, m.AccountID)
 	}
 	for _, u := range want {
 		wantIDs = append(wantIDs, u.ID)
@@ -519,7 +377,7 @@ func requireMembers(t *testing.T, got memberList, want ...userRef) {
 }
 
 // TestTheRequestSurfaceKeepsTenantsApart is the case for isolation where a
-// caller can reach it: the membership layer, the gateway before resolution, the
+// caller can reach it: the admission layer, the gateway before resolution, the
 // two tenant refusals being one answer, the admin endpoint's two audiences,
 // and a disabled user.
 func TestTheRequestSurfaceKeepsTenantsApart(t *testing.T) {
@@ -531,22 +389,21 @@ func TestTheRequestSurfaceKeepsTenantsApart(t *testing.T) {
 		c.disableTenant(initech)
 		alice := c.createUser("alice")
 		c.grant(acme, alice, roleOwner)
+		// No caching of a session's status or its account, so a change to an
+		// account's row is seen on the next request.
+		c.setGlobal(sessionCheckTTLSetting, "0s")
 		h := c.serve()
 
 		t.Run("a member naming another tenant is refused, and the refusal is journalled", func(t *testing.T) {
 			sub := c.in(t)
 			resp := h.get(t, apiEndpoint, "/members", globex.Alias, signedIn(alice))
-			expect(t, "alice naming globex", resp, nethttp.StatusForbidden)
-			var body apiError
-			resp.decode(t, &body)
-			if body.Error == "" {
-				t.Errorf("the refusal carries no error text: %q", resp.body)
-			}
+			expect(t, "alice naming globex", resp, nethttp.StatusNotFound)
+			requireProblem(t, "the admission layer's refusal", resp)
 			// The layer sits inside the journal, so its refusal is a request
 			// row: the route, the status, the tenant the request named and
 			// the caller who named it.
-			sub.awaitJournal("the membership layer's refusal", func(r auditRow) bool {
-				return r.requestOn(listMembersRoute) && r.outcome == "403" &&
+			sub.awaitJournal("the admission layer's refusal", func(r auditRow) bool {
+				return r.requestOn(listMembersRoute) && r.outcome == "404" &&
 					r.tenant == globex.ID && r.actor == alice.ID
 			})
 		})
@@ -570,12 +427,29 @@ func TestTheRequestSurfaceKeepsTenantsApart(t *testing.T) {
 			disabled := h.get(t, apiEndpoint, "/members", initech.Alias, signedIn(alice))
 			unknown := h.get(t, apiEndpoint, "/members", sub.tenantNamed("nosuch").Alias, signedIn(alice))
 			// Asserted exactly, not merely as "the same": two answers that
-			// agree because both fell through to the membership layer's 403
-			// would be equal without the roster having judged anything.
+			// agree because both fell through to one 403 would be equal without
+			// the roster having judged anything.
 			expect(t, "a request naming a disabled tenant", disabled, nethttp.StatusNotFound)
 			if disabled.status != unknown.status || string(disabled.body) != string(unknown.body) {
 				t.Errorf("a disabled tenant answered %d %q and an unknown one %d %q; telling them apart enumerates the roster",
 					disabled.status, disabled.body, unknown.status, unknown.body)
+			}
+		})
+
+		t.Run("a non-member and an unknown tenant get the same shape", func(t *testing.T) {
+			// globex is a real tenant alice is not a member of, so the admission
+			// layer answers it; a tenant no one registered is resolution's to
+			// answer. Both are 404 problem details, so a caller cannot tell a
+			// tenant that does not hold them from one that does not exist.
+			nonMember := h.get(t, apiEndpoint, "/members", globex.Alias, signedIn(alice))
+			unknown := h.get(t, apiEndpoint, "/members", c.in(t).tenantNamed("none").Alias, signedIn(alice))
+			expect(t, "a non-member naming globex", nonMember, nethttp.StatusNotFound)
+			expect(t, "a caller naming an unknown tenant", unknown, nethttp.StatusNotFound)
+			requireProblem(t, "the admission layer's refusal", nonMember)
+			requireProblem(t, "resolution's refusal", unknown)
+			if got, want := nonMember.header.Get("Content-Type"), unknown.header.Get("Content-Type"); got != want {
+				t.Errorf("a non-member's refusal carries %q and an unknown tenant's %q; the two have to read alike",
+					got, want)
 			}
 		})
 
@@ -656,17 +530,22 @@ func TestTheRequestSurfaceKeepsTenantsApart(t *testing.T) {
 		})
 
 		// Last, because it leaves alice unable to sign in.
-		t.Run("a disabled user is refused on every token they hold and on a new login", func(t *testing.T) {
+		t.Run("a disabled account is refused on every session it holds and on a new login", func(t *testing.T) {
 			sub := c.in(t)
 			token := h.login(t, alice)
 			expect(t, "alice before she is disabled", h.get(t, accountEndpoint, "/me", "", signedIn(alice)), nethttp.StatusOK)
-			sub.exec("UPDATE users SET disabled = ? WHERE id = ?", true, alice.ID)
-			expect(t, "a disabled user's token the replica holds",
+			sub.exec("UPDATE authn_accounts SET status = ? WHERE id = ?", 0, alice.ID)
+			expect(t, "a disabled account's session the replica holds",
 				h.get(t, accountEndpoint, "/me", "", signedIn(alice)), nethttp.StatusUnauthorized)
-			expect(t, "a disabled user's token",
+			expect(t, "a disabled account's session",
 				h.get(t, accountEndpoint, "/me", "", bearer(token)), nethttp.StatusUnauthorized)
-			expect(t, "a disabled user's login",
-				h.post(t, accountEndpoint, "/login", "", basic(alice), nil), nethttp.StatusUnauthorized)
+			expect(t, "a disabled account's login",
+				h.post(t, accountEndpoint, loginFlowPath, "", noCredential{},
+					map[string]any{
+						"method": "password",
+						"input":  map[string]string{"identifier": alice.Email, "password": alice.Password},
+					}),
+				nethttp.StatusUnauthorized)
 		})
 	})
 }
@@ -679,9 +558,9 @@ func TestTheRequestSurfaceKeepsTenantsApart(t *testing.T) {
 // look-up is, and never a server error, and it is answered with the body the
 // look-up's is, which a third creation of the address, made once the first is
 // written, is answered with: the constraint's name and the engine's code are
-// in the driver's error alone, and no answer carries them. The derivation runs
-// at the production cost here, since its duration is what holds the two
-// apart: at the cases' own cost the second could find the first at its
+// in the driver's error alone, and no answer carries them. The creation takes a
+// plaintext password, so the derivation it runs is what holds the two apart: a
+// creation that imported an entry without deriving could find the first at its
 // look-up. The operator's credential is checked once before the two arrive:
 // the static backend derives at most as many hashes at once as it has
 // processors, so two requests that both find its cache cold would, on one
@@ -689,7 +568,6 @@ func TestTheRequestSurfaceKeepsTenantsApart(t *testing.T) {
 // the case is about.
 func TestTwoCreationsOfOneEmailAreOneSuccessAndOneConflict(t *testing.T) {
 	forEachStack(t, func(t *testing.T, c *crmCase) {
-		c.config.set("users.password-iterations", defaultHashIterations)
 		c.migrate()
 		h := c.serve()
 		u := c.userNamed("twice")
@@ -730,66 +608,149 @@ func TestTwoCreationsOfOneEmailAreOneSuccessAndOneConflict(t *testing.T) {
 	})
 }
 
-// TestAPasswordIsDerivedAtTheConfiguredCost is the case for the cost a CRM
-// user's password is derived at, on the local stack: a user created at the
-// command line and one created through the admin endpoint each store the
-// count users.password-iterations gave when they were created, and a count
-// that is not positive stops the serving command at startup, naming the item.
-// A user created at one count signs in once the deployment gives another,
-// since each hash carries its own, and the sign-in stores that user's hash
-// again at the count now given: the decoy a login naming no user is checked
-// against is derived at that count, and a user left at the old one costs
-// another time to sign in.
-// The rewritten hash is the password's: the user signs in again with it.
-func TestAPasswordIsDerivedAtTheConfiguredCost(t *testing.T) {
-	const first, moved = 1_000, 2_000
-	c := newCase(t, stackNamed(t, localStack))
-	c.config.set("users.password-iterations", first)
-	c.migrate()
-	storedCount := func(u userRef) string {
-		t.Helper()
-		var stored string
-		if err := c.sql().QueryRow(c.rebind("SELECT password_hash FROM users WHERE id = ?"), u.ID).Scan(&stored); err != nil {
-			t.Fatalf("reading the password hash of %s: %v", u.Email, err)
+// TestAWeakPasswordIsRefusedAtCreation is the case for the password policy at
+// the admin endpoint: a creation whose password is shorter than the policy
+// allows is answered 422 and writes no account, so the policy the account module
+// judges is the one the host's create path reports, and a creation that failed it
+// leaves nothing behind.
+func TestAWeakPasswordIsRefusedAtCreation(t *testing.T) {
+	forEachStack(t, func(t *testing.T, c *crmCase) {
+		c.migrate()
+		h := c.serve()
+		u := c.userNamed("weak")
+		resp := h.post(t, adminEndpoint, "/users", "", operator(),
+			map[string]string{"email": u.Email, "display_name": "weak", "password": "short"})
+		expect(t, "a creation whose password is below the policy", resp, nethttp.StatusUnprocessableEntity)
+		if n := c.count("SELECT count(*) FROM authn_accounts WHERE display_name = ?", "weak"); n != 0 {
+			t.Fatalf("the accounts table holds %d rows after a refused creation, want none", n)
 		}
-		parts := strings.Split(stored, "$")
-		if len(parts) != 4 {
-			t.Fatalf("the password hash of %s has %d parts, want 4", u.Email, len(parts))
-		}
-		return parts[1]
-	}
+	})
+}
 
-	early := c.createUser("early")
-	if got, want := storedCount(early), strconv.Itoa(first); got != want {
-		t.Errorf("a user created at the command line stores the count %s, want the configured %s", got, want)
-	}
-	c.config.set("users.password-iterations", moved)
+// TestACommandLineGrantWithNoKnownRoleWritesNothing is the case for the order the
+// command line's grant judges its inputs in: a role that is none of the four is
+// refused before any membership is written, so a failed command leaves no
+// half-written membership behind. The HTTP grant judges the same role in its
+// request body's validation, before it writes.
+func TestACommandLineGrantWithNoKnownRoleWritesNothing(t *testing.T) {
+	forEachStack(t, func(t *testing.T, c *crmCase) {
+		c.migrate()
+		acme := c.createTenant("acme")
+		alice := c.createUser("alice")
+
+		res := c.run(nil, "", "user", "grant", "--tenant-id", acme.ID, "--email", alice.Email, "--role", "bogus")
+		if res.err == nil {
+			t.Fatalf("user grant with an unknown role succeeded:\n%s", res.combined())
+		}
+		if !strings.Contains(res.stderr, errUnknownRole.Error()) {
+			t.Errorf("user grant's failure does not name the role; it wrote:\n%s", res.combined())
+		}
+		if n := c.count("SELECT count(*) FROM authn_memberships WHERE account_id = ?", alice.ID); n != 0 {
+			t.Errorf("the refused grant wrote %d memberships, want none", n)
+		}
+		if n := c.count("SELECT count(*) FROM member_roles WHERE account_id = ?", alice.ID); n != 0 {
+			t.Errorf("the refused grant wrote %d roles, want none", n)
+		}
+	})
+}
+
+// TestAPasswordIsDerivedAtTheAccountPolicy is the case for the cost a CRM user's
+// password is derived at. The served deployment reads its policy from the
+// settings store, so a user created at the admin endpoint stores the combination
+// the deployment configured, and one created under a policy signs in once the
+// deployment gives another, that sign-in storing the entry again at the
+// combination now set. A command-line creation runs no settings store — a command
+// group carries no event backend, and the settings store requires one — so it
+// derives at the module's declared defaults. A password below the minimum length
+// is refused at the command line, leaving no account behind.
+func TestAPasswordIsDerivedAtTheAccountPolicy(t *testing.T) {
+	c := newCase(t, stackNamed(t, localStack))
+	c.migrate()
+	// The first policy is OWASP's one-iteration floor pair, distinct from the
+	// module's default two-iteration pair; the settings store loads its snapshot
+	// at startup, so each policy is written before the run that reads it.
+	c.setGlobal("authn.account.password-argon2-memory-kib", "47104")
+	c.setGlobal("authn.account.password-argon2-iterations", "1")
+	c.setGlobal("authn.account.password-argon2-parallelism", "1")
 	h := c.serve()
-	h.login(t, early)
-	if got, want := storedCount(early), strconv.Itoa(moved); got != want {
-		t.Errorf("a user created at %d stores the count %s once signed in with a login at %d, want %s",
-			first, got, moved, want)
-	}
-	expect(t, "a signed-in request of that user once the hash was stored again",
-		h.get(t, accountEndpoint, "/me", "", signedIn(early)), nethttp.StatusOK)
-	late := h.adminCreateUser(t, c.userNamed("late"))
-	if got, want := storedCount(late), strconv.Itoa(moved); got != want {
-		t.Errorf("a user created through the admin endpoint stores the count %s, want the configured %s", got, want)
+	early := h.adminCreateUser(t, c.userNamed("early"))
+	if got := c.text("SELECT phc FROM authn_password_credentials WHERE account_id = ?", early.ID); !strings.Contains(got, "m=47104,t=1,p=1") {
+		t.Errorf("a user created at the admin endpoint stores %q, want the policy combination m=47104,t=1,p=1", got)
 	}
 	h.stop(t)
 
-	const item = "users.password-iterations"
-	c.config.set(item, 0)
-	res := c.run(nil, "", serveCommand)
-	if res.err == nil {
-		t.Fatalf("the serving command ran with %s at 0:\n%s", item, res.combined())
+	// The deployment moves to another floor pair, and the user created under the
+	// first signs in once it does.
+	c.setGlobal("authn.account.password-argon2-memory-kib", "12288")
+	c.setGlobal("authn.account.password-argon2-iterations", "3")
+	c.setGlobal("authn.account.password-argon2-parallelism", "1")
+	h = c.serve()
+	h.login(t, early)
+	if got := c.text("SELECT phc FROM authn_password_credentials WHERE account_id = ?", early.ID); !strings.Contains(got, "m=12288,t=3,p=1") {
+		t.Errorf("the entry after a sign-in under the moved policy is %q, want it stored again at m=12288,t=3,p=1", got)
 	}
-	if !strings.Contains(res.stderr, item) {
-		t.Errorf("the serving command's startup failure (%v) does not name %s:\n%s", res.err, item, res.combined())
+	h.stop(t)
+
+	// A command-line creation runs no settings store, so it derives at the
+	// module's declared defaults, not at the policy the deployment set.
+	cli := c.userNamed("cli")
+	var created userView
+	c.resultOf(c.mustRun(cli.Password+"\n", "user", "create",
+		"--email", cli.Email, "--display-name", "cli"), &created)
+	if got := c.text("SELECT phc FROM authn_password_credentials WHERE account_id = ?", created.ID); !strings.Contains(got, "m=19456,t=2,p=1") {
+		t.Errorf("a user created at the command line stores %q, want the module's default combination m=19456,t=2,p=1", got)
+	}
+
+	// A weak password is refused there too, before any account is written.
+	weak := c.userNamed("weak")
+	if res := c.run(nil, "short\n", "user", "create", "--email", weak.Email, "--display-name", "weak"); res.err == nil {
+		t.Fatalf("a command-line creation whose password is below the policy succeeded:\n%s", res.combined())
+	}
+	if n := c.count("SELECT count(*) FROM authn_accounts WHERE display_name = ?", "weak"); n != 0 {
+		t.Errorf("the refused command-line creation wrote %d accounts, want none", n)
 	}
 }
 
-// The refusal the hash case adds to the users table: its name, and the display
+// TestASessionEndsWhenItsIdleTimeoutLapses is the case for the session lifetime:
+// the setting the session module declares, read from the settings surface at
+// login, and honoured by the key-value backend the stack names.
+//
+// The idle timeout is the session setting a browser session an unused cookie is
+// refused by, and the shortest one, so it is written at its domain minimum. Its
+// period is extended by use, but only once half of it has passed since the last
+// write, so one check is made well inside that half — where use writes nothing —
+// and the next only after the period has ended. A cookie honoured at once and at
+// that check and refused after is neither a store keeping it for ever nor one
+// reading the setting in another unit.
+func TestASessionEndsWhenItsIdleTimeoutLapses(t *testing.T) {
+	const idle = time.Minute
+	forEachStack(t, func(t *testing.T, c *crmCase) {
+		c.migrate()
+		acme := c.createTenant("acme")
+		alice := c.createUser("alice")
+		c.grant(acme, alice, roleRep)
+		c.setGlobal("authn.session.idle-timeout", idle.String())
+		h := c.serve()
+
+		issuedAt := time.Now()
+		cookie := h.login(t, alice)
+		expect(t, "the session at once", h.get(t, accountEndpoint, "/me", "", bearer(cookie)), nethttp.StatusOK)
+
+		// Idle/2 is a minute, so a use this far in writes nothing and leaves the
+		// period ending a minute after the login.
+		time.Sleep(time.Until(issuedAt.Add(idle/2 - 2*time.Second)))
+		expect(t, "the session half-way through its idle period",
+			h.get(t, accountEndpoint, "/me", "", bearer(cookie)), nethttp.StatusOK)
+
+		// No use is made of the cookie until the period has ended: a use inside it
+		// would extend it.
+		time.Sleep(time.Until(issuedAt.Add(idle + 2*lifetimeSlack)))
+		expect(t, "the session past its idle timeout",
+			h.get(t, accountEndpoint, "/me", "", bearer(cookie)), nethttp.StatusUnauthorized)
+	})
+}
+
+// The refusal the hash case adds to the accounts table: its name, and the display
 // name it refuses.
 const (
 	userRefusalName    = "crm_case_refuses_users"
@@ -797,10 +758,11 @@ const (
 )
 
 // TestAPasswordHashReachesNoOutput is the case for where a CRM user's password
-// hash goes, on every stack: into the users table and nowhere else. The case
-// has the database refuse one creation, through a refusal it adds to the users
-// table once the migration has run — a CHECK on PostgreSQL, a trigger on
-// SQLite, neither of which the host knows of — and the refused creation is
+// hash goes, on every stack: into the account store's credential column and
+// nowhere else. The case has the database refuse one creation, through a
+// refusal it adds to the accounts table once the migration has run — a CHECK on
+// PostgreSQL, a trigger on SQLite, neither of which the host knows of — and the
+// refused creation is
 // answered 500 and leaves neither the hash it derived nor the address in the
 // serving process's output.
 //
@@ -816,10 +778,10 @@ func TestAPasswordHashReachesNoOutput(t *testing.T) {
 	forEachStack(t, func(t *testing.T, c *crmCase) {
 		c.migrate()
 		if c.dialect == "postgres" {
-			c.exec("ALTER TABLE users ADD CONSTRAINT " + userRefusalName +
+			c.exec("ALTER TABLE authn_accounts ADD CONSTRAINT " + userRefusalName +
 				" CHECK (display_name <> '" + refusedDisplayName + "')")
 		} else {
-			c.exec("CREATE TRIGGER " + userRefusalName + " BEFORE INSERT ON users WHEN NEW.display_name = '" +
+			c.exec("CREATE TRIGGER " + userRefusalName + " BEFORE INSERT ON authn_accounts WHEN NEW.display_name = '" +
 				refusedDisplayName + "' BEGIN SELECT RAISE(ABORT, 'the case refuses this user'); END")
 		}
 		h := c.serve()
@@ -827,8 +789,8 @@ func TestAPasswordHashReachesNoOutput(t *testing.T) {
 		resp := h.post(t, adminEndpoint, "/users", "", operator(),
 			map[string]string{"email": u.Email, "display_name": refusedDisplayName, "password": u.Password})
 		expect(t, "a creation the database refuses", resp, nethttp.StatusInternalServerError)
-		if n := c.count("SELECT count(*) FROM users WHERE email = ?", u.Email); n != 0 {
-			t.Fatalf("the users table holds %d rows for %s after the refused creation, want none", n, u.Email)
+		if n := c.count("SELECT count(*) FROM authn_accounts WHERE display_name = ?", refusedDisplayName); n != 0 {
+			t.Fatalf("the accounts table holds %d rows for the refused name after the creation, want none", n)
 		}
 		// The run's output is whole once it has stopped.
 		h.stop(t)
@@ -841,15 +803,15 @@ func TestAPasswordHashReachesNoOutput(t *testing.T) {
 		// what the module's logger leaves out of it.
 		recorded := slices.ContainsFunc(records(out), func(rec record) bool {
 			return rec.is("statement failed", "level", "ERROR", "module", c.stack.engine) &&
-				strings.Contains(rec["statement"], "INSERT INTO") && strings.Contains(rec["statement"], "users")
+				strings.Contains(rec["statement"], "INSERT INTO") && strings.Contains(rec["statement"], "authn_")
 		})
 		if !recorded {
 			t.Fatalf("the serving process's output carries no \"statement failed\" record at ERROR, stamped "+
-				"with module=%s, for an insert into users, so the database module recorded nothing of the "+
-				"refused insert:\n%s", c.stack.engine, tail(out))
+				"with module=%s, for an insert into an authn table, so the database module recorded nothing "+
+				"of the refused insert:\n%s", c.stack.engine, tail(out))
 		}
 		for _, line := range strings.Split(out, "\n") {
-			if strings.Contains(line, hashScheme+"$") {
+			if strings.Contains(line, "$argon2id$") {
 				t.Errorf("the serving process's output carries a password hash: %s", line)
 			}
 			if strings.Contains(line, u.Email) {
@@ -1029,13 +991,126 @@ func TestTheOperationsEndpointMergesEveryFragment(t *testing.T) {
 	}
 }
 
-// TestTheMembershipLayerSitsInsideTheJournalAndTheLimiter is the case for where
-// the membership layer lands on the API endpoint's chain. The layer sits in the
-// authorizing stage, which is the innermost one, so it runs inside every layer
-// that settles an identity or a tenant, inside the throttling layer, and inside
-// the journal: its refusals pass through all of them, and the chain listing is
-// where that is read off.
-func TestTheMembershipLayerSitsInsideTheJournalAndTheLimiter(t *testing.T) {
+// TestTheServedMemberSchemasMatchTheHandlers is the case for the fields the
+// members fragments declare in the document the operations endpoint serves: a
+// client generates its reader from that document, so a schema naming a field the
+// handler does not send is a broken client waiting to happen. The listing and the
+// grant name the account by account_id, GET /me answers an account object, and
+// the listing is refused a stranger by the admission layer with the same 404 as
+// an unknown tenant, not 403.
+func TestTheServedMemberSchemasMatchTheHandlers(t *testing.T) {
+	c := newCase(t, stackNamed(t, localStack))
+	c.migrate()
+	h := c.serve()
+
+	resp := h.get(t, opsEndpoint, "/openapi.json", "", noCredential{})
+	expect(t, "GET /openapi.json", resp, nethttp.StatusOK)
+	var doc struct {
+		Paths      map[string]map[string]json.RawMessage `json:"paths"`
+		Components struct {
+			Schemas map[string]json.RawMessage `json:"schemas"`
+		} `json:"components"`
+	}
+	resp.decode(t, &doc)
+
+	propertiesOf := func(raw json.RawMessage, what string) map[string]json.RawMessage {
+		t.Helper()
+		var node struct {
+			Properties map[string]json.RawMessage `json:"properties"`
+		}
+		if err := json.Unmarshal(raw, &node); err != nil {
+			t.Fatalf("reading the properties of %s: %v", what, err)
+		}
+		return node.Properties
+	}
+	has := func(props map[string]json.RawMessage, field string) bool {
+		_, ok := props[field]
+		return ok
+	}
+
+	// The grant and the listing items name the account by account_id.
+	grant := propertiesOf(doc.Components.Schemas["Membership"], "the Membership schema")
+	if !has(grant, "account_id") || has(grant, "user_id") {
+		t.Errorf("the Membership schema declares %v, want account_id and not user_id", schemaFields(grant))
+	}
+	var list struct {
+		Properties map[string]json.RawMessage `json:"properties"`
+	}
+	if err := json.Unmarshal(doc.Components.Schemas["MemberList"], &list); err != nil {
+		t.Fatalf("reading the MemberList schema: %v", err)
+	}
+	var members struct {
+		Items json.RawMessage `json:"items"`
+	}
+	if err := json.Unmarshal(list.Properties["members"], &members); err != nil {
+		t.Fatalf("reading the MemberList members schema: %v", err)
+	}
+	item := propertiesOf(members.Items, "the MemberList items schema")
+	if !has(item, "account_id") || has(item, "user_id") {
+		t.Errorf("the MemberList items schema declares %v, want account_id and not user_id", schemaFields(item))
+	}
+
+	// GET /me answers an account object.
+	var me struct {
+		Responses map[string]struct {
+			Content map[string]struct {
+				Schema json.RawMessage `json:"schema"`
+			} `json:"content"`
+		} `json:"responses"`
+	}
+	if err := json.Unmarshal(doc.Paths["/me"]["get"], &me); err != nil {
+		t.Fatalf("reading the GET /me operation: %v", err)
+	}
+	meSchema := propertiesOf(me.Responses["200"].Content["application/json"].Schema, "the GET /me schema")
+	if !has(meSchema, "account") || has(meSchema, "user") {
+		t.Errorf("the GET /me schema declares %v, want account and not user", schemaFields(meSchema))
+	}
+
+	// The listing is refused a stranger with 404, not 403.
+	var listing struct {
+		Responses map[string]json.RawMessage `json:"responses"`
+	}
+	if err := json.Unmarshal(doc.Paths["/members"]["get"], &listing); err != nil {
+		t.Fatalf("reading the GET /members operation: %v", err)
+	}
+	if _, ok := listing.Responses["403"]; ok {
+		t.Errorf("the GET /members operation declares a 403, which the handler never answers: a stranger is refused 404 by the admission layer")
+	}
+	if _, ok := listing.Responses["404"]; !ok {
+		t.Errorf("the GET /members operation declares no 404, which the admission layer answers a stranger")
+	}
+}
+
+// schemaFields lists the field names of a schema's properties, for a failure
+// message.
+func schemaFields(props map[string]json.RawMessage) []string {
+	out := make([]string, 0, len(props))
+	for name := range props {
+		out = append(out, name)
+	}
+	slices.Sort(out)
+	return out
+}
+
+// unlandedMsg is the startup record of an HTTP middleware constraint that
+// placed nothing.
+const unlandedMsg = "an HTTP middleware constraint landed on no layer"
+
+// TestTheAdmissionLayerSitsInsideTheJournalAndTheLimiter is the case for where
+// the admission layer lands on the API endpoint's chain. The layer anchors on
+// the four it has to sit inside, and the chain listing is where those anchors
+// are readable as positions that landed rather than as spellings: an anchor no
+// layer stands for is dropped with nothing said about where the layer went.
+//
+// The startup's record of constraints that landed on no layer is held to the
+// ones this configuration is known to leave: the journal anchors inside
+// resolution on every endpoint it covers, and two of those endpoints resolve no
+// tenant. Those two are reported, and at Info: no layer there stands for the
+// capability, which is a legal assembly rather than a mistake to warn about.
+// Any other is a layer whose position guarantee is gone — a module a slice
+// added anchoring on a capability nobody stands for on that endpoint — and
+// fails here by name.
+func TestTheAdmissionLayerSitsInsideTheJournalAndTheLimiter(t *testing.T) {
 	c := newCase(t, stackNamed(t, localStack))
 	c.migrate()
 	h := c.serve()
@@ -1046,36 +1121,59 @@ func TestTheMembershipLayerSitsInsideTheJournalAndTheLimiter(t *testing.T) {
 	}
 	layers := chainLayers(rec["chain"])
 	at := func(name string) int { return slices.Index(layers, name) }
-	members := at(membersModuleName)
-	if members < 0 {
-		t.Fatalf("the chain %q carries no %s layer", rec["chain"], membersModuleName)
+	admission := at(admissionModuleName)
+	if admission < 0 {
+		t.Fatalf("the chain %q carries no %s layer", rec["chain"], admissionModuleName)
 	}
 	for _, outer := range []string{"authn.gate", resolve.ModuleName, journal.ModuleName, ratelimit.ModuleName} {
 		switch position := at(outer); {
 		case position < 0:
-			t.Errorf("the chain %q is missing the %s layer the membership layer sits inside", rec["chain"], outer)
-		case position > members:
+			t.Errorf("the chain %q is missing the %s layer the admission layer sits inside", rec["chain"], outer)
+		case position > admission:
 			t.Errorf("the chain %q puts %s outside %s; its refusals would not pass through it",
-				rec["chain"], membersModuleName, outer)
+				rec["chain"], admissionModuleName, outer)
+		}
+	}
+
+	resolution := reflect.TypeFor[tenant.Resolution]()
+	resolutionName := resolution.PkgPath() + "." + resolution.Name()
+	reported := map[string]bool{}
+	for _, r := range records(h.output()) {
+		if r["msg"] != unlandedMsg {
+			continue
+		}
+		known := (r["endpoint"] == accountEndpoint || r["endpoint"] == adminEndpoint) &&
+			r["middleware"] == journal.ModuleName && r["capability"] == resolutionName
+		if !known {
+			t.Errorf("a middleware constraint landed on no layer beyond the journal's resolution anchor on %s and %s: "+
+				"endpoint=%s middleware=%s declaration=%s capability=%s cause=%q",
+				accountEndpoint, adminEndpoint, r["endpoint"], r["middleware"], r["declaration"], r["capability"], r["cause"])
+			continue
+		}
+		reported[r["endpoint"]] = true
+		// No layer on those endpoints stands for resolution, which an
+		// assembly resolving tenants on some endpoints alone leaves by
+		// design, so the record is information rather than a warning.
+		if r["level"] != slog.LevelInfo.String() {
+			t.Errorf("the journal's resolution anchor on %s, which no layer there stands for, is reported at %s, "+
+				"want %s", r["endpoint"], r["level"], slog.LevelInfo)
+		}
+	}
+	for _, endpoint := range []string{accountEndpoint, adminEndpoint} {
+		if !reported[endpoint] {
+			t.Errorf("the startup does not report the journal's resolution anchor on %s, which resolves no tenant, "+
+				"as landing on no layer; the run wrote:\n%s", endpoint, h.outputForReport())
 		}
 	}
 }
 
 // chainLayers splits a chain listing into its layers' names, outermost first:
-// "http:recovery -> [identify] authn.gate(github.com/...) -> ..." reads as
-// ["http:recovery", "authn.gate", ...]. The stage marker prefixed to a stage's
-// first layer and the capabilities in parentheses are dropped, so every entry is
-// a plain layer name.
+// "http:base -> http:fallback -> authn.gate(github.com/...) -> ..." reads as
+// ["http:base", "http:fallback", "authn.gate", ...].
 func chainLayers(chain string) []string {
 	var names []string
 	for part := range strings.SplitSeq(chain, " -> ") {
-		name := strings.TrimSpace(part)
-		if rest, marked := strings.CutPrefix(name, "["); marked {
-			if _, after, found := strings.Cut(rest, "] "); found {
-				name = after
-			}
-		}
-		name, _, _ = strings.Cut(name, "(")
+		name, _, _ := strings.Cut(strings.TrimSpace(part), "(")
 		names = append(names, name)
 	}
 	return names
@@ -1586,40 +1684,8 @@ func TestTheSubdomainNamesTheTenant(t *testing.T) {
 }
 
 // requestDurationBounds are the bucket bounds of the request duration, in
-// seconds, as the instrumentation library the request layer is built on fixes
-// them.
+// seconds, as the telemetry module fixes them.
 var requestDurationBounds = []float64{0.005, 0.01, 0.025, 0.05, 0.075, 0.1, 0.25, 0.5, 0.75, 1, 2.5, 5, 7.5, 10}
-
-// requestDurationRequired and requestDurationOptional are the attribute keys a
-// data point of the request duration carries: the library's whole surface, not a
-// closed pair. The first are on every point; the second depend on the request,
-// the port and the route being known, and on an error having been seen. A key in
-// neither, a tenant or a user among them, is not the library's.
-var (
-	requestDurationRequired = []string{"http.request.method", "http.response.status_code", "server.address", "url.scheme"}
-	requestDurationOptional = []string{
-		"error.type", "http.route", "network.protocol.name", "network.protocol.version", "server.port",
-	}
-)
-
-// requestDurationAttributeError holds the keys of one data point of the request
-// duration to the library's surface: all of the required ones, and no key
-// outside the required and the optional ones. It returns nil when they hold.
-func requestDurationAttributeError(keys []string) error {
-	for _, want := range requestDurationRequired {
-		if !slices.Contains(keys, want) {
-			return fmt.Errorf("carries the attributes %v, which lack the %s the library records on every request",
-				slices.Sorted(slices.Values(keys)), want)
-		}
-	}
-	for _, key := range keys {
-		if !slices.Contains(requestDurationRequired, key) && !slices.Contains(requestDurationOptional, key) {
-			return fmt.Errorf("carries the attribute %s, which is not among the library's: %v", key,
-				slices.Sorted(slices.Values(keys)))
-		}
-	}
-	return nil
-}
 
 // standardMethods are the methods the request duration carries by name; any
 // other is folded into _OTHER.
@@ -1643,12 +1709,9 @@ type exportedHistogramPoint struct {
 
 // exportedMetric is one metric as the stdout export backend writes it.
 type exportedMetric struct {
-	// Scope is the name of the instrumentation scope the metric was exported under;
-	// it is read from the scope that carried the metric, not from the metric.
-	Scope string `json:"-"`
-	Name  string `json:"Name"`
-	Unit  string `json:"Unit"`
-	Data  struct {
+	Name string `json:"Name"`
+	Unit string `json:"Unit"`
+	Data struct {
 		DataPoints []exportedHistogramPoint `json:"DataPoints"`
 	} `json:"Data"`
 }
@@ -1666,9 +1729,6 @@ func lastExportedMetric(out, name string) (exportedMetric, bool) {
 		}
 		var export struct {
 			ScopeMetrics []struct {
-				Scope struct {
-					Name string `json:"Name"`
-				} `json:"Scope"`
 				Metrics []exportedMetric `json:"Metrics"`
 			} `json:"ScopeMetrics"`
 		}
@@ -1678,7 +1738,6 @@ func lastExportedMetric(out, name string) (exportedMetric, bool) {
 		for _, scope := range export.ScopeMetrics {
 			for _, m := range scope.Metrics {
 				if m.Name == name {
-					m.Scope = scope.Scope.Name
 					found, ok = m, true
 				}
 			}
@@ -1687,19 +1746,13 @@ func lastExportedMetric(out, name string) (exportedMetric, bool) {
 	return found, ok
 }
 
-// TestTheRequestDurationCarriesTheInstrumentationLibrarysSurface is the case for
-// the request duration histogram on the local stack, whose metrics leave through
-// standard output. The request layer is built on the gin instrumentation
-// library and adds no instrument of its own, so the histogram is that library's:
-// its name, its unit, its bucket bounds, and its whole attribute surface, which
-// is the method, the status, the scheme, the server address and the route among
-// others and is not closed to a pair. What the layer does not put there is
-// anything of the request's tenant or user. The method is the library's
-// standardised one, so a method outside the standard nine is folded into _OTHER,
-// and a route a request matched is carried as its pattern. The instruments are
-// exported under the library's scope, and the request and response sizes beside
-// the duration.
-func TestTheRequestDurationCarriesTheInstrumentationLibrarysSurface(t *testing.T) {
+// TestTheRequestDurationKeepsItsFixedShape is the case for the request
+// duration histogram, whose name, unit, bucket bounds and attributes are a
+// fixed public surface, on the local stack, whose metrics leave through
+// standard output. Requests on the API endpoint are measured under their
+// method and status alone — no route and no tenant — and a method outside the
+// standard nine is folded into _OTHER rather than carried by name.
+func TestTheRequestDurationKeepsItsFixedShape(t *testing.T) {
 	c := newCase(t, stackNamed(t, localStack))
 	c.migrate()
 	h := c.serve()
@@ -1724,19 +1777,6 @@ func TestTheRequestDurationCarriesTheInstrumentationLibrarysSurface(t *testing.T
 	if metric.Unit != "s" {
 		t.Errorf("the request duration is exported in %q, want s", metric.Unit)
 	}
-	if metric.Scope != otelGinScope {
-		t.Errorf("the request duration is exported under the scope %q, want the instrumentation library's %q",
-			metric.Scope, otelGinScope)
-	}
-	for _, name := range []string{"http.server.request.body.size", "http.server.response.body.size"} {
-		sized, ok := lastExportedMetric(h.output(), name)
-		if !ok {
-			t.Errorf("the run exported no %s, which the instrumentation library records beside the duration", name)
-		} else if sized.Scope != otelGinScope {
-			t.Errorf("%s is exported under the scope %q, want the instrumentation library's %q", name, sized.Scope,
-				otelGinScope)
-		}
-	}
 	var gets, others uint64
 	for _, point := range metric.Data.DataPoints {
 		if !slices.Equal(point.Bounds, requestDurationBounds) {
@@ -1747,8 +1787,9 @@ func TestTheRequestDurationCarriesTheInstrumentationLibrarysSurface(t *testing.T
 			values[attr.Key] = attr.Value.Value
 		}
 		keys := slices.Sorted(maps.Keys(values))
-		if err := requestDurationAttributeError(keys); err != nil {
-			t.Errorf("a data point of the request duration %v", err)
+		if !slices.Equal(keys, []string{"http.request.method", "http.response.status_code"}) {
+			t.Errorf("a data point of the request duration carries the attributes %v, want the method and the status alone",
+				keys)
 			continue
 		}
 		method, _ := values["http.request.method"].(string)
@@ -1757,9 +1798,6 @@ func TestTheRequestDurationCarriesTheInstrumentationLibrarysSurface(t *testing.T
 		}
 		switch status, _ := values["http.response.status_code"].(float64); {
 		case method == nethttp.MethodGet && status == nethttp.StatusOK:
-			if route, _ := values["http.route"].(string); route != "/members" {
-				t.Errorf("a data point of the GETs answered 200 carries the route %q, want /members", route)
-			}
 			gets += point.Count
 		case method == "_OTHER" && int(status) == purge.status:
 			others += point.Count
@@ -1845,8 +1883,8 @@ func TestARequestNoRouteServesIsRefusedAsAProblem(t *testing.T) {
 	})
 	expect(t, "a member deleting the member list", deleteMembers, nethttp.StatusMethodNotAllowed)
 	requireProblem(t, "the answer to a member using a method the members path does not take", deleteMembers)
-	if allow := deleteMembers.header.Get("Allow"); allow != "GET, POST" {
-		t.Errorf("the answer to DELETE /members allows %q, want \"GET, POST\"", allow)
+	if allow := deleteMembers.header.Get("Allow"); allow != "POST, GET" {
+		t.Errorf("the answer to DELETE /members allows %q, want \"POST, GET\"", allow)
 	}
 
 	anonymous := h.get(t, apiEndpoint, "/nosuch", acme.Alias, noCredential{})

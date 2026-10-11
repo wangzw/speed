@@ -21,6 +21,7 @@ const (
 	moduleImportPath = "github.com/vislake/speed/pkg"
 	rootPath         = moduleImportPath + "/authn"
 	authntestPath    = rootPath + "/authntest"
+	mounttestPath    = internalPrefix + "mount/mounttest"
 	internalPrefix   = rootPath + "/internal/"
 	modelPath        = internalPrefix + "model"
 	identityPath     = internalPrefix + "identity"
@@ -326,18 +327,20 @@ func layerViolations(pkgs []listed) []string {
 	return out
 }
 
-// authntestViolations is the third rule: no package imports authntest in a file
-// that is not a test, except authntest itself. The compiler cannot stop
-// production code importing it, and an identity built there would be one no
-// gateway stamped.
+// authntestViolations is the third rule: no package imports authntest or
+// mounttest in a file that is not a test, except those two themselves, and
+// mounttest, which builds the identities of its requests with authntest, is the
+// one package besides authntest that may import it. The compiler cannot stop
+// production code importing either, and an identity built there would be one no
+// gateway stamped, a route registered there one no gateway guards.
 func authntestViolations(pkgs []listed) []string {
 	var out []string
 	for _, p := range pkgs {
-		if p.ImportPath == authntestPath {
-			continue
-		}
-		if slices.Contains(p.Imports, authntestPath) {
+		if p.ImportPath != authntestPath && p.ImportPath != mounttestPath && slices.Contains(p.Imports, authntestPath) {
 			out = append(out, p.ImportPath+" imports authntest outside a test file")
+		}
+		if p.ImportPath != mounttestPath && slices.Contains(p.Imports, mounttestPath) {
+			out = append(out, p.ImportPath+" imports mounttest outside a test file")
 		}
 	}
 	slices.Sort(out)
@@ -358,6 +361,24 @@ func identityWriterViolations(pkgs []listed) []string {
 		}
 		if slices.Contains(p.Imports, identityPath) {
 			out = append(out, p.ImportPath+" imports "+identityPath+" outside a test file: only "+strings.Join(identityWriters, ", ")+" may")
+		}
+	}
+	slices.Sort(out)
+	return out
+}
+
+// unusedWriterViolations is the other direction of the fourth rule: a package on
+// identityWriters that is in the listing and does not import the identity package
+// in a non-test file is a name on the list with no code behind it, which the
+// list should not carry, because a closed list that names a package that does
+// not write is a list that hides what the writers are. A writer that is not in
+// the listing at all is not reported: the login engine is on the list before it
+// exists, and the entry is held to the code from the day the package appears.
+func unusedWriterViolations(pkgs []listed) []string {
+	var out []string
+	for _, w := range identityWriters {
+		if p, ok := find(pkgs, w); ok && !slices.Contains(p.Imports, identityPath) {
+			out = append(out, w+" is on the list of identity writers and does not import "+identityPath+" outside a test file")
 		}
 	}
 	slices.Sort(out)
@@ -489,6 +510,9 @@ func TestTheRootPackageImportsOnlyWhatItMay(t *testing.T) {
 	if p, _ := find(pkgs, authntestPath); !slices.Contains(p.Imports, rootPath) {
 		t.Fatal("authntest is not listed as importing the root package, so the listing does not hold imports")
 	}
+	if p, ok := find(pkgs, mounttestPath); !ok || !slices.Contains(p.Imports, authntestPath) {
+		t.Fatal("mounttest is not listed as importing authntest, so the rule about who may import either has nothing to read")
+	}
 	for _, writer := range []string{rootPath, rootPath + "/gate", authntestPath} {
 		if p, ok := find(pkgs, writer); !ok || !slices.Contains(p.Imports, identityPath) {
 			t.Fatalf("%s is not listed as importing the identity package, so the writer rule has nothing to read", writer)
@@ -505,6 +529,9 @@ func TestTheRootPackageImportsOnlyWhatItMay(t *testing.T) {
 		t.Error(v)
 	}
 	for _, v := range identityWriterViolations(pkgs) {
+		t.Error(v)
+	}
+	for _, v := range unusedWriterViolations(pkgs) {
 		t.Error(v)
 	}
 	for _, v := range tenantViolations(pkgs) {
@@ -611,7 +638,9 @@ func writeTree(t *testing.T, files map[string]string) string {
 //   - model imports identity, which the layering forbids;
 //   - step imports a third-party library;
 //   - a production package imports authntest, and another does so from a test
-//     file alone, which is allowed;
+//     file alone, which is allowed; one imports mounttest, another does so from
+//     a test file alone, and mounttest itself imports authntest, which is
+//     allowed;
 //   - a backend imports the identity package, as model does too, while the
 //     gateway and the login engine do so legitimately and a session package
 //     does so from a test file alone;
@@ -645,6 +674,10 @@ import (
 		"authn/internal/verdict/verdict.go":   "package verdict\n\nimport _ \"" + modelPath + "\"\n",
 		"authn/internal/step/step.go":         "package step\n\nimport _ \"example.com/lib\"\n",
 		"authn/authntest/authntest.go":        "package authntest\n\nimport _ \"" + rootPath + "\"\n",
+		"authn/internal/mount/mounttest/m.go": "package mounttest\n\nimport _ \"" + authntestPath + "\"\n",
+		"usesmounttest/usesmounttest.go":      "package usesmounttest\n\nimport _ \"" + mounttestPath + "\"\n",
+		"mounttestonly/mounttestonly.go":      "package mounttestonly\n",
+		"mounttestonly/mounttestonly_test.go": "package mounttestonly\n\nimport _ \"" + mounttestPath + "\"\n",
 		"authn/static/inject.go":              "package static\n\nimport _ \"" + identityPath + "\"\n",
 		"authn/gate/gate.go":                  "package gate\n\nimport _ \"" + identityPath + "\"\n",
 		"authn/login/login.go":                "package login\n\nimport _ \"" + identityPath + "\"\n",
@@ -718,7 +751,7 @@ func TestTheDependencyRulesFailOnAViolatingTree(t *testing.T) {
 			name, _, _ := strings.Cut(v, " ")
 			names = append(names, strings.TrimPrefix(name, moduleImportPath+"/"))
 		}
-		want := []string{"onlytagged", "platform", "production", "tagged"}
+		want := []string{"onlytagged", "platform", "production", "tagged", "usesmounttest"}
 		if !slices.Equal(names, want) {
 			t.Errorf("violations name %q, want %q: a test file's import is allowed, authntest's own import of the root "+
 				"is not an import of itself, and a file another platform or a custom build tag leaves out of the build "+
@@ -735,6 +768,18 @@ func TestTheDependencyRulesFailOnAViolatingTree(t *testing.T) {
 		if !slices.Equal(names, want) {
 			t.Errorf("violations name %q, want %q: the gateway, the login engine, authntest and the root package may "+
 				"import the identity package, a test file's import is allowed, and a package outside them is not", names, want)
+		}
+	})
+	t.Run("a package on the list of writers does not write", func(t *testing.T) {
+		var names []string
+		for _, v := range unusedWriterViolations(pkgs) {
+			name, _, _ := strings.Cut(v, " ")
+			names = append(names, strings.TrimPrefix(name, moduleImportPath+"/"))
+		}
+		want := []string{"authn", "authn/authntest"}
+		if !slices.Equal(names, want) {
+			t.Errorf("violations name %q, want %q: the root package and authntest are on the list here and import "+
+				"no identity package, while the gateway and the login engine do", names, want)
 		}
 	})
 	t.Run("a package of the authn tree reaches the tenant module", func(t *testing.T) {
@@ -773,12 +818,15 @@ func TestTheDependencyRulesFailOnAViolatingTree(t *testing.T) {
 func TestTheDependencyRulesPassOnACleanTree(t *testing.T) {
 	dir := writeTree(t, map[string]string{
 		"go.mod":                              "module " + moduleImportPath + "\n\ngo 1.26\n",
-		"authn/authn.go":                      "package authn\n\nimport (\n\t_ \"fmt\"\n\t_ \"" + modelPath + "\"\n)\n",
+		"authn/authn.go":                      "package authn\n\nimport (\n\t_ \"fmt\"\n\t_ \"" + modelPath + "\"\n\t_ \"" + identityPath + "\"\n)\n",
 		"authn/internal/model/model.go":       "package model\n\nimport _ \"errors\"\n",
 		"authn/internal/identity/identity.go": "package identity\n\nimport _ \"" + modelPath + "\"\n",
 		"authn/internal/verdict/verdict.go":   "package verdict\n\nimport _ \"" + modelPath + "\"\n",
 		"authn/internal/step/step.go":         "package step\n\nimport _ \"" + modelPath + "\"\n",
-		"authn/authntest/authntest.go":        "package authntest\n\nimport _ \"" + rootPath + "\"\n",
+		"authn/authntest/authntest.go":        "package authntest\n\nimport (\n\t_ \"" + rootPath + "\"\n\t_ \"" + identityPath + "\"\n)\n",
+		"authn/internal/mount/mounttest/m.go": "package mounttest\n\nimport _ \"" + authntestPath + "\"\n",
+		"mounttestonly/mounttestonly.go":      "package mounttestonly\n",
+		"mounttestonly/mounttestonly_test.go": "package mounttestonly\n\nimport _ \"" + mounttestPath + "\"\n",
 		"authn/gate/gate.go":                  "package gate\n\nimport _ \"" + identityPath + "\"\n",
 		"authn/login/login.go":                "package login\n\nimport _ \"" + identityPath + "\"\n",
 		"authn/static/static.go":              "package static\n",
@@ -796,6 +844,7 @@ func TestTheDependencyRulesPassOnACleanTree(t *testing.T) {
 		"layering":  layerViolations(pkgs),
 		"authntest": authntestViolations(pkgs),
 		"writers":   identityWriterViolations(pkgs),
+		"unused":    unusedWriterViolations(pkgs),
 		"tenant":    tenantViolations(pkgs),
 	} {
 		if len(got) != 0 {
@@ -806,4 +855,70 @@ func TestTheDependencyRulesPassOnACleanTree(t *testing.T) {
 
 func anyContains(list []string, fragment string) bool {
 	return slices.ContainsFunc(list, func(s string) bool { return strings.Contains(s, fragment) })
+}
+
+// TestTheListOfWritersIsHeldToTheCodeBehindIt holds the other direction of the
+// writer rule on small trees: an entry of the list whose package exists and does
+// not import the identity package is reported, an entry whose package does not
+// exist yet is not, and one that imports it from a test file alone is.
+func TestTheListOfWritersIsHeldToTheCodeBehindIt(t *testing.T) {
+	writes := "package p\n\nimport _ \"" + identityPath + "\"\n"
+	tree := func(files map[string]string) []listed {
+		files["go.mod"] = "module " + moduleImportPath + "\n\ngo 1.26\n"
+		files["authn/internal/identity/identity.go"] = "package identity\n"
+		return listModule(t, writeTree(t, files), isolated)
+	}
+	names := func(vs []string) []string {
+		var out []string
+		for _, v := range vs {
+			name, _, _ := strings.Cut(v, " ")
+			out = append(out, strings.TrimPrefix(name, moduleImportPath+"/"))
+		}
+		return out
+	}
+
+	t.Run("every entry that exists writes", func(t *testing.T) {
+		pkgs := tree(map[string]string{
+			"authn/authn.go":               writes,
+			"authn/gate/gate.go":           writes,
+			"authn/login/login.go":         writes,
+			"authn/authntest/authntest.go": writes,
+		})
+		if got := unusedWriterViolations(pkgs); len(got) != 0 {
+			t.Errorf("violations %q on a tree where every listed package writes", got)
+		}
+	})
+	t.Run("the login engine is not there yet", func(t *testing.T) {
+		pkgs := tree(map[string]string{
+			"authn/authn.go":               writes,
+			"authn/gate/gate.go":           writes,
+			"authn/authntest/authntest.go": writes,
+		})
+		if got := unusedWriterViolations(pkgs); len(got) != 0 {
+			t.Errorf("violations %q for an entry whose package does not exist", got)
+		}
+	})
+	t.Run("an entry that exists and does not write", func(t *testing.T) {
+		pkgs := tree(map[string]string{
+			"authn/authn.go":               writes,
+			"authn/gate/gate.go":           writes,
+			"authn/login/login.go":         "package login\n",
+			"authn/authntest/authntest.go": writes,
+		})
+		if got := names(unusedWriterViolations(pkgs)); !slices.Equal(got, []string{"authn/login"}) {
+			t.Errorf("violations name %q, want the login engine alone", got)
+		}
+	})
+	t.Run("an entry that writes from a test file alone", func(t *testing.T) {
+		pkgs := tree(map[string]string{
+			"authn/authn.go":               writes,
+			"authn/gate/gate.go":           writes,
+			"authn/login/login.go":         "package login\n",
+			"authn/login/login_test.go":    writes,
+			"authn/authntest/authntest.go": writes,
+		})
+		if got := names(unusedWriterViolations(pkgs)); !slices.Equal(got, []string{"authn/login"}) {
+			t.Errorf("violations name %q: the identity package imported from a test file is not what a writer is", got)
+		}
+	})
 }

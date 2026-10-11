@@ -100,7 +100,7 @@
           "name": {"type": "string"},
           "domain": {"type": "string"},
           "industry": {"type": "string"},
-          "owner": {"type": "string", "description": "The owning member's user identifier"},
+          "owner": {"type": "string", "description": "The owning member's account identifier"},
           "created_at": {"type": "string", "format": "date-time"},
           "updated_at": {"type": "string", "format": "date-time"}
         },
@@ -129,7 +129,7 @@
           "name": {"type": "string"},
           "domain": {"type": "string"},
           "industry": {"type": "string"},
-          "owner": {"type": "string", "description": "A member's user identifier; the caller when absent"}
+          "owner": {"type": "string", "description": "A member's account identifier; the caller when absent"}
         },
         "required": ["name"]
       },

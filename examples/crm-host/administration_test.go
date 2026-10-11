@@ -25,6 +25,7 @@ import (
 
 	"github.com/vislake/speed/pkg/audit"
 	"github.com/vislake/speed/pkg/core"
+	"github.com/vislake/speed/pkg/db"
 	"github.com/vislake/speed/pkg/log"
 	"github.com/vislake/speed/pkg/settings"
 	"github.com/vislake/speed/pkg/tenant"
@@ -636,7 +637,7 @@ func entryWith(page trailPage, match func(trailView) bool) (trailView, bool) {
 // Two tenants do the same things — the same setting written to the same value,
 // the same user granted the same role — so each trail has rows the other's
 // could be mistaken for, and a read that lost its tenant condition would answer
-// the other's among its own. The membership layer refuses a stranger in one of
+// the other's among its own. The admission layer refuses a stranger in one of
 // them, and the settings change event is captured, so the trail holds a row of
 // every capture path.
 func TestATenantReadsItsOwnAuditTrail(t *testing.T) {
@@ -663,7 +664,7 @@ func TestATenantReadsItsOwnAuditTrail(t *testing.T) {
 				h.post(t, apiEndpoint, "/members", ref.Alias, signedIn(owner), map[string]string{"email": uma.Email, "role": roleRep}),
 				nethttp.StatusOK)
 		}
-		expect(t, "sid naming acme", h.get(t, apiEndpoint, "/members", acme.Alias, signedIn(sid)), nethttp.StatusForbidden)
+		expect(t, "sid naming acme", h.get(t, apiEndpoint, "/members", acme.Alias, signedIn(sid)), nethttp.StatusNotFound)
 
 		userKey := func(u userRef) string { return u.ID }
 		for _, ref := range []tenantRef{acme, globex} {
@@ -679,14 +680,14 @@ func TestATenantReadsItsOwnAuditTrail(t *testing.T) {
 				return r.source == "event" && r.action == "settings.changed"
 			})
 			sub.awaitTrailRow(ref.ID, "the grant's statement", func(r trailRow) bool {
-				return r.source == "statement" && r.object == membershipTable
+				return r.source == "statement" && r.object == memberRoleTable
 			})
 			sub.awaitTrailRow(ref.ID, "the grant's request", func(r trailRow) bool {
 				return r.requestOn(grantMemberRoute) && r.outcome == "200"
 			})
 		}
-		c.awaitTrailRow(acme.ID, "the membership layer's refusal of sid", func(r trailRow) bool {
-			return r.requestOn(listMembersRoute) && r.outcome == "403" && r.actor == userKey(sid)
+		c.awaitTrailRow(acme.ID, "the admission layer's refusal of sid", func(r trailRow) bool {
+			return r.requestOn(listMembersRoute) && r.outcome == "404" && r.actor == userKey(sid)
 		})
 
 		t.Run("each tenant's trail holds its own rows and no other", func(t *testing.T) {
@@ -733,10 +734,10 @@ func TestATenantReadsItsOwnAuditTrail(t *testing.T) {
 						e.Detail["Key"] == "deals.default-currency" && e.Detail["New"] == "EUR"
 				}},
 				{"the grant's statement", func(e trailView) bool {
-					return e.Source == "statement" && e.Object == membershipTable && e.Actor == userKey(ann)
+					return e.Source == "statement" && e.Object == memberRoleTable && e.Actor == userKey(ann)
 				}},
-				{"the membership layer's refusal of a stranger", func(e trailView) bool {
-					return e.requestOn(listMembersRoute) && e.Outcome == "403" && e.Actor == userKey(sid)
+				{"the admission layer's refusal of a stranger", func(e trailView) bool {
+					return e.requestOn(listMembersRoute) && e.Outcome == "404" && e.Actor == userKey(sid)
 				}},
 			} {
 				if _, ok := entryWith(page, want.match); !ok {
@@ -1049,12 +1050,13 @@ func TestAnOperatorLowersATenantsRateLimit(t *testing.T) {
 			settingsListing(t, h, adminEndpoint, "/tenants/"+globex.ID+"/settings", "", operator()), "ratelimit.limit"),
 			"<none>", float64(100))
 
-		// bob belongs to globex alone, so the membership layer refuses every
-		// request of his naming acme. The limiter sits outside that layer and
-		// counts the refusals, so past the limit the answer is the limiter's.
+		// bob belongs to globex alone, so the admission layer refuses every
+		// request of his naming acme with the same 404 it answers a member the
+		// tenant does not hold. The limiter sits outside that layer and counts
+		// the refusals, so past the limit the answer is the limiter's.
 		for i := 1; i <= limit; i++ {
 			expect(t, fmt.Sprintf("bob's request %d naming acme", i),
-				h.get(t, apiEndpoint, "/members", acme.Alias, signedIn(bob)), nethttp.StatusForbidden)
+				h.get(t, apiEndpoint, "/members", acme.Alias, signedIn(bob)), nethttp.StatusNotFound)
 		}
 		expect(t, "bob's request past acme's limit",
 			h.get(t, apiEndpoint, "/members", acme.Alias, signedIn(bob)), nethttp.StatusTooManyRequests)
@@ -1409,6 +1411,7 @@ func buildPreferences(t *testing.T, declared []settings.DeclaredItem) error {
 		product any
 	}{
 		{"stand-in.log", (*log.Logger)(nil), discardingLogger{}},
+		{"stand-in.db", (*db.Database)(nil), struct{ db.Database }{}},
 		{"stand-in.settings", (*settings.Store)(nil), declarationsOnly{declared: declared}},
 		{"stand-in.roster", (*tenant.Catalog)(nil), struct{ tenant.Catalog }{}},
 		{"stand-in.seam", (*audit.Audit)(nil), struct{ audit.Audit }{}},

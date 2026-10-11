@@ -568,11 +568,11 @@ SSO 不做单点登出：IdP 一侧的登出与停用都不终止 speed 的会�
 
 ## 实现状态
 
-`pkg/authn` 下没有 `sso` 目录，根包没有 `SSOProviders`、`SSOProvider`、`SSOMetadataRefresher`，`pkg/go.mod` 里没有 gosaml2、goxmldsig、go-oidc 与 x/oauth2。
+`pkg/authn` 下没有 `sso` 目录，根包没有 `SSOMetadataRefresher`，`pkg/go.mod` 里没有 gosaml2、goxmldsig、go-oidc 与 x/oauth2。
 
 | 能力 | 状态 | 代码 |
 |---|---|---|
-| 根包接口：`SSOProvider`、`SSOProviders`、`SSOMetadataRefresher` 与对应哨兵、`authn.idp.changed` 事件类型 | 未实现 | — |
+| 根包接口：`SSOProvider`、`SSOProviders`、`SSOMetadataRefresher` 与对应哨兵、`authn.idp.changed` 事件类型 | 部分实现 — 缺 `SSOMetadataRefresher`；其余已在 | `pkg/authn/sso.go` `SSOProviders`；`pkg/authn/internal/model/sso.go` `SSOProvider`；`pkg/authn/errors.go` `ErrDomainClaimed`、`ErrAssertionReplay`；`pkg/authn/events.go` `EventIDPChanged`、`IDPChanged` |
 | `authn.sso` 提供方登记：`Put`、`Get`、`List`、`Secret`、`Tenant`、`Delete`、`config` 校验、`version` | 未实现 | — |
 | `authn_idps`、`authn_idp_domains`、`authn_saml_assertions` 迁移集 | 未实现 | — |
 | 域所有权：`ClaimDomain`、`VerifyDomain`、`RemoveDomain`、`ReverifyDomains` | 未实现 | — |

@@ -1,0 +1,545 @@
+package login
+
+import (
+	"context"
+	"encoding/json"
+	"errors"
+	"log/slog"
+	"net/http"
+	"strconv"
+	"strings"
+	"testing"
+	"time"
+
+	"github.com/vislake/speed/pkg/authn"
+	"github.com/vislake/speed/pkg/settings"
+)
+
+func decode(t *testing.T, body string) map[string]any {
+	t.Helper()
+	var out map[string]any
+	if err := json.Unmarshal([]byte(body), &out); err != nil {
+		t.Fatalf("decoding %q: %v", body, err)
+	}
+	return out
+}
+
+// startPassword begins a password flow and returns the flow cookie.
+func startPassword(t *testing.T, r *rig) string {
+	t.Helper()
+	rec := r.send(http.MethodPost, "/auth/flows", `{"method":"password"}`)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("POST flows answered %d: %s", rec.Code, rec.Body.String())
+	}
+	return flowCookie(t, rec)
+}
+
+// errBoom is the cause a fake refusal carries.
+var errBoom = errors.New("boom")
+
+// TestFirstFactorPromptRefuseAndProveWalksTheStateMachine holds the first
+// factor's moves: a prompt keeps the flow at the first factor and bumps the step
+// number, a refusal keeps it there and answers login-failed, and a proof moves
+// it to ready.
+func TestFirstFactorPromptRefuseAndProveWalksTheStateMachine(t *testing.T) {
+	step := 0
+	m := &fakeMethod{name: "password"}
+	m.begin = func(authn.Start) (authn.Step, error) {
+		return authn.StepPrompt("credentials", nil,
+			authn.Field{Name: "identifier", Kind: authn.FieldText, Required: true}), nil
+	}
+	m.ans = func(authn.FlowState, authn.StepInput) (authn.Step, error) {
+		step++
+		switch step {
+		case 1:
+			return authn.StepRefused(errBoom), nil
+		default:
+			return authn.StepProven(authn.Proof{Account: "acct1", Methods: []authn.Method{authn.MethodPassword}}), nil
+		}
+	}
+	r := newRig(t, m)
+	r.allow("acct1")
+
+	cookie := startPassword(t, r)
+
+	refused := r.send(http.MethodPost, "/auth/flows/answer", `{"seq":1,"step":"answer","input":{}}`, "Cookie", cookie)
+	if refused.Code != http.StatusUnauthorized || refused.Header().Get("WWW-Authenticate") == "" {
+		t.Fatalf("a refused answer answered %d with challenge %q, want 401 login-failed",
+			refused.Code, refused.Header().Get("WWW-Authenticate"))
+	}
+	if !strings.Contains(refused.Header().Get("WWW-Authenticate"), "Bearer") ||
+		strings.Contains(refused.Header().Get("WWW-Authenticate"), "Basic") {
+		t.Errorf("the 401 challenge carries Basic or no Bearer: %q", refused.Header().Get("WWW-Authenticate"))
+	}
+
+	proven := r.send(http.MethodPost, "/auth/flows/answer", `{"seq":2,"step":"answer","input":{}}`, "Cookie", cookie)
+	if proven.Code != http.StatusOK {
+		t.Fatalf("a proven answer answered %d: %s", proven.Code, proven.Body.String())
+	}
+	next := decode(t, proven.Body.String())["next"].(map[string]any)
+	if next["kind"] != "complete" {
+		t.Errorf("a proof moved to next %v, want complete", next)
+	}
+}
+
+// TestNegativeVectorsAreRefusedBeforeTheMethodRuns holds the request checks that
+// come before a method is called: a wrong step number, a step the state does not
+// take, a missing or mismatched binding, an unknown field, and the wrong content
+// type.
+func TestNegativeVectorsAreRefusedBeforeTheMethodRuns(t *testing.T) {
+	m := &fakeMethod{name: "password"}
+	m.begin = func(authn.Start) (authn.Step, error) { return authn.StepPrompt("credentials", nil), nil }
+	m.ans = func(authn.FlowState, authn.StepInput) (authn.Step, error) {
+		return authn.StepProven(authn.Proof{Account: "acct1"}), nil
+	}
+	r := newRig(t, m)
+	r.allow("acct1")
+	cookie := startPassword(t, r)
+	before := m.calls
+
+	cases := []struct {
+		name   string
+		method string
+		path   string
+		body   string
+		hdr    []string
+		want   int
+	}{
+		{
+			"wrong step number", http.MethodPost, "/auth/flows/answer", `{"seq":99,"step":"answer","input":{}}`,
+			[]string{"Cookie", cookie},
+			http.StatusUnauthorized,
+		},
+		{
+			"step the state does not take", http.MethodPost, "/auth/flows/answer", `{"seq":1,"step":"complete","input":{}}`,
+			[]string{"Cookie", cookie},
+			http.StatusUnauthorized,
+		},
+		{"missing binding", http.MethodPost, "/auth/flows/answer", `{"seq":1,"step":"answer","input":{}}`, nil, http.StatusUnauthorized},
+		{
+			"mismatched binding", http.MethodPost, "/auth/flows/answer", `{"seq":1,"step":"answer","input":{}}`,
+			[]string{"Cookie", "authn-flow=not-the-token"},
+			http.StatusUnauthorized,
+		},
+		{
+			"unknown field", http.MethodPost, "/auth/flows/answer", `{"seq":1,"step":"answer","surprise":1}`,
+			[]string{"Cookie", cookie},
+			http.StatusBadRequest,
+		},
+		{"unknown start field", http.MethodPost, "/auth/flows", `{"method":"password","surprise":1}`, nil, http.StatusBadRequest},
+	}
+	for _, c := range cases {
+		rec := r.send(c.method, c.path, c.body, c.hdr...)
+		if rec.Code != c.want {
+			t.Errorf("%s answered %d, want %d: %s", c.name, rec.Code, c.want, rec.Body.String())
+		}
+	}
+	if m.calls != before {
+		t.Errorf("a refused request reached the method: calls went from %d to %d", before, m.calls)
+	}
+}
+
+// TestWrongContentTypeIsRefused holds the 415 that comes before the body is read.
+func TestWrongContentTypeIsRefused(t *testing.T) {
+	m := &fakeMethod{name: "password"}
+	m.begin = func(authn.Start) (authn.Step, error) { return authn.StepPrompt("credentials", nil), nil }
+	r := newRig(t, m)
+	rec := r.send(http.MethodPost, "/auth/flows", `<method></method>`, "Content-Type", "text/xml")
+	if rec.Code != http.StatusUnsupportedMediaType {
+		t.Errorf("a text/xml body answered %d, want 415: %s", rec.Code, rec.Body.String())
+	}
+}
+
+// TestMethodDefectsAreAnsweredWithoutLeakingTheCause holds the failure direction
+// for a method's own faults: a panic and an over-budget call are the method's
+// outage, and no answer at all is a server error.
+func TestMethodDefectsAreAnsweredWithoutLeakingTheCause(t *testing.T) {
+	m := &fakeMethod{name: "password"}
+	m.begin = func(authn.Start) (authn.Step, error) {
+		panic("the method panicked")
+	}
+	r := newRig(t, m)
+	if rec := r.send(http.MethodPost, "/auth/flows", `{"method":"password"}`); rec.Code != http.StatusServiceUnavailable {
+		t.Errorf("a panicking method answered %d, want 503: %s", rec.Code, rec.Body.String())
+	}
+
+	none := &fakeMethod{name: "password", begin: func(authn.Start) (authn.Step, error) { return authn.Step{}, nil }}
+	r2 := newRig(t, none)
+	if rec := r2.send(http.MethodPost, "/auth/flows", `{"method":"password"}`); rec.Code != http.StatusInternalServerError {
+		t.Errorf("a method that gave no answer answered %d, want 500: %s", rec.Code, rec.Body.String())
+	}
+}
+
+// TestKVUnavailableIsRefused holds the fail-closed direction of the key-value
+// store: beginning a flow against a store that cannot be read is a 503.
+func TestKVUnavailableIsRefused(t *testing.T) {
+	m := &fakeMethod{name: "password"}
+	m.begin = func(authn.Start) (authn.Step, error) { return authn.StepPrompt("credentials", nil), nil }
+	r := newRig(t, m)
+	r.kv.failing = true
+	if rec := r.send(http.MethodPost, "/auth/flows", `{"method":"password"}`); rec.Code != http.StatusServiceUnavailable {
+		t.Errorf("a flow against an unavailable store answered %d, want 503: %s", rec.Code, rec.Body.String())
+	}
+}
+
+// TestASecondFactorIsOfferedAndPassed holds the second-factor path: a different
+// kind is offered, its challenge is started, and a pass moves the flow to ready.
+func TestASecondFactorIsOfferedAndPassed(t *testing.T) {
+	m := &fakeMethod{name: "password"}
+	m.begin = func(authn.Start) (authn.Step, error) {
+		return authn.StepProven(authn.Proof{Account: "acct1", Methods: []authn.Method{authn.MethodPassword}}), nil
+	}
+	r := newRig(t, m)
+	r.allow("acct1")
+	r.mfa.outcome = authn.MFAFactor
+	r.mfa.offered = []authn.FactorRecord{{ID: "f1", Kind: authn.FactorTOTP, Label: "Authenticator"}}
+	r.mfa.assurance = authn.MFAResult{Assurance: authn.AssuranceMulti}
+
+	rec := r.send(http.MethodPost, "/auth/flows", `{"method":"password"}`)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("POST flows answered %d: %s", rec.Code, rec.Body.String())
+	}
+	cookie := flowCookie(t, rec)
+	next := decode(t, rec.Body.String())["next"].(map[string]any)
+	if next["kind"] != "factor" {
+		t.Fatalf("a login needing a factor answered next %v, want factor", next)
+	}
+
+	challenge := r.send(http.MethodPost, "/auth/flows/answer",
+		`{"seq":0,"step":"factor","input":{"factor":"f1"}}`, "Cookie", cookie)
+	if challenge.Code != http.StatusOK {
+		t.Fatalf("the factor selection answered %d: %s", challenge.Code, challenge.Body.String())
+	}
+	if k := decode(t, challenge.Body.String())["next"].(map[string]any)["kind"]; k != "challenge" {
+		t.Fatalf("the factor challenge answered next kind %v, want challenge", k)
+	}
+
+	seq := int(decode(t, challenge.Body.String())["seq"].(float64))
+	passed := r.send(http.MethodPost, "/auth/flows/answer",
+		`{"seq":`+itoa(seq)+`,"step":"factor","input":{"factor":"f1","code":"123456"}}`, "Cookie", cookie)
+	if passed.Code != http.StatusOK {
+		t.Fatalf("the factor pass answered %d: %s", passed.Code, passed.Body.String())
+	}
+	if k := decode(t, passed.Body.String())["next"].(map[string]any)["kind"]; k != "complete" {
+		t.Errorf("a passed factor answered next kind %v, want complete", k)
+	}
+}
+
+// TestEnrollFlowCompletes holds the enrollment's terminal action: a registration
+// started on an authenticated identity reaches ready, and its completion revokes
+// the account's other sessions without changing the session's level.
+func TestEnrollFlowCompletes(t *testing.T) {
+	m := &fakeMethod{name: "password"}
+	r := newRig(t, m)
+	r.loginAsAuthenticated("acct1", "sid")
+
+	start := r.send(http.MethodPost, "/auth/flows/authenticated",
+		`{"purpose":"enroll","input":{"kind":"totp"}}`)
+	if start.Code != http.StatusOK {
+		t.Fatalf("POST flows/authenticated answered %d: %s", start.Code, start.Body.String())
+	}
+	if k := decode(t, start.Body.String())["next"].(map[string]any)["kind"]; k != "complete" {
+		t.Fatalf("a registration answered next kind %v, want complete", k)
+	}
+	cookie := flowCookie(t, start)
+	seq := int(decode(t, start.Body.String())["seq"].(float64))
+
+	done := r.send(http.MethodPost, "/auth/flows/answer",
+		`{"seq":`+itoa(seq)+`,"step":"complete"}`, "Cookie", cookie)
+	if done.Code != http.StatusOK {
+		t.Fatalf("the enrollment completion answered %d: %s", done.Code, done.Body.String())
+	}
+	if r.sessions.revokedAll == 0 {
+		t.Errorf("the enrollment completion revoked no sessions")
+	}
+}
+
+// TestStepUpWithASecondFactorCompletes holds the step-up: a session's factors are
+// offered, a challenge is started, and a pass elevates the session.
+func TestStepUpWithASecondFactorCompletes(t *testing.T) {
+	m := &fakeMethod{name: "password"}
+	r := newRig(t, m)
+	r.loginAsAuthenticated("acct1", "sid")
+	r.mfa.outcome = authn.MFAFactor
+	r.mfa.offered = []authn.FactorRecord{{ID: "f1", Kind: authn.FactorTOTP, ActivatedAt: time.Now().Add(-time.Hour)}}
+	r.mfa.assurance = authn.MFAResult{Assurance: authn.AssuranceMulti}
+
+	start := r.send(http.MethodPost, "/auth/flows/authenticated", `{"purpose":"step-up"}`)
+	if start.Code != http.StatusOK {
+		t.Fatalf("POST flows/authenticated answered %d: %s", start.Code, start.Body.String())
+	}
+	if k := decode(t, start.Body.String())["next"].(map[string]any)["kind"]; k != "factor" {
+		t.Fatalf("a step-up with factors answered next kind %v, want factor", k)
+	}
+	cookie := flowCookie(t, start)
+
+	challenge := r.send(http.MethodPost, "/auth/flows/answer",
+		`{"seq":0,"step":"factor","input":{"factor":"f1"}}`, "Cookie", cookie)
+	if challenge.Code != http.StatusOK {
+		t.Fatalf("the factor challenge answered %d: %s", challenge.Code, challenge.Body.String())
+	}
+	seq := int(decode(t, challenge.Body.String())["seq"].(float64))
+	passed := r.send(http.MethodPost, "/auth/flows/answer",
+		`{"seq":`+itoa(seq)+`,"step":"factor","input":{"factor":"f1","code":"123456"}}`, "Cookie", cookie)
+	if passed.Code != http.StatusOK {
+		t.Fatalf("the factor pass answered %d: %s", passed.Code, passed.Body.String())
+	}
+	done := r.send(http.MethodPost, "/auth/flows/answer",
+		`{"seq":`+itoa(seq+1)+`,"step":"complete"}`, "Cookie", cookie)
+	if done.Code != http.StatusOK {
+		t.Fatalf("the step-up completion answered %d: %s", done.Code, done.Body.String())
+	}
+	if len(r.sessions.elevated) != 1 {
+		t.Fatalf("the step-up elevated %d sessions, want one", len(r.sessions.elevated))
+	}
+	if r.sessions.elevated[0].Assurance != authn.AssuranceMulti {
+		t.Errorf("the elevation is %v, want multi-factor", r.sessions.elevated[0].Assurance)
+	}
+}
+
+// TestAStepUpWithNoUsableFactorIsRefused holds that an account whose factors were
+// all registered during the current session cannot step up with them.
+func TestAStepUpWithNoUsableFactorIsRefused(t *testing.T) {
+	m := &fakeMethod{name: "password"}
+	r := newRig(t, m)
+	r.loginAsAuthenticated("acct1", "sid")
+	r.mfa.outcome = authn.MFAFactor
+	// A factor activated after the session's own authentication time cannot
+	// strengthen it.
+	r.mfa.offered = []authn.FactorRecord{{ID: "f1", Kind: authn.FactorTOTP, ActivatedAt: time.Now().Add(time.Minute)}}
+
+	start := r.send(http.MethodPost, "/auth/flows/authenticated", `{"purpose":"step-up"}`)
+	if start.Code != http.StatusUnauthorized {
+		t.Errorf("a step-up with no usable factor answered %d, want 401: %s", start.Code, start.Body.String())
+	}
+}
+
+// TestCompleteMakesASessionOnce holds the terminal login action: a ready flow
+// completed twice makes a session once, the second completion refused by the
+// tombstone.
+func TestCompleteMakesASessionOnce(t *testing.T) {
+	m := &fakeMethod{name: "password"}
+	m.begin = func(authn.Start) (authn.Step, error) {
+		return authn.StepProven(authn.Proof{Account: "acct1", Methods: []authn.Method{authn.MethodPassword}}), nil
+	}
+	r := newRig(t, m)
+	r.allow("acct1")
+	rec := r.send(http.MethodPost, "/auth/flows", `{"method":"password"}`)
+	cookie := flowCookie(t, rec)
+	seq := int(decode(t, rec.Body.String())["seq"].(float64))
+
+	done := r.send(http.MethodPost, "/auth/flows/answer", `{"seq":`+itoa(seq)+`,"step":"complete"}`, "Cookie", cookie)
+	if done.Code != http.StatusOK {
+		t.Fatalf("complete answered %d: %s", done.Code, done.Body.String())
+	}
+	if len(r.sessions.created) != 1 {
+		t.Fatalf("complete made %d sessions, want one", len(r.sessions.created))
+	}
+	if got := r.sessions.created[0].Account; got != "acct1" {
+		t.Errorf("the session is for %q, want acct1", got)
+	}
+
+	again := r.send(http.MethodPost, "/auth/flows/answer", `{"seq":`+itoa(seq+1)+`,"step":"complete"}`, "Cookie", cookie)
+	if again.Code != http.StatusUnauthorized {
+		t.Errorf("a second complete answered %d, want 401: %s", again.Code, again.Body.String())
+	}
+	if len(r.sessions.created) != 1 {
+		t.Errorf("a second complete made another session: %d", len(r.sessions.created))
+	}
+}
+
+// TestTheLoginAuditIsWrittenUnderADerivedIdentity holds that the audit row of a
+// completed login is written under an identity the engine derives for that one
+// call: the login runs on an Open route whose own context carries no identity,
+// yet the row's actor is the account the login just proved. The request's own
+// context is left as it was, so the login identity does not flow back into the
+// chain the request runs in.
+func TestTheLoginAuditIsWrittenUnderADerivedIdentity(t *testing.T) {
+	m := &fakeMethod{name: "password"}
+	m.begin = func(authn.Start) (authn.Step, error) {
+		return authn.StepProven(authn.Proof{Account: "acct1", Methods: []authn.Method{authn.MethodPassword}}), nil
+	}
+	r := newRig(t, m)
+	r.allow("acct1")
+	sink := &auditing{}
+	r.p.audit = sink
+	// The route carries no identity, so anything on the request's own context
+	// after the handler came from the engine writing it back.
+	r.watchCtx.Store(true)
+
+	rec := r.send(http.MethodPost, "/auth/flows", `{"method":"password"}`)
+	cookie := flowCookie(t, rec)
+	seq := int(decode(t, rec.Body.String())["seq"].(float64))
+	done := r.send(http.MethodPost, "/auth/flows/answer", `{"seq":`+itoa(seq)+`,"step":"complete"}`, "Cookie", cookie)
+	if done.Code != http.StatusOK {
+		t.Fatalf("complete answered %d: %s", done.Code, done.Body.String())
+	}
+	got := sink.identities()
+	if len(got) != 1 || got[0] != "acct1" {
+		t.Fatalf("the audit rows were written under identities %v, want [acct1]", got)
+	}
+	if r.leaked.Load() {
+		t.Errorf("the login engine left its derived identity on the request's own context")
+	}
+}
+
+// TestAMustChangeLoginRevokesTheAccountsOtherSessions holds the terminal action's
+// password-change branch: a login whose proof replaced the account's password
+// revokes the account's other sessions and keeps the new one, while a login that
+// did not touch the password leaves them alone.
+func TestAMustChangeLoginRevokesTheAccountsOtherSessions(t *testing.T) {
+	login := func(passwordChanged bool) *rig {
+		t.Helper()
+		m := &fakeMethod{name: "password"}
+		m.begin = func(authn.Start) (authn.Step, error) {
+			return authn.StepProven(authn.Proof{
+				Account:         "acct1",
+				Methods:         []authn.Method{authn.MethodPassword},
+				PasswordChanged: passwordChanged,
+			}), nil
+		}
+		r := newRig(t, m)
+		r.allow("acct1")
+		rec := r.send(http.MethodPost, "/auth/flows", `{"method":"password"}`)
+		cookie := flowCookie(t, rec)
+		seq := int(decode(t, rec.Body.String())["seq"].(float64))
+		done := r.send(http.MethodPost, "/auth/flows/answer", `{"seq":`+itoa(seq)+`,"step":"complete"}`, "Cookie", cookie)
+		if done.Code != http.StatusOK {
+			t.Fatalf("complete answered %d: %s", done.Code, done.Body.String())
+		}
+		return r
+	}
+
+	changed := login(true)
+	if changed.sessions.revokedAll != 1 {
+		t.Fatalf("a password-changing login revoked the account's sessions %d times, want one", changed.sessions.revokedAll)
+	}
+	if len(changed.sessions.made) != 1 || changed.sessions.except != changed.sessions.made[0].ID {
+		t.Errorf("the revoke kept session %q, want the new one %q", changed.sessions.except, changed.sessions.made[0].ID)
+	}
+
+	plain := login(false)
+	if plain.sessions.revokedAll != 0 {
+		t.Errorf("a login that did not change the password revoked the account's sessions %d times, want none", plain.sessions.revokedAll)
+	}
+}
+
+// TestAnswersAreCappedAtEight holds the per-flow answer limit: the ninth answer
+// makes the flow a tombstone and is refused.
+func TestAnswersAreCappedAtEight(t *testing.T) {
+	m := &fakeMethod{name: "password"}
+	m.begin = func(authn.Start) (authn.Step, error) { return authn.StepPrompt("credentials", nil), nil }
+	m.ans = func(authn.FlowState, authn.StepInput) (authn.Step, error) {
+		return authn.StepPrompt("credentials", nil), nil
+	}
+	r := newRig(t, m)
+	rec := r.send(http.MethodPost, "/auth/flows", `{"method":"password"}`)
+	cookie := flowCookie(t, rec)
+	for i := 1; i <= maxAnswers; i++ {
+		out := r.send(http.MethodPost, "/auth/flows/answer", `{"seq":`+itoa(i)+`,"step":"answer","input":{}}`, "Cookie", cookie)
+		if out.Code != http.StatusOK {
+			t.Fatalf("answer %d answered %d: %s", i, out.Code, out.Body.String())
+		}
+	}
+	ninth := r.send(http.MethodPost, "/auth/flows/answer", `{"seq":`+itoa(maxAnswers+1)+`,"step":"answer","input":{}}`, "Cookie", cookie)
+	if ninth.Code != http.StatusUnauthorized {
+		t.Errorf("the answer past the limit answered %d, want 401: %s", ninth.Code, ninth.Body.String())
+	}
+}
+
+// TestCrossSiteStartIsRefusedByTheWrapper holds that the cross-origin check runs
+// before the handler: a cross-site POST flows is refused without reaching it.
+func TestCrossSiteStartIsRefusedByTheWrapper(t *testing.T) {
+	m := &fakeMethod{name: "password"}
+	m.begin = func(authn.Start) (authn.Step, error) { return authn.StepPrompt("credentials", nil), nil }
+	r := newRig(t, m)
+	rec := r.send(http.MethodPost, "/auth/flows", `{"method":"password"}`,
+		"Sec-Fetch-Site", "cross-site", "Origin", "https://evil.example.org")
+	if rec.Code != http.StatusUnauthorized {
+		t.Errorf("a cross-site start answered %d, want the gateway's 401: %s", rec.Code, rec.Body.String())
+	}
+	if m.calls != 0 {
+		t.Errorf("a cross-site start reached the handler: calls %d", m.calls)
+	}
+}
+
+// TestDisabledMethodIsRefused holds that a method the operator turned off answers
+// method-disabled without reaching its Begin.
+func TestDisabledMethodIsRefusedWithAMethodDisabledCode(t *testing.T) {
+	m := &fakeMethod{name: "sms"}
+	m.begin = func(authn.Start) (authn.Step, error) { return authn.StepPrompt("phone", nil), nil }
+	r := newRig(t, m)
+	r.p.settings = readerWithDisabled(t, "sms")
+	rec := r.send(http.MethodPost, "/auth/flows", `{"method":"sms"}`)
+	if rec.Code != http.StatusForbidden {
+		t.Fatalf("a disabled method answered %d, want 403: %s", rec.Code, rec.Body.String())
+	}
+	if m.calls != 0 {
+		t.Errorf("a disabled method's Begin ran: calls %d", m.calls)
+	}
+}
+
+// fakeStore is a settings store that answers string and int items and errors for
+// the rest.
+type fakeStore struct{ values map[string]string }
+
+func (s *fakeStore) Get(_ settings.Layer, key string, target any) error {
+	v, ok := s.values[key]
+	if !ok {
+		return errors.New("undeclared")
+	}
+	switch p := target.(type) {
+	case *string:
+		*p = v
+	case *int:
+		n, err := strconv.Atoi(v)
+		if err != nil {
+			return err
+		}
+		*p = n
+	case *time.Duration:
+		d, err := time.ParseDuration(v)
+		if err != nil {
+			return err
+		}
+		*p = d
+	default:
+		return errors.New("the target is not a string, an int or a duration")
+	}
+	return nil
+}
+func (*fakeStore) Set(context.Context, settings.Write) error                      { return nil }
+func (*fakeStore) Delete(context.Context, settings.Layer, string, string) error   { return nil }
+func (*fakeStore) List(context.Context, settings.Layer) ([]settings.Entry, error) { return nil, nil }
+func (*fakeStore) Declared() []settings.DeclaredItem                              { return nil }
+
+// readerWithDisabled builds a settings reader whose disabled-methods switch lists
+// the names given.
+func readerWithDisabled(t *testing.T, names ...string) *reader {
+	t.Helper()
+	encoded, err := json.Marshal(names)
+	if err != nil {
+		t.Fatalf("encoding the disabled methods: %v", err)
+	}
+	store := &fakeStore{values: map[string]string{disabledMethodsPath: string(encoded)}}
+	return newReader(store, slog.New(slog.NewTextHandler(ioDiscard{}, nil)))
+}
+
+func itoa(n int) string {
+	if n == 0 {
+		return "0"
+	}
+	var b []byte
+	neg := n < 0
+	if neg {
+		n = -n
+	}
+	for n > 0 {
+		b = append([]byte{byte('0' + n%10)}, b...)
+		n /= 10
+	}
+	if neg {
+		b = append([]byte{'-'}, b...)
+	}
+	return string(b)
+}

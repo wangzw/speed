@@ -125,7 +125,7 @@ type MFA interface {
 
 ### 登记、删除与加强认证的路由与要求
 
-「新鲜的第一因素」指 `Requirement{Assurance: AssuranceSingle, MaxAge: 5 分钟}`，5 分钟是固定值，不是设置。「新鲜的本地多因素」指 `Requirement{Assurance: AssuranceMulti, MaxAge: recent-window, Local: true}`，`recent-window` 是设置 `authn.mfa.recent-window`。路由相对基路径 `B`，访问级别均为 `Required`。下表是这些动作的完整集合。
+「新鲜的第一因素」指 `Requirement{Assurance: AssuranceSingle, MaxAge: 5 分钟}`，5 分钟是固定值，不是设置。「新鲜的本地多因素」指 `Requirement{Assurance: AssuranceMulti, MaxAge: recent-window, Local: true}`，`recent-window` 是设置 `authn.mfa.recent-window`。读这个键的是各使用方，不是本模块：因素路由的处理器、登录引擎的自助路由与准入层各自经设置存储从全局层读同一个键，构成 `MaxAge`；读取出错或取值越出取值域时取声明的缺省（10 分钟）。`MaxAge` 为零或负读作没有任何身份满足，不是「不要求新鲜」：取值域由读取方保证，构造 `Requirement` 时落进来的域外取值因此落在拒绝一侧。路由相对基路径 `B`，访问级别均为 `Required`。下表是这些动作的完整集合。
 
 | 动作 | 路由 | 要求 |
 |---|---|---|
@@ -163,6 +163,8 @@ WWW-Authenticate: <Identity.Challenge()> error="insufficient_user_authentication
 ```
 
 `insufficient_user_authentication`、`acr_values`、`max_age` 取自 RFC 9470。RFC 把它们定义在 Bearer 方案的挑战里，对 Cookie 与 Basic 载体沿用同名参数是认证功能目录的约定，不是 RFC 的规定。`acr_values` 取保障等级数字的十进制文本，与访问令牌的 `acr` 同写法；`max_age` 取要求的 `MaxAge` 的秒数。
+
+`guard.Require` 尚未交付。需要这一应答的地方在 `guard` 落地之前各自写它：登录引擎与因素路由的处理器按路由部件写出同形的 401，准入层按它的判定次序应答同一个问题码。挑战的构成在 `guard` 落地后与它们一致，因为参数取自同一个 `Identity.Challenge()` 与同一套 `MaxAge` 读法。
 
 ### 稳定性承诺
 
@@ -506,7 +508,7 @@ CREATE TABLE authn_webauthn_credentials (
 
 重置不绕过第一因素：重置后的下一次登录仍要先过第一因素，然后只能登记新因素；不提供「重置后直接登录」。重置也不借道冒充接缝。
 
-**重置的授权与强认证核验在管理面处理器。** 处理器先经 `Decider`（动作 `authn.mfa.reset`，`Decider` 缺席即全拒），再核验发起者的要求（见「账户安全类动作与 `Requirement.Local`、`Seasoned`」），然后写强制审计，审计写成功才调 `MFA.Reset`，写失败则重置失败（[authn-admin](design-authn-admin.md)）。
+**重置的授权与强认证核验在管理面处理器。** 处理器先经 `Decider`（动作 `authn.mfa.reset`，`Decider` 缺席即全拒），再核验发起者的要求（见「账户安全类动作与 `Requirement.Local`、`Seasoned`」），然后写强制审计，审计写成功才调 `MFA.Reset`，写失败则重置失败（[authn-admin](design-authn-admin.md)）。`Reset` 的 `reason` 形参由处理器填入，本模块不使用它记录或发事件：`authn.factor.changed`（`reset`）不带原因，会话撤销固定用 `authn.ReasonFactorReset`，重置的来由落在处理器写的强制档审计里。签名保留该形参，供宿主与处理器表达重置的来由。
 
 **`MFA.Seasoned`。** 读账户的因素行：存在 `kind` 不是 `sms`、`status` 为启用、`activated_at` 与当前时刻之差不小于 `sensitive-min-age` 的行即为真。该判定不看会话，只看登记簿。
 
@@ -546,7 +548,7 @@ CREATE TABLE authn_webauthn_credentials (
 | `ErrReplay` | TOTP 计数器或 WebAuthn 签名计数重放 | 并入 `login-failed` | 拒 |
 | `ErrThrottled` | `ScopeFactor` 退避中 | 429 带 `Retry-After` | 拒 |
 | `ErrStepUpRequired` | 保障等级、新鲜度或 `Local` 不满足 | 401 `insufficient_user_authentication` | 拒 |
-| `ErrNoFactor` | 纳入 `authn.mfa` 而没有任何 `Factor`，却设了 `global-required` | 启动失败，点名缺的模块 | 拒 |
+| `ErrNoFactor` | 纳入 `authn.mfa` 而没有任何 `Factor`，且设了 `global-required`，或库里已有账户登记了某个种类而该种类没有实现 | 启动失败，点名缺的模块 | 拒 |
 | `ErrFactorConflict` | 两个 `Factor` 同种 | 启动失败，点名双方 | 拒 |
 | `ErrForbidden`、`ErrAuditRequired` | 重置因素时 `Decider` 判否；强制审计写失败 | 403；503 | 拒 |
 
@@ -557,6 +559,7 @@ CREATE TABLE authn_webauthn_credentials (
 - **库成功而补充校验失败，按失败。** TOTP 的重放判定与 WebAuthn 的计数写回是库之外补上的校验，失败即拒绝，记 Error。
 - **读设置出错的方向。** `global-required` 属强制类开关，读不出来按拒绝（503）；调参类的期限与上限读不出来取声明的默认值并记 Error。
 - **因素实现的故障。** 因素实现宕机时交 `StepUnavailable`，对外 503，不与 `StepRefused` 的 401 混桶。
+- **登记的种类没有实现。** 启动期已按 `ErrNoFactor` 拒绝（见哨兵表）。运行期仍遇到账户登记的种类没有对应实现时（例如某实现模块在运行期缺席），本模块把它按该因素不可用处理，交 `StepRefused` 并以 `ErrNoFactor` 为成因，对外并入 `login-failed`，不退避；不为这一运行期情形另立哨兵，复用启动期哨兵作成因。
 - **`Reset` 的部分失败。** 返回错误，账户处于更严的状态；重试幂等。`AccountDeleted` 清理失败时返回错误，由 `authn.account` 汇总为 `ErrCleanupIncomplete`，重试同一调用幂等地补完，事件补偿与 `valid_after` 兜底。
 - **启动期。** 带表的 `Start` 探测不到自己的表即以 `ErrNotMigrated` 终止；`New` 里不读写自己的表，清扫协程在 `Start` 起。
 
@@ -594,22 +597,22 @@ CREATE TABLE authn_webauthn_credentials (
 
 ## 实现状态
 
-`pkg/authn` 目前只含网关、口令表后端、身份与判决的类型和值类型；多因素的接缝、模块与全部因素尚未实现，代码锚点只有下表列出的值类型与 `Identity.Satisfies`。
+`pkg/authn` 目前含网关、口令表后端、身份与判决的类型、值类型、多因素的根包接缝，以及多因素模块 `authn.mfa` 的登记簿与编排；四种因素种类（TOTP、短信、WebAuthn）与 `guard.Require` 尚未实现。
 
 | 能力 | 状态 | 代码 |
 |---|---|---|
-| 根包的因素类型与接缝：`FactorKind`、`FactorStatus`、`FactorRecord`、`Pass`、`Factor`、`MFAOutcome`、`MFAResult`、`MFA` | 部分实现 — 缺 `Factor`、`MFAOutcome`、`MFAResult`、`MFA`；`FactorKind`、`FactorStatus`、`FactorRecord`、`Pass` 已在 | `pkg/authn/internal/model/factor.go` `FactorKind`、`FactorStatus`、`FactorRecord`；`pkg/authn/internal/model/login.go` `Pass`；`pkg/authn/ids.go` |
+| 根包的因素类型与接缝：`FactorKind`、`FactorStatus`、`FactorRecord`、`Pass`、`Factor`、`MFAOutcome`、`MFAResult`、`MFA` | 已实现 | `pkg/authn/factor.go` `Factor`、`MFA`；`pkg/authn/internal/model/factor.go` `FactorKind`、`FactorStatus`、`FactorRecord`、`MFAOutcome`、`MFAResult`；`pkg/authn/internal/model/login.go` `Pass`；`pkg/authn/ids.go` |
 | `Requirement` 的 `Local` 与 `Identity.Satisfies`、`AssuranceFromIDP` | 已实现 | `pkg/authn/internal/model/assurance.go` `Requirement`；`pkg/authn/internal/identity/identity.go` `Satisfies`、`AssuranceFromIDP` |
-| `authn.mfa` 模块：登记簿、策略判定、`Challenge`、`Verify`、`Enroll`、`Remove` | 未实现 | — |
-| 保障等级的合成与 IdP 声明的采信条件 | 未实现 | — |
-| `Seasoned`、`Reset` | 未实现 | — |
-| 待确认行的清扫协程 | 未实现 | — |
-| `Start` 里对 `tenant.admission` 参与性的判定与 `Warn` | 未实现 | — |
-| 账户生命周期钩子与 `authn.account.deleted` 的补偿订阅 | 未实现 | — |
-| `GET B/factors`、`DELETE B/factors/:id` | 未实现 | — |
+| `authn.mfa` 模块：登记簿、策略判定、`Challenge`、`Verify`、`Enroll`、`Remove` | 已实现 | `pkg/authn/mfa/mfa.go` `Module`；`pkg/authn/mfa/orchestrate.go` `Enroll`、`Verify`、`Challenge`；`pkg/authn/mfa/manage.go` `Remove`、`Factors`、`Kinds`；`pkg/authn/mfa/register.go` |
+| 保障等级的合成与 IdP 声明的采信条件 | 已实现 — 唯一合成处 | `pkg/authn/mfa/policy.go` `Assurance`、`Require` |
+| `Seasoned`、`Reset` | 已实现 | `pkg/authn/mfa/manage.go` `Seasoned`、`Reset` |
+| 待确认行的清扫协程 | 已实现 | `pkg/authn/mfa/sweep.go` |
+| `Start` 里对 `tenant.admission` 参与性的判定与 `Warn` | 已实现 | `pkg/authn/mfa/mfa.go` `admissionModule` |
+| 账户生命周期钩子与 `authn.account.deleted` 的补偿订阅 | 已实现 | `pkg/authn/mfa/manage.go` `AccountDeleted`、`AccountDisabled`、`ServiceSecretRevoked`；`pkg/authn/mfa/lifecycle.go` |
+| `GET B/factors`、`DELETE B/factors/:id` | 已实现 — 均经 `mount.Mounter` 挂载，删除要求本模块核验的新鲜本地多因素 | `pkg/authn/mfa/routes.go` |
 | TOTP 因素 | 未实现 | — |
 | 短信因素 | 未实现 | — |
 | WebAuthn 因素与通行密钥登录方法 | 未实现 | — |
-| `guard.Require` 与加强认证应答 | 未实现 | — |
-| 加强认证的 `Elevate` 与仪式数据承载；归 [authn-session](design-authn-session.md) 与 [authn-login](design-authn-login.md) | 未实现 | — |
+| `guard.Require` 与加强认证应答 | 未实现 — 见「加强认证的应答与 `guard.Require`」 | — |
+| 加强认证的 `Elevate` 与仪式数据承载；归 [authn-session](design-authn-session.md) 与 [authn-login](design-authn-login.md) | 已实现 | `pkg/authn/session/sessions.go` `Elevate`；`pkg/authn/login/engine.go` |
 | 根包 import 守卫 | 已实现 — 实现多因素的子包不在根包 import 的白名单之内，状态行见 [design-authn](design-authn.md) | `pkg/authn/deps_test.go` `TestTheRootPackageImportsOnlyWhatItMay`、`TestTheRootPackageClosureHoldsNoThirdPartyPackage` |

@@ -8,7 +8,7 @@
         "parameters": [{"$ref": "#/components/parameters/Tenant"}],
         "responses": {
           "200": {"description": "The tenant's members", "content": {"application/json": {"schema": {"$ref": "#/components/schemas/MemberList"}}}},
-          "403": {"description": "The caller is not a member of the tenant", "content": {"application/json": {"schema": {"$ref": "#/components/schemas/Error"}}}}
+          "404": {"description": "The tenant is unknown, or the caller is not a member of it", "content": {"application/json": {"schema": {"$ref": "#/components/schemas/Error"}}}}
         }
       },
       "post": {
@@ -37,8 +37,8 @@
       },
       "Membership": {
         "type": "object",
-        "properties": {"tenant_id": {"type": "string"}, "user_id": {"type": "string"}, "role": {"$ref": "#/components/schemas/Role"}},
-        "required": ["tenant_id", "user_id", "role"]
+        "properties": {"tenant_id": {"type": "string"}, "account_id": {"type": "string"}, "role": {"$ref": "#/components/schemas/Role"}},
+        "required": ["tenant_id", "account_id", "role"]
       },
       "MemberList": {
         "type": "object",
@@ -51,7 +51,7 @@
             "items": {
               "type": "object",
               "properties": {
-                "user_id": {"type": "string"},
+                "account_id": {"type": "string"},
                 "email": {"type": "string"},
                 "display_name": {"type": "string"},
                 "role": {"$ref": "#/components/schemas/Role"}

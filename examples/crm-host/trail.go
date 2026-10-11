@@ -361,7 +361,7 @@ type trailProduct struct {
 
 // listTrail answers the trail of the tenant the request names.
 func (p *trailProduct) listTrail(c *gin.Context) {
-	self, ok := memberWith(c, roleAdmin)
+	self, ok := memberWith(c, p.db, roleAdmin)
 	if !ok {
 		return
 	}
@@ -385,7 +385,7 @@ func (p *trailProduct) listTrail(c *gin.Context) {
 // row's identifier alone, and a row of another tenant is not found, because the
 // filter conditions the statement on this one.
 func (p *trailProduct) trailEntryByID(c *gin.Context) {
-	if _, ok := memberWith(c, roleAdmin); !ok {
+	if _, ok := memberWith(c, p.db, roleAdmin); !ok {
 		return
 	}
 	id, err := strconv.ParseInt(c.Param("id"), 10, 64)

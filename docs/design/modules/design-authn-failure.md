@@ -232,6 +232,7 @@ type ThrottledError struct{ RetryAfter time.Duration }
 | `ErrInvalidAccountID`、`ErrAccountNotFound`、`ErrAccountExists` | 标识格式不合法；账户不存在（含墓碑）；标识、登录名或绑定违反唯一约束（`gorm.ErrDuplicatedKey`，两个引擎同判） | 400；对外并入 `login-failed` 或 404；409 |
 | `ErrInvalidCredentials` | 未知标识、错口令、验证码错、停用、无口令，一律此哨兵 | 401 `login-failed` |
 | `ErrPasswordPolicy`、`ErrInvalidIdentifier` | 口令不合策略（过短、超长、等于本人标识、低于 OWASP 下限、与当前口令相同）；标识规范化失败（用户名、邮箱、手机格式不合） | 400 `bad-request` |
+| `ErrInvalidArgument` | 写入的值越过调用允许的域：属性集越界、显示名过长、`via` 不在 `Verification` 接受的形式内、`reason` 不在 `ReasonClass` 闭集 | 管理路由 400 `bad-request`；模块在自己写下的值（会话载荷的 `idp.*` 属性）上遇到它是自身的缺陷，503 |
 | `ErrFactorLimit`、`ErrIdentifierRequired` | 某种因素已达 `max-per-kind`；账户没有可作登录名的标识而要设口令 | 409 `conflict`、409 `login-identifier-required` |
 | `ErrAccountUnavailable`、`ErrMethodDisabled` | 外部登录路径上账户停用；方法被 `disabled-methods` 关掉 | 403 `account-unavailable`、403 `method-disabled` |
 | `ErrCleanupIncomplete` | 账户状态或服务密钥状态已生效而某个 `AccountLifecycle` 钩子失败（重试同一调用幂等地补完） | 503 |
@@ -342,22 +343,22 @@ type ThrottledError struct{ RetryAfter time.Duration }
 
 ## 实现状态
 
-下表的状态以代码为准。运行期哨兵与多数依赖路径所属的模块尚未存在，对应条目写「未实现」。
+下表的状态以代码为准。运行期哨兵与依赖路径所属的模块已随各期落地，尚未落地的那部分对应条目写「未实现」。
 
 | 能力 | 状态 | 代码 |
 |---|---|---|
 | 网关的启动期哨兵 `ErrNoRouter`、`ErrNoVerifier`、`ErrDrainTimeout` | 已实现 | `pkg/authn/errors.go` `ErrNoRouter`、`ErrNoVerifier`、`ErrDrainTimeout`；`pkg/authn/gate/gate.go` `drain` |
-| 网关的其余启动期哨兵 | 已实现 — `ErrRoutesUnconfigured` 由 `authn.mount` 在 `Init` 里触发，网关在 `Start` 对同一规则再判一次，该模块尚未实现 | `pkg/authn/errors.go`；`pkg/authn/gate/dispatch.go` `buildDispatch`；`pkg/authn/gate/config.go`；`pkg/authn/gate/exempt.go` `seal`；`pkg/authn/gate/gate.go` `checkMount`；`pkg/authn/internal/mount/endpoint.go` `Endpoint` |
-| 带表模块、登录、因素与密钥的启动期哨兵 | 未实现 — `ErrNoEncryptionKey`、`ErrInvalidKey`、`ErrNotMigrated`、`ErrMethodConflict`、`ErrFactorConflict`、`ErrNoLoginMethod`、`ErrNoFactor` 都不存在 | — |
-| 口令条目的哨兵 `static.ErrMalformedHash` | 已实现 — 与 `internal/password` 共用同一个值；启动期点名主体且不带条目的任何部分，并与 `ErrInvalidClaim` 同时可匹配；口令表的条目在启动期读完，没有运行期读不了的条目，运行期按 `ErrInvalidCredentials` 处理属账户后端，尚未实现 | `pkg/authn/internal/password/phc.go` `ErrMalformedHash`、`Parse`；`pkg/authn/static/hash.go`；`pkg/authn/static/config.go` |
-| 运行期哨兵表 | 部分实现 — 根包只有 `ErrInvalidAccountID`、`ErrThrottled`（经 `*ThrottledError` 与 `errors.As` 取 `RetryAfter`）与 `ErrBusy`；表里其余运行期哨兵都没有声明 | `pkg/authn/ids.go` `ErrInvalidAccountID`；`pkg/authn/throttle.go` `ErrThrottled`、`ThrottledError`；`pkg/authn/errors.go` `ErrBusy` |
+| 网关的其余启动期哨兵 | 已实现 — `ErrRoutesUnconfigured` 由 `authn.mount` 在解析挂载端时触发，网关在 `Start` 对同一规则再判一次 | `pkg/authn/errors.go`；`pkg/authn/gate/dispatch.go` `buildDispatch`；`pkg/authn/gate/config.go`；`pkg/authn/gate/exempt.go` `seal`；`pkg/authn/gate/gate.go` `checkMount`；`pkg/authn/internal/mount/endpoint.go` `Endpoint`；`pkg/authn/mount/config.go` |
+| 带表模块、登录、因素与密钥的启动期哨兵 | 部分实现 — 哨兵已声明；`ErrNotMigrated`、`ErrMethodConflict`、`ErrNoLoginMethod`、`ErrFactorConflict`、`ErrNoFactor` 的触发方（带表模块、登录引擎、因素模块）已在；缺令牌与签名密钥的 `ErrNoEncryptionKey`、`ErrInvalidKey` | `pkg/authn/errors.go` `ErrNoEncryptionKey`、`ErrInvalidKey`、`ErrNotMigrated`、`ErrMethodConflict`、`ErrFactorConflict`、`ErrNoLoginMethod`、`ErrNoFactor`；`pkg/authn/account/account.go`、`pkg/authn/session/session.go`、`pkg/authn/mfa/mfa.go` `Start` |
+| 口令条目的哨兵 `static.ErrMalformedHash` | 已实现 — 与 `internal/password` 共用同一个值；启动期点名主体且不带条目的任何部分，并与 `ErrInvalidClaim` 同时可匹配；口令表的条目在启动期读完，没有运行期读不了的条目，账户侧的运行期口令校验按 `ErrInvalidCredentials` 处理 | `pkg/authn/internal/password/phc.go` `ErrMalformedHash`、`Parse`；`pkg/authn/static/hash.go`；`pkg/authn/static/config.go`；`pkg/authn/account/password.go` `Verify` |
+| 运行期哨兵表 | 已实现 — 根包声明表里全部运行期哨兵，`ErrThrottled` 经 `*ThrottledError` 与 `errors.As` 取 `RetryAfter`；各哨兵的触发方在账户、会话、多因素与登录各模块里 | `pkg/authn/ids.go` `ErrInvalidAccountID`；`pkg/authn/throttle.go` `ErrThrottled`、`ThrottledError`；`pkg/authn/errors.go`；`pkg/authn/errors_test.go` `TestTheSentinelsAreExactlyTheDesignsTables` |
 | 网关对后端答不了、超预算、panic、零值判决的收口 | 已实现 | `pkg/authn/gate/serve.go` `verify`、`enter`、`conclude`、`admit`；`pkg/authn/internal/verdict/verdict.go` `Unspoken` |
 | 可选认证路由上凭据存在而后端答不了的方向 | 已实现 | `pkg/authn/gate/serve.go` `admit`、`credentialOf` |
 | 出口检查的补充校验与库结论的优先级 | 部分实现 — 出口检查含账户命名空间、能力声明、`Scope` 与 `Provider` 的形状；没有库结论可与它排优先级 | `pkg/authn/gate/exitcheck.go` `checkPrincipal` |
 | 503 的 `Problem.Type` 为 `urn:speed:authn:unavailable`、令牌端点的 `temporarily_unavailable` | 未实现 — 现有应答只带状态码 | — |
-| 放宽清单各项的设置与上界、依赖不可用的方向表 | 未实现 — 承载它们的会话、令牌、准入层与设置键都不存在 | — |
+| 放宽清单各项的设置与上界、依赖不可用的方向表 | 部分实现 — 会话校验缓存、成员关系缓存、设置传播、事件与审计的缺口方向与账户生命周期钩子已在；缺令牌路径（`check-session`）、短信发送方、SAML 元数据刷新与签名密钥的条目 | `pkg/authn/session/cache.go`、`pkg/authn/session/verify.go`；`pkg/tenant/admission/cache.go`；`pkg/authn/account/lifecycle.go` |
 | 口令表的进程内退避（检查即预占、命中缓存不预占、成功不清零、固定键与容量上界）、并发上限与 `ErrBusy` | 已实现 — 网关见到 `ErrBusy` 包在 `Unavailable` 的成因里时答 503 带 `Retry-After: 1`；`ErrBusy` 与派生给出答案之前已结束的上下文不是一次猜测，退还预占 | `pkg/authn/internal/password` `Throttle`、`Reserve`、`MaxThrottleKeys`、`Governor`；`pkg/authn/static/static.go` `Verify`；`pkg/authn/gate/serve.go` `outage` |
-| 登录引擎对方法与因素的 `recover` | 未实现 | — |
-| 令牌与 SAML 的时间容差、撤销不依赖时钟的会话行 | 未实现 | — |
-| `New` 不读写自己的表、`Start` 里自检与清扫 | 未实现 | — |
-| 哨兵归类的装配测试与按依赖注入故障的方向测试 | 未实现 | — |
+| 登录引擎对方法与因素的 `recover` | 已实现 — 方法与因素边界上的 panic 收口为应答，不泄露成因 | `pkg/authn/login/engine.go`、`pkg/authn/login/answer.go` |
+| 令牌与 SAML 的时间容差、撤销不依赖时钟的会话行 | 部分实现 — 会话撤销以行的 `revoked_at` 为准，不比较时钟；缺令牌与 SAML 的时间容差 | `pkg/authn/session/sessions.go` `Revoke` |
+| `New` 不读写自己的表、`Start` 里自检与清扫 | 已实现 — 账户、会话与多因素的表模块 `New` 不触表，`Start` 探测表并在缺失时以 `ErrNotMigrated` 拒绝，各自带清扫协程 | `pkg/authn/account/account.go` `Start`、`pkg/authn/account/sweep.go`；`pkg/authn/session/session.go`、`pkg/authn/session/sweep.go`；`pkg/authn/mfa/mfa.go`、`pkg/authn/mfa/sweep.go` |
+| 哨兵归类的装配测试与按依赖注入故障的方向测试 | 部分实现 — 各模块的 `assembly_test` 与方向测试守住自己的哨兵与故障方向；缺跨模块的汇总用例 | `pkg/authn/account/assembly_test.go`；`pkg/authn/session/assembly_test.go`；`pkg/authn/mfa/assembly_test.go`；`pkg/authn/login/e2e_test.go` |

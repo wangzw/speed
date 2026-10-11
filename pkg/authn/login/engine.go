@@ -1,0 +1,384 @@
+package login
+
+import (
+	"context"
+	"encoding/json"
+	"fmt"
+	"log/slog"
+	"net/http"
+	"runtime/debug"
+
+	"github.com/gin-gonic/gin"
+
+	"github.com/vislake/speed/pkg/authn"
+	"github.com/vislake/speed/pkg/authn/internal/mount"
+	"github.com/vislake/speed/pkg/authn/internal/step"
+	"github.com/vislake/speed/pkg/authn/login/internal/resolve"
+)
+
+// errNoUsableFactor is a login whose account has factors but none the engine can
+// offer, which reads as a failed credential and never as an account with no
+// factor.
+var errNoUsableFactor = fmt.Errorf("%w: no usable factor", authn.ErrInvalidCredentials)
+
+// invoke runs one call to a login method or a factor under the call budget,
+// recovering a panic and discarding an answer that arrives after the budget.
+// ok is false only when the call gave no answer at all, which the caller writes
+// as a server error; every other defect is answered as the method's outage.
+func (p *product) invoke(ctx context.Context, method string, call func(ctx context.Context) (authn.Step, error)) (authn.Step, bool) {
+	cctx, cancel := context.WithTimeout(ctx, p.settings.callBudget())
+	defer cancel()
+
+	var got authn.Step
+	panicked := false
+	func() {
+		defer func() {
+			if r := recover(); r != nil {
+				panicked = true
+				p.logger.Error(ModuleName+": a login method panicked",
+					slog.String("method", method), slog.String("cause", fmt.Sprint(r)),
+					slog.String("stack", string(debug.Stack())))
+			}
+		}()
+		var err error
+		got, err = call(cctx)
+		if err != nil {
+			panicked = true
+			p.logger.Warn(ModuleName+": a login method failed",
+				slog.String("method", method), slog.String("cause", err.Error()))
+		}
+	}()
+	if panicked || cctx.Err() != nil {
+		return authn.StepUnavailable(fmt.Errorf("%w: the method %s did not answer", authn.ErrUnavailable, method)), true
+	}
+	if step.KindOf(got) == step.KindUnanswered {
+		p.logger.Error(ModuleName+": a login method gave no answer its call may take",
+			slog.String("method", method))
+		return authn.Step{}, false
+	}
+	return got, true
+}
+
+// countAnswer folds one accepted client answer into the record's count, which
+// the per-flow limit is read against. A call that is the flow's first move and
+// not a client's answer counts none.
+func countAnswer(rec *record, answered bool) {
+	if answered {
+		rec.Answers++
+	}
+}
+
+// sendsLeft is how many SMS sends a flow may still make.
+func (r *routes) sendsLeft(rec record) int {
+	left := r.settings.perFlowSends() - rec.Sends
+	if left < 0 {
+		return 0
+	}
+	return left
+}
+
+// flowState is the view a method or factor is handed of the flow.
+func (r *routes) flowState(rec record, token string) authn.FlowState {
+	return authn.FlowState{
+		ID:        tokenDigest(token)[:16],
+		Purpose:   rec.Purpose,
+		Step:      rec.MethodStep,
+		Account:   authn.AccountID(rec.Account),
+		Session:   authn.SessionID(rec.Session),
+		Private:   rec.MethodState,
+		SendsLeft: r.sendsLeft(rec),
+		Locale:    rec.Locale,
+	}
+}
+
+// swap writes the record built from old, refusing the request as an invalid flow
+// when another writer moved the record first.
+func (r *routes) swap(c *gin.Context, token string, old []byte, rec record) bool {
+	ok, err := r.advance(c.Request.Context(), token, old, rec)
+	if err != nil {
+		r.fail(c, err)
+		return false
+	}
+	if !ok {
+		mount.Unauthorized(c, r.endpoint, mount.CodeFlowInvalid)
+		return false
+	}
+	return true
+}
+
+// serverError is the answer to a defect the engine cannot pin on the client.
+func serverError(c *gin.Context) {
+	c.AbortWithStatusJSON(500, gin.H{"title": "Internal Server Error", "status": 500})
+}
+
+// recordSends folds a method's or factor's send report into the record. It
+// returns false and ends the flow when the report overstates what the call was
+// allowed to send, which would widen the per-flow limit: the record is swapped
+// to its tombstone and the request is answered as the method's outage.
+func (r *routes) recordSends(c *gin.Context, token string, raw []byte, rec *record, got authn.Step) bool {
+	n := step.SendsOf(got)
+	if n < 0 {
+		n = 0
+	}
+	if n > r.sendsLeft(*rec) {
+		r.logger.Error(ModuleName+": a login method reported more sends than it was allowed",
+			slog.Int("reported", n), slog.Int("allowed", r.sendsLeft(*rec)))
+		failed := *rec
+		failed.State = stateFailed
+		_, _ = r.advance(c.Request.Context(), token, raw, failed)
+		mount.Unavailable(c)
+		return false
+	}
+	rec.Sends += n
+	return true
+}
+
+// applyFirstSubmit advances a flow whose first-factor answer is a client
+// submission. It is the answer route's work for a flow in the first state.
+func (r *routes) applyFirstSubmit(c *gin.Context, token, echo string, rec record, raw []byte, fields map[string]string) {
+	ctx := c.Request.Context()
+	m, ok := r.method(rec.Method)
+	if !ok {
+		r.fail(c, fmt.Errorf("%w: the flow names a method not taken in", authn.ErrFlowInvalid))
+		return
+	}
+	f := r.flowState(rec, token)
+	in := authn.StepInput{Action: authn.InputSubmit, Fields: fields, Client: requestClient(c)}
+	got, ok2 := r.invoke(ctx, rec.Method, func(cctx context.Context) (authn.Step, error) {
+		return m.Answer(cctx, f, in)
+	})
+	if !ok2 {
+		serverError(c)
+		return
+	}
+	r.migrateFirst(c, token, echo, rec, raw, got, false, true)
+}
+
+// applyFirstBegin runs the first call of a flow started at the first factor. It
+// is not a client answer, so it moves the step number but counts no answer.
+func (r *routes) applyFirstBegin(c *gin.Context, token, echo string, rec record, raw []byte, fields map[string]string) {
+	ctx := c.Request.Context()
+	m, ok := r.method(rec.Method)
+	if !ok {
+		r.fail(c, fmt.Errorf("%w: the flow names a method not taken in", authn.ErrFlowInvalid))
+		return
+	}
+	s := authn.Start{
+		Purpose:   rec.Purpose,
+		Account:   authn.AccountID(rec.Account),
+		Fields:    fields,
+		Client:    requestClient(c),
+		SendsLeft: r.sendsLeft(rec),
+		Locale:    rec.Locale,
+	}
+	got, ok2 := r.invoke(ctx, rec.Method, func(cctx context.Context) (authn.Step, error) {
+		return m.Begin(cctx, s)
+	})
+	if !ok2 {
+		serverError(c)
+		return
+	}
+	r.migrateFirst(c, token, echo, rec, raw, got, false, false)
+}
+
+// migrateFirst turns a first-factor method's answer into the next record state,
+// swaps it and writes the reply. callback marks the callback route, whose reply
+// for a completed cookie login is a 303 rather than a body; answered marks a
+// client submission, which is what counts against the per-flow answer limit.
+func (r *routes) migrateFirst(c *gin.Context, token, echo string, rec record, raw []byte, got authn.Step, callback, answered bool) {
+	if !r.recordSends(c, token, raw, &rec, got) {
+		return
+	}
+	switch step.KindOf(got) {
+	case step.KindPrompt:
+		rec.MethodStep = step.NameOf(got)
+		rec.MethodState = step.PrivateOf(got)
+		rec.Seq++
+		countAnswer(&rec, answered)
+		if !r.swap(c, token, raw, rec) {
+			return
+		}
+		r.replyStep(c, rec, promptView(step.FieldsOf(got)), echo)
+	case step.KindRedirect:
+		rec.MethodStep = step.NameOf(got)
+		rec.MethodState = step.PrivateOf(got)
+		rec.Seq++
+		countAnswer(&rec, answered)
+		if !r.swap(c, token, raw, rec) {
+			return
+		}
+		r.replyStep(c, rec, stepView{Kind: nextRedirect, URL: step.RedirectOf(got), Method: "GET"}, echo)
+	case step.KindData:
+		rec.MethodStep = step.NameOf(got)
+		rec.MethodState = step.PrivateOf(got)
+		rec.Seq++
+		countAnswer(&rec, answered)
+		if !r.swap(c, token, raw, rec) {
+			return
+		}
+		r.replyStep(c, rec, stepView{Kind: nextWebAuthn, Options: step.DataOf(got)}, echo)
+	case step.KindRefused:
+		rec.Seq++
+		countAnswer(&rec, answered)
+		rec.MethodStep = ""
+		rec.MethodState = nil
+		if !r.swap(c, token, raw, rec) {
+			return
+		}
+		r.reportLogin(c.Request.Context(), rec, outcomeFailed)
+		mount.Unauthorized(c, r.endpoint, mount.CodeLoginFailed)
+	case step.KindThrottled:
+		r.reportLogin(c.Request.Context(), rec, outcomeThrottled)
+		mount.Throttled(c, step.RetryAfterOf(got))
+	case step.KindUnavailable:
+		r.reportLogin(c.Request.Context(), rec, outcomeUnavailable)
+		mount.Unavailable(c)
+	case step.KindProven:
+		r.resolveAndDecide(c, token, echo, rec, raw, step.ProofOf(got), callback)
+	default:
+		// A first factor answers a proof, a prompt, a redirect, a refusal or an
+		// outage; anything else is its defect.
+		r.logger.Error(ModuleName+": a login method gave an answer a first factor may not give",
+			slog.String("method", rec.Method), slog.String("answer", step.KindOf(got).String()))
+		serverError(c)
+	}
+}
+
+// resolveAndDecide resolves the account a proof names and decides what the flow
+// does next: a second factor, a registration, or ready. The record it writes
+// carries the account, the proof and, for a login, the policy outcome.
+func (r *routes) resolveAndDecide(c *gin.Context, token, echo string, rec record, raw []byte, proof authn.Proof, callback bool) {
+	ctx := c.Request.Context()
+	res, err := r.resolver.Resolve(ctx, resolve.Request{
+		Proof:   proof,
+		Purpose: rec.Purpose,
+		Account: authn.AccountID(rec.Account),
+	})
+	if err != nil {
+		rec.State = stateFailed
+		if !r.swap(c, token, raw, rec) {
+			return
+		}
+		r.reportLogin(ctx, rec, loginOutcomeOf(err))
+		r.fail(c, err)
+		return
+	}
+	rec.Account = string(res.Account)
+	p := proof
+	rec.Proof = &p
+	if res.Outcome == resolve.OutcomeMerged {
+		rec.Merged = true
+	}
+	if err := r.decidePolicy(ctx, &rec, proof); err != nil {
+		rec.State = stateFailed
+		if !r.swap(c, token, raw, rec) {
+			return
+		}
+		r.reportLogin(ctx, rec, loginOutcomeOf(err))
+		r.fail(c, err)
+		return
+	}
+	if !r.swap(c, token, raw, rec) {
+		return
+	}
+	switch rec.State {
+	case stateReady:
+		r.replyReady(c, token, rec, callback, echo)
+	case stateSecond, stateEnroll:
+		// A callback is a top-level navigation, so a flow that still needs a
+		// second or a registration factor sends the user agent back to the
+		// return target with the flow left in the cookie; the front end resumes
+		// with GET flows/current.
+		if callback {
+			c.Redirect(http.StatusSeeOther, rec.ReturnTo)
+			return
+		}
+		r.replyStep(c, rec, r.nextOf(rec), echo)
+	default:
+		serverError(c)
+	}
+}
+
+// decidePolicy sets the flow's next state from the multi-factor policy. A login
+// with a second factor becomes second, a login the policy requires a factor of
+// becomes enroll, and every other purpose and a login with no factor requirement
+// becomes ready.
+func (r *routes) decidePolicy(ctx context.Context, rec *record, proof authn.Proof) error {
+	if rec.Purpose != authn.PurposeLogin {
+		rec.State = stateReady
+		return nil
+	}
+	outcome, offered, err := r.mfa.Require(ctx, authn.AccountID(rec.Account), proof)
+	if err != nil {
+		return fmt.Errorf("%w: %w", authn.ErrUnavailable, err)
+	}
+	switch outcome {
+	case authn.MFANone:
+		rec.State = stateReady
+	case authn.MFAFactor:
+		if len(offered) == 0 {
+			return errNoUsableFactor
+		}
+		rec.State = stateSecond
+		rec.MFA.Required = true
+		rec.MFA.Offered = factorViews(offered)
+	case authn.MFAEnroll:
+		rec.State = stateEnroll
+	default:
+		return fmt.Errorf("%w: the policy gave an outcome outside its set", authn.ErrUnavailable)
+	}
+	return nil
+}
+
+// factorViews renders the offered factors for the client.
+func factorViews(records []authn.FactorRecord) []factorView {
+	out := make([]factorView, len(records))
+	for i, f := range records {
+		out[i] = factorView{ID: f.ID, Kind: string(f.Kind), Label: f.Label}
+	}
+	return out
+}
+
+// replyStep writes a reply that keeps a flow open, echoing the flow token only
+// when the request carried it in the header.
+func (r *routes) replyStep(c *gin.Context, rec record, next stepView, echo string) {
+	c.JSON(200, flowReply{Seq: rec.Seq, State: rec.State, FlowToken: echo, Next: next})
+}
+
+// replyReady writes the reply of a flow that reached ready: for the callback
+// route of a cookie login the session is made here and the user agent is sent to
+// the return target; for a submit answer the client takes the result with
+// step=complete.
+func (r *routes) replyReady(c *gin.Context, token string, rec record, callback bool, echo string) {
+	if callback && rec.Purpose == authn.PurposeLogin {
+		switch rec.Delivery {
+		case deliverySession:
+			r.completeCallbackLogin(c, token, rec)
+			return
+		case deliveryToken:
+			// A token cannot ride a redirect URL: the flow waits for the client.
+			r.replyStep(c, rec, stepView{Kind: nextComplete}, echo)
+			return
+		}
+	}
+	writeComplete(c, rec)
+}
+
+// completeCallbackLogin runs the terminal action of a callback that finished a
+// cookie login. The record was just left at ready by the resolution, so the
+// ready->done tombstone is swapped here first, exactly as complete does on the
+// answer route: the callback's terminal action runs at most once and an Open
+// POST flows/answer {"step":"complete"} against the same flow is refused.
+func (r *routes) completeCallbackLogin(c *gin.Context, token string, rec record) {
+	raw, err := json.Marshal(rec)
+	if err != nil {
+		serverError(c)
+		return
+	}
+	done := rec
+	done.State = stateDone
+	if !r.swap(c, token, raw, done) {
+		return
+	}
+	r.completeLogin(c, rec, true)
+}

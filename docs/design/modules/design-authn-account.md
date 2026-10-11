@@ -77,6 +77,8 @@ type Accounts interface {
 | `List` | 返回下一页游标，空串表示没有下一页。墓碑默认不返回，要看须显式给 `StatusDeleted`。无标识过滤时 `WHERE id > ? ORDER BY id LIMIT n`，走 `authn_accounts` 主键，次序近似创建次序；有标识过滤时先在 `authn_identifiers` 的 `(kind, value)` 唯一索引上取 `value >= 前缀 AND value < 前缀的上界`（范围比较，PostgreSQL 与 SQLite 通用，不用 `LIKE`），再回表按 `id` 排序分页。标识前缀已规范化、至少 3 个字符，防止全表扫描；`Limit` 缺省 100、上限 1000。 |
 | `ListServiceSecrets` | 只交回标识、标签、期限与撤销状态，从不含密钥。 |
 
+`Accounts` 没有批量读：按一组标识取多个账户要逐个 `Get`。需要一次取多个账户的展示信息（成员页、联系人属主）的调用方自己组织这些读取，本接口不提供 `GetMany` 一类方法。
+
 ### AccountAdmin
 
 ```go
@@ -103,11 +105,11 @@ type AccountAdmin interface {
 | 方法 | 承诺 |
 |---|---|
 | `Create` | 写入启用状态的账户。邮箱与手机须已被验证，验证渠道分别由 `EmailVerifiedVia` 与 `PhoneVerifiedVia` 给出（短信首登开户取 `sms-code`），没有「待验证」的行；`Password` 与 `PasswordHash` 二选一，`Password` 经口令策略校验，`PasswordHash` 是 PHC 或遗留格式、供导入用；`ID` 留空则生成，仅导入用，管理面路由不暴露；`Via` 取 `admin`、`jit`、`signup`、`import`，写进事件载荷。标识、登录名或绑定违反唯一约束返回 `ErrAccountExists`。 |
-| `SetStatus`、`Delete` | 在本模块事务里写 `status`、`valid_after`、墓碑与暂存的发件箱事件；事务提交之后同步调用全部 `AccountLifecycle`，清理失败返回 `ErrCleanupIncomplete`：状态已生效，重试同一调用幂等地补完清理。迁移表见[账户状态与生命周期](#账户状态与生命周期)。 |
+| `SetStatus`、`Delete` | 在本模块事务里写 `status`、`valid_after`、墓碑与暂存的发件箱事件；事务提交之后同步调用全部 `AccountLifecycle`，清理失败返回 `ErrCleanupIncomplete`：状态已生效，重试同一调用幂等地补完清理。迁移表见[账户状态与生命周期](#账户状态与生命周期)。两者的 `reason` 形参取自 [authn-events](design-authn-events.md) 的 `ReasonClass` 闭集；签名是 `string`，没有类型约束，靠调用方与 `ValidReasonClass` 保证，它随 `authn.account.status-changed` 以 `reason_class` 写入载荷。`Sessions.Revoke` 的 `reason` 同此。 |
 | `SetDisplayName` | 至多 100 个字符。 |
 | `SetAttributes` | 受[属性集的限制](#扩展点)约束；经 `Identity.Attribute` 只读到达所有层。 |
 | `SetProtected` | 为真的账户不得被冒充，不依赖 `Decider`（[design-authn-impersonation](design-authn-impersonation.md)）。 |
-| `AddIdentifier`、`RemoveIdentifier` | 标识先规范化；`via` 取值是 `sms-code`、`idp:<提供方标识>`、`admin`、`import-unverified` 这一封闭集合的形态，其余拒绝。 |
+| `AddIdentifier`、`RemoveIdentifier` | 标识先规范化；`via` 取值是 `sms-code`、`idp:<提供方标识>`、`admin`、`import-unverified` 这一封闭集合的形态，其余拒绝。`idp:` 后的提供方标识是 1 到 64 字节、字符集 `[A-Za-z0-9._-]`（与 `AccountID` 同一字符集），越出即 `ErrInvalidArgument`。 |
 | `LinkExternal` | 该（提供方，主体）已被别的账户占用返回 `ErrBindingConflict`。 |
 | `UnlinkExternal` | 解绑之后账户至少还剩一种可用登录方式，否则返回 `ErrLastLoginMethod`。 |
 | `CreateServiceSecret` | 密钥是 256 位随机数，前缀 `spd_cs_`，库里只存 SHA-256；明文只在返回值里出现一次。 |
@@ -120,6 +122,7 @@ type AccountAdmin interface {
 type Passwords interface {
 	Verify(ctx context.Context, identifier, password string) (AccountID, VerifyResult, error)
 	Set(ctx context.Context, id AccountID, password string, opt SetPasswordOptions) error
+	Clear(ctx context.Context, id AccountID) error
 	ImportHash(ctx context.Context, id AccountID, encoded string, mustChange bool) error
 	VerifyServiceSecret(ctx context.Context, clientID, secret string) (account AccountID, secretID string, expires time.Time, err error)
 }
@@ -136,6 +139,7 @@ type SetPasswordOptions struct {
 |---|---|
 | `Verify` | `identifier` 先规范化：含 `@` 按邮箱，否则按用户名；手机号不作口令登录名。对未知标识、停用账户、无口令账户，先做一次与当前参数等成本的诱饵派生，再统一返回 `ErrInvalidCredentials`。已知账户上的账户级失败退避在此静默计数，到阈值后照常派生并返回 `ErrInvalidCredentials`，不返回 429（[失败退避](#失败退避)）。成功时 `VerifyResult.MustChange` 为真表示凭据带 `must_change`，口令方法据此要求先设新口令。 |
 | `Set` | 经口令策略校验，违反返回 `ErrPasswordPolicy`；新口令不得与当前口令相同。`Set` 不撤销任何会话：撤销其余会话是调用方（改口令的处理器）在 `Set` 成功之后调 `Sessions.RevokeAccount(except)` 的事，所以本接口不依赖会话模块。 |
+| `Clear` | 删除该账户的口令凭据，使账户没有口令、须重设。幂等：没有凭据返回 nil。登录引擎在自动并入（规则 A10）成功之后调用它。 |
 | `ImportHash` | 把 PHC 或遗留条目写成账户的口令凭据；遗留条目无损转成 PHC（盐与密钥的字节相同，只改外壳）。 |
 | `VerifyServiceSecret` | 按 `SHA-256(secret)` 取未撤销、未过期的行；行里的账户标识与出示的 `clientID` 常量时间相等，且账户是启用的 `service`。返回账户标识、密钥标识与到期时刻（零值表示不过期）。 |
 
@@ -454,6 +458,8 @@ type Page struct {
 
 `AccountID` 不透明、不可变、不复用，1 到 64 字节，字符集 `[A-Za-z0-9._-]`，大小写敏感，`ParseAccountID` 判定形态，违反返回 `ErrInvalidAccountID`。库里的账户用 UUIDv7 文本；口令表主体取 `static.` 加主体名，`AccountID.IsStatic()` 对它为真；宿主导入既有用户时可带入自己的标识，须满足这一形态且不以 `static.` 起头。库里生成的标识不含 `static.` 前缀，库里的标识与口令表主体的标识不会相撞。
 
+`AccountQuery` 与 `Page` 的 `Limit` 经 `EffectiveLimit` 取有效值：非正取缺省 100，超过上限截断到 1000，不因超限拒绝。`EffectiveLimit` 是值类型上的方法，列表接口据此取实际条数。
+
 ### 表
 
 全部在 `authn.account` 的一份迁移集里，`migrations/postgres/` 与 `migrations/sqlite/` 各一份同名文件，序号自 `0001_` 起。下面写 PostgreSQL 的形态；SQLite 的差别只有类型（`TIMESTAMPTZ` 写 `TIMESTAMP`、`BOOLEAN` 写 `INTEGER`）与部分索引的写法。
@@ -607,13 +613,13 @@ flowchart TD
 | A1 | 外部身份的键是（提供方，主体），绝不用邮箱。各提供方的主体：Google 的 `sub`；GitHub 的数字 `id`（`login` 会变，只作展示）；企业 OIDC 的 `sub`，SAML 的 `NameID` 或映射指定的属性，命名空间是 `oidc:<IdP 标识>`、`saml:<IdP 标识>`；微信取 `unionid`，没有则 `wechat-openid:<appid>` 加 `openid`。 |
 | A2 | 已有绑定：直接登录那个账户。账户非启用则失败：口令与短信路径与密码错误同形，外部登录路径因调用方已在 IdP 处认证过而报 403 `account-unavailable`。提供方声明的邮箱变化不更新账户的邮箱标识，只更新绑定行里仅作展示的字段。 |
 | A3 | 无绑定、来源是社交、`authn.account.auto-link` 未开启自动关联：不关联。仅当 `External.EmailVerified` 为真且该邮箱命中现有账户的邮箱标识时应答 `link-required`（请先用原有方式登录，再在账户设置里关联）；提供方自称未验证的邮箱（Google 在某些账号上给 `email_verified=false`）不触发它，按「无邮箱线索」处理，走首登开户或统一的 `login-failed`。所以 `link-required` 只在调用者已被提供方证明拥有该邮箱时才给，不构成对陌生人的枚举预言机。 |
-| A4 | `authn.account.auto-link` 取 `verified-email`（放宽开关，仅取主配置源，必须显式开启，只有全局一档）时，仅在下列各条同时满足才自动关联：提供方声明邮箱已验证（Google 的 `email_verified` 为真；GitHub 取 `/user/emails` 里 `primary` 且 `verified` 的一条，不用 `/user` 返回的邮箱）；现有账户持有该邮箱的标识，且标识的 `verified_via` 是真实证明（`idp:*`；`admin` 与 `import-unverified` 不算）；现有账户状态为启用；该邮箱域不属于任何租户已验证的 SSO 域，否则社交登录会绕开租户的强制 SSO；微信无邮箱，永不适用。关联只改变第一因素，账户已登记的因素照常要求，不因关联降低任何要求。不满足任一条时按 A3 处理。成功并入的副作用见 A10。 |
-| A5 | 企业 SSO（提供方属租户 T）无绑定时：提供方声明的邮箱，其域必须属于 T 已验证的域，否则 `ErrDomainMismatch`，防止恶意租户管理员用自己配置的 IdP 声明别家用户的邮箱。`provisioning` 为 `preprovisioned` 的提供方只匹配管理员预先建好、且带该邮箱标识的账户（`admin` 来源的邮箱在这里可用，预置账户就是管理员为这个人建的；`import-unverified` 不可），匹配不上即 `ErrNotProvisioned`；`jit` 才可新建账户并建 T 的成员关系（`source = jit:<提供方标识>`），缺省只新建、不并入：邮箱已被现有账户占用时应答 `link-required`，域匹配已由 IdP 的域证明替代 A3 的 `EmailVerified` 前提，用户先用原方式登录再在设置里关联。提供方行的 `merge_existing`（缺省假，创建提供方时显式选）为真时才可并入，且只并入「邮箱标识是真实证明、全部成员关系 ⊆ {T}、没有口令、手机、其他绑定与因素」的账户；账户可属多个租户或有别的登录方式时一律不并入，因为账户是全局的，并入会让 T 的 IdP 管理员（或前雇主）永久登录这个人在别的租户里的账户。成员关系只在建绑定的开户这一次里新建：已有绑定的后续登录不读不写成员关系（A2），所以管理员暂停或移除的成员不会被 JIT 复活或重建；下线人员要么暂停成员关系，要么在 IdP 侧停用。 |
+| A4 | `authn.account.auto-link` 取 `verified-email`（放宽开关，仅取主配置源，必须显式开启，只有全局一档）时，仅在下列各条同时满足才自动关联：提供方声明邮箱已验证（Google 的 `email_verified` 为真；GitHub 取 `/user/emails` 里 `primary` 且 `verified` 的一条，不用 `/user` 返回的邮箱）；现有账户持有该邮箱的标识，且标识的 `verified_via` 是真实证明（`idp:*`；`admin` 与 `import-unverified` 不算）；现有账户状态为启用；该邮箱域不属于任何已启用提供方、由租户验证过的 SSO 域，否则社交登录会绕开租户的强制 SSO。域的判定经 `SSOProviders.Discover`，它只返回已验证且提供方已启用的域；某租户为已停用提供方验证过的域无从经该接口枚举，因此不拦住自动关联，这是该接口契约的直接结果。微信无邮箱，永不适用。关联只改变第一因素，账户已登记的因素照常要求，不因关联降低任何要求。不满足任一条时按 A3 处理。成功并入的副作用见 A10。 |
+| A5 | 企业 SSO（提供方属租户 T）无绑定时：提供方声明的邮箱，其域必须属于 T 已验证的域，否则 `ErrDomainMismatch`，防止恶意租户管理员用自己配置的 IdP 声明别家用户的邮箱。`provisioning` 为 `preprovisioned` 的提供方只匹配管理员预先建好、且带该邮箱标识的账户（标识的验证渠道合法且不是 `import-unverified`，即 `admin` 或 `idp:*`；`admin` 的断言在这里算数，预置账户就是管理员为这个人建的），匹配不上即 `ErrNotProvisioned`；`jit` 才可新建账户并建 T 的成员关系（`source = jit:<提供方标识>`），缺省只新建、不并入：邮箱已被现有账户占用时应答 `link-required`，域匹配已由 IdP 的域证明替代 A3 的 `EmailVerified` 前提，用户先用原方式登录再在设置里关联。提供方行的 `merge_existing`（缺省假，创建提供方时显式选）为真时才可并入，且只并入「邮箱标识是真实证明、全部成员关系 ⊆ {T}、没有口令、手机、其他绑定与因素」的账户；账户可属多个租户或有别的登录方式时一律不并入，因为账户是全局的，并入会让 T 的 IdP 管理员（或前雇主）永久登录这个人在别的租户里的账户。成员关系只在建绑定的开户这一次里新建：已有绑定的后续登录不读不写成员关系（A2），所以管理员暂停或移除的成员不会被 JIT 复活或重建；下线人员要么暂停成员关系，要么在 IdP 侧停用。 |
 | A6 | 解绑与关联要新鲜的本地多因素认证（账户有因素时，`Requirement.Local`，IdP 声明的多因素不算）；解绑后账户至少还剩一种可用登录方式（口令、手机、另一条绑定、任一因素），否则 `ErrLastLoginMethod`；解绑与关联成功后处理器调 `Sessions.RevokeAccount(except = 当前会话)` 撤销其余登录会话，并发 `authn.binding.changed`。 |
 | A7 | 手机的变更与添加经短信验证（新号码的验证码，`verified_via = sms-code`）；邮箱只经 IdP 声明（首登开户时写入）或管理员登记成为标识，没有自助添加邮箱的路由（无邮件通道）；用户名只由管理员添加。变更要求新鲜的本地多因素；成功后处理器调 `Sessions.RevokeAccount(except = 当前会话)`。 |
 | A8 | 微信后来收到 `unionid` 时，若没有账户占用该 `unionid`，给同一账户补一条以 `unionid` 为键的绑定；若已被别的账户占用，报 `ErrBindingConflict`，不自动合并。 |
 | A9 | 同一个（提供方，主体）并发首登：唯一约束让败者回读绑定后继续，幂等。 |
-| A10 | 自动并入（A4 的自动关联、A5 `merge_existing` 的并入）成功时：撤销该账户全部既有登录会话（并入前的会话不是由本次证明建立的，不能随账户交给新到场的登录者，本次登录建立的新会话在撤销之后创建），并删除该账户的口令凭据，要求用户重设。显式关联（A6，已登录并通过新鲜多因素）不触发。 |
+| A10 | 自动并入（A4 的自动关联、A5 `merge_existing` 的并入）成功时：撤销该账户全部既有登录会话（并入前的会话不是由本次证明建立的，不能随账户交给新到场的登录者，本次登录建立的新会话在撤销之后创建），并删除该账户的口令凭据（经 `Passwords.Clear`），要求用户重设。显式关联（A6，已登录并通过新鲜多因素）不触发。 |
 
 ### 首登开户
 
@@ -684,7 +690,7 @@ flowchart TD
 | Argon2id | `m≥47104,t≥1`；或 `m≥19456,t≥2`；或 `m≥12288,t≥3`；或 `m≥9216,t≥4`；或 `m≥7168,t≥5`；均要求 `p≥1` |
 | PBKDF2-SHA256 | `i≥600000` |
 
-口令表里读到的条目不设下界（读侧不设下界，测试要用小迭代次数），但低于下限的条目启动时逐条点名 `Warn`，把「静默的弱条目」变成「有记录的弱条目」。
+口令表里读到的条目不设下界（读侧不设下界，测试要用小迭代次数），但低于下限的条目启动时逐条点名 `Warn`，把「静默的弱条目」变成「有记录的弱条目」。经 `ImportHash` 与 `CreateAccount.PasswordHash` 导入的 PHC 也不判强度：它们是在别处写下的，照原样收下并转成 PHC；所以更便宜的 PBKDF2 条目可经导入进入，而经 `Passwords.Set`（明文）写出则受下限。要放行更便宜的明文派生只能改用 Argon2id 并调低 `m`、`t`；`authn.account.password-pbkdf2-iterations` 的取值域同以 600000 起，部署无从把 PBKDF2 降得更便宜。
 
 **再哈希。** 校验成功后，若库里条目的算法或参数弱于当前设置，用当前设置重写：写入是对旧哈希的比较并替换，失败只记日志，不影响本次登录。口令表条目无法由 authn 重写，只记 `Warn`。
 
@@ -696,7 +702,7 @@ flowchart TD
 
 ### 失败退避
 
-`Throttle` 的 db 实现，键是提交内容规范化形式的 SHA-256，与账户是否存在无关：未知标识与已知标识走同一条计数路径。判据见 [ADR-authn-throttling-2026-10-10](../../adr/adr-authn-throttling-2026-10-10.md)。
+`Throttle` 的 db 实现，键是提交内容规范化形式的 SHA-256，与账户是否存在无关：未知标识与已知标识走同一条计数路径。判据见 [ADR-authn-throttling-2026-10-10](../../adr/adr-authn-throttling-2026-10-10.md)。标识级退避的键由调用方（口令方法）按它自己的规则算出：去首尾空白并折小写，再取 SHA-256；账户的 `NormalizeIdentifier` 由账户包导出，但口令方法不 import `pkg/authn/account`，所以它按自己的规则算键，两者对某些拼写（NFKC、邮箱域名规则）不一致。这种不一致只让标识级计数更分散，不放过攻击者：账户级退避与标识拼写无关，把同一账户的不同拼写合在一起计数。
 
 - **算法。** 窗口自最近一次失败起 `throttle-decay` 内无新失败，且这些失败赚得的等待（`locked_until`）已经走完，计数才归零，所以 `throttle-max-delay` 大于 `throttle-decay` 时窗口也不会在锁定期结束之前清掉计数；前 `throttle-free-attempts` 次失败不退避，之后每多一次失败退避 `min(throttle-max-delay, 2^(n-free) 秒)`；成功清零。成功清零只适用于这里的 `Throttle`：口令表后端的进程内退避面对逐请求出示的口令，成功不清零，写法见 [design-authn-gate](design-authn-gate.md)。这些参数都是 `authn.account.*` 的设置，对 `Throttle` 的全部范围同用一套（缺省与取值域见 [design-authn-config](design-authn-config.md)）。
 - **状态与原子性。** 状态在 `authn_throttles`，递增是一条原子语句，并发的失败不丢计数。
@@ -743,6 +749,7 @@ flowchart TD
 | `ErrInvalidCredentials` | 未知标识、错口令、停用、无口令，一律此哨兵 | 401 `login-failed` |
 | `ErrPasswordPolicy` | 口令不合策略：过短、超长、等于本人标识、低于 OWASP 下限、与当前口令相同 | 400 `bad-request` |
 | `ErrInvalidIdentifier` | 标识规范化失败：用户名、邮箱、手机格式不合 | 400 `bad-request` |
+| `ErrInvalidArgument` | 写入的值越过调用允许的域：属性集越界（条目数、键值形状、总字节）、显示名过长、`via` 不在接受的形式内、`reason` 不在 `ReasonClass` 闭集 | 管理路由 400 `bad-request`；也会在会话载荷的 `idp.*` 越界处出现，那时是写载荷一方的缺陷，503 |
 | `ErrIdentifierRequired` | 账户没有可作登录名的标识而要设口令 | 409 `login-identifier-required` |
 | `ErrCleanupIncomplete` | 账户状态或服务密钥状态已生效，而某个 `AccountLifecycle` 钩子失败；重试同一调用幂等地补完 | 503 |
 | `ErrThrottled`（经 `*ThrottledError` 与 `errors.As` 取 `RetryAfter`） | 标识级退避中 | 429 `throttled`，带 `Retry-After` |
@@ -852,17 +859,19 @@ type Provisioner interface {
 
 | 能力 | 状态 | 代码 |
 |---|---|---|
-| 账户、标识、外部绑定、成员关系、口令凭据、服务密钥、退避的表与迁移集 | 未实现 | — |
-| `Accounts`、`AccountAdmin`、`Passwords`、`Memberships`、`Throttle` 的根包接口与排他交付 | 部分实现 — 根包已有 `Throttle` 接口、`ThrottleScope` 的范围常量、`ErrThrottled` 与 `ThrottledError`；缺 `Accounts`、`AccountAdmin`、`Passwords`、`Memberships` 的接口，以及全部排他交付 | `pkg/authn/throttle.go` `Throttle`、`ThrottleScope`、`ErrThrottled`、`ThrottledError` |
-| 值类型 `AccountID`、`Account`、`Identifier`、`External`、`Membership` 与哨兵 | 部分实现 — 缺 `Account`、`Membership` 与账户的哨兵；`AccountID`、`Identifier`、`External` 与 `ErrInvalidAccountID` 已在 | `pkg/authn/internal/model/account.go` `AccountID`、`ParseAccountID`；`pkg/authn/internal/model/identifier.go` `Identifier`；`pkg/authn/internal/model/login.go` `External`；`pkg/authn/ids.go` |
-| 标识规范化 `NormalizeIdentifier` | 未实现 | — |
+| 账户、标识、外部绑定、成员关系、口令凭据、服务密钥、退避的表与迁移集 | 已实现 | `pkg/authn/account/rows.go` `tables`；`pkg/authn/account/migrations/postgres`、`pkg/authn/account/migrations/sqlite` |
+| `Accounts`、`AccountAdmin`、`Passwords`、`Memberships`、`Throttle` 的根包接口与排他交付 | 已实现 | `pkg/authn/account/account.go` `Module`、`(*product)` 的编译期断言与五个 `Exclusive` 交付；`pkg/authn/account.go` `Accounts`、`AccountAdmin`、`Passwords`；`pkg/authn/membership.go` `Memberships`；`pkg/authn/throttle.go` `Throttle`、`ThrottleScope`、`ErrThrottled`、`ThrottledError` |
+| 值类型 `AccountID`、`Account`、`Identifier`、`External`、`Membership` 与哨兵 | 已实现 — 含 `Verification`、`CreateAccount`、`AccountQuery`、`Page` 的读取上限 `EffectiveLimit`、`ExternalBinding`、`ServiceSecretInfo`、`VerifyResult`、`SetPasswordOptions` | `pkg/authn/internal/model/account.go` `AccountID`、`ParseAccountID`；`pkg/authn/internal/model/directory.go` `Account`、`Membership`、`Verification`、`CreateAccount`、`AccountQuery`、`Page`；`pkg/authn/internal/model/identifier.go` `Identifier`；`pkg/authn/internal/model/login.go` `External`；`pkg/authn/ids.go`；`pkg/authn/errors.go` `ErrAccountNotFound`、`ErrAccountExists`、`ErrInvalidArgument` |
+| 标识规范化 `NormalizeIdentifier` | 已实现 | `pkg/authn/account/normalize.go` `NormalizeIdentifier`、`normalizePrefix` |
 | 账户快照的进程内缓存 `internal/acctcache`：有效期、容量上限、按键与整体清除 | 已实现 | `pkg/authn/internal/acctcache/acctcache.go` `Cache`、`New`、`Invalidate`、`Purge` |
 | 写入数据库与绑定为查询参数的时间取自 `internal/clock` | 已实现 — 只做进程内时长比较的计时（口令校验缓存、失败退避、账户快照缓存）以单调时钟为默认并允许注入，不经 `clock` | `pkg/authn/internal/clock/clock.go` `Now`、`UTC`、`Source` |
-| 账户状态迁移、墓碑抹除与 `AccountLifecycle` 钩子调用、事件暂存 | 未实现 | — |
-| 外部身份绑定与自动关联的规则、首登开户（执行在 `authn.login` 的账户解析步） | 未实现 | — |
-| 口令凭据的 PHC 编解码、解析界限、强度下限、再哈希、内存预算 | 部分实现 — 已有：两种算法的 PHC 编解码、严格解析与界限、强度下限的判定（`Params.BelowFloor`、`Params.Weaker`）、并发与按字节计的内存预算（`Governor`）、诱饵；缺：`Passwords` 的实现、NFKC 规范化与长度规则、参数组合的回落、数据库里条目的再哈希，它们随账户模块实现 | `pkg/authn/internal/password/phc.go` `Parse`、`Params`；`pkg/authn/internal/password/hash.go`；`pkg/authn/internal/password/govern.go` `Governor`；`pkg/authn/internal/password/decoy.go` `Decoy` |
+| 账户状态迁移、墓碑抹除与 `AccountLifecycle` 钩子调用、事件暂存 | 已实现 | `pkg/authn/account/lifecycle.go` `SetStatus`、`Delete`、`RevokeServiceSecret`；`pkg/authn/account/events.go`；`pkg/authn/account/sweep.go` |
+| 外部身份绑定与自动关联的规则、首登开户（执行在 `authn.login` 的账户解析步） | 已实现 — 账户侧的绑定面与首登开户的账户创建在本模块；自动关联与首登开户的规则由 [authn-login](design-authn-login.md) 的 `login/internal/resolve` 执行 | `pkg/authn/account/admin.go` `LinkExternal`、`UnlinkExternal`、`AddIdentifier`、`RemoveIdentifier`；`pkg/authn/account/accounts.go` `ByExternal`；`pkg/authn/account/admin.go` `Create`；`pkg/authn/login/internal/resolve` |
+| 口令凭据的 PHC 编解码、解析界限、强度下限、再哈希、内存预算 | 已实现 | `pkg/authn/account/password.go` `Verify`；`pkg/authn/account/credentials.go` `Set`、`Clear`、`ImportHash`；`pkg/authn/internal/password` `Parse`、`Params`、`Governor`、`Decoy` |
+| 口令凭据的删除（规则 A10） | 已实现 — 幂等，无凭据返回 nil | `pkg/authn/account/credentials.go` `Clear`；`pkg/authn/account.go` `Passwords.Clear` |
 | 口令表遗留写法 `pbkdf2-sha256$<迭代>$<盐>$<密钥>` 的解析与比对 | 已实现 — 只读，启动时逐条记 `Warn` | `pkg/authn/internal/password/phc.go` `Parse`；`pkg/authn/static/hash.go` `ParseHash`；`pkg/authn/static/static.go` `wire` |
-| 失败退避的 db 实现与进程内实现 | 部分实现 — 进程内实现已在，供口令表用；db 实现随账户模块实现 | `pkg/authn/internal/password/throttle.go` `Throttle` |
-| `authn_throttles` 与 `authn_service_secrets` 的清扫 | 未实现 | — |
-| 服务密钥的创建、校验与撤销 | 未实现 | — |
-| `Provisioner` 钩子与账户属性集 | 未实现 | — |
+| 失败退避的 db 实现与进程内实现 | 已实现 — db 实现供账户用，进程内实现供口令表用 | `pkg/authn/account/throttle.go`；`pkg/authn/internal/password/throttle.go` `Throttle` |
+| `authn_throttles` 与 `authn_service_secrets` 的清扫 | 已实现 | `pkg/authn/account/sweep.go` |
+| 服务密钥的创建、校验与撤销 | 已实现 | `pkg/authn/account/admin.go` `CreateServiceSecret`；`pkg/authn/account/credentials.go` `VerifyServiceSecret`；`pkg/authn/account/lifecycle.go` `RevokeServiceSecret` |
+| `Provisioner` 钩子与账户属性集 | 已实现 — 接缝与属性集在本模块；`Provisioner` 由首登开户的调用方（[authn-login](design-authn-login.md)）取用 | `pkg/authn/account/admin.go` `SetAttributes`；`pkg/authn/provision.go` `Provisioner`；`pkg/authn/internal/model/bounds.go` `CheckAccountAttributes`、`AccountAttributesMax` |
+| 账户与口令的配置项、设置声明与启动自检 | 已实现 — `signup`、`auto-link` 仅取主配置源；口令参数与失败退避参数是设置，读取即判取值域 | `pkg/authn/account/config.go` `schema`、`settingsSchema`；`pkg/authn/account/params.go`；`pkg/authn/account/relax.go` |

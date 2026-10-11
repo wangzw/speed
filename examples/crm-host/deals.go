@@ -17,6 +17,7 @@ import (
 	"github.com/gin-gonic/gin"
 	"gorm.io/gorm"
 
+	"github.com/vislake/speed/pkg/authn"
 	"github.com/vislake/speed/pkg/core"
 	"github.com/vislake/speed/pkg/db"
 	"github.com/vislake/speed/pkg/event"
@@ -142,12 +143,12 @@ type Deal struct {
 	UpdatedAt     time.Time      `gorm:"column:updated_at;not null"`
 	DeletedAt     gorm.DeletedAt `gorm:"column:deleted_at"`
 
-	// Stage, Account and Owner are the rows the deal points at, read by a join
-	// or a preload. The stage and the account are scoped as the deal is; the
-	// owner is a CRM user, whose table is global.
+	// Stage and Account are the rows the deal points at, read by a join or a
+	// preload, scoped as the deal is. The owner is an account identifier of the
+	// identity system and names no foreign key: its display name is read through
+	// the account store, not joined.
 	Stage   PipelineStage `gorm:"foreignKey:StageKey;references:Key"`
 	Account Account       `gorm:"foreignKey:AccountID;references:ID"`
-	Owner   User          `gorm:"foreignKey:OwnerID;references:ID"`
 
 	// Stakeholders are the contacts of the deal's tenant the deal names, read
 	// by a preload and written through the association (stakeholders.go).
@@ -195,13 +196,29 @@ type dealsTable interface{ dealsTable() }
 // dealsProduct is the deals module's product.
 type dealsProduct struct {
 	released
-	db       db.Database
-	store    kv.KV
-	settings settings.Store
+	db          db.Database
+	store       kv.KV
+	settings    settings.Store
+	accounts    authn.Accounts
+	memberships authn.Memberships
 	// outbox stages each deal event in the transaction of the write it
 	// announces; its relay publishes the event once that transaction has
 	// committed.
 	outbox outbox.Outbox
+}
+
+// ownerName reads the display name of the account a deal's owner column names,
+// through the account store. The owner column is an account identifier and names
+// no foreign key, so the name is read here rather than joined.
+func (p *dealsProduct) ownerName(ctx context.Context, id string) string {
+	if id == "" {
+		return ""
+	}
+	account, err := p.accounts.Get(ctx, authn.AccountID(id))
+	if err != nil {
+		return ""
+	}
+	return account.DisplayName
 }
 
 // dealsTable marks the product as the deals module's.
@@ -240,7 +257,7 @@ type stakeholderView struct {
 // its owner and its stakeholders the statement that read it loaded. A deleted
 // account or contact is not loaded, so the account's name reads empty and the
 // contact is not among the stakeholders.
-func viewOfDeal(d Deal) dealView {
+func viewOfDeal(d Deal, ownerName string) dealView {
 	v := dealView{
 		ID:          d.ID,
 		AccountID:   d.AccountID,
@@ -252,7 +269,7 @@ func viewOfDeal(d Deal) dealView {
 		StageName:   d.Stage.Name,
 		StageKind:   d.Stage.Kind,
 		OwnerID:     d.OwnerID,
-		OwnerName:   d.Owner.DisplayName,
+		OwnerName:   ownerName,
 		Version:     d.Version,
 		ClosedAt:    d.ClosedAt,
 		CreatedAt:   d.CreatedAt,
@@ -352,7 +369,6 @@ func withDealRelations(q *gorm.DB) *gorm.DB {
 	return q.
 		Preload("Stage").
 		Preload("Account").
-		Preload("Owner", func(q *gorm.DB) *gorm.DB { return q.Select("id", "display_name") }).
 		Preload("Stakeholders", func(q *gorm.DB) *gorm.DB { return q.Order(contactTable + ".name, " + contactTable + ".id") })
 }
 
@@ -440,7 +456,7 @@ func fingerprintOf(body dealRequest) (string, error) {
 // caller, so a key one client chose never meets another tenant's or another
 // user's, and the digest of the key the client sent.
 func idempotencyStoreKey(self member, key string) string {
-	return storeKey("idempotency", dealsModuleName, string(self.TenantID), self.UserID, keyDigest(key))
+	return storeKey("idempotency", dealsModuleName, string(self.TenantID), string(self.Account), keyDigest(key))
 }
 
 // createDeal creates a deal, honouring an Idempotency-Key when the request
@@ -457,7 +473,7 @@ func idempotencyStoreKey(self member, key string) string {
 // corrected request under the same key.
 func (p *dealsProduct) createDeal(c *gin.Context) {
 	ctx := c.Request.Context()
-	self, ok := memberOf(c, createDealRoute)
+	self, ok := memberOf(c, p.db, createDealRoute)
 	if !ok {
 		return
 	}
@@ -617,9 +633,9 @@ func (p *dealsProduct) insertDeal(ctx context.Context, self member, body dealReq
 	}
 	owner := body.OwnerID
 	if owner == "" {
-		owner = self.UserID
+		owner = string(self.Account)
 	}
-	belongs, err := isMember(ctx, p.db, owner)
+	belongs, err := isMember(ctx, p.memberships, authn.AccountID(owner), self.TenantID)
 	if err != nil {
 		logger.Error("reading the owner's membership", "error", err)
 		return refusal(nethttp.StatusServiceUnavailable, "the membership table cannot be read")
@@ -708,7 +724,7 @@ func (p *dealsProduct) insertDeal(ctx context.Context, self member, body dealReq
 		logger.Error("reading a deal back", "error", err, "found", found)
 		return refusal(nethttp.StatusInternalServerError, errDealUnresolvable.Error())
 	}
-	encoded, err := json.Marshal(viewOfDeal(created))
+	encoded, err := json.Marshal(viewOfDeal(created, p.ownerName(ctx, created.OwnerID)))
 	if err != nil {
 		logger.Error("encoding a deal", "error", err)
 		return refusal(nethttp.StatusInternalServerError, "the deal could not be encoded")
@@ -768,7 +784,7 @@ type dealList struct {
 // models, for every deal of the page at once.
 func (p *dealsProduct) listDeals(c *gin.Context) {
 	ctx := c.Request.Context()
-	if _, ok := memberOf(c, listDealsRoute); !ok {
+	if _, ok := memberOf(c, p.db, listDealsRoute); !ok {
 		return
 	}
 	query := c.Request.URL.Query()
@@ -799,7 +815,6 @@ func (p *dealsProduct) listDeals(c *gin.Context) {
 	err := chain.
 		Joins("Stage").
 		Joins("Account", p.db.DB().Select("id", "name")).
-		Joins("Owner", p.db.DB().Select("id", "display_name")).
 		Preload("Stakeholders", func(q *gorm.DB) *gorm.DB { return q.Order(contactTable + ".name, " + contactTable + ".id") }).
 		Order(dealTable + ".created_at DESC, " + dealTable + ".id").
 		Limit(limit).
@@ -811,7 +826,7 @@ func (p *dealsProduct) listDeals(c *gin.Context) {
 	}
 	out := dealList{Total: total, Deals: make([]dealView, 0, len(deals))}
 	for _, d := range deals {
-		out.Deals = append(out.Deals, viewOfDeal(d))
+		out.Deals = append(out.Deals, viewOfDeal(d, p.ownerName(ctx, d.OwnerID)))
 	}
 	c.JSON(nethttp.StatusOK, out)
 }
@@ -819,7 +834,7 @@ func (p *dealsProduct) listDeals(c *gin.Context) {
 // getDeal answers one deal, with its version as the ETag a write conditions on.
 func (p *dealsProduct) getDeal(c *gin.Context) {
 	ctx := c.Request.Context()
-	if _, ok := memberOf(c, getDealRoute); !ok {
+	if _, ok := memberOf(c, p.db, getDealRoute); !ok {
 		return
 	}
 	deal, found, err := dealByID(ctx, p.db, c.Param("id"))
@@ -833,7 +848,7 @@ func (p *dealsProduct) getDeal(c *gin.Context) {
 		return
 	}
 	c.Header("ETag", etagOf(deal.Version))
-	c.JSON(nethttp.StatusOK, viewOfDeal(deal))
+	c.JSON(nethttp.StatusOK, viewOfDeal(deal, p.ownerName(ctx, deal.OwnerID)))
 }
 
 // dealPatch is the body of a change to a deal. A member left out is left as it
@@ -910,7 +925,7 @@ func (d dealPatch) changes() map[string]any {
 func (p *dealsProduct) patchDeal(c *gin.Context) {
 	ctx := c.Request.Context()
 	logger := log.FromContext(ctx)
-	self, ok := memberOf(c, patchDealRoute)
+	self, ok := memberOf(c, p.db, patchDealRoute)
 	if !ok {
 		return
 	}
@@ -927,7 +942,7 @@ func (p *dealsProduct) patchDeal(c *gin.Context) {
 		return
 	}
 	if body.OwnerID != nil {
-		belongs, err := isMember(ctx, p.db, *body.OwnerID)
+		belongs, err := isMember(ctx, p.memberships, authn.AccountID(*body.OwnerID), self.TenantID)
 		if err != nil {
 			logger.Error("reading the owner's membership", "error", err)
 			writeError(c, nethttp.StatusServiceUnavailable, "the membership table cannot be read")
@@ -990,7 +1005,7 @@ func (p *dealsProduct) patchDeal(c *gin.Context) {
 		writeError(c, nethttp.StatusInternalServerError, "the deal could not be written")
 	default:
 		c.Header("ETag", etagOf(updated.Version))
-		c.JSON(nethttp.StatusOK, viewOfDeal(updated))
+		c.JSON(nethttp.StatusOK, viewOfDeal(updated, p.ownerName(ctx, updated.OwnerID)))
 	}
 }
 
@@ -1031,7 +1046,7 @@ type moveView struct {
 func (p *dealsProduct) moveDeal(c *gin.Context) {
 	ctx := c.Request.Context()
 	logger := log.FromContext(ctx)
-	self, ok := memberOf(c, moveDealRoute)
+	self, ok := memberOf(c, p.db, moveDealRoute)
 	if !ok {
 		return
 	}
@@ -1112,7 +1127,7 @@ func (p *dealsProduct) moveDeal(c *gin.Context) {
 			SubjectID:   id,
 			Kind:        activityStageChange,
 			Body:        stageChangeBody(from, target, body.Note),
-			ActorID:     self.UserID,
+			ActorID:     string(self.Account),
 			OccurredAt:  now,
 			EventID:     &changedID,
 			WonEventID:  wonID,
@@ -1131,7 +1146,7 @@ func (p *dealsProduct) moveDeal(c *gin.Context) {
 			Payload: stageChangedPayload{
 				Object: object, Outcome: target.Kind, DealID: id,
 				FromStage: from, ToStage: target.Key, Amount: moved.Amount, Currency: moved.Currency,
-				Version: moved.Version, ActivityID: activity.ID, ActorID: self.UserID,
+				Version: moved.Version, ActivityID: activity.ID, ActorID: string(self.Account),
 			},
 		}); stageErr != nil {
 			return stageErr
@@ -1146,7 +1161,7 @@ func (p *dealsProduct) moveDeal(c *gin.Context) {
 			Payload: wonPayload{
 				Object: object, Outcome: stageWon, DealID: id, AccountID: moved.AccountID,
 				Stage: target.Key, Amount: moved.Amount, Currency: moved.Currency, OwnerID: moved.OwnerID,
-				WonAt: now.Format(time.RFC3339Nano), ActivityID: activity.ID, ActorID: self.UserID,
+				WonAt: now.Format(time.RFC3339Nano), ActivityID: activity.ID, ActorID: string(self.Account),
 			},
 		})
 	})
@@ -1161,7 +1176,7 @@ func (p *dealsProduct) moveDeal(c *gin.Context) {
 	}
 
 	c.Header("ETag", etagOf(moved.Version))
-	c.JSON(nethttp.StatusOK, moveView{Deal: viewOfDeal(moved), Activity: viewOfActivity(activity)})
+	c.JSON(nethttp.StatusOK, moveView{Deal: viewOfDeal(moved, p.ownerName(ctx, moved.OwnerID)), Activity: viewOfActivity(activity)})
 }
 
 // stageWrite stages the event of a creation, a change or a deletion in the
@@ -1170,7 +1185,7 @@ func (p *dealsProduct) stageWrite(tx *gorm.DB, self member, eventType, outcome, 
 	return p.outbox.Stage(tx, event.Event{
 		Type:     eventType,
 		TenantID: string(self.TenantID),
-		Payload:  dealWrittenPayload{Object: "deal/" + id, Outcome: outcome, DealID: id, ActorID: self.UserID},
+		Payload:  dealWrittenPayload{Object: "deal/" + id, Outcome: outcome, DealID: id, ActorID: string(self.Account)},
 	})
 }
 
@@ -1182,7 +1197,7 @@ func (p *dealsProduct) stageWrite(tx *gorm.DB, self member, eventType, outcome, 
 // deal.deleted in its transaction, and one that found no deal stages nothing.
 func (p *dealsProduct) deleteDeal(c *gin.Context) {
 	ctx := c.Request.Context()
-	self, ok := memberOf(c, deleteDealRoute)
+	self, ok := memberOf(c, p.db, deleteDealRoute)
 	if !ok {
 		return
 	}
@@ -1218,7 +1233,7 @@ func init() {
 	registerApplication(application{
 		module: dealsModule(),
 		runsOn: []string{serveCommand},
-		models: []any{Deal{}, PipelineStage{}, Activity{}, Account{}, Membership{}, User{}, Contact{}},
+		models: []any{Deal{}, PipelineStage{}, Activity{}, Account{}, MemberRole{}, Contact{}},
 		journalled: []string{
 			createDealRoute, patchDealRoute, moveDealRoute, deleteDealRoute,
 			setStakeholdersRoute, addStakeholderRoute, removeStakeholderRoute,
@@ -1235,10 +1250,10 @@ func init() {
 // brings none of them into a command; it fails a command that runs this module
 // and forgot one, at resolution and naming the capability, rather than at the
 // first request. The bus is the outbox relay's to require: this module stages
-// its events and publishes none itself. The deals table references the stages, accounts and users
-// tables, and the stakeholders' join table the contacts table, so the
-// requirements on those four modules' table tokens order its migrations after
-// theirs; they are optional, because the order is computed over every
+// its events and publishes none itself. The deals table references the stages
+// and accounts tables, and the stakeholders' join table the contacts table, so
+// the requirements on those three modules' table tokens order its migrations
+// after theirs; they are optional, because the order is computed over every
 // registered module and this module reads those tables through the database
 // handle rather than through any of those modules' products.
 func dealsModule() core.Module {
@@ -1251,9 +1266,10 @@ func dealsModule() core.Module {
 			{Token: (*kv.KV)(nil)},
 			{Token: (*settings.Store)(nil)},
 			{Token: (*outbox.Outbox)(nil)},
+			{Token: (*authn.Accounts)(nil)},
+			{Token: (*authn.Memberships)(nil)},
 			{Token: (*pipelineTable)(nil), Optional: true},
 			{Token: (*accountsTable)(nil), Optional: true},
-			{Token: (*usersTable)(nil), Optional: true},
 			{Token: (*contactsTable)(nil), Optional: true},
 		},
 		Provides: []core.Provision{
@@ -1286,12 +1302,22 @@ func dealsModule() core.Module {
 			if err != nil {
 				return nil, err
 			}
+			accounts, err := core.Resolve[authn.Accounts](reg)
+			if err != nil {
+				return nil, err
+			}
+			memberships, err := core.Resolve[authn.Memberships](reg)
+			if err != nil {
+				return nil, err
+			}
 			return &dealsProduct{
-				released: released{log: logger},
-				db:       database,
-				store:    store,
-				settings: surface,
-				outbox:   staged,
+				released:    released{log: logger},
+				db:          database,
+				store:       store,
+				settings:    surface,
+				accounts:    accounts,
+				memberships: memberships,
+				outbox:      staged,
 			}, nil
 		},
 

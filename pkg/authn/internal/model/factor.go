@@ -31,3 +31,21 @@ type FactorRecord struct {
 	ActivatedAt time.Time
 	LastUsedAt  time.Time
 }
+
+// MFAOutcome is what the multi-factor policy decides for one login. The zero
+// value, MFANone, is the reading of no second factor being asked for.
+type MFAOutcome uint8
+
+// The outcomes of the policy.
+const (
+	MFANone   MFAOutcome = iota // no second factor is asked for
+	MFAFactor                   // the account has a usable factor and must use one
+	MFAEnroll                   // the policy requires a factor and the account has none
+)
+
+// MFAResult is the assurance one login reached, as the multi-factor module
+// composes it from the first factor's proof and the second factor's pass.
+type MFAResult struct {
+	Assurance  Assurance
+	IDPAssured bool // the multi-factor level is an enterprise IdP's declaration, not locally verified factors
+}

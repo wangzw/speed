@@ -40,7 +40,7 @@
 
 **类型。** 事件类型的集合是封闭集合，即下表。集合在各模块 `Init` 之前静态已知；类型按功能划分，不按 IdP、登录方式或租户展开，变化用载荷字段表达。没有登录失败事件：失败只走审计、日志与计数器，退避开始时才发 `authn.throttle.engaged`：发出方是调用 `Throttle.Fail` 并得到 `engaged` 为真的使用方，同时让 `authn.throttle.engagements` 加一；使用方的名单见 [design-authn-account](design-authn-account.md) 的 `Throttle` 一节。
 
-**载荷。** 每个类型对应根包 `pkg/authn` 导出的一个具名结构体，常量命名 `authn.EventAccountCreated` 一类，值即下表的类型名；订阅方用 `event.DecodePayload` 解到该结构体。载荷的约束：
+**载荷。** 每个类型对应根包 `pkg/authn` 导出的一个具名载荷结构体：结构体名由类型名去掉 `authn.` 前缀后各段首字母大写连接而成（`authn.account.created` → `AccountCreated`，`authn.token.reuse-detected` → `TokenReuseDetected`），常量名是 `Event` 加结构体名（`EventAccountCreated`、`EventTokenReuseDetected`），常量值即下表的类型名；订阅方用 `event.DecodePayload` 解到该结构体。载荷的约束：
 
 - JSON 标签小写下划线，顶层字段全是标量。
 - 载荷的顶层字段只放标识、枚举与时刻。不放秘密、自由文本（理由、显示名）、邮箱、手机号与登录标识。判据：载荷的每个顶层字段都会成为跨度属性并写进审计明细，所以放进去的值在这两处出现时必须无害。
@@ -65,7 +65,7 @@
 | `authn.token.reuse-detected` | `session_id`、`account_id` | 空 | 否 |
 | `authn.impersonation.started` | `grant_id`、`actor_id`、`account_id`、`session_id`、`expires_at` | 信封 | 否 |
 | `authn.impersonation.ended` | `grant_id`、`ended_by`（`actor`、`session-ended`、`disabled`、`membership-removed`、`revoked`） | 信封 | 否 |
-| `authn.idp.changed` | `idp_id`、`change`（`created`、`updated`、`enabled`、`disabled`、`deleted`、`domain-verified`、`domain-removed`） | 信封 | 否 |
+| `authn.idp.changed` | `idp_id`、`change`（`created`、`updated`、`enabled`、`disabled`、`deleted`、`domain-verified`、`domain-unverified`、`domain-removed`） | 信封 | 否 |
 
 括号里的取值集是该字段的封闭集合。下表是其余字段的取值域。
 
@@ -97,6 +97,8 @@
 | `account-deleted` | 账户被删除 |
 | `evicted` | 超出每账户会话上限，最久未使用的会话被撤销 |
 | `throttled` | 失败退避开始：一个键越过自由次数而进入等待；只出现在退避那一行日志，不进事件载荷与审计明细 |
+
+`throttled` 是退避那一行日志专有的类别。根包给出两个判定把它与其余取值分开：`ValidReasonClass` 对闭集全部取值为真（含 `throttled`），供日志与「是不是一个类别名」的核对用；`ValidPayloadReasonClass` 排除 `throttled`，写事件载荷与审计明细的模块用后者，把 `throttled` 挡在载荷与明细之外。
 
 **authn 自己订阅的事件**是下表（封闭集合）。订阅全在 `Init` 里登记，类型静态，处理函数幂等，只做丢本地缓存与账户清理的补偿。
 
@@ -221,7 +223,7 @@
 | `authn.sso.assertions` | `{assertion}` | `protocol`：`saml`、`oidc`；`outcome`：`accepted`、`signature`、`audience`、`time`、`replay`、`in-response-to`、`issuer`、`destination`、`other` |
 | `authn.impersonation.sessions` | `{session}` | `outcome`：`started`、`denied`、`ended` |
 | `authn.audit.write-failures` | `{failure}` | `mandatory`：`true`、`false` |
-| `authn.cleanup.failures` | `{failure}` | `hook`：`session`、`mfa`、`sms`、`secret`；账户停用、删除与服务密钥撤销之后钩子失败的次数 |
+| `authn.cleanup.failures` | `{failure}` | `hook`：`session`、`mfa`、`sms`、`secret`、`other`；账户停用、删除与服务密钥撤销之后钩子失败的次数 |
 
 `authn.gate.conclusions` 的 `anonymous` 是可选路由上无凭据而放行的结局；`outcome` 各取值之和包含 `anonymous`。`authn.login.completions` 按方式聚合，看不到哪个 IdP 在失败，定位到 IdP 读日志里的 `idp` 字段。
 
@@ -404,20 +406,20 @@ audit.Entry{
 
 | 能力 | 状态 | 代码 |
 |---|---|---|
-| 事件类型常量与载荷结构体 | 未实现 | — |
-| 事件的发布：经发件箱与经总线的路径、缺席时的启动诊断 | 未实现 | — |
-| authn 自己的事件订阅与幂等补偿 | 未实现 | — |
-| 接缝级审计：强制档与尽力档、动作表、明细键名、`actor` 取法 | 未实现 | — |
-| `authn.settings.relaxed` 的订阅与审计 | 未实现 | — |
+| 事件类型常量与载荷结构体 | 已实现 — 含 `reason_class` 的封闭集与两个判定函数：`ValidReasonClass` 认全部类别，`ValidPayloadReasonClass` 排除只写进退避日志行的 `throttled` | `pkg/authn/events.go` `EventAccountStatusChanged`、`AccountStatusChanged`、`ReasonAdmin`、`ValidReasonClass`、`ValidPayloadReasonClass` |
+| 事件的发布：经发件箱与经总线的路径、缺席时的启动诊断 | 已实现 — 账户在事务里暂存发件箱事件并在提交后发总线，会话、多因素与登录各自发布；总线或发件箱缺席时的分支已有 | `pkg/authn/account/events.go`；`pkg/authn/session/lifecycle.go`；`pkg/authn/mfa/manage.go`；`pkg/authn/login/engine.go`；`pkg/authn/events.go` |
+| authn 自己的事件订阅与幂等补偿 | 已实现 — 账户状态变更与删除的清理经发件箱补偿，会话与多因素订阅 `authn.account.*`，准入层订阅 `authn.membership.changed` | `pkg/authn/session/lifecycle.go`；`pkg/authn/mfa/manage.go`；`pkg/tenant/admission/admission.go` |
+| 接缝级审计：强制档与尽力档、动作表、明细键名、`actor` 取法 | 部分实现 — 账户、登录、多因素、会话与准入的审计点已在；缺令牌、短信、SSO 与冒充 | `pkg/authn/account/events.go`；`pkg/authn/login/engine.go`；`pkg/authn/mfa/manage.go`；`pkg/authn/session/routes.go`；`pkg/tenant/admission/decide.go` |
+| `authn.settings.relaxed` 的订阅与审计 | 已实现 — 账户订阅设置变更，放宽到更宽松取值时写 `Warn` 并经审计接缝记一条尽力档记录 | `pkg/authn/account/relax.go` |
 | 记录接缝 `audit.Audit.Record` 及其错误 `ErrNotAccepting`、`ErrWriteFailed` | 已实现 | `pkg/audit/audit.go` `Audit`、`Entry`、`ErrNotAccepting`、`ErrWriteFailed` |
-| 登录引擎的派生上下文（`internal/identity` 的 `With` 供一次 `Record` 使用） | 部分实现 — 缺登录引擎对它的使用；`With` 已在 | `pkg/authn/internal/identity/identity.go` `With` |
+| 登录引擎的派生上下文（`internal/identity` 的 `With` 供一次 `Record` 使用） | 已实现 — 引擎为完成的登录派生一个只交给那一次 `Audit.Record` 的上下文 | `pkg/authn/login/engine.go`；`pkg/authn/internal/identity/identity.go` `With` |
 | 日志请求关联字段 | 已实现 — 网关绑定 `account` 与 `backend`，冒充时另绑 `actor` 与 `impersonating`，有会话时另绑 `session`；`subject` 不再出现 | `pkg/authn/gate/serve.go` `identityAttrs` |
 | 日志级别按谁有事要做：网关的收口 | 已实现 | `pkg/authn/gate/serve.go` `conclude`、`gatewayRefusal`、`outage` |
 | 网关的记录级字段（收口行、取凭据的拒绝行、启动诊断、cookie 前缀警告行）与字段名的写法 | 已实现 | `pkg/authn/gate/serve.go` `conclude`、`credentialOf`；`pkg/authn/gate/gate.go` `diagnose`、`freeze`、`warnUnprefixedCookies` |
-| 日志级别与字段：其余模块 | 未实现 | — |
+| 日志级别与字段：其余模块 | 部分实现 — 账户、会话、多因素、登录、挂载与准入各写出自己的记录级字段；缺令牌、短信、SSO 与冒充 | `pkg/authn/account/events.go`；`pkg/authn/session/routes.go`；`pkg/authn/mfa/routes.go`；`pkg/authn/login/engine.go`；`pkg/authn/mount/mount.go`；`pkg/tenant/admission/decide.go` |
 | 日志脱敏登记与永不记录 | 部分实现 — 登记内容的状态由 [design-authn-gate](design-authn-gate.md) 承载；缺逐模块在 `New` 里登记字面量与「`Sensitive` 值不进日志」的测试 | `pkg/authn/gate/redact.go` `registerNewRules`、`registerValueRule` |
 | 指标 `authn.gate.conclusions` | 已实现 — `Meter` 以 `authn` 命名，`outcome` 的取值含 `anonymous` | `pkg/authn/gate/metrics.go` `takeMeter`、`bucketName` |
-| 其余仪器（登录、口令、因素、会话、令牌、退避、短信、SSO、冒充、审计写失败、清理失败） | 未实现 | — |
-| 守住外部行为假设与纪律的测试 | 未实现 | — |
+| 其余仪器（登录、口令、因素、会话、令牌、退避、短信、SSO、冒充、审计写失败、清理失败） | 部分实现 — 登录（`authn.login.*`）、因素（`authn.mfa.verifications`）、会话（`authn.session.operations`）、退避（`authn.throttle.engagements`）与准入（`tenant.admission.decisions`）的仪器已在；缺令牌、短信、SSO 与冒充 | `pkg/authn/login/metrics.go`；`pkg/authn/mfa/mfa.go`；`pkg/authn/session/session.go`；`pkg/authn/account/meters.go`；`pkg/tenant/admission/admission.go` |
+| 守住外部行为假设与纪律的测试 | 部分实现 — 各模块的字段、仪器名与属性名的封闭集由各自的测试守住；缺跨模块的汇总用例 | `pkg/authn/account/audit_test.go`；`pkg/authn/session/observability_test.go`；`pkg/tenant/admission/decide_test.go` |
 
 事件、审计与指标在各模块里的发出点，随各模块的实现状态由 [design-authn-session](design-authn-session.md) 等文档承载。

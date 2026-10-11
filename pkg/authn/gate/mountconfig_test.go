@@ -288,6 +288,7 @@ func (fakeMounter) Optional(string, string, gin.HandlerFunc, ...mount.Option) {}
 func (fakeMounter) Guarded(string, string, gin.HandlerFunc, ...mount.Option)  {}
 func (fakeMounter) Callback([]string, string, gin.HandlerFunc)                {}
 func (fakeMounter) Base() string                                              { return "/auth" }
+func (fakeMounter) Endpoint() string                                          { return "public" }
 func (fakeMounter) PublicURL() string                                         { return "" }
 func (fakeMounter) CSRF() *nethttp.CrossOriginProtection                      { return nil }
 

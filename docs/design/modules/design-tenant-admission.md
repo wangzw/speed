@@ -111,7 +111,7 @@ type ScopeGuard interface {
 
 ### 稳定性承诺
 
-下列是本模块与其他模块之间的契约：`tenant.Admission` 与 `authn.ScopeGuard` 的形状，模块名与交付标识，`endpoints` 的必填与不接受 `*`，设置键 `tenant.admission.require-mfa`、`require-sso`、`check-ttl`，`Decider` 动作 `authn.tenant.access` 的使用方式，指标名 `tenant.admission.decisions` 与属性 `outcome` 的取值，以及应答状态码的封闭集。改名、增减取值或扩大状态码集合是对宿主与授权模块的不兼容变更；设置键与指标属性值的变更同时是对运维面的不兼容变更。
+下列是本模块与其他模块之间的契约：`tenant.Admission` 与 `authn.ScopeGuard` 的形状，模块名与交付标识，`endpoints` 的必填与不接受 `*`，设置键 `tenant.admission.require-mfa`、`require-sso`、`check-ttl`，`Decider` 动作 `authn.tenant.access` 的使用方式，指标名 `tenant.admission.decisions` 与其 Meter 名 `tenant`、属性 `outcome` 的取值，以及应答状态码的封闭集。改名、增减取值或扩大状态码集合是对宿主与授权模块的不兼容变更；设置键与指标属性值的变更同时是对运维面的不兼容变更。
 
 ## 依赖
 
@@ -217,7 +217,7 @@ sequenceDiagram
 | 放行条目 | 同键；值：`Decide` 对 `authn.tenant.access` 的回答、读取时刻 | 只在非成员且 `Decider` 在场、身份不带冒充范围时产生 |
 | 判定结果 | 状态与成因类 | 成因类即指标属性 `outcome` 的取值，下表给出 |
 
-指标 `tenant.admission.decisions`（单位 `{decision}`）按 `outcome` 计数，每个到达本层的请求恰计一次。`outcome` 的取值是封闭集：
+指标 `tenant.admission.decisions`（单位 `{decision}`）按 `outcome` 计数，每个到达本层的请求恰计一次。它是名为 `tenant` 的 Meter 上的 `Int64ObservableCounter`：本模块属 `pkg/tenant`，与 authn 各模块的 `authn` Meter 分开命名；用可观察计数器是因为采集时才读本层持有的原子计数，八个 `outcome` 因此从第一次采集起就各有一条序列，同步计数器做不到这一点。`outcome` 的取值是封闭集：
 
 | `outcome` | 含义 |
 |---|---|
@@ -383,23 +383,23 @@ flowchart TD
 
 ## 实现状态
 
-下表的状态以代码为准。`pkg/tenant/admission` 目录尚不存在，准入层的各项能力都写「未实现」；它依赖的接缝在代码里的现状列在表后。
+下表的状态以代码为准。准入层在 `pkg/tenant/admission` 已实现，逐项状态与代码如下。
 
 | 能力 | 状态 | 代码 |
 |---|---|---|
-| 模块 `tenant.admission`、排他交付、`Order` 为 92、`After` 写全网关、解析、审计与限流的功能标识 | 未实现 | — |
-| `tenant.Admission` 标记接口 | 未实现 | — |
-| `authn.ScopeGuard` 与 `Covers` | 部分实现 — 根包接口与网关对它的取用已在；交付它的 `tenant.admission` 尚不存在 | `pkg/authn/scope.go` `ScopeGuard` |
-| `endpoints` 的必填、空清单与 `*` 的拒绝、端名核对 | 未实现 | — |
-| 判定次序：租户上下文、身份、冒充范围、成员、豁免、多因素强度、SSO 强度 | 未实现 | — |
-| 经 `Decider` 的 `authn.tenant.access` 放行 | 未实现 | — |
-| 成员、豁免与放行结果的缓存，以及 `authn.membership.changed` 订阅 | 未实现 | — |
-| 租户设置 `require-mfa`、`require-sso` 与 `check-ttl` 的声明与读取 | 未实现 | — |
-| 指标 `tenant.admission.decisions`、拒绝日志与启动诊断 | 未实现 | — |
+| 模块 `tenant.admission`、排他交付、`Order` 为 92、`After` 写全网关、解析、审计与限流的功能标识 | 已实现 | `pkg/tenant/admission/admission.go` `Module` |
+| `tenant.Admission` 标记接口 | 已实现 — 接口定义在 `pkg/tenant`，由本包的类型交付；方法导出是交付检查能通过的前提 | `pkg/tenant/capabilities.go` `Admission`；`pkg/tenant/admission/admission.go` `(*layer).AdmissionLayer` |
+| `authn.ScopeGuard` 与 `Covers` | 已实现 — 根包接口与网关对它的取用，加上本包的精确成员判定 | `pkg/authn/scope.go` `ScopeGuard`；`pkg/tenant/admission/admission.go` `(*layer).Covers` |
+| `endpoints` 的必填、空清单与 `*` 的拒绝、端名核对 | 已实现 — 空清单、空名、`*` 与重复名为错误，未知端名为 `tenant.ErrUnknownEndpoint` | `pkg/tenant/admission/config.go` `(moduleConfig).resolve` |
+| 判定次序：租户上下文、身份、冒充范围、成员、豁免、多因素强度、SSO 强度 | 已实现 | `pkg/tenant/admission/decide.go` `decide` |
+| 经 `Decider` 的 `authn.tenant.access` 放行 | 已实现 | `pkg/tenant/admission/decide.go`；`pkg/authn/decide.go` `Decider` |
+| 成员、豁免与放行结果的缓存，以及 `authn.membership.changed` 订阅 | 已实现 — 缓存三种答案，错误从不记住，订阅在 `Init` 里建立，无总线时只靠有效期 | `pkg/tenant/admission/cache.go`；`pkg/tenant/admission/admission.go` |
+| 租户设置 `require-mfa`、`require-sso` 与 `check-ttl` 的声明与读取 | 已实现 — 两个强制开关读不到是 503，`check-ttl` 读不到或越域取默认并记一次 Error | `pkg/tenant/admission/config.go`；`pkg/tenant/admission/admission.go` |
+| 指标 `tenant.admission.decisions`、拒绝日志与启动诊断 | 已实现 — 每次请求记一次，取值名是封闭集；拒因只带账户、租户与类别 | `pkg/tenant/admission/admission.go`、`pkg/tenant/admission/decide.go` |
 
 依赖的接缝在代码里的现状：
 
 - 租户解析层与 `tenant.FromContext`：已实现，代码 `pkg/tenant/resolve/resolve.go` `Module`、`pkg/tenant/scope.go` `FromContext`。
 - 入口模块的端枚举：已实现，代码 `pkg/http/router.go` `Endpoints`。
 - `Identity` 上的 `Scope`、`Assurance`、`AssuranceFromIDP`、`Provider`、`Challenge` 与根包的 `AccessFromContext`：已实现，代码 `pkg/authn/internal/identity/identity.go` `Scope`、`Assurance`、`AssuranceFromIDP`、`Provider`、`Challenge`，`pkg/authn/identity.go` `AccessFromContext`。
-- `authn.Memberships`、`authn.SSOProviders`、`authn.Decider`：未实现，代码里没有对应符号。
+- `authn.Memberships` 由 `authn.account` 交付、`authn.Decider` 的接口在根包 `pkg/authn/decide.go`；交付 `authn.SSOProviders` 的模块（`authn.sso`）未实现，代码里只有根包接口 `pkg/authn/sso.go`。

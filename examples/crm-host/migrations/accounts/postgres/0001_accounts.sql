@@ -8,9 +8,9 @@
 -- The CHECK catches a write issued where the tenant filter is not installed,
 -- which writes an empty tenant rather than failing.
 --
--- owner names a row of the users table, which another module owns, so the
--- accounts module declares a requirement on that module's table token to have
--- this migration applied after the users one.
+-- owner is the account identifier of the member who owns this record. It names
+-- no foreign key: the identity system's accounts live in another module's
+-- tables, and a cross-module reference would couple the two migrations' order.
 --
 -- deleted_at is the soft delete: a deleted account keeps its row, and every
 -- read through the model leaves it out.
@@ -20,7 +20,7 @@ CREATE TABLE accounts (
     name       TEXT        NOT NULL,
     domain     TEXT        NOT NULL,
     industry   TEXT        NOT NULL,
-    owner      TEXT        NOT NULL REFERENCES users (id),
+    owner      TEXT        NOT NULL,
     created_at TIMESTAMPTZ NOT NULL,
     updated_at TIMESTAMPTZ NOT NULL,
     deleted_at TIMESTAMPTZ,

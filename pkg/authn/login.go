@@ -1,6 +1,7 @@
 package authn
 
 import (
+	"context"
 	"time"
 
 	"github.com/vislake/speed/pkg/authn/internal/step"
@@ -58,3 +59,35 @@ func StepPassed(p Pass) Step { return step.Passed(p) }
 
 // StepEnrolled answers that a factor has been registered. Only a factor uses it.
 func StepEnrolled(r FactorRecord) Step { return step.Enrolled(r) }
+
+// LoginMethod is one kind of first factor: a password, an SMS code, a social or
+// enterprise redirect, a passkey. A module delivers it without claiming it, so
+// several stand side by side, and only the login engine takes them, with
+// core.ResolveAll in its Init. A third party's method is held to the same rules
+// as this repository's.
+//
+// A method answers with a Step and does nothing else. It answers within ctx,
+// because the engine sets a budget per call that covers an external provider's
+// round trips. When what it reads from cannot be reached it answers
+// StepUnavailable and not StepRefused, so that a 503 and a 401 are counted
+// apart. It does not create an account, merge, make a session, touch HTTP, gin,
+// a session or a token, and it does not read or write the flow record, whose
+// compare-and-swap belongs to the engine. Failing must not differ in time or in
+// the shape of the answer by whether an identifier exists. A method that sends an
+// SMS checks SendsLeft before every send and reports the sends it made with
+// Step.WithSends. A panic is recovered by the engine and ends in a 503 for that
+// method alone, so one method's defect reaches no other.
+//
+// A method depends on neither HTTP nor storage, and its tests build a Start, a
+// FlowState and a StepInput and read the kind of the answer.
+type LoginMethod interface {
+	// Name is the method's stable name: it appears in routes, flow records and
+	// metric attributes, and a published name never changes. It is unique across
+	// the assembly, and two methods with one name are ErrMethodConflict.
+	Name() string
+	// Begin starts a flow for a purpose.
+	Begin(ctx context.Context, s Start) (Step, error)
+	// Answer handles the client's answer to the previous step, or an external
+	// party's redirect back: an OAuth code, a SAML assertion.
+	Answer(ctx context.Context, f FlowState, in StepInput) (Step, error)
+}

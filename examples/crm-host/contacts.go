@@ -15,6 +15,7 @@ import (
 	"gorm.io/gorm"
 	"gorm.io/gorm/clause"
 
+	"github.com/vislake/speed/pkg/authn"
 	"github.com/vislake/speed/pkg/core"
 	"github.com/vislake/speed/pkg/db"
 	speedhttp "github.com/vislake/speed/pkg/http"
@@ -146,7 +147,45 @@ type contactList struct {
 // contactsProduct is the contacts module's product.
 type contactsProduct struct {
 	released
-	db db.Database
+	db       db.Database
+	accounts authn.Accounts
+}
+
+// ownerName reads the display name of an account identifier through the account
+// store, empty when it is empty or the account is gone.
+func (p *contactsProduct) ownerName(ctx context.Context, id string) string {
+	if id == "" {
+		return ""
+	}
+	account, err := p.accounts.Get(ctx, authn.AccountID(id))
+	if err != nil {
+		return ""
+	}
+	return account.DisplayName
+}
+
+// ownersByAccount reads, for each account the contacts name, the account
+// identifier of its owner. The owner column is an account identifier and names
+// no foreign key, so it is read here rather than joined.
+func (p *contactsProduct) ownersByAccount(ctx context.Context, entries []directoryEntry) (map[string]string, error) {
+	ids := make([]string, 0, len(entries))
+	for _, e := range entries {
+		if e.AccountID != "" {
+			ids = append(ids, e.AccountID)
+		}
+	}
+	out := make(map[string]string, len(ids))
+	if len(ids) == 0 {
+		return out, nil
+	}
+	var found []Account
+	if err := p.db.DB().WithContext(ctx).Where("id IN ?", ids).Find(&found).Error; err != nil {
+		return nil, err
+	}
+	for _, a := range found {
+		out[a.ID] = a.Owner
+	}
+	return out, nil
 }
 
 // contactsTable marks the product as the contacts module's.
@@ -308,7 +347,7 @@ func logWritten(ctx context.Context, msg string, c Contact) {
 // transaction.
 func (p *contactsProduct) createContact(c *gin.Context) {
 	ctx := c.Request.Context()
-	if _, ok := memberWith(c, roleRep); !ok {
+	if _, ok := memberWith(c, p.db, roleRep); !ok {
 		return
 	}
 	var body contactRequest
@@ -337,7 +376,7 @@ func (p *contactsProduct) createContact(c *gin.Context) {
 // the one column an equality on a sealed value can meet.
 func (p *contactsProduct) listContacts(c *gin.Context) {
 	ctx := c.Request.Context()
-	if _, ok := memberWith(c, roleViewer); !ok {
+	if _, ok := memberWith(c, p.db, roleViewer); !ok {
 		return
 	}
 	query := c.Request.URL.Query()
@@ -369,7 +408,7 @@ func (p *contactsProduct) listContacts(c *gin.Context) {
 // getContact answers one contact, in the clear.
 func (p *contactsProduct) getContact(c *gin.Context) {
 	ctx := c.Request.Context()
-	if _, ok := memberWith(c, roleViewer); !ok {
+	if _, ok := memberWith(c, p.db, roleViewer); !ok {
 		return
 	}
 	id := c.Param("id")
@@ -437,7 +476,7 @@ func (c contactPatch) Validate() error {
 // it.
 func (p *contactsProduct) patchContact(c *gin.Context) {
 	ctx := c.Request.Context()
-	if _, ok := memberWith(c, roleRep); !ok {
+	if _, ok := memberWith(c, p.db, roleRep); !ok {
 		return
 	}
 	id := c.Param("id")
@@ -492,7 +531,7 @@ func (p *contactsProduct) patchContact(c *gin.Context) {
 // the request.
 func (p *contactsProduct) deleteContact(c *gin.Context) {
 	ctx := c.Request.Context()
-	if _, ok := memberWith(c, roleAdmin); !ok {
+	if _, ok := memberWith(c, p.db, roleAdmin); !ok {
 		return
 	}
 	id := c.Param("id")
@@ -522,7 +561,7 @@ func (p *contactsProduct) deleteContact(c *gin.Context) {
 // the body names is a live account of the tenant, in the same transaction.
 func (p *contactsProduct) upsertContact(c *gin.Context) {
 	ctx := c.Request.Context()
-	if _, ok := memberWith(c, roleRep); !ok {
+	if _, ok := memberWith(c, p.db, roleRep); !ok {
 		return
 	}
 	var body contactRequest
@@ -580,7 +619,7 @@ type exportedContact struct {
 // logged rather than answered.
 func (p *contactsProduct) exportContacts(c *gin.Context) {
 	ctx := c.Request.Context()
-	if _, ok := memberWith(c, roleViewer); !ok {
+	if _, ok := memberWith(c, p.db, roleViewer); !ok {
 		return
 	}
 	stmt := p.db.DB().WithContext(ctx).Model(&Contact{}).
@@ -631,7 +670,7 @@ type autocompleteView struct {
 // with a prefix, compared without regard to case, in order.
 func (p *contactsProduct) autocomplete(c *gin.Context) {
 	ctx := c.Request.Context()
-	if _, ok := memberWith(c, roleViewer); !ok {
+	if _, ok := memberWith(c, p.db, roleViewer); !ok {
 		return
 	}
 	prefix := strings.ToLower(strings.TrimSpace(c.Query("prefix")))
@@ -649,15 +688,15 @@ func (p *contactsProduct) autocomplete(c *gin.Context) {
 }
 
 // directoryEntry is one contact with the name of its account and of the
-// account's owner. Each name is read from the column the association join
-// selects for it.
+// account's owner. The account's name is read from the column the association
+// join selects for it; the owner's name is resolved through the account store.
 type directoryEntry struct {
 	ID           string `gorm:"column:id" json:"id"`
 	Name         string `gorm:"column:name" json:"name"`
 	Title        string `gorm:"column:title" json:"title"`
 	AccountID    string `gorm:"column:account_id" json:"account_id"`
 	AccountName  string `gorm:"column:Account__name" json:"account_name"`
-	AccountOwner string `gorm:"column:Account__OwnerUser__display_name" json:"account_owner"`
+	AccountOwner string `gorm:"-" json:"account_owner"`
 }
 
 // directoryView is what the directory answers with.
@@ -665,23 +704,22 @@ type directoryView struct {
 	Entries []directoryEntry `json:"entries"`
 }
 
-// directory answers every contact of the tenant beside the name of its
-// account and of the account's owner, in one statement: the association join
-// puts the account's columns and its owner's beside the contact's, and the
-// rows are scanned into a struct of their own. The selection leaves the sealed
-// columns out, which a Scan over the model has to.
+// directory answers every contact of the tenant beside the name of its account
+// and of the account's owner: the association join puts the account's columns
+// beside the contact's and the rows are scanned into a struct of their own, and
+// the owner's display name is then resolved through the account store. The
+// selection leaves the sealed columns out, which a Scan over the model has to.
 //
-// The join names the nested path alone, so the account is joined as the
-// middle level of the path rather than by a join of its own. It is a scoped
-// table all the same, and the filter conditions it; the owner's table, at the
-// end of the path, is global.
+// The account joined here is a scoped table, and the filter conditions it. The
+// owner is an account identifier of the identity system, whose display name the
+// account store holds.
 func (p *contactsProduct) directory(c *gin.Context) {
 	ctx := c.Request.Context()
-	if _, ok := memberWith(c, roleViewer); !ok {
+	if _, ok := memberWith(c, p.db, roleViewer); !ok {
 		return
 	}
 	out := directoryView{Entries: []directoryEntry{}}
-	err := p.db.DB().WithContext(ctx).Model(&Contact{}).Joins("Account.OwnerUser").
+	err := p.db.DB().WithContext(ctx).Model(&Contact{}).Joins("Account").
 		Select("contacts.id, contacts.name, contacts.title, contacts.account_id").
 		Order("contacts.name").Order("contacts.id").
 		Scan(&out.Entries).Error
@@ -689,6 +727,15 @@ func (p *contactsProduct) directory(c *gin.Context) {
 		log.FromContext(ctx).Error("reading the contact directory", "error", err)
 		writeError(c, nethttp.StatusServiceUnavailable, "the contact table cannot be read")
 		return
+	}
+	owners, err := p.ownersByAccount(ctx, out.Entries)
+	if err != nil {
+		log.FromContext(ctx).Error("reading the contacts' account owners", "error", err)
+		writeError(c, nethttp.StatusServiceUnavailable, "the account table cannot be read")
+		return
+	}
+	for i := range out.Entries {
+		out.Entries[i].AccountOwner = p.ownerName(ctx, owners[out.Entries[i].AccountID])
 	}
 	c.JSON(nethttp.StatusOK, out)
 }
@@ -699,7 +746,7 @@ func init() {
 	registerApplication(application{
 		module: contactsModule(),
 		runsOn: []string{serveCommand},
-		models: []any{Contact{}, Account{}, User{}},
+		models: []any{Contact{}, Account{}},
 		journalled: []string{
 			createContactRoute, patchContactRoute, deleteContactRoute, upsertContactRoute,
 		},
@@ -722,6 +769,7 @@ func contactsModule() core.Module {
 			{Token: (*log.Logger)(nil)},
 			{Token: (*db.Database)(nil)},
 			{Token: (*tenant.Catalog)(nil)},
+			{Token: (*authn.Accounts)(nil)},
 			{Token: (*accountsTable)(nil), Optional: true},
 		},
 		Provides: []core.Provision{
@@ -742,7 +790,11 @@ func contactsModule() core.Module {
 			if err != nil {
 				return nil, err
 			}
-			return &contactsProduct{released: released{log: logging.Named(contactsModuleName)}, db: database}, nil
+			accounts, err := core.Resolve[authn.Accounts](reg)
+			if err != nil {
+				return nil, err
+			}
+			return &contactsProduct{released: released{log: logging.Named(contactsModuleName)}, db: database, accounts: accounts}, nil
 		},
 
 		Init: func(_ context.Context, reg *core.Registry, instance any) error {

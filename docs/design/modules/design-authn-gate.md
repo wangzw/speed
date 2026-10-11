@@ -162,6 +162,7 @@ type Mounter interface {
     Guarded(method, rel string, h gin.HandlerFunc, opts ...Option)   // 只登记路由，网关守
     Callback(methods []string, rel string, h gin.HandlerFunc)        // 公开，且不做跨源检查（外部方的跨站回跳）
     Base() string                                                    // 基路径 B
+    Endpoint() string                                                // 路由挂载所在的端名；处理器自答 401 时写作挑战的 realm
     PublicURL() string                                               // 对外基址
     CSRF() *http.CrossOriginProtection
 }
@@ -169,9 +170,9 @@ type Mounter interface {
 
 每次登记在一处包好，宿主与子包因此没有「只挂路由、忘了登记」或「登记写错一个字符」的机会：
 
-- 响应加 `Cache-Control: no-store`；
-- 非 `Callback` 的 `POST`、`PUT`、`PATCH`、`DELETE` 先过跨源检查，不过即 401；
-- 路径是 `Base() + rel`；路由冲突或窗口外的登记失败按 `Route` 的 panic 约定处理；
+- 经本包装的处理器所写的响应加 `Cache-Control: no-store`（`Wrap` 在调用处理器之前写好该头，处理器可以覆盖它，如密钥集自带缓存头）；网关在处理器之前自产的 401/503 不经这一层，不带该头，入口模块对 panic 的缺陷响应按它自己的形状处置；
+- 非 `Callback` 的 `POST`、`PUT`、`PATCH`、`DELETE` 先过跨源检查，不过即 401（`Wrap` 写的，只带 `Bearer` 与 `Cookie` 挑战）；
+- 路径是 `Base() + rel`；路由冲突或窗口外的登记失败以 panic 拒绝，文本点名方法与路径（`Route` 的 panic 约定不点名路由，挂载端在重抛时补上）；
 - 路由与访问级别在同一次调用里成对写入入口模块与 `Gate`。
 
 `Mounter.CSRF()` 返回的 `CrossOriginProtection` 与网关自己的是各自独立的实例：`Gate` 只有登记方法，宿主又可以预置自己的 `Gate`，`authn.mount` 因此拿不到网关的实例而自建一份。两者的信任集都由 `internal/mount` 的同一份规则从 `public-url` 与 `trusted-origins` 推出（见可信来源的规范形式），不各推一遍。`Callback` 的旁路模式 `POST <base>/{provider}`（gin 的路径参数 `:provider` 在这里写成 `{provider}`）只加在 `authn.mount` 自己的实例上，回跳路由的旁路因此不会变成网关的口子。
@@ -217,6 +218,8 @@ var ErrMalformedHash error
 
 `mount.*` 与 `trusted-origins` 由 `authn.gate` 声明，`authn.mount` 不声明输入项；`authn.mount` 与需要 `public-url` 的模块在自己的 `Prepare` 里读这几个键，这是已有的跨模块读法，不是重复声明。`authn.static.name` 不存在：口令表的名字是常量。
 
+`base-path` 的形状检查与 `public-url` 的 https、回环判断在网关与 `authn.mount` 各有一份（各自的 `config` 校验做一次），因为预置自有 `Gate` 的宿主没有网关来校验这些键，而 `authn.mount` 把 `Base()` 与 `PublicURL()` 交给全部挂路由模块。可信来源的规范与挂载端规则则共用 `internal/mount` 的一份，不各推一遍。
+
 ### 对宿主的要求
 
 下列各条与 [design-authn](design-authn.md) 列出的命令树纳入规则（逐条命令点名、不放进根命令、不对纳入 authn 的命令用 `IncludeAll()`、施加迁移的命令静态级纳入带表模块，以及对外提供服务的装配不为网关预置外来的实例）合起来，是网关在宿主一侧的全部前提，是封闭集。本模块既不能把它们声明出来，也没有检查它们的位置。
@@ -225,6 +228,7 @@ var ErrMalformedHash error
 - **宿主自己的路由用 `Route` 加 `Gate.Exempt`、`Gate.Optional` 或 `Gate.Impersonable` 配对登记**，并共用同一组常量。
 - **宿主自写校验后端时声明自己的账户前缀**，并自己负责它交回的账户标识的真伪。
 - **在允许冒充的端上不对业务路由开租户解析的豁免**：这样的路由没有租户上下文，冒充身份仍到得了它们（见 [design-authn](design-authn.md) 的非保证）。
+- **自备 `Gate` 时自己核对挂载端受守。** `mount.endpoint` 指向网关不守的端、而挂路由模块只登记 `Guarded` 路由时，唯一拦住它的是网关 `Start` 的 `ErrRoutesUnguarded`。宿主预置自己的 `Gate` 替身、不纳入 `authn.gate` 时没有这道检查，`Guarded` 路由会在无人守护的端上被静默公开。预置自有 `Gate` 的宿主因此自己负责这一核对。
 
 ### 稳定性承诺
 
@@ -529,7 +533,7 @@ sequenceDiagram
 
 ### 可信来源的规范形式
 
-跨源检查信任的来源是 `public-url` 的来源，加上 `trusted-origins` 的每一项；规则放在 `internal/mount`，当前由网关调用，`authn.mount` 落地后共用同一份，网关与 `authn.mount` 因此不会从同一份配置推出不同的信任集。标准库按字节比对请求的 `Origin` 头与信任集，所以每一项先规范成浏览器发送的形式再入集：scheme 与主机小写，默认端口（`http` 的 80、`https` 的 443）省略，主机末尾的点去掉。写成 `https://Example.com:443` 的一项与浏览器发出的 `https://example.com` 是同一个来源。
+跨源检查信任的来源是 `public-url` 的来源，加上 `trusted-origins` 的每一项；规则放在 `internal/mount`，由网关与 `authn.mount` 共用同一份，两者因此不会从同一份配置推出不同的信任集。标准库按字节比对请求的 `Origin` 头与信任集，所以每一项先规范成浏览器发送的形式再入集：scheme 与主机小写，默认端口（`http` 的 80、`https` 的 443）省略，主机末尾的点去掉。写成 `https://Example.com:443` 的一项与浏览器发出的 `https://example.com` 是同一个来源。
 
 不能规范成来源的项在启动期以 `ErrInvalidConfig` 失败，不是被跳过：被跳过的项读起来像一份已经生效的清单。`trusted-origins` 的一项是来源而不是 URL，带路径的项同样被拒；`public-url` 只含来源，路径另由 `base-path` 承载。错误文本只含不带用户信息、查询与片段的部分：`trusted-origins` 的项只以序号点名，不抄值，`public-url` 与 `base-path` 只回显去掉这些部分之后的值，因为配置里写错位置的值可能夹带口令。被拒的形态列在 [design-authn-config](design-authn-config.md) 的启动期自检表。
 
@@ -678,13 +682,13 @@ sequenceDiagram
 | 后端调用的预算、在飞闸门、`recover` 与停机排空 | 已实现 | `pkg/authn/gate/serve.go` `enter`、`verify`；`pkg/authn/gate/gate.go` `drain` |
 | `Exempt`、`Optional`、`Impersonable` 的登记窗口、校验、冻结与逐字比对，`ErrAccessConflict`，网关对 `Access` 的写入 | 已实现 | `pkg/authn/gate/exempt.go` `Exempt`、`Optional`、`Impersonable`、`open`、`seal`、`accessOf`；`pkg/authn/gate/serve.go` `admit` |
 | 校验后端接缝：`Accepts`、`Credential` 的 `Cookie` 与 `Peer`、`Verify` 去掉主体入参、`Challenger`、`CookieClearer` | 已实现 | `pkg/authn/authn.go` |
-| 按载体分派表与准入条件、cookie 凭据来源、浏览器可能自己附带的载体的跨源检查、被认领 cookie 并存时的整体拒绝 | 已实现 — 可信来源的规范与匹配规则放在 `internal/mount`，当前只有网关调用，`authn.mount` 落地后共用同一份 | `pkg/authn/gate/dispatch.go` `buildDispatch`、`admitBackend`；`pkg/authn/gate/serve.go` `credentialOf`、`identify`、`scriptWrittenScheme`、`attachedByBrowser`；`pkg/authn/gate/gate.go` `newGateway`；`pkg/authn/internal/mount/origin.go` `Origin`、`TrustedOrigins`、`CrossOrigin` |
+| 按载体分派表与准入条件、cookie 凭据来源、浏览器可能自己附带的载体的跨源检查、被认领 cookie 并存时的整体拒绝 | 已实现 — 可信来源的规范与匹配规则放在 `internal/mount`，网关与 `authn.mount` 共用同一份 | `pkg/authn/gate/dispatch.go` `buildDispatch`、`admitBackend`；`pkg/authn/gate/serve.go` `credentialOf`、`identify`、`scriptWrittenScheme`、`attachedByBrowser`；`pkg/authn/gate/gate.go` `newGateway`；`pkg/authn/internal/mount/origin.go` `Origin`、`TrustedOrigins`、`CrossOrigin`；`pkg/authn/mount/mounter.go` |
 | 出口检查：账户命名空间核对、能力声明核对、`Principal` 的形状与属性集界限、盖章 | 已实现 — 属性键的保留前缀 `idp.` 与 `authn.` 不在盖章处判，由写属性的一方保证 | `pkg/authn/gate/exitcheck.go` `checkPrincipal`；`pkg/authn/gate/dispatch.go` `inNamespace`；`pkg/authn/gate/serve.go` `identify` |
-| 冒充范围核对与 `ScopeGuard` 的可选取用 | 已实现 — 交付 `ScopeGuard` 的 `tenant.admission` 尚未实现，装配里没有准入层时只放 `Impersonable` 路由 | `pkg/authn/gate/serve.go` `impersonationAdmitted`；`pkg/authn/gate/gate.go` `wire` |
+| 冒充范围核对与 `ScopeGuard` 的可选取用 | 已实现 — `tenant.admission` 交付 `ScopeGuard`；装配里没有准入层时只放 `Impersonable` 路由 | `pkg/authn/gate/serve.go` `impersonationAdmitted`；`pkg/authn/gate/gate.go` `wire` |
 | `endpoints` 缺省守全部端（`Router.Endpoints()` 展开、`*`、空清单与混写的 `ErrInvalidConfig`） | 已实现 | `pkg/authn/gate/gate.go` `expandGuarded`；`pkg/authn/gate/config.go` `checkEndpoints` |
 | 入口模块的端枚举与保留端名 `*` | 已实现 | `pkg/http/router.go` `(*router).Endpoints`；`pkg/http/config.go` `reservedEndpointName` |
-| `authn.gate.mount.*` 与 `trusted-origins` 配置键，`Start` 对挂载端的核对（存在、受守、不被 `ScopeGuard` 守、不在 `tenant.resolve.endpoints` 里） | 已实现 — 配置里写明的挂载端一律核对；键为空时，只在装配里有交付 `Mounter` 的模块时核对入口模块的唯一端，没有挂路由的模块就不核对；`ErrRoutesUnconfigured` 由 `authn.mount` 在自己的 `Init` 里判，规则 `mount.Endpoint` 已在，网关在 `Start` 对同一规则再判一次，该模块尚未实现 | `pkg/authn/gate/config.go`；`pkg/authn/gate/gate.go` `wire`、`checkMount`、`checkResolution`；`pkg/authn/internal/mount/endpoint.go` `Endpoint` |
-| `authn.mount` 与 `mount.Mounter` | 部分实现 — 缺 `authn.mount` 模块与 `Mounter` 的实现；接口、选项、`Resolve`，以及与网关共用的挂载端规则与可信来源规则已在 | `pkg/authn/internal/mount/mount.go` `Mounter`、`Option`、`Impersonable`、`Resolve`；`pkg/authn/internal/mount/endpoint.go` `Endpoint`；`pkg/authn/internal/mount/origin.go` `Origin`、`TrustedOrigins`、`CrossOrigin` |
+| `authn.gate.mount.*` 与 `trusted-origins` 配置键，`Start` 对挂载端的核对（存在、受守、不被 `ScopeGuard` 守、不在 `tenant.resolve.endpoints` 里） | 已实现 — 配置里写明的挂载端一律核对；键为空时，只在装配里有交付 `Mounter` 的模块时核对入口模块的唯一端，没有挂路由的模块就不核对；`ErrRoutesUnconfigured` 由 `authn.mount` 在解析挂载端时触发，规则 `mount.Endpoint` 共用，网关在 `Start` 对同一规则再判一次 | `pkg/authn/gate/config.go`；`pkg/authn/gate/gate.go` `wire`、`checkMount`、`checkResolution`；`pkg/authn/internal/mount/endpoint.go` `Endpoint`；`pkg/authn/mount/config.go` |
+| `authn.mount` 与 `mount.Mounter` | 已实现 — 模块交付 `mount.Mounter`，接口、选项、`Resolve`、与网关共用的挂载端规则与可信来源规则、每条登记都经过的 `Wrap` 与回跳旁路 `AllowCallback`，以及测试用的 `Mounter`（`mounttest`）都在 | `pkg/authn/mount/mount.go` `Module`；`pkg/authn/mount/mounter.go` `(product).Guarded`、`(product).Optional`、`(product).Public`、`(product).Endpoint`；`pkg/authn/internal/mount/mount.go` `Mounter`、`Option`、`Impersonable`、`Resolve`；`pkg/authn/internal/mount/endpoint.go` `Endpoint`；`pkg/authn/internal/mount/origin.go` `Origin`、`TrustedOrigins`、`CrossOrigin`；`pkg/authn/internal/mount/wrap.go` `Wrap`、`AllowCallback`；`pkg/authn/internal/mount/mounttest/mounttest.go` |
 | 401 的挑战头：各后端认领的 scheme、`Challenger`、只有 cookie 时的 `Cookie` 挑战、被拒时按后端重新生成（含出口检查不符与冒充范围不符） | 已实现 | `pkg/authn/gate/challenge.go` `newChallenge`、`valueFor` |
 | 脱敏规则的登记 | 部分实现 — 已有：键名全集（每个名字按原写法、小写与首字母大写各登记一份）与值形状（JWT、`spd_rt_` 与 `spd_cs_` 令牌前缀、`otpauth://` 地址、查询串里的机密对、会话 cookie 的 `sid` 对）由 `registerNewRules` 在 `New` 里登记，各后端认领的 scheme 的值形状规则由 `registerValueRule` 在 `Init` 里登记；缺：持有秘密配置值的模块在各自的 `New` 里登记的字面量匹配器（共用的构造 `literal.Register` 已在，尚无模块调用），以及各模块自己新增的键名，它们随各模块实现 | `pkg/authn/gate/redact.go` `registerNewRules`、`registerValueRule`、`credentialKeyNames`、`keySpellings`、`shapeMatcher`、`credentialMatcher`；`pkg/authn/internal/literal/literal.go` `Register`、`Matcher` |
 | 收口计数经指标功能报出，含 `anonymous` 桶，`Meter` 以 `authn` 命名（见 [design-authn-events](design-authn-events.md)） | 已实现 | `pkg/authn/gate/metrics.go` `takeMeter`、`bucketName`；`pkg/authn/gate/gate.go` `tally` |
@@ -692,6 +696,6 @@ sequenceDiagram
 | 口令表后端：`Name()` 恒为 `static`、`Accepts` 声明、`Basic` 的解析与校验、`name` 键去掉 | 已实现 | `pkg/authn/static/static.go` `Name`、`Accepts`、`Verify`；`pkg/authn/static/config.go` |
 | 口令表的校验缓存（绝对期限）、进程内失败退避（检查即预占、命中缓存不预占、成功不清零、固定键与容量上界）与并发信号量，设置里的缓存与退避参数 | 已实现 — 内存预算取 `internal/password` 的缺省 512 MiB，口令表没有为它设键，这份预算归口令表后端所有，不与账户后端共用；退避越过自由次数的那一行 Info 带 `reason_class=throttled` | `pkg/authn/internal/password` `Cache`、`Throttle`、`Reserve`、`Standing`、`Attempt`、`MaxThrottleKeys`、`Governor`；`pkg/authn/static/static.go` `Verify`、`fail`；`pkg/authn/static/config.go` `settingsSchema` |
 | 口令条目的 PHC 写法、`HashPBKDF2`、`ParseHash` 只校验、遗留写法只读并逐条 `Warn` | 已实现 | `pkg/authn/internal/password/phc.go` `Parse`；`pkg/authn/static/hash.go` `Hash`、`HashPBKDF2`、`ParseHash`；`pkg/authn/static/static.go` `wire` |
-| 哨兵错误 | 已实现 — `ErrRoutesUnconfigured` 声明在根包，由 `authn.mount` 在 `Init` 里触发，该模块尚未实现 | `pkg/authn/errors.go`；`pkg/authn/internal/mount/endpoint.go` `Endpoint` |
+| 哨兵错误 | 已实现 — `ErrRoutesUnconfigured` 声明在根包，由 `authn.mount` 在解析挂载端时触发 | `pkg/authn/errors.go`；`pkg/authn/internal/mount/endpoint.go` `Endpoint`；`pkg/authn/mount/config.go` |
 
 行为由真实注册表与回环端口驱动的测试守住：描述符各回调的行为在 `pkg/authn/gate/assembly_test.go` 与 `pkg/authn/gate/endpoints_test.go`，登记、豁免比对、可选路由、无匹配路由与方法不允许时先于入口模块的应答在 `pkg/authn/gate/exempt_test.go` 与 `pkg/authn/gate/live_test.go`，冒充范围与挂载端的核对在 `pkg/authn/gate/scope_test.go` 与 `pkg/authn/gate/mountconfig_test.go`，共用的挂载端与可信来源规则在 `pkg/authn/internal/mount`，挑战头在 `pkg/authn/gate/challenge_test.go`，拒绝响应的形状与后端 panic 的收口在 `pkg/authn/gate/response_test.go`，出口检查在 `pkg/authn/gate/exitcheck_test.go`，口令表经真实网关与入口模块的口令校验、挑战头与失败退避在 `examples/orders-host/e2e_test.go`。
