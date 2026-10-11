@@ -1050,18 +1050,17 @@ func TestAnOperatorLowersATenantsRateLimit(t *testing.T) {
 			"<none>", float64(100))
 
 		// bob belongs to globex alone, so the membership layer refuses every
-		// request of his naming acme. The limiter sits outside that layer and
-		// counts the refusals, so past the limit the answer is the limiter's.
+		// request of his naming acme. The limiter sits outside that layer —
+		// throttling runs before authorizing — and counts the refusals, so past
+		// the limit the answer is the limiter's. The journal runs inside the
+		// limiter, so that 429 is not captured: a refused request never reaches
+		// the recording stage, by design.
 		for i := 1; i <= limit; i++ {
 			expect(t, fmt.Sprintf("bob's request %d naming acme", i),
 				h.get(t, apiEndpoint, "/members", acme.Alias, basic(bob)), nethttp.StatusForbidden)
 		}
 		expect(t, "bob's request past acme's limit",
 			h.get(t, apiEndpoint, "/members", acme.Alias, basic(bob)), nethttp.StatusTooManyRequests)
-
-		c.awaitTrailRow(acme.ID, "the limiter's refusal", func(r trailRow) bool {
-			return r.source == "request" && r.outcome == "429" && r.actor == usersBackendName+"/"+bob.ID
-		})
 	})
 }
 

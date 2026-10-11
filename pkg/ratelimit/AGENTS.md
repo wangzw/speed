@@ -1,14 +1,23 @@
 # pkg/ratelimit
 
-The rate limiting module: one middleware layer per listening endpoint, counting
-requests per identity string inside a tenant, and answering 429 with a
-`Retry-After` header once the estimate for the current window exceeds the
-limit.
+The rate limiting module. It registers two middleware layers that do different
+jobs and are configured apart.
+
+The **quota** is the per-identity layer: one on each endpoint its list names,
+counting requests per identity string inside a tenant and answering 429 with a
+`Retry-After` header once the estimate for the current window exceeds the limit.
+
+The **address shield** is the second layer, in the guard stage, before any
+identity is settled. It counts requests per client address in this process's
+memory and spends by outcome, charging a refusal far more than a success. It is
+a coarse defence against a source that has not identified itself, not a quota;
+the two layers share the module and the chain listing and nothing else, and each
+names its own endpoints and reads its own settings.
 
 The root package is the implementation — there is no separate interface
 package, because the module has one implementation and one path. It registers
-the module `ratelimit`, delivers `(*Limiter)(nil)` exclusively, and declares
-one configuration item and two settings items, all under the `ratelimit`
+the module `ratelimit`, delivers `(*Limiter)(nil)` exclusively, and declares two
+configuration items and five settings items, all under the `ratelimit`
 namespace.
 
 ## Where the authority is
@@ -101,17 +110,23 @@ here must not cross, and how to run it.
 - **The layer's `Provides` carries `(*Limiter)(nil)`**, the same token the
   descriptor delivers under. That is the only anchor another layer has for
   placing itself inside or outside rate limiting, so the two must not drift.
-- **The layer's `After` carries three anchors, and each one is load-bearing.**
-  Without `(*authn.Gate)(nil)` the layer may sit outside authentication and
-  every request is let through for want of an identity; without
-  `(*tenant.Resolution)(nil)` it reads the global row for every request;
-  without `(*audit.Audit)(nil)` its place relative to the audit request layer is
-  left to `Order`, which carries no constraint. Audit's own token is the way
-  that module settled for modules ordering against it
-  ([`adr-audit-anchor-2026-09-21.md`](../../docs/adr/adr-audit-anchor-2026-09-21.md)).
-- **`Order` stays at zero.** Every position this layer needs is fixed by the
-  `After` entries, so a numeric preference would only decide where it lands
-  when those entries do not land — a case worth not tuning for.
+- **The layer declares `StageThrottle`, and carries no `After`.** Where it sits
+  relative to the layers that settle an identity and the layer that records the
+  request is the stage order's business, not an anchor's: `StageIdentify` is
+  outside this stage and `StageRecord` inside it, so an identity exists by the
+  time the layer reads one and a refusal here leaves no audit row
+  ([`adr-http-stages-2026-10-11.md`](../../docs/adr/adr-http-stages-2026-10-11.md)).
+  `After` is for a constraint between two layers of one stage, and this layer has
+  none.
+- **The address shield is a second layer, declaring `StageGuard`.** It runs
+  before any identity is settled, because before that point the only key
+  available is the client's address. It carries no `Provides`: nothing places
+  itself relative to the shield, and the quota layer's `(*Limiter)(nil)` must not
+  be read as standing for it.
+- **Neither layer states a `Position`.** The quota layer has no preference within
+  its stage; the shield keeps the default so that a layer in its own stage asking
+  for the outside — the cross-origin layer — stays outside it, which is what lets
+  a 429 carry that layer's headers.
 - **A refusal sets `Retry-After` first and then goes through `speedhttp.Fail`,
   with the status as the only member of the `Problem`.** The shape of the body
   is the entry point's — `application/problem+json` unless a module delivers an
@@ -136,7 +151,72 @@ here must not cross, and how to run it.
   metadata `middleware` declares in front of a handler that fixes the identity.
 - **Time is read through `l.now`, never `time.Now` directly.** The weight a
   decision applies depends on where in the window the request lands, so a test
-  letting the clock run would pass or fail with the time of day.
+  letting the clock run would pass or fail with the time of day. The shield
+  reads it through the same field, for the refill its buckets take.
+
+## The address shield
+
+- **The shield is the shield; the identity layer is the quota.** They are not the
+  two halves of one thing. The quota is fairness on a known identity — a
+  business limit, applied after identity is settled, and it can be generous. The
+  shield is a coarse defence against a source that has not identified itself —
+  applied before any identity exists, and aimed only at the traffic an attacker
+  produces. A chain listing that shows `ratelimit.address` before `ratelimit` is
+  showing exactly that: the shield outermost, the quota inside it. Any change
+  that blurs the two — one settings set, one endpoint list, one shared counter —
+  takes the shield's job away from it.
+- **The key is the client address, and an IPv6 address counts by its /64.** The
+  address is whatever the entry point reports through `c.ClientIP()`; the shield
+  reads no forwarded header itself. With no trusted proxies configured that is
+  the peer address, and a forwarded header is ignored, so a client cannot choose
+  its own bucket by writing one. A /64 is counted as one key because a host is
+  routinely handed a whole /64, and counting whole addresses would let one host
+  walk through its own prefix and never fill a bucket. The tests pin both
+  (`TestAddressKeyCountsAnIPv6AddressByItsSlashSixtyFour`).
+- **The counting is in this process's memory and makes no network call of any
+  kind.** This is the one thing that must not change: a shield that read a shared
+  counter over the network on every request would itself be the amplification
+  point it exists to close. The state is the `addressGuard` on the product, not
+  the key-value primitives the quota counts through.
+- **The cost is stated and not hidden.** Each replica counts alone, so the
+  effective limit is the per-replica limit times the number of replicas, and a
+  flood spread over many addresses is not stopped by this layer at all — a
+  per-address counter cannot see a distributed one. The first is the price of
+  keeping the count in-process; the second is why this layer sits behind an edge
+  (a CDN or a WAF) and not instead of one, and is written into the design's list
+  of what the application layer does not solve.
+- **A request is charged by outcome, and the charge is what empties the
+  bucket.** The gate at the front spends one token and refuses with a 429 when
+  there is none; after `c.Next` a 401 or a 404 spends the penalty on top, and a
+  success spends nothing more. Only those two statuses are charged: they are what
+  credential stuffing and tenant enumeration produce, and charging the others
+  would spend a client's budget on the server's own faults. The penalty is
+  applied with `spend`, which reads `TokensAt` first and charges only what the
+  bucket holds, because `rate.Limiter` cannot overdraw a bucket — a penalty
+  charged as one `AllowN` on a nearly empty bucket would consume nothing and let
+  the source straight back in. Both halves of that are held by a test
+  (`TestSpendTakesWhatTheBucketHoldsAndNoMore`,
+  `TestTheShieldStopsARefusedSourceAndKeepsAddressesApart`).
+- **The shield's endpoints are their own item, and the layer is off unless one
+  names it.** `address-endpoints` is separate from `endpoints` so the two layers
+  are switched apart; an endpoint named in both carries both. The shield's
+  numbers are `address-rate`, `address-burst` and `address-penalty`, read from
+  the global settings layer and never a tenant's, because the shield runs before
+  any tenant is settled. Each is judged against the same domain on the way in
+  and on the way out as the quota's are, and the shield stands aside on a value
+  outside it rather than act on one.
+- **Every failing path lets the request through, the shield's included.** A
+  failed settings read, or a row outside its domain, stands the shield aside and
+  reports on standard error like the quota's failure classes; it never refuses
+  the endpoint on one bad row. The two shield classes are kept apart from the
+  quota's for the same reason the quota's are kept apart from one another.
+- **The bucket map is bounded, and that is not an optimisation.** A flood of
+  distinct addresses — which this layer does not stop — would otherwise grow the
+  map without limit. Entries idle past `addressIdle` are dropped on a sweep, and
+  a hard cap (`addressCap`) drops entries whatever their age past it. Dropping a
+  bucket only resets one address's budget, and an address silent long enough to
+  be swept has refilled to `burst` many times over, so nothing the shield relied
+  on is lost.
 
 ## Running it
 

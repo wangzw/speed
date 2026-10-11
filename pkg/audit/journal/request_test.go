@@ -423,6 +423,7 @@ func TestTheOutcomeIsTheStatusTheChainEndedWith(t *testing.T) {
 		})
 		endpoint.Use(speedhttp.Middleware{
 			Name:  "refuse",
+			Stage: speedhttp.StageRecord,
 			After: []core.Token{(*audit.Audit)(nil)},
 			Handler: func(c *gin.Context) {
 				if c.Request.URL.Path == "/refused" {
@@ -688,6 +689,7 @@ func TestTheRowIsBuiltFromTheRequestTheLayerReceived(t *testing.T) {
 	servedRequests(t, []string{"GET /things/:id"}, func(endpoint speedhttp.Endpoint) {
 		endpoint.Use(speedhttp.Middleware{
 			Name:  "rewrite",
+			Stage: speedhttp.StageRecord,
 			After: []core.Token{(*audit.Audit)(nil)},
 			Handler: func(c *gin.Context) {
 				inner := c.Request.Clone(c.Request.Context())

@@ -41,7 +41,7 @@ func TestATrailingSlashIsNotRedirected(t *testing.T) {
 	var runs int
 	logger, _ := newRecordingLogger()
 	handler := mustAssemble(t, testSettings("public"), nil, logger, func(e Endpoint) {
-		e.Use(Middleware{Name: "counter", Handler: func(c *gin.Context) {
+		e.Use(Middleware{Name: "counter", Stage: StageObserve, Handler: func(c *gin.Context) {
 			runs++
 			c.Next()
 		}})
@@ -111,7 +111,7 @@ func TestTheGinContextFallsBackToTheRequestContext(t *testing.T) {
 
 	var fromLayer, fromHandler, fromRequest *slog.Logger
 	handler := mustAssemble(t, testSettings("public"), injected, logger, func(e Endpoint) {
-		e.Use(Middleware{Name: "witness", Handler: func(c *gin.Context) {
+		e.Use(Middleware{Name: "witness", Stage: StageObserve, Handler: func(c *gin.Context) {
 			fromLayer = log.FromContext(c)
 			c.Next()
 		}})
@@ -144,7 +144,7 @@ func TestALayerReadsTheMatchedRouteBeforeNext(t *testing.T) {
 	var before string
 	logger, _ := newRecordingLogger()
 	handler := mustAssemble(t, testSettings("public"), nil, logger, func(e Endpoint) {
-		e.Use(Middleware{Name: "reader", Handler: func(c *gin.Context) {
+		e.Use(Middleware{Name: "reader", Stage: StageObserve, Handler: func(c *gin.Context) {
 			before = c.FullPath()
 			c.Next()
 		}})
@@ -511,25 +511,29 @@ func TestThereIsNoPusherOnAnHTTP1Writer(t *testing.T) {
 	}
 }
 
-// TestAFailedHijackOverHTTP2LeavesTheResponseToTheFallback pins that a hijack the
-// writer refuses does not count as a start. An HTTP/2 stream has no connection
-// to take over, so the call fails, and a handler that goes on to panic has
-// written nothing: the panic is answered with the error response, as it is for a
-// handler that never asked. A writer that recorded the hijack before it knew the
-// outcome would take the response to have started and answer nothing.
+// TestAFailedHijackOverHTTP2LeavesTheResponseUnanswered pins what a handler that
+// asks its writer for the connection gets over HTTP/2, where there is no
+// connection to take over, and what becomes of a panic after it.
 //
-// The control is the same panic without the hijack, which gets the same answer;
-// the two are compared on the status and the media type.
-func TestAFailedHijackOverHTTP2LeavesTheResponseToTheFallback(t *testing.T) {
+// gin's writer Hijack asserts http.Hijacker on the writer it wraps, and an
+// HTTP/2 stream is not one, so the call panics rather than returning an error;
+// before it does, it records the response as having started. The panic unwinds
+// to the recovery layer, which then leaves the response as it is: nothing was
+// written, so the client reads the empty 200 net/http supplies for a response
+// that ended without a final status.
+//
+// The control panics without asking for the connection first, so its response
+// has not started and it is answered with the error response. The two outcomes
+// differ on the one point this pins: an attempt to take a connection the writer
+// cannot give starts the response for gin, whether or not it succeeds.
+func TestAFailedHijackOverHTTP2LeavesTheResponseUnanswered(t *testing.T) {
 	certFile, keyFile, roots := writeSelfSignedCertificate(t, t.TempDir())
 	s := testSettings("public")
 	s.tlsCertFile, s.tlsKeyFile = certFile, keyFile
 	logger, _ := newRecordingLogger()
-	hijackErrs := make(chan error, 1)
 	handler := mustAssemble(t, s, nil, logger, func(e Endpoint) {
-		e.Route("GET", "/after-a-failed-hijack", func(c *gin.Context) {
-			_, _, err := c.Writer.Hijack()
-			hijackErrs <- err
+		e.Route("GET", "/hijack", func(c *gin.Context) {
+			_, _, _ = c.Writer.Hijack()
 			panic("after the hijack failed")
 		})
 		e.Route("GET", "/plain", func(*gin.Context) { panic("with no hijack") })
@@ -544,11 +548,11 @@ func TestAFailedHijackOverHTTP2LeavesTheResponseToTheFallback(t *testing.T) {
 	client := &nethttp.Client{Transport: transport, Timeout: waitDeadline}
 
 	type outcome struct {
-		proto, mediaType string
-		status           int
+		proto, mediaType, body string
+		status                 int
 	}
 	answers := map[string]outcome{}
-	for _, path := range []string{"/after-a-failed-hijack", "/plain"} {
+	for _, path := range []string{"/hijack", "/plain"} {
 		request, err := nethttp.NewRequestWithContext(context.Background(), nethttp.MethodGet, "https://"+addr+path, nil)
 		if err != nil {
 			t.Fatal(err)
@@ -557,19 +561,22 @@ func TestAFailedHijackOverHTTP2LeavesTheResponseToTheFallback(t *testing.T) {
 		if err != nil {
 			t.Fatalf("%s: the request failed: %v", path, err)
 		}
-		_, _ = io.Copy(io.Discard, resp.Body)
+		body, _ := io.ReadAll(resp.Body)
 		_ = resp.Body.Close()
-		answers[path] = outcome{proto: resp.Proto, mediaType: resp.Header.Get("Content-Type"), status: resp.StatusCode}
+		answers[path] = outcome{
+			proto: resp.Proto, mediaType: resp.Header.Get("Content-Type"),
+			body: string(body), status: resp.StatusCode,
+		}
 	}
 
-	if err := <-hijackErrs; err == nil {
-		t.Fatal("the HTTP/2 writer let a handler hijack, so this case did not exercise a failed hijack")
+	if got := answers["/hijack"]; got.proto != "HTTP/2.0" || got.status != nethttp.StatusOK || got.body != "" {
+		t.Errorf("the handler that asked for the connection was answered %+v, want the empty 200 the "+
+			"failed hijack leaves over HTTP/2", got)
 	}
 	want := outcome{proto: "HTTP/2.0", mediaType: "application/problem+json", status: nethttp.StatusInternalServerError}
-	for path, got := range answers {
-		if got != want {
-			t.Errorf("%s was answered %+v, want %+v", path, got, want)
-		}
+	if got := answers["/plain"]; got.status != want.status || got.mediaType != want.mediaType || got.proto != want.proto {
+		t.Errorf("the handler that panicked without asking for the connection was answered %+v, want %+v",
+			got, want)
 	}
 }
 

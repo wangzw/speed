@@ -106,7 +106,7 @@ func TestARefusalNoPairReproducesSaysSo(t *testing.T) {
 
 	logger, _ := newRecordingLogger()
 	_, err := assembleEndpoint(t, testSettings("public"), nil, logger, func(e Endpoint) {
-		e.Use(Middleware{Name: "layer", Handler: passThrough})
+		e.Use(Middleware{Name: "layer", Stage: StageObserve, Handler: passThrough})
 		e.Route("GET", "/one", filler)
 		e.Route("GET", "/two", filler)
 		e.Route("GET", "/heavy", atTheLimit...)
@@ -144,7 +144,7 @@ func TestTheRefusalNoPairReproducesIsAMatterOfTheHandlerCount(t *testing.T) {
 	assembles := func(handlers int) bool {
 		logger, _ := newRecordingLogger()
 		_, err := assembleEndpoint(t, testSettings("public"), nil, logger, func(e Endpoint) {
-			e.Use(Middleware{Name: "layer", Handler: passThrough})
+			e.Use(Middleware{Name: "layer", Stage: StageObserve, Handler: passThrough})
 			e.Route("GET", "/heavy", handlersOf(handlers)...)
 		})
 		return err == nil
@@ -176,7 +176,7 @@ func assembleWithCounts(t *testing.T, layers, handlers int) error {
 	logger, _ := newRecordingLogger()
 	_, err := assembleEndpoint(t, testSettings("public"), nil, logger, func(e Endpoint) {
 		for i := range layers {
-			e.Use(Middleware{Name: fmt.Sprintf("layer-%d", i), Handler: passThrough})
+			e.Use(Middleware{Name: fmt.Sprintf("layer-%d", i), Stage: StageObserve, Handler: passThrough})
 		}
 		e.Route("GET", "/things", handlersOf(handlers)...)
 	})
@@ -223,7 +223,7 @@ func TestTooManyLayersFailTheAssembly(t *testing.T) {
 
 	layers := make([]func(*core.Registry) error, 0, limit+1)
 	for i := range limit + 1 {
-		layers = append(layers, useLayer("public", Middleware{Name: fmt.Sprintf("layer-%d", i), Handler: passThrough}))
+		layers = append(layers, useLayer("public", Middleware{Name: fmt.Sprintf("layer-%d", i), Stage: StageObserve, Handler: passThrough}))
 	}
 	probe := &stageProbe{name: "probe.registers-every-layer", requires: requiresRouter(), onInit: inOrder(layers...)}
 	a := startAssembly(t, oneEndpoint("public"), Module(), probe.module())

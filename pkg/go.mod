@@ -4,6 +4,7 @@ go 1.26.0
 
 require (
 	github.com/bradfitz/gomemcache v0.0.0-20260422231931-4d751bb6e37c
+	github.com/gin-contrib/cors v1.7.3
 	github.com/gin-gonic/gin v1.12.0
 	github.com/glebarez/go-sqlite v1.21.2
 	github.com/glebarez/sqlite v1.11.0
@@ -27,6 +28,7 @@ require (
 	go.opentelemetry.io/otel/sdk/metric v1.47.0
 	go.opentelemetry.io/otel/trace v1.47.0
 	go.yaml.in/yaml/v3 v3.0.5
+	golang.org/x/time v0.14.0
 	google.golang.org/grpc v1.83.2
 	gorm.io/driver/postgres v1.6.0
 	gorm.io/gorm v1.31.2

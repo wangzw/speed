@@ -72,7 +72,7 @@ func TestUseBeforeGateOpensPanics(t *testing.T) {
 	e := endpointOf(t, r, "public")
 
 	text := wantPanic(t, "Use before the gate opened", func() {
-		e.Use(Middleware{Name: "trace", Handler: passThrough})
+		e.Use(Middleware{Name: "trace", Stage: StageObserve, Handler: passThrough})
 	})
 	mustContain(t, text, "Use", "the call that was refused")
 	mustContain(t, text, "before the registration gate opened", "which side of the window the call fell on")
@@ -86,7 +86,7 @@ func TestRegistrationInsideInitSucceeds(t *testing.T) {
 	r.open()
 
 	e.Route("GET", "/things", filler)
-	e.Use(Middleware{Name: "trace", Handler: passThrough})
+	e.Use(Middleware{Name: "trace", Stage: StageObserve, Handler: passThrough})
 
 	inner := r.endpoints["public"]
 	if len(inner.routes) != 1 || inner.routes[0].method != "GET" || inner.routes[0].path != "/things" {
@@ -114,7 +114,7 @@ func TestRegistrationAfterSealPanics(t *testing.T) {
 	mustContain(t, text, "assembled once in Serve", "why a late registration reaches nothing")
 
 	useText := wantPanic(t, "Use after the gate was sealed", func() {
-		e.Use(Middleware{Name: "trace", Handler: passThrough})
+		e.Use(Middleware{Name: "trace", Stage: StageObserve, Handler: passThrough})
 	})
 	mustContain(t, useText, "after the registration gate closed", "which side of the window the call fell on")
 }
@@ -285,7 +285,7 @@ func TestNilHandlerFieldPanics(t *testing.T) {
 	r.open()
 
 	text := wantPanic(t, "Use with a nil Handler", func() {
-		e.Use(Middleware{Name: "trace"})
+		e.Use(Middleware{Name: "trace", Stage: StageObserve})
 	})
 	mustContain(t, text, "trace", "the layer that was registered")
 	mustContain(t, text, "nil Handler", "what was wrong with it")
@@ -466,7 +466,7 @@ func TestIllegalConstraintTokenPanicsAtTheRegistration(t *testing.T) {
 	r.open()
 
 	text := wantPanic(t, "Use with an untyped nil in After", func() {
-		e.Use(Middleware{Name: "trace", After: []any{nil}, Handler: passThrough})
+		e.Use(Middleware{Name: "trace", Stage: StageObserve, After: []any{nil}, Handler: passThrough})
 	})
 	mustContain(t, text, `endpoint "public"`, "the endpoint the declaration was made on")
 	mustContain(t, text, `middleware "trace"`, "the layer that declared it")
@@ -489,7 +489,7 @@ func TestIllegalBeforeTokenPanicsAtTheRegistration(t *testing.T) {
 	r.open()
 
 	text := wantPanic(t, "Use with an untyped nil in Before", func() {
-		e.Use(Middleware{Name: "trace", Before: []any{nil}, Handler: passThrough})
+		e.Use(Middleware{Name: "trace", Stage: StageObserve, Before: []any{nil}, Handler: passThrough})
 	})
 	mustContain(t, text, `endpoint "public"`, "the endpoint the declaration was made on")
 	mustContain(t, text, `middleware "trace"`, "the layer that declared it")
@@ -529,6 +529,7 @@ func TestIllegalProvidesTokenPanicsNamingTheDeclaration(t *testing.T) {
 			text := wantPanic(t, "Use with "+c.name+" in Provides", func() {
 				e.Use(Middleware{
 					Name:     "trace",
+					Stage:    StageObserve,
 					Provides: []core.Token{(*probe)(nil), c.token},
 					Handler:  passThrough,
 				})
@@ -548,13 +549,13 @@ func TestIllegalProvidesTokenPanicsNamingTheDeclaration(t *testing.T) {
 // TestProvidesIsRecordedOnTheLayer pins the field reaching the graph node the
 // ordering reads. Dropped between Use and the record, every constraint on the
 // endpoint would find no provider, and the chain would come out ordered by
-// Order alone with nothing saying so.
+// registration order alone with nothing saying so.
 func TestProvidesIsRecordedOnTheLayer(t *testing.T) {
 	r := testRouter("public")
 	e := endpointOf(t, r, "public")
 	r.open()
 
-	e.Use(Middleware{Name: "auth", Provides: []core.Token{(*probe)(nil)}, Handler: passThrough})
+	e.Use(Middleware{Name: "auth", Stage: StageObserve, Provides: []core.Token{(*probe)(nil)}, Handler: passThrough})
 
 	layers := r.endpoints["public"].layers
 	if len(layers) != 1 {
@@ -610,7 +611,7 @@ func TestConcurrentRegistrationIsSafe(t *testing.T) {
 			defer wg.Done()
 			for j := range each {
 				e.Route("GET", fmt.Sprintf("/things/%d/%d", i, j), filler)
-				e.Use(Middleware{Name: fmt.Sprintf("layer-%d-%d", i, j), Handler: passThrough})
+				e.Use(Middleware{Name: fmt.Sprintf("layer-%d-%d", i, j), Stage: StageObserve, Handler: passThrough})
 			}
 		}()
 	}

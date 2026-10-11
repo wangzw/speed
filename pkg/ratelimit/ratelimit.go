@@ -1,11 +1,21 @@
-// Package ratelimit delivers request rate limiting per identity string.
+// Package ratelimit registers two middleware layers: a quota on a settled
+// identity, and an address shield that runs before any identity is settled.
 //
-// One middleware layer is registered on each listening endpoint this module's
-// configuration names. A request that carries an identity string is counted
-// once, and a request whose estimate exceeds the limit for the current window
-// is answered 429 with a Retry-After header. The counting goes through the
-// key-value primitives, so the module holds no state of its own across
-// replicas.
+// The quota is the per-identity layer. One such layer is registered on each
+// endpoint this module's configuration names, a request that carries an
+// identity string is counted once, and a request whose estimate exceeds the
+// limit for the current window is answered 429 with a Retry-After header. Its
+// counting goes through the key-value primitives, so the module holds no state
+// of its own across replicas.
+//
+// The shield is a second, separate layer, registered on the endpoints its own
+// list names. It runs in the guard stage, before identity is known, so its key
+// is the client address; it counts that address in this process's memory and
+// makes no network call of any kind, and it spends by outcome, charging a
+// refusal far more than a success. Its cost is stated where it is implemented:
+// each replica counts alone, so the effective limit is the per-replica limit
+// times the number of replicas, and a flood spread over many addresses is not
+// stopped by it at all.
 package ratelimit
 
 import (
@@ -29,7 +39,8 @@ const ModuleName = "ratelimit"
 // registering module's namespace always is.
 const ConfigNamespace = ModuleName
 
-// The two setting items, and the full paths they are declared and read under.
+// The quota's two setting items, and the full paths they are declared and read
+// under. The shield's three are declared the same way in address.go.
 //
 // The settings module registers every declared item under its full path — the
 // namespace, a dot, then the item key — and looks a key up by that exact path,
@@ -72,9 +83,16 @@ const (
 // guard, which is a startup failure rather than a module that quietly does
 // nothing.
 type Config struct {
-	// Endpoints names the listening endpoints the limiting layer is
-	// registered on.
+	// Endpoints names the listening endpoints the quota layer is registered on.
 	Endpoints []string `config:"endpoints"`
+
+	// AddressEndpoints names the listening endpoints the address shield is
+	// registered on. The two lists are separate so the two layers are switched
+	// apart: an endpoint is guarded by the quota, the shield, both or neither
+	// according to which list names it. An empty list leaves the shield off,
+	// which is not a startup failure — a host that wants only the quota says
+	// nothing here.
+	AddressEndpoints []string `config:"address-endpoints"`
 }
 
 // options carries the two settings items and their declared defaults.
@@ -87,13 +105,36 @@ type Config struct {
 type options struct {
 	Window time.Duration `config:"window"`
 	Limit  int           `config:"limit"`
+
+	// The shield's three settings. They are read from the global layer and
+	// never a tenant's: the shield runs before any tenant is settled, so there
+	// is no tenant row to read them from.
+	AddressRate    int `config:"address-rate"`
+	AddressBurst   int `config:"address-burst"`
+	AddressPenalty int `config:"address-penalty"`
 }
 
 // defaults is the prototype the settings module reads the declared defaults
 // off. It never receives a value.
+//
+// The shield's numbers are chosen for the endpoints it is meant for — an
+// authentication endpoint, where a human client makes a request every few
+// seconds at most and an attacker makes hundreds. Four tokens a second is more
+// than a page load's worth of parallel requests and far above a human's click
+// rate. A burst of forty absorbs the parallel requests a single page issues
+// without touching the shield. A refusal costs one plus a penalty of twenty —
+// half the bucket — so an ordinary success pays one token while a 401 or a 404
+// pays twenty-one: two refusals empty a full bucket, and the address is then
+// admitted about once every five seconds until it stops being refused, which is
+// where credential stuffing and tenant enumeration stop being economical. A
+// normal client never gets near the penalty, so its throughput is unchanged.
 var defaults = options{
 	Window: time.Minute,
 	Limit:  100,
+
+	AddressRate:    4,
+	AddressBurst:   40,
+	AddressPenalty: 20,
 }
 
 // windowInDomain and limitInDomain are the two settings' domains: the values
@@ -119,6 +160,12 @@ func schema() config.Schema {
 				Description: "the listening endpoints whose requests are limited, by the names " +
 					"the entry point's configuration gives them; at least one is required",
 			},
+			addressEndpointsKey: {
+				Description: "the listening endpoints whose requests the address shield " +
+					"counts, by the names the entry point's configuration gives them; the " +
+					"shield is registered on the endpoints this list names and on no others, " +
+					"so an empty list leaves it off",
+			},
 		},
 	}
 }
@@ -140,6 +187,22 @@ func settingsSchema() settings.Schema {
 				Description: "the requests one identity string may make in one window " +
 					"within one tenant, which must be positive",
 				Domain: settings.DomainOf("the positive integers", limitInDomain),
+			},
+			addressRateKey: {
+				Description: "the requests per second the address shield admits from one " +
+					"client address, which must be positive",
+				Domain: settings.DomainOf("the positive integers", addressRateInDomain),
+			},
+			addressBurstKey: {
+				Description: "how many requests the address shield admits from one client " +
+					"address in a burst, which must be positive",
+				Domain: settings.DomainOf("the positive integers", addressBurstInDomain),
+			},
+			addressPenaltyKey: {
+				Description: "the extra tokens a refusal (a 401 or a 404) costs a client " +
+					"address against the shield's bucket, which must not be negative; zero " +
+					"leaves the shield a plain per-address rate cap",
+				Domain: settings.DomainOf("the non-negative integers", addressPenaltyInDomain),
 			},
 		},
 	}

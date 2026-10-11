@@ -14,27 +14,27 @@ import (
 )
 
 // assemble builds this endpoint's final handler, once, from the inside out: a
-// gin engine is made and the registered layers are handed to its Use in the
-// order the constraints and the preferences give, the routes are mounted on it,
-// the fallback closes over the whole of that, and the base sits outside all of
-// it.
+// gin engine is made, the layers are handed to its Use in the order the stages,
+// the constraints and the preferences give — with the built-in access log, panic
+// recovery and body limit placed between the stages they belong between — the
+// routes are mounted on it, and the base sits outside all of it.
 //
 // injected is the logger to put in each request's context, or nil when no
 // module delivers the Logger capability. logger is where this assembly's own
 // diagnostics go. responder is what decides the shape of the error responses,
 // or nil when no module delivers the ErrorResponder capability.
 func (e *endpoint) assemble(injected, logger *slog.Logger, responder ErrorResponder) (nethttp.Handler, error) {
-	ordered, unlanded, err := orderLayers(e.settings.name, e.layers)
+	ordered, remarks, err := orderLayers(e.settings.name, e.layers)
 	if err != nil {
 		return nil, err
 	}
 
-	engine := newEngine()
+	engine := newEngine(e.settings)
 	// ordered runs from outermost to innermost, and gin runs the handlers
 	// given to Use in the order given. Use goes first: gin combines the
 	// engine's handlers into a route's chain when the route is added, so a
 	// layer registered after the routes would not reach them.
-	if raised := useLayers(engine, ordered); raised != nil {
+	if raised := useLayers(engine, ordered, e.settings); raised != nil {
 		return nil, fmt.Errorf("%w: endpoint %q: gin refused the %d registered layers: %v. A chain "+
 			"holds a limited number of handlers, and the layers, the engine's own and a route's "+
 			"count together; register fewer layers on this endpoint or move some of them to "+
@@ -44,23 +44,88 @@ func (e *endpoint) assemble(injected, logger *slog.Logger, responder ErrorRespon
 		return nil, err
 	}
 
-	reportUnlanded(logger, unlanded)
+	reportRemarks(logger, remarks)
 	logger.Info("an HTTP endpoint's chain is assembled",
 		"endpoint", e.settings.name,
 		"routes", len(e.routes),
 		"chain", chainDescription(e.settings.name, ordered))
-	return e.base(fallback(engine, e.settings.name, responder), injected, responder), nil
+	return e.base(engine, injected, responder), nil
 }
 
-// useLayers hands the layers to the engine and returns what gin raised, or nil.
+// useLayers registers this module's built-in layers and the ordered registered
+// ones on the engine, outermost first, and returns what gin raised, or nil.
+//
+// The built-ins are placed between the stages, which is what the stage order
+// cannot express on its own, and each is placed against a contract:
+//
+//   - the access log sits outside the observe stage, so it sees every request,
+//     including the ones the observe stage's own layers never hand on;
+//   - the panic recovery sits inside the observe stage and outside the guard
+//     stage, so an observer sees a recovered request as the 500 that was
+//     written rather than as a panic thrown past it;
+//   - the request body limit sits inside the guard stage and outside every
+//     stage below it — it is registered after every guard layer and before the
+//     identify stage — so a body is already bounded when an identify, throttle,
+//     record or authorize layer, or the handler, reads it.
+//
+// The body limit's place is the guard contract and not an accident. A guard
+// layer refuses on what it can see without reading the body — an address, a
+// header, a CORS preflight — so it neither needs a bounded body nor may have
+// one imposed on it: bounding first would answer an oversize request before the
+// address limit had counted it. It is also the one boundary that keeps the CORS
+// rule: a 413 is a refusal, so the layer that writes it has to sit inside CORS,
+// and CORS is a guard layer. Put the body limit outside the guard stage and the
+// 413 goes out without the Access-Control-Allow-Origin a browser needs to read
+// it.
+//
+// None of the built-ins is registered through the surface, so none is named by
+// a constraint and none is moved by one.
+//
 // gin refuses a chain longer than it can hold by panicking, and that would
-// otherwise leave Serve as a panic instead of a startup failure.
-func useLayers(engine *gin.Engine, ordered []layer) (raised any) {
+// otherwise leave Serve as a panic instead of a startup failure, which is why
+// what it raised is caught and handed back.
+func useLayers(engine *gin.Engine, ordered []layer, s endpointSettings) (raised any) {
 	defer func() { raised = recover() }()
-	for _, l := range ordered {
+	engine.Use(accessLog(s.name))
+	observe, guard, inner := splitStages(ordered)
+	for _, l := range observe {
+		engine.Use(l.mw.Handler)
+	}
+	engine.Use(recovery(s.name))
+	for _, l := range guard {
+		engine.Use(l.mw.Handler)
+	}
+	engine.Use(bodyLimit(s.name, s.maxBodyBytes))
+	for _, l := range inner {
 		engine.Use(l.mw.Handler)
 	}
 	return nil
+}
+
+// splitStages divides the ordered layers into the observe stage, the guard
+// stage, and everything inside the guard stage, each keeping its order.
+//
+// The two boundaries are the points the recovery and the body limit sit at, and
+// they are read off the stage and nothing else: orderLayers runs the stages in
+// their declared order, so the observe layers come out first and the guard ones
+// next, but the partition is made by the stage each layer declared rather than
+// by its position in the slice, so a change to the built-in order here cannot
+// put an outer or an inner layer on the wrong side of a boundary in silence.
+func splitStages(ordered []layer) (observe, guard, inner []layer) {
+	observe = make([]layer, 0, len(ordered))
+	guard = make([]layer, 0, len(ordered))
+	inner = make([]layer, 0, len(ordered))
+	for _, l := range ordered {
+		switch l.mw.Stage {
+		case StageObserve:
+			observe = append(observe, l)
+		case StageGuard:
+			guard = append(guard, l)
+		default:
+			inner = append(inner, l)
+		}
+	}
+	return observe, guard, inner
 }
 
 // ginMode is the guard that sets gin's process-wide mode once.
@@ -85,10 +150,19 @@ func setReleaseMode() {
 // middleware runs, so a request that gets one would go past every layer;
 // redirects are off. A request that matches no route, and one whose method the
 // path does not allow, run through all the layers like any other and are
-// answered through Fail. The engine trusts no proxy, because gin's default
-// takes X-Forwarded-For from any peer, which lets a client choose the address
-// Context.ClientIP reports. Context falls back to the request's context, so a
-// logger put there is reachable from the gin context as well.
+// answered through Fail.
+//
+// The engine trusts no proxy unless the endpoint's configuration names the
+// networks in front of it, in which case the client address Context.ClientIP
+// reports is taken from the forwarded-address headers named there. The default
+// is no trust: gin's own default trusts any peer, which lets a client put
+// whatever address it likes in X-Forwarded-For and choose the address the rate
+// limiter and the audit trail are keyed by. The trusted networks are handed to
+// gin's SetTrustedProxies and the header names to its RemoteIPHeaders, so this
+// module reads no forwarded header itself; configuration has already refused a
+// network gin cannot parse, which is why SetTrustedProxies cannot fail here.
+// Context falls back to the request's context, so a logger put there is
+// reachable from the gin context as well.
 //
 // gin writes the Allow header of a 405 into the response before it runs any
 // layer, so a layer that refuses such a request — authentication with a 401,
@@ -97,16 +171,17 @@ func setReleaseMode() {
 // handler on the engine takes the header off and holds it; the handler for a
 // method the path does not allow puts it back once every layer has let the
 // request through.
-func newEngine() *gin.Engine {
+func newEngine(s endpointSettings) *gin.Engine {
 	setReleaseMode()
 	engine := gin.New()
 	engine.RedirectTrailingSlash = false
 	engine.RedirectFixedPath = false
 	engine.HandleMethodNotAllowed = true
 	engine.ContextWithFallback = true
-	// SetTrustedProxies fails only for an address it cannot parse, and nil
-	// has none.
-	_ = engine.SetTrustedProxies(nil)
+	_ = engine.SetTrustedProxies(s.trustedProxies)
+	if len(s.remoteIPHeaders) > 0 {
+		engine.RemoteIPHeaders = s.remoteIPHeaders
+	}
 	engine.Use(holdAllow)
 	engine.NoRoute(func(c *gin.Context) { Fail(c, Problem{Status: nethttp.StatusNotFound}) })
 	engine.NoMethod(func(c *gin.Context) {
@@ -124,6 +199,11 @@ func newEngine() *gin.Engine {
 // the gin context.
 const heldAllowKey = "http:held-allow"
 
+// holdAllowName is holdAllow as it appears in the assembled chain's description.
+// It is not one of the names the chain renderer would otherwise invent for a
+// registered layer, because holdAllow is on no registration surface.
+const holdAllowName = "holdAllow"
+
 // holdAllow is the first handler on every engine. A request that gin answers
 // with 405 arrives with the Allow header already on the response; this takes
 // it off and keeps it for the method-not-allowed handler, so that a layer
@@ -139,36 +219,76 @@ func holdAllow(c *gin.Context) {
 }
 
 // unlandedMsg is the message of the record reporting a constraint that placed
-// nothing.
+// nothing: the two causes where a layer the constraint named is one the
+// ordering could not use. It is shared, because the two are answered by the
+// same family of edit — a layer is missing or a declaration is wrong — and the
+// cause attribute tells the reader which of the two it is.
 const unlandedMsg = "an HTTP middleware constraint landed on no layer"
 
-// reportUnlanded writes out the constraints that placed nothing, one record
-// each, at the level their cause calls for.
+// stageSatisfiedMsg is the message of the record reporting a constraint whose
+// provider is in another stage and in the direction the stage order already
+// gives. Nothing is wrong here and nothing is missing: the constraint repeats
+// the boundary, which is why the record is Debug and not one of the two below.
+const stageSatisfiedMsg = "an HTTP middleware constraint is already given by the stage order"
+
+// tiedPreferenceMsg is the message of the record reporting two layers of one
+// stage that claimed the same edge with PositionFirst or PositionLast. There is
+// no constraint in this record at all; the layers are the point, and the
+// middleware attribute names both of them.
+const tiedPreferenceMsg = "two HTTP middleware layers claim the same edge of their stage, and the registration order decided"
+
+// reportRemarks writes out what the ordering noticed and did not act on, one
+// record each, at the level and in the words its cause calls for.
 //
 // This is the whole of their observability. The assembly carries on — a
 // capability absent from the process is a legal configuration — so the layer
 // that declared itself inside authentication runs anyway, in the position its
-// Order happens to give it. The cause is written with each line because the
-// two causes are answered by different edits: a capability nobody stands for
-// sends the reader looking for the module that should have been on the
-// endpoint, while a capability only the declaring layer stands for is that
-// layer correcting what it said about itself.
+// stage and preference happen to give it. The cause is written with each line
+// because the causes are answered by different edits: a capability nobody
+// stands for sends the reader looking for the module that should have been on
+// the endpoint; a capability only the declaring layer stands for is that layer
+// correcting what it said about itself; a constraint the stage order already
+// satisfies needs nothing done at all; and a lost preference sends the reader
+// to the two layers that both asked for the same edge.
+//
+// The declaration and the capability are written only where there is one. A
+// tied preference names no capability and states no After or Before, so those
+// two attributes are left off rather than written empty, which would read as a
+// declaration at an empty position.
 //
 // It goes to this module's own logger because core does not export a startup
-// diagnostics surface. The level is the cause's; see unlandedCause.level.
-func reportUnlanded(logger *slog.Logger, unlanded []unlandedConstraint) {
-	for _, u := range unlanded {
-		logger.Log(context.Background(), u.cause.level(), unlandedMsg,
-			"endpoint", u.endpoint,
-			"middleware", u.layer,
-			"declaration", fmt.Sprintf("%s[%d]", u.field, u.at),
-			"capability", u.capability,
-			"cause", string(u.cause))
+// diagnostics surface. The level is the cause's; see remarkCause.level.
+func reportRemarks(logger *slog.Logger, remarks []orderingRemark) {
+	for _, u := range remarks {
+		attrs := []any{"endpoint", u.endpoint, "middleware", u.layer}
+		if u.cause != causeTiedPreference {
+			attrs = append(attrs,
+				"declaration", fmt.Sprintf("%s[%d]", u.field, u.at),
+				"capability", u.capability)
+		}
+		attrs = append(attrs, "cause", string(u.cause))
+		logger.Log(context.Background(), u.cause.level(), u.cause.message(), attrs...)
 	}
 }
 
-// level is the level a constraint that placed nothing is written at. What
-// decides it is whether the assembly can be right as it stands.
+// message is the text a remark is written with. Each cause reads differently
+// because each sends its reader somewhere else: the two unplaced causes to the
+// absent module or the wrong declaration, the stage-satisfied one to the stage
+// boundary that already holds, and the tied preference to the two layers whose
+// registration order decided.
+func (c remarkCause) message() string {
+	switch c {
+	case causeStageSatisfied:
+		return stageSatisfiedMsg
+	case causeTiedPreference:
+		return tiedPreferenceMsg
+	default:
+		return unlandedMsg
+	}
+}
+
+// level is the level a remark is written at. What decides it is whether the
+// assembly can be right as it stands.
 //
 // A capability no layer on the endpoint stands for is what a legal assembly
 // produces whenever the module standing for it is absent from the process or
@@ -178,15 +298,25 @@ func reportUnlanded(logger *slog.Logger, unlanded []unlandedConstraint) {
 // the ones that mean something along with it. The price is that the one wrong
 // declaration of that shape — a module on the endpoint that left its Provides
 // empty — is written at Info too: the graph cannot tell it from an absent
-// module, and nothing here knows who registered which layer.
+// module, and nothing here knows who registered which layer. A tied preference
+// is written at Info as well: both layers run and the ordering is legitimate,
+// and the line is a note that the loser's claim was shared, not a fault.
 //
 // A layer that is the only one standing for the capability it names has a
 // declaration that places nothing in every assembly, which no configuration
 // makes right, so it is written at Warn. So is any cause not named here: a
 // level is decided per cause, and one nobody decided is not assumed legal.
-func (c unlandedCause) level() slog.Level {
+//
+// A constraint the stage order already satisfies is written at Debug. The
+// boundary places the layer whatever the constraint says, so nothing is wrong
+// and nothing is missing — the declaration only repeats what the stages
+// already give, and a reader chasing their After/Before chain is the one who
+// wants to see it.
+func (c remarkCause) level() slog.Level {
 	switch c {
-	case causeNoProvider:
+	case causeStageSatisfied:
+		return slog.LevelDebug
+	case causeNoProvider, causeTiedPreference:
 		return slog.LevelInfo
 	default:
 		return slog.LevelWarn
@@ -264,16 +394,12 @@ func (e *endpoint) conflictError(mounted []route, refused route, raised any) err
 // base is the outermost layer of the chain, the one this module puts there
 // itself.
 //
-// The body limit is imposed here rather than in the handlers, so that it holds
-// for every handler on the endpoint, and so that a middleware reading the body
-// is already reading a truncated one.
-//
-// The logger and the delivered ErrorResponder are put into the request context
-// here for the same reason of position: outside every layer is the only place
-// from which each of them, and the handler, can take them out of the request
-// context. First injection belongs to whoever creates the context rather than
-// to a middleware — several middlewares would each believe they are the
-// fallback, and the loggers they inject carry different module names.
+// It puts the logger and the delivered ErrorResponder into the request context
+// and nothing else. Outside every layer is the only place from which each of
+// them, and the handler, can take them out of the request context. First
+// injection belongs to whoever creates the context rather than to a middleware —
+// several middlewares would each believe they are the outermost one, and the
+// loggers they inject carry different module names.
 //
 // With no Logger capability in the assembly nothing is injected and nothing
 // fails: log.FromContext then falls back to the process default logger, so the
@@ -281,12 +407,13 @@ func (e *endpoint) conflictError(mounted []route, refused route, raised any) err
 // destinations, without a failure signal. That is the stated cost of the
 // dependency being optional. With no ErrorResponder, Fail writes the default
 // shape.
+//
+// The request body limit is not imposed here: it is the body limit layer's, and
+// that layer sits inside the engine, after the route is matched, so a request
+// whose method the path does not allow and one that matches no route are bounded
+// too.
 func (e *endpoint) base(next nethttp.Handler, injected *slog.Logger, responder ErrorResponder) nethttp.Handler {
-	limit := e.settings.maxBodyBytes
 	return nethttp.HandlerFunc(func(w nethttp.ResponseWriter, r *nethttp.Request) {
-		if limit > 0 && r.Body != nil {
-			r.Body = nethttp.MaxBytesReader(w, r.Body, limit)
-		}
 		if injected != nil || responder != nil {
 			ctx := r.Context()
 			if injected != nil {
@@ -298,26 +425,64 @@ func (e *endpoint) base(next nethttp.Handler, injected *slog.Logger, responder E
 	})
 }
 
+// contextName is the outermost built-in layer — the one that injects the logger
+// and the ErrorResponder — as it appears in the assembled chain's description.
+const contextName = "http:context"
+
 // chainDescription renders an assembled chain for the startup log, outermost
 // first.
 //
-// A registered layer is written down together with the capabilities it stands
-// for. This line is where those are readable side by side, and what makes it
-// worth reading: a capability no layer on this endpoint stands for is a
-// position another layer's After or Before asked for and did not get, and the
-// name alone does not answer whether the layer that should have stood for it
-// was in the assembly at all. The layers this module puts outside every
-// registered one are named too, and by name alone: they are not on the
-// registration surface and stand for no capability, so a reader comparing the
-// line with the code would otherwise find the body limit, the logger and the
-// panic fallback applied by something the line does not mention.
+// The built-in layers are named where they sit: the context and holdAllow
+// outside every registered layer, the access log outside the observe stage, the
+// panic recovery between the observe stage and the guard stage, and the request
+// body limit between the guard stage and the rest. None of them is on the
+// registration surface, so a reader comparing the line with the code would
+// otherwise find work applied by something the line does not mention, and the
+// reader would not see that the recovery sits inside the observers, which is
+// the property the whole order exists for. The body limit after the guard's
+// layers is what shows a 413 going out inside CORS, which is a guard layer.
+//
+// Each stage is written as a marker followed by its layers, in the order the
+// chain runs them, so the category constraint — every observer outside every
+// layer that can refuse — is readable off the line. A registered layer is
+// written down together with the capabilities it stands for: a capability no
+// layer on this endpoint stands for is a position another layer's After or
+// Before asked for and did not get, and the name alone does not answer whether
+// the layer that should have stood for it was in the assembly at all.
 func chainDescription(endpoint string, ordered []layer) string {
-	parts := make([]string, 0, len(ordered)+2)
-	parts = append(parts, baseName, fallbackName)
-	for _, l := range ordered {
-		parts = append(parts, chainLayer(endpoint, l))
+	parts := make([]string, 0, len(ordered)+6)
+	parts = append(parts, contextName, holdAllowName, accessLogName)
+	parts = append(parts, chainStage(endpoint, ordered, StageObserve)...)
+	parts = append(parts, recoveryName)
+	parts = append(parts, chainStage(endpoint, ordered, StageGuard)...)
+	parts = append(parts, bodyLimitName)
+	for _, st := range declaredStages {
+		if st == StageObserve || st == StageGuard {
+			continue
+		}
+		parts = append(parts, chainStage(endpoint, ordered, st)...)
 	}
 	return strings.Join(parts, " -> ")
+}
+
+// chainStage renders the layers of one stage, each keeping its order. The
+// stage marker is written against the first layer of the stage, joined to it by
+// a space rather than by the arrow between layers, so a marker and its layers
+// read as one group — "[observe] otel -> otel:guard" — and the marker names the
+// category each of the layers after it belongs to.
+func chainStage(endpoint string, ordered []layer, st Stage) []string {
+	var out []string
+	for _, l := range ordered {
+		if l.mw.Stage != st {
+			continue
+		}
+		name := chainLayer(endpoint, l)
+		if len(out) == 0 {
+			name = "[" + stageName(st) + "] " + name
+		}
+		out = append(out, name)
+	}
+	return out
 }
 
 // chainLayer names one registered layer on the chain listing, and the

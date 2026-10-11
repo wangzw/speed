@@ -356,7 +356,7 @@ func TestFailEndsTheChain(t *testing.T) {
 	var status int
 	logger, _ := newRecordingLogger()
 	handler := mustAssemble(t, testSettings("public"), nil, logger, func(e Endpoint) {
-		e.Use(Middleware{Name: "observer", Handler: func(c *gin.Context) {
+		e.Use(Middleware{Name: "observer", Stage: StageObserve, Handler: func(c *gin.Context) {
 			c.Next()
 			aborted, status = c.IsAborted(), c.Writer.Status()
 		}})
@@ -564,7 +564,7 @@ func TestARequestMatchingNoRouteIsAnsweredThroughEveryLayer(t *testing.T) {
 	var status int
 	logger, _ := newRecordingLogger()
 	handler := mustAssemble(t, testSettings("public"), nil, logger, func(e Endpoint) {
-		e.Use(Middleware{Name: "observer", Handler: func(c *gin.Context) {
+		e.Use(Middleware{Name: "observer", Stage: StageObserve, Handler: func(c *gin.Context) {
 			runs++
 			fullPath = c.FullPath()
 			c.Next()
@@ -601,7 +601,7 @@ func TestAMethodTheRouteDoesNotAllowIsAnsweredThroughEveryLayer(t *testing.T) {
 	var status int
 	logger, _ := newRecordingLogger()
 	handler := mustAssemble(t, testSettings("public"), nil, logger, func(e Endpoint) {
-		e.Use(Middleware{Name: "observer", Handler: func(c *gin.Context) {
+		e.Use(Middleware{Name: "observer", Stage: StageObserve, Handler: func(c *gin.Context) {
 			runs++
 			c.Next()
 			status = c.Writer.Status()
@@ -647,7 +647,7 @@ func TestALayerRefusingAMethodNotAllowedRequestDoesNotSendAllow(t *testing.T) {
 	var atEntry string
 	logger, _ := newRecordingLogger()
 	handler := mustAssemble(t, testSettings("public"), nil, logger, func(e Endpoint) {
-		e.Use(Middleware{Name: "gate", Handler: func(c *gin.Context) {
+		e.Use(Middleware{Name: "gate", Stage: StageIdentify, Handler: func(c *gin.Context) {
 			atEntry = c.Writer.Header().Get("Allow")
 			if c.GetHeader("Authorization") == "" {
 				c.Header("WWW-Authenticate", "Bearer")
@@ -795,7 +795,7 @@ func TestTheDefaultShapeDropsTheHeadersThatDescribeAnotherBody(t *testing.T) {
 		c.Header("Retry-After", "30")
 	}
 	addr, _ := serveRoutes(t, nil, func(e Endpoint) {
-		e.Use(Middleware{Name: "refuser", Handler: func(c *gin.Context) {
+		e.Use(Middleware{Name: "refuser", Stage: StageGuard, Handler: func(c *gin.Context) {
 			if c.Request.URL.Path != "/by-layer" {
 				c.Next()
 				return

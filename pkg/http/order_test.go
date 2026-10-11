@@ -27,19 +27,22 @@ type (
 func passThrough(c *gin.Context) { c.Next() }
 
 // registered builds one layer the way Use records one: the declaration and the
-// capabilities it stands for, which are the registration's own Provides.
+// capabilities it stands for, which are the registration's own Provides. The
+// stage and the position are passed as the two steps the ordering reads them
+// in.
 //
 // Calling orderLayers on such a slice is the ordering seen on its own, with no
 // gate, no engine and no chain around it. The same declarations made through
 // the public surface are exercised in assemble_test.go; what is pinned here is
 // the solver.
-func registered(name string, order int, provides, after, before []core.Token) layer {
+func registered(name string, stage Stage, position Position, provides, after, before []core.Token) layer {
 	return registeredLayer(Middleware{
 		Name:     name,
+		Stage:    stage,
+		Position: position,
 		Provides: provides,
 		After:    after,
 		Before:   before,
-		Order:    order,
 		Handler:  passThrough,
 	})
 }
@@ -57,78 +60,231 @@ func layerNames(layers []layer) []string {
 	return out
 }
 
+// solve orders the fixtures whose every constraint a provider on the endpoint
+// satisfies and whose layers declare no preference two of them share, so a
+// chain comes out and the diagnostics are empty.
 func solve(t *testing.T, layers []layer) []layer {
 	t.Helper()
-	out, unlanded, err := orderLayers("public", layers)
+	out, report, err := orderLayers("public", layers)
 	if err != nil {
 		t.Fatalf("ordering %v failed: %v", layerNames(layers), err)
 	}
-	if len(unlanded) != 0 {
-		t.Fatalf("ordering %v reported the constraints %+v as landing on nothing, and these "+
-			"fixtures declare a provider for every capability they name", layerNames(layers), unlanded)
+	if len(report) != 0 {
+		t.Fatalf("ordering %v reported %+v, and these fixtures declare no constraint that "+
+			"landed on nothing and no shared preference", layerNames(layers), report)
 	}
 	return out
 }
 
-// TestOrderDecidesWithinReadySet pins where Order applies: inside the ready
-// set, and nowhere else.
+// hasCause reports whether the report carries a diagnostic for the given layer
+// under the given cause.
+func hasCause(report []orderingRemark, layer string, cause remarkCause) bool {
+	for _, d := range report {
+		if d.layer == layer && d.cause == cause {
+			return true
+		}
+	}
+	return false
+}
+
+// TestStageOrdering pins the two steps that decide a layer's position, as a
+// table: the stage boundary first, then the preference and the constraints
+// within a stage.
 //
-// P is registered first and carries the largest Order, R the middle one, and Q
-// the smallest but sits behind a constraint on P. Sorting by Order first and
-// running a stable topological pass over the result — the shape that reads as
-// if it honoured both — yields Q, R, P: Q's constraint is satisfied by the
-// time the pass reaches it, so nothing pulls it back. Choosing within the
-// ready set yields R, P, Q, because Q is not in the ready set at all until P
-// has been taken out.
-func TestOrderDecidesWithinReadySet(t *testing.T) {
+// The row that fails against the ordering this replaced is the cross-stage
+// comparison. The old ordering knew only one axis, so a constraint across what
+// are now stages drew an edge like any other and the chain came out, silently
+// placing a layer on the wrong side of the boundary. Here that same input has
+// to come back as ErrStageConflict.
+func TestStageOrdering(t *testing.T) {
+	tests := []struct {
+		name   string
+		layers []layer
+		// want is the chain when the ordering succeeds.
+		want []string
+		// conflict, when set, is the pair of layer names the ErrStageConflict
+		// text must carry, and the chain is not checked.
+		conflict []string
+		// satisfied, when set, is a layer whose cross-stage constraint the
+		// ordering must record as already given by the stage order.
+		satisfied string
+	}{
+		{
+			name: "registration order against the stage order still assembles in stage order",
+			layers: []layer{
+				registered("authorize-first", StageAuthorize, PositionDefault, nil, nil, nil),
+				registered("observe-second", StageObserve, PositionDefault, nil, nil, nil),
+			},
+			want: []string{"observe-second", "authorize-first"},
+		},
+		{
+			name: "a same-stage After is honoured however the two registered",
+			layers: []layer{
+				registered("inside", StageIdentify, PositionFirst, nil, tokens((*capAuth)(nil)), nil),
+				registered("auth", StageIdentify, PositionDefault, tokens((*capAuth)(nil)), nil, nil),
+			},
+			want: []string{"auth", "inside"},
+		},
+		{
+			name: "an agreeing cross-stage constraint draws no edge and does not change the chain",
+			layers: []layer{
+				registered("throttle", StageThrottle, PositionDefault, nil, tokens((*capAuth)(nil)), nil),
+				registered("auth", StageIdentify, PositionDefault, tokens((*capAuth)(nil)), nil, nil),
+			},
+			want:      []string{"auth", "throttle"},
+			satisfied: "throttle",
+		},
+		{
+			name: "a contradicting cross-stage constraint fails, naming both layers",
+			layers: []layer{
+				registered("observe", StageObserve, PositionDefault, nil, tokens((*capAuth)(nil)), nil),
+				registered("auth", StageAuthorize, PositionDefault, tokens((*capAuth)(nil)), nil, nil),
+			},
+			conflict: []string{"observe", "auth"},
+		},
+		{
+			name: "PositionFirst and PositionLast place a layer within its stage",
+			layers: []layer{
+				registered("middle", StageGuard, PositionDefault, nil, nil, nil),
+				registered("last", StageGuard, PositionLast, nil, nil, nil),
+				registered("first", StageGuard, PositionFirst, nil, nil, nil),
+			},
+			want: []string{"first", "middle", "last"},
+		},
+		{
+			name: "a PositionFirst layer yields to a same-stage constraint",
+			layers: []layer{
+				registered("first", StageGuard, PositionFirst, nil, tokens((*capAuth)(nil)), nil),
+				registered("auth", StageGuard, PositionDefault, tokens((*capAuth)(nil)), nil, nil),
+			},
+			want: []string{"auth", "first"},
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			out, report, err := orderLayers("public", tt.layers)
+
+			if len(tt.conflict) > 0 {
+				if !errors.Is(err, ErrStageConflict) {
+					t.Fatalf("ordering %v returned %v, want one wrapping ErrStageConflict: a "+
+						"constraint across stages that points against the stage order is a "+
+						"startup failure, not an edge", layerNames(tt.layers), err)
+				}
+				if out != nil {
+					t.Errorf("a failed ordering returned a chain of %v, want none", layerNames(out))
+				}
+				for _, name := range tt.conflict {
+					if !strings.Contains(err.Error(), `"`+name+`"`) {
+						t.Errorf("the failure does not name %q, so the reader cannot see which two "+
+							"layers the constraint tied together: %v", name, err)
+					}
+				}
+				return
+			}
+
+			if err != nil {
+				t.Fatalf("ordering %v failed: %v", layerNames(tt.layers), err)
+			}
+			if got := layerNames(out); !slices.Equal(got, tt.want) {
+				t.Errorf("chain is %v, want %v", got, tt.want)
+			}
+			if tt.satisfied != "" {
+				if !hasCause(report, tt.satisfied, causeStageSatisfied) {
+					t.Errorf("the report %+v does not record %q's constraint as already given by "+
+						"the stage order, which is the only place the redundancy shows",
+						report, tt.satisfied)
+				}
+			} else if len(report) != 0 {
+				t.Errorf("the ordering reported %+v, and this fixture declares nothing that needs "+
+					"a diagnostic", report)
+			}
+		})
+	}
+}
+
+// TestStageConflictNamesWhereTheStagesPlacedTheLayer pins the direction in the
+// failure text: the constraint asked to sit inside the layer it named, and the
+// stage order put the declaring layer outside it. A text that repeated the word
+// from the declaration — "inside" — would tell the reader the constraint and
+// the boundary agree, which is the opposite of the failure, so the word has to
+// name where the stage order put the layer and not what it asked for.
+//
+// Under the ordering this replaced the same input drew an edge like any other
+// and came out as a chain, with the layers on the opposite sides of the
+// boundary from where the stages put them, and no failure at all.
+func TestStageConflictNamesWhereTheStagesPlacedTheLayer(t *testing.T) {
 	layers := []layer{
-		registered("p", 5, tokens((*capRecovery)(nil)), nil, nil),
-		registered("q", 0, nil, tokens((*capRecovery)(nil)), nil),
-		registered("r", 3, nil, nil, nil),
+		registered("outer", StageObserve, PositionDefault, nil, tokens((*capAuth)(nil)), nil),
+		registered("inner", StageAuthorize, PositionDefault, tokens((*capAuth)(nil)), nil, nil),
+	}
+
+	_, _, err := orderLayers("public", layers)
+	if !errors.Is(err, ErrStageConflict) {
+		t.Fatalf("error is %v, want one wrapping ErrStageConflict", err)
+	}
+	mustContain(t, err.Error(), "places",
+		"that the stage order, and not the constraint, decides which side the layer lands on")
+	mustContain(t, err.Error(), "outside",
+		"the side the stage order put the declaring layer on, which is the opposite of the side "+
+			"the After asked for")
+}
+
+// TestPositionDecidesWithinReadySet pins where Position applies: inside the
+// ready set, and nowhere else.
+//
+// P is registered first and carries PositionLast, R the middle one and
+// PositionDefault, and Q asks for the outside with PositionFirst but sits
+// behind a constraint on P. Picking by Position over the whole stage and then
+// running a stable topological pass — the shape that reads as if it honoured
+// both — yields Q, R, P: Q's constraint is satisfied by the time the pass
+// reaches it, so nothing pulls it back. Choosing within the ready set yields
+// R, P, Q, because Q is not in the ready set at all until P has been taken
+// out.
+func TestPositionDecidesWithinReadySet(t *testing.T) {
+	layers := []layer{
+		registered("p", StageAuthorize, PositionLast, tokens((*capRecovery)(nil)), nil, nil),
+		registered("q", StageAuthorize, PositionFirst, nil, tokens((*capRecovery)(nil)), nil),
+		registered("r", StageAuthorize, PositionDefault, nil, nil, nil),
 	}
 
 	got := layerNames(solve(t, layers))
 	want := []string{"r", "p", "q"}
 	if !slices.Equal(got, want) {
-		t.Errorf("chain is %v, want %v: Order picks within the ready set, so q cannot be "+
+		t.Errorf("chain is %v, want %v: Position picks within the ready set, so q cannot be "+
 			"reached before p leaves it", got, want)
 	}
 }
 
-// TestConstraintBeatsSmallerOrder pins that a constraint outranks Order. The
-// recovery layer asks for the outermost position with the smallest Order in
-// the endpoint and is registered first, and still lands inside the layer it
-// declared itself to be after.
-func TestConstraintBeatsSmallerOrder(t *testing.T) {
+// TestConstraintBeatsPosition pins that a constraint outranks Position. The
+// layer asks for the outside of its stage with PositionFirst and is registered
+// first, and still lands inside the layer it declared itself to be after.
+func TestConstraintBeatsPosition(t *testing.T) {
 	layers := []layer{
-		registered("recover", -100, nil, tokens((*capAuth)(nil)), nil),
-		registered("auth", 0, tokens((*capAuth)(nil)), nil, nil),
+		registered("guarded", StageGuard, PositionFirst, nil, tokens((*capAuth)(nil)), nil),
+		registered("auth", StageGuard, PositionDefault, tokens((*capAuth)(nil)), nil, nil),
 	}
 
 	got := layerNames(solve(t, layers))
-	want := []string{"auth", "recover"}
+	want := []string{"auth", "guarded"}
 	if !slices.Equal(got, want) {
-		t.Errorf("chain is %v, want %v: After is a hard constraint, and neither a smaller "+
-			"Order nor an earlier registration may place recover outside auth", got, want)
+		t.Errorf("chain is %v, want %v: After is a hard constraint within the stage, and neither "+
+			"PositionFirst nor an earlier registration may place guarded outside auth", got, want)
 	}
 }
 
 // TestBeforeEdgeReversesDirection pins that Before draws the same edge as
-// After with its ends swapped. Both halves hold the layers, their Order values
-// and their registration order fixed, so the pair coming out reversed can only
-// be the field that changed.
-//
-// In the Before half the outcome also contradicts Order and registration order
-// at once, which is what makes it a statement about the edge rather than about
-// a tie-break.
+// After with its ends swapped. Both halves hold the layers, their Position
+// values and their registration order fixed, so the pair coming out reversed
+// can only be the field that changed.
 func TestBeforeEdgeReversesDirection(t *testing.T) {
 	after := []layer{
-		registered("auth", 0, tokens((*capAuth)(nil)), nil, nil),
-		registered("peer", 10, nil, tokens((*capAuth)(nil)), nil),
+		registered("auth", StageIdentify, PositionDefault, tokens((*capAuth)(nil)), nil, nil),
+		registered("peer", StageIdentify, PositionDefault, nil, tokens((*capAuth)(nil)), nil),
 	}
 	before := []layer{
-		registered("auth", 0, tokens((*capAuth)(nil)), nil, nil),
-		registered("peer", 10, nil, nil, tokens((*capAuth)(nil))),
+		registered("auth", StageIdentify, PositionDefault, tokens((*capAuth)(nil)), nil, nil),
+		registered("peer", StageIdentify, PositionDefault, nil, nil, tokens((*capAuth)(nil))),
 	}
 
 	gotAfter := layerNames(solve(t, after))
@@ -142,8 +298,8 @@ func TestBeforeEdgeReversesDirection(t *testing.T) {
 	}
 }
 
-// TestEqualOrderKeepsRegistrationOrder pins the final tie-break: layers with
-// equal Order and no constraint between them stay in the order they were
+// TestEqualPositionKeepsRegistrationOrder pins the final tie-break: layers with
+// equal Position and no constraint between them stay in the order they were
 // registered in.
 //
 // What is pinned here is this endpoint's own record — the order in which it
@@ -154,25 +310,60 @@ func TestBeforeEdgeReversesDirection(t *testing.T) {
 //
 // The names are registered out of alphabetical order, so an implementation
 // that reached for the name as a tie-break instead would come out different.
-func TestEqualOrderKeepsRegistrationOrder(t *testing.T) {
+func TestEqualPositionKeepsRegistrationOrder(t *testing.T) {
 	layers := []layer{
-		registered("gamma", 7, nil, nil, nil),
-		registered("alpha", 7, nil, nil, nil),
-		registered("beta", 7, nil, nil, nil),
+		registered("gamma", StageRecord, PositionDefault, nil, nil, nil),
+		registered("alpha", StageRecord, PositionDefault, nil, nil, nil),
+		registered("beta", StageRecord, PositionDefault, nil, nil, nil),
 	}
 
 	got := layerNames(solve(t, layers))
 	want := []string{"gamma", "alpha", "beta"}
 	if !slices.Equal(got, want) {
-		t.Errorf("chain is %v, want %v: equal Order falls back to the order the endpoint "+
+		t.Errorf("chain is %v, want %v: equal Position falls back to the order the endpoint "+
 			"recorded the registrations in", got, want)
+	}
+}
+
+// TestTiedPreferenceIsReported pins the diagnostic the design gives a line of
+// its own: two layers of one stage both claiming the same edge with
+// PositionFirst. The ordering does not treat it as a contradiction — the two
+// keep their registration order — but the line names both, because the layer
+// that yields has no other way to learn that its claim was shared.
+func TestTiedPreferenceIsReported(t *testing.T) {
+	layers := []layer{
+		registered("outer-claim", StageGuard, PositionFirst, nil, nil, nil),
+		registered("inner-claim", StageGuard, PositionFirst, nil, nil, nil),
+	}
+
+	out, report, err := orderLayers("public", layers)
+	if err != nil {
+		t.Fatalf("a shared preference is not a failure, got: %v", err)
+	}
+	if got, want := layerNames(out), []string{"outer-claim", "inner-claim"}; !slices.Equal(got, want) {
+		t.Errorf("chain is %v, want %v: the two share a preference, so registration order decides",
+			got, want)
+	}
+	if len(report) != 1 {
+		t.Fatalf("the shared PositionFirst was reported as %+v, want exactly one diagnostic", report)
+	}
+	only := report[0]
+	if only.cause != causeTiedPreference {
+		t.Errorf("the diagnostic gives the cause as %q, and two layers claiming one edge of a "+
+			"stage is the case this fixture is", only.cause)
+	}
+	for _, name := range []string{"outer-claim", "inner-claim"} {
+		if !strings.Contains(only.layer, name) {
+			t.Errorf("the diagnostic names %q, and both layers have to be there or the reader "+
+				"cannot tell which two asked for the same edge: %q", name, only.layer)
+		}
 	}
 }
 
 // TestMissingProviderDropsConstraint pins the cost the design accepts: a
 // constraint naming a capability no layer on this endpoint stands for
 // disappears, and the assembly carries on without failing. The layer that
-// declared itself inside recovery is ordered by its Order alone, which here
+// declared itself inside recovery is ordered by its Position alone, which here
 // puts it where its constraint would never have allowed it to be if a recovery
 // layer had been present.
 //
@@ -181,11 +372,11 @@ func TestEqualOrderKeepsRegistrationOrder(t *testing.T) {
 // position it does not have, and this list is the only place that shows.
 func TestMissingProviderDropsConstraint(t *testing.T) {
 	layers := []layer{
-		registered("trace", 5, nil, tokens((*capRecovery)(nil)), nil),
-		registered("metrics", 1, nil, nil, nil),
+		registered("trace", StageObserve, PositionLast, nil, tokens((*capRecovery)(nil)), nil),
+		registered("metrics", StageObserve, PositionFirst, nil, nil, nil),
 	}
 
-	out, unlanded, err := orderLayers("public", layers)
+	out, report, err := orderLayers("public", layers)
 	if err != nil {
 		t.Fatalf("a constraint with no provider must not fail the assembly, got: %v", err)
 	}
@@ -193,14 +384,14 @@ func TestMissingProviderDropsConstraint(t *testing.T) {
 	want := []string{"metrics", "trace"}
 	if !slices.Equal(got, want) {
 		t.Errorf("chain is %v, want %v: with no provider for the capability the constraint "+
-			"draws no edge, leaving Order to decide", got, want)
+			"draws no edge, leaving Position to decide", got, want)
 	}
 
-	if len(unlanded) != 1 {
+	if len(report) != 1 {
 		t.Fatalf("the dropped constraint was reported as %+v, want exactly the one that "+
-			"landed on nothing", unlanded)
+			"landed on nothing", report)
 	}
-	only := unlanded[0]
+	only := report[0]
 	if only.endpoint != "public" || only.layer != "trace" || only.field != "After" || only.at != 0 {
 		t.Errorf("the report locates the constraint at %+v, and it was declared as "+
 			"endpoint public, middleware trace, After[0]", only)
@@ -225,18 +416,18 @@ func TestMissingProviderDropsConstraint(t *testing.T) {
 // is dropped and the edge to that other layer still places it.
 func TestLandedConstraintIsNotReported(t *testing.T) {
 	layers := []layer{
-		registered("auth", 0, tokens((*capAuth)(nil)), nil, nil),
-		registered("tenant", 0, nil, tokens((*capAuth)(nil)), nil),
-		registered("warden", 0, tokens((*capAuth)(nil)), tokens((*capAuth)(nil)), nil),
+		registered("auth", StageIdentify, PositionDefault, tokens((*capAuth)(nil)), nil, nil),
+		registered("tenant", StageIdentify, PositionDefault, nil, tokens((*capAuth)(nil)), nil),
+		registered("warden", StageIdentify, PositionDefault, tokens((*capAuth)(nil)), tokens((*capAuth)(nil)), nil),
 	}
 
-	_, unlanded, err := orderLayers("public", layers)
+	_, report, err := orderLayers("public", layers)
 	if err != nil {
 		t.Fatalf("ordering failed: %v", err)
 	}
-	if len(unlanded) != 0 {
+	if len(report) != 0 {
 		t.Errorf("a constraint with a provider on this endpoint was reported as landing on "+
-			"nothing: %+v", unlanded)
+			"nothing: %+v", report)
 	}
 }
 
@@ -251,24 +442,24 @@ func TestLandedConstraintIsNotReported(t *testing.T) {
 // not the problem, which is why the cause travels with the line.
 func TestSelfProvidedConstraintIsReportedUnderItsOwnCause(t *testing.T) {
 	layers := []layer{
-		registered("recover", 0,
+		registered("recover", StageGuard, PositionDefault,
 			tokens((*capRecovery)(nil)),
 			tokens((*capRecovery)(nil)),
 			nil),
 	}
 
-	out, unlanded, err := orderLayers("public", layers)
+	out, report, err := orderLayers("public", layers)
 	if err != nil {
 		t.Fatalf("ordering failed: %v", err)
 	}
 	if got := layerNames(out); !slices.Equal(got, []string{"recover"}) {
 		t.Errorf("chain is %v, and the layer still runs whatever its constraint did", got)
 	}
-	if len(unlanded) != 1 {
+	if len(report) != 1 {
 		t.Fatalf("the constraint of a layer standing only for itself was reported as %+v, want "+
-			"exactly that one", unlanded)
+			"exactly that one", report)
 	}
-	only := unlanded[0]
+	only := report[0]
 	if only.layer != "recover" || only.field != "After" || only.at != 0 {
 		t.Errorf("the report locates the constraint at %+v, and it was declared as "+
 			"endpoint public, middleware recover, After[0]", only)
@@ -288,14 +479,14 @@ func TestSelfProvidedConstraintIsReportedUnderItsOwnCause(t *testing.T) {
 // contradiction between two declarations.
 func TestSelfConstraintIsNotACycle(t *testing.T) {
 	layers := []layer{
-		registered("recover", 0,
+		registered("recover", StageGuard, PositionDefault,
 			tokens((*capRecovery)(nil)),
 			tokens((*capRecovery)(nil)),
 			tokens((*capRecovery)(nil))),
-		registered("trace", 1, nil, nil, nil),
+		registered("trace", StageGuard, PositionDefault, nil, nil, nil),
 	}
 
-	out, unlanded, err := orderLayers("public", layers)
+	out, report, err := orderLayers("public", layers)
 	if err != nil {
 		t.Fatalf("a layer naming a capability it stands for itself must not fail the ordering: %v", err)
 	}
@@ -307,11 +498,11 @@ func TestSelfConstraintIsNotACycle(t *testing.T) {
 
 	// Both of the layer's constraints are the self-only case and are reported
 	// as such; they are not a cycle is the point of the fixture.
-	if len(unlanded) != 2 {
+	if len(report) != 2 {
 		t.Errorf("the layer's two self-referring constraints were reported as %+v, want both "+
-			"of them under the self-only cause", unlanded)
+			"of them under the self-only cause", report)
 	}
-	for _, u := range unlanded {
+	for _, u := range report {
 		if u.cause != causeSelfOnly {
 			t.Errorf("the constraint on %q was reported with the cause %q, and the layer "+
 				"standing only for itself is the case this fixture is", u.layer, u.cause)
@@ -326,8 +517,8 @@ func TestSelfConstraintIsNotACycle(t *testing.T) {
 // satisfiable and reports a cycle that does not exist.
 func TestDuplicateEdgeIsCountedOnce(t *testing.T) {
 	layers := []layer{
-		registered("inner", 0, tokens((*capAuth)(nil)), tokens((*capTenant)(nil)), nil),
-		registered("outer", 0, tokens((*capTenant)(nil)), nil, tokens((*capAuth)(nil))),
+		registered("inner", StageIdentify, PositionDefault, tokens((*capAuth)(nil)), tokens((*capTenant)(nil)), nil),
+		registered("outer", StageIdentify, PositionDefault, tokens((*capTenant)(nil)), nil, tokens((*capAuth)(nil))),
 	}
 
 	out, _, err := orderLayers("public", layers)
@@ -351,13 +542,13 @@ func TestDuplicateEdgeIsCountedOnce(t *testing.T) {
 // the text names the members of the cycle, not every layer on the endpoint.
 func TestCycleNamesEveryMemberAndTheirDeclarations(t *testing.T) {
 	layers := []layer{
-		registered("auth", 0, tokens((*capAuth)(nil)), tokens((*capTenant)(nil)), nil),
-		registered("tenant", 0, tokens((*capTenant)(nil)), tokens((*capQuota)(nil)), nil),
-		registered("quota", 0, tokens((*capQuota)(nil)), tokens((*capAuth)(nil)), nil),
-		registered("offcycle", 0, nil, nil, nil),
+		registered("auth", StageAuthorize, PositionDefault, tokens((*capAuth)(nil)), tokens((*capTenant)(nil)), nil),
+		registered("tenant", StageAuthorize, PositionDefault, tokens((*capTenant)(nil)), tokens((*capQuota)(nil)), nil),
+		registered("quota", StageAuthorize, PositionDefault, tokens((*capQuota)(nil)), tokens((*capAuth)(nil)), nil),
+		registered("offcycle", StageAuthorize, PositionDefault, nil, nil, nil),
 	}
 
-	out, unlanded, err := orderLayers("public", layers)
+	out, report, err := orderLayers("public", layers)
 	if !errors.Is(err, ErrMiddlewareCycle) {
 		t.Fatalf("error is %v, want one wrapping ErrMiddlewareCycle", err)
 	}
@@ -365,9 +556,9 @@ func TestCycleNamesEveryMemberAndTheirDeclarations(t *testing.T) {
 		t.Errorf("a failed solve returned a chain of %v, want none: a partial order is not a "+
 			"chain anyone may assemble", layerNames(out))
 	}
-	if unlanded != nil {
-		t.Errorf("a failed solve reported %+v as landing on nothing; the assembly is being "+
-			"abandoned, and the failure is the only thing worth reading", unlanded)
+	if report != nil {
+		t.Errorf("a failed solve reported %+v; the assembly is being abandoned, and the failure "+
+			"is the only thing worth reading", report)
 	}
 
 	text := err.Error()
@@ -395,10 +586,10 @@ func TestCycleNamesEveryMemberAndTheirDeclarations(t *testing.T) {
 // members, or the same set in a different rotation, from one run to the next.
 func TestCycleReportIsDeterministic(t *testing.T) {
 	layers := []layer{
-		registered("auth", 0, tokens((*capAuth)(nil)), tokens((*capTenant)(nil)), nil),
-		registered("tenant", 0, tokens((*capTenant)(nil)), tokens((*capQuota)(nil)), nil),
-		registered("quota", 0, tokens((*capQuota)(nil)), tokens((*capAuth)(nil)), nil),
-		registered("offcycle", 0, nil, nil, nil),
+		registered("auth", StageAuthorize, PositionDefault, tokens((*capAuth)(nil)), tokens((*capTenant)(nil)), nil),
+		registered("tenant", StageAuthorize, PositionDefault, tokens((*capTenant)(nil)), tokens((*capQuota)(nil)), nil),
+		registered("quota", StageAuthorize, PositionDefault, tokens((*capQuota)(nil)), tokens((*capAuth)(nil)), nil),
+		registered("offcycle", StageAuthorize, PositionDefault, nil, nil, nil),
 	}
 
 	_, _, err := orderLayers("public", layers)
@@ -442,7 +633,37 @@ func TestIllegalConstraintTokenPanicsNamingTheDeclaration(t *testing.T) {
 	}()
 
 	_, _, _ = orderLayers("public", []layer{
-		registered("trace", 0, nil, tokens(nil), nil),
+		registered("trace", StageGuard, PositionDefault, nil, tokens(nil), nil),
+	})
+}
+
+// TestZeroStagePanicsAtRegistration pins that a layer which left Stage out is
+// refused where it registered, naming the layer and the values to write. There
+// is deliberately no default: filed under one, the layer would run in a
+// category nobody chose, and the panic is what stops a category being picked
+// for it by a guess.
+func TestZeroStagePanicsAtRegistration(t *testing.T) {
+	defer func() {
+		raised := recover()
+		if raised == nil {
+			t.Fatal("a middleware with no Stage was accepted, so the layer has no category and " +
+				"would run wherever a default put it")
+		}
+		text, ok := raised.(string)
+		if !ok {
+			t.Fatalf("panicked with %T, want the string the registration raises", raised)
+		}
+		for _, want := range []string{`middleware "unstaged"`, "StageObserve"} {
+			if !strings.Contains(text, want) {
+				t.Errorf("the panic does not carry %s, so the reader cannot find the call or the "+
+					"value to write: %s", want, text)
+			}
+		}
+	}()
+
+	logger, _ := newRecordingLogger()
+	_ = mustAssemble(t, testSettings("public"), nil, logger, func(e Endpoint) {
+		e.Use(Middleware{Name: "unstaged", Handler: passThrough})
 	})
 }
 

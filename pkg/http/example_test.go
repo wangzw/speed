@@ -301,8 +301,9 @@ func ExampleEndpoint_Route() {
 	fmt.Println(response.status, response.body)
 
 	// Output:
-	// INFO an HTTP endpoint's chain is assembled endpoint=public routes=1 chain=http:base -> http:fallback
+	// INFO an HTTP endpoint's chain is assembled endpoint=public routes=1 chain=http:context -> holdAllow -> http:access-log -> http:recovery -> http:body-limit
 	// INFO an HTTP endpoint is listening endpoint=public address=127.0.0.1:<port> configured=127.0.0.1:0 tls=false
+	// INFO an HTTP request was served endpoint=public method=GET route=/things/:id path=/things/7 status=200 size=10
 	// 200 {"id":"7"}
 }
 
@@ -335,19 +336,21 @@ func ExampleEndpoint_Use() {
 			return err
 		}
 		// trace stands for tracing and belongs inside the span layer. Its
-		// Order asks for the front of the chain; the After constraint is
+		// Position asks for the front of its stage; the After constraint is
 		// what overrides that.
 		endpoint.Use(speedhttp.Middleware{
 			Name:     "trace",
+			Stage:    speedhttp.StageObserve,
+			Position: speedhttp.PositionFirst,
 			Provides: []core.Token{(*tracing)(nil)},
 			After:    []core.Token{(*spans)(nil)},
-			Order:    -100,
 			Handler:  func(c *gin.Context) { c.Next() },
 		})
 		// span stands for spans itself, so trace's constraint lands on it
 		// and nowhere else.
 		endpoint.Use(speedhttp.Middleware{
 			Name:     "span",
+			Stage:    speedhttp.StageObserve,
 			Provides: []core.Token{(*spans)(nil)},
 			Handler:  func(c *gin.Context) { c.Next() },
 		})
@@ -360,7 +363,7 @@ func ExampleEndpoint_Use() {
 	defer func() { _ = host.stop() }()
 
 	// Output:
-	// INFO an HTTP endpoint's chain is assembled endpoint=public routes=0 chain=http:base -> http:fallback -> span(github.com/vislake/speed/pkg/http_test.spans) -> trace(github.com/vislake/speed/pkg/http_test.tracing)
+	// INFO an HTTP endpoint's chain is assembled endpoint=public routes=0 chain=http:context -> holdAllow -> http:access-log -> [observe] span(github.com/vislake/speed/pkg/http_test.spans) -> trace(github.com/vislake/speed/pkg/http_test.tracing) -> http:recovery -> http:body-limit
 	// INFO an HTTP endpoint is listening endpoint=public address=127.0.0.1:<port> configured=127.0.0.1:0 tls=false
 }
 
@@ -407,10 +410,12 @@ func ExampleFail() {
 	}
 
 	// Output:
-	// INFO an HTTP endpoint's chain is assembled endpoint=public routes=1 chain=http:base -> http:fallback
+	// INFO an HTTP endpoint's chain is assembled endpoint=public routes=1 chain=http:context -> holdAllow -> http:access-log -> http:recovery -> http:body-limit
 	// INFO an HTTP endpoint is listening endpoint=public address=127.0.0.1:<port> configured=127.0.0.1:0 tls=false
+	// INFO an HTTP request was served endpoint=public method=GET route=/things/:id path=/things/7 status=404 size=86
 	// 404 application/problem+json
 	// {"type":"about:blank","title":"Not Found","status":404,"detail":"there is no thing 7"}
+	// INFO an HTTP request was served endpoint=public method=GET route= path=/nowhere status=404 size=55
 	// 404 application/problem+json
 	// {"type":"about:blank","title":"Not Found","status":404}
 }
@@ -456,8 +461,9 @@ func ExampleErrorResponder() {
 	fmt.Println(response.body)
 
 	// Output:
-	// INFO an HTTP endpoint's chain is assembled endpoint=public routes=0 chain=http:base -> http:fallback
+	// INFO an HTTP endpoint's chain is assembled endpoint=public routes=0 chain=http:context -> holdAllow -> http:access-log -> http:recovery -> http:body-limit
 	// INFO an HTTP endpoint is listening endpoint=public address=127.0.0.1:<port> configured=127.0.0.1:0 tls=false
+	// INFO an HTTP request was served endpoint=public method=GET route= path=/nowhere status=404 size=34
 	// 404 application/json
 	// {"code":404,"message":"Not Found"}
 }

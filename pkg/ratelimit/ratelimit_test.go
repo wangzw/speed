@@ -307,10 +307,15 @@ func TestThresholdsReadsTheLayerItIsGiven(t *testing.T) {
 
 // The settings module registers every declared item under its full path — the
 // namespace, a dot, then the item key — and a read is looked up by that exact
-// path. This holds the two paths the layer reads against the declaration
-// itself, so a read that named the bare item key cannot pass: it covers no
-// declaration, and every decision would therefore fail open on it with nothing
-// in the assembly to show for it.
+// path. This holds the paths the layers read against the declaration itself, so
+// a read that named the bare item key cannot pass: it covers no declaration,
+// and every decision would therefore fail open on it with nothing in the
+// assembly to show for it.
+//
+// Both layers' readers are driven. The quota reads its two items and the shield
+// its three, and between them they have to cover every declared item: a declared
+// item no reader asks for is either dead weight in the declaration or a read
+// that went missing, and this case fails either way.
 func TestThresholdsReadsTheDeclaredPathOfEachItem(t *testing.T) {
 	declared, ok := declaredSettingsSchema()
 	if !ok {
@@ -321,15 +326,20 @@ func TestThresholdsReadsTheDeclaredPathOfEachItem(t *testing.T) {
 	}
 
 	// The store serves every key and records the ones it was asked for, so a
-	// read reaches the second item only if the first one did not trip.
+	// read reaches the next item only if the one before it did not trip.
 	store := &recordingStore{}
 	l := newLimiter(nil)
 	l.store = store
 
-	var d decision
-	l.thresholds(settings.Global(), &d)
-	if d.tripped != "" {
-		t.Fatalf("tripped %q; the store serves every key, so no read should fail", d.tripped)
+	var quota decision
+	l.thresholds(settings.Global(), &quota)
+	if quota.tripped != "" {
+		t.Fatalf("the quota tripped %q; the store serves every key, so no read should fail", quota.tripped)
+	}
+	var shield decision
+	l.shieldThresholds(&shield)
+	if shield.tripped != "" {
+		t.Fatalf("the shield tripped %q; the store serves every key, so no read should fail", shield.tripped)
 	}
 
 	want := make([]string, 0, len(declared.Items))
@@ -340,7 +350,7 @@ func TestThresholdsReadsTheDeclaredPathOfEachItem(t *testing.T) {
 	slices.Sort(want)
 	slices.Sort(got)
 	if !slices.Equal(got, want) {
-		t.Fatalf("the layer read %v, want the declared paths %v", store.keys, want)
+		t.Fatalf("the layers read %v, want the declared paths %v", store.keys, want)
 	}
 }
 
@@ -743,7 +753,7 @@ func TestInitWiresOnlyThisModulesOwnProduct(t *testing.T) {
 
 // --- the layer -------------------------------------------------------------
 
-func TestMiddlewareCarriesTheAnchorsItNeeds(t *testing.T) {
+func TestMiddlewareCarriesItsTokenAndItsStage(t *testing.T) {
 	mw := newLimiter(nil).middleware()
 
 	if mw.Handler == nil {
@@ -752,51 +762,52 @@ func TestMiddlewareCarriesTheAnchorsItNeeds(t *testing.T) {
 	if len(mw.Provides) != 1 || mw.Provides[0] != core.Token((*Limiter)(nil)) {
 		t.Fatalf("Provides = %v, want the Limiter token", mw.Provides)
 	}
-	want := []core.Token{(*authn.Gate)(nil), (*tenant.Resolution)(nil), (*audit.Audit)(nil)}
-	if len(mw.After) != len(want) {
-		t.Fatalf("After = %v, want %v", mw.After, want)
+	if mw.Stage != speedhttp.StageThrottle {
+		t.Fatalf("Stage = %v, want the throttling stage", mw.Stage)
 	}
-	for i := range want {
-		if mw.After[i] != want[i] {
-			t.Errorf("After[%d] = %v, want %v", i, mw.After[i], want[i])
-		}
+	if len(mw.After) != 0 {
+		t.Fatalf("After = %v, want none: the layer's place comes from its stage, not an anchor", mw.After)
 	}
 	if mw.Name != ModuleName {
 		t.Errorf("Name = %q, want %q", mw.Name, ModuleName)
 	}
 }
 
-// The layer's place on the chain comes from what it declares: it sits inside
-// the layers that stand for authentication, tenant resolution and audit. The
-// layers it is checked against carry an Order that would put them inside it, so
-// only the declared constraints can produce the order the entry point lists.
-func TestTheLayerSitsInsideAuthenticationTenantResolutionAndAudit(t *testing.T) {
+// The layer's place on the chain comes from its stage: the throttling stage runs
+// after the identifying stage, which settles the identity and the tenant, and
+// before the recording stage, which is what keeps a refused request out of the
+// journal. The stand-in layers are placed by their own stages, so only the stage
+// order produces the order the chain listing shows.
+func TestTheLayerSitsInsideIdentityAndOutsideTheJournal(t *testing.T) {
 	l := pinned("public")
 	l.counters = newFakeKV()
 	l.store = &fakeStore{values: map[string]any{windowPath: time.Minute, limitPath: 10}}
-	standingFor := func(name string, token core.Token) speedhttp.Middleware {
+	standingFor := func(name string, stage speedhttp.Stage, token core.Token) speedhttp.Middleware {
 		return speedhttp.Middleware{
 			Name:     name,
 			Provides: []core.Token{token},
-			Order:    1000,
+			Stage:    stage,
 			Handler:  func(c *gin.Context) { c.Next() },
 		}
 	}
 	h := startHost(t, hostOptions{limiter: l, register: func(ep speedhttp.Endpoint) {
-		ep.Use(standingFor("gate", (*authn.Gate)(nil)))
-		ep.Use(standingFor("resolution", (*tenant.Resolution)(nil)))
-		ep.Use(standingFor("audit", (*audit.Audit)(nil)))
+		ep.Use(standingFor("gate", speedhttp.StageIdentify, (*authn.Gate)(nil)))
+		ep.Use(standingFor("resolution", speedhttp.StageIdentify, (*tenant.Resolution)(nil)))
+		ep.Use(standingFor("audit", speedhttp.StageRecord, (*audit.Audit)(nil)))
 	}})
 
 	limiting := strings.Index(h.chain, ModuleName+"(")
 	if limiting < 0 {
 		t.Fatalf("the chain %q lists no limiting layer", h.chain)
 	}
-	for _, outer := range []string{"gate(", "resolution(", "audit("} {
-		at := strings.Index(h.chain, outer)
+	for _, inside := range []string{"gate(", "resolution("} {
+		at := strings.Index(h.chain, inside)
 		if at < 0 || at >= limiting {
-			t.Errorf("the chain is %q, want %s ahead of the limiting layer", h.chain, outer)
+			t.Errorf("the chain is %q, want %s ahead of the limiting layer", h.chain, inside)
 		}
+	}
+	if at := strings.Index(h.chain, "audit("); at < 0 || at <= limiting {
+		t.Errorf("the chain is %q, want the recording layer inside the limiting layer", h.chain)
 	}
 }
 
@@ -1140,7 +1151,10 @@ func (k *fakeKV) putRaw(key, raw string) {
 }
 
 // fakeReader serves this module's section.
-type fakeReader struct{ endpoints []string }
+type fakeReader struct {
+	endpoints        []string
+	addressEndpoints []string
+}
 
 func (r fakeReader) Decode(_ string, target any) error {
 	cfg, ok := target.(*Config)
@@ -1148,6 +1162,7 @@ func (r fakeReader) Decode(_ string, target any) error {
 		return errors.New("unsupported target")
 	}
 	cfg.Endpoints = r.endpoints
+	cfg.AddressEndpoints = r.addressEndpoints
 	return nil
 }
 
@@ -1159,8 +1174,14 @@ func (r fakeReader) Decode(_ string, target any) error {
 // call on, so Prepare finds it although nothing has been constructed.
 func registryWith(t *testing.T, endpoints []string) *core.Registry {
 	t.Helper()
+	return registryReading(t, fakeReader{endpoints: endpoints})
+}
+
+// registryReading is registryWith for a reader that serves both endpoint lists.
+func registryReading(t *testing.T, reader fakeReader) *core.Registry {
+	t.Helper()
 	reg := core.New()
 	reg.Register(config.Module())
-	reg.Supply(fakeReader{endpoints}, config.ModuleName)
+	reg.Supply(reader, config.ModuleName)
 	return reg
 }

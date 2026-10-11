@@ -6,6 +6,7 @@ import (
 	"os"
 	"path/filepath"
 	"reflect"
+	"slices"
 	"testing"
 	"time"
 
@@ -523,4 +524,64 @@ func TestMaxBodyBytesHasThreeStatesAndRefusesANegativeOne(t *testing.T) {
 	}
 	mustContain(t, err.Error(), "max-body-bytes", "the item that was refused")
 	mustContain(t, err.Error(), `endpoint "public"`, "the endpoint that gave it")
+}
+
+// TestTrustedProxiesAndRemoteIPHeadersDecodeAndResolve pins the two input items a
+// listener behind a proxy needs. They are handed to gin, which works out the
+// client address from the forwarded headers; this module reads no header itself.
+// An entry is an address or a block, matching gin's own rule.
+func TestTrustedProxiesAndRemoteIPHeadersDecodeAndResolve(t *testing.T) {
+	got, decodeErr, runErr := readThrough(t, `{
+		"http": {"endpoints": {"public": {
+			"address": ":8080",
+			"trusted-proxies": ["10.0.0.0/8", "192.0.2.7"],
+			"remote-ip-headers": ["X-Forwarded-For", "X-Real-IP"]
+		}}}
+	}`, schema())
+	if runErr != nil || decodeErr != nil {
+		t.Fatalf("the section did not decode: %v", errors.Join(runErr, decodeErr))
+	}
+
+	settings, err := got.resolve()
+	if err != nil {
+		t.Fatalf("resolving: %v", err)
+	}
+	if want := []string{"10.0.0.0/8", "192.0.2.7"}; !slices.Equal(settings[0].trustedProxies, want) {
+		t.Errorf("trusted-proxies resolved to %v, want %v", settings[0].trustedProxies, want)
+	}
+	if want := []string{"X-Forwarded-For", "X-Real-IP"}; !slices.Equal(settings[0].remoteIPHeaders, want) {
+		t.Errorf("remote-ip-headers resolved to %v, want %v", settings[0].remoteIPHeaders, want)
+	}
+}
+
+// TestNoTrustedProxyIsTheDefault pins the safe default: with the items absent no
+// proxy is trusted, so a client cannot choose the address Context.ClientIP
+// reports by writing a forwarded header. The behaviour that follows is pinned
+// over a request in TestClientIPDoesNotTakeForwardingHeaders.
+func TestNoTrustedProxyIsTheDefault(t *testing.T) {
+	settings, err := moduleConfig{Endpoints: map[string]endpointConfig{
+		"public": {Address: ":8080"},
+	}}.resolve()
+	if err != nil {
+		t.Fatalf("resolving: %v", err)
+	}
+	if len(settings[0].trustedProxies) != 0 || len(settings[0].remoteIPHeaders) != 0 {
+		t.Errorf("an endpoint naming no proxy resolved to trusted-proxies %v remote-ip-headers %v, want none",
+			settings[0].trustedProxies, settings[0].remoteIPHeaders)
+	}
+}
+
+// TestAnInvalidTrustedProxyIsStartupFailure pins the check that turns a mistyped
+// network into a message naming the endpoint and the key, rather than letting it
+// surface as gin's parse error from inside the engine.
+func TestAnInvalidTrustedProxyIsStartupFailure(t *testing.T) {
+	_, err := moduleConfig{Endpoints: map[string]endpointConfig{
+		"public": {Address: ":8080", TrustedProxies: []string{"10.0.0.0/8", "not-a-network"}},
+	}}.resolve()
+	if err == nil {
+		t.Fatal("an endpoint naming a value that is not an address or a block was accepted")
+	}
+	mustContain(t, err.Error(), "trusted-proxies", "the key that was written")
+	mustContain(t, err.Error(), `"public"`, "the endpoint it was written on")
+	mustContain(t, err.Error(), "not-a-network", "the value that is not a network")
 }

@@ -43,6 +43,7 @@ func TestSelfReferentialConstraintIsReportedUnderItsOwnCause(t *testing.T) {
 	handler := mustAssemble(t, testSettings("public"), nil, logger, func(e Endpoint) {
 		e.Use(Middleware{
 			Name:     "recover",
+			Stage:    StageObserve,
 			Provides: []core.Token{(*capRecovery)(nil)},
 			After:    []core.Token{(*capRecovery)(nil)},
 			Handler:  noteLayer(tr, "recover"),
@@ -71,7 +72,7 @@ func TestSelfReferentialConstraintIsReportedUnderItsOwnCause(t *testing.T) {
 	serveOnce(handler, nethttp.MethodGet, "/things")
 	if got := tr.seen(); !equalStrings(got, []string{"recover"}) {
 		t.Errorf("the chain ran %v, and a constraint that placed nothing leaves the layer "+
-			"running where Order puts it", got)
+			"running where its stage and position put it", got)
 	}
 }
 
@@ -85,23 +86,24 @@ func TestSelfReferentialConstraintIsReportedUnderItsOwnCause(t *testing.T) {
 // which is exactly what makes the lines for the ones that did not stop being a
 // signal.
 //
-// The Order values are the wrong way round on purpose: left to Order alone
-// "warden" comes out first, so the chain shows whether the constraint bound to
-// the other provider or was dropped along with the self edge.
+// The registration order is the wrong way round on purpose: warden is registered
+// first, so an ordering that read only registration order would put it ahead of
+// auth, and the chain shows whether the constraint bound to the other provider
+// or was dropped along with the self edge.
 func TestSelfReferentialConstraintWithAnotherProviderIsNotReported(t *testing.T) {
 	tr := &trace{}
 	logger, records := newRecordingLogger()
 	handler := mustAssemble(t, testSettings("public"), nil, logger, func(e Endpoint) {
 		e.Use(Middleware{
 			Name:     "warden",
-			Order:    0,
+			Stage:    StageIdentify,
 			Provides: []core.Token{(*capAuth)(nil)},
 			After:    []core.Token{(*capAuth)(nil)},
 			Handler:  noteLayer(tr, "warden"),
 		})
 		e.Use(Middleware{
 			Name:     "auth",
-			Order:    10,
+			Stage:    StageIdentify,
 			Provides: []core.Token{(*capAuth)(nil)},
 			Handler:  noteLayer(tr, "auth"),
 		})
@@ -120,7 +122,7 @@ func TestSelfReferentialConstraintWithAnotherProviderIsNotReported(t *testing.T)
 	serveOnce(handler, nethttp.MethodGet, "/things")
 	if got, want := tr.seen(), []string{"auth", "warden"}; !equalStrings(got, want) {
 		t.Errorf("the chain ran %v, want %v: warden declared itself inside the capability it "+
-			"shares with auth, so the constraint places it there however Order would order the two",
-			got, want)
+			"shares with auth, so the constraint places it there however registration order would "+
+			"order the two", got, want)
 	}
 }

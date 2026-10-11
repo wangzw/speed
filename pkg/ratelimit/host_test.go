@@ -4,7 +4,6 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
-	"fmt"
 	"io"
 	"log/slog"
 	nethttp "net/http"
@@ -66,9 +65,20 @@ type hostOptions struct {
 	// viaModule registers the layer through this module's descriptor, with the
 	// product supplied to it, instead of registering it with a fixed identity.
 	viaModule bool
-	// responder, when set, is delivered as the ErrorResponder capability, so
+	// respond, when set, is delivered as the ErrorResponder capability, so
 	// that it decides the shape of every error response.
 	responder speedhttp.ErrorResponder
+	// routeStatus is the status the guarded route answers with. The zero value
+	// is 204, the success the ordinary cases read; a case sets it to a refusal
+	// like 401 so that an inner layer produces the outcome the address shield
+	// charges for.
+	routeStatus int
+	// trustedProxies, when set, are written into the endpoint's configuration
+	// as the networks in front of it, so the entry point takes the client
+	// address from the forwarded-address headers instead of the peer's. A case
+	// that needs the shield to see two addresses over one loopback connection
+	// sets this and sends X-Forwarded-For.
+	trustedProxies []string
 	// register, when set, runs in the registrant's Init with the guarded
 	// endpoint, for the layers a case puts beside this module's.
 	register func(ep speedhttp.Endpoint)
@@ -135,7 +145,7 @@ func startHost(t *testing.T, opts hostOptions) *host {
 
 	reg := core.New()
 	reg.Register(config.Module())
-	reg.Supply(loadReader(t), config.ModuleName)
+	reg.Supply(loadReader(t, opts), config.ModuleName)
 	reg.Register(speedhttp.Module())
 	reg.Register(core.Module{
 		Name:     "stand-in.logger",
@@ -181,9 +191,13 @@ func startHost(t *testing.T, opts hostOptions) *host {
 			if opts.register != nil {
 				opts.register(ep)
 			}
+			status := opts.routeStatus
+			if status == 0 {
+				status = nethttp.StatusNoContent
+			}
 			ep.Route(nethttp.MethodGet, "/things", func(c *gin.Context) {
 				h.reached.inc()
-				c.Status(nethttp.StatusNoContent)
+				c.Status(status)
 			})
 			return nil
 		},
@@ -243,13 +257,31 @@ func fixedIdentityLayer(l *limiter, made *decisions) speedhttp.Middleware {
 
 // loadReader loads the configuration this assembly runs on through the real
 // loader: the entry point declares one endpoint on a port of the system's
-// choosing.
-func loadReader(t *testing.T) config.Reader {
+// choosing, with the trusted-proxy networks the case names when it names any.
+func loadReader(t *testing.T, opts hostOptions) config.Reader {
 	t.Helper()
-	document := fmt.Sprintf(`{"http": {"endpoints": {%q: {"address": "127.0.0.1:0"}}}}`, guardedEndpoint)
+	endpoint := map[string]any{"address": "127.0.0.1:0"}
+	if len(opts.trustedProxies) > 0 {
+		endpoint["trusted-proxies"] = opts.trustedProxies
+	}
+	document, err := json.Marshal(map[string]any{
+		"http": map[string]any{"endpoints": map[string]any{guardedEndpoint: endpoint}},
+	})
+	if err != nil {
+		t.Fatalf("marshalling the config document: %v", err)
+	}
+	return loadDocument(t, document)
+}
 
+// loadDocument loads one configuration document through the real loader, with
+// the entry point's and this module's declarations registered as a host's run
+// would register them. It is how a case holds a document to what the modules
+// declare: an item the schema does not declare, or a field whose tag names
+// another key, comes out here.
+func loadDocument(t *testing.T, document []byte) config.Reader {
+	t.Helper()
 	path := filepath.Join(t.TempDir(), "config.json")
-	if err := os.WriteFile(path, []byte(document), 0o600); err != nil {
+	if err := os.WriteFile(path, document, 0o600); err != nil {
 		t.Fatalf("writing the config document: %v", err)
 	}
 	reg := core.New()
@@ -259,9 +291,10 @@ func loadReader(t *testing.T) config.Reader {
 		Name:      "host",
 		Resources: []any{config.HostIdentity{Prefix: "RATELIMITTEST", DefaultLocator: "file:" + path}},
 	})
-	// The declaration reaches the load as the resource of a registered module,
+	// The declarations reach the load as the resources of registered modules,
 	// which is the only way one ever reaches it.
 	reg.Register(core.Module{Name: speedhttp.ModuleName, Resources: speedhttp.Module().Resources})
+	reg.Register(core.Module{Name: ModuleName, Resources: Module().Resources})
 
 	reader, err := config.Load(t.Context(), reg, nil)
 	if err != nil {

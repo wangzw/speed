@@ -1,6 +1,8 @@
 package http
 
 import (
+	"fmt"
+
 	"github.com/gin-gonic/gin"
 
 	"github.com/vislake/speed/pkg/core"
@@ -62,13 +64,138 @@ type Endpoint interface {
 	Accepting() bool
 }
 
+// Stage is the category a layer belongs to. The chain runs the stages in the
+// order they are declared on this type, outermost first, so where the boundary
+// between two categories falls is decided here and does not move when a module
+// is added or removed.
+//
+// It exists because a whole-category constraint is the one thing a stated order
+// cannot carry. "Every layer that observes a request sits outside every layer
+// that can refuse one" holds for layers this module has never heard of, and
+// under a numeric order a host layer registered with a smaller number would
+// slip inside without a signal. The stages are the general HTTP pipeline kinds
+// — observing, protecting, identifying, throttling, recording, authorizing —
+// and not concrete capabilities, which is why they are fixed here rather than
+// named by whichever module chooses one: a set a module could extend would be
+// back to the problem the fixed set solves, and these categories have changed
+// rarely enough that a new one is a change to this module and an ADR.
+//
+// The zero value is no stage. Stage is required, and registration refuses a
+// layer that leaves it out. There is deliberately no default: a default is
+// where a layer that forgot to declare itself lands, in a category nobody
+// chose, and for a layer whose job is to refuse a request the safe answer is
+// not the one a wrong guess would pick.
+type Stage uint8
+
+const (
+	// StageObserve sees every request and never refuses one or writes a
+	// response: timing, tracing, binding fields into the context.
+	StageObserve Stage = iota + 1
+	// StageGuard protects the process without knowing who is calling: CORS, an
+	// address limit, anything keyed on the request alone. A guard layer refuses
+	// on what it can see without reading the request body — an address, a
+	// header, a CORS preflight — and must not read the body, because the body is
+	// bounded only from the identify stage inwards. Bounding it in front of the
+	// guard stage would answer an oversize request before the address limit had
+	// counted it, and would put the body limit outside CORS, leaving the 413 a
+	// browser cannot read.
+	StageGuard
+	// StageIdentify settles who the caller is and which tenant the request is
+	// for; its refusals are 401, 404 and 503.
+	StageIdentify
+	// StageThrottle applies quotas to an identity or a tenant that is already
+	// settled.
+	StageThrottle
+	// StageRecord records what passed admission and never refuses a request.
+	StageRecord
+	// StageAuthorize decides on a settled identity; its refusals are recorded
+	// by the layers inside it.
+	StageAuthorize
+)
+
+// Position is a layer's preference within its stage, below the stage's After
+// and Before. It only picks among the positions those constraints already
+// leave open, so it can never contradict one, and it is a preference and not a
+// guarantee: two layers claiming the same edge of a stage are separated by
+// registration order.
+//
+// What it is for is the few places where a layer asks for the outside of its
+// own category without naming any other layer — CORS has to sit outside the
+// address limit in the same stage, so that a 429 carries its headers.
+type Position uint8
+
+const (
+	// PositionDefault leaves the layer to its constraints and the registration
+	// order, which is what most layers want.
+	PositionDefault Position = iota
+	// PositionFirst puts the layer at the outside of its stage's unconstrained
+	// layers.
+	PositionFirst
+	// PositionLast puts the layer at the inside of its stage's unconstrained
+	// layers.
+	PositionLast
+)
+
+// validStage reports whether a registration named one of the declared stages.
+// The zero value is not one of them: it says the registrant did not choose.
+func validStage(s Stage) bool { return s >= StageObserve && s <= StageAuthorize }
+
+// validPosition reports whether a registration named one of the declared
+// positions.
+func validPosition(p Position) bool { return p <= PositionLast }
+
+// positionRank is the order the ready set sorts by: PositionFirst comes out
+// first, PositionLast last, and PositionDefault between them, so a layer that
+// states no preference yields to one that asks for the outside and comes out
+// ahead of one that asks for the inside. The declaration order on Position is
+// not that ranking — PositionFirst sorts after PositionDefault by its value —
+// which is why the ordering reads this and not the constant.
+func positionRank(p Position) uint8 {
+	switch p {
+	case PositionFirst:
+		return 0
+	case PositionDefault:
+		return 1
+	default:
+		return 2
+	}
+}
+
+// stageName renders a stage for a diagnostic — the ordering's failure text and
+// the chain listing — so the reader meets the category by the name it is
+// declared under rather than by its number.
+func stageName(s Stage) string {
+	switch s {
+	case StageObserve:
+		return "observe"
+	case StageGuard:
+		return "guard"
+	case StageIdentify:
+		return "identify"
+	case StageThrottle:
+		return "throttle"
+	case StageRecord:
+		return "record"
+	case StageAuthorize:
+		return "authorize"
+	default:
+		return fmt.Sprintf("stage(%d)", uint8(s))
+	}
+}
+
 // Middleware is one layer together with what it declares about its own
 // position.
 //
-// After and Before are hard constraints and decide the topological order;
-// Order is a preference that only picks among the positions the constraints
-// already allow. The two cannot contradict each other, because Order never
-// selects outside the ready set.
+// The position is settled in two steps that cannot contradict each other.
+// Stage says which category the layer belongs to, and the chain runs the
+// categories in their declared order; the stage boundary is the framework's, so
+// it holds for layers registered by modules this one has never seen. After and
+// Before are hard constraints within a stage and decide the order there, and
+// Position is a preference that only picks among the positions those
+// constraints leave open. A cross-stage After or Before therefore holds only
+// when it agrees with the stage order: the boundary is not something an edge
+// can move, and one that points against it is refused at startup rather than
+// letting the layer slip to the wrong side in silence.
 //
 // Provides is what makes those constraints land: After and Before name
 // capabilities, and which layer on the chain stands for a capability can only
@@ -80,6 +207,20 @@ type Middleware struct {
 	// Name is for diagnostics only: the panic text and the chain listed at
 	// startup. It is not an identity this module matches anything against.
 	Name string
+	// Stage is the category this layer belongs to, and the chain runs the
+	// stages in the order they are declared on Stage. It is required:
+	// registration panics on the zero value, and on any value that is not a
+	// declared stage, because a layer that has not said which category it is in
+	// has no position this module can give it. There is deliberately no default
+	// — filed under one, a layer that forgot to declare itself would run in a
+	// category nobody chose, and for a layer whose job is to refuse a request
+	// the safe answer is not the one a wrong guess would pick.
+	Stage Stage
+	// Position puts the layer at the outside or the inside of its stage's
+	// unconstrained layers; PositionDefault leaves it to the constraints and
+	// the registration order. It never overrides After or Before, which are
+	// hard constraints within the stage.
+	Position Position
 	// Provides names the capabilities this layer stands for on the chain, so
 	// that another layer's After or Before can point at it. Leaving it empty
 	// is legal, at the cost that nobody can point at this layer.
@@ -89,23 +230,23 @@ type Middleware struct {
 	// this module does not know who registered the layer. A layer may
 	// therefore claim a capability its module does not deliver.
 	Provides []core.Token
-	// After places this layer inside the middleware of these capabilities.
-	// A capability no other layer stands for drops the constraint, and the
-	// dropped constraint is listed in the startup diagnostics with the cause
-	// it dropped for: no layer on the endpoint represents the capability, or
-	// only this one does, and that edge to itself is dropped too. A
-	// capability nobody on the endpoint represents is written at Info,
-	// because a module that is absent or does not guard the endpoint is a
-	// legal configuration; one only this layer represents is written at
+	// After places this layer inside the middleware of these capabilities,
+	// within this layer's stage. A capability a layer in another stage stands
+	// for draws no edge: that constraint holds only when the stage order
+	// already places this layer inside such a provider, and registration fails
+	// when it does not. A capability no other layer stands for drops the
+	// constraint, and the dropped constraint is listed in the startup
+	// diagnostics with the cause it dropped for: no layer on the endpoint
+	// represents the capability, or only this one does, and that edge to itself
+	// is dropped too. A capability nobody on the endpoint represents is written
+	// at Info, because a module that is absent or does not guard the endpoint is
+	// a legal configuration; one only this layer represents is written at
 	// Warn, because no assembly makes that declaration place anything.
 	After []core.Token
 	// Before places this layer outside the middleware of these
-	// capabilities, with the same treatment of an absent provider.
+	// capabilities, within this layer's stage, with the same treatment of an
+	// absent provider and of a provider in another stage as After.
 	Before []core.Token
-	// Order is the preference where the constraints leave a choice; a
-	// smaller value sits further out. Layers with equal Order and no
-	// constraint between them keep their registration order.
-	Order int
 	// Handler is the layer itself. It hands the request on with c.Next and
 	// ends the chain with c.Abort, as any gin handler does. A nil Handler
 	// panics at registration.

@@ -94,13 +94,13 @@ func TestThePanicValueStaysOutOfTheDefaultResponse(t *testing.T) {
 	}
 }
 
-// TestAPanicInARegisteredLayerIsAnswered pins that the fallback sits outside
-// every registered layer: it catches what a middleware raises, not only what a
-// handler does.
+// TestAPanicInARegisteredLayerIsAnswered pins that the recovery layer sits
+// outside every stage that can refuse a request: it catches what a layer of one
+// of those stages raises, not only what a handler does.
 func TestAPanicInARegisteredLayerIsAnswered(t *testing.T) {
 	logger, records := newRecordingLogger()
 	handler := assembleFallback(t, nil, logger, func(e Endpoint) {
-		e.Use(Middleware{Name: "boom", Handler: panicking("raised in a layer")})
+		e.Use(Middleware{Name: "boom", Stage: StageGuard, Handler: panicking("raised in a layer")})
 		e.Route("GET", "/things", filler)
 	})
 
@@ -241,23 +241,24 @@ func TestADeliveredResponderDecidesTheShapeOfAPanic(t *testing.T) {
 	mustContain(t, written[0], "panic=boom", "the value the handler panicked with")
 }
 
-// TestALayerSeesAPanicPassThroughAndMayThrowItAgain pins the position of the
-// registered layers relative to the panic: they are inside the engine, no
-// recovery sits between them and the handler, so a layer that wants to see a
-// panic — to record it against its own subject, say — sees it as it unwinds,
-// and a layer that throws what it caught again hands the same value to the
-// fallback, which answers it and writes the record.
+// TestALayerSeesAPanicPassThroughAndMayThrowItAgain pins the position of a
+// registered layer relative to the panic. The recovery layer sits outside every
+// stage that can refuse a request, so no recovery stands between a layer of one
+// of those stages and the handler: a layer that wants to see a panic — to record
+// it against its own subject, say — sees it as it unwinds, and a layer that
+// throws what it caught again hands the same value to the recovery layer, which
+// answers it and writes the record.
 //
-// A recovery middleware inside the engine would swallow the panic before the
-// fallback saw it. The record and the Cause are what show it was not swallowed:
-// both are the fallback's.
+// A recovery middleware inside that stage would swallow the panic before the
+// outer one saw it. The record and the Cause are what show it was not swallowed:
+// both are the recovery layer's.
 func TestALayerSeesAPanicPassThroughAndMayThrowItAgain(t *testing.T) {
 	thrown := &panicValue{detail: "the thing is broken"}
 	var seen any
 	responder := &recordingResponder{}
 	logger, records := newRecordingLogger()
 	handler := assembleFallback(t, responder, logger, func(e Endpoint) {
-		e.Use(Middleware{Name: "witness", Handler: func(c *gin.Context) {
+		e.Use(Middleware{Name: "witness", Stage: StageGuard, Handler: func(c *gin.Context) {
 			defer func() {
 				if seen = recover(); seen != nil {
 					panic(seen)
@@ -275,15 +276,15 @@ func TestALayerSeesAPanicPassThroughAndMayThrowItAgain(t *testing.T) {
 	}
 	var found *panicValue
 	if cause := responder.problem(t, 0).Cause; !errors.As(cause, &found) || found != thrown {
-		t.Errorf("the fallback was handed the Cause %v, want the value thrown again", cause)
+		t.Errorf("the recovery layer was handed the Cause %v, want the value thrown again", cause)
 	}
 	if recorder.Code != nethttp.StatusInternalServerError {
-		t.Errorf("the response was %d, want the %d the fallback wrote", recorder.Code,
+		t.Errorf("the response was %d, want the %d the recovery layer wrote", recorder.Code,
 			nethttp.StatusInternalServerError)
 	}
 	if written := records.at(slog.LevelError); len(written) != 1 ||
-		!strings.Contains(written[0], "endpoint's fallback caught it") {
-		t.Errorf("the records were %v, want the fallback's one", written)
+		!strings.Contains(written[0], "endpoint's recovery layer caught it") {
+		t.Errorf("the records were %v, want the recovery layer's one", written)
 	}
 }
 
@@ -498,19 +499,19 @@ func TestAPanicAfterTheResponseStartedLeavesItAsWritten(t *testing.T) {
 }
 
 // TestTheResponderIsAskedOnlyForAResponseThatHasNotStarted pins when the
-// fallback asks the delivered ErrorResponder for a response: only when no part
-// of the response has gone out. Once a status of 200 or above has been written,
-// a byte of body has been written or the output flushed, the response is the
-// handler's, and whatever the responder wrote would follow bytes the client is
-// already reading as something else.
+// recovery layer asks the delivered ErrorResponder for a response: only when no
+// part of the response has gone out. The criterion is gin's own account of the
+// writer, Context.Writer.Written, which is true once a status, a body, a flush
+// or a hijack has gone out and false while only a status has been set with
+// c.Status.
 //
-// The rows are each way a response starts and the ways it has not: a handler
-// that wrote nothing, and one that has sent an informational status and nothing
-// final. A flush is a start in its own right, so the buffered and the flushed row
-// are both here, and so are the edges of what counts as a final status: 200 is
-// one, 101 is one, and an interim status is not, so that a body or a flush after
-// it is the start. A status checked against the wrong side of any edge moves
-// one of these rows.
+// The rows are each way a response starts and the one way it has not: a handler
+// that wrote nothing. Force the header out with WriteHeaderNow — an
+// informational status is one way — and gin counts the response as started, so
+// the interim rows are starts like any other. A response judged started when it
+// is not leaves a panic unanswered, and one judged not started after it has gone
+// out appends a body to bytes the client is already reading; the two wrong
+// readings move a row here.
 func TestTheResponderIsAskedOnlyForAResponseThatHasNotStarted(t *testing.T) {
 	for _, c := range []struct {
 		name    string
@@ -542,11 +543,11 @@ func TestTheResponderIsAskedOnlyForAResponseThatHasNotStarted(t *testing.T) {
 			c.Writer.WriteHeaderNow()
 			panic("after the 101")
 		}, 0},
-		{"an interim status alone", func(c *gin.Context) {
+		{"an interim status forced out", func(c *gin.Context) {
 			c.Status(nethttp.StatusEarlyHints)
 			c.Writer.WriteHeaderNow()
 			panic("after the interim status")
-		}, 1},
+		}, 0},
 		{"an interim status and then a body", func(c *gin.Context) {
 			c.Status(nethttp.StatusEarlyHints)
 			c.Writer.WriteHeaderNow()
@@ -713,18 +714,21 @@ func TestAPanicAfterOutputOnARealConnectionLeavesTheResponseAsWritten(t *testing
 	}
 }
 
-// TestAPanicAfterAnInterimResponseIsStillAnswered pins where "the response has
-// started" begins: with a status that is final. A handler that sends an
-// informational response — 103 Early Hints is the common one — has not started
-// its response, the final status is still to come, and a panic after it is
-// answered with the error response like any other. Counting the interim status
-// as the start would leave the client with the 103 and then an empty 200, the
-// panic read as a success.
+// TestAPanicAfterAnInterimResponseForcedOutIsNotAnswered pins where "the
+// response has started" falls once the recovery layer reads gin's own account of
+// the writer. A handler that sends an informational response — 103 Early Hints
+// is the common one — has to force the header out to send it, and gin counts a
+// forced header as the response having started whatever the status was. The
+// panic after it is therefore not answered: the response is left as it is, and
+// the client reads the interim status and then the 200 net/http supplies for a
+// response that ends without a final status.
 //
-// The client records the interim response it saw, which is what shows the
-// handler's own part went out before the panic.
-func TestAPanicAfterAnInterimResponseIsStillAnswered(t *testing.T) {
-	addr, _ := serveRoutes(t, nil, func(e Endpoint) {
+// This is narrower than the net/http layer this replaced, whose writer counted
+// only a final status as the start. The change follows from reading gin's writer
+// directly; what does not change is a response that has committed a final
+// status, or one that has written no header at all.
+func TestAPanicAfterAnInterimResponseForcedOutIsNotAnswered(t *testing.T) {
+	addr, records := serveRoutes(t, nil, func(e Endpoint) {
 		e.Route("GET", "/early", func(c *gin.Context) {
 			c.Header("Link", "</style.css>; rel=preload")
 			c.Status(nethttp.StatusEarlyHints)
@@ -739,9 +743,13 @@ func TestAPanicAfterAnInterimResponseIsStillAnswered(t *testing.T) {
 		t.Fatalf("the client saw the informational responses %v, want the one 103 the handler sent, "+
 			"so this case did not exercise what it is about", interim)
 	}
-	if got.status != nethttp.StatusInternalServerError {
-		t.Errorf("the final status was %d, want %d: the panic after an interim response was not answered",
-			got.status, nethttp.StatusInternalServerError)
+	if got.status != nethttp.StatusOK || got.body != "" {
+		t.Errorf("the final answer was %d %q, want the empty 200 an interim-only response ends with: "+
+			"the panic after a sent interim status is not answered", got.status, got.body)
+	}
+	if written := records.at(slog.LevelError); len(written) != 1 {
+		t.Errorf("the recovery layer wrote %d error records for the panic, want one: the record is "+
+			"the only signal that the request did not finish: %v", len(written), written)
 	}
 }
 
@@ -753,16 +761,14 @@ func TestAPanicAfterAnInterimResponseIsStillAnswered(t *testing.T) {
 // has forced it out, an informational status included. A handler that sends a
 // 103 Early Hints and then refuses the request through Fail therefore gets no
 // error response: Fail writes nothing, net/http follows the 103 with an empty
-// 200, and the client reads a success. The fallback's criterion is narrower — a
-// final status — which is why the panic in the next route is answered with a 500
-// where the Fail is not.
+// 200, and the client reads a success.
 //
-// The test pins what happens today, so that a change to either criterion is
-// noticed and made on purpose, and it is not a statement that an empty 200 is the
-// right answer to a refusal. When Fail's criterion is brought in line with the
-// fallback's, the first half of this test is the one to change.
+// The recovery layer reads the same account, so a panic after a forced interim
+// status is left unanswered the same way. The test pins what happens today, so
+// that a change to the criterion is noticed and made on purpose, and it is not a
+// statement that an empty 200 is the right answer to a refusal.
 func TestFailAfterAnInterimResponseWritesNothing(t *testing.T) {
-	addr, _ := serveRoutes(t, nil, func(e Endpoint) {
+	addr, records := serveRoutes(t, nil, func(e Endpoint) {
 		early := func(c *gin.Context) {
 			c.Header("Link", "</style.css>; rel=preload")
 			c.Status(nethttp.StatusEarlyHints)
@@ -788,20 +794,28 @@ func TestFailAfterAnInterimResponseWritesNothing(t *testing.T) {
 	}
 
 	_, panicked := getTracingInterim(t, addr, "/panic")
-	if panicked.status != nethttp.StatusInternalServerError {
-		t.Errorf("a panic after a 103 was answered %d, want %d: the fallback's criterion is a final "+
-			"status", panicked.status, nethttp.StatusInternalServerError)
+	if panicked.status != nethttp.StatusOK || panicked.body != "" {
+		t.Errorf("a panic after a 103 was answered %d %q, want the same empty 200 Fail gives: the "+
+			"recovery layer reads the same criterion Fail does", panicked.status, panicked.body)
+	}
+	if written := records.at(slog.LevelError); len(written) != 1 {
+		t.Errorf("the recovery layer wrote %d error records for the panic, want one: %v", len(written), written)
 	}
 }
 
-// TestAnInvalidStatusCodeIsAnsweredAsAPanic pins what a handler that writes a
-// status net/http refuses gets. net/http panics on a code outside 100 through
-// 999, and the status line is refused before it is written, so the response has
-// not started: the panic is answered with the error response. A writer that
-// recorded the start before the status was accepted would take the response to
-// have started, write nothing, and leave the client an empty 200 with the panic
-// read as a success.
-func TestAnInvalidStatusCodeIsAnsweredAsAPanic(t *testing.T) {
+// TestAnInvalidStatusCodeIsAnsweredAsAnEmptySuccess pins what a handler that
+// writes a status net/http refuses gets. net/http panics on a code outside 100
+// through 999, and gin records the response as started before it hands the
+// status to the underlying writer, so the recovery layer leaves the response
+// alone and the panic is stopped inside it: the attempted status never reaches
+// the wire, and net/http answers the handler that returned with the 200 it
+// supplies for a response that ended without a final status.
+//
+// This differs from the net/http layer this replaced, which recorded the start
+// only after the status was accepted and answered the panic with a 500. The
+// difference follows from reading gin's own account of the writer; the record
+// the recovery layer wrote is what still says the request did not finish.
+func TestAnInvalidStatusCodeIsAnsweredAsAnEmptySuccess(t *testing.T) {
 	addr, records := serveRoutes(t, nil, func(e Endpoint) {
 		e.Route("GET", "/above", func(c *gin.Context) { c.String(1000, "hello") })
 		e.Route("GET", "/below", func(c *gin.Context) { c.String(99, "hello") })
@@ -812,12 +826,9 @@ func TestAnInvalidStatusCodeIsAnsweredAsAPanic(t *testing.T) {
 		if err != nil {
 			t.Fatalf("%s: the request failed outright: %v", path, err)
 		}
-		if got.status != nethttp.StatusInternalServerError {
-			t.Errorf("%s: a handler that wrote an invalid status was answered %d %q, want %d", path,
-				got.status, got.body, nethttp.StatusInternalServerError)
-		}
-		if got.header.Get("Content-Type") != "application/problem+json" {
-			t.Errorf("%s: the media type was %q", path, got.header.Get("Content-Type"))
+		if got.status != nethttp.StatusOK || got.body != "" {
+			t.Errorf("%s: a handler that wrote an invalid status was answered %d %q, want the empty "+
+				"200 the refused status leaves", path, got.status, got.body)
 		}
 	}
 	written := records.at(slog.LevelError)
@@ -860,8 +871,32 @@ func TestAWrappedAbortHandlerAbandonsTheConnection(t *testing.T) {
 	}
 
 	for _, line := range records.at(slog.LevelError) {
-		if strings.Contains(line, "the endpoint's fallback caught it") {
-			t.Errorf("the fallback wrote a record for a panic it lets through: %s", line)
+		if strings.Contains(line, "the endpoint's recovery layer caught it") {
+			t.Errorf("the recovery layer wrote a record for a panic it lets through: %s", line)
 		}
+	}
+}
+
+// TestABareStatusThenAPanicIsAnswered pins the criterion of "the response has
+// started" at the edge it turns on. A status set with c.Status alone is not on
+// the wire — gin keeps it in its writer until a header has to go out — so a
+// handler that sets one and then panics is answered with the error response, and
+// the 201 it never sent is not what the client reads. A criterion that counted
+// the set status as the start would leave the client that 201.
+func TestABareStatusThenAPanicIsAnswered(t *testing.T) {
+	logger, _ := newRecordingLogger()
+	handler := assembleFallback(t, nil, logger, func(e Endpoint) {
+		e.Route("GET", "/things", func(c *gin.Context) {
+			c.Status(nethttp.StatusCreated)
+			panic("after the bare status")
+		})
+	})
+
+	recorder := serveOnce(handler, nethttp.MethodGet, "/things")
+
+	if recorder.Code != nethttp.StatusInternalServerError {
+		t.Errorf("a handler that set a 201 with c.Status and then panicked was answered %d, want %d: a "+
+			"status the writer is holding is not a response that has started", recorder.Code,
+			nethttp.StatusInternalServerError)
 	}
 }

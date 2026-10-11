@@ -70,13 +70,13 @@ func (p *probe) register(reg *core.Registry, ep speedhttp.Endpoint) error {
 
 // subjectLayer stands for the authentication layer: it points at no one, claims
 // the capability the resolution layer points at, and binds the subject onto the
-// request's logger. Its Order is the largest of the layers on the chain, so the
-// resolution layer sits inside it only because of the constraint it declares.
+// request's logger. It is in the identifying stage and declares no constraint,
+// so the resolution layer sits inside it only because of the After it declares.
 func subjectLayer() speedhttp.Middleware {
 	return speedhttp.Middleware{
 		Name:     "subject",
 		Provides: []core.Token{(*authn.Gate)(nil)},
-		Order:    1000,
+		Stage:    speedhttp.StageIdentify,
 		Handler: func(c *gin.Context) {
 			c.Request = c.Request.WithContext(log.WithAttrs(c.Request.Context(), slog.String("subject", "alice")))
 			c.Next()
@@ -86,13 +86,13 @@ func subjectLayer() speedhttp.Middleware {
 
 // witness is a layer that notes what a request looks like on the inside of the
 // resolution layer. It points at the capability the resolution layer claims and
-// carries the smallest Order, so it sits inside the resolution layer only
-// because of the constraint it declares.
+// is in the same stage, so it sits inside the resolution layer only because of
+// the After it declares.
 func (p *probe) witness() speedhttp.Middleware {
 	return speedhttp.Middleware{
 		Name:  "witness",
+		Stage: speedhttp.StageIdentify,
 		After: []core.Token{(*tenant.Resolution)(nil)},
-		Order: -1000,
 		Handler: func(c *gin.Context) {
 			id, ok := tenant.FromContext(c.Request.Context())
 			p.mu.Lock()
@@ -400,11 +400,11 @@ func TestADeliveredErrorResponderDecidesTheShape(t *testing.T) {
 	}
 }
 
-// The layer's place on the chain comes from what it declares: it stands for the
-// resolution capability, and it sits inside the layer that stands for
-// authentication. The layers it is checked against carry Orders that would put
-// them on the other side of it, so only the declared constraints can produce
-// the order the chain listing shows.
+// The layer's place on the chain comes from what it declares within its stage:
+// it stands for the resolution capability and sits inside the layer that stands
+// for authentication, which is the After it declares. The witness declares
+// itself inside the resolution layer, so the chain listing reads subject, then
+// the resolution layer, then the witness.
 func TestTheLayerSitsInsideAuthenticationAndOutsideWhatPointsAtIt(t *testing.T) {
 	h := startHost(t, hostOptions{roster: standardRoster(), register: (&probe{}).register})
 

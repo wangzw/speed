@@ -458,6 +458,7 @@ func TestMiddlewareCycleFailsARealAssembly(t *testing.T) {
 		product:  deliveredA{},
 		onInit: useLayer("public", Middleware{
 			Name:     "layer-a",
+			Stage:    StageIdentify,
 			Provides: []core.Token{(*capA)(nil)},
 			After:    []core.Token{(*capB)(nil)},
 			Handler:  passThrough,
@@ -470,6 +471,7 @@ func TestMiddlewareCycleFailsARealAssembly(t *testing.T) {
 		product:  deliveredB{},
 		onInit: useLayer("public", Middleware{
 			Name:     "layer-b",
+			Stage:    StageIdentify,
 			Provides: []core.Token{(*capB)(nil)},
 			After:    []core.Token{(*capA)(nil)},
 			Handler:  passThrough,
@@ -493,15 +495,16 @@ func TestMiddlewareCycleFailsARealAssembly(t *testing.T) {
 }
 
 // TestConstraintLandsOnItsProviderInARealAssembly pins the opposite direction:
-// a constraint that does land decides the order, and Order does not get to
-// overrule it.
+// a constraint that does land decides the order, and a preference does not get
+// to overrule it.
 //
-// The two layers are given Order values pointing the other way, so a chain
-// built by sorting on Order alone comes out reversed. That is what an
-// assembly whose registration surface cannot say what a layer stands for
-// falls back to, and it is the failure this pins against. Which of the two
-// probes registers first does not enter into it: the constraint fixes the
-// order either way, which is why no dependency is declared between them.
+// The two layers are given Position values pointing the other way — each asks
+// for the edge of its stage the other one wants — so a chain built from the
+// preferences alone comes out reversed. That is what an assembly whose
+// registration surface cannot say what a layer stands for falls back to, and it
+// is the failure this pins against. Which of the two probes registers first does
+// not enter into it: the constraint fixes the order either way, which is why no
+// dependency is declared between them.
 func TestConstraintLandsOnItsProviderInARealAssembly(t *testing.T) {
 	tr := &trace{}
 	serving := make(chan struct{}, 1)
@@ -519,11 +522,12 @@ func TestConstraintLandsOnItsProviderInARealAssembly(t *testing.T) {
 			routeOn("public", "GET", "/things", filler),
 			useLayer("public", Middleware{
 				Name:     "outer-by-constraint",
+				Stage:    StageAuthorize,
 				Provides: []core.Token{(*capA)(nil)},
-				// A large Order asks for the innermost
-				// position, which the constraint denies it.
-				Order:   100,
-				Handler: noteLayer(tr, "outer-by-constraint"),
+				// PositionLast asks for the innermost position, which the
+				// constraint denies it.
+				Position: PositionLast,
+				Handler:  noteLayer(tr, "outer-by-constraint"),
 			}),
 		),
 	}
@@ -534,11 +538,12 @@ func TestConstraintLandsOnItsProviderInARealAssembly(t *testing.T) {
 		product:  deliveredB{},
 		onInit: useLayer("public", Middleware{
 			Name:     "inner-by-constraint",
+			Stage:    StageAuthorize,
 			Provides: []core.Token{(*capB)(nil)},
 			After:    []core.Token{(*capA)(nil)},
-			// A small Order asks for the outermost position.
-			Order:   -100,
-			Handler: noteLayer(tr, "inner-by-constraint"),
+			// PositionFirst asks for the outermost position.
+			Position: PositionFirst,
+			Handler:  noteLayer(tr, "inner-by-constraint"),
 		}),
 		onServe: func(reg *core.Registry) error {
 			r, err := routerFrom(reg)
@@ -577,7 +582,7 @@ func TestConstraintLandsOnItsProviderInARealAssembly(t *testing.T) {
 	if got := tr.seen(); !equalStrings(got, want) {
 		t.Errorf("the request went through %v; After places the second layer inside the "+
 			"layer standing for the capability it names, so it has to be %v whatever the "+
-			"two Order values ask for", got, want)
+			"two positions ask for", got, want)
 	}
 	if err := a.stop(t); err != nil {
 		t.Errorf("a run that served and was then cancelled came back with %v", err)

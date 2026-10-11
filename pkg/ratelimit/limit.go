@@ -10,7 +10,6 @@ import (
 
 	"github.com/gin-gonic/gin"
 
-	"github.com/vislake/speed/pkg/audit"
 	"github.com/vislake/speed/pkg/authn"
 	"github.com/vislake/speed/pkg/core"
 	speedhttp "github.com/vislake/speed/pkg/http"
@@ -24,14 +23,22 @@ import (
 // It holds configuration and nothing derived from it. The capabilities the
 // decision needs are all taken up in Init, which is also where the layer is
 // registered.
+//
+// One product registers two layers: the quota (middleware, in this file) and
+// the address shield (addressMiddleware, in address.go). addressEndpoints is
+// the shield's own list, so the two are switched apart; guard holds the shield's
+// per-address buckets, which are this process's memory and only this process's.
 type limiter struct {
-	endpoints []string
-	store     settings.Store
-	counters  kv.KV
-	signal    *signal
+	endpoints        []string
+	addressEndpoints []string
+	store            settings.Store
+	counters         kv.KV
+	signal           *signal
+	guard            *addressGuard
 
 	// now reads the wall clock. The window index is derived from it, so a
-	// test pins it to make the arithmetic reproducible.
+	// test pins it to make the arithmetic reproducible. The shield reads it
+	// too, for the refill its buckets take from it.
 	now func() time.Time
 }
 
@@ -39,6 +46,7 @@ func newLimiter(endpoints []string) *limiter {
 	return &limiter{
 		endpoints: append([]string(nil), endpoints...),
 		signal:    newSignal(),
+		guard:     newAddressGuard(),
 		now:       time.Now,
 	}
 }
@@ -74,6 +82,16 @@ func (l *limiter) wire(reg *core.Registry) error {
 		}
 		endpoint.Use(l.middleware())
 	}
+	// The shield is registered on its own list. An endpoint named in both lists
+	// carries both layers, one in the guard stage and one in the throttling
+	// stage, which is the ordinary case; an endpoint in neither carries none.
+	for _, name := range l.addressEndpoints {
+		endpoint, err := router.Endpoint(name)
+		if err != nil {
+			return takeUp("endpoint "+strconv.Quote(name), err)
+		}
+		endpoint.Use(l.addressMiddleware())
+	}
 	return nil
 }
 
@@ -85,24 +103,19 @@ func takeUp(what string, err error) error {
 //
 // Provides carries the same token the descriptor delivers the capability
 // under, which is the only anchor another layer has for placing itself inside
-// or outside rate limiting. The three After entries are what this layer needs
-// to read an identity string and a tenant, and to sit inside the audit
-// request layer: pointing at audit's own token is the way that module settled
-// for modules that want to order against it, rather than a numeric preference.
+// or outside rate limiting.
 //
-// Order carries no constraint here — every position this layer needs is fixed
-// by the After entries — so it stays at the zero value.
+// It sits in the throttling stage, which runs after the identifying stage that
+// settles the identity and the tenant and before the recording stage. That
+// placement is the stage's and needs no anchor: this layer reads an identity
+// string and a tenant by the time it runs, and a refused request is not
+// recorded, because the recording stage is inside it.
 func (l *limiter) middleware() speedhttp.Middleware {
 	return speedhttp.Middleware{
 		Name:     ModuleName,
 		Provides: []core.Token{(*Limiter)(nil)},
-		After: []core.Token{
-			(*authn.Gate)(nil),
-			(*tenant.Resolution)(nil),
-			(*audit.Audit)(nil),
-		},
-		Order:   0,
-		Handler: l.handle,
+		Stage:    speedhttp.StageThrottle,
+		Handler:  l.handle,
 	}
 }
 

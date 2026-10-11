@@ -3,6 +3,7 @@ package http
 import (
 	"fmt"
 	"maps"
+	"net"
 	"reflect"
 	"slices"
 	"strconv"
@@ -75,10 +76,22 @@ type endpointConfig struct {
 	// receive has its cancellation stripped.
 	DrainTimeout *time.Duration `config:"drain-timeout"`
 
-	// MaxBodyBytes is the request body limit the outermost layer of the
+	// MaxBodyBytes is the request body limit the body limit layer of the
 	// chain imposes, 0 for no limit. It applies to every handler on the
 	// endpoint, whatever way a handler reads the body.
 	MaxBodyBytes *int64 `config:"max-body-bytes"`
+
+	// TrustedProxies are the networks in front of this endpoint, each an IP
+	// address or a CIDR block, whose forwarded-address headers are believed
+	// when the client address is worked out. Empty trusts nobody, which is the
+	// safe default: with nobody trusted, a client cannot choose the address
+	// Context.ClientIP reports by writing a header.
+	TrustedProxies []string `config:"trusted-proxies"`
+	// RemoteIPHeaders name the headers a trusted proxy writes the client
+	// address into, in the order they are read. Empty leaves gin's default
+	// (X-Forwarded-For then X-Real-IP), which is only consulted for a request
+	// whose peer is one of TrustedProxies.
+	RemoteIPHeaders []string `config:"remote-ip-headers"`
 
 	// TLSCertFile and TLSKeyFile are where the certificate and its key are
 	// read from. Both empty serves plain HTTP; one of them alone is a
@@ -149,6 +162,9 @@ type endpointSettings struct {
 	drainTimeout      time.Duration
 
 	maxBodyBytes int64
+
+	trustedProxies  []string
+	remoteIPHeaders []string
 
 	tlsCertFile string
 	tlsKeyFile  string
@@ -257,6 +273,22 @@ func (e endpointConfig) resolve(name string) (endpointSettings, error) {
 			"http: endpoint %q gives max-body-bytes the value %d; 0 removes the limit and a "+
 				"positive number sets it", name, *e.MaxBodyBytes)
 	}
+	// The trusted proxy networks are validated here rather than only being handed
+	// to gin, so a mistyped one names the endpoint and the key it was written
+	// under instead of surfacing as gin's parse error from inside the engine.
+	// The check is gin's own rule — an IP address or a CIDR — and the values
+	// themselves go to gin untouched; this module parses no request header
+	// itself.
+	for i, network := range e.TrustedProxies {
+		if validTrustedProxy(network) {
+			continue
+		}
+		return endpointSettings{}, fmt.Errorf(
+			"http: endpoint %q gives trusted-proxies[%d] the value %q, which is neither an IP "+
+				"address nor a CIDR block. Write each entry as an address or a block, for example "+
+				"\"10.0.0.0/8\", or drop the key to trust no proxy",
+			name, i, network)
+	}
 	if (e.TLSCertFile == "") != (e.TLSKeyFile == "") {
 		return endpointSettings{}, fmt.Errorf(
 			"http: endpoint %q gives only one of tls-cert-file and tls-key-file. Give both to "+
@@ -272,9 +304,22 @@ func (e endpointConfig) resolve(name string) (endpointSettings, error) {
 		idleTimeout:       valueOrDefault(e.IdleTimeout, defaultIdleTimeout),
 		drainTimeout:      valueOrDefault(e.DrainTimeout, defaultDrainTimeout),
 		maxBodyBytes:      valueOrDefault(e.MaxBodyBytes, defaultMaxBodyBytes),
+		trustedProxies:    e.TrustedProxies,
+		remoteIPHeaders:   e.RemoteIPHeaders,
 		tlsCertFile:       e.TLSCertFile,
 		tlsKeyFile:        e.TLSKeyFile,
 	}, nil
+}
+
+// validTrustedProxy reports whether a trusted-proxies entry is a form gin
+// accepts: an IP address or a CIDR block. It mirrors gin's own rule, so a value
+// refused here is exactly one SetTrustedProxies would refuse, and the message
+// the reader gets names the endpoint and the key rather than only the value.
+func validTrustedProxy(network string) bool {
+	if _, _, err := net.ParseCIDR(network); err == nil {
+		return true
+	}
+	return net.ParseIP(network) != nil
 }
 
 // endpointKeys lists the keys an endpoint entry takes, read off the carrier's

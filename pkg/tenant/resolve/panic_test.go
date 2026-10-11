@@ -17,7 +17,7 @@ type panickingExtractor struct{}
 func (panickingExtractor) Extract(*nethttp.Request) (string, bool) { panic("extractor defect") }
 
 // The message the entry point's fallback writes for a panic that reached it.
-const fallbackCaught = "a request panicked and the endpoint's fallback caught it"
+const fallbackCaught = "a request panicked and the endpoint's recovery layer caught it"
 
 // The message this layer writes for a panic of its own.
 const layerPanicked = diagnosticPrefix + ModuleName + ": the resolution layer panicked while resolving this request"

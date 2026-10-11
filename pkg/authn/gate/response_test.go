@@ -20,7 +20,7 @@ import (
 
 // fallbackMsg is the record the entry point's fallback writes when it catches a
 // panic. A case that wants to know which layer answered one reads for it.
-const fallbackMsg = "a request panicked and the endpoint's fallback caught it"
+const fallbackMsg = "a request panicked and the endpoint's recovery layer caught it"
 
 // problemBody decodes the entry point's default error response, keeping every
 // member it carries so that a case can say which ones are there.

@@ -19,6 +19,7 @@ import (
 	"github.com/vislake/speed/pkg/audit"
 	"github.com/vislake/speed/pkg/core"
 	"github.com/vislake/speed/pkg/event"
+	speedhttp "github.com/vislake/speed/pkg/http"
 	"github.com/vislake/speed/pkg/internal/dbtest"
 	"github.com/vislake/speed/pkg/log"
 )
@@ -434,9 +435,9 @@ func TestARequestRowIsNotWrittenOnceTheJournalStoppedAccepting(t *testing.T) {
 	}
 }
 
-// The capture layer stands for the audit capability on the chain and sits after
-// authentication and tenant resolution: the token and the two After edges are
-// what other layers place themselves against.
+// The capture layer stands for the audit capability on the chain and sits in
+// the recording stage: the token and the stage are what other layers place
+// themselves against.
 func TestMiddlewareCarriesTheAuditToken(t *testing.T) {
 	j := newJournal(settings{}, nil, nil)
 	mw := j.middlewareFor("public")
@@ -446,8 +447,8 @@ func TestMiddlewareCarriesTheAuditToken(t *testing.T) {
 	if len(mw.Provides) != 1 || mw.Provides[0] != (*audit.Audit)(nil) {
 		t.Errorf("the layer provides %v, want the audit token", mw.Provides)
 	}
-	if len(mw.After) != 2 {
-		t.Errorf("the layer sits after %v, want authentication and tenant resolution", mw.After)
+	if mw.Stage != speedhttp.StageRecord {
+		t.Errorf("the layer is in stage %v, want the recording stage", mw.Stage)
 	}
 	if mw.Handler == nil {
 		t.Error("the layer has no Handler")

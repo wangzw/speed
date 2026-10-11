@@ -7,12 +7,10 @@ import (
 	"errors"
 	"fmt"
 	"io"
-	"log/slog"
 	"maps"
 	nethttp "net/http"
 	"os"
 	"path/filepath"
-	"reflect"
 	"slices"
 	"sort"
 	"strconv"
@@ -1030,24 +1028,12 @@ func TestTheOperationsEndpointMergesEveryFragment(t *testing.T) {
 	}
 }
 
-// unlandedMsg is the startup record of an HTTP middleware constraint that
-// placed nothing.
-const unlandedMsg = "an HTTP middleware constraint landed on no layer"
-
 // TestTheMembershipLayerSitsInsideTheJournalAndTheLimiter is the case for where
-// the membership layer lands on the API endpoint's chain. The layer anchors on
-// the four it has to sit inside, and the chain listing is where those anchors
-// are readable as positions that landed rather than as spellings: an anchor no
-// layer stands for is dropped with nothing said about where the layer went.
-//
-// The startup's record of constraints that landed on no layer is held to the
-// ones this configuration is known to leave: the journal anchors inside
-// resolution on every endpoint it covers, and two of those endpoints resolve no
-// tenant. Those two are reported, and at Info: no layer there stands for the
-// capability, which is a legal assembly rather than a mistake to warn about.
-// Any other is a layer whose position guarantee is gone — a module a slice
-// added anchoring on a capability nobody stands for on that endpoint — and
-// fails here by name.
+// the membership layer lands on the API endpoint's chain. The layer sits in the
+// authorizing stage, which is the innermost one, so it runs inside every layer
+// that settles an identity or a tenant, inside the throttling layer, and inside
+// the journal: its refusals pass through all of them, and the chain listing is
+// where that is read off.
 func TestTheMembershipLayerSitsInsideTheJournalAndTheLimiter(t *testing.T) {
 	c := newCase(t, stackNamed(t, localStack))
 	c.migrate()
@@ -1072,46 +1058,23 @@ func TestTheMembershipLayerSitsInsideTheJournalAndTheLimiter(t *testing.T) {
 				rec["chain"], membersModuleName, outer)
 		}
 	}
-
-	resolution := reflect.TypeFor[tenant.Resolution]()
-	resolutionName := resolution.PkgPath() + "." + resolution.Name()
-	reported := map[string]bool{}
-	for _, r := range records(h.output()) {
-		if r["msg"] != unlandedMsg {
-			continue
-		}
-		known := (r["endpoint"] == accountEndpoint || r["endpoint"] == adminEndpoint) &&
-			r["middleware"] == journal.ModuleName && r["capability"] == resolutionName
-		if !known {
-			t.Errorf("a middleware constraint landed on no layer beyond the journal's resolution anchor on %s and %s: "+
-				"endpoint=%s middleware=%s declaration=%s capability=%s cause=%q",
-				accountEndpoint, adminEndpoint, r["endpoint"], r["middleware"], r["declaration"], r["capability"], r["cause"])
-			continue
-		}
-		reported[r["endpoint"]] = true
-		// No layer on those endpoints stands for resolution, which an
-		// assembly resolving tenants on some endpoints alone leaves by
-		// design, so the record is information rather than a warning.
-		if r["level"] != slog.LevelInfo.String() {
-			t.Errorf("the journal's resolution anchor on %s, which no layer there stands for, is reported at %s, "+
-				"want %s", r["endpoint"], r["level"], slog.LevelInfo)
-		}
-	}
-	for _, endpoint := range []string{accountEndpoint, adminEndpoint} {
-		if !reported[endpoint] {
-			t.Errorf("the startup does not report the journal's resolution anchor on %s, which resolves no tenant, "+
-				"as landing on no layer; the run wrote:\n%s", endpoint, h.outputForReport())
-		}
-	}
 }
 
 // chainLayers splits a chain listing into its layers' names, outermost first:
-// "http:base -> http:fallback -> authn.gate(github.com/...) -> ..." reads as
-// ["http:base", "http:fallback", "authn.gate", ...].
+// "http:recovery -> [identify] authn.gate(github.com/...) -> ..." reads as
+// ["http:recovery", "authn.gate", ...]. The stage marker prefixed to a stage's
+// first layer and the capabilities in parentheses are dropped, so every entry is
+// a plain layer name.
 func chainLayers(chain string) []string {
 	var names []string
 	for part := range strings.SplitSeq(chain, " -> ") {
-		name, _, _ := strings.Cut(strings.TrimSpace(part), "(")
+		name := strings.TrimSpace(part)
+		if rest, marked := strings.CutPrefix(name, "["); marked {
+			if _, after, found := strings.Cut(rest, "] "); found {
+				name = after
+			}
+		}
+		name, _, _ = strings.Cut(name, "(")
 		names = append(names, name)
 	}
 	return names

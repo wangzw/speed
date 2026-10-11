@@ -23,42 +23,61 @@ type layer struct {
 	provides []core.Token
 }
 
-// unlandedConstraint is one After or Before that placed nothing: after the
-// edge to the declaring layer itself was dropped, no layer was left for it to
-// point at, so it drew no edge and the declared position is not what the layer
-// gets.
+// declaredStages lists the stages in the order the chain runs them, outermost
+// first — the order they are declared in on Stage, written out so the ordering
+// walks them by name rather than by their numeric values. Registration refuses
+// a layer whose stage is not one of these, so they are the only buckets the
+// ordering can meet.
+var declaredStages = [...]Stage{
+	StageObserve,
+	StageGuard,
+	StageIdentify,
+	StageThrottle,
+	StageRecord,
+	StageAuthorize,
+}
+
+// orderingRemark is one thing the ordering noticed about an endpoint's
+// declarations that it reports rather than acts on: a constraint that drew no
+// edge, a constraint the stage order already satisfies, or a preference two
+// layers of one stage both claimed. None of them is a failure — the assembly
+// carries on — but none of them is observable anywhere else either, so they
+// come back for the caller to write out.
 //
-// It is not a failure: a capability absent from the endpoint is a legal
-// configuration, and the layer runs unconstrained by design. It is reported
-// because nothing else about it is observable, and because the ways of
-// arriving here are the same shape in the graph — the module that would stand
-// for the capability is not in this process, or it is and does not guard this
-// endpoint, or it is on the endpoint and left its Provides empty — so without
-// the report none of them produces any signal at all. How loudly it is
-// reported follows from its cause; see unlandedCause.level.
-type unlandedConstraint struct {
-	// endpoint and layer say where the declaration was made.
+// The ways of arriving here share one shape in the graph — nothing moved, and
+// without the report nothing is written at all — which is why one type carries
+// them. The cause tells them apart, because the fixing actions differ; see
+// remarkCause, and remarkCause.level and remarkCause.message for how each is
+// written.
+type orderingRemark struct {
+	// endpoint says which endpoint the declaration was made on; with layer it
+	// locates the declaration.
 	endpoint string
-	layer    string
+	// layer is what the line is about. For a constraint it is the layer that
+	// declared it; for a tied preference the layers sharing the edge of the
+	// stage are written here joined by ", ", because the tie is between them
+	// and naming one alone would say nothing.
+	layer string
 	// field is "After" or "Before" and at is the position in it, which is
-	// what locates the one declaration among several on the same layer.
+	// what locates the one declaration among several on the same layer. They
+	// are empty for a tied preference, which names no capability.
 	field string
 	at    int
 	// capability is the type the token designates, rendered with its
 	// package path, so the reader can go and look at who was meant to
-	// stand for it.
+	// stand for it. It is empty for a tied preference.
 	capability string
-	// cause is why the constraint placed nothing. The two causes have
-	// different fixing actions, so a report that does not tell them apart
-	// sends half its readers after a module that is not the problem.
-	cause unlandedCause
+	// cause is why the line is there.
+	cause remarkCause
 }
 
-// unlandedCause is why a constraint placed nothing on the chain. The two are
-// told apart because the fixing action differs: one asks who should have been
-// on the endpoint and was not, if anyone, the other asks the declaring layer to
-// correct what it said about itself.
-type unlandedCause string
+// remarkCause is why a remark is written. The causes are told apart because
+// the fixing action differs, so a report that does not name the cause sends
+// half its readers after the wrong thing. The level and the words travel with
+// the cause too, because they differ the same way: a redundant cross-stage
+// constraint and a lost preference are neither of them the failure an unplaced
+// constraint may be.
+type remarkCause string
 
 const (
 	// causeNoProvider is a capability no layer on this endpoint stands for:
@@ -66,44 +85,68 @@ const (
 	// and does not guard this endpoint, or its layer is here and left its
 	// Provides empty. The graph cannot tell those apart, and a module that is
 	// absent or does not guard the endpoint is a legal configuration.
-	causeNoProvider unlandedCause = "no layer on this endpoint stands for the capability"
+	causeNoProvider remarkCause = "no layer on this endpoint stands for the capability"
 	// causeSelfOnly is a capability whose only representative is the layer
 	// declaring the constraint. The self edge is dropped, so the constraint
 	// places nothing; nobody is absent, and the declaration is what is wrong.
 	// A capability another layer stands for as well is not this case: that
 	// part of the claim holds, so the constraint did what it said.
-	causeSelfOnly unlandedCause = "the declaring layer is the only layer standing for the capability"
+	causeSelfOnly remarkCause = "the declaring layer is the only layer standing for the capability"
+	// causeStageSatisfied is a constraint whose provider is in another stage,
+	// in the direction the stage order already gives. It drew no edge: a
+	// position across stages is the framework's to decide, and an edge cannot
+	// move a layer past a stage boundary. The declaration repeats what the
+	// boundary already says, so it is redundant rather than wrong, and it is
+	// reported at Debug — it is not a position the layer failed to get, and
+	// nothing about the assembly needs changing.
+	causeStageSatisfied remarkCause = "the constraint is already given by the stage order"
+	// causeTiedPreference is a preference two layers of one stage both
+	// claimed, either PositionFirst or PositionLast. The ordering does not
+	// treat it as a contradiction: Position is a preference, so the two are
+	// separated by the registration order and both run, the second-registered
+	// one yielding. It is reported because the layer that yields has no other
+	// way to learn that its claim was shared and that the order between the
+	// two came from registration rather than from what it asked for.
+	causeTiedPreference remarkCause = "two layers of one stage claim the same edge of the stage"
 )
 
 // orderLayers returns an endpoint's middleware from outermost to innermost,
-// together with the constraints that landed on nothing. The layers arrive in
-// registration order, and that order is the final tie-breaker, so the caller
-// appends as it registers and does not sort.
+// together with the things it noticed and did not act on. The layers arrive in
+// registration order.
 //
-// After and Before give the graph its edges: After C places this layer inside
-// the middleware standing for C, so an edge runs from each provider of C to
-// this layer, the provider coming out first and landing further out. Before C
-// is the same edge reversed. A constraint a provider stands beside places the
-// layer; one that does not places nothing, and comes back in the second return
-// value for the caller to write out with the reason, because nothing else
-// about it is observable. That is not a failure — a capability absent from the
-// assembly is a legal configuration — but a constraint nobody placed is a
-// position the declaring layer believes it has and does not.
+// Stage decides the order between categories and nothing else does: the
+// layers are bucketed by stage, each bucket is solved on its own, and the
+// buckets are concatenated in declared-stage order, so every layer of an outer
+// stage comes out before any layer of an inner one. That is what makes a
+// category constraint hold for layers this module has never heard of, and what
+// makes a cross-stage After or Before redundant — the boundary, not the edge,
+// places the layer. A cross-stage constraint that agrees with the boundary is
+// recorded for Debug; one that points against it is refused with
+// ErrStageConflict, because it asks for the opposite of where the stages put
+// the two layers.
 //
-// Order decides only within the ready set — among the layers whose
+// Within a bucket, After and Before give the graph its edges: After C places
+// this layer inside the middleware standing for C, so an edge runs from each
+// provider of C to this layer, the provider coming out first and landing
+// further out. Before C is the same edge reversed. A constraint a provider
+// stands beside places the layer; one that does not places nothing, and comes
+// back in the report for the caller to write out with the reason.
+//
+// Position decides only within the ready set — among the layers whose
 // constraints are already satisfied at that point — so it can never select a
 // position a constraint forbids, and the two ways of declaring a position
-// cannot contradict each other. A smaller Order goes further out. Equal Order
-// falls back to registration order, which makes (Order, registration) a total
-// order and the result unique.
+// cannot contradict each other. PositionFirst comes out before PositionDefault
+// before PositionLast, and equal Position falls back to registration order,
+// which makes (Position, registration) a total order within a stage and the
+// result unique.
 //
 // The graph is built per endpoint, per assembly, and thrown away with the
 // call. It costs O(V+E) in the number of layers and the constraints that hold
 // between them, once per endpoint at startup.
-func orderLayers(endpoint string, layers []layer) ([]layer, []unlandedConstraint, error) {
+func orderLayers(endpoint string, layers []layer) ([]layer, []orderingRemark, error) {
 	providers := providersByCapability(endpoint, layers)
 
-	var unlanded []unlandedConstraint
+	var reported []orderingRemark
 	// note records a constraint that placed nothing, with the reason. The
 	// declaring layer's own standing is what the answer turns on: the edge
 	// to it is dropped, so a layer that is the only one standing for the
@@ -114,7 +157,7 @@ func orderLayers(endpoint string, layers []layer) ([]layer, []unlandedConstraint
 		if !unplaced {
 			return
 		}
-		unlanded = append(unlanded, unlandedConstraint{
+		reported = append(reported, orderingRemark{
 			endpoint:   endpoint,
 			layer:      name,
 			field:      field,
@@ -144,54 +187,113 @@ func orderLayers(endpoint string, layers []layer) ([]layer, []unlandedConstraint
 		edges[from][to] = true
 		indegree[to]++
 	}
+	// place resolves one provider of one constraint. A provider in the
+	// declaring layer's own stage draws the edge; one in another stage draws
+	// nothing, and instead either repeats what the stage order gives or
+	// contradicts it, which the caller cannot be given a position for.
+	place := func(i, p int, field string, at int, key reflect.Type) error {
+		if layers[p].mw.Stage == layers[i].mw.Stage {
+			if field == "After" {
+				addEdge(p, i)
+			} else {
+				addEdge(i, p)
+			}
+			return nil
+		}
+		// After asks to sit inside the named provider, Before outside it. The
+		// stage order gives the declarer one of those two, and a constraint
+		// that asks for the other cannot be honoured by an edge.
+		wantInside := field == "After"
+		providerInside := layers[p].mw.Stage > layers[i].mw.Stage
+		if wantInside != providerInside {
+			reported = append(reported, orderingRemark{
+				endpoint:   endpoint,
+				layer:      layers[i].mw.Name,
+				field:      field,
+				at:         at,
+				capability: typeName(key),
+				cause:      causeStageSatisfied,
+			})
+			return nil
+		}
+		return stageConflict(endpoint, layers[i], field, at, layers[p], key)
+	}
+
 	for i, l := range layers {
 		for j, token := range l.mw.After {
 			key := capabilityKey(token, declarationSite(endpoint, l.mw.Name, "After", j))
 			note(i, l.mw.Name, "After", j, key)
 			for _, p := range providers[key] {
-				addEdge(p, i)
+				if p == i {
+					continue
+				}
+				if err := place(i, p, "After", j, key); err != nil {
+					return nil, nil, err
+				}
 			}
 		}
 		for j, token := range l.mw.Before {
 			key := capabilityKey(token, declarationSite(endpoint, l.mw.Name, "Before", j))
 			note(i, l.mw.Name, "Before", j, key)
 			for _, p := range providers[key] {
-				addEdge(i, p)
+				if p == i {
+					continue
+				}
+				if err := place(i, p, "Before", j, key); err != nil {
+					return nil, nil, err
+				}
 			}
 		}
 	}
 
-	// Kahn's algorithm. The ready set is re-sorted each round rather than
-	// kept as a heap: it is sorted by (Order, registration) on every round
-	// anyway, and the round count is the number of layers on one endpoint.
-	ready := make([]int, 0, len(layers))
+	// Bucket by stage, solve each bucket, then concatenate. Every edge the
+	// constraints drew is within one stage — a cross-stage constraint drew
+	// none — so a bucket's indegree counts only its own members, and the loop
+	// below is the same Kahn run the ordering has always done, over one stage
+	// at a time. The ready set is re-sorted each round rather than kept as a
+	// heap: it is sorted by (Position, registration) on every round anyway,
+	// and the round count is the number of layers in one stage.
+	buckets := make(map[Stage][]int, len(declaredStages))
 	for i := range layers {
-		if indegree[i] == 0 {
-			ready = append(ready, i)
-		}
+		buckets[layers[i].mw.Stage] = append(buckets[layers[i].mw.Stage], i)
 	}
+
 	order := make([]int, 0, len(layers))
-	for len(ready) > 0 {
-		slices.SortFunc(ready, func(a, b int) int {
-			if c := cmp.Compare(layers[a].mw.Order, layers[b].mw.Order); c != 0 {
-				return c
+	for _, st := range declaredStages {
+		members := buckets[st]
+		if len(members) == 0 {
+			continue
+		}
+		reported = append(reported, tiedPreferences(endpoint, layers, members)...)
+
+		ready := make([]int, 0, len(members))
+		for _, m := range members {
+			if indegree[m] == 0 {
+				ready = append(ready, m)
 			}
-			return cmp.Compare(a, b)
-		})
-		at := ready[0]
-		ready = ready[1:]
-		order = append(order, at)
-		for _, to := range sortedTargets(edges[at]) {
-			indegree[to]--
-			if indegree[to] == 0 {
-				ready = append(ready, to)
+		}
+		for len(ready) > 0 {
+			slices.SortFunc(ready, func(a, b int) int {
+				if c := cmp.Compare(positionRank(layers[a].mw.Position), positionRank(layers[b].mw.Position)); c != 0 {
+					return c
+				}
+				return cmp.Compare(a, b)
+			})
+			at := ready[0]
+			ready = ready[1:]
+			order = append(order, at)
+			for _, to := range sortedTargets(edges[at]) {
+				indegree[to]--
+				if indegree[to] == 0 {
+					ready = append(ready, to)
+				}
 			}
 		}
 	}
 	if len(order) != len(layers) {
-		// No chain comes out of a cyclic graph, and the unlanded list
-		// describes an assembly that is about to be abandoned; the
-		// failure is the only thing worth reading here.
+		// No chain comes out of a cyclic graph, and the report describes an
+		// assembly that is about to be abandoned; the failure is the only
+		// thing worth reading here.
 		return nil, nil, cycleError(endpoint, layers, order, edges)
 	}
 
@@ -199,7 +301,69 @@ func orderLayers(endpoint string, layers []layer) ([]layer, []unlandedConstraint
 	for _, at := range order {
 		out = append(out, layers[at])
 	}
-	return out, unlanded, nil
+	return out, reported, nil
+}
+
+// tiedPreferences reports, per stage, the layers that all asked for the same
+// edge of the stage with PositionFirst or PositionLast. Position is a
+// preference, so the ordering does not treat the tie as a contradiction: the
+// layers keep their registration order, and the one that registered later is
+// the one that yields. The line is here because that outcome may not be either
+// layer's intent, and neither layer has another way to learn that its claim was
+// shared. PositionDefault is exempt: many layers leaving the choice open is the
+// ordinary case and not a tie anyone needs to hear about.
+func tiedPreferences(endpoint string, layers []layer, members []int) []orderingRemark {
+	byPosition := make(map[Position][]int, 2)
+	for _, m := range members {
+		if p := layers[m].mw.Position; p != PositionDefault {
+			byPosition[p] = append(byPosition[p], m)
+		}
+	}
+	var out []orderingRemark
+	for _, p := range [...]Position{PositionFirst, PositionLast} {
+		tied := byPosition[p]
+		if len(tied) < 2 {
+			continue
+		}
+		names := make([]string, 0, len(tied))
+		for _, m := range tied {
+			names = append(names, layers[m].mw.Name)
+		}
+		out = append(out, orderingRemark{
+			endpoint: endpoint,
+			layer:    strings.Join(names, ", "),
+			cause:    causeTiedPreference,
+		})
+	}
+	return out
+}
+
+// stageConflict builds the failure for a constraint whose provider is in
+// another stage, pointing against the stage order. It is not a position the
+// caller can be given quietly: the constraint asks for the opposite of where
+// the stages put the two layers, and the fix is an edit to one of them. The
+// text names both layers, both stages and the declaration, which is everything
+// the reader needs to choose between moving a layer and dropping the
+// constraint.
+func stageConflict(endpoint string, declarer layer, field string, at int, provider layer, key reflect.Type) error {
+	// After asks to sit inside the named layer, Before outside it. The
+	// contradiction is that the stage order puts the declarer on the other
+	// side, so the two words name opposite sides and the text has to keep them
+	// apart.
+	asked, placed := "inside", "outside"
+	if field == "Before" {
+		asked, placed = "outside", "inside"
+	}
+	return fmt.Errorf("%w: endpoint %q: middleware %q in stage %s declares %s[%d] %s, asking to "+
+		"sit %s the layer standing for %s, but that layer, %q, is in stage %s, and the stage "+
+		"order places %q %s %q: the two point opposite ways. A constraint across stages "+
+		"holds only when it agrees with the stage order, because the boundary between stages is "+
+		"the framework's and no edge moves a layer across it. Move one of the two layers to a "+
+		"stage that matches, or drop the constraint if the stages already place the layer where "+
+		"it wants to be",
+		ErrStageConflict, endpoint, declarer.mw.Name, stageName(declarer.mw.Stage), field, at,
+		typeName(key), asked, typeName(key), provider.mw.Name, stageName(provider.mw.Stage),
+		declarer.mw.Name, placed, provider.mw.Name)
 }
 
 // unplacedCause reports whether a constraint placed nothing, and why. The
@@ -209,7 +373,7 @@ func orderLayers(endpoint string, layers []layer) ([]layer, []unlandedConstraint
 // constraint placed nothing, and the capability having no representative at
 // all is a different fixing action from the declaring layer being its only
 // representative.
-func unplacedCause(providers []int, self int) (unlandedCause, bool) {
+func unplacedCause(providers []int, self int) (remarkCause, bool) {
 	selfOnly := false
 	for _, p := range providers {
 		if p != self {
@@ -305,8 +469,8 @@ func cycleError(endpoint string, layers []layer, ordered []int, edges []map[int]
 
 	return fmt.Errorf("%w: endpoint %q: %s. After and Before are hard constraints, so they have "+
 		"to form an acyclic graph: drop one of the constraints on this cycle, or state the "+
-		"position with Order, which only picks among the positions the remaining constraints "+
-		"already allow",
+		"position with Position — PositionFirst or PositionLast only pick among the positions "+
+		"the remaining constraints already allow",
 		ErrMiddlewareCycle, endpoint, strings.Join(described, " -> "))
 }
 

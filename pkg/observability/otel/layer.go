@@ -1,14 +1,9 @@
 package otel
 
 import (
-	"errors"
-	"fmt"
-	nethttp "net/http"
-
 	"github.com/gin-gonic/gin"
 	"go.opentelemetry.io/contrib/instrumentation/github.com/gin-gonic/gin/otelgin"
 	"go.opentelemetry.io/otel/attribute"
-	"go.opentelemetry.io/otel/codes"
 	"go.opentelemetry.io/otel/trace"
 
 	"github.com/vislake/speed/pkg/core"
@@ -17,46 +12,19 @@ import (
 	"github.com/vislake/speed/pkg/observability"
 )
 
-const (
-	// layerOrder places the layer outside the layers it should time. It is a
-	// preference, not a guarantee: a layer registered with a smaller order, or
-	// one nothing points at, ends up outside this one, and the time it spends
-	// is then not in the span.
-	layerOrder = -10
-
-	// raisedKey is the gin context key under which the guard hands a recovered
-	// panic value to the outer layer, which throws it again once the upstream
-	// instrumentation has recorded the request.
-	raisedKey = "speed.observability.raised"
-)
-
 // attrEndpointName is the one attribute the server span carries that the
 // upstream instrumentation does not: the endpoint name the configuration lists,
 // the only place the span records which endpoint a request arrived on.
 var attrEndpointName = attribute.Key("speed.endpoint.name")
 
-// handlerPanic is the error the guard files against a request whose handler
-// panicked. The upstream instrumentation reads the request's errors to mark the
-// span failed and to set its error type, so the type's name is what an operator
-// filters on. The panic value is not carried: it reaches the span as an event and
-// the log through the entry module's fallback, and a status description would
-// copy it into every system that renders one.
-type handlerPanic struct{}
-
-func (handlerPanic) Error() string { return "handler panicked" }
-
-// errUnwound is the text the span's exception event carries for a chain that
-// stopped without a panic value.
-var errUnwound = errors.New("the handler stopped without returning and without a panic value")
-
 // layers describes the two layers this module registers for one endpoint, in the
 // order they are registered: the instrumentation, then the guard inside it.
 //
-// The two are separate because the upstream instrumentation ends its span as a
-// panic passes through it and records nothing on the way. Whatever has to stop
-// the panic before it reaches the instrumentation has to sit inside it, and the
-// handler that binds the log fields needs the span the instrumentation started,
-// so it sits inside as well.
+// The two are separate because the guard binds fields from the span the
+// instrumentation started, so it has to run inside it, and because the
+// instrumentation stands for the two capabilities this module delivers while the
+// guard must stand for nothing: a second layer standing for them would split
+// what another layer's After or Before points at.
 func (p *providers) layers(endpoint string) []http.Middleware {
 	return []http.Middleware{p.instrumentation(), p.guard(endpoint)}
 }
@@ -68,8 +36,10 @@ func (p *providers) attach(ep http.Endpoint, endpoint string) {
 	}
 }
 
-// instrumentation is the outer layer: the upstream gin instrumentation, plus the
-// throw that gives the panic back once the request has been recorded.
+// instrumentation is the outer layer: the upstream gin instrumentation on its
+// own. It opens the request's span, runs the rest of the chain, and on the way
+// back reads the writer's status and the request's error list to set the span's
+// status, attributes and duration and to record the duration histogram.
 //
 // Provides names the capabilities this module actually delivers rather than a
 // name invented for the layer: another layer's After or Before has to match
@@ -80,38 +50,36 @@ func (p *providers) attach(ep http.Endpoint, endpoint string) {
 // upstream's global defaults: the globals are whatever the process set last, and
 // this module's product is the one the registry delivered. The server name is
 // empty, which the upstream reads as "take it from the request's host".
+//
+// It sits in the observing stage at PositionFirst, so it is the outermost
+// layer of that stage: every other observing layer runs inside it and the time
+// they spend is in the span. The stage places every observing layer outside
+// every layer that can refuse a request, which is what lets the span carry the
+// response a refusal produced.
 func (p *providers) instrumentation() http.Middleware {
-	record := otelgin.Middleware("",
-		otelgin.WithTracerProvider(p.tp),
-		otelgin.WithMeterProvider(p.mp),
-		otelgin.WithPropagators(observability.Propagator()),
-	)
 	return http.Middleware{
 		Name: ModuleName,
 		Provides: []core.Token{
 			(*observability.TracerProvider)(nil),
 			(*observability.MeterProvider)(nil),
 		},
-		Order: layerOrder,
-		Handler: func(c *gin.Context) {
-			record(c)
-
-			// The panic goes on to the entry module's own fallback, which
-			// sits outside the engine this layer runs in. Swallowing it here
-			// would take over a promise that is not this module's, and
-			// writing a response is not this layer's job either.
-			if raised, ok := c.Get(raisedKey); ok {
-				// A recovered nil is stored as a nil and so thrown as one: the
-				// fallback tells that from a request that returned and gives
-				// it its own record. After a Goexit this line is never reached.
-				panic(raised)
-			}
-		},
+		Stage:    http.StageObserve,
+		Position: http.PositionFirst,
+		Handler: otelgin.Middleware("",
+			otelgin.WithTracerProvider(p.tp),
+			otelgin.WithMeterProvider(p.mp),
+			otelgin.WithPropagators(observability.Propagator()),
+		),
 	}
 }
 
 // guard is the inner layer. It stands between the upstream instrumentation and
-// the rest of the chain and does three things the instrumentation does not.
+// the rest of the chain and does the two things the instrumentation does not.
+//
+// It belongs to the same observing stage as the instrumentation and sits inside
+// it by declaring After(TracerProvider), which is a constraint within the stage:
+// a cross-stage constraint would be redundant, because the stage order already
+// places every observer outside every layer that can refuse a request.
 //
 // It binds the span's identifiers into the request context for the log module.
 // The attribute keys are this module's, bound here and read by the log module
@@ -123,36 +91,25 @@ func (p *providers) instrumentation() http.Middleware {
 // endpoint at a time, and nothing downstream can recover which one a request
 // arrived on.
 //
-// It stops a panic from the handlers inside it, so the instrumentation returns
-// normally and records the request. The status the instrumentation reads is the
-// one the writer holds, and while nothing has been written that is no answer yet:
-// it is whatever the handler had set or the 200 the writer starts from, and
-// reporting it would put every panicking request into the 200 bucket, which is the
-// one place an operator most needs it not to be. The status the entry module's
-// fallback writes for a panic is an internal error, so that is what the writer is
-// given. A module that delivered an ErrorResponder can write another status, and
-// this layer cannot see that decision — the module's documentation states it as
-// one of the things it does not guarantee.
-//
-// The recovered value goes to the outer layer, which throws it again, and the
-// chain is aborted so that no handler after the one that panicked runs.
-//
-// A chain that stops without returning and without a value is handled as a
-// panic too. recover returns nil for a panic(nil) under GODEBUG=panicnil=1, and
-// reading that as a request that returned would stop the panic here: the handlers
-// after it would run, the client would get a 200, and the fallback would never
-// write its record. A runtime.Goexit also reads as nil, but it keeps unwinding
-// after the deferred function returns, so the outer layer never runs and the
-// instrumentation records nothing on its way out. The guard marks the span failed
-// on the still-open span; the request is then in no histogram, which is the
-// instrumentation's own behaviour.
+// It does not touch a panic, and a recover here would be wrong twice over. The
+// entry module's own recovery runs inside this layer and inside every other
+// observing layer, so a handler's panic is caught there and never reaches the
+// guard: a status or an error the guard wrote for it would be describing a
+// request the recovery had already answered, and one it wrote after the
+// recovery had answered could not change the answer. The only panic the guard
+// can still see is one the recovery deliberately lets through — net/http's
+// ErrAbortHandler, with which a handler asks for its connection to be dropped —
+// and recovering that one would swallow it, leaving the protocol layer nothing
+// to close the connection with. A chain that stops without returning normally,
+// by that sentinel or by a runtime.Goexit, therefore leaves the span as the
+// instrumentation's deferred span.End leaves it: ended, with no status this
+// module set, and in no histogram.
 func (p *providers) guard(endpoint string) http.Middleware {
 	return http.Middleware{
 		Name:  ModuleName + ":guard",
+		Stage: http.StageObserve,
 		After: []core.Token{(*observability.TracerProvider)(nil)},
-		Order: layerOrder,
 		Handler: func(c *gin.Context) {
-			finished := false
 			ctx := c.Request.Context()
 			span := trace.SpanFromContext(ctx)
 			span.SetAttributes(attrEndpointName.String(endpoint))
@@ -162,33 +119,7 @@ func (p *providers) guard(endpoint string) http.Middleware {
 			)
 			c.Request = c.Request.WithContext(ctx)
 
-			defer func() {
-				raised := recover()
-				cause := error(nil)
-				if raised == nil {
-					if finished {
-						return
-					}
-					cause = errUnwound
-					span.SetStatus(codes.Error, handlerPanic{}.Error())
-				} else {
-					cause = fmt.Errorf("%v", raised)
-				}
-				// The stack is taken here, while the frames of the panic are
-				// still on it: once the value is thrown again from the outer
-				// layer, the stack the entry module's fallback records starts
-				// there. The span is where the origin survives.
-				span.RecordError(cause, trace.WithStackTrace(true))
-				c.Set(raisedKey, raised)
-				_ = c.Error(handlerPanic{})
-				if !c.Writer.Written() {
-					c.Status(nethttp.StatusInternalServerError)
-				}
-				c.Abort()
-			}()
-
 			c.Next()
-			finished = true
 		},
 	}
 }

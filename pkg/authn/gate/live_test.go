@@ -342,9 +342,9 @@ type sighting struct {
 //
 // It requires the gateway's capability, which is an ordering and nothing else:
 // it puts this module's Init after the gateway's, so the gateway's layer is
-// registered first. A layer that stated no preference then differs from the
-// gateway's only by the gateway's own Order, and nothing else decides which of
-// the two is further out.
+// registered first. A layer in an earlier stage than the gateway's then runs
+// outside it, and a layer in the gateway's own stage that declares itself inside
+// runs after.
 func observer(name string, seen *sighting, place func(*speedhttp.Middleware)) core.Module {
 	return core.Module{
 		Name: "stand-in." + name,
@@ -378,25 +378,27 @@ func observer(name string, seen *sighting, place func(*speedhttp.Middleware)) co
 	}
 }
 
-// TestALayerThatStatedNoOrderSitsOutsideTheGateway holds the preference the
-// gateway's layer is registered with.
+// TestALayerInAnEarlierStageSitsOutsideTheGateway holds where the stages put a
+// layer relative to the gateway.
 //
-// The gateway's Order is positive so that layers registering with the zero
-// Order — the ones that stated no preference — sit further out, which is where
-// request logging and panic recovery belong. A layer that declares nothing
-// therefore runs before the gateway has stamped an identity, and one that
-// declares itself inside the gateway runs after. The second is the control: it
-// shows the request did reach the gateway's pass, so the first layer not seeing
-// an identity is its position and not a request that was never admitted.
-func TestALayerThatStatedNoOrderSitsOutsideTheGateway(t *testing.T) {
+// The gateway is in the identifying stage. A layer in an earlier stage — the
+// guarding stage here — runs before the gateway has stamped an identity. A layer
+// that declares itself inside the gateway, in the gateway's own stage, runs
+// after. The second is the control: it shows the request did reach the gateway's
+// pass, so the first layer not seeing an identity is its stage and not a request
+// that was never admitted.
+func TestALayerInAnEarlierStageSitsOutsideTheGateway(t *testing.T) {
 	var outside, inside sighting
 	var got reply
 	liveAssembly{
 		backends: []authn.Verifier{passes(enumerating("local", "alice"))},
 		routes:   []liveRoute{{endpoint: "public", method: "GET", path: "/orders"}},
 		modules: []core.Module{
-			observer("unplaced", &outside, func(*speedhttp.Middleware) {}),
+			observer("out of stage", &outside, func(mw *speedhttp.Middleware) {
+				mw.Stage = speedhttp.StageGuard
+			}),
 			observer("inside", &inside, func(mw *speedhttp.Middleware) {
+				mw.Stage = speedhttp.StageIdentify
 				mw.After = []core.Token{(*authn.Gate)(nil)}
 			}),
 		},
@@ -406,7 +408,7 @@ func TestALayerThatStatedNoOrderSitsOutsideTheGateway(t *testing.T) {
 
 	requireStatus(t, "a request with a good credential", got, nethttp.StatusOK)
 	if !outside.ran.Load() || !inside.ran.Load() {
-		t.Fatalf("the layers ran: unplaced %v, inside %v; both should have", outside.ran.Load(),
+		t.Fatalf("the layers ran: out of stage %v, inside %v; both should have", outside.ran.Load(),
 			inside.ran.Load())
 	}
 	if !inside.carried.Load() {
@@ -414,7 +416,7 @@ func TestALayerThatStatedNoOrderSitsOutsideTheGateway(t *testing.T) {
 			"was not admitted by the gateway")
 	}
 	if outside.carried.Load() {
-		t.Error("a layer that stated no order ran inside the gateway, with the identity already " +
-			"stamped: the gateway's Order has to put it further in than the zero value")
+		t.Error("a layer in an earlier stage ran inside the gateway, with the identity already " +
+			"stamped: the stages have to place it outside the identifying one")
 	}
 }

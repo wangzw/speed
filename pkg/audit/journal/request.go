@@ -8,10 +8,8 @@ import (
 	"github.com/gin-gonic/gin"
 
 	"github.com/vislake/speed/pkg/audit"
-	"github.com/vislake/speed/pkg/authn"
 	"github.com/vislake/speed/pkg/core"
 	speedhttp "github.com/vislake/speed/pkg/http"
-	"github.com/vislake/speed/pkg/tenant"
 )
 
 // middlewareFor builds the capture layer registered on one endpoint.
@@ -20,11 +18,11 @@ import (
 // under. That is the only anchor another layer has for placing itself inside or
 // outside audit, which makes it this module's contract surface on the chain.
 //
-// After points at authentication and at tenant resolution, so the layer sits
-// inside both and the identity and the tenant it records are the ones those two
-// settled. Those are constraints and not guarantees: the entry point drops an
-// edge whose capability no layer stands for and lists the drop in the startup
-// diagnostics, so an assembly without authentication runs this layer with an
+// It sits in the recording stage, which runs after the identifying and the
+// throttling stages. That placement is the stage's: the identity and the tenant
+// it records are the ones those earlier stages settled, and a request that a
+// rate limiting layer refused never reaches here, so an over-limit request is
+// not recorded. An assembly without authentication runs this layer with an
 // entry whose actor — and, without tenant resolution, whose tenant — is empty.
 //
 // The layer runs inside the engine, after the route is matched, so it compares
@@ -36,8 +34,7 @@ func (j *journal) middlewareFor(endpoint string) speedhttp.Middleware {
 	return speedhttp.Middleware{
 		Name:     ModuleName,
 		Provides: []core.Token{(*audit.Audit)(nil)},
-		After:    []core.Token{(*authn.Gate)(nil), (*tenant.Resolution)(nil)},
-		Order:    middlewareOrder,
+		Stage:    speedhttp.StageRecord,
 		Handler: func(c *gin.Context) {
 			route := c.FullPath()
 			if !j.requested(c.Request.Method, route) {

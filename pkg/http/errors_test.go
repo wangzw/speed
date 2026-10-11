@@ -17,6 +17,7 @@ var sentinels = map[string]error{
 	"ErrUnknownEndpoint": ErrUnknownEndpoint,
 	"ErrRouteConflict":   ErrRouteConflict,
 	"ErrMiddlewareCycle": ErrMiddlewareCycle,
+	"ErrStageConflict":   ErrStageConflict,
 	"ErrInvalidSpec":     ErrInvalidSpec,
 	"ErrListen":          ErrListen,
 	"ErrDrainTimeout":    ErrDrainTimeout,

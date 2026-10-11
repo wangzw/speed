@@ -156,9 +156,9 @@ func TestTheDescriptorRegistersTheLayerOnEveryGuardedEndpointAndNowhereElse(t *t
 				name, len(layers))
 		}
 		layer := layers[0]
-		if layer.Name != ModuleName || layer.Order != middlewareOrder {
-			t.Errorf("endpoint %q carries the layer %q at Order %d, want %q at %d",
-				name, layer.Name, layer.Order, ModuleName, middlewareOrder)
+		if layer.Name != ModuleName || layer.Stage != speedhttp.StageIdentify {
+			t.Errorf("endpoint %q carries the layer %q in stage %v, want %q in the identifying stage",
+				name, layer.Name, layer.Stage, ModuleName)
 		}
 		if len(layer.Provides) != 1 || layer.Provides[0] != core.Token((*authn.Gate)(nil)) {
 			t.Errorf("endpoint %q carries a layer providing %v, want the gateway's own token "+

@@ -42,17 +42,6 @@ const challengeHeader = "WWW-Authenticate"
 // for that scheme claiming it whole.
 const basicScheme = "basic"
 
-// middlewareOrder places the authentication layer on the chain where the
-// constraints leave a choice.
-//
-// It is a preference, not a constraint: a layer that has to sit inside or
-// outside authentication says so with After or Before pointing at
-// (*authn.Gate)(nil), which is what the layer's own Provides declares. The value
-// is positive so that layers registering with the zero Order — the ones that
-// stated no preference — sit further out, which is where request logging and
-// panic recovery belong.
-const middlewareOrder = 100
-
 // errStopped and errSaturated are the two refusals the gateway makes before a
 // backend is reached at all. Both end the request as an outage: the module
 // cannot answer right now, and neither says anything about the credential.
@@ -197,6 +186,10 @@ func caught(format string, args ...any) *backendPanic {
 // under. That is the only anchor another layer has for placing itself inside or
 // outside authentication, which makes it this module's stable contract surface
 // on the chain.
+//
+// It sits in the identifying stage, where authentication is the layer that
+// settles the caller. A layer that wants to sit inside or outside it within the
+// stage declares After or Before pointing at (*authn.Gate)(nil).
 func (g *gateway) middlewareFor(endpoint string) speedhttp.Middleware {
 	// The layer is built out of the ownership table, so the table has to
 	// exist by now. A nil one is a mistake in this package's own ordering
@@ -213,7 +206,7 @@ func (g *gateway) middlewareFor(endpoint string) speedhttp.Middleware {
 	return speedhttp.Middleware{
 		Name:     ModuleName,
 		Provides: []core.Token{(*authn.Gate)(nil)},
-		Order:    middlewareOrder,
+		Stage:    speedhttp.StageIdentify,
 		Handler: func(c *gin.Context) {
 			if g.admit(endpoint, challenge, c) {
 				c.Next()

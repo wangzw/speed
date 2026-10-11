@@ -46,12 +46,6 @@ const ConfigNamespace = ModuleName
 // rather than the module, and the module follows it in the line itself.
 const diagnosticPrefix = "audit: "
 
-// middlewareOrder places the capture layer where the constraints leave a
-// choice. It is a preference and not a constraint: where the layer has to sit
-// is decided by pointing at authentication and tenant resolution, and this
-// value only decides where it lands when neither is in the assembly at all.
-const middlewareOrder = 95
-
 //go:embed migrations
 var migrationRoot embed.FS
 

@@ -52,6 +52,10 @@ func Module() core.Module {
 				return core.Enablement{}, fmt.Errorf("%s: listening endpoint %q is named twice: %w",
 					ModuleName, name, ErrDuplicateEndpoint)
 			}
+			if name, twice := duplicateEndpoint(cfg.AddressEndpoints); twice {
+				return core.Enablement{}, fmt.Errorf("%s: listening endpoint %q is named twice in %s: %w",
+					ModuleName, name, addressEndpointsKey, ErrDuplicateEndpoint)
+			}
 			return stance(), nil
 		},
 
@@ -60,7 +64,9 @@ func Module() core.Module {
 			if err != nil {
 				return nil, err
 			}
-			return newLimiter(cfg.Endpoints), nil
+			l := newLimiter(cfg.Endpoints)
+			l.addressEndpoints = append([]string(nil), cfg.AddressEndpoints...)
+			return l, nil
 		},
 
 		// The layer is wired here and not in New: the entry point, settings and

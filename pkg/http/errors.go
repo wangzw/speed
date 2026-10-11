@@ -39,6 +39,19 @@ var (
 	// The text names every member of the cycle along with its own
 	// declarations.
 	ErrMiddlewareCycle = errors.New("http: middleware constraints form a cycle")
+	// ErrStageConflict reports an After or Before that points across stages in
+	// the direction the stage order already forbids: a layer in an earlier
+	// stage declares itself after a capability a later stage stands for, or the
+	// reverse. The stage order is the framework's, so this is not a position
+	// the caller can be given quietly — the constraint asks for the opposite of
+	// where the stages put the two layers.
+	//
+	// The text names both layers, both stages and the declaration, because the
+	// fix is one of two edits — move a layer to a stage that matches the
+	// constraint, or drop the constraint, which the stage boundary now covers
+	// on its own — and the reader can only choose with both positions in front
+	// of them.
+	ErrStageConflict = errors.New("http: middleware constraint contradicts the stage order")
 	// ErrInvalidSpec reports a declared OpenAPI fragment whose shape is not
 	// usable: empty, not UTF-8, not JSON, not an object at the top level, or
 	// an object without an openapi field. The content beyond that shape is

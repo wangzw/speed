@@ -13,13 +13,11 @@ import (
 	"github.com/gin-gonic/gin"
 	"gorm.io/gorm/clause"
 
-	"github.com/vislake/speed/pkg/audit"
 	"github.com/vislake/speed/pkg/authn"
 	"github.com/vislake/speed/pkg/core"
 	"github.com/vislake/speed/pkg/db"
 	speedhttp "github.com/vislake/speed/pkg/http"
 	"github.com/vislake/speed/pkg/log"
-	"github.com/vislake/speed/pkg/ratelimit"
 	"github.com/vislake/speed/pkg/tenant"
 )
 
@@ -255,26 +253,19 @@ func (*membersProduct) membersTable() {}
 // authenticates and names another tenant would otherwise read that tenant's
 // rows. This is where that is decided.
 //
-// Its anchors are the four layers it has to sit inside. The gateway and
-// resolution because it reads what they establish; the journal and the rate
-// limiter because its refusals are the ones most worth a record and most worth
-// counting — a caller probing tenants it does not belong to is refused here, and
-// a layer outside the journal refuses without a row. Anchoring on the first two
-// alone lands it outside the other two: once resolution is placed, this layer
-// and the journal are both free to go next, the smaller order sits further out,
-// and the journal's order is larger than the default this layer carries; the
-// limiter anchors on the journal itself, so it lands inside both.
+// It sits in the authorizing stage, which runs after identity and tenant are
+// settled and after the rate limiting stage, and inside the recording stage: a
+// caller probing tenants it does not belong to is refused here, and the stage
+// order is what puts the journal outside this layer, so the refusal gets a row.
+// It anchors nothing on the earlier layers — the stage supplies that order —
+// and it carries no After, because it has no same-stage neighbour to sit
+// inside.
 func (p *membersProduct) layer() speedhttp.Middleware {
 	return speedhttp.Middleware{
 		Name:     membersModuleName,
 		Provides: []core.Token{(*memberLayer)(nil)},
-		After: []core.Token{
-			(*authn.Gate)(nil),
-			(*tenant.Resolution)(nil),
-			(*audit.Audit)(nil),
-			(*ratelimit.Limiter)(nil),
-		},
-		Handler: p.admit,
+		Stage:    speedhttp.StageAuthorize,
+		Handler:  p.admit,
 	}
 }
 

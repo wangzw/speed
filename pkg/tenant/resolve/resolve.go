@@ -58,14 +58,6 @@ const diagnosticPrefix = "tenant: "
 // rather than one fixed here.
 var contextLogger = tenantctx.Logger{With: log.WithAttrs, Without: log.WithoutAttrs}
 
-// middlewareOrder places this layer where the constraints leave a choice.
-//
-// It is a preference, not a constraint. Where this layer has to sit is decided
-// by pointing at the authentication capability, which is what its own Provides
-// declares; this value only decides where it lands when authentication is not
-// in the assembly at all.
-const middlewareOrder = 90
-
 // The module registers itself. Importing this package is what puts tenant
 // resolution in a binary's available set; a host that never imports it carries
 // no resolution layer, whatever else of this capability it takes in.
@@ -322,18 +314,19 @@ func (r *resolver) seal() error {
 // under. That is the only anchor another layer has for placing itself inside or
 // outside tenant resolution, which makes it this contract surface on the chain.
 //
-// After points at the authentication capability, so the layer sits inside
-// authentication: a request that authentication refused never reaches here, and
-// neither does the roster lookup it would have driven. On an exempt route
-// authentication passes the request through without settling an identity, and
-// this layer still runs — which is what puts a tenant behind login and
-// registration, where it is needed most.
+// It sits in the identifying stage, alongside the authentication gateway. The
+// After points at the authentication capability, a constraint within the stage,
+// so the layer sits inside authentication: a request that authentication refused
+// never reaches here, and neither does the roster lookup it would have driven.
+// On an exempt route authentication passes the request through without settling
+// an identity, and this layer still runs — which is what puts a tenant behind
+// login and registration, where it is needed most.
 func (r *resolver) middlewareFor() speedhttp.Middleware {
 	return speedhttp.Middleware{
 		Name:     ModuleName,
 		Provides: []core.Token{(*tenant.Resolution)(nil)},
+		Stage:    speedhttp.StageIdentify,
 		After:    []core.Token{(*authn.Gate)(nil)},
-		Order:    middlewareOrder,
 		Handler:  r.handle,
 	}
 }

@@ -168,12 +168,13 @@ claim there has its case in `e2e_test.go` or a slice's own test file, or in
   `Key()`, so the rate limiter keeps one bucket per credential kind and the
   journal names the actor by the credential used: a consequence of the
   two-backend shape, not something the host corrects.
-- **A layer that must see the journal or the rate limiter anchors on them.**
-  The membership layer declares `After` on the gateway, resolution, the journal
-  and the limiter. Anchoring on the gateway and resolution alone leaves it
-  unordered against the journal and the limiter: its own zero `Order` is
-  smaller than the journal's, so it lands outside the journal, and outside the
-  limiter, which sits inside the journal. Its refusals would be neither
+- **A layer that must see the journal or the rate limiter declares a stage
+  inside them.** The membership layer declares `StageAuthorize`, the innermost
+  stage, so the journal's `StageRecord` and the limiter's `StageThrottle` both
+  run outside it and its refusals are recorded and counted. Where a layer sits
+  relative to those two is which stage it names, not an anchor it writes and not
+  a number: a layer naming an earlier stage — `StageGuard`, or `StageIdentify` —
+  would be outside one or both of them, and its refusals would be neither
   recorded nor counted.
 - **The journal covers the account and admin endpoints, which resolve no
   tenant.** Its layer anchors after resolution on every endpoint it is

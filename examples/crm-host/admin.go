@@ -61,14 +61,15 @@ type adminProduct struct {
 	passwords passwords
 }
 
-// layer is the operator check. It sits inside the gateway, because it reads the
-// identity the gateway established, and inside the journal, so a CRM user
-// knocking on the admin endpoint leaves a row.
+// layer is the operator check. It sits in the authorizing stage, so it runs
+// after the identity is settled, which it reads, and inside the recording
+// stage, so a CRM user knocking on the admin endpoint leaves a row. It needs
+// no anchor to reach either — the stage order supplies both.
 func (p *adminProduct) layer() speedhttp.Middleware {
 	return speedhttp.Middleware{
 		Name:     adminModuleName,
 		Provides: []core.Token{(*operatorLayer)(nil)},
-		After:    []core.Token{(*authn.Gate)(nil), (*audit.Audit)(nil)},
+		Stage:    speedhttp.StageAuthorize,
 		Handler: func(c *gin.Context) {
 			caller, ok := authn.FromContext(c.Request.Context())
 			if !ok {

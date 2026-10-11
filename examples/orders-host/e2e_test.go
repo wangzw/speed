@@ -1382,14 +1382,13 @@ func chainFor(t *testing.T, run *running, endpoint string) string {
 // limiting layer lands on an assembled endpoint.
 //
 // The layer registers itself on the endpoints the configuration names, so its
-// reach is configuration and not something every route gets. On the endpoint it
-// guards it sits inside authentication, tenant resolution and the journal:
-// those three are the anchors its own declaration carries, and an anchor whose
-// capability no layer on the endpoint stands for is dropped rather than
-// honoured. The chain listing is where the anchors are therefore readable as
-// positions that landed — a layer outside authentication reads no identity
-// string, and one outside resolution reads the limits of the shared layer
-// instead of the caller's tenant.
+// reach is configuration and not something every route gets. It sits in the
+// throttling stage, which runs after the identifying stage that settles the
+// identity and the tenant and before the recording stage, so on the endpoint it
+// guards it reads an identity and a tenant and its refusals are not journaled.
+// The chain listing is where that is read off — a layer outside the identifying
+// stage reads no identity string, and one outside the recording stage sits
+// outside the journal.
 func TestTheLimitingLayerSitsInsideTheGuards(t *testing.T) {
 	f := writeFixture(t)
 	f.migrate(t)
@@ -1401,7 +1400,7 @@ func TestTheLimitingLayerSitsInsideTheGuards(t *testing.T) {
 		t.Fatalf("the chain %q carries no %q layer, which the configuration names %q for",
 			chain, ratelimitModuleName, publicEndpoint)
 	}
-	for _, inside := range []string{gateModuleName, resolveModuleName, journalModuleName} {
+	for _, inside := range []string{gateModuleName, resolveModuleName} {
 		at := strings.Index(chain, inside)
 		if at < 0 {
 			t.Fatalf("the chain %q is missing the %q layer the limiter has to sit inside", chain, inside)
@@ -1410,6 +1409,9 @@ func TestTheLimitingLayerSitsInsideTheGuards(t *testing.T) {
 			t.Errorf("the chain %q puts %q outside %q, which it has to sit inside",
 				chain, ratelimitModuleName, inside)
 		}
+	}
+	if at := strings.Index(chain, journalModuleName); at < 0 || at <= limiter {
+		t.Errorf("the chain %q must put the journal inside the limiter, so a refused request is not recorded", chain)
 	}
 
 	// The endpoint the configuration does not name is served without the layer,
@@ -1423,8 +1425,8 @@ func TestTheLimitingLayerSitsInsideTheGuards(t *testing.T) {
 // TestTheLimitingLayerRefusesPastTheLimit is the case for the layer's decision
 // being reached at all. The limit is the value written for one tenant, and the
 // request past it is refused through the assembled chain: the answer is 429
-// with a Retry-After header, and the journal, which sits outside the layer,
-// captures the refusal.
+// with a Retry-After header. The journal runs inside the limiter here, so the
+// refusal is not captured: a refused request never reaches the recording stage.
 //
 // The tenant this case drives past the limit belongs to this case and to no
 // other case, and the seed is why. The seed writes this tenant's low row on
@@ -1466,28 +1468,6 @@ func TestTheLimitingLayerRefusesPastTheLimit(t *testing.T) {
 		t.Errorf("the refusal carries Retry-After %q, want a positive number of seconds", got)
 	}
 	requireProblem(t, "the refusal by the limiter", header)
-
-	// The request row is written once the inner chain has returned, so the
-	// table is read until the refusal turns up rather than once.
-	deadline := time.Now().Add(settleLimit)
-	for {
-		var captured bool
-		for _, row := range f.journal(t) {
-			if row.source == "request" && row.action == nethttp.MethodGet && row.object == ordersPath &&
-				row.outcome == strconv.Itoa(nethttp.StatusTooManyRequests) &&
-				row.tenant == limitedTenant {
-				captured = true
-			}
-		}
-		if captured {
-			return
-		}
-		if time.Now().After(deadline) {
-			t.Fatalf("the journal captured no request row for the refusal of %s on %s %s",
-				limitedTenant, nethttp.MethodGet, ordersPath)
-		}
-		time.Sleep(20 * time.Millisecond)
-	}
 }
 
 // TestTheLimitingRowCoversOneTenantAlone is the case for how far the row the

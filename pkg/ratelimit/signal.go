@@ -26,6 +26,14 @@ const (
 	reasonCounterIncrement  reason = "incrementing the current window's count failed"
 	reasonThresholdRead     reason = "reading the thresholds failed"
 	reasonThresholdDomain   reason = "the window or the limit is outside its domain"
+
+	// The shield's two classes. They are the quota's threshold classes for the
+	// second layer: a failed read of the shield's settings, and a value outside
+	// one of its domains. They are kept apart from the quota's because the two
+	// layers read different items on different paths, and one line for both
+	// would not say which layer stood aside.
+	reasonShieldRead   reason = "reading the address shield's thresholds failed"
+	reasonShieldDomain reason = "an address shield threshold is outside its domain"
 )
 
 // reasons is every class this module reports, named once so the per-class maps
@@ -37,6 +45,8 @@ var reasons = []reason{
 	reasonCounterIncrement,
 	reasonThresholdRead,
 	reasonThresholdDomain,
+	reasonShieldRead,
+	reasonShieldDomain,
 }
 
 // recoveryQuiet is how long a class has to go without failing before a

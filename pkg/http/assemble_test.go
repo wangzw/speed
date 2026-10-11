@@ -174,7 +174,7 @@ func TestARouteRunsItsHandlersInOrder(t *testing.T) {
 	tr := &trace{}
 	logger, _ := newRecordingLogger()
 	handler := mustAssemble(t, testSettings("public"), nil, logger, func(e Endpoint) {
-		e.Use(Middleware{Name: "layer", Handler: noteLayer(tr, "layer")})
+		e.Use(Middleware{Name: "layer", Stage: StageObserve, Handler: noteLayer(tr, "layer")})
 		e.Route("GET", "/things",
 			func(c *gin.Context) { tr.note("first"); c.Next() },
 			func(c *gin.Context) { tr.note("second"); c.Next() },
@@ -225,7 +225,7 @@ func TestALayerReadsTheOutcomeAfterNext(t *testing.T) {
 	var written bool
 	logger, _ := newRecordingLogger()
 	handler := mustAssemble(t, testSettings("public"), nil, logger, func(e Endpoint) {
-		e.Use(Middleware{Name: "observer", Handler: func(c *gin.Context) {
+		e.Use(Middleware{Name: "observer", Stage: StageObserve, Handler: func(c *gin.Context) {
 			c.Next()
 			status, size, written = c.Writer.Status(), c.Writer.Size(), c.Writer.Written()
 		}})
@@ -244,7 +244,7 @@ func TestALayerReadsTheOutcomeAfterNext(t *testing.T) {
 // declared the only way a registrant can declare one — through Use — reaches
 // the layer it points at.
 //
-// The two Order values are deliberately the wrong way round: left to Order
+// The two positions are deliberately the wrong way round: left to Position
 // alone the chain is "tenant" then "auth", and that is exactly what an
 // implementation whose provider index stays empty produces, whatever anyone
 // registers. Provides is what the After resolves against, so the constraint
@@ -255,15 +255,17 @@ func TestConstraintThroughUseOrdersAgainstItsProvider(t *testing.T) {
 	handler := mustAssemble(t, testSettings("public"), nil, logger, func(e Endpoint) {
 		e.Use(Middleware{
 			Name:     "auth",
-			Order:    10,
+			Stage:    StageIdentify,
+			Position: PositionLast,
 			Provides: []core.Token{(*capAuth)(nil)},
 			Handler:  noteLayer(tr, "auth"),
 		})
 		e.Use(Middleware{
-			Name:    "tenant",
-			Order:   0,
-			After:   []core.Token{(*capAuth)(nil)},
-			Handler: noteLayer(tr, "tenant"),
+			Name:     "tenant",
+			Stage:    StageIdentify,
+			Position: PositionFirst,
+			After:    []core.Token{(*capAuth)(nil)},
+			Handler:  noteLayer(tr, "tenant"),
 		})
 		e.Route("GET", "/things", filler)
 	})
@@ -272,7 +274,7 @@ func TestConstraintThroughUseOrdersAgainstItsProvider(t *testing.T) {
 
 	want := []string{"auth", "tenant"}
 	if got := tr.seen(); !slices.Equal(got, want) {
-		t.Errorf("the chain ran in the order %v, want %v: After outranks Order, and %v is what "+
+		t.Errorf("the chain ran in the order %v, want %v: After outranks Position, and %v is what "+
 			"comes out when the constraint finds nothing to bind to", got, want,
 			[]string{"tenant", "auth"})
 	}
@@ -286,10 +288,10 @@ func TestEmptyProvidesStaysLegal(t *testing.T) {
 	tr := &trace{}
 	logger, _ := newRecordingLogger()
 	handler := mustAssemble(t, testSettings("public"), nil, logger, func(e Endpoint) {
-		e.Use(Middleware{Name: "anonymous", Order: 0, Handler: noteLayer(tr, "anonymous")})
+		e.Use(Middleware{Name: "anonymous", Stage: StageObserve, Handler: noteLayer(tr, "anonymous")})
 		e.Use(Middleware{
 			Name:     "auth",
-			Order:    10,
+			Stage:    StageObserve,
 			Provides: []core.Token{(*capAuth)(nil)},
 			Handler:  noteLayer(tr, "auth"),
 		})
@@ -327,21 +329,25 @@ func TestUnlandedConstraintIsReported(t *testing.T) {
 	_, err := assembleEndpoint(t, testSettings("public"), nil, logger, func(e Endpoint) {
 		e.Use(Middleware{
 			Name:     "auth",
+			Stage:    StageIdentify,
 			Provides: []core.Token{(*capAuth)(nil)},
 			Handler:  passThrough,
 		})
 		e.Use(Middleware{
 			Name:    "tenant",
+			Stage:   StageIdentify,
 			After:   []core.Token{(*capAuth)(nil)},
 			Handler: passThrough,
 		})
 		e.Use(Middleware{
 			Name:    "audit",
+			Stage:   StageIdentify,
 			After:   []core.Token{(*capQuota)(nil)},
 			Handler: passThrough,
 		})
 		e.Use(Middleware{
 			Name:     "recover",
+			Stage:    StageIdentify,
 			Provides: []core.Token{(*capRecovery)(nil)},
 			After:    []core.Token{(*capRecovery)(nil)},
 			Handler:  passThrough,
@@ -357,7 +363,7 @@ func TestUnlandedConstraintIsReported(t *testing.T) {
 	written := strings.Join(append(slices.Clone(informed), warned...), "\n")
 	if len(informed)+len(warned) == 0 {
 		t.Fatal("nothing was written about the constraints that placed nothing, so the layers " +
-			"that declared them run where Order puts them with no signal at all")
+			"that declared them run where their stage and position put them with no signal at all")
 	}
 	if strings.Contains(written, "middleware=tenant") {
 		t.Errorf("the report lists tenant, whose constraint found a provider and placed it. "+
@@ -391,6 +397,66 @@ func TestUnlandedConstraintIsReported(t *testing.T) {
 			"the declaration is what is wrong")
 }
 
+// TestOrderingRemarksAreWrittenAtTheirOwnLevels pins that each cause reaches the
+// log with its own words at its own level: a cross-stage constraint the stage
+// order already satisfies is ordinary and written at Debug, and a preference two
+// layers of one stage both claimed is written at Info with both layers named.
+// Written with one message and one level for every cause, the stage-satisfied
+// remark would read as a constraint that landed on no layer — which it did not —
+// and the tied preference would be a warning with no constraint behind it.
+func TestOrderingRemarksAreWrittenAtTheirOwnLevels(t *testing.T) {
+	logger, records := newRecordingLogger()
+	_, err := assembleEndpoint(t, testSettings("public"), nil, logger, func(e Endpoint) {
+		// Two guard layers both ask for the outside of their stage: PositionFirst
+		// twice is the shared edge the design gives a line of its own.
+		e.Use(Middleware{Name: "edge", Stage: StageGuard, Position: PositionFirst, Handler: passThrough})
+		e.Use(Middleware{Name: "also-edge", Stage: StageGuard, Position: PositionFirst, Handler: passThrough})
+		// A constraint that crosses stages in the direction the stages already
+		// give: throttle sits inside identify, so this After repeats the boundary
+		// rather than asking for a position the boundary does not already give.
+		e.Use(Middleware{
+			Name:     "gate",
+			Stage:    StageIdentify,
+			Provides: []core.Token{(*capAuth)(nil)},
+			Handler:  passThrough,
+		})
+		e.Use(Middleware{
+			Name:    "quota",
+			Stage:   StageThrottle,
+			After:   []core.Token{(*capAuth)(nil)},
+			Handler: passThrough,
+		})
+		e.Route("GET", "/things", filler)
+	})
+	if err != nil {
+		t.Fatalf("assembly failed: %v", err)
+	}
+
+	satisfied := lineFor(records.at(slog.LevelDebug), "middleware=quota")
+	if satisfied == "" {
+		t.Fatalf("the cross-stage constraint the stage order already gives was not written at "+
+			"Debug; Debug carries\n%s", strings.Join(records.at(slog.LevelDebug), "\n"))
+	}
+	mustContain(t, satisfied, "already given by the stage order",
+		"the words of a constraint the boundary already satisfies, not the words of one that landed "+
+			"on no layer")
+	mustContain(t, satisfied, "cause="+string(causeStageSatisfied), "the cause of the remark")
+
+	tied := lineFor(records.at(slog.LevelInfo), "middleware=edge, also-edge")
+	if tied == "" {
+		t.Fatalf("the shared preference was not written at Info naming both layers; Info carries\n%s",
+			strings.Join(records.at(slog.LevelInfo), "\n"))
+	}
+	mustContain(t, tied, "registration order decided",
+		"the words of a shared preference, where a statement about a constraint would be wrong: two "+
+			"layers claiming one edge of a stage state no constraint")
+	mustContain(t, tied, "cause="+string(causeTiedPreference), "the cause of the remark")
+	if strings.Contains(tied, "capability=") {
+		t.Errorf("the tied-preference line carries a capability attribute, and the tie names no "+
+			"capability: %s", tied)
+	}
+}
+
 // TestALegalAssemblyStartsWithoutAWarning pins the shape a host with an
 // unguarded endpoint produces: a capturing layer declares itself inside
 // authentication and tenant resolution on every endpoint it guards, and one of
@@ -406,11 +472,13 @@ func TestALegalAssemblyStartsWithoutAWarning(t *testing.T) {
 	_, err := assembleEndpoint(t, testSettings("admin"), nil, logger, func(e Endpoint) {
 		e.Use(Middleware{
 			Name:     "gate",
+			Stage:    StageIdentify,
 			Provides: []core.Token{(*capAuth)(nil)},
 			Handler:  passThrough,
 		})
 		e.Use(Middleware{
 			Name:    "journal",
+			Stage:   StageIdentify,
 			After:   []core.Token{(*capAuth)(nil), (*capTenant)(nil)},
 			Handler: passThrough,
 		})
@@ -470,12 +538,14 @@ func TestCycleThroughUseFailsTheAssembly(t *testing.T) {
 	_, err := assembleEndpoint(t, testSettings("public"), nil, logger, func(e Endpoint) {
 		e.Use(Middleware{
 			Name:     "a",
+			Stage:    StageIdentify,
 			Provides: []core.Token{(*capAuth)(nil)},
 			After:    []core.Token{(*capTenant)(nil)},
 			Handler:  passThrough,
 		})
 		e.Use(Middleware{
 			Name:     "b",
+			Stage:    StageIdentify,
 			Provides: []core.Token{(*capTenant)(nil)},
 			After:    []core.Token{(*capAuth)(nil)},
 			Handler:  passThrough,
@@ -499,9 +569,9 @@ func TestChainOrderIsOutermostFirst(t *testing.T) {
 		// Registered innermost-first and with the preferences deciding, so
 		// an implementation running them in registration order gets the
 		// opposite of the right answer.
-		e.Use(Middleware{Name: "inner", Order: 10, Handler: noteLayer(tr, "inner")})
-		e.Use(Middleware{Name: "middle", Order: 0, Handler: noteLayer(tr, "middle")})
-		e.Use(Middleware{Name: "outer", Order: -10, Handler: noteLayer(tr, "outer")})
+		e.Use(Middleware{Name: "inner", Stage: StageObserve, Position: PositionLast, Handler: noteLayer(tr, "inner")})
+		e.Use(Middleware{Name: "middle", Stage: StageObserve, Handler: noteLayer(tr, "middle")})
+		e.Use(Middleware{Name: "outer", Stage: StageObserve, Position: PositionFirst, Handler: noteLayer(tr, "outer")})
 		e.Route("GET", "/things", noteHandler(tr, "handler"))
 	})
 
@@ -522,7 +592,7 @@ func TestALayerRegisteredAfterTheRoutesStillRunsForThem(t *testing.T) {
 	logger, _ := newRecordingLogger()
 	handler := mustAssemble(t, testSettings("public"), nil, logger, func(e Endpoint) {
 		e.Route("GET", "/things", noteHandler(tr, "handler"))
-		e.Use(Middleware{Name: "late", Handler: noteLayer(tr, "late")})
+		e.Use(Middleware{Name: "late", Stage: StageObserve, Handler: noteLayer(tr, "late")})
 	})
 
 	serveOnce(handler, nethttp.MethodGet, "/things")
@@ -533,10 +603,14 @@ func TestALayerRegisteredAfterTheRoutesStillRunsForThem(t *testing.T) {
 	}
 }
 
-// TestBodyLimitAppliedOutsideEveryLayer pins where the limit is imposed. Put in
-// a handler's own reading, it would not hold for a layer reading the body, nor
-// for a handler that parses the body itself.
-func TestBodyLimitAppliedOutsideEveryLayer(t *testing.T) {
+// TestBodyLimitIsAppliedFromTheIdentifyStageInwards pins where the limit is
+// imposed: inside the guard stage, so the first layer of the identify stage and
+// every layer below it read a bounded body. Put in a handler's own reading it
+// would not hold for a layer reading the body, nor for a handler that parses the
+// body itself; put in front of the guard stage, where it used to sit, it would
+// answer an oversize request before the address limit counted it and put the
+// 413 outside CORS.
+func TestBodyLimitIsAppliedFromTheIdentifyStageInwards(t *testing.T) {
 	logger, _ := newRecordingLogger()
 	s := testSettings("public")
 	s.maxBodyBytes = 8
@@ -544,24 +618,93 @@ func TestBodyLimitAppliedOutsideEveryLayer(t *testing.T) {
 	var readErr error
 	var read []byte
 	handler := mustAssemble(t, s, nil, logger, func(e Endpoint) {
-		e.Use(Middleware{Name: "outermost", Order: -100, Handler: func(c *gin.Context) {
+		e.Use(Middleware{Name: "identified", Stage: StageIdentify, Handler: func(c *gin.Context) {
 			read, readErr = io.ReadAll(c.Request.Body)
 			c.Next()
 		}})
 		e.Route("POST", "/things", filler)
 	})
 
-	body := strings.NewReader(strings.Repeat("x", 64))
+	// The body's length is not declared, so the body limit layer wraps it rather
+	// than refusing it outright; that is the path a layer reading the body is on.
+	body := io.NopCloser(strings.NewReader(strings.Repeat("x", 64)))
 	handler.ServeHTTP(httptest.NewRecorder(), httptest.NewRequest(nethttp.MethodPost, "/things", body))
 
 	var tooLarge *nethttp.MaxBytesError
 	if !errors.As(readErr, &tooLarge) {
-		t.Fatalf("the outermost layer read %d bytes with error %v; the limit was not imposed outside it",
-			len(read), readErr)
+		t.Fatalf("an identify-stage layer read %d bytes with error %v; the limit was not imposed "+
+			"outside it", len(read), readErr)
 	}
 	if tooLarge.Limit != s.maxBodyBytes {
 		t.Errorf("the limit imposed was %d, and the endpoint is configured with %d",
 			tooLarge.Limit, s.maxBodyBytes)
+	}
+}
+
+// TestGuardStageIsOutsideTheBodyLimit pins the place the body limit was moved
+// to. The design makes "CORS outside every layer that refuses" a measured
+// property, and the body limit refuses; the guard stage, whose first layer is
+// CORS, therefore has to run before it. Measured from both sides: the header a
+// guard layer sets is on the 413 the body limit writes, and it is on the 429 a
+// second guard layer writes, so neither a guard layer's refusal nor the body
+// limit's goes out without what the layer in front of it set. With the limit
+// outside the guard stage, as it was, the CORS layer never runs before the
+// refusal and a browser cannot read the 413.
+func TestGuardStageIsOutsideTheBodyLimit(t *testing.T) {
+	logger, _ := newRecordingLogger()
+	s := testSettings("public")
+	s.maxBodyBytes = 8
+
+	var corsRan, limitRan bool
+	handler := mustAssemble(t, s, nil, logger, func(e Endpoint) {
+		e.Use(Middleware{Name: "cors", Stage: StageGuard, Position: PositionFirst, Handler: func(c *gin.Context) {
+			corsRan = true
+			c.Header("Access-Control-Allow-Origin", "https://example.test")
+			c.Next()
+		}})
+		e.Use(Middleware{Name: "address-limit", Stage: StageGuard, Position: PositionLast, Handler: func(c *gin.Context) {
+			limitRan = true
+			if c.Request.URL.Path == "/limited" {
+				Fail(c, Problem{Status: nethttp.StatusTooManyRequests})
+				return
+			}
+			c.Next()
+		}})
+		e.Route("POST", "/things", filler)
+		e.Route("GET", "/limited", filler)
+	})
+
+	// A guard layer's refusal carries what the layer in front of it set.
+	limited := serveOnce(handler, nethttp.MethodGet, "/limited")
+	if limited.Code != nethttp.StatusTooManyRequests {
+		t.Fatalf("the address limit answered %d, want %d", limited.Code, nethttp.StatusTooManyRequests)
+	}
+	if limited.Header().Get("Access-Control-Allow-Origin") == "" {
+		t.Errorf("the 429 carries no Access-Control-Allow-Origin, so CORS was not in front of the " +
+			"address limit")
+	}
+
+	// The body limit's refusal carries it too: the body limit is inside the guard
+	// stage, behind the CORS layer, and the guard layers run before it.
+	corsRan, limitRan = false, false
+	body := strings.NewReader(strings.Repeat("x", 64))
+	oversized := httptest.NewRecorder()
+	handler.ServeHTTP(oversized, httptest.NewRequest(nethttp.MethodPost, "/things", body))
+	if oversized.Code != nethttp.StatusRequestEntityTooLarge {
+		t.Fatalf("an oversize declared body answered %d, want %d",
+			oversized.Code, nethttp.StatusRequestEntityTooLarge)
+	}
+	if oversized.Header().Get("Access-Control-Allow-Origin") == "" {
+		t.Errorf("the 413 carries no Access-Control-Allow-Origin, so the body limit was not placed " +
+			"inside the guard stage: outside CORS a browser cannot read the refusal")
+	}
+	if !corsRan {
+		t.Errorf("the cors layer did not run before the body limit refused, which is the same thing " +
+			"seen from the other side")
+	}
+	if !limitRan {
+		t.Errorf("the address limit did not run before the body limit refused, so an oversize request " +
+			"escapes the address limit; the body limit is in front of the guard stage")
 	}
 }
 
@@ -574,6 +717,10 @@ func TestBodyLimitAppliedOutsideEveryLayer(t *testing.T) {
 // The body is valid JSON that is longer than the limit, so the only thing wrong
 // with it is its size; and a body inside the limit binds, which is what keeps
 // the first half from being a binder that fails on everything.
+//
+// Its length is left undeclared, which is what puts the binding path under test:
+// a request that declares a length over the limit is refused with a 413 by the
+// body limit layer before the handler runs, and never reaches the binder.
 func TestAnOversizedBodyBindsAsAMaxBytesError(t *testing.T) {
 	logger, _ := newRecordingLogger()
 	s := testSettings("public")
@@ -590,7 +737,7 @@ func TestAnOversizedBodyBindsAsAMaxBytesError(t *testing.T) {
 	send := func(body string) {
 		bound.Name, bindErr = "", nil
 		handler.ServeHTTP(httptest.NewRecorder(),
-			httptest.NewRequest(nethttp.MethodPost, "/things", strings.NewReader(body)))
+			httptest.NewRequest(nethttp.MethodPost, "/things", io.NopCloser(strings.NewReader(body))))
 	}
 
 	send(`{"name":"` + strings.Repeat("x", 64) + `"}`)
@@ -641,7 +788,7 @@ func TestLoggerInjectedOutsideEveryLayer(t *testing.T) {
 
 	var seen *slog.Logger
 	handler := mustAssemble(t, testSettings("public"), injected, logger, func(e Endpoint) {
-		e.Use(Middleware{Name: "outermost", Order: -100, Handler: func(c *gin.Context) {
+		e.Use(Middleware{Name: "outermost", Stage: StageObserve, Handler: func(c *gin.Context) {
 			seen = log.FromContext(c.Request.Context())
 			c.Next()
 		}})
@@ -653,8 +800,9 @@ func TestLoggerInjectedOutsideEveryLayer(t *testing.T) {
 	if seen != injected {
 		t.Fatal("the outermost layer did not take the injected logger out of the request context")
 	}
-	seen.Info("written from the outermost layer")
-	if len(records.at(slog.LevelInfo)) != 1 {
+	const layerMsg = "written from the outermost layer"
+	seen.Info(layerMsg)
+	if _, written := records.first(layerMsg); !written {
 		t.Error("what the layer took out of the context does not write to the injected destination")
 	}
 }
@@ -679,24 +827,27 @@ func TestNoLoggerModuleLeavesContextUntouched(t *testing.T) {
 }
 
 // TestAssembledChainIsListed pins that the chain a run really serves is written
-// down at startup, in the order it runs, with the capabilities each registered
-// layer stands for. A process whose layer order can only be worked out by
-// sending a request through it is one where a mis-ordered chain is found by the
-// request that goes wrong, and a chain listing with the names alone cannot say
-// that a capability has no representative on the endpoint.
+// down at startup, in the order it runs, with the stage each registered layer
+// declared and the capabilities each stands for. A process whose layer order can
+// only be worked out by sending a request through it is one where a mis-ordered
+// chain is found by the request that goes wrong, and a chain listing with the
+// names alone cannot say that a capability has no representative on the
+// endpoint.
 //
-// The two layers this module puts around the registered ones are in the line as
-// well, by name: they are on no registration surface and stand for no
-// capability, and a reader comparing the line with the code would otherwise find
-// the body limit, the logger and the panic fallback applied by something the
-// line does not mention.
+// The built-in layers are in the line where they sit as well, by name: they are
+// on no registration surface and stand for no capability, and a reader comparing
+// the line with the code would otherwise find the context, the access log, the
+// panic recovery and the body limit applied by something the line does not
+// mention. The stage markers are what show that the access log sits outside the
+// observe stage and the recovery and the body limit inside it.
 func TestAssembledChainIsListed(t *testing.T) {
 	logger, records := newRecordingLogger()
 	mustAssemble(t, testSettings("public"), nil, logger, func(e Endpoint) {
-		e.Use(Middleware{Name: "inner", Order: 10, Handler: passThrough})
+		e.Use(Middleware{Name: "inner", Stage: StageObserve, Handler: passThrough})
 		e.Use(Middleware{
 			Name:     "outer",
-			Order:    -10,
+			Stage:    StageObserve,
+			Position: PositionFirst,
 			Provides: []core.Token{(*capAuth)(nil), (*capTenant)(nil)},
 			Handler:  passThrough,
 		})
@@ -704,11 +855,70 @@ func TestAssembledChainIsListed(t *testing.T) {
 	})
 
 	outer := "outer(" + typeName(reflect.TypeFor[capAuth]()) + ", " + typeName(reflect.TypeFor[capTenant]()) + ")"
+	wantChain := "chain=http:context -> holdAllow -> http:access-log -> [observe] " + outer +
+		" -> inner -> http:recovery -> http:body-limit"
 	written := strings.Join(records.at(slog.LevelInfo), "\n")
-	mustContain(t, written, "chain=http:base -> http:fallback -> "+outer+" -> inner",
-		"the chain in the order it runs, each registered layer with the capabilities it stands for")
+	mustContain(t, written, wantChain,
+		"the chain in the order it runs, the stage marker before each stage's layers and each "+
+			"registered layer with the capabilities it stands for")
 	mustContain(t, written, "endpoint=public", "the endpoint the chain belongs to")
 	mustContain(t, written, "routes=1", "the number of routes mounted")
+}
+
+// TestAnObserveLayerSeesARecoveredPanicAsANormalReturn names the property the
+// chain's order exists for. The recovery layer sits inside the observe stage, so
+// a layer of that stage sees a panicking handler as a request that returned
+// normally with a 500, not as a panic thrown past it. That is what an
+// observability layer needs: its span ends with the status that was written and
+// everything it measures after c.Next runs, where a recovery outside it would
+// end the span with no status and skip the measurements.
+func TestAnObserveLayerSeesARecoveredPanicAsANormalReturn(t *testing.T) {
+	logger, _ := newRecordingLogger()
+	var returned bool
+	var status int
+	handler := mustAssemble(t, testSettings("public"), nil, logger, func(e Endpoint) {
+		e.Use(Middleware{Name: "observer", Stage: StageObserve, Handler: func(c *gin.Context) {
+			c.Next()
+			returned, status = true, c.Writer.Status()
+		}})
+		e.Route("GET", "/things", panicking("boom"))
+	})
+
+	recorder := serveOnce(handler, nethttp.MethodGet, "/things")
+
+	if recorder.Code != nethttp.StatusInternalServerError {
+		t.Errorf("the client was answered %d, want %d", recorder.Code, nethttp.StatusInternalServerError)
+	}
+	if !returned || status != nethttp.StatusInternalServerError {
+		t.Errorf("the observe layer saw returned=%v status=%d, want a normal return with %d: the "+
+			"recovery layer has to sit inside the observe stage", returned, status,
+			nethttp.StatusInternalServerError)
+	}
+}
+
+// TestATrustedProxyMakesClientIPTakeTheForwardedHeader pins the other half of the
+// proxy configuration: with a network named, a request whose peer is inside it
+// has the client address taken from the forwarded header, which is what a rate
+// limiter or an audit trail behind a proxy needs. The default trusts nobody, and
+// TestClientIPDoesNotTakeForwardingHeaders pins that side.
+func TestATrustedProxyMakesClientIPTakeTheForwardedHeader(t *testing.T) {
+	var reported string
+	logger, _ := newRecordingLogger()
+	s := testSettings("public")
+	s.trustedProxies = []string{"192.0.2.0/24"}
+	handler := mustAssemble(t, s, nil, logger, func(e Endpoint) {
+		e.Route("GET", "/things", func(c *gin.Context) { reported = c.ClientIP() })
+	})
+
+	request := httptest.NewRequest(nethttp.MethodGet, "/things", nil)
+	request.RemoteAddr = "192.0.2.10:4711"
+	request.Header.Set("X-Forwarded-For", "203.0.113.9")
+	handler.ServeHTTP(httptest.NewRecorder(), request)
+
+	if reported != "203.0.113.9" {
+		t.Errorf("ClientIP reported %q for a request from a trusted proxy carrying a forwarded header, "+
+			"want the forwarded address", reported)
+	}
 }
 
 // equalStrings compares two sequences element by element.

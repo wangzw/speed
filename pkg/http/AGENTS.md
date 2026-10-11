@@ -3,8 +3,11 @@
 The HTTP entry point module, a wrapper of gin: the registration surface modules
 bind routes and middleware through, the `Spec` resource type they declare
 OpenAPI fragments as, and the error response every layer and handler writes
-through (`Problem`, `Fail`, the optional `ErrorResponder`). The root package
-registers the module, named `http`, when it is initialised.
+through (`Problem`, `Fail`, the optional `ErrorResponder`). A middleware layer
+declares the stage it belongs to, which is where the chain's cross-category
+order comes from, and the capability tokens it stands for, which is what another
+layer's constraints point at. The root package registers the module, named
+`http`, when it is initialised.
 
 ## Where the authority is
 
@@ -12,10 +15,12 @@ registers the module, named `http`, when it is initialised.
   [`docs/design/modules/design-http.md`](../../docs/design/modules/design-http.md).
 - The decisions behind it, one file per decision:
   [`docs/adr/`](../../docs/adr/) — `adr-http-surface-2026-09-14`,
-  `adr-http-middleware-2026-09-14`, `adr-http-routing-2026-09-14`,
-  `adr-http-endpoints-2026-09-14`, `adr-http-shutdown-2026-09-14`,
-  `adr-http-recovery-2026-09-22`, `adr-http-errors-2026-10-10`,
-  `adr-http-enumeration-2026-10-10`.
+  `adr-http-middleware-2026-09-14`, `adr-http-stages-2026-10-11`,
+  `adr-http-routing-2026-09-14`, `adr-http-endpoints-2026-09-14`,
+  `adr-http-shutdown-2026-09-14`, `adr-http-recovery-2026-09-22`,
+  `adr-http-body-limit-2026-10-11`, `adr-http-access-log-2026-10-11`,
+  `adr-http-errors-2026-10-10`, `adr-http-enumeration-2026-10-10`,
+  `adr-http-cors-2026-10-11`.
 - The API itself: the godoc in this package, and the runnable examples in
   `example_test.go`. Read `Middleware`'s field comments before adding a seat to
   a layer.
@@ -33,9 +38,13 @@ here must not cross, and how to run it.
   endpoints are read through its reader, so config's parsing libraries are in
   the closure too (ADR-config-parsing-2026-09-20). `deps_test.go` holds the
   budget — the standard library, this repository's modules, config's closure and
-  gin's closure, each read as it stands — and fails on the first package outside
-  it. An OpenAPI parsing library is such a package: `Spec` is checked for its
-  shape and nothing else.
+  gin's closure, each read as it stands — and the extra closure a subpackage
+  contributes when it bridges a library the root package does not reach. Every
+  such subpackage is named in the test's `subpackagesInBudget`, so one that
+  brings a library is a deliberate edit there rather than something a change
+  slips through; the `./...` scan is what forces it to be named. The test fails
+  on the first package outside the budget. An OpenAPI parsing library is such a
+  package: `Spec` is checked for its shape and nothing else.
 - **gin is the surface, and nothing wraps it.** A route's handlers and a
   layer's `Handler` are `gin.HandlerFunc`s, and routing, the middleware chain,
   body binding and validation, and rendering are gin's. A helper that decodes a
@@ -50,34 +59,31 @@ here must not cross, and how to run it.
   `TestGinsProcessWideSettings` re-executes the test binary (see `TestMain`).
 - **gin's recovery middleware is not installed.** It swallows
   `http.ErrAbortHandler` and ends the response as an empty 200. The panic
-  fallback is a `net/http` layer outside the engine, once per endpoint, and
-  lets `ErrAbortHandler` through. The assertion that matters is on a real
-  connection (`TestAnAbortedConnectionIsNotAnsweredAsASuccess`): a recorder has
-  no connection to abandon.
+  fallback is a gin handler on the engine, once per endpoint, inside the observe
+  stage and outside every layer that can refuse a request, and it lets
+  `ErrAbortHandler` through. A panic raised by an observe-stage layer itself
+  runs outside the fallback: it reaches `net/http`, which closes the connection
+  and writes a record through the endpoint's configured logger. The assertion
+  that matters is on a real connection
+  (`TestAnAbortedConnectionIsNotAnsweredAsASuccess`): a recorder has no
+  connection to abandon.
 - **Every error response goes through one place.** `Fail`, the answer to a
   request that matches no route, the answer to a disallowed method and the
   fallback's answer to a panic all end in `respondProblem`, which hands the
   `Problem` to the delivered `ErrorResponder` or writes the default shape. Code
   in this package that calls `WriteHeader` for an error itself is the shape to
-  reject. A response that has begun to go out is left as it is: `Fail` checks
-  the gin writer, and the fallback's `startedWriter` stands in for that check
-  outside the engine.
-- **A writer this package wraps keeps its optional interfaces, and claims no
-  more than the one underneath has.** `Flusher`, `Hijacker`, `CloseNotifier` and
-  `Unwrap` are forwarded by every layer that puts its own writer around the
-  connection's, and `Pusher` is handed down only when the writer underneath is
-  one: gin gives a handler a nil `Pusher` for a writer that is not, and handlers
-  test for it. A handler that asserts one of them on a writer that lost it fails
-  quietly: a stream arrives all at once, an upgrade cannot take the connection.
-  `engine_test.go` observes each on a real connection.
+  reject. A response that has begun to go out is left as it is: `Fail` and the
+  fallback both read gin's writer (`Context.Writer.Written`), and the fallback
+  writes its 500 only when nothing has been committed.
 - **Paths are in the form gin keeps them.** `Route` refuses, by panicking at
   the call, a path that gin would rewrite (`x`, `/a//b`, `/a/../b`), because a
   layer that compares `Context.FullPath` with the registered path — an
   authentication exemption, an audit match — would otherwise never match.
 - **No knowledge of any capability, and no interpretation of a layer.** The
-  ordering reads capability tokens and nothing else: a `switch` on a concrete
-  token, or anything else that reads what a layer stands for, is the shape to
-  reject.
+  ordering reads the declared stage and the capability tokens, and nothing else:
+  a `switch` on a concrete token, or anything else that reads what a layer
+  stands for, is the shape to reject. The stage is a category the layer itself
+  named, not a capability this module recognized.
 - **The root package registers the module at init time, and registering opens
   nothing.** `ModuleName` is the name a host takes the module into a command
   by; a module only takes part in a run when a command names it.
@@ -86,15 +92,50 @@ here must not cross, and how to run it.
   surface is expressed in gin's types; adding a declaration is a deliberate
   edit to that list rather than something a change slips through.
 
+## Stages
+
+A layer declares the stage it belongs to, and the chain runs the stages in the
+order they are declared — outermost first — so the boundary between two
+categories is fixed by this module and does not move when a module is added or
+removed. The stage is required: registration refuses the zero value and any
+value that is not a declared stage, because a layer that left it out would
+otherwise run in a category nobody chose.
+
+The stages, and what each lets the layers inside it rely on:
+
+- `StageObserve` sees every request and refuses none; it may time, trace and
+  bind fields into the context, and everything inside it relies on having been
+  reached by every request.
+- `StageGuard` protects without knowing the caller. By the time it runs a panic
+  is already answered and the body is not yet bounded — bounding starts at the
+  identify stage. It refuses on what it can see without reading the body: an
+  address, a header, a CORS preflight.
+- `StageIdentify` settles who the caller is and which tenant the request is for;
+  from here inwards the body is bounded. Its refusals are 401, 404 and 503.
+- `StageThrottle` applies quotas to an identity or a tenant that is already
+  settled; its refusal is 429.
+- `StageRecord` records what passed admission and refuses nothing, so a refusal
+  by an authorize layer inside it is recorded.
+- `StageAuthorize` decides on a settled identity; its refusals are seen by the
+  recording layers inside it.
+
+Within a stage, `After` and `Before` are hard constraints and `Position` is a
+preference that only picks among the positions they leave open. A cross-stage
+`After` or `Before` holds only when it agrees with the stage order; one that
+points against it fails the startup (`ErrStageConflict`), so the boundary cannot
+be moved by an edge.
+
 ## Shape of a module
 
 A module takes the `Router` capability up in its `Init` callback, looks a
 listening endpoint up by the name configuration gave it, and binds routes and
-middleware layers there. A layer states what it stands for with `Provides`, and
-the `After` and `Before` of the other layers name those statements: the fields
-belong together, and a layer that declares a position without saying what it
-stands for gives the next layer nothing to point at. A layer that refuses a
-request sets the response headers the refusal needs and then calls `Fail`.
+middleware layers there. A layer declares the stage it belongs to, and within
+that stage states what it stands for with `Provides`; the `After` and `Before`
+of the other layers name those statements. The fields belong together: a layer
+that declares a position without saying what it stands for gives the next layer
+nothing to point at, and a layer that leaves the stage out cannot be registered
+at all. A layer that refuses a request sets the response headers the refusal
+needs and then calls `Fail`.
 
 ```go
 package catalog
@@ -105,7 +146,7 @@ import (
 
 	"github.com/gin-gonic/gin"
 
-	"github.com/vislake/speed/pkg/audit"
+	"github.com/vislake/speed/pkg/authn"
 	"github.com/vislake/speed/pkg/core"
 	speedhttp "github.com/vislake/speed/pkg/http"
 )
@@ -131,16 +172,17 @@ func Module() core.Module {
 
 			endpoint.Route(http.MethodGet, "/things", listThings)
 
-			// The layer stands for this module's capability and belongs
-			// inside the middleware of the auditing module. The anchor is
-			// that module's own interface type, taken from its interface
-			// package: the ordering matches tokens by type identity, so an
-			// interface declared here with the same methods would be
-			// another type, stand for no layer, and place nothing.
+			// The layer belongs to the identifying stage and stands for this
+			// module's capability, so it sits inside the gate's middleware.
+			// The anchor is the gate module's own interface type, taken from
+			// its interface package: the ordering matches tokens by type
+			// identity, so an interface declared here with the same methods
+			// would be another type, stand for no layer, and place nothing.
 			endpoint.Use(speedhttp.Middleware{
 				Name:     "catalog-access",
+				Stage:    speedhttp.StageIdentify,
 				Provides: []core.Token{(*Catalog)(nil)},
-				After:    []core.Token{(*audit.Audit)(nil)},
+				After:    []core.Token{(*authn.Gate)(nil)},
 				Handler:  access,
 			})
 			return nil
