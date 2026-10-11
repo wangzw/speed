@@ -448,5 +448,6 @@ sequenceDiagram
 | 地址防护层：来源地址取键、令牌桶判定与按结果计费，超限时写出 429 | 已实现 | `pkg/ratelimit/address.go` `addressMiddleware`、`shield`、`addressKey`、`addressGuard`、`spend`、`retryAfterFor` |
 | 地址防护层的取值域与设置键表 | 已实现 | `pkg/ratelimit/address.go` `addressRateInDomain`、`addressBurstInDomain`、`addressPenaltyInDomain`、`shieldThresholds`；`pkg/ratelimit/ratelimit.go` `settingsSchema`、`defaults` |
 | 地址防护层的失败类别 | 已实现 | `pkg/ratelimit/signal.go` `reasonShieldRead`、`reasonShieldDomain` |
+| 计数的身份维度取责任键 `Key()`，冒充计在实际操作者名下，取不到身份的请求放行且不计数 | 已实现 | `pkg/ratelimit/limit.go` `handle`、`decide` |
 | 失败信号与共享计数 | 已实现 | `pkg/ratelimit/signal.go` `signal`、`settle`、`recoveryQuiet`、`whereSeen` |
 | 哨兵错误 | 已实现 | `pkg/ratelimit/errors.go` `ErrDuplicateEndpoint` |

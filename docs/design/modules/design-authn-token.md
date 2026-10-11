@@ -382,7 +382,7 @@ CREATE INDEX authn_refresh_tokens_expiry  ON authn_refresh_tokens (idle_expires_
 
 **构造 `Principal`。** `Principal` 在全部步骤通过之后构造，字段按令牌种类取值：
 
-| 令牌种类 | `Account` | `Actor` | `Session` | `Methods`、`Assurance`、`AuthTime` | `IdPAssured` | `Scope` |
+| 令牌种类 | `Account` | `Actor` | `Session` | `Methods`、`Assurance`、`AuthTime` | `IDPAssured` | `Scope` |
 |---|---|---|---|---|---|---|
 | 普通令牌 | `sub` | 零值 | `sid` | 取自会话行 | 取自会话行 | 空 |
 | service 种令牌 | `sub` | 零值 | `sid` | `Methods` 为 `[client-secret]`，`Assurance` 为 `AssuranceSingle`，`AuthTime` 取令牌的 `iat`；会话行里的认证时刻只在创建时写，不随每次换令牌更新 | 假 | 空 |

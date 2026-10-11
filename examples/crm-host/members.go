@@ -160,12 +160,12 @@ type memberLayer interface{ memberLayer() }
 // member is what the membership layer establishes about a request: which CRM
 // user is asking, in which tenant, in which role.
 //
-// UserID is the CRM principal. A CRM user authenticates through either of two
-// backends, so the identity's Key differs by credential — users/<id> for Basic,
-// sessions/<id> for a bearer token — and UserID is the same under both: it is
-// what a handler stores wherever a row records who acted. TenantID is for
-// answering with; a scoped row a handler writes names no tenant, because the
-// filter fills it from the request's context.
+// UserID is the CRM principal. A CRM user authenticates through the sessions
+// backend alone, with the bearer token a login issued, so the identity's
+// account, and its Key, is the user identifier: it is what a handler stores
+// wherever a row records who acted. TenantID is for answering with; a scoped
+// row a handler writes names no tenant, because the filter fills it from the
+// request's context.
 type member struct {
 	UserID   string
 	TenantID tenant.ID
@@ -293,8 +293,10 @@ func (p *membersProduct) admit(c *gin.Context) {
 	}
 	userID, isUser := userIDOf(caller)
 	if !isUser {
-		// An operator, or any identity no CRM backend issued, belongs to
-		// no tenant and is refused like a stranger.
+		// An operator, an account of the static table, belongs to no tenant
+		// and is refused like a stranger. The record carries the account and
+		// the backend that verified it, which the gateway puts on the context.
+		log.FromContext(ctx).Info(strangerRefusal)
 		writeError(c, nethttp.StatusForbidden, "the caller is not a member of this tenant")
 		return
 	}
@@ -312,6 +314,10 @@ func (p *membersProduct) admit(c *gin.Context) {
 	c.Request = c.Request.WithContext(ctx)
 	c.Next()
 }
+
+// strangerRefusal is the record the membership layer writes when it refuses an
+// identity that is no CRM user.
+const strangerRefusal = "the membership layer refused an identity that is no CRM user, which belongs to no tenant"
 
 // memberView is one membership as the API shows it.
 type memberView struct {

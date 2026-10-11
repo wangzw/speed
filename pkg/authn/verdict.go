@@ -15,24 +15,28 @@ import "github.com/vislake/speed/pkg/authn/internal/verdict"
 // surface: a backend answers, it does not inspect.
 type Verdict = verdict.Verdict
 
-// Authenticated answers that the credential holds for this subject.
+// Authenticated answers that the credential holds, and carries the facts the
+// backend claims about the caller.
 //
-// The subject has to be one this backend owns. The gateway checks that against
-// the ownership table it built and refuses the request otherwise, because a
-// backend owning a small corner of the subject space could else mint any
-// identity at all.
-func Authenticated(subject string) Verdict { return verdict.NewAuthenticated(subject) }
+// The principal is the backend's claim and not an identity: the gateway checks
+// it item by item — the shape and bounds of each field, that the account and
+// the actor fall inside the account namespace the backend declared in Accepts,
+// and that it names no actor, impersonation scope or SSO provider unless the
+// backend declared it may — and stamps an Identity from it only when all of
+// them hold. The principal is copied, so changing it after returning changes
+// nothing the gateway reads.
+func Authenticated(p Principal) Verdict { return verdict.NewAuthenticated(p) }
 
 // Denied answers that the credential does not hold.
 //
-// This is final: the request ends here and no other backend is asked. The cause
+// This is final: the request ends here, in a 401. The cause
 // reaches the log and changes nothing, so a backend cannot turn a wrong
 // password into an outage by choosing what to put in it.
 func Denied(cause error) Verdict { return verdict.NewDenied(cause) }
 
 // Unavailable answers that this backend cannot say right now.
 //
-// The subjects it owns are not handed to anyone else while it is in this state.
-// Taking them over would let the store that knows least decide, which is the
-// reading an account disabled in one place and stale in another turns on.
+// The request ends in a 503 and is never read as anonymous, not even on a route
+// that accepts a request with no credential: reading an outage as no credential
+// would let a caller who can make a backend fail walk past authentication.
 func Unavailable(cause error) Verdict { return verdict.NewUnavailable(cause) }

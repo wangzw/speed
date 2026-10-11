@@ -132,7 +132,7 @@ func (s *signal) settle(d decision) {
 // row is bad and not whose. It is where the failure was seen, not a claim that
 // the row belongs to that tenant — the read falls back to the global row and
 // the declared default. The counter classes add nothing: their key embeds the
-// identity string, which is not for this line to repeat.
+// accountability key, which is not for this line to repeat.
 func whereSeen(r reason, d decision) string {
 	if r != reasonThresholdRead && r != reasonThresholdDomain {
 		return ""

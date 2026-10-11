@@ -62,12 +62,13 @@ const streamLag = 200 * time.Millisecond
 const settleLimit = 5 * time.Second
 
 // The account every case authenticates with, and what a handler behind the
-// gateway sees. The qualification is asserted rather than elided: it is what a
-// policy written today stays right against when a second backend arrives.
+// gateway sees. The static prefix is asserted rather than elided: it is what a
+// policy written today stays right against, since no other backend may hand an
+// account back under it.
 const (
-	subject   = "alice"
-	password  = "s3cret"
-	qualified = "local/" + subject
+	subject  = "alice"
+	password = "s3cret"
+	account  = "static." + subject
 )
 
 // The tenants a case reaches for by alias. The two active ones differ in
@@ -88,6 +89,7 @@ const (
 // checking anything.
 const (
 	gateModuleName      = gate.ModuleName
+	staticModuleName    = static.ModuleName
 	resolveModuleName   = resolve.ModuleName
 	journalModuleName   = journal.ModuleName
 	ratelimitModuleName = ratelimit.ModuleName
@@ -251,15 +253,63 @@ type fixture struct {
 	ops    string
 }
 
-// writeFixture lays out a configuration naming both endpoints, the engine, both
-// guards and the three capture paths of the journal.
-func writeFixture(t *testing.T) *fixture {
-	t.Helper()
+// The two sections of authn a case composes. gateNarrowed is the one this host
+// ships with, which narrows the gateway from every endpoint to the public one;
+// the subject table is written by tableSection from whatever entries the case
+// hands it.
+const gateNarrowed = `  gate:
+    endpoints:
+      - public
+`
 
+// tableSection renders the subject table of authn.static, one line for each
+// entry in the order given, with every entry quoted as a YAML string. The
+// entries are written exactly as they are, since which form a case writes is
+// what it is about.
+func tableSection(entries ...subjectEntry) string {
+	var b strings.Builder
+	b.WriteString("  static:\n    subjects:\n")
+	for _, e := range entries {
+		fmt.Fprintf(&b, "      %s: %q\n", e.name, e.entry)
+	}
+	return b.String()
+}
+
+// subjectEntry is one line of the subject table: the name and the entry as the
+// table holds it.
+type subjectEntry struct {
+	name  string
+	entry string
+}
+
+// aliceTable is the table nearly every case runs with: the one account,
+// written the way the hash command writes it.
+func aliceTable(t *testing.T) string {
+	t.Helper()
 	hashed, err := static.Hash(password)
 	if err != nil {
 		t.Fatalf("deriving the password hash for this run: %v", err)
 	}
+	return tableSection(subjectEntry{subject, hashed})
+}
+
+// writeFixture lays out a configuration naming both endpoints, the engine, both
+// guards and the three capture paths of the journal. The gateway is narrowed to
+// the public endpoint, as this host's own configuration narrows it.
+func writeFixture(t *testing.T) *fixture {
+	t.Helper()
+	return writeFixtureWith(t, gateNarrowed+aliceTable(t))
+}
+
+// writeFixtureWith lays out the same configuration around the authn section a
+// case hands it, which is everything that goes under the authn key: the
+// gateway's section, if the case has one, and the subject table. Every other
+// module's section is here whatever the case is about, because the serving
+// command names those modules, and a run that cannot read one of their sections
+// would stop in that module's Prepare instead of the gateway's.
+func writeFixtureWith(t *testing.T, authnSection string) *fixture {
+	t.Helper()
+
 	dir := t.TempDir()
 	dbPath := filepath.Join(dir, "host.db")
 	public := freeAddress(t)
@@ -279,14 +329,7 @@ db:
   sqlite:
     dsn: %q
 authn:
-  gate:
-    endpoints:
-      - public
-  static:
-    name: local
-    subjects:
-      %s: %q
-tenant:
+%stenant:
   resolve:
     endpoints:
       - public
@@ -315,69 +358,15 @@ observability:
       batch-timeout: 200ms
     endpoints:
       - public
-`, public, ops, dbPath, subject, hashed, placedEventType)
+    events:
+      - %q
+`, public, ops, dbPath, authnSection, placedEventType, placedEventType)
 
 	configPath := filepath.Join(dir, "config.yaml")
 	if err := os.WriteFile(configPath, []byte(body), 0o600); err != nil {
 		t.Fatalf("writing the configuration: %v", err)
 	}
 	return &fixture{config: configPath, dbPath: dbPath, public: public, ops: ops}
-}
-
-// writeUnguardedFixture lays out the same configuration with no endpoint named
-// under the gateway, which is the shape a host must refuse to serve rather than
-// serving guarded routes unguarded.
-//
-// The rate limiting module's section is here for the same reason every other
-// one is: the serving command names that module, so a run it cannot read a
-// section for stops in its own Prepare. This fixture exists to stop in the
-// gateway's.
-func writeUnguardedFixture(t *testing.T) *fixture {
-	t.Helper()
-
-	hashed, err := static.Hash(password)
-	if err != nil {
-		t.Fatalf("deriving the password hash for this run: %v", err)
-	}
-	dir := t.TempDir()
-	dbPath := filepath.Join(dir, "host.db")
-	body := fmt.Sprintf(`http:
-  endpoints:
-    public:
-      address: %q
-    ops:
-      address: %q
-db:
-  sqlite:
-    dsn: %q
-authn:
-  gate:
-    endpoints: []
-  static:
-    name: local
-    subjects:
-      %s: %q
-tenant:
-  resolve:
-    endpoints:
-      - public
-    extractor: header
-    header-name: X-Tenant
-  catalog:
-    refresh-period: 0s
-ratelimit:
-  endpoints:
-    - public
-observability:
-  otel:
-    service-name: orders-host
-`, freeAddress(t), freeAddress(t), dbPath, subject, hashed)
-
-	configPath := filepath.Join(dir, "config.yaml")
-	if err := os.WriteFile(configPath, []byte(body), 0o600); err != nil {
-		t.Fatalf("writing the configuration: %v", err)
-	}
-	return &fixture{config: configPath, dbPath: dbPath}
 }
 
 // migrate runs the migration command and returns its output. A case asserts on
@@ -725,9 +714,9 @@ func TestGuardedRouteIsScopedToTheRequestTenant(t *testing.T) {
 	}
 	var got listing
 	decode(t, body, &got)
-	if got.Caller != qualified {
-		t.Errorf("the handler saw caller %q, want %q: the qualification is what a policy is written against",
-			got.Caller, qualified)
+	if got.Caller != account {
+		t.Errorf("the handler saw caller %q, want %q: the static prefix is what a policy is written against",
+			got.Caller, account)
 	}
 	if got.Tenant != acme {
 		t.Errorf("the handler saw tenant %q, want %q", got.Tenant, acme)
@@ -833,6 +822,236 @@ func TestAuthenticationRefusesBeforeResolution(t *testing.T) {
 			status, nethttp.StatusNotFound)
 	}
 	requireProblem(t, "the refusal by resolution", header)
+}
+
+// getAs builds one GET request that presents the given name and password as a
+// Basic credential, for the cases whose subject is the password and not the
+// name.
+func getAs(t *testing.T, base, path, tenantName, user, plaintext string) *nethttp.Request {
+	t.Helper()
+	r := get(t, base, path, tenantName, "")
+	r.SetBasicAuth(user, plaintext)
+	return r
+}
+
+// TestAPasswordThatDoesNotMatchIsRefusedWithTheBasicChallenge is the case for
+// the password table and the gateway working together on a real socket: a right
+// password passes, and a wrong one, an unknown name and no credential at all are
+// each refused as unauthenticated and each carry the challenge the one backend
+// that takes Basic writes, naming the guarded endpoint as the realm.
+//
+// The right password is the control. A gateway that let every credential
+// through, or a table that stopped comparing, would make the refusals 200, and
+// one that stopped writing the challenge would leave the header empty.
+func TestAPasswordThatDoesNotMatchIsRefusedWithTheBasicChallenge(t *testing.T) {
+	f := writeFixture(t)
+	f.migrate(t)
+	run := f.start(t)
+
+	if status, _, body := send(t, getAs(t, run.public, "/orders", acme, subject, password)); status != nethttp.StatusOK {
+		t.Fatalf("the right password answered %d, want 200: %s", status, body)
+	}
+
+	const challenge = `Basic realm="public"`
+	for name, r := range map[string]*nethttp.Request{
+		"a wrong password":     getAs(t, run.public, "/orders", acme, subject, password+"x"),
+		"an unknown name":      getAs(t, run.public, "/orders", acme, "nobody", password),
+		"no credential at all": get(t, run.public, "/orders", acme, ""),
+	} {
+		status, header, _ := send(t, r)
+		if status != nethttp.StatusUnauthorized {
+			t.Errorf("%s answered %d, want %d", name, status, nethttp.StatusUnauthorized)
+		}
+		if got := header.Values("WWW-Authenticate"); len(got) != 1 || got[0] != challenge {
+			t.Errorf("%s carries the challenge %q, want the one header %q", name, got, challenge)
+		}
+		requireProblem(t, name, header)
+	}
+}
+
+// TestRepeatedWrongPasswordsHoldTheNameBack is the case for the back-off being
+// in force on the assembled path. Past the free attempts a name is held back,
+// so the right password, which passed a moment before, is refused: what tells a
+// back-off that is in force from one that is not is that very answer.
+//
+// The six failures are the five free attempts and the one that starts the
+// back-off, whose first wait is two seconds. The case reads the answer at once
+// after the sixth, so it is well inside that wait.
+func TestRepeatedWrongPasswordsHoldTheNameBack(t *testing.T) {
+	f := writeFixture(t)
+	f.migrate(t)
+	run := f.start(t)
+
+	if status, _, body := send(t, getAs(t, run.public, "/orders", acme, subject, password)); status != nethttp.StatusOK {
+		t.Fatalf("before any failure the right password answered %d, want 200: %s", status, body)
+	}
+	for i := range 6 {
+		status, _, _ := send(t, getAs(t, run.public, "/orders", acme, subject, password+"x"))
+		if status != nethttp.StatusUnauthorized {
+			t.Fatalf("wrong password %d answered %d, want %d", i+1, status, nethttp.StatusUnauthorized)
+		}
+	}
+
+	status, header, _ := send(t, getAs(t, run.public, "/orders", acme, subject, password))
+	if status != nethttp.StatusUnauthorized {
+		t.Errorf("the right password after six wrong ones answered %d, want %d: the name is held back",
+			status, nethttp.StatusUnauthorized)
+	}
+	requireProblem(t, "the refusal of a name that is held back", header)
+}
+
+// legacyEntry is a password entry in the form older tables hold, written as it
+// was written then: no leading dollar sign, the iteration count on its own, and
+// no field names. It is a literal on purpose. A form this module still reads
+// but never writes can only be held to what it was by a string that was written
+// before, since nothing in the current code would produce one to compare with.
+// It is the entry of the password "s3cret".
+const legacyEntry = "pbkdf2-sha256$600000$BX9j3EiuLR4S79FTmjj9dw$2vKTCfw3Uq14KIrgIFfmxlzQ3AR17pdHLADoJPAoaCw"
+
+// The three subjects of the forms case, one for each form an entry is read in.
+const (
+	argonSubject  = subject
+	pbkdf2Subject = "bob"
+	legacySubject = "carol"
+)
+
+// writeFormsFixture lays out a configuration whose table holds the same password
+// in each of the three forms an entry is read in: Argon2id, which is what Hash
+// writes, PBKDF2 in the PHC form, which HashPBKDF2 writes, and the older form.
+//
+// The PBKDF2 entry is at 600000, the count OWASP recommends, so that the only
+// entry the startup has anything to say about is the one written the old way.
+func writeFormsFixture(t *testing.T) (*fixture, []subjectEntry) {
+	t.Helper()
+	argon, err := static.Hash(password)
+	if err != nil {
+		t.Fatalf("deriving the Argon2id entry: %v", err)
+	}
+	pbkdf2, err := static.HashPBKDF2(password, 600_000)
+	if err != nil {
+		t.Fatalf("deriving the PBKDF2 entry: %v", err)
+	}
+	entries := []subjectEntry{{argonSubject, argon}, {pbkdf2Subject, pbkdf2}, {legacySubject, legacyEntry}}
+	return writeFixtureWith(t, gateNarrowed+tableSection(entries...)), entries
+}
+
+// TestEveryFormOfPasswordEntryOpensTheGateForItsOwnAccount is the case for the
+// subject table reading all three forms through the assembled gateway. Each
+// subject is let in with the password its entry holds, answered as the account
+// the table gives it, and refused with a wrong one: the right password alone
+// would be passed by a table that stopped comparing, and the refusal alone by
+// one that stopped reading an entry of that form.
+func TestEveryFormOfPasswordEntryOpensTheGateForItsOwnAccount(t *testing.T) {
+	f, entries := writeFormsFixture(t)
+	f.migrate(t)
+	run := f.start(t)
+
+	for _, e := range entries {
+		t.Run(e.name, func(t *testing.T) {
+			status, _, body := send(t, getAs(t, run.public, "/orders", acme, e.name, password))
+			if status != nethttp.StatusOK {
+				t.Fatalf("the right password answered %d, want 200: %s", status, body)
+			}
+			var got listing
+			decode(t, body, &got)
+			if want := "static." + e.name; got.Caller != want {
+				t.Errorf("the handler saw caller %q, want %q: the account is the table's prefix and the subject",
+					got.Caller, want)
+			}
+
+			status, _, _ = send(t, getAs(t, run.public, "/orders", acme, e.name, password+"x"))
+			if status != nethttp.StatusUnauthorized {
+				t.Errorf("a wrong password answered %d, want %d", status, nethttp.StatusUnauthorized)
+			}
+		})
+	}
+}
+
+// TestOnlyTheEntryInTheOldFormIsWarnedAboutAndNoWarningHoldsAHash is the case for
+// what the startup says about the table. The entry in the older form is read and
+// named in one record at Warn, so that an operator knows which line to write
+// again; the other two say nothing; and nothing the run writes carries any part
+// of any entry, since a table is read from a file that may be checked in, but
+// what a run logs is shipped elsewhere.
+//
+// The count of warnings is half the assertion. A table that warned about every
+// entry would still have named the right one, and one that warned about none
+// would have no record to find; and a warning that carried the entry would be
+// found by the substrings of every entry.
+func TestOnlyTheEntryInTheOldFormIsWarnedAboutAndNoWarningHoldsAHash(t *testing.T) {
+	f, entries := writeFormsFixture(t)
+	f.migrate(t)
+	run := f.start(t)
+
+	var warned []record
+	for _, rec := range records(run.output()) {
+		if rec["level"] == "WARN" && rec["module"] == staticModuleName {
+			warned = append(warned, rec)
+		}
+	}
+	if len(warned) != 1 {
+		t.Fatalf("the table wrote %d warnings, want the one for the entry in the old form; the run wrote:\n%s",
+			len(warned), run.output())
+	}
+	if !strings.Contains(warned[0]["msg"], "old form") || warned[0]["entry"] != legacySubject {
+		t.Errorf("the warning is %v, want the one that names %q as written in the old form", warned[0], legacySubject)
+	}
+	if got, present := warned[0]["subject"]; present {
+		t.Errorf("the warning carries the field subject=%q, which the log does not use", got)
+	}
+
+	for _, e := range entries {
+		for _, part := range strings.FieldsFunc(e.entry, func(r rune) bool { return r == '$' || r == ',' }) {
+			// The short fields are the algorithm's name and its numbers,
+			// which the diagnostics are free to say.
+			if len(part) >= 16 && strings.Contains(run.output(), part) {
+				t.Errorf("the run's output carries a field of the entry of %q: %q", e.name, part)
+			}
+		}
+	}
+}
+
+// awaitRecord waits for a record that a request leaves behind and returns it. A
+// record is written by the host and read through a pipe, so one written an
+// instant before the response may not be readable at once.
+func awaitRecord(t *testing.T, run *running, msg string, attrs ...string) record {
+	t.Helper()
+	deadline := time.Now().Add(settleLimit)
+	for {
+		if rec, ok := findRecord(run.output(), msg, attrs...); ok {
+			return rec
+		}
+		if time.Now().After(deadline) {
+			t.Fatalf("no record %q with %q; the run wrote:\n%s", msg, attrs, run.output())
+		}
+		time.Sleep(20 * time.Millisecond)
+	}
+}
+
+// TestRecordsOfAnAuthenticatedRequestCarryTheAccountAndTheBackend is the case
+// for the fields the gateway puts on every record a request writes after it. The
+// layer that refuses a request for naming a tenant that is not on the roster
+// writes after authentication, and its record names the account, which is the
+// static prefix and the subject, and the backend that verified it. There is no
+// field named subject on it: a dashboard that searches the field by that name
+// finds nothing rather than finds the wrong thing.
+func TestRecordsOfAnAuthenticatedRequestCarryTheAccountAndTheBackend(t *testing.T) {
+	f := writeFixture(t)
+	f.migrate(t)
+	run := f.start(t)
+
+	if status, _ := call(t, run.public, "/orders", "nobody", subject); status != nethttp.StatusNotFound {
+		t.Fatalf("a tenant that is not on the roster was answered %d, want %d", status, nethttp.StatusNotFound)
+	}
+
+	rec := awaitRecord(t, run, "tenant: tenant.resolve: request refused", "name", "nobody")
+	if rec["account"] != account || rec["backend"] != "static" {
+		t.Errorf("the record carries account %q and backend %q, want %q and %q",
+			rec["account"], rec["backend"], account, "static")
+	}
+	if got, present := rec["subject"]; present {
+		t.Errorf("the record carries the field subject=%q, which the account field replaces", got)
+	}
 }
 
 // TestTheTwoTenantRefusalsAreOneAnswer is the case for the roster not being
@@ -1014,48 +1233,159 @@ func TestTheExemptedRouteNeedsNoCredential(t *testing.T) {
 	}
 }
 
-// TestAGuardedRouteWithNoGatewayStopsTheStartup is the case for the failure
-// this design treats as the worst one: a run that comes up with routes whose
-// guard is missing. Nothing about serving would report it — the routes answer,
-// the process lives — so the shape that reports it is a startup that refuses.
+// requireRefusedStartup runs the serving command on a configuration that has to
+// stop it, and returns what it wrote.
 //
-// The refusal comes from the gateway's own Prepare, and that is where it has to
-// come from now: a module taken in at run level must start, so the gateway
-// cannot stand itself down when it is given no endpoint to guard. It fails the
-// startup instead, naming itself and the input item that is missing, and the
-// guarded routes never reach the wire.
-func TestAGuardedRouteWithNoGatewayStopsTheStartup(t *testing.T) {
-	f := writeUnguardedFixture(t)
-	f.migrate(t)
-
+// The deadline is checked before the error: a process that served on until the
+// case killed it reports a non-nil error too, so "it failed and said the right
+// thing" is satisfied by a run that never refused anything.
+func requireRefusedStartup(t *testing.T, f *fixture) string {
+	t.Helper()
 	ctx, cancel := context.WithTimeout(context.Background(), waitLimit)
 	defer cancel()
 	cmd := exec.CommandContext(ctx, hostBinary, "serve", "--config", "file://"+f.config)
 	out, err := cmd.CombinedOutput()
-
-	// The deadline is checked before the error: a process that served on
-	// until the case killed it reports a non-nil error too, so "it failed
-	// and said the right thing" is satisfied by a run that never refused
-	// anything.
 	if ctx.Err() != nil {
-		t.Fatalf("the run was still serving when the case gave up; a configuration naming no endpoint to guard must refuse to start rather than serve:\n%s", out)
+		t.Fatalf("the run was still serving when the case gave up; this configuration must refuse "+
+			"to start rather than serve:\n%s", out)
 	}
 	if err == nil {
-		t.Fatalf("a configuration naming no endpoint to guard served anyway; it wrote:\n%s", out)
+		t.Fatalf("this configuration served anyway; it wrote:\n%s", out)
 	}
-	if !strings.Contains(string(out), `module "`+gateModuleName+`" Prepare:`) {
-		t.Errorf("the failure does not name the gateway as the module whose Prepare failed:\n%s", out)
-	}
-	if !strings.Contains(string(out), gateConfigNamespace+".endpoints") {
-		t.Errorf("the failure does not name the input item the gateway is missing:\n%s", out)
+	return string(out)
+}
+
+// TestAnEndpointListTheGatewayCannotUseStopsTheStartup is the case for the
+// failure this design treats as the worst one: a run that comes up with routes
+// whose guard is missing. Nothing about serving would report it — the routes
+// answer, the process lives — so the shape that reports it is a startup that
+// refuses.
+//
+// Two kinds of list are refused here, each for its own reason. An empty list
+// names no endpoint and would leave every route without a guard; the reserved
+// name written beside a named endpoint says the same thing twice, in either
+// order, and is a mistake to report. Neither is read as the default. Each
+// refusal comes from the gateway's own Prepare, naming the module and the input
+// item: a module taken in at run level must start, so the gateway cannot stand
+// itself down, and the guarded routes never reach the wire.
+func TestAnEndpointListTheGatewayCannotUseStopsTheStartup(t *testing.T) {
+	for name, list := range map[string]string{
+		"an empty list": "[]",
+		"the reserved name beside a named endpoint": `["*", public]`,
+		"a named endpoint beside the reserved name": `[public, "*"]`,
+	} {
+		t.Run(name, func(t *testing.T) {
+			f := writeFixtureWith(t, "  gate:\n    endpoints: "+list+"\n"+aliceTable(t))
+			out := requireRefusedStartup(t, f)
+
+			if !strings.Contains(out, `module "`+gateModuleName+`" Prepare:`) {
+				t.Errorf("the failure does not name the gateway as the module whose Prepare failed:\n%s", out)
+			}
+			if !strings.Contains(out, gateConfigNamespace+".endpoints") {
+				t.Errorf("the failure does not name the input item the gateway cannot use:\n%s", out)
+			}
+		})
 	}
 }
 
-// TestTheOpsEndpointNeedsNeitherGuard is the case for the second endpoint: the
-// health check is reached through neither authentication nor resolution,
-// because it sits where neither is configured rather than where it was
-// exempted.
-func TestTheOpsEndpointNeedsNeitherGuard(t *testing.T) {
+// TestTheGatewayGuardsEveryEndpointWhenNoneIsNamed is the case for the default
+// of authn.gate.endpoints. Left out, the key means every endpoint the entry
+// point declares, so the operations endpoint, which the host's own configuration
+// takes out of the gateway's reach by naming only the public one, is guarded
+// here: its health check answers 401 with no credential.
+//
+// The right credential is the control, since a gateway that refused everything
+// would pass the 401 alone. The chain listing and the diagnostics are the other
+// two readings of the same fact: the layer is on the operations endpoint's chain,
+// and the guarded endpoints are the two the entry point declares, written as the
+// default.
+func TestTheGatewayGuardsEveryEndpointWhenNoneIsNamed(t *testing.T) {
+	f := writeFixtureWith(t, aliceTable(t))
+	f.migrate(t)
+	run := f.start(t)
+
+	status, header, body := send(t, get(t, run.ops, "/health", "", ""))
+	if status != nethttp.StatusUnauthorized {
+		t.Errorf("the operations endpoint answered %d with no credential, want %d: with the key left out "+
+			"the gateway guards every endpoint; %s", status, nethttp.StatusUnauthorized, body)
+	}
+	requireProblem(t, "the refusal on the operations endpoint", header)
+	if got := header.Values("WWW-Authenticate"); len(got) != 1 || got[0] != `Basic realm="`+opsEndpoint+`"` {
+		t.Errorf("the refusal carries the challenge %q, want the one Basic challenge naming the "+
+			"operations endpoint as the realm", got)
+	}
+
+	status, body = call(t, run.ops, "/health", "", subject)
+	if status != nethttp.StatusOK {
+		t.Errorf("the operations endpoint answered %d to the right credential, want 200: %s", status, body)
+	}
+
+	if chain := chainFor(t, run, opsEndpoint); !strings.Contains(chain, gateModuleName) {
+		t.Errorf("the operations endpoint's chain %q lacks the gateway", chain)
+	}
+
+	guarded, ok := findRecord(run.output(), "authn: the endpoints this gateway guards")
+	if !ok {
+		t.Fatalf("the startup diagnostics do not name the guarded endpoints; the run wrote:\n%s", run.output())
+	}
+	listed := strings.Split(guarded["endpoints"], ", ")
+	sort.Strings(listed)
+	if want := []string{opsEndpoint, publicEndpoint}; !slicesEqual(listed, want) {
+		t.Errorf("the diagnostics list the guarded endpoints %q, want both of %q: the default is every endpoint",
+			listed, want)
+	}
+	if guarded["configured"] != "*" {
+		t.Errorf("the diagnostics give the configured endpoints as %q, want the default %q: the key was left out",
+			guarded["configured"], "*")
+	}
+}
+
+// slicesEqual reports whether two lists hold the same strings in the same order.
+func slicesEqual(a, b []string) bool {
+	if len(a) != len(b) {
+		return false
+	}
+	for i := range a {
+		if a[i] != b[i] {
+			return false
+		}
+	}
+	return true
+}
+
+// TestAStaticNameInTheConfigurationStopsTheLoad is the case for authn.static.name
+// being gone and not merely ignored. The table no longer owns a name: its
+// accounts are static.<subject> whatever a configuration says, so a key that
+// looks as though it decides the name and decides nothing is worse than a startup
+// that refuses. The configuration library refuses a key no module accepts, and
+// says which one.
+func TestAStaticNameInTheConfigurationStopsTheLoad(t *testing.T) {
+	hashed, err := static.Hash(password)
+	if err != nil {
+		t.Fatalf("deriving the password hash for this run: %v", err)
+	}
+	f := writeFixtureWith(t, gateNarrowed+"  static:\n    name: local\n    subjects:\n      "+subject+": "+
+		strconv.Quote(hashed)+"\n")
+
+	out := requireRefusedStartup(t, f)
+	if !strings.Contains(out, "authn.static.name") {
+		t.Errorf("the failure does not name the key that is no longer accepted:\n%s", out)
+	}
+	if strings.Contains(out, hashed) {
+		t.Errorf("the failure carries the password entry:\n%s", out)
+	}
+}
+
+// TestANarrowedGatewayLeavesTheOpsEndpointUnguarded is the case for the second
+// endpoint under this host's own configuration, which narrows the gateway from
+// every endpoint to the public one: the health check is reached through neither
+// authentication nor resolution, because the operations endpoint is outside the
+// list rather than exempted on it.
+//
+// The chain listing is the other reading of the same fact, and the one that
+// tells a narrowed list from a gateway that guards everything and exempts the
+// route: the gateway is not on that endpoint's chain at all.
+func TestANarrowedGatewayLeavesTheOpsEndpointUnguarded(t *testing.T) {
 	f := writeFixture(t)
 	f.migrate(t)
 	run := f.start(t)
@@ -1069,26 +1399,40 @@ func TestTheOpsEndpointNeedsNeitherGuard(t *testing.T) {
 	if got.Status != "ok" {
 		t.Errorf("the health check answered %q", got.Status)
 	}
+
+	if chain := chainFor(t, run, opsEndpoint); strings.Contains(chain, gateModuleName) {
+		t.Errorf("the operations endpoint's chain %q carries the gateway, which the configuration "+
+			"does not name it for", chain)
+	}
 }
 
 // TestTheStartupDiagnosticsListWhatWasFrozen is the case for what the gateway
-// reports about itself. The backends that turned up and the exemption table are
-// both frozen at startup and both named in the diagnostics, which is the only
-// place either is stated.
+// reports about itself. The backends that turned up, the endpoints that are
+// guarded and the exemption table are all settled at startup and all named in the
+// diagnostics, which is the only place any of them is stated.
 func TestTheStartupDiagnosticsListWhatWasFrozen(t *testing.T) {
 	f := writeFixture(t)
 	f.migrate(t)
 	run := f.start(t)
 
-	backends, ok := findRecord(run.output(), "authn: the credential-verifying backends taking part")
+	backend, ok := findRecord(run.output(), "authn: a credential-verifying backend taking part")
 	if !ok {
 		t.Fatalf("the startup diagnostics name no credential-verifying backend; the run wrote:\n%s", run.output())
 	}
-	if backends["backends"] != "local" {
-		t.Errorf("the diagnostics list the backends %q, want the one configured", backends["backends"])
+	if backend["backend"] != "static" || backend["schemes"] != "basic" || backend["accounts"] != "static." {
+		t.Errorf("the diagnostics name the backend %q taking %q with the accounts %q, want the static table "+
+			"taking Basic under the static prefix", backend["backend"], backend["schemes"], backend["accounts"])
+	}
+	guarded, ok := findRecord(run.output(), "authn: the endpoints this gateway guards")
+	if !ok {
+		t.Fatalf("the startup diagnostics do not name the guarded endpoints; the run wrote:\n%s", run.output())
+	}
+	if guarded["endpoints"] != publicEndpoint {
+		t.Errorf("the diagnostics list the guarded endpoints %q, want %q alone: the configuration narrows "+
+			"the default to the public endpoint", guarded["endpoints"], publicEndpoint)
 	}
 
-	frozen, ok := findRecord(run.output(), "authn: the exemption table, frozen")
+	frozen, ok := findRecord(run.output(), "authn: the exempt routes, frozen")
 	if !ok {
 		t.Fatalf("the startup diagnostics say nothing about the exemption table; the run wrote:\n%s", run.output())
 	}
@@ -1382,13 +1726,14 @@ func chainFor(t *testing.T, run *running, endpoint string) string {
 // limiting layer lands on an assembled endpoint.
 //
 // The layer registers itself on the endpoints the configuration names, so its
-// reach is configuration and not something every route gets. It sits in the
-// throttling stage, which runs after the identifying stage that settles the
-// identity and the tenant and before the recording stage, so on the endpoint it
-// guards it reads an identity and a tenant and its refusals are not journaled.
-// The chain listing is where that is read off — a layer outside the identifying
-// stage reads no identity string, and one outside the recording stage sits
-// outside the journal.
+// reach is configuration and not something every route gets. On the endpoint it
+// guards it sits inside authentication, tenant resolution and the journal:
+// those three are the anchors its own declaration carries, and an anchor whose
+// capability no layer on the endpoint stands for is dropped rather than
+// honoured. The chain listing is where the anchors are therefore readable as
+// positions that landed — a layer outside authentication reads no identity
+// string, and one outside resolution reads the limits of the shared layer
+// instead of the caller's tenant.
 func TestTheLimitingLayerSitsInsideTheGuards(t *testing.T) {
 	f := writeFixture(t)
 	f.migrate(t)
@@ -1400,7 +1745,7 @@ func TestTheLimitingLayerSitsInsideTheGuards(t *testing.T) {
 		t.Fatalf("the chain %q carries no %q layer, which the configuration names %q for",
 			chain, ratelimitModuleName, publicEndpoint)
 	}
-	for _, inside := range []string{gateModuleName, resolveModuleName} {
+	for _, inside := range []string{gateModuleName, resolveModuleName, journalModuleName} {
 		at := strings.Index(chain, inside)
 		if at < 0 {
 			t.Fatalf("the chain %q is missing the %q layer the limiter has to sit inside", chain, inside)
@@ -1409,9 +1754,6 @@ func TestTheLimitingLayerSitsInsideTheGuards(t *testing.T) {
 			t.Errorf("the chain %q puts %q outside %q, which it has to sit inside",
 				chain, ratelimitModuleName, inside)
 		}
-	}
-	if at := strings.Index(chain, journalModuleName); at < 0 || at <= limiter {
-		t.Errorf("the chain %q must put the journal inside the limiter, so a refused request is not recorded", chain)
 	}
 
 	// The endpoint the configuration does not name is served without the layer,
@@ -1425,8 +1767,8 @@ func TestTheLimitingLayerSitsInsideTheGuards(t *testing.T) {
 // TestTheLimitingLayerRefusesPastTheLimit is the case for the layer's decision
 // being reached at all. The limit is the value written for one tenant, and the
 // request past it is refused through the assembled chain: the answer is 429
-// with a Retry-After header. The journal runs inside the limiter here, so the
-// refusal is not captured: a refused request never reaches the recording stage.
+// with a Retry-After header, and the journal, which sits outside the layer,
+// captures the refusal.
 //
 // The tenant this case drives past the limit belongs to this case and to no
 // other case, and the seed is why. The seed writes this tenant's low row on
@@ -1468,6 +1810,28 @@ func TestTheLimitingLayerRefusesPastTheLimit(t *testing.T) {
 		t.Errorf("the refusal carries Retry-After %q, want a positive number of seconds", got)
 	}
 	requireProblem(t, "the refusal by the limiter", header)
+
+	// The request row is written once the inner chain has returned, so the
+	// table is read until the refusal turns up rather than once.
+	deadline := time.Now().Add(settleLimit)
+	for {
+		var captured bool
+		for _, row := range f.journal(t) {
+			if row.source == "request" && row.action == nethttp.MethodGet && row.object == ordersPath &&
+				row.outcome == strconv.Itoa(nethttp.StatusTooManyRequests) &&
+				row.tenant == limitedTenant {
+				captured = true
+			}
+		}
+		if captured {
+			return
+		}
+		if time.Now().After(deadline) {
+			t.Fatalf("the journal captured no request row for the refusal of %s on %s %s",
+				limitedTenant, nethttp.MethodGet, ordersPath)
+		}
+		time.Sleep(20 * time.Millisecond)
+	}
 }
 
 // TestTheLimitingRowCoversOneTenantAlone is the case for how far the row the
@@ -1729,13 +2093,15 @@ func TestTheLocatorBeforeTheCommandIsTheSameRun(t *testing.T) {
 }
 
 // TestHashAssemblesNothing is the case for the command an operator reaches for
-// before anything is running: it reads its input from standard input, writes a
-// hash the subject table accepts, and assembles no module at all.
+// before anything is running: it reads its input from standard input, writes an
+// entry the subject table accepts, and assembles no module at all.
 //
+// The entry is read twice. ParseHash is the shape: Argon2id in the PHC form,
+// which is what the command is to write, and within the bounds the table reads.
 // The round trip is what makes this an assertion rather than a spelling check:
-// the hash is parsed back through the same reader the subject table uses, so a
-// command that emitted something of the right shape and the wrong contents
-// fails here.
+// the entry goes into a table of a host that is run, and the password it was
+// made from is let in and another is not, so a command that emitted something of
+// the right shape and the wrong contents fails here.
 func TestHashAssemblesNothing(t *testing.T) {
 	cmd := exec.Command(hostBinary, "hash")
 	cmd.Stdin = strings.NewReader(password + "\n")
@@ -1744,8 +2110,73 @@ func TestHashAssemblesNothing(t *testing.T) {
 		t.Fatalf("hash failed: %v\n%s", err, out)
 	}
 	encoded := strings.TrimSpace(string(out))
-	if _, err := static.ParseHash(encoded); err != nil {
+	if err := static.ParseHash(encoded); err != nil {
 		t.Errorf("the subject table cannot read what the hash command wrote: %v (it wrote %q)", err, encoded)
+	}
+	if !strings.HasPrefix(encoded, "$argon2id$") {
+		t.Errorf("the hash command wrote %q, want an Argon2id entry in the PHC form", encoded)
+	}
+
+	f := writeFixtureWith(t, gateNarrowed+tableSection(subjectEntry{subject, encoded}))
+	f.migrate(t)
+	run := f.start(t)
+	if status, _, body := send(t, getAs(t, run.public, "/orders", acme, subject, password)); status != nethttp.StatusOK {
+		t.Errorf("the password the entry was made from answered %d, want 200: %s", status, body)
+	}
+	if status, _, _ := send(t, getAs(t, run.public, "/orders", acme, subject, password+"x")); status != nethttp.StatusUnauthorized {
+		t.Errorf("another password answered %d, want %d", status, nethttp.StatusUnauthorized)
+	}
+}
+
+// TestHashTakesTheWholeLineAsThePassword is the case for the entry being made
+// from the string the operator typed and from no other: a password may hold
+// spaces inside it and at either end, and a command that dropped them would write
+// an entry that the password typed does not open, with nothing said about it.
+//
+// Each entry goes into a table of a host that is run, and the whole line is let
+// in while the same line with its spaces cut is not.
+func TestHashTakesTheWholeLineAsThePassword(t *testing.T) {
+	for _, secret := range []string{"pass word", " leading", "trailing ", " both sides "} {
+		t.Run(strconv.Quote(secret), func(t *testing.T) {
+			cmd := exec.Command(hostBinary, "hash")
+			cmd.Stdin = strings.NewReader(secret + "\n")
+			out, err := cmd.CombinedOutput()
+			if err != nil {
+				t.Fatalf("hash failed: %v\n%s", err, out)
+			}
+			encoded := strings.TrimSpace(string(out))
+
+			f := writeFixtureWith(t, gateNarrowed+tableSection(subjectEntry{subject, encoded}))
+			f.migrate(t)
+			run := f.start(t)
+			if status, _, body := send(t, getAs(t, run.public, "/orders", acme, subject, secret)); status != nethttp.StatusOK {
+				t.Errorf("the line the entry was made from answered %d, want 200: %s", status, body)
+			}
+			if trimmed := strings.TrimSpace(secret); trimmed != secret {
+				if status, _, _ := send(t, getAs(t, run.public, "/orders", acme, subject, trimmed)); status != nethttp.StatusUnauthorized {
+					t.Errorf("the line with its surrounding spaces cut answered %d, want %d",
+						status, nethttp.StatusUnauthorized)
+				}
+			}
+		})
+	}
+}
+
+// TestHashRefusesAnEmptyLine is the case for the command saying so when there is
+// no password to derive from, rather than writing the entry of the empty string.
+func TestHashRefusesAnEmptyLine(t *testing.T) {
+	for name, input := range map[string]string{"a bare newline": "\n", "no input": "", "a carriage return": "\r\n"} {
+		t.Run(name, func(t *testing.T) {
+			cmd := exec.Command(hostBinary, "hash")
+			cmd.Stdin = strings.NewReader(input)
+			out, err := cmd.Output()
+			if err == nil {
+				t.Fatalf("hash accepted an empty password and wrote %q", out)
+			}
+			if strings.Contains(string(out), "$argon2id$") {
+				t.Errorf("hash wrote an entry for an empty password: %q", out)
+			}
+		})
 	}
 }
 
@@ -1779,17 +2210,17 @@ func TestAServedRequestProducesASpan(t *testing.T) {
 
 	// The batch processor hands the span over on its own schedule, so the case
 	// waits for the line rather than reading it straight away. The span is
-	// named for the method and the route the layer observed, and read as the
-	// name of an exported span, which nothing else in this run writes.
-	spanName := `"Name":"` + nethttp.MethodGet + " " + ordersPath + `"`
+	// named for the endpoint and the method the layer observed, which is a
+	// string nothing else in this run writes.
 	deadline := time.Now().Add(settleLimit)
 	for time.Now().Before(deadline) {
-		if strings.Contains(run.output(), spanName) {
+		if strings.Contains(run.output(), publicEndpoint+" GET") {
 			return
 		}
 		time.Sleep(20 * time.Millisecond)
 	}
-	t.Fatalf("no span named %s reached the export backend; the run wrote:\n%s", spanName, run.output())
+	t.Fatalf("no span named for the endpoint and the method reached the export backend; the run wrote:\n%s",
+		run.output())
 }
 
 // contains reports whether a string slice holds a value.

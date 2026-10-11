@@ -2,8 +2,8 @@ package gate
 
 import (
 	"context"
-	"encoding/base64"
 	"errors"
+	"log/slog"
 	nethttp "net/http"
 	"net/http/httptest"
 	"strings"
@@ -30,6 +30,7 @@ type arrival struct {
 	reached bool
 	id      identity.Identity
 	carried bool
+	access  authn.Access
 }
 
 // run puts one request through the gateway's layer on an endpoint and reports
@@ -42,7 +43,7 @@ func run(g *gateway, endpoint string, r *nethttp.Request) (*httptest.ResponseRec
 }
 
 // layerOn builds the gateway's layer for one endpoint, without serving
-// anything through it yet. The layer is assembled in Init, where the ownership
+// anything through it yet. The layer is assembled in Init, where the dispatch
 // table exists, so a case that wants to break the gateway's state has to build
 // the layer first and break it afterwards.
 func layerOn(g *gateway, endpoint string) (*gin.Engine, *arrival) {
@@ -57,14 +58,15 @@ func layerOn(g *gateway, endpoint string) (*gin.Engine, *arrival) {
 //
 // What a real chain does with a route — the path a request is matched to, the
 // order of the layers, the shape of a refusal the entry point writes — is not
-// held here: those cases run against the real entry point, in live_test.go.
+// held here by an engine that has no routes: the cases that need a route use
+// routedEngine, and the ones that need the entry point itself run against the
+// real one, in live_test.go.
 func engineWith(layer gin.HandlerFunc) (*gin.Engine, *arrival) {
 	seen := &arrival{}
 	engine := gin.New()
 	engine.Use(layer)
 	engine.NoRoute(func(c *gin.Context) {
-		seen.reached = true
-		seen.id, seen.carried = identity.From(c.Request.Context())
+		record(seen, c)
 		// A handler that writes nothing leaves the engine's own answer to a
 		// request with no route, a 404 and its body, in place.
 		c.Status(nethttp.StatusOK)
@@ -72,57 +74,92 @@ func engineWith(layer gin.HandlerFunc) (*gin.Engine, *arrival) {
 	return engine, seen
 }
 
-// TestARequestWithNoUsableCredentialIsRefusedByTheGateway holds the refusals
-// the gateway reaches without asking anybody.
+// record notes what a handler behind the gateway was handed.
+func record(seen *arrival, c *gin.Context) {
+	seen.reached = true
+	seen.id, seen.carried = identity.From(c.Request.Context())
+	seen.access = identity.AccessFrom(c.Request.Context())
+}
+
+// routedEngine is engineWith for the cases about routes: the gateway's layer in
+// front of the routes named, each a method and a path, whose handler records the
+// request. A request to anything else is answered by the engine's own 404 and
+// reaches only the layer.
+func routedEngine(g *gateway, endpoint string, routes ...[2]string) (*gin.Engine, *arrival) {
+	seen := &arrival{}
+	engine := gin.New()
+	engine.Use(g.middlewareFor(endpoint).Handler)
+	for _, r := range routes {
+		engine.Handle(r[0], r[1], func(c *gin.Context) {
+			record(seen, c)
+			c.Status(nethttp.StatusOK)
+		})
+	}
+	return engine, seen
+}
+
+// conclusionOf runs a request through the gateway with a recorder behind the
+// request's logger and returns the response with the one record the conclusion
+// wrote. A pass writes none, so the record is returned only for a refusal.
+func conclusionOf(t *testing.T, g *gateway, endpoint string, edit func(*nethttp.Request) *nethttp.Request) (*httptest.ResponseRecorder, slog.Record) {
+	t.Helper()
+	h := &recorder{}
+	w := httptest.NewRecorder()
+	engine, _ := layerOn(g, endpoint)
+	engine.ServeHTTP(w, edit(recorded(h, "GET", "/orders")))
+	return w, h.only(t)
+}
+
+// TestARequestWithNoUsableCredentialIsRefusedByTheGateway holds the refusals the
+// gateway reaches without asking anybody.
 //
 // Two Authorization headers is the case worth naming: picking one of them would
-// let a caller who can add a header choose which credential is judged, and
-// which one that is would be the header order.
+// let a caller who can add a header choose which credential is judged, and which
+// one that is would be the header order.
 func TestARequestWithNoUsableCredentialIsRefusedByTheGateway(t *testing.T) {
 	for _, c := range []struct {
 		name    string
 		prepare func(*nethttp.Request) *nethttp.Request
 	}{
-		{
-			name:    "no Authorization header",
-			prepare: func(r *nethttp.Request) *nethttp.Request { return r },
-		},
-		{
-			name: "an empty Authorization header",
-			prepare: func(r *nethttp.Request) *nethttp.Request {
-				r.Header.Set(authHeader, "   ")
-				return r
-			},
-		},
-		{
-			name: "two Authorization headers",
-			prepare: func(r *nethttp.Request) *nethttp.Request {
-				r.Header.Add(authHeader, "Basic YWxpY2U6c2VjcmV0")
-				r.Header.Add(authHeader, "Basic Ym9iOnNlY3JldA==")
-				return r
-			},
-		},
-		{
-			name: "a scheme nobody claims, carrying no readable subject",
-			prepare: func(r *nethttp.Request) *nethttp.Request {
-				r.Header.Set(authHeader, "Bearer an.opaque.token")
-				return r
-			},
-		},
-		{
-			name: "a Basic credential that is not base64",
-			prepare: func(r *nethttp.Request) *nethttp.Request {
-				r.Header.Set(authHeader, "Basic not-base64!")
-				return r
-			},
-		},
+		{"no credential at all", func(r *nethttp.Request) *nethttp.Request { return r }},
+		{"an empty Authorization header", func(r *nethttp.Request) *nethttp.Request {
+			r.Header.Set(authHeader, "")
+			return r
+		}},
+		{"a blank Authorization header", func(r *nethttp.Request) *nethttp.Request {
+			r.Header.Set(authHeader, "   ")
+			return r
+		}},
+		{"two Authorization headers", func(r *nethttp.Request) *nethttp.Request {
+			r.Header.Add(authHeader, "Basic YWxpY2U6c2VjcmV0")
+			r.Header.Add(authHeader, "Basic Ym9iOnNlY3JldA==")
+			return r
+		}},
+		{"two Authorization headers of one scheme and one that nobody takes", func(r *nethttp.Request) *nethttp.Request {
+			r.Header.Add(authHeader, "Basic YWxpY2U6c2VjcmV0")
+			r.Header.Add(authHeader, "Digest abc")
+			return r
+		}},
+		{"a scheme nobody takes", func(r *nethttp.Request) *nethttp.Request {
+			r.Header.Set(authHeader, "Digest an.opaque.token")
+			return r
+		}},
+		{"a scheme taken only as a cookie name", func(r *nethttp.Request) *nethttp.Request {
+			r.Header.Set(authHeader, "sid abc")
+			return r
+		}},
+		{"a cookie nobody takes", func(r *nethttp.Request) *nethttp.Request {
+			return withCookie(r, "other", "abc")
+		}},
 	} {
 		t.Run(c.name, func(t *testing.T) {
 			var asked atomic.Int64
-			backend := passes(enumerating("local", "alice"))
-			backend.asked = &asked
+			basic := passes(basicBackend("static", "static."))
+			basic.asked = &asked
+			cookie := passes(cookieBackend("session", "sid"))
+			cookie.asked = &asked
 
-			g := testGateway(t, []string{"public"}, backend)
+			g := testGateway(t, []string{"public"}, basic, cookie)
 			sealed(t, g, routerWith("public"))
 
 			w, seen := run(g, "public", c.prepare(request("GET", "/orders")))
@@ -134,456 +171,507 @@ func TestARequestWithNoUsableCredentialIsRefusedByTheGateway(t *testing.T) {
 				t.Error("the layer behind the gateway was reached by a request the gateway refused")
 			}
 			if asked.Load() != 0 {
-				t.Errorf("a backend was asked %d time(s) about a credential the gateway could not "+
-					"resolve an owner for, want none", asked.Load())
+				t.Errorf("a backend was asked %d time(s) about a request the gateway refused unread, want none", asked.Load())
 			}
 			if got := g.tally()["denied"]; got != 1 {
 				t.Errorf("the refusal was counted %d time(s) in the denied bucket, want 1", got)
 			}
-		})
-	}
-}
-
-// TestTheGatewayReadsASubjectOutOfBasicAndNothingElse holds the one credential
-// format this module understands by itself.
-//
-// Step 1 splits on whether a backend claims the credential's scheme whole. When
-// none does, the gateway has to read the subject, and it can only do that where
-// a standard fixes where the subject sits — Basic, and no other. A gateway that
-// guessed at another scheme's layout would hand a backend a subject read out of
-// a structure nobody promised, which is a silent misreading rather than a
-// refusal.
-//
-// The case is written with a credential that is valid base64 of user:password
-// under a scheme nobody claims. A malformed value would be refused for being
-// malformed, and would hold nothing about the scheme at all.
-func TestTheGatewayReadsASubjectOutOfBasicAndNothingElse(t *testing.T) {
-	readable := base64.StdEncoding.EncodeToString([]byte("alice:secret"))
-
-	for _, c := range []struct {
-		scheme string
-		want   int
-		why    string
-	}{
-		{"Basic", nethttp.StatusOK, "the one scheme a standard fixes the subject's place in"},
-		{"Digest", nethttp.StatusUnauthorized, "nobody claims it, and its value is not a " +
-			"base64 user:password however much it happens to look like one here"},
-		{"Bearer", nethttp.StatusUnauthorized, "the same, for the scheme most likely to be " +
-			"mistaken for one the gateway understands"},
-	} {
-		t.Run(c.scheme, func(t *testing.T) {
-			var asked atomic.Int64
-			backend := passes(enumerating("local", "alice"))
-			backend.asked = &asked
-
-			g := testGateway(t, []string{"public"}, backend)
-			sealed(t, g, routerWith("public"))
-
-			r := request("GET", "/orders")
-			r.Header.Set(authHeader, c.scheme+" "+readable)
-			w, _ := run(g, "public", r)
-
-			if w.Code != c.want {
-				t.Errorf("a %s credential answered %d, want %d: %s",
-					c.scheme, w.Code, c.want, c.why)
-			}
-			if c.want == nethttp.StatusUnauthorized && asked.Load() != 0 {
-				t.Errorf("a backend was asked %d time(s) about a scheme the gateway cannot "+
-					"read and nobody claimed, want none", asked.Load())
+			if w.Header().Get(challengeHeader) == "" {
+				t.Errorf("the refusal carries no %s header", challengeHeader)
 			}
 		})
 	}
 }
 
-// TestOwnershipIsPutToExactlyOneBackend holds the four-step sequence: which
-// backend is asked, and with what subject.
-//
-// The sequence is the whole of it. A credential that reaches the end of it
-// without an owner is refused, never handed to a backend picked some other way,
-// which is what stops one backend from answering about another's subjects.
-func TestOwnershipIsPutToExactlyOneBackend(t *testing.T) {
-	yes := func(context.Context, string) (bool, error) { return true, nil }
-	no := func(context.Context, string) (bool, error) { return false, nil }
-
-	t.Run("a scheme claimed whole reaches its claimant, which reads the subject itself",
-		func(t *testing.T) {
-			var handed string
-			issuer := claimingScheme("issuer", "Bearer")
-			issuer.verify = func(_ context.Context, subject string, c authn.Credential) authn.Verdict {
-				handed = subject
-				return authn.Authenticated("carol")
-			}
-
-			g := testGateway(t, []string{"public"}, issuer, passes(enumerating("local", "alice")))
-			sealed(t, g, routerWith("public"))
-
-			r := request("GET", "/orders")
-			r.Header.Set(authHeader, "Bearer an.opaque.token")
-			w, seen := run(g, "public", r)
-
-			if w.Code != nethttp.StatusOK {
-				t.Fatalf("the request answered %d, want %d", w.Code, nethttp.StatusOK)
-			}
-			if handed != "" {
-				t.Errorf("the gateway handed the subject %q to a backend that claims the scheme "+
-					"whole, want none: that backend reads the subject out of the credential",
-					handed)
-			}
-			if seen.id.Owner() != "issuer" {
-				t.Errorf("the identity is owned by %q, want the backend that claimed the scheme",
-					seen.id.Owner())
-			}
-		})
-
-	t.Run("a subject naming its owner reaches that owner, with the name stripped",
-		func(t *testing.T) {
-			var handed string
-			second := enumerating("second", "alice")
-			second.verify = func(_ context.Context, subject string, _ authn.Credential) authn.Verdict {
-				handed = subject
-				return authn.Authenticated(subject)
-			}
-
-			g := testGateway(t, []string{"public"},
-				passes(enumerating("first", "bob")), second)
-			sealed(t, g, routerWith("public"))
-
-			w, seen := run(g, "public",
-				withBasic(request("GET", "/orders"), "second/alice", "secret"))
-
-			if w.Code != nethttp.StatusOK {
-				t.Fatalf("the request answered %d, want %d", w.Code, nethttp.StatusOK)
-			}
-			if handed != "alice" {
-				t.Errorf("the backend was asked about %q, want the bare subject", handed)
-			}
-			if got := seen.id.Key(); got != "second/alice" {
-				t.Errorf("the identity reads %q, want the qualified form", got)
-			}
-		})
-
-	t.Run("a subject naming an owner no backend reports is refused", func(t *testing.T) {
-		var asked atomic.Int64
-		backend := passes(enumerating("local", "alice"))
-		backend.asked = &asked
-
-		g := testGateway(t, []string{"public"}, backend)
-		sealed(t, g, routerWith("public"))
-
-		w, _ := run(g, "public", withBasic(request("GET", "/orders"), "absent/alice", "secret"))
-
-		if w.Code != nethttp.StatusUnauthorized {
-			t.Errorf("the request answered %d, want %d", w.Code, nethttp.StatusUnauthorized)
-		}
-		if asked.Load() != 0 {
-			t.Errorf("a backend was asked %d time(s) about a subject qualified with another "+
-				"backend's name, want none", asked.Load())
-		}
-	})
-
-	t.Run("an enumerated subject reaches the backend that wrote it out", func(t *testing.T) {
-		var otherAsked atomic.Int64
-		other := passes(enumerating("other", "bob"))
-		other.asked = &otherAsked
-
-		g := testGateway(t, []string{"public"}, passes(enumerating("local", "alice")), other)
-		sealed(t, g, routerWith("public"))
-
-		w, seen := run(g, "public", withBasic(request("GET", "/orders"), "alice", "secret"))
-
-		if w.Code != nethttp.StatusOK {
-			t.Fatalf("the request answered %d, want %d", w.Code, nethttp.StatusOK)
-		}
-		if seen.id.Owner() != "local" {
-			t.Errorf("the identity is owned by %q, want the backend that enumerated the subject",
-				seen.id.Owner())
-		}
-		if otherAsked.Load() != 0 {
-			t.Errorf("the backend that did not claim the subject was asked %d time(s), want none",
-				otherAsked.Load())
-		}
-	})
-
-	t.Run("a bare subject exactly one open claim owns reaches that claim", func(t *testing.T) {
-		owner := openly("directory", yes)
-		owner.verify = func(_ context.Context, subject string, _ authn.Credential) authn.Verdict {
-			return authn.Authenticated(subject)
-		}
-
-		g := testGateway(t, []string{"public"}, owner, openly("elsewhere", no))
-		sealed(t, g, routerWith("public"))
-
-		w, seen := run(g, "public", withBasic(request("GET", "/orders"), "dave", "secret"))
-
-		if w.Code != nethttp.StatusOK {
-			t.Fatalf("the request answered %d, want %d", w.Code, nethttp.StatusOK)
-		}
-		if got := seen.id.Key(); got != "directory/dave" {
-			t.Errorf("the identity reads %q, want the open claimant's qualification", got)
-		}
-	})
-
-	t.Run("a bare subject no open claim owns is refused", func(t *testing.T) {
-		g := testGateway(t, []string{"public"}, openly("directory", no))
-		sealed(t, g, routerWith("public"))
-
-		w, _ := run(g, "public", withBasic(request("GET", "/orders"), "nobody", "secret"))
-
-		if w.Code != nethttp.StatusUnauthorized {
-			t.Errorf("the request answered %d, want %d", w.Code, nethttp.StatusUnauthorized)
-		}
-	})
-}
-
-// TestQualifyingASubjectPicksTheBackendWithoutGrantingItAuthority holds the
-// difference between disambiguating and escalating.
-//
-// The owner-qualified writing form exists so a caller under several backends can
-// say which one it belongs to. It must not be able to do more than that: if
-// naming a backend were enough to reach it, a caller could take a subject the
-// gateway would refuse outright — nobody claims it — and get it put to a backend
-// by prefixing a name it can guess. Exit binding would not catch that, because
-// the subject a backend returns on this path is the subject it was asked about,
-// so the only thing standing here is the ownership check itself.
-func TestQualifyingASubjectPicksTheBackendWithoutGrantingItAuthority(t *testing.T) {
-	owns := func(_ context.Context, subject string) (bool, error) {
-		return subject == "dave", nil
-	}
-
-	for _, c := range []struct {
-		name    string
-		written string
-		want    int
-		why     string
-	}{
-		{
-			name:    "a subject the named backend enumerated",
-			written: "local/alice",
-			want:    nethttp.StatusOK,
-			why:     "the qualification is what the writing form is for",
-		},
-		{
-			name:    "a subject the named backend answers for openly",
-			written: "directory/dave",
-			want:    nethttp.StatusOK,
-			why:     "an open claim answers ownership for itself, qualified or not",
-		},
-		{
-			name:    "a subject the named backend does not claim",
-			written: "local/mallory",
-			want:    nethttp.StatusUnauthorized,
-			why: "naming a backend must not reach it with a subject it is not the " +
-				"authority for — bare mallory is refused, and the prefix must not change that",
-		},
-		{
-			name:    "a subject the named open claim says is not its own",
-			written: "directory/mallory",
-			want:    nethttp.StatusUnauthorized,
-			why:     "the open claim answered no, and the qualification does not overrule it",
-		},
-		{
-			name:    "a subject qualified with a backend that claims only a scheme",
-			written: "issuer/admin",
-			want:    nethttp.StatusUnauthorized,
-			why: "a whole-scheme claim says which credentials come here, not which " +
-				"subjects belong here, so it is the authority for none of them",
-		},
-	} {
-		t.Run(c.name, func(t *testing.T) {
-			directory := openly("directory", owns)
-			directory.verify = func(_ context.Context, subject string, _ authn.Credential) authn.Verdict {
-				return authn.Authenticated(subject)
-			}
-
-			g := testGateway(t, []string{"public"},
-				passes(enumerating("local", "alice")),
-				directory,
-				passes(claimingScheme("issuer", "Bearer")))
-			sealed(t, g, routerWith("public"))
-
-			w, _ := run(g, "public", withBasic(request("GET", "/orders"), c.written, "secret"))
-			if w.Code != c.want {
-				t.Errorf("%q answered %d, want %d: %s", c.written, w.Code, c.want, c.why)
-			}
-		})
-	}
-}
-
-// TestABareSubjectAndItsQualifiedFormAgree holds the two writing forms against
-// each other. A subject the gateway refuses bare must stay refused however it is
-// qualified, and one it admits bare must be admitted qualified — otherwise the
-// qualification is a second, weaker way in.
-func TestABareSubjectAndItsQualifiedFormAgree(t *testing.T) {
-	for _, subject := range []string{"alice", "mallory"} {
-		t.Run(subject, func(t *testing.T) {
-			bare := testGateway(t, []string{"public"}, passes(enumerating("local", "alice")))
-			sealed(t, bare, routerWith("public"))
-			bareCode, _ := run(bare, "public", withBasic(request("GET", "/orders"), subject, "secret"))
-
-			named := testGateway(t, []string{"public"}, passes(enumerating("local", "alice")))
-			sealed(t, named, routerWith("public"))
-			namedCode, _ := run(named, "public",
-				withBasic(request("GET", "/orders"), "local/"+subject, "secret"))
-
-			if bareCode.Code != namedCode.Code {
-				t.Errorf("%q answers %d bare and %d as local/%s; the qualification says which "+
-					"backend, never whether", subject, bareCode.Code, namedCode.Code, subject)
-			}
-		})
-	}
-}
-
-// TestTwoOpenClaimsOnOneSubjectAreRefusedWithTheWayOut holds the overlap the
-// build could not detect, and the one thing the log line has to carry.
-//
-// Nothing else in the process can tell the operator which backends collided or
-// how to get past it, so the refusal names both and gives the qualified form
-// that resolves it.
-func TestTwoOpenClaimsOnOneSubjectAreRefusedWithTheWayOut(t *testing.T) {
-	yes := func(context.Context, string) (bool, error) { return true, nil }
-
-	g := testGateway(t, []string{"public"}, openly("first", yes), openly("second", yes))
+// TestAGatewayRefusalIsChargedToTheGatewayAtInfo holds the attribution of what
+// the gateway refuses on its own: it is the gateway's judgement, not a backend's,
+// and it is ordinary traffic.
+func TestAGatewayRefusalIsChargedToTheGatewayAtInfo(t *testing.T) {
+	g := testGateway(t, []string{"public"}, passes(basicBackend("static", "static.")), passes(cookieBackend("session", "sid")))
 	sealed(t, g, routerWith("public"))
 
-	// The request path is held first, then the refusal itself is read for
-	// the attributes that only reach the log.
-	w, seen := run(g, "public", withBasic(request("GET", "/orders"), "dave", "secret"))
-	if w.Code != nethttp.StatusUnauthorized {
-		t.Errorf("a subject two open claims both own answered %d, want %d",
-			w.Code, nethttp.StatusUnauthorized)
-	}
-	if seen.reached {
-		t.Error("the layer behind the gateway was reached by a subject with two authorities")
-	}
-
-	deny := mustRefuse(t, g, "dave")
-	if deny.status != nethttp.StatusUnauthorized {
-		t.Errorf("the refusal answers %d, want %d", deny.status, nethttp.StatusUnauthorized)
-	}
-	if deny.backend != "" {
-		t.Errorf("the refusal is charged to %q, want the gateway: the judgement is the "+
-			"ownership table's, and the table is the gateway's", deny.backend)
-	}
-	rendered := renderAttrs(deny.attrs)
-	for _, want := range []string{"first", "second", "first/dave", "second/dave"} {
-		if !strings.Contains(rendered, want) {
-			t.Errorf("the refusal's attributes read %q and do not carry %q; nothing else in the "+
-				"process can tell the operator who collided or how to get past it",
-				rendered, want)
-		}
-	}
-}
-
-// TestAnOpenClaimThatCannotAnswerEndsTheRequestAsAnOutage holds the one place a
-// failure must not be read as a "no".
-//
-// A claim that could not be asked is not a claim that said the subject is not
-// its own. Reading it as one would hand that backend's subjects to whoever
-// answers next, which is an authentication decision made by a backend that was
-// never consulted.
-func TestAnOpenClaimThatCannotAnswerEndsTheRequestAsAnOutage(t *testing.T) {
-	yes := func(context.Context, string) (bool, error) { return true, nil }
-
-	for _, c := range []struct {
-		name string
-		owns func(context.Context, string) (bool, error)
-	}{
-		{
-			name: "the claim reports an error",
-			owns: func(context.Context, string) (bool, error) {
-				return false, errors.New("the directory is unreachable")
-			},
+	for name, edit := range map[string]func(*nethttp.Request) *nethttp.Request{
+		"no credential": func(r *nethttp.Request) *nethttp.Request { return r },
+		"an unclaimed scheme": func(r *nethttp.Request) *nethttp.Request {
+			r.Header.Set(authHeader, "Digest x")
+			return r
 		},
-		{
-			name: "the claim panics",
-			owns: func(context.Context, string) (bool, error) {
-				panic("the directory client is nil")
-			},
+		"a cookie twice": func(r *nethttp.Request) *nethttp.Request {
+			return withCookie(withCookie(r, "sid", "a"), "sid", "b")
 		},
 	} {
-		t.Run(c.name, func(t *testing.T) {
-			// The other claim answers yes, so what is held is that a
-			// failure anywhere ends the request, not that no owner
-			// was found.
-			healthy := openly("healthy", yes)
-			healthy.verify = func(_ context.Context, subject string, _ authn.Credential) authn.Verdict {
-				return authn.Authenticated(subject)
+		t.Run(name, func(t *testing.T) {
+			w, rec := conclusionOf(t, g, "public", edit)
+			if w.Code != nethttp.StatusUnauthorized {
+				t.Fatalf("answered %d, want %d", w.Code, nethttp.StatusUnauthorized)
 			}
-
-			g := testGateway(t, []string{"public"}, healthy, openly("broken", c.owns))
-			sealed(t, g, routerWith("public"))
-
-			w, seen := run(g, "public", withBasic(request("GET", "/orders"), "dave", "secret"))
-
-			if w.Code != nethttp.StatusServiceUnavailable {
-				t.Errorf("the request answered %d, want %d: a claim that could not be asked "+
-					"is not one that said no", w.Code, nethttp.StatusServiceUnavailable)
+			if rec.Level != slog.LevelInfo {
+				t.Errorf("written at %v, want %v", rec.Level, slog.LevelInfo)
 			}
-			if seen.reached {
-				t.Error("the layer behind the gateway was reached although an open claim failed")
+			if got := attrText(rec, "attributed_to"); got != ModuleName {
+				t.Errorf("attributed to %q, want the gateway %q", got, ModuleName)
 			}
-			if got := g.tally()["unavailable"]; got != 1 {
-				t.Errorf("the outage was counted %d time(s) in the unavailable bucket, want 1", got)
+			if got := attrText(rec, "outcome"); got != "denied" {
+				t.Errorf("counted as %q, want denied", got)
 			}
 		})
 	}
 }
 
-// TestWhatABackendAnswersDecidesTheStatusAndTheBucket holds the three-tier
-// conclusion, and holds the zero verdict apart from a refusal.
-//
-// An operator has to be able to tell a wrong password from a broken plugin, and
-// both from a backend that is down: a refusal is the caller's problem, an outage
-// is the operator's, and a verdict nobody spoke is the plugin author's.
+// TestTheCredentialsTheGatewayHandsOverAreTheCarriersAsTheyArrived holds what a
+// backend is handed: for a header, the scheme folded and the value trimmed, and
+// for a cookie, its name and its value with no scheme, and in both the peer
+// address the entry point reported.
+func TestTheCredentialsTheGatewayHandsOverAreTheCarriersAsTheyArrived(t *testing.T) {
+	for _, c := range []struct {
+		name string
+		edit func(*nethttp.Request) *nethttp.Request
+		want authn.Credential
+	}{
+		{"a header in capitals", func(r *nethttp.Request) *nethttp.Request {
+			r.Header.Set(authHeader, "BEARER   the.token  ")
+			return r
+		}, authn.Credential{Scheme: "bearer", Value: "the.token"}},
+		{"a header in mixed case", func(r *nethttp.Request) *nethttp.Request {
+			r.Header.Set(authHeader, "BeArEr x.y.z")
+			return r
+		}, authn.Credential{Scheme: "bearer", Value: "x.y.z"}},
+		{"a scheme with no value", func(r *nethttp.Request) *nethttp.Request {
+			r.Header.Set(authHeader, "Bearer")
+			return r
+		}, authn.Credential{Scheme: "bearer", Value: ""}},
+		{"a cookie", func(r *nethttp.Request) *nethttp.Request {
+			return withCookie(r, "sid", "opaque-value")
+		}, authn.Credential{Cookie: "sid", Value: "opaque-value"}},
+		{"a cookie with an empty value", func(r *nethttp.Request) *nethttp.Request {
+			return withCookie(r, "sid", "")
+		}, authn.Credential{Cookie: "sid", Value: ""}},
+	} {
+		t.Run(c.name, func(t *testing.T) {
+			tokens := passes(schemeBackend("token", "Bearer"))
+			sessions := passes(cookieBackend("session", "sid"))
+			g := testGateway(t, []string{"public"}, tokens, sessions)
+			sealed(t, g, routerWith("public"))
+
+			r := c.edit(request("GET", "/orders"))
+			r.RemoteAddr = "203.0.113.9:4711"
+			w, _ := run(g, "public", r)
+			if w.Code != nethttp.StatusOK {
+				t.Fatalf("the request answered %d, want %d", w.Code, nethttp.StatusOK)
+			}
+
+			handed := append(tokens.credentials(), sessions.credentials()...)
+			if len(handed) != 1 {
+				t.Fatalf("the backends were handed %d credential(s), want one", len(handed))
+			}
+			want := c.want
+			want.Peer = "203.0.113.9"
+			if handed[0] != want {
+				t.Errorf("the backend was handed %+v, want %+v", handed[0], want)
+			}
+		})
+	}
+}
+
+// TestACredentialReachesOnlyTheBackendThatTakesItsCarrier holds the dispatch:
+// one carrier, one backend, and the other is not asked.
+func TestACredentialReachesOnlyTheBackendThatTakesItsCarrier(t *testing.T) {
+	var basicAsked, tokenAsked, cookieAsked atomic.Int64
+	basic := passes(basicBackend("static", "static."))
+	basic.asked = &basicAsked
+	token := passes(schemeBackend("token", "bearer"))
+	token.asked = &tokenAsked
+	cookie := passes(cookieBackend("session", "sid"))
+	cookie.asked = &cookieAsked
+
+	g := testGateway(t, []string{"public"}, basic, token, cookie)
+	sealed(t, g, routerWith("public"))
+
+	run(g, "public", withBasic(request("GET", "/x"), "alice", "secret"))
+	run(g, "public", withBearer(request("GET", "/x"), "t"))
+	run(g, "public", withCookie(request("GET", "/x"), "sid", "v"))
+
+	if basicAsked.Load() != 1 || tokenAsked.Load() != 1 || cookieAsked.Load() != 1 {
+		t.Errorf("the backends were asked basic %d, token %d, cookie %d times, want once each",
+			basicAsked.Load(), tokenAsked.Load(), cookieAsked.Load())
+	}
+}
+
+// TestTheAuthorizationHeaderIsReadAloneAndDoesNotFallBackToACookie holds the
+// precedence: when the header is there it is the credential, the cookie is not
+// read and not asked about, and a header that does not hold is not made up for
+// by a cookie that might. Two carriers judged separately would be two ways for a
+// caller to get through.
+func TestTheAuthorizationHeaderIsReadAloneAndDoesNotFallBackToACookie(t *testing.T) {
+	t.Run("a header and a cookie that both hold", func(t *testing.T) {
+		var tokenAsked, cookieAsked atomic.Int64
+		token := passes(schemeBackend("token", "bearer"))
+		token.asked = &tokenAsked
+		cookie := passes(cookieBackend("session", "sid"))
+		cookie.asked = &cookieAsked
+		g := testGateway(t, []string{"public"}, token, cookie)
+		sealed(t, g, routerWith("public"))
+
+		w, _ := run(g, "public", withCookie(withBearer(request("GET", "/x"), "t"), "sid", "v"))
+
+		if w.Code != nethttp.StatusOK {
+			t.Fatalf("answered %d", w.Code)
+		}
+		if tokenAsked.Load() != 1 || cookieAsked.Load() != 0 {
+			t.Errorf("the token backend was asked %d time(s) and the cookie backend %d, want 1 and 0: "+
+				"the header is read alone", tokenAsked.Load(), cookieAsked.Load())
+		}
+	})
+
+	t.Run("a header that does not hold beside a cookie that does", func(t *testing.T) {
+		var cookieAsked atomic.Int64
+		token := schemeBackend("token", "bearer") // denies
+		cookie := passes(cookieBackend("session", "sid"))
+		cookie.asked = &cookieAsked
+		g := testGateway(t, []string{"public"}, token, cookie)
+		sealed(t, g, routerWith("public"))
+
+		w, seen := run(g, "public", withCookie(withBearer(request("GET", "/x"), "stale"), "sid", "v"))
+
+		if w.Code != nethttp.StatusUnauthorized || seen.reached {
+			t.Errorf("answered %d (reached %v), want a refusal: a cookie must not make up for a header", w.Code, seen.reached)
+		}
+		if cookieAsked.Load() != 0 {
+			t.Error("the cookie backend was asked after the header was refused")
+		}
+	})
+
+	t.Run("a header nobody takes beside a cookie that holds", func(t *testing.T) {
+		var cookieAsked atomic.Int64
+		cookie := passes(cookieBackend("session", "sid"))
+		cookie.asked = &cookieAsked
+		g := testGateway(t, []string{"public"}, cookie)
+		sealed(t, g, routerWith("public"))
+
+		r := withCookie(request("GET", "/x"), "sid", "v")
+		r.Header.Set(authHeader, "Digest abc")
+		w, _ := run(g, "public", r)
+
+		if w.Code != nethttp.StatusUnauthorized {
+			t.Errorf("answered %d, want %d", w.Code, nethttp.StatusUnauthorized)
+		}
+		if cookieAsked.Load() != 0 {
+			t.Error("the cookie backend was asked after the header was refused as one nobody takes")
+		}
+	})
+}
+
+// TestTwoCookiesABackendTakesAreAmbiguousAndRefused holds the cookie planting
+// defence: a page that can set a cookie for this site must not choose which
+// credential is judged, so the same name twice, or two names two backends take,
+// is a refusal and not a pick.
+func TestTwoCookiesABackendTakesAreAmbiguousAndRefused(t *testing.T) {
+	var asked atomic.Int64
+	one := passes(cookieBackend("one", "sid"))
+	one.asked = &asked
+	two := passes(cookieBackend("two", "other"))
+	two.asked = &asked
+	g := testGateway(t, []string{"public"}, one, two)
+	sealed(t, g, routerWith("public"))
+
+	for name, r := range map[string]*nethttp.Request{
+		"one name twice":          withCookie(withCookie(request("GET", "/x"), "sid", "a"), "sid", "b"),
+		"two names, two backends": withCookie(withCookie(request("GET", "/x"), "sid", "a"), "other", "b"),
+	} {
+		t.Run(name, func(t *testing.T) {
+			w, seen := run(g, "public", r)
+			if w.Code != nethttp.StatusUnauthorized || seen.reached {
+				t.Errorf("answered %d (reached %v), want a refusal", w.Code, seen.reached)
+			}
+		})
+	}
+	if asked.Load() != 0 {
+		t.Errorf("a backend was asked %d time(s) about an ambiguous request", asked.Load())
+	}
+
+	// The control: either cookie alone is a credential.
+	for _, r := range []*nethttp.Request{
+		withCookie(request("GET", "/x"), "sid", "a"), withCookie(request("GET", "/x"), "other", "b"),
+	} {
+		if w, _ := run(g, "public", r); w.Code != nethttp.StatusOK {
+			t.Errorf("a single cookie answered %d, want %d", w.Code, nethttp.StatusOK)
+		}
+	}
+}
+
+// TestACookieCredentialOnAnUnsafeRequestMustPassTheCrossOriginCheck holds the
+// CSRF defence at the gateway: a cookie is sent by the browser on a request a
+// page of another site makes, as it does a Basic pair it stored after a
+// challenge, and a Bearer header it never does, so the check applies to those two
+// carriers and only to the methods that change state.
+func TestACredentialABrowserAttachesOnAnUnsafeRequestMustPassTheCrossOriginCheck(t *testing.T) {
+	forged := func(r *nethttp.Request) *nethttp.Request {
+		r.Header.Set("Sec-Fetch-Site", "cross-site")
+		r.Header.Set("Origin", "https://evil.example")
+		return r
+	}
+	for _, c := range []struct {
+		name    string
+		method  string
+		prepare func(*nethttp.Request) *nethttp.Request
+		set     settings
+		passes  bool
+	}{
+		{"a cross-site POST with a cookie", "POST", func(r *nethttp.Request) *nethttp.Request { return forged(withCookie(r, "sid", "v")) }, settings{}, false},
+		{"a cross-site DELETE with a cookie", "DELETE", func(r *nethttp.Request) *nethttp.Request { return forged(withCookie(r, "sid", "v")) }, settings{}, false},
+		{"a cross-site PUT with a cookie", "PUT", func(r *nethttp.Request) *nethttp.Request { return forged(withCookie(r, "sid", "v")) }, settings{}, false},
+		{"a cross-site PATCH with a cookie", "PATCH", func(r *nethttp.Request) *nethttp.Request { return forged(withCookie(r, "sid", "v")) }, settings{}, false},
+		{"a same-origin POST with a cookie", "POST", func(r *nethttp.Request) *nethttp.Request {
+			r.Header.Set("Sec-Fetch-Site", "same-origin")
+			return withCookie(r, "sid", "v")
+		}, settings{}, true},
+		{"a POST with no browser headers, as a program sends it", "POST", func(r *nethttp.Request) *nethttp.Request { return withCookie(r, "sid", "v") }, settings{}, true},
+		{"a cross-site GET with a cookie", "GET", func(r *nethttp.Request) *nethttp.Request { return forged(withCookie(r, "sid", "v")) }, settings{}, true},
+		{"a cross-site HEAD with a cookie", "HEAD", func(r *nethttp.Request) *nethttp.Request { return forged(withCookie(r, "sid", "v")) }, settings{}, true},
+		{"a cross-site POST with a Bearer credential", "POST", func(r *nethttp.Request) *nethttp.Request { return forged(withBearer(r, "t")) }, settings{}, true},
+		{"a cross-site POST with a Basic credential", "POST", func(r *nethttp.Request) *nethttp.Request { return forged(withBasic(r, "static.bob", "pw")) }, settings{}, false},
+		{"a cross-site PATCH with a Basic credential", "PATCH", func(r *nethttp.Request) *nethttp.Request { return forged(withBasic(r, "static.bob", "pw")) }, settings{}, false},
+		{"a cross-site GET with a Basic credential", "GET", func(r *nethttp.Request) *nethttp.Request { return forged(withBasic(r, "static.bob", "pw")) }, settings{}, true},
+		{"a cross-site POST with a Basic credential in capitals", "POST", func(r *nethttp.Request) *nethttp.Request {
+			r.Header.Set(authHeader, "BASIC dXNlcjpwdw==")
+			return forged(r)
+		}, settings{}, false},
+		{
+			"a cross-site POST from a trusted origin", "POST", func(r *nethttp.Request) *nethttp.Request { return forged(withCookie(r, "sid", "v")) },
+			settings{trustedOrigins: []string{"https://evil.example"}},
+			true,
+		},
+		{
+			"a cross-site POST from the public URL's origin", "POST", func(r *nethttp.Request) *nethttp.Request { return forged(withCookie(r, "sid", "v")) },
+			settings{mount: mountConfig{PublicURL: "https://evil.example"}},
+			true,
+		},
+		{"a same-site POST from an origin nobody trusts", "POST", func(r *nethttp.Request) *nethttp.Request {
+			r.Header.Set("Sec-Fetch-Site", "same-site")
+			return withCookie(r, "sid", "v")
+		}, settings{}, false},
+	} {
+		t.Run(c.name, func(t *testing.T) {
+			var cookieAsked, cleared atomic.Int64
+			cookie := passes(cookieBackend("session", "sid"))
+			cookie.asked = &cookieAsked
+			session := clearingVerifier{fakeVerifier: cookie, cleared: &cleared}
+			token := passes(schemeBackend("token", "bearer"))
+			var basicAsked atomic.Int64
+			basic := passes(basicBackend("static", "static."))
+			basic.asked = &basicAsked
+
+			set := c.set
+			set.endpoints = []string{"public"}
+			set.budget, set.inFlight = time.Second, 8
+			g := gatewayWith(t, set, session, token, basic)
+			sealed(t, g, routerWith("public"))
+
+			w, seen := run(g, "public", c.prepare(request(c.method, "/x")))
+
+			if c.passes {
+				if w.Code != nethttp.StatusOK {
+					t.Errorf("answered %d, want %d", w.Code, nethttp.StatusOK)
+				}
+				return
+			}
+			if w.Code != nethttp.StatusUnauthorized || seen.reached {
+				t.Errorf("answered %d (reached %v), want a 401 that ends the request", w.Code, seen.reached)
+			}
+			if cookieAsked.Load() != 0 || basicAsked.Load() != 0 {
+				t.Errorf("the backend was asked about a credential from a request that failed the cross-origin check")
+			}
+			if cleared.Load() != 0 {
+				t.Error("the cookie was cleared for a request that failed the cross-origin check, though nothing was judged about it")
+			}
+			if got := g.tally()["denied"]; got != 1 {
+				t.Errorf("counted %d time(s) as denied, want 1", got)
+			}
+		})
+	}
+}
+
+// TestACrossOriginRefusalIsTheGatewaysOwnAtInfo holds the attribution of the
+// refusal: it is the gateway's own, it is ordinary traffic, and it is a 401 and
+// never a 403, since the gateway does not write 403.
+func TestACrossOriginRefusalIsTheGatewaysOwnAtInfo(t *testing.T) {
+	g := testGateway(t, []string{"public"}, passes(cookieBackend("session", "sid")))
+	sealed(t, g, routerWith("public"))
+
+	h := &recorder{}
+	r := withCookie(recorded(h, "POST", "/x"), "sid", "v")
+	r.Header.Set("Sec-Fetch-Site", "cross-site")
+	engine, _ := layerOn(g, "public")
+	w := httptest.NewRecorder()
+	engine.ServeHTTP(w, r)
+
+	if w.Code != nethttp.StatusUnauthorized {
+		t.Fatalf("answered %d, want %d", w.Code, nethttp.StatusUnauthorized)
+	}
+	rec := h.only(t)
+	if rec.Level != slog.LevelInfo || attrText(rec, "attributed_to") != ModuleName {
+		t.Errorf("written at %v and attributed to %q, want Info and the gateway", rec.Level, attrText(rec, "attributed_to"))
+	}
+}
+
+// TestAnOptionalRouteLetsARequestWithNoCredentialThroughAsAnonymous holds the
+// one thing an optional route changes: a request with no credential passes with
+// no identity, the access level says why, and it is counted in a bucket of its
+// own and not as a pass.
+func TestAnOptionalRouteLetsARequestWithNoCredentialThroughAsAnonymous(t *testing.T) {
+	var asked atomic.Int64
+	basic := passes(basicBackend("static", "static."))
+	basic.asked = &asked
+	g := testGateway(t, []string{"public"}, basic)
+	g.Optional("public", "GET", "/catalog")
+	sealed(t, g, routerWith("public"))
+
+	engine, seen := routedEngine(g, "public", [2]string{"GET", "/catalog"}, [2]string{"GET", "/orders"})
+	w := httptest.NewRecorder()
+	engine.ServeHTTP(w, request("GET", "/catalog"))
+
+	if w.Code != nethttp.StatusOK || !seen.reached {
+		t.Fatalf("answered %d (reached %v), want the request let through", w.Code, seen.reached)
+	}
+	if seen.carried {
+		t.Error("an anonymous request carries an identity")
+	}
+	if seen.access != authn.AccessOptional {
+		t.Errorf("the access level reads %v, want %v", seen.access, authn.AccessOptional)
+	}
+	if asked.Load() != 0 {
+		t.Error("a backend was asked about a request with no credential")
+	}
+	tally := g.tally()
+	if tally["anonymous"] != 1 || tally["authenticated"] != 0 || tally["denied"] != 0 {
+		t.Errorf("the buckets read %v, want one anonymous and nothing else", tally)
+	}
+
+	// The same request on a route that is not optional is refused.
+	w = httptest.NewRecorder()
+	engine.ServeHTTP(w, request("GET", "/orders"))
+	if w.Code != nethttp.StatusUnauthorized {
+		t.Errorf("a request with no credential on a guarded route answered %d, want %d", w.Code, nethttp.StatusUnauthorized)
+	}
+	// And on the optional route under another method.
+	engine2, _ := routedEngine(g, "public", [2]string{"POST", "/catalog"})
+	w = httptest.NewRecorder()
+	engine2.ServeHTTP(w, request("POST", "/catalog"))
+	if w.Code != nethttp.StatusUnauthorized {
+		t.Errorf("a POST to a path registered optional for GET answered %d, want %d", w.Code, nethttp.StatusUnauthorized)
+	}
+}
+
+// TestACredentialOnAnOptionalRouteIsAuthenticatedAsAnywhereElse holds the other
+// half of the optional route, which is the half that matters: a credential that
+// is there is judged, and one that does not hold is a 401, never an anonymous
+// pass. Passing it as anonymous would let an expired or stolen credential be
+// ignored on this route without the caller noticing it had stopped working.
+func TestACredentialOnAnOptionalRouteIsAuthenticatedAsAnywhereElse(t *testing.T) {
+	for _, c := range []struct {
+		name    string
+		prepare func(*nethttp.Request) *nethttp.Request
+		verify  func(context.Context, authn.Credential) authn.Verdict
+		status  int
+		bucket  string
+		carries bool
+	}{
+		{
+			"a credential that holds", func(r *nethttp.Request) *nethttp.Request { return withBasic(r, "alice", "s") },
+			nil, nethttp.StatusOK, "authenticated", true,
+		},
+		{
+			"a credential that does not", func(r *nethttp.Request) *nethttp.Request { return withBasic(r, "alice", "wrong") },
+			func(context.Context, authn.Credential) authn.Verdict { return authn.Denied(errors.New("no")) },
+			nethttp.StatusUnauthorized, "denied", false,
+		},
+		{
+			"a credential the backend cannot judge", func(r *nethttp.Request) *nethttp.Request { return withBasic(r, "alice", "s") },
+			func(context.Context, authn.Credential) authn.Verdict { return authn.Unavailable(errors.New("down")) },
+			nethttp.StatusServiceUnavailable, "unavailable", false,
+		},
+		{
+			"a credential the backend answers nothing about", func(r *nethttp.Request) *nethttp.Request { return withBasic(r, "alice", "s") },
+			func(context.Context, authn.Credential) authn.Verdict { return authn.Verdict{} },
+			nethttp.StatusUnauthorized, "unspoken", false,
+		},
+		{"an empty Authorization header", func(r *nethttp.Request) *nethttp.Request {
+			r.Header.Set(authHeader, "")
+			return r
+		}, nil, nethttp.StatusUnauthorized, "denied", false},
+		{"a scheme nobody takes", func(r *nethttp.Request) *nethttp.Request {
+			r.Header.Set(authHeader, "Digest x")
+			return r
+		}, nil, nethttp.StatusUnauthorized, "denied", false},
+		{"two Authorization headers", func(r *nethttp.Request) *nethttp.Request {
+			r.Header.Add(authHeader, "Basic YTpi")
+			r.Header.Add(authHeader, "Basic YTpi")
+			return r
+		}, nil, nethttp.StatusUnauthorized, "denied", false},
+		{
+			"a cookie that is refused", func(r *nethttp.Request) *nethttp.Request { return withCookie(r, "sid", "stale") },
+			nil, nethttp.StatusUnauthorized, "denied", false,
+		},
+	} {
+		t.Run(c.name, func(t *testing.T) {
+			basic := passes(basicBackend("static", "static."))
+			cookie := cookieBackend("session", "sid") // denies
+			if c.verify != nil {
+				basic.verify = c.verify
+			}
+			g := testGateway(t, []string{"public"}, basic, cookie)
+			g.Optional("public", "GET", "/catalog")
+			sealed(t, g, routerWith("public"))
+
+			engine, seen := routedEngine(g, "public", [2]string{"GET", "/catalog"})
+			w := httptest.NewRecorder()
+			engine.ServeHTTP(w, c.prepare(request("GET", "/catalog")))
+
+			if w.Code != c.status {
+				t.Errorf("answered %d, want %d", w.Code, c.status)
+			}
+			if seen.carried != c.carries {
+				t.Errorf("the request carries an identity: %v, want %v", seen.carried, c.carries)
+			}
+			if got := g.tally()[c.bucket]; got != 1 {
+				t.Errorf("counted %d time(s) in %s, want 1: %v", got, c.bucket, g.tally())
+			}
+			if g.tally()["anonymous"] != 0 {
+				t.Error("a request that carried a credential was counted as anonymous")
+			}
+			if c.status == nethttp.StatusOK && seen.access != authn.AccessOptional {
+				t.Errorf("a credential that held on an optional route reads the access level %v, want %v",
+					seen.access, authn.AccessOptional)
+			}
+		})
+	}
+}
+
+// TestWhatABackendAnswersDecidesTheStatusAndTheBucket holds the mapping from
+// what a backend says to what the caller is told and which bucket counts it.
 func TestWhatABackendAnswersDecidesTheStatusAndTheBucket(t *testing.T) {
 	for _, c := range []struct {
 		name   string
-		answer func() authn.Verdict
+		answer func(*fakeVerifier) authn.Verdict
 		panics bool
 		status int
 		bucket string
 	}{
-		{
-			name:   "the credential holds",
-			answer: func() authn.Verdict { return authn.Authenticated("alice") },
-			status: nethttp.StatusOK,
-			bucket: "authenticated",
-		},
-		{
-			name:   "the credential does not hold",
-			answer: func() authn.Verdict { return authn.Denied(errors.New("wrong password")) },
-			status: nethttp.StatusUnauthorized,
-			bucket: "denied",
-		},
-		{
-			name:   "the backend cannot say right now",
-			answer: func() authn.Verdict { return authn.Unavailable(errors.New("down")) },
-			status: nethttp.StatusServiceUnavailable,
-			bucket: "unavailable",
-		},
-		{
-			name:   "the backend returned without answering",
-			answer: func() authn.Verdict { return authn.Verdict{} },
-			status: nethttp.StatusUnauthorized,
-			bucket: "unspoken",
-		},
-		{
-			name:   "the backend panicked",
-			panics: true,
-			status: nethttp.StatusServiceUnavailable,
-			bucket: "unavailable",
-		},
+		{"the credential holds", func(f *fakeVerifier) authn.Verdict { return held(f, "alice") }, false, nethttp.StatusOK, "authenticated"},
+		{"the credential does not hold", func(*fakeVerifier) authn.Verdict { return authn.Denied(errors.New("wrong password")) }, false, nethttp.StatusUnauthorized, "denied"},
+		{"the backend cannot say right now", func(*fakeVerifier) authn.Verdict { return authn.Unavailable(errors.New("down")) }, false, nethttp.StatusServiceUnavailable, "unavailable"},
+		{"the backend returned without answering", func(*fakeVerifier) authn.Verdict { return authn.Verdict{} }, false, nethttp.StatusUnauthorized, "unspoken"},
+		{"the backend panicked", nil, true, nethttp.StatusServiceUnavailable, "unavailable"},
 	} {
 		t.Run(c.name, func(t *testing.T) {
-			backend := enumerating("local", "alice")
-			backend.verify = func(_ context.Context, _ string, _ authn.Credential) authn.Verdict {
+			b := basicBackend("static", "static.")
+			b.verify = func(context.Context, authn.Credential) authn.Verdict {
 				if c.panics {
 					panic("the backend's store is nil")
 				}
-				return c.answer()
+				return c.answer(b)
 			}
-
-			g := testGateway(t, []string{"public"}, backend)
+			g := testGateway(t, []string{"public"}, b)
 			sealed(t, g, routerWith("public"))
 
 			w, _ := run(g, "public", withBasic(request("GET", "/orders"), "alice", "secret"))
@@ -592,231 +680,182 @@ func TestWhatABackendAnswersDecidesTheStatusAndTheBucket(t *testing.T) {
 				t.Errorf("the request answered %d, want %d", w.Code, c.status)
 			}
 			if got := g.tally()[c.bucket]; got != 1 {
-				t.Errorf("the conclusion was counted %d time(s) in the %s bucket, want 1: "+
-					"%v", got, c.bucket, g.tally())
+				t.Errorf("counted %d time(s) in the %s bucket, want 1: %v", got, c.bucket, g.tally())
+			}
+			total := int64(0)
+			for _, n := range g.tally() {
+				total += n
+			}
+			if total != 1 {
+				t.Errorf("the conclusion was counted %d times across the buckets, want exactly once", total)
 			}
 		})
 	}
 }
 
-// TestABackendCannotMintASubjectOutsideItsOwnClaim holds exit binding, which is
-// the only gateway-produced refusal that happens after a backend has answered.
-//
-// Without it a backend claiming one small slice of the subject space could
-// return any subject at all and step straight over the ownership table — which
-// is to say a plugin anyone can write could issue the administrator's identity.
-func TestABackendCannotMintASubjectOutsideItsOwnClaim(t *testing.T) {
-	yes := func(context.Context, string) (bool, error) { return true, nil }
-
-	// Each case names a backend that would otherwise be let through: the
-	// path that reached it does not constrain the subject it returns, so
-	// exit binding is the only thing standing between it and the identity
-	// it is reaching for.
-	for _, c := range []struct {
-		name string
-		// overreaching is the backend that answers, and returns the
-		// subject named.
-		overreaching func(returns string) authn.Verifier
-		// send prepares the request that reaches it.
-		send     func() *nethttp.Request
-		returned string
-		why      string
-	}{
-		{
-			name: "a backend claiming a scheme whole, returning another backend's subject",
-			overreaching: func(returns string) authn.Verifier {
-				v := claimingScheme("issuer", "Bearer")
-				v.verify = func(_ context.Context, _ string, _ authn.Credential) authn.Verdict {
-					return authn.Authenticated(returns)
-				}
-				return v
-			},
-			send: func() *nethttp.Request {
-				r := request("GET", "/orders")
-				r.Header.Set(authHeader, "Bearer an.opaque.token")
-				return r
-			},
-			returned: "root",
-			why: "a scheme claim says nothing about subjects, so without this check any " +
-				"plugin claiming a scheme could issue the administrator's identity",
-		},
-		{
-			name: "a backend with an open claim, returning another backend's subject",
-			overreaching: func(returns string) authn.Verifier {
-				v := openly("directory", yes)
-				v.verify = func(_ context.Context, _ string, _ authn.Credential) authn.Verdict {
-					return authn.Authenticated(returns)
-				}
-				return v
-			},
-			send: func() *nethttp.Request {
-				return withBasic(request("GET", "/orders"), "dave", "secret")
-			},
-			returned: "root",
-			why:      "the other backend enumerated it, so it is that backend's to vouch for",
-		},
-		{
-			name: "a backend returning a subject carrying the separator",
-			overreaching: func(returns string) authn.Verifier {
-				v := openly("directory", yes)
-				v.verify = func(_ context.Context, _ string, _ authn.Credential) authn.Verdict {
-					return authn.Authenticated(returns)
-				}
-				return v
-			},
-			send: func() *nethttp.Request {
-				return withBasic(request("GET", "/orders"), "dave", "secret")
-			},
-			returned: "other/root",
-			why:      "it could not be told from an owner qualification once written down",
-		},
-		{
-			name: "a backend returning a subject it has no claim over",
-			overreaching: func(returns string) authn.Verifier {
-				v := enumerating("local", "alice")
-				v.verify = func(_ context.Context, _ string, _ authn.Credential) authn.Verdict {
-					return authn.Authenticated(returns)
-				}
-				return v
-			},
-			send: func() *nethttp.Request {
-				return withBasic(request("GET", "/orders"), "alice", "secret")
-			},
-			returned: "invented",
-			why:      "the backend enumerated neither it nor an open claim to cover it",
-		},
-		{
-			name: "a backend returning an empty subject",
-			overreaching: func(returns string) authn.Verifier {
-				v := claimingScheme("issuer", "Bearer")
-				v.verify = func(_ context.Context, _ string, _ authn.Credential) authn.Verdict {
-					return authn.Authenticated(returns)
-				}
-				return v
-			},
-			send: func() *nethttp.Request {
-				r := request("GET", "/orders")
-				r.Header.Set(authHeader, "Bearer an.opaque.token")
-				return r
-			},
-			returned: "",
-			why:      "an identity naming nobody is not an identity",
-		},
-	} {
-		t.Run(c.name, func(t *testing.T) {
-			g := testGateway(t, []string{"public"},
-				c.overreaching(c.returned), passes(enumerating("other", "root")))
-			sealed(t, g, routerWith("public"))
-
-			w, seen := run(g, "public", c.send())
-
-			if w.Code != nethttp.StatusUnauthorized {
-				t.Errorf("a pass returning %q answered %d, want %d: %s",
-					c.returned, w.Code, nethttp.StatusUnauthorized, c.why)
-			}
-			if seen.carried {
-				t.Errorf("the request carried the identity %q although the subject falls "+
-					"outside the backend's claim", seen.id.Key())
-			}
-		})
-	}
-}
-
-// TestABackendMayReturnAnotherSubjectItIsItselfTheAuthorityFor holds the other
-// side of exit binding, so that it is a boundary rather than a rule that the
-// subject asked about is the subject returned.
-//
-// A backend that maps an alias onto a canonical name is doing something
-// legitimate, as long as the name it lands on is one it is the authority for.
-func TestABackendMayReturnAnotherSubjectItIsItselfTheAuthorityFor(t *testing.T) {
-	mapping := enumerating("local", "alice", "alice.smith")
-	mapping.verify = func(_ context.Context, _ string, _ authn.Credential) authn.Verdict {
-		return authn.Authenticated("alice.smith")
-	}
-
-	g := testGateway(t, []string{"public"}, mapping)
-	sealed(t, g, routerWith("public"))
-
-	w, seen := run(g, "public", withBasic(request("GET", "/orders"), "alice", "secret"))
-
-	if w.Code != nethttp.StatusOK {
-		t.Fatalf("the request answered %d, want %d", w.Code, nethttp.StatusOK)
-	}
-	if got := seen.id.Key(); got != "local/alice.smith" {
-		t.Errorf("the identity reads %q, want the subject the backend landed on", got)
-	}
-}
-
-// TestAPassingRequestCarriesTheIdentityTheGatewayStamped holds what the layers
-// behind the gateway actually receive.
-//
-// The owner is not the backend's to write: it is taken from the name the
-// authority reported and stamped by the gateway, and there is no field on a
-// verdict a backend could put it in. The qualification is never dropped, even
-// with one backend running: a bare "alice" and a qualified "local/alice" would
-// otherwise both name the caller, and a policy written against either would
-// silently miss the other the day a second backend arrives.
+// TestAPassingRequestCarriesTheIdentityTheGatewayStamped holds the stamp: the
+// fields come from the principal the backend handed over, except the two the
+// gateway stamps from what it knows, which no backend can choose.
 func TestAPassingRequestCarriesTheIdentityTheGatewayStamped(t *testing.T) {
-	g := testGateway(t, []string{"public"}, passes(enumerating("local", "alice")))
+	b := &fakeVerifier{
+		name:    "issuer",
+		accepts: authn.Accepts{Schemes: []string{"bearer"}, Accounts: "", SSO: true},
+	}
+	provider := "0198f0aa-0000-7000-8000-000000000001"
+	authTime := time.Now().Add(-time.Hour)
+	b.verify = func(context.Context, authn.Credential) authn.Verdict {
+		return authn.Authenticated(authn.Principal{
+			Account:    "0198f0aa-0000-7000-8000-00000000000a",
+			Session:    "0198f0aa-0000-7000-8000-00000000000b",
+			Methods:    []authn.Method{authn.MethodOIDC, authn.MethodTOTP},
+			Assurance:  authn.AssuranceMulti,
+			IDPAssured: true,
+			AuthTime:   authTime,
+			Provider:   provider,
+			Attributes: map[string]string{"idp.team": "ops"},
+		})
+	}
+	g := testGateway(t, []string{"public"}, b)
 	sealed(t, g, routerWith("public"))
 
-	w, seen := run(g, "public", withBasic(request("GET", "/orders"), "alice", "secret"))
+	w, seen := run(g, "public", withBearer(request("GET", "/orders"), "t"))
 
-	if w.Code != nethttp.StatusOK {
-		t.Fatalf("the request answered %d, want %d", w.Code, nethttp.StatusOK)
+	if w.Code != nethttp.StatusOK || !seen.carried {
+		t.Fatalf("answered %d (identity carried %v), want a pass with an identity", w.Code, seen.carried)
 	}
-	if !seen.carried {
-		t.Fatal("a request the gateway passed carries no identity, so every layer behind it " +
-			"reads the caller as anonymous")
+	id := seen.id
+	for name, check := range map[string]bool{
+		"the account":    id.Account() == "0198f0aa-0000-7000-8000-00000000000a",
+		"the key":        id.Key() == "0198f0aa-0000-7000-8000-00000000000a",
+		"the actor":      id.Actor() == id.Account() && !id.Impersonating(),
+		"the session":    id.Session() == "0198f0aa-0000-7000-8000-00000000000b",
+		"the assurance":  id.Assurance() == authn.AssuranceMulti && id.AssuranceFromIDP(),
+		"the provider":   id.Provider() == provider,
+		"the auth time":  id.AuthTime().Equal(authTime),
+		"the backend":    id.Backend() == "issuer",
+		"the challenge":  id.Challenge() == "Bearer",
+		"the attributes": len(id.Attributes()) == 1 && id.Attributes()["idp.team"] == "ops",
+	} {
+		if !check {
+			t.Errorf("%s of the identity is not what the backend handed over or the gateway stamps", name)
+		}
 	}
-	if got := seen.id.Subject(); got != "alice" {
-		t.Errorf("the identity's subject is %q, want %q", got, "alice")
+	if got := id.Methods(); len(got) != 2 || got[0] != authn.MethodOIDC || got[1] != authn.MethodTOTP {
+		t.Errorf("the identity's methods are %v", got)
 	}
-	if got := seen.id.Owner(); got != "local" {
-		t.Errorf("the identity's owner is %q, want the name the authority reported", got)
-	}
-	if got := seen.id.Key(); got != "local"+authn.Separator+"alice" {
-		t.Errorf("the identity reads %q, want the owner-qualified form", got)
+	if seen.access != authn.AccessRequired {
+		t.Errorf("the access level is %v, want %v for a guarded route with no registration", seen.access, authn.AccessRequired)
 	}
 	if got := g.tally()["authenticated"]; got != 1 {
-		t.Errorf("the pass was counted %d time(s) in the authenticated bucket, want 1", got)
+		t.Errorf("the pass was counted %d time(s) as authenticated, want 1", got)
 	}
 }
 
-// TestAPassBindsTheSubjectOnTheLoggerOfTheLayersBehindTheGateway holds the
-// correlation field the gateway puts on the request's logger.
-//
-// The subject is settled here and nowhere else, so a record written by any layer
-// or handler behind the gateway can be attributed to its caller only if the
-// gateway bound it. The field is the owner-qualified identity, the same string
-// the identity's own Key reads, and it is on the logger the request carries, not
-// only on the identity.
-func TestAPassBindsTheSubjectOnTheLoggerOfTheLayersBehindTheGateway(t *testing.T) {
-	g := testGateway(t, []string{"public"}, passes(enumerating("local", "alice")))
+// TestTheChallengeNameFollowsTheCarrier holds Identity.Challenge, which a
+// re-authentication challenge is written with: the scheme as a header carried
+// it, in its conventional capitalisation, and Cookie for a cookie.
+func TestTheChallengeNameFollowsTheCarrier(t *testing.T) {
+	g := testGateway(t, []string{"public"},
+		passes(basicBackend("static", "static.")), passes(schemeBackend("token", "bearer", "dpop")),
+		passes(cookieBackend("session", "sid")))
 	sealed(t, g, routerWith("public"))
 
-	engine := gin.New()
-	engine.Use(g.middlewareFor("public").Handler)
-	engine.NoRoute(func(c *gin.Context) {
-		log.FromContext(c.Request.Context()).Info("a record from behind the gateway")
-		c.Status(nethttp.StatusOK)
-	})
-
-	h := &recorder{}
-	w := httptest.NewRecorder()
-	engine.ServeHTTP(w, withBasic(recorded(h, "GET", "/orders"), "alice", "secret"))
-
-	if w.Code != nethttp.StatusOK {
-		t.Fatalf("the request answered %d, want %d, so nothing was written behind the gateway",
-			w.Code, nethttp.StatusOK)
+	for name, c := range map[string]struct {
+		edit func(*nethttp.Request) *nethttp.Request
+		want string
+	}{
+		"basic":  {func(r *nethttp.Request) *nethttp.Request { return withBasic(r, "a", "b") }, "Basic"},
+		"bearer": {func(r *nethttp.Request) *nethttp.Request { return withBearer(r, "t") }, "Bearer"},
+		"cookie": {func(r *nethttp.Request) *nethttp.Request { return withCookie(r, "sid", "v") }, "Cookie"},
+		"dpop": {func(r *nethttp.Request) *nethttp.Request {
+			r.Header.Set(authHeader, "dPoP x")
+			return r
+		}, "Dpop"},
+	} {
+		t.Run(name, func(t *testing.T) {
+			_, seen := run(g, "public", c.edit(request("GET", "/x")))
+			if !seen.carried || seen.id.Challenge() != c.want {
+				t.Errorf("the challenge name reads %q, want %q", seen.id.Challenge(), c.want)
+			}
+		})
 	}
-	subject, bound := attr(h.only(t), "subject")
-	if !bound {
-		t.Fatal("a record written behind the gateway carries no subject field, so the request's " +
-			"log lines cannot be attributed to its caller")
+}
+
+// TestTheBackendAndTheChallengeAreNotTheBackendsToChoose holds that nothing a
+// backend hands over reaches the two fields the gateway stamps: the backend is
+// the name the gateway read from the verifier, and the challenge is the
+// carrier's. A backend cannot make its identities read as another backend's.
+func TestTheBackendAndTheChallengeAreNotTheBackendsToChoose(t *testing.T) {
+	b := schemeBackend("honest", "bearer")
+	b.verify = func(context.Context, authn.Credential) authn.Verdict {
+		p := principalOf(b, "alice")
+		p.Attributes = map[string]string{"backend": "static", "challenge": "Basic"}
+		return authn.Authenticated(p)
 	}
-	if got, want := subject.String(), "local"+authn.Separator+"alice"; got != want {
-		t.Errorf("the subject field reads %q, want the owner-qualified identity %q", got, want)
+	g := testGateway(t, []string{"public"}, b)
+	sealed(t, g, routerWith("public"))
+
+	_, seen := run(g, "public", withBearer(request("GET", "/x"), "t"))
+	if seen.id.Backend() != "honest" || seen.id.Challenge() != "Bearer" {
+		t.Errorf("the identity reads backend %q and challenge %q, want the gateway's own stamp", seen.id.Backend(), seen.id.Challenge())
+	}
+}
+
+// TestAPassBindsTheCorrelationFieldsOnTheLoggerOfTheLayersBehindTheGateway holds
+// what the gateway puts on the request's logger: the account, the backend, and,
+// when they apply, the actor of an impersonation and the session. The caller is
+// settled here and nowhere else, so a record written behind the gateway can be
+// attributed to its caller only if the gateway bound it.
+func TestAPassBindsTheCorrelationFieldsOnTheLoggerOfTheLayersBehindTheGateway(t *testing.T) {
+	plain := basicBackend("static", "static.")
+	plain.verify = func(context.Context, authn.Credential) authn.Verdict { return held(plain, "ops") }
+	imp := &fakeVerifier{name: "imp", accepts: authn.Accepts{Schemes: []string{"bearer"}, Impersonation: true}}
+	imp.verify = func(context.Context, authn.Credential) authn.Verdict {
+		p := principalOf(imp, "customer-1")
+		p.Actor, p.Session, p.Scope = "admin-9", "sess-1", "tenant-a"
+		return authn.Authenticated(p)
+	}
+	g := testGateway(t, []string{"public"}, plain, imp)
+	g.Impersonable("public", "GET", "/x")
+	sealed(t, g, routerWith("public"))
+
+	read := func(edit func(*nethttp.Request) *nethttp.Request) slog.Record {
+		engine := gin.New()
+		engine.Use(g.middlewareFor("public").Handler)
+		engine.GET("/x", func(c *gin.Context) {
+			log.FromContext(c.Request.Context()).Info("a record from behind the gateway")
+			c.Status(nethttp.StatusOK)
+		})
+		h := &recorder{}
+		w := httptest.NewRecorder()
+		engine.ServeHTTP(w, edit(recorded(h, "GET", "/x")))
+		if w.Code != nethttp.StatusOK {
+			t.Fatalf("answered %d, want %d", w.Code, nethttp.StatusOK)
+		}
+		return h.only(t)
+	}
+
+	rec := read(func(r *nethttp.Request) *nethttp.Request { return withBasic(r, "ops", "s") })
+	if got := attrText(rec, "account"); got != "static.ops" {
+		t.Errorf("the account field reads %q, want static.ops", got)
+	}
+	if got := attrText(rec, "backend"); got != "static" {
+		t.Errorf("the backend field reads %q, want static", got)
+	}
+	for _, absent := range []string{"actor", "impersonating", "session", "subject"} {
+		if _, found := attr(rec, absent); found {
+			t.Errorf("a plain pass carries the field %q", absent)
+		}
+	}
+
+	rec = read(func(r *nethttp.Request) *nethttp.Request { return withBearer(r, "t") })
+	if attrText(rec, "account") != "customer-1" || attrText(rec, "actor") != "admin-9" ||
+		attrText(rec, "session") != "sess-1" || attrText(rec, "backend") != "imp" {
+		t.Errorf("an impersonation binds account %q, actor %q, session %q, backend %q, want customer-1, admin-9, sess-1, imp",
+			attrText(rec, "account"), attrText(rec, "actor"), attrText(rec, "session"), attrText(rec, "backend"))
+	}
+	if v, found := attr(rec, "impersonating"); !found || !v.Bool() {
+		t.Error("an impersonation does not carry impersonating=true")
 	}
 }
 
@@ -826,18 +865,18 @@ func TestAPassBindsTheSubjectOnTheLoggerOfTheLayersBehindTheGateway(t *testing.T
 // The entry point's fallback would answer the panic with a 500 as well, and it
 // could not say which layer raised it: the response is the same whoever crashed.
 // The gateway recovering is what answers it as its own defect — counted in none
-// of the four buckets, logged with the endpoint and the stack — and what writes
-// that answer through the entry point's error response like any other refusal.
-// The engine here carries no fallback, so a panic that was not recovered would
-// leave ServeHTTP altogether.
+// of the buckets, logged with the endpoint and the stack — and what writes that
+// answer through the entry point's error response like any other refusal. The
+// engine here carries no fallback, so a panic that was not recovered would leave
+// ServeHTTP altogether.
 func TestTheGatewaysOwnDefectBecomesAStatusCode(t *testing.T) {
-	g := testGateway(t, []string{"public"}, passes(enumerating("local", "alice")))
+	g := testGateway(t, []string{"public"}, passes(basicBackend("static", "static.")))
 	sealed(t, g, routerWith("public"))
 
 	// The layer is built first, the way Init builds it, and the gateway is
-	// broken afterwards: a table that went missing under a running server is
-	// a defect of this module, and it is the cheapest way to reach the panic
-	// path without a backend being involved.
+	// broken afterwards: a table that went missing under a running server is a
+	// defect of this module, and it is the cheapest way to reach the panic path
+	// without a backend being involved.
 	engine, seen := layerOn(g, "public")
 	g.table = nil
 
@@ -845,26 +884,23 @@ func TestTheGatewaysOwnDefectBecomesAStatusCode(t *testing.T) {
 	engine.ServeHTTP(w, withBasic(request("GET", "/orders"), "alice", "secret"))
 
 	if w.Code != nethttp.StatusInternalServerError {
-		t.Errorf("the gateway's own panic answered %d, want %d", w.Code,
-			nethttp.StatusInternalServerError)
+		t.Errorf("the gateway's own panic answered %d, want %d", w.Code, nethttp.StatusInternalServerError)
 	}
 	if got := w.Header().Get("Content-Type"); got != "application/problem+json" {
-		t.Errorf("the gateway's own panic answered with the media type %q, want the entry "+
-			"point's error response", got)
+		t.Errorf("the gateway's own panic answered with the media type %q, want the entry point's error response", got)
 	}
 	if seen.reached {
 		t.Error("the layer behind the gateway was reached after the gateway panicked")
 	}
 	for bucket, count := range g.tally() {
 		if count != 0 {
-			t.Errorf("the gateway's own panic was counted in the %s bucket (%d), want none of "+
-				"the four: those count judgements about a credential, and this is not one",
-				bucket, count)
+			t.Errorf("the gateway's own panic was counted in the %s bucket (%d), want none: those "+
+				"count judgements about a credential, and this is not one", bucket, count)
 		}
 	}
 }
 
-// TestALayerCannotBeBuiltBeforeTheOwnershipTable pins an ordering inside Init
+// TestALayerCannotBeBuiltBeforeTheDispatchTable pins an ordering inside Init
 // that has no other signal.
 //
 // The layer is built out of the table — the challenge it answers a refusal with
@@ -872,42 +908,44 @@ func TestTheGatewaysOwnDefectBecomesAStatusCode(t *testing.T) {
 // exists takes it while it is still nil. Read from the outside that ordering
 // looks like a free choice, and getting it wrong does not fail at registration
 // or at startup: it fails on the first request, several frames from the cause.
-func TestALayerCannotBeBuiltBeforeTheOwnershipTable(t *testing.T) {
-	g := newGateway(settings{endpoints: []string{"public"}, budget: time.Second, inFlight: 1})
+func TestALayerCannotBeBuiltBeforeTheDispatchTable(t *testing.T) {
+	g, err := newGateway(settings{endpoints: []string{"public"}, budget: time.Second, inFlight: 1})
+	if err != nil {
+		t.Fatal(err)
+	}
 
-	assertPanics(t, "building a layer before the ownership table", func() {
+	assertPanics(t, "building a layer before the dispatch table", func() {
 		g.middlewareFor("public")
 	})
 }
 
 // TestTheGatewayStopsAcceptingBackendCallsWhenItIsStopped holds the Stop
-// contract: a call that has not begun does not begin, and the request ends as
-// an outage rather than as a refusal, because nothing was learned about the
+// contract: a call that has not begun does not begin, and the request ends as an
+// outage rather than as a refusal, because nothing was learned about the
 // credential.
 func TestTheGatewayStopsAcceptingBackendCallsWhenItIsStopped(t *testing.T) {
 	var asked atomic.Int64
-	backend := passes(enumerating("local", "alice"))
-	backend.asked = &asked
+	b := passes(basicBackend("static", "static."))
+	b.asked = &asked
 
-	g := testGateway(t, []string{"public"}, backend)
+	g := testGateway(t, []string{"public"}, b)
 	sealed(t, g, routerWith("public"))
 	g.stop()
 
 	w, _ := run(g, "public", withBasic(request("GET", "/orders"), "alice", "secret"))
 
 	if w.Code != nethttp.StatusServiceUnavailable {
-		t.Errorf("a request after Stop answered %d, want %d", w.Code,
-			nethttp.StatusServiceUnavailable)
+		t.Errorf("a request after Stop answered %d, want %d", w.Code, nethttp.StatusServiceUnavailable)
 	}
 	if asked.Load() != 0 {
 		t.Errorf("a backend was asked %d time(s) after Stop, want none", asked.Load())
 	}
 }
 
-// TestDrainingReturnsOnceTheCallsInFlightAreDone holds the Close contract on
-// the ordinary path: nothing is in flight, so there is nothing to wait for.
+// TestDrainingReturnsOnceTheCallsInFlightAreDone holds the Close contract on the
+// ordinary path: nothing is in flight, so there is nothing to wait for.
 func TestDrainingReturnsOnceTheCallsInFlightAreDone(t *testing.T) {
-	g := testGateway(t, []string{"public"}, passes(enumerating("local", "alice")))
+	g := testGateway(t, []string{"public"}, passes(basicBackend("static", "static.")))
 	sealed(t, g, routerWith("public"))
 	run(g, "public", withBasic(request("GET", "/orders"), "alice", "secret"))
 	g.stop()
@@ -917,240 +955,181 @@ func TestDrainingReturnsOnceTheCallsInFlightAreDone(t *testing.T) {
 	}
 }
 
-// TestAnOutageTheGatewayCausedIsNotChargedToABackend holds the attribution of a
-// 503.
+// TestAnOutageIsChargedToWhoCouldNotAnswer holds the attribution of a 503.
 //
 // Stopping, and the in-flight gate being full, are this module's own limits: the
 // backend was never asked. Charging them to it sends an operator to read the
 // logs of a credential store that is working perfectly, while the thing that
 // actually refused the request says nothing.
-func TestAnOutageTheGatewayCausedIsNotChargedToABackend(t *testing.T) {
+func TestAnOutageIsChargedToWhoCouldNotAnswer(t *testing.T) {
 	t.Run("after the gateway has stopped", func(t *testing.T) {
-		g := testGateway(t, []string{"public"}, passes(enumerating("local", "alice")))
+		g := testGateway(t, []string{"public"}, passes(basicBackend("static", "static.")))
 		sealed(t, g, routerWith("public"))
 		g.stop()
 
-		_, deny := g.identify(withBasic(request("GET", "/orders"), "alice", "secret"))
-		if deny == nil {
-			t.Fatal("a request after Stop was admitted")
+		w, rec := conclusionOf(t, g, "public", func(r *nethttp.Request) *nethttp.Request { return withBasic(r, "alice", "s") })
+		if w.Code != nethttp.StatusServiceUnavailable {
+			t.Errorf("answered %d, want %d", w.Code, nethttp.StatusServiceUnavailable)
 		}
-		if deny.status != nethttp.StatusServiceUnavailable {
-			t.Errorf("the conclusion answers %d, want %d", deny.status,
-				nethttp.StatusServiceUnavailable)
-		}
-		if deny.backend != "" {
-			t.Errorf("the outage is charged to %q, want the gateway: the backend was never "+
-				"asked", deny.backend)
+		if got := attrText(rec, "attributed_to"); got != ModuleName {
+			t.Errorf("the outage is charged to %q, want the gateway: the backend was never asked", got)
 		}
 	})
 
 	t.Run("when a backend reports a failure", func(t *testing.T) {
-		broken := enumerating("local", "alice")
-		broken.verify = func(_ context.Context, _ string, _ authn.Credential) authn.Verdict {
+		broken := basicBackend("static", "static.")
+		broken.verify = func(context.Context, authn.Credential) authn.Verdict {
 			return authn.Unavailable(errors.New("the store is unreachable"))
 		}
-
 		g := testGateway(t, []string{"public"}, broken)
 		sealed(t, g, routerWith("public"))
 
-		_, deny := g.identify(withBasic(request("GET", "/orders"), "alice", "secret"))
-		if deny == nil {
-			t.Fatal("a backend reporting a failure admitted the request")
+		_, rec := conclusionOf(t, g, "public", func(r *nethttp.Request) *nethttp.Request { return withBasic(r, "alice", "s") })
+		if got := attrText(rec, "attributed_to"); got != "static" {
+			t.Errorf("the outage is charged to %q, want the backend that could not answer", got)
 		}
-		if deny.backend != "local" {
-			t.Errorf("the outage is charged to %q, want the backend that could not answer",
-				deny.backend)
+		if rec.Level != slog.LevelWarn {
+			t.Errorf("written at %v, want %v", rec.Level, slog.LevelWarn)
 		}
 	})
 }
 
-// TestABackendIsHandedTheSchemeFolded holds the one normalisation the surface
-// promises a backend.
-//
-// Authentication scheme names are case-insensitive on the wire. A backend left
-// to compare the raw token would authenticate or refuse on the casing a client
-// happened to send — a standards-conformant client refused, and one that sends
-// lower case let through, with nothing to tell the two apart.
-func TestABackendIsHandedTheSchemeFolded(t *testing.T) {
-	for _, written := range []string{"Bearer", "bearer", "BEARER", "BeArEr"} {
-		t.Run(written, func(t *testing.T) {
-			var seen string
-			issuer := claimingScheme("issuer", "Bearer")
-			issuer.verify = func(_ context.Context, _ string, c authn.Credential) authn.Verdict {
-				seen = c.Scheme
-				return authn.Authenticated("carol")
-			}
-
-			g := testGateway(t, []string{"public"}, issuer)
-			sealed(t, g, routerWith("public"))
-
-			r := request("GET", "/orders")
-			r.Header.Set(authHeader, written+" a.token")
-			if w, _ := run(g, "public", r); w.Code != nethttp.StatusOK {
-				t.Fatalf("the request answered %d, want %d", w.Code, nethttp.StatusOK)
-			}
-			if seen != "bearer" {
-				t.Errorf("the backend was handed the scheme %q, want it folded", seen)
-			}
-		})
-	}
-}
-
-// TestARefusalTellsTheCallerWhatCredentialToSend holds the one header a 401 may
-// not leave out.
-//
-// The shape of the body is the entry point's, so the challenge is the whole of
-// what a caller can rely on to learn what kind of credential to send; a 401
-// carrying none says "you need a credential" without saying what kind, which is
-// the one thing RFC 7235 does not allow a 401 to do.
-func TestARefusalTellsTheCallerWhatCredentialToSend(t *testing.T) {
-	g := testGateway(t, []string{"public"},
-		enumerating("local", "alice"), claimingScheme("issuer", "Bearer"))
-	sealed(t, g, routerWith("public"))
-
-	w, _ := run(g, "public", request("GET", "/orders"))
-	if w.Code != nethttp.StatusUnauthorized {
-		t.Fatalf("the request answered %d, want %d", w.Code, nethttp.StatusUnauthorized)
-	}
-
-	got := w.Header().Get(challengeHeader)
-	for _, want := range []string{"Basic", "Bearer"} {
-		if !strings.Contains(got, want) {
-			t.Errorf("the challenge reads %q and does not offer %q, which is a scheme a "+
-				"credential can actually arrive under here", got, want)
-		}
-	}
-	// Basic requires a realm, and the protection space a credential is
-	// worth something in is the endpoint it was issued for.
-	if !strings.Contains(got, `realm="public"`) {
-		t.Errorf("the challenge reads %q and names no realm; Basic requires one, and without "+
-			"it a client cannot tell which protection space it is being asked for", got)
-	}
-}
-
-// TestARealmCannotBreakOutOfTheChallenge holds the escaping of the one part of
-// the header that comes from configuration.
-//
-// An endpoint name is written by whoever writes the config file. A quote in one
-// would end the quoted realm early and let the rest be read as further challenge
-// parameters, and a line ending would be read as the start of another header
-// altogether.
-func TestARealmCannotBreakOutOfTheChallenge(t *testing.T) {
-	table, err := buildOwnership([]authn.Verifier{enumerating("local", "alice")})
-	if err != nil {
-		t.Fatalf("building the table: %v", err)
-	}
-
-	got := challengeFor(table, "pub\"lic\r\nX-Evil: 1")
-	if strings.ContainsAny(got, "\r\n") {
-		t.Errorf("the challenge %q carries a line ending, so the rest of the endpoint name "+
-			"would reach the caller as a header of its own", got)
-	}
-	if strings.Contains(got, `realm="pub"lic`) {
-		t.Errorf("the challenge %q ends the quoted realm early, so the rest of the name is "+
-			"read as further challenge parameters", got)
-	}
-	if !strings.Contains(got, `pub\"lic`) {
-		t.Errorf("the challenge %q dropped the quote instead of escaping it, so two endpoints "+
-			"whose names differ only there would share a realm", got)
-	}
-}
-
-// TestTheChallengeOffersExactlyTheSchemesACredentialCanReachABackendUnder holds
-// what the scheme list in the challenge is: every way a credential can arrive
-// and be put to some backend, and nothing else.
-//
-// Basic reaches a backend through the gateway's own reading of it, and that
-// reading leads somewhere only when some backend claims subjects — one by one,
-// or openly. An assembly whose backends all claim whole schemes has nowhere for
-// a Basic credential to go, and offering it anyway tells a caller to send a
-// credential that is refused unread; a browser shown a Basic challenge opens its
-// native password prompt for it.
-func TestTheChallengeOffersExactlyTheSchemesACredentialCanReachABackendUnder(t *testing.T) {
-	yes := func(context.Context, string) (bool, error) { return true, nil }
+// TestARefusalMayCarryRetryAfterOnlyWhenTheCapacityWasInUse holds the one header
+// a 503 may carry. A backend that says its derivation capacity is in use is a
+// condition that passes, so the answer says to ask again in a second; no other
+// cause of a 503 says anything about when to come back, and a Retry-After on one
+// would be a promise nobody made.
+func TestARefusalMayCarryRetryAfterOnlyWhenTheCapacityWasInUse(t *testing.T) {
 	for _, c := range []struct {
-		name      string
-		verifiers []authn.Verifier
-		want      string
+		name   string
+		answer func() authn.Verdict
+		want   string
 	}{
-		{
-			name:      "whole schemes alone",
-			verifiers: []authn.Verifier{claimingScheme("issuer", "Bearer")},
-			want:      `Bearer realm="public"`,
-		},
-		{
-			name:      "enumerated subjects",
-			verifiers: []authn.Verifier{enumerating("local", "alice")},
-			want:      `Basic realm="public"`,
-		},
-		{
-			name:      "an open claim",
-			verifiers: []authn.Verifier{openly("directory", yes)},
-			want:      `Basic realm="public"`,
-		},
-		{
-			name:      "Basic claimed whole",
-			verifiers: []authn.Verifier{claimingScheme("vault", "basic")},
-			want:      `Basic realm="public"`,
-		},
-		{
-			name: "a whole scheme beside enumerated subjects",
-			verifiers: []authn.Verifier{
-				claimingScheme("issuer", "Bearer"), enumerating("local", "alice"),
-			},
-			want: `Basic realm="public", Bearer realm="public"`,
-		},
+		{"the capacity was in use", func() authn.Verdict { return authn.Unavailable(authn.ErrBusy) }, "1"},
+		{"the capacity was in use, wrapped", func() authn.Verdict {
+			return authn.Unavailable(errors.Join(errors.New("static"), authn.ErrBusy))
+		}, "1"},
+		{"the backend is down", func() authn.Verdict { return authn.Unavailable(errors.New("down")) }, ""},
+		{"no cause at all", func() authn.Verdict { return authn.Unavailable(nil) }, ""},
+		{"a refusal that mentions the capacity", func() authn.Verdict { return authn.Denied(authn.ErrBusy) }, ""},
 	} {
 		t.Run(c.name, func(t *testing.T) {
-			table, err := buildOwnership(c.verifiers)
-			if err != nil {
-				t.Fatalf("building the table: %v", err)
+			b := basicBackend("static", "static.")
+			b.verify = func(context.Context, authn.Credential) authn.Verdict { return c.answer() }
+			g := testGateway(t, []string{"public"}, b)
+			sealed(t, g, routerWith("public"))
+
+			w, _ := run(g, "public", withBasic(request("GET", "/x"), "a", "b"))
+			if got := w.Header().Get("Retry-After"); got != c.want {
+				t.Errorf("Retry-After reads %q, want %q", got, c.want)
 			}
-			if got := challengeFor(table, "public"); got != c.want {
-				t.Errorf("the challenge reads %q, want %q", got, c.want)
+		})
+	}
+
+	t.Run("the gateway's own outages carry none", func(t *testing.T) {
+		g := testGateway(t, []string{"public"}, passes(basicBackend("static", "static.")))
+		sealed(t, g, routerWith("public"))
+		g.stop()
+		w, _ := run(g, "public", withBasic(request("GET", "/x"), "a", "b"))
+		if w.Code != nethttp.StatusServiceUnavailable || w.Header().Get("Retry-After") != "" {
+			t.Errorf("a stopped gateway answered %d with Retry-After %q, want a 503 with none", w.Code, w.Header().Get("Retry-After"))
+		}
+	})
+}
+
+// TestEveryResponseOnAGuardedRouteVariesByTheCredentialCarriers holds the Vary
+// header: a cache that stored the answer to one caller's credential and served
+// it to another would hand over what the first was let see.
+func TestEveryResponseOnAGuardedRouteVariesByTheCredentialCarriers(t *testing.T) {
+	g := testGateway(t, []string{"public"}, passes(basicBackend("static", "static.")))
+	g.Exempt("public", "GET", "/status")
+	g.Optional("public", "GET", "/catalog")
+	sealed(t, g, routerWith("public"))
+	engine, _ := routedEngine(g, "public", [2]string{"GET", "/status"}, [2]string{"GET", "/catalog"}, [2]string{"GET", "/orders"})
+
+	for name, c := range map[string]struct {
+		path string
+		edit func(*nethttp.Request) *nethttp.Request
+		want string
+	}{
+		"a pass":                  {"/orders", func(r *nethttp.Request) *nethttp.Request { return withBasic(r, "a", "b") }, "Authorization, Cookie"},
+		"a refusal":               {"/orders", func(r *nethttp.Request) *nethttp.Request { return r }, "Authorization, Cookie"},
+		"an anonymous pass":       {"/catalog", func(r *nethttp.Request) *nethttp.Request { return r }, "Authorization, Cookie"},
+		"an exempt route's reply": {"/status", func(r *nethttp.Request) *nethttp.Request { return r }, ""},
+	} {
+		t.Run(name, func(t *testing.T) {
+			w := httptest.NewRecorder()
+			engine.ServeHTTP(w, c.edit(request("GET", c.path)))
+			if got := strings.Join(w.Header().Values("Vary"), ", "); got != c.want {
+				t.Errorf("Vary reads %q, want %q", got, c.want)
 			}
 		})
 	}
 }
 
-// TestAPassCarriesNoChallenge keeps the case above honest: the header belongs to
-// a refusal, and a request that was admitted has nothing to be challenged about.
+// TestACookieThatIsRefusedIsClearedAndNoOtherCredentialIs holds ClearCookie: it
+// is called when the backend refuses a credential that came in a cookie, so a
+// browser does not keep sending one that cannot hold. A header credential that is
+// refused clears nothing here, where the backend takes no cookie; the same for a
+// backend that takes both carriers is held in request_edges_test.go.
+func TestACookieThatIsRefusedIsClearedAndNoOtherCredentialIs(t *testing.T) {
+	for _, c := range []struct {
+		name   string
+		answer authn.Verdict
+		edit   func(*nethttp.Request) *nethttp.Request
+		clear  bool
+	}{
+		{"a cookie the backend refuses", authn.Denied(nil), func(r *nethttp.Request) *nethttp.Request { return withCookie(r, "sid", "stale") }, true},
+		{"a cookie the backend cannot judge", authn.Unavailable(nil), func(r *nethttp.Request) *nethttp.Request { return withCookie(r, "sid", "v") }, false},
+		{"a cookie the backend answers nothing about", authn.Verdict{}, func(r *nethttp.Request) *nethttp.Request { return withCookie(r, "sid", "v") }, false},
+		{"a cookie that holds", held(cookieBackend("session", "sid"), "alice"), func(r *nethttp.Request) *nethttp.Request { return withCookie(r, "sid", "v") }, false},
+		{"a header the backend refuses", authn.Denied(nil), func(r *nethttp.Request) *nethttp.Request { return withBearer(r, "stale") }, false},
+	} {
+		t.Run(c.name, func(t *testing.T) {
+			var cleared atomic.Int64
+			cookie := cookieBackend("session", "sid")
+			cookie.verify = func(context.Context, authn.Credential) authn.Verdict { return c.answer }
+			session := clearingVerifier{fakeVerifier: cookie, cleared: &cleared}
+			token := schemeBackend("token", "bearer")
+			token.verify = func(context.Context, authn.Credential) authn.Verdict { return c.answer }
+			g := testGateway(t, []string{"public"}, session, token)
+			sealed(t, g, routerWith("public"))
+
+			w, _ := run(g, "public", c.edit(request("GET", "/x")))
+
+			if c.clear {
+				if cleared.Load() != 1 {
+					t.Fatalf("the cookie was cleared %d time(s), want once", cleared.Load())
+				}
+				if got := w.Header().Get("Set-Cookie"); !strings.Contains(got, "sid=") || !strings.Contains(got, "Max-Age=0") {
+					t.Errorf("the response carries Set-Cookie %q, want the header that clears sid", got)
+				}
+			} else if cleared.Load() != 0 || w.Header().Get("Set-Cookie") != "" {
+				t.Errorf("the cookie was cleared (%d) or a Set-Cookie was written (%q) where it should not be",
+					cleared.Load(), w.Header().Get("Set-Cookie"))
+			}
+		})
+	}
+
+	t.Run("a backend that cannot clear", func(t *testing.T) {
+		cookie := cookieBackend("session", "sid") // denies, and implements no CookieClearer
+		g := testGateway(t, []string{"public"}, cookie)
+		sealed(t, g, routerWith("public"))
+		w, _ := run(g, "public", withCookie(request("GET", "/x"), "sid", "stale"))
+		if w.Code != nethttp.StatusUnauthorized || w.Header().Get("Set-Cookie") != "" {
+			t.Errorf("answered %d with Set-Cookie %q, want a plain 401", w.Code, w.Header().Get("Set-Cookie"))
+		}
+	})
+}
+
+// TestAPassCarriesNoChallenge holds that a request let through is not given a
+// WWW-Authenticate header, which belongs to a 401.
 func TestAPassCarriesNoChallenge(t *testing.T) {
-	g := testGateway(t, []string{"public"}, passes(enumerating("local", "alice")))
+	g := testGateway(t, []string{"public"}, passes(basicBackend("static", "static.")))
 	sealed(t, g, routerWith("public"))
 
 	w, _ := run(g, "public", withBasic(request("GET", "/orders"), "alice", "secret"))
 	if got := w.Header().Get(challengeHeader); got != "" {
-		t.Errorf("an admitted request carries the challenge %q", got)
+		t.Errorf("a pass carries %s %q, want none", challengeHeader, got)
 	}
-}
-
-// mustRefuse runs the ownership sequence for a bare subject and requires a
-// refusal, handing it back so its attributes can be read.
-func mustRefuse(t *testing.T, g *gateway, subject string) *refusal {
-	t.Helper()
-	found, deny := g.askOpenClaims(context.Background(), subject)
-	if deny == nil {
-		t.Fatalf("the subject %q resolved to %q, want a refusal", subject, found.claimant.name)
-	}
-	return deny
-}
-
-// renderAttrs flattens slog's alternating attribute form into something a test
-// can search.
-func renderAttrs(attrs []any) string {
-	var b strings.Builder
-	for _, a := range attrs {
-		b.WriteString(strings.TrimSpace(strings.Trim(stringify(a), "{}")))
-		b.WriteString(" ")
-	}
-	return b.String()
-}
-
-func stringify(a any) string {
-	type stringer interface{ String() string }
-	if s, ok := a.(stringer); ok {
-		return s.String()
-	}
-	return ""
 }

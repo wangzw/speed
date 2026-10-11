@@ -70,6 +70,7 @@ type Entry struct {
 	// Purpose 是用途或理由；跨租户这类需要说明的操作在此给出。
 	Purpose string
 	// Detail 是明细的键值。键名决定它是否被遮蔽，见"脱敏"。
+	// on_behalf_of、impersonation_scope 与 session 由本模块写入，见审计行的补全。
 	Detail map[string]string
 }
 
@@ -112,15 +113,17 @@ var ErrNotAccepting = errors.New("audit: the module is not accepting records")
 
 **主体与租户都取字符串，不引用交付它们的模块的类型。** 判据与事件总线相同：让一个模块的标识类型进入接口面，接口面所在的包就要 import 定义它的那个包。代价不是一份第三方依赖，而是本模块的接口面对认证与租户的具体功能的接口面的依赖（见 [event](design-event.md)）。读取它们因此发生在实现子包里。主体那一列的字符串是认证模块定义的责任键，本模块不重复这条定义，也不解析它的内部结构（见 [authn](design-authn.md) 的身份）。
 
-**上下文里的身份是冒充身份时，本模块的补全步骤往明细补入 `on_behalf_of`、`impersonation_scope` 与 `session`。** 判据是身份的 `Impersonating()` 为真；键名与取值如下，这一组是封闭集：
+**`on_behalf_of`、`impersonation_scope` 与 `session` 只由本模块在冒充行上写入。** 上下文里的身份是冒充身份（身份的 `Impersonating()` 为真）时，补全步骤往明细写入这些键，覆盖调用方放在同名下的值；其余的行，包括上下文里没有身份的行，调用方放进明细的同名键一律剥掉，调用方交来的映射不被改动。判据与代价见 [ADR-audit-impersonation-2026-10-11](../../adr/adr-audit-impersonation-2026-10-11.md)。键名与取值如下，这一组是封闭集：
 
 | 键 | 取值 |
 |---|---|
 | `on_behalf_of` | 身份的 `Account()`，即被冒充的账户 |
 | `impersonation_scope` | 身份的 `Scope()` 给出的租户，即冒充限定的那个租户 |
-| `session` | 身份的 `Session()`；它为空时不写这个键 |
+| `session` | 身份的 `Session()` |
 
-主体列在这时仍是实际操作者：审计行回答「谁动的手」，「替谁」由明细回答。这些键由本模块从上下文里的身份写入。凡是补全那一刻上下文里带着冒充身份的行都带它们，与来源通路无关。审计表的结构不变：表上没有按被冒充者索引的列，按被冒充者聚合要读明细（见非保证）。
+冒充身份经网关的出口检查保证带会话与冒充范围（见 [authn](design-authn.md) 的身份），所以冒充行上 `on_behalf_of`、`impersonation_scope` 与 `session` 都在。身份没有会话时不写 `session`，并删除调用方放在这个名下的值，行不带身份没有的会话；这是本模块对一个没有经过出口检查的身份的防御，不是网关盖出的身份会走到的分支。
+
+主体列在这时仍是实际操作者：审计行回答「谁动的手」，「替谁」由明细回答。这些键由本模块从上下文里的身份写入，不分来源通路，凡是补全那一刻上下文里带着冒充身份的行都带它们；各通路补全时手上的上下文不同，事件级通路里订阅回调收到的上下文不带发布方的上下文时，那条通路的行不带这些键（见非保证）。审计表的结构不变：表上没有按被冒充者索引的列，按被冒充者聚合要读明细（见非保证）。
 
 **一条审计行不因为主体或租户为空而被拒绝。** 系统级操作、豁免路由与没有凭据的可选认证路由上没有主体或租户，而它们同样是要留痕的那一类。登录发生在没有身份的豁免路由上，请求级通路为它写不出主体，由认证经接缝级自己记（见 [authn-events](design-authn-events.md) 的审计）。
 
@@ -483,6 +486,8 @@ sequenceDiagram
 - **没有匹配路由的请求不留请求级审计行。** 层只对已匹配的路由比对请求项，探测不存在的路径留不下痕。
 - **漏写的监听端不报错。** `endpoints` 里没写的监听端上没有任何请求级捕获，启动期不失败，也不产生诊断；察觉它靠入口模块组装时逐端的链清单里没有代表审计功能的那一层（见 [http](design-http.md)）。反过来不成立：`requests` 为空时本层照样登记，链清单里有它而它一个请求也不记，这一档要看 `capture in force` 那一行里的请求项条数。
 - **被认证层、租户解析层或限流层拒绝的请求不留请求级审计行。** 本层排在鉴别与限流两个阶段之后，未通过这两级准入的请求到不了这里；认证与租户的拒绝在各自模块写的日志里（见 [authn](design-authn.md) 与 [tenant](design-tenant.md)），限流的拒绝在限流模块写的日志里。排在本层之内的授权阶段给出的拒绝照常记下。
+- **事件级的行只带订阅回调收到的上下文里的身份。** 订阅回调收到的上下文不带发布方的上下文时，该上下文没有身份：这条通路的行主体为空，明细里没有 `on_behalf_of`、`impersonation_scope`、`session`，冒充期间经事件发布的变更因此在审计行上看不出是谁在冒充谁。传输型总线用自己的上下文调用订阅方（见 [event](design-event.md)），经发件箱中继发布的事件在任何一种总线上交给订阅方的都是中继的上下文，不是发布方的（见 [outbox](design-outbox.md) 的发布的承诺）；只有不经发件箱、在进程内总线上直接发布的事件，订阅方收到发布方的上下文，行才带这些键。载荷自带操作者的事件（设置变更的 `Actor` 字段即是）不受影响，操作者取自载荷。
+- **非冒充行上调用方的同名明细键被静默剥掉。** 记录接缝的明细或事件载荷的字段叫 `on_behalf_of`、`impersonation_scope` 或 `session` 时，值不进表，调用方与发布方都得不到错误或日志；要记会话标识的调用方改用别的键名（认证模块自己用 `sid`）。
 - **冒充明细只在明细里，不在列上。** `on_behalf_of`、`impersonation_scope` 与 `session` 存在明细的序列化文本里，审计表没有按被冒充者索引的列；「某账户名下被冒充操作过的全部动作」要扫明细。冒充的开始与结束另有认证模块自己的记录，可按目标账户查询（见 [authn-impersonation](design-authn-impersonation.md) 的表 authn_impersonations）。
 - **请求路径原样进明细。** 路径里的标识与个人数据（写进路径的邮箱即是）不经遮蔽落库：遮蔽只比对明细的键名，不看值。
 - **不调用记录接缝的跨租户操作不留痕。** 用途与操作一起由调用点交给接缝；没有调用点就没有痕，本模块无从知道哪个调用点该调用。
@@ -533,8 +538,8 @@ sequenceDiagram
 | 事件级捕获 | 已实现 | `pkg/audit/journal/event.go` `subscribe`、`handlerFor` |
 | 事件级按事件标识去重 | 已实现 | `pkg/audit/journal/event.go` `eventIDOf`；`pkg/audit/journal/entry.go` `insert` |
 | 记录接缝 | 已实现 | `pkg/audit/journal/entry.go` `Record` |
-| 主体列取责任键 `Key()`，冒充时是实际操作者 | 部分实现 — 取 `Key()` 的写法已在；冒充时 `Key()` 取实际操作者的账户，依赖认证重设计里身份与责任键的落地 | `pkg/audit/journal/entry.go` `actorOf` |
-| 审计组装在冒充时补入 `on_behalf_of`、`impersonation_scope`、`session` | 部分实现 — 缺这些键与按 `Impersonating()` 的判定；现有组装只填行动者、租户、来源与调用方给的明细 | `pkg/audit/journal/entry.go` `assemble` |
+| 主体列取责任键 `Key()`，冒充时是实际操作者 | 已实现 — `Key()` 恒为实际操作者的账户标识，冒充时主体列记真正动手的人 | `pkg/audit/journal/entry.go` `actorOf`；`pkg/authn/internal/identity/identity.go` `Key` |
+| 审计组装在冒充时补入 `on_behalf_of`、`impersonation_scope`、`session`，非冒充行剥掉调用方的同名键 | 已实现 — 判据是 `Impersonating()`，每条通路都经 `assemble`；补入的键写在调用方的明细之上，非冒充行上同名键被剥掉 | `pkg/audit/journal/entry.go` `assemble`、`withImpersonation`、`withoutImpersonationKeys` |
 | 明细脱敏 | 已实现 | `pkg/audit/journal/redact.go` `maskedKeySet`、`maskDetail` |
 | 失败信号 | 已实现 | `pkg/audit/journal/signal.go` `signal`、`report` |
 | 配置 | 已实现 | `pkg/audit/journal/config.go` `schema`、`readSettings` |

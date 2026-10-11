@@ -2,8 +2,9 @@
 # in e2e_test.go write their own, with their own ports and their own database
 # file, so nothing here is load-bearing for `make check`.
 #
-# The one account is alice with the password "s3cret". The hash below is what
-# the `hash` command produces for it, which is the only form a password is ever
+# The one account is alice with the password "s3cret", which the gateway knows
+# as static.alice. The entry below is what the `hash` command produces for it, an
+# Argon2id string in the PHC form, which is the only form a password is ever
 # written in: this file is the one an operator checks in or mounts as a secret.
 http:
   endpoints:
@@ -16,12 +17,14 @@ db:
     dsn: "orders-host.db"
 authn:
   gate:
+    # Left out, the key guards every endpoint. Naming the public one narrows
+    # that, so the ops endpoint, which serves the health check and carries no
+    # credential, is not guarded.
     endpoints:
       - public
   static:
-    name: local
     subjects:
-      alice: "pbkdf2-sha256$600000$BX9j3EiuLR4S79FTmjj9dw$2vKTCfw3Uq14KIrgIFfmxlzQ3AR17pdHLADoJPAoaCw"
+      alice: "$argon2id$v=19$m=19456,t=2,p=1$PdXT9r3cnPwrIV3GuEnpkQ$HQpohtsI56f/s9qfHKmVnLKmjVJwXZdCnq3WWBHHp9s"
 tenant:
   resolve:
     endpoints:

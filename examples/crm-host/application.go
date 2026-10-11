@@ -4,9 +4,11 @@ import (
 	"context"
 	"crypto/rand"
 	"crypto/sha256"
+	"embed"
 	"encoding/hex"
 	"errors"
 	"fmt"
+	"io/fs"
 	"log/slog"
 	nethttp "net/http"
 	"slices"
@@ -52,6 +54,18 @@ type application struct {
 	// requests its configuration lists, and the harness writes that list from
 	// these.
 	journalled []string
+}
+
+// subtree is fs.Sub for a tree embedded at build time, where a failure is a
+// mistake in this program rather than a condition to report. Every module that
+// carries migrations drops the wrapping directories of its embedded tree with
+// it.
+func subtree(root embed.FS, dir string) fs.FS {
+	sub, err := fs.Sub(root, dir)
+	if err != nil {
+		panic("crm-host: the embedded tree " + dir + ": " + err.Error())
+	}
+	return sub
 }
 
 // applications is every application module this host registers, in

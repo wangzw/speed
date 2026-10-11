@@ -2,15 +2,12 @@ package gate
 
 import (
 	"context"
-	"encoding/base64"
 	"errors"
 	"fmt"
 	"log/slog"
 	nethttp "net/http"
 	"runtime/debug"
-	"sort"
 	"strings"
-	"sync"
 
 	"github.com/gin-gonic/gin"
 
@@ -29,18 +26,16 @@ const authHeader = "Authorization"
 // authentication schemes in.
 const challengeHeader = "WWW-Authenticate"
 
-// basicScheme is the one authentication scheme this gateway can read a subject
-// out of by itself.
-//
-// Step 1 of the ownership sequence splits on whether a backend claims the
-// credential's scheme whole. When one does, that backend reads the subject; when
-// none does, the gateway has to, and it can only do that for a scheme whose
-// credential carries the subject in a place fixed by a standard. Basic is that
-// scheme (RFC 7617: base64 of user:pass). A credential under any other unclaimed
-// scheme is opaque here and the request ends at step 1 with a refusal charged to
-// the gateway — which is the fail-closed direction, and is fixed by the backend
-// for that scheme claiming it whole.
-const basicScheme = "basic"
+// varyValue is what every response on a guarded route varies by. A cache that
+// stored the answer to one caller's credential and served it to another would
+// hand over what the first was let see, so a response is keyed by both carriers.
+const varyValue = "Authorization, Cookie"
+
+// retryAfterBusy is the Retry-After a 503 carries when the backend refused to
+// derive a password because its capacity was in use. It is the one 503 that is a
+// transient condition of this process and says so: every other cause of a 503
+// carries no promise about when to come back.
+const retryAfterBusy = "1"
 
 // errStopped and errSaturated are the two refusals the gateway makes before a
 // backend is reached at all. Both end the request as an outage: the module
@@ -58,48 +53,20 @@ var (
 	errAbandoned = errors.New("the request's own context ended before the backend answered")
 )
 
-// reach records why a backend was asked. Exit binding needs it: what counts as
-// the returned subject still falling inside the backend's claim depends on which
-// claim authorised the question.
-type reach int
-
-const (
-	// reachScheme is step 1: the backend claims the credential's scheme
-	// whole and read the subject out of the credential itself.
-	reachScheme reach = iota
-	// reachQualified is step 2: the subject named its owner.
-	reachQualified
-	// reachEnumerated is step 3: the backend wrote the subject out by hand.
-	reachEnumerated
-	// reachOpen is step 4: the backend answered that a bare subject is its
-	// own.
-	reachOpen
-)
-
-// lookup is the outcome of the ownership sequence: which backend to ask, why,
-// and with what subject.
-type lookup struct {
-	claimant *claimant
-	reach    reach
-	// subject is what is handed to Verify. It is empty for reachScheme,
-	// where the backend reads the subject out of the credential.
-	subject string
-}
-
 // refusal is a conclusion reached without a backend verdict, or one derived
 // from a backend's failure to produce one.
 type refusal struct {
 	status int
-	// bucket is which of the four counters this conclusion lands in.
-	bucket verdict.Outcome
+	// bucket is which of the counters this conclusion lands in.
+	bucket int
 	// reason is the log line.
 	reason string
 	// level is what the log line is written at, and it follows who has
 	// something to do about it. A refusal is ordinary traffic and is written
 	// at Info, and so is a request its own caller ended; an outage is an
 	// operator's to look at and is written at Warn; a backend that returned
-	// without answering, that panicked, or that passed a subject outside its
-	// claim is a defect somebody has to fix and is written at Error. The
+	// without answering, that panicked, or that passed a principal outside what
+	// it may is a defect somebody has to fix and is written at Error. The
 	// level is the first filter every log pipeline applies, so a signal
 	// written below the one a deployment keeps is a signal nobody receives.
 	level slog.Level
@@ -108,6 +75,14 @@ type refusal struct {
 	backend string
 	// attrs are extra log attributes, in slog's alternating form.
 	attrs []any
+	// refused is the backend whose credential this 401 refuses, which the
+	// challenge is written for, or nil when the request reached none.
+	refused *backend
+	// clear says the backend refused a credential that came in a cookie, so the
+	// cookie is to be cleared in this response.
+	clear bool
+	// retryAfter is the Retry-After this response carries, empty for none.
+	retryAfter string
 }
 
 // gatewayRefusal builds a refusal the gateway produced itself: a 401 charged to
@@ -115,7 +90,7 @@ type refusal struct {
 func gatewayRefusal(reason string, attrs ...any) *refusal {
 	return &refusal{
 		status: nethttp.StatusUnauthorized,
-		bucket: verdict.Denied,
+		bucket: int(verdict.Denied),
 		reason: reason,
 		level:  slog.LevelInfo,
 		attrs:  attrs,
@@ -135,7 +110,10 @@ func gatewayRefusal(reason string, attrs ...any) *refusal {
 // The cause decides the level too. An outage is written at Warn; a panic is a
 // defect rather than an outage, is written at Error, and carries the stack it
 // was raised on; a request its own caller brought to an end is ordinary
-// traffic and is written at Info.
+// traffic and is written at Info. And the cause decides the one header a 503
+// may carry: a backend that says its capacity is in use is a condition that
+// passes in a moment, so the response says to ask again in one second, and no
+// other cause of a 503 says anything of the kind.
 func outage(backend, reason string, cause error, attrs ...any) *refusal {
 	if errors.Is(cause, errStopped) || errors.Is(cause, errSaturated) ||
 		errors.Is(cause, errAbandoned) {
@@ -153,14 +131,18 @@ func outage(backend, reason string, cause error, attrs ...any) *refusal {
 		level = slog.LevelError
 		attrs = append(attrs, slog.String("stack", string(panicked.stack)))
 	}
-	return &refusal{
+	r := &refusal{
 		status:  nethttp.StatusServiceUnavailable,
-		bucket:  verdict.Unavailable,
+		bucket:  int(verdict.Unavailable),
 		reason:  reason,
 		level:   level,
 		backend: backend,
 		attrs:   attrs,
 	}
+	if errors.Is(cause, authn.ErrBusy) {
+		r.retryAfter = retryAfterBusy
+	}
+	return r
 }
 
 // backendPanic is a panic caught at a backend call site. It travels as an
@@ -191,18 +173,18 @@ func caught(format string, args ...any) *backendPanic {
 // settles the caller. A layer that wants to sit inside or outside it within the
 // stage declares After or Before pointing at (*authn.Gate)(nil).
 func (g *gateway) middlewareFor(endpoint string) speedhttp.Middleware {
-	// The layer is built out of the ownership table, so the table has to
-	// exist by now. A nil one is a mistake in this package's own ordering
-	// rather than anything a host did, and saying so here beats the nil
-	// dereference it would otherwise become several frames away.
+	// The layer is built out of the dispatch table, so the table has to exist
+	// by now. A nil one is a mistake in this package's own ordering rather than
+	// anything a host did, and saying so here beats the nil dereference it
+	// would otherwise become several frames away.
 	if g.table == nil {
 		panic(ModuleName + ": a layer was built for endpoint " + endpoint + " before the " +
-			"ownership table. The table decides what the layer answers a refusal with, so " +
+			"dispatch table. The table decides what the layer answers a refusal with, so " +
 			"Init has to build it before it registers anything")
 	}
 	// The challenge names this endpoint as its realm, so it is built once
 	// per endpoint here rather than once per gateway.
-	challenge := challengeFor(g.table, endpoint)
+	challenge := newChallenge(g.table, endpoint)
 	return speedhttp.Middleware{
 		Name:     ModuleName,
 		Provides: []core.Token{(*authn.Gate)(nil)},
@@ -223,12 +205,12 @@ func (g *gateway) middlewareFor(endpoint string) speedhttp.Middleware {
 // below is for this module's own defects; a panic in a layer or a handler behind
 // this one belongs to the entry point's fallback, and catching it here would
 // answer for code this module does not own.
-func (g *gateway) admit(endpoint, challenge string, c *gin.Context) (passed bool) {
+func (g *gateway) admit(endpoint string, ch *challenge, c *gin.Context) (passed bool) {
 	defer func() {
 		if rec := recover(); rec != nil {
 			// The gateway's own defect. It is counted in none of the
-			// four buckets: those count judgements about a credential,
-			// and this is not one.
+			// buckets: those count judgements about a credential, and this
+			// is not one.
 			//
 			// The entry point's fallback would answer a panic here with
 			// a 500 as well, and could not say which layer it was
@@ -243,24 +225,54 @@ func (g *gateway) admit(endpoint, challenge string, c *gin.Context) (passed bool
 		}
 	}()
 
-	// The exemption is judged before the Authorization header is read, so
-	// no backend is reached on an exempt route whatever the request carries.
-	if g.exempts(endpoint, c) {
+	// The registrations are read before the Authorization header, so no backend
+	// is reached on an exempt route whatever the request carries.
+	reg := g.accessOf(endpoint, c)
+	if reg.exempt {
+		c.Request = c.Request.WithContext(identity.WithAccess(c.Request.Context(), authn.AccessOpen))
 		return true
 	}
+	level := authn.AccessRequired
+	if reg.optional {
+		level = authn.AccessOptional
+	}
+	// From here the response depends on what the request carries.
+	c.Writer.Header().Add("Vary", varyValue)
 
-	id, deny := g.identify(c.Request)
+	found, deny := g.credentialOf(c.Request)
+	if deny == nil && found == nil {
+		if reg.optional {
+			g.anonymous(c, endpoint)
+			c.Request = c.Request.WithContext(identity.WithAccess(c.Request.Context(), level))
+			return true
+		}
+		deny = gatewayRefusal(ModuleName + ": the request carries no credential")
+	}
+
+	var id identity.Identity
+	if deny == nil {
+		id, deny = g.identify(c, endpoint, reg, found)
+	}
 	if deny != nil {
 		g.conclude(c.Request, endpoint, deny)
+		if deny.clear && found != nil && found.backend.clearer != nil {
+			// The backend said the credential does not hold, so the browser
+			// is told to stop sending it. Left in place, it would be sent on
+			// every request and refused every time.
+			found.backend.clearer.ClearCookie(c.Writer)
+		}
 		if deny.status == nethttp.StatusUnauthorized {
 			// A 401 carrying no challenge tells a caller it needs a
 			// credential without saying what kind, which is the one
-			// thing RFC 7235 does not allow a 401 to do. The entry point
+			// thing RFC 9110 does not allow a 401 to do. The entry point
 			// decides the shape of the body, and it is not this module's
 			// to carry the answer in, so the header is the whole of what
 			// a caller can rely on. It is set before the response is
 			// written, and the entry point keeps it.
-			c.Header(challengeHeader, challenge)
+			c.Header(challengeHeader, ch.valueFor(deny.refused))
+		}
+		if deny.retryAfter != "" {
+			c.Header("Retry-After", deny.retryAfter)
 		}
 		// The problem carries the status alone. What the refusal was for,
 		// and whose it was, reaches the log and no further.
@@ -269,46 +281,80 @@ func (g *gateway) admit(endpoint, challenge string, c *gin.Context) (passed bool
 	}
 
 	g.counts[verdict.Authenticated].Add(1)
-	ctx := identity.With(c.Request.Context(), id)
-	ctx = log.WithAttrs(ctx, slog.String("subject", id.Key()))
+	ctx := identity.WithAccess(identity.With(c.Request.Context(), id), level)
+	ctx = log.WithAttrs(ctx, identityAttrs(id)...)
 	c.Request = c.Request.WithContext(ctx)
 	return true
 }
 
-// identify runs the ownership sequence, the backend call and exit binding,
-// and produces either the identity to stamp or the refusal to conclude with.
-func (g *gateway) identify(r *nethttp.Request) (identity.Identity, *refusal) {
-	credential, ok := credentialOf(r)
-	if !ok {
-		return identity.Identity{}, gatewayRefusal(ModuleName + ": the request carries no usable " +
-			authHeader + " header")
+// identityAttrs are the correlation fields every record of a request carries
+// once the gateway has stamped an identity on it: the account, the backend that
+// verified it and, when they apply, the actor of an impersonation and the
+// session. The account is an identifier and never a credential.
+func identityAttrs(id identity.Identity) []any {
+	attrs := []any{
+		slog.String("account", string(id.Account())),
+		slog.String("backend", id.Backend()),
+	}
+	if id.Impersonating() {
+		attrs = append(attrs, slog.String("actor", string(id.Actor())), slog.Bool("impersonating", true))
+	}
+	if session := id.Session(); session != "" {
+		attrs = append(attrs, slog.String("session", string(session)))
+	}
+	return attrs
+}
+
+// identify asks the backend that took the credential, then holds what it says
+// to the exit checks and the impersonation rule, and produces either the
+// identity to stamp or the refusal to conclude with.
+func (g *gateway) identify(c *gin.Context, endpoint string, reg access, found *claimed) (identity.Identity, *refusal) {
+	b := found.backend
+	r := c.Request
+
+	// The unsafe request of a credential the browser may attach by itself is held
+	// to the cross-origin check before any backend is asked: a request a page of
+	// another origin made with the browser's own cookie or a credential it
+	// stored after a challenge is the forgery the check exists to refuse. It is
+	// the gateway's own refusal, and the credential is not cleared, because
+	// nothing about it was judged.
+	if found.attachedByBrowser() {
+		if err := g.csrf.Check(r); err != nil {
+			attrs := []any{slog.String("cause", err.Error())}
+			carrier := found.cred.Scheme
+			if found.fromCookie {
+				carrier = "cookie"
+				attrs = append([]any{slog.String("cookie_name", found.cred.Cookie)}, attrs...)
+			}
+			return identity.Identity{}, gatewayRefusal(ModuleName+": the request carries a "+carrier+
+				" credential and fails the cross-origin check, so it is refused unread", attrs...)
+		}
 	}
 
-	found, deny := g.resolveOwner(r.Context(), credential)
-	if deny != nil {
-		return identity.Identity{}, deny
-	}
-
-	answer, err := g.verify(r.Context(), found.claimant, found.subject, credential)
+	cred := found.cred
+	cred.Peer = c.ClientIP()
+	answer, err := g.verify(r.Context(), b, cred)
 	if err != nil {
-		return identity.Identity{}, outage(found.claimant.name,
+		return identity.Identity{}, outage(b.name,
 			ModuleName+": the backend could not be asked about this credential", err)
 	}
 
 	switch verdict.OutcomeOf(answer) {
 	case verdict.Authenticated:
-		// Falls through to exit binding below.
+		// Falls through to the exit checks below.
 	case verdict.Denied:
 		return identity.Identity{}, &refusal{
 			status:  nethttp.StatusUnauthorized,
-			bucket:  verdict.Denied,
+			bucket:  int(verdict.Denied),
 			reason:  ModuleName + ": the backend refused this credential",
 			level:   slog.LevelInfo,
-			backend: found.claimant.name,
+			backend: b.name,
 			attrs:   causeAttrs(answer),
+			refused: b,
+			clear:   found.fromCookie,
 		}
 	case verdict.Unavailable:
-		return identity.Identity{}, outage(found.claimant.name,
+		return identity.Identity{}, outage(b.name,
 			ModuleName+": the backend cannot answer about this credential right now",
 			verdict.CauseOf(answer))
 	default:
@@ -321,36 +367,70 @@ func (g *gateway) identify(r *nethttp.Request) (identity.Identity, *refusal) {
 		// written at Info is one a production pipeline drops.
 		return identity.Identity{}, &refusal{
 			status:  nethttp.StatusUnauthorized,
-			bucket:  verdict.Unspoken,
+			bucket:  int(verdict.Unspoken),
 			reason:  ModuleName + ": the backend returned without answering",
 			level:   slog.LevelError,
-			backend: found.claimant.name,
+			backend: b.name,
+			refused: b,
 		}
 	}
 
-	returned := verdict.SubjectOf(answer)
-	bound, err := g.exitBound(r.Context(), found, returned)
-	if err != nil {
-		return identity.Identity{}, outage(found.claimant.name,
-			ModuleName+": the backend could not be asked whether the subject it returned "+
-				"is its own", err)
-	}
-	if !bound {
-		// The one gateway-produced refusal that happens after a backend
-		// has answered. The judgement is the ownership table's, and the
-		// gateway built the table, so it is charged here rather than to
-		// the backend. It is written at Error all the same: whoever is
-		// charged, a backend said something it had no authority to say,
-		// which is a defect in that backend or an overlap in this
-		// deployment, and either is somebody's to fix.
-		deny := gatewayRefusal(ModuleName+": the backend returned a subject "+
-			"that does not fall inside its own claim, so the pass is not honoured",
-			slog.String("backend", found.claimant.name),
-			slog.String("returned-subject", returned))
-		deny.level = slog.LevelError
+	principal, reason := checkPrincipal(verdict.PrincipalOf(answer), g.clock.Now(), b, g.table)
+	if reason != "" {
+		deny := exitRefusal(ModuleName+": the principal the backend returned does not pass the "+
+			"exit check, so the pass is not honoured", b, slog.String("reason", reason))
 		return identity.Identity{}, deny
 	}
-	return identity.New(found.claimant.name, returned), nil
+	if principal.Actor != "" && !g.impersonationAdmitted(endpoint, reg) {
+		// The credential holds and the principal is well formed, and the route
+		// is still not one an impersonating identity may reach: it is neither
+		// registered for it nor on an endpoint whose tenant range the
+		// admission layer checks. The refusal is the gateway's judgement and
+		// is charged to the backend whose pass it declines, and it is
+		// ordinary traffic, so it is written at Info.
+		return identity.Identity{}, &refusal{
+			status:  nethttp.StatusUnauthorized,
+			bucket:  int(verdict.Denied),
+			reason:  ModuleName + ": an impersonating identity reached a route that neither admits one nor lies on an endpoint the scope guard covers",
+			level:   slog.LevelInfo,
+			backend: b.name,
+			refused: b,
+			attrs:   []any{slog.String("cause", "impersonation-scope")},
+		}
+	}
+	return identity.New(principal, b.name, challengeName(found)), nil
+}
+
+// impersonationAdmitted reports whether an impersonating identity may be let
+// into the route: the route is registered Impersonable, or the endpoint is one
+// the scope guard covers. With no scope guard in the assembly only the first can
+// hold.
+func (g *gateway) impersonationAdmitted(endpoint string, reg access) bool {
+	if reg.impersonable {
+		return true
+	}
+	return g.scope != nil && g.scope.Covers(endpoint)
+}
+
+// exitRefusal builds the refusal for a pass that did not survive the exit
+// checks. It is the gateway's own judgement, so it is charged to the gateway,
+// and it is written at Error: whoever is charged, a backend said something it
+// had no authority to say.
+func exitRefusal(reason string, b *backend, attrs ...any) *refusal {
+	deny := gatewayRefusal(reason, append([]any{slog.String("backend", b.name)}, attrs...)...)
+	deny.level = slog.LevelError
+	deny.refused = b
+	return deny
+}
+
+// challengeName is the scheme name a re-authentication challenge for this
+// credential is written with: the scheme it arrived under, in its conventional
+// capitalisation, or the cookie scheme for a credential that came in a cookie.
+func challengeName(found *claimed) string {
+	if found.fromCookie {
+		return cookieChallengeScheme
+	}
+	return canonicalScheme(found.cred.Scheme)
 }
 
 // causeAttrs renders what a verdict carried, for the log line. The cause
@@ -378,253 +458,126 @@ func (g *gateway) conclude(r *nethttp.Request, endpoint string, deny *refusal) {
 	attrs := append([]any{
 		slog.String("endpoint", endpoint),
 		slog.Int("status", deny.status),
-		slog.String("outcome", deny.bucket.String()),
-		slog.String("attributed-to", attributed),
+		slog.String("outcome", bucketName(deny.bucket)),
+		slog.String("attributed_to", attributed),
 	}, deny.attrs...)
 	log.FromContext(r.Context()).Log(r.Context(), deny.level, deny.reason, attrs...)
 }
 
-// credentialOf reads the credential out of the request.
+// anonymous counts a request that carried no credential and passed on an
+// optional route, and writes the line that says so.
+func (g *gateway) anonymous(c *gin.Context, endpoint string) {
+	g.counts[bucketAnonymous].Add(1)
+	r := c.Request
+	log.FromContext(r.Context()).Info(ModuleName+": the request carries no credential and the "+
+		"route accepts that, so it passes with no identity",
+		slog.String("endpoint", endpoint),
+		slog.String("outcome", bucketName(bucketAnonymous)))
+}
+
+// claimed is a credential taken off a request together with the backend that
+// takes it.
+type claimed struct {
+	cred       authn.Credential
+	backend    *backend
+	fromCookie bool
+}
+
+// scriptWrittenScheme is the one Authorization scheme the gateway knows a browser
+// never attaches by itself: a Bearer header is written by the page's own script,
+// which the same-origin policy keeps from a page of another site. It is named
+// because the gateway reads nothing of a credential and so cannot tell whether a
+// scheme it was told about is one a browser stores after a challenge and sends
+// again on its own, as it does Basic, Digest, Negotiate and NTLM. Every other
+// scheme is held to the cross-origin check, so a scheme nobody listed fails
+// closed and not open.
+const scriptWrittenScheme = "bearer"
+
+// attachedByBrowser reports whether the browser may send this credential on a
+// request the user did not mean to make: a cookie, and a header under any scheme
+// but the one only a script writes.
+func (c *claimed) attachedByBrowser() bool {
+	return c.fromCookie || c.cred.Scheme != scriptWrittenScheme
+}
+
+// credentialOf reads the credential out of the request. A nil credential with no
+// refusal is a request that carries none.
 //
-// More than one Authorization header is refused rather than resolved by picking
-// one: which of them the caller meant cannot be known, and choosing would let a
-// caller who can add a header decide which credential is judged.
-func credentialOf(r *nethttp.Request) (authn.Credential, bool) {
+// The Authorization header goes first and goes alone: when one is there the
+// cookies are not read, and a header that does not hold is not made up for by a
+// cookie that might, because two carriers judged separately would be two ways
+// for a caller to get through. More than one Authorization header is refused
+// rather than resolved by picking one: which of them the caller meant cannot be
+// known, and choosing would let a caller who can add a header decide which
+// credential is judged.
+//
+// Without the header, the cookies a backend takes are the source. Two of them on
+// one request, the same name twice or two names two backends take, are refused
+// for the same reason: which was meant cannot be known, and a page that can set
+// a cookie for this site must not be the one to choose. A cookie no backend
+// takes is not a credential at all.
+func (g *gateway) credentialOf(r *nethttp.Request) (*claimed, *refusal) {
 	values := r.Header.Values(authHeader)
-	if len(values) != 1 {
-		return authn.Credential{}, false
-	}
-	field := strings.TrimSpace(values[0])
-	if field == "" {
-		return authn.Credential{}, false
-	}
-	scheme, value, _ := strings.Cut(field, " ")
-	if scheme == "" {
-		return authn.Credential{}, false
-	}
-	// The scheme is folded here, once, because that is what the surface
-	// promises a backend: authentication scheme names are case-insensitive on
-	// the wire, and a backend left to compare the raw token would authenticate
-	// or refuse on the casing a client happened to send.
-	return authn.Credential{Scheme: strings.ToLower(scheme), Value: strings.TrimSpace(value)}, true
-}
-
-// subjectFromCredential reads the subject a Basic credential carries. See
-// basicScheme for why this is the only scheme it answers for.
-func subjectFromCredential(c authn.Credential) (string, bool) {
-	if !strings.EqualFold(c.Scheme, basicScheme) {
-		return "", false
-	}
-	raw, err := base64.StdEncoding.DecodeString(c.Value)
-	if err != nil {
-		return "", false
-	}
-	user, _, found := strings.Cut(string(raw), ":")
-	if !found || user == "" {
-		return "", false
-	}
-	return user, true
-}
-
-// resolveOwner runs the four-step ownership sequence. The sequence is the whole
-// of it: a credential that reaches the end of step 4 without an owner is
-// refused, never handed to a backend chosen some other way.
-func (g *gateway) resolveOwner(ctx context.Context, c authn.Credential) (lookup, *refusal) {
-	// 1. The scheme claimed whole.
-	// The credential arrives with its scheme already folded, and the table is
-	// keyed the same way, so the two meet without either side folding again.
-	if owner, claimed := g.table.byScheme[c.Scheme]; claimed {
-		return lookup{claimant: owner, reach: reachScheme}, nil
-	}
-	subject, readable := subjectFromCredential(c)
-	if !readable {
-		return lookup{}, gatewayRefusal(ModuleName+": no backend claims this credential's "+
-			"authentication scheme, and the gateway cannot read a subject out of it",
-			slog.String("scheme", c.Scheme))
-	}
-
-	// 2. The subject naming its owner.
-	//
-	// The qualification says which backend to ask. It does not say that the
-	// backend is the authority for the subject, and the claimant still has
-	// to answer that: ownership is never derived from the subject string.
-	// Without the check below a caller who knows a backend's name could
-	// reach it with any subject at all — turning the writing form that
-	// exists to disambiguate into one that escalates — and exit binding
-	// would wave the result through, because the subject a backend returns
-	// on this path is the subject it was asked about.
-	if owner, bare, qualified := g.qualified(subject); qualified {
-		if owner == nil {
-			return lookup{}, gatewayRefusal(ModuleName+": the subject names an owner no "+
-				"backend in this command reports", slog.String("subject", subject))
+	switch {
+	case len(values) > 1:
+		return nil, gatewayRefusal(ModuleName+": the request carries more than one "+
+			authHeader+" header, and which one is meant cannot be told",
+			slog.Int("headers", len(values)))
+	case len(values) == 1:
+		field := strings.TrimSpace(values[0])
+		scheme, value, separated := strings.Cut(field, " ")
+		if scheme == "" {
+			return nil, gatewayRefusal(ModuleName + ": the " + authHeader + " header is empty or " +
+				"names no scheme")
 		}
-		owns, err := g.claims(ctx, owner, bare)
-		if err != nil {
-			return lookup{}, outage(owner.name,
-				ModuleName+": the named backend could not answer whether this subject is its own",
-				err, slog.String("subject", subject))
+		// The scheme is folded here, once, because that is what the surface
+		// promises a backend: authentication scheme names are case-insensitive
+		// on the wire, and a backend left to compare the raw token would
+		// authenticate or refuse on the casing a client happened to send.
+		folded := strings.ToLower(scheme)
+		b, taken := g.table.byScheme[folded]
+		if !taken {
+			// What the client wrote in the scheme position is not written
+			// down. A caller who left the scheme out puts the credential
+			// itself there, and a masking rule cannot be relied on to catch
+			// an arbitrary secret, so the record carries the shape of what
+			// arrived and none of its text.
+			return nil, gatewayRefusal(ModuleName+": no backend takes this credential's "+
+				"authentication scheme", slog.Int("scheme_length", len(scheme)),
+				slog.Bool("scheme_separated", separated))
 		}
-		if !owns {
-			return lookup{}, gatewayRefusal(ModuleName+": the backend this subject names is not "+
-				"the authority for it", slog.String("subject", subject),
-				slog.String("backend", owner.name))
+		return &claimed{
+			cred:    authn.Credential{Scheme: folded, Value: strings.TrimSpace(value)},
+			backend: b,
+		}, nil
+	}
+
+	if len(g.table.byCookie) == 0 {
+		return nil, nil
+	}
+	var found *claimed
+	for _, cookie := range r.Cookies() {
+		b, taken := g.table.byCookie[cookie.Name]
+		if !taken {
+			continue
 		}
-		return lookup{claimant: owner, reach: reachQualified, subject: bare}, nil
-	}
-
-	// 3. The subject enumerated by hand.
-	if owner, enumerated := g.table.bySubject[subject]; enumerated {
-		return lookup{claimant: owner, reach: reachEnumerated, subject: subject}, nil
-	}
-
-	// 4. A bare name, put to every open claim at once.
-	return g.askOpenClaims(ctx, subject)
-}
-
-// qualified splits an owner-qualified subject. The split is on the first
-// separator, so a backend name never has to be escaped and the remainder is the
-// subject as that backend knows it.
-func (g *gateway) qualified(subject string) (owner *claimant, bare string, ok bool) {
-	name, rest, found := strings.Cut(subject, authn.Separator)
-	if !found {
-		return nil, subject, false
-	}
-	return g.table.byName[name], rest, true
-}
-
-// ownsAnswer is one open claimant's answer about one bare subject.
-type ownsAnswer struct {
-	claimant *claimant
-	owns     bool
-	err      error
-}
-
-// askOpenClaims puts a bare subject to every open claim at once.
-//
-// Exactly one claim is an answer; none is a refusal; more than one is a refusal
-// too, and that is the overlap the build could not detect — an open claim has no
-// key to collide on. The log names the parties and the qualified form that
-// resolves it, because nothing else in the process can.
-//
-// Any open claim that fails or panics ends the request as an outage whatever the
-// others said. A claim that could not be asked is not a claim that said no, and
-// treating it as one would let a broken backend hand its subjects to whoever
-// answers next.
-func (g *gateway) askOpenClaims(ctx context.Context, subject string) (lookup, *refusal) {
-	if len(g.table.open) == 0 {
-		return lookup{}, gatewayRefusal(ModuleName+": no backend claims this subject",
-			slog.String("subject", subject))
-	}
-
-	answers := make([]ownsAnswer, len(g.table.open))
-	var wg sync.WaitGroup
-	for i, c := range g.table.open {
-		wg.Add(1)
-		go func() {
-			defer wg.Done()
-			owns, err := g.owns(ctx, c, subject)
-			answers[i] = ownsAnswer{claimant: c, owns: owns, err: err}
-		}()
-	}
-	wg.Wait()
-
-	var owners []*claimant
-	for _, a := range answers {
-		if a.err != nil {
-			return lookup{}, outage(a.claimant.name,
-				ModuleName+": an open claim could not answer whether this subject is its own",
-				a.err, slog.String("subject", subject))
+		if found != nil {
+			return nil, gatewayRefusal(ModuleName+": the request carries more than one cookie a "+
+				"backend takes, and which one is meant cannot be told",
+				slog.String("cookie_name", cookie.Name))
 		}
-		if a.owns {
-			owners = append(owners, a.claimant)
+		found = &claimed{
+			cred:       authn.Credential{Value: cookie.Value, Cookie: cookie.Name},
+			backend:    b,
+			fromCookie: true,
 		}
 	}
-
-	switch len(owners) {
-	case 0:
-		return lookup{}, gatewayRefusal(ModuleName+": no backend claims this subject",
-			slog.String("subject", subject))
-	case 1:
-		return lookup{claimant: owners[0], reach: reachOpen, subject: subject}, nil
-	default:
-		names := make([]string, 0, len(owners))
-		qualifications := make([]string, 0, len(owners))
-		for _, c := range owners {
-			names = append(names, c.name)
-			qualifications = append(qualifications, c.name+authn.Separator+subject)
-		}
-		sort.Strings(names)
-		sort.Strings(qualifications)
-		// Charged to the gateway: the judgement is the ownership
-		// table's, and the table is the gateway's.
-		return lookup{}, gatewayRefusal(ModuleName+": more than one open claim reports this "+
-			"subject as its own, so it has no single authority",
-			slog.String("subject", subject),
-			slog.String("claimed-by", strings.Join(names, ", ")),
-			slog.String("qualified-forms", strings.Join(qualifications, ", ")))
-	}
-}
-
-// exitBound reports whether the subject a passing verdict returned still falls
-// inside the claim that authorised the question.
-//
-// Without it a backend claiming one small slice of the subject space could
-// return any subject at all and mint an identity belonging to someone else,
-// stepping straight over the ownership table.
-//
-// What "inside the claim" means depends on how the backend was reached, because
-// that is what the claim was:
-//
-//   - A subject another backend enumerated is refused whatever the path. That
-//     is the exact collision the table exists to prevent, and it is the one
-//     check that also binds a backend claiming a whole scheme — its claim is the
-//     scheme, so nothing else here constrains the subject it reads out.
-//   - The subject that was asked about is bound by construction: the step that
-//     selected this backend established the ownership of that very subject.
-//   - A different subject has to be established again, by the same two kinds of
-//     claim that could have selected the backend in the first place.
-func (g *gateway) exitBound(ctx context.Context, found lookup, returned string) (bool, error) {
-	if strings.TrimSpace(returned) == "" {
-		return false, nil
-	}
-	// A subject carrying the separator could not be told from an owner
-	// qualification once it is written down, so a backend whose natural
-	// identifiers carry one has to map them itself.
-	if strings.Contains(returned, authn.Separator) {
-		return false, nil
-	}
-	if other, enumerated := g.table.bySubject[returned]; enumerated && other != found.claimant {
-		return false, nil
-	}
-	if found.reach == reachScheme {
-		return true, nil
-	}
-	if returned == found.subject {
-		return true, nil
-	}
-	return g.claims(ctx, found.claimant, returned)
-}
-
-// claims reports whether this backend is the authority for a bare subject, by
-// the two kinds of claim that can answer for one: the subjects it wrote out by
-// hand, and an open claim it answers itself.
-//
-// A whole-scheme claim is not among them, and cannot be: it says which
-// credentials come here, not which subjects belong here. A backend reached
-// through one is bound by the collision check alone.
-func (g *gateway) claims(ctx context.Context, c *claimant, subject string) (bool, error) {
-	if c.enumerates(subject) {
-		return true, nil
-	}
-	if c.owner != nil {
-		return g.owns(ctx, c, subject)
-	}
-	return false, nil
+	return found, nil
 }
 
 // verify puts one credential to one backend, under the call budget, the
 // in-flight gate and a recover.
-func (g *gateway) verify(ctx context.Context, c *claimant, subject string, cred authn.Credential) (
+func (g *gateway) verify(ctx context.Context, b *backend, cred authn.Credential) (
 	answer authn.Verdict, err error,
 ) {
 	made, err := g.enter(ctx)
@@ -635,16 +588,15 @@ func (g *gateway) verify(ctx context.Context, c *claimant, subject string, cred 
 	defer func() {
 		if rec := recover(); rec != nil {
 			// The panic is caught at the call site, so the process
-			// survives and every other ownership in it goes on
-			// answering.
-			err = caught("backend %q panicked while verifying a credential: %v", c.name, rec)
+			// survives and every other backend in it goes on answering.
+			err = caught("backend %q panicked while verifying a credential: %v", b.name, rec)
 		}
 	}()
 
-	answer = c.verifier.Verify(made.ctx, subject, cred)
+	answer = b.verifier.Verify(made.ctx, cred)
 	if made.overran() {
 		return authn.Verdict{}, fmt.Errorf("backend %q did not answer within the call budget of %s",
-			c.name, g.settings.budget)
+			b.name, g.settings.budget)
 	}
 	// Only a report of not being able to answer is read against the
 	// request's context. A pass or a refusal is an answer about the
@@ -656,34 +608,6 @@ func (g *gateway) verify(ctx context.Context, c *claimant, subject string, cred 
 		}
 	}
 	return answer, nil
-}
-
-// owns asks one open claim about one subject, under the same three guards.
-func (g *gateway) owns(ctx context.Context, c *claimant, subject string) (owns bool, err error) {
-	made, err := g.enter(ctx)
-	if err != nil {
-		return false, err
-	}
-	defer made.release()
-	defer func() {
-		if rec := recover(); rec != nil {
-			err = caught("backend %q panicked while answering whether %q is its own: %v",
-				c.name, subject, rec)
-		}
-	}()
-
-	owns, err = c.owner.Owns(made.ctx, subject)
-	if made.overran() {
-		return false, fmt.Errorf("backend %q did not answer ownership within the call budget of %s",
-			c.name, g.settings.budget)
-	}
-	if err != nil {
-		if abandoned := made.abandoned(); abandoned != nil {
-			return false, abandoned
-		}
-		return false, err
-	}
-	return owns, nil
 }
 
 // enter takes an in-flight slot and puts the call under the budget. The

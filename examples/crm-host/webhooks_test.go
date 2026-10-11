@@ -1089,22 +1089,22 @@ func TestTheDealFeedIsOffUnlessTurnedOn(t *testing.T) {
 	fed := wonEvent(w.acme, "", "fed-1", 500, w.alice)
 	expect(t, "the operator publishing through a feed left off",
 		w.h.post(t, adminEndpoint, "/deal-events", "", operator(), fed), nethttp.StatusNotFound)
-	if got, _ := revenueOf(t, w.h, w.acme, basic(w.alice)); len(got.Revenue) != 0 {
+	if got, _ := revenueOf(t, w.h, w.acme, signedIn(w.alice)); len(got.Revenue) != 0 {
 		t.Errorf("acme's won revenue reads %+v after a publish through a feed left off, want nothing", got.Revenue)
 	}
 	w.h.stop(t)
 
 	c.config.set("dealfeed.enabled", true)
 	h := c.serve(dealsServeEnv...)
-	for _, cred := range []credential{basic(w.alice), bearer(h.login(t, w.alice))} {
+	for _, cred := range []credential{signedIn(w.alice), bearer(h.login(t, w.alice))} {
 		expect(t, "acme's owner publishing through the feed",
 			h.post(t, adminEndpoint, "/deal-events", "", cred, fed), nethttp.StatusForbidden)
 	}
-	if got, _ := revenueOf(t, h, w.acme, basic(w.alice)); len(got.Revenue) != 0 {
+	if got, _ := revenueOf(t, h, w.acme, signedIn(w.alice)); len(got.Revenue) != 0 {
 		t.Errorf("acme's won revenue reads %+v after a CRM user's publish was refused, want nothing", got.Revenue)
 	}
 	h.publishWon(t, fed)
-	awaitRevenue(t, h, w.acme, basic(w.alice), revenueView{Currency: "EUR", Deals: 1, Amount: 500})
+	awaitRevenue(t, h, w.acme, signedIn(w.alice), revenueView{Currency: "EUR", Deals: 1, Amount: 500})
 }
 
 // awaitCalls waits until one path of the receiver has taken n requests, and

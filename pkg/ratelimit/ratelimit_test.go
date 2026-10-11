@@ -17,6 +17,7 @@ import (
 
 	"github.com/vislake/speed/pkg/audit"
 	"github.com/vislake/speed/pkg/authn"
+	"github.com/vislake/speed/pkg/authn/authntest"
 	"github.com/vislake/speed/pkg/config"
 	"github.com/vislake/speed/pkg/core"
 	speedhttp "github.com/vislake/speed/pkg/http"
@@ -44,10 +45,13 @@ func pinned(endpoints ...string) *limiter {
 
 // --- the key ---------------------------------------------------------------
 
-// A tenant identifier may hold a colon, and an identity string is two halves
-// joined by a separator with no rule keeping a colon out of either. Without
-// escaping, these two would build one key and share one count across two
-// tenants.
+// A tenant identifier may hold a colon, so a key built from a tenant segment
+// and an identity key has to keep the two apart. Without escaping, these two
+// would build one key and share one count across two tenants.
+//
+// The segments are the escape's inputs, not identity keys: an account
+// identifier cannot hold a colon, so no identity makes the second one, and the
+// test is about what the key builder does with a segment that does.
 func TestEscapeKeepsTwoDistinctPairsApart(t *testing.T) {
 	first := countKey("a:b", "c", 7)
 	second := countKey("a", "b:c", 7)
@@ -57,7 +61,8 @@ func TestEscapeKeepsTwoDistinctPairsApart(t *testing.T) {
 }
 
 func TestEscapeLeavesOrdinarySegmentsAlone(t *testing.T) {
-	if got := countKey("acme", "local/bob", 7); got != "ratelimit:acme:local/bob:7" {
+	key := accountKey(t)
+	if got := countKey("acme", key, 7); got != "ratelimit:acme:"+key+":7" {
 		t.Fatalf("key = %q", got)
 	}
 }
@@ -97,7 +102,7 @@ func TestCountLetsThroughUpToTheLimit(t *testing.T) {
 
 	for i := 1; i <= 5; i++ {
 		var d decision
-		allowed, _ := l.count(context.Background(), "local/bob", "acme", time.Minute, 5, &d)
+		allowed, _ := l.count(context.Background(), accountKey(t), "acme", time.Minute, 5, &d)
 		if d.tripped != "" {
 			t.Fatalf("request %d tripped %q", i, d.tripped)
 		}
@@ -107,7 +112,7 @@ func TestCountLetsThroughUpToTheLimit(t *testing.T) {
 	}
 
 	var d decision
-	allowed, retry := l.count(context.Background(), "local/bob", "acme", time.Minute, 5, &d)
+	allowed, retry := l.count(context.Background(), accountKey(t), "acme", time.Minute, 5, &d)
 	if d.tripped != "" {
 		t.Fatalf("tripped %q", d.tripped)
 	}
@@ -128,9 +133,9 @@ func TestCountSpendsOnRefusedRequestsToo(t *testing.T) {
 	l.counters = kv
 
 	for i := 0; i < 3; i++ {
-		l.count(context.Background(), "local/bob", "acme", time.Minute, 2, &decision{})
+		l.count(context.Background(), accountKey(t), "acme", time.Minute, 2, &decision{})
 	}
-	key := countKey("acme", "local/bob", pinnedAt.UnixNano()/int64(time.Minute))
+	key := countKey("acme", accountKey(t), pinnedAt.UnixNano()/int64(time.Minute))
 	if got := kv.value(key); got != 3 {
 		t.Fatalf("count = %v, want 3: refused requests did not consume", got)
 	}
@@ -143,9 +148,9 @@ func TestCountStaysRefusedAfterTheFirstRefusal(t *testing.T) {
 	l := pinned()
 	l.counters = kv
 
-	l.count(context.Background(), "local/bob", "acme", time.Minute, 1, &decision{})
+	l.count(context.Background(), accountKey(t), "acme", time.Minute, 1, &decision{})
 	for i := 0; i < 4; i++ {
-		allowed, _ := l.count(context.Background(), "local/bob", "acme", time.Minute, 1, &decision{})
+		allowed, _ := l.count(context.Background(), accountKey(t), "acme", time.Minute, 1, &decision{})
 		if allowed {
 			t.Fatalf("request %d past the limit was allowed", i+2)
 		}
@@ -163,10 +168,10 @@ func TestCountAsksForTwoWindowsOfExpiry(t *testing.T) {
 	l.counters = kv
 
 	const window = time.Minute
-	l.count(context.Background(), "local/bob", "acme", window, 10, &decision{})
+	l.count(context.Background(), accountKey(t), "acme", window, 10, &decision{})
 
 	index := pinnedAt.UnixNano() / int64(window)
-	ttl := kv.ttlOf(countKey("acme", "local/bob", index))
+	ttl := kv.ttlOf(countKey("acme", accountKey(t), index))
 	if ttl < 2*window {
 		t.Fatalf("ttl = %v, want at least %v: the previous window's key would lapse", ttl, 2*window)
 	}
@@ -181,13 +186,13 @@ func TestCountCarriesThePreviousWindowOver(t *testing.T) {
 
 	const window = time.Minute
 	width := int64(window)
-	previous := countKey("acme", "local/bob", pinnedAt.UnixNano()/width-1)
+	previous := countKey("acme", accountKey(t), pinnedAt.UnixNano()/width-1)
 	kv.seed(previous, 10)
 
 	// At a window's start the previous window weighs one, so a limit of five
 	// is already spent.
 	var d decision
-	allowed, _ := l.count(context.Background(), "local/bob", "acme", window, 5, &d)
+	allowed, _ := l.count(context.Background(), accountKey(t), "acme", window, 5, &d)
 	if d.tripped != "" {
 		t.Fatalf("tripped %q", d.tripped)
 	}
@@ -220,10 +225,10 @@ func TestCountWeighsThePreviousWindowByWhatHasNotElapsed(t *testing.T) {
 		l := pinned()
 		l.counters = kv
 		l.now = func() time.Time { return time.Unix(0, start+3*width/4) }
-		kv.seed(countKey("acme", "local/bob", start/width-1), 10)
+		kv.seed(countKey("acme", accountKey(t), start/width-1), 10)
 
 		var d decision
-		allowed, retry := l.count(context.Background(), "local/bob", "acme", window, c.limit, &d)
+		allowed, retry := l.count(context.Background(), accountKey(t), "acme", window, c.limit, &d)
 		if d.tripped != "" {
 			t.Fatalf("limit %d: tripped %q", c.limit, d.tripped)
 		}
@@ -242,7 +247,7 @@ func TestCountStandsAsideWhenTheReadFails(t *testing.T) {
 	l.counters = &fakeKV{readErr: errors.New("backend down")}
 
 	var d decision
-	allowed, _ := l.count(context.Background(), "local/bob", "acme", time.Minute, 5, &d)
+	allowed, _ := l.count(context.Background(), accountKey(t), "acme", time.Minute, 5, &d)
 	if d.tripped != reasonCounterRead {
 		t.Fatalf("tripped %q, want %q", d.tripped, reasonCounterRead)
 	}
@@ -258,7 +263,7 @@ func TestCountStandsAsideWhenTheIncrementFails(t *testing.T) {
 	l.counters = kv
 
 	var d decision
-	allowed, _ := l.count(context.Background(), "local/bob", "acme", time.Minute, 5, &d)
+	allowed, _ := l.count(context.Background(), accountKey(t), "acme", time.Minute, 5, &d)
 	if d.tripped != reasonCounterIncrement {
 		t.Fatalf("tripped %q, want %q", d.tripped, reasonCounterIncrement)
 	}
@@ -273,10 +278,10 @@ func TestCountStandsAsideOnAKeyHoldingNoNumber(t *testing.T) {
 	l.counters = kv
 
 	width := int64(time.Minute)
-	kv.putRaw(countKey("acme", "local/bob", pinnedAt.UnixNano()/width-1), "not a number")
+	kv.putRaw(countKey("acme", accountKey(t), pinnedAt.UnixNano()/width-1), "not a number")
 
 	var d decision
-	allowed, _ := l.count(context.Background(), "local/bob", "acme", time.Minute, 5, &d)
+	allowed, _ := l.count(context.Background(), accountKey(t), "acme", time.Minute, 5, &d)
 	if d.tripped != reasonCounterNotNumeric {
 		t.Fatalf("tripped %q, want %q", d.tripped, reasonCounterNotNumeric)
 	}
@@ -366,7 +371,7 @@ func TestThresholdsStandsAsideWhenTheReadFails(t *testing.T) {
 }
 
 // Both domains exclude zero. A limit of zero would refuse every request that
-// carries an identity string, since the increment happens before the decision;
+// carries an identity, since the increment happens before the decision;
 // a window of zero leaves the window index undefined.
 func TestThresholdsStandsAsideOutsideTheDomain(t *testing.T) {
 	cases := map[string]map[string]any{
@@ -401,8 +406,9 @@ func TestARequestWithoutAnIdentityIsLetThroughAndNotCounted(t *testing.T) {
 	l.store = &fakeStore{values: map[string]any{windowPath: time.Minute, limitPath: 0}}
 	l.signal = newSignalTo(&out)
 	h := startHost(t, hostOptions{limiter: l, viaModule: true})
+	anonymous := map[string]string{anonymousHeader: "1"}
 
-	if got := h.get(t, "/things"); got.status != nethttp.StatusNoContent {
+	if got := h.send(t, nethttp.MethodGet, "/things", anonymous); got.status != nethttp.StatusNoContent {
 		t.Fatalf("a request with no identity was answered %d, want the route's 204", got.status)
 	}
 	if got := h.reached.count(); got != 1 {
@@ -410,7 +416,7 @@ func TestARequestWithoutAnIdentityIsLetThroughAndNotCounted(t *testing.T) {
 	}
 	// A request that matches no route has no identity either, and the layer is
 	// as indifferent to it.
-	requireProblem(t, h.get(t, "/nowhere"), nethttp.StatusNotFound)
+	requireProblem(t, h.send(t, nethttp.MethodGet, "/nowhere", anonymous), nethttp.StatusNotFound)
 	if got := counters.size(); got != 0 {
 		t.Fatalf("the layer counted a request with no identity: %d keys written", got)
 	}
@@ -499,7 +505,7 @@ func TestARequestMatchingNoRouteIsCountedAndRefusedLikeAnyOther(t *testing.T) {
 	requireProblem(t, refused, nethttp.StatusTooManyRequests)
 	requireRetryAfter(t, refused)
 	index := pinnedAt.UnixNano() / int64(time.Minute)
-	if got := counters.value(countKey("", authn.Identity{}.Key(), index)); got != 2 {
+	if got := counters.value(countKey("", accountKey(t), index)); got != 2 {
 		t.Fatalf("the window holds a count of %v, want both requests counted", got)
 	}
 	if got := h.reached.count(); got != 0 {
@@ -844,7 +850,7 @@ func TestDecideReportsNothingForACancelledContext(t *testing.T) {
 
 		ctx, cancel := context.WithCancel(context.Background())
 		cancel()
-		d := decideOnce(l, ctx)
+		d := decideOnce(t, l, ctx)
 
 		if d.tripped != "" {
 			t.Errorf("%s: tripped %q, want the empty reason", c.name, d.tripped)
@@ -885,7 +891,7 @@ func TestDecideClearsOnlyTheClassesItEvaluated(t *testing.T) {
 
 	// One request through the layer, its class accounted for as handle does.
 	step := func() reason {
-		return decideOnce(l, context.Background()).tripped
+		return decideOnce(t, l, context.Background()).tripped
 	}
 
 	// The counter read fails, so its class is reported.
@@ -953,17 +959,23 @@ func containsLine(out, first, second string) bool {
 
 // --- helpers ---------------------------------------------------------------
 
-// decideOnce runs one decision with the zero identity on a context gin makes for
-// a test, carrying a request on ctx, and accounts for it as the layer's handler
-// does.
+// decideOnce runs one decision with an identity authntest builds, read back off
+// the request's context as the layer's handler reads it, on a context gin makes
+// for a test, carrying a request on ctx, and accounts for it as the handler does.
 //
 // The context has no chain behind it and no route, so what a case using it reads
 // is the decision and the signal. Whether a request went on, and what it was
 // answered with, is read off a real assembly by the cases that serve one.
-func decideOnce(l *limiter, ctx context.Context) decision {
+func decideOnce(t testing.TB, l *limiter, ctx context.Context) decision {
+	t.Helper()
 	c, _ := gin.CreateTestContext(httptest.NewRecorder())
-	c.Request = httptest.NewRequest(nethttp.MethodGet, "/things", nil).WithContext(ctx)
-	d := l.decide(c, authn.Identity{}, true)
+	c.Request = httptest.NewRequest(nethttp.MethodGet, "/things", nil).
+		WithContext(authntest.Context(t, ctx))
+	id, identified := authn.FromContext(c.Request.Context())
+	if !identified {
+		t.Fatal("authntest.Context left no identity on the request")
+	}
+	d := l.decide(c, id, identified)
 	l.signal.settle(d)
 	return d
 }

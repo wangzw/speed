@@ -59,9 +59,9 @@ func publishOne(t *testing.T, payload any) map[string]string {
 // leaves the history of its changes.
 func TestEventDetailKeepsScalarFields(t *testing.T) {
 	t.Run("a delete", func(t *testing.T) {
-		detail := publishOne(t, change{Key: "crm.stages", Old: "a", Deleted: true, Actor: "local/alice"})
+		detail := publishOne(t, change{Key: "crm.stages", Old: "a", Deleted: true, Actor: "u_alice"})
 		for key, want := range map[string]string{
-			"Key": "crm.stages", "Old": "a", "New": "", "Actor": "local/alice",
+			"Key": "crm.stages", "Old": "a", "New": "", "Actor": "u_alice",
 			"Deleted": "true", "Sensitive": "false", "Version": "0",
 		} {
 			if got, ok := detail[key]; !ok || got != want {

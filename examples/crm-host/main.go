@@ -50,9 +50,13 @@
 //     for a bus; a configuration that asks the journal to capture events stops
 //     them at startup, naming the journal's event list.
 //   - A CRM user signs in on the account endpoint with a Basic credential and
-//     gets a bearer token; the token and the Basic credential then reach the
-//     same guarded routes, and the account endpoint answers who the caller is
-//     and which tenants they belong to. The login route is exempt from the
+//     gets a bearer token; the token reaches the guarded routes, and the user's
+//     Basic credential reaches no backend there, since the one scheme belongs to
+//     the operators' table, which answers it 401 with the Basic challenge. The
+//     identity a token authenticates is the user's account, the user
+//     identifier, so the journal and the rate limiter name the user by it.
+//     The account endpoint answers who the caller is and which tenants they
+//     belong to. The login route is exempt from the
 //     gateway through the gateway's own surface, and a logout ends the token.
 //     The ended token's refusal is logged with the cause the backend gave:
 //     the gateway masks a word after a scheme name anywhere in a record,
@@ -90,23 +94,26 @@
 //     grants a membership, and the tenant is usable at once; the cross-tenant
 //     grant states its purpose through the seam. Disabling the tenant there
 //     refuses it on the next request, and enabling it brings it back. A CRM
-//     user on the admin endpoint is refused, and the refusal is in the
-//     journal: the operator check sits inside it.
+//     user on the admin endpoint is refused, and so is another subject of the
+//     operators' table: the check serves one account, and the refusal is in the
+//     journal, because the operator check sits inside it. The operator's
+//     account belongs to no tenant, so the membership layer refuses it as a
+//     stranger to the tenant it names.
 //   - Two creations of one email at once are answered with one success and one
 //     conflict: the unique constraint decides, and the look-up before the
 //     insert only answers the ordinary case sooner.
-//   - A disabled user is refused whichever credential they present.
+//   - A disabled user is refused on the next request with a token issued
+//     before, and at a new login.
 //   - A CRM user's password is derived at the cost users.password-iterations
 //     gives when the user is created, at the command line and on the admin
 //     endpoint alike. Each hash carries its count, so a user created at one
 //     count signs in once the deployment gives another, and that sign-in,
-//     with a login or with a Basic credential, stores the hash again at the
-//     count now given; a count that is not positive stops the serving command
-//     at startup, naming the item. A login naming no user is checked against
-//     a decoy derived at the configured count, so it costs what a login of a
-//     user at that count does; until every user has signed in since a change
-//     of the count, the time a login takes tells a user still at the old
-//     count from an address no user has.
+//     with a login, stores the hash again at the count now given; a count that
+//     is not positive stops the serving command at startup, naming the item. A
+//     login naming no user is checked against a decoy derived at the configured
+//     count, so it costs what a login of a user at that count does; until every
+//     user has signed in since a change of the count, the time a login takes
+//     tells a user still at the old count from an address no user has.
 //   - A CRM user's password hash is written to the users table and nowhere
 //     else: a creation the database refuses leaves neither the hash nor the
 //     address in the serving process's output, because the module's logger
@@ -543,9 +550,9 @@
 //
 //   - A bearer token presented while the key-value store is cut is answered
 //     503, attributed to the sessions backend, and not 401: the backend cannot
-//     say whether the session is live, which is not the token failing. A
-//     Basic credential is answered all along, and the token again once the
-//     store is back.
+//     say whether the session is live, which is not the token failing. The
+//     operator's Basic credential, checked against a table in memory, is
+//     answered all along, and the token again once the store is back.
 //   - While the key-value store is cut the rate limiter lets requests past the
 //     limit through, and says so once on standard error however many it lets
 //     through; once the store is back and a minute has passed since the last
@@ -875,8 +882,8 @@ func untilCancelled(command string) config.Action {
 
 // hashCommand reads a password from standard input and writes its hash to
 // standard output, for pasting into the operators' subject table. The hash is
-// the static backend's, since that backend holds the operators; a CRM user's
-// password is hashed by the users module when the user is created.
+// the static backend's, a PHC string, since that backend holds the operators; a
+// CRM user's password is hashed by the users module when the user is created.
 func hashCommand(_ context.Context, _ *core.Registry) error {
 	password, err := readSecret(os.Stdin)
 	if err != nil {

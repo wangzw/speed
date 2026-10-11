@@ -13,7 +13,7 @@
                 "schema": {
                   "type": "object",
                   "properties": {
-                    "identity": {"type": "string", "description": "The owner-qualified identity, for example users/u_..."},
+                    "identity": {"type": "string", "description": "The caller's account identifier: the user identifier for a CRM user, and static.<subject> for an operator"},
                     "user": {
                       "type": ["object", "null"],
                       "properties": {"id": {"type": "string"}, "email": {"type": "string"}, "display_name": {"type": "string"}}

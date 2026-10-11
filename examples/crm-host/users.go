@@ -10,7 +10,6 @@ import (
 	"encoding/base64"
 	"errors"
 	"fmt"
-	"io/fs"
 	"strconv"
 	"strings"
 	"sync"
@@ -26,13 +25,10 @@ import (
 	"github.com/vislake/speed/pkg/log"
 )
 
-// usersModuleName is the name the users module is registered under. The
-// credential-verifying backend it delivers reports the same name, so every
-// identity it authenticates is written users/<user id>.
-const (
-	usersModuleName  = "users"
-	usersBackendName = usersModuleName
-)
+// usersModuleName is the name the users module is registered under. The module
+// holds the users table and derives the passwords; what authenticates a CRM
+// user is the sessions module, which takes the bearer token a login issues.
+const usersModuleName = "users"
 
 // userTable is the table the user model maps to.
 const userTable = "users"
@@ -60,36 +56,23 @@ var usersMigrationRoot embed.FS
 // module reads has one directory per dialect at its root.
 var usersMigrations = subtree(usersMigrationRoot, "migrations/users")
 
-// subtree is fs.Sub for a tree embedded at build time, where a failure is a
-// mistake in this program rather than a condition to report.
-func subtree(root embed.FS, dir string) fs.FS {
-	sub, err := fs.Sub(root, dir)
-	if err != nil {
-		panic("crm-host: the embedded tree " + dir + ": " + err.Error())
-	}
-	return sub
-}
-
 // The failures a user operation reports, for the callers that turn them into a
 // status or an exit.
 //
-// The texts the backend hands the gateway as a refusal's cause are logged
-// through a chain that masks the word following the name of an authentication
-// scheme, unless that word is one of the fixed prose words the gateway's rule
-// leaves alone, such as "token" or "credential". None of them puts a word
-// after "Basic" or "bearer", so none depends on that list: a word outside it
-// would reach the log masked, and the cause would say nothing.
+// The texts the sessions backend hands the gateway as a refusal's cause are
+// logged through a chain that masks the word following the name of an
+// authentication scheme, unless that word is one of the fixed prose words the
+// gateway's rule leaves alone, such as "token" or "credential". None of them
+// puts a word after "Basic" or "bearer", so none depends on that list: a word
+// outside it would reach the log masked, and the cause would say nothing.
 var (
-	errEmailTaken      = errors.New("a user with this email already exists")
-	errInvalidEmail    = errors.New("the email is not an address this host accepts")
-	errInvalidName     = errors.New("the display name is empty")
-	errWeakPassword    = errors.New("the password is shorter than " + strconv.Itoa(minPasswordLength) + " characters")
-	errBadCredentials  = errors.New("the email and password do not match a user")
-	errUserDisabled    = errors.New("the user is disabled")
-	errNotBasic        = errors.New("the credential's scheme is not Basic")
-	errMalformedBasic  = errors.New("the credential does not decode to a name and a password")
-	errSubjectMismatch = errors.New("the credential names a subject other than the one it was routed to")
-	errMalformedHash   = errors.New("the stored password hash is not in this host's format")
+	errEmailTaken     = errors.New("a user with this email already exists")
+	errInvalidEmail   = errors.New("the email is not an address this host accepts")
+	errInvalidName    = errors.New("the display name is empty")
+	errWeakPassword   = errors.New("the password is shorter than " + strconv.Itoa(minPasswordLength) + " characters")
+	errBadCredentials = errors.New("the email and password do not match a user")
+	errUserDisabled   = errors.New("the user is disabled")
+	errMalformedHash  = errors.New("the stored password hash is not in this host's format")
 )
 
 // minPasswordLength is the shortest password a user is created with.
@@ -97,9 +80,10 @@ const minPasswordLength = 8
 
 // The password derivation: PBKDF2 over HMAC-SHA-256 from the standard library.
 // The stored form is pbkdf2-sha256$<iterations>$<salt>$<key>, salt and key in
-// unpadded standard base64. The iteration count travels with each hash, so a
-// hash keeps verifying at the count it was made with whatever count the
-// configuration gives later.
+// unpadded standard base64: this host's own format, which the operators' table
+// reads only as an older form and never writes. The iteration count travels
+// with each hash, so a hash keeps verifying at the count it was made with
+// whatever count the configuration gives later.
 const (
 	hashScheme            = "pbkdf2-sha256"
 	defaultHashIterations = 600_000
@@ -161,12 +145,6 @@ type derivation struct {
 // address still at the old count from one no user has. The decoy is derived
 // lazily because every command running this module would otherwise pay for
 // it at start.
-//
-// A Basic credential is outside this. The gateway asks this backend whether it
-// owns the subject before it asks it to verify, and a subject no user has is
-// refused there, with no derivation; that question answers whether the address
-// exists whatever a decoy costs, which is the existence oracle design-authn
-// records as a cost of ownership.
 func newDerivation(iterations int) (*derivation, error) {
 	if iterations < 1 {
 		return nil, fmt.Errorf("%w: %d", errBadIterations, iterations)
@@ -250,19 +228,18 @@ func passwordMatches(stored, password string) (bool, error) {
 func normaliseEmail(email string) string { return strings.ToLower(strings.TrimSpace(email)) }
 
 // validEmail accepts an address with one @ and something on each side of it.
-// It refuses the identity separator as well: a Basic user name carrying it is
-// read by the gateway as owner and subject, so an address with one could never
-// sign in with Basic.
 func validEmail(email string) bool {
 	local, domain, found := strings.Cut(email, "@")
 	if !found || local == "" || domain == "" || strings.Contains(domain, "@") {
 		return false
 	}
-	if strings.Contains(email, authn.Separator) {
-		return false
-	}
 	return !strings.ContainsFunc(email, func(r rune) bool { return unicode.IsSpace(r) || unicode.IsControl(r) })
 }
+
+// userIDPrefix starts the identifier of every user this host creates. It is the
+// account prefix the sessions backend declares, so that the gateway holds the
+// backend to the users table's own namespace.
+const userIDPrefix = "u_"
 
 // createUser adds a user. The email is normalised before it is stored, so the
 // lookup that follows a login finds the row whatever case the user typed.
@@ -297,7 +274,7 @@ func createUser(ctx context.Context, database db.Database, pw passwords, email, 
 	if err != nil {
 		return User{}, err
 	}
-	id, err := newID("u_")
+	id, err := newID(userIDPrefix)
 	if err != nil {
 		return User{}, err
 	}
@@ -363,18 +340,6 @@ func listUsers(ctx context.Context, database db.Database) ([]User, error) {
 	return found, err
 }
 
-// lookupUser finds the user a subject names. A subject carrying an @ is an
-// email, which is what a person types into a Basic prompt; any other subject
-// is a user identifier, which is what an identity this module authenticated
-// carries and what the gateway asks about again once a verification has
-// answered with one.
-func lookupUser(ctx context.Context, database db.Database, subject string) (User, bool, error) {
-	if strings.Contains(subject, "@") {
-		return userByEmail(ctx, database, subject)
-	}
-	return userByID(ctx, database, subject)
-}
-
 // authenticate checks an email and a password, for the login route: the route
 // is exempt from the gateway, so the check the gateway would have asked this
 // module's backend for is made here by the same code.
@@ -429,17 +394,27 @@ func rederive(ctx context.Context, database db.Database, pw passwords, user User
 	}
 }
 
-// userIDOf reads the CRM user an identity stands for. Two backends of this host
-// authenticate CRM users — this one for a Basic credential and the sessions one
-// for a bearer token — and both put the user identifier in the subject. Any
-// other owner is not a CRM user: the platform's operators are authenticated by
-// the static backend, and they belong to no tenant.
+// userIDOf reads the CRM user an identity stands for. A CRM user's account is
+// the user identifier, whichever backend authenticated it. An account under the
+// static prefix is an operator of the static table, who belongs to no tenant
+// and is no CRM user, and the empty account is no one.
 func userIDOf(id authn.Identity) (string, bool) {
-	switch id.Owner() {
-	case usersBackendName, sessionsBackendName:
-		return id.Subject(), true
-	default:
+	account := id.Account()
+	if account == "" || account.IsStatic() {
 		return "", false
+	}
+	return string(account), true
+}
+
+// principalFor is what the sessions backend claims about the CRM user whose
+// token holds: the user's account, signed in by password at the time the
+// session records.
+func principalFor(userID string, issued time.Time) authn.Principal {
+	return authn.Principal{
+		Account:   authn.AccountID(userID),
+		Methods:   []authn.Method{authn.MethodPassword},
+		Assurance: authn.AssuranceSingle,
+		AuthTime:  issued,
 	}
 }
 
@@ -451,89 +426,20 @@ func userIDOf(id authn.Identity) (string, bool) {
 // on it never brings this module into a command.
 type usersTable interface{ usersTable() }
 
-// usersBackend is the users module's product: a credential-verifying backend
-// for the Basic credentials of CRM users, and the derivation every new
-// password of theirs goes through.
-//
-// It claims openly, because the set of users is a table that grows at run
-// time and cannot be written out at startup. An open claim is answered by
-// asking, which is what Owns does, and it answers for a subject in either of
-// the two forms lookupUser reads.
-type usersBackend struct {
+// usersProduct is the users module's product: the derivation every new password
+// of a CRM user goes through, and the table the sessions module reads.
+type usersProduct struct {
 	released
 	*derivation
-	db db.Database
 }
-
-// Name is the owner half of every identity this backend authenticates.
-func (b *usersBackend) Name() string { return usersBackendName }
 
 // usersTable marks the product as the users module's.
-func (*usersBackend) usersTable() {}
+func (*usersProduct) usersTable() {}
 
-// Claim is final when New returns, which is when the gateway may read it.
-func (b *usersBackend) Claim() authn.Claim { return authn.Claim{Open: true} }
-
-// Owns answers whether a subject names a CRM user. A disabled user is still
-// owned here: the refusal is Verify's, so it is a refusal by the authority
-// rather than a subject nobody answers for.
-func (b *usersBackend) Owns(ctx context.Context, subject string) (bool, error) {
-	_, found, err := lookupUser(ctx, b.db, subject)
-	return found, err
-}
-
-// Verify checks a Basic credential against the users table, and brings the
-// user's hash to the configured cost once it matches, as a login does.
-//
-// A store that cannot be read answers Unavailable, never Denied: telling a user
-// their password is wrong because the database was unreachable is the one
-// answer a backend must not give.
-func (b *usersBackend) Verify(ctx context.Context, subject string, c authn.Credential) authn.Verdict {
-	if c.Scheme != "basic" {
-		return authn.Denied(errNotBasic)
-	}
-	name, password, ok := decodeBasic(c.Value)
-	if !ok {
-		return authn.Denied(errMalformedBasic)
-	}
-	// A qualified credential arrives as the raw pair, owner included.
-	name = strings.TrimPrefix(name, usersBackendName+authn.Separator)
-	if name != subject {
-		return authn.Denied(errSubjectMismatch)
-	}
-	user, found, err := lookupUser(ctx, b.db, subject)
-	if err != nil {
-		return authn.Unavailable(err)
-	}
-	if !found {
-		return authn.Denied(errBadCredentials)
-	}
-	matched, err := passwordMatches(user.PasswordHash, password)
-	if err != nil {
-		return authn.Unavailable(err)
-	}
-	if !matched {
-		return authn.Denied(errBadCredentials)
-	}
-	if user.Disabled {
-		return authn.Denied(errUserDisabled)
-	}
-	rederive(ctx, b.db, b.derivation, user, password)
-	return authn.Authenticated(user.ID)
-}
-
-// decodeBasic reads the name and password out of a Basic credential's value.
-func decodeBasic(value string) (name, password string, ok bool) {
-	raw, err := base64.StdEncoding.DecodeString(value)
-	if err != nil {
-		return "", "", false
-	}
-	return strings.Cut(string(raw), ":")
-}
-
-// init registers the users module. It runs on serve, where the gateway asks it
-// about Basic credentials and the admin endpoint creates users, and on the user
-// command group, whose create derives the new user's password through it.
+// init registers the users module. It runs on serve, where the sessions module
+// checks a login against its table and the admin endpoint creates users, and on
+// the user command group, whose create derives the new user's password through
+// it.
 func init() {
 	registerApplication(application{
 		module: usersModule(),
@@ -543,14 +449,10 @@ func init() {
 }
 
 // usersModule declares the users table and the derivation cost, and delivers
-// the backend.
+// the derivation.
 //
-// The backend's product needs the database handle at request time only, but it
-// takes it in New and declares the requirement: the product is what the gateway
-// collects in its own Init, and a backend whose handle arrived later would be
-// one the gateway could reach before it was whole. The cost is read in New too,
-// so a count that is not positive fails the startup rather than the first
-// creation.
+// The cost is read in New, so a count that is not positive fails the startup
+// rather than the first creation.
 func usersModule() core.Module {
 	return core.Module{
 		Name: usersModuleName,
@@ -558,11 +460,7 @@ func usersModule() core.Module {
 			{Token: (*log.Logger)(nil)},
 			{Token: (*db.Database)(nil)},
 		},
-		// The verifier is delivered without an exclusive claim, as every
-		// credential backend is: several backends answer side by side, each
-		// for its own part of the subject space.
 		Provides: []core.Provision{
-			{Token: (*authn.Verifier)(nil)},
 			{Token: (*usersTable)(nil), Exclusive: true},
 			{Token: (*passwords)(nil), Exclusive: true},
 		},
@@ -571,7 +469,7 @@ func usersModule() core.Module {
 			usersSchema(),
 		},
 
-		// The backend's one input item decides how it derives, not whether it
+		// The module's one input item decides how it derives, not whether it
 		// runs, so its stance is enabled whatever the item says.
 		Prepare: func(context.Context, *core.Registry) (core.Enablement, error) {
 			return core.Enablement{State: core.StateEnabled}, nil
@@ -579,10 +477,6 @@ func usersModule() core.Module {
 
 		New: func(_ context.Context, reg *core.Registry) (any, error) {
 			logger, err := namedLogger(reg, usersModuleName)
-			if err != nil {
-				return nil, err
-			}
-			database, err := core.Resolve[db.Database](reg)
 			if err != nil {
 				return nil, err
 			}
@@ -598,7 +492,7 @@ func usersModule() core.Module {
 			if err != nil {
 				return nil, err
 			}
-			return &usersBackend{released: released{log: logger}, derivation: derived, db: database}, nil
+			return &usersProduct{released: released{log: logger}, derivation: derived}, nil
 		},
 
 		Stop:  recordStop,

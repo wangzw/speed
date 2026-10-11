@@ -1,10 +1,4 @@
-// Package configreader builds the configuration reader a case hands a module
-// under test.
-//
-// It lives in the capability directory's internal subtree because the gateway
-// and the static backend both need it, and a helper written in one package's
-// tests is out of reach of the other's.
-package configreader
+package authntest
 
 import (
 	"os"
@@ -17,9 +11,10 @@ import (
 	"github.com/vislake/speed/pkg/core"
 )
 
-// Over builds the reader a real assembly hands module: the actual configuration
-// loader over a JSON primary source holding body, with module registered
-// alongside the two modules that make the loader work.
+// ConfigReader builds the configuration reader a case hands a module under
+// test: the actual configuration loader over a JSON primary source holding
+// body, with module registered alongside the two modules that make the loader
+// work.
 //
 // It is the loader itself rather than a stand-in because half of what these
 // cases hold belongs to the declaration rather than to the code — that an absent
@@ -30,14 +25,14 @@ import (
 // command line is given as empty and the prefix is one no machine carries
 // variables under, so the locator is the host identity's default and nothing
 // outside the case reaches the values.
-func Over(t *testing.T, module core.Module, body string) config.Reader {
+func ConfigReader(t testing.TB, module core.Module, body string) config.Reader {
 	t.Helper()
-	return OverAll(t, body, module)
+	return ConfigReaderAll(t, body, module)
 }
 
-// OverAll is Over for a case that assembles several modules, each of which
-// reads its own section of the one body.
-func OverAll(t *testing.T, body string, modules ...core.Module) config.Reader {
+// ConfigReaderAll is ConfigReader for a case that assembles several modules,
+// each of which reads its own section of the one body.
+func ConfigReaderAll(t testing.TB, body string, modules ...core.Module) config.Reader {
 	t.Helper()
 
 	locator := filepath.Join(t.TempDir(), "config.json")

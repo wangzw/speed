@@ -2,14 +2,13 @@ package gate
 
 import (
 	"context"
-	"errors"
 	"io"
 	"log/slog"
 	"maps"
 	nethttp "net/http"
 	"net/http/httptest"
 	"slices"
-	"strings"
+	"sync"
 	"sync/atomic"
 	"testing"
 	"time"
@@ -17,8 +16,6 @@ import (
 	"github.com/gin-gonic/gin"
 
 	"github.com/vislake/speed/pkg/authn"
-	"github.com/vislake/speed/pkg/authn/internal/configreader"
-	"github.com/vislake/speed/pkg/config"
 	speedhttp "github.com/vislake/speed/pkg/http"
 	"github.com/vislake/speed/pkg/log"
 )
@@ -26,68 +23,105 @@ import (
 // fakeVerifier stands in for a credential-verifying backend. Every field the
 // tests vary is a field here, so that a case reads as the backend it describes.
 type fakeVerifier struct {
-	name   string
-	claim  authn.Claim
-	verify func(ctx context.Context, subject string, c authn.Credential) authn.Verdict
-	owns   func(ctx context.Context, subject string) (bool, error)
-	// asked counts the calls into Verify, which is how a case asserts that
-	// a backend was not reached at all. It is atomic because the cases
-	// about the in-flight gate drive one backend from several request
-	// goroutines at once, and a miscount there would show up as an
-	// assertion failing for no visible reason.
+	name    string
+	accepts authn.Accepts
+	verify  func(ctx context.Context, c authn.Credential) authn.Verdict
+	// asked counts the calls into Verify, which is how a case asserts that a
+	// backend was not reached at all. It is atomic because the cases about the
+	// in-flight gate drive one backend from several request goroutines at once,
+	// and a miscount there would show up as an assertion failing for no visible
+	// reason. It may be nil, in which case calls are not counted.
 	asked *atomic.Int64
+	// mu guards handed.
+	mu sync.Mutex
+	// handed is every credential the backend was asked about, in order.
+	handed []authn.Credential
 }
 
-func (f *fakeVerifier) Name() string       { return f.name }
-func (f *fakeVerifier) Claim() authn.Claim { return f.claim }
+func (f *fakeVerifier) Name() string           { return f.name }
+func (f *fakeVerifier) Accepts() authn.Accepts { return f.accepts }
 
-func (f *fakeVerifier) Verify(ctx context.Context, subject string, c authn.Credential) authn.Verdict {
+func (f *fakeVerifier) Verify(ctx context.Context, c authn.Credential) authn.Verdict {
 	if f.asked != nil {
 		f.asked.Add(1)
 	}
+	f.mu.Lock()
+	f.handed = append(f.handed, c)
+	f.mu.Unlock()
 	if f.verify == nil {
 		return authn.Denied(nil)
 	}
-	return f.verify(ctx, subject, c)
+	return f.verify(ctx, c)
 }
 
-// openVerifier is a backend that also answers ownership. It is a separate type
-// so that a backend stating an open claim without implementing Owner stays
-// expressible, which is the shape the build has to refuse.
-type openVerifier struct{ *fakeVerifier }
+// credentials is what the backend was handed, in order.
+func (f *fakeVerifier) credentials() []authn.Credential {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	return slices.Clone(f.handed)
+}
 
-func (o openVerifier) Owns(ctx context.Context, subject string) (bool, error) {
-	if o.owns == nil {
-		return false, nil
+// challengingVerifier is a backend that writes its own part of the challenge.
+type challengingVerifier struct {
+	*fakeVerifier
+	challenge func(realm string, rejected bool) []string
+}
+
+func (c challengingVerifier) Challenge(realm string, rejected bool) []string {
+	return c.challenge(realm, rejected)
+}
+
+// clearingVerifier is a backend whose credential is a cookie it can clear.
+type clearingVerifier struct {
+	*fakeVerifier
+	cleared *atomic.Int64
+}
+
+func (c clearingVerifier) ClearCookie(w nethttp.ResponseWriter) {
+	c.cleared.Add(1)
+	nethttp.SetCookie(w, &nethttp.Cookie{Name: c.accepts.Cookies[0], Value: "", MaxAge: -1, Path: "/"})
+}
+
+// basicBackend builds a backend that takes the Basic scheme and hands back
+// accounts under the prefix.
+func basicBackend(name, prefix string) *fakeVerifier {
+	return &fakeVerifier{name: name, accepts: authn.Accepts{Schemes: []string{"basic"}, Accounts: prefix}}
+}
+
+// schemeBackend builds a backend that takes whole authentication schemes and
+// hands back accounts in the library namespace.
+func schemeBackend(name string, schemes ...string) *fakeVerifier {
+	return &fakeVerifier{name: name, accepts: authn.Accepts{Schemes: schemes}}
+}
+
+// cookieBackend builds a backend that takes cookies and hands back accounts in
+// the library namespace.
+func cookieBackend(name string, cookies ...string) *fakeVerifier {
+	return &fakeVerifier{name: name, accepts: authn.Accepts{Cookies: cookies}}
+}
+
+// principalOf is what a backend claims about a caller whose credential holds
+// for the account local: an account in the backend's own namespace, one
+// authentication method and the time it is now. Every field the gateway's exit
+// check reads is one a well-behaved backend sets.
+func principalOf(f *fakeVerifier, local string) authn.Principal {
+	return authn.Principal{
+		Account:   authn.AccountID(f.accepts.Accounts + local),
+		Methods:   []authn.Method{authn.MethodStatic},
+		Assurance: authn.AssuranceSingle,
+		AuthTime:  time.Now(),
 	}
-	return o.owns(ctx, subject)
 }
 
-// enumerating builds a backend that is the authority for the subjects named.
-func enumerating(name string, subjects ...string) *fakeVerifier {
-	return &fakeVerifier{name: name, claim: authn.Claim{Subjects: subjects}}
+// held is the verdict that a credential holds for the account local, from the
+// backend.
+func held(f *fakeVerifier, local string) authn.Verdict {
+	return authn.Authenticated(principalOf(f, local))
 }
 
-// claimingScheme builds a backend that claims whole authentication schemes.
-func claimingScheme(name string, schemes ...string) *fakeVerifier {
-	return &fakeVerifier{name: name, claim: authn.Claim{Schemes: schemes}}
-}
-
-// openly builds a backend that answers ownership for itself.
-func openly(name string, owns func(context.Context, string) (bool, error)) openVerifier {
-	return openVerifier{&fakeVerifier{
-		name:  name,
-		claim: authn.Claim{Open: true},
-		owns:  owns,
-	}}
-}
-
-// passes makes a backend answer that the credential holds for the subject it
-// was asked about.
+// passes makes a backend answer that every credential holds, for alice.
 func passes(f *fakeVerifier) *fakeVerifier {
-	f.verify = func(_ context.Context, subject string, _ authn.Credential) authn.Verdict {
-		return authn.Authenticated(subject)
-	}
+	f.verify = func(context.Context, authn.Credential) authn.Verdict { return held(f, "alice") }
 	return f
 }
 
@@ -127,18 +161,23 @@ func (r *fakeRouter) Endpoint(name string) (speedhttp.Endpoint, error) {
 
 func (r *fakeRouter) Endpoints() []string { return slices.Sorted(maps.Keys(r.endpoints)) }
 
+// fakeScope is the admission layer's statement of which endpoints it guards.
+type fakeScope map[string]bool
+
+func (s fakeScope) Covers(endpoint string) bool { return s[endpoint] }
+
 // quiet is a logger that writes nowhere, so that a test asserting on a
 // conclusion does not also print it.
 func quiet() *slog.Logger {
 	return slog.New(slog.NewTextHandler(io.Discard, nil))
 }
 
-// testGateway builds a gateway with its ownership table already in place and
-// its registration window open, which is the state the Init stage leaves it in.
-func testGateway(t *testing.T, endpoints []string, verifiers ...authn.Verifier) *gateway {
+// testGateway builds a gateway with its dispatch table already in place, the
+// endpoints named guarded and its registration window open, which is the state
+// the Init stage leaves it in.
+func testGateway(t *testing.T, guarded []string, verifiers ...authn.Verifier) *gateway {
 	t.Helper()
-	return gatewayWith(t, settings{endpoints: endpoints, budget: time.Second, inFlight: 8},
-		verifiers...)
+	return gatewayWith(t, settings{endpoints: guarded, budget: time.Second, inFlight: 8}, verifiers...)
 }
 
 // gatewayWith is testGateway with the settings spelled out, for the cases that
@@ -146,13 +185,17 @@ func testGateway(t *testing.T, endpoints []string, verifiers ...authn.Verifier) 
 func gatewayWith(t *testing.T, set settings, verifiers ...authn.Verifier) *gateway {
 	t.Helper()
 
-	g := newGateway(set)
-	g.logger = quiet()
-	table, err := buildOwnership(verifiers)
+	g, err := newGateway(set)
 	if err != nil {
-		t.Fatalf("building the ownership table for this case: %v", err)
+		t.Fatalf("building the gateway for this case: %v", err)
+	}
+	g.logger = quiet()
+	table, err := buildDispatch(verifiers)
+	if err != nil {
+		t.Fatalf("building the dispatch table for this case: %v", err)
 	}
 	g.table = table
+	g.guarded = slices.Sorted(slices.Values(set.endpoints))
 	g.open()
 	return g
 }
@@ -161,8 +204,9 @@ func gatewayWith(t *testing.T, set settings, verifiers ...authn.Verifier) *gatew
 // endpoints named.
 func sealed(t *testing.T, g *gateway, router speedhttp.Router) {
 	t.Helper()
+	g.router = router
 	if err := g.seal(router); err != nil {
-		t.Fatalf("sealing the exemption table: %v", err)
+		t.Fatalf("sealing the registration tables: %v", err)
 	}
 }
 
@@ -180,41 +224,14 @@ func withBasic(r *nethttp.Request, user, password string) *nethttp.Request {
 	return r
 }
 
-// TestAGatewayToldToGuardNothingRefusesToStart holds the only answer this
-// module has when the configuration names no endpoint for it to guard.
-//
-// A command that lists this module has promised it starts, so there is no
-// stance in which a gateway comes up registered on nothing and every route on
-// every endpoint is served without a credential. The failure names the key: for
-// the operator reading it, that is the whole of what to fix.
-func TestAGatewayToldToGuardNothingRefusesToStart(t *testing.T) {
-	for _, c := range []struct {
-		name   string
-		body   string
-		absent bool
-	}{
-		{"the key is absent", `{}`, true},
-		{"the list is empty", `{"authn":{"gate":{"endpoints":[]}}}`, false},
-	} {
-		t.Run(c.name, func(t *testing.T) {
-			state, err := prepare(configreader.Over(t, Module(), c.body))
-			if err == nil {
-				t.Fatalf("a gateway with no endpoint to guard took the stance %v, so a command "+
-					"would come up serving every route on every endpoint without a credential",
-					state.State)
-			}
-			if !strings.Contains(err.Error(), ConfigNamespace+"."+endpointsItem) {
-				t.Errorf("the failure reads %q and does not name the key to write", err)
-			}
-			// The absent key and the empty list are one fact, so they
-			// carry one sentinel; the absent key carries the loader's own
-			// as well, because the loader judged it first.
-			if !errors.Is(err, authn.ErrInvalidConfig) {
-				t.Errorf("the failure reads %q and does not wrap %v", err, authn.ErrInvalidConfig)
-			}
-			if c.absent && !errors.Is(err, config.ErrMissingRequired) {
-				t.Errorf("the failure reads %q and does not wrap %v", err, config.ErrMissingRequired)
-			}
-		})
-	}
+// withBearer puts a Bearer credential on a request.
+func withBearer(r *nethttp.Request, token string) *nethttp.Request {
+	r.Header.Set(authHeader, "Bearer "+token)
+	return r
+}
+
+// withCookie puts a cookie on a request.
+func withCookie(r *nethttp.Request, name, value string) *nethttp.Request {
+	r.AddCookie(&nethttp.Cookie{Name: name, Value: value})
+	return r
 }

@@ -42,9 +42,9 @@ claim there has its case in `e2e_test.go` or a slice's own test file, or in
 |---|---|
 | `main.go` | The package comment, the stack table and the command tree, with the platform modules each command runs. |
 | `host.go` | The host identity (prefix `CRM`) and the endpoint names. |
-| `application.go` | The registration table every host module goes through, the release records, the error body, the route and request-body helpers, identifiers. |
-| `users.go` | The global users table, password hashing at the cost `users.password-iterations` gives — a hash at another cost is derived again at it on its user's next sign-in — and the credential backend for Basic credentials of CRM users (an open claim). |
-| `sessions.go` | The bearer backend (the `bearer` scheme claimed whole), sessions in the key-value store, the `sessions.ttl` setting, and `POST /login`, `POST /logout` on the account endpoint. |
+| `application.go` | The registration table every host module goes through, the migration tree helper every module's migrations use, the release records, the error body, the route and request-body helpers, identifiers. |
+| `users.go` | The global users table, password hashing at the cost `users.password-iterations` gives — a hash at another cost is derived again at it on its user's next login. |
+| `sessions.go` | The bearer backend (the `bearer` scheme taken whole, accounts in the library namespace, which are the user identifiers), sessions in the key-value store, each recording the user and the time of the login, the `sessions.ttl` setting, and `POST /login`, `POST /logout` on the account endpoint. The login reads the user's Basic header itself: the gateway hands the one `basic` scheme to the operators' table. |
 | `members.go` | The scoped memberships table, the membership layer on the API endpoint, `GET`/`POST /members`, and `GET /me` on the account endpoint. |
 | `admin.go` | The operator check and the roster, user and cross-tenant grant routes on the admin endpoint. |
 | `ops.go` | Health, readiness, the merged OpenAPI document, and the ready record. |
@@ -160,21 +160,28 @@ claim there has its case in `e2e_test.go` or a slice's own test file, or in
   default, whose transaction takes the lock at its first write and is refused
   it outright when it has read first while another connection writes. The
   host never reorders a transaction's statements to suit an engine.
-- **The CRM principal is `member.UserID`.** A CRM user authenticates through
-  two backends — `users` for Basic, `sessions` for a bearer token — so the
-  identity's `Key()` is `users/<id>` or `sessions/<id>` depending on the
-  credential. Store the user identifier (`member.UserID`, or `userIDOf` off the
-  API endpoint) wherever a row records who acted. The platform modules key on
-  `Key()`, so the rate limiter keeps one bucket per credential kind and the
-  journal names the actor by the credential used: a consequence of the
-  two-backend shape, not something the host corrects.
-- **A layer that must see the journal or the rate limiter declares a stage
-  inside them.** The membership layer declares `StageAuthorize`, the innermost
-  stage, so the journal's `StageRecord` and the limiter's `StageThrottle` both
-  run outside it and its refusals are recorded and counted. Where a layer sits
-  relative to those two is which stage it names, not an anchor it writes and not
-  a number: a layer naming an earlier stage — `StageGuard`, or `StageIdentify` —
-  would be outside one or both of them, and its refusals would be neither
+- **The CRM principal is `member.UserID`.** A CRM user authenticates with the
+  bearer token a login issued, through the `sessions` backend, so the
+  identity's account, and its `Key()`, is the user identifier (`u_` and
+  hexadecimal digits, a well-formed account identifier that is not under the
+  static prefix); the `sessions` backend declares `u_` as its account prefix, so
+  the gateway refuses an account outside it. Store the user identifier (`member.UserID`, or `userIDOf` off
+  the API endpoint) wherever a row records who acted. The platform modules key
+  on `Key()`, so the rate limiter keeps one bucket per CRM user and the journal
+  names the actor by the user identifier. An operator is the account
+  `static.root`: `userIDOf` reads it as no user, and the membership layer
+  refuses it as a stranger to every tenant.
+- **One scheme has one backend.** The operators' table takes `basic`, so a CRM
+  user's Basic header reaches the login route and no other. A case that needs a
+  CRM user on the API signs the user in (`signedIn`, which logs in on first use
+  and sends the token), and a case about a Basic credential on the API expects
+  the operators' table to refuse it.
+- **A layer that must see the journal or the rate limiter anchors on them.**
+  The membership layer declares `After` on the gateway, resolution, the journal
+  and the limiter. Anchoring on the gateway and resolution alone leaves it
+  unordered against the journal and the limiter: its own zero `Order` is
+  smaller than the journal's, so it lands outside the journal, and outside the
+  limiter, which sits inside the journal. Its refusals would be neither
   recorded nor counted.
 - **The journal covers the account and admin endpoints, which resolve no
   tenant.** Its layer anchors after resolution on every endpoint it is
@@ -232,12 +239,9 @@ claim there has its case in `e2e_test.go` or a slice's own test file, or in
   lists, or name the bus on the groups with that cost written down.
 - **A worker shares the serving configuration and empties two endpoint lists.**
   The journal and the telemetry assembler take the HTTP entry point up when
-  their endpoint lists name endpoints, and the serving configuration writes
-  names into both while the worker runs no entry point; the harness starts it
-  with `CRM_AUDIT__JOURNAL__ENDPOINTS=` and
-  `CRM_OBSERVABILITY__OTEL__ENDPOINTS=`. Emptying the telemetry list is needed
-  because the serving configuration lists names: the assembler's default list,
-  `*`, is skipped when no entry point is present.
+  their endpoint lists are not empty, and the worker runs none; the harness
+  starts it with `CRM_AUDIT__JOURNAL__ENDPOINTS=` and
+  `CRM_OBSERVABILITY__OTEL__ENDPOINTS=`.
 - **Keep the demonstrated claims and their cases together.** A claim the
   package comment makes and no case covers is one the next reader cannot trust.
 
@@ -253,10 +257,17 @@ env -C examples/crm-host golangci-lint run ./...
 The cases compile the host once in `TestMain` and run it as a child process;
 under `-race` the host is built with the race detector as well, and a child that
 reports a data race fails its case. Such a child runs with the detector's
-second-long sleep before exit turned off, and every case derives passwords at a
-low cost — `users.password-iterations` and the operator's hash, at
+second-long sleep before exit turned off, and every case derives the CRM
+users' passwords at a low cost — `users.password-iterations`, at
 `caseHashIterations` — since at the production cost one derivation takes over a
-second under the detector and the cases make hundreds. The `sqlite-memory`
+second under the detector and the cases make hundreds. The operator's entry is
+written at the static backend's production cost: that backend remembers a check
+that held, so a case pays for one derivation per serving process, and an entry
+that cheap would be named at Warn by every case's startup. By default the
+backend derives at most as many hashes at once as the process has processors,
+and answers 503 to a request that finds none free, so a case that sends two
+operator requests together first sends one alone, to warm the cache: on one
+processor, two requests that both find it cold are answered one 200 and one 503. The `sqlite-memory`
 stack needs nothing but the Go toolchain and a loopback interface. The four
 PostgreSQL stacks need the docker CLI: the harness starts, or reuses when
 already running, one container per backend per machine —
@@ -298,9 +309,8 @@ authn:
   gate:
     endpoints: [api, account, admin]
   static:
-    name: ops
     subjects:
-      root: "pbkdf2-sha256$600000$...$..."
+      root: "$argon2id$v=19$m=19456,t=2,p=1$...$..."
 tenant:
   resolve:
     endpoints: [api]
@@ -320,8 +330,39 @@ observability:
     endpoints: [api, account, admin]
 ```
 
-The static backend's name has to be `ops`: the admin endpoint lets through the
-identities that backend owns and no others.
+The admin endpoint lets through the one account `operatorAccount` names,
+`static.root`: the subject of that name in the operators' table, which only the
+static backend may hand back. Another subject of the table authenticates and is
+answered 403 there.
+`authn.gate.endpoints` narrows the gateway's default of every endpoint to the
+three that carry credentials, which leaves the `ops` endpoint with the probes
+and the documents unguarded.
+
+## Transitional form
+
+The users table, the password derivation and the `sessions` backend are the
+host's own, and they stand in for the account, session and login modules of
+`pkg/authn`, which this host adopts in place of them. What holds until then:
+
+- `sessions` is the one backend for CRM users. It is a host-written directory
+  backend and not the library's account module, so it declares the account
+  prefix of its own that the users table's identifiers begin with, `u_`
+  (`userIDPrefix`), which is what the gateway's account namespace check holds it
+  to. Its Principal is the user's account, the password method, one factor, and
+  the time of the login the session records.
+- The users table keeps its hashes in this host's own `pbkdf2-sha256` format,
+  `pbkdf2-sha256$<iterations>$<salt>$<key>`. The operators' table reads that
+  layout as an older form and never writes it, and writes PHC strings: the
+  derivation here, its cost item and its cases are the host's, and the format is
+  the host's to keep.
+- `POST /login` and `POST /logout` are host handlers. `POST /login` is exempt
+  through the gateway's registration and reads the Basic header itself;
+  `POST /logout` is guarded and ends the bearer session that authenticated it.
+- The membership layer is the host's own, reading the memberships table.
+- `migrations/users` and `openapi/sessions.json` are used by `users.go` and
+  `sessions.go` and leave with them. `subtree`, which every module's migrations
+  go through, lives in `application.go` so that removing `users.go` leaves the
+  other modules' migration trees alone.
 
 ## Extending the harness
 
@@ -353,8 +394,8 @@ outliving it.
   as the operator. `c.tenantNamed(name)` and `c.userNamed(name)` make the
   names unique per case. `c.setGlobal(key, value)` writes a global setting row
   before a run starts.
-- Passwords are derived at `caseHashIterations`. Both credential backends
-  verify a hash at the count it carries, so a case does not depend on the
+- The CRM users' passwords are derived at `caseHashIterations`. The hash
+  carries its count and is verified at it, so a case does not depend on the
   count; one whose property rests on how long a derivation takes sets
   `users.password-iterations` to the production cost itself, as the case of
   two creations of one email at once does.
@@ -374,9 +415,12 @@ outliving it.
   fails, the output of every run it started is logged, even one that stopped
   cleanly.
 - `h.get`, `h.post` and `h.send` take a tenant alias and a credential —
-  `basic(user)`, `bearer(token)`, `operator()`, `noCredential{}` — and fail the
-  test when the request cannot be made; `h.do` returns the error instead, for
-  requests sent from several goroutines at once.
+  `signedIn(user)`, `bearer(token)`, `operator()`, `basic(user)`,
+  `noCredential{}` — and fail the test when the request cannot be made; `h.do`
+  returns the error instead, for requests sent from several goroutines at once.
+  `signedIn` logs the user in on the replica the request goes to and sends the
+  token; `basic` is for the login itself and for a case that expects a Basic
+  credential refused.
 - `c.journal()` and `c.awaitJournal(...)` read `audit_entries`; `c.sql()` is
   the harness's own connection for anything else a case asserts on.
 - `c.holdWrites(table)` holds every write to a table back while its reads go

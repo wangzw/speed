@@ -7,6 +7,7 @@ import (
 	_ "embed"
 	"encoding/base64"
 	"encoding/hex"
+	"encoding/json"
 	"errors"
 	nethttp "net/http"
 	"strings"
@@ -24,8 +25,9 @@ import (
 )
 
 // sessionsModuleName is the name the sessions module is registered under, and
-// the name its backend reports: an identity authenticated by a bearer token is
-// written sessions/<user id>.
+// the name its backend reports. An identity authenticated by a bearer token is
+// the account of the user the session belongs to, so its Key is the user
+// identifier.
 const (
 	sessionsModuleName  = "sessions"
 	sessionsBackendName = sessionsModuleName
@@ -40,7 +42,7 @@ const (
 	logoutRoute = "POST /logout"
 )
 
-// bearerScheme is the authentication scheme this backend claims whole, in the
+// bearerScheme is the authentication scheme this backend takes whole, in the
 // folded form the gateway hands a backend.
 const bearerScheme = "bearer"
 
@@ -66,9 +68,31 @@ const tokenBytes = 32
 // prose list does not hold, so neither text puts a word after "bearer" (see
 // the failures in users.go).
 var (
-	errUnknownSession = errors.New("no live session holds this token")
-	errNoSuchUser     = errors.New("the session's user no longer exists")
+	errUnknownSession   = errors.New("no live session holds this token")
+	errMalformedSession = errors.New("the stored session is not in this host's form")
+	errNoSuchUser       = errors.New("the session's user no longer exists")
 )
+
+// session is what the key-value store holds under a token's key: the user the
+// session belongs to and when the login that issued it happened, which is the
+// authentication time the identity carries.
+type session struct {
+	User   string    `json:"user"`
+	Issued time.Time `json:"issued"`
+}
+
+// encode is the stored form of a session.
+func (s session) encode() ([]byte, error) { return json.Marshal(s) }
+
+// readSession reads a stored session back. A value that does not decode, or that
+// names no user or no time, is not a session this host wrote.
+func readSession(stored []byte) (session, error) {
+	var s session
+	if err := json.Unmarshal(stored, &s); err != nil || s.User == "" || s.Issued.IsZero() {
+		return session{}, errMalformedSession
+	}
+	return s, nil
+}
 
 //go:embed openapi/sessions.json
 var sessionsOpenAPI []byte
@@ -118,37 +142,66 @@ type sessionsBackend struct {
 	passwords passwords
 }
 
-// Name is the owner half of every identity this backend authenticates.
+// Name is what the gateway stamps on every identity this backend authenticates.
 func (b *sessionsBackend) Name() string { return sessionsBackendName }
 
-// Claim takes the bearer scheme whole: a token says nothing about whose it is
-// until the store is asked, so there is no subject to route on beforehand.
-func (b *sessionsBackend) Claim() authn.Claim {
-	return authn.Claim{Schemes: []string{bearerScheme}}
+// Accepts takes the bearer scheme whole. The accounts it hands back are the
+// identifiers of the users table, which this host keeps itself and not the
+// library: the backend declares the prefix those identifiers begin with, so the
+// gateway refuses an account outside it, and it claims no impersonation and no
+// SSO.
+func (b *sessionsBackend) Accepts() authn.Accepts {
+	return authn.Accepts{Schemes: []string{bearerScheme}, Accounts: userIDPrefix}
 }
 
 // Verify looks a token's session up and answers for the user it belongs to.
 // The user is read again on every request, so a user disabled after logging in
 // is refused from the next request on rather than when the token expires.
-func (b *sessionsBackend) Verify(ctx context.Context, _ string, c authn.Credential) authn.Verdict {
-	stored, present, err := b.store.Get(ctx, sessionKey(c.Value))
-	if err != nil {
+func (b *sessionsBackend) Verify(ctx context.Context, c authn.Credential) authn.Verdict {
+	principal, err := b.principalOf(ctx, c.Value)
+	switch {
+	case err == nil:
+		return authn.Authenticated(principal)
+	case isRefusal(err):
+		return authn.Denied(err)
+	default:
 		return authn.Unavailable(err)
+	}
+}
+
+// isRefusal reports whether an error from principalOf says the token does not
+// hold, as against the store or the table failing to answer.
+func isRefusal(err error) bool {
+	return errors.Is(err, errUnknownSession) || errors.Is(err, errMalformedSession) ||
+		errors.Is(err, errNoSuchUser) || errors.Is(err, errUserDisabled)
+}
+
+// principalOf is what a token's session claims: the principal of the user it
+// belongs to, signed in at the time the session records. An error that isRefusal
+// holds says the token does not hold; any other says a store could not answer.
+func (b *sessionsBackend) principalOf(ctx context.Context, token string) (authn.Principal, error) {
+	stored, present, err := b.store.Get(ctx, sessionKey(token))
+	if err != nil {
+		return authn.Principal{}, err
 	}
 	if !present {
-		return authn.Denied(errUnknownSession)
+		return authn.Principal{}, errUnknownSession
 	}
-	user, found, err := userByID(ctx, b.db, string(stored))
+	held, err := readSession(stored)
 	if err != nil {
-		return authn.Unavailable(err)
+		return authn.Principal{}, err
+	}
+	user, found, err := userByID(ctx, b.db, held.User)
+	if err != nil {
+		return authn.Principal{}, err
 	}
 	if !found {
-		return authn.Denied(errNoSuchUser)
+		return authn.Principal{}, errNoSuchUser
 	}
 	if user.Disabled {
-		return authn.Denied(errUserDisabled)
+		return authn.Principal{}, errUserDisabled
 	}
-	return authn.Authenticated(user.ID)
+	return principalFor(user.ID, held.Issued), nil
 }
 
 // issued is what a login answers with.
@@ -161,7 +214,9 @@ type issued struct {
 
 // login takes the Basic credential of a CRM user and answers with a bearer
 // token. The route is exempt, so nothing has checked the credential before this
-// handler runs; it is checked here by the same code the users backend runs.
+// handler runs; it is checked here against the users table. The Basic header is
+// read by this handler and not by the gateway, which hands Basic to the one
+// backend that takes it, the operators' table.
 func (b *sessionsBackend) login(c *gin.Context) {
 	ctx := c.Request.Context()
 	email, password, ok := c.Request.BasicAuth()
@@ -170,7 +225,6 @@ func (b *sessionsBackend) login(c *gin.Context) {
 		writeError(c, nethttp.StatusUnauthorized, "a login takes the Basic credential of a CRM user")
 		return
 	}
-	email = strings.TrimPrefix(email, usersBackendName+authn.Separator)
 	user, err := authenticate(ctx, b.db, b.passwords, email, password)
 	switch {
 	case errors.Is(err, errBadCredentials), errors.Is(err, errUserDisabled):
@@ -204,7 +258,13 @@ func (b *sessionsBackend) login(c *gin.Context) {
 		writeError(c, nethttp.StatusInternalServerError, "no token could be drawn")
 		return
 	}
-	if err := b.store.Set(ctx, sessionKey(token), []byte(user.ID), ttl); err != nil {
+	record, err := session{User: user.ID, Issued: time.Now().UTC()}.encode()
+	if err != nil {
+		log.FromContext(ctx).Error("encoding a session", "error", err)
+		writeError(c, nethttp.StatusInternalServerError, "no session could be recorded")
+		return
+	}
+	if err := b.store.Set(ctx, sessionKey(token), record, ttl); err != nil {
 		log.FromContext(ctx).Error("storing a session", "error", err)
 		writeError(c, nethttp.StatusServiceUnavailable, "the session store cannot be written")
 		return
@@ -231,7 +291,7 @@ func (b *sessionsBackend) logout(c *gin.Context) {
 		return
 	}
 	token, isBearer := bearerToken(c.Request)
-	if caller.Owner() != sessionsBackendName || !isBearer {
+	if caller.Backend() != sessionsBackendName || !isBearer {
 		writeError(c, nethttp.StatusBadRequest, "a logout ends a bearer session, and this request was not authenticated by one")
 		return
 	}

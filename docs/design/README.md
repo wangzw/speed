@@ -37,5 +37,6 @@ speed 是一个配置驱动的模块化应用程序框架，以 Go 库的形式�
 | [outbox](modules/design-outbox.md) | 事务发件箱：在写入的事务里暂存事件、提交之后中继到事件总线、拒收后重发、多副本的有时限认领 |
 | [audit](modules/design-audit.md) | 审计：语句、事件、请求与记录接缝的捕获通路、审计表、明细的脱敏 |
 | [settings](modules/design-settings.md) | 设置：模块声明的运行期参数、三级回落、以快照读取、变更事件的发布与订阅 |
-| [ratelimit](modules/design-ratelimit.md) | 限流：租户内按身份串的请求速率限制、以设置读取额度与窗口、经键值原语按窗口计数 |
+| [ratelimit](modules/design-ratelimit.md) | 限流：租户内按责任键的请求速率限制、以设置读取额度与窗口、经键值原语按窗口计数 |
+| [observability](modules/design-observability.md) | 运行期遥测：上游 SDK 的 provider、请求路径的采集、出站注入、事件订阅、导出后端 |
 | [observability](modules/design-observability.md) | 运行期遥测：上游 SDK 的 provider、请求路径的采集、出站注入、导出后端 |

@@ -77,8 +77,8 @@ func (cr crew) as(h *crmHost, u userRef, in tenantRef) actor {
 }
 
 // sessionActor is how the journal names an actor who authenticated with a
-// bearer token.
-func (a actor) sessionActor() string { return sessionsBackendName + "/" + a.user.ID }
+// bearer token: by the account, which is the user identifier.
+func (a actor) sessionActor() string { return a.user.ID }
 
 // send makes one request as the actor.
 func (a actor) send(t *testing.T, method, path string, body any) response {

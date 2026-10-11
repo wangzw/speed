@@ -18,7 +18,7 @@
 
 ### 非职责
 
-- **不执行跨源检查。** cookie 凭据下的跨源检查由网关在调用校验后端之前执行，规则写在本文的「cookie 凭据下的跨源检查」一节，执行点与拒绝形状见 [design-authn-gate](design-authn-gate.md)。
+- **不执行跨源检查。** 浏览器自行附带的凭据下的跨源检查由网关在调用校验后端之前执行，规则写在本文的「浏览器自行附带的凭据下的跨源检查」一节，载体判据、执行点与拒绝形状见 [design-authn-gate](design-authn-gate.md)。
 - **不认证任何人。** 第一因素与第二因素由登录引擎与因素编排完成（[design-authn-login](design-authn-login.md)、[design-authn-mfa](design-authn-mfa.md)），登录完成后调用 `Sessions.Create`；本模块不创建没有账户的匿名会话。
 - **不持有账户状态。** 账户的启用、停用、删除与 `valid_after` 归 `authn.account`（[design-authn-account](design-authn-account.md)）；本模块只读，并在每次校验时核对。
 - **不签发、不校验访问令牌与刷新令牌。** 令牌、刷新令牌表 `authn_refresh_tokens` 与服务密钥的换令牌流程归 `authn.token`（[design-authn-token](design-authn-token.md)）；`token` 种与 `service` 种的会话行住在本模块，行里没有令牌。
@@ -81,7 +81,7 @@ type Sessions interface {
 | `Revoke` | 幂等。置 `revoked_at` 与 `revoke_reason`，清本副本缓存，发布 `authn.session.revoked`。刷新令牌随之失效：刷新每次都核对会话行，本方法不级联写刷新令牌表。对 `service` 种的行同样置 `revoked_at`，之后 `ForCredential` 对该密钥返回 `ErrSessionRevoked`；访问令牌的撤销接口对 `service` 种是无操作，持有访问令牌的人走不到这一路径。 |
 | `RevokeAccount` | 对该账户的 `browser` 与 `token` 种做一条 `UPDATE`；`except` 非空则保留那一个会话，为空则全撤；返回撤销的行数。`service` 种不在其内。 |
 | `Rotate` | 为当前会话换令牌，保留标识、等级与期限；只对 `browser` 种有内容，其余种类无事可做。它与 `RevokeAccount` 是两个动作：前者换当前会话的令牌，后者撤销其余会话。 |
-| `Elevate` | 加强认证完成后更新等级、认证时刻、方式集与 `IdPAssured`，并对 `browser` 种换令牌；保留标识与绝对期限，不建新会话。 |
+| `Elevate` | 加强认证完成后更新等级、认证时刻、方式集与 `IDPAssured`，并对 `browser` 种换令牌；保留标识与绝对期限，不建新会话。 |
 | `SetImpersonation` | 写入冒充记录标识，空串表示结束，并对 `browser` 种换令牌；保留标识与期限。 |
 | `Status` | 回答会话是否仍然有效，并交出校验后端建立身份所需的全部事实；受 `check-ttl` 缓存。库里没有该会话返回 `ErrSessionNotFound`；会话存在而失效（已撤销、过期、账户停用、会话早于账户的 `valid_after`）返回 `Active` 为假的 `SessionStatus`。 |
 | `StatusFresh` | 与 `Status` 同判据，不走缓存；刷新令牌轮换与登录流程完成时使用。 |
@@ -93,7 +93,7 @@ type Sessions interface {
 
 ### 路由
 
-下表是本模块经 `authn.mount` 登记的全部路由（封闭集合）。所有 authn 响应带 `Cache-Control: no-store`；「CSRF」指 cookie 凭据下的非安全方法过跨源检查；`Impersonable` 经 `mount.Impersonable()` 登记，冒充身份在网关只被放进这样的路由，冒充期间允许的路由的完整集合见 [design-authn-impersonation](design-authn-impersonation.md)。
+下表是本模块经 `authn.mount` 登记的全部路由（封闭集合）。所有 authn 响应带 `Cache-Control: no-store`；「CSRF」指浏览器自行附带的凭据下的非安全方法过跨源检查；`Impersonable` 经 `mount.Impersonable()` 登记，冒充身份在网关只被放进这样的路由，冒充期间允许的路由的完整集合见 [design-authn-impersonation](design-authn-impersonation.md)。
 
 | 方法与路径 | 访问 | 要求 |
 |---|---|---|
@@ -107,7 +107,7 @@ type Sessions interface {
 
 本模块声明的配置项只有 `authn.session.cookie-domain` 与 `authn.session.same-site`；类型、缺省与取值写在 [design-authn-config](design-authn-config.md)。语义如下：
 
-- `cookie-domain` 非空时 cookie 名改为 `__Secure-sid`，写出 `Domain` 属性；`__Host-` 前缀所保证的「子域不可写」随之失去，启动诊断为此写一行 Warn。
+- `cookie-domain` 非空时 cookie 名改为 `__Secure-sid`，写出 `Domain` 属性；`__Host-` 前缀所保证的「子域不可写」随之失去，启动诊断为此写一行 Warn。改动 `cookie-domain` 或 `allow-insecure` 会更换 cookie 名：同时带着旧名与新名两个被认领 cookie 的浏览器，网关整体答 401，既不择一校验也不清除其中任何一个，所以切换要先让旧 cookie 过期，再启用新名（见 [design-authn-gate](design-authn-gate.md)）。
 - `same-site` 取 `lax` 或 `strict`；取 `none` 是 `ErrInsecureConfig`。
 
 cookie 的 `Secure` 没有独立开关。`public-url` 不是 https（回环主机除外）而未开 `authn.gate.mount.allow-insecure` 是 `ErrInsecureConfig`；回环主机的 http 基址按 https 处理，保留 `__Host-` 前缀与 `Secure`，不写 Warn；`allow-insecure`（仅开发）同时去掉 `__Host-` 前缀与 `Secure`，启动诊断为此写一行 Warn。`public-url`、`allow-insecure` 与 `trusted-origins` 由 `authn.gate` 声明，本模块在 `Prepare` 里读取（[design-authn-gate](design-authn-gate.md)）。
@@ -300,7 +300,7 @@ type NewSession struct {
 	Kind        SessionKind       // browser 或 token；service 种只经 ForCredential 建，Create 拒绝它
 	Methods     []Method
 	Assurance   Assurance
-	IdPAssured  bool              // 多因素来自企业 IdP 的声明
+	IDPAssured  bool              // 多因素来自企业 IdP 的声明
 	AuthTime    time.Time
 	Provider    string            // SSO 提供方标识
 	Attributes  map[string]string // 属性映射得到的 idp.* 快照
@@ -336,7 +336,7 @@ type SessionStatus struct {
 	Kind            SessionKind
 	Methods         []Method
 	Assurance       Assurance
-	IdPAssured      bool
+	IDPAssured      bool
 	AuthTime        time.Time
 	Provider        string
 	Attributes      map[string]string
@@ -349,7 +349,7 @@ type SessionStatus struct {
 type Elevation struct {
 	Methods    []Method
 	Assurance  Assurance
-	IdPAssured bool // 本地因素完成加强认证后为假
+	IDPAssured bool // 本地因素完成加强认证后为假
 	AuthTime   time.Time
 }
 ```
@@ -386,7 +386,7 @@ CREATE INDEX authn_sessions_expires ON authn_sessions (expires_at);
 ```
 
 - 行里不存令牌明文，只存令牌的 SHA-256，库转储得不到可用的 cookie。
-- `data` 是编解码器写出的 JSON，承载校验后端建立身份所需、又不是独立列的会话事实：会话标识（`sid`）、账户、种类、方式集、等级、`IdPAssured` 标记、认证时刻、提供方、`idp.*` 属性、绝对期限（`exp`）与空闲期限（`idle`）。载荷里的属性集不越过根包规定的界限，`idp.*` 至多 8 项；超过 8 KiB 拒绝写入。
+- `data` 是编解码器写出的 JSON，承载校验后端建立身份所需、又不是独立列的会话事实：会话标识（`sid`）、账户、种类、方式集、等级、`IDPAssured` 标记、认证时刻、提供方、`idp.*` 属性、绝对期限（`exp`）与空闲期限（`idle`）。载荷里的属性集不越过根包规定的界限，`idp.*` 受 [design-authn-gate](design-authn-gate.md#出口检查) 属性集界限表里的分项上限约束（条数、键长、值长以那一份为准）；超过 8 KiB 拒绝写入。
 - `idle_expires_at` 只对 `browser` 种有意义；`token` 种的空闲约束由刷新令牌行承担，`service` 种没有空闲期限。
 - `revoked_at` 是撤销的唯一依据，不与任何时间比较。
 
@@ -465,7 +465,7 @@ stateDiagram-v2
 
 ### cookie 校验
 
-`authn.session` 作为 `Verifier` 校验一条取自 cookie 的凭据。网关的取用规则：`Authorization` 头恰有一个时它优先，此时 cookie 不被读、不被校验；无 `Authorization` 时才读被某个校验后端认领的 cookie；同名 cookie 出现多于一次视为歧义，401。下表按先后次序列出校验的各阶段（封闭集合）；某一阶段不通过时，排在它之后的阶段不执行。
+`authn.session` 作为 `Verifier` 校验一条取自 cookie 的凭据。网关的取用规则：`Authorization` 头恰有一个时它优先，此时 cookie 不被读、不被校验；无 `Authorization` 时才读被某个校验后端认领的 cookie；同名 cookie 出现多于一次，或同时出现两个不同名的被认领 cookie，视为歧义，整体 401。下表按先后次序列出校验的各阶段（封闭集合）；某一阶段不通过时，排在它之后的阶段不执行。
 
 | 阶段 | 做什么 | 不通过时 |
 |---|---|---|
@@ -473,11 +473,13 @@ stateDiagram-v2
 | 缓存 | 以 `h` 为键查进程内缓存（值是 `SessionStatus`，有效期 `check-ttl`，容量上限 1 万条，超出按最久未用淘汰，键里没有令牌明文）。命中则直接进入账户核对，不调 scs、不读库。缓存必须先于 `scs.Load`：`Load` 对非空令牌总会读一次存储，缓存放在它之后则每个 cookie 请求都读库。 | — |
 | 读取 | 未命中时 `scs.Load`，经 `FindCtx` 读一次库（条件见 S4）；载荷里没有 `sid` 即无此会话；用这一次读取的结果构造 `SessionStatus` 写入缓存，同时以 `sid` 为二级键建索引。`Sessions.Status(sid)` 复用这次读取，不读第二次库。已撤销、已过空闲期限或绝对期限的会话同样拒绝。 | `Load` 出错（db 不可用）是 `Unavailable`；无此会话、已撤销、已过期是 `Denied` |
 | 账户核对 | 经账户快照缓存（`internal/acctcache`，有效期同 `check-ttl`）核对：账户非启用，或会话的 `CreatedAt` 早于账户的 `valid_after`。这与 `Sessions.Status` 里的同一判据是双重校验：停用账户时的清理钩子漏了，也不放行。 | `Denied` |
-| 冒充 | 会话行的 `ImpersonationID` 非空时，经冒充记录缓存取 `Impersonation.Active(id)` 的结果（键是记录标识，有效期 `check-ttl`，容量与淘汰同会话校验缓存，`Active` 出错不写入），未命中才询问：记录仍有效则按冒充构造 `Principal`（`Account` 为被冒充账户，`Actor` 为会话账户，`Scope` 为记录的租户，等级封顶 `AssuranceSingle`，`IdPAssured` 为假）；记录已结束或过期则按未冒充处理，管理员回到自己的身份，不是 401。 | 能力缺席而 `ImpersonationID` 非空：`Denied`；`Active` 出错：`Unavailable` |
+| 冒充 | 会话行的 `ImpersonationID` 非空时，经冒充记录缓存取 `Impersonation.Active(id)` 的结果（键是记录标识，有效期 `check-ttl`，容量与淘汰同会话校验缓存，`Active` 出错不写入），未命中才询问：记录仍有效则按冒充构造 `Principal`（`Account` 为被冒充账户，`Actor` 为会话账户，`Scope` 为记录的租户，等级封顶 `AssuranceSingle`，`IDPAssured` 为假）；记录已结束或过期则按未冒充处理，管理员回到自己的身份，不是 401。 | 能力缺席而 `ImpersonationID` 非空：`Denied`；`Active` 出错：`Unavailable` |
 | 续期 | 距上次续期已过 `touch-interval` 时，按 S2 条件更新 `last_seen_at` 与 `idle_expires_at`。 | 续期失败被忽略，请求照常通过，只影响空闲续期的精度 |
-| 构造身份 | 方式集、等级、`IdPAssured`、认证时刻、提供方取自会话行（冒充时等级与 `IdPAssured` 按冒充阶段）；属性为账户快照的 `attributes` 并上会话载荷里的 `idp.*`；`Session` 取 `sid`。 | — |
+| 构造身份 | 方式集、等级、`IDPAssured`、认证时刻、提供方取自会话行（冒充时等级与 `IDPAssured` 按冒充阶段）；属性为账户快照的 `attributes` 并上会话载荷里的 `idp.*`；`Session` 取 `sid`。 | — |
 
 `Denied` 时网关调用 `ClearCookie` 清除失效的 cookie；`Unavailable` 与超预算由网关收口为 503，不清 cookie。
+
+**会话模块持有的进程内缓存各是 `internal/acctcache` 的一个实例，键与值各自不同，互不共享条目。** 会话校验缓存以令牌摘要 `h` 为键，值是 `SessionStatus`；账户快照缓存以账户标识为键，值是账户状态、`valid_after` 与属性的快照；冒充记录缓存以记录标识为键，值是 `Active` 的结果。它们的有效期都是 `check-ttl`，容量上限各为 1 万条，超出按最久未用淘汰；容量是构造参数，写在会话模块里，不是配置键或设置键，缓存的大小不是运维调参的旋钮。`acctcache` 只按单一字符串键存取，没有二级键：会话校验缓存按 `sid` 清除条目所需的 `sid` 索引由会话模块在缓存之外自己维护，同样以 1 万条为界，索引里指向已被淘汰条目的项清除时是空操作。各缓存的写入都先取 `Epoch`、读库之后用 `PutIfEpoch` 写：清除无论键在不在都使纪元前进，在清除之前读到旧值的在途读取因此写不回缓存，一份已被事件清掉的旧快照不会再服务一个有效期。缓存里的值被所有命中它的请求共享，是只读的，要并入别的东西的读者先拷贝。
 
 **放宽的上界是缓存有效期。** 撤销、账户状态变更与冒充记录的结束在其他副本上最多晚 `check-ttl` 生效。需要立刻生效的动作（管理员立即踢下线）在本副本直接清缓存，其他副本靠 `authn.session.revoked` 事件清；冒充记录缓存订阅 `authn.impersonation.ended`，按事件的 `grant_id` 清除条目。事件丢了由缓存有效期兜底。缓存不可用时每个已认证请求一次库读，`check-ttl` 设为 0 即严格，代价是每个请求读库。
 
@@ -520,13 +522,13 @@ stateDiagram-v2
 
 `Start` 起一个常驻协程，每 10 分钟批量删除到期并过了 `retention` 的行，每批至多 1000 行（`DELETE … WHERE id IN (SELECT id … LIMIT 1000)`，两个方言通用）。`browser` 与 `token` 种按 `expires_at` 判到期；`service` 种的行只在已撤销且过了 `retention` 之后删除，随密钥的行不按期限删。每个副本都跑，条件删除互不冲突。`Stop` 以自带的 5 秒为界等协程退出（`Stop` 的 context 已去掉取消）。每批删除后本模块上报 `authn.session.operations`。
 
-### cookie 凭据下的跨源检查
+### 浏览器自行附带的凭据下的跨源检查
 
 规则的执行点在网关，位于调用校验后端之前；本节固定规则本身。
 
-- **适用范围。** 凭据来自 cookie 且方法不是 `GET`、`HEAD`、`OPTIONS` 的请求。凭据来自 `Authorization` 头的请求不适用：跨站表单发不出该头，且头优先时 cookie 不被读。
-- **检查。** 调用标准库 `http.CrossOriginProtection.Check`：它以 `Sec-Fetch-Site` 判跨源，只放行 `same-origin` 与 `none`；缺失时比较 `Origin` 与 `Host`；两个头都没有的请求按「非浏览器或同源」放行。`same-site`（兄弟子域）按跨源处理，除非把那个来源逐字加进可信来源。
-- **可信来源。** `public-url` 的来源加 `authn.gate.trusted-origins`（逐字匹配，仅主配置源）。SAML 的断言消费端点等外部方回跳经 `Mounter.Callback` 登记旁路（`AddInsecureBypassPattern`，模式语法同 `ServeMux`，gin 的 `:provider` 写成 `{provider}`）。
+- **适用范围。** 载体可能由浏览器自己附带、且方法不是 `GET`、`HEAD`、`OPTIONS` 的请求；哪些载体算在内的判据与执行点只在 [design-authn-gate](design-authn-gate.md)，本节不重复。
+- **检查。** 调用标准库 `http.CrossOriginProtection.Check`：它以 `Sec-Fetch-Site` 判跨源，只放行 `same-origin` 与 `none`；缺失时比较 `Origin` 与 `Host`；`Sec-Fetch-Site` 与 `Origin` 都没有的请求按「非浏览器或同源」放行。`same-site`（兄弟子域）按跨源处理，除非把那个来源加进可信来源。
+- **可信来源。** `public-url` 的来源加 `authn.gate.trusted-origins`（仅主配置源；每项先规范成浏览器发送的形式再匹配，规则见 [design-authn-gate](design-authn-gate.md#可信来源的规范形式)）。SAML 的断言消费端点等外部方回跳经 `Mounter.Callback` 登记旁路（`AddInsecureBypassPattern`，模式语法同 `ServeMux`，gin 的 `:provider` 写成 `{provider}`）。
 - **不通过。** 401，由网关自产，计入 `denied` 桶、记在网关名下；不写 403；不清除 cookie。
 - **覆盖面。** authn 自己的 POST 路由（登录与步进等）经 `Mounter` 登记时先过同一检查，防登录 CSRF；可选认证的路由上 cookie 凭据同样要过，`Optional` 只放过「没带凭据」。
 - **不做令牌式 CSRF。** 这一检查与 `SameSite=Lax` 互为兜底。跨源的单页应用用承载令牌，不用 cookie：承载令牌没有环境凭据，也就没有 CSRF 面。
@@ -556,7 +558,7 @@ stateDiagram-v2
 |---|---|---|
 | `ErrInsecureConfig` | `public-url` 不是 https（回环主机除外）而未开 `allow-insecure`；`same-site` 取 `none` | 改基址，或显式开 `allow-insecure`（仅开发）；`same-site` 取 `lax` 或 `strict` |
 | `ErrInvalidConfig` | `public-url` 为空或不合法；`base-path` 不合法 | 点名该项 |
-| `ErrRoutesUnconfigured`、`ErrRoutesUnguarded` | `mount.endpoint` 为空而入口声明的端不止一个；`mount.endpoint` 不是网关所守的端 | 配置 `authn.gate.mount.endpoint`；把它写进 `endpoints` |
+| `ErrRoutesUnconfigured`、`ErrRoutesUnguarded` | `mount.endpoint` 为空而入口声明的端不是恰好一个；`mount.endpoint` 不是网关所守的端 | 配置 `authn.gate.mount.endpoint`；把它写进 `endpoints` |
 | `ErrNotMigrated` | `Start` 探测不到 `authn_sessions` | 点名施加迁移的命令；把本模块静态级纳入它（`IncludeAllDeclarations`） |
 | `ErrMissingProvider` | 宿主漏点名 `Requires` 里的排他功能（`db.Database`、`mount.Mounter`、`Accounts`） | 把对应模块写进这条命令 |
 
@@ -596,7 +598,7 @@ stateDiagram-v2
 - **会话令牌没有设备或网络绑定。** 令牌在 `HttpOnly` cookie 里，脚本读不到，但注入的脚本能借浏览器发出同源请求；窃取者在会话有效期内可用。缩短期限与 `same-site=strict` 是缓解，不是保证。
 - **实际空闲超时可能比 `idle-timeout` 长至多一个 `touch-interval`。**
 - **`ClientInfo.IP` 在代理之后是代理地址。** 入口模块没有可信代理的输入项，`c.ClientIP()` 在代理之后恒为代理地址，列出会话时的来源地址仅供展示。
-- **跨源检查对既无 `Sec-Fetch-Site` 又无 `Origin` 的请求放行。** 不发送这两个头的浏览器与非浏览器客户端落在这一档；兄弟子域按跨源处理，除非把它的来源逐字加进可信来源。
+- **跨源检查对既无 `Sec-Fetch-Site` 又无 `Origin` 的请求放行。** 不发送它们的浏览器与非浏览器客户端落在这一档；兄弟子域按跨源处理，除非把它的来源加进可信来源。
 - **同源脚本注入不在防护内。** 它靠宿主前端的内容安全策略。
 - **SAML 的跨站 POST 回跳时，旧会话无从撤销。**
 - **`cookie-domain` 非空或 `allow-insecure` 为真时，`__Host-` 前缀的保证失去。** 启动诊断写 Warn。
@@ -629,7 +631,7 @@ stateDiagram-v2
 
 ## 实现状态
 
-下表逐项列出本模块的能力。本模块在仓库中没有代码，每一项都是未实现。
+下表逐项列出本模块的能力。本模块没有模块代码，除校验后端读取的账户快照缓存外，每一项都是未实现。
 
 | 能力 | 状态 | 代码 |
 |---|---|---|
@@ -641,6 +643,7 @@ stateDiagram-v2
 | 令牌轮换、提权与冒充挂接 | 未实现 | — |
 | cookie 的写出、清除、读取与启动校验 | 未实现 | — |
 | `Verifier`：cookie 校验、会话校验缓存、账户核对与冒充记录缓存 | 未实现 | — |
+| 账户快照的进程内缓存 `internal/acctcache`，供会话校验后端核对账户 | 部分实现 — 缓存已在，有效期、容量上限、按键与整体清除、`Epoch` 与 `PutIfEpoch` 可用；缺会话校验后端对它的读取、会话模块自己维护的 `sid` 索引，以及按 `authn.account.status-changed` 与 `authn.account.deleted` 清除的订阅 | `pkg/authn/internal/acctcache/acctcache.go` `Cache`、`New`、`Invalidate`、`Purge` |
 | `CookieClearer` | 未实现 | — |
 | `service` 种：`ForCredential` 与 `RevokeCredential` | 未实现 | — |
 | `AccountLifecycle` 钩子与事件补偿订阅 | 未实现 | — |
@@ -648,4 +651,4 @@ stateDiagram-v2
 | 到期行的清扫协程 | 未实现 | — |
 | `authn.session.revoked` 事件的发布与订阅、`authn.impersonation.ended` 的订阅、`authn.session.operations` 指标 | 未实现 | — |
 
-cookie 凭据下的跨源检查由网关执行，它的实现状态由 [design-authn-gate](design-authn-gate.md) 承载。
+浏览器自行附带的凭据下的跨源检查由网关执行，它的实现状态由 [design-authn-gate](design-authn-gate.md) 承载。

@@ -71,7 +71,7 @@
 
 | 字段 | 出现于 | 取值域 |
 |---|---|---|
-| `reason_class` | `authn.account.status-changed`、`authn.session.revoked` | 封闭集合，见下文 |
+| `reason_class` | `authn.account.status-changed`、`authn.session.revoked`，以及失败退避开始的那一行日志 | 封闭集合，见下文 |
 | `from`、`to` | `authn.account.status-changed` | 账户状态的名字，状态的定义见 [design-authn-account](design-authn-account.md) |
 | `kind` | `authn.account.created` | 账户种类 `user`、`service` |
 | `kind` | `authn.identifier.changed` | 标识种类，见 [design-authn-account](design-authn-account.md) |
@@ -96,6 +96,7 @@
 | `account-disabled` | 账户被停用 |
 | `account-deleted` | 账户被删除 |
 | `evicted` | 超出每账户会话上限，最久未使用的会话被撤销 |
+| `throttled` | 失败退避开始：一个键越过自由次数而进入等待；只出现在退避那一行日志，不进事件载荷与审计明细 |
 
 **authn 自己订阅的事件**是下表（封闭集合）。订阅全在 `Init` 里登记，类型静态，处理函数幂等，只做丢本地缓存与账户清理的补偿。
 
@@ -108,7 +109,7 @@
 | `tenant.admission` | `authn.membership.changed` | 清成员关系缓存；处理见 [design-tenant-admission](design-tenant-admission.md) |
 | 持有可在运行期改动的安全设置的模块（`authn.sms` 在其中） | `settings.changed` | 取值改到更宽松时写 Warn 并记尽力档审计 |
 
-上表之外的订阅方由各自文档承载，授权、审计与宿主是例举，判据是以事件为输入而不在上表之内的消费方。审计只订阅 `audit.journal` 配置里点名的类型；可观测性只对它配置里点名的类型生成跨度。
+上表之外的订阅方由各自文档承载，授权、审计与宿主是例举，判据是以事件为输入而不在上表之内的消费方。审计只订阅 `audit.journal` 配置里点名的类型；可观测性只对它配置里点名的类型生成跨度。「发件箱」列为「是」的类型在发件箱在场时经中继发布，到达订阅方的上下文是中继的，不带发布方的身份：审计订阅这些类型得到的行没有主体，也没有 `on_behalf_of`、`impersonation_scope` 与 `session`（规则见 [design-audit](design-audit.md) 的非保证）。
 
 ### 审计
 
@@ -117,8 +118,8 @@
 **`actor` 与生效账户。** 审计同时记实际操作者与生效账户：
 
 - `actor` 列恒取实际操作者的责任键 `Key()`。
-- 冒充时，生效账户进 `Detail` 的 `on_behalf_of`，冒充范围进 `impersonation_scope`，有会话时进 `session`。`on_behalf_of`、`impersonation_scope`、`session` 由 `audit/journal` 的组装步骤在身份存在且 `Impersonating()` 为真时补入，请求级与语句级的行同样带它们。审计表的结构不变。
-- 已认证路由上，`Record` 取上下文里的身份。登录引擎记登录审计行时用新认定的身份派生上下文（`internal/identity` 的 `With`，只在 authn 树内可见，派生的上下文只用于这一次 `Record`、不流回请求链），使 `actor` 是登录的账户而不是空串。
+- 冒充时，生效账户进 `Detail` 的 `on_behalf_of`，冒充范围进 `impersonation_scope`，会话进 `session`。这些键只由 `audit/journal` 在冒充行上写入，覆盖、剥掉与不改动调用方映射的规则只在 [design-audit](design-audit.md) 的审计行的补全一节。认证自己的接缝级行因此不得写这些名字，记会话标识用 `sid`。审计表的结构不变。
+- 已认证路由上，`Record` 取上下文里的身份。登录引擎记登录审计行时用新认定的身份派生上下文（`internal/identity` 的 `With`，只在 authn 树内可见，登录引擎在 [design-authn](design-authn.md) 的写入方名单里，由依赖测试断言；派生的上下文只用于这一次 `Record`、不流回请求链），使 `actor` 是登录的账户而不是空串。
 - 登录失败时 `actor` 为空，用 `identifier_mac` 关联同一标识的多次失败。
 
 **明细键名**是下列封闭集合：`method`、`reason_class`、`sid`、`peer`、`identifier_mac`、`factor_id`、`kind`、`scope`、`by`、`tenant`、`change`、`provider`、`ttl_seconds`、`parent_sid`、`secret_id`、`source`、`on_behalf_of`、`impersonation_scope`、`session`、`grant_id`、`action_id`。明细键名不得取的名字有两部分：[design-audit](design-audit.md) 的审计敏感闭集，以及下列禁用名的封闭集合：`code`、`otp`、`refresh_token`、`id_token`、`assertion`、`state`。值只放标识、枚举、计数与密钥摘要的前缀：
@@ -166,7 +167,26 @@
 
 任何模块都不使用日志字段 `subject`：该词在账户体系里指外部身份绑定的主体，同名字段会使读日志的人把两种标识读混；冒充时实际操作者与生效账户并存，所以身份值的字段是 `account`，实际操作者另用 `actor`。
 
-**各模块自加字段**是下列封闭集合：`method`、`flow`（公开流程标识，不是流程令牌）、`idp`（IdP 标识）、`endpoint`、`factor`。
+**日志字段名一律小写，词间用下划线**（`trace_id`、`tenant_id`、`reason_class`、`attributed_to`），与日志模块的关联字段、事件载荷与审计明细的键同一风格；字段名里不用连字符。
+
+**各模块自加的业务字段**是下列封闭集合：`method`、`flow`（公开流程标识，不是流程令牌）、`idp`（IdP 标识）、`endpoint`、`factor`。这个集合约束任何模块在它自己的任意记录上自加的字段。只出现在某一种记录上、由拥有这种记录的模块登记的字段是记录级字段，不属于这个集合，也不得出现在别的模块的记录里：口令表后端的行与网关的收口行、取凭据的拒绝行、启动诊断各有下面的登记表，记录级字段新增时登记在拥有这种记录的表里，不加进这个集合。
+
+**口令表后端的日志字段**是下列封闭集合：`entry`（口令表里写着的主体名，一行写一个）、`entries`（只在大小写上不同、共用一个退避键的主体名，逗号连接）、`algorithm`（低于下限的条目的算法名）、`setting`（读不出或越出取值域的设置键名）、`reason_class`（退避那一行的类别，取值见上）。这些行只写表里写着的主体名，不写调用方出示的名字，也不写条目的任何部分；主体名的字段一律叫 `entry`，不叫 `subject`。
+
+**网关的收口行、取凭据的拒绝行与启动诊断行**另写下表的字段。下表是网关日志字段的封闭集合，按稳定性承诺对待，网关新增字段先登记在这里；字段的值只含形状、计数、名字与成因文本，从不含凭据、令牌或口令。
+
+| 字段 | 出现在 | 值 |
+|---|---|---|
+| `endpoint` | 收口行、启动诊断 | 端名（与上一段的 `endpoint` 是同一个字段） |
+| `status` | 收口行 | 响应状态码 |
+| `outcome` | 收口行、`anonymous` 放行行 | 与指标 `authn.gate.conclusions` 的 `outcome` 同一取值集 |
+| `attributed_to` | 收口行 | 这条结局记在谁名下：后端名，网关自产的拒绝为 `authn.gate` |
+| `cause` | 收口行、装配与启动检查的警告行 | 失败成因的文本；冒充范围拒绝取 `impersonation-scope` |
+| `reason`、`backend` | 出口检查拒绝行（`backend` 另见 cookie 前缀警告行） | 出口检查拒绝的项（不带后端交出的值）与相关的后端名 |
+| `scheme_length`、`scheme_separated`、`headers`、`cookie_name` | 取凭据的拒绝行与 cookie 前缀警告行 | 只记形状：scheme 的长度与是否带分隔、`Authorization` 头的个数、cookie 名 |
+| `endpoints`、`schemes`、`cookies`、`accounts`、`impersonation`、`sso`、`configured`、`key` | 启动诊断 | `endpoints` 是展开后的受守端名清单，或冒充身份可到达的端名清单；各后端认领的 scheme、cookie 名与账户前缀，冒充与 SSO 的能力声明；`configured` 是配置读到的 `endpoints` 值，缺省时就是缺省值 `*`，不区分「键没写」与「显式写 `*`」；被核对的配置键名 |
+| `exemptions`、`optional_routes`、`impersonable_routes`，以及各端名 | 启动诊断（冻结的登记表） | 某类登记在各端上开出的路由，写成「方法 路径」，逗号连接；端名是入口模块声明的端名，原样作字段名，一类登记在某端上为空时该端不写；整类登记为空时只写标题字段，值是没有登记的说明 |
+| `panic`、`stack` | 网关自身 panic 的 Error 行 | recover 得到的值与调用栈；两者是排障信息，不在稳定性承诺之内 |
 
 **级别**按谁有事要做定。判据：问题在调用方，记 Info；问题要运维去查，记 Warn；问题是缺陷，记 Error。下表的条目是例举，不是封闭集。
 
@@ -178,7 +198,7 @@
 
 **永不记录**的判据：凡持有它即可冒用或重放认证过程的值，以及用户提交的原文。记录的是类别、标识与结果。例举与登记规则见 [design-authn-gate](design-authn-gate.md) 的脱敏规则一节。
 
-- 退避、重放、克隆告警这类安全事件各写一行，带 `reason_class`；账户标识可带，用户输入的标识字符串不带。
+- 退避、重放、克隆告警这类安全事件各写一行；账户标识可带，用户输入的标识字符串不带。退避的那一行带 `reason_class`，取值取自上文的封闭集合。
 - `Sensitive` 的配置项不向日志模块登记规则，所以「`Sensitive` 值不进日志」是认证自己的纪律：持有秘密配置值的模块把值本身登记成日志的字面量匹配器，并由测试对每个模块的错误路径断言输出里不含配置里的哨兵值。
 
 ### 指标
@@ -390,13 +410,13 @@ audit.Entry{
 | 接缝级审计：强制档与尽力档、动作表、明细键名、`actor` 取法 | 未实现 | — |
 | `authn.settings.relaxed` 的订阅与审计 | 未实现 | — |
 | 记录接缝 `audit.Audit.Record` 及其错误 `ErrNotAccepting`、`ErrWriteFailed` | 已实现 | `pkg/audit/audit.go` `Audit`、`Entry`、`ErrNotAccepting`、`ErrWriteFailed` |
-| 审计组装在冒充时补入 `on_behalf_of`、`impersonation_scope`、`session` | 部分实现 — 缺这些键与按 `Impersonating()` 的判定；现有组装只填行动者、租户、来源与调用方给的明细 | `pkg/audit/journal/entry.go` `assemble` |
 | 登录引擎的派生上下文（`internal/identity` 的 `With` 供一次 `Record` 使用） | 部分实现 — 缺登录引擎对它的使用；`With` 已在 | `pkg/authn/internal/identity/identity.go` `With` |
-| 日志请求关联字段 | 部分实现 — 缺 `account`、`actor`、`impersonating`、`session`、`backend`；现有网关绑定 `subject` | `pkg/authn/gate/serve.go` `admit` |
+| 日志请求关联字段 | 已实现 — 网关绑定 `account` 与 `backend`，冒充时另绑 `actor` 与 `impersonating`，有会话时另绑 `session`；`subject` 不再出现 | `pkg/authn/gate/serve.go` `identityAttrs` |
 | 日志级别按谁有事要做：网关的收口 | 已实现 | `pkg/authn/gate/serve.go` `conclude`、`gatewayRefusal`、`outage` |
+| 网关的记录级字段（收口行、取凭据的拒绝行、启动诊断、cookie 前缀警告行）与字段名的写法 | 已实现 | `pkg/authn/gate/serve.go` `conclude`、`credentialOf`；`pkg/authn/gate/gate.go` `diagnose`、`freeze`、`warnUnprefixedCookies` |
 | 日志级别与字段：其余模块 | 未实现 | — |
-| 日志脱敏登记与永不记录 | 部分实现 — 登记内容的状态由 [design-authn-gate](design-authn-gate.md) 承载；缺逐模块在 `New` 里登记字面量与「`Sensitive` 值不进日志」的测试 | `pkg/authn/gate/redact.go` `registerRedaction` |
-| 指标 `authn.gate.conclusions` | 部分实现 — 缺 `anonymous` 取值；`Meter` 现以 `authn.gate` 命名，本文取 `authn` | `pkg/authn/gate/metrics.go` `takeMeter` |
+| 日志脱敏登记与永不记录 | 部分实现 — 登记内容的状态由 [design-authn-gate](design-authn-gate.md) 承载；缺逐模块在 `New` 里登记字面量与「`Sensitive` 值不进日志」的测试 | `pkg/authn/gate/redact.go` `registerNewRules`、`registerValueRule` |
+| 指标 `authn.gate.conclusions` | 已实现 — `Meter` 以 `authn` 命名，`outcome` 的取值含 `anonymous` | `pkg/authn/gate/metrics.go` `takeMeter`、`bucketName` |
 | 其余仪器（登录、口令、因素、会话、令牌、退避、短信、SSO、冒充、审计写失败、清理失败） | 未实现 | — |
 | 守住外部行为假设与纪律的测试 | 未实现 | — |
 

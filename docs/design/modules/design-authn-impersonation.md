@@ -113,7 +113,7 @@ type Impersonation interface {
 
 ### 路由
 
-下表是本模块经 `authn.mount` 登记的全部路由（封闭集合）。所有 authn 响应带 `Cache-Control: no-store`；「CSRF」指 cookie 凭据下的非安全方法过跨源检查。路由与访问级别由 `authn.mount` 成对登记。
+下表是本模块经 `authn.mount` 登记的全部路由（封闭集合）。所有 authn 响应带 `Cache-Control: no-store`；「CSRF」指浏览器自行附带的凭据下的非安全方法过跨源检查。路由与访问级别由 `authn.mount` 成对登记。
 
 | 方法与路径 | 访问 | 要求与应答 |
 |---|---|---|
@@ -558,13 +558,13 @@ flowchart TD
 
 ## 实现状态
 
-下表逐项列出本模块的能力。`pkg/authn` 根包里没有冒充涉及的任何符号，也没有 `pkg/authn/impersonation` 包，每一项都是未实现。
+下表逐项列出本模块的能力。`pkg/authn/impersonation` 包不存在；根包里与冒充有关的只有 `ScopeGuard`、`Identity.Impersonating` 与网关的范围规则，其余每一项都是未实现。
 
 | 能力 | 状态 | 代码 |
 |---|---|---|
 | 根包的接缝与值类型：`Impersonation`、`ImpersonationRequest`、`ImpersonationGrant`、`GrantQuery` | 未实现 | — |
 | 冒充的哨兵：`ErrImpersonationRestricted`、`ErrImpersonationActive`、`ErrNotImpersonating`、`ErrImpersonationNeedsSession` | 未实现 | — |
-| `ScopeGuard` 的根包接口 | 未实现 | — |
+| `ScopeGuard` 的根包接口 | 已实现 — 网关对它的可选取用与冒充范围规则也已在 | `pkg/authn/scope.go` `ScopeGuard`；`pkg/authn/gate/serve.go` `impersonationAdmitted` |
 | 模块 `authn.impersonation` 的登记与阶段行为（`Prepare`、`New`、`Migrate`、`Init`、`Start`、`Stop`），含 `var _` 编译期断言 | 未实现 | — |
 | 表 `authn_impersonations`、部分唯一索引与按方言的迁移集 | 未实现 | — |
 | 结构性限制：发起者、目标、参数、并发各组 | 未实现 | — |

@@ -1,149 +1,300 @@
 package static
 
 import (
+	"bytes"
 	"context"
 	"encoding/base64"
 	"errors"
-	"strconv"
+	"log/slog"
+	"os"
+	"reflect"
+	"slices"
 	"strings"
+	"sync"
+	"sync/atomic"
 	"testing"
 	"time"
 
 	"github.com/vislake/speed/pkg/authn"
-	"github.com/vislake/speed/pkg/authn/internal/configreader"
+	"github.com/vislake/speed/pkg/authn/authntest"
+	"github.com/vislake/speed/pkg/authn/internal/password"
 	"github.com/vislake/speed/pkg/authn/internal/verdict"
+	"github.com/vislake/speed/pkg/config"
+	jsonformat "github.com/vislake/speed/pkg/config/format/json"
+	filesource "github.com/vislake/speed/pkg/config/source/file"
+	"github.com/vislake/speed/pkg/core"
+	"github.com/vislake/speed/pkg/settings"
 )
 
-// cheapHash makes a hash at a cost a test can afford. The iteration count
-// travels inside the hash, so what is exercised here is the same code path a
-// production table takes, at a cost the default would not be.
-func cheapHash(t *testing.T, password string) string {
+// cheapEntry writes an entry at a cost a test can afford. The cost travels inside
+// the entry, so what is exercised is the path a production table takes.
+func cheapEntry(t *testing.T, plaintext string) string {
 	t.Helper()
-	encoded, err := encode(2, []byte("0123456789abcdef"), password)
+	encoded, err := HashPBKDF2(plaintext, 2)
 	if err != nil {
-		t.Fatalf("deriving a hash for this case: %v", err)
+		t.Fatalf("writing an entry for this case: %v", err)
 	}
 	return encoded
 }
 
 // tableWith builds a backend holding the subjects named, each with the given
 // password.
-func tableWith(t *testing.T, name string, subjects map[string]string) *backend {
+func tableWith(t *testing.T, subjects map[string]string) *backend {
 	t.Helper()
-	cfg := moduleConfig{Name: name, Subjects: make(map[string]string, len(subjects))}
-	for subject, password := range subjects {
-		cfg.Subjects[subject] = cheapHash(t, password)
+	cfg := moduleConfig{
+		Subjects:    make(map[string]string, len(subjects)),
+		CacheSize:   configDefaults.CacheSize,
+		Concurrency: configDefaults.Concurrency,
 	}
-	set, err := cfg.resolve()
+	for subject, plaintext := range subjects {
+		cfg.Subjects[subject] = cheapEntry(t, plaintext)
+	}
+	return backendOf(t, cfg)
+}
+
+func backendOf(t *testing.T, cfg moduleConfig) *backend {
+	t.Helper()
+	r, err := cfg.resolve()
 	if err != nil {
 		t.Fatalf("resolving the configuration for this case: %v", err)
 	}
-	return newBackend(set)
+	b := newBackend(r)
+	b.logger = slog.New(slog.DiscardHandler)
+	return b
 }
 
-// basic renders a Basic credential the way a caller sends one.
-func basic(user, password string) authn.Credential {
+// basic renders a Basic credential the way the gateway hands one over: the
+// scheme folded to lower case.
+func basic(user, plaintext string) authn.Credential {
 	return authn.Credential{
-		Scheme: "Basic",
-		Value:  base64.StdEncoding.EncodeToString([]byte(user + ":" + password)),
+		Scheme: "basic",
+		Value:  base64.StdEncoding.EncodeToString([]byte(user + ":" + plaintext)),
 	}
 }
 
-// TestTheRightPasswordAuthenticatesAndTheWrongOneDoesNot holds what this
-// backend is for, and holds the refusal apart from the pass.
+// outcome and cause read a verdict the way the gateway does.
+func outcome(v authn.Verdict) verdict.Outcome { return verdict.OutcomeOf(v) }
+func cause(v authn.Verdict) error             { return verdict.CauseOf(v) }
+
+// fakeSettings is a settings store holding the values a case writes into it.
+type fakeSettings struct {
+	mu     sync.Mutex
+	values map[string]any
+	reads  map[string]int
+	err    error
+}
+
+func newFakeSettings() *fakeSettings {
+	return &fakeSettings{values: map[string]any{}, reads: map[string]int{}}
+}
+
+func (f *fakeSettings) set(key string, v any) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	f.values[key] = v
+}
+
+func (f *fakeSettings) Get(_ settings.Layer, key string, target any) error {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	f.reads[key]++
+	if f.err != nil {
+		return f.err
+	}
+	v, ok := f.values[key]
+	if !ok {
+		return settings.ErrUnknownKey
+	}
+	reflect.ValueOf(target).Elem().Set(reflect.ValueOf(v))
+	return nil
+}
+
+func (f *fakeSettings) Set(context.Context, settings.Write) error { return nil }
+func (f *fakeSettings) Delete(context.Context, settings.Layer, string, string) error {
+	return nil
+}
+
+func (f *fakeSettings) List(context.Context, settings.Layer) ([]settings.Entry, error) {
+	return nil, nil
+}
+func (f *fakeSettings) Declared() []settings.DeclaredItem { return nil }
+
+// counting wraps the backend's derivation so that a case can tell when one ran.
+func counting(b *backend) *atomic.Int64 {
+	var n atomic.Int64
+	inner := b.check
+	b.check = func(ctx context.Context, e password.Entry, plaintext string, wait time.Duration) (bool, error) {
+		n.Add(1)
+		return inner(ctx, e, plaintext, wait)
+	}
+	return &n
+}
+
+// handClock is a clock a case moves by hand.
+type handClock struct {
+	mu sync.Mutex
+	t  time.Time
+}
+
+func newClock() *handClock { return &handClock{t: time.Date(2026, 10, 11, 12, 0, 0, 0, time.UTC)} }
+
+func (c *handClock) now() time.Time {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	return c.t
+}
+
+func (c *handClock) advance(d time.Duration) {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	c.t = c.t.Add(d)
+}
+
+// TestTheRightPasswordAuthenticatesAndTheWrongOneDoesNot holds what this backend
+// is for, and holds the refusal apart from the pass.
 func TestTheRightPasswordAuthenticatesAndTheWrongOneDoesNot(t *testing.T) {
-	b := tableWith(t, "local", map[string]string{"alice": "correct horse"})
+	b := tableWith(t, map[string]string{"alice": "correct horse"})
 
 	t.Run("the password in the table", func(t *testing.T) {
-		got := b.Verify(context.Background(), "alice", basic("alice", "correct horse"))
-		if verdict.OutcomeOf(got) != verdict.Authenticated {
-			t.Fatalf("the verdict reads %v, want authenticated: %v",
-				verdict.OutcomeOf(got), verdict.CauseOf(got))
+		before := time.Now()
+		got := b.Verify(context.Background(), basic("alice", "correct horse"))
+		if outcome(got) != verdict.Authenticated {
+			t.Fatalf("the verdict reads %v, want authenticated: %v", outcome(got), cause(got))
 		}
-		if subject := verdict.SubjectOf(got); subject != "alice" {
-			t.Errorf("the verdict carries the subject %q, want %q", subject, "alice")
+		p := verdict.PrincipalOf(got)
+		if p.Account != "static.alice" {
+			t.Errorf("the verdict carries the account %q, want %q: the static prefix and the subject",
+				p.Account, "static.alice")
+		}
+		if len(p.Methods) != 1 || p.Methods[0] != authn.MethodStatic {
+			t.Errorf("the verdict carries the methods %v, want [%s]", p.Methods, authn.MethodStatic)
+		}
+		if p.Assurance != authn.AssuranceSingle {
+			t.Errorf("the verdict carries the assurance %v, want %v: a password is one factor",
+				p.Assurance, authn.AssuranceSingle)
+		}
+		if p.Session != "" || p.Actor != "" || p.Scope != "" || p.Provider != "" || p.IDPAssured {
+			t.Errorf("the verdict carries %+v, want no session, actor, scope or provider: a table "+
+				"subject has none of them", p)
+		}
+		if p.AuthTime.Before(before.Add(-time.Second)) || p.AuthTime.After(time.Now().Add(time.Second)) {
+			t.Errorf("the verdict carries the authentication time %v, want about now: every request "+
+				"is an authentication of its own", p.AuthTime)
+		}
+		if p.AuthTime.Location() != time.UTC {
+			t.Errorf("the authentication time is in %v, want UTC", p.AuthTime.Location())
 		}
 	})
 
 	t.Run("a password that is not", func(t *testing.T) {
-		got := b.Verify(context.Background(), "alice", basic("alice", "correct hors"))
-		if verdict.OutcomeOf(got) != verdict.Denied {
-			t.Errorf("the verdict reads %v, want denied", verdict.OutcomeOf(got))
+		got := b.Verify(context.Background(), basic("alice", "correct hors"))
+		if outcome(got) != verdict.Denied {
+			t.Errorf("the verdict reads %v, want denied", outcome(got))
+		}
+		if p := verdict.PrincipalOf(got); p.Account != "" {
+			t.Errorf("the refusal carries the account %q, want none", p.Account)
 		}
 	})
 }
 
-// TestThisBackendNeverAnswersUnavailable holds the one thing a backend must not
-// get wrong, from the other direction.
-//
-// A refusal and an outage are the distinction every lockout, rate limiter and
-// alert rule is keyed off. This backend's table is in memory from startup, so
-// while the context it was handed holds there is no moment at which it is
-// present but unable to say — and so no case in which it may answer as though
-// there were.
-func TestThisBackendNeverAnswersUnavailable(t *testing.T) {
-	b := tableWith(t, "local", map[string]string{"alice": "secret"})
+// TestTheBackendDeclaresWhatItTakesAndMayHandBack holds the two declarations the
+// gateway admits it by, from the outside: the name is the constant the static
+// prefix is reserved to, the carrier is the Basic scheme alone, and the account
+// namespace is the static prefix with no capability beyond it.
+func TestTheBackendDeclaresWhatItTakesAndMayHandBack(t *testing.T) {
+	b := tableWith(t, map[string]string{"alice": "a"})
+
+	if got := b.Name(); got != "static" {
+		t.Errorf("the backend is named %q, want %q: the gateway lets the static prefix be declared "+
+			"by that name alone", got, "static")
+	}
+	want := authn.Accepts{Schemes: []string{"basic"}, Accounts: authn.StaticPrefix}
+	if got := b.Accepts(); !reflect.DeepEqual(got, want) {
+		t.Errorf("the backend declares %+v, want %+v", got, want)
+	}
+	if len(b.Accepts().Cookies) != 0 || b.Accepts().Impersonation || b.Accepts().SSO {
+		t.Errorf("the backend declares a cookie, impersonation or SSO, which a password table "+
+			"has none of: %+v", b.Accepts())
+	}
+}
+
+// TestEveryNoThisBackendGivesIsAboutTheCredential holds the one thing a backend
+// must not get wrong, from the other direction: a refusal and an outage are the
+// distinction every lockout, rate limiter and alert rule is keyed off, and the
+// table is in memory, so a no is never an outage.
+func TestEveryNoThisBackendGivesIsAboutTheCredential(t *testing.T) {
+	b := tableWith(t, map[string]string{"alice": "secret"})
 
 	for _, c := range []struct {
 		name       string
-		subject    string
 		credential authn.Credential
 	}{
-		{
-			"a scheme this backend does not read", "alice",
-			authn.Credential{Scheme: "Bearer", Value: "a.token"},
-		},
-		{
-			"a credential that is not base64", "alice",
-			authn.Credential{Scheme: "Basic", Value: "not base64!"},
-		},
-		{
-			"a credential with no colon in it", "alice",
-			authn.Credential{Scheme: "Basic", Value: base64.StdEncoding.EncodeToString([]byte("alice"))},
-		},
-		{"a subject that is not in the table", "mallory", basic("mallory", "secret")},
-		{"the wrong password", "alice", basic("alice", "wrong")},
+		{"a scheme this backend does not take", authn.Credential{Scheme: "bearer", Value: "a.token"}},
+		{"a cookie credential", authn.Credential{Cookie: "sid", Value: "x"}},
+		{"the scheme in capitals", authn.Credential{Scheme: "Basic", Value: basic("alice", "secret").Value}},
+		{"a credential that is not base64", authn.Credential{Scheme: "basic", Value: "not base64!"}},
+		{"a credential with no colon in it", authn.Credential{Scheme: "basic", Value: base64.StdEncoding.EncodeToString([]byte("alice"))}},
+		{"a credential with no user", basic("", "secret")},
+		{"a name that is not in the table", basic("mallory", "secret")},
+		{"the name in another case", basic("ALICE", "secret")},
+		{"the wrong password", basic("alice", "wrong")},
+		{"the empty password", basic("alice", "")},
 	} {
 		t.Run(c.name, func(t *testing.T) {
-			got := b.Verify(context.Background(), c.subject, c.credential)
-			if verdict.OutcomeOf(got) != verdict.Denied {
-				t.Errorf("the verdict reads %v, want denied: this backend is never unable to "+
-					"say, so every no it gives is about the credential",
-					verdict.OutcomeOf(got))
+			if got := b.Verify(context.Background(), c.credential); outcome(got) != verdict.Denied {
+				t.Errorf("the verdict reads %v, want denied: %v", outcome(got), cause(got))
 			}
 		})
 	}
 }
 
-// TestAContextThatHasEndedIsHonouredBeforeThePasswordIsDerived holds the one
-// point at which this backend can honour its context.
-//
-// Every backend is required to return once its context ends. The password
-// derivation takes no context and runs to completion once it has begun, so the
-// context is asked before it begins: a call whose time is already gone spends
-// no derivation and answers that it could not say, which is the truth — the
-// password was never checked.
-//
-// Whether a derivation ran is observed through its cost. The subject's hash asks
-// for more iterations than the derivation finishes in hours, so a call that
-// returns within the bound below did not begin one. The verdict alone cannot
-// tell: asked after the derivation, the same check still answers unavailable for
-// the right password, having spent the whole cost first.
-func TestAContextThatHasEndedIsHonouredBeforeThePasswordIsDerived(t *testing.T) {
-	const bound = 2 * time.Second
-	// A well-formed entry: startup parses it with a single-round derivation,
-	// and only a verification would run the count it carries.
-	endless := strings.Join([]string{
-		hashScheme,
-		strconv.Itoa(1 << 40),
-		hashEncoding.EncodeToString([]byte("0123456789abcdef")),
-		hashEncoding.EncodeToString(make([]byte, keyLength)),
-	}, hashSeparator)
-	set, err := moduleConfig{Name: "local", Subjects: map[string]string{"alice": endless}}.resolve()
-	if err != nil {
-		t.Fatalf("resolving the configuration for this case: %v", err)
+// TestThePasswordMayContainColons holds the split at the first colon: the user
+// name cannot carry one, the password can.
+func TestThePasswordMayContainColons(t *testing.T) {
+	b := tableWith(t, map[string]string{"alice": "a:b:c"})
+
+	if got := b.Verify(context.Background(), basic("alice", "a:b:c")); outcome(got) != verdict.Authenticated {
+		t.Errorf("a password with colons reads %v, want authenticated", outcome(got))
 	}
-	b := newBackend(set)
+	if got := b.Verify(context.Background(), basic("alice", "b:c")); outcome(got) != verdict.Denied {
+		t.Errorf("a password cut at the second colon reads %v, want denied", outcome(got))
+	}
+}
+
+// TestACredentialIsNotReadAgainstAnotherNamesEntry holds that the user name in
+// the credential picks the entry and the password is derived against that entry
+// alone: the two names share a password on purpose, so that bob's password
+// failing against alice's entry could not be what refuses them.
+func TestACredentialIsNotReadAgainstAnotherNamesEntry(t *testing.T) {
+	b := tableWith(t, map[string]string{"alice": "same", "bob": "same"})
+
+	for _, user := range []string{"alice", "bob"} {
+		got := b.Verify(context.Background(), basic(user, "same"))
+		if outcome(got) != verdict.Authenticated {
+			t.Fatalf("%s reads %v", user, outcome(got))
+		}
+		if want := authn.AccountID("static." + user); verdict.PrincipalOf(got).Account != want {
+			t.Errorf("the credential of %s authenticated %q, want %q", user, verdict.PrincipalOf(got).Account, want)
+		}
+	}
+}
+
+// TestACancelledCallIsAnOutageAndDerivesNothing holds the one point at which this
+// backend can honour its context: a call whose time is already gone spends no
+// derivation and answers that it could not say, which is the truth, since the
+// password was never checked. The right password is the one a derivation would
+// have confirmed, and a password that was already remembered would be accepted
+// without one, so both are asked.
+func TestACancelledCallIsAnOutageAndDerivesNothing(t *testing.T) {
+	b := tableWith(t, map[string]string{"alice": "correct horse"})
+	derived := counting(b)
+
+	if got := b.Verify(context.Background(), basic("alice", "correct horse")); outcome(got) != verdict.Authenticated {
+		t.Fatalf("the first check reads %v", outcome(got))
+	}
+	if derived.Load() != 1 {
+		t.Fatalf("the first check derived %d times, want 1", derived.Load())
+	}
 
 	cancelled, cancel := context.WithCancel(context.Background())
 	cancel()
@@ -151,205 +302,802 @@ func TestAContextThatHasEndedIsHonouredBeforeThePasswordIsDerived(t *testing.T) 
 	defer stop()
 
 	for name, ctx := range map[string]context.Context{"cancelled": cancelled, "expired": expired} {
-		t.Run(name, func(t *testing.T) {
-			answered := make(chan authn.Verdict, 1)
-			go func() { answered <- b.Verify(ctx, "alice", basic("alice", "correct horse")) }()
-
-			var got authn.Verdict
-			select {
-			case got = <-answered:
-			case <-time.After(bound):
-				t.Fatalf("Verify had not returned %s after it was handed a context that had "+
-					"already ended, so it began a derivation nobody was waiting for", bound)
-			}
-			if verdict.OutcomeOf(got) != verdict.Unavailable {
-				t.Errorf("the verdict reads %v, want unavailable: the call's time was gone "+
-					"before the password was derived", verdict.OutcomeOf(got))
-			}
-			if !errors.Is(verdict.CauseOf(got), ctx.Err()) {
-				t.Errorf("the verdict carries %v, want the context's own error", verdict.CauseOf(got))
-			}
-		})
-	}
-}
-
-// TestACredentialCannotVouchForSomebodyElse holds the check that keeps this
-// backend from being turned into a confused deputy.
-//
-// Nothing on the gateway's path produces a mismatch today. The check is what
-// stops a future caller — another gateway, a test harness, a later refactor —
-// from having this backend confirm one subject using another's credential.
-func TestACredentialCannotVouchForSomebodyElse(t *testing.T) {
-	// The two accounts share a password on purpose. With different ones the
-	// hash comparison would turn this away by itself and the case would
-	// hold nothing: what is being held is that the credential has to name
-	// the subject it is checked against, not that bob's password fails
-	// against alice's hash.
-	const shared = "the same password"
-	b := tableWith(t, "local", map[string]string{"alice": shared, "bob": shared})
-
-	got := b.Verify(context.Background(), "alice", basic("bob", shared))
-	if verdict.OutcomeOf(got) != verdict.Denied {
-		t.Errorf("a credential naming bob authenticated alice (%v), so a caller holding one "+
-			"account could be confirmed as another wherever the two share a password",
-			verdict.OutcomeOf(got))
-	}
-	if subject := verdict.SubjectOf(got); subject != "" {
-		t.Errorf("the refusal carries the subject %q, want none", subject)
-	}
-}
-
-// TestAnOwnerQualifiedUserNamesTheSameSubject holds the writing form a caller
-// uses under several backends. The gateway has already resolved the owner by
-// the time the credential arrives here, so the qualification is stripped rather
-// than compared.
-func TestAnOwnerQualifiedUserNamesTheSameSubject(t *testing.T) {
-	b := tableWith(t, "local", map[string]string{"alice": "secret"})
-
-	got := b.Verify(context.Background(), "alice", basic("local/alice", "secret"))
-	if verdict.OutcomeOf(got) != verdict.Authenticated {
-		t.Errorf("the qualified writing form reads %v, want authenticated: it names the same "+
-			"subject as the bare one", verdict.OutcomeOf(got))
-	}
-}
-
-// TestACredentialQualifiedWithAnotherBackendIsRefused holds the second half of
-// the check that keeps this backend from being a confused deputy.
-//
-// A credential has to name what it is being checked against in both halves. The
-// subject comparison covers one; without this, local/alice and anyone-at-all/alice
-// would be the same credential here, and a backend that accepts a name it never
-// answered to is one that can be handed somebody else's credential and made to
-// vouch for it. The gateway settles ownership before the call and turns a wrong
-// name away first, so this is depth rather than the only line.
-func TestACredentialQualifiedWithAnotherBackendIsRefused(t *testing.T) {
-	b := tableWith(t, "local", map[string]string{"alice": "secret"})
-
-	for _, written := range []string{"other/alice", "OTHER/alice", "/alice", "local/other/alice"} {
-		t.Run(written, func(t *testing.T) {
-			got := b.Verify(context.Background(), "alice", basic(written, "secret"))
-			if verdict.OutcomeOf(got) != verdict.Denied {
-				t.Errorf("a credential written %q reads %v against this backend, want denied: "+
-					"it names a backend this one is not", written, verdict.OutcomeOf(got))
-			}
-		})
-	}
-}
-
-// TestTheClaimIsTheTableWrittenOut holds what this backend tells the gateway
-// about itself. A claim wider than the table would have the gateway route
-// subjects here that this backend has nothing to say about, and an open claim
-// would have it answer for subjects a file cannot know about.
-func TestTheClaimIsTheTableWrittenOut(t *testing.T) {
-	b := tableWith(t, "local", map[string]string{"alice": "a", "bob": "b"})
-
-	claim := b.Claim()
-	if got := strings.Join(claim.Subjects, ","); got != "alice,bob" {
-		t.Errorf("the claim enumerates %q, want the table's subjects in a stable order", got)
-	}
-	if claim.Open {
-		t.Error("the claim is open, but a table read from a file has nothing to say about a " +
-			"subject that is not in it")
-	}
-	if len(claim.Schemes) != 0 {
-		t.Errorf("the claim takes the schemes %v whole, want none: claiming a scheme would "+
-			"route every credential under it here, including subjects this backend lacks",
-			claim.Schemes)
-	}
-}
-
-// TestAConfigurationThisBackendCannotRunOnIsRefusedAtStartup holds the
-// validations that turn a request-time surprise into a startup failure.
-func TestAConfigurationThisBackendCannotRunOnIsRefusedAtStartup(t *testing.T) {
-	for _, c := range []struct {
-		name string
-		cfg  moduleConfig
-		want error
-	}{
-		{
-			name: "a name that is blank",
-			cfg:  moduleConfig{Name: "  ", Subjects: map[string]string{"alice": "x"}},
-			want: authn.ErrInvalidClaim,
-		},
-		{
-			name: "a name carrying the separator",
-			cfg:  moduleConfig{Name: "a/b", Subjects: map[string]string{"alice": "x"}},
-			want: authn.ErrInvalidClaim,
-		},
-		{
-			name: "a subject that is blank",
-			cfg:  moduleConfig{Name: "local", Subjects: map[string]string{"  ": "x"}},
-			want: authn.ErrInvalidClaim,
-		},
-		{
-			name: "a subject carrying the separator",
-			cfg:  moduleConfig{Name: "local", Subjects: map[string]string{"a/b": "x"}},
-			want: authn.ErrInvalidClaim,
-		},
-		{
-			name: "a password hash nothing can read",
-			cfg:  moduleConfig{Name: "local", Subjects: map[string]string{"alice": "plaintext"}},
-			want: ErrMalformedHash,
-		},
-	} {
-		t.Run(c.name, func(t *testing.T) {
-			_, err := c.cfg.resolve()
-			if !errors.Is(err, c.want) {
-				t.Fatalf("resolving gave %v, want one wrapping %v", err, c.want)
-			}
-		})
-	}
-}
-
-// TestAnUnusableHashNeverReachesAnErrorMessage holds the one thing an error
-// about a credential table must not do.
-func TestAnUnusableHashNeverReachesAnErrorMessage(t *testing.T) {
-	const looksLikeASecret = "pbkdf2-sha256$2$AAAA$NOT-BASE64!!"
-
-	cfg := moduleConfig{Name: "local", Subjects: map[string]string{"alice": looksLikeASecret}}
-	_, err := cfg.resolve()
-	if err == nil {
-		t.Fatal("an unreadable hash resolved without complaint")
-	}
-	if strings.Contains(err.Error(), looksLikeASecret) || strings.Contains(err.Error(), "AAAA") {
-		t.Errorf("the failure reads %q and echoes the stored hash, which is the secret this "+
-			"table exists to hold", err)
-	}
-}
-
-// TestABackendWithNobodyToVouchForRefusesToStart holds what this backend does
-// when its table names no subject, which is not a stance it may take.
-//
-// A command that names this module has promised it starts, so a table it cannot
-// be the authority for stops the startup rather than leaving the command quietly
-// without a credential source. The failure has to name the key: under an
-// assembly carrying several backends, that line is the only thing telling an
-// operator which of them could not start and what it lacked.
-func TestABackendWithNobodyToVouchForRefusesToStart(t *testing.T) {
-	for _, c := range []struct {
-		name string
-		body string
-	}{
-		{"the key is absent", `{"authn":{"static":{"name":"local"}}}`},
-		{"the table is empty", `{"authn":{"static":{"name":"local","subjects":{}}}}`},
-	} {
-		t.Run(c.name, func(t *testing.T) {
-			_, err := prepare(configreader.Over(t, Module(), c.body))
-			if err == nil {
-				t.Fatal("a table naming no subject was carried into the run, so a command would " +
-					"come up with a backend that authenticates nobody")
-			}
-			for _, want := range []string{ModuleName, ConfigNamespace + "." + subjectsItem} {
-				if !strings.Contains(err.Error(), want) {
-					t.Errorf("the failure reads %q and does not carry %q", err, want)
+		for _, user := range []string{"alice"} {
+			t.Run(name, func(t *testing.T) {
+				for _, plaintext := range []string{"correct horse", "wrong"} {
+					got := b.Verify(ctx, basic(user, plaintext))
+					if outcome(got) != verdict.Unavailable {
+						t.Errorf("the verdict for %q reads %v, want unavailable: the call's time was gone "+
+							"before the password was checked", plaintext, outcome(got))
+					}
+					if !errors.Is(cause(got), ctx.Err()) {
+						t.Errorf("the verdict carries %v, want the context's own error", cause(got))
+					}
 				}
+			})
+		}
+	}
+	if derived.Load() != 1 {
+		t.Errorf("a call that had already ended derived: %d derivations in all, want the 1 of the first check", derived.Load())
+	}
+}
+
+// TestAnEndedContextIsNotAFailedAttempt holds that a call cancelled before it
+// could check does not count against the name, whether the name is in the table
+// or not: nothing was tried, and counting it would let a caller who can cancel
+// requests hold a name back.
+func TestAnEndedContextIsNotAFailedAttempt(t *testing.T) {
+	b := tableWith(t, map[string]string{"alice": "secret"})
+	cancelled, cancel := context.WithCancel(context.Background())
+	cancel()
+
+	for _, user := range []string{"alice", "mallory"} {
+		for range 20 {
+			if got := b.Verify(cancelled, basic(user, "wrong")); outcome(got) != verdict.Unavailable {
+				t.Fatalf("a cancelled call for %q reads %v, want unavailable", user, outcome(got))
 			}
-			// A table naming nobody is a claim of no subject space, which
-			// is what the gateway refuses as a malformed claim; the two
-			// report one fact, under one sentinel.
-			if !errors.Is(err, authn.ErrInvalidClaim) {
-				t.Errorf("the failure reads %q and does not wrap %v", err, authn.ErrInvalidClaim)
-			}
-		})
+		}
+	}
+	if got := b.Verify(context.Background(), basic("alice", "secret")); outcome(got) != verdict.Authenticated {
+		t.Errorf("after twenty cancelled calls the right password reads %v, want authenticated: "+
+			"cancelled calls were counted as failures", outcome(got))
+	}
+	// A name that is not in the table is not held back by the cancelled calls
+	// made in its name either.
+	for range 6 {
+		b.Verify(context.Background(), basic("mallory", "wrong"))
+	}
+	if got := b.Verify(context.Background(), basic("mallory", "wrong")); !errors.Is(cause(got), authn.ErrThrottled) {
+		t.Errorf("six real failures of an unknown name read %v (%v), want it held back: the cancelled calls "+
+			"were not what held it", outcome(got), cause(got))
+	}
+}
+
+// TestACapacityLimitIsAnOutageThatSaysSo holds the answer when the width is
+// taken: unavailable, never denied, with the sentinel the gateway reads the
+// Retry-After off. The failure does not count against the name, since the
+// password was not checked.
+func TestACapacityLimitIsAnOutageThatSaysSo(t *testing.T) {
+	b := tableWith(t, map[string]string{"alice": "secret"})
+	real := b.check
+	b.check = func(context.Context, password.Entry, string, time.Duration) (bool, error) {
+		return false, authn.ErrBusy
+	}
+
+	for range 20 {
+		got := b.Verify(context.Background(), basic("alice", "secret"))
+		if outcome(got) != verdict.Unavailable {
+			t.Fatalf("a derivation refused for want of capacity reads %v, want unavailable", outcome(got))
+		}
+		if !errors.Is(cause(got), authn.ErrBusy) {
+			t.Fatalf("the verdict carries %v, want one wrapping %v", cause(got), authn.ErrBusy)
+		}
+	}
+	b.check = real
+	if got := b.Verify(context.Background(), basic("alice", "secret")); outcome(got) != verdict.Authenticated {
+		t.Errorf("after twenty refusals for want of capacity the right password reads %v, want "+
+			"authenticated: they were counted as failures", outcome(got))
+	}
+}
+
+// TestAnAskForCapacityIsAskedForWithNoWait holds what the backend asks of the
+// Governor: no wait. A derivation that finds the width taken is an outage, and
+// a backend that waited would queue every request behind the ones running.
+func TestAnAskForCapacityIsAskedForWithNoWait(t *testing.T) {
+	b := tableWith(t, map[string]string{"alice": "secret"})
+	var asked []time.Duration
+	real := b.check
+	b.check = func(ctx context.Context, e password.Entry, plaintext string, wait time.Duration) (bool, error) {
+		asked = append(asked, wait)
+		return real(ctx, e, plaintext, wait)
+	}
+
+	b.Verify(context.Background(), basic("alice", "secret"))
+
+	if len(asked) != 1 || asked[0] != 0 {
+		t.Errorf("the backend asked for capacity with the waits %v, want one ask with no wait", asked)
+	}
+}
+
+// TestAPasswordThatHeldIsNotDerivedAgainWhileItIsRemembered holds the cache from
+// both sides: a second check of the same password derives nothing, and a
+// password that was refused is never remembered, so it derives every time.
+func TestAPasswordThatHeldIsNotDerivedAgainWhileItIsRemembered(t *testing.T) {
+	b := tableWith(t, map[string]string{"alice": "secret"})
+	derived := counting(b)
+
+	for range 3 {
+		if got := b.Verify(context.Background(), basic("alice", "secret")); outcome(got) != verdict.Authenticated {
+			t.Fatalf("the right password reads %v", outcome(got))
+		}
+	}
+	if derived.Load() != 1 {
+		t.Errorf("three checks of one password derived %d times, want once", derived.Load())
+	}
+
+	for range 3 {
+		if got := b.Verify(context.Background(), basic("alice", "wrong")); outcome(got) != verdict.Denied {
+			t.Fatalf("the wrong password reads %v", outcome(got))
+		}
+	}
+	if derived.Load() != 4 {
+		t.Errorf("three checks of a wrong password brought the derivations to %d, want 4: a refusal "+
+			"is derived every time", derived.Load())
+	}
+}
+
+// TestTheCacheDoesNotLetOneSubjectsPasswordStandForAnothers holds the cache
+// against the case that makes it dangerous: two subjects, and a password that
+// held for one being presented for the other.
+func TestTheCacheDoesNotLetOneSubjectsPasswordStandForAnothers(t *testing.T) {
+	b := tableWith(t, map[string]string{"alice": "alices", "bob": "bobs"})
+
+	if got := b.Verify(context.Background(), basic("alice", "alices")); outcome(got) != verdict.Authenticated {
+		t.Fatalf("alice's password reads %v", outcome(got))
+	}
+	if got := b.Verify(context.Background(), basic("bob", "alices")); outcome(got) != verdict.Denied {
+		t.Errorf("alice's password, which is remembered, reads %v for bob, want denied", outcome(got))
+	}
+}
+
+// TestTheCacheLifetimeIsASettingAndZeroSwitchesItOff holds the setting from
+// three sides: unread it is the declared sixty seconds, a value in its domain is
+// followed, zero switches the cache off, and a value outside the domain reads as
+// the default.
+func TestTheCacheLifetimeIsASettingAndZeroSwitchesItOff(t *testing.T) {
+	store := newFakeSettings()
+	b := tableWith(t, map[string]string{"alice": "secret"})
+	b.store = store
+	derived := counting(b)
+	check := func() { b.Verify(context.Background(), basic("alice", "secret")) }
+
+	// Not stored: the declared default, which remembers.
+	check()
+	check()
+	if derived.Load() != 1 {
+		t.Errorf("with no setting stored the cache derived %d times in two checks, want once", derived.Load())
+	}
+
+	// Zero: off, and what was remembered is not served.
+	store.set(cacheTTLPath, time.Duration(0))
+	check()
+	check()
+	if derived.Load() != 3 {
+		t.Errorf("with the lifetime at zero two checks brought the derivations to %d, want 3", derived.Load())
+	}
+
+	// A value outside the domain reads as the default, which is to remember.
+	for _, bad := range []time.Duration{-time.Second, password.MaxCacheTTL + time.Second} {
+		store.set(cacheTTLPath, bad)
+		before := derived.Load()
+		check()
+		check()
+		if got := derived.Load() - before; got > 1 {
+			t.Errorf("a lifetime of %s (outside the domain) derived %d times in two checks, want the "+
+				"default's behaviour of at most once", bad, got)
+		}
+	}
+
+	// A store that cannot be read is the declared default too.
+	store.set(cacheTTLPath, time.Duration(0))
+	store.err = errors.New("the store is not loaded")
+	before := derived.Load()
+	check()
+	check()
+	if got := derived.Load() - before; got > 1 {
+		t.Errorf("an unreadable store derived %d times in two checks, want the default's behaviour", got)
+	}
+}
+
+// TestAFailedNameIsHeldBackAndTheCheckIsNotMade holds the back-off at its edge:
+// five failures are free, the sixth attempt is the first one beyond them and is
+// still made, and it is the failure of the sixth that holds the name back, after
+// which the right password is refused without a derivation.
+func TestAFailedNameIsHeldBackAndTheCheckIsNotMade(t *testing.T) {
+	b := tableWith(t, map[string]string{"alice": "secret"})
+	clk := newClock()
+	b.throttle = password.NewThrottle(b.throttleParams, clk.now)
+	derived := counting(b)
+
+	for i := 1; i <= 5; i++ {
+		if got := b.Verify(context.Background(), basic("alice", "wrong")); outcome(got) != verdict.Denied {
+			t.Fatalf("attempt %d reads %v", i, outcome(got))
+		}
+	}
+	if derived.Load() != 5 {
+		t.Fatalf("five free attempts derived %d times, want 5", derived.Load())
+	}
+	// The sixth attempt is made and fails, which starts the back-off.
+	if got := b.Verify(context.Background(), basic("alice", "wrong")); outcome(got) != verdict.Denied {
+		t.Fatalf("the sixth attempt reads %v", outcome(got))
+	}
+	if derived.Load() != 6 {
+		t.Fatalf("the sixth attempt derived %d times in all, want 6", derived.Load())
+	}
+
+	got := b.Verify(context.Background(), basic("alice", "secret"))
+	if outcome(got) != verdict.Denied {
+		t.Fatalf("the right password during the back-off reads %v, want denied", outcome(got))
+	}
+	var held *authn.ThrottledError
+	if !errors.As(cause(got), &held) || !errors.Is(cause(got), authn.ErrThrottled) {
+		t.Fatalf("the refusal carries %v, want a ThrottledError", cause(got))
+	}
+	if held.RetryAfter != 2*time.Second {
+		t.Errorf("the refusal says to wait %s, want 2s", held.RetryAfter)
+	}
+	if derived.Load() != 6 {
+		t.Errorf("a name being held back was checked: %d derivations, want 6", derived.Load())
+	}
+
+	clk.advance(2 * time.Second)
+	if passed := b.Verify(context.Background(), basic("alice", "secret")); outcome(passed) != verdict.Authenticated {
+		t.Errorf("the right password after the back-off reads %v, want authenticated: %v", outcome(passed), cause(passed))
+	}
+	// The pass cleared nothing: six failures stand, so the next failure is the
+	// seventh and holds the name back for four seconds. Had the pass cleared the
+	// count, five more failures would still have been free.
+	if failed := b.Verify(context.Background(), basic("alice", "wrong")); outcome(failed) != verdict.Denied {
+		t.Fatalf("a failure after the pass reads %v, want denied", outcome(failed))
+	}
+	got = b.Verify(context.Background(), basic("alice", "secret"))
+	if !errors.As(cause(got), &held) {
+		t.Fatalf("the right password after the seventh failure reads %v (%v), want it held back: the pass "+
+			"cleared the count", outcome(got), cause(got))
+	}
+	if held.RetryAfter != 4*time.Second {
+		t.Errorf("the refusal says to wait %s, want 4s", held.RetryAfter)
+	}
+}
+
+// TestTheBackoffDoesNotDependOnTheNameBeingInTheTable holds what the keying is
+// for: a name that is in the table and one that is not are held back after the
+// same number of failures, so holding a name back says nothing about whether it
+// exists.
+func TestTheBackoffDoesNotDependOnTheNameBeingInTheTable(t *testing.T) {
+	b := tableWith(t, map[string]string{"alice": "secret"})
+	b.throttle = password.NewThrottle(b.throttleParams, newClock().now)
+
+	for _, user := range []string{"alice", "ghost"} {
+		for i := 1; i <= 6; i++ {
+			b.Verify(context.Background(), basic(user, "wrong"))
+		}
+		got := b.Verify(context.Background(), basic(user, "secret"))
+		if !errors.Is(cause(got), authn.ErrThrottled) {
+			t.Errorf("after six failures the name %q reads %v (%v), want it held back like any other",
+				user, outcome(got), cause(got))
+		}
+	}
+}
+
+// TestOneNamesBackoffIsNotAnothers holds the key: the failures of one name do not
+// hold back the next.
+func TestOneNamesBackoffIsNotAnothers(t *testing.T) {
+	b := tableWith(t, map[string]string{"alice": "a", "bob": "b"})
+	b.throttle = password.NewThrottle(b.throttleParams, newClock().now)
+
+	for range 10 {
+		b.Verify(context.Background(), basic("alice", "wrong"))
+	}
+	if got := b.Verify(context.Background(), basic("bob", "b")); outcome(got) != verdict.Authenticated {
+		t.Errorf("bob reads %v after alice's failures, want authenticated", outcome(got))
+	}
+}
+
+// TestTheBackoffParametersAreSettings holds the three settings each from its own
+// side: the free attempts, the window and the cap are read from the store, and a
+// value outside its domain, or no store, reads as the declared default.
+func TestTheBackoffParametersAreSettings(t *testing.T) {
+	t.Run("free attempts", func(t *testing.T) {
+		store := newFakeSettings()
+		store.set(freeAttemptsPath, 1)
+		b := tableWith(t, map[string]string{"alice": "secret"})
+		b.store = store
+		b.throttle = password.NewThrottle(b.throttleParams, newClock().now)
+
+		b.Verify(context.Background(), basic("alice", "wrong"))
+		b.Verify(context.Background(), basic("alice", "wrong"))
+		if got := b.Verify(context.Background(), basic("alice", "secret")); !errors.Is(cause(got), authn.ErrThrottled) {
+			t.Errorf("with one free attempt, the third attempt reads %v (%v), want held back", outcome(got), cause(got))
+		}
+	})
+
+	t.Run("the cap", func(t *testing.T) {
+		store := newFakeSettings()
+		store.set(maxBackoffPath, 10*time.Second)
+		b := tableWith(t, map[string]string{"alice": "secret"})
+		b.store = store
+		clk := newClock()
+		b.throttle = password.NewThrottle(b.throttleParams, clk.now)
+
+		for range 40 {
+			b.Verify(context.Background(), basic("alice", "wrong"))
+			// Each wait is over before the next attempt, so that every attempt
+			// is made and fails: attempts made during a wait are refused unread
+			// and are not counted. Forty of them stay inside the window.
+			clk.advance(10 * time.Second)
+		}
+		b.Verify(context.Background(), basic("alice", "wrong"))
+		got := b.Verify(context.Background(), basic("alice", "secret"))
+		var held *authn.ThrottledError
+		if !errors.As(cause(got), &held) {
+			t.Fatalf("after forty failures the name reads %v (%v)", outcome(got), cause(got))
+		}
+		if held.RetryAfter != 10*time.Second {
+			t.Errorf("the wait is %s, want the cap of 10s the setting states", held.RetryAfter)
+		}
+	})
+
+	t.Run("the window", func(t *testing.T) {
+		store := newFakeSettings()
+		store.set(failWindowPath, 2*time.Minute)
+		b := tableWith(t, map[string]string{"alice": "secret"})
+		b.store = store
+		clk := newClock()
+		b.throttle = password.NewThrottle(b.throttleParams, clk.now)
+
+		for range 12 {
+			b.Verify(context.Background(), basic("alice", "wrong"))
+		}
+		clk.advance(2 * time.Minute)
+		if got := b.Verify(context.Background(), basic("alice", "secret")); outcome(got) != verdict.Authenticated {
+			t.Errorf("after the window of two minutes the name reads %v (%v), want it forgotten",
+				outcome(got), cause(got))
+		}
+	})
+
+	t.Run("a value outside its domain is the default", func(t *testing.T) {
+		store := newFakeSettings()
+		store.set(freeAttemptsPath, 1000)
+		store.set(failWindowPath, time.Second)
+		store.set(maxBackoffPath, time.Nanosecond)
+		b := tableWith(t, map[string]string{"alice": "secret"})
+		b.store = store
+
+		want := password.DefaultThrottleParams()
+		if got := b.throttleParams(); got != want {
+			t.Errorf("parameters outside their domains read as %+v, want the defaults %+v", got, want)
+		}
+	})
+
+	t.Run("no store is the default", func(t *testing.T) {
+		b := tableWith(t, map[string]string{"alice": "secret"})
+		if got := b.throttleParams(); got != password.DefaultThrottleParams() {
+			t.Errorf("with no store the parameters read as %+v", got)
+		}
+		if got := b.cacheTTL(); got != 60*time.Second {
+			t.Errorf("with no store the cache lifetime reads as %s, want 60s", got)
+		}
+	})
+}
+
+// TestTheDeclaredSettingsAreTheDesignsAndTheirDomainsHold holds the defaults and
+// the domains against the design's numbers, which a setting's reader and its
+// declaration both lean on.
+func TestTheDeclaredSettingsAreTheDesignsAndTheirDomainsHold(t *testing.T) {
+	if defaults.CacheTTL != time.Minute || defaults.FreeAttempts != 5 ||
+		defaults.FailWindow != 15*time.Minute || defaults.MaxBackoff != 15*time.Minute {
+		t.Errorf("the declared defaults are %+v, want 60s, 5, 15m and 15m", defaults)
+	}
+	for _, c := range []struct {
+		name string
+		in   func() bool
+		out  func() bool
+	}{
+		{
+			"cache-ttl", func() bool { return cacheTTLInDomain(0) && cacheTTLInDomain(5*time.Minute) },
+			func() bool { return cacheTTLInDomain(-1) || cacheTTLInDomain(5*time.Minute+1) },
+		},
+		{
+			"free-attempts", func() bool { return freeAttemptsInDomain(1) && freeAttemptsInDomain(20) },
+			func() bool { return freeAttemptsInDomain(0) || freeAttemptsInDomain(21) },
+		},
+		{
+			"fail-window", func() bool { return failWindowInDomain(time.Minute) && failWindowInDomain(24*time.Hour) },
+			func() bool { return failWindowInDomain(time.Minute-1) || failWindowInDomain(24*time.Hour+1) },
+		},
+		{
+			"max-backoff", func() bool { return maxBackoffInDomain(10*time.Second) && maxBackoffInDomain(24*time.Hour) },
+			func() bool { return maxBackoffInDomain(10*time.Second-1) || maxBackoffInDomain(24*time.Hour+1) },
+		},
+	} {
+		if !c.in() {
+			t.Errorf("%s: the edges of the domain are refused", c.name)
+		}
+		if c.out() {
+			t.Errorf("%s: a value just outside the domain is admitted", c.name)
+		}
+	}
+	if !strings.HasPrefix(cacheTTLPath, "authn.static.") {
+		t.Errorf("the setting path is %q, want it under authn.static", cacheTTLPath)
+	}
+}
+
+// TestALegacyEntryStillAuthenticates holds the read-only form end to end: an
+// entry in the old form, which nothing writes, is read at startup and verifies
+// its password.
+func TestALegacyEntryStillAuthenticates(t *testing.T) {
+	phc := cheapEntry(t, "secret")
+	fields := strings.Split(phc, "$") // "", "pbkdf2-sha256", "i=2,l=32", salt, hash
+	legacy := "pbkdf2-sha256$2$" + fields[3] + "$" + fields[4]
+
+	b := backendOf(t, moduleConfig{
+		Subjects: map[string]string{"alice": legacy}, CacheSize: 16, Concurrency: 2,
+	})
+	if got := b.Verify(context.Background(), basic("alice", "secret")); outcome(got) != verdict.Authenticated {
+		t.Errorf("a legacy entry reads %v (%v), want authenticated", outcome(got), cause(got))
+	}
+	if got := b.Verify(context.Background(), basic("alice", "wrong")); outcome(got) != verdict.Denied {
+		t.Errorf("a legacy entry with the wrong password reads %v", outcome(got))
+	}
+}
+
+// TestEntriesOfAllThreeFormsShareOneTable holds that the form of an entry is its
+// own: Argon2id, PBKDF2 and the old form sit in one table and each verifies its
+// own password.
+func TestEntriesOfAllThreeFormsShareOneTable(t *testing.T) {
+	argon, err := Hash("argon-secret")
+	if err != nil {
+		t.Fatal(err)
+	}
+	phc := cheapEntry(t, "pbkdf-secret")
+	fields := strings.Split(cheapEntry(t, "legacy-secret"), "$")
+	b := backendOf(t, moduleConfig{
+		Subjects: map[string]string{
+			"argon": argon, "pbkdf": phc,
+			"legacy": "pbkdf2-sha256$2$" + fields[3] + "$" + fields[4],
+		},
+		CacheSize: 16, Concurrency: 2,
+	})
+	for user, plaintext := range map[string]string{
+		"argon": "argon-secret", "pbkdf": "pbkdf-secret", "legacy": "legacy-secret",
+	} {
+		if got := b.Verify(context.Background(), basic(user, plaintext)); outcome(got) != verdict.Authenticated {
+			t.Errorf("%s reads %v (%v), want authenticated", user, outcome(got), cause(got))
+		}
+		if got := b.Verify(context.Background(), basic(user, plaintext+"x")); outcome(got) != verdict.Denied {
+			t.Errorf("%s with a wrong password reads %v", user, outcome(got))
+		}
+	}
+}
+
+// capture is a log handler that keeps what it is handed, text and all.
+type capture struct {
+	mu  sync.Mutex
+	buf bytes.Buffer
+}
+
+func (c *capture) logger() *slog.Logger {
+	return slog.New(slog.NewTextHandler(syncWriter{c}, &slog.HandlerOptions{Level: slog.LevelDebug}))
+}
+
+type syncWriter struct{ c *capture }
+
+func (w syncWriter) Write(p []byte) (int, error) {
+	w.c.mu.Lock()
+	defer w.c.mu.Unlock()
+	return w.c.buf.Write(p)
+}
+
+func (c *capture) String() string {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	return c.buf.String()
+}
+
+// TestTheStartupNamesTheEntriesThatAreOldOrWeak holds the diagnostics that turn
+// a silent weak entry into a recorded one: an entry in the old form and an entry
+// below what OWASP recommends are each named once, by entry, and a sound entry
+// is not named. The entries themselves never reach the log.
+func TestTheStartupNamesTheEntriesThatAreOldOrWeak(t *testing.T) {
+	sound, err := Hash("sound")
+	if err != nil {
+		t.Fatal(err)
+	}
+	weak := cheapEntry(t, "weak")
+	fields := strings.Split(cheapEntry(t, "old"), "$")
+	old := "pbkdf2-sha256$600000$" + fields[3] + "$" + fields[4]
+
+	var out capture
+	b := backendOf(t, moduleConfig{
+		Subjects:  map[string]string{"sound": sound, "weak": weak, "old": old},
+		CacheSize: 16, Concurrency: 2,
+	})
+	b.logger = out.logger()
+	if err := b.wire(core.New()); err != nil {
+		t.Fatalf("wiring: %v", err)
+	}
+
+	text := out.String()
+	for _, want := range []string{"entry=weak", "entry=old"} {
+		if !strings.Contains(text, want) {
+			t.Errorf("the startup does not name %q:\n%s", want, text)
+		}
+	}
+	if strings.Contains(text, "entry=sound") {
+		t.Errorf("the startup names a sound entry:\n%s", text)
+	}
+	if strings.Count(text, "old form") != 1 {
+		t.Errorf("the old-form entry is named %d times, want once:\n%s", strings.Count(text, "old form"), text)
+	}
+	// "old" is at 600000 iterations, which is not below the floor, so it is named
+	// as old and not as weak.
+	if strings.Count(text, "below the least") != 1 {
+		t.Errorf("the weak entry is named %d times, want once:\n%s", strings.Count(text, "below the least"), text)
+	}
+	for _, secret := range []string{sound, weak, old, fields[3], fields[4]} {
+		if strings.Contains(text, secret) {
+			t.Errorf("the startup log carries an entry or part of one:\n%s", text)
+		}
+	}
+}
+
+// TestTheLinesAboutTheTableNameAnEntryAndNeverASubject holds the attribute the
+// table's own log lines carry. The log has no field called subject, because that
+// word means a bound external identity elsewhere in the library: a name of the
+// table is written as the entry, the name a line about a held-back name carries
+// is written only when the table holds it, and a name the table does not hold is
+// whatever a caller typed and is not written at all.
+func TestTheLinesAboutTheTableNameAnEntryAndNeverASubject(t *testing.T) {
+	var out capture
+	b := tableWith(t, map[string]string{"alice": "secret", "Admin": "upper", "admin": "lower"})
+	b.logger = out.logger()
+	if err := b.wire(core.New()); err != nil {
+		t.Fatalf("wiring: %v", err)
+	}
+	b.throttle = password.NewThrottle(b.throttleParams, newClock().now)
+	for range 10 {
+		b.Verify(context.Background(), basic("typed-by-a-caller", "wrong"))
+	}
+	typed := out.String()
+	for range 10 {
+		b.Verify(context.Background(), basic("alice", "wrong"))
+	}
+	text := out.String()
+
+	for _, line := range strings.Split(typed, "\n") {
+		if strings.Contains(line, "held back") && !strings.Contains(line, "level=INFO") {
+			t.Errorf("a name held back is written as something other than Info, which is what a problem on the caller's side is:\n%s", line)
+		}
+	}
+	if !strings.Contains(typed, "held back") || strings.Contains(typed, "typed-by-a-caller") {
+		t.Errorf("the line for a name the table does not hold is missing or writes the name:\n%s", typed)
+	}
+	var heldBack []string
+	for _, line := range strings.Split(text, "\n") {
+		if strings.Contains(line, "held back") {
+			heldBack = append(heldBack, line)
+		}
+	}
+	if !slices.ContainsFunc(heldBack, func(line string) bool { return strings.Contains(line, "entry=alice") }) {
+		t.Errorf("no line about a held-back name carries entry=alice:\n%s", text)
+	}
+	if !strings.Contains(text, "entries=Admin,admin") {
+		t.Errorf("the line about names that share a back-off does not carry entries=Admin,admin:\n%s", text)
+	}
+	if strings.Contains(text, "subject=") || strings.Contains(text, "subjects=") {
+		t.Errorf("a line about the table carries a field called subject:\n%s", text)
+	}
+}
+
+// TestNamesThatDifferOnlyInCaseAreNamedAtStartupAndShareTheBackoff holds the
+// coupling the case-folded back-off key brings: the table matches names exactly
+// and the back-off does not, so two subjects spelt apart by case hold each other
+// back, and the startup says which ones. A name that has no twin is not named.
+func TestNamesThatDifferOnlyInCaseAreNamedAtStartupAndShareTheBackoff(t *testing.T) {
+	var out capture
+	b := tableWith(t, map[string]string{"Admin": "upper", "admin": "lower", "bob": "bob-secret"})
+	b.logger = out.logger()
+	if err := b.wire(core.New()); err != nil {
+		t.Fatalf("wiring: %v", err)
+	}
+
+	text := out.String()
+	if strings.Count(text, "share one back-off") != 1 {
+		t.Errorf("the startup names the shared back-off %d times, want once:\n%s",
+			strings.Count(text, "share one back-off"), text)
+	}
+	if !strings.Contains(text, "entries=Admin,admin") {
+		t.Errorf("the startup does not name the two entries that share a back-off:\n%s", text)
+	}
+	for _, line := range strings.Split(text, "\n") {
+		if strings.Contains(line, "share one back-off") && strings.Contains(line, "bob") {
+			t.Errorf("the line about the shared back-off names a subject that has no twin:\n%s", line)
+		}
+	}
+
+	b.throttle = password.NewThrottle(b.throttleParams, newClock().now)
+	for range 6 {
+		b.Verify(context.Background(), basic("Admin", "wrong"))
+	}
+	if got := b.Verify(context.Background(), basic("admin", "lower")); !errors.Is(cause(got), authn.ErrThrottled) {
+		t.Errorf("the right password of the subject that shares the back-off reads %v (%v), want it held back",
+			outcome(got), cause(got))
+	}
+	if got := b.Verify(context.Background(), basic("bob", "bob-secret")); outcome(got) != verdict.Authenticated {
+		t.Errorf("a subject with its own back-off reads %v, want it to pass", outcome(got))
+	}
+}
+
+// TestModuleIsAnUnexclusiveVerifierThatAlwaysRuns holds the descriptor: it
+// delivers the verification capability without claiming it, so it stands beside
+// other backends, and it never stands itself down.
+func TestModuleIsAnUnexclusiveVerifierThatAlwaysRuns(t *testing.T) {
+	m := Module()
+	if m.Name != ModuleName {
+		t.Errorf("the module is named %q, want %q", m.Name, ModuleName)
+	}
+	if len(m.Provides) != 1 || m.Provides[0].Exclusive {
+		t.Errorf("the module provides %+v, want the verification capability, not claimed exclusively", m.Provides)
+	}
+	if m.Provides[0].Token != core.Token((*authn.Verifier)(nil)) {
+		t.Errorf("the module delivers %v, want authn.Verifier", m.Provides[0].Token)
+	}
+
+	body := `{"authn":{"static":{"subjects":{"alice":"` + cheapEntry(t, "x") + `"}}}}`
+	state, err := prepare(authntest.ConfigReader(t, m, body))
+	if err != nil {
+		t.Fatalf("preparing a good table: %v", err)
+	}
+	if state.State != core.StateEnabled {
+		t.Errorf("the module takes the stance %v, want enabled: whether it runs is the command tree's decision", state.State)
+	}
+}
+
+// load reads a configuration body with the real loader and returns the error it
+// gives, which the shared reader of authntest turns into a failed test.
+func load(t *testing.T, body string) (config.Reader, error) {
+	t.Helper()
+	locator := t.TempDir() + "/config.json"
+	if err := os.WriteFile(locator, []byte(body), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	reg := core.New()
+	reg.Register(jsonformat.Module())
+	reg.Register(filesource.Module())
+	reg.Register(core.Module{
+		Name:      "host",
+		Resources: []any{config.HostIdentity{Prefix: "SPEEDSTATICTEST", DefaultLocator: "file://" + locator}},
+	})
+	reg.Register(Module())
+	return config.Load(t.Context(), reg, nil)
+}
+
+// TestAValueOutsideItsDomainIsTheDefaultAndIsReportedAtError holds the read side
+// of a setting's domain, which the store judges only when a value is written: a
+// value found outside it is acted on as the declared default, the Error line
+// names the setting and not the table, and a setting read on every request is
+// written once for as long as it stays wrong.
+func TestAValueOutsideItsDomainIsTheDefaultAndIsReportedAtError(t *testing.T) {
+	store := newFakeSettings()
+	store.set(freeAttemptsPath, 1000)
+	store.set(failWindowPath, 2*time.Minute)
+	store.set(maxBackoffPath, 30*time.Second)
+	store.set(cacheTTLPath, 10*time.Minute)
+	b := tableWith(t, map[string]string{"alice": "secret"})
+	b.store = store
+	var out capture
+	b.logger = out.logger()
+
+	for range 5 {
+		if got := b.throttleParams(); got.FreeAttempts != 5 || got.Window != 2*time.Minute ||
+			got.MaxBackoff != 30*time.Second {
+			t.Fatalf("the parameters read as %+v, want the default free attempts and the stored rest", got)
+		}
+		if got := b.cacheTTL(); got != 60*time.Second {
+			t.Fatalf("a cache lifetime of ten minutes reads as %s, want the default", got)
+		}
+	}
+	text := out.String()
+	for _, path := range []string{freeAttemptsPath, cacheTTLPath} {
+		if n := strings.Count(text, "setting="+path); n != 1 {
+			t.Errorf("%s is reported %d times over five reads, want once:\n%s", path, n, text)
+		}
+	}
+	if strings.Contains(text, "setting="+failWindowPath) || strings.Contains(text, "setting="+maxBackoffPath) {
+		t.Errorf("a setting inside its domain is reported:\n%s", text)
+	}
+	if !strings.Contains(text, "level=ERROR") || strings.Contains(text, "level=WARN") {
+		t.Errorf("the report is not at Error:\n%s", text)
+	}
+
+	// Once the value is right and wrong again, it is reported again.
+	store.set(freeAttemptsPath, 3)
+	if got := b.throttleParams().FreeAttempts; got != 3 {
+		t.Fatalf("a value inside the domain reads as %d, want 3", got)
+	}
+	store.set(freeAttemptsPath, 1000)
+	b.throttleParams()
+	if n := strings.Count(out.String(), "setting="+freeAttemptsPath); n != 2 {
+		t.Errorf("a fault that came back is reported %d times in all, want 2", n)
+	}
+}
+
+// TestALockedNameIsRefusedEvenWhenItsPasswordIsRemembered holds the order of
+// the lock and the cache: the cache saves a derivation and never a back-off, so
+// a password that held lately is refused for a name that is being held back.
+func TestALockedNameIsRefusedEvenWhenItsPasswordIsRemembered(t *testing.T) {
+	b := tableWith(t, map[string]string{"alice": "secret"})
+	b.throttle = password.NewThrottle(b.throttleParams, newClock().now)
+	derived := counting(b)
+
+	if got := b.Verify(context.Background(), basic("alice", "secret")); outcome(got) != verdict.Authenticated {
+		t.Fatalf("the right password reads %v", outcome(got))
+	}
+	for range 6 {
+		b.Verify(context.Background(), basic("alice", "wrong"))
+	}
+	before := derived.Load()
+	got := b.Verify(context.Background(), basic("alice", "secret"))
+	if outcome(got) != verdict.Denied || !errors.Is(cause(got), authn.ErrThrottled) {
+		t.Errorf("a remembered password for a name held back reads %v (%v), want it refused as held back",
+			outcome(got), cause(got))
+	}
+	if derived.Load() != before {
+		t.Error("the refusal derived")
+	}
+}
+
+// TestALockedNameIsRefusedBeforeTheContextIsLookedAt holds the order of the lock
+// and the call's time: a name that is being held back is refused as held back,
+// and the Unavailable of an ended call is for a name that is not.
+func TestALockedNameIsRefusedBeforeTheContextIsLookedAt(t *testing.T) {
+	b := tableWith(t, map[string]string{"alice": "secret"})
+	b.throttle = password.NewThrottle(b.throttleParams, newClock().now)
+	for range 6 {
+		b.Verify(context.Background(), basic("alice", "wrong"))
+	}
+	cancelled, cancel := context.WithCancel(context.Background())
+	cancel()
+	if got := b.Verify(cancelled, basic("alice", "secret")); !errors.Is(cause(got), authn.ErrThrottled) {
+		t.Errorf("an ended call for a name held back reads %v (%v), want it held back", outcome(got), cause(got))
+	}
+}
+
+// leaveKey carries the cancel function of a call to the derivation it makes.
+type leaveKey struct{}
+
+// TestAWrongPasswordWhoseCallerLeftDuringTheDerivationIsStillCounted holds that
+// the derivation, which takes no context, has an answer when it ends, and that
+// the answer is counted: a caller who disconnects as soon as it has sent a
+// password cannot try passwords without the back-off seeing them.
+func TestAWrongPasswordWhoseCallerLeftDuringTheDerivationIsStillCounted(t *testing.T) {
+	b := tableWith(t, map[string]string{"alice": "secret"})
+	b.throttle = password.NewThrottle(b.throttleParams, newClock().now)
+	inner := b.check
+	b.check = func(ctx context.Context, e password.Entry, plaintext string, wait time.Duration) (bool, error) {
+		ok, err := inner(ctx, e, plaintext, wait)
+		leave, _ := ctx.Value(leaveKey{}).(context.CancelFunc)
+		leave()
+		return ok, err
+	}
+
+	for range 6 {
+		ctx, leave := context.WithCancel(context.Background())
+		ctx = context.WithValue(ctx, leaveKey{}, leave)
+		got := b.Verify(ctx, basic("alice", "wrong"))
+		leave()
+		if outcome(got) != verdict.Denied {
+			t.Fatalf("a wrong password whose caller left reads %v, want denied", outcome(got))
+		}
+	}
+	b.check = inner
+	if got := b.Verify(context.Background(), basic("alice", "secret")); !errors.Is(cause(got), authn.ErrThrottled) {
+		t.Errorf("after six wrong passwords whose callers left the name reads %v (%v), want it held back",
+			outcome(got), cause(got))
+	}
+}
+
+// TestSpellingsOfAnUnknownNameShareTheBackoff holds the normalised key: failures
+// of a name in another case or with white space around it are failures of the
+// same key, so changing the spelling does not start the count over.
+func TestSpellingsOfAnUnknownNameShareTheBackoff(t *testing.T) {
+	b := tableWith(t, map[string]string{"alice": "secret"})
+	b.throttle = password.NewThrottle(b.throttleParams, newClock().now)
+	for _, spelling := range []string{"Ghost", "GHOST", " ghost", "ghost ", "gHoSt", "ghost"} {
+		b.Verify(context.Background(), basic(spelling, "wrong"))
+	}
+	if got := b.Verify(context.Background(), basic("ghost", "wrong")); !errors.Is(cause(got), authn.ErrThrottled) {
+		t.Errorf("six failures in six spellings read %v (%v), want one count", outcome(got), cause(got))
 	}
 }

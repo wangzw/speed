@@ -50,7 +50,7 @@ func TestARefusalIsWrittenThroughTheEntryPointsErrorResponse(t *testing.T) {
 	const cause = "wrong password for alice in db-7"
 	for _, c := range []struct {
 		name      string
-		verify    func(context.Context, string, authn.Credential) authn.Verdict
+		verify    func(context.Context, authn.Credential) authn.Verdict
 		edit      func(*nethttp.Request)
 		status    int
 		title     string
@@ -65,7 +65,7 @@ func TestARefusalIsWrittenThroughTheEntryPointsErrorResponse(t *testing.T) {
 		},
 		{
 			name: "a credential that does not hold",
-			verify: func(context.Context, string, authn.Credential) authn.Verdict {
+			verify: func(context.Context, authn.Credential) authn.Verdict {
 				return authn.Denied(errors.New(cause))
 			},
 			edit:      asAlice,
@@ -75,7 +75,7 @@ func TestARefusalIsWrittenThroughTheEntryPointsErrorResponse(t *testing.T) {
 		},
 		{
 			name: "a backend that cannot answer",
-			verify: func(context.Context, string, authn.Credential) authn.Verdict {
+			verify: func(context.Context, authn.Credential) authn.Verdict {
 				return authn.Unavailable(errors.New("the store at db-7 is unreachable"))
 			},
 			edit:   asAlice,
@@ -84,7 +84,7 @@ func TestARefusalIsWrittenThroughTheEntryPointsErrorResponse(t *testing.T) {
 		},
 	} {
 		t.Run(c.name, func(t *testing.T) {
-			backend := enumerating("local", "alice")
+			backend := basicBackend("static", "static.")
 			backend.verify = c.verify
 
 			var got reply
@@ -106,7 +106,7 @@ func TestARefusalIsWrittenThroughTheEntryPointsErrorResponse(t *testing.T) {
 				t.Errorf("%s carries the members %v, want the type, the title and the status "+
 					"alone: the cause and the attribution belong to the log", c.name, members)
 			}
-			for _, leaked := range []string{"db-7", "local", "alice"} {
+			for _, leaked := range []string{"db-7", "static", "alice"} {
 				if strings.Contains(got.body, leaked) {
 					t.Errorf("%s carries %q in its body %q, which is what only the log is "+
 						"for", c.name, leaked, got.body)
@@ -167,8 +167,8 @@ func TestADeliveredErrorResponderDecidesTheShapeAndTheHeaderStays(t *testing.T) 
 	// The first request carries no credential and is refused by the gateway
 	// before any backend is asked; the second reaches the backend, which
 	// cannot answer.
-	unreachable := enumerating("local", "alice")
-	unreachable.verify = func(context.Context, string, authn.Credential) authn.Verdict {
+	unreachable := basicBackend("static", "static.")
+	unreachable.verify = func(context.Context, authn.Credential) authn.Verdict {
 		return authn.Unavailable(errors.New("the store at db-7 is unreachable"))
 	}
 	var refused, outage reply
@@ -218,14 +218,14 @@ func TestADeliveredErrorResponderDecidesTheShapeAndTheHeaderStays(t *testing.T) 
 // cannot say which layer or module crashed. The gateway catches a backend's
 // panic at the call site, which is what answers it as the outage it is — a 503,
 // charged to that backend, with its stack in the log — and what lets every
-// other subject go on being answered by the same process. A 500 here would be
+// other backend go on being answered by the same process. A 500 here would be
 // the fallback's answer, with no backend named.
 func TestABackendPanicIsAnsweredByTheGatewayNotTheFallback(t *testing.T) {
-	crashing := enumerating("local", "alice")
-	crashing.verify = func(context.Context, string, authn.Credential) authn.Verdict {
+	crashing := basicBackend("static", "static.")
+	crashing.verify = func(context.Context, authn.Credential) authn.Verdict {
 		panic("the backend's store is nil")
 	}
-	healthy := passes(enumerating("other", "bob"))
+	healthy := passes(schemeBackend("tokens", "bearer"))
 
 	var crashed, survived reply
 	logs := liveAssembly{
@@ -233,7 +233,7 @@ func TestABackendPanicIsAnsweredByTheGatewayNotTheFallback(t *testing.T) {
 		routes:   []liveRoute{{endpoint: "public", method: "GET", path: "/orders"}},
 	}.serve(t, func(l *live) {
 		crashed = l.send("public", "GET", "/orders", asAlice)
-		survived = l.send("public", "GET", "/orders", func(r *nethttp.Request) { r.SetBasicAuth("bob", "secret") })
+		survived = l.send("public", "GET", "/orders", asBearer("t"))
 	})
 
 	requireStatus(t, "a request whose backend panicked", crashed, nethttp.StatusServiceUnavailable)
@@ -243,7 +243,7 @@ func TestABackendPanicIsAnsweredByTheGatewayNotTheFallback(t *testing.T) {
 	if got := crashed.header.Get(challengeHeader); got != "" {
 		t.Errorf("the answer to a backend's panic carries the challenge %q, but only a 401 offers one", got)
 	}
-	requireStatus(t, "a request for another backend's subject after the panic", survived, nethttp.StatusOK)
+	requireStatus(t, "a request for another backend after the panic", survived, nethttp.StatusOK)
 
 	var charged slog.Record
 	found := false
@@ -258,7 +258,7 @@ func TestABackendPanicIsAnsweredByTheGatewayNotTheFallback(t *testing.T) {
 	if charged.Level != slog.LevelError {
 		t.Errorf("the backend's panic was logged at %v, want %v", charged.Level, slog.LevelError)
 	}
-	if got := attrText(charged, "attributed-to"); got != "local" {
+	if got := attrText(charged, "attributed_to"); got != "static" {
 		t.Errorf("the backend's panic was charged to %q, want the backend that panicked", got)
 	}
 	if got := attrText(charged, "stack"); got == "" {
@@ -278,7 +278,7 @@ func TestABackendPanicIsAnsweredByTheGatewayNotTheFallback(t *testing.T) {
 func TestAHandlerPanicBehindTheGatewayIsTheEntryPointsToAnswer(t *testing.T) {
 	var crashed reply
 	logs := liveAssembly{
-		backends: []authn.Verifier{passes(enumerating("local", "alice"))},
+		backends: []authn.Verifier{passes(basicBackend("static", "static."))},
 		routes: []liveRoute{{
 			endpoint: "public", method: "GET", path: "/boom",
 			handler: func(*gin.Context) { panic("the handler's table is nil") },
@@ -305,14 +305,14 @@ func TestAHandlerPanicBehindTheGatewayIsTheEntryPointsToAnswer(t *testing.T) {
 func TestAPassHandsTheIdentityToTheHandlerBehindTheEntryPoint(t *testing.T) {
 	var got reply
 	liveAssembly{
-		backends: []authn.Verifier{passes(enumerating("local", "alice"))},
+		backends: []authn.Verifier{passes(basicBackend("static", "static."))},
 		routes:   []liveRoute{{endpoint: "public", method: "GET", path: "/orders"}},
 	}.serve(t, func(l *live) {
 		got = l.send("public", "GET", "/orders", asAlice)
 	})
 
 	requireStatus(t, "a request with a good credential", got, nethttp.StatusOK)
-	if want := "reached as local/alice"; got.body != want {
+	if want := "reached as static.alice [required]"; got.body != want {
 		t.Errorf("the handler saw %q, want %q", got.body, want)
 	}
 }

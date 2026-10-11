@@ -15,7 +15,7 @@ import (
 	"github.com/gin-gonic/gin"
 
 	"github.com/vislake/speed/pkg/authn"
-	"github.com/vislake/speed/pkg/authn/internal/configreader"
+	"github.com/vislake/speed/pkg/authn/authntest"
 	"github.com/vislake/speed/pkg/authn/internal/identity"
 	"github.com/vislake/speed/pkg/config"
 	"github.com/vislake/speed/pkg/core"
@@ -54,12 +54,31 @@ type liveRoute struct {
 // each backend registered as a module of its own, and a module that makes the
 // registrations a real registrant makes in its Init.
 type liveAssembly struct {
-	// endpoints are the entry point's endpoints, every one of them guarded.
-	// It defaults to a single endpoint named "public".
+	// endpoints are the entry point's endpoints. It defaults to a single
+	// endpoint named "public".
 	endpoints []string
-	backends  []authn.Verifier
-	routes    []liveRoute
-	exempt    []liveRoute
+	// guarded is what the gateway's endpoints key is written with. It defaults
+	// to the key being absent, which guards every endpoint the entry point
+	// declares; a list narrows the set to those.
+	guarded []string
+	// scope, when non-nil, is delivered as the tenant admission layer's scope
+	// guard.
+	scope authn.ScopeGuard
+	// gateItems is further text for the gateway's own section, written as JSON
+	// members without the braces, such as `"mount":{"endpoint":"admin"}`.
+	gateItems string
+	// authnItems is further text for the authn section beside the gateway's,
+	// written the same way, such as `"static":{"subjects":{...}}`.
+	authnItems string
+	// topItems is further text for the top level of the configuration, beside
+	// the authn and http sections, written the same way, such as
+	// `"tenant":{"resolve":{"endpoints":["public"]}}`.
+	topItems     string
+	backends     []authn.Verifier
+	routes       []liveRoute
+	exempt       []liveRoute
+	optional     []liveRoute
+	impersonable []liveRoute
 	// modules take part beside the rest.
 	modules []core.Module
 	// inFlight is the gateway's in-flight width, the default when it is zero.
@@ -67,14 +86,28 @@ type liveAssembly struct {
 }
 
 // whoReached is the handler a route gets when a case does not give it one. It
-// answers with who the request was made out to be, so that a case reads from the
-// body whether the request got through and as whom.
+// answers with who the request was made out to be and the access level the
+// gateway recorded, so that a case reads from the body whether the request got
+// through, as whom, and under which registration.
 func whoReached(c *gin.Context) {
 	who := "nobody"
 	if id, ok := identity.From(c.Request.Context()); ok {
 		who = id.Key()
 	}
-	c.String(nethttp.StatusOK, "reached as %s", who)
+	c.String(nethttp.StatusOK, "reached as %s [%s]", who, accessName(identity.AccessFrom(c.Request.Context())))
+}
+
+// accessName names an access level the way a case writes it.
+func accessName(a authn.Access) string {
+	switch a {
+	case authn.AccessOpen:
+		return "open"
+	case authn.AccessOptional:
+		return "optional"
+	case authn.AccessRequired:
+		return "required"
+	}
+	return "unknown"
 }
 
 // reply is what a client got back.
@@ -128,6 +161,11 @@ func (l *live) send(endpoint, method, path string, edits ...func(*nethttp.Reques
 // asAlice puts alice's Basic credential on a request.
 func asAlice(r *nethttp.Request) { r.SetBasicAuth("alice", "secret") }
 
+// asBearer returns an edit that puts a Bearer credential on a request.
+func asBearer(token string) func(*nethttp.Request) {
+	return func(r *nethttp.Request) { r.Header.Set(authHeader, "Bearer "+token) }
+}
+
 // recordsOf lists what the case's logger has been handed, as the records
 // themselves.
 func (h *recorder) recordsOf() []slog.Record {
@@ -174,18 +212,33 @@ var _ log.Logger = recordingLogging{}
 // body is the configuration for the entry point and the gateway: one endpoint
 // per name on a loopback port the operating system picks, all of them guarded.
 func (a liveAssembly) body(endpoints []string) string {
-	quoted := make([]string, len(endpoints))
 	declared := make([]string, len(endpoints))
 	for i, name := range endpoints {
-		quoted[i] = strconv.Quote(name)
 		declared[i] = strconv.Quote(name) + `:{"address":"127.0.0.1:0"}`
 	}
-	gateItems := `"endpoints":[` + strings.Join(quoted, ",") + `]`
-	if a.inFlight > 0 {
-		gateItems += `,"in-flight":` + strconv.Itoa(a.inFlight)
+	var items []string
+	if a.guarded != nil {
+		quoted := make([]string, len(a.guarded))
+		for i, name := range a.guarded {
+			quoted[i] = strconv.Quote(name)
+		}
+		items = append(items, `"endpoints":[`+strings.Join(quoted, ",")+`]`)
 	}
-	return `{"authn":{"gate":{` + gateItems + `}},"http":{"endpoints":{` +
-		strings.Join(declared, ",") + `}}}`
+	if a.inFlight > 0 {
+		items = append(items, `"in-flight":`+strconv.Itoa(a.inFlight))
+	}
+	if a.gateItems != "" {
+		items = append(items, a.gateItems)
+	}
+	authn := `"gate":{` + strings.Join(items, ",") + `}`
+	if a.authnItems != "" {
+		authn += "," + a.authnItems
+	}
+	top := `{"authn":{` + authn + `},"http":{"endpoints":{` + strings.Join(declared, ",") + `}}`
+	if a.topItems != "" {
+		top += "," + a.topItems
+	}
+	return top + "}"
 }
 
 // registrant is the module that makes the registrations a real registrant makes:
@@ -217,6 +270,12 @@ func (a liveAssembly) registrant() core.Module {
 			for _, e := range a.exempt {
 				gate.Exempt(e.endpoint, e.method, e.path)
 			}
+			for _, e := range a.optional {
+				gate.Optional(e.endpoint, e.method, e.path)
+			}
+			for _, e := range a.impersonable {
+				gate.Impersonable(e.endpoint, e.method, e.path)
+			}
 			return nil
 		},
 	}
@@ -235,7 +294,7 @@ func (a liveAssembly) serve(t *testing.T, use func(l *live)) *recorder {
 
 	gateModule := Module()
 	entry := speedhttp.Module()
-	reader := configreader.OverAll(t, a.body(endpoints), gateModule, entry)
+	reader := authntest.ConfigReaderAll(t, a.body(endpoints), append([]core.Module{gateModule, entry}, a.modules...)...)
 
 	logs := &recorder{}
 	reg := core.New()
@@ -260,6 +319,11 @@ func (a liveAssembly) serve(t *testing.T, use func(l *live)) *recorder {
 		m := backendModule(v)
 		reg.Register(m)
 		names = append(names, m.Name)
+	}
+	if a.scope != nil {
+		reg.Register(standIn("stand-in.admission", (*authn.ScopeGuard)(nil)))
+		reg.Supply(a.scope, "stand-in.admission")
+		names = append(names, "stand-in.admission")
 	}
 	reg.Supply(reader, config.ModuleName)
 
@@ -391,7 +455,7 @@ func TestALayerInAnEarlierStageSitsOutsideTheGateway(t *testing.T) {
 	var outside, inside sighting
 	var got reply
 	liveAssembly{
-		backends: []authn.Verifier{passes(enumerating("local", "alice"))},
+		backends: []authn.Verifier{passes(basicBackend("static", "static."))},
 		routes:   []liveRoute{{endpoint: "public", method: "GET", path: "/orders"}},
 		modules: []core.Module{
 			observer("out of stage", &outside, func(mw *speedhttp.Middleware) {

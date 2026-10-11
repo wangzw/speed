@@ -36,8 +36,27 @@ func (b bearerCredential) apply(r *nethttp.Request) {
 	r.Header.Set("Authorization", "Bearer "+string(b))
 }
 
-// basic is a CRM user's Basic credential, by email.
+// basic is a CRM user's Basic credential, by email. The gateway hands Basic to
+// the operators' table, so the only route a CRM user's Basic credential reaches
+// is the login, which reads the header itself.
 func basic(u userRef) credential { return basicCredential{user: u.Email, password: u.Password} }
+
+// sessionCredential is a CRM user signed in: the first request it authenticates
+// logs the user in on the replica it is sent to and sends the bearer token the
+// login issued, and every later request to that replica sends the same one. A
+// CRM user's requests are authenticated by a token, since a Basic credential
+// reaches no backend of the users'.
+type sessionCredential struct{ user userRef }
+
+// apply is never reached: the replica swaps this credential for the bearer token
+// before it builds the request, because the swap needs the replica's address.
+func (sessionCredential) apply(*nethttp.Request) {
+	panic("crm-host: a session credential is resolved by the replica it is sent to")
+}
+
+// signedIn is a CRM user's credential: the bearer token of a login the replica
+// makes for the user when the request is sent.
+func signedIn(u userRef) credential { return sessionCredential{user: u} }
 
 // operator is the platform operator's Basic credential.
 func operator() credential { return basicCredential{user: operatorSubject, password: operatorPassword} }
@@ -109,7 +128,9 @@ func (h *crmHost) do(req request) (response, error) {
 		r.Header.Set(tenantHeader, req.tenant)
 	}
 	if req.cred != nil {
-		req.cred.apply(r)
+		if authErr := h.authorize(req.cred, r); authErr != nil {
+			return response{}, authErr
+		}
 	}
 	resp, err := client.Do(r)
 	if err != nil {
@@ -121,6 +142,47 @@ func (h *crmHost) do(req request) (response, error) {
 		return response{}, fmt.Errorf("reading the response: %w", err)
 	}
 	return response{status: resp.StatusCode, header: resp.Header, body: read}, nil
+}
+
+// authorize puts a credential on a request, signing a signed-in user in first
+// when the replica holds no token for the user yet.
+func (h *crmHost) authorize(cred credential, r *nethttp.Request) error {
+	resolved, err := h.resolve(cred)
+	if err != nil {
+		return err
+	}
+	resolved.apply(r)
+	return nil
+}
+
+// resolve turns a signed-in user's credential into the bearer token the
+// replica issued for the user, logging the user in the first time and keeping
+// the token for the rest of the replica's life.
+func (h *crmHost) resolve(cred credential) (credential, error) {
+	session, ok := cred.(sessionCredential)
+	if !ok {
+		return cred, nil
+	}
+	h.tokensMu.Lock()
+	defer h.tokensMu.Unlock()
+	if token, held := h.tokens[session.user.Email]; held {
+		return bearer(token), nil
+	}
+	resp, err := h.do(request{
+		method: nethttp.MethodPost, endpoint: accountEndpoint, path: "/login", cred: basic(session.user),
+	})
+	if err != nil {
+		return nil, fmt.Errorf("signing %s in: %w", session.user.Email, err)
+	}
+	var got issued
+	if resp.status != nethttp.StatusCreated || json.Unmarshal(resp.body, &got) != nil || got.Token == "" {
+		return nil, fmt.Errorf("signing %s in answered %d with %q, want a token", session.user.Email, resp.status, resp.body)
+	}
+	if h.tokens == nil {
+		h.tokens = map[string]string{}
+	}
+	h.tokens[session.user.Email] = got.Token
+	return bearer(got.Token), nil
 }
 
 // get makes one GET request.

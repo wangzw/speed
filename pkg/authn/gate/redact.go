@@ -1,39 +1,264 @@
 package gate
 
 import (
+	"errors"
+	"fmt"
 	"strings"
 
+	"github.com/vislake/speed/pkg/core"
 	"github.com/vislake/speed/pkg/log"
 )
 
-// credentialKeys are the attribute names a credential would travel under. A
-// record written anywhere in the process under one of these is masked.
-//
-// Each name is registered in both the spellings a call site plausibly uses.
-// Key matching is an exact lookup — pkg/log stores what it is given and folds
-// nothing — so a name registered in one case leaves the other in the clear, and
-// which case a call site picked is not something this module can know.
-var credentialKeys = []string{
-	authHeader, strings.ToLower(authHeader),
-	"Credential", "credential",
+// credentialKeyNames are the attribute names a credential or a one-time secret
+// would travel under, as the design lists them. A record written anywhere in the
+// process under one of these is masked. The authentication modules that carry
+// these values are the ones to register them in their own New; the gateway
+// registers the whole set because it is the one module every authentication
+// assembly has.
+var credentialKeyNames = []string{
+	"Authorization", "Cookie", "Set-Cookie", "Credential",
+	"password", "new_password", "current_password",
+	"code", "otp", "secret", "client_secret",
+	"refresh_token", "access_token", "id_token", "token",
+	"assertion", "SAMLResponse", "state", "code_verifier", "flow_token",
+	"credential",
 }
 
-// registerRedaction registers the credential redaction rules.
+// keySpellings lists every spelling of the names that is registered: the name as
+// written, in lower case, and with its first letter capitalised. Key matching is
+// an exact lookup — pkg/log stores what it is given and folds nothing — so a name
+// registered in one case leaves the others in the clear, and which case a call
+// site picked is not something this module can know.
+func keySpellings(names []string) []string {
+	spellings := make([]string, 0, 3*len(names))
+	seen := make(map[string]struct{}, 3*len(names))
+	add := func(name string) {
+		if _, already := seen[name]; already {
+			return
+		}
+		seen[name] = struct{}{}
+		spellings = append(spellings, name)
+	}
+	for _, name := range names {
+		lower := strings.ToLower(name)
+		add(name)
+		add(lower)
+		add(strings.ToUpper(lower[:1]) + lower[1:])
+	}
+	return spellings
+}
+
+// registerNewRules registers what needs no table with the logging capability when
+// the assembly carries one: the credential key names and the rule over value
+// shapes. It runs in New, before any logger binds an attribute, which is the
+// timing a rule needs to govern what a logger bound before it could otherwise
+// have kept: a rule only judges what is written after it is registered, and an
+// attribute bound with With is judged once, when it is bound.
+//
+// Absence of logging is legal and registers nothing. Any other failure to take
+// the capability up is carried out: reading it as absence would leave the
+// credential keys unmasked without a word.
+func registerNewRules(reg *core.Registry) error {
+	delivered, err := core.Resolve[log.Logger](reg)
+	if err != nil {
+		if errors.Is(err, core.ErrMissingProvider) {
+			return nil
+		}
+		return fmt.Errorf("%staking up the logging capability to register the credential key "+
+			"names with: %w", diagnosticPrefix, err)
+	}
+	rules := delivered.Redaction()
+	rules.AddKeys(keySpellings(credentialKeyNames)...)
+	rules.AddPattern(ModuleName+".shapes", shapeMatcher)
+	return nil
+}
+
+// registerValueRule registers the rule that masks the value following an
+// authentication scheme.
 //
 // The schemes are the ones actually in play: every scheme a backend in this
-// assembly claims, plus the one the gateway reads itself. Registering a fixed
-// list instead would mask what this build does not use and miss what it does.
-//
-// A rule only governs judgements made after it is registered, and an attribute
-// bound through With is judged once at binding time. This registration lands
-// after every module's New, so a logger that took its attributes before then
-// keeps them unmasked however late the record is written. That is weaker than
-// the timing log offers a module for its own bindings, and weaker again across
-// modules, where there is no timing to speak of.
-func registerRedaction(r log.Redaction, schemes []string) {
-	r.AddKeys(credentialKeys...)
+// assembly takes. Registering a fixed list instead would mask what this build
+// does not use and miss what it does. It runs in Init, because the schemes are
+// read from the backends' declarations there, and so it is later than a logger's
+// first bindings; that is weaker than the timing log offers a module for its own
+// bindings, and the weakness is stated with the rule.
+func registerValueRule(r log.Redaction, schemes []string) {
 	r.AddPattern(ModuleName+".credential", credentialMatcher(schemes))
 }
+
+// secretPairKeys are the keys of a key=value pair in a query string whose value is
+// a secret, in lower case. A key is compared whole: a longer word that merely
+// begins or ends with one, such as secretary or barcode, is not a match.
+var secretPairKeys = map[string]struct{}{
+	"secret": {}, "code": {}, "access_token": {}, "refresh_token": {},
+	"id_token": {}, "client_secret": {}, "samlresponse": {}, "assertion": {},
+	"password": {},
+}
+
+// sessionCookieKeys are the names the session cookie is written under, in lower
+// case: the plain name, and the two prefixed forms the session module issues.
+var sessionCookieKeys = map[string]struct{}{
+	"sid": {}, "__host-sid": {}, "__secure-sid": {},
+}
+
+// longestPairKey bounds the key a pair is looked up under, so that a long run of
+// word characters before an '=' is never lower-cased only to be found absent.
+const longestPairKey = 16
+
+// tokenPrefixes begin the opaque tokens this capability issues, which are secrets
+// wherever they are written.
+var tokenPrefixes = []string{"spd_rt_", "spd_cs_"}
+
+// shapeMatcher masks the values whose shape says they are secrets whatever they
+// were logged under: a JWT, a token with one of this capability's prefixes, an
+// otpauth:// address, the value of a secret pair in a query string and the value
+// of the session cookie's pair.
+//
+// Like the scheme rule it runs on every resolved string value and every error
+// text of every record in the process, so it is a set of byte scans with no
+// expression engine behind it, and each scan returns at once for a string that
+// lacks its marker. The spans come back in the order found; pkg/log sorts and
+// merges them.
+func shapeMatcher(value string) []log.Span {
+	var spans []log.Span
+	spans = appendJWTSpans(spans, value)
+	for _, prefix := range tokenPrefixes {
+		spans = appendTokenSpans(spans, value, prefix)
+	}
+	spans = appendURISpans(spans, value, "otpauth://")
+	return appendPairSpans(spans, value)
+}
+
+// appendJWTSpans masks each run that has the shape of a compact JWT: three
+// non-empty base64url segments joined by dots, the first beginning with the
+// encoding of '{"'. A run of two segments is not one, and neither is a run of
+// four or more, which is some other dotted token and not a JWS.
+//
+// A full stop that ends a sentence is not part of the token, so one trailing dot
+// is left off. A token with an empty signature, which is how an unsecured JWT is
+// written, ends in a dot and so reads as two segments: the rule leaves it alone,
+// and nothing in this capability issues one.
+func appendJWTSpans(spans []log.Span, value string) []log.Span {
+	for from := 0; from < len(value); {
+		at := strings.Index(value[from:], "eyJ")
+		if at < 0 {
+			break
+		}
+		at += from
+		end := at
+		for end < len(value) && isJWTByte(value[end]) {
+			end++
+		}
+		from = end
+		if at > 0 && isJWTByte(value[at-1]) {
+			// The middle of a longer token, not the start of one.
+			continue
+		}
+		run := strings.TrimSuffix(value[at:end], ".")
+		segments := strings.Split(run, ".")
+		if len(segments) == 3 && segments[0] != "" && segments[1] != "" && segments[2] != "" {
+			spans = append(spans, log.Span{Start: at, End: at + len(run)})
+		}
+	}
+	return spans
+}
+
+// isJWTByte reports whether b can sit in a compact JWT: the base64url alphabet
+// and the dot between segments.
+func isJWTByte(b byte) bool { return b == '.' || isKeyByte(b) }
+
+// appendTokenSpans masks each token that begins with prefix, from the prefix to
+// the end of the run of URL-safe characters after it. A prefix with nothing after
+// it is a word and not a token.
+func appendTokenSpans(spans []log.Span, value, prefix string) []log.Span {
+	for from := 0; from < len(value); {
+		at := strings.Index(value[from:], prefix)
+		if at < 0 {
+			break
+		}
+		at += from
+		end := at + len(prefix)
+		for end < len(value) && isKeyByte(value[end]) {
+			end++
+		}
+		if end > at+len(prefix) {
+			spans = append(spans, log.Span{Start: at, End: end})
+		}
+		from = end
+	}
+	return spans
+}
+
+// appendURISpans masks each address that begins with the scheme prefix, up to the
+// next whitespace or quote. The scheme of a URI is case-insensitive. The whole
+// address is the secret: its query carries the seed.
+func appendURISpans(spans []log.Span, value, prefix string) []log.Span {
+	for from := 0; from < len(value); {
+		at := indexFold(value, prefix, from)
+		if at < 0 {
+			break
+		}
+		end := at + len(prefix)
+		for end < len(value) && !isSpaceByte(value[end]) {
+			end++
+		}
+		if end > at+len(prefix) {
+			spans = append(spans, log.Span{Start: at, End: end})
+		}
+		from = end
+	}
+	return spans
+}
+
+// appendPairSpans masks the value of each key=value pair whose key is a secret
+// pair key or a session cookie name, from the '=' to the next '&', ';',
+// whitespace or quote.
+func appendPairSpans(spans []log.Span, value string) []log.Span {
+	for from := 0; from < len(value); {
+		eq := strings.IndexByte(value[from:], '=')
+		if eq < 0 {
+			break
+		}
+		eq += from
+		from = eq + 1
+		start := eq
+		for start > 0 && isKeyByte(value[start-1]) {
+			start--
+		}
+		if eq-start == 0 || eq-start > longestPairKey || !isSecretKey(value[start:eq]) {
+			continue
+		}
+		end := from
+		for end < len(value) && !isPairEnd(value[end]) {
+			end++
+		}
+		if end > from {
+			spans = append(spans, log.Span{Start: from, End: end})
+		}
+		from = end
+	}
+	return spans
+}
+
+// isSecretKey reports whether key, compared without regard to case, is a key
+// whose value is a secret.
+func isSecretKey(key string) bool {
+	folded := strings.ToLower(key)
+	if _, found := secretPairKeys[folded]; found {
+		return true
+	}
+	_, found := sessionCookieKeys[folded]
+	return found
+}
+
+// isKeyByte reports whether b can sit in a key or a URL-safe token: a letter, a
+// digit, an underscore or a hyphen.
+func isKeyByte(b byte) bool {
+	return isWordByte(b) || b == '_' || b == '-'
+}
+
+// isPairEnd reports whether b ends the value of a pair.
+func isPairEnd(b byte) bool { return b == '&' || b == ';' || isSpaceByte(b) }
 
 // credentialMatcher builds the rule that masks the value following an
 // authentication scheme wherever one appears inside a string.
@@ -52,7 +277,7 @@ func registerRedaction(r log.Redaction, schemes []string) {
 func credentialMatcher(schemes []string) log.Matcher {
 	needles := make([]string, 0, len(schemes))
 	seen := make(map[string]struct{}, len(schemes))
-	for _, scheme := range append([]string{basicScheme}, schemes...) {
+	for _, scheme := range schemes {
 		folded := strings.ToLower(strings.TrimSpace(scheme))
 		if folded == "" {
 			continue

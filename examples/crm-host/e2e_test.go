@@ -137,8 +137,8 @@ func TestMigrateBuildsEveryDeclaredTable(t *testing.T) {
 //
 // Two tenants and two users are put in place at the command line, one user in
 // each tenant, and then served. The user signs in on the account endpoint and
-// the token reaches the API; the Basic credential reaches the same route and is
-// answered for the same user under the other backend's name; the account
+// the token reaches the API; the user's Basic credential reaches no backend on
+// the API, since the one scheme belongs to the operators' table; the account
 // endpoint answers who the caller is across tenants; the second user sees their
 // own tenant; the owner grants from the API; and a logout ends the token.
 func TestEveryStackServesTheSamePath(t *testing.T) {
@@ -164,7 +164,7 @@ func TestEveryStackServesTheSamePath(t *testing.T) {
 		if refusal.Error == "" {
 			t.Errorf("the login's refusal carries no error text, so the gateway answered it: %q", wrong.body)
 		}
-		if _, ok := findRecord(h.output(), "authn: the exemption table, frozen", accountEndpoint, loginRoute); !ok {
+		if _, ok := findRecord(h.output(), "authn: the exempt routes, frozen", accountEndpoint, loginRoute); !ok {
 			t.Errorf("the frozen exemption table does not list %s on %s; the run wrote:\n%s",
 				loginRoute, accountEndpoint, h.outputForReport())
 		}
@@ -178,7 +178,7 @@ func TestEveryStackServesTheSamePath(t *testing.T) {
 			t.Errorf("the listing ran in tenant %q, want the identifier %q behind the alias %q",
 				viaToken.Tenant, acme.ID, acme.Alias)
 		}
-		if want := sessionsBackendName + "/" + alice.ID; viaToken.Caller != want {
+		if want := alice.ID; viaToken.Caller != want {
 			t.Errorf("a bearer request was answered for %q, want %q", viaToken.Caller, want)
 		}
 		if viaToken.Role != roleOwner {
@@ -186,11 +186,16 @@ func TestEveryStackServesTheSamePath(t *testing.T) {
 		}
 		requireMembers(t, viaToken, alice)
 
-		viaBasic := h.members(t, acme.Alias, basic(alice))
-		if want := usersBackendName + "/" + alice.ID; viaBasic.Caller != want {
-			t.Errorf("a Basic request was answered for %q, want %q", viaBasic.Caller, want)
+		// A CRM user's Basic credential reaches the login and nothing else: the
+		// gateway hands Basic to the one backend that takes it, the operators'
+		// table, which does not know the user and refuses the credential.
+		expect(t, "a CRM user's Basic credential on the API",
+			h.get(t, apiEndpoint, "/members", acme.Alias, basic(alice)), nethttp.StatusUnauthorized)
+		viaSession := h.members(t, acme.Alias, signedIn(alice))
+		if want := alice.ID; viaSession.Caller != want {
+			t.Errorf("a signed-in request was answered for %q, want %q: one person is one identity", viaSession.Caller, want)
 		}
-		requireMembers(t, viaBasic, alice)
+		requireMembers(t, viaSession, alice)
 
 		me := h.me(t, bearer(token))
 		if me.User == nil || me.User.ID != alice.ID || me.User.Email != alice.Email {
@@ -201,7 +206,7 @@ func TestEveryStackServesTheSamePath(t *testing.T) {
 			t.Errorf("GET /me answered the tenants %+v, want %+v", me.Tenants, wantTenants)
 		}
 
-		bobs := h.members(t, globex.Alias, basic(bob))
+		bobs := h.members(t, globex.Alias, signedIn(bob))
 		if bobs.Tenant != globex.ID || bobs.Role != roleRep {
 			t.Errorf("bob's listing ran in %q as %q, want %q as %q", bobs.Tenant, bobs.Role, globex.ID, roleRep)
 		}
@@ -225,21 +230,21 @@ func TestEveryStackServesTheSamePath(t *testing.T) {
 					t.Errorf("the grant answered %+v, want %s in %s as %s", got, bob.ID, acme.ID, role)
 				}
 			}
-			inAcme := h.members(t, acme.Alias, basic(bob))
+			inAcme := h.members(t, acme.Alias, signedIn(bob))
 			requireMembers(t, inAcme, alice, bob)
 			if inAcme.Role != roleViewer {
 				t.Errorf("bob's role in acme reads %q after the second grant, want %q", inAcme.Role, roleViewer)
 			}
 			// The grant stayed in acme: bob's membership in globex is the
 			// one the command line wrote, and globex still holds bob alone.
-			inGlobex := h.members(t, globex.Alias, basic(bob))
+			inGlobex := h.members(t, globex.Alias, signedIn(bob))
 			requireMembers(t, inGlobex, bob)
 			if inGlobex.Role != roleRep {
 				t.Errorf("bob's role in globex reads %q after the grants in acme, want the %q the command line wrote",
 					inGlobex.Role, roleRep)
 			}
 			expect(t, "bob, not an owner or an admin of acme, granting there",
-				h.post(t, apiEndpoint, "/members", acme.Alias, basic(bob),
+				h.post(t, apiEndpoint, "/members", acme.Alias, signedIn(bob),
 					map[string]string{"email": alice.Email, "role": roleViewer}), nethttp.StatusForbidden)
 		})
 
@@ -263,7 +268,7 @@ func requireRefusalCause(t *testing.T, h *crmHost, backend string, cause error) 
 	if !eventually(settleLimit, func() bool {
 		causes = causes[:0]
 		for _, rec := range records(h.output()) {
-			if rec["attributed-to"] == backend && rec["outcome"] == "denied" {
+			if rec["attributed_to"] == backend && rec["outcome"] == "denied" {
 				causes = append(causes, rec["cause"])
 				if rec["cause"] == cause.Error() {
 					return true
@@ -421,7 +426,7 @@ func TestTwoReplicasShareTheirSessions(t *testing.T) {
 
 		token := first.login(t, alice)
 		list := second.members(t, acme.Alias, bearer(token))
-		if want := sessionsBackendName + "/" + alice.ID; list.Caller != want {
+		if want := alice.ID; list.Caller != want {
 			t.Errorf("the second replica answered a token the first issued for %q, want %q", list.Caller, want)
 		}
 		expect(t, "a logout on the second replica",
@@ -530,7 +535,7 @@ func TestTheRequestSurfaceKeepsTenantsApart(t *testing.T) {
 
 		t.Run("a member naming another tenant is refused, and the refusal is journalled", func(t *testing.T) {
 			sub := c.in(t)
-			resp := h.get(t, apiEndpoint, "/members", globex.Alias, basic(alice))
+			resp := h.get(t, apiEndpoint, "/members", globex.Alias, signedIn(alice))
 			expect(t, "alice naming globex", resp, nethttp.StatusForbidden)
 			var body apiError
 			resp.decode(t, &body)
@@ -542,7 +547,7 @@ func TestTheRequestSurfaceKeepsTenantsApart(t *testing.T) {
 			// the caller who named it.
 			sub.awaitJournal("the membership layer's refusal", func(r auditRow) bool {
 				return r.requestOn(listMembersRoute) && r.outcome == "403" &&
-					r.tenant == globex.ID && r.actor == usersBackendName+"/"+alice.ID
+					r.tenant == globex.ID && r.actor == alice.ID
 			})
 		})
 
@@ -555,15 +560,15 @@ func TestTheRequestSurfaceKeepsTenantsApart(t *testing.T) {
 			// The same tenant with a credential is resolution's to refuse,
 			// which is what tells the two layers apart by the answer: a
 			// gateway inside resolution would have answered 404 above.
-			unresolved := h.get(t, apiEndpoint, "/members", unknown, basic(alice))
+			unresolved := h.get(t, apiEndpoint, "/members", unknown, signedIn(alice))
 			expect(t, "a credential naming an unknown tenant", unresolved, nethttp.StatusNotFound)
 			requireProblem(t, "resolution's refusal", unresolved)
 		})
 
 		t.Run("a disabled tenant and an unknown one get the same answer", func(t *testing.T) {
 			sub := c.in(t)
-			disabled := h.get(t, apiEndpoint, "/members", initech.Alias, basic(alice))
-			unknown := h.get(t, apiEndpoint, "/members", sub.tenantNamed("nosuch").Alias, basic(alice))
+			disabled := h.get(t, apiEndpoint, "/members", initech.Alias, signedIn(alice))
+			unknown := h.get(t, apiEndpoint, "/members", sub.tenantNamed("nosuch").Alias, signedIn(alice))
 			// Asserted exactly, not merely as "the same": two answers that
 			// agree because both fell through to the membership layer's 403
 			// would be equal without the roster having judged anything.
@@ -583,7 +588,7 @@ func TestTheRequestSurfaceKeepsTenantsApart(t *testing.T) {
 
 			// The roster is reread by the replica that wrote it, so the tenant
 			// resolves on the next request with no refresh period in between.
-			list := h.members(t, fresh.Alias, basic(carol))
+			list := h.members(t, fresh.Alias, signedIn(carol))
 			if list.Tenant != fresh.ID || list.Role != roleAdmin {
 				t.Errorf("carol's listing ran in %q as %q, want %q as %q", list.Tenant, list.Role, fresh.ID, roleAdmin)
 			}
@@ -594,7 +599,7 @@ func TestTheRequestSurfaceKeepsTenantsApart(t *testing.T) {
 			// the purpose is stated.
 			seam := sub.awaitJournal("the operator's grant", func(r auditRow) bool {
 				return r.source == "seam" && r.action == "membership.grant" &&
-					r.actor == operatorOwner+"/"+operatorSubject && strings.Contains(r.object, fresh.ID)
+					r.actor == string(operatorAccount) && strings.Contains(r.object, fresh.ID)
 			})
 			if seam.purpose == "" {
 				t.Errorf("the grant's seam row states no purpose: %+v", seam)
@@ -618,7 +623,7 @@ func TestTheRequestSurfaceKeepsTenantsApart(t *testing.T) {
 					t.Errorf("%s answered %+v, want %s %s", step.route, entry, fresh.ID, step.status)
 				}
 				expect(t, "carol's listing after "+step.route,
-					h.get(t, apiEndpoint, "/members", fresh.Alias, basic(carol)), step.want)
+					h.get(t, apiEndpoint, "/members", fresh.Alias, signedIn(carol)), step.want)
 			}
 			// A status change for an identifier no tenant has is not found,
 			// and one for an identifier no tenant could have is refused as
@@ -632,14 +637,14 @@ func TestTheRequestSurfaceKeepsTenantsApart(t *testing.T) {
 
 		t.Run("a CRM user on the admin endpoint is refused", func(t *testing.T) {
 			sub := c.in(t)
-			expect(t, "alice's Basic credential on the admin endpoint",
-				h.get(t, adminEndpoint, "/tenants", "", basic(alice)), nethttp.StatusForbidden)
+			expect(t, "alice, signed in, on the admin endpoint",
+				h.get(t, adminEndpoint, "/tenants", "", signedIn(alice)), nethttp.StatusForbidden)
 			// The operator check sits inside the journal, so a CRM user
 			// knocking on the admin endpoint leaves a request row with the
 			// caller named.
 			sub.awaitJournal("the operator check's refusal", func(r auditRow) bool {
 				return r.requestOn(listTenantsRoute) && r.outcome == "403" &&
-					r.actor == usersBackendName+"/"+alice.ID
+					r.actor == alice.ID
 			})
 			token := h.login(t, alice)
 			expect(t, "alice's token on the admin endpoint",
@@ -651,13 +656,13 @@ func TestTheRequestSurfaceKeepsTenantsApart(t *testing.T) {
 		})
 
 		// Last, because it leaves alice unable to sign in.
-		t.Run("a disabled user is refused whichever credential they present", func(t *testing.T) {
+		t.Run("a disabled user is refused on every token they hold and on a new login", func(t *testing.T) {
 			sub := c.in(t)
 			token := h.login(t, alice)
-			expect(t, "alice before she is disabled", h.get(t, accountEndpoint, "/me", "", basic(alice)), nethttp.StatusOK)
+			expect(t, "alice before she is disabled", h.get(t, accountEndpoint, "/me", "", signedIn(alice)), nethttp.StatusOK)
 			sub.exec("UPDATE users SET disabled = ? WHERE id = ?", true, alice.ID)
-			expect(t, "a disabled user's Basic credential",
-				h.get(t, accountEndpoint, "/me", "", basic(alice)), nethttp.StatusUnauthorized)
+			expect(t, "a disabled user's token the replica holds",
+				h.get(t, accountEndpoint, "/me", "", signedIn(alice)), nethttp.StatusUnauthorized)
 			expect(t, "a disabled user's token",
 				h.get(t, accountEndpoint, "/me", "", bearer(token)), nethttp.StatusUnauthorized)
 			expect(t, "a disabled user's login",
@@ -677,7 +682,11 @@ func TestTheRequestSurfaceKeepsTenantsApart(t *testing.T) {
 // in the driver's error alone, and no answer carries them. The derivation runs
 // at the production cost here, since its duration is what holds the two
 // apart: at the cases' own cost the second could find the first at its
-// look-up.
+// look-up. The operator's credential is checked once before the two arrive:
+// the static backend derives at most as many hashes at once as it has
+// processors, so two requests that both find its cache cold would, on one
+// processor, have one of them answered 503 and no longer be the two creations
+// the case is about.
 func TestTwoCreationsOfOneEmailAreOneSuccessAndOneConflict(t *testing.T) {
 	forEachStack(t, func(t *testing.T, c *crmCase) {
 		c.config.set("users.password-iterations", defaultHashIterations)
@@ -685,6 +694,7 @@ func TestTwoCreationsOfOneEmailAreOneSuccessAndOneConflict(t *testing.T) {
 		h := c.serve()
 		u := c.userNamed("twice")
 		body := map[string]string{"email": u.Email, "display_name": "twice", "password": u.Password}
+		expect(t, "the operator's first request", h.get(t, adminEndpoint, "/tenants", "", operator()), nethttp.StatusOK)
 
 		answers := make([]response, 2)
 		failures := make([]error, 2)
@@ -725,11 +735,11 @@ func TestTwoCreationsOfOneEmailAreOneSuccessAndOneConflict(t *testing.T) {
 // command line and one created through the admin endpoint each store the
 // count users.password-iterations gave when they were created, and a count
 // that is not positive stops the serving command at startup, naming the item.
-// Two users created at one count sign in once the deployment gives another,
-// since each hash carries its own, one with a login and one with a Basic
-// credential, and each sign-in stores that user's hash again at the count now
-// given: the decoy a login naming no user is checked against is derived at
-// that count, and a user left at the old one costs another time to sign in.
+// A user created at one count signs in once the deployment gives another,
+// since each hash carries its own, and the sign-in stores that user's hash
+// again at the count now given: the decoy a login naming no user is checked
+// against is derived at that count, and a user left at the old one costs
+// another time to sign in.
 // The rewritten hash is the password's: the user signs in again with it.
 func TestAPasswordIsDerivedAtTheConfiguredCost(t *testing.T) {
 	const first, moved = 1_000, 2_000
@@ -753,8 +763,6 @@ func TestAPasswordIsDerivedAtTheConfiguredCost(t *testing.T) {
 	if got, want := storedCount(early), strconv.Itoa(first); got != want {
 		t.Errorf("a user created at the command line stores the count %s, want the configured %s", got, want)
 	}
-	basicEarly := c.createUser("basic-early")
-
 	c.config.set("users.password-iterations", moved)
 	h := c.serve()
 	h.login(t, early)
@@ -762,15 +770,8 @@ func TestAPasswordIsDerivedAtTheConfiguredCost(t *testing.T) {
 		t.Errorf("a user created at %d stores the count %s once signed in with a login at %d, want %s",
 			first, got, moved, want)
 	}
-	h.login(t, early)
-	expect(t, "a Basic credential of a user created at the old count",
-		h.get(t, accountEndpoint, "/me", "", basic(basicEarly)), nethttp.StatusOK)
-	if got, want := storedCount(basicEarly), strconv.Itoa(moved); got != want {
-		t.Errorf("a user created at %d stores the count %s once signed in with a Basic credential at %d, want %s",
-			first, got, moved, want)
-	}
-	expect(t, "a Basic credential of that user once the hash was stored again",
-		h.get(t, accountEndpoint, "/me", "", basic(basicEarly)), nethttp.StatusOK)
+	expect(t, "a signed-in request of that user once the hash was stored again",
+		h.get(t, accountEndpoint, "/me", "", signedIn(early)), nethttp.StatusOK)
 	late := h.adminCreateUser(t, c.userNamed("late"))
 	if got, want := storedCount(late), strconv.Itoa(moved); got != want {
 		t.Errorf("a user created through the admin endpoint stores the count %s, want the configured %s", got, want)
@@ -1160,7 +1161,9 @@ func holdRequest(t *testing.T, h *crmHost, what, method, path string, ref tenant
 	}
 	req.Header.Set("Content-Type", "application/json")
 	req.Header.Set(tenantHeader, ref.Alias)
-	cred.apply(req)
+	if err := h.authorize(cred, req); err != nil {
+		t.Fatalf("authorizing %s: %v", what, err)
+	}
 	held := &heldRequest{what: what, rest: body[len(body)/2:], writer: writer, answered: make(chan outcome, 1)}
 	go func() {
 		resp, err := client.Do(req)
@@ -1523,7 +1526,9 @@ func (h *crmHost) getOnHost(t *testing.T, host, path string, cred credential, ex
 	for name, value := range extra {
 		req.Header.Set(name, value)
 	}
-	cred.apply(req)
+	if authErr := h.authorize(cred, req); authErr != nil {
+		t.Fatalf("authorizing GET %s as %s: %v", path, host, authErr)
+	}
 	resp, err := client.Do(req)
 	if err != nil {
 		t.Fatalf("GET %s as %s: %v", path, host, err)
@@ -1564,7 +1569,7 @@ func TestTheSubdomainNamesTheTenant(t *testing.T) {
 		{acme.Alias + ".crm.test:8443", acme},
 		{globex.Alias + ".crm.test", globex},
 	} {
-		resp := h.getOnHost(t, tc.host, "/members", basic(ann), nil)
+		resp := h.getOnHost(t, tc.host, "/members", signedIn(ann), nil)
 		expect(t, "listing the members as "+tc.host, resp, nethttp.StatusOK)
 		var got struct {
 			Tenant string `json:"tenant"`
@@ -1575,9 +1580,9 @@ func TestTheSubdomainNamesTheTenant(t *testing.T) {
 		}
 	}
 	expect(t, "a request whose label no tenant holds",
-		h.getOnHost(t, c.tenantNamed("nosuch").Alias+".crm.test", "/members", basic(ann), nil), nethttp.StatusNotFound)
+		h.getOnHost(t, c.tenantNamed("nosuch").Alias+".crm.test", "/members", signedIn(ann), nil), nethttp.StatusNotFound)
 	expect(t, "a request naming acme in the header alone",
-		h.getOnHost(t, "crm.test", "/members", basic(ann), headers{tenantHeader: acme.Alias}), nethttp.StatusNotFound)
+		h.getOnHost(t, "crm.test", "/members", signedIn(ann), headers{tenantHeader: acme.Alias}), nethttp.StatusNotFound)
 }
 
 // requestDurationBounds are the bucket bounds of the request duration, in
@@ -1831,12 +1836,12 @@ func TestARequestNoRouteServesIsRefusedAsAProblem(t *testing.T) {
 	head := h.send(t, request{method: nethttp.MethodHead, endpoint: opsEndpoint, path: "/health"})
 	expect(t, "a HEAD request to the health path", head, nethttp.StatusMethodNotAllowed)
 
-	member := h.get(t, apiEndpoint, "/nosuch", acme.Alias, basic(ann))
+	member := h.get(t, apiEndpoint, "/nosuch", acme.Alias, signedIn(ann))
 	expect(t, "a member asking for a path no route serves", member, nethttp.StatusNotFound)
 	requireProblem(t, "the answer to a member asking for a path no route serves", member)
 
 	deleteMembers := h.send(t, request{
-		method: nethttp.MethodDelete, endpoint: apiEndpoint, path: "/members", tenant: acme.Alias, cred: basic(ann),
+		method: nethttp.MethodDelete, endpoint: apiEndpoint, path: "/members", tenant: acme.Alias, cred: signedIn(ann),
 	})
 	expect(t, "a member deleting the member list", deleteMembers, nethttp.StatusMethodNotAllowed)
 	requireProblem(t, "the answer to a member using a method the members path does not take", deleteMembers)

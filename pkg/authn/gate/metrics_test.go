@@ -2,9 +2,11 @@ package gate
 
 import (
 	"context"
+	nethttp "net/http"
 	"net/http/httptest"
 	"testing"
 
+	"github.com/gin-gonic/gin"
 	sdkmetric "go.opentelemetry.io/otel/sdk/metric"
 	"go.opentelemetry.io/otel/sdk/metric/metricdata"
 
@@ -14,8 +16,9 @@ import (
 )
 
 // countsIn reads the conclusion counter out of one collection, by outcome.
-// It reports false when the instrument is not in the collection at all.
-func countsIn(rm metricdata.ResourceMetrics) (map[string]int64, bool) {
+// It reports false when the instrument is not in the collection at all, and it
+// reports the name of the meter the instrument came from.
+func countsIn(rm metricdata.ResourceMetrics) (map[string]int64, string, bool) {
 	for _, scope := range rm.ScopeMetrics {
 		for _, m := range scope.Metrics {
 			if m.Name != "authn.gate.conclusions" {
@@ -23,28 +26,31 @@ func countsIn(rm metricdata.ResourceMetrics) (map[string]int64, bool) {
 			}
 			sum, ok := m.Data.(metricdata.Sum[int64])
 			if !ok {
-				return nil, false
+				return nil, "", false
 			}
 			out := make(map[string]int64, len(sum.DataPoints))
 			for _, point := range sum.DataPoints {
 				outcome, _ := point.Attributes.Value("outcome")
 				out[outcome.AsString()] = point.Value
 			}
-			return out, true
+			return out, scope.Scope.Name, true
 		}
 	}
-	return nil, false
+	return nil, "", false
 }
 
 // TestTheConclusionCountsReachTheMetricCapability holds the one surface the
-// four buckets are read from.
+// buckets are read from.
 //
 // The buckets are fixed so that a dashboard and an alert can be written against
 // them, and a count held in the process with no reader outside it is one no
 // dashboard ever sees: the outage bucket an operator is told to alert on would
 // be a number nobody can alert on. Where the assembly carries the metric
 // capability, each bucket is reported through it under the outcome it names,
-// the empty ones included, so a series exists before its first conclusion.
+// the empty ones included, so a series exists before its first conclusion. The
+// anonymous bucket is the fifth: a request with no credential that passed on an
+// optional route is a conclusion of its own, and counted nowhere else it would
+// vanish from the set that is meant to be exhaustive.
 func TestTheConclusionCountsReachTheMetricCapability(t *testing.T) {
 	collected := sdkmetric.NewManualReader()
 	provider := sdkmetric.NewMeterProvider(sdkmetric.WithReader(collected))
@@ -56,27 +62,50 @@ func TestTheConclusionCountsReachTheMetricCapability(t *testing.T) {
 
 	router := routerWith("public")
 	var counts map[string]int64
+	var meterName string
 	var found bool
+	registrant := core.Module{
+		Name: "stand-in.registrant",
+		New:  func(context.Context, *core.Registry) (any, error) { return struct{}{}, nil },
+		Init: func(_ context.Context, reg *core.Registry, _ any) error {
+			gate, err := core.Resolve[authn.Gate](reg)
+			if err != nil {
+				return err
+			}
+			gate.Optional("public", "GET", "/catalog")
+			gate.Exempt("public", "GET", "/status")
+			return nil
+		},
+	}
 	err := assembly{
 		body:     guarding("public"),
-		backends: []authn.Verifier{passes(enumerating("local", "alice"))},
+		backends: []authn.Verifier{passes(basicBackend("static", "static."))},
 		router:   router,
+		modules:  []core.Module{registrant},
 		supplied: []supply{{
 			module:   "stand-in.meter",
 			token:    (*observability.MeterProvider)(nil),
 			instance: provider,
 		}},
 	}.drive(t, func(ctx context.Context, _ *core.Registry) error {
-		engine, _ := engineWith(router.endpoints["public"].middleware[0].Handler)
+		engine := gin.New()
+		engine.Use(router.endpoints["public"].middleware[0].Handler)
+		for _, path := range []string{"/orders", "/catalog", "/status"} {
+			engine.GET(path, func(c *gin.Context) { c.Status(nethttp.StatusOK) })
+		}
 		engine.ServeHTTP(httptest.NewRecorder(), withBasic(request("GET", "/orders"), "alice", "secret"))
 		engine.ServeHTTP(httptest.NewRecorder(), request("GET", "/orders"))
 		engine.ServeHTTP(httptest.NewRecorder(), request("GET", "/orders"))
+		engine.ServeHTTP(httptest.NewRecorder(), request("GET", "/catalog"))
+		engine.ServeHTTP(httptest.NewRecorder(), request("GET", "/catalog"))
+		// An exempt route is no conclusion and is counted nowhere.
+		engine.ServeHTTP(httptest.NewRecorder(), request("GET", "/status"))
 
 		var rm metricdata.ResourceMetrics
 		if err := collected.Collect(ctx, &rm); err != nil {
 			return err
 		}
-		counts, found = countsIn(rm)
+		counts, meterName, found = countsIn(rm)
 		return nil
 	})
 	if err != nil {
@@ -87,7 +116,11 @@ func TestTheConclusionCountsReachTheMetricCapability(t *testing.T) {
 		t.Fatalf("no %q instrument was collected: the conclusion counts are held in the process "+
 			"and reach no dashboard", "authn.gate.conclusions")
 	}
-	want := map[string]int64{"authenticated": 1, "denied": 2, "unspoken": 0, "unavailable": 0}
+	if meterName != "authn" {
+		t.Errorf("the counter is reported on the meter %q, want %q: the meter is the capability "+
+			"directory's, and only the instrument name carries the module's", meterName, "authn")
+	}
+	want := map[string]int64{"authenticated": 1, "denied": 2, "unspoken": 0, "unavailable": 0, "anonymous": 2}
 	for outcome, n := range want {
 		got, present := counts[outcome]
 		if !present {
@@ -100,6 +133,6 @@ func TestTheConclusionCountsReachTheMetricCapability(t *testing.T) {
 		}
 	}
 	if len(counts) != len(want) {
-		t.Errorf("the counter reports the outcomes %v, want exactly the four buckets", counts)
+		t.Errorf("the counter reports the outcomes %v, want exactly the five buckets", counts)
 	}
 }

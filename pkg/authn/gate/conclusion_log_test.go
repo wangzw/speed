@@ -6,8 +6,10 @@ import (
 	"log/slog"
 	nethttp "net/http"
 	"net/http/httptest"
+	"strings"
 	"sync"
 	"testing"
+	"time"
 
 	"github.com/vislake/speed/pkg/authn"
 	"github.com/vislake/speed/pkg/log"
@@ -107,34 +109,34 @@ func recorded(h *recorder, method, target string) *nethttp.Request {
 func TestEachConclusionIsLoggedAtTheLevelItsCauseDeserves(t *testing.T) {
 	for _, c := range []struct {
 		name   string
-		verify func(context.Context, string, authn.Credential) authn.Verdict
+		verify func(context.Context, authn.Credential) authn.Verdict
 		level  slog.Level
 		stack  bool
 	}{
 		{
 			name: "the credential does not hold",
-			verify: func(context.Context, string, authn.Credential) authn.Verdict {
+			verify: func(context.Context, authn.Credential) authn.Verdict {
 				return authn.Denied(errors.New("wrong password"))
 			},
 			level: slog.LevelInfo,
 		},
 		{
 			name: "the backend cannot say right now",
-			verify: func(context.Context, string, authn.Credential) authn.Verdict {
+			verify: func(context.Context, authn.Credential) authn.Verdict {
 				return authn.Unavailable(errors.New("the store is unreachable"))
 			},
 			level: slog.LevelWarn,
 		},
 		{
 			name: "the backend returned without answering",
-			verify: func(context.Context, string, authn.Credential) authn.Verdict {
+			verify: func(context.Context, authn.Credential) authn.Verdict {
 				return authn.Verdict{}
 			},
 			level: slog.LevelError,
 		},
 		{
 			name: "the backend panicked",
-			verify: func(context.Context, string, authn.Credential) authn.Verdict {
+			verify: func(context.Context, authn.Credential) authn.Verdict {
 				panic("the backend's store is nil")
 			},
 			level: slog.LevelError,
@@ -142,7 +144,7 @@ func TestEachConclusionIsLoggedAtTheLevelItsCauseDeserves(t *testing.T) {
 		},
 	} {
 		t.Run(c.name, func(t *testing.T) {
-			backend := enumerating("local", "alice")
+			backend := basicBackend("static", "static.")
 			backend.verify = c.verify
 			g := testGateway(t, []string{"public"}, backend)
 			sealed(t, g, routerWith("public"))
@@ -163,11 +165,41 @@ func TestEachConclusionIsLoggedAtTheLevelItsCauseDeserves(t *testing.T) {
 	}
 }
 
+// TestEveryConclusionNamesTheEndpointTheStatusTheBucketAndWhoItIsChargedTo holds
+// the four attributes every conclusion carries, which are what an operator reads
+// a 401 or a 503 from since the response body says nothing of why.
+func TestEveryConclusionNamesTheEndpointTheStatusTheBucketAndWhoItIsChargedTo(t *testing.T) {
+	deny := basicBackend("static", "static.")
+	deny.verify = func(context.Context, authn.Credential) authn.Verdict {
+		return authn.Denied(errors.New("wrong password"))
+	}
+	g := testGateway(t, []string{"public"}, deny)
+	sealed(t, g, routerWith("public"))
+
+	h := &recorder{}
+	run(g, "public", withBasic(recorded(h, "GET", "/orders"), "alice", "secret"))
+	record := h.only(t)
+
+	for key, want := range map[string]string{
+		"endpoint": "public", "outcome": "denied", "attributed_to": "static",
+	} {
+		if got := attrText(record, key); got != want {
+			t.Errorf("the record carries %s=%q, want %q", key, got, want)
+		}
+	}
+	if status, found := attr(record, "status"); !found || status.Int64() != nethttp.StatusUnauthorized {
+		t.Errorf("the record carries status %v, want %d", status, nethttp.StatusUnauthorized)
+	}
+	if got := attrText(record, "cause"); got != "wrong password" {
+		t.Errorf("the record carries the cause %q, want what the backend gave", got)
+	}
+}
+
 // TestAGatewayRefusalIsLoggedAsOrdinaryTraffic holds the other end: a request
 // that brought no usable credential is what a public endpoint sees all day, and
 // writing it any louder would bury the lines that matter.
 func TestAGatewayRefusalIsLoggedAsOrdinaryTraffic(t *testing.T) {
-	g := testGateway(t, []string{"public"}, passes(enumerating("local", "alice")))
+	g := testGateway(t, []string{"public"}, passes(basicBackend("static", "static.")))
 	sealed(t, g, routerWith("public"))
 
 	h := &recorder{}
@@ -179,15 +211,66 @@ func TestAGatewayRefusalIsLoggedAsOrdinaryTraffic(t *testing.T) {
 	}
 }
 
-// TestAPassOutsideTheClaimIsLoggedAsTheDefectItIs holds the level of exit
-// binding. The refusal is charged to the gateway, which judged it, but what it
-// reports is a backend saying something it had no authority to say — a defect
-// in that backend or an overlap in the deployment — and either one is somebody's
-// to fix.
-func TestAPassOutsideTheClaimIsLoggedAsTheDefectItIs(t *testing.T) {
-	minting := enumerating("local", "alice")
-	minting.verify = func(context.Context, string, authn.Credential) authn.Verdict {
-		return authn.Authenticated("mallory")
+// TestAnAnonymousPassIsLoggedAsOrdinaryTraffic holds that a request that passed
+// on an optional route with no credential writes one line, at Info, and counts
+// the anonymous bucket named in it.
+func TestAnAnonymousPassIsLoggedAsOrdinaryTraffic(t *testing.T) {
+	g := testGateway(t, []string{"public"}, passes(basicBackend("static", "static.")))
+	g.Optional("public", "GET", "/catalog")
+	sealed(t, g, routerWith("public"))
+
+	h := &recorder{}
+	engine, _ := routedEngine(g, "public", [2]string{"GET", "/catalog"})
+	engine.ServeHTTP(httptest.NewRecorder(), recorded(h, "GET", "/catalog"))
+
+	record := h.only(t)
+	if record.Level != slog.LevelInfo {
+		t.Errorf("an anonymous pass was logged at %v, want %v", record.Level, slog.LevelInfo)
+	}
+	if got := attrText(record, "outcome"); got != "anonymous" {
+		t.Errorf("the record carries the outcome %q, want anonymous", got)
+	}
+	if got := attrText(record, "endpoint"); got != "public" {
+		t.Errorf("the record carries the endpoint %q, want public", got)
+	}
+}
+
+// TestARequestOnAnExemptRouteWritesNoRecordAndCountsNothing holds the silence of
+// a route that was opened on purpose: it is not a conclusion about a credential,
+// so it is neither logged nor counted.
+func TestARequestOnAnExemptRouteWritesNoRecordAndCountsNothing(t *testing.T) {
+	g := testGateway(t, []string{"public"}, passes(basicBackend("static", "static.")))
+	g.Exempt("public", "GET", "/status")
+	sealed(t, g, routerWith("public"))
+
+	h := &recorder{}
+	engine, _ := routedEngine(g, "public", [2]string{"GET", "/status"})
+	engine.ServeHTTP(httptest.NewRecorder(), recorded(h, "GET", "/status"))
+
+	if n := len(h.recordsOf()); n != 0 {
+		t.Errorf("an exempt route wrote %d record(s), want none", n)
+	}
+	for bucket, n := range g.tally() {
+		if n != 0 {
+			t.Errorf("an exempt route was counted in the %s bucket (%d)", bucket, n)
+		}
+	}
+}
+
+// TestAPassOutsideTheNamespaceIsLoggedAsTheDefectItIs holds the level of the
+// namespace check. The refusal is charged to the gateway, which judged it, but
+// what it reports is a backend saying something it had no authority to say — a
+// defect in that backend or an overlap in the deployment — and either one is
+// somebody's to fix.
+func TestAPassOutsideTheNamespaceIsLoggedAsTheDefectItIs(t *testing.T) {
+	minting := basicBackend("corp", "corp.")
+	minting.verify = func(context.Context, authn.Credential) authn.Verdict {
+		return authn.Authenticated(authn.Principal{
+			Account:   "static.ops",
+			Methods:   []authn.Method{authn.MethodStatic},
+			Assurance: authn.AssuranceSingle,
+			AuthTime:  time.Now(),
+		})
 	}
 	g := testGateway(t, []string{"public"}, minting)
 	sealed(t, g, routerWith("public"))
@@ -195,31 +278,44 @@ func TestAPassOutsideTheClaimIsLoggedAsTheDefectItIs(t *testing.T) {
 	h := &recorder{}
 	run(g, "public", withBasic(recorded(h, "GET", "/orders"), "alice", "secret"))
 
-	if record := h.only(t); record.Level != slog.LevelError {
-		t.Errorf("a pass refused by exit binding was logged at %v, want %v", record.Level,
-			slog.LevelError)
+	record := h.only(t)
+	if record.Level != slog.LevelError {
+		t.Errorf("a pass refused by the namespace check was logged at %v, want %v", record.Level, slog.LevelError)
+	}
+	if got := attrText(record, "reason"); !strings.Contains(got, "namespace") {
+		t.Errorf("the record gives the reason %q, want it to name the namespace", got)
 	}
 }
 
-// TestAnOpenClaimThatPanicsIsLoggedAsTheDefectItIs holds the same level for the
-// other call a request makes into a backend. The ownership question runs on a
-// goroutine of its own, and the stack has to be taken there, where the panic
-// was raised.
-func TestAnOpenClaimThatPanicsIsLoggedAsTheDefectItIs(t *testing.T) {
-	g := testGateway(t, []string{"public"}, openly("directory",
-		func(context.Context, string) (bool, error) { panic("the directory client is nil") }))
+// TestAnImpersonationOutOfScopeIsLoggedAtInfoWithItsCause holds the record of the
+// one refusal that is the gateway's judgement of a well-formed pass: it is
+// ordinary traffic, written at Info, charged to the backend whose pass it
+// declines, and says impersonation-scope as the cause.
+func TestAnImpersonationOutOfScopeIsLoggedAtInfoWithItsCause(t *testing.T) {
+	imp := &fakeVerifier{name: "imp", accepts: authn.Accepts{Schemes: []string{"bearer"}, Impersonation: true}}
+	imp.verify = func(context.Context, authn.Credential) authn.Verdict {
+		p := principalOf(imp, "customer")
+		p.Actor, p.Session, p.Scope = "admin", "sess", "tenant-a"
+		return authn.Authenticated(p)
+	}
+	g := testGateway(t, []string{"public"}, imp)
 	sealed(t, g, routerWith("public"))
 
 	h := &recorder{}
-	run(g, "public", withBasic(recorded(h, "GET", "/orders"), "dave", "secret"))
+	run(g, "public", withBearer(recorded(h, "GET", "/orders"), "t"))
 
 	record := h.only(t)
-	if record.Level != slog.LevelError {
-		t.Errorf("an open claim that panicked was logged at %v, want %v", record.Level,
-			slog.LevelError)
+	if record.Level != slog.LevelInfo {
+		t.Errorf("logged at %v, want %v", record.Level, slog.LevelInfo)
 	}
-	if _, has := attr(record, "stack"); !has {
-		t.Error("the record of an open claim's panic carries no stack")
+	if got := attrText(record, "cause"); got != "impersonation-scope" {
+		t.Errorf("the record gives the cause %q, want impersonation-scope", got)
+	}
+	if got := attrText(record, "attributed_to"); got != "imp" {
+		t.Errorf("charged to %q, want the backend whose pass is declined", got)
+	}
+	if got := attrText(record, "outcome"); got != "denied" {
+		t.Errorf("counted as %q, want denied", got)
 	}
 }
 
@@ -227,7 +323,7 @@ func TestAnOpenClaimThatPanicsIsLoggedAsTheDefectItIs(t *testing.T) {
 // defect: it is already written at Error, and without the stack it names the
 // endpoint and the value and nothing that finds the line.
 func TestTheGatewaysOwnPanicCarriesItsStack(t *testing.T) {
-	g := testGateway(t, []string{"public"}, passes(enumerating("local", "alice")))
+	g := testGateway(t, []string{"public"}, passes(basicBackend("static", "static.")))
 	sealed(t, g, routerWith("public"))
 	handler, _ := layerOn(g, "public")
 	g.table = nil

@@ -11,7 +11,14 @@
 // The readers are functions rather than methods for the same reason: a method
 // would travel with the type through the alias in the interface package and be
 // callable from everywhere.
+//
+// The type is a package of its own, apart from the value types in
+// internal/model, because its property — that only a constructor can produce
+// one — holds per type: were it defined beside the other types, any code in
+// that package could set its fields.
 package verdict
+
+import "github.com/vislake/speed/pkg/authn/internal/model"
 
 // Verdict is what one backend answers about one credential.
 //
@@ -20,9 +27,9 @@ package verdict
 // that returns before it answers, or that builds a Verdict some way its author
 // did not intend, ends the request in a refusal rather than in a pass.
 type Verdict struct {
-	outcome Outcome
-	subject string
-	cause   error
+	outcome   Outcome
+	principal model.Principal
+	cause     error
 }
 
 // Outcome is which of the four things a verdict is.
@@ -34,7 +41,7 @@ const (
 	// not hold, this says the backend is defective — and both end the
 	// request the same way.
 	Unspoken Outcome = iota
-	// Authenticated is the credential holding for the subject carried.
+	// Authenticated is the credential holding for the principal carried.
 	Authenticated
 	// Denied is the credential not holding. It is final.
 	Denied
@@ -58,9 +65,12 @@ func (o Outcome) String() string {
 	return "unknown"
 }
 
-// NewAuthenticated answers that the credential holds for this subject.
-func NewAuthenticated(subject string) Verdict {
-	return Verdict{outcome: Authenticated, subject: subject}
+// NewAuthenticated answers that the credential holds, and carries the facts the
+// backend claims about the caller. The principal is copied, Methods and
+// Attributes included: the backend changing its own copy after returning
+// changes nothing the gateway reads.
+func NewAuthenticated(p model.Principal) Verdict {
+	return Verdict{outcome: Authenticated, principal: p.Clone()}
 }
 
 // NewDenied answers that the credential does not hold. The cause reaches the
@@ -79,9 +89,11 @@ func NewUnavailable(cause error) Verdict {
 // reports Unspoken.
 func OutcomeOf(v Verdict) Outcome { return v.outcome }
 
-// SubjectOf reports the subject an authenticated verdict carries. It is empty
-// for every other outcome.
-func SubjectOf(v Verdict) string { return v.subject }
+// PrincipalOf reports the principal an authenticated verdict carries, as a
+// copy: a verdict may be read more than once, and a reader changing what it
+// got must not change what the next one reads. It is the zero Principal for
+// every other outcome.
+func PrincipalOf(v Verdict) model.Principal { return v.principal.Clone() }
 
 // CauseOf reports what a refusal or an unavailability carried. It reaches the
 // log and decides nothing.

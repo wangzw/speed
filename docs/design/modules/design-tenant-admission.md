@@ -23,7 +23,7 @@
 - **不认定凭据，不读 `Authorization`。** 谁是调用方由网关与校验后端认定（[design-authn-gate](design-authn-gate.md)）；准入层读网关写进上下文的身份与访问级别。
 - **不解析租户。** 请求属于哪个租户由 `tenant.resolve` 认定；准入层读 `tenant.FromContext`，不读请求面的租户名，也不读名册（[design-tenant](design-tenant.md)）。
 - **不登记、不改写、不结束冒充，不核对冒充的发起条件。** 记录与限制归 `authn.impersonation`（[design-authn-impersonation](design-authn-impersonation.md)）；准入层只比对身份带的范围与请求的租户。
-- **不合成保障等级。** 等级只在 `authn.mfa` 一处合成；准入层读身份上已盖章的 `Assurance()` 与 `AssuranceFromIdP()`（[design-authn-mfa](design-authn-mfa.md)）。
+- **不合成保障等级。** 等级只在 `authn.mfa` 一处合成；准入层读身份上已盖章的 `Assurance()` 与 `AssuranceFromIDP()`（[design-authn-mfa](design-authn-mfa.md)）。
 - **不核对网关的挂载端是否落在自己所守的端里。** 这条核对由网关在 `Start` 里经 `ScopeGuard.Covers` 执行（[design-authn-gate](design-authn-gate.md)）。
 - **不核对宿主有没有在所守的端上开租户解析的豁免。** `ScopeGuard.Covers` 只说准入层守哪些端。
 - **不约束账户登录。** 强度要求与冒充范围约束的是该租户内的请求；账户全局，仍可登录、仍可访问它所属的其他租户。
@@ -37,7 +37,7 @@
 | 术语 | 适用范围 | 定义 |
 |---|---|---|
 | 所守的端 | 本文 | `tenant.admission.endpoints` 列出的监听端：准入层在这些端上登记了中间件。`ScopeGuard.Covers` 对这些端回答真。 |
-| 有效保障等级 | 本文 | 准入层在比对 `tenant.admission.require-mfa` 时使用的等级，由身份的 `Assurance()` 与 `AssuranceFromIdP()` 导出；规则见「有效保障等级」一节。 |
+| 有效保障等级 | 本文 | 准入层在比对 `tenant.admission.require-mfa` 时使用的等级，由身份的 `Assurance()` 与 `AssuranceFromIDP()` 导出；规则见「有效保障等级」一节。 |
 
 ## 外部接口契约
 
@@ -164,7 +164,7 @@ classDiagram
         +Account() AccountID
         +Scope() string, bool
         +Assurance() Assurance
-        +AssuranceFromIdP() bool
+        +AssuranceFromIDP() bool
         +Provider() string
         +Challenge() string
     }
@@ -281,7 +281,7 @@ flowchart TD
 
 ### 有效保障等级
 
-`require-mfa` 比对的是有效保障等级：身份的 `Assurance()`，但 `AssuranceFromIdP()` 为真时，只有 `SSOProviders.Tenant(Provider())` 等于本租户，多因素才保持多因素；提供方属于别的租户，或 `SSOProviders` 缺席，IdP 声明的多因素按单因素计，别的租户的 `require-mfa` 不认（[ADR-authn-mfa-2026-10-10](../../adr/adr-authn-mfa-2026-10-10.md)）。`sso_exempt` 的成员须达到的多因素同样按有效保障等级比对。
+`require-mfa` 比对的是有效保障等级：身份的 `Assurance()`，但 `AssuranceFromIDP()` 为真时，只有 `SSOProviders.Tenant(Provider())` 等于本租户，多因素才保持多因素；提供方属于别的租户，或 `SSOProviders` 缺席，IdP 声明的多因素按单因素计，别的租户的 `require-mfa` 不认（[ADR-authn-mfa-2026-10-10](../../adr/adr-authn-mfa-2026-10-10.md)）。`sso_exempt` 的成员须达到的多因素同样按有效保障等级比对。
 
 ### SSO 要求的比对
 
@@ -389,7 +389,7 @@ flowchart TD
 |---|---|---|
 | 模块 `tenant.admission`、排他交付、`Order` 为 92、`After` 写全网关、解析、审计与限流的功能标识 | 未实现 | — |
 | `tenant.Admission` 标记接口 | 未实现 | — |
-| `authn.ScopeGuard` 与 `Covers` | 未实现 | — |
+| `authn.ScopeGuard` 与 `Covers` | 部分实现 — 根包接口与网关对它的取用已在；交付它的 `tenant.admission` 尚不存在 | `pkg/authn/scope.go` `ScopeGuard` |
 | `endpoints` 的必填、空清单与 `*` 的拒绝、端名核对 | 未实现 | — |
 | 判定次序：租户上下文、身份、冒充范围、成员、豁免、多因素强度、SSO 强度 | 未实现 | — |
 | 经 `Decider` 的 `authn.tenant.access` 放行 | 未实现 | — |
@@ -401,4 +401,5 @@ flowchart TD
 
 - 租户解析层与 `tenant.FromContext`：已实现，代码 `pkg/tenant/resolve/resolve.go` `Module`、`pkg/tenant/scope.go` `FromContext`。
 - 入口模块的端枚举：已实现，代码 `pkg/http/router.go` `Endpoints`。
-- `authn.Memberships`、`authn.SSOProviders`、`authn.Decider`，以及 `Identity` 上的 `Scope`、`Assurance`、`AssuranceFromIdP`、`Provider`、`Challenge` 与 `AccessFromContext`：未实现，代码里没有对应符号。
+- `Identity` 上的 `Scope`、`Assurance`、`AssuranceFromIDP`、`Provider`、`Challenge` 与根包的 `AccessFromContext`：已实现，代码 `pkg/authn/internal/identity/identity.go` `Scope`、`Assurance`、`AssuranceFromIDP`、`Provider`、`Challenge`，`pkg/authn/identity.go` `AccessFromContext`。
+- `authn.Memberships`、`authn.SSOProviders`、`authn.Decider`：未实现，代码里没有对应符号。

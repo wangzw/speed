@@ -199,7 +199,7 @@ func TestATenantAdministersItsSettings(t *testing.T) {
 		h.adminGrant(t, acme, rex, roleRep)
 
 		t.Run("the listing names each editable key with its type, its written value and its resolved one", func(t *testing.T) {
-			list := settingsListing(t, h, apiEndpoint, "/settings", acme.Alias, basic(ann))
+			list := settingsListing(t, h, apiEndpoint, "/settings", acme.Alias, signedIn(ann))
 			if list.Tenant != acme.ID {
 				t.Errorf("the listing is of %q, want %q", list.Tenant, acme.ID)
 			}
@@ -218,19 +218,19 @@ func TestATenantAdministersItsSettings(t *testing.T) {
 
 		t.Run("a write lands in the tenant's own layer, and two tenants writing one key read their own", func(t *testing.T) {
 			sub := c.in(t)
-			resp := writeTenantSettingAs(t, h, acme.Alias, basic(ann), "deals.default-currency", "EUR")
+			resp := writeTenantSettingAs(t, h, acme.Alias, signedIn(ann), "deals.default-currency", "EUR")
 			expect(t, "acme's owner writing the currency", resp, nethttp.StatusOK)
 			var written settingView
 			resp.decode(t, &written)
 			// The replica that wrote serves the value at once.
 			requireSetting(t, "the write's answer", written, "EUR", "EUR")
 			expect(t, "globex's admin writing the same key",
-				writeTenantSettingAs(t, h, globex.Alias, basic(gus), "deals.default-currency", "JPY"), nethttp.StatusOK)
+				writeTenantSettingAs(t, h, globex.Alias, signedIn(gus), "deals.default-currency", "JPY"), nethttp.StatusOK)
 
 			requireSetting(t, "acme's listing", settingIn(t,
-				settingsListing(t, h, apiEndpoint, "/settings", acme.Alias, basic(ann)), "deals.default-currency"), "EUR", "EUR")
+				settingsListing(t, h, apiEndpoint, "/settings", acme.Alias, signedIn(ann)), "deals.default-currency"), "EUR", "EUR")
 			requireSetting(t, "globex's listing", settingIn(t,
-				settingsListing(t, h, apiEndpoint, "/settings", globex.Alias, basic(gus)), "deals.default-currency"), "JPY", "JPY")
+				settingsListing(t, h, apiEndpoint, "/settings", globex.Alias, signedIn(gus)), "deals.default-currency"), "JPY", "JPY")
 			for tenantID, want := range map[string]string{acme.ID: "EUR", globex.ID: "JPY"} {
 				if got, ok := sub.settingRow(tenantID, "deals.default-currency"); !ok || got != want {
 					t.Errorf("the settings table holds %q (present %v) for %s, want %q", got, ok, tenantID, want)
@@ -243,13 +243,13 @@ func TestATenantAdministersItsSettings(t *testing.T) {
 
 		t.Run("a duration is written as text, and the settings module refuses a bare number", func(t *testing.T) {
 			sub := c.in(t)
-			resp := writeTenantSettingAs(t, h, acme.Alias, basic(ann), "deals.idempotency-ttl", "90m")
+			resp := writeTenantSettingAs(t, h, acme.Alias, signedIn(ann), "deals.idempotency-ttl", "90m")
 			expect(t, "a duration written as text", resp, nethttp.StatusOK)
 			var written settingView
 			resp.decode(t, &written)
 			requireSetting(t, "the duration's answer", written, "1h30m0s", "1h30m0s")
 
-			refused := writeTenantSettingAs(t, h, acme.Alias, basic(ann), "deals.idempotency-ttl", 300)
+			refused := writeTenantSettingAs(t, h, acme.Alias, signedIn(ann), "deals.idempotency-ttl", 300)
 			expect(t, "a bare number for a duration", refused, nethttp.StatusUnprocessableEntity)
 			var body apiError
 			refused.decode(t, &body)
@@ -261,28 +261,28 @@ func TestATenantAdministersItsSettings(t *testing.T) {
 			}
 
 			expect(t, "a whole number for an integer",
-				writeTenantSettingAs(t, h, acme.Alias, basic(ann), "accounts.page-size", 40), nethttp.StatusOK)
+				writeTenantSettingAs(t, h, acme.Alias, signedIn(ann), "accounts.page-size", 40), nethttp.StatusOK)
 			expect(t, "a fraction for an integer",
-				writeTenantSettingAs(t, h, acme.Alias, basic(ann), "accounts.page-size", 12.5), nethttp.StatusUnprocessableEntity)
+				writeTenantSettingAs(t, h, acme.Alias, signedIn(ann), "accounts.page-size", 12.5), nethttp.StatusUnprocessableEntity)
 			if got, _ := sub.settingRow(acme.ID, "accounts.page-size"); got != "40" {
 				t.Errorf("the refused fraction left the row holding %q, want 40", got)
 			}
 			expect(t, "a body whose value is null",
-				writeTenantSettingAs(t, h, acme.Alias, basic(ann), "accounts.page-size", nil), nethttp.StatusUnprocessableEntity)
+				writeTenantSettingAs(t, h, acme.Alias, signedIn(ann), "accounts.page-size", nil), nethttp.StatusUnprocessableEntity)
 			// A member spelled in another case is read as the one it
 			// resembles, as the HTTP module's binder reads a body. The page
 			// size is put back for the steps that follow.
 			expect(t, "a body naming the member in another case",
 				h.send(t, request{
 					method: nethttp.MethodPut, endpoint: apiEndpoint, path: "/settings/accounts.page-size",
-					tenant: acme.Alias, cred: basic(ann), body: map[string]any{"Value": 41},
+					tenant: acme.Alias, cred: signedIn(ann), body: map[string]any{"Value": 41},
 				}),
 				nethttp.StatusOK)
 			if got, _ := sub.settingRow(acme.ID, "accounts.page-size"); got != "41" {
 				t.Errorf("a body naming the value member in another case left the page size row holding %q, want 41", got)
 			}
 			expect(t, "the page size written back",
-				writeTenantSettingAs(t, h, acme.Alias, basic(ann), "accounts.page-size", 40), nethttp.StatusOK)
+				writeTenantSettingAs(t, h, acme.Alias, signedIn(ann), "accounts.page-size", 40), nethttp.StatusOK)
 		})
 
 		t.Run("a delete falls back to the global value and then to the declared default", func(t *testing.T) {
@@ -293,23 +293,23 @@ func TestATenantAdministersItsSettings(t *testing.T) {
 			requireSetting(t, "the global listing", settingIn(t,
 				settingsListing(t, h, adminEndpoint, "/global-settings", "", operator()), "deals.default-currency"), "GBP", "GBP")
 			requireSetting(t, "acme's listing over a global value", settingIn(t,
-				settingsListing(t, h, apiEndpoint, "/settings", acme.Alias, basic(ann)), "deals.default-currency"), "EUR", "EUR")
+				settingsListing(t, h, apiEndpoint, "/settings", acme.Alias, signedIn(ann)), "deals.default-currency"), "EUR", "EUR")
 
-			resp := settingsMutation(t, h, apiEndpoint, "/settings/deals.default-currency", acme.Alias, basic(ann), nil, true)
+			resp := settingsMutation(t, h, apiEndpoint, "/settings/deals.default-currency", acme.Alias, signedIn(ann), nil, true)
 			expect(t, "acme's owner deleting the currency", resp, nethttp.StatusOK)
 			var after settingView
 			resp.decode(t, &after)
 			requireSetting(t, "the delete's answer", after, "<none>", "GBP")
 			requireSetting(t, "globex's listing after acme's delete", settingIn(t,
-				settingsListing(t, h, apiEndpoint, "/settings", globex.Alias, basic(gus)), "deals.default-currency"), "JPY", "JPY")
+				settingsListing(t, h, apiEndpoint, "/settings", globex.Alias, signedIn(gus)), "deals.default-currency"), "JPY", "JPY")
 
 			expect(t, "the operator deleting the global currency",
 				settingsMutation(t, h, adminEndpoint, "/global-settings/deals.default-currency", "", operator(), nil, true),
 				nethttp.StatusOK)
 			requireSetting(t, "acme's listing with no row on either layer", settingIn(t,
-				settingsListing(t, h, apiEndpoint, "/settings", acme.Alias, basic(ann)), "deals.default-currency"), "<none>", "USD")
+				settingsListing(t, h, apiEndpoint, "/settings", acme.Alias, signedIn(ann)), "deals.default-currency"), "<none>", "USD")
 			expect(t, "deleting a row that is not there",
-				settingsMutation(t, h, apiEndpoint, "/settings/deals.default-currency", acme.Alias, basic(ann), nil, true),
+				settingsMutation(t, h, apiEndpoint, "/settings/deals.default-currency", acme.Alias, signedIn(ann), nil, true),
 				nethttp.StatusOK)
 			if _, ok := sub.settingRow(acme.ID, "deals.default-currency"); ok {
 				t.Error("acme's currency row is still there after its delete")
@@ -319,9 +319,9 @@ func TestATenantAdministersItsSettings(t *testing.T) {
 		t.Run("a key the host does not list for tenants is not found, whichever module declares it", func(t *testing.T) {
 			sub := c.in(t)
 			expect(t, "a tenant writing its own rate limit",
-				writeTenantSettingAs(t, h, acme.Alias, basic(ann), "ratelimit.limit", 100000), nethttp.StatusNotFound)
+				writeTenantSettingAs(t, h, acme.Alias, signedIn(ann), "ratelimit.limit", 100000), nethttp.StatusNotFound)
 			expect(t, "a tenant writing a key nothing declares",
-				writeTenantSettingAs(t, h, acme.Alias, basic(ann), "deals.nosuch", "x"), nethttp.StatusNotFound)
+				writeTenantSettingAs(t, h, acme.Alias, signedIn(ann), "deals.nosuch", "x"), nethttp.StatusNotFound)
 			if got, ok := sub.settingRow(acme.ID, "ratelimit.limit"); ok {
 				t.Errorf("a tenant's refused write of its rate limit left a row holding %q", got)
 			}
@@ -330,18 +330,18 @@ func TestATenantAdministersItsSettings(t *testing.T) {
 		t.Run("a member in a lesser role is refused", func(t *testing.T) {
 			sub := c.in(t)
 			expect(t, "a rep listing the settings",
-				h.get(t, apiEndpoint, "/settings", acme.Alias, basic(rex)), nethttp.StatusForbidden)
+				h.get(t, apiEndpoint, "/settings", acme.Alias, signedIn(rex)), nethttp.StatusForbidden)
 			expect(t, "a rep writing a setting",
-				writeTenantSettingAs(t, h, acme.Alias, basic(rex), "deals.idempotency-ttl", "2h"), nethttp.StatusForbidden)
+				writeTenantSettingAs(t, h, acme.Alias, signedIn(rex), "deals.idempotency-ttl", "2h"), nethttp.StatusForbidden)
 			expect(t, "a rep deleting a setting",
-				settingsMutation(t, h, apiEndpoint, "/settings/accounts.page-size", acme.Alias, basic(rex), nil, true),
+				settingsMutation(t, h, apiEndpoint, "/settings/accounts.page-size", acme.Alias, signedIn(rex), nil, true),
 				nethttp.StatusForbidden)
 			if got, ok := sub.settingRow(acme.ID, "accounts.page-size"); !ok || got != "40" {
 				t.Errorf("a rep's refused delete left acme's page size row holding %q (present %v), want 40", got, ok)
 			}
 		})
 
-		operatorKey := operatorOwner + "/" + operatorSubject
+		operatorKey := string(operatorAccount)
 		// requireOperatorChange fails the case unless the seam row of an
 		// operator's change to globex's layer is the platform's: it names the
 		// layer and the tenant in its detail and states its purpose.
@@ -359,9 +359,9 @@ func TestATenantAdministersItsSettings(t *testing.T) {
 			expect(t, "the operator writing globex's page size",
 				settingsMutation(t, h, adminEndpoint, path, "", operator(), 10, false), nethttp.StatusOK)
 			requireSetting(t, "globex's listing after the operator's write", settingIn(t,
-				settingsListing(t, h, apiEndpoint, "/settings", globex.Alias, basic(gus)), "accounts.page-size"), "10", float64(10))
+				settingsListing(t, h, apiEndpoint, "/settings", globex.Alias, signedIn(gus)), "accounts.page-size"), "10", float64(10))
 			requireSetting(t, "acme's listing after the operator's write to globex", settingIn(t,
-				settingsListing(t, h, apiEndpoint, "/settings", acme.Alias, basic(ann)), "accounts.page-size"), "40", float64(40))
+				settingsListing(t, h, apiEndpoint, "/settings", acme.Alias, signedIn(ann)), "accounts.page-size"), "40", float64(40))
 
 			// The change ran in no tenant's scope, so its row is among the
 			// platform's rows and globex's own trail does not show it.
@@ -373,7 +373,7 @@ func TestATenantAdministersItsSettings(t *testing.T) {
 			if value := rowDetail(t, seam)["value"]; value != "10" {
 				t.Errorf("the operator's write into globex's layer records the value %q, want 10", value)
 			}
-			globexWrites := readTrailPage(t, h, apiEndpoint, "/audit", globex.Alias, basic(gus),
+			globexWrites := readTrailPage(t, h, apiEndpoint, "/audit", globex.Alias, signedIn(gus),
 				url.Values{"action": {settingWriteAction}})
 			if e, ok := entryWith(globexWrites, func(e trailView) bool { return e.Actor == operatorKey }); ok {
 				t.Errorf("globex's own trail shows the operator's change to its layer: %+v", e)
@@ -408,10 +408,10 @@ func TestATenantAdministersItsSettings(t *testing.T) {
 			resp.decode(t, &after)
 			requireSetting(t, "the delete's answer", after, "<none>", float64(30))
 			requireSetting(t, "globex's listing after the operator's delete", settingIn(t,
-				settingsListing(t, h, apiEndpoint, "/settings", globex.Alias, basic(gus)), "accounts.page-size"),
+				settingsListing(t, h, apiEndpoint, "/settings", globex.Alias, signedIn(gus)), "accounts.page-size"),
 				"<none>", float64(30))
 			requireSetting(t, "acme's listing after the operator's delete from globex", settingIn(t,
-				settingsListing(t, h, apiEndpoint, "/settings", acme.Alias, basic(ann)), "accounts.page-size"),
+				settingsListing(t, h, apiEndpoint, "/settings", acme.Alias, signedIn(ann)), "accounts.page-size"),
 				"40", float64(40))
 			for tenantID, want := range map[string]string{"": "30", acme.ID: "40"} {
 				if got, ok := sub.settingRow(tenantID, "accounts.page-size"); !ok || got != want {
@@ -658,14 +658,14 @@ func TestATenantReadsItsOwnAuditTrail(t *testing.T) {
 		for _, ref := range []tenantRef{acme, globex} {
 			owner := owners[ref.ID]
 			expect(t, "the owner of "+ref.ID+" writing the currency",
-				writeTenantSettingAs(t, h, ref.Alias, basic(owner), "deals.default-currency", "EUR"), nethttp.StatusOK)
+				writeTenantSettingAs(t, h, ref.Alias, signedIn(owner), "deals.default-currency", "EUR"), nethttp.StatusOK)
 			expect(t, "the owner of "+ref.ID+" granting uma",
-				h.post(t, apiEndpoint, "/members", ref.Alias, basic(owner), map[string]string{"email": uma.Email, "role": roleRep}),
+				h.post(t, apiEndpoint, "/members", ref.Alias, signedIn(owner), map[string]string{"email": uma.Email, "role": roleRep}),
 				nethttp.StatusOK)
 		}
-		expect(t, "sid naming acme", h.get(t, apiEndpoint, "/members", acme.Alias, basic(sid)), nethttp.StatusForbidden)
+		expect(t, "sid naming acme", h.get(t, apiEndpoint, "/members", acme.Alias, signedIn(sid)), nethttp.StatusForbidden)
 
-		userKey := func(u userRef) string { return usersBackendName + "/" + u.ID }
+		userKey := func(u userRef) string { return u.ID }
 		for _, ref := range []tenantRef{acme, globex} {
 			sub := c.in(t)
 			owner := owners[ref.ID]
@@ -693,7 +693,7 @@ func TestATenantReadsItsOwnAuditTrail(t *testing.T) {
 			sub := c.in(t)
 			for _, ref := range []tenantRef{acme, globex} {
 				rows := sub.trailRowsOf(ref.ID)
-				page := readTrailPage(t, h, apiEndpoint, "/audit", ref.Alias, basic(owners[ref.ID]), nil)
+				page := readTrailPage(t, h, apiEndpoint, "/audit", ref.Alias, signedIn(owners[ref.ID]), nil)
 				if page.Tenant != ref.ID {
 					t.Errorf("the trail read in %s answers for %q", ref.ID, page.Tenant)
 				}
@@ -715,7 +715,7 @@ func TestATenantReadsItsOwnAuditTrail(t *testing.T) {
 		})
 
 		t.Run("the trail shows the writes, the refused request, the seam rows and the captured change", func(t *testing.T) {
-			page := readTrailPage(t, h, apiEndpoint, "/audit", acme.Alias, basic(ann), nil)
+			page := readTrailPage(t, h, apiEndpoint, "/audit", acme.Alias, signedIn(ann), nil)
 			for _, want := range []struct {
 				what  string
 				match func(trailView) bool
@@ -746,7 +746,7 @@ func TestATenantReadsItsOwnAuditTrail(t *testing.T) {
 		})
 
 		t.Run("the trail is newest first and narrows by action", func(t *testing.T) {
-			page := readTrailPage(t, h, apiEndpoint, "/audit", acme.Alias, basic(ann), nil)
+			page := readTrailPage(t, h, apiEndpoint, "/audit", acme.Alias, signedIn(ann), nil)
 			for i := 1; i < len(page.Entries); i++ {
 				prev, cur := page.Entries[i-1], page.Entries[i]
 				if cur.OccurredAt.After(prev.OccurredAt) || (cur.OccurredAt.Equal(prev.OccurredAt) && cur.ID > prev.ID) {
@@ -754,7 +754,7 @@ func TestATenantReadsItsOwnAuditTrail(t *testing.T) {
 						i, cur.OccurredAt, cur.ID, i-1, prev.OccurredAt, prev.ID)
 				}
 			}
-			one := readTrailPage(t, h, apiEndpoint, "/audit", acme.Alias, basic(ann),
+			one := readTrailPage(t, h, apiEndpoint, "/audit", acme.Alias, signedIn(ann),
 				url.Values{"action": {settingWriteAction}})
 			if one.Total != 1 || len(one.Entries) != 1 || one.Entries[0].Action != settingWriteAction {
 				t.Errorf("the trail narrowed to %s answers %d of %d rows: %+v", settingWriteAction, len(one.Entries), one.Total, one.Entries)
@@ -762,19 +762,19 @@ func TestATenantReadsItsOwnAuditTrail(t *testing.T) {
 			if !reflect.DeepEqual(one.Actions, page.Actions) {
 				t.Errorf("narrowing by action changed the counts by action from %+v to %+v", page.Actions, one.Actions)
 			}
-			two := readTrailPage(t, h, apiEndpoint, "/audit", acme.Alias, basic(ann),
+			two := readTrailPage(t, h, apiEndpoint, "/audit", acme.Alias, signedIn(ann),
 				url.Values{"action": {settingWriteAction, "settings.changed"}})
 			if two.Total != 2 {
 				t.Errorf("the trail narrowed to two actions counts %d rows, want 2: %+v", two.Total, two.Entries)
 			}
-			short := readTrailPage(t, h, apiEndpoint, "/audit", acme.Alias, basic(ann), url.Values{"limit": {"2"}})
+			short := readTrailPage(t, h, apiEndpoint, "/audit", acme.Alias, signedIn(ann), url.Values{"limit": {"2"}})
 			if len(short.Entries) != 2 || short.Total != page.Total || short.Entries[0].ID != page.Entries[0].ID {
 				t.Errorf("a page of two answers %d rows of %d, starting at #%d; want the newest two of %d",
 					len(short.Entries), short.Total, short.Entries[0].ID, page.Total)
 			}
 			for _, bad := range []url.Values{{"since": {"yesterday"}}, {"limit": {"0"}}, {"acton": {"x"}}} {
 				expect(t, "a trail read with "+bad.Encode(),
-					h.get(t, apiEndpoint, "/audit?"+bad.Encode(), acme.Alias, basic(ann)), nethttp.StatusUnprocessableEntity)
+					h.get(t, apiEndpoint, "/audit?"+bad.Encode(), acme.Alias, signedIn(ann)), nethttp.StatusUnprocessableEntity)
 			}
 		})
 
@@ -784,7 +784,7 @@ func TestATenantReadsItsOwnAuditTrail(t *testing.T) {
 			mid := time.Now().UTC()
 			time.Sleep(5 * time.Millisecond)
 			expect(t, "acme's owner writing the idempotency lifetime",
-				writeTenantSettingAs(t, h, acme.Alias, basic(ann), "deals.idempotency-ttl", "2h"), nethttp.StatusOK)
+				writeTenantSettingAs(t, h, acme.Alias, signedIn(ann), "deals.idempotency-ttl", "2h"), nethttp.StatusOK)
 			sub.awaitTrailRow(acme.ID, "the lifetime write's request", func(r trailRow) bool {
 				return r.source == "request" && strings.HasSuffix(r.detail, `"path":"/settings/deals.idempotency-ttl"}`)
 			})
@@ -792,10 +792,10 @@ func TestATenantReadsItsOwnAuditTrail(t *testing.T) {
 				return r.source == "event" && strings.Contains(r.detail, `"Key":"deals.idempotency-ttl"`)
 			})
 
-			all := readTrailPage(t, h, apiEndpoint, "/audit", acme.Alias, basic(ann), nil)
+			all := readTrailPage(t, h, apiEndpoint, "/audit", acme.Alias, signedIn(ann), nil)
 			bound := mid.Format(time.RFC3339Nano)
-			after := readTrailPage(t, h, apiEndpoint, "/audit", acme.Alias, basic(ann), url.Values{"since": {bound}})
-			before := readTrailPage(t, h, apiEndpoint, "/audit", acme.Alias, basic(ann), url.Values{"until": {bound}})
+			after := readTrailPage(t, h, apiEndpoint, "/audit", acme.Alias, signedIn(ann), url.Values{"since": {bound}})
+			before := readTrailPage(t, h, apiEndpoint, "/audit", acme.Alias, signedIn(ann), url.Values{"until": {bound}})
 			isLifetime := func(e trailView) bool { return e.Detail["key"] == "deals.idempotency-ttl" }
 			isCurrency := func(e trailView) bool { return e.Detail["key"] == "deals.default-currency" }
 			if _, ok := entryWith(after, isLifetime); !ok {
@@ -830,8 +830,8 @@ func TestATenantReadsItsOwnAuditTrail(t *testing.T) {
 				return r.source == "seam" && r.action == settingWriteAction
 			})
 			expect(t, "acme's owner reading globex's row",
-				h.get(t, apiEndpoint, "/audit/"+strconv.FormatInt(theirs.id, 10), acme.Alias, basic(ann)), nethttp.StatusNotFound)
-			resp := h.get(t, apiEndpoint, "/audit/"+strconv.FormatInt(ours.id, 10), acme.Alias, basic(ann))
+				h.get(t, apiEndpoint, "/audit/"+strconv.FormatInt(theirs.id, 10), acme.Alias, signedIn(ann)), nethttp.StatusNotFound)
+			resp := h.get(t, apiEndpoint, "/audit/"+strconv.FormatInt(ours.id, 10), acme.Alias, signedIn(ann))
 			expect(t, "acme's owner reading acme's row", resp, nethttp.StatusOK)
 			var got trailView
 			resp.decode(t, &got)
@@ -842,7 +842,7 @@ func TestATenantReadsItsOwnAuditTrail(t *testing.T) {
 
 		t.Run("an operator reads across tenants, and one tenant's by entering it", func(t *testing.T) {
 			sub := c.in(t)
-			operatorKey := operatorOwner + "/" + operatorSubject
+			operatorKey := string(operatorAccount)
 
 			// No read of the seam's own action has been made before this one,
 			// so the record it answers with is its own: it was written before
@@ -884,13 +884,13 @@ func TestATenantReadsItsOwnAuditTrail(t *testing.T) {
 
 			// The read of acme was recorded in acme's context, so acme's own
 			// trail shows it, and globex's does not.
-			ours := readTrailPage(t, h, apiEndpoint, "/audit", acme.Alias, basic(ann), url.Values{"action": {trailQueryAction}})
+			ours := readTrailPage(t, h, apiEndpoint, "/audit", acme.Alias, signedIn(ann), url.Values{"action": {trailQueryAction}})
 			if len(ours.Entries) != 1 || ours.Entries[0].Actor != operatorKey || ours.Entries[0].Purpose == "" ||
 				ours.Entries[0].Detail["tenant"] != acme.ID {
 				t.Errorf("acme's trail shows the operator's reads as %+v, want the one read of acme, with its purpose",
 					ours.Entries)
 			}
-			theirs := readTrailPage(t, h, apiEndpoint, "/audit", globex.Alias, basic(gus), url.Values{"action": {trailQueryAction}})
+			theirs := readTrailPage(t, h, apiEndpoint, "/audit", globex.Alias, signedIn(gus), url.Values{"action": {trailQueryAction}})
 			if theirs.Total != 0 {
 				t.Errorf("globex's trail shows an operator's read it was not the subject of: %+v", theirs.Entries)
 			}
@@ -906,7 +906,7 @@ func TestATenantReadsItsOwnAuditTrail(t *testing.T) {
 			h.adminCreateTenant(t, hooli)
 			h.adminGrant(t, hooli, ann, roleOwner)
 			expect(t, "ann writing hooli's currency",
-				writeTenantSettingAs(t, h, hooli.Alias, basic(ann), "deals.default-currency", "EUR"), nethttp.StatusOK)
+				writeTenantSettingAs(t, h, hooli.Alias, signedIn(ann), "deals.default-currency", "EUR"), nethttp.StatusOK)
 			written := sub.awaitTrailRow(hooli.ID, "hooli's currency seam row", func(r trailRow) bool {
 				return r.source == "seam" && r.action == settingWriteAction
 			})
@@ -937,9 +937,9 @@ func TestATenantReadsItsOwnAuditTrail(t *testing.T) {
 			ours := c.in(t).awaitTrailRow(acme.ID, "acme's currency seam row", func(r trailRow) bool {
 				return r.source == "seam" && r.action == settingWriteAction
 			})
-			expect(t, "a rep reading the trail", h.get(t, apiEndpoint, "/audit", acme.Alias, basic(uma)), nethttp.StatusForbidden)
+			expect(t, "a rep reading the trail", h.get(t, apiEndpoint, "/audit", acme.Alias, signedIn(uma)), nethttp.StatusForbidden)
 			expect(t, "a rep reading one row of the trail",
-				h.get(t, apiEndpoint, "/audit/"+strconv.FormatInt(ours.id, 10), acme.Alias, basic(uma)), nethttp.StatusForbidden)
+				h.get(t, apiEndpoint, "/audit/"+strconv.FormatInt(ours.id, 10), acme.Alias, signedIn(uma)), nethttp.StatusForbidden)
 		})
 	})
 }
@@ -1020,7 +1020,7 @@ func TestAnOperatorLowersATenantsRateLimit(t *testing.T) {
 		// spend nothing of ann's allowance, which the loop below counts.
 		for _, key := range []string{"ratelimit.limit", "ratelimit.window"} {
 			expect(t, "acme's owner deleting "+key+" from acme's layer",
-				settingsMutation(t, h, apiEndpoint, "/settings/"+key, acme.Alias, basic(otto), nil, true),
+				settingsMutation(t, h, apiEndpoint, "/settings/"+key, acme.Alias, signedIn(otto), nil, true),
 				nethttp.StatusNotFound)
 		}
 		for key, want := range map[string]string{"ratelimit.limit": strconv.Itoa(limit), "ratelimit.window": "1h0m0s"} {
@@ -1031,9 +1031,9 @@ func TestAnOperatorLowersATenantsRateLimit(t *testing.T) {
 
 		for i := 1; i <= limit; i++ {
 			expect(t, fmt.Sprintf("ann's request %d in acme", i),
-				h.get(t, apiEndpoint, "/members", acme.Alias, basic(ann)), nethttp.StatusOK)
+				h.get(t, apiEndpoint, "/members", acme.Alias, signedIn(ann)), nethttp.StatusOK)
 		}
-		refused := h.get(t, apiEndpoint, "/members", acme.Alias, basic(ann))
+		refused := h.get(t, apiEndpoint, "/members", acme.Alias, signedIn(ann))
 		expect(t, "ann's request past acme's limit", refused, nethttp.StatusTooManyRequests)
 		requireProblem(t, "the limiter's refusal", refused)
 		retryAfterWithin(t, refused, time.Hour)
@@ -1043,24 +1043,25 @@ func TestAnOperatorLowersATenantsRateLimit(t *testing.T) {
 		// would refuse the last of these.
 		for i := 1; i <= limit+1; i++ {
 			expect(t, fmt.Sprintf("ann's request %d in globex, whose limit nobody lowered", i),
-				h.get(t, apiEndpoint, "/members", globex.Alias, basic(ann)), nethttp.StatusOK)
+				h.get(t, apiEndpoint, "/members", globex.Alias, signedIn(ann)), nethttp.StatusOK)
 		}
 		requireSetting(t, "globex's rate limit after acme's was lowered", settingIn(t,
 			settingsListing(t, h, adminEndpoint, "/tenants/"+globex.ID+"/settings", "", operator()), "ratelimit.limit"),
 			"<none>", float64(100))
 
 		// bob belongs to globex alone, so the membership layer refuses every
-		// request of his naming acme. The limiter sits outside that layer —
-		// throttling runs before authorizing — and counts the refusals, so past
-		// the limit the answer is the limiter's. The journal runs inside the
-		// limiter, so that 429 is not captured: a refused request never reaches
-		// the recording stage, by design.
+		// request of his naming acme. The limiter sits outside that layer and
+		// counts the refusals, so past the limit the answer is the limiter's.
 		for i := 1; i <= limit; i++ {
 			expect(t, fmt.Sprintf("bob's request %d naming acme", i),
-				h.get(t, apiEndpoint, "/members", acme.Alias, basic(bob)), nethttp.StatusForbidden)
+				h.get(t, apiEndpoint, "/members", acme.Alias, signedIn(bob)), nethttp.StatusForbidden)
 		}
 		expect(t, "bob's request past acme's limit",
-			h.get(t, apiEndpoint, "/members", acme.Alias, basic(bob)), nethttp.StatusTooManyRequests)
+			h.get(t, apiEndpoint, "/members", acme.Alias, signedIn(bob)), nethttp.StatusTooManyRequests)
+
+		c.awaitTrailRow(acme.ID, "the limiter's refusal", func(r trailRow) bool {
+			return r.source == "request" && r.outcome == "429" && r.actor == bob.ID
+		})
 	})
 }
 
@@ -1100,10 +1101,10 @@ func TestARateLimitOutsideItsDomainIsRefused(t *testing.T) {
 	}
 	for i := 1; i <= limit; i++ {
 		expect(t, fmt.Sprintf("ann's request %d in acme", i),
-			h.get(t, apiEndpoint, "/members", acme.Alias, basic(ann)), nethttp.StatusOK)
+			h.get(t, apiEndpoint, "/members", acme.Alias, signedIn(ann)), nethttp.StatusOK)
 	}
 	expect(t, "ann's request past acme's limit",
-		h.get(t, apiEndpoint, "/members", acme.Alias, basic(ann)), nethttp.StatusTooManyRequests)
+		h.get(t, apiEndpoint, "/members", acme.Alias, signedIn(ann)), nethttp.StatusTooManyRequests)
 }
 
 // TestTwoReplicasShareSettingsAndTheLimit is the case for the settings layers
@@ -1116,7 +1117,7 @@ func TestARateLimitOutsideItsDomainIsRefused(t *testing.T) {
 // payload, and only an event's identifier tells them apart.
 //
 // The members call with the tokens a login issued, as a client polling a
-// replica does: a Basic credential is derived afresh on every request. The
+// replica does, so that no poll derives a password. The
 // wait for the other replica polls its API endpoint, and the global limit is
 // raised before the run so those polls are answered by the settings rather
 // than by the limiter; the limit the last subtest counts is initech's own.
@@ -1221,9 +1222,8 @@ func TestTwoReplicasShareSettingsAndTheLimit(t *testing.T) {
 // spends the caller's allowance there, on both replicas at once. The global
 // limit is raised before the run, so a poll that takes a few refresh periods
 // is answered by the roster rather than by the limiter. The polls carry a
-// session token, as a client that polls does: a Basic credential is derived
-// afresh on every request, and a poll every few milliseconds would spend the
-// replica on derivations.
+// session token, as a client that polls does: a poll every few milliseconds
+// that signed in each time would spend the replica on derivations.
 func TestADisabledTenantIsRefusedOnEveryReplica(t *testing.T) {
 	forEachSharedStack(t, func(t *testing.T, c *crmCase) {
 		c.config.set("tenant.catalog.refresh-period", "1s")

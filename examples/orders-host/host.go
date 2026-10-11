@@ -16,7 +16,8 @@ const hostModuleName = "host"
 // The two listening endpoints. Which one carries which guards is the whole of
 // what this host has to say about them: the public one is reached through
 // authentication and through tenant resolution, and the operations one is
-// reached through neither.
+// reached through neither, because the configuration narrows the gateway from
+// every endpoint to the public one.
 const (
 	publicEndpoint = "public"
 	opsEndpoint    = "ops"
@@ -31,10 +32,10 @@ func init() { core.ProcessRegistry.Register(hostModule()) }
 //
 // DefaultLocator is left empty: this host has no installed config file to fall
 // back on. A run with no primary config source is legal in itself, but not for
-// this host: the endpoints to guard and the extractor to resolve with come from
+// this host: the subject table and the extractor to resolve with come from
 // nowhere else, and a module taken in has to start, so such a run stops in the
-// gateway's or the resolver's Prepare, naming the key to write, rather than
-// standing down.
+// subject table's or the resolver's own startup, naming the key to write,
+// rather than standing down.
 func hostModule() core.Module {
 	return core.Module{
 		Name:      hostModuleName,

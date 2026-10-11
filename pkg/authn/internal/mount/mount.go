@@ -1,0 +1,94 @@
+// Package mount is the interface through which a module of the authentication
+// capability mounts a route, and the options that qualify one registration.
+//
+// The implementation is the module in pkg/authn/mount, which registers the route
+// and its access level in one call: a route and the exemption that lets it
+// through the gateway are never written separately, so there is no route that
+// was mounted and left unexempted, and no exemption that names a path with a typo
+// in it.
+//
+// Two rules are read by that module and by the gateway both, and live here so
+// that there is one reading of each: which endpoint the routes are mounted on
+// (Endpoint) and which origins the cross-origin check trusts (TrustedOrigins,
+// CrossOrigin). The gateway cannot hand its own check to the Mounter, because a
+// host may supply a Gate of its own, so each builds an instance from the same
+// rule.
+//
+// The package is internal to pkg/authn. The modules that mount routes require
+// the capability by this interface, and a host reaches it only through the
+// modules, never by the type.
+package mount
+
+import (
+	"net/http"
+
+	"github.com/gin-gonic/gin"
+)
+
+// Mounter registers routes under the capability's base path together with the
+// access level the gateway is to apply to each.
+//
+// Every registration goes through one wrapper: the response carries
+// Cache-Control: no-store, and a POST, PUT, PATCH or DELETE that is not a
+// Callback passes the cross-origin check first and is refused with 401 when it
+// does not. The path is Base() + rel, and a registration that fails (a route
+// conflict, a call outside the registration window) panics in the way the
+// router's own Route does.
+type Mounter interface {
+	// Public registers the route and exempts it from authentication.
+	Public(method, rel string, h gin.HandlerFunc, opts ...Option)
+	// Optional registers the route and makes authentication optional on it:
+	// a request without a credential passes with no identity, one with a
+	// credential that does not hold is still refused.
+	Optional(method, rel string, h gin.HandlerFunc, opts ...Option)
+	// Guarded registers the route only; the gateway guards it.
+	Guarded(method, rel string, h gin.HandlerFunc, opts ...Option)
+	// Callback registers a public route for each of methods that skips the
+	// cross-origin check, for the redirect an external party sends the
+	// browser back with from another site.
+	Callback(methods []string, rel string, h gin.HandlerFunc)
+	// Base is the base path every rel is joined to.
+	Base() string
+	// PublicURL is the origin the deployment is reached at from outside,
+	// without a path.
+	PublicURL() string
+	// CSRF is the cross-origin check the wrapper applies, for a handler that
+	// has to apply it to something that is not a route.
+	CSRF() *http.CrossOriginProtection
+}
+
+// Option qualifies one registration.
+type Option func(*routeSpec)
+
+// routeSpec is what the options of one registration add up to.
+type routeSpec struct {
+	impersonable bool
+}
+
+// Spec is what the options of one registration add up to, as the implementation
+// of Mounter reads it. It is the exported form of the unexported accumulator the
+// options write to, which a package other than this one could not otherwise see.
+type Spec struct {
+	// Impersonable is whether the route is one an impersonating identity may
+	// pass, registered through the gateway's Impersonable.
+	Impersonable bool
+}
+
+// Impersonable lets an impersonating identity through the route. It is for the
+// few self-service routes of the capability that must stay reachable while an
+// identity is being impersonated, such as the one that ends the impersonation.
+func Impersonable() Option {
+	return func(s *routeSpec) { s.impersonable = true }
+}
+
+// Resolve is what opts add up to. A nil option does nothing, and no option
+// leaves every field at its zero value, which reads as the plain route.
+func Resolve(opts ...Option) Spec {
+	var s routeSpec
+	for _, o := range opts {
+		if o != nil {
+			o(&s)
+		}
+	}
+	return Spec{Impersonable: s.impersonable}
+}

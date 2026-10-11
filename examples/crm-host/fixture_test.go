@@ -1,11 +1,8 @@
 package main
 
 import (
-	"crypto/pbkdf2"
 	"crypto/rand"
-	"crypto/sha256"
 	"database/sql"
-	"encoding/base64"
 	"encoding/hex"
 	"encoding/json"
 	"fmt"
@@ -19,6 +16,8 @@ import (
 
 	_ "github.com/glebarez/go-sqlite" // the database/sql driver the harness reads SQLite through
 	"go.yaml.in/yaml/v3"
+
+	"github.com/vislake/speed/pkg/authn/static"
 )
 
 // A case is one stack's worth of backends, a configuration, and the host
@@ -27,12 +26,10 @@ import (
 // run, creates what it needs through the command line or the admin endpoint,
 // and reads what it asserts on through sql.
 
-// The operator every case configures in the static backend's table. The owner
-// half of the operator's identity is the host's operatorOwner.
-const (
-	operatorSubject  = "root"
-	operatorPassword = "operator-secret"
-)
+// The operator every case configures in the static backend's table, under the
+// subject the admin endpoint serves (operatorSubject). The identity it
+// authenticates as is the account operatorAccount.
+const operatorPassword = "operator-secret"
 
 // tenantHeader is the request header the configuration names for resolution.
 const tenantHeader = "X-Tenant"
@@ -209,40 +206,28 @@ func layOutCase(t *testing.T, s stack, linked bool) *crmCase {
 	return c
 }
 
-// caseHashIterations is the PBKDF2 cost of every password the cases derive:
-// the CRM users', through users.password-iterations, and the operator's, which
-// the harness writes into the static backend's subject table itself.
+// caseHashIterations is the PBKDF2 cost of every password the cases derive for
+// the CRM users, through users.password-iterations.
 //
-// Each Basic request, each user created and each sign-in derives a password
-// once, and at the production cost a derivation takes over a second in a
-// binary built with the race detector, which put a -race run of this package
-// far past go test's default timeout. Both backends verify a hash at the count
-// the hash carries, so what a case shows does not rest on the count; a case
-// whose property rests on how long a derivation takes sets the production cost
-// itself.
+// Each user created and each sign-in derives a password once, and at the
+// production cost a derivation takes over a second in a binary built with the
+// race detector, which put a -race run of this package far past go test's
+// default timeout. The hash carries its count and is verified at it, so what a
+// case shows does not rest on the count; a case whose property rests on how long
+// a derivation takes sets the production cost itself.
 const caseHashIterations = 1_000
 
 // operatorHash is the operator's entry of the static backend's subject table,
-// derived at caseHashIterations in the format that backend documents: scheme,
-// iteration count, salt and key, separated by '$', the last two in unpadded
-// standard base64. It is derived here because static.Hash takes no count: it
-// derives at the backend's fixed production cost, and the derivation at a
-// given cost is unexported. The entry `hash` writes is held to that backend's
-// own derivation by TestAnOperatorSignsInWithWhatHashWrote, and every
-// operator request of every case to this one.
+// written at the backend's own production cost through its contract function. The
+// backend remembers a check that held for its cache lifetime, so a case pays for
+// one derivation of it per serving process rather than one per request, and an
+// entry at the cost the backend holds an entry to leaves its startup nothing to
+// warn about: a cheaper entry would be named at Warn in every case's output. The
+// entry `hash` writes is held to that backend's own derivation by
+// TestAnOperatorSignsInWithWhatHashWrote, and every operator request of every
+// case to this one.
 func operatorHash() (string, error) {
-	salt := make([]byte, 16)
-	if _, err := rand.Read(salt); err != nil {
-		return "", err
-	}
-	key, err := pbkdf2.Key(sha256.New, operatorPassword, salt, caseHashIterations, 32)
-	if err != nil {
-		return "", err
-	}
-	return strings.Join([]string{
-		"pbkdf2-sha256", strconv.Itoa(caseHashIterations),
-		base64.RawStdEncoding.EncodeToString(salt), base64.RawStdEncoding.EncodeToString(key),
-	}, "$"), nil
+	return static.Hash(operatorPassword)
 }
 
 // writeBaseConfig writes everything that does not depend on the stack.
@@ -259,7 +244,6 @@ func (c *crmCase) writeBaseConfig() {
 	guarded := []string{apiEndpoint, accountEndpoint, adminEndpoint}
 	c.config.set(logLevelPath, runLogLevel)
 	c.config.set("authn.gate.endpoints", guarded)
-	c.config.set("authn.static.name", operatorOwner)
 	c.config.set("authn.static.subjects", map[string]string{operatorSubject: hashed})
 	c.config.set("users.password-iterations", caseHashIterations)
 	c.config.set("tenant.resolve.endpoints", []string{apiEndpoint})
@@ -531,6 +515,11 @@ type crmHost struct {
 	*process
 	replica int
 	urls    map[string]string
+
+	// tokens are the bearer tokens this replica issued to the users a case
+	// signed in with signedIn, by email, and tokensMu guards them.
+	tokensMu sync.Mutex
+	tokens   map[string]string
 }
 
 // url is the base URL of one of the replica's endpoints.

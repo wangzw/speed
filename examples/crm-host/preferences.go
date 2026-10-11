@@ -490,7 +490,7 @@ func (p *preferencesProduct) deleteSetting(c *gin.Context) {
 	c.JSON(nethttp.StatusOK, v)
 }
 
-// operatorActor is the owner and subject of the operator calling an admin route.
+// operatorActor is the account of the operator calling an admin route.
 // The operator check sits on the admin endpoint's chain, so an identity is
 // always there; its absence means a path that skipped the gateway.
 func operatorActor(c *gin.Context, route string) (string, bool) {

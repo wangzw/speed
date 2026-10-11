@@ -63,6 +63,14 @@ must not cross, and how to run it.
   live, and it would put the self-reference judgement in front of statements
   that carry no target table to judge. That reach is a non-guarantee in the
   design document, not a gap to close here.
+- **The impersonation detail keys are the journal's, not the caller's.** Under an
+  impersonating identity the journal writes `on_behalf_of`,
+  `impersonation_scope` and `session` into the detail from the identity in the
+  context, over whatever the caller put under those names, and removes `session`
+  when the identity has none. On every other row, with no identity in the context
+  included, it removes the caller's keys under those names. A caller's own
+  detail, and an event payload field that becomes a detail key, must not use
+  them: the value is dropped without an error, so a collision goes unseen.
 - **The masked key set is closed, and every spelling in it is flat.** The log
   module compares a registered name segment by segment against a key path while
   this module compares it against a whole key; restricting the set to spellings

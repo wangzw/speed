@@ -84,6 +84,13 @@ type Entry struct {
 	// Detail is the entry's key-value detail. A key name decides whether its
 	// value is masked on the way to the table; see the implementation package's
 	// documentation for the set that is.
+	//
+	// The keys "on_behalf_of", "impersonation_scope" and "session" belong to the
+	// journal. Under an impersonating identity it writes them over whatever the
+	// caller put there, and removes "session" when the identity has none; on
+	// every other entry, including one with no identity in the context, it
+	// removes them from the caller's detail. A caller, including an event
+	// payload field that becomes a detail key, must not use them.
 	Detail map[string]string
 }
 

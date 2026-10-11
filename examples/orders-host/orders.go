@@ -252,7 +252,10 @@ type health struct {
 
 // listing is what the guarded listing answers with. The caller and the tenant
 // are echoed back so that a case can see which of each reached the handler, and
-// the two settings so that it can see which layer answered for each.
+// the two settings so that it can see which layer answered for each. The caller
+// is the identity's accountability key: the account of whoever authenticated,
+// which for the subject table is the static prefix and the subject's name, as in
+// static.alice.
 type listing struct {
 	Caller        string   `json:"caller"`
 	Tenant        string   `json:"tenant"`
@@ -339,6 +342,8 @@ func listOrders(database db.Database, set settings.Store) gin.HandlerFunc {
 			items = append(items, o.Item)
 		}
 		c.JSON(nethttp.StatusOK, listing{
+			// The key is the account of the one who authenticated, which is
+			// also what rate limiting counts by and the audit trail records.
 			Caller:        caller.Key(),
 			Tenant:        string(id),
 			PageSize:      limit,

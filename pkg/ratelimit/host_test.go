@@ -34,15 +34,16 @@ import (
 // point's and not a stand-in's. The settings store and the counters are the
 // case's own, the same stand-ins the decision's cases use.
 //
-// Reading the identity is the one step the layer takes that a case cannot drive:
-// the identity is written only inside the authentication capability directory.
-// A case therefore reaches the layer in one of two ways. Through the module's own
-// descriptor, with the product supplied to it, the layer registered is the real
-// one and a request carries no identity, which is the path an exempt route or a
-// command without authentication takes. Otherwise the case registers the layer
-// with the metadata this module declares for it, in front of a handler that fixes
-// the identity — one zero identity for every request, unless the request carries
-// the header named by anonymousHeader — and runs the same decision.
+// Reading the identity is a step a case drives through authntest: a layer
+// standing outside the limiting one puts the identity of the caller a request
+// names on its context, as the gateway would, and none on a request that carries
+// the header named by anonymousHeader. A case reaches the limiting layer in one of
+// two ways. Through the module's own descriptor, with the product supplied to it,
+// the layer registered is the real one, handler included, and what it did is read
+// off the counters and the response. Otherwise the case registers the layer with
+// the metadata this module declares for it, in front of a handler that reads the
+// identity as the real one does and runs the same decision, so that the decision
+// itself can be read as well.
 
 // waitLimit bounds every wait in these cases, so that a startup which never
 // reaches Serve fails the case with a message instead of the whole binary at the
@@ -53,8 +54,7 @@ const waitLimit = 10 * time.Second
 // guards.
 const guardedEndpoint = "public"
 
-// anonymousHeader marks a request the fixed-identity handler runs without an
-// identity.
+// anonymousHeader marks a request the stamping layer puts no identity on.
 const anonymousHeader = "X-Anonymous"
 
 // hostOptions is what one assembly is built from.
@@ -63,7 +63,8 @@ type hostOptions struct {
 	// store, counters, signal and clock are the case's.
 	limiter *limiter
 	// viaModule registers the layer through this module's descriptor, with the
-	// product supplied to it, instead of registering it with a fixed identity.
+	// product supplied to it, instead of registering it in front of a handler
+	// that records the decisions.
 	viaModule bool
 	// respond, when set, is delivered as the ErrorResponder capability, so
 	// that it decides the shape of every error response.
@@ -138,6 +139,7 @@ func (c *counter) count() int {
 // fails the case.
 func startHost(t *testing.T, opts hostOptions) *host {
 	t.Helper()
+	checkCallers(t)
 	l := opts.limiter
 	h := &host{decisions: &decisions{}, reached: &counter{}}
 	logs := &entryRecorder{}
@@ -185,8 +187,9 @@ func startHost(t *testing.T, opts hostOptions) *host {
 			if err != nil {
 				return err
 			}
+			ep.Use(stampingLayer(t))
 			if !opts.viaModule {
-				ep.Use(fixedIdentityLayer(l, h.decisions))
+				ep.Use(recordingLayer(l, h.decisions))
 			}
 			if opts.register != nil {
 				opts.register(ep)
@@ -241,14 +244,15 @@ func startHost(t *testing.T, opts hostOptions) *host {
 	return h
 }
 
-// fixedIdentityLayer is the layer this module registers, with the metadata it
-// declares for it, in front of a handler that fixes the identity and runs the
-// decision and its accounting the way the real handler does.
-func fixedIdentityLayer(l *limiter, made *decisions) speedhttp.Middleware {
+// recordingLayer is the layer this module registers, with the metadata it
+// declares for it, in front of a handler that reads the identity, runs the
+// decision and accounts for it the way the real handler does, and keeps the
+// decision.
+func recordingLayer(l *limiter, made *decisions) speedhttp.Middleware {
 	mw := l.middleware()
 	mw.Handler = func(c *gin.Context) {
-		_, anonymous := c.Request.Header[anonymousHeader]
-		d := l.decide(c, authn.Identity{}, !anonymous)
+		id, identified := authn.FromContext(c.Request.Context())
+		d := l.decide(c, id, identified)
 		l.signal.settle(d)
 		made.add(d)
 	}

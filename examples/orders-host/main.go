@@ -49,16 +49,21 @@
 //     name into the call.
 //   - A guarded route answers 401 without a credential and 200 with one, and the
 //     handler behind it reads the caller out of the request context rather than
-//     out of the request. The identity is owner-qualified — local/alice, not
-//     alice — with one backend running and no second one in sight.
+//     out of the request. The identity's account sits in its backend's
+//     namespace — static.alice, not alice — with one backend running and no
+//     second one in sight.
 //   - An exemption is registered by the module that owns the route, through the
 //     gateway's own surface, and is frozen at startup: the startup diagnostics
-//     list the frozen table and the backends that turned up. The exemption
-//     covers the credential alone — resolution has no per-route exception, so
-//     the exempted route still needs a tenant — which is why the route that
-//     needs neither sits on the endpoint neither guard covers.
-//   - A configuration that names no endpoint to guard stops the startup rather
-//     than serving the guarded routes unguarded.
+//     list the frozen table, the endpoints the gateway guards and the backends
+//     that turned up. The exemption covers the credential alone — resolution has
+//     no per-route exception, so the exempted route still needs a tenant — which
+//     is why the route that needs neither sits on the endpoint neither guard
+//     covers.
+//   - The gateway guards every endpoint the entry point declares unless the
+//     configuration narrows it, and this host narrows it to the public one. A
+//     configuration that names an empty list, or the reserved name beside a named
+//     endpoint, stops the startup rather than serving the guarded routes
+//     unguarded.
 //   - An unauthenticated request for a route nobody registered is refused as
 //     unauthenticated rather than as not found: the entry point runs every
 //     layer on a request that matches no route before it answers the 404, so a
@@ -113,10 +118,14 @@
 package main
 
 import (
+	"bufio"
 	"context"
+	"errors"
 	"fmt"
+	"io"
 	"os"
 	"os/signal"
+	"strings"
 	"syscall"
 
 	"github.com/vislake/speed/pkg/audit"
@@ -202,7 +211,7 @@ const (
 // namespace, a dot, then the item key — so the row goes under one of them. Its
 // value is below the declared default so that a case can drive a request past
 // it, and it is written for one tenant so that the rest keep the default: the
-// count is per identity string inside a tenant, and a case that polls a route
+// count is per accountability key inside a tenant, and a case that polls a route
 // spends it on every call.
 //
 // That tenant is one no other case names, and the seed is why it has to be. The
@@ -437,16 +446,23 @@ func seed(ctx context.Context, reg *core.Registry) error {
 	return nil
 }
 
-// hashPassword reads a password from standard input and writes its hash to
-// standard output, for pasting into the subject table.
+// hashPassword reads a password from standard input and writes its entry, an
+// Argon2id string in the PHC form, to standard output, for pasting into the
+// subject table.
 //
 // It is read from standard input rather than taken as an argument, so that the
 // password does not land in the shell history or in the process list of every
-// other user on the machine.
+// other user on the machine. The whole line is the password, spaces included:
+// only its line ending is dropped, so that the entry is made from the string the
+// operator typed and opens the account for no other.
 func hashPassword(_ context.Context, _ *core.Registry) error {
-	var password string
-	if _, err := fmt.Scanln(&password); err != nil {
+	line, err := bufio.NewReader(os.Stdin).ReadString('\n')
+	if err != nil && !errors.Is(err, io.EOF) {
 		return fmt.Errorf("reading the password from standard input: %w", err)
+	}
+	password := strings.TrimRight(line, "\r\n")
+	if password == "" {
+		return errors.New("reading the password from standard input: the input is empty")
 	}
 	encoded, err := static.Hash(password)
 	if err != nil {

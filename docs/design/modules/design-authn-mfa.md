@@ -86,7 +86,7 @@ const (
 
 type MFAResult struct {
 	Assurance  Assurance
-	IdPAssured bool // 多因素来自企业 IdP 的声明，不是本地验证过的因素
+	IDPAssured bool // 多因素来自企业 IdP 的声明，不是本地验证过的因素
 }
 
 // MFA 由 authn.mfa 排他交付。
@@ -139,7 +139,7 @@ type MFA interface {
 
 ### 账户安全类动作与 `Requirement.Local`、`Seasoned`
 
-**判据。** 账户安全类动作是能改变账户的凭据或身份绑定、或授予更高权限的动作。它们要求本地验证过的因素：`Requirement.Local` 为真时，`Identity.AssuranceFromIdP()` 为真的身份不满足。账户没有因素时，自助类动作退回要求新鲜的第一因素。
+**判据。** 账户安全类动作是能改变账户的凭据或身份绑定、或授予更高权限的动作。它们要求本地验证过的因素：`Requirement.Local` 为真时，`Identity.AssuranceFromIDP()` 为真的身份不满足。账户没有因素时，自助类动作退回要求新鲜的第一因素。
 
 下表是该判据的例举，不是封闭集；新增的动作按判据归入。
 
@@ -234,7 +234,7 @@ classDiagram
     }
     class MFAResult {
         +Assurance Assurance
-        +IdPAssured bool
+        +IDPAssured bool
     }
     class LoginEngine {
         <<authn.login>>
@@ -281,8 +281,8 @@ flowchart TD
     F -->|否| X["该次登录无法完成：login-failed"]
     A -->|否| R{"mfa_required 或 global-required"}
     R -->|是| E["MFAEnroll：只能登记，本次记单因素"]
-    R -->|否| I{"IdPAsserted"}
-    I -->|是| N2["MFANone：多因素，标 IdPAssured"]
+    R -->|否| I{"IDPAsserted"}
+    I -->|是| N2["MFANone：多因素，标 IDPAssured"]
     I -->|否| N3["MFANone：单因素完成"]
 ```
 
@@ -389,7 +389,7 @@ CREATE TABLE authn_webauthn_credentials (
 | 第一因素带用户验证（`Proof.UserVerified`，通行密钥） | 不要求第二因素；`MFA.Assurance` 记多因素 |
 | 账户有任何有效因素 | `MFAFactor`：必须用一个与第一因素种类不同的因素；即使第一因素是声明了多因素的 IdP，IdP 的声明盖不过账户自己的因素 |
 | 账户 `mfa_required` 为真，或 `global-required` 为真，而账户尚无有效因素 | `MFAEnroll`：只能登记；本次登录会话记单因素，登记的因素不计入本次保障等级 |
-| `Proof.IdPAsserted` 为真，而账户没有因素、也没有账户级与全局级的强制 | 不要求第二因素；`MFA.Assurance` 记多因素并标 `IdPAssured` |
+| `Proof.IDPAsserted` 为真，而账户没有因素、也没有账户级与全局级的强制 | 不要求第二因素；`MFA.Assurance` 记多因素并标 `IDPAssured` |
 | 其余 | 单因素完成 |
 
 - **策略只加严，不放宽。** 任一级不得抵消另一级。
@@ -400,7 +400,7 @@ CREATE TABLE authn_webauthn_credentials (
 
 ### 保障等级的合成
 
-`MFA.Assurance(first, second)` 是纯函数，输入是第一因素交出的事实（`Proof.UserVerified`、`Proof.IdPAsserted`、`Proof.Methods`）与可空的第二因素结论 `Pass`。判据是已证明的因素种类：
+`MFA.Assurance(first, second)` 是纯函数，输入是第一因素交出的事实（`Proof.UserVerified`、`Proof.IDPAsserted`、`Proof.Methods`）与可空的第二因素结论 `Pass`。判据是已证明的因素种类：
 
 - 第一因素带用户验证的通行密钥：多因素。
 - 第一因素加一个认证方式与之不相交的第二因素：多因素。
@@ -409,23 +409,23 @@ CREATE TABLE authn_webauthn_credentials (
 
 **IdP 声明的采信条件。** 企业 IdP 断言里的 `amr`、`acr` 是外部声明，默认不采信（应用自己验证这些声明才合规，IdP 不给声明时按最低强度）。同时满足以下全部条件才抬高，封闭集：
 
-1. 提供方行显式开启信任（`trust_idp_mfa`），断言里带落在该行 `mfa_acr_values` 内的取值；`Proof.IdPAsserted` 即上述判定的结论。
+1. 提供方行显式开启信任（`trust_idp_mfa`），断言里带落在该行 `mfa_acr_values` 内的取值；`Proof.IDPAsserted` 即上述判定的结论。
 2. 账户没有任何有效因素。
 3. 账户 `mfa_required` 与全局 `global-required` 都不要求登记。
 
-抬高时合成结果为多因素并标 `IdPAssured`，会话记 `idp_assured`。该多因素是 IdP 的声明，不是本地验证过的因素：
+抬高时合成结果为多因素并标 `IDPAssured`，会话记 `idp_assured`。该多因素是 IdP 的声明，不是本地验证过的因素：
 
 - 只在该提供方所属的租户内算数；在别的租户的 `require-mfa` 里不计。
 - 设了 `Requirement.Local` 的动作不采信它。
-- 本地因素完成加强认证后，`Elevation.IdPAssured` 为假，会话转为本地多因素。
+- 本地因素完成加强认证后，`Elevation.IDPAssured` 为假，会话转为本地多因素。
 
-**调用约定。** 登录引擎只在结局为 `MFANone` 与第二因素通过之后调用 `Assurance`。结局为 `MFAEnroll` 的登录不调用它：会话记单因素，`Methods` 只含第一因素，`IdPAssured` 为假。第二因素通过时，`Assurance` 不抬高 `IdPAssured`：账户有有效因素即不满足采信条件。
+**调用约定。** 登录引擎只在结局为 `MFANone` 与第二因素通过之后调用 `Assurance`。结局为 `MFAEnroll` 的登录不调用它：会话记单因素，`Methods` 只含第一因素，`IDPAssured` 为假。第二因素通过时，`Assurance` 不抬高 `IDPAssured`：账户有有效因素即不满足采信条件。
 
 **登录期间登记的因素不计入本次强度。** 要得到多因素，须下一次登录，或加强认证时通过一个早于该次认证登记的因素：加强认证只接受启用时刻早于当前会话 `AuthTime` 的因素。否则只知道口令的人抢在真用户之前登记自己的 TOTP，立即得到多因素会话，并凭它删因素、解绑、创建服务密钥。
 
 ### 请求期的租户级判定
 
-租户级 `require-mfa` 为真而 `Assurance` 低于多因素时，准入层应答 `401 insufficient_user_authentication`；`IdPAssured` 的多因素只在该提供方所属的租户内计数。账户没有因素时同一应答告诉客户端去登记。`authn.mfa` 在 `Start` 里若 `core.Registry.Participating("tenant.admission")` 为假，写一行 `Warn`：租户级强制多因素无人执行。判定顺序与应答在 [tenant.admission](design-tenant-admission.md)。登记与加强认证的端点所在的端不受租户解析守卫，所以客户端总有路可走。
+租户级 `require-mfa` 为真而 `Assurance` 低于多因素时，准入层应答 `401 insufficient_user_authentication`；`IDPAssured` 的多因素只在该提供方所属的租户内计数。账户没有因素时同一应答告诉客户端去登记。`authn.mfa` 在 `Start` 里若 `core.Registry.Participating("tenant.admission")` 为假，写一行 `Warn`：租户级强制多因素无人执行。判定顺序与应答在 [tenant.admission](design-tenant-admission.md)。登记与加强认证的端点所在的端不受租户解析守卫，所以客户端总有路可走。
 
 ### 统一收口：`Challenge`、`Verify`、`Enroll`
 
@@ -594,12 +594,12 @@ CREATE TABLE authn_webauthn_credentials (
 
 ## 实现状态
 
-`pkg/authn` 目前只含网关、口令表后端与身份、判决的类型；多因素的接缝、模块与全部因素尚未实现，没有代码锚点。
+`pkg/authn` 目前只含网关、口令表后端、身份与判决的类型和值类型；多因素的接缝、模块与全部因素尚未实现，代码锚点只有下表列出的值类型与 `Identity.Satisfies`。
 
 | 能力 | 状态 | 代码 |
 |---|---|---|
-| 根包的因素类型与接缝：`FactorKind`、`FactorStatus`、`FactorRecord`、`Pass`、`Factor`、`MFAOutcome`、`MFAResult`、`MFA` | 未实现 | — |
-| `Requirement` 的 `Local` 与 `Identity.Satisfies`、`AssuranceFromIdP` | 未实现 | — |
+| 根包的因素类型与接缝：`FactorKind`、`FactorStatus`、`FactorRecord`、`Pass`、`Factor`、`MFAOutcome`、`MFAResult`、`MFA` | 部分实现 — 缺 `Factor`、`MFAOutcome`、`MFAResult`、`MFA`；`FactorKind`、`FactorStatus`、`FactorRecord`、`Pass` 已在 | `pkg/authn/internal/model/factor.go` `FactorKind`、`FactorStatus`、`FactorRecord`；`pkg/authn/internal/model/login.go` `Pass`；`pkg/authn/ids.go` |
+| `Requirement` 的 `Local` 与 `Identity.Satisfies`、`AssuranceFromIDP` | 已实现 | `pkg/authn/internal/model/assurance.go` `Requirement`；`pkg/authn/internal/identity/identity.go` `Satisfies`、`AssuranceFromIDP` |
 | `authn.mfa` 模块：登记簿、策略判定、`Challenge`、`Verify`、`Enroll`、`Remove` | 未实现 | — |
 | 保障等级的合成与 IdP 声明的采信条件 | 未实现 | — |
 | `Seasoned`、`Reset` | 未实现 | — |
@@ -612,4 +612,4 @@ CREATE TABLE authn_webauthn_credentials (
 | WebAuthn 因素与通行密钥登录方法 | 未实现 | — |
 | `guard.Require` 与加强认证应答 | 未实现 | — |
 | 加强认证的 `Elevate` 与仪式数据承载；归 [authn-session](design-authn-session.md) 与 [authn-login](design-authn-login.md) | 未实现 | — |
-| 根包 import 守卫 | 未实现 | — |
+| 根包 import 守卫 | 已实现 — 实现多因素的子包不在根包 import 的白名单之内，状态行见 [design-authn](design-authn.md) | `pkg/authn/deps_test.go` `TestTheRootPackageImportsOnlyWhatItMay`、`TestTheRootPackageClosureHoldsNoThirdPartyPackage` |

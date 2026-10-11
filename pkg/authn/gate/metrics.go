@@ -13,14 +13,40 @@ import (
 	"github.com/vislake/speed/pkg/observability"
 )
 
-// conclusionsInstrument is the counter the four buckets are reported through,
-// and outcomeAttribute the attribute that tells the buckets apart. A dashboard
-// or an alert rule written against them stops matching when either changes, so
-// they are fixed here the way the bucket names are fixed by verdict.Outcome.
+// conclusionsInstrument is the counter the buckets are reported through, and
+// outcomeAttribute the attribute that tells the buckets apart. A dashboard or an
+// alert rule written against them stops matching when either changes, so they
+// are fixed here the way the bucket names are.
 const (
 	conclusionsInstrument = ModuleName + ".conclusions"
 	outcomeAttribute      = "outcome"
 )
+
+// meterName is the name of the meter the counter is created on. It is the
+// capability directory's name, the one every module of it reports under, and not
+// this module's: the instrument's own name already says which module counts.
+const meterName = "authn"
+
+// The buckets a conclusion lands in. The first four are the outcomes of a
+// verdict, indexed by verdict.Outcome, and the last is a request that carried no
+// credential and passed on an optional route. The set is exhaustive and the
+// buckets exclude each other: every conclusion about a credential or about the
+// absence of one lands in exactly one. A request on an exempt route and one on
+// an endpoint this gateway does not guard are not conclusions and land in none.
+// The names are frozen, a name can be added and none is renamed.
+const (
+	bucketAnonymous = int(verdict.Unavailable) + 1
+	bucketCount     = bucketAnonymous + 1
+)
+
+// bucketName is the name a bucket is reported under, in the log line and as the
+// value of the outcome attribute.
+func bucketName(bucket int) string {
+	if bucket == bucketAnonymous {
+		return "anonymous"
+	}
+	return verdict.Outcome(bucket).String()
+}
 
 // takeMeter reports the conclusion counts through the metric capability, when
 // the assembly carries one.
@@ -47,7 +73,7 @@ func (g *gateway) takeMeter(reg *core.Registry) error {
 			"through: %w", diagnosticPrefix, err)
 	}
 
-	meter := provider.Meter(ModuleName)
+	meter := provider.Meter(meterName)
 	counter, err := meter.Int64ObservableCounter(conclusionsInstrument,
 		metric.WithUnit("{conclusion}"),
 		metric.WithDescription("Request-time authentication conclusions, by the bucket each "+
@@ -58,7 +84,7 @@ func (g *gateway) takeMeter(reg *core.Registry) error {
 
 	buckets := make([]metric.ObserveOption, len(g.counts))
 	for i := range g.counts {
-		buckets[i] = metric.WithAttributes(attribute.String(outcomeAttribute, verdict.Outcome(i).String()))
+		buckets[i] = metric.WithAttributes(attribute.String(outcomeAttribute, bucketName(i)))
 	}
 	registration, err := meter.RegisterCallback(func(_ context.Context, o metric.Observer) error {
 		for i := range g.counts {

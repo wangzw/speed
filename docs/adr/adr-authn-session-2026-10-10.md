@@ -103,7 +103,7 @@ cookie 带 `Max-Age` 或 `Expires`，关闭浏览器后仍在。
 
 ## 决策
 
-采纳：登录会话的权威存放在 db 的 `authn_sessions`；scs 只承担令牌生成、哈希存储、cookie 写出与创建路径，其余由 authn 自写；每种会话种类按自己的期限语义判有效；cookie 缺省为仅主机的会话期 cookie，由 `authn.session` 一处写出；cookie 凭据下的非安全方法由网关用标准库 `CrossOriginProtection` 检查。表结构、方法集、cookie 取值、绕开项、校验阶段与缓存见设计文档 [design-authn-session](../design/modules/design-authn-session.md)，配置键与缺省见 [design-authn-config](../design/modules/design-authn-config.md)，本记录只定判据。
+采纳：登录会话的权威存放在 db 的 `authn_sessions`；scs 只承担令牌生成、哈希存储、cookie 写出与创建路径，其余由 authn 自写；每种会话种类按自己的期限语义判有效；cookie 缺省为仅主机的会话期 cookie，由 `authn.session` 一处写出；浏览器可能自己附带的凭据下的非安全方法由网关用标准库 `CrossOriginProtection` 检查。表结构、方法集、cookie 取值、绕开项、校验阶段与缓存见设计文档，本记录只定判据。
 
 - **权威存放与撤销。** 每个会话一行，公开标识是行的主键而不是凭据，行里只存令牌的 SHA-256，不存明文。撤销以行的撤销标记为准，不比较时间，时钟偏差不使撤销失效。撤销面唯一：访问令牌带会话标识，刷新令牌与冒充记录挂在会话上，撤销会话即撤销它们。会话行的每一次续期与轮换都以「未撤销」为写入条件，写不会把已撤销的会话写回。
 - **scs 只作令牌与 cookie 的桥。** scs 提供令牌生成、哈希存储、cookie 写出与创建路径；存储适配器、公开标识、按账户的索引与撤销、空闲续期的节流、令牌轮换与 gin 的适配代码由 authn 自写；编码器不用 gob，避开类型登记与更大的解码面。令牌绝不由客户端指定，登录与提权仍换令牌作纵深。scs 的默认用法中与上述约束冲突的部分（`LoadAndSave`、`IdleTimeout`、`RenewToken`、创建时传入的 `expiry`）一律绕开，每个绕开项各有一条测试，去掉该绕开项时测试必败，scs 升级时先重跑。
@@ -115,7 +115,7 @@ cookie 带 `Max-Age` 或 `Expires`，关闭浏览器后仍在。
   - 每账户的会话数上限只统计 `browser` 与 `token`，`service` 不占。
 - **cookie 缺省仅主机、会话期。** 缺省的 cookie 名带 `__Host-` 前缀，`Secure` 不可单独关闭并由启动校验强制，`HttpOnly`，不设 `Domain`，不设 `Max-Age` 与 `Expires`；没有记住我。偏离缺省只经显式配置：配 `cookie-domain` 时名字改用 `__Secure-` 前缀并写出 `Domain`，`same-site` 可取更严的值，开发用的 `allow-insecure` 去掉前缀与 `Secure`。哪些开关存在、取值与启动诊断由设计文档与配置文档承载；偏离缺省会失去 `__Host-` 所保证的子域不可写，这一代价写在后果里。
 - **cookie 的写出与清除只有一处。** `Sessions` 的 `SetCookie` 与 `ClearCookie` 是唯一写出点，`authn.login`、`authn.impersonation` 等别的模块以及宿主换上的会话模块都不自己拼。凭据被拒、登出与撤销时清除 cookie；跨源检查不通过时不清除，因为 cookie 本身有效、被拒的是请求的意图，跨站请求不能借一次被拒的 POST 让用户登出。
-- **cookie 凭据的跨源检查在网关。** 凭据来自 cookie 且方法不是 `GET`、`HEAD`、`OPTIONS` 的请求，由网关在调用校验后端之前用标准库 `CrossOriginProtection` 检查。凭据来自 `Authorization` 头的请求不适用：跨站表单发不出该头，且头优先时 cookie 不被读。不通过即 401，由网关自产，不写 403。检查与 `SameSite` 互为兜底，不做令牌式 CSRF；外部方回跳的端点登记检查的旁路；跨源的单页应用用承载令牌，不用 cookie。可信来源的取值与覆盖的路由由 [design-authn-gate](../design/modules/design-authn-gate.md) 承载。
+- **浏览器可能自己附带的凭据的跨源检查在网关。** 载体是 cookie 或 `Authorization` 头里 `Bearer` 以外的 scheme、且方法不是 `GET`、`HEAD`、`OPTIONS` 的请求，由网关在调用校验后端之前用标准库 `CrossOriginProtection` 检查，载体判据与否决项见 [ADR-authn-credential-dispatch-2026-10-10](adr-authn-credential-dispatch-2026-10-10.md)。不通过即 401，由网关自产，不写 403。检查与 `SameSite` 互为兜底，不做令牌式 CSRF；外部方回跳的端点登记检查的旁路；跨源的单页应用用承载令牌，不用 cookie。可信来源的取值与覆盖的路由由设计文档承载。
 - **校验缓存的有效期是撤销生效的上界。** 会话校验经进程内缓存，缓存有效期是撤销在其他副本上生效的上界，属于有界放宽，由 [ADR-authn-failure-2026-10-10](adr-authn-failure-2026-10-10.md) 逐项列出；缺省取短值，上限由设置的取值域封顶。读库出错是 `Unavailable`，失败时拒绝，不是放行。缓存的键、次序与读库次数见 design-authn-session。
 - **账户停用、删除与密钥撤销的清理**经账户生命周期钩子与事件补偿完成，会话校验对账户状态与 `valid_after` 的核对是钩子之外的双重校验（[ADR-authn-account-lifecycle-2026-10-10](adr-authn-account-lifecycle-2026-10-10.md)）。
 
@@ -131,7 +131,7 @@ cookie 带 `Max-Age` 或 `Expires`，关闭浏览器后仍在。
 - **会话要求宿主有 db。** 只有口令表的部署没有会话。
 - **scs 的接缝要绕开几处**，存储适配器、编码器、轮换与续期各由 authn 自写，scs 在这里承担的只剩令牌生成、cookie 写出与创建路径。scs 升级时，绕开项各带的测试要先重跑，存储键的哈希函数若变化，轮换会先失败。
 - **需要跨子域共享 cookie 或更严 `SameSite` 的部署要放弃缺省。** 配 `cookie-domain` 之后 `__Host-` 前缀所保证的子域不可写随之失去，同域下的兄弟子域可以覆盖这个 cookie，启动诊断为此写一行 Warn；开发用的 `allow-insecure` 同样失去前缀与 `Secure`。`same-site` 取更严的值会使从外站链接进入时首个请求不带 cookie。
-- **标准库的跨源检查对既无 `Sec-Fetch-Site` 又无 `Origin` 的请求放行**，只有极旧的浏览器与非浏览器客户端落在这一档；兄弟子域按跨源处理，除非把它的来源逐字加进可信来源。
+- **标准库的跨源检查对既无 `Sec-Fetch-Site` 又无 `Origin` 的请求放行**，只有极旧的浏览器与非浏览器客户端落在这一档；兄弟子域按跨源处理，除非把它的来源加进可信来源。
 - **会话令牌在 `HttpOnly` cookie 里**，脚本读不到，但注入的脚本能借浏览器发出同源请求。这一类风险靠应用自身的内容安全策略，不在 authn 的保证之内；会话没有绑定设备或网络，绑定在 NAT 与移动网络下会误杀；列出会话时 `ClientInfo.IP` 在代理之后是代理地址，仅供记录与展示。
 - **跨源的单页应用不能用 cookie 会话。** 它用承载令牌；单页应用与 API 跨域时需要一个 `Order` 小于网关的 CORS 层，否则预检在网关被 401，该层由宿主提供，authn 不提供。
 - **会话期 cookie 随浏览器关闭而丢**，没有记住我；长期免登录只经刷新令牌，面向非浏览器客户端。

@@ -3,15 +3,18 @@ package gate
 import (
 	"context"
 	"errors"
+	"log/slog"
 	nethttp "net/http"
 	"net/http/httptest"
 	"os"
 	"path/filepath"
+	"slices"
 	"strings"
+	"sync"
 	"testing"
 
 	"github.com/vislake/speed/pkg/authn"
-	"github.com/vislake/speed/pkg/authn/internal/configreader"
+	"github.com/vislake/speed/pkg/authn/authntest"
 	"github.com/vislake/speed/pkg/config"
 	"github.com/vislake/speed/pkg/core"
 	speedhttp "github.com/vislake/speed/pkg/http"
@@ -77,7 +80,7 @@ func (a assembly) drive(t *testing.T, action func(ctx context.Context, reg *core
 	t.Helper()
 
 	gateModule := Module()
-	reader := configreader.OverAll(t, a.body, append([]core.Module{gateModule}, a.modules...)...)
+	reader := authntest.ConfigReaderAll(t, a.body, append([]core.Module{gateModule}, a.modules...)...)
 
 	reg := core.New()
 	reg.Register(config.Module())
@@ -142,7 +145,7 @@ func TestTheDescriptorRegistersTheLayerOnEveryGuardedEndpointAndNowhereElse(t *t
 	router := routerWith("public", "admin", "ops")
 	err := assembly{
 		body:     guarding("public", "admin"),
-		backends: []authn.Verifier{enumerating("local", "alice")},
+		backends: []authn.Verifier{basicBackend("static", "static.")},
 		router:   router,
 	}.drive(t, nothing)
 	if err != nil {
@@ -185,7 +188,7 @@ func TestInitRefusesWhatTheCommandIsMissing(t *testing.T) {
 			name: "no HTTP entry point",
 			a: assembly{
 				body:     guarding("public"),
-				backends: []authn.Verifier{enumerating("local", "alice")},
+				backends: []authn.Verifier{basicBackend("static", "static.")},
 			},
 			want: authn.ErrNoRouter,
 		},
@@ -201,10 +204,31 @@ func TestInitRefusesWhatTheCommandIsMissing(t *testing.T) {
 			name: "an endpoint the entry point does not have",
 			a: assembly{
 				body:     guarding("pubilc"),
-				backends: []authn.Verifier{enumerating("local", "alice")},
+				backends: []authn.Verifier{basicBackend("static", "static.")},
 				router:   routerWith("public"),
 			},
 			want: authn.ErrUnknownEndpoint,
+		},
+		{
+			name: "two backends taking Basic",
+			a: assembly{
+				body:     guarding("public"),
+				backends: []authn.Verifier{basicBackend("static", "static."), basicBackend("users", "users.")},
+				router:   routerWith("public"),
+			},
+			want: authn.ErrClaimConflict,
+		},
+		{
+			name: "a backend declaring the static prefix under another name",
+			a: assembly{
+				body: guarding("public"),
+				backends: []authn.Verifier{
+					basicBackend("static", "static."),
+					&fakeVerifier{name: "impostor", accepts: authn.Accepts{Schemes: []string{"bearer"}, Accounts: "static."}},
+				},
+				router: routerWith("public"),
+			},
+			want: authn.ErrInvalidClaim,
 		},
 	} {
 		t.Run(c.name, func(t *testing.T) {
@@ -238,7 +262,7 @@ func TestARouterFailureOtherThanAnUnknownNameIsCarriedOutAsItStands(t *testing.T
 	failure := errors.New("the entry point cannot hand out endpoints right now")
 	err := assembly{
 		body:     guarding("public"),
-		backends: []authn.Verifier{enumerating("local", "alice")},
+		backends: []authn.Verifier{basicBackend("static", "static.")},
 		router:   brokenRouter{fakeRouter: routerWith("public"), broken: "public", err: failure},
 	}.drive(t, nothing)
 
@@ -258,7 +282,7 @@ func TestARouterFailureOtherThanAnUnknownNameIsCarriedOutAsItStands(t *testing.T
 func TestAfterStopNoRequestReachesABackend(t *testing.T) {
 	router := routerWith("public")
 	var asked countingVerifier
-	asked.fakeVerifier = passes(enumerating("local", "alice"))
+	asked.fakeVerifier = passes(basicBackend("static", "static."))
 
 	err := assembly{
 		body:     guarding("public"),
@@ -291,9 +315,9 @@ type countingVerifier struct {
 	calls int
 }
 
-func (c *countingVerifier) Verify(ctx context.Context, subject string, cred authn.Credential) authn.Verdict {
+func (c *countingVerifier) Verify(ctx context.Context, cred authn.Credential) authn.Verdict {
 	c.calls++
-	return c.fakeVerifier.Verify(ctx, subject, cred)
+	return c.fakeVerifier.Verify(ctx, cred)
 }
 
 // foreignGate is an instance a host supplies for the gateway module so that
@@ -301,7 +325,9 @@ func (c *countingVerifier) Verify(ctx context.Context, subject string, cred auth
 // capability and is not a gateway.
 type foreignGate struct{}
 
-func (foreignGate) Exempt(string, string, string) {}
+func (foreignGate) Exempt(string, string, string)       {}
+func (foreignGate) Optional(string, string, string)     {}
+func (foreignGate) Impersonable(string, string, string) {}
 
 // TestTheCallbacksPassByAnInstanceSuppliedForTheGateway holds what the
 // descriptor does with an instance this module did not build: nothing. The
@@ -315,7 +341,7 @@ func TestTheCallbacksPassByAnInstanceSuppliedForTheGateway(t *testing.T) {
 	var delivered authn.Gate
 	err := assembly{
 		body:     guarding("public"),
-		backends: []authn.Verifier{enumerating("local", "alice")},
+		backends: []authn.Verifier{basicBackend("static", "static.")},
 		router:   router,
 		gate:     foreignGate{},
 	}.drive(t, func(_ context.Context, reg *core.Registry) error {
@@ -351,7 +377,7 @@ func TestTheRedactionRulesReachTheLoggingModulesOwnOutput(t *testing.T) {
 
 	err := assembly{
 		body:     body,
-		backends: []authn.Verifier{enumerating("local", "alice"), claimingScheme("tokens", "bearer")},
+		backends: []authn.Verifier{basicBackend("static", "static."), schemeBackend("tokens", "bearer")},
 		router:   routerWith("public"),
 		modules:  []core.Module{log.Module()},
 	}.drive(t, func(_ context.Context, reg *core.Registry) error {
@@ -361,6 +387,9 @@ func TestTheRedactionRulesReachTheLoggingModulesOwnOutput(t *testing.T) {
 		}
 		logging.Named("case").Info("a handler that logs what it was sent",
 			"Authorization", "Basic YWxpY2U6c2VjcmV0",
+			"Cookie", "sid=cookie-secret-1",
+			"set-cookie", "sid=cookie-secret-2; Path=/",
+			"credential", "credential-secret-3",
 			"note", "the caller sent Bearer tok-very-secret and nothing else",
 			"cause", cause)
 		return nil
@@ -377,7 +406,7 @@ func TestTheRedactionRulesReachTheLoggingModulesOwnOutput(t *testing.T) {
 	if !strings.Contains(text, "a handler that logs what it was sent") {
 		t.Fatalf("the record is not in the output at all, so nothing here was checked:\n%s", text)
 	}
-	for _, secret := range []string{"YWxpY2U6c2VjcmV0", "tok-very-secret"} {
+	for _, secret := range []string{"YWxpY2U6c2VjcmV0", "tok-very-secret", "cookie-secret-1", "cookie-secret-2", "credential-secret-3"} {
 		if strings.Contains(text, secret) {
 			t.Errorf("the output carries the credential %q in the clear:\n%s", secret, text)
 		}
@@ -385,5 +414,222 @@ func TestTheRedactionRulesReachTheLoggingModulesOwnOutput(t *testing.T) {
 	if !strings.Contains(text, cause) {
 		t.Errorf("the output does not carry the refusal cause %q as it was written, so the rule "+
 			"took a word of prose for a credential:\n%s", cause, text)
+	}
+}
+
+// TestTheKeyAndShapeRulesGovernAnAttributeBoundBeforeInit holds the effect of
+// registering those rules before Init: a module constructed after the gateway,
+// and before Init, binds attributes carrying a credential under a key name and as
+// a bare JWT, and the destination gets neither.
+//
+// The rules the logging module keeps are process-wide and only ever grow, so a
+// case that ran earlier in the same test binary may already have registered the
+// same names, and this case then passes whichever stage the gateway registers at.
+// The stage itself is held by TestTheKeyAndShapeRulesAreInPlaceWhenTheNextModuleIsBuilt,
+// which reads what a recording capability has been handed.
+func TestTheKeyAndShapeRulesGovernAnAttributeBoundBeforeInit(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "log.json")
+	body := `{"authn":{"gate":{"endpoints":["public"]}},` +
+		`"log":{"outputs":[{"to":"file","format":"json","path":"` + path + `"}]}}`
+	const early = "early record written in New"
+	earlyWriter := core.Module{
+		Name: "stand-in.early",
+		// Requiring the gateway's capability and logging puts this module's New
+		// after the gateway's and after logging's, which is the moment between
+		// the two registrations that the case is about.
+		Requires: []core.Requirement{
+			{Token: (*authn.Gate)(nil)},
+			{Token: (*log.Logger)(nil)},
+		},
+		New: func(_ context.Context, reg *core.Registry) (any, error) {
+			logging, err := core.Resolve[log.Logger](reg)
+			if err != nil {
+				return nil, err
+			}
+			// The attributes are bound with With, which judges them once, when
+			// they are bound: a rule registered after this line never sees them.
+			// Written on the record itself they would be judged when the record
+			// is written, and a destination that is not open yet would hide the
+			// difference.
+			logging.Named("early").With(
+				"token", "token-secret-1",
+				"Password", "password-secret-2",
+				"note", "carrying "+jwtToken+" in the clear",
+				"refresh", refreshToken).Info(early)
+			return struct{}{}, nil
+		},
+	}
+
+	err := assembly{
+		body:     body,
+		backends: []authn.Verifier{basicBackend("static", "static.")},
+		router:   routerWith("public"),
+		modules:  []core.Module{log.Module(), earlyWriter},
+	}.drive(t, nothing)
+	if err != nil {
+		t.Fatalf("the drive failed: %v", err)
+	}
+
+	written, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatalf("reading the log output: %v", err)
+	}
+	text := string(written)
+	if !strings.Contains(text, early) {
+		t.Fatalf("the early record is not in the output, so nothing here was checked:\n%s", text)
+	}
+	for _, secret := range []string{"token-secret-1", "password-secret-2", jwtToken, refreshToken} {
+		if strings.Contains(text, secret) {
+			t.Errorf("an attribute bound before Init carries %q in the clear:\n%s", secret, text)
+		}
+	}
+}
+
+// TestWithNoLoggingModuleNoRuleIsRegisteredAndNothingFails holds the absence of
+// the optional dependency: the gateway builds and runs, and registering the
+// rules is a no-op rather than an error.
+func TestWithNoLoggingModuleNoRuleIsRegisteredAndNothingFails(t *testing.T) {
+	if err := registerNewRules(core.New()); err != nil {
+		t.Errorf("registering the rules with no logging in the registry failed: %v", err)
+	}
+	err := assembly{
+		body:     guarding("public"),
+		backends: []authn.Verifier{basicBackend("static", "static.")},
+		router:   routerWith("public"),
+	}.drive(t, nothing)
+	if err != nil {
+		t.Errorf("an assembly with no logging module failed: %v", err)
+	}
+}
+
+// rulesRecorder is a logging capability that records the order in which the
+// redaction rules were registered with it.
+type rulesRecorder struct {
+	mu     *sync.Mutex
+	events *[]string
+	keys   *[]string
+}
+
+func (r rulesRecorder) Named(string) *slog.Logger { return quiet() }
+func (r rulesRecorder) Redaction() log.Redaction  { return r }
+func (r rulesRecorder) AddKeys(keys ...string) {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	*r.events = append(*r.events, "keys")
+	*r.keys = append(*r.keys, keys...)
+}
+
+func (r rulesRecorder) AddPattern(name string, _ log.Matcher) {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	*r.events = append(*r.events, "pattern:"+name)
+}
+
+// TestTheRulesAreRegisteredAsKeysThenShapesThenTheSchemeRule holds what reaches
+// the logging capability and in which order: the credential key names, then the
+// value shapes, then the rule over the value that follows a scheme, which needs
+// the backends' declarations. The key names have to include every spelling of
+// each name, because key matching is exact. Which stage each is registered in is
+// held by TestTheKeyAndShapeRulesAreInPlaceWhenTheNextModuleIsBuilt, and this case
+// cannot tell the stages apart.
+func TestTheRulesAreRegisteredAsKeysThenShapesThenTheSchemeRule(t *testing.T) {
+	var mu sync.Mutex
+	var events, keys []string
+	logging := core.Module{
+		Name:     "stand-in.logging",
+		Provides: []core.Provision{{Token: (*log.Logger)(nil)}},
+		New: func(context.Context, *core.Registry) (any, error) {
+			return rulesRecorder{mu: &mu, events: &events, keys: &keys}, nil
+		},
+	}
+	// A module that records the moment the gateway's New has run: it requires
+	// nothing of the gateway, so what is held is the gateway's own declared
+	// dependency on logging and not an ordering this case arranged.
+	err := assembly{
+		body:     `{}`,
+		backends: []authn.Verifier{basicBackend("static", "static.")},
+		router:   routerWith("public"),
+		modules:  []core.Module{logging},
+	}.drive(t, nothing)
+	if err != nil {
+		t.Fatalf("the drive failed: %v", err)
+	}
+
+	mu.Lock()
+	defer mu.Unlock()
+	want := []string{"keys", "pattern:" + ModuleName + ".shapes", "pattern:" + ModuleName + ".credential"}
+	if !slices.Equal(events, want) {
+		t.Fatalf("the rules were registered in the order %v, want %v: the key names and the "+
+			"value shapes in New, the scheme rule once the backends are known", events, want)
+	}
+	for _, want := range []string{
+		"Authorization", "authorization", "Cookie", "cookie", "Set-Cookie", "set-cookie",
+		"Credential", "credential", "password", "Password", "SAMLResponse", "samlresponse", "state", "flow_token",
+	} {
+		if !slices.Contains(keys, want) {
+			t.Errorf("the key %q is not registered, and key matching is exact", want)
+		}
+	}
+}
+
+// TestTheKeyAndShapeRulesAreInPlaceWhenTheNextModuleIsBuilt holds the stage the
+// key names and the value shapes are registered at. A module that requires the
+// gateway and logging is built right after the gateway, and no Init has run
+// by then; what the recording capability has been handed at that moment is the
+// rules registered in New, and the rule over a scheme's value, which waits for the
+// backends' declarations, is not among them. A gateway that registered the key
+// names in Init would hand the recorder nothing yet.
+func TestTheKeyAndShapeRulesAreInPlaceWhenTheNextModuleIsBuilt(t *testing.T) {
+	var mu sync.Mutex
+	var events, keys, atNextNew []string
+	logging := core.Module{
+		Name:     "stand-in.logging",
+		Provides: []core.Provision{{Token: (*log.Logger)(nil)}},
+		New: func(context.Context, *core.Registry) (any, error) {
+			return rulesRecorder{mu: &mu, events: &events, keys: &keys}, nil
+		},
+	}
+	next := core.Module{
+		Name: "stand-in.next",
+		Requires: []core.Requirement{
+			{Token: (*authn.Gate)(nil)},
+			{Token: (*log.Logger)(nil)},
+		},
+		New: func(context.Context, *core.Registry) (any, error) {
+			mu.Lock()
+			defer mu.Unlock()
+			atNextNew = slices.Clone(events)
+			return struct{}{}, nil
+		},
+	}
+	err := assembly{
+		body:     `{}`,
+		backends: []authn.Verifier{basicBackend("static", "static.")},
+		router:   routerWith("public"),
+		modules:  []core.Module{logging, next},
+	}.drive(t, nothing)
+	if err != nil {
+		t.Fatalf("the drive failed: %v", err)
+	}
+
+	want := []string{"keys", "pattern:" + ModuleName + ".shapes"}
+	if !slices.Equal(atNextNew, want) {
+		t.Errorf("by the time the module after the gateway was built the rules registered were %v, "+
+			"want %v: the key names and the value shapes belong to New, before any logger binds an attribute",
+			atNextNew, want)
+	}
+}
+
+// TestTheGatewayRequiresLoggingAsOptionalAndNothingElse holds the descriptor's
+// one dependency: logging, and optional, so that the key rules are in place
+// before any logger binds an attribute without the gateway forcing a logging
+// module into a command that has none.
+func TestTheGatewayRequiresLoggingAsOptionalAndNothingElse(t *testing.T) {
+	m := Module()
+	if len(m.Requires) != 1 || m.Requires[0].Token != core.Token((*log.Logger)(nil)) || !m.Requires[0].Optional {
+		t.Errorf("the gateway requires %+v, want an optional dependency on logging alone", m.Requires)
+	}
+	if len(m.Provides) != 1 || !m.Provides[0].Exclusive || m.Provides[0].Token != core.Token((*authn.Gate)(nil)) {
+		t.Errorf("the gateway provides %+v, want authn.Gate exclusively", m.Provides)
 	}
 }

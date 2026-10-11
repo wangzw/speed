@@ -73,7 +73,9 @@ func (h *crmHost) doWith(req request, extra headers) (response, error) {
 		r.Header.Set(name, value)
 	}
 	if req.cred != nil {
-		req.cred.apply(r)
+		if authErr := h.authorize(req.cred, r); authErr != nil {
+			return response{}, authErr
+		}
 	}
 	resp, err := client.Do(r)
 	if err != nil {
@@ -107,10 +109,9 @@ func api(method, path string, tenant tenantRef, cred credential, body any) reque
 // in each, and the serving replicas, h being the first of them.
 //
 // The owners sign in once and send every request of a case with the session
-// token they get, as a client does. A Basic credential costs a password
-// derivation on every request, which is the users module's doing and not
-// what these cases are about, and under load that cost is what the gate's
-// call budget runs out on.
+// token they get, as a client does. A login costs a password derivation, which
+// is the users module's doing and not what these cases are about, and under
+// load that cost is what the gate's call budget runs out on.
 type dealsWorld struct {
 	c              *crmCase
 	h              *crmHost
@@ -175,8 +176,8 @@ func openAccount(t *testing.T, h *crmHost, ref tenantRef, cred credential, id st
 }
 
 // sessionActor is how the journal names a user who sent a request with a
-// session token.
-func sessionActor(u userRef) string { return sessionsBackendName + "/" + u.ID }
+// session token: by the account, which is the user identifier.
+func sessionActor(u userRef) string { return u.ID }
 
 // stageDef is a stage as a client defines it.
 type stageDef struct {

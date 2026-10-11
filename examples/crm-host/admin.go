@@ -22,12 +22,19 @@ import (
 // carries the same name in the chain listing.
 const adminModuleName = "admin"
 
-// operatorOwner is the owner every platform operator's identity carries: the
-// name the static credential backend is configured with
-// (authn.static.name). An operator table configured under another name
-// authenticates, and every operator in it is then refused here — which is the
-// direction a mismatch between the two has to fail in.
-const operatorOwner = "ops"
+// operatorSubject is the one subject of the operators' table the admin endpoint
+// serves, and operatorAccount the account the static backend hands back for it:
+// the static prefix and the subject's name. A table holding other subjects
+// authenticates them, and every one of them is refused here, which is the
+// direction a mismatch between the table and this name has to fail in.
+const (
+	operatorSubject = "root"
+	operatorAccount = authn.AccountID(authn.StaticPrefix + operatorSubject)
+)
+
+// adminRefusal is the record the operator check writes when it turns a caller
+// away.
+const adminRefusal = "the admin endpoint refused a caller that is not the platform's operator"
 
 // The admin routes. All of them sit on the admin endpoint, which resolves no
 // tenant: an operator acts on the roster and across tenants, never inside one.
@@ -77,7 +84,16 @@ func (p *adminProduct) layer() speedhttp.Middleware {
 				writeError(c, nethttp.StatusInternalServerError, "the request carries no identity")
 				return
 			}
-			if caller.Owner() != operatorOwner {
+			// A platform operator is the subject of the operators' table named
+			// operatorSubject. Its account carries the static prefix, which no
+			// other backend may hand back: the gateway holds every backend to
+			// the namespace it declared. A CRM user's account is a user
+			// identifier, and another subject of the table is an account under
+			// the same prefix and is not this one.
+			if caller.Account() != operatorAccount {
+				// The record carries the caller's account and the backend
+				// that verified it, which the gateway puts on the context.
+				log.FromContext(c.Request.Context()).Info(adminRefusal)
 				writeError(c, nethttp.StatusForbidden, "the admin endpoint serves the platform's operators")
 				return
 			}

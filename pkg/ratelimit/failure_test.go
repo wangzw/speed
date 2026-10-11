@@ -200,8 +200,8 @@ func TestAnEmptyEndpointListNamesTheKey(t *testing.T) {
 }
 
 // TestACounterFailureLineNamesNoIdentity keeps the counter classes' lines to
-// the class alone. Their key carries the identity string, and a failure line
-// on standard error is not the place to repeat it.
+// the class alone. Their counting key carries the accountability key, and a
+// failure line on standard error is not the place to repeat it.
 func TestACounterFailureLineNamesNoIdentity(t *testing.T) {
 	var out bytes.Buffer
 	s := newSignalTo(&out)

@@ -73,13 +73,15 @@
 | `authn.gate.call-budget` | `time.Duration` | `5s` | 默认 | | 一次进入校验后端的调用的期限；须为正 |
 | `authn.gate.in-flight` | 整数 | `64` | 默认 | | 同时进行的后端调用数上限，满时请求收口 503；须为正 |
 | `authn.gate.mount.endpoint` | 字符串 | 空 | 默认 | | authn 自己的路由所挂的入口端 |
-| `authn.gate.mount.base-path` | 字符串 | `/auth` | 默认 | | 路由基路径；以 `/` 起头、不以 `/` 结尾、无通配 |
+| `authn.gate.mount.base-path` | 字符串 | `/auth` | 默认 | | 路由基路径；以 `/` 起头、不以 `/` 结尾、无通配，是 gin 规整后的写法 |
 | `authn.gate.mount.public-url` | 字符串 | 空 | 默认 | | 对外基址，只含来源不含路径 |
 | `authn.gate.mount.allow-insecure` | 布尔 | `false` | 主 | | 放宽开关，仅开发：放行 http 基址，cookie 去掉 `__Host-` 前缀与 `Secure` |
-| `authn.gate.trusted-origins` | 字符串列表 | 空 | 主 | | 跨源检查与 `return_to` 额外信任的来源，每项 `scheme://host[:port]`，逐字匹配；`public-url` 的来源恒可信 |
+| `authn.gate.trusted-origins` | 字符串列表 | 空 | 主 | | 跨源检查与 `return_to` 额外信任的来源，每项 `scheme://host[:port]`，先规范成浏览器发送的形式再匹配（规则见 [design-authn-gate](design-authn-gate.md#可信来源的规范形式)）；`public-url` 的来源恒可信 |
 | `authn.static.subjects` | 主体名到 PHC 条目的映射 | 无 | 主 | 必填、敏 | 口令表；键是主体名，值是 PHC 条目，遗留写法只读并告警 |
-| `authn.static.cache-size` | 整数 | `1024` | 默认 | | 口令校验缓存的容量，构造时分配 |
-| `authn.static.concurrency` | 整数 | `min(GOMAXPROCS,8)` | 默认 | | 口令派生的并发上限，构造时分配 |
+| `authn.static.cache-size` | 整数 | `1024` | 默认 | | 口令校验缓存的容量，取值 1 到 1000000，0 被拒绝（要关闭缓存，把设置 `authn.static.cache-ttl` 设为 0），构造时分配 |
+| `authn.static.concurrency` | 整数 | `min(GOMAXPROCS,8)` | 默认 | | 口令派生的并发上限，取值 1 到 256，构造时分配 |
+
+口令表后端的失败退避表另有一个不是输入项的界限：固定键之外至多记 16384 个键，常量 `MaxThrottleKeys` 在 `internal/password`。它是内存上界而不是调参旋钮，所以不设键；口令表里每个主体的键是固定键，不占这些名额，也不会被挤出，机制见 [design-authn-gate](design-authn-gate.md)。
 
 下表是账户、会话与令牌的配置项（封闭集合）。
 
@@ -87,7 +89,7 @@
 |---|---|---|---|---|---|
 | `authn.account.password-algorithm` | 字符串 | `argon2id` | 默认 | | `argon2id` 或 `pbkdf2-sha256`；要求 FIPS 140 的部署取后者 |
 | `authn.account.password-concurrency` | 整数 | `min(GOMAXPROCS,8)` | 默认 | | 口令派生的并发上限 |
-| `authn.account.password-memory-budget-mib` | 整数 | `512` | 默认 | | 口令派生的全局内存预算，启动时分配；至少是 `authn.account.password-argon2-memory-kib` 取值域上限的两倍，否则 `ErrInvalidConfig` |
+| `authn.account.password-memory-budget-mib` | 整数 | `512` | 默认 | | 账户后端的口令派生内存预算，启动时分配（口令表后端另持自己的一份缺省预算，不设键）；至少是 `authn.account.password-argon2-memory-kib` 取值域上限的两倍，否则 `ErrInvalidConfig` |
 | `authn.account.signup` | 字符串 | `closed` | 主 | | 放宽开关；放宽值 `open` |
 | `authn.account.auto-link` | 字符串 | `never` | 主 | | 放宽开关；放宽值 `verified-email` |
 | `authn.session.cookie-domain` | 字符串 | 空 | 默认 | | 非空则 cookie 名改为 `__Secure-sid` 并写出 `Domain` 属性 |
@@ -189,6 +191,8 @@
 | `authn.account.throttle-max-delay` | `time.Duration` | `15m` | 10s 到 24h | | 减小 |
 | `authn.account.throttle-decay` | `time.Duration` | `1h` | 1m 到 24h | | 减小 |
 | `authn.account.secret-retention` | `time.Duration` | `720h` | 1h 到 8760h | | |
+
+`cache-ttl` 是绝对期限：自一次真实派生通过起算，命中不续期，0 关闭缓存。`fail-window` 与 `max-backoff` 的取值域各自独立，所以 `max-backoff` 大于 `fail-window` 的组合合法。失败计数在窗口已过、且这些失败赚得的等待也已走完之后才归零，窗口不会在锁定期结束之前把计数清掉；缺省值下两者相等，行为与按窗口归零相同。账户的 `throttle-decay` 与 `throttle-max-delay` 同判（[design-authn-account](design-authn-account.md)）。
 
 Argon2id 的 `memory-kib`、`iterations`、`parallelism` 各自只能在单项取值域内判，而 OWASP 最低组合按（m, t, p）的组合判：各自合法而组合低于下限时，写入不被拒绝，使用处回落到默认组合并记 `Error`（回落与内存预算的口径见 [design-authn-account](design-authn-account.md)）。`secret-retention` 是服务密钥到期或撤销之后行的保留期。
 
@@ -417,21 +421,24 @@ flowchart TD
 
 ### 启动期自检
 
-任一失败即终止启动，错误点名缺的那一项，且不带秘密。下表是配置与秘密相关自检的全集（封闭集合）。网关装配自检（无入口模块、无校验后端、载体撞车）归 [design-authn-gate](design-authn-gate.md)。
+任一失败即终止启动，错误点名缺的那一项，且不带秘密：`trusted-origins` 的项只以序号点名，`public-url` 与 `base-path` 至多回显去掉用户信息、查询与片段之后的值。下表是配置与秘密相关自检的全集（封闭集合）。网关装配自检（无入口模块、无校验后端、载体撞车）归 [design-authn-gate](design-authn-gate.md)。
 
 | 自检 | 失败的哨兵 |
 |---|---|
 | `authn.gate.endpoints` 非空、无空名、无重名，`*` 不与具体端名混写；`authn.gate.call-budget` 与 `authn.gate.in-flight` 为正；`authn.token.audience` 至少一个值 | `ErrInvalidConfig` |
 | `tenant.admission.endpoints` 非空，且不含 `*` | `ErrInvalidConfig` |
 | `authn.gate.endpoints` 里的端名存在于入口模块 | `ErrUnknownEndpoint` |
-| `authn.gate.mount.public-url` 非空（由需要它的模块判）、无用户信息、无查询与片段；`authn.gate.mount.base-path` 以 `/` 起头、不以 `/` 结尾、无通配 | `ErrInvalidConfig` |
+| `authn.gate.mount.public-url` 非空（由需要它的模块判）；`authn.gate.mount.public-url` 不是带主机的 http 或 https URL，或带用户信息、路径、查询、片段、空端口、越界端口、通配，或主机不是 ASCII（国际化域名写 punycode） | `ErrInvalidConfig` |
+| `authn.gate.mount.base-path` 不以 `/` 起头、以 `/` 结尾、含通配或路径参数（`*`、`:`）、`?` 或 `#`，或不是 `path.Clean` 之后的写法 | `ErrInvalidConfig` |
+| `authn.gate.trusted-origins` 的某一项不是 `scheme://host[:port]`：scheme 不是 http 或 https，带用户信息、路径、查询、片段、空端口、通配，端口不在 1 到 65535，或主机不是 ASCII（国际化域名写 punycode）；每项先规范成浏览器发送的形式，规范后相同的项并作一项 | `ErrInvalidConfig` |
+| `authn.static.cache-size` 不在 1 到 1000000（0 被拒绝）；`authn.static.concurrency` 不在 1 到 256 | `ErrInvalidConfig` |
 | `authn.gate.mount.public-url` 是 https（回环主机与 `allow-insecure` 为真时除外）；`authn.session.same-site` 不取 `none` | `ErrInsecureConfig` |
 | `authn.gate.mount.endpoint` 存在于入口模块 | `ErrUnknownEndpoint` |
-| `authn.gate.mount.endpoint` 被网关所守；挂路由的模块在 `authn.gate.mount.endpoint` 为空且入口声明的端不止一个时失败 | `ErrRoutesUnguarded`、`ErrRoutesUnconfigured` |
+| `authn.gate.mount.endpoint` 被网关所守；`authn.mount` 在 `authn.gate.mount.endpoint` 为空且入口声明的端不是恰好一个时失败，网关在 `Start` 对同一规则再判一次 | `ErrRoutesUnguarded`、`ErrRoutesUnconfigured` |
 | `authn.gate.mount.endpoint` 不被 `ScopeGuard` 所守；不在 `tenant.resolve.endpoints` 里（核不了则 `Warn`） | `ErrInvalidConfig` |
 | 加密列往返（`db` 根密钥在）；`BlindIndex` 自检（包 `recover`） | `ErrNoEncryptionKey` |
 | 签名与验证密钥文件可读、解析成功、算法一致、RSA 至少 2048 位、`kid` 不重复 | `ErrInvalidKey` |
-| 每个口令表条目可解析且主体名合法；表非空 | `ErrInvalidClaim` 包 `static.ErrMalformedHash` |
+| 每个口令表条目可解析且主体名合法；表非空 | `ErrInvalidClaim`；条目读不了时同时包住 `static.ErrMalformedHash` |
 | `authn.login.wechat-web` 与 `authn.login.wechat-mp` 各自的必填项齐备；`authn.mfa.webauthn.rp-id` 等于基址主机或其父域；短信 `templates` 覆盖（用途，语言）的全部组合；SAML 的 `sign_requests` 有 SP 密钥；`authn.account.password-memory-budget-mib` 不低于 `m` 取值域上限的两倍 | `ErrInvalidConfig` |
 | 纳入 `authn.login` 而没有任何 `LoginMethod`；纳入 `authn.mfa` 而没有任何 `Factor`，却设了 `global-required` 或库里已有账户登记了某个种类而该种类没有实现 | `ErrNoLoginMethod`、`ErrNoFactor` |
 | 带表模块的迁移已施加（`Start` 里探测自己的表） | `ErrNotMigrated` |
@@ -465,6 +472,8 @@ flowchart TD
 **其余 `Warn`：**
 
 - 没有发件箱的装配里账户抹除不保证完成（[design-authn-account](design-authn-account.md)）。
+- 网关装配里某个校验后端认领的 cookie 名不带 `__Host-` 前缀：每个这样的名字一行。兄弟子域的页面可以种下该名字的 cookie，网关只能拒绝带着两份同名 cookie 的请求，只带被种下的那一份的请求与诚实的请求分不开（[design-authn-gate](design-authn-gate.md)）。
+- 口令表里只在大小写上不同、共用一个退避键的主体名：每一组一行，点名这组主体。
 - `authn.sso` 与 `authn.mfa` 在 `Start` 里若 `core.Registry.Participating("tenant.admission")` 为假，各写一行：租户级强制 SSO 与强制多因素无人执行。
 
 ### 外部行为假设与守住它们的测试
@@ -524,16 +533,16 @@ flowchart TD
 
 | 能力 | 状态 | 代码 |
 |---|---|---|
-| 网关的配置项 | 部分实现 — `authn.gate.endpoints` 仍必填、无缺省、不接受 `*`；缺 `mount.*` 与 `trusted-origins`；`call-budget` 与 `in-flight` 及其判定已在 | `pkg/authn/gate/config.go` `schema`、`moduleConfig`、`(moduleConfig).resolve` |
-| 口令表后端的配置项 | 部分实现 — 缺 PHC 条目、`cache-size`、`concurrency`，现有 `name` 键尚未删除；`subjects` 的必填、敏感与仅主配置源已在 | `pkg/authn/static/config.go` `schema`、`moduleConfig` |
+| 网关的配置项 | 已实现 — `endpoints` 缺省 `["*"]`、空清单与混写是 `ErrInvalidConfig`；`mount.*`、`trusted-origins`、`call-budget` 与 `in-flight` 及其判定 | `pkg/authn/gate/config.go` `schema`、`moduleConfig`、`(moduleConfig).resolve` |
+| 口令表后端的配置项与设置 | 已实现 — `subjects`（必填、敏感、仅主配置源、PHC 与遗留写法）、`cache-size`、`concurrency`，设置 `cache-ttl`、`free-attempts`、`fail-window`、`max-backoff` 及其取值域；`name` 键已删除 | `pkg/authn/static/config.go` `schema`、`settingsSchema`、`(moduleConfig).resolve` |
 | 账户、会话、令牌、登录方式、多因素、短信、SSO 与租户准入的配置项 | 未实现 | — |
-| 全部设置项的声明与取值域 | 未实现 | — |
-| 设置缺席的降级与读取出错的方向 | 未实现 | — |
-| 放宽开关与决定守护面的清单只取主配置源 | 部分实现 — `authn.gate.endpoints` 已仅取主配置源；其余放宽开关与 `trusted-origins`、`tenant.admission.endpoints` 未声明 | `pkg/authn/gate/config.go` `schema` |
+| 全部设置项的声明与取值域 | 部分实现 — 口令表后端的 `cache-ttl`、`free-attempts`、`fail-window`、`max-backoff` 及其取值域已声明；缺其余模块的设置项 | `pkg/authn/static/config.go` `settingsSchema` |
+| 设置缺席的降级与读取出错的方向 | 部分实现 — 口令表后端已实现：设置缺席取声明的默认值，读取出错或取值越出取值域时取默认值并记 `Error`；缺其余模块的设置项 | `pkg/authn/static/static.go` `readSetting`、`(*backend).reportSetting` |
+| 放宽开关与决定守护面的清单只取主配置源 | 部分实现 — 网关的 `endpoints`、`trusted-origins` 与 `mount.allow-insecure` 已仅取主配置源；其余放宽开关与 `tenant.admission.endpoints` 未声明 | `pkg/authn/gate/config.go` `schema` |
 | 放宽变更的监视与 `authn.settings.relaxed` | 未实现 | — |
-| 日志字面量匹配器的登记 | 部分实现 — 缺各模块持有的秘密配置值的字面量；现有按 scheme 的值形状规则已在 | `pkg/authn/gate/redact.go` `registerRedaction` |
-| 启动期自检 | 部分实现 — 网关的 `endpoints`、`call-budget`、`in-flight` 判定与口令表条目的解析已在；缺其余自检与对应哨兵 | `pkg/authn/gate/config.go` `(moduleConfig).resolve`；`pkg/authn/gate/gate.go` `wire`；`pkg/authn/static/config.go` `(moduleConfig).resolve`；`pkg/authn/errors.go` |
+| 日志字面量匹配器的登记 | 部分实现 — 缺各模块持有的秘密配置值的字面量，共用的构造 `literal.Register` 已在、尚无模块调用；键名、值形状与按 scheme 的值形状规则已在 | `pkg/authn/gate/redact.go` `registerNewRules`、`registerValueRule`；`pkg/authn/internal/literal/literal.go` `Register` |
+| 启动期自检 | 部分实现 — 网关的 `endpoints`、`call-budget`、`in-flight`、`mount.*` 与 `trusted-origins` 判定、`Start` 对挂载端的核对，口令表条目的解析与 `cache-size`、`concurrency` 的取值域已在；缺其余自检与对应哨兵 | `pkg/authn/gate/config.go` `(moduleConfig).resolve`；`pkg/authn/gate/gate.go` `checkMount`；`pkg/authn/static/config.go` `(moduleConfig).resolve`；`pkg/authn/errors.go` |
 | 加密列往返自检 | 未实现 | — |
-| 启动诊断 | 部分实现 — 缺放宽项的单独 `Warn` 行与其余常规行；现有到场后端与受守端、冻结后的豁免表已在 | `pkg/authn/gate/gate.go` `wire`、`exemptionAttrs` |
-| 秘密的存放 | 部分实现 — 只有口令表的旧写法哈希条目；缺 PHC 条目、加密列、签名与 SAML 私钥文件 | `pkg/authn/static/hash.go` `Hash`、`ParseHash` |
+| 启动诊断 | 部分实现 — 缺其余常规行；网关的到场后端与其认领、展开后的受守端、各类登记开出的路由、冒充可达的端与放宽项的 `Warn` 行，不带 `__Host-` 前缀的 cookie 名的 `Warn` 行，口令表里弱条目、遗留写法条目与大小写共用退避的 `Warn` 行已在 | `pkg/authn/gate/gate.go` `diagnose`、`freeze` |
+| 秘密的存放 | 部分实现 — 口令表的 PHC 条目与遗留写法已在；缺加密列、签名与 SAML 私钥文件 | `pkg/authn/static/hash.go` `Hash`、`HashPBKDF2`、`ParseHash`；`pkg/authn/internal/password/phc.go` `Parse` |
 | `AGENTS.md` 对设置写权限的硬要求 | 未实现 | — |

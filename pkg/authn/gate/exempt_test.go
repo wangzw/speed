@@ -1,6 +1,7 @@
 package gate
 
 import (
+	"context"
 	"errors"
 	"fmt"
 	nethttp "net/http"
@@ -11,89 +12,148 @@ import (
 	"github.com/vislake/speed/pkg/authn"
 )
 
-// TestRegisteringOutsideTheWindowPanics holds both ends of the three-state
-// gate.
+// registrations are the three calls a registrant makes, each with the name the
+// panic of a refused one is written with.
+var registrations = []struct {
+	name string
+	call func(g *gateway, endpoint, method, path string)
+}{
+	{"Exempt", func(g *gateway, e, m, p string) { g.Exempt(e, m, p) }},
+	{"Optional", func(g *gateway, e, m, p string) { g.Optional(e, m, p) }},
+	{"Impersonable", func(g *gateway, e, m, p string) { g.Impersonable(e, m, p) }},
+}
+
+// TestRegisteringOutsideTheWindowPanics holds both ends of the three-state gate
+// for every one of the three registrations.
 //
 // Before the window a registrant is still constructing, and the instance it
-// would register with may not exist. After it the table is frozen and requests
-// read it, so a late registration would change what is guarded while requests
+// would register with may not exist. After it the tables are frozen and requests
+// read them, so a late registration would change what is guarded while requests
 // are already being served. Neither is something a caller can retry, which is
 // why it is a panic rather than a value handed back.
 //
 // The panic text is part of what is held here: it is the only thing the caller
-// sees, and it has to say which side of the window the call fell on and where
-// the call belongs.
+// sees, and it has to say which method was called, which side of the window the
+// call fell on and where the call belongs.
 func TestRegisteringOutsideTheWindowPanics(t *testing.T) {
-	t.Run("before the window opens", func(t *testing.T) {
-		g := newGateway(settings{endpoints: []string{"public"}, inFlight: 1})
-		text := panicked(t, "registering before Migrate", func() {
-			g.Exempt("public", "GET", "/health")
+	for _, reg := range registrations {
+		t.Run(reg.name+" before the window opens", func(t *testing.T) {
+			g, err := newGateway(settings{endpoints: []string{"public"}, inFlight: 1})
+			if err != nil {
+				t.Fatal(err)
+			}
+			text := panicked(t, "registering before Migrate", func() { reg.call(g, "public", "GET", "/health") })
+			mustContain(t, text, reg.name+`("public", "GET", "/health")`, "the method that was called and what it was given")
+			mustContain(t, text, "before the registration gate opened", "which side of the window the call fell on")
+			mustContain(t, text, "this module's Migrate callback", "where the window that accepts writes opens")
+			mustContain(t, text, "whole Init stage", "what the window frames")
+			mustContain(t, text, "Move the call into the registering module's Init callback", "the fixing action")
 		})
-		mustContain(t, text, "before the registration gate opened", "which side of the window the call fell on")
-		mustContain(t, text, "this module's Migrate callback", "where the window that accepts writes opens")
-		mustContain(t, text, "whole Init stage", "what the window frames")
-		mustContain(t, text, "Move the call into the registering module's Init callback", "the fixing action")
-		mustContain(t, text, `"GET", "/health"`, "the method and path that were refused")
-	})
 
-	t.Run("after the window shuts", func(t *testing.T) {
-		g := testGateway(t, []string{"public"}, enumerating("local", "alice"))
-		sealed(t, g, routerWith("public"))
-		text := panicked(t, "registering after Start", func() {
-			g.Exempt("public", "GET", "/health")
+		t.Run(reg.name+" after the window shuts", func(t *testing.T) {
+			g := testGateway(t, []string{"public"}, basicBackend("static", "static."))
+			sealed(t, g, routerWith("public"))
+			text := panicked(t, "registering after Start", func() { reg.call(g, "public", "GET", "/health") })
+			mustContain(t, text, reg.name+`("public", "GET", "/health")`, "the method that was called and what it was given")
+			mustContain(t, text, "after the registration gate closed", "which side of the window the call fell on")
+			mustContain(t, text, "so this registration would change what is guarded", "why a late registration reaches nothing")
+			mustContain(t, text, "Move the call into the registering module's Init callback", "the fixing action")
 		})
-		mustContain(t, text, "after the registration gate closed", "which side of the window the call fell on")
-		mustContain(t, text, "so this registration would change what is guarded", "why a late registration reaches nothing")
-		mustContain(t, text, "Move the call into the registering module's Init callback", "the fixing action")
-		mustContain(t, text, `"GET", "/health"`, "the method and path that were refused")
-	})
+
+		t.Run(reg.name+" inside the window", func(t *testing.T) {
+			g := testGateway(t, []string{"public"}, basicBackend("static", "static."))
+			reg.call(g, "public", "GET", "/health") // does not panic
+		})
+	}
 }
 
-// TestAnExemptionThatCannotLandFailsTheStartup holds the two validations Start
-// makes, each with its own sentinel.
+// TestARegistrationThatCannotLandFailsTheStartup holds the two validations Start
+// makes of the endpoint every registration names, each with its own sentinel and
+// for each of the three kinds.
 //
 // The unguarded case is the one worth spelling out: the direction is already
-// fail-closed, since an exemption on an endpoint nobody guards changes nothing.
-// Swallowing it silently is what the sentinel prevents — the registrant
-// believes a route is public, and nothing anywhere says it is not.
-func TestAnExemptionThatCannotLandFailsTheStartup(t *testing.T) {
+// fail-closed, since a registration on an endpoint nobody guards changes
+// nothing. Swallowing it silently is what the sentinel prevents — the registrant
+// believes a route is public, or open to an impersonation, and nothing anywhere
+// says it is not.
+func TestARegistrationThatCannotLandFailsTheStartup(t *testing.T) {
+	for _, reg := range registrations {
+		for _, c := range []struct {
+			name      string
+			guarded   []string
+			endpoints []string
+			endpoint  string
+			want      error
+		}{
+			{"the endpoint does not exist", []string{"public"}, []string{"public"}, "typo", authn.ErrUnknownEndpoint},
+			{"the endpoint exists but this gateway does not guard it", []string{"public"}, []string{"public", "admin"}, "admin", authn.ErrExemptionUnguarded},
+		} {
+			t.Run(reg.name+" "+c.name, func(t *testing.T) {
+				g := testGateway(t, c.guarded, basicBackend("static", "static."))
+				reg.call(g, c.endpoint, "GET", "/health")
+
+				err := g.seal(routerWith(c.endpoints...))
+				if !errors.Is(err, c.want) {
+					t.Fatalf("sealing gave %v, want one wrapping %v", err, c.want)
+				}
+				for _, named := range []string{c.endpoint, "GET", "/health", reg.name} {
+					if !strings.Contains(err.Error(), named) {
+						t.Errorf("the failure reads %q and does not name %q", err, named)
+					}
+				}
+			})
+		}
+	}
+}
+
+// TestOneRouteWithTwoLevelsThatExcludeEachOtherFailsTheStartup holds which pairs
+// of registrations conflict. An exempt route reads no credential, so it has no
+// identity that could be optional or impersonating; Optional and Impersonable
+// act on requests that do not overlap, so they may share a route.
+func TestOneRouteWithTwoLevelsThatExcludeEachOtherFailsTheStartup(t *testing.T) {
+	type call struct {
+		kind     string
+		endpoint string
+		method   string
+		path     string
+	}
 	for _, c := range []struct {
-		name      string
-		guarded   []string
-		endpoints []string
-		endpoint  string
-		method    string
-		path      string
-		want      error
+		name     string
+		calls    []call
+		conflict bool
 	}{
-		{
-			name:      "the endpoint does not exist",
-			guarded:   []string{"public"},
-			endpoints: []string{"public"},
-			endpoint:  "typo",
-			method:    "GET",
-			path:      "/health",
-			want:      authn.ErrUnknownEndpoint,
-		},
-		{
-			name:      "the endpoint exists but this gateway does not guard it",
-			guarded:   []string{"public"},
-			endpoints: []string{"public", "admin"},
-			endpoint:  "admin",
-			method:    "GET",
-			path:      "/health",
-			want:      authn.ErrExemptionUnguarded,
-		},
+		{"exempt and optional", []call{{"Exempt", "public", "GET", "/x"}, {"Optional", "public", "GET", "/x"}}, true},
+		{"optional and exempt", []call{{"Optional", "public", "GET", "/x"}, {"Exempt", "public", "GET", "/x"}}, true},
+		{"exempt and impersonable", []call{{"Exempt", "public", "GET", "/x"}, {"Impersonable", "public", "GET", "/x"}}, true},
+		{"impersonable and exempt", []call{{"Impersonable", "public", "GET", "/x"}, {"Exempt", "public", "GET", "/x"}}, true},
+		{"all three", []call{{"Exempt", "public", "GET", "/x"}, {"Optional", "public", "GET", "/x"}, {"Impersonable", "public", "GET", "/x"}}, true},
+		{"optional and impersonable", []call{{"Optional", "public", "GET", "/x"}, {"Impersonable", "public", "GET", "/x"}}, false},
+		{"the same registration twice", []call{{"Exempt", "public", "GET", "/x"}, {"Exempt", "public", "GET", "/x"}}, false},
+		{"exempt and optional under two methods", []call{{"Exempt", "public", "GET", "/x"}, {"Optional", "public", "POST", "/x"}}, false},
+		{"exempt and optional under two paths", []call{{"Exempt", "public", "GET", "/x"}, {"Optional", "public", "GET", "/y"}}, false},
+		{"exempt and optional on two endpoints", []call{{"Exempt", "public", "GET", "/x"}, {"Optional", "admin", "GET", "/x"}}, false},
 	} {
 		t.Run(c.name, func(t *testing.T) {
-			g := testGateway(t, c.guarded, enumerating("local", "alice"))
-			g.Exempt(c.endpoint, c.method, c.path)
-
-			err := g.seal(routerWith(c.endpoints...))
-			if !errors.Is(err, c.want) {
-				t.Fatalf("sealing gave %v, want one wrapping %v", err, c.want)
+			g := testGateway(t, []string{"admin", "public"}, basicBackend("static", "static."))
+			for _, k := range c.calls {
+				for _, reg := range registrations {
+					if reg.name == k.kind {
+						reg.call(g, k.endpoint, k.method, k.path)
+					}
+				}
 			}
-			for _, named := range []string{c.endpoint, c.method, c.path} {
+
+			err := g.seal(routerWith("admin", "public"))
+			if !c.conflict {
+				if err != nil {
+					t.Fatalf("sealing refused a set of registrations that do not conflict: %v", err)
+				}
+				return
+			}
+			if !errors.Is(err, authn.ErrAccessConflict) {
+				t.Fatalf("sealing gave %v, want one wrapping %v", err, authn.ErrAccessConflict)
+			}
+			for _, named := range []string{"GET /x", `"public"`, "Exempt"} {
 				if !strings.Contains(err.Error(), named) {
 					t.Errorf("the failure reads %q and does not name %q", err, named)
 				}
@@ -102,18 +162,50 @@ func TestAnExemptionThatCannotLandFailsTheStartup(t *testing.T) {
 	}
 }
 
-// TestTheFrozenTableIsWrittenByEndpointMethodAndPath holds the startup diagnostic
-// that states what is public. It names the routes the way a registrant wrote
-// them — method and path, under the endpoint they are on — and a route
-// registered twice is one line of it, because it is one exemption.
-func TestTheFrozenTableIsWrittenByEndpointMethodAndPath(t *testing.T) {
+// TestTheFrozenTableCarriesEachKindOnTheRoutesItWasRegisteredOn holds the
+// freeze: the tables say, route by route, which of the three levels each route
+// has, and a route registered with none has the zero value.
+func TestTheFrozenTableCarriesEachKindOnTheRoutesItWasRegisteredOn(t *testing.T) {
+	g := testGateway(t, []string{"admin", "public"}, basicBackend("static", "static."))
+	g.Exempt("public", "GET", "/status")
+	g.Optional("public", "GET", "/catalog")
+	g.Impersonable("public", "GET", "/catalog")
+	g.Impersonable("admin", "POST", "/end")
+	sealed(t, g, routerWith("admin", "public"))
+
+	for _, c := range []struct {
+		endpoint string
+		route    route
+		want     access
+	}{
+		{"public", route{"GET", "/status"}, access{exempt: true}},
+		{"public", route{"GET", "/catalog"}, access{optional: true, impersonable: true}},
+		{"admin", route{"POST", "/end"}, access{impersonable: true}},
+		{"public", route{"POST", "/status"}, access{}},
+		{"admin", route{"GET", "/status"}, access{}},
+		{"public", route{"GET", "/orders"}, access{}},
+	} {
+		if got := g.routes[c.endpoint][c.route]; got != c.want {
+			t.Errorf("%s %s: the table holds %+v, want %+v", c.endpoint, c.route, got, c.want)
+		}
+	}
+}
+
+// TestTheFrozenTablesAreWrittenByEndpointMethodAndPath holds the startup
+// diagnostics that state what is public, what is optional and what admits an
+// impersonation. They name the routes the way a registrant wrote them — method
+// and path, under the endpoint they are on — and a route registered twice is one
+// entry of it, because it is one registration.
+func TestTheFrozenTablesAreWrittenByEndpointMethodAndPath(t *testing.T) {
 	logs := liveAssembly{
 		endpoints: []string{"public", "admin"},
-		backends:  []authn.Verifier{passes(enumerating("local", "alice"))},
+		backends:  []authn.Verifier{passes(basicBackend("static", "static."))},
 		routes: []liveRoute{
 			{endpoint: "public", method: "GET", path: "/health"},
 			{endpoint: "public", method: "POST", path: "/login"},
+			{endpoint: "public", method: "GET", path: "/catalog"},
 			{endpoint: "admin", method: "GET", path: "/status"},
+			{endpoint: "admin", method: "POST", path: "/end"},
 		},
 		exempt: []liveRoute{
 			{endpoint: "public", method: "POST", path: "/login"},
@@ -121,26 +213,49 @@ func TestTheFrozenTableIsWrittenByEndpointMethodAndPath(t *testing.T) {
 			{endpoint: "public", method: "GET", path: "/health"},
 			{endpoint: "admin", method: "GET", path: "/status"},
 		},
+		optional:     []liveRoute{{endpoint: "public", method: "GET", path: "/catalog"}},
+		impersonable: []liveRoute{{endpoint: "admin", method: "POST", path: "/end"}},
 	}.serve(t, func(*live) {})
 
-	frozen, ok := logs.recordNamed("authn: the exemption table, frozen")
+	frozen, ok := logs.recordNamed("authn: the exempt routes, frozen")
 	if !ok {
-		t.Fatal("the startup diagnostics say nothing about the exemption table")
+		t.Fatal("the startup diagnostics say nothing about the exempt routes")
 	}
 	if got, want := attrText(frozen, "public"), "GET /health, POST /login"; got != want {
-		t.Errorf("the frozen table lists %q for the endpoint public, want %q: each route once, "+
-			"as method and path, in a stable order", got, want)
+		t.Errorf("the exempt table lists %q for the endpoint public, want %q: each route once, as "+
+			"method and path, in a stable order", got, want)
 	}
 	if got, want := attrText(frozen, "admin"), "GET /status"; got != want {
-		t.Errorf("the frozen table lists %q for the endpoint admin, want %q", got, want)
+		t.Errorf("the exempt table lists %q for the endpoint admin, want %q", got, want)
+	}
+
+	optional, ok := logs.recordNamed("authn: the routes that accept a request with no credential, frozen")
+	if !ok {
+		t.Fatal("the startup diagnostics say nothing about the optional routes")
+	}
+	if got, want := attrText(optional, "public"), "GET /catalog"; got != want {
+		t.Errorf("the optional table lists %q for public, want %q", got, want)
+	}
+	if got := attrText(optional, "admin"); got != "" {
+		t.Errorf("the optional table lists %q for admin, want nothing", got)
+	}
+
+	imp, ok := logs.recordNamed("authn: the routes that admit an impersonating identity, frozen")
+	if !ok {
+		t.Fatal("the startup diagnostics say nothing about the impersonable routes")
+	}
+	if got, want := attrText(imp, "admin"), "POST /end"; got != want {
+		t.Errorf("the impersonable table lists %q for admin, want %q", got, want)
 	}
 }
 
 // TestAnEmptyFrozenTableSaysSo holds the other half of that diagnostic: with
-// nothing registered it still speaks, and says that every route needs a
-// credential, which is the sentence that makes an absent registration readable.
+// nothing registered it still speaks, and the exempt table says that every route
+// needs a credential, which is the sentence that makes an absent registration
+// readable.
 func TestAnEmptyFrozenTableSaysSo(t *testing.T) {
-	attrs := exemptionAttrs(nil)
+	attrs := registrationAttrs(nil, func(a access) bool { return a.exempt }, "exemptions",
+		"none: every route on every guarded endpoint requires a credential")
 	if len(attrs) != 1 {
 		t.Fatalf("an empty table is written as %d attribute(s), want the one that says so", len(attrs))
 	}
@@ -148,6 +263,17 @@ func TestAnEmptyFrozenTableSaysSo(t *testing.T) {
 		!strings.Contains(rendered, "requires a credential") {
 		t.Errorf("an empty table is written as %q, which does not say that nothing is exempt", rendered)
 	}
+}
+
+// renderAttrs writes slog's alternating attributes as text, so a case can look
+// for what a line says.
+func renderAttrs(attrs []any) string {
+	var b strings.Builder
+	for _, a := range attrs {
+		fmt.Fprint(&b, a)
+		b.WriteByte(' ')
+	}
+	return b.String()
 }
 
 // TestAnExemptRouteReachesNoBackendAtAll holds the ordering the whole exemption
@@ -159,7 +285,7 @@ func TestAnEmptyFrozenTableSaysSo(t *testing.T) {
 // the one route that must answer when everything else cannot.
 func TestAnExemptRouteReachesNoBackendAtAll(t *testing.T) {
 	var asked atomic.Int64
-	backend := passes(enumerating("local", "alice"))
+	backend := passes(basicBackend("static", "static."))
 	backend.asked = &asked
 
 	var exempt, guarded reply
@@ -172,8 +298,8 @@ func TestAnExemptRouteReachesNoBackendAtAll(t *testing.T) {
 		},
 		exempt: []liveRoute{{endpoint: "public", method: "GET", path: "/health"}},
 	}.serve(t, func(l *live) {
-		// The request carries a credential, so that what is held is the
-		// ordering and not merely the absence of a header.
+		// The request carries a credential, so that what is held is the ordering
+		// and not merely the absence of a header.
 		exempt = l.send("public", "GET", "/health", asAlice)
 		askedByExempt = asked.Load()
 		guarded = l.send("public", "GET", "/orders", asAlice)
@@ -184,16 +310,16 @@ func TestAnExemptRouteReachesNoBackendAtAll(t *testing.T) {
 		t.Errorf("a backend was asked %d time(s) on an exempt route, want none: the exemption is "+
 			"judged before the credential is read", askedByExempt)
 	}
-	if want := "reached as nobody"; exempt.body != want {
+	if want := "reached as nobody [open]"; exempt.body != want {
 		t.Errorf("the exempt route answered %q, want %q: nothing authenticated the request, so it "+
-			"carries no identity", exempt.body, want)
+			"carries no identity, and the access level says why", exempt.body, want)
 	}
 
-	// The guarded route with the same credential is the control: the backend
-	// is reachable and the credential is good, so the silence above is the
+	// The guarded route with the same credential is the control: the backend is
+	// reachable and the credential is good, so the silence above is the
 	// exemption's doing.
 	requireStatus(t, "a guarded route with a good credential", guarded, nethttp.StatusOK)
-	if want := "reached as local/alice"; guarded.body != want {
+	if want := "reached as static.alice [required]"; guarded.body != want {
 		t.Errorf("the guarded route answered %q, want %q", guarded.body, want)
 	}
 	if got := asked.Load(); got != 1 {
@@ -201,32 +327,81 @@ func TestAnExemptRouteReachesNoBackendAtAll(t *testing.T) {
 	}
 }
 
+// TestAnOptionalRouteTakesARequestWithNoCredentialAndJudgesOneWithACredential
+// holds the optional registration against the real entry point: no credential
+// passes as nobody and the access level says optional, a good credential is the
+// account, a refused one is a 401 and not a pass as nobody, and a route beside
+// it that is not optional is guarded.
+func TestAnOptionalRouteTakesARequestWithNoCredentialAndJudgesOneWithACredential(t *testing.T) {
+	tokens := schemeBackend("token", "bearer")
+	tokens.verify = func(_ context.Context, c authn.Credential) authn.Verdict {
+		if c.Value == "good" {
+			return held(tokens, "carol")
+		}
+		return authn.Denied(errors.New("expired"))
+	}
+	var bare, good, refused, other reply
+	liveAssembly{
+		backends: []authn.Verifier{tokens},
+		routes: []liveRoute{
+			{endpoint: "public", method: "GET", path: "/catalog"},
+			{endpoint: "public", method: "GET", path: "/orders"},
+		},
+		optional: []liveRoute{{endpoint: "public", method: "GET", path: "/catalog"}},
+	}.serve(t, func(l *live) {
+		bare = l.send("public", "GET", "/catalog")
+		good = l.send("public", "GET", "/catalog", asBearer("good"))
+		refused = l.send("public", "GET", "/catalog", asBearer("expired"))
+		other = l.send("public", "GET", "/orders")
+	})
+
+	requireStatus(t, "an optional route with no credential", bare, nethttp.StatusOK)
+	if want := "reached as nobody [optional]"; bare.body != want {
+		t.Errorf("the optional route with no credential answered %q, want %q", bare.body, want)
+	}
+	requireStatus(t, "an optional route with a good credential", good, nethttp.StatusOK)
+	if want := "reached as carol [optional]"; good.body != want {
+		t.Errorf("the optional route with a good credential answered %q, want %q: a credential that is "+
+			"there is judged", good.body, want)
+	}
+	requireStatus(t, "an optional route with a credential that does not hold", refused, nethttp.StatusUnauthorized)
+	requireChallenge(t, "an optional route with a credential that does not hold", refused)
+	requireStatus(t, "a route beside the optional one", other, nethttp.StatusUnauthorized)
+}
+
 // TestAnExemptionMatchesTheRegisteredMethodAndPathOnly holds that the method is
 // part of what is exempted.
 //
 // Only GET /both is exempted, and POST /both is a route on the same path that
 // carries its own handler and its own business. Exempting by path alone would
-// open the one by exempting the other.
+// open the one by exempting the other. The same holds for the other two kinds.
 func TestAnExemptionMatchesTheRegisteredMethodAndPathOnly(t *testing.T) {
-	var get, post, other reply
+	var get, post, other, optionalGet, optionalPost reply
 	liveAssembly{
-		backends: []authn.Verifier{passes(enumerating("local", "alice"))},
+		backends: []authn.Verifier{passes(basicBackend("static", "static."))},
 		routes: []liveRoute{
 			{endpoint: "public", method: "GET", path: "/both"},
 			{endpoint: "public", method: "POST", path: "/both"},
 			{endpoint: "public", method: "GET", path: "/other"},
+			{endpoint: "public", method: "GET", path: "/either"},
+			{endpoint: "public", method: "POST", path: "/either"},
 		},
-		exempt: []liveRoute{{endpoint: "public", method: "GET", path: "/both"}},
+		exempt:   []liveRoute{{endpoint: "public", method: "GET", path: "/both"}},
+		optional: []liveRoute{{endpoint: "public", method: "GET", path: "/either"}},
 	}.serve(t, func(l *live) {
 		get = l.send("public", "GET", "/both")
 		post = l.send("public", "POST", "/both")
 		other = l.send("public", "GET", "/other")
+		optionalGet = l.send("public", "GET", "/either")
+		optionalPost = l.send("public", "POST", "/either")
 	})
 
 	requireStatus(t, "GET /both, the exempted route", get, nethttp.StatusOK)
 	requireStatus(t, "POST /both, on the same path with another method", post, nethttp.StatusUnauthorized)
 	requireChallenge(t, "POST /both", post)
 	requireStatus(t, "GET /other, a route nobody exempted", other, nethttp.StatusUnauthorized)
+	requireStatus(t, "GET /either, the optional route", optionalGet, nethttp.StatusOK)
+	requireStatus(t, "POST /either, on the same path as the optional one", optionalPost, nethttp.StatusUnauthorized)
 }
 
 // TestAnExemptionWrittenAsTheRouteWasRegisteredCoversThatRouteOnly holds the
@@ -242,7 +417,7 @@ func TestAnExemptionMatchesTheRegisteredMethodAndPathOnly(t *testing.T) {
 func TestAnExemptionWrittenAsTheRouteWasRegisteredCoversThatRouteOnly(t *testing.T) {
 	var parameter, sibling, catchAll, nested, elsewhere reply
 	liveAssembly{
-		backends: []authn.Verifier{passes(enumerating("local", "alice"))},
+		backends: []authn.Verifier{passes(basicBackend("static", "static."))},
 		routes: []liveRoute{
 			{endpoint: "public", method: "GET", path: "/accounts/:id"},
 			{endpoint: "public", method: "GET", path: "/accounts/me"},
@@ -313,28 +488,34 @@ func TestAnExemptionSpelledDifferentlyFromEveryRouteNeverMatches(t *testing.T) {
 		{"GET", "/orders/9"},
 		{"GET", "/nowhere"},
 	}
-	got := make([]reply, len(requests))
-	liveAssembly{
-		backends: []authn.Verifier{passes(enumerating("local", "alice"))},
-		routes:   routes,
-		exempt:   spelled,
-	}.serve(t, func(l *live) {
-		for i, r := range requests {
-			got[i] = l.send("public", r.method, r.path)
-		}
-	})
+	// Each registration is tried on its own, in a drive of its own: an exempt
+	// route may not also be optional, so the two kinds cannot share a spelling.
+	for kind, assemble := range map[string]func(liveAssembly) liveAssembly{
+		"an exemption":      func(a liveAssembly) liveAssembly { a.exempt = spelled; return a },
+		"an optional route": func(a liveAssembly) liveAssembly { a.optional = spelled; return a },
+	} {
+		got := make([]reply, len(requests))
+		assemble(liveAssembly{
+			backends: []authn.Verifier{passes(basicBackend("static", "static."))},
+			routes:   routes,
+		}).serve(t, func(l *live) {
+			for i, r := range requests {
+				got[i] = l.send("public", r.method, r.path)
+			}
+		})
 
-	for i, r := range requests {
-		requireStatus(t, fmt.Sprintf("%s %s, which no exemption is spelled as", r.method, r.path),
-			got[i], nethttp.StatusUnauthorized)
+		for i, r := range requests {
+			requireStatus(t, fmt.Sprintf("%s %s, which no %s is spelled as", r.method, r.path, kind),
+				got[i], nethttp.StatusUnauthorized)
+		}
 	}
 }
 
 // TestARequestTheRouterAnswersWithoutARouteIsStillChallenged holds the position
 // of the gateway relative to the router's own answers: a request that matches no
 // route, one the matched path does not allow the method for, and a HEAD to a
-// route registered for GET alone, are all answered by the gateway first when
-// they carry no credential, and by the router once they do.
+// route registered for GET alone, are all answered by the gateway first when they
+// carry no credential, and by the router once they do.
 //
 // The gateway answering first is what keeps an unauthenticated caller from
 // telling a path that does not exist from one that does, and that includes the
@@ -343,12 +524,12 @@ func TestAnExemptionSpelledDifferentlyFromEveryRouteNeverMatches(t *testing.T) {
 // credentialed half is what shows the router's answer, Allow included, was not
 // lost.
 //
-// None of the three is a request an exemption covers, because the router reports
-// no route for them. That is held with exemptions written for exactly those
-// requests — GET /nowhere, POST /health and HEAD /health, none of them a route
-// anyone registered — which would let the requests through if the path the
-// router reports for an unmatched request, or for a request whose method the
-// path does not allow, were the path that was asked for.
+// None of the three is a request a registration covers, because the router
+// reports no route for them. That is held with exemptions and optional routes
+// written for exactly those requests — GET /nowhere, POST /health and HEAD
+// /health, none of them a route anyone registered — which would let the requests
+// through if the path the router reports for an unmatched request, or for a
+// request whose method the path does not allow, were the path that was asked for.
 func TestARequestTheRouterAnswersWithoutARouteIsStillChallenged(t *testing.T) {
 	requests := []struct {
 		name   string
@@ -361,24 +542,36 @@ func TestARequestTheRouterAnswersWithoutARouteIsStillChallenged(t *testing.T) {
 		{"a method the matched path does not allow", "POST", "/health", nethttp.StatusMethodNotAllowed},
 		{"HEAD to a route registered for GET", "HEAD", "/health", nethttp.StatusMethodNotAllowed},
 	}
+	unrouted := []liveRoute{
+		{endpoint: "public", method: "GET", path: "/health"},
+		{endpoint: "public", method: "GET", path: "/nowhere"},
+		{endpoint: "public", method: "POST", path: "/health"},
+		{endpoint: "public", method: "HEAD", path: "/health"},
+	}
 
 	bare := make([]reply, len(requests))
 	credentialed := make([]reply, len(requests))
-	liveAssembly{
-		backends: []authn.Verifier{passes(enumerating("local", "alice"))},
-		routes:   []liveRoute{{endpoint: "public", method: "GET", path: "/health"}},
-		exempt: []liveRoute{
-			{endpoint: "public", method: "GET", path: "/health"},
-			{endpoint: "public", method: "GET", path: "/nowhere"},
-			{endpoint: "public", method: "POST", path: "/health"},
-			{endpoint: "public", method: "HEAD", path: "/health"},
-		},
-	}.serve(t, func(l *live) {
+	// An exemption and an optional route are tried in two drives, since one route
+	// may not be both. The last drive is the one the assertions below read, and
+	// the first is held to the same refusals.
+	for _, assemble := range []func(liveAssembly) liveAssembly{
+		func(a liveAssembly) liveAssembly { a.exempt = unrouted; return a },
+		func(a liveAssembly) liveAssembly { a.optional = unrouted; return a },
+	} {
+		assemble(liveAssembly{
+			backends: []authn.Verifier{passes(basicBackend("static", "static."))},
+			routes:   []liveRoute{{endpoint: "public", method: "GET", path: "/health"}},
+		}).serve(t, func(l *live) {
+			for i, r := range requests {
+				bare[i] = l.send("public", r.method, r.path)
+				credentialed[i] = l.send("public", r.method, r.path, asAlice)
+			}
+		})
 		for i, r := range requests {
-			bare[i] = l.send("public", r.method, r.path)
-			credentialed[i] = l.send("public", r.method, r.path, asAlice)
+			requireStatus(t, r.name+" without a credential, whichever registration is written for it",
+				bare[i], nethttp.StatusUnauthorized)
 		}
-	})
+	}
 
 	for i, r := range requests {
 		requireStatus(t, r.name+" without a credential", bare[i], nethttp.StatusUnauthorized)
@@ -397,50 +590,58 @@ func TestARequestTheRouterAnswersWithoutARouteIsStillChallenged(t *testing.T) {
 	}
 }
 
-// TestAnEndpointWithNoExemptionExemptsNothing holds what an endpoint carrying no
-// registration is left with. Reading an empty table as "nothing was registered,
-// so let everything through" would open every guarded endpoint that nobody
-// wrote an exemption for.
-func TestAnEndpointWithNoExemptionExemptsNothing(t *testing.T) {
+// TestAnEndpointWithNoRegistrationExemptsNothing holds what an endpoint carrying
+// no registration is left with. Reading an empty table as "nothing was
+// registered, so let everything through" would open every guarded endpoint that
+// nobody wrote an exemption for.
+func TestAnEndpointWithNoRegistrationExemptsNothing(t *testing.T) {
 	var health, nowhere reply
 	liveAssembly{
-		backends: []authn.Verifier{passes(enumerating("local", "alice"))},
+		backends: []authn.Verifier{passes(basicBackend("static", "static."))},
 		routes:   []liveRoute{{endpoint: "public", method: "GET", path: "/health"}},
 	}.serve(t, func(l *live) {
 		health = l.send("public", "GET", "/health")
 		nowhere = l.send("public", "GET", "/nowhere")
 	})
 
-	requireStatus(t, "a route on an endpoint with no exemption", health, nethttp.StatusUnauthorized)
-	requireStatus(t, "a path no route carries, on an endpoint with no exemption", nowhere,
+	requireStatus(t, "a route on an endpoint with no registration", health, nethttp.StatusUnauthorized)
+	requireStatus(t, "a path no route carries, on an endpoint with no registration", nowhere,
 		nethttp.StatusUnauthorized)
 }
 
-// TestAnExemptionOnlyExemptsTheEndpointItWasRegisteredOn holds the keying of the
-// tables.
+// TestARegistrationOnlyAppliesToTheEndpointItWasRegisteredOn holds the keying of
+// the tables.
 //
-// An exemption is registered against one endpoint by name. A gateway that
-// consulted the wrong endpoint's table — or one table for all of them — would
-// open a public route's path on every endpoint it guards. That is an
-// authentication bypass produced by a one-word mistake and visible nowhere
-// else: both endpoints go on answering, one of them without a credential.
-func TestAnExemptionOnlyExemptsTheEndpointItWasRegisteredOn(t *testing.T) {
-	var opened, guarded reply
+// A registration is made against one endpoint by name. A gateway that consulted
+// the wrong endpoint's table — or one table for all of them — would open a public
+// route's path on every endpoint it guards. That is an authentication bypass
+// produced by a one-word mistake and visible nowhere else: both endpoints go on
+// answering, one of them without a credential.
+func TestARegistrationOnlyAppliesToTheEndpointItWasRegisteredOn(t *testing.T) {
+	var opened, guarded, optionalHere, optionalThere reply
 	liveAssembly{
 		endpoints: []string{"public", "admin"},
-		backends:  []authn.Verifier{passes(enumerating("local", "alice"))},
+		backends:  []authn.Verifier{passes(basicBackend("static", "static."))},
 		routes: []liveRoute{
 			{endpoint: "public", method: "GET", path: "/health"},
 			{endpoint: "admin", method: "GET", path: "/health"},
+			{endpoint: "public", method: "GET", path: "/catalog"},
+			{endpoint: "admin", method: "GET", path: "/catalog"},
 		},
-		exempt: []liveRoute{{endpoint: "public", method: "GET", path: "/health"}},
+		exempt:   []liveRoute{{endpoint: "public", method: "GET", path: "/health"}},
+		optional: []liveRoute{{endpoint: "public", method: "GET", path: "/catalog"}},
 	}.serve(t, func(l *live) {
 		opened = l.send("public", "GET", "/health")
 		guarded = l.send("admin", "GET", "/health")
+		optionalHere = l.send("public", "GET", "/catalog")
+		optionalThere = l.send("admin", "GET", "/catalog")
 	})
 
 	requireStatus(t, "the endpoint the exemption was registered on", opened, nethttp.StatusOK)
 	requireStatus(t, "an endpoint nobody registered the exemption on, for the same route", guarded,
+		nethttp.StatusUnauthorized)
+	requireStatus(t, "the endpoint the optional route was registered on", optionalHere, nethttp.StatusOK)
+	requireStatus(t, "an endpoint nobody registered the optional route on, for the same route", optionalThere,
 		nethttp.StatusUnauthorized)
 }
 

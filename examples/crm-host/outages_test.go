@@ -71,8 +71,9 @@ func recordWith(text string, attrs ...string) bool {
 // not the token failing: it answers that it cannot answer, and the gateway
 // answers 503 and attributes the answer to the backend. A backend that read a
 // failed look-up as a missing session would have the token refused with 401,
-// and every client signed out, for as long as the store is away. The Basic
-// credential, which the store has no part in, is answered all along, and once
+// and every client signed out, for as long as the store is away. The
+// operator's Basic credential, which the store has no part in, is answered all
+// along, and once
 // the link is back the same token is answered again.
 //
 // On the NATS store the read does not fail while the client reconnects; it
@@ -96,12 +97,12 @@ func TestABearerTokenIsUnavailableWhileTheStoreIsCut(t *testing.T) {
 			t.Errorf("ann's token answered %d %s while the store is cut, want 503", resp.status, resp.body)
 		}
 		if !eventually(settleLimit, func() bool {
-			return recordWith(h.output(), "status", "503", "outcome", "unavailable", "attributed-to", sessionsBackendName)
+			return recordWith(h.output(), "status", "503", "outcome", "unavailable", "attributed_to", sessionsBackendName)
 		}) {
 			t.Errorf("no record attributes a 503 to the %s backend", sessionsBackendName)
 		}
-		expect(t, "ann asking who she is with her Basic credential while the store is cut",
-			h.get(t, accountEndpoint, "/me", "", basic(ann)), nethttp.StatusOK)
+		expect(t, "the operator listing the tenants with the Basic credential the static table checks, while the store is cut",
+			h.get(t, adminEndpoint, "/tenants", "", operator()), nethttp.StatusOK)
 
 		c.restore(storeLink)
 		var last response
@@ -141,8 +142,8 @@ var (
 // otherwise write a pair of lines at every turn — and a request past the limit
 // is refused once more.
 //
-// Every request authenticates with a Basic credential, which the store has no
-// part in. A limiter that refused while it could not count, one that wrote a
+// Every request is the operator's, authenticated with a Basic credential, which
+// the store has no part in. A limiter that refused while it could not count, one that wrote a
 // line for each request it let through, one that said it was back at the first
 // request that counted and one that never said so each fail an assertion of
 // their own.
@@ -157,20 +158,26 @@ func TestTheLimiterLetsRequestsThroughWhileItsStoreIsCut(t *testing.T) {
 		const limit = 3
 		limitTenant(t, h, acme, limit)
 		awaitLimit(t, h, acme, limit)
-		members := func() response { return h.get(t, apiEndpoint, "/members", acme.Alias, basic(ann)) }
+		// The requests are the operator's. A CRM user's token is checked against
+		// the key-value store, which is the link this case cuts, so the gateway
+		// would answer it 503 before the limiter ran; the operator's credential is
+		// checked against a table in memory. The membership layer behind the
+		// limiter refuses the operator as a stranger to the tenant, and that 403 is
+		// what a request the limiter let through is answered with.
+		members := func() response { return h.get(t, apiEndpoint, "/members", acme.Alias, operator()) }
 		for i := 1; i <= limit; i++ {
-			expect(t, fmt.Sprintf("ann's request %d in acme", i), members(), nethttp.StatusOK)
+			expect(t, fmt.Sprintf("the operator's request %d in acme", i), members(), nethttp.StatusForbidden)
 		}
-		expect(t, "ann's request past acme's limit", members(), nethttp.StatusTooManyRequests)
+		expect(t, "the operator's request past acme's limit", members(), nethttp.StatusTooManyRequests)
 		c.requireCarried(storeLink)
 
 		c.cut(storeLink)
 		var lastLetThrough time.Time
 		for i := 1; i <= limit+2; i++ {
 			lastLetThrough = time.Now()
-			if resp := members(); resp.status != nethttp.StatusOK {
-				t.Errorf("ann's request %d past the limit while the store is cut answered %d %s, want 200",
-					i, resp.status, resp.body)
+			if resp := members(); resp.status != nethttp.StatusForbidden {
+				t.Errorf("the operator's request %d past the limit while the store is cut answered %d %s, want 403 "+
+					"from the membership layer behind the limiter", i, resp.status, resp.body)
 			}
 		}
 		if n := lines(h.output(), limiterLetThrough); n != 1 {
@@ -197,7 +204,7 @@ func TestTheLimiterLetsRequestsThroughWhileItsStoreIsCut(t *testing.T) {
 		if n, m := lines(h.output(), limiterLetThrough), lines(h.output(), limiterBack); n != 1 || m != 1 {
 			t.Errorf("the limiter wrote %d lines letting requests through and %d back to limiting, want one each", n, m)
 		}
-		expect(t, "ann's request past acme's limit once the limiter counts again", members(),
+		expect(t, "the operator's request past acme's limit once the limiter counts again", members(),
 			nethttp.StatusTooManyRequests)
 	})
 }
@@ -571,13 +578,13 @@ func TestASettingWrittenWhileTheBusIsCutReachesTheOtherReplicaOnceTheBusIsBack(t
 		replicas := c.serveReplicas(2, firstThenRest)
 		a, b := replicas[0], replicas[1]
 		valueOn := func(h *crmHost, key string) any {
-			return settingIn(t, settingsListing(t, h, apiEndpoint, "/settings", acme.Alias, basic(ann)), key).Value
+			return settingIn(t, settingsListing(t, h, apiEndpoint, "/settings", acme.Alias, signedIn(ann)), key).Value
 		}
 		c.requireCarried(busLink)
 
 		c.cut(busLink)
 		expect(t, "ann writing acme's currency through the first replica while the bus is cut",
-			writeTenantSettingAs(t, a, acme.Alias, basic(ann), "deals.default-currency", "CHF"), nethttp.StatusOK)
+			writeTenantSettingAs(t, a, acme.Alias, signedIn(ann), "deals.default-currency", "CHF"), nethttp.StatusOK)
 		if got := valueOn(a, "deals.default-currency"); got != "CHF" {
 			t.Errorf("the first replica serves acme's currency as %#v after the write, want CHF", got)
 		}
@@ -588,7 +595,7 @@ func TestASettingWrittenWhileTheBusIsCutReachesTheOtherReplicaOnceTheBusIsBack(t
 		var seen any
 		if !pollEvery(recoveryLimit, time.Second, func() bool {
 			expect(t, "ann writing acme's page size through the first replica",
-				writeTenantSettingAs(t, a, acme.Alias, basic(ann), "accounts.page-size", size), nethttp.StatusOK)
+				writeTenantSettingAs(t, a, acme.Alias, signedIn(ann), "accounts.page-size", size), nethttp.StatusOK)
 			written[float64(size)] = true
 			size++
 			n, ok := valueOn(b, "accounts.page-size").(float64)

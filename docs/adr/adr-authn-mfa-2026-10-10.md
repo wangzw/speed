@@ -142,7 +142,7 @@ TOTP、短信、WebAuthn 各自挂一组登记路由，自行处理新鲜度检�
 flowchart LR
     M["第一因素的方法"] -->|"Proof：事实"| A["MFA.Assurance"]
     F["第二因素的 Pass"] --> A
-    A -->|"Assurance、IdPAssured"| S["登录会话行"]
+    A -->|"Assurance、IDPAssured"| S["登录会话行"]
     S --> G["网关校验后端"]
     S --> T["tenant.admission"]
     S --> R["guard.Require"]

@@ -14,11 +14,11 @@
 
 - **不存账户，不定账户解析的规则。** 账户、标识、外部身份绑定、成员关系与口令凭据的存取，以及自动关联与首登开户的判据，归 [authn-account](design-authn-account.md)；引擎只按那里的规则调用。
 - **不建会话、不签令牌。** 会话的建立、cookie 的写出与撤销归 [authn-session](design-authn-session.md)，令牌的签发归 [authn-token](design-authn-token.md)；引擎经 `Sessions` 与 `Tokens` 调用，不自己拼 cookie。
-- **不实现因素，不合成保障等级。** 因素的登记、校验与保障等级的唯一计算处是 `authn.mfa`；方法只交出 `Proof.UserVerified` 与 `Proof.IdPAsserted` 这类事实。
+- **不实现因素，不合成保障等级。** 因素的登记、校验与保障等级的唯一计算处是 `authn.mfa`；方法只交出 `Proof.UserVerified` 与 `Proof.IDPAsserted` 这类事实。
 - **不持有短信验证码的状态。** 挑战行、预算、尝试次数与发送归 [authn-sms](design-authn-sms.md)。
 - **不登记企业 IdP，不校验 SAML 断言。** 提供方行、域声明、元数据与断言校验归 [authn-sso](design-authn-sso.md)。
 - **不认识租户。** 账户全局，登录请求不带租户名；没有按租户启停登录方式的能力，只有全局的紧急开关。租户级的认证强度策略与成员判定在请求期由 [tenant-admission](design-tenant-admission.md) 执行，`pkg/authn` 的任何子包都不 import `pkg/tenant`。
-- **不经 `pkg/ratelimit` 限流。** 该模块排在认证之内、无身份即放行、维度只有（租户，身份串），认证前的失败退避由 `Throttle` 承担（算法归 [authn-account](design-authn-account.md)）。
+- **不经 `pkg/ratelimit` 限流。** 该模块排在认证之内、无身份即放行、维度只有（租户，责任键），认证前的失败退避由 `Throttle` 承担（算法归 [authn-account](design-authn-account.md)）。
 - **不写网关自产的 401。** 网关为各端建成的挑战与「没有凭据」的 401 归 [authn-gate](design-authn-gate.md)；本模块只写自己处理器的应答。
 - **不提供登录页，不做人机验证。** 界面是宿主的前端，本模块只给 JSON 接口；人机验证与入口层面的洪泛限流是宿主的部署责任。
 - **不做授权判定。** 本模块的 403 只转述认证之外的策略，且只出现在 authn 自己的处理器里（[authn-admin](design-authn-admin.md)）。
@@ -100,7 +100,9 @@ func StepEnrolled(r FactorRecord) Step                             // 登记流�
 func (s Step) WithSends(n int) Step // 报告本次调用已成功调用 SMSCodes.Send 的次数；加在任一种非零回答上
 ```
 
-`Field` 是 `{Name, Kind, Required, Secret}`，`Kind` 的取值是封闭集：`text`、`password`、`code`、`phone`。`StepPassed` 与 `StepEnrolled` 只由因素实现经 `authn.mfa` 交出，第一因素的方法不使用它们。`WithSends` 的用法见「短信发送的每流程上限」。
+`Field` 是 `{Name, Kind, Required, Secret}`，`Kind` 的取值是封闭集：`text`、`password`、`code`、`phone`，对应根包常量 `FieldText`、`FieldPassword`、`FieldCode`、`FieldPhone`。`StepPassed` 与 `StepEnrolled` 只由因素实现经 `authn.mfa` 交出，第一因素的方法不使用它们。`WithSends` 的用法见「短信发送的每流程上限」。
+
+**`Step` 的读取面是包级函数，只在 `pkg/authn` 树内可见。** 判据与 `Verdict` 的读取函数相同：方法会随别名带到任何包，包级函数才把读取限在树内，而只有登录引擎有理由拆开一个回答；`WithSends` 是唯一的方法，因为它是方法与因素往回答上添东西的途径，属于方法作者看得见的那一面。读取函数按回答的种类各有一个：`KindOf` 报种类（零值报没答）；`NameOf`、`PrivateOf`、`FieldsOf` 读 `StepPrompt`、`StepRedirect`、`StepData` 带的步骤名、方法私有状态与字段；`RedirectOf`、`DataOf` 读跳转目标与 JSON 载荷；`ProofOf`、`PassOf`、`RecordOf` 读 `StepProven`、`StepPassed`、`StepEnrolled` 的载荷；`CauseOf` 读 `StepRefused` 与 `StepUnavailable` 的成因，`RetryAfterOf` 读 `StepThrottled` 的等待；`SendsOf` 读 `WithSends` 设置的条数。读取函数对不属于它那一种的回答返回零值：空串、`nil`、零 `Proof`、零 `Pass`、零时长。在错误的种类上读不到任何东西，零 `Proof` 不指任何账户，账户解析因而失败，零 `Pass` 不带任何方式；引擎因此先按 `KindOf` 分支再读。返回切片、映射或指针的读取函数交出副本，构造器收进来的同类值也先拷贝；`StepData` 的载荷是 `any`，无法深拷贝，按原值持有，方法交出之后不得再改它。
 
 `Proof` 是方法交出的全部事实。来源字段 `Account`、`Identifier`、`External` 恰有一个非空，其余字段是附加事实：
 
@@ -111,7 +113,7 @@ type Proof struct {
 	External     *External      // 外部身份
 	Methods      []Method
 	UserVerified bool           // 通行密钥断言带用户验证：该因素自己就相当于两个因素
-	IdPAsserted  bool           // 企业 IdP 声明已做多因素，且提供方行的 trust_idp_mfa 与 mfa_acr_values 命中
+	IDPAsserted  bool           // 企业 IdP 声明已做多因素，且提供方行的 trust_idp_mfa 与 mfa_acr_values 命中
 	Provider     string         // 企业 SSO 提供方标识
 	Aliases      []ExternalLink // 同一外部身份此前可能绑定的旧键
 }
@@ -342,7 +344,7 @@ classDiagram
         +External External
         +Methods Method
         +UserVerified bool
-        +IdPAsserted bool
+        +IDPAsserted bool
         +Provider string
         +Aliases ExternalLink
     }
@@ -425,7 +427,7 @@ cookie 的属性是 `Secure; HttpOnly; Path=/`、无 `Domain`、**`SameSite=None
 | `step-up`，账户没有因素 | `method` | 请求的 `method` | `first` | 无附加要求 |
 | `enroll` | `input.kind` | 空；因素种类交给 `MFA.Enroll` | `enroll` | 账户安全类动作的要求 |
 
-「账户安全类动作的要求」是 `Requirement`：账户有有效因素（`MFA.Factors` 里状态为启用的行）时为新鲜的本地多因素，没有因素时为新鲜的第一因素，取值与单位归 [authn-mfa](design-authn-mfa.md)。引擎以 `StatusFresh` 交回的 `Assurance`、`AuthTime`、`IdPAssured` 按 `Identity.Satisfies` 的同一判据核对。
+「账户安全类动作的要求」是 `Requirement`：账户有有效因素（`MFA.Factors` 里状态为启用的行）时为新鲜的本地多因素，没有因素时为新鲜的第一因素，取值与单位归 [authn-mfa](design-authn-mfa.md)。引擎以 `StatusFresh` 交回的 `Assurance`、`AuthTime`、`IDPAssured` 按 `Identity.Satisfies` 的同一判据核对。
 
 `step-up` 的可用清单这样产生：引擎以会话的方式集构造只含 `Methods` 的 `Proof`，调 `MFA.Require(账户, Proof)` 取认证方式与会话方式不相交的启用因素，再剔除启用时刻不早于会话 `AuthTime` 的因素（`FactorRecord.ActivatedAt`）：登录期间登记的因素不得用来加强认证。`Require` 的结局不是 `MFAFactor` 即账户没有因素，起始状态取 `first`；结局是 `MFAFactor` 而剔除后清单为空，401 `insufficient_user_authentication`，不写记录。
 
@@ -504,10 +506,10 @@ cookie 的属性是 `Secure; HttpOnly; Path=/`、无 `Domain`、**`SameSite=None
 |---|---|
 | `login` | 以 `MFA.Assurance` 合成强度；记录的 `mfa.enrolled` 非空（策略要求登记而账户没有因素的登录）时，先经 `MFA.Activate` 启用该因素并发 `authn.factor.changed`（`enrolled`），本次会话仍记单因素；`Sessions.Create` 建会话，`delivery=session` 时 `Kind` 为 `browser`、cookie 经 `Sessions.SetCookie` 写出，`delivery=token` 时 `Kind` 为 `token`、不写 cookie，并对该会话调 `Tokens.Issue` 与 `Tokens.NewRefresh`；账户 `Touch`；写 `authn.login` 审计（尽力）；发 `authn.login.succeeded`；请求带着可解析的旧会话 cookie（`Sessions.Current`）时经 `Sessions.Revoke` 撤销旧会话 |
 | `link` | 复核；`AccountAdmin.LinkExternal`，外部身份已被别的账户占用则 409 `conflict`，不并入；`Sessions.RevokeAccount(except = 发起会话)`；发 `authn.binding.changed`；不建新会话 |
-| `step-up` | 复核；`Sessions.Elevate` 更新等级、认证时刻与方式集并轮换令牌，不建新会话；cookie 会话写新 cookie，令牌会话在应答里带新访问令牌。`Elevation` 的方式集、等级与 `IdPAssured` 取 `MFA.Assurance`（以会话方式集构成的 `Proof` 与通过的 `Pass`）的结果 |
+| `step-up` | 复核；`Sessions.Elevate` 更新等级、认证时刻与方式集并轮换令牌，不建新会话；cookie 会话写新 cookie，令牌会话在应答里带新访问令牌。`Elevation` 的方式集、等级与 `IDPAssured` 取 `MFA.Assurance`（以会话方式集构成的 `Proof` 与通过的 `Pass`）的结果 |
 | `enroll` | 复核；`MFA.Activate` 把记录的 `mfa.enrolled` 因素置为启用并发 `authn.factor.changed`（`enrolled`）；`Sessions.RevokeAccount(except = 发起会话)`；不改会话等级。复核失败时因素保持待确认，由 [authn-mfa](design-authn-mfa.md) 的待确认清扫回收 |
 
-`login` 建会话时 `NewSession` 的取值：`Account` 是解析出的账户；`Methods` 是 `Proof.Methods` 加第二因素 `Pass.Methods`；`Assurance` 与 `IdPAssured` 取 `MFA.Assurance` 的结果（结局为 `MFAEnroll` 时为单因素、`IdPAssured` 为假）；`AuthTime` 是完成时刻；`Provider` 取 `Proof.Provider`，`Attributes` 取 `Proof.External.Attributes`；`Client` 取请求的 `ClientInfo`。令牌的 `IssueToken` 由同一份取值与 `Issued.ID` 构成。
+`login` 建会话时 `NewSession` 的取值：`Account` 是解析出的账户；`Methods` 是 `Proof.Methods` 加第二因素 `Pass.Methods`；`Assurance` 与 `IDPAssured` 取 `MFA.Assurance` 的结果（结局为 `MFAEnroll` 时为单因素、`IDPAssured` 为假）；`AuthTime` 是完成时刻；`Provider` 取 `Proof.Provider`，`Attributes` 取 `Proof.External.Attributes`；`Client` 取请求的 `ClientInfo`。令牌的 `IssueToken` 由同一份取值与 `Issued.ID` 构成。
 
 说明：
 
@@ -559,7 +561,7 @@ cookie 的属性是 `Secure; HttpOnly; Path=/`、无 `Domain`、**`SameSite=None
 
 - **引擎供数。** 每次调用方法或经 `MFA` 调用因素之前，引擎把设置值减去记录的 `sends`（下限为零）写进 `Start.SendsLeft` 或 `FlowState.SendsLeft`。
 - **方法与因素在 `Send` 之前核对。** 一次调用里发送的条数不超过 `SendsLeft`；`SendsLeft` 为零时不调 `Send`，交 `StepThrottled(0)`，对外 429 `throttled`、不带 `Retry-After`。
-- **方法与因素报告。** 回答上用 `Step.WithSends(n)` 带出本次成功返回的 `Send` 调用数；`MFA` 转交因素的回答时保留该报告。
+- **方法与因素报告。** 回答上用 `Step.WithSends(n)` 带出本次成功返回的 `Send` 调用数；它设置条数而不累加，负数按零读，因为引擎据此核减上限，一个负的条数会放宽上限；加在没答的零值回答上不生效，一份报告做不成一个回答。`MFA` 转交因素的回答时保留该报告。
 - **引擎累加。** 不论回答是哪一种，引擎在写这一步迁移的比较并交换里把 `n` 加进 `sends`。报告值超过交给方法的 `SendsLeft` 是方法缺陷：记 Error，按该方法故障收口为 503，流程置 `failed`。
 
 `POST B/phone` 与 `POST B/phone/verify` 不在流程里，不受这一上限约束，由 [authn-sms](design-authn-sms.md) 的号码级与账户级预算约束。
@@ -709,17 +711,17 @@ cookie 的属性是 `Secure; HttpOnly; Path=/`、无 `Domain`、**`SameSite=None
 
 ## 实现状态
 
-`pkg/authn` 目前只含网关、口令表后端与身份、判决的类型；登录引擎、方法接缝与全部方法尚未实现，没有代码锚点。
+`pkg/authn` 目前只含网关、口令表后端、身份与判决的类型和值类型，以及 `Step`；登录引擎、方法接缝的其余部分与全部方法尚未实现。
 
 | 能力 | 状态 | 代码 |
 |---|---|---|
-| 根包登录接缝：`LoginMethod`、`Start`、`FlowState`、`StepInput`、`Step` 及构造器、`Proof`、`Field` | 未实现 | — |
+| 根包登录接缝：`LoginMethod`、`Start`、`FlowState`、`StepInput`、`Step` 及构造器、`Proof`、`Field` | 部分实现 — 缺 `LoginMethod`、`Start`、`FlowState`、`StepInput`；`Step` 及构造器、树内可见的读取函数、`Proof`、`Field` 已在 | `pkg/authn/login.go` `StepPrompt`；`pkg/authn/ids.go` `Proof`、`Field`；`pkg/authn/internal/step/step.go` `Step`、`Prompt`、`KindOf`、`ProofOf`；`pkg/authn/internal/model/login.go` `Proof`、`Field` |
 | 登录引擎：流程记录、状态机、迁移、比较并交换 | 未实现 | — |
 | 流程令牌的承载与绑定（cookie 与请求头载体） | 未实现 | — |
 | 账户解析与策略判定的引擎侧编排 | 未实现 | — |
 | 终态动作（`login`、`link`、`step-up`、`enroll`）与完成复核 | 未实现 | — |
 | 在已登录身份上开始流程（`POST B/flows/authenticated`） | 未实现 | — |
-| 短信发送的每流程上限（`SendsLeft`、`Step.WithSends`） | 未实现 | — |
+| 短信发送的每流程上限（`SendsLeft`、`Step.WithSends`） | 部分实现 — 缺 `Start.SendsLeft` 与 `FlowState.SendsLeft`、引擎侧的核减；`Step.WithSends` 与读取它的 `SendsOf` 已在 | `pkg/authn/internal/step/step.go` `(Step).WithSends`、`SendsOf` |
 | IdP 发起的 SAML 的流程创建 | 未实现 | — |
 | 路由、请求与应答的形状、问题码 | 未实现 | — |
 | 账户自助路由与手机号验证 | 未实现 | — |

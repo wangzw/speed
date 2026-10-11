@@ -7,23 +7,22 @@ import (
 	"github.com/vislake/speed/pkg/authn/static"
 )
 
-// ExampleHashAt writes a table entry at a cost a test can afford. The count
-// travels inside the entry, so the backend reading the table verifies it at
-// that count through the same path a production entry takes.
-func ExampleHashAt() {
-	entry, err := static.HashAt("correct horse", 1_000)
+// ExampleHashPBKDF2 writes a table entry at a cost a test can afford. The count
+// travels inside the entry, so the backend reading the table verifies it at that
+// count through the same path a production entry takes.
+func ExampleHashPBKDF2() {
+	entry, err := static.HashPBKDF2("correct horse", 1_000)
 	if err != nil {
 		fmt.Println(err)
 		return
 	}
-	// The salt is drawn fresh on every call, so only the fields that do not
-	// depend on it are printed: the scheme and the count.
+	// The salt and the hash depend on the salt drawn, so only the part that does
+	// not is printed: the algorithm and the parameters.
 	fields := strings.Split(entry, "$")
-	fmt.Println(fields[0], fields[1])
+	fmt.Println(fields[1], fields[2])
 
-	_, err = static.ParseHash(entry)
-	fmt.Println(err)
+	fmt.Println(static.ParseHash(entry))
 	// Output:
-	// pbkdf2-sha256 1000
+	// pbkdf2-sha256 i=1000,l=32
 	// <nil>
 }

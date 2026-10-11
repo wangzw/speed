@@ -56,6 +56,19 @@ The things no module's own suite can hold:
   neither which paths exist. Every refusal a layer or the entry point writes is a
   problem details document (`application/problem+json`); the host's own handlers
   answer their failures with a bare status.
+- **The gateway guards every endpoint unless the configuration narrows it.**
+  Left out, `authn.gate.endpoints` means `*`, so the `ops` endpoint is refused
+  without a credential; an empty list, or `*` written beside a named endpoint,
+  stops the startup naming the key. This host narrows the list to `public`, so
+  the health check on `ops` needs none, and the chain listing and the startup
+  diagnostics are where the difference is readable.
+- **A password entry is read in each form it can be written in, and the caller
+  is `static.<subject>`.** An Argon2id entry from the `hash` command, a PBKDF2
+  entry in the PHC form and an entry in the older form all let their subject in
+  through Basic; the older one is named in a startup warning that carries no part
+  of any entry. The identity the handler reads is the account `static.alice`, and
+  the records written after authentication carry it as `account`, beside
+  `backend`.
 - **A command reaches a module for its declarations without running it.**
   `migrate` runs the engine and nothing else, and the application module's
   table, the journal's and the settings surface's are built anyway.
@@ -115,6 +128,12 @@ The things no module's own suite can hold:
   that never matches leaves the journal without the row. Each case that expects
   one of those rows has to see it. The journal's object for a request row is the
   route path, with the method in the action column.
+- **Only a test imports `authntest`.** The package builds the context a gateway
+  would have left on a request, so non-test code that imported it could make an
+  identity no gateway stamped. `authntest_test.go` parses every non-test source
+  file of this module for its imports, whatever its build constraints say, and
+  holds the host to it, since the check in `pkg/authn` does not reach a module of
+  its own.
 - **An example stays an example.** Nothing here is imported by a released
   module, and nothing here is a place to put code the modules should carry: if a
   host would have to write it again, it belongs in a module.
@@ -156,12 +175,12 @@ db:
     dsn: "/var/lib/orders-host/host.db"
 authn:
   gate:
+    # Left out, every endpoint is guarded; this narrows it.
     endpoints:
       - public
   static:
-    name: local
     subjects:
-      alice: "pbkdf2-sha256$600000$...$..."
+      alice: "$argon2id$v=19$m=19456,t=2,p=1$...$..."
 tenant:
   resolve:
     endpoints:
@@ -193,6 +212,13 @@ observability:
 Each module hangs under its own capability directory's heading — `authn.gate`
 beside `authn.static`, `tenant.resolve` beside `tenant.catalog`,
 `audit.journal` under `audit` — and none of them owns the heading itself.
+
+The gateway guards every endpoint the entry point declares unless
+`authn.gate.endpoints` narrows it, and an empty list is a startup failure rather
+than a way to switch it off. This host narrows it to `public`, because the `ops`
+endpoint serves the health check with no credential.
+The identity a handler reads for the configured account is `static.alice`: the
+static prefix, then the subject's name.
 
 Two things a run of this binary will not do on its own. It does not register any
 tenant: a host does that through the roster's write surface, and `seed` here is

@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"maps"
 	"time"
 
 	"gorm.io/gorm"
@@ -180,8 +181,67 @@ func assemble(ctx context.Context, src audit.Source, e audit.Entry, tenantOverri
 		Object:     e.Object,
 		Outcome:    e.Outcome,
 		Purpose:    e.Purpose,
-		Detail:     encodeDetail(maskDetail(e.Detail)),
+		Detail:     encodeDetail(maskDetail(withImpersonation(ctx, e.Detail))),
 	}
+}
+
+// The detail keys this module writes from an impersonating identity. They are a
+// closed set of this module's own: the caller's detail does not get to name them.
+const (
+	detailOnBehalfOf         = "on_behalf_of"
+	detailImpersonationScope = "impersonation_scope"
+	detailSession            = "session"
+)
+
+// withImpersonation returns the detail as it goes into the row. The
+// impersonation keys are the journal's alone: an impersonating identity has them
+// written from it, and on every other row, including one with no identity, the
+// caller's keys under those names are removed. The caller's map is not changed.
+//
+// The actor column already says who did it, because it carries the identity's
+// key, which is the actor's account; the detail says on whose behalf. The row
+// records what the identity in the context says, and not what a caller of this
+// module claims it said.
+func withImpersonation(ctx context.Context, detail map[string]string) map[string]string {
+	id, ok := authn.FromContext(ctx)
+	if !ok || !id.Impersonating() {
+		return withoutImpersonationKeys(detail)
+	}
+	scope, _ := id.Scope()
+	return impersonationKeys(detail, string(id.Account()), scope, string(id.Session()))
+}
+
+// withoutImpersonationKeys returns the detail without the impersonation keys, as
+// it was handed over when it holds none of them.
+func withoutImpersonationKeys(detail map[string]string) map[string]string {
+	_, onBehalfOf := detail[detailOnBehalfOf]
+	_, scope := detail[detailImpersonationScope]
+	_, session := detail[detailSession]
+	if !onBehalfOf && !scope && !session {
+		return detail
+	}
+	out := maps.Clone(detail)
+	delete(out, detailOnBehalfOf)
+	delete(out, detailImpersonationScope)
+	delete(out, detailSession)
+	return out
+}
+
+// impersonationKeys returns a copy of the detail with the impersonation keys
+// written from the given values over whatever the caller put under them. An empty
+// session writes no session key and removes the caller's, so that a row never
+// carries a session the identity does not have.
+func impersonationKeys(detail map[string]string, account, scope, session string) map[string]string {
+	out := make(map[string]string, len(detail)+3)
+	maps.Copy(out, detail)
+	out[detailOnBehalfOf] = account
+	out[detailImpersonationScope] = scope
+	if session != "" {
+		out[detailSession] = session
+	} else {
+		delete(out, detailSession)
+	}
+	return out
 }
 
 // insert writes one row through the given handle.

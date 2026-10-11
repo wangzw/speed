@@ -37,7 +37,7 @@
 
 ### 哨兵的形状
 
-失败对调用方的接口是哨兵错误。启动期哨兵与运行期哨兵都在 `pkg/authn/errors.go`，两类除外：口令表后端的 `static.ErrMalformedHash` 在 `pkg/authn/static`，由 `pkg/authn/internal/password` 与 `static` 共用；`tenant.admission` 的端名与路由判定用 `pkg/tenant` 根包的同类哨兵，与 `pkg/authn` 的同名哨兵各属自己的包。
+失败对调用方的接口是哨兵错误。启动期哨兵与运行期哨兵在 `pkg/authn` 根包，不按启动期与运行期分文件：有同名形状的随形状，其余在 `errors.go`。`ErrInvalidAccountID` 与 `AccountID` 同在 `ids.go`，`ErrThrottled` 与 `ThrottledError` 同在 `throttle.go`；`ErrBusy` 由 `internal/password` 的并发与内存闸门抛出，闸门不是 `Throttle`，没有可依附的形状，所以在 `errors.go`。不在根包的是：口令表后端的 `static.ErrMalformedHash` 在 `pkg/authn/static`，由 `pkg/authn/internal/password` 与 `static` 共用；受限出站客户端的 `ErrDestinationDenied`、`ErrSchemeNotHTTPS`、`ErrBodyTooLarge` 在 `pkg/authn/internal/egress`，只在 `pkg/authn` 树内可见，调用方遇到它们一律按 IdP 不可用收口（见依赖不可用时每条路径的方向）；`tenant.admission` 的端名与路由判定用 `pkg/tenant` 根包的同类哨兵，与 `pkg/authn` 的同名哨兵各属自己的包。
 
 - 调用方用 `errors.Is` 判别，包裹一律用 `%w`，使错误链保持完整。
 - `ErrThrottled` 经 `*ThrottledError` 携带 `RetryAfter`，调用方用 `errors.As` 取得它；`ThrottledError` 的 `Is(ErrThrottled)` 为真。
@@ -204,13 +204,13 @@ type ThrottledError struct{ RetryAfter time.Duration }
 |---|---|---|
 | `ErrNoRouter` | 网关的 `Init` 里取不到路由功能 | 把入口模块的 `ModuleName` 写进这条命令 |
 | `ErrNoVerifier` | `ResolveAll[Verifier]` 为零个 | 把校验后端子包的模块名写进这条命令 |
-| `ErrClaimConflict` | 两个校验后端同名，或认领同一个 scheme、同一个 cookie 名，或声明的非空账户前缀互为前缀 | 点名双方与撞上的那一项 |
-| `ErrInvalidClaim` | 载体认领形状不合法：scheme 不是 RFC 9110 token、cookie 名不合法、一个载体都不认领、名字为空；声明保留前缀 `static.` 而 `Name()` 不是 `static`；不是库账户的后端声明空前缀；口令表一个主体都没写、主体名不合法或条目读不了（后者包住 `static.ErrMalformedHash`） | 点名该后端与不合法之处 |
-| `ErrInvalidConfig` | 配置取值跑不起来：`authn.gate.endpoints` 写成空、含空名、重名、`*` 与具体名混用；`tenant.admission.endpoints` 写成空、含空名或含 `*`；`mount.endpoint` 被 `ScopeGuard` 所守；`call-budget` 或 `in-flight` 非正；`audience` 为空；微信的某个模块缺必填项；`rp-id` 与基址主机无关；`public-url` 或 `base-path` 不合法，或需要 `public-url` 的模块遇到它为空；短信 `templates` 缺用途；`sign_requests` 无 SP 密钥；`password-memory-budget-mib` 低于 `m` 取值域上限的两倍 | 点名该项与不合法之处 |
+| `ErrClaimConflict` | 两个校验后端同名，或认领同一个 scheme、同一个 cookie 名，或两个都不是 `static` 的后端声明的非空账户前缀互为前缀（含相同）；涉及 `static.` 的前缀归 `ErrInvalidClaim` | 点名双方与撞上的那一项 |
+| `ErrInvalidClaim` | 载体认领形状不合法：scheme 不是 RFC 9110 token、cookie 名不合法、一个载体都不认领、名字为空；账户前缀的形状不合法（非空前缀超过 63 字节，或不能作账户标识的前缀）；`Name()` 为 `static` 的后端声明的前缀不是 `static.`，其他后端声明的非空前缀是 `static.` 的前缀或以 `static.` 起头；口令表一个主体都没写、主体名不合法或条目读不了（后者同时包住 `static.ErrMalformedHash`，`errors.Is` 对 `ErrInvalidClaim` 与 `static.ErrMalformedHash` 都成立）。后端是否交付库账户、该不该声明非空前缀网关判不出来，不在此列，见 [design-authn-gate](design-authn-gate.md) | 点名该后端与不合法之处 |
+| `ErrInvalidConfig` | 配置取值跑不起来：`authn.gate.endpoints` 写成空、含空名、重名、`*` 与具体名混用；`tenant.admission.endpoints` 写成空、含空名或含 `*`；`mount.endpoint` 被 `ScopeGuard` 所守；`*` 展开后入口模块没有任何端；`call-budget` 或 `in-flight` 非正；`trusted-origins` 的某项不是能规范成浏览器发送形式的来源 `scheme://host[:port]`（带通配、用户信息、空端口、越界端口、非 ASCII 主机、路径、查询或片段）；口令表的 `cache-size` 或 `concurrency` 不在取值域内（取值域见 [design-authn-config](design-authn-config.md)）；`audience` 为空；微信的某个模块缺必填项；`rp-id` 与基址主机无关；`public-url` 或 `base-path` 不合法，或需要 `public-url` 的模块遇到它为空；短信 `templates` 缺用途；`sign_requests` 无 SP 密钥；`password-memory-budget-mib` 低于 `m` 取值域上限的两倍 | 点名该项与不合法之处 |
 | `ErrUnknownEndpoint` | `authn.gate.endpoints`、`mount.endpoint`、`Exempt`、`Optional`、`Impersonable` 登记里的端名在入口模块里不存在 | 点名该端名；出自登记时另点名方法与路径 |
 | `ErrExemptionUnguarded` | `Exempt`、`Optional` 或 `Impersonable` 登记在网关不守的端上 | 把该端写进 `endpoints`，或把登记挪走 |
 | `ErrAccessConflict` | 同一（端，方法，路径）既登记 `Exempt` 又登记 `Optional`，或既登记 `Exempt` 又登记 `Impersonable` | 去掉其中一个 |
-| `ErrRoutesUnconfigured`、`ErrRoutesUnguarded` | 挂路由的模块在 `mount.endpoint` 为空且入口声明的端不止一个时 `Init`；`mount.endpoint` 不是网关所守的端 | 配置 `authn.gate.mount.endpoint`；把它写进 `endpoints` |
+| `ErrRoutesUnconfigured`、`ErrRoutesUnguarded` | `authn.mount` 在 `Init` 里发现 `mount.endpoint` 为空而入口声明的端不是恰好一个（零个或多个），网关在 `Start` 对同一规则再判一次；`mount.endpoint` 不是网关所守的端 | 配置 `authn.gate.mount.endpoint`；把它写进 `endpoints` |
 | `ErrInsecureConfig` | `public-url` 不是 https（回环主机除外）而未开 `allow-insecure`；`same-site` 取 `none` | 改基址，或显式开 `allow-insecure`（仅开发） |
 | `ErrNoEncryptionKey` | 加密列往返自检失败：`db` 的根密钥缺失或不可用 | 给 `db` 模块配 `encryption-key` |
 | `ErrInvalidKey` | 签名或验证密钥文件读不了、类型与算法不符、RSA 小于 2048 位、`kid` 重复、没有任何密钥 | 点名文件 |
@@ -268,7 +268,7 @@ type ThrottledError struct{ RetryAfter time.Duration }
 | kv | 开始与继续登录流程、WebAuthn 仪式 | 503 | 拒 |
 | kv | 已建立的会话、访问令牌、刷新令牌 | 不受影响（在 db） | — |
 | kv | 按来源地址的前置减负（若开） | 跳过该层，写 Warn 与计数 | 放：权威退避在 db，上界是退避的自由次数 |
-| settings | 请求期读取 | 内存快照，不会失败；强制类开关读不出按拒绝，调参类取声明的默认值并记 Error | — |
+| settings | 请求期读取 | 内存快照，不会失败；强制类开关读不出按拒绝，调参类取声明的默认值并记 Error，同一种故障只记一次，不逐请求记 | — |
 | settings | 变更的传播 | 最终一致 | 有界放：设置变更的传播 |
 | event | 发布 | 记 Warn，不阻塞业务 | 放：事件是提示 |
 | outbox | 发件箱路径的 `Stage` | `Stage` 失败令该动作失败 | 拒 |
@@ -277,6 +277,7 @@ type ThrottledError struct{ RetryAfter time.Duration }
 | 账户生命周期钩子 | 停用、删除、撤销服务密钥之后的清理 | 账户状态已在本模块事务里生效；钩子失败返回 `ErrCleanupIncomplete`（503），重试幂等；发件箱在场时事件补偿；`valid_after` 与账户状态检查兜底 | 拒：状态已生效，清理待补 |
 | 短信发送方 | 登录与因素的短信 | 异步工作池记 Warn 与指标，用户收不到；`ErrSMSUncertain` 不盲目重发；入队时队列满 503 | 拒：不发 |
 | IdP（OIDC 发现、JWKS、令牌端点） | 企业 OIDC 与社交登录 | 该 IdP 的登录 503，流程保留至到期，其他 IdP 不受影响 | 拒 |
+| 受限出站客户端拒绝的连接（目的地不是公网地址、方案不是 https、响应体超上限） | IdP 的发现文档、JWKS、元数据与 userinfo 的出站请求 | 与该 IdP 不可用同形：该 IdP 的登录 503，流程保留至到期，其他 IdP 不受影响；成因进日志，不进应答 | 拒 |
 | IdP 元数据（SAML） | 证书更新 | 不自动刷新；管理员触发的刷新失败保留上一份有效配置并记 Warn | 有界放：IdP 元数据的证书陈旧 |
 | 签名密钥文件 | 签发 | 没有签名钥则 503；验证用启动时已装入内存的密钥集，不依赖运行期读文件 | 拒 |
 | `db` 根密钥缺失 | 加密列读写 | 503；启动期自检已拦 | 拒 |
@@ -323,6 +324,8 @@ type ThrottledError struct{ RetryAfter time.Duration }
 - **对外不区分成因，排障靠日志与指标。** 日志与指标因此要能按成因检索。
 - **时钟漂移的后果分散在令牌、SAML、会话期限与 kv 值的写入时刻几处，没有统一的检测。** 本功能目录不检查本机时钟；SAML 的时间条件没有容差，违反时间同步时表现为零星地拒绝合法断言。
 - **口令表的失败退避在多副本下每副本各算一份**，总量不受保证。
+- **口令表里只在大小写上不同的主体共用一份退避。** 退避键折叠大小写，一个被锁另一个也被锁；这个耦合保持，装配期不拒绝这样的表，启动诊断对每一组点名主体。
+- **口令表的失败退避表有容量上界。** 固定键之外至多记 `MaxThrottleKeys` 个键（取值见 [design-authn-config](design-authn-config.md)），固定键是口令表里每个主体的键，建表时就在、永不被忘记；满时最久没有失败的非固定键先被挤出，它的计数随之丢失。被挤出的是不在表里的名字，它们没有口令可猜；表内主体的计数不会被喷洒别的名字的调用方挤掉，对表内主体的退避绕不开。机制见 [design-authn-gate](design-authn-gate.md)。
 - **证书陈旧没有按时间的上界**，只有管理员的更新动作能结束它。
 - **一个有缺陷的校验后端会让合法用户被拒绝**，直到缺陷被修；该后端被计入 `unspoken` 并写 Error，是发现它的唯一信号。
 
@@ -344,16 +347,16 @@ type ThrottledError struct{ RetryAfter time.Duration }
 | 能力 | 状态 | 代码 |
 |---|---|---|
 | 网关的启动期哨兵 `ErrNoRouter`、`ErrNoVerifier`、`ErrDrainTimeout` | 已实现 | `pkg/authn/errors.go` `ErrNoRouter`、`ErrNoVerifier`、`ErrDrainTimeout`；`pkg/authn/gate/gate.go` `drain` |
-| 网关的其余启动期哨兵 | 部分实现 — 缺 `ErrAccessConflict`、`ErrRoutesUnconfigured`、`ErrRoutesUnguarded`、`ErrInsecureConfig`；`ErrClaimConflict` 与 `ErrInvalidClaim` 仍按主体归属判，尚未收窄为载体认领与账户前缀；`ErrInvalidConfig` 缺 `*` 混写、`mount.endpoint` 与 `public-url` 的判定；`ErrUnknownEndpoint` 与 `ErrExemptionUnguarded` 缺 `Optional`、`Impersonable` 登记的覆盖 | `pkg/authn/errors.go` `ErrClaimConflict`、`ErrInvalidClaim`、`ErrInvalidConfig`、`ErrUnknownEndpoint`、`ErrExemptionUnguarded` |
+| 网关的其余启动期哨兵 | 已实现 — `ErrRoutesUnconfigured` 由 `authn.mount` 在 `Init` 里触发，网关在 `Start` 对同一规则再判一次，该模块尚未实现 | `pkg/authn/errors.go`；`pkg/authn/gate/dispatch.go` `buildDispatch`；`pkg/authn/gate/config.go`；`pkg/authn/gate/exempt.go` `seal`；`pkg/authn/gate/gate.go` `checkMount`；`pkg/authn/internal/mount/endpoint.go` `Endpoint` |
 | 带表模块、登录、因素与密钥的启动期哨兵 | 未实现 — `ErrNoEncryptionKey`、`ErrInvalidKey`、`ErrNotMigrated`、`ErrMethodConflict`、`ErrFactorConflict`、`ErrNoLoginMethod`、`ErrNoFactor` 都不存在 | — |
-| 口令条目的哨兵 `static.ErrMalformedHash` | 部分实现 — 缺 `internal/password` 共用、启动期被 `ErrInvalidClaim` 包住、运行期按 `ErrInvalidCredentials` 处理并记 Error；启动期点名主体且不带哈希已在 | `pkg/authn/static/hash.go` `ErrMalformedHash`、`ParseHash`；`pkg/authn/static/config.go` |
-| 运行期哨兵表 | 未实现 — 根包没有任何运行期哨兵 | `pkg/authn/errors.go` |
+| 口令条目的哨兵 `static.ErrMalformedHash` | 已实现 — 与 `internal/password` 共用同一个值；启动期点名主体且不带条目的任何部分，并与 `ErrInvalidClaim` 同时可匹配；口令表的条目在启动期读完，没有运行期读不了的条目，运行期按 `ErrInvalidCredentials` 处理属账户后端，尚未实现 | `pkg/authn/internal/password/phc.go` `ErrMalformedHash`、`Parse`；`pkg/authn/static/hash.go`；`pkg/authn/static/config.go` |
+| 运行期哨兵表 | 部分实现 — 根包只有 `ErrInvalidAccountID`、`ErrThrottled`（经 `*ThrottledError` 与 `errors.As` 取 `RetryAfter`）与 `ErrBusy`；表里其余运行期哨兵都没有声明 | `pkg/authn/ids.go` `ErrInvalidAccountID`；`pkg/authn/throttle.go` `ErrThrottled`、`ThrottledError`；`pkg/authn/errors.go` `ErrBusy` |
 | 网关对后端答不了、超预算、panic、零值判决的收口 | 已实现 | `pkg/authn/gate/serve.go` `verify`、`enter`、`conclude`、`admit`；`pkg/authn/internal/verdict/verdict.go` `Unspoken` |
-| 可选认证路由上凭据存在而后端答不了的方向 | 未实现 — `Optional` 登记不存在 | — |
-| 出口检查的补充校验与库结论的优先级 | 未实现 — 出口检查不存在 | — |
+| 可选认证路由上凭据存在而后端答不了的方向 | 已实现 | `pkg/authn/gate/serve.go` `admit`、`credentialOf` |
+| 出口检查的补充校验与库结论的优先级 | 部分实现 — 出口检查含账户命名空间、能力声明、`Scope` 与 `Provider` 的形状；没有库结论可与它排优先级 | `pkg/authn/gate/exitcheck.go` `checkPrincipal` |
 | 503 的 `Problem.Type` 为 `urn:speed:authn:unavailable`、令牌端点的 `temporarily_unavailable` | 未实现 — 现有应答只带状态码 | — |
 | 放宽清单各项的设置与上界、依赖不可用的方向表 | 未实现 — 承载它们的会话、令牌、准入层与设置键都不存在 | — |
-| 口令表的进程内退避、并发上限与 `ErrBusy` | 未实现 | — |
+| 口令表的进程内退避（检查即预占、命中缓存不预占、成功不清零、固定键与容量上界）、并发上限与 `ErrBusy` | 已实现 — 网关见到 `ErrBusy` 包在 `Unavailable` 的成因里时答 503 带 `Retry-After: 1`；`ErrBusy` 与派生给出答案之前已结束的上下文不是一次猜测，退还预占 | `pkg/authn/internal/password` `Throttle`、`Reserve`、`MaxThrottleKeys`、`Governor`；`pkg/authn/static/static.go` `Verify`；`pkg/authn/gate/serve.go` `outage` |
 | 登录引擎对方法与因素的 `recover` | 未实现 | — |
 | 令牌与 SAML 的时间容差、撤销不依赖时钟的会话行 | 未实现 | — |
 | `New` 不读写自己的表、`Start` 里自检与清扫 | 未实现 | — |

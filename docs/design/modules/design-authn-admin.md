@@ -78,7 +78,7 @@ const (
 	ActionSessionRevoke       Action = "authn.session.revoke"        // 撤销他人的会话
 	ActionMFAReset            Action = "authn.mfa.reset"
 	ActionClientManage        Action = "authn.client.manage"         // 服务账户的密钥创建与撤销
-	ActionIdPManage           Action = "authn.idp.manage"            // 含域声明与元数据刷新
+	ActionIDPManage           Action = "authn.idp.manage"            // 含域声明与元数据刷新
 	ActionImpersonateStart    Action = "authn.impersonation.start"
 	ActionImpersonationRead   Action = "authn.impersonation.read"
 	ActionImpersonationRevoke Action = "authn.impersonation.revoke"
@@ -119,6 +119,8 @@ func (opsOnly) Decide(ctx context.Context, d authn.Decision) (bool, error) {
 	return d.Actor.Backend() == "static" && d.Actor.Account() == "static.ops", nil
 }
 ```
+
+判据是完整的账户标识 `static.ops`，不是 `static.` 前缀：前缀只表示这个标识出自口令表，表里每个主体的标识都带它。有几个运营者，就各列一个名字；`d.Actor.Account().IsStatic()` 为真即放行，会把口令表里的每个主体都放进管理面。
 
 ### `ScopeGuard`
 
@@ -418,8 +420,8 @@ flowchart TD
 
 | 能力 | 状态 | 代码 |
 |---|---|---|
-| 根包的 `Decider`、`Decision`、`Action` 常量 | 未实现 | `pkg/authn/decision.go` `Decider`、`Decision`、`Action`。缺：全部 |
-| 根包的 `ScopeGuard` | 未实现 | `pkg/authn/scope.go` `ScopeGuard`。缺：全部；交付方 `tenant.admission` 归 [tenant.admission](design-tenant-admission.md) |
+| 根包的 `Decider`、`Decision`、`Action` 常量 | 未实现 | `pkg/authn/decide.go` `Decider`、`Decision`、`Action`。缺：全部 |
+| 根包的 `ScopeGuard` | 部分实现 — 接口与网关对它的可选取用已在；交付方 `tenant.admission` 归 [tenant.admission](design-tenant-admission.md) | `pkg/authn/scope.go` `ScopeGuard`；`pkg/authn/gate/gate.go` `wire` |
 | `authn.admin` 模块：注册、必需与可选依赖、缺审计的启动失败、路由组的挂出与启动诊断 | 未实现 | `pkg/authn/admin` `Module`、`Prepare`、`Init`、`Start`。缺：全部 |
 | 处理器的判定顺序：冒充检查、`Decider` 取用、强度核验、强制审计、失败补行 | 未实现 | `pkg/authn/admin` `authorize`、`mandatoryAudit`。缺：全部 |
 | `Decision` 的归属解析 | 未实现 | `pkg/authn/admin` `resolveOwner`。缺：全部 |
@@ -427,4 +429,5 @@ flowchart TD
 | 会话组、因素与口令组、服务密钥组路由 | 未实现 | `pkg/authn/admin` `sessionRoutes`、`factorRoutes`、`secretRoutes`。缺：全部 |
 | SSO 提供方组、元数据刷新与冒充记录组路由 | 未实现 | `pkg/authn/admin` `ssoRoutes`、`impersonationRoutes`。缺：全部 |
 | 守住性质的测试与装配测试 | 未实现 | `pkg/authn/admin/admin_test.go` `TestDecisionFill`、`TestNoDeciderDeniesAll`、`TestMandatoryAuditBeforeWrite`。缺：全部 |
-| 根包 import 守卫 | 未实现 | `pkg/authn/deps_test.go`。缺：全部 |
+| 根包的 import 白名单与网关闭包的禁止表 | 已实现 — 根包非测试文件的 import 只许标准库与 `internal/model`、`internal/identity`、`internal/verdict`、`internal/step`，授权、`pkg/tenant` 与任何实现子包都在白名单之外 | `pkg/authn/deps_test.go` `TestTheRootPackageImportsOnlyWhatItMay`、`TestTheRootPackageClosureHoldsNoThirdPartyPackage` |
+| `authn.admin` 子包的 import 方向：不 import `pkg/tenant`、授权、宿主与别的实现子包 | 未实现 — 子包尚不存在，核对随它实现 | `pkg/authn/admin`。缺：全部 |

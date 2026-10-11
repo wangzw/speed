@@ -18,7 +18,7 @@
 
 - **不运行登录流程。** 流程记录、状态机迁移、比较并交换、账户解析、会话与令牌的发放归登录引擎（[design-authn-login](design-authn-login.md)）；方法只回答「这次回跳证明了什么」，交出 `Proof`。
 - **不决定账户。** 外部身份的绑定键、自动关联、首登开户、预置账户匹配与 JIT 并入的判据归 `authn.account`（[design-authn-account](design-authn-account.md)）。本模块只提供其输入：提供方的 `provisioning`、`merge_existing`、所属租户与邮箱域的验证状态。
-- **不合成保障等级。** 方法只报 `Proof.IdPAsserted` 这一事实，是否采信、等级是多少只在 `authn.mfa` 一处合成（[design-authn-mfa](design-authn-mfa.md)）。
+- **不合成保障等级。** 方法只报 `Proof.IDPAsserted` 这一事实，是否采信、等级是多少只在 `authn.mfa` 一处合成（[design-authn-mfa](design-authn-mfa.md)）。
 - **不执行租户级强制 SSO。** `tenant.admission.require-sso` 在请求期由租户准入层执行（[design-tenant-admission](design-tenant-admission.md)）；本模块只回答「这个提供方属于哪个租户」。
 - **不写管理面路由，不做判定。** 提供方、域与元数据刷新的 HTTP 路由、`Decider` 的判定与强制审计归 `authn.admin`（[design-authn-admin](design-authn-admin.md)）。
 - **不创建会话，不计算会话期限。** `Provider` 非空的会话的期限规则由 `authn.session` 统一计算（[design-authn-session](design-authn-session.md)）。
@@ -55,8 +55,8 @@ type SSOProvider struct {
 	Name              string
 	Enabled           bool   // 零值读作停用
 	Provisioning      string // jit、preprovisioned
-	TrustIdPMFA       bool
-	AllowIdPInitiated bool
+	TrustIDPMFA       bool
+	AllowIDPInitiated bool
 	AllowSHA1         bool
 	MergeExisting     bool   // JIT 是否可并入现有账户；缺省假
 	Config            json.RawMessage // 读出时不含密钥
@@ -156,7 +156,7 @@ type SSOMetadataRefresher interface {
 非模块的依赖（封闭集合）：
 
 - `pkg/authn/internal/egress`：受限出站客户端，`authn.sso`、协议模块与登录方式叶子包共用。
-- `pkg/authn/internal/clock`：取时间的唯一一处，一律 UTC。
+- `pkg/authn/internal/clock`：写入数据库与绑定为查询参数的时间的来源，一律 UTC。
 - 第三方库：gosaml2 与 goxmldsig（`authn.sso.saml`，goxmldsig 不低于 v1.6.1，版本要求写在 `pkg/go.mod`）；go-oidc 与 x/oauth2（`authn.sso.oidc`）。
 
 依赖方向满足架构不变量：
@@ -334,14 +334,14 @@ CREATE INDEX authn_saml_assertions_expiry ON authn_saml_assertions (not_on_or_af
 | saml | `idp_entity_id`、`idp_sso_url`、`idp_certs` | 以下键必填：`idp_entity_id` 为空时库跳过颁发者校验；`idp_sso_url` 为 https 且无用户信息；`idp_certs` 是 IdP 签名证书的 PEM 列表，1 到 4 个，任一可验签（证书轮换时当前与下一张并存），证书是公钥，不加密 |
 | saml | `metadata_url`、`name_id_format`、`subject_attribute`、`sign_requests` | `metadata_url` 可空，只在刷新时取一次；`name_id_format` 缺省 `persistent`，`transient` 一律拒绝（没有稳定标识），`emailAddress` 格式不稳定、须配置 `subject_attribute` 改取别的属性；`sign_requests` 为真时必须配了 SP 密钥 |
 
-`claims` 的目标集是封闭集（`email`、`display_name`、`subject`、`attr.<名>`）。`attr.<名>` 里的名字与 `idp.` 前缀拼成的键须满足根包对属性键的界限；`idp.` 与 `authn.` 是保留前缀，账户属性不得使用，`idp.` 只能由本映射写入。
+`claims` 的目标集是封闭集（`email`、`display_name`、`subject`、`attr.<名>`）。`attr.<名>` 里的名字与 `idp.` 前缀拼成的键须满足会话载荷里 `idp.*` 的分项上限（键含前缀至多 32 字节，所以名字至多 28 字节；界限只在 [design-authn-gate](design-authn-gate.md#出口检查) 写一份），名字超出的映射在 `config` 校验时按 `ErrInvalidConfig` 拒绝；`idp.` 与 `authn.` 是保留前缀，账户属性不得使用，`idp.` 只能由本映射写入。
 
 ### 属性映射的使用规则
 
 - `subject` 是绑定键的主体，绑定键永远是（提供方，主体）：`oidc:<提供方标识>` 或 `saml:<提供方标识>` 加主体，不用邮箱。
 - `email` 只在首登开户或匹配预置账户时使用，之后不更新账户；映射缺邮箱不是错误，只是没有关联线索。
 - `display_name` 只在首登开户时写入。
-- `attr.<名>` 经根包的界限校验后写进该次登录会话的载荷，键加 `idp.` 前缀，值截断到 256 字节；随该会话终结，不写入账户。
+- `attr.<名>` 经根包的界限校验后写进该次登录会话的载荷，键加 `idp.` 前缀，值在 UTF-8 字符边界截断到 128 字节（分项上限，见 [design-authn-gate](design-authn-gate.md#出口检查)）；随该会话终结，不写入账户。
 - `provisioning` 为 `jit` 时，开户所需的映射缺失（开户必需 `email`）按首登失败处理，返回 `ErrNotProvisioned`，不使用空值开户。
 
 ### 进程内缓存
@@ -418,7 +418,7 @@ gosaml2 没有元数据解析助手，`authn.sso.saml` 用标准库 `encoding/xm
 - 主体取 `NameID`（格式为 `persistent` 或 `unspecified`）或 `subject_attribute` 指定的属性；`transient` 与邮箱格式的 `NameID` 不作主体。
 - 属性按 `claims` 取，值与条数设界。
 - 邮箱「已验证」的含义是：其域在该提供方所属租户的已验证域之内。SAML 本身没有这个概念，由 `authn_idp_domains` 判定。
-- `trust_idp_mfa` 为真，且 `AuthnContextClassRef` 在 `mfa_acr_values` 里时，置 `Proof.IdPAsserted`，否则不置；等级由 `MFA.Assurance` 合成。
+- `trust_idp_mfa` 为真，且 `AuthnContextClassRef` 在 `mfa_acr_values` 里时，置 `Proof.IDPAsserted`，否则不置；等级由 `MFA.Assurance` 合成。
 - 交出 `Proof`：`External` 的 `Provider` 为 `saml:<提供方标识>`、`Subject` 为主体、`Tenant` 为提供方所属租户、`Attributes` 为带 `idp.` 前缀的映射结果；`Methods` 为 `MethodSAML`；`Provider` 为提供方标识。
 
 NameID 里夹带 XML 注释会被截断是一类已知的 SAML 攻击，gosaml2 对它的处理未经核实，见「假设与守住它们的测试」。
@@ -435,7 +435,7 @@ NameID 里夹带 XML 注释会被截断是一类已知的 SAML 攻击，gosaml2 
 - 回调地址 `public-url + B/callback/<提供方标识>`；每个提供方的路径不同，把 A 的回跳投给 B 因路径不同而不可能。
 - `iss` 必须逐字等于 `config.issuer`；`aud` 含 `client_id`；多受众时 `azp` 等于 `client_id`；`nonce`、`state`、PKCE 都发都校验；`sub` 非空。
 - 不调 userinfo，只取 ID 令牌里的声明；邮箱的 `EmailVerified` 取 `email_verified` 为布尔真。
-- `trust_idp_mfa` 为真时，断言的 `acr` 落在 `mfa_acr_values` 才置 `Proof.IdPAsserted`，`amr` 不参与比对；`auth_time` 只在步进里核对新鲜度。
+- `trust_idp_mfa` 为真时，断言的 `acr` 落在 `mfa_acr_values` 才置 `Proof.IDPAsserted`，`amr` 不参与比对；`auth_time` 只在步进里核对新鲜度。
 - `Proof` 的 `External.Provider` 为 `oidc:<提供方标识>`，`Methods` 为 `MethodOIDC`。
 - 所有出站调用经 `oidc.ClientContext(ctx, client)` 注入受限客户端，`oidc.NewProvider` 的 `ctx` 也要带它：go-oidc 未注入时用无超时的 `http.DefaultClient`，未经注入的出站调用本身是缺陷。
 
@@ -447,17 +447,19 @@ Google 与企业 OIDC 走同一条代码路径，差别只在配置来源：Goog
 
 | 项 | 做法 |
 |---|---|
-| 目的地址 | `net.Dialer.Control` 在**实际连接的地址**上判，每次连接尝试都判，所以 DNS 重绑定与多记录无从绕过。白名单思路：只放行 `netip.Addr.IsGlobalUnicast()` 为真、且不落在下列特殊用途段的地址；IPv4 映射的 IPv6 先还原再判；NAT64 的 `64:ff9b::/96` 与 6to4 的 `2002::/16` 抽出内嵌的 IPv4 再按 IPv4 判（IPv6-only 网络里经 DNS64 合成的真实公网地址因此仍可达）；Teredo 的 `2001::/32` 与 `64:ff9b:1::/48` 一律拒绝 |
-| 方案与重定向 | 只许 `https`；不跟随重定向，发现文档不应重定向 |
-| 超时与大小 | 总期限取 `authn.sso.egress-timeout`，每次调用用 `context` 的期限；响应体上限 1 MiB |
-| TLS 与代理 | 系统根证书，从不关闭校验；`Proxy` 置空：经代理时 `Control` 看到的是代理地址，目的地判断失效，所以不支持经出站代理访问 IdP |
-| 观测 | 套 `observability.Transport` 注入追踪头；微信客户端除外，它的 URL 里有 `secret` |
+| 目的地址 | `net.Dialer.Control` 在**实际连接的地址**上判，每次连接尝试都判，所以 DNS 重绑定与多记录无从绕过。白名单思路：只放行 `netip.Addr.IsGlobalUnicast()` 为真、且不落在下列特殊用途段的地址，IPv6 地址另须落在已分配给全球单播的 `2000::/3` 内；IPv4 映射的 IPv6 先还原再判；NAT64 的 `64:ff9b::/96` 与 6to4 的 `2002::/16` 抽出内嵌的 IPv4 再按 IPv4 判（IPv6-only 网络里经 DNS64 合成的真实公网地址因此仍可达）；Teredo 的 `2001::/32` 与 `64:ff9b:1::/48` 一律拒绝 |
+| 方案与重定向 | 只许 `https`，其他方案在建立连接之前失败；不跟随重定向，3xx 应答原样返回，发现文档不应重定向 |
+| 超时与大小 | 总期限取 `authn.sso.egress-timeout`，每次调用用 `context` 的期限，调用方必须带期限：不带期限的调用只受握手超时与对端约束。名称解析与每次连接尝试随调用的期限与取消而结束，每次尝试分得剩余期限的均分份额，第一个不可达的地址耗不尽后面的地址要用的时间；连接按地址逐个尝试，不做并行回退。响应体上限 1 MiB，超出的读失败，不静默截断；响应头上限 64 KiB |
+| TLS 与代理 | 系统根证书，从不关闭校验，TLS 1.2 为下限；`Proxy` 置空：经代理时 `Control` 看到的是代理地址，目的地判断失效，所以不支持经出站代理访问 IdP |
+| 观测 | 追踪头由调用方在客户端的 `Transport` 外自行套 `observability.Transport` 注入，包内不提供这层包装；微信客户端不套，它的 URL 里有 `secret` |
 | 开发开关 | `authn.sso.allow-private-egress`（仅主配置源，缺省假）放开回环 |
 
 **特殊用途段**（封闭集，取自 IANA 特殊用途地址登记表，与登记表的一致是假设，见「假设与守住它们的测试」）：
 
 - IPv4：`0.0.0.0/8`、`10.0.0.0/8`、`100.64.0.0/10`、`127.0.0.0/8`、`169.254.0.0/16`、`172.16.0.0/12`、`192.0.0.0/24`、`192.0.2.0/24`、`192.88.99.0/24`、`192.168.0.0/16`、`198.18.0.0/15`、`198.51.100.0/24`、`203.0.113.0/24`、`224.0.0.0/4`、`240.0.0.0/4`。
-- IPv6：`::/128`、`::1/128`、`100::/64`、`2001:2::/48`、`2001:db8::/32`、`fc00::/7`、`fe80::/10`、`ff00::/8`。
+- IPv6：`::/128`、`::1/128`、`100::/64`、`2001::/23`、`2001:2::/48`、`2001:db8::/32`、`3fff::/20`、`fc00::/7`、`fe80::/10`、`ff00::/8`。`2001::/23` 是登记表里整块不可全局到达的 IETF 协议分配段，含 Teredo 与基准测试段，其中登记为可全局到达的任播与覆盖网前缀没有 IdP 在那里，随整块拒绝；`3fff::/20` 是文档段（RFC 9637）。`2000::/3` 之外的整块（`::/128`、`::1/128`、`100::/64`、`fc00::/7`、`fe80::/10`、`ff00::/8`）同时被 `2000::/3` 的要求拒绝，仍照登记表列出；登记表里的 `100:0:0:1::/64`（RFC 9780）与 `5f00::/16`（RFC 9602）也在 `2000::/3` 之外，只由这条要求拒绝，不在表里；`2001::/32`（Teredo）与 `64:ff9b:1::/48` 在查表之前即被拒绝。IPv4 的 `192.0.0.0/24` 里登记为可全局到达的 `192.0.0.9`、`192.0.0.10` 随父块一起拒绝，是保守的读法。
+
+表与 IANA 的 IPv4 与 IPv6 特殊用途地址登记表逐条核对，一致的版本是 2026-10-11 取得的那一份，含 RFC 9637、RFC 9780、RFC 9602 的新增项；表按登记表的整块列，登记表新增整块时表随之增补。`internal/egress` 不保留登记表的副本，向量测试是每一整块核对过什么的记录；复核的时机见 [design-authn-threats](design-authn-threats.md)。
 
 只靠 `IsGlobalUnicast()` 不够：它对 `64:ff9b::a9fe:a9fe`（内嵌 `169.254.169.254`）、`2002:a9fe:a9fe::1`、Teredo 地址、`198.18.0.1`、`240.0.0.1`、`192.0.0.1`、`100.64.0.1` 都返回真，所以只拒私网、回环与链路本地不足以挡住服务端请求伪造。负向测试向量覆盖这些写法，以及十六进制、八进制与十进制写法的 IPv4 字面量。
 
@@ -513,7 +515,7 @@ SSO 不做单点登出：IdP 一侧的登出与停用都不终止 speed 的会�
 - **元数据刷新失败时保留旧配置。** 解析或校验失败保留旧的 `idp_certs`、`idp_sso_url`、`idp_entity_id`，记 `Warn`，返回错误。这是有界的放宽：被 IdP 撤销的旧证书继续被接受，直到管理员更新；放宽的上界是「管理员触发刷新或手工更新」，不自动刷新。
 - **证书轮换没有跟上时拒绝。** IdP 换了证书而管理员没有更新，该提供方的登录全部失败。
 - **缺省拒绝。** IdP 发起登录缺省关；`provisioning` 无默认值；`merge_existing` 缺省假，JIT 缺省只新建；未验证的域不参与发现；邮箱域不匹配时不并入账户；SHA-1 签名缺省拒绝；`transient` 的 `NameID` 一律拒绝。
-- **出站拒绝非公网地址。** 受限出站客户端拒绝的连接按 IdP 不可用处理。
+- **出站拒绝非公网地址。** 受限出站客户端拒绝的连接（目的地不是公网地址、方案不是 `https`、响应体超出上限，各有一个哨兵，见 [design-authn-failure](design-authn-failure.md)）按 IdP 不可用处理：该提供方的登录答 503，成因只进日志。
 
 ### 幂等
 
@@ -532,7 +534,7 @@ SSO 不做单点登出：IdP 一侧的登出与停用都不终止 speed 的会�
 - **时间条件不设容差。** 副本与 IdP 的时钟偏差超过几秒就会零星拒掉合法断言，部署必须保证时间同步。
 - **整个部署共用一组 SP 密钥对。** 租户的 IdP 要登记统一 `public-url` 下的 ACS 与 `redirect_uri`；不支持按租户子域名的回调，不支持经出站代理访问 IdP。
 - **补充校验的每一项都是 speed 自写的安全部件。** 漏一项就是静默放行，所以每一项都要有负向测试；库的新缺陷在发现到升级之间有窗口，版本固定，升级走专门变更。
-- **受限出站客户端是自写的安全部件。** 特殊用途段表与登记表的一致要靠核对与测试；每个提供方在进程内缓存一份库实例，租户很多时内存随之增长。
+- **受限出站客户端是自写的安全部件。** 特殊用途段表与登记表的一致要靠核对与测试；连接按地址逐个尝试，不做并行回退，多地址主机的首个地址不可达时多花一份期限；每个提供方在进程内缓存一份库实例，租户很多时内存随之增长。
 - **SHA-1 预检可能误拒。** 预检扫描 XML 文本，保守的判断会拒掉不含 SHA-1 签名的少数文档，靠测试向量守住边界。
 - **发现的耗时只能证否，不能证真。** 应答同形同时由统一路径压到最小，对照不出差别不构成证明。
 
@@ -544,7 +546,7 @@ SSO 不做单点登出：IdP 一侧的登出与停用都不终止 speed 的会�
 - **gosaml2 的 `ValidateEncodedResponse` 返回验过签的响应，且不要求对同一字节再解析。** 测试：对固定版本 v0.12.0 的签名与返回类型做编译期断言，并以单元测试断言验过签的响应可直接用于后续校验；断言失败即「单次解析并验签」的前提不成立。
 - **gosaml2 对 NameID 中夹带 XML 注释的截断攻击已有防护。** 测试：构造含注释的 NameID，断言取得的主体不被截断。
 - **gosaml2 的 `SPKeyStore` 不同时接受两把解密密钥。** 在这个假设下，SP 证书的轮换要在 IdP 元数据刷新的重叠期内完成。
-- **特殊用途地址段的清单与 IANA 登记表一致。** 测试：一条对照 IANA 登记表的测试逐条断言清单与登记表一致；测试向量覆盖 NAT64、6to4、Teredo 的嵌入写法，以及十六进制、八进制与十进制写法的 IPv4 字面量。
+- **特殊用途地址段的清单与 IANA 登记表一致。** 测试：向量测试对登记表的每一整块断言边缘地址的判定，覆盖 NAT64、6to4、Teredo 的嵌入写法，以及十六进制、八进制与十进制写法的 IPv4 字面量。包内没有登记表的机器可读副本，所以这条断言守住的是核对那一天的状态，随登记表的更新而漂移，复核的时机见 [design-authn-threats](design-authn-threats.md)。
 - **审计的语句级明细不带加密列的值。** 测试：写入 `client_secret` 之后，审计行里不得出现任何秘密字节。
 - **时区无关。** 假设 `not_on_or_after` 与 `verified_at` 等时间列在非 UTC 的 `time.Time` 写入下比较结果仍正确。SQLite 夹具在 `TZ=America/New_York` 下断言清扫与重放判定的条件。
 
@@ -566,7 +568,7 @@ SSO 不做单点登出：IdP 一侧的登出与停用都不终止 speed 的会�
 
 ## 实现状态
 
-`pkg/authn` 下没有 `sso` 目录与 `internal/egress`，根包没有 `SSOProviders`、`SSOProvider`、`SSOMetadataRefresher`，`pkg/go.mod` 里没有 gosaml2、goxmldsig、go-oidc 与 x/oauth2。
+`pkg/authn` 下没有 `sso` 目录，根包没有 `SSOProviders`、`SSOProvider`、`SSOMetadataRefresher`，`pkg/go.mod` 里没有 gosaml2、goxmldsig、go-oidc 与 x/oauth2。
 
 | 能力 | 状态 | 代码 |
 |---|---|---|
@@ -578,7 +580,7 @@ SSO 不做单点登出：IdP 一侧的登出与停用都不终止 speed 的会�
 | 清扫：未验证的域声明与过期的断言标识 | 未实现 | — |
 | `Start` 的表存在性探测与加密列探针 | 未实现 | — |
 | 租户准入层缺席时的 `Warn` | 未实现 | — |
-| `internal/egress` 受限出站客户端与特殊用途地址表 | 未实现 | — |
+| `internal/egress` 受限出站客户端与特殊用途地址表 | 已实现 — 追踪头的注入留给调用方，包内没有 `observability.Transport` 的包装 | `pkg/authn/internal/egress/egress.go` `New`、`Options`；`pkg/authn/internal/egress/address.go` `Permitted` |
 | `authn.sso.saml`：SP 元数据路由与 SP 构造 | 未实现 | — |
 | `authn.sso.saml`：`LoginMethod` 的发起与断言消费（SHA-1 预检、单次解析验签、逐项补充校验、断言标识去重、主体与属性提取） | 未实现 | — |
 | `authn.sso.saml`：IdP 发起登录的方法侧校验 | 未实现 | — |

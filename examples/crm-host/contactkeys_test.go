@@ -70,9 +70,9 @@ func TestAContactRekeyRollsARotatedRootKeyOut(t *testing.T) {
 	for _, ref := range tenants {
 		h.adminCreateTenant(t, ref)
 		h.adminGrant(t, ref, ann, roleOwner)
-		expect(t, "opening acc-1 in "+ref.ID, h.send(t, api(nethttp.MethodPost, "/accounts", ref, basic(ann),
+		expect(t, "opening acc-1 in "+ref.ID, h.send(t, api(nethttp.MethodPost, "/accounts", ref, signedIn(ann),
 			map[string]any{"id": "acc-1", "name": "Rocket"})), nethttp.StatusCreated)
-		expect(t, "writing con-1 in "+ref.ID, h.send(t, api(nethttp.MethodPost, "/contacts", ref, basic(ann),
+		expect(t, "writing con-1 in "+ref.ID, h.send(t, api(nethttp.MethodPost, "/contacts", ref, signedIn(ann),
 			map[string]any{"id": "con-1", "account_id": "acc-1", "name": "Ann at " + ref.ID, "email": email})),
 			nethttp.StatusCreated)
 	}
@@ -84,12 +84,12 @@ func TestAContactRekeyRollsARotatedRootKeyOut(t *testing.T) {
 	c.config.set(engine+".encryption-retired-keys", []string{caseRootKey})
 	h = c.serve()
 	for _, ref := range []tenantRef{acme, globex} {
-		got, resp := contactOf(t, h, ref, basic(ann), "con-1")
+		got, resp := contactOf(t, h, ref, signedIn(ann), "con-1")
 		expect(t, "reading "+ref.ID+"'s con-1 under the rotated key", resp, nethttp.StatusOK)
 		if got.Email != email {
 			t.Errorf("%s's con-1 reads the email %q under the rotated key, want it in the clear", ref.ID, got.Email)
 		}
-		if ids := contactsByEmail(t, h, ref, basic(ann), email); len(ids) != 0 {
+		if ids := contactsByEmail(t, h, ref, signedIn(ann), email); len(ids) != 0 {
 			t.Fatalf("%s's lookup by email finds %v before the rekey, so the rotation took no effect on the digest "+
 				"and the case says nothing", ref.ID, ids)
 		}
@@ -102,12 +102,12 @@ func TestAContactRekeyRollsARotatedRootKeyOut(t *testing.T) {
 		if !slices.Contains(done, rekeyedTenant{TenantID: ref.ID, Contacts: 1}) {
 			t.Errorf("the rekey answered %+v, want %s's one contact written again", done, ref.ID)
 		}
-		if ids := contactsByEmail(t, h, ref, basic(ann), email); !slices.Equal(ids, []string{"con-1"}) {
+		if ids := contactsByEmail(t, h, ref, signedIn(ann), email); !slices.Equal(ids, []string{"con-1"}) {
 			t.Errorf("%s's lookup by email finds %v after the rekey, want its con-1", ref.ID, ids)
 		}
 		// The unique index takes the digest under the current key again, so a
 		// second contact with the email is refused, as a conflict.
-		resp := h.send(t, api(nethttp.MethodPost, "/contacts", ref, basic(ann),
+		resp := h.send(t, api(nethttp.MethodPost, "/contacts", ref, signedIn(ann),
 			map[string]any{"id": "con-2", "account_id": "acc-1", "name": "Ann again", "email": strings.ToUpper(email)}))
 		expect(t, ref.ID+" taking a second contact with con-1's email after the rekey", resp, nethttp.StatusConflict)
 		if n := c.count("SELECT count(*) FROM contacts WHERE tenant_id = ? AND id = ?", ref.ID, "con-2"); n != 0 {
@@ -131,7 +131,7 @@ func TestAContactRekeyRollsARotatedRootKeyOut(t *testing.T) {
 	c.mustRun("", "tenant", "enable", "--tenant-id", dormant.ID)
 	h = c.serve()
 	for _, ref := range []tenantRef{acme, globex} {
-		got, resp := contactOf(t, h, ref, basic(ann), "con-1")
+		got, resp := contactOf(t, h, ref, signedIn(ann), "con-1")
 		expect(t, "reading "+ref.ID+"'s con-1 with the retired key dropped", resp, nethttp.StatusOK)
 		if got.Email != email {
 			t.Errorf("%s's con-1 reads the email %q with the retired key dropped, want it in the clear", ref.ID, got.Email)
@@ -145,12 +145,12 @@ func TestAContactRekeyRollsARotatedRootKeyOut(t *testing.T) {
 		if !slices.Contains(done, rekeyedTenant{TenantID: dormant.ID, Contacts: 1}) {
 			t.Errorf("the rekey answered %+v, want the disabled %s's one contact written again", done, dormant.ID)
 		}
-		got, resp := contactOf(t, h, dormant, basic(ann), "con-1")
+		got, resp := contactOf(t, h, dormant, signedIn(ann), "con-1")
 		if resp.status != nethttp.StatusOK || got.Email != email {
 			t.Errorf("dormant's con-1, disabled through the rekey, answered %d %s with the retired key dropped, "+
 				"want it in the clear", resp.status, resp.body)
 		}
-		if ids := contactsByEmail(t, h, dormant, basic(ann), email); !slices.Equal(ids, []string{"con-1"}) {
+		if ids := contactsByEmail(t, h, dormant, signedIn(ann), email); !slices.Equal(ids, []string{"con-1"}) {
 			t.Errorf("dormant's lookup by email finds %v once it is served again, want its con-1", ids)
 		}
 	})
