@@ -1,6 +1,7 @@
 package authn
 
 import (
+	"context"
 	"fmt"
 	"go/ast"
 	"go/build"
@@ -11,6 +12,7 @@ import (
 	"os"
 	"path/filepath"
 	"slices"
+	"strconv"
 	"strings"
 	"sync"
 	"testing"
@@ -486,6 +488,7 @@ var exportedSurface = []string{
 	"method Accounts.ListServiceSecrets",
 	"method Accounts.Lookup",
 	"method Challenger.Challenge",
+	"method ClaimsContributor.Claims",
 	"method CookieClearer.ClearCookie",
 	"method CreateAccount.Clone",
 	"method Decider.Decide",
@@ -622,6 +625,7 @@ var exportedSurface = []string{
 	"type Assurance",
 	"type BindingChanged",
 	"type Challenger",
+	"type ClaimsContributor",
 	"type ClientInfo",
 	"type CookieClearer",
 	"type CreateAccount",
@@ -1114,4 +1118,179 @@ const KindA Kind = "a"
 	if len(missing) != 1 || !strings.Contains(missing[0], `"func Removed"`) {
 		t.Errorf("a symbol removed from the source is reported as %q", missing)
 	}
+}
+
+// claimsContributorFunc is ClaimsContributor's shape written as a function type:
+// one method, Claims, taking a context and a Principal and returning a claim
+// mapping. The assertion below makes that shape a compile-time fact, so an
+// interface that grows another method, loses Claims or moves it off this
+// signature no longer compiles.
+type claimsContributorFunc func(context.Context, Principal) (map[string]any, error)
+
+func (f claimsContributorFunc) Claims(ctx context.Context, p Principal) (map[string]any, error) {
+	return f(ctx, p)
+}
+
+var _ ClaimsContributor = claimsContributorFunc(nil)
+
+// TestTheClaimsContributorDocHoldsTheDesignClaimSet holds the reserved claim
+// names in the ClaimsContributor doc to the design's closed set, name for name
+// and in order. The set is written in the interface comment alone, so this reads
+// it back out of the source: a name added, dropped, reordered or respelled there
+// fails here.
+func TestTheClaimsContributorDocHoldsTheDesignClaimSet(t *testing.T) {
+	got := reservedClaimNamesFromDoc(t)
+	want := []string{
+		"iss", "sub", "aud", "exp", "nbf", "iat", "jti", "sid",
+		"amr", "acr", "auth_time", "act", "imp", "imp_tenant", "client_id", "typ",
+	}
+	if !slices.Equal(got, want) {
+		t.Errorf("the doc's reserved claim set is %q; the design's is %q", got, want)
+	}
+}
+
+// reservedClaimNamesFromDoc returns the reserved claim names listed in the
+// ClaimsContributor doc comment, in the order the design lists them. It reads
+// the set back out of the source, so a name added, dropped, reordered or
+// respelled in the comment changes what it returns.
+func reservedClaimNamesFromDoc(t *testing.T) []string {
+	t.Helper()
+	const anchor = "The reserved claim names are a closed set: "
+	norm := strings.Join(strings.Fields(claimsContributorDoc(t)), " ")
+	start := strings.Index(norm, anchor)
+	if start < 0 {
+		t.Fatalf("the ClaimsContributor doc does not state the reserved claim set; it reads:\n%s", norm)
+	}
+	rest := norm[start+len(anchor):]
+	end := strings.IndexByte(rest, '.')
+	if end < 0 {
+		t.Fatalf("the reserved claim set in the doc does not end with a period; it reads:\n%s", norm)
+	}
+	return strings.Split(rest[:end], ", ")
+}
+
+// TestTheClaimsContributorDocAndTheTokenModuleHoldOneSet forces the reserved
+// claim set the ClaimsContributor doc promises and the set the token module
+// enforces to be one set. The doc is the contract a host reads; the module's
+// reservedClaims map, in another package, is what refuses a contributor claim at
+// issue time. The two are written in two files and nothing but this test ties
+// them, so a name dropped from reservedClaims while the doc still lists it — or
+// the reverse — passes every other test and leaves the contract describing
+// behaviour that is not there.
+//
+// The set is read from the token module's source rather than through an
+// identifier: this test is in package authn, and importing the token module here
+// would close an import cycle (the token module itself imports this package).
+func TestTheClaimsContributorDocAndTheTokenModuleHoldOneSet(t *testing.T) {
+	doc := reservedClaimNamesFromDoc(t)
+	enforced := reservedClaimNamesFromToken(t)
+
+	inDoc := make(map[string]struct{}, len(doc))
+	for _, name := range doc {
+		inDoc[name] = struct{}{}
+	}
+	inToken := make(map[string]struct{}, len(enforced))
+	for _, name := range enforced {
+		inToken[name] = struct{}{}
+	}
+	for _, name := range doc {
+		if _, ok := inToken[name]; !ok {
+			t.Errorf("the doc reserves %q but the token module does not enforce it", name)
+		}
+	}
+	for _, name := range enforced {
+		if _, ok := inDoc[name]; !ok {
+			t.Errorf("the token module enforces %q but the doc does not list it", name)
+		}
+	}
+	if len(doc) != len(enforced) {
+		t.Errorf("the doc lists %d reserved names, the token module enforces %d", len(doc), len(enforced))
+	}
+}
+
+// reservedClaimNamesFromToken reads the keys of the token module's reservedClaims
+// map literal out of token/claims.go, the set the module actually refuses a
+// contributor claim against. A rename of that map or a change of its shape fails
+// the test rather than silently reading nothing.
+func reservedClaimNamesFromToken(t *testing.T) []string {
+	t.Helper()
+	fset := token.NewFileSet()
+	f, err := parser.ParseFile(fset, filepath.Join("token", "claims.go"), nil, parser.ParseComments)
+	if err != nil {
+		t.Fatalf("parsing token/claims.go: %v", err)
+	}
+	for _, decl := range f.Decls {
+		gd, ok := decl.(*ast.GenDecl)
+		if !ok || gd.Tok != token.VAR {
+			continue
+		}
+		for _, spec := range gd.Specs {
+			vs, ok := spec.(*ast.ValueSpec)
+			if !ok {
+				continue
+			}
+			for i, name := range vs.Names {
+				if name.Name != "reservedClaims" {
+					continue
+				}
+				if i >= len(vs.Values) {
+					t.Fatalf("the token module's reservedClaims has no value")
+				}
+				lit, ok := vs.Values[i].(*ast.CompositeLit)
+				if !ok {
+					t.Fatalf("the token module's reservedClaims is not a composite literal")
+				}
+				names := make([]string, 0, len(lit.Elts))
+				for _, elt := range lit.Elts {
+					kv, ok := elt.(*ast.KeyValueExpr)
+					if !ok {
+						t.Fatalf("the token module's reservedClaims holds a non key-value element")
+					}
+					bl, ok := kv.Key.(*ast.BasicLit)
+					if !ok || bl.Kind != token.STRING {
+						t.Fatalf("the token module's reservedClaims holds a non-string key")
+					}
+					s, err := strconv.Unquote(bl.Value)
+					if err != nil {
+						t.Fatalf("unquoting the reserved claim %s: %v", bl.Value, err)
+					}
+					names = append(names, s)
+				}
+				return names
+			}
+		}
+	}
+	t.Fatal("token/claims.go declares no reservedClaims map")
+	return nil
+}
+
+// claimsContributorDoc returns the doc comment of the ClaimsContributor
+// declaration read from claims.go.
+func claimsContributorDoc(t *testing.T) string {
+	t.Helper()
+	fset := token.NewFileSet()
+	f, err := parser.ParseFile(fset, "claims.go", nil, parser.ParseComments)
+	if err != nil {
+		t.Fatalf("parsing claims.go: %v", err)
+	}
+	for _, decl := range f.Decls {
+		gd, ok := decl.(*ast.GenDecl)
+		if !ok || gd.Tok != token.TYPE {
+			continue
+		}
+		for _, spec := range gd.Specs {
+			ts, ok := spec.(*ast.TypeSpec)
+			if !ok || ts.Name.Name != "ClaimsContributor" {
+				continue
+			}
+			if ts.Doc != nil {
+				return ts.Doc.Text()
+			}
+			if gd.Doc != nil {
+				return gd.Doc.Text()
+			}
+		}
+	}
+	t.Fatal("claims.go declares no ClaimsContributor with a doc comment")
+	return ""
 }

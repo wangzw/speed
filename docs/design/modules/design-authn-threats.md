@@ -387,7 +387,7 @@ flowchart LR
 | 日志脱敏的登记面 | 已实现 | `pkg/log/log.go` `Redaction` |
 | 标识级与账户级失败退避、`valid_after`、账户停用的跨模块清理 | 已实现 — 账户级静默退避与标识级退避、`valid_after`，以及停用后经 `AccountLifecycle` 与会话、多因素钩子的清理并幂等补偿 | `pkg/authn/account/throttle.go`；`pkg/authn/account/lifecycle.go`；`pkg/authn/session/lifecycle.go`；`pkg/authn/mfa/manage.go` |
 | 登录会话、cookie 与 CSRF 的对策 | 已实现 — 会话行与撤销、cookie 属性随网关地址、跨源检查经 `Mounter` 施加 | `pkg/authn/session/sessions.go`、`pkg/authn/session/verify.go`；`pkg/authn/session/config.go`；`pkg/authn/internal/mount/wrap.go` `Wrap` |
-| 访问令牌、刷新令牌轮换与重用检测、签名密钥轮换 | 未实现 | — |
+| 访问令牌、刷新令牌轮换与重用检测、签名密钥轮换 | 已实现 — 访问令牌的校验次序、刷新令牌的轮换与重用即整族撤销、两相密钥轮换与 JWKS 发布都已在，含 `TestAKeyRotationRollsOverInTwoPhases` 的轮换演练与各负向向量 | `pkg/authn/token/verify.go` `Verify`、`Accepts`；`pkg/authn/token/refresh.go` `Refresh`、`rotate`、`revokeFamily`；`pkg/authn/token/keys.go` `loadKeySet`、`GenerateKey`；`pkg/authn/token/jwks.go` `JWKS` |
 | 登录流程绑定、`state`、PKCE、`nonce`、`return_to` 校验 | 部分实现 — 流程令牌的绑定、比较并交换与 `return_to` 校验已在；缺 `state`、PKCE、`nonce`（随社交与 OIDC 登录方式） | `pkg/authn/login/flow.go`、`pkg/authn/login/engine.go` |
 | 多因素的保障等级合成与账户安全类操作的因素门槛 | 部分实现 — 唯一的保障等级合成、新鲜度判据与账户安全类动作的门槛已在；缺 TOTP、WebAuthn 因素与 `guard.Require` | `pkg/authn/mfa/policy.go` `Assurance`、`Require`；`pkg/authn/mfa/routes.go` |
 | 短信的预算、抑制行与号码前缀白名单 | 未实现 | — |
@@ -396,5 +396,5 @@ flowchart LR
 | 判定接缝 `Decider` 与管理面的强制审计 | 部分实现 — `Decider` 接缝已在；缺管理面的强制审计 | `pkg/authn/decide.go` `Decider` |
 | 租户准入层 `tenant.admission` | 已实现 — 成员默认拒绝、租户级强度、冒充范围与经 `Decider` 的放行，判定次序按设计 | `pkg/tenant/admission/admission.go` `Module`；`pkg/tenant/admission/decide.go` `decide`；`pkg/tenant/capabilities.go` `Admission` |
 | 放宽方向的设置变更订阅与 `authn.*` 设置写权限的硬要求 | 部分实现 — 账户订阅设置变更，放宽到更宽松取值时写 `Warn` 并记审计；`authn.*` 与 `tenant.admission.*` 设置写权限的硬要求写在 `pkg/authn/AGENTS.md`，authn 不检查宿主是否遵守 | `pkg/authn/account/relax.go`；`pkg/authn/AGENTS.md` |
-| `pkg/go.mod` 对 go-jose 与 goxmldsig 的版本下限 | 未实现 | — |
+| `pkg/go.mod` 对 go-jose 与 goxmldsig 的版本下限 | 部分实现 — go-jose 的下限已在（v4.1.5，`go-oidc` 要求的 v4.1.4 受 GHSA-6mp9-8xrw-74r4 影响）；缺 goxmldsig 的下限（随 SAML 协议模块在后续期落地） | `pkg/go.mod` `github.com/go-jose/go-jose/v4` v4.1.5 |
 | 链上次序的装配测试 | 部分实现 — 准入层的链上次序与端点在 `pkg/tenant/admission/assembly_test.go` 与 `pkg/tenant/admission/live_test.go` 里从真实注册表与回环端守住；缺与全部六期模块齐全的链上次序汇总 | `pkg/tenant/admission/assembly_test.go`；`pkg/tenant/admission/live_test.go` |

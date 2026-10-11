@@ -4,8 +4,9 @@ import "context"
 
 // Tokens issues and checks the access tokens and refresh tokens of this
 // capability. The token module delivers it exclusively; a host may supply an
-// equivalent module. Adding a method or changing a signature breaks a host that
-// did.
+// equivalent module. Its signature and that of ClaimsContributor are frozen:
+// both are interfaces a host implements, so a later change that adds a method to
+// either or gives one another signature is a breaking change.
 //
 // The login engine takes it as optional, and an assembly without it can only
 // deliver cookies.
@@ -23,8 +24,10 @@ type Tokens interface {
 	// grace is ErrRefreshReuse, which has revoked the whole family.
 	Refresh(ctx context.Context, presented string) (AccessToken, RefreshToken, error) // ErrInvalidGrant, ErrRefreshReuse
 	// Revoke is RFC 7009: it handles the presented token as the kind it is, and
-	// whether the token was valid or even existed is not told.
-	Revoke(ctx context.Context, presented string) error
+	// whether the token was valid or even existed is not told. A dependency that
+	// cannot be reached is ErrUnavailable, which the endpoint answers with a 503:
+	// a revocation that did not happen is never reported as one that did.
+	Revoke(ctx context.Context, presented string) error // ErrUnavailable
 	// JWKS returns the public keys that verify the tokens, as a JWK Set. It holds
 	// no private field.
 	JWKS(ctx context.Context) ([]byte, error)

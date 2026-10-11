@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"go/ast"
 	"go/parser"
 	"go/token"
 	"io"
@@ -13,6 +14,7 @@ import (
 	"path/filepath"
 	"runtime"
 	"slices"
+	"strconv"
 	"strings"
 	"testing"
 )
@@ -919,6 +921,152 @@ func TestTheListOfWritersIsHeldToTheCodeBehindIt(t *testing.T) {
 		})
 		if got := names(unusedWriterViolations(pkgs)); !slices.Equal(got, []string{"authn/login"}) {
 			t.Errorf("violations name %q: the identity package imported from a test file is not what a writer is", got)
+		}
+	})
+}
+
+// The token bridge is the module's one place the JOSE library is named, and the
+// library's floor is a requirement the pkg module states for itself. These two
+// hold the design's statements about it: the bridge is the only non-test file
+// that imports the library, no non-test file names the claims-without-
+// verification escape hatch, and pkg/go.mod requires at least the version the
+// design fixes.
+const (
+	goJosePath       = "github.com/go-jose/go-jose/v4"
+	goJoseFloor      = "v4.1.5"
+	tokenPackagePath = rootPath + "/token"
+	// unsafeClaims is the library's escape hatch, which decodes a token's
+	// claims without checking its signature.
+	unsafeClaims = "UnsafeClaimsWithoutVerification"
+)
+
+// goJoseImporters lists every non-test file of the module that imports the JOSE
+// library, as slash-separated paths relative to the module root, sorted.
+func goJoseImporters(t *testing.T, root string, pkgs []listed) []string {
+	t.Helper()
+	var out []string
+	for _, p := range pkgs {
+		if p.Standard || p.Dir == "" {
+			continue
+		}
+		for _, name := range p.sourceFiles() {
+			imps, err := readImports(filepath.Join(p.Dir, name))
+			if err != nil {
+				t.Fatalf("reading the imports of %s: %v", name, err)
+			}
+			if slices.ContainsFunc(imps, func(imp string) bool { return imp == goJosePath || strings.HasPrefix(imp, goJosePath+"/") }) {
+				rel, err := filepath.Rel(root, filepath.Join(p.Dir, name))
+				if err != nil {
+					t.Fatal(err)
+				}
+				out = append(out, filepath.ToSlash(rel))
+			}
+		}
+	}
+	slices.Sort(out)
+	return out
+}
+
+// namesUnsafeClaims reports whether a non-test file names the library's
+// claims-without-verification escape hatch. It reads the parsed identifiers, so
+// a mention in a comment is not one, and a file that does not parse is left to
+// the build to report.
+func namesUnsafeClaims(path string) bool {
+	f, err := parser.ParseFile(token.NewFileSet(), path, nil, 0)
+	if err != nil {
+		return false
+	}
+	found := false
+	ast.Inspect(f, func(n ast.Node) bool {
+		if id, ok := n.(*ast.Ident); ok && id.Name == unsafeClaims {
+			found = true
+		}
+		return !found
+	})
+	return found
+}
+
+// requiredVersion reads the version pkg/go.mod requires of an import path,
+// whether the requirement is in a block or stands alone.
+func requiredVersion(gomod, path string) (string, bool) {
+	for line := range strings.Lines(gomod) {
+		fields := strings.Fields(line)
+		if len(fields) >= 2 && fields[0] == path {
+			return fields[1], true
+		}
+	}
+	return "", false
+}
+
+// versionNumbers reads the major, minor and patch of a vX.Y.Z version, ignoring
+// any prerelease or build suffix.
+func versionNumbers(v string) [3]int {
+	v = strings.TrimPrefix(v, "v")
+	if i := strings.IndexAny(v, "-+"); i >= 0 {
+		v = v[:i]
+	}
+	parts := strings.Split(v, ".")
+	var out [3]int
+	for i := 0; i < 3 && i < len(parts); i++ {
+		n, err := strconv.Atoi(parts[i])
+		if err != nil {
+			return out
+		}
+		out[i] = n
+	}
+	return out
+}
+
+// compareVersions orders two vX.Y.Z versions.
+func compareVersions(a, b string) int {
+	pa, pb := versionNumbers(a), versionNumbers(b)
+	for i := range pa {
+		switch {
+		case pa[i] < pb[i]:
+			return -1
+		case pa[i] > pb[i]:
+			return 1
+		}
+	}
+	return 0
+}
+
+func TestTheTokenBridgeIsTheOnlyGoJoseUserAndTheFloorIsHeld(t *testing.T) {
+	root := moduleRoot(t)
+	pkgs := listModule(t, root, nil)
+
+	t.Run("only the token bridge imports the JOSE library", func(t *testing.T) {
+		got := goJoseImporters(t, root, pkgs)
+		want := []string{strings.TrimPrefix(tokenPackagePath, moduleImportPath+"/") + "/jose.go"}
+		if !slices.Equal(got, want) {
+			t.Errorf("the non-test files importing %s are %v, want %v", goJosePath, got, want)
+		}
+	})
+
+	t.Run("no non-test file names the claims-without-verification escape hatch", func(t *testing.T) {
+		for _, p := range pkgs {
+			if p.Standard || p.Dir == "" {
+				continue
+			}
+			for _, name := range p.sourceFiles() {
+				if namesUnsafeClaims(filepath.Join(p.Dir, name)) {
+					t.Errorf("%s/%s names %s", p.ImportPath, name, unsafeClaims)
+				}
+			}
+		}
+	})
+
+	t.Run("pkg/go.mod requires the library at or above the floor", func(t *testing.T) {
+		data, err := os.ReadFile(filepath.Join(root, "go.mod"))
+		if err != nil {
+			t.Fatalf("reading go.mod: %v", err)
+		}
+		version, ok := requiredVersion(string(data), goJosePath)
+		if !ok {
+			t.Fatalf("pkg/go.mod does not require %s, so a transitive requirement could pull it below the floor", goJosePath)
+		}
+		if compareVersions(version, goJoseFloor) < 0 {
+			t.Errorf("pkg/go.mod requires %s %s, want at least %s", goJosePath, version, goJoseFloor)
 		}
 	})
 }

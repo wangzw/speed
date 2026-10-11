@@ -6,13 +6,13 @@ module that guards listening endpoints — `pkg/authn/static`, the first
 credential backend, whose subject table comes from configuration,
 `pkg/authn/mount`, which mounts a module's routes under the base path with the
 access level the gateway applies to each, the modules of the identity system —
-`pkg/authn/account`, `pkg/authn/session`, `pkg/authn/mfa` and the login packages
-under `pkg/authn/login` — and `pkg/authn/authntest`, which builds the context a
-gateway would have left on a request, and the configuration reader a backend's
-tests need, for the tests of modules that read an identity. The value types and
-the units the modules share live in `pkg/authn/internal/`, which only this
-directory can import; among them `internal/mount/mounttest` is a `Mounter` for
-the tests of the modules that mount routes.
+`pkg/authn/account`, `pkg/authn/session`, `pkg/authn/mfa`, `pkg/authn/token` and
+the login packages under `pkg/authn/login` — and `pkg/authn/authntest`, which
+builds the context a gateway would have left on a request, and the configuration
+reader a backend's tests need, for the tests of modules that read an identity.
+The value types and the units the modules share live in `pkg/authn/internal/`,
+which only this directory can import; among them `internal/mount/mounttest` is
+a `Mounter` for the tests of the modules that mount routes.
 
 ## Where the authority is
 
@@ -186,6 +186,13 @@ here must not cross, and how to run it.
   module and no tenant: it reaches the gateway through the interface alone, so
   that a host's own gateway takes it in and importing its package registers no
   gateway with every binary that imports this one.
+- **`pkg/authn/token` is the one package of this directory that speaks to the
+  JOSE library, and the one that delivers `Tokens`.** Every signing,
+  verification and JWK-publication call reaches the library through
+  `token/jose.go`, so a change of library reaches one file; a `jose` import
+  outside `token` is the shape to reject, and `deps_test.go` holds the single
+  importer. The module registers as a `Verifier` for the `bearer` scheme, so the
+  access tokens it issues are the credentials it checks.
 - **The capability interfaces one module delivers have pairwise disjoint method
   names.** A module has one instance and `core.Resolve` asserts it against each
   delivered interface, so two interfaces whose methods share a name with

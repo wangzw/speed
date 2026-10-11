@@ -22,10 +22,10 @@ import (
 // these, so a method added, dropped, renamed or given another signature is
 // found, and so is a parameter that lost its name.
 //
-// Impersonation, Tokens, SMSCodes, SSOProviders and Decider are implemented by
-// modules and hosts outside this package, and a changed signature breaks every
-// one of them; Passwords.Clear is the one method whose form the design leaves
-// open, so it is held to the form in use.
+// Impersonation, Tokens, SMSCodes, SSOProviders, Decider and ClaimsContributor
+// are implemented by modules and hosts outside this package, and a changed
+// signature breaks every one of them; Passwords.Clear is the one method whose
+// form the design leaves open, so it is held to the form in use.
 var seamSignatures = map[string][]string{
 	"Accounts": {
 		"Get(ctx context.Context, id AccountID) (Account, error)",
@@ -132,6 +132,9 @@ var seamSignatures = map[string][]string{
 		"Refresh(ctx context.Context, presented string) (AccessToken, RefreshToken, error)",
 		"Revoke(ctx context.Context, presented string) error",
 		"JWKS(ctx context.Context) ([]byte, error)",
+	},
+	"ClaimsContributor": {
+		"Claims(ctx context.Context, p Principal) (map[string]any, error)",
 	},
 	"SMSCodes": {
 		"Send(ctx context.Context, in SendCode) (challengeID string, err error)",

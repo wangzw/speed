@@ -57,6 +57,15 @@
 //     account the flow resolved, so the journal and the rate limiter name the
 //     user by it. The account endpoint answers who the caller is and which
 //     tenants they belong to. A logout ends the session.
+//   - A CRM user can take a login as a token pair instead of a cookie: a login
+//     asked for `delivery: token` answers an access token and a refresh token,
+//     and the access token reaches the guarded routes as an `Authorization:
+//     Bearer` credential, stamped by the gateway as the account the login
+//     resolved. A credential that is absent or forged is refused before
+//     resolution. The refresh token rotates with each use and a reuse past the
+//     grace window ends the login session the family hangs on, so the rotated
+//     token is refused too. `GET /auth/jwks.json` publishes the verification
+//     keys as a JWK set, and the signing key comes from a file.
 //   - A session lives as long as the session module's settings say, read from
 //     the settings surface, and is refused once it lapses. The account and the
 //     session are the identity system's, so the host keeps neither a users
@@ -608,6 +617,7 @@ import (
 	authnmount "github.com/vislake/speed/pkg/authn/mount"
 	"github.com/vislake/speed/pkg/authn/session"
 	"github.com/vislake/speed/pkg/authn/static"
+	"github.com/vislake/speed/pkg/authn/token"
 	"github.com/vislake/speed/pkg/config"
 	"github.com/vislake/speed/pkg/core"
 	speedhttp "github.com/vislake/speed/pkg/http"
@@ -791,13 +801,16 @@ func addStack(root *config.Command, s stack) {
 		// account store, its write surface and the membership store; session
 		// delivers the session store and the cookie backend; login and its
 		// password method deliver the flow routes; mfa delivers the factor
-		// register and policy; admission holds the member check on the API.
+		// register and policy; token delivers the access and refresh tokens and
+		// registers the bearer verifier; admission holds the member check on the
+		// API.
 		authnmount.ModuleName,
 		account.ModuleName,
 		session.ModuleName,
 		login.ModuleName,
 		loginpassword.ModuleName,
 		mfa.ModuleName,
+		token.ModuleName,
 		admission.ModuleName,
 		resolve.ModuleName,
 		catalog.ModuleName,

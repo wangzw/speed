@@ -272,29 +272,22 @@ speed 不引入进程边界。宿主是单一进程，注册表与全部模块�
 | [log](modules/design-log.md) | 已实现 |
 | [db](modules/design-db.md) | 已实现 |
 | [http](modules/design-http.md) | 已实现 |
-<<<<<<< HEAD
 | [http-cors](modules/design-http-cors.md) | 已实现 |
-| [authn](modules/design-authn.md) | 部分实现 — 已有网关（按载体认领、出口检查、冒充范围核对、缺省守全部端）、口令表后端、类型化的身份与判决、值类型、`authntest` 与依赖守卫；缺 `authn.mount` 模块，以及账户存储、登录会话、令牌、登录、多因素、短信、企业 SSO、冒充、判定接缝与管理面；各方面的状态见各自的文档 |
+| [authn](modules/design-authn.md) | 部分实现 — 已有网关、挂载口、口令表后端、类型化的身份与判决、值类型、账户存储、登录会话、令牌、多因素编排、登录引擎与口令方法、判定接缝、`authntest` 与依赖守卫；缺短信、企业 SSO、冒充、管理面、`guard` 与其余登录方式与因素种类；各方面的状态见各自的文档 |
 | [authn-gate](modules/design-authn-gate.md) | 部分实现 — 缺 `authn.mount` 模块与 `Mounter` 的实现、持有秘密配置值的模块登记的日志字面量匹配器；其余已在，其中冒充范围核对在装配里没有准入层时只放 `Impersonable` 路由 |
 | [authn-account](modules/design-authn-account.md) | 部分实现 — 缺账户存储的全部表、`Accounts`、`AccountAdmin`、`Passwords`、`Memberships` 的接口、生命周期与退避的 db 实现；口令表的 PHC 写法与进程内退避、`Throttle` 的根包接口、账户标识等值类型、进程内账户缓存与取时间的单元已在 |
 | [authn-login](modules/design-authn-login.md) | 部分实现 — 缺登录引擎、方法接缝的其余部分与全部方法；`Step`、`Proof` 与 `Field` 已在 |
-=======
-| [authn](modules/design-authn.md) | 部分实现 — 已有网关、挂载口、口令表后端、类型化的身份与判决、值类型、账户存储、登录会话、多因素编排、登录引擎与口令方法、判定接缝、`authntest` 与依赖守卫；缺令牌、短信、企业 SSO、冒充、管理面、`guard` 与其余登录方式与因素种类；各方面的状态见各自的文档 |
-| [authn-gate](modules/design-authn-gate.md) | 部分实现 — 缺持有秘密配置值的模块登记的日志字面量匹配器；其余已在，含挂载口 `authn.mount` 与 `mount.Mounter`，其中冒充范围核对在装配里没有准入层时只放 `Impersonable` 路由 |
-| [authn-account](modules/design-authn-account.md) | 已实现 |
-| [authn-login](modules/design-authn-login.md) | 部分实现 — 缺短信、Google、GitHub、微信与 SAML/OIDC 登录方式与 `guard.Require`；引擎与口令方法、账户解析与自助路由已在 |
->>>>>>> 7abe35f09 (feat(authn,tenant): sign a caller in and require membership of a tenant)
 | [authn-sms](modules/design-authn-sms.md) | 未实现 |
 | [authn-mfa](modules/design-authn-mfa.md) | 部分实现 — 缺 TOTP、短信、WebAuthn 因素与 `guard.Require`；登记簿、编排、策略与 `Seasoned`、`Reset` 已在 |
 | [authn-session](modules/design-authn-session.md) | 已实现 |
-| [authn-token](modules/design-authn-token.md) | 未实现 |
+| [authn-token](modules/design-authn-token.md) | 已实现 |
 | [authn-sso](modules/design-authn-sso.md) | 部分实现 — 缺 `authn.sso` 与两个协议模块；受限出站客户端已在 |
 | [authn-impersonation](modules/design-authn-impersonation.md) | 未实现 |
 | [authn-admin](modules/design-authn-admin.md) | 未实现 |
-| [authn-config](modules/design-authn-config.md) | 部分实现 — 缺令牌、短信、SSO 的配置项与设置、放宽变更的监视与加密列自检；网关、口令表、账户、会话、多因素、登录、挂载与准入的配置项与设置已在 |
-| [authn-events](modules/design-authn-events.md) | 部分实现 — 缺逐模块在 `New` 里登记的字面量脱敏与跨模块的汇总用例；事件类型、发布与订阅、接缝级审计、放宽变更的审计以及登录、因素、会话、退避与准入的仪器已在 |
-| [authn-failure](modules/design-authn-failure.md) | 部分实现 — 缺令牌与签名密钥的启动期哨兵触发方、令牌与 SAML 的时间容差与跨模块汇总用例；网关的启动期哨兵、收口、可选认证路由上的失败方向、口令表的退避与并发上限、表模块的自检与清扫已在 |
-| [authn-threats](modules/design-authn-threats.md) | 部分实现 — 缺令牌、冒充、短信与社交 SSO 各自的对策，以及日志字面量的脱敏；网关默认守全部端、出口检查、跨源检查、冒充范围核对、失败即拒绝、判决不可字面构造、受限出站客户端、口令保护、失败退避与 `valid_after`、会话与准入的对策已在 |
+| [authn-config](modules/design-authn-config.md) | 部分实现 — 缺短信、SSO 的配置项与设置、放宽变更的监视与加密列自检；网关、口令表、账户、会话、令牌、多因素、登录、挂载与准入的配置项与设置已在 |
+| [authn-events](modules/design-authn-events.md) | 部分实现 — 缺逐模块在 `New` 里登记的字面量脱敏与跨模块的汇总用例；事件类型、发布与订阅、接缝级审计、放宽变更的审计以及登录、因素、会话、令牌、退避与准入的仪器已在 |
+| [authn-failure](modules/design-authn-failure.md) | 部分实现 — 缺 SAML 的时间容差、`ErrNoEncryptionKey` 的触发方与跨模块汇总用例；网关的启动期哨兵、收口、可选认证路由上的失败方向、口令表的退避与并发上限、表模块（含令牌）的自检与清扫、令牌与签名密钥的启动期哨兵触发方与令牌的时间容差已在 |
+| [authn-threats](modules/design-authn-threats.md) | 部分实现 — 缺冒充、短信与社交 SSO 各自的对策、go-jose 之外的依赖版本下限，以及日志字面量的脱敏；网关默认守全部端、出口检查、跨源检查、冒充范围核对、失败即拒绝、判决不可字面构造、受限出站客户端、口令保护、失败退避与 `valid_after`、会话、令牌与准入的对策已在 |
 | [tenant](modules/design-tenant.md) | 已实现 |
 | [tenant-admission](modules/design-tenant-admission.md) | 已实现 |
 | [kv](modules/design-kv.md) | 已实现 |

@@ -230,6 +230,74 @@ func TestEveryModelNamesItsTable(t *testing.T) {
 // tenantPackage is the import path of the scoping convention.
 const tenantPackage = "github.com/vislake/speed/pkg/tenant"
 
+// tokenPackage is the import path of the module this host wires to carry the
+// access and refresh tokens.
+const tokenPackage = "github.com/vislake/speed/pkg/authn/token"
+
+// TestTheTokenModuleIsWiredAndReachesNoTenantPackage is the case for the edge
+// this host gains with the token surface. Importing the package is the whole of
+// the wiring, so some non-test file of this host has to import it — that is the
+// positive control, without which an empty reading would pass. And the token
+// package, like every package under pkg/authn, reaches no pkg/tenant package: the
+// identity system sits below the tenant one, and the edge this host takes on must
+// add no dependency from authn onto tenant.
+func TestTheTokenModuleIsWiredAndReachesNoTenantPackage(t *testing.T) {
+	if !hostImports(t, ".", tokenPackage) {
+		t.Errorf("no non-test file of this host imports %s, so the token surface is not wired", tokenPackage)
+	}
+	for _, name := range nonTestSources(t, filepath.Join("..", "..", "pkg", "authn", "token")) {
+		file, err := parser.ParseFile(token.NewFileSet(), name, nil, parser.SkipObjectResolution)
+		if err != nil {
+			t.Fatalf("reading %s: %v", name, err)
+		}
+		for _, spec := range file.Imports {
+			p, err := strconv.Unquote(spec.Path.Value)
+			if err != nil {
+				continue
+			}
+			if p == tenantPackage || strings.HasPrefix(p, tenantPackage+"/") {
+				t.Errorf("%s imports %s: the identity system must not reach the tenant one", name, p)
+			}
+		}
+	}
+}
+
+// hostImports reports whether any non-test Go source directly under dir imports
+// the named package.
+func hostImports(t *testing.T, dir, importPath string) bool {
+	t.Helper()
+	names := nonTestSources(t, dir)
+	if len(names) == 0 {
+		t.Fatalf("no non-test Go source under %s, so this case checks nothing", dir)
+	}
+	for _, name := range names {
+		file, err := parser.ParseFile(token.NewFileSet(), name, nil, parser.SkipObjectResolution)
+		if err != nil {
+			t.Fatalf("reading %s: %v", name, err)
+		}
+		if importedAs(file, importPath) != "" {
+			return true
+		}
+	}
+	return false
+}
+
+// nonTestSources lists the non-test Go files directly under dir.
+func nonTestSources(t *testing.T, dir string) []string {
+	t.Helper()
+	names, err := filepath.Glob(filepath.Join(dir, "*.go"))
+	if err != nil {
+		t.Fatalf("listing the Go source under %s: %v", dir, err)
+	}
+	var kept []string
+	for _, name := range names {
+		if !strings.HasSuffix(name, "_test.go") {
+			kept = append(kept, name)
+		}
+	}
+	return kept
+}
+
 // TestEveryScopedModelIsListed is the case for the one input the roster case
 // above trusts: the models a module lists. It reads the program's own source,
 // and every struct type that embeds the scoping convention has to be listed by

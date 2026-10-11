@@ -267,6 +267,7 @@ type Requirement struct {
 - 根包的 `Gate`、`Verifier`、`Accepts`、`Credential`、`Challenger`、`CookieClearer`、`ScopeGuard`、`Verdict` 的构造器、`Principal`、`Identity` 的方法集与 `Access` 的取值；`Key()` 的取值（责任键恒为实际操作者）。
 - 网关层在链上代表的功能标识：中间件的 `Provides` 与描述符里的交付声明同为 `(*Gate)(nil)`，别的模块据它排序，取值与 `Order` 不变。
 - 判定接缝、成员关系的只读面、账户生命周期钩子与事件名，这些是授权模块依赖的面（见 [design-authn-admin](design-authn-admin.md)、[design-authn-events](design-authn-events.md)）。
+- 下列根包接缝接口的方法集是稳定面，加方法与改签名对取用它们的模块、实现了它们的宿主即是不兼容变更：`Tokens` 与 `ClaimsContributor`（[design-authn-token](design-authn-token.md)）、`SMSCodes`（[design-authn-sms](design-authn-sms.md)）、`SSOProviders`（[design-authn-sso](design-authn-sso.md)）、`Impersonation`（[design-authn-impersonation](design-authn-impersonation.md)）与 `Decider`（[design-authn-admin](design-authn-admin.md)）；各自的字段、取值集合与取用方式由各自的模块文档承载。
 
 `Gate` 与 `Verifier` 是宿主可以预置自己实现的接口：对它们加方法或改签名，对预置了自己实现的宿主是不兼容变更。`Key()` 的签名不变而取值随责任键的定义而定，编译通过的调用方因此在取值变化时静默得到新值，变化必须带破坏性变更的标注。
 
@@ -669,7 +670,7 @@ type Provisioner interface {
 | 判决不可字面构造与零值读作没答 | 已实现 | `pkg/authn/internal/verdict/verdict.go` `Verdict`、`OutcomeOf`；`pkg/authn/verdict.go` |
 | 判决携带 `Principal` | 已实现 | `pkg/authn/verdict.go` `Authenticated`；`pkg/authn/internal/verdict/verdict.go` `NewAuthenticated`、`PrincipalOf`；`pkg/authn/internal/model/principal.go` `Principal` |
 | 值类型的落点与根包别名：`AccountID`、`SessionID`、`Method`、`Assurance`、`Access`、`Requirement`、`Principal`，以及登录、因素、标识、外部绑定、账户、成员关系、会话、令牌、冒充、短信与 SSO 提供方的值类型 | 已实现 | `pkg/authn/internal/model`；`pkg/authn/ids.go` |
-| 接缝的根包声明：`Accounts`、`AccountAdmin`、`Passwords`、`Memberships`、`AccountLifecycle`、`Provisioner`、`Sessions`、`LoginMethod`、`Factor`、`MFA`、`Decider`、`Impersonation`、`Tokens`、`SMSCodes`、`SSOProviders`，事件类型与载荷，哨兵 | 部分实现 — 缺 `ClaimsContributor`、`SMSSender`、`SMS`、`SSOMetadataRefresher` | `pkg/authn/account.go`；`pkg/authn/membership.go`；`pkg/authn/lifecycle.go`；`pkg/authn/provision.go`；`pkg/authn/session.go`；`pkg/authn/login.go`；`pkg/authn/factor.go`；`pkg/authn/decide.go`；`pkg/authn/impersonation.go`；`pkg/authn/token.go`；`pkg/authn/sms.go`；`pkg/authn/sso.go`；`pkg/authn/events.go`；`pkg/authn/errors.go`；`pkg/authn/surface_test.go` `exportedSurface` |
+| 接缝的根包声明：`Accounts`、`AccountAdmin`、`Passwords`、`Memberships`、`AccountLifecycle`、`Provisioner`、`Sessions`、`LoginMethod`、`Factor`、`MFA`、`Decider`、`Impersonation`、`Tokens`、`ClaimsContributor`、`SMSCodes`、`SSOProviders`，事件类型与载荷，哨兵 | 部分实现 — 缺 `SMSSender`、`SMS`、`SSOMetadataRefresher` | `pkg/authn/account.go`；`pkg/authn/membership.go`；`pkg/authn/lifecycle.go`；`pkg/authn/provision.go`；`pkg/authn/session.go`；`pkg/authn/login.go`；`pkg/authn/factor.go`；`pkg/authn/decide.go`；`pkg/authn/impersonation.go`；`pkg/authn/token.go`；`pkg/authn/claims.go`；`pkg/authn/sms.go`；`pkg/authn/sso.go`；`pkg/authn/events.go`；`pkg/authn/errors.go`；`pkg/authn/surface_test.go` `exportedSurface` |
 | 属性集的分项上限与检查，账户与会话载荷各一份上限，合计低于盖章处的总上限 | 已实现 | `pkg/authn/internal/model/bounds.go` `CheckAccountAttributes`、`CheckIDPAttributes`、`TruncateUTF8`；`pkg/authn/gate/attribute_bounds_test.go` |
 | 路由共用部件：问题码与 `Fail` 一族、`Decode`、`Wrap`、`AllowCallback`，与测试用的 `Mounter` | 已实现 | `pkg/authn/internal/mount/problem.go`；`pkg/authn/internal/mount/decode.go`；`pkg/authn/internal/mount/wrap.go`；`pkg/authn/internal/mount/mounttest/mounttest.go` |
 | 身份的类型化字段与责任键 | 已实现 | `pkg/authn/internal/identity/identity.go` `Identity`、`New`、`Key`、`Satisfies`；`pkg/authn/identity.go` `Identity` |
@@ -681,7 +682,7 @@ type Provisioner interface {
 | 挂路由口 `authn.mount` 与 `mount.Mounter` | 已实现 — 模块挂路由并成对登记访问级别，触发 `ErrRoutesUnconfigured` | `pkg/authn/mount/mount.go` `Module`；`pkg/authn/internal/mount/mount.go` `Mounter`；`pkg/authn/internal/mount/mounttest/mounttest.go` |
 | 账户存储 `authn.account` | 已实现 | `pkg/authn/account/account.go` `Module` |
 | 登录会话 `authn.session` | 已实现 | `pkg/authn/session/session.go` `Module` |
-| 访问令牌、刷新令牌与服务账户 `authn.token` | 未实现 | — |
+| 访问令牌、刷新令牌与服务账户 `authn.token` | 已实现 | `pkg/authn/token` 的 `Module`；配置、迁移、路由、清扫与事件订阅俱在 |
 | 登录引擎 `authn.login` 与全部登录方式 | 部分实现 — 引擎与口令方法 `authn.login.password` 已实现；缺短信、Google、GitHub、微信与 SAML/OIDC 登录方式 | `pkg/authn/login/login.go` `Module`；`pkg/authn/login/password/password.go` `Module` |
 | 多因素编排 `authn.mfa` 与全部因素 | 部分实现 — 登记簿与编排已实现；缺 TOTP、短信、WebAuthn 三种因素种类 | `pkg/authn/mfa/mfa.go` `Module` |
 | 短信验证码 `authn.sms` 与短信发送方 | 未实现 | — |

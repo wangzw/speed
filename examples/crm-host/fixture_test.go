@@ -6,6 +6,7 @@ import (
 	"encoding/hex"
 	"encoding/json"
 	"fmt"
+	"os"
 	"path/filepath"
 	"slices"
 	"strconv"
@@ -18,6 +19,7 @@ import (
 	"go.yaml.in/yaml/v3"
 
 	"github.com/vislake/speed/pkg/authn/static"
+	"github.com/vislake/speed/pkg/authn/token"
 )
 
 // A case is one stack's worth of backends, a configuration, and the host
@@ -255,6 +257,16 @@ func (c *crmCase) writeBaseConfig() {
 	c.config.set("authn.gate.mount.endpoint", accountEndpoint)
 	c.config.set("authn.gate.mount.public-url", "https://"+hostName+".test")
 	c.config.set("authn.static.subjects", map[string]string{operatorSubject: hashed})
+	// The token module signs the access tokens a token login hands out and
+	// publishes the keys that verify them. Its signing key comes from a file,
+	// minted here with the module's own generator, and the issuer is the address
+	// the deployment is reached at.
+	issuer := "https://" + hostName + ".test"
+	c.config.set("authn.token.issuer", issuer)
+	c.config.set("authn.token.audience", []string{issuer})
+	c.config.set("authn.token.client-id", hostName)
+	c.config.set("authn.token.algorithm", "ES256")
+	c.config.set("authn.token.signing-key-file", c.mintKeyFile("token-signing-key.pem"))
 	c.config.set("tenant.resolve.endpoints", []string{apiEndpoint})
 	c.config.set("tenant.resolve.extractor", "header")
 	c.config.set("tenant.resolve.header-name", tenantHeader)
@@ -266,6 +278,24 @@ func (c *crmCase) writeBaseConfig() {
 	c.config.set("observability.otel.service-name", hostName)
 	c.config.set("observability.otel.endpoints", guarded)
 	c.config.set("observability.otel.batch.batch-timeout", "200ms")
+}
+
+// mintKeyFile writes an ES256 key of the case's own into its directory with the
+// token module's generator, the form a deployment hands the module's signing-key
+// and verification-key items, and returns the path. The module refuses a
+// configuration with no key at startup, so every case carries one whether or not
+// it exercises the token surface.
+func (c *crmCase) mintKeyFile(name string) string {
+	c.t.Helper()
+	path := filepath.Join(c.dir, name)
+	key, err := token.GenerateKey("ES256")
+	if err != nil {
+		c.t.Fatalf("minting the token key %s: %v", name, err)
+	}
+	if err := os.WriteFile(path, key, 0o600); err != nil {
+		c.t.Fatalf("writing the token key %s: %v", name, err)
+	}
+	return path
 }
 
 // postgresDatabase is the case's PostgreSQL database, created on first use. The

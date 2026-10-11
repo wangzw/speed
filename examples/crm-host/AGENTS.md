@@ -323,6 +323,12 @@ authn:
   static:
     subjects:
       ops: "$argon2id$v=19$m=19456,t=2,p=1$...$..."
+  token:
+    issuer: "https://crm.example.com"
+    audience: ["https://crm.example.com"]
+    algorithm: ES256
+    signing-key-file: "/var/lib/crm-host/signing-key.pem"
+    verify-key-files: ["/var/lib/crm-host/previous-key.pem"]
 tenant:
   resolve:
     endpoints: [api]
@@ -349,7 +355,13 @@ The admin endpoint lets through the one account `operatorAccount` names,
 static backend may hand back. Another subject of the table authenticates and is
 answered 403 there. The identity system's own routes are mounted on the account
 endpoint under `authn.gate.mount.base-path` (default `/auth`), so a login runs
-through `POST /auth/flows` and a logout through `POST /auth/logout` there.
+through `POST /auth/flows` and a logout through `POST /auth/logout` there, and
+the token surface runs there too (`POST /auth/token`, `POST /auth/token/revoke`
+and `GET /auth/jwks.json`). The `authn.token` section names the signing key file
+and the algorithm; `authn.token.issuer` defaults to
+`authn.gate.mount.public-url`, the audience to the issuer, and the client
+identifier to `speed`, so a deployment that names none still issues tokens a
+verifier can compare.
 `authn.gate.endpoints` narrows the gateway's default of every endpoint to the
 three that carry credentials, which leaves the `ops` endpoint with the probes
 and the documents unguarded. `tenant.admission.endpoints` holds the account and
@@ -365,10 +377,11 @@ through; `authn.account` is the account store and delivers the account reads and
 writes, the password capability, the membership store and the failure back-off;
 `authn.session` is the session store and the cookie backend; `authn.login` and
 `authn.login.password` are the login flow and its password method; `authn.mfa`
-is the factor register and policy; `tenant.admission` holds the member check on
-the API endpoint; `authz` (this host's `decider.go`) is the decision seam. Every
-one of them is named, since the dependency closure never picks an exclusive
-provider.
+is the factor register and policy; `authn.token` is the access and refresh
+tokens and registers the bearer verifier; `tenant.admission` holds the member
+check on the API endpoint; `authz` (this host's `decider.go`) is the decision
+seam. Every one of them is named, since the dependency closure never picks an
+exclusive provider.
 
 What this means for a slice:
 
@@ -382,6 +395,17 @@ What this means for a slice:
   login is `POST /auth/flows` (method `password`, input `identifier` and
   `password`) and, once it answers `next.kind: complete`, `POST /auth/flows/answer`
   with `step: complete`, which sets `__Host-sid`. A logout is `POST /auth/logout`.
+- **A CRM user can take the same login as a token pair.** The same flow with
+  `delivery: token` answers `access_token` and `refresh_token`; the access token
+  reaches the guarded routes as `Authorization: Bearer`, and the token module's
+  verifier stamps it as the account the flow resolved. `POST /auth/token` serves
+  the `refresh_token` grant (and `client_credentials`, which this host issues no
+  service accounts for), `POST /auth/token/revoke` is RFC 7009, and
+  `GET /auth/jwks.json` publishes the verification keys. All three are Open; the
+  first two are registered through the mounter's `Callback`, the key set through
+  `Public`. The signing key comes from a file the configuration names, and the
+  module refuses to start with no key: the token tests mint one with
+  `token.GenerateKey` into the case's directory.
 - **The membership check is `tenant.admission`.** A caller that is not a member
   of the tenant its request names is answered the same 404 as an unknown tenant;
   the host keeps only the role (`member_roles`), which admission does not know.
@@ -494,7 +518,10 @@ outliving it.
   the session cookie the completion set; `bearer` carries a cookie a case holds
   from one replica to another; `basic` is the operator's Basic credential, and a
   case about a CRM user's Basic credential expects the operators' table to
-  refuse it.
+  refuse it. `bearerHeader(value)` sends an access token as
+  `Authorization: Bearer`, which is how the token cases reach a guarded route;
+  `postForm` sends a form body to a token endpoint, which the JSON-writing
+  `post` cannot.
 - `c.journal()` and `c.awaitJournal(...)` read `audit_entries`; `c.sql()` is
   the harness's own connection for anything else a case asserts on.
 - `c.holdWrites(table)` holds every write to a table back while its reads go
