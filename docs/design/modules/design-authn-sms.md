@@ -142,6 +142,8 @@ type SMSCodes interface {
 
 厂商适配模块不依赖任何其他 authn 模块，只绑定各自的厂商 SDK，所以 SDK 只进 import 了该叶子包的宿主的依赖闭包（[ADR-authn-packaging-2026-10-10](../../adr/adr-authn-packaging-2026-10-10.md)）。两家 SDK 在 `pkg/go.mod` 里精确钉版（版本见「厂商适配」一节），各只被对应的适配叶子包 import，两条都由 `pkg/authn/deps_test.go` 的守卫守住。
 
+**阿里云 SDK 经 `github.com/tjfoc/gmsm` 拖回未经模块图修剪的 `google.golang.org/genproto` 单体**：那个版本的 `googleapis` 包与拆分后的 `google.golang.org/genproto/googleapis/*` 模块重名，工作区构建因此报歧义导入。`go.work` 用一行 `replace` 把单体钉到拆分之后的版本。gmsm 已是最新发布版，而这个钉版放进任一模块的 `go.mod` 都会被 `tidy` 当作无人引用的依赖删掉，所以它落在工作区层。
+
 依赖方向满足架构不变量：
 
 - `Requires` 只写排他功能，并立功能一律经 `ResolveAll` 取用（[ADR-authn-wiring-2026-10-10](../../adr/adr-authn-wiring-2026-10-10.md)）。`AccountLifecycle` 是并立功能，`authn.account` 在 `Init` 里 `ResolveAll[AccountLifecycle]` 取到本模块的实例；`authn.account` 在运行期调用本模块，编译期与构造期都不 import 它，所以不构成环。
