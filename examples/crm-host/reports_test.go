@@ -83,6 +83,7 @@ func (c *crmCase) liveDeals(ref tenantRef) int64 {
 // it pairs a deal with both tenants' stage of its key, counting it twice. The
 // cache is off, so each read computes the report from the table.
 func TestTheReportsStayInTheirTenant(t *testing.T) {
+	t.Parallel()
 	forEachStack(t, func(t *testing.T, c *crmCase) {
 		w := startDeals(t, c, func(w *dealsWorld) {
 			c.setGlobal("reports.cache-ttl", "0s")
@@ -253,6 +254,7 @@ func awaitInvalidations(t *testing.T, replicas []*process, ref tenantRef, want i
 // event did not invalidate would leave that read on the report cached before
 // it.
 func TestThePipelineReportIsServedFromTheCacheUntilInvalidated(t *testing.T) {
+	t.Parallel()
 	forEachStack(t, func(t *testing.T, c *crmCase) {
 		w, writer, reader := reportReplicas(t, c, nil)
 		replicas := distinct(writer, reader)
@@ -371,7 +373,7 @@ func TestThePipelineReportIsServedFromTheCacheUntilInvalidated(t *testing.T) {
 // lapse may land: the slack covers the clocks a backend judges an expiry by and
 // a second-granular expiry.
 const (
-	reportLifetime = 3 * time.Second
+	reportLifetime = 2 * time.Second
 	reportSlack    = time.Second
 )
 
@@ -469,6 +471,7 @@ func (c *crmCase) storeExpiry(key string) (time.Time, bool) {
 // It runs on the stack whose key-value store is a table the harness reads, which
 // is how a case loses a key the way a store would.
 func TestLosingTheReportGenerationBringsNoSupersededReportBack(t *testing.T) {
+	t.Parallel()
 	c := newCase(t, stackNamed(t, "postgres"))
 	w := startDeals(t, c, func(*dealsWorld) { c.config.set("dealfeed.enabled", true) })
 	acme, h, nobody := w.acme, w.h, c.tenantNamed("nobody")
@@ -521,6 +524,7 @@ func leadersOf(t *testing.T, h *crmHost, ref tenantRef, cred credential, currenc
 // two wins and one won deal; a change of its amount, and its deletion, move
 // the reports and leave the revenue line as it was.
 func TestTheRevenueLineCountsWinsAndTheReportsCountDeals(t *testing.T) {
+	t.Parallel()
 	c := newCase(t, stackNamed(t, localStack))
 	w := startDeals(t, c, nil)
 	acme, alice := w.acme, w.asAlice

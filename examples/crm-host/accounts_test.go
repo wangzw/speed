@@ -152,6 +152,7 @@ func accountIDs(page accountPage) []string {
 // accounts module issues, each in two tenants holding the same identifiers, and
 // for the role each route takes.
 func TestAccountsStayInTheirTenant(t *testing.T) {
+	t.Parallel()
 	forEachStack(t, func(t *testing.T, c *crmCase) {
 		c.sealWithCaseKey()
 		c.migrate()

@@ -212,7 +212,7 @@ const relayRepublishedMsg = "outbox: a staged event the bus had refused was publ
 
 // cutHold is how long a case keeps a link cut after the write it is about, and
 // watches that nothing the cut should hold back gets through.
-const cutHold = 3 * time.Second
+const cutHold = 2 * time.Second
 
 // TestAWinMadeWhileTheBusIsCutIsCountedOnceTheBusIsBack is the case for the
 // outbox across an outage of the bus, on every stack whose bus is reached over

@@ -521,6 +521,7 @@ func statuses(answers ...response) []int {
 // before the insert lets several through, and the primary key's refusal of
 // each is answered as the conflict the look-up gives.
 func TestTheDealStatementsStayInTheirTenant(t *testing.T) {
+	t.Parallel()
 	forEachStack(t, func(t *testing.T, c *crmCase) {
 		w := startDeals(t, c, nil)
 		acme, globex := w.acme, w.globex
@@ -1036,6 +1037,7 @@ func (c *crmCase) awaitWritersHeld(table string, n int) {
 // since a deal's delete leaves its row. An account no deal names is purged,
 // which shows the purge itself goes through.
 func TestAnAccountADealNamesKeepsItsRow(t *testing.T) {
+	t.Parallel()
 	forEachStack(t, func(t *testing.T, c *crmCase) {
 		w := startDeals(t, c, nil)
 		acme, alice := w.acme, w.asAlice
@@ -1131,12 +1133,15 @@ func activityIDs(activities []activityView) []string {
 // idempotencyLifetime is how long the idempotency case's short-lived tenant
 // remembers a key: long enough for a creation and its replay to be answered
 // inside it, on a binary built with the race detector as well.
-var idempotencyLifetime = scaledForRace(2 * time.Second)
+var idempotencyLifetime = scaledForRace(1 * time.Second)
 
 // TestADealCreationIsIdempotentByKey is the case for POST /deals under an
 // Idempotency-Key: the claim in the key-value store the stack names, the
 // answer stored in it, and the lifetime the setting gives it.
 func TestADealCreationIsIdempotentByKey(t *testing.T) {
+	// This case stays serial: its last subtest sets a tenant's idempotency
+	// lifetime and waits that lifetime out before asserting the key lapsed, so
+	// its own wall-clock window is part of what it asserts.
 	forEachStack(t, func(t *testing.T, c *crmCase) {
 		var carol userRef
 		w := startDeals(t, c, func(w *dealsWorld) {
@@ -1336,6 +1341,7 @@ func TestADealCreationIsIdempotentByKey(t *testing.T) {
 // check before the write passes for both moves and the update's condition is
 // what stops the second.
 func TestTwoWritersNamingOneVersionAreOneSuccessAndOnePreconditionFailure(t *testing.T) {
+	t.Parallel()
 	forEachStack(t, func(t *testing.T, c *crmCase) {
 		w := startDeals(t, c, nil)
 		acme, alice := w.acme, w.asAlice
@@ -1448,6 +1454,7 @@ func TestTwoWritersNamingOneVersionAreOneSuccessAndOnePreconditionFailure(t *tes
 // The property is the reading of the body, which no backend takes part in, so
 // it runs on the stack that runs everywhere.
 func TestADealChangeIsReadAsTheBinderReadsIt(t *testing.T) {
+	t.Parallel()
 	c := newCase(t, stackNamed(t, localStack))
 	w := startDeals(t, c, nil)
 	acme, alice := w.acme, w.asAlice
@@ -1526,6 +1533,7 @@ func (c *crmCase) statementCount(action, table string, ref tenantRef) int {
 // with no activity, no statement row for the update and no event. With the
 // refusal lifted the same move, at the same version, goes through once.
 func TestAStageMoveThatCannotRecordItsActivityChangesNothing(t *testing.T) {
+	t.Parallel()
 	forEachStack(t, func(t *testing.T, c *crmCase) {
 		w := startDeals(t, c, nil)
 		acme, alice := w.acme, w.asAlice
@@ -1621,6 +1629,7 @@ func (c *crmCase) allowCommitsOfDealUpdates() {
 // only when the activity was written inside the move's transaction. With the
 // refusal lifted the same move, at the same version, goes through once.
 func TestAStageMoveWhoseCommitFailsLeavesNoActivity(t *testing.T) {
+	t.Parallel()
 	forEachStack(t, func(t *testing.T, c *crmCase) {
 		w := startDeals(t, c, nil)
 		acme, alice := w.acme, w.asAlice
@@ -1700,6 +1709,7 @@ func (c *crmCase) allowStagedCreations() {
 // same identifier, goes through once and its announcement reaches its
 // consumer.
 func TestADealWhoseAnnouncementCannotBeStagedIsNotWritten(t *testing.T) {
+	t.Parallel()
 	forEachStack(t, func(t *testing.T, c *crmCase) {
 		w := startDeals(t, c, nil)
 		acme, alice := w.acme, w.asAlice
@@ -1756,6 +1766,7 @@ const outboxRefusalName = "crm_case_refuses_wins"
 // counted. A host that published after the commit instead would have its
 // publish refused, the event lost and no refusal of the relay's to wait for.
 func TestAWinAndItsAnnouncementStandOrFallTogether(t *testing.T) {
+	t.Parallel()
 	c := newCase(t, stackNamed(t, "postgres"))
 	w := startDeals(t, c, nil)
 	acme, alice := w.acme, w.asAlice
@@ -1827,6 +1838,7 @@ func awaitRecord(t *testing.T, h *crmHost, what, msg string, attrs ...string) {
 // events from its event path, and the amount, above what a float64 holds,
 // arrives exact in its rows and in the pipeline report.
 func TestAMovesEventsReachTheirConsumersAsTheMoveRecordedThem(t *testing.T) {
+	t.Parallel()
 	forEachStack(t, func(t *testing.T, c *crmCase) {
 		w := startDeals(t, c, nil)
 		acme, alice := w.acme, w.asAlice
@@ -1921,6 +1933,7 @@ func TestAMovesEventsReachTheirConsumersAsTheMoveRecordedThem(t *testing.T) {
 // the request's tenant, so a tenant's own row wins over the global one, and
 // held to the shape of a currency code when it is read.
 func TestADealTakesItsCurrencyFromItsTenantsSetting(t *testing.T) {
+	t.Parallel()
 	c := newCase(t, stackNamed(t, localStack))
 	w := startDeals(t, c, func(w *dealsWorld) {
 		c.setGlobal("deals.default-currency", "GBP")
@@ -2053,6 +2066,7 @@ func winDeal(t *testing.T, h *crmHost, ref tenantRef, cred credential, id, curre
 // or an upsert that met the other tenant's line, reads as a line in the wrong
 // place.
 func TestEachSubscriberCountsInTheEventsOwnTenant(t *testing.T) {
+	t.Parallel()
 	forEachStack(t, func(t *testing.T, c *crmCase) {
 		w := startDeals(t, c, nil)
 		acme, globex := w.acme, w.globex
@@ -2104,6 +2118,7 @@ func TestEachSubscriberCountsInTheEventsOwnTenant(t *testing.T) {
 // The journal's event path hears the same event on both replicas, and a row
 // per replica is a second record of one event.
 func TestAWonDealHeardByEveryReplicaIsCountedOnce(t *testing.T) {
+	t.Parallel()
 	forEachSharedStack(t, func(t *testing.T, c *crmCase) {
 		w := startDealsOn(t, c, 2, nil)
 		acme, alice := w.acme, w.asAlice
@@ -2176,6 +2191,7 @@ func TestAWonDealHeardByEveryReplicaIsCountedOnce(t *testing.T) {
 // other tenant's row as well: the page would hold the one deal the count found
 // twice, or name the other tenant's account.
 func TestADealListingJoinsEachScopedRelationInItsTenant(t *testing.T) {
+	t.Parallel()
 	forEachStack(t, func(t *testing.T, c *crmCase) {
 		w := startDeals(t, c, nil)
 		sides := sidesOf(w)

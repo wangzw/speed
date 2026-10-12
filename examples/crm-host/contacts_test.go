@@ -89,6 +89,7 @@ func contactIDs(list contactList) []string {
 // the sealed columns, the blind index and the unique email; for the redaction
 // of a contact's email and phone; and for the role each route takes.
 func TestContactsStayInTheirTenant(t *testing.T) {
+	t.Parallel()
 	forEachStack(t, func(t *testing.T, c *crmCase) {
 		c.sealWithCaseKey()
 		c.migrate()
@@ -815,6 +816,7 @@ func statusCounts(answers []response) map[int]int {
 // (see sqliteLocator); a transaction begun without it is refused the lock
 // outright at its first write while another writer holds it.
 func TestConcurrentContactWritesAtOneAccountAllCommit(t *testing.T) {
+	t.Parallel()
 	forEachStack(t, func(t *testing.T, c *crmCase) {
 		c.sealWithCaseKey()
 		c.migrate()

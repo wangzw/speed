@@ -219,10 +219,11 @@ const otelGinScope = "go.opentelemetry.io/contrib/instrumentation/github.com/gin
 // gives each assembly as its service.instance.id.
 var uuidV4Pattern = regexp.MustCompile(`^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$`)
 
-// otlpStack is the stack whose telemetry leaves through the OTLP backend.
+// otlpStack is the stack whose telemetry leaves through the OTLP backend,
+// among the stacks caseStacks lays a case out on.
 func otlpStack(t *testing.T) stack {
 	t.Helper()
-	for _, s := range stacks {
+	for _, s := range caseStacks() {
 		if s.exporter == otlp.ModuleName {
 			return s
 		}

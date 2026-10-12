@@ -256,6 +256,19 @@ go -C examples/crm-host test -race ./...
 env -C examples/crm-host golangci-lint run ./...
 ```
 
+By default the cases the `forEach` helpers lay out run on a light set of
+stacks, `sqlite-memory` and `postgres-redis-nats`; the full five-stack matrix is
+what CI runs, what the `test` and `test-race` legs of the Makefile run, and what
+a local `go test` takes in by setting `SPEED_CRM_HOST_ALL_STACKS` (or `CI`). A
+case whose property needs the PostgreSQL-backed event bus or key-value store
+names its stack outright and runs on that stack whatever the matrix, so a light
+run still reaches for docker. The assembly
+leg does not need all five: its properties — replicas started together, a drain
+that lets in-flight requests finish, a link cut and restored, a worker beside a
+serve, one migration set applied across processes — hold on any stack, and a
+module's internal race coverage is the `-race` leg that module runs. A run that
+lays out on the light set names the stacks it left out and how to take them in.
+
 The cases compile the host once in `TestMain` and run it as a child process;
 under `-race` the host is built with the race detector as well, and a child that
 reports a data race fails its case. Such a child runs with the detector's
@@ -282,7 +295,10 @@ harness creates it from; one created from other constants is refused with the
 `docker rm -f` that removes it, and is never removed by the harness, since
 another test binary may be using it. Each case gets a database of its own on
 PostgreSQL, a database index of its own on Redis, and a namespace and bucket of
-its own on NATS, and gives each back when it ends. A machine without docker
+its own on NATS, and gives each back when it ends. The Redis server offers
+sixteen databases and the harness reserves one for its own leases, so fifteen
+cases hold one at a time; a run whose parallelism asks for more waits for a
+lease, and fails the case that waited past two minutes. A machine without docker
 skips those stacks unless `CI` is set, in which case they fail. Remove the
 containers by hand with `docker rm -f` when they are no longer wanted.
 

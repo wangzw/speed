@@ -235,13 +235,13 @@ func (c *crmCase) restore(l link) {
 	c.proxyOf(l).restore()
 }
 
-// forEachLinkedStack runs a case on every stack for which reaches says the
-// stack reaches a backend over a link, each as a parallel subtest with a case
-// laid out by newLinkedCase.
+// forEachLinkedStack runs a case on every stack caseStacks selects for which
+// reaches says the stack reaches a backend over a link, each as a parallel
+// subtest with a case laid out by newLinkedCase.
 func forEachLinkedStack(t *testing.T, reaches func(stack) bool, body func(t *testing.T, c *crmCase)) {
 	t.Helper()
 	ran := false
-	for _, s := range stacks {
+	for _, s := range caseStacks() {
 		if !reaches(s) {
 			continue
 		}

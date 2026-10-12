@@ -67,6 +67,7 @@ func (c *crmCase) linksOf(ref tenantRef, deal string) []string {
 // them is refused, and the case fails at its first deal, whose read back
 // preloads the stakeholders.
 func TestADealsStakeholdersStayInItsTenant(t *testing.T) {
+	t.Parallel()
 	forEachStack(t, func(t *testing.T, c *crmCase) {
 		c.sealWithCaseKey()
 		w := startDeals(t, c, nil)
@@ -229,6 +230,7 @@ func TestADealsStakeholdersStayInItsTenant(t *testing.T) {
 // the account, the contact and the link stay as they were. Once the deal's set
 // is cleared, the purge goes through, which shows the link was what refused it.
 func TestAContactADealNamesKeepsItsAccountFromAPurge(t *testing.T) {
+	t.Parallel()
 	forEachStack(t, func(t *testing.T, c *crmCase) {
 		c.sealWithCaseKey()
 		w := startDeals(t, c, nil)

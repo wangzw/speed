@@ -874,12 +874,88 @@ func (c *crmCase) awaitJournal(what string, match func(auditRow) bool) auditRow 
 	return found
 }
 
-// forEachStack runs a case on every stack the host defines, each as a parallel
-// subtest with a case of its own. A stack whose backends need docker skips on
-// a machine without it, unless CI is set.
+// allStacksEnv selects the full stack matrix for a local run: set to a value
+// other than "", "0" or "false", a case is laid out on every stack the roster
+// holds, as CI lays one out. It and CI are the only two selectors for the full
+// matrix.
+const allStacksEnv = "SPEED_CRM_HOST_ALL_STACKS"
+
+// lightStackNames are the stacks a case is laid out on when neither CI nor
+// allStacksEnv asks for the whole roster, named to be read against the roster.
+// They are the stack that needs no service at all and the one whose backends
+// are the most distinct of the roster.
+var lightStackNames = []string{localStack, "postgres-redis-nats"}
+
+// caseStacks is the stacks a case is laid out on: the whole roster under CI or
+// allStacksEnv, and the light set otherwise, in the roster's order.
+//
+// The light set is sqlite-memory, which needs no service, and
+// postgres-redis-nats, whose backends are the most distinct of the roster — a
+// PostgreSQL engine, a Redis key-value store, a NATS event bus and the OTLP
+// export backend — so a local run still carries every kind of backend through
+// the assembly. This leg exists for assembly-level properties; the
+// module-internal coverage a further stack would add is pkg's own, which make
+// test-race runs under the race detector. The three stacks left out pay for
+// docker-backed services without adding a kind the light set lacks, so the
+// local loop leaves them out and the full matrix lives in the roster, where CI
+// and allStacksEnv select it.
+func caseStacks() []stack {
+	if fullMatrix() {
+		return stacks
+	}
+	light := make([]stack, 0, len(lightStackNames))
+	for _, s := range stacks {
+		if slices.Contains(lightStackNames, s.name) {
+			light = append(light, s)
+		}
+	}
+	announceLightStacks(light)
+	return light
+}
+
+// fullMatrix reports whether a case is laid out on the whole roster: CI set to
+// a non-empty value, or allStacksEnv set to a value other than "", "0" or
+// "false".
+func fullMatrix() bool {
+	if os.Getenv("CI") != "" {
+		return true
+	}
+	switch os.Getenv(allStacksEnv) {
+	case "", "0", "false":
+		return false
+	default:
+		return true
+	}
+}
+
+// lightOnce guards the one announcement of the light set per test binary.
+var lightOnce sync.Once
+
+// announceLightStacks writes, once per test binary, the stacks the light set
+// leaves out and the variable that brings them back. A developer who never runs
+// the other stacks has to be able to see they were skipped, so the choice is
+// stated on standard error rather than left silent.
+func announceLightStacks(light []stack) {
+	lightOnce.Do(func() {
+		var ran, skipped []string
+		for _, s := range stacks {
+			if slices.ContainsFunc(light, func(l stack) bool { return l.name == s.name }) {
+				ran = append(ran, s.name)
+			} else {
+				skipped = append(skipped, s.name)
+			}
+		}
+		fmt.Fprintf(os.Stderr, "crm-host: cases run on %s; skipping %s. Set %s, or CI, to run every stack.\n",
+			strings.Join(ran, ", "), strings.Join(skipped, ", "), allStacksEnv)
+	})
+}
+
+// forEachStack runs a case on every stack caseStacks lays one out on, each as a
+// parallel subtest with a case of its own. A stack whose backends need docker
+// skips on a machine without it, unless CI is set.
 func forEachStack(t *testing.T, body func(t *testing.T, c *crmCase)) {
 	t.Helper()
-	for _, s := range stacks {
+	for _, s := range caseStacks() {
 		t.Run(s.name, func(t *testing.T) {
 			t.Parallel()
 			body(t, newCase(t, s))
@@ -887,13 +963,14 @@ func forEachStack(t *testing.T, body func(t *testing.T, c *crmCase)) {
 	}
 }
 
-// forEachSharedStack runs a case on every stack whose backends several
-// processes can share, which is every stack that keeps no state in one process.
-// The multi-replica cases run here; a stack whose state lives in one process has
-// replicas that share nothing, so it is left out rather than skipped.
+// forEachSharedStack runs a case on every stack caseStacks selects whose
+// backends several processes can share, which is every stack that keeps no
+// state in one process. The multi-replica cases run here; a stack whose state
+// lives in one process has replicas that share nothing, so it is left out
+// rather than skipped.
 func forEachSharedStack(t *testing.T, body func(t *testing.T, c *crmCase)) {
 	t.Helper()
-	for _, s := range stacks {
+	for _, s := range caseStacks() {
 		if !sharedStack(s) {
 			continue
 		}

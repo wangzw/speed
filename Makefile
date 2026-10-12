@@ -46,11 +46,16 @@ build: modules-present ## Build every module, both in the workspace and standalo
 # test's default is ten minutes, which the example hosts' end-to-end legs
 # exceed under the race detector on a loaded machine. The bound is generous on
 # purpose: it is there to end a hung run, not to pace a slow one.
+#
+# An example host lays its cases out on a light set of stacks unless asked for
+# the whole roster, so that a developer's own `go test` comes back sooner. These
+# two legs are the gate, and a gate runs the whole matrix; naming the variable
+# for every module costs the ones that do not read it nothing.
 test: modules-present ## Test every module
-	@failed=; $(call each,$(MODULES),test,go -C $$it test -timeout 30m ./...); $(each-end)
+	@failed=; $(call each,$(MODULES),test,SPEED_CRM_HOST_ALL_STACKS=1 go -C $$it test -timeout 30m ./...); $(each-end)
 
 test-race: modules-present ## Test every module under the race detector
-	@failed=; $(call each,$(MODULES),test -race,go -C $$it test -race -timeout 60m ./...); $(each-end)
+	@failed=; $(call each,$(MODULES),test -race,SPEED_CRM_HOST_ALL_STACKS=1 go -C $$it test -race -timeout 60m ./...); $(each-end)
 
 fmt: modules-present ## Format every module in place
 	@failed=; $(call each,$(MODULES),fmt,env -C $$it golangci-lint fmt ./...); $(each-end)

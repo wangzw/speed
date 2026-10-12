@@ -115,6 +115,7 @@ func (c *crmCase) requireTables(after string) {
 // The membership relation itself is the account module's own table, migrated
 // with that module.
 func TestMigrateBuildsEveryDeclaredTable(t *testing.T) {
+	t.Parallel()
 	forEachStack(t, func(t *testing.T, c *crmCase) {
 		c.migrate()
 		c.requireTables("migrate")
@@ -141,6 +142,7 @@ func TestMigrateBuildsEveryDeclaredTable(t *testing.T) {
 // endpoint answers who the caller is across tenants; the second user sees their
 // own tenant; the owner grants from the API; and a logout ends the token.
 func TestEveryStackServesTheSamePath(t *testing.T) {
+	t.Parallel()
 	forEachStack(t, func(t *testing.T, c *crmCase) {
 		c.migrate()
 		acme := c.createTenant("acme")
@@ -275,6 +277,7 @@ const sessionCheckTTLSetting = "authn.session.check-ttl"
 // not in the
 // process, and a logout on the second ends the session on the first.
 func TestTwoReplicasShareTheirSessions(t *testing.T) {
+	t.Parallel()
 	forEachSharedStack(t, func(t *testing.T, c *crmCase) {
 		c.migrate()
 		acme := c.createTenant("acme")
@@ -308,6 +311,7 @@ func TestTwoReplicasShareTheirSessions(t *testing.T) {
 // The two replicas are started one after the other: what this case is about is
 // not the rollout.
 func TestTheAdminEndpointActsOnTheTableFromAnyReplica(t *testing.T) {
+	t.Parallel()
 	forEachSharedStack(t, func(t *testing.T, c *crmCase) {
 		c.migrate()
 		replicas := c.serveReplicas(2, firstThenRest)
@@ -382,6 +386,7 @@ func requireMembers(t *testing.T, got memberList, want ...userRef) {
 // two tenant refusals being one answer, the admin endpoint's two audiences,
 // and a disabled user.
 func TestTheRequestSurfaceKeepsTenantsApart(t *testing.T) {
+	t.Parallel()
 	forEachStack(t, func(t *testing.T, c *crmCase) {
 		c.migrate()
 		acme := c.createTenant("acme")
@@ -568,6 +573,7 @@ func TestTheRequestSurfaceKeepsTenantsApart(t *testing.T) {
 // processor, have one of them answered 503 and no longer be the two creations
 // the case is about.
 func TestTwoCreationsOfOneEmailAreOneSuccessAndOneConflict(t *testing.T) {
+	t.Parallel()
 	forEachStack(t, func(t *testing.T, c *crmCase) {
 		c.migrate()
 		h := c.serve()
@@ -615,6 +621,7 @@ func TestTwoCreationsOfOneEmailAreOneSuccessAndOneConflict(t *testing.T) {
 // judges is the one the host's create path reports, and a creation that failed it
 // leaves nothing behind.
 func TestAWeakPasswordIsRefusedAtCreation(t *testing.T) {
+	t.Parallel()
 	forEachStack(t, func(t *testing.T, c *crmCase) {
 		c.migrate()
 		h := c.serve()
@@ -634,6 +641,7 @@ func TestAWeakPasswordIsRefusedAtCreation(t *testing.T) {
 // half-written membership behind. The HTTP grant judges the same role in its
 // request body's validation, before it writes.
 func TestACommandLineGrantWithNoKnownRoleWritesNothing(t *testing.T) {
+	t.Parallel()
 	forEachStack(t, func(t *testing.T, c *crmCase) {
 		c.migrate()
 		acme := c.createTenant("acme")
@@ -665,6 +673,7 @@ func TestACommandLineGrantWithNoKnownRoleWritesNothing(t *testing.T) {
 // derives at the module's declared defaults. A password below the minimum length
 // is refused at the command line, leaving no account behind.
 func TestAPasswordIsDerivedAtTheAccountPolicy(t *testing.T) {
+	t.Parallel()
 	c := newCase(t, stackNamed(t, localStack))
 	c.migrate()
 	// The first policy is OWASP's one-iteration floor pair, distinct from the
@@ -776,6 +785,7 @@ const (
 // output is searched, so an output the database wrote nothing of the refused
 // insert to does not pass for one that holds it without the values.
 func TestAPasswordHashReachesNoOutput(t *testing.T) {
+	t.Parallel()
 	forEachStack(t, func(t *testing.T, c *crmCase) {
 		c.migrate()
 		if c.dialect == "postgres" {
@@ -829,6 +839,7 @@ func TestAPasswordHashReachesNoOutput(t *testing.T) {
 // journal's Start on, so a command that stopped at Init could not write one,
 // and every write here succeeding is the depth being right.
 func TestACommandLineWriteStatesItsPurpose(t *testing.T) {
+	t.Parallel()
 	c := newCase(t, stackNamed(t, localStack))
 	c.migrate()
 	acme := c.createTenant("acme")
@@ -874,6 +885,7 @@ func TestACommandLineWriteStatesItsPurpose(t *testing.T) {
 // the commands that take that module in and nowhere else, and the command line
 // takes no positional argument.
 func TestTheCommandLineTakesFlagsFromTheHostModule(t *testing.T) {
+	t.Parallel()
 	c := newCase(t, stackNamed(t, localStack))
 
 	help := c.run(nil, "", "tenant", "create", "--help")
@@ -902,6 +914,7 @@ func TestTheCommandLineTakesFlagsFromTheHostModule(t *testing.T) {
 // command-line write at startup, naming the journal's list, rather than running
 // it with a bus nobody chose for it.
 func TestACommandGroupRunsNoEventBackend(t *testing.T) {
+	t.Parallel()
 	c := newCase(t, stackNamed(t, localStack))
 	c.migrate()
 	if res := c.run(nil, "", "tenant", "list"); res.err != nil {
@@ -919,6 +932,7 @@ func TestACommandGroupRunsNoEventBackend(t *testing.T) {
 // configuration. The file and the environment name different database files
 // for the same input item, and only the environment's is created.
 func TestTheEnvironmentOverridesTheFile(t *testing.T) {
+	t.Parallel()
 	c := newCase(t, stackNamed(t, localStack))
 	fromEnv := filepath.Join(t.TempDir(), "from-env.db")
 
@@ -1105,6 +1119,7 @@ func schemaFields(props map[string]json.RawMessage) []string {
 // fix — the gateway, then resolution, then rate limiting, then the journal,
 // then admission — rather than the admission layer's position alone.
 func TestTheAdmissionLayerSitsInsideTheJournalAndTheLimiter(t *testing.T) {
+	t.Parallel()
 	c := newCase(t, stackNamed(t, localStack))
 	c.migrate()
 	h := c.serve()
@@ -1170,6 +1185,7 @@ func chainLayers(chain string) []string {
 // entry point up, and with both endpoint lists emptied through the environment
 // it runs and stops cleanly.
 func TestTheWorkerRunsWithoutTheEntryPoint(t *testing.T) {
+	t.Parallel()
 	forEachStack(t, func(t *testing.T, c *crmCase) {
 		c.migrate()
 		res := c.run(nil, "", workerCommand)
@@ -1220,8 +1236,8 @@ func TestAnInterruptStopsEveryStack(t *testing.T) {
 // Each pause is far longer than that and far shorter than the entry point's
 // drain.
 var (
-	handlerReachPause = scaledForRace(500 * time.Millisecond)
-	stopStagesPause   = scaledForRace(500 * time.Millisecond)
+	handlerReachPause = scaledForRace(200 * time.Millisecond)
+	stopStagesPause   = scaledForRace(200 * time.Millisecond)
 )
 
 // heldRequest is a request on the API endpoint whose body is sent in two
@@ -1433,6 +1449,7 @@ func TestAnInterruptDrainsRequestsInFlight(t *testing.T) {
 // running with no configuration source and no module: neither is given one,
 // and both answer.
 func TestVersionAndHashAssembleNothing(t *testing.T) {
+	t.Parallel()
 	version := runCommand(t, []string{"version"}, nil, "")
 	if version.err != nil || strings.TrimSpace(version.stdout) != hostVersion {
 		t.Errorf("version answered %q (%v), want %q", version.stdout, version.err, hostVersion)
@@ -1452,6 +1469,7 @@ func TestVersionAndHashAssembleNothing(t *testing.T) {
 // parse of the output would not. A wrong password is refused, so the sign-in
 // is the entry matching rather than the table accepting anything.
 func TestAnOperatorSignsInWithWhatHashWrote(t *testing.T) {
+	t.Parallel()
 	hash := runCommand(t, []string{"hash"}, nil, operatorPassword+"\n")
 	if hash.err != nil {
 		t.Fatalf("hash failed: %v\n%s", hash.err, hash.combined())
@@ -1479,6 +1497,7 @@ func (h *crmHost) registerAs(t *testing.T, id, alias string) response {
 // alias another tenant holds is answered as a conflict, names the refusal, and
 // leaves the roster with the tenant that holds it and without the one refused.
 func TestARegistrationUnderATakenAliasIsAConflict(t *testing.T) {
+	t.Parallel()
 	c := newCase(t, stackNamed(t, localStack))
 	c.migrate()
 	h := c.serve()
@@ -1513,6 +1532,7 @@ func TestARegistrationUnderATakenAliasIsAConflict(t *testing.T) {
 // is answered with: a conflict a constraint found carries the driver's error
 // under the roster's, which no answer shows.
 func TestTwoRegistrationsAtOnceAreOneSuccessAndOneConflict(t *testing.T) {
+	t.Parallel()
 	forEachSharedStack(t, func(t *testing.T, c *crmCase) {
 		c.migrate()
 		c.config.set("tenant.catalog.refresh-period", "1s")
@@ -1631,6 +1651,7 @@ func (h *crmHost) getOnHost(t *testing.T, host, path string, cred credential, ex
 // read, so a request carrying acme's alias there and no tenant's label in its
 // host reaches no tenant.
 func TestTheSubdomainNamesTheTenant(t *testing.T) {
+	t.Parallel()
 	c := newCase(t, stackNamed(t, localStack))
 	c.config.set("tenant.resolve.extractor", "subdomain")
 	c.config.set("tenant.resolve.subdomain-index", 0)
@@ -1737,6 +1758,7 @@ func lastExportedMetric(out, name string) (exportedMetric, bool) {
 // method and status alone — no route and no tenant — and a method outside the
 // standard nine is folded into _OTHER rather than carried by name.
 func TestTheRequestDurationKeepsItsFixedShape(t *testing.T) {
+	t.Parallel()
 	c := newCase(t, stackNamed(t, localStack))
 	c.migrate()
 	h := c.serve()
@@ -1800,6 +1822,7 @@ func TestTheRequestDurationKeepsItsFixedShape(t *testing.T) {
 // endpoint's max-body-bytes is refused as too large and writes nothing, and
 // one within it is written.
 func TestABodyPastTheEndpointsLimitIsRefused(t *testing.T) {
+	t.Parallel()
 	c := newCase(t, stackNamed(t, localStack))
 	c.sealWithCaseKey()
 	c.setOnEndpoint(apiEndpoint, "max-body-bytes", 4096)
@@ -1891,6 +1914,7 @@ func TestARequestNoRouteServesIsRefusedAsAProblem(t *testing.T) {
 // bus stops the serving command at startup, naming the item, since each
 // replica would hold its own and every call would still succeed.
 func TestAnInProcessBackendRefusesADeploymentOfSeveralReplicas(t *testing.T) {
+	t.Parallel()
 	for _, item := range []string{"kv.memory.replicas", "event.memory.replicas"} {
 		t.Run(item, func(t *testing.T) {
 			c := newCase(t, stackNamed(t, localStack))
@@ -1913,6 +1937,7 @@ func TestAnInProcessBackendRefusesADeploymentOfSeveralReplicas(t *testing.T) {
 // --config or through CRM_CONFIG. A tenant registered through the one is
 // listed through the other, from the same database.
 func TestAJSONConfigurationReachesTheSameItems(t *testing.T) {
+	t.Parallel()
 	c := newCase(t, stackNamed(t, localStack))
 	c.migrate()
 	c.oneShotConfig()
@@ -2116,6 +2141,7 @@ func (h *crmHost) loginWithTOTP(t *testing.T, u userRef, uri string) string {
 // fresh login that answers the factor is multi-factor, so it is admitted with
 // the level the route asked for.
 func TestAFactorGatedRouteAdmitsOnlyAMultiFactorSession(t *testing.T) {
+	t.Parallel()
 	c := newCase(t, stackNamed(t, localStack))
 	c.migrate()
 	acme := c.createTenant("acme")
@@ -2161,6 +2187,7 @@ func TestAFactorGatedRouteAdmitsOnlyAMultiFactorSession(t *testing.T) {
 // The rule is what keeps a password holder who registers their own factor from
 // turning that session into a multi-factor one before the real owner notices.
 func TestAStepUpCannotStrengthenTheSessionItEnrolledOn(t *testing.T) {
+	t.Parallel()
 	c := newCase(t, stackNamed(t, localStack))
 	c.migrate()
 	acme := c.createTenant("acme")
@@ -2187,6 +2214,7 @@ func TestAStepUpCannotStrengthenTheSessionItEnrolledOn(t *testing.T) {
 // that requires nothing. The requirement is per tenant, so the two tenants
 // answer the same request differently.
 func TestATenantRequiringMFARefusesASingleFactorMember(t *testing.T) {
+	t.Parallel()
 	c := newCase(t, stackNamed(t, localStack))
 	c.migrate()
 	acme := c.createTenant("acme")

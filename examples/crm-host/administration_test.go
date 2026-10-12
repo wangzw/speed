@@ -51,7 +51,7 @@ var propagationLimit = scaledForRace(15 * time.Second)
 // duplicateWindow is how long a case watches for a second copy of an audit row
 // after the first has arrived. A copy written by another replica for the same
 // event arrives within milliseconds of the first.
-const duplicateWindow = 2 * time.Second
+const duplicateWindow = 500 * time.Millisecond
 
 // changeRounds is how many times the replica case writes and deletes one
 // setting with the same value.
@@ -186,6 +186,7 @@ func documentedStatuses(t *testing.T, h *crmHost, method, pattern string) []stri
 // TestATenantAdministersItsSettings is the case for the tenant settings API and
 // the operator's writes into the layers.
 func TestATenantAdministersItsSettings(t *testing.T) {
+	t.Parallel()
 	forEachStack(t, func(t *testing.T, c *crmCase) {
 		c.migrate()
 		h := c.serve(trailEventsEnv)
@@ -641,6 +642,7 @@ func entryWith(page trailPage, match func(trailView) bool) (trailView, bool) {
 // them, and the settings change event is captured, so the trail holds a row of
 // every capture path.
 func TestATenantReadsItsOwnAuditTrail(t *testing.T) {
+	t.Parallel()
 	forEachStack(t, func(t *testing.T, c *crmCase) {
 		c.migrate()
 		h := c.serve(trailEventsEnv)
@@ -998,6 +1000,7 @@ func awaitLimit(t *testing.T, h *crmHost, ref tenantRef, limit int) {
 // TestAnOperatorLowersATenantsRateLimit is the case for the limit an operator
 // sets through a tenant's settings layer.
 func TestAnOperatorLowersATenantsRateLimit(t *testing.T) {
+	t.Parallel()
 	forEachStack(t, func(t *testing.T, c *crmCase) {
 		c.migrate()
 		h := c.serve()
@@ -1086,6 +1089,7 @@ func TestAnOperatorLowersATenantsRateLimit(t *testing.T) {
 // value of the wrong type. Nothing of the domain is written in the host, so a
 // limiter that declared none would have both writes stored and this case red.
 func TestARateLimitOutsideItsDomainIsRefused(t *testing.T) {
+	t.Parallel()
 	c := newCase(t, stackNamed(t, localStack))
 	c.migrate()
 	h := c.serve()
@@ -1130,6 +1134,7 @@ func TestARateLimitOutsideItsDomainIsRefused(t *testing.T) {
 // raised before the run so those polls are answered by the settings rather
 // than by the limiter; the limit the last subtest counts is initech's own.
 func TestTwoReplicasShareSettingsAndTheLimit(t *testing.T) {
+	t.Parallel()
 	forEachSharedStack(t, func(t *testing.T, c *crmCase) {
 		c.config.set("settings.refresh-interval", "0s")
 		c.migrate()
@@ -1233,6 +1238,7 @@ func TestTwoReplicasShareSettingsAndTheLimit(t *testing.T) {
 // session token, as a client that polls does: a poll every few milliseconds
 // that signed in each time would spend the replica on derivations.
 func TestADisabledTenantIsRefusedOnEveryReplica(t *testing.T) {
+	t.Parallel()
 	forEachSharedStack(t, func(t *testing.T, c *crmCase) {
 		c.config.set("tenant.catalog.refresh-period", "1s")
 		c.migrate()
@@ -1320,6 +1326,7 @@ func declaredItems() map[string]settings.Item {
 // declaration gives, and to the type and the default text a client expects of
 // it, the tenant's keys and the platform's alike.
 func TestTheSettingsListingIsTheDeclaration(t *testing.T) {
+	t.Parallel()
 	c := newCase(t, stackNamed(t, localStack))
 	c.migrate()
 	h := c.serve()
@@ -1442,6 +1449,7 @@ func buildPreferences(t *testing.T, declared []settings.DeclaredItem) error {
 // command's startup runs; the same declarations with every served key in them
 // are built.
 func TestAServedKeyTheDeclarationsLackFailsTheStartup(t *testing.T) {
+	t.Parallel()
 	var declared []settings.DeclaredItem
 	for _, k := range servedKeys {
 		declared = append(declared, settings.DeclaredItem{Key: k.key, Type: reflect.TypeFor[string]()})
@@ -1474,6 +1482,7 @@ var trailTableColumns = []string{
 // A model that mapped fewer would read those columns as empty and fail only
 // where a row is rendered.
 func TestTheTrailModelsMapEveryColumn(t *testing.T) {
+	t.Parallel()
 	for _, model := range []any{&trailEntry{}, &anyTenantsEntry{}} {
 		parsed, err := schema.Parse(model, &sync.Map{}, schema.NamingStrategy{})
 		if err != nil {
@@ -1502,6 +1511,7 @@ var errProbed = errors.New("the probe stopped the statement before it was issued
 // convention, so the filter conditions the same read on the tenant its context
 // carries, and refuses it with none, rather than taking it for a global table.
 func TestAnOperatorsReadGoesThroughAModelThatTakesANullTenant(t *testing.T) {
+	t.Parallel()
 	handle, err := gorm.Open(tests.DummyDialector{}, &gorm.Config{DryRun: true, Logger: logger.Discard})
 	if err != nil {
 		t.Fatalf("opening a dry-run handle: %v", err)
@@ -1539,6 +1549,7 @@ func TestAnOperatorsReadGoesThroughAModelThatTakesANullTenant(t *testing.T) {
 // run on a dialector that reaches no database, since the refusal comes before a
 // statement would.
 func TestNothingIsWrittenThroughTheTrailModels(t *testing.T) {
+	t.Parallel()
 	handle, err := gorm.Open(tests.DummyDialector{}, &gorm.Config{DryRun: true, Logger: logger.Discard})
 	if err != nil {
 		t.Fatalf("opening a dry-run handle: %v", err)

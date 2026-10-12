@@ -425,6 +425,7 @@ type wonDeal struct {
 // again, and one that claimed by the identifier alone would take globex's event
 // for acme's second delivery and drop it.
 func TestEachWonDealIsDeliveredAndCountedOnce(t *testing.T) {
+	t.Parallel()
 	forEachStack(t, func(t *testing.T, c *crmCase) {
 		receiver := startWebhookReceiver(t)
 		secrets := map[string]string{}
@@ -764,6 +765,7 @@ func TestAWebhookIsRetriedAndEachAttemptIsRecorded(t *testing.T) {
 // deal, won through the deals module, is the one that shows the consumers were
 // running.
 func TestADisabledOrUnknownTenantGetsNoDelivery(t *testing.T) {
+	t.Parallel()
 	forEachStack(t, func(t *testing.T, c *crmCase) {
 		receiver := startWebhookReceiver(t)
 		nobody := c.tenantNamed("nobody")
@@ -985,6 +987,7 @@ func TestASlowReceiverHoldsUpNoOtherTenant(t *testing.T) {
 // cannot win that deal through the deals module, since a request's tenant is
 // resolved from the snapshot alone, so the event comes from the feed.
 func TestAWonDealOfATenantRegisteredWhileServingIsCounted(t *testing.T) {
+	t.Parallel()
 	forEachStack(t, func(t *testing.T, c *crmCase) {
 		c.migrate()
 		c.config.set("dealfeed.enabled", true)
@@ -1019,6 +1022,7 @@ func TestAWonDealOfATenantRegisteredWhileServingIsCounted(t *testing.T) {
 // setting just past its bound, and gets nothing sent and a record naming the
 // setting; the last writes all three at their bounds and is delivered to.
 func TestAWebhookSettingOutsideItsBoundSendsNothing(t *testing.T) {
+	t.Parallel()
 	c := newCase(t, stackNamed(t, localStack))
 	c.migrate()
 	receiver := startWebhookReceiver(t)
@@ -1084,6 +1088,7 @@ func TestAWebhookSettingOutsideItsBoundSendsNothing(t *testing.T) {
 // admin endpoint's operator check and nothing is counted, and the operator's
 // publish is counted: the route is the switch's, and the refusal the check's.
 func TestTheDealFeedIsOffUnlessTurnedOn(t *testing.T) {
+	t.Parallel()
 	c := newCase(t, stackNamed(t, localStack))
 	w := startDeals(t, c, nil)
 	fed := wonEvent(w.acme, "", "fed-1", 500, w.alice)
@@ -1135,6 +1140,7 @@ func (r *webhookReceiver) awaitCalls(t *testing.T, path string, n int) []webhook
 // the bus, the seam rows, the request rows — or in any log record the process
 // wrote, and the settings table holds the one that is set.
 func TestATenantConfiguresItsWebhookThroughTheSettings(t *testing.T) {
+	t.Parallel()
 	forEachStack(t, func(t *testing.T, c *crmCase) {
 		receiver := startWebhookReceiver(t)
 		w := startDealsWith(t, c, 1, []string{"CRM_AUDIT__JOURNAL__EVENTS=deal.won,settings.changed"}, nil)

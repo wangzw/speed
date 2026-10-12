@@ -59,6 +59,7 @@ func contactsByEmail(t *testing.T, h *crmHost, ref tenantRef, cred credential, e
 // tenant is served again, its contact reads in the clear with the retired key
 // dropped and is found by its email.
 func TestAContactRekeyRollsARotatedRootKeyOut(t *testing.T) {
+	t.Parallel()
 	c := newCase(t, stackNamed(t, localStack))
 	engine := c.stack.engine
 	c.sealWithCaseKey()

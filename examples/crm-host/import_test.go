@@ -6,6 +6,7 @@ import (
 	"crypto/sha256"
 	"encoding/base64"
 	nethttp "net/http"
+	"slices"
 	"strconv"
 	"strings"
 	"testing"
@@ -21,9 +22,28 @@ import (
 // stack whose database is a different engine, since the import reads the old
 // tables and writes the new ones through DDL, booleans and timestamps that the
 // two engines handle differently.
+//
+// The second stack is the roster's own "postgres" when the run lays a case out
+// on it, and otherwise the first stack of another engine the run lays one out
+// on, so a run that leaves "postgres" out does not take it back in here.
 func forImportStacks(t *testing.T, body func(t *testing.T, c *crmCase)) {
 	t.Helper()
-	for _, name := range []string{localStack, "postgres"} {
+	on := caseStacks()
+	other := "postgres"
+	if !slices.ContainsFunc(on, func(s stack) bool { return s.name == other }) {
+		other = ""
+		for _, s := range on {
+			if s.name != localStack {
+				other = s.name
+				break
+			}
+		}
+	}
+	names := []string{localStack}
+	if other != "" && other != localStack {
+		names = append(names, other)
+	}
+	for _, name := range names {
 		s := stackNamed(t, name)
 		t.Run(s.name, func(t *testing.T) {
 			t.Parallel()
@@ -116,6 +136,7 @@ func (c *crmCase) text(query string, args ...any) string {
 // report the same rows without writing any of them. Then the real run, then a
 // second real run, which must create nothing and leave the state as it was.
 func TestTheImportCarriesTheOldUsersAndMemberships(t *testing.T) {
+	t.Parallel()
 	forImportStacks(t, func(t *testing.T, c *crmCase) {
 		c.migrate()
 		acme := c.createTenant("acme")
@@ -313,6 +334,7 @@ func TestTheImportCarriesTheOldUsersAndMemberships(t *testing.T) {
 // rows around it are still imported. It also holds the address a different
 // account already owns, which the access store's uniqueness constraint refuses.
 func TestTheImportRefusesRowsItCannotCarryAndGoesOn(t *testing.T) {
+	t.Parallel()
 	forImportStacks(t, func(t *testing.T, c *crmCase) {
 		c.migrate()
 		acme := c.createTenant("acme")
@@ -402,6 +424,7 @@ func TestTheImportRefusesRowsItCannotCarryAndGoesOn(t *testing.T) {
 // roster that scopes it, so a command that took it in without either fails at
 // startup rather than writing an empty tenant.
 func TestTheImportCommandRunsUnderTheHostsCommandGroup(t *testing.T) {
+	t.Parallel()
 	if dataImportGroup.word != "import" || len(dataImportGroup.commands) != 1 {
 		t.Fatalf("the import group is %q with %d commands, want import with one", dataImportGroup.word, len(dataImportGroup.commands))
 	}
@@ -457,6 +480,7 @@ func contains(values []string, want string) bool {
 // table holds is left as it is and the row is counted skipped, so a repeated
 // import never reverts an administrator's change behind their back.
 func TestTheImportLeavesAChangedRoleAsItIs(t *testing.T) {
+	t.Parallel()
 	forImportStacks(t, func(t *testing.T, c *crmCase) {
 		c.migrate()
 		acme := c.createTenant("acme")
@@ -490,6 +514,7 @@ func TestTheImportLeavesAChangedRoleAsItIs(t *testing.T) {
 // is, so a repeated import never switches an account off behind the
 // administrator's back.
 func TestTheImportLeavesAReEnabledAccountEnabled(t *testing.T) {
+	t.Parallel()
 	forImportStacks(t, func(t *testing.T, c *crmCase) {
 		c.migrate()
 		seedLegacySchema(t, c)
@@ -517,6 +542,7 @@ func TestTheImportLeavesAReEnabledAccountEnabled(t *testing.T) {
 // writing. A role row that is present is never overwritten, so this is the only
 // write a re-run makes.
 func TestTheImportFinishesAHalfWrittenMembership(t *testing.T) {
+	t.Parallel()
 	forImportStacks(t, func(t *testing.T, c *crmCase) {
 		c.migrate()
 		acme := c.createTenant("acme")
@@ -558,6 +584,7 @@ func TestTheImportFinishesAHalfWrittenMembership(t *testing.T) {
 // run names that collision for what it is rather than as an address another
 // account owns.
 func TestTheImportNamesADeletedTargetForWhatItIs(t *testing.T) {
+	t.Parallel()
 	forImportStacks(t, func(t *testing.T, c *crmCase) {
 		c.migrate()
 		seedLegacySchema(t, c)

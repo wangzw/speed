@@ -63,7 +63,7 @@ const natsAckWait = 30 * time.Second
 // half runs on NATS alone.
 func TestWorkersSharingAConsumerHandleEachWinOnce(t *testing.T) {
 	ran := false
-	for _, s := range stacks {
+	for _, s := range caseStacks() {
 		env, ok := sharedConsumerEnv(s)
 		if !ok {
 			continue
