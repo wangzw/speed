@@ -733,6 +733,7 @@ func TestAPasswordIsDerivedAtTheAccountPolicy(t *testing.T) {
 // that check and refused after is neither a store keeping it for ever nor one
 // reading the setting in another unit.
 func TestASessionEndsWhenItsIdleTimeoutLapses(t *testing.T) {
+	t.Parallel()
 	const idle = time.Minute
 	forEachStack(t, func(t *testing.T, c *crmCase) {
 		c.migrate()
@@ -746,9 +747,13 @@ func TestASessionEndsWhenItsIdleTimeoutLapses(t *testing.T) {
 		cookie := h.login(t, alice)
 		expect(t, "the session at once", h.get(t, accountEndpoint, "/me", "", bearer(cookie)), nethttp.StatusOK)
 
-		// Idle/2 is a minute, so a use this far in writes nothing and leaves the
-		// period ending a minute after the login.
-		time.Sleep(time.Until(issuedAt.Add(idle/2 - 2*time.Second)))
+		// The check lands inside the period's first half — thirty seconds of a
+		// minute — so the use writes nothing and the period still ends a minute
+		// after the login. The margin ahead of that half carries the load the
+		// case runs under beside the others: a use past it would extend the
+		// period instead, and the check after it would then hold a session that
+		// should have ended.
+		time.Sleep(time.Until(issuedAt.Add(idle/2 - 5*time.Second)))
 		expect(t, "the session half-way through its idle period",
 			h.get(t, accountEndpoint, "/me", "", bearer(cookie)), nethttp.StatusOK)
 
