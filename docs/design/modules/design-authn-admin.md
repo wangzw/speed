@@ -35,7 +35,7 @@
 | 账户标识的性质 | 不可变、全局唯一、形态由 `ParseAccountID` 判定；全部要求见下节 | 本文、[authn-account](design-authn-account.md) |
 | 成员关系 | `Memberships` 的只读面，零值读作非成员；成员关系与账户的变更事件供授权清理角色绑定与缓存，事件清单、投递路径与去重要求见载体文档 | [authn-account](design-authn-account.md)、[authn-events](design-authn-events.md) |
 | 会话撤销 | `Sessions.Status` 是撤销的权威面；事件 `authn.session.revoked` 是缓存失效的提示，不是权威 | [authn-session](design-authn-session.md) |
-| 链上次序 | 授权位于租户准入层之内，对网关、租户解析、审计与准入层交付的功能标识写 `After`；次序与锚点的完整表在载体文档，位置的保证是 `After`，不是 `Order` | [authn](design-authn.md)、[tenant.admission](design-tenant-admission.md) |
+| 链上次序 | 授权层声明授权阶段，阶段内用 `After` 指向准入层的功能标识，位于租户准入层之内；跨阶段的位置由阶段顺序给出，次序与锚点的完整表在载体文档 | [authn](design-authn.md)、[tenant.admission](design-tenant-admission.md) |
 | 加强认证 | 授权需要某条路由要求新鲜的多因素时，挂 `guard.Require(authn.Requirement{...})` | [authn-mfa](design-authn-mfa.md) |
 | 令牌 | 访问令牌不带角色；`ClaimsContributor` 是宿主显式选择追加声明的口子 | [authn-token](design-authn-token.md) |
 | 平台范围与准入放行 | `Decision.Tenant` 为空表示平台范围，只用于账户级动作；租户级动作的 `Decision.Tenant` 一律由 `authn.admin` 解析后填，`Decider` 永远不会收到租户为空的租户级动作；非成员的请求在准入层经 `authn.tenant.access` 询问 `Decider`，缺省拒绝，授权模块据此落地跨租户的平台级角色，不必改准入层与 authn | 本文 |

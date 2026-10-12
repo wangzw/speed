@@ -18,7 +18,7 @@
 - **不持有短信验证码的状态。** 挑战行、预算、尝试次数与发送归 [authn-sms](design-authn-sms.md)。
 - **不登记企业 IdP，不校验 SAML 断言。** 提供方行、域声明、元数据与断言校验归 [authn-sso](design-authn-sso.md)。
 - **不认识租户。** 账户全局，登录请求不带租户名；没有按租户启停登录方式的能力，只有全局的紧急开关。租户级的认证强度策略与成员判定在请求期由 [tenant-admission](design-tenant-admission.md) 执行，`pkg/authn` 的任何子包都不 import `pkg/tenant`。
-- **不经 `pkg/ratelimit` 限流。** 该模块排在认证之内、无身份即放行、维度只有（租户，责任键），认证前的失败退避由 `Throttle` 承担（算法归 [authn-account](design-authn-account.md)）。
+- **不经 `pkg/ratelimit` 限流。** 该模块的配额层落在限流阶段、排在鉴别阶段之内、无身份即放行、维度只有（租户，责任键），认证前的失败退避由 `Throttle` 承担（算法归 [authn-account](design-authn-account.md)）。
 - **不写网关自产的 401。** 网关为各端建成的挑战与「没有凭据」的 401 归 [authn-gate](design-authn-gate.md)；本模块只写自己处理器的应答。
 - **不提供登录页，不做人机验证。** 界面是宿主的前端，本模块只给 JSON 接口；人机验证与入口层面的洪泛限流是宿主的部署责任。
 - **不做授权判定。** 本模块的 403 只转述认证之外的策略，且只出现在 authn 自己的处理器里（[authn-admin](design-authn-admin.md)）。

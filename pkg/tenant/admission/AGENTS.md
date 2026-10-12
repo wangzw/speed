@@ -58,15 +58,14 @@ must not cross, and how to run it.
   descriptor delivers, and it is the only anchor another layer has for placing
   itself inside or outside admission, so the two must not drift
   (`TestTheMiddlewareDeclaresWhatTheDesignSays`).
-- **The layer's `After` names four anchors, and each is load-bearing.** Gate and
-  resolution because the layer reads an identity and a tenant; the audit capture
-  and rate limiting because a refusal made here has to be audited and counted,
-  which an `Order` preference does not guarantee. A capability nobody on the
-  endpoint stands for drops its constraint, so an assembly without audit or rate
-  limiting is not made to carry them
+- **The layer declares the authorizing stage and no constraint of its own.** The
+  stage runs after identity and tenant are settled, which the layer reads, and
+  inside the recording and the throttling stages, so a refusal made here is
+  audited and counted by the stage order rather than by a preference. Assemblies
+  that leave the audit capture or rate limiting out are therefore placed the same
+  way
   (`TestTheLayerSitsInsideResolutionAuditAndRateLimitingAndOutsideAuthorization`,
-  `TestAConstraintOnAnAbsentLayerIsDropped`). `Order` stays at 92: it only decides
-  where the layer lands when none of the four is in the assembly.
+  `TestTheStageOrderPlacesAdmissionWithoutTheOuterStages`).
 - **The endpoint list is required, refused as a set, and never `*`.** There is no
   default: guarding every endpoint would cover the endpoint the authentication
   routes are mounted on, where a request that ends an impersonation has no tenant

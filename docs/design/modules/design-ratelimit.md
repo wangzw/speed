@@ -41,7 +41,7 @@
 
 ### 交付的功能
 
-功能标识的元素类型必须是接口。**这个标识的用途是在链上定序，不是一个可调用的判定面**：同一限流阶段里的别的层在自己的 `After` 或 `Before` 里写下它，把自己排在限流之内或之外；跨阶段的这类边是冗余的（见依赖一节）。租户准入层写下它，使被准入层拒绝的请求已经计入额度（见 [tenant-admission](design-tenant-admission.md)）。
+功能标识的元素类型必须是接口。**这个标识的用途是在链上定序，不是一个可调用的判定面**：同一限流阶段里的别的层在自己的 `After` 或 `Before` 里写下它，把自己排在限流之内或之外；跨阶段的这类边是冗余的（见依赖一节）。租户准入层声明授权阶段，该阶段在限流阶段之内，被准入层拒绝的请求因此已经计入额度（见 [tenant-admission](design-tenant-admission.md)）。
 
 ```go
 // Limiter 是限流功能的标识。链上的层在自己的 After 或 Before 里写下它，
@@ -162,7 +162,7 @@ speedhttp.Middleware{
 
 **对宿主的要求**：本模块排他交付，宿主必须在命令树上点名它或为它预置实例，依赖闭包不替宿主挑。**本模块描述符里的 `Requires` 为空**：它没有任何构造期依赖，入口模块、设置与键值三项都在 `Init` 期经注册表取用，认证与租户则连取用都不发生（判据与[认证网关](design-authn-gate.md)同一条，见 [ADR-authn-wiring-2026-10-10](../../adr/adr-authn-wiring-2026-10-10.md)）。宿主要让本模块装得起来，必须让入口模块、设置与键值都在参与集里：在命令树上把它们列进去，或为它们预置实例，没有别的修法；缺任何一项都是启动失败，错误点名缺的那个功能。
 
-方向满足架构不变量：本功能目录位于 `core`、`config`、`http`、`settings` 与 `kv` 之上，不被其中任何一个 import；它 import `authn` 与 `tenant` 只是为了读它们的上下文，而 `authn` 的任何包与 `tenant` 的根包都不 import 它；`tenant` 目录下的准入层 `tenant/admission` 例外，它 import 本包取 `(*Limiter)(nil)` 作自己的 `After` 锚点（见 [tenant-admission](design-tenant-admission.md)）。
+方向满足架构不变量：本功能目录位于 `core`、`config`、`http`、`settings` 与 `kv` 之上，不被其中任何一个 import；它 import `authn` 与 `tenant` 只是为了读它们的上下文，而 `authn` 的任何包与 `tenant` 的根包都不 import 它。`tenant` 目录下的准入层 `tenant/admission` 也不例外：它声明授权阶段，落在限流阶段之内，位置由阶段给出，因而不为定序 import 本包（见 [tenant-admission](design-tenant-admission.md)）。
 
 ## UML 图
 

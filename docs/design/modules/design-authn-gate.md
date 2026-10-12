@@ -23,7 +23,7 @@
 - **不判定租户成员关系与租户级认证强度，也不核对冒充身份的租户范围是否相符。** 这些由租户准入层判定（见 [design-tenant-admission](design-tenant-admission.md)）；网关只决定冒充身份能否被放进某个端或某条路由。
 - **不提供配置式的豁免与可选清单。** 登记只来自代码（[ADR-authn-exemption-2026-10-10](../../adr/adr-authn-exemption-2026-10-10.md)）。
 - **不读入口模块的路由表。** 登记面只列出端名，不枚举路由（见 [design-http](design-http.md)）；网关无从核对一条登记是否对应一条已挂的路由。
-- **不规定其他层的 `Order`。** 网关只给出自己的层与锚点 `(*authn.Gate)(nil)`；别的层用 `After`、`Before` 指向它，链上次序见 [design-authn](design-authn.md)。
+- **不规定其他层的位置。** 网关只给出自己的层、它所属的阶段与锚点 `(*authn.Gate)(nil)`；同处鉴别阶段的层用 `After`、`Before` 指向它，链上次序见 [design-authn](design-authn.md)。
 - **不决定哪条命令纳入网关。** 模块无从知道自己出现在哪条命令下（[ADR-command-tree-2026-09-20](../../adr/adr-command-tree-2026-09-20.md)）。
 - **不承载运行期可变的参数。** 判据是该值是否在数据库可用之前就被需要（[ADR-config-scope-2026-09-13](../../adr/adr-config-scope-2026-09-13.md)）；网关守哪些端在其列，口令表的退避参数不在。
 
@@ -35,7 +35,7 @@
 
 每个模块的包导出自己的 `ModuleName`，配置与设置的命名空间取同一个取值。每个模块的 `Prepare` 只表态 `StateEnabled`，永不 `StateAuto`：是否运行是命令树上的决定，不是配置能推断的结论（[ADR-authn-wiring-2026-10-10](../../adr/adr-authn-wiring-2026-10-10.md)）。**每个模块在包内以 `var _ authn.X = (*product)(nil)` 做编译期断言，并在装配测试里用真实注册表核对交付**：网关的 `Gate`、`authn.mount` 的 `Mounter`、口令表的 `Verifier` 各自由不同的实例交付，宿主与测试预置自己的 `Gate` 替身时不必同时实现 `Mounter`。
 
-网关的描述符以 `(*authn.Gate)(nil)` 作为 `Provides`，登记的中间件以同一个功能标识作为自己在链上代表的功能，`Order` 为 100。**这个标识与 `Order` 是别的层排序的稳定锚点**：限流、租户解析、审计、租户准入用 `After` 指向它，落在认证之内；`Order` 只是偏好，位置的保证是 `After`。反方向网关声明不了：入口模块内建的兜底层不是功能标识，网关因此自备 `recover`（见错误与失败语义）。
+网关的描述符以 `(*authn.Gate)(nil)` 作为 `Provides`，登记的中间件以同一个功能标识作为自己在链上代表的功能，声明鉴别阶段。**这个标识与它所属的阶段是别的层定序的稳定锚点**：同处鉴别阶段的租户解析用 `After` 指向它，落在认证之内；更内的阶段（限流、记录、授权）按阶段本身落在认证之内，不由这条锚点决定。反方向网关声明不了：入口模块内建的兜底层不是功能标识，网关因此自备 `recover`（见错误与失败语义）。
 
 ### 校验后端的接缝
 
@@ -233,7 +233,7 @@ var ErrMalformedHash error
 ### 稳定性承诺
 
 - 根包符号的契约与不兼容变更的判据见 [design-authn](design-authn.md) 的稳定性承诺；本文不另列符号。
-- `(*authn.Gate)(nil)` 与 `Order` 为 100 是别层定序的稳定锚点，取值不变。
+- `(*authn.Gate)(nil)` 与它声明的鉴别阶段是别层定序的稳定锚点，取值不变。
 - 收口计数器 `authn.gate.conclusions`、它的单位、属性名 `outcome` 与全部桶名冻结：已有取值不改名，只许新增取值。
 - 模块名、配置命名空间与哨兵的名字不变；哨兵的触发条件以本文的哨兵表为准。
 - `pkg/authn/static` 的 `Hash`、`HashPBKDF2`、`ParseHash`、`ErrMalformedHash` 与条目格式是它与写表者之间的契约。
@@ -248,7 +248,7 @@ var ErrMalformedHash error
 
 依赖方向的约束，包括网关不 import `pkg/tenant` 的理由、准入层经 `ScopeGuard` 与网关衔接的方式与对架构不变量的满足，见 [design-authn](design-authn.md#依赖方向)。
 
-被依赖方向：`tenant/resolve`、`ratelimit`、`audit` 的请求期层以 `After` 指向 `(*authn.Gate)(nil)`；租户准入交付 `ScopeGuard` 并读身份（见 [design-tenant](design-tenant.md)、[design-ratelimit](design-ratelimit.md)、[design-audit](design-audit.md)）。
+被依赖方向：`tenant/resolve` 的请求期层与网关同处鉴别阶段，以 `After` 指向 `(*authn.Gate)(nil)`；`ratelimit` 与 `audit` 按限流、记录两个阶段落在认证之内，不指向这条锚点；租户准入交付 `ScopeGuard` 并读身份（见 [design-tenant](design-tenant.md)、[design-ratelimit](design-ratelimit.md)、[design-audit](design-audit.md)）。
 
 ## UML 图
 
@@ -641,8 +641,8 @@ sequenceDiagram
 
 | 假设 | 守住它的测试 |
 |---|---|
-| 网关对 `ScopeGuard` 的可选取用，与准入层对网关的 `After` 不构成构造环（`After` 只定链序，不是构造期依赖） | 装配测试：用真实注册表同时装配网关与准入层，断言构造成功 |
-| 链上次序由 `orderLayers` 的算法推得：准入层在审计与限流之内、在授权之外，网关的 `Order` 为 100 | 装配测试：装配后读 `chain=` 那一行，断言各层的相对次序 |
+| 网关对 `ScopeGuard` 的可选取用，与准入层读身份不构成构造环 | 装配测试：用真实注册表同时装配网关与准入层，断言构造成功 |
+| 链上次序由 `orderLayers` 的算法从各层声明的阶段与阶段内的 `After` 推得：准入层在限流与审计之内、在授权之外，网关声明鉴别阶段 | 装配测试：装配后读 `chain=` 那一行，断言各层的相对次序 |
 | 不是本模块产物的预置 `Gate`，不会使 `authn.mount` 与挂路由的模块在构造期交付自检失败（`Mounter` 不由网关交付） | 装配测试：预置一个 `Gate` 替身，纳入 `authn.mount`，断言 `assertDelivered` 通过 |
 
 ## 并发与事务边界
@@ -678,7 +678,7 @@ sequenceDiagram
 
 | 能力 | 状态 | 代码 |
 |---|---|---|
-| 网关模块、排他交付、`Order` 为 100 与 `(*Gate)(nil)` 锚点 | 已实现 | `pkg/authn/gate/gate.go` `Module`；`pkg/authn/gate/serve.go` `middlewareOrder`、`middlewareFor` |
+| 网关模块、排他交付、鉴别阶段与 `(*Gate)(nil)` 锚点 | 已实现 | `pkg/authn/gate/gate.go` `Module`；`pkg/authn/gate/serve.go` `middlewareFor` |
 | 后端调用的预算、在飞闸门、`recover` 与停机排空 | 已实现 | `pkg/authn/gate/serve.go` `enter`、`verify`；`pkg/authn/gate/gate.go` `drain` |
 | `Exempt`、`Optional`、`Impersonable` 的登记窗口、校验、冻结与逐字比对，`ErrAccessConflict`，网关对 `Access` 的写入 | 已实现 | `pkg/authn/gate/exempt.go` `Exempt`、`Optional`、`Impersonable`、`open`、`seal`、`accessOf`；`pkg/authn/gate/serve.go` `admit` |
 | 校验后端接缝：`Accepts`、`Credential` 的 `Cookie` 与 `Peer`、`Verify` 去掉主体入参、`Challenger`、`CookieClearer` | 已实现 | `pkg/authn/authn.go` |

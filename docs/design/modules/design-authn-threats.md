@@ -142,8 +142,8 @@
 | 秘密进入日志、事件、审计、指标 | 脱敏按键名、值形状与字面量登记；事件与审计明细只放标识；指标属性是闭集；永不记录请求体与表单 | [design-authn-gate](design-authn-gate.md)、[design-authn-events](design-authn-events.md)、[design-log](design-log.md) | 日志模块只管登记之后的记录；宿主自己的 handler 若记录请求体，authn 管不到；漏净化一处 |
 | 数据库转储 | 口令用 Argon2id；令牌只存哈希；TOTP 种子与 IdP 密钥用加密列；短信码存带密钥的摘要；签名私钥不在库里 | [design-authn-account](design-authn-account.md)、[design-authn-config](design-authn-config.md)、[design-db](design-db.md) | 邮箱、手机、显示名是明文；加密列依赖 db 根密钥，根密钥与库一起失守则全失 |
 | `Host` 头注入与对外基址 | 基址只来自配置；从不用 `Host` 或转发头拼回跳地址、`iss`、ACS | [design-authn-config](design-authn-config.md)、[design-authn-login](design-authn-login.md) | 无已知剩余项 |
-| 跨租户访问：持合法凭据的调用方指名另一个租户 | `tenant.admission` 默认拒绝，非成员的应答与不存在的租户同形（404） | [design-tenant-admission](design-tenant-admission.md) | 准入层的拒绝落在审计与限流之内，靠 `After` 声明保证，装配后的真实次序未经运行核对（见[依赖未核实行为的假设](#依赖未核实行为的假设)） |
-| 监听端漏守、配置错误 | 默认守全部端，漏写的端同样被守；启动诊断列出展开后的清单与被开出的口子；放宽项各写一行 Warn；缺省值取最严 | [design-authn-gate](design-authn-gate.md)、[design-authn-config](design-authn-config.md) | 链上仍可有层绕过认证（非保证）：`Order` 取更小值的层排在认证之外；宿主仍可显式放宽 |
+| 跨租户访问：持合法凭据的调用方指名另一个租户 | `tenant.admission` 默认拒绝，非成员的应答与不存在的租户同形（404） | [design-tenant-admission](design-tenant-admission.md) | 准入层的拒绝落在审计与限流之内：准入层在授权阶段，该阶段在记录与限流之内；装配后的真实次序未经运行核对（见[依赖未核实行为的假设](#依赖未核实行为的假设)） |
+| 监听端漏守、配置错误 | 默认守全部端，漏写的端同样被守；启动诊断列出展开后的清单与被开出的口子；放宽项各写一行 Warn；缺省值取最严 | [design-authn-gate](design-authn-gate.md)、[design-authn-config](design-authn-config.md) | 链上仍可有层绕过认证（非保证）：声明在鉴别阶段之外各阶段的层、阶段内被 `After`、`Before` 或 `Position` 排到网关之外的层，以及入口模块内建的请求上下文、访问日志与兜底层，都在网关之前；宿主仍可显式放宽 |
 | 管理面被远程滥用 | 默认不可用：`authn.admin` 要宿主纳入并交付 `Decider` 与审计；强制审计 | [design-authn-admin](design-authn-admin.md) | 宿主交付的 `Decider` 有缺陷，则管理面有缺陷 |
 | 设置写权限被滥用来放宽安全项 | 放宽方向的开关（`signup`、`auto-link`、`check-session`）只取主配置源；其余可在运行期修改的安全项，由 authn 订阅 `settings.changed`，改到更宽松的取值时写 Warn 并记一条尽力档审计；`pkg/authn/AGENTS.md` 写明「`authn.*` 与 `tenant.admission.*` 设置不得对租户或普通管理员开放写权限」 | [design-authn-config](design-authn-config.md)、[design-settings](design-settings.md) | 事后可见、不能事前阻止；拿到设置写权限的主体仍能把 `throttle-*` 与短信预算调松。**接受** |
 | 预认证请求使表无界增长 | 每张会增长的表有持有者与清扫协程；`authn_throttles` 的行数上界是失败请求速率乘 `throttle-decay` | [design-authn-account](design-authn-account.md) | 匿名洪泛期间表会变大；缓解是来源地址层的前置减负（缺省关）与入口层限流。**接受** |
@@ -220,7 +220,7 @@
 | `pkg/ratelimit`（[design-ratelimit](design-ratelimit.md)） | 入口层限流按责任键计 | 预认证洪泛的前置减负缺席 |
 | `pkg/audit`（[design-audit](design-audit.md)） | 强制档审计由调用方在事务之外、动作之前写；尽力档写失败不令动作失败 | 强制档缺席则冒充与管理面动作不开始；尽力档缺失只丢审计行 |
 | `pkg/settings`（[design-settings](design-settings.md)） | 变更事件 `settings.changed` 可订阅 | 放宽的设置变更没有 Warn 与审计 |
-| `pkg/http`（[design-http](design-http.md)） | `Router.Endpoints()` 与保留端名 `*`；中间件链的 `After` 与 `Order` 排序 | 默认守全部端无从展开；链上次序不成立则准入层与限流的次序保证不成立 |
+| `pkg/http`（[design-http](design-http.md)） | `Router.Endpoints()` 与保留端名 `*`；中间件链按阶段与阶段内的 `After`、`Before`、`Position` 组装 | 默认守全部端无从展开；链上次序不成立则准入层与限流的次序保证不成立 |
 | `pkg/tenant` 的 `tenant.admission`（[design-tenant-admission](design-tenant-admission.md)） | 非成员与范围不符的冒充身份得 404 | 跨租户访问与冒充越界的拦截缺席 |
 | go-jose/v4 | `pkg/go.mod` 的版本下限，对应畸形令牌触发 panic 的缺陷；数值见 [design-authn-token](design-authn-token.md) | 删去该要求会使依赖图把版本带回受影响的版本 |
 | goxmldsig | `pkg/go.mod` 的版本下限，对应签名绕过缺陷；数值见 [design-authn-sso](design-authn-sso.md) | 同上 |
@@ -273,7 +273,7 @@ flowchart LR
 
 ### 拦截位置
 
-下图按请求在链上的先后，标出各类威胁被拦截的位置。链上次序由 `After` 与 `Order` 排出，次序与锚点见 [design-authn](design-authn.md)；认证前的公开端点是被登记为免认证的 authn 自己的路由，它们经过网关，但不由网关认证。
+下图按请求在链上的先后，标出各类威胁被拦截的位置。链上次序由各层声明的阶段与阶段内的 `After`、`Before`、`Position` 排出，次序与锚点见 [design-authn](design-authn.md)；认证前的公开端点是被登记为免认证的 authn 自己的路由，它们经过网关，但不由网关认证。
 
 ```mermaid
 flowchart LR
@@ -281,14 +281,14 @@ flowchart LR
     obs --> gate["网关：载体认领、被认领 cookie 并存的拒绝、浏览器可能自己附带的载体的跨源检查、出口检查、冒充范围核对"]
     gate -->|"Exempt 命中的公开路由"| pre["认证前端点：退避、枚举防护、流程绑定、state、PKCE、nonce、短信预算"]
     gate --> resolve["租户解析"]
-    resolve --> audit["审计"]
-    audit --> rl["限流"]
-    rl --> adm["租户准入：成员判定、冒充范围、租户级强度"]
+    resolve --> rl["限流"]
+    rl --> audit["审计"]
+    audit --> adm["租户准入：成员判定、冒充范围、租户级强度"]
     adm --> authz["授权：不在本文范围"]
     authz --> handler["handler"]
 ```
 
-网关之前只有采集：排在认证之外的层自答的请求没有经过认证，这是[链上不保证没有能绕过认证的层](design-authn.md#非保证)的直接后果。准入层的 `After` 写全了网关、租户解析、审计与限流，所以准入层的拒绝要进审计、要计入限流。授权在准入之内，认证只为它留接缝（见 [design-authn-admin](design-authn-admin.md)）。
+网关之前只有采集：排在认证之外的层自答的请求没有经过认证，这是[链上不保证没有能绕过认证的层](design-authn.md#非保证)的直接后果。准入层在授权阶段，该阶段在记录与限流之内，所以准入层的拒绝要进审计、要计入限流。授权在准入之内，认证只为它留接缝（见 [design-authn-admin](design-authn-admin.md)）。
 
 ## 核心算法与流程
 

@@ -385,13 +385,10 @@ func (l *layer) dropMeter() error {
 //
 // Provides carries the token the descriptor delivers the capability under: the
 // only anchor another layer has for placing itself inside or outside admission.
-// After names the four layers this one has to sit inside, each by the
-// capability it stands for. Authentication has to be outside because this layer
-// reads an identity; tenant resolution because it reads a tenant; the audit
-// capture and rate limiting so that a refusal made here is audited and counted,
-// which an Order preference would not guarantee. A capability nobody on the
-// endpoint stands for drops its constraint, so an assembly without audit or rate
-// limiting is not made to carry them.
+// The layer declares the authorizing stage and no constraint of its own. That
+// stage runs after identity and tenant are settled, which this layer reads, and
+// inside the recording and the throttling stages, so a refusal made here is
+// audited and counted by the stage order rather than by a preference.
 func (l *layer) middlewareFor(endpoint string) speedhttp.Middleware {
 	realm := quoteRealm(endpoint)
 	return speedhttp.Middleware{

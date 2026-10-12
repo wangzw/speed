@@ -9,7 +9,7 @@
 - 执行租户级的认证强度要求：租户设置 `tenant.admission.require-mfa` 与 `tenant.admission.require-sso`。这类强度要求只能在请求期判，登录时账户全局、租户未知（[ADR-authn-mfa-2026-10-10](../../adr/adr-authn-mfa-2026-10-10.md)、[ADR-authn-sso-2026-10-10](../../adr/adr-authn-sso-2026-10-10.md)）。
 - 执行冒充身份的租户范围：身份携带的 `Scope()` 与请求的租户不符，或请求没有租户上下文时拒绝（[ADR-authn-impersonation-2026-10-10](../../adr/adr-authn-impersonation-2026-10-10.md)）。
 - 交付 `authn.ScopeGuard`：声明自己守哪些端，使网关与 `authn.impersonation` 不 import `pkg/tenant` 即可得知冒充身份能被放进哪些端。
-- 交付定序锚点 `(*tenant.Admission)(nil)`：授权模块与别的层用 `After` 指向它。
+- 交付定序锚点 `(*tenant.Admission)(nil)`：授权模块与宿主自己的层在授权阶段之内用 `After` 指向它，落在准入层之内。
 - 报出每次判定的结果：指标 `tenant.admission.decisions`，以及每次拒绝一行日志。
 
 准入层的判据是判定所需的输入：需要同时读身份与租户上下文的判定归本层；只读凭据与主体来源的归认证；角色与授权归授权模块。
@@ -66,7 +66,7 @@ type ScopeGuard interface {
 
 交付声明写作 `Provides: []core.Provision{{Token: (*tenant.Admission)(nil), Exclusive: true}, {Token: (*authn.ScopeGuard)(nil), Exclusive: true}}`。这些排他性不可局部违反：两层准入同时在链上时，一个请求被谁放行说不清。
 
-`tenant.Admission` 带一个**导出**的标记方法。接口在 `pkg/tenant` 根包、实现在 `pkg/tenant/admission`，别的包的类型无法实现带本包未导出方法的接口，用未导出方法时交付核对必然失败（[ADR-tenant-admission-2026-10-10](../../adr/adr-tenant-admission-2026-10-10.md)）。授权模块只 import 根包，取 `(*tenant.Admission)(nil)` 作 `After` 锚点。
+`tenant.Admission` 带一个**导出**的标记方法。接口在 `pkg/tenant` 根包、实现在 `pkg/tenant/admission`，别的包的类型无法实现带本包未导出方法的接口，用未导出方法时交付核对必然失败（[ADR-tenant-admission-2026-10-10](../../adr/adr-tenant-admission-2026-10-10.md)）。授权模块只 import 根包，在授权阶段之内取 `(*tenant.Admission)(nil)` 作 `After` 锚点。
 
 `ScopeGuard.Covers(endpoint)` 报出 `endpoints` 里是否有该端：清单只含具体端名，不含 `*`，所以回答是精确的集合成员判定。消费方：
 
@@ -75,9 +75,9 @@ type ScopeGuard interface {
 
 ### 链上的位置
 
-中间件在 `endpoints` 的每个端上登记一层，描述符的 `Provides` 是 `(*tenant.Admission)(nil)`，`After` 写全网关、租户解析、审计与限流各自的功能标识：`(*authn.Gate)(nil)`、`(*tenant.Resolution)(nil)`、`(*audit.Audit)(nil)`、`(*ratelimit.Limiter)(nil)`；`Order` 为 92。位置由 `After` 保证，`Order` 只在约束落空时决定落点（[ADR-tenant-ordering-2026-09-21](../../adr/adr-tenant-ordering-2026-09-21.md)）。由外到内的次序是采集、网关、租户解析、审计、限流、租户准入、授权、handler；整条链的次序与别的层的 `Order` 由各自的文档承载（[design-authn](design-authn.md)）。
+中间件在 `endpoints` 的每个端上登记一层，描述符的 `Provides` 是 `(*tenant.Admission)(nil)`，`Stage` 声明授权阶段（`StageAuthorize`），不带 `After`：跨阶段的位置由阶段顺序给出，不由锚点或数值表达（[ADR-http-stages-2026-10-11](../../adr/adr-http-stages-2026-10-11.md)）。阶段由外到内是观测、防护、鉴别、限流、记录、授权，网关与租户解析在鉴别阶段、限流在限流阶段、审计在记录阶段，准入层所在的授权阶段在它们之内；整条链的阶段与别的层的声明由各自的文档承载（[design-authn](design-authn.md)）。
 
-非成员的拒绝因此必然进审计、必然计入限流，位置由硬约束保证而不靠 `Order` 偏好（[ADR-ratelimit-dimension-2026-09-22](../../adr/adr-ratelimit-dimension-2026-09-22.md)）。约束指向的功能在该端无人代表时，入口模块丢弃那条约束（[design-http](design-http.md)）：没装审计或限流的装配里，对应的那条 `After` 不产生约束。
+非成员的拒绝因此必然进审计、必然计入限流：准入层所在的授权阶段在记录与限流两个阶段之内，位置由阶段顺序给出（[ADR-ratelimit-dimension-2026-09-22](../../adr/adr-ratelimit-dimension-2026-09-22.md)）。审计或限流不在这次装配里时，记录或限流阶段上没有层，非成员的拒绝既不进审计也不计入限流。
 
 ### 请求期的应答
 
@@ -128,8 +128,6 @@ type ScopeGuard interface {
 | `event.Bus` | `pkg/event` | 订阅 `authn.membership.changed` | 可选，缓存只靠 `check-ttl` 过期 |
 | `log.Logger` | `pkg/log` | 启动诊断 | 可选，不写启动诊断 |
 | `observability.MeterProvider` | `pkg/observability` | 指标 | 可选，不报指标 |
-
-另有只为写出 `After` 的功能标识而 import 的包：`pkg/audit` 根包的 `(*audit.Audit)(nil)` 与 `pkg/ratelimit` 根包的 `(*ratelimit.Limiter)(nil)`；准入层不调用这些功能。
 
 **方向满足架构不变量。** 准入层 import `pkg/authn` 根包而不 import `pkg/authn` 的任何子包：`pkg/authn/internal/...` 只能被 `pkg/authn/` 之下的包 import，准入层只经根包导出面读身份。`pkg/authn` 的子包不 import `pkg/tenant`，账户、登录、令牌的依赖闭包不含租户；准入层不 import `pkg/db`，成员关系的存取经 `Memberships`。`pkg/tenant` 位于 `pkg/authn` 之上，不被其中任何一个 import；授权模块位于准入层之上，只 import `pkg/tenant` 根包取锚点（[architecture](../architecture.md)）。
 
@@ -350,7 +348,7 @@ flowchart TD
 - **不保证每个业务端都在 `endpoints` 里。** 不在清单里的端没有准入层；网关只放冒充身份进准入层所守的端与 `Impersonable` 路由，所以宿主的 admin 一类端对冒充身份是 401。
 - **所守的端上，被租户解析豁免的路由没有租户上下文。** 非冒充身份照常放行，冒充身份得 404；`ScopeGuard.Covers` 只说准入层守哪些端，不核对宿主有没有在那些端上开解析豁免。
 - **宿主为准入层预置的实例不是本模块的产物时，链上没有准入层，而注册表答它在场。** 回调对这样的实例不做事，成员核对、强度要求与冒充范围都随之缺席，由预置它的宿主自己负责（[ADR-supplied-instance-2026-10-08](../../adr/adr-supplied-instance-2026-10-08.md)）。
-- **链上位置是推导而非实测的假设。** 准入层的次序由 `After` 经定序算法推得，没有读过装配出的链清单。守住这条假设的测试：在同时纳入网关、解析、审计、限流与准入层的装配里读链清单，断言准入层位于解析、审计与限流之内；该断言失败，「非成员的拒绝必然留痕并计数」不成立（失效条件见 [ADR-tenant-admission-2026-10-10](../../adr/adr-tenant-admission-2026-10-10.md)）。
+- **不保证记录与限流阶段这次装配里有层。** 准入层的次序由它声明的授权阶段与固定的阶段顺序给出，它在解析、审计与限流之内；审计或限流不在装配里时，记录或限流阶段上没有层，非成员的拒绝既不进审计也不计入限流。守住它的测试：在同时纳入网关、解析、审计、限流与准入层的装配里读链清单，断言准入层位于解析、审计与限流之内（失效条件见 [ADR-tenant-admission-2026-10-10](../../adr/adr-tenant-admission-2026-10-10.md)）。
 - **不保证租户的强度要求即时生效。** 放宽的上界分别是 `check-ttl` 与设置的刷新周期。
 
 ### 威胁与对策
@@ -379,7 +377,7 @@ flowchart TD
 ## 扩展点
 
 - **判定接缝 `Decider` 的 `authn.tenant.access` 动作。** 授权模块或宿主据此落地平台级角色（跨租户的客服、平台管理员），不必改准入层与认证；询问的参数是发起者身份与租户标识，缺省拒绝。
-- **定序锚点 `(*tenant.Admission)(nil)`。** 授权模块与宿主自己的层用 `After` 指向它，落在准入层之内。
+- **定序锚点 `(*tenant.Admission)(nil)`。** 授权模块与宿主自己的层在授权阶段之内用 `After` 指向它，落在准入层之内。
 
 ## 实现状态
 
@@ -387,7 +385,7 @@ flowchart TD
 
 | 能力 | 状态 | 代码 |
 |---|---|---|
-| 模块 `tenant.admission`、排他交付、`Order` 为 92、`After` 写全网关、解析、审计与限流的功能标识 | 已实现 | `pkg/tenant/admission/admission.go` `Module` |
+| 模块 `tenant.admission`、排他交付、`Stage` 声明授权阶段、不带 `After` | 已实现 | `pkg/tenant/admission/admission.go` `Module` |
 | `tenant.Admission` 标记接口 | 已实现 — 接口定义在 `pkg/tenant`，由本包的类型交付；方法导出是交付检查能通过的前提 | `pkg/tenant/capabilities.go` `Admission`；`pkg/tenant/admission/admission.go` `(*layer).AdmissionLayer` |
 | `authn.ScopeGuard` 与 `Covers` | 已实现 — 根包接口与网关对它的取用，加上本包的精确成员判定 | `pkg/authn/scope.go` `ScopeGuard`；`pkg/tenant/admission/admission.go` `(*layer).Covers` |
 | `endpoints` 的必填、空清单与 `*` 的拒绝、端名核对 | 已实现 — 空清单、空名、`*` 与重复名为错误，未知端名为 `tenant.ErrUnknownEndpoint` | `pkg/tenant/admission/config.go` `(moduleConfig).resolve` |
