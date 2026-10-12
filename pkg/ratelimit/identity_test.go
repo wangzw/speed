@@ -108,7 +108,7 @@ func checkCallers(t testing.TB) {
 func stampingLayer(t testing.TB) speedhttp.Middleware {
 	return speedhttp.Middleware{
 		Name:  "stand-in.identity",
-		Order: -1000,
+		Stage: speedhttp.StageIdentify,
 		Handler: func(c *gin.Context) {
 			if _, anonymous := c.Request.Header[anonymousHeader]; anonymous {
 				c.Next()

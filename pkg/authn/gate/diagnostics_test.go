@@ -13,6 +13,7 @@ import (
 
 	"github.com/vislake/speed/pkg/authn"
 	"github.com/vislake/speed/pkg/core"
+	speedhttp "github.com/vislake/speed/pkg/http"
 	"github.com/vislake/speed/pkg/observability"
 )
 
@@ -164,11 +165,11 @@ func TestTheConclusionCounterIsDescribedAndUnitised(t *testing.T) {
 	t.Fatal("the counter was not collected")
 }
 
-// TestTheLayerOrderIsTheValueTheDesignPromises holds the value of the layer order the design promises as the anchor other layers place themselves by.
-func TestTheLayerOrderIsTheValueTheDesignPromises(t *testing.T) {
+// TestTheLayerStageIsTheValueTheDesignPromises holds the stage the design promises as the anchor other layers place themselves by.
+func TestTheLayerStageIsTheValueTheDesignPromises(t *testing.T) {
 	g := testGateway(t, []string{"public"}, basicBackend("static", "static."))
-	if got := g.middlewareFor("public").Order; got != 100 {
-		t.Errorf("Order is %d, want 100", got)
+	if got := g.middlewareFor("public").Stage; got != speedhttp.StageIdentify {
+		t.Errorf("Stage is %v, want the identifying stage", got)
 	}
 }
 

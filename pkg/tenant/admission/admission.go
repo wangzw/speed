@@ -29,7 +29,6 @@ import (
 	"go.opentelemetry.io/otel/attribute"
 	"go.opentelemetry.io/otel/metric"
 
-	"github.com/vislake/speed/pkg/audit"
 	"github.com/vislake/speed/pkg/authn"
 	"github.com/vislake/speed/pkg/config"
 	"github.com/vislake/speed/pkg/core"
@@ -37,7 +36,6 @@ import (
 	speedhttp "github.com/vislake/speed/pkg/http"
 	"github.com/vislake/speed/pkg/log"
 	"github.com/vislake/speed/pkg/observability"
-	"github.com/vislake/speed/pkg/ratelimit"
 	"github.com/vislake/speed/pkg/settings"
 	"github.com/vislake/speed/pkg/tenant"
 )
@@ -55,13 +53,6 @@ const ConfigNamespace = ModuleName
 // diagnostics, which have several writers. It names the capability directory
 // rather than the module, and the module follows it in the line itself.
 const diagnosticPrefix = "tenant: "
-
-// middlewareOrder places this layer where the constraints leave a choice. It is
-// a preference and not a constraint: the After entries of the layer are what
-// put it inside authentication, tenant resolution, the audit capture and rate
-// limiting, so a refused request is audited and counted. The value only decides
-// where the layer lands when none of them is in the assembly.
-const middlewareOrder = 92
 
 // The names of the metric: the counter, the meter it is created on, and the
 // attribute that tells the outcomes apart. A dashboard written against them
@@ -406,13 +397,7 @@ func (l *layer) middlewareFor(endpoint string) speedhttp.Middleware {
 	return speedhttp.Middleware{
 		Name:     ModuleName,
 		Provides: []core.Token{(*tenant.Admission)(nil)},
-		After: []core.Token{
-			(*authn.Gate)(nil),
-			(*tenant.Resolution)(nil),
-			(*audit.Audit)(nil),
-			(*ratelimit.Limiter)(nil),
-		},
-		Order: middlewareOrder,
+		Stage:    speedhttp.StageAuthorize,
 		Handler: func(c *gin.Context) {
 			d := l.decide(c.Request.Context())
 			l.conclude(c, d, realm)

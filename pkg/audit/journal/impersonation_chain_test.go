@@ -31,7 +31,7 @@ func gateStandIn(t *testing.T, opts ...authntest.Option) speedhttp.Middleware {
 	return speedhttp.Middleware{
 		Name:     "gate-stand-in",
 		Provides: []core.Token{(*authn.Gate)(nil)},
-		Order:    middlewareOrder + 100,
+		Stage:    speedhttp.StageIdentify,
 		Handler: func(c *gin.Context) {
 			c.Request = c.Request.WithContext(authntest.Context(t, c.Request.Context(), opts...))
 			c.Next()

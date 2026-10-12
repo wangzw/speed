@@ -7,7 +7,6 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/vislake/speed/pkg/audit"
 	"github.com/vislake/speed/pkg/authn"
 	"github.com/vislake/speed/pkg/core"
 	speedhttp "github.com/vislake/speed/pkg/http"
@@ -304,25 +303,18 @@ func (*hostAdmission) Covers(string) bool { return true }
 type wrapped struct{ *layer }
 
 // TestTheMiddlewareDeclaresWhatTheDesignSays pins the registration: the name,
-// the anchor it stands for, the four layers it sits inside and the preference.
-// The chain cases in live_test.go hold what the entry point makes of it; this
-// holds the declaration itself, which an assembly in which the other layers'
-// constraints imply a position would not tell apart from a shorter one.
+// the anchor it stands for and the stage it declares. The chain cases in
+// live_test.go hold what the entry point makes of it; this holds the
+// declaration itself.
 func TestTheMiddlewareDeclaresWhatTheDesignSays(t *testing.T) {
 	mw := newLayer(resolved{endpoints: []string{"public"}}, newMemberStub()).middlewareFor("public")
-	if mw.Name != "tenant.admission" || mw.Order != 92 || mw.Handler == nil {
-		t.Fatalf("the layer is %q with Order %d, want tenant.admission with Order 92", mw.Name, mw.Order)
+	if mw.Name != "tenant.admission" || mw.Stage != speedhttp.StageAuthorize || mw.Handler == nil {
+		t.Fatalf("the layer is %q in stage %v, want tenant.admission in the authorizing stage", mw.Name, mw.Stage)
 	}
 	if !slices.Equal(mw.Provides, []core.Token{(*tenant.Admission)(nil)}) {
 		t.Fatalf("the layer stands for %v, want the admission anchor alone", mw.Provides)
 	}
-	want := []core.Token{(*authn.Gate)(nil), (*tenant.Resolution)(nil), (*audit.Audit)(nil), (*ratelimit.Limiter)(nil)}
-	if len(mw.After) != len(want) {
-		t.Fatalf("the layer sits inside %v, want exactly %v", mw.After, want)
-	}
-	for _, token := range want {
-		if !slices.Contains(mw.After, token) {
-			t.Errorf("the layer does not sit inside %T", token)
-		}
+	if len(mw.After) != 0 {
+		t.Fatalf("the layer declares the constraints %v, and the stage order supplies its position", mw.After)
 	}
 }

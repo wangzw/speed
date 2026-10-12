@@ -196,9 +196,9 @@ type chain struct {
 	admissionEndpoints string
 	// noAdmission leaves the admission layer out.
 	noAdmission bool
-	// lateOrders gives the audit and rate-limiting stand-ins an Order that
-	// prefers a position inside admission's, so that where they land is the
-	// constraints' doing.
+	// lateOrders makes the audit and rate-limiting stand-ins prefer the inner
+	// edge of their own stage, so that where they land relative to admission is
+	// the stage order's doing rather than a preference.
 	lateOrders bool
 }
 
@@ -277,34 +277,30 @@ func (c chain) run(t *testing.T, use func(s *served)) error {
 			return namedLogger{logger: slog.New(logs)}, nil
 		},
 	})
-	auditOrder, limiterOrder := 95, 0
+	auditPosition, limiterPosition := speedhttp.PositionDefault, speedhttp.PositionDefault
 	if c.lateOrders {
-		auditOrder, limiterOrder = 500, 500
+		auditPosition, limiterPosition = speedhttp.PositionLast, speedhttp.PositionLast
 	}
 	if !c.noAudit {
 		reg.Register(layerModule("audit", "public", speedhttp.Middleware{
 			Provides: []core.Token{(*audit.Audit)(nil)},
-			After:    []core.Token{(*authn.Gate)(nil), (*tenant.Resolution)(nil)},
-			Order:    auditOrder,
+			Stage:    speedhttp.StageRecord,
+			Position: auditPosition,
 		}))
 	}
 	if !c.noLimiter {
 		reg.Register(layerModule("ratelimit", "public", speedhttp.Middleware{
 			Provides: []core.Token{(*ratelimit.Limiter)(nil)},
-			After:    []core.Token{(*authn.Gate)(nil), (*tenant.Resolution)(nil), (*audit.Audit)(nil)},
-			Order:    limiterOrder,
+			Stage:    speedhttp.StageThrottle,
+			Position: limiterPosition,
 		}))
 	}
-	// The authorization layer of the design: it points at the admission anchor
-	// and prefers the outermost position, so that the constraint is the only
-	// thing that puts it inside.
+	// The authorization layer of the design: it shares admission's stage and
+	// points at the admission anchor, so the constraint is what puts it inside.
 	reg.Register(layerModule("authorization", "public", speedhttp.Middleware{
 		Provides: []core.Token{(*authorization)(nil)},
-		After: []core.Token{
-			(*authn.Gate)(nil), (*tenant.Resolution)(nil), (*audit.Audit)(nil),
-			(*tenant.Admission)(nil),
-		},
-		Order: -1000,
+		Stage:    speedhttp.StageAuthorize,
+		After:    []core.Token{(*tenant.Admission)(nil)},
 	}))
 	reg.Register(core.Module{
 		Name: "registrant",
@@ -443,6 +439,14 @@ func chainOf(t *testing.T, logs *recorder, endpoint string) []string {
 		var names []string
 		for _, part := range strings.Split(rec.attrs["chain"], " -> ") {
 			name, _, _ := strings.Cut(part, "(")
+			// The listing prefixes the first layer of a stage with the stage
+			// marker, joined by a space: "[identify] authn.gate".
+			if strings.HasPrefix(name, "[") {
+				_, rest, found := strings.Cut(name, "] ")
+				if found {
+					name = rest
+				}
+			}
 			if name == "http:base" || name == "http:fallback" {
 				continue
 			}
@@ -496,14 +500,15 @@ func TestTheLayerSitsInsideResolutionAuditAndRateLimitingAndOutsideAuthorization
 					t.Errorf("the chain %v does not put admission outside authorization", names)
 				}
 				// The layers that stand outside admission stand in the order
-				// the design gives: the gateway, then resolution, then the
-				// audit capture, then rate limiting.
+				// the stages give: the gateway, then resolution, then rate
+				// limiting in the throttling stage, then the audit capture in
+				// the recording stage inside it.
 				order := []string{"authn.gate", "tenant.resolve"}
-				if !c.noAudit {
-					order = append(order, "audit")
-				}
 				if !c.noLimiter {
 					order = append(order, "ratelimit")
+				}
+				if !c.noAudit {
+					order = append(order, "audit")
 				}
 				for i := 1; i < len(order); i++ {
 					if at(order[i-1]) >= at(order[i]) {
@@ -518,11 +523,12 @@ func TestTheLayerSitsInsideResolutionAuditAndRateLimitingAndOutsideAuthorization
 	}
 }
 
-// TestAConstraintOnAnAbsentLayerIsDropped holds the other half of the design's
-// note about placement: an After entry that no layer on the endpoint stands for
-// places nothing, so an assembly without the audit capture or without rate
-// limiting is not made to carry them, and the entry point says so at Info.
-func TestAConstraintOnAnAbsentLayerIsDropped(t *testing.T) {
+// TestTheStageOrderPlacesAdmissionWithoutTheOuterStages holds the placement in
+// an assembly that leaves out the recording stage and the throttling stage. The
+// stage order alone puts admission inside identity and outside authorization, so
+// the layer keeps that position without a constraint of its own and reports no
+// dropped one.
+func TestTheStageOrderPlacesAdmissionWithoutTheOuterStages(t *testing.T) {
 	err := chain{noAudit: true, noLimiter: true}.run(t, func(s *served) {
 		names := chainOf(t, s.logs, "public")
 		if slices.Contains(names, "audit") || slices.Contains(names, "ratelimit") {
@@ -531,25 +537,12 @@ func TestAConstraintOnAnAbsentLayerIsDropped(t *testing.T) {
 		gateAt, resolveAt := slices.Index(names, "authn.gate"), slices.Index(names, "tenant.resolve")
 		admitAt, authzAt := slices.Index(names, "tenant.admission"), slices.Index(names, "authorization")
 		if gateAt < 0 || gateAt >= resolveAt || resolveAt >= admitAt || admitAt >= authzAt {
-			t.Fatalf("the chain %v does not keep the constraints that do land", names)
+			t.Fatalf("the chain %v does not put admission after identity and before authorization", names)
 		}
-		dropped := map[string]bool{}
 		for _, rec := range s.logs.withMessage("an HTTP middleware constraint landed on no layer") {
-			if rec.attrs["middleware"] != "tenant.admission" {
-				continue
+			if rec.attrs["middleware"] == "tenant.admission" {
+				t.Errorf("the layer reports a dropped constraint %v, and it declares none", rec.attrs)
 			}
-			if rec.level != slog.LevelInfo {
-				t.Errorf("a dropped constraint of the layer is written at %v, want Info: an assembly without audit is legal", rec.level)
-			}
-			dropped[rec.attrs["capability"]] = true
-		}
-		var got []string
-		for capability := range dropped {
-			got = append(got, capability)
-		}
-		slices.Sort(got)
-		if len(got) != 2 || !strings.HasSuffix(got[0], "audit.Audit") || !strings.HasSuffix(got[1], "ratelimit.Limiter") {
-			t.Errorf("the dropped constraints of the layer name %v, want the audit capability and the rate limiter", got)
 		}
 	})
 	if err != nil {
