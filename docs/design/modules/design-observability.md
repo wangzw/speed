@@ -5,7 +5,7 @@
 `pkg/observability` 承载运行期的遥测：追踪与指标两种信号。产品是上游遥测 SDK 的 provider，加上请求路径的采集与一条出站注入工具。
 
 - **交付上游 SDK 的 provider**，追踪与指标各是一个功能，两者由同一个装配器模块排他交付。
-- **请求路径的采集**：以上游 gin 采集库为基座，由它提取父跨度上下文、开始与结束服务端跨度、记请求计量；本模块只补它没有的 panic 处理、日志关联字段与端名属性（[ADR-observability-request-layer-2026-10-11](../../adr/adr-observability-request-layer-2026-10-11.md)、[ADR-observability-instruments-2026-09-22](../../adr/adr-observability-instruments-2026-09-22.md)）。
+- **请求路径的采集**：以上游 gin 采集库为基座，由它提取父跨度上下文、开始与结束服务端跨度、记请求计量；本模块只补它没有的日志关联字段与端名属性（[ADR-observability-request-layer-2026-10-11](../../adr/adr-observability-request-layer-2026-10-11.md)、[ADR-observability-instruments-2026-09-22](../../adr/adr-observability-instruments-2026-09-22.md)）。
 - **出站注入**：把当前跨度上下文按上游的传播格式写进 `net/http` 客户端的出站头部（[ADR-observability-propagation-2026-09-22](../../adr/adr-observability-propagation-2026-09-22.md)）。
 - **导出后端的扩展点**：一个导出目的地是一个模块，交付一个导出器功能（[ADR-observability-packaging-2026-09-22](../../adr/adr-observability-packaging-2026-09-22.md)）。
 
@@ -15,7 +15,7 @@
 
 - **不提供日志这一种信号。** 结构化日志归 [log](design-log.md)。本模块只往日志上下文里绑关联字段，并为自己的失败与配置上的隐患写日志行；不定义日志字段的语义，不拥有日志的装配面。
 - **不接管启动诊断。** 它发生在本模块构造之前，固定写标准错误。
-- **不提供请求路径的 panic 兜底。** 兜底归 [http](design-http.md) 内建。本模块的守护层接住 panic 只为给跨度与计量记错，记完由外层原样重抛，见[采集层的跨度](#采集层的跨度)。
+- **不提供请求路径的 panic 兜底。** 兜底归 [http](design-http.md) 内建。本模块的守护层不接住任何 panic：接住它会吞掉 `http.ErrAbortHandler`，而入口模块的兜底层有意放行那个值，见[采集层的跨度](#采集层的跨度)。
 - **不判定健康。** 就绪与否是装配决策，本模块不提供探活路由，也不定义健康的含义。
 - **不提供拉取式指标端点。** 指标只经配置的导出后端推出，见扩展点。
 - **不提供性能剖析。**
@@ -35,9 +35,9 @@
 | 装配器 | assembler | 构造两个 provider、收取导出器、登记采集层的那个模块（`observability.otel`）。 |
 | 导出后端 | export backend | 交付一个导出器的模块，把信号交给一种目的地（`observability.otlp`、`observability.stdout`）。 |
 | 导出器 | exporter | 上游 SDK 的导出接口的一个实现，由导出后端在 `New` 中构造并交出。 |
-| 采集层 | instrumentation layer | 装配器登记到监听端上的中间件层的合称，由外层与守护层构成：跨度与计量由上游采集库产出，守护层补上它没有的 panic 处理、日志关联字段与端名。 |
-| 外层 | outer layer | 采集层中位于外侧的那一层：上游采集库的中间件，加上在它记录完成后把守护层交来的 panic 值再抛出的一步；在链上代表追踪与指标两个功能。 |
-| 守护层 | guard layer | 采集层中位于外层之内的那一层：接住它之内抛出的 panic，把跨度的标识绑进日志上下文，给跨度写端名；不代表任何功能。 |
+| 采集层 | instrumentation layer | 装配器登记到监听端上的中间件层的合称，由外层与守护层构成：跨度与计量由上游采集库产出，守护层补上它没有的日志关联字段与端名。 |
+| 外层 | outer layer | 采集层中位于外侧的那一层：上游采集库的中间件；在链上代表追踪与指标两个功能。 |
+| 守护层 | guard layer | 采集层中位于外层之内的那一层：把跨度的标识绑进日志上下文，给跨度写端名；不代表任何功能。 |
 | 上游采集库 | upstream gin instrumentation | `go.opentelemetry.io/contrib/instrumentation/github.com/gin-gonic/gin/otelgin`：为 gin 提供服务端跨度与请求计量的中间件，外层以它为基座。 |
 | 转发包装 | forwarding wrapper | 装配器套在导出器外的装饰器：除关闭之外逐方法转发到内层，并在导出失败时写日志行。 |
 
@@ -91,7 +91,7 @@ type Exporters struct {
 
 导出器功能的非排他性正是多目的地并存的机制：装配器把它们全部收下，转发包装逐个套上，一个目的地一个处理器。
 
-**链上锚点用本层实际交付的功能标识**：外层的 `Provides` 取 `[]core.Token{(*observability.TracerProvider)(nil), (*observability.MeterProvider)(nil)}`，不另立一个只在这一层出现的标识；守护层的 `Provides` 为空，以 `After` 指向追踪 provider 的功能标识。理由是 `pkg/http` 不校验 `Middleware.Provides` 与登记方描述符的一致性，也不提供登记方身份（见 [http](design-http.md) 的中间件一节）；用交付标识时，链上出现的名字与模块真交付的东西同源（[ADR-observability-anchor-2026-09-22](../../adr/adr-observability-anchor-2026-09-22.md)）。
+**链上锚点用本层实际交付的功能标识**：外层的 `Provides` 取 `[]core.Token{(*observability.TracerProvider)(nil), (*observability.MeterProvider)(nil)}`，不另立一个只在这一层出现的标识；守护层的 `Provides` 为空，以 `After` 指向追踪 provider 的功能标识；两者同属观测阶段，这条 `After` 因而是阶段内的约束。理由是 `pkg/http` 不校验 `Middleware.Provides` 与登记方描述符的一致性，也不提供登记方身份（见 [http](design-http.md) 的中间件一节）；用交付标识时，链上出现的名字与模块真交付的东西同源（[ADR-observability-anchor-2026-09-22](../../adr/adr-observability-anchor-2026-09-22.md)）。
 
 各实现子包导出自己的模块名常量，配置命名空间的取值与它相同：
 
@@ -173,7 +173,7 @@ classDiagram
     Assembler --> MetricExporter : 经注册表收取
 ```
 
-一次入站请求的处理次序。采集层由外层与守护层构成，位于请求上下文建立那一层与由 `http` 内建的兜底层之内，二者都在 gin 引擎之外；外层与守护层的 `Order` 取负值，偏向外层：认证、租户解析、审计与限流各层的 `Order` 都不小于零，采集层因而排在它们之外。跨度覆盖外层之内的每一层与 handler。panic 在守护层被接住、记入跨度，由外层在上游采集库记录完成后再抛出，落到兜底层。
+一次入站请求的处理次序。采集层由外层与守护层构成，两者都在观测阶段：外层取 `PositionFirst`，是观测阶段最外侧的一层，守护层以 `After` 指向追踪 provider 的功能标识（阶段内的约束）放在它之内。观测阶段是链上各阶段中最外的一个，排在其余各阶段之外，采集层因而包在它们之外；采集层位于请求上下文建立那一层之内、由 `http` 内建的兜底层之外，跨度覆盖外层之内的每一层与 handler。handler 的 panic 由兜底层接住：兜底层位于观测阶段之内、其后的各阶段之外，在采集层看到之前应答 `500`，采集层把它记成一次正常返回、响应是 `500`。
 
 ```mermaid
 sequenceDiagram
@@ -181,6 +181,7 @@ sequenceDiagram
     participant 入口 as http 入口
     participant 外层
     participant 守护 as 守护层
+    participant 兜底 as http 兜底层
     participant 业务 as 业务 handler
     participant 导出 as 转发包装
 
@@ -191,11 +192,13 @@ sequenceDiagram
     外层->>外层: 开始服务端跨度
     外层->>守护: 转交（带跨度的上下文）
     守护->>守护: 写端名属性并把关联字段绑进日志上下文
-    守护->>业务: 转交
-    业务-->>守护: 返回（抛出 panic 时由守护层接住并记入跨度）
+    守护->>兜底: 转交
+    兜底->>业务: 转交
+    业务-->>兜底: 返回（抛出 panic 时由兜底层接住并应答 500）
+    兜底-->>守护: 返回
     守护-->>外层: 返回
     外层->>外层: 记请求计量并结束跨度
-    外层-->>入口: 返回（守护层交来 panic 值时原样重抛）
+    外层-->>入口: 返回
     外层->>导出: 批处理器交出跨度
 ```
 
@@ -346,26 +349,26 @@ type Config struct {
 
 ### 采集层的跨度
 
-采集层在被登记的监听端上由外层与守护层构成，外层位于外侧（[ADR-observability-request-layer-2026-10-11](../../adr/adr-observability-request-layer-2026-10-11.md)）。外层与守护层的 `Order` 都取 `layerOrder`，一个负值，偏向外层，不是保证：认证、租户解析、审计与限流各层的 `Order` 都不小于零，采集层因而包在它们之外，位于请求上下文建立那一层与兜底层的内侧；它因此看得到该端每一条请求，也看得到它之内每一层的耗时。外层在链上代表追踪与指标两个功能，守护层不代表任何功能，以 `After` 指向追踪 provider 的功能标识放在外层之内，不靠与外层相邻（[ADR-observability-anchor-2026-09-22](../../adr/adr-observability-anchor-2026-09-22.md)）。`Order` 只在约束留有余地处取舍：以 `After` 指向追踪 provider 的功能标识、`Order` 小于守护层的层，或 `Order` 与它相等而登记更早的层，落在外层与守护层之间，这样的层里抛出的 panic 不被守护层接住，见[非保证](#非保证)的「位置」一条。
+采集层在被登记的监听端上由外层与守护层构成，外层位于外侧（[ADR-observability-request-layer-2026-10-11](../../adr/adr-observability-request-layer-2026-10-11.md)）。两者都在观测阶段，观测阶段是链上各阶段中最外的一个，排在其余各阶段之外，采集层因而包在它们之外，位于请求上下文建立那一层之内、由 `http` 内建的兜底层之外；它因此看得到该端每一条请求，也看得到它之内每一层的耗时。外层取 `PositionFirst`，是观测阶段最外侧的一层；外层在链上代表追踪与指标两个功能，守护层不代表任何功能，以 `After` 指向追踪 provider 的功能标识放在外层之内，不靠与外层相邻——这条约束是阶段内的（[ADR-observability-anchor-2026-09-22](../../adr/adr-observability-anchor-2026-09-22.md)）。阶段之间的先后由阶段次序给出，阶段内的先后由 `After`、`Before` 与 `Position` 给出：`After` 或 `Before` 指向另一阶段的层时只有与阶段次序一致才成立，不一致由 `pkg/http` 在启动时以 `ErrStageConflict` 拒绝。别的观测层可以落在外层与守护层之间：这样的层在观测阶段之内、位于兜底层之外，它之内抛出的 panic 不被兜底层接住，见[非保证](#非保证)的「位置」一条。
 
-**外层是上游采集库的中间件**，配置的是本模块的 tracer provider、meter provider 与传播器，服务端名留空，上游读作取自请求的 `Host`。它的动作按序如下：
+**外层是上游采集库的中间件**，配置的是本模块的 tracer provider、meter provider 与传播器，服务端名留空，上游读作取自请求的 `Host`。它在观测阶段内取 `PositionFirst`，位于该阶段最外侧。它的动作按序如下：
 
 1. **提取**：用本模块的传播器从入站头部取出父跨度上下文。取不到就当作没有父跨度，请求照常处理。
 2. **开始跨度**：以提取结果（或空上下文）为父，开始一个服务端跨度，名称与开始时带上的属性由上游采集库定，见下。采样器只读父跨度上下文与追踪标识，不读名称与属性。
 3. **转交**：把带跨度的上下文放进请求，调用 `c.Next` 交给其后各层；`c.Next` 返回后，上游采集库把请求的上下文换回进入时的那一个。
 4. **记录与结束**：`c.Next` 返回后，上游采集库按写出者持有的状态码与错误列表定跨度状态与属性，记录[请求计量](#请求计量)的各个直方图，随后结束跨度。
-5. **重抛**：上游采集库返回之后，守护层交来了一个 panic 值时，外层把它原样再抛出。
 
 **守护层**的动作按序如下：
 
 1. **写端名**：跨度写属性 `speed.endpoint.name`，取值是请求到达的端的端名，配置里的端名，集合随配置而定、不随流量。
 2. **绑定关联字段**：把跨度的标识经 `log.WithAttrs` 写回上下文，键名是本模块导出的两个常量。这一步只做绑定，不做注入——日志上下文里的 logger 由产生上下文的那一方注入（见 [log](design-log.md) 的首次注入归属）。
 3. **转交**：把绑好字段的上下文放进请求，调用 `c.Next` 交给其后各层与 handler。
-4. **接住 panic**：它之内抛出的 panic 在这里被接住，并且：给跨度记一个 `exception` 事件，带 panic 值的文本与抛出处的堆栈；把值留给外层；给请求登记一个错误，类型是本模块的 `handlerPanic`，上游采集库据此把跨度标为错误并带上 `error.type`，panic 值不放进这个错误，免得它的文本进入每一个渲染状态描述的系统；响应尚未写出（`c.Writer.Written()` 为假）时把状态置为 `500`，已写出则不动，那个状态已经提交；中止其后的链，使抛出 panic 的那一层之后的层与 handler 不再运行。
 
-响应尚未写出时 panic 穿过，写出者持有的状态是 handler 设过的值或起始的 `200`，按它记会把 panic 的请求记进成功一档，所以守护层把它置为入口模块的兜底层随后会写出的 `500`。
+守护层不接住任何 panic：接住它会吞掉 `http.ErrAbortHandler`——兜底层有意放行的那个值——连接将无从关闭。
 
-**链停下而没有返回、也没有 panic 值，守护层按失败处理。** `recover` 对 `runtime.Goexit` 的展开与 `GODEBUG=panicnil=1` 下的 `panic(nil)` 都返回 `nil`，两者无法区分。守护层以「`c.Next` 已经返回」的标记认出这一档，不把它读成正常返回：`panic(nil)` 照 panic 那一档处理（登记错误、置 `500`、中止其后的链、给跨度记错误），外层再抛一个 `nil`，入口模块的兜底层按「没有 panic 值而 handler 未返回」写自己的那一条记录并应答；`Goexit` 的展开继续向外，外层不会运行，守护层在仍未结束的跨度上设错误状态并记 `exception` 事件，该请求不在任何直方图里（见[非保证](#非保证)）。
+**handler 的 panic 由 `http` 内建的兜底层接住，采集层把它记成一次错误。** 兜底层位于观测阶段之内、其后的各阶段之外，panic 在采集层看到之前被它接住：它给请求登记一个定型的错误（入口模块的 handler 缺陷类型），应答 `500`，并中止其后的链。采集层把这次请求当一次正常返回记：跨度状态为错误，带那个类型的 `error.type` 与 `http.response.status_code` `500`，请求按 `500` 记进时长直方图（[ADR-http-recovery-2026-09-22](../../adr/adr-http-recovery-2026-09-22.md)、[ADR-observability-request-layer-2026-10-11](../../adr/adr-observability-request-layer-2026-10-11.md)）。跨度不带 `exception` 事件——panic 没有穿过跨度的结束；panic 值与堆栈留在兜底层写出的日志记录里。
+
+**链停下而没有返回、也没有 panic 值，由兜底层按失败处理。** `recover` 对 `runtime.Goexit` 的展开与 `GODEBUG=panicnil=1` 下的 `panic(nil)` 都返回 `nil`，两者无法区分；兜底层以「`c.Next` 已经返回」的标记认出这一档，不把它读成正常返回：`panic(nil)` 照 panic 那一档处理，采集层随之把跨度标错、按 `500` 记；`Goexit` 的展开越过采集层而不回到上游采集库，上游采集库只结束跨度，跨度以未标记结束、该请求不在任何直方图里（见[非保证](#非保证)）。
 
 **状态与错误按上游采集库的规则记在跨度上。** 状态码取调用返回时写出者持有的值，原样，不对任何状态码折叠：处理器只设了 1xx（101 除外）就写出响应体时，调用方收到的最终状态是 `200`，写出者持有的仍是那个 1xx，跨度与计量记 1xx，见[非保证](#非保证)。状态码为服务端错误（`5xx`）时跨度标为错误，与 handler 是否抛 panic 无关，有意写出的 `500` 与兜底层写出的一样是本端的失败；客户端错误（`4xx`）是调用方的错，跨度状态不设，这也是上游对服务端跨度的约定。请求的错误列表非空时跨度同样标为错误，状态描述是错误列表的文本，`error.type` 在恰有一个错误时取它的类型、有多个时取 `_OTHER`。错误列表为空而请求的原上下文在处理结束时已被取消（调用方断开）时，跨度标为错误并带该上下文错误的 `error.type`，响应状态码仍是写出者持有的值。
 
@@ -387,11 +390,11 @@ type Config struct {
 
 **采样跟随父跨度。** 采样器以父跨度的决定为先，没有父跨度时才按 `sample-ratio` 判定：带着父跨度的请求照入站头部里的采样标志走，两个方向都是——调用方标记已采样的，采样率为零也记录；标记未采样的，采样率为一也不记录。各进程各按自己的采样率判定，同一条追踪就会在一部分节点上有跨度、另一部分没有，从哪一侧看都是断的。代价落在信任上：本层包在认证之外，入站头部可以由任何调用方写下，调用方因而能让自己的请求被记录或不被记录；`sample-ratio` 约束的只是本进程开始的追踪。
 
-**panic 在守护层被接住，在外层被重抛。** 守护层位于上游采集库之内：上游采集库不接住 panic，穿过它的 panic 不进计量，跨度也不带错误状态，接住它的一层因而必须在它之内（[ADR-observability-request-layer-2026-10-11](../../adr/adr-observability-request-layer-2026-10-11.md)）。接住之后不吞：吞掉它等于取消入口模块的兜底承诺，而写出响应不是采集层的职责，值由外层在上游采集库记录完成后原样再抛出。重抛之所以安全，靠的是入口模块那一层确实在场：兜底层由 [http](design-http.md) 内建、每端唯一，包在采集层之外，外层抛出去的那一次因此落到它手里，而不是落到 `net/http` 的默认处置上——计量里记下的 `500` 是守护层置的状态，与兜底层默认写出的状态码相同。
+**兜底层落在观测阶段之内，判据是观测层要看得到这一次失败。** 兜底层在采集层之内，被接住的 panic 因而以一次正常返回、响应是 `500` 的形式回到采集层，采集层据以记状态码、`error.type` 与时长直方图；它若在采集层之外，panic 会先穿过采集层，一个 `c.Next` 不返回的追踪层的跨度会以无状态结束，并跳过它在调用之后度量的一切（[ADR-http-recovery-2026-09-22](../../adr/adr-http-recovery-2026-09-22.md)、[ADR-observability-request-layer-2026-10-11](../../adr/adr-observability-request-layer-2026-10-11.md)）。
 
-**重抛使兜底层记下的堆栈起于外层的重抛处。** 守护层已经返回，崩溃的那一帧不在栈上；崩溃的位置保存在跨度的 `exception` 事件的 `exception.stacktrace` 上。只读兜底层那一行日志的人看不到崩溃的那一帧，要到跨度上找。
+**崩溃的堆栈在兜底层接住的那一帧取得，跨度不带 `exception` 事件。** 兜底层就在那一步取堆栈，崩溃处及其穿过的各帧仍在栈上，崩溃的位置就在它写出的日志记录里；跨度不带 `exception` 事件，因为 panic 在跨度结束之前已被接住，没有穿过跨度的结束（[ADR-observability-request-layer-2026-10-11](../../adr/adr-observability-request-layer-2026-10-11.md)）。
 
-**本层不包住响应写出者，也不替换 `c.Writer`。** 响应的状态与已写出的字节数从 `c.Writer` 的 `Status` 与 `Size` 读，已写出与否从 `Written` 读；写出者携带的 `Flusher`、`Hijacker` 与 `Unwrap` 原样留在链上，不需要本层转发（见 [http](design-http.md) 的中间件一节）。状态因此是写出者此刻持有的值，除守护层在 panic 时置的 `500` 之外，本层不改它。
+**本层不包住响应写出者，也不替换 `c.Writer`。** 响应的状态与已写出的字节数从 `c.Writer` 的 `Status` 与 `Size` 读，已写出与否从 `Written` 读；写出者携带的 `Flusher`、`Hijacker` 与 `Unwrap` 原样留在链上，不需要本层转发（见 [http](design-http.md) 的中间件一节）。状态因此是写出者此刻持有的值，本层不改它。
 
 ### 请求计量
 
@@ -506,7 +509,7 @@ type Config struct {
 - **存在。** 本模块未被本次命令纳入、也没有预置实例时，两种信号都不存在，没有一层会拦下，也不进启动诊断——诊断不覆盖「已登记而未被本次命令纳入、也没有预置实例」这一档。察觉途径是注册表的按名查询：它对这样的名字给出禁用，原因写明它不在这条命令的参与集里。
 - **宿主为本模块预置的实例不是本模块的产物时，采集层不存在，而注册表答本模块在场。** `Init` 对这样的实例不做任何事（见[关停时的刷出](#关停时的刷出)）：不登记采集层；经那个实例是否还有信号产生，由预置的一方决定。按名查询答启用，查不出这一档。察觉途径是各端组装时写出的链清单里没有采集层。
 - **覆盖面。** 默认的星号覆盖入口模块声明的每一个端，本次运行没有入口模块时它什么也不登记，不失败也不进诊断。清单写了具体端名时，受采集的监听端由名单点名，漏写一个端不失败、不进诊断。察觉途径是各端组装时写出的链清单：漏挂的那一行少一个层名。按名查询的启用结果在这一档上没有判别力——它答的是模块的状态，不是某份声明挂在哪个端上。
-- **位置。** `Order` 是偏好，不是保证。外层不是链上最外层：以 `Before` 指向本功能的层，以及 `Order` 更小而约束已经满足的层，都排在它之外，那一段的耗时与其中抛出的 panic 都不进跨度。守护层按 `After` 放置，不按相邻放置：以 `After` 指向追踪 provider 的功能标识、`Order` 小于守护层的层，或 `Order` 与它相等而登记更早的层，落在外层与守护层之间，这样的层里抛出的 panic 不被守护层接住；它直接穿过上游采集库，跨度带一个不含堆栈的 `exception` 事件而状态不设，请求不进任何直方图，panic 继续到兜底层。察觉途径同上，链清单给出组装后的次序。
+- **位置。** 阶段之间的先后是框架的保证，阶段内的先后是偏好。外层不是链上最外层：`http` 内建的请求上下文、`holdAllow` 与访问日志都排在它之外，那一段的耗时与其中抛出的 panic 都不进跨度。守护层按 `After` 放置，不按相邻放置：别的观测层可以落在外层与守护层之间，这样的层是观测层的、位于兜底层之外，它之内抛出的 panic 不被兜底层接住；它直接穿过上游采集库与引擎抵达 `net/http`，连接被关闭，跨度带一个不含堆栈的 `exception` 事件而状态不设，请求不进任何直方图。察觉途径同上，链清单给出组装后的次序。
 - **采样。** `sample-ratio` 只决定本进程开始的追踪；带父跨度的请求由调用方的采样标志决定，而调用方不经认证即可写下它。一次请求有没有跨度因而不只取决于配置，这一档没有察觉途径。
 - **服务名。** 没有配置 `service-name`，环境变量（`OTEL_SERVICE_NAME`，以及 `OTEL_RESOURCE_ATTRIBUTES` 里的 `service.name`）也没有给出服务名时，服务名是 `unknown_service:<可执行文件名>`：这是上游表示「没有命名」的约定值，同一个可执行文件承载的不同服务在采集端同名。本模块不为这一档写启动说明；察觉途径是采集端看到的服务名带 `unknown_service:` 前缀。
 - **导出。** 零导出后端与零采样率各写一行说明；端点写错主机名在默认配置下不产生任何信号；导出失败只有转发包装写出的首次与恢复两行日志，关停时读数器最后一次导出的失败与 `Close` 里被截断的导出也不例外，而那两行经日志模块的链写出——链本身可以被配置成不输出任何记录。
@@ -514,12 +517,11 @@ type Config struct {
 - **被忽略的标准变量。** 察觉途径只有装配器与 OTLP 导出后端各自在 `New` 里写的那一行告警，它在下列情形缺席：OTLP 导出后端取不到 logger；日志模块的链被配置成不输出告警级的记录；上游升级后新读的变量还不在清单里——在钉住测试读取的上游文件（两个包各自的 `upstreamSources`）里新读的，由 `pkg/observability/otel/upstream_variables_test.go` 与 `pkg/observability/otlp/upstream_variables_test.go` 各自的 `TestNoUpstreamVariableIsLeftOffTheOverriddenList` 在升级时判出，不在运行期判，在这些文件之外新读的判不出；`OTEL_SERVICE_NAME` 与 `OTEL_RESOURCE_ATTRIBUTES` 给出的属性被本模块给出的同名属性覆盖。仍然起作用的上游变量不告警，它们对本模块留给上游的设置有效（见[provider 的构造次序](#provider-的构造次序)与[核心数据结构](#核心数据结构)）。宿主没有声明前缀时，不带前缀的写法（`OBSERVABILITY__OTEL__SERVICE_NAME` 这类）既不被读取，也没有任何一行提示（见[核心数据结构](#核心数据结构)里环境变量来源一段）。
 - **停机。** 刷出排在全部 `Stop` 之后，覆盖不到的是更晚的记录：在本模块之后关闭的模块在自己的 `Close` 里记下的跨度与指标，入口排空超时之后仍在运行的处理函数此后产生的跨度，以及宿主为入口模块预置的、不是它的产物的实例放进来的请求在刷出之后产生的跨度，都不被导出。刷出的上界是两个 provider 与它们各自的导出器共用的一份，一个目的地刷得慢就让其余几个的末批数据一并被取消；采集端不可达时，关停对导出的等待至多到截断点，截断点上仍未送达的跨度与指标被丢弃；导出器无视上下文时，截断够不着它：跨度一侧 `Close` 以超时错误返回，指标一侧关停等到那次导出返回，排在它后面的读数器以超时错误返回，见[关停时的刷出](#关停时的刷出)。
 - **出站传播。** `Transport` 不被任何一层自动接管，未使用它的调用点会让跨进程的链路从客户端一侧断开，不产生信号。
-- **属性不在脱敏覆盖内。** 跨度与指标属性不经日志的处理链；请求计量与服务端跨度的属性取自上游采集库，含请求的路径、`Host` 头给出的主机、客户端地址与 `User-Agent`；请求带有错误时跨度状态描述是错误列表的文本，panic 的 `exception` 事件带 panic 值的文本与堆栈。
-- **handler 调用 `runtime.Goexit` 的请求不在任何直方图里，跨度没有响应状态码。** `Goexit` 的展开穿过守护层而不回到上游采集库，上游采集库只结束跨度，不记录响应与计量；跨度带守护层设的错误状态与 `exception` 事件，不带 `http.response.status_code`，连接被丢弃，兜底层记一行说明。察觉途径是兜底层的那一行记录；计量侧没有。
-- **panic 请求的状态码按 `500` 记。** 响应尚未写出时 panic 穿过，守护层把写出者的状态置为 `500`，上游采集库按它记，与兜底层默认写出的状态码相同。交付了 `ErrorResponder` 的模块须按 `Problem.Status` 写出状态码（见 [http](design-http.md) 的错误响应），这条义务由交付者履行，守护层看不到它是否履行：交付者写出了别的状态码时，计量与跨度里仍是 `500`，与调用方实际收到的不一致，且这一档没有察觉途径。响应已经写出时，记的是已提交的状态码。
-- **handler 有意放弃的连接被记成一次缺陷。** handler 用 `net/http` 的 `ErrAbortHandler` 放弃连接时，入口模块内建的兜底层认得那个值、原样抛出，既不写响应也不记一行（见 [http](design-http.md) 的兜底层）；守护层在它之内，读不到这个区分，于是照着 panic 那一档处理——跨度标错、计量记下 `500`，对应的是调用方从未收到的响应。这一档同样没有察觉途径。
-- **panic 请求的兜底日志堆栈起于外层的重抛处。** 外层在守护层返回之后重抛，崩溃的那一帧不在栈上，入口模块的兜底层记下的那一行（见 [http](design-http.md) 的兜底层）因而不指向崩溃的位置；位置保存在跨度的 `exception` 事件的 `exception.stacktrace` 上。该请求未被采样，或没有导出后端时，跨度不被导出，崩溃的位置就没有留存。
-- **请求计量与服务端跨度的行为是上游采集库的，本模块不修补。** 不加 View，不包装 `c.Writer`，不覆盖跨度名的格式化，因此：没有写出响应体的请求（空 `200`、`204`、panic 的请求）在响应体大小直方图里记 `-1`，该直方图的总和可以为负，长度未知的请求在请求体大小直方图里同样记 `-1`，服务端跨度此时不带 `http.response.body.size`；没有匹配路由的请求，服务端跨度带取值为空串的 `http.route`，计量不带该属性；非标准方法在跨度名里写作 `HTTP`，在 `http.request.method` 属性里写作 `_OTHER`；请求体大小与响应体大小的直方图与请求时长的直方图一并导出；跨度与计量的仪器作用域名是上游采集库的，不是本模块的；处理器只设了 1xx（101 除外）就写出响应体时，计量与跨度记那个 1xx，而调用方收到的是 `200`；`server.address` 取自调用方可写的 `Host` 头。察觉途径只有读上游采集库的源码与它的发布说明，上游采集库换版可以改变其中任何一项（[ADR-observability-request-layer-2026-10-11](../../adr/adr-observability-request-layer-2026-10-11.md)）。
+- **属性不在脱敏覆盖内。** 跨度与指标属性不经日志的处理链；请求计量与服务端跨度的属性取自上游采集库，含请求的路径、`Host` 头给出的主机、客户端地址与 `User-Agent`；请求带有错误时跨度状态描述是错误列表的文本。panic 的值与堆栈只进兜底层的日志记录，不进跨度。
+- **handler 调用 `runtime.Goexit` 的请求不在任何直方图里，跨度以未标记结束。** `Goexit` 的展开越过采集层而不回到上游采集库，上游采集库只结束跨度，不记录响应与计量；跨度不带本模块设的状态、不带 `http.response.status_code`，连接被丢弃，兜底层记一行说明。这是一条真缺陷，跨度不显示它。察觉途径是兜底层的那一行记录；计量侧没有。
+- **panic 请求的状态码取兜底层应答的状态。** 兜底层在响应尚未写出时以状态码 `500` 应答，上游采集库按写出者的状态记 `500`；响应已经写出时，记的是已提交的状态码，兜底层不改动它。交付了 `ErrorResponder` 的模块须按 `Problem.Status` 写出状态码（见 [http](design-http.md) 的错误响应），交付者写出了别的状态码时，计量与跨度里是写出者实际持有的值，与兜底层应答的不一致，且这一档没有察觉途径。
+- **handler 有意放弃的连接不被记成一次缺陷。** handler 用 `net/http` 的 `ErrAbortHandler` 放弃连接时，兜底层认得那个值、原样放行，既不写响应也不记一行（见 [http](design-http.md) 的兜底层）；展开越过采集层而不回到上游采集库，跨度以未标记结束、该请求不在任何直方图里，与 handler 调用 `runtime.Goexit` 的那一档相同。客户端主动断开时如此是应当的。
+- **请求计量与服务端跨度的行为是上游采集库的，本模块不修补。** 不加 View，不包装 `c.Writer`，不覆盖跨度名的格式化，因此：没有写出响应体的请求（空 `200`、`204`）在响应体大小直方图里记 `-1`，该直方图的总和可以为负，长度未知的请求在请求体大小直方图里同样记 `-1`，服务端跨度此时不带 `http.response.body.size`；没有匹配路由的请求，服务端跨度带取值为空串的 `http.route`，计量不带该属性；非标准方法在跨度名里写作 `HTTP`，在 `http.request.method` 属性里写作 `_OTHER`；请求体大小与响应体大小的直方图与请求时长的直方图一并导出；跨度与计量的仪器作用域名是上游采集库的，不是本模块的；处理器只设了 1xx（101 除外）就写出响应体时，计量与跨度记那个 1xx，而调用方收到的是 `200`；`server.address` 取自调用方可写的 `Host` 头。察觉途径只有读上游采集库的源码与它的发布说明，上游采集库换版可以改变其中任何一项（[ADR-observability-request-layer-2026-10-11](../../adr/adr-observability-request-layer-2026-10-11.md)）。
 - **锚点的一致性。** 链上某一层声称代表的功能，与它所属模块真交付的功能之间没有校验：`pkg/http` 不校验，注册表看的是描述符自己的交付声明。两者不一致时没有任何一层会报。
 
 ## 并发与事务边界
@@ -552,7 +554,7 @@ type Config struct {
 | provider 的构造、资源与导出器的释放 | 已实现 | `pkg/observability/otel/providers.go` `newProviders`、`newResource`、`layered`、`newInstanceID`、`queueSize`、`releaseExporters`、`releaseTimeout`、`exportCutoff`、`cutoffMarginDivisor` |
 | 被忽略的标准变量的告警 | 已实现 | `pkg/observability/otel/variables.go` `overriddenVariables`、`ignoredVariables`、`warnIgnoredVariables`、`pkg/observability/otlp/variables.go` `overriddenVariables`、`ignoredVariables`、`warnIgnoredVariables` |
 | 转发包装、导出失败的上报、停机时的截断与关闭的截留 | 已实现 | `pkg/observability/otel/wrapper.go` `spanExporter`、`metricExporter`、`cutoff`、`notifier` |
-| 请求路径的采集层 | 已实现 | `pkg/observability/otel/layer.go` `(*providers).layers`、`attach`、`instrumentation`、`guard`、`handlerPanic`、`layerOrder`、`attrEndpointName` |
+| 请求路径的采集层 | 已实现 | `pkg/observability/otel/layer.go` `(*providers).layers`、`attach`、`instrumentation`、`guard`、`attrEndpointName` |
 | 请求计量 | 已实现 | 由上游采集库产出，`pkg/observability/otel/layer.go` `(*providers).instrumentation` 交给它 tracer provider、meter provider 与传播器；名称、单位与桶边界的钉住见 `pkg/observability/otel/layer_test.go` `TestTheRequestDurationBucketsAreInSeconds`、`TestTheRequestDurationInstrumentKeepsItsNameUnitAndSeconds` |
 | 配置声明与解读 | 已实现 | `pkg/observability/otel/config.go` `Config`、`schema`、`pkg/observability/otlp/otlp.go` `Config`、`read`、`validateEndpoint`、`headerMap`、`loadTLS`、`tlsMaterial`、`pkg/observability/stdout/stdout.go` `Config` |
 | OTLP 导出后端 | 已实现 | `pkg/observability/otlp/exporters.go` `newExporters`、`warnPlaintextHeaders`、`loopbackHost`、`build`、`clientTLS`、`probe`、`dialAddress` |

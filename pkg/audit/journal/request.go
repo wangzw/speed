@@ -60,8 +60,8 @@ func (j *journal) middlewareFor(endpoint string) speedhttp.Middleware {
 				// and a status code would be a guess. Nothing is recovered, so
 				// whatever is unwinding the stack goes on exactly as it was: this
 				// layer's job is to record what happened, not to change what
-				// happens. The entry point's fallback, outside the engine,
-				// answers it.
+				// happens. The entry point's recovery layer, which sits outside
+				// this one and inside the observe stage, answers it.
 				if !returned {
 					j.recordRequest(r, endpoint, route, panicOutcome)
 				}
