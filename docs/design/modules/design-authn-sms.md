@@ -2,7 +2,7 @@
 
 ## 职责
 
-本模块持有短信验证码的**全部状态机**：写挑战行、发放预算、尝试次数、消费、入队与发送。短信验证码按用途区分，用途是封闭集：`login`（作第一因素）、`mfa`（作第二因素）、`enroll`（登记手机或短信因素时证明号码归属）。各用途对挑战的要求相同：一次性消费、尝试次数上限、发送预算，所以挑战状态只有一处持有，使用方是 `authn.login.sms`（用途 `login`）、`authn.mfa.sms`（用途 `mfa`、`enroll`）与登录引擎的手机号验证路由（用途 `enroll`），它们不持有挑战状态（[ADR-authn-sms-2026-10-10](../../adr/adr-authn-sms-2026-10-10.md)）。
+本模块持有短信验证码的**全部状态机**：写挑战行、发放预算、尝试次数、消费、入队与发送。短信验证码按用途区分，用途是封闭集：`login`（作第一因素）、`mfa`（作第二因素）、`enroll`（登记手机或短信因素时证明号码归属）。各用途对挑战的要求相同：一次性消费、尝试次数上限、发送预算，所以挑战状态只有一处持有，使用方是 `authn.login.sms`（用途 `login`）、`authn.mfa.sms`（用途 `mfa`）与登录引擎的手机号验证路由（用途 `enroll`），它们不持有挑战状态（[ADR-authn-sms-2026-10-10](../../adr/adr-authn-sms-2026-10-10.md)）。
 
 本功能包括下列部分：
 
@@ -37,9 +37,9 @@
 
 | 包 | 模块名 | 交付 | 排他 | 构造期依赖 | 其余取用（缺席合法） | 表 |
 |---|---|---|---|---|---|---|
-| `pkg/authn/sms` | `authn.sms` | `SMSCodes`；`AccountLifecycle` | `SMSCodes` 排他 | `db.Database`、`SMSSender` | `settings.Store`、`event.Bus`、`audit.Audit` | `authn_challenges` |
-| `pkg/authn/sms/aliyun` | `authn.sms.aliyun` | `SMSSender` | 排他 | 无 | 无 | 无 |
-| `pkg/authn/sms/tencent` | `authn.sms.tencent` | `SMSSender` | 排他 | 无 | 无 | 无 |
+| `pkg/authn/sms` | `authn.sms` | `SMSCodes`；`AccountLifecycle` | `SMSCodes` 排他 | `db.Database`、`SMSSender` | `settings.Store`、`event.Bus`、`audit.Audit`、`log.Logger` | `authn_challenges` |
+| `pkg/authn/sms/aliyun` | `authn.sms.aliyun` | `SMSSender` | 排他 | 无 | `log.Logger` | 无 |
+| `pkg/authn/sms/tencent` | `authn.sms.tencent` | `SMSSender` | 排他 | 无 | `log.Logger` | 无 |
 
 `SMSCodes` 与 `SMSSender` 的接口定义在 `pkg/authn` 根包，根包自身不登记模块。每个登记模块的包导出 `ModuleName`，配置命名空间取同一个取值。阿里云与腾讯云是厂商适配的封闭集；`authn.sms.aliyun` 与 `authn.sms.tencent` 同时纳入时，在消解阶段以排他冲突失败，宿主选其一。每个适配叶子包整个撤掉而不影响其他模块。
 
@@ -67,7 +67,7 @@ type SMSSender interface {
 `SMSSender` 的实现受以下约束，约束的主体是每个交付 `SMSSender` 的模块：
 
 - 响应 `ctx`；任何一次调用都不在适配层内重试。
-- 对同一个 `DedupeID` 至多调用厂商一次。
+- 对同一个 `DedupeID` 至多调用厂商一次：适配层记住它已发过的标识（有界），重复者返回首次的结果，不作第二次厂商调用。
 - 把厂商的响应与错误归入 `ErrSMSThrottled`、`ErrSMSRejected`、`ErrSMSUncertain` 之一；没有明确归入 `ErrSMSThrottled` 或 `ErrSMSRejected` 的错误，与全部超时、网络错误，一律归 `ErrSMSUncertain`。
 - `Params` 里的验证码与厂商凭据不写日志、不进错误文本、不进指标属性。
 - 构造期核对 `templates` 覆盖（用途，语言）的全部组合，缺任何一个组合即 `ErrInvalidConfig`。
@@ -117,7 +117,7 @@ type SMSCodes interface {
 | 设置，`authn.sms` | `global-hourly-login`、`global-hourly-mfa`、`global-hourly-enroll` | 按用途分设的全局每小时上限 |
 | 设置，`authn.sms` | `per-flow-sends`、`per-account-hourly` | 每流程发送上限（由调用方核对）与每账户每小时上限（只对 `mfa`、`enroll` 计） |
 
-这些键由本模块声明，读它们的是使用方。本模块尚未实现，在其落地之前：`code-ttl` 与 `resend-interval` 由登录模块的手机号自助路由读（构成记录的有效期与应答里的 `resend_after`，见 [design-authn-login](design-authn-login.md) 的「手机号验证」），`per-flow-sends` 由登录引擎读（构成交给方法与因素的 `SendsLeft`），各经设置存储从全局层读，读取出错或取值越出取值域时取声明的缺省。本模块落地后这些键由本模块读。
+这些键由本模块声明。除 `per-flow-sends` 外，各键由本模块读；`code-ttl` 与 `resend-interval` 另由登录模块的手机号自助路由读（构成记录的有效期与应答里的 `resend_after`，见 [design-authn-login](design-authn-login.md) 的「手机号验证」），`per-flow-sends` 由登录引擎读（构成交给方法与因素的 `SendsLeft`）。各键经设置存储从全局层读，读取出错或取值越出取值域时取声明的缺省。
 
 `allowed-prefixes` 与预算项是设置，改到更宽松的取值时，本模块写一行 `Warn` 并经审计接缝记一条尽力档记录，事前不拦（[ADR-authn-settings-and-secrets-2026-10-10](../../adr/adr-authn-settings-and-secrets-2026-10-10.md)）。
 
@@ -356,7 +356,7 @@ flowchart TD
 | 用途 | 使用方 | 退避范围与键 | 判据 |
 |---|---|---|---|
 | `login` | `authn.login.sms` | `ScopePhone`，键为规范化 E.164 号码的 SHA-256 十六进制 | 登录时没有账户也没有因素标识，号码是唯一稳定的键 |
-| `enroll` | `authn.mfa.sms` 与登录引擎的手机号验证路由 | `ScopePhone`，键同上 | 登记时因素尚未存在，同样只有号码可作键 |
+| `enroll` | 登录引擎的手机号验证路由 | `ScopePhone`，键同上 | 登记时因素尚未存在，同样只有号码可作键 |
 | `mfa` | `authn.mfa.sms` | `ScopeFactor`，键为因素标识，由 `authn.mfa` 的统一收口施加 | 因素标识在发码前已确定；不另计 `ScopePhone`，使登录一侧对号码的错误提交不锁住已通过第一因素的第二因素 |
 
 施加的次序是：`Verify` 之前 `Throttle.Check`，退避中不调用 `Verify`；`Verify` 返回 `ErrInvalidCredentials` 时 `Throttle.Fail`，返回 `nil` 时 `Throttle.Succeed`。对 `Deliver` 为假的挑战同样施加：使用方不区分行的真假，所以未登记号码与已登记号码的退避累计路径一致。`Verify` 返回 `ErrUnavailable` 时既不 `Fail` 也不 `Succeed`。
@@ -399,13 +399,13 @@ flowchart TD
 | 项 | 阿里云 `authn.sms.aliyun` | 腾讯云 `authn.sms.tencent` |
 |---|---|---|
 | SDK | `github.com/alibabacloud-go/dysmsapi-20170525/v5` | `github.com/tencentcloud/tencentcloud-sdk-go/tencentcloud/sms/v20210111` |
-| 调用 | `SendSmsWithContext` | `SendSmsWithContext` |
+| 调用 | `SendSmsWithOptions`（`ctx` 由适配层用 `select` 等待响应） | `SendSmsWithContext` |
 | 请求字段 | `SignName`、`TemplateCode`、`TemplateParam`（`Params` 的 JSON） | `SignName`、`TemplateId`、`TemplateParamSet`（位置参数，按 `code`、`ttl_minutes` 的次序） |
 | 归 `ErrSMSThrottled` | 没有已核实的错误码 | `LimitExceeded.*` 错误码 |
 | 归 `ErrSMSRejected` | 没有已核实的错误码 | `TemplateParamSetNotMatchApprovedTemplate` |
 | 归 `ErrSMSUncertain` | 超时、网络错误与全部错误码 | 超时、网络错误与表中未列出的错误码 |
 
-两家 SDK 的发送调用都不幂等，超时之后调用方无从知道短信是否已发出，所以超时归 `ErrSMSUncertain`，适配层从不重试。阿里云的错误码到 `ErrSMSThrottled`、`ErrSMSRejected` 的归类未经核实（见「假设与守住它们的测试」），在核实之前阿里云适配把全部错误码归 `ErrSMSUncertain`：这个方向只多计一次预算、不盲目重发，不会把未确认的失败当作确定的限流或拒绝。国内厂商只收预先审核通过的签名加模板，不收自由文本，模板按语言分别审核，所以语言是模板的一个维度。
+两家 SDK 的发送调用都不幂等，超时之后调用方无从知道短信是否已发出，所以超时归 `ErrSMSUncertain`，适配层从不重试。阿里云的错误码到 `ErrSMSThrottled`、`ErrSMSRejected` 的归类未经核实（见「假设与守住它们的测试」），在核实之前阿里云适配把全部错误码归 `ErrSMSUncertain`：这个方向只多计一次预算、不盲目重发，不会把未确认的失败当作确定的限流或拒绝。国内厂商只收预先审核通过的签名加模板，不收自由文本，模板按语言分别审核，所以语言是模板的一个维度。腾讯云的接入点由配置的 `region` 推出（SDK 按地域选定），没有单独的接入点配置项；阿里云另有 `authn.sms.aliyun.endpoint`，可指向地域或网关接入点。
 
 ### 账户生命周期与清扫
 
@@ -413,7 +413,7 @@ flowchart TD
 - **`AccountDeleted`**：删除该账户的挑战行（`account_id` 非空的 `mfa`、`enroll` 行）；`login` 行不带账户，由清扫回收，号码本身不在表里留存。幂等：没有行可删时返回 `nil`。
 - **`ServiceSecretRevoked`**：与短信无关，返回 `nil`。
 - **事件补偿。** `event.Bus` 在场时，本模块在 `Init` 里订阅 `authn.account.deleted`，按 `Event.ID` 去重，处理函数幂等，重做 `AccountDeleted` 的清理。钩子失败计入 `authn.cleanup.failures`（`hook` 取 `sms`）。钩子是同步的清理，事件是补偿，两者都不是正确性的底线：校验后端每次建立身份时另行核对账户状态与 `valid_after`，残留的挑战行不能单独换出身份（[ADR-authn-account-lifecycle-2026-10-10](../../adr/adr-authn-account-lifecycle-2026-10-10.md)）。
-- **清扫。** 本模块是 `authn_challenges` 的持有者，在 `Start` 起一个有界协程，每 10 分钟一轮，删除 `created_at` 早于当前时刻 25 小时的行。25 小时是预算统计窗口的最长一日加一小时余量，所以窗口内的行不会被提前清走、预算不会少计。一轮以一批至多 1000 行为单位（`DELETE … WHERE id IN (SELECT id … LIMIT 1000)`，各方言通用）连续删到不足一批为止；每个副本都跑，条件删除互不冲突；`Stop` 以自带的 5 秒为界等它退出。全部清扫表见 [design-authn-account](design-authn-account.md)。
+- **清扫。** 本模块是 `authn_challenges` 的持有者，在 `Start` 起一个有界协程，每 10 分钟一轮，删除 `expires_at` 早于当前时刻 25 小时的行。行在写入时取 `expires_at`，它与 `created_at` 的差就是该行的有效期（至多 10 分钟），远小于 25 小时相对最长一日窗口（24 小时）的一小时余量，所以窗口内的行不会被提前清走、预算不会少计；清扫走 `expires_at` 上的索引，不受 `(phone_mac, created_at)` 的前缀限制。一轮以一批至多 1000 行为单位（`DELETE … WHERE id IN (SELECT id … LIMIT 1000)`，各方言通用）连续删到不足一批为止；每个副本都跑，条件删除互不冲突；`Stop` 以自带的 5 秒为界等它退出。全部清扫表见 [design-authn-account](design-authn-account.md)。
 
 ## 错误与失败语义
 
@@ -485,15 +485,15 @@ flowchart TD
 
 ## 实现状态
 
-`pkg/authn` 下没有 `sms` 目录，根包没有 `SMSSender` 与 `SMS`。
+`pkg/authn/sms` 交付发送引擎与两个厂商适配；根包的接口、数据类型与哨兵已就位。
 
 | 能力 | 状态 | 代码 |
 |---|---|---|
-| 根包接口：`SMSCodes`、`SMSSender`、`SendCode`、`SMS` 与短信哨兵 | 部分实现 — 缺 `SMSSender` 与 `SMS`；其余已在 | `pkg/authn/sms.go` `SMSCodes`；`pkg/authn/internal/model/sms.go` `SendCode`；`pkg/authn/errors.go` `ErrUnsupportedRegion`、`ErrSMSThrottled`、`ErrSMSRejected`、`ErrSMSUncertain` |
-| `authn.sms` 引擎：挑战状态机、预算、抑制行 | 未实现 | — |
-| `authn_challenges` 迁移集 | 未实现 | — |
-| 发送工作池 | 未实现 | — |
-| `AccountLifecycle` 钩子与事件补偿 | 未实现 | — |
-| `authn_challenges` 清扫 | 未实现 | — |
-| 阿里云适配 `authn.sms.aliyun` | 未实现 | — |
-| 腾讯云适配 `authn.sms.tencent` | 未实现 | — |
+| 根包接口：`SMSCodes`、`SMSSender`、`SendCode`、`SMS` 与短信哨兵 | 已实现 | `pkg/authn/sms.go` `SMSCodes`、`SMSSender`、`SMS`、`SendReceipt`；`pkg/authn/internal/model/sms.go` `SendCode`；`pkg/authn/errors.go` `ErrUnsupportedRegion`、`ErrSMSThrottled`、`ErrSMSRejected`、`ErrSMSUncertain` |
+| `authn.sms` 引擎：挑战状态机、预算、抑制行 | 已实现 | `pkg/authn/sms/send.go`、`verify.go`、`register.go`、`config.go`、`module.go` |
+| `authn_challenges` 迁移集 | 已实现 | `pkg/authn/sms/migrations/postgres/0001_authn_challenges.sql`、`migrations/sqlite/0001_authn_challenges.sql` |
+| 发送工作池 | 已实现 | `pkg/authn/sms/pool.go` |
+| `AccountLifecycle` 钩子与事件补偿 | 已实现 | `pkg/authn/sms/lifecycle.go`、`subscribe.go` |
+| `authn_challenges` 清扫 | 已实现 | `pkg/authn/sms/sweep.go` |
+| 阿里云适配 `authn.sms.aliyun` | 已实现 | `pkg/authn/sms/aliyun/aliyun.go`、`config.go` |
+| 腾讯云适配 `authn.sms.tencent` | 已实现 | `pkg/authn/sms/tencent/tencent.go`、`classify.go`、`config.go` |

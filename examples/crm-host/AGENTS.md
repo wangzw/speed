@@ -41,7 +41,7 @@ claim there has its case in `e2e_test.go` or a slice's own test file, or in
 
 | File | What it holds |
 |---|---|
-| `main.go` | The package comment, the stack table and the command tree, with the platform modules each command runs, the identity system's own modules among them. |
+| `main.go` | The package comment, the stack table and the command tree, with the platform modules each command runs, the identity system's own modules among them; and the `factor-gate` module, the one route of which `authn/guard` protects. |
 | `host.go` | The host identity (prefix `CRM`) and the endpoint names. |
 | `application.go` | The registration table every host module goes through, the migration tree helper every module's migrations use, the release records, the error body, the route and request-body helpers, identifiers. |
 | `decider.go` | The host's `authn.Decider`: it allows the platform operator a management action and refuses `authn.tenant.access` whatever the actor, so an operator stays a stranger to every tenant until a permission model is written. |
@@ -377,11 +377,27 @@ through; `authn.account` is the account store and delivers the account reads and
 writes, the password capability, the membership store and the failure back-off;
 `authn.session` is the session store and the cookie backend; `authn.login` and
 `authn.login.password` are the login flow and its password method; `authn.mfa`
-is the factor register and policy; `authn.token` is the access and refresh
+is the factor register and policy, and `authn.mfa.totp` and `authn.mfa.webauthn`
+are the two factor kinds it drives — a code an authenticator app generates from
+a seed, and an authenticator-bound credential that is also the `passkey` login
+method; `authn.token` is the access and refresh
 tokens and registers the bearer verifier; `tenant.admission` holds the member
 check on the API endpoint; `authz` (this host's `decider.go`) is the decision
 seam. Every one of them is named, since the dependency closure never picks an
 exclusive provider.
+
+`pkg/authn/guard` is the step-up middleware, and it registers no module: its
+presence is a call site. `main.go`'s `factor-gate` module mounts one route with
+it, `GET /security-summary` on the account endpoint, which asks a multi-factor
+identity proved here and fresh within ten minutes and answers a request that
+falls short with RFC 9470's `insufficient_user_authentication`, `acr_values` and
+`max_age`. It is the host's one route that adds a requirement of its own ahead
+of the handler, past the gateway's.
+
+The SMS family (`authn.sms`, `sms.aliyun`, `sms.tencent`, `authn.login.sms`,
+`authn.mfa.sms`) is not taken in. A provider adapter needs real credentials and
+outbound egress, so each module is covered by its own tests over a fake sender,
+and the host configures nothing for them.
 
 What this means for a slice:
 
@@ -406,6 +422,14 @@ What this means for a slice:
   `Public`. The signing key comes from a file the configuration names, and the
   module refuses to start with no key: the token tests mint one with
   `token.GenerateKey` into the case's directory.
+- **A second factor is registered through the login engine and then required.**
+  `POST /auth/flows/authenticated` with `purpose: enroll` and `input.kind: totp`
+  begins a TOTP registration; the reply's `next.options.otpauth_uri` carries the
+  seed once, and answering the confirmation code makes the factor active. A
+  password login on an account that has a factor stops at `next.kind: factor` and
+  needs the code before the session is complete. `GET /security-summary` is the
+  host's factor-gated route: `authn/guard` in front of it admits a multi-factor
+  session and answers a single-factor one with the step-up 401.
 - **The membership check is `tenant.admission`.** A caller that is not a member
   of the tenant its request names is answered the same 404 as an unknown tenant;
   the host keeps only the role (`member_roles`), which admission does not know.

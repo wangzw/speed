@@ -389,8 +389,8 @@ flowchart LR
 | 登录会话、cookie 与 CSRF 的对策 | 已实现 — 会话行与撤销、cookie 属性随网关地址、跨源检查经 `Mounter` 施加 | `pkg/authn/session/sessions.go`、`pkg/authn/session/verify.go`；`pkg/authn/session/config.go`；`pkg/authn/internal/mount/wrap.go` `Wrap` |
 | 访问令牌、刷新令牌轮换与重用检测、签名密钥轮换 | 已实现 — 访问令牌的校验次序、刷新令牌的轮换与重用即整族撤销、两相密钥轮换与 JWKS 发布都已在，含 `TestAKeyRotationRollsOverInTwoPhases` 的轮换演练与各负向向量 | `pkg/authn/token/verify.go` `Verify`、`Accepts`；`pkg/authn/token/refresh.go` `Refresh`、`rotate`、`revokeFamily`；`pkg/authn/token/keys.go` `loadKeySet`、`GenerateKey`；`pkg/authn/token/jwks.go` `JWKS` |
 | 登录流程绑定、`state`、PKCE、`nonce`、`return_to` 校验 | 部分实现 — 流程令牌的绑定、比较并交换与 `return_to` 校验已在；缺 `state`、PKCE、`nonce`（随社交与 OIDC 登录方式） | `pkg/authn/login/flow.go`、`pkg/authn/login/engine.go` |
-| 多因素的保障等级合成与账户安全类操作的因素门槛 | 部分实现 — 唯一的保障等级合成、新鲜度判据与账户安全类动作的门槛已在；缺 TOTP、WebAuthn 因素与 `guard.Require` | `pkg/authn/mfa/policy.go` `Assurance`、`Require`；`pkg/authn/mfa/routes.go` |
-| 短信的预算、抑制行与号码前缀白名单 | 未实现 | — |
+| 多因素的保障等级合成与账户安全类操作的因素门槛 | 已实现 — 唯一的保障等级合成、新鲜度判据、账户安全类动作的门槛与三种因素（TOTP、短信、WebAuthn）及 `guard.Require` 都已在 | `pkg/authn/mfa/policy.go` `Assurance`、`Require`；`pkg/authn/mfa/routes.go`；`pkg/authn/mfa/totp`、`pkg/authn/mfa/sms`、`pkg/authn/mfa/webauthn`；`pkg/authn/guard/guard.go` |
+| 短信的预算、抑制行与号码前缀白名单 | 已实现 | `pkg/authn/sms/send.go`、`verify.go`、`register.go`；`pkg/authn/sms/settings.go` |
 | 企业 SSO 的断言补充校验、SHA-1 预扫描与受限出站客户端 | 部分实现 — 缺断言补充校验与 SHA-1 预扫描；受限出站客户端已在，追踪头的注入留给调用方 | `pkg/authn/internal/egress/egress.go` `New`；`pkg/authn/internal/egress/address.go` `Permitted` |
 | 冒充的结构性限制、租户范围与审计先于动作 | 未实现 | — |
 | 判定接缝 `Decider` 与管理面的强制审计 | 部分实现 — `Decider` 接缝已在；缺管理面的强制审计 | `pkg/authn/decide.go` `Decider` |

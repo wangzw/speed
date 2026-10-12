@@ -195,3 +195,18 @@ func (r *routes) fail(c *gin.Context, err error) {
 		mount.Unavailable(c)
 	}
 }
+
+// refusedStep answers a first-factor method's refusal. A refusal is a credential
+// that did not hold, which is login-failed, except for the two causes the design
+// answers as a 400: a phone prefix the deployment does not allow, and an
+// identifier that cannot name an account. The cause goes to no body.
+func (r *routes) refusedStep(c *gin.Context, cause error) {
+	switch {
+	case errors.Is(cause, authn.ErrUnsupportedRegion):
+		mount.Fail(c, mount.CodeUnsupportedRegion)
+	case errors.Is(cause, authn.ErrInvalidIdentifier):
+		mount.Fail(c, mount.CodeBadRequest)
+	default:
+		mount.Unauthorized(c, r.endpoint, mount.CodeLoginFailed)
+	}
+}

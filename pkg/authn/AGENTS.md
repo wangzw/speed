@@ -338,6 +338,29 @@ here must not cross, and how to run it.
   the files that build for the platform and tags of the run. A new host module
   added without one is not covered.
 
+## The seams
+
+The root package declares the capability interfaces a module, a host or a vendor
+leaf implements — the seams — and registers no module of its own, which is the
+first boundary above. A seam's method set and the value types it names are a
+stable contract: a method added, dropped or re-signed, or a field of one of those
+types renamed, is a breaking change for every implementer and every consumer.
+`seams_test.go` holds each method set it lists to the design's signature and
+`surface_test.go` pins the exported fields and methods. The closed sets a seam
+reads — the SMS purposes and the sentinel errors — live in this package beside
+it; the locale values are a closed set documented on the `SMS.Locale` and
+`SendCode.Locale` fields rather than declared here. How a module delivers a seam
+and how a consumer takes it are stated in the module's own `AGENTS.md`, not here.
+
+`SMSSender` is the SMS sending seam: `SMS` is what a send carries, `SendReceipt`
+is what a carrier answers with, and `ErrSMSThrottled`, `ErrSMSRejected` and
+`ErrSMSUncertain` are the errors a carrier may return. A carrier module
+(`pkg/authn/sms/aliyun`, `pkg/authn/sms/tencent`) delivers it exclusively, so a
+command tree names exactly one and two at once fail in resolution. It is therefore
+one of the exclusive seams, taken by its consumer as a single required dependency,
+and not one of the standing, non-exclusive seams a consumer takes from every
+provider at once with `ResolveAll`.
+
 ## Shape of a backend
 
 A backend is a module that delivers `Verifier` non-exclusively. It reports a

@@ -103,9 +103,13 @@ must not cross, and how to run it.
   (`TestAFactorInBackOffIsNotAskedAndNothingIsCounted`,
   `TestAFactorWhoseBackOffCannotBeReadIsNotAsked`). A failure is counted and a
   pass clears the key; a replay is counted as a failure and reported as a replay,
-  and an outage of the factor is neither counted nor answered as a refusal
+  a refusal whose cause is `authn.ErrFactorFlagged` disables that factor's row and
+  publishes `authn.factor.changed` with `flagged` — the row is taken out of the
+  account's factors, so a cloned credential does not stay usable — and an outage
+  of the factor is neither counted nor answered as a refusal
   (`TestVerifyThrottlesBeforeAskingAndCountsTheOutcome`,
   `TestAReplayIsCountedAsAFailureAndReportedAsAReplay`,
+  `TestAFlaggedFactorIsDisabledAndAnnounced`,
   `TestAnOutageOfTheFactorIsNotCountedAsAGuess`). A factor answer a call may not
   give is the factor's fault and ends as its outage, never a pass or a refusal
   (`TestAnAnswerAFactorMayNotGiveIsAFaultOfTheFactor`). When a failure begins a

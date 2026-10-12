@@ -46,6 +46,7 @@ const (
 	changeEnrolled = "enrolled"
 	changeRemoved  = "removed"
 	changeReset    = "reset"
+	changeFlagged  = "flagged"
 
 	byClassSelf   = "self"
 	byClassAdmin  = "admin"

@@ -226,7 +226,7 @@ func (r *routes) migrateFirst(c *gin.Context, token, echo string, rec record, ra
 			return
 		}
 		r.reportLogin(c.Request.Context(), rec, outcomeFailed)
-		mount.Unauthorized(c, r.endpoint, mount.CodeLoginFailed)
+		r.refusedStep(c, step.CauseOf(got))
 	case step.KindThrottled:
 		r.reportLogin(c.Request.Context(), rec, outcomeThrottled)
 		mount.Throttled(c, step.RetryAfterOf(got))

@@ -289,6 +289,11 @@ var (
 	// Outwardly it is merged into login-failed.
 	ErrReplay = errors.New("authn: replay of a one-time value")
 
+	// ErrFactorFlagged reports a factor whose credential is suspected of being a
+	// clone: the assertion is refused, the multi-factor module disables the factor
+	// and announces the change as flagged. Outwardly it is merged into login-failed.
+	ErrFactorFlagged = errors.New("authn: the factor's credential was flagged as a possible clone")
+
 	// ErrStepUpRequired reports an assurance level, a freshness, a local-only
 	// requirement or a method set that the identity does not meet. Outwardly it is
 	// a 401 insufficient_user_authentication.

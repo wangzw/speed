@@ -162,9 +162,11 @@ WWW-Authenticate: <Identity.Challenge()> error="insufficient_user_authentication
     error_description="…", acr_values="2", max_age="600"
 ```
 
-`insufficient_user_authentication`、`acr_values`、`max_age` 取自 RFC 9470。RFC 把它们定义在 Bearer 方案的挑战里，对 Cookie 与 Basic 载体沿用同名参数是认证功能目录的约定，不是 RFC 的规定。`acr_values` 取保障等级数字的十进制文本，与访问令牌的 `acr` 同写法；`max_age` 取要求的 `MaxAge` 的秒数。
+`insufficient_user_authentication`、`acr_values`、`max_age` 取自 RFC 9470。RFC 把它们定义在 Bearer 方案的挑战里，对 Cookie 与 Basic 载体沿用同名参数是认证功能目录的约定，不是 RFC 的规定。`acr_values` 取要求等级的十进制文本，零等级（路由不要求特定等级）写作 `"0"`；`max_age` 取要求的 `MaxAge` 的秒数。访问令牌的 `acr` 用同一记法写等级，但把零等级读作单因素，使自己的取值不越出非零等级这一闭集；`acr_values` 不这样归一，写的是要求本身的取值。
 
-`guard.Require` 尚未交付。需要这一应答的地方在 `guard` 落地之前各自写它：登录引擎与因素路由的处理器按路由部件写出同形的 401，准入层按它的判定次序应答同一个问题码。挑战的构成在 `guard` 落地后与它们一致，因为参数取自同一个 `Identity.Challenge()` 与同一套 `MaxAge` 读法。
+`guard.Require` 已由 `pkg/authn/guard/guard.go` 交付：需要这一应答的路由把它挂进处理链。登录引擎与因素路由的处理器按路由部件各自写出同形的 401，准入层按它的判定次序应答同一个问题码，挑战的构成与 `guard.Require` 一致，因为参数取自同一个 `Identity.Challenge()` 与同一套 `MaxAge` 读法。
+
+一次加强认证（`purpose=step-up`）要求一个认证方式不落在会话已有方式里、且启用时刻不早于会话认证时刻的因素，所以只有一种因素种类的装配里没有可用的加强认证因素：这样的装配取到满足要求的 200 靠登录时完成第二因素，加强认证的入口留给种类多于一种的装配。同一份约束见 [design-authn-login](design-authn-login.md) 的「在已登录身份上开始流程」一节。
 
 ### 稳定性承诺
 
@@ -490,7 +492,7 @@ CREATE TABLE authn_webauthn_credentials (
 | 来源与 RP ID | RP ID、站点名与来源集合由配置给出（键、取值与缺省见 [authn-config](design-authn-config.md)）；启动校验 `rp-id` 等于基址主机或其父域。**全局账户对应一个 RP ID**：凭据绑定 RP ID，换 RP ID 就是另一批凭据，库提供的单次仪式覆盖 RP ID 的口子不启用。公共后缀表的核对不做，是残余风险 |
 | 仪式数据 | 放流程记录的私有字节；`Timeouts.Login.Enforce` 与 `Timeouts.Registration.Enforce` 固定为真，库只在它为真时才设过期；一次性消费靠引擎对流程记录的比较并交换，库不防同一份仪式数据被消费两次；只取本库序列化、由服务端保完整的字节，被篡改的字节能让库按长度前缀分配数 GB 内存 |
 | 每次断言成功 | 条件更新写回 `sign_count`（`WHERE sign_count <= ?`）、`clone_warning`、`user_verified`、`backup_state`，库不替调用方落库；更新失败按重放处理。同步通行密钥的计数常恒为 0，库只在新计数不大于旧计数且不全为零时才置告警，所以不误伤 |
-| 克隆告警 | `clone_warning` 为真则本次校验失败；因素随之置停用，`MFA` 发 `authn.factor.changed`（`flagged`） |
+| 克隆告警 | `clone_warning` 为真则本次校验失败：因素以 `StepRefused(authn.ErrFactorFlagged)` 拒绝本次断言，`MFA.Verify` 据该成因把因素行置停用并发布 `authn.factor.changed`（`flagged`）；断言本身的计数回退也写 `clone_warning` 并同样以该成因拒绝。通行密钥作第一因素时由登录引擎直接驱动方法、不经 `MFA` 编排，那一路只拒绝本次断言（对外并入 `login-failed`），不置停用、不发事件；凭据自身的 `clone_warning` 使它在该路与 `Factor` 路上都不可用，清除该行经 `MFA.Remove` |
 | 版本 | go-webauthn 是 0.x，`go.mod` 固定版本；升级要读其迁移说明并排空在途仪式，`SessionData` 的序列化形状随版本变 |
 
 `Pass.UserVerified` 取自断言里的用户验证位。通行密钥作第一因素时，带用户验证的断言使策略判定里「第一因素带用户验证」那一条命中。
@@ -546,6 +548,7 @@ CREATE TABLE authn_webauthn_credentials (
 | `ErrLastFactor` | `mfa_required` 的账户删最后一个因素 | 409 | 拒 |
 | `ErrFactorNotEnrolled` | 因素未登记，或待确认的行被用于验证 | 并入 `login-failed` | 拒 |
 | `ErrReplay` | TOTP 计数器或 WebAuthn 签名计数重放 | 并入 `login-failed` | 拒 |
+| `ErrFactorFlagged` | WebAuthn 凭据疑似克隆（计数回退或库置的克隆告警） | 并入 `login-failed`；因素以此作成因拒绝，`MFA.Verify` 据它停用该因素行并发 `authn.factor.changed`（`flagged`） | 拒 |
 | `ErrThrottled` | `ScopeFactor` 退避中 | 429 带 `Retry-After` | 拒 |
 | `ErrStepUpRequired` | 保障等级、新鲜度或 `Local` 不满足 | 401 `insufficient_user_authentication` | 拒 |
 | `ErrNoFactor` | 纳入 `authn.mfa` 而没有任何 `Factor`，且设了 `global-required`，或库里已有账户登记了某个种类而该种类没有实现 | 启动失败，点名缺的模块 | 拒 |
@@ -558,6 +561,7 @@ CREATE TABLE authn_webauthn_credentials (
 - **审计与事件。** 强制档的重置在审计写成功之前不动作；尽力档的因素登记与删除审计写失败只记 Error 与计数，业务继续。事件发布失败只记 Warn，不使业务失败；事件是提示，权威在 db。
 - **库成功而补充校验失败，按失败。** TOTP 的重放判定与 WebAuthn 的计数写回是库之外补上的校验，失败即拒绝，记 Error。
 - **读设置出错的方向。** `global-required` 属强制类开关，读不出来按拒绝（503）；调参类的期限与上限读不出来取声明的默认值并记 Error。
+- **克隆告警经拒绝的成因交回。** 因素判定断言来自疑似克隆的凭据（库置的克隆告警或签名计数回退）时，以 `StepRefused(authn.ErrFactorFlagged)` 交回；`MFA.Verify` 据该成因把该因素行置停用、发布 `authn.factor.changed`（`flagged`），并使该失败计入退避。该哨兵是因素把这一事实交给 `MFA` 的通道，由根包导出，因素与 `MFA` 都经 `errors.Is` 判别。
 - **因素实现的故障。** 因素实现宕机时交 `StepUnavailable`，对外 503，不与 `StepRefused` 的 401 混桶。
 - **登记的种类没有实现。** 启动期已按 `ErrNoFactor` 拒绝（见哨兵表）。运行期仍遇到账户登记的种类没有对应实现时（例如某实现模块在运行期缺席），本模块把它按该因素不可用处理，交 `StepRefused` 并以 `ErrNoFactor` 为成因，对外并入 `login-failed`，不退避；不为这一运行期情形另立哨兵，复用启动期哨兵作成因。
 - **`Reset` 的部分失败。** 返回错误，账户处于更严的状态；重试幂等。`AccountDeleted` 清理失败时返回错误，由 `authn.account` 汇总为 `ErrCleanupIncomplete`，重试同一调用幂等地补完，事件补偿与 `valid_after` 兜底。
@@ -597,7 +601,7 @@ CREATE TABLE authn_webauthn_credentials (
 
 ## 实现状态
 
-`pkg/authn` 目前含网关、口令表后端、身份与判决的类型、值类型、多因素的根包接缝，以及多因素模块 `authn.mfa` 的登记簿与编排；四种因素种类（TOTP、短信、WebAuthn）与 `guard.Require` 尚未实现。
+`pkg/authn` 目前含网关、口令表后端、身份与判决的类型、值类型、多因素的根包接缝，多因素模块 `authn.mfa` 的登记簿与编排，以及三种因素种类（TOTP、短信、WebAuthn）与 `guard.Require`。
 
 | 能力 | 状态 | 代码 |
 |---|---|---|
@@ -610,9 +614,9 @@ CREATE TABLE authn_webauthn_credentials (
 | `Start` 里对 `tenant.admission` 参与性的判定与 `Warn` | 已实现 | `pkg/authn/mfa/mfa.go` `admissionModule` |
 | 账户生命周期钩子与 `authn.account.deleted` 的补偿订阅 | 已实现 | `pkg/authn/mfa/manage.go` `AccountDeleted`、`AccountDisabled`、`ServiceSecretRevoked`；`pkg/authn/mfa/lifecycle.go` |
 | `GET B/factors`、`DELETE B/factors/:id` | 已实现 — 均经 `mount.Mounter` 挂载，删除要求本模块核验的新鲜本地多因素 | `pkg/authn/mfa/routes.go` |
-| TOTP 因素 | 未实现 | — |
-| 短信因素 | 未实现 | — |
-| WebAuthn 因素与通行密钥登录方法 | 未实现 | — |
-| `guard.Require` 与加强认证应答 | 未实现 — 见「加强认证的应答与 `guard.Require`」 | — |
+| TOTP 因素 | 已实现 | `pkg/authn/mfa/totp/factor.go`、`config.go`、`register.go`、`migrations/` |
+| 短信因素 | 已实现 | `pkg/authn/mfa/sms/sms.go` |
+| WebAuthn 因素与通行密钥登录方法 | 已实现 | `pkg/authn/mfa/webauthn/factor.go`、`method.go`、`ceremony.go`、`register.go`、`config.go` |
+| `guard.Require` 与加强认证应答 | 已实现 | `pkg/authn/guard/guard.go` |
 | 加强认证的 `Elevate` 与仪式数据承载；归 [authn-session](design-authn-session.md) 与 [authn-login](design-authn-login.md) | 已实现 | `pkg/authn/session/sessions.go` `Elevate`；`pkg/authn/login/engine.go` |
 | 根包 import 守卫 | 已实现 — 实现多因素的子包不在根包 import 的白名单之内，状态行见 [design-authn](design-authn.md) | `pkg/authn/deps_test.go` `TestTheRootPackageImportsOnlyWhatItMay`、`TestTheRootPackageClosureHoldsNoThirdPartyPackage` |

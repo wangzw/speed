@@ -1,0 +1,181 @@
+package totp
+
+import (
+	"context"
+	"errors"
+	"fmt"
+
+	"github.com/pquerna/otp"
+	pquernaotp "github.com/pquerna/otp/totp"
+
+	"github.com/vislake/speed/pkg/authn"
+	"github.com/vislake/speed/pkg/authn/internal/clock"
+	"github.com/vislake/speed/pkg/authn/mfa"
+)
+
+// The step names this factor gives its own steps, and the marker it leaves in
+// its private bytes once a seed has been generated. The private bytes round-trip
+// through the multi-factor module's envelope, so a step whose private bytes are
+// present is the confirmation step of a registration that has already written
+// its seed; a step with none begins one.
+const (
+	stepEnroll    = "totp"
+	stepChallenge = "code"
+)
+
+// privateConfirm is the marker the first registration step leaves for the
+// confirmation step. Its value means nothing; only its presence does.
+var privateConfirm = []byte{1}
+
+// errCodeMismatch is what a code that does not match is refused with. It reaches
+// the log through the multi-factor module and decides nothing there: to the
+// client the answer is the same as any other refused second factor. It is not
+// ErrReplay, which the module reports apart.
+var errCodeMismatch = errors.New("the code does not match the seed")
+
+// enrollmentOptions is what the first registration step answers with: the
+// otpauth address the client draws a QR code from. The seed is in the address
+// and the address is answered once; nothing reads it back.
+type enrollmentOptions struct {
+	OTPAuthURI string `json:"otpauth_uri"`
+}
+
+// factor is a TOTP second factor. It holds the seed store and the issuer name,
+// and it reads the time through a source a test replaces.
+type factor struct {
+	register *register
+	issuer   string
+	clock    clock.Source
+}
+
+// Kind is the kind of factor this is.
+func (f *factor) Kind() authn.FactorKind { return authn.FactorTOTP }
+
+// Enroll registers a TOTP factor one step at a time. The first step, whose flow
+// state carries no private bytes, generates a seed, writes it sealed, and
+// answers with the otpauth address for the client to draw a QR code from. The
+// confirmation step, whose private bytes say the seed was written, requires the
+// code of the seed and, on a match, answers StepEnrolled, which is what makes
+// the multi-factor module activate the row.
+//
+// The identifier this factor keys its seed by is the pending row's, which the
+// multi-factor module puts in the context. A call that finds no row there was
+// not made by an enrollment and registers nothing.
+func (f *factor) Enroll(ctx context.Context, fs authn.FlowState, in authn.StepInput) (authn.Step, error) {
+	rec, ok := mfa.PendingFactor(ctx)
+	if !ok {
+		return authn.Step{}, fmt.Errorf("%w: a registration step reached the TOTP factor without a pending row",
+			authn.ErrInvalidArgument)
+	}
+	if len(fs.Private) == 0 {
+		return f.beginEnroll(ctx, rec)
+	}
+	return f.finishEnroll(ctx, rec, in)
+}
+
+// beginEnroll generates the seed, writes it and answers with the otpauth
+// address. The address carries the seed and is this answer alone.
+func (f *factor) beginEnroll(ctx context.Context, rec authn.FactorRecord) (authn.Step, error) {
+	key, err := pquernaotp.Generate(pquernaotp.GenerateOpts{
+		Issuer:      f.issuer,
+		AccountName: string(rec.Account),
+		Period:      periodSeconds,
+		SecretSize:  secretBytes,
+		Digits:      otp.DigitsSix,
+		Algorithm:   otp.AlgorithmSHA1,
+	})
+	if err != nil {
+		return authn.Step{}, fmt.Errorf("generating a TOTP seed: %w", err)
+	}
+	s := seed{
+		FactorID:    rec.ID,
+		Secret:      key.Secret(),
+		Algorithm:   algorithmSHA1,
+		Digits:      digitsOfSix,
+		Period:      periodSeconds,
+		LastCounter: 0,
+	}
+	if err := f.register.insert(ctx, s); err != nil {
+		return authn.Step{}, err
+	}
+	return authn.StepData(stepEnroll, privateConfirm, enrollmentOptions{OTPAuthURI: key.URL()}), nil
+}
+
+// finishEnroll requires a valid code and, on one, answers StepEnrolled. The
+// counter the code matched is written, so the confirmation code cannot be
+// presented again as a login code. A code that does not match is refused and the
+// factor stays pending, which the multi-factor module counts against its
+// back-off.
+func (f *factor) finishEnroll(ctx context.Context, rec authn.FactorRecord, in authn.StepInput) (authn.Step, error) {
+	s, found, err := f.register.load(ctx, rec.ID)
+	if err != nil {
+		return authn.Step{}, err
+	}
+	if !found {
+		return authn.StepRefused(authn.ErrFactorNotEnrolled), nil
+	}
+	counter, ok := match(s, f.clock.Now(), in.Fields[codeField])
+	if !ok {
+		return authn.StepRefused(errCodeMismatch), nil
+	}
+	if counter <= s.LastCounter {
+		return authn.StepRefused(authn.ErrReplay), nil
+	}
+	won, err := f.register.advance(ctx, rec.ID, counter)
+	if err != nil {
+		return authn.Step{}, err
+	}
+	if !won {
+		return authn.StepRefused(authn.ErrReplay), nil
+	}
+	return authn.StepEnrolled(rec), nil
+}
+
+// Challenge has nothing to send: a TOTP is generated by the client's own
+// authenticator app, so there is no code to send and no options to make. The
+// answer asks the client for a code, which is what the flow's next step prompts
+// for.
+func (f *factor) Challenge(_ context.Context, _ authn.FlowState, _ authn.FactorRecord) (authn.Step, error) {
+	return authn.StepPrompt(stepChallenge, nil, authn.Field{Name: codeField, Kind: authn.FieldCode, Required: true}), nil
+}
+
+// Verify checks the code against the seed. A factor that is not active, or whose
+// seed is not there, is refused as not enrolled. A code that does not match one
+// of the three candidate steps is refused. A code that matches a counter at or
+// below the stored one, or one another attempt has already written, is refused
+// as a replay: the conditional write, not a read, decides which of two attempts
+// that present the same code is the one.
+func (f *factor) Verify(ctx context.Context, _ authn.FlowState, rec authn.FactorRecord, in authn.StepInput) (authn.Step, error) {
+	if rec.Status != authn.FactorActive {
+		return authn.StepRefused(authn.ErrFactorNotEnrolled), nil
+	}
+	s, found, err := f.register.load(ctx, rec.ID)
+	if err != nil {
+		return authn.Step{}, err
+	}
+	if !found {
+		return authn.StepRefused(authn.ErrFactorNotEnrolled), nil
+	}
+	counter, ok := match(s, f.clock.Now(), in.Fields[codeField])
+	if !ok {
+		return authn.StepRefused(errCodeMismatch), nil
+	}
+	if counter <= s.LastCounter {
+		return authn.StepRefused(authn.ErrReplay), nil
+	}
+	won, err := f.register.advance(ctx, rec.ID, counter)
+	if err != nil {
+		return authn.Step{}, err
+	}
+	if !won {
+		return authn.StepRefused(authn.ErrReplay), nil
+	}
+	return authn.StepPassed(authn.Pass{Methods: []authn.Method{authn.MethodTOTP}}), nil
+}
+
+// Remove deletes the seed of a factor. It is idempotent: the row of a factor
+// whose seed is already gone is not an error, because the factor row itself
+// belongs to the multi-factor module.
+func (f *factor) Remove(ctx context.Context, _ authn.AccountID, rec authn.FactorRecord) error {
+	return f.register.remove(ctx, rec.ID)
+}

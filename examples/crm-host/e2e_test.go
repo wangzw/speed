@@ -19,6 +19,9 @@ import (
 	"testing"
 	"time"
 
+	"github.com/pquerna/otp"
+	"github.com/pquerna/otp/totp"
+
 	"github.com/vislake/speed/pkg/audit/journal"
 	"github.com/vislake/speed/pkg/config"
 	"github.com/vislake/speed/pkg/core"
@@ -1961,5 +1964,285 @@ func TestAJSONConfigurationReachesTheSameItems(t *testing.T) {
 	c.resultOf(listed, &roster)
 	if !slices.ContainsFunc(roster, func(v tenantView) bool { return v.ID == acme.ID && v.Alias == acme.Alias }) {
 		t.Errorf("tenant list through CRM_CONFIG answered %+v, want the tenant created through --config", roster)
+	}
+}
+
+// The factor cases drive the multi-step factor flows the identity system's
+// modules serve: enrolling a TOTP factor, logging in with it as a second factor,
+// a step-up on a session that already has one, the guard middleware in front of
+// a host route, and the admission layer's tenant-level factor requirement. They
+// run on the stack that needs no docker, since the property is the identity
+// system's and not a backend's.
+
+// totpPeriod is the step the TOTP factor fixes its codes at, written here so a
+// case can derive a code for a named instant rather than wait for the clock.
+const totpPeriod = 30 * time.Second
+
+// totpCode derives the code a TOTP seed produces at an instant, from the otpauth
+// address the enrollment answered. The address carries the seed and the
+// parameters the factor generated it with, so the code is the one the factor's
+// own generator makes.
+func totpCode(t *testing.T, otpauthURI string, at time.Time) string {
+	t.Helper()
+	key, err := otp.NewKeyFromURL(otpauthURI)
+	if err != nil {
+		t.Fatalf("reading the otpauth address: %v", err)
+	}
+	code, err := totp.GenerateCodeCustom(key.Secret(), at, totp.ValidateOpts{
+		Period:    uint(key.Period()),
+		Digits:    key.Digits(),
+		Algorithm: key.Algorithm(),
+	})
+	if err != nil {
+		t.Fatalf("deriving a TOTP code: %v", err)
+	}
+	return code
+}
+
+// flowReply is a step of a login flow as a client reads it: the step number the
+// next answer carries, the state, and what the flow asks for next.
+type flowReply struct {
+	Seq   int    `json:"seq"`
+	State string `json:"state"`
+	Next  struct {
+		Kind    string `json:"kind"`
+		Options struct {
+			OTPAuthURI string `json:"otpauth_uri"`
+		} `json:"options"`
+		Factors []struct {
+			ID   string `json:"id"`
+			Kind string `json:"kind"`
+		} `json:"factors"`
+	} `json:"next"`
+}
+
+// beginAuthenticatedFlow starts a link, step-up or enroll flow on a session
+// cookie and returns the flow cookie the reply set and the opening step.
+func (h *crmHost) beginAuthenticatedFlow(t *testing.T, sessionCookie, purpose string, input map[string]string) (string, flowReply) {
+	t.Helper()
+	resp := h.send(t, request{
+		method: nethttp.MethodPost, endpoint: accountEndpoint, path: "/auth/flows/authenticated",
+		header: map[string]string{"Cookie": sessionCookieName + "=" + sessionCookie},
+		body:   map[string]any{"purpose": purpose, "input": input},
+	})
+	if resp.status != nethttp.StatusOK {
+		t.Fatalf("beginning the %s flow answered %d: %s", purpose, resp.status, resp.body)
+	}
+	var reply flowReply
+	resp.decode(t, &reply)
+	cookie, ok := cookieOf(resp.header, flowCookieName)
+	if !ok {
+		t.Fatalf("beginning the %s flow set no %s cookie", purpose, flowCookieName)
+	}
+	return cookie, reply
+}
+
+// answerFlow answers one step of a cookie-bound flow and returns the reply
+// together with the response, so a caller reads the session cookie off the
+// completion.
+func (h *crmHost) answerFlow(t *testing.T, flowCookie string, seq int, step string, input map[string]string) (flowReply, response) {
+	t.Helper()
+	body := map[string]any{"seq": seq, "step": step}
+	if input != nil {
+		body["input"] = input
+	}
+	resp := h.send(t, request{
+		method: nethttp.MethodPost, endpoint: accountEndpoint, path: loginAnswerPath,
+		header: map[string]string{"Cookie": flowCookieName + "=" + flowCookie},
+		body:   body,
+	})
+	if resp.status != nethttp.StatusOK {
+		t.Fatalf("answering step %q (seq %d) answered %d: %s", step, seq, resp.status, resp.body)
+	}
+	var reply flowReply
+	resp.decode(t, &reply)
+	return reply, resp
+}
+
+// enrollTOTP registers a TOTP factor for the session's account and returns the
+// otpauth address the enrollment answered, which is where the next login's code
+// is derived from. The factor is active once the confirmation code is accepted,
+// which is the last registration step.
+func (h *crmHost) enrollTOTP(t *testing.T, sessionCookie string) string {
+	t.Helper()
+	flowCookie, begun := h.beginAuthenticatedFlow(t, sessionCookie, "enroll", map[string]string{"kind": "totp"})
+	uri := begun.Next.Options.OTPAuthURI
+	if begun.Next.Kind == "" || uri == "" {
+		t.Fatalf("beginning a TOTP enrollment answered next %+v, want the otpauth address", begun.Next)
+	}
+	// The confirmation code is the current step's, what an authenticator app
+	// would show now.
+	code := totpCode(t, uri, time.Now())
+	done, _ := h.answerFlow(t, flowCookie, begun.Seq, "enroll", map[string]string{"code": code})
+	if done.Next.Kind != "complete" {
+		t.Fatalf("the TOTP confirmation answered next %q, want complete", done.Next.Kind)
+	}
+	return uri
+}
+
+// loginWithTOTP runs a password login through to a session, answering the TOTP
+// second factor the account now requires, and returns the session cookie. The
+// start carries the password, so the first-factor step is the start's own reply;
+// the account has an active factor, so the flow lands on the factor step.
+func (h *crmHost) loginWithTOTP(t *testing.T, u userRef, uri string) string {
+	t.Helper()
+	start := h.send(t, request{
+		method: nethttp.MethodPost, endpoint: accountEndpoint, path: loginFlowPath,
+		body: map[string]any{
+			"method": "password", "delivery": "session",
+			"input": map[string]string{"identifier": u.Email, "password": u.Password},
+		},
+	})
+	expect(t, "starting a password login for "+u.Email+" with a factor enrolled", start, nethttp.StatusOK)
+	var begun flowReply
+	start.decode(t, &begun)
+	if begun.Next.Kind != "factor" || len(begun.Next.Factors) == 0 {
+		t.Fatalf("a password login for %s answered next %+v, want a factor step", u.Email, begun.Next)
+	}
+	flowCookie, ok := cookieOf(start.header, flowCookieName)
+	if !ok {
+		t.Fatalf("starting a password login for %s set no %s cookie", u.Email, flowCookieName)
+	}
+	factorID := begun.Next.Factors[0].ID
+	challenge, _ := h.answerFlow(t, flowCookie, begun.Seq, "factor", map[string]string{"factor": factorID})
+	if challenge.Next.Kind != "challenge" {
+		t.Fatalf("challenging the factor answered next %q, want challenge", challenge.Next.Kind)
+	}
+	// The enrollment spent the current step's counter, so this login presents the
+	// next step's code: it is above the counter the enrollment consumed and
+	// within the one step either side of now the factor accepts.
+	code := totpCode(t, uri, time.Now().Add(totpPeriod))
+	verified, _ := h.answerFlow(t, flowCookie, challenge.Seq, "factor",
+		map[string]string{"factor": factorID, "code": code})
+	if verified.Next.Kind != "complete" {
+		t.Fatalf("verifying the second factor answered next %q, want complete", verified.Next.Kind)
+	}
+	done, resp := h.answerFlow(t, flowCookie, verified.Seq, "complete", nil)
+	if done.State != "authenticated" {
+		t.Fatalf("completing the login answered state %q, want authenticated", done.State)
+	}
+	cookie, ok := cookieOf(resp.header, sessionCookieName)
+	if !ok {
+		t.Fatalf("completing the login set no %s cookie", sessionCookieName)
+	}
+	return cookie
+}
+
+// TestAFactorGatedRouteAdmitsOnlyAMultiFactorSession is the case for the guard
+// middleware in front of a host route: the route asking a multi-factor identity
+// answers a single-factor session with the RFC 9470 step-up 401 and its
+// challenge, and lets a session that completed a second factor through. The
+// session that enrolled the factor is single-factor still, so it is refused; a
+// fresh login that answers the factor is multi-factor, so it is admitted with
+// the level the route asked for.
+func TestAFactorGatedRouteAdmitsOnlyAMultiFactorSession(t *testing.T) {
+	c := newCase(t, stackNamed(t, localStack))
+	c.migrate()
+	acme := c.createTenant("acme")
+	ann := c.createUser("ann")
+	c.grant(acme, ann, roleOwner)
+	h := c.serve()
+
+	_, gatePath := splitRoute(factorGateRoute)
+	single := h.login(t, ann)
+	before := h.get(t, accountEndpoint, gatePath, "", bearer(single))
+	expect(t, "a single-factor session at the factor-gated route", before, nethttp.StatusUnauthorized)
+	requireStepUpChallenge(t, "the factor-gated route", before, true)
+	var problem struct {
+		Type string `json:"type"`
+	}
+	before.decode(t, &problem)
+	if problem.Type != "urn:speed:authn:insufficient_user_authentication" {
+		t.Errorf("the refusal's type is %q, want urn:speed:authn:insufficient_user_authentication", problem.Type)
+	}
+
+	uri := h.enrollTOTP(t, single)
+	multi := h.loginWithTOTP(t, ann, uri)
+	after := h.get(t, accountEndpoint, gatePath, "", bearer(multi))
+	expect(t, "a multi-factor session at the factor-gated route", after, nethttp.StatusOK)
+	var summary struct {
+		Account   string   `json:"account"`
+		Assurance int      `json:"assurance"`
+		Methods   []string `json:"methods"`
+	}
+	after.decode(t, &summary)
+	if summary.Account != string(ann.ID) || summary.Assurance != 2 {
+		t.Errorf("the factor-gated route answered %+v, want account %s at assurance 2", summary, ann.ID)
+	}
+	if !slices.Contains(summary.Methods, "otp") {
+		t.Errorf("the summary's methods are %v, want the second factor otp among them", summary.Methods)
+	}
+}
+
+// TestAStepUpCannotStrengthenTheSessionItEnrolledOn is the case for the rule
+// that a factor registered during an authentication may not strengthen it: a
+// step-up on the session that enrolled the factor is refused with the step-up
+// challenge, because the factor was activated after the session authenticated.
+// The rule is what keeps a password holder who registers their own factor from
+// turning that session into a multi-factor one before the real owner notices.
+func TestAStepUpCannotStrengthenTheSessionItEnrolledOn(t *testing.T) {
+	c := newCase(t, stackNamed(t, localStack))
+	c.migrate()
+	acme := c.createTenant("acme")
+	ann := c.createUser("ann")
+	c.grant(acme, ann, roleOwner)
+	h := c.serve()
+
+	session := h.login(t, ann)
+	h.enrollTOTP(t, session)
+
+	start := h.send(t, request{
+		method: nethttp.MethodPost, endpoint: accountEndpoint, path: "/auth/flows/authenticated",
+		header: map[string]string{"Cookie": sessionCookieName + "=" + session},
+		body:   map[string]any{"purpose": "step-up"},
+	})
+	expect(t, "a step-up on the session that enrolled the factor", start, nethttp.StatusUnauthorized)
+	requireStepUpChallenge(t, "the step-up", start, true)
+}
+
+// TestATenantRequiringMFARefusesASingleFactorMember is the case for the
+// admission layer's tenant-level factor requirement: in a tenant that requires
+// multi-factor, a member whose session is single-factor is answered the step-up
+// 401 before its request reaches a handler, and the same member reaches a tenant
+// that requires nothing. The requirement is per tenant, so the two tenants
+// answer the same request differently.
+func TestATenantRequiringMFARefusesASingleFactorMember(t *testing.T) {
+	c := newCase(t, stackNamed(t, localStack))
+	c.migrate()
+	acme := c.createTenant("acme")
+	globex := c.createTenant("globex")
+	ann := c.createUser("ann")
+	c.grant(acme, ann, roleOwner)
+	c.grant(globex, ann, roleOwner)
+	// acme requires its members to have authenticated with more than one kind of
+	// factor. The setting is the admission layer's, written into acme's layer
+	// before the run reads its snapshot.
+	c.setForTenant(acme, "tenant.admission.require-mfa", "true")
+	h := c.serve()
+
+	session := h.login(t, ann)
+	refused := h.get(t, apiEndpoint, "/members", acme.Alias, bearer(session))
+	expect(t, "a single-factor member in a tenant requiring multi-factor", refused, nethttp.StatusUnauthorized)
+	requireStepUpChallenge(t, "the admission layer", refused, false)
+	admitted := h.get(t, apiEndpoint, "/members", globex.Alias, bearer(session))
+	expect(t, "the same member in a tenant requiring nothing", admitted, nethttp.StatusOK)
+}
+
+// requireStepUpChallenge fails the case unless a refusal carries the RFC 9470
+// step-up challenge: the error code and the multi-factor level, and, when
+// withMaxAge is set, the freshness window the requirement asked for. The guard
+// writes max_age when its requirement is fresh; the admission layer compares a
+// level alone and writes none.
+func requireStepUpChallenge(t *testing.T, what string, got response, withMaxAge bool) {
+	t.Helper()
+	challenge := got.header.Get("WWW-Authenticate")
+	parts := []string{`error="insufficient_user_authentication"`, `acr_values="2"`}
+	if withMaxAge {
+		parts = append(parts, `max_age="600"`)
+	}
+	for _, part := range parts {
+		if !strings.Contains(challenge, part) {
+			t.Errorf("the %s challenge %q does not carry %s", what, challenge, part)
+		}
 	}
 }

@@ -195,7 +195,12 @@ func (m *product) Verify(ctx context.Context, f authn.FlowState, factorID string
 	case step.KindRefused:
 		m.failed(ctx, rec)
 		outcome := verifyBad
-		if errors.Is(step.CauseOf(got), authn.ErrReplay) {
+		switch cause := step.CauseOf(got); {
+		case errors.Is(cause, authn.ErrFactorFlagged):
+			m.logger.Warn(ModuleName+": a factor's credential was flagged as a possible clone",
+				slog.String("account", string(rec.Account)), slog.String("factor", rec.ID))
+			m.flagged(ctx, rec)
+		case errors.Is(cause, authn.ErrReplay):
 			outcome = verifyReplay
 			m.logger.Info(ModuleName+": a one-time value was presented again",
 				slog.String("account", string(rec.Account)), slog.String("factor", rec.ID))

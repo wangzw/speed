@@ -26,6 +26,10 @@ import (
 	"github.com/vislake/speed/pkg/log"
 	"github.com/vislake/speed/pkg/observability"
 	"github.com/vislake/speed/pkg/tenant"
+
+	"github.com/vislake/speed/pkg/authn"
+	"github.com/vislake/speed/pkg/authn/mfa/totp"
+	"github.com/vislake/speed/pkg/authn/mfa/webauthn"
 )
 
 // These cases read the descriptors and the host's tables instead of running the
@@ -260,6 +264,184 @@ func TestTheTokenModuleIsWiredAndReachesNoTenantPackage(t *testing.T) {
 			}
 		}
 	}
+}
+
+// TestTheFactorModulesAreRegisteredWithTheirTables is the case for the two
+// factor modules this host names on serve: each is registered, delivers the
+// factor capability the multi-factor module takes all of with ResolveAll, and
+// its migrations declare its own tables. The delivery runs where the modules are
+// driven — a served case assembles them through the registry, and a module that
+// declared a capability it did not deliver fails that drive with
+// ErrUndeliveredCapability — so this case holds the names and the tables beside
+// it.
+//
+// Registration follows the import graph: importing the package is what runs the
+// init that registers the module, so the registration check passes however the
+// names are written on serve. The two factors are parallel capability
+// providers, which the dependency closure never picks on the host's behalf, so a
+// name dropped from the serve Include list leaves the stack a factor short with
+// no descriptor and no served case saying so — the second half of this case
+// reads the names where they are written.
+func TestTheFactorModulesAreRegisteredWithTheirTables(t *testing.T) {
+	for _, name := range []string{totp.ModuleName, webauthn.ModuleName} {
+		module, ok := core.ProcessRegistry.Lookup(name)
+		if !ok {
+			t.Errorf("the module %q is not registered, so serve names a module nothing delivers", name)
+			continue
+		}
+		if !provides(module, (*authn.Factor)(nil)) {
+			t.Errorf("the module %q does not deliver %T", name, (*authn.Factor)(nil))
+		}
+	}
+	onServe := modulesNamedOnServe(t)
+	for _, module := range []string{
+		"github.com/vislake/speed/pkg/authn/mfa/totp",
+		"github.com/vislake/speed/pkg/authn/mfa/webauthn",
+	} {
+		if !onServe[module] {
+			t.Errorf("serve names no module from %s, so the factor is registered but never runs", module)
+		}
+	}
+	tables, err := migrationTables("sqlite")
+	if err != nil {
+		t.Fatalf("reading the declared migrations: %v", err)
+	}
+	for _, want := range []string{
+		"authn_factors", "authn_totp_secrets", "authn_webauthn_users", "authn_webauthn_credentials",
+	} {
+		if !slices.Contains(tables, want) {
+			t.Errorf("the declared migrations create no %q table; they create %v", want, tables)
+		}
+	}
+}
+
+// modulesNamedOnServe names the modules addStack's serve command takes in, each
+// by the import path of the package that registers it.
+//
+// The command tree keeps its include lists unexported, so the set a served run
+// assembles is not readable off the tree the way a descriptor is readable off
+// core.ProcessRegistry: a name dropped from the serve Include list leaves no
+// trace in a descriptor and none in a registry populated by the import graph.
+// This reads the names where they are written, in the program's own source, so
+// the case above holds serve to the names and not the import graph alone.
+func modulesNamedOnServe(t *testing.T) map[string]bool {
+	t.Helper()
+	named := map[string]bool{}
+	declared := false
+	for _, name := range nonTestSources(t, ".") {
+		file, err := parser.ParseFile(token.NewFileSet(), name, nil, parser.SkipObjectResolution)
+		if err != nil {
+			t.Fatalf("reading %s: %v", name, err)
+		}
+		addStack := funcDeclNamed(file, "addStack")
+		if addStack == nil {
+			continue
+		}
+		declared = true
+		serve := serveVariableIn(addStack)
+		if serve == "" {
+			t.Fatalf("%s declares addStack with no serve command bound to node.Sub(%s)", name, serveCommand)
+		}
+		ast.Inspect(addStack, func(n ast.Node) bool {
+			call, ok := n.(*ast.CallExpr)
+			if !ok {
+				return true
+			}
+			sel, ok := call.Fun.(*ast.SelectorExpr)
+			if !ok || sel.Sel.Name != "Include" {
+				return true
+			}
+			receiver, ok := sel.X.(*ast.Ident)
+			if !ok || receiver.Name != serve {
+				return true
+			}
+			for _, arg := range call.Args {
+				if module := moduleImportPath(file, arg); module != "" {
+					named[module] = true
+				}
+			}
+			return true
+		})
+	}
+	if !declared {
+		t.Fatal("no non-test file of the program declares addStack, so this case checks nothing")
+	}
+	if len(named) == 0 {
+		t.Fatal("addStack names no module on serve, so this case checks nothing")
+	}
+	return named
+}
+
+// funcDeclNamed is the top-level function a file declares under name, or nil
+// when it declares none.
+func funcDeclNamed(file *ast.File, name string) *ast.FuncDecl {
+	for _, decl := range file.Decls {
+		if fn, ok := decl.(*ast.FuncDecl); ok && fn.Name.Name == name {
+			return fn
+		}
+	}
+	return nil
+}
+
+// serveVariableIn names the local a function binds the serve command to: the
+// left side of the assignment whose right side is node.Sub(serveCommand). The
+// argument is matched by the identifier's own text, which is the constant's
+// name and not its value.
+func serveVariableIn(fn *ast.FuncDecl) string {
+	var name string
+	ast.Inspect(fn, func(n ast.Node) bool {
+		assign, ok := n.(*ast.AssignStmt)
+		if !ok || assign.Tok != token.DEFINE || len(assign.Lhs) != 1 || len(assign.Rhs) != 1 {
+			return true
+		}
+		lhs, ok := assign.Lhs[0].(*ast.Ident)
+		if !ok {
+			return true
+		}
+		call, ok := assign.Rhs[0].(*ast.CallExpr)
+		if !ok || len(call.Args) != 1 {
+			return true
+		}
+		sel, ok := call.Fun.(*ast.SelectorExpr)
+		if !ok || sel.Sel.Name != "Sub" {
+			return true
+		}
+		arg, ok := call.Args[0].(*ast.Ident)
+		if !ok || arg.Name != "serveCommand" {
+			return true
+		}
+		name = lhs.Name
+		return false
+	})
+	return name
+}
+
+// moduleImportPath is the import path of the package that registers the module
+// an Include argument names, when the argument is written as pkg.ModuleName; it
+// is "" for any other argument.
+func moduleImportPath(file *ast.File, arg ast.Expr) string {
+	sel, ok := arg.(*ast.SelectorExpr)
+	if !ok || sel.Sel.Name != "ModuleName" {
+		return ""
+	}
+	pkg, ok := sel.X.(*ast.Ident)
+	if !ok {
+		return ""
+	}
+	for _, spec := range file.Imports {
+		p, err := strconv.Unquote(spec.Path.Value)
+		if err != nil {
+			continue
+		}
+		local := path.Base(p)
+		if spec.Name != nil {
+			local = spec.Name.Name
+		}
+		if local == pkg.Name {
+			return p
+		}
+	}
+	return ""
 }
 
 // hostImports reports whether any non-test Go source directly under dir imports

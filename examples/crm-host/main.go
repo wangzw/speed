@@ -66,6 +66,18 @@
 //     grace window ends the login session the family hangs on, so the rotated
 //     token is refused too. `GET /auth/jwks.json` publishes the verification
 //     keys as a JWK set, and the signing key comes from a file.
+//   - A CRM user registers a second factor and is held to it. A TOTP factor is
+//     registered through the login engine's enrollment flow, and the account
+//     then needs it at every login: a password login stops at the factor step,
+//     and the session it lands on is multi-factor only once the code is
+//     answered. A route guarded with a multi-factor requirement — this host's
+//     `GET /security-summary`, in front of which `authn/guard` sits — answers a
+//     single-factor session with the RFC 9470 step-up 401 and its challenge (the
+//     error, the level, the window) and lets a multi-factor session through. A
+//     factor registered during a session does not strengthen it, so a step-up on
+//     the session that enrolled it is refused the same way. A tenant that
+//     requires multi-factor refuses a single-factor member at the admission
+//     layer, before the request reaches a handler.
 //   - A session lives as long as the session module's settings say, read from
 //     the settings surface, and is refused once it lapses. The account and the
 //     session are the identity system's, so the host keeps neither a users
@@ -604,16 +616,24 @@ package main
 import (
 	"context"
 	"fmt"
+	nethttp "net/http"
 	"os"
 	"os/signal"
 	"syscall"
+	"time"
+
+	"github.com/gin-gonic/gin"
 
 	"github.com/vislake/speed/pkg/audit/journal"
+	"github.com/vislake/speed/pkg/authn"
 	"github.com/vislake/speed/pkg/authn/account"
 	"github.com/vislake/speed/pkg/authn/gate"
+	"github.com/vislake/speed/pkg/authn/guard"
 	"github.com/vislake/speed/pkg/authn/login"
 	loginpassword "github.com/vislake/speed/pkg/authn/login/password"
 	"github.com/vislake/speed/pkg/authn/mfa"
+	"github.com/vislake/speed/pkg/authn/mfa/totp"
+	"github.com/vislake/speed/pkg/authn/mfa/webauthn"
 	authnmount "github.com/vislake/speed/pkg/authn/mount"
 	"github.com/vislake/speed/pkg/authn/session"
 	"github.com/vislake/speed/pkg/authn/static"
@@ -801,15 +821,18 @@ func addStack(root *config.Command, s stack) {
 		// account store, its write surface and the membership store; session
 		// delivers the session store and the cookie backend; login and its
 		// password method deliver the flow routes; mfa delivers the factor
-		// register and policy; token delivers the access and refresh tokens and
-		// registers the bearer verifier; admission holds the member check on the
-		// API.
+		// register and policy, and the totp and webauthn modules each deliver a
+		// factor kind, so the register has something to drive; token delivers
+		// the access and refresh tokens and registers the bearer verifier;
+		// admission holds the member check on the API.
 		authnmount.ModuleName,
 		account.ModuleName,
 		session.ModuleName,
 		login.ModuleName,
 		loginpassword.ModuleName,
 		mfa.ModuleName,
+		totp.ModuleName,
+		webauthn.ModuleName,
 		token.ModuleName,
 		admission.ModuleName,
 		resolve.ModuleName,
@@ -936,4 +959,112 @@ func hashCommand(_ context.Context, _ *core.Registry) error {
 func printVersion(_ context.Context, _ *core.Registry) error {
 	fmt.Println(hostVersion)
 	return nil
+}
+
+// factorGateRoute is the route the factor-gate module mounts on the account
+// endpoint: the caller's own authentication facts, served only to an identity
+// that reached the multi-factor level here and recently. It is this host's one
+// route that adds a requirement of its own ahead of the handler — the level and
+// the freshness are the route's, and the guard middleware writes them into the
+// challenge a refusal carries.
+const factorGateRoute = "GET /security-summary"
+
+// factorGateModuleName is the name the factor-gate module is registered under.
+const factorGateModuleName = "factor-gate"
+
+// factorGateRequirement is what factorGateRoute asks of a caller: a
+// multi-factor authentication proved here rather than declared by an identity
+// provider, fresh within ten minutes. The level is a second kind of factor
+// beside the first, and the window is how recent the authentication must be; a
+// request that falls short is answered RFC 9470's way by the guard.
+var factorGateRequirement = authn.Requirement{
+	Assurance: authn.AssuranceMulti,
+	Local:     true,
+	MaxAge:    10 * time.Minute,
+}
+
+// factorGateProduct is the factor-gate module's product. It holds the release
+// logger its Stop and Close records go through.
+type factorGateProduct struct {
+	released
+}
+
+// init registers the factor-gate module. It runs on serve: its route sits on the
+// account endpoint, where a user who has not chosen a tenant reaches it.
+func init() {
+	registerApplication(application{
+		module: factorGateModule(),
+		runsOn: []string{serveCommand},
+	})
+}
+
+// factorGateModule declares factorGateRoute behind the step-up guard.
+//
+// The route is guarded by the gateway like every other route on the endpoint, so
+// the identity is on the request before the guard middleware runs; the middleware
+// adds the requirement the gateway does not carry, and the handler reads the
+// identity the gateway stamped. It takes the router and a logger, and nothing
+// else: the decision is the identity's own.
+func factorGateModule() core.Module {
+	return core.Module{
+		Name: factorGateModuleName,
+		Requires: []core.Requirement{
+			{Token: (*log.Logger)(nil)},
+			{Token: (*speedhttp.Router)(nil)},
+		},
+		New: func(_ context.Context, reg *core.Registry) (any, error) {
+			logger, err := namedLogger(reg, factorGateModuleName)
+			if err != nil {
+				return nil, err
+			}
+			return &factorGateProduct{released: released{log: logger}}, nil
+		},
+		Init: func(_ context.Context, reg *core.Registry, instance any) error {
+			if _, ok := instance.(*factorGateProduct); !ok {
+				return errForeignInstance(factorGateModuleName, instance)
+			}
+			router, err := core.Resolve[speedhttp.Router](reg)
+			if err != nil {
+				return err
+			}
+			account, err := router.Endpoint(accountEndpoint)
+			if err != nil {
+				return err
+			}
+			mount(account, factorGateRoute, guard.Require(factorGateRequirement), factorGateSummary)
+			return nil
+		},
+		Stop:  recordStop,
+		Close: recordClose,
+	}
+}
+
+// factorGateSummary answers factorGateRoute. The guard has already refused a
+// request whose identity falls short of the requirement, so the identity here
+// reached the multi-factor level; the handler reports the facts the route is
+// gated on. A request carrying no identity is refused here as well, so a
+// mounting that left the guard out would not answer an anonymous caller; the
+// refusal writes its own WWW-Authenticate, since RFC 9110 requires a 401 to name
+// a challenge and the guard that would otherwise write one is what this branch
+// stands in for.
+func factorGateSummary(c *gin.Context) {
+	id, ok := authn.FromContext(c.Request.Context())
+	if !ok {
+		c.Header("WWW-Authenticate", `Bearer error="insufficient_user_authentication"`)
+		speedhttp.Fail(c, speedhttp.Problem{
+			Status: nethttp.StatusUnauthorized,
+			Type:   "urn:speed:authn:insufficient_user_authentication",
+		})
+		return
+	}
+	methods := id.Methods()
+	names := make([]string, len(methods))
+	for i, m := range methods {
+		names[i] = string(m)
+	}
+	c.JSON(nethttp.StatusOK, gin.H{
+		"account":   string(id.Account()),
+		"assurance": int(id.Assurance()),
+		"methods":   names,
+	})
 }

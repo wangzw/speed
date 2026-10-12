@@ -28,6 +28,9 @@ const (
 	modelPath        = internalPrefix + "model"
 	identityPath     = internalPrefix + "identity"
 	tenantPath       = moduleImportPath + "/tenant"
+	guardPath        = rootPath + "/guard"
+	speedHTTPPath    = moduleImportPath + "/http"
+	ginPath          = "github.com/gin-gonic/gin"
 )
 
 // identityWriters are the packages that may import the identity package in a
@@ -434,6 +437,30 @@ func tenantViolations(pkgs []listed) []string {
 	return out
 }
 
+// guardImportViolations is the sixth rule: the guard package's non-test imports
+// are the standard library, the root package, the HTTP entry point and gin, and
+// nothing else. The middleware decides a request from the identity the gateway
+// stamped, so no factor module, no store and no other package of the capability
+// may enter its closure; Go admits every package under pkg/authn to it, so this
+// rule is what keeps a leaf factor out. A host that mounts a guarded route then
+// carries the factor only if its own code imports it.
+func guardImportViolations(pkgs []listed) []string {
+	p, ok := find(pkgs, guardPath)
+	if !ok {
+		return []string{"the listing does not hold " + guardPath}
+	}
+	allowed := []string{rootPath, speedHTTPPath, ginPath}
+	var out []string
+	for _, imp := range p.Imports {
+		if isStandard(imp) || slices.Contains(allowed, imp) {
+			continue
+		}
+		out = append(out, guardPath+" imports "+imp+": the guard package may import the standard library, the root package, the HTTP entry point and gin only")
+	}
+	slices.Sort(out)
+	return out
+}
+
 // reachable is the set of non-standard packages reachable from start through
 // the imports of every non-test file, start included, sorted. A package outside
 // the listing is in the set and is not walked into.
@@ -520,6 +547,9 @@ func TestTheRootPackageImportsOnlyWhatItMay(t *testing.T) {
 			t.Fatalf("%s is not listed as importing the identity package, so the writer rule has nothing to read", writer)
 		}
 	}
+	if p, ok := find(pkgs, guardPath); !ok || len(p.Imports) == 0 {
+		t.Fatal("the listing does not hold the guard package and its imports, so the guard rule has nothing to read")
+	}
 
 	for _, v := range rootImportViolations(pkgs) {
 		t.Error(v)
@@ -537,6 +567,9 @@ func TestTheRootPackageImportsOnlyWhatItMay(t *testing.T) {
 		t.Error(v)
 	}
 	for _, v := range tenantViolations(pkgs) {
+		t.Error(v)
+	}
+	for _, v := range guardImportViolations(pkgs) {
 		t.Error(v)
 	}
 }
@@ -831,6 +864,7 @@ func TestTheDependencyRulesPassOnACleanTree(t *testing.T) {
 		"mounttestonly/mounttestonly_test.go": "package mounttestonly\n\nimport _ \"" + mounttestPath + "\"\n",
 		"authn/gate/gate.go":                  "package gate\n\nimport _ \"" + identityPath + "\"\n",
 		"authn/login/login.go":                "package login\n\nimport _ \"" + identityPath + "\"\n",
+		"authn/guard/guard.go":                "package guard\n\nimport (\n\t_ \"time\"\n\t_ \"" + rootPath + "\"\n\t_ \"" + speedHTTPPath + "\"\n\t_ \"" + ginPath + "\"\n)\n",
 		"authn/static/static.go":              "package static\n",
 		"authn/static/static_test.go":         "package static\n\nimport _ \"" + identityPath + "\"\n",
 		"authn/authn_windows.go":              "package authn\n\nimport _ \"os\"\n",
@@ -848,6 +882,7 @@ func TestTheDependencyRulesPassOnACleanTree(t *testing.T) {
 		"writers":   identityWriterViolations(pkgs),
 		"unused":    unusedWriterViolations(pkgs),
 		"tenant":    tenantViolations(pkgs),
+		"guard":     guardImportViolations(pkgs),
 	} {
 		if len(got) != 0 {
 			t.Errorf("the %s rule reports %q on a clean tree", name, got)
@@ -940,9 +975,117 @@ const (
 	unsafeClaims = "UnsafeClaimsWithoutVerification"
 )
 
-// goJoseImporters lists every non-test file of the module that imports the JOSE
-// library, as slash-separated paths relative to the module root, sorted.
-func goJoseImporters(t *testing.T, root string, pkgs []listed) []string {
+// The module binds four more third-party libraries, each to one leaf package:
+// the TOTP library to the TOTP factor, the WebAuthn library to the passkey
+// factor and login method, and the two SMS carrier SDKs to their adapters. A
+// host that imports none of the leaves carries none of the libraries, so each
+// is confined to its leaf. Their versions, and those of the other libraries the
+// selection table fixes, are pinned in pinnedLibraries below.
+const (
+	otpPath         = "github.com/pquerna/otp"
+	otpVersion      = "v1.5.0"
+	totpPackagePath = rootPath + "/mfa/totp"
+
+	webauthnPath        = "github.com/go-webauthn/webauthn"
+	webauthnVersion     = "v0.18.2"
+	webauthnPackagePath = rootPath + "/mfa/webauthn"
+
+	aliyunSMSPath        = "github.com/alibabacloud-go/dysmsapi-20170525/v5"
+	aliyunSMSVersion     = "v5.6.0"
+	aliyunSMSPackagePath = rootPath + "/sms/aliyun"
+
+	tencentSMSPath        = "github.com/tencentcloud/tencentcloud-sdk-go/tencentcloud/sms"
+	tencentSMSVersion     = "v1.3.172"
+	tencentSMSPackagePath = rootPath + "/sms/tencent"
+
+	scsPath         = "github.com/alexedwards/scs/v2"
+	scsVersion      = "v2.9.0"
+	argon2idPath    = "github.com/alexedwards/argon2id"
+	argon2idVersion = "v1.0.0"
+	uuidPath        = "github.com/google/uuid"
+	uuidVersion     = "v1.6.0"
+	xCryptoPath     = "golang.org/x/crypto"
+	xCryptoVersion  = "v0.57.0"
+	xTextPath       = "golang.org/x/text"
+	xTextVersion    = "v0.42.0"
+)
+
+// bridgeLibrary is one third-party library the module binds to a single leaf
+// package: the leaf package whose non-test files, and its subpackages, are the
+// only ones that may import it.
+type bridgeLibrary struct {
+	path string
+	leaf string
+}
+
+// bridgeLibraries are the libraries this file holds to a leaf package by the
+// package name rather than by a file list, so the leaf's own files may grow
+// without the guard changing. The JOSE bridge is not here: its importer is a
+// single file, and TestTheTokenBridgeIsTheOnlyGoJoseUserAndTheFloorIsHeld holds
+// it to that file and to the claims-without-verification escape hatch besides.
+var bridgeLibraries = []bridgeLibrary{
+	{path: otpPath, leaf: totpPackagePath},
+	{path: webauthnPath, leaf: webauthnPackagePath},
+	{path: aliyunSMSPath, leaf: aliyunSMSPackagePath},
+	{path: tencentSMSPath, leaf: tencentSMSPackagePath},
+}
+
+// pinnedLibrary is one third-party library the design's selection table fixes
+// to an exact version, which pkg/go.mod must state and no other.
+type pinnedLibrary struct {
+	path    string
+	version string
+}
+
+// pinnedLibraries are the libraries the module requires whose version the
+// design's selection table fixes exactly rather than as a floor. The design
+// states floors for only the JOSE, goxmldsig and x/oauth2 bridges, each held by
+// its own test; every other library it names is fixed to the table version, so
+// pkg/go.mod must state exactly that version for each: an upgrade goes through a
+// dedicated change, not go get -u, and a transitive requirement could otherwise
+// move one.
+//
+// The TOTP, WebAuthn and two SMS libraries are also the bridgeLibraries above,
+// which hold each to its leaf. The session store, the Argon2id encoder and the
+// uuid, x/crypto and x/text libraries have no single leaf, so they are pinned
+// here alone.
+var pinnedLibraries = []pinnedLibrary{
+	{path: otpPath, version: otpVersion},
+	{path: webauthnPath, version: webauthnVersion},
+	{path: aliyunSMSPath, version: aliyunSMSVersion},
+	{path: tencentSMSPath, version: tencentSMSVersion},
+	{path: scsPath, version: scsVersion},
+	{path: argon2idPath, version: argon2idVersion},
+	{path: uuidPath, version: uuidVersion},
+	{path: xCryptoPath, version: xCryptoVersion},
+	{path: xTextPath, version: xTextVersion},
+}
+
+// libraryConfinementViolations reports the packages of the module that import
+// the library at libPath in a non-test file but are not the leaf package that
+// binds it, nor a package under it. An import anywhere else would put the
+// library into that package's closure, and so into a host that never asked for
+// it. A test file is not what puts a library into a closure, so the rule reads
+// the non-test imports that go list and readSourceImports collect.
+func libraryConfinementViolations(pkgs []listed, libPath, leafPath string) []string {
+	var out []string
+	for _, p := range pkgs {
+		if p.Standard || p.Dir == "" || p.ImportPath == leafPath || strings.HasPrefix(p.ImportPath, leafPath+"/") {
+			continue
+		}
+		if slices.ContainsFunc(p.Imports, func(imp string) bool { return imp == libPath || strings.HasPrefix(imp, libPath+"/") }) {
+			out = append(out, p.ImportPath+" imports "+libPath+" outside "+leafPath)
+		}
+	}
+	slices.Sort(out)
+	return out
+}
+
+// libraryImporters lists every non-test file of the module that imports the
+// library at libPath or one of its subpackages, as slash-separated paths
+// relative to the module root, sorted. The subpackages count as the library: a
+// bridge that imports github.com/example/lib/sub still binds the library whole.
+func libraryImporters(t *testing.T, root string, pkgs []listed, libPath string) []string {
 	t.Helper()
 	var out []string
 	for _, p := range pkgs {
@@ -954,7 +1097,7 @@ func goJoseImporters(t *testing.T, root string, pkgs []listed) []string {
 			if err != nil {
 				t.Fatalf("reading the imports of %s: %v", name, err)
 			}
-			if slices.ContainsFunc(imps, func(imp string) bool { return imp == goJosePath || strings.HasPrefix(imp, goJosePath+"/") }) {
+			if slices.ContainsFunc(imps, func(imp string) bool { return imp == libPath || strings.HasPrefix(imp, libPath+"/") }) {
 				rel, err := filepath.Rel(root, filepath.Join(p.Dir, name))
 				if err != nil {
 					t.Fatal(err)
@@ -1036,7 +1179,7 @@ func TestTheTokenBridgeIsTheOnlyGoJoseUserAndTheFloorIsHeld(t *testing.T) {
 	pkgs := listModule(t, root, nil)
 
 	t.Run("only the token bridge imports the JOSE library", func(t *testing.T) {
-		got := goJoseImporters(t, root, pkgs)
+		got := libraryImporters(t, root, pkgs, goJosePath)
 		want := []string{strings.TrimPrefix(tokenPackagePath, moduleImportPath+"/") + "/jose.go"}
 		if !slices.Equal(got, want) {
 			t.Errorf("the non-test files importing %s are %v, want %v", goJosePath, got, want)
@@ -1069,4 +1212,132 @@ func TestTheTokenBridgeIsTheOnlyGoJoseUserAndTheFloorIsHeld(t *testing.T) {
 			t.Errorf("pkg/go.mod requires %s %s, want at least %s", goJosePath, version, goJoseFloor)
 		}
 	})
+}
+
+// pinViolation reports, if any, how pkg/go.mod fails to state the exact version
+// the design pins for lib. A version other than the pinned one, above or below,
+// is a violation: the design fixes these libraries to the table version and
+// routes an upgrade through a dedicated change, so a requirement that floats is
+// not what it asks for. A missing requirement is reported too, because a
+// transitive requirement alone could resolve to anything.
+func pinViolation(gomod string, lib pinnedLibrary) string {
+	version, ok := requiredVersion(gomod, lib.path)
+	if !ok {
+		return "pkg/go.mod does not require " + lib.path + ", so a transitive requirement could move it"
+	}
+	if version != lib.version {
+		return fmt.Sprintf("pkg/go.mod requires %s %s, want exactly %s", lib.path, version, lib.version)
+	}
+	return ""
+}
+
+// TestEachBridgeLibraryIsConfinedToItsLeaf is the executable form of the
+// design's per-library confinement statement: the pquerna/otp, go-webauthn,
+// Aliyun Dysmsapi and Tencent Cloud SMS bindings appear in the non-test files of
+// their own leaf package and nowhere else.
+//
+// The leaf package is looked for in the listing first, so a rule that reads no
+// file of it is reported rather than passing on an empty read.
+func TestEachBridgeLibraryIsConfinedToItsLeaf(t *testing.T) {
+	root := moduleRoot(t)
+	pkgs := listModule(t, root, nil)
+
+	for _, lib := range bridgeLibraries {
+		t.Run(lib.path, func(t *testing.T) {
+			if _, ok := find(pkgs, lib.leaf); !ok {
+				t.Fatalf("the listing does not hold %s, so the rule about %s has nothing to read", lib.leaf, lib.path)
+			}
+			for _, v := range libraryConfinementViolations(pkgs, lib.path, lib.leaf) {
+				t.Error(v)
+			}
+		})
+	}
+}
+
+// TestEachPinnedLibraryStatesTheTableVersion is the other half of the design's
+// per-library statement, over every library the module requires and the
+// selection table fixes to an exact version: pkg/go.mod states that version and
+// no other, so a requirement that floats above or below it, or is missing, is
+// reported.
+func TestEachPinnedLibraryStatesTheTableVersion(t *testing.T) {
+	root := moduleRoot(t)
+	gomod, err := os.ReadFile(filepath.Join(root, "go.mod"))
+	if err != nil {
+		t.Fatalf("reading go.mod: %v", err)
+	}
+
+	for _, lib := range pinnedLibraries {
+		t.Run(lib.path, func(t *testing.T) {
+			if v := pinViolation(string(gomod), lib); v != "" {
+				t.Error(v)
+			}
+		})
+	}
+}
+
+// TestTheVersionPinFailsOnADriftedRequirement holds the pin above to be a pin
+// and not a floor: a go.mod that states a version above the table's, or below
+// it, or does not name the library at all, is reported, so the check cannot pass
+// on the real tree by only ever accepting a lower bound. A requirement at the
+// exact version is not reported.
+func TestTheVersionPinFailsOnADriftedRequirement(t *testing.T) {
+	lib := pinnedLibrary{path: otpPath, version: otpVersion}
+	line := func(version string) string { return "\t" + otpPath + " " + version + "\n" }
+	if v := pinViolation(line(otpVersion), lib); v != "" {
+		t.Errorf("a go.mod at the pinned version is reported: %q", v)
+	}
+	for _, gomod := range []string{line("v1.6.0"), line("v1.4.0"), ""} {
+		if v := pinViolation(gomod, lib); v == "" {
+			t.Errorf("a go.mod %q is not reported, so the pin would let it through", gomod)
+		}
+	}
+}
+
+// TestTheBridgeConfinementFailsOnAViolatingTree runs the confinement rule over
+// a tree that imports a bridge library from outside its leaf, so the rule can
+// fail and is not passing on the real tree by accident. The leaf's own files
+// may import the library and its subpackages, and its test file may import the
+// library; an import of the library or of a subpackage of it from another
+// package is reported, the second of which shows the rule reads the library's
+// subpackages too.
+func TestTheBridgeConfinementFailsOnAViolatingTree(t *testing.T) {
+	tree := writeTree(t, map[string]string{
+		"go.mod":                        "module " + moduleImportPath + "\n\ngo 1.26\n",
+		"authn/mfa/totp/factor.go":      "package totp\n\nimport _ \"" + otpPath + "\"\n",
+		"authn/mfa/totp/code.go":        "package totp\n\nimport _ \"" + otpPath + "/totp\"\n",
+		"authn/mfa/totp/factor_test.go": "package totp\n\nimport _ \"" + otpPath + "\"\n",
+		"authn/static/static.go":        "package static\n\nimport _ \"" + otpPath + "\"\n",
+		"authn/subpkg/subpkg.go":        "package subpkg\n\nimport _ \"" + otpPath + "/hotp\"\n",
+	})
+	pkgs := listModule(t, tree, isolated)
+
+	got := libraryConfinementViolations(pkgs, otpPath, totpPackagePath)
+	want := []string{
+		moduleImportPath + "/authn/static imports " + otpPath + " outside " + totpPackagePath,
+		moduleImportPath + "/authn/subpkg imports " + otpPath + " outside " + totpPackagePath,
+	}
+	if !slices.Equal(got, want) {
+		t.Errorf("violations are %q, want %q: the leaf's own files and its test file are allowed, and an import of the "+
+			"library or one of its subpackages from another package is reported", got, want)
+	}
+}
+
+// TestTheGuardImportRuleFailsOnAViolatingTree runs the guard rule over a tree
+// whose guard package imports a factor leaf, so the rule can fail and is not
+// passing on the real tree by accident. The standard library, the root package,
+// the HTTP entry point and gin are allowed; an import of any other package of
+// the capability, a factor module among them, is reported.
+func TestTheGuardImportRuleFailsOnAViolatingTree(t *testing.T) {
+	tree := writeTree(t, map[string]string{
+		"go.mod":               "module " + moduleImportPath + "\n\ngo 1.26\n",
+		"authn/guard/guard.go": "package guard\n\nimport (\n\t_ \"time\"\n\t_ \"" + rootPath + "\"\n\t_ \"" + speedHTTPPath + "\"\n\t_ \"" + ginPath + "\"\n\t_ \"" + rootPath + "/mfa/totp\"\n)\n",
+	})
+	pkgs := listModule(t, tree, isolated)
+
+	got := guardImportViolations(pkgs)
+	want := []string{guardPath + " imports " + rootPath + "/mfa/totp: the guard package may import the standard library, the root package, the HTTP entry point and gin only"}
+	if !slices.Equal(got, want) {
+		t.Errorf("violations are %q, want %q: the standard library, the root package, the HTTP entry point and gin "+
+			"are allowed, and any other import is reported", got, want)
+	}
 }

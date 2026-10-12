@@ -40,6 +40,12 @@ const tenantHeader = "X-Tenant"
 // the gateway stamps it on every identity a session cookie authenticates.
 const sessionBackendName = "session"
 
+// caseEncryptionKey is the database root key every case's engine is configured
+// with: the TOTP factor seals its seed in an encrypted column, and the database
+// module reads the key from its own engine's section. It is longer than the
+// fourteen bytes the module requires and is a case's alone.
+const caseEncryptionKey = "crm-host-case-root-key-0123456789"
+
 // admissionModuleName is the name the tenant admission layer reports, both in
 // the registry and in the chain listing.
 const admissionModuleName = "tenant.admission"
@@ -267,6 +273,23 @@ func (c *crmCase) writeBaseConfig() {
 	c.config.set("authn.token.client-id", hostName)
 	c.config.set("authn.token.algorithm", "ES256")
 	c.config.set("authn.token.signing-key-file", c.mintKeyFile("token-signing-key.pem"))
+	// A TOTP factor names the issuer an authenticator app shows beside the
+	// account, and a WebAuthn relying party is bound to an id and the origins it
+	// accepts an assertion from. Both default off the gateway's public address,
+	// whose host is the host below; they are written here so the fixture pins
+	// them to the host rather than leaving them to whatever the address would
+	// resolve to. The relying party id is the public address's host, which it has
+	// to be or a parent domain of.
+	c.config.set("authn.mfa.totp.issuer", hostName)
+	c.config.set("authn.mfa.webauthn.rp-id", hostName+".test")
+	c.config.set("authn.mfa.webauthn.rp-name", hostName)
+	c.config.set("authn.mfa.webauthn.origins", []string{"https://" + hostName + ".test"})
+	// A TOTP seed is held in an encrypted column, and the database module reads a
+	// root key from its own engine's section. It is written for both engines,
+	// since a case's stack names one of them and the section of the other is read
+	// by nothing.
+	c.config.set("db.sqlite.encryption-key", caseEncryptionKey)
+	c.config.set("db.postgres.encryption-key", caseEncryptionKey)
 	c.config.set("tenant.resolve.endpoints", []string{apiEndpoint})
 	c.config.set("tenant.resolve.extractor", "header")
 	c.config.set("tenant.resolve.header-name", tenantHeader)

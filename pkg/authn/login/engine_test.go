@@ -82,6 +82,43 @@ func TestFirstFactorPromptRefuseAndProveWalksTheStateMachine(t *testing.T) {
 	}
 }
 
+// TestARefusalIsAnsweredByItsCause holds the design's rule that a first factor's
+// refusal is not always login-failed: a phone prefix outside the allow-list is a
+// 400 unsupported-region and an identifier that cannot name an account is a 400
+// bad-request, while a credential that did not hold stays a 401 login-failed.
+func TestARefusalIsAnsweredByItsCause(t *testing.T) {
+	cases := []struct {
+		name  string
+		cause error
+		code  int
+		typ   string
+	}{
+		{"a credential that did not hold", authn.ErrInvalidCredentials, http.StatusUnauthorized, "login-failed"},
+		{"an identifier that cannot name an account", authn.ErrInvalidIdentifier, http.StatusBadRequest, "bad-request"},
+		{"a phone prefix outside the allow-list", authn.ErrUnsupportedRegion, http.StatusBadRequest, "unsupported-region"},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			m := &fakeMethod{name: "password"}
+			m.begin = func(authn.Start) (authn.Step, error) { return authn.StepPrompt("credentials", nil), nil }
+			m.ans = func(authn.FlowState, authn.StepInput) (authn.Step, error) {
+				return authn.StepRefused(tc.cause), nil
+			}
+			r := newRig(t, m)
+			r.allow("acct1")
+			cookie := startPassword(t, r)
+
+			rec := r.send(http.MethodPost, "/auth/flows/answer", `{"seq":1,"step":"answer","input":{}}`, "Cookie", cookie)
+			if rec.Code != tc.code {
+				t.Fatalf("a refusal caused by %v answered %d, want %d: %s", tc.cause, rec.Code, tc.code, rec.Body.String())
+			}
+			if got, _ := decode(t, rec.Body.String())["type"].(string); got != "urn:speed:authn:"+tc.typ {
+				t.Errorf("the refusal caused by %v wrote problem type %q, want %q", tc.cause, got, tc.typ)
+			}
+		})
+	}
+}
+
 // TestNegativeVectorsAreRefusedBeforeTheMethodRuns holds the request checks that
 // come before a method is called: a wrong step number, a step the state does not
 // take, a missing or mismatched binding, an unknown field, and the wrong content

@@ -198,6 +198,18 @@ func (g *register) disableAll(ctx context.Context, account authn.AccountID) (int
 	return int(changed), nil
 }
 
+// disable sets one active row of the account to disabled. The update is
+// conditional on the row still being active, so a second detection of the same
+// clone, or a reset or a removal that came first, is a no-op.
+func (g *register) disable(ctx context.Context, account authn.AccountID, id string) error {
+	res := g.session(ctx).Exec("UPDATE "+factorTable+" SET status = ? WHERE id = ? AND account_id = ? AND status = ?",
+		int(authn.FactorDisabled), id, string(account), int(authn.FactorActive))
+	if res.Error != nil {
+		return fmt.Errorf("disabling a factor: %w", res.Error)
+	}
+	return nil
+}
+
 // seasoned reports whether the account has an active row of a kind other than
 // SMS that was activated at or before the cutoff.
 func (g *register) seasoned(ctx context.Context, account authn.AccountID, cutoff time.Time) (bool, error) {

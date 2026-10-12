@@ -153,6 +153,21 @@ func (m *product) Reset(ctx context.Context, id authn.AccountID, _ string) (int,
 	return removed, nil
 }
 
+// flagged disables the factor a clone warning came from and announces the change.
+// The factor already refuses the flagged credential; this takes its row out of
+// the account's factors and publishes authn.factor.changed with flagged, the way
+// a reset does for every row. A failure to disable the row is an Error and the
+// event is published anyway, because a client holding a clone must not keep a
+// usable factor row.
+func (m *product) flagged(ctx context.Context, rec authn.FactorRecord) {
+	if err := m.register.disable(ctx, rec.Account, rec.ID); err != nil {
+		m.logger.Error(ModuleName+": a flagged factor could not be disabled",
+			slog.String("account", string(rec.Account)), slog.String("factor", rec.ID),
+			slog.String("cause", err.Error()))
+	}
+	m.publishChanged(ctx, rec, changeFlagged, byClassSystem)
+}
+
 // Seasoned reports whether the account has an active factor of a kind other than
 // SMS that has been active for at least sensitive-min-age. It reads the register
 // and no session: the highest-privilege actions ask this of whoever is acting,

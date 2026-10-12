@@ -5,3 +5,13 @@ use (
 	./examples/orders-host
 	./pkg
 )
+
+// github.com/tjfoc/gmsm, reached through the Aliyun SMS SDK's credential
+// chain, predates module graph pruning and drags google.golang.org/genproto
+// v0.0.0-20190819201941 back into the workspace build list, where its
+// googleapis/api and googleapis/rpc packages shadow the split
+// google.golang.org/genproto/googleapis/* modules. Pin the monolith to a
+// version whose googleapis/api and googleapis/rpc trees are separate modules,
+// so only the split modules provide those packages.
+replace google.golang.org/genproto => google.golang.org/genproto v0.0.0-20260819154853-08b0e4226688
+

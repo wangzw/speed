@@ -89,7 +89,7 @@ type StepInput struct {
 ```go
 func StepPrompt(step string, private []byte, fields ...Field) Step // 向客户端要这些字段
 func StepRedirect(step string, private []byte, to string) Step     // 让用户代理去外部方；to 必须是 https
-func StepData(step string, private []byte, v any) Step             // 回给客户端一段 JSON（通行密钥的选项）
+func StepData(step string, private []byte, v any) Step             // 回给客户端一段 JSON（因素或方法自己的对象）
 func StepProven(p Proof) Step                                      // 第一因素通过
 func StepRefused(cause error) Step                                 // 凭据不成立；对外统一答复，成因只进日志
 func StepThrottled(retryAfter time.Duration) Step                  // 429 加 Retry-After
@@ -167,7 +167,7 @@ type Proof struct {
 | `factor` | `factors: [{id, kind, label}]`，种类须与第一因素不同 |
 | `enroll` | `kinds` |
 | `complete` | 流程已就绪，客户端以 `step=complete` 取走结果 |
-| `webauthn` | 库生成的 `options` 原样 |
+| `webauthn` | 数据步：`options` 是该因素自己的 JSON 对象——通行密钥的仪式取库生成的创建或请求选项，TOTP 登记取 `otpauth_uri`（二维码由客户端画） |
 
 完成时，`delivery=session` 设 cookie，体为 `{"state":"authenticated","session":{"id","expires_at"}}`；`delivery=token` 体为 `{"state":"authenticated","token_type":"Bearer","access_token","expires_in","refresh_token"}`。
 
@@ -178,7 +178,7 @@ type Proof struct {
 | 状态 | 码 | 场景 |
 |---|---|---|
 | 400 | `bad-request`、`unsupported-region` | 体不合法、字段缺失、未知字段、体超过 64 KiB 上限、方法不存在、`return_to` 不合规；短信号码前缀不在放行表里 |
-| 401 | `login-failed` | 未知标识、错口令、停用、无口令、验证码错、方法内任何校验失败；**同一个应答** |
+| 401 | `login-failed` | 未知标识、错口令、停用、无口令、验证码错、方法内校验失败；**同一个应答**，成因是号码前缀不在放行表或标识无法规范化时按 400 答 |
 | 401 | `flow-invalid` | 流程过期、已用、绑定不符、步序不符、被并发消费 |
 | 401 | `link-required` | 社交登录无绑定而已验证邮箱命中现有账户 |
 | 401 | `insufficient_user_authentication` | 加强认证，同时带 `WWW-Authenticate`（[authn-mfa](design-authn-mfa.md)） |
@@ -437,7 +437,7 @@ cookie 的属性是 `Secure; HttpOnly; Path=/`、无 `Domain`、**`SameSite=None
 
 「账户安全类动作的要求」是 `Requirement`：账户有有效因素（`MFA.Factors` 里状态为启用的行）时为新鲜的本地多因素，没有因素时为新鲜的第一因素，取值与单位归 [authn-mfa](design-authn-mfa.md)。引擎以 `StatusFresh` 交回的 `Assurance`、`AuthTime`、`IDPAssured` 按 `Identity.Satisfies` 的同一判据核对。
 
-`step-up` 的可用清单这样产生：引擎以会话的方式集构造只含 `Methods` 的 `Proof`，调 `MFA.Require(账户, Proof)` 取认证方式与会话方式不相交的启用因素，再剔除启用时刻不早于会话 `AuthTime` 的因素（`FactorRecord.ActivatedAt`）：登录期间登记的因素不得用来加强认证。`Require` 的结局不是 `MFAFactor` 即账户没有因素，起始状态取 `first`；结局是 `MFAFactor` 而剔除后清单为空，401 `insufficient_user_authentication`，不写记录。
+`step-up` 的可用清单这样产生：引擎以会话的方式集构造只含 `Methods` 的 `Proof`，调 `MFA.Require(账户, Proof)` 取认证方式与会话方式不相交的启用因素，再剔除启用时刻不早于会话 `AuthTime` 的因素（`FactorRecord.ActivatedAt`）：登录期间登记的因素不得用来加强认证。`Require` 的结局不是 `MFAFactor` 即账户没有因素，起始状态取 `first`；结局是 `MFAFactor` 而剔除后清单为空，401 `insufficient_user_authentication`，不写记录。清单为空在只有一种因素种类的装配里是常态：会话在登录时已答过该种类，没有不相交的因素可提供，所以这样的装配取到满足要求的 200 靠登录时完成第二因素，加强认证的入口留给种类多于一种的装配。
 
 `step-up` 在 `first` 起始时，方法证明的账户必须等于记录的 `account`，否则落入 `failed`，401 `login-failed`；`link` 的外部身份不按绑定解析账户，账户取记录的 `account`。
 
@@ -454,7 +454,7 @@ cookie 的属性是 `Secure; HttpOnly; Path=/`、无 `Domain`、**`SameSite=None
 | 当前状态 | 事件 | 下一状态 | 答复 | 副作用 |
 |---|---|---|---|---|
 | `first` | `submit`，方法交出 `StepPrompt`、`StepData`、`StepRedirect` | `first`，`seq` 加一，`answers` 加一，`sends` 累加 | 200 | 无 |
-| `first` | `submit`，`StepRefused` | `first`，`seq` 加一，`answers` 加一，受 8 次上限 | 401 `login-failed` | 方法自己记退避 |
+| `first` | `submit`，`StepRefused` | `first`，`seq` 加一，`answers` 加一，受 8 次上限 | 401 `login-failed`；成因是 `ErrUnsupportedRegion` 或 `ErrInvalidIdentifier` 时按 400 答（`unsupported-region`、`bad-request`） | 方法自己记退避 |
 | `first` | `submit`，`StepThrottled` | 不变 | 429 带 `Retry-After`；`retryAfter` 为零时不带 | 无 |
 | `first` | `submit`，`StepUnavailable` | 不变 | 503 | 无 |
 | `first` | `submit`，`StepProven` | 账户解析，随后按策略判定落入 `second`、`enroll` 或 `ready`；解析失败落入 `failed` | 200 或 401 | 见「账户解析与策略判定」 |
@@ -729,7 +729,7 @@ cookie 的属性是 `Secure; HttpOnly; Path=/`、无 `Domain`、**`SameSite=None
 
 ## 实现状态
 
-`pkg/authn` 目前含网关、口令表后端、身份与判决的类型、值类型、登录方法与因素的根包接缝、`Step`、路由共用部件 `internal/mount`、登录引擎 `authn.login` 与口令方法 `authn.login.password`；短信、社交与微信登录方式、`guard.Require` 尚未实现。引擎把两块内容放在内部包里：`login/internal/resolve` 把 `Proof` 解析成账户（开户、绑定、并入外部身份，交回一个 `Result`），`login/internal/selfservice` 挂账户自助路由（`GET me`、改口令、手机号、删标识、解绑）；两个包都只被引擎构造与调用，别的模块够不到。
+`pkg/authn` 目前含网关、口令表后端、身份与判决的类型、值类型、登录方法与因素的根包接缝、`Step`、路由共用部件 `internal/mount`、登录引擎 `authn.login`、口令方法 `authn.login.password` 与短信方法 `authn.login.sms`；社交与微信登录方式尚未实现。引擎把两块内容放在内部包里：`login/internal/resolve` 把 `Proof` 解析成账户（开户、绑定、并入外部身份，交回一个 `Result`），`login/internal/selfservice` 挂账户自助路由（`GET me`、改口令、手机号、删标识、解绑）；两个包都只被引擎构造与调用，别的模块够不到。
 
 | 能力 | 状态 | 代码 |
 |---|---|---|
@@ -745,7 +745,7 @@ cookie 的属性是 `Secure; HttpOnly; Path=/`、无 `Domain`、**`SameSite=None
 | 账户自助路由与手机号验证 | 已实现 — `GET B/me`、`PUT B/password`、`POST B/phone`、`POST B/phone/verify`、`DELETE B/identifiers/:id`、`DELETE B/links/:id` 在 `login/internal/selfservice` | `pkg/authn/login/internal/selfservice` `Service`、`Deps`；`pkg/authn/login/routes.go` |
 | 失败退避的流程侧、枚举防护与来源地址前置减负 | 已实现 — 每流程八次答复上限、不可区分的枚举应答与来源地址前置减负 | `pkg/authn/login/engine.go`、`pkg/authn/login/answer.go` |
 | 口令方法 `authn.login.password` | 已实现 | `pkg/authn/login/password/password.go` `Module`、`(method).Begin`、`(method).Answer`、`(method).Name` |
-| 短信方法 `authn.login.sms` | 未实现 | — |
+| 短信方法 `authn.login.sms` | 已实现 | `pkg/authn/login/sms/sms.go` `Module` |
 | Google 方法 `authn.login.google` | 未实现 | — |
 | GitHub 方法 `authn.login.github` | 未实现 | — |
 | 微信方法 `authn.login.wechat-web`、`authn.login.wechat-mp` 与共用客户端 | 未实现 | — |

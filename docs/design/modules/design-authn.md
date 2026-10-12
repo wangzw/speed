@@ -670,7 +670,7 @@ type Provisioner interface {
 | 判决不可字面构造与零值读作没答 | 已实现 | `pkg/authn/internal/verdict/verdict.go` `Verdict`、`OutcomeOf`；`pkg/authn/verdict.go` |
 | 判决携带 `Principal` | 已实现 | `pkg/authn/verdict.go` `Authenticated`；`pkg/authn/internal/verdict/verdict.go` `NewAuthenticated`、`PrincipalOf`；`pkg/authn/internal/model/principal.go` `Principal` |
 | 值类型的落点与根包别名：`AccountID`、`SessionID`、`Method`、`Assurance`、`Access`、`Requirement`、`Principal`，以及登录、因素、标识、外部绑定、账户、成员关系、会话、令牌、冒充、短信与 SSO 提供方的值类型 | 已实现 | `pkg/authn/internal/model`；`pkg/authn/ids.go` |
-| 接缝的根包声明：`Accounts`、`AccountAdmin`、`Passwords`、`Memberships`、`AccountLifecycle`、`Provisioner`、`Sessions`、`LoginMethod`、`Factor`、`MFA`、`Decider`、`Impersonation`、`Tokens`、`ClaimsContributor`、`SMSCodes`、`SSOProviders`，事件类型与载荷，哨兵 | 部分实现 — 缺 `SMSSender`、`SMS`、`SSOMetadataRefresher` | `pkg/authn/account.go`；`pkg/authn/membership.go`；`pkg/authn/lifecycle.go`；`pkg/authn/provision.go`；`pkg/authn/session.go`；`pkg/authn/login.go`；`pkg/authn/factor.go`；`pkg/authn/decide.go`；`pkg/authn/impersonation.go`；`pkg/authn/token.go`；`pkg/authn/claims.go`；`pkg/authn/sms.go`；`pkg/authn/sso.go`；`pkg/authn/events.go`；`pkg/authn/errors.go`；`pkg/authn/surface_test.go` `exportedSurface` |
+| 接缝的根包声明：`Accounts`、`AccountAdmin`、`Passwords`、`Memberships`、`AccountLifecycle`、`Provisioner`、`Sessions`、`LoginMethod`、`Factor`、`MFA`、`Decider`、`Impersonation`、`Tokens`、`ClaimsContributor`、`SMSCodes`、`SMSSender`、`SSOProviders`，事件类型与载荷，哨兵 | 部分实现 — 缺 `SSOMetadataRefresher` | `pkg/authn/account.go`；`pkg/authn/membership.go`；`pkg/authn/lifecycle.go`；`pkg/authn/provision.go`；`pkg/authn/session.go`；`pkg/authn/login.go`；`pkg/authn/factor.go`；`pkg/authn/decide.go`；`pkg/authn/impersonation.go`；`pkg/authn/token.go`；`pkg/authn/claims.go`；`pkg/authn/sms.go`；`pkg/authn/sso.go`；`pkg/authn/events.go`；`pkg/authn/errors.go`；`pkg/authn/surface_test.go` `exportedSurface` |
 | 属性集的分项上限与检查，账户与会话载荷各一份上限，合计低于盖章处的总上限 | 已实现 | `pkg/authn/internal/model/bounds.go` `CheckAccountAttributes`、`CheckIDPAttributes`、`TruncateUTF8`；`pkg/authn/gate/attribute_bounds_test.go` |
 | 路由共用部件：问题码与 `Fail` 一族、`Decode`、`Wrap`、`AllowCallback`，与测试用的 `Mounter` | 已实现 | `pkg/authn/internal/mount/problem.go`；`pkg/authn/internal/mount/decode.go`；`pkg/authn/internal/mount/wrap.go`；`pkg/authn/internal/mount/mounttest/mounttest.go` |
 | 身份的类型化字段与责任键 | 已实现 | `pkg/authn/internal/identity/identity.go` `Identity`、`New`、`Key`、`Satisfies`；`pkg/authn/identity.go` `Identity` |
@@ -683,12 +683,12 @@ type Provisioner interface {
 | 账户存储 `authn.account` | 已实现 | `pkg/authn/account/account.go` `Module` |
 | 登录会话 `authn.session` | 已实现 | `pkg/authn/session/session.go` `Module` |
 | 访问令牌、刷新令牌与服务账户 `authn.token` | 已实现 | `pkg/authn/token` 的 `Module`；配置、迁移、路由、清扫与事件订阅俱在 |
-| 登录引擎 `authn.login` 与全部登录方式 | 部分实现 — 引擎与口令方法 `authn.login.password` 已实现；缺短信、Google、GitHub、微信与 SAML/OIDC 登录方式 | `pkg/authn/login/login.go` `Module`；`pkg/authn/login/password/password.go` `Module` |
-| 多因素编排 `authn.mfa` 与全部因素 | 部分实现 — 登记簿与编排已实现；缺 TOTP、短信、WebAuthn 三种因素种类 | `pkg/authn/mfa/mfa.go` `Module` |
-| 短信验证码 `authn.sms` 与短信发送方 | 未实现 | — |
+| 登录引擎 `authn.login` 与全部登录方式 | 部分实现 — 引擎、口令方法 `authn.login.password` 与短信方法 `authn.login.sms` 已实现；缺 Google、GitHub、微信与 SAML/OIDC 登录方式 | `pkg/authn/login/login.go` `Module`；`pkg/authn/login/password/password.go` `Module`；`pkg/authn/login/sms/sms.go` `Module` |
+| 多因素编排 `authn.mfa` 与全部因素 | 已实现 | `pkg/authn/mfa/mfa.go` `Module`；`pkg/authn/mfa/totp`、`pkg/authn/mfa/sms`、`pkg/authn/mfa/webauthn` |
+| 短信验证码 `authn.sms` 与短信发送方 | 已实现 | `pkg/authn/sms` 的 `Module`；`pkg/authn/sms/aliyun`、`pkg/authn/sms/tencent` |
 | 企业 SSO `authn.sso` 与 SAML、企业 OIDC | 未实现 | — |
 | 冒充 `authn.impersonation` | 未实现 | — |
 | 判定接缝与管理面 `authn.admin` | 部分实现 — 接缝 `Decider`、`Decision`、`Action` 已在；缺管理面 `authn.admin` | `pkg/authn/decide.go` `Decider`、`Decision`、`Action` |
-| 加强认证处理器 `authn/guard` | 未实现 | — |
+| 加强认证处理器 `authn/guard` | 已实现 | `pkg/authn/guard/guard.go` `Require` |
 | 租户准入层 `tenant.admission` | 已实现 | `pkg/tenant/admission/admission.go` `Module`；`pkg/tenant/capabilities.go` `Admission` |
 | 链上次序的装配测试 | 部分实现 — 准入层的链上次序与端点在 `pkg/tenant/admission/assembly_test.go` 与 `pkg/tenant/admission/live_test.go` 里从真实注册表与回环端守住；缺与全部六期模块齐全的链上次序汇总 | `pkg/tenant/admission/assembly_test.go`；`pkg/tenant/admission/live_test.go` |

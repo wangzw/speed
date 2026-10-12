@@ -448,6 +448,37 @@ func TestVerifyThrottlesBeforeAskingAndCountsTheOutcome(t *testing.T) {
 	})
 }
 
+// TestAFlaggedFactorIsDisabledAndAnnounced holds the clone chain: a verification
+// whose factor reports a flagged credential is refused, the factor's row is set
+// disabled so it no longer verifies, and the change is published as
+// authn.factor.changed with flagged.
+func TestAFlaggedFactorIsDisabledAndAnnounced(t *testing.T) {
+	onEachDialect(t, []authn.FactorKind{authn.FactorWebAuthn}, func(t *testing.T, r *rig) {
+		wa := r.p.factors[authn.FactorWebAuthn].(*fakeFactor)
+		id := r.activeFactor(acct, authn.FactorWebAuthn, time.Hour)
+		wa.verifyFn = func(context.Context, authn.FlowState, authn.FactorRecord, authn.StepInput) (authn.Step, error) {
+			return authn.StepRefused(authn.ErrFactorFlagged), nil
+		}
+
+		got, err := r.p.Verify(context.Background(), flow(acct), id, authn.StepInput{})
+		if err != nil {
+			t.Fatalf("Verify: %v", err)
+		}
+		answerIs(t, got, step.KindRefused)
+		if status, found := r.status(id); !found || status != authn.FactorDisabled {
+			t.Errorf("the flagged factor's row is %v (found %v), want disabled", status, found)
+		}
+		var payload authn.FactorChanged
+		r.bus.payload(t, authn.EventFactorChanged, &payload)
+		if payload.Change != "flagged" {
+			t.Errorf("the announced change is %q, want flagged", payload.Change)
+		}
+		if payload.FactorID != id {
+			t.Errorf("the event names factor %q, want %q", payload.FactorID, id)
+		}
+	})
+}
+
 func TestAFactorInBackOffIsNotAskedAndNothingIsCounted(t *testing.T) {
 	onEachDialect(t, []authn.FactorKind{authn.FactorTOTP}, func(t *testing.T, r *rig) {
 		totp := r.p.factors[authn.FactorTOTP].(*fakeFactor)
