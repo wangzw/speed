@@ -13,27 +13,8 @@ it derives anything, hands the credential to the account module's `Passwords`,
 counts the outcome against the same key, and says what is next. The engine, not
 this package, logs the cause of an answer.
 
-## Where the authority is
-
-- What this method is and why it is shaped this way:
-  [`docs/design/modules/design-authn-login.md`](../../../../docs/design/modules/design-authn-login.md),
-  the LoginMethod seam and the password section. The credential it hands over is
-  the account module's —
-  [design-authn-account](../../../../docs/design/modules/design-authn-account.md)
-  for `Passwords.Verify` and `Passwords.Set` and the policy; the back-off it
-  counts against is in the failure design
-  ([design-authn-failure](../../../../docs/design/modules/design-authn-failure.md),
-  [design-authn-account](../../../../docs/design/modules/design-authn-account.md)).
-- The decisions behind it: [`docs/adr/`](../../../../docs/adr/) —
-  `adr-authn-password-hash-2026-10-10` for what a credential is,
-  `adr-authn-throttling-2026-10-10` for the back-off, and
-  `adr-authn-wiring-2026-10-10` for a method as a non-exclusive seam taken with
-  `ResolveAll`.
-- The API itself: the godoc in this package, and the `LoginMethod`, `Start`,
-  `FlowState`, `StepInput`, `Step` and `Proof` shapes in `pkg/authn`.
-
-This file states only what neither of those states: the boundaries a change here
-must not cross, and how to run it.
+The API is the package's godoc, and the `LoginMethod`, `Start`, `FlowState`,
+`StepInput`, `Step` and `Proof` shapes in `pkg/authn`.
 
 ## Boundaries
 

@@ -19,22 +19,7 @@ nothing else — no factor module, no store and no other package of this
 capability. The decision is a function of the identity alone, so there is nothing
 to resolve and no dependency to fail at start.
 
-## Where the authority is
-
-- What it is and the exact answer it writes:
-  [`docs/design/modules/design-authn-mfa.md`](../../../docs/design/modules/design-authn-mfa.md),
-  the section on the step-up answer and `guard.Require`. The RFC 9470 parameters
-  and the schemes the gateway stamps are named there.
-- The challenge the rest of the capability writes, and why `Basic` is not among
-  them:
-  [`docs/design/modules/design-authn-gate.md`](../../../docs/design/modules/design-authn-gate.md).
-- The decision it carries out — why a verdict is closed, and where strength is
-  composed:
-  [`docs/adr/adr-authn-verdict-2026-10-10.md`](../../../docs/adr/adr-authn-verdict-2026-10-10.md),
-  [`docs/adr/adr-authn-mfa-2026-10-10.md`](../../../docs/adr/adr-authn-mfa-2026-10-10.md).
-
-This file states only what those do not: the boundaries a change here must not
-cross.
+The API is the package's godoc.
 
 ## Boundaries
 

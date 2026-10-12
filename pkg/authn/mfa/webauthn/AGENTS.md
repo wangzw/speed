@@ -18,31 +18,12 @@ and the event belong to `authn.mfa`, which drives this factor through the root
 package's `Factor` interface and drives this method through `LoginMethod`. What
 this module does is speak the protocol and keep its own two tables.
 
-## Where the authority is
+The API is the package's godoc. Read `factor.Enroll`'s comment before changing the
+two steps of a registration, and `factor.Verify`'s before changing the counter
+write-back.
 
-- What this module is and why it is shaped this way: the `WebAuthn 与通行密钥`
-  section of
-  [`docs/design/modules/design-authn-mfa.md`](../../../../docs/design/modules/design-authn-mfa.md),
-  and the `通行密钥` login method in
-  [`docs/design/modules/design-authn-login.md`](../../../../docs/design/modules/design-authn-login.md).
-  The two tables it owns (`authn_webauthn_users`, `authn_webauthn_credentials`)
-  and the `Factor` and `LoginMethod` seams it answers are in those documents too.
-- The decisions behind it: the factor seam and the single composition of the level
-  ([`adr-authn-mfa-2026-10-10.md`](../../../../docs/adr/adr-authn-mfa-2026-10-10.md)) —
-  in particular that the passkey login counts as a first factor and the level is
-  composed elsewhere. The change a cloned credential announces is a value of
-  `authn.factor.changed`
-  ([`docs/design/modules/design-authn-events.md`](../../../../docs/design/modules/design-authn-events.md)).
-- The three input items, their defaults and the relying-party-id check:
-  [`docs/design/modules/design-authn-config.md`](../../../../docs/design/modules/design-authn-config.md)
-  (`authn.mfa.webauthn.rp-id` defaulting to the host of the gateway's public
-  address, `rp-name`, `origins`).
-- The API itself: the godoc in this package. Read `factor.Enroll`'s comment before
-  changing the two steps of a registration, and `factor.Verify`'s before changing
-  the counter write-back.
-
-This file states only what neither of those states: the boundaries a change here
-must not cross, and how to run it.
+The three input items are `authn.mfa.webauthn.rp-id` (defaulting to the host of
+the gateway's public address), `rp-name` and `origins`.
 
 ## Boundaries
 
@@ -90,7 +71,7 @@ must not cross, and how to run it.
   credential is bound to the relying party id, so one that does not cover the
   host — equal to it or a parent domain of it — would let an assertion collected
   at the site complete a ceremony begun elsewhere. The public suffix table is not
-  consulted, which is the residual risk the design accepts (`config.go` `resolve`,
+  consulted, which is the residual risk accepted here (`config.go` `resolve`,
   `withinHost`, `TestTheRelyingPartyIDMustCoverTheHost`,
   `TestPrepareRefusesARelyingPartyIDOutsideTheHost`).
 - **An assertion that holds advances the counter by a conditional write.** The

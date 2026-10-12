@@ -21,35 +21,9 @@ routes: `GET me`, the password and phone writes, unbinding an external identity
 and deleting an identifier. This package builds both and calls them; neither is
 reachable from another module.
 
-## Where the authority is
-
-- What this module is and why it is shaped this way:
-  [`docs/design/modules/design-authn-login.md`](../../../docs/design/modules/design-authn-login.md).
-  The account-resolution rules it calls are in
-  [design-authn-account](../../../docs/design/modules/design-authn-account.md);
-  the factor policy and the one composition of a level are in
-  [design-authn-mfa](../../../docs/design/modules/design-authn-mfa.md); the
-  cookie, the periods and the revocation are in
-  [design-authn-session](../../../docs/design/modules/design-authn-session.md);
-  the settings and their domains are in
-  [design-authn-config](../../../docs/design/modules/design-authn-config.md);
-  the audit actions, events and instruments are in
-  [design-authn-events](../../../docs/design/modules/design-authn-events.md).
-- The decisions behind it, one file per decision, in
-  [`docs/adr/`](../../../docs/adr/): the flow record and its compare-and-swap
-  (`adr-authn-login-flow-2026-10-10`), the challenge a 401 carries
-  (`adr-authn-credential-dispatch-2026-10-10`), the audit row and the event
-  (`adr-authn-events-and-audit-2026-10-10`), the external binding and the merge
-  (`adr-authn-external-binding-2026-10-10`), where the flow is placed
-  (`adr-authn-state-placement-2026-10-10`), the back-off
-  (`adr-authn-throttling-2026-10-10`), and how a method is taken in
-  (`adr-authn-wiring-2026-10-10`, `adr-authn-packaging-2026-10-10`).
-- The API itself: the godoc in this package. Read `Module`'s comment before
-  changing the descriptor and `migrateFirst`/`resolveAndDecide` before changing
-  what a state does.
-
-This file states only what neither of those states: the boundaries a change here
-must not cross, and how to run it.
+The API is the package's godoc. Read `Module`'s comment before changing the
+descriptor and `migrateFirst`/`resolveAndDecide` before changing what a state
+does.
 
 ## Boundaries
 

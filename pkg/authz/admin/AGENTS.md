@@ -19,24 +19,8 @@ every other command: without it a tenant's roles, grants and bindings are still
 read and written through the policy module's `Manager` Go interface, and the
 host's own commands carry their access control.
 
-## Where the authority is
-
-- What this module is and why it is shaped this way:
-  [`docs/design/modules/design-authz.md`](../../../docs/design/modules/design-authz.md) —
-  the module row under "登记单元与名字" and "模块清单", the shapes it reads and
-  writes under "类型与接口" (`Manager`, `RoleRecord`, `GrantRecord`, `Binding`),
-  the route surface, view shapes and refusal codes under "管理面", the two
-  management permissions under "权限常量", the grant, builtin-role and tenant
-  refusals under "错误与失败语义", and the extension point a handler uses to ask
-  one question, under "扩展点".
-- The management face precedent — a module that delivers no capability, mounts
-  routes and checks a decision before it acts:
-  [`docs/design/modules/design-authn-admin.md`](../../../docs/design/modules/design-authn-admin.md).
-- The API itself: the godoc in this package, and the `Manager`, `Catalog`,
-  `Role` and record types in `pkg/authz`.
-
-This file states only what neither of those states: the boundaries a change
-here must not cross, and how to run it.
+The API is the package's godoc, plus the `Manager`, `Catalog`, `Role` and record
+types in `pkg/authz`.
 
 ## Routes and the permissions they are held to
 
@@ -114,8 +98,8 @@ write that lands answers 204 and no body.
 - **The binding writes refuse an empty account on shape, after the decision and
   before the manager.** The route addresses a binding by its account, and the
   empty account names the zero subject, so a request that carries one is a 400
-  and the manager is not called. An empty tenant is not refused here: the design
-  puts the empty-tenant check in the store, and the manager reports it as the
+  and the manager is not called. An empty tenant is not refused here: the
+  empty-tenant check is in the store, and the manager reports it as the
   tenant mismatch this module maps to a 400, so the write is forwarded to the
   manager with the empty tenant intact.
 - **The module decides its own routes in the handler and declares them open.**

@@ -11,37 +11,8 @@ nothing here sits on top of it. Concrete engines are subpackages — `postgres`,
 `sqlite` — and each registers one module, binds its own driver, and declares the
 same capability exclusively.
 
-## Where the authority is
-
-- What this module is and why it is shaped this way:
-  [`docs/design/modules/design-db.md`](../../docs/design/modules/design-db.md).
-- The decisions behind it, one file per decision: [`docs/adr/`](../../docs/adr/) —
-  what the module takes on
-  ([`adr-db-scope-2026-09-14.md`](../../docs/adr/adr-db-scope-2026-09-14.md)),
-  why several engines deliver one capability
-  ([`adr-db-multiplicity-2026-09-14.md`](../../docs/adr/adr-db-multiplicity-2026-09-14.md)),
-  how migrations are applied
-  ([`adr-db-migration-2026-09-14.md`](../../docs/adr/adr-db-migration-2026-09-14.md)),
-  how a constraint refusal is recognised
-  ([`adr-db-errors-2026-09-28.md`](../../docs/adr/adr-db-errors-2026-09-28.md)),
-  how a module's own statements take a connection within a bounded wait
-  ([`adr-db-waits-2026-09-29.md`](../../docs/adr/adr-db-waits-2026-09-29.md)),
-  why the GORM logger a handle carries writes through the log module and writes
-  no statement's values
-  ([`adr-db-logging-2026-10-10.md`](../../docs/adr/adr-db-logging-2026-10-10.md)),
-  why `Migrate` accepts only an instance this module's own `New` built
-  ([`adr-db-scope-2026-10-08.md`](../../docs/adr/adr-db-scope-2026-10-08.md)),
-  what an instance a host supplies for a module is
-  ([`adr-supplied-instance-2026-10-08.md`](../../docs/adr/adr-supplied-instance-2026-10-08.md)),
-  why this package's interface exposes GORM
-  ([`adr-module-packaging-2026-09-14.md`](../../docs/adr/adr-module-packaging-2026-09-14.md)),
-  and where a driver is allowed to live
-  ([`adr-module-packaging-2026-09-22.md`](../../docs/adr/adr-module-packaging-2026-09-22.md)).
-- The API itself: the godoc in this package and in each subpackage. Read `Spec`'s
-  field comments before adding an implementation.
-
-This file states only what neither of those states: the boundaries a change here
-must not cross, and how to run it.
+The API is the package's godoc, the root package's and each subpackage's. Read
+`Spec`'s field comments before adding an implementation.
 
 ## Boundaries
 
@@ -51,8 +22,7 @@ must not cross, and how to run it.
   carries no engine but the one it deploys on. Nothing enforces that at compile
   time — an implementation subpackage and the root package are one module, so
   both drivers are in one dependency list — and `TestRootPackageImportsNoDriver`
-  in `deps_test.go` is the gate that stands in for it. The cost of having no
-  compiler behind this is recorded in `adr-module-packaging-2026-09-22`.
+  in `deps_test.go` is the gate that stands in for it.
 - **A driver belongs to the subpackage that binds it.** The root package reaches
   an engine only through the `Spec.Dialector` an implementation hands it.
 - **The root package registers no module of its own.** Each engine's subpackage
@@ -91,10 +61,10 @@ must not cross, and how to run it.
   Encryption and decryption failures are run-time errors that belong to the
   statement that hit them and get no sentinel here; a new class of startup
   failure is a decision, not an addition, and `ErrForeignInstance` is one that
-  was decided (`adr-db-scope-2026-10-08`). A constraint refusal is a run-time
+  was decided. A constraint refusal is a run-time
   error too, and it is classified with GORM's own `gorm.ErrDuplicatedKey` and
   `gorm.ErrForeignKeyViolated`, attached beside the driver's error rather than
-  in its place (`adr-db-errors-2026-09-28`).
+  in its place.
 - **`Migrate` accepts only an instance this module's own `New` built.** A host
   may supply an instance for the module, and neither `Prepare` nor `New` then
   runs; the plugins and the encryption serializer are installed in `New`, so a
@@ -141,7 +111,7 @@ must not cross, and how to run it.
   `statement_timeout` ends it on PostgreSQL. A wrapper that reset a timeout
   before a statement would cost a round trip on every audited row and would
   put a statement ahead of `ROLLBACK TO SAVEPOINT` inside a transaction
-  PostgreSQL has aborted (`adr-db-waits-2026-09-29`).
+  PostgreSQL has aborted.
 - **What `fn` leaves open on the connection never holds its release up.** The
   session is pinned to a wrapper of the connection (`pinnedConn`) that records
   each transaction begun on it and ties each result set to the call's end:
@@ -169,7 +139,7 @@ must not cross, and how to run it.
   on a `mode=ro` locator naming no mode. Under SQLite's DEFERRED default a transaction that
   read first is refused the write lock at once under any concurrent writer,
   and the driver's own begin drops `_txlock` whenever the locator gives
-  `_time_format` (`adr-db-waits-2026-09-29`). `transactions_test.go` holds the
+  `_time_format`. `transactions_test.go` holds the
   mode to the lock a second connection observes.
 - **A transaction runs on every locator whose connections cannot write.**
   SQLite begins an IMMEDIATE transaction on a database it opened read-only
@@ -185,8 +155,8 @@ must not cross, and how to run it.
   `transactions_test.go` holds the fallback to every answer a connection can
   give.
 - **The GORM logger every handle carries writes through the log module, and
-  writes no value a statement binds or reads** (`statementLogger`,
-  `adr-db-logging-2026-10-10`). It writes through the `*slog.Logger` its
+  writes no value a statement binds or reads** (`statementLogger`). It writes
+  through the `*slog.Logger` its
   module's `New` took up (`Spec.logger`): the log capability's `Named` logger,
   so that every record carries the module's own name, `module=db.sqlite` or
   `module=db.postgres`, or, when the assembly delivers none, the log package's
@@ -205,7 +175,7 @@ must not cross, and how to run it.
   level above Info writes no statement of a `Debug` session, because GORM's
   Info, Warn and Error are written at slog's levels of those names and those
   statements are Info records. The messages, levels and attributes of the
-  records are the design document's vocabulary and the cases pin them, because
+  records are a fixed vocabulary the cases pin, because
   operators search the output for them and `internal/dbhost` counts the
   failed statements' records on a replica's output. The messages are
   fixed words and whatever varies is an attribute — the statement is
@@ -221,13 +191,13 @@ must not cross, and how to run it.
   both engines in a copy of the test binary whose assembly has no log module, so
   that its records are the process default logger's and arrive on standard
   output, and reads the copy's two streams apart. Each statement it holds is
-  written as exactly one record, with the level and message the design document
-  gives, the engine's module name and a call site in the file that ran it; a
+  written as exactly one record, with the level and message this module fixes,
+  the engine's module name and a call site in the file that ran it; a
   statement that succeeds outside a `Debug` session is not written as a
   `statement` record; standard error carries no record of the logger; and
   neither stream carries a value any statement binds or reads. `logger_test.go`
   drives the logger over a recording handler and holds every record it writes
-  to the design document's vocabulary — its level, its message, the attributes
+  to that vocabulary — its level, its message, the attributes
   of its kind and no others — and a failure's classes to their spelling.
   `logrouting_test.go` runs the module under the real log module writing JSON
   to a file and holds a statement that fails, one in a `Debug` session, a slow

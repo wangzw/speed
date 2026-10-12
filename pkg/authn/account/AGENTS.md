@@ -13,25 +13,7 @@ No other module reads these tables. Every module that needs an account, a
 credential, a membership or a back-off takes one of the five interfaces from the
 registry; the `*gorm.DB` stays inside this package, and so do the migrations.
 
-## Where the authority is
-
-- What this module is and why it is shaped this way:
-  [`docs/design/modules/design-authn-account.md`](../../../docs/design/modules/design-authn-account.md),
-  with [`design-authn-config.md`](../../../docs/design/modules/design-authn-config.md)
-  for the settings and [`design-authn-failure.md`](../../../docs/design/modules/design-authn-failure.md)
-  for the sentinels.
-- The decisions behind it, one file per decision, in
-  [`docs/adr/`](../../../docs/adr/):
-  `adr-authn-accounts-2026-10-10`, `adr-authn-account-lifecycle-2026-10-10`,
-  `adr-authn-external-binding-2026-10-10`, `adr-authn-password-hash-2026-10-10`,
-  `adr-authn-throttling-2026-10-10`, `adr-authn-state-placement-2026-10-10`,
-  `adr-authn-guarantees-2026-10-10`, `adr-authn-wiring-2026-10-10`,
-  `adr-authn-packaging-2026-10-10`.
-- The API itself: the godoc in this package and the interface comments in
-  `pkg/authn`.
-
-This file states only what neither of those states: the boundaries a change here
-must not cross, and how to run it.
+The API is the package's godoc and the interface comments in `pkg/authn`.
 
 ## Boundaries
 

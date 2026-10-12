@@ -15,25 +15,9 @@ checks the redirect, exchanges the authorization code and verifies the identity
 token. It touches no HTTP route, session, token or flow record: account
 resolution is the engine's.
 
-## Where the authority is
-
-- What this method is and why it is shaped this way:
-  [`docs/design/modules/design-authn-sso.md`](../../../../docs/design/modules/design-authn-sso.md),
-  the "企业 OIDC" section and the tables around it, and the shared transaction in
-  [`design-authn-login.md`](../../../../docs/design/modules/design-authn-login.md)
-  ("社交登录与企业 OIDC 的共同事务").
-- The decisions behind it, in [`docs/adr/`](../../../../docs/adr/): the OAuth and
-  OIDC bridge and what the libraries do not do
-  (`adr-authn-oauth-flow-2026-10-10`), a library as a bridge confined to a leaf
-  package (`adr-authn-packaging-2026-10-10`), the enterprise IdP as data
-  (`adr-authn-sso-2026-10-10`), a method as a non-exclusive seam taken with
-  `ResolveAll` (`adr-authn-wiring-2026-10-10`).
-- The API itself: the godoc in this package, and the `LoginMethod`, `Start`,
-  `FlowState`, `StepInput`, `Step`, `Proof`, `SSOProvider` and `SSOProviders`
-  shapes in `pkg/authn`.
-
-This file states only what neither of those states: the boundaries a change here
-must not cross, and how to run it.
+The API is the package's godoc, and the `LoginMethod`, `Start`, `FlowState`,
+`StepInput`, `Step`, `Proof`, `SSOProvider` and `SSOProviders` shapes in
+`pkg/authn`.
 
 ## Boundaries
 

@@ -19,23 +19,8 @@ log line; it reads the anti-forgery state and the PKCE verifier from the flow
 record's method state, checks each exactly once on the callback, and says what is
 next. The engine, not this package, logs the cause of an answer.
 
-## Where the authority is
-
-- What this method is and why it is shaped this way:
-  [`docs/design/modules/design-authn-login.md`](../../../../docs/design/modules/design-authn-login.md),
-  the LoginMethod seam and the GitHub part of the social-login transaction. The
-  binding and first-login rules the proof feeds are in
-  [design-authn-account](../../../../docs/design/modules/design-authn-account.md).
-- The decisions behind it: [`docs/adr/`](../../../../docs/adr/) —
-  `adr-authn-oauth-flow-2026-10-10` for the split between the OAuth library and
-  the parts speed writes, `adr-authn-packaging-2026-10-10` and
-  `adr-authn-wiring-2026-10-10` for a method as a non-exclusive leaf seam taken
-  with `ResolveAll`.
-- The API itself: the godoc in this package, and the `LoginMethod`, `Start`,
-  `FlowState`, `StepInput`, `Step` and `Proof` shapes in `pkg/authn`.
-
-This file states only what neither of those states: the boundaries a change here
-must not cross, and how to run it.
+The API is the package's godoc, and the `LoginMethod`, `Start`, `FlowState`,
+`StepInput`, `Step` and `Proof` shapes in `pkg/authn`.
 
 ## Boundaries
 

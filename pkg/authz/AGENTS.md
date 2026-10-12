@@ -16,21 +16,8 @@ The management surface's routes are this directory's third module,
 `authz.admin`: it mounts them under `/authz/admin/*`, delivers nothing of its
 own, and is not built here yet.
 
-## Where the authority is
-
-- What this module is and why it is shaped this way:
-  [`docs/design/modules/design-authz.md`](../../docs/design/modules/design-authz.md).
-- The decisions behind it, one file per decision, in
-  [`docs/adr/`](../../docs/adr/): `adr-authz-model-2026-10-12`,
-  `adr-authz-engine-2026-10-12`, `adr-authz-store-2026-10-12`,
-  `adr-authz-decision-seam-2026-10-12`, `adr-authz-enforcement-2026-10-12`,
-  `adr-authz-cache-2026-10-12`, `adr-authz-packaging-2026-10-12` and
-  `adr-authz-reversal-2026-10-12`.
-- The API itself: the godoc in this package. Read the capability interfaces'
-  comments before writing a consumer.
-
-This file states only what neither of those states: the boundaries a change
-here must not cross, and how to run it.
+The API is the package's godoc. Read the capability interfaces' comments
+before writing a consumer.
 
 ## Modules and namespaces
 
@@ -55,8 +42,7 @@ here must not cross, and how to run it.
   item `authz.policy.load-timeout` and the setting
   `authz.policy.refresh-interval`. The enforcement module's namespace is
   `authz.guard`; it declares no input item yet, and the endpoint list and the
-  undeclared-route default the design places under it arrive with its
-  middleware.
+  undeclared-route default arrive with its middleware.
 
 ## Boundaries
 
@@ -76,8 +62,8 @@ here must not cross, and how to run it.
 - **The model text is fixed in the root package.** `ModelText` is the one model
   the engine is loaded with; a host writes policy data and never the model, so
   the judgment language cannot be changed out from under the engine. A wrong
-  matcher does not fail to load — it silently allows or denies where the design
-  says the opposite — so `policy` runs the self-check fixtures in
+  matcher does not fail to load — it silently allows or denies where the model
+  intends the opposite — so `policy` runs the self-check fixtures in
   `pkg/authz/internal/policy` against the root package's `ModelText`, the exact
   text the process will enforce with, before it begins serving, and a failure
   stops the startup.

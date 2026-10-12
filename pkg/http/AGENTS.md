@@ -9,34 +9,18 @@ order comes from, and the capability tokens it stands for, which is what another
 layer's constraints point at. The root package registers the module, named
 `http`, when it is initialised.
 
-## Where the authority is
-
-- What this module is and why it is shaped this way:
-  [`docs/design/modules/design-http.md`](../../docs/design/modules/design-http.md).
-- The decisions behind it, one file per decision:
-  [`docs/adr/`](../../docs/adr/) — `adr-http-surface-2026-09-14`,
-  `adr-http-middleware-2026-09-14`, `adr-http-stages-2026-10-11`,
-  `adr-http-routing-2026-09-14`, `adr-http-endpoints-2026-09-14`,
-  `adr-http-shutdown-2026-09-14`, `adr-http-recovery-2026-09-22`,
-  `adr-http-body-limit-2026-10-11`, `adr-http-access-log-2026-10-11`,
-  `adr-http-errors-2026-10-10`, `adr-http-enumeration-2026-10-10`,
-  `adr-http-cors-2026-10-11`.
-- The API itself: the godoc in this package, and the runnable examples in
-  `example_test.go`. Read `Middleware`'s field comments before adding a seat to
-  a layer.
-
-This file states only what neither of those states: the boundaries a change
-here must not cross, and how to run it.
+The API is the package's godoc, plus the runnable examples in `example_test.go`.
+Read `Middleware`'s field comments before adding a seat to a layer.
 
 ## Boundaries
 
 - **The root package adds no dependency of its own to gin's and config's.**
   Every module that registers a route imports this package, so a dependency
   added here lands in the dependency list of all of them. What already reaches
-  them from here is gin's closure (ADR-http-surface-2026-09-14) and what reading
+  them from here is gin's closure and what reading
   configuration costs: the input items are declared to `pkg/config` and the
   endpoints are read through its reader, so config's parsing libraries are in
-  the closure too (ADR-config-parsing-2026-09-20). `deps_test.go` holds the
+  the closure too. `deps_test.go` holds the
   budget — the standard library, this repository's modules, config's closure and
   gin's closure, each read as it stands — and the extra closure a subpackage
   contributes when it bridges a library the root package does not reach. Every

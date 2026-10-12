@@ -17,37 +17,8 @@ The value types and the units the modules share live in `pkg/authn/internal/`,
 which only this directory can import; among them `internal/mount/mounttest` is
 a `Mounter` for the tests of the modules that mount routes.
 
-## Where the authority is
-
-- What this module is and why it is shaped this way:
-  [`docs/design/modules/design-authn.md`](../../docs/design/modules/design-authn.md).
-- The decisions behind it, one file per decision, in
-  [`docs/adr/`](../../docs/adr/):
-  `adr-authn-account-lifecycle-2026-10-10`, `adr-authn-accounts-2026-10-10`,
-  `adr-authn-credential-dispatch-2026-10-10`,
-  `adr-authn-decision-seam-2026-10-10`,
-  `adr-authn-events-and-audit-2026-10-10`, `adr-authn-exemption-2026-10-10`,
-  `adr-authn-external-binding-2026-10-10`, `adr-authn-failure-2026-10-10`,
-  `adr-authn-guarantees-2026-10-10`, `adr-authn-identity-2026-10-10`,
-  `adr-authn-impersonation-2026-10-10`, `adr-authn-login-flow-2026-10-10`,
-  `adr-authn-mfa-2026-10-10`, `adr-authn-mfa-recovery-2026-10-10`,
-  `adr-authn-oauth-flow-2026-10-10`, `adr-authn-packaging-2026-10-10`,
-  `adr-authn-password-hash-2026-10-10`, `adr-authn-scope-2026-10-10`,
-  `adr-authn-session-2026-10-10`, `adr-authn-settings-and-secrets-2026-10-10`,
-  `adr-authn-sms-2026-10-10`, `adr-authn-sso-2026-10-10`,
-  `adr-authn-state-placement-2026-10-10`, `adr-authn-throttling-2026-10-10`,
-  `adr-authn-token-2026-10-10`, `adr-authn-verdict-2026-10-10`,
-  `adr-authn-wechat-2026-10-10`, `adr-authn-wiring-2026-10-10`,
-  `adr-tenant-admission-2026-10-10`
-- The API itself: the godoc in this package. Read `Verdict`'s constructors and
-  `Accepts`'s field comments before writing a backend.
-- What is implemented and what is not: the implementation-status section of the
-  design document that owns the capability, with `design-authn-gate` for the
-  gateway and the password table. The boundaries and the backend shape below
-  describe the code as it stands.
-
-This file states only what neither of those states: the boundaries a change
-here must not cross, and how to run it.
+The API is the package's godoc. Read `Verdict`'s constructors and `Accepts`'s
+field comments before writing a backend.
 
 ## Boundaries
 
@@ -348,7 +319,7 @@ leaf implements — the seams — and registers no module of its own, which is t
 first boundary above. A seam's method set and the value types it names are a
 stable contract: a method added, dropped or re-signed, or a field of one of those
 types renamed, is a breaking change for every implementer and every consumer.
-`seams_test.go` holds each method set it lists to the design's signature and
+`seams_test.go` holds each method set it lists to the declared signature and
 `surface_test.go` pins the exported fields and methods. The closed sets a seam
 reads — the SMS purposes, the sentinel errors and the locale values (`LocaleZH`,
 `LocaleEN`) — are declared in this package beside it. How a module delivers a
@@ -369,8 +340,8 @@ provider at once with `ResolveAll`.
 A backend is a module that delivers `Verifier` non-exclusively. It reports a
 name that is a constant of its code, declares in `Accepts` which carriers it
 takes whole and what kind of identity it may hand back, and answers about one
-credential at a time. The admission conditions are in the design's extension
-points section; the two that are easiest to get wrong are here.
+credential at a time. The two admission conditions that are easiest to get
+wrong are singled out below.
 
 `Prepare` is not optional. A module taken into a command has to start, so a
 configuration it cannot run on — a required item nobody gave, a table naming no

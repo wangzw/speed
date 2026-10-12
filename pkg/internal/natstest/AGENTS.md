@@ -8,10 +8,9 @@ a capability directory nor a program, and it exists because the key-value and
 event modules' NATS backends would otherwise each carry their own copy of
 "start a server, read its published port, wait for it to answer" — copies that
 would differ in nothing, cannot cover each other, and drift onto differently
-behaved servers. The cost of that sharing — one shared unit whose changes reach
-two modules — is recorded in
-[`adr-shared-backend-unit-2026-09-21.md`](../../../docs/adr/adr-shared-backend-unit-2026-09-21.md),
-which `pkg/internal/pgpool/pgtest` and `pkg/internal/redis/redistest` share.
+behaved servers. The cost of that sharing is one unit whose changes reach two
+modules; `pkg/internal/pgpool/pgtest` and `pkg/internal/redis/redistest` share
+the same arrangement.
 
 ## Boundaries
 

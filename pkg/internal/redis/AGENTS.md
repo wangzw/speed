@@ -5,19 +5,6 @@ registers no module and delivers no capability: it wraps "read an address, build
 a client, close it" so that the two backends do not each carry a copy of it and
 drift apart on what connecting means.
 
-## Where the authority is
-
-- Why a shared unit that registers nothing exists at all, and what sharing one
-  costs:
-  [`adr-shared-backend-unit-2026-09-21.md`](../../../docs/adr/adr-shared-backend-unit-2026-09-21.md).
-- What each backend is and why it is shaped that way:
-  [`docs/design/modules/design-kv.md`](../../../docs/design/modules/design-kv.md)
-  and
-  [`docs/design/modules/design-event.md`](../../../docs/design/modules/design-event.md).
-
-This file states only what neither of those states: the boundaries a change
-here must not cross, and how to run it.
-
 ## Boundaries
 
 - **No module is registered here and no capability is delivered.** The backends

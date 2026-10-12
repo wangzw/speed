@@ -22,25 +22,8 @@ one configuration item and three settings items under the `tenant.admission`
 namespace. `pkg/tenant`'s root package holds the `tenant.Admission` interface;
 `pkg/authn`'s holds `authn.ScopeGuard`.
 
-## Where the authority is
-
-- What this module is and why it is shaped this way:
-  [`docs/design/modules/design-tenant-admission.md`](../../../docs/design/modules/design-tenant-admission.md).
-- The decisions behind it, one file per decision: [`docs/adr/`](../../../docs/adr/) —
-  why the layer lives in the tenant directory and reads memberships through the
-  authentication root package
-  ([`adr-tenant-admission-2026-10-10.md`](../../../docs/adr/adr-tenant-admission-2026-10-10.md)),
-  the `authn.tenant.access` question it puts to the permission model on a
-  non-member ([`adr-authn-decision-seam-2026-10-10.md`](../../../docs/adr/adr-authn-decision-seam-2026-10-10.md)),
-  why its `After` names the audit and rate-limit anchors
-  ([`adr-ratelimit-dimension-2026-09-22.md`](../../../docs/adr/adr-ratelimit-dimension-2026-09-22.md)),
-  and the ordering of the layers it sits among
-  ([`adr-tenant-ordering-2026-09-21.md`](../../../docs/adr/adr-tenant-ordering-2026-09-21.md)).
-- The API itself: the godoc in this package. Read `Module`'s comment before
-  changing the descriptor, and `decide`'s before changing the judgement order.
-
-This file states only what neither of those states: the boundaries a change here
-must not cross, and how to run it.
+The API is the package's godoc. Read `Module`'s comment before changing the
+descriptor, and `decide`'s before changing the judgement order.
 
 ## Boundaries
 
@@ -83,7 +66,7 @@ must not cross, and how to run it.
   claims it; this module must fail that startup instead of giving way, so whether
   the layer runs is a decision of the command tree
   (`TestPrepareStatesEnabledNeverAuto`, `TestTwoAdmissionLayersFailTheStartup`).
-- **The judgement order is the design's, and several guarantees are properties of
+- **The judgement order is fixed, and several guarantees are properties of
   it** (`decide`). Strength rows come after the membership row, so a caller that is
   not a member never meets a prompt only a member would meet and every refusal of a
   non-member is the same 404 (`TestStrengthComesAfterMembership`, the `TestRow*`
@@ -150,10 +133,7 @@ must not cross, and how to run it.
   that nor detects it — the write surface has no access control of its own, so the
   requirement is on the host's own management surface, and this module does not
   check that a host honours it. The same hard requirement covers the `authn.*`
-  namespace and is stated with the reasoning in
-  [design-authn-config](../../../docs/design/modules/design-authn-config.md); the
-  risk is stated in
-  [design-tenant-admission](../../../docs/design/modules/design-tenant-admission.md).
+  namespace.
 - **Every diagnostic line starts with `tenant: ` and names the module.** The
   capability directory's prefix leads the line so the several writers of the
   startup diagnostics can be told apart. A registry of identity providers that is

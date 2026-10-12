@@ -12,30 +12,8 @@ host that only guards routes carries no policy store. The thin adapter and the
 snapshot holder are the package's own units under `pkg/authz/internal/`, which
 only this directory can import.
 
-## Where the authority is
-
-- What this module is and why it is shaped this way:
-  [`docs/design/modules/design-authz.md`](../../../docs/design/modules/design-authz.md) —
-  the tables and migrations under "表与迁移", the adapter under "薄 adapter",
-  the snapshot under "快照", the write and reload order under "快照与失效", the
-  platform-domain check under "平台域与跨租户回退", the management surface under
-  "核心数据结构" and "并发与事务边界", the input items under "配置与设置", and
-  the module row under "登记单元与名字" and "依赖".
-- The decisions behind it, one file per decision, in
-  [`docs/adr/`](../../../docs/adr/):
-  [`adr-authz-store-2026-10-12`](../../../docs/adr/adr-authz-store-2026-10-12.md)
-  (the thin adapter and the tenant-keyed tables),
-  [`adr-authz-cache-2026-10-12`](../../../docs/adr/adr-authz-cache-2026-10-12.md)
-  (the immutable snapshot, the write order, the refresh fallback),
-  [`adr-authz-engine-2026-10-12`](../../../docs/adr/adr-authz-engine-2026-10-12.md)
-  (the engine and the fixed model text),
-  [`adr-authz-model-2026-10-12`](../../../docs/adr/adr-authz-model-2026-10-12.md)
-  (RBAC, the tenant as the policy domain).
-- The API itself: the godoc in this package and in `pkg/authz`. Read the
-  `Manager` and `Enforcer` comments before writing a consumer.
-
-This file states only what neither of those states: the boundaries a change
-here must not cross, and how to run it.
+The API is the package's godoc and `pkg/authz`'s. Read the `Manager` and
+`Enforcer` comments before writing a consumer.
 
 ## Boundaries
 
@@ -53,7 +31,7 @@ here must not cross, and how to run it.
 - **The model text is fixed in the root package, and its self-check runs before
   the process serves.** `ModelText` is the one model the engine is loaded with;
   a host writes policy data and never the model. A wrong matcher does not fail
-  to load — it silently allows or denies where the design says the opposite —
+  to load — it silently allows or denies where the model intends the opposite —
   so `Start` runs the root-package fixtures on the exact text the process will
   enforce with, and a failure stops the startup. The reload in that path is
   bounded by the configured `authz.policy.load-timeout`; a load that does not
@@ -90,7 +68,7 @@ here must not cross, and how to run it.
   of a security-sensitive table and each replica holds every tenant's policy;
   isolation rests on judging only within the request's domain, not on the
   process holding one tenant's data.
-- **`Manager` refuses the writes the design names.** A grant or a binding on a
+- **`Manager` refuses the writes below.** A grant or a binding on a
   role that was not created in the tenant is `authz.ErrUnknownRole`; deleting a
   role, rewriting it, or changing a builtin role's grants is
   `authz.ErrBuiltinRole`; a write that names no tenant is

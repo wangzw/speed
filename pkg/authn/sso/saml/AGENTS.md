@@ -7,29 +7,16 @@ on-demand refresher of a provider's identity provider metadata. It delivers
 `authn.SSOProviders`, `authn.Accounts` and `mount.Mounter`. This is the only
 package of the module that imports gosaml2 and goxmldsig.
 
-## Where the authority is
-
-- What this module is and why: the SAML sections of
-  [`design-authn-sso.md`](../../../../docs/design/modules/design-authn-sso.md) —
-  the ordered validation table, the SP metadata, the IdP-initiated path and the
-  refresher.
-- The decisions behind the supplementary checks and the library choice:
-  [`adr-authn-sso-2026-10-10.md`](../../../../docs/adr/adr-authn-sso-2026-10-10.md).
-- The route, the `authn.sso.assertions` metric and the `authn.sso.reject` audit
-  action: [`design-authn-events.md`](../../../../docs/design/modules/design-authn-events.md).
-- The API itself: the godoc in this package. Read the `LoginMethod` comments in
-  [`pkg/authn/login.go`](../../login.go) before changing the method's shape.
-
-This file states only what neither of those states: the boundaries a change here
-must not cross, and how to run it.
+The API is the package's godoc. Read the `LoginMethod` comments in
+[`pkg/authn/login.go`](../../login.go) before changing the method's shape.
 
 ## Boundaries
 
 - **The supplementary checks are the security part, and every one of them is
   fail-closed.** The library's `RetrieveAssertionInfo` is never called: it uses
   the first assertion only, does not check `InResponseTo` and skips a comparison
-  against an empty issuer or destination. The order in `consume` is the design's
-  table; a check is added with a negative test that fails before it lands, and the
+  against an empty issuer or destination. The order in `consume` is fixed; a
+  check is added with a negative test that fails before it lands, and the
   outcome it is counted under is one of the closed set.
 - **One parse, and the verified element is the used element.** The response is
   decoded and its signature validated once by `ValidateEncodedResponse`, and the

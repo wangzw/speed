@@ -15,23 +15,8 @@ WeChat issues the website application and the official account their own. Its
 authorization scope is `snsapi_userinfo` and its authorization address ends with
 the `#wechat_redirect` fragment WeChat's web authorization requires.
 
-## Where the authority is
-
-- What a WeChat login is and why it is shaped this way:
-  [`docs/design/modules/design-authn-login.md`](../../../../docs/design/modules/design-authn-login.md),
-  the WeChat section, the LoginMethod seam and the callback flow.
-- The decision to write the client and split the two entries, and the secret's
-  disposition: [`docs/adr/adr-authn-wechat-2026-10-10.md`](../../../../docs/adr/adr-authn-wechat-2026-10-10.md).
-- The subject and alias rules it hands over as a `Proof`:
-  [`docs/adr/adr-authn-external-binding-2026-10-10.md`](../../../../docs/adr/adr-authn-external-binding-2026-10-10.md).
-- The configuration items: [`docs/design/modules/design-authn-config.md`](../../../../docs/design/modules/design-authn-config.md)
-  (`authn.login.wechat-mp.app-id`, `.app-secret`) and the gateway's public
-  address the callback is built from.
-- The API itself: the godoc in this package, and the `LoginMethod`, `Start`,
-  `FlowState`, `StepInput`, `Step` and `Proof` shapes in `pkg/authn`.
-
-This file states only what neither of those states: the boundaries a change here
-must not cross, and how to run it.
+The API is the package's godoc, and the `LoginMethod`, `Start`, `FlowState`,
+`StepInput`, `Step` and `Proof` shapes in `pkg/authn`.
 
 ## Boundaries
 

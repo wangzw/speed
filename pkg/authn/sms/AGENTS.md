@@ -14,29 +14,13 @@ exclusive requirement: a command tree names one carrier, and two at once fail in
 resolution. A carrier module (one of `authn.sms.aliyun`, `authn.sms.tencent`, or
 a third party's) is the one that constructs, calls and classifies.
 
-## Where the authority is
+The API is the package's godoc. Read `Send`'s and `Verify`'s comments before
+changing either.
 
-- What this module is and why it is shaped this way:
-  [`docs/design/modules/design-authn-sms.md`](../../../docs/design/modules/design-authn-sms.md).
-  The state machine, the budgets, the suppression and the carrier contract are
-  that document's.
-- The decisions behind it, one file per decision: [`docs/adr/`](../../../docs/adr/) —
-  [`adr-authn-sms-2026-10-10.md`](../../../docs/adr/adr-authn-sms-2026-10-10.md),
-  the settings and secrets boundary
-  ([`adr-authn-settings-and-secrets-2026-10-10.md`](../../../docs/adr/adr-authn-settings-and-secrets-2026-10-10.md))
-  and the placement of the state in the database
-  ([`adr-authn-state-placement-2026-10-10.md`](../../../docs/adr/adr-authn-state-placement-2026-10-10.md)).
-- The names the module reports under, and the closed sets they take:
-  [`docs/design/modules/design-authn-events.md`](../../../docs/design/modules/design-authn-events.md)
-  (the `authn.sms.sends` instrument and its `outcome` set, the
-  `authn.audit.write-failures` counter, the `settings.changed` subscription) and
-  [`docs/design/modules/design-authn-config.md`](../../../docs/design/modules/design-authn-config.md)
-  (the twelve settings, their domains and defaults, and the relax directions).
-- The API itself: the godoc in this package. Read `Send`'s and `Verify`'s
-  comments before changing either.
-
-This file states only what neither of those states: the boundaries a change here
-must not cross, and how to run it.
+The names the module reports under are a closed set — the `authn.sms.sends`
+instrument and its `outcome` set, the `authn.audit.write-failures` counter, and
+the `settings.changed` subscription — so a name or an attribute value is a
+compatibility break for a dashboard written against it.
 
 ## Boundaries
 

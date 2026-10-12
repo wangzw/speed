@@ -18,10 +18,8 @@ the engine module's name as the `module` attribute. The tenant
 roster, the settings store, the audit journal and the outbox relay are tested
 on it, and so are the rate limiter's domain cases, which drive the settings
 module over it; a copy of this fixture in each would differ in nothing and
-drift apart. Its placement follows
-[`adr-shared-backend-unit-2026-09-21.md`](../../../docs/adr/adr-shared-backend-unit-2026-09-21.md):
-a fixture with no wrapper package of its own is a unit of its own under the
-`pkg` module's `internal/`.
+drift apart. Its placement follows one rule: a fixture with no wrapper package
+of its own is a unit of its own under the `pkg` module's `internal/`.
 
 ## Boundaries
 

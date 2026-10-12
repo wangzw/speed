@@ -10,22 +10,8 @@ names exactly one carrier and two at once fail in resolution.
 The whole leaf package binds `github.com/alibabacloud-go/dysmsapi-20170525/v5`
 and can be dropped without touching any other module.
 
-## Where the authority is
-
-- What this carrier is and why it is shaped this way:
-  [`docs/design/modules/design-authn-sms.md`](../../../../docs/design/modules/design-authn-sms.md),
-  the SMSSender seam and the vendor-adapter section, and
-  [`docs/adr/adr-authn-sms-2026-10-10.md`](../../../../docs/adr/adr-authn-sms-2026-10-10.md).
-- Why the SDK binding lives in a leaf package:
-  [`adr-authn-packaging-2026-10-10`](../../../../docs/adr/adr-authn-packaging-2026-10-10.md).
-- The input items this module declares:
-  [`design-authn-config`](../../../../docs/design/modules/design-authn-config.md),
-  the `authn.sms.aliyun` rows.
-- The seam itself, `authn.SMS`, `authn.SendReceipt` and the sending sentinels:
-  the godoc in `pkg/authn`.
-
-This file states only what neither of those states: the boundaries a change here
-must not cross, and how to run it.
+The API is the package's godoc, and the `authn.SMS`, `authn.SendReceipt` and
+sending sentinels in `pkg/authn`.
 
 ## Boundaries
 

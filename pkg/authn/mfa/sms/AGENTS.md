@@ -15,24 +15,8 @@ answer against it. The register row, the back-off, the audit row and the event
 belong to the multi-factor module, done around every call it makes here; this
 package touches no HTTP, session, token or flow record and writes no log line.
 
-## Where the authority is
-
-- What this factor is and why it is shaped this way:
-  [`docs/design/modules/design-authn-mfa.md`](../../../../docs/design/modules/design-authn-mfa.md),
-  the Factor seam, the SMS factor section, and the error and failure semantics.
-  The code engine it sends through, its purposes, budgets and digests:
-  [`docs/design/modules/design-authn-sms.md`](../../../../docs/design/modules/design-authn-sms.md).
-- The decisions behind it: [`docs/adr/`](../../../../docs/adr/) —
-  [`adr-authn-mfa-2026-10-10.md`](../../../../docs/adr/adr-authn-mfa-2026-10-10.md)
-  for the factor as a non-exclusive seam and the single composition of the level,
-  and
-  [`adr-authn-sms-2026-10-10.md`](../../../../docs/adr/adr-authn-sms-2026-10-10.md)
-  for the challenge state machine that lives in the engine, not here.
-- The API itself: the godoc in this package, and the `Factor`, `FactorRecord`,
-  `FlowState`, `StepInput`, `Step` and `Pass` shapes in `pkg/authn`.
-
-This file states only what neither of those states: the boundaries a change here
-must not cross, and how to run it.
+The API is the package's godoc, and the `Factor`, `FactorRecord`, `FlowState`,
+`StepInput`, `Step` and `Pass` shapes in `pkg/authn`.
 
 ## Boundaries
 

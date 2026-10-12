@@ -20,21 +20,7 @@ the module `ratelimit`, delivers `(*Limiter)(nil)` exclusively, and declares two
 configuration items and five settings items, all under the `ratelimit`
 namespace.
 
-## Where the authority is
-
-- What this module is and why it is shaped this way:
-  [`docs/design/modules/design-ratelimit.md`](../../docs/design/modules/design-ratelimit.md).
-- The decisions behind it, one file per decision: [`docs/adr/`](../../docs/adr/) —
-  what it limits and what it does not
-  ([`adr-ratelimit-scope-2026-09-22.md`](../../docs/adr/adr-ratelimit-scope-2026-09-22.md)),
-  why the count is two weighted windows
-  ([`adr-ratelimit-algorithm-2026-09-22.md`](../../docs/adr/adr-ratelimit-algorithm-2026-09-22.md)),
-  why an unreachable backend lets requests through
-  ([`adr-ratelimit-failure-2026-09-22.md`](../../docs/adr/adr-ratelimit-failure-2026-09-22.md)).
-- The API itself: the godoc in this package.
-
-This file states only what neither of those states: the boundaries a change
-here must not cross, and how to run it.
+The API is the package's godoc.
 
 ## Boundaries
 
@@ -51,7 +37,7 @@ here must not cross, and how to run it.
   expiry, an identity string that made its first request at the start of a
   window has its previous key lapse the moment the next window opens, the
   weighted term collapses to nothing, and the decision is made on the current
-  window alone: the single fixed window the design rejected. There is a test
+  window alone: the single fixed window this module rejected. There is a test
   pinning this (`TestCountAsksForTwoWindowsOfExpiry`).
 - **The increment happens before the decision.** A refused request spends. A
   layer that counted only what it let through would let a caller that is already
@@ -79,8 +65,7 @@ here must not cross, and how to run it.
   reason the logging module reports its own write failures that way.
 - **Every failing path lets the request through.** A refusal would turn one bad
   backend or one bad row into a refusal of the whole endpoint. The limits here
-  are an abuse surface, not a data boundary
-  ([`adr-ratelimit-boundary-2026-09-22.md`](../../docs/adr/adr-ratelimit-boundary-2026-09-22.md)).
+  are an abuse surface, not a data boundary.
 - **A settings read names the item's declared path, not its item key.** The
   settings module registers every item under its full path — the namespace, a
   dot, then the item key — and looks a key up by that exact path. A read of the
@@ -114,8 +99,7 @@ here must not cross, and how to run it.
   relative to the layers that settle an identity and the layer that records the
   request is the stage order's business, not an anchor's: `StageIdentify` is
   outside this stage and `StageRecord` inside it, so an identity exists by the
-  time the layer reads one and a refusal here leaves no audit row
-  ([`adr-http-stages-2026-10-11.md`](../../docs/adr/adr-http-stages-2026-10-11.md)).
+  time the layer reads one and a refusal here leaves no audit row.
   `After` is for a constraint between two layers of one stage, and this layer has
   none.
 - **The address shield is a second layer, declaring `StageGuard`.** It runs
@@ -134,8 +118,7 @@ here must not cross, and how to run it.
   load-bearing: `Fail` writes the response, and a header set after it never
   reaches the client. A member beyond the status in the `Problem` would be this
   layer choosing the body of one kind of refusal, and that choice belongs to the
-  entry point
-  ([`adr-ratelimit-verdict-2026-09-22.md`](../../docs/adr/adr-ratelimit-verdict-2026-09-22.md)).
+  entry point.
 - **The layer does not read the route.** It runs for every request on the
   endpoint, including one that matches no route and one whose method the path
   does not allow, and counts them like any other; a branch on `c.FullPath()`
@@ -183,8 +166,8 @@ here must not cross, and how to run it.
   flood spread over many addresses is not stopped by this layer at all — a
   per-address counter cannot see a distributed one. The first is the price of
   keeping the count in-process; the second is why this layer sits behind an edge
-  (a CDN or a WAF) and not instead of one, and is written into the design's list
-  of what the application layer does not solve.
+  (a CDN or a WAF) and not instead of one: the application layer does not solve
+  a distributed flood.
 - **A request is charged by outcome, and the charge is what empties the
   bucket.** The gate at the front spends one token and refuses with a 429 when
   there is none; after `c.Next` a 401 or a 404 spends the penalty on top, and a

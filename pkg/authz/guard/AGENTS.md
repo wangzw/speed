@@ -18,33 +18,12 @@ module resolves them with the rows a module declares of its own through
 decider and the middleware both read the resolved set, so a permission cannot
 mean one thing on the request path and another on the decider's path.
 
-## Where the authority is
-
-- What this module is and why it is shaped this way:
-  [`docs/design/modules/design-authz.md`](../../../docs/design/modules/design-authz.md) —
-  the translation table under "动作到查询的翻译", the middleware's decision table
-  under "请求期判定", the decider under "Decider 的动作分派", the platform fallback
-  under "平台域与跨租户回退", the route-declaration registry under "类型与接口"
-  (`Gate`) and "扩展点", the 403/503 boundary under "错误与失败语义", and the
-  module row under "登记单元与名字".
-- The decisions behind it, one file per decision, in
-  [`docs/adr/`](../../../docs/adr/):
-  [`adr-authz-enforcement-2026-10-12`](../../../docs/adr/adr-authz-enforcement-2026-10-12.md)
-  (the middleware, the route declaration and the undeclared default),
-  [`adr-authz-decision-seam-2026-10-12`](../../../docs/adr/adr-authz-decision-seam-2026-10-12.md)
-  (the seam it implements, the one platform fallback, the fail-closed unknown
-  action),
-  [`adr-authz-packaging-2026-10-12`](../../../docs/adr/adr-authz-packaging-2026-10-12.md)
-  (why the decider and the middleware are one module).
-- The API itself: the godoc in this package, the seam in `pkg/authn` (`Decision`,
-  `Action`, `Decider`), and the declaration surface in `pkg/authz` (`Gate`).
-
-This file states only what neither of those states: the boundaries a change
-here must not cross, and how to run it.
+The API is the package's godoc, the seam in `pkg/authn` (`Decision`, `Action`,
+`Decider`), and the declaration surface in `pkg/authz` (`Gate`).
 
 ## Boundaries
 
-- **The middleware takes the first matching row of the design's decision table,
+- **The middleware takes the first matching row of its decision table,
   in order.** A request with no matched route (`c.FullPath()` is empty) is handed
   on — the entry point answers its own 404. A route declared open is let
   through. A route declared to need a permission goes to the engine. A route
@@ -57,8 +36,8 @@ here must not cross, and how to run it.
 - **An undeclared route is refused by default.** `authz.guard.undeclared` is
   `closed` unless the configuration says `open`, and `open` writes a Warn at
   startup. The refusal is a 403 written with the module's problem type and an
-  Error line carrying `authz.ErrUndeclaredRoute`, the design's request-period
-  sentinel. A policy denial is the only refusal written at Info; the three
+  Error line carrying `authz.ErrUndeclaredRoute`, the request-period sentinel. A
+  policy denial is the only refusal written at Info; the three
   refusals that mean something is wrong rather than someone is refused — an
   undeclared route, a request with no identity where the route requires one
   (the gateway is not in front of the endpoint), and a decision the engine could

@@ -4,19 +4,8 @@ The module mechanism: the descriptor a module registers, the registry that
 holds registrations and instances, the queries modules reach each other
 through, and the lifecycle driver.
 
-## Where the authority is
-
-- What this module is and why it is shaped this way:
-  [`docs/design/modules/design-core.md`](../../docs/design/modules/design-core.md).
-- The decisions behind it, one file per decision:
-  [`docs/adr/`](../../docs/adr/) — its scope, module registration, module
-  resources, capability tokens, dependency resolution, module enablement,
-  the lifecycle stages, the supplied instance, packaging.
-- The API itself: the godoc in this package. Read `core.Module`'s field
-  comments before adding a callback or a declaration seat.
-
-This file states only what neither of those states: the boundaries a
-change here must not cross, and how to run it.
+The API is the package's godoc. Read `core.Module`'s field comments before
+adding a callback or a declaration seat.
 
 ## Boundaries
 

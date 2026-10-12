@@ -10,21 +10,7 @@ GORM session, and the two sentinels it refuses a session with. It registers no
 module. The implementation is `relay`, which registers `event.outbox.relay`,
 keeps the staged events in a table of the delivered database, and relays them.
 
-## Where the authority is
-
-- What this capability is and why it is shaped this way:
-  [`docs/design/modules/design-outbox.md`](../../../docs/design/modules/design-outbox.md).
-- The decisions behind it: why an announcement is staged in the write's
-  transaction and relayed after the commit
-  ([`adr-outbox-scope-2026-09-29.md`](../../../docs/adr/adr-outbox-scope-2026-09-29.md)),
-  why it lives in the event directory with an interface package of its own
-  ([`adr-outbox-packaging-2026-09-29.md`](../../../docs/adr/adr-outbox-packaging-2026-09-29.md)),
-  and how the relays of several replicas share one table
-  ([`adr-outbox-replicas-2026-09-29.md`](../../../docs/adr/adr-outbox-replicas-2026-09-29.md)).
-- The API itself: the godoc here and in `relay`.
-
-This file states only what neither of those states: the boundaries a change here
-must not cross, and how to run it.
+The API is the package's godoc, here and in `relay`.
 
 ## Boundaries
 

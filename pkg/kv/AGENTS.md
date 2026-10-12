@@ -10,22 +10,8 @@ Concrete backends are subpackages — `memory`, `redis`, `postgres`, `memcached`
 and `nats` — and each registers one module, binds its own client, and declares
 the same capability exclusively.
 
-## Where the authority is
-
-- What this module is and why it is shaped this way:
-  [`docs/design/modules/design-kv.md`](../../docs/design/modules/design-kv.md).
-- The decisions behind it, one file per decision: [`docs/adr/`](../../docs/adr/) —
-  what it delivers and why as primitives rather than as a cache
-  ([`adr-kv-scope-2026-09-21.md`](../../docs/adr/adr-kv-scope-2026-09-21.md)),
-  how an implementation states the deployment it needs
-  ([`adr-kv-implementations-2026-09-21.md`](../../docs/adr/adr-kv-implementations-2026-09-21.md)),
-  and where the construction of a shared third-party client lives
-  ([`adr-shared-backend-unit-2026-09-21.md`](../../docs/adr/adr-shared-backend-unit-2026-09-21.md)).
-- The API itself: the godoc in this package and in each subpackage. Read `Spec`'s
-  field comments before adding an implementation.
-
-This file states only what neither of those states: the boundaries a change here
-must not cross, and how to run it.
+The API is the package's godoc, the root package's and each subpackage's. Read
+`Spec`'s field comments before adding an implementation.
 
 ## Boundaries
 

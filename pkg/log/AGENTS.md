@@ -11,17 +11,7 @@ carries beyond the standard library arrived through `pkg/config`, which parses
 the command line and the config sources. `internal/loghost` is not part of the
 product — it is the child-process host this module's end-to-end cases drive.
 
-## Where the authority is
-
-- What this module is and why it is shaped this way:
-  [`docs/design/modules/design-log.md`](../../docs/design/modules/design-log.md).
-- The decisions behind it, one file per decision:
-  [`docs/adr/`](../../docs/adr/) — the calling surface, the redaction
-  mechanism, the storage of a logger in a context.
-- The API itself: the godoc in this package.
-
-This file states only what neither of those states: the boundaries a
-change here must not cross, and how to run it.
+The API is the package's godoc.
 
 ## Boundaries
 

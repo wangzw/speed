@@ -11,21 +11,7 @@ It binds no WeChat SDK. The reasons it is written here rather than bridged are i
 the WeChat ADR; they are specific to this one provider and are not a precedent
 for another.
 
-## Where the authority is
-
-- What a WeChat login is and why it is shaped this way:
-  [`docs/design/modules/design-authn-login.md`](../../../../../docs/design/modules/design-authn-login.md),
-  the WeChat section, and the login flow and its callback.
-- The decision to write the client and split the two entries:
-  [`docs/adr/adr-authn-wechat-2026-10-10.md`](../../../../../docs/adr/adr-authn-wechat-2026-10-10.md).
-- The subject and alias rules — a union id, or the open-id key, and the upgrade
-  of a binding — [`docs/adr/adr-authn-external-binding-2026-10-10.md`](../../../../../docs/adr/adr-authn-external-binding-2026-10-10.md).
-- The restricted outbound client it sends through:
-  `pkg/authn/internal/egress`.
-- The API itself: the godoc in this package.
-
-This file states only what neither of those states: the boundaries a change here
-must not cross, and how to run it.
+The API is the package's godoc.
 
 ## Boundaries
 

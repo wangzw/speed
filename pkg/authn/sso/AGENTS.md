@@ -15,24 +15,8 @@ column; the module also declares the `authn.sso` namespace's inputs
 (`allow-private-egress` and the `assertion-max-age`, `provider-cache-ttl` and
 `egress-timeout` settings) that the protocol modules read.
 
-## Where the authority is
-
-- What this module is and why it is shaped this way:
-  [`docs/design/modules/design-authn-sso.md`](../../../docs/design/modules/design-authn-sso.md).
-  The tables, the domain rules, the discovery and the sweep are that document's.
-- The decisions behind it, one file per decision: [`docs/adr/`](../../../docs/adr/) —
-  [`adr-authn-sso-2026-10-10.md`](../../../docs/adr/adr-authn-sso-2026-10-10.md),
-  the package split
-  ([`adr-authn-packaging-2026-10-10.md`](../../../docs/adr/adr-authn-packaging-2026-10-10.md))
-  and the placement of the state in the database
-  ([`adr-authn-state-placement-2026-10-10.md`](../../../docs/adr/adr-authn-state-placement-2026-10-10.md)).
-- The route, the `authn.idp.changed` event and its `change` set: the design
-  documents above and [`design-authn-events.md`](../../../docs/design/modules/design-authn-events.md).
-- The API itself: the godoc in this package. Read the `SSOProviders` comments in
-  [`pkg/authn/sso.go`](../sso.go) before changing an interface.
-
-This file states only what neither of those states: the boundaries a change here
-must not cross, and how to run it.
+The API is the package's godoc. Read the `SSOProviders` comments in
+[`pkg/authn/sso.go`](../sso.go) before changing an interface.
 
 ## Boundaries
 

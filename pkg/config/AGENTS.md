@@ -9,17 +9,7 @@ and defines the `Source` and `Format` extension points. Concrete
 transports and formats are subpackages: `source/file`, `format/json`,
 `format/yaml`.
 
-## Where the authority is
-
-- What this module is and why it is shaped this way:
-  [`docs/design/modules/design-config.md`](../../docs/design/modules/design-config.md).
-- The decisions behind it: [`docs/adr/`](../../docs/adr/) — its scope, the
-  source extension point, the lifecycle position, the assembly bootstrap, the
-  supplied instance.
-- The API itself: the godoc in this package and in each subpackage.
-
-This file states only what neither of those states: the boundaries a
-change here must not cross, and how to run it.
+The API is the package's godoc, the root package's and each subpackage's.
 
 ## Boundaries
 

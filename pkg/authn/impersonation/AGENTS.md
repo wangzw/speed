@@ -11,27 +11,7 @@ The module delivers `authn.Impersonation` exclusively, owns the table and its
 migration, mounts the `B/impersonation` routes through `authn.mount`, and
 writes the seam-level audit rows and the two impersonation events.
 
-## Where the authority is
-
-- What this module is and why it is shaped this way:
-  [`docs/design/modules/design-authn-impersonation.md`](../../../docs/design/modules/design-authn-impersonation.md).
-  The tenant scope the admission layer and the gateway enforce with it is in
-  [design-authn-gate](../../../docs/design/modules/design-authn-gate.md) and
-  [design-tenant-admission](../../../docs/design/modules/design-tenant-admission.md);
-  the carriers it attaches are in
-  [design-authn-session](../../../docs/design/modules/design-authn-session.md)
-  and [design-authn-token](../../../docs/design/modules/design-authn-token.md);
-  the audit and event shapes are in
-  [design-authn-events](../../../docs/design/modules/design-authn-events.md).
-- The decisions behind it: [`docs/adr/`](../../../docs/adr/) —
-  `adr-authn-impersonation-2026-10-10.md`,
-  `adr-authn-decision-seam-2026-10-10.md`,
-  `adr-authn-identity-2026-10-10.md`,
-  `adr-authn-guarantees-2026-10-10.md`.
-- The API itself: the godoc in this package.
-
-This file states only what neither of those states: the boundaries a change
-here must not cross, and how to run it.
+The API is the package's godoc.
 
 ## Boundaries
 
@@ -92,9 +72,8 @@ here must not cross, and how to run it.
   to `GrantQuery.Tenant` in the store, so a tenant's page is not a full page
   filtered afterwards (`TestListConfinesToTheQueriedTenant`).
 - **A new end reason, a new carrier, or another writer of the table** belongs
-  in this module only through the design document and the ADR tree first: the
-  closed set of end reasons is a promise to the session and token modules and
-  to the host.
+  in this module only as a deliberate change, because the closed set of end
+  reasons is a promise to the session and token modules and to the host.
 
 ## Running it
 

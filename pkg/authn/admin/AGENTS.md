@@ -12,22 +12,7 @@ their Go interfaces, and the host's own commands carry their access control.
 Taken in without the audit capability, the start fails before any instance is
 built.
 
-## Where the authority is
-
-- What this module is and why it is shaped this way:
-  [`docs/design/modules/design-authn-admin.md`](../../../docs/design/modules/design-authn-admin.md).
-  The seam it uses is in
-  [adr-authn-decision-seam](../../../docs/adr/adr-authn-decision-seam-2026-10-10.md)
-  and the 403s it may write in
-  [adr-authn-scope](../../../docs/adr/adr-authn-scope-2026-10-10.md); the
-  audit action names, detail keys and tiers are in
-  [design-authn-events](../../../docs/design/modules/design-authn-events.md);
-  the keys it reads are in
-  [design-authn-config](../../../docs/design/modules/design-authn-config.md).
-- The API itself: the godoc in this package.
-
-This file states only what neither of those states: the boundaries a change
-here must not cross, and how to run it.
+The API is the package's godoc.
 
 ## Boundaries
 
@@ -101,7 +86,7 @@ and stand the capabilities in with fakes that count their calls, so a case can
 assert that an action that was not authorized, or whose audit did not land, was
 never carried out.
 
-The design's "write the mandatory audit outside the transaction" property has no
+The property that the mandatory audit is written outside the transaction has no
 test here, and none is possible: this module is a handler that sits on top of the
 capabilities and holds no transaction of its own, so the mandatory audit is
 written before the capability is called and is never inside a transaction this

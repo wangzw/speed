@@ -9,10 +9,8 @@ It registers no module and delivers no capability. It is a shared unit, neither
 a capability directory nor a program, and it exists because the key-value and
 event modules' NATS backends both test what a call issued while the link is down
 may and may not do, and would otherwise each carry their own copy of the same
-proxy. Its placement follows
-[`adr-shared-backend-unit-2026-09-21.md`](../../../docs/adr/adr-shared-backend-unit-2026-09-21.md):
-a fixture with no wrapper package of its own is a unit of its own under the
-`pkg` module's `internal/`.
+proxy. Its placement follows one rule: a fixture with no wrapper package of its
+own is a unit of its own under the `pkg` module's `internal/`.
 
 ## Boundaries
 

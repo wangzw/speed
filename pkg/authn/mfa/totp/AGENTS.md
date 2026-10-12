@@ -13,29 +13,14 @@ hand back the otpauth address once, and check a code against the seed with the
 replay protection the library's own validation does not give. It reads the time
 through a source a test replaces, and it never logs.
 
-## Where the authority is
+The API is the package's godoc. Read `factor.Enroll`'s comment before changing
+the two steps of a registration, and `factor.Verify`'s before changing the replay
+judgement.
 
-- What this module is and why it is shaped this way: the `TOTP` section of
-  [`docs/design/modules/design-authn-mfa.md`](../../../../docs/design/modules/design-authn-mfa.md).
-  The table it owns (`authn_totp_secrets`) and the `Factor` seam it answers are in
-  that document too.
-- The decisions behind it: the factor seam and the single composition of the level
-  ([`adr-authn-mfa-2026-10-10.md`](../../../../docs/adr/adr-authn-mfa-2026-10-10.md)) —
-  in particular that TOTP verification does not use the library's boolean
-  validation, and that the replay counter lives in the database and is judged by a
-  conditional write — and where that state is placed and why
-  ([`adr-authn-state-placement-2026-10-10.md`](../../../../docs/adr/adr-authn-state-placement-2026-10-10.md)).
-- The one input item, its default and its domain:
-  [`docs/design/modules/design-authn-config.md`](../../../../docs/design/modules/design-authn-config.md)
-  (`authn.mfa.totp.issuer`, defaulting to the host name of the gateway's public
-  address). The `authn.mfa.verifications` instrument this factor's outcomes are
-  counted under is the multi-factor module's, reported there and not here.
-- The API itself: the godoc in this package. Read `factor.Enroll`'s comment before
-  changing the two steps of a registration, and `factor.Verify`'s before changing
-  the replay judgement.
-
-This file states only what neither of those states: the boundaries a change here
-must not cross, and how to run it.
+The one input item is `authn.mfa.totp.issuer`, defaulting to the host name of the
+gateway's public address. The `authn.mfa.verifications` instrument this factor's
+outcomes are counted under is the multi-factor module's, reported there and not
+here.
 
 ## Boundaries
 
@@ -104,9 +89,9 @@ must not cross, and how to run it.
   `ErrNoEncryptionKey`
   (`TestStartRefusesWhenTheSeedTableIsMissing`,
   `TestStartRefusesWithoutAUsableEncryptionKey`).
-- **The step of a code is fixed, and the period column records it.** The design
-  fixes the step at thirty seconds, so generation uses that constant; the
-  `algorithm`, `digits` and `period` columns the design's table requires record
+- **The step of a code is fixed, and the period column records it.** The step is
+  fixed at thirty seconds, so generation uses that constant; the `algorithm`,
+  `digits` and `period` columns the table requires record
   what the seed was generated with, and generation reads the first two of them
   (`code.go` `validateOpts`).
 

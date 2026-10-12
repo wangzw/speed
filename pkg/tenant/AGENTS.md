@@ -7,23 +7,8 @@ keeps the roster and filters statements to the tenant they carry — and
 `pkg/tenant/admission`, the module that decides whether an identified caller may
 enter the tenant its request resolved to.
 
-## Where the authority is
-
-- What this module is and why it is shaped this way:
-  [`docs/design/modules/design-tenant.md`](../../docs/design/modules/design-tenant.md).
-- The decisions behind it, one file per decision:
-  [`docs/adr/`](../../docs/adr/) — `adr-tenant-scope-2026-09-21`,
-  `adr-tenant-packaging-2026-09-21`, `adr-tenant-resolution-2026-09-21`,
-  `adr-tenant-ordering-2026-09-21`, `adr-tenant-identifier-2026-09-21`,
-  `adr-tenant-directory-2026-09-21`, `adr-tenant-isolation-2026-09-21`,
-  `adr-tenant-scoping-2026-09-21`, `adr-tenant-guarantees-2026-09-21`,
-  `adr-tenant-scoping-2026-09-28`, `adr-tenant-scoping-2026-09-29`,
-  `adr-tenant-directory-2026-09-29`, `adr-tenant-isolation-2026-09-29`.
-- The API itself: the godoc in this package. Read `Model`'s comment and
-  `CrossTenant`'s before writing a scoped model.
-
-This file states only what neither of those states: the boundaries a change
-here must not cross, and how to run it.
+The API is the package's godoc. Read `Model`'s comment and `CrossTenant`'s
+before writing a scoped model.
 
 ## Boundaries
 
@@ -99,7 +84,7 @@ here must not cross, and how to run it.
   two registries that share it — so anything learned per run is the other
   registry's value on the second run. It also does not consult the roster, which
   is why disabling a tenant takes effect on the request face and not on the
-  statement face. Both facts are in the design's non-guarantees section.
+  statement face. Both are non-guarantees.
 - **`catalog/catalog.go` reaches a handle only through `db.Database`.** The
   plugin registers callbacks; nothing in this module opens a database of its
   own or writes SQL. A table belongs to the module that declares it, and this
@@ -174,8 +159,8 @@ here must not cross, and how to run it.
   global and the owner's key puts no identifier into its ON — joined by the
   rest of its key, or through a tenant field that is not an `ID` — the owner is
   refused on every statement (`unjudgedRead`). The read itself, on an owner no
-  statement goes through, is the design's non-guarantee; reaching GORM's
-  unexported schema cache to judge it is the shape to reject.
+  statement goes through, is a non-guarantee; reaching GORM's unexported schema
+  cache to judge it is the shape to reject.
 - **The roster table does not embed the convention.** It is the fact scoping is
   decided from, so a read of it that needed a tenant first would have nothing to
   read it with. It is not special-cased anywhere: it takes the same path through
@@ -325,8 +310,8 @@ stays in the tenant (`catalog/associations_test.go`).
 
 A model that should be scoped and does not embed this reads exactly like a table
 that is global on purpose, and nothing says which it is. That is the one failure
-this convention cannot catch, and it is why the design writes it as a
-non-guarantee rather than pretending to detect it.
+this convention cannot catch, and it is why this is a non-guarantee rather than
+something the filter pretends to detect.
 
 **A model that embeds the convention only to read, by tenant, a table another
 module declares and writes carries neither obligation above** — the audit table

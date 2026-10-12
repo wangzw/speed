@@ -20,23 +20,7 @@ with its migration, rotation, reuse detection and sweep, revocation, the token
 and revocation endpoints, the client_credentials grant, the operations metric,
 and the cache-clearing event subscriptions.
 
-## Where the authority is
-
-- What this module is and why it is shaped this way:
-  [`docs/design/modules/design-authn-token.md`](../../../docs/design/modules/design-authn-token.md).
-  The configuration and setting keys are in
-  [design-authn-config](../../../docs/design/modules/design-authn-config.md);
-  the metric, event and audit names are in
-  [design-authn-events](../../../docs/design/modules/design-authn-events.md).
-- The decisions behind it: [`docs/adr/`](../../../docs/adr/) —
-  `adr-authn-token-2026-10-10.md`,
-  `adr-authn-settings-and-secrets-2026-10-10.md`,
-  `adr-authn-state-placement-2026-10-10.md`,
-  `adr-authn-wiring-2026-10-10.md`.
-- The API itself: the godoc in this package.
-
-This file states only what neither of those states: the boundaries a change
-here must not cross, and how to run it.
+The API is the package's godoc.
 
 ## Boundaries
 
@@ -80,11 +64,10 @@ here must not cross, and how to run it.
   `Cache-Control: public, max-age=300` over the mounter's `no-store`, because
   its body holds no secret and its lifetime is the wait a key rotation counts
   on.
-- **The refresh-token credential format and the stable names belong to the
-  design.** The claim names, the `typ` value, the routes, the two token
-  prefixes and the JWKS content type are a closed set a reader outside the
-  module writes down; a change to one is a breaking change, made in the design
-  first.
+- **The refresh-token credential format and the stable names are a closed set.**
+  The claim names, the `typ` value, the routes, the two token prefixes and the
+  JWKS content type are written down by a reader outside the module; a change to
+  one is a breaking change.
 
 ## Running it
 

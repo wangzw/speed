@@ -8,30 +8,9 @@ assembler: it builds the two providers, collects the exporters the registry
 holds, and instruments the request path. `otlp` and `stdout` are export
 backends, each registering one module that delivers both exporter capabilities.
 
-## Where the authority is
-
-- What this module is and why it is shaped this way:
-  [`docs/design/modules/design-observability.md`](../../docs/design/modules/design-observability.md).
-- The decisions behind it, one file per decision: [`docs/adr/`](../../docs/adr/) —
-  what it owns and what it does not
-  ([`adr-observability-scope-2026-09-22.md`](../../docs/adr/adr-observability-scope-2026-09-22.md)),
-  the library it wraps and the types it re-exports
-  ([`adr-observability-library-2026-09-22.md`](../../docs/adr/adr-observability-library-2026-09-22.md)),
-  the request path's instrumentation built on the upstream gin
-  instrumentation
-  ([`adr-observability-request-layer-2026-10-11.md`](../../docs/adr/adr-observability-request-layer-2026-10-11.md)),
-  the attribute surface of the request instruments and the server span's name
-  and attributes
-  ([`adr-observability-instruments-2026-09-22.md`](../../docs/adr/adr-observability-instruments-2026-09-22.md)),
-  and what happens when the endpoint is unreachable
-  ([`adr-observability-failure-2026-09-22.md`](../../docs/adr/adr-observability-failure-2026-09-22.md)).
-- The vocabulary this module shares with the rest of the tree: `遥测` in
-  [`docs/glossary.md`](../../docs/glossary.md), which is also where the
-  difference from the assembly-time diagnostics architecture calls `可观测性` is
-  stated.
-
-This file states only what neither of those states: the boundaries a change here
-must not cross, and how to run it.
+The API is the package's godoc and each subpackage's. The module's term in the
+project's shared vocabulary is `遥测`, distinct from `可观测性`, which names the
+assembly-time diagnostics architecture.
 
 ## Boundaries
 
@@ -124,8 +103,7 @@ must not cross, and how to run it.
   `service.name` is this module's attribute only when `service-name` is
   configured; leaving it out when it is not is what lets the upstream settle the
   name from `OTEL_SERVICE_NAME`, the `service.name` in `OTEL_RESOURCE_ATTRIBUTES`
-  and its `unknown_service:` fallback, in the order the resource section of
-  `docs/design/modules/design-observability.md` gives, and setting it to the
+  and its `unknown_service:` fallback, in that order, and setting it to the
   empty string instead would report an empty one.
   `TestAnUnnamedServiceTakesItsNameFromTheUpstream` and
   `TestALaterLayerOverridesAnEarlierOne` hold the order.
@@ -194,7 +172,7 @@ must not cross, and how to run it.
   code other than 101 is not a final one — the server sends it ahead of the
   response and answers with the 200 it supplies, while the writer goes on
   reporting the informational code, so the span and the histograms record that
-  code. The design document carries it as a non-guarantee.
+  code. This is accepted as a non-guarantee.
 - **The two layers sit in the observe stage, and the guard's place inside the
   outer layer is a within-stage constraint.** The outer layer is the
   instrumentation at `StageObserve` with `PositionFirst`, the outermost layer of
@@ -255,8 +233,8 @@ must not cross, and how to run it.
   unknown; a request matching no route gets `http.route` with an empty value on
   the span. A panicked request is not one of these: the recovery answers it with
   a problem body, so its response-body-size is that body's length. Repairing any
-  of them here would take a View or a wrapper, which is a change of the decision
-  (`adr-observability-request-layer-2026-10-11.md`), not a repair.
+  of them here would take a View or a wrapper, which is a change of the decision,
+  not a repair.
 - **A name written twice in `endpoints` is registered once.** The loop
   registers unconditionally and the entry module does not dedupe, so a repeat
   would double every request in the histogram and open two spans for it. The
@@ -265,7 +243,7 @@ must not cross, and how to run it.
   not an implementation detail. They are bound here and the log module carries
   them without knowing what they mean.
 - **Every setting the configuration declares, and every part of the wire
-  shape the design documents, is given to the upstream exporter explicitly.**
+  shape this module fixes, is given to the upstream exporter explicitly.**
   The upstream reads the standard `OTEL_EXPORTER_OTLP_*` variables for whatever
   it is not given, and applies them before the options, so an option that
   looks redundant because it passes the upstream default is what keeps a
@@ -312,9 +290,8 @@ must not cross, and how to run it.
   outside its reach.
 - **The environment is a source only under the host's prefix.** Every
   variable name is derived from `config.HostIdentity.Prefix` and the item's
-  path (the derivation section of `docs/design/modules/design-config.md` for
-  the spelling, its locator section for what an absent prefix leaves), so a
-  host that declares no prefix gives these items no environment name at all:
+  path, so a host that declares no prefix gives these items no environment name
+  at all:
   they come from the primary source alone, an unprefixed
   `OBSERVABILITY__OTEL__SERVICE_NAME` is read by nothing and reported by
   nothing, and the upstream's variables for these settings are kept out

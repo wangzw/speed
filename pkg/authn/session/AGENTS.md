@@ -14,23 +14,7 @@ account is disabled, deleted or has a secret revoked
 three, and it also implements the optional `authn.CookieClearer` that the
 gateway discovers by a type assertion.
 
-## Where the authority is
-
-- What this module is and why it is shaped this way:
-  [`docs/design/modules/design-authn-session.md`](../../../docs/design/modules/design-authn-session.md).
-  The cookie source and the cross-origin check are in
-  [design-authn-gate](../../../docs/design/modules/design-authn-gate.md); the
-  validity judgement the account side repeats is in
-  [design-authn-account](../../../docs/design/modules/design-authn-account.md);
-  the settings and their domains are in
-  [design-authn-config](../../../docs/design/modules/design-authn-config.md).
-- The decisions behind it: [`docs/adr/`](../../../docs/adr/) —
-  `adr-authn-session-2026-10-10.md`, `adr-authn-state-placement-2026-10-10.md`,
-  `adr-authn-account-lifecycle-2026-10-10.md`.
-- The API itself: the godoc in this package.
-
-This file states only what neither of those states: the boundaries a change
-here must not cross, and how to run it.
+The API is the package's godoc.
 
 ## Boundaries
 
@@ -84,9 +68,9 @@ here must not cross, and how to run it.
   guarded and impersonable; listing and revoking sessions is guarded and not
   impersonable, and the handler refuses an impersonating identity again.
 - **A new kind of session, a new credential a backend stands for, or another
-  reader of the table** belongs in this module only through the design
-  document and the ADR tree first: the periods, the validity judgement and
-  the revocation surface are decided there.
+  reader of the table** belongs in this module only as a deliberate change,
+  because the periods, the validity judgement and the revocation surface are
+  settled here.
 
 ## Running it
 

@@ -15,26 +15,8 @@ token or flow record and writes no log line; the engine logs the cause of an
 answer. It reads the account module's registration switch from the configuration
 to decide whether an unknown number is sent a real code.
 
-## Where the authority is
-
-- What this method is and why it is shaped this way:
-  [`docs/design/modules/design-authn-login.md`](../../../../docs/design/modules/design-authn-login.md),
-  the LoginMethod seam, the per-flow send budget and the enumeration guard, and
-  the SMS section.
-- The challenge state machine it drives:
-  [`docs/design/modules/design-authn-sms.md`](../../../../docs/design/modules/design-authn-sms.md)
-  for `SMSCodes`, `SendCode` and the suppressed row, and
-  [`docs/adr/adr-authn-sms-2026-10-10.md`](../../../../docs/adr/adr-authn-sms-2026-10-10.md)
-  for why the state is one module's and the send is pluggable.
-- The flow state machine and the comparison-and-swap it is a step of:
-  [`docs/adr/adr-authn-login-flow-2026-10-10.md`](../../../../docs/adr/adr-authn-login-flow-2026-10-10.md).
-- The back-off it counts against: `design-authn-account` and
-  `design-authn-failure`, and the `Throttle` seam in `pkg/authn`.
-- The API itself: the godoc in this package, and the `LoginMethod`, `Start`,
-  `FlowState`, `StepInput`, `Step` and `Proof` shapes in `pkg/authn`.
-
-This file states only what neither of those states: the boundaries a change here
-must not cross, and how to run it.
+The API is the package's godoc, and the `LoginMethod`, `Start`, `FlowState`,
+`StepInput`, `Step` and `Proof` shapes in `pkg/authn`.
 
 ## Boundaries
 

@@ -12,32 +12,7 @@ The root package is both the interface package and the implementation, unlike
 surface exclusively. Storage is the database alone, so there is no
 implementation subpackage to hold one backend apart from another.
 
-## Where the authority is
-
-- What this module is and why it is shaped this way:
-  [`docs/design/modules/design-settings.md`](../../docs/design/modules/design-settings.md).
-- The decisions behind it, one file per decision:
-  [`docs/adr/`](../../docs/adr/) — what the capability directory delivers
-  ([`adr-settings-scope-2026-09-21.md`](../../docs/adr/adr-settings-scope-2026-09-21.md)),
-  why items are declared rather than typed at the call site
-  ([`adr-settings-declaration-2026-09-21.md`](../../docs/adr/adr-settings-declaration-2026-09-21.md)),
-  why a read has three layers and how a layer is named
-  ([`adr-settings-layer-2026-09-21.md`](../../docs/adr/adr-settings-layer-2026-09-21.md)),
-  how a change reaches the other replicas
-  ([`adr-settings-propagation-2026-09-21.md`](../../docs/adr/adr-settings-propagation-2026-09-21.md)),
-  where the history of a change lives
-  ([`adr-settings-audit-2026-09-21.md`](../../docs/adr/adr-settings-audit-2026-09-21.md)),
-  why the declared items are listed through the store
-  ([`adr-settings-declaration-2026-09-29.md`](../../docs/adr/adr-settings-declaration-2026-09-29.md)),
-  why a declaring module states the domain of an item's value and a write is
-  held to it
-  ([`adr-settings-domain-2026-09-29.md`](../../docs/adr/adr-settings-domain-2026-09-29.md)),
-  and why a call takes a connection of its own within a bound
-  ([`adr-settings-connection-2026-09-29.md`](../../docs/adr/adr-settings-connection-2026-09-29.md)).
-- The API itself: the godoc in this package.
-
-This file states only what neither of those states: the boundaries a change
-here must not cross, and how to run it.
+The API is the package's godoc.
 
 ## Boundaries
 

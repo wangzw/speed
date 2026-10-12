@@ -11,27 +11,13 @@ The whole leaf package binds
 `github.com/tencentcloud/tencentcloud-sdk-go/tencentcloud/sms/v20210111` and can
 be dropped without touching any other module.
 
-## Where the authority is
-
-- What this carrier is and why it is shaped this way:
-  [`docs/design/modules/design-authn-sms.md`](../../../../docs/design/modules/design-authn-sms.md),
-  the SMSSender seam and the vendor-adapter section, and
-  [`docs/adr/adr-authn-sms-2026-10-10.md`](../../../../docs/adr/adr-authn-sms-2026-10-10.md).
-- Why the SDK binding lives in a leaf package:
-  [`adr-authn-packaging-2026-10-10`](../../../../docs/adr/adr-authn-packaging-2026-10-10.md).
-- The input items this module declares:
-  [`design-authn-config`](../../../../docs/design/modules/design-authn-config.md),
-  the `authn.sms.tencent` rows.
-- The seam itself, `authn.SMS`, `authn.SendReceipt` and the sending sentinels:
-  the godoc in `pkg/authn`.
-
-This file states only what neither of those states: the boundaries a change here
-must not cross, and how to run it.
+The API is the package's godoc, and the `authn.SMS`, `authn.SendReceipt` and
+sending sentinels in `pkg/authn`.
 
 ## Boundaries
 
-- **The classification table is the design's, and the two verified codes are the
-  only ones that leave the uncertain sentinel.** `LimitExceeded.*` is
+- **The classification table is this module's, and the two verified codes are
+  the only ones that leave the uncertain sentinel.** `LimitExceeded.*` is
   `ErrSMSThrottled`, `FailedOperation.TemplateParamSetNotMatchApprovedTemplate`
   is `ErrSMSRejected`, and every other code — a per-number status and a top-level
   error alike — is `ErrSMSUncertain`, along with a timeout, a network error and a

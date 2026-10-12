@@ -18,37 +18,15 @@ The login engine reaches factors through `MFA` and never through `Factor`: with
 factors registered in the store and no module here, a login would skip the second
 factor without a word, so the engine requires `MFA`.
 
-## Where the authority is
+The API is the package's godoc. Read `Module`'s comment before changing the
+descriptor, `Require`'s and `Assurance`'s before changing the policy or the
+level, and `Reset`'s before changing the order of its steps.
 
-- What this module is and why it is shaped this way:
-  [`docs/design/modules/design-authn-mfa.md`](../../../docs/design/modules/design-authn-mfa.md).
-  The policy, assurance and IdP-trust shapes it must match are in that document's
-  `Require`, `Assurance` and `Reset` sections.
-- The decisions behind it, one file per decision: [`docs/adr/`](../../../docs/adr/) —
-  the factor seam and the single composition of the level
-  ([`adr-authn-mfa-2026-10-10.md`](../../../docs/adr/adr-authn-mfa-2026-10-10.md)),
-  the recovery paths and their accepted costs
-  ([`adr-authn-mfa-recovery-2026-10-10.md`](../../../docs/adr/adr-authn-mfa-recovery-2026-10-10.md)),
-  the failure back-off the factors use
-  ([`adr-authn-throttling-2026-10-10.md`](../../../docs/adr/adr-authn-throttling-2026-10-10.md)),
-  where the register is placed and why it is in the database
-  ([`adr-authn-state-placement-2026-10-10.md`](../../../docs/adr/adr-authn-state-placement-2026-10-10.md)),
-  and the rule that a factor is a standing seam taken with `ResolveAll`
-  ([`adr-authn-wiring-2026-10-10.md`](../../../docs/adr/adr-authn-wiring-2026-10-10.md)).
-- The names the module reports under, and the closed sets they take:
-  [`docs/design/modules/design-authn-events.md`](../../../docs/design/modules/design-authn-events.md)
-  (the `authn.factor.changed` payload, the `authn.factor.enroll` and
-  `authn.factor.remove` audit actions, the `authn.mfa.verifications` instrument
-  and its `factor` and `outcome` attributes) and
-  [`docs/design/modules/design-authn-config.md`](../../../docs/design/modules/design-authn-config.md)
-  (the five settings, their domains and defaults). A name or an attribute value is
-  a compatibility break for a dashboard or an audit query written against it.
-- The API itself: the godoc in this package. Read `Module`'s comment before
-  changing the descriptor, `Require`'s and `Assurance`'s before changing the
-  policy or the level, and `Reset`'s before changing the order of its steps.
-
-This file states only what neither of those states: the boundaries a change here
-must not cross, and how to run it.
+The names the module reports under are a closed set — the `authn.factor.changed`
+payload, the `authn.factor.enroll` and `authn.factor.remove` audit actions, and
+the `authn.mfa.verifications` instrument with its `factor` and `outcome`
+attributes — so a name or an attribute value is a compatibility break for a
+dashboard or an audit query written against it.
 
 ## Boundaries
 
@@ -63,7 +41,7 @@ must not cross, and how to run it.
   is pending, and a pending row is never used to verify — a value nobody chose is
   not one to verify with (`TestARowThatIsPendingCannotBeUsedToVerify`,
   `factorRow.record`).
-- **The policy only ever tightens.** `Require` walks the design's table top to
+- **The policy only ever tightens.** `Require` walks its policy table top to
   bottom and takes the first row that holds, and no row cancels another: a first
   factor with user verification asks for nothing more; an account with an active
   factor must use one even when the first factor is an IdP that declared
@@ -144,7 +122,7 @@ must not cross, and how to run it.
   `TestACleanupThatFailsIsReturnedAndTheRepeatFinishesIt`,
   `TestADisabledAccountKeepsItsFactors`,
   `TestTheDeletionEventCompensatesAndIsDeduplicatedByItsID`).
-- **The two routes are the ones the design names, both guarded, and a deletion
+- **The two routes are the two below, both guarded, and a deletion
   asks for a fresh local multi-factor verified here.** `GET B/factors` lists the
   caller's own factors and nothing of a kind's own; `DELETE B/factors/:id` refuses
   an impersonating identity, requires `FreshLocalMulti(recent-window)` — an IdP's
@@ -161,7 +139,7 @@ must not cross, and how to run it.
   `global-required` that cannot be read is a refusal, and the adjustment settings
   that cannot be read fall to their declared defaults
   (`TestRequireRefusesWhenTheMandatorySwitchCannotBeRead`).
-- **The settings are the design's five, each with its domain and its failure
+- **The settings are these five, each with its domain and its failure
   direction.** `global-required` is a mandatory switch and reads as a refusal when
   it cannot be read; `recent-window`, `max-per-kind`, `pending-ttl` and
   `sensitive-min-age` are adjustments that fall to their declared defaults and are

@@ -16,23 +16,8 @@ to the bus once that transaction commits. Its interface package is `outbox`, its
 implementation `outbox/relay`, and its boundaries are in
 [`outbox/AGENTS.md`](outbox/AGENTS.md).
 
-## Where the authority is
-
-- What this module is and why it is shaped this way:
-  [`docs/design/modules/design-event.md`](../../docs/design/modules/design-event.md).
-- The decisions behind it, one file per decision: [`docs/adr/`](../../docs/adr/) —
-  why the payload is read structurally and the tenant identifier is carried on
-  the event
-  ([`adr-event-scope-2026-09-21.md`](../../docs/adr/adr-event-scope-2026-09-21.md)),
-  what a publish does and does not promise
-  ([`adr-event-delivery-2026-09-21.md`](../../docs/adr/adr-event-delivery-2026-09-21.md)),
-  and why an event carries an identifier a consumer de-duplicates by
-  ([`adr-event-delivery-2026-09-28.md`](../../docs/adr/adr-event-delivery-2026-09-28.md)).
-- The API itself: the godoc in this package and in each subpackage. Read `Spec`'s
-  field comments before adding an implementation.
-
-This file states only what neither of those states: the boundaries a change here
-must not cross, and how to run it.
+The API is the package's godoc, the root package's and each subpackage's. Read
+`Spec`'s field comments before adding an implementation.
 
 ## Boundaries
 
@@ -48,8 +33,7 @@ must not cross, and how to run it.
   documentation; a caller may rely on the floor alone. The floor has one window
   no implementation reached over a connection can close: a request the server
   took, whose reply was lost on the way back. The call returns an error with the
-  event stored, and no client can tell that from a request that never arrived
-  ([`docs/design/modules/design-event.md`](../../docs/design/modules/design-event.md)).
+  event stored, and no client can tell that from a request that never arrived.
 - **A subscriber cannot name a publisher's type.** The payload is read through
   the helpers in this package, by field spelling. An implementation that
   type-asserts a payload has stopped being an implementation of this interface,
@@ -91,8 +75,7 @@ must not cross, and how to run it.
   package, and that edge would sit in every publisher's closure. The cost is
   that dependency — the bus reaching a concrete capability's interface — rather
   than a third-party stack, since the tenant interface package imports the
-  standard library alone. The reason and its cost are recorded in
-  `adr-event-scope-2026-09-21`.
+  standard library alone.
 - **A new backend is a subpackage with a namespace of its own.** The namespace
   has to be its own: the configuration manifest is collected from every
   registered module, so two implementations declaring items on one path conflict
@@ -140,7 +123,7 @@ must not cross, and how to run it.
   receives the same one. An implementation never mints a second identifier
   for an event it redelivers, and never substitutes its backend's own entry
   identity: a consumer's stored keys would stop matching the day the backend
-  changed. The decision and its costs are in `adr-event-delivery-2026-09-28`.
+  changed.
 - **`Event.Type` is an agreement with no checker.** A publisher that renames one
   silently stops reaching its subscribers. Nothing here can catch that, and an
   implementation must not try by, say, refusing types nobody publishes — a

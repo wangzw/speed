@@ -10,23 +10,7 @@ names. It registers no module and imports the standard library alone. The
 implementation is the `journal` subpackage, which registers the module
 `audit.journal` and delivers the capability exclusively.
 
-## Where the authority is
-
-- What this module is and why it is shaped this way:
-  [`docs/design/modules/design-audit.md`](../../docs/design/modules/design-audit.md).
-- The decisions behind it, one file per decision: [`docs/adr/`](../../docs/adr/) —
-  what audit does and does not deliver
-  ([`adr-audit-scope-2026-09-21.md`](../../docs/adr/adr-audit-scope-2026-09-21.md)),
-  why the capture surface has these paths
-  ([`adr-audit-capture-2026-09-21.md`](../../docs/adr/adr-audit-capture-2026-09-21.md)),
-  why the statement path fails with what it records
-  ([`adr-audit-failure-2026-09-21.md`](../../docs/adr/adr-audit-failure-2026-09-21.md)),
-  what a host reading the table may rely on
-  ([`adr-audit-sink-2026-09-29.md`](../../docs/adr/adr-audit-sink-2026-09-29.md)).
-- The API itself: the godoc in this package and in `journal`.
-
-This file states only what neither of those states: the boundaries a change here
-must not cross, and how to run it.
+The API is the package's godoc, the root package's and `journal`'s.
 
 ## Boundaries
 
@@ -61,8 +45,8 @@ must not cross, and how to run it.
   `Exec` and `Raw` are left out on purpose. Adding them would put raw SQL in
   reach, which is where the module's own migrations and a host's own cleanup
   live, and it would put the self-reference judgement in front of statements
-  that carry no target table to judge. That reach is a non-guarantee in the
-  design document, not a gap to close here.
+  that carry no target table to judge. That reach is a non-guarantee, not a
+  gap to close here.
 - **The impersonation detail keys are the journal's, not the caller's.** Under an
   impersonating identity the journal writes `on_behalf_of`,
   `impersonation_scope` and `session` into the detail from the identity in the
@@ -127,7 +111,7 @@ must not cross, and how to run it.
   without answering, but this layer sits inside it and cannot tell the two
   apart, so the outcome column holds `panic` for a request the caller got no
   response to. Recording the request is what this layer is for, so the row
-  stays; the design document carries the misreport as a non-guarantee.
+  stays; the misreport is accepted as a non-guarantee.
 - **The plugin is installed on every handle the database module builds, the
   connections built with `Open` included, and a row for a statement on such a
   connection belongs in the delivered database's table.** `Open` carries the
