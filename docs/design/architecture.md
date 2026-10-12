@@ -272,27 +272,13 @@ speed 不引入进程边界。宿主是单一进程，注册表与全部模块�
 | [log](modules/design-log.md) | 已实现 |
 | [db](modules/design-db.md) | 已实现 |
 | [http](modules/design-http.md) | 已实现 |
-<<<<<<< HEAD
-<<<<<<< HEAD
 | [http-cors](modules/design-http-cors.md) | 已实现 |
-| [authn](modules/design-authn.md) | 部分实现 — 已有网关、挂载口、口令表后端、类型化的身份与判决、值类型、账户存储、登录会话、令牌、多因素编排、登录引擎与口令方法、判定接缝、`authntest` 与依赖守卫；缺短信、企业 SSO、冒充、管理面、`guard` 与其余登录方式与因素种类；各方面的状态见各自的文档 |
-| [authn-gate](modules/design-authn-gate.md) | 部分实现 — 缺 `authn.mount` 模块与 `Mounter` 的实现、持有秘密配置值的模块登记的日志字面量匹配器；其余已在，其中冒充范围核对在装配里没有准入层时只放 `Impersonable` 路由 |
-| [authn-account](modules/design-authn-account.md) | 部分实现 — 缺账户存储的全部表、`Accounts`、`AccountAdmin`、`Passwords`、`Memberships` 的接口、生命周期与退避的 db 实现；口令表的 PHC 写法与进程内退避、`Throttle` 的根包接口、账户标识等值类型、进程内账户缓存与取时间的单元已在 |
-| [authn-login](modules/design-authn-login.md) | 部分实现 — 缺登录引擎、方法接缝的其余部分与全部方法；`Step`、`Proof` 与 `Field` 已在 |
-| [authn-sms](modules/design-authn-sms.md) | 未实现 |
-| [authn-mfa](modules/design-authn-mfa.md) | 部分实现 — 缺 TOTP、短信、WebAuthn 因素与 `guard.Require`；登记簿、编排、策略与 `Seasoned`、`Reset` 已在 |
-=======
-| [authn](modules/design-authn.md) | 部分实现 — 已有网关、挂载口、口令表后端、类型化的身份与判决、值类型、账户存储、登录会话、令牌、多因素编排与三种因素、登录引擎与口令及短信方法、短信验证码、`guard`、判定接缝、`authntest` 与依赖守卫；缺企业 SSO、冒充、管理面与其余登录方式；各方面的状态见各自的文档 |
-| [authn-gate](modules/design-authn-gate.md) | 部分实现 — 缺持有秘密配置值的模块登记的日志字面量匹配器；其余已在，含挂载口 `authn.mount` 与 `mount.Mounter`，其中冒充范围核对在装配里没有准入层时只放 `Impersonable` 路由 |
-=======
 | [authn](modules/design-authn.md) | 部分实现 — 全部模块俱在（网关与校验后端、挂载口、口令表后端、类型化的身份与判决、值类型、账户存储、登录会话、令牌、多因素编排与三种因素、登录引擎与全部登录方式含 Google、GitHub、微信两方式与企业 SSO 的 SAML/OIDC、短信验证码与两家厂商、企业 SSO 与两协议、冒充、管理面、`guard`、判定接缝、`authntest` 与依赖守卫）；网关的脱敏登记、配置的放宽监视、事件与失败的跨模块汇总用例、威胁模型的部分对策仍待补，分项状态见各自的文档 |
 | [authn-gate](modules/design-authn-gate.md) | 部分实现 — 缺各模块为自身秘密键名登记的脱敏规则（短信两家适配与社交登录四方式已登记）；其余已在，含挂载口 `authn.mount` 与 `mount.Mounter`，其中冒充范围核对在装配里没有准入层时只放 `Impersonable` 路由 |
->>>>>>> 5b451ccee (feat(authn): sign in through a provider or an IdP, and act as someone else)
 | [authn-account](modules/design-authn-account.md) | 已实现 |
 | [authn-login](modules/design-authn-login.md) | 已实现 — 引擎、口令、短信、Google、GitHub、微信两方式（wechat-web、wechat-mp）与企业 SSO 的 SAML/OIDC 方法俱在；账户解析与自助路由已在 |
 | [authn-sms](modules/design-authn-sms.md) | 已实现 |
 | [authn-mfa](modules/design-authn-mfa.md) | 已实现 |
->>>>>>> cdb320ea4 (feat(authn): deliver sign-in codes and the three second factors)
 | [authn-session](modules/design-authn-session.md) | 已实现 |
 | [authn-token](modules/design-authn-token.md) | 已实现 |
 | [authn-sso](modules/design-authn-sso.md) | 已实现 — `authn.sso` 的提供方登记、域所有权与校验、发现与清扫，`authn.sso.saml` 与 `authn.sso.oidc` 两个协议模块与受限出站客户端俱在 |
