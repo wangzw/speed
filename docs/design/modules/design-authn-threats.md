@@ -381,7 +381,7 @@ flowchart LR
 | 判决不可字面构造、零值读作没答 | 已实现 | `pkg/authn/internal/verdict/verdict.go` `Verdict`、`OutcomeOf` |
 | 免认证登记按已匹配的路由逐字比对 | 已实现 — `Exempt`、`Optional`、`Impersonable` 与 `ErrAccessConflict` | `pkg/authn/gate/exempt.go` `Exempt`、`Optional`、`Impersonable`、`seal`、`accessOf` |
 | 启动诊断列出展开后的受守端、被开出的口子与放宽项 | 已实现 | `pkg/authn/gate/gate.go` `diagnose`、`freeze` |
-| 凭据的日志脱敏规则 | 部分实现 — 键名全集、JWT 与令牌前缀形状、`otpauth://` 地址、查询串机密对、会话 cookie 对与按 scheme 的值形状规则已在；配置字面量由短信两家适配与社交登录四方式在各自的 `New` 里登记，各模块自己新增的键名随各模块实现 | `pkg/authn/gate/redact.go` `registerNewRules`、`registerValueRule`、`shapeMatcher`、`credentialMatcher` |
+| 凭据的日志脱敏规则 | 已实现 | `pkg/authn/gate/redact.go` `registerNewRules`、`registerValueRule`、`shapeMatcher`、`credentialMatcher` |
 | 口令表的口令保护 | 已实现 — PHC 条目与 Argon2id 缺省、校验缓存、进程内失败退避、并发上限与内存预算已在，条目解析的模糊用例与以 `m` 取上限的条目并发校验时内存峰值不超过预算的用例也已在 | `pkg/authn/static/hash.go` `Hash`、`ParseHash`；`pkg/authn/static/static.go` `Verify`；`pkg/authn/internal/password` `FuzzParse`、`TestDerivationsOfLargeEntriesNeverHoldMoreThanTheBudget` |
 | 加密列与根密钥 | 已实现 | `pkg/db/crypto.go` `newKeyRing`、`(*keyRing).encrypt` |
 | 日志脱敏的登记面 | 已实现 | `pkg/log/log.go` `Redaction` |
