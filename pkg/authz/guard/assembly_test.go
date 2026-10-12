@@ -360,6 +360,56 @@ func TestADeclaredPermissionOutsideTheCatalogFailsAssembly(t *testing.T) {
 	}
 }
 
+// A module that declares a permission of its own declares its translation row
+// beside it — the permission in the catalog and the (object, action) pair beside
+// it. A route the module declares in its own Init then passes Start: Init
+// resolves the process's translation before the declaration window closes, so the
+// module's row reaches the set the declaration check reads. The case fails if
+// Init does not resolve it at all, and if the resolution drops a module's row —
+// either leaves the route's permission with no translation, which aborts the
+// start.
+func TestAModuleDeclaredTranslationRowLetsAssemblyStart(t *testing.T) {
+	permission := authz.Permission("crm.deal.read")
+	t.Cleanup(func() { processTranslation.Store(nil) })
+
+	err := assembly{
+		extra:   []core.Module{translationRegistrant(permission)},
+		catalog: authztest.NewCatalog(permission),
+		supplied: []authztest.Provider{
+			{Name: "stand-in.logger", Token: (*log.Logger)(nil), Instance: logStub{logger: slog.New(newRecorder())}},
+		},
+	}.drive(t, core.StageStart, nil)
+	if err != nil {
+		t.Fatalf("the drive ended with %v, want nil: the module's declared row should reach the process translation", err)
+	}
+}
+
+// translationRegistrant is a module that carries a permission of its own and its
+// translation row, and declares a route that needs it from its own Init — the two
+// halves a business module declares for a permission beyond this capability's
+// own.
+func translationRegistrant(permission authz.Permission) core.Module {
+	return core.Module{
+		Name:     "stand-in.business",
+		Requires: []core.Requirement{{Token: (*speedhttp.Router)(nil)}},
+		Resources: []any{
+			authz.PermissionSpec{Permissions: []authz.Permission{permission}},
+			authz.TranslationSpec{Rows: map[authz.Permission]authz.Translation{
+				permission: {Object: "deal", Action: "read"},
+			}},
+		},
+		New: func(context.Context, *core.Registry) (any, error) { return struct{}{}, nil },
+		Init: func(_ context.Context, reg *core.Registry, _ any) error {
+			gate, err := core.Resolve[authz.Gate](reg)
+			if err != nil {
+				return err
+			}
+			gate.Require(nethttp.MethodGet, "/deals", permission)
+			return nil
+		},
+	}
+}
+
 // Start holds the declarations to the catalog before it registers the metric
 // callback: a route on a permission outside the catalog aborts the startup, and
 // the meter is never asked for the counter, so a layer that did not start

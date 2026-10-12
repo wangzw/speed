@@ -138,6 +138,10 @@ func Module() core.Module {
 				return nil
 			}
 			if err := p.gate.verify(); err != nil {
+				// A failed Start must not leave the resolved translation
+				// installed: a later assembly sharing the process would read a set
+				// this one never accepted.
+				processTranslation.Store(nil)
 				return err
 			}
 			return p.registerMetrics()
@@ -253,13 +257,19 @@ func optional[T any](reg *core.Registry, what string) (T, bool, error) {
 // wire takes up what the middleware reads, registers it on every guarded
 // endpoint and writes the startup diagnostics.
 //
-// The entry point is required: a command that guards routes and has no entry
-// point has nothing to guard, and the failure names the module so the fix —
-// writing the entry point module's name into this command — is visible. Every
-// endpoint in the configured list is looked up on the entry point; a name the
-// entry point does not declare is ErrUnknownEndpoint and stops the startup,
-// because a guard on an endpoint nobody serves guards nothing.
+// It first resolves the process's translation set — the built-in rows unioned
+// with every module's declared rows — because a disagreement there is a startup
+// failure the fix for which is visible before the entry point is touched. The
+// entry point is required: a command that guards routes and has no entry point
+// has nothing to guard, and the failure names the module so the fix — writing
+// the entry point module's name into this command — is visible. Every endpoint
+// in the configured list is looked up on the entry point; a name the entry point
+// does not declare is ErrUnknownEndpoint and stops the startup, because a guard
+// on an endpoint nobody serves guards nothing.
 func (p *product) wire(reg *core.Registry) error {
+	if err := resolveTranslation(reg); err != nil {
+		return err
+	}
 	if delivered, found, err := optional[log.Logger](reg, "the logger"); err != nil {
 		return err
 	} else if found {

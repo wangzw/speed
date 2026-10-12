@@ -146,7 +146,11 @@ type routeKey struct{ method, path string }
 // module registered at Init without running the enforcement middleware. It
 // carries no catalog check: the real gate refuses a declaration naming a
 // permission the catalog does not hold, and a case that wants that failure
-// drives the real gate.
+// drives the real gate. It carries no translation check either, and that is
+// deliberate: the real gate refuses a declaration naming a permission the
+// process's translation — the built-in rows unioned with every module's declared
+// rows — has no row for, and this stand-in holds no such set. A case that wants
+// that failure drives the real gate over a resolved translation.
 type Gate struct {
 	mu   sync.Mutex
 	reqs map[routeKey]authz.Permission

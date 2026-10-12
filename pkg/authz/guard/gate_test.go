@@ -172,7 +172,9 @@ func TestGateVerifyHoldsPermissionsToTheTranslation(t *testing.T) {
 	if !errors.Is(err, authz.ErrUnknownPermission) {
 		t.Fatalf("verify() = %v, want an error wrapping ErrUnknownPermission for a catalogued-but-untranslatable permission", err)
 	}
-	for _, want := range []string{"GET", "/x", "authz.guard.test.untranslatable"} {
+	// The wording distinguishes this refusal from the catalog one: both wrap the
+	// same sentinel, and the caller reads which check refused from the text.
+	for _, want := range []string{"GET", "/x", "authz.guard.test.untranslatable", "translation"} {
 		if !strings.Contains(err.Error(), want) {
 			t.Errorf("verify()'s error %q does not name %q", err, want)
 		}

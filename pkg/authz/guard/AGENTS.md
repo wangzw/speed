@@ -12,10 +12,11 @@ API, which lets a handler ask one more question after the middleware let the
 request through. The module declares `authz.guard` and delivers `(*authz.Gate)`,
 `(*Guard)` and `(*authn.Decider)`, each exclusively.
 
-The translation from a permission to the (object, action) pair the engine
-matches on lives here and nowhere else, because the decider and the middleware
-both read it: a permission cannot mean one thing on the request path and another
-on the decider's path.
+The translation rows for this capability's own permissions live here, and this
+module resolves them with the rows a module declares of its own through
+`authz.TranslationSpec` into the one mapping the whole process decides by: the
+decider and the middleware both read the resolved set, so a permission cannot
+mean one thing on the request path and another on the decider's path.
 
 ## Where the authority is
 
@@ -87,15 +88,33 @@ here must not cross, and how to run it.
   identifier, never the alias the request carried, or the platform domain when no
   tenant resolved. `TestTheQueryNamesTheAccountsKeyAndThePlatformDomain`,
   `TestTheQueryNamesTheTenantIdentifierOnTheChain`.
-- **`Decide` is a closed translation, and an unknown action is refused.** The
-  mapping from a permission to the (object, action) pair is the whole set the
-  module can express. An action with no row returns `(false, nil)` — a denial
-  and not an error — so an action the authentication side added is refused until
-  the table is updated, which is the safe direction; the parity guard in the
-  parent directory (`action_parity_test.go`) holds the table and the two
-  vocabularies aligned. `ObjectAction` is the one reader of the table, shared
-  with the middleware. The middleware treats a declared permission with no row
-  the same way: a denial.
+- **`Decide` refuses an action the resolved translation has no row for.** The
+  mapping from a permission to the (object, action) pair is the built-in rows
+  unioned with the rows the registered modules declared through
+  `authz.TranslationSpec`, resolved once before the declaration window closes.
+  An action with no row returns `(false, nil)` — a denial and not an error — so
+  an action the authentication side added is refused until a row is added, which
+  is the safe direction; the parity guard in the parent directory
+  (`action_parity_test.go`) holds the built-in rows and the two vocabularies
+  aligned. `ObjectAction` is the one reader of the resolved set, shared with the
+  middleware. The middleware treats a declared permission with no row the same
+  way: a denial.
+- **The resolved set is consistent by construction.** Resolving the translation
+  refuses a declared row whose object or action is empty (the engine matches a
+  permission on its pair alone, so an empty pair is one no grant can carry), a
+  pair already carried by a different permission (the engine matches the pair
+  verbatim and never the permission key, so two permissions sharing one pair are
+  one to it), and a row that disagrees with one already in the set. Each fails
+  the startup, wrapped around `authz.ErrUnknownPermission`, and the failed
+  resolution installs nothing; a row that agrees with one already there is kept
+  once. `TestAnEmptyTranslationRowFailsResolution`,
+  `TestASharedPairFailsResolution`, `TestATranslationConflictFailsResolution`,
+  `TestAnAgreeingTranslationRowIsKept`.
+- **Every registered module's rows, and every row of a module, reach the set.**
+  The union walks each registered `authz.TranslationSpec` and each of its rows,
+  so a second business module and a module's second permission are translated
+  alike. `TestEachModulesRowReachesTheTranslation`,
+  `TestEveryRowOfAModuleReachesTheTranslation`.
 - **`authn.tenant.access` is the one action with a platform-domain fallback.** In
   the decider it decides in the tenant's own domain first, and only on a miss
   does it decide again in `PlatformDomain`; two misses are a denial. Every other
@@ -138,12 +157,16 @@ here must not cross, and how to run it.
   decision reads neither.
   `TestTheGuardNeedsAnEngineAndACatalog`, `TestASecondProviderOfAnyFaceFailsTheStartup`,
   `TestNoEntryPointIsErrNoRouter`, `TestAnIllegalUndeclaredValueFailsPrepare`.
-- **A route that declares a permission the catalog does not hold fails the
-  startup.** `Start` holds every declaration to the catalog and reports the
+- **A route that declares a permission the catalog does not hold, or the
+  translation cannot express, fails the startup.** `Start` holds every
+  declaration to the catalog and to the resolved translation, and reports the
   first it does not hold, wrapped around `authz.ErrUnknownPermission` and naming
   the route and the permission. It is a startup diagnostic, not a response, so
   naming the permission does not open the policy-probing path the 403's detail is
-  kept clear of. `TestARouteOnAnUndeclaredPermissionFailsStart`.
+  kept clear of. A failed `Start` clears the process translation `Init`
+  installed, so an assembly that fails leaves no set serving.
+  `TestARouteOnAnUndeclaredPermissionFailsStart`,
+  `TestAFailedStartClearsTheProcessTranslation`.
 - **`Prepare` states `StateEnabled` and never `StateAuto`.** `StateAuto` is the
   stance a resolution disables when a second provider claims an exclusive
   capability; this module must fail that startup instead of giving way, so

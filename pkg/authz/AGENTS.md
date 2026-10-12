@@ -93,12 +93,17 @@ here must not cross, and how to run it.
   landed between its read and its write. A module that builds its own session
   around the adapter, or that writes policy rows without it, is the shape to
   reject.
-- **The decision is a closed translation, and an unknown action is refused.**
-  `guard` holds the one mapping from a permission to the (object, action) pair
-  the engine matches on. An action with no row is a denial without an error, so
-  that an action the authentication side added is refused until the table is
-  updated; `action_parity_test.go` holds the table and the two vocabularies
-  aligned. `authn.tenant.access` is the one action with a platform-domain
+- **The translation is this capability's rows unioned with every module's
+  declared rows, and a permission no row covers is refused.** `guard` carries
+  the rows for this capability's own permissions, and a module that declares a
+  permission of its own declares its (object, action) row beside it through
+  `authz.TranslationSpec`; the enforcement module resolves the two into the one
+  mapping the engine matches on, once, before any route is checked. An action no
+  resolved row covers is a denial without an error, so that an action the
+  authentication side added is refused until a row is added here;
+  `action_parity_test.go` holds the built-in rows to the two vocabularies. A
+  module may not disagree with a row already in the set — a disagreement is a
+  startup failure. `authn.tenant.access` is the one action with a platform-domain
   fallback, and it is the only one.
 - **The engine or its store being unavailable is a 503, never a 403.** A
   decision that cannot be made is neither a denial nor a permission: the engine
@@ -109,10 +114,17 @@ here must not cross, and how to run it.
 - **The catalog declares the permission constants.** `policy` declares a
   `PermissionSpec` listing every permission, and the catalog is built by unioning
   the specs the registry holds — so a module declaring a permission of its own
-  adds it the same way. `TestTheCatalogDeclaresEveryPermission` in
-  `action_parity_test.go` holds the declared permissions to the root package's
-  constants: a constant with no declaration and a declaration naming no constant
-  each fail it.
+  adds it the same way, and declares its translation row beside it, because a
+  permission the translation cannot express is one no route may name.
+  `TestTheCatalogDeclaresEveryPermission` in `action_parity_test.go` holds the
+  permissions the modules it registers declare — `policy`'s own spec and a
+  stand-in business module — to the root package's constants and to a translation
+  row: a constant with no declaration, a declaration naming no constant, and a
+  declared permission with no row each fail it. It sees only the modules it
+  registers, so a host module that declares a permission with no row is not held
+  here; the gate's `verify` holds it at startup instead, failing the process once
+  the Init window closes when a declared route names a permission the catalog or
+  the translation cannot express.
 - **The sentinel set in the root package is closed over what this directory
   judges for itself.** A new class of failure is a decision, not an addition.
   Errors that pass through from an external library — Casbin's matcher errors,

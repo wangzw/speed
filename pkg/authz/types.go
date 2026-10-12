@@ -43,6 +43,26 @@ type PermissionSpec struct {
 	DescriptionKeys map[Permission]string
 }
 
+// Translation is one row of the permission translation: the object and the
+// action the policy engine matches on for a permission.
+type Translation struct {
+	Object string
+	Action string
+}
+
+// TranslationSpec is what one module declares about translating the permissions
+// it owns beyond the ones this capability carries: a row for each, naming the
+// (object, action) pair the engine matches on.
+//
+// The enforcement subpackage unions every registered module's rows with the rows
+// it carries itself to form the one translation the whole process decides by, so
+// a module that declares a permission of its own also declares how it
+// translates. A permission the union has no row for is one the enforcement
+// point cannot express, and a route that names it fails the startup.
+type TranslationSpec struct {
+	Rows map[Permission]Translation
+}
+
 // Query is one question put to the engine: whether Subject may do Action on
 // Object within Domain. Subject is an account's key; the pair (Object, Action)
 // comes from the permission-to-(resource, action) translation the enforcement

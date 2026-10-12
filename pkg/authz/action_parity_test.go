@@ -193,10 +193,13 @@ func TestTheTranslationCoversEveryPermission(t *testing.T) {
 	}
 }
 
-// The policy module's catalog declares every permission constant, and declares
-// nothing that is not one: a constant the catalog omits is one no route may
-// reference, and a declaration naming no constant is a permission the vocabulary
-// does not hold.
+// The catalog is the union of the permission specs the registry holds. The
+// policy module's own spec is the capability's vocabulary: it declares every
+// permission constant and nothing else, one-to-one. A module may declare a
+// permission of its own beside them, and every declared permission — the
+// constants and a module's own alike — must carry a translation row, because a
+// permission the translation cannot express is one no route may name and no
+// grant can hold.
 //
 // The catalog's declaration is read from the module the way its own build reads
 // it, rather than by driving the module: the module's construction needs a
@@ -206,37 +209,93 @@ func TestTheCatalogDeclaresEveryPermission(t *testing.T) {
 
 	reg := core.New()
 	reg.Register(policy.Module())
-	specs := core.Resources[authz.PermissionSpec](reg)
-	if len(specs) == 0 {
+	own := catalogOf(t, reg)
+	if len(own) == 0 {
 		t.Fatal("the policy module declares no permission spec, so the catalog holds nothing to compare")
 	}
+
+	constantValues := map[string]bool{}
+	for _, value := range permissions {
+		constantValues[value] = true
+	}
+	for _, name := range sortedNames(permissions) {
+		if value := permissions[name]; !own[value] {
+			t.Errorf("the catalog does not declare the permission %s (%q)", name, value)
+		}
+	}
+	for _, value := range sortedValues(own) {
+		if !constantValues[value] {
+			t.Errorf("the policy module declares %q, which is no permission constant", value)
+		}
+	}
+
+	// A module may declare a permission of its own beside them, and its row.
+	reg.Register(businessModule())
+	union := catalogOf(t, reg)
+	if !union[string(businessPermission)] {
+		t.Errorf("the catalog does not carry the module's declared permission %q", businessPermission)
+	}
+	for _, value := range sortedValues(union) {
+		if !translated(reg, authz.Permission(value)) {
+			t.Errorf("the catalog declares %q, which has no translation row", value)
+		}
+	}
+}
+
+// businessPermission is a permission a module declares of its own, beside the
+// ones this capability carries, and one no permission constant names.
+const businessPermission = authz.Permission("crm.deal.read")
+
+// businessModule declares businessPermission: the permission spec and the
+// translation row beside it, the way a business module carries both.
+func businessModule() core.Module {
+	return core.Module{
+		Name: "stand-in.business",
+		Resources: []any{
+			authz.PermissionSpec{Permissions: []authz.Permission{businessPermission}},
+			authz.TranslationSpec{Rows: map[authz.Permission]authz.Translation{
+				businessPermission: {Object: "deal", Action: "read"},
+			}},
+		},
+	}
+}
+
+// catalogOf collects every permission the registry's specs declare.
+func catalogOf(_ *testing.T, reg *core.Registry) map[string]bool {
 	declared := map[string]bool{}
-	for _, resource := range specs {
+	for _, resource := range core.Resources[authz.PermissionSpec](reg) {
 		for _, p := range resource.Value.Permissions {
 			declared[string(p)] = true
 		}
 	}
+	return declared
+}
 
-	constantNames := make(map[string]string, len(permissions))
-	for name, value := range permissions {
-		constantNames[value] = name
+// translated reports whether a declared permission has a translation row: the
+// guard's built-in rows for a permission constant, or a registered module's
+// TranslationSpec row for a permission of its own. It is the two sources the
+// enforcement module unions into its translation.
+func translated(reg *core.Registry, permission authz.Permission) bool {
+	if _, _, ok := guard.ObjectAction(permission); ok {
+		return true
 	}
-	for _, name := range sortedNames(permissions) {
-		value := permissions[name]
-		if !declared[value] {
-			t.Errorf("the catalog does not declare the permission %s (%q)", name, value)
+	for _, resource := range core.Resources[authz.TranslationSpec](reg) {
+		if _, ok := resource.Value.Rows[permission]; ok {
+			return true
 		}
 	}
-	values := make([]string, 0, len(declared))
-	for value := range declared {
+	return false
+}
+
+// sortedValues gives a set's members in order, so a failure message and a
+// counted comparison do not depend on map iteration order.
+func sortedValues(set map[string]bool) []string {
+	values := make([]string, 0, len(set))
+	for value := range set {
 		values = append(values, value)
 	}
 	sort.Strings(values)
-	for _, value := range values {
-		if _, ok := constantNames[value]; !ok {
-			t.Errorf("the catalog declares %q, which is no permission constant", value)
-		}
-	}
+	return values
 }
 
 // The vocabulary reading is held to be one: it finds every constant of the

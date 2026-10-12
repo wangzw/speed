@@ -899,6 +899,39 @@ func TestARouteOnAnUndeclaredPermissionFailsStart(t *testing.T) {
 	}
 }
 
+// A failed Start leaves no resolved translation installed: the process value
+// Init built is cleared when Start refuses the assembly, so a later assembly
+// sharing the process does not read a set this one never accepted. The set is a
+// process value because the middleware, the decider and the management surface
+// all read it through ObjectAction and none of them holds the product.
+func TestAFailedStartClearsTheProcessTranslation(t *testing.T) {
+	reg := authztest.Registry(t, guardedBody, Module())
+	authztest.AddProvider(reg, authztest.EnforcerProvider(authztest.NewEnforcer()))
+	authztest.AddProvider(reg, authztest.CatalogProvider(authztest.NewCatalog(authz.PermissionAccountRead)))
+	authztest.AddProvider(reg, authztest.Provider{
+		Name:     "stand-in.router",
+		Token:    (*speedhttp.Router)(nil),
+		Instance: routerStub{},
+	})
+	authztest.AddProvider(reg, authztest.Provider{
+		Name:     "stand-in.logger",
+		Token:    (*log.Logger)(nil),
+		Instance: logStub{logger: slog.Default()},
+	})
+	reg.Register(registrantModule)
+
+	err := reg.Drive(t.Context(), core.Drive{
+		Depth:        core.StageStart,
+		Participants: []string{ModuleName, registrantModule.Name},
+	})
+	if !errors.Is(err, authz.ErrUnknownPermission) {
+		t.Fatalf("the drive ended with %v, want authz.ErrUnknownPermission", err)
+	}
+	if p := processTranslation.Load(); p != nil {
+		t.Errorf("a failed Start left the resolved translation installed (%d rows)", len(*p))
+	}
+}
+
 // registrantModule declares GET /orders as needing a permission the policy
 // stand-in does not hold, the way a module writes its routes from its own Init.
 var registrantModule = core.Module{

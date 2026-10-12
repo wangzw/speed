@@ -107,14 +107,16 @@ func (g *gate) isOpen(method, path string) bool {
 
 // verify holds every declared permission to the catalog and to the translation,
 // and reports the first one it does not hold, wrapped around
-// authz.ErrUnknownPermission and naming the route and the permission. It is run
-// once after the Init window closes, because Require reports nothing and the
-// check has to see every declaration at once: the middleware reads the table
-// after the window, so a permission the catalog does not hold is a startup
-// failure rather than a route that decides nothing. A permission the catalog
-// holds but the translation has no row for is refused the same way: the request
-// path decides through the translation, so such a route would deny every request
-// forever with no startup symptom.
+// authz.ErrUnknownPermission and naming the route and the permission. The
+// translation it reads is the process's resolved set — the built-in rows unioned
+// with every module's declared rows — so a route may name a permission a module
+// declared of its own. It is run once after the Init window closes, because
+// Require reports nothing and the check has to see every declaration at once:
+// the middleware reads the table after the window, so a permission the catalog
+// does not hold is a startup failure rather than a route that decides nothing. A
+// permission the catalog holds but the translation has no row for is refused the
+// same way: the request path decides through the translation, so such a route
+// would deny every request forever with no startup symptom.
 //
 // The failure names the permission. It is a startup diagnostic and not a
 // response, so naming it does not open the policy-probing path the 403's detail
