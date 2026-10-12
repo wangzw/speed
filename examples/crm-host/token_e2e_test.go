@@ -140,6 +140,7 @@ func requireOAuthError(t *testing.T, what string, got response, code string) {
 // alone; its declaration travels through the stack node's static inclusion, so
 // the table is built by every command that applies migrations, migrate included.
 func TestMigrateBuildsTheRefreshTokenTable(t *testing.T) {
+	t.Parallel()
 	forEachStack(t, func(t *testing.T, c *crmCase) {
 		c.migrate()
 		if got := c.tables(); !slices.Contains(got, refreshTable) {
@@ -155,6 +156,7 @@ func TestMigrateBuildsTheRefreshTokenTable(t *testing.T) {
 // A credential that is absent and one that is forged are refused before
 // resolution.
 func TestAPasswordLoginIssuedAsATokenGuardsTheAPI(t *testing.T) {
+	t.Parallel()
 	forEachStack(t, func(t *testing.T, c *crmCase) {
 		c.migrate()
 		acme := c.createTenant("acme")
@@ -184,6 +186,7 @@ func TestAPasswordLoginIssuedAsATokenGuardsTheAPI(t *testing.T) {
 // /auth/jwks.json answers the verification keys as a JWK set, under its own
 // content type and public cache lifetime, and carries no private field.
 func TestTheJWKSSetIsServed(t *testing.T) {
+	t.Parallel()
 	forEachStack(t, func(t *testing.T, c *crmCase) {
 		c.migrate()
 		h := c.serve()
@@ -239,6 +242,7 @@ func TestTheJWKSSetIsServed(t *testing.T) {
 // window, is a reuse that ends the login session the family hangs on, so neither
 // the rotated refresh token nor the access token it came with is usable after.
 func TestARefreshTokenRotatesOnceAndItsReuseEndsTheSession(t *testing.T) {
+	t.Parallel()
 	forEachStack(t, func(t *testing.T, c *crmCase) {
 		c.migrate()
 		acme := c.createTenant("acme")
@@ -286,6 +290,7 @@ func TestARefreshTokenRotatesOnceAndItsReuseEndsTheSession(t *testing.T) {
 // refresh token ends the login session the family hangs on: the access token the
 // login issued no longer guards the API, and the refresh token gets no new pair.
 func TestRevokingARefreshTokenEndsItsSession(t *testing.T) {
+	t.Parallel()
 	forEachStack(t, func(t *testing.T, c *crmCase) {
 		c.migrate()
 		acme := c.createTenant("acme")
@@ -320,6 +325,7 @@ func TestRevokingARefreshTokenEndsItsSession(t *testing.T) {
 // outside the (zero) grace window and so is a reuse, but the property here is the
 // count of winners, which no interleaving may make two.
 func TestTwoRefreshesOfOneTokenLeaveOneWinner(t *testing.T) {
+	t.Parallel()
 	forEachStack(t, func(t *testing.T, c *crmCase) {
 		c.migrate()
 		acme := c.createTenant("acme")
@@ -370,6 +376,7 @@ func TestTwoRefreshesOfOneTokenLeaveOneWinner(t *testing.T) {
 // identifier, the account the login resolved and the session it was issued for,
 // with a lifetime inside the fixed hour.
 func TestTheAccessTokenCarriesTheConfiguredClaims(t *testing.T) {
+	t.Parallel()
 	forEachStack(t, func(t *testing.T, c *crmCase) {
 		c.migrate()
 		acme := c.createTenant("acme")
@@ -445,6 +452,7 @@ func decodeJWTPart(t *testing.T, token string, index int, v any) {
 // and publishes but does not sign with, so a deployment pre-publishes the next
 // signing key by putting it there: the published set carries both keys.
 func TestThePublishedKeySetCarriesEveryConfiguredKey(t *testing.T) {
+	t.Parallel()
 	forEachStack(t, func(t *testing.T, c *crmCase) {
 		c.migrate()
 		extra := c.mintKeyFile("rotated-key.pem")
@@ -475,6 +483,7 @@ func TestThePublishedKeySetCarriesEveryConfiguredKey(t *testing.T) {
 // a valid token whose signature was altered, and a token past the length limit
 // are each refused by the gateway, before resolution.
 func TestABearerThatFailsItsChecksIsRefused(t *testing.T) {
+	t.Parallel()
 	forEachStack(t, func(t *testing.T, c *crmCase) {
 		c.migrate()
 		acme := c.createTenant("acme")

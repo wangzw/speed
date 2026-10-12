@@ -251,6 +251,7 @@ func otlpStack(t *testing.T) stack {
 // attributes are that library's: the request and the response size are exported
 // beside it, all three under the library's scope.
 func TestTheOTLPExportCarriesWhatEachReplicaMeasured(t *testing.T) {
+	t.Parallel()
 	c := newCase(t, otlpStack(t))
 	receiver := startWebhookReceiver(t)
 	w := startDealsOn(t, c, 2, func(w *dealsWorld) {

@@ -390,6 +390,7 @@ const (
 // judgement: a cache kept in the process would answer the second replica with
 // the table at once.
 func TestAPipelineReportLapsesWithItsTenantsLifetime(t *testing.T) {
+	t.Parallel()
 	forEachStack(t, func(t *testing.T, c *crmCase) {
 		w, writer, reader := reportReplicas(t, c, func(w *dealsWorld) {
 			c.setForTenant(w.acme, "reports.cache-ttl", reportLifetime.String())

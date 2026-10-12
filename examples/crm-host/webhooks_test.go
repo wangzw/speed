@@ -646,6 +646,7 @@ func TestEachWonDealIsDeliveredAndCountedOnce(t *testing.T) {
 // published again: the row has used every attempt, and a second delivery sends
 // nothing and records that rather than another failure.
 func TestAWebhookIsRetriedAndEachAttemptIsRecorded(t *testing.T) {
+	t.Parallel()
 	forEachStack(t, func(t *testing.T, c *crmCase) {
 		receiver := startWebhookReceiver(t)
 		secrets := map[string]string{}
@@ -932,6 +933,7 @@ func (c *crmCase) deliveryRow(ref tenantRef, eventID string) (status string, att
 // then cuts acme's delivery short: the process leaves cleanly, and the row says
 // one attempt was made and the delivery is pending.
 func TestASlowReceiverHoldsUpNoOtherTenant(t *testing.T) {
+	t.Parallel()
 	forEachStack(t, func(t *testing.T, c *crmCase) {
 		receiver := startWebhookReceiver(t)
 		var held *heldCall

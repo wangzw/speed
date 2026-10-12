@@ -89,6 +89,7 @@ func requiresCapability(module core.Module, capability core.Token) bool {
 // a startup failure at resolution, which is why it is asserted where it is
 // written — no run shows it until the command that forgot is the one running.
 func TestEveryModuleWritingAScopedTableRequiresTheRoster(t *testing.T) {
+	t.Parallel()
 	var scoped int
 	for _, a := range applications {
 		for _, model := range a.models {
@@ -119,6 +120,7 @@ func TestEveryModuleWritingAScopedTableRequiresTheRoster(t *testing.T) {
 // Named logger for its release records, which is this host's convention; one
 // without a product has no logger to hold.
 func TestEveryModuleThatLogsDeclaresTheLoggingDependency(t *testing.T) {
+	t.Parallel()
 	for _, a := range applications {
 		if a.module.New == nil {
 			continue
@@ -139,6 +141,7 @@ func TestEveryModuleThatLogsDeclaresTheLoggingDependency(t *testing.T) {
 // does already, so it adds nothing: a module that reads configuration resolves
 // the surface and declares nothing for it.
 func TestNoModuleDeclaresTheConfigReaderRequirement(t *testing.T) {
+	t.Parallel()
 	modules := []core.Module{hostModule()}
 	for _, a := range applications {
 		modules = append(modules, a.module)
@@ -157,6 +160,7 @@ func TestNoModuleDeclaresTheConfigReaderRequirement(t *testing.T) {
 // there or by providing what a named module requires, and a module providing
 // nothing can only arrive the first way.
 func TestTheHostModuleProvidesNothingThatCouldPullItIntoACommand(t *testing.T) {
+	t.Parallel()
 	module := hostModule()
 	if len(module.Provides) != 0 {
 		t.Errorf("module %q declares %d provision(s); a capability delivered without an exclusive claim "+
@@ -173,6 +177,7 @@ func TestTheHostModuleProvidesNothingThatCouldPullItIntoACommand(t *testing.T) {
 // with no provider of one capability and two of another. The table is read
 // against what each named module delivers.
 func TestEveryStackNamesOneModuleOfEachKind(t *testing.T) {
+	t.Parallel()
 	kinds := []struct {
 		field      string
 		capability core.Token
@@ -218,6 +223,7 @@ func provides(module core.Module, capability core.Token) bool {
 // added to the host is exercised rather than failed on a configuration nobody
 // wrote.
 func TestTheHarnessConfiguresEveryStack(t *testing.T) {
+	t.Parallel()
 	for _, s := range stacks {
 		for _, name := range []string{s.engine, s.kv, s.event, s.exporter} {
 			if _, ok := backends[name]; !ok {
@@ -231,6 +237,7 @@ func TestTheHarnessConfiguresEveryStack(t *testing.T) {
 // from the models: a model whose table GORM would name by its own convention
 // is one whose table no case can name in advance.
 func TestEveryModelNamesItsTable(t *testing.T) {
+	t.Parallel()
 	for _, a := range applications {
 		for _, model := range a.models {
 			if _, ok := model.(interface{ TableName() string }); !ok {
@@ -255,6 +262,7 @@ const tokenPackage = "github.com/vislake/speed/pkg/authn/token"
 // identity system sits below the tenant one, and the edge this host takes on must
 // add no dependency from authn onto tenant.
 func TestTheTokenModuleIsWiredAndReachesNoTenantPackage(t *testing.T) {
+	t.Parallel()
 	if !hostImports(t, ".", tokenPackage) {
 		t.Errorf("no non-test file of this host imports %s, so the token surface is not wired", tokenPackage)
 	}
@@ -292,6 +300,7 @@ func TestTheTokenModuleIsWiredAndReachesNoTenantPackage(t *testing.T) {
 // no descriptor and no served case saying so — the second half of this case
 // reads the names where they are written.
 func TestTheFactorModulesAreRegisteredWithTheirTables(t *testing.T) {
+	t.Parallel()
 	for _, name := range []string{totp.ModuleName, webauthn.ModuleName} {
 		module, ok := core.ProcessRegistry.Lookup(name)
 		if !ok {
@@ -336,6 +345,7 @@ func TestTheFactorModulesAreRegisteredWithTheirTables(t *testing.T) {
 // case saying so, so this case holds both halves: the module is registered and
 // delivers what its package declares, and serve names a module from that package.
 func TestTheIdentityModulesAreRegisteredAndNamedOnServe(t *testing.T) {
+	t.Parallel()
 	deliveries := []struct {
 		name       string
 		importPath string
@@ -546,6 +556,7 @@ func nonTestSources(t *testing.T, dir string) []string {
 // never sees, and a command that runs its statements without the roster runs
 // them unscoped with nothing said.
 func TestEveryScopedModelIsListed(t *testing.T) {
+	t.Parallel()
 	listed := map[string]bool{}
 	for _, a := range applications {
 		for _, model := range a.models {
@@ -656,6 +667,7 @@ func isSelector(expr ast.Expr, pkg, name string) bool {
 // TenantID-first tag: a slice adding such a field is told here rather than at
 // the first statement of its own case.
 func TestEveryScopedManyToManyNamesTenantFirst(t *testing.T) {
+	t.Parallel()
 	var fields int
 	for _, a := range applications {
 		for _, model := range a.models {
@@ -704,6 +716,7 @@ func TestEveryScopedManyToManyNamesTenantFirst(t *testing.T) {
 // the tree does not have would run nowhere with nothing said, and a group
 // sharing a word with another command would put two subtrees under one word.
 func TestEveryApplicationRunsOnACommandTheTreeHas(t *testing.T) {
+	t.Parallel()
 	commands := []string{serveCommand, workerCommand}
 	fixed := []string{serveCommand, workerCommand, "migrate"}
 	for _, g := range commandGroups {
@@ -779,6 +792,7 @@ func migrationTables(dialect string) ([]string, error) {
 // a name a slice picks can put its table first. The table token each
 // table-owning module of this host delivers is the capability to require.
 func TestATableReferencingAnotherModulesTableIsOrderedAfterIt(t *testing.T) {
+	t.Parallel()
 	owners := map[string]string{}
 	declared := map[string]map[string]string{}
 	for _, res := range core.Resources[db.Migrations](core.ProcessRegistry) {
@@ -870,6 +884,7 @@ func openAPIPath(path string) string {
 // still written in the OpenAPI spelling is documented under its own text and
 // reaches no route either, which is why it is refused outright.
 func TestEveryJournalledRouteIsAnOperationItsModuleDocuments(t *testing.T) {
+	t.Parallel()
 	var checked int
 	for _, a := range applications {
 		documented := map[string]bool{}

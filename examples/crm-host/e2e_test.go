@@ -955,6 +955,7 @@ func TestTheEnvironmentOverridesTheFile(t *testing.T) {
 // the registry, and each of its operations has to be in the served document,
 // marked with the endpoint the fragment is for.
 func TestTheOperationsEndpointMergesEveryFragment(t *testing.T) {
+	t.Parallel()
 	c := newCase(t, stackNamed(t, localStack))
 	c.migrate()
 	h := c.serve()
@@ -1014,6 +1015,7 @@ func TestTheOperationsEndpointMergesEveryFragment(t *testing.T) {
 // the listing is refused a stranger by the admission layer with the same 404 as
 // an unknown tenant, not 403.
 func TestTheServedMemberSchemasMatchTheHandlers(t *testing.T) {
+	t.Parallel()
 	c := newCase(t, stackNamed(t, localStack))
 	c.migrate()
 	h := c.serve()
@@ -1205,6 +1207,7 @@ func TestTheWorkerRunsWithoutTheEntryPoint(t *testing.T) {
 // application module the serving command runs writes its release records on
 // the way out.
 func TestAnInterruptStopsEveryStack(t *testing.T) {
+	t.Parallel()
 	var serving []string
 	for _, a := range applications {
 		if a.module.New != nil && slices.Contains(a.runsOn, serveCommand) {
@@ -1340,6 +1343,7 @@ func (r *heldRequest) finish(t *testing.T) response {
 // record would come before, which is where a module that refuses work in its
 // Stop refuses a request still being answered.
 func TestAnInterruptDrainsRequestsInFlight(t *testing.T) {
+	t.Parallel()
 	var serving []string
 	for _, a := range applications {
 		if a.module.New != nil && slices.Contains(a.runsOn, serveCommand) {
@@ -1857,6 +1861,7 @@ func TestABodyPastTheEndpointsLimitIsRefused(t *testing.T) {
 // take reaches no caller a layer turned away. A HEAD request is a method a path
 // serving GET alone does not take.
 func TestARequestNoRouteServesIsRefusedAsAProblem(t *testing.T) {
+	t.Parallel()
 	c := newCase(t, stackNamed(t, localStack))
 	c.migrate()
 	h := c.serve()

@@ -34,6 +34,7 @@ func requireRecord(t *testing.T, h *crmHost, what, msg string, attrs ...string) 
 // the fields the gateway puts on a request's records once it has stamped an
 // identity.
 func TestTheAdminEndpointServesTheOperatorAndNoOtherAccount(t *testing.T) {
+	t.Parallel()
 	const other = "mallory"
 	forEachStack(t, func(t *testing.T, c *crmCase) {
 		hash, err := operatorHash()
@@ -71,6 +72,7 @@ func TestTheAdminEndpointServesTheOperatorAndNoOtherAccount(t *testing.T) {
 // The member's request is the control: the refusal is about whose account asks,
 // not about the tenant or the route.
 func TestAnOperatorBelongsToNoTenant(t *testing.T) {
+	t.Parallel()
 	forEachStack(t, func(t *testing.T, c *crmCase) {
 		c.migrate()
 		acme := c.createTenant("acme")
@@ -102,6 +104,7 @@ func TestAnOperatorBelongsToNoTenant(t *testing.T) {
 // through the running host by TestAnOperatorBelongsToNoTenant, where the
 // admission layer asks this decision and answers its 404.
 func TestTheDecisionSeamRefusesTenantAccessAndServesTheOperator(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	identity := func(account authn.AccountID, backend string) authn.Identity {
 		t.Helper()
@@ -141,6 +144,7 @@ func TestTheDecisionSeamRefusesTenantAccessAndServesTheOperator(t *testing.T) {
 // table's. The same user's token reaches the same route, which tells the
 // refusal of the scheme from a refusal of the route.
 func TestAUsersPasswordIsNoCredentialOnAGuardedRoute(t *testing.T) {
+	t.Parallel()
 	forEachStack(t, func(t *testing.T, c *crmCase) {
 		c.migrate()
 		acme := c.createTenant("acme")
@@ -172,6 +176,7 @@ func TestAUsersPasswordIsNoCredentialOnAGuardedRoute(t *testing.T) {
 // the backend names it at Warn while it wires, and the case reads that line
 // rather than the run leaving it unsaid.
 func TestTheStartupNamesTheWeakOperatorEntry(t *testing.T) {
+	t.Parallel()
 	c := newCase(t, stackNamed(t, localStack))
 	c.migrate()
 	h := c.serve()

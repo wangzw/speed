@@ -1132,16 +1132,15 @@ func activityIDs(activities []activityView) []string {
 
 // idempotencyLifetime is how long the idempotency case's short-lived tenant
 // remembers a key: long enough for a creation and its replay to be answered
-// inside it, on a binary built with the race detector as well.
-var idempotencyLifetime = scaledForRace(1 * time.Second)
+// inside it, on a binary built with the race detector and beside the other
+// cases this package now runs in parallel.
+var idempotencyLifetime = scaledForRace(2 * time.Second)
 
 // TestADealCreationIsIdempotentByKey is the case for POST /deals under an
 // Idempotency-Key: the claim in the key-value store the stack names, the
 // answer stored in it, and the lifetime the setting gives it.
 func TestADealCreationIsIdempotentByKey(t *testing.T) {
-	// This case stays serial: its last subtest sets a tenant's idempotency
-	// lifetime and waits that lifetime out before asserting the key lapsed, so
-	// its own wall-clock window is part of what it asserts.
+	t.Parallel()
 	forEachStack(t, func(t *testing.T, c *crmCase) {
 		var carol userRef
 		w := startDeals(t, c, func(w *dealsWorld) {

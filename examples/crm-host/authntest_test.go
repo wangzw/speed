@@ -97,6 +97,7 @@ func writeScratchModule(t *testing.T, files map[string]string) string {
 // all the same, and the reading has to name it. The plain file is the positive
 // control: the reading finds an importer that no constraint hides.
 func TestTheReadingFindsAnImporterUnderAnyBuildConstraint(t *testing.T) {
+	t.Parallel()
 	const source = "package scratch\n\nimport _ \"" + authntestPath + "\"\n"
 	cases := map[string]string{
 		"evade.go":                    source,
@@ -137,6 +138,7 @@ func TestTheReadingFindsAnImporterUnderAnyBuildConstraint(t *testing.T) {
 // testdata directory is not part of the build; and a directory with a go.mod of
 // its own is another module, held to its own rule.
 func TestTheReadingLeavesOutWhatTheRuleDoesNotCover(t *testing.T) {
+	t.Parallel()
 	const source = "package scratch\n\nimport _ \"" + authntestPath + "\"\n"
 	cases := map[string]map[string]string{
 		"a test file":                    {"clean_test.go": source},
@@ -171,6 +173,7 @@ func TestTheReadingLeavesOutWhatTheRuleDoesNotCover(t *testing.T) {
 // never read: the files have to include one of this host's that imports the
 // authentication module.
 func TestNoCodeOfThisHostThatIsNotATestImportsAuthntest(t *testing.T) {
+	t.Parallel()
 	files, scanned := importersOf(t, ".", "github.com/vislake/speed/pkg/authn")
 	if scanned == 0 {
 		t.Fatal("the reading scanned no file of this module")

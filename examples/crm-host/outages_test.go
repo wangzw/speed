@@ -76,6 +76,7 @@ func recordWith(text string, attrs ...string) bool {
 // database, is answered all along, and once the link is back the same session is
 // answered again.
 func TestASessionIsUnavailableWhileTheDatabaseIsCut(t *testing.T) {
+	t.Parallel()
 	forEachLinkedStack(t, reachesDatabase, func(t *testing.T, c *crmCase) {
 		c.migrate()
 		acme := c.createTenant("acme")
@@ -145,6 +146,7 @@ var (
 // request that counted and one that never said so each fail an assertion of
 // their own.
 func TestTheLimiterLetsRequestsThroughWhileItsStoreIsCut(t *testing.T) {
+	t.Parallel()
 	forEachLinkedStack(t, reachesStore, func(t *testing.T, c *crmCase) {
 		c.migrate()
 		h := c.serve()
@@ -232,6 +234,7 @@ const cutHold = 2 * time.Second
 // A host that published after the commit would have no staged row to show and
 // its win would never be counted.
 func TestAWinMadeWhileTheBusIsCutIsCountedOnceTheBusIsBack(t *testing.T) {
+	t.Parallel()
 	forEachLinkedStack(t, reachesBus, func(t *testing.T, c *crmCase) {
 		w := startDeals(t, c, nil)
 		acme, alice := w.acme, w.asAlice
@@ -294,6 +297,7 @@ func TestAWinMadeWhileTheBusIsCutIsCountedOnceTheBusIsBack(t *testing.T) {
 // all, and either would then be wrong. A bus that kept a refused publish and
 // sent it once it reconnected would have the event counted.
 func TestAPublishTheBusRefusesReachesNoConsumer(t *testing.T) {
+	t.Parallel()
 	forEachLinkedStack(t, reachesBus, func(t *testing.T, c *crmCase) {
 		c.config.set("dealfeed.enabled", true)
 		c.migrate()
@@ -374,6 +378,7 @@ func (c *crmCase) listeningSessions() []int {
 // A bus that polled on without listening again delivers the win and fails the
 // look for the new session.
 func TestTheBusListensAgainOnceItsSessionIsKilled(t *testing.T) {
+	t.Parallel()
 	c := newCase(t, stackNamed(t, "postgres"))
 	w := startDeals(t, c, nil)
 	acme, alice := w.acme, w.asAlice
@@ -463,6 +468,7 @@ func recoveredAfter(out string) (int, bool) {
 // on the statement, fails and leaves no account, while a listing of the
 // members, which it records on the request alone, is answered in full.
 func TestTheJournalFailsOpenOnRequestsAndClosedOnStatements(t *testing.T) {
+	t.Parallel()
 	t.Run("with the database cut", func(t *testing.T) {
 		forEachLinkedStack(t, reachesDatabase, func(t *testing.T, c *crmCase) {
 			c.migrate()
@@ -565,6 +571,7 @@ func TestTheJournalFailsOpenOnRequestsAndClosedOnStatements(t *testing.T) {
 // an event names, or a bus consumer that did not resume after the outage, would
 // leave the second replica on the old currency.
 func TestASettingWrittenWhileTheBusIsCutReachesTheOtherReplicaOnceTheBusIsBack(t *testing.T) {
+	t.Parallel()
 	forEachLinkedStack(t, func(s stack) bool { return reachesBus(s) && sharedStack(s) }, func(t *testing.T, c *crmCase) {
 		c.config.set("settings.refresh-interval", "0s")
 		c.migrate()

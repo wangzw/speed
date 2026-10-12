@@ -62,6 +62,7 @@ const natsAckWait = 30 * time.Second
 // read an entry a killed process took again, as design-event has it, so that
 // half runs on NATS alone.
 func TestWorkersSharingAConsumerHandleEachWinOnce(t *testing.T) {
+	t.Parallel()
 	ran := false
 	for _, s := range caseStacks() {
 		env, ok := sharedConsumerEnv(s)

@@ -269,6 +269,14 @@ serve, one migration set applied across processes — hold on any stack, and a
 module's internal race coverage is the `-race` leg that module runs. A run that
 lays out on the light set names the stacks it left out and how to take them in.
 
+A case spends its wall clock waiting on its child processes, on the shared
+backends and on the window it waits out, not computing, so a run goes faster
+with `-parallel` set above the processor count: on a ten-processor machine
+twenty is worth around a tenth over the default, and thirty is worth nothing.
+Every case calls `t.Parallel()`, and each holds a slot for itself and for each
+stack it is laid out on, so the number of cases in flight is `-parallel` divided
+by that count.
+
 The cases compile the host once in `TestMain` and run it as a child process;
 under `-race` the host is built with the race detector as well, and a child that
 reports a data race fails its case. Such a child runs with the detector's
