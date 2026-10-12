@@ -238,6 +238,39 @@ func TestPutRoleRewritesANonBuiltinRole(t *testing.T) {
 	}
 }
 
+// A grant and a binding are create-or-keep, not create-only: writing the same
+// rule twice names the same row, and the second write is a no-op rather than a
+// duplicate-key failure. The management surface addresses grants and bindings
+// with PUT, and the host's role provisioner re-issues a tenant's grants on every
+// grant — both rely on a re-run adding no row.
+func TestPutGrantAndPutBindingAreIdempotent(t *testing.T) {
+	f := newFixture(t)
+	ctx := t.Context()
+	mustPutRole(t, ctx, f, "acme", "roleA")
+
+	grant := authz.GrantRecord{Tenant: "acme", Role: "roleA", Resource: "account", Action: "read"}
+	if err := f.PutGrant(ctx, grant); err != nil {
+		t.Fatalf("PutGrant(first): %v", err)
+	}
+	if err := f.PutGrant(ctx, grant); err != nil {
+		t.Fatalf("PutGrant(second, same key): %v", err)
+	}
+	if grants, err := f.Grants(ctx, "acme", "roleA"); err != nil || len(grants) != 1 {
+		t.Errorf("Grants(acme, roleA) = %v, %v, want the one grant: the second write added no row", grants, err)
+	}
+
+	binding := authz.Binding{Tenant: "acme", Account: "acc1", Role: "roleA"}
+	if err := f.PutBinding(ctx, binding); err != nil {
+		t.Fatalf("PutBinding(first): %v", err)
+	}
+	if err := f.PutBinding(ctx, binding); err != nil {
+		t.Fatalf("PutBinding(second, same key): %v", err)
+	}
+	if bindings, err := f.BindingsOf(ctx, "acme", "acc1"); err != nil || len(bindings) != 1 {
+		t.Errorf("BindingsOf(acme, acc1) = %v, %v, want the one binding: the second write added no row", bindings, err)
+	}
+}
+
 // A role written with no creation time gets one, so a later read never sees a
 // zero timestamp.
 func TestPutRoleFillsCreatedAt(t *testing.T) {

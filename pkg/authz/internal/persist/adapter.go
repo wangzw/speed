@@ -18,6 +18,7 @@ import (
 	casbinmodel "github.com/casbin/casbin/v3/model"
 	casbinpersist "github.com/casbin/casbin/v3/persist"
 	"gorm.io/gorm"
+	"gorm.io/gorm/clause"
 
 	"github.com/vislake/speed/pkg/authz"
 	"github.com/vislake/speed/pkg/tenant"
@@ -137,12 +138,19 @@ func (a *Adapter) SavePolicy(casbinmodel.Model) error { return ErrNotImplemented
 // authz_bindings. The domain becomes the row's tenant column, and a domain that
 // is not the caller's is refused with authz.ErrTenantMismatch before any
 // statement is issued.
+//
+// A rule already there is left as it is rather than reported as a conflict: the
+// write is keyed by the rule's whole key, so the same rule written twice names
+// the same row, and the intent of a second write is that the row be there, which
+// it already is. This is how the management surface's PUT routes and the host's
+// role provisioner — both documented as idempotent, "a second run adds no row" —
+// behave: a repeated grant or binding is a no-op, not a duplicate-key failure.
 func (a *Adapter) AddPolicy(sec, ptype string, rule []string) error {
 	row, err := a.newRow(ptype, rule, time.Now().UTC())
 	if err != nil {
 		return err
 	}
-	return a.session.Create(row).Error
+	return a.session.Clauses(clause.OnConflict{DoNothing: true}).Create(row).Error
 }
 
 // RemovePolicy deletes the one rule named. It is addressed by the row's whole
