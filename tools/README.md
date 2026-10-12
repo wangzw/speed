@@ -21,6 +21,7 @@ Each script also runs on its own:
 python3 tools/check_toolchain.py
 python3 tools/check_markdown_examples.py
 python3 tools/check_workflow_refs.py
+python3 tools/check_conflict_markers.py
 ```
 
 Their own test suites run together, from the repository root:
@@ -55,6 +56,19 @@ fragment, and is syntax-checked under several wrappings instead of being
 forced into a padded full program. The script's own docstring carries the
 scope rules and the escape hatch for a fragment that genuinely cannot
 parse.
+
+`check_conflict_markers.py` — fails when a line of git's conflict
+markers survives into a file. A resolution done by hand and committed
+leaves them as ordinary content: `git status` is clean and no other gate
+reads them, since the document checker reads diagrams, sections, indexes
+and links and the example checker reads Go blocks. The three labeled
+markers are findings on their own; the bare middle one is reported only
+in a file that also carries a labeled one, because a line of seven `=`
+alone is also how Markdown underlines a heading. Everything text-shaped
+in the tree is in scope, `node_modules` and non-UTF-8 files excepted.
+Exit codes: 0 clean, 1 markers found (each with file, line and text),
+2 infrastructure error (the root is not a directory, or the scan read no
+text file at all).
 
 `check_workflow_refs.py` — fails when a coding-flow template copy under
 `.github/workflows/` carries a relative path segment (a `.` or `..`
