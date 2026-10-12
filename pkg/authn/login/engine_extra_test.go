@@ -13,6 +13,7 @@ import (
 	"go.opentelemetry.io/otel/sdk/metric/metricdata"
 
 	"github.com/vislake/speed/pkg/authn"
+	"github.com/vislake/speed/pkg/authn/internal/step"
 	"github.com/vislake/speed/pkg/core"
 )
 
@@ -573,5 +574,65 @@ func TestTheLoginCompletionsInstrumentCarriesMethodAndOutcome(t *testing.T) {
 	}
 	if pairs["password/failed"] != 1 {
 		t.Errorf("the refused login is not counted: %v", pairs)
+	}
+}
+
+// TestAnAnswerAfterTheCallBudgetIsUnavailable holds the engine's call budget: a
+// method that answers only after the budget has ended is answered as an outage,
+// not with its late answer.
+func TestAnAnswerAfterTheCallBudgetIsUnavailable(t *testing.T) {
+	r := newRigMethod(t, &redirectMethod{})
+	r.p.settings = readerWith(map[string]string{ModuleName + "." + callBudgetKey: "1s"})
+
+	got, ok := r.p.invoke(context.Background(), "password", func(cctx context.Context) (authn.Step, error) {
+		<-cctx.Done()
+		return authn.StepProven(authn.Proof{Account: "acct1", Methods: []authn.Method{authn.MethodPassword}}), nil
+	})
+	if !ok {
+		t.Fatal("invoke reported that the method gave no answer")
+	}
+	if step.KindOf(got) != step.KindUnavailable {
+		t.Errorf("an answer after the call budget is %s, want an outage", step.KindOf(got))
+	}
+}
+
+// TestAMethodGivingOversizedPrivateStateIsAnOutage holds the surface bound the
+// model states on a method's private state: a step whose private bytes are over
+// it is answered as the method's outage rather than stored in the flow record.
+func TestAMethodGivingOversizedPrivateStateIsAnOutage(t *testing.T) {
+	m := &fakeMethod{name: "password"}
+	m.begin = func(authn.Start) (authn.Step, error) {
+		return authn.StepRedirect("idp", make([]byte, maxPrivateBytes+1), "https://idp.example.org/auth"), nil
+	}
+	r := newRig(t, m)
+
+	rec := r.send(http.MethodPost, "/auth/flows", `{"method":"password"}`)
+	if rec.Code != http.StatusServiceUnavailable {
+		t.Errorf("a method giving oversized private state answered %d, want 503: %s", rec.Code, rec.Body.String())
+	}
+}
+
+// TestAResolverErrorFailsTheFlowClosed holds the resolver's failure path: a proof
+// the resolver refuses to resolve leaves the flow a failed tombstone, answers the
+// request and issues no session, rather than being read as a zero resolution.
+func TestAResolverErrorFailsTheFlowClosed(t *testing.T) {
+	m := &redirectMethod{}
+	m.answer = func(authn.FlowState, authn.StepInput) (authn.Step, error) {
+		// A proof that names no resolution source is the resolver's own error.
+		return authn.StepProven(authn.Proof{}), nil
+	}
+	r := newRigMethod(t, m)
+	r.allow("acct1")
+	cookie := startRedirect(t, r, "")
+
+	out := r.send(http.MethodGet, "/auth/callback/password", "", "Cookie", cookie)
+	if out.Code == http.StatusSeeOther {
+		t.Fatalf("a resolver error made a session and redirected: %s", out.Body.String())
+	}
+	if len(r.sessions.created) != 0 {
+		t.Errorf("a resolver error made %d sessions", len(r.sessions.created))
+	}
+	if st := flowRecordOf(t, r, cookie).State; st != stateFailed {
+		t.Errorf("the flow state is %q, want the failed tombstone", st)
 	}
 }

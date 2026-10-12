@@ -6,10 +6,13 @@ module that guards listening endpoints — `pkg/authn/static`, the first
 credential backend, whose subject table comes from configuration,
 `pkg/authn/mount`, which mounts a module's routes under the base path with the
 access level the gateway applies to each, the modules of the identity system —
-`pkg/authn/account`, `pkg/authn/session`, `pkg/authn/mfa`, `pkg/authn/token` and
-the login packages under `pkg/authn/login` — and `pkg/authn/authntest`, which
-builds the context a gateway would have left on a request, and the configuration
-reader a backend's tests need, for the tests of modules that read an identity.
+`pkg/authn/account`, `pkg/authn/session`, `pkg/authn/mfa`, `pkg/authn/token`,
+`pkg/authn/sso`, `pkg/authn/impersonation`, `pkg/authn/admin` and the login
+methods under `pkg/authn/login` — `pkg/authn/guard`, which writes the step-up
+challenge of a route that requires a stronger authentication, and
+`pkg/authn/authntest`, which builds the context a gateway would have left on a
+request, and the configuration reader a backend's tests need, for the tests of
+modules that read an identity.
 The value types and the units the modules share live in `pkg/authn/internal/`,
 which only this directory can import; among them `internal/mount/mounttest` is
 a `Mounter` for the tests of the modules that mount routes.
@@ -347,10 +350,10 @@ stable contract: a method added, dropped or re-signed, or a field of one of thos
 types renamed, is a breaking change for every implementer and every consumer.
 `seams_test.go` holds each method set it lists to the design's signature and
 `surface_test.go` pins the exported fields and methods. The closed sets a seam
-reads — the SMS purposes and the sentinel errors — live in this package beside
-it; the locale values are a closed set documented on the `SMS.Locale` and
-`SendCode.Locale` fields rather than declared here. How a module delivers a seam
-and how a consumer takes it are stated in the module's own `AGENTS.md`, not here.
+reads — the SMS purposes, the sentinel errors and the locale values (`LocaleZH`,
+`LocaleEN`) — are declared in this package beside it. How a module delivers a
+seam and how a consumer takes it are stated in the module's own `AGENTS.md`, not
+here.
 
 `SMSSender` is the SMS sending seam: `SMS` is what a send carries, `SendReceipt`
 is what a carrier answers with, and `ErrSMSThrottled`, `ErrSMSRejected` and

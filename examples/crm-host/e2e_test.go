@@ -1105,6 +1105,14 @@ const unlandedMsg = "an HTTP middleware constraint landed on no layer"
 // are readable as positions that landed rather than as spellings: an anchor no
 // layer stands for is dropped with nothing said about where the layer went.
 //
+// The chain the real modules assembled is also the chain-order summary the
+// design leaves as an unverified assumption: every phase's modules are present
+// on this endpoint, and the listing is checked for the whole order the design
+// fixes — the gateway, then resolution, then the journal, then rate limiting,
+// then admission — rather than the admission layer's position alone. The
+// ordering is derived from the After entries and preferences the algorithm
+// reads, and no assembly had been run when it was written down.
+//
 // The startup's record of constraints that landed on no layer is held to the
 // ones this configuration is known to leave: the journal anchors inside
 // resolution on every endpoint it covers, and two of those endpoints resolve no
@@ -1135,6 +1143,19 @@ func TestTheAdmissionLayerSitsInsideTheJournalAndTheLimiter(t *testing.T) {
 		case position > admission:
 			t.Errorf("the chain %q puts %s outside %s; its refusals would not pass through it",
 				rec["chain"], admissionModuleName, outer)
+		}
+	}
+	// The whole order the design fixes, outermost first, with the admission
+	// layer innermost of the layers it anchors on. Each layer stands outside the
+	// next; a pair where one is missing is left to the loop above, which names it.
+	order := []string{"authn.gate", resolve.ModuleName, journal.ModuleName, ratelimit.ModuleName, admissionModuleName}
+	for i := 1; i < len(order); i++ {
+		outer, inner := at(order[i-1]), at(order[i])
+		if outer < 0 || inner < 0 {
+			continue
+		}
+		if outer >= inner {
+			t.Errorf("the chain %q does not put %s outside %s", rec["chain"], order[i-1], order[i])
 		}
 	}
 

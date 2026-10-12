@@ -44,7 +44,7 @@ claim there has its case in `e2e_test.go` or a slice's own test file, or in
 | `main.go` | The package comment, the stack table and the command tree, with the platform modules each command runs, the identity system's own modules among them; and the `factor-gate` module, the one route of which `authn/guard` protects. |
 | `host.go` | The host identity (prefix `CRM`) and the endpoint names. |
 | `application.go` | The registration table every host module goes through, the migration tree helper every module's migrations use, the release records, the error body, the route and request-body helpers, identifiers. |
-| `decider.go` | The host's `authn.Decider`: it allows the platform operator a management action and refuses `authn.tenant.access` whatever the actor, so an operator stays a stranger to every tenant until a permission model is written. |
+| `decider.go` | The host's `authn.Decider`: it allows the platform operator a management action, allows a tenant's owner to start an impersonation of a lower-role member of the same tenant, and refuses `authn.tenant.access` whatever the actor, so an operator stays a stranger to every tenant until a permission model is written. |
 | `members.go` | The scoped `member_roles` table (the role an account holds in a tenant; the membership relation itself is the account module's), `GET`/`POST /members`, and `GET /me` on the account endpoint. The member check is `tenant.admission`, not a layer of this module. |
 | `admin.go` | The operator check and the roster, user and cross-tenant grant routes on the admin endpoint. A user is created through `authn.AccountAdmin`, and the operator is judged by the full account `static.<operator subject>`. |
 | `ops.go` | Health, readiness, the merged OpenAPI document, and the ready record. |
@@ -323,6 +323,19 @@ authn:
   static:
     subjects:
       ops: "$argon2id$v=19$m=19456,t=2,p=1$...$..."
+  login:
+    google:
+      client-id: "000000000000-xxxxxxxx.apps.googleusercontent.com"
+      client-secret: "..."
+    github:
+      client-id: "..."
+      client-secret: "..."
+    wechat-web:
+      app-id: "..."
+      app-secret: "..."
+    wechat-mp:
+      app-id: "..."
+      app-secret: "..."
   token:
     issuer: "https://crm.example.com"
     audience: ["https://crm.example.com"]
@@ -357,11 +370,19 @@ answered 403 there. The identity system's own routes are mounted on the account
 endpoint under `authn.gate.mount.base-path` (default `/auth`), so a login runs
 through `POST /auth/flows` and a logout through `POST /auth/logout` there, and
 the token surface runs there too (`POST /auth/token`, `POST /auth/token/revoke`
-and `GET /auth/jwks.json`). The `authn.token` section names the signing key file
-and the algorithm; `authn.token.issuer` defaults to
+and `GET /auth/jwks.json`). The management routes are mounted there as well,
+under `/auth/admin/*`; the impersonation routes under `/auth/impersonation`; the
+enterprise discovery route `POST /auth/sso/discover`; the SAML SP metadata route
+`GET /auth/sso/saml/:provider/metadata`; and the `GET|POST /auth/callback/:provider`
+the social and enterprise methods answer. The `authn.token` section names the
+signing key file and the algorithm; `authn.token.issuer` defaults to
 `authn.gate.mount.public-url`, the audience to the issuer, and the client
 identifier to `speed`, so a deployment that names none still issues tokens a
-verifier can compare.
+verifier can compare. The `authn.login.google`, `authn.login.github`,
+`authn.login.wechat-web` and `authn.login.wechat-mp` sections each carry the
+provider credentials their method requires at startup, since a method named
+without them fails the start; the enterprise IdPs are rows in the SSO module's
+tables, written through the management routes, and are not configuration.
 `authn.gate.endpoints` narrows the gateway's default of every endpoint to the
 three that carry credentials, which leaves the `ops` endpoint with the probes
 and the documents unguarded. `tenant.admission.endpoints` holds the account and
@@ -376,15 +397,24 @@ carries the route mounter the login, session and multi-factor modules mount
 through; `authn.account` is the account store and delivers the account reads and
 writes, the password capability, the membership store and the failure back-off;
 `authn.session` is the session store and the cookie backend; `authn.login` and
-`authn.login.password` are the login flow and its password method; `authn.mfa`
+`authn.login.password` are the login flow and its password method, and
+`authn.login.google`, `authn.login.github`, `authn.login.wechat-web` and
+`authn.login.wechat-mp` are the four social methods the engine takes up with
+`ResolveAll`; `authn.mfa`
 is the factor register and policy, and `authn.mfa.totp` and `authn.mfa.webauthn`
 are the two factor kinds it drives — a code an authenticator app generates from
 a seed, and an authenticator-bound credential that is also the `passkey` login
 method; `authn.token` is the access and refresh
-tokens and registers the bearer verifier; `tenant.admission` holds the member
-check on the API endpoint; `authz` (this host's `decider.go`) is the decision
-seam. Every one of them is named, since the dependency closure never picks an
-exclusive provider.
+tokens and registers the bearer verifier; `authn.sso` is the register of the
+tenants' enterprise identity providers and the domain-discovery route, and
+`authn.sso.saml` and `authn.sso.oidc` are the two enterprise login methods, the
+SAML one carrying the SP metadata route besides; `authn.admin` mounts the
+management routes under the base path's `/admin` tree, and
+`authn.impersonation` holds the impersonation records and the `B/impersonation`
+routes; `tenant.admission` holds the member check on the API endpoint and
+delivers the scope guard the impersonation module requires;
+`authz` (this host's `decider.go`) is the decision seam. Every one of them is
+named, since the dependency closure never picks an exclusive provider.
 
 `pkg/authn/guard` is the step-up middleware, and it registers no module: its
 presence is a call site. `main.go`'s `factor-gate` module mounts one route with
@@ -397,7 +427,11 @@ of the handler, past the gateway's.
 The SMS family (`authn.sms`, `sms.aliyun`, `sms.tencent`, `authn.login.sms`,
 `authn.mfa.sms`) is not taken in. A provider adapter needs real credentials and
 outbound egress, so each module is covered by its own tests over a fake sender,
-and the host configures nothing for them.
+and the host configures nothing for them. The social and enterprise methods are
+taken in, by contrast: they need placeholder provider credentials, which the
+configuration carries, and each is covered by its own tests over a simulated
+provider, so a run of this host exercises the assembly and the routes rather
+than a live login against Google, GitHub, WeChat or a tenant's IdP.
 
 What this means for a slice:
 
@@ -436,6 +470,23 @@ What this means for a slice:
 - **The role every handler gates on is read from `member_roles`, last.** A route
   reads the caller's role with `memberOf`/`memberWith`, which read the tenant's
   own table through the scoped handle.
+- **The management and impersonation routes are the identity system's own.**
+  `authn.admin` mounts the `/auth/admin/*` tree on the account endpoint, and
+  every route of it asks the host's `Decider` (`authz`) and is recorded by the
+  journal before it acts; the host's own admin endpoints (`/tenants`, `/users`
+  on the admin endpoint) stay separate and go through the operator check.
+  `authn.impersonation` mounts `/auth/impersonation` there: `POST` starts one,
+  allowed by the host's `Decider` to a tenant's owner impersonating a lower-role
+  member of the same tenant, and `GET` and `DELETE` stay reachable during an
+  impersonation so that owner can see and end it.
+- **A social or enterprise login is a method of the engine, not a route of this
+  host.** The methods `google`, `github`, `wechat.web` and `wechat.mp` come from
+  configuration and `saml` and `oidc` from a tenant's IdP rows; each begins
+  through `POST /auth/flows` with the method named and answers on
+  `GET|POST /auth/callback/:provider`, with `POST /auth/sso/discover` and the
+  SAML SP metadata route beside them. This host configures the four social
+  methods with placeholder credentials, so the assembly and the routes are the
+  thing a run shows, not a live login at a provider.
 - **`subtree`, which every module's migrations go through, lives in
   `application.go`, so a slice's migration tree stands on its own.**
 

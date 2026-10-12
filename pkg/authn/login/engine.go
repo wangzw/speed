@@ -56,6 +56,12 @@ func (p *product) invoke(ctx context.Context, method string, call func(ctx conte
 			slog.String("method", method))
 		return authn.Step{}, false
 	}
+	if n := len(step.PrivateOf(got)); n > maxPrivateBytes {
+		p.logger.Error(ModuleName+": a login method gave more private state than the surface allows",
+			slog.String("method", method), slog.Int("bytes", n))
+		return authn.StepUnavailable(fmt.Errorf("%w: the method %s gave oversized private state",
+			authn.ErrUnavailable, method)), true
+	}
 	return got, true
 }
 
@@ -83,6 +89,7 @@ func (r *routes) flowState(rec record, token string) authn.FlowState {
 		ID:        tokenDigest(token)[:16],
 		Purpose:   rec.Purpose,
 		Step:      rec.MethodStep,
+		Provider:  rec.Provider,
 		Account:   authn.AccountID(rec.Account),
 		Session:   authn.SessionID(rec.Session),
 		Private:   rec.MethodState,
@@ -163,6 +170,10 @@ func (r *routes) applyFirstBegin(c *gin.Context, token, echo string, rec record,
 		r.fail(c, fmt.Errorf("%w: the flow names a method not taken in", authn.ErrFlowInvalid))
 		return
 	}
+	// The provider the flow's callback path must name is fixed with this first
+	// call and written in the swap below: the start input's provider for an
+	// enterprise one, the method's own name for a social one.
+	rec.Provider = flowProvider(rec.Method, fields)
 	s := authn.Start{
 		Purpose:   rec.Purpose,
 		Account:   authn.AccountID(rec.Account),

@@ -49,9 +49,13 @@ type ImpersonationGrant struct {
 }
 
 // GrantQuery selects impersonation records for Impersonation.List. The zero
-// value selects every record, the first page of the default size.
+// value selects every record, the first page of the default size. Tenant names a
+// tenant to confine the page to, which the management routes pass so that a
+// tenant's records are selected in the store rather than filtered out of a full
+// page afterwards.
 type GrantQuery struct {
 	Actor, Target AccountID
+	Tenant        string
 	After         string
 	Limit         int // see Page.EffectiveLimit
 }

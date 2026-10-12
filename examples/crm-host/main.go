@@ -627,15 +627,24 @@ import (
 	"github.com/vislake/speed/pkg/audit/journal"
 	"github.com/vislake/speed/pkg/authn"
 	"github.com/vislake/speed/pkg/authn/account"
+	authnadmin "github.com/vislake/speed/pkg/authn/admin"
 	"github.com/vislake/speed/pkg/authn/gate"
 	"github.com/vislake/speed/pkg/authn/guard"
+	"github.com/vislake/speed/pkg/authn/impersonation"
 	"github.com/vislake/speed/pkg/authn/login"
+	"github.com/vislake/speed/pkg/authn/login/github"
+	"github.com/vislake/speed/pkg/authn/login/google"
 	loginpassword "github.com/vislake/speed/pkg/authn/login/password"
+	"github.com/vislake/speed/pkg/authn/login/wechatmp"
+	"github.com/vislake/speed/pkg/authn/login/wechatweb"
 	"github.com/vislake/speed/pkg/authn/mfa"
 	"github.com/vislake/speed/pkg/authn/mfa/totp"
 	"github.com/vislake/speed/pkg/authn/mfa/webauthn"
 	authnmount "github.com/vislake/speed/pkg/authn/mount"
 	"github.com/vislake/speed/pkg/authn/session"
+	"github.com/vislake/speed/pkg/authn/sso"
+	ssooidc "github.com/vislake/speed/pkg/authn/sso/oidc"
+	ssosaml "github.com/vislake/speed/pkg/authn/sso/saml"
 	"github.com/vislake/speed/pkg/authn/static"
 	"github.com/vislake/speed/pkg/authn/token"
 	"github.com/vislake/speed/pkg/config"
@@ -820,20 +829,37 @@ func addStack(root *config.Command, s stack) {
 		// session and multi-factor modules mount through; account delivers the
 		// account store, its write surface and the membership store; session
 		// delivers the session store and the cookie backend; login and its
-		// password method deliver the flow routes; mfa delivers the factor
-		// register and policy, and the totp and webauthn modules each deliver a
-		// factor kind, so the register has something to drive; token delivers
-		// the access and refresh tokens and registers the bearer verifier;
-		// admission holds the member check on the API.
+		// password method deliver the flow routes, and the google, github and
+		// wechat-web and wechat-mp modules each deliver a social login method
+		// the engine takes up with ResolveAll; mfa delivers the factor register
+		// and policy, and the totp and webauthn modules each deliver a factor
+		// kind, so the register has something to drive; token delivers the
+		// access and refresh tokens and registers the bearer verifier; admin
+		// mounts the management routes under the base path and impersonation
+		// holds the impersonation records; admission holds the member check and
+		// delivers the scope guard; sso delivers the enterprise provider
+		// register, and the SAML and enterprise OIDC modules each deliver a
+		// login method and, for SAML, the metadata route. This host takes the
+		// social and enterprise methods in and configures placeholder provider
+		// credentials for them, unlike the SMS family it leaves out.
 		authnmount.ModuleName,
 		account.ModuleName,
+		authnadmin.ModuleName,
 		session.ModuleName,
 		login.ModuleName,
 		loginpassword.ModuleName,
+		google.ModuleName,
+		github.ModuleName,
+		wechatweb.ModuleName,
+		wechatmp.ModuleName,
 		mfa.ModuleName,
 		totp.ModuleName,
 		webauthn.ModuleName,
 		token.ModuleName,
+		sso.ModuleName,
+		ssosaml.ModuleName,
+		ssooidc.ModuleName,
+		impersonation.ModuleName,
 		admission.ModuleName,
 		resolve.ModuleName,
 		catalog.ModuleName,

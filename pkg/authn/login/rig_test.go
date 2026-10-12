@@ -495,6 +495,17 @@ func (r *rig) send(method, path, body string, hdr ...string) *httptest.ResponseR
 	return r.m.Do(req)
 }
 
+// postForm issues a POST carrying an urlencoded form body and the given flow
+// cookie, as a SAML ACS does.
+func (r *rig) postForm(path, body, cookie string) *httptest.ResponseRecorder {
+	r.t.Helper()
+	req := httptest.NewRequest(http.MethodPost, path, strings.NewReader(body))
+	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+	req.Header.Set("Cookie", cookie)
+	req.Header.Set("Sec-Fetch-Site", "same-origin")
+	return r.m.Do(req)
+}
+
 // flowCookie is the flow cookie a start reply set, as the "name=value" pair to
 // send back.
 func flowCookie(t *testing.T, rec *httptest.ResponseRecorder) string {

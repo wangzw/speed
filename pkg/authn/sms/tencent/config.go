@@ -20,13 +20,13 @@ const (
 	templatesItem = "templates"
 )
 
-// The languages a message may be written in. The set is closed: the carrier
-// approves a template per language, so the language is one dimension of the
-// template lookup and a value outside the set is a caller defect, not a
-// language to send in.
+// The languages a message may be written in, named by the root package. The set
+// is closed: the carrier approves a template per language, so the language is
+// one dimension of the template lookup and a value outside the set is a caller
+// defect, not a language to send in.
 const (
-	localeZH = "zh-CN"
-	localeEN = "en-US"
+	localeZH = authn.LocaleZH
+	localeEN = authn.LocaleEN
 )
 
 // purposes are the template keys this module maps to a carrier template number.
@@ -74,14 +74,12 @@ type resolved struct {
 // table and in the carrier's template list.
 func templateKey(purpose, locale string) string { return purpose + "/" + locale }
 
-// localeOf is the language a message is built in: the one named, or zh-CN when
-// none is. The caller's empty value reads as zh-CN, matching the contract of the
-// SendCode this is built from.
+// localeOf is the language a message is built in: the one named, or the default
+// when none is, through the root package's single mapping. The caller's empty
+// value reads as the default, matching the contract of the SendCode this is
+// built from.
 func localeOf(locale string) string {
-	if locale == "" {
-		return localeZH
-	}
-	return locale
+	return authn.LocaleOf(locale)
 }
 
 // resolve validates the decoded configuration and turns it into what the module

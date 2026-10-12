@@ -98,7 +98,7 @@ type SMSCodes interface {
 
 - **`Send` 的调用方责任。** `Purpose` 取自封闭集，`Phone` 已规范化，`mfa` 与 `enroll` 的 `Account` 非空；违反即调用方缺陷，`Send` 返回普通错误，不属于哨兵集。每流程发送上限由调用方在 `Send` 之前核对。
 - **`Send` 对 `Deliver` 为真与为假的调用走同一条路径。** 应答只有 `challengeID` 一种形状，调用方无法从返回值、状态码或错误形态区分抑制行与真实行（耗时见「非保证」）。
-- **`Locale` 的来源与取值。** 本模块不读 HTTP，也不解析 `Accept-Language`。`Locale` 由登录引擎在发起流程的请求上对 `Accept-Language` 做闭集映射得出（取不到或不在闭集内读作 `zh-CN`），存入流程记录，经方法与因素的入参交给调用方，调用方原样填入 `SendCode.Locale`；映射本身归 [design-authn-login](design-authn-login.md)。`Locale` 非空且不在 `zh-CN`、`en-US` 内属调用方缺陷，`Send` 返回普通错误。`SMS.Locale` 取 `SendCode.Locale`，适配层按（用途，语言）选厂商模板。
+- **`Locale` 的来源与取值。** 语言取值的封闭集是根包 `pkg/authn` 的 `LocaleZH`（`zh-CN`）与 `LocaleEN`（`en-US`）两个常量，本模块与两个厂商适配取用同一组常量。本模块不读 HTTP，也不解析 `Accept-Language`：`Accept-Language` 到语言的映射由登录引擎在发起流程的请求上做（取不到或不在闭集内读作 `zh-CN`），存入流程记录，经方法与因素的入参交给调用方，调用方原样填入 `SendCode.Locale`；映射本身归 [design-authn-login](design-authn-login.md)。**空值的归一只有一处**：根包 `LocaleOf` 把空串读作 `LocaleZH`、把非空值原样返回，它只填默认值、不把一种语言替换成另一种，所以一个不在闭集内的值原样透传。两条 fail-closed 路径由此分开：`Send` 的入参校验把非空且不在闭集内的语言按调用方缺陷拒掉，返回普通错误；而 `SMSSender` 作为独立接缝被直接调用、传入未经校验的 `SMS.Locale` 时，适配层按（用途，语言）查找模板落空，以 `ErrSMSRejected` 拒绝、不调厂商——构造期只保证模板覆盖闭集内的全部组合，闭集外的语言因此一律被拒。`SMS.Locale` 取 `SendCode.Locale`，适配层按（用途，语言）选厂商模板。
 - **`Verify` 不回传号码与账户。** 通过只证明持有该挑战标识的调用方出示了正确的码；码发往哪个号码，由调用方在自己的流程记录里保存，以发起时的号码为准。
 - **`Verify` 对抑制行恒返回 `ErrInvalidCredentials`**，照样计数并做一次诱饵比对。
 - **方法名核对。** 同一模块交付的各能力接口方法名两两不相交的规则见 [design-authn](design-authn.md#扩展点)。`authn.sms` 交付的 `SMSCodes` 的方法（`Send`、`Verify`）与 `AccountLifecycle` 的方法（`AccountDisabled`、`AccountDeleted`、`ServiceSecretRevoked`）互不重名；`SMSSender` 的 `Send` 与 `SMSCodes` 的 `Send` 同名异签，二者由不同模块交付，不会落在同一个类型上。
@@ -117,13 +117,15 @@ type SMSCodes interface {
 | 设置，`authn.sms` | `global-hourly-login`、`global-hourly-mfa`、`global-hourly-enroll` | 按用途分设的全局每小时上限 |
 | 设置，`authn.sms` | `per-flow-sends`、`per-account-hourly` | 每流程发送上限（由调用方核对）与每账户每小时上限（只对 `mfa`、`enroll` 计） |
 
+这些键里出现的「语言」是封闭集 `zh-CN`、`en-US`，由根包 `pkg/authn` 的 `LocaleZH`、`LocaleEN` 常量声明；本模块与两个厂商适配取用同一组常量，不各自重声明。
+
 这些键由本模块声明。除 `per-flow-sends` 外，各键由本模块读；`code-ttl` 与 `resend-interval` 另由登录模块的手机号自助路由读（构成记录的有效期与应答里的 `resend_after`，见 [design-authn-login](design-authn-login.md) 的「手机号验证」），`per-flow-sends` 由登录引擎读（构成交给方法与因素的 `SendsLeft`）。各键经设置存储从全局层读，读取出错或取值越出取值域时取声明的缺省。
 
 `allowed-prefixes` 与预算项是设置，改到更宽松的取值时，本模块写一行 `Warn` 并经审计接缝记一条尽力档记录，事前不拦（[ADR-authn-settings-and-secrets-2026-10-10](../../adr/adr-authn-settings-and-secrets-2026-10-10.md)）。
 
 ### 稳定性承诺
 
-- `SMSCodes`、`SMSSender`、`SendCode`、`SMS` 的字段与方法集，以及用途、模板键、`Locale` 取值与错误哨兵这几个封闭集，是本模块对使用方与厂商适配的契约。增删封闭集的成员，等同修改契约，使用方与适配模块一并复核。
+- `SMSCodes`、`SMSSender`、`SendCode`、`SMS` 的字段与方法集，以及用途、模板键、`Locale` 取值与错误哨兵这几个封闭集，是本模块对使用方与厂商适配的契约。其中 `Locale` 取值的封闭集由根包 `pkg/authn` 的 `LocaleZH`、`LocaleEN` 常量声明，本模块与两个厂商适配取用同一组常量。增删封闭集的成员，等同修改契约，使用方与适配模块一并复核。
 - 挑战表的列与索引是本模块私有的存储形状，不属于契约：其他模块不读 `authn_challenges`，只经 `SMSCodes` 与 `AccountLifecycle` 交互。
 - 单个厂商适配叶子包可替换、可撤掉，不改变 `SMSCodes` 的行为。
 
@@ -138,7 +140,7 @@ type SMSCodes interface {
 | `audit.Audit` | 取用，缺席合法 | 放宽设置的尽力档审计 | 只写 `Warn` |
 | `log.Logger` | 取用，缺席合法 | 脱敏规则登记、日志 | 无日志 |
 
-厂商适配模块不依赖任何其他 authn 模块，只绑定各自的厂商 SDK，所以 SDK 只进 import 了该叶子包的宿主的依赖闭包（[ADR-authn-packaging-2026-10-10](../../adr/adr-authn-packaging-2026-10-10.md)）。
+厂商适配模块不依赖任何其他 authn 模块，只绑定各自的厂商 SDK，所以 SDK 只进 import 了该叶子包的宿主的依赖闭包（[ADR-authn-packaging-2026-10-10](../../adr/adr-authn-packaging-2026-10-10.md)）。两家 SDK 在 `pkg/go.mod` 里精确钉版（版本见「厂商适配」一节），各只被对应的适配叶子包 import，两条都由 `pkg/authn/deps_test.go` 的守卫守住。
 
 依赖方向满足架构不变量：
 
@@ -398,7 +400,7 @@ flowchart TD
 
 | 项 | 阿里云 `authn.sms.aliyun` | 腾讯云 `authn.sms.tencent` |
 |---|---|---|
-| SDK | `github.com/alibabacloud-go/dysmsapi-20170525/v5` | `github.com/tencentcloud/tencentcloud-sdk-go/tencentcloud/sms/v20210111` |
+| SDK | `github.com/alibabacloud-go/dysmsapi-20170525/v5` v5.6.0 | `github.com/tencentcloud/tencentcloud-sdk-go/tencentcloud/sms/v20210111` v1.3.172 |
 | 调用 | `SendSmsWithOptions`（`ctx` 由适配层用 `select` 等待响应） | `SendSmsWithContext` |
 | 请求字段 | `SignName`、`TemplateCode`、`TemplateParam`（`Params` 的 JSON） | `SignName`、`TemplateId`、`TemplateParamSet`（位置参数，按 `code`、`ttl_minutes` 的次序） |
 | 归 `ErrSMSThrottled` | 没有已核实的错误码 | `LimitExceeded.*` 错误码 |

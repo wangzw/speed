@@ -36,7 +36,15 @@ func (r *routes) callback(c *gin.Context) {
 		mount.Unauthorized(c, r.endpoint, mount.CodeFlowInvalid)
 		return
 	}
-	m, ok := r.callbackMethod(provider, rec.Method)
+	// The path's provider must be the one the flow recorded before the method is
+	// asked: a social method records its own name, an enterprise provider records
+	// the identifier the start input named. A callback aimed at another provider
+	// is refused and never reaches a method.
+	if rec.Provider != provider {
+		mount.Unauthorized(c, r.endpoint, mount.CodeFlowInvalid)
+		return
+	}
+	m, ok := r.method(rec.Method)
 	if !ok {
 		mount.Unauthorized(c, r.endpoint, mount.CodeFlowInvalid)
 		return
@@ -45,20 +53,6 @@ func (r *routes) callback(c *gin.Context) {
 		return
 	}
 	r.answerCallback(c, token, rec, m)
-}
-
-// callbackMethod finds the method a callback path serves: a social method whose
-// name is the provider, or the enterprise method the flow recorded, whose
-// provider is the path's identifier.
-func (r *routes) callbackMethod(provider, recorded string) (authn.LoginMethod, bool) {
-	if m, ok := r.method(provider); ok {
-		return m, true
-	}
-	if recorded == "" {
-		return nil, false
-	}
-	m, ok := r.method(recorded)
-	return m, ok
 }
 
 // beginProcessing swaps a first-state flow to processing. A false result means
@@ -83,11 +77,23 @@ func (r *routes) answerCallback(c *gin.Context, token string, rec record, m auth
 		serverError(c)
 		return
 	}
+	form, ok := formValues(c)
+	if !ok {
+		// The posted body is over the callback's limit. It is refused before any
+		// method reads it, and the flow is left a tombstone.
+		failed := proc
+		failed.State = stateFailed
+		if !r.swap(c, token, procBytes, failed) {
+			return
+		}
+		mount.Unauthorized(c, r.endpoint, mount.CodeLoginFailed)
+		return
+	}
 	f := r.flowState(proc, token)
 	in := authn.StepInput{
 		Action: authn.InputCallback,
 		Query:  c.Request.URL.Query(),
-		Form:   formValues(c),
+		Form:   form,
 		Client: requestClient(c),
 	}
 	got, ok := r.invoke(ctx, proc.Method, func(cctx context.Context) (authn.Step, error) {
@@ -205,6 +211,7 @@ func (r *routes) callbackIDPInitiated(c *gin.Context, provider string) {
 		Version:   recordVersion,
 		Purpose:   authn.PurposeLogin,
 		Method:    row.Protocol,
+		Provider:  provider,
 		State:     stateProcessing,
 		Binding:   tokenDigest(token),
 		Delivery:  deliverySession,
@@ -220,13 +227,22 @@ func (r *routes) callbackIDPInitiated(c *gin.Context, provider string) {
 	r.answerCallback(c, token, rec, m)
 }
 
+// maxCallbackFormBytes is the bound on a callback's posted body, before the form
+// is parsed. The design gives SAML's ACS a 512 KiB body limit; the bound is
+// applied here, so an oversized POST is refused rather than read.
+const maxCallbackFormBytes = 512 << 10
+
 // formValues reads a posted form without consuming a JSON body, for SAML's POST
-// binding.
-func formValues(c *gin.Context) map[string][]string {
-	if c.Request.Method == http.MethodPost {
-		if err := c.Request.ParseForm(); err == nil {
-			return c.Request.PostForm
-		}
+// binding. The body is bounded before it is parsed; the second result is false
+// when the body is over the limit or does not parse, which the caller answers as
+// a refusal rather than handing a method a form it cannot trust.
+func formValues(c *gin.Context) (map[string][]string, bool) {
+	if c.Request.Method != http.MethodPost {
+		return nil, true
 	}
-	return nil
+	c.Request.Body = http.MaxBytesReader(c.Writer, c.Request.Body, maxCallbackFormBytes)
+	if err := c.Request.ParseForm(); err != nil {
+		return nil, false
+	}
+	return c.Request.PostForm, true
 }

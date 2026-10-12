@@ -51,3 +51,22 @@ type SSOProviders interface {
 	// itself.
 	ReverifyDomains(ctx context.Context, idpID string) error
 }
+
+// SSOMetadataRefresher refreshes one IdP's protocol metadata on demand. It is
+// delivered without claiming the capability, so a consumer takes every
+// refresher with ResolveAll and dispatches on Protocol; a protocol whose
+// discovery document is fetched on demand has none and delivers no refresher.
+// The SAML module delivers it, and it does not run by itself: a host or an
+// administrator triggers it.
+type SSOMetadataRefresher interface {
+	// Protocol names the provider protocol this refresher refreshes.
+	Protocol() string
+	// Refresh fetches the provider's metadata through the restricted egress
+	// client, parses the identity provider's certificate, single sign-on URL
+	// and entity identifier out of it and writes them back through
+	// SSOProviders.Put, raising the provider's Version. A parse or validation
+	// failure leaves the stored configuration as it was, logs a warning and
+	// returns the error; a success returns the new provider. A provider with
+	// no metadata URL cannot be refreshed.
+	Refresh(ctx context.Context, idpID string) (SSOProvider, error)
+}

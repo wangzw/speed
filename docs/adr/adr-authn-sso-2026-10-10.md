@@ -89,6 +89,12 @@ SP 的私钥与证书成为按租户的数据，附带生成与轮换流程。
 
 **否决**：一组 PEM 文件变成按租户的数据与轮换流程，范围随之扩大。默认不请求加密断言，签名 AuthnRequest 本就是可选，SP 私钥只在 IdP 要求时才用到。需要时可在 IdP 记录上加可选的密钥覆盖，不改变接缝。
 
+### 把断言重放行加进 SSOProviders 的方法集，或另立一个根包能力接口
+
+`SSOProviders` 增加一个写入断言标识的方法，或把它拆成一个独立的根包接口、在 `authn.sso` 与 `authn.sso.saml` 之间传递。
+
+**否决**：`SSOProviders` 的方法集是对宿主与协议模块的稳定承诺（[authn-sso](../design/modules/design-authn-sso.md)）；把一条只为 SAML 服务、只为内部去重而存在的写入塞进它，会让每个自写实现的提供方登记都被迫交付一个与登记职责无关的方法。另立一个根包接口则要在根包里新增一个只被一个协议模块用到的能力。做法是：写入由持有表的 `authn.sso` 交付一个 `RememberAssertion`，`authn.sso.saml` 在构造期把它取到的 `SSOProviders` 值断言到这个扩展形状上，断不上即构造失败（fail-closed）；公开方法集不变，这个扩展是登记方必须额外满足的形状。
+
 ### authn 在后台自动刷新 IdP 元数据与周期性复验域
 
 常驻协程定期取元数据、定期重查域的 DNS TXT 记录。
@@ -168,7 +174,7 @@ IdP 断言里的组或角色声明，按租户管理员配置的对照表转成�
 
 - 被验签的元素与被使用的元素必须是同一个：验签与取用基于一次解析，使用验过签返回的元素。
 - 时间条件严格判、不设容差，部署要求各副本与 IdP 时间同步。
-- 断言标识的去重放在 db 的唯一约束上，不放 kv：这类丢失会放宽校验的状态的判据见 [ADR-authn-state-placement-2026-10-10](adr-authn-state-placement-2026-10-10.md)。
+- 断言标识的去重放在 db 的唯一约束上，不放 kv：这类丢失会放宽校验的状态的判据见 [ADR-authn-state-placement-2026-10-10](adr-authn-state-placement-2026-10-10.md)。写这一行的是持有表的 `authn.sso`，它向 `authn.sso.saml` 交付一个 `RememberAssertion`，方法与登记之间以构造期要求的扩展形状相接，公开的 `SSOProviders` 方法集不变。
 
 ### 域发现与域所有权
 

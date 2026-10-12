@@ -65,6 +65,7 @@ type record struct {
 	Version     int          `json:"v"`
 	Purpose     string       `json:"purpose"`
 	Method      string       `json:"method,omitempty"`
+	Provider    string       `json:"provider,omitempty"`
 	State       string       `json:"state"`
 	Seq         int          `json:"seq"`
 	Binding     string       `json:"binding"`
@@ -248,6 +249,31 @@ func (p *product) deleteFlow(ctx context.Context, token string) error {
 func (p *product) method(name string) (authn.LoginMethod, bool) {
 	m, ok := p.methods[name]
 	return m, ok
+}
+
+// flowProvider is the value a flow records as the provider its callback path
+// must carry. An enterprise SSO method is dispatched at a provider identifier
+// the start input names, so its record takes that value; every other method's
+// callback path is built from its own name, so its record takes the method name
+// and the start input cannot change it.
+func flowProvider(method string, input map[string]string) string {
+	if enterpriseSSOMethod(method) {
+		if p := input["provider"]; p != "" {
+			return p
+		}
+	}
+	return method
+}
+
+// enterpriseSSOMethod reports whether a method is an enterprise SSO protocol
+// method, whose callback path carries the IdP identifier a start names rather
+// than the method's own name.
+func enterpriseSSOMethod(method string) bool {
+	switch method {
+	case model.SSOProtocolOIDC, model.SSOProtocolSAML:
+		return true
+	}
+	return false
 }
 
 // deliveryAllowed reports whether a delivery mode is one the deployment offers.

@@ -28,8 +28,17 @@ import (
 	"github.com/vislake/speed/pkg/tenant"
 
 	"github.com/vislake/speed/pkg/authn"
+	authnadmin "github.com/vislake/speed/pkg/authn/admin"
+	"github.com/vislake/speed/pkg/authn/impersonation"
+	"github.com/vislake/speed/pkg/authn/login/github"
+	"github.com/vislake/speed/pkg/authn/login/google"
+	"github.com/vislake/speed/pkg/authn/login/wechatmp"
+	"github.com/vislake/speed/pkg/authn/login/wechatweb"
 	"github.com/vislake/speed/pkg/authn/mfa/totp"
 	"github.com/vislake/speed/pkg/authn/mfa/webauthn"
+	"github.com/vislake/speed/pkg/authn/sso"
+	ssooidc "github.com/vislake/speed/pkg/authn/sso/oidc"
+	ssosaml "github.com/vislake/speed/pkg/authn/sso/saml"
 )
 
 // These cases read the descriptors and the host's tables instead of running the
@@ -312,6 +321,56 @@ func TestTheFactorModulesAreRegisteredWithTheirTables(t *testing.T) {
 		if !slices.Contains(tables, want) {
 			t.Errorf("the declared migrations create no %q table; they create %v", want, tables)
 		}
+	}
+}
+
+// TestTheIdentityModulesAreRegisteredAndNamedOnServe is the case for the social
+// and enterprise login methods, the administration routes and the impersonation
+// records this host takes in beside the factor modules. Each is a module of the
+// identity system named on serve, and none is drawn in by the dependency closure:
+// the login methods are a non-exclusive seam the engine takes up with ResolveAll,
+// and the enterprise provider register, the impersonation records and the
+// administration module are exclusive providers or route mounts the host writes
+// down one by one. A name dropped from the serve Include list leaves the stack a
+// method, a capability or a route group short with no descriptor and no served
+// case saying so, so this case holds both halves: the module is registered and
+// delivers what its package declares, and serve names a module from that package.
+func TestTheIdentityModulesAreRegisteredAndNamedOnServe(t *testing.T) {
+	deliveries := []struct {
+		name       string
+		importPath string
+		capability core.Token
+	}{
+		{google.ModuleName, "github.com/vislake/speed/pkg/authn/login/google", (*authn.LoginMethod)(nil)},
+		{github.ModuleName, "github.com/vislake/speed/pkg/authn/login/github", (*authn.LoginMethod)(nil)},
+		{wechatweb.ModuleName, "github.com/vislake/speed/pkg/authn/login/wechatweb", (*authn.LoginMethod)(nil)},
+		{wechatmp.ModuleName, "github.com/vislake/speed/pkg/authn/login/wechatmp", (*authn.LoginMethod)(nil)},
+		{sso.ModuleName, "github.com/vislake/speed/pkg/authn/sso", (*authn.SSOProviders)(nil)},
+		{ssosaml.ModuleName, "github.com/vislake/speed/pkg/authn/sso/saml", (*authn.LoginMethod)(nil)},
+		{ssooidc.ModuleName, "github.com/vislake/speed/pkg/authn/sso/oidc", (*authn.LoginMethod)(nil)},
+		{impersonation.ModuleName, "github.com/vislake/speed/pkg/authn/impersonation", (*authn.Impersonation)(nil)},
+	}
+	onServe := modulesNamedOnServe(t)
+	for _, d := range deliveries {
+		module, ok := core.ProcessRegistry.Lookup(d.name)
+		if !ok {
+			t.Errorf("the module %q is not registered, so serve names a module nothing delivers", d.name)
+			continue
+		}
+		if !provides(module, d.capability) {
+			t.Errorf("the module %q does not deliver %T", d.name, d.capability)
+		}
+		if !onServe[d.importPath] {
+			t.Errorf("serve names no module from %s, so the module is registered but never runs", d.importPath)
+		}
+	}
+	// The administration module delivers no capability of its own: it is taken in
+	// by being named on serve, which is what mounts the management routes.
+	if _, ok := core.ProcessRegistry.Lookup(authnadmin.ModuleName); !ok {
+		t.Errorf("the module %q is not registered, so serve names a module nothing delivers", authnadmin.ModuleName)
+	}
+	if !onServe["github.com/vislake/speed/pkg/authn/admin"] {
+		t.Error("serve names no module from the administration package, so the management routes are never mounted")
 	}
 }
 

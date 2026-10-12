@@ -381,20 +381,20 @@ flowchart LR
 | 判决不可字面构造、零值读作没答 | 已实现 | `pkg/authn/internal/verdict/verdict.go` `Verdict`、`OutcomeOf` |
 | 免认证登记按已匹配的路由逐字比对 | 已实现 — `Exempt`、`Optional`、`Impersonable` 与 `ErrAccessConflict` | `pkg/authn/gate/exempt.go` `Exempt`、`Optional`、`Impersonable`、`seal`、`accessOf` |
 | 启动诊断列出展开后的受守端、被开出的口子与放宽项 | 已实现 | `pkg/authn/gate/gate.go` `diagnose`、`freeze` |
-| 凭据的日志脱敏规则 | 部分实现 — 键名全集、JWT 与令牌前缀形状、`otpauth://` 地址、查询串机密对、会话 cookie 对与按 scheme 的值形状规则已在；缺配置字面量与各模块自己新增的键名 | `pkg/authn/gate/redact.go` `registerNewRules`、`registerValueRule`、`shapeMatcher`、`credentialMatcher` |
+| 凭据的日志脱敏规则 | 部分实现 — 键名全集、JWT 与令牌前缀形状、`otpauth://` 地址、查询串机密对、会话 cookie 对与按 scheme 的值形状规则已在；配置字面量由短信两家适配与社交登录四方式在各自的 `New` 里登记，各模块自己新增的键名随各模块实现 | `pkg/authn/gate/redact.go` `registerNewRules`、`registerValueRule`、`shapeMatcher`、`credentialMatcher` |
 | 口令表的口令保护 | 已实现 — PHC 条目与 Argon2id 缺省、校验缓存、进程内失败退避、并发上限与内存预算已在，条目解析的模糊用例与以 `m` 取上限的条目并发校验时内存峰值不超过预算的用例也已在 | `pkg/authn/static/hash.go` `Hash`、`ParseHash`；`pkg/authn/static/static.go` `Verify`；`pkg/authn/internal/password` `FuzzParse`、`TestDerivationsOfLargeEntriesNeverHoldMoreThanTheBudget` |
 | 加密列与根密钥 | 已实现 | `pkg/db/crypto.go` `newKeyRing`、`(*keyRing).encrypt` |
 | 日志脱敏的登记面 | 已实现 | `pkg/log/log.go` `Redaction` |
 | 标识级与账户级失败退避、`valid_after`、账户停用的跨模块清理 | 已实现 — 账户级静默退避与标识级退避、`valid_after`，以及停用后经 `AccountLifecycle` 与会话、多因素钩子的清理并幂等补偿 | `pkg/authn/account/throttle.go`；`pkg/authn/account/lifecycle.go`；`pkg/authn/session/lifecycle.go`；`pkg/authn/mfa/manage.go` |
 | 登录会话、cookie 与 CSRF 的对策 | 已实现 — 会话行与撤销、cookie 属性随网关地址、跨源检查经 `Mounter` 施加 | `pkg/authn/session/sessions.go`、`pkg/authn/session/verify.go`；`pkg/authn/session/config.go`；`pkg/authn/internal/mount/wrap.go` `Wrap` |
 | 访问令牌、刷新令牌轮换与重用检测、签名密钥轮换 | 已实现 — 访问令牌的校验次序、刷新令牌的轮换与重用即整族撤销、两相密钥轮换与 JWKS 发布都已在，含 `TestAKeyRotationRollsOverInTwoPhases` 的轮换演练与各负向向量 | `pkg/authn/token/verify.go` `Verify`、`Accepts`；`pkg/authn/token/refresh.go` `Refresh`、`rotate`、`revokeFamily`；`pkg/authn/token/keys.go` `loadKeySet`、`GenerateKey`；`pkg/authn/token/jwks.go` `JWKS` |
-| 登录流程绑定、`state`、PKCE、`nonce`、`return_to` 校验 | 部分实现 — 流程令牌的绑定、比较并交换与 `return_to` 校验已在；缺 `state`、PKCE、`nonce`（随社交与 OIDC 登录方式） | `pkg/authn/login/flow.go`、`pkg/authn/login/engine.go` |
+| 登录流程绑定、`state`、PKCE、`nonce`、`return_to` 校验 | 已实现 — 流程令牌的绑定、比较并交换与 `return_to` 校验已在；社交方式（google、github、微信）与企业 OIDC 各自的 `state`、PKCE verifier 与 `nonce` 由方式私有状态承载，回调逐项核对 | `pkg/authn/login/flow.go`、`pkg/authn/login/engine.go`、`pkg/authn/login/callback.go`；`pkg/authn/login/google`、`github`、`internal/wechat`；`pkg/authn/sso/oidc` 各自的 `state.go` |
 | 多因素的保障等级合成与账户安全类操作的因素门槛 | 已实现 — 唯一的保障等级合成、新鲜度判据、账户安全类动作的门槛与三种因素（TOTP、短信、WebAuthn）及 `guard.Require` 都已在 | `pkg/authn/mfa/policy.go` `Assurance`、`Require`；`pkg/authn/mfa/routes.go`；`pkg/authn/mfa/totp`、`pkg/authn/mfa/sms`、`pkg/authn/mfa/webauthn`；`pkg/authn/guard/guard.go` |
 | 短信的预算、抑制行与号码前缀白名单 | 已实现 | `pkg/authn/sms/send.go`、`verify.go`、`register.go`；`pkg/authn/sms/settings.go` |
-| 企业 SSO 的断言补充校验、SHA-1 预扫描与受限出站客户端 | 部分实现 — 缺断言补充校验与 SHA-1 预扫描；受限出站客户端已在，追踪头的注入留给调用方 | `pkg/authn/internal/egress/egress.go` `New`；`pkg/authn/internal/egress/address.go` `Permitted` |
-| 冒充的结构性限制、租户范围与审计先于动作 | 未实现 | — |
-| 判定接缝 `Decider` 与管理面的强制审计 | 部分实现 — `Decider` 接缝已在；缺管理面的强制审计 | `pkg/authn/decide.go` `Decider` |
+| 企业 SSO 的断言补充校验、SHA-1 预扫描与受限出站客户端 | 已实现 — 断言补充校验（`consume`、`checkResponseTo`、`checkConditions`、`checkConfirmation`）、SHA-1 预扫描（`usesSHA1`）与受限出站客户端俱在；追踪头的注入留给调用方 | `pkg/authn/sso/saml/assertion.go`、`pkg/authn/sso/saml/sha1.go`；`pkg/authn/internal/egress/egress.go` `New` |
+| 冒充的结构性限制、租户范围与审计先于动作 | 已实现 — 冒充记录的结构性限制、跨租户 404、`guard.Require(Multi)` 401 与审计先于动作 | `pkg/authn/impersonation/routes.go` `handleStart`、`handleStatus`、`handleEnd`；`active.go`、`end.go`、`store.go`、`settings.go` |
+| 判定接缝 `Decider` 与管理面的强制审计 | 已实现 — `Decider` 接缝与 `authn.admin` 的强制审计（每次写先记强制行，失败再记一行） | `pkg/authn/decide.go` `Decider`；`pkg/authn/admin/audit.go` `mandatory`、`newActionID`；`pkg/authn/admin/admin.go` |
 | 租户准入层 `tenant.admission` | 已实现 — 成员默认拒绝、租户级强度、冒充范围与经 `Decider` 的放行，判定次序按设计 | `pkg/tenant/admission/admission.go` `Module`；`pkg/tenant/admission/decide.go` `decide`；`pkg/tenant/capabilities.go` `Admission` |
 | 放宽方向的设置变更订阅与 `authn.*` 设置写权限的硬要求 | 部分实现 — 账户订阅设置变更，放宽到更宽松取值时写 `Warn` 并记审计；`authn.*` 与 `tenant.admission.*` 设置写权限的硬要求写在 `pkg/authn/AGENTS.md`，authn 不检查宿主是否遵守 | `pkg/authn/account/relax.go`；`pkg/authn/AGENTS.md` |
-| `pkg/go.mod` 对 go-jose 与 goxmldsig 的版本下限 | 部分实现 — go-jose 的下限已在（v4.1.5，`go-oidc` 要求的 v4.1.4 受 GHSA-6mp9-8xrw-74r4 影响）；缺 goxmldsig 的下限（随 SAML 协议模块在后续期落地） | `pkg/go.mod` `github.com/go-jose/go-jose/v4` v4.1.5 |
-| 链上次序的装配测试 | 部分实现 — 准入层的链上次序与端点在 `pkg/tenant/admission/assembly_test.go` 与 `pkg/tenant/admission/live_test.go` 里从真实注册表与回环端守住；缺与全部六期模块齐全的链上次序汇总 | `pkg/tenant/admission/assembly_test.go`；`pkg/tenant/admission/live_test.go` |
+| `pkg/go.mod` 对 go-jose 与 goxmldsig 的版本下限 | 已实现 — go-jose 的下限 v4.1.5（`go-oidc` 要求的 v4.1.4 受 GHSA-6mp9-8xrw-74r4 影响）、goxmldsig 的下限 v1.6.1 均在，由 `deps_test.go` 守 | `pkg/go.mod` `github.com/go-jose/go-jose/v4` v4.1.5、`github.com/russellhaering/goxmldsig` v1.6.1；`pkg/authn/deps_test.go` `goJoseFloor`、`goxmldsigFloor` |
+| 链上次序的装配测试 | 已实现 — 准入层的链上次序与端点在 `pkg/tenant/admission/assembly_test.go` 与 `pkg/tenant/admission/live_test.go` 里从真实注册表与回环端守住；全部模块齐全的装配里读 `chain=` 行、逐项断言整条次序的汇总在 `examples/crm-host/e2e_test.go` | `pkg/tenant/admission/assembly_test.go`；`pkg/tenant/admission/live_test.go`；`examples/crm-host/e2e_test.go` `TestTheAdmissionLayerSitsInsideTheJournalAndTheLimiter` |

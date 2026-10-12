@@ -402,4 +402,4 @@ flowchart TD
 - 租户解析层与 `tenant.FromContext`：已实现，代码 `pkg/tenant/resolve/resolve.go` `Module`、`pkg/tenant/scope.go` `FromContext`。
 - 入口模块的端枚举：已实现，代码 `pkg/http/router.go` `Endpoints`。
 - `Identity` 上的 `Scope`、`Assurance`、`AssuranceFromIDP`、`Provider`、`Challenge` 与根包的 `AccessFromContext`：已实现，代码 `pkg/authn/internal/identity/identity.go` `Scope`、`Assurance`、`AssuranceFromIDP`、`Provider`、`Challenge`，`pkg/authn/identity.go` `AccessFromContext`。
-- `authn.Memberships` 由 `authn.account` 交付、`authn.Decider` 的接口在根包 `pkg/authn/decide.go`；交付 `authn.SSOProviders` 的模块（`authn.sso`）未实现，代码里只有根包接口 `pkg/authn/sso.go`。
+- `authn.Memberships` 由 `authn.account` 交付、`authn.Decider` 的接口在根包 `pkg/authn/decide.go`；交付 `authn.SSOProviders` 的 `authn.sso` 已实现，代码 `pkg/authn/sso/module.go` `Module`。

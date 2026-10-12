@@ -46,6 +46,7 @@ type FlowState struct {
 	ID        string // the flow's public identifier, for log correlation only; no secret
 	Purpose   string
 	Step      string // the method's own name for the current step
+	Provider  string // the provider the callback path must name: a social method's own name, an enterprise provider's identifier, or empty
 	Account   AccountID
 	Session   SessionID // an authenticated flow: the login session that started it
 	Private   []byte    // the method's own, opaque, at most 8 KiB, kept by the engine as it stands

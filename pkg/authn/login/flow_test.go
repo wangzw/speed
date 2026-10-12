@@ -1,6 +1,7 @@
 package login
 
 import (
+	"context"
 	"encoding/json"
 	"strings"
 	"testing"
@@ -54,6 +55,49 @@ func TestRecordDecodeRefusesAnUnknownVersionAndField(t *testing.T) {
 	if _, err := decodeRecord(extra); err == nil {
 		t.Error("a record with an unknown field is accepted")
 	}
+}
+
+// TestAFlowRecordsTheProviderItsCallbackPathCarries holds what a flow records as
+// the provider its callback path must name: the method's own name for a social
+// method, and the start input's provider for an enterprise one. A social
+// method's start input cannot change it, so the recorded value always matches
+// the callback path the method itself builds.
+func TestAFlowRecordsTheProviderItsCallbackPathCarries(t *testing.T) {
+	social := newRigMethod(t, &redirectMethod{})
+	socialCookie := startRedirect(t, social, "")
+	if got := flowProviderOf(t, social, socialCookie); got != "password" {
+		t.Errorf("a social flow recorded provider %q, want the method name", got)
+	}
+	// A social start input naming a provider does not change the record.
+	sneaky := startRedirect(t, social, `,"input":{"provider":"ent"}`)
+	if got := flowProviderOf(t, social, sneaky); got != "password" {
+		t.Errorf("a social flow with input.provider recorded provider %q, want the method name", got)
+	}
+
+	ent := newRigMethod(t, &redirectMethod{name: "oidc"})
+	entCookie := startRedirect(t, ent, `,"input":{"provider":"ent"}`)
+	if got := flowProviderOf(t, ent, entCookie); got != "ent" {
+		t.Errorf("an enterprise flow recorded provider %q, want the input's provider", got)
+	}
+}
+
+// flowProviderOf reads the provider a flow recorded, keyed by the token its
+// cookie carries.
+func flowProviderOf(t *testing.T, r *rig, cookie string) string {
+	t.Helper()
+	_, token, ok := strings.Cut(cookie, "=")
+	if !ok {
+		t.Fatalf("the cookie %q carries no token", cookie)
+	}
+	raw, present, err := r.kv.Get(context.Background(), flowKey(token))
+	if err != nil || !present {
+		t.Fatalf("reading the flow record: present=%v err=%v", present, err)
+	}
+	rec, err := decodeRecord(raw)
+	if err != nil {
+		t.Fatalf("decoding the flow record: %v", err)
+	}
+	return rec.Provider
 }
 
 // TestCheckReturnToAcceptsARelativePathOrATrustedAbsoluteURL holds the rule the

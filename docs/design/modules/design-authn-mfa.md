@@ -162,7 +162,7 @@ WWW-Authenticate: <Identity.Challenge()> error="insufficient_user_authentication
     error_description="…", acr_values="2", max_age="600"
 ```
 
-`insufficient_user_authentication`、`acr_values`、`max_age` 取自 RFC 9470。RFC 把它们定义在 Bearer 方案的挑战里，对 Cookie 与 Basic 载体沿用同名参数是认证功能目录的约定，不是 RFC 的规定。`acr_values` 取要求等级的十进制文本，零等级（路由不要求特定等级）写作 `"0"`；`max_age` 取要求的 `MaxAge` 的秒数。访问令牌的 `acr` 用同一记法写等级，但把零等级读作单因素，使自己的取值不越出非零等级这一闭集；`acr_values` 不这样归一，写的是要求本身的取值。
+`insufficient_user_authentication`、`acr_values`、`max_age` 取自 RFC 9470。RFC 把它们定义在 Bearer 方案的挑战里，对 Cookie 与 Basic 载体沿用同名参数是认证功能目录的约定，不是 RFC 的规定。`acr_values` 取要求等级的十进制文本，零等级（路由不要求特定等级，`Requirement.Assurance` 的零值 `AssuranceNone`）写作 `"0"`；`guard.Require` 与路由部件的挑战一致，都按 `Requirement.Assurance` 写它，零等级因此都写 `"0"`。`max_age` 取要求的 `MaxAge` 的秒数。访问令牌的 `acr` 用同一记法写等级，但把零等级读作单因素，使自己的取值不越出非零等级这一闭集；`acr_values` 不这样归一，写的是要求本身的取值。
 
 `guard.Require` 已由 `pkg/authn/guard/guard.go` 交付：需要这一应答的路由把它挂进处理链。登录引擎与因素路由的处理器按路由部件各自写出同形的 401，准入层按它的判定次序应答同一个问题码，挑战的构成与 `guard.Require` 一致，因为参数取自同一个 `Identity.Challenge()` 与同一套 `MaxAge` 读法。
 
@@ -190,7 +190,7 @@ WWW-Authenticate: <Identity.Challenge()> error="insufficient_user_authentication
 | `audit.Audit` | 可选 | 尽力档审计；强制档动作的审计由管理面处理器承担，那里把它当必需。 |
 | `event.Bus` | 可选 | 发布 `authn.factor.changed`，提交之后 `Bus.Publish`，不经发件箱；订阅 `authn.account.deleted` 作补偿。 |
 
-因素子包的依赖：`authn.mfa.totp` 依赖 `db.Database` 与 `MFA`；`authn.mfa.sms` 依赖 `SMSCodes` 与 `Accounts`；`authn.mfa.webauthn` 依赖 `db.Database`、`MFA` 与 `Accounts`，另交付通行密钥登录方法。各因素子包都不依赖 kv。
+因素子包的依赖：`authn.mfa.totp` 依赖 `db.Database` 与 `MFA`；`authn.mfa.sms` 依赖 `SMSCodes` 与 `Accounts`；`authn.mfa.webauthn` 依赖 `db.Database`、`MFA` 与 `Accounts`，另交付通行密钥登录方法。各因素子包都不依赖 kv。因素子包用到的第三方库在 `pkg/go.mod` 里精确钉版：`authn.mfa.totp` 用 `github.com/pquerna/otp` v1.5.0，`authn.mfa.webauthn` 用 `github.com/go-webauthn/webauthn` v0.18.2；各库只被对应的因素叶子包 import，两条都由 `pkg/authn/deps_test.go` 的守卫守住。
 
 **被依赖方向。** `authn.login` 把 `MFA` 当必需：库里已有账户登记了因素而装配里没有因素编排时，登录不能无声跳过第二因素。`authn.impersonation` 也把 `MFA` 当必需：没有因素编排的装配里没有任何账户满足发起者的强认证要求。`authn.admin` 把 `MFA` 当可选，缺席时没有 `mfa-*` 与 `password` 路由，因为这些路由要核对 `MFA.Seasoned`。
 
@@ -493,7 +493,7 @@ CREATE TABLE authn_webauthn_credentials (
 | 仪式数据 | 放流程记录的私有字节；`Timeouts.Login.Enforce` 与 `Timeouts.Registration.Enforce` 固定为真，库只在它为真时才设过期；一次性消费靠引擎对流程记录的比较并交换，库不防同一份仪式数据被消费两次；只取本库序列化、由服务端保完整的字节，被篡改的字节能让库按长度前缀分配数 GB 内存 |
 | 每次断言成功 | 条件更新写回 `sign_count`（`WHERE sign_count <= ?`）、`clone_warning`、`user_verified`、`backup_state`，库不替调用方落库；更新失败按重放处理。同步通行密钥的计数常恒为 0，库只在新计数不大于旧计数且不全为零时才置告警，所以不误伤 |
 | 克隆告警 | `clone_warning` 为真则本次校验失败：因素以 `StepRefused(authn.ErrFactorFlagged)` 拒绝本次断言，`MFA.Verify` 据该成因把因素行置停用并发布 `authn.factor.changed`（`flagged`）；断言本身的计数回退也写 `clone_warning` 并同样以该成因拒绝。通行密钥作第一因素时由登录引擎直接驱动方法、不经 `MFA` 编排，那一路只拒绝本次断言（对外并入 `login-failed`），不置停用、不发事件；凭据自身的 `clone_warning` 使它在该路与 `Factor` 路上都不可用，清除该行经 `MFA.Remove` |
-| 版本 | go-webauthn 是 0.x，`go.mod` 固定版本；升级要读其迁移说明并排空在途仪式，`SessionData` 的序列化形状随版本变 |
+| 版本 | go-webauthn 是 0.x，`pkg/go.mod` 精确钉在 v0.18.2（由 `pkg/authn/deps_test.go` 的守卫守住）；升级要读其迁移说明并排空在途仪式，`SessionData` 的序列化形状随版本变 |
 
 `Pass.UserVerified` 取自断言里的用户验证位。通行密钥作第一因素时，带用户验证的断言使策略判定里「第一因素带用户验证」那一条命中。
 

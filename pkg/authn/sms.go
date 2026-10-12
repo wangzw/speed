@@ -45,7 +45,7 @@ type SMS struct {
 	// Params carries the substitutions, its key set fixed to code and
 	// ttl_minutes.
 	Params map[string]string
-	// Locale is the language of the message, zh-CN or en-US.
+	// Locale is the language of the message, one of LocaleZH and LocaleEN.
 	Locale string
 	// DedupeID is a stable identifier, the challenge identifier; a carrier
 	// must not send the same identifier twice.

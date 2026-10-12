@@ -381,6 +381,11 @@ var (
 	// Outwardly it is a 409.
 	ErrDomainClaimed = errors.New("authn: the domain is verified for another identity provider")
 
+	// ErrProviderNotFound reports an identity provider that does not exist, as
+	// SSOProviders.Get, Secret and Tenant say it. The management routes turn it
+	// into a 404. It names a class and no identifier.
+	ErrProviderNotFound = errors.New("authn: the identity provider was not found")
+
 	// ErrAssertionReplay reports a SAML assertion identifier that was seen
 	// already. The login fails, and a Warn and a metric record it.
 	ErrAssertionReplay = errors.New("authn: the assertion was already used")

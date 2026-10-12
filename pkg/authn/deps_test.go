@@ -975,12 +975,13 @@ const (
 	unsafeClaims = "UnsafeClaimsWithoutVerification"
 )
 
-// The module binds four more third-party libraries, each to one leaf package:
-// the TOTP library to the TOTP factor, the WebAuthn library to the passkey
-// factor and login method, and the two SMS carrier SDKs to their adapters. A
-// host that imports none of the leaves carries none of the libraries, so each
-// is confined to its leaf. Their versions, and those of the other libraries the
-// selection table fixes, are pinned in pinnedLibraries below.
+// The module binds several third-party libraries, each to one leaf package: the
+// TOTP library to the TOTP factor, the WebAuthn library to the passkey factor and
+// login method, the two SMS carrier SDKs to their adapters, and the SAML and
+// XML-signature libraries to the SAML method. A host that imports none of the
+// leaves carries none of the libraries, so each is confined to its leaf. Their
+// versions, and those of the other libraries the selection table fixes to an
+// exact version, are pinned in pinnedLibraries below.
 const (
 	otpPath         = "github.com/pquerna/otp"
 	otpVersion      = "v1.5.0"
@@ -997,6 +998,12 @@ const (
 	tencentSMSPath        = "github.com/tencentcloud/tencentcloud-sdk-go/tencentcloud/sms"
 	tencentSMSVersion     = "v1.3.172"
 	tencentSMSPackagePath = rootPath + "/sms/tencent"
+
+	gosaml2Path     = "github.com/russellhaering/gosaml2"
+	gosaml2Version  = "v0.12.0"
+	goxmldsigPath   = "github.com/russellhaering/goxmldsig"
+	goxmldsigFloor  = "v1.6.1"
+	samlPackagePath = rootPath + "/sso/saml"
 
 	scsPath         = "github.com/alexedwards/scs/v2"
 	scsVersion      = "v2.9.0"
@@ -1028,6 +1035,8 @@ var bridgeLibraries = []bridgeLibrary{
 	{path: webauthnPath, leaf: webauthnPackagePath},
 	{path: aliyunSMSPath, leaf: aliyunSMSPackagePath},
 	{path: tencentSMSPath, leaf: tencentSMSPackagePath},
+	{path: gosaml2Path, leaf: samlPackagePath},
+	{path: goxmldsigPath, leaf: samlPackagePath},
 }
 
 // pinnedLibrary is one third-party library the design's selection table fixes
@@ -1039,17 +1048,20 @@ type pinnedLibrary struct {
 
 // pinnedLibraries are the libraries the module requires whose version the
 // design's selection table fixes exactly rather than as a floor. The design
-// states floors for only the JOSE, goxmldsig and x/oauth2 bridges, each held by
-// its own test; every other library it names is fixed to the table version, so
+// states floors for the JOSE, goxmldsig and x/oauth2 bridges, each held by its
+// own test; every other library it names is fixed to the table version, so
 // pkg/go.mod must state exactly that version for each: an upgrade goes through a
 // dedicated change, not go get -u, and a transitive requirement could otherwise
 // move one.
 //
-// The TOTP, WebAuthn and two SMS libraries are also the bridgeLibraries above,
-// which hold each to its leaf. The session store, the Argon2id encoder and the
-// uuid, x/crypto and x/text libraries have no single leaf, so they are pinned
-// here alone.
+// The TOTP, WebAuthn, SAML, goxmldsig and two SMS libraries are also the
+// bridgeLibraries above, which hold each to its leaf; go-oidc is also a
+// multiLeafLibrary, held to its leaves. The session store, the Argon2id encoder
+// and the uuid, x/crypto and x/text libraries have no single leaf, so they are
+// pinned here alone.
 var pinnedLibraries = []pinnedLibrary{
+	{path: goOIDCPath, version: goOIDCVersion},
+	{path: gosaml2Path, version: gosaml2Version},
 	{path: otpPath, version: otpVersion},
 	{path: webauthnPath, version: webauthnVersion},
 	{path: aliyunSMSPath, version: aliyunSMSVersion},
@@ -1061,24 +1073,102 @@ var pinnedLibraries = []pinnedLibrary{
 	{path: xTextPath, version: xTextVersion},
 }
 
+// The OIDC and OAuth 2.0 bridges bind their library to more than one leaf: the
+// google login method and, once the enterprise protocol modules are in, the
+// authn.sso.oidc method both import go-oidc; the google and github login methods
+// and the enterprise OIDC method all import x/oauth2. Each library is confined
+// to the set of leaves that bridge it; go-oidc's version is pinned to the table
+// version in pinnedLibraries below, and x/oauth2 is held at or above the floor
+// the design fixes, in floorLibraries.
+const (
+	goOIDCPath         = "github.com/coreos/go-oidc/v3"
+	goOIDCVersion      = "v3.21.0"
+	xOAuth2Path        = "golang.org/x/oauth2"
+	xOAuth2Floor       = "v0.37.0"
+	googlePackagePath  = rootPath + "/login/google"
+	githubPackagePath  = rootPath + "/login/github"
+	ssoOIDCPackagePath = rootPath + "/sso/oidc"
+)
+
+// multiLeafBridge is one third-party library the module binds to a set of leaf
+// packages: each of them, and its subpackages, may import the library and no
+// other package of the module may. It is the multi-leaf form of bridgeLibrary,
+// for a library more than one leaf bridges.
+type multiLeafBridge struct {
+	path   string
+	leaves []string
+}
+
+// multiLeafLibraries are the libraries more than one package bridges, each held
+// to the leaves that bridge it. A leaf that is not in the tree yet is listed all
+// the same: the entry is held to the code from the day the package appears, and
+// an import from a package that is not one of the leaves is reported either way.
+var multiLeafLibraries = []multiLeafBridge{
+	{path: goOIDCPath, leaves: []string{googlePackagePath, ssoOIDCPackagePath}},
+	{path: xOAuth2Path, leaves: []string{googlePackagePath, githubPackagePath, ssoOIDCPackagePath}},
+}
+
+// floorLibrary is one third-party library the design holds at or above a version
+// floor rather than pinning to an exact table version, because it carries a
+// security advisory below that floor.
+type floorLibrary struct {
+	path  string
+	floor string
+}
+
+// floorLibraries are the libraries the design holds at or above a floor rather
+// than pinning: x/oauth2 and goxmldsig here. go-jose has its own test, which
+// holds the bridge file and the claims-without-verification escape hatch besides.
+var floorLibraries = []floorLibrary{
+	{path: xOAuth2Path, floor: xOAuth2Floor},
+	{path: goxmldsigPath, floor: goxmldsigFloor},
+}
+
+// floorViolation reports, if any, how pkg/go.mod fails to hold lib at or above
+// its floor. A version below the floor is reported, and so is a missing
+// requirement, because a transitive requirement alone could resolve below the
+// floor. A version at or above the floor is not reported: the floor is a lower
+// bound, so an upgrade beyond it is what the design asks for.
+func floorViolation(gomod string, lib floorLibrary) string {
+	version, ok := requiredVersion(gomod, lib.path)
+	if !ok {
+		return "pkg/go.mod does not require " + lib.path + ", so a transitive requirement could pull it below the floor"
+	}
+	if compareVersions(version, lib.floor) < 0 {
+		return fmt.Sprintf("pkg/go.mod requires %s %s, want at least %s", lib.path, version, lib.floor)
+	}
+	return ""
+}
+
 // libraryConfinementViolations reports the packages of the module that import
-// the library at libPath in a non-test file but are not the leaf package that
-// binds it, nor a package under it. An import anywhere else would put the
-// library into that package's closure, and so into a host that never asked for
-// it. A test file is not what puts a library into a closure, so the rule reads
-// the non-test imports that go list and readSourceImports collect.
-func libraryConfinementViolations(pkgs []listed, libPath, leafPath string) []string {
+// the library at libPath in a non-test file but are not any of the leaf packages
+// that bind it, nor a package under one of them. An import anywhere else would
+// put the library into that package's closure, and so into a host that never
+// asked for it. A test file is not what puts a library into a closure, so the
+// rule reads the non-test imports that go list and readSourceImports collect.
+func libraryConfinementViolations(pkgs []listed, libPath string, leaves ...string) []string {
 	var out []string
 	for _, p := range pkgs {
-		if p.Standard || p.Dir == "" || p.ImportPath == leafPath || strings.HasPrefix(p.ImportPath, leafPath+"/") {
+		if p.Standard || p.Dir == "" || underAnyLeaf(p.ImportPath, leaves) {
 			continue
 		}
 		if slices.ContainsFunc(p.Imports, func(imp string) bool { return imp == libPath || strings.HasPrefix(imp, libPath+"/") }) {
-			out = append(out, p.ImportPath+" imports "+libPath+" outside "+leafPath)
+			out = append(out, p.ImportPath+" imports "+libPath+" outside "+strings.Join(leaves, ", "))
 		}
 	}
 	slices.Sort(out)
 	return out
+}
+
+// underAnyLeaf reports whether path is one of the leaf packages or sits under
+// one: a bridge library that a leaf bridges is the leaf's whole subtree.
+func underAnyLeaf(path string, leaves []string) bool {
+	for _, leaf := range leaves {
+		if path == leaf || strings.HasPrefix(path, leaf+"/") {
+			return true
+		}
+	}
+	return false
 }
 
 // libraryImporters lists every non-test file of the module that imports the
@@ -1233,19 +1323,26 @@ func pinViolation(gomod string, lib pinnedLibrary) string {
 
 // TestEachBridgeLibraryIsConfinedToItsLeaf is the executable form of the
 // design's per-library confinement statement: the pquerna/otp, go-webauthn,
-// Aliyun Dysmsapi and Tencent Cloud SMS bindings appear in the non-test files of
-// their own leaf package and nowhere else.
+// Aliyun Dysmsapi, Tencent Cloud SMS, gosaml2 and goxmldsig bindings appear in
+// the non-test files of their own leaf package and nowhere else.
 //
-// The leaf package is looked for in the listing first, so a rule that reads no
-// file of it is reported rather than passing on an empty read.
+// The leaf package is looked for in the listing first and has to import the
+// library, so a rule that reads no file of it is reported rather than passing on
+// an empty read.
 func TestEachBridgeLibraryIsConfinedToItsLeaf(t *testing.T) {
 	root := moduleRoot(t)
 	pkgs := listModule(t, root, nil)
 
 	for _, lib := range bridgeLibraries {
 		t.Run(lib.path, func(t *testing.T) {
-			if _, ok := find(pkgs, lib.leaf); !ok {
+			leaf, ok := find(pkgs, lib.leaf)
+			if !ok {
 				t.Fatalf("the listing does not hold %s, so the rule about %s has nothing to read", lib.leaf, lib.path)
+			}
+			if !slices.ContainsFunc(leaf.Imports, func(imp string) bool {
+				return imp == lib.path || strings.HasPrefix(imp, lib.path+"/")
+			}) {
+				t.Fatalf("the leaf %s does not import %s, so the rule about it has nothing to read", lib.leaf, lib.path)
 			}
 			for _, v := range libraryConfinementViolations(pkgs, lib.path, lib.leaf) {
 				t.Error(v)
@@ -1339,5 +1436,96 @@ func TestTheGuardImportRuleFailsOnAViolatingTree(t *testing.T) {
 	if !slices.Equal(got, want) {
 		t.Errorf("violations are %q, want %q: the standard library, the root package, the HTTP entry point and gin "+
 			"are allowed, and any other import is reported", got, want)
+	}
+}
+
+// TestTheMultiLeafBridgesAreConfinedToTheirLeaves holds the libraries more than
+// one leaf bridges, each to the set of leaves that bridge it: a non-test import
+// from a package outside the set is reported. It also holds the floored
+// libraries among them at or above their floor, where pkg/go.mod requires one
+// below the floor or does not require it at all.
+//
+// Each library gets a positive control: at least one leaf has to import it, so
+// the rule cannot pass on a listing that holds none of the leaves and reads no
+// import to judge. The exact pin of a multi-leaf library is held by
+// TestEachPinnedLibraryStatesTheTableVersion, over the same library.
+func TestTheMultiLeafBridgesAreConfinedToTheirLeaves(t *testing.T) {
+	root := moduleRoot(t)
+	pkgs := listModule(t, root, nil)
+	gomod, err := os.ReadFile(filepath.Join(root, "go.mod"))
+	if err != nil {
+		t.Fatalf("reading go.mod: %v", err)
+	}
+
+	for _, lib := range multiLeafLibraries {
+		t.Run("confine "+lib.path, func(t *testing.T) {
+			bound := false
+			for _, leaf := range lib.leaves {
+				p, ok := find(pkgs, leaf)
+				if ok && slices.ContainsFunc(p.Imports, func(imp string) bool {
+					return imp == lib.path || strings.HasPrefix(imp, lib.path+"/")
+				}) {
+					bound = true
+				}
+			}
+			if !bound {
+				t.Fatalf("no leaf of %s imports it, so the rule about it has nothing to read", lib.path)
+			}
+			for _, v := range libraryConfinementViolations(pkgs, lib.path, lib.leaves...) {
+				t.Error(v)
+			}
+		})
+	}
+
+	for _, lib := range floorLibraries {
+		t.Run("floor "+lib.path, func(t *testing.T) {
+			if v := floorViolation(string(gomod), lib); v != "" {
+				t.Error(v)
+			}
+		})
+	}
+}
+
+// TestTheFloorFailsBelowIt holds the floor above to be a floor and not a pin: a
+// go.mod that states a version below the floor, or does not name the library at
+// all, is reported; a requirement exactly at the floor, and one above it, are
+// not. Without this the floor check could pass on the real tree while accepting
+// any lower bound, or none.
+func TestTheFloorFailsBelowIt(t *testing.T) {
+	lib := floorLibrary{path: xOAuth2Path, floor: xOAuth2Floor}
+	line := func(version string) string { return "\t" + xOAuth2Path + " " + version + "\n" }
+	for _, gomod := range []string{line(xOAuth2Floor), line("v0.38.0")} {
+		if v := floorViolation(gomod, lib); v != "" {
+			t.Errorf("a go.mod %q is reported: %q", gomod, v)
+		}
+	}
+	for _, gomod := range []string{line("v0.36.0"), ""} {
+		if v := floorViolation(gomod, lib); v == "" {
+			t.Errorf("a go.mod %q is not reported, so the floor would let it through", gomod)
+		}
+	}
+}
+
+// TestTheMultiLeafConfinementFailsOnAViolatingTree runs the confinement rule
+// over a tree in which a library more than one leaf bridges is imported from
+// each of its allowed leaves and from a package that is not one of them, so the
+// rule can fail and is not passing on the real tree by accident. An import from
+// any allowed leaf is allowed, and an import from another package is reported.
+func TestTheMultiLeafConfinementFailsOnAViolatingTree(t *testing.T) {
+	tree := writeTree(t, map[string]string{
+		"go.mod":                  "module " + moduleImportPath + "\n\ngo 1.26\n",
+		"authn/login/google/g.go": "package google\n\nimport _ \"" + xOAuth2Path + "\"\n",
+		"authn/login/github/g.go": "package github\n\nimport _ \"" + xOAuth2Path + "\"\n",
+		"authn/sso/oidc/o.go":     "package oidc\n\nimport _ \"" + xOAuth2Path + "\"\n",
+		"authn/elsewhere/e.go":    "package elsewhere\n\nimport _ \"" + xOAuth2Path + "\"\n",
+	})
+	pkgs := listModule(t, tree, isolated)
+
+	leaves := []string{googlePackagePath, githubPackagePath, ssoOIDCPackagePath}
+	got := libraryConfinementViolations(pkgs, xOAuth2Path, leaves...)
+	want := []string{moduleImportPath + "/authn/elsewhere imports " + xOAuth2Path + " outside " + strings.Join(leaves, ", ")}
+	if !slices.Equal(got, want) {
+		t.Errorf("violations are %q, want %q: an import from any allowed leaf is allowed, and an import from "+
+			"another package is reported", got, want)
 	}
 }

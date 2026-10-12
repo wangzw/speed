@@ -1,0 +1,118 @@
+# pkg/authn/impersonation
+
+The impersonation module: one row per impersonation an administrator began,
+in the table `authn_impersonations`. A record is a lifetime, a reason and one
+tenant, and not a new credential and not a switch on an identity. It hangs on
+the administrator's own session; the browser carries it as a marker on that
+session, the API carries it as a short-lived impersonation access token, and
+the administrator stays the accountable party through every request.
+
+The module delivers `authn.Impersonation` exclusively, owns the table and its
+migration, mounts the `B/impersonation` routes through `authn.mount`, and
+writes the seam-level audit rows and the two impersonation events.
+
+## Where the authority is
+
+- What this module is and why it is shaped this way:
+  [`docs/design/modules/design-authn-impersonation.md`](../../../docs/design/modules/design-authn-impersonation.md).
+  The tenant scope the admission layer and the gateway enforce with it is in
+  [design-authn-gate](../../../docs/design/modules/design-authn-gate.md) and
+  [design-tenant-admission](../../../docs/design/modules/design-tenant-admission.md);
+  the carriers it attaches are in
+  [design-authn-session](../../../docs/design/modules/design-authn-session.md)
+  and [design-authn-token](../../../docs/design/modules/design-authn-token.md);
+  the audit and event shapes are in
+  [design-authn-events](../../../docs/design/modules/design-authn-events.md).
+- The decisions behind it: [`docs/adr/`](../../../docs/adr/) —
+  `adr-authn-impersonation-2026-10-10.md`,
+  `adr-authn-decision-seam-2026-10-10.md`,
+  `adr-authn-identity-2026-10-10.md`,
+  `adr-authn-guarantees-2026-10-10.md`.
+- The API itself: the godoc in this package.
+
+This file states only what neither of those states: the boundaries a change
+here must not cross, and how to run it.
+
+## Boundaries
+
+- **The structural restrictions are this module's, the decision seam is the
+  host's.** `Start` enforces the four groups — the actor's facts, the
+  target's, the parameters, the session's concurrency — before it asks the
+  `Decider`, and the `Decider` may only tighten them. None of them has a
+  switch that turns it off. A target or a parameter violation and a
+  step-up shortfall are answered apart so that nothing the caller learns
+  tells it a target's state.
+- **The mandatory audit is written outside the record transaction.** The
+  audit seam takes its own connection and does not join the caller's
+  transaction, so `Start` writes the granted row before it opens any
+  transaction; a start whose audit cannot be written is refused with
+  `ErrAuditRequired` and writes no record. The record transaction writes only
+  `authn_impersonations` and calls neither `audit.Record` nor `Bus.Publish`.
+- **The record is written before the carrier is attached.** `Start` cannot
+  reach a response writer, so the handler attaches the session marker or
+  issues the token after `Start` returns, and compensates on a failure by
+  ending the record with the reason `start-failed`. `End` never touches a
+  carrier: the handler clears the marker, and the path that revokes an
+  impersonation token has no cookie at all.
+- **A lapse is a read, written back once.** `Active` is the one judgement the
+  session and token backends share. A record that has lapsed is written back
+  with a conditional update, and the caller that changes the row publishes
+  the ended event and counts the end. An expiry publishes nothing.
+- **The module caches nothing.** `Active` reads the record, the session and
+  the account each time; the caching is the verifying backends', bounded by
+  `authn.session.check-ttl` and cleared by `authn.impersonation.ended`.
+- **The table is this module's.** `migrations/{postgres,sqlite}` hold the one
+  migration that creates `authn_impersonations`, its indexes and the partial
+  unique index `authn_imp_one_active`. `Start` probes the table and fails
+  with `ErrNotMigrated` when it is absent, because `New` does not touch it.
+  Rows carry no foreign key; every time in them is UTC, and a read
+  normalises the zone. The record is never deleted.
+- **The reason never leaves the record and the audit row.** It is not in an
+  event payload, a log line or a response. The audit detail's key set is
+  closed, and the session is written there as `sid`: `session`,
+  `on_behalf_of` and `impersonation_scope` belong to the audit journal on an
+  impersonating row.
+- **The routes are mounted through `mount.Mounter` and the access level is
+  registered beside them.** `POST /impersonation` is guarded and not
+  impersonable; `GET` and `DELETE /impersonation` are guarded and
+  impersonable, so an administrator can always see and end an impersonation.
+  The mount endpoint may not be one the admission layer guards, which the
+  module's `Start` refuses with `ErrInvalidConfig`.
+- **The required dependency `ScopeGuard` is held, not called, by the module's
+  own logic beyond the endpoint check.** It is what makes the absence of the
+  admission layer fail the assembly before any instance is built. The scope
+  enforcement itself is the gateway's and the admission layer's.
+- **`Get` reads one record beyond the published `Impersonation` method set.** The
+  administration routes need a record's tenant and target before asking the
+  Decider, which `List` alone cannot give; the method set of `Impersonation` is
+  fixed, so `authn.admin` reaches `Get` through its own narrow interface and
+  mounts the record routes only when the capability answers it. A record that is
+  not there is `authn.ErrNotImpersonating`, and an ended record is still
+  returned (`Get`, `TestGetReadsOneRecordAndReportsAMissingOne`). `List` confines
+  to `GrantQuery.Tenant` in the store, so a tenant's page is not a full page
+  filtered afterwards (`TestListConfinesToTheQueriedTenant`).
+- **A new end reason, a new carrier, or another writer of the table** belongs
+  in this module only through the design document and the ADR tree first: the
+  closed set of end reasons is a promise to the session and token modules and
+  to the host.
+
+## Running it
+
+From the repository root, over every module in the workspace:
+
+```
+make build
+make test
+make lint
+make check
+```
+
+`make check` is what CI runs. To run this package alone, from `pkg/`:
+
+```
+go test -race ./authn/impersonation/...
+```
+
+The tests run over both dialects the store supports (SQLite and PostgreSQL)
+and need the same fixtures the rest of the repository uses; PostgreSQL cases
+acquire a database through `pkg/internal/pgpool/pgtest`.

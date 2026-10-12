@@ -22,10 +22,12 @@ import (
 // these, so a method added, dropped, renamed or given another signature is
 // found, and so is a parameter that lost its name.
 //
-// Impersonation, Tokens, SMSCodes, SMSSender, SSOProviders, Decider and
-// ClaimsContributor are implemented by modules and hosts outside this package,
-// and a changed signature breaks every one of them; Passwords.Clear is the one
-// method whose form the design leaves open, so it is held to the form in use.
+// Every interface here is implemented outside this package, so a changed
+// signature breaks each implementer: a module delivers the account, session,
+// token, factor, login, SMS, SSO and impersonation contracts and the gate, a
+// host delivers Decider, Provisioner and its own credential backends, and the
+// tenant admission layer delivers ScopeGuard. Every entry is the design's own
+// signature, Passwords.Clear among them.
 var seamSignatures = map[string][]string{
 	"Accounts": {
 		"Get(ctx context.Context, id AccountID) (Account, error)",
@@ -66,6 +68,11 @@ var seamSignatures = map[string][]string{
 		"Members(ctx context.Context, tenant string, page Page) ([]Membership, error)",
 		"Put(ctx context.Context, m Membership) error",
 		"Remove(ctx context.Context, id AccountID, tenant string) error",
+	},
+	"Throttle": {
+		"Check(ctx context.Context, scope ThrottleScope, key string) (retryAfter time.Duration, err error)",
+		"Fail(ctx context.Context, scope ThrottleScope, key string) (engaged bool, err error)",
+		"Succeed(ctx context.Context, scope ThrottleScope, key string) error",
 	},
 	"AccountLifecycle": {
 		"AccountDisabled(ctx context.Context, id AccountID) error",
@@ -157,6 +164,29 @@ var seamSignatures = map[string][]string{
 		"RemoveDomain(ctx context.Context, idpID, domain string) error",
 		"ReverifyDomains(ctx context.Context, idpID string) error",
 	},
+	"SSOMetadataRefresher": {
+		"Protocol() string",
+		"Refresh(ctx context.Context, idpID string) (SSOProvider, error)",
+	},
+	"Gate": {
+		"Exempt(endpoint, method, path string)",
+		"Optional(endpoint, method, path string)",
+		"Impersonable(endpoint, method, path string)",
+	},
+	"Verifier": {
+		"Name() string",
+		"Accepts() Accepts",
+		"Verify(ctx context.Context, c Credential) Verdict",
+	},
+	"Challenger": {
+		"Challenge(realm string, rejected bool) []string",
+	},
+	"CookieClearer": {
+		"ClearCookie(w http.ResponseWriter)",
+	},
+	"ScopeGuard": {
+		"Covers(endpoint string) bool",
+	},
 }
 
 // interfaceMethods reads the interfaces declared in the non-test files of the
@@ -207,7 +237,10 @@ func interfaceMethods(t *testing.T, dir string) map[string][]string {
 
 // TestTheSeamsMatchTheDesign holds the method set of each capability interface
 // to the signatures the design writes, in both directions: an interface that has
-// a method the design does not list fails as surely as one that lacks one.
+// a method the design does not list fails as surely as one that lacks one. The
+// set of this package's interfaces is held to seamSignatures in both directions
+// too, so an interface declared here without an entry there fails rather than
+// going unchecked.
 func TestTheSeamsMatchTheDesign(t *testing.T) {
 	got := interfaceMethods(t, ".")
 	for name, want := range seamSignatures {
@@ -225,6 +258,11 @@ func TestTheSeamsMatchTheDesign(t *testing.T) {
 			if !slices.Contains(want, h) {
 				t.Errorf("%s has the method %q, which the design does not list", name, h)
 			}
+		}
+	}
+	for name := range got {
+		if _, ok := seamSignatures[name]; !ok {
+			t.Errorf("the package declares the interface %s, which seamSignatures does not hold, so its signature goes unchecked", name)
 		}
 	}
 }

@@ -152,7 +152,7 @@ type ScopeGuard interface {
 | 服务密钥 | `Tokens` 在场 |
 | SSO 提供方 | `SSOProviders` 在场 |
 | 元数据刷新 | 至少一个 `SSOMetadataRefresher` 在场，且 SSO 提供方组已挂 |
-| 冒充记录 | `Impersonation` 在场 |
+| 冒充记录 | `Impersonation` 在场，且交付了单条读取（`Get`） |
 
 ### 管理面路由表
 
@@ -171,7 +171,7 @@ type ScopeGuard interface {
 | 成员关系 | `GET B/admin/tenants/:tenant/members`、`PUT\|DELETE B/admin/tenants/:tenant/members/:account`、`PUT B/admin/tenants/:tenant/members/:account/sso-exempt` | `membership.manage` | `Decision.Tenant` 取路径里的租户标识，不是别名，所以 `authn.admin` 不依赖租户名册；强制审计 |
 | SSO 提供方 | `GET\|POST B/admin/tenants/:tenant/sso/providers`、`GET\|PUT\|DELETE B/admin/sso/providers/:id`、`POST\|DELETE B/admin/sso/providers/:id/domains[/:domain]`、`POST B/admin/sso/providers/:id/domains/:domain/verify`、`POST B/admin/sso/providers/:id/reverify-domains` | `idp.manage` | `Decision.Tenant` 取 `SSOProviders.Tenant(id)`；路径带租户的路由核对路径、请求体与已存记录的租户一致，不一致 400，`PUT` 时租户不可变；加密列从不回显；IdP 发起登录开启与 `merge_existing` 开启时应答带警告；强制审计 |
 | 元数据刷新 | `POST B/admin/sso/providers/:id/metadata/refresh` | `idp.manage` | `Decision` 的填法同 SSO 提供方组；经 `SSOMetadataRefresher` 按 `Protocol` 分派；强制审计 |
-| 冒充记录 | `GET B/admin/impersonations`、`DELETE B/admin/impersonations/:id` | `impersonation.read`、`impersonation.revoke` | `GET` 必带查询参数 `tenant`，缺省或为空 400，`Decision.Tenant` 取它，并作为 `GrantQuery.Tenant` 传给 `Impersonation.List`；`DELETE` 先经 `Impersonation.Get` 按标识读记录（含已结束的），记录不存在 404，`Decision.Tenant` 取记录的租户，`Target` 与 `TargetAccount` 取记录的目标；已结束的记录经 `Decider` 放行后 `Revoke` 无操作，应答与首次撤销相同；这一组的审计是尽力档：撤销是向安全方向的动作，审计由 `Impersonation.Revoke` 自己写，写失败只记 Error，不阻止撤销，处理器不另写强制档审计，也不补 `failed` 行 |
+| 冒充记录 | `GET B/admin/impersonations`、`DELETE B/admin/impersonations/:id` | `impersonation.read`、`impersonation.revoke` | `GET` 必带查询参数 `tenant`，缺省或为空 400，`Decision.Tenant` 取它，并作为 `GrantQuery.Tenant` 传给 `Impersonation.List`；`DELETE` 先经单条读取 `Get`（依赖表登记的扩展形状）按标识读记录（含已结束的），记录不存在 404，`Decision.Tenant` 取记录的租户，`Target` 与 `TargetAccount` 取记录的目标；已结束的记录经 `Decider` 放行后 `Revoke` 无操作，应答与首次撤销相同；这一组的审计是尽力档：撤销是向安全方向的动作，审计由 `Impersonation.Revoke` 自己写，写失败只记 Error，不阻止撤销，处理器不另写强制档审计，也不补 `failed` 行 |
 
 ### 自助范围
 
@@ -202,10 +202,11 @@ type ScopeGuard interface {
 | `Decider` | 可选 | 缺席即全拒。 |
 | `Sessions` | 可选 | 会话组路由；取会话所属账户。 |
 | `MFA` | 可选 | 因素与口令组路由；核对 `Seasoned`。 |
+| `settings.Store` | 可选 | 读 `authn.mfa.recent-window` 构造强认证要求的 `FreshLocalMulti` 窗口（该键由 [design-authn-mfa](design-authn-mfa.md) 声明，本模块是它的使用方之一）；缺席或读不出取声明的缺省（见 [design-authn-config](design-authn-config.md)）。 |
 | `Tokens` | 可选 | 服务密钥组路由。 |
 | `SSOProviders` | 可选 | SSO 提供方组路由；取提供方所属租户。 |
 | 全部 `SSOMetadataRefresher` | `ResolveAll` | 元数据刷新路由；按 `Protocol` 分派。 |
-| `Impersonation` | 可选 | 冒充记录组路由；用到 `List`、`Get`、`Revoke`。 |
+| `Impersonation` 及单条读取 `Get` | 可选 | 冒充记录组路由。`List`、`Revoke` 来自公开的 `Impersonation` 接口；`Get` 是记录组为解析记录的租户与目标所需的扩展形状，不在公开接口里（见 [design-authn-impersonation](design-authn-impersonation.md)）；缺 `Get` 时整组不挂，不做成挂出而全拒。 |
 
 **方向核对。** `authn.admin` 位于认证功能目录内，依赖只指向 `pkg/core`、`pkg/audit` 的接口包与认证功能目录的根包与能力接口，不 import `pkg/tenant`、授权、宿主，也不 import 认证功能目录里别的实现子包。`Decider` 与 `ScopeGuard` 都是根包接口：授权与 `tenant.admission` import 根包交付它们，反向没有依赖。
 
@@ -289,7 +290,7 @@ flowchart TD
     G -- "true" --> H{"发起者满足强度要求?"}
     H -- 否 --> R6["401 insufficient_user_authentication"]
     H -- 是 --> I{"写操作?"}
-    I -- 否 --> J["读取并应答<br/>审计尽力"]
+    I -- 否 --> J["读取并应答<br/>读不写接缝级审计"]
     I -- 是 --> K{"强制审计写入<br/>事务之外、动作之前<br/>撤销冒充记录除外"}
     K -- 写失败 --> R7["503 动作不执行"]
     K -- 写成功 --> L["调用能力接口执行写"]
@@ -305,7 +306,7 @@ flowchart TD
 - **强度核验在 `Decide` 之后、审计之前。** 强度要求按路由表的「额外要求」列，核验失败答 401 加强认证挑战，不写审计，不执行动作。
 - **强制审计在事务之外、动作之前。** 管理面路由里只有撤销冒充记录不适用：它的审计是尽力档，由 `Impersonation.Revoke` 自己写，处理器跳过强制审计与补行（路由表）。接缝级的审计写入另占一条连接、不加入调用方的事务；在调用方事务开着时调用它，SQLite 上等调用方占着的写锁，单连接库上等调用方占着的那条连接，等待超时后 `Record` 以 `ErrWriteFailed` 失败，强制档因此永远写不成功。处理器因此不在任何事务里调用 `audit.Record`，事务内只暂存发件箱事件，不调 `Bus.Publish`。
 - **写失败补一条 `failed` 行。** 审计与动作不在同一事务里，动作失败时审计里留一条已写而未生效的行，随后补一条 `outcome=failed` 的行，用动作标识关联。
-- **读操作的审计尽力。** 读路由写审计失败只记 Error 与 `authn.audit.write-failures`，应答照常。
+- **读路由不写接缝级审计。** 审计动作表是封闭集且不含任何读动作，读由请求级采集记录（[design-authn-events](design-authn-events.md)），所以 `authn.admin` 的读路由只读、不应答审计，也不补 `failed` 行。
 - **事件由能力接口发出。** 写成功后的事件在能力接口自己的事务与发布路径里，`authn.admin` 不重复发布。
 
 审计的动作名、明细键与档位见 [authn-events](design-authn-events.md)。
@@ -345,6 +346,8 @@ flowchart TD
 
 默认部署开箱即不可被远程管理，这是有意的。
 
+**发起冒充的判定不属于这条引导。** `opsOnly` 这样的静态主体规则驱动不了冒充：本模块的结构性限制要求发起者是有会话、本地验证过新鲜多因素的非静态用户账户，而静态主体没有会话可绑（[design-authn-impersonation](design-authn-impersonation.md)）。要启用冒充，宿主须实现一个按（账户，租户）角色判定的 `Decider`——例如租户的所有者冒充该租户内角色更低的成员——角色绑定由授权一侧持有，authn 不认识它。「谁有权冒充谁」因此是宿主的配置；authn 保证的只是发起者满足不依赖 `Decider` 的结构与强认证限制，`Decider` 只能在其上收紧。
+
 ## 错误与失败语义
 
 ### 403 的收窄
@@ -371,7 +374,6 @@ flowchart TD
 | 强制档审计写失败（含 `ErrNotAccepting`、`ErrWriteFailed`） | 503（`ErrAuditRequired`），动作不执行 | 拒 |
 | 写失败 | 补一条 `failed` 审计行，按能力接口的哨兵映射应答 | 拒 |
 | 写已生效而清理失败（`ErrCleanupIncomplete`） | 503，重试同一请求幂等地补完 | 拒（状态已生效，清理待补） |
-| 读操作的审计写失败 | 记 Error 与 `authn.audit.write-failures`，应答照常 | 放（审计缺失），明说 |
 | db 或依赖的能力不可用 | 503，不带着半份结果放行 | 拒 |
 
 ### 非保证
@@ -392,13 +394,13 @@ flowchart TD
 
 | 守住的性质 | 测试 |
 |---|---|
-| `Decision` 的填法 | 表驱动：对路径里不带租户的每条租户级路由，租户 T1 的管理员对租户 T2 的对象发请求，断言收到的 `Decision.Tenant` 是 T2、`TargetAccount` 是对象所属账户；覆盖 IdP 与域、会话、因素、服务密钥、冒充记录。 |
+| `Decision` 的填法 | 表驱动，逐族断言与「`Decision` 的填法」一致：租户级路由（IdP 与域、成员关系、冒充记录）收到 `Decision.Tenant` 为对象的租户、`TargetAccount` 为对象所属账户；账户级路由（`accounts/:id` 及其下的会话、因素、服务密钥）收到 `Decision.Tenant` 为空（平台范围），跨租户的保护落在 `TargetAccount`，是对象所属账户。 |
 | 租户一致性 | 路径、请求体与已存租户不一致时 400，且 `Decider` 的调用计数为零。 |
 | 缺席即全拒 | 没有任何 `Decider` 的装配里，逐条管理路由回 403，冒充被拒，非成员请求回 404。 |
 | 缺审计 | 纳入 `authn.admin` 而没有 `audit.Audit` 的装配，在构造之前以 `core.ErrMissingProvider` 失败。 |
 | 强制审计先于动作 | 审计接缝返回 `ErrWriteFailed` 时，每条强制档路由回 503，且能力接口的写调用计数为零。 |
 | 撤销冒充记录的审计档 | 审计接缝返回 `ErrWriteFailed` 时，`DELETE B/admin/impersonations/:id` 仍撤销成功，只记 Error；已结束的记录再撤销得到相同应答；记录不存在回 404；`GET B/admin/impersonations` 缺 `tenant` 回 400，`Decider` 的调用计数为零。 |
-| 事务之外写审计 | SQLite 文件库上，管理写操作成功且审计行存在。 |
+| 强制审计不在调用方事务里 | 处理器全程不开事务，`audit.Record` 在能力接口的写之前调用；SQLite 文件库（单写者）上管理写操作成功且审计行存在——处理器若把审计与写包进一条事务，该库上会因写锁自等而失败。 |
 | 冒充中拒绝 | 冒充身份直达处理器时，每条管理路由回 403 `impersonation-restricted`，`Decider` 的调用计数为零。 |
 | 路由组随能力挂 | 逐个去掉 `Sessions`、`MFA`、`Tokens`、`SSOProviders`、`SSOMetadataRefresher`、`Impersonation`，对应组的路由是路由引擎的未命中，其余组不受影响；启动诊断列出实际挂出的组。 |
 | 缺席不放行 | `Decide` 返回 error 回 503，panic 同样回 503，两种情形下能力接口的写调用计数都为零。 |
@@ -422,12 +424,12 @@ flowchart TD
 |---|---|---|
 | 根包的 `Decider`、`Decision`、`Action` 常量 | 已实现 | `pkg/authn/decide.go` `Decider`、`Decision`、`Action` |
 | 根包的 `ScopeGuard` | 已实现 — 接口、网关对它的可选取用与交付方 `tenant.admission` 都已在 | `pkg/authn/scope.go` `ScopeGuard`；`pkg/authn/gate/gate.go` `wire`；`pkg/tenant/admission/admission.go` `(*layer).Covers` |
-| `authn.admin` 模块：注册、必需与可选依赖、缺审计的启动失败、路由组的挂出与启动诊断 | 未实现 | `pkg/authn/admin` `Module`、`Prepare`、`Init`、`Start`。缺：全部 |
-| 处理器的判定顺序：冒充检查、`Decider` 取用、强度核验、强制审计、失败补行 | 未实现 | `pkg/authn/admin` `authorize`、`mandatoryAudit`。缺：全部 |
-| `Decision` 的归属解析 | 未实现 | `pkg/authn/admin` `resolveOwner`。缺：全部 |
-| 账户组与成员关系组路由 | 未实现 | `pkg/authn/admin` `accountRoutes`、`membershipRoutes`。缺：全部 |
-| 会话组、因素与口令组、服务密钥组路由 | 未实现 | `pkg/authn/admin` `sessionRoutes`、`factorRoutes`、`secretRoutes`。缺：全部 |
-| SSO 提供方组、元数据刷新与冒充记录组路由 | 未实现 | `pkg/authn/admin` `ssoRoutes`、`impersonationRoutes`。缺：全部 |
-| 守住性质的测试与装配测试 | 未实现 | `pkg/authn/admin/admin_test.go` `TestDecisionFill`、`TestNoDeciderDeniesAll`、`TestMandatoryAuditBeforeWrite`。缺：全部 |
+| `authn.admin` 模块：注册、必需与可选依赖、缺审计的启动失败、路由组的挂出与启动诊断 | 已实现 | `pkg/authn/admin/admin.go` `Module`、`newProduct`、`product.wire`、`diagnose`；`pkg/authn/admin/routes.go` `mountRoutes` |
+| 处理器的判定顺序：冒充检查、`Decider` 取用、强度核验、强制审计、失败补行 | 已实现 | `pkg/authn/admin/pipeline.go` `caller`、`admit`、`asks`、`callDecider`、`require`、`auditRequired`、`auditBestEffort`、`answer`、`notFound`、`bad` |
+| `Decision` 的归属解析 | 已实现 — 按路由族就地解析，非单一函数 | `pkg/authn/admin/sso.go` `providerFor`（`SSOProviders.Tenant`）；`pkg/authn/admin/membership.go`（路径租户）；`pkg/authn/admin/session.go`（`Sessions.Get` 解析账户）；`pkg/authn/admin/impersonation.go`（记录租户） |
+| 账户组与成员关系组路由 | 已实现 | `pkg/authn/admin/account.go` `handleAccountList`、`handleAccountCreate`、`handleAccountGet`、`handleAccountPatch`、`handleAccountDelete`、`handleAccountStatus`、`handleIdentifierAdd`、`handleIdentifierRemove`；`pkg/authn/admin/membership.go` `handleMemberList`、`handleMemberPut`、`handleMemberRemove`、`handleMemberSSOExempt`；`pkg/authn/admin/routes.go` `mountAccountRoutes`、`mountMembershipRoutes` |
+| 会话组、因素与口令组、服务密钥组路由 | 已实现 | `pkg/authn/admin/session.go` `handleAccountSessions`、`handleRevokeAccountSessions`、`handleSessionRevoke`；`pkg/authn/admin/factor.go` `handleFactorList`、`handleMFARequired`、`handleMFAReset`、`handlePasswordReset`；`pkg/authn/admin/secret.go` `handleSecretList`、`handleSecretCreate`、`handleSecretRevoke`；`pkg/authn/admin/routes.go` `mountSessionRoutes`、`mountSecretRoutes` |
+| SSO 提供方组、元数据刷新与冒充记录组路由 | 已实现 | `pkg/authn/admin/sso.go` `handleProviderList`、`handleProviderCreate`、`handleProviderGet`、`handleProviderUpdate`、`handleProviderDelete`、`handleDomainClaim`、`handleDomainRemove`、`handleDomainVerify`、`handleReverifyDomains`、`handleMetadataRefresh`、`refresherFor`；`pkg/authn/admin/impersonation.go` `handleImpersonationList`、`handleImpersonationRevoke`；`pkg/authn/admin/routes.go` `mountSSORoutes`、`mountImpersonationRoutes` |
+| 守住性质的测试与装配测试 | 已实现 | `pkg/authn/admin/admin_test.go` `TestDecisionFill`、`TestNoDeciderDeniesEveryRoute`、`TestTheMandatoryAuditLandsBeforeTheWrite`、`TestAnImpersonatingActorIsRefusedAtTheHandler`、`TestAStrengthShortfallIsAStepUp`、`TestTheImpersonationRecordGroup`；`pkg/authn/admin/assembly_test.go` `TestARealRegistryMountsTheManagementRoutes` |
 | 根包的 import 白名单与网关闭包的禁止表 | 已实现 — 根包非测试文件的 import 只许标准库与 `internal/model`、`internal/identity`、`internal/verdict`、`internal/step`，授权、`pkg/tenant` 与任何实现子包都在白名单之外 | `pkg/authn/deps_test.go` `TestTheRootPackageImportsOnlyWhatItMay`、`TestTheRootPackageClosureHoldsNoThirdPartyPackage` |
-| `authn.admin` 子包的 import 方向：不 import `pkg/tenant`、授权、宿主与别的实现子包 | 未实现 — 子包尚不存在，核对随它实现 | `pkg/authn/admin`。缺：全部 |
+| `authn.admin` 子包的 import 方向：不 import `pkg/tenant`、授权、宿主与别的实现子包 | 已实现 — 子包只 import 根包 `authn`、`internal/mount`、`audit`、`settings`、`core` 与 `log` | `pkg/authn/admin` 的 import 清单；`pkg/authn/deps_test.go` `tenantViolations` 规则（本目录每个包都不达 `pkg/tenant`） |

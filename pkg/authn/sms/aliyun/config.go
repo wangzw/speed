@@ -30,11 +30,11 @@ const (
 const defaultEndpoint = "dysmsapi.aliyuncs.com"
 
 // The languages a template key is built for. They are the closed set the SMS
-// module passes through in authn.SMS.Locale; an empty locale reads as the
-// default one, as it does on the way in.
+// module passes through in authn.SMS.Locale, named by the root package; an empty
+// locale reads as the default one, as it does on the way in.
 const (
-	localeZhCN = "zh-CN"
-	localeEnUS = "en-US"
+	localeZhCN = authn.LocaleZH
+	localeEnUS = authn.LocaleEN
 
 	defaultLocale = localeZhCN
 )

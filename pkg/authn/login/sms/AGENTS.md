@@ -18,16 +18,16 @@ to decide whether an unknown number is sent a real code.
 ## Where the authority is
 
 - What this method is and why it is shaped this way:
-  [`docs/design/modules/design-authn-login.md`](../../../docs/design/modules/design-authn-login.md),
+  [`docs/design/modules/design-authn-login.md`](../../../../docs/design/modules/design-authn-login.md),
   the LoginMethod seam, the per-flow send budget and the enumeration guard, and
   the SMS section.
 - The challenge state machine it drives:
-  [`docs/design/modules/design-authn-sms.md`](../../../docs/design/modules/design-authn-sms.md)
+  [`docs/design/modules/design-authn-sms.md`](../../../../docs/design/modules/design-authn-sms.md)
   for `SMSCodes`, `SendCode` and the suppressed row, and
-  [`docs/adr/adr-authn-sms-2026-10-10.md`](../../../docs/adr/adr-authn-sms-2026-10-10.md)
+  [`docs/adr/adr-authn-sms-2026-10-10.md`](../../../../docs/adr/adr-authn-sms-2026-10-10.md)
   for why the state is one module's and the send is pluggable.
 - The flow state machine and the comparison-and-swap it is a step of:
-  [`docs/adr/adr-authn-login-flow-2026-10-10.md`](../../../docs/adr/adr-authn-login-flow-2026-10-10.md).
+  [`docs/adr/adr-authn-login-flow-2026-10-10.md`](../../../../docs/adr/adr-authn-login-flow-2026-10-10.md).
 - The back-off it counts against: `design-authn-account` and
   `design-authn-failure`, and the `Throttle` seam in `pkg/authn`.
 - The API itself: the godoc in this package, and the `LoginMethod`, `Start`,

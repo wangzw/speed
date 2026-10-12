@@ -385,7 +385,9 @@ func checkFields(fields map[string]string) error {
 }
 
 // localeOf maps the request's Accept-Language to the closed set the SMS
-// templates use. An empty result reads as zh-CN.
+// templates use. It reads the first tag's primary subtag, names the language the
+// root package declares for it, and reads nothing when the set names none; the
+// empty result reads as the default further down.
 func localeOf(c *gin.Context) string {
 	header := c.GetHeader("Accept-Language")
 	for _, part := range strings.Split(header, ",") {
@@ -393,12 +395,11 @@ func localeOf(c *gin.Context) string {
 		if tag == "" {
 			continue
 		}
-		primary := strings.ToLower(strings.SplitN(tag, "-", 2)[0])
-		switch primary {
+		switch strings.ToLower(strings.SplitN(tag, "-", 2)[0]) {
 		case "en":
-			return "en-US"
+			return authn.LocaleEN
 		case "zh":
-			return "zh-CN"
+			return authn.LocaleZH
 		default:
 			return ""
 		}

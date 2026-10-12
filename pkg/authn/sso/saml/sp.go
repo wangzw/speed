@@ -1,0 +1,189 @@
+package saml
+
+import (
+	"crypto/x509"
+	"encoding/json"
+	"encoding/pem"
+	"fmt"
+	"strings"
+	"sync"
+	"time"
+
+	saml2 "github.com/russellhaering/gosaml2"
+	dsig "github.com/russellhaering/goxmldsig"
+
+	"github.com/vislake/speed/pkg/authn"
+)
+
+// providerConfig is the part of a provider row's config a SAML provider carries.
+// The register validates the shape on write; a field the module cannot read here
+// leaves the provider unusable, which is the strict direction.
+type providerConfig struct {
+	IDPEntityID      string            `json:"idp_entity_id"`
+	IDPSSOURL        string            `json:"idp_sso_url"`
+	IDPCerts         []string          `json:"idp_certs"`
+	MetadataURL      string            `json:"metadata_url"`
+	NameIDFormat     string            `json:"name_id_format"`
+	SubjectAttribute string            `json:"subject_attribute"`
+	SignRequests     bool              `json:"sign_requests"`
+	Claims           map[string]string `json:"claims"`
+	MFAACRValues     []string          `json:"mfa_acr_values"`
+}
+
+// parseProviderConfig reads a provider row's config. A config that does not
+// decode names no provider.
+func parseProviderConfig(raw json.RawMessage) (providerConfig, error) {
+	var cfg providerConfig
+	if len(raw) == 0 {
+		return providerConfig{}, fmt.Errorf("%w: the provider carries no config", authn.ErrInvalidConfig)
+	}
+	if err := json.Unmarshal(raw, &cfg); err != nil {
+		return providerConfig{}, fmt.Errorf("%w: the provider's config does not decode: %w", authn.ErrInvalidConfig, err)
+	}
+	return cfg, nil
+}
+
+// built is a service provider built from one provider row, together with the
+// parsed config the assertion checks read.
+type built struct {
+	sp      *saml2.SAMLServiceProvider
+	config  providerConfig
+	version int
+	at      time.Time
+}
+
+// spCache is the process-local cache of built service providers, keyed by the
+// provider identifier and invalidated by the provider's version, by its
+// configured lifetime, and by an authn.idp.changed event.
+type spCache struct {
+	mu sync.Mutex
+	m  map[string]built
+}
+
+func newSPCache() *spCache { return &spCache{m: make(map[string]built)} }
+
+// get returns the built provider for a row, rebuilding it when it is not
+// cached, its version changed or its lifetime ran out.
+func (c *spCache) get(row authn.SSOProvider, ttl time.Duration, now time.Time, build func() (built, error)) (built, error) {
+	c.mu.Lock()
+	entry, ok := c.m[row.ID]
+	c.mu.Unlock()
+	if ok && entry.version == row.Version && now.Sub(entry.at) < ttl {
+		return entry, nil
+	}
+	fresh, err := build()
+	if err != nil {
+		return built{}, err
+	}
+	fresh.at = now
+	c.mu.Lock()
+	c.m[row.ID] = fresh
+	c.mu.Unlock()
+	return fresh, nil
+}
+
+// drop removes a provider's cached service provider.
+func (c *spCache) drop(id string) {
+	c.mu.Lock()
+	delete(c.m, id)
+	c.mu.Unlock()
+}
+
+// flush removes every cached service provider.
+func (c *spCache) flush() {
+	c.mu.Lock()
+	c.m = make(map[string]built)
+	c.mu.Unlock()
+}
+
+// buildServiceProvider builds the library's service provider for one row: the
+// identity provider's issuer, single sign-on URL and certificates, and this
+// deployment's own ACS address, entity identifier and audience. It refuses a row
+// whose required config is missing and one that signs its requests while the
+// deployment carries no key, so that the library is never handed an empty issuer
+// or destination, against which it would skip the comparison.
+func (p *product) buildServiceProvider(row authn.SSOProvider) (built, error) {
+	cfg, err := parseProviderConfig(row.Config)
+	if err != nil {
+		return built{}, err
+	}
+	if strings.TrimSpace(cfg.IDPEntityID) == "" {
+		return built{}, fmt.Errorf("%w: idp_entity_id is empty", authn.ErrInvalidConfig)
+	}
+	if strings.TrimSpace(cfg.IDPSSOURL) == "" {
+		return built{}, fmt.Errorf("%w: idp_sso_url is empty", authn.ErrInvalidConfig)
+	}
+	if len(cfg.IDPCerts) == 0 {
+		return built{}, fmt.Errorf("%w: idp_certs is empty", authn.ErrInvalidConfig)
+	}
+	if cfg.SignRequests && !p.sp.configured() {
+		return built{}, fmt.Errorf("%w: sign_requests is on and no service provider key is configured",
+			authn.ErrInvalidConfig)
+	}
+	store, err := certificateStore(cfg.IDPCerts)
+	if err != nil {
+		return built{}, err
+	}
+	acs := p.acsURL(row.ID)
+	entity := p.entityID(row.ID)
+	sp := &saml2.SAMLServiceProvider{
+		IdentityProviderIssuer:      cfg.IDPEntityID,
+		IdentityProviderSSOURL:      cfg.IDPSSOURL,
+		IdentityProviderSSOBinding:  saml2.BindingHttpRedirect,
+		AssertionConsumerServiceURL: acs,
+		ServiceProviderIssuer:       entity,
+		AudienceURI:                 entity,
+		IDPCertificateStore:         store,
+		SignAuthnRequests:           cfg.SignRequests,
+		SkipSignatureValidation:     false,
+		MaximumDecompressedBodySize: maxDecompressedBody,
+		MaximumXMLTokens:            maxXMLTokens,
+		NameIdFormat:                nameIDURN(cfg.NameIDFormat),
+	}
+	if p.sp.configured() {
+		if err := sp.SetSPKeyStore(&saml2.KeyStore{Signer: p.sp.signer, Cert: p.sp.certDER}); err != nil {
+			return built{}, fmt.Errorf("%w: building the service provider's key store: %w", authn.ErrInvalidConfig, err)
+		}
+	}
+	return built{sp: sp, config: cfg, version: row.Version}, nil
+}
+
+// The bounds the library is given, so that a decompression or token bomb is
+// refused before it is parsed.
+const (
+	maxDecompressedBody = 1 << 20
+	maxXMLTokens        = 50000
+)
+
+// certificateStore builds the library's certificate store from a provider's PEM
+// certificates: any one of them may verify a signature, which is how a rotation
+// lets the current and next certificates stand together.
+func certificateStore(pems []string) (*dsig.MemoryX509CertificateStore, error) {
+	roots := make([]*x509.Certificate, 0, len(pems))
+	for _, text := range pems {
+		block, _ := pem.Decode([]byte(text))
+		if block == nil || block.Type != "CERTIFICATE" {
+			return nil, fmt.Errorf("%w: an idp_certs entry is not a PEM certificate", authn.ErrInvalidConfig)
+		}
+		cert, err := x509.ParseCertificate(block.Bytes)
+		if err != nil {
+			return nil, fmt.Errorf("%w: an idp_certs entry does not parse: %w", authn.ErrInvalidConfig, err)
+		}
+		roots = append(roots, cert)
+	}
+	return &dsig.MemoryX509CertificateStore{Roots: roots}, nil
+}
+
+// nameIDURN maps a provider's configured NameID format to the SAML URN the
+// library sends and expects. The register refuses a format outside the set, so
+// an unknown value reads as persistent.
+func nameIDURN(format string) string {
+	switch format {
+	case "unspecified":
+		return saml2.NameIdFormatUnspecified
+	case "emailAddress":
+		return saml2.NameIdFormatEmailAddress
+	default:
+		return saml2.NameIdFormatPersistent
+	}
+}

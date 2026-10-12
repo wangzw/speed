@@ -5,6 +5,8 @@ import (
 	"strings"
 	"testing"
 	"time"
+
+	"github.com/vislake/speed/pkg/authn"
 )
 
 // TestGenerateCodeHasExactlyNDigits holds the length invariant on every draw: a
@@ -71,6 +73,25 @@ func TestTTLMinutesRoundsUp(t *testing.T) {
 	for _, c := range cases {
 		if got := ttlMinutes(c.ttl); got != c.want {
 			t.Errorf("ttlMinutes(%v) = %q, want %q", c.ttl, got, c.want)
+		}
+	}
+}
+
+// TestValidPurposeIsTheRootPackageClosedSet binds this package's purpose set to
+// the root package's SMSPurpose constants, so the two cannot drift: the package
+// names no purpose value of its own. The positive probes are the binding — if
+// code.go ever accepts a set that is not exactly the root constants, validPurpose
+// answers false for a root constant here. The near-misses hold the other side:
+// the accepted set carries no member the root package does not name.
+func TestValidPurposeIsTheRootPackageClosedSet(t *testing.T) {
+	for _, p := range []string{authn.SMSPurposeLogin, authn.SMSPurposeMFA, authn.SMSPurposeEnroll} {
+		if !validPurpose(p) {
+			t.Errorf("validPurpose(%q) = false, want true: %q is a root package SMSPurpose constant", p, p)
+		}
+	}
+	for _, p := range []string{"", "login ", " login", "LOGIN", "Login", "signin", "verify", "register", "sms", "otp", "mfa-login"} {
+		if validPurpose(p) {
+			t.Errorf("validPurpose(%q) = true, want false: no root package SMSPurpose constant names %q", p, p)
 		}
 	}
 }

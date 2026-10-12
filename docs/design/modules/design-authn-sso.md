@@ -42,7 +42,7 @@
 - **排他与并立。** `SSOProviders` 排他：宿主点名 `authn.sso.saml` 或 `authn.sso.oidc` 而漏点名 `authn.sso`，在 `Requires` 消解阶段以 `core.ErrMissingProvider` 失败。`LoginMethod` 与 `SSOMetadataRefresher` 并立，由消费方 `ResolveAll` 取用，从不写进 `Requires`（[ADR-authn-wiring-2026-10-10](../../adr/adr-authn-wiring-2026-10-10.md)）。
 - **一个模块一个方法名。** `authn.sso.saml` 的 `LoginMethod.Name()` 恒为 `saml`，`authn.sso.oidc` 的恒为 `oidc`；全局重名即 `ErrMethodConflict`。
 - **方法名两两不相交。** `authn.sso.saml` 交付的接口方法名为 `Name`、`Begin`、`Answer` 与 `Protocol`、`Refresh`，互不相交；包内为每个交付的接口加 `var _ authn.X = (*product)(nil)` 编译期断言。
-- **库只在叶子包里。** gosaml2 与 goxmldsig 只被 `authn.sso.saml` import，go-oidc 与 x/oauth2 只被 `authn.sso.oidc` import；`authn.sso` 不 import 任何协议库，宿主只纳入 `authn.sso.oidc` 时 gosaml2 不进它的依赖闭包。
+- **库只在叶子包里。** gosaml2 与 goxmldsig 只被 `authn.sso.saml` import；`authn.sso` 不 import 任何协议库，宿主只纳入 `authn.sso.oidc` 时 gosaml2 不进它的依赖闭包。**在 `authn.sso` 模块内**，go-oidc 只被 `authn.sso.oidc` import，x/oauth2 同样只被它 import；**在 `pkg/authn` 全树内**这两个库另被社交登录方式 import——go-oidc 另被 `authn.login.google` import，x/oauth2 另被 `authn.login.google` 与 `authn.login.github` import——因为它们与 Google 走同一条 OAuth/OIDC 共同事务（见 [design-authn-login](design-authn-login.md) 的「社交登录与企业 OIDC 的共同事务」）。
 - **命名空间约束。** `authn.sso` 的配置与设置叶子不得叫 `saml`、`oidc`，否则与协议模块的命名空间相撞（[design-authn-config](design-authn-config.md)）。
 
 ### SSOProvider 与 SSOProviders
@@ -87,12 +87,16 @@ type SSOProviders interface {
 | `Discover` | 只在「已验证的域且提供方已启用」的行里找，规范化与失败形状见「域所有权与发现」一节。 |
 | `Put` | 新建或更新。`secret` 为 `nil` 表示保持原值，非 `nil` 表示写入该值。校验 `Config`（写入时校验，未知键拒绝）；更新时 `Tenant` 不可变，与已存的不同即 `ErrInvalidConfig`；创建时 `Tenant` 取调用方给的值，管理面要求它与路径里的租户一致。`Provisioning` 无默认值，取值不在 `jit`、`preprovisioned` 之内即 `ErrInvalidConfig`。每次写入使 `version` 加一。 |
 | `Delete` | 删除提供方行及其域声明，在同一个事务里完成。 |
-| `ClaimDomain` | 为提供方声明一个邮箱域，写入一行未验证的声明并返回 `verifyToken`；该域已被另一个提供方验证时返回 `ErrDomainClaimed`。未验证的声明可以并存。 |
+| `ClaimDomain` | 为提供方声明一个邮箱域，写入一行未验证的声明并返回 `verifyToken`；该域已被另一个提供方验证时返回 `ErrDomainClaimed`。未验证的声明可以并存。声明本身不改变发现所依据的已生效状态，所以不发 `authn.idp.changed`（`change` 闭集里没有 `domain-added`）；验证命中时才发 `domain-verified`。提供方不存在返回 `ErrProviderNotFound`。 |
 | `VerifyDomain` | 查 `_speed-authn.<域>` 的 TXT 记录，内容为 `speed-authn=<token>`；命中则置 `verified_at`。该域已被另一个提供方验证，或并发验证败于唯一约束，返回 `ErrDomainClaimed`。失败不改状态。 |
 | `RemoveDomain` | 移除一条域声明，已验证或未验证的都可以。 |
 | `ReverifyDomains` | 对该提供方全部已验证的域重查 TXT，查不到的域撤回验证（`verified_at` 置空）并发 `authn.idp.changed`，`change` 取 `domain-unverified`。不自动运行，由宿主调度或经管理面触发。 |
 
 `Put`、`Delete`、`ClaimDomain`、`VerifyDomain`、`RemoveDomain`、`ReverifyDomains` 是写面，只经 `authn.admin` 由 `Decider` 放行后暴露为 HTTP 路由（动作 `authn.idp.manage`，强制审计，见 [design-authn-admin](design-authn-admin.md)）；本模块自己不判定调用者有无权限。
+
+`Get`、`Secret`、`Tenant`、`Delete`、`ClaimDomain` 对不存在的行返回 `ErrProviderNotFound`，`Put` 更新一条不存在的行同样返回它；该哨兵由根包声明，管理面按行不存在答裸 404（见 [design-authn-failure](design-authn-failure.md)）。
+
+**断言重放行的写面。** 断言标识的去重表 `authn_saml_assertions` 归本模块，写这一行是登记方的活，所以协议方法不直接持有 `db.Database`。`authn.sso` 除 `SSOProviders` 外另行交付 `RememberAssertion(ctx, idpID, assertionID, notOnOrAfter)`：插入断言标识，撞唯一约束即 `ErrAssertionReplay`。`authn.sso.saml` 在构造期把它取到的 `SSOProviders` 值断言到这个扩展形状上，断不上即构造失败——没有它一条断言可在有效期内被重放，所以这是构造期要求而非可选。`SSOProviders` 的公开方法集不变：这个扩展是登记方必须额外满足的形状，宿主换用自写实现时同样要交付它。
 
 ### SSOMetadataRefresher
 
@@ -122,7 +126,7 @@ type SSOMetadataRefresher interface {
 输入项的键、类型、缺省值、取值范围与来源限制只在 [design-authn-config](design-authn-config.md) 给全，本节只写语义，所列的是与本功能有关的输入项，不是全部输入项的清单。
 
 - **`authn.sso.allow-private-egress`**：放开受限出站客户端对回环地址的拒绝，只用于开发。只取主配置源，环境变量与命令行都改不了；开启时启动诊断写一行 `Warn`。
-- **`authn.sso.saml.sp-key-file`、`sp-cert-file`、`sp-next-cert-file`**：整个部署共用的 SP 私钥、当前证书与下一张证书的文件路径，可缺省。私钥只在提供方要求签名 AuthnRequest（`sign_requests` 为真）或 IdP 要加密断言时用到；该条件成立而私钥未配置，以 `ErrInvalidConfig` 拒绝。
+- **`authn.sso.saml.sp-key-file`、`sp-cert-file`、`sp-next-cert-file`**：整个部署共用的 SP 私钥、当前证书与下一张证书的文件路径，可缺省。私钥只在提供方要求签名 AuthnRequest（`sign_requests` 为真）时用到；加密断言一律拒收（见「SAML：断言消费」），所以解密路径不启用。`sign_requests` 为真而私钥未配置，以 `ErrInvalidConfig` 拒绝。
 - **`authn.sso.assertion-max-age`**：SAML 断言的 `IssueInstant` 允许早于当前时刻的最大间隔。设置，请求期读。
 - **`authn.sso.provider-cache-ttl`**：进程内缓存的 `*oidc.Provider`、`*oauth2.Config` 与 SAML `ServiceProvider` 的有效期。设置，请求期读。
 - **`authn.sso.egress-timeout`**：出站调用的期限。设置，请求期读；`http.Client` 不设总 `Timeout`，每次调用用 `context` 的期限。
@@ -157,7 +161,7 @@ type SSOMetadataRefresher interface {
 
 - `pkg/authn/internal/egress`：受限出站客户端，`authn.sso`、协议模块与登录方式叶子包共用。
 - `pkg/authn/internal/clock`：写入数据库与绑定为查询参数的时间的来源，一律 UTC。
-- 第三方库：gosaml2 与 goxmldsig（`authn.sso.saml`，goxmldsig 不低于 v1.6.1，版本要求写在 `pkg/go.mod`）；go-oidc 与 x/oauth2（`authn.sso.oidc`）。
+- 第三方库（版本写在 `pkg/go.mod`，由 `pkg/authn/deps_test.go` 的守卫按下面的形式钉住）：`authn.sso.saml` 用 gosaml2 v0.12.0 与 goxmldsig 不低于 v1.6.1；`authn.sso.oidc` 用 go-oidc v3.21.0 与 x/oauth2 不低于 v0.37.0。goxmldsig 与 x/oauth2 是下限（对应签名绕过与畸形输入的历史缺陷，见 [design-authn-threats](design-authn-threats.md)），gosaml2 与 go-oidc 是精确钉。go-oidc 与 x/oauth2 另被社交登录方式 import，见「登记单元与名字」。
 
 依赖方向满足架构不变量：
 
@@ -328,8 +332,8 @@ CREATE INDEX authn_saml_assertions_expiry ON authn_saml_assertions (not_on_or_af
 
 | 协议 | 键 | 含义与校验 |
 |---|---|---|
-| oidc | `issuer`、`client_id`、`scopes`、`algs` | `issuer` 必须是具体的 `https` issuer，与发现文档的 `issuer` 逐字相等（含末尾斜杠，go-oidc 的要求），拒绝 `common`、`organizations` 这类聚合地址，所以不用库注释自称不安全的 `InsecureIssuerURLContext`；`algs` 缺省 `["RS256","ES256"]`，不得含 `none` 与 `HS*` |
-| oidc、saml | `claims` | 声明名到目标的映射，目标只许 `email`、`display_name`、`subject`（缺省 OIDC 取 `sub`、SAML 取 `NameID`）与至多 8 个 `attr.<名>`（写入属性集时加 `idp.` 前缀） |
+| oidc | `issuer`、`client_id`、`scopes`、`algs` | `issuer` 必须是具体的 `https` issuer，与发现文档的 `issuer` 逐字相等（含末尾斜杠，go-oidc 的要求），拒绝 `common`、`organizations` 这类聚合地址，所以不用库注释自称不安全的 `InsecureIssuerURLContext`；`scopes` 缺省 `["openid","email","profile"]`，`openid` 是取回 ID 令牌所必需；`algs` 缺省 `["RS256","ES256"]`，不得含 `none` 与 `HS*` |
+| oidc、saml | `claims` | 声明名到目标的映射，目标只许 `email`、`display_name`、`subject`（缺省 OIDC 取 `sub`、SAML 取 `NameID`）与至多 8 个 `attr.<名>`（写入属性集时加 `idp.` 前缀）。只有 `subject` 有缺省；`email` 与 `display_name` 没有缺省，未映射即留空——`jit` 开户缺 `email` 映射按首登失败处理。取值只从字符串声明填充，非字符串（数组、数字）的声明值被丢弃 |
 | oidc、saml | `mfa_acr_values` | `trust_idp_mfa` 为真时，哪些 `acr` 或 `AuthnContextClassRef` 取值算多因素；空表即不信任任何取值 |
 | saml | `idp_entity_id`、`idp_sso_url`、`idp_certs` | 以下键必填：`idp_entity_id` 为空时库跳过颁发者校验；`idp_sso_url` 为 https 且无用户信息；`idp_certs` 是 IdP 签名证书的 PEM 列表，1 到 4 个，任一可验签（证书轮换时当前与下一张并存），证书是公钥，不加密 |
 | saml | `metadata_url`、`name_id_format`、`subject_attribute`、`sign_requests` | `metadata_url` 可空，只在刷新时取一次；`name_id_format` 缺省 `persistent`，`transient` 一律拒绝（没有稳定标识），`emailAddress` 格式不稳定、须配置 `subject_attribute` 改取别的属性；`sign_requests` 为真时必须配了 SP 密钥 |
@@ -361,7 +365,7 @@ CREATE INDEX authn_saml_assertions_expiry ON authn_saml_assertions (not_on_or_af
 
 1. 校验：`name` 长度；`protocol` 在封闭集内；`provisioning` 显式给出；更新时 `Tenant` 与已存相同；`config` 按上一节的形状逐项校验，OIDC 以外的协议带非空 `secret` 一律拒绝；失败即 `ErrInvalidConfig`，点名不合法之处。
 2. 写入，`version` 创建时为 1、更新时加一；`secret` 为 `nil` 时不动 `client_secret`。
-3. 提交之后发布 `authn.idp.changed`，使各副本的协议模块丢弃缓存；发布失败只记 `Warn`，从不令写入失败（事件是提示，不是权威）。
+3. 提交之后发布 `authn.idp.changed`，使各副本的协议模块丢弃缓存；`change` 取：新建为 `created`，启用态 0→1 为 `enabled`、1→0 为 `disabled`，其余更新为 `updated`（值集是封闭集，见 [design-authn-events](design-authn-events.md)）；发布失败只记 `Warn`，从不令写入失败（事件是提示，不是权威）。
 
 `allow_idp_initiated`、`allow_sha1` 或 `merge_existing` 为真的行，`Put` 写 `Warn`，启动诊断也各写一行 `Warn`；管理面应答里的警告归 [design-authn-admin](design-authn-admin.md)。
 
@@ -397,7 +401,7 @@ gosaml2 没有元数据解析助手，`authn.sso.saml` 用标准库 `encoding/xm
 
 | 校验项 | 判据 | 来源与理由 | 指标取值 |
 |---|---|---|---|
-| 流程与提供方 | 流程绑定匹配；流程存在、处于 `processing`（引擎已在调用本方法前置好）、方法为 `saml`；路径里的提供方标识等于流程记录里的 | 登录 CSRF 的防线；提供方取自流程而非表单 | `other` |
+| 流程与提供方 | 流程绑定匹配；流程存在、处于 `processing`（引擎已在调用本方法前置好）、方法为 `saml`；引擎在分发之前已核对路径里的提供方标识等于记录里的 `provider`（`Begin` 时由 `input.provider` 写定）；SP 发起时要 `RelayState` 与 `Begin` 存入 `method_state` 的那个相等，IdP 发起路径没有 `Begin`，不比对 | 登录 CSRF 的防线；提供方取自流程而非表单 | `other` |
 | SP 的构造 | 提供方行已启用；构造 SP 时 `IdentityProviderIssuer`、`AssertionConsumerServiceURL`、`AudienceURI` 均非空；`MaximumDecompressedBodySize` 取 1 MiB、`MaximumXMLTokens` 取 50000；`SkipSignatureValidation` 为假 | gosaml2 对 `IdentityProviderIssuer` 为空时跳过颁发者比较、对 `Destination` 为空时跳过比较 | `other` |
 | SHA-1 预检 | 调用库验签之前，扫描解码后的 XML 里全部 `Algorithm` 属性，出现 `rsa-sha1`、`ecdsa-sha1`、`#sha1` 即拒绝，除非该提供方 `allow_sha1` 为真；以误拒为代价 | goxmldsig 的 `ValidationContext` 只有 `CertificateStore`、`IdAttribute`、`Clock` 字段，没有拒绝算法的开关，验签面接受 SHA-1 | `signature` |
 | 单次解析并验签 | `ValidateEncodedResponse` 得到验过签的 `types.Response`，不对同一字节做第二次解析；要求响应或断言至少一个 `SignatureValidated` | 签名包装类攻击的根源是被验的元素与被用的元素不是同一个；gosaml2 用验过签返回的元素解码 | `signature` |
@@ -408,6 +412,8 @@ gosaml2 没有元数据解析助手，`authn.sso.saml` 用标准库 `encoding/xm
 | 颁发者与确认 | 断言的 `Issuer` 等于 `idp_entity_id`；`Status` 为 Success；`SubjectConfirmation` 方法为 bearer；`Recipient` 等于 ACS 地址；`IssueInstant` 不早于当前减 `authn.sso.assertion-max-age`（只比较过去方向，未来方向由「断言条件」对 `NotBefore` 的严格判断承担）；`NotOnOrAfter` 距 `IssueInstant` 不超过 10 分钟 | 对库的复核；限制断言可被重放的窗口 | 颁发者与状态不符为 `issuer`，接收者不符为 `destination`，时刻不符为 `time`，其余为 `other` |
 | 断言标识去重 | `INSERT INTO authn_saml_assertions (idp_id, assertion_id, not_on_or_after, seen_at)`，撞唯一约束（`gorm.ErrDuplicatedKey`）即重放，返回 `ErrAssertionReplay`；`not_on_or_after` 取断言与 `SubjectConfirmationData` 里较小的那个 | 库不做；用 db 而不是 kv，因为 kv 丢键则重放窗口重开 | `replay` |
 | 主体与属性的提取 | 见下文 | | `other` |
+
+**可达域。** 第 4 步的 `ValidateEncodedResponse` 内部会先调用库的 `sp.Validate`，它在本方法第 5 步起的逐项校验之前就拒绝若干情形：`Destination` 与 ACS 不符、`Issuer` 为空或不符、`Status` 非 Success、`SubjectConfirmation` 非 bearer、`Recipient` 与 ACS 不符、`SubjectConfirmationData.NotOnOrAfter` 已过期。这些被库先拦下的情形计入第 4 步的 `signature`，而不是表里给目的地、颁发者与时间各行的 `destination`、`issuer`、`time`。所以那几行的取值只在库跳过该比较（如 `Destination`、`Issuer` 为空）或本方法在库之外另行判断时才真正产出；库返回成功而本方法补充拒绝的每一项仍按表里的取值计数。
 
 **时间条件不设容差。** 库的时间比较没有容差字段，另造一个带容差的版本会绕过库已做的校验，所以部署要求各副本与 IdP 时间同步（[design-authn-failure](design-authn-failure.md)）；没有 `authn.sso.clock-skew` 设置。
 
@@ -425,7 +431,7 @@ NameID 里夹带 XML 注释会被截断是一类已知的 SAML 攻击，gosaml2 
 
 ### SAML：IdP 发起登录
 
-`allow_idp_initiated` 为真时，`POST B/callback/:provider` 可以没有流程 cookie：引擎当场新建一条 `purpose=login`、`delivery=session` 的流程记录并置 `processing`（[design-authn-login](design-authn-login.md)），方法随后按「断言消费」校验，其中「请求标识」一项允许 `InResponseTo` 为空。没有流程就没有可比对的绑定，所以这一路径防不了登录 CSRF（攻击者把自己的断言投给受害者的浏览器）；能做的是：断言必须新鲜（`IssueInstant` 在 2 分钟内）、标识唯一、受众与接收者精确、已签名。该路径没有可比对的绑定，登录 CSRF 防线不成立，所以该开关缺省关闭，开启时在管理应答里作为警告、在启动诊断里写一行 `Warn`。
+`allow_idp_initiated` 为真时，`POST B/callback/:provider` 可以没有流程 cookie：引擎当场新建一条 `purpose=login`、`delivery=session` 的流程记录并置 `processing`（[design-authn-login](design-authn-login.md)），方法随后按「断言消费」校验，其中「请求标识」一项允许 `InResponseTo` 为空。断言消费要先取提供方行（构造 SP、取 `idp_certs` 与 `issuer`），这条路径没有 `Begin`，提供方标识只来自回跳路径，所以引擎把提供方标识经 `FlowState.Provider` 交给方法：它在新建流程时把该标识写进记录，也写进交给方法的流程状态（[design-authn-login](design-authn-login.md)）。没有流程就没有可比对的绑定，所以这一路径防不了登录 CSRF（攻击者把自己的断言投给受害者的浏览器）；能做的是：断言必须新鲜（`IssueInstant` 在 2 分钟内）、标识唯一、受众与接收者精确、已签名。该路径没有可比对的绑定，登录 CSRF 防线不成立，所以该开关缺省关闭，开启时在管理应答里作为警告、在启动诊断里写一行 `Warn`。
 
 ### 企业 OIDC
 
@@ -438,6 +444,8 @@ NameID 里夹带 XML 注释会被截断是一类已知的 SAML 攻击，gosaml2 
 - `trust_idp_mfa` 为真时，断言的 `acr` 落在 `mfa_acr_values` 才置 `Proof.IDPAsserted`，`amr` 不参与比对；`auth_time` 只在步进里核对新鲜度。
 - `Proof` 的 `External.Provider` 为 `oidc:<提供方标识>`，`Methods` 为 `MethodOIDC`。
 - 所有出站调用经 `oidc.ClientContext(ctx, client)` 注入受限客户端，`oidc.NewProvider` 的 `ctx` 也要带它：go-oidc 未注入时用无超时的 `http.DefaultClient`，未经注入的出站调用本身是缺陷。
+- 指标 `authn.sso.assertions` 的 `outcome` 按自做判定归类：`iss` 不符记 `issuer`；验签、`aud`、`exp` 的拒绝因库把这些错误压成同一个字符串，改按 ID 令牌自身未验证的声明归类（只决定指标标签，不决定放行）；`nonce`、`state`、`sub`、`code` 的问题记 `other`；多受众而 `azp` 不符记 `audience`。用户在提供方处取消（回跳带 `error`）既不是断言也不是不可用，不记 `outcome`。
+- 方法持有 `Accounts` 以满足装配契约，但不从它读任何东西：账户解析（开户、关联、并入）是登录引擎的活（[design-authn-account](design-authn-account.md)）。
 
 Google 与企业 OIDC 走同一条代码路径，差别只在配置来源：Google 来自配置，是启动必须项；企业 IdP 来自表。
 
@@ -500,13 +508,14 @@ SSO 不做单点登出：IdP 一侧的登出与停用都不终止 speed 的会�
 | `ErrInvalidConfig` | `Put`、构造 | `config` 形状不合法、含未知键、`provisioning` 缺失、更新时 `Tenant` 与已存的不同、`sign_requests` 为真而没有 SP 密钥 | 管理面 400，点名不合法之处；启动期启动失败 |
 | `ErrDomainClaimed` | `ClaimDomain`、`VerifyDomain` | 该域已被另一个提供方验证过 | 409 |
 | `ErrAssertionReplay` | SAML 断言消费 | 断言标识已见过 | 登录失败，统一 `login-failed`；记 `Warn` 与指标 |
+| `ErrProviderNotFound` | `Get`、`Secret`、`Tenant`、`Put`（更新路径）、`Delete`、`ClaimDomain` | 点名的提供方行不存在 | 管理面裸 404（不带问题码） |
 | `ErrNotProvisioned` | 引擎的账户解析，取自本模块交出的提供方与映射 | `preprovisioned` 的提供方没有预置账户；`jit` 开户所需的映射缺失 | 401 `login-failed`，成因进日志 |
 | `ErrDomainMismatch` | 引擎的账户解析 | 断言邮箱的域不属于该提供方所属租户的已验证域 | 401 `login-failed`，成因进日志 |
 | `ErrUnavailable` | 构造提供方、发现与 JWKS 取回、元数据刷新、db | IdP 不可用，或 db 不可用 | 503；对外不区分是哪个依赖 |
 | `ErrNoEncryptionKey` | `Start` | `db` 没有根密钥 | 启动失败 |
 | `ErrNotMigrated` | `Start` | 探测不到自己的表 | 启动失败，点名施加迁移的命令 |
 
-提供方行不存在、已停用、协议与路径不符，在回调与发起路径上一律并入「方法不可用」或 `login-failed`，不区分成因；在管理面路径上按行不存在应答。SAML 断言与 OIDC ID 令牌的每一项校验失败，对外都是 `login-failed`，成因只进日志、指标与审计。
+提供方行不存在（`ErrProviderNotFound`）、已停用、协议与路径不符，在回调与发起路径上一律并入「方法不可用」或 `login-failed`，不区分成因；在管理面路径上按行不存在应答。SAML 断言与 OIDC ID 令牌的每一项校验失败，对外都是 `login-failed`，成因只进日志、指标与审计。
 
 ### 失败方向
 
@@ -545,7 +554,7 @@ SSO 不做单点登出：IdP 一侧的登出与停用都不终止 speed 的会�
 - **goxmldsig 没有别的途径拒绝 SHA-1 签名。** 测试：用 SHA-1 签名的样本做负向测试，预检必须拒绝。若库提供按算法拒绝的开关，预检与库的开关择一保留，不并存。
 - **gosaml2 的 `ValidateEncodedResponse` 返回验过签的响应，且不要求对同一字节再解析。** 测试：对固定版本 v0.12.0 的签名与返回类型做编译期断言，并以单元测试断言验过签的响应可直接用于后续校验；断言失败即「单次解析并验签」的前提不成立。
 - **gosaml2 对 NameID 中夹带 XML 注释的截断攻击已有防护。** 测试：构造含注释的 NameID，断言取得的主体不被截断。
-- **gosaml2 的 `SPKeyStore` 不同时接受两把解密密钥。** 在这个假设下，SP 证书的轮换要在 IdP 元数据刷新的重叠期内完成。
+- **gosaml2 的 `SPKeyStore` 不同时接受两把解密密钥。** 测试：用旧钥加密的断言，在 `SPKeyStore` 只交出新钥时必须解密失败而被拒绝。该测试失败即说明库已支持双钥，SP 证书的轮换步骤可以简化；在假设成立期间，SP 证书的轮换要在 IdP 元数据刷新的重叠期内完成。
 - **特殊用途地址段的清单与 IANA 登记表一致。** 测试：向量测试对登记表的每一整块断言边缘地址的判定，覆盖 NAT64、6to4、Teredo 的嵌入写法，以及十六进制、八进制与十进制写法的 IPv4 字面量。包内没有登记表的机器可读副本，所以这条断言守住的是核对那一天的状态，随登记表的更新而漂移，复核的时机见 [design-authn-threats](design-authn-threats.md)。
 - **审计的语句级明细不带加密列的值。** 测试：写入 `client_secret` 之后，审计行里不得出现任何秘密字节。
 - **时区无关。** 假设 `not_on_or_after` 与 `verified_at` 等时间列在非 UTC 的 `time.Time` 写入下比较结果仍正确。SQLite 夹具在 `TZ=America/New_York` 下断言清扫与重放判定的条件。
@@ -568,24 +577,26 @@ SSO 不做单点登出：IdP 一侧的登出与停用都不终止 speed 的会�
 
 ## 实现状态
 
-`pkg/authn` 下没有 `sso` 目录，根包没有 `SSOMetadataRefresher`，`pkg/go.mod` 里没有 gosaml2、goxmldsig、go-oidc 与 x/oauth2。
+`pkg/authn/sso` 交付提供方登记 `SSOProviders` 与它的迁移、域所有权与校验、发现与清扫；`pkg/authn/sso/saml` 交付 SAML 的 `LoginMethod`、SP 元数据路由与 `SSOMetadataRefresher`；`pkg/authn/sso/oidc` 交付企业 OIDC 的 `LoginMethod` 与提供方缓存。受限出站客户端 `internal/egress`，以及 `pkg/go.mod` 里的 gosaml2、goxmldsig、go-oidc 与 x/oauth2，俱在。
 
 | 能力 | 状态 | 代码 |
 |---|---|---|
-| 根包接口：`SSOProvider`、`SSOProviders`、`SSOMetadataRefresher` 与对应哨兵、`authn.idp.changed` 事件类型 | 部分实现 — 缺 `SSOMetadataRefresher`；其余已在 | `pkg/authn/sso.go` `SSOProviders`；`pkg/authn/internal/model/sso.go` `SSOProvider`；`pkg/authn/errors.go` `ErrDomainClaimed`、`ErrAssertionReplay`；`pkg/authn/events.go` `EventIDPChanged`、`IDPChanged` |
-| `authn.sso` 提供方登记：`Put`、`Get`、`List`、`Secret`、`Tenant`、`Delete`、`config` 校验、`version` | 未实现 | — |
-| `authn_idps`、`authn_idp_domains`、`authn_saml_assertions` 迁移集 | 未实现 | — |
-| 域所有权：`ClaimDomain`、`VerifyDomain`、`RemoveDomain`、`ReverifyDomains` | 未实现 | — |
-| 发现：`Discover` 与 `POST B/sso/discover` | 未实现 | — |
-| 清扫：未验证的域声明与过期的断言标识 | 未实现 | — |
-| `Start` 的表存在性探测与加密列探针 | 未实现 | — |
-| 租户准入层缺席时的 `Warn` | 未实现 | — |
+| 根包接口：`SSOProvider`、`SSOProviders`、`SSOMetadataRefresher` 与对应哨兵、`authn.idp.changed` 事件类型 | 已实现 | `pkg/authn/sso.go` `SSOProviders`、`SSOMetadataRefresher`；`pkg/authn/internal/model/sso.go` `SSOProvider`；`pkg/authn/errors.go` `ErrDomainClaimed`、`ErrAssertionReplay`；`pkg/authn/events.go` `EventIDPChanged`、`IDPChanged` |
+| `authn.sso` 提供方登记：`Put`、`Get`、`List`、`Secret`、`Tenant`、`Delete`、`config` 校验、`version` | 已实现 | `pkg/authn/sso/providers.go` `Get`、`Secret`、`List`、`Tenant`、`Put`、`Delete`、`checkPutShape`；`pkg/authn/sso/register.go` `readIDP`、`readSecret`、`insertIDP`、`saveIDP`；`pkg/authn/sso/config_validate.go` `validateConfig` |
+| `authn_idps`、`authn_idp_domains`、`authn_saml_assertions` 迁移集 | 已实现 | `pkg/authn/sso/migrations/{postgres,sqlite}/0001_authn_idps.sql` |
+| 域所有权：`ClaimDomain`、`VerifyDomain`、`RemoveDomain`、`ReverifyDomains` | 已实现 | `pkg/authn/sso/providers.go` `ClaimDomain`、`VerifyDomain`、`RemoveDomain`、`ReverifyDomains`、`normalizeDomain`、`txtName` |
+| 发现：`Discover` 与 `POST B/sso/discover` | 已实现 | `pkg/authn/sso/providers.go` `Discover`；`pkg/authn/sso/routes.go` `handleDiscover`、`mountRoutes` |
+| 清扫：未验证的域声明与过期的断言标识 | 已实现 | `pkg/authn/sso/sweep.go` `startSweep`、`sweepClaims`、`sweepAssertions`；`pkg/authn/sso/register.go` `removeStaleClaims`、`removeExpiredAssertions` |
+| `Start` 的表存在性探测与加密列探针 | 已实现 | `pkg/authn/sso/start.go` `start`；`pkg/authn/sso/register.go` `probe`、`roundTrip` |
+| 租户准入层缺席时的 `Warn` | 已实现 | `pkg/authn/sso/start.go` `start`（`reg.Participating(admissionModule)`） |
 | `internal/egress` 受限出站客户端与特殊用途地址表 | 已实现 — 追踪头的注入留给调用方，包内没有 `observability.Transport` 的包装 | `pkg/authn/internal/egress/egress.go` `New`、`Options`；`pkg/authn/internal/egress/address.go` `Permitted` |
-| `authn.sso.saml`：SP 元数据路由与 SP 构造 | 未实现 | — |
-| `authn.sso.saml`：`LoginMethod` 的发起与断言消费（SHA-1 预检、单次解析验签、逐项补充校验、断言标识去重、主体与属性提取） | 未实现 | — |
-| `authn.sso.saml`：IdP 发起登录的方法侧校验 | 未实现 | — |
-| `authn.sso.saml`：`SSOMetadataRefresher.Refresh` 与元数据解析 | 未实现 | — |
-| `authn.sso.oidc`：`LoginMethod` 与提供方缓存 | 未实现 | — |
-| `authn.idp.changed` 的发布与缓存失效订阅 | 未实现 | — |
-| 指标 `authn.sso.assertions` 与审计动作 `authn.sso.reject` 的写入点 | 未实现 | — |
-| goxmldsig 版本下限与依赖的 `pkg/go.mod` 条目 | 未实现 | — |
+| `authn.sso.saml`：SP 元数据路由与 SP 构造 | 已实现 | `pkg/authn/sso/saml/metadata.go` `mountMetadata`、`serveMetadata`、`metadataEntity`；`pkg/authn/sso/saml/sp.go` `buildServiceProvider`、`spCache` |
+| `authn.sso.saml`：`LoginMethod` 的发起与断言消费（SHA-1 预检、单次解析验签、逐项补充校验、断言标识去重、主体与属性提取） | 已实现 | `pkg/authn/sso/saml/method.go` `Begin`、`Answer`、`serviceProvider`；`pkg/authn/sso/saml/assertion.go` `consume`、`checkResponseTo`、`checkConditions`、`checkConfirmation`、`extract`；`pkg/authn/sso/saml/sha1.go` `usesSHA1` |
+| `authn.sso.saml`：IdP 发起登录的方法侧校验 | 已实现 | `pkg/authn/sso/saml/assertion.go` `consume`、`checkResponseTo`（`idpInitiatedMaxAge` 与提供方的 `AllowIDPInitiated`） |
+| 断言标识去重的写面：登记的 `RememberAssertion` 与方法侧的构造期断言 | 已实现 — 登记方插入标识并报告重放，方法侧断不上即构造失败 | `pkg/authn/sso/assertions.go` `RememberAssertion`；`pkg/authn/sso/saml/assertion.go` `assertionLog`、`consume`；`pkg/authn/sso/saml/saml.go` `newProduct` |
+| 提供方行不存在的哨兵 `ErrProviderNotFound` | 已实现 — 根包声明，`Get`、`Secret`、`Tenant`、`Put`（更新路径）、`Delete`、`ClaimDomain` 报告它 | `pkg/authn/errors.go` `ErrProviderNotFound`；`pkg/authn/sso/providers.go` |
+| `authn.sso.saml`：`SSOMetadataRefresher.Refresh` 与元数据解析 | 已实现 | `pkg/authn/sso/saml/refresh.go` `Protocol`、`Refresh`、`fetchMetadata`、`mergeMetadata`；`pkg/authn/sso/saml/metadata.go` `parseIDPMetadata` |
+| `authn.sso.oidc`：`LoginMethod` 与提供方缓存 | 已实现 | `pkg/authn/sso/oidc/method.go` `Begin`、`Answer`、`exchange`；`pkg/authn/sso/oidc/cache.go` `providerCache` `get`、`drop` |
+| `authn.idp.changed` 的发布与缓存失效订阅 | 已实现 | `pkg/authn/sso/providers.go` `publishChange`、`events.go`；`pkg/authn/sso/oidc/subscribe.go` `subscribe`、`onIDPChanged`；`pkg/authn/sso/saml/events.go` `subscribe`、`onIDPChanged`、`spCache.flush` |
+| 指标 `authn.sso.assertions` 与审计动作 `authn.sso.reject` 的写入点 | 已实现 | `pkg/authn/sso/saml/reject.go` `newMeters`、`actionSSOReject`；`pkg/authn/sso/oidc/metrics.go` `assertionsName`；`pkg/authn/sso/oidc/method.go` `reject`、`logRefusal`、`actionReject` |
+| goxmldsig 版本下限与依赖的 `pkg/go.mod` 条目 | 已实现 | `pkg/go.mod`（gosaml2、goxmldsig、go-oidc、x/oauth2）；`pkg/authn/deps_test.go` `goxmldsigFloor`、`pinnedLibraries` |

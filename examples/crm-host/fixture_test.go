@@ -284,6 +284,19 @@ func (c *crmCase) writeBaseConfig() {
 	c.config.set("authn.mfa.webauthn.rp-id", hostName+".test")
 	c.config.set("authn.mfa.webauthn.rp-name", hostName)
 	c.config.set("authn.mfa.webauthn.origins", []string{"https://" + hostName + ".test"})
+	// The four social login methods are taken in on serve, and each refuses a
+	// configuration without its provider credentials at construction. The values
+	// are placeholders: a case exercises the assembly and the routes over
+	// simulated provider endpoints, not a live sign-in at Google, GitHub or
+	// WeChat, and the redirect target each builds is the public URL above.
+	c.config.set("authn.login.google.client-id", "crm-host-google-client")
+	c.config.set("authn.login.google.client-secret", "crm-host-google-secret")
+	c.config.set("authn.login.github.client-id", "crm-host-github-client")
+	c.config.set("authn.login.github.client-secret", "crm-host-github-secret")
+	c.config.set("authn.login.wechat-web.app-id", "crm-host-wechat-web-app")
+	c.config.set("authn.login.wechat-web.app-secret", "crm-host-wechat-web-secret")
+	c.config.set("authn.login.wechat-mp.app-id", "crm-host-wechat-mp-app")
+	c.config.set("authn.login.wechat-mp.app-secret", "crm-host-wechat-mp-secret")
 	// A TOTP seed is held in an encrypted column, and the database module reads a
 	// root key from its own engine's section. It is written for both engines,
 	// since a case's stack names one of them and the section of the other is read

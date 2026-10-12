@@ -292,7 +292,7 @@ func fullStart() Start {
 }
 
 func fullFlowState() FlowState {
-	return FlowState{ID: "f", Purpose: PurposeLogin, Step: "s", Account: "a", Session: "s", Private: []byte{1, 2}, SendsLeft: 2, Locale: "zh-CN"}
+	return FlowState{ID: "f", Purpose: PurposeLogin, Step: "s", Provider: "p", Account: "a", Session: "s", Private: []byte{1, 2}, SendsLeft: 2, Locale: "zh-CN"}
 }
 
 func fullStepInput() StepInput {

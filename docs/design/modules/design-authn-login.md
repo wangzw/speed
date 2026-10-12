@@ -62,6 +62,7 @@ type Start struct {
 	Fields    map[string]string // 开始请求的 input，至多 8 个、每个至多 512 字符
 	Client    ClientInfo        // 来源地址与用户代理：供日志与审计，不作判定与绑定依据
 	SendsLeft int               // 本流程还可发的短信条数，见「短信发送的每流程上限」
+	Locale    string            // 引擎对请求 Accept-Language 的封闭集映射；空读作 zh-CN（见「流程记录」的 locale）
 }
 
 // FlowState 是引擎交给方法的、方法不得改写的视图，加上方法私有的字节。
@@ -69,10 +70,12 @@ type FlowState struct {
 	ID        string    // 公开的流程标识，只用于日志关联，不是密钥
 	Purpose   string
 	Step      string    // 方法自己命名的当前步骤
+	Provider  string    // 回跳路径必须点名的提供方：社交方法是方法名，企业提供方是标识，空表示不限定
 	Account   AccountID
 	Session   SessionID // authenticated 流程：发起它的登录会话
 	Private   []byte    // 方法私有、不透明、至多 8 KiB，引擎原样保存
 	SendsLeft int       // 本流程还可发的短信条数，见「短信发送的每流程上限」
+	Locale    string    // 同 Start.Locale，从发起请求沿用
 }
 
 type StepInput struct {
@@ -116,6 +119,7 @@ type Proof struct {
 	IDPAsserted  bool           // 企业 IdP 声明已做多因素，且提供方行的 trust_idp_mfa 与 mfa_acr_values 命中
 	Provider     string         // 企业 SSO 提供方标识
 	Aliases      []ExternalLink // 同一外部身份此前可能绑定的旧键
+	PasswordChanged bool        // 口令方法在自己重设了凭据时置真，引擎据此在完成时撤销其余会话
 }
 ```
 
@@ -325,6 +329,7 @@ classDiagram
         +ID string
         +Purpose string
         +Step string
+        +Provider string
         +Account AccountID
         +Session SessionID
         +Private bytes
@@ -370,6 +375,7 @@ kv 键是 `authn:flow:<流程令牌的 SHA-256 十六进制>`。kv 不划分命�
 |---|---|
 | `v` | 记录格式版本；读到不认识的版本一律拒绝 |
 | `purpose`、`method`、`state` | 目的（`login`、`link`、`step-up`、`enroll`）、方法名、状态机状态 |
+| `provider` | 回跳路径 `:provider` 的期望值：社交方法的记录取方法名，企业 SSO 的记录取 `Begin` 时 `input.provider` 给的值；回跳时分发之前与路径逐字比对（见「回跳类的一步」） |
 | `seq` | 步序号，每次迁移加一；请求必须带当前值，不符即 `ErrStepOutOfOrder`。置为处理中的那次迁移不改 `seq`，因为回跳请求不带它 |
 | `binding` | 绑定秘密的 SHA-256；外部回跳与每次答复都以请求带来的流程令牌重算后常量时间比对 |
 | `account`、`proof` | 解析出的账户标识与方法交出的证明，解析之后才有 |
@@ -383,6 +389,8 @@ kv 键是 `authn:flow:<流程令牌的 SHA-256 十六进制>`。kv 不划分命�
 | `created_at`、`expires_at` | 绝对到期，与键的生存期一致 |
 
 `state` 的取值是封闭集：`first`（第一因素）、`processing`（处理中，仅回跳类）、`second`（第二因素）、`enroll`（登记因素）、`ready`（就绪），以及终态墓碑 `done` 与 `failed`。墓碑与记录同寿，交换不改动过期。
+
+**记录的新字段与滚动升级。** 记录按拒绝未知字段解码，`v` 是格式版本，读到不认识的 `v` 一律拒绝。`provider` 是记录里新增的可选字段，加它时没有抬高 `v`：滚动升级期里，旧二进制读到带 `provider` 的记录会因未知字段被拒读，新二进制读到旧记录时 `provider` 为空即与回跳路径不符——两条路径都 fail-closed，被拒的是该次回跳，用户重新开始。在途流程因此作废，窗口有界：流程 TTL 至多 30 分钟。
 
 流程记录里的 PKCE 校验串对持有 kv 读权限的人不是秘密：能读 kv 的人加上受害者的授权码才能完成交换，而授权码一次有效且短命、回调还要求流程绑定。kv 的读权限因此要按凭据对待。
 
@@ -475,7 +483,7 @@ cookie 的属性是 `Secure; HttpOnly; Path=/`、无 `Domain`、**`SameSite=None
 
 ### 回跳类的一步
 
-`GET|POST B/callback/:provider` 由引擎处理，分发给方法。引擎先核对：流程存在且处于 `first`；社交类方法的方法名与路径一致，企业 SSO 的提供方标识与记录一致；绑定匹配。通过后引擎**在调用 `Answer` 之前**先把记录交换成 `processing`，`seq` 与方法状态不变。并发的第二次回跳败于这一步，当场得到 `flow-invalid`，所以授权码至多换一次、SAML 断言至多处理一次。
+`GET|POST B/callback/:provider` 由引擎处理，分发给方法。引擎先核对：流程存在且处于 `first`；回跳路径的 `:provider` 与记录里的 `provider` 一致（社交方法的记录记方法名，企业 SSO 的记录记 `Begin` 时 `input.provider` 给的值）；绑定匹配。通过后引擎**在调用 `Answer` 之前**先把记录交换成 `processing`，`seq` 与方法状态不变。并发的第二次回跳败于这一步，当场得到 `flow-invalid`，所以授权码至多换一次、SAML 断言至多处理一次。
 
 `Answer` 返回之后，引擎再把记录交换成新状态；方法交回 `StepRefused` 或 `StepUnavailable` 时置 `failed` 墓碑。停在 `processing` 的记录，即进程崩溃而 `Answer` 没有返回的情形，一律按失效处理，用户重新开始。方法自己不对流程记录做任何写。这一做法的取舍见 [ADR-authn-login-flow-2026-10-10](../../adr/adr-authn-login-flow-2026-10-10.md)。
 
@@ -594,7 +602,7 @@ cookie 的属性是 `Secure; HttpOnly; Path=/`、无 `Domain`、**`SameSite=None
 
 ### 社交登录与企业 OIDC 的共同事务
 
-适用于 `google`、`github` 与企业 `oidc`。库的分工与自做部分的判据见 [ADR-authn-oauth-flow-2026-10-10](../../adr/adr-authn-oauth-flow-2026-10-10.md)。
+适用于 `google`、`github` 与企业 `oidc`。库的分工与自做部分的判据见 [ADR-authn-oauth-flow-2026-10-10](../../adr/adr-authn-oauth-flow-2026-10-10.md)。本节与「微信」一节里的社交方法，连同企业 `oidc` 与 `saml`，服务 `login`、`link` 与 `step-up` 三个目的，不受理 `enroll`：只有交回 `External` 的方法能承担 `link`（外部绑定经它建立与解绑），而 `enroll` 是登记第二因素、由 `MFA.Enroll` 承担。空目的与 `enroll` 在读到任何参数之前被拒。
 
 **`Begin`。** 方法生成 `state`（32 字节随机数的 base64url）、PKCE 校验串（`oauth2.GenerateVerifier`）、OIDC 的 `nonce`（32 字节随机数），连同绑定存入 `method_state`，`state` 存摘要。授权地址由 `oauth2.Config.AuthCodeURL(state, oauth2.S256ChallengeOption(verifier), oidc.Nonce(nonce))` 生成，PKCE 一律 S256。`redirect_uri` 是 `public-url + B/callback/<提供方>`，每个提供方的回跳路径不同，把 A 的回跳投给 B 因路径不同而不可能；回跳里若带 `iss` 仍与该提供方的 issuer 比对（RFC 9207）。
 
@@ -610,11 +618,13 @@ cookie 的属性是 `Secure; HttpOnly; Path=/`、无 `Domain`、**`SameSite=None
 
 **Google。** 对 issuer `https://accounts.google.com` 用 go-oidc 做发现，首次使用时懒发现、缓存，失败不终止启动，期间该方式答 503。`sub` 作主体。配置了 `hosted-domain` 时检查 ID 令牌的 `hd` 声明：限定组织的依据是 `hd`，不是邮箱域名，授权请求里的 `hd` 参数只是界面优化。
 
-**GitHub。** `x/oauth2` 加 `endpoints.GitHub`，作用域 `read:user user:email`，PKCE S256。授权码换到访问令牌后自写对 `/user` 与 `/user/emails` 的 GET：`/user` 取数字 `id` 作主体；`/user/emails` 取 `primary` 且 `verified` 的邮箱，没有这样的一条时邮箱为空、`EmailVerified` 为假，不报错。`/user` 返回的 `email` 没有已验证标记，不采用。访问令牌用完即弃，不存、不刷新。取舍见 [ADR-authn-oauth-flow-2026-10-10](../../adr/adr-authn-oauth-flow-2026-10-10.md)。
+**验证路径上的取键集不受调用预算约束。** go-oidc 构造密钥集时用 `context.Background()` 而非本次调用的 `ctx`，叠加 `internal/egress` 按设计不设总超时，一个接受连接却不作答的密钥集端点能把这次登录请求拖过 `authn.login.call-budget`。这条缺陷的修法在 `egress`（加总超时选项）或引擎（并发跑方法、作废迟到的回答），不在方法叶子包里。受此影响，验证路径上取键集失败一律答 `StepRefused`，不答 `StepUnavailable`：go-oidc 把「取不到密钥集」与「验签失败」压成同一个错误字符串，两者无法区分；发现与换令牌的不可用仍答 `StepUnavailable`。
+
+**GitHub。** `x/oauth2` 加 `endpoints.GitHub`，作用域 `read:user user:email`，PKCE S256。GitHub 是纯 OAuth 2.0，没有 discovery、没有 issuer，也从不发 `iss`，所以共同事务里「回跳带 `iss` 就与该提供方的 issuer 比对」对它不适用。授权码换到访问令牌后自写对 `/user` 与 `/user/emails` 的 GET：`/user` 取数字 `id` 作主体；`/user/emails` 取 `primary` 且 `verified` 的邮箱，没有这样的一条时邮箱为空、`EmailVerified` 为假，不报错。`/user` 返回的 `email` 没有已验证标记，不采用。**这两次 GET 返回非 200、或 `/user` 里没有正整数 `id`，都答 `StepRefused`（拒绝，fail-closed），不是 `StepUnavailable`；只有传输失败或响应体解不开才答 `StepUnavailable`。** 因此 `/user/emails` 临时抖动会让一个此前已绑定的身份也登录不上，这是 fail-closed 的代价。访问令牌用完即弃，不存、不刷新。取舍见 [ADR-authn-oauth-flow-2026-10-10](../../adr/adr-authn-oauth-flow-2026-10-10.md)。
 
 ### 微信（wechat.web 与 wechat.mp）
 
-`wechat.web` 是网站应用扫码登录，作用域 `snsapi_login`；`wechat.mp` 是公众号网页授权，作用域 `snsapi_userinfo`，授权地址末尾必须带 `#wechat_redirect`。`authn.login.wechat-web` 与 `authn.login.wechat-mp` 各是一个模块，共用 `authn/login/internal/wechat` 里的薄客户端，客户端自写，不引任何微信 SDK（[ADR-authn-wechat-2026-10-10](../../adr/adr-authn-wechat-2026-10-10.md)）。
+`wechat.web` 是网站应用扫码登录（`qrconnect`），作用域 `snsapi_login`；`wechat.mp` 是公众号网页授权，作用域 `snsapi_userinfo`。两个入口的授权地址末尾都必须带 `#wechat_redirect`——微信的 `qrconnect` 与网页授权端点都要求该片段——由共用客户端对两者统一带上。`authn.login.wechat-web` 与 `authn.login.wechat-mp` 各是一个模块，共用 `authn/login/internal/wechat` 里的薄客户端，客户端自写，不引任何微信 SDK（[ADR-authn-wechat-2026-10-10](../../adr/adr-authn-wechat-2026-10-10.md)）。
 
 - **`state`**：32 字节随机数的十六进制，64 字符，满足公众号侧「字母数字、至多 128 字节」的限制。
 - **换令牌**：`GET https://api.weixin.qq.com/sns/oauth2/access_token?appid&secret&code&grant_type=authorization_code`；HTTP 200 加 `errcode` 非零按失败。
@@ -729,7 +739,7 @@ cookie 的属性是 `Secure; HttpOnly; Path=/`、无 `Domain`、**`SameSite=None
 
 ## 实现状态
 
-`pkg/authn` 目前含网关、口令表后端、身份与判决的类型、值类型、登录方法与因素的根包接缝、`Step`、路由共用部件 `internal/mount`、登录引擎 `authn.login`、口令方法 `authn.login.password` 与短信方法 `authn.login.sms`；社交与微信登录方式尚未实现。引擎把两块内容放在内部包里：`login/internal/resolve` 把 `Proof` 解析成账户（开户、绑定、并入外部身份，交回一个 `Result`），`login/internal/selfservice` 挂账户自助路由（`GET me`、改口令、手机号、删标识、解绑）；两个包都只被引擎构造与调用，别的模块够不到。
+`pkg/authn` 目前含网关、口令表后端、身份与判决的类型、值类型、登录方法与因素的根包接缝、`Step`、路由共用部件 `internal/mount`、登录引擎 `authn.login`、口令方法 `authn.login.password`、短信方法 `authn.login.sms`，以及社交与微信登录方式 `authn.login.google`、`authn.login.github`、`authn.login.wechat-web`、`authn.login.wechat-mp`（微信两方式共用 `login/internal/wechat` 薄客户端）。引擎把两块内容放在内部包里：`login/internal/resolve` 把 `Proof` 解析成账户（开户、绑定、并入外部身份，交回一个 `Result`），`login/internal/selfservice` 挂账户自助路由（`GET me`、改口令、手机号、删标识、解绑）；两个包都只被引擎构造与调用，别的模块够不到。
 
 | 能力 | 状态 | 代码 |
 |---|---|---|
@@ -740,12 +750,12 @@ cookie 的属性是 `Secure; HttpOnly; Path=/`、无 `Domain`、**`SameSite=None
 | 终态动作（`login`、`link`、`step-up`、`enroll`）与完成复核 | 已实现 | `pkg/authn/login/action.go` |
 | 在已登录身份上开始流程（`POST B/flows/authenticated`） | 已实现 | `pkg/authn/login/start.go` |
 | 短信发送的每流程上限（`SendsLeft`、`Step.WithSends`） | 已实现 — 引擎核减每流程的发送次数 | `pkg/authn/login/engine.go`；`pkg/authn/internal/step/step.go` `(Step).WithSends`、`SendsOf`；`pkg/authn/internal/model/flow.go` `Start`、`FlowState` |
-| IdP 发起的 SAML 的流程创建 | 未实现 | — |
+| IdP 发起的 SAML 的流程创建 | 已实现 | `pkg/authn/login/callback.go` `callbackIDPInitiated`；`pkg/authn/login/flow.go` `flowProvider`（社交方法的记录取方法名、企业 SSO 的记录取 `input.provider`；`FlowState.Provider` 同源交给方法） |
 | 路由、请求与应答的形状、问题码 | 已实现 | `pkg/authn/login/routes.go`、`pkg/authn/login/respond.go`；`pkg/authn/login/answer.go`；`pkg/authn/internal/mount/problem.go` |
 | 账户自助路由与手机号验证 | 已实现 — `GET B/me`、`PUT B/password`、`POST B/phone`、`POST B/phone/verify`、`DELETE B/identifiers/:id`、`DELETE B/links/:id` 在 `login/internal/selfservice` | `pkg/authn/login/internal/selfservice` `Service`、`Deps`；`pkg/authn/login/routes.go` |
 | 失败退避的流程侧、枚举防护与来源地址前置减负 | 已实现 — 每流程八次答复上限、不可区分的枚举应答与来源地址前置减负 | `pkg/authn/login/engine.go`、`pkg/authn/login/answer.go` |
 | 口令方法 `authn.login.password` | 已实现 | `pkg/authn/login/password/password.go` `Module`、`(method).Begin`、`(method).Answer`、`(method).Name` |
 | 短信方法 `authn.login.sms` | 已实现 | `pkg/authn/login/sms/sms.go` `Module` |
-| Google 方法 `authn.login.google` | 未实现 | — |
-| GitHub 方法 `authn.login.github` | 未实现 | — |
-| 微信方法 `authn.login.wechat-web`、`authn.login.wechat-mp` 与共用客户端 | 未实现 | — |
+| Google 方法 `authn.login.google` | 已实现 | `pkg/authn/login/google/google.go` `Module`；`pkg/authn/login/google/method.go` `Begin`、`Answer`、`exchange`；`pkg/authn/login/google/state.go` |
+| GitHub 方法 `authn.login.github` | 已实现 | `pkg/authn/login/github/github.go` `Module`、`Begin`、`Answer`；`pkg/authn/login/github/api.go` `fetchUser`、`fetchPrimaryVerifiedEmail` |
+| 微信方法 `authn.login.wechat-web`、`authn.login.wechat-mp` 与共用客户端 | 已实现 | `pkg/authn/login/wechatweb/wechatweb.go` `Module`、`Begin`、`Answer`；`pkg/authn/login/wechatmp/wechatmp.go` `Module`、`Begin`、`Answer`；`pkg/authn/login/internal/wechat/client.go` `Client`、`Exchange`、`AuthorizeURL`；`pkg/authn/login/internal/wechat/identity.go`、`state.go` |

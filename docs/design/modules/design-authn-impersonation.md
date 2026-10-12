@@ -25,7 +25,7 @@
 - **不通知被冒充者。** authn 没有通知通道；`authn.impersonation.started` 事件是宿主接通知的钩子。
 - **不清除记录。** 记录永不由本模块删除，保留期是宿主的合规策略。
 - **不为冒充中的业务请求加限制。** 冒充时是否只读等业务约束，由授权与宿主读 `Identity.Impersonating()` 与 `Actor()` 自行决定；本模块只管 authn 自己的处理器。
-- **不挂管理面路由。** 列出与撤销记录的 HTTP 路由 `B/admin/impersonations` 归 `authn.admin`；本模块只提供它调用的 `List` 与 `Revoke`。
+- **不挂管理面路由。** 列出与撤销记录的 HTTP 路由 `B/admin/impersonations` 归 `authn.admin`；本模块只提供它调用的 `List`、`Revoke` 与单条读取 `Get`。
 - **不提供全局冒充、嵌套冒充、冒充服务账户与可续期的冒充令牌。**
 - **不声明配置键与设置键。** 键的名字、取值域与缺省值只在 [design-authn-config](design-authn-config.md) 给全，本文只写它们的语义。
 - **不定义事件、审计与指标的取值表。** 全部类型、载荷与属性的权威表在 [design-authn-events](design-authn-events.md)；本文只写本模块在何处写、写什么约束。
@@ -82,6 +82,7 @@ type ImpersonationGrant struct {
 
 type GrantQuery struct {
 	Actor, Target AccountID
+	Tenant        string // 限定到该租户；空表示不限定
 	After         string
 	Limit         int
 }
@@ -102,7 +103,7 @@ type Impersonation interface {
 | `End` | 结束 `actor` 的会话上未结束的那条记录，结束原因记 `explicit`。`actor` 可以是冒充身份，也可以是发起者自己的身份；会话上没有未结束的记录返回 `ErrNotImpersonating`。只改记录、写审计、发事件，不碰载体：不摘除会话行上的记录标识，不轮换会话令牌；cookie 凭据下的摘除与换令牌由 `DELETE B/impersonation` 的处理器随后完成，撤销冒充令牌的路径没有 cookie，两者都不做。结束是向安全方向的动作，审计写失败不阻止结束。`reason` 是结束的说明，只进审计行，不进事件，也不进 `end_reason`。 |
 | `Revoke` | 管理面强制结束记录 `id`，结束原因记 `revoked`；`by` 是撤销者。幂等：记录已结束时无操作。`Revoke` 不询问 `Decider`，授权由 `authn.admin` 的处理器在调用之前完成。 |
 | `Active` | 回答记录 `id` 此刻是否仍然有效，判定条件见「有效性判定」。记录不存在、已结束或已失效时第二个返回值为假；读到失效而记录仍未结束时同时落库。返回错误时调用方按失败方向处理，不当作有效。 |
-| `List` | 按 `GrantQuery` 过滤的键集分页：`After` 是上一页返回的游标，第二个返回值是下一页的游标，空串表示没有下一页。记录永不清除，所以按目标查询的结果是「谁冒充过谁」的完整来源。 |
+| `List` | 按 `GrantQuery` 过滤的键集分页：`After` 是上一页返回的游标，第二个返回值是下一页的游标，空串表示没有下一页。次序按记录 `id` 升序，`id` 是 UUIDv7、接近开始次序，游标取上一页最后一条的 `id`；记录永不清除，所以按目标查询的结果是「谁冒充过谁」的完整来源。 |
 
 稳定性承诺：
 
@@ -111,6 +112,8 @@ type Impersonation interface {
 - 冒充的理由只进审计与记录本身，不进事件；这一约束对 `authn.impersonation.*` 事件的任何载荷演进都成立。
 - `Impersonation` 是排他功能：宿主可以不纳入 `authn.impersonation`，换上自己的实现，实现须满足上表的承诺与「开始的顺序」写出的约束。
 
+**发给管理面的单条读取不在公开接口里。** 管理面的记录路由要在询问 `Decider` 之前读出记录的租户与目标，这需要一个按标识读单条记录的方法，它不是公开 `Impersonation` 接口的一部分（公开接口承诺的是上表的方法集）。本模块另行交付 `Get(ctx, id) (ImpersonationGrant, error)`，对不存在的记录返回 `ErrNotImpersonating`；`authn.admin` 在构造期把取到的 `Impersonation` 值断言到这个扩展形状上，满足才挂出记录组（[design-authn-admin](design-authn-admin.md)）。宿主换上自己的实现时，要让管理面的记录组可用，同样要交付它。
+
 ### 路由
 
 下表是本模块经 `authn.mount` 登记的全部路由（封闭集合）。所有 authn 响应带 `Cache-Control: no-store`；「CSRF」指浏览器自行附带的凭据下的非安全方法过跨源检查。路由与访问级别由 `authn.mount` 成对登记。
@@ -118,10 +121,10 @@ type Impersonation interface {
 | 方法与路径 | 访问 | 要求与应答 |
 |---|---|---|
 | `POST B/impersonation` | Required | CSRF；请求体 `{"account","tenant","reason","ttl_seconds"}`；调用 `Start`，成功后由处理器挂接载体并发事件（见「开始的顺序」）。cookie 凭据下应答带 `{grant:{id, target, tenant, ends_at}}`，换出的会话令牌经 `Sessions.SetCookie` 写出；Bearer 凭据下应答另带一枚冒充访问令牌。 |
-| `GET B/impersonation` | Required，`Impersonable` | 返回当前会话上的冒充状态；会话上没有有效的记录时 404。 |
+| `GET B/impersonation` | Required，`Impersonable` | 返回当前会话上的冒充状态；会话上没有有效的记录时 404（裸 404，不带问题码）。 |
 | `DELETE B/impersonation` | Required，`Impersonable` | CSRF；调用 `End`，冒充身份下允许；cookie 凭据下处理器随后清除会话上的记录标识、换令牌并写出 cookie；Bearer 凭据下只结束记录。 |
 
-`GET` 与 `DELETE` 登记为 `Impersonable`，使冒充中的管理员总能查看并结束冒充。本模块的挂载端不得是准入层所守的端：准入层对「冒充身份且无租户上下文」答 404，会让结束冒充都做不到；网关在启动阶段的校验里核对 `ScopeGuard.Covers(mount.endpoint)` 为假，为真即 `ErrInvalidConfig`（[design-authn-gate](design-authn-gate.md)）。
+`GET` 与 `DELETE` 登记为 `Impersonable`，使冒充中的管理员总能查看并结束冒充。本模块的挂载端不得是准入层所守的端：准入层对「冒充身份且无租户上下文」答 404，会让结束冒充都做不到。本模块在自己的 `Start` 里核对 `ScopeGuard.Covers(mount.endpoint)` 为假，为真即 `ErrInvalidConfig`（这既是所需依赖的用武之处，也使一段只被挂错端的装配当场失败）；网关在启动阶段的校验里对同一规则再核一次（[design-authn-gate](design-authn-gate.md)）。
 
 ## 依赖
 
@@ -140,7 +143,7 @@ type Impersonation interface {
 | `Decider` | `Init` 取用，○ | 询问「谁有权冒充谁」。缺席即全拒。 |
 | `Tokens` | `Init` 取用，○ | Bearer 凭据下的开始签发冒充访问令牌。缺席时只有 cookie 凭据下的开始可用。 |
 | `settings.Store` | `Init` 取用，○ | 读 `authn.impersonation.*` 设置；缺席取声明的缺省值。 |
-| `event.Bus` | `Init` 取用，○ | 发布 `authn.impersonation.started` 与 `authn.impersonation.ended`，订阅 `authn.impersonation.ended` 清缓存；缺席则不发布。 |
+| `event.Bus` | `Init` 取用，○ | 发布 `authn.impersonation.started` 与 `authn.impersonation.ended`；本模块不缓存 `Active`，所以不订阅自己的事件，订阅由会话与令牌的校验后端承担（见「并发与事务边界」）；缺席则不发布。 |
 | `log.Logger`、`observability.MeterProvider` | `Init` 取用，○ | 日志与 `authn.impersonation.sessions` 指标；缺席合法，缺提供者静默跳过。 |
 
 `Requires` 里只有排他功能与 `db.Database`：`Decider` 与 `Tokens` 是否在场是宿主的选择，写进 `Requires` 会让依赖闭包替宿主纳入它们（[ADR-authn-wiring-2026-10-10](../../adr/adr-authn-wiring-2026-10-10.md)）。`Decider` 缺提供者（`core.ErrMissingProvider`）是合法配置，行为是全拒，所以不需要一个「默认拒绝」的模块被宿主点名。
@@ -295,7 +298,7 @@ CREATE UNIQUE INDEX authn_imp_one_active ON authn_impersonations (session_id) WH
 |---|---|---|
 | a 发起者 | 身份不是冒充身份，不得链式；账户不是静态口令表主体，种类是 `user`，状态启用；有会话可绑，否则 `ErrImpersonationNeedsSession`（口令表主体与客户端凭据没有会话可绑）；`Identity.Satisfies(Requirement{Assurance: AssuranceMulti, MaxAge: authn.impersonation.max-auth-age, Local: true})`，即本地验证过的多因素，IdP 声明的不算；那次认证的方式集含 `otp` 或 `webauthn`，不接受只靠短信的多因素；`MFA.Seasoned(actor)` 为真，即名下有启用已满 `authn.mfa.sensitive-min-age` 的非短信因素。强认证类条件（`Satisfies`、方式集、`Seasoned`）不满足时答 401 `insufficient_user_authentication`，管理员先做加强认证。 | 冒充只在发起者的强认证之下发生：发起者是有会话、可审计到人的用户账户，认证是本地验证过的新鲜多因素，且不只靠短信、不靠抢先登记的因素（[design-authn-mfa](design-authn-mfa.md)）。没有登记任何因素的账户因此永远不能冒充别人，这是设计内的结果。 |
 | b 目标 | 账户存在、状态启用、种类是 `user`；不是发起者自己，不是静态主体，`protected` 不为真；是 `Tenant` 的有效成员，读 `authn_memberships`，不经缓存。 | 影响面是「该租户里的这个成员」：目标是启用的人类用户账户，不是服务账户、静态主体、已停用或已删除的账户，不是发起者自己。`protected` 是宿主打在要保护的账户上的人工标记；authn 不认识超级管理员，那是授权的概念。 |
-| c 参数 | `Tenant` 非空且形状合法；`Reason` 去空白后 1 到 500 个字符；有效期取下列各项的最小值：请求的 TTL（零表示由设置决定）、设置 `authn.impersonation.max-ttl`、发起者会话的剩余寿命，且不超过 1 小时。 | 没有全局冒充；理由是审计的一部分；冒充的期限有硬上限。 |
+| c 参数 | `Tenant` 非空且形状合法；`Reason` 去空白后 1 到 500 个字符；有效期取下列各项的最小值：请求的 TTL（零表示由设置决定）、设置 `authn.impersonation.max-ttl`、发起者会话的剩余寿命，且不论前几项取值如何都不超过 1 小时。这个 1 小时是硬上限，独立于 `max-ttl` 的取值域（后者的上界当前也取 1 小时，两者指向同一个秒数）。 | 没有全局冒充；理由是审计的一部分；冒充的期限有硬上限。 |
 | d 并发 | 同一个发起者会话任一时刻至多一条未结束的记录：先检是读 `authn_imp_session` 取该会话上未结束的记录，经 `Active` 求值仍有效即 `ErrImpersonationActive`；插入处的部分唯一索引是并发竞态的兜底。 | 同一会话上的冒充不并存。 |
 
 - **发起者、目标、参数三组的违反一律答 403 `impersonation-restricted`，且不区分是哪一条**，避免向发起者泄露目标账户的状态。例外只涉及发起者自己的状态与并发：强认证类条件不满足答 401；没有会话可绑是 `ErrImpersonationNeedsSession`，对外同样是 403 `impersonation-restricted`；并发组的先检失败是 `ErrImpersonationActive`（409）。
@@ -310,7 +313,7 @@ CREATE UNIQUE INDEX authn_imp_one_active ON authn_impersonations (session_id) WH
 1. **询问 `Decider`。** 以 `Decision{Action: ActionImpersonateStart, Actor: actor, Target: 目标, TargetAccount: 目标, Tenant: 租户, Params: {reason, ttl}}` 调 `Decide`。返回 `false` 即 403 `forbidden`；返回 error 或 panic 即 503，不当作放行；`Decider` 缺席等同全拒。
 2. **强制档审计，事务之外。** `audit.Record`，动作 `authn.impersonation.start`，对象是目标账户，结果 `granted`，明细含租户、TTL、发起者会话标识与预先生成的 `grant_id`，理由放 `Purpose`。写失败（含 `ErrNotAccepting`）即 `ErrAuditRequired`、503，不开事务，冒充不开始。
 3. **记录事务。** 先把本会话上已失效而 `ended_at IS NULL` 的记录落库结束，再插入新记录，`Start` 随后返回记录。事务内只写本模块的表，不调 `audit.Record`，不调 `Bus.Publish`。
-4. **载体挂接，处理器完成。** 凭据种类按身份的 `Backend()` 分：`session` 是 cookie 凭据，`token` 是 Bearer 凭据。cookie 凭据：`Sessions.SetImpersonation(sid, grantID)` 换出会话令牌，再 `Sessions.SetCookie`，应答带 `{grant:{id, target, tenant, ends_at}}`。Bearer 凭据：不改会话，经 `Tokens.Issue` 签发冒充访问令牌，应答额外带这枚令牌。令牌的声明为 `sub`（目标）、`act.sub`（发起者）、`imp`（记录标识）、`imp_tenant`（租户）、`sid`（发起者的会话）、`acr` 恒为 `"1"`，有效期取 `min(access-ttl, 记录剩余时限)`，不签发刷新令牌。挂接失败时处理器补偿：以条件更新结束记录，结束原因 `start-failed`，不经 `End`，其处置见「开始失败的处置」。
+4. **载体挂接，处理器完成。** 凭据种类按身份的 `Backend()` 分：`session` 是 cookie 凭据，`token` 是 Bearer 凭据。cookie 凭据：`Sessions.SetImpersonation(sid, grantID)` 换出会话令牌，再 `Sessions.SetCookie`，应答带 `{grant:{id, target, tenant, ends_at}}`。Bearer 凭据：不改会话，经 `Tokens.Issue` 签发冒充访问令牌，应答额外带这枚令牌。令牌的声明为 `sub`（目标）、`act.sub`（发起者）、`imp`（记录标识）、`imp_tenant`（租户）、`sid`（发起者的会话）、`acr` 恒为 `"1"`，另经 `IssueToken` 带上发起者的方式集（`amr`）与认证时刻（`auth_time`），与会话端对称；有效期取 `min(authn.token.access-ttl, 记录剩余时限)`，而记录的硬上限是 1 小时，所以令牌有效期至多 1 小时；不签发刷新令牌。挂接失败时处理器补偿：以条件更新结束记录，结束原因 `start-failed`，不经 `End`，其处置见「开始失败的处置」。
 5. **事件，处理器完成。** 载体挂接成功之后经 `Bus.Publish` 发 `authn.impersonation.started`，理由不进事件。发布失败只记 Warn，不使冒充失败。
 
 **载体挂接与事件不在 `Start` 里**，判据在于 `Start` 与 `End` 的返回值交不出令牌，也拿不到响应写出器：换出的会话令牌与冒充访问令牌只能由持有响应的处理器交给调用方。`End` 还被 `authn.token` 在撤销冒充令牌时调用，那条路径没有 cookie，`End` 不碰载体才不会误摘会话行上的标识或轮换管理员的会话令牌。`started` 事件放在载体挂接之后，使一次挂接失败的开始不对外发出事件。
@@ -485,7 +488,7 @@ flowchart TD
 |---|---|---|---|
 | `ErrImpersonationRestricted` | 开始时违反发起者、目标、参数三组的条件，强认证类条件与没有会话可绑除外（不区分是哪一条）；冒充期间 authn 的处理器自检被拒 | 403 `impersonation-restricted` | 拒 |
 | `ErrImpersonationActive` | 同一发起者会话上已有未结束的有效记录：并发组的先检，或部分唯一索引冲突 | 409 | 拒 |
-| `ErrNotImpersonating` | 结束时会话上没有未结束的记录；撤销的记录不存在；查询时会话上没有有效记录 | 404 | 拒 |
+| `ErrNotImpersonating` | 结束时会话上没有未结束的记录；撤销的记录不存在；查询时会话上没有有效记录 | 404（裸 404，不带问题码） | 拒 |
 | `ErrImpersonationNeedsSession` | 调用方没有会话可绑 | 403 `impersonation-restricted`，与 `ErrImpersonationRestricted` 对外不区分 | 拒 |
 | `ErrStepUpRequired` | 发起者的保障等级、新鲜度、`Local`、认证方式集或 `Seasoned` 不满足 | 401 `insufficient_user_authentication` | 拒 |
 | `ErrForbidden` | `Decider` 判否；`Decider` 缺席 | 403 `forbidden` | 拒 |
@@ -558,23 +561,23 @@ flowchart TD
 
 ## 实现状态
 
-下表逐项列出本模块的能力。`pkg/authn/impersonation` 包不存在；根包里与冒充有关的是接缝与值类型、哨兵、`ScopeGuard`、`Identity.Impersonating` 与网关的范围规则，其余每一项都是未实现。
+下表逐项列出本模块的能力。`pkg/authn/impersonation` 交付 `Impersonation`，并独占表 `authn_impersonations` 与它的迁移；根包里与冒充有关的是接缝与值类型、哨兵、`ScopeGuard`、`Identity.Impersonating` 与网关的范围规则。
 
 | 能力 | 状态 | 代码 |
 |---|---|---|
 | 根包的接缝与值类型：`Impersonation`、`ImpersonationRequest`、`ImpersonationGrant`、`GrantQuery` | 已实现 | `pkg/authn/impersonation.go` `Impersonation`；`pkg/authn/internal/model/impersonation.go` `ImpersonationRequest`、`ImpersonationGrant`、`GrantQuery` |
 | 冒充的哨兵：`ErrImpersonationRestricted`、`ErrImpersonationActive`、`ErrNotImpersonating`、`ErrImpersonationNeedsSession` | 已实现 | `pkg/authn/errors.go` `ErrImpersonationRestricted`、`ErrImpersonationActive`、`ErrNotImpersonating`、`ErrImpersonationNeedsSession` |
 | `ScopeGuard` 的根包接口 | 已实现 — 网关对它的可选取用与冒充范围规则也已在 | `pkg/authn/scope.go` `ScopeGuard`；`pkg/authn/gate/serve.go` `impersonationAdmitted` |
-| 模块 `authn.impersonation` 的登记与阶段行为（`Prepare`、`New`、`Migrate`、`Init`、`Start`、`Stop`），含 `var _` 编译期断言 | 未实现 | — |
-| 表 `authn_impersonations`、部分唯一索引与按方言的迁移集 | 未实现 | — |
-| 结构性限制：发起者、目标、参数、并发各组 | 未实现 | — |
-| 开始的顺序：`Decider`、事务之外的强制档审计、记录事务、载体挂接、事件，与各失败点的补偿 | 未实现 | — |
-| 有效性判定与惰性落库 | 未实现 | — |
-| `End`、`Revoke`、`List` | 未实现 | — |
-| 路由 `POST`、`GET`、`DELETE B/impersonation`，其中 `GET` 与 `DELETE` 登记为 `Impersonable` | 未实现 | — |
-| Bearer 凭据下的冒充访问令牌签发 | 未实现 | — |
-| 接缝级审计、事件、日志与指标 `authn.impersonation.sessions` | 未实现 | — |
-| 订阅 `authn.impersonation.ended` 清缓存 | 未实现 | — |
-| 守住假设的测试：并发开始、SQLite 文件库上的开始、各成因的失效、装配测试 | 未实现 | — |
+| 模块 `authn.impersonation` 的登记与阶段行为（`Prepare`、`New`、`Migrate`、`Init`、`Start`、`Stop`），含 `var _` 编译期断言 | 已实现 | `pkg/authn/impersonation/impersonation.go` `Module`、`(*product)` 与 `var _ authn.Impersonation`；`Migrate` 由 `db.Migrations` 资源声明 |
+| 表 `authn_impersonations`、部分唯一索引与按方言的迁移集 | 已实现 | `pkg/authn/impersonation/migrations/{postgres,sqlite}/0001_authn_impersonations.sql` `authn_imp_one_active` |
+| 结构性限制：发起者、目标、参数、并发各组 | 已实现 | `pkg/authn/impersonation/start.go` `checkActor`、`checkTarget`、`checkParams`、`checkConcurrency` |
+| 开始的顺序：`Decider`、事务之外的强制档审计、记录事务、载体挂接、事件，与各失败点的补偿 | 已实现 | `pkg/authn/impersonation/start.go` `Start`、`mandatoryAudit`、`record`；`pkg/authn/impersonation/routes.go` `handleStart`、`compensate` |
+| 有效性判定与惰性落库 | 已实现 | `pkg/authn/impersonation/active.go` `Active`、`lapseReason` |
+| `End`、`Revoke`、`List` | 已实现 | `pkg/authn/impersonation/end.go` `End`、`Revoke`、`List`；`pkg/authn/impersonation/store.go` `list` |
+| 路由 `POST`、`GET`、`DELETE B/impersonation`，其中 `GET` 与 `DELETE` 登记为 `Impersonable` | 已实现 | `pkg/authn/impersonation/routes.go` `mountRoutes`、`handleStart`、`handleStatus`、`handleEnd` |
+| Bearer 凭据下的冒充访问令牌签发 | 已实现 — 令牌侧由 `authn.token` 交付，签发由本模块的处理器完成 | `pkg/authn/impersonation/routes.go` `issueImpersonation`（`authn.IssueToken` 的 `sub`、`act`、`imp`、`imp_tenant`、`sid`、有效期取 `min(access-ttl, 记录剩余时限)`）；令牌侧 `pkg/authn/token/issue.go` `signAccess` |
+| 接缝级审计、事件、日志与指标 `authn.impersonation.sessions` | 已实现 | `pkg/authn/impersonation/signal.go` `writeAudit`、`publish`、`recordSession`；开始/结束的日志在 `routes.go` |
+| 不缓存 `Active`（订阅 `authn.impersonation.ended` 清缓存的职责由校验后端承担） | 已实现 | `pkg/authn/impersonation/active.go` `Active` 每次读记录、会话与账户；订阅在 `pkg/authn/session/lifecycle.go`、`pkg/authn/token/subscribe.go` |
+| 守住假设的测试：并发开始、SQLite 文件库上的开始、各成因的失效、强认证与范围限制、装配测试 | 已实现 | `pkg/authn/impersonation/start_test.go` `TestTwoStartsOnOneSessionRaceToOne`、`TestStartWritesTheMandatoryAuditBeforeTheTransaction`、`TestStartRefusesEachStructuralRestriction`；`pkg/authn/impersonation/active_test.go` `TestActiveLapsesForEachReason`；`pkg/authn/impersonation/guard_test.go` `TestGuardRequireRefusesAnImpersonatingIdentity`、`TestAnImpersonatingIdentityIsKeyedByItsActor`（`Identity.Key()` 取冒充发起者）；`pkg/authn/impersonation/get_test.go` `TestListConfinesToTheQueriedTenant`；`pkg/authn/impersonation/assembly_test.go` `TestTheDriveRefusesAGuardedMountEndpoint` |
 
 网关的范围规则、准入层的范围核对、会话与令牌载体的校验各自的实现状态由 [design-authn-gate](design-authn-gate.md)、[design-tenant-admission](design-tenant-admission.md)、[design-authn-session](design-authn-session.md)、[design-authn-token](design-authn-token.md) 承载。
