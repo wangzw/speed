@@ -1,0 +1,679 @@
+# authz
+
+## 职责
+
+`pkg/authz` 交付**授权**：在已认定的身份与已解析的租户之上，判定这个身份能否对某个资源做某个动作。模型是经典 RBAC——角色到权限，权限按（资源，动作）声明，**一个租户是一个策略域**（[ADR-authz-model-2026-10-12](../../adr/adr-authz-model-2026-10-12.md)）。引擎桥接 `github.com/casbin/casbin/v3`，策略持久化经 `pkg/db` 由本模块自写的一个薄 adapter 落到自己的表（[ADR-authz-engine-2026-10-12](../../adr/adr-authz-engine-2026-10-12.md)、[ADR-authz-store-2026-10-12](../../adr/adr-authz-store-2026-10-12.md)）。
+
+归属本模块的判据是判定所需的输入：还需要资源、动作与策略，而认证事实（凭据、账户、标识、会话、令牌、因素、IdP 配置、冒充记录）不足以单独裁决的，归本模块；只需认证事实即可裁决的归认证。本模块的回答是：这个身份对（域，资源，动作）有没有匹配的策略行。
+
+本功能目录由接口包与子包组成，判据同时是依赖闭包（[ADR-authz-packaging-2026-10-12](../../adr/adr-authz-packaging-2026-10-12.md)）：
+
+- **根包 `pkg/authz`** 定义接口、数据类型、权限常量、Casbin 模型文本与哨兵；**自身不登记模块**。根包被每一个使用方 import，把第三方库留在根包里会把它带进每一个使用方的闭包，所以根包只依赖标准库。
+- **`pkg/authz/policy`（模块 `authz.policy`）** 交付策略表与迁移、薄 adapter、Casbin 引擎、权限目录、`Manager` 与账户生命周期清理。它取用 `pkg/db`，因此把库依赖限制在需要策略存储的装配里。
+- **`pkg/authz/guard`（模块 `authz.guard`）** 交付中间件、路由声明登记面、handler 内判定 API，并**实现 `authn.Decider`**。中间件与 `Decider` 共用同一份声明表与同一处租户读取，拆成两个模块要为它们另立接口。
+- **`pkg/authz/admin`（模块 `authz.admin`）** 挂 `/authz/admin/*` 下的管理面路由，不交付功能；它取用 `policy` 的 `Manager`，把管理面的依赖与业务判定的依赖分开。
+- **`pkg/authz/internal/persist`、`pkg/authz/internal/policy` 与 `pkg/authz/authztest`** 不登记模块：两个 `internal` 包是库包，`authztest` 是测试构造夹具。
+
+本模块承接设计中划归授权的各权限点（[ADR-authn-decision-seam-2026-10-10](../../adr/adr-authn-decision-seam-2026-10-10.md)）：审计的检索与导出、设置的写入面、口令表主体（`static.*`）的角色、以及谁有权冒充谁。它们各自的形状见[承接的权限点](#承接的权限点)。
+
+### 非职责
+
+下列各条例举本模块不承担的事，归属的判据见[职责](#职责)。
+
+- **不做认证，不认定身份。** 谁是调用方由认证的网关认定，本模块只读网关写进上下文的身份；它不读凭据，不解释 `Authorization` 头，也不产生身份。
+- **不管理成员关系。** 「账户是不是租户的成员」是认证的表 `authn_memberships` 的事实，归 `authn.account`；本模块只按（账户，租户）绑定角色，经 `Memberships` 的只读面读成员关系，不写它的表。
+- **不做租户解析，不读租户名册解释请求面的租户。** 请求属于哪个租户由 `tenant.resolve` 认定，本模块读 `tenant.FromContext` 的标识（[tenant](design-tenant.md)）。平台域的保留值只用于策略裁决，不构成一次租户解析。
+- **不把角色放进令牌，也不把它们放进任何凭据。** 访问令牌不带角色（[authn-token](design-authn-token.md)）；角色在请求期由本模块按生效账户实时查自己的绑定，令牌有效期内改绑定即时生效的方向与认证的取态一致。
+- **不做审计的存储与脱敏。** 本模块的拒绝经请求级捕获进入审计，审计行的补全、脱敏与存放归 [audit](design-audit.md)；本模块不调 `Audit.Record`，不写审计表，也不决定明细里遮蔽哪些键。
+- **不定义响应体的形状。** 本模块决定拒绝的状态码、`Problem.Type` 与必要的响应头；响应体经入口模块的 `Fail` 写出，形状由入口模块的默认形状或交付 `ErrorResponder` 的模块决定（[http](design-http.md)）。
+- **写出缺身份时的 401，且它与准入层的无身份 401 同形。** 这条不推翻「不做认证」：它是「路由需要认证而没有身份」的拒绝，与准入层写出的那个 401 是同一个判定，形状也保持相同——同为 `Problem{Status: 401}`（不带 `Type`），头按准入层无身份 401 的同一规则组装（[authn-gate](design-authn-gate.md)）。它出现在这里，因为授权阶段也在网关之内：网关缺席或没守这个端时，授权层是链上唯一还能拒绝匿名请求的层，而准入层只在它自己所守的端上运行；两处写出同一个形状，调用方就不必按「谁拒的」分辨它们的读法（[tenant-admission](design-tenant-admission.md)、[authn](design-authn.md)）。
+- **不实现管理面的访问控制之外的任何业务动作。** `authz.admin` 只把权限目录、角色、权限授予与角色绑定的读写暴露成 HTTP 路由，动作本身是 `policy` 的表操作。
+- **不决定哪条命令纳入本模块。** 每个模块的 `Prepare` 只表态 `StateEnabled`，永不 `StateAuto`；是否运行是命令树上的决定（[ADR-command-tree-2026-09-20](../../adr/adr-command-tree-2026-09-20.md)）。
+
+## 术语表
+
+以下术语的含义限于本文档与授权主题的决策记录；它们不进项目术语表。
+
+| 术语 | 英文 | 定义 |
+|---|---|---|
+| 权限 | permission | `Permission` 的取值，一个字符串；判定时经[动作到查询的翻译](#动作到查询的翻译)映射到一对（资源，动作）。角色是一组权限的集合。 |
+| 角色 | role | 一个策略域内的权限集合的名字，`Role` 的取值；把一组权限授予一个账户要先经角色间接表达。 |
+| 策略域 | domain | 策略行的归属范围，`Domain` 的取值；一个租户是一个策略域。角色绑定与权限授予都带域。 |
+| 平台域 | platform domain | 保留域 `"system"`，承载平台运营的角色、权限授予与绑定。名册里不得有同名租户，启动期核对。 |
+| 权限授予 | grant | 一行 `p` 策略：某个域里的某个角色拥有某个权限。落在 `authz_grants` 表。 |
+| 角色绑定 | binding | 一行 `g` 策略：某个域里的某个账户具有某个角色。落在 `authz_bindings` 表。 |
+| 查询 | query | 一次判定请求 `Query{Subject, Domain, Object, Action}`，交给引擎做匹配。 |
+| 条件 | requirement | 一条路由对权限的要求 `Requirement{Method, Path, Permission}`。 |
+| 目录 | catalog | 本模块声明的全部权限的清单，与 `authn.Action` 的词表对齐。 |
+| 快照 | snapshot | 进程内一份不可变的全量策略，请求期只读它，不查库。 |
+
+## 外部接口契约
+
+### 登记单元与名字
+
+| 登记单元 | 模块名 | 交付 | 排他 |
+|---|---|---|---|
+| `pkg/authz`（根包） | 不登记 | 接口、类型、权限常量、`ModelText`、哨兵 | — |
+| `pkg/authz/policy` | `authz.policy` | 表与迁移、薄 adapter、Casbin 引擎、权限目录、`Manager`、`AccountLifecycle` | 是 |
+| `pkg/authz/guard` | `authz.guard` | 中间件、路由声明登记面、handler 内 API、实现 `authn.Decider` | 是 |
+| `pkg/authz/admin` | `authz.admin` | 管理面 HTTP 路由（不交付功能） | — |
+| `pkg/authz/internal/{persist,policy}`、`pkg/authz/authztest` | 不登记 | 库包与夹具 | — |
+
+每个登记模块的包导出自己的 `ModuleName` 常量，配置与设置的命名空间取同一个取值。名字的每一段只用小写字母、数字与短横线。`policy` 与 `guard` 各带一份 `AGENTS.md`，写它的边界与怎么跑，在该包落地的同一批改动里提供。
+
+**命名空间之间的约束。** 两个模块不得声明同一个输入项路径，也不得一个路径是某模块的叶子而另一个模块的内部节点。`authz` 本身不得是任何模块的叶子。
+
+### 类型与接口
+
+```go
+// Permission、Role、Domain 都是字符串类型；Domain 的取值是一个租户标识或平台域。
+type Permission string
+type Role string
+type Domain string
+
+// PlatformDomain 是平台运营的保留域。启动时核对名册里没有同名租户，否则终止启动。
+const PlatformDomain Domain = "system"
+
+// PermissionSpec 是一个模块对自己声明的权限的形状：清单，以及每个权限的说明文案的 i18n 键。
+type PermissionSpec struct {
+    Permissions     []Permission
+    DescriptionKeys map[Permission]string
+}
+
+// Query 是一次判定请求。Subject 取 Identity.Key()。
+type Query struct {
+    Subject string
+    Domain  Domain
+    Object  string
+    Action  string
+}
+
+// Enforcer 回答一次判定。排他；出错表示引擎或存储不可用，调用方收口 503。
+type Enforcer interface {
+    Allowed(ctx context.Context, q Query) (bool, error)
+}
+
+// Catalog 是本模块声明的全部权限。排他。
+type Catalog interface {
+    Declared() []Permission
+    Has(p Permission) bool
+}
+
+// Requirement 是一条路由对权限的要求。
+type Requirement struct {
+    Method     string
+    Path       string
+    Permission Permission
+}
+
+// Gate 是路由声明登记面：为一条（方法，路径）登记所需权限或登记为开放。写入窗口是 Init。
+type Gate interface {
+    Require(method, path string, perm Permission)
+    Open(method, path string)
+    Covered(method, path string) bool
+}
+
+// Guard 是 handler 内判定 API：授权路由的 handler 在自己的逻辑里问一句。
+type Guard interface {
+    Allowed(c *gin.Context, perm Permission) (bool, error)
+    Require(c *gin.Context, perm Permission) bool
+}
+
+// Binding 是一行角色绑定的读取形状。
+type Binding struct {
+    Tenant    string
+    Account   string
+    Role      Role
+    GrantedAt time.Time
+}
+
+// RoleRecord 是一行角色（authz_roles）的读写形状。
+type RoleRecord struct {
+    Tenant         string
+    Role           Role
+    Builtin        bool
+    DescriptionKey string
+    CreatedAt      time.Time
+}
+
+// GrantRecord 是一行权限授予（authz_grants）的读写形状。
+type GrantRecord struct {
+    Tenant    string
+    Role      Role
+    Resource  string
+    Action    string
+    CreatedAt time.Time
+}
+
+// Manager 是策略数据的读写面，由 authz.policy 交付、authz.admin 取用。
+type Manager interface {
+    Roles(ctx context.Context, tenant string) ([]RoleRecord, error)
+    Grants(ctx context.Context, tenant string, role Role) ([]GrantRecord, error)
+    Bindings(ctx context.Context, tenant string) ([]Binding, error)
+    BindingsOf(ctx context.Context, tenant, account string) ([]Binding, error)
+    PutRole(ctx context.Context, r RoleRecord) error
+    DeleteRole(ctx context.Context, tenant string, role Role) error
+    PutGrant(ctx context.Context, g GrantRecord) error
+    DeleteGrant(ctx context.Context, g GrantRecord) error
+    PutBinding(ctx context.Context, b Binding) error
+    DeleteBinding(ctx context.Context, tenant, account string, role Role) error
+}
+```
+
+接口在根包的稳定面是签名与方法集：加方法与改签名对取用它们的模块、实现了它们的宿主即是不兼容变更。
+
+### 权限常量
+
+权限常量与 `authn.Action` 的字符串**逐一相同**，零翻译：动作的名字就是权限的名字。这条对齐是本模块与认证之间的契约面，由[词表对齐守卫](#词表对齐守卫)守住。
+
+```go
+// 与 authn.Action 逐一相同：authn.account.read … authn.tenant.access，此处只列其形状。
+const (
+    PermissionAccountRead      Permission = "authn.account.read"
+    PermissionAccountCreate    Permission = "authn.account.create"
+    PermissionAccountUpdate    Permission = "authn.account.update"
+    PermissionAccountDisable   Permission = "authn.account.disable"
+    PermissionAccountDelete    Permission = "authn.account.delete"
+    PermissionMembershipManage Permission = "authn.membership.manage"
+    PermissionSessionRead      Permission = "authn.session.read"
+    PermissionSessionRevoke    Permission = "authn.session.revoke"
+    PermissionMFAReset         Permission = "authn.mfa.reset"
+    PermissionClientManage     Permission = "authn.client.manage"
+    PermissionIDPManage        Permission = "authn.idp.manage"
+    PermissionImpersonateStart Permission = "authn.impersonation.start"
+    PermissionImpersonationRead Permission = "authn.impersonation.read"
+    PermissionImpersonationRevoke Permission = "authn.impersonation.revoke"
+    PermissionTenantAccess     Permission = "authn.tenant.access"
+)
+
+// 本模块自己的管理面权限。
+const (
+    PermissionRoleRead   Permission = "authz.role.read"
+    PermissionRoleManage Permission = "authz.role.manage"
+)
+
+// 承接面：审计与设置。
+const (
+    PermissionAuditRead     Permission = "audit.read"
+    PermissionAuditExport   Permission = "audit.export"
+    PermissionSettingsRead  Permission = "settings.read"
+    PermissionSettingsWrite Permission = "settings.write"
+)
+```
+
+### 承接的权限点
+
+下列各条即本模块承接的全部权限点，由本模块以权限常量与策略行的形状落地；策略数据由宿主经 `Manager` 写入，本模块不在迁移里种任何角色或绑定。
+
+- **审计的检索与导出**：权限 `audit.read` 与 `audit.export`。审计不提供查询面（[audit](design-audit.md)），检索与导出的端点由宿主或审计的检索单元挂出，它们的授权经本模块的 `Gate` 或 handler 内 API 落到 `audit.read` 与 `audit.export` 上。
+- **设置的写入面**：权限 `settings.read` 与 `settings.write`。设置的写入面没有访问控制，由宿主经本模块鉴权（[settings](design-settings.md)）。
+- **口令表主体（`static.*`）的角色**：本模块只提供形状——保留的平台域 `system`、内置的运营角色、以及绑定表；口令表主体的平台角色由宿主写入，不在迁移里种。`Identity.Account().IsStatic()` 的主体读不到任何成员关系，其权限只来自平台域上的绑定。
+- **谁有权冒充谁**：权限 `authn.impersonation.start`、`authn.impersonation.read`、`authn.impersonation.revoke`，在租户域上判定。冒充的结构性限制（发起者、目标、参数、并发）由 `authn.impersonation` 核对，本模块在其之上收紧「谁能冒充谁」（[authn-impersonation](design-authn-impersonation.md)）。
+
+### 动作到查询的翻译
+
+`authz.guard` 把一次判定翻成一次 `Enforcer.Allowed` 调用：中间件翻的是路由声明的 `Permission`，`Decider` 翻的是 `Decision.Action`（`authn.Action` 的取值，与权限常量逐一相同）。两条路径用**同一份权限到（资源，动作）映射**给出 `Query.Object` 与 `Query.Action`；映射是**闭集**，下表是它的全部行。`Query.Subject` 取主体的标识：中间件取 `Identity.Key()`，`Decider` 取 `Decision.Actor.Key()`。
+
+| 权限 | `Query.Object` | `Query.Action` |
+|---|---|---|
+| `authn.tenant.access` | `tenant` | `access` |
+| `authn.account.read` | `account` | `read` |
+| `authn.account.create` | `account` | `create` |
+| `authn.account.update` | `account` | `update` |
+| `authn.account.disable` | `account` | `disable` |
+| `authn.account.delete` | `account` | `delete` |
+| `authn.membership.manage` | `membership` | `manage` |
+| `authn.session.read` | `session` | `read` |
+| `authn.session.revoke` | `session` | `revoke` |
+| `authn.mfa.reset` | `factor` | `reset` |
+| `authn.client.manage` | `client` | `manage` |
+| `authn.idp.manage` | `idp` | `manage` |
+| `authn.impersonation.start` | `impersonation` | `start` |
+| `authn.impersonation.read` | `impersonation` | `read` |
+| `authn.impersonation.revoke` | `impersonation` | `revoke` |
+| `authz.role.read` | `role` | `read` |
+| `authz.role.manage` | `role` | `manage` |
+| `audit.read` | `audit` | `read` |
+| `audit.export` | `audit` | `export` |
+| `settings.read` | `settings` | `read` |
+| `settings.write` | `settings` | `write` |
+
+**域。** 中间件的 `Query.Domain` 取 `tenant.FromContext` 的标识（无租户则 `PlatformDomain`）。`Decider` 的 `Query.Domain` 取 `Decision.Tenant`，其中 `authn.account.*` 在 `Decision.Tenant` 为空时取 `PlatformDomain`；`authn.tenant.access` 是唯一带平台域回退的动作，见[平台域与跨租户回退](#平台域与跨租户回退)。
+
+**未知动作 fail-closed。** `Decider` 收到的 `Decision.Action` 不在上表的 `authn.*` 行里时返回 `(false, nil)`：拒绝而不报错。`Action` 是开放的字符串类型，认证新增一个常量时，本模块在对齐更新之前对它的回答是拒绝，方向取拒绝（[ADR-authz-decision-seam-2026-10-12](../../adr/adr-authz-decision-seam-2026-10-12.md)）。
+
+### 配置与设置
+
+输入项的完整键表、取值域与缺省值随实现提供；本节写语义。
+
+- **`authz.guard.endpoints`**（配置，字符串列表）：中间件所守的端。**必填、无缺省、不接受 `*`，空清单是 `ErrInvalidConfig`。** 清单的形状同 `tenant.admission.endpoints`；端名在入口模块里不存在时，`authz.guard` 在 `Init` 以 `ErrUnknownEndpoint` 终止启动。
+- **`authz.guard.undeclared`**（配置，取值 `closed`/`open`）：未声明路由的缺省处置。**缺省 `closed`**（答 403），取 `open` 时放行并写一行启动 `Warn`。只取主配置源，环境变量与命令行覆盖不改写它：把缺省安全态放到配置的覆盖层一侧，会让一条命令行参数改变哪些路由不需要权限。
+- **`authz.policy.load-timeout`**（配置，时长，缺省 `5s`）：启动期全量装载策略的时限。超时即启动失败（`ErrPolicyUnavailable`），不带着半份快照开始服务。
+- **`authz.policy.refresh-interval`**（设置，时长，缺省 `0s`）：无事件总线时的周期重载间隔。`0` 表示不重载。
+
+**配置承载启动必须项，设置承载运行期参数**（[ADR-config-scope-2026-09-13](../../adr/adr-config-scope-2026-09-13.md)）：`endpoints` 与 `load-timeout` 在装配期就要读出来，`refresh-interval` 由运维在运行期调整。**本模块没有设置型的放宽开关**：唯一会放宽的方向是 `undeclared`，它是配置项，改它要重启。
+
+### 对宿主的要求
+
+- **把 `authz.guard`、`authz.policy` 的模块名写进需要授权的命令。** 只挂中间件而不点名 `policy` 时，`guard` 的 `Enforcer` 缺席，本模块判定不可用，全部受守路由答 503；两者要么一起点名，要么都不点。
+- **`endpoints` 写成业务端。** 与 `tenant.admission.endpoints` 一致；`authz.guard` 只在它守的端上登记中间件。
+- **策略数据由宿主写入。** 迁移只建表，不种角色、不种权限授予、不种绑定；平台域 `system` 的运营角色、口令表主体的绑定、各租户的角色与绑定都经 `Manager` 或管理面路由写入。
+- **名册里不得有名为 `system` 的租户。** 平台域的保留值与本模块的判定绑定；`authz.policy` 在启动时经 `tenant.Catalog` 读名册，有同名租户即以 `ErrPlatformDomainTaken` 终止启动。没有租户模块的装配里没有名册，这条核对不执行。
+- **想让权限随撤销尽快生效的装配里要提供事件总线。** 没有 `event.Bus` 时，策略变更靠 `refresh-interval` 兜底，撤销的生效延迟以它为界。
+
+### 稳定性承诺
+
+以下是本模块与其他模块和宿主之间的契约，改动它们改变每一个消费者：
+
+- 根包的接口与方法集：`Enforcer`、`Catalog`、`Gate`、`Guard`、`Manager`，以及 `Permission`、`Role`、`Domain`、`Query`、`Requirement`、`PermissionSpec`、`Binding` 的字段与取值。
+- 权限常量的值。常量一经发布不改名；新增常量不改已有常量。与 `authn.Action` 的对齐关系是稳定面。
+- `ModelText` 的模型文本，与动作到查询的翻译表。
+- 平台域的保留值 `"system"`。
+- 中间件在链上代表的功能标识：描述符的 `Provides` 与中间件的 `Provides` 同为 `(*authz.Guard)(nil)`，别的模块据它排序，取值与它所属的阶段不变。
+- 配置键 `authz.guard.endpoints`、`authz.guard.undeclared`、`authz.policy.load-timeout`，设置键 `authz.policy.refresh-interval`，以及 `Endpoints` 的必填与不接受 `*`。
+- 403 的 `Problem.Type` 前缀 `urn:speed:authz:` 与其中的 `forbidden` 码，指标名 `authz.guard.decisions` 与其属性 `outcome` 的取值，以及拒绝状态码的封闭集。
+
+## 依赖
+
+### 模块清单
+
+| 包 | 模块名 | 交付 | 排他 | `Requires` | 在 `Init` 里取用（缺席合法者标 ○） | 表 |
+|---|---|---|---|---|---|---|
+| `authz/policy` | `authz.policy` | `Enforcer`、`Catalog`、`Manager`；`authn.AccountLifecycle` | `Enforcer`、`Catalog`、`Manager` 各自是 | `db.Database` | `authn.Memberships`、`tenant.Catalog` ○、`event.Bus` ○、`settings.Store` ○、`log.Logger` ○、`observability.MeterProvider` ○ | `authz_roles`、`authz_grants`、`authz_bindings` |
+| `authz/guard` | `authz.guard` | `Guard`、`Gate`；`authn.Decider` | 各自是 | `Enforcer`、`Catalog` | `http.Router`、`tenant` 的上下文读取、`log.Logger` ○、`observability.MeterProvider` ○ | 无 |
+| `authz/admin` | `authz.admin` | 无（只挂 `/authz/admin/*` 下的路由） | — | `Manager`、`Catalog` | `http.Router`、`log.Logger` ○ | 无 |
+
+`authz/guard` 以 `Enforcer` 为必需依赖（排他），缺它即 `core.ErrMissingProvider`，早于迁移：没有引擎的中间件只能把所有受守路由答成 503。`authn.Decider` 由 `authz.guard` 交付——它是排他功能，取用方（`authn.admin`、`authn.impersonation`、`tenant.admission`）在 `Init` 里以 `Optional` 取用，`authz.guard` 在场即提供了它。`authz.policy` 取 `tenant.Catalog` 只为启动期核对平台域与名册不冲突：它是可选取用，没有租户模块的装配里没有名册可核对，这条检查不执行，也不因此启动失败。
+
+### 依赖方向
+
+- **根包只依赖标准库。** 它被每个使用方 import，第三方的 Casbin 库与 gin、gorm 不出现在根包签名里，也不进根包的非测试 import 闭包。`pkg/authz/deps_test.go` 守住这条断言。
+- **库类型只出现在叶子与库包里。** `github.com/casbin/casbin/v3` 落在 `internal/policy` 与 `internal/persist`，gin 落在 `guard` 与 `admin`，gorm 与 `pkg/db` 落在 `policy`。只有 import 该子包的宿主才背负它（[ADR-module-packaging-2026-09-22](../../adr/adr-module-packaging-2026-09-22.md)）。
+- **本模块 import `pkg/authn` 根包并交付其中的接缝，认证不 import 本模块**（[ADR-authn-scope-2026-10-10](../../adr/adr-authn-scope-2026-10-10.md)）。`authz/guard` 实现 `authn.Decider`，读 `Identity` 的方法集；方向是授权指向认证。
+- **本模块 import `pkg/tenant` 根包取 `tenant.FromContext` 与 `tenant.CrossTenant`，不 import 它的子包。** 准入层交付的 `(*tenant.Admission)(nil)` 是授权阶段内的定序锚点，本模块的中间件用 `After` 指向它（[tenant-admission](design-tenant-admission.md)）。
+- 方向满足架构不变量（[architecture](../architecture.md)）：本模块位于 `core`、`config`、`log`、`http`、`observability`、`db`、`event`、`settings`、`authn`、`tenant` 之上，不被其中任何一个 import。
+
+## UML 图
+
+下图给出根包上的类型与它们的关系。图中画不出的约束是：`Enforcer` 的实现读进程内快照，请求期不查库；`Decider` 由 `authz.guard` 的产品实现（`var _ authn.Decider = (*product)(nil)`），它与中间件共用同一份 `Gate` 声明表与同一处租户读取；`Query` 由中间件与 `Decider` 两处构造，都被翻成引擎的一次匹配。
+
+```mermaid
+classDiagram
+    class Permission
+    class Role
+    class Domain
+    class Query {
+        +Subject string
+        +Domain Domain
+        +Object string
+        +Action string
+    }
+    class Requirement {
+        +Method string
+        +Path string
+        +Permission Permission
+    }
+    class Enforcer {
+        <<interface>>
+        +Allowed(ctx, q Query) bool, error
+    }
+    class Catalog {
+        <<interface>>
+        +Declared() []Permission
+        +Has(p Permission) bool
+    }
+    class Gate {
+        <<interface>>
+        +Require(method, path, perm)
+        +Open(method, path)
+        +Covered(method, path) bool
+    }
+    class Guard {
+        <<interface>>
+        +Allowed(c, perm) bool, error
+        +Require(c, perm) bool
+    }
+    class Manager {
+        <<interface>>
+        +Roles(ctx, tenant)
+        +Grants(ctx, tenant, role)
+        +Bindings(ctx, tenant)
+        +BindingsOf(ctx, tenant, account)
+        +PutRole(ctx, r)
+        +DeleteRole(ctx, tenant, role)
+        +PutGrant(ctx, g)
+        +DeleteGrant(ctx, g)
+        +PutBinding(ctx, b)
+        +DeleteBinding(ctx, tenant, account, role)
+    }
+    class Binding {
+        +Tenant string
+        +Account string
+        +Role Role
+        +GrantedAt time.Time
+    }
+    class Decider {
+        <<interface>>
+        +Decide(ctx, d Decision) bool, error
+    }
+    class guardProduct {
+        -gate Gate
+        -enforcer Enforcer
+    }
+    Enforcer --> Query : 入参
+    Guard --> Query : 构造
+    Requirement --> Permission : 指明
+    Gate ..> Requirement : 登记
+    Binding --> Role
+    Manager --> Binding : 读写
+    Decider <|.. guardProduct : 实现
+    Guard <|.. guardProduct : 交付
+    guardProduct --> Enforcer : 判定
+    guardProduct --> Gate : 读声明
+```
+
+`guardProduct` 未导出，它持有声明表、引擎引用与租户读取（见[请求期判定](#请求期判定)）。
+
+下图给出一条受守路由从进入授权阶段到 403 或放行的路径。它固定的是读的次序与拒绝的划分：声明先于身份，身份先于租户，引擎出错是 503 而不是 403，未声明路由在缺省下也走 403。
+
+```mermaid
+sequenceDiagram
+    participant C as 请求链
+    participant G as 授权中间件
+    participant T as 声明表
+    participant I as 身份与租户上下文
+    participant E as 引擎快照
+    participant R as 审计记录层
+
+    C->>G: 进入授权阶段
+    G->>T: 按 (方法, FullPath) 查声明
+    alt 命中 Open
+        T-->>G: 开放
+        G->>C: 放行
+    else 命中 Require
+        T-->>G: 所需权限
+        G->>I: 读身份与访问级别
+        alt 无身份
+            I-->>G: 无身份
+            G->>C: Open 或 Optional 放行；否则 401
+        else 有身份
+            I-->>G: 身份与租户标识
+            G->>E: Allowed(Query)
+            alt 允许
+                E-->>G: 真
+                G->>C: 放行
+            else 拒绝
+                E-->>G: 假
+                G->>R: 403
+            else 出错
+                E-->>G: 错误
+                G->>R: 503
+            end
+        end
+    else 无声明
+        T-->>G: 未声明
+        G->>R: 缺省 403；undeclared=open 时放行
+    end
+```
+
+审计记录层在授权阶段之外，本阶段内的拒绝由它看到并记入审计行（[http](design-http.md)）。
+
+下图给出 `Decider` 对动作的分派、平台域回退与未知动作的 fail-closed。它固定的是：未知动作走拒绝分支且不报错；平台域回退只属于 `authn.tenant.access`，在租户域判空之后发生；其余动作按翻译表构造一次查询，出错是 503。
+
+```mermaid
+flowchart TD
+    start(["Decide 收到一次判定"]) --> known{"动作在翻译表里?"}
+    known -- 否 --> denyNoErr["返回 (false, nil)：拒绝且不报错"]
+    known -- 是 --> access{"是 authn.tenant.access?"}
+    access -- 是 --> domTenant["在租户域判定"]
+    domTenant --> hit{"租户域命中?"}
+    hit -- 是 --> allow["允许"]
+    hit -- 否 --> domPlatform["回退平台域再判一次"]
+    domPlatform --> hitP{"平台域命中?"}
+    hitP -- 是 --> allow
+    hitP -- 否 --> deny["拒绝"]
+    access -- 否 --> build["按翻译表构造 Query，域取 Decision.Tenant，空则平台域"]
+    build --> judge["调用 Enforcer.Allowed"]
+    judge --> err{"出错?"}
+    err -- 是 --> unavailable["返回错误，取用方收口 503"]
+    err -- 否 --> result{"允许?"}
+    result -- 是 --> allow
+    result -- 否 --> deny
+```
+
+## 核心数据结构
+
+### Casbin 模型文本
+
+模型文本是根包的常量 `ModelText`，经 `model.NewModelFromString` 装载。宿主只写策略数据，不写模型文本：模型固定在代码里，见[扩展点](#扩展点)与 [ADR-authz-engine-2026-10-12](../../adr/adr-authz-engine-2026-10-12.md)。
+
+```
+[request_definition]
+r = sub, dom, obj, act
+[policy_definition]
+p = sub, dom, obj, act
+[role_definition]
+g = _, _, _
+[policy_effect]
+e = some(where (p.eft == allow))
+[matchers]
+m = g(r.sub, p.sub, r.dom) && r.dom == p.dom && r.obj == p.obj && r.act == p.act
+```
+
+**无通配符、无角色继承、无 deny 行。** 匹配是逐字相等加一条 `g` 的角色解析；拒绝由「无匹配」表达，`policy_effect` 因而是「存在一条 allow 即允许」。`g` 的第三个参数是域，角色解析因此按域进行，一个账户在租户 A 的角色不解析到租户 B 的权限（[ADR-authz-model-2026-10-12](../../adr/adr-authz-model-2026-10-12.md)）。
+
+### 表与迁移
+
+策略表都归 `authz.policy`，迁移在 `pkg/authz/policy/migrations/{sqlite,postgres}/0001_authz_policy.sql`。每张表都以 `tenant_id` 领衔主键，都带 `CHECK (tenant_id <> '')`，都不用方言专有类型与函数；`TIMESTAMPTZ`（Postgres）与 `DATETIME`（SQLite）的对照照行 `examples/crm-host/migrations/members`。
+
+- **`authz_roles(tenant_id, role, builtin, description_key, created_at)`**，主键 `(tenant_id, role)`。`builtin` 标记内置角色（不可删除、不可改权限），`description_key` 是说明文案的 i18n 键。
+
+```sql
+CREATE TABLE authz_roles (
+    tenant_id       TEXT NOT NULL CHECK (tenant_id <> ''),
+    role            TEXT NOT NULL,
+    builtin         BOOLEAN NOT NULL,
+    description_key TEXT NOT NULL,
+    created_at      TIMESTAMPTZ NOT NULL,   -- SQLite 方言为 DATETIME
+    PRIMARY KEY (tenant_id, role)
+);
+```
+
+- **`authz_grants(tenant_id, role, resource, action, created_at)`**，主键 `(tenant_id, role, resource, action)`，索引 `(tenant_id, resource, action)`。这一行是 `p` 策略。
+
+```sql
+CREATE TABLE authz_grants (
+    tenant_id  TEXT NOT NULL CHECK (tenant_id <> ''),
+    role       TEXT NOT NULL,
+    resource   TEXT NOT NULL,
+    action     TEXT NOT NULL,
+    created_at TIMESTAMPTZ NOT NULL,        -- SQLite 方言为 DATETIME
+    PRIMARY KEY (tenant_id, role, resource, action)
+);
+CREATE INDEX authz_grants_by_object ON authz_grants (tenant_id, resource, action);
+```
+
+- **`authz_bindings(tenant_id, account_id, role, granted_at)`**，主键 `(tenant_id, account_id, role)`，索引 `(tenant_id, role)`。这一行是 `g` 策略。
+
+```sql
+CREATE TABLE authz_bindings (
+    tenant_id  TEXT NOT NULL CHECK (tenant_id <> ''),
+    account_id TEXT NOT NULL,
+    role       TEXT NOT NULL,
+    granted_at TIMESTAMPTZ NOT NULL,        -- SQLite 方言为 DATETIME
+    PRIMARY KEY (tenant_id, account_id, role)
+);
+CREATE INDEX authz_bindings_by_role ON authz_bindings (tenant_id, role);
+```
+
+**`tenant_id` 领衔主键是正确性而不是索引考量**：以账户或角色单独为键，一次写入会在另一个租户的行上冲突并把那一行改写到本方的租户，而语句里没点名别的租户，租户过滤没有可拒绝的对象。这些表都不建指向认证表的外键：跨模块外键让迁移先后成为隐含契约，账户删除后的清理走生命周期钩子与事件（[db](design-db.md)）。
+
+### 薄 adapter
+
+`pkg/authz/internal/persist` 自写一个实现 `github.com/casbin/casbin/v3` 的 `persist.Adapter` 的类型。它把策略行与策略表互转：
+
+| 策略行 | 表 | 字段映射 |
+|---|---|---|
+| `p` 行 `rule = {role, dom, resource, action}` | `authz_grants` | `rule[0]=role`、`rule[1]=dom=tenant_id`、`rule[2]=resource`、`rule[3]=action` |
+| `g` 行 `rule = {account, role, dom}` | `authz_bindings` | `rule[0]=account_id`、`rule[1]=role`、`rule[2]=dom=tenant_id` |
+
+- **跨租户标记在构造时施加一次。** `persist.Adapter` 的五个方法（`LoadPolicy`、`SavePolicy`、`AddPolicy`、`RemovePolicy`、`RemoveFilteredPolicy`）都不带 `context.Context`，`Enforcer.LoadPolicy` 也不带，所以「每条语句各自施加标记」在这个接口上无处可写。adapter 因此在构造时取一条会话——`handle.Session(&gorm.Session{Context: tenant.CrossTenant(context.Background())})`——此后它发出的每一条语句都带着这个标记。标记是 `tenant.CrossTenant` 定义的上下文事实，一次施加即对随后所有语句成立，这也是该函数的设计意图。
+- **写：** 租户列从 `rule` 的 `dom` 段取出并显式写进模型字段；写入前核对它与调用方给的租户一致，不一致即 `ErrTenantMismatch`。会话虽带跨租户标记，策略行的租户仍逐条核对：标记说的是「这次调用意图跨租户」，不是「这条语句写哪个租户都对」。空租户被表的 `CHECK` 与 `tenant.ID.Value()` 双重挡住。
+- **读（`LoadPolicy`）：** 必须**跨租户**读——判定进程持有全部租户的策略——用的就是构造时那条带标记的会话。这是本模块唯一一处对安全敏感表的跨租户读（[并发与事务边界](#并发与事务边界)）。
+- **`SavePolicy` 不实现「清表重写」，返回 `ErrNotImplemented`**（adapter 包自带的错误，不是根包哨兵）。本模块只经 `Manager` 逐条增删策略，一次全量重写会在读改写之间抹掉并发写入。
+
+自写这个 adapter 而不是用官方 `casbin/gorm-adapter`，是因为官方 adapter 自己开 `*gorm.DB`，与本仓的句柄、插件与租户过滤不是同一条路；用 Casbin 的默认 `casbin_rule` 表则让最敏感的表退出三层隔离（[ADR-authz-store-2026-10-12](../../adr/adr-authz-store-2026-10-12.md)）。
+
+### 快照
+
+`authz.policy` 在 `Start` 把全部策略装载成一份进程内**不可变快照**（原子指针持有），请求期只读它、不查库。`Enforcer` 的实现是「读快照、跑 matcher」，对同一份快照的并发读不加锁。快照的更替见[快照与失效](#快照与失效)。
+
+## 核心算法与流程
+
+### 请求期判定
+
+中间件在 `authz.guard.endpoints` 的每个端上登记一层，描述符的 `Provides` 是 `(*authz.Guard)(nil)`，`Stage` 声明授权阶段（`StageAuthorize`），阶段内 `After: [(*tenant.Admission)(nil)]`。同一个请求按下表自上而下判定，取第一条命中的行，命中即终止。
+
+| 行 | 条件 | 结果 |
+|---|---|---|
+| 无路由 | `c.FullPath()` 为空串（没有匹配的路由） | `c.Next()`，交给入口模块的 404 |
+| 声明为开放 | `(方法, FullPath)` 命中一条 `Open` 登记 | 放行 |
+| 声明为需要权限 | 命中一条 `Require` 登记 | 进入身份与引擎判定 |
+| 未声明 | 既没有 `Open` 也没有 `Require` 登记 | `undeclared` 为 `closed`（缺省）：**403** 并记 Error；为 `open`：放行 |
+| 无身份 | 进入判定而上下文里没有身份 | `AccessFromContext` 为 `Open` 或 `Optional`：放行；为 `Required` 或 `Unknown`：**401**（见[非职责](#非职责)的形状） |
+| 有身份 | 上下文里有身份 | 域取 `tenant.FromContext` 的**标识**（不是别名），无租户则 `PlatformDomain`；构造 `Query{Subject: Identity.Key(), Domain, Object, Action}`；`Allowed` 出错 **503**，为假 **403**，为真放行 |
+
+`Object` 与 `Action` 由与 `Decider` 共用的权限到（资源，动作）映射给出（[动作到查询的翻译](#动作到查询的翻译)），不做字符串拆分。`Query` 交给引擎，与快照里的策略行按 matcher 匹配。
+
+**判定的复杂度**：声明表的查找与上下文的读取是常数时间；快照上的一次匹配随策略行数线性增长（matcher 逐行求值）。请求期不做 IO、不查库。
+
+中间件的每一次判定上报一条指标 `authz.guard.decisions`，属性 `outcome` 取 `allowed`、`denied`、`unguarded`、`unavailable`、`no-identity` 之一，并决定日志级别：拒绝记 Info，故障记 Error。
+
+### 快照与失效
+
+- **装载：** `policy.Start` 在全量读策略之后构造快照，受配置 `authz.policy.load-timeout` 约束；超时即启动失败，不带着半份快照提供服务。
+- **请求期：** `Enforcer` 读当前原子指针指向的快照，只读、不加锁、不查库。
+- **写路径：** 写库并提交 → 本地换指针（以新快照替换旧快照）→ 发 `authz.policy.changed` 事件。本地那次写入的生效不依赖事件：换指针在提交之后立即发生。
+- **跨副本失效：** 别的副本订阅 `authz.policy.changed`，收到的副本重载快照。没有 `event.Bus` 的装配靠设置 `authz.policy.refresh-interval` 周期重载兜底；间隔为 `0` 时不重载，撤销的生效延迟以别的副本的进程寿命为界。
+
+**撤销的生效延迟由本模块的换指针窗口与准入层的缓存分别界定**（[ADR-authz-cache-2026-10-12](../../adr/adr-authz-cache-2026-10-12.md)）：
+
+1. **本模块换指针与事件传播的窗口。** 本副本在提交后立即换指针；别的副本要等 `authz.policy.changed` 到达或 `refresh-interval` 到期，这是本模块一侧的上界。
+2. **准入层对 `Decider` 答复的 TTL 缓存。** `tenant.admission` 把它从 `Decider` 得到的 `authn.tenant.access` 放行结果按 `tenant.admission.check-ttl` 缓存在进程内（[tenant-admission](design-tenant-admission.md)），请求不会每次都问到本模块。一条平台级放行被撤销之后，准入层至多在 `check-ttl` 之内仍按缓存放行。这条上界与本模块的一侧无关，它与本模块的上界并存、不叠加取小——一个管本模块自己的快照，一个管准入层的缓存。
+
+### 平台域与跨租户回退
+
+`Decision.Tenant` 为空表示平台域，取保留值 `PlatformDomain`（`"system"`）。平台策略行 `tenant_id = 'system'`，主体可以是账户标识或 `static.<subject>`。跨租户的客服与平台管理员在这种装配里落地：**`Decider` 对 `authn.tenant.access` 在租户域判空之后回退平台域再判一次。**
+
+回退是**唯一的平台域回退分支**：先按 `Decision.Tenant` 构造查询在租户域判一次，无匹配时改用 `PlatformDomain` 判第二次，两次都不匹配即拒绝。其余动作没有回退——租户级动作只在租户域判，账户级动作只在平台域判。
+
+**平台域与真实租户同名是一处配置冲突，在开始服务之前拦下。** `authz.policy` 在 `Start` 时经 `tenant.Catalog` 查一次标识为 `system` 的租户，存在即以 `ErrPlatformDomainTaken` 终止启动。这道核对只在有租户模块的装配里执行：一个真实租户叫 `system` 时，本模块的账户级动作会落到那个租户的策略行上，方向是安全的一侧，但语义不是设计所声明的那一个。策略行里的 `tenant_id` 是否对应一个真实租户不由本模块核对（见[非保证](#非保证)）。
+
+**平台域的绑定由宿主写，不在迁移里种。** 内置的运营角色只在 `authz_roles` 里建立形状（`builtin=true`），谁的账户获得哪个运营角色由宿主经 `Manager.PutBinding` 在 `system` 域写入。
+
+### Decider 的动作分派
+
+`authz.guard` 的产品实现 `authn.Decider`：`var _ authn.Decider = (*product)(nil)`。`Decide` 按[动作到查询的翻译表](#动作到查询的翻译)把 `Decision` 翻成一次 `Enforcer.Allowed`，`Subject` 取 `Decision.Actor.Key()`。它的失败方向：动作不在表里 → `(false, nil)`（拒绝且不报错）；引擎出错 → 返回错误（取用方按 503 处置）；引擎为假 → `(false, nil)`。`Decide` 可被多协程并发调用，`ctx` 结束即返回。
+
+### 词表对齐守卫
+
+`authn.Action` 的常量与对应的 `authz.Permission` 常量是两份词表，会漂移。守卫在 `pkg/authz` 的测试里断言：
+
+- 每一个 `authn.Action` 常量有一个字符串相同的 `authz.Permission` 常量，且翻译表覆盖它的每一行——两个集合互不缺失、互不多余。
+- 中间件与 `Decider` 对同一个权限取同一份映射：中间件按路由声明的 `Permission` 构造的（`Object`，`Action`），与 `Decider` 对字符串相同的 `authn.Action` 构造的一致，不存在第二份推导。
+- `Catalog.Declared()` 覆盖全部权限常量，无遗漏、无多余。
+
+认证新增一个 `Action` 时，这条守卫失败，直到本模块补上对应的权限与翻译行。
+
+### 启动期模型自检
+
+**模型文本写错会静默改变授权方向**（[ADR-authz-engine-2026-10-12](../../adr/adr-authz-engine-2026-10-12.md)）。一个写错的 matcher 不报错，它只是让某些判定恒真或恒假。`policy.Start` 在装载快照之后、开始服务之前跑一次自检，用一组固定的夹具断言模型的行为：
+
+| 夹具 | 期望 |
+|---|---|
+| 域 D 的角色 R 有一条权限授予，账户 A 在域 D 绑定 R | `Allowed({A, D, obj, act})` 为真 |
+| 域 D 的角色 R 有一条权限授予，账户 A 在**另一个**域 D′ 绑定 R | 为假：域不串 |
+| 域 D 的角色 R 有一条权限授予，账户 A 在域 D 绑定 R，查询的 `obj` 或 `act` 与授予不同 | 为假：逐字相等 |
+| 账户 A 在域 D 没有绑定 | 为假：无匹配即拒绝 |
+| 同一条查询再问一次 | 与第一次相同：判定是纯函数，无副作用 |
+
+自检失败即启动失败（`ErrPolicyUnavailable`）：它与「引擎或存储不可用」同一处置，方向都是不带着一个可能放错人的引擎开始服务。
+
+## 错误与失败语义
+
+本模块自己判定出的失败由下表收口，哨兵是封闭集。调用方以 `errors.Is` 判别，包裹一律用 `%w`。经本模块返回的外部库错误（Casbin 的匹配错误、gorm 的错误）不在此列。
+
+| 哨兵 | 时机 | 触发 | 修复动作 |
+|---|---|---|---|
+| `ErrNoRouter` | 启动期 | `Init` 里取不到入口模块的路由功能 | 把入口模块的 `ModuleName` 写进这条命令 |
+| `ErrUnknownEndpoint` | 启动期 | `endpoints` 里的端名在入口模块里不存在 | 改端名，或在入口模块的配置里声明这个端 |
+| `ErrUnknownPermission` | 启动期 | 一条路由登记引用了目录里没有的权限 | 登记一个声明过的权限，或把权限补进 `authz/policy` |
+| `ErrPlatformDomainTaken` | 启动期 | 经 `tenant.Catalog` 核对出名册里有一个名为 `system` 的租户 | 改名册里的那个租户，平台域是保留值 |
+| `ErrUnknownRole` | 写入期 | `PutGrant`、`PutBinding` 里的角色在 `authz_roles` 里不存在 | 先建立角色，或改用已存在的角色 |
+| `ErrBuiltinRole` | 写入期 | 试图删除或修改 `builtin=true` 的角色 | 内置角色的权限不可改；给账户绑别的角色 |
+| `ErrTenantMismatch` | 写入期 | adapter 从 `rule` 取出的租户与调用方给的租户不一致 | 一次写入只作用一个租户；核对调用点的租户 |
+| `ErrUndeclaredRoute` | 请求期 | 一条路由没有任何声明（既非 `Require` 也非 `Open`），`undeclared=closed` 下拒 | 为那条路由声明权限或登记为开放 |
+| `ErrPolicyUnavailable` | 请求期或启动期 | 引擎快照、存储读或启动自检不可用 | 依赖可用即恢复；成因进日志，应答不区分 |
+
+### 403 与 503 的分界
+
+- **403** 是策略的拒绝：一条路由需要权限而引擎匹配为假，或一条未声明路由在 `undeclared=closed` 下被拒。它经 `pkg/http` 的 `Fail` 与 `Problem` 写出，`Problem.Type` 是 `urn:speed:authz:forbidden`，`Detail` **只写原因类、不写权限名**：说出被拒的权限会让应答成为探查策略的口子。
+- **503** 是依赖不可用：引擎快照损坏、存储读失败、启动自检失败。**引擎或存储不可用一律 503，绝不改判 403。** 把故障读成拒绝会让客户端把一次可恢复的失败当作永久的权限结论，把故障读成放行则更糟。应答不区分是哪个依赖失败，成因只进日志。
+
+### 非保证
+
+以下是本模块声明不保证的性质。每条写清可观察到什么、由哪一层决定；列出的是已识别的情形，不是穷尽。
+
+- **模型 DSL 写错会静默改变授权方向。** 模型文本固定在代码里，宿主改不了它；写错的是本模块的代码，一个错误的 matcher 不报错，只是让某些判定恒真或恒假。缓解是[启动期模型自检](#启动期模型自检)：自检覆盖域隔离、对象与动作的逐字相等、无绑定的拒绝与判定的纯函数性，未覆盖的模型错误（例如 `g` 的域参数写反）在装配里不会被拦住。
+- **两份词表会漂移。** `authn.Action` 与 `authz.Permission` 是两份字符串词表，[词表对齐守卫](#词表对齐守卫)在测试里断言它们对齐，但那是构建期的守卫：一个绕过测试的构建，或在认证侧新增动作而本模块未更新时，未知动作走 fail-closed（拒绝），因此方向仍是安全的一侧——代价是一个新动作在被登记之前不可用。
+- **`LoadPolicy` 是唯一的跨租户读，且每个副本持有全部租户的策略。** 判定进程要在一次匹配里回答任意租户的查询，所以 `LoadPolicy` 读全部租户的 `authz_grants` 与 `authz_bindings`（用 adapter 构造时那条带跨租户标记的会话，见[薄 adapter](#薄-adapter)），且快照在内存里含全部租户的策略行。这是本模块接受的代价：进程内的策略数据是全租户的，租户隔离对它靠「判定只在请求所属的那个域上进行」，不靠「进程只持有本租户的数据」（[ADR-authz-store-2026-10-12](../../adr/adr-authz-store-2026-10-12.md)）。
+- **撤销的生效延迟由两处窗口分别界定，且都不为零。** 本模块一侧是换指针与事件传播的窗口（无事件总线的装配以 `refresh-interval` 为界），准入层一侧是它对 `Decider` 答复的 `check-ttl` 缓存；一个撤销的平台级放行在准入层至多在 `check-ttl` 内仍被采信。两处上界并存，不是取小。
+- **不保证未纳入本模块的端上有任何权限层。** `authz.guard` 只在 `authz.guard.endpoints` 清单列出的端上登记中间件（清单必填、无缺省），清单外的端上全部路由没有权限判定；启动期不失败。察觉靠启动诊断里展开后的受守端名清单。
+- **不保证 `system` 之外的域名与租户名册一致。** 本模块只核对 `system` 与名册不冲突；策略行里的租户标识与准入层解析出的标识是否对应，由准入层与宿主负责，本模块只按标识匹配。
+- **不保证管理面的调用方是谁。** 管理面路由的访问控制经 `Decider` 或宿主自己的判定；本模块不认定凭据，管理面若挂在没有认证的端上，谁能调用它由装配决定。
+
+## 并发与事务边界
+
+- **快照不可变，请求期只读。** `Enforcer` 读当前的原子指针，读到的快照在其生命周期内不被改写；换指针是一次原子写，读到的要么是旧快照要么是新快照，不会是两者的混合。对同一份快照的并发读不加锁。
+- **`Decider` 可被并发调用。** `authz.guard` 的产品实现无请求间可变状态，`Decide` 只读快照与入参。
+- **写路径串行化在单条语句上。** `Manager` 的每次写入是一条语句，落在自己的事务里：写库、提交、然后本副本换指针。跨模块的写不共用一个事务——本模块只写自己的表，别的模块的清理走生命周期钩子与事件。
+- **`LoadPolicy` 是跨租户读，写是租户域内的写。** 读写都走 adapter 构造时那条带跨租户标记的会话（[薄 adapter](#薄-adapter)）；写仍逐条核对规则里的租户，越出调用方租户的写在 adapter 处被 `ErrTenantMismatch` 拒绝，空租户被 `CHECK` 拒绝。装载没有请求上下文可用，标记因此不能在调用点施加：Casbin 的 Adapter 接口不带 context。
+- **`AccountLifecycle` 清理幂等、至少一次。** 账户删除后本模块按账户订阅事件或经钩子清理其绑定行；清理没做完时残留的绑定行指向一个已无账户的标识，认证侧读不到该账户即可用性不受影响（[authn-account](design-authn-account.md)）。本模块不建指向认证表的外键，清理不依赖外键级联。
+- **快照装载不阻塞请求。** `Start` 完成装载之前不接受请求；跨副本重载在后台进行，装载期间旧快照继续服务。
+
+## 扩展点
+
+- **策略数据是数据，不是代码。** 宿主经 `Manager` 或 `authz.admin` 的管理面路由写角色、权限授予与绑定；本模块不在迁移里种任何策略行。这是模型 DSL 固定在代码里的另一面：可插拔的 model.conf 不开放，宿主只提供数据（[ADR-authz-engine-2026-10-12](../../adr/adr-authz-engine-2026-10-12.md)）。
+- **路由声明的登记面（`Gate`）。** 任何模块在 `Init` 里经 `Gate.Require`/`Gate.Open` 为一条（方法，路径）声明访问级别；`authz.guard` 用它同时服务请求期中间件与 `Decider`。一个模块也可以在自己的 handler 里经 `Guard` 问一句。
+- **`authn.Decider` 由本模块交付。** 宿主若换上自己的实现，`authz.guard` 不再交付它；本模块的中间件与 handler API 不受影响，只有认证侧的管理面与冒充改走宿主的判定。
+- **`Catalog` 是权限目录的读取面。** 需要枚举本模块声明的全部权限的消费方（例如生成管理面的权限选择器）经它取用。新增一个权限常量即进入目录，登记它的路由随即可引用；未登记的权限引用在启动期以 `ErrUnknownPermission` 终止。
+
+## 实现状态
+
+下表的状态以代码为准。本模块整体未实现，逐项状态与代码锚点如下；锚点给出的是计划落地该能力的路径与符号名。
+
+| 能力 | 状态 | 代码 |
+|---|---|---|
+| 根包的类型与接口：`Permission`、`Role`、`Domain`、`PermissionSpec`、`Query`、`Requirement`、`Enforcer`、`Catalog`、`Gate`、`Guard`、`Manager`、`Binding`、`RoleRecord`、`GrantRecord` | 未实现 | `pkg/authz/types.go` `Permission`、`Role`、`Domain`、`Query`、`Requirement`、`Binding`、`RoleRecord`、`GrantRecord`；`pkg/authz/capabilities.go` `Enforcer`、`Catalog`、`Gate`、`Guard`、`Manager` |
+| 权限常量与 `authn.Action` 的对齐、平台域保留值 | 未实现 | `pkg/authz/permissions.go` `PermissionAccountRead` …、`PlatformDomain` |
+| 平台域与真实租户同名的启动期核对 | 未实现 | `pkg/authz/policy/platform.go` `checkPlatformDomain` |
+| `ModelText` 模型文本常量 | 未实现 | `pkg/authz/model.go` `ModelText` |
+| 哨兵 | 未实现 | `pkg/authz/errors.go` `ErrNoRouter`、`ErrUnknownEndpoint`、`ErrUndeclaredRoute`、`ErrUnknownPermission`、`ErrUnknownRole`、`ErrBuiltinRole`、`ErrTenantMismatch`、`ErrPlatformDomainTaken`、`ErrPolicyUnavailable` |
+| 模块 `authz.policy` 的登记与各阶段行为（`Prepare`、`New`、`Migrate`、`Init`、`Start`、`Stop`） | 未实现 | `pkg/authz/policy/policy.go` `Module` |
+| 策略表与按方言的迁移集 | 未实现 | `pkg/authz/policy/migrations/{postgres,sqlite}/0001_authz_policy.sql` |
+| 薄 adapter（`persist.Adapter`）、跨租户读与租户核对的写 | 未实现 | `pkg/authz/internal/persist/adapter.go` `Adapter` |
+| Casbin 引擎装载、不可变快照与原子换指针 | 未实现 | `pkg/authz/internal/policy/policy.go` `Snapshot`、`Load`、`Swap` |
+| 启动期模型自检与夹具 | 未实现 | `pkg/authz/internal/policy/selftest.go` `SelfCheck`（夹具同包） |
+| 权限目录 `Catalog` 与 `PermissionSpec` 的登记 | 未实现 | `pkg/authz/policy/catalog.go` `Catalog` |
+| `Manager` 的策略读写 | 未实现 | `pkg/authz/policy/manager.go` `Manager` |
+| `AccountLifecycle` 清理与账户删除订阅 | 未实现 | `pkg/authz/policy/lifecycle.go` `Cleanup` |
+| `authz.policy.changed` 事件发布与订阅、`refresh-interval` 周期重载 | 未实现 | `pkg/authz/policy/policy.go` `publish`、`subscribe`、`reload` |
+| 配置 `endpoints`、`undeclared`、`load-timeout` 与设置 `refresh-interval` 的声明与读取 | 未实现 | `pkg/authz/policy/config.go`、`pkg/authz/guard/config.go` |
+| 模块 `authz.guard` 的中间件与授权阶段登记 | 未实现 | `pkg/authz/guard/guard.go` `Module` |
+| 路由声明登记面 `Gate`（`Require`/`Open`/`Covered`）与声明表 | 未实现 | `pkg/authz/guard/gate.go` `Gate` |
+| handler 内判定 API `Guard` | 未实现 | `pkg/authz/guard/guard.go` `Allowed`、`Require` |
+| `authn.Decider` 的实现、动作翻译表与未知动作 fail-closed | 未实现 | `pkg/authz/guard/decide.go` `(*product).Decide` |
+| 403 与 503 的写出、指标 `authz.guard.decisions` 与拒绝日志 | 未实现 | `pkg/authz/guard/respond.go` `forbidden`、`unavailable`；`pkg/authz/guard/guard.go` `conclude` |
+| 模块 `authz.admin` 的管理面路由（权限目录、角色、权限授予、绑定的读写） | 未实现 | `pkg/authz/admin/admin.go` `Module` |
+| 词表对齐守卫与根包依赖守卫 | 未实现 | `pkg/authz/action_parity_test.go`、`pkg/authz/deps_test.go` |
+| 测试构造夹具 `authztest` | 未实现 | `pkg/authz/authztest/authztest.go` |

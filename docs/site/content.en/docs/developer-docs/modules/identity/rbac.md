@@ -52,6 +52,8 @@ does **not** depend on:
 
 ## Why native, not Casbin
 
+> Superseded by `ADR-authz-reversal-2026-10-12`: what was rejected is Casbin's default store (`casbin_rule` has no tenant column), not the engine; the new design resolves it with a hand-written adapter over a real tenant column.
+
 The design's RBAC semantics were originally sketched over Casbin's
 `RBAC with domains` model; the implementation lands on a **native
 engine over three `dbkit`-managed, tenant-scoped tables**, an

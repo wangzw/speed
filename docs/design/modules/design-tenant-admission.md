@@ -9,16 +9,16 @@
 - 执行租户级的认证强度要求：租户设置 `tenant.admission.require-mfa` 与 `tenant.admission.require-sso`。这类强度要求只能在请求期判，登录时账户全局、租户未知（[ADR-authn-mfa-2026-10-10](../../adr/adr-authn-mfa-2026-10-10.md)、[ADR-authn-sso-2026-10-10](../../adr/adr-authn-sso-2026-10-10.md)）。
 - 执行冒充身份的租户范围：身份携带的 `Scope()` 与请求的租户不符，或请求没有租户上下文时拒绝（[ADR-authn-impersonation-2026-10-10](../../adr/adr-authn-impersonation-2026-10-10.md)）。
 - 交付 `authn.ScopeGuard`：声明自己守哪些端，使网关与 `authn.impersonation` 不 import `pkg/tenant` 即可得知冒充身份能被放进哪些端。
-- 交付定序锚点 `(*tenant.Admission)(nil)`：授权模块与宿主自己的层在授权阶段之内用 `After` 指向它，落在准入层之内。
+- 交付定序锚点 `(*tenant.Admission)(nil)`：授权功能目录（[authz](design-authz.md)）与宿主自己的层在授权阶段之内用 `After` 指向它，落在准入层之内。
 - 报出每次判定的结果：指标 `tenant.admission.decisions`，以及每次拒绝一行日志。
 
-准入层的判据是判定所需的输入：需要同时读身份与租户上下文的判定归本层；只读凭据与主体来源的归认证；角色与授权归授权模块。
+准入层的判据是判定所需的输入：需要同时读身份与租户上下文的判定归本层；只读凭据与主体来源的归认证；角色与授权归授权功能目录。
 
 本功能目录的整体职责、租户名册与解析层见 [design-tenant](design-tenant.md)；身份、判决与成员关系的形状见 [design-authn](design-authn.md) 与 [design-authn-account](design-authn-account.md)。
 
 ### 非职责
 
-- **不判定角色与授权，不写 403。** 本模块回答「这个身份能不能进入这个租户」，「进入之后能做什么」归授权模块，它另立（[ADR-authn-scope-2026-10-10](../../adr/adr-authn-scope-2026-10-10.md)）。
+- **不判定角色与授权，不写 403。** 本模块回答「这个身份能不能进入这个租户」，「进入之后能做什么」归授权功能目录，它另立（[ADR-authn-scope-2026-10-10](../../adr/adr-authn-scope-2026-10-10.md)）。
 - **不存成员关系，不定义身份。** 成员关系的表与读写面由 `authn.account` 的 `Memberships` 实现独占（[design-authn-account](design-authn-account.md)）；准入层只经接口读。
 - **不认定凭据，不读 `Authorization`。** 谁是调用方由网关与校验后端认定（[design-authn-gate](design-authn-gate.md)）；准入层读网关写进上下文的身份与访问级别。
 - **不解析租户。** 请求属于哪个租户由 `tenant.resolve` 认定；准入层读 `tenant.FromContext`，不读请求面的租户名，也不读名册（[design-tenant](design-tenant.md)）。
@@ -66,7 +66,7 @@ type ScopeGuard interface {
 
 交付声明写作 `Provides: []core.Provision{{Token: (*tenant.Admission)(nil), Exclusive: true}, {Token: (*authn.ScopeGuard)(nil), Exclusive: true}}`。这些排他性不可局部违反：两层准入同时在链上时，一个请求被谁放行说不清。
 
-`tenant.Admission` 带一个**导出**的标记方法。接口在 `pkg/tenant` 根包、实现在 `pkg/tenant/admission`，别的包的类型无法实现带本包未导出方法的接口，用未导出方法时交付核对必然失败（[ADR-tenant-admission-2026-10-10](../../adr/adr-tenant-admission-2026-10-10.md)）。授权模块只 import 根包，在授权阶段之内取 `(*tenant.Admission)(nil)` 作 `After` 锚点。
+`tenant.Admission` 带一个**导出**的标记方法。接口在 `pkg/tenant` 根包、实现在 `pkg/tenant/admission`，别的包的类型无法实现带本包未导出方法的接口，用未导出方法时交付核对必然失败（[ADR-tenant-admission-2026-10-10](../../adr/adr-tenant-admission-2026-10-10.md)）。授权功能目录只 import 根包，在授权阶段之内取 `(*tenant.Admission)(nil)` 作 `After` 锚点。
 
 `ScopeGuard.Covers(endpoint)` 报出 `endpoints` 里是否有该端：清单只含具体端名，不含 `*`，所以回答是精确的集合成员判定。消费方：
 
@@ -111,7 +111,7 @@ type ScopeGuard interface {
 
 ### 稳定性承诺
 
-下列是本模块与其他模块之间的契约：`tenant.Admission` 与 `authn.ScopeGuard` 的形状，模块名与交付标识，`endpoints` 的必填与不接受 `*`，设置键 `tenant.admission.require-mfa`、`require-sso`、`check-ttl`，`Decider` 动作 `authn.tenant.access` 的使用方式，指标名 `tenant.admission.decisions` 与其 Meter 名 `tenant`、属性 `outcome` 的取值，以及应答状态码的封闭集。改名、增减取值或扩大状态码集合是对宿主与授权模块的不兼容变更；设置键与指标属性值的变更同时是对运维面的不兼容变更。
+下列是本模块与其他模块之间的契约：`tenant.Admission` 与 `authn.ScopeGuard` 的形状，模块名与交付标识，`endpoints` 的必填与不接受 `*`，设置键 `tenant.admission.require-mfa`、`require-sso`、`check-ttl`，`Decider` 动作 `authn.tenant.access` 的使用方式，指标名 `tenant.admission.decisions` 与其 Meter 名 `tenant`、属性 `outcome` 的取值，以及应答状态码的封闭集。改名、增减取值或扩大状态码集合是对宿主与授权功能目录的不兼容变更；设置键与指标属性值的变更同时是对运维面的不兼容变更。
 
 ## 依赖
 
@@ -123,13 +123,13 @@ type ScopeGuard interface {
 | `(*tenant.Resolution)(nil)` | `pkg/tenant` 根包，`tenant.resolve` 交付 | 保证租户上下文由解析层写入 | 必需，启动失败 |
 | `http.Router` | `pkg/http` | 登记中间件 | `tenant.ErrNoRouter`，启动失败 |
 | `authn.SSOProviders` | `pkg/authn` 根包，`authn.sso` 交付 | 提供方所属租户 | 可选，见核心算法与流程 |
-| `authn.Decider` | `pkg/authn` 根包，宿主或授权模块交付 | `authn.tenant.access` | 可选，非成员一律 404 |
+| `authn.Decider` | `pkg/authn` 根包，宿主或 `authz.guard` 交付 | `authn.tenant.access` | 可选，非成员一律 404 |
 | `settings.Store` | `pkg/settings` | 租户设置与缓存时长 | 可选，取默认值 |
 | `event.Bus` | `pkg/event` | 订阅 `authn.membership.changed` | 可选，缓存只靠 `check-ttl` 过期 |
 | `log.Logger` | `pkg/log` | 启动诊断 | 可选，不写启动诊断 |
 | `observability.MeterProvider` | `pkg/observability` | 指标 | 可选，不报指标 |
 
-**方向满足架构不变量。** 准入层 import `pkg/authn` 根包而不 import `pkg/authn` 的任何子包：`pkg/authn/internal/...` 只能被 `pkg/authn/` 之下的包 import，准入层只经根包导出面读身份。`pkg/authn` 的子包不 import `pkg/tenant`，账户、登录、令牌的依赖闭包不含租户；准入层不 import `pkg/db`，成员关系的存取经 `Memberships`。`pkg/tenant` 位于 `pkg/authn` 之上，不被其中任何一个 import；授权模块位于准入层之上，只 import `pkg/tenant` 根包取锚点（[architecture](../architecture.md)）。
+**方向满足架构不变量。** 准入层 import `pkg/authn` 根包而不 import `pkg/authn` 的任何子包：`pkg/authn/internal/...` 只能被 `pkg/authn/` 之下的包 import，准入层只经根包导出面读身份。`pkg/authn` 的子包不 import `pkg/tenant`，账户、登录、令牌的依赖闭包不含租户；准入层不 import `pkg/db`，成员关系的存取经 `Memberships`。`pkg/tenant` 位于 `pkg/authn` 之上，不被其中任何一个 import；授权功能目录位于准入层之上，只 import `pkg/tenant` 根包取锚点（[architecture](../architecture.md)）。
 
 ## UML 图
 
@@ -215,7 +215,7 @@ sequenceDiagram
 | 放行条目 | 同键；值：`Decide` 对 `authn.tenant.access` 的回答、读取时刻 | 只在非成员且 `Decider` 在场、身份不带冒充范围时产生 |
 | 判定结果 | 状态与成因类 | 成因类即指标属性 `outcome` 的取值，下表给出 |
 
-指标 `tenant.admission.decisions`（单位 `{decision}`）按 `outcome` 计数，每个到达本层的请求恰计一次。它是名为 `tenant` 的 Meter 上的 `Int64ObservableCounter`：本模块属 `pkg/tenant`，与 authn 各模块的 `authn` Meter 分开命名；用可观察计数器是因为采集时才读本层持有的原子计数，八个 `outcome` 因此从第一次采集起就各有一条序列，同步计数器做不到这一点。`outcome` 的取值是封闭集：
+指标 `tenant.admission.decisions`（单位 `{decision}`）按 `outcome` 计数，每个到达本层的请求恰计一次。它是名为 `tenant` 的 Meter 上的 `Int64ObservableCounter`：本模块属 `pkg/tenant`，与 authn 各模块的 `authn` Meter 分开命名；用可观察计数器是因为采集时才读本层持有的原子计数，每个 `outcome` 因此从第一次采集起就各有一条序列，同步计数器做不到这一点。`outcome` 的取值是封闭集：
 
 | `outcome` | 含义 |
 |---|---|
@@ -291,6 +291,7 @@ flowchart TD
 
 - 成员被移除或暂停后，其他副本最多在 `check-ttl` 内仍放行；`authn.membership.changed` 事件（载荷含 `account_id`，信封带租户）使各副本丢弃该账户在该租户的缓存项，缩短这个窗口；事件总线缺席或事件丢失时，窗口仍以 `check-ttl` 为界。事件是提示，不是权威。
 - 租户设置刚开启 `require-mfa` 或 `require-sso` 之后，设置的刷新周期内个别副本仍放行。准入判定读设置读的是内存快照，不做 IO，变更经 `settings.changed` 事件与周期刷新传播（[design-settings](design-settings.md)）。
+- 准入层对 `Decider` 答复的 TTL 缓存是撤销生效延迟的上界之一：放行结果在缓存里保留至 `check-ttl` 过期，一个主体的平台级角色被撤销之后，其他副本最多在这个窗口内仍放行。见 [design-authz](design-authz.md) 的非保证。
 
 订阅在 `Init` 里登记，类型静态，处理函数幂等，只做「丢本地缓存」。
 
@@ -344,7 +345,7 @@ flowchart TD
 
 以下是本模块声明不保证的性质。每一条都是装配级的事实：成立与否取决于这次运行纳入了什么、链上还有谁，本模块没有能观察它们的接缝；列出的是已识别的情形，不是穷尽（[ADR-authn-guarantees-2026-10-10](../../adr/adr-authn-guarantees-2026-10-10.md)）。
 
-- **不装准入层的装配仍是开放的越权路径。** 约束指向的功能在该端无人代表时被入口模块丢弃，所以授权模块的 `After` 指向准入层，在没装准入层的装配里不产生任何影响；成员核对要靠宿主自己的层关闭。
+- **不装准入层的装配仍是开放的越权路径。** 约束指向的功能在该端无人代表时被入口模块丢弃，所以授权功能目录的 `After` 指向准入层，在没装准入层的装配里不产生任何影响；成员核对要靠宿主自己的层关闭。
 - **不保证每个业务端都在 `endpoints` 里。** 不在清单里的端没有准入层；网关只放冒充身份进准入层所守的端与 `Impersonable` 路由，所以宿主的 admin 一类端对冒充身份是 401。
 - **所守的端上，被租户解析豁免的路由没有租户上下文。** 非冒充身份照常放行，冒充身份得 404；`ScopeGuard.Covers` 只说准入层守哪些端，不核对宿主有没有在那些端上开解析豁免。
 - **宿主为准入层预置的实例不是本模块的产物时，链上没有准入层，而注册表答它在场。** 回调对这样的实例不做事，成员核对、强度要求与冒充范围都随之缺席，由预置它的宿主自己负责（[ADR-supplied-instance-2026-10-08](../../adr/adr-supplied-instance-2026-10-08.md)）。
@@ -376,8 +377,8 @@ flowchart TD
 
 ## 扩展点
 
-- **判定接缝 `Decider` 的 `authn.tenant.access` 动作。** 授权模块或宿主据此落地平台级角色（跨租户的客服、平台管理员），不必改准入层与认证；询问的参数是发起者身份与租户标识，缺省拒绝。
-- **定序锚点 `(*tenant.Admission)(nil)`。** 授权模块与宿主自己的层在授权阶段之内用 `After` 指向它，落在准入层之内。
+- **判定接缝 `Decider` 的 `authn.tenant.access` 动作。** 授权功能目录或宿主据此落地平台级角色（跨租户的客服、平台管理员），不必改准入层与认证；询问的参数是发起者身份与租户标识，缺省拒绝。**这条放行只表示这个身份可以进入该租户，进入之后能做什么仍归授权功能目录。**
+- **定序锚点 `(*tenant.Admission)(nil)`。** 授权功能目录与宿主自己的层在授权阶段之内用 `After` 指向它，落在准入层之内。
 
 ## 实现状态
 

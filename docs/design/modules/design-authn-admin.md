@@ -2,7 +2,7 @@
 
 ## 职责
 
-- **对授权的承诺。** `pkg/authn` 不 import 授权模块；authn 交给授权的全部东西是根包里的接口、值类型与事件，授权模块 import 根包并交付其中的接缝，方向与 `tenant/resolve` import `pkg/authn` 同形（[ADR-authn-scope-2026-10-10](../../adr/adr-authn-scope-2026-10-10.md)）。本文的承诺表是这些东西的清单，账户标识对授权的要求在其后单列。
+- **对授权的承诺。** `pkg/authn` 不 import 授权功能目录（[authz](design-authz.md)）；authn 交给授权的全部东西是根包里的接口、值类型与事件，`authz.guard` 与 `authz.policy` import 根包并交付其中的接缝，方向与 `tenant/resolve` import `pkg/authn` 同形（[ADR-authn-scope-2026-10-10](../../adr/adr-authn-scope-2026-10-10.md)）。本文的承诺表是这些东西的清单，账户标识对授权的要求在其后单列。
 - **判定接缝。** 定义根包接口 `Decider`、值类型 `Decision`、动作常量 `Action`，以及冒充范围守卫 `ScopeGuard`。管理面动作、冒充的开始与读写、非成员进入租户，都经 `Decider` 判定（[ADR-authn-decision-seam-2026-10-10](../../adr/adr-authn-decision-seam-2026-10-10.md)）。
 - **管理面模块 `authn.admin`。** 挂 `B/admin/*` 下的全部管理路由；每条路由的处理顺序固定为 `Decider`、发起者强度核验、强制审计、写、事件。
 - **`Decision` 的填法。** 路径里不带租户的租户级动作，`authn.admin` 在调用 `Decider` 之前自己解析对象的归属并填入 `Decision`。
@@ -11,15 +11,15 @@
 
 ### 非职责
 
-- **不做授权判定，不含角色、权限、组。** 角色按（账户，租户）绑定、归授权；授权按生效账户实时查自己的绑定。本模块只回答「谁」与「是不是成员」。
-- **不实现 `Decider`，不内置放行名单。** 实现由宿主或授权模块交付；口令表主体能否通过由接缝判定，接缝能看到 `Identity.Account().IsStatic()`。
+- **不做授权判定，不含角色、权限、组。** 角色按（账户，租户）绑定、归 `authz.policy`；`authz.policy` 按生效账户实时查自己的绑定。本模块只回答「谁」与「是不是成员」。
+- **不实现 `Decider`，不内置放行名单。** 实现由宿主或 `authz.guard` 交付；口令表主体能否通过由接缝判定，接缝能看到 `Identity.Account().IsStatic()`。
 - **不实现租户准入层。** 成员核对、租户级认证强度与冒充的租户范围在 [tenant.admission](design-tenant-admission.md)；本模块只定义它询问的 `Decider` 动作 `authn.tenant.access` 与它交付的 `ScopeGuard`。
 - **不持有账户、会话、因素、服务密钥、IdP、冒充记录的数据与规则。** 管理路由只调用对应能力的根包接口，规则与哨兵在各能力的模块里（[authn-account](design-authn-account.md)、[authn-session](design-authn-session.md)、[authn-mfa](design-authn-mfa.md)、[authn-sso](design-authn-sso.md)、[authn-impersonation](design-authn-impersonation.md)）。
 - **不挂自助路由。** 自助路由在 [authn-login](design-authn-login.md)、[authn-session](design-authn-session.md)、[authn-mfa](design-authn-mfa.md) 里。
 - **不发布事件。** 事件由执行写的能力接口发出；`authn.admin` 不取用事件总线与发件箱。事件与审计的契约在 [authn-events](design-authn-events.md)。
 - **不声明配置键与设置键。** 键的名字、取值域与缺省值只在 [authn-config](design-authn-config.md) 给全。
 - **不约束经 Go 接口的直接调用。** 宿主在自己的命令里调用 `AccountAdmin`、`Memberships`、`Sessions`、`SSOProviders` 不经 `Decider`，其访问控制由宿主命令自己负责。
-- **不实现授权模块自己的缓存与对账。** 授权清理角色绑定靠订阅事件，并可用 `Accounts.Get` 对账。
+- **不实现 `authz.policy` 自己的缓存与对账。** `authz.policy` 清理角色绑定靠订阅事件，并可用 `Accounts.Get` 对账。
 
 ## 外部接口契约
 
@@ -29,18 +29,20 @@
 
 | 项 | 承诺 | 载体 |
 |---|---|---|
-| 依赖方向 | `pkg/authn` 不 import 授权；所有接缝是根包里的接口，授权 import 根包并交付它们 | 本文 |
+| 依赖方向 | `pkg/authn` 不 import 授权功能目录；所有接缝是根包里的接口，`authz.guard` 与 `authz.policy` import 根包并交付它们 | 本文 |
 | 身份字段 | 读取面的字段集见载体文档；不含角色，不含租户（冒充范围 `Scope` 除外） | [authn](design-authn.md) |
-| 访问级别 | 授权经 `authn.AccessFromContext` 得知本请求命中的路由登记为 `Open`、`Optional` 还是 `Required`，以及网关有没有对它作过决定；约定用法见下节 | [authn](design-authn.md)、[authn-gate](design-authn-gate.md) |
+| 访问级别 | `authz.guard` 经 `authn.AccessFromContext` 得知本请求命中的路由登记为 `Open`、`Optional` 还是 `Required`，以及网关有没有对它作过决定；约定用法见下节 | [authn](design-authn.md)、[authn-gate](design-authn-gate.md) |
 | 账户标识的性质 | 不可变、全局唯一、形态由 `ParseAccountID` 判定；全部要求见下节 | 本文、[authn-account](design-authn-account.md) |
-| 成员关系 | `Memberships` 的只读面，零值读作非成员；成员关系与账户的变更事件供授权清理角色绑定与缓存，事件清单、投递路径与去重要求见载体文档 | [authn-account](design-authn-account.md)、[authn-events](design-authn-events.md) |
+| 成员关系 | `Memberships` 的只读面，零值读作非成员；成员关系与账户的变更事件供 `authz.policy` 清理角色绑定与缓存，事件清单、投递路径与去重要求见载体文档 | [authn-account](design-authn-account.md)、[authn-events](design-authn-events.md) |
+| 角色绑定 | 角色按（账户，租户）绑定，由 `authz.policy` 的 `authz_bindings` 承载 | [design-authz](design-authz.md) |
 | 会话撤销 | `Sessions.Status` 是撤销的权威面；事件 `authn.session.revoked` 是缓存失效的提示，不是权威 | [authn-session](design-authn-session.md) |
-| 链上次序 | 授权层声明授权阶段，阶段内用 `After` 指向准入层的功能标识，位于租户准入层之内；跨阶段的位置由阶段顺序给出，次序与锚点的完整表在载体文档 | [authn](design-authn.md)、[tenant.admission](design-tenant-admission.md) |
-| 加强认证 | 授权需要某条路由要求新鲜的多因素时，挂 `guard.Require(authn.Requirement{...})` | [authn-mfa](design-authn-mfa.md) |
+| 链上次序 | `authz.guard` 声明授权阶段，阶段内用 `After` 指向准入层的功能标识，位于租户准入层之内；跨阶段的位置由阶段顺序给出，次序与锚点的完整表在载体文档 | [authn](design-authn.md)、[tenant.admission](design-tenant-admission.md) |
+| 加强认证 | `authz.guard` 需要某条路由要求新鲜的多因素时，挂 `guard.Require(authn.Requirement{...})` | [authn-mfa](design-authn-mfa.md) |
 | 令牌 | 访问令牌不带角色；`ClaimsContributor` 是宿主显式选择追加声明的口子 | [authn-token](design-authn-token.md) |
-| 平台范围与准入放行 | `Decision.Tenant` 为空表示平台范围，只用于账户级动作；租户级动作的 `Decision.Tenant` 一律由 `authn.admin` 解析后填，`Decider` 永远不会收到租户为空的租户级动作；非成员的请求在准入层经 `authn.tenant.access` 询问 `Decider`，缺省拒绝，授权模块据此落地跨租户的平台级角色，不必改准入层与 authn | 本文 |
+| 平台范围与准入放行 | `Decision.Tenant` 为空表示平台范围，只用于账户级动作；租户级动作的 `Decision.Tenant` 一律由 `authn.admin` 解析后填，`Decider` 永远不会收到租户为空的租户级动作；非成员的请求在准入层经 `authn.tenant.access` 询问 `Decider`，缺省拒绝，`authz.guard` 据此落地跨租户的平台级角色，不必改准入层与 authn | 本文 |
 | 冒充范围 | `Identity.Scope()`、`ScopeGuard.Covers`、网关对冒充身份的范围规则 | [authn-impersonation](design-authn-impersonation.md)、[authn-gate](design-authn-gate.md) |
 | 管理面与冒充接缝 | `Decider`、`Decision`、`Action` | 本文 |
+| 判定接缝的实现 | `Decider` 由 `authz.guard` 实现 | [design-authz](design-authz.md) |
 | 状态码来源 | 网关从不写 403；准入层写 404 与 401；authn 的路由处理器只在封闭集内转述策略拒绝时写 403 | 本文「403 的收窄」 |
 | 测试 | `authntest.Context` 构造带指定身份与访问级别的上下文 | [authn](design-authn.md) |
 
@@ -103,7 +105,7 @@ type Decider interface {
 | 项 | 承诺 |
 |---|---|
 | 动作常量 | 上列常量是动作的全集；归属判据是「作用于他人账户或租户级资源的管理面动作、冒充的开始与读写、非成员进入租户」。动作随新增的管理面能力增长，新增动作按此判据归入。 |
-| 排他与取用 | `Decider` 由宿主或授权模块实现，排他。取用方 `authn.admin`、`authn.impersonation`、`tenant.admission` 在 `Init` 里以 `Optional` 取用，缺提供者（`core.ErrMissingProvider`）是合法配置，行为是全部拒绝；`Decider` 不写进任何模块的 `Requires`（[ADR-authn-wiring-2026-10-10](../../adr/adr-authn-wiring-2026-10-10.md)）。 |
+| 排他与取用 | `Decider` 由宿主或 `authz.guard` 实现，排他。取用方 `authn.admin`、`authn.impersonation`、`tenant.admission` 在 `Init` 里以 `Optional` 取用，缺提供者（`core.ErrMissingProvider`）是合法配置，行为是全部拒绝；`Decider` 不写进任何模块的 `Requires`（[ADR-authn-wiring-2026-10-10](../../adr/adr-authn-wiring-2026-10-10.md)）。 |
 | 返回值 | `allow` 为真放行，为假拒绝；`err` 非空一律按 503 收口，不当作拒绝，也不当作放行。处理器对 `Decide` 的调用自带 `recover`，panic 按 `err` 非空处理，同样是 503，管理动作不执行。 |
 | 默认全拒的落点 | 在取用方，不在一个「默认拒绝」的模块里。没有任何模块交付 `Decider` 的装配，宿主什么都不做也是安全的。 |
 | 不内置名单 | `pkg/authn` 不内置任何放行名单。 |
@@ -208,7 +210,7 @@ type ScopeGuard interface {
 | 全部 `SSOMetadataRefresher` | `ResolveAll` | 元数据刷新路由；按 `Protocol` 分派。 |
 | `Impersonation` 及单条读取 `Get` | 可选 | 冒充记录组路由。`List`、`Revoke` 来自公开的 `Impersonation` 接口；`Get` 是记录组为解析记录的租户与目标所需的扩展形状，不在公开接口里（见 [design-authn-impersonation](design-authn-impersonation.md)）；缺 `Get` 时整组不挂，不做成挂出而全拒。 |
 
-**方向核对。** `authn.admin` 位于认证功能目录内，依赖只指向 `pkg/core`、`pkg/audit` 的接口包与认证功能目录的根包与能力接口，不 import `pkg/tenant`、授权、宿主，也不 import 认证功能目录里别的实现子包。`Decider` 与 `ScopeGuard` 都是根包接口：授权与 `tenant.admission` import 根包交付它们，反向没有依赖。
+**方向核对。** `authn.admin` 位于认证功能目录内，依赖只指向 `pkg/core`、`pkg/audit` 的接口包与认证功能目录的根包与能力接口，不 import `pkg/tenant`、授权功能目录、宿主，也不 import 认证功能目录里别的实现子包。`Decider` 与 `ScopeGuard` 都是根包接口：`authz.guard` 与 `tenant.admission` import 根包交付它们，反向没有依赖。
 
 被依赖方向：`authn.impersonation` 与 `tenant.admission` 取用同一个 `Decider`，各自在自己的处理路径上询问；`tenant.admission` 交付 `ScopeGuard`（[ADR-tenant-admission-2026-10-10](../../adr/adr-tenant-admission-2026-10-10.md)）。
 
@@ -335,7 +337,7 @@ flowchart TD
 
 ### 非成员进入租户
 
-`tenant.admission` 对非成员且 `Identity.Scope()` 为空的身份询问 `Decide(Decision{Action: ActionTenantAccess, Actor, Tenant})`。返回 `true` 放行，只表示「可以进入这个租户」，不赋予任何角色，租户内能做什么仍由授权判定；`Decider` 缺席或返回 `false` 按准入层的 404 处理，返回 error 按 503 处理。冒充身份不适用这条询问，冒充只能在其范围内。判定与缓存的细节在 [tenant.admission](design-tenant-admission.md)。
+`tenant.admission` 对非成员且 `Identity.Scope()` 为空的身份询问 `Decide(Decision{Action: ActionTenantAccess, Actor, Tenant})`。返回 `true` 放行，只表示「可以进入这个租户」，不赋予任何角色，租户内能做什么仍由 `authz.guard` 判定；`Decider` 缺席或返回 `false` 按准入层的 404 处理，返回 error 按 503 处理。冒充身份不适用这条询问，冒充只能在其范围内。判定与缓存的细节在 [tenant.admission](design-tenant-admission.md)。
 
 ### 引导
 
@@ -346,7 +348,7 @@ flowchart TD
 
 默认部署开箱即不可被远程管理，这是有意的。
 
-**发起冒充的判定不属于这条引导。** `opsOnly` 这样的静态主体规则驱动不了冒充：本模块的结构性限制要求发起者是有会话、本地验证过新鲜多因素的非静态用户账户，而静态主体没有会话可绑（[design-authn-impersonation](design-authn-impersonation.md)）。要启用冒充，宿主须实现一个按（账户，租户）角色判定的 `Decider`——例如租户的所有者冒充该租户内角色更低的成员——角色绑定由授权一侧持有，authn 不认识它。「谁有权冒充谁」因此是宿主的配置；authn 保证的只是发起者满足不依赖 `Decider` 的结构与强认证限制，`Decider` 只能在其上收紧。
+**发起冒充的判定不属于这条引导。** `opsOnly` 这样的静态主体规则驱动不了冒充：本模块的结构性限制要求发起者是有会话、本地验证过新鲜多因素的非静态用户账户，而静态主体没有会话可绑（[design-authn-impersonation](design-authn-impersonation.md)）。要启用冒充，宿主须实现一个按（账户，租户）角色判定的 `Decider`——例如租户的所有者冒充该租户内角色更低的成员——角色绑定由 `authz.policy` 持有，authn 不认识它。「谁有权冒充谁」因此是宿主的配置；authn 保证的只是发起者满足不依赖 `Decider` 的结构与强认证限制，`Decider` 只能在其上收紧。
 
 ## 错误与失败语义
 
@@ -357,7 +359,7 @@ flowchart TD
 - **authn 的路由处理器可以写 403，位置是封闭集。** 它们是自己资源的所有者，只在转述认证之外的策略的拒绝时写 403：`Decider` 的拒绝（`forbidden`）、被全局设置关闭的登录方式（`method-disabled`）、外部登录路径上的账户不可用（`account-unavailable`）、冒充期间的限制（`impersonation-restricted`）。本模块的处理器只写其中的 `forbidden` 与 `impersonation-restricted`。
 - **其余一切「不够强」是 401。** 加强认证挑战的应答见 [authn-mfa](design-authn-mfa.md)。
 
-判据、被否决的 401 与 404 两种写法及其理由在 [ADR-authn-scope-2026-10-10](../../adr/adr-authn-scope-2026-10-10.md)。调用方读到的 403 可能来自 authn 的处理函数，也可能来自链上的授权层或宿主的 handler，仅凭状态码区分不了来源。
+判据、被否决的 401 与 404 两种写法及其理由在 [ADR-authn-scope-2026-10-10](../../adr/adr-authn-scope-2026-10-10.md)。调用方读到的 403 可能来自 authn 的处理函数，也可能来自链上的授权层（`authz.guard`）或宿主的 handler，仅凭状态码区分不了来源。
 
 ### 失败方向
 
@@ -414,7 +416,7 @@ flowchart TD
 
 ## 扩展点
 
-- **`Decider`。** 宿主与授权模块的接入点，一个接口按动作字符串路由；授权按 `Decision.Action` 分派，「是否允许冒充」是其中一个动作。
+- **`Decider`。** 宿主与 `authz.guard` 的接入点，一个接口按动作字符串路由；`authz.guard` 按 `Decision.Action` 分派，「是否允许冒充」是其中一个动作。
 - **新增管理路由。** 对象属于某个租户的路由要按「`Decision` 的填法」自己解析归属，并加入对应的表驱动测试；新增动作按动作常量的归属判据加入根包。
 - **`SSOMetadataRefresher`。** 元数据刷新路由按 `Protocol` 分派到 `ResolveAll` 取到的实现；新增协议的刷新实现不改本模块。
 
@@ -431,5 +433,5 @@ flowchart TD
 | 会话组、因素与口令组、服务密钥组路由 | 已实现 | `pkg/authn/admin/session.go` `handleAccountSessions`、`handleRevokeAccountSessions`、`handleSessionRevoke`；`pkg/authn/admin/factor.go` `handleFactorList`、`handleMFARequired`、`handleMFAReset`、`handlePasswordReset`；`pkg/authn/admin/secret.go` `handleSecretList`、`handleSecretCreate`、`handleSecretRevoke`；`pkg/authn/admin/routes.go` `mountSessionRoutes`、`mountSecretRoutes` |
 | SSO 提供方组、元数据刷新与冒充记录组路由 | 已实现 | `pkg/authn/admin/sso.go` `handleProviderList`、`handleProviderCreate`、`handleProviderGet`、`handleProviderUpdate`、`handleProviderDelete`、`handleDomainClaim`、`handleDomainRemove`、`handleDomainVerify`、`handleReverifyDomains`、`handleMetadataRefresh`、`refresherFor`；`pkg/authn/admin/impersonation.go` `handleImpersonationList`、`handleImpersonationRevoke`；`pkg/authn/admin/routes.go` `mountSSORoutes`、`mountImpersonationRoutes` |
 | 守住性质的测试与装配测试 | 已实现 | `pkg/authn/admin/admin_test.go` `TestDecisionFill`、`TestNoDeciderDeniesEveryRoute`、`TestTheMandatoryAuditLandsBeforeTheWrite`、`TestAnImpersonatingActorIsRefusedAtTheHandler`、`TestAStrengthShortfallIsAStepUp`、`TestTheImpersonationRecordGroup`；`pkg/authn/admin/assembly_test.go` `TestARealRegistryMountsTheManagementRoutes` |
-| 根包的 import 白名单与网关闭包的禁止表 | 已实现 — 根包非测试文件的 import 只许标准库与 `internal/model`、`internal/identity`、`internal/verdict`、`internal/step`，授权、`pkg/tenant` 与任何实现子包都在白名单之外 | `pkg/authn/deps_test.go` `TestTheRootPackageImportsOnlyWhatItMay`、`TestTheRootPackageClosureHoldsNoThirdPartyPackage` |
-| `authn.admin` 子包的 import 方向：不 import `pkg/tenant`、授权、宿主与别的实现子包 | 已实现 — 子包只 import 根包 `authn`、`internal/mount`、`audit`、`settings`、`core` 与 `log` | `pkg/authn/admin` 的 import 清单；`pkg/authn/deps_test.go` `tenantViolations` 规则（本目录每个包都不达 `pkg/tenant`） |
+| 根包的 import 白名单与网关闭包的禁止表 | 已实现 — 根包非测试文件的 import 只许标准库与 `internal/model`、`internal/identity`、`internal/verdict`、`internal/step`，授权功能目录、`pkg/tenant` 与任何实现子包都在白名单之外 | `pkg/authn/deps_test.go` `TestTheRootPackageImportsOnlyWhatItMay`、`TestTheRootPackageClosureHoldsNoThirdPartyPackage` |
+| `authn.admin` 子包的 import 方向：不 import `pkg/tenant`、授权功能目录、宿主与别的实现子包 | 已实现 — 子包只 import 根包 `authn`、`internal/mount`、`audit`、`settings`、`core` 与 `log` | `pkg/authn/admin` 的 import 清单；`pkg/authn/deps_test.go` `tenantViolations` 规则（本目录每个包都不达 `pkg/tenant`） |

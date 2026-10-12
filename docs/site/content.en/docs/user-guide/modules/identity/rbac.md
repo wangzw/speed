@@ -52,6 +52,8 @@ nil): role management is served by the operations-console surface, and
 rbac does not authorize its own writes — `rbac:read`/`rbac:manage`
 are the caller's vocabulary for gating role administration.
 
+> Superseded by `ADR-authz-reversal-2026-10-12`: what was rejected is Casbin's default store (`casbin_rule` has no tenant column), not the engine; the new design resolves it with a hand-written adapter over a real tenant column.
+
 ## When to choose it
 
 When your modules declare permissions and routes must be gated on

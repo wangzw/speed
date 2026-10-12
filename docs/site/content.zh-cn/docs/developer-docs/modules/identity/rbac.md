@@ -20,6 +20,8 @@ rbac 做判定。它不做身份识别——它的定义性属性是它**不**�
 
 ## 为什么自研,不用 Casbin
 
+> 该结论已被 `ADR-authz-reversal-2026-10-12` 取代;被否的是 Casbin 的默认存储(`casbin_rule` 无租户列),新设计以自写 adapter 加真实租户列消解。
+
 设计的 RBAC 语义最初画在 Casbin 的 `RBAC with domains` 模型上;落地实现改成**三张 `dbkit` 托管、租户化表上的自研引擎**,理由逐条记录:
 
 1. `casbin_rule` 没有 `tenant_id` 列——租户藏在策略串里。全产品最安全敏感的一张表,会一次性退出**全部三层**租户隔离:插件注入不了过滤、用不了 `Repository[T]`、行级安全策略没有可比的列。隔离退化成"调用方传对了 domain 串"。

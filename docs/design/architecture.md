@@ -82,6 +82,7 @@ graph TD
     admission["admission<br/>租户准入"]
     catalog["catalog<br/>名册与隔离插件"]
   end
+  authz["pkg/authz"]
   http["pkg/http"]
   audit["pkg/audit"]
   ratelimit["pkg/ratelimit"]
@@ -106,6 +107,10 @@ graph TD
   ratelimit --> aroot
   ratelimit --> troot
   ratelimit --> audit
+  authz --> aroot
+  authz --> troot
+  authz --> http
+  authz --> lower
 ```
 
 箭头表示 import。
@@ -113,6 +118,8 @@ graph TD
 图中没有从 `aleaf` 或 `aroot` 指向租户任何包的边，方向是租户指向认证（不变量 17）。租户的解析与准入子包、审计与限流读身份，只经 `pkg/authn` 根包，不 import 认证的任何子包；根包只放接口与数据类型，非测试代码只依赖标准库与自己的内部包，因而被它们 import 不把认证的任何第三方库带进它们的闭包（[ADR-authn-packaging-2026-10-10](../adr/adr-authn-packaging-2026-10-10.md)）。
 
 认证的叶子包各自 import 它取用的功能所在的接口包（图中归为 `pkg/http`、`pkg/audit` 与下层各包）；每个叶子包取用哪些功能、哪些必需哪些可选，由 [authn](modules/design-authn.md) 的模块清单承载。
+
+授权由 [authz](modules/design-authz.md) 承载，它 import 认证与租户的根包、`pkg/http` 与下层各包，方向是授权指向它们，认证与租户都不 import 它。授权坐在准入层之上（不变量 17）：`authz.guard` 声明授权阶段，以 `After` 指向 `(*tenant.Admission)(nil)`，在同一阶段内排在准入层之后、handler 之外。
 
 ## 逻辑部署架构
 
@@ -223,7 +230,7 @@ speed 不引入进程边界。宿主是单一进程，注册表与全部模块�
 
 ### 认证与授权边界
 
-认证交付身份系统：登录、会话、令牌、多因素、企业 SSO、冒充与账户存储；授权另立，两者之间只有判定接缝一处相连（[ADR-authn-scope-2026-10-10](../adr/adr-authn-scope-2026-10-10.md)、[ADR-authn-decision-seam-2026-10-10](../adr/adr-authn-decision-seam-2026-10-10.md)）。归属认证的判据是判定所需的输入：只需要凭据、账户、标识、会话、令牌、因素、IdP 配置与冒充记录这类认证事实的归认证，还需要资源、动作与策略的归授权。判定接缝 `Decider` 缺席即全拒：认证自己的管理面与冒充的开始都不在它缺席时放行。网关与 `tenant.admission` 不写 403，认证强度不足答 401，非成员与冒充范围不符答 404，403 只出现在认证自己的处理器里（[authn](modules/design-authn.md)、[authn-failure](modules/design-authn-failure.md)）。
+认证交付身份系统：登录、会话、令牌、多因素、企业 SSO、冒充与账户存储；授权由 [authz](modules/design-authz.md) 承载，接缝只有 `Decider` 一处（[ADR-authn-scope-2026-10-10](../adr/adr-authn-scope-2026-10-10.md)、[ADR-authn-decision-seam-2026-10-10](../adr/adr-authn-decision-seam-2026-10-10.md)、[ADR-authz-decision-seam-2026-10-12](../adr/adr-authz-decision-seam-2026-10-12.md)）。归属认证的判据是判定所需的输入：只需要凭据、账户、标识、会话、令牌、因素、IdP 配置与冒充记录这类认证事实的归认证，还需要资源、动作与策略的归授权。判定接缝 `Decider` 缺席即全拒：认证自己的管理面与冒充的开始都不在它缺席时放行。网关与 `tenant.admission` 不写 403，认证强度不足答 401，非成员与冒充范围不符答 404，403 出现在认证自己的处理器里与 `authz.guard`（[authn](modules/design-authn.md)、[authn-failure](modules/design-authn-failure.md)、[authz](modules/design-authz.md)）。
 
 **身份由网关盖章。** 校验后端只交出判决，不写请求上下文；网关在出口检查全部成立之后才把身份写进上下文，注入口不导出（[ADR-authn-verdict-2026-10-10](../adr/adr-authn-verdict-2026-10-10.md)）。身份的实际操作者 `Actor()` 是真正动手的账户，冒充时与生效账户 `Account()` 不同；限流、审计与设置的归责一律取责任键 `Key()`，即实际操作者（[ADR-authn-identity-2026-10-10](../adr/adr-authn-identity-2026-10-10.md)）。
 
@@ -290,6 +297,7 @@ speed 不引入进程边界。宿主是单一进程，注册表与全部模块�
 | [authn-threats](modules/design-authn-threats.md) | 部分实现 — 缺日志字面量的脱敏与持有放宽方向设置项的模块的设置变更订阅；网关默认守全部端、出口检查、跨源检查、冒充范围核对、失败即拒绝、判决不可字面构造、受限出站客户端、口令保护、失败退避与 `valid_after`、会话、令牌、短信、企业 SSO、冒充、管理面与准入的对策，以及 go-jose 与 goxmldsig 的版本下限，均已在 |
 | [tenant](modules/design-tenant.md) | 已实现 |
 | [tenant-admission](modules/design-tenant-admission.md) | 已实现 |
+| [authz](modules/design-authz.md) | 未实现 |
 | [kv](modules/design-kv.md) | 已实现 |
 | [event](modules/design-event.md) | 已实现 |
 | [outbox](modules/design-outbox.md) | 已实现 |

@@ -17,14 +17,14 @@
 
 ### 非职责
 
-- **不判定「谁有权冒充谁」。** 这一判定经判定接缝 `Decider` 取得，接缝、动作常量与管理面路由由 [design-authn-admin](design-authn-admin.md) 承载；`Decider` 缺席时本模块全拒。
+- **不判定「谁有权冒充谁」。** 这一判定经判定接缝 `Decider` 取得（由 `authz.guard` 实现，[design-authz](design-authz.md)），接缝、动作常量与管理面路由由 [design-authn-admin](design-authn-admin.md) 承载；`Decider` 缺席时本模块全拒。
 - **不认识角色。** 「不得冒充权限更高或同级的账户」不是身份层面的事实，本模块无从核对；它由 `Decider` 的实现方负责。
 - **不执行网关的范围规则，也不执行准入层的范围核对。** 网关对冒充身份只放进准入层所守的端与登记为 `Impersonable` 的路由（[design-authn-gate](design-authn-gate.md)）；准入层核对 `Scope()` 与请求的租户（[design-tenant-admission](design-tenant-admission.md)）。本模块只持有必需依赖 `ScopeGuard`，使网关与准入层的范围执行在装配里必然有落点。
 - **不持有登录会话与访问令牌。** 会话行上的冒充记录标识由 `Sessions.SetImpersonation` 写（[design-authn-session](design-authn-session.md)），冒充用的访问令牌由 `Tokens.Issue` 签发（[design-authn-token](design-authn-token.md)）；本模块只调用它们。
 - **不判断账户、成员关系与因素的事实。** 账户状态与 `protected` 标记读自 `Accounts`，成员关系读自 `Memberships`（[design-authn-account](design-authn-account.md)），因素年龄读自 `MFA.Seasoned`（[design-authn-mfa](design-authn-mfa.md)）。
 - **不通知被冒充者。** authn 没有通知通道；`authn.impersonation.started` 事件是宿主接通知的钩子。
 - **不清除记录。** 记录永不由本模块删除，保留期是宿主的合规策略。
-- **不为冒充中的业务请求加限制。** 冒充时是否只读等业务约束，由授权与宿主读 `Identity.Impersonating()` 与 `Actor()` 自行决定；本模块只管 authn 自己的处理器。
+- **不为冒充中的业务请求加限制。** 冒充时是否只读等业务约束，由 `authz.guard` 与宿主读 `Identity.Impersonating()` 与 `Actor()` 自行决定；本模块只管 authn 自己的处理器。
 - **不挂管理面路由。** 列出与撤销记录的 HTTP 路由 `B/admin/impersonations` 归 `authn.admin`；本模块只提供它调用的 `List`、`Revoke` 与单条读取 `Get`。
 - **不提供全局冒充、嵌套冒充、冒充服务账户与可续期的冒充令牌。**
 - **不声明配置键与设置键。** 键的名字、取值域与缺省值只在 [design-authn-config](design-authn-config.md) 给全，本文只写它们的语义。
@@ -298,7 +298,7 @@ CREATE UNIQUE INDEX authn_imp_one_active ON authn_impersonations (session_id) WH
 |---|---|---|
 | a 发起者 | 身份不是冒充身份，不得链式；账户不是静态口令表主体，种类是 `user`，状态启用；有会话可绑，否则 `ErrImpersonationNeedsSession`（口令表主体与客户端凭据没有会话可绑）；`Identity.Satisfies(Requirement{Assurance: AssuranceMulti, MaxAge: authn.impersonation.max-auth-age, Local: true})`，即本地验证过的多因素，IdP 声明的不算；那次认证的方式集含 `otp` 或 `webauthn`，不接受只靠短信的多因素；`MFA.Seasoned(actor)` 为真，即名下有启用已满 `authn.mfa.sensitive-min-age` 的非短信因素。强认证类条件（`Satisfies`、方式集、`Seasoned`）不满足时答 401 `insufficient_user_authentication`，管理员先做加强认证。 | 冒充只在发起者的强认证之下发生：发起者是有会话、可审计到人的用户账户，认证是本地验证过的新鲜多因素，且不只靠短信、不靠抢先登记的因素（[design-authn-mfa](design-authn-mfa.md)）。没有登记任何因素的账户因此永远不能冒充别人，这是设计内的结果。 |
 | b 目标 | 账户存在、状态启用、种类是 `user`；不是发起者自己，不是静态主体，`protected` 不为真；是 `Tenant` 的有效成员，读 `authn_memberships`，不经缓存。 | 影响面是「该租户里的这个成员」：目标是启用的人类用户账户，不是服务账户、静态主体、已停用或已删除的账户，不是发起者自己。`protected` 是宿主打在要保护的账户上的人工标记；authn 不认识超级管理员，那是授权的概念。 |
-| c 参数 | `Tenant` 非空且形状合法；`Reason` 去空白后 1 到 500 个字符；有效期取下列各项的最小值：请求的 TTL（零表示由设置决定）、设置 `authn.impersonation.max-ttl`、发起者会话的剩余寿命，且不论前几项取值如何都不超过 1 小时。这个 1 小时是硬上限，独立于 `max-ttl` 的取值域（后者的上界当前也取 1 小时，两者指向同一个秒数）。 | 没有全局冒充；理由是审计的一部分；冒充的期限有硬上限。 |
+| c 参数 | `Tenant` 非空且形状合法；`Reason` 去空白后 1 到 500 个字符；有效期取下列各项的最小值：请求的 TTL（零表示由设置决定）、设置 `authn.impersonation.max-ttl`、发起者会话的剩余寿命，且有效期不超过 1 小时。这个 1 小时是硬上限，独立于 `max-ttl` 的取值域（`max-ttl` 的上界当前也取 1 小时，与这个硬上限指向同一个秒数）。 | 没有全局冒充；理由是审计的一部分；冒充的期限有硬上限。 |
 | d 并发 | 同一个发起者会话任一时刻至多一条未结束的记录：先检是读 `authn_imp_session` 取该会话上未结束的记录，经 `Active` 求值仍有效即 `ErrImpersonationActive`；插入处的部分唯一索引是并发竞态的兜底。 | 同一会话上的冒充不并存。 |
 
 - **发起者、目标、参数三组的违反一律答 403 `impersonation-restricted`，且不区分是哪一条**，避免向发起者泄露目标账户的状态。例外只涉及发起者自己的状态与并发：强认证类条件不满足答 401；没有会话可绑是 `ErrImpersonationNeedsSession`，对外同样是 403 `impersonation-restricted`；并发组的先检失败是 `ErrImpersonationActive`（409）。
@@ -436,11 +436,11 @@ WHERE id = ? AND ended_at IS NULL
 | 再次开始冒充 | `POST B/impersonation` |
 | 管理面 | 全部 `B/admin/*` |
 
-**冒充期间允许的路由**（封闭集合，登记为 `Impersonable`）：`DELETE B/impersonation`、`GET B/impersonation`、`POST B/logout`、`GET B/session`、`GET B/me`。前两条由本模块登记；`POST B/logout` 与 `GET B/session` 由 [design-authn-session](design-authn-session.md) 经 `mount.Impersonable()` 登记，`GET B/me` 由 [design-authn-login](design-authn-login.md) 经 `mount.Impersonable()` 登记，路由的访问级别以各自的路由表为准。`POST B/logout` 登出的是发起者自己的会话，冒充随之结束：会话撤销使绑定的会话失效，`Active` 为假。
+**冒充期间允许的路由**（封闭集合，登记为 `Impersonable`）：`DELETE B/impersonation`、`GET B/impersonation`、`POST B/logout`、`GET B/session`、`GET B/me`。`DELETE B/impersonation` 与 `GET B/impersonation` 由本模块登记；`POST B/logout` 与 `GET B/session` 由 [design-authn-session](design-authn-session.md) 经 `mount.Impersonable()` 登记，`GET B/me` 由 [design-authn-login](design-authn-login.md) 经 `mount.Impersonable()` 登记，路由的访问级别以各自的路由表为准。`POST B/logout` 登出的是发起者自己的会话，冒充随之结束：会话撤销使绑定的会话失效，`Active` 为假。
 
 **分层拒绝。** 不在允许集合内的 authn 路由，冒充身份先被网关挡下：authn 的挂载端不被准入层守，网关对冒充身份只放进准入层所守的端与登记为 `Impersonable` 的路由，其余 401。处理器对 `Impersonating()` 再自检一次，答 403 `impersonation-restricted`，作为路由登记出错时的后备防线；网关与准入层从不写 403（[design-authn-gate](design-authn-gate.md)）。
 
-**冒充身份不受租户的「要求多因素」「要求 SSO」约束。** 这些策略证明的是目标本人的身份，而冒充按定义不是目标本人，发起者的强认证已在开始时核验；不豁免则冒充在启用了强制 SSO 的租户里根本不可用。准入层对冒充身份跳过它们（[design-tenant-admission](design-tenant-admission.md)）。授权与宿主业务对冒充的约束（例如冒充时只读）读 `Identity.Impersonating()` 与 `Actor()`，authn 不替它们写 403。
+**冒充身份不受租户的「要求多因素」「要求 SSO」约束。** 这些策略证明的是目标本人的身份，而冒充按定义不是目标本人，发起者的强认证已在开始时核验；不豁免则冒充在启用了强制 SSO 的租户里根本不可用。准入层对冒充身份跳过它们（[design-tenant-admission](design-tenant-admission.md)）。`authz.guard` 与宿主业务对冒充的约束（例如冒充时只读）读 `Identity.Impersonating()` 与 `Actor()`，authn 不替它们写 403。
 
 ### 租户范围的执行
 
@@ -515,7 +515,7 @@ flowchart TD
 - **租户解析豁免的路由。** 准入层所守的端上，租户解析豁免的业务路由没有租户上下文：非冒充身份照常放行，冒充身份在准入层得 404，但在网关一侧仍到得了它们，对它们的拒绝完全落在准入层对「无租户上下文」的判定上。宿主不应在允许冒充的端上对业务路由开租户解析的豁免。
 - **准入层不守的端。** 这些端只放冒充身份进 `Impersonable` 路由，宿主的 admin 一类端对冒充身份是 401。`ScopeGuard.Covers` 只说明准入层守哪些端，不核对宿主有没有在那些端上开解析豁免。
 - **外部资源服务器的范围。** 外部校验方若不读冒充令牌的 `imp_tenant`，则不受租户范围约束；本进程校验时范围取自记录。
-- **「不得冒充谁」。** 不得冒充权限更高或同级的账户，本模块做不到，它不认识角色；这是 `Decider` 的实现方的责任，也是对授权承诺的一部分。
+- **「不得冒充谁」。** 不得冒充权限更高或同级的账户，本模块做不到，它不认识角色；这是 `Decider` 的实现方（`authz.guard` 或宿主）的责任，也是对授权承诺的一部分。
 - **Go 接口的直接调用。** `Revoke`、`End` 与 `List` 经 Go 接口直接调用时不询问 `Decider`，授权在 `authn.admin` 的处理器里完成；宿主自己的命令借此撤销冒充，是运维手段。
 - **冒充理由的个人信息。** 理由是管理员写的自由文本，随记录长期保留，是已知残留。
 
@@ -538,7 +538,7 @@ flowchart TD
 
 - **假设：** 部分唯一索引（未结束的记录按会话唯一）在各个受支持的方言下写法兼容且迁移可用。**测试：** 同一会话上并发两次开始，恰一次成功、另一次得 `ErrImpersonationActive`；记录到期之后再次开始可以成功。
 - **假设：** 强制档审计在事务之外写，在 SQLite 文件库（默认 `IMMEDIATE` 事务）上可以成功。**测试：** 该库上的开始冒充必须成功，审计行存在，事务内没有调用审计。
-- **假设：** `authn.gate` 对 `ScopeGuard` 的可选取用，与准入层在链上相对网关的位置不构成构造环：网关声明鉴别阶段、准入层声明授权阶段，先后由阶段顺序给出，不是构造依赖。准入层落在记录阶段与限流阶段之内；它与授权层同属授权阶段，排在授权层之外。**测试：** 同时纳入网关、准入层与冒充模块的装配测试，断言构造成功；没有准入层时冒充模块以缺少提供者失败；链序符合阶段顺序。
+- **假设：** `authn.gate` 对 `ScopeGuard` 的可选取用，与准入层在链上相对网关的位置不构成构造环：网关声明鉴别阶段、准入层声明授权阶段，先后由阶段顺序给出，不是构造依赖。准入层落在记录阶段与限流阶段之内；它与 `authz.guard` 同属授权阶段，排在 `authz.guard` 之外。**测试：** 同时纳入网关、准入层与冒充模块的装配测试，断言构造成功；没有准入层时冒充模块以缺少提供者失败；链序符合阶段顺序。
 - **假设：** 准入层对范围不符、无租户上下文与非成员的应答形状相同，都是 404。**测试：** 准入层的表驱动测试，并有一条端到端测试：租户 A 的冒充身份访问租户 B 的路由得 404，访问不受准入层守且未登记 `Impersonable` 的端得 401。
 - **假设：** 记录失效的各个成因（到期、会话结束、发起者或目标停用、成员移除、撤销）都使 `Active` 为假，且落库后同一会话可再次开始。**测试：** 逐成因一条：记录的结束原因被写入，会话端回到发起者自己的身份，令牌端被拒。
 
@@ -555,7 +555,7 @@ flowchart TD
 ## 扩展点
 
 - **`Impersonation` 是排他功能。** 宿主可以换上自己的实现，须满足「外部接口契约」的承诺与「开始的顺序」的约束，并同样以 `ScopeGuard`、`audit.Audit` 为必需依赖。
-- **`Decider` 接缝。** 非本模块的扩展点，而是它的取用点：宿主或授权模块交付 `Decider`，在结构性限制之上收紧「谁能冒充谁」。结构性限制本身不可经 `Decider` 放宽，也没有配置项可以关闭其中任何一条。
+- **`Decider` 接缝。** 非本模块的扩展点，而是它的取用点：宿主或 `authz.guard` 交付 `Decider`，在结构性限制之上收紧「谁能冒充谁」。结构性限制本身不可经 `Decider` 放宽，也没有配置项可以关闭其中任何一条。
 - **`Impersonable` 登记。** 宿主自己的路由可以经 `Gate.Impersonable` 登记为冒充中允许；authn 自己的路由只有「冒充期间的请求」一节列出的几条。
 - **`authn.impersonation.started` 事件。** 宿主接通知、接监控的钩子。
 

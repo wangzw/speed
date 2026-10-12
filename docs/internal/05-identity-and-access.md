@@ -17,6 +17,8 @@
 >
 > 而 Casbin 真正的价值（可插拔 model.conf、ABAC、RESTful matcher）在这里全部用不上：判定链就是 `subject → bindings → role → permissions` 加一次物化路径前缀判断。在"以库的形式分发的模块化单体"这个前提下，为此往每个交付项目的 `go.sum` 里塞两个第三方依赖，不成立。
 >
+> **注**：本结论已被 `ADR-authz-reversal-2026-10-12` 取代；被否的是 Casbin 的默认存储（`casbin_rule` 无租户列），新设计以自写 adapter 加真实租户列消解。
+>
 > 落地实现同时明确了本节几处留白，均记录在 `go/rbac/AGENTS.md` 的 deferral 清单里：
 >
 > - **不做角色到角色的继承**（Casbin 的 `g` 分组）。本节"权限沿树继承"说的是**组织树**继承——绑定在 `/g1` 的授权覆盖 `/g1/r2/s7`——这一条已实现；角色层级本节从未要求，不臆测实现。
