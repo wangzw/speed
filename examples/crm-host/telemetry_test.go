@@ -386,3 +386,34 @@ func spanNamedIn(r *otlpReceiver, name, traceID, spanID string) bool {
 	}
 	return false
 }
+
+// requestDurationRequired and requestDurationOptional are the attribute keys a
+// data point of the request duration carries: the library's whole surface, not
+// a closed pair. The first are on every point; the second depend on the
+// request, the port and the route being known, and on an error having been
+// seen. A key in neither, a tenant or a user among them, is not the library's.
+var (
+	requestDurationRequired = []string{"http.request.method", "http.response.status_code", "server.address", "url.scheme"}
+	requestDurationOptional = []string{
+		"error.type", "http.route", "network.protocol.name", "network.protocol.version", "server.port",
+	}
+)
+
+// requestDurationAttributeError holds the keys of one data point of the request
+// duration to the library's surface: all of the required ones, and no key
+// outside the required and the optional ones. It returns nil when they hold.
+func requestDurationAttributeError(keys []string) error {
+	for _, want := range requestDurationRequired {
+		if !slices.Contains(keys, want) {
+			return fmt.Errorf("carries the attributes %v, which lack the %s the library records on every request",
+				slices.Sorted(slices.Values(keys)), want)
+		}
+	}
+	for _, key := range keys {
+		if !slices.Contains(requestDurationRequired, key) && !slices.Contains(requestDurationOptional, key) {
+			return fmt.Errorf("carries the attribute %s, which is not among the library's: %v", key,
+				slices.Sorted(slices.Values(keys)))
+		}
+	}
+	return nil
+}

@@ -358,9 +358,7 @@ observability:
       batch-timeout: 200ms
     endpoints:
       - public
-    events:
-      - %q
-`, public, ops, dbPath, authnSection, placedEventType, placedEventType)
+`, public, ops, dbPath, authnSection, placedEventType)
 
 	configPath := filepath.Join(dir, "config.yaml")
 	if err := os.WriteFile(configPath, []byte(body), 0o600); err != nil {
@@ -1745,7 +1743,7 @@ func TestTheLimitingLayerSitsInsideTheGuards(t *testing.T) {
 		t.Fatalf("the chain %q carries no %q layer, which the configuration names %q for",
 			chain, ratelimitModuleName, publicEndpoint)
 	}
-	for _, inside := range []string{gateModuleName, resolveModuleName, journalModuleName} {
+	for _, inside := range []string{gateModuleName, resolveModuleName} {
 		at := strings.Index(chain, inside)
 		if at < 0 {
 			t.Fatalf("the chain %q is missing the %q layer the limiter has to sit inside", chain, inside)
@@ -1754,6 +1752,14 @@ func TestTheLimitingLayerSitsInsideTheGuards(t *testing.T) {
 			t.Errorf("the chain %q puts %q outside %q, which it has to sit inside",
 				chain, ratelimitModuleName, inside)
 		}
+	}
+	// The recording stage sits inside the throttling stage, so a refusal from
+	// the limiter leaves no audit row.
+	if journalAt := strings.Index(chain, journalModuleName); journalAt < 0 {
+		t.Fatalf("the chain %q is missing the %q layer", chain, journalModuleName)
+	} else if journalAt < limiter {
+		t.Errorf("the chain %q puts %q outside %q, and the recording stage sits inside the throttling one",
+			chain, journalModuleName, ratelimitModuleName)
 	}
 
 	// The endpoint the configuration does not name is served without the layer,
@@ -1811,26 +1817,16 @@ func TestTheLimitingLayerRefusesPastTheLimit(t *testing.T) {
 	}
 	requireProblem(t, "the refusal by the limiter", header)
 
-	// The request row is written once the inner chain has returned, so the
-	// table is read until the refusal turns up rather than once.
-	deadline := time.Now().Add(settleLimit)
-	for {
-		var captured bool
-		for _, row := range f.journal(t) {
-			if row.source == "request" && row.action == nethttp.MethodGet && row.object == ordersPath &&
-				row.outcome == strconv.Itoa(nethttp.StatusTooManyRequests) &&
-				row.tenant == limitedTenant {
-				captured = true
-			}
+	// The recording stage sits inside the throttling stage, so a refusal made
+	// by the limiter never reaches the recorder and leaves no request row. The
+	// case gives any capture path the time it would need and then holds that
+	// absence: a row here would mean the refusal was answered further in.
+	time.Sleep(200 * time.Millisecond)
+	for _, row := range f.journal(t) {
+		if row.source == "request" && row.action == nethttp.MethodGet && row.object == ordersPath &&
+			row.outcome == strconv.Itoa(nethttp.StatusTooManyRequests) {
+			t.Errorf("the journal captured a request row for the limiter's refusal, and the recording stage sits inside the throttling one")
 		}
-		if captured {
-			return
-		}
-		if time.Now().After(deadline) {
-			t.Fatalf("the journal captured no request row for the refusal of %s on %s %s",
-				limitedTenant, nethttp.MethodGet, ordersPath)
-		}
-		time.Sleep(20 * time.Millisecond)
 	}
 }
 
@@ -2210,17 +2206,17 @@ func TestAServedRequestProducesASpan(t *testing.T) {
 
 	// The batch processor hands the span over on its own schedule, so the case
 	// waits for the line rather than reading it straight away. The span is
-	// named for the endpoint and the method the layer observed, which is a
-	// string nothing else in this run writes.
+	// named for the method and the route the layer observed, and read as the
+	// name of an exported span, which nothing else in this run writes.
+	spanName := `"Name":"` + nethttp.MethodGet + " " + ordersPath + `"`
 	deadline := time.Now().Add(settleLimit)
 	for time.Now().Before(deadline) {
-		if strings.Contains(run.output(), publicEndpoint+" GET") {
+		if strings.Contains(run.output(), spanName) {
 			return
 		}
 		time.Sleep(20 * time.Millisecond)
 	}
-	t.Fatalf("no span named for the endpoint and the method reached the export backend; the run wrote:\n%s",
-		run.output())
+	t.Fatalf("no span named %s reached the export backend; the run wrote:\n%s", spanName, run.output())
 }
 
 // contains reports whether a string slice holds a value.
