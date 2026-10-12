@@ -548,6 +548,40 @@ func TestGuardRequireWritesTheRefusal(t *testing.T) {
 	})
 }
 
+// The handler API's explicit-domain form decides in the domain it is given and
+// not in the domain the request carries: a caller that names a domain of its own
+// — a management surface whose path tenant is data and not a scope — is not
+// steered by the tenant the request resolved to. The context here carries no
+// tenant, so the context-based form reads the platform domain, while the
+// explicit form decides in the domain it was handed.
+func TestGuardRequirePermissionInDecidesInTheGivenDomain(t *testing.T) {
+	t.Run("the explicit domain is used", func(t *testing.T) {
+		r := newRig(t)
+		r.enforcer.answer = func(authz.Query) (bool, error) { return true, nil }
+		c, _ := ginContext(t, caller(t))
+		if !r.p.RequirePermissionIn(c, authz.PermissionAccountRead, "t-other") {
+			t.Fatal("RequirePermissionIn refused a question the engine allowed")
+		}
+		want := authz.Query{Subject: "alice", Domain: "t-other", Object: "account", Action: "read"}
+		if got := r.enforcer.queries(); len(got) != 1 || got[0] != want {
+			t.Fatalf("the engine was asked %v, want exactly %v", got, want)
+		}
+	})
+
+	t.Run("the context-based form reads the platform domain", func(t *testing.T) {
+		r := newRig(t)
+		r.enforcer.answer = func(authz.Query) (bool, error) { return true, nil }
+		c, _ := ginContext(t, caller(t))
+		if !r.p.RequirePermission(c, authz.PermissionAccountRead) {
+			t.Fatal("RequirePermission refused a question the engine allowed")
+		}
+		want := authz.Query{Subject: "alice", Domain: authz.PlatformDomain, Object: "account", Action: "read"}
+		if got := r.enforcer.queries(); len(got) != 1 || got[0] != want {
+			t.Fatalf("the engine was asked %v, want exactly %v", got, want)
+		}
+	})
+}
+
 // decisionsNameForTest is the published instrument name, written as a literal
 // and not through decisionsInstrument. The name is a stability commitment a
 // dashboard or an alert is written against, so the case finds the instrument by
@@ -887,6 +921,9 @@ type guardStub struct{}
 
 func (guardStub) Allowed(*gin.Context, authz.Permission) (bool, error)  { return false, nil }
 func (guardStub) RequirePermission(*gin.Context, authz.Permission) bool { return false }
+func (guardStub) RequirePermissionIn(*gin.Context, authz.Permission, authz.Domain) bool {
+	return false
+}
 
 // routerStub stands for an entry point module: an endpoint whose registrations
 // are dropped, so wiring succeeds without a listener.

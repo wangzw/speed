@@ -167,15 +167,26 @@ func Module() core.Module {
 // and a second method named Require would collide with it and leave the product
 // unable to deliver both capabilities.
 type Guard interface {
-	// Allowed answers whether the identity on the request may do perm. A false
-	// with no error is a denial; a non-nil error is an outage the caller reads
-	// as a 503. A request with no identity, or a permission this module cannot
-	// express, is refused.
+	// Allowed answers whether the identity on the request may do perm in the
+	// request's own domain — the tenant it resolved to, or the platform domain
+	// when it resolved none. A false with no error is a denial; a non-nil error
+	// is an outage the caller reads as a 503. A request with no identity, or a
+	// permission this module cannot express, is refused.
 	Allowed(c *gin.Context, perm authz.Permission) (bool, error)
 	// RequirePermission is Allowed with the refusal written: it answers whether
 	// the request may go on, writing a 403 for a denial and a 503 for an outage,
 	// and returning false in both cases.
 	RequirePermission(c *gin.Context, perm authz.Permission) bool
+	// RequirePermissionIn is RequirePermission with the policy domain named
+	// explicitly rather than read from the request: it answers whether the
+	// identity on the request may do perm in domain, writing the same refusals.
+	//
+	// It is for a caller whose decision must not be steered by whatever tenant
+	// the request happened to resolve to — a management surface that names a
+	// tenant in its path as data and decides in a fixed domain of its own, so
+	// that a caller authorized in one tenant cannot reach another's data by
+	// naming it. Reading the domain from the context would let the two drift.
+	RequirePermissionIn(c *gin.Context, perm authz.Permission, domain authz.Domain) bool
 }
 
 // product is this module's product. It implements authn.Decider, the
@@ -378,13 +389,9 @@ func (p *product) enforce(c *gin.Context, perm authz.Permission, realm string) {
 		p.conclude(c, decision{outcome: denied, permission: perm}, realm)
 		return
 	}
-	domain := authz.PlatformDomain
-	if tenantID, ok := tenant.FromContext(ctx); ok {
-		domain = authz.Domain(tenantID)
-	}
 	allow, err := p.enforcer.Allowed(ctx, authz.Query{
 		Subject: id.Key(),
-		Domain:  domain,
+		Domain:  domainOf(c),
 		Object:  object,
 		Action:  action,
 	})
@@ -440,30 +447,23 @@ func (p *product) conclude(c *gin.Context, d decision, realm string) {
 	}
 }
 
+// domainOf reads the policy domain a handler-internal decision runs in when the
+// domain is not named: the tenant the request resolved to, or the platform
+// domain when it resolved none. It is the one read of the tenant the middleware
+// and the handler API share.
+func domainOf(c *gin.Context) authz.Domain {
+	if tenantID, ok := tenant.FromContext(c.Request.Context()); ok {
+		return authz.Domain(tenantID)
+	}
+	return authz.PlatformDomain
+}
+
 // Allowed implements Guard. It reads the identity and the tenant off the request
 // and puts one query to the engine. A request with no identity, and a permission
 // this module cannot express, are both refused without an error; an engine error
 // is carried out as it stands.
 func (p *product) Allowed(c *gin.Context, perm authz.Permission) (bool, error) {
-	ctx := c.Request.Context()
-	id, ok := authn.FromContext(ctx)
-	if !ok {
-		return false, nil
-	}
-	object, action, ok := ObjectAction(perm)
-	if !ok {
-		return false, nil
-	}
-	domain := authz.PlatformDomain
-	if tenantID, ok := tenant.FromContext(ctx); ok {
-		domain = authz.Domain(tenantID)
-	}
-	return p.enforcer.Allowed(ctx, authz.Query{
-		Subject: id.Key(),
-		Domain:  domain,
-		Object:  object,
-		Action:  action,
-	})
+	return p.allowedIn(c, perm, domainOf(c))
 }
 
 // RequirePermission implements Guard: Allowed with the refusal written. It
@@ -473,7 +473,45 @@ func (p *product) Allowed(c *gin.Context, perm authz.Permission) (bool, error) {
 // middleware uses, so an outage reached this way leaves its cause in the log as
 // the middleware's does.
 func (p *product) RequirePermission(c *gin.Context, perm authz.Permission) bool {
-	allow, err := p.Allowed(c, perm)
+	return p.requireIn(c, perm, domainOf(c))
+}
+
+// RequirePermissionIn implements Guard: RequirePermission with the policy domain
+// named explicitly. It decides in domain and never reads the request's tenant,
+// so a caller that asks in a fixed domain of its own cannot be steered by
+// whatever tenant the request resolved to.
+func (p *product) RequirePermissionIn(c *gin.Context, perm authz.Permission, domain authz.Domain) bool {
+	return p.requireIn(c, perm, domain)
+}
+
+// allowedIn answers whether the identity on the request may do perm in domain,
+// without writing anything. A request with no identity, and a permission this
+// module cannot express, are both refused without an error; an engine error is
+// carried out as it stands.
+func (p *product) allowedIn(c *gin.Context, perm authz.Permission, domain authz.Domain) (bool, error) {
+	ctx := c.Request.Context()
+	id, ok := authn.FromContext(ctx)
+	if !ok {
+		return false, nil
+	}
+	object, action, ok := ObjectAction(perm)
+	if !ok {
+		return false, nil
+	}
+	return p.enforcer.Allowed(ctx, authz.Query{
+		Subject: id.Key(),
+		Domain:  domain,
+		Object:  object,
+		Action:  action,
+	})
+}
+
+// requireIn decides in domain and writes the refusal: a 503 for an outage and a
+// 403 for a denial, and false in both cases. Both refusals go through the same
+// writers the middleware uses, so an outage reached this way leaves its cause in
+// the log as the middleware's does.
+func (p *product) requireIn(c *gin.Context, perm authz.Permission, domain authz.Domain) bool {
+	allow, err := p.allowedIn(c, perm, domain)
 	if err != nil {
 		unavailable(c, outage, err)
 		return false

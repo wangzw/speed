@@ -111,6 +111,14 @@ here must not cross, and how to run it.
   cannot carry two methods of one name, and a `Require` on the handler API would
   collide with it and leave the product unable to deliver both capabilities.
   `TestGuardAllowedAnswersWithoutWriting`, `TestGuardRequireWritesTheRefusal`.
+- **A handler may name the domain, and then the request's tenant is not read.**
+  `Allowed` and `RequirePermission` decide in the tenant the request resolved to
+  (or the platform domain when it resolved none). `RequirePermissionIn` decides
+  in the domain it is handed instead, so a management surface whose path tenant
+  is data and not the deciding scope is not steered by whatever tenant the
+  request happened to resolve to: reading the request's tenant there would let a
+  caller authorized in one tenant reach another's data by naming it in the path.
+  `TestGuardRequirePermissionInDecidesInTheGivenDomain`.
 - **The metric is a closed set.** `authz.guard.decisions` has one attribute,
   `outcome`, whose values are `allowed`, `denied`, `unguarded`, `unavailable` and
   `no-identity`; every collection observes all of them, the empty ones included,

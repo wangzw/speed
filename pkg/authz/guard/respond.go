@@ -80,8 +80,8 @@ type decision struct {
 	permission authz.Permission
 }
 
-// The shape of a 403 answer. typePrefix is this module's problem-type namespace
-// and forbidden is its one code in it.
+// The shape of a 403 answer. typePrefix is the authorization capability's
+// problem-type namespace; forbidden is the code this layer writes in it.
 const (
 	typePrefix    = "urn:speed:authz:"
 	forbiddenCode = "forbidden"

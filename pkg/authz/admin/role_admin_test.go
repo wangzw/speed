@@ -1,0 +1,308 @@
+package admin
+
+import (
+	"errors"
+	"net/http"
+	"strings"
+	"testing"
+	"time"
+
+	"github.com/gin-gonic/gin"
+
+	"github.com/vislake/speed/pkg/authz"
+)
+
+// TestAnUnauthorisedRoleDeleteReachesNoManagerAndWritesNoAudit holds the delete
+// route's decision: the guard is asked for the write's permission, and a
+// shortfall ends the handler before the manager is called and before any audit
+// row is written. The delete is a write, so the permission is role.manage and
+// not the read's.
+func TestAnUnauthorisedRoleDeleteReachesNoManagerAndWritesNoAudit(t *testing.T) {
+	r := newRig(t)
+	r.guard.allow = false
+	w := r.serve(r.p.handleRoleDelete, http.MethodDelete, "/authz/admin/tenants/t1/roles/editor",
+		params("tenant", "t1", "role", "editor"), nil)
+	if w.Code != http.StatusForbidden {
+		t.Fatalf("an unauthorised role delete answered %d, want 403", w.Code)
+	}
+	if got := r.guard.askedFor(); len(got) != 1 || got[0] != authz.PermissionRoleManage {
+		t.Fatalf("the delete asked the guard for %v, want [authz.role.manage]", got)
+	}
+	if got := r.manager.recorded(); len(got) != 0 {
+		t.Fatalf("the manager was called %v on an unauthorised delete", got)
+	}
+	if got := r.audit.entries(); len(got) != 0 {
+		t.Fatalf("an audit row was written %v on an unauthorised delete", got)
+	}
+}
+
+// TestDeletingARoleAsksForRoleManageAndLandsOneSuccessRow holds the delete
+// route's permission and its audit: it asks for role.manage, and a delete that
+// lands writes exactly one success row whose object is the role, before any
+// other answer.
+func TestDeletingARoleAsksForRoleManageAndLandsOneSuccessRow(t *testing.T) {
+	r := newRig(t)
+	w := r.serve(r.p.handleRoleDelete, http.MethodDelete, "/authz/admin/tenants/t1/roles/editor",
+		params("tenant", "t1", "role", "editor"), nil)
+	if w.Code != http.StatusNoContent {
+		t.Fatalf("deleting a role answered %d, want 204", w.Code)
+	}
+	if got := r.guard.askedFor(); len(got) != 1 || got[0] != authz.PermissionRoleManage {
+		t.Fatalf("the delete asked the guard for %v, want [authz.role.manage]", got)
+	}
+	got := r.manager.recorded()
+	if len(got) != 1 || got[0].op != "DeleteRole" {
+		t.Fatalf("the manager calls = %+v, want one DeleteRole", got)
+	}
+	rows := r.audit.entries()
+	if len(rows) != 1 || rows[0].Action != actionRoleDelete || rows[0].Outcome != outcomeSuccess {
+		t.Fatalf("the audit rows = %+v, want one success row for %s", rows, actionRoleDelete)
+	}
+	if rows[0].Object != "editor" {
+		t.Fatalf("the mandatory row's object = %q, want the role editor", rows[0].Object)
+	}
+}
+
+// TestARoleListWhoseManagerFailsIsMapped holds the read's failure path: a
+// manager failure that a read reaches is mapped by the same closed answer the
+// writes use, and the answer carries no list. A read that swallowed the error
+// would answer 200 with an empty roles view.
+func TestARoleListWhoseManagerFailsIsMapped(t *testing.T) {
+	t.Run("a tenant mismatch is a 400", func(t *testing.T) {
+		r := newRig(t)
+		r.manager.fail(authz.ErrTenantMismatch)
+		w := r.serve(r.p.handleRoleList, http.MethodGet, "/authz/admin/tenants/t1/roles",
+			params("tenant", "t1"), nil)
+		if w.Code != http.StatusBadRequest {
+			t.Fatalf("a role list whose manager refused the tenant answered %d, want 400", w.Code)
+		}
+	})
+	t.Run("any other failure is a 503 with no list", func(t *testing.T) {
+		r := newRig(t)
+		r.manager.fail(errors.New("the store is down"))
+		w := r.serve(r.p.handleRoleList, http.MethodGet, "/authz/admin/tenants/t1/roles",
+			params("tenant", "t1"), nil)
+		if w.Code != http.StatusServiceUnavailable {
+			t.Fatalf("a role list whose manager failed answered %d, want 503", w.Code)
+		}
+		if hasKey(t, w.Body.String(), "roles") {
+			t.Fatalf("the refusal %q carries a roles view, want none", w.Body.String())
+		}
+	})
+}
+
+// TestAnonymousRequestsAreRefusedOnEveryRoleRoute holds the caller check on the
+// role routes: each answers 401 before the guard is asked and before the manager
+// is called, so the check cannot be dropped on the list or the delete while the
+// write's own case still passes.
+func TestAnonymousRequestsAreRefusedOnEveryRoleRoute(t *testing.T) {
+	cases := map[string]struct {
+		handler func(*product) gin.HandlerFunc
+		method  string
+		path    string
+		params  gin.Params
+	}{
+		"the list":   {func(p *product) gin.HandlerFunc { return p.handleRoleList }, http.MethodGet, "/authz/admin/tenants/t1/roles", params("tenant", "t1")},
+		"the write":  {func(p *product) gin.HandlerFunc { return p.handleRolePut }, http.MethodPut, "/authz/admin/tenants/t1/roles/editor", params("tenant", "t1", "role", "editor")},
+		"the delete": {func(p *product) gin.HandlerFunc { return p.handleRoleDelete }, http.MethodDelete, "/authz/admin/tenants/t1/roles/editor", params("tenant", "t1", "role", "editor")},
+	}
+	for name, tc := range cases {
+		t.Run(name, func(t *testing.T) {
+			r := newRig(t)
+			w := r.serveAnonymous(tc.handler(r.p), tc.method, tc.path, tc.params)
+			if w.Code != http.StatusUnauthorized {
+				t.Fatalf("an anonymous request answered %d, want 401", w.Code)
+			}
+			if got := r.guard.askedFor(); len(got) != 0 {
+				t.Fatalf("the guard was asked %v for an anonymous request", got)
+			}
+			if got := r.manager.recorded(); len(got) != 0 {
+				t.Fatalf("the manager was called %v for an anonymous request", got)
+			}
+			if got := r.audit.entries(); len(got) != 0 {
+				t.Fatalf("an audit row was written %v for an anonymous request", got)
+			}
+		})
+	}
+}
+
+// TestARolePutFailureLeavesAFailedRow holds the write's failure path on the put
+// verb: a put the manager refuses leaves the mandatory success row and a failed
+// row linked to it by the action id, the same shape a delete leaves. Only the
+// delete was held to two rows, so a put that wrote its failed row differently
+// was invisible.
+func TestARolePutFailureLeavesAFailedRow(t *testing.T) {
+	r := newRig(t)
+	r.manager.fail(errors.New("the store is down"))
+	w := r.serve(r.p.handleRolePut, http.MethodPut, "/authz/admin/tenants/t1/roles/editor",
+		params("tenant", "t1", "role", "editor"), roleBody{})
+	if w.Code != http.StatusServiceUnavailable {
+		t.Fatalf("a put whose action failed answered %d, want 503", w.Code)
+	}
+	rows := r.audit.entries()
+	if len(rows) != 2 {
+		t.Fatalf("the audit rows = %+v, want the mandatory row and the failed one", rows)
+	}
+	if rows[0].Action != actionRolePut || rows[0].Outcome != outcomeSuccess {
+		t.Fatalf("the mandatory row = %+v, want a success row for %s", rows[0], actionRolePut)
+	}
+	if rows[1].Action != actionRolePut || rows[1].Outcome != outcomeFailed {
+		t.Fatalf("the failed row = %+v, want a failed row for %s", rows[1], actionRolePut)
+	}
+	id := rows[0].Detail[detailActionID]
+	if id == "" || rows[1].Detail[detailActionID] != id {
+		t.Fatalf("the rows are not linked by the action id: %q vs %q", id, rows[1].Detail[detailActionID])
+	}
+}
+
+// TestTheRoleListViewCarriesEveryField holds the role view's field mapping: the
+// answer decodes into the view with the tenant, the role, the builtin flag and
+// the description key each in its own field, and the timestamp normalized to
+// UTC. A list that only carried the role name as a substring would let a view
+// that swapped the tenant and the role, dropped the builtin flag, or left a
+// non-UTC timestamp pass.
+func TestTheRoleListViewCarriesEveryField(t *testing.T) {
+	created := time.Date(2021, 6, 7, 8, 9, 10, 0, time.FixedZone("plus-one", 3600))
+	r := newRig(t)
+	r.manager.roles = []authz.RoleRecord{
+		{Tenant: "t1", Role: "editor", Builtin: true, DescriptionKey: "authz.role.editor", CreatedAt: created},
+	}
+	w := r.serve(r.p.handleRoleList, http.MethodGet, "/authz/admin/tenants/t1/roles",
+		params("tenant", "t1"), nil)
+	if w.Code != http.StatusOK {
+		t.Fatalf("listing the roles answered %d, want 200", w.Code)
+	}
+	var got struct {
+		Roles []roleView `json:"roles"`
+	}
+	decodeInto(t, w.Body.String(), &got)
+	if len(got.Roles) != 1 {
+		t.Fatalf("the answer carries %d views, want one", len(got.Roles))
+	}
+	v := got.Roles[0]
+	if v.Tenant != "t1" || v.Role != "editor" || !v.Builtin || v.DescriptionKey != "authz.role.editor" {
+		t.Fatalf("the view = %+v, want tenant t1, role editor, builtin true, the description key", v)
+	}
+	if !v.CreatedAt.Equal(created) || v.CreatedAt.Location() != time.UTC {
+		t.Fatalf("the view's created_at = %v (%v), want the same instant in UTC", v.CreatedAt, v.CreatedAt.Location())
+	}
+}
+
+// TestARoleWriteAuditCarriesTheObjectAndDetail holds the audit row's object and
+// detail: the object is the row the write acted on, and the detail names the
+// tenant, the natural key and — for the put — the change. Asserting only the
+// action, the outcome and the action-id link lets the object and the detail be
+// swapped or emptied.
+func TestARoleWriteAuditCarriesTheObjectAndDetail(t *testing.T) {
+	t.Run("the put", func(t *testing.T) {
+		r := newRig(t)
+		w := r.serve(r.p.handleRolePut, http.MethodPut, "/authz/admin/tenants/t1/roles/editor",
+			params("tenant", "t1", "role", "editor"), roleBody{})
+		if w.Code != http.StatusNoContent {
+			t.Fatalf("writing a role answered %d, want 204", w.Code)
+		}
+		rows := r.audit.entries()
+		if len(rows) != 1 {
+			t.Fatalf("the audit rows = %+v, want one", rows)
+		}
+		if rows[0].Object != "editor" {
+			t.Fatalf("the mandatory row's object = %q, want the role editor", rows[0].Object)
+		}
+		if rows[0].Detail[detailTenant] != "t1" || rows[0].Detail[detailRole] != "editor" ||
+			rows[0].Detail[detailChange] != roleChange {
+			t.Fatalf("the mandatory row's detail = %+v, want tenant t1, role editor, change %s", rows[0].Detail, roleChange)
+		}
+	})
+	t.Run("the delete", func(t *testing.T) {
+		r := newRig(t)
+		w := r.serve(r.p.handleRoleDelete, http.MethodDelete, "/authz/admin/tenants/t1/roles/editor",
+			params("tenant", "t1", "role", "editor"), nil)
+		if w.Code != http.StatusNoContent {
+			t.Fatalf("deleting a role answered %d, want 204", w.Code)
+		}
+		rows := r.audit.entries()
+		if len(rows) != 1 {
+			t.Fatalf("the audit rows = %+v, want one", rows)
+		}
+		if rows[0].Object != "editor" {
+			t.Fatalf("the mandatory row's object = %q, want the role editor", rows[0].Object)
+		}
+		if rows[0].Detail[detailTenant] != "t1" || rows[0].Detail[detailRole] != "editor" {
+			t.Fatalf("the mandatory row's detail = %+v, want tenant t1 and role editor", rows[0].Detail)
+		}
+	})
+}
+
+// TestAMalformedRoleBodyIsRefused holds the body check: a body the handler
+// cannot read is a 400 answered before the audit row and before the manager, so
+// a handler that parsed and ignored the error — proceeding to the write — fails
+// here.
+func TestAMalformedRoleBodyIsRefused(t *testing.T) {
+	for _, raw := range []string{`{"builtin":`, `[1, 2, 3]`, `not json at all`} {
+		t.Run(raw, func(t *testing.T) {
+			r := newRig(t)
+			w := r.serveRaw(r.p.handleRolePut, http.MethodPut, "/authz/admin/tenants/t1/roles/editor",
+				params("tenant", "t1", "role", "editor"), raw)
+			if w.Code != http.StatusBadRequest {
+				t.Fatalf("a malformed body answered %d, want 400", w.Code)
+			}
+			if got := r.manager.recorded(); len(got) != 0 {
+				t.Fatalf("the manager was called %v for a malformed body", got)
+			}
+			if got := r.audit.entries(); len(got) != 0 {
+				t.Fatalf("an audit row was written %v for a malformed body", got)
+			}
+		})
+	}
+}
+
+// TestTheRoleRefusalProblemTypes holds the problem-type codes this module writes
+// for a refusal it judges: a 400 carries urn:speed:authz:bad-request and a 409
+// carries urn:speed:authz:conflict. The codes and the namespace prefix are the
+// wire contract, so a 400 and a 409 that carried each other's code, or a
+// renamed prefix, must fail.
+func TestTheRoleRefusalProblemTypes(t *testing.T) {
+	t.Run("a 400 is the bad-request code", func(t *testing.T) {
+		r := newRig(t)
+		r.manager.fail(authz.ErrUnknownRole)
+		w := r.serve(r.p.handleRolePut, http.MethodPut, "/authz/admin/tenants/t1/roles/ghost",
+			params("tenant", "t1", "role", "ghost"), roleBody{})
+		if w.Code != http.StatusBadRequest {
+			t.Fatalf("the answer = %d, want 400", w.Code)
+		}
+		if p := decodeProblem(t, w.Body.String()); p.Type != "urn:speed:authz:bad-request" {
+			t.Fatalf("the 400's type = %q, want urn:speed:authz:bad-request", p.Type)
+		}
+	})
+	t.Run("a 409 is the conflict code", func(t *testing.T) {
+		r := newRig(t)
+		r.manager.fail(authz.ErrBuiltinRole)
+		w := r.serve(r.p.handleRoleDelete, http.MethodDelete, "/authz/admin/tenants/t1/roles/editor",
+			params("tenant", "t1", "role", "editor"), nil)
+		if w.Code != http.StatusConflict {
+			t.Fatalf("the answer = %d, want 409", w.Code)
+		}
+		if p := decodeProblem(t, w.Body.String()); p.Type != "urn:speed:authz:conflict" {
+			t.Fatalf("the 409's type = %q, want urn:speed:authz:conflict", p.Type)
+		}
+	})
+}
+
+// TestAnAnonymousRoleRequestWritesA401WithoutAType holds the shape of the
+// module's own 401: the status alone and no problem type, and the realm
+// challenge the admission and authorization layers write. A 401 that carried a
+// type, or dropped the challenge, would not be the same shape as theirs.
+func TestAnAnonymousRoleRequestWritesA401WithoutAType(t *testing.T) {
+	r := newRig(t)
+	w := r.serveAnonymous(r.p.handleRolePut, http.MethodPut, "/authz/admin/tenants/t1/roles/editor",
+		params("tenant", "t1", "role", "editor"))
+	if w.Code != http.StatusUnauthorized {
+		t.Fatalf("an anonymous request answered %d, want 401", w.Code)
+	}
+	if p := decodeProblem(t, w.Body.String()); strings.HasPrefix(p.Type, "urn:speed:authz:") {
+		t.Fatalf("the 401's type = %q, want none of this capability's codes", p.Type)
+	}
+	if got := w.Header().Get("WWW-Authenticate"); got != realmChallenge("public") {
+		t.Fatalf("WWW-Authenticate = %q, want the realm challenge %q", got, realmChallenge("public"))
+	}
+}
