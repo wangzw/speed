@@ -1,10 +1,12 @@
 package main
 
 import (
+	"context"
 	"database/sql"
 	"encoding/base64"
 	"encoding/csv"
 	"fmt"
+	"log/slog"
 	"maps"
 	nethttp "net/http"
 	"slices"
@@ -13,7 +15,18 @@ import (
 	"testing"
 	"time"
 
+	"github.com/gin-gonic/gin"
+
+	"github.com/vislake/speed/pkg/authn"
+	"github.com/vislake/speed/pkg/authz"
+	"github.com/vislake/speed/pkg/authz/authztest"
+	authzguard "github.com/vislake/speed/pkg/authz/guard"
+	"github.com/vislake/speed/pkg/config"
+	"github.com/vislake/speed/pkg/core"
+	"github.com/vislake/speed/pkg/db"
+	speedhttp "github.com/vislake/speed/pkg/http"
 	"github.com/vislake/speed/pkg/log"
+	"github.com/vislake/speed/pkg/tenant"
 )
 
 // storedContact is a contact row as the table holds it: the sealed columns as
@@ -798,6 +811,239 @@ func statusCounts(answers []response) map[int]int {
 		counts[a.status]++
 	}
 	return counts
+}
+
+// The cases below hold the contacts routes' declarations. Each route names the
+// permission the enforcement middleware decides it on, so a route a module
+// binds but does not declare is refused 403 for every caller under the closed
+// default, and one declared on too coarse a permission lets a role the route
+// does not intend reach it.
+
+// contactsGuardConfig is the configuration an enforcement-only contacts drive
+// runs on: the endpoint the middleware would guard, named the way the stand-in
+// entry point declares it.
+const contactsGuardConfig = `{"authz":{"guard":{"endpoints":["api"]}}}`
+
+// contactsLogger is a stand-in for the logging capability. Its redaction is a
+// no-op that is present rather than nil: the contacts module registers the keys
+// its email and phone are logged under in New, before it takes its logger, so a
+// nil redaction would be called and panic.
+type contactsLogger struct{}
+
+func (contactsLogger) Named(string) *slog.Logger { return slog.New(slog.DiscardHandler) }
+func (contactsLogger) Redaction() log.Redaction  { return contactsRedaction{} }
+
+// contactsRedaction accepts every rule and does nothing with it.
+type contactsRedaction struct{}
+
+func (contactsRedaction) AddKeys(...string)              {}
+func (contactsRedaction) AddPattern(string, log.Matcher) {}
+
+// contactsEntryStub stands for the HTTP entry point in the contacts assembly
+// cases: one endpoint whose registrations are dropped.
+type contactsEntryStub struct{}
+
+func (contactsEntryStub) Endpoint(string) (speedhttp.Endpoint, error) {
+	return contactsEndpointStub{}, nil
+}
+func (contactsEntryStub) Endpoints() []string { return []string{apiEndpoint} }
+
+// contactsEndpointStub accepts registrations and does nothing with them.
+type contactsEndpointStub struct{}
+
+func (contactsEndpointStub) Route(string, string, ...gin.HandlerFunc) {}
+func (contactsEndpointStub) Use(speedhttp.Middleware)                 {}
+func (contactsEndpointStub) Accepting() bool                          { return true }
+
+// contactsSupply registers a stand-in module and supplies its instance, so the
+// contacts module resolves the capability from it exactly as a host's assembly
+// hands one over.
+func contactsSupply(reg *core.Registry, name string, token core.Token, instance any) {
+	reg.Register(core.Module{Name: name, Provides: []core.Provision{{Token: token}}})
+	reg.Supply(instance, name)
+}
+
+// newContactsRegistry builds a registry holding the real contacts module beside
+// a route-declaration surface and stand-ins for every other capability the
+// module requires, and names the modules a drive of it takes in.
+//
+// When guard is true the surface is the real enforcement module's, over the
+// host's business vocabulary and a stand-in engine and catalog, so a drive to
+// Start holds every declaration the contacts module makes to the permission
+// catalog and to the resolved translation. When guard is false the surface is
+// the given stand-in gate and no enforcement module runs, so a case reads back
+// what the contacts module declared without the enforcement module's checks.
+func newContactsRegistry(t *testing.T, gate authz.Gate, guard bool) (*core.Registry, []string) {
+	t.Helper()
+	reg := core.New()
+	reader := authztest.ConfigReaderAll(t, contactsGuardConfig, authzguard.Module())
+	reg.Register(config.Module())
+	reg.Supply(reader, config.ModuleName)
+	names := []string{
+		contactsModuleName, "stand-in.router", "stand-in.db", "stand-in.roster", "stand-in.accounts", "stand-in.log",
+	}
+	if guard {
+		reg.Register(authzguard.Module())
+		reg.Register(authzBusinessModule())
+		contactsSupply(reg, "stand-in.enforcer", (*authz.Enforcer)(nil), authztest.NewEnforcer())
+		contactsSupply(reg, "stand-in.catalog", (*authz.Catalog)(nil), authztest.NewCatalog(
+			permContactRead, permContactWrite, permContactDel, permContactExport))
+		names = append(names, authzguard.ModuleName, authzBusinessModuleName, "stand-in.enforcer", "stand-in.catalog")
+	} else {
+		contactsSupply(reg, "stand-in.gate", (*authz.Gate)(nil), gate)
+		names = append(names, "stand-in.gate")
+	}
+	reg.Register(contactsModule())
+	contactsSupply(reg, "stand-in.router", (*speedhttp.Router)(nil), contactsEntryStub{})
+	contactsSupply(reg, "stand-in.db", (*db.Database)(nil), struct{ db.Database }{})
+	contactsSupply(reg, "stand-in.roster", (*tenant.Catalog)(nil), struct{ tenant.Catalog }{})
+	contactsSupply(reg, "stand-in.accounts", (*authn.Accounts)(nil), struct{ authn.Accounts }{})
+	contactsSupply(reg, "stand-in.log", (*log.Logger)(nil), contactsLogger{})
+	return reg, names
+}
+
+// contactRoutes is every route the contacts module binds on the API endpoint, in
+// registration order, so a case that holds the whole surface to a property names
+// them once.
+var contactRoutes = []string{
+	createContactRoute, listContactsRoute, getContactRoute, patchContactRoute, deleteContactRoute,
+	upsertContactRoute, exportContactsRoute, autocompleteRoute, contactDirectoryRoute,
+}
+
+// TestContactsDeclaresEveryAPIRoute is the case for the contacts module's route
+// declarations, the surface the enforcement middleware reads.
+//
+// Every contacts route on the API endpoint declares a permission, so a request
+// that reaches one is decided by the policy rather than refused as an undeclared
+// route: under the closed default a route with no declaration is answered 403
+// for every caller, whatever role the caller holds. The observation therefore
+// discriminates: with a `Require` dropped for a route, that route is undeclared
+// and this case finds it not covered, while with the module as written every one
+// is covered. The drive runs the real enforcement module, so a declaration
+// naming a permission the host does not declare, or one the resolved translation
+// cannot express, fails the start rather than leaving a route that decides
+// nothing at request time.
+func TestContactsDeclaresEveryAPIRoute(t *testing.T) {
+	t.Parallel()
+	reg, names := newContactsRegistry(t, nil, true)
+	err := reg.Drive(t.Context(), core.Drive{
+		Depth:        core.StageStart,
+		Participants: names,
+		Action: func(_ context.Context, reg *core.Registry) error {
+			gate, err := core.Resolve[authz.Gate](reg)
+			if err != nil {
+				return err
+			}
+			for _, route := range contactRoutes {
+				method, path := splitRoute(route)
+				if !gate.Covered(method, path) {
+					t.Errorf("the route %s carries no declaration, so the middleware refuses it 403 for every caller "+
+						"under the closed default", route)
+				}
+			}
+			// The control: a route the module does not declare is not covered,
+			// which is the state a dropped declaration leaves a real route in.
+			if gate.Covered(nethttp.MethodGet, "/contacts/undeclared") {
+				t.Error("a route the module does not declare reads as covered")
+			}
+			return nil
+		},
+	})
+	if err != nil {
+		t.Fatalf("driving the contacts module with the enforcement module failed: %v", err)
+	}
+}
+
+// TestContactsDeclaresThePermissionEachRouteNeeds is the case for which
+// permission each contacts route declares, and it is what makes the role matrix
+// reach the routes: a viewer holds crm.contact.read and crm.contact.export and
+// so reads and exports, a rep holds crm.contact.write and so writes, and an
+// admin holds crm.contact.delete. A route declared on the wrong permission would
+// let a role the matrix does not intend reach it, so each route is held to the
+// exact permission it needs.
+func TestContactsDeclaresThePermissionEachRouteNeeds(t *testing.T) {
+	t.Parallel()
+	gate := authztest.NewGate()
+	reg, names := newContactsRegistry(t, gate, false)
+	if err := reg.Drive(t.Context(), core.Drive{Depth: core.StageInit, Participants: names}); err != nil {
+		t.Fatalf("driving the contacts module with a stand-in gate failed: %v", err)
+	}
+	for _, want := range []struct {
+		route string
+		perm  authz.Permission
+	}{
+		{createContactRoute, permContactWrite},
+		{listContactsRoute, permContactRead},
+		{getContactRoute, permContactRead},
+		{patchContactRoute, permContactWrite},
+		{deleteContactRoute, permContactDel},
+		{upsertContactRoute, permContactWrite},
+		{exportContactsRoute, permContactExport},
+		{autocompleteRoute, permContactRead},
+		{contactDirectoryRoute, permContactRead},
+	} {
+		method, path := splitRoute(want.route)
+		got, ok := gate.Requirement(method, path)
+		if !ok {
+			t.Errorf("the route %s declared no permission, want %q", want.route, want.perm)
+			continue
+		}
+		if got != want.perm {
+			t.Errorf("the route %s declares %q, want %q", want.route, got, want.perm)
+		}
+	}
+}
+
+// TestEachContactRouteTakesItsLeastRole is the case for the least role each
+// contacts route takes, now that the enforcement middleware decides a declared
+// route rather than the handler reading the caller's role. A viewer reads and
+// exports, a rep writes, an admin deletes: an actor at the route's least role
+// reaches it, and one below it is refused with 403. A non-member is answered 404
+// by admission, before the authorization layer runs, which the tenant-isolation
+// case holds.
+func TestEachContactRouteTakesItsLeastRole(t *testing.T) {
+	t.Parallel()
+	c := newCase(t, stackNamed(t, localStack))
+	c.sealWithCaseKey()
+	c.migrate()
+	h := c.serve()
+	cr := setUpCrew(t, c, h)
+	ivan := cr.as(h, cr.ivan, cr.acme)
+	rita := cr.as(h, cr.rita, cr.acme)
+	vera := cr.as(h, cr.vera, cr.acme)
+
+	rita.must(t, nethttp.MethodPost, "/accounts", map[string]any{"id": "acc-1", "name": "Rocket"},
+		nethttp.StatusCreated)
+	rita.must(t, nethttp.MethodPost, "/contacts", map[string]any{
+		"id": "con-1", "account_id": "acc-1", "name": "Ada", "email": "ada@example.test",
+	}, nethttp.StatusCreated)
+
+	// The reads take a viewer: the least member reaches them.
+	for _, path := range []string{
+		"/contacts/con-1", "/contacts?account_id=acc-1", "/contacts/autocomplete?prefix=a",
+		"/contacts/directory", "/contacts/export",
+	} {
+		vera.must(t, nethttp.MethodGet, path, nil, nethttp.StatusOK)
+	}
+
+	// The writes take a rep: a viewer is refused, a rep reaches them.
+	refused(t, "a viewer creating a contact", vera.send(t, nethttp.MethodPost, "/contacts", map[string]any{
+		"id": "con-v", "account_id": "acc-1", "name": "Viewer", "email": "viewer@example.test",
+	}))
+	refused(t, "a viewer updating a contact",
+		vera.send(t, nethttp.MethodPatch, "/contacts/con-1", map[string]any{"name": "Viewer"}))
+	refused(t, "a viewer finding or creating a contact",
+		vera.send(t, nethttp.MethodPost, "/contacts/upsert", map[string]any{
+			"account_id": "acc-1", "name": "Viewer", "email": "viewer@example.test",
+		}))
+	rita.must(t, nethttp.MethodPatch, "/contacts/con-1", map[string]any{"title": "CTO"}, nethttp.StatusOK)
+	rita.must(t, nethttp.MethodPost, "/contacts/upsert", map[string]any{
+		"account_id": "acc-1", "name": "Bea Brown", "email": "bea@example.test",
+	}, nethttp.StatusCreated)
+
+	// The delete takes an admin: a rep is refused, an admin reaches it.
+	refused(t, "a rep deleting a contact", rita.send(t, nethttp.MethodDelete, "/contacts/con-1", nil))
+	ivan.must(t, nethttp.MethodDelete, "/contacts/con-1", nil, nethttp.StatusNoContent)
 }
 
 // TestConcurrentContactWritesAtOneAccountAllCommit is the case for the contacts

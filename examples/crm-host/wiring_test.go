@@ -1,11 +1,13 @@
 package main
 
 import (
+	"context"
 	"encoding/json"
 	"go/ast"
 	"go/parser"
 	"go/token"
 	"io/fs"
+	nethttp "net/http"
 	"path"
 	"path/filepath"
 	"reflect"
@@ -17,14 +19,20 @@ import (
 
 	"gorm.io/gorm/schema"
 
+	"github.com/vislake/speed/pkg/audit"
+	"github.com/vislake/speed/pkg/authz"
+	authztest "github.com/vislake/speed/pkg/authz/authztest"
+	authzguard "github.com/vislake/speed/pkg/authz/guard"
 	"github.com/vislake/speed/pkg/config"
 	"github.com/vislake/speed/pkg/core"
 	"github.com/vislake/speed/pkg/db"
 	"github.com/vislake/speed/pkg/event"
+	"github.com/vislake/speed/pkg/event/outbox"
 	speedhttp "github.com/vislake/speed/pkg/http"
 	"github.com/vislake/speed/pkg/kv"
 	"github.com/vislake/speed/pkg/log"
 	"github.com/vislake/speed/pkg/observability"
+	"github.com/vislake/speed/pkg/settings"
 	"github.com/vislake/speed/pkg/tenant"
 
 	"github.com/vislake/speed/pkg/authn"
@@ -920,5 +928,189 @@ func TestEveryJournalledRouteIsAnOperationItsModuleDocuments(t *testing.T) {
 	}
 	if checked == 0 {
 		t.Fatal("no module hands the journal a route, so this case checks nothing")
+	}
+}
+
+// ginPathFromOpenAPI converts a path written in OpenAPI's grammar back to the
+// one gin registers: each "{name}" segment becomes ":name". It is the inverse of
+// openAPIPath, and the two together let a document and a declaration speak of
+// one route.
+func ginPathFromOpenAPI(path string) string {
+	segments := strings.Split(path, "/")
+	for i, segment := range segments {
+		if name, ok := strings.CutPrefix(segment, "{"); ok {
+			segments[i] = ":" + strings.TrimSuffix(name, "}")
+		}
+	}
+	return strings.Join(segments, "/")
+}
+
+// guardedRoute is one route on the guarded endpoint: the HTTP method and the
+// path as gin registers it, the pair the declaration table is keyed by.
+type guardedRoute struct{ method, path string }
+
+// guardedAPIRoutes enumerates every route the host binds on the guarded API
+// endpoint, from the OpenAPI fragments the modules declare for that endpoint.
+// Each fragment documents the operations its module serves, under the OpenAPI
+// spelling of each path, so the union is the whole guarded surface — the set a
+// coverage guard has to hold the declaration table against.
+func guardedAPIRoutes(t *testing.T) []guardedRoute {
+	t.Helper()
+	var routes []guardedRoute
+	for _, spec := range core.Resources[speedhttp.Spec](core.ProcessRegistry) {
+		if spec.Value.Endpoint != apiEndpoint {
+			continue
+		}
+		var part fragment
+		if err := json.Unmarshal(spec.Value.Document, &part); err != nil {
+			t.Fatalf("reading the OpenAPI fragment %s declares for %s: %v", spec.Module, spec.Value.Endpoint, err)
+		}
+		for path, item := range part.Paths {
+			for method := range item {
+				routes = append(routes, guardedRoute{strings.ToUpper(method), ginPathFromOpenAPI(path)})
+			}
+		}
+	}
+	slices.SortFunc(routes, func(a, b guardedRoute) int {
+		if c := strings.Compare(a.method, b.method); c != 0 {
+			return c
+		}
+		return strings.Compare(a.path, b.path)
+	})
+	return routes
+}
+
+// guardedAPIModules are the application modules that declare an OpenAPI fragment
+// for the guarded API endpoint — the ones whose Init records a route declaration
+// the coverage guard drives. A module that documents a route on that endpoint
+// and declares none is exactly what the guard exists to catch.
+func guardedAPIModules() []core.Module {
+	var out []core.Module
+	for _, a := range applications {
+		for _, res := range a.module.Resources {
+			if spec, ok := res.(speedhttp.Spec); ok && spec.Endpoint == apiEndpoint {
+				out = append(out, a.module)
+				break
+			}
+		}
+	}
+	return out
+}
+
+// guardedSettingsStore stands in for the settings surface when the settings and
+// audit routes' modules are driven. The preferences module joins the keys it
+// serves against the declarations the settings module reports, so the stand-in
+// lists every served key: a served key no declaration carries fails that
+// module's construction, which is the join the real store answers. The declared
+// type is a string for every key — the join reads the type only to name it, and
+// a string is one the settings API shows.
+type guardedSettingsStore struct{ settings.Store }
+
+func (guardedSettingsStore) Declared() []settings.DeclaredItem {
+	items := make([]settings.DeclaredItem, 0, len(servedKeys))
+	for _, k := range servedKeys {
+		items = append(items, settings.DeclaredItem{Key: k.key, Type: reflect.TypeFor[string]()})
+	}
+	return items
+}
+
+// newGuardedRoutesRegistry builds a registry holding the real enforcement module
+// over every module that declares a route on the guarded endpoint, with a
+// stand-in for every other capability they take. The declaration table is the
+// real one, so a route a module forgot to declare is absent from it and the
+// coverage case finds it; the enforcement module's Start holds every declaration
+// it does hold to the catalog and the resolved translation.
+func newGuardedRoutesRegistry(t *testing.T) (*core.Registry, []string) {
+	t.Helper()
+	guardModule := authzguard.Module()
+	modules := guardedAPIModules()
+	reader := authztest.ConfigReaderAll(t, sliceGuardConfig, append([]core.Module{guardModule}, modules...)...)
+
+	reg := core.New()
+	reg.Register(config.Module())
+	reg.Supply(reader, config.ModuleName)
+	reg.Register(guardModule)
+	reg.Register(authzBusinessModule())
+	sliceSupply(reg, "stand-in.enforcer", (*authz.Enforcer)(nil), authztest.NewEnforcer())
+	sliceSupply(reg, "stand-in.catalog", (*authz.Catalog)(nil), authztest.NewCatalog(businessPermissions...))
+	sliceSupply(reg, "stand-in.router", (*speedhttp.Router)(nil), sliceRouter{})
+	sliceSupply(reg, "stand-in.log", (*log.Logger)(nil), sliceLogger{})
+	sliceSupply(reg, "stand-in.db", (*db.Database)(nil), struct{ db.Database }{})
+	sliceSupply(reg, "stand-in.roster", (*tenant.Catalog)(nil), struct{ tenant.Catalog }{})
+	sliceSupply(reg, "stand-in.settings", (*settings.Store)(nil), guardedSettingsStore{})
+	sliceSupply(reg, "stand-in.accounts", (*authn.Accounts)(nil), struct{ authn.Accounts }{})
+	sliceSupply(reg, "stand-in.memberships", (*authn.Memberships)(nil), struct{ authn.Memberships }{})
+	sliceSupply(reg, "stand-in.manager", (*authz.Manager)(nil), struct{ authz.Manager }{})
+	sliceSupply(reg, "stand-in.kv", (*kv.KV)(nil), struct{ kv.KV }{})
+	sliceSupply(reg, "stand-in.bus", (*event.Bus)(nil), sliceBus{})
+	sliceSupply(reg, "stand-in.outbox", (*outbox.Outbox)(nil), struct{ outbox.Outbox }{})
+	sliceSupply(reg, "stand-in.seam", (*audit.Audit)(nil), struct{ audit.Audit }{})
+
+	names := []string{
+		authzguard.ModuleName, authzBusinessModuleName,
+		"stand-in.enforcer", "stand-in.catalog", "stand-in.router", "stand-in.log",
+		"stand-in.db", "stand-in.roster", "stand-in.settings", "stand-in.accounts",
+		"stand-in.memberships", "stand-in.manager", "stand-in.kv", "stand-in.bus",
+		"stand-in.outbox", "stand-in.seam",
+	}
+	for _, m := range modules {
+		reg.Register(m)
+		names = append(names, m.Name)
+	}
+	return reg, names
+}
+
+// TestEveryGuardedAPIRouteCarriesADeclaration is the closing guard of the
+// undeclared-default-reject: every route the host binds on the guarded endpoint
+// reads as declared in the enforcement module's declaration table.
+//
+// The middleware reads that table top down, and a route it holds no declaration
+// for is refused 403 under the closed default, for every caller whatever role
+// the caller holds. The observation therefore discriminates: drop one module's
+// `Require` for one route and that route is undeclared, so it is not covered and
+// this case names it; with the modules as written every route is covered. The
+// control is the same state read from the other side — a route the host does not
+// declare is not covered, which is what a dropped declaration leaves a real
+// route in. The drive runs the real enforcement module to Start, so a
+// declaration naming a permission outside the catalog, or one the resolved
+// translation cannot express, fails the start rather than leaving a route that
+// decides nothing at request time.
+func TestEveryGuardedAPIRouteCarriesADeclaration(t *testing.T) {
+	t.Parallel()
+	routes := guardedAPIRoutes(t)
+	if len(routes) == 0 {
+		t.Fatal("no module declares an OpenAPI fragment for the guarded API endpoint, so this case checks nothing")
+	}
+	reg, names := newGuardedRoutesRegistry(t)
+	var checked bool
+	err := reg.Drive(t.Context(), core.Drive{
+		Depth:        core.StageStart,
+		Participants: names,
+		Action: func(_ context.Context, reg *core.Registry) error {
+			gate, err := core.Resolve[authz.Gate](reg)
+			if err != nil {
+				return err
+			}
+			for _, r := range routes {
+				if !gate.Covered(r.method, r.path) {
+					t.Errorf("the guarded route %s %s carries no declaration, so the middleware refuses it "+
+						"403 for every caller under the closed default", r.method, r.path)
+				}
+			}
+			// A route the host does not declare reads as uncovered: it is the
+			// state a dropped declaration leaves a real route in, and the
+			// middleware answers it 403.
+			if gate.Covered(nethttp.MethodGet, "/crm-host-undeclared-control") {
+				t.Error("a route the host does not declare reads as covered")
+			}
+			checked = true
+			return nil
+		},
+	})
+	if err != nil {
+		t.Fatalf("driving every API-route module with the enforcement module failed: %v", err)
+	}
+	if !checked {
+		t.Fatal("the drive's action never ran, so nothing was held to the declaration table")
 	}
 }

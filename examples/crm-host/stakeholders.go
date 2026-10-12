@@ -135,12 +135,7 @@ func distinctIDs(ids []string) []string {
 // linked and removes the links to the rest, on the join table alone.
 func (p *dealsProduct) setStakeholders(c *gin.Context) {
 	ctx := c.Request.Context()
-	self, ok := memberOf(c, p.db, setStakeholdersRoute)
-	if !ok {
-		return
-	}
-	if !canWriteDeals(self.Role) {
-		writeError(c, nethttp.StatusForbidden, errReadOnlyRole.Error())
+	if _, ok := memberOf(c, setStakeholdersRoute); !ok {
 		return
 	}
 	var body stakeholderSet
@@ -171,12 +166,7 @@ func (p *dealsProduct) setStakeholders(c *gin.Context) {
 // and appends the contact it read to the association on the deal it read.
 func (p *dealsProduct) addStakeholder(c *gin.Context) {
 	ctx := c.Request.Context()
-	self, ok := memberOf(c, p.db, addStakeholderRoute)
-	if !ok {
-		return
-	}
-	if !canWriteDeals(self.Role) {
-		writeError(c, nethttp.StatusForbidden, errReadOnlyRole.Error())
+	if _, ok := memberOf(c, addStakeholderRoute); !ok {
 		return
 	}
 	var body stakeholderAddition
@@ -237,12 +227,7 @@ func (p *dealsProduct) answerStakeholders(c *gin.Context, id string, err error, 
 // deletion is GORM's, on the join table alone.
 func (p *dealsProduct) removeStakeholder(c *gin.Context) {
 	ctx := c.Request.Context()
-	self, ok := memberOf(c, p.db, removeStakeholderRoute)
-	if !ok {
-		return
-	}
-	if !canWriteDeals(self.Role) {
-		writeError(c, nethttp.StatusForbidden, errReadOnlyRole.Error())
+	if _, ok := memberOf(c, removeStakeholderRoute); !ok {
 		return
 	}
 	database := p.db.DB().WithContext(ctx)

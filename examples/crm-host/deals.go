@@ -18,6 +18,7 @@ import (
 	"gorm.io/gorm"
 
 	"github.com/vislake/speed/pkg/authn"
+	"github.com/vislake/speed/pkg/authz"
 	"github.com/vislake/speed/pkg/core"
 	"github.com/vislake/speed/pkg/db"
 	"github.com/vislake/speed/pkg/event"
@@ -37,7 +38,11 @@ const dealsModuleName = "deals"
 const dealTable = "deals"
 
 // The deal routes, on the API endpoint and so inside the tenant the request
-// names. Any member reads; an owner, an admin or a rep writes.
+// names. Each route's required permission is declared at Init, in
+// dealRoutePermissions; the enforcement middleware decides the route at the
+// authorizing stage from what is declared there, and the handler never
+// consults the caller's role. A read needs the read permission and a write the
+// write one, and the stakeholder routes are the deal's writes.
 const (
 	createDealRoute = "POST /deals"
 	listDealsRoute  = "GET /deals"
@@ -50,6 +55,27 @@ const (
 	addStakeholderRoute    = "POST /deals/:id/stakeholders"
 	removeStakeholderRoute = "DELETE /deals/:id/stakeholders/:contact"
 )
+
+// dealRoutePermissions is the permission each deal route needs, declared by
+// this module at Init. The create, change, move and stakeholder routes need the
+// write permission and the deletion the delete one; the reads need the read
+// permission. The permissions are the host's own CRM vocabulary, declared
+// alongside this module (authzbusiness.go) and carried into the catalog every
+// route is checked against.
+var dealRoutePermissions = []struct {
+	route string
+	perm  authz.Permission
+}{
+	{createDealRoute, permDealWrite},
+	{listDealsRoute, permDealRead},
+	{getDealRoute, permDealRead},
+	{patchDealRoute, permDealWrite},
+	{moveDealRoute, permDealWrite},
+	{deleteDealRoute, permDealDel},
+	{setStakeholdersRoute, permDealWrite},
+	{addStakeholderRoute, permDealWrite},
+	{removeStakeholderRoute, permDealWrite},
+}
 
 // The settings this module declares, under their full paths: the namespace, a
 // dot, then the item key.
@@ -107,7 +133,6 @@ var (
 	errKeyReused        = errors.New("the idempotency key was used with another request body")
 	errKeyInFlight      = errors.New("a request with this idempotency key is still being answered")
 	errBadIdempotency   = errors.New("the idempotency key is empty or longer than 255 characters")
-	errReadOnlyRole     = errors.New("a viewer reads this tenant's deals and does not write them")
 	errIdempotencyTTL   = errors.New("the idempotency lifetime is not positive")
 	errDefaultCurrency  = errors.New("the default currency is misconfigured")
 	errDealUnresolvable = errors.New("the deal could not be read back after it was written")
@@ -161,9 +186,6 @@ type Deal struct {
 
 // TableName fixes the table this model maps to.
 func (Deal) TableName() string { return dealTable }
-
-// canWriteDeals reports whether a role writes deals and their activities.
-func canWriteDeals(role string) bool { return roleRank(role) >= roleRank(roleRep) }
 
 // dealSettings is the carrier of this module's setting items. A field's value is
 // the declared default.
@@ -473,12 +495,8 @@ func idempotencyStoreKey(self member, key string) string {
 // corrected request under the same key.
 func (p *dealsProduct) createDeal(c *gin.Context) {
 	ctx := c.Request.Context()
-	self, ok := memberOf(c, p.db, createDealRoute)
+	self, ok := memberOf(c, createDealRoute)
 	if !ok {
-		return
-	}
-	if !canWriteDeals(self.Role) {
-		writeError(c, nethttp.StatusForbidden, errReadOnlyRole.Error())
 		return
 	}
 	var body dealRequest
@@ -784,7 +802,7 @@ type dealList struct {
 // models, for every deal of the page at once.
 func (p *dealsProduct) listDeals(c *gin.Context) {
 	ctx := c.Request.Context()
-	if _, ok := memberOf(c, p.db, listDealsRoute); !ok {
+	if _, ok := memberOf(c, listDealsRoute); !ok {
 		return
 	}
 	query := c.Request.URL.Query()
@@ -834,7 +852,7 @@ func (p *dealsProduct) listDeals(c *gin.Context) {
 // getDeal answers one deal, with its version as the ETag a write conditions on.
 func (p *dealsProduct) getDeal(c *gin.Context) {
 	ctx := c.Request.Context()
-	if _, ok := memberOf(c, p.db, getDealRoute); !ok {
+	if _, ok := memberOf(c, getDealRoute); !ok {
 		return
 	}
 	deal, found, err := dealByID(ctx, p.db, c.Param("id"))
@@ -925,12 +943,8 @@ func (d dealPatch) changes() map[string]any {
 func (p *dealsProduct) patchDeal(c *gin.Context) {
 	ctx := c.Request.Context()
 	logger := log.FromContext(ctx)
-	self, ok := memberOf(c, p.db, patchDealRoute)
+	self, ok := memberOf(c, patchDealRoute)
 	if !ok {
-		return
-	}
-	if !canWriteDeals(self.Role) {
-		writeError(c, nethttp.StatusForbidden, errReadOnlyRole.Error())
 		return
 	}
 	version, ok := ifMatchVersion(c)
@@ -1046,12 +1060,8 @@ type moveView struct {
 func (p *dealsProduct) moveDeal(c *gin.Context) {
 	ctx := c.Request.Context()
 	logger := log.FromContext(ctx)
-	self, ok := memberOf(c, p.db, moveDealRoute)
+	self, ok := memberOf(c, moveDealRoute)
 	if !ok {
-		return
-	}
-	if !canWriteDeals(self.Role) {
-		writeError(c, nethttp.StatusForbidden, errReadOnlyRole.Error())
 		return
 	}
 	version, ok := ifMatchVersion(c)
@@ -1197,12 +1207,8 @@ func (p *dealsProduct) stageWrite(tx *gorm.DB, self member, eventType, outcome, 
 // deal.deleted in its transaction, and one that found no deal stages nothing.
 func (p *dealsProduct) deleteDeal(c *gin.Context) {
 	ctx := c.Request.Context()
-	self, ok := memberOf(c, p.db, deleteDealRoute)
+	self, ok := memberOf(c, deleteDealRoute)
 	if !ok {
-		return
-	}
-	if !canWriteDeals(self.Role) {
-		writeError(c, nethttp.StatusForbidden, errReadOnlyRole.Error())
 		return
 	}
 	id := c.Param("id")
@@ -1233,7 +1239,7 @@ func init() {
 	registerApplication(application{
 		module: dealsModule(),
 		runsOn: []string{serveCommand},
-		models: []any{Deal{}, PipelineStage{}, Activity{}, Account{}, MemberRole{}, Contact{}},
+		models: []any{Deal{}, PipelineStage{}, Activity{}, Account{}, Contact{}},
 		journalled: []string{
 			createDealRoute, patchDealRoute, moveDealRoute, deleteDealRoute,
 			setStakeholdersRoute, addStakeholderRoute, removeStakeholderRoute,
@@ -1268,6 +1274,7 @@ func dealsModule() core.Module {
 			{Token: (*outbox.Outbox)(nil)},
 			{Token: (*authn.Accounts)(nil)},
 			{Token: (*authn.Memberships)(nil)},
+			{Token: (*authz.Gate)(nil), Optional: true},
 			{Token: (*pipelineTable)(nil), Optional: true},
 			{Token: (*accountsTable)(nil), Optional: true},
 			{Token: (*contactsTable)(nil), Optional: true},
@@ -1333,6 +1340,25 @@ func dealsModule() core.Module {
 			api, err := router.Endpoint(apiEndpoint)
 			if err != nil {
 				return fmt.Errorf("binding the deal routes: %w", err)
+			}
+			// Declare each route's permission on the enforcement gate, so the
+			// middleware decides it at the authorizing stage. The gate is optional:
+			// a command that runs this module without the authorization layer
+			// declares nothing here, and the routes carry no requirement. The
+			// gate's writes fall in this window; a command that runs the layer
+			// names the enforcement module alongside this one, so the gate is
+			// there to write to.
+			gate, err := core.Resolve[authz.Gate](reg)
+			switch {
+			case errors.Is(err, core.ErrMissingProvider):
+				break
+			case err != nil:
+				return err
+			default:
+				for _, declared := range dealRoutePermissions {
+					method, path := splitRoute(declared.route)
+					gate.Require(method, path, declared.perm)
+				}
 			}
 			mount(api, createDealRoute, product.createDeal)
 			mount(api, listDealsRoute, product.listDeals)

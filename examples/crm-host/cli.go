@@ -12,6 +12,8 @@ import (
 
 	"github.com/vislake/speed/pkg/audit"
 	"github.com/vislake/speed/pkg/authn"
+	"github.com/vislake/speed/pkg/authz"
+	authzpolicy "github.com/vislake/speed/pkg/authz/policy"
 	"github.com/vislake/speed/pkg/config"
 	"github.com/vislake/speed/pkg/core"
 	"github.com/vislake/speed/pkg/db"
@@ -135,7 +137,7 @@ var (
 		{use: "enable", depth: core.StageStart, action: statusCommand("tenant enable", tenant.StatusActive)},
 		{use: "list", depth: core.StageInit, action: listTenantsCommand},
 	}}
-	userGroup = commandGroup{word: "user", platform: []string{accountModuleName}, commands: []cliCommand{
+	userGroup = commandGroup{word: "user", platform: []string{accountModuleName, authzpolicy.ModuleName}, commands: []cliCommand{
 		{use: "create", depth: core.StageStart, action: createUserCommand},
 		{use: "grant", depth: core.StageStart, action: grantCommand},
 		{use: "list", depth: core.StageInit, action: listUsersCommand},
@@ -365,15 +367,19 @@ func grantCommand(ctx context.Context, reg *core.Registry) error {
 	if putErr != nil {
 		return putErr
 	}
-	granted, err := grantIn(tenant.CrossTenant(ctx), tools.db, id, account, tools.in.Role)
+	mgr, err := core.Resolve[authz.Manager](reg)
+	if err != nil {
+		return err
+	}
+	granted, err := grantIn(tenant.CrossTenant(ctx), mgr, id, account, tools.in.Role)
 	if err != nil {
 		return err
 	}
 	if err := tools.record(ctx, command, "membership.grant",
-		memberRoleTable+"/"+string(id)+"/"+string(account), map[string]string{"role": granted.Role}); err != nil {
+		memberBindingObject(id, account), map[string]string{"role": string(granted.Role)}); err != nil {
 		return err
 	}
-	return printResult(grantView{TenantID: string(granted.TenantID), AccountID: granted.AccountID, Role: granted.Role})
+	return printResult(grantView{TenantID: granted.Tenant, AccountID: granted.Account, Role: string(granted.Role)})
 }
 
 // userListing is one user as user list prints it, with the tenants they belong
@@ -454,7 +460,7 @@ func readSecret(r io.Reader) (string, error) {
 const userCommandsModuleName = "user-commands"
 
 func init() {
-	registerApplication(application{module: cliModule(), models: []any{MemberRole{}}})
+	registerApplication(application{module: cliModule()})
 	registerApplication(application{module: userCommandsModule(), runsOn: []string{userGroup.word}})
 	registerCommandGroup(tenantGroup)
 	registerCommandGroup(userGroup)
@@ -466,9 +472,10 @@ func init() {
 // It has no New: an action is not a module and has no product, and the module
 // exists so that its input items reach the command line of the commands that
 // take it in, and so that those commands answer for what the actions use. The
-// roster requirement is the guard every writer of the scoped role table states,
-// and the audit requirement fails a command that forgot the journal rather than
-// letting it write with no seam row.
+// database, roster and audit requirements are what the actions' toolset reads —
+// a command-line write is scoped through the roster and recorded through the
+// seam — and the audit requirement fails a command that forgot the journal
+// rather than letting it write with no seam row.
 func cliModule() core.Module {
 	return core.Module{
 		Name: cliModuleName,
@@ -482,10 +489,11 @@ func cliModule() core.Module {
 }
 
 // userCommandsModule carries the account capabilities the user command group's
-// actions use, and nothing else. It runs on the user group alone, so the tenant
-// group is not made to carry the account store for actions that never touch it.
-// Each capability is delivered exclusively, so a command naming a capability
-// the closure does not pick fails here rather than at the first create.
+// actions use, and the policy manager the grant action writes the role through.
+// It runs on the user group alone, so the tenant group is not made to carry the
+// account store or the policy store for actions that never touch them. Each
+// capability is delivered exclusively, so a command naming a capability the
+// closure does not pick fails here rather than at the first create.
 func userCommandsModule() core.Module {
 	return core.Module{
 		Name: userCommandsModuleName,
@@ -493,6 +501,7 @@ func userCommandsModule() core.Module {
 			{Token: (*authn.Accounts)(nil)},
 			{Token: (*authn.AccountAdmin)(nil)},
 			{Token: (*authn.Memberships)(nil)},
+			{Token: (*authz.Manager)(nil)},
 		},
 	}
 }

@@ -11,9 +11,9 @@ import (
 	"time"
 
 	"github.com/gin-gonic/gin"
-	"gorm.io/gorm/clause"
 
 	"github.com/vislake/speed/pkg/authn"
+	"github.com/vislake/speed/pkg/authz"
 	"github.com/vislake/speed/pkg/core"
 	"github.com/vislake/speed/pkg/db"
 	speedhttp "github.com/vislake/speed/pkg/http"
@@ -93,86 +93,86 @@ type MemberRole struct {
 // TableName fixes the table this model maps to.
 func (MemberRole) TableName() string { return memberRoleTable }
 
-// roleHere reads the caller's role in the tenant the request's context names.
-// The statement names the account and nothing else; the filter scopes it. A
-// caller with no row here has no role, which is the empty string.
-func roleHere(ctx context.Context, database db.Database, account authn.AccountID) (string, error) {
-	var found []MemberRole
-	err := database.DB().WithContext(ctx).Where("account_id = ?", string(account)).Limit(1).Find(&found).Error
-	if err != nil || len(found) == 0 {
-		return "", err
-	}
-	return found[0].Role, nil
-}
-
-// roleIn reads an account's role in a named tenant, from outside any request
-// scoped to that tenant: the account endpoint's GET /me. The caller hands in a
-// cross-tenant context, so the row names its tenant itself.
-func roleIn(ctx context.Context, database db.Database, id tenant.ID, account authn.AccountID) (string, error) {
-	var found []MemberRole
-	err := database.DB().WithContext(ctx).
-		Where("tenant_id = ? AND account_id = ?", string(id), string(account)).Limit(1).Find(&found).Error
-	if err != nil || len(found) == 0 {
-		return "", err
-	}
-	return found[0].Role, nil
-}
-
-// grantHere gives an account a role in the tenant a request's context names, or
-// changes the role it already has there. The membership relation was written
-// through authn.Memberships before this runs; this writes the role the tenant's
-// own layer holds.
+// grantRole gives an account a role in a tenant, or rewrites the role it
+// already has there, through the authorization layer's policy manager. The
+// membership relation itself was written through authn.Memberships before this
+// runs; this writes the role, which is a policy row now rather than a row of any
+// table of this host's.
 //
-// The row it writes names no tenant. The tenant half of the key is the filter's
-// to fill, from the context, before the statement is bound. "Insert it, or
-// rewrite the one there" is an upsert by the primary key.
-func grantHere(ctx context.Context, database db.Database, account authn.AccountID, role string) (MemberRole, error) {
+// It ensures the tenant's four roles exist first — re-issuing the matrix only
+// when a role is missing, so a grant on an already-provisioned tenant writes no
+// grant row and does not reload the policy — and then sets the account's role.
+// The account holds
+// one role in a tenant, so a grant rewrites it: any other role the account is
+// bound to in the tenant is removed before the new binding is written. The
+// binding is a g policy row whose domain is the tenant the caller names, never a
+// constant.
+func grantRole(ctx context.Context, mgr authz.Manager, id tenant.ID, account authn.AccountID, role string) (authz.Binding, error) {
 	if !validRole(role) {
-		return MemberRole{}, errUnknownRole
+		return authz.Binding{}, errUnknownRole
 	}
-	m := MemberRole{AccountID: string(account), Role: role, GrantedAt: time.Now().UTC()}
-	if err := database.DB().WithContext(ctx).Clauses(clause.OnConflict{UpdateAll: true}).Create(&m).Error; err != nil {
-		return MemberRole{}, fmt.Errorf("writing the member role: %w", err)
+	provisioned, err := tenantRolesProvisioned(ctx, mgr, string(id))
+	if err != nil {
+		return authz.Binding{}, fmt.Errorf("reading the tenant's roles: %w", err)
 	}
-	return m, nil
+	if !provisioned {
+		if err = provisionTenantRoles(ctx, mgr, string(id)); err != nil {
+			return authz.Binding{}, fmt.Errorf("provisioning the tenant's roles: %w", err)
+		}
+	}
+	existing, err := mgr.BindingsOf(ctx, string(id), string(account))
+	if err != nil {
+		return authz.Binding{}, fmt.Errorf("reading the account's roles: %w", err)
+	}
+	for _, held := range existing {
+		if err := mgr.DeleteBinding(ctx, string(id), string(account), held.Role); err != nil {
+			return authz.Binding{}, fmt.Errorf("removing the account's %s role: %w", held.Role, err)
+		}
+	}
+	binding := authz.Binding{Tenant: string(id), Account: string(account), Role: authz.Role(role)}
+	if err := mgr.PutBinding(ctx, binding); err != nil {
+		return authz.Binding{}, fmt.Errorf("writing the member role: %w", err)
+	}
+	return binding, nil
+}
+
+// grantHere gives an account a role in the tenant a request's context names.
+// The tenant comes from the request itself: the caller passes the identifier
+// the request resolved to.
+func grantHere(ctx context.Context, mgr authz.Manager, id tenant.ID, account authn.AccountID, role string) (authz.Binding, error) {
+	return grantRole(ctx, mgr, id, account, role)
 }
 
 // grantIn gives an account a role in a named tenant, from outside any request
-// scoped to that tenant: the admin endpoint and the command line.
-//
-// The caller hands in a cross-tenant context, and under it the filter neither
-// adds a condition nor fills the column, so the row names its tenant itself. The
-// tenant comes from a roster read the caller made, never from a constant.
-func grantIn(ctx context.Context, database db.Database, id tenant.ID, account authn.AccountID, role string) (MemberRole, error) {
-	if !validRole(role) {
-		return MemberRole{}, errUnknownRole
-	}
-	m := MemberRole{
-		Model:     tenant.Model{TenantID: id},
-		AccountID: string(account),
-		Role:      role,
-		GrantedAt: time.Now().UTC(),
-	}
-	if err := database.DB().WithContext(ctx).Save(&m).Error; err != nil {
-		return MemberRole{}, fmt.Errorf("writing the member role: %w", err)
-	}
-	return m, nil
+// scoped to that tenant: the admin endpoint and the command line. The tenant
+// comes from a roster read the caller made, never from a constant.
+func grantIn(ctx context.Context, mgr authz.Manager, id tenant.ID, account authn.AccountID, role string) (authz.Binding, error) {
+	return grantRole(ctx, mgr, id, account, role)
+}
+
+// memberBindingObject names a grant for the audit seam: the tenant and the
+// account the binding is for, under a prefix that says what was written.
+func memberBindingObject(id tenant.ID, account authn.AccountID) string {
+	return "bindings/" + string(id) + "/" + string(account)
 }
 
 // member is what a handler reads about the caller: which account is asking, in
-// which tenant, in which role. The account is the CRM principal and is what a
-// handler stores wherever a row records who acted.
+// which tenant. The account is the CRM principal and is what a handler stores
+// wherever a row records who acted. It carries no role: a route's permission is
+// decided by the authorization layer's middleware, not by a role a handler
+// reads.
 type member struct {
 	Account  authn.AccountID
 	TenantID tenant.ID
-	Role     string
 }
 
-// memberOf reads the caller the request stands for: its identity and tenant from
-// the request's context, and its role from the tenant's own table. The membership
-// check itself is the admission layer's; this reads the role admission does not
-// know.
-func memberOf(c *gin.Context, database db.Database, route string) (member, bool) {
+// memberOf reads the caller the request stands for: its identity and tenant
+// from the request's context. It does not read the caller's role: a route's
+// permission is decided by the authorization layer's middleware before the
+// handler runs, not by a role the handler reads. The membership check itself is
+// the admission layer's; this carries only the account a handler records and
+// the tenant it acts in.
+func memberOf(c *gin.Context, route string) (member, bool) {
 	ctx := c.Request.Context()
 	caller, ok := authn.FromContext(ctx)
 	if !ok {
@@ -186,28 +186,7 @@ func memberOf(c *gin.Context, database db.Database, route string) (member, bool)
 		writeError(c, nethttp.StatusInternalServerError, "the request carries no tenant")
 		return member{}, false
 	}
-	role, err := roleHere(ctx, database, caller.Account())
-	if err != nil {
-		log.FromContext(ctx).Error("reading the caller's role", "error", err)
-		writeError(c, nethttp.StatusServiceUnavailable, "the member role table cannot be read")
-		return member{}, false
-	}
-	return member{Account: caller.Account(), TenantID: id, Role: role}, true
-}
-
-// memberWith reads the caller and refuses the request with 403 when the caller's
-// role is below the least one the route takes. It writes the refusal itself; a
-// false answer is the end of the handler.
-func memberWith(c *gin.Context, database db.Database, least string) (member, bool) {
-	self, ok := memberOf(c, database, c.FullPath())
-	if !ok {
-		return member{}, false
-	}
-	if roleRank(self.Role) < roleRank(least) {
-		writeError(c, nethttp.StatusForbidden, "this takes the "+least+" role or above in this tenant")
-		return member{}, false
-	}
-	return self, true
+	return member{Account: caller.Account(), TenantID: id}, true
 }
 
 // isMember reports whether an account belongs to the named tenant, through the
@@ -218,7 +197,11 @@ func isMember(ctx context.Context, memberships authn.Memberships, account authn.
 	return memberships.IsMember(ctx, account, string(id))
 }
 
-// roleRank orders the four roles, each able to do what the ones below it do.
+// roleRank orders the four tenant roles by how much they carry, each able to do
+// what the ones below it do, so a member bound to more than one is shown under
+// the highest. It is a display ordering only: what a role may do is its grant
+// rows in the tenant's policy, decided by the authorization middleware, not this
+// rank.
 func roleRank(role string) int {
 	switch role {
 	case roleOwner:
@@ -242,10 +225,10 @@ type memberLine interface{ memberLine() }
 // membersProduct is the members module's product.
 type membersProduct struct {
 	released
-	db          db.Database
 	memberships authn.Memberships
 	accounts    authn.Accounts
 	roster      tenant.Catalog
+	mgr         authz.Manager
 }
 
 // memberLine marks the product as the members module's.
@@ -289,11 +272,12 @@ func (p *membersProduct) displayOf(ctx context.Context, id authn.AccountID) (ema
 }
 
 // listMembers answers the tenant's membership list. It reads the members through
-// authn.Memberships and each member's role from the tenant's own table; a member
-// with no role row is shown with an empty role.
+// authn.Memberships and each member's role from the tenant's policy; a member
+// with no binding is shown with an empty role. The caller's own role is read the
+// same way.
 func (p *membersProduct) listMembers(c *gin.Context) {
 	ctx := c.Request.Context()
-	self, ok := memberOf(c, p.db, listMembersRoute)
+	self, ok := memberOf(c, listMembersRoute)
 	if !ok {
 		return
 	}
@@ -303,14 +287,19 @@ func (p *membersProduct) listMembers(c *gin.Context) {
 		writeError(c, nethttp.StatusServiceUnavailable, "the membership table cannot be read")
 		return
 	}
-	roles, err := p.rolesByAccount(ctx)
+	roles, err := p.rolesByAccount(ctx, self.TenantID)
 	if err != nil {
 		log.FromContext(ctx).Error("reading the member roles", "error", err)
 		writeError(c, nethttp.StatusServiceUnavailable, "the member role table cannot be read")
 		return
 	}
-	caller, _ := authn.FromContext(ctx)
-	out := memberList{Tenant: string(self.TenantID), Caller: string(caller.Account()), Role: self.Role, Members: []memberView{}}
+	callerRole, err := p.roleOf(ctx, self.TenantID, self.Account)
+	if err != nil {
+		log.FromContext(ctx).Error("reading the caller's role", "error", err)
+		writeError(c, nethttp.StatusServiceUnavailable, "the member role table cannot be read")
+		return
+	}
+	out := memberList{Tenant: string(self.TenantID), Caller: string(self.Account), Role: callerRole, Members: []memberView{}}
 	for _, m := range rows {
 		email, name := p.displayOf(ctx, m.Account)
 		out.Members = append(out.Members, memberView{
@@ -320,18 +309,38 @@ func (p *membersProduct) listMembers(c *gin.Context) {
 	c.JSON(nethttp.StatusOK, out)
 }
 
-// rolesByAccount reads every role the tenant's own table holds, keyed by
-// account. The statement names no tenant; the filter scopes it.
-func (p *membersProduct) rolesByAccount(ctx context.Context) (map[string]string, error) {
-	var found []MemberRole
-	if err := p.db.DB().WithContext(ctx).Find(&found).Error; err != nil {
+// rolesByAccount reads every binding the tenant's policy holds, keyed by
+// account and reduced to the highest role each account carries. An account bound
+// to more than one role is shown under the highest.
+func (p *membersProduct) rolesByAccount(ctx context.Context, id tenant.ID) (map[string]string, error) {
+	bindings, err := p.mgr.Bindings(ctx, string(id))
+	if err != nil {
 		return nil, err
 	}
-	out := make(map[string]string, len(found))
-	for _, m := range found {
-		out[m.AccountID] = m.Role
+	out := make(map[string]string, len(bindings))
+	for _, b := range bindings {
+		if roleRank(string(b.Role)) > roleRank(out[b.Account]) {
+			out[b.Account] = string(b.Role)
+		}
 	}
 	return out, nil
+}
+
+// roleOf reads the highest role an account holds in a tenant from the tenant's
+// policy. An account bound to no role reads as the empty string, which ranks
+// below every role.
+func (p *membersProduct) roleOf(ctx context.Context, id tenant.ID, account authn.AccountID) (string, error) {
+	bindings, err := p.mgr.BindingsOf(ctx, string(id), string(account))
+	if err != nil {
+		return "", err
+	}
+	best := ""
+	for _, b := range bindings {
+		if roleRank(string(b.Role)) > roleRank(best) {
+			best = string(b.Role)
+		}
+	}
+	return best, nil
 }
 
 // grantRequest is the body of a membership grant.
@@ -358,17 +367,15 @@ type grantView struct {
 	Role      string `json:"role"`
 }
 
-// grantMember gives an existing account a role in the caller's tenant. Only an
-// owner or an admin of the tenant may. It writes the membership relation through
-// authn.Memberships and the role into the tenant's own table.
+// grantMember gives an existing account a role in the caller's tenant. The
+// caller's right to do so is the route's declared permission, decided by the
+// authorization layer's middleware before this handler runs. It writes the
+// membership relation through authn.Memberships and the role into the tenant's
+// policy.
 func (p *membersProduct) grantMember(c *gin.Context) {
 	ctx := c.Request.Context()
-	self, ok := memberOf(c, p.db, grantMemberRoute)
+	self, ok := memberOf(c, grantMemberRoute)
 	if !ok {
-		return
-	}
-	if self.Role != roleOwner && self.Role != roleAdmin {
-		writeError(c, nethttp.StatusForbidden, "only an owner or an admin of this tenant grants a membership")
 		return
 	}
 	var body grantRequest
@@ -393,14 +400,14 @@ func (p *membersProduct) grantMember(c *gin.Context) {
 		writeError(c, nethttp.StatusInternalServerError, "the membership could not be written")
 		return
 	}
-	granted, err := grantHere(ctx, p.db, account, body.Role)
+	granted, err := grantHere(ctx, p.mgr, self.TenantID, account, body.Role)
 	if err != nil {
 		log.FromContext(ctx).Error("granting a membership", "error", err)
 		writeError(c, nethttp.StatusInternalServerError, "the membership could not be written")
 		return
 	}
 	c.JSON(nethttp.StatusOK, grantView{
-		TenantID: string(granted.TenantID), AccountID: granted.AccountID, Role: granted.Role,
+		TenantID: granted.Tenant, AccountID: granted.Account, Role: string(granted.Role),
 	})
 }
 
@@ -491,7 +498,7 @@ func (p *membersProduct) me(c *gin.Context) {
 		if !known {
 			continue
 		}
-		role, err := roleIn(tenant.CrossTenant(ctx), p.db, t.ID, account)
+		role, err := p.roleOf(tenant.CrossTenant(ctx), t.ID, account)
 		if err != nil {
 			log.FromContext(ctx).Error("reading the caller's role", "error", err)
 			writeError(c, nethttp.StatusServiceUnavailable, "the member role table cannot be read")
@@ -504,38 +511,62 @@ func (p *membersProduct) me(c *gin.Context) {
 	c.JSON(nethttp.StatusOK, out)
 }
 
+// declareMemberRoutes records, on the authorization layer's declaration table,
+// the permission each members route needs. The enforcement middleware on the
+// authorizing stage reads that table and decides a route before its handler
+// runs, so a handler no longer reads the caller's role itself. Reading the list
+// needs crm.member.read; granting a membership needs crm.member.manage, the
+// permission the four tenant roles above a rep carry.
+func declareMemberRoutes(gate authz.Gate) {
+	require := func(route string, perm authz.Permission) {
+		method, path := splitRoute(route)
+		gate.Require(method, path, perm)
+	}
+	require(listMembersRoute, permMemberRead)
+	require(grantMemberRoute, permMemberManage)
+}
+
 // init registers the members module. It runs on serve: its routes sit on the API
-// and account endpoints.
+// and account endpoints. It lists no model: its handlers issue no statement of
+// their own, reading the membership relation through authn.Memberships, the
+// account store through authn.Accounts and the role through authz.Manager. The
+// member_roles table it once wrote no longer appears among the tables its code
+// reaches; the role-import command declares that model alone.
 func init() {
 	registerApplication(application{
 		module:     membersModule(),
 		runsOn:     []string{serveCommand},
-		models:     []any{MemberRole{}},
 		journalled: []string{listMembersRoute, grantMemberRoute, meRoute},
 	})
 }
 
-// membersModule declares the member role table and binds its routes.
+// membersModule declares the member role table, its routes and the permissions
+// those routes need.
 //
 // The membership relation itself is the account module's, read and written
-// through authn.Memberships; this module owns only the role a tenant gives one of
-// its accounts. The admission layer (tenant.admission) holds the membership
-// check that a caller named here belongs to the tenant; that layer, and not a
-// layer of this module, is what refuses a stranger.
+// through authn.Memberships; the role a tenant gives one of its accounts is a
+// binding in the tenant's policy, read and written through authz.Manager. The
+// admission layer (tenant.admission) holds the membership check that a caller
+// named here belongs to the tenant; that layer, and not a layer of this module,
+// is what refuses a stranger.
 //
-// It requires the roster because the role table is scoped, and the filter that
-// scopes it is the roster module's plugin: a command that ran this module without
-// that module would issue every statement unscoped. The roster is delivered
-// exclusively, so the requirement brings nothing into a command.
+// It requires the manager, since every members route reads or writes the
+// tenant's policy, and it takes up the declaration gate when a command carries
+// one, to record the permission its two API routes need. The roster is still
+// required: the account endpoint's GET /me reads it to name the tenants the
+// caller belongs to. The legacy member_roles table this module migrated is left
+// in place; the role is a policy row now, and the old table is kept until the
+// host confirms the migration.
 func membersModule() core.Module {
 	return core.Module{
 		Name: membersModuleName,
 		Requires: []core.Requirement{
 			{Token: (*log.Logger)(nil)},
-			{Token: (*db.Database)(nil)},
 			{Token: (*tenant.Catalog)(nil)},
 			{Token: (*authn.Memberships)(nil)},
 			{Token: (*authn.Accounts)(nil)},
+			{Token: (*authz.Manager)(nil)},
+			{Token: (*authz.Gate)(nil), Optional: true},
 		},
 		Provides: []core.Provision{
 			{Token: (*memberLine)(nil), Exclusive: true},
@@ -551,10 +582,6 @@ func membersModule() core.Module {
 			if err != nil {
 				return nil, err
 			}
-			database, err := core.Resolve[db.Database](reg)
-			if err != nil {
-				return nil, err
-			}
 			roster, err := core.Resolve[tenant.Catalog](reg)
 			if err != nil {
 				return nil, err
@@ -567,9 +594,13 @@ func membersModule() core.Module {
 			if err != nil {
 				return nil, err
 			}
+			mgr, err := core.Resolve[authz.Manager](reg)
+			if err != nil {
+				return nil, err
+			}
 			return &membersProduct{
-				released: released{log: logger}, db: database, memberships: memberships,
-				accounts: accounts, roster: roster,
+				released: released{log: logger}, memberships: memberships,
+				accounts: accounts, roster: roster, mgr: mgr,
 			}, nil
 		},
 
@@ -589,6 +620,11 @@ func membersModule() core.Module {
 			account, err := router.Endpoint(accountEndpoint)
 			if err != nil {
 				return err
+			}
+			if gate, gateErr := core.Resolve[authz.Gate](reg); gateErr == nil {
+				declareMemberRoutes(gate)
+			} else if !errors.Is(gateErr, core.ErrMissingProvider) {
+				return gateErr
 			}
 			mount(api, listMembersRoute, product.listMembers)
 			mount(api, grantMemberRoute, product.grantMember)

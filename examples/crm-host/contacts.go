@@ -16,6 +16,7 @@ import (
 	"gorm.io/gorm/clause"
 
 	"github.com/vislake/speed/pkg/authn"
+	"github.com/vislake/speed/pkg/authz"
 	"github.com/vislake/speed/pkg/core"
 	"github.com/vislake/speed/pkg/db"
 	speedhttp "github.com/vislake/speed/pkg/http"
@@ -337,7 +338,9 @@ func logWritten(ctx context.Context, msg string, c Contact) {
 		contactEmailKey, c.Email, contactPhoneKey, phone)
 }
 
-// createContact answers a contact creation; a rep or above.
+// createContact answers a contact creation. The route requires
+// crm.contact.write, which the enforcement middleware decides at the
+// authorizing stage.
 //
 // Whether the email is taken in this tenant is the unique index's to decide,
 // and nothing looks first: a look-up would answer the ordinary duplicate and
@@ -347,9 +350,6 @@ func logWritten(ctx context.Context, msg string, c Contact) {
 // transaction.
 func (p *contactsProduct) createContact(c *gin.Context) {
 	ctx := c.Request.Context()
-	if _, ok := memberWith(c, p.db, roleRep); !ok {
-		return
-	}
 	var body contactRequest
 	if !bindBody(c, &body) {
 		return
@@ -376,9 +376,6 @@ func (p *contactsProduct) createContact(c *gin.Context) {
 // the one column an equality on a sealed value can meet.
 func (p *contactsProduct) listContacts(c *gin.Context) {
 	ctx := c.Request.Context()
-	if _, ok := memberWith(c, p.db, roleViewer); !ok {
-		return
-	}
 	query := c.Request.URL.Query()
 	account, email := query.Get("account_id"), strings.TrimSpace(query.Get("email"))
 	if account == "" && email == "" {
@@ -408,9 +405,6 @@ func (p *contactsProduct) listContacts(c *gin.Context) {
 // getContact answers one contact, in the clear.
 func (p *contactsProduct) getContact(c *gin.Context) {
 	ctx := c.Request.Context()
-	if _, ok := memberWith(c, p.db, roleViewer); !ok {
-		return
-	}
 	id := c.Param("id")
 	if !validRecordID(id) {
 		writeError(c, nethttp.StatusNotFound, errNoSuchContact.Error())
@@ -464,7 +458,8 @@ func (c contactPatch) Validate() error {
 	return nil
 }
 
-// patchContact changes the named columns of one contact; a rep or above.
+// patchContact changes the named columns of one contact. The route requires
+// crm.contact.write, which the enforcement middleware decides.
 //
 // The update is written from a map of column names. The database module seals
 // the values a map carries into a sealed column before the statement is built,
@@ -476,9 +471,6 @@ func (c contactPatch) Validate() error {
 // it.
 func (p *contactsProduct) patchContact(c *gin.Context) {
 	ctx := c.Request.Context()
-	if _, ok := memberWith(c, p.db, roleRep); !ok {
-		return
-	}
 	id := c.Param("id")
 	var body contactPatch
 	if !bindBody(c, &body) {
@@ -526,14 +518,12 @@ func (p *contactsProduct) patchContact(c *gin.Context) {
 	c.JSON(nethttp.StatusOK, contactViewOf(contact))
 }
 
-// deleteContact soft-deletes one contact; an admin or above. The statement
+// deleteContact soft-deletes one contact. The route requires
+// crm.contact.delete, which the enforcement middleware decides. The statement
 // addresses the row by its model's key, whose tenant half the filter fills from
 // the request.
 func (p *contactsProduct) deleteContact(c *gin.Context) {
 	ctx := c.Request.Context()
-	if _, ok := memberWith(c, p.db, roleAdmin); !ok {
-		return
-	}
 	id := c.Param("id")
 	if !validRecordID(id) {
 		writeError(c, nethttp.StatusNotFound, errNoSuchContact.Error())
@@ -552,8 +542,8 @@ func (p *contactsProduct) deleteContact(c *gin.Context) {
 }
 
 // upsertContact finds the tenant's contact with an email, or creates it from
-// the body when there is none; a rep or above. A contact found is answered as
-// it stands, 200; one created is answered 201.
+// the body when there is none; the route requires crm.contact.write. A contact
+// found is answered as it stands, 200; one created is answered 201.
 //
 // The lookup is the blind index, given as a struct condition so that the
 // create that follows a miss starts from it; the rest of the row comes from
@@ -561,9 +551,6 @@ func (p *contactsProduct) deleteContact(c *gin.Context) {
 // the body names is a live account of the tenant, in the same transaction.
 func (p *contactsProduct) upsertContact(c *gin.Context) {
 	ctx := c.Request.Context()
-	if _, ok := memberWith(c, p.db, roleRep); !ok {
-		return
-	}
 	var body contactRequest
 	if !bindBody(c, &body) {
 		return
@@ -619,9 +606,6 @@ type exportedContact struct {
 // logged rather than answered.
 func (p *contactsProduct) exportContacts(c *gin.Context) {
 	ctx := c.Request.Context()
-	if _, ok := memberWith(c, p.db, roleViewer); !ok {
-		return
-	}
 	stmt := p.db.DB().WithContext(ctx).Model(&Contact{}).
 		Select(exportColumns).Order("account_id").Order("name").Order("id")
 	rows, err := stmt.Rows()
@@ -670,9 +654,6 @@ type autocompleteView struct {
 // with a prefix, compared without regard to case, in order.
 func (p *contactsProduct) autocomplete(c *gin.Context) {
 	ctx := c.Request.Context()
-	if _, ok := memberWith(c, p.db, roleViewer); !ok {
-		return
-	}
 	prefix := strings.ToLower(strings.TrimSpace(c.Query("prefix")))
 	out := autocompleteView{Names: []string{}}
 	err := p.db.DB().WithContext(ctx).Model(&Contact{}).
@@ -715,9 +696,6 @@ type directoryView struct {
 // account store holds.
 func (p *contactsProduct) directory(c *gin.Context) {
 	ctx := c.Request.Context()
-	if _, ok := memberWith(c, p.db, roleViewer); !ok {
-		return
-	}
 	out := directoryView{Entries: []directoryEntry{}}
 	err := p.db.DB().WithContext(ctx).Model(&Contact{}).Joins("Account").
 		Select("contacts.id, contacts.name, contacts.title, contacts.account_id").
@@ -740,6 +718,48 @@ func (p *contactsProduct) directory(c *gin.Context) {
 	c.JSON(nethttp.StatusOK, out)
 }
 
+// declareContactRoutes records, on the authorization layer's declaration
+// table, the permission each contacts route needs. The enforcement middleware
+// on the authorizing stage reads that table and decides a route before its
+// handler runs, so a handler no longer reads the caller's role itself. The
+// permission each route names is the least role it took before it declared
+// one: a viewer reads and exports, a rep writes, an admin deletes.
+//
+// The surface is taken up optionally: a command that runs the contacts module
+// without the enforcement layer (migrate, for one) has no table to declare to,
+// and its routes there carry no requirement. A command that runs the layer
+// holds every declaration to the permission catalog and to the process's
+// translation once the Init window closes, so a route naming a permission the
+// host does not declare fails the startup rather than deciding nothing at
+// request time.
+func declareContactRoutes(reg *core.Registry) error {
+	gate, err := core.Resolve[authz.Gate](reg)
+	switch {
+	case errors.Is(err, core.ErrMissingProvider):
+		return nil
+	case err != nil:
+		return err
+	}
+	for _, decl := range []struct {
+		route string
+		perm  authz.Permission
+	}{
+		{createContactRoute, permContactWrite},
+		{listContactsRoute, permContactRead},
+		{getContactRoute, permContactRead},
+		{patchContactRoute, permContactWrite},
+		{deleteContactRoute, permContactDel},
+		{upsertContactRoute, permContactWrite},
+		{exportContactsRoute, permContactExport},
+		{autocompleteRoute, permContactRead},
+		{contactDirectoryRoute, permContactRead},
+	} {
+		method, path := splitRoute(decl.route)
+		gate.Require(method, path, decl.perm)
+	}
+	return nil
+}
+
 // init registers the contacts module. It runs on serve, where its routes sit on
 // the API endpoint.
 func init() {
@@ -754,14 +774,17 @@ func init() {
 }
 
 // contactsModule declares the contacts table, registers the redaction of the
-// keys a contact's email and phone are logged under, and binds the contact
-// routes.
+// keys a contact's email and phone are logged under, binds the contact routes,
+// and declares each route's permission on the authorization layer's gate.
 //
 // It requires the roster, for the filter every contact statement is scoped by,
 // and the accounts module's table token, optionally, because the contacts table
-// references the accounts table. The redaction is registered in New, before the
-// module takes its logger: a rule governs the judgements made after it is
-// registered, and taking a Named logger already binds an attribute.
+// references the accounts table. The authorization gate is taken up optionally:
+// a command without the enforcement layer (migrate, for one) declares nothing
+// and leaves the routes unguarded, which is why the surface is optional rather
+// than required. The redaction is registered in New, before the module takes its
+// logger: a rule governs the judgements made after it is registered, and taking
+// a Named logger already binds an attribute.
 func contactsModule() core.Module {
 	return core.Module{
 		Name: contactsModuleName,
@@ -771,6 +794,7 @@ func contactsModule() core.Module {
 			{Token: (*tenant.Catalog)(nil)},
 			{Token: (*authn.Accounts)(nil)},
 			{Token: (*accountsTable)(nil), Optional: true},
+			{Token: (*authz.Gate)(nil), Optional: true},
 		},
 		Provides: []core.Provision{
 			{Token: (*contactsTable)(nil), Exclusive: true},
@@ -808,6 +832,9 @@ func contactsModule() core.Module {
 			}
 			api, err := router.Endpoint(apiEndpoint)
 			if err != nil {
+				return err
+			}
+			if err := declareContactRoutes(reg); err != nil {
 				return err
 			}
 			mount(api, createContactRoute, product.createContact)

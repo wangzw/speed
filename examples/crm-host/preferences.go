@@ -13,8 +13,9 @@ import (
 
 	"github.com/vislake/speed/pkg/audit"
 	"github.com/vislake/speed/pkg/authn"
+	"github.com/vislake/speed/pkg/authz"
+	authzguard "github.com/vislake/speed/pkg/authz/guard"
 	"github.com/vislake/speed/pkg/core"
-	"github.com/vislake/speed/pkg/db"
 	speedhttp "github.com/vislake/speed/pkg/http"
 	"github.com/vislake/speed/pkg/log"
 	"github.com/vislake/speed/pkg/settings"
@@ -262,13 +263,15 @@ func (s settingWrite) Validate() error {
 }
 
 // preferencesProduct is the preferences module's product. served is every key
-// its API serves, joined to its declaration when the module is built.
+// its API serves, joined to its declaration when the module is built. guard is
+// the authorization layer's handler-internal API, which each handler asks the
+// permission its route needs through.
 type preferencesProduct struct {
 	released
-	db       db.Database
 	store    settings.Store
 	roster   tenant.Catalog
 	recorder audit.Audit
+	guard    authzguard.Guard
 	served   []servedSetting
 }
 
@@ -425,11 +428,21 @@ func writeSettingFailure(c *gin.Context, f *settingFailure) {
 // settingsLayerOf is the layer of the tenant the request names. The identifier
 // is the one resolution put in the context, never one the request body or path
 // carries.
-func settingsLayerOf(self member) settings.Layer { return settings.ForTenant(string(self.TenantID)) }
+func settingsLayerOf(self member) settings.Layer {
+	return settings.ForTenant(string(self.TenantID))
+}
 
 // listSettings answers the settings a tenant edits.
+//
+// The permission is decided in the handler, through the authorization layer's
+// handler-internal API: the route is declared open so the middleware lets the
+// request reach the handler, and this question is what answers it. The layer is
+// the tenant the request resolved to.
 func (p *preferencesProduct) listSettings(c *gin.Context) {
-	self, ok := memberWith(c, p.db, roleAdmin)
+	if !p.guard.RequirePermission(c, authz.PermissionSettingsRead) {
+		return
+	}
+	self, ok := memberOf(c, listSettingsRoute)
 	if !ok {
 		return
 	}
@@ -443,8 +456,15 @@ func (p *preferencesProduct) listSettings(c *gin.Context) {
 
 // writeSetting writes a value into the layer of the tenant the request names.
 // The actor the change event carries is the member's account identifier.
+//
+// The permission is asked first, so a caller without settings.write is answered
+// 403 whatever key it names; only a caller that holds it reaches the key
+// lookup, where a key the host does not list for tenants is a 404.
 func (p *preferencesProduct) writeSetting(c *gin.Context) {
-	self, ok := memberWith(c, p.db, roleAdmin)
+	if !p.guard.RequirePermission(c, authz.PermissionSettingsWrite) {
+		return
+	}
+	self, ok := memberOf(c, writeSettingRoute)
 	if !ok {
 		return
 	}
@@ -470,9 +490,13 @@ func (p *preferencesProduct) writeSetting(c *gin.Context) {
 }
 
 // deleteSetting removes the tenant's own row for a key, which reverts it to the
-// global value or the declared default.
+// global value or the declared default. The permission is asked before the key
+// lookup, as writeSetting asks it.
 func (p *preferencesProduct) deleteSetting(c *gin.Context) {
-	self, ok := memberWith(c, p.db, roleAdmin)
+	if !p.guard.RequirePermission(c, authz.PermissionSettingsWrite) {
+		return
+	}
+	self, ok := memberOf(c, deleteSettingRoute)
 	if !ok {
 		return
 	}
@@ -516,7 +540,17 @@ func (p *preferencesProduct) pathSettingKey(c *gin.Context) (servedSetting, bool
 }
 
 // listGlobalSettings answers the global layer of every key the host lists.
+//
+// The operator check is the chain's, on the admin endpoint; the handler asks
+// the authorization layer's handler-internal API for settings.read as well, and
+// names the platform domain rather than reading one off the request: an admin
+// route whose path carries a tenant decides in the platform domain regardless,
+// so a caller authorized in one tenant cannot reach another's or the platform's
+// rows by naming it.
 func (p *preferencesProduct) listGlobalSettings(c *gin.Context) {
+	if !p.guard.RequirePermissionIn(c, authz.PermissionSettingsRead, authz.PlatformDomain) {
+		return
+	}
 	views, f := p.view(c.Request.Context(), settings.Global(), p.on(false))
 	if f != nil {
 		writeSettingFailure(c, f)
@@ -529,10 +563,15 @@ func (p *preferencesProduct) listGlobalSettings(c *gin.Context) {
 func globalSettingDetail() map[string]string { return map[string]string{"layer": "global"} }
 
 // writeGlobalSetting writes a value into the global layer, which every tenant
-// without a row of its own reads.
+// without a row of its own reads. The operator check is the chain's; the
+// handler asks settings.write in the platform domain, before the key lookup, so
+// a caller without it is answered 403 whatever key it names.
 func (p *preferencesProduct) writeGlobalSetting(c *gin.Context) {
 	actor, ok := operatorActor(c, writeGlobalSettingRoute)
 	if !ok {
+		return
+	}
+	if !p.guard.RequirePermissionIn(c, authz.PermissionSettingsWrite, authz.PlatformDomain) {
 		return
 	}
 	k, ok := p.pathSettingKey(c)
@@ -555,10 +594,14 @@ func (p *preferencesProduct) writeGlobalSetting(c *gin.Context) {
 	c.JSON(nethttp.StatusOK, v)
 }
 
-// deleteGlobalSetting removes the global row for a key.
+// deleteGlobalSetting removes the global row for a key. The permission is asked
+// as writeGlobalSetting asks it.
 func (p *preferencesProduct) deleteGlobalSetting(c *gin.Context) {
 	actor, ok := operatorActor(c, deleteGlobalSettingRoute)
 	if !ok {
+		return
+	}
+	if !p.guard.RequirePermissionIn(c, authz.PermissionSettingsWrite, authz.PlatformDomain) {
 		return
 	}
 	k, ok := p.pathSettingKey(c)
@@ -625,7 +668,12 @@ func tenantSettingDetail(t tenant.Tenant) map[string]string {
 }
 
 // listTenantSettings answers one tenant's layer of every key the host lists.
+// The operator check is the chain's; the handler asks settings.read in the
+// platform domain.
 func (p *preferencesProduct) listTenantSettings(c *gin.Context) {
+	if !p.guard.RequirePermissionIn(c, authz.PermissionSettingsRead, authz.PlatformDomain) {
+		return
+	}
 	t, ok := p.pathTenant(c)
 	if !ok {
 		return
@@ -640,10 +688,14 @@ func (p *preferencesProduct) listTenantSettings(c *gin.Context) {
 
 // writeTenantSetting writes a value into the layer of the tenant the path
 // names: a platform key such as the tenant's rate limit, or one the tenant
-// edits itself.
+// edits itself. The operator check is the chain's; the handler asks
+// settings.write in the platform domain, before the key lookup.
 func (p *preferencesProduct) writeTenantSetting(c *gin.Context) {
 	actor, ok := operatorActor(c, writeTenantSettingRoute)
 	if !ok {
+		return
+	}
+	if !p.guard.RequirePermissionIn(c, authz.PermissionSettingsWrite, authz.PlatformDomain) {
 		return
 	}
 	t, ok := p.pathTenant(c)
@@ -671,10 +723,13 @@ func (p *preferencesProduct) writeTenantSetting(c *gin.Context) {
 }
 
 // deleteTenantSetting removes the row the tenant the path names holds for a
-// key.
+// key. The permission is asked as writeTenantSetting asks it.
 func (p *preferencesProduct) deleteTenantSetting(c *gin.Context) {
 	actor, ok := operatorActor(c, deleteTenantSettingRoute)
 	if !ok {
+		return
+	}
+	if !p.guard.RequirePermissionIn(c, authz.PermissionSettingsWrite, authz.PlatformDomain) {
 		return
 	}
 	t, ok := p.pathTenant(c)
@@ -717,20 +772,29 @@ func init() {
 // serves is declared by the module that reads it.
 //
 // It requires the settings surface, the roster and the audit seam, which it
-// takes up. The settings surface is read on the request path, never in Init,
+// takes up, and the authorization layer's handler-internal API, which it takes
+// up in Init. The settings surface is read on the request path, never in Init,
 // and the requirement is what fails a command that names this module and
-// forgets it at resolution. The admin routes sit behind the operator check the
-// admin module registers on that endpoint, and the API routes behind the
-// admission layer.
+// forgets it at resolution. The authorization API is what every handler asks
+// its route's permission through: the routes are declared open at Init, so the
+// middleware lets a request on a guarded endpoint reach the handler and the
+// handler is the one that decides — the route-level permission a settings route
+// cannot express for itself, since the key it names is checked after the
+// permission. The API is taken up optionally and its absence fails the Init: a
+// command that runs this module without the authorization layer has no way to
+// decide a settings permission, and failing the startup is the direction that
+// does not leave the surface deciding by default. The admin routes sit behind
+// the operator check the admin module registers on that endpoint, and the API
+// routes behind the admission layer.
 func preferencesModule() core.Module {
 	return core.Module{
 		Name: preferencesModuleName,
 		Requires: []core.Requirement{
 			{Token: (*log.Logger)(nil)},
-			{Token: (*db.Database)(nil)},
 			{Token: (*settings.Store)(nil)},
 			{Token: (*tenant.Catalog)(nil)},
 			{Token: (*audit.Audit)(nil)},
+			{Token: (*authzguard.Guard)(nil), Optional: true},
 		},
 		Resources: []any{
 			speedhttp.Spec{Endpoint: apiEndpoint, Document: preferencesAPIOpenAPI},
@@ -739,10 +803,6 @@ func preferencesModule() core.Module {
 
 		New: func(_ context.Context, reg *core.Registry) (any, error) {
 			logger, err := namedLogger(reg, preferencesModuleName)
-			if err != nil {
-				return nil, err
-			}
-			database, err := core.Resolve[db.Database](reg)
 			if err != nil {
 				return nil, err
 			}
@@ -766,7 +826,6 @@ func preferencesModule() core.Module {
 			}
 			return &preferencesProduct{
 				released: released{log: logger},
-				db:       database,
 				store:    store,
 				roster:   roster,
 				recorder: recorder,
@@ -779,6 +838,11 @@ func preferencesModule() core.Module {
 			if !ok {
 				return errForeignInstance(preferencesModuleName, instance)
 			}
+			guard, err := core.Resolve[authzguard.Guard](reg)
+			if err != nil {
+				return fmt.Errorf("%s: taking up the authorization API: %w", preferencesModuleName, err)
+			}
+			product.guard = guard
 			router, err := core.Resolve[speedhttp.Router](reg)
 			if err != nil {
 				return err
@@ -790,6 +854,21 @@ func preferencesModule() core.Module {
 			admin, err := router.Endpoint(adminEndpoint)
 			if err != nil {
 				return err
+			}
+			// The routes carry no route-level permission: the handler asks it.
+			// They are registered open so a guarded endpoint lets a request
+			// through to the handler, which is where the decision is written.
+			declarations, err := core.Resolve[authz.Gate](reg)
+			if err != nil {
+				return err
+			}
+			for _, route := range []string{
+				listSettingsRoute, writeSettingRoute, deleteSettingRoute,
+				listGlobalSettingsRoute, writeGlobalSettingRoute, deleteGlobalSettingRoute,
+				listTenantSettingsRoute, writeTenantSettingRoute, deleteTenantSettingRoute,
+			} {
+				method, path := splitRoute(route)
+				declarations.Open(method, path)
 			}
 			mount(api, listSettingsRoute, product.listSettings)
 			mount(api, writeSettingRoute, product.writeSetting)

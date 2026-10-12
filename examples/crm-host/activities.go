@@ -13,6 +13,7 @@ import (
 	"github.com/gin-gonic/gin"
 	"gorm.io/gorm"
 
+	"github.com/vislake/speed/pkg/authz"
 	"github.com/vislake/speed/pkg/core"
 	"github.com/vislake/speed/pkg/db"
 	speedhttp "github.com/vislake/speed/pkg/http"
@@ -26,12 +27,54 @@ const activitiesModuleName = "activities"
 // activityTable is the table the activity model maps to.
 const activityTable = "activities"
 
-// The activity routes, on the API endpoint.
+// The activity routes, on the API endpoint. Any member reads a deal's timeline;
+// recording and deleting an activity take the write and delete permissions. Each
+// route declares the permission the authorization middleware decides it on, from
+// the module's own Init; the handlers trust that decision and run no role
+// comparison of their own.
 const (
 	createActivityRoute = "POST /activities"
 	deleteActivityRoute = "DELETE /activities/:id"
 	dealTimelineRoute   = "GET /deals/:id/timeline"
 )
+
+// activityPermissions is each route's required permission, in the form the
+// declaration surface takes. A route the host mounts on the API endpoint must
+// appear here or be declared open, or the authorization middleware refuses it as
+// undeclared.
+var activityPermissions = []struct {
+	route string
+	perm  authz.Permission
+}{
+	{createActivityRoute, permActivityWrite},
+	{deleteActivityRoute, permActivityDel},
+	{dealTimelineRoute, permActivityRead},
+}
+
+// declareActivityRoutes declares each activity route's required permission on the
+// route-declaration surface, so the enforcement middleware decides the route
+// rather than the handler reading a role.
+//
+// The surface is taken up optionally: a command that runs the activities module
+// without the enforcement layer has none to declare to, and its routes there
+// carry no requirement. A command that runs the layer holds every declaration to
+// the permission catalog and to the process's translation once the Init window
+// closes, so a route naming a permission the host does not declare fails the
+// startup rather than deciding nothing at request time.
+func declareActivityRoutes(reg *core.Registry) error {
+	gate, err := core.Resolve[authz.Gate](reg)
+	switch {
+	case errors.Is(err, core.ErrMissingProvider):
+		return nil
+	case err != nil:
+		return err
+	}
+	for _, d := range activityPermissions {
+		method, path := splitRoute(d.route)
+		gate.Require(method, path, d.perm)
+	}
+	return nil
+}
 
 // What an activity is about. A deal is the one subject so far; the column is a
 // kind and an identifier so that another subject is a value rather than a new
@@ -179,12 +222,8 @@ func activityByID(ctx context.Context, database db.Database, id string) (Activit
 func (p *activitiesProduct) createActivity(c *gin.Context) {
 	ctx := c.Request.Context()
 	logger := log.FromContext(ctx)
-	self, ok := memberOf(c, p.db, createActivityRoute)
+	self, ok := memberOf(c, createActivityRoute)
 	if !ok {
-		return
-	}
-	if !canWriteDeals(self.Role) {
-		writeError(c, nethttp.StatusForbidden, errReadOnlyRole.Error())
 		return
 	}
 	var body activityRequest
@@ -257,12 +296,7 @@ func (p *activitiesProduct) createActivity(c *gin.Context) {
 func (p *activitiesProduct) deleteActivity(c *gin.Context) {
 	ctx := c.Request.Context()
 	logger := log.FromContext(ctx)
-	self, ok := memberOf(c, p.db, deleteActivityRoute)
-	if !ok {
-		return
-	}
-	if !canWriteDeals(self.Role) {
-		writeError(c, nethttp.StatusForbidden, errReadOnlyRole.Error())
+	if _, ok := memberOf(c, deleteActivityRoute); !ok {
 		return
 	}
 	id := c.Param("id")
@@ -300,7 +334,7 @@ type timeline struct {
 func (p *activitiesProduct) dealTimeline(c *gin.Context) {
 	ctx := c.Request.Context()
 	logger := log.FromContext(ctx)
-	if _, ok := memberOf(c, p.db, dealTimelineRoute); !ok {
+	if _, ok := memberOf(c, dealTimelineRoute); !ok {
 		return
 	}
 	id := c.Param("id")
@@ -347,7 +381,9 @@ func init() {
 // The activities table references the deals table, so the module requires that
 // module's table token, optionally, for the order of the migrations alone: it
 // reads the deals table through the database handle. The actor column is an
-// account identifier and names no foreign key.
+// account identifier and names no foreign key. It takes up the declaration
+// surface optionally: each route declares the permission the authorization
+// middleware decides it on from this module's own Init.
 func activitiesModule() core.Module {
 	return core.Module{
 		Name: activitiesModuleName,
@@ -356,6 +392,7 @@ func activitiesModule() core.Module {
 			{Token: (*db.Database)(nil)},
 			{Token: (*tenant.Catalog)(nil)},
 			{Token: (*dealsTable)(nil), Optional: true},
+			{Token: (*authz.Gate)(nil), Optional: true},
 		},
 		Resources: []any{
 			db.Migrations{FS: activitiesMigrations},
@@ -390,7 +427,7 @@ func activitiesModule() core.Module {
 			mount(api, createActivityRoute, product.createActivity)
 			mount(api, deleteActivityRoute, product.deleteActivity)
 			mount(api, dealTimelineRoute, product.dealTimeline)
-			return nil
+			return declareActivityRoutes(reg)
 		},
 
 		Stop:  recordStop,

@@ -1,11 +1,26 @@
 package main
 
 import (
+	"context"
 	nethttp "net/http"
 	"slices"
 	"strings"
 	"testing"
 	"time"
+
+	"github.com/gin-gonic/gin"
+
+	"github.com/vislake/speed/pkg/authn"
+	"github.com/vislake/speed/pkg/authz"
+	"github.com/vislake/speed/pkg/authz/authztest"
+	authzguard "github.com/vislake/speed/pkg/authz/guard"
+	"github.com/vislake/speed/pkg/config"
+	"github.com/vislake/speed/pkg/core"
+	"github.com/vislake/speed/pkg/db"
+	speedhttp "github.com/vislake/speed/pkg/http"
+	"github.com/vislake/speed/pkg/log"
+	"github.com/vislake/speed/pkg/settings"
+	"github.com/vislake/speed/pkg/tenant"
 )
 
 // The cases of the accounts and contacts slice. Each claim under "Accounts and
@@ -97,14 +112,24 @@ func (a actor) must(t *testing.T, method, path string, body any, status int) res
 	return resp
 }
 
-// refused holds a response to a 403 whose body is the host's error body.
+// refused holds a response to a 403 that carries a diagnostic. A 403 comes from
+// two writers with two bodies: a handler of this host writes the host's own
+// error body (`{"error": ...}`), and the authorization layer's middleware writes
+// an RFC 9457 problem detail (`{"type", "status", "detail", ...}`). The case
+// asserts only that the refusal carries some text, so a role that is refused for
+// want of a permission passes whether the route's handler or the policy refused
+// it.
 func refused(t *testing.T, what string, resp response) {
 	t.Helper()
 	expect(t, what, resp, nethttp.StatusForbidden)
-	var body apiError
+	var body struct {
+		Error  string `json:"error"`
+		Detail string `json:"detail"`
+		Title  string `json:"title"`
+	}
 	resp.decode(t, &body)
-	if body.Error == "" {
-		t.Errorf("%s was refused with no error text: %q", what, resp.body)
+	if body.Error == "" && body.Detail == "" && body.Title == "" {
+		t.Errorf("%s was refused with no diagnostic text: %q", what, resp.body)
 	}
 }
 
@@ -362,6 +387,12 @@ func TestAccountsStayInTheirTenant(t *testing.T) {
 			}
 		})
 
+		// Each route's required permission is declared where the route is
+		// registered, and the enforcement middleware decides it in the authorizing
+		// stage: a role that holds the permission reaches the handler, and one that
+		// does not is refused 403 by the middleware before the handler runs. The
+		// handler reads no role, so these statuses are the policy's and not a
+		// second check inside the handler.
 		t.Run("each route takes its role", func(t *testing.T) {
 			sub := c.in(t)
 			vera.must(t, nethttp.MethodGet, "/accounts", nil, nethttp.StatusOK)
@@ -577,5 +608,162 @@ func requireNames(t *testing.T, what string, got, want []string) {
 	t.Helper()
 	if !slices.Equal(got, want) {
 		t.Errorf("%s: got %s, want %s", what, strings.Join(got, ", "), strings.Join(want, ", "))
+	}
+}
+
+// accountsGuardConfig is the configuration the enforcement-only accounts drive
+// runs on: the endpoint the middleware would guard, named the way the stand-in
+// entry point declares it.
+const accountsGuardConfig = `{"authz":{"guard":{"endpoints":["api"]}}}`
+
+// accountsSupply registers a stand-in module and supplies its instance, so the
+// accounts module resolves the capability from it exactly as a host's assembly
+// hands one over.
+func accountsSupply(reg *core.Registry, name string, token core.Token, instance any) {
+	reg.Register(core.Module{Name: name, Provides: []core.Provision{{Token: token}}})
+	reg.Supply(instance, name)
+}
+
+// accountsEntryStub stands for the HTTP entry point in the accounts assembly
+// cases: one endpoint whose registrations are dropped.
+type accountsEntryStub struct{}
+
+func (accountsEntryStub) Endpoint(string) (speedhttp.Endpoint, error) {
+	return accountsEndpointStub{}, nil
+}
+func (accountsEntryStub) Endpoints() []string { return []string{apiEndpoint} }
+
+// accountsEndpointStub accepts registrations and does nothing with them.
+type accountsEndpointStub struct{}
+
+func (accountsEndpointStub) Route(string, string, ...gin.HandlerFunc) {}
+func (accountsEndpointStub) Use(speedhttp.Middleware)                 {}
+func (accountsEndpointStub) Accepting() bool                          { return true }
+
+// newAccountsRegistry builds a registry holding the real accounts module beside
+// a route-declaration surface and stand-ins for every other capability the
+// module requires, and names the modules a drive of it takes in.
+//
+// When guard is true the surface is the real enforcement module's, over the
+// host's business vocabulary and a stand-in engine and catalog, so a drive to
+// Start holds every declaration the accounts module makes to the permission
+// catalog and to the resolved translation. When guard is false the surface is
+// the given stand-in gate and no enforcement module runs, so a case reads back
+// what the accounts module declared without the enforcement module's checks.
+func newAccountsRegistry(t *testing.T, gate authz.Gate, guard bool) (*core.Registry, []string) {
+	t.Helper()
+	reg := core.New()
+	reader := authztest.ConfigReaderAll(t, accountsGuardConfig, authzguard.Module())
+	reg.Register(config.Module())
+	reg.Supply(reader, config.ModuleName)
+	names := []string{accountsModuleName, "stand-in.router", "stand-in.db", "stand-in.settings", "stand-in.roster", "stand-in.memberships", "stand-in.log"}
+	if guard {
+		reg.Register(authzguard.Module())
+		reg.Register(authzBusinessModule())
+		accountsSupply(reg, "stand-in.enforcer", (*authz.Enforcer)(nil), authztest.NewEnforcer())
+		accountsSupply(reg, "stand-in.catalog", (*authz.Catalog)(nil), authztest.NewCatalog(
+			permAccountRead, permAccountWrite, permAccountDel, permAccountOwn, permAccountPurge))
+		names = append(names, authzguard.ModuleName, authzBusinessModuleName, "stand-in.enforcer", "stand-in.catalog")
+	} else {
+		accountsSupply(reg, "stand-in.gate", (*authz.Gate)(nil), gate)
+		names = append(names, "stand-in.gate")
+	}
+	reg.Register(accountsModule())
+	accountsSupply(reg, "stand-in.router", (*speedhttp.Router)(nil), accountsEntryStub{})
+	accountsSupply(reg, "stand-in.db", (*db.Database)(nil), struct{ db.Database }{})
+	accountsSupply(reg, "stand-in.settings", (*settings.Store)(nil), struct{ settings.Store }{})
+	accountsSupply(reg, "stand-in.roster", (*tenant.Catalog)(nil), struct{ tenant.Catalog }{})
+	accountsSupply(reg, "stand-in.memberships", (*authn.Memberships)(nil), struct{ authn.Memberships }{})
+	accountsSupply(reg, "stand-in.log", (*log.Logger)(nil), discardingLogger{})
+	return reg, names
+}
+
+// accountRoutes is every route the accounts module binds on the API endpoint, in
+// registration order, so a case that holds the whole surface to a property names
+// them once.
+var accountRoutes = []string{
+	createAccountRoute, listAccountsRoute, getAccountRoute, patchAccountRoute,
+	deleteAccountRoute, ownerAccountRoute, purgeAccountRoute,
+}
+
+// TestAccountsDeclaresEveryAPIRoute is the case for the accounts module's route
+// declarations, the surface the enforcement middleware reads.
+//
+// Every account route on the API endpoint declares a permission, so a request
+// that reaches one is decided by the policy rather than refused as an undeclared
+// route: under the closed default a route with no declaration is answered 403
+// for every caller, whatever role the caller holds. The observation therefore
+// discriminates: with a `Require` dropped for a route, that route is undeclared
+// and this case finds it not covered, while with the module as written every one
+// is covered and a sufficient role passes the middleware. The drive runs the
+// real enforcement module, so a declaration naming a permission the host does
+// not declare, or one the resolved translation cannot express, fails the start
+// rather than leaving a route that decides nothing at request time.
+func TestAccountsDeclaresEveryAPIRoute(t *testing.T) {
+	t.Parallel()
+	reg, names := newAccountsRegistry(t, nil, true)
+	err := reg.Drive(t.Context(), core.Drive{
+		Depth:        core.StageStart,
+		Participants: names,
+		Action: func(_ context.Context, reg *core.Registry) error {
+			gate, err := core.Resolve[authz.Gate](reg)
+			if err != nil {
+				return err
+			}
+			for _, route := range accountRoutes {
+				method, path := splitRoute(route)
+				if !gate.Covered(method, path) {
+					t.Errorf("the route %s carries no declaration, so the middleware refuses it 403 for every caller "+
+						"under the closed default", route)
+				}
+			}
+			// The control: a route the module does not declare is not covered, which
+			// is the state a dropped declaration leaves a real route in.
+			if gate.Covered(nethttp.MethodGet, "/accounts/undeclared") {
+				t.Error("a route the module does not declare reads as covered")
+			}
+			return nil
+		},
+	})
+	if err != nil {
+		t.Fatalf("driving the accounts module with the enforcement module failed: %v", err)
+	}
+}
+
+// TestAccountsDeclaresThePermissionEachRouteNeeds is the case for which
+// permission each account route declares, and it is what makes the role matrix
+// reach the routes: a viewer holds crm.account.read and so reads, a rep holds
+// crm.account.write and so writes, an admin holds crm.account.delete, and an
+// owner holds crm.account.own and crm.account.purge. A route that declared the
+// wrong permission would let a role the matrix does not intend reach it, so each
+// route is held to the exact permission it needs.
+func TestAccountsDeclaresThePermissionEachRouteNeeds(t *testing.T) {
+	t.Parallel()
+	gate := authztest.NewGate()
+	reg, names := newAccountsRegistry(t, gate, false)
+	if err := reg.Drive(t.Context(), core.Drive{Depth: core.StageInit, Participants: names}); err != nil {
+		t.Fatalf("driving the accounts module with a stand-in gate failed: %v", err)
+	}
+	for _, want := range []struct {
+		route string
+		perm  authz.Permission
+	}{
+		{createAccountRoute, permAccountWrite},
+		{listAccountsRoute, permAccountRead},
+		{getAccountRoute, permAccountRead},
+		{patchAccountRoute, permAccountWrite},
+		{deleteAccountRoute, permAccountDel},
+		{ownerAccountRoute, permAccountOwn},
+		{purgeAccountRoute, permAccountPurge},
+	} {
+		method, path := splitRoute(want.route)
+		got, ok := gate.Requirement(method, path)
+		if !ok {
+			t.Errorf("the route %s declared no permission, want %q", want.route, want.perm)
+			continue
+		}
+		if got != want.perm {
+			t.Errorf("the route %s declares %q, want %q", want.route, got, want.perm)
+		}
 	}
 }

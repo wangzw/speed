@@ -13,6 +13,7 @@ import (
 
 	"github.com/gin-gonic/gin"
 
+	"github.com/vislake/speed/pkg/authz"
 	"github.com/vislake/speed/pkg/core"
 	"github.com/vislake/speed/pkg/db"
 	speedhttp "github.com/vislake/speed/pkg/http"
@@ -27,13 +28,53 @@ const pipelineModuleName = "pipeline"
 const stageTable = "pipeline_stages"
 
 // The pipeline routes, on the API endpoint and so inside the tenant the request
-// names. Any member reads the stages; only an owner or an admin of the tenant
-// defines them.
+// names. Any member reads the stages; only a member whose role carries the
+// pipeline write permission defines them. Each route declares the permission the
+// authorization middleware decides it on, from the module's own Init; the
+// handler trusts that decision and runs no role comparison of its own.
 const (
 	listStagesRoute  = "GET /pipeline/stages"
 	createStageRoute = "POST /pipeline/stages"
 	patchStageRoute  = "PATCH /pipeline/stages/:key"
 )
+
+// pipelinePermissions is each route's required permission, in the form the
+// declaration surface takes. A route the host mounts on the API endpoint must
+// appear here or be declared open, or the authorization middleware refuses it as
+// undeclared.
+var pipelinePermissions = []struct {
+	route string
+	perm  authz.Permission
+}{
+	{listStagesRoute, permPipelineRead},
+	{createStageRoute, permPipelineWrite},
+	{patchStageRoute, permPipelineWrite},
+}
+
+// declarePipelineRoutes declares each pipeline route's required permission on the
+// route-declaration surface, so the enforcement middleware decides the route
+// rather than the handler reading a role.
+//
+// The surface is taken up optionally: a command that runs the pipeline module
+// without the enforcement layer (migrate, for one) has none to declare to, and
+// its routes there carry no requirement. A command that runs the layer holds
+// every declaration to the permission catalog and to the process's translation
+// once the Init window closes, so a route naming a permission the host does not
+// declare fails the startup rather than deciding nothing at request time.
+func declarePipelineRoutes(reg *core.Registry) error {
+	gate, err := core.Resolve[authz.Gate](reg)
+	switch {
+	case errors.Is(err, core.ErrMissingProvider):
+		return nil
+	case err != nil:
+		return err
+	}
+	for _, d := range pipelinePermissions {
+		method, path := splitRoute(d.route)
+		gate.Require(method, path, d.perm)
+	}
+	return nil
+}
 
 // The three kinds of stage. A deal in an open stage is being worked; one in a
 // won or lost stage is closed, and moving it there stamps when it closed. The
@@ -53,14 +94,13 @@ var stageKinds = []string{stageOpen, stageWon, stageLost}
 var stageKeyPattern = regexp.MustCompile(`^[a-z][a-z0-9-]{0,39}$`)
 
 var (
-	errBadStageKey     = errors.New("the stage key is not lower-case letters, digits and dashes starting with a letter, at most 40 long")
-	errNoStageName     = errors.New("the stage name is empty")
-	errBadPosition     = errors.New("the stage position is negative")
-	errBadProbability  = errors.New("the stage probability is not between 0 and 100")
-	errNoProbability   = errors.New("the stage probability is missing")
-	errUnknownKind     = errors.New("the stage kind is not one of " + strings.Join(stageKinds, ", "))
-	errStageDiffers    = errors.New("a stage with this key exists with other attributes")
-	errNotAdministered = errors.New("only an owner or an admin of this tenant defines the pipeline")
+	errBadStageKey    = errors.New("the stage key is not lower-case letters, digits and dashes starting with a letter, at most 40 long")
+	errNoStageName    = errors.New("the stage name is empty")
+	errBadPosition    = errors.New("the stage position is negative")
+	errBadProbability = errors.New("the stage probability is not between 0 and 100")
+	errNoProbability  = errors.New("the stage probability is missing")
+	errUnknownKind    = errors.New("the stage kind is not one of " + strings.Join(stageKinds, ", "))
+	errStageDiffers   = errors.New("a stage with this key exists with other attributes")
 )
 
 //go:embed openapi/pipeline.json
@@ -101,9 +141,6 @@ func stageByKey(ctx context.Context, database db.Database, key string) (Pipeline
 	return found[0], true, nil
 }
 
-// canAdminister reports whether a role defines the pipeline.
-func canAdminister(role string) bool { return roleRank(role) >= roleRank(roleAdmin) }
-
 // pipelineTable is the capability the pipeline module stands for, so that a
 // module whose tables reference the stages table can declare a requirement on
 // it and have its migration applied after this one. It is a token only, and it
@@ -142,7 +179,7 @@ type stageList struct {
 // tenant condition; the filter puts it there.
 func (p *pipelineProduct) listStages(c *gin.Context) {
 	ctx := c.Request.Context()
-	if _, ok := memberOf(c, p.db, listStagesRoute); !ok {
+	if _, ok := memberOf(c, listStagesRoute); !ok {
 		return
 	}
 	var stages []PipelineStage
@@ -199,12 +236,7 @@ func (s stageRequest) Validate() error {
 // changed.
 func (p *pipelineProduct) createStage(c *gin.Context) {
 	ctx := c.Request.Context()
-	self, ok := memberOf(c, p.db, createStageRoute)
-	if !ok {
-		return
-	}
-	if !canAdminister(self.Role) {
-		writeError(c, nethttp.StatusForbidden, errNotAdministered.Error())
+	if _, ok := memberOf(c, createStageRoute); !ok {
 		return
 	}
 	var body stageRequest
@@ -259,12 +291,7 @@ func (s stagePatch) Validate() error {
 // the filter's to fill from the request, as the condition it adds is.
 func (p *pipelineProduct) patchStage(c *gin.Context) {
 	ctx := c.Request.Context()
-	self, ok := memberOf(c, p.db, patchStageRoute)
-	if !ok {
-		return
-	}
-	if !canAdminister(self.Role) {
-		writeError(c, nethttp.StatusForbidden, errNotAdministered.Error())
+	if _, ok := memberOf(c, patchStageRoute); !ok {
 		return
 	}
 	var body stagePatch
@@ -307,6 +334,10 @@ func init() {
 // It requires the roster for the reason every module issuing statements on a
 // scoped model does: a command that ran it without the roster would run its
 // statements unscoped, and the requirement turns that into a startup failure.
+// It takes up the declaration surface optionally: each of its routes declares
+// the permission the authorization middleware decides it on from this module's
+// own Init, and a command without the surface mounts routes that carry no
+// requirement.
 func pipelineModule() core.Module {
 	return core.Module{
 		Name: pipelineModuleName,
@@ -314,6 +345,7 @@ func pipelineModule() core.Module {
 			{Token: (*log.Logger)(nil)},
 			{Token: (*db.Database)(nil)},
 			{Token: (*tenant.Catalog)(nil)},
+			{Token: (*authz.Gate)(nil), Optional: true},
 		},
 		Provides: []core.Provision{
 			{Token: (*pipelineTable)(nil), Exclusive: true},
@@ -351,7 +383,7 @@ func pipelineModule() core.Module {
 			mount(api, listStagesRoute, product.listStages)
 			mount(api, createStageRoute, product.createStage)
 			mount(api, patchStageRoute, product.patchStage)
-			return nil
+			return declarePipelineRoutes(reg)
 		},
 
 		Stop:  recordStop,

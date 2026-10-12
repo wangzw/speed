@@ -1,13 +1,11 @@
 package main
 
 import (
-	"context"
 	nethttp "net/http"
 	"strings"
 	"testing"
 
 	"github.com/vislake/speed/pkg/authn"
-	"github.com/vislake/speed/pkg/authn/authntest"
 )
 
 // requireRecord waits for the record of a request's refusal, whose message and
@@ -91,50 +89,6 @@ func TestAnOperatorBelongsToNoTenant(t *testing.T) {
 			t.Errorf("GET /me answered account %+v and tenants %+v for the operator, want neither", me.Account, me.Tenants)
 		}
 	})
-}
-
-// TestTheDecisionSeamRefusesTenantAccessAndServesTheOperator is the case for
-// the host's Decider: a management action is allowed to the one operator
-// account alone, judged by its full identifier, and authn.tenant.access is
-// refused whatever the actor, so no platform role crosses a tenant until a
-// permission model is written.
-//
-// The actor identities are built with authntest, which is the package a host's
-// tests reach for and its code does not; the tenant-access refusal is also held
-// through the running host by TestAnOperatorBelongsToNoTenant, where the
-// admission layer asks this decision and answers its 404.
-func TestTheDecisionSeamRefusesTenantAccessAndServesTheOperator(t *testing.T) {
-	t.Parallel()
-	ctx := context.Background()
-	identity := func(account authn.AccountID, backend string) authn.Identity {
-		t.Helper()
-		id, ok := authn.FromContext(authntest.Context(t, ctx,
-			authntest.WithAccount(account), authntest.WithBackend(backend)))
-		if !ok {
-			t.Fatalf("the test context carries no identity")
-		}
-		return id
-	}
-	operatorID := identity(operatorAccount, "static")
-	userID := identity(authn.AccountID("u_0123456789abcdef"), sessionBackendName)
-
-	var d opsDecider
-	for _, tc := range []struct {
-		what   string
-		action authn.Action
-		actor  authn.Identity
-		want   bool
-	}{
-		{"tenant access by the operator", authn.ActionTenantAccess, operatorID, false},
-		{"tenant access by a user", authn.ActionTenantAccess, userID, false},
-		{"a management action by the operator", authn.ActionAccountRead, operatorID, true},
-		{"a management action by a user", authn.ActionAccountRead, userID, false},
-	} {
-		got, err := d.Decide(ctx, authn.Decision{Action: tc.action, Actor: tc.actor})
-		if err != nil || got != tc.want {
-			t.Errorf("%s: Decide = %v, %v, want %v", tc.what, got, err, tc.want)
-		}
-	}
 }
 
 // TestAUsersPasswordIsNoCredentialOnAGuardedRoute is the case for the one scheme

@@ -86,11 +86,22 @@
 //     tenant its request names, the operator included, is answered the same 404
 //     the admission layer answers an unknown tenant, and the refusal is in the
 //     journal: the layer sits inside the journal and the rate limiter, which the
-//     chain listing shows. The host keeps only the role (`member_roles`), which
-//     admission does not know. The only constraints the startup reports as
-//     landing on no layer are the journal's anchors on resolution, on the two
-//     endpoints that resolve no tenant, and it reports them at Info, since no
-//     layer on those endpoints stands for resolution.
+//     chain listing shows. The host keeps a member's role as a policy row the
+//     authorization layer decides on, which admission does not know. The only
+//     constraints the startup reports as landing on no layer are the journal's
+//     anchors on resolution, on the two endpoints that resolve no tenant, and it
+//     reports them at Info, since no layer on those endpoints stands for
+//     resolution.
+//   - The authorization layer runs on serve: `authz.policy` carries the policy
+//     tables, the engine and the permission catalog; `authz.guard` is the
+//     enforcement middleware on the authorizing stage of the API endpoint and
+//     provides the decision seam the admission layer, the identity system's
+//     management routes and the impersonation module ask their questions
+//     through; and `authz.admin` mounts the policy administration routes under
+//     its own base path on the admin endpoint. This host names no `Decider` of
+//     its own. The middleware guards the API endpoint alone, inside the
+//     admission layer, and a route it holds no declaration for is answered 403
+//     under the closed default.
 //   - A tenant's owner grants an existing user a role from the API, inside the
 //     tenant the request names: the row the grant writes names no tenant, and
 //     the filter fills it from the request. The grant is an upsert by the
@@ -647,6 +658,9 @@ import (
 	ssosaml "github.com/vislake/speed/pkg/authn/sso/saml"
 	"github.com/vislake/speed/pkg/authn/static"
 	"github.com/vislake/speed/pkg/authn/token"
+	authzadmin "github.com/vislake/speed/pkg/authz/admin"
+	authzguard "github.com/vislake/speed/pkg/authz/guard"
+	authzpolicy "github.com/vislake/speed/pkg/authz/policy"
 	"github.com/vislake/speed/pkg/config"
 	"github.com/vislake/speed/pkg/core"
 	speedhttp "github.com/vislake/speed/pkg/http"
@@ -866,6 +880,19 @@ func addStack(root *config.Command, s stack) {
 		journal.ModuleName,
 		ratelimit.ModuleName,
 		settings.ModuleName,
+		// The authorization layer. The engine carries the policy tables and
+		// the permission catalog; the guard is the enforcement middleware on
+		// the authorizing stage and the decision seam the admission layer, the
+		// identity system's management routes and the impersonation module ask
+		// their questions through; the management module mounts the policy
+		// administration routes under its own base path. The engine and the
+		// guard are named together, since the guard requires the engine and
+		// the catalog the engine delivers, and the guard guards the API
+		// endpoint alone — the business endpoint whose admission layer it sits
+		// inside.
+		authzpolicy.ModuleName,
+		authzguard.ModuleName,
+		authzadmin.ModuleName,
 		s.kv,
 		s.event,
 		// The outbox's relay publishes what the deals module stages, and is

@@ -17,6 +17,8 @@ import (
 	"gorm.io/gorm"
 
 	"github.com/vislake/speed/pkg/audit"
+	"github.com/vislake/speed/pkg/authz"
+	authzguard "github.com/vislake/speed/pkg/authz/guard"
 	"github.com/vislake/speed/pkg/core"
 	"github.com/vislake/speed/pkg/db"
 	speedhttp "github.com/vislake/speed/pkg/http"
@@ -351,17 +353,28 @@ func readOperatorTrail(ctx context.Context, handle *gorm.DB, q trailQuery) (trai
 	return readTrail[anyTenantsEntry](ctx, handle, q)
 }
 
-// trailProduct is the trail module's product.
+// trailProduct is the trail module's product. guard is the authorization
+// layer's handler-internal API, which each read asks audit.read through.
 type trailProduct struct {
 	released
 	db       db.Database
 	roster   tenant.Catalog
 	recorder audit.Audit
+	guard    authzguard.Guard
 }
 
 // listTrail answers the trail of the tenant the request names.
+//
+// The permission is decided in the handler, through the authorization layer's
+// handler-internal API: the route is declared open so the middleware lets the
+// request reach the handler, and this question is what answers it. The
+// admission layer has already refused a stranger, so the caller here is a
+// member of the tenant the request resolved to.
 func (p *trailProduct) listTrail(c *gin.Context) {
-	self, ok := memberWith(c, p.db, roleAdmin)
+	if !p.guard.RequirePermission(c, authz.PermissionAuditRead) {
+		return
+	}
+	self, ok := memberOf(c, listTrailRoute)
 	if !ok {
 		return
 	}
@@ -383,9 +396,10 @@ func (p *trailProduct) listTrail(c *gin.Context) {
 
 // trailEntryByID answers one row of the tenant's trail. The lookup names the
 // row's identifier alone, and a row of another tenant is not found, because the
-// filter conditions the statement on this one.
+// filter conditions the statement on this one. The permission is asked first,
+// through the same handler-internal API listTrail asks it through.
 func (p *trailProduct) trailEntryByID(c *gin.Context) {
-	if _, ok := memberWith(c, p.db, roleAdmin); !ok {
+	if !p.guard.RequirePermission(c, authz.PermissionAuditRead) {
 		return
 	}
 	id, err := strconv.ParseInt(c.Param("id"), 10, 64)
@@ -433,7 +447,16 @@ func (p *trailProduct) trailEntryByID(c *gin.Context) {
 // operator's read of tenants' rows with no trace is what the seam is there to
 // prevent. The record of a read of one tenant is written in that tenant's
 // context, so it is in that tenant's own trail.
+//
+// The operator check is the chain's, on the admin endpoint; the handler asks
+// audit.read through the handler-internal API as well, in the platform domain
+// rather than the request's: the tenant the query names is data this route
+// reads, never the domain it decides in, so a caller authorized in one tenant
+// cannot widen a read of another's rows by naming it.
 func (p *trailProduct) crossTrail(c *gin.Context) {
+	if !p.guard.RequirePermissionIn(c, authz.PermissionAuditRead, authz.PlatformDomain) {
+		return
+	}
 	ctx := c.Request.Context()
 	values := c.Request.URL.Query()
 	q, err := parseTrailQuery(values, trailTenantParam)
@@ -518,9 +541,13 @@ func init() {
 // does: both its read models are scoped, and a command running it without the
 // filter would read every tenant's rows for any of them. The roster is also what an
 // operator's read of one tenant enters that tenant through. It requires the
-// audit seam, which an operator's read is recorded through. The table is built
-// by the journal's own migrations, which every stack's migrate applies, so this
-// module declares none.
+// audit seam, which an operator's read is recorded through, and takes the
+// authorization layer's handler-internal API up optionally in Init: a read asks
+// audit.read through it, the routes are declared open at Init so a guarded
+// endpoint lets a request reach the handler, and a command that reaches Init
+// without the API fails the startup rather than leaving the trail without a
+// permission. The table is built by the journal's own migrations, which every
+// stack's migrate applies, so this module declares none.
 func trailModule() core.Module {
 	return core.Module{
 		Name: trailModuleName,
@@ -529,6 +556,7 @@ func trailModule() core.Module {
 			{Token: (*db.Database)(nil)},
 			{Token: (*tenant.Catalog)(nil)},
 			{Token: (*audit.Audit)(nil)},
+			{Token: (*authzguard.Guard)(nil), Optional: true},
 		},
 		Resources: []any{
 			speedhttp.Spec{Endpoint: apiEndpoint, Document: trailAPIOpenAPI},
@@ -565,6 +593,11 @@ func trailModule() core.Module {
 			if !ok {
 				return errForeignInstance(trailModuleName, instance)
 			}
+			guard, err := core.Resolve[authzguard.Guard](reg)
+			if err != nil {
+				return fmt.Errorf("%s: taking up the authorization API: %w", trailModuleName, err)
+			}
+			product.guard = guard
 			router, err := core.Resolve[speedhttp.Router](reg)
 			if err != nil {
 				return err
@@ -576,6 +609,17 @@ func trailModule() core.Module {
 			admin, err := router.Endpoint(adminEndpoint)
 			if err != nil {
 				return err
+			}
+			// The routes carry no route-level permission: the handler asks it.
+			// They are registered open so a guarded endpoint lets a request
+			// through to the handler, which is where the decision is written.
+			declarations, err := core.Resolve[authz.Gate](reg)
+			if err != nil {
+				return err
+			}
+			for _, route := range []string{listTrailRoute, trailEntryRoute, crossTrailRoute} {
+				method, path := splitRoute(route)
+				declarations.Open(method, path)
 			}
 			mount(api, listTrailRoute, product.listTrail)
 			mount(api, trailEntryRoute, product.trailEntryByID)

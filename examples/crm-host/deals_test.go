@@ -14,6 +14,19 @@ import (
 	"sync"
 	"testing"
 	"time"
+
+	"github.com/gin-gonic/gin"
+
+	"github.com/vislake/speed/pkg/authn"
+	"github.com/vislake/speed/pkg/authz"
+	"github.com/vislake/speed/pkg/core"
+	"github.com/vislake/speed/pkg/db"
+	"github.com/vislake/speed/pkg/event/outbox"
+	speedhttp "github.com/vislake/speed/pkg/http"
+	"github.com/vislake/speed/pkg/kv"
+	"github.com/vislake/speed/pkg/log"
+	"github.com/vislake/speed/pkg/settings"
+	"github.com/vislake/speed/pkg/tenant"
 )
 
 // The cases of the deals, the pipeline, the activities and their events: the
@@ -1977,10 +1990,9 @@ func TestADealTakesItsCurrencyFromItsTenantsSetting(t *testing.T) {
 		if n := c.count("SELECT count(*) FROM deals WHERE tenant_id = ?", w.acme.ID); n != before {
 			t.Errorf("acme holds %d deals after a creation under the default euro, want the %d it held", n, before)
 		}
-		if _, ok := findRecord(w.h.output(), "the default currency is not a three-letter ISO 4217 code, so no deal is written",
-			"setting", "deals.default-currency", "value", "euro"); !ok {
-			t.Errorf("the refusal of a creation under the default euro wrote no record naming the setting")
-		}
+		requireRecord(t, w.h, "the refusal of a creation under the default euro",
+			"the default currency is not a three-letter ISO 4217 code, so no deal is written",
+			"setting", "deals.default-currency", "value", "euro")
 		named := w.createDeal(t, w.acme, w.asAlice, map[string]any{
 			"account_id": "acc-1", "title": "in euros, named", "amount": 700, "currency": "EUR", "stage": "qualify",
 		})
@@ -2234,4 +2246,209 @@ func TestADealListingJoinsEachScopedRelationInItsTenant(t *testing.T) {
 			}
 		}
 	})
+}
+
+// TestTheDealRoutesDecideOnTheCallersPermission is the case for the deal and
+// stakeholder routes being decided by the permission model rather than by a
+// role a handler reads: each route is declared at Init with the permission it
+// needs, and the enforcement middleware decides it at the authorizing stage.
+//
+// A viewer holds the read permission alone, so it reads a deal and is refused
+// every write; a rep holds the write and delete permissions, so it creates,
+// moves, names stakeholders and deletes. A viewer's refusal is a 403 from the
+// middleware, and a read that reaches the handler is told from one by the 404 a
+// deal the tenant does not hold answers.
+func TestTheDealRoutesDecideOnTheCallersPermission(t *testing.T) {
+	t.Parallel()
+	forEachStack(t, func(t *testing.T, c *crmCase) {
+		var viewer, rep userRef
+		w := startDeals(t, c, func(w *dealsWorld) {
+			viewer = c.createUser("vera")
+			rep = c.createUser("raj")
+			c.grant(w.acme, viewer, roleViewer)
+			c.grant(w.acme, rep, roleRep)
+		})
+		acme, alice := w.acme, w.asAlice
+		definePipeline(t, w.h, acme, alice, pipelineOf("acme"))
+		deal := w.createDeal(t, acme, alice, map[string]any{
+			"id": "d-perm", "account_id": "acc-1", "title": "perm", "amount": 100, "currency": "EUR", "stage": "qualify",
+		})
+		asViewer := bearer(w.h.login(t, viewer))
+		asRep := bearer(w.h.login(t, rep))
+
+		t.Run("a viewer reads and is refused every write", func(t *testing.T) {
+			expect(t, "a viewer reading a deal",
+				w.h.get(t, apiEndpoint, "/deals/"+deal.ID, acme.Alias, asViewer), nethttp.StatusOK)
+			expect(t, "a viewer listing deals",
+				w.h.get(t, apiEndpoint, "/deals", acme.Alias, asViewer), nethttp.StatusOK)
+			// A read the middleware let through reaches the handler, whose 404
+			// for a deal the tenant does not hold tells it from a refusal.
+			expect(t, "a viewer reading a deal the tenant does not hold",
+				w.h.get(t, apiEndpoint, "/deals/none", acme.Alias, asViewer), nethttp.StatusNotFound)
+			for _, refused := range []struct {
+				what string
+				resp response
+			}{
+				{"a viewer creating a deal", w.h.send(t, api(nethttp.MethodPost, "/deals", acme, asViewer, map[string]any{
+					"account_id": "acc-1", "title": "no", "amount": 1, "stage": "qualify",
+				}))},
+				{"a viewer changing a deal", w.h.sendWith(t, api(nethttp.MethodPatch, "/deals/"+deal.ID, acme, asViewer,
+					map[string]any{"title": "no"}), headers{"If-Match": `"1"`})},
+				{"a viewer moving a deal", w.move(t, acme, asViewer, deal.ID, "won", 1)},
+				{"a viewer deleting a deal", w.h.send(t, api(nethttp.MethodDelete, "/deals/"+deal.ID, acme, asViewer, nil))},
+				{"a viewer naming a deal's stakeholders", w.h.send(t, api(nethttp.MethodPut,
+					"/deals/"+deal.ID+"/stakeholders", acme, asViewer, map[string]any{"contact_ids": []string{}}))},
+				{"a viewer adding a deal's stakeholder", w.h.send(t, api(nethttp.MethodPost,
+					"/deals/"+deal.ID+"/stakeholders", acme, asViewer, map[string]any{"contact_id": "con-x"}))},
+				{"a viewer removing a deal's stakeholder", w.h.send(t, api(nethttp.MethodDelete,
+					"/deals/"+deal.ID+"/stakeholders/con-x", acme, asViewer, nil))},
+			} {
+				expect(t, refused.what, refused.resp, nethttp.StatusForbidden)
+			}
+			if got := w.getDeal(t, acme, alice, deal.ID); got.Title != "perm" || got.Version != 1 {
+				t.Errorf("the deal reads %+v after the viewer's refused writes, want it as the owner left it", got)
+			}
+		})
+
+		t.Run("a rep creates, moves, names stakeholders and deletes", func(t *testing.T) {
+			created := w.createDeal(t, acme, asRep, map[string]any{
+				"id": "d-rep", "account_id": "acc-1", "title": "rep's", "amount": 5, "currency": "EUR", "stage": "qualify",
+			})
+			if created.ID != "d-rep" {
+				t.Fatalf("the rep's creation answered %+v, want d-rep", created)
+			}
+			expect(t, "a rep moving its deal", w.move(t, acme, asRep, "d-rep", "won", 1), nethttp.StatusOK)
+			expect(t, "a rep naming its deal's stakeholders", w.h.send(t, api(nethttp.MethodPut,
+				"/deals/d-rep/stakeholders", acme, asRep, map[string]any{"contact_ids": []string{}})), nethttp.StatusOK)
+			expect(t, "a rep deleting its deal",
+				w.h.send(t, api(nethttp.MethodDelete, "/deals/d-rep", acme, asRep, nil)), nethttp.StatusNoContent)
+		})
+
+		// The activity routes carry the same tiers as the deal routes they sit
+		// beside: reading a deal's timeline is a read (the viewer tier), and
+		// recording and deleting an activity are writes (the rep tier). A
+		// least-role reduction of the write routes' audience, or a promotion of
+		// the read route's, fails here.
+		t.Run("a viewer reads the timeline and is refused the activity writes", func(t *testing.T) {
+			expect(t, "a viewer reading a deal's timeline",
+				w.h.get(t, apiEndpoint, "/deals/"+deal.ID+"/timeline", acme.Alias, asViewer), nethttp.StatusOK)
+			expect(t, "a viewer recording an activity",
+				w.h.send(t, api(nethttp.MethodPost, "/activities", acme, asViewer, map[string]any{
+					"subject_kind": "deal", "subject_id": deal.ID, "kind": "note", "body": "no",
+				})), nethttp.StatusForbidden)
+			expect(t, "a viewer deleting an activity",
+				w.h.send(t, api(nethttp.MethodDelete, "/activities/a-v", acme, asViewer, nil)), nethttp.StatusForbidden)
+		})
+
+		t.Run("a rep records and deletes an activity", func(t *testing.T) {
+			expect(t, "a rep recording an activity",
+				w.h.send(t, api(nethttp.MethodPost, "/activities", acme, asRep, map[string]any{
+					"id": "a-rep", "subject_kind": "deal", "subject_id": deal.ID, "kind": "note", "body": "a rep's note",
+				})), nethttp.StatusCreated)
+			expect(t, "a rep deleting its activity",
+				w.h.send(t, api(nethttp.MethodDelete, "/activities/a-rep", acme, asRep, nil)), nethttp.StatusNoContent)
+		})
+	})
+}
+
+// recordingRouter is a stand-in entry point that records the (method, path)
+// every route is mounted under, so a case can hold a module's declarations to
+// the routes it mounts. Its one endpoint is the API endpoint's name.
+type recordingRouter struct {
+	mounted []string
+}
+
+func (r *recordingRouter) Endpoint(string) (speedhttp.Endpoint, error) { return r, nil }
+
+func (r *recordingRouter) Endpoints() []string { return []string{apiEndpoint} }
+
+func (r *recordingRouter) Route(method, path string, _ ...gin.HandlerFunc) {
+	r.mounted = append(r.mounted, method+" "+path)
+}
+func (r *recordingRouter) Use(speedhttp.Middleware) {}
+func (r *recordingRouter) Accepting() bool          { return true }
+
+// recordingGate is a stand-in for the route-declaration surface: it records the
+// permission each route is declared with, and Open and Covered as the real gate
+// answers them.
+type recordingGate struct {
+	declared map[string]authz.Permission
+	open     map[string]bool
+}
+
+func (g *recordingGate) Require(method, path string, perm authz.Permission) {
+	g.declared[method+" "+path] = perm
+}
+
+func (g *recordingGate) Open(method, path string) {
+	if g.open == nil {
+		g.open = map[string]bool{}
+	}
+	g.open[method+" "+path] = true
+}
+
+func (g *recordingGate) Covered(method, path string) bool {
+	if _, ok := g.declared[method+" "+path]; ok {
+		return true
+	}
+	return g.open[method+" "+path]
+}
+
+// TestEveryDealRouteIsDeclaredWithItsPermission is the assembly case for the
+// deal module's route declarations. Driving the real module through a registry
+// whose entry point and route-declaration surface record what they are given
+// holds every route the module mounts to a declaration and every declaration to
+// a mounted route, at the permission the module states. A route mounted without
+// a declaration is one the enforcement middleware refuses under its closed
+// default; a declaration naming no mounted route decides nothing.
+func TestEveryDealRouteIsDeclaredWithItsPermission(t *testing.T) {
+	t.Parallel()
+	router := &recordingRouter{}
+	gate := &recordingGate{declared: map[string]authz.Permission{}}
+
+	reg := core.New()
+	names := []string{dealsModuleName}
+	for _, stand := range []struct {
+		name    string
+		token   core.Token
+		product any
+	}{
+		{"stand-in.log", (*log.Logger)(nil), discardingLogger{}},
+		{"stand-in.db", (*db.Database)(nil), authzDBStub{}},
+		{"stand-in.roster", (*tenant.Catalog)(nil), struct{ tenant.Catalog }{}},
+		{"stand-in.kv", (*kv.KV)(nil), struct{ kv.KV }{}},
+		{"stand-in.settings", (*settings.Store)(nil), struct{ settings.Store }{}},
+		{"stand-in.outbox", (*outbox.Outbox)(nil), struct{ outbox.Outbox }{}},
+		{"stand-in.accounts", (*authn.Accounts)(nil), struct{ authn.Accounts }{}},
+		{"stand-in.memberships", (*authn.Memberships)(nil), struct{ authn.Memberships }{}},
+		{"stand-in.router", (*speedhttp.Router)(nil), router},
+		{"stand-in.gate", (*authz.Gate)(nil), gate},
+	} {
+		authzSupply(reg, stand.name, stand.token, stand.product)
+		names = append(names, stand.name)
+	}
+	reg.Register(dealsModule())
+	if err := reg.Drive(t.Context(), core.Drive{Depth: core.StageInit, Participants: names}); err != nil {
+		t.Fatalf("driving the deals module through its Init failed: %v", err)
+	}
+	if len(router.mounted) == 0 {
+		t.Fatal("the deals module mounted no route, so the case checks nothing")
+	}
+	for _, mounted := range router.mounted {
+		if _, ok := gate.declared[mounted]; !ok {
+			t.Errorf("the deals module mounts %s without declaring its permission", mounted)
+		}
+	}
+	for _, declared := range dealRoutePermissions {
+		method, path := splitRoute(declared.route)
+		key := method + " " + path
+		perm, ok := gate.declared[key]
+		if !ok {
+			t.Errorf("the deals module declares no permission for %s, which it mounts", declared.route)
+			continue
+		}
+		if perm != declared.perm {
+			t.Errorf("%s is declared with %q, want %q", declared.route, perm, declared.perm)
+		}
+	}
 }

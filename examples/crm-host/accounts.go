@@ -14,6 +14,7 @@ import (
 	"gorm.io/gorm/clause"
 
 	"github.com/vislake/speed/pkg/authn"
+	"github.com/vislake/speed/pkg/authz"
 	"github.com/vislake/speed/pkg/core"
 	"github.com/vislake/speed/pkg/db"
 	speedhttp "github.com/vislake/speed/pkg/http"
@@ -222,7 +223,9 @@ func (a accountRequest) Validate() error {
 	return nil
 }
 
-// createAccount answers an account creation; a rep or above.
+// createAccount answers an account creation. The route declares the
+// `crm.account.write` permission, so who may reach it is the enforcement
+// layer's to decide.
 //
 // The row names no tenant: the filter fills the column from the request before
 // the insert is bound, and the saved row comes back with it filled.
@@ -233,7 +236,7 @@ func (a accountRequest) Validate() error {
 // conflict it is.
 func (p *accountsProduct) createAccount(c *gin.Context) {
 	ctx := c.Request.Context()
-	self, ok := memberWith(c, p.db, roleRep)
+	self, ok := memberOf(c, createAccountRoute)
 	if !ok {
 		return
 	}
@@ -293,9 +296,12 @@ func (p *accountsProduct) createAccount(c *gin.Context) {
 // answers it: the tenant's own row, else the global row, else the declared
 // default. The count and the page are two statements, each built from the
 // request's context, and neither names a tenant.
+//
+// The route declares the `crm.account.read` permission, so who may reach it is
+// the enforcement layer's to decide.
 func (p *accountsProduct) listAccounts(c *gin.Context) {
 	ctx := c.Request.Context()
-	self, ok := memberWith(c, p.db, roleViewer)
+	self, ok := memberOf(c, listAccountsRoute)
 	if !ok {
 		return
 	}
@@ -349,10 +355,11 @@ func (p *accountsProduct) listAccounts(c *gin.Context) {
 }
 
 // getAccount answers one account with its contacts, which the preload reads in
-// a statement of its own on the same context.
+// a statement of its own on the same context. The route declares the
+// `crm.account.read` permission.
 func (p *accountsProduct) getAccount(c *gin.Context) {
 	ctx := c.Request.Context()
-	if _, ok := memberWith(c, p.db, roleViewer); !ok {
+	if _, ok := memberOf(c, getAccountRoute); !ok {
 		return
 	}
 	id := c.Param("id")
@@ -399,14 +406,15 @@ func (a accountPatch) Validate() error {
 	return nil
 }
 
-// patchAccount changes the named columns of one account; a rep or above.
+// patchAccount changes the named columns of one account. The route declares the
+// `crm.account.write` permission.
 //
 // The update is written from the model: Select names the columns the body
 // carries, so a member given as empty is written as empty rather than skipped
 // the way a zero field of the struct would be.
 func (p *accountsProduct) patchAccount(c *gin.Context) {
 	ctx := c.Request.Context()
-	if _, ok := memberWith(c, p.db, roleRep); !ok {
+	if _, ok := memberOf(c, patchAccountRoute); !ok {
 		return
 	}
 	id := c.Param("id")
@@ -446,11 +454,12 @@ func (o ownerRequest) Validate() error {
 	return nil
 }
 
-// changeOwner hands one account to another member of the tenant; a rep or
-// above. It writes the one column.
+// changeOwner hands one account to another member of the tenant. The route
+// declares the `crm.account.own` permission. It writes the one column.
 func (p *accountsProduct) changeOwner(c *gin.Context) {
 	ctx := c.Request.Context()
-	if _, ok := memberWith(c, p.db, roleRep); !ok {
+	self, ok := memberOf(c, ownerAccountRoute)
+	if !ok {
 		return
 	}
 	id := c.Param("id")
@@ -462,8 +471,7 @@ func (p *accountsProduct) changeOwner(c *gin.Context) {
 		writeError(c, nethttp.StatusNotFound, errNoSuchAccount.Error())
 		return
 	}
-	tenantID, _ := tenant.FromContext(ctx)
-	belongs, err := isMember(ctx, p.memberships, authn.AccountID(body.Owner), tenantID)
+	belongs, err := isMember(ctx, p.memberships, authn.AccountID(body.Owner), self.TenantID)
 	if err != nil {
 		log.FromContext(ctx).Error("reading the owner's membership", "error", err)
 		writeError(c, nethttp.StatusServiceUnavailable, "the membership table cannot be read")
@@ -499,22 +507,23 @@ func (p *accountsProduct) answerChanged(c *gin.Context, id string, res *gorm.DB,
 	c.JSON(nethttp.StatusOK, accountViewOf(account))
 }
 
-// deleteAccount soft-deletes one account and its contacts; an admin or above.
-// Both rows stay in their tables with the deletion time set, and every read
-// through the models leaves them out from then on. The statements are one
-// transaction, so an account is never deleted with its contacts left showing.
+// deleteAccount soft-deletes one account and its contacts. The route declares
+// the `crm.account.delete` permission. Both rows stay in their tables with the
+// deletion time set, and every read through the models leaves them out from
+// then on. The statements are one transaction, so an account is never deleted
+// with its contacts left showing.
 func (p *accountsProduct) deleteAccount(c *gin.Context) {
-	if _, ok := memberWith(c, p.db, roleAdmin); !ok {
+	if _, ok := memberOf(c, deleteAccountRoute); !ok {
 		return
 	}
 	p.removeAccount(c, false, "deleting an account")
 }
 
-// purgeAccount removes one account and its contacts from their tables,
-// deleted or not; an owner only. The contacts go first, because their rows
-// reference the account's.
+// purgeAccount removes one account and its contacts from their tables, deleted
+// or not. The route declares the `crm.account.purge` permission. The contacts
+// go first, because their rows reference the account's.
 func (p *accountsProduct) purgeAccount(c *gin.Context) {
-	if _, ok := memberWith(c, p.db, roleOwner); !ok {
+	if _, ok := memberOf(c, purgeAccountRoute); !ok {
 		return
 	}
 	p.removeAccount(c, true, "purging an account")
@@ -631,23 +640,65 @@ func init() {
 	registerApplication(application{
 		module: accountsModule(),
 		runsOn: []string{serveCommand},
-		models: []any{Account{}, Contact{}, MemberRole{}},
+		models: []any{Account{}, Contact{}},
 		journalled: []string{
 			createAccountRoute, patchAccountRoute, deleteAccountRoute, ownerAccountRoute, purgeAccountRoute,
 		},
 	})
 }
 
+// declareAccountRoutes records each account route's required permission on the
+// route-declaration surface, where the enforcement middleware reads it in the
+// authorizing stage.
+//
+// The surface is optional: a command that runs this module without the
+// authorization layer declares nothing here and the routes carry no requirement,
+// which is why a missing surface is not a failure. A command that runs the layer
+// declares the permission each route needs, and the surface holds every
+// declaration to the permission catalog and to the process's translation once
+// the Init window closes, so a route naming a permission the host does not
+// declare fails the startup rather than deciding nothing at request time. The
+// permissions are the host's own business ones (authzbusiness), which the host
+// declares so the catalog carries them.
+func declareAccountRoutes(reg *core.Registry) error {
+	gate, err := core.Resolve[authz.Gate](reg)
+	switch {
+	case errors.Is(err, core.ErrMissingProvider):
+		return nil
+	case err != nil:
+		return err
+	}
+	for _, decl := range []struct {
+		route string
+		perm  authz.Permission
+	}{
+		{createAccountRoute, permAccountWrite},
+		{listAccountsRoute, permAccountRead},
+		{getAccountRoute, permAccountRead},
+		{patchAccountRoute, permAccountWrite},
+		{deleteAccountRoute, permAccountDel},
+		{ownerAccountRoute, permAccountOwn},
+		{purgeAccountRoute, permAccountPurge},
+	} {
+		method, path := splitRoute(decl.route)
+		gate.Require(method, path, decl.perm)
+	}
+	return nil
+}
+
 // accountsModule declares the accounts table and the page-size setting and
 // binds the account routes.
 //
-// It requires the roster, which installs the filter the accounts, contacts and
-// memberships statements are scoped by, so a command running this module
-// without it fails at resolution rather than running unscoped. It requires the
-// settings surface for the page size, and the membership store for the owner
-// check. The accounts table's owner column names an account of the identity
-// system's store and carries no foreign key to it, so no table token orders
-// this module's migration after another's.
+// It requires the roster, which installs the filter the accounts and contacts
+// statements are scoped by, so a command running this module without it fails
+// at resolution rather than running unscoped. It requires the settings surface
+// for the page size, and the membership store for the owner check. It takes the
+// route-declaration surface up optionally, in Init, and declares each route's
+// permission there; a command without the authorization layer (migrate, for
+// one) declares nothing and leaves the routes unguarded, which is why the
+// surface is optional rather than required. The accounts table's owner column
+// names an account of the identity system's store and carries no foreign key to
+// it, so no table token orders this module's migration after another's.
 //
 // It is built after the roster, and so after the HTTP entry module; it releases
 // nothing (see recordClose).
@@ -660,6 +711,7 @@ func accountsModule() core.Module {
 			{Token: (*tenant.Catalog)(nil)},
 			{Token: (*settings.Store)(nil)},
 			{Token: (*authn.Memberships)(nil)},
+			{Token: (*authz.Gate)(nil), Optional: true},
 		},
 		Provides: []core.Provision{
 			{Token: (*accountsTable)(nil), Exclusive: true},
@@ -712,7 +764,7 @@ func accountsModule() core.Module {
 			mount(api, deleteAccountRoute, product.deleteAccount)
 			mount(api, ownerAccountRoute, product.changeOwner)
 			mount(api, purgeAccountRoute, product.purgeAccount)
-			return nil
+			return declareAccountRoutes(reg)
 		},
 
 		Stop:  recordStop,

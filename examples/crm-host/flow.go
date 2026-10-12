@@ -12,6 +12,7 @@ import (
 	"gorm.io/gorm"
 	"gorm.io/gorm/clause"
 
+	"github.com/vislake/speed/pkg/authz"
 	"github.com/vislake/speed/pkg/core"
 	"github.com/vislake/speed/pkg/db"
 	"github.com/vislake/speed/pkg/event"
@@ -27,8 +28,33 @@ const flowModuleName = "flow"
 // flowTable is the table the stage-flow model maps to.
 const flowTable = "stage_flow"
 
-// flowRoute answers a tenant's stage flow, on the API endpoint.
+// flowRoute answers a tenant's stage flow, on the API endpoint. It declares the
+// flow read permission; the authorization middleware decides it and the handler
+// runs no role comparison of its own.
 const flowRoute = "GET /pipeline/flow"
+
+// declareFlowRoutes declares the flow route's required permission on the
+// route-declaration surface, so the enforcement middleware decides the route
+// rather than the handler reading a role.
+//
+// The surface is taken up optionally: a command that runs the flow module without
+// the enforcement layer has none to declare to, and its route there carries no
+// requirement. A command that runs the layer holds every declaration to the
+// permission catalog and to the process's translation once the Init window
+// closes, so a route naming a permission the host does not declare fails the
+// startup rather than deciding nothing at request time.
+func declareFlowRoutes(reg *core.Registry) error {
+	gate, err := core.Resolve[authz.Gate](reg)
+	switch {
+	case errors.Is(err, core.ErrMissingProvider):
+		return nil
+	case err != nil:
+		return err
+	}
+	method, path := splitRoute(flowRoute)
+	gate.Require(method, path, permFlowRead)
+	return nil
+}
 
 // The records the subscriber writes for each deal.stage-changed it is handed,
 // one per event and process: one that counted it, one that found it already
@@ -145,7 +171,7 @@ type flowList struct {
 // tenant, and the filter scopes it by the model.
 func (p *flowProduct) listFlow(c *gin.Context) {
 	ctx := c.Request.Context()
-	if _, ok := memberOf(c, p.db, flowRoute); !ok {
+	if _, ok := memberOf(c, flowRoute); !ok {
 		return
 	}
 	lines := []flowView{}
@@ -173,9 +199,11 @@ func init() {
 //
 // Its requirements are the revenue projection's but the settings surface, for
 // the same reasons: the roster for the filter and for Enter, the key-value
-// store for the claims and the bus for the events. The table holds stage keys
-// as plain columns rather than a reference to the stages table: it counts what
-// the events said, and nothing it holds is read back through the stages.
+// store for the claims and the bus for the events. It takes up the declaration
+// surface optionally: its route declares the permission the authorization
+// middleware decides it on from this module's own Init. The table holds stage
+// keys as plain columns rather than a reference to the stages table: it counts
+// what the events said, and nothing it holds is read back through the stages.
 func flowModule() core.Module {
 	return core.Module{
 		Name: flowModuleName,
@@ -185,6 +213,7 @@ func flowModule() core.Module {
 			{Token: (*tenant.Catalog)(nil)},
 			{Token: (*kv.KV)(nil)},
 			{Token: (*event.Bus)(nil)},
+			{Token: (*authz.Gate)(nil), Optional: true},
 		},
 		Resources: []any{
 			db.Migrations{FS: flowMigrations},
@@ -232,7 +261,7 @@ func flowModule() core.Module {
 				return fmt.Errorf("binding the flow route: %w", err)
 			}
 			mount(api, flowRoute, product.listFlow)
-			return nil
+			return declareFlowRoutes(reg)
 		},
 
 		Stop:  recordStop,

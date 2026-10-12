@@ -4,6 +4,7 @@ import (
 	"context"
 	_ "embed"
 	"encoding/json"
+	"errors"
 	"fmt"
 	nethttp "net/http"
 	"strconv"
@@ -12,6 +13,7 @@ import (
 	"github.com/gin-gonic/gin"
 
 	"github.com/vislake/speed/pkg/authn"
+	"github.com/vislake/speed/pkg/authz"
 	"github.com/vislake/speed/pkg/core"
 	"github.com/vislake/speed/pkg/db"
 	"github.com/vislake/speed/pkg/event"
@@ -49,6 +51,46 @@ const (
 	revenueRoute        = "GET /revenue"
 	deliveriesRoute     = "GET /reports/webhook-deliveries"
 )
+
+// reportPermissions is each route's required permission, in the form the
+// declaration surface takes. Every route here is a read of what other modules
+// wrote, so each needs the report read permission. A route the host mounts on
+// the API endpoint must appear here or be declared open, or the authorization
+// middleware refuses it as undeclared.
+var reportPermissions = []struct {
+	route string
+	perm  authz.Permission
+}{
+	{pipelineReportRoute, permReportRead},
+	{leaderboardRoute, permReportRead},
+	{revenueRoute, permReportRead},
+	{deliveriesRoute, permReportRead},
+}
+
+// declareReportRoutes declares each report route's required permission on the
+// route-declaration surface, so the enforcement middleware decides the route
+// rather than the handler reading a role.
+//
+// The surface is taken up optionally: a command that runs the reports module
+// without the enforcement layer has none to declare to, and its routes there
+// carry no requirement. A command that runs the layer holds every declaration to
+// the permission catalog and to the process's translation once the Init window
+// closes, so a route naming a permission the host does not declare fails the
+// startup rather than deciding nothing at request time.
+func declareReportRoutes(reg *core.Registry) error {
+	gate, err := core.Resolve[authz.Gate](reg)
+	switch {
+	case errors.Is(err, core.ErrMissingProvider):
+		return nil
+	case err != nil:
+		return err
+	}
+	for _, d := range reportPermissions {
+		method, path := splitRoute(d.route)
+		gate.Require(method, path, d.perm)
+	}
+	return nil
+}
 
 // deliveriesPage bounds how many deliveries the listing answers with.
 const deliveriesPage = 200
@@ -173,7 +215,7 @@ type pipelineReport struct {
 // deal is not paired with the other tenant's stage of the same key.
 func (p *reportsProduct) pipeline(c *gin.Context) {
 	ctx := c.Request.Context()
-	self, ok := memberOf(c, p.db, pipelineReportRoute)
+	self, ok := memberOf(c, pipelineReportRoute)
 	if !ok {
 		return
 	}
@@ -282,7 +324,7 @@ type leaderboardView struct {
 // scoped side, and the filter puts the condition on them and on their stages.
 func (p *reportsProduct) leaderboard(c *gin.Context) {
 	ctx := c.Request.Context()
-	self, ok := memberOf(c, p.db, leaderboardRoute)
+	self, ok := memberOf(c, leaderboardRoute)
 	if !ok {
 		return
 	}
@@ -343,7 +385,7 @@ type revenueList struct {
 // projection has counted it. The read names no tenant; the filter scopes it.
 func (p *reportsProduct) revenue(c *gin.Context) {
 	ctx := c.Request.Context()
-	if _, ok := memberOf(c, p.db, revenueRoute); !ok {
+	if _, ok := memberOf(c, revenueRoute); !ok {
 		return
 	}
 	var rows []WonRevenue
@@ -380,7 +422,7 @@ type deliveriesView struct {
 // filter scopes the read.
 func (p *reportsProduct) deliveries(c *gin.Context) {
 	ctx := c.Request.Context()
-	if _, ok := memberOf(c, p.db, deliveriesRoute); !ok {
+	if _, ok := memberOf(c, deliveriesRoute); !ok {
 		return
 	}
 	var rows []WebhookDelivery
@@ -439,7 +481,9 @@ func init() {
 //
 // It owns no table: it reads other modules' through the database handle. It
 // requires the roster because every table it reads a tenant's rows from is
-// scoped.
+// scoped, and it takes up the declaration surface optionally: each of its routes
+// declares the permission the authorization middleware decides it on from this
+// module's own Init.
 func reportsModule() core.Module {
 	return core.Module{
 		Name: reportsModuleName,
@@ -451,6 +495,7 @@ func reportsModule() core.Module {
 			{Token: (*settings.Store)(nil)},
 			{Token: (*event.Bus)(nil)},
 			{Token: (*authn.Accounts)(nil)},
+			{Token: (*authz.Gate)(nil), Optional: true},
 		},
 		Resources: []any{
 			reportsSettingsSchema(),
@@ -507,7 +552,7 @@ func reportsModule() core.Module {
 			for _, eventType := range dealEventTypes {
 				bus.Subscribe(eventType, product.dropPipeline)
 			}
-			return nil
+			return declareReportRoutes(reg)
 		},
 
 		Stop:  recordStop,

@@ -681,9 +681,6 @@ func TestATenantReadsItsOwnAuditTrail(t *testing.T) {
 			sub.awaitTrailRow(ref.ID, "the captured change event", func(r trailRow) bool {
 				return r.source == "event" && r.action == "settings.changed"
 			})
-			sub.awaitTrailRow(ref.ID, "the grant's statement", func(r trailRow) bool {
-				return r.source == "statement" && r.object == memberRoleTable
-			})
 			sub.awaitTrailRow(ref.ID, "the grant's request", func(r trailRow) bool {
 				return r.requestOn(grantMemberRoute) && r.outcome == "200"
 			})
@@ -734,9 +731,6 @@ func TestATenantReadsItsOwnAuditTrail(t *testing.T) {
 				{"the captured change event", func(e trailView) bool {
 					return e.Source == "event" && e.Action == "settings.changed" &&
 						e.Detail["Key"] == "deals.default-currency" && e.Detail["New"] == "EUR"
-				}},
-				{"the grant's statement", func(e trailView) bool {
-					return e.Source == "statement" && e.Object == memberRoleTable && e.Actor == userKey(ann)
 				}},
 				{"the admission layer's refusal of a stranger", func(e trailView) bool {
 					return e.requestOn(listMembersRoute) && e.Outcome == "404" && e.Actor == userKey(sid)

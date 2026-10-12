@@ -637,8 +637,8 @@ func TestAWeakPasswordIsRefusedAtCreation(t *testing.T) {
 
 // TestACommandLineGrantWithNoKnownRoleWritesNothing is the case for the order the
 // command line's grant judges its inputs in: a role that is none of the four is
-// refused before any membership is written, so a failed command leaves no
-// half-written membership behind. The HTTP grant judges the same role in its
+// refused before any membership or role binding is written, so a failed command
+// leaves nothing half-written behind. The HTTP grant judges the same role in its
 // request body's validation, before it writes.
 func TestACommandLineGrantWithNoKnownRoleWritesNothing(t *testing.T) {
 	t.Parallel()
@@ -657,8 +657,11 @@ func TestACommandLineGrantWithNoKnownRoleWritesNothing(t *testing.T) {
 		if n := c.count("SELECT count(*) FROM authn_memberships WHERE account_id = ?", alice.ID); n != 0 {
 			t.Errorf("the refused grant wrote %d memberships, want none", n)
 		}
-		if n := c.count("SELECT count(*) FROM member_roles WHERE account_id = ?", alice.ID); n != 0 {
-			t.Errorf("the refused grant wrote %d roles, want none", n)
+		// A member's role is a policy binding now, in authz_bindings, not the
+		// member_roles table the migration left behind: the refused grant must
+		// write no binding.
+		if n := c.count("SELECT count(*) FROM authz_bindings WHERE account_id = ?", alice.ID); n != 0 {
+			t.Errorf("the refused grant wrote %d role bindings, want none", n)
 		}
 	})
 }

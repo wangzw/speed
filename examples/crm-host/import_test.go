@@ -86,6 +86,13 @@ func (c *crmCase) insertLegacyMembership(tenantID, userID, role string) {
 		tenantID, userID, role, time.Now().UTC())
 }
 
+// insertMemberRole writes one row of the host's own former member_roles table,
+// which the roles import reads.
+func (c *crmCase) insertMemberRole(tenantID, accountID, role string) {
+	c.exec("INSERT INTO member_roles (tenant_id, account_id, role, granted_at) VALUES (?, ?, ?, ?)",
+		tenantID, accountID, role, time.Now().UTC())
+}
+
 // legacyPasswordEntry builds a password entry in the envelope the previous host
 // wrote: the scheme, the iteration count, and the raw-base64 salt and key, with
 // no leading dollar sign. The account module reads it as a legacy entry and
@@ -257,16 +264,16 @@ func TestTheImportCarriesTheOldUsersAndMemberships(t *testing.T) {
 		if got := c.intFrom("SELECT COUNT(*) FROM authn_memberships"); got != 3 {
 			t.Errorf("the import wrote %d memberships, want 3", got)
 		}
-		if got := c.intFrom("SELECT COUNT(*) FROM member_roles"); got != 3 {
+		if got := c.intFrom("SELECT COUNT(*) FROM authz_bindings"); got != 3 {
 			t.Errorf("the import wrote %d roles, want one per membership", got)
 		}
-		if got := c.text("SELECT role FROM member_roles WHERE tenant_id = ? AND account_id = ?", acme.ID, aliceID); got != roleOwner {
+		if got := c.text("SELECT role FROM authz_bindings WHERE tenant_id = ? AND account_id = ?", acme.ID, aliceID); got != roleOwner {
 			t.Errorf("Alice's role in acme is %q, want %q", got, roleOwner)
 		}
-		if got := c.text("SELECT role FROM member_roles WHERE tenant_id = ? AND account_id = ?", globex.ID, aliceID); got != roleRep {
+		if got := c.text("SELECT role FROM authz_bindings WHERE tenant_id = ? AND account_id = ?", globex.ID, aliceID); got != roleRep {
 			t.Errorf("Alice's role in globex is %q, want %q", got, roleRep)
 		}
-		if got := c.text("SELECT role FROM member_roles WHERE tenant_id = ? AND account_id = ?", acme.ID, bobID); got != roleAdmin {
+		if got := c.text("SELECT role FROM authz_bindings WHERE tenant_id = ? AND account_id = ?", acme.ID, bobID); got != roleAdmin {
 			t.Errorf("Bob's role in acme is %q, want %q", got, roleAdmin)
 		}
 		if got := c.text("SELECT source FROM authn_memberships WHERE tenant_id = ? AND account_id = ?", acme.ID, aliceID); got != importVia {
@@ -276,7 +283,7 @@ func TestTheImportCarriesTheOldUsersAndMemberships(t *testing.T) {
 		// A second run creates nothing and leaves the state as it was.
 		accountsBefore := c.intFrom("SELECT COUNT(*) FROM authn_accounts")
 		membershipsBefore := c.intFrom("SELECT COUNT(*) FROM authn_memberships")
-		rolesBefore := c.intFrom("SELECT COUNT(*) FROM member_roles")
+		rolesBefore := c.intFrom("SELECT COUNT(*) FROM authz_bindings")
 		var again dataImportReport
 		c.resultOf(c.mustRun("", "import", "run"), &again)
 		if again.Created != 0 || again.Skipped != 5 || again.Failed != 3 {
@@ -289,7 +296,7 @@ func TestTheImportCarriesTheOldUsersAndMemberships(t *testing.T) {
 		if got := c.intFrom("SELECT COUNT(*) FROM authn_memberships"); got != membershipsBefore {
 			t.Errorf("the second run changed the membership count from %d to %d", membershipsBefore, got)
 		}
-		if got := c.intFrom("SELECT COUNT(*) FROM member_roles"); got != rolesBefore {
+		if got := c.intFrom("SELECT COUNT(*) FROM authz_bindings"); got != rolesBefore {
 			t.Errorf("the second run changed the role count from %d to %d", rolesBefore, got)
 		}
 
@@ -408,7 +415,7 @@ func TestTheImportRefusesRowsItCannotCarryAndGoesOn(t *testing.T) {
 		if got := c.intFrom("SELECT COUNT(*) FROM authn_accounts WHERE id = ?", goodID); got != 1 {
 			t.Errorf("the good user was not imported")
 		}
-		if got := c.text("SELECT role FROM member_roles WHERE tenant_id = ? AND account_id = ?", acme.ID, goodID); got != roleViewer {
+		if got := c.text("SELECT role FROM authz_bindings WHERE tenant_id = ? AND account_id = ?", acme.ID, goodID); got != roleViewer {
 			t.Errorf("the good member's role is %q, want %q", got, roleViewer)
 		}
 		if got := c.intFrom("SELECT COUNT(*) FROM authn_accounts WHERE id = ?", authn.StaticPrefix+"ghost"); got != 0 {
@@ -418,19 +425,19 @@ func TestTheImportRefusesRowsItCannotCarryAndGoesOn(t *testing.T) {
 }
 
 // TestTheImportCommandRunsUnderTheHostsCommandGroup is the case for the shape
-// the import command is registered with: it is one leaf of the host's own
+// the import command is registered with: it is a leaf of the host's own
 // command-group mechanism, it drives to Start because its write is recorded
-// through the audit seam, and its module names the role table it writes and the
-// roster that scopes it, so a command that took it in without either fails at
-// startup rather than writing an empty tenant.
+// through the audit seam, and its module names the roster that scopes its reads,
+// so a command that took this module in without the roster fails at startup
+// rather than writing an empty tenant.
 func TestTheImportCommandRunsUnderTheHostsCommandGroup(t *testing.T) {
 	t.Parallel()
 	if dataImportGroup.word != "import" || len(dataImportGroup.commands) != 1 {
-		t.Fatalf("the import group is %q with %d commands, want import with one", dataImportGroup.word, len(dataImportGroup.commands))
+		t.Fatalf("the import group is %q with %d commands, want import with run", dataImportGroup.word, len(dataImportGroup.commands))
 	}
-	if dataImportGroup.commands[0].depth != core.StageStart {
-		t.Errorf("the import command drives to %v, want Start: its write is recorded through the audit seam",
-			dataImportGroup.commands[0].depth)
+	if dataImportGroup.commands[0].use != "run" || dataImportGroup.commands[0].depth != core.StageStart {
+		t.Errorf("the import command is %q at %v, want run at Start: its write is recorded through the audit seam",
+			dataImportGroup.commands[0].use, dataImportGroup.commands[0].depth)
 	}
 
 	var found *application
@@ -453,15 +460,6 @@ func TestTheImportCommandRunsUnderTheHostsCommandGroup(t *testing.T) {
 	}
 	if !requiresCapability(found.module, (*tenant.Catalog)(nil)) {
 		t.Errorf("%q does not require the roster, which it reads to refuse a tenant nobody registered", dataImportModuleName)
-	}
-	scoped := false
-	for _, model := range found.models {
-		if _, ok := model.(MemberRole); ok {
-			scoped = true
-		}
-	}
-	if !scoped {
-		t.Errorf("%q does not list the role table it writes among its models", dataImportModuleName)
 	}
 }
 
@@ -495,7 +493,7 @@ func TestTheImportLeavesAChangedRoleAsItIs(t *testing.T) {
 		if first.Created != 2 {
 			t.Fatalf("the first import created %d, want the user and its membership", first.Created)
 		}
-		c.exec("UPDATE member_roles SET role = ? WHERE tenant_id = ? AND account_id = ?", roleOwner, acme.ID, aliceID)
+		c.exec("UPDATE authz_bindings SET role = ? WHERE tenant_id = ? AND account_id = ?", roleOwner, acme.ID, aliceID)
 
 		var again dataImportReport
 		c.resultOf(c.mustRun("", "import", "run"), &again)
@@ -503,7 +501,7 @@ func TestTheImportLeavesAChangedRoleAsItIs(t *testing.T) {
 			t.Errorf("the second run answered created %d resumed %d failed %d, want none",
 				again.Created, again.Resumed, again.Failed)
 		}
-		if got := c.text("SELECT role FROM member_roles WHERE tenant_id = ? AND account_id = ?", acme.ID, aliceID); got != roleOwner {
+		if got := c.text("SELECT role FROM authz_bindings WHERE tenant_id = ? AND account_id = ?", acme.ID, aliceID); got != roleOwner {
 			t.Errorf("the second import changed the role to %q, want the out-of-band change %q left as it is", got, roleOwner)
 		}
 	})
@@ -554,7 +552,7 @@ func TestTheImportFinishesAHalfWrittenMembership(t *testing.T) {
 
 		c.mustRun("", "import", "run")
 		// An earlier run wrote the membership and died before writing its role.
-		c.exec("DELETE FROM member_roles WHERE tenant_id = ? AND account_id = ?", acme.ID, aliceID)
+		c.exec("DELETE FROM authz_bindings WHERE tenant_id = ? AND account_id = ?", acme.ID, aliceID)
 
 		var dry dataImportReport
 		c.resultOf(c.mustRun("", "import", "run", "--dry-run"), &dry)
@@ -562,7 +560,7 @@ func TestTheImportFinishesAHalfWrittenMembership(t *testing.T) {
 			t.Errorf("the dry run answered created %d resumed %d skipped %d failed %d, want the 1 resumed and 1 skipped the real run would",
 				dry.Created, dry.Resumed, dry.Skipped, dry.Failed)
 		}
-		if got := c.count("SELECT count(*) FROM member_roles WHERE tenant_id = ? AND account_id = ?", acme.ID, aliceID); got != 0 {
+		if got := c.count("SELECT count(*) FROM authz_bindings WHERE tenant_id = ? AND account_id = ?", acme.ID, aliceID); got != 0 {
 			t.Errorf("the dry run wrote the role")
 		}
 
@@ -572,7 +570,7 @@ func TestTheImportFinishesAHalfWrittenMembership(t *testing.T) {
 			t.Errorf("the resuming run answered created %d resumed %d skipped %d failed %d, want the 1 resumed (the membership) and 1 skipped (the account)",
 				again.Created, again.Resumed, again.Skipped, again.Failed)
 		}
-		if got := c.text("SELECT role FROM member_roles WHERE tenant_id = ? AND account_id = ?", acme.ID, aliceID); got != roleRep {
+		if got := c.text("SELECT role FROM authz_bindings WHERE tenant_id = ? AND account_id = ?", acme.ID, aliceID); got != roleRep {
 			t.Errorf("the missing role was not written; the row holds %q, want %q", got, roleRep)
 		}
 	})

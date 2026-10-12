@@ -11,8 +11,8 @@ import (
 
 	"github.com/vislake/speed/pkg/audit"
 	"github.com/vislake/speed/pkg/authn"
+	"github.com/vislake/speed/pkg/authz"
 	"github.com/vislake/speed/pkg/core"
-	"github.com/vislake/speed/pkg/db"
 	speedhttp "github.com/vislake/speed/pkg/http"
 	"github.com/vislake/speed/pkg/log"
 	"github.com/vislake/speed/pkg/tenant"
@@ -62,12 +62,12 @@ type operatorLayer interface{ operatorLayer() }
 // adminProduct is the admin module's product.
 type adminProduct struct {
 	released
-	db          db.Database
 	roster      tenant.Catalog
 	recorder    audit.Audit
 	accounts    authn.Accounts
 	admin       authn.AccountAdmin
 	memberships authn.Memberships
+	mgr         authz.Manager
 }
 
 // layer is the operator check. It sits in the authorizing stage, so it runs
@@ -365,7 +365,7 @@ func (p *adminProduct) grantAcross(c *gin.Context) {
 		writeError(c, nethttp.StatusInternalServerError, "the membership could not be written")
 		return
 	}
-	granted, err := grantIn(tenant.CrossTenant(ctx), p.db, id, account, body.Role)
+	granted, err := grantIn(tenant.CrossTenant(ctx), p.mgr, id, account, body.Role)
 	if err != nil {
 		log.FromContext(ctx).Error("granting a membership", "error", err)
 		writeError(c, nethttp.StatusInternalServerError, "the membership could not be written")
@@ -373,11 +373,11 @@ func (p *adminProduct) grantAcross(c *gin.Context) {
 	}
 	if err := p.recorder.Record(ctx, audit.Entry{
 		Action:  "membership.grant",
-		Object:  memberRoleTable + "/" + string(id) + "/" + string(account),
+		Object:  memberBindingObject(id, account),
 		Outcome: "ok",
 		Purpose: "a platform operator granted a membership in a tenant from the admin endpoint, " +
 			"outside any request scoped to that tenant",
-		Detail: map[string]string{"role": granted.Role},
+		Detail: map[string]string{"role": string(granted.Role)},
 	}); err != nil {
 		// The membership is written and its reason is not: a crossing with
 		// no record is what the seam exists to prevent, so the caller is
@@ -387,7 +387,7 @@ func (p *adminProduct) grantAcross(c *gin.Context) {
 		return
 	}
 	c.JSON(nethttp.StatusOK, grantView{
-		TenantID: string(granted.TenantID), AccountID: granted.AccountID, Role: granted.Role,
+		TenantID: granted.Tenant, AccountID: granted.Account, Role: string(granted.Role),
 	})
 }
 
@@ -410,7 +410,6 @@ func init() {
 	registerApplication(application{
 		module: adminModule(),
 		runsOn: []string{serveCommand},
-		models: []any{MemberRole{}},
 		journalled: []string{
 			listTenantsRoute, createTenantRoute, disableTenantRoute, enableTenantRoute,
 			createUserRoute, grantTenantRoute,
@@ -421,21 +420,21 @@ func init() {
 // adminModule binds the admin endpoint's routes and its operator check.
 //
 // It requires the roster and the audit seam, which it takes up, and the account
-// module's read, write and membership capabilities. The roster requirement is
-// the guard the members module states as well: this module writes the scoped
-// role table, and a command running it without the roster would write it
-// unscoped with nothing said.
+// module's read, write and membership capabilities. The roster is the table this
+// endpoint acts on — a tenant is created and its status changed through it — and
+// a cross-tenant grant takes the tenant it writes into from a roster read rather
+// than a constant.
 func adminModule() core.Module {
 	return core.Module{
 		Name: adminModuleName,
 		Requires: []core.Requirement{
 			{Token: (*log.Logger)(nil)},
-			{Token: (*db.Database)(nil)},
 			{Token: (*tenant.Catalog)(nil)},
 			{Token: (*audit.Audit)(nil)},
 			{Token: (*authn.Accounts)(nil)},
 			{Token: (*authn.AccountAdmin)(nil)},
 			{Token: (*authn.Memberships)(nil)},
+			{Token: (*authz.Manager)(nil)},
 		},
 		Resources: []any{
 			speedhttp.Spec{Endpoint: adminEndpoint, Document: adminOpenAPI},
@@ -443,10 +442,6 @@ func adminModule() core.Module {
 
 		New: func(_ context.Context, reg *core.Registry) (any, error) {
 			logger, err := namedLogger(reg, adminModuleName)
-			if err != nil {
-				return nil, err
-			}
-			database, err := core.Resolve[db.Database](reg)
 			if err != nil {
 				return nil, err
 			}
@@ -470,9 +465,13 @@ func adminModule() core.Module {
 			if err != nil {
 				return nil, err
 			}
+			mgr, err := core.Resolve[authz.Manager](reg)
+			if err != nil {
+				return nil, err
+			}
 			return &adminProduct{
-				released: released{log: logger}, db: database, roster: roster, recorder: recorder,
-				accounts: accounts, admin: admin, memberships: memberships,
+				released: released{log: logger}, roster: roster, recorder: recorder,
+				accounts: accounts, admin: admin, memberships: memberships, mgr: mgr,
 			}, nil
 		},
 

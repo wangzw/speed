@@ -7,6 +7,8 @@ import (
 	"strconv"
 
 	"github.com/vislake/speed/pkg/authn"
+	"github.com/vislake/speed/pkg/authz"
+	authzpolicy "github.com/vislake/speed/pkg/authz/policy"
 	"github.com/vislake/speed/pkg/config"
 	"github.com/vislake/speed/pkg/core"
 	"github.com/vislake/speed/pkg/db"
@@ -133,12 +135,12 @@ func readDataImportInput(reg *core.Registry) (dataImportInput, error) {
 
 // dataImportGroup is the command group the one-shot import runs under, on every
 // stack. It carries the account store, so its action resolves the account,
-// membership and write capabilities, and it names no other module of its own:
-// the shared flags and the roster come with the command-line platform every
-// group carries.
+// membership and write capabilities, and the policy module, because a legacy
+// membership's role is written as a policy binding; the shared flags and the
+// roster come with the command-line platform every group carries.
 var dataImportGroup = commandGroup{
 	word:     "import",
-	platform: []string{accountModuleName},
+	platform: []string{accountModuleName, authzpolicy.ModuleName},
 	commands: []cliCommand{
 		{use: "run", depth: core.StageStart, action: importCommand},
 	},
@@ -150,23 +152,21 @@ func init() {
 	registerApplication(application{
 		module: dataImportModule(),
 		runsOn: []string{dataImportGroup.word},
-		models: []any{MemberRole{}},
 	})
 	registerCommandGroup(dataImportGroup)
 }
 
 // dataImportModule carries the account capabilities the import action uses, the
-// role table it writes, and the logger its per-row failures are reported
-// through.
+// policy it writes the roles into, and the logger its per-row failures are
+// reported through.
 //
 // It requires the roster because importMembership reads it to refuse a tenant
 // nobody registered, and because toolsOf resolves it: a command that ran this
-// module without the roster fails at startup rather than at the first read. The
-// role row itself is written under a cross-tenant context, so the roster's
-// filter neither scopes that statement nor fills its tenant column; the row
-// names its own tenant from the roster read. Each account capability is
-// delivered exclusively, so a command that took this module in without one
-// fails here rather than at the first write.
+// module without the roster fails at startup rather than at the first read. It
+// requires the policy manager because a legacy membership's role is written as a
+// policy binding, not as a row of any table of this host's. Each account
+// capability is delivered exclusively, so a command that took this module in
+// without one fails here rather than at the first write.
 func dataImportModule() core.Module {
 	return core.Module{
 		Name: dataImportModuleName,
@@ -176,6 +176,7 @@ func dataImportModule() core.Module {
 			{Token: (*authn.Accounts)(nil)},
 			{Token: (*authn.AccountAdmin)(nil)},
 			{Token: (*authn.Memberships)(nil)},
+			{Token: (*authz.Manager)(nil)},
 		},
 		Resources: []any{dataImportSchema()},
 	}
@@ -229,6 +230,10 @@ func importCommand(ctx context.Context, reg *core.Registry) error {
 	if err != nil {
 		return err
 	}
+	mgr, err := core.Resolve[authz.Manager](reg)
+	if err != nil {
+		return err
+	}
 
 	users, err := readLegacyUsers(ctx, tools.db)
 	if err != nil {
@@ -245,7 +250,7 @@ func importCommand(ctx context.Context, reg *core.Registry) error {
 		report.add(outcome, reason)
 	}
 	for _, g := range grants {
-		outcome, reason := importMembership(ctx, tools, memberships, g, in.DryRun)
+		outcome, reason := importMembership(ctx, tools, memberships, mgr, g, in.DryRun)
 		report.add(outcome, reason)
 	}
 
@@ -374,24 +379,24 @@ func collisionReason(ctx context.Context, accounts authn.Accounts, id authn.Acco
 }
 
 // importMembership writes one legacy membership into the account store and its
-// role into the tenant's own table, or leaves the membership it already has.
+// role into the tenant's policy, or leaves the membership it already has.
 //
 // A membership whose tenant the roster does not hold is failed rather than
-// written: the role table is scoped by that tenant, and a membership for a
-// tenant nobody registered serves nobody. The membership is written through
-// authn.Memberships and the role through grantIn, the same pair the command line
-// and the admin endpoint use.
+// written: the role is a policy binding in that tenant's domain, and a
+// membership for a tenant nobody registered serves nobody. The membership is
+// written through authn.Memberships and the role through grantIn, the same pair
+// the command line and the admin endpoint use.
 //
-// A membership already there keeps the role the tenant's table holds: a role an
-// administrator changed after an earlier run is left as it is, and the row is
-// counted skipped. Only a membership whose role row is missing — one an earlier
-// run wrote the membership of and then failed before writing the role — has the
-// role written, and that row is counted resumed.
+// A membership already there keeps the role the tenant's policy holds: a role an
+// administrator raised after an earlier run is left as it is, and the row is
+// counted skipped. Only a membership whose role binding is missing — one an
+// earlier run wrote the membership of and then failed before writing the role —
+// has the role written, and that row is counted resumed.
 //
 // It is written active: the previous set's memberships table carries no state
 // column to carry over, and a Membership whose Active is false reads as a
 // suspended membership, which a carried-over row is not.
-func importMembership(ctx context.Context, tools cliTools, memberships authn.Memberships, g legacyMembership, dryRun bool) (outcome, reason string) {
+func importMembership(ctx context.Context, tools cliTools, memberships authn.Memberships, mgr authz.Manager, g legacyMembership, dryRun bool) (outcome, reason string) {
 	account, err := authn.ParseAccountID(g.UserID)
 	if err != nil {
 		return outcomeFailed, "identifier-not-an-account-id"
@@ -417,18 +422,18 @@ func importMembership(ctx context.Context, tools cliTools, memberships authn.Mem
 		return outcomeFailed, "membership-unreadable"
 	}
 	if exists {
-		role, roleErr := roleIn(tenant.CrossTenant(ctx), tools.db, tid, account)
-		if roleErr != nil {
-			log.FromContext(ctx).Error("reading the role of an imported membership", "error", roleErr, "tenant", g.TenantID)
+		bindings, bindErr := mgr.BindingsOf(tenant.CrossTenant(ctx), string(tid), string(account))
+		if bindErr != nil {
+			log.FromContext(ctx).Error("reading the role of an imported membership", "error", bindErr, "tenant", g.TenantID)
 			return outcomeFailed, "role-unreadable"
 		}
-		if role != "" {
+		if len(bindings) > 0 {
 			return outcomeSkipped, ""
 		}
 		if dryRun {
 			return outcomeResumed, ""
 		}
-		if _, writeErr := grantIn(tenant.CrossTenant(ctx), tools.db, tid, account, g.Role); writeErr != nil {
+		if _, writeErr := grantIn(tenant.CrossTenant(ctx), mgr, tid, account, g.Role); writeErr != nil {
 			log.FromContext(ctx).Error("writing the role of an imported membership", "error", writeErr, "tenant", g.TenantID)
 			return outcomeFailed, "role-not-written"
 		}
@@ -447,7 +452,7 @@ func importMembership(ctx context.Context, tools cliTools, memberships authn.Mem
 		log.FromContext(ctx).Error("writing an imported membership", "error", err, "tenant", g.TenantID)
 		return outcomeFailed, "membership-not-written"
 	}
-	if _, err := grantIn(tenant.CrossTenant(ctx), tools.db, tid, account, g.Role); err != nil {
+	if _, err := grantIn(tenant.CrossTenant(ctx), mgr, tid, account, g.Role); err != nil {
 		log.FromContext(ctx).Error("writing the role of an imported membership", "error", err, "tenant", g.TenantID)
 		return outcomeFailed, "role-not-written"
 	}

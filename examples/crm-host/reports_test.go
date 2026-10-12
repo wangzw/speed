@@ -566,3 +566,30 @@ func TestTheRevenueLineCountsWinsAndTheReportsCountDeals(t *testing.T) {
 	requireStages(t, "acme's pipeline report once rw-1 was deleted", report)
 	awaitRevenue(t, w.h, acme, alice, twice)
 }
+
+// TestReportAndFlowRoutesTakeTheirLeastRole is the case for the report and flow
+// routes now that the enforcement middleware decides them. Each is a read of what
+// other modules wrote, so each declares the report or flow read permission, which
+// the matrix grants to every tenant role: a viewer, the least member, reaches
+// every one. A member with no binding is not part of this case; the route
+// declarations' exactness is the case of the assembly above.
+func TestReportAndFlowRoutesTakeTheirLeastRole(t *testing.T) {
+	t.Parallel()
+	forEachStack(t, func(t *testing.T, c *crmCase) {
+		c.sealWithCaseKey()
+		c.migrate()
+		h := c.serve()
+		cr := setUpCrew(t, c, h)
+		vera := cr.as(h, cr.vera, cr.acme) // viewer
+
+		for _, path := range []string{
+			"/reports/pipeline",
+			"/reports/leaderboard?currency=EUR",
+			"/revenue",
+			"/reports/webhook-deliveries",
+			"/pipeline/flow",
+		} {
+			vera.must(t, nethttp.MethodGet, path, nil, nethttp.StatusOK)
+		}
+	})
+}

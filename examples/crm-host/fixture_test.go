@@ -6,6 +6,9 @@ import (
 	"encoding/hex"
 	"encoding/json"
 	"fmt"
+	"go/ast"
+	"go/parser"
+	gotoken "go/token"
 	"os"
 	"path/filepath"
 	"slices"
@@ -20,6 +23,10 @@ import (
 
 	"github.com/vislake/speed/pkg/authn/static"
 	"github.com/vislake/speed/pkg/authn/token"
+	"github.com/vislake/speed/pkg/authz"
+	authzguard "github.com/vislake/speed/pkg/authz/guard"
+	authzpolicy "github.com/vislake/speed/pkg/authz/policy"
+	"github.com/vislake/speed/pkg/core"
 )
 
 // A case is one stack's worth of backends, a configuration, and the host
@@ -135,6 +142,22 @@ func (c configTree) get(path string) (any, bool) {
 	}
 	v, ok := node[parts[len(parts)-1]]
 	return v, ok
+}
+
+// unset removes the value under a dotted path, for a case that states an item's
+// absence rather than a value for it. A path whose sections are not there is
+// left as it is.
+func (c configTree) unset(path string) {
+	parts := strings.Split(path, ".")
+	node := c
+	for _, part := range parts[:len(parts)-1] {
+		next, ok := node[part].(configTree)
+		if !ok {
+			return
+		}
+		node = next
+	}
+	delete(node, parts[len(parts)-1])
 }
 
 // crmCase is one case: a stack, the backends it runs on, and its configuration,
@@ -308,6 +331,16 @@ func (c *crmCase) writeBaseConfig() {
 	c.config.set("tenant.resolve.header-name", tenantHeader)
 	c.config.set("tenant.catalog.refresh-period", "0s")
 	c.config.set("tenant.admission.endpoints", []string{apiEndpoint})
+	// The authorization layer guards the API endpoint, the business endpoint
+	// whose admission layer it sits inside, and mounts its management routes on
+	// the admin endpoint, where no middleware guards them. Every business route
+	// on the API endpoint declares its permission or is registered open where it
+	// is registered, so the undeclared default is left at the design's closed: a
+	// route that declared nothing is answered 403 rather than let through, and
+	// the migration to route declarations is what this setting holds a case to.
+	c.config.set("authz.guard.endpoints", []string{apiEndpoint})
+	c.config.set("authz.guard.undeclared", "closed")
+	c.config.set("authz.admin.endpoints", []string{adminEndpoint})
 	c.config.set("audit.journal.endpoints", guarded)
 	c.config.set("audit.journal.requests", journalledRoutes())
 	c.config.set("ratelimit.endpoints", []string{apiEndpoint})
@@ -1007,3 +1040,193 @@ func stackNamed(t *testing.T, name string) stack {
 // localStack is the stack that runs everywhere, for the cases whose property
 // does not depend on which backends the host runs on.
 const localStack = "sqlite-memory"
+
+// authzModulePaths are the import paths of the three packages of the
+// authorization layer, the modules this host names on serve.
+var authzModulePaths = []string{
+	"github.com/vislake/speed/pkg/authz/policy",
+	"github.com/vislake/speed/pkg/authz/guard",
+	"github.com/vislake/speed/pkg/authz/admin",
+}
+
+// TestTheAuthorizationModulesRunOnServeAlone is the case for where the
+// authorization layer takes its place in the command tree. The three modules
+// are named on serve, the command whose requests are authorized, and on no
+// other command: migrate runs the engine and reaches the other modules for
+// their declarations alone, so a module named on the stack node or on migrate
+// would run there too, and the layer's tables would be built with the layer
+// itself running. Naming the layer on serve alone keeps migrate running the
+// engine and the declarations as it did, and its tables are still built.
+func TestTheAuthorizationModulesRunOnServeAlone(t *testing.T) {
+	t.Parallel()
+	onServe := modulesNamedOnServe(t)
+	named := includedModulePaths(t)
+	for _, path := range authzModulePaths {
+		if !onServe[path] {
+			t.Errorf("serve names no module from %s", path)
+		}
+		var count int
+		for _, namedPath := range named {
+			if namedPath == path {
+				count++
+			}
+		}
+		if count != 1 {
+			t.Errorf("%s is named on %d Include calls of addStack, want exactly 1: the module runs on serve alone",
+				path, count)
+		}
+	}
+
+	c := newCase(t, stackNamed(t, localStack))
+	c.migrate()
+	for _, table := range []string{"authz_roles", "authz_grants", "authz_bindings"} {
+		if !slices.Contains(c.tables(), table) {
+			t.Errorf("migrate left no %q table; it holds %v. migrate reaches a module for its declarations, "+
+				"so the layer's tables are built without the layer running", table, c.tables())
+		}
+	}
+}
+
+// TestTheAuthorizationLayerRefusesTheEndpointListsItCanNotRunOn is the case for
+// the guarded endpoint list, which decides what the middleware authorizes and
+// therefore has no default and no every-endpoint name. A served command whose
+// configuration omits the list, names every endpoint with *, or holds an empty
+// list stops the startup, naming the item, rather than starting with the
+// enforcement switched off or laid over endpoints nobody chose.
+//
+// The guard requires the engine and the permission catalog, both delivered by
+// the policy module, so a command that names the guard without the policy
+// module fails the startup at resolution: the pair is either named together or
+// neither is. serve names both.
+func TestTheAuthorizationLayerRefusesTheEndpointListsItCanNotRunOn(t *testing.T) {
+	t.Parallel()
+	guard, ok := core.ProcessRegistry.Lookup(authzguard.ModuleName)
+	if !ok {
+		t.Fatalf("the module %q is not registered", authzguard.ModuleName)
+	}
+	policy, ok := core.ProcessRegistry.Lookup(authzpolicy.ModuleName)
+	if !ok {
+		t.Fatalf("the module %q is not registered", authzpolicy.ModuleName)
+	}
+	for _, capability := range []core.Token{(*authz.Enforcer)(nil), (*authz.Catalog)(nil)} {
+		if !requires(guard, capability) {
+			t.Errorf("the guard declares no requirement on %T, so a command could name it without a provider", capability)
+		}
+		if !provides(policy, capability) {
+			t.Errorf("the policy module delivers no %T, so a command that names the guard has no provider to reach", capability)
+		}
+	}
+
+	for _, tc := range []struct {
+		what  string
+		apply func(*crmCase)
+		want  []string
+	}{
+		{
+			"the item absent",
+			func(c *crmCase) { c.config.unset("authz.guard.endpoints") },
+			[]string{"authz.guard.endpoints"},
+		},
+		{
+			"the every-endpoint name",
+			func(c *crmCase) { c.config.set("authz.guard.endpoints", []string{"*"}) },
+			[]string{"authz.guard.endpoints", `"*"`},
+		},
+		{
+			"an empty list",
+			func(c *crmCase) { c.config.set("authz.guard.endpoints", []string{}) },
+			[]string{"authz.guard.endpoints", "empty"},
+		},
+	} {
+		t.Run(tc.what, func(t *testing.T) {
+			c := newCase(t, stackNamed(t, localStack))
+			c.migrate()
+			tc.apply(c)
+			res := c.run(nil, "", serveCommand)
+			if res.err == nil {
+				t.Fatalf("serve started with %s", tc.what)
+			}
+			for _, want := range tc.want {
+				if !strings.Contains(res.stderr, want) {
+					t.Errorf("serve refused %s without naming %q (%v):\n%s", tc.what, want, res.err, res.combined())
+				}
+			}
+		})
+	}
+}
+
+// TestNoReferenceToTheRemovedDeciderRemains is the case for the host's own
+// decision seam having been deleted and its business routes having moved to the
+// authorization layer's route declarations: no non-test source names the
+// removed decider or its module, so the seam the admission layer, the identity
+// system's management routes and the impersonation module ask is provided by
+// the authorization layer alone; and no non-test source names the handler-side
+// role checks a route ran before it declared a permission, so no route decides
+// from the old role table.
+func TestNoReferenceToTheRemovedDeciderRemains(t *testing.T) {
+	t.Parallel()
+	gone := []string{"opsDecider", "deciderModuleName", "func memberWith(", "func roleHere(", "func roleIn("}
+	for _, name := range nonTestSources(t, ".") {
+		body, err := os.ReadFile(name)
+		if err != nil {
+			t.Fatalf("reading %s: %v", name, err)
+		}
+		for _, text := range gone {
+			if strings.Contains(string(body), text) {
+				t.Errorf("%s still names %q, which the deleted decider.go or the completed route-declaration "+
+					"migration removed", name, text)
+			}
+		}
+	}
+}
+
+// includedModulePaths names, in the order they appear, every module an addStack
+// Include call names literally as pkg.ModuleName, across every receiver. A
+// spread — Include(modulesOn(...)...) — names no literal module and adds
+// nothing here.
+func includedModulePaths(t *testing.T) []string {
+	t.Helper()
+	var paths []string
+	found := false
+	for _, name := range nonTestSources(t, ".") {
+		file, err := parser.ParseFile(gotoken.NewFileSet(), name, nil, parser.SkipObjectResolution)
+		if err != nil {
+			t.Fatalf("reading %s: %v", name, err)
+		}
+		addStack := funcDeclNamed(file, "addStack")
+		if addStack == nil {
+			continue
+		}
+		found = true
+		ast.Inspect(addStack, func(n ast.Node) bool {
+			call, ok := n.(*ast.CallExpr)
+			if !ok {
+				return true
+			}
+			sel, ok := call.Fun.(*ast.SelectorExpr)
+			if !ok || sel.Sel.Name != "Include" {
+				return true
+			}
+			for _, arg := range call.Args {
+				if module := moduleImportPath(file, arg); module != "" {
+					paths = append(paths, module)
+				}
+			}
+			return true
+		})
+	}
+	if !found {
+		t.Fatal("no non-test file of the program declares addStack, so this case checks nothing")
+	}
+	return paths
+}
+
+// requires reports whether a descriptor declares a requirement on a capability.
+func requires(module core.Module, capability core.Token) bool {
+	for _, requirement := range module.Requires {
+		if requirement.Token == capability {
+			return true
+		}
+	}
+	return false
+}

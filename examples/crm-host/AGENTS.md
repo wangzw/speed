@@ -44,8 +44,9 @@ claim there has its case in `e2e_test.go` or a slice's own test file, or in
 | `main.go` | The package comment, the stack table and the command tree, with the platform modules each command runs, the identity system's own modules among them; and the `factor-gate` module, the one route of which `authn/guard` protects. |
 | `host.go` | The host identity (prefix `CRM`) and the endpoint names. |
 | `application.go` | The registration table every host module goes through, the migration tree helper every module's migrations use, the release records, the error body, the route and request-body helpers, identifiers. |
-| `decider.go` | The host's `authn.Decider`: it allows the platform operator a management action, allows a tenant's owner to start an impersonation of a lower-role member of the same tenant, and refuses `authn.tenant.access` whatever the actor, so an operator stays a stranger to every tenant until a permission model is written. |
-| `members.go` | The scoped `member_roles` table (the role an account holds in a tenant; the membership relation itself is the account module's), `GET`/`POST /members`, and `GET /me` on the account endpoint. The member check is `tenant.admission`, not a layer of this module. |
+| `authzbusiness.go` | The host's own CRM permissions and their translation, declared as the resource-only module `authzbusiness` on `serve`, so the authorization catalog carries them and a route may name them. |
+| `authzroles.go` | The four tenant roles and the platform operator role, the grant sets they carry, the provisioners that write them through `authz.Manager`, and the `authz-roles` module that provisions the platform operator at serve startup. |
+| `members.go` | The `member_roles` model (kept for the previous deployment's data; a member's role is a policy row now), `GET`/`POST /members`, `GET /me` on the account endpoint, and `declareMemberRoutes`, which records the permission each members route needs. The member check is `tenant.admission`, not a layer of this module. |
 | `admin.go` | The operator check and the roster, user and cross-tenant grant routes on the admin endpoint. A user is created through `authn.AccountAdmin`, and the operator is judged by the full account `static.<operator subject>`. |
 | `ops.go` | Health, readiness, the merged OpenAPI document, and the ready record. |
 | `cli.go` | The shared command-line flags, the command-group mechanism, and the tenant and user command actions, the user actions going through the account store. |
@@ -381,6 +382,14 @@ audit:
     requests: ["GET /members", "POST /members", "POST /tenants"]
 ratelimit:
   endpoints: [api]
+authz:
+  guard:
+    endpoints: [api]
+    undeclared: closed
+  policy:
+    load-timeout: 5s
+  admin:
+    endpoints: [admin]
 observability:
   otel:
     service-name: crm-host
@@ -413,6 +422,27 @@ and the documents unguarded. `tenant.admission.endpoints` holds the account and
 admin endpoints out of the member check: the account endpoint resolves no
 tenant, and the admin endpoint is the operator's.
 
+The authorization layer's items configure what it guards and where its
+management routes mount. `authz.guard.endpoints` is the endpoint whose requests
+the middleware authorizes — the API endpoint, the business endpoint the
+admission layer sits inside — and it has no default, so a served command names
+it. `authz.guard.undeclared` is the treatment of a route the middleware holds no
+declaration for: `closed` (the default, answered 403) or `open`.
+`authz.policy.load-timeout` bounds the startup policy load, and
+`authz.admin.endpoints` names the endpoint the `/authz/admin/*` management routes
+mount on. The settings item `authz.policy.refresh-interval` bounds how long a
+replica without an event bus waits before it reloads the policy. The platform
+operator's role and its binding are written by the host, not the migration: the
+`authz-roles` module provisions the `operator` role in the reserved platform
+domain and binds `static.ops` to it at serve startup, idempotently, so the
+operator's administration of the platform's settings and audit — which decides
+in the platform domain, not the request's — has a policy to decide against. The
+same provisioning has a command-line face, `operator provision`, which writes
+the operator role, its grants and its binding for a deployment that has not
+served yet or one re-asserting the binding over rows an administrator removed;
+it is idempotent and reaches no HTTP route. The migration builds the policy
+tables and seeds no row.
+
 ## The identity system
 
 The identity system of `pkg/authn` and `pkg/tenant` is what a CRM user, a
@@ -436,8 +466,13 @@ SAML one carrying the SP metadata route besides; `authn.admin` mounts the
 management routes under the base path's `/admin` tree, and
 `authn.impersonation` holds the impersonation records and the `B/impersonation`
 routes; `tenant.admission` holds the member check on the API endpoint and
-delivers the scope guard the impersonation module requires;
-`authz` (this host's `decider.go`) is the decision seam. Every one of them is
+delivers the scope guard the impersonation module requires. Beside them the
+authorization layer runs: `authz.policy` carries the policy tables, the Casbin
+engine and the permission catalog, `authz.guard` is the enforcement middleware
+on the API endpoint and the decision seam (`authn.Decider`) the admission layer,
+the identity system's management routes and the impersonation module ask their
+questions through, and `authz.admin` mounts the policy administration routes
+under `/authz/admin` on the admin endpoint. Every one of them is
 named, since the dependency closure never picks an exclusive provider.
 
 `pkg/authn/guard` is the step-up middleware, and it registers no module: its
@@ -489,20 +524,48 @@ What this means for a slice:
   host's factor-gated route: `authn/guard` in front of it admits a multi-factor
   session and answers a single-factor one with the step-up 401.
 - **The membership check is `tenant.admission`.** A caller that is not a member
-  of the tenant its request names is answered the same 404 as an unknown tenant;
-  the host keeps only the role (`member_roles`), which admission does not know.
-- **The role every handler gates on is read from `member_roles`, last.** A route
-  reads the caller's role with `memberOf`/`memberWith`, which read the tenant's
-  own table through the scoped handle.
+  of the tenant its request names is answered the same 404 as an unknown tenant.
+  A member's role is a policy row now, written and read through `authz.Manager`;
+  the `member_roles` table the previous deployment used is left in place until
+  the migration is confirmed, and no route reads it. A member the tenant's policy
+  holds no binding for reads as holding no role, which is below every role a route
+  takes: a membership written without a grant — the identity system's management
+  membership routes write one — reaches a read route as 403 where the previous
+  host's role-free membership check answered 200. The host's own grants write the
+  binding with the membership, so this is the identity system's surface alone.
+- **A route's permission is a declaration, decided by the authorization
+  middleware.** Each business route records, in its module's `Init` through
+  `authz.Gate.Require`, the permission it needs, or is registered open through
+  `authz.Gate.Open`. The middleware on the authorizing stage decides it before
+  the handler runs: a caller whose role does not carry the permission is answered
+  403 by the layer, and a route that declared nothing is answered 403 under the
+  closed default. A member's role is a binding of the account to a role in the
+  tenant's policy domain, and the role's grant rows are the permissions it
+  carries. The host's own permissions are the `crm.*` names `authzbusiness`
+  declares; a route that needs a carried permission (`settings.read`,
+  `settings.write`, `audit.read`, `authn.impersonation.start`, …) names the
+  capability's constant. The settings and audit surfaces decide their permission
+  in the handler rather than at the route level — a settings write judges the key
+  after the permission, and a trail route's decision is the platform domain's on
+  the admin endpoint — so their routes are registered open, and the handler asks
+  through the authorization layer's handler-internal `authzguard.Guard`
+  (`RequirePermission` in the request's domain, `RequirePermissionIn` in the
+  platform domain for the admin routes).
 - **The management and impersonation routes are the identity system's own.**
   `authn.admin` mounts the `/auth/admin/*` tree on the account endpoint, and
-  every route of it asks the host's `Decider` (`authz`) and is recorded by the
-  journal before it acts; the host's own admin endpoints (`/tenants`, `/users`
-  on the admin endpoint) stay separate and go through the operator check.
+  every route of it asks the authorization layer's `Decider` (`authz.guard`) and
+  is recorded by the journal before it acts; the host's own admin endpoints
+  (`/tenants`, `/users` on the admin endpoint) stay separate and go through the
+  operator check.
   `authn.impersonation` mounts `/auth/impersonation` there: `POST` starts one,
-  allowed by the host's `Decider` to a tenant's owner impersonating a lower-role
-  member of the same tenant, and `GET` and `DELETE` stay reachable during an
-  impersonation so that owner can see and end it.
+  decided by the authorization layer's `Decider` (`authz.guard`) on the actor's
+  `authn.impersonation.start` grant — the owner role holds it, so an owner of the
+  tenant may start one — and `GET`
+  and `DELETE` stay reachable during an
+  impersonation so that owner can see and end it. The target the impersonation
+  module accepts is checked structurally (a live, non-static, non-protected
+  member of the tenant); the permission model decides the actor alone and does
+  not express a rule relating the target's role to the actor's.
 - **A social or enterprise login is a method of the engine, not a route of this
   host.** The methods `google`, `github`, `wechat.web` and `wechat.mp` come from
   configuration and `saml` and `oidc` from a tenant's IdP rows; each begins
@@ -514,15 +577,16 @@ What this means for a slice:
 - **`subtree`, which every module's migrations go through, lives in
   `application.go`, so a slice's migration tree stands on its own.**
 
-## The one-shot import
+## The one-shot imports
 
-`import run` moves a deployment's data out of the previous migration set's
-tables and into the identity system. It is a one-shot command of the host's own
-command-group mechanism (`import.go`, registered from its own `init`, editing no
-shared list) and runs on every stack. It drives to Start, because its write is
+`import run` and `role import` carry a deployment's data out of the tables the
+previous hosts wrote and into the identity system and the authorization policy.
+They are one-shot commands of the host's own command-group mechanism
+(`import.go` and `roleimport.go`, each registered from its own `init`, editing no
+shared list) and run on every stack. Each drives to Start, because its write is
 recorded through the audit seam; a `--dry-run` report writes nothing.
 
-- **It reads the tables the previous set built.** `users` and `memberships`
+- **`import run` reads the tables the previous set built.** `users` and `memberships`
   exist only in a database carried over from the previous deployment — the
   current set builds neither — and the command reads them by hand. The host
   leaves them in place, and does not drop them until it has confirmed the
@@ -536,7 +600,8 @@ recorded through the audit seam; a `--dry-run` report writes nothing.
   account module to convert to the PHC form without loss. A user switched off in
   the old system becomes a disabled account, switched off the moment it is made.
   A membership becomes a `authn.Memberships.Put` of source `import`, and its
-  role a row of `member_roles` through `grantIn`.
+  role a policy binding written through `grantIn`, which binds the account to
+  the role in the tenant's policy domain and provisions the tenant's roles.
 - **It is idempotent and resumable.** An account or membership already there is
   left as it is and counted skipped, so a run may be repeated without reverting
   a change made since — a role an administrator raised, a status one set. The
@@ -556,6 +621,15 @@ recorded through the audit seam; a `--dry-run` report writes nothing.
 - **Rollback is by backup.** Only forward migrations exist, so undoing the
   import means restoring the database from the copy taken before it, or running
   the previous binary against the untouched old tables.
+- **`role import` carries the host's own former role table, which `import run`
+  never reads.** The migration kept a member's role in the host's `member_roles`
+  table, and a role is a policy binding now, so `role import` reads every row and
+  writes the binding through `authz.Manager`, provisioning the tenant's four
+  roles and their grant rows first. It is idempotent and resumable — a row whose
+  binding already exists is left as it is and counted skipped, one whose
+  membership is already there but whose binding is missing is finished and
+  counted resumed, and a `--dry-run` report writes nothing — and it leaves
+  `member_roles` in place until the host confirms the migration.
 
 ## Extending the harness
 
