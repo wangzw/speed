@@ -6,9 +6,9 @@
 
 ## 背景
 
-中间件的排序按功能标识建图：一层用 `Provides` 声明它在链上代表什么，别的层用 `After` 或 `Before` 指向那个标识（[ADR-http-middleware-2026-09-14](adr-http-middleware-2026-09-14.md)）。`pkg/http` 的登记面把一层的名字与它声称代表的功能分开。`http.Middleware` 的 `Name` 字段只用于诊断，写在 panic 文本与启动时列出的链里；指向功能的是同一结构上的 `Provides`，其元素是 `core.Token`（`pkg/core/module.go`）。登记面拿不到登记方的身份——`http.Endpoint` 不带它——因此 `pkg/http` 不校验 `Provides` 与登记方描述符里交付面的一致性，一层可以声称代表一个它所属模块并不交付的功能（见 `http` 设计文档的中间件一节）。
+中间件的先后由阶段给出，同一阶段之内按功能标识建图：一层用 `Provides` 声明它在链上代表什么，同阶段的别的层用 `After` 或 `Before` 指向那个标识（[ADR-http-stages-2026-10-11](adr-http-stages-2026-10-11.md)）。`pkg/http` 的登记面把一层的名字与它声称代表的功能分开。`http.Middleware` 的 `Name` 字段只用于诊断，写在 panic 文本与启动时列出的链里；指向功能的是同一结构上的 `Provides`，其元素是 `core.Token`（`pkg/core/module.go`）。登记面拿不到登记方的身份——`http.Endpoint` 不带它——因此 `pkg/http` 不校验 `Provides` 与登记方描述符里交付面的一致性，一层可以声称代表一个它所属模块并不交付的功能（见 `http` 设计文档的中间件一节）。
 
-入口模块的 panic 兜底由它内建，位于全部登记层之外（见 `http` 设计文档的兜底层一节、[ADR-http-recovery-2026-09-22](adr-http-recovery-2026-09-22.md)）。内层抛出的 panic 因此先穿过登记层，才到兜底层。
+入口模块的 panic 兜底由它内建，落在观测阶段之内、排在观测阶段的登记层之内（见 `http` 设计文档的兜底层一节、[ADR-http-recovery-2026-09-22](adr-http-recovery-2026-09-22.md)）。它之内的层抛出的 panic 才到它；观测阶段本身的层抛出的 panic 越过它，抵达协议层。
 
 采集层由上游 gin 采集库的中间件与本模块的守护层组成（[ADR-observability-request-layer-2026-10-11](adr-observability-request-layer-2026-10-11.md)）。上游采集库不接住 panic，穿过它的 panic 不进计量，接住它的一层因而必须位于它之内。
 
@@ -24,7 +24,7 @@
 
 采纳它意味着 `Provides` 留空。
 
-**否决**：声明为空会让任何别的层的 `After` 或 `Before` 都指不到本层，那些约束随之被丢掉。丢掉一条约束不失败，只在启动诊断里记一行 Info（`pkg/http/assemble.go` 的 `reportUnlanded`），与本模块缺席、或没有在这个端上登记采集层时合法装配记下的那一行同形——声明方以为自己有位置保证，而这一点在启动期看不出区别。
+**否决**：声明为空会让任何别的层的 `After` 或 `Before` 都指不到本层，那些约束随之被丢掉。丢掉一条约束不失败，只在启动诊断里记一行 Info（`pkg/http/assemble.go` 的 `reportRemarks`），与本模块缺席、或没有在这个端上登记采集层时合法装配记下的那一行同形——声明方以为自己有位置保证，而这一点在启动期看不出区别。
 
 ### 依赖入口模块的兜底层接住 panic，本层不捕获
 

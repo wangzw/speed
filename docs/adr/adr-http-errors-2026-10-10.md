@@ -10,7 +10,7 @@
 
 登记面锚定 gin（[ADR-http-surface-2026-09-14](adr-http-surface-2026-09-14.md)）。gin 把错误交给 handler 自己写出，不定义统一的错误响应形状，也没有集中的错误处理接缝。
 
-兜底层位于 gin 引擎之外，手里只有 `http.ResponseWriter` 与 `*http.Request`，没有 `*gin.Context`。
+兜底层是引擎上的一个 gin handler，手里有 `*gin.Context`。写出仍经同一处接缝：`ErrorResponder` 的签名只取 `http.ResponseWriter` 与 `*http.Request`，形状因而不依赖 gin 的类型。
 
 RFC 9457 是 HTTP API 错误响应的现成标准，规定了字段与 `application/problem+json` 媒体类型。
 
