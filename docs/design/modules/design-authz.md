@@ -21,7 +21,7 @@
 下列各条例举本模块不承担的事，归属的判据见[职责](#职责)。
 
 - **不做认证，不认定身份。** 谁是调用方由认证的网关认定，本模块只读网关写进上下文的身份；它不读凭据，不解释 `Authorization` 头，也不产生身份。
-- **不管理成员关系。** 「账户是不是租户的成员」是认证的表 `authn_memberships` 的事实，归 `authn.account`；本模块只按（账户，租户）绑定角色，经 `Memberships` 的只读面读成员关系，不写它的表。
+- **不管理成员关系。** 「账户是不是租户的成员」是认证的表 `authn_memberships` 的事实，归 `authn.account`；本模块只按（账户，租户）绑定角色，不读、不写成员关系，也不核对它。
 - **不做租户解析，不读租户名册解释请求面的租户。** 请求属于哪个租户由 `tenant.resolve` 认定，本模块读 `tenant.FromContext` 的标识（[tenant](design-tenant.md)）。平台域的保留值只用于策略裁决，不构成一次租户解析。
 - **不把角色放进令牌，也不把它们放进任何凭据。** 访问令牌不带角色（[authn-token](design-authn-token.md)）；角色在请求期由本模块按生效账户实时查自己的绑定，令牌有效期内改绑定即时生效的方向与认证的取态一致。
 - **不做审计的存储与脱敏。** 本模块的拒绝经请求级捕获进入审计，审计行的补全、脱敏与存放归 [audit](design-audit.md)；本模块不调 `Audit.Record`，不写审计表，也不决定明细里遮蔽哪些键。
@@ -113,12 +113,6 @@ type Gate interface {
     Covered(method, path string) bool
 }
 
-// Guard 是 handler 内判定 API：授权路由的 handler 在自己的逻辑里问一句。
-type Guard interface {
-    Allowed(c *gin.Context, perm Permission) (bool, error)
-    Require(c *gin.Context, perm Permission) bool
-}
-
 // Binding 是一行角色绑定的读取形状。
 type Binding struct {
     Tenant    string
@@ -159,6 +153,8 @@ type Manager interface {
     DeleteBinding(ctx context.Context, tenant, account string, role Role) error
 }
 ```
+
+上列接口与类型都在根包。根包只依赖标准库，因此它不声明取 `*gin.Context` 的接口：handler 内判定 API `Guard` 由此不在根包，而由 `authz.guard` 随中间件一并交付。
 
 接口在根包的稳定面是签名与方法集：加方法与改签名对取用它们的模块、实现了它们的宿主即是不兼容变更。
 
@@ -249,9 +245,9 @@ const (
 - **`authz.guard.endpoints`**（配置，字符串列表）：中间件所守的端。**必填、无缺省、不接受 `*`，空清单是 `ErrInvalidConfig`。** 清单的形状同 `tenant.admission.endpoints`；端名在入口模块里不存在时，`authz.guard` 在 `Init` 以 `ErrUnknownEndpoint` 终止启动。
 - **`authz.guard.undeclared`**（配置，取值 `closed`/`open`）：未声明路由的缺省处置。**缺省 `closed`**（答 403），取 `open` 时放行并写一行启动 `Warn`。只取主配置源，环境变量与命令行覆盖不改写它：把缺省安全态放到配置的覆盖层一侧，会让一条命令行参数改变哪些路由不需要权限。
 - **`authz.policy.load-timeout`**（配置，时长，缺省 `5s`）：启动期全量装载策略的时限。超时即启动失败（`ErrPolicyUnavailable`），不带着半份快照开始服务。
-- **`authz.policy.refresh-interval`**（设置，时长，缺省 `0s`）：无事件总线时的周期重载间隔。`0` 表示不重载。
+- **`authz.policy.refresh-interval`**（设置，时长，缺省 `0s`）：无事件总线时的周期重载间隔。`0` 表示不重载。**它归设置而非配置，因为它是运行期可变的参数；本模块只在 `Start` 读它一次**，运行期改值要重启进程才生效。
 
-**配置承载启动必须项，设置承载运行期参数**（[ADR-config-scope-2026-09-13](../../adr/adr-config-scope-2026-09-13.md)）：`endpoints` 与 `load-timeout` 在装配期就要读出来，`refresh-interval` 由运维在运行期调整。**本模块没有设置型的放宽开关**：唯一会放宽的方向是 `undeclared`，它是配置项，改它要重启。
+**配置承载启动必须项，设置承载运行期参数**（[ADR-config-scope-2026-09-13](../../adr/adr-config-scope-2026-09-13.md)）：`endpoints` 与 `load-timeout` 在装配期就要读出来，`refresh-interval` 是运行期参数——尽管本模块只在 `Start` 读它一次，改值要重启进程才生效。**本模块没有设置型的放宽开关**：唯一会放宽的方向是 `undeclared`，它是配置项，改它要重启。
 
 ### 对宿主的要求
 
@@ -265,11 +261,11 @@ const (
 
 以下是本模块与其他模块和宿主之间的契约，改动它们改变每一个消费者：
 
-- 根包的接口与方法集：`Enforcer`、`Catalog`、`Gate`、`Guard`、`Manager`，以及 `Permission`、`Role`、`Domain`、`Query`、`Requirement`、`PermissionSpec`、`Binding` 的字段与取值。
+- 根包的接口与方法集：`Enforcer`、`Catalog`、`Gate`、`Manager`，以及 `Permission`、`Role`、`Domain`、`Query`、`Requirement`、`PermissionSpec`、`Binding` 的字段与取值。
 - 权限常量的值。常量一经发布不改名；新增常量不改已有常量。与 `authn.Action` 的对齐关系是稳定面。
 - `ModelText` 的模型文本，与动作到查询的翻译表。
 - 平台域的保留值 `"system"`。
-- 中间件在链上代表的功能标识：描述符的 `Provides` 与中间件的 `Provides` 同为 `(*authz.Guard)(nil)`，别的模块据它排序，取值与它所属的阶段不变。
+- 中间件在链上代表的功能标识：描述符的 `Provides` 与中间件的 `Provides` 同为 `(*authz.Gate)(nil)`——链上锚点住在根包（别的模块为排序 import 的是接口包，不是实现子包），而 handler 内判定 API `Guard` 因签名取 `*gin.Context` 落在 `pkg/authz/guard`，它不作为锚点。别的模块据这个标识排序，取值与它所属的阶段不变。
 - 配置键 `authz.guard.endpoints`、`authz.guard.undeclared`、`authz.policy.load-timeout`，设置键 `authz.policy.refresh-interval`，以及 `Endpoints` 的必填与不接受 `*`。
 - 403 的 `Problem.Type` 前缀 `urn:speed:authz:` 与其中的 `forbidden` 码，指标名 `authz.guard.decisions` 与其属性 `outcome` 的取值，以及拒绝状态码的封闭集。
 
@@ -279,11 +275,11 @@ const (
 
 | 包 | 模块名 | 交付 | 排他 | `Requires` | 在 `Init` 里取用（缺席合法者标 ○） | 表 |
 |---|---|---|---|---|---|---|
-| `authz/policy` | `authz.policy` | `Enforcer`、`Catalog`、`Manager`；`authn.AccountLifecycle` | `Enforcer`、`Catalog`、`Manager` 各自是 | `db.Database` | `authn.Memberships`、`tenant.Catalog` ○、`event.Bus` ○、`settings.Store` ○、`log.Logger` ○、`observability.MeterProvider` ○ | `authz_roles`、`authz_grants`、`authz_bindings` |
+| `authz/policy` | `authz.policy` | `Enforcer`、`Catalog`、`Manager`；`authn.AccountLifecycle` | `Enforcer`、`Catalog`、`Manager` 各自是 | `db.Database` | `tenant.Catalog` ○、`event.Bus` ○、`settings.Store` ○、`log.Logger` ○ | `authz_roles`、`authz_grants`、`authz_bindings` |
 | `authz/guard` | `authz.guard` | `Guard`、`Gate`；`authn.Decider` | 各自是 | `Enforcer`、`Catalog` | `http.Router`、`tenant` 的上下文读取、`log.Logger` ○、`observability.MeterProvider` ○ | 无 |
 | `authz/admin` | `authz.admin` | 无（只挂 `/authz/admin/*` 下的路由） | — | `Manager`、`Catalog` | `http.Router`、`log.Logger` ○ | 无 |
 
-`authz/guard` 以 `Enforcer` 为必需依赖（排他），缺它即 `core.ErrMissingProvider`，早于迁移：没有引擎的中间件只能把所有受守路由答成 503。`authn.Decider` 由 `authz.guard` 交付——它是排他功能，取用方（`authn.admin`、`authn.impersonation`、`tenant.admission`）在 `Init` 里以 `Optional` 取用，`authz.guard` 在场即提供了它。`authz.policy` 取 `tenant.Catalog` 只为启动期核对平台域与名册不冲突：它是可选取用，没有租户模块的装配里没有名册可核对，这条检查不执行，也不因此启动失败。
+`authz/guard` 以 `Enforcer` 与 `Catalog` 为必需依赖（前者排他），缺任一个即 `core.ErrMissingProvider`，早于迁移：没有引擎的中间件只能把所有受守路由答成 503，没有目录的路由声明面核对不了登记的权限。`Catalog` 是随中间件落地的路由声明面所读的那一项——decider 本期不读它，但它与 `Enforcer` 同为必需依赖：一个必需能力没有提供方，无论哪个回调读它，启动都失败。`authn.Decider` 由 `authz.guard` 交付——它是排他功能，取用方（`authn.admin`、`authn.impersonation`、`tenant.admission`）在 `Init` 里以 `Optional` 取用，`authz.guard` 在场即提供了它。`authz.policy` 取 `tenant.Catalog` 只为启动期核对平台域与名册不冲突：它是可选取用，没有租户模块的装配里没有名册可核对，这条检查不执行，也不因此启动失败。
 
 ### 依赖方向
 
@@ -295,7 +291,7 @@ const (
 
 ## UML 图
 
-下图给出根包上的类型与它们的关系。图中画不出的约束是：`Enforcer` 的实现读进程内快照，请求期不查库；`Decider` 由 `authz.guard` 的产品实现（`var _ authn.Decider = (*product)(nil)`），它与中间件共用同一份 `Gate` 声明表与同一处租户读取；`Query` 由中间件与 `Decider` 两处构造，都被翻成引擎的一次匹配。
+下图给出根包的类型、`authz.guard` 的产品所交付的接口，以及它们之间的关系。图中画不出的约束是：`Enforcer` 的实现读进程内快照，请求期不查库；`Decider` 由 `authz.guard` 的产品实现（`var _ authn.Decider = (*product)(nil)`），它与中间件共用同一份 `Gate` 声明表与同一处租户读取；`Query` 由中间件与 `Decider` 两处构造，都被翻成引擎的一次匹配。
 
 ```mermaid
 classDiagram
@@ -372,7 +368,7 @@ classDiagram
     guardProduct --> Gate : 读声明
 ```
 
-`guardProduct` 未导出，它持有声明表、引擎引用与租户读取（见[请求期判定](#请求期判定)）。
+`guardProduct` 未导出，它持有声明表、引擎引用与租户读取（见[请求期判定](#请求期判定)）。图中 `Guard` 与 `Decider` 由 `authz.guard` 交付、不在根包；`Gate` 与 `Enforcer`、`Catalog`、`Manager` 连同各数据类型都在根包。链上锚点取根包的 `(*authz.Gate)(nil)`——`Guard` 因签名取 `*gin.Context` 落在 `pkg/authz/guard`，不作为锚点。
 
 下图给出一条受守路由从进入授权阶段到 403 或放行的路径。它固定的是读的次序与拒绝的划分：声明先于身份，身份先于租户，引擎出错是 503 而不是 403，未声明路由在缺省下也走 403。
 
@@ -517,8 +513,11 @@ CREATE INDEX authz_bindings_by_role ON authz_bindings (tenant_id, role);
 | `p` 行 `rule = {role, dom, resource, action}` | `authz_grants` | `rule[0]=role`、`rule[1]=dom=tenant_id`、`rule[2]=resource`、`rule[3]=action` |
 | `g` 行 `rule = {account, role, dom}` | `authz_bindings` | `rule[0]=account_id`、`rule[1]=role`、`rule[2]=dom=tenant_id` |
 
-- **跨租户标记在构造时施加一次。** `persist.Adapter` 的五个方法（`LoadPolicy`、`SavePolicy`、`AddPolicy`、`RemovePolicy`、`RemoveFilteredPolicy`）都不带 `context.Context`，`Enforcer.LoadPolicy` 也不带，所以「每条语句各自施加标记」在这个接口上无处可写。adapter 因此在构造时取一条会话——`handle.Session(&gorm.Session{Context: tenant.CrossTenant(context.Background())})`——此后它发出的每一条语句都带着这个标记。标记是 `tenant.CrossTenant` 定义的上下文事实，一次施加即对随后所有语句成立，这也是该函数的设计意图。
-- **写：** 租户列从 `rule` 的 `dom` 段取出并显式写进模型字段；写入前核对它与调用方给的租户一致，不一致即 `ErrTenantMismatch`。会话虽带跨租户标记，策略行的租户仍逐条核对：标记说的是「这次调用意图跨租户」，不是「这条语句写哪个租户都对」。空租户被表的 `CHECK` 与 `tenant.ID.Value()` 双重挡住。
+两个行类型住在 `pkg/authz/internal/persist`：`grantRow`（表 `authz_grants`，除嵌入的租户列外是 `Role`、`Resource`、`Action` 与 `CreatedAt`）承载 `p` 行，`bindingRow`（表 `authz_bindings`，除租户列外是 `AccountID`、`Role` 与 `GrantedAt`）承载 `g` 行；两者的租户列都由嵌入的 `tenant.Model` 领衔主键，写时从 `rule` 的 `dom` 段填进去。
+
+- **跨租户标记在构造时施加一次。** `persist.Adapter` 的五个方法（`LoadPolicy`、`SavePolicy`、`AddPolicy`、`RemovePolicy`、`RemoveFilteredPolicy`）都不带 `context.Context`，`Enforcer.LoadPolicy` 也不带，所以「每条语句各自施加标记」在这个接口上无处可写。adapter 因此在构造时取一条会话——`handle.Session(&gorm.Session{Context: tenant.CrossTenant(ctx)})`——此后它发出的每一条语句都带着这个标记。标记是 `tenant.CrossTenant` 定义的上下文事实，一次施加即对随后所有语句成立，这也是该函数的设计意图。`ctx` 是这些语句继承的期限与取消：受配置 `authz.policy.load-timeout` 约束的装载随它结束（[快照与失效](#快照与失效)）。
+- **调用方租户在构造期一并绑定：`persist.New(ctx, handle, caller)`。** 一个 adapter 只服务一个租户的写，`caller` 就是那个租户。因此 `authz.policy` 的 `Manager` **每次写各自构造一个绑定该租户的 adapter**；只读的装载（[快照](#快照)的全量读）构造一个 `caller` 为空标识的 adapter，经它的一切写入被拒。
+- **写：** 租户列从 `rule` 的 `dom` 段取出并显式写进模型字段；写入前核对它与构造期绑定的 `caller` 一致，不一致即 `ErrTenantMismatch`。会话虽带跨租户标记，策略行的租户仍逐条核对：标记说的是「这次调用意图跨租户」，不是「这条语句写哪个租户都对」。空租户由三层挡下：装插件的句柄上，请求路径的租户过滤插件先一步拒掉上下文没有租户的语句（[tenant](design-tenant.md)）；不装插件的句柄（例如只跑迁移的命令）上没有这一层，剩下 `tenant.ID.Value()` 拒绝把空标识绑进语句、表的 `CHECK (tenant_id <> '')` 两道。
 - **读（`LoadPolicy`）：** 必须**跨租户**读——判定进程持有全部租户的策略——用的就是构造时那条带标记的会话。这是本模块唯一一处对安全敏感表的跨租户读（[并发与事务边界](#并发与事务边界)）。
 - **`SavePolicy` 不实现「清表重写」，返回 `ErrNotImplemented`**（adapter 包自带的错误，不是根包哨兵）。本模块只经 `Manager` 逐条增删策略，一次全量重写会在读改写之间抹掉并发写入。
 
@@ -532,7 +531,7 @@ CREATE INDEX authz_bindings_by_role ON authz_bindings (tenant_id, role);
 
 ### 请求期判定
 
-中间件在 `authz.guard.endpoints` 的每个端上登记一层，描述符的 `Provides` 是 `(*authz.Guard)(nil)`，`Stage` 声明授权阶段（`StageAuthorize`），阶段内 `After: [(*tenant.Admission)(nil)]`。同一个请求按下表自上而下判定，取第一条命中的行，命中即终止。
+中间件在 `authz.guard.endpoints` 的每个端上登记一层，描述符的 `Provides` 是 `(*authz.Gate)(nil)`（模块描述符另声明排他交付 `(*authn.Decider)(nil)`），`Stage` 声明授权阶段（`StageAuthorize`），阶段内 `After: [(*tenant.Admission)(nil)]`。同一个请求按下表自上而下判定，取第一条命中的行，命中即终止。
 
 | 行 | 条件 | 结果 |
 |---|---|---|
@@ -636,8 +635,9 @@ CREATE INDEX authz_bindings_by_role ON authz_bindings (tenant_id, role);
 
 - **快照不可变，请求期只读。** `Enforcer` 读当前的原子指针，读到的快照在其生命周期内不被改写；换指针是一次原子写，读到的要么是旧快照要么是新快照，不会是两者的混合。对同一份快照的并发读不加锁。
 - **`Decider` 可被并发调用。** `authz.guard` 的产品实现无请求间可变状态，`Decide` 只读快照与入参。
-- **写路径串行化在单条语句上。** `Manager` 的每次写入是一条语句，落在自己的事务里：写库、提交、然后本副本换指针。跨模块的写不共用一个事务——本模块只写自己的表，别的模块的清理走生命周期钩子与事件。
-- **`LoadPolicy` 是跨租户读，写是租户域内的写。** 读写都走 adapter 构造时那条带跨租户标记的会话（[薄 adapter](#薄-adapter)）；写仍逐条核对规则里的租户，越出调用方租户的写在 adapter 处被 `ErrTenantMismatch` 拒绝，空租户被 `CHECK` 拒绝。装载没有请求上下文可用，标记因此不能在调用点施加：Casbin 的 Adapter 接口不带 context。
+- **写路径串行化在一个事务里。** `Manager` 的每次写入落在自己的事务里：需要先核对角色的写（权限授予、角色绑定、角色改写、删角色）把核对与它守护的行放在同一事务，免得并发写落在两者之间——一条授予或绑定落到刚被删、或刚被改成内置的角色上；然后写库、提交、本副本换指针。跨模块的写不共用一个事务——本模块只写自己的表，别的模块的清理走生命周期钩子与事件。
+- **删角色即撤销，不留下孤儿行。** `Manager.DeleteRole` 在一个事务里删掉该租户下这个角色的三处行：`authz_grants` 的授予行、`authz_bindings` 的绑定行与 `authz_roles` 的角色行。引擎只从授予表与绑定表判定、从不读 `authz_roles`，所以残留的授予行或绑定行会替一个已不存在的角色继续判定——三行是一个单位，删除就是撤销。另一个租户的同名角色及其行不受影响。
+- **`LoadPolicy` 是跨租户读，写是租户域内的写。** 读写都走 adapter 构造时那条带跨租户标记的会话（[薄 adapter](#薄-adapter)）；写仍逐条核对规则里的租户，越出调用方租户的写在 adapter 处被 `ErrTenantMismatch` 拒绝，空租户由[薄 adapter](#薄-adapter) 的三层防线挡下。装载没有请求上下文可用，标记因此不能在调用点施加：Casbin 的 Adapter 接口不带 context。
 - **`AccountLifecycle` 清理幂等、至少一次。** 账户删除后本模块按账户订阅事件或经钩子清理其绑定行；清理没做完时残留的绑定行指向一个已无账户的标识，认证侧读不到该账户即可用性不受影响（[authn-account](design-authn-account.md)）。本模块不建指向认证表的外键，清理不依赖外键级联。
 - **快照装载不阻塞请求。** `Start` 完成装载之前不接受请求；跨副本重载在后台进行，装载期间旧快照继续服务。
 
@@ -650,30 +650,32 @@ CREATE INDEX authz_bindings_by_role ON authz_bindings (tenant_id, role);
 
 ## 实现状态
 
-下表的状态以代码为准。本模块整体未实现，逐项状态与代码锚点如下；锚点给出的是计划落地该能力的路径与符号名。
+下表的状态以代码为准。已实现的行给出代码锚点；仍未实现的行给出计划落地该能力的路径与符号名。
 
 | 能力 | 状态 | 代码 |
 |---|---|---|
-| 根包的类型与接口：`Permission`、`Role`、`Domain`、`PermissionSpec`、`Query`、`Requirement`、`Enforcer`、`Catalog`、`Gate`、`Guard`、`Manager`、`Binding`、`RoleRecord`、`GrantRecord` | 未实现 | `pkg/authz/types.go` `Permission`、`Role`、`Domain`、`Query`、`Requirement`、`Binding`、`RoleRecord`、`GrantRecord`；`pkg/authz/capabilities.go` `Enforcer`、`Catalog`、`Gate`、`Guard`、`Manager` |
-| 权限常量与 `authn.Action` 的对齐、平台域保留值 | 未实现 | `pkg/authz/permissions.go` `PermissionAccountRead` …、`PlatformDomain` |
-| 平台域与真实租户同名的启动期核对 | 未实现 | `pkg/authz/policy/platform.go` `checkPlatformDomain` |
-| `ModelText` 模型文本常量 | 未实现 | `pkg/authz/model.go` `ModelText` |
-| 哨兵 | 未实现 | `pkg/authz/errors.go` `ErrNoRouter`、`ErrUnknownEndpoint`、`ErrUndeclaredRoute`、`ErrUnknownPermission`、`ErrUnknownRole`、`ErrBuiltinRole`、`ErrTenantMismatch`、`ErrPlatformDomainTaken`、`ErrPolicyUnavailable` |
-| 模块 `authz.policy` 的登记与各阶段行为（`Prepare`、`New`、`Migrate`、`Init`、`Start`、`Stop`） | 未实现 | `pkg/authz/policy/policy.go` `Module` |
-| 策略表与按方言的迁移集 | 未实现 | `pkg/authz/policy/migrations/{postgres,sqlite}/0001_authz_policy.sql` |
-| 薄 adapter（`persist.Adapter`）、跨租户读与租户核对的写 | 未实现 | `pkg/authz/internal/persist/adapter.go` `Adapter` |
-| Casbin 引擎装载、不可变快照与原子换指针 | 未实现 | `pkg/authz/internal/policy/policy.go` `Snapshot`、`Load`、`Swap` |
-| 启动期模型自检与夹具 | 未实现 | `pkg/authz/internal/policy/selftest.go` `SelfCheck`（夹具同包） |
-| 权限目录 `Catalog` 与 `PermissionSpec` 的登记 | 未实现 | `pkg/authz/policy/catalog.go` `Catalog` |
-| `Manager` 的策略读写 | 未实现 | `pkg/authz/policy/manager.go` `Manager` |
-| `AccountLifecycle` 清理与账户删除订阅 | 未实现 | `pkg/authz/policy/lifecycle.go` `Cleanup` |
-| `authz.policy.changed` 事件发布与订阅、`refresh-interval` 周期重载 | 未实现 | `pkg/authz/policy/policy.go` `publish`、`subscribe`、`reload` |
-| 配置 `endpoints`、`undeclared`、`load-timeout` 与设置 `refresh-interval` 的声明与读取 | 未实现 | `pkg/authz/policy/config.go`、`pkg/authz/guard/config.go` |
-| 模块 `authz.guard` 的中间件与授权阶段登记 | 未实现 | `pkg/authz/guard/guard.go` `Module` |
-| 路由声明登记面 `Gate`（`Require`/`Open`/`Covered`）与声明表 | 未实现 | `pkg/authz/guard/gate.go` `Gate` |
-| handler 内判定 API `Guard` | 未实现 | `pkg/authz/guard/guard.go` `Allowed`、`Require` |
-| `authn.Decider` 的实现、动作翻译表与未知动作 fail-closed | 未实现 | `pkg/authz/guard/decide.go` `(*product).Decide` |
+| 根包的类型与判定接口：`Permission`、`Role`、`Domain`、`PermissionSpec`、`Query`、`Requirement`、`Binding`、`RoleRecord`、`GrantRecord`、`Enforcer`、`Catalog`、`Gate`、`Manager` | 已实现 | `pkg/authz/types.go`；`pkg/authz/capabilities.go` |
+| 权限常量与 `authn.Action` 的对齐、平台域保留值 | 已实现 | `pkg/authz/permissions.go` `PermissionAccountRead` …、`PlatformDomain` |
+| 平台域与真实租户同名的启动期核对 | 已实现 | `pkg/authz/policy/platform.go` `checkPlatformDomain` |
+| `ModelText` 模型文本常量 | 已实现 | `pkg/authz/model.go` `ModelText` |
+| 哨兵 | 已实现 | `pkg/authz/errors.go` `ErrNoRouter`、`ErrUnknownEndpoint`、`ErrUndeclaredRoute`、`ErrUnknownPermission`、`ErrUnknownRole`、`ErrBuiltinRole`、`ErrTenantMismatch`、`ErrPlatformDomainTaken`、`ErrPolicyUnavailable` |
+| 模块 `authz.policy` 的登记与各阶段行为（`Prepare`、`New`、`Init`、`Start`、`Stop`） | 已实现 | `pkg/authz/policy/policy.go` `Module` |
+| 策略表与按方言的迁移集 | 已实现 | `pkg/authz/policy/migrations/{postgres,sqlite}/0001_authz_policy.sql` |
+| 薄 adapter（`persist.Adapter`）、跨租户读与租户核对的写 | 已实现 | `pkg/authz/internal/persist/adapter.go` `Adapter`、`New` |
+| Casbin 引擎装载、不可变快照与原子换指针 | 已实现 | `pkg/authz/internal/policy/policy.go` `Snapshot`、`Load`、`Holder`（`Get`/`Swap` 即原子指针的读写） |
+| 启动期模型自检与夹具 | 已实现 | `pkg/authz/internal/policy/selftest.go` `SelfCheck`（夹具同包） |
+| 权限目录与 `PermissionSpec` 的登记 | 已实现 | `pkg/authz/policy/catalog.go` `permissions`、`buildCatalog`（目录类型未导出，读取面是根包的 `Catalog`） |
+| `Manager` 的策略读写 | 已实现 | `pkg/authz/policy/manager.go` `(*product).Roles` … `(*product).DeleteBinding`（接口在 `pkg/authz/capabilities.go`） |
+| `AccountLifecycle` 清理（账户删除与停用钩子） | 已实现 | `pkg/authz/policy/lifecycle.go` `AccountDeleted`、`AccountDisabled`、`ServiceSecretRevoked` |
+| `authz.policy.changed` 事件发布与订阅、`refresh-interval` 周期重载 | 已实现 | `pkg/authz/policy/policy.go` `wire`（订阅）、`publish`、`reload` |
+| 配置 `load-timeout` 与设置 `refresh-interval` 的声明与读取 | 已实现 | `pkg/authz/policy/config.go` |
+| 配置 `endpoints`、`undeclared` 的声明与读取 | 未实现 | `pkg/authz/guard/config.go` |
+| 模块 `authz.guard` 的登记（排他交付 `authn.Decider`） | 已实现 | `pkg/authz/guard/guard.go` `Module`、`ModuleName` |
+| 请求期中间件与授权阶段登记 | 未实现 | `pkg/authz/guard/guard.go` `Module` |
+| 路由声明的登记表实现（`Gate` 的 `Require`/`Open`/`Covered`） | 未实现 | `pkg/authz/guard/gate.go` `Gate` |
+| handler 内判定 API `Guard`（`authz.guard` 随中间件交付） | 未实现 | `pkg/authz/guard/guard.go` `Allowed`、`Require` |
+| `authn.Decider` 的实现、动作翻译表与未知动作 fail-closed | 已实现 | `pkg/authz/guard/decide.go` `translation`、`ObjectAction`、`(*product).Decide` |
 | 403 与 503 的写出、指标 `authz.guard.decisions` 与拒绝日志 | 未实现 | `pkg/authz/guard/respond.go` `forbidden`、`unavailable`；`pkg/authz/guard/guard.go` `conclude` |
 | 模块 `authz.admin` 的管理面路由（权限目录、角色、权限授予、绑定的读写） | 未实现 | `pkg/authz/admin/admin.go` `Module` |
-| 词表对齐守卫与根包依赖守卫 | 未实现 | `pkg/authz/action_parity_test.go`、`pkg/authz/deps_test.go` |
-| 测试构造夹具 `authztest` | 未实现 | `pkg/authz/authztest/authztest.go` |
+| 词表对齐守卫与根包依赖守卫 | 已实现 | `pkg/authz/action_parity_test.go`、`pkg/authz/deps_test.go` |
+| 测试构造夹具 `authztest` | 已实现 | `pkg/authz/authztest/authztest.go`、`pkg/authz/authztest/configreader.go` |

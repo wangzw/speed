@@ -562,7 +562,7 @@ type SessionID string // 登录会话的公开标识（UUIDv7 文本），不是
 | `ratelimit` | 限流 | `(*ratelimit.Limiter)(nil)` | 无 | [ratelimit](design-ratelimit.md) |
 | `audit.journal` | 记录 | `(*audit.Audit)(nil)` | 无 | [audit](design-audit.md) |
 | `tenant.admission` | 授权 | `(*tenant.Admission)(nil)`、`(*authn.ScopeGuard)(nil)` | 无 | [design-tenant-admission](design-tenant-admission.md) |
-| `authz.guard` | 授权 | `(*authz.Guard)(nil)` | `(*tenant.Admission)(nil)` | [design-authz](design-authz.md) |
+| `authz.guard` | 授权 | `(*authz.Gate)(nil)` | `(*tenant.Admission)(nil)` | [design-authz](design-authz.md) |
 
 ```mermaid
 flowchart LR

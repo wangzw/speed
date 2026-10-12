@@ -1,0 +1,430 @@
+package guard
+
+import (
+	"context"
+	"errors"
+	"slices"
+	"sync"
+	"testing"
+
+	"github.com/vislake/speed/pkg/authn"
+	"github.com/vislake/speed/pkg/authn/authntest"
+	"github.com/vislake/speed/pkg/authz"
+	"github.com/vislake/speed/pkg/authz/authztest"
+	"github.com/vislake/speed/pkg/core"
+)
+
+// stubEnforcer records every query and answers from a function, so a case can
+// hold both what the decider put to the engine and what it did with the answer.
+type stubEnforcer struct {
+	mu     sync.Mutex
+	answer func(authz.Query) (bool, error)
+	asked  []authz.Query
+}
+
+func (s *stubEnforcer) Allowed(_ context.Context, q authz.Query) (bool, error) {
+	s.mu.Lock()
+	s.asked = append(s.asked, q)
+	answer := s.answer
+	s.mu.Unlock()
+	if answer != nil {
+		return answer(q)
+	}
+	return false, nil
+}
+
+func (s *stubEnforcer) queries() []authz.Query {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	return slices.Clone(s.asked)
+}
+
+// identity builds the identity a request would carry, centred on account. Any
+// further option, such as WithActor, makes it what it makes it.
+func identity(t *testing.T, account authn.AccountID, opts ...authntest.Option) authn.Identity {
+	t.Helper()
+	opts = append([]authntest.Option{authntest.WithAccount(account)}, opts...)
+	ctx := authntest.Context(t, t.Context(), opts...)
+	id, ok := authn.FromContext(ctx)
+	if !ok {
+		t.Fatalf("the fixture left no identity on the context")
+	}
+	return id
+}
+
+// The translation is the whole closed set: every permission of the two
+// vocabularies maps to its one (object, action) pair, and the set holds no row
+// beyond them. A permission with no row is a decision this module cannot
+// express, and a row with no permission is a mapping nothing can reach.
+func TestTheTranslationIsTheWholeClosedSet(t *testing.T) {
+	want := map[authz.Permission]pair{
+		authz.PermissionTenantAccess:        {object: "tenant", action: "access"},
+		authz.PermissionAccountRead:         {object: "account", action: "read"},
+		authz.PermissionAccountCreate:       {object: "account", action: "create"},
+		authz.PermissionAccountUpdate:       {object: "account", action: "update"},
+		authz.PermissionAccountDisable:      {object: "account", action: "disable"},
+		authz.PermissionAccountDelete:       {object: "account", action: "delete"},
+		authz.PermissionMembershipManage:    {object: "membership", action: "manage"},
+		authz.PermissionSessionRead:         {object: "session", action: "read"},
+		authz.PermissionSessionRevoke:       {object: "session", action: "revoke"},
+		authz.PermissionMFAReset:            {object: "factor", action: "reset"},
+		authz.PermissionClientManage:        {object: "client", action: "manage"},
+		authz.PermissionIDPManage:           {object: "idp", action: "manage"},
+		authz.PermissionImpersonateStart:    {object: "impersonation", action: "start"},
+		authz.PermissionImpersonationRead:   {object: "impersonation", action: "read"},
+		authz.PermissionImpersonationRevoke: {object: "impersonation", action: "revoke"},
+		authz.PermissionRoleRead:            {object: "role", action: "read"},
+		authz.PermissionRoleManage:          {object: "role", action: "manage"},
+		authz.PermissionAuditRead:           {object: "audit", action: "read"},
+		authz.PermissionAuditExport:         {object: "audit", action: "export"},
+		authz.PermissionSettingsRead:        {object: "settings", action: "read"},
+		authz.PermissionSettingsWrite:       {object: "settings", action: "write"},
+	}
+	for p, w := range want {
+		object, action, ok := ObjectAction(p)
+		if !ok || object != w.object || action != w.action {
+			t.Errorf("ObjectAction(%q) = (%q, %q, %t), want (%q, %q, true)",
+				p, object, action, ok, w.object, w.action)
+		}
+	}
+	for p := range translation {
+		if _, ok := want[authz.Permission(p)]; !ok {
+			t.Errorf("the translation holds a row for %q, which no permission names", p)
+		}
+	}
+	if len(translation) != len(want) {
+		t.Errorf("the translation holds %d rows, want %d", len(translation), len(want))
+	}
+}
+
+// A known action is translated to the engine's (object, action) pair and put to
+// the engine with the actor's key and the decision's tenant.
+func TestDecideTranslatesAndQueries(t *testing.T) {
+	enforcer := &stubEnforcer{}
+	enforcer.answer = func(authz.Query) (bool, error) { return true, nil }
+	p := &product{enforcer: enforcer}
+
+	allow, err := p.Decide(t.Context(), authn.Decision{
+		Action: authn.ActionAccountRead,
+		Actor:  identity(t, "alice"),
+		Tenant: "acme",
+	})
+	if err != nil || !allow {
+		t.Fatalf("Decide gave (%t, %v), want (true, nil)", allow, err)
+	}
+	want := authz.Query{Subject: "alice", Domain: "acme", Object: "account", Action: "read"}
+	got := enforcer.queries()
+	if len(got) != 1 || got[0] != want {
+		t.Fatalf("the engine was asked %v, want exactly %v", got, want)
+	}
+}
+
+// A known action the engine refuses is a denial without an error, and the
+// action has no fallback: one query is put.
+func TestDecideCarriesADenial(t *testing.T) {
+	enforcer := &stubEnforcer{}
+	enforcer.answer = func(authz.Query) (bool, error) { return false, nil }
+	p := &product{enforcer: enforcer}
+
+	allow, err := p.Decide(t.Context(), authn.Decision{
+		Action: authn.ActionAccountRead,
+		Actor:  identity(t, "alice"),
+		Tenant: "acme",
+	})
+	if err != nil || allow {
+		t.Fatalf("Decide gave (%t, %v), want (false, nil)", allow, err)
+	}
+	if got := enforcer.queries(); len(got) != 1 {
+		t.Fatalf("the engine was asked %v, want one query", got)
+	}
+}
+
+// An action the translation does not hold is refused without an error, and the
+// engine is never asked: a denial is the safe answer for an action this module
+// cannot express.
+func TestDecideRefusesAnUnknownAction(t *testing.T) {
+	for _, c := range []struct {
+		name string
+		lead bool
+	}{
+		{"an engine that would allow", true},
+		{"an engine that would deny", false},
+	} {
+		t.Run(c.name, func(t *testing.T) {
+			enforcer := &stubEnforcer{}
+			enforcer.answer = func(authz.Query) (bool, error) { return c.lead, nil }
+			p := &product{enforcer: enforcer}
+
+			allow, err := p.Decide(t.Context(), authn.Decision{
+				Action: authn.Action("authn.not.a.real.action"),
+				Actor:  identity(t, "alice"),
+				Tenant: "acme",
+			})
+			if err != nil || allow {
+				t.Fatalf("Decide gave (%t, %v), want (false, nil)", allow, err)
+			}
+			if n := len(enforcer.queries()); n != 0 {
+				t.Fatalf("the engine was asked %d times for an unknown action, want none", n)
+			}
+		})
+	}
+}
+
+// An engine error is carried out and is neither a denial nor a permission.
+func TestDecideCarriesAnEngineError(t *testing.T) {
+	boom := errors.New("the store is down")
+	enforcer := &stubEnforcer{}
+	enforcer.answer = func(authz.Query) (bool, error) { return false, boom }
+	p := &product{enforcer: enforcer}
+
+	allow, err := p.Decide(t.Context(), authn.Decision{
+		Action: authn.ActionAccountRead,
+		Actor:  identity(t, "alice"),
+		Tenant: "acme",
+	})
+	if allow || !errors.Is(err, boom) {
+		t.Fatalf("Decide gave (%t, %v), want (false, the engine's error)", allow, err)
+	}
+}
+
+// authn.tenant.access decides four ways: a match in the tenant's own domain is an
+// allow with one query; a miss there falls back to the platform domain, where a
+// match is an allow and a miss is a denial, each with two queries; and a decision
+// already in the platform domain, the tenant being empty, is one query with no
+// fallback to run.
+func TestTenantAccessDecidesFourWays(t *testing.T) {
+	cases := []struct {
+		name        string
+		tenant      string
+		answer      func(authz.Query) bool
+		wantAllow   bool
+		wantDomains []authz.Domain
+	}{
+		{
+			name:        "the tenant domain matches",
+			tenant:      "acme",
+			answer:      func(q authz.Query) bool { return q.Domain == "acme" },
+			wantAllow:   true,
+			wantDomains: []authz.Domain{"acme"},
+		},
+		{
+			name:        "the tenant domain misses and the platform domain matches",
+			tenant:      "acme",
+			answer:      func(q authz.Query) bool { return q.Domain == authz.PlatformDomain },
+			wantAllow:   true,
+			wantDomains: []authz.Domain{"acme", authz.PlatformDomain},
+		},
+		{
+			name:        "both domains miss",
+			tenant:      "acme",
+			answer:      func(authz.Query) bool { return false },
+			wantAllow:   false,
+			wantDomains: []authz.Domain{"acme", authz.PlatformDomain},
+		},
+		{
+			name:        "the tenant is empty and the platform domain matches",
+			tenant:      "",
+			answer:      func(q authz.Query) bool { return q.Domain == authz.PlatformDomain },
+			wantAllow:   true,
+			wantDomains: []authz.Domain{authz.PlatformDomain},
+		},
+	}
+	for _, c := range cases {
+		t.Run(c.name, func(t *testing.T) {
+			enforcer := &stubEnforcer{}
+			enforcer.answer = func(q authz.Query) (bool, error) { return c.answer(q), nil }
+			p := &product{enforcer: enforcer}
+
+			allow, err := p.Decide(t.Context(), authn.Decision{
+				Action: authn.ActionTenantAccess,
+				Actor:  identity(t, "alice"),
+				Tenant: c.tenant,
+			})
+			if err != nil || allow != c.wantAllow {
+				t.Fatalf("Decide gave (%t, %v), want (%t, nil)", allow, err, c.wantAllow)
+			}
+			got := enforcer.queries()
+			domains := make([]authz.Domain, len(got))
+			for i, q := range got {
+				domains[i] = q.Domain
+				if q.Object != "tenant" || q.Action != "access" {
+					t.Errorf("query %d was %q on %q, want the tenant object on access", i, q.Object, q.Action)
+				}
+			}
+			if !slices.Equal(domains, c.wantDomains) {
+				t.Fatalf("the domains were %v, want %v", domains, c.wantDomains)
+			}
+		})
+	}
+}
+
+// A non-tenant-access action puts exactly one query, whatever its domain: an
+// account-level action whose decision names no tenant is decided in the
+// platform domain, and a tenant-level action in the tenant's own domain. A miss
+// in that one domain is a denial, and the engine is asked no second time —
+// authn.tenant.access is the only action with a query after a miss.
+func TestANonAccessActionDecidesInOneQuery(t *testing.T) {
+	cases := []struct {
+		name   string
+		action authn.Action
+		tenant string
+		domain authz.Domain
+	}{
+		{"an account-level action with no tenant decides in the platform domain", authn.ActionAccountRead, "", authz.PlatformDomain},
+		{"a tenant-level action decides in its tenant's domain", authn.ActionSessionRead, "acme", "acme"},
+	}
+	for _, c := range cases {
+		t.Run(c.name, func(t *testing.T) {
+			enforcer := &stubEnforcer{}
+			enforcer.answer = func(authz.Query) (bool, error) { return false, nil }
+			p := &product{enforcer: enforcer}
+
+			allow, err := p.Decide(t.Context(), authn.Decision{
+				Action: c.action,
+				Actor:  identity(t, "alice"),
+				Tenant: c.tenant,
+			})
+			if err != nil {
+				t.Fatalf("Decide gave an error: %v", err)
+			}
+			if allow {
+				t.Fatal("Decide allowed a query the engine denied")
+			}
+			got := enforcer.queries()
+			if len(got) != 1 || got[0].Domain != c.domain {
+				t.Fatalf("the engine was asked %v, want one query in the %q domain", got, c.domain)
+			}
+		})
+	}
+}
+
+// The subject is the actor's accountability key. Under an impersonation the
+// decision is made for the account whose hands are on the request, not for the
+// account the request is taken to be from: the engine is asked about the actor.
+func TestDecideTakesTheActorsKey(t *testing.T) {
+	enforcer := &stubEnforcer{}
+	enforcer.answer = func(authz.Query) (bool, error) { return true, nil }
+	p := &product{enforcer: enforcer}
+
+	actor := identity(t, "acct-bob",
+		authntest.WithActor("acct-alice"),
+		authntest.WithSession("sess-1"),
+		authntest.WithScope("acme"))
+	if actor.Account() != "acct-bob" || actor.Actor() != "acct-alice" {
+		t.Fatalf("the impersonated identity is account %q actor %q, want acct-bob acct-alice",
+			actor.Account(), actor.Actor())
+	}
+
+	_, err := p.Decide(t.Context(), authn.Decision{
+		Action: authn.ActionAccountRead,
+		Actor:  actor,
+		Tenant: "acme",
+	})
+	if err != nil {
+		t.Fatalf("Decide gave an error: %v", err)
+	}
+	got := enforcer.queries()
+	if len(got) != 1 || got[0].Subject != "acct-alice" {
+		t.Fatalf("the engine was asked %v, want the subject acct-alice", got)
+	}
+}
+
+// The module's own descriptor is driven through a real registry, holding what a
+// decider built by hand cannot: that New takes the engine up from the registry
+// the way a host's command does, and that the module provides the seam
+// authn.Decider under the name the command tree uses.
+func TestTheRegistryDeliversTheDecider(t *testing.T) {
+	enforcer := authztest.NewEnforcer()
+	enforcer.Answer(func(authz.Query) bool { return true })
+
+	reg := authztest.Registry(t, `{}`, Module())
+	authztest.AddProvider(reg, authztest.EnforcerProvider(enforcer))
+	authztest.AddProvider(reg, authztest.CatalogProvider(authztest.NewCatalog(authz.PermissionAccountRead)))
+
+	var delivered authn.Decider
+	err := reg.Drive(t.Context(), core.Drive{
+		Depth: core.StageStart,
+		// The name is a literal and not ModuleName: the host writes the
+		// published key into its command tree, so a rename that left the
+		// constant and its uses agreeing would break that host with the tests
+		// still green.
+		Participants: []string{"authz.guard"},
+		Action: func(ctx context.Context, reg *core.Registry) error {
+			d, err := core.Resolve[authn.Decider](reg)
+			if err != nil {
+				return err
+			}
+			delivered = d
+			allow, err := d.Decide(ctx, authn.Decision{
+				Action: authn.ActionAccountRead,
+				Actor:  identity(t, "alice"),
+				Tenant: "acme",
+			})
+			if err != nil {
+				return err
+			}
+			if !allow {
+				t.Error("the delivered decider refused an action the engine allowed")
+			}
+			return nil
+		},
+	})
+	if err != nil {
+		t.Fatalf("the assembly did not drive: %v", err)
+	}
+	if delivered == nil {
+		t.Fatal("the drive delivered no authn.Decider")
+	}
+	want := authz.Query{Subject: "alice", Domain: "acme", Object: "account", Action: "read"}
+	if got := enforcer.Asked(); !slices.Equal(got, []authz.Query{want}) {
+		t.Errorf("the engine was asked %v, want %v", got, want)
+	}
+}
+
+// The module requires the catalog as it requires the engine: a command that
+// brings this module in without a catalog fails the startup, so a host that
+// provides an engine but no policy catalog learns it is incomplete rather than
+// starting a decider whose route declarations can check nothing.
+func TestTheRegistryRefusesWithoutACatalog(t *testing.T) {
+	reg := authztest.Registry(t, `{}`, Module())
+	authztest.AddProvider(reg, authztest.EnforcerProvider(authztest.NewEnforcer()))
+
+	err := reg.Drive(t.Context(), core.Drive{
+		Depth:        core.StageNew,
+		Participants: []string{ModuleName},
+	})
+	if !errors.Is(err, core.ErrMissingProvider) {
+		t.Fatalf("a drive with no catalog returned %v, want ErrMissingProvider", err)
+	}
+}
+
+// A second provider of the decision seam fails the startup. The module delivers
+// authn.Decider exclusively and states StateEnabled, so two providers is not a
+// configuration resolution stands one of them down from: the seam has one
+// implementation, and which one answers must not be left to resolution order or
+// to a runtime ErrAmbiguousProvider. The stand-in claims nothing exclusively,
+// which is what the guard module's own exclusive claim has to catch.
+func TestASecondDeciderFailsTheStartup(t *testing.T) {
+	reg := authztest.Registry(t, `{}`, Module())
+	authztest.AddProvider(reg, authztest.EnforcerProvider(authztest.NewEnforcer()))
+	authztest.AddProvider(reg, authztest.CatalogProvider(authztest.NewCatalog(authz.PermissionAccountRead)))
+	authztest.AddProvider(reg, authztest.Provider{
+		Name:     "stand-in.decider",
+		Token:    (*authn.Decider)(nil),
+		Instance: refusingDecider{},
+	})
+
+	err := reg.Drive(t.Context(), core.Drive{
+		Depth:        core.StageStart,
+		Participants: []string{ModuleName},
+	})
+	if !errors.Is(err, core.ErrExclusiveViolated) {
+		t.Fatalf("a second provider of the seam ended the drive with %v, want ErrExclusiveViolated", err)
+	}
+}
+
+// refusingDecider is a second implementation of the seam, delivered by a
+// stand-in module that claims nothing exclusively.
+type refusingDecider struct{}
+
+func (refusingDecider) Decide(context.Context, authn.Decision) (bool, error) { return false, nil }

@@ -297,7 +297,7 @@ speed 不引入进程边界。宿主是单一进程，注册表与全部模块�
 | [authn-threats](modules/design-authn-threats.md) | 部分实现 — 缺日志字面量的脱敏与持有放宽方向设置项的模块的设置变更订阅；网关默认守全部端、出口检查、跨源检查、冒充范围核对、失败即拒绝、判决不可字面构造、受限出站客户端、口令保护、失败退避与 `valid_after`、会话、令牌、短信、企业 SSO、冒充、管理面与准入的对策，以及 go-jose 与 goxmldsig 的版本下限，均已在 |
 | [tenant](modules/design-tenant.md) | 已实现 |
 | [tenant-admission](modules/design-tenant-admission.md) | 已实现 |
-| [authz](modules/design-authz.md) | 未实现 |
+| [authz](modules/design-authz.md) | 部分实现 — 判定核心俱在（根包的类型与判定接口、权限常量与 `authn.Action` 的对齐及平台域保留值、`ModelText`、哨兵、`authz.policy` 的模块登记与三张表及按方言迁移、权限目录、`Manager`、账户生命周期清理、平台域启动核对、配置与设置键、薄 `persist.Adapter`、Casbin 快照装载与原子换指针、启动期模型自检与夹具、`authz.guard` 对 `authn.Decider` 的排他交付与动作翻译表、词表对齐守卫与根包依赖守卫、`authztest`）；请求期中间件与授权阶段登记、路由声明登记表 `Gate`、handler 内判定 API `Guard`、403 与 503 的写出及指标 `authz.guard.decisions`、`authz.admin` 管理面仍缺，分项状态见文档 |
 | [kv](modules/design-kv.md) | 已实现 |
 | [event](modules/design-event.md) | 已实现 |
 | [outbox](modules/design-outbox.md) | 已实现 |
