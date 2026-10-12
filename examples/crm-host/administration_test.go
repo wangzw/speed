@@ -1061,9 +1061,15 @@ func TestAnOperatorLowersATenantsRateLimit(t *testing.T) {
 		expect(t, "bob's request past acme's limit",
 			h.get(t, apiEndpoint, "/members", acme.Alias, signedIn(bob)), nethttp.StatusTooManyRequests)
 
-		c.awaitTrailRow(acme.ID, "the limiter's refusal", func(r trailRow) bool {
-			return r.source == "request" && r.outcome == "429" && r.actor == bob.ID
-		})
+		// The recording stage sits inside the throttling stage, so the
+		// limiter's own refusal leaves no row: the case gives any capture path
+		// the time it would need and then holds that absence.
+		time.Sleep(200 * time.Millisecond)
+		for _, r := range c.trailRowsOf(acme.ID) {
+			if r.source == "request" && r.outcome == "429" && r.actor == bob.ID {
+				t.Errorf("the journal holds a row for the limiter's refusal, and the recording stage sits inside the throttling one: %+v", r)
+			}
+		}
 	})
 }
 

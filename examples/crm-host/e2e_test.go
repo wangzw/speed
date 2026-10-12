@@ -6,12 +6,10 @@ import (
 	"encoding/json"
 	"errors"
 	"io"
-	"log/slog"
 	"maps"
 	nethttp "net/http"
 	"os"
 	"path/filepath"
-	"reflect"
 	"slices"
 	"sort"
 	"strings"
@@ -247,19 +245,19 @@ func TestEveryStackServesTheSamePath(t *testing.T) {
 // requireSpanExported waits for the API requests' server span to leave through
 // the export backend the stack names: the in-process receiver for the OTLP
 // backend, which decodes it, the run's standard output for the stdout one. The
-// span is named for the endpoint and the method the telemetry layer observed,
+// span is named for the method and the route the telemetry layer observed,
 // which is a string nothing else in the run writes.
 func requireSpanExported(t *testing.T, c *crmCase, h *crmHost) {
 	t.Helper()
+	name := nethttp.MethodGet + " /members"
 	if c.receiver != nil {
-		name := apiEndpoint + " " + nethttp.MethodGet
 		if !eventually(settleLimit, func() bool { return len(c.receiver.spansNamed(name)) > 0 }) {
 			t.Errorf("no span named %s reached the OTLP receiver after the requests were served", name)
 		}
 		c.receiver.requireDecoded(t)
 		return
 	}
-	spanName := `"Name":"` + apiEndpoint + ` GET"`
+	spanName := `"Name":"` + name + `"`
 	if !eventually(settleLimit, func() bool { return strings.Contains(h.output(), spanName) }) {
 		t.Errorf("no span named %s reached the run's standard output; it wrote:\n%s", spanName, h.outputForReport())
 	}
@@ -1095,32 +1093,17 @@ func schemaFields(props map[string]json.RawMessage) []string {
 	return out
 }
 
-// unlandedMsg is the startup record of an HTTP middleware constraint that
-// placed nothing.
-const unlandedMsg = "an HTTP middleware constraint landed on no layer"
-
 // TestTheAdmissionLayerSitsInsideTheJournalAndTheLimiter is the case for where
-// the admission layer lands on the API endpoint's chain. The layer anchors on
-// the four it has to sit inside, and the chain listing is where those anchors
-// are readable as positions that landed rather than as spellings: an anchor no
-// layer stands for is dropped with nothing said about where the layer went.
+// the admission layer lands on the API endpoint's chain: it declares the
+// authorizing stage, which the stage order puts inside the identifying, the
+// throttling and the recording stages, and the chain listing is where that is
+// read off.
 //
 // The chain the real modules assembled is also the chain-order summary the
-// design leaves as an unverified assumption: every phase's modules are present
-// on this endpoint, and the listing is checked for the whole order the design
-// fixes — the gateway, then resolution, then the journal, then rate limiting,
-// then admission — rather than the admission layer's position alone. The
-// ordering is derived from the After entries and preferences the algorithm
-// reads, and no assembly had been run when it was written down.
-//
-// The startup's record of constraints that landed on no layer is held to the
-// ones this configuration is known to leave: the journal anchors inside
-// resolution on every endpoint it covers, and two of those endpoints resolve no
-// tenant. Those two are reported, and at Info: no layer there stands for the
-// capability, which is a legal assembly rather than a mistake to warn about.
-// Any other is a layer whose position guarantee is gone — a module a slice
-// added anchoring on a capability nobody stands for on that endpoint — and
-// fails here by name.
+// design leaves as an unverified assumption: every stage's modules are present
+// on this endpoint, and the listing is checked for the whole order the stages
+// fix — the gateway, then resolution, then rate limiting, then the journal,
+// then admission — rather than the admission layer's position alone.
 func TestTheAdmissionLayerSitsInsideTheJournalAndTheLimiter(t *testing.T) {
 	c := newCase(t, stackNamed(t, localStack))
 	c.migrate()
@@ -1145,10 +1128,10 @@ func TestTheAdmissionLayerSitsInsideTheJournalAndTheLimiter(t *testing.T) {
 				rec["chain"], admissionModuleName, outer)
 		}
 	}
-	// The whole order the design fixes, outermost first, with the admission
-	// layer innermost of the layers it anchors on. Each layer stands outside the
-	// next; a pair where one is missing is left to the loop above, which names it.
-	order := []string{"authn.gate", resolve.ModuleName, journal.ModuleName, ratelimit.ModuleName, admissionModuleName}
+	// The whole order the stages fix, outermost first. Each layer stands
+	// outside the next; a pair where one is missing is left to the loop above,
+	// which names it.
+	order := []string{"authn.gate", resolve.ModuleName, ratelimit.ModuleName, journal.ModuleName, admissionModuleName}
 	for i := 1; i < len(order); i++ {
 		outer, inner := at(order[i-1]), at(order[i])
 		if outer < 0 || inner < 0 {
@@ -1158,46 +1141,23 @@ func TestTheAdmissionLayerSitsInsideTheJournalAndTheLimiter(t *testing.T) {
 			t.Errorf("the chain %q does not put %s outside %s", rec["chain"], order[i-1], order[i])
 		}
 	}
-
-	resolution := reflect.TypeFor[tenant.Resolution]()
-	resolutionName := resolution.PkgPath() + "." + resolution.Name()
-	reported := map[string]bool{}
-	for _, r := range records(h.output()) {
-		if r["msg"] != unlandedMsg {
-			continue
-		}
-		known := (r["endpoint"] == accountEndpoint || r["endpoint"] == adminEndpoint) &&
-			r["middleware"] == journal.ModuleName && r["capability"] == resolutionName
-		if !known {
-			t.Errorf("a middleware constraint landed on no layer beyond the journal's resolution anchor on %s and %s: "+
-				"endpoint=%s middleware=%s declaration=%s capability=%s cause=%q",
-				accountEndpoint, adminEndpoint, r["endpoint"], r["middleware"], r["declaration"], r["capability"], r["cause"])
-			continue
-		}
-		reported[r["endpoint"]] = true
-		// No layer on those endpoints stands for resolution, which an
-		// assembly resolving tenants on some endpoints alone leaves by
-		// design, so the record is information rather than a warning.
-		if r["level"] != slog.LevelInfo.String() {
-			t.Errorf("the journal's resolution anchor on %s, which no layer there stands for, is reported at %s, "+
-				"want %s", r["endpoint"], r["level"], slog.LevelInfo)
-		}
-	}
-	for _, endpoint := range []string{accountEndpoint, adminEndpoint} {
-		if !reported[endpoint] {
-			t.Errorf("the startup does not report the journal's resolution anchor on %s, which resolves no tenant, "+
-				"as landing on no layer; the run wrote:\n%s", endpoint, h.outputForReport())
-		}
-	}
 }
 
 // chainLayers splits a chain listing into its layers' names, outermost first:
 // "http:base -> http:fallback -> authn.gate(github.com/...) -> ..." reads as
-// ["http:base", "http:fallback", "authn.gate", ...].
+// ["http:base", "http:fallback", "authn.gate", ...]. The listing prefixes the
+// first layer of a stage with the stage marker, joined by a space, so
+// "[identify] authn.gate" reads as "authn.gate".
 func chainLayers(chain string) []string {
 	var names []string
 	for part := range strings.SplitSeq(chain, " -> ") {
 		name, _, _ := strings.Cut(strings.TrimSpace(part), "(")
+		if strings.HasPrefix(name, "[") {
+			_, rest, found := strings.Cut(name, "] ")
+			if found {
+				name = rest
+			}
+		}
 		names = append(names, name)
 	}
 	return names
@@ -1811,9 +1771,8 @@ func TestTheRequestDurationKeepsItsFixedShape(t *testing.T) {
 			values[attr.Key] = attr.Value.Value
 		}
 		keys := slices.Sorted(maps.Keys(values))
-		if !slices.Equal(keys, []string{"http.request.method", "http.response.status_code"}) {
-			t.Errorf("a data point of the request duration carries the attributes %v, want the method and the status alone",
-				keys)
+		if err := requestDurationAttributeError(keys); err != nil {
+			t.Errorf("a data point of the request duration %v", err)
 			continue
 		}
 		method, _ := values["http.request.method"].(string)
