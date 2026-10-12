@@ -340,8 +340,12 @@ func (p *product) DeleteBinding(ctx context.Context, tenant, account string, rol
 // the two inside one transaction: as two independent statements a concurrent
 // writer could commit between them — a grant landing on a role a concurrent
 // delete removed, or on a role a concurrent write turned builtin — and leave a
-// row the manager's own rules say must not exist. The transaction is this
-// module's own; a write shares no transaction with another module.
+// row the manager's own rules say must not exist. The transaction alone is not
+// enough under READ COMMITTED, where each statement sees the last committed row:
+// the check takes the role row's lock through roleState, so the delete and the
+// guarded write serialise on that one row and the later of the two reads what the
+// earlier one committed. The transaction is this module's own; a write shares no
+// transaction with another module.
 func (p *product) write(ctx context.Context, fn func(tx *gorm.DB) error) error {
 	return p.crossing(ctx).Transaction(fn)
 }
@@ -353,10 +357,24 @@ func (p *product) write(ctx context.Context, fn func(tx *gorm.DB) error) error {
 // ordinary answer to "does this role exist yet" and not a failed statement, and
 // a Take would report it as gorm.ErrRecordNotFound, which the statement log
 // writes at Error.
+//
+// The read takes the role row's exclusive lock (SELECT ... FOR UPDATE). It is
+// run inside the write's own transaction, and the lock is held until that
+// transaction ends, so it serialises the check against a concurrent write that
+// touches the same role: a delete waits for the check to commit before it
+// removes the role, and the check waits for a delete already in flight and then
+// reads the role as gone. Without the lock the check is a plain read, and under
+// READ COMMITTED a delete can commit in the window between the check and the row
+// it guards — leaving a grant or a binding on a role that no longer exists, a
+// row the engine decides with because it reads authz_grants and authz_bindings
+// and never authz_roles. The clause is inert where the dialect has no row locks
+// (SQLite ignores it and its single writer already serialises the writes).
 func roleState(ctx context.Context, tx *gorm.DB, tenant string, role authz.Role) (builtin, found bool, err error) {
 	var rows []roleRow
 	err = tx.WithContext(tenancy.CrossTenant(ctx)).
-		Where("tenant_id = ? AND role = ?", tenant, string(role)).Limit(1).Find(&rows).Error
+		Where("tenant_id = ? AND role = ?", tenant, string(role)).
+		Clauses(clause.Locking{Strength: clause.LockingStrengthUpdate}).
+		Limit(1).Find(&rows).Error
 	if err != nil {
 		return false, false, fmt.Errorf("authz/policy: reading the role %q of tenant %q: %w", role, tenant, err)
 	}

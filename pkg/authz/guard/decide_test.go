@@ -337,13 +337,13 @@ func TestTheRegistryDeliversTheDecider(t *testing.T) {
 	enforcer := authztest.NewEnforcer()
 	enforcer.Answer(func(authz.Query) bool { return true })
 
-	reg := authztest.Registry(t, `{}`, Module())
+	reg := authztest.Registry(t, guardedBody, Module())
 	authztest.AddProvider(reg, authztest.EnforcerProvider(enforcer))
 	authztest.AddProvider(reg, authztest.CatalogProvider(authztest.NewCatalog(authz.PermissionAccountRead)))
 
 	var delivered authn.Decider
 	err := reg.Drive(t.Context(), core.Drive{
-		Depth: core.StageStart,
+		Depth: core.StageNew,
 		// The name is a literal and not ModuleName: the host writes the
 		// published key into its command tree, so a rename that left the
 		// constant and its uses agreeing would break that host with the tests
@@ -386,7 +386,7 @@ func TestTheRegistryDeliversTheDecider(t *testing.T) {
 // provides an engine but no policy catalog learns it is incomplete rather than
 // starting a decider whose route declarations can check nothing.
 func TestTheRegistryRefusesWithoutACatalog(t *testing.T) {
-	reg := authztest.Registry(t, `{}`, Module())
+	reg := authztest.Registry(t, guardedBody, Module())
 	authztest.AddProvider(reg, authztest.EnforcerProvider(authztest.NewEnforcer()))
 
 	err := reg.Drive(t.Context(), core.Drive{
@@ -405,7 +405,7 @@ func TestTheRegistryRefusesWithoutACatalog(t *testing.T) {
 // to a runtime ErrAmbiguousProvider. The stand-in claims nothing exclusively,
 // which is what the guard module's own exclusive claim has to catch.
 func TestASecondDeciderFailsTheStartup(t *testing.T) {
-	reg := authztest.Registry(t, `{}`, Module())
+	reg := authztest.Registry(t, guardedBody, Module())
 	authztest.AddProvider(reg, authztest.EnforcerProvider(authztest.NewEnforcer()))
 	authztest.AddProvider(reg, authztest.CatalogProvider(authztest.NewCatalog(authz.PermissionAccountRead)))
 	authztest.AddProvider(reg, authztest.Provider{

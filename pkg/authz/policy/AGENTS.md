@@ -68,10 +68,15 @@ here must not cross, and how to run it.
   table and the other replicas reload at their next tick or a later change.
 - **The table is written one row at a time, never rewritten wholesale.** A
   `Manager` write commits in its own transaction, and a write that checks a role
-  first — a grant, a binding, a role rewrite — does that check and the row it
-  guards in the same transaction, so a concurrent writer cannot land between
-  them and leave a grant or a binding on a role that was just removed or turned
-  builtin. The thin adapter's `SavePolicy` is left unimplemented because a
+  first — a grant, a binding, a role rewrite, a delete — does that check and the
+  row it guards in the same transaction, so a concurrent writer cannot land
+  between them and leave a grant or a binding on a role that was just removed or
+  turned builtin. The check reads the role under its own row lock (`SELECT ...
+  FOR UPDATE`), which is what makes the guarantee hold under `READ COMMITTED`: a
+  delete takes the same lock, so the two serialise and the later one reads what
+  the earlier committed rather than a stale present-row. The lock is inert on a
+  dialect without row locks, where the single writer already serialises the
+  writes. The thin adapter's `SavePolicy` is left unimplemented because a
   clear-and-rewrite would drop a write that landed between its read and its
   write. A host that wants a different store shape is the shape to reject.
 - **The store is read and written through the adapter's construction, not per

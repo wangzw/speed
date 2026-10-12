@@ -6,6 +6,7 @@ import (
 	"path/filepath"
 	"testing"
 
+	"github.com/gin-gonic/gin"
 	"gorm.io/gorm"
 
 	"github.com/vislake/speed/pkg/authn"
@@ -17,6 +18,7 @@ import (
 	"github.com/vislake/speed/pkg/config"
 	"github.com/vislake/speed/pkg/core"
 	"github.com/vislake/speed/pkg/db"
+	speedhttp "github.com/vislake/speed/pkg/http"
 	"github.com/vislake/speed/pkg/internal/dbtest"
 	"github.com/vislake/speed/pkg/tenant"
 )
@@ -72,6 +74,10 @@ func createTables(t *testing.T, handle *gorm.DB) {
 	}
 }
 
+// routerBody satisfies the guard module's required endpoint list, so a drive
+// that only needs the module to wire reaches Init.
+const routerBody = `{"authz":{"guard":{"endpoints":["public"]}}}`
+
 // assembly builds a registry holding the policy and guard modules and the
 // stand-ins they need.
 func assembly(t *testing.T, roster tenant.Catalog) (*core.Registry, db.Database, []string) {
@@ -81,7 +87,7 @@ func assembly(t *testing.T, roster tenant.Catalog) (*core.Registry, db.Database,
 
 	policyModule := policy.Module()
 	guardModule := guard.Module()
-	reader := authztest.ConfigReaderAll(t, `{}`, policyModule, guardModule)
+	reader := authztest.ConfigReaderAll(t, routerBody, policyModule, guardModule)
 
 	reg := core.New()
 	reg.Register(config.Module())
@@ -90,14 +96,32 @@ func assembly(t *testing.T, roster tenant.Catalog) (*core.Registry, db.Database,
 	reg.Register(guardModule)
 	stand := dbStandIn{name: "stand-in.database", base: database}
 	reg.Register(stand.module())
+	// The guard module takes the entry point up at Init; the stand-in declares
+	// the endpoint the configuration guards, so the module wires without a
+	// listener.
+	supply(reg, "stand-in.router", (*speedhttp.Router)(nil), routerStub{})
 
-	names := []string{policy.ModuleName, guard.ModuleName, stand.name}
+	names := []string{policy.ModuleName, guard.ModuleName, stand.name, "stand-in.router"}
 	if roster != nil {
 		supply(reg, "stand-in.roster", (*tenant.Catalog)(nil), roster)
 		names = append(names, "stand-in.roster")
 	}
 	return reg, database, names
 }
+
+// routerStub stands for an entry point module: one endpoint whose registrations
+// are dropped, so wiring succeeds without a listener.
+type routerStub struct{}
+
+func (routerStub) Endpoint(string) (speedhttp.Endpoint, error) { return endpointStub{}, nil }
+func (routerStub) Endpoints() []string                         { return []string{"public"} }
+
+// endpointStub accepts registrations and does nothing with them.
+type endpointStub struct{}
+
+func (endpointStub) Route(string, string, ...gin.HandlerFunc) {}
+func (endpointStub) Use(speedhttp.Middleware)                 {}
+func (endpointStub) Accepting() bool                          { return true }
 
 // identity builds the identity the authentication fixture would have left on a
 // request, for a decision's actor.
