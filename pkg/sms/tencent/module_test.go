@@ -6,18 +6,18 @@ import (
 	"log/slog"
 	"testing"
 
-	"github.com/vislake/speed/pkg/authn"
-	"github.com/vislake/speed/pkg/authn/authntest"
 	"github.com/vislake/speed/pkg/config"
 	"github.com/vislake/speed/pkg/core"
 	"github.com/vislake/speed/pkg/log"
+	"github.com/vislake/speed/pkg/sms"
+	"github.com/vislake/speed/pkg/sms/internal/configtest"
 )
 
 // driveSender assembles the module the way a host does, with the real
 // configuration loader, and returns the sender it delivers.
 func driveSender(t *testing.T, document string) *sender {
 	t.Helper()
-	reader := authntest.ConfigReader(t, Module(), document)
+	reader := configtest.Reader(t, document, Module())
 	reg := core.New()
 	reg.Register(config.Module())
 	reg.Supply(reader, config.ModuleName)
@@ -27,7 +27,7 @@ func driveSender(t *testing.T, document string) *sender {
 		Depth:        core.StageInit,
 		Participants: []string{ModuleName},
 		Action: func(_ context.Context, reg *core.Registry) error {
-			v, err := core.Resolve[authn.SMSSender](reg)
+			v, err := core.Resolve[sms.Sender](reg)
 			if err != nil {
 				return err
 			}
@@ -51,22 +51,22 @@ func TestTheModuleDeliversTheSenderNamedTencent(t *testing.T) {
 	if got := s.Name(); got != "tencent" {
 		t.Errorf("the sender reports %q, want tencent", got)
 	}
-	if ModuleName != "authn.sms.tencent" || ConfigNamespace != "authn.sms.tencent" {
-		t.Errorf("the module name %q and namespace %q, want authn.sms.tencent", ModuleName, ConfigNamespace)
+	if ModuleName != "sms.tencent" || ConfigNamespace != "sms.tencent" {
+		t.Errorf("the module name %q and namespace %q, want sms.tencent", ModuleName, ConfigNamespace)
 	}
 }
 
 // The claim is exclusive: a run that also holds another carrier fails the
 // resolution rather than letting two senders stand.
 func TestASecondExclusiveCarrierFailsTheResolution(t *testing.T) {
-	reader := authntest.ConfigReader(t, Module(), body(t, section(validTemplates(), nil)))
+	reader := configtest.Reader(t, body(t, section(validTemplates(), nil)), Module())
 	reg := core.New()
 	reg.Register(config.Module())
 	reg.Supply(reader, config.ModuleName)
 	reg.Register(Module())
 	reg.Register(core.Module{
 		Name:     "carrier.other",
-		Provides: []core.Provision{{Token: (*authn.SMSSender)(nil), Exclusive: true}},
+		Provides: []core.Provision{{Token: (*sms.Sender)(nil), Exclusive: true}},
 		Prepare: func(context.Context, *core.Registry) (core.Enablement, error) {
 			return core.Enablement{State: core.StateEnabled}, nil
 		},
@@ -86,9 +86,11 @@ type otherCarrier struct{}
 
 func (otherCarrier) Name() string { return "other" }
 
-func (otherCarrier) Send(context.Context, authn.SMS) (authn.SendReceipt, error) {
-	return authn.SendReceipt{}, nil
+func (otherCarrier) Send(context.Context, sms.Message) (sms.Receipt, error) {
+	return sms.Receipt{}, nil
 }
+
+func (otherCarrier) Declared() []sms.Template { return nil }
 
 // capturingRedaction records the rules registered with it.
 type capturingRedaction struct {
@@ -110,25 +112,38 @@ func (l *capturingLogger) Named(string) *slog.Logger { return slog.Default() }
 
 func (l *capturingLogger) Redaction() log.Redaction { return l.red }
 
-// The credentials are registered as literal redaction rules, so a credential
-// that turns up in any log line of the process is masked.
-func TestTheCredentialsAreRegisteredAsRedactionRules(t *testing.T) {
-	red := &capturingRedaction{}
-	reg := core.New()
-	reg.Register(core.Module{
+// providingLoggerModule is a logging capability the drive can construct.
+func providingLoggerModule(red *capturingRedaction) core.Module {
+	return core.Module{
 		Name:     "stand-in.logger",
 		Provides: []core.Provision{{Token: (*log.Logger)(nil)}},
 		New:      func(context.Context, *core.Registry) (any, error) { return &capturingLogger{red}, nil },
+	}
+}
+
+// The credentials are registered as literal redaction rules through the module
+// factory, so a credential that turns up in any log line of the process is
+// masked.
+func TestTheCredentialsAreRegisteredAsRedactionRules(t *testing.T) {
+	red := &capturingRedaction{}
+	reg := core.New()
+	reg.Register(config.Module())
+	reg.Supply(configtest.Reader(t, body(t, section(validTemplates(), nil)), Module()), config.ModuleName)
+	reg.Register(providingLoggerModule(red))
+	reg.Register(Module())
+
+	err := reg.Drive(context.Background(), core.Drive{
+		Depth:        core.StageInit,
+		Participants: []string{ModuleName, config.ModuleName, "stand-in.logger"},
 	})
-	reg.Supply(&capturingLogger{red}, "stand-in.logger")
-
-	registerSecrets(reg, testConfig())
-
+	if err != nil {
+		t.Fatalf("driving the module: %v", err)
+	}
 	if len(red.matches) == 0 {
 		t.Fatal("no redaction rule was registered for the credentials")
 	}
 	match := red.matches[0]
-	for _, secret := range []string{testConfig().secretID, testConfig().secretKey} {
+	for _, secret := range []string{"AKIDexample", "secret-key-example"} {
 		line := "a request carried " + secret + " somewhere"
 		if spans := match(line); len(spans) == 0 {
 			t.Errorf("the credential %q is not masked in %q", secret, line)
@@ -140,5 +155,14 @@ func TestTheCredentialsAreRegisteredAsRedactionRules(t *testing.T) {
 // without logs has no log to protect.
 func TestWithoutLoggingTheRegistrationIsSkipped(t *testing.T) {
 	reg := core.New()
-	registerSecrets(reg, testConfig()) // must not panic
+	reg.Register(config.Module())
+	reg.Supply(configtest.Reader(t, body(t, section(validTemplates(), nil)), Module()), config.ModuleName)
+	reg.Register(Module())
+	err := reg.Drive(context.Background(), core.Drive{
+		Depth:        core.StageInit,
+		Participants: []string{ModuleName, config.ModuleName},
+	})
+	if err != nil {
+		t.Fatalf("driving the module with no logging: %v", err)
+	}
 }

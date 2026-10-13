@@ -11,6 +11,7 @@ import (
 	"github.com/vislake/speed/pkg/authn"
 	"github.com/vislake/speed/pkg/event"
 	"github.com/vislake/speed/pkg/settings"
+	"github.com/vislake/speed/pkg/sms"
 )
 
 // metricLabels returns every attribute key and value of every data point the
@@ -55,7 +56,7 @@ func TestTheCodeAndTheRootKeyNeverReachTheLog(t *testing.T) {
 
 	// A carrier refusal is the path that logs the carrier's own error text; the
 	// code must not be in the line even though the message carried it.
-	r.sender.setResult(authn.ErrSMSRejected)
+	r.sender.setResult(sms.ErrRejected)
 	r.p.deliverOne(context.Background(), msg)
 
 	logs := r.logs.String()
@@ -84,7 +85,7 @@ func TestNoMetricAttributeCarriesASecret(t *testing.T) {
 	}
 	msg := <-r.p.pool.queue
 	code := msg.Params["code"]
-	r.sender.setResult(authn.ErrSMSRejected)
+	r.sender.setResult(sms.ErrRejected)
 	r.p.deliverOne(context.Background(), msg)
 	// A relaxed setting records on the audit-failure counter and writes a Warn.
 	r.bus.deliver(context.Background(), event.Event{
@@ -119,7 +120,7 @@ func TestTheMetricNamesAndAttributesAreTheDesignsLiterals(t *testing.T) {
 	r.allow()
 	// A delivered success records outcome=sent on the sends counter.
 	r.sender.setResult(nil)
-	r.p.deliverOne(context.Background(), authn.SMS{To: phone})
+	r.p.deliverOne(context.Background(), sms.Message{To: phone})
 	// A failed audit write records on the audit-failures counter.
 	r.audit.err = errors.New("the audit is down")
 	r.deliverChange(settings.Change{Key: codeTTLPath, Old: "5m0s", New: "8m0s"})

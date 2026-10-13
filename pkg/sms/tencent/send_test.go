@@ -17,11 +17,21 @@ import (
 
 	tc "github.com/tencentcloud/tencentcloud-sdk-go/tencentcloud/sms/v20210111"
 
-	"github.com/vislake/speed/pkg/authn"
+	"github.com/vislake/speed/pkg/sms"
 )
 
+// mustDeclaration freezes the case templates into the declaration a sender runs
+// on.
+func mustDeclaration() sms.Declaration {
+	decl, err := sms.NewDeclaration(validTemplates())
+	if err != nil {
+		panic(err)
+	}
+	return decl
+}
+
 // testConfig is the configuration the fake-endpoint cases run on: credentials
-// that sign a request, and the full template table.
+// that sign a request, and the full declared template set.
 func testConfig() resolved {
 	return resolved{
 		secretID:  "AKIDexample",
@@ -29,15 +39,15 @@ func testConfig() resolved {
 		sdkAppID:  "1400006666",
 		region:    "ap-guangzhou",
 		signName:  "Speed",
-		templates: validTemplates(),
+		decl:      mustDeclaration(),
 	}
 }
 
 // message is one SendSms the cases hand the sender.
-func message(id string) authn.SMS {
-	return authn.SMS{
+func message(id string) sms.Message {
+	return sms.Message{
 		To:       "+8613800138000",
-		Template: authn.SMSPurposeLogin,
+		Template: "authn.code.login",
 		Params:   map[string]string{"code": "123456", "ttl_minutes": "5"},
 		Locale:   "zh-CN",
 		DedupeID: id,
@@ -111,8 +121,8 @@ type wireRequest struct {
 }
 
 // Send builds the carrier request out of the message: the destination, the
-// signature and application, the template the (purpose, locale) pair selects, and
-// the parameters in the order the approved template expects.
+// signature and application, the template the (template, locale) pair selects,
+// and the parameters in the order the approved template expects.
 func TestSendBuildsTheRequestFromTheMessage(t *testing.T) {
 	var got wireRequest
 	var calls int32
@@ -129,9 +139,9 @@ func TestSendBuildsTheRequestFromTheMessage(t *testing.T) {
 		_, _ = io.WriteString(w, okBody())
 	})
 	s := newTestSender(t, host)
-	m := authn.SMS{
+	m := sms.Message{
 		To:       "+8613800138000",
-		Template: authn.SMSPurposeMFA,
+		Template: "authn.code.mfa",
 		Params:   map[string]string{"code": "123456", "ttl_minutes": "5"},
 		Locale:   "en-US",
 		DedupeID: "chal-shape",
@@ -150,7 +160,7 @@ func TestSendBuildsTheRequestFromTheMessage(t *testing.T) {
 		t.Errorf("SmsSdkAppId is %q, want the configured application", got.SmsSdkAppID)
 	}
 	if got.TemplateID != "1004" {
-		t.Errorf("TemplateId is %q, want the mfa/en-US template", got.TemplateID)
+		t.Errorf("TemplateId is %q, want the authn.code.mfa/en-US template", got.TemplateID)
 	}
 	if !reflect.DeepEqual(got.TemplateParamSet, []string{"123456", "5"}) {
 		t.Errorf("TemplateParamSet is %v, want the code then the minutes", got.TemplateParamSet)
@@ -163,24 +173,24 @@ func TestSendBuildsTheRequestFromTheMessage(t *testing.T) {
 	}
 }
 
-// An empty language reads as zh-CN, which is the template the caller's empty
-// value selects.
-func TestAnEmptyLocaleReadsChinese(t *testing.T) {
-	var got wireRequest
-	host := fakeServer(t, func(w http.ResponseWriter, r *http.Request) {
-		data, _ := io.ReadAll(r.Body)
-		_ = json.Unmarshal(data, &got)
+// An empty language is the caller's defect: this package refuses it before the
+// carrier is reached rather than reading it as a default.
+func TestAnEmptyLocaleIsRefused(t *testing.T) {
+	var calls int32
+	host := fakeServer(t, func(w http.ResponseWriter, _ *http.Request) {
+		atomic.AddInt32(&calls, 1)
 		w.Header().Set("Content-Type", "application/json")
 		_, _ = io.WriteString(w, okBody())
 	})
 	s := newTestSender(t, host)
 	m := message("chal-locale")
 	m.Locale = ""
-	if _, err := s.Send(context.Background(), m); err != nil {
-		t.Fatalf("sending: %v", err)
+	_, err := s.Send(context.Background(), m)
+	if !errors.Is(err, sms.ErrRejected) {
+		t.Fatalf("an empty language gave %v, want ErrRejected", err)
 	}
-	if got.TemplateID != "1001" {
-		t.Errorf("TemplateId is %q, want the login/zh-CN template", got.TemplateID)
+	if n := atomic.LoadInt32(&calls); n != 0 {
+		t.Errorf("the carrier was called %d times for a message with no language, want 0", n)
 	}
 }
 
@@ -194,14 +204,14 @@ func TestSendClassifiesTheCarrierAnswer(t *testing.T) {
 		body string
 		want error
 	}{
-		{"a per-number rate limit is throttled", statusBody("LimitExceeded.PhoneNumberDailyLimit"), authn.ErrSMSThrottled},
-		{"a global rate limit is throttled", statusBody("LimitExceeded.GlobalSmsSendingRateLimit"), authn.ErrSMSThrottled},
-		{"a parameter mismatch is a rejection", statusBody("FailedOperation.TemplateParamSetNotMatchApprovedTemplate"), authn.ErrSMSRejected},
-		{"an unlisted per-number code is uncertain", statusBody("FailedOperation.JsonParseFail"), authn.ErrSMSUncertain},
-		{"a top-level rate limit is throttled", errBody("LimitExceeded.AppDailyLimit"), authn.ErrSMSThrottled},
-		{"a top-level mismatch is a rejection", errBody("FailedOperation.TemplateParamSetNotMatchApprovedTemplate"), authn.ErrSMSRejected},
-		{"a top-level unlisted code is uncertain", errBody("InternalError.UnknownError"), authn.ErrSMSUncertain},
-		{"an answer with no status is uncertain", `{"Response":{"RequestId":"req-1"}}`, authn.ErrSMSUncertain},
+		{"a per-number rate limit is throttled", statusBody("LimitExceeded.PhoneNumberDailyLimit"), sms.ErrThrottled},
+		{"a global rate limit is throttled", statusBody("LimitExceeded.GlobalSmsSendingRateLimit"), sms.ErrThrottled},
+		{"a parameter mismatch is a rejection", statusBody("FailedOperation.TemplateParamSetNotMatchApprovedTemplate"), sms.ErrRejected},
+		{"an unlisted per-number code is uncertain", statusBody("FailedOperation.JsonParseFail"), sms.ErrUncertain},
+		{"a top-level rate limit is throttled", errBody("LimitExceeded.AppDailyLimit"), sms.ErrThrottled},
+		{"a top-level mismatch is a rejection", errBody("FailedOperation.TemplateParamSetNotMatchApprovedTemplate"), sms.ErrRejected},
+		{"a top-level unlisted code is uncertain", errBody("InternalError.UnknownError"), sms.ErrUncertain},
+		{"an answer with no status is uncertain", `{"Response":{"RequestId":"req-1"}}`, sms.ErrUncertain},
 	}
 	for _, c := range cases {
 		t.Run(c.name, func(t *testing.T) {
@@ -238,8 +248,8 @@ func TestEveryRateLimitCodeIsThrottled(t *testing.T) {
 		t.Run(code, func(t *testing.T) {
 			for _, body := range []string{statusBody(code), errBody(code)} {
 				s := newTestSender(t, answerServer(t, body))
-				if _, err := s.Send(context.Background(), message("chal-"+code)); !errors.Is(err, authn.ErrSMSThrottled) {
-					t.Fatalf("the code %s gave %v, want ErrSMSThrottled", code, err)
+				if _, err := s.Send(context.Background(), message("chal-"+code)); !errors.Is(err, sms.ErrThrottled) {
+					t.Fatalf("the code %s gave %v, want ErrThrottled", code, err)
 				}
 			}
 		})
@@ -252,13 +262,13 @@ func TestTheParameterMismatchCodeIsARejection(t *testing.T) {
 	code := tc.FAILEDOPERATION_TEMPLATEPARAMSETNOTMATCHAPPROVEDTEMPLATE
 	for _, body := range []string{statusBody(code), errBody(code)} {
 		s := newTestSender(t, answerServer(t, body))
-		if _, err := s.Send(context.Background(), message("chal-mismatch")); !errors.Is(err, authn.ErrSMSRejected) {
-			t.Fatalf("the mismatch code gave %v, want ErrSMSRejected", err)
+		if _, err := s.Send(context.Background(), message("chal-mismatch")); !errors.Is(err, sms.ErrRejected) {
+			t.Fatalf("the mismatch code gave %v, want ErrRejected", err)
 		}
 	}
 }
 
-// A (purpose, locale) pair the constructor did not cover never reaches the
+// A (template, locale) pair the declaration does not cover never reaches the
 // carrier: nothing is composed, so the send is a definite rejection and not an
 // uncertain one, and the endpoint is never called.
 func TestAnUncoveredTemplateIsRefusedWithoutCallingTheCarrier(t *testing.T) {
@@ -270,10 +280,10 @@ func TestAnUncoveredTemplateIsRefusedWithoutCallingTheCarrier(t *testing.T) {
 	})
 	s := newTestSender(t, host)
 	m := message("chal-uncovered")
-	m.Locale = "fr-FR" // outside the closed set the templates cover
+	m.Locale = "fr-FR" // a language no declared template has a code for
 	_, err := s.Send(context.Background(), m)
-	if !errors.Is(err, authn.ErrSMSRejected) {
-		t.Fatalf("an uncovered template gave %v, want ErrSMSRejected", err)
+	if !errors.Is(err, sms.ErrRejected) {
+		t.Fatalf("an uncovered template gave %v, want ErrRejected", err)
 	}
 	if n := atomic.LoadInt32(&calls); n != 0 {
 		t.Errorf("the carrier was called %d times for a message with no template, want 0", n)
@@ -294,8 +304,8 @@ func TestATimedOutSendIsUncertain(t *testing.T) {
 	_, err := s.Send(ctx, message("chal-timeout"))
 	// Let the server handler return, so its server can close, before asserting.
 	close(release)
-	if !errors.Is(err, authn.ErrSMSUncertain) {
-		t.Fatalf("a timed-out send gave %v, want ErrSMSUncertain", err)
+	if !errors.Is(err, sms.ErrUncertain) {
+		t.Fatalf("a timed-out send gave %v, want ErrUncertain", err)
 	}
 }
 

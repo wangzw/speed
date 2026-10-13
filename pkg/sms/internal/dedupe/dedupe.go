@@ -1,9 +1,9 @@
 // Package dedupe remembers the outcome of what a carrier has already been
 // asked to do, keyed by a stable identifier, so that the same identifier
 // reaches the carrier at most once. A carrier is not idempotent — a second
-// send delivers and bills a second message — so both SMS carrier modules in
-// this capability hold one of these and take a message's DedupeID through it
-// before calling the vendor.
+// send delivers and bills a second message — so the SMS carrier modules hold
+// one of these and take a message's DedupeID through it before calling the
+// vendor.
 //
 // A caller begins with the identifier: the first caller owns the operation and
 // settles it, and any caller that finds the identifier taken waits for the

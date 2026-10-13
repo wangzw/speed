@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"path/filepath"
+	"strings"
 	"testing"
 
 	"gorm.io/gorm"
@@ -16,6 +17,7 @@ import (
 	"github.com/vislake/speed/pkg/db"
 	"github.com/vislake/speed/pkg/internal/dbtest"
 	"github.com/vislake/speed/pkg/settings"
+	"github.com/vislake/speed/pkg/sms"
 )
 
 // The stand-in modules an assembly drives: the capabilities another module
@@ -46,7 +48,7 @@ func standIn(name string, instance any, exclusive bool, tokens ...core.Token) co
 // root key are there.
 type assembly struct {
 	// sender, when non-nil, is supplied to a stand-in for the carrier module.
-	sender authn.SMSSender
+	sender sms.Sender
 	// secondSender adds a second carrier stand-in, for the exclusive-conflict
 	// case.
 	secondSender bool
@@ -94,11 +96,11 @@ func (a assembly) drive(t *testing.T, action func(ctx context.Context, reg *core
 	names = append(names, dbModule)
 
 	if a.sender != nil {
-		reg.Register(standIn(senderModule, a.sender, true, (*authn.SMSSender)(nil)))
+		reg.Register(standIn(senderModule, a.sender, true, (*sms.Sender)(nil)))
 		names = append(names, senderModule)
 	}
 	if a.secondSender {
-		reg.Register(standIn("stand-in.sender2", newSender(), true, (*authn.SMSSender)(nil)))
+		reg.Register(standIn("stand-in.sender2", newSender(), true, (*sms.Sender)(nil)))
 		names = append(names, "stand-in.sender2")
 	}
 	if a.store != nil {
@@ -139,7 +141,7 @@ func TestTheDescriptorNamesWhatItDeliversAndRequires(t *testing.T) {
 			required = append(required, r.Token)
 		}
 	}
-	want := []core.Token{(*db.Database)(nil), (*authn.SMSSender)(nil)}
+	want := []core.Token{(*db.Database)(nil), (*sms.Sender)(nil)}
 	if len(required) != len(want) {
 		t.Fatalf("Requires = %+v, want %v", m.Requires, want)
 	}
@@ -277,5 +279,75 @@ func TestStartRefusesWithoutARootKeyThroughTheDrive(t *testing.T) {
 	})
 	if !errors.Is(err, authn.ErrNoEncryptionKey) {
 		t.Errorf("the drive returned %v, want ErrNoEncryptionKey", err)
+	}
+}
+
+// TestTheDriveRefusesACarrierWhoseDeclarationDoesNotMatchWhatTheModuleNeeds
+// holds the consumer-side check: this module sends under three templates, each
+// with two languages and exactly the two parameters it builds, and a carrier
+// whose declaration does not match — a missing template, a missing language, a
+// missing parameter, or a parameter the module never sends — stops the startup
+// at New with ErrInvalidConfig naming the combination it is about, ahead of any
+// code. It is the property the carrier-side check used to give: a mismatch is
+// named at startup rather than at the first send that needs it.
+func TestTheDriveRefusesACarrierWhoseDeclarationDoesNotMatchWhatTheModuleNeeds(t *testing.T) {
+	cases := []struct {
+		name string
+		drop func(declared []sms.Template) []sms.Template
+		// mentions is the combination the failure has to name: the missing
+		// template, the missing language, the missing parameter or the surplus
+		// parameter.
+		mentions string
+	}{
+		{
+			name:     "a missing template",
+			drop:     func(d []sms.Template) []sms.Template { return d[:len(d)-1] },
+			mentions: templateEnroll,
+		},
+		{
+			name: "a template missing a language",
+			drop: func(d []sms.Template) []sms.Template {
+				d[0].Locales = d[0].Locales[:1]
+				return d
+			},
+			mentions: authn.LocaleEN,
+		},
+		{
+			name: "a template missing a parameter",
+			drop: func(d []sms.Template) []sms.Template {
+				d[0].Params = d[0].Params[:1]
+				return d
+			},
+			mentions: "ttl_minutes",
+		},
+		{
+			// A template substituting a parameter this module never sends cannot be
+			// satisfied: Resolve requires every declared parameter and the module
+			// carries only its own two. A subset check passes such a template and
+			// then rejects every send at runtime, where the failure is a metric and
+			// a warn line and never reaches the operator.
+			name: "a template with a parameter the module never sends",
+			drop: func(d []sms.Template) []sms.Template {
+				d[0].Params = append(append([]string(nil), d[0].Params...), "sign")
+				return d
+			},
+			mentions: "sign",
+		},
+	}
+	for _, c := range cases {
+		t.Run(c.name, func(t *testing.T) {
+			sender := newSender()
+			sender.declared = c.drop(sender.declared)
+			err := assembly{sender: sender, migrate: true}.drive(t, func(context.Context, *core.Registry) error {
+				t.Error("the drive reached its action with a carrier that does not cover the module's templates")
+				return nil
+			})
+			if !errors.Is(err, authn.ErrInvalidConfig) {
+				t.Fatalf("the drive returned %v, want ErrInvalidConfig", err)
+			}
+			if !strings.Contains(err.Error(), c.mentions) {
+				t.Errorf("the failure %q does not name the missing combination %q", err.Error(), c.mentions)
+			}
+		})
 	}
 }

@@ -9,6 +9,7 @@ import (
 	"go.opentelemetry.io/otel/attribute"
 
 	"github.com/vislake/speed/pkg/authn"
+	"github.com/vislake/speed/pkg/sms"
 )
 
 // TestTheWorkerRecordsEachCarrierOutcome holds the carrier classification: the
@@ -21,15 +22,15 @@ func TestTheWorkerRecordsEachCarrierOutcome(t *testing.T) {
 		outcome string
 	}{
 		{"sent", nil, outcomeSent},
-		{"uncertain", authn.ErrSMSUncertain, outcomeUncertain},
-		{"throttled", authn.ErrSMSThrottled, outcomeThrottled},
-		{"rejected", authn.ErrSMSRejected, outcomeRejected},
+		{"uncertain", sms.ErrUncertain, outcomeUncertain},
+		{"throttled", sms.ErrThrottled, outcomeThrottled},
+		{"rejected", sms.ErrRejected, outcomeRejected},
 	}
 	for _, c := range cases {
 		t.Run(c.name, func(t *testing.T) {
 			r := newRigSQLite(t)
 			r.sender.setResult(c.result)
-			r.p.deliverOne(context.Background(), authn.SMS{To: phone, Params: map[string]string{"code": "123456"}})
+			r.p.deliverOne(context.Background(), sms.Message{To: phone, Params: map[string]string{"code": "123456"}})
 			if got := r.counter(sendsName, attribute.String(outcomeAttribute, c.outcome)); got != 1 {
 				t.Errorf("outcome %s = %d, want 1", c.outcome, got)
 			}
@@ -43,7 +44,7 @@ func TestTheWorkerRecordsEachCarrierOutcome(t *testing.T) {
 func TestACarrierErrorOutsideTheClosedSetIsUncertain(t *testing.T) {
 	r := newRigSQLite(t)
 	r.sender.setResult(errors.New("a carrier defect"))
-	r.p.deliverOne(context.Background(), authn.SMS{To: phone})
+	r.p.deliverOne(context.Background(), sms.Message{To: phone})
 	if got := r.counter(sendsName, attribute.String(outcomeAttribute, outcomeUncertain)); got != 1 {
 		t.Errorf("an unrecognised carrier error recorded outcome uncertain %d times, want 1", got)
 	}
@@ -71,7 +72,7 @@ func TestEveryOutcomeIsRecorded(t *testing.T) {
 
 	// dropped: the queue is full.
 	for range cap(r.p.pool.queue) {
-		r.p.pool.queue <- authn.SMS{To: phone}
+		r.p.pool.queue <- sms.Message{To: phone}
 	}
 	if _, err := r.sendLogin(); !errors.Is(err, authn.ErrUnavailable) {
 		t.Fatalf("the full-queue send returned %v", err)
@@ -93,9 +94,9 @@ func TestEveryOutcomeIsRecorded(t *testing.T) {
 	}
 
 	// The four carrier outcomes, driven directly.
-	for _, res := range []error{nil, authn.ErrSMSUncertain, authn.ErrSMSThrottled, authn.ErrSMSRejected} {
+	for _, res := range []error{nil, sms.ErrUncertain, sms.ErrThrottled, sms.ErrRejected} {
 		r.sender.setResult(res)
-		r.p.deliverOne(ctx, authn.SMS{To: phone})
+		r.p.deliverOne(ctx, sms.Message{To: phone})
 	}
 
 	for _, outcome := range []string{
@@ -114,7 +115,7 @@ func TestTheWorkersDrainQueuedMessagesOffTheRequestPath(t *testing.T) {
 	r := newRigSQLite(t)
 	r.allow()
 	delivered := make(chan struct{}, 1)
-	r.sender.onSend = func(authn.SMS) {
+	r.sender.onSend = func(sms.Message) {
 		select {
 		case delivered <- struct{}{}:
 		default:
@@ -160,7 +161,7 @@ func TestStopDrainsTheQueueWithinItsBound(t *testing.T) {
 	// message when Stop is called.
 	block := make(chan struct{})
 	first := make(chan struct{}, 1)
-	r.sender.onSend = func(authn.SMS) {
+	r.sender.onSend = func(sms.Message) {
 		select {
 		case first <- struct{}{}:
 			<-block

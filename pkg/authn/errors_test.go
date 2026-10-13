@@ -44,7 +44,6 @@ var designSentinels = map[string]error{
 	"ErrImpersonationActive": ErrImpersonationActive, "ErrNotImpersonating": ErrNotImpersonating,
 	"ErrImpersonationNeedsSession": ErrImpersonationNeedsSession, "ErrForbidden": ErrForbidden,
 	"ErrAuditRequired": ErrAuditRequired, "ErrUnsupportedRegion": ErrUnsupportedRegion,
-	"ErrSMSThrottled": ErrSMSThrottled, "ErrSMSRejected": ErrSMSRejected, "ErrSMSUncertain": ErrSMSUncertain,
 	"ErrDomainClaimed": ErrDomainClaimed, "ErrAssertionReplay": ErrAssertionReplay,
 	"ErrProviderNotFound": ErrProviderNotFound,
 	"ErrUnavailable":      ErrUnavailable, "ErrBusy": ErrBusy,

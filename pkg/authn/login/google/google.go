@@ -33,9 +33,9 @@ import (
 
 	"github.com/vislake/speed/pkg/authn"
 	"github.com/vislake/speed/pkg/authn/internal/egress"
-	"github.com/vislake/speed/pkg/authn/internal/literal"
 	"github.com/vislake/speed/pkg/config"
 	"github.com/vislake/speed/pkg/core"
+	"github.com/vislake/speed/pkg/internal/literal"
 	"github.com/vislake/speed/pkg/log"
 )
 

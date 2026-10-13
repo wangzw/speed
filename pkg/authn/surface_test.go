@@ -369,11 +369,6 @@ var exportedSurface = []string{
 	"field Requirement.Assurance",
 	"field Requirement.Local",
 	"field Requirement.MaxAge",
-	"field SMS.DedupeID",
-	"field SMS.Locale",
-	"field SMS.Params",
-	"field SMS.Template",
-	"field SMS.To",
 	"field SSOProvider.AllowIDPInitiated",
 	"field SSOProvider.AllowSHA1",
 	"field SSOProvider.Config",
@@ -391,7 +386,6 @@ var exportedSurface = []string{
 	"field SendCode.Locale",
 	"field SendCode.Phone",
 	"field SendCode.Purpose",
-	"field SendReceipt.ProviderID",
 	"field ServiceSecretInfo.CreatedAt",
 	"field ServiceSecretInfo.ExpiresAt",
 	"field ServiceSecretInfo.ID",
@@ -570,8 +564,6 @@ var exportedSurface = []string{
 	"method Provisioner.Provision",
 	"method SMSCodes.Send",
 	"method SMSCodes.Verify",
-	"method SMSSender.Name",
-	"method SMSSender.Send",
 	"method SSOMetadataRefresher.Protocol",
 	"method SSOMetadataRefresher.Refresh",
 	"method SSOProvider.Clone",
@@ -691,15 +683,12 @@ var exportedSurface = []string{
 	"type Provisioner",
 	"type RefreshToken",
 	"type Requirement",
-	"type SMS",
 	"type SMSCodes",
-	"type SMSSender",
 	"type SSOMetadataRefresher",
 	"type SSOProvider",
 	"type SSOProviders",
 	"type ScopeGuard",
 	"type SendCode",
-	"type SendReceipt",
 	"type ServiceSecretInfo",
 	"type SessionID",
 	"type SessionInfo",
@@ -777,9 +766,6 @@ var exportedSurface = []string{
 	"var ErrReservedClaim",
 	"var ErrRoutesUnconfigured",
 	"var ErrRoutesUnguarded",
-	"var ErrSMSRejected",
-	"var ErrSMSThrottled",
-	"var ErrSMSUncertain",
 	"var ErrSessionNotFound",
 	"var ErrSessionRevoked",
 	"var ErrSignupClosed",
@@ -1153,19 +1139,6 @@ func (f claimsContributorFunc) Claims(ctx context.Context, p Principal) (map[str
 }
 
 var _ ClaimsContributor = claimsContributorFunc(nil)
-
-// smsSenderStub is SMSSender's method set written out: Name returning a string,
-// and Send taking a context and an SMS and returning a SendReceipt and an error.
-// The assertion below makes that shape a compile-time fact, so an interface that
-// grows a third method, or moves Send onto another message type or another
-// receipt, no longer compiles.
-type smsSenderStub struct{}
-
-func (smsSenderStub) Name() string { return "" }
-
-func (smsSenderStub) Send(context.Context, SMS) (SendReceipt, error) { return SendReceipt{}, nil }
-
-var _ SMSSender = smsSenderStub{}
 
 // TestTheClaimsContributorDocHoldsTheDesignClaimSet holds the reserved claim
 // names in the ClaimsContributor doc to the design's closed set, name for name

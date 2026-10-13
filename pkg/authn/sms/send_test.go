@@ -11,6 +11,7 @@ import (
 	"go.opentelemetry.io/otel/attribute"
 
 	"github.com/vislake/speed/pkg/authn"
+	"github.com/vislake/speed/pkg/sms"
 )
 
 // TestAnAllowedSendWritesARowAndQueuesAMessage holds the happy path: the allowed
@@ -32,8 +33,8 @@ func TestAnAllowedSendWritesARowAndQueuesAMessage(t *testing.T) {
 		t.Fatalf("the queue holds %d messages, want 1", got)
 	}
 	msg := <-r.p.pool.queue
-	if msg.To != phone || msg.Template != authn.SMSPurposeLogin || msg.DedupeID != id {
-		t.Errorf("queued message = %+v, want To %s, Template login, DedupeID %s", msg, phone, id)
+	if msg.To != phone || msg.Template != templateLogin || msg.DedupeID != id {
+		t.Errorf("queued message = %+v, want To %s, Template %s, DedupeID %s", msg, phone, templateLogin, id)
 	}
 	if _, ok := msg.Params["code"]; !ok {
 		t.Errorf("the queued message carries no code: %+v", msg.Params)
@@ -255,7 +256,7 @@ func TestAQuedMessageIsDroppedWhenTheQueueIsFull(t *testing.T) {
 	r.allow()
 	// Fill the queue without starting the pool, so nothing drains it.
 	for range cap(r.p.pool.queue) {
-		r.p.pool.queue <- authn.SMS{To: phone}
+		r.p.pool.queue <- sms.Message{To: phone}
 	}
 	_, err := r.sendLogin()
 	if !errors.Is(err, authn.ErrUnavailable) {

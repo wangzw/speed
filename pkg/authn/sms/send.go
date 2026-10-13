@@ -9,6 +9,7 @@ import (
 
 	"github.com/vislake/speed/pkg/authn"
 	"github.com/vislake/speed/pkg/event"
+	"github.com/vislake/speed/pkg/sms"
 )
 
 // errCallerDefect is what a Send whose input breaks the caller's contract is
@@ -79,9 +80,9 @@ func (p *product) Send(ctx context.Context, in authn.SendCode) (string, error) {
 		p.meters.sent(ctx, outcomeSuppressed)
 		return id, nil
 	}
-	msg := authn.SMS{
+	msg := sms.Message{
 		To:       in.Phone,
-		Template: in.Purpose,
+		Template: purposeTemplate(in.Purpose),
 		Params:   map[string]string{"code": code, "ttl_minutes": ttlMinutes(ttl)},
 		Locale:   localeOf(in.Locale),
 		DedupeID: id,

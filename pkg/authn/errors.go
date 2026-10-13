@@ -363,20 +363,6 @@ var (
 	// allowed table. Outwardly it is a 400 unsupported-region.
 	ErrUnsupportedRegion = errors.New("authn: the phone number's region is not supported")
 
-	// ErrSMSThrottled reports a sender that limited the call. It is not shown to
-	// the client: it goes to a metric and the log, and the answer to the request
-	// that triggered the send does not change.
-	ErrSMSThrottled = errors.New("authn: the SMS sender limited the call")
-
-	// ErrSMSRejected reports a template, a signature or a number the sender
-	// refused. It is not shown to the client.
-	ErrSMSRejected = errors.New("authn: the SMS sender rejected the message")
-
-	// ErrSMSUncertain reports a send that timed out or failed in a way that leaves
-	// delivery unknown, which must not be resent blindly. It is not shown to the
-	// client.
-	ErrSMSUncertain = errors.New("authn: whether the SMS was delivered is not known")
-
 	// ErrDomainClaimed reports an email domain that another IdP has verified.
 	// Outwardly it is a 409.
 	ErrDomainClaimed = errors.New("authn: the domain is verified for another identity provider")

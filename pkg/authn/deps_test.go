@@ -977,11 +977,12 @@ const (
 
 // The module binds several third-party libraries, each to one leaf package: the
 // TOTP library to the TOTP factor, the WebAuthn library to the passkey factor and
-// login method, the two SMS carrier SDKs to their adapters, and the SAML and
-// XML-signature libraries to the SAML method. A host that imports none of the
-// leaves carries none of the libraries, so each is confined to its leaf. Their
-// versions, and those of the other libraries the selection table fixes to an
-// exact version, are pinned in pinnedLibraries below.
+// login method, and the SAML and XML-signature libraries to the SAML method. A
+// host that imports none of the leaves carries none of the libraries, so each is
+// confined to its leaf. Their versions, and those of the other libraries the
+// selection table fixes to an exact version, are pinned in pinnedLibraries
+// below. The SMS carrier SDKs are the sending capability's own, guarded in
+// pkg/sms.
 const (
 	otpPath         = "github.com/pquerna/otp"
 	otpVersion      = "v1.5.0"
@@ -990,14 +991,6 @@ const (
 	webauthnPath        = "github.com/go-webauthn/webauthn"
 	webauthnVersion     = "v0.18.2"
 	webauthnPackagePath = rootPath + "/mfa/webauthn"
-
-	aliyunSMSPath        = "github.com/alibabacloud-go/dysmsapi-20170525/v5"
-	aliyunSMSVersion     = "v5.6.0"
-	aliyunSMSPackagePath = rootPath + "/sms/aliyun"
-
-	tencentSMSPath        = "github.com/tencentcloud/tencentcloud-sdk-go/tencentcloud/sms"
-	tencentSMSVersion     = "v1.3.172"
-	tencentSMSPackagePath = rootPath + "/sms/tencent"
 
 	gosaml2Path     = "github.com/russellhaering/gosaml2"
 	gosaml2Version  = "v0.12.0"
@@ -1033,8 +1026,6 @@ type bridgeLibrary struct {
 var bridgeLibraries = []bridgeLibrary{
 	{path: otpPath, leaf: totpPackagePath},
 	{path: webauthnPath, leaf: webauthnPackagePath},
-	{path: aliyunSMSPath, leaf: aliyunSMSPackagePath},
-	{path: tencentSMSPath, leaf: tencentSMSPackagePath},
 	{path: gosaml2Path, leaf: samlPackagePath},
 	{path: goxmldsigPath, leaf: samlPackagePath},
 }
@@ -1054,7 +1045,7 @@ type pinnedLibrary struct {
 // dedicated change, not go get -u, and a transitive requirement could otherwise
 // move one.
 //
-// The TOTP, WebAuthn, SAML, goxmldsig and two SMS libraries are also the
+// The TOTP, WebAuthn, SAML and goxmldsig libraries are also the
 // bridgeLibraries above, which hold each to its leaf; go-oidc is also a
 // multiLeafLibrary, held to its leaves. The session store, the Argon2id encoder
 // and the uuid, x/crypto and x/text libraries have no single leaf, so they are
@@ -1064,8 +1055,6 @@ var pinnedLibraries = []pinnedLibrary{
 	{path: gosaml2Path, version: gosaml2Version},
 	{path: otpPath, version: otpVersion},
 	{path: webauthnPath, version: webauthnVersion},
-	{path: aliyunSMSPath, version: aliyunSMSVersion},
-	{path: tencentSMSPath, version: tencentSMSVersion},
 	{path: scsPath, version: scsVersion},
 	{path: argon2idPath, version: argon2idVersion},
 	{path: uuidPath, version: uuidVersion},
@@ -1323,8 +1312,8 @@ func pinViolation(gomod string, lib pinnedLibrary) string {
 
 // TestEachBridgeLibraryIsConfinedToItsLeaf is the executable form of the
 // design's per-library confinement statement: the pquerna/otp, go-webauthn,
-// Aliyun Dysmsapi, Tencent Cloud SMS, gosaml2 and goxmldsig bindings appear in
-// the non-test files of their own leaf package and nowhere else.
+// gosaml2 and goxmldsig bindings appear in the non-test files of their own leaf
+// package and nowhere else.
 //
 // The leaf package is looked for in the listing first and has to import the
 // library, so a rule that reads no file of it is reported rather than passing on
@@ -1527,5 +1516,22 @@ func TestTheMultiLeafConfinementFailsOnAViolatingTree(t *testing.T) {
 	if !slices.Equal(got, want) {
 		t.Errorf("violations are %q, want %q: an import from any allowed leaf is allowed, and an import from "+
 			"another package is reported", got, want)
+	}
+}
+
+// TestTheRootPackageDoesNotImportTheSendingCapability states outright what the
+// import budget already holds: the root package must not reach the top-level
+// sending capability. The capability belongs to the SMS module's leaf, which
+// takes it as a requirement, so a host that takes authentication in is not handed
+// the sms tree, and the sending capability stays usable on its own.
+func TestTheRootPackageDoesNotImportTheSendingCapability(t *testing.T) {
+	const smsCapabilityPath = moduleImportPath + "/sms"
+	pkgs := listModule(t, moduleRoot(t), nil)
+	root, ok := find(pkgs, rootPath)
+	if !ok {
+		t.Fatal("the listing does not hold the root package")
+	}
+	if slices.Contains(root.Imports, smsCapabilityPath) {
+		t.Errorf("the root package imports %s", smsCapabilityPath)
 	}
 }

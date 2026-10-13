@@ -8,7 +8,7 @@ import (
 	"sync"
 	"time"
 
-	"github.com/vislake/speed/pkg/authn"
+	"github.com/vislake/speed/pkg/sms"
 )
 
 // stopWait is how long Stop waits for a background goroutine to end. The
@@ -23,7 +23,7 @@ var errPoolWait = errors.New("the sending pool did not drain in time")
 // path. The queue is in this process and its elements are never stored; the
 // plaintext code lives in them and nowhere else while it waits.
 type pool struct {
-	queue   chan authn.SMS
+	queue   chan sms.Message
 	workers int
 
 	parent   context.Context
@@ -38,7 +38,7 @@ type pool struct {
 // workers start in Start.
 func newPool(workers, queueSize int) *pool {
 	return &pool{
-		queue:   make(chan authn.SMS, queueSize),
+		queue:   make(chan sms.Message, queueSize),
 		workers: workers,
 		stop:    make(chan struct{}),
 		done:    make(chan struct{}),
@@ -54,7 +54,7 @@ func (p *product) poolFull() bool {
 
 // enqueue hands a message to the pool without blocking. It reports false when
 // the queue is full, which the caller records as a drop.
-func (p *product) enqueue(m authn.SMS) bool {
+func (p *product) enqueue(m sms.Message) bool {
 	select {
 	case p.pool.queue <- m:
 		return true
@@ -145,18 +145,18 @@ func (p *product) stopPool() error {
 // deliverOne calls the carrier for one queued message and records how the send
 // ended. The result never reaches the request that triggered the send: the
 // carrier's answer is a metric and a log line and nothing else.
-func (p *product) deliverOne(ctx context.Context, m authn.SMS) {
+func (p *product) deliverOne(ctx context.Context, m sms.Message) {
 	_, err := p.sender.Send(ctx, m)
 	switch {
 	case err == nil:
 		p.meters.sent(ctx, outcomeSent)
-	case errors.Is(err, authn.ErrSMSUncertain):
+	case errors.Is(err, sms.ErrUncertain):
 		p.meters.sent(ctx, outcomeUncertain)
 		p.warnCarrier(ctx, outcomeUncertain, err)
-	case errors.Is(err, authn.ErrSMSThrottled):
+	case errors.Is(err, sms.ErrThrottled):
 		p.meters.sent(ctx, outcomeThrottled)
 		p.warnCarrier(ctx, outcomeThrottled, err)
-	case errors.Is(err, authn.ErrSMSRejected):
+	case errors.Is(err, sms.ErrRejected):
 		p.meters.sent(ctx, outcomeRejected)
 		p.warnCarrier(ctx, outcomeRejected, err)
 	default:

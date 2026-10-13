@@ -11,9 +11,10 @@
 //
 // The module delivers authn.SMSCodes exclusively and the authn.AccountLifecycle
 // hook beside it, as the module that holds data keyed by an account. It takes
-// the sending seam authn.SMSSender as an exclusive requirement: a command tree
-// names one carrier, and two at once fail in resolution. A carrier module does
-// the constructing, calling and error classification alone.
+// the sending seam sms.Sender as an exclusive requirement: a command tree names
+// one carrier, and two at once fail in resolution. A carrier module does the
+// constructing, calling and error classification alone, and this module checks
+// the templates it needs against what the carrier declares before it starts.
 //
 // The plaintext code never leaves the module: it is written to no table, no
 // log, no event and no metric, and lives only in the queued message and the
@@ -42,6 +43,7 @@ import (
 	"github.com/vislake/speed/pkg/log"
 	"github.com/vislake/speed/pkg/observability"
 	"github.com/vislake/speed/pkg/settings"
+	"github.com/vislake/speed/pkg/sms"
 )
 
 // ModuleName is this module's name in the registry. A host writes it into the
@@ -106,7 +108,7 @@ func Module() core.Module {
 		Name: ModuleName,
 		Requires: []core.Requirement{
 			{Token: (*db.Database)(nil)},
-			{Token: (*authn.SMSSender)(nil)},
+			{Token: (*sms.Sender)(nil)},
 			{Token: (*settings.Store)(nil), Optional: true},
 		},
 		Provides: []core.Provision{
@@ -186,7 +188,7 @@ func readerOf(reg *core.Registry) (config.Reader, error) {
 type product struct {
 	database db.Database
 	handle   *gorm.DB
-	sender   authn.SMSSender
+	sender   sms.Sender
 
 	register *register
 	pool     *pool
@@ -222,9 +224,15 @@ func newProduct(reg *core.Registry) (*product, error) {
 	if err != nil {
 		return nil, fmt.Errorf("%s%s: taking up the database: %w", diagnosticPrefix, ModuleName, err)
 	}
-	sender, err := core.Resolve[authn.SMSSender](reg)
+	sender, err := core.Resolve[sms.Sender](reg)
 	if err != nil {
 		return nil, fmt.Errorf("%s%s: taking up the sending seam: %w", diagnosticPrefix, ModuleName, err)
+	}
+	// The carrier is taken up here, so its declared templates are checked here:
+	// Prepare runs earlier and holds no instance. A carrier that does not cover
+	// the templates this module sends under stops the startup, before any code.
+	if err := checkSender(sender.Declared()); err != nil {
+		return nil, fmt.Errorf("%s%s: %w", diagnosticPrefix, ModuleName, err)
 	}
 	return build(database, sender, cfg), nil
 }
@@ -232,7 +240,7 @@ func newProduct(reg *core.Registry) (*product, error) {
 // build assembles a product from its parts. The optional parts start absent and
 // the logger starts as the process's, so that a product that has not been through
 // Init is still one that does not panic.
-func build(database db.Database, sender authn.SMSSender, cfg resolved) *product {
+func build(database db.Database, sender sms.Sender, cfg resolved) *product {
 	logger := log.Default()
 	return &product{
 		database:   database,

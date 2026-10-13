@@ -26,6 +26,7 @@ import (
 	"github.com/vislake/speed/pkg/internal/dbtest"
 	"github.com/vislake/speed/pkg/internal/pgpool/pgtest"
 	"github.com/vislake/speed/pkg/settings"
+	"github.com/vislake/speed/pkg/sms"
 )
 
 // base is the instant the cases that need a fixed time start from.
@@ -96,19 +97,30 @@ func (b *logBuffer) lines(substrings ...string) []string {
 }
 
 // fakeSender is the carrier a case scripts. It records every message it is
-// handed and answers with the result it was told to.
+// handed, answers with the result it was told to, and reports the templates it
+// holds as the full set this module needs until a case says otherwise.
 type fakeSender struct {
-	mu     sync.Mutex
-	sent   []authn.SMS
-	result error
-	onSend func(authn.SMS)
+	mu       sync.Mutex
+	sent     []sms.Message
+	result   error
+	onSend   func(sms.Message)
+	declared []sms.Template
 }
 
-func newSender() *fakeSender { return &fakeSender{} }
+func newSender() *fakeSender { return &fakeSender{declared: declaredTemplates()} }
 
 func (f *fakeSender) Name() string { return "fake" }
 
-func (f *fakeSender) Send(_ context.Context, m authn.SMS) (authn.SendReceipt, error) {
+// Declared reports the templates this carrier holds. It starts as the full set
+// this module needs, so an assembly drives to Start; a case that drives the
+// consumer-side check replaces it with a set missing a combination.
+func (f *fakeSender) Declared() []sms.Template {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	return f.declared
+}
+
+func (f *fakeSender) Send(_ context.Context, m sms.Message) (sms.Receipt, error) {
 	f.mu.Lock()
 	f.sent = append(f.sent, m)
 	res := f.result
@@ -117,7 +129,7 @@ func (f *fakeSender) Send(_ context.Context, m authn.SMS) (authn.SendReceipt, er
 	if cb != nil {
 		cb(m)
 	}
-	return authn.SendReceipt{ProviderID: "provider-1"}, res
+	return sms.Receipt{ProviderID: "provider-1"}, res
 }
 
 func (f *fakeSender) count() int {
@@ -130,6 +142,19 @@ func (f *fakeSender) setResult(err error) {
 	f.mu.Lock()
 	defer f.mu.Unlock()
 	f.result = err
+}
+
+// declaredTemplates is the set of templates this module needs, as a carrier that
+// covers them would report it: the three template names, each with the two
+// parameters and the two languages.
+func declaredTemplates() []sms.Template {
+	params := append([]string(nil), templateParams...)
+	locales := append([]string(nil), templateLocales...)
+	return []sms.Template{
+		{Name: templateLogin, Params: params, Locales: locales},
+		{Name: templateMFA, Params: params, Locales: locales},
+		{Name: templateEnroll, Params: params, Locales: locales},
+	}
 }
 
 // recordingBus is a bus that keeps what was published and delivers it to the

@@ -21,23 +21,40 @@ import (
 	dysmsapi "github.com/alibabacloud-go/dysmsapi-20170525/v5/client"
 	"github.com/alibabacloud-go/tea/dara"
 
-	"github.com/vislake/speed/pkg/authn"
+	"github.com/vislake/speed/pkg/sms"
 )
 
 // testAccessKeySecret is the value the cases configure and then look for in
 // everything the module produces.
 const testAccessKeySecret = "test-access-key-secret-9f3a2c"
 
-// validTemplates is a mapping that covers every (purpose, locale) combination.
-func validTemplates() map[string]string {
-	return map[string]string{
-		"login/zh-CN":  "SMS_LOGIN_ZH",
-		"login/en-US":  "SMS_LOGIN_EN",
-		"mfa/zh-CN":    "SMS_MFA_ZH",
-		"mfa/en-US":    "SMS_MFA_EN",
-		"enroll/zh-CN": "SMS_ENROLL_ZH",
-		"enroll/en-US": "SMS_ENROLL_EN",
+// validTemplates declares every template the cases send under.
+func validTemplates() map[string]sms.TemplateSpec {
+	return map[string]sms.TemplateSpec{
+		"authn.code.login": {
+			Params: []string{"code", "ttl_minutes"},
+			Codes:  map[string]string{"zh-CN": "SMS_LOGIN_ZH", "en-US": "SMS_LOGIN_EN"},
+		},
+		"authn.code.mfa": {
+			Params: []string{"code", "ttl_minutes"},
+			Codes:  map[string]string{"zh-CN": "SMS_MFA_ZH", "en-US": "SMS_MFA_EN"},
+		},
+		"authn.code.enroll": {
+			Params: []string{"code", "ttl_minutes"},
+			Codes:  map[string]string{"zh-CN": "SMS_ENROLL_ZH", "en-US": "SMS_ENROLL_EN"},
+		},
 	}
+}
+
+// testDeclaration freezes the case templates into the declaration a sender runs
+// on.
+func testDeclaration(t *testing.T) sms.Declaration {
+	t.Helper()
+	decl, err := sms.NewDeclaration(validTemplates())
+	if err != nil {
+		t.Fatalf("building the declaration: %v", err)
+	}
+	return decl
 }
 
 // senderOver builds a sender whose client points at the given endpoint and
@@ -53,7 +70,7 @@ func senderOver(t *testing.T, endpoint, protocol string) *sender {
 	if err != nil {
 		t.Fatalf("building the carrier client against the loopback endpoint: %v", err)
 	}
-	return newSender(resolved{signName: "Speed", templates: validTemplates()}, client)
+	return newSender(resolved{signName: "Speed", decl: testDeclaration(t)}, client)
 }
 
 // jsonReply answers every request with one body.
@@ -65,10 +82,10 @@ func jsonReply(body string) http.HandlerFunc {
 }
 
 // oneMessage is a send the cases drive.
-func oneMessage() authn.SMS {
-	return authn.SMS{
+func oneMessage() sms.Message {
+	return sms.Message{
 		To:       "+8613800000000",
-		Template: authn.SMSPurposeLogin,
+		Template: "authn.code.login",
 		Params:   map[string]string{"code": "123456", "ttl_minutes": "5"},
 		Locale:   "zh-CN",
 		DedupeID: "challenge-1",
@@ -76,18 +93,18 @@ func oneMessage() authn.SMS {
 }
 
 func TestTheSenderReportsTheCarrierName(t *testing.T) {
-	s := newSender(resolved{signName: "Speed", templates: validTemplates()}, nil)
+	s := newSender(resolved{signName: "Speed", decl: testDeclaration(t)}, nil)
 	if got := s.Name(); got != "aliyun" {
 		t.Errorf("Name() = %q, want aliyun", got)
 	}
-	if ModuleName != "authn.sms.aliyun" {
-		t.Errorf("ModuleName = %q, want authn.sms.aliyun", ModuleName)
+	if ModuleName != "sms.aliyun" {
+		t.Errorf("ModuleName = %q, want sms.aliyun", ModuleName)
 	}
 }
 
 // TestTheRequestCarriesTheSignatureTemplateAndParameters holds the request shape
 // the vendor interface takes: the approved signature, the template code the
-// (purpose, locale) pair maps to, and the message parameters as a JSON string.
+// (template, locale) pair maps to, and the message parameters as a JSON string.
 func TestTheRequestCarriesTheSignatureTemplateAndParameters(t *testing.T) {
 	var got struct {
 		method, signName, templateCode, templateParam string
@@ -115,7 +132,7 @@ func TestTheRequestCarriesTheSignatureTemplateAndParameters(t *testing.T) {
 		t.Errorf("SignName = %q, want the configured signature Speed", got.signName)
 	}
 	if got.templateCode != "SMS_LOGIN_ZH" {
-		t.Errorf("TemplateCode = %q, want the login/zh-CN template SMS_LOGIN_ZH", got.templateCode)
+		t.Errorf("TemplateCode = %q, want the authn.code.login/zh-CN template SMS_LOGIN_ZH", got.templateCode)
 	}
 	var params map[string]string
 	if err := json.Unmarshal([]byte(got.templateParam), &params); err != nil {
@@ -129,9 +146,9 @@ func TestTheRequestCarriesTheSignatureTemplateAndParameters(t *testing.T) {
 	}
 }
 
-// TestTheTemplateFollowsThePurposeAndLocale holds that the (purpose, locale)
-// pair, and not a fixed template, decides the carrier template code.
-func TestTheTemplateFollowsThePurposeAndLocale(t *testing.T) {
+// TestTheTemplateFollowsTheNameAndLocale holds that the (template, locale) pair,
+// and not a fixed template, decides the carrier template code.
+func TestTheTemplateFollowsTheNameAndLocale(t *testing.T) {
 	var seen []string
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		_ = r.ParseForm()
@@ -145,11 +162,9 @@ func TestTheTemplateFollowsThePurposeAndLocale(t *testing.T) {
 	for _, c := range []struct {
 		template, locale, want string
 	}{
-		{authn.SMSPurposeLogin, "en-US", "SMS_LOGIN_EN"},
-		{authn.SMSPurposeMFA, "zh-CN", "SMS_MFA_ZH"},
-		{authn.SMSPurposeEnroll, "en-US", "SMS_ENROLL_EN"},
-		// An empty locale reads as the default, zh-CN.
-		{authn.SMSPurposeLogin, "", "SMS_LOGIN_ZH"},
+		{"authn.code.login", "en-US", "SMS_LOGIN_EN"},
+		{"authn.code.mfa", "zh-CN", "SMS_MFA_ZH"},
+		{"authn.code.enroll", "en-US", "SMS_ENROLL_EN"},
 	} {
 		m := oneMessage()
 		m.Template, m.Locale = c.template, c.locale
@@ -189,10 +204,10 @@ func TestTheStatusCodesFallToUncertain(t *testing.T) {
 			defer server.Close()
 			s := senderOver(t, server.Listener.Addr().String(), "http")
 			_, err := s.Send(t.Context(), oneMessage())
-			if !errors.Is(err, authn.ErrSMSUncertain) {
+			if !errors.Is(err, sms.ErrUncertain) {
 				t.Fatalf("send answered %v, want the uncertain sentinel for the status %q", err, code)
 			}
-			if errors.Is(err, authn.ErrSMSThrottled) || errors.Is(err, authn.ErrSMSRejected) {
+			if errors.Is(err, sms.ErrThrottled) || errors.Is(err, sms.ErrRejected) {
 				t.Errorf("send classified %q as throttled or rejected; no Aliyun status is verified to mean either", code)
 			}
 			if code != "" && !strings.Contains(err.Error(), code) {
@@ -219,7 +234,7 @@ func TestATransportFailureIsUncertain(t *testing.T) {
 		// A port nothing listens on: the dial fails inside the SDK.
 		s := senderOver(t, "127.0.0.1:1", "http")
 		_, err := s.Send(t.Context(), oneMessage())
-		if !errors.Is(err, authn.ErrSMSUncertain) {
+		if !errors.Is(err, sms.ErrUncertain) {
 			t.Fatalf("send answered %v, want the uncertain sentinel", err)
 		}
 	})
@@ -238,7 +253,7 @@ func TestATransportFailureIsUncertain(t *testing.T) {
 		ctx, cancel := context.WithTimeout(t.Context(), 20*time.Millisecond)
 		defer cancel()
 		_, err := s.Send(ctx, oneMessage())
-		if !errors.Is(err, authn.ErrSMSUncertain) {
+		if !errors.Is(err, sms.ErrUncertain) {
 			t.Fatalf("send answered %v, want the uncertain sentinel for a call the context ended", err)
 		}
 	})
@@ -261,7 +276,7 @@ func TestACancelledContextDoesNotReachTheCarrier(t *testing.T) {
 	ctx, cancel := context.WithCancel(t.Context())
 	cancel()
 	_, err := s.Send(ctx, oneMessage())
-	if !errors.Is(err, authn.ErrSMSUncertain) {
+	if !errors.Is(err, sms.ErrUncertain) {
 		t.Fatalf("a cancelled send answered %v, want the uncertain sentinel", err)
 	}
 	if n := atomic.LoadInt32(&calls); n != 0 {
@@ -269,9 +284,9 @@ func TestACancelledContextDoesNotReachTheCarrier(t *testing.T) {
 	}
 }
 
-// TestAnUncoveredTemplateIsRefusedWithoutSending holds that a pair the
-// constructor did not cover never reaches the carrier: no message is composed,
-// so the send is a definite refusal and not an uncertain one.
+// TestAnUncoveredTemplateIsRefusedWithoutSending holds that a (template, locale)
+// pair the declaration does not cover never reaches the carrier: no message is
+// composed, so the send is a definite refusal and not an uncertain one.
 func TestAnUncoveredTemplateIsRefusedWithoutSending(t *testing.T) {
 	called := false
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
@@ -283,13 +298,37 @@ func TestAnUncoveredTemplateIsRefusedWithoutSending(t *testing.T) {
 
 	s := senderOver(t, server.Listener.Addr().String(), "http")
 	m := oneMessage()
-	m.Locale = "fr-FR" // outside the closed set the templates cover
+	m.Locale = "fr-FR" // a language no declared template has a code for
 	_, err := s.Send(t.Context(), m)
-	if !errors.Is(err, authn.ErrSMSRejected) {
+	if !errors.Is(err, sms.ErrRejected) {
 		t.Fatalf("send answered %v, want the rejected sentinel", err)
 	}
 	if called {
 		t.Error("the carrier was called for a message with no configured template")
+	}
+}
+
+// TestAnEmptyLocaleIsRefusedWithoutSending holds that the language is the
+// caller's to set: this package treats an empty locale as a caller defect and
+// refuses it before the carrier is reached.
+func TestAnEmptyLocaleIsRefusedWithoutSending(t *testing.T) {
+	called := false
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		called = true
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = io.WriteString(w, `{"Code":"OK"}`)
+	}))
+	defer server.Close()
+
+	s := senderOver(t, server.Listener.Addr().String(), "http")
+	m := oneMessage()
+	m.Locale = ""
+	_, err := s.Send(t.Context(), m)
+	if !errors.Is(err, sms.ErrRejected) {
+		t.Fatalf("send answered %v, want the rejected sentinel for an empty language", err)
+	}
+	if called {
+		t.Error("the carrier was called for a message with no language")
 	}
 }
 
@@ -336,7 +375,7 @@ func TestTheCodeAndTheCredentialsReachNoErrorOrLog(t *testing.T) {
 			if err == nil {
 				t.Fatal("send answered no error")
 			}
-			if !errors.Is(err, authn.ErrSMSUncertain) {
+			if !errors.Is(err, sms.ErrUncertain) {
 				t.Fatalf("send answered %v, want the uncertain sentinel", err)
 			}
 			if strings.Contains(request.String(), testAccessKeySecret) {
@@ -365,7 +404,7 @@ func TestTheCarrierIsCalledExactlyOnceEvenWhenItFails(t *testing.T) {
 	defer server.Close()
 
 	s := senderOver(t, server.Listener.Addr().String(), "http")
-	if _, err := s.Send(t.Context(), oneMessage()); !errors.Is(err, authn.ErrSMSUncertain) {
+	if _, err := s.Send(t.Context(), oneMessage()); !errors.Is(err, sms.ErrUncertain) {
 		t.Fatalf("send answered %v, want the uncertain sentinel", err)
 	}
 	if calls != 1 {
@@ -381,9 +420,10 @@ func mustJSON(s string) string {
 }
 
 // TestNoVendorTypeReachesTheExportedSurface holds that the vendor SDK is an
-// implementation detail: the package exports the module name and the module
-// descriptor and nothing else, and neither signature names a vendor type, so a
-// host that imports this package to register it never has to name the SDK.
+// implementation detail: the package exports the module name, its config
+// namespace and the module descriptor and nothing else, and neither signature
+// names a vendor type, so a host that imports this package to register it never
+// has to name the SDK.
 func TestNoVendorTypeReachesTheExportedSurface(t *testing.T) {
 	entries, err := os.ReadDir(".")
 	if err != nil {
