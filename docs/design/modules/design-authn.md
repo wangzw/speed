@@ -12,7 +12,7 @@
 - **账户存储**：账户、已验证标识、外部身份绑定、成员关系、口令凭据、服务密钥与失败退避。
 - **登录**：多种登录方式共用的多步引擎，终态是登录会话或令牌。
 - **登录会话、访问令牌与刷新令牌**：签发、校验、轮换与撤销。
-- **多因素、企业 SSO、短信验证码与短信发送方的接缝**。
+- **多因素、企业 SSO 与短信验证码**。
 - **冒充**：发起、记录、期限与结构性限制。
 - **对授权的接缝与可选的管理面**：判定接缝、成员关系的只读面、账户生命周期钩子与变更事件。
 
@@ -27,7 +27,7 @@
 | [design-authn-gate](design-authn-gate.md) | 网关、校验后端接缝、路由登记（豁免、可选认证、可冒充）、挂路由口、口令表后端、请求期判定顺序与收口 |
 | [design-authn-account](design-authn-account.md) | 账户、标识、外部绑定、成员关系、口令凭据、账户生命周期 |
 | [design-authn-login](design-authn-login.md) | 登录引擎、登录方式接缝、流程记录与状态机、失败退避与枚举防护 |
-| [design-authn-sms](design-authn-sms.md) | 短信验证码与短信发送方 |
+| [design-authn-sms](design-authn-sms.md) | 短信验证码 |
 | [design-authn-mfa](design-authn-mfa.md) | 因素、多因素编排、保障等级的合成、加强认证、找回 |
 | [design-authn-session](design-authn-session.md) | 登录会话、期限、cookie 与跨源检查、撤销 |
 | [design-authn-token](design-authn-token.md) | 访问令牌、刷新令牌、签名密钥、服务账户 |
@@ -110,7 +110,7 @@
 
 每个登记模块的包导出自己的 `ModuleName` 常量，配置与设置的命名空间取同一个取值（形态见 [db](design-db.md) 的实现子包）。名字的每一段只用小写字母、数字与短横线：`Namespace` 按 `.` 切段后适用配置键的字符集规则，违反它会从环境变量名那一头破坏分层（见 [config](design-config.md)）。
 
-**命名空间之间的约束。** 两个模块不得声明同一个输入项路径，也不得一个路径是某模块的叶子而另一个模块的内部节点。判据的推论是：一个模块自己的输入项名不得与以它的模块名为前缀的另一个模块的下一段同名。例如 `authn.login` 的叶子不得叫 `password`、`sms`、`google`、`github`、`wechat-web`、`wechat-mp`，`authn.mfa` 的叶子不得叫 `totp`、`sms`、`webauthn`，`authn.sso` 的叶子不得叫 `saml`、`oidc`，`authn.sms` 的叶子不得叫 `aliyun`、`tencent`（例举，判据是上述推论）；`authn` 本身不得是任何模块的叶子。`authn.mount` 不声明输入项：路由挂载的键与跨源检查的受信来源归 `authn.gate` 声明，`authn.mount` 与需要对外基址的模块在自己的 `Prepare` 里读这几个键，这是已有的跨模块读法，不是重复声明（键表见 [design-authn-config](design-authn-config.md)）。
+**命名空间之间的约束。** 两个模块不得声明同一个输入项路径，也不得一个路径是某模块的叶子而另一个模块的内部节点。判据的推论是：一个模块自己的输入项名不得与以它的模块名为前缀的另一个模块的下一段同名。例如 `authn.login` 的叶子不得叫 `password`、`sms`、`google`、`github`、`wechat-web`、`wechat-mp`，`authn.mfa` 的叶子不得叫 `totp`、`sms`、`webauthn`，`authn.sso` 的叶子不得叫 `saml`、`oidc`（例举，判据是上述推论）；`authn` 本身不得是任何模块的叶子。`authn.mount` 不声明输入项：路由挂载的键与跨源检查的受信来源归 `authn.gate` 声明，`authn.mount` 与需要对外基址的模块在自己的 `Prepare` 里读这几个键，这是已有的跨模块读法，不是重复声明（键表见 [design-authn-config](design-authn-config.md)）。
 
 ### 身份
 
@@ -255,7 +255,7 @@ type Requirement struct {
 | 浏览器应用：口令加 TOTP | `authn.gate`、`authn.mount`、`authn.account`、`authn.session`、`authn.login`、`authn.login.password`、`authn.mfa`、`authn.mfa.totp`，另加 `tenant.resolve` 与 `tenant.admission` |
 | 加 API 令牌与服务账户 | 再加 `authn.token` |
 | 企业 SSO | 再加 `authn.sso` 与 `authn.sso.oidc` 或 `authn.sso.saml` |
-| 短信登录与短信因素 | 再加 `authn.sms`、`authn.sms.aliyun`（或 `authn.sms.tencent`）、`authn.login.sms`、`authn.mfa.sms` |
+| 短信登录与短信因素 | 再加 `authn.sms`、`sms.aliyun`（或 `sms.tencent`）、`authn.login.sms`、`authn.mfa.sms` |
 | 社交登录、通行密钥 | 再加 `authn.login.google` 等、`authn.mfa.webauthn` |
 | 冒充与管理面 | 再加 `authn.impersonation`、`authn.admin`；宿主交付 `Decider` 与审计的实现；`tenant.admission` 是 `authn.impersonation` 的必需依赖，`authn.mfa` 也必须在场 |
 
@@ -274,7 +274,7 @@ type Requirement struct {
 
 ### 模块清单
 
-下表是本功能目录登记的全部模块。“Requires”列写必需的排他功能与 `db.Database`，网关一行另写它对 `log.Logger` 的 `Optional` 声明；“取用”列是 `Init` 里 `core.Resolve` 或 `core.ResolveAll` 的对象，标 ○ 的取用缺席合法，缺席时对应的子功能不启用，并在启动诊断里写一行，不是到 `Init` 才报缺失。日志功能与指标功能的可选取用除网关一行外不在表里逐行列出：持有秘密配置值的模块为在 `New` 里登记字面量脱敏而对 `log.Logger` 写 `Optional`（例举：两家短信厂商适配、`authn.sso` 与两个协议模块、两个微信登录方式，这些行的“Requires”列因此不是完整的声明），产生指标的模块在 `Init` 里取 `observability.MeterProvider`，逐项见各模块文档的依赖表；“表”列写该模块拥有的表，表归声明它的模块。`authn.mount` 与挂路由的模块经内部接口 `mount.Mounter` 协作，它在 `pkg/authn/internal/mount`，只在 authn 树内可见。
+下表是本功能目录登记的全部模块。“Requires”列写必需的排他功能与 `db.Database`，网关一行另写它对 `log.Logger` 的 `Optional` 声明；“取用”列是 `Init` 里 `core.Resolve` 或 `core.ResolveAll` 的对象，标 ○ 的取用缺席合法，缺席时对应的子功能不启用，并在启动诊断里写一行，不是到 `Init` 才报缺失。日志功能与指标功能的可选取用除网关一行外不在表里逐行列出：持有秘密配置值的模块为在 `New` 里登记字面量脱敏而对 `log.Logger` 写 `Optional`（例举：`authn.sso` 与两个协议模块、两个微信登录方式，这些行的“Requires”列因此不是完整的声明），产生指标的模块在 `Init` 里取 `observability.MeterProvider`，逐项见各模块文档的依赖表；“表”列写该模块拥有的表，表归声明它的模块。`authn.mount` 与挂路由的模块经内部接口 `mount.Mounter` 协作，它在 `pkg/authn/internal/mount`，只在 authn 树内可见。
 
 | 包 | 模块名 | 交付 | 排他 | Requires | 取用 | 表 |
 |---|---|---|---|---|---|---|
@@ -294,8 +294,7 @@ type Requirement struct {
 | `authn/mfa/totp` | `authn.mfa.totp` | `Factor` | 否 | `db.Database`、`MFA` | 无 | `authn_totp_secrets` |
 | `authn/mfa/sms` | `authn.mfa.sms` | `Factor` | 否 | `SMSCodes`、`Accounts` | 无 | 无 |
 | `authn/mfa/webauthn` | `authn.mfa.webauthn` | `Factor`、`LoginMethod`（通行密钥） | 否 | `db.Database`、`MFA`、`Accounts` | 无 | `authn_webauthn_users`、`authn_webauthn_credentials` |
-| `authn/sms` | `authn.sms` | `SMSCodes`；`AccountLifecycle` | 是 | `db.Database`、`SMSSender` | `settings.Store` ○、`event.Bus` ○、`audit.Audit` ○ | `authn_challenges` |
-| `authn/sms/aliyun`、`authn/sms/tencent` | `authn.sms.aliyun`、`authn.sms.tencent` | `SMSSender` | 是 | 无 | 无 | 无 |
+| `authn/sms` | `authn.sms` | `SMSCodes`；`AccountLifecycle` | 是 | `db.Database`、`sms.Sender` | `settings.Store` ○、`event.Bus` ○、`audit.Audit` ○ | `authn_challenges` |
 | `authn/sso` | `authn.sso` | `SSOProviders` | 是 | `db.Database`、`mount.Mounter` | `settings.Store` ○、`event.Bus` ○ | `authn_idps`、`authn_idp_domains`、`authn_saml_assertions` |
 | `authn/sso/saml` | `authn.sso.saml` | `LoginMethod`、`SSOMetadataRefresher` | 否 | `SSOProviders`、`mount.Mounter` | `settings.Store` ○、`event.Bus` ○、`audit.Audit` ○ | 无 |
 | `authn/sso/oidc` | `authn.sso.oidc` | `LoginMethod` | 否 | `SSOProviders` | `settings.Store` ○、`event.Bus` ○、`audit.Audit` ○ | 无 |
@@ -321,7 +320,7 @@ type Requirement struct {
 ### 依赖方向
 
 - **根包**只 import 标准库（含 `net/http` 里的 `*http.Cookie`、`http.ResponseWriter`、`*http.Request`，不含 gin）与 `pkg/authn/internal/{model,identity,verdict,step}`；这些内部包同样只依赖标准库，`identity`、`verdict`、`step` 各自 import `model`，彼此不 import。根包被 `tenant/resolve`、`audit/journal`、`ratelimit` 与 `tenant/admission` import，根包新增的任何 import 会进它们的闭包，所以 `pkg/authn/deps_test.go` 守住：根包的非测试 import 只许标准库与上述内部包，并断言这些内部包只依赖标准库。
-- **库类型只出现在叶子包里**：`go-jose`、`go-oidc`、`x/oauth2`、`gosaml2`、`go-webauthn`、`scs`、两家短信 SDK 各落在使用它的叶子子包，只有 import 该子包的宿主才背负（[ADR-module-packaging-2026-09-22](../../adr/adr-module-packaging-2026-09-22.md)）。
+- **库类型只出现在叶子包里**：`go-jose`、`go-oidc`、`x/oauth2`、`gosaml2`、`go-webauthn`、`scs` 各落在使用它的叶子子包，只有 import 该子包的宿主才背负（[ADR-module-packaging-2026-09-22](../../adr/adr-module-packaging-2026-09-22.md)）。短信厂商 SDK 不在此列：随发送能力住在顶层 `pkg/sms` 的载体叶子包下（[ADR-sms-capability-2026-10-13](../../adr/adr-sms-capability-2026-10-13.md)）。
 - **接口包不依赖 `pkg/db`，这是本功能目录的自我约束而不是架构的要求**（架构对跨功能目录依赖的要求是一律指向对方的接口包，见 [architecture](../architecture.md)，指向 `pkg/db` 的接口包并不违反它）。带表的子包把 `db` 依赖、迁移集与模型留在自己的子包里；其他 authn 子包与授权功能目录只经根包的能力接口读写，拿不到 `*gorm.DB`。
 - **authn 的任何子包都不 import `pkg/tenant`。** 方向是 tenant 指向 authn：`tenant/resolve` 排在网关之后，`tenant/admission` 读身份与租户上下文，`tenant/resolve` 与 `tenant/admission` 都 import 根包，准入层经根包的 `ScopeGuard` 向网关说出它守哪些端；授权功能目录位于本功能目录之上（[authz](design-authz.md)）：`authz.guard` 交付 `Decider`，`authz.policy` 交付 `AccountLifecycle`，两者都 import 根包；本功能目录不认识它（[ADR-authn-scope-2026-10-10](../../adr/adr-authn-scope-2026-10-10.md)）。
 - **网关与别的模块的关系只经链上锚点**：网关交付 `(*authn.Gate)(nil)`，不 import `tenant`、`audit`、`ratelimit` 的任何包（见[链上次序](#链上次序)）。`tenant/admission` 声明授权阶段，该阶段本身就在记录与限流之内，位置由阶段给出；它不为定序 import `pkg/ratelimit` 或 `pkg/audit` 的锚点包。
@@ -393,7 +392,7 @@ classDiagram
 
 `gateway` 未导出，它持有各类登记表、按 scheme 与 cookie 名的分派表与在飞闸门（见 [design-authn-gate](design-authn-gate.md)）。
 
-下图给出包之间的依赖方向。箭头从依赖方指向被依赖方，虚线是可选依赖。根包只依赖标准库与 `internal/model`、`internal/identity`、`internal/verdict`、`internal/step`，这些内部包只依赖标准库；其余内部包是实现侧共用的部件，不被根包 import，可以依赖根包、`pkg/log` 与第三方库（`internal/mount` 依赖根包与 gin，`internal/password` 依赖根包、Argon2 与信号量库，`internal/literal` 依赖 `pkg/log`）；库类型只出现在叶子包里；authn 的任何子包都不 import `pkg/tenant`，tenant 目录与授权功能目录经根包的接口依赖本功能目录。
+下图给出包之间的依赖方向。箭头从依赖方指向被依赖方，虚线是可选依赖。根包只依赖标准库与 `internal/model`、`internal/identity`、`internal/verdict`、`internal/step`，这些内部包只依赖标准库；其余内部包是实现侧共用的部件，不被根包 import，可以依赖根包、`pkg/log` 与第三方库（`internal/mount` 依赖根包与 gin，`internal/password` 依赖根包、Argon2 与信号量库）；库类型只出现在叶子包里；`internal/literal` 已上移为共享单元 `pkg/internal/literal`，被两个短信载体与四个登录叶子共用，不再是本功能目录的内部包；authn 的任何子包都不 import `pkg/tenant`，tenant 目录与授权功能目录经根包的接口依赖本功能目录。
 
 ```mermaid
 flowchart LR
@@ -433,7 +432,7 @@ flowchart LR
     egress[authn/internal/egress]
     acctcache[authn/internal/acctcache]
     clock[authn/internal/clock]
-    literal[authn/internal/literal]
+    literal[pkg/internal/literal]
     mount --> R
     mount --> gin[gin]
     pwd --> acctcache
@@ -487,7 +486,7 @@ flowchart LR
     auditj[pkg/audit/journal] --> R
 ```
 
-除上文只依赖标准库的 `internal/model`、`internal/identity`、`internal/verdict`、`internal/step` 外，`pkg/authn/internal` 下还有下列包，它们与上述内部包合起来是内部包的封闭名册：`internal/password` 放 PHC 编解码、派生、校验缓存、进程内退避与并发和内存预算，`internal/egress` 放受限的出站 `http.Client`，`internal/mount` 放 `Mounter` 接口、路由登记选项与挂路由模块共用的路由部件（问题码与 `Fail` 一族、请求体解码 `Decode`、每条登记都经过的 `Wrap`、回跳旁路 `AllowCallback`，以及挂载端与可信来源规则 `Endpoint`、`TrustedOrigins`、`CrossOrigin`），`internal/mount/mounttest` 放测试用的 `Mounter`，`internal/acctcache` 放按键有界、带有效期的进程内缓存（值类型是参数，账户快照与口令校验缓存各自取用），`internal/clock` 放写入数据库或绑定为查询参数的时间的来源（一律 UTC），`internal/literal` 放日志脱敏字面量匹配器的登记构造 `Register`（依赖 `pkg/log`，所以只依赖标准库的值类型包不能放它），持有秘密配置值的模块在自己的 `New` 里调用；只做进程内时长比较的计时（口令校验缓存、失败退避、账户快照缓存的默认时钟）可以直接取单调时钟，并允许测试注入。没有 `internal/configreader`：读取器的构造由 `authntest` 的 `ConfigReader` 承担。内部包名册里的各包都只能被 `pkg/authn` 之下的包 import。
+除上文只依赖标准库的 `internal/model`、`internal/identity`、`internal/verdict`、`internal/step` 外，`pkg/authn/internal` 下还有下列包，它们与上述内部包合起来是内部包的封闭名册：`internal/password` 放 PHC 编解码、派生、校验缓存、进程内退避与并发和内存预算，`internal/egress` 放受限的出站 `http.Client`，`internal/mount` 放 `Mounter` 接口、路由登记选项与挂路由模块共用的路由部件（问题码与 `Fail` 一族、请求体解码 `Decode`、每条登记都经过的 `Wrap`、回跳旁路 `AllowCallback`，以及挂载端与可信来源规则 `Endpoint`、`TrustedOrigins`、`CrossOrigin`），`internal/mount/mounttest` 放测试用的 `Mounter`，`internal/acctcache` 放按键有界、带有效期的进程内缓存（值类型是参数，账户快照与口令校验缓存各自取用），`internal/clock` 放写入数据库或绑定为查询参数的时间的来源（一律 UTC）；`internal/literal` 不在此列：该共享单元上移为 `pkg/internal/literal`，被两个短信载体与四个登录叶子共用，持有秘密配置值的模块在自己的 `New` 里调用它；只做进程内时长比较的计时（口令校验缓存、失败退避、账户快照缓存的默认时钟）可以直接取单调时钟，并允许测试注入。没有 `internal/configreader`：读取器的构造由 `authntest` 的 `ConfigReader` 承担。内部包名册里的各包都只能被 `pkg/authn` 之下的包 import。
 
 ## 核心数据结构
 
@@ -659,7 +658,7 @@ type Provisioner interface {
 }
 ```
 
-**邮件通道不在本功能目录之内。** 它在形状上是与 `SMSSender` 对称的发送方接口，加对应的 `LoginMethod`、`Factor` 与验证流程，不改现有接口。
+**邮件通道不在本功能目录之内。** 它在形状上是与顶层发送能力 `sms.Sender` 对称的发送方接口，加对应的 `LoginMethod`、`Factor` 与验证流程，不改现有接口。
 
 ## 实现状态
 
@@ -669,7 +668,7 @@ type Provisioner interface {
 | 判决不可字面构造与零值读作没答 | 已实现 | `pkg/authn/internal/verdict/verdict.go` `Verdict`、`OutcomeOf`；`pkg/authn/verdict.go` |
 | 判决携带 `Principal` | 已实现 | `pkg/authn/verdict.go` `Authenticated`；`pkg/authn/internal/verdict/verdict.go` `NewAuthenticated`、`PrincipalOf`；`pkg/authn/internal/model/principal.go` `Principal` |
 | 值类型的落点与根包别名：`AccountID`、`SessionID`、`Method`、`Assurance`、`Access`、`Requirement`、`Principal`，以及登录、因素、标识、外部绑定、账户、成员关系、会话、令牌、冒充、短信与 SSO 提供方的值类型 | 已实现 | `pkg/authn/internal/model`；`pkg/authn/ids.go` |
-| 接缝的根包声明：`Accounts`、`AccountAdmin`、`Passwords`、`Memberships`、`AccountLifecycle`、`Provisioner`、`Sessions`、`LoginMethod`、`Factor`、`MFA`、`Decider`、`Impersonation`、`Tokens`、`ClaimsContributor`、`SMSCodes`、`SMSSender`、`SSOProviders`、`SSOMetadataRefresher`，事件类型与载荷，哨兵 | 已实现 | `pkg/authn/account.go`；`pkg/authn/membership.go`；`pkg/authn/lifecycle.go`；`pkg/authn/provision.go`；`pkg/authn/session.go`；`pkg/authn/login.go`；`pkg/authn/factor.go`；`pkg/authn/decide.go`；`pkg/authn/impersonation.go`；`pkg/authn/token.go`；`pkg/authn/claims.go`；`pkg/authn/sms.go`；`pkg/authn/sso.go`；`pkg/authn/events.go`；`pkg/authn/errors.go`；`pkg/authn/surface_test.go` `exportedSurface` |
+| 接缝的根包声明：`Accounts`、`AccountAdmin`、`Passwords`、`Memberships`、`AccountLifecycle`、`Provisioner`、`Sessions`、`LoginMethod`、`Factor`、`MFA`、`Decider`、`Impersonation`、`Tokens`、`ClaimsContributor`、`SMSCodes`、`SSOProviders`、`SSOMetadataRefresher`，事件类型与载荷，哨兵 | 已实现 | `pkg/authn/account.go`；`pkg/authn/membership.go`；`pkg/authn/lifecycle.go`；`pkg/authn/provision.go`；`pkg/authn/session.go`；`pkg/authn/login.go`；`pkg/authn/factor.go`；`pkg/authn/decide.go`；`pkg/authn/impersonation.go`；`pkg/authn/token.go`；`pkg/authn/claims.go`；`pkg/authn/sms.go`；`pkg/authn/sso.go`；`pkg/authn/events.go`；`pkg/authn/errors.go`；`pkg/authn/surface_test.go` `exportedSurface` |
 | 属性集的分项上限与检查，账户与会话载荷各一份上限，合计低于盖章处的总上限 | 已实现 | `pkg/authn/internal/model/bounds.go` `CheckAccountAttributes`、`CheckIDPAttributes`、`TruncateUTF8`；`pkg/authn/gate/attribute_bounds_test.go` |
 | 路由共用部件：问题码与 `Fail` 一族、`Decode`、`Wrap`、`AllowCallback`，与测试用的 `Mounter` | 已实现 | `pkg/authn/internal/mount/problem.go`；`pkg/authn/internal/mount/decode.go`；`pkg/authn/internal/mount/wrap.go`；`pkg/authn/internal/mount/mounttest/mounttest.go` |
 | 身份的类型化字段与责任键 | 已实现 | `pkg/authn/internal/identity/identity.go` `Identity`、`New`、`Key`、`Satisfies`；`pkg/authn/identity.go` `Identity` |
@@ -684,7 +683,7 @@ type Provisioner interface {
 | 访问令牌、刷新令牌与服务账户 `authn.token` | 已实现 | `pkg/authn/token` 的 `Module`；配置、迁移、路由、清扫与事件订阅俱在 |
 | 登录引擎 `authn.login` 与全部登录方式 | 已实现 | `pkg/authn/login/login.go` `Module`；`pkg/authn/login/password/password.go`、`pkg/authn/login/sms/sms.go`、`pkg/authn/login/google/google.go`、`pkg/authn/login/github/github.go`、`pkg/authn/login/wechatweb/wechatweb.go`、`pkg/authn/login/wechatmp/wechatmp.go` 各自的 `Module` |
 | 多因素编排 `authn.mfa` 与全部因素 | 已实现 | `pkg/authn/mfa/mfa.go` `Module`；`pkg/authn/mfa/totp`、`pkg/authn/mfa/sms`、`pkg/authn/mfa/webauthn` |
-| 短信验证码 `authn.sms` 与短信发送方 | 已实现 | `pkg/authn/sms` 的 `Module`；`pkg/authn/sms/aliyun`、`pkg/authn/sms/tencent` |
+| 短信验证码 `authn.sms` | 已实现 | `pkg/authn/sms` 的 `Module` |
 | 企业 SSO `authn.sso` 与 SAML、企业 OIDC | 已实现 | `pkg/authn/sso/module.go` `Module`；`pkg/authn/sso/saml/saml.go`、`pkg/authn/sso/oidc/oidc.go` 各自的 `Module` |
 | 冒充 `authn.impersonation` | 已实现 | `pkg/authn/impersonation/impersonation.go` `Module` |
 | 判定接缝与管理面 `authn.admin` | 已实现 | `pkg/authn/decide.go` `Decider`、`Decision`、`Action`；`pkg/authn/admin/admin.go` `Module` |

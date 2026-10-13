@@ -1,25 +1,35 @@
-# pkg/authn/sms/aliyun
+# pkg/sms/aliyun
 
-The Aliyun Dysmsapi carrier, registered as `authn.sms.aliyun`. It is one
-`authn.SMSSender`: it maps this side's (purpose, language) pair to an approved
-template code, builds one `SendSms` request, calls the carrier once and
+The Aliyun Dysmsapi carrier, registered as `sms.aliyun`. It is one `sms.Sender`:
+it maps a message's template and locale to an approved template code and a
+parameter object, builds one `SendSms` request, calls the carrier once and
 classifies the answer into the sending sentinels. A host writes this module's
-name into a command; it delivers the sending seam exclusively, so a command
-names exactly one carrier and two at once fail in resolution.
+name into a command; it declares the sending seam exclusively, so a command names
+exactly one carrier and two at once fail in resolution.
 
 The whole leaf package binds `github.com/alibabacloud-go/dysmsapi-20170525/v5`
 and can be dropped without touching any other module.
 
-The API is the package's godoc, and the `authn.SMS`, `authn.SendReceipt` and
-sending sentinels in `pkg/authn`.
+The API is the package's godoc, and the `sms.Message`, `sms.Receipt` and sending
+sentinels in `pkg/sms`.
 
 ## Boundaries
 
+- **The templates are a first-class declaration.** The config's `templates` is a
+  `map[string]sms.TemplateSpec`: each template names its ordered parameters and
+  its language-to-code map. The constructor freezes it into an `sms.Declaration`
+  and `Send` resolves a `sms.Message` into the vendor code and the parameters.
+  Aliyun takes the parameters as a JSON object, so the order does not matter here;
+  the same declaration serves the positional carrier. A template map the config
+  does not shape this way is a startup failure.
+- **A message the declaration does not cover never reaches the carrier.** An
+  unlisted template, a locale with no code, or a missing or extra parameter is a
+  caller defect: `Resolve` answers `ErrRejected` and no request is built.
 - **Every status falls to the uncertain sentinel, and no code is verified yet to
   mean otherwise.** Aliyun's status codes for throttling and rejection have not
   been checked against the vendor's list, so the mapping in `verifiedSentinels`
   is empty and a status that is not `OK` — the empty one included — is
-  `ErrSMSUncertain`. The direction is deliberate: it counts one more budget
+  `sms.ErrUncertain`. The direction is deliberate: it counts one more budget
   rather than treating an unconfirmed failure as a definite throttle or refusal,
   and it never resends. A code verified against the vendor's list is added to
   that table, and the per-code case gains it in the same change. A timeout, a
@@ -30,24 +40,18 @@ sending sentinels in `pkg/authn`.
   message twice and bill it twice. A message whose `DedupeID` was seen before is
   answered with the earlier call's outcome instead of calling again; the memory
   is bounded, lives in this process alone, and is shared with the other carrier
-  through `pkg/authn/sms/internal/dedupe`. The vendor SDK's own retry is switched
-  off for the same reason.
+  through `pkg/sms/internal/dedupe`. The vendor SDK's own retry is switched off
+  for the same reason.
 - **The call carries the caller's context, so a context that ends cancels the
   in-flight request.** The SDK's `SendSmsWithContext` takes the context and
   cancels the HTTP call when it ends; a cancelled call is answered with the
   uncertain sentinel, the same direction as a timeout the carrier itself reports.
-  Nothing is retried: the vendor interface is not idempotent, so the SDK's own
-  retry is switched off.
-- **A (purpose, locale) pair the constructor did not cover never reaches the
-  carrier.** The two sets are closed and the constructor checks the template map
-  covers every combination, so `Send` with a pair outside them is refused before
-  a request is built and is not an uncertain case — no message was composed. An
-  empty locale reads as `zh-CN`.
 - **The credentials and the message code reach no log, no error text and no
-  metric.** The access-key secret only signs the call and is registered as a
-  literal redaction rule with the logging capability; the module does not echo
-  the carrier's own message text into what it returns, because that text can
-  carry the request and the request carries the code.
+  metric.** The access-key secret is registered as a literal redaction rule by
+  the factory, from the `Secrets` hook, through `pkg/internal/literal`, before
+  this package's `Open` builds the client and before any logger is bound; the
+  module does not echo the carrier's own message text into what it returns,
+  because that text can carry the request and the request carries the code.
 - **No vendor type appears on the package's surface.** The package exports its
   module name, its config namespace and its module descriptor; the vendor client
   is held behind an unexported interface, so a host that imports this package to
@@ -58,10 +62,10 @@ sending sentinels in `pkg/authn`.
 From the module directory:
 
 ```
-env -C pkg go build ./authn/sms/aliyun/...
-env -C pkg go test ./authn/sms/aliyun/...
-env -C pkg go test -race ./authn/sms/aliyun/...
-env -C pkg golangci-lint run ./authn/sms/aliyun/...
+env -C pkg go build ./sms/aliyun/...
+env -C pkg go test ./sms/aliyun/...
+env -C pkg go test -race ./sms/aliyun/...
+env -C pkg golangci-lint run ./sms/aliyun/...
 ```
 
 Run `golangci-lint` from `pkg`, never from the workspace root with an absolute

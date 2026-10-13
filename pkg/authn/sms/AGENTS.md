@@ -9,10 +9,11 @@ the `authn.AccountLifecycle` hook beside it.
 A purpose is one of the closed set `login`, `mfa` and `enroll`. The state of a
 challenge is one table whatever the purpose, so the code is held once and its
 consumers — the SMS login method, the SMS factor and the phone routes of the
-login engine — hold none of it. The module takes `authn.SMSSender` as an
-exclusive requirement: a command tree names one carrier, and two at once fail in
-resolution. A carrier module (one of `authn.sms.aliyun`, `authn.sms.tencent`, or
-a third party's) is the one that constructs, calls and classifies.
+login engine — hold none of it. The module takes the top-level `pkg/sms`
+capability's `Sender` as an exclusive requirement: a command tree names one
+carrier, and two at once fail in resolution. A carrier module (one of
+`sms.aliyun`, `sms.tencent`, or a third party's, under `pkg/sms`) is the one
+that constructs, calls and classifies.
 
 The API is the package's godoc. Read `Send`'s and `Verify`'s comments before
 changing either.
@@ -81,8 +82,20 @@ compatibility break for a dashboard written against it.
   best-effort audit row naming the key and the direction and no value
   (`relax.go`, `TestARelaxingChangeWritesAWarnAndAnAuditRow`).
 - **The module knows no tenant and no carrier.** No package here imports
-  `pkg/tenant`; the carrier is taken only as the root package's `SMSSender`, and
-  no carrier subpackage is imported (`Module`).
+  `pkg/tenant`; the carrier is taken only as `pkg/sms`'s `Sender`, and no
+  carrier subpackage is imported (`Module`).
+- **The templates this module needs are held to the carrier's declaration in
+  `New`.** The top-level `pkg/sms` capability carries the first-class template
+  declaration and does not know what a consumer needs; this module maps each
+  purpose to a template key (`authn.code.login`, `authn.code.mfa`,
+  `authn.code.enroll`), names the `code` and `ttl_minutes` parameters and the
+  locales it sends in, and checks them against `Sender.Declared()` after the
+  sender is resolved in `newProduct`, failing the startup with `ErrInvalidConfig`
+  on any combination it does not match — a missing one, or a parameter the
+  carrier declares and the module never sends, which no message could satisfy.
+  The parameter names are compared for equality, not containment. `Prepare` runs
+  before `New` and has no instance, so the check lives in `New` (`templates.go`,
+  `newProduct`).
 - **The configuration sizes the pool; the settings tune the state machine.** The
   worker count and the queue size are read before a database is reachable;
   everything a request reads is a setting with a declared default. An absent

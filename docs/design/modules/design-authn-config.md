@@ -48,7 +48,6 @@
 | `authn.mfa` | [design-authn-mfa](design-authn-mfa.md) | 设置 |
 | `authn.mfa.totp`、`authn.mfa.webauthn` | [design-authn-mfa](design-authn-mfa.md) | 配置 |
 | `authn.sms` | [design-authn-sms](design-authn-sms.md) | 配置与设置 |
-| `authn.sms.aliyun`、`authn.sms.tencent` | [design-authn-sms](design-authn-sms.md) | 配置 |
 | `authn.sso` | [design-authn-sso](design-authn-sso.md) | 配置与设置 |
 | `authn.sso.saml` | [design-authn-sso](design-authn-sso.md) | 配置 |
 | `authn.impersonation` | [design-authn-impersonation](design-authn-impersonation.md) | 设置 |
@@ -128,24 +127,13 @@
 |---|---|---|---|---|---|
 | `authn.sms.workers` | 整数 | `4` | 默认 | | 异步发送的有界工作池的协程数 |
 | `authn.sms.queue-size` | 整数 | `1024` | 默认 | | 异步发送队列的容量 |
-| `authn.sms.aliyun.access-key-id` | 字符串 | 无 | 默认 | 必填 | 厂商访问标识 |
-| `authn.sms.aliyun.access-key-secret` | 字符串 | 无 | 默认 | 必填、敏 | 厂商访问密钥 |
-| `authn.sms.aliyun.endpoint` | 字符串 | `dysmsapi.aliyuncs.com` | 默认 | | 厂商接入点 |
-| `authn.sms.aliyun.sign-name` | 字符串 | 无 | 默认 | 必填 | 短信签名 |
-| `authn.sms.aliyun.templates` | （用途，语言）到模板编号的映射 | 无 | 主 | 必填 | 键写 `用途/语言`，用途取 `login`、`mfa`、`enroll`，语言取 `zh-CN`、`en-US`，如 `login/zh-CN`；缺任何一个组合即 `ErrInvalidConfig` |
-| `authn.sms.tencent.secret-id` | 字符串 | 无 | 默认 | 必填 | 厂商访问标识 |
-| `authn.sms.tencent.secret-key` | 字符串 | 无 | 默认 | 必填、敏 | 厂商访问密钥 |
-| `authn.sms.tencent.sdk-app-id` | 字符串 | 无 | 默认 | 必填 | 厂商应用标识 |
-| `authn.sms.tencent.region` | 字符串 | 无 | 默认 | 必填 | 厂商地域 |
-| `authn.sms.tencent.sign-name` | 字符串 | 无 | 默认 | 必填 | 短信签名 |
-| `authn.sms.tencent.templates` | 同 `authn.sms.aliyun.templates` | 无 | 主 | 必填 | 同 `authn.sms.aliyun.templates` |
 | `authn.sso.allow-private-egress` | 布尔 | `false` | 主 | | 放宽开关，仅开发：放开出站调用对回环地址的拒绝 |
 | `authn.sso.saml.sp-key-file` | 字符串，文件路径 | 无 | 默认 | 敏 | 服务提供方私钥；只在 IdP 配了 `sign_requests` 或要加密断言时需要，缺则 `Validate` 拒绝 |
 | `authn.sso.saml.sp-cert-file` | 字符串，文件路径 | 无 | 默认 | | 服务提供方证书，条件同上 |
 | `authn.sso.saml.sp-next-cert-file` | 字符串，文件路径 | 无 | 默认 | | 先发布的下一张证书，轮换时用 |
 | `tenant.admission.endpoints` | 字符串列表 | 无 | 主 | 必填 | 准入层所守的端；与 `tenant.resolve.endpoints` 同形，一般相同；空是 `ErrInvalidConfig`，不接受 `*`，不得含 authn 的挂载端 |
 
-`authn.sms.aliyun` 与 `authn.sms.tencent` 是排他的 `SMSSender`：只能纳入其中一个，同时纳入在消解阶段失败。必填判定只对运行级纳入的模块做，没有被纳入的厂商模块的必填项不参与判定。
+短信厂商适配的配置键（`sms.aliyun.*`、`sms.tencent.*`）不在本文：发送能力抽为顶层能力模块 `pkg/sms`，其配置随能力归 [design-sms](design-sms.md)。必填判定只对运行级纳入的模块做，没有被纳入的模块的必填项不参与判定。
 
 ### 设置项
 
@@ -293,12 +281,12 @@ Argon2id 的 `memory-kib`、`iterations`、`parallelism` 各自只能在单项�
 | 企业 OIDC 客户端密钥 | `authn_idps.client_secret` 加密列 | 管理面 `PUT` 带新密钥，`version` 加一，各副本按版本重建缓存 | 读取接口从不交出它，应答里只有「是否已设置」 |
 | SAML 的 SP 私钥 | 配置里的文件路径 | `authn.sso.saml.sp-next-cert-file` 先发布新证书，IdP 侧更新后换位 | 同 JWT 签名私钥 |
 | IdP 的签名证书 | `config.idp_certs`，公钥证书 | 管理员更新，可同时放当前与下一张 | 非秘密，但变更要经管理面，强制审计 |
-| 社交登录、微信、短信厂商的密钥 | 配置的敏感项 | 运维改配置并滚动重启；提供方允许新旧并存的，先加新、再换、再删旧 | 另登记为日志的字面量匹配器 |
+| 社交登录与微信的密钥 | 配置的敏感项 | 运维改配置并滚动重启；提供方允许新旧并存的，先加新、再换、再删旧 | 另登记为日志的字面量匹配器 |
 | 校验缓存的 HMAC 密钥 | 进程内存，启动时随机 | 重启即换 | 不落盘 |
 
 存放的规则：
 
-- **authn 自己持有的机密只以下列形态存放（封闭集合）：** 哈希（口令、令牌、验证码、服务密钥）、数据库加密列（因素种子、IdP 客户端密钥）、文件（JWT 签名私钥、SAML 私钥）。提供方发给宿主的客户端密钥与厂商密钥是启动必须项，存在配置的敏感项里；配置里的敏感项只放这类启动必须项。
+- **authn 自己持有的机密只以下列形态存放（封闭集合）：** 哈希（口令、令牌、验证码、服务密钥）、数据库加密列（因素种子、IdP 客户端密钥）、文件（JWT 签名私钥、SAML 私钥）。提供方发给宿主的客户端密钥是启动必须项，存在配置的敏感项里；配置里的敏感项只放这类启动必须项。
 - **秘密不进命令行。** 秘密类配置项取 `Origins` 的零值，标 `Sensitive` 并带 `Description`，因为命令行参数会进入命令行历史与进程列表。
 - **秘密不进设置。** 设置的值明文存库，`Sensitive` 只遮蔽变更事件的载荷与 `Declared` 的默认值，`Get` 与 `List` 照常交出值。
 - **`Sensitive` 不向日志登记脱敏。** 它只约束错误文本不复述值、帮助输出不回显默认值、必须带说明。每个持有秘密配置值的模块在自己的 `New` 里把该值另登记为日志的字面量匹配器；日志模块不在这次运行的参与集里时登记不上。
@@ -439,7 +427,7 @@ flowchart TD
 | 加密列往返（`db` 根密钥在）；`BlindIndex` 自检（包 `recover`） | `ErrNoEncryptionKey` |
 | 签名与验证密钥文件可读、解析成功、算法一致、RSA 至少 2048 位、`kid` 不重复 | `ErrInvalidKey` |
 | 每个口令表条目可解析且主体名合法；表非空 | `ErrInvalidClaim`；条目读不了时同时包住 `static.ErrMalformedHash` |
-| `authn.login.wechat-web` 与 `authn.login.wechat-mp` 各自的必填项齐备；`authn.mfa.webauthn.rp-id` 等于基址主机或其父域；短信 `templates` 覆盖（用途，语言）的全部组合；SAML 的 `sign_requests` 有 SP 密钥；`authn.account.password-memory-budget-mib` 不低于 `m` 取值域上限的两倍 | `ErrInvalidConfig` |
+| `authn.login.wechat-web` 与 `authn.login.wechat-mp` 各自的必填项齐备；`authn.mfa.webauthn.rp-id` 等于基址主机或其父域；短信模板覆盖本模块所需的（模板，语言，参数）组合（在 `New` 核对载体声明）；SAML 的 `sign_requests` 有 SP 密钥；`authn.account.password-memory-budget-mib` 不低于 `m` 取值域上限的两倍 | `ErrInvalidConfig` |
 | 纳入 `authn.login` 而没有任何 `LoginMethod`；纳入 `authn.mfa` 而没有任何 `Factor`，却设了 `global-required` 或库里已有账户登记了某个种类而该种类没有实现 | `ErrNoLoginMethod`、`ErrNoFactor` |
 | 带表模块的迁移已施加（`Start` 里探测自己的表） | `ErrNotMigrated` |
 | `Requires` 里的排他功能齐备（在构造之前） | `core.ErrMissingProvider` |
@@ -535,12 +523,12 @@ flowchart TD
 |---|---|---|
 | 网关的配置项 | 已实现 | `pkg/authn/gate/config.go` `schema`、`moduleConfig`、`(moduleConfig).resolve` |
 | 口令表后端的配置项与设置 | 已实现 | `pkg/authn/static/config.go` `schema`、`settingsSchema`、`(moduleConfig).resolve` |
-| 账户、会话、令牌、登录方式、多因素、短信、SSO 与租户准入的配置项 | 已实现 | `pkg/authn/account/config.go` `schema`、`settingsSchema`；`pkg/authn/session/config.go`；`pkg/authn/token/config.go` `schema`、`(moduleConfig).resolve`；`pkg/authn/mfa/settings.go` `settingsSchema`、`pkg/authn/mfa/totp/config.go`、`pkg/authn/mfa/webauthn/config.go`；`pkg/authn/login/config.go`；`pkg/authn/login/google/config.go`、`pkg/authn/login/github/config.go`、`pkg/authn/login/wechatweb/wechatweb.go`、`pkg/authn/login/wechatmp/wechatmp.go`；`pkg/authn/mount/config.go`；`pkg/authn/sms/config.go`、`pkg/authn/sms/aliyun/config.go`、`pkg/authn/sms/tencent/config.go`；`pkg/authn/sso/config.go`、`pkg/authn/sso/saml/config.go`；`pkg/tenant/admission/config.go` |
+| 账户、会话、令牌、登录方式、多因素、短信、SSO 与租户准入的配置项 | 已实现 | `pkg/authn/account/config.go` `schema`、`settingsSchema`；`pkg/authn/session/config.go`；`pkg/authn/token/config.go` `schema`、`(moduleConfig).resolve`；`pkg/authn/mfa/settings.go` `settingsSchema`、`pkg/authn/mfa/totp/config.go`、`pkg/authn/mfa/webauthn/config.go`；`pkg/authn/login/config.go`；`pkg/authn/login/google/config.go`、`pkg/authn/login/github/config.go`、`pkg/authn/login/wechatweb/wechatweb.go`、`pkg/authn/login/wechatmp/wechatmp.go`；`pkg/authn/mount/config.go`；`pkg/authn/sms/config.go`；`pkg/authn/sso/config.go`、`pkg/authn/sso/saml/config.go`；`pkg/tenant/admission/config.go` |
 | 全部设置项的声明与取值域 | 已实现 | `pkg/authn/account/config.go` `settingsSchema`；`pkg/authn/session/settings.go`；`pkg/authn/token/settings.go` `settingsSchema`；`pkg/authn/mfa/settings.go`；`pkg/authn/login/config.go`；`pkg/authn/sms/settings.go` `settingsSchema`；`pkg/tenant/admission/config.go`；`pkg/authn/static/config.go` `settingsSchema`；`pkg/authn/sso/config.go` `settingsSchema`；`pkg/authn/impersonation/settings.go` `settingsSchema` |
 | 设置缺席的降级与读取出错的方向 | 已实现 | `pkg/authn/account/relax.go`、`pkg/authn/account/params.go`；`pkg/authn/session/settings.go`；`pkg/authn/token/settings.go` `settingReader`、`readSetting`；`pkg/authn/mfa/settings.go`；`pkg/authn/sms/settings.go`；`pkg/tenant/admission/config.go`；`pkg/authn/sso/config.go`；`pkg/authn/impersonation/settings.go` `readTuned`、`report` |
 | 放宽开关与决定守护面的清单只取主配置源 | 已实现 | `pkg/authn/gate/config.go` `schema`；`pkg/authn/account/config.go` `schema`；`pkg/authn/token/config.go` `schema`；`pkg/authn/sso/config.go` `schema`；`pkg/tenant/admission/config.go` |
 | 放宽变更的监视与 `authn.settings.relaxed` | 已实现 | `pkg/authn/account/relax.go`；`pkg/authn/{sms,session,token,static,login,mfa,sso,impersonation}/relax.go`；`pkg/tenant/admission/relax.go` |
-| 日志字面量匹配器的登记 | 已实现 | `pkg/authn/gate/redact.go` `registerNewRules`、`registerValueRule`；`pkg/authn/internal/literal/literal.go` `Register` |
+| 日志字面量匹配器的登记 | 已实现 | `pkg/authn/gate/redact.go` `registerNewRules`、`registerValueRule`；`pkg/internal/literal/literal.go` `Register` |
 | 启动期自检 | 已实现 | `pkg/authn/gate/config.go` `(moduleConfig).resolve`；`pkg/authn/account/config.go` `(moduleConfig).resolve`；`pkg/authn/session/config.go`；`pkg/authn/token/config.go` `(moduleConfig).resolve`、`pkg/authn/token/keys.go` `loadKeySet`、`pkg/authn/token/module.go`（探测表）；`pkg/authn/mfa/settings.go`、`pkg/authn/mfa/totp/config.go` `(moduleConfig).resolve`、`pkg/authn/mfa/webauthn/config.go` `(moduleConfig).resolve`；`pkg/authn/sms/config.go` `(moduleConfig).resolve`；`pkg/tenant/admission/config.go`；`pkg/authn/static/config.go` `(moduleConfig).resolve`；`pkg/authn/errors.go`；`pkg/authn/sso/config.go` `readConfig`、`pkg/authn/sso/config_validate.go` `validateConfig`、`pkg/authn/sso/register.go` `probe`、`pkg/authn/sso/saml/config.go` `loadKey` |
 | 加密列往返自检 | 已实现 | `pkg/authn/mfa/totp/totp.go` `(*factor).start`、`pkg/authn/mfa/totp/register.go` `roundTrip`；`pkg/authn/sms/start.go` `checkEncryptionKey`；`pkg/authn/sso/register.go` `roundTrip` |
 | 启动诊断 | 已实现 | `pkg/authn/gate/gate.go` `diagnose`、`freeze`；`pkg/authn/mount/mount.go`；`pkg/authn/token/product.go` `diagnose`；`pkg/tenant/admission/admission.go`；`pkg/authn/mfa/mfa.go` |

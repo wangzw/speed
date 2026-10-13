@@ -248,7 +248,7 @@ type ThrottledError struct{ RetryAfter time.Duration }
 | `ErrImpersonationRestricted`、`ErrImpersonationActive`、`ErrNotImpersonating`、`ErrImpersonationNeedsSession` | 违反冒充的硬性限制；该会话上已有未结束的冒充；结束时没有未结束的记录；调用方没有会话可绑 | 403 `impersonation-restricted`；409；404；403 `impersonation-restricted` |
 | `ErrForbidden`、`ErrAuditRequired` | `Decider` 判否；强制档动作写审计失败 | 403 `forbidden`；503 |
 | `ErrUnsupportedRegion` | 号码前缀不在放行表 | 400 `unsupported-region` |
-| `ErrSMSThrottled`、`ErrSMSRejected`、`ErrSMSUncertain` | 发送方限流；模板、签名或号码被拒；发送后超时、不知是否送达（不得盲目重发） | 不外露，只记指标与日志，对触发发送的请求的应答不变 |
+| `sms.ErrThrottled`、`sms.ErrRejected`、`sms.ErrUncertain` | 发送方限流；模板、签名或号码被拒；发送后超时、不知是否送达（不得盲目重发）。由本模块的工作池归类 | 不外露，只记指标与日志，对触发发送的请求的应答不变 |
 | `ErrDomainClaimed`、`ErrAssertionReplay` | 域名已被另一个 IdP 验证过；SAML 断言标识已见过 | 409；登录失败，记 Warn 与指标 |
 | `ErrProviderNotFound` | 点名的身份提供方行不存在（`SSOProviders` 的 `Get`、`Secret`、`Tenant`、`Put` 的更新路径、`Delete`、`ClaimDomain` 如此报告） | 管理面 404：裸 404，不带本能力的 problem 码，与同表内 `ErrAccountNotFound`、`ErrNotImpersonating` 的处置一致 |
 | `ErrUnavailable`、`ErrBusy` | kv、db、发送方、IdP 不可用（外部库错误包它）；口令派生的并发上限或内存预算已满 | 503；503 并带 `Retry-After: 1` |
@@ -277,7 +277,7 @@ type ThrottledError struct{ RetryAfter time.Duration }
 | audit | 强制档动作 | 先写审计、写成功才动作；写失败 503，动作不执行 | 拒 |
 | audit | 尽力档动作 | 记 Error 与 `authn.audit.write-failures`，业务继续 | 放：审计缺失，写入非保证 |
 | 账户生命周期钩子 | 停用、删除、撤销服务密钥之后的清理 | 账户状态已在本模块事务里生效；钩子失败返回 `ErrCleanupIncomplete`（503），重试幂等；发件箱在场时事件补偿；`valid_after` 与账户状态检查兜底 | 拒：状态已生效，清理待补 |
-| 短信发送方 | 登录与因素的短信 | 异步工作池记 Warn 与指标，用户收不到；`ErrSMSUncertain` 不盲目重发；入队时队列满 503 | 拒：不发 |
+| 短信发送方 | 登录与因素的短信 | 异步工作池记 Warn 与指标，用户收不到；`sms.ErrUncertain` 不盲目重发；入队时队列满 503 | 拒：不发 |
 | IdP（OIDC 发现、JWKS、令牌端点） | 企业 OIDC 与社交登录 | 该 IdP 的登录 503，流程保留至到期，其他 IdP 不受影响 | 拒 |
 | 受限出站客户端拒绝的连接（目的地不是公网地址、方案不是 https、响应体超上限） | IdP 的发现文档、JWKS、元数据与 userinfo 的出站请求 | 与该 IdP 不可用同形：该 IdP 的登录 503，流程保留至到期，其他 IdP 不受影响；成因进日志，不进应答 | 拒 |
 | IdP 元数据（SAML） | 证书更新 | 不自动刷新；管理员触发的刷新失败保留上一份有效配置并记 Warn | 有界放：IdP 元数据的证书陈旧 |
@@ -303,7 +303,7 @@ type ThrottledError struct{ RetryAfter time.Duration }
 - **上下文。** 每个对外调用（db、kv、IdP、短信）都带请求上下文并受预算约束；后台协程自带时限；`Stop` 与 `Close` 的上下文去掉了取消（见 [design-core](design-core.md)）。
 - **幂等。** 下列操作幂等（例举，不是封闭集；各模块文档写各自的幂等项）：`Revoke`、`DELETE flows/current`、`POST token/revoke`、`AccountLifecycle` 各方法与在 `ErrCleanupIncomplete` 之后重试同一调用。登录完成靠流程记录的比较并交换保证只成功一次；管理面写入靠唯一约束与条件更新保证幂等与互斥。
 - **启动顺序。** `New` 里不读写自己的表，因为首次启动时表还没建，`Migrate` 在 `New` 之后；需要读表的初始化（自检、清扫协程）放 `Start`。
-- **不盲目重试。** 网关不重试后端调用；`ErrSMSUncertain` 不得盲目重发。
+- **不盲目重试。** 网关不重试后端调用；`sms.ErrUncertain` 不得盲目重发。
 
 ### 部署前提
 

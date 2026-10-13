@@ -15,7 +15,10 @@ request, and the configuration reader a backend's tests need, for the tests of
 modules that read an identity.
 The value types and the units the modules share live in `pkg/authn/internal/`,
 which only this directory can import; among them `internal/mount/mounttest` is
-a `Mounter` for the tests of the modules that mount routes.
+a `Mounter` for the tests of the modules that mount routes. The literal-redaction
+register is the one shared unit outside it: it is `pkg/internal/literal`, used by
+the four login leaves here and by the two SMS carriers under `pkg/sms`, because a
+package under `pkg/sms` cannot import an `internal` package of this directory.
 
 The API is the package's godoc. Read `Verdict`'s constructors and `Accepts`'s
 field comments before writing a backend.
@@ -137,7 +140,7 @@ field comments before writing a backend.
   reach it: no module binds a sensitive attribute to a logger in its own `New`.
   A module that holds a secret configuration value registers the value itself as
   a literal matcher in its own `New`, before it takes its `Named` logger, through
-  `internal/literal`; marking an item `Sensitive` does not do that. The matcher
+  `pkg/internal/literal`; marking an item `Sensitive` does not do that. The matcher
   finds the value as written, without the whitespace around it and URL-escaped,
   because a failed request's text carries the address it was sent to. A module
   that builds a matcher of its own for a configured secret is the shape to reject.
@@ -333,15 +336,6 @@ reads — the SMS purposes, the sentinel errors and the locale values (`LocaleZH
 `LocaleEN`) — are declared in this package beside it. How a module delivers a
 seam and how a consumer takes it are stated in the module's own `AGENTS.md`, not
 here.
-
-`SMSSender` is the SMS sending seam: `SMS` is what a send carries, `SendReceipt`
-is what a carrier answers with, and `ErrSMSThrottled`, `ErrSMSRejected` and
-`ErrSMSUncertain` are the errors a carrier may return. A carrier module
-(`pkg/authn/sms/aliyun`, `pkg/authn/sms/tencent`) delivers it exclusively, so a
-command tree names exactly one and two at once fail in resolution. It is therefore
-one of the exclusive seams, taken by its consumer as a single required dependency,
-and not one of the standing, non-exclusive seams a consumer takes from every
-provider at once with `ResolveAll`.
 
 ## Shape of a backend
 

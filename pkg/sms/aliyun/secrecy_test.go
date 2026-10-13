@@ -5,7 +5,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/vislake/speed/pkg/authn"
+	"github.com/vislake/speed/pkg/sms"
 )
 
 // TestAConfigurationErrorNeverRepeatsTheAccessKeySecret holds the discipline that
@@ -16,9 +16,14 @@ import (
 func TestAConfigurationErrorNeverRepeatsTheAccessKeySecret(t *testing.T) {
 	const secret = "s3cr3t-aliyun-access-key-sentinel-9f8e7d6c"
 	for name, edit := range map[string]func(*moduleConfig){
-		"a missing login template": func(c *moduleConfig) { delete(c.Templates, "login/zh-CN") },
-		"a blank enrollment template": func(c *moduleConfig) {
-			c.Templates["enroll/en-US"] = "   "
+		"a template with no parameter": func(c *moduleConfig) {
+			c.Templates["authn.code.login"] = sms.TemplateSpec{Codes: map[string]string{"zh-CN": "SMS_X"}}
+		},
+		"a template with a blank code": func(c *moduleConfig) {
+			c.Templates["authn.code.enroll"] = sms.TemplateSpec{
+				Params: []string{"code", "ttl_minutes"},
+				Codes:  map[string]string{"zh-CN": "SMS_X", "en-US": "   "},
+			}
 		},
 	} {
 		t.Run(name, func(t *testing.T) {
@@ -26,7 +31,7 @@ func TestAConfigurationErrorNeverRepeatsTheAccessKeySecret(t *testing.T) {
 			cfg.AccessKeySecret = secret
 			edit(&cfg)
 			_, err := cfg.resolve()
-			if !errors.Is(err, authn.ErrInvalidConfig) {
+			if !errors.Is(err, sms.ErrInvalidConfig) {
 				t.Fatalf("resolve = %v, want one wrapping ErrInvalidConfig", err)
 			}
 			if strings.Contains(err.Error(), secret) {

@@ -299,6 +299,7 @@ speed 不引入进程边界。宿主是单一进程，注册表与全部模块�
 | [tenant-admission](modules/design-tenant-admission.md) | 已实现 |
 | [authz](modules/design-authz.md) | 已实现 |
 | [kv](modules/design-kv.md) | 已实现 |
+| [sms](modules/design-sms.md) | 已实现 |
 | [event](modules/design-event.md) | 已实现 |
 | [outbox](modules/design-outbox.md) | 已实现 |
 | [audit](modules/design-audit.md) | 已实现 |

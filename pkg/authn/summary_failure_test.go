@@ -591,8 +591,8 @@ var runtimeSentinels = []error{
 	authn.ErrSessionNotFound, authn.ErrCSRF, authn.ErrTokenInvalid, authn.ErrInvalidGrant,
 	authn.ErrRefreshReuse, authn.ErrNoSigningKey, authn.ErrReservedClaim, authn.ErrImpersonationRestricted,
 	authn.ErrImpersonationActive, authn.ErrNotImpersonating, authn.ErrImpersonationNeedsSession,
-	authn.ErrForbidden, authn.ErrAuditRequired, authn.ErrUnsupportedRegion, authn.ErrSMSThrottled,
-	authn.ErrSMSRejected, authn.ErrSMSUncertain, authn.ErrDomainClaimed, authn.ErrAssertionReplay,
+	authn.ErrForbidden, authn.ErrAuditRequired, authn.ErrUnsupportedRegion,
+	authn.ErrDomainClaimed, authn.ErrAssertionReplay,
 	authn.ErrProviderNotFound, authn.ErrUnavailable, authn.ErrBusy,
 }
 

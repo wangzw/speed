@@ -6,7 +6,7 @@
 
 ## 背景
 
-`pkg/authn` 交付的功能彼此独立，各自绑定不同的第三方库：SAML、通行密钥、短信发送方、OIDC、JWT、会话库。宿主的 `go.mod` 由它 import 的包决定，未被 import 的包所绑的库不进它的 `go.mod`，宿主的 `go.sum` 与实际下载则会经被 import 包的测试闭包带上同一 Go module 内其余实现所绑的库（[ADR-module-packaging-2026-09-22](adr-module-packaging-2026-09-22.md)）。
+`pkg/authn` 交付的功能彼此独立，各自绑定不同的第三方库：SAML、通行密钥、OIDC、JWT、会话库。宿主的 `go.mod` 由它 import 的包决定，未被 import 的包所绑的库不进它的 `go.mod`，宿主的 `go.sum` 与实际下载则会经被 import 包的测试闭包带上同一 Go module 内其余实现所绑的库（[ADR-module-packaging-2026-09-22](adr-module-packaging-2026-09-22.md)）。短信发送方的厂商 SDK 不在此列：发送能力抽为顶层能力模块 `pkg/sms`，厂商 SDK 随它住在 `pkg/sms` 的载体叶子包下（[ADR-sms-capability-2026-10-13](adr-sms-capability-2026-10-13.md)）。
 
 登记随 import 发生，import 一个包即执行它的 `init`，该包登记的模块随之进入可用集（[ADR-module-registration-2026-09-13](adr-module-registration-2026-09-13.md)）。根包是每个子包与每一处读取身份的代码都要 import 的包：`pkg/tenant/resolve`、`pkg/audit/journal`、`pkg/ratelimit` 都 import 它，根包新增的任何 import 随之进入这些包的依赖闭包。
 
@@ -156,4 +156,4 @@ flowchart LR
 - 若消解规则演进出「兜底提供者」这一档——声明排他的默认实现在别人显式启用之后仍然留在提供者集合里，而不是整个退出——则「并立功能一律非排他」不再必要，本记录对并立功能排他性的约束不再适用。
 - 若 `core` 取消「一个模块一个实例」，则能力接口方法名两两不相交、一个模块一个登录方式名与一个 `Factor.Kind()` 这些约束失去依据。
 - 若某个叶子功能的消费者要求脱离其余功能单独引入，或它的发布节奏必须独立，则把它拆为独立 Go module，目录边界已经就位（[ADR-module-packaging-2026-09-22](adr-module-packaging-2026-09-22.md)）。
-- 假设：同一个 Go module 内并存的第三方库编译兼容。已验证兼容的组合是：TOTP、WebAuthn、SAML 库与 go-oidc 同在；各家短信发送方 SDK 同在。其余组合的兼容性未验证。守住它的是对整个 `pkg` 模块的构建与依赖整理检查（`make check` 的 build 与 tidy-check）：引入任一库的变更须使它们通过，不通过即该库不能与其余库并存于同一 Go module。
+- 假设：同一个 Go module 内并存的第三方库编译兼容。已验证兼容的组合是：TOTP、WebAuthn、SAML 库与 go-oidc 同在；各家短信发送方 SDK 同在（随发送能力住在顶层 `pkg/sms` 的载体叶子包下，仍在同一个 `pkg` 模块里）。其余组合的兼容性未验证。守住它的是对整个 `pkg` 模块的构建与依赖整理检查（`make check` 的 build 与 tidy-check）：引入任一库的变更须使它们通过，不通过即该库不能与其余库并存于同一 Go module。

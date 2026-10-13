@@ -34,6 +34,7 @@ speed 是一个配置驱动的模块化应用程序框架，以 Go 库的形式�
 | [tenant-admission](modules/design-tenant-admission.md) | 租户准入层：身份是否被准入已解析的租户、租户级认证强度要求、冒充的租户范围 |
 | [authz](modules/design-authz.md) | 授权：职责边界、模块清单与依赖、判定引擎与策略存储、中间件与路由声明、管理面、承接的权限点 |
 | [kv](modules/design-kv.md) | 键值原语：不透明字节的存取与过期、原子自增与比较并交换、按最弱后端设计的接口面 |
+| [sms](modules/design-sms.md) | 短信发送：按模板发送、模板一等声明、载体接缝与厂商适配 |
 | [event](modules/design-event.md) | 事件总线：按类型发布与订阅、载荷的结构化读取、投递承诺的下界 |
 | [outbox](modules/design-outbox.md) | 事务发件箱：在写入的事务里暂存事件、提交之后中继到事件总线、拒收后重发、多副本的有时限认领 |
 | [audit](modules/design-audit.md) | 审计：语句、事件、请求与记录接缝的捕获通路、审计表、明细的脱敏 |

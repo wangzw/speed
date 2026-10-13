@@ -5,7 +5,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/vislake/speed/pkg/authn"
+	"github.com/vislake/speed/pkg/sms"
 )
 
 // TestAConfigurationErrorNeverRepeatsTheCredentialValues holds the discipline that
@@ -20,8 +20,15 @@ func TestAConfigurationErrorNeverRepeatsTheCredentialValues(t *testing.T) {
 		secretKey = "s3cr3t-tencent-key-sentinel-1a2b3c4d"
 	)
 	for name, edit := range map[string]func(*moduleConfig){
-		"a missing mfa template": func(c *moduleConfig) { c.Templates["mfa/zh-CN"] = "" },
-		"a blank login template": func(c *moduleConfig) { c.Templates["login/en-US"] = "   " },
+		"a template with a blank code": func(c *moduleConfig) {
+			c.Templates["authn.code.mfa"] = sms.TemplateSpec{
+				Params: []string{"code", "ttl_minutes"},
+				Codes:  map[string]string{"zh-CN": "", "en-US": "1004"},
+			}
+		},
+		"a template with no language": func(c *moduleConfig) {
+			c.Templates["authn.code.login"] = sms.TemplateSpec{Params: []string{"code", "ttl_minutes"}}
+		},
 	} {
 		t.Run(name, func(t *testing.T) {
 			cfg := moduleConfig{
@@ -34,7 +41,7 @@ func TestAConfigurationErrorNeverRepeatsTheCredentialValues(t *testing.T) {
 			}
 			edit(&cfg)
 			_, err := cfg.resolve()
-			if !errors.Is(err, authn.ErrInvalidConfig) {
+			if !errors.Is(err, sms.ErrInvalidConfig) {
 				t.Fatalf("resolve = %v, want one wrapping ErrInvalidConfig", err)
 			}
 			for _, value := range []string{secretID, secretKey} {
