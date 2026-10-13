@@ -15,17 +15,24 @@ import (
 	"github.com/vislake/speed/pkg/i18n"
 )
 
+// The tags these cases write by name. The engine no longer exports them, so the
+// test names them itself.
+const (
+	localeEN i18n.Locale = "en-US"
+	localeZH i18n.Locale = "zh-CN"
+)
+
 // catalog is the message set the tests render against: a typed key and a
 // parameterised one in both locales, and the status-derived keys the responder
 // ships for a problem that names no message.
 var catalog = fakeLocalizer{
-	i18n.LocaleEN: {
+	localeEN: {
 		"authn.login-failed": "Login failed",
 		"authn.retry-later":  "Try again in {{seconds}} seconds",
 		"http.404":           "Not Found",
 		"http.429":           "Too Many Requests",
 	},
-	i18n.LocaleZH: {
+	localeZH: {
 		"authn.login-failed": "登录失败",
 		"authn.retry-later":  "请在 {{seconds}} 秒后重试",
 		"http.404":           "未找到",
@@ -58,20 +65,34 @@ func (f fakeLocalizer) Translate(locale i18n.Locale, key i18n.Key, args i18n.Arg
 	return message, true
 }
 
-// fakeResolver answers with the locale written into the context, or Default,
-// the way the engine's resolver does. The responder reads only LocaleOf.
-type fakeResolver struct{}
+// fakeResolver answers with the locale written into the context, or its
+// configured default, the way the engine's resolver does. The responder reads
+// LocaleOf for the response's language and Default for its fallback lookup.
+type fakeResolver struct {
+	// def is the configured default locale; empty reads as English, which is
+	// what an unset configuration resolves to.
+	def i18n.Locale
+}
 
-func (fakeResolver) LocaleOf(ctx context.Context) i18n.Locale {
+func (r fakeResolver) configured() i18n.Locale {
+	if r.def == "" {
+		return localeEN
+	}
+	return r.def
+}
+
+func (r fakeResolver) Default() i18n.Locale { return r.configured() }
+
+func (r fakeResolver) LocaleOf(ctx context.Context) i18n.Locale {
 	if locale, ok := i18n.FromContext(ctx); ok {
 		return locale
 	}
-	return i18n.Default
+	return r.configured()
 }
 
-func (fakeResolver) TimeZoneOf(context.Context) string             { return "" }
-func (fakeResolver) LocaleFor(context.Context, string) i18n.Locale { return i18n.Default }
-func (fakeResolver) TimeZoneFor(context.Context, string) string    { return "" }
+func (r fakeResolver) TimeZoneOf(context.Context) string             { return "" }
+func (r fakeResolver) LocaleFor(context.Context, string) i18n.Locale { return r.configured() }
+func (r fakeResolver) TimeZoneFor(context.Context, string) string    { return "" }
 
 // render runs p through a responder over catalog with the request's locale set
 // to locale. Headers in before are set on the response writer first, so a test
@@ -106,7 +127,7 @@ func decodeBody(t *testing.T, rec *httptest.ResponseRecorder) problemBody {
 // while the machine-readable type and the status are written exactly as the
 // refusing layer set them.
 func TestALocalizedTitleKeepsTypeAndStatusVerbatim(t *testing.T) {
-	rec := render(t, i18n.LocaleZH, speedhttp.Problem{
+	rec := render(t, localeZH, speedhttp.Problem{
 		Type:   "urn:speed:authn:login-failed",
 		Status: nethttp.StatusUnauthorized,
 	}, nil)
@@ -164,13 +185,13 @@ func TestFallbacks(t *testing.T) {
 		{
 			name:   "a message key no catalog carries falls to the standard text",
 			p:      speedhttp.Problem{Key: "authn.gone", Status: nethttp.StatusNotFound},
-			locale: i18n.LocaleZH,
+			locale: localeZH,
 			want:   "Not Found",
 		},
 		{
 			name:   "a type whose derived key no catalog carries falls to the standard text",
 			p:      speedhttp.Problem{Type: "urn:speed:authn:gone", Status: nethttp.StatusNotFound},
-			locale: i18n.LocaleZH,
+			locale: localeZH,
 			want:   "Not Found",
 		},
 		{
@@ -178,13 +199,13 @@ func TestFallbacks(t *testing.T) {
 			// code is the whole story; the status-derived key answers it.
 			name:   "the RFC 9457 default type takes the status-derived key",
 			p:      speedhttp.Problem{Type: "about:blank", Status: nethttp.StatusNotFound},
-			locale: i18n.LocaleZH,
+			locale: localeZH,
 			want:   "未找到",
 		},
 		{
 			name:   "a type the built-in catalog carries is rendered from it",
 			p:      speedhttp.Problem{Type: "urn:speed:http:404", Status: nethttp.StatusNotFound},
-			locale: i18n.LocaleZH,
+			locale: localeZH,
 			want:   "未找到",
 		},
 		{
@@ -193,13 +214,13 @@ func TestFallbacks(t *testing.T) {
 			// library's English.
 			name:   "a problem that names no type renders the status-derived key",
 			p:      speedhttp.Problem{Status: nethttp.StatusNotFound},
-			locale: i18n.LocaleZH,
+			locale: localeZH,
 			want:   "未找到",
 		},
 		{
 			name:   "a problem that already carries a title keeps it",
 			p:      speedhttp.Problem{Type: "urn:speed:authn:login-failed", Title: "Already set", Status: nethttp.StatusUnauthorized},
-			locale: i18n.LocaleZH,
+			locale: localeZH,
 			want:   "Already set",
 		},
 	}
@@ -217,7 +238,7 @@ func TestFallbacks(t *testing.T) {
 // them, and that a name with no argument is left in the text rather than dropped.
 func TestAParameterisedTitle(t *testing.T) {
 	t.Run("fills the placeholders from Args", func(t *testing.T) {
-		rec := render(t, i18n.LocaleZH, speedhttp.Problem{
+		rec := render(t, localeZH, speedhttp.Problem{
 			Key:    "authn.retry-later",
 			Args:   map[string]string{"seconds": "30"},
 			Status: nethttp.StatusTooManyRequests,
@@ -227,7 +248,7 @@ func TestAParameterisedTitle(t *testing.T) {
 		}
 	})
 	t.Run("leaves a placeholder with no argument as written", func(t *testing.T) {
-		rec := render(t, i18n.LocaleZH, speedhttp.Problem{
+		rec := render(t, localeZH, speedhttp.Problem{
 			Key:    "authn.retry-later",
 			Status: nethttp.StatusTooManyRequests,
 		}, nil)
@@ -246,7 +267,7 @@ func TestHeadersKeptAndDropped(t *testing.T) {
 	before.Set("Content-Length", "42")
 	before.Set("Content-Encoding", "gzip")
 
-	rec := render(t, i18n.LocaleZH, speedhttp.Problem{
+	rec := render(t, localeZH, speedhttp.Problem{
 		Type:   "urn:speed:authn:login-failed",
 		Status: nethttp.StatusUnauthorized,
 	}, before)
@@ -261,6 +282,26 @@ func TestHeadersKeptAndDropped(t *testing.T) {
 		if got := header.Get(name); got != "" {
 			t.Errorf("%s: got %q, want it dropped", name, got)
 		}
+	}
+}
+
+// TestTheFallbackFollowsTheResolverDefault holds that the responder's fallback
+// lookup follows the resolver's configured default rather than a fixed English
+// one: with a default of zh-CN, a request whose own locale the catalog does not
+// carry renders the key from the default locale, in Chinese. A responder that
+// fell back to English would answer "Try again in 30 seconds" here.
+func TestTheFallbackFollowsTheResolverDefault(t *testing.T) {
+	req := httptest.NewRequest(nethttp.MethodGet, "/thing", nil)
+	req = req.WithContext(i18n.WithLocale(req.Context(), i18n.Locale("fr-FR")))
+	rec := httptest.NewRecorder()
+	r := &responder{localizer: catalog, resolver: fakeResolver{def: localeZH}}
+	r.RespondError(rec, req, speedhttp.Problem{
+		Key:    "authn.retry-later",
+		Args:   map[string]string{"seconds": "30"},
+		Status: nethttp.StatusTooManyRequests,
+	})
+	if got, want := decodeBody(t, rec).Title, "请在 30 秒后重试"; got != want {
+		t.Errorf("title: got %q, want %q", got, want)
 	}
 }
 
@@ -281,7 +322,7 @@ func TestAStatusOutsideTheRangeIsWrittenAs500(t *testing.T) {
 	}
 	for _, tc := range cases {
 		t.Run(strconv.Itoa(tc.status), func(t *testing.T) {
-			rec := render(t, i18n.Default, speedhttp.Problem{Title: "given", Status: tc.status}, nil)
+			rec := render(t, localeEN, speedhttp.Problem{Title: "given", Status: tc.status}, nil)
 			if rec.Code != tc.want {
 				t.Errorf("response status: got %d, want %d", rec.Code, tc.want)
 			}

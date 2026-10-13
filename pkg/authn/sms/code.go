@@ -10,16 +10,13 @@ import (
 	"github.com/vislake/speed/pkg/authn"
 )
 
-// The closed sets this package validates against, taken from the root package's
-// single declaration of each: the code purposes and the two message languages.
-// The names are this package's own shorthand; the values are the root package's.
+// The closed set of code purposes, taken from the root package's single
+// declaration of each. The names are this package's own shorthand; the values
+// are the root package's.
 const (
 	purposeLogin  = authn.SMSPurposeLogin
 	purposeMFA    = authn.SMSPurposeMFA
 	purposeEnroll = authn.SMSPurposeEnroll
-
-	localeChinese = authn.LocaleZH
-	localeEnglish = authn.LocaleEN
 )
 
 // decoyMAC is the digest a check compares against when there is no row to
@@ -57,26 +54,10 @@ func ttlMinutes(ttl time.Duration) string {
 	return fmt.Sprintf("%d", minutes)
 }
 
-// localeOf reads the message language the caller named through the root
-// package's single mapping, the empty string reading as the default.
-func localeOf(locale string) string {
-	return authn.LocaleOf(locale)
-}
-
 // validPurpose reports whether p is one of the closed set of purposes.
 func validPurpose(p string) bool {
 	switch p {
 	case purposeLogin, purposeMFA, purposeEnroll:
-		return true
-	}
-	return false
-}
-
-// validLocale reports whether locale is the empty string or one of the two
-// languages a message may be written in.
-func validLocale(locale string) bool {
-	switch locale {
-	case "", localeChinese, localeEnglish:
 		return true
 	}
 	return false

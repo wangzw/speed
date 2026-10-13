@@ -11,7 +11,8 @@ its own.
 
 - `pkg/i18n/catalog` registers the engine, module name `i18n`: it delivers
   `Localizer`, `Negotiator` and `Resolver` exclusively, collects the declared
-  catalogs over the available set, and takes an optional `Profile`.
+  catalogs over the available set, reads the default locale from the
+  `i18n.default-locale` config item, and takes an optional `Profile`.
 - `pkg/i18n/http` registers `i18n.http`: it walks `http.Router`'s `Endpoints`
   and binds two middleware layers on each, one negotiating `Accept-Language`,
   one reading an account's stored language and time zone. It imports `pkg/http`
@@ -55,13 +56,23 @@ message.
   of an identity in `pkg/authn`: a host starting a job for a known account writes
   the locale it resolved there directly. Directory and time zone change nothing
   about what a caller may reach; that is decided elsewhere.
+- **The default locale is configuration, not a constant.** The set of locales a
+  run supports is the set the declared catalogs carry, and which of them a
+  request that names none resolves to — and which a message falls back to when
+  its key is missing — is the `i18n.default-locale` config item, "en-US" when
+  unset. Startup refuses a set of catalogs that does not carry that locale
+  (`ErrNoCatalog`), because the fallback every message relies on would then
+  render bare keys. The interface package exports the namespace
+  (`i18n.ConfigNamespace`) and the item name (`i18n.DefaultLocaleItem`) so the
+  SMS module resolves the same single statement of the default.
 - **An empty locale or time zone is not written.** `WithLocale` and
   `WithTimeZone` leave the context unchanged for an empty value, so a context
   naming nothing reads as naming nothing. The fallback lives in the resolver, not
-  in the context: `Resolver.LocaleOf` answers `Default` for a context that
-  carries none.
+  in the context: `Resolver.LocaleOf` answers the run's configured default for a
+  context that carries none.
 - **A message is never rendered empty.** `Localize` falls back from the requested
-  locale to `Default` and then to the key itself, and reports no error; an
+  locale to the run's configured default and then to the key itself, and reports
+  no error; an
   unsupported locale or an unknown key is a fallback, not a failure. `Translate`
   does not fall back — it reports whether a catalog carried the key through its
   second return value, and returns the empty string when none did.
@@ -83,7 +94,7 @@ message.
   run has one set of languages, taken by `core.Resolve`, and two engines fail in
   resolution. `Profile` is non-exclusive and optional — the engine takes every
   implementation with `core.ResolveAll`, and none is a legal configuration in
-  which the resolution chain falls through to `Default`.
+  which the resolution chain falls through to the configured default.
 - **`pkg/http` does not import this package, and neither does the `pkg/authn`
   root package.** `pkg/http` hands a `Problem` to the delivered
   `ErrorResponder` and knows nothing about a locale. The `pkg/authn` root package

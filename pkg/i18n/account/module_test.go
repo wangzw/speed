@@ -66,7 +66,7 @@ func TestLocaleForReadsTheStoredAttribute(t *testing.T) {
 		want    i18n.Locale
 		wantOK  bool
 	}{
-		{"a stored locale reads back", "acct-1", full, nil, i18n.LocaleZH, true},
+		{"a stored locale reads back", "acct-1", full, nil, i18n.Locale("zh-CN"), true},
 		{"a malformed identifier reads as none", "not an id!", full, nil, "", false},
 		{"an absent account reads as none", "acct-1", full, authn.ErrAccountNotFound, "", false},
 		{"an absent attribute reads as none", "acct-1", authn.Account{}, nil, "", false},
@@ -119,7 +119,7 @@ func TestTimeZoneForReadsTheStoredAttribute(t *testing.T) {
 // about to be created, changes no other field, and leaves the attribute set
 // untouched when the context names neither.
 func TestProvisionSeedsTheContextPreferences(t *testing.T) {
-	localeCtx := i18n.WithLocale(context.Background(), i18n.LocaleZH)
+	localeCtx := i18n.WithLocale(context.Background(), i18n.Locale("zh-CN"))
 	zoneCtx := i18n.WithTimeZone(context.Background(), "Asia/Shanghai")
 	bothCtx := i18n.WithTimeZone(localeCtx, "Asia/Shanghai")
 

@@ -84,18 +84,29 @@ compatibility break for a dashboard written against it.
 - **The module knows no tenant and no carrier.** No package here imports
   `pkg/tenant`; the carrier is taken only as `pkg/sms`'s `Sender`, and no
   carrier subpackage is imported (`Module`).
-- **The templates this module needs are held to the carrier's declaration in
-  `New`.** The top-level `pkg/sms` capability carries the first-class template
+- **The templates and the languages are the carrier's, held to its declaration
+  in `New`.** The top-level `pkg/sms` capability carries the first-class template
   declaration and does not know what a consumer needs; this module maps each
   purpose to a template key (`authn.code.login`, `authn.code.mfa`,
-  `authn.code.enroll`), names the `code` and `ttl_minutes` parameters and the
-  locales it sends in, and checks them against `Sender.Declared()` after the
-  sender is resolved in `newProduct`, failing the startup with `ErrInvalidConfig`
-  on any combination it does not match — a missing one, or a parameter the
-  carrier declares and the module never sends, which no message could satisfy.
-  The parameter names are compared for equality, not containment. `Prepare` runs
-  before `New` and has no instance, so the check lives in `New` (`templates.go`,
-  `newProduct`).
+  `authn.code.enroll`), and checks against `Sender.Declared()` after the sender is
+  resolved in `newProduct` that every template is present, carries exactly the
+  `code` and `ttl_minutes` parameters, has at least one language, and covers the
+  configured default language. The parameter names are compared for equality, not
+  containment. A mismatch — a missing template, a stray parameter, or a template
+  without the default language — stops the startup with `ErrInvalidConfig` naming
+  it, ahead of any code. `Prepare` runs before `New` and has no instance, so the
+  check lives in `New` (`templates.go`, `newProduct`).
+- **The set of languages is derived, and a requested language is resolved, never
+  refused.** The languages a message may be sent in are the ones the template its
+  purpose maps to declares, taken from the carrier's declaration, not a set
+  enumerated in code; two templates of one carrier may declare different sets. A
+  language a caller names is matched by primary subtag against that template's set
+  — `en-GB` goes out under the template's `en-US` — and an empty request, or one
+  that template's set does not match, resolves to the configured default. The
+  default is the shared `i18n.default-locale` item, read from the i18n
+  capability's namespace so one statement of the default serves both capabilities;
+  an assembly with no i18n engine keeps `en-US` (`readDefaultLocale`,
+  `resolveLocale`, `templateLocales`).
 - **The configuration sizes the pool; the settings tune the state machine.** The
   worker count and the queue size are read before a database is reachable;
   everything a request reads is a setting with a declared default. An absent

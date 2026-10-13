@@ -21,7 +21,8 @@ func TestStartRefusesWithoutARootKey(t *testing.T) {
 	handle := database.DB().Session(&gorm.Session{Logger: logger.Discard})
 	applyMigrations(t, handle, sqliteDialect)
 
-	p := build(database, newSender(), resolved{Workers: 1, QueueSize: 4})
+	p := build(database, newSender(), resolved{Workers: 1, QueueSize: 4}, testDefaultLocale,
+		templateLocales(newSender().Declared()))
 	err := p.start(context.Background())
 	if !errors.Is(err, authn.ErrNoEncryptionKey) {
 		t.Fatalf("start without a root key returned %v, want ErrNoEncryptionKey", err)
@@ -32,7 +33,8 @@ func TestStartRefusesWithoutARootKey(t *testing.T) {
 // there ends the startup with ErrNotMigrated before the key is even checked.
 func TestStartRefusesWhenTheTableIsMissing(t *testing.T) {
 	database := dbtest.SQLite(t, filepath.Join(t.TempDir(), "sms.db"), nil)
-	p := build(database, newSender(), resolved{Workers: 1, QueueSize: 4})
+	p := build(database, newSender(), resolved{Workers: 1, QueueSize: 4}, testDefaultLocale,
+		templateLocales(newSender().Declared()))
 	err := p.start(context.Background())
 	if !errors.Is(err, authn.ErrNotMigrated) {
 		t.Fatalf("start without the table returned %v, want ErrNotMigrated", err)

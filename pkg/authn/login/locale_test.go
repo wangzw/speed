@@ -6,28 +6,27 @@ import (
 	"testing"
 
 	"github.com/gin-gonic/gin"
-
-	"github.com/vislake/speed/pkg/authn"
 )
 
-// TestLocaleOfMapsAcceptLanguageToTheClosedSet holds the engine's mapping of the
-// request's Accept-Language to the closed set the SMS templates use: the first
-// tag's primary subtag names the language, a tag the set does not name reads as
-// nothing, and the empty header reads as nothing. The empty result is what the
-// default further down reads.
-func TestLocaleOfMapsAcceptLanguageToTheClosedSet(t *testing.T) {
+// TestLocaleOfPassesTheRequestLanguageThrough holds the engine's mapping of the
+// request's language: the locale the i18n layer settled into the context, or,
+// with no i18n layer, the first Accept-Language tag as written. It is not held to
+// a set — the SMS module resolves it against the languages its carrier declares —
+// so a tag of any language passes through, and an empty request names none.
+func TestLocaleOfPassesTheRequestLanguageThrough(t *testing.T) {
 	cases := []struct {
 		header string
 		want   string
 	}{
 		{"", ""},
-		{"en-US,en;q=0.9", authn.LocaleEN},
-		{"en", authn.LocaleEN},
-		{"zh-Hans-CN", authn.LocaleZH},
-		{"zh-CN,zh;q=0.9", authn.LocaleZH},
-		{"ZH", authn.LocaleZH},
-		{"fr-FR", ""},
-		{"de,en;q=0.5", ""},
+		{"en-US,en;q=0.9", "en-US"},
+		{"en", "en"},
+		// A tag the old closed set did not hold is neither mapped nor dropped: it
+		// is passed through for the SMS module to resolve.
+		{"zh-Hans-CN", "zh-Hans-CN"},
+		{"ja-JP", "ja-JP"},
+		{"fr-FR", "fr-FR"},
+		{"de,en;q=0.5", "de"},
 	}
 	for _, tc := range cases {
 		t.Run(tc.header, func(t *testing.T) {
@@ -44,17 +43,17 @@ func TestLocaleOfMapsAcceptLanguageToTheClosedSet(t *testing.T) {
 }
 
 // TestTheLanguageReachesTheFlowRecord holds the wiring: the language the engine
-// maps from the start request's Accept-Language is the one the flow record keeps,
-// which is what a later SMS send reads.
+// reads off the start request is the one the flow record keeps, which is what a
+// later SMS send reads and resolves.
 func TestTheLanguageReachesTheFlowRecord(t *testing.T) {
 	m := &redirectMethod{}
 	r := newRigMethod(t, m)
-	rec := r.send(http.MethodPost, "/auth/flows", `{"method":"password"}`, "Accept-Language", "en-US,en;q=0.9")
+	rec := r.send(http.MethodPost, "/auth/flows", `{"method":"password"}`, "Accept-Language", "ja-JP,en;q=0.9")
 	if rec.Code != http.StatusOK {
 		t.Fatalf("POST flows answered %d: %s", rec.Code, rec.Body.String())
 	}
 	cookie := flowCookie(t, rec)
-	if got := flowRecordOf(t, r, cookie).Locale; got != authn.LocaleEN {
-		t.Errorf("the flow record locale is %q, want %q", got, authn.LocaleEN)
+	if got := flowRecordOf(t, r, cookie).Locale; got != "ja-JP" {
+		t.Errorf("the flow record locale is %q, want %q", got, "ja-JP")
 	}
 }

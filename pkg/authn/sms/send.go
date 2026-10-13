@@ -84,7 +84,7 @@ func (p *product) Send(ctx context.Context, in authn.SendCode) (string, error) {
 		To:       in.Phone,
 		Template: purposeTemplate(in.Purpose),
 		Params:   map[string]string{"code": code, "ttl_minutes": ttlMinutes(ttl)},
-		Locale:   localeOf(in.Locale),
+		Locale:   resolveLocale(in.Locale, p.defaultLocale, p.localesByTemplate[purposeTemplate(in.Purpose)]),
 		DedupeID: id,
 	}
 	if p.enqueue(msg) {
@@ -99,9 +99,11 @@ func (p *product) Send(ctx context.Context, in authn.SendCode) (string, error) {
 }
 
 // checkSendCode holds the input to the caller's contract. The purpose is one of
-// the closed set, the phone is a normalized number, the locale is empty or one
-// of the two languages, and the account is set for the purposes that count
-// against one. A breach is a defect of the caller.
+// the closed set, the phone is a normalized number, and the account is set for
+// the purposes that count against one. The locale is not held to a set here: it
+// is a caller's preference for the message language, and the carrier's set — what
+// a message can actually be sent in — is what resolves it, at send time. A breach
+// of the checks below is a defect of the caller.
 func checkSendCode(in authn.SendCode) error {
 	if !validPurpose(in.Purpose) {
 		return fmt.Errorf("%w: the purpose %q is not one of %s, %s and %s",
@@ -109,10 +111,6 @@ func checkSendCode(in authn.SendCode) error {
 	}
 	if in.Phone == "" {
 		return fmt.Errorf("%w: the phone number is empty", errCallerDefect)
-	}
-	if !validLocale(in.Locale) {
-		return fmt.Errorf("%w: the locale %q is not one of %s and %s",
-			errCallerDefect, in.Locale, localeChinese, localeEnglish)
 	}
 	if in.Purpose != purposeLogin && in.Account == "" {
 		return fmt.Errorf("%w: the purpose %q counts against an account, and none is set",

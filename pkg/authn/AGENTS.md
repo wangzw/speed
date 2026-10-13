@@ -332,8 +332,10 @@ stable contract: a method added, dropped or re-signed, or a field of one of thos
 types renamed, is a breaking change for every implementer and every consumer.
 `seams_test.go` holds each method set it lists to the declared signature and
 `surface_test.go` pins the exported fields and methods. The closed sets a seam
-reads — the SMS purposes, the sentinel errors and the locale values (`LocaleZH`,
-`LocaleEN`) — are declared in this package beside it. How a module delivers a
+reads — the SMS purposes and the sentinel errors — are declared in this package
+beside it. The message languages are not one of them: the set of languages a run
+supports is the set the declared catalogs and carrier templates carry, and the
+default is the `i18n.default-locale` configuration item. How a module delivers a
 seam and how a consumer takes it are stated in the module's own `AGENTS.md`, not
 here.
 

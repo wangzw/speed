@@ -16,7 +16,9 @@ package catalog
 
 import (
 	"context"
+	"fmt"
 
+	"github.com/vislake/speed/pkg/config"
 	"github.com/vislake/speed/pkg/core"
 	"github.com/vislake/speed/pkg/i18n"
 )
@@ -44,9 +46,11 @@ var (
 // set of catalogs, and two engines would leave a consumer unable to tell which
 // set it read. The Profile dependency is optional and non-exclusive — the
 // bridge to the account store delivers it, and an assembly with no accounts
-// resolves no user preference and falls back to the default. Nothing is
-// declared in Resources: this module declares no messages of its own, and the
-// http.<status> fallback catalog belongs to the responder that needs it.
+// resolves no user preference and falls back to the default. The default locale
+// is read from configuration, so the descriptor declares the config schema it
+// hangs from and nothing else in Resources: this module declares no messages of
+// its own, and the http.<status> fallback catalog belongs to the responder that
+// needs it.
 func Module() core.Module {
 	return core.Module{
 		Name: ModuleName,
@@ -58,16 +62,46 @@ func Module() core.Module {
 			{Token: (*i18n.Negotiator)(nil), Exclusive: true},
 			{Token: (*i18n.Resolver)(nil), Exclusive: true},
 		},
+		Resources: []any{schema()},
 
 		Prepare: func(_ context.Context, reg *core.Registry) (core.Enablement, error) {
-			if err := validate(core.Resources[i18n.Catalog](reg)); err != nil {
+			cfg, err := configuration(reg)
+			if err != nil {
+				return core.Enablement{}, err
+			}
+			if err := validate(core.Resources[i18n.Catalog](reg), cfg.DefaultLocale); err != nil {
 				return core.Enablement{}, err
 			}
 			return core.Enablement{State: core.StateEnabled}, nil
 		},
 
 		New: func(_ context.Context, reg *core.Registry) (any, error) {
-			return newEngine(core.Resources[i18n.Catalog](reg), core.ResolveAll[i18n.Profile](reg))
+			cfg, err := configuration(reg)
+			if err != nil {
+				return nil, err
+			}
+			return newEngine(core.Resources[i18n.Catalog](reg), core.ResolveAll[i18n.Profile](reg), cfg.DefaultLocale)
 		},
 	}
+}
+
+// configuration reads this module's section of the configuration into the
+// values it runs on.
+func configuration(reg *core.Registry) (resolved, error) {
+	reader, err := readerOf(reg)
+	if err != nil {
+		return resolved{}, err
+	}
+	return readConfig(reader)
+}
+
+// readerOf takes up the configuration reader. Its absence is the host's omission
+// and is carried out as it stands, not read as "the default is English".
+func readerOf(reg *core.Registry) (config.Reader, error) {
+	reader, err := core.Resolve[config.Reader](reg)
+	if err != nil {
+		return nil, fmt.Errorf("%s: the default locale is read from configuration, and no reader was handed to "+
+			"the registry before the assembly began: %w", ModuleName, err)
+	}
+	return reader, nil
 }

@@ -25,8 +25,9 @@ var (
 	ErrInvalidCatalog = errors.New("i18n: a declared catalog is not well formed")
 	// ErrDuplicateKey reports one message key declared by more than one module.
 	ErrDuplicateKey = errors.New("i18n: two modules declare the same message key")
-	// ErrNoCatalog reports that the default locale has no entries while other
-	// locales do, so the fallback every message relies on cannot be rendered.
+	// ErrNoCatalog reports that the configured default locale has no entries
+	// while other locales do, so the fallback every message relies on cannot be
+	// rendered.
 	ErrNoCatalog = errors.New("i18n: the default locale has no catalog")
 )
 
@@ -43,11 +44,15 @@ type engine struct {
 	matcher language.Matcher
 	// profiles is every module that delivers i18n.Profile, in module-name order.
 	profiles []i18n.Profile
+	// defaultLocale is the configured locale a request that names none resolves
+	// to, and the fallback for a key a catalog misses.
+	defaultLocale i18n.Locale
 }
 
-// newEngine builds the index from the declared catalogs and holds the profiles
-// that answer a user's stored preference off the request path.
-func newEngine(catalogs []core.Resource[i18n.Catalog], profiles []i18n.Profile) (*engine, error) {
+// newEngine builds the index from the declared catalogs, holds the profiles that
+// answer a user's stored preference off the request path, and records the
+// configured default locale the resolver and the fallbacks use.
+func newEngine(catalogs []core.Resource[i18n.Catalog], profiles []i18n.Profile, defaultLocale i18n.Locale) (*engine, error) {
 	index := map[i18n.Locale]map[i18n.Key]string{}
 	// owner records which module declared a key, so a collision names both.
 	owner := map[i18n.Key]string{}
@@ -74,7 +79,7 @@ func newEngine(catalogs []core.Resource[i18n.Catalog], profiles []i18n.Profile) 
 			}
 		}
 	}
-	if err := checkDefault(index); err != nil {
+	if err := checkDefault(index, defaultLocale); err != nil {
 		return nil, err
 	}
 	supported := make([]i18n.Locale, 0, len(index))
@@ -94,30 +99,31 @@ func newEngine(catalogs []core.Resource[i18n.Catalog], profiles []i18n.Profile) 
 		tags = append(tags, tag)
 	}
 	return &engine{
-		index:     index,
-		supported: supported,
-		matcher:   language.NewMatcher(tags),
-		profiles:  profiles,
+		index:         index,
+		supported:     supported,
+		matcher:       language.NewMatcher(tags),
+		profiles:      profiles,
+		defaultLocale: defaultLocale,
 	}, nil
 }
 
-// validate checks the declared catalogs without building the index, so the
-// check runs in Prepare and a bad catalog terminates the startup before any
-// instance is constructed.
-func validate(catalogs []core.Resource[i18n.Catalog]) error {
-	_, err := newEngine(catalogs, nil)
+// validate checks the declared catalogs against the configured default without
+// building the index, so the check runs in Prepare and a bad catalog terminates
+// the startup before any instance is constructed.
+func validate(catalogs []core.Resource[i18n.Catalog], defaultLocale i18n.Locale) error {
+	_, err := newEngine(catalogs, nil, defaultLocale)
 	return err
 }
 
 // checkDefault refuses a set of catalogs that carries messages but no entries
-// in the default locale: every message a locale does not carry falls back to
-// the default, and a set without it would render keys to every request.
-func checkDefault(index map[i18n.Locale]map[i18n.Key]string) error {
+// in the configured default locale: every message a locale does not carry falls
+// back to the default, and a set without it would render keys to every request.
+func checkDefault(index map[i18n.Locale]map[i18n.Key]string, defaultLocale i18n.Locale) error {
 	if len(index) == 0 {
 		return nil
 	}
-	if _, ok := index[i18n.Default]; !ok {
-		return fmt.Errorf("%w: no catalog carries %q", ErrNoCatalog, string(i18n.Default))
+	if _, ok := index[defaultLocale]; !ok {
+		return fmt.Errorf("%w: no catalog carries %q", ErrNoCatalog, string(defaultLocale))
 	}
 	return nil
 }
@@ -170,8 +176,8 @@ func (e *engine) Localize(ctx context.Context, key i18n.Key, args i18n.Args) str
 	if message, ok := e.index[locale][key]; ok {
 		return interpolate(message, args)
 	}
-	if locale != i18n.Default {
-		if message, ok := e.index[i18n.Default][key]; ok {
+	if locale != e.defaultLocale {
+		if message, ok := e.index[e.defaultLocale][key]; ok {
 			return interpolate(message, args)
 		}
 	}
@@ -207,12 +213,18 @@ func (e *engine) Negotiate(acceptLanguage string) (i18n.Locale, bool) {
 	return e.supported[index], true
 }
 
-// LocaleOf is the locale of ctx, or the default when it carries none.
+// Default is the locale a request that names none resolves to, and the fallback
+// for a key a catalog misses.
+func (e *engine) Default() i18n.Locale {
+	return e.defaultLocale
+}
+
+// LocaleOf is the locale of ctx, or the configured default when it carries none.
 func (e *engine) LocaleOf(ctx context.Context) i18n.Locale {
 	if locale, ok := i18n.FromContext(ctx); ok {
 		return locale
 	}
-	return i18n.Default
+	return e.defaultLocale
 }
 
 // TimeZoneOf is the time zone of ctx, or "" when it carries none, which reads
@@ -233,7 +245,7 @@ func (e *engine) LocaleFor(ctx context.Context, account string) i18n.Locale {
 			return locale
 		}
 	}
-	return i18n.Default
+	return e.defaultLocale
 }
 
 // TimeZoneFor is the time zone for a named account: the context's when it

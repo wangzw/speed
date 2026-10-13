@@ -52,7 +52,7 @@ type Receipt struct{ ProviderID string }
 - 把厂商的回应与错误归入 `ErrThrottled`、`ErrRejected`、`ErrUncertain` 之一；没有明确归入 `ErrThrottled` 或 `ErrRejected` 的错误，与全部超时、网络错误，一律归 `ErrUncertain`。
 - `Message.Params` 里的值（例如验证码）与厂商凭据不写日志、不进错误文本、不进指标属性。
 
-**`Locale` 为空是调用方缺陷。** 本模块把空 `Locale` 读作缺参，`Resolve` 以 `ErrRejected` 拒绝，与「语言不在声明的编号表里」同形；归一（把空串填成某个缺省语言）只由调用方做，认证一侧的归一在根包的 `LocaleOf` 一处。
+**`Locale` 为空是调用方缺陷。** 本模块把空 `Locale` 读作缺参，`Resolve` 以 `ErrRejected` 拒绝，与「语言不在声明的编号表里」同形；归一（把空串填成某个缺省语言）只由调用方做，认证一侧的归一在 `pkg/authn/sms`，其缺省语言取自共享的 `i18n.default-locale` 项，认证根包不再声明语言集或 `LocaleOf`（[ADR-i18n-language-set-2026-10-13](../../adr/adr-i18n-language-set-2026-10-13.md)）。
 
 ### 模板声明
 

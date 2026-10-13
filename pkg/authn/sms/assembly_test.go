@@ -15,6 +15,7 @@ import (
 	"github.com/vislake/speed/pkg/config"
 	"github.com/vislake/speed/pkg/core"
 	"github.com/vislake/speed/pkg/db"
+	"github.com/vislake/speed/pkg/i18n"
 	"github.com/vislake/speed/pkg/internal/dbtest"
 	"github.com/vislake/speed/pkg/settings"
 	"github.com/vislake/speed/pkg/sms"
@@ -61,6 +62,10 @@ type assembly struct {
 	// body is the primary configuration source the reader is loaded from; empty
 	// is the empty document, whose defaults are what the module runs on.
 	body string
+	// readerModules are modules whose configuration schemas the reader is also
+	// built with, so a case can declare a namespace this module reads but does not
+	// own — the i18n capability's default-locale item, for one.
+	readerModules []core.Module
 }
 
 // drive advances the assembly to Start, runs action there, and returns what the
@@ -82,7 +87,7 @@ func (a assembly) drive(t *testing.T, action func(ctx context.Context, reg *core
 	if body == "" {
 		body = "{}"
 	}
-	reader := authntest.ConfigReaderAll(t, body, Module())
+	reader := authntest.ConfigReaderAll(t, body, append([]core.Module{Module()}, a.readerModules...)...)
 
 	reg := core.New()
 	reg.Register(Module())
@@ -305,12 +310,15 @@ func TestTheDriveRefusesACarrierWhoseDeclarationDoesNotMatchWhatTheModuleNeeds(t
 			mentions: templateEnroll,
 		},
 		{
-			name: "a template missing a language",
+			// Truncating a template's languages to the first leaves one that misses
+			// the configured default (the set is ordered default-last), which is what
+			// checkSender refuses.
+			name: "a template missing the default language",
 			drop: func(d []sms.Template) []sms.Template {
 				d[0].Locales = d[0].Locales[:1]
 				return d
 			},
-			mentions: authn.LocaleEN,
+			mentions: testDefaultLocale,
 		},
 		{
 			name: "a template missing a parameter",
@@ -349,5 +357,123 @@ func TestTheDriveRefusesACarrierWhoseDeclarationDoesNotMatchWhatTheModuleNeeds(t
 				t.Errorf("the failure %q does not name the missing combination %q", err.Error(), c.mentions)
 			}
 		})
+	}
+}
+
+// i18nStubDefaults is the carrier struct the stub schema below mounts, with the
+// one item's declared default.
+type i18nStubDefaults struct {
+	DefaultLocale string `config:"default-locale"`
+}
+
+// i18nStubModule declares the i18n capability's configuration namespace with
+// just the shared default-locale item, so a case drives the module's read of the
+// item the i18n capability also reads. It is a stand-in the test file builds
+// rather than the catalog module itself, which a subpackage of pkg/authn may not
+// import; the namespace name and the item name are the root package's own, so
+// the read goes through the same names the real catalog declares either way.
+func i18nStubModule() core.Module {
+	return core.Module{
+		Name: "stand-in.i18n",
+		Resources: []any{config.Schema{
+			Namespace: i18n.ConfigNamespace,
+			Mounts:    []config.Mount{{Value: &i18nStubDefaults{DefaultLocale: defaultLocaleFallback}}},
+			Items: map[string]config.Item{
+				i18n.DefaultLocaleItem: {Description: "the default locale"},
+			},
+		}},
+	}
+}
+
+// TestStartupRefusesACarrierMissingTheConfiguredDefaultLanguage holds the new
+// startup check: the default language is configuration, not a constant, so a
+// carrier whose templates do not cover it cannot send a message the module falls
+// back to, and the drive stops with ErrInvalidConfig naming the missing pair.
+//
+// On the pre-change code this drive succeeds: it read no configured default and
+// required only the two hardcoded languages, which this carrier declares, so the
+// action ran rather than failing at startup.
+func TestStartupRefusesACarrierMissingTheConfiguredDefaultLanguage(t *testing.T) {
+	sender := newSender() // declares zh-CN and en-US only
+	err := assembly{
+		sender:        sender,
+		store:         newStore(),
+		migrate:       true,
+		body:          `{"i18n":{"default-locale":"ja-JP"}}`,
+		readerModules: []core.Module{i18nStubModule()},
+	}.drive(t, func(context.Context, *core.Registry) error {
+		t.Error("the drive reached its action with a carrier that misses the configured default language")
+		return nil
+	})
+	if !errors.Is(err, authn.ErrInvalidConfig) {
+		t.Fatalf("the drive returned %v, want ErrInvalidConfig", err)
+	}
+	if !strings.Contains(err.Error(), "ja-JP") {
+		t.Errorf("the failure %q does not name the missing default language ja-JP", err.Error())
+	}
+}
+
+// TestACarrierSendsInALanguageItDeclaresBesidesChineseAndEnglish holds that the
+// set of languages is the carrier's, not a hardcoded pair: a carrier declaring
+// en-US and ja-JP satisfies the startup check, and a ja-JP request goes out in
+// ja-JP.
+//
+// On the pre-change code a "ja-JP" send is refused as a caller defect before it
+// reaches the carrier, and the carrier would not satisfy the hardcoded check in
+// the first place.
+func TestACarrierSendsInALanguageItDeclaresBesidesChineseAndEnglish(t *testing.T) {
+	sender := newSender()
+	sender.declared = declaredTemplatesFor([]string{"en-US", "ja-JP"})
+	if err := checkSender(sender.Declared(), testDefaultLocale); err != nil {
+		t.Fatalf("a carrier declaring en-US and ja-JP was refused: %v", err)
+	}
+	r := newRig(t, openSQLite(t), sender)
+	r.allow()
+	if _, err := r.p.Send(context.Background(), authn.SendCode{
+		Purpose: authn.SMSPurposeLogin, Phone: phone, Locale: "ja-JP", Deliver: true,
+	}); err != nil {
+		t.Fatalf("a ja-JP send returned %v, want success", err)
+	}
+	msg := <-r.p.pool.queue
+	if msg.Locale != "ja-JP" {
+		t.Errorf("the queued message locale = %q, want ja-JP", msg.Locale)
+	}
+}
+
+// TestASendWithNoNamedLocaleGoesOutInTheConfiguredDefault holds the end-to-end
+// chain: the shared i18n.default-locale item is read as the run's default, and a
+// send whose caller names no language goes out in it.
+//
+// On the pre-change code the default is the en-US constant, so this send goes
+// out in en-US and the assertion fails; the pre-change carrier check also refuses
+// a carrier declaring ja-JP.
+func TestASendWithNoNamedLocaleGoesOutInTheConfiguredDefault(t *testing.T) {
+	sender := newSender()
+	sender.declared = declaredTemplatesFor([]string{"en-US", "ja-JP"})
+	store := newStore()
+	store.set(allowedPrefixesPath, `["+86"]`)
+	err := assembly{
+		sender:        sender,
+		store:         store,
+		migrate:       true,
+		body:          `{"i18n":{"default-locale":"ja-JP"}}`,
+		readerModules: []core.Module{i18nStubModule()},
+	}.drive(t, func(ctx context.Context, reg *core.Registry) error {
+		codes, err := core.Resolve[authn.SMSCodes](reg)
+		if err != nil {
+			return err
+		}
+		_, err = codes.Send(ctx, authn.SendCode{Purpose: authn.SMSPurposeLogin, Phone: phone, Deliver: true})
+		return err
+	})
+	if err != nil {
+		t.Fatalf("the drive failed: %v", err)
+	}
+	msg, ok := sender.last()
+	if !ok {
+		t.Fatal("the carrier was handed no message")
+	}
+	if msg.Locale != "ja-JP" {
+		t.Errorf("the sent message locale = %q, want the configured default ja-JP", msg.Locale)
 	}
 }

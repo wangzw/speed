@@ -24,19 +24,24 @@ import (
 // consumer; the engine parses it where matching happens.
 type Locale string
 
-// The locales the project ships catalogs for. The set a run supports is the set
-// of locales the declared catalogs carry, not this list; these are the tags the
-// code writes by name.
+// The names this capability reads its configuration under. The set of locales a
+// run supports is the set of locales the declared catalogs carry, and the one
+// additional choice — which of them a request that names none resolves to — is
+// this configuration item rather than a value written into code.
+//
+// The default locale is the one configuration item the SMS module also resolves,
+// so one statement of the default serves both capabilities. Because that second
+// module needs the two names, they are exported here rather than spelled as
+// literals on both sides.
 const (
-	// LocaleEN is English. It is the default.
-	LocaleEN Locale = "en-US"
-	// LocaleZH is Simplified Chinese.
-	LocaleZH Locale = "zh-CN"
+	// ConfigNamespace is the config namespace this capability's items hang from.
+	ConfigNamespace = "i18n"
+	// DefaultLocaleItem is the config item carrying the default locale: the
+	// locale a request that names none resolves to, and the locale a message
+	// falls back to when the requested locale has no entry for its key. Its value
+	// is a BCP 47 language tag, and it is "en-US" when unset.
+	DefaultLocaleItem = "default-locale"
 )
-
-// Default is the locale a request that names none resolves to, and the locale a
-// message falls back to when the requested locale has no entry for its key.
-const Default Locale = LocaleEN
 
 // Key identifies a message in a catalog. A key is flat and namespaced by the
 // module that renders it — "authn.login-failed", "http.404" — so that two
@@ -52,9 +57,9 @@ type Args map[string]string
 // Localizer renders a message in a locale. It is delivered exclusively by the
 // engine.
 type Localizer interface {
-	// Localize renders key in the locale of ctx, falling back to Default and
-	// then to the key itself, so the result is never empty. A key no catalog
-	// carries is written back as the key.
+	// Localize renders key in the locale of ctx, falling back to the run's
+	// default and then to the key itself, so the result is never empty. A key no
+	// catalog carries is written back as the key.
 	Localize(ctx context.Context, key Key, args Args) string
 	// Translate renders key in the named locale, reporting whether a catalog
 	// carried it. It does not fall back.
@@ -76,14 +81,18 @@ type Negotiator interface {
 // named account off the request path. It is delivered exclusively by the
 // engine.
 type Resolver interface {
-	// LocaleOf is the locale of ctx: the one written into it, or Default. It
-	// never fails.
+	// Default is the locale a request that names none resolves to, and the
+	// fallback for a key a catalog misses. It is the run's configured default.
+	Default() Locale
+	// LocaleOf is the locale of ctx: the one written into it, or the value
+	// Default reports. It never fails.
 	LocaleOf(ctx context.Context) Locale
 	// TimeZoneOf is the IANA time zone name of ctx, or "" when none is set, which
 	// reads as UTC.
 	TimeZoneOf(ctx context.Context) string
 	// LocaleFor is the locale for a named account, read from its stored
-	// preferences when the context carries none, and Default otherwise.
+	// preferences when the context carries none, and the value Default reports
+	// otherwise.
 	LocaleFor(ctx context.Context, account string) Locale
 	// TimeZoneFor is the time zone for a named account, or "" when none is
 	// stored.
@@ -92,8 +101,8 @@ type Resolver interface {
 
 // Profile is the seam onto an account's stored language and time zone. It is
 // non-exclusive and optional: the engine takes every implementation with
-// core.ResolveAll and falls back to Default when there is none. The bridge to
-// pkg/authn's accounts implements it.
+// core.ResolveAll and falls back to the run's default when there is none. The
+// bridge to pkg/authn's accounts implements it.
 type Profile interface {
 	// LocaleFor returns the locale stored for an account, and whether one is.
 	LocaleFor(ctx context.Context, account string) (Locale, bool)

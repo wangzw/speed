@@ -385,19 +385,16 @@ func checkFields(fields map[string]string) error {
 	return nil
 }
 
-// localeOf maps the request to the language the SMS templates are built in.
-//
-// It reads first the language the i18n layer settled into the request context —
-// the supported locale the request's header asked for, negotiated by quality —
-// and falls back to reading the header directly for a run with no i18n layer.
-// Either way it names a language of the closed set the carriers approve templates
-// in; a language outside that set, or none at all, reads as empty, and the empty
-// value becomes the default further down.
+// localeOf reads the language a start request names and passes it through as it
+// stands. It reads first the language the i18n layer settled into the request
+// context — the supported locale the request's header asked for, negotiated by
+// quality — and falls back to reading the header directly for a run with no i18n
+// layer, taking the first tag as written. Either way the value is a BCP 47 tag
+// the SMS module resolves against the languages its carrier declares: the empty
+// string names none and resolves to the run's default.
 func localeOf(c *gin.Context) string {
 	if locale, ok := i18n.FromContext(c.Request.Context()); ok {
-		if named := smsLocale(string(locale)); named != "" {
-			return named
-		}
+		return string(locale)
 	}
 	header := c.GetHeader("Accept-Language")
 	for _, part := range strings.Split(header, ",") {
@@ -405,22 +402,9 @@ func localeOf(c *gin.Context) string {
 		if tag == "" {
 			continue
 		}
-		return smsLocale(tag)
+		return tag
 	}
 	return ""
-}
-
-// smsLocale names the language of the closed set a tag's primary subtag maps to,
-// or the empty string when the set names none.
-func smsLocale(tag string) string {
-	switch strings.ToLower(strings.SplitN(tag, "-", 2)[0]) {
-	case "en":
-		return authn.LocaleEN
-	case "zh":
-		return authn.LocaleZH
-	default:
-		return ""
-	}
 }
 
 // ipAllow applies the source-address pre-throttle when it is on. A counter that

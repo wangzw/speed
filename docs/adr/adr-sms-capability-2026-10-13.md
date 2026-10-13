@@ -59,9 +59,9 @@
 
 - **宿主可见的命名空间变更。** 厂商适配的模块名从 `authn.sms.aliyun`、`authn.sms.tencent` 变为 `sms.aliyun`、`sms.tencent`，配置命名空间随模块名改变。宿主的命令树与配置文件都要相应改写：命令树上点名的模块名与配置文件里的命名空间前缀都变了。
 - **模板配置形态变更。** 载体配置里的 `templates` 从「把（用途，语言）映射到编号的平铺映射」变为「模板名 → 结构体（`params` 有序参数名表、`codes` 语言到编号映射）」的嵌套结构。`pkg/config` 把任何 map 判为一个容器叶子，整张 map 从主源取出后经解码器落进字段；值类型为结构体时嵌套 section 的键按 tag 落进字段，所以模板配置必须是嵌套的，不能是 `名: {zh-CN: 编号, params: [...]}` 的混合形式——混合形式要么只能落 `map[string]any` 绕过类型检查，要么在 `map[string]TemplateSpec` 下静默丢掉语言键。嵌套后类型错误在启动期即 `ErrTypeMismatch`。
-- **认证根包的导出面收缩。** `authn.SMS`、`authn.SendReceipt`、`authn.SMSSender` 与 `authn.ErrSMSThrottled`、`ErrSMSRejected`、`ErrSMSUncertain` 从根包删除；三个发送哨兵改由 `pkg/sms` 定义，认证的工作池归类它们、不外露。认证根包保留 `SMSCodes`、`SendCode`、语言常量与 `LocaleOf`，语言词表不随之搬走（登录引擎在用）。
+- **认证根包的导出面收缩。** `authn.SMS`、`authn.SendReceipt`、`authn.SMSSender` 与 `authn.ErrSMSThrottled`、`ErrSMSRejected`、`ErrSMSUncertain` 从根包删除；三个发送哨兵改由 `pkg/sms` 定义，认证的工作池归类它们、不外露。认证根包保留 `SMSCodes` 与 `SendCode`，不再声明语言集或 `LocaleOf`：归一改在 `pkg/authn/sms`，其缺省语言取自共享的 `i18n.default-locale` 项（[ADR-i18n-language-set-2026-10-13](adr-i18n-language-set-2026-10-13.md)）。
 - **`pkg/internal/literal` 的路径变更。** 引用它的包改 import 路径；该包自身的导出面不变。
-- **认证侧的空值归一只有一处。** `pkg/sms` 把空 `Locale` 读作调用方缺陷；把空串填成缺省语言的归一留在 `authn.LocaleOf` 一处。消费方直接调 `sms.Sender` 时必须自己先归一。
+- **认证侧的空值归一只有一处。** `pkg/sms` 把空 `Locale` 读作调用方缺陷；把空串填成缺省语言的归一留在 `pkg/authn/sms` 一处，缺省语言取自共享的 `i18n.default-locale` 项（[ADR-i18n-language-set-2026-10-13](adr-i18n-language-set-2026-10-13.md)）。消费方直接调 `sms.Sender` 时必须自己先归一。
 
 ## 失效条件
 

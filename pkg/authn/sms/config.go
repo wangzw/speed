@@ -5,6 +5,7 @@ import (
 
 	"github.com/vislake/speed/pkg/authn"
 	"github.com/vislake/speed/pkg/config"
+	"github.com/vislake/speed/pkg/i18n"
 )
 
 // The configuration keys this module accepts, relative to its namespace. They
@@ -74,4 +75,33 @@ func readConfig(reader config.Reader) (resolved, error) {
 		return resolved{}, err
 	}
 	return cfg.resolve()
+}
+
+// defaultLocaleFallback is the default language an assembly without the i18n
+// engine keeps. It matches the i18n capability's own default, so a run with and
+// a run without the engine send in the same language by default.
+const defaultLocaleFallback = "en-US"
+
+// i18nConfig carries the one item this module reads from the i18n capability's
+// namespace: the default language a request that names none resolves to. It is
+// the same item the i18n engine reads, so one statement of the default serves
+// both capabilities.
+type i18nConfig struct {
+	DefaultLocale string `config:"default-locale"`
+}
+
+// readDefaultLocale reads the shared default language from the i18n capability's
+// namespace. The item is pre-seeded with the fallback, so an assembly that
+// declares no i18n engine — and therefore no such namespace — leaves the value
+// untouched and the module sends in English, the same default the engine would
+// have read.
+func readDefaultLocale(reader config.Reader) (string, error) {
+	cfg := i18nConfig{DefaultLocale: defaultLocaleFallback}
+	if err := reader.Decode(i18n.ConfigNamespace, &cfg); err != nil {
+		return "", err
+	}
+	if cfg.DefaultLocale == "" {
+		return defaultLocaleFallback, nil
+	}
+	return cfg.DefaultLocale, nil
 }

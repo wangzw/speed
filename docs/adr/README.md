@@ -270,7 +270,8 @@
 | [各模块以自己的资源声明消息目录，引擎收集为可用集并在启动期校验](adr-i18n-catalogs-2026-10-13.md) | 2026-10-13 | 已接受 |
 | [本地化错误由 respond 子包交付 ErrorResponder，Problem 增 Key 与 Args](adr-i18n-error-rendering-2026-10-13.md) | 2026-10-13 | 已接受 |
 | [语言与时区偏好存账户属性集，不改 authn 表结构](adr-i18n-preferences-storage-2026-10-13.md) | 2026-10-13 | 已接受 |
-| [默认语言由 zh-CN 改为 en-US，i18n 与 authn 取同一个默认](adr-i18n-default-locale-2026-10-13.md) | 2026-10-13 | 已接受 |
+| [默认语言是配置项 i18n.default-locale，i18n 与 authn 取同一个](adr-i18n-default-locale-2026-10-13.md) | 2026-10-13 | 已接受 |
+| [受支持语言集由目录派生，默认语言是配置而非常量](adr-i18n-language-set-2026-10-13.md) | 2026-10-13 | 已接受 |
 
 ## 示例宿主
 

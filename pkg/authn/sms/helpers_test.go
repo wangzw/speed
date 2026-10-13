@@ -138,6 +138,17 @@ func (f *fakeSender) count() int {
 	return len(f.sent)
 }
 
+// last returns the most recent message the carrier was handed, and whether it
+// was handed one at all.
+func (f *fakeSender) last() (sms.Message, bool) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	if len(f.sent) == 0 {
+		return sms.Message{}, false
+	}
+	return f.sent[len(f.sent)-1], true
+}
+
 func (f *fakeSender) setResult(err error) {
 	f.mu.Lock()
 	defer f.mu.Unlock()
@@ -147,15 +158,32 @@ func (f *fakeSender) setResult(err error) {
 // declaredTemplates is the set of templates this module needs, as a carrier that
 // covers them would report it: the three template names, each with the two
 // parameters and the two languages.
-func declaredTemplates() []sms.Template {
-	params := append([]string(nil), templateParams...)
-	locales := append([]string(nil), templateLocales...)
-	return []sms.Template{
-		{Name: templateLogin, Params: params, Locales: locales},
-		{Name: templateMFA, Params: params, Locales: locales},
-		{Name: templateEnroll, Params: params, Locales: locales},
+func declaredTemplates() []sms.Template { return declaredTemplatesFor(testLocales) }
+
+// declaredTemplatesFor is declaredTemplates over a carrier's own language set, so
+// a case can drive a carrier that declares languages other than the two the
+// module used to hardcode.
+func declaredTemplatesFor(locales []string) []sms.Template {
+	out := make([]sms.Template, 0, len(requiredTemplates))
+	for _, name := range requiredTemplates {
+		out = append(out, sms.Template{
+			Name:    name,
+			Params:  append([]string(nil), templateParams...),
+			Locales: append([]string(nil), locales...),
+		})
 	}
+	return out
 }
+
+// testDefaultLocale is the default language the rig's product runs on, matching
+// the i18n capability's fallback.
+const testDefaultLocale = "en-US"
+
+// testLocales is the language set the rig's carrier declares by default. The
+// default language is last on purpose: a case that truncates a template's
+// languages to the first one leaves a template that misses the configured
+// default, which is the startup failure checkSender names.
+var testLocales = []string{"zh-CN", "en-US"}
 
 // recordingBus is a bus that keeps what was published and delivers it to the
 // handlers subscribed, which is what a process-local bus does.
@@ -313,8 +341,16 @@ type rig struct {
 // Send alone leaves the queue untouched.
 func newRig(t *testing.T, database db.Database, sender *fakeSender) *rig {
 	t.Helper()
+	return newRigLocale(t, database, sender, testDefaultLocale)
+}
+
+// newRigLocale is newRig over a chosen default language, so a case can drive the
+// module's read of a configured default. The carrier's languages are derived from
+// what it declares, the way newProduct derives them.
+func newRigLocale(t *testing.T, database db.Database, sender *fakeSender, defaultLocale string) *rig {
+	t.Helper()
 	cfg := resolved{Workers: 1, QueueSize: 64}
-	p := build(database, sender, cfg)
+	p := build(database, sender, cfg, defaultLocale, templateLocales(sender.Declared()))
 	r := &rig{
 		t: t, p: p, h: database.DB(), database: database, sender: sender,
 		bus: newBus(), audit: &recordingAudit{}, store: newStore(),

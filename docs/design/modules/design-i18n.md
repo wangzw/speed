@@ -6,7 +6,7 @@
 
 本功能目录按接口包加实现子包的方式拆分（[ADR-module-packaging-2026-09-22](../../adr/adr-module-packaging-2026-09-22.md)）。根包是接口包：它定义接口、值类型与资源类型，只依赖标准库，不登记任何模块。子包各自登记一个模块：
 
-- `pkg/i18n/catalog/` 登记引擎模块 `i18n`：排他交付 `Localizer`、`Negotiator`、`Resolver`，收集全部已声明目录，非排他地取用可选的 `Profile`。
+- `pkg/i18n/catalog/` 登记引擎模块 `i18n`：排他交付 `Localizer`、`Negotiator`、`Resolver`，收集全部已声明目录，从配置项 `i18n.default-locale` 读默认语言，非排他地取用可选的 `Profile`。
 - `pkg/i18n/http/` 登记模块 `i18n.http`：经 `http.Router` 在每个端注册两层中间件，把协商出的语言与账户偏好的语言时区写进请求上下文。
 - `pkg/i18n/respond/` 登记模块 `i18n.respond`：非排他交付 `http.ErrorResponder`，把错误响应渲染成本地化文案。
 - `pkg/i18n/account/` 登记模块 `i18n.account`：非排他交付 `Profile`，并实现 `authn.Provisioner`，在首登开户时把请求语言写进待建账户的属性。
@@ -34,7 +34,9 @@
 | 键 | key | 一条消息在目录中的标识，扁平且带模块命名空间，如 `http.404`、`authn.login-failed`。 |
 | 参数 | args | 一条参数化消息插值用的名值对；消息写 `{{name}}`，缺参时该处原样保留。 |
 | 协商 | negotiation | 按请求的 `Accept-Language` 头，在本次支持的受语言集中选出最匹配的一个。 |
-| 回落 | fallback | 请求语言在该键上没有条目时，改取默认语言、再不中则取键本身的次序。 |
+| 回落 | fallback | 请求语言在该键上没有条目时，改取配置的默认语言、再不中则取键本身的次序。 |
+| 受支持的语言集 | supported locale set | 一次运行能渲染的语言集合，等于各模块声明的目录所覆盖的语言并集；代码不枚举它，它在装配期由目录派生。 |
+| 默认语言 | default locale | 一个什么都没指名的请求解析到的语言，也是每条回落所落的语言；它是配置项 `i18n.default-locale`，未设置时为 `en-US`。 |
 | 偏好 | preference | 一项源自用户、用于本地化、不参与任何裁定的选择；与授权事实相对。 |
 
 ## 外部接口契约
@@ -60,15 +62,20 @@
 // 它是一个字符串，以便不带语言匹配库就跨模块边界传递（上下文、接口、声明的目录）。
 type Locale string
 
-// 项目为它们发布了目录的语言，代码按名写出 LocaleEN 与 LocaleZH。
+// 本功能目录读取配置所用的两个名字。受支持的语言集是各模块声明的目录所承载
+// 的语言集，代码不枚举任何语言表；在此之上唯一的额外选择——一个什么都没指名
+// 的请求解析到哪一种语言——是配置项而非写进代码的值。
+//
+// 默认语言是短信模块也解析的那一个配置项，一处声明同时服务两个能力目录。因为
+// 那个模块需要这两个名字，它们在此导出，而不是在两侧各写一遍字面量。
 const (
-    LocaleEN Locale = "en-US"
-    LocaleZH Locale = "zh-CN"
+    // ConfigNamespace 是本功能目录各项所挂的配置命名空间。
+    ConfigNamespace = "i18n"
+    // DefaultLocaleItem 是承载默认语言的配置项：一个什么都没指名的请求解析到
+    // 的语言，也是某条消息在请求语言无该键时回落到的语言。取值是 BCP 47 标签，
+    // 未设置时为 "en-US"。
+    DefaultLocaleItem = "default-locale"
 )
-
-// Default 是一次没有指名语言的请求解析到的语言，也是某条消息在请求语言无
-// 该键时回落到的语言。
-const Default Locale = LocaleEN
 
 // Key 标识目录中的一条消息，扁平且按渲染它的模块命名空间化。
 type Key string
@@ -78,7 +85,7 @@ type Args map[string]string
 
 // Localizer 按语言渲染一条消息。它由引擎排他交付。
 type Localizer interface {
-    // Localize 按 ctx 的语言渲染 key，回落 Default、再回落键本身，结果永不为空。
+    // Localize 按 ctx 的语言渲染 key，回落配置的默认语言、再回落键本身，结果永不为空。
     Localize(ctx context.Context, key Key, args Args) string
     // Translate 按指名的语言渲染 key，并报告某个目录是否载有它。它不回落。
     Translate(locale Locale, key Key, args Args) (string, bool)
@@ -94,18 +101,22 @@ type Negotiator interface {
 
 // Resolver 回答某个上下文与某个具名账户适用哪种语言与时区。它由引擎排他交付。
 type Resolver interface {
-    // LocaleOf 是 ctx 的语言：写进它的那个，或 Default。它从不失败。
+    // Default 是一个什么都没指名的请求解析到的语言，也是某条消息在请求语言无该
+    // 键时回落到的语言；它是本次运行配置的默认语言。
+    Default() Locale
+    // LocaleOf 是 ctx 的语言：写进它的那个，或 Default 报告的那个。它从不失败。
     LocaleOf(ctx context.Context) Locale
     // TimeZoneOf 是 ctx 的 IANA 时区名，未设置时为空串，读作 UTC。
     TimeZoneOf(ctx context.Context) string
-    // LocaleFor 是具名账户的语言，来自它存的偏好，未存时是 Default。
+    // LocaleFor 是具名账户的语言：上下文无语言时来自它存的偏好，否则是 Default
+    // 报告的那个。
     LocaleFor(ctx context.Context, account string) Locale
     // TimeZoneFor 是具名账户的时区，未存时为空串。
     TimeZoneFor(ctx context.Context, account string) string
 }
 
 // Profile 是通往账户所存语言与时区的一条接缝。它非排他且可选：引擎用
-// core.ResolveAll 取用每一个实现，一个都没有时回落到 Default。
+// core.ResolveAll 取用每一个实现，一个都没有时回落到配置的默认语言。
 type Profile interface {
     // LocaleFor 返回一个账户所存的语言，以及是否存过。
     LocaleFor(ctx context.Context, account string) (Locale, bool)
@@ -168,20 +179,20 @@ func ValidTimeZone(name string) bool
 | `i18n.respond` | `Provides: [(*http.ErrorResponder)(nil)]`，非排他 | 取用 `i18n.Localizer`、`i18n.Resolver` |
 | `i18n.account` | `Provides: [(*i18n.Profile)(nil), (*authn.Provisioner)(nil)]`，非排他 | 取用 `authn.Accounts`；语言经 `pkg/i18n` 的上下文存取函数与属性键读写 |
 
-**引擎的这几件能力排他交付，一个进程至多一个语言集。** 语言集是目录承载的集合，两个引擎会各自持有不同的一份，`Resolve` 要求唯一，多于一个即装配期 `ErrExclusiveViolated`。**`Profile` 非排他可选取用**：引擎在 `New` 用 `core.ResolveAll[i18n.Profile]` 取用每一个实现，一个都没有是合法配置，账户语言随之缺失，解析链落到 Default。
+**引擎的这几件能力排他交付，一个进程至多一个语言集。** 语言集是目录承载的集合，两个引擎会各自持有不同的一份，`Resolve` 要求唯一，多于一个即装配期 `ErrExclusiveViolated`。**`Profile` 非排他可选取用**：引擎在 `New` 用 `core.ResolveAll[i18n.Profile]` 取用每一个实现，一个都没有是合法配置，账户语言随之缺失，解析链落到配置的默认语言。
 
 ### 对既有模块的改动
 
 以下各条落在既有模块里，本功能目录借用它们的既有接缝，不新增跨目录的机制。
 
 - **`http.Problem` 增加承载消息键与插值参数的字段**，默认写出形状不变：`Key string` 与 `Args map[string]string`。没有键的错误照旧按 `Type` 与 `Status` 写出，加了键的错误由交付的 `ErrorResponder` 渲染（[http](http/design-http.md) 的错误响应一节、[ADR-i18n-error-rendering-2026-10-13](../../adr/adr-i18n-error-rendering-2026-10-13.md)）。
-- **`authn.LocaleOf` 的默认由 `zh-CN` 改为 `en-US`**，与 `i18n.Default` 对齐；它仍是登录引擎把请求语言映射进那个闭集所用的映射，签名不变（[ADR-i18n-default-locale-2026-10-13](../../adr/adr-i18n-default-locale-2026-10-13.md)）。登录引擎内部的 `localeOf` 先取 `i18n.FromContext` 已定的语言，再映射进那个闭集，请求路径上有 `i18n.http` 时它读到协商与偏好定下的语言。
+- **认证侧不再声明语言闭集，也不再给语言填默认。** 根包 `pkg/authn` 的 `locale.go`（`LocaleEN`、`LocaleZH`、`LocaleOf`）整体删除：一个只读语言的模块 import 认证根包，不再从中拿到一份语言表。登录引擎把 `i18n.FromContext` 定下的语言原样带进流程记录与短信发送（取不到时为 `""`），`authn.sms` 再把请求语言解析到该消息所用模板声明的语言（[ADR-i18n-language-set-2026-10-13](../../adr/adr-i18n-language-set-2026-10-13.md)）。默认语言只由 `i18n.default-locale` 一处给出。
 - **认证自助面新增一条偏好路由** `PATCH B/me/preferences`，写在 [authn-login](authn/design-authn-login.md) 的账户自助面里：它把语言与时区写进账户的 `Account.Attributes`，经账户模块的 `AccountAdmin.SetAttributes` 落库，写前用 `ValidLocaleTag` 与 `ValidTimeZone` 判形状。它是 [authn](authn/design-authn.md) 的子包 `pkg/authn/login` 对 `pkg/i18n` 的取用——`pkg/authn` 根包不 import 它（见依赖）。
 - **语言与时区存进 `Account.Attributes` 的 `i18n.locale` 与 `i18n.tz`**，不改认证的表结构，不新增列（[ADR-i18n-preferences-storage-2026-10-13](../../adr/adr-i18n-preferences-storage-2026-10-13.md)）。
 
 ### 稳定性承诺
 
-`Locale`、`LocaleEN`、`LocaleZH`、`Default`、`Key`、`Args`、`Localizer`、`Negotiator`、`Resolver`、`Profile`、`Catalog`、`LocaleResolver`、上下文的存取函数、属性键常量与校验函数，以及各模块导出的 `ModuleName`，是本功能目录与其他模块之间的契约：接口的方法集、值类型与资源类型的字段，以及属性键的取值，改一个即破坏每一个实现方与消费方。属性键 `i18n.locale` 与 `i18n.tz` 同时是存储契约：账户属性里已经写下的值按这两个键读，改键会让既有偏好读不出来。模块名由各包导出为常量，改名会让命令树上的纳入静默失配。
+`Locale`、`ConfigNamespace`、`DefaultLocaleItem`、`Key`、`Args`、`Localizer`、`Negotiator`、`Resolver`、`Profile`、`Catalog`、`LocaleResolver`、上下文的存取函数、属性键常量与校验函数，以及各模块导出的 `ModuleName`，是本功能目录与其他模块之间的契约：接口的方法集、值类型与资源类型的字段，以及属性键的取值，改一个即破坏每一个实现方与消费方。属性键 `i18n.locale` 与 `i18n.tz` 同时是存储契约：账户属性里已经写下的值按这两个键读，改键会让既有偏好读不出来。配置命名空间 `i18n` 与配置项名 `default-locale` 是配置契约：短信模块按这两个名字读同一个默认语言，改名会让两个能力在无声中各读一份。模块名由各包导出为常量，改名会让命令树上的纳入静默失配。
 
 ## 依赖
 
@@ -221,6 +232,7 @@ classDiagram
     }
     class Resolver {
         <<interface>>
+        +Default() Locale
         +LocaleOf(ctx) Locale
         +TimeZoneOf(ctx) string
         +LocaleFor(ctx, account) Locale
@@ -291,7 +303,7 @@ sequenceDiagram
 
 ### 目录的收集与装载
 
-引擎在装配期依次做 `Prepare` 校验与 `New` 建立。
+引擎在装配期依次做 `Prepare` 校验与 `New` 建立。默认语言是配置项 `i18n.default-locale`，未设置时为 `en-US`，取值须是一个 BCP 47 标签的形状（`ValidLocaleTag`），否则启动失败；它在 `Prepare` 与 `New` 各读一次，两次读的是同一份快照。
 
 **取材域取可用集**（架构不变量 15）。来源是 `core.Resources[i18n.Catalog](reg)` 的全体；判据是**一组消息文件是不是这个二进制的一部分**是静态事实，比任何一次命令长寿，因而未运行、消解落选与只被静态级纳入的模块，其目录一律进索引。**这个消费点不做减法**：目录随二进制一起编译进来，一个本次不运行的模块，它的消息照常可被渲染——这正是“某个错误在某个装配下答得出键、在另一个装配下答不出”要避免的形态（[ADR-i18n-catalogs-2026-10-13](../../adr/adr-i18n-catalogs-2026-10-13.md)）。
 
@@ -300,9 +312,9 @@ sequenceDiagram
 - **每份目录指名了文件系统与通配**，通配合法且至少命中一个文件，每个文件按它承载的语言标签命名。
 - **每个文件是一个 JSON 对象**，字符串到消息原文的映射。
 - **跨模块的同名键不冲突**，冲突时点名该键与两个声明方——键带命名空间，冲突是命名空间被两个模块共用的信号。
-- **`Default` 语言有覆盖**：索引非空时，默认语言至少有一份条目，使一个没有指名的请求总有一个语言可落。
+- **配置的默认语言有覆盖**：索引非空时，`i18n.default-locale` 所指的语言至少有一份条目，使一个没有指名的请求与每一条回落都落得到一个目录承载的语言。
 
-`New` 把全部目录装载进内存索引、构造匹配器，并把取用到的 `Profile` 一并收进引擎，此后只读。
+`New` 把全部目录装载进内存索引、构造匹配器，并把取用到的 `Profile` 与配置的默认语言一并收进引擎，此后只读。受支持的语言集由此确定：它是索引里出现的语言的并集，代码不枚举它。
 
 ### 语言解析链
 
@@ -312,13 +324,13 @@ sequenceDiagram
 |---|---|---|
 | 一 | 请求上下文 | `i18n.http` 的两层之一已写进语言 |
 | 二 | 账户偏好 | 上下文无语言而身份的属性集带 `i18n.locale` |
-| 三 | `Default` | 两者都没有 |
+| 三 | 配置的默认语言 | 两者都没有 |
 
-**解析链在 `Resolver` 上收口。** `LocaleOf` 读上下文，未携带时给 `Default`；`LocaleFor(ctx, account)` 在上下文无语言时，经取用的每一个 `Profile` 读该账户存储的语言。两级回落都归引擎，前两级都不报告失败——“没有指名”读作落到 Default，而不是一次错误。
+**解析链在 `Resolver` 上收口。** `Default` 报告配置的默认语言；`LocaleOf` 读上下文，未携带时给 `Default`；`LocaleFor(ctx, account)` 在上下文无语言时，经取用的每一个 `Profile` 读该账户存储的语言。两级回落都归引擎，前两级都不报告失败——“没有指名”读作落到 `Default`，而不是一次错误。
 
 ### 协商
 
-`Negotiate` 把 `Accept-Language` 的头值交给匹配器，在受支持的语言集中选出最匹配的一个，并报告是否有匹配。**无匹配是 `false`，不是 `Default`**：调用方把 `false` 读作“本次不给语言留痕”，与“用默认语言”是两回事，头里一个受支持语言都没有时那两层因而不写上下文，让解析链后面的级去定。
+`Negotiate` 把 `Accept-Language` 的头值交给匹配器，在受支持的语言集中选出最匹配的一个，并报告是否有匹配。**无匹配是 `false`，不是配置的默认语言**：调用方把 `false` 读作“本次不给语言留痕”，与“用配置的默认语言”是两回事，头里一个受支持语言都没有时那两层因而不写上下文，让解析链后面的级去定。
 
 ### 错误渲染
 
@@ -352,9 +364,9 @@ sequenceDiagram
 |---|---|---|
 | `ErrInvalidCatalog` | 一份声明的目录不合格：未指名文件系统或通配、通配不合法或没有命中文件、文件不是按语言标签命名、文件不是一个字符串到字符串的 JSON 对象 | 点名声明它的模块与文件；修正目录声明或消息文件 |
 | `ErrDuplicateKey` | 一个消息键被多于一个模块声明 | 点名该键与两个声明方；其中一方改键的命名空间 |
-| `ErrNoCatalog` | 索引非空而 `Default` 语言没有任何条目 | 点名默认语言；补一份默认语言的目录，或改 `Default` |
+| `ErrNoCatalog` | 索引非空而配置的默认语言没有任何条目 | 点名那个语言；补一份该语言的目录，或改 `i18n.default-locale` |
 
-**渲染期没有失败路径。** `Localize` 按请求语言、`Default`、键本身依次回落，结果永不为空；一个未受支持的语言只是落到 Default，一个目录里没有的键只是把键写回。`Translate` 不回落，它把“目录里有没有这个键”以第二个返回值交给调用方，缺键时返回空串而不是错误。
+**渲染期没有失败路径。** `Localize` 按请求语言、配置的默认语言、键本身依次回落，结果永不为空；一个未受支持的语言只是落到配置的默认语言，一个目录里没有的键只是把键写回。`Translate` 不回落，它把“目录里有没有这个键”以第二个返回值交给调用方，缺键时返回空串而不是错误。
 
 **协商的无匹配不是失败。** `Negotiate` 报告 `false` 是合法结果，调用方据此不写上下文；把它当成错误会在每个不接受任何受支持语言的请求上写出一次不存在的故障。
 
@@ -366,7 +378,7 @@ sequenceDiagram
 
 以下各类性质本模块声明为不保证。
 
-- **不保证目录穷举。** 一个模块没有为某个键声明任何语言的条目时，该键按回落规则渲染；本功能目录不检查键的覆盖面，只检查 `Default` 至少有一份。
+- **不保证目录穷举。** 一个模块没有为某个键声明任何语言的条目时，该键按回落规则渲染；本功能目录不检查键的覆盖面，只检查配置的默认语言至少有一份。
 - **不保证协商结果与账户偏好一致。** 协商只看请求头，账户偏好只在上下文尚无语言时补位；一个已带 `Accept-Language` 的已登录请求按头值渲染，不按账户偏好。
 - **不保证账户偏好的即时生效。** 账户属性经账户快照读取，宿主经管理面改了属性，要等快照缓存过期才进身份与解析链（见 [authn](authn/design-authn.md) 的非保证）。
 - **不保证 `i18n.http` 覆盖到一个端。** 它在遍历 `http.Endpoints` 得到的每个端注册；一个端不在那次遍历里、或那个端由宿主单独装配而不经本模块，就不带本地化，启动期不失败，也没有一行诊断指向它（与 [http](http/design-http.md) 的漏写同源）。
@@ -391,13 +403,13 @@ sequenceDiagram
 
 | 能力 | 状态 | 代码 |
 |---|---|---|
-| 根包的类型与接口 | 已实现 | `pkg/i18n/i18n.go` `Locale`、`LocaleEN`、`LocaleZH`、`Default`、`Key`、`Args`、`Localizer`、`Negotiator`、`Resolver`、`Profile`、`Catalog`、`LocaleResolver` |
+| 根包的类型与接口 | 已实现 | `pkg/i18n/i18n.go` `Locale`、`ConfigNamespace`、`DefaultLocaleItem`、`Key`、`Args`、`Localizer`、`Negotiator`、`Resolver`、`Profile`、`Catalog`、`LocaleResolver` |
 | 上下文的存取 | 已实现 | `pkg/i18n/context.go` `WithLocale`、`FromContext`、`WithTimeZone`、`TimeZoneFromContext` |
 | 账户属性键与形状校验 | 已实现 | `pkg/i18n/attributes.go` `LocaleAttributeKey`、`TimeZoneAttributeKey`、`ValidLocaleTag`、`ValidTimeZone` |
-| 目录的收集、校验与装载、语言解析与协商 | 已实现 | `pkg/i18n/catalog` `Module`、`ModuleName` |
+| 目录的收集、校验与装载、默认语言的配置项、语言解析与协商 | 已实现 | `pkg/i18n/catalog` `Module`、`ModuleName`；`pkg/i18n/catalog/config.go` `moduleConfig`、`readConfig` |
 | 每端两层的语言与时区中间件 | 已实现 | `pkg/i18n/http` `Module`、`ModuleName` |
 | 错误响应的本地化渲染 | 已实现 | `pkg/i18n/respond` `Module`、`ModuleName` |
 | 账户偏好的读桥与开户时写入 | 已实现 | `pkg/i18n/account` `Module`、`ModuleName` |
 | `Problem` 的消息键与参数 | 已实现 | `pkg/http/problem.go` `Problem` |
-| 认证默认语言与登录语言映射 | 已实现 | `pkg/authn/locale.go` `LocaleOf`；`pkg/authn/login/start.go` `localeOf` |
+| 登录语言的原样传递 | 已实现 | `pkg/authn/login/start.go` `localeOf`；`pkg/authn/login/internal/selfservice/phone.go` `smsLocale` |
 | 自助面的偏好路由 | 已实现 | `pkg/authn/login` 的账户自助路由 |

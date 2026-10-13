@@ -143,14 +143,14 @@ func statusKey(status int) i18n.Key {
 	return i18n.Key("http." + strconv.Itoa(status))
 }
 
-// lookup renders key in locale, falling back to the default locale, and reports
-// whether a catalog carried it.
+// lookup renders key in locale, falling back to the resolver's default locale,
+// and reports whether a catalog carried it.
 func (r *responder) lookup(locale i18n.Locale, key i18n.Key, args i18n.Args) (string, bool) {
 	if text, ok := r.localizer.Translate(locale, key, args); ok {
 		return text, true
 	}
-	if locale != i18n.Default {
-		if text, ok := r.localizer.Translate(i18n.Default, key, args); ok {
+	if fallback := r.resolver.Default(); locale != fallback {
+		if text, ok := r.localizer.Translate(fallback, key, args); ok {
 			return text, true
 		}
 	}

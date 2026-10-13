@@ -8,7 +8,6 @@ import (
 	"errors"
 	"net/http"
 	"regexp"
-	"strings"
 
 	"github.com/gin-gonic/gin"
 
@@ -54,24 +53,17 @@ func phoneThrottleKey(phone string) string {
 	return hex.EncodeToString(sum[:])
 }
 
-// smsLocale names the closed-set language the request's negotiated locale maps
-// to, or the empty string when the request named none of the set, which the SMS
-// module reads as the default. It is the same mapping the login engine applies to
-// a start request; the two call sites are in packages that share no helper, and
-// the closed set belongs to the root package rather than to either of them.
+// smsLocale is the language the request carries, passed to the SMS module as the
+// message language and resolved there against the languages the carrier
+// declares. It is the locale the i18n layer settled into the context, or the
+// empty string when the request named none, which the SMS module reads as the
+// run's configured default.
 func smsLocale(ctx context.Context) string {
 	locale, ok := i18n.FromContext(ctx)
 	if !ok {
 		return ""
 	}
-	switch strings.ToLower(strings.SplitN(string(locale), "-", 2)[0]) {
-	case "en":
-		return authn.LocaleEN
-	case "zh":
-		return authn.LocaleZH
-	default:
-		return ""
-	}
+	return string(locale)
 }
 
 // startPhoneRequest is the body of POST /phone.

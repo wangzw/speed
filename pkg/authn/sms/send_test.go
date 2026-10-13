@@ -119,8 +119,10 @@ func TestANumberOutsideTheAllowedTableIsRefused(t *testing.T) {
 }
 
 // TestTheCallerContractIsEnforced holds the input checks: a purpose outside the
-// set, an empty number, a locale outside the set and a missing account for mfa
-// are defects of the caller and are ordinary errors, not sentinels.
+// set, an empty number and a missing account for mfa are defects of the caller
+// and are ordinary errors, not sentinels. The locale is deliberately not one of
+// them: a language the carrier does not declare is a preference that resolves to
+// the default, not a defect to refuse.
 func TestTheCallerContractIsEnforced(t *testing.T) {
 	r := newRigSQLite(t)
 	r.allow()
@@ -134,7 +136,6 @@ func TestTheCallerContractIsEnforced(t *testing.T) {
 		// has to refuse it.
 		{"purpose-with-account", authn.SendCode{Purpose: "reset", Phone: phone, Account: acct, Deliver: true}},
 		{"phone", authn.SendCode{Purpose: authn.SMSPurposeLogin, Phone: "", Deliver: true}},
-		{"locale", authn.SendCode{Purpose: authn.SMSPurposeLogin, Phone: phone, Locale: "fr-FR", Deliver: true}},
 		{"account", authn.SendCode{Purpose: authn.SMSPurposeMFA, Phone: phone, Deliver: true}},
 	}
 	for _, c := range cases {
@@ -300,10 +301,9 @@ func TestTheAllowedPrefixIsAnchoredAndNeverBlank(t *testing.T) {
 	}
 }
 
-// TestAnEnrollSendAndAnEnglishSendGoThrough holds two values of the closed sets
-// that no other case drives positively: the enroll purpose and the en-US locale
-// are admitted by the caller contract, so dropping either from its set turns a
-// legal send into a caller defect.
+// TestAnEnrollSendAndAnEnglishSendGoThrough holds two values that no other case
+// drives positively: the enroll purpose and the en-US language are both declared
+// by the carrier, so a send carrying either is legal.
 func TestAnEnrollSendAndAnEnglishSendGoThrough(t *testing.T) {
 	r := newRigSQLite(t)
 	r.allow()
@@ -330,14 +330,14 @@ func TestAnEnrollSendAndAnEnglishSendGoThrough(t *testing.T) {
 }
 
 // TestTheQueuedMessageCarriesTheLanguageTheCallerNamed holds that the message
-// locale is not lost: an empty input reads as the default en-US and a named
-// language is carried as it is.
+// locale is not lost: an empty input reads as the configured default and a
+// language the carrier declares is carried as it is.
 func TestTheQueuedMessageCarriesTheLanguageTheCallerNamed(t *testing.T) {
 	cases := []struct {
 		locale string
 		want   string
 	}{
-		{"", localeEnglish},
+		{"", testDefaultLocale},
 		{"en-US", "en-US"},
 		{"zh-CN", "zh-CN"},
 	}
@@ -355,6 +355,78 @@ func TestTheQueuedMessageCarriesTheLanguageTheCallerNamed(t *testing.T) {
 				t.Errorf("the queued message locale = %q, want %q", msg.Locale, c.want)
 			}
 		})
+	}
+}
+
+// TestAnUndeclaredRequestedLocaleResolvesToTheDefault holds that a language the
+// carrier does not declare is a preference and not a caller defect: the send goes
+// through, in the configured default, rather than being refused.
+//
+// On the pre-change code a "fr-FR" send is refused as a caller defect — the
+// locale is held to the hardcoded pair — so this send returns an error instead of
+// reaching the carrier.
+func TestAnUndeclaredRequestedLocaleResolvesToTheDefault(t *testing.T) {
+	r := newRigSQLite(t)
+	r.allow()
+	if _, err := r.p.Send(context.Background(), authn.SendCode{
+		Purpose: authn.SMSPurposeLogin, Phone: phone, Locale: "fr-FR", Deliver: true,
+	}); err != nil {
+		t.Fatalf("a fr-FR send returned %v, want success (resolving to the default)", err)
+	}
+	msg := <-r.p.pool.queue
+	if msg.Locale != testDefaultLocale {
+		t.Errorf("the queued message locale = %q, want the default %q", msg.Locale, testDefaultLocale)
+	}
+}
+
+// TestTheMessageLanguageIsTheTemplatesOwnNotTheCarriersUnion holds that the
+// languages a message may go out in are those of the template its purpose maps
+// to, not the union of every template the carrier declares. A carrier whose
+// login template declares en-US and ja-JP and whose mfa template declares en-US
+// and fr-FR starts up — every template covers the configured default — a login
+// request in ja-JP goes out in ja-JP, and an mfa request in ja-JP resolves to
+// the configured default, because the mfa template does not carry ja-JP.
+//
+// On the union code this case fails: ja-JP is in the union, taken from the login
+// template, so the mfa message would go out in ja-JP — a language its own
+// template does not hold. The carrier accepts the startup and then refuses every
+// mfa message at send time, which is the shape the startup check exists to
+// prevent.
+func TestTheMessageLanguageIsTheTemplatesOwnNotTheCarriersUnion(t *testing.T) {
+	sender := newSender()
+	sender.declared = []sms.Template{
+		{Name: templateLogin, Params: append([]string(nil), templateParams...), Locales: []string{"en-US", "ja-JP"}},
+		{Name: templateMFA, Params: append([]string(nil), templateParams...), Locales: []string{"en-US", "fr-FR"}},
+		{Name: templateEnroll, Params: append([]string(nil), templateParams...), Locales: []string{"en-US"}},
+	}
+	if err := checkSender(sender.Declared(), testDefaultLocale); err != nil {
+		t.Fatalf("a carrier whose templates declare different languages was refused at startup: %v", err)
+	}
+	r := newRig(t, openSQLite(t), sender)
+	r.allow()
+
+	// A login send requested in ja-JP goes out in ja-JP: its template declares it.
+	if _, err := r.p.Send(context.Background(), authn.SendCode{
+		Purpose: authn.SMSPurposeLogin, Phone: phone, Locale: "ja-JP", Deliver: true,
+	}); err != nil {
+		t.Fatalf("a ja-JP login send returned %v, want success", err)
+	}
+	loginMsg := <-r.p.pool.queue
+	if loginMsg.Locale != "ja-JP" {
+		t.Errorf("the login message locale = %q, want ja-JP", loginMsg.Locale)
+	}
+
+	// An mfa send requested in ja-JP goes out in the configured default: the mfa
+	// template declares en-US and fr-FR and carries no ja-JP. A distinct number
+	// keeps this send off the login send's resend-interval and phone budgets.
+	if _, err := r.p.Send(context.Background(), authn.SendCode{
+		Purpose: authn.SMSPurposeMFA, Phone: "+8613800138001", Account: acct, Locale: "ja-JP", Deliver: true,
+	}); err != nil {
+		t.Fatalf("a ja-JP mfa send returned %v, want success", err)
+	}
+	mfaMsg := <-r.p.pool.queue
+	if mfaMsg.Locale != testDefaultLocale {
+		t.Errorf("the mfa message locale = %q, want the configured default %q", mfaMsg.Locale, testDefaultLocale)
 	}
 }
 

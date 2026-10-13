@@ -190,6 +190,14 @@ type product struct {
 	handle   *gorm.DB
 	sender   sms.Sender
 
+	// defaultLocale is the language a request that names none resolves to, read
+	// from the shared i18n item. localesByTemplate is, per template name, the
+	// languages that template declares and a message under it may be sent in.
+	// Both are read once, at construction, because the configuration is a
+	// snapshot.
+	defaultLocale     string
+	localesByTemplate map[string][]string
+
 	register *register
 	pool     *pool
 	meters   *meters
@@ -210,7 +218,9 @@ type product struct {
 
 // newProduct takes up what the descriptor requires and assembles the product.
 // The worker pool is sized here, from configuration, which is why the reader is
-// required.
+// required; the default language and the carrier's languages are read here too,
+// because the carrier's declaration is available only once the sender is taken
+// up.
 func newProduct(reg *core.Registry) (*product, error) {
 	reader, err := readerOf(reg)
 	if err != nil {
@@ -228,32 +238,43 @@ func newProduct(reg *core.Registry) (*product, error) {
 	if err != nil {
 		return nil, fmt.Errorf("%s%s: taking up the sending seam: %w", diagnosticPrefix, ModuleName, err)
 	}
+	// The default language is the shared i18n item, so a run reads one statement
+	// of it whatever engine is assembled; an assembly with no i18n engine keeps
+	// the fallback.
+	defaultLocale, err := readDefaultLocale(reader)
+	if err != nil {
+		return nil, fmt.Errorf("%s%s: reading the default language: %w", diagnosticPrefix, ModuleName, err)
+	}
 	// The carrier is taken up here, so its declared templates are checked here:
 	// Prepare runs earlier and holds no instance. A carrier that does not cover
-	// the templates this module sends under stops the startup, before any code.
-	if err := checkSender(sender.Declared()); err != nil {
+	// the templates this module sends under, or the configured default language,
+	// stops the startup, before any code.
+	declared := sender.Declared()
+	if err := checkSender(declared, defaultLocale); err != nil {
 		return nil, fmt.Errorf("%s%s: %w", diagnosticPrefix, ModuleName, err)
 	}
-	return build(database, sender, cfg), nil
+	return build(database, sender, cfg, defaultLocale, templateLocales(declared)), nil
 }
 
 // build assembles a product from its parts. The optional parts start absent and
 // the logger starts as the process's, so that a product that has not been through
 // Init is still one that does not panic.
-func build(database db.Database, sender sms.Sender, cfg resolved) *product {
+func build(database db.Database, sender sms.Sender, cfg resolved, defaultLocale string, localesByTemplate map[string][]string) *product {
 	logger := log.Default()
 	return &product{
-		database:   database,
-		handle:     database.DB(),
-		sender:     sender,
-		register:   &register{handle: database.DB(), dialect: database.Dialect()},
-		pool:       newPool(cfg.Workers, cfg.QueueSize),
-		meters:     &meters{},
-		settings:   newReader(nil, logger),
-		logger:     logger,
-		seen:       newSeenEvents(),
-		sweepEvery: sweepInterval,
-		stopBound:  stopWait,
+		database:          database,
+		handle:            database.DB(),
+		sender:            sender,
+		defaultLocale:     defaultLocale,
+		localesByTemplate: localesByTemplate,
+		register:          &register{handle: database.DB(), dialect: database.Dialect()},
+		pool:              newPool(cfg.Workers, cfg.QueueSize),
+		meters:            &meters{},
+		settings:          newReader(nil, logger),
+		logger:            logger,
+		seen:              newSeenEvents(),
+		sweepEvery:        sweepInterval,
+		stopBound:         stopWait,
 	}
 }
 

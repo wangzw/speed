@@ -8,7 +8,7 @@ import (
 // TestLocaleRoundTripsThroughContext holds the write-then-read pair: the value
 // written is the value read back, and the read reports that it found one.
 func TestLocaleRoundTripsThroughContext(t *testing.T) {
-	for _, locale := range []Locale{LocaleEN, LocaleZH, "fr-FR"} {
+	for _, locale := range []Locale{"en-US", "zh-CN", "fr-FR"} {
 		ctx := WithLocale(context.Background(), locale)
 		got, ok := FromContext(ctx)
 		if !ok || got != locale {
@@ -29,10 +29,10 @@ func TestFromContextReadsAContextWithNoLocaleAsNone(t *testing.T) {
 // written: the layer already carrying one is what a read still sees, so an empty
 // write neither introduces a locale nor erases the one beneath it.
 func TestWithLocaleWritesNothingForAnEmptyLocale(t *testing.T) {
-	parent := WithLocale(context.Background(), LocaleZH)
+	parent := WithLocale(context.Background(), "zh-CN")
 	got, ok := FromContext(WithLocale(parent, ""))
-	if !ok || got != LocaleZH {
-		t.Errorf("FromContext(WithLocale(carrying %q, \"\")) = %q, %v; want %q, true", LocaleZH, got, ok, LocaleZH)
+	if !ok || got != "zh-CN" {
+		t.Errorf("FromContext(WithLocale(carrying %q, \"\")) = %q, %v; want %q, true", "zh-CN", got, ok, "zh-CN")
 	}
 }
 
@@ -106,19 +106,14 @@ func TestValidTimeZoneRefusesNonIANANames(t *testing.T) {
 	}
 }
 
-// TestDefaultIsEnglish holds the fallback the resolver and the renderer both use.
-func TestDefaultIsEnglish(t *testing.T) {
-	if Default != LocaleEN {
-		t.Errorf("Default = %q; want %q", Default, LocaleEN)
+// TestConfigNamesAreStable pins the two names another module reaches for across
+// the package boundary: the SMS module reads the same default-locale item under
+// the same namespace, so a change here silently unfreezes the shared default.
+func TestConfigNamesAreStable(t *testing.T) {
+	if ConfigNamespace != "i18n" {
+		t.Errorf("ConfigNamespace = %q; want %q", ConfigNamespace, "i18n")
 	}
-}
-
-// TestShippedLocaleTags pins the tags the code writes by name.
-func TestShippedLocaleTags(t *testing.T) {
-	if LocaleEN != "en-US" {
-		t.Errorf("LocaleEN = %q; want %q", LocaleEN, "en-US")
-	}
-	if LocaleZH != "zh-CN" {
-		t.Errorf("LocaleZH = %q; want %q", LocaleZH, "zh-CN")
+	if DefaultLocaleItem != "default-locale" {
+		t.Errorf("DefaultLocaleItem = %q; want %q", DefaultLocaleItem, "default-locale")
 	}
 }

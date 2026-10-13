@@ -40,13 +40,13 @@
 
 ## 决策
 
-采纳解析链 `context → 账户 profile → Default`，由两层中间件落位。
+采纳解析链 `context → 账户 profile → 配置的默认语言`，由两层中间件落位。
 
 `i18n:accept-language` 落在观测阶段的最外，对每一个请求生效，只读 `Accept-Language` 并按 `q` 值协商出受支持语言中最合适的一个，写进请求的 context；它不依赖身份，鉴别的拒绝也经它带上语言。取不到受支持语言时它不写值。
 
 `i18n:profile-locale` 落在鉴别阶段之内、认证网关之后，在 context 尚无语言时读账户保存的偏好并写进 context。
 
-解析的优先序是 context 已有的值、账户 profile、`Default`。协商按 `Accept-Language` 的 `q` 值在受支持语言集合（各模块声明的目录所覆盖的语言，见 [ADR-i18n-catalogs-2026-10-13](adr-i18n-catalogs-2026-10-13.md)）中挑选，而不是只看第一个标签。既有的只看第一个标签的映射被它取代。
+解析的优先序是 context 已有的值、账户 profile、配置的默认语言。协商按 `Accept-Language` 的 `q` 值在受支持语言集合（各模块声明的目录所覆盖的语言，见 [ADR-i18n-catalogs-2026-10-13](adr-i18n-catalogs-2026-10-13.md)）中挑选，而不是只看第一个标签。既有的只看第一个标签的映射被它取代。
 
 ## 后果
 

@@ -15,6 +15,13 @@ import (
 	"github.com/vislake/speed/pkg/i18n"
 )
 
+// The tags these cases write by name. The engine no longer exports them, so the
+// test names them itself.
+const (
+	localeEN i18n.Locale = "en-US"
+	localeZH i18n.Locale = "zh-CN"
+)
+
 // fakeNegotiator is a Negotiator whose answer a test fixes: it returns locale
 // and ok for any header, and records whether it was reached and the header it
 // was handed, so a test can hold the layer to consulting the negotiator only
@@ -66,22 +73,22 @@ func TestNegotiationLayerWritesTheNegotiatedLocale(t *testing.T) {
 		{
 			name:    "writes the matched locale",
 			header:  "zh-CN,zh;q=0.9",
-			matched: i18n.LocaleZH,
+			matched: localeZH,
 			ok:      true,
 			called:  true,
-			want:    i18n.LocaleZH,
+			want:    localeZH,
 			wantAny: true,
 		},
 		{
 			// A locale is already in the context, so the layer never consults the
 			// negotiator and the header it would have matched cannot overwrite it.
 			name:    "leaves a locale the context already carries",
-			base:    i18n.LocaleEN,
+			base:    localeEN,
 			header:  "zh-CN,zh;q=0.9",
-			matched: i18n.LocaleZH,
+			matched: localeZH,
 			ok:      true,
 			called:  false,
-			want:    i18n.LocaleEN,
+			want:    localeEN,
 			wantAny: true,
 		},
 		{
@@ -89,7 +96,7 @@ func TestNegotiationLayerWritesTheNegotiatedLocale(t *testing.T) {
 			// wrote it without reading the bool would be caught writing it here.
 			name:    "writes nothing when the negotiator reports no match",
 			header:  "fr-FR",
-			matched: i18n.LocaleZH,
+			matched: localeZH,
 			ok:      false,
 			called:  true,
 			wantAny: false,
@@ -129,7 +136,7 @@ func TestNegotiationLayerWritesTheNegotiatedLocale(t *testing.T) {
 // that value.
 func TestProfileLayerFillsFromTheIdentity(t *testing.T) {
 	attrs := map[string]string{
-		i18n.LocaleAttributeKey:   string(i18n.LocaleZH),
+		i18n.LocaleAttributeKey:   string(localeZH),
 		i18n.TimeZoneAttributeKey: "Asia/Shanghai",
 	}
 	cases := []struct {
@@ -141,19 +148,19 @@ func TestProfileLayerFillsFromTheIdentity(t *testing.T) {
 		{
 			name:       "fills both when the context carries neither",
 			base:       func(ctx context.Context) context.Context { return ctx },
-			wantLocale: i18n.LocaleZH,
+			wantLocale: localeZH,
 			wantZone:   "Asia/Shanghai",
 		},
 		{
 			name:       "keeps a locale already present and still fills the zone",
-			base:       func(ctx context.Context) context.Context { return i18n.WithLocale(ctx, i18n.LocaleEN) },
-			wantLocale: i18n.LocaleEN,
+			base:       func(ctx context.Context) context.Context { return i18n.WithLocale(ctx, localeEN) },
+			wantLocale: localeEN,
 			wantZone:   "Asia/Shanghai",
 		},
 		{
 			name:       "keeps a zone already present and still fills the locale",
 			base:       func(ctx context.Context) context.Context { return i18n.WithTimeZone(ctx, "UTC") },
-			wantLocale: i18n.LocaleZH,
+			wantLocale: localeZH,
 			wantZone:   "UTC",
 		},
 	}
