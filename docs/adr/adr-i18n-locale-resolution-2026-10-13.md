@@ -46,7 +46,7 @@
 
 `i18n:profile-locale` 落在鉴别阶段之内、认证网关之后，在 context 尚无语言时读账户保存的偏好并写进 context。
 
-解析的优先序是 context 已有的值、账户 profile、配置的默认语言。协商按 `Accept-Language` 的 `q` 值在受支持语言集合（各模块声明的目录所覆盖的语言，见 [ADR-i18n-catalogs-2026-10-13](adr-i18n-catalogs-2026-10-13.md)）中挑选，而不是只看第一个标签。既有的只看第一个标签的映射被它取代。
+解析的优先序是 context 已有的值、账户 profile、配置的默认语言。协商按 `Accept-Language` 的 `q` 值在受支持语言集合（各模块声明的目录与配置指定的覆盖目录所覆盖的语言，见 [ADR-i18n-catalogs-2026-10-13](adr-i18n-catalogs-2026-10-13.md)）中挑选，而不是只看第一个标签。既有的只看第一个标签的映射被它取代。
 
 ## 后果
 

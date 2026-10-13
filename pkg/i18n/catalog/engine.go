@@ -6,6 +6,7 @@ import (
 	"errors"
 	"fmt"
 	"io/fs"
+	"os"
 	"path"
 	"sort"
 	"strings"
@@ -16,9 +17,10 @@ import (
 	"github.com/vislake/speed/pkg/i18n"
 )
 
-// Sentinel failures of loading the declared catalogs. Each is a startup failure:
-// a catalog that does not load is one no message can be rendered from, and a
-// key two modules both declare cannot be resolved to one message.
+// Sentinel failures of loading the message sources. Each is a startup failure: a
+// source that does not load is one no message can be rendered from, a key two
+// modules both declare cannot be resolved to one message, and a configured
+// overlay holding a malformed file is a directory the run cannot be built from.
 var (
 	// ErrInvalidCatalog reports a declared catalog whose files are missing or
 	// whose entries are not a JSON object of string to string.
@@ -29,6 +31,11 @@ var (
 	// while other locales do, so the fallback every message relies on cannot be
 	// rendered.
 	ErrNoCatalog = errors.New("i18n: the default locale has no catalog")
+	// ErrInvalidOverlay reports a configured catalogs directory holding a file
+	// that is not a message catalog: its base name is not a language tag, or its
+	// body is not a JSON object of string to string. It is distinct from
+	// ErrInvalidCatalog, whose message names a catalog a module declares.
+	ErrInvalidOverlay = errors.New("i18n: a configured catalogs directory holds a file that is not a well-formed catalog")
 )
 
 // engine is the merged index. It is built once in New and read afterwards; no
@@ -38,7 +45,8 @@ type engine struct {
 	// index is locale to key to message. A locale that a catalog did not cover
 	// has no entry, and a key a locale did not carry has none under it.
 	index map[i18n.Locale]map[i18n.Key]string
-	// supported is the sorted set of locales some catalog carried.
+	// supported is the sorted set of locales a declared catalog or the overlay
+	// carried.
 	supported []i18n.Locale
 	// matcher negotiates a request's language preferences against supported.
 	matcher language.Matcher
@@ -49,10 +57,13 @@ type engine struct {
 	defaultLocale i18n.Locale
 }
 
-// newEngine builds the index from the declared catalogs, holds the profiles that
-// answer a user's stored preference off the request path, and records the
-// configured default locale the resolver and the fallbacks use.
-func newEngine(catalogs []core.Resource[i18n.Catalog], profiles []i18n.Profile, defaultLocale i18n.Locale) (*engine, error) {
+// newEngine builds the index from the declared catalogs and then the configured
+// overlay directory, holds the profiles that answer a user's stored preference
+// off the request path, and records the configured default locale the resolver
+// and the fallbacks use. The overlay is read here and merged after the declared
+// catalogs, so it wins on a shared key and adds a locale no declared catalog
+// carries; the default check runs after the merge, so the overlay may supply it.
+func newEngine(catalogs []core.Resource[i18n.Catalog], profiles []i18n.Profile, defaultLocale i18n.Locale, catalogsDir string) (*engine, error) {
 	index := map[i18n.Locale]map[i18n.Key]string{}
 	// owner records which module declared a key, so a collision names both.
 	owner := map[i18n.Key]string{}
@@ -77,6 +88,23 @@ func newEngine(catalogs []core.Resource[i18n.Catalog], profiles []i18n.Profile, 
 				owner[key] = catalog.Module
 				bucket[key] = message
 			}
+		}
+	}
+	overlay, err := readOverlay(catalogsDir)
+	if err != nil {
+		return nil, err
+	}
+	// The overlay is not a module declaration: it overwrites a key a declared
+	// catalog carries rather than colliding with it, and its keys take no part in
+	// the owner check that refuses two modules claiming one key.
+	for locale, messages := range overlay {
+		bucket := index[locale]
+		if bucket == nil {
+			bucket = map[i18n.Key]string{}
+			index[locale] = bucket
+		}
+		for key, message := range messages {
+			bucket[key] = message
 		}
 	}
 	if err := checkDefault(index, defaultLocale); err != nil {
@@ -107,12 +135,54 @@ func newEngine(catalogs []core.Resource[i18n.Catalog], profiles []i18n.Profile, 
 	}, nil
 }
 
-// validate checks the declared catalogs against the configured default without
-// building the index, so the check runs in Prepare and a bad catalog terminates
-// the startup before any instance is constructed.
-func validate(catalogs []core.Resource[i18n.Catalog], defaultLocale i18n.Locale) error {
-	_, err := newEngine(catalogs, nil, defaultLocale)
+// validate checks the declared catalogs and the configured overlay against the
+// default without building the index, so the check runs in Prepare and a bad
+// catalog or overlay terminates the startup before any instance is constructed.
+func validate(catalogs []core.Resource[i18n.Catalog], defaultLocale i18n.Locale, catalogsDir string) error {
+	_, err := newEngine(catalogs, nil, defaultLocale, catalogsDir)
 	return err
+}
+
+// overlayPattern selects the message files a configured catalogs directory
+// holds: one file per locale, named for the locale it carries, as "{tag}.json".
+const overlayPattern = "*.json"
+
+// readOverlay reads the extra catalogs a configured directory holds, through the
+// same loader the declared catalogs go through. An unset directory, a path that
+// names no existing directory, and a directory holding no *.json file all mean
+// "no extras" and are legal: the overlay is an addition to the catalogs a run
+// ships, not a source it depends on. A file that does not load as a catalog
+// fails startup under ErrInvalidOverlay, naming the directory and the file.
+//
+// The directory is read here, once, at assembly. Nothing reads it again, so the
+// request path stays lock-free and IO-free, as it is for the declared catalogs.
+func readOverlay(dir string) (map[i18n.Locale]map[i18n.Key]string, error) {
+	if dir == "" {
+		return nil, nil
+	}
+	info, err := os.Stat(dir)
+	if err != nil || !info.IsDir() {
+		// A path that names no existing directory, or names a file rather than a
+		// directory, is the legal "no extras".
+		return nil, nil
+	}
+	fsys := os.DirFS(dir)
+	// The loader treats a pattern that matches no file as an error, which is
+	// right for a declared catalog — a module that ships none is a mistake — and
+	// wrong for the overlay, where an empty directory is a legal "no extras".
+	// Find the files first, so that error never surfaces for this source.
+	names, err := fs.Glob(fsys, overlayPattern)
+	if err != nil {
+		return nil, fmt.Errorf("%w: the pattern %q is malformed: %w", ErrInvalidOverlay, overlayPattern, err)
+	}
+	if len(names) == 0 {
+		return nil, nil
+	}
+	entries, err := read(i18n.Catalog{FS: fsys, Pattern: overlayPattern})
+	if err != nil {
+		return nil, fmt.Errorf("%w (in %q): %w", ErrInvalidOverlay, dir, err)
+	}
+	return entries, nil
 }
 
 // checkDefault refuses a set of catalogs that carries messages but no entries

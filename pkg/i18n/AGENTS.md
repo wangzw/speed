@@ -12,7 +12,8 @@ its own.
 - `pkg/i18n/catalog` registers the engine, module name `i18n`: it delivers
   `Localizer`, `Negotiator` and `Resolver` exclusively, collects the declared
   catalogs over the available set, reads the default locale from the
-  `i18n.default-locale` config item, and takes an optional `Profile`.
+  `i18n.default-locale` config item and an optional directory of extra catalogs
+  from `i18n.catalogs-dir`, and takes an optional `Profile`.
 - `pkg/i18n/http` registers `i18n.http`: it walks `http.Router`'s `Endpoints`
   and binds two middleware layers on each, one negotiating `Accept-Language`,
   one reading an account's stored language and time zone. It imports `pkg/http`
@@ -40,14 +41,25 @@ message.
   read off a problem's `Type` is unambiguous. The engine refuses a duplicate key
   at startup and names the two modules; declaring one is what keeps the refusal
   from firing.
-- **A catalog is a compile-time static fact.** A module declares one with
-  `//go:embed` over its own `locales/{tag}.json` files, one per locale, and puts
-  the `Catalog` in its descriptor's `Resources`. The engine collects them over
-  the available set: a catalog lives in the binary, so it counts whether or not
-  the module is included in a given command, and the consumer does no
-  subtraction. A catalog is loaded once, at `Init`, and is read-only, IO-free and
-  never reloaded afterward. There is no interface for changing a catalog or a
-  message at runtime, and adding one would put a lock on the request path.
+- **A catalog is a compile-time static fact, with one assembly-time addition.**
+  A module declares one with `//go:embed` over its own `locales/{tag}.json`
+  files, one per locale, and puts the `Catalog` in its descriptor's `Resources`.
+  The engine collects them over the available set: a catalog lives in the
+  binary, so it counts whether or not the module is included in a given command,
+  and the consumer does no subtraction. The `i18n.catalogs-dir` config item
+  names a directory of extra catalogs in the same shape — one `{tag}.json` file
+  per locale, the base name the locale, the body a JSON object of key to message
+  — read through the same loader. When it is set, the engine reads it at
+  assembly, after the declared catalogs, and merges it into the same index: the
+  overlay wins on a key a declared catalog also carries, and a locale only the
+  overlay carries enters the supported set and the negotiation matcher. An
+  unset item, a path that is not an existing directory, and a directory holding
+  no `*.json` file all mean no extras and are legal; a file the loader cannot
+  read terminates startup under `catalog.ErrInvalidOverlay`, naming the file.
+  The index is read-only, IO-free and never reloaded afterward — the overlay
+  too is read only at assembly — so the request path carries no lock and no IO.
+  There is no interface for changing a catalog or a message at runtime, and
+  adding one would put a lock on the request path.
 - **`i18n.locale` and `i18n.tz` are preferences, not authorizing facts.** They
   are stored in `Account.Attributes` under `LocaleAttributeKey` and
   `TimeZoneAttributeKey`, read back into a request's context, and used for
@@ -57,14 +69,16 @@ message.
   the locale it resolved there directly. Directory and time zone change nothing
   about what a caller may reach; that is decided elsewhere.
 - **The default locale is configuration, not a constant.** The set of locales a
-  run supports is the set the declared catalogs carry, and which of them a
-  request that names none resolves to — and which a message falls back to when
-  its key is missing — is the `i18n.default-locale` config item, "en-US" when
-  unset. Startup refuses a set of catalogs that does not carry that locale
-  (`ErrNoCatalog`), because the fallback every message relies on would then
-  render bare keys. The interface package exports the namespace
-  (`i18n.ConfigNamespace`) and the item name (`i18n.DefaultLocaleItem`) so the
-  SMS module resolves the same single statement of the default.
+  run supports is the set the declared catalogs and the configured overlay
+  directory carry, and which of them a request that names none resolves to — and
+  which a message falls back to when its key is missing — is the
+  `i18n.default-locale` config item, "en-US" when unset. The check runs after
+  the overlay is merged, so the overlay may supply the default locale. Startup
+  refuses a set of catalogs that does not carry that locale (`ErrNoCatalog`),
+  because the fallback every message relies on would then render bare keys. The
+  interface package exports the namespace (`i18n.ConfigNamespace`) and the item
+  name (`i18n.DefaultLocaleItem`) so the SMS module resolves the same single
+  statement of the default.
 - **An empty locale or time zone is not written.** `WithLocale` and
   `WithTimeZone` leave the context unchanged for an empty value, so a context
   naming nothing reads as naming nothing. The fallback lives in the resolver, not
@@ -134,8 +148,8 @@ env -C pkg golangci-lint run ./i18n/...
 ```
 
 The tests need no service, no database and no environment: the engine's are
-built on catalogs constructed in the test, and the middleware's bring up a
-registry with an entry point and a gateway. `subpackagesInBudget`-style
-dependency tests, where a subpackage runs one, are what hold the standard
-library-only boundary of the root package and the single-importer boundary of
-`golang.org/x/text`.
+built on catalogs constructed in the test, or written into a temporary directory
+the test makes, and the middleware's bring up a registry with an entry point and
+a gateway. `subpackagesInBudget`-style dependency tests, where a subpackage runs
+one, are what hold the standard library-only boundary of the root package and the
+single-importer boundary of `golang.org/x/text`.

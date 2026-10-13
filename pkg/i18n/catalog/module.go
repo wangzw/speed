@@ -69,7 +69,7 @@ func Module() core.Module {
 			if err != nil {
 				return core.Enablement{}, err
 			}
-			if err := validate(core.Resources[i18n.Catalog](reg), cfg.DefaultLocale); err != nil {
+			if err := validate(core.Resources[i18n.Catalog](reg), cfg.DefaultLocale, cfg.CatalogsDir); err != nil {
 				return core.Enablement{}, err
 			}
 			return core.Enablement{State: core.StateEnabled}, nil
@@ -80,7 +80,7 @@ func Module() core.Module {
 			if err != nil {
 				return nil, err
 			}
-			return newEngine(core.Resources[i18n.Catalog](reg), core.ResolveAll[i18n.Profile](reg), cfg.DefaultLocale)
+			return newEngine(core.Resources[i18n.Catalog](reg), core.ResolveAll[i18n.Profile](reg), cfg.DefaultLocale, cfg.CatalogsDir)
 		},
 	}
 }

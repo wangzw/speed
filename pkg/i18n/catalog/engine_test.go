@@ -3,6 +3,9 @@ package catalog
 import (
 	"context"
 	"errors"
+	"fmt"
+	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 	"testing/fstest"
@@ -58,11 +61,33 @@ func mustEngine(t *testing.T, catalogs []core.Resource[i18n.Catalog], profiles [
 // fails the test.
 func mustEngineWithDefault(t *testing.T, catalogs []core.Resource[i18n.Catalog], profiles []i18n.Profile, def i18n.Locale) *engine {
 	t.Helper()
-	e, err := newEngine(catalogs, profiles, def)
+	return mustEngineWithOverlay(t, catalogs, profiles, "", def)
+}
+
+// mustEngineWithOverlay builds the engine over a named overlay directory and a
+// named configured default, or fails the test. An empty directory is the unset
+// configuration.
+func mustEngineWithOverlay(t *testing.T, catalogs []core.Resource[i18n.Catalog], profiles []i18n.Profile, dir string, def i18n.Locale) *engine {
+	t.Helper()
+	e, err := newEngine(catalogs, profiles, def, dir)
 	if err != nil {
 		t.Fatalf("newEngine: %v", err)
 	}
 	return e
+}
+
+// overlayDir writes one {tag}.json file per entry under a fresh temporary
+// directory and returns the directory, standing in for a configured
+// catalogs-dir on disk.
+func overlayDir(t *testing.T, files map[string]string) string {
+	t.Helper()
+	dir := t.TempDir()
+	for name, body := range files {
+		if err := os.WriteFile(filepath.Join(dir, name), []byte(body), 0o600); err != nil {
+			t.Fatalf("writing %s: %v", name, err)
+		}
+	}
+	return dir
 }
 
 func TestLocalize(t *testing.T) {
@@ -242,7 +267,7 @@ func TestLoadErrors(t *testing.T) {
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			_, err := newEngine(tt.catalogs, nil, localeEN)
+			_, err := newEngine(tt.catalogs, nil, localeEN, "")
 			if !errors.Is(err, tt.want) {
 				t.Fatalf("newEngine error = %v, want %v", err, tt.want)
 			}
@@ -265,7 +290,7 @@ func TestLoadMultiLocaleCatalog(t *testing.T) {
 			"locales/zh-CN.json": `{"app.hello":"你好"}`,
 		}),
 	}
-	if _, err := newEngine(catalogs, nil, localeEN); err != nil {
+	if _, err := newEngine(catalogs, nil, localeEN, ""); err != nil {
 		t.Fatalf("a module's own multi-locale catalog must load: %v", err)
 	}
 }
@@ -394,6 +419,46 @@ func TestModuleReadsTheConfiguredDefaultIntoTheEngine(t *testing.T) {
 	}
 }
 
+// TestModuleReadsTheConfiguredOverlayIntoTheEngine holds the configuration-to-
+// engine wiring for the overlay: driven through the real Module() over a reader
+// carrying catalogs-dir and a default-locale that only the overlay supplies, the
+// engine renders the overlay's message. New has to carry the decoded
+// cfg.CatalogsDir into the engine; dropping it would leave the declared catalogs
+// alone and fail here.
+func TestModuleReadsTheConfiguredOverlayIntoTheEngine(t *testing.T) {
+	dir := overlayDir(t, map[string]string{"ja-JP.json": `{"app.ja":"こんにちは"}`})
+	reg := core.New()
+	reg.Register(core.Module{
+		Name: "app",
+		Resources: []any{
+			i18n.Catalog{FS: mapFS(map[string]string{"locales/en-US.json": `{"app.en":"Hello"}`}), Pattern: "locales/*.json"},
+		},
+	})
+	reg.Register(Module())
+	reg.Register(config.Module())
+	body := fmt.Sprintf(`{"i18n":{"default-locale":"ja-JP","catalogs-dir":%q}}`, dir)
+	reg.Supply(authntest.ConfigReaderAll(t, body, Module()), config.ModuleName)
+
+	product, err := Module().New(context.Background(), reg)
+	if err != nil {
+		t.Fatalf("Module().New: %v", err)
+	}
+	resolver, ok := product.(i18n.Resolver)
+	if !ok {
+		t.Fatalf("the engine does not implement i18n.Resolver: %T", product)
+	}
+	if got := resolver.Default(); got != localeJA {
+		t.Errorf("Default() = %q, want the overlay-supplied default %q", got, localeJA)
+	}
+	localizer, ok := product.(i18n.Localizer)
+	if !ok {
+		t.Fatalf("the engine does not implement i18n.Localizer: %T", product)
+	}
+	if got := localizer.Localize(context.Background(), "app.ja", nil); got != "こんにちは" {
+		t.Errorf("Localize = %q, want the overlay's message", got)
+	}
+}
+
 // TestEngineNegotiatesACatalogDefinedThirdLanguage holds that the supported set
 // is the set of locales the catalogs carry and not a fixed pair: a catalog in
 // three languages negotiates the third — ja-JP, neither English nor Chinese —
@@ -450,7 +515,7 @@ func TestCatalogsMissingTheConfiguredDefaultFailStartup(t *testing.T) {
 	catalogs := []core.Resource[i18n.Catalog]{catalogOf("app", map[string]string{
 		"locales/en-US.json": `{"app.en":"Hello"}`,
 	})}
-	_, err := newEngine(catalogs, nil, localeJA)
+	_, err := newEngine(catalogs, nil, localeJA, "")
 	if !errors.Is(err, ErrNoCatalog) {
 		t.Fatalf("newEngine error = %v, want ErrNoCatalog", err)
 	}
@@ -476,5 +541,153 @@ func TestAnUnsetDefaultLocaleResolvesToEnglish(t *testing.T) {
 	e := mustEngineWithDefault(t, catalogs, nil, cfg.DefaultLocale)
 	if got := e.Default(); got != localeEN {
 		t.Errorf("Default() = %q, want %q", got, localeEN)
+	}
+}
+
+// TestOverlayOverridesADeclaredMessage holds that a message the overlay directory
+// carries wins over the same key a declared catalog carries: the index is built
+// from the declared catalogs and then the overlay, and the overlay's entry is
+// written last. It covers both render paths — Localize (with fallback) and
+// Translate (without) — so the override is in the index, not in the fallback.
+func TestOverlayOverridesADeclaredMessage(t *testing.T) {
+	catalogs := []core.Resource[i18n.Catalog]{catalogOf("app", map[string]string{
+		"locales/en-US.json": `{"app.greet":"Hello from the binary"}`,
+	})}
+	dir := overlayDir(t, map[string]string{
+		"en-US.json": `{"app.greet":"Hello from the directory"}`,
+	})
+	e := mustEngineWithOverlay(t, catalogs, nil, dir, localeEN)
+	if got := e.Localize(context.Background(), "app.greet", nil); got != "Hello from the directory" {
+		t.Errorf("Localize = %q, want the overlay's message", got)
+	}
+	if got, ok := e.Translate(localeEN, "app.greet", nil); !ok || got != "Hello from the directory" {
+		t.Errorf("Translate = %q, %v; want the overlay's message, true", got, ok)
+	}
+}
+
+// TestOverlayIntroducesANewLocale holds that a locale only the overlay carries
+// enters the engine's supported set: a request that prefers it negotiates to it
+// and renders in it, though no declared catalog names it. The engine supports
+// whatever the merged index carries, not a fixed pair.
+func TestOverlayIntroducesANewLocale(t *testing.T) {
+	catalogs := []core.Resource[i18n.Catalog]{catalogOf("app", map[string]string{
+		"locales/en-US.json": `{"app.en":"Hello"}`,
+	})}
+	dir := overlayDir(t, map[string]string{
+		"ja-JP.json": `{"app.ja":"こんにちは"}`,
+	})
+	e := mustEngineWithOverlay(t, catalogs, nil, dir, localeEN)
+	if locale, ok := e.Negotiate("ja-JP,ja;q=0.9"); !ok || locale != localeJA {
+		t.Errorf("Negotiate(\"ja-JP,ja;q=0.9\") = %q, %v; want %q, true", locale, ok, localeJA)
+	}
+	if got := e.Localize(i18n.WithLocale(context.Background(), localeJA), "app.ja", nil); got != "こんにちは" {
+		t.Errorf("Localize in the overlay's locale = %q, want %q", got, "こんにちは")
+	}
+}
+
+// TestOverlaySuppliesTheConfiguredDefault holds that the default-locale check
+// runs after the merge: a declared catalog carries only zh-CN while the
+// configured default is ja-JP, which only the overlay carries. Because the
+// overlay is merged first, the run starts instead of failing with ErrNoCatalog,
+// and the overlay's locale is the fallback every message relies on.
+func TestOverlaySuppliesTheConfiguredDefault(t *testing.T) {
+	catalogs := []core.Resource[i18n.Catalog]{catalogOf("app", map[string]string{
+		"locales/zh-CN.json": `{"app.zh":"你好"}`,
+	})}
+	dir := overlayDir(t, map[string]string{
+		"ja-JP.json": `{"app.ja":"こんにちは"}`,
+	})
+	// newEngine builds and does not fail, where a set that carries no ja-JP would
+	// stop with ErrNoCatalog.
+	e := mustEngineWithOverlay(t, catalogs, nil, dir, localeJA)
+	if got := e.Default(); got != localeJA {
+		t.Errorf("Default() = %q, want the configured default %q", got, localeJA)
+	}
+	if got, ok := e.Translate(localeJA, "app.ja", nil); !ok || got != "こんにちは" {
+		t.Errorf("Translate in the overlay-supplied default = %q, %v; want %q, true", got, ok, "こんにちは")
+	}
+	// A key the requested locale misses falls back to the overlay-supplied
+	// default, so the overlay is a real fallback target, not only an added locale.
+	if got := e.Localize(i18n.WithLocale(context.Background(), localeZH), "app.ja", nil); got != "こんにちは" {
+		t.Errorf("Localize fallback to the overlay-supplied default = %q, want %q", got, "こんにちは")
+	}
+}
+
+// TestOverlayMalformedFileFailsStartup holds that a file in the configured
+// directory the loader cannot read as a catalog fails startup under
+// ErrInvalidOverlay — a sentinel distinct from ErrInvalidCatalog, and naming the
+// directory and the file. The two ways a file is malformed are a body that is
+// not a JSON object of string to string and a base name that is not a language
+// tag.
+func TestOverlayMalformedFileFailsStartup(t *testing.T) {
+	catalogs := []core.Resource[i18n.Catalog]{catalogOf("app", map[string]string{
+		"locales/en-US.json": `{"app.en":"Hello"}`,
+	})}
+	tests := []struct {
+		name string
+		file string
+		body string
+	}{
+		{"a body that is not a JSON object", "zh-CN.json", `{not json}`},
+		{"a base name that is not a language tag", "1234.json", `{"app.x":"y"}`},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			dir := overlayDir(t, map[string]string{tt.file: tt.body})
+			_, err := newEngine(catalogs, nil, localeEN, dir)
+			if !errors.Is(err, ErrInvalidOverlay) {
+				t.Fatalf("newEngine error = %v, want ErrInvalidOverlay", err)
+			}
+			if errors.Is(err, ErrInvalidCatalog) {
+				t.Errorf("the overlay failure must be distinct from ErrInvalidCatalog: %v", err)
+			}
+			if !strings.Contains(err.Error(), tt.file) {
+				t.Errorf("the failure %q does not name the file %q", err.Error(), tt.file)
+			}
+		})
+	}
+}
+
+// TestNoOverlayLeavesBehaviourAsBefore holds that every way of naming no overlay
+// — the item unset, a path that is not an existing directory, an existing
+// directory holding no *.json file, a path naming a file — leaves the engine
+// built from the declared catalogs alone. In particular the loader's "matched no
+// file" error, an error for a declared catalog, must not surface for the overlay
+// source.
+func TestNoOverlayLeavesBehaviourAsBefore(t *testing.T) {
+	catalogs := []core.Resource[i18n.Catalog]{twoLocales}
+	empty := t.TempDir()
+	noJSON := overlayDir(t, map[string]string{"readme.txt": "not a catalog"})
+	file := filepath.Join(t.TempDir(), "a-file")
+	if err := os.WriteFile(file, []byte("x"), 0o600); err != nil {
+		t.Fatalf("writing the file case: %v", err)
+	}
+	tests := []struct {
+		name string
+		dir  string
+	}{
+		{"the item is unset", ""},
+		{"a path that is not an existing directory", filepath.Join(t.TempDir(), "missing")},
+		{"an existing but empty directory", empty},
+		{"a directory holding no *.json file", noJSON},
+		{"a path naming a file, not a directory", file},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			e := mustEngineWithOverlay(t, catalogs, nil, tt.dir, localeEN)
+			if got := e.Localize(i18n.WithLocale(context.Background(), localeZH), "app.zh", nil); got != "你好" {
+				t.Errorf("Localize = %q, want %q", got, "你好")
+			}
+			if got := e.Default(); got != localeEN {
+				t.Errorf("Default() = %q, want %q", got, localeEN)
+			}
+			// No overlay adds a locale the declared catalogs do not carry.
+			if _, ok := e.Translate(localeJA, "app.ja", nil); ok {
+				t.Error("an overlay-less run carries a locale no declared catalog does")
+			}
+			if locale, ok := e.Negotiate("ja-JP,ja;q=0.9"); ok {
+				t.Errorf("Negotiate matched %q with no overlay", locale)
+			}
+		})
 	}
 }

@@ -25,7 +25,8 @@ import (
 type Locale string
 
 // The names this capability reads its configuration under. The set of locales a
-// run supports is the set of locales the declared catalogs carry, and the one
+// run supports is the set of locales the declared catalogs and the configured
+// catalogs directory carry, and the one
 // additional choice — which of them a request that names none resolves to — is
 // this configuration item rather than a value written into code.
 //

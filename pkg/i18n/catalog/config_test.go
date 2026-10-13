@@ -65,3 +65,21 @@ func TestTheConfigSchemaNamesTheDefaultItem(t *testing.T) {
 		t.Errorf("the schema declares no item %q", i18n.DefaultLocaleItem)
 	}
 }
+
+// TestTheCatalogsDirItemIsDeclaredAndCarried holds the second item: the schema
+// declares catalogs-dir beside default-locale, and its value resolves through
+// unchanged. The directory's existence is the engine's business at load, not the
+// configuration's, so resolve does not refuse a path that names nothing.
+func TestTheCatalogsDirItemIsDeclaredAndCarried(t *testing.T) {
+	s := schema()
+	if _, ok := s.Items[catalogsDirItem]; !ok {
+		t.Errorf("the schema declares no item %q", catalogsDirItem)
+	}
+	got, err := readConfig(stubReader{cfg: moduleConfig{DefaultLocale: "en-US", CatalogsDir: "/no/such/dir"}})
+	if err != nil {
+		t.Fatalf("readConfig refused a directory that names nothing: %v", err)
+	}
+	if got.CatalogsDir != "/no/such/dir" {
+		t.Errorf("CatalogsDir = %q, want %q", got.CatalogsDir, "/no/such/dir")
+	}
+}
