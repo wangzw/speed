@@ -589,12 +589,12 @@ SSO 不做单点登出：IdP 一侧的登出与停用都不终止 speed 的会�
 | 清扫：未验证的域声明与过期的断言标识 | 已实现 | `pkg/authn/sso/sweep.go` `startSweep`、`sweepClaims`、`sweepAssertions`；`pkg/authn/sso/register.go` `removeStaleClaims`、`removeExpiredAssertions` |
 | `Start` 的表存在性探测与加密列探针 | 已实现 | `pkg/authn/sso/start.go` `start`；`pkg/authn/sso/register.go` `probe`、`roundTrip` |
 | 租户准入层缺席时的 `Warn` | 已实现 | `pkg/authn/sso/start.go` `start`（`reg.Participating(admissionModule)`） |
-| `internal/egress` 受限出站客户端与特殊用途地址表 | 已实现 — 追踪头的注入留给调用方，包内没有 `observability.Transport` 的包装 | `pkg/authn/internal/egress/egress.go` `New`、`Options`；`pkg/authn/internal/egress/address.go` `Permitted` |
+| `internal/egress` 受限出站客户端与特殊用途地址表 | 已实现 | `pkg/authn/internal/egress/egress.go` `New`、`Options`；`pkg/authn/internal/egress/address.go` `Permitted` |
 | `authn.sso.saml`：SP 元数据路由与 SP 构造 | 已实现 | `pkg/authn/sso/saml/metadata.go` `mountMetadata`、`serveMetadata`、`metadataEntity`；`pkg/authn/sso/saml/sp.go` `buildServiceProvider`、`spCache` |
 | `authn.sso.saml`：`LoginMethod` 的发起与断言消费（SHA-1 预检、单次解析验签、逐项补充校验、断言标识去重、主体与属性提取） | 已实现 | `pkg/authn/sso/saml/method.go` `Begin`、`Answer`、`serviceProvider`；`pkg/authn/sso/saml/assertion.go` `consume`、`checkResponseTo`、`checkConditions`、`checkConfirmation`、`extract`；`pkg/authn/sso/saml/sha1.go` `usesSHA1` |
 | `authn.sso.saml`：IdP 发起登录的方法侧校验 | 已实现 | `pkg/authn/sso/saml/assertion.go` `consume`、`checkResponseTo`（`idpInitiatedMaxAge` 与提供方的 `AllowIDPInitiated`） |
-| 断言标识去重的写面：登记的 `RememberAssertion` 与方法侧的构造期断言 | 已实现 — 登记方插入标识并报告重放，方法侧断不上即构造失败 | `pkg/authn/sso/assertions.go` `RememberAssertion`；`pkg/authn/sso/saml/assertion.go` `assertionLog`、`consume`；`pkg/authn/sso/saml/saml.go` `newProduct` |
-| 提供方行不存在的哨兵 `ErrProviderNotFound` | 已实现 — 根包声明，`Get`、`Secret`、`Tenant`、`Put`（更新路径）、`Delete`、`ClaimDomain` 报告它 | `pkg/authn/errors.go` `ErrProviderNotFound`；`pkg/authn/sso/providers.go` |
+| 断言标识去重的写面：登记的 `RememberAssertion` 与方法侧的构造期断言 | 已实现 | `pkg/authn/sso/assertions.go` `RememberAssertion`；`pkg/authn/sso/saml/assertion.go` `assertionLog`、`consume`；`pkg/authn/sso/saml/saml.go` `newProduct` |
+| 提供方行不存在的哨兵 `ErrProviderNotFound` | 已实现 | `pkg/authn/errors.go` `ErrProviderNotFound`；`pkg/authn/sso/providers.go` |
 | `authn.sso.saml`：`SSOMetadataRefresher.Refresh` 与元数据解析 | 已实现 | `pkg/authn/sso/saml/refresh.go` `Protocol`、`Refresh`、`fetchMetadata`、`mergeMetadata`；`pkg/authn/sso/saml/metadata.go` `parseIDPMetadata` |
 | `authn.sso.oidc`：`LoginMethod` 与提供方缓存 | 已实现 | `pkg/authn/sso/oidc/method.go` `Begin`、`Answer`、`exchange`；`pkg/authn/sso/oidc/cache.go` `providerCache` `get`、`drop` |
 | `authn.idp.changed` 的发布与缓存失效订阅 | 已实现 | `pkg/authn/sso/providers.go` `publishChange`、`events.go`；`pkg/authn/sso/oidc/subscribe.go` `subscribe`、`onIDPChanged`；`pkg/authn/sso/saml/events.go` `subscribe`、`onIDPChanged`、`spCache.flush` |

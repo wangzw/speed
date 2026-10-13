@@ -635,19 +635,19 @@ stateDiagram-v2
 
 | 能力 | 状态 | 代码 |
 |---|---|---|
-| `Sessions` 接缝与根包值类型（`SessionKind`、`NewSession`、`Issued`、`SessionInfo`、`SessionStatus`、`Elevation`、`ClientInfo`） | 已实现 — 载荷里 `idp.*` 的分项上限与检查在 `internal/model`，会话模块写载荷时引用它们 | `pkg/authn/session.go` `Sessions`；`pkg/authn/internal/model/session.go` `SessionKind`、`NewSession`、`Issued`、`SessionInfo`、`SessionStatus`、`Elevation`、`ClientInfo`；`pkg/authn/internal/model/bounds.go` `CheckIDPAttributes`、`SessionIDPAttributesMax`、`TruncateUTF8` |
+| `Sessions` 接缝与根包值类型（`SessionKind`、`NewSession`、`Issued`、`SessionInfo`、`SessionStatus`、`Elevation`、`ClientInfo`） | 已实现 | `pkg/authn/session.go` `Sessions`；`pkg/authn/internal/model/session.go` `SessionKind`、`NewSession`、`Issued`、`SessionInfo`、`SessionStatus`、`Elevation`、`ClientInfo`；`pkg/authn/internal/model/bounds.go` `CheckIDPAttributes`、`SessionIDPAttributesMax`、`TruncateUTF8` |
 | 模块 `authn.session` 的登记与阶段行为（`Prepare`、`New`、`Migrate`、`Init`、`Start`、`Stop`），含 `var _` 编译期断言与 `assembly_test` | 已实现 | `pkg/authn/session/session.go` `Module`、`(*product)` 的编译期断言；`pkg/authn/session/assembly_test.go` |
 | 表 `authn_sessions` 与按方言的迁移集 | 已实现 | `pkg/authn/session/store.go`；`pkg/authn/session/migrations/postgres`、`pkg/authn/session/migrations/sqlite` |
 | scs 的适配：存储适配器、JSON 编码器与适配规则 | 已实现 | `pkg/authn/session/adapter.go` `storeAdapter`；`pkg/authn/session/payload.go` `jsonCodec` |
 | 会话的创建、读取、列出、撤销与按账户批量撤销 | 已实现 | `pkg/authn/session/sessions.go` `Create`、`Get`、`List`、`Revoke`、`RevokeAccount` |
 | 令牌轮换、提权与冒充挂接 | 已实现 | `pkg/authn/session/sessions.go` `Rotate`、`Elevate`、`SetImpersonation` |
-| cookie 的写出、清除、读取与启动校验 | 已实现 — cookie 名与属性取自网关的 `public-url` 与 `allow-insecure`，不可运行的配置在 `Prepare` 里以 `ErrInsecureConfig` 终止 | `pkg/authn/session/sessions.go` `SetCookie`、`ClearCookie`；`pkg/authn/session/config.go` |
+| cookie 的写出、清除、读取与启动校验 | 已实现 | `pkg/authn/session/sessions.go` `SetCookie`、`ClearCookie`；`pkg/authn/session/config.go` |
 | `Verifier`：cookie 校验、会话校验缓存、账户核对与冒充记录缓存 | 已实现 | `pkg/authn/session/verify.go` `Verify`、`Accepts`、`Name`；`pkg/authn/session/cache.go` |
-| 账户快照的进程内缓存 `internal/acctcache`，供会话校验后端核对账户 | 已实现 — 会话模块以 `sid` 二级键维护自己的索引，账户快照缓存按账户标识读 | `pkg/authn/internal/acctcache/acctcache.go` `Cache`、`Epoch`、`PutIfEpoch`；`pkg/authn/session/cache.go` |
+| 账户快照的进程内缓存 `internal/acctcache`，供会话校验后端核对账户 | 已实现 | `pkg/authn/internal/acctcache/acctcache.go` `Cache`、`Epoch`、`PutIfEpoch`；`pkg/authn/session/cache.go` |
 | `CookieClearer` | 已实现 | `pkg/authn/session/sessions.go` `ClearCookie`；`pkg/authn/session.go` `CookieClearer` |
 | `service` 种：`ForCredential` 与 `RevokeCredential` | 已实现 | `pkg/authn/session/sessions.go` `ForCredential`、`RevokeCredential` |
 | `AccountLifecycle` 钩子与事件补偿订阅 | 已实现 | `pkg/authn/session/lifecycle.go` `AccountDisabled`、`AccountDeleted`、`ServiceSecretRevoked` |
-| 自助路由 `B/session`、`B/logout`、`B/sessions` | 已实现 — 经 `mount.Mounter` 挂载并成对登记访问级别 | `pkg/authn/session/routes.go` |
+| 自助路由 `B/session`、`B/logout`、`B/sessions` | 已实现 | `pkg/authn/session/routes.go` |
 | 到期行的清扫协程 | 已实现 | `pkg/authn/session/sweep.go` |
 | `authn.session.revoked` 事件的发布与订阅、`authn.impersonation.ended` 的订阅、`authn.session.operations` 指标 | 已实现 | `pkg/authn/session/lifecycle.go`；`pkg/authn/session/status.go` |
 

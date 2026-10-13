@@ -538,8 +538,8 @@ sequenceDiagram
 | 事件级捕获 | 已实现 | `pkg/audit/journal/event.go` `subscribe`、`handlerFor` |
 | 事件级按事件标识去重 | 已实现 | `pkg/audit/journal/event.go` `eventIDOf`；`pkg/audit/journal/entry.go` `insert` |
 | 记录接缝 | 已实现 | `pkg/audit/journal/entry.go` `Record` |
-| 主体列取责任键 `Key()`，冒充时是实际操作者 | 已实现 — `Key()` 恒为实际操作者的账户标识，冒充时主体列记真正动手的人 | `pkg/audit/journal/entry.go` `actorOf`；`pkg/authn/internal/identity/identity.go` `Key` |
-| 审计组装在冒充时补入 `on_behalf_of`、`impersonation_scope`、`session`，非冒充行剥掉调用方的同名键 | 已实现 — 判据是 `Impersonating()`，每条通路都经 `assemble`；补入的键写在调用方的明细之上，非冒充行上同名键被剥掉 | `pkg/audit/journal/entry.go` `assemble`、`withImpersonation`、`withoutImpersonationKeys` |
+| 主体列取责任键 `Key()`，冒充时是实际操作者 | 已实现 | `pkg/audit/journal/entry.go` `actorOf`；`pkg/authn/internal/identity/identity.go` `Key` |
+| 审计组装在冒充时补入 `on_behalf_of`、`impersonation_scope`、`session`，非冒充行剥掉调用方的同名键 | 已实现 | `pkg/audit/journal/entry.go` `assemble`、`withImpersonation`、`withoutImpersonationKeys` |
 | 明细脱敏 | 已实现 | `pkg/audit/journal/redact.go` `maskedKeySet`、`maskDetail` |
 | 失败信号 | 已实现 | `pkg/audit/journal/signal.go` `signal`、`report` |
 | 配置 | 已实现 | `pkg/audit/journal/config.go` `schema`、`readSettings` |

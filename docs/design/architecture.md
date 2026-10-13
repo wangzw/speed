@@ -283,21 +283,21 @@ speed 不引入进程边界。宿主是单一进程，注册表与全部模块�
 | [authn](modules/design-authn.md) | 已实现 |
 | [authn-gate](modules/design-authn-gate.md) | 已实现 |
 | [authn-account](modules/design-authn-account.md) | 已实现 |
-| [authn-login](modules/design-authn-login.md) | 已实现 — 引擎、口令、短信、Google、GitHub、微信两方式（wechat-web、wechat-mp）与企业 SSO 的 SAML/OIDC 方法俱在；账户解析与自助路由已在 |
+| [authn-login](modules/design-authn-login.md) | 已实现 |
 | [authn-sms](modules/design-authn-sms.md) | 已实现 |
 | [authn-mfa](modules/design-authn-mfa.md) | 已实现 |
 | [authn-session](modules/design-authn-session.md) | 已实现 |
 | [authn-token](modules/design-authn-token.md) | 已实现 |
-| [authn-sso](modules/design-authn-sso.md) | 已实现 — `authn.sso` 的提供方登记、域所有权与校验、发现与清扫，`authn.sso.saml` 与 `authn.sso.oidc` 两个协议模块与受限出站客户端俱在 |
-| [authn-impersonation](modules/design-authn-impersonation.md) | 已实现 — 记录、结构性限制、开始与结束/撤销/列出、Bearer 与 cookie 两种载体的挂接、审计先于动作俱在 |
-| [authn-admin](modules/design-authn-admin.md) | 已实现 — 注册、判定顺序、`Decision` 归属解析与各能力组路由俱在 |
+| [authn-sso](modules/design-authn-sso.md) | 已实现 |
+| [authn-impersonation](modules/design-authn-impersonation.md) | 已实现 |
+| [authn-admin](modules/design-authn-admin.md) | 已实现 |
 | [authn-config](modules/design-authn-config.md) | 已实现 |
 | [authn-events](modules/design-authn-events.md) | 已实现 |
 | [authn-failure](modules/design-authn-failure.md) | 已实现 |
 | [authn-threats](modules/design-authn-threats.md) | 已实现 |
 | [tenant](modules/design-tenant.md) | 已实现 |
 | [tenant-admission](modules/design-tenant-admission.md) | 已实现 |
-| [authz](modules/design-authz.md) | 已实现 — 判定核心与请求期强制面俱在（根包的类型与判定接口、权限常量与 `authn.Action` 的对齐及平台域保留值、`ModelText`、哨兵、`authz.policy` 的模块登记与三张表及按方言迁移、权限目录、`Manager`、账户生命周期清理、平台域启动核对、配置与设置键、薄 `persist.Adapter`、Casbin 快照装载与原子换指针、启动期模型自检与夹具、`authz.guard` 的模块登记与对 `authn.Decider` 的排他交付、动作翻译表与未知动作 fail-closed、翻译扩展点（模块经 `authz.TranslationSpec` 声明的行并入进程翻译、冲突即启动失败）、请求期中间件与授权阶段登记、路由声明登记表 `Gate`、handler 内判定 API `Guard`、403 与 503 的写出及指标 `authz.guard.decisions`、词表对齐守卫与根包依赖守卫、`authztest`、`authz.admin` 的 `/authz/admin/*` 管理面路由与 handler 内平台域判定及强制档审计）；分项状态见文档 |
+| [authz](modules/design-authz.md) | 已实现 |
 | [kv](modules/design-kv.md) | 已实现 |
 | [event](modules/design-event.md) | 已实现 |
 | [outbox](modules/design-outbox.md) | 已实现 |

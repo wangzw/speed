@@ -387,14 +387,14 @@ flowchart TD
 | 能力 | 状态 | 代码 |
 |---|---|---|
 | 模块 `tenant.admission`、排他交付、`Stage` 声明授权阶段、不带 `After` | 已实现 | `pkg/tenant/admission/admission.go` `Module` |
-| `tenant.Admission` 标记接口 | 已实现 — 接口定义在 `pkg/tenant`，由本包的类型交付；方法导出是交付检查能通过的前提 | `pkg/tenant/capabilities.go` `Admission`；`pkg/tenant/admission/admission.go` `(*layer).AdmissionLayer` |
-| `authn.ScopeGuard` 与 `Covers` | 已实现 — 根包接口与网关对它的取用，加上本包的精确成员判定 | `pkg/authn/scope.go` `ScopeGuard`；`pkg/tenant/admission/admission.go` `(*layer).Covers` |
-| `endpoints` 的必填、空清单与 `*` 的拒绝、端名核对 | 已实现 — 空清单、空名、`*` 与重复名为错误，未知端名为 `tenant.ErrUnknownEndpoint` | `pkg/tenant/admission/config.go` `(moduleConfig).resolve` |
+| `tenant.Admission` 标记接口 | 已实现 | `pkg/tenant/capabilities.go` `Admission`；`pkg/tenant/admission/admission.go` `(*layer).AdmissionLayer` |
+| `authn.ScopeGuard` 与 `Covers` | 已实现 | `pkg/authn/scope.go` `ScopeGuard`；`pkg/tenant/admission/admission.go` `(*layer).Covers` |
+| `endpoints` 的必填、空清单与 `*` 的拒绝、端名核对 | 已实现 | `pkg/tenant/admission/config.go` `(moduleConfig).resolve` |
 | 判定次序：租户上下文、身份、冒充范围、成员、豁免、多因素强度、SSO 强度 | 已实现 | `pkg/tenant/admission/decide.go` `decide` |
 | 经 `Decider` 的 `authn.tenant.access` 放行 | 已实现 | `pkg/tenant/admission/decide.go`；`pkg/authn/decide.go` `Decider` |
-| 成员、豁免与放行结果的缓存，以及 `authn.membership.changed` 订阅 | 已实现 — 缓存三种答案，错误从不记住，订阅在 `Init` 里建立，无总线时只靠有效期 | `pkg/tenant/admission/cache.go`；`pkg/tenant/admission/admission.go` |
-| 租户设置 `require-mfa`、`require-sso` 与 `check-ttl` 的声明与读取 | 已实现 — 两个强制开关读不到是 503，`check-ttl` 读不到或越域取默认并记一次 Error | `pkg/tenant/admission/config.go`；`pkg/tenant/admission/admission.go` |
-| 指标 `tenant.admission.decisions`、拒绝日志与启动诊断 | 已实现 — 每次请求记一次，取值名是封闭集；拒因只带账户、租户与类别 | `pkg/tenant/admission/admission.go`、`pkg/tenant/admission/decide.go` |
+| 成员、豁免与放行结果的缓存，以及 `authn.membership.changed` 订阅 | 已实现 | `pkg/tenant/admission/cache.go`；`pkg/tenant/admission/admission.go` |
+| 租户设置 `require-mfa`、`require-sso` 与 `check-ttl` 的声明与读取 | 已实现 | `pkg/tenant/admission/config.go`；`pkg/tenant/admission/admission.go` |
+| 指标 `tenant.admission.decisions`、拒绝日志与启动诊断 | 已实现 | `pkg/tenant/admission/admission.go`、`pkg/tenant/admission/decide.go` |
 
 依赖的接缝在代码里的现状：
 

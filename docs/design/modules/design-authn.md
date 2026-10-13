@@ -674,15 +674,15 @@ type Provisioner interface {
 | 路由共用部件：问题码与 `Fail` 一族、`Decode`、`Wrap`、`AllowCallback`，与测试用的 `Mounter` | 已实现 | `pkg/authn/internal/mount/problem.go`；`pkg/authn/internal/mount/decode.go`；`pkg/authn/internal/mount/wrap.go`；`pkg/authn/internal/mount/mounttest/mounttest.go` |
 | 身份的类型化字段与责任键 | 已实现 | `pkg/authn/internal/identity/identity.go` `Identity`、`New`、`Key`、`Satisfies`；`pkg/authn/identity.go` `Identity` |
 | 身份的上下文承载：无回落、注入口不导出 | 已实现 | `pkg/authn/internal/identity/identity.go` `With`、`From`；`pkg/authn/identity.go` `FromContext` |
-| 访问级别 `Access` 的承载与 `AccessFromContext` | 已实现 — 网关在放行时写入 | `pkg/authn/internal/identity/identity.go` `WithAccess`、`AccessFrom`；`pkg/authn/identity.go` `AccessFromContext`；`pkg/authn/gate/serve.go` `admit` |
-| 根包依赖守卫 `deps_test.go` | 已实现 — 根包的 import 断言、值类型包只依赖标准库与 `internal/model` 的断言、非测试代码不 import `authntest` 与 `mounttest` 的断言（`mounttest` 是唯一在非测试文件里 import `authntest` 的包）、`internal/identity` 只被写入方名单内的包 import 的断言，以及名单内已存在的包都确有 import 的反向断言 | `pkg/authn/deps_test.go`；`pkg/authn/internal/model/deps_test.go` |
-| 根包导出面清单 | 已实现 — 根包的每个导出声明（含别名带出的字段与方法集）逐条写在测试里，新增导出必须手工登记；导出面不含归属模型的名字 | `pkg/authn/surface_test.go` `exportedSurface`、`TestExportedSurfaceIsPinned`、`TestTheSurfaceHoldsNoNameOfTheOwnershipModel` |
-| 测试构造口 `authntest` | 已实现 — 防线只有依赖测试：`pkg` 模块里的 `deps_test.go` 与各宿主模块自带的同形断言，类型上没有屏障；不检查出口检查里需要网关时钟或后端声明的几项（认证时刻的 120 秒偏移、`static.` 以外的账户命名空间、`Accepts` 声明的能力、保留的属性前缀）；属性集的总上限与键、值长度取自 `internal/model/bounds.go`，其余形状与界限常量与出口检查各持一份，由网关包的对拍测试守住 | `pkg/authn/authntest`；`pkg/authn/deps_test.go`；`pkg/authn/gate/exitcheck_parity_test.go` `TestAuthntestAndTheExitCheckAgreeOnEveryShapeAndBound`；`examples/orders-host/authntest_test.go`；`examples/crm-host/authntest_test.go` |
-| 挂路由口 `authn.mount` 与 `mount.Mounter` | 已实现 — 模块挂路由并成对登记访问级别，触发 `ErrRoutesUnconfigured` | `pkg/authn/mount/mount.go` `Module`；`pkg/authn/internal/mount/mount.go` `Mounter`；`pkg/authn/internal/mount/mounttest/mounttest.go` |
+| 访问级别 `Access` 的承载与 `AccessFromContext` | 已实现 | `pkg/authn/internal/identity/identity.go` `WithAccess`、`AccessFrom`；`pkg/authn/identity.go` `AccessFromContext`；`pkg/authn/gate/serve.go` `admit` |
+| 根包依赖守卫 `deps_test.go` | 已实现 | `pkg/authn/deps_test.go`；`pkg/authn/internal/model/deps_test.go` |
+| 根包导出面清单 | 已实现 | `pkg/authn/surface_test.go` `exportedSurface`、`TestExportedSurfaceIsPinned`、`TestTheSurfaceHoldsNoNameOfTheOwnershipModel` |
+| 测试构造口 `authntest` | 已实现 | `pkg/authn/authntest`；`pkg/authn/deps_test.go`；`pkg/authn/gate/exitcheck_parity_test.go` `TestAuthntestAndTheExitCheckAgreeOnEveryShapeAndBound`；`examples/orders-host/authntest_test.go`；`examples/crm-host/authntest_test.go` |
+| 挂路由口 `authn.mount` 与 `mount.Mounter` | 已实现 | `pkg/authn/mount/mount.go` `Module`；`pkg/authn/internal/mount/mount.go` `Mounter`；`pkg/authn/internal/mount/mounttest/mounttest.go` |
 | 账户存储 `authn.account` | 已实现 | `pkg/authn/account/account.go` `Module` |
 | 登录会话 `authn.session` | 已实现 | `pkg/authn/session/session.go` `Module` |
 | 访问令牌、刷新令牌与服务账户 `authn.token` | 已实现 | `pkg/authn/token` 的 `Module`；配置、迁移、路由、清扫与事件订阅俱在 |
-| 登录引擎 `authn.login` 与全部登录方式 | 已实现 — SAML 与 OIDC 登录方法由 `authn.sso.saml`、`authn.sso.oidc` 交付 | `pkg/authn/login/login.go` `Module`；`pkg/authn/login/password/password.go`、`pkg/authn/login/sms/sms.go`、`pkg/authn/login/google/google.go`、`pkg/authn/login/github/github.go`、`pkg/authn/login/wechatweb/wechatweb.go`、`pkg/authn/login/wechatmp/wechatmp.go` 各自的 `Module` |
+| 登录引擎 `authn.login` 与全部登录方式 | 已实现 | `pkg/authn/login/login.go` `Module`；`pkg/authn/login/password/password.go`、`pkg/authn/login/sms/sms.go`、`pkg/authn/login/google/google.go`、`pkg/authn/login/github/github.go`、`pkg/authn/login/wechatweb/wechatweb.go`、`pkg/authn/login/wechatmp/wechatmp.go` 各自的 `Module` |
 | 多因素编排 `authn.mfa` 与全部因素 | 已实现 | `pkg/authn/mfa/mfa.go` `Module`；`pkg/authn/mfa/totp`、`pkg/authn/mfa/sms`、`pkg/authn/mfa/webauthn` |
 | 短信验证码 `authn.sms` 与短信发送方 | 已实现 | `pkg/authn/sms` 的 `Module`；`pkg/authn/sms/aliyun`、`pkg/authn/sms/tencent` |
 | 企业 SSO `authn.sso` 与 SAML、企业 OIDC | 已实现 | `pkg/authn/sso/module.go` `Module`；`pkg/authn/sso/saml/saml.go`、`pkg/authn/sso/oidc/oidc.go` 各自的 `Module` |
@@ -690,4 +690,4 @@ type Provisioner interface {
 | 判定接缝与管理面 `authn.admin` | 已实现 | `pkg/authn/decide.go` `Decider`、`Decision`、`Action`；`pkg/authn/admin/admin.go` `Module` |
 | 加强认证处理器 `authn/guard` | 已实现 | `pkg/authn/guard/guard.go` `Require` |
 | 租户准入层 `tenant.admission` | 已实现 | `pkg/tenant/admission/admission.go` `Module`；`pkg/tenant/capabilities.go` `Admission` |
-| 链上次序的装配测试 | 已实现 — 准入层的链上次序与端点在 `pkg/tenant/admission/assembly_test.go` 与 `pkg/tenant/admission/live_test.go` 里从真实注册表与回环端守住；全部模块齐全的装配里读 `chain=` 行、逐项断言整条次序的汇总在 `examples/crm-host/e2e_test.go` | `pkg/tenant/admission/assembly_test.go`；`pkg/tenant/admission/live_test.go`；`examples/crm-host/e2e_test.go` `TestTheAdmissionLayerSitsInsideTheJournalAndTheLimiter` |
+| 链上次序的装配测试 | 已实现 | `pkg/tenant/admission/assembly_test.go`；`pkg/tenant/admission/live_test.go`；`examples/crm-host/e2e_test.go` `TestTheAdmissionLayerSitsInsideTheJournalAndTheLimiter` |

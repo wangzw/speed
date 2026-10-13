@@ -411,20 +411,20 @@ audit.Entry{
 
 | 能力 | 状态 | 代码 |
 |---|---|---|
-| 事件类型常量与载荷结构体 | 已实现 — 含 `reason_class` 的封闭集与两个判定函数：`ValidReasonClass` 认全部类别，`ValidPayloadReasonClass` 排除只写进退避日志行的 `throttled` | `pkg/authn/events.go` `EventAccountStatusChanged`、`AccountStatusChanged`、`ReasonAdmin`、`ValidReasonClass`、`ValidPayloadReasonClass` |
-| 事件的发布：经发件箱与经总线的路径、缺席时的启动诊断 | 已实现 — 账户在事务里暂存发件箱事件并在提交后发总线，会话、多因素与登录各自发布，令牌在重用检测命中时经总线发 `authn.token.reuse-detected`；总线或发件箱缺席时的分支已有 | `pkg/authn/account/events.go`；`pkg/authn/session/lifecycle.go`；`pkg/authn/mfa/manage.go`；`pkg/authn/login/engine.go`；`pkg/authn/token/refresh.go` `revokeFamily`；`pkg/authn/events.go` |
-| authn 自己的事件订阅与幂等补偿 | 已实现 — 账户状态变更与删除的清理经发件箱补偿，会话与多因素订阅 `authn.account.*`，准入层订阅 `authn.membership.changed`，令牌校验后端订阅会话撤销、账户状态变更、账户删除与冒充结束 | `pkg/authn/session/lifecycle.go`；`pkg/authn/mfa/manage.go`；`pkg/tenant/admission/admission.go`；`pkg/authn/token/subscribe.go` |
-| 接缝级审计：强制档与尽力档、动作表、明细键名、`actor` 取法 | 已实现 — 账户、登录、多因素、会话、令牌、准入、SSO 与冒充的审计点俱在 | `pkg/authn/account/events.go`；`pkg/authn/login/engine.go`；`pkg/authn/mfa/manage.go`；`pkg/authn/session/routes.go`；`pkg/authn/token/refresh.go` `revokeFamily`；`pkg/tenant/admission/decide.go`；`pkg/authn/sso/saml/reject.go` `actionSSOReject`、`pkg/authn/sso/oidc/method.go`；`pkg/authn/impersonation/signal.go` `writeAudit` |
+| 事件类型常量与载荷结构体 | 已实现 | `pkg/authn/events.go` `EventAccountStatusChanged`、`AccountStatusChanged`、`ReasonAdmin`、`ValidReasonClass`、`ValidPayloadReasonClass` |
+| 事件的发布：经发件箱与经总线的路径、缺席时的启动诊断 | 已实现 | `pkg/authn/account/events.go`；`pkg/authn/session/lifecycle.go`；`pkg/authn/mfa/manage.go`；`pkg/authn/login/engine.go`；`pkg/authn/token/refresh.go` `revokeFamily`；`pkg/authn/events.go` |
+| authn 自己的事件订阅与幂等补偿 | 已实现 | `pkg/authn/session/lifecycle.go`；`pkg/authn/mfa/manage.go`；`pkg/tenant/admission/admission.go`；`pkg/authn/token/subscribe.go` |
+| 接缝级审计：强制档与尽力档、动作表、明细键名、`actor` 取法 | 已实现 | `pkg/authn/account/events.go`；`pkg/authn/login/engine.go`；`pkg/authn/mfa/manage.go`；`pkg/authn/session/routes.go`；`pkg/authn/token/refresh.go` `revokeFamily`；`pkg/tenant/admission/decide.go`；`pkg/authn/sso/saml/reject.go` `actionSSOReject`、`pkg/authn/sso/oidc/method.go`；`pkg/authn/impersonation/signal.go` `writeAudit` |
 | `authn.settings.relaxed` 的订阅与审计 | 已实现 | `pkg/authn/account/relax.go`；`pkg/authn/{sms,session,token,static,login,mfa,sso,impersonation}/relax.go`；`pkg/tenant/admission/relax.go` |
 | 记录接缝 `audit.Audit.Record` 及其错误 `ErrNotAccepting`、`ErrWriteFailed` | 已实现 | `pkg/audit/audit.go` `Audit`、`Entry`、`ErrNotAccepting`、`ErrWriteFailed` |
-| 登录引擎的派生上下文（`internal/identity` 的 `With` 供一次 `Record` 使用） | 已实现 — 引擎为完成的登录派生一个只交给那一次 `Audit.Record` 的上下文 | `pkg/authn/login/engine.go`；`pkg/authn/internal/identity/identity.go` `With` |
-| 日志请求关联字段 | 已实现 — 网关绑定 `account` 与 `backend`，冒充时另绑 `actor` 与 `impersonating`，有会话时另绑 `session`；`subject` 不再出现 | `pkg/authn/gate/serve.go` `identityAttrs` |
+| 登录引擎的派生上下文（`internal/identity` 的 `With` 供一次 `Record` 使用） | 已实现 | `pkg/authn/login/engine.go`；`pkg/authn/internal/identity/identity.go` `With` |
+| 日志请求关联字段 | 已实现 | `pkg/authn/gate/serve.go` `identityAttrs` |
 | 日志级别按谁有事要做：网关的收口 | 已实现 | `pkg/authn/gate/serve.go` `conclude`、`gatewayRefusal`、`outage` |
 | 网关的记录级字段（收口行、取凭据的拒绝行、启动诊断、cookie 前缀警告行）与字段名的写法 | 已实现 | `pkg/authn/gate/serve.go` `conclude`、`credentialOf`；`pkg/authn/gate/gate.go` `diagnose`、`freeze`、`warnUnprefixedCookies` |
-| 日志级别与字段：其余模块 | 已实现 — 账户、会话、多因素、登录、令牌、短信、挂载、准入、SSO 与冒充各写出自己的记录级字段 | `pkg/authn/account/events.go`；`pkg/authn/session/routes.go`；`pkg/authn/mfa/routes.go`；`pkg/authn/login/engine.go`；`pkg/authn/token/refresh.go`；`pkg/authn/sms/pool.go`；`pkg/authn/mount/mount.go`；`pkg/tenant/admission/decide.go`；`pkg/authn/sso/saml/reject.go`、`pkg/authn/sso/oidc/method.go`；`pkg/authn/impersonation/routes.go` |
+| 日志级别与字段：其余模块 | 已实现 | `pkg/authn/account/events.go`；`pkg/authn/session/routes.go`；`pkg/authn/mfa/routes.go`；`pkg/authn/login/engine.go`；`pkg/authn/token/refresh.go`；`pkg/authn/sms/pool.go`；`pkg/authn/mount/mount.go`；`pkg/tenant/admission/decide.go`；`pkg/authn/sso/saml/reject.go`、`pkg/authn/sso/oidc/method.go`；`pkg/authn/impersonation/routes.go` |
 | 日志脱敏登记与永不记录 | 已实现 | `pkg/authn/gate/redact.go` `registerNewRules`、`registerValueRule`；`pkg/authn/login/{google,github,wechatweb,wechatmp}/secrecy_test.go`、`pkg/authn/sms/{aliyun,tencent}/secrecy_test.go`、`pkg/authn/static/secrecy_test.go`、`pkg/authn/token/secrecy_test.go`、`pkg/authn/sso/saml/secrecy_test.go` |
-| 指标 `authn.gate.conclusions` | 已实现 — `Meter` 以 `authn` 命名，`outcome` 的取值含 `anonymous` | `pkg/authn/gate/metrics.go` `takeMeter`、`bucketName` |
-| 其余仪器（登录、口令、因素、会话、令牌、退避、短信、SSO、冒充、审计写失败、清理失败） | 已实现 — 登录（`authn.login.*`）、因素（`authn.mfa.verifications`）、会话（`authn.session.operations`）、令牌（`authn.token.operations`）、退避（`authn.throttle.engagements`）、短信（`authn.sms.sends`）、准入（`tenant.admission.decisions`）、SSO（`authn.sso.assertions`）与冒充（`authn.impersonation.sessions`）的仪器俱在 | `pkg/authn/login/metrics.go`；`pkg/authn/mfa/mfa.go`；`pkg/authn/session/session.go`；`pkg/authn/token/product.go` `takeMeter`；`pkg/authn/account/meters.go`；`pkg/authn/sms/meters.go`；`pkg/tenant/admission/admission.go`；`pkg/authn/sso/oidc/metrics.go`、`pkg/authn/sso/saml/reject.go`；`pkg/authn/impersonation/signal.go` |
+| 指标 `authn.gate.conclusions` | 已实现 | `pkg/authn/gate/metrics.go` `takeMeter`、`bucketName` |
+| 其余仪器（登录、口令、因素、会话、令牌、退避、短信、SSO、冒充、审计写失败、清理失败） | 已实现 | `pkg/authn/login/metrics.go`；`pkg/authn/mfa/mfa.go`；`pkg/authn/session/session.go`；`pkg/authn/token/product.go` `takeMeter`；`pkg/authn/account/meters.go`；`pkg/authn/sms/meters.go`；`pkg/tenant/admission/admission.go`；`pkg/authn/sso/oidc/metrics.go`、`pkg/authn/sso/saml/reject.go`；`pkg/authn/impersonation/signal.go` |
 | 守住外部行为假设与纪律的测试 | 已实现 | `pkg/authn/summary_test.go`；`pkg/authn/account/audit_test.go`；`pkg/authn/session/observability_test.go`；`pkg/tenant/admission/decide_test.go` |
 
 事件、审计与指标在各模块里的发出点，随各模块的实现状态由 [design-authn-session](design-authn-session.md) 等文档承载。
