@@ -170,7 +170,7 @@ db 不可用时答 `temporarily_unavailable`，**不答 `invalid_grant`**：客�
 
 ### 稳定性
 
-下列名字（封闭集）被模块之外的程序读取，更名或改义对读取它们的一方是不兼容变更：声明名与保留名集合、`typ` 取值、`spd_rt_` 与 `spd_cs_` 前缀、令牌端点与 JWKS 的路径、`error` 取值、JWKS 的内容类型。`Tokens` 与 `ClaimsContributor` 是宿主可以预置或实现的接口：`Tokens` 排他交付、宿主可预置，也是仓库内其余模块取用的接缝（`authn.login` 取用它换取令牌对）；`ClaimsContributor` 由宿主实现，只由本模块在签发时取用。两者的方法集在本模块落地时定下并冻结，加方法与改签名对已实现或已取用它们的一侧同样是不兼容变更，后续期不得改动。
+下列名字（封闭集）被模块之外的程序读取，更名或改义对读取它们的一方是不兼容变更：声明名与保留名集合、`typ` 取值、`spd_rt_` 与 `spd_cs_` 前缀、令牌端点与 JWKS 的路径、`error` 取值、JWKS 的内容类型。`Tokens` 与 `ClaimsContributor` 是宿主可以预置或实现的接口：`Tokens` 排他交付、宿主可预置，也是仓库内其余模块取用的接缝（`authn.login` 取用它换取令牌对）；`ClaimsContributor` 由宿主实现，只由本模块在签发时取用。两者的方法集是冻结面：加方法与改签名对已实现或已取用它们的一侧是不兼容变更。
 
 ## 依赖
 
@@ -481,7 +481,7 @@ service 种访问令牌的撤销是无操作：该会话行由同一密钥签出
 
 ### 清扫
 
-`authn_refresh_tokens` 是会无界增长的表，持有者是本模块：`Start` 起一个有界协程，每个副本都跑，周期 1 小时，批量删除（`DELETE ... WHERE id IN (SELECT id ... LIMIT 1000)`，各方言通用）。删除条件是封闭集：所属会话已不存在、已撤销、已过绝对期限，或 `idle_expires_at < now`。前三个条件用一条 `JOIN authn_sessions` 的批量语句表达，所以清扫直接读会话模块的表——这是本模块唯一直接读 `authn_sessions` 的地方，校验与会话判定一律经 `Sessions` 接缝；逐行经 `Sessions` 核对的写法既不是一批、也没有上界，与有界批量删除不符，不采用。条件删除互不冲突，多副本同时清扫不需要协调。`Stop` 以自带的 5 秒为界等协程退出（`Stop` 的 context 去掉了取消）。`New` 不读写自己的表（首次启动表还没建），需要读表的自检与清扫协程放 `Start`。
+`authn_refresh_tokens` 是会无界增长的表，持有者是本模块：`Start` 起一个有界协程，每个副本都跑，周期 1 小时，批量删除（`DELETE ... WHERE id IN (SELECT id ... LIMIT 1000)`，各方言通用）。删除条件是封闭集：所属会话已不存在、已撤销、已过绝对期限，或 `idle_expires_at < now`。前三个条件用一条 `JOIN authn_sessions` 的批量语句表达，所以清扫直接读会话模块的表——这是本模块唯一直接读 `authn_sessions` 的地方，校验与会话判定一律经 `Sessions` 接缝（[ADR-authn-token-2026-10-10](../../../adr/adr-authn-token-2026-10-10.md)）。条件删除互不冲突，多副本同时清扫不需要协调。`Stop` 以自带的 5 秒为界等协程退出（`Stop` 的 context 去掉了取消）。`New` 不读写自己的表（首次启动表还没建），需要读表的自检与清扫协程放 `Start`。
 
 ### 必须由测试守住的性质
 

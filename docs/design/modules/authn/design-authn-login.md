@@ -390,7 +390,7 @@ kv 键是 `authn:flow:<流程令牌的 SHA-256 十六进制>`。kv 不划分命�
 
 `state` 的取值是封闭集：`first`（第一因素）、`processing`（处理中，仅回跳类）、`second`（第二因素）、`enroll`（登记因素）、`ready`（就绪），以及终态墓碑 `done` 与 `failed`。墓碑与记录同寿，交换不改动过期。
 
-**记录的新字段与滚动升级。** 记录按拒绝未知字段解码，`v` 是格式版本，读到不认识的 `v` 一律拒绝。`provider` 是记录里新增的可选字段，加它时没有抬高 `v`：滚动升级期里，旧二进制读到带 `provider` 的记录会因未知字段被拒读，新二进制读到旧记录时 `provider` 为空即与回跳路径不符——两条路径都 fail-closed，被拒的是该次回跳，用户重新开始。在途流程因此作废，窗口有界：流程 TTL 至多 30 分钟。
+**记录格式与滚动升级。** 记录按拒绝未知字段解码，`v` 是格式版本，读到不认识的 `v` 一律拒绝。`provider` 是记录的可选字段，它不抬高 `v`：滚动升级期里，旧二进制读到带 `provider` 的记录会因未知字段被拒读，新二进制读到旧记录时 `provider` 为空即与回跳路径不符——两条路径都 fail-closed，被拒的是该次回跳，用户重新开始。在途流程因此作废，窗口有界：流程 TTL 至多 30 分钟。
 
 流程记录里的 PKCE 校验串对持有 kv 读权限的人不是秘密：能读 kv 的人加上受害者的授权码才能完成交换，而授权码一次有效且短命、回调还要求流程绑定。kv 的读权限因此要按凭据对待。
 
@@ -449,7 +449,7 @@ cookie 的属性是 `Secure; HttpOnly; Path=/`、无 `Domain`、**`SameSite=None
 
 `step-up` 在 `first` 起始时，方法证明的账户必须等于记录的 `account`，否则落入 `failed`，401 `login-failed`；`link` 的外部身份不按绑定解析账户，账户取记录的 `account`。
 
-**完成时的复核**由 `complete` 在终态动作之前做，`link`、`step-up`、`enroll` 共用：`StatusFresh(记录的 session)` 有效、会话账户与记录的 `account` 一致、会话不在冒充中，任一项不过为 401 `flow-invalid`；`link` 与 `enroll` 另按上表的起始要求再核对一次，不满足为 401 `insufficient_user_authentication`。复核之所以必要，是因为完成发生在 `Open` 的答复路由上，网关没有读会话，不能靠请求里的 cookie。
+**完成时的复核**由 `complete` 在终态动作之前做，`link`、`step-up`、`enroll` 共用：`StatusFresh(记录的 session)` 有效、会话账户与记录的 `account` 一致、会话不在冒充中，任一项不过为 401 `flow-invalid`；`link` 与 `enroll` 另按上表的起始要求再核对一次，不满足为 401 `insufficient_user_authentication`（[ADR-authn-login-flow-2026-10-10](../../../adr/adr-authn-login-flow-2026-10-10.md)）。
 
 ### 答复与迁移
 

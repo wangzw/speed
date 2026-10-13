@@ -133,7 +133,7 @@
 | `authn.sso.saml.sp-next-cert-file` | 字符串，文件路径 | 无 | 默认 | | 先发布的下一张证书，轮换时用 |
 | `tenant.admission.endpoints` | 字符串列表 | 无 | 主 | 必填 | 准入层所守的端；与 `tenant.resolve.endpoints` 同形，一般相同；空是 `ErrInvalidConfig`，不接受 `*`，不得含 authn 的挂载端 |
 
-短信厂商适配的配置键（`sms.aliyun.*`、`sms.tencent.*`）不在本文：发送能力抽为顶层能力模块 `pkg/sms`，其配置随能力归 [design-sms](../design-sms.md)。必填判定只对运行级纳入的模块做，没有被纳入的模块的必填项不参与判定。
+短信厂商适配的配置键（`sms.aliyun.*`、`sms.tencent.*`）不在本文：发送能力是顶层能力模块 `pkg/sms`，其配置随能力归 [design-sms](../design-sms.md)。必填判定只对运行级纳入的模块做，没有被纳入的模块的必填项不参与判定。
 
 ### 设置项
 
@@ -254,7 +254,7 @@ Argon2id 的 `memory-kib`、`iterations`、`parallelism` 各自只能在单项�
 | `authn.account.auto-link` | `verified-email` | `never` |
 | `authn.token.check-session` | `false` | `true` |
 
-放宽开关不进设置的原因是设置的写入面没有访问控制：持有设置写权限的主体能在运行期放宽它们，而启动诊断的 `Warn` 只在启动时写（[ADR-authn-settings-and-secrets-2026-10-10](../../../adr/adr-authn-settings-and-secrets-2026-10-10.md)）。
+放宽开关不进设置（[ADR-authn-settings-and-secrets-2026-10-10](../../../adr/adr-authn-settings-and-secrets-2026-10-10.md)）。
 
 ### 放宽变更的监视
 

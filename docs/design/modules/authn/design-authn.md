@@ -145,7 +145,7 @@ func FromContext(ctx context.Context) (Identity, bool) // 无回落
 
 **责任键 `Key()` 的取值恒为 `string(Actor())`，这条定义只写在这里。** 限流按真正动手的人计数，冒充不占用被冒充者的额度，也借不到许多个账户的许多个桶；审计的行动者列记真正动手的人，归责不落到被冒充者头上。下游（`ratelimit`、`audit/journal`、`settings` 的 `actor` 参数）不透明地使用它，不重复这条定义、也不解析它的内部结构：值不含 `/`，零值身份的责任键是空串。`Subject()` 与 `Owner()` 不存在：后端主体空间里的名字不是身份的一部分。
 
-**`FromContext` 无回落，注入口不导出，写入方是一份封闭名单。** 这一对约定与 [log](../design-log.md) 的形态反着来：那里 `WithLogger` 是导出的注入口，`FromContext` 在上下文里没有 logger 时回落到进程根 logger（[ADR-log-context-2026-09-13](../../../adr/adr-log-context-2026-09-13.md)）。反过来的理由是两者要承载的东西不同：logger 有默认值而身份没有，回落等于把一个匿名请求读成某个主体；导出注入口等于让链上任何一层改写身份，而认证的全部意义就是这件事只发生一次、只由一个地方决定。
+**`FromContext` 无回落，注入口不导出，写入方是一份封闭名单。** 这一对约定与 [log](../design-log.md) 的形态反着来（[ADR-log-context-2026-09-13](../../../adr/adr-log-context-2026-09-13.md)、[ADR-authn-identity-2026-10-10](../../../adr/adr-authn-identity-2026-10-10.md)）。
 
 **写入方名单。** `internal/identity` 的 `With` 与 `WithAccess` 是仅有的注入口，非测试文件里 import `internal/identity` 的包限于下列几个，名单是封闭的：根包只转出读取面，不转出注入口；`authn/gate` 是请求链上唯一的写入方，写之前先过出口检查；`authn/login` 为登录审计行派生一个携带新认定身份的上下文，只交给那一次 `Audit.Record`，不交给任何处理器或流程的下一步，所以它不进请求链、不被授权读取，也不经出口检查（`pkg/authn/login/identity.go` 的派生点，`pkg/authn/login/engine_test.go` `TestTheLoginAuditIsWrittenUnderADerivedIdentity` 守住它只交给那次 `Record`）；`authn/authntest` 是测试构造口，非测试代码不得 import 它（见下）。`pkg/authn/deps_test.go` 对 `pkg` 模块里每个包断言这份名单：名单之外的包在非测试文件里 import `internal/identity` 即失败，并有一棵违反它的树作反例，名单里已存在的包都要确有 import（`identityWriters`、`TestTheListOfWritersIsHeldToTheCodeBehindIt`）。编译器只拦得住 `pkg/authn` 之外的包，树内的校验后端、会话与登录方法各包由这条断言拦。名单只约束 `internal/identity` 的注入口：`internal/verdict` 与 `internal/step` 的读取函数（`OutcomeOf`、`PrincipalOf`、`CauseOf`，以及 `Step` 的读取函数）不限定 importer，`pkg/authn` 之下的包都可以用，因为它们只读，读取者做不出构造器做不出的判决与步骤；判决与步骤的不可字面构造靠字段不导出与构造器，不靠名单。
 
@@ -392,7 +392,7 @@ classDiagram
 
 `gateway` 未导出，它持有各类登记表、按 scheme 与 cookie 名的分派表与在飞闸门（见 [design-authn-gate](design-authn-gate.md)）。
 
-下图给出包之间的依赖方向。箭头从依赖方指向被依赖方，虚线是可选依赖。根包只依赖标准库与 `internal/model`、`internal/identity`、`internal/verdict`、`internal/step`，这些内部包只依赖标准库；其余内部包是实现侧共用的部件，不被根包 import，可以依赖根包、`pkg/log` 与第三方库（`internal/mount` 依赖根包与 gin，`internal/password` 依赖根包、Argon2 与信号量库）；库类型只出现在叶子包里；`internal/literal` 已上移为共享单元 `pkg/internal/literal`，被两个短信载体与四个登录叶子共用，不再是本功能目录的内部包；authn 的任何子包都不 import `pkg/tenant`，tenant 目录与授权功能目录经根包的接口依赖本功能目录。
+下图给出包之间的依赖方向。箭头从依赖方指向被依赖方，虚线是可选依赖。根包只依赖标准库与 `internal/model`、`internal/identity`、`internal/verdict`、`internal/step`，这些内部包只依赖标准库；其余内部包是实现侧共用的部件，不被根包 import，可以依赖根包、`pkg/log` 与第三方库（`internal/mount` 依赖根包与 gin，`internal/password` 依赖根包、Argon2 与信号量库）；库类型只出现在叶子包里；`pkg/internal/literal` 是共享单元，被两个短信载体与四个登录叶子共用；authn 的任何子包都不 import `pkg/tenant`，tenant 目录与授权功能目录经根包的接口依赖本功能目录。
 
 ```mermaid
 flowchart LR
@@ -486,7 +486,7 @@ flowchart LR
     auditj[pkg/audit/journal] --> R
 ```
 
-除上文只依赖标准库的 `internal/model`、`internal/identity`、`internal/verdict`、`internal/step` 外，`pkg/authn/internal` 下还有下列包，它们与上述内部包合起来是内部包的封闭名册：`internal/password` 放 PHC 编解码、派生、校验缓存、进程内退避与并发和内存预算，`internal/egress` 放受限的出站 `http.Client`，`internal/mount` 放 `Mounter` 接口、路由登记选项与挂路由模块共用的路由部件（问题码与 `Fail` 一族、请求体解码 `Decode`、每条登记都经过的 `Wrap`、回跳旁路 `AllowCallback`，以及挂载端与可信来源规则 `Endpoint`、`TrustedOrigins`、`CrossOrigin`），`internal/mount/mounttest` 放测试用的 `Mounter`，`internal/acctcache` 放按键有界、带有效期的进程内缓存（值类型是参数，账户快照与口令校验缓存各自取用），`internal/clock` 放写入数据库或绑定为查询参数的时间的来源（一律 UTC）；`internal/literal` 不在此列：该共享单元上移为 `pkg/internal/literal`，被两个短信载体与四个登录叶子共用，持有秘密配置值的模块在自己的 `New` 里调用它；只做进程内时长比较的计时（口令校验缓存、失败退避、账户快照缓存的默认时钟）可以直接取单调时钟，并允许测试注入。没有 `internal/configreader`：读取器的构造由 `authntest` 的 `ConfigReader` 承担。内部包名册里的各包都只能被 `pkg/authn` 之下的包 import。
+除上文只依赖标准库的 `internal/model`、`internal/identity`、`internal/verdict`、`internal/step` 外，`pkg/authn/internal` 下还有下列包，它们与上述内部包合起来是内部包的封闭名册：`internal/password` 放 PHC 编解码、派生、校验缓存、进程内退避与并发和内存预算，`internal/egress` 放受限的出站 `http.Client`，`internal/mount` 放 `Mounter` 接口、路由登记选项与挂路由模块共用的路由部件（问题码与 `Fail` 一族、请求体解码 `Decode`、每条登记都经过的 `Wrap`、回跳旁路 `AllowCallback`，以及挂载端与可信来源规则 `Endpoint`、`TrustedOrigins`、`CrossOrigin`），`internal/mount/mounttest` 放测试用的 `Mounter`，`internal/acctcache` 放按键有界、带有效期的进程内缓存（值类型是参数，账户快照与口令校验缓存各自取用），`internal/clock` 放写入数据库或绑定为查询参数的时间的来源（一律 UTC）；`pkg/internal/literal` 不在此列：它是共享单元，被两个短信载体与四个登录叶子共用，持有秘密配置值的模块在自己的 `New` 里调用它；只做进程内时长比较的计时（口令校验缓存、失败退避、账户快照缓存的默认时钟）可以直接取单调时钟，并允许测试注入。没有 `internal/configreader`：读取器的构造由 `authntest` 的 `ConfigReader` 承担。内部包名册里的各包都只能被 `pkg/authn` 之下的包 import。
 
 ## 核心数据结构
 

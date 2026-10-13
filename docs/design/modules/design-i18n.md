@@ -209,18 +209,9 @@ func ValidTimeZone(name string) bool
 
 **引擎的这几件能力排他交付，一个进程至多一个语言集。** 语言集是目录承载的集合，两个引擎会各自持有不同的一份，`Resolve` 要求唯一，多于一个即装配期 `ErrExclusiveViolated`。**`Profile` 非排他可选取用**：引擎在 `New` 用 `core.ResolveAll[i18n.Profile]` 取用每一个实现，一个都没有是合法配置，账户语言随之缺失，解析链落到配置的默认语言。
 
-### 对既有模块的改动
-
-以下各条落在既有模块里，本功能目录借用它们的既有接缝，不新增跨目录的机制。
-
-- **入口模块 `pkg/http` 取用本功能目录的根包，渲染它自己写出的拒绝。** 它把 `i18n.Localizer` 作为可选依赖取用，并从自己声明的目录取 `http.<status>` 文案；交出 `Problem` 时文本已经是成品，`Problem` 不再承载消息键与参数（[http](http/design-http.md) 的错误响应一节、[ADR-i18n-error-rendering-2026-10-13](../../adr/adr-i18n-error-rendering-2026-10-13.md)）。
-- **认证侧不再声明语言闭集，也不再给语言填默认。** 根包 `pkg/authn` 的 `locale.go`（`LocaleEN`、`LocaleZH`、`LocaleOf`）整体删除：一个只读语言的模块 import 认证根包，不再从中拿到一份语言表。登录引擎把 `i18n.FromContext` 定下的语言原样带进流程记录与短信发送（取不到时为 `""`），`authn.sms` 再把请求语言解析到该消息所用模板声明的语言（[ADR-i18n-language-set-2026-10-13](../../adr/adr-i18n-language-set-2026-10-13.md)）。默认语言只由 `i18n.default-locale` 一处给出。
-- **认证自助面新增一条偏好路由** `PATCH B/me/preferences`，写在 [authn-login](authn/design-authn-login.md) 的账户自助面里：它把语言与时区写进账户的 `Account.Attributes`，经账户模块的 `AccountAdmin.SetAttributes` 落库，写前用 `ValidLocaleTag` 与 `ValidTimeZone` 判形状。它是 [authn](authn/design-authn.md) 的子包 `pkg/authn/login` 对 `pkg/i18n` 的取用——`pkg/authn` 根包不 import 它（见依赖）。
-- **语言与时区存进 `Account.Attributes` 的 `i18n.locale` 与 `i18n.tz`**，不改认证的表结构，不新增列（[ADR-i18n-preferences-storage-2026-10-13](../../adr/adr-i18n-preferences-storage-2026-10-13.md)）。
-
 ### 稳定性承诺
 
-`Locale`、`ConfigNamespace`、`DefaultLocaleItem`、`Key`、`Args`、`Value`、`ValueKind`、`KindString`／`KindInt`／`KindFloat`／`KindTime`、构造与读回函数 `String`／`Int`／`Float`／`Time`／`KindOf`／`StringOf`／`IntOf`／`FloatOf`／`TimeOf`、`Localizer`、`Negotiator`、`Resolver`、`Profile`、`Catalog`、`LocaleResolver`、上下文的存取函数、属性键常量与校验函数，以及各模块导出的 `ModuleName`，是本功能目录与其他模块之间的契约：接口的方法集、值类型与资源类型的字段，以及属性键的取值，改一个即破坏每一个实现方与消费方。`Args` 的取值类型由 `map[string]string` 改为 `map[string]Value` 是一次破坏性变更，每一个插值字符串的调用方都改为经 `i18n.String` 构造。消息的语法同样是契约：六个 CLDR 类别、`other` 必填、`#` 与分支边界的含义，以及时间段的关键字与布局，是每个目录文件写消息时依据的规则，改它会让既有消息不再按原样渲染。属性键 `i18n.locale` 与 `i18n.tz` 同时是存储契约：账户属性里已经写下的值按这两个键读，改键会让既有偏好读不出来。配置命名空间 `i18n` 与配置项名 `default-locale`、`catalogs-dir` 是配置契约：短信模块按命名空间与 `default-locale` 两个名字读同一个默认语言，改名会让两个能力在无声中各读一份；`catalogs-dir` 是运维写入覆盖目录的入口，改名会让既有配置静默地读作没有额外文案。模块名由各包导出为常量，改名会让命令树上的纳入静默失配。
+`Locale`、`ConfigNamespace`、`DefaultLocaleItem`、`Key`、`Args`、`Value`、`ValueKind`、`KindString`／`KindInt`／`KindFloat`／`KindTime`、构造与读回函数 `String`／`Int`／`Float`／`Time`／`KindOf`／`StringOf`／`IntOf`／`FloatOf`／`TimeOf`、`Localizer`、`Negotiator`、`Resolver`、`Profile`、`Catalog`、`LocaleResolver`、上下文的存取函数、属性键常量与校验函数，以及各模块导出的 `ModuleName`，是本功能目录与其他模块之间的契约：接口的方法集、值类型与资源类型的字段，以及属性键的取值，改一个即破坏每一个实现方与消费方。`Args` 的取值类型是 `map[string]Value`，插值字符串的调用方经 `i18n.String` 构造。消息的语法同样是契约：六个 CLDR 类别、`other` 必填、`#` 与分支边界的含义，以及时间段的关键字与布局，是每个目录文件写消息时依据的规则，改它会让既有消息不再按原样渲染。属性键 `i18n.locale` 与 `i18n.tz` 同时是存储契约：账户属性里已经写下的值按这两个键读，改键会让既有偏好读不出来。配置命名空间 `i18n` 与配置项名 `default-locale`、`catalogs-dir` 是配置契约：短信模块按命名空间与 `default-locale` 两个名字读同一个默认语言，改名会让两个能力在无声中各读一份；`catalogs-dir` 是运维写入覆盖目录的入口，改名会让既有配置静默地读作没有额外文案。模块名由各包导出为常量，改名会让命令树上的纳入静默失配。
 
 ## 依赖
 

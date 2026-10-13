@@ -575,7 +575,7 @@ CREATE INDEX authz_bindings_by_role ON authz_bindings (tenant_id, role);
 - **读（`LoadPolicy`）：** 必须**跨租户**读——判定进程持有全部租户的策略——用的就是构造时那条带标记的会话。这是本模块唯一一处对安全敏感表的跨租户读（[并发与事务边界](#并发与事务边界)）。
 - **`SavePolicy` 不实现「清表重写」，返回 `ErrNotImplemented`**（adapter 包自带的错误，不是根包哨兵）。本模块只经 `Manager` 逐条增删策略，一次全量重写会在读改写之间抹掉并发写入。
 
-自写这个 adapter 而不是用官方 `casbin/gorm-adapter`，是因为官方 adapter 自己开 `*gorm.DB`，与本仓的句柄、插件与租户过滤不是同一条路；用 Casbin 的默认 `casbin_rule` 表则让最敏感的表退出三层隔离（[ADR-authz-store-2026-10-12](../../adr/adr-authz-store-2026-10-12.md)）。
+策略落在以真实租户列领衔键的表上，由本模块自写这个 adapter，见 [ADR-authz-store-2026-10-12](../../adr/adr-authz-store-2026-10-12.md)。
 
 ### 快照
 
@@ -708,7 +708,7 @@ CREATE INDEX authz_bindings_by_role ON authz_bindings (tenant_id, role);
 
 ## 实现状态
 
-下表的状态以代码为准。已实现的行给出代码锚点；仍未实现的行给出计划落地该能力的路径与符号名。
+下表的状态以代码为准。每一个声称已实现的行给出代码锚点。
 
 | 能力 | 状态 | 代码 |
 |---|---|---|
