@@ -7,6 +7,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/vislake/speed/pkg/audit"
 	"github.com/vislake/speed/pkg/authn"
 	"github.com/vislake/speed/pkg/core"
 	speedhttp "github.com/vislake/speed/pkg/http"
@@ -26,9 +27,10 @@ func TestTheDescriptorIsWhatTheDesignSays(t *testing.T) {
 	wantRequires := []core.Requirement{
 		{Token: (*authn.Memberships)(nil)},
 		{Token: (*tenant.Resolution)(nil)},
+		{Token: (*audit.Audit)(nil), Optional: true},
 	}
 	if !slices.Equal(m.Requires, wantRequires) {
-		t.Fatalf("the module requires %+v, want exactly the memberships and the resolution, neither optional", m.Requires)
+		t.Fatalf("the module requires %+v, want the memberships and the resolution required and the audit capability optional", m.Requires)
 	}
 	wantProvides := []core.Provision{
 		{Token: (*tenant.Admission)(nil), Exclusive: true},

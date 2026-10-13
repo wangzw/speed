@@ -29,6 +29,7 @@ import (
 	"go.opentelemetry.io/otel/attribute"
 	"go.opentelemetry.io/otel/metric"
 
+	"github.com/vislake/speed/pkg/audit"
 	"github.com/vislake/speed/pkg/authn"
 	"github.com/vislake/speed/pkg/config"
 	"github.com/vislake/speed/pkg/core"
@@ -98,6 +99,10 @@ func init() { core.ProcessRegistry.Register(Module()) }
 // names this module and not theirs ends at dependency resolution, before
 // anything is constructed.
 //
+// The audit capability is declared as an optional requirement, so that a command
+// that names it orders the audit module first; going without it is the legal
+// assembly where a relaxation is written to the log and no record is kept.
+//
 // Prepare states StateEnabled and never StateAuto: StateAuto is the cell the
 // resolution of an exclusive capability disables when a second provider claims
 // it, and this module must fail that startup instead of giving way. Whether the
@@ -108,6 +113,7 @@ func Module() core.Module {
 		Requires: []core.Requirement{
 			{Token: (*authn.Memberships)(nil)},
 			{Token: (*tenant.Resolution)(nil)},
+			{Token: (*audit.Audit)(nil), Optional: true},
 		},
 		Provides: []core.Provision{
 			{Token: (*tenant.Admission)(nil), Exclusive: true},
@@ -186,6 +192,8 @@ type layer struct {
 	providers authn.SSOProviders
 	decider   authn.Decider
 	store     settings.Store
+	audit     audit.Audit
+	bus       event.Bus
 	logger    *slog.Logger
 
 	cache *decisionCache
@@ -281,6 +289,11 @@ func (l *layer) wire(reg *core.Registry) error {
 	} else if !have {
 		l.store = nil
 	}
+	if l.audit, have, err = optional[audit.Audit](reg, "the audit capability"); err != nil {
+		return err
+	} else if !have {
+		l.audit = nil
+	}
 
 	for _, name := range l.endpoints {
 		endpoint, err := router.Endpoint(name)
@@ -294,7 +307,15 @@ func (l *layer) wire(reg *core.Registry) error {
 	if bus, found, err := optional[event.Bus](reg, "the event bus"); err != nil {
 		return err
 	} else if found {
-		bus.Subscribe(authn.EventMembershipChanged, l.onMembershipChanged)
+		l.bus = bus
+	}
+	if l.bus != nil {
+		l.bus.Subscribe(authn.EventMembershipChanged, l.onMembershipChanged)
+		// A relaxation is only watchable where the settings are in hand: with no
+		// store there is no setting and no change event to follow.
+		if l.store != nil {
+			l.bus.Subscribe(settings.ChangedEventType, l.onSettingsChanged)
+		}
 	}
 	if err := l.takeMeter(reg); err != nil {
 		return err

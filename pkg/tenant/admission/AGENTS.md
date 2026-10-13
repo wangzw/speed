@@ -182,6 +182,12 @@ descriptor, and `decide`'s before changing the judgement order.
   that the authentication routes' endpoint is not among the ones it guards: the
   gateway checks the latter in `Start`
   (`TestTheEndpointTheAuthenticationRoutesAreMountedOnIsNotOneTheLayerGuards`).
+- **A setting moved toward more lenient is visible after the fact, never
+  blocked.** The subscription to `settings.changed` writes a `Warn` and a
+  best-effort `authn.settings.relaxed` audit row naming the key and the
+  direction and no value; the settings it watches are `require-mfa` and
+  `require-sso` in the `to-false` direction and `check-ttl` in `increase`
+  (`relax.go`, `TestARelaxingChangeWritesAWarnAndAnAuditRow`).
 
 ## Running it
 
