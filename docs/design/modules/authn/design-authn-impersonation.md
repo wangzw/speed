@@ -2,7 +2,7 @@
 
 ## 职责
 
-`authn.impersonation` 是冒充记录的唯一持有者。冒充是一条有期限、有理由、限定一个租户、全程留痕的记录，存放在表 `authn_impersonations`；它不是一枚新的凭据，也不是身份上的开关。包为 `pkg/authn/impersonation`，模块名为 `authn.impersonation`。取舍见 [ADR-authn-impersonation-2026-10-10](../../adr/adr-authn-impersonation-2026-10-10.md)，身份的形状见 [ADR-authn-identity-2026-10-10](../../adr/adr-authn-identity-2026-10-10.md)，判定接缝与管理面的分工见 [ADR-authn-decision-seam-2026-10-10](../../adr/adr-authn-decision-seam-2026-10-10.md)。
+`authn.impersonation` 是冒充记录的唯一持有者。冒充是一条有期限、有理由、限定一个租户、全程留痕的记录，存放在表 `authn_impersonations`；它不是一枚新的凭据，也不是身份上的开关。包为 `pkg/authn/impersonation`，模块名为 `authn.impersonation`。取舍见 [ADR-authn-impersonation-2026-10-10](../../../adr/adr-authn-impersonation-2026-10-10.md)，身份的形状见 [ADR-authn-identity-2026-10-10](../../../adr/adr-authn-identity-2026-10-10.md)，判定接缝与管理面的分工见 [ADR-authn-decision-seam-2026-10-10](../../../adr/adr-authn-decision-seam-2026-10-10.md)。
 
 本模块负责下列事项（封闭集合，不在其内的事项归非职责一节点名的模块）：
 
@@ -17,9 +17,9 @@
 
 ### 非职责
 
-- **不判定「谁有权冒充谁」。** 这一判定经判定接缝 `Decider` 取得（由 `authz.guard` 实现，[design-authz](design-authz.md)），接缝、动作常量与管理面路由由 [design-authn-admin](design-authn-admin.md) 承载；`Decider` 缺席时本模块全拒。
+- **不判定「谁有权冒充谁」。** 这一判定经判定接缝 `Decider` 取得（由 `authz.guard` 实现，[design-authz](../design-authz.md)），接缝、动作常量与管理面路由由 [design-authn-admin](design-authn-admin.md) 承载；`Decider` 缺席时本模块全拒。
 - **不认识角色。** 「不得冒充权限更高或同级的账户」不是身份层面的事实，本模块无从核对；它由 `Decider` 的实现方负责。
-- **不执行网关的范围规则，也不执行准入层的范围核对。** 网关对冒充身份只放进准入层所守的端与登记为 `Impersonable` 的路由（[design-authn-gate](design-authn-gate.md)）；准入层核对 `Scope()` 与请求的租户（[design-tenant-admission](design-tenant-admission.md)）。本模块只持有必需依赖 `ScopeGuard`，使网关与准入层的范围执行在装配里必然有落点。
+- **不执行网关的范围规则，也不执行准入层的范围核对。** 网关对冒充身份只放进准入层所守的端与登记为 `Impersonable` 的路由（[design-authn-gate](design-authn-gate.md)）；准入层核对 `Scope()` 与请求的租户（[design-tenant-admission](../tenant/design-tenant-admission.md)）。本模块只持有必需依赖 `ScopeGuard`，使网关与准入层的范围执行在装配里必然有落点。
 - **不持有登录会话与访问令牌。** 会话行上的冒充记录标识由 `Sessions.SetImpersonation` 写（[design-authn-session](design-authn-session.md)），冒充用的访问令牌由 `Tokens.Issue` 签发（[design-authn-token](design-authn-token.md)）；本模块只调用它们。
 - **不判断账户、成员关系与因素的事实。** 账户状态与 `protected` 标记读自 `Accounts`，成员关系读自 `Memberships`（[design-authn-account](design-authn-account.md)），因素年龄读自 `MFA.Seasoned`（[design-authn-mfa](design-authn-mfa.md)）。
 - **不通知被冒充者。** authn 没有通知通道；`authn.impersonation.started` 事件是宿主接通知的钩子。
@@ -52,7 +52,7 @@
 |---|---|---|
 | `Impersonation` | 是 | 交付声明写作 `Provides: []core.Provision{{Token: (*authn.Impersonation)(nil), Exclusive: true}}`。 |
 
-模块的表态只能是 `StateEnabled`，永不 `StateAuto`：是否运行是命令树上的决定，不是配置能推断的结论（[ADR-authn-packaging-2026-10-10](../../adr/adr-authn-packaging-2026-10-10.md)）。
+模块的表态只能是 `StateEnabled`，永不 `StateAuto`：是否运行是命令树上的决定，不是配置能推断的结论（[ADR-authn-packaging-2026-10-10](../../../adr/adr-authn-packaging-2026-10-10.md)）。
 
 ### 根包的类型与接缝
 
@@ -146,9 +146,9 @@ type Impersonation interface {
 | `event.Bus` | `Init` 取用，○ | 发布 `authn.impersonation.started` 与 `authn.impersonation.ended`；本模块不缓存 `Active`，所以不订阅自己的事件，订阅由会话与令牌的校验后端承担（见「并发与事务边界」）；缺席则不发布。 |
 | `log.Logger`、`observability.MeterProvider` | `Init` 取用，○ | 日志与 `authn.impersonation.sessions` 指标；缺席合法，缺提供者静默跳过。 |
 
-`Requires` 里只有排他功能与 `db.Database`：`Decider` 与 `Tokens` 是否在场是宿主的选择，写进 `Requires` 会让依赖闭包替宿主纳入它们（[ADR-authn-wiring-2026-10-10](../../adr/adr-authn-wiring-2026-10-10.md)）。`Decider` 缺提供者（`core.ErrMissingProvider`）是合法配置，行为是全拒，所以不需要一个「默认拒绝」的模块被宿主点名。
+`Requires` 里只有排他功能与 `db.Database`：`Decider` 与 `Tokens` 是否在场是宿主的选择，写进 `Requires` 会让依赖闭包替宿主纳入它们（[ADR-authn-wiring-2026-10-10](../../../adr/adr-authn-wiring-2026-10-10.md)）。`Decider` 缺提供者（`core.ErrMissingProvider`）是合法配置，行为是全拒，所以不需要一个「默认拒绝」的模块被宿主点名。
 
-方向满足架构不变量：本模块只依赖 `pkg/authn` 根包的接口与值类型、`pkg/db`、`pkg/audit`、`pkg/settings`、`pkg/event`、`pkg/log`、`pkg/observability` 与 `authn.mount`；不 import `pkg/tenant`，也不 import 别的 authn 叶子包。`ScopeGuard` 是根包接口，tenant 目录交付它，`pkg/authn` 因此不依赖 `pkg/tenant`（[ADR-tenant-admission-2026-10-10](../../adr/adr-tenant-admission-2026-10-10.md)）。`authn.session` 与 `authn.token` 反向取用 `Impersonation` 只在 `Init` 里取已构造的实例，所以与本模块对 `Sessions` 的 `Requires` 不构成构造环。
+方向满足架构不变量：本模块只依赖 `pkg/authn` 根包的接口与值类型、`pkg/db`、`pkg/audit`、`pkg/settings`、`pkg/event`、`pkg/log`、`pkg/observability` 与 `authn.mount`；不 import `pkg/tenant`，也不 import 别的 authn 叶子包。`ScopeGuard` 是根包接口，tenant 目录交付它，`pkg/authn` 因此不依赖 `pkg/tenant`（[ADR-tenant-admission-2026-10-10](../../../adr/adr-tenant-admission-2026-10-10.md)）。`authn.session` 与 `authn.token` 反向取用 `Impersonation` 只在 `Init` 里取已构造的实例，所以与本模块对 `Sessions` 的 `Requires` 不构成构造环。
 
 取用 `Impersonation` 的模块如下（宿主自写的取用者不在表内）。
 
@@ -279,20 +279,20 @@ CREATE UNIQUE INDEX authn_imp_one_active ON authn_impersonations (session_id) WH
 |---|---|
 | `tenant_id` | 非空，检查约束拒绝空串：没有全局冒充。 |
 | `session_id` | 开始冒充的会话，即发起者的会话；记录挂在发起者的会话上，不为目标另开会话。 |
-| `reason` | 管理员写的自由文本，可能含个人信息，随记录长期保留，是已知残留（[ADR-authn-accounts-2026-10-10](../../adr/adr-authn-accounts-2026-10-10.md)）；只进本表与审计行的 `Purpose`，不进事件、不进日志。 |
+| `reason` | 管理员写的自由文本，可能含个人信息，随记录长期保留，是已知残留（[ADR-authn-accounts-2026-10-10](../../../adr/adr-authn-accounts-2026-10-10.md)）；只进本表与审计行的 `Purpose`，不进事件、不进日志。 |
 | `ended_by` | `End` 与 `Revoke` 写调用方身份的 `Key()`；读时落库的成因没有发起者，留空，成因记在 `end_reason`。 |
 | `end_reason` | 闭集，取值与写入点见「结束原因与写入点」。 |
 | `authn_imp_actor`、`authn_imp_target` | 按发起者与按目标查询冒充历史；按目标查询回答「谁冒充过谁」。 |
 | `authn_imp_session` | 按会话取记录，`Start` 的事务与 `End` 用它找到会话上的记录。 |
 | `authn_imp_one_active` | 部分唯一索引：同一会话至多一条 `ended_at IS NULL` 的记录；冲突即 `ErrImpersonationActive`。 |
 
-记录永不由本模块清除。时间一律取自认证功能目录的统一时钟，写入 UTC。表没有外键：其他模块的表可能因模块未纳入而不存在，`pkg/db` 也没有跨模块传递事务句柄的通道（[ADR-authn-accounts-2026-10-10](../../adr/adr-authn-accounts-2026-10-10.md)）。部分唯一索引在各个受支持的方言下的写法由迁移集按方言提供。
+记录永不由本模块清除。时间一律取自认证功能目录的统一时钟，写入 UTC。表没有外键：其他模块的表可能因模块未纳入而不存在，`pkg/db` 也没有跨模块传递事务句柄的通道（[ADR-authn-accounts-2026-10-10](../../../adr/adr-authn-accounts-2026-10-10.md)）。部分唯一索引在各个受支持的方言下的写法由迁移集按方言提供。
 
 ## 核心算法与流程
 
 ### 结构性限制
 
-开始时逐组检查下表，每组内按所列次序，任一条不满足即拒绝，不进入后续的组。判据：这些条件是身份层面的事实，不是「谁有权限」的判定；`Decider` 只能在其上进一步收紧，不能放宽。组本身是封闭集，各组的内容以本表为准，取舍见 [ADR-authn-impersonation-2026-10-10](../../adr/adr-authn-impersonation-2026-10-10.md)。
+开始时逐组检查下表，每组内按所列次序，任一条不满足即拒绝，不进入后续的组。判据：这些条件是身份层面的事实，不是「谁有权限」的判定；`Decider` 只能在其上进一步收紧，不能放宽。组本身是封闭集，各组的内容以本表为准，取舍见 [ADR-authn-impersonation-2026-10-10](../../../adr/adr-authn-impersonation-2026-10-10.md)。
 
 | 组 | 条件 | 守住的性质 |
 |---|---|---|
@@ -318,7 +318,7 @@ CREATE UNIQUE INDEX authn_imp_one_active ON authn_impersonations (session_id) WH
 
 **载体挂接与事件不在 `Start` 里**，判据在于 `Start` 与 `End` 的返回值交不出令牌，也拿不到响应写出器：换出的会话令牌与冒充访问令牌只能由持有响应的处理器交给调用方。`End` 还被 `authn.token` 在撤销冒充令牌时调用，那条路径没有 cookie，`End` 不碰载体才不会误摘会话行上的标识或轮换管理员的会话令牌。`started` 事件放在载体挂接之后，使一次挂接失败的开始不对外发出事件。
 
-**强制档审计先于动作，且在事务之外**，判据在于审计接缝的写入另占一条连接、不加入调用方的事务：在调用方事务开着时调用它，单写者的 SQLite 上等的是调用方自己占着的写锁，只开一条连接的库上等的是调用方占着的那条连接，等满界限后 `Record` 以 `ErrWriteFailed` 失败，强制档因此永远写不成功（[ADR-audit-failure-2026-09-21](../../adr/adr-audit-failure-2026-09-21.md)）。同一次序适用于全部管理面写操作：先 `Decider`，再强制审计，再写，再事件，写失败补一条 `failed` 的审计行（[design-authn-admin](design-authn-admin.md)）。
+**强制档审计先于动作，且在事务之外**，判据在于审计接缝的写入另占一条连接、不加入调用方的事务：在调用方事务开着时调用它，单写者的 SQLite 上等的是调用方自己占着的写锁，只开一条连接的库上等的是调用方占着的那条连接，等满界限后 `Record` 以 `ErrWriteFailed` 失败，强制档因此永远写不成功（[ADR-audit-failure-2026-09-21](../../../adr/adr-audit-failure-2026-09-21.md)）。同一次序适用于全部管理面写操作：先 `Decider`，再强制审计，再写，再事件，写失败补一条 `failed` 的审计行（[design-authn-admin](design-authn-admin.md)）。
 
 Bearer 凭据下开始而 `Tokens` 缺席时，处理器在调用 `Start` 之前以 `ErrUnavailable` 失败（503）：该路径没有载体可挂，不留下一行没有对应动作的 `granted` 审计。
 
@@ -440,13 +440,13 @@ WHERE id = ? AND ended_at IS NULL
 
 **分层拒绝。** 不在允许集合内的 authn 路由，冒充身份先被网关挡下：authn 的挂载端不被准入层守，网关对冒充身份只放进准入层所守的端与登记为 `Impersonable` 的路由，其余 401。处理器对 `Impersonating()` 再自检一次，答 403 `impersonation-restricted`，作为路由登记出错时的后备防线；网关与准入层从不写 403（[design-authn-gate](design-authn-gate.md)）。
 
-**冒充身份不受租户的「要求多因素」「要求 SSO」约束。** 这些策略证明的是目标本人的身份，而冒充按定义不是目标本人，发起者的强认证已在开始时核验；不豁免则冒充在启用了强制 SSO 的租户里根本不可用。准入层对冒充身份跳过它们（[design-tenant-admission](design-tenant-admission.md)）。`authz.guard` 与宿主业务对冒充的约束（例如冒充时只读）读 `Identity.Impersonating()` 与 `Actor()`，authn 不替它们写 403。
+**冒充身份不受租户的「要求多因素」「要求 SSO」约束。** 这些策略证明的是目标本人的身份，而冒充按定义不是目标本人，发起者的强认证已在开始时核验；不豁免则冒充在启用了强制 SSO 的租户里根本不可用。准入层对冒充身份跳过它们（[design-tenant-admission](../tenant/design-tenant-admission.md)）。`authz.guard` 与宿主业务对冒充的约束（例如冒充时只读）读 `Identity.Impersonating()` 与 `Actor()`，authn 不替它们写 403。
 
 ### 租户范围的执行
 
-`ScopeGuard` 的接口与语义（含 `Covers`）由 [design-authn-admin](design-authn-admin.md) 承载，`tenant.admission` 交付（[design-tenant-admission](design-tenant-admission.md)）。本模块把它当必需依赖，网关当可选依赖。
+`ScopeGuard` 的接口与语义（含 `Covers`）由 [design-authn-admin](design-authn-admin.md) 承载，`tenant.admission` 交付（[design-tenant-admission](../tenant/design-tenant-admission.md)）。本模块把它当必需依赖，网关当可选依赖。
 
-「限定一个租户」由下表的执行点合起来才成为结构性限制，只靠其中任何一处，换一个不带租户解析的端就越过了（[ADR-authn-impersonation-2026-10-10](../../adr/adr-authn-impersonation-2026-10-10.md)）：
+「限定一个租户」由下表的执行点合起来才成为结构性限制，只靠其中任何一处，换一个不带租户解析的端就越过了（[ADR-authn-impersonation-2026-10-10](../../../adr/adr-authn-impersonation-2026-10-10.md)）：
 
 | 执行点 | 位置与规则 | 挡住的越界 | 越界的结果 |
 |---|---|---|---|
@@ -476,7 +476,7 @@ flowchart TD
 | 审计，接缝级 | 本模块写 `authn.impersonation.start`、`authn.impersonation.end` 与 `authn.impersonation.revoke` 三个动作。开始的强制档审计在事务之外、动作之前；被拒、补偿、结束与撤销的审计为尽力档。对象是目标账户标识，理由只放 `Purpose`。动作的结果取值与档位见 [design-authn-events](design-authn-events.md)。 |
 | 事件 | `authn.impersonation.started`、`authn.impersonation.ended`，租户在信封上；载荷不放理由。载荷表见 [design-authn-events](design-authn-events.md)。 |
 | 指标 | 记录 `authn.impersonation.sessions`：开始、被拒与结束各计一次；仪器与属性取值见 [design-authn-events](design-authn-events.md)。 |
-| 限流 | 按 `Key()` 计数，即发起者；冒充不占用目标的额度，也不能被用来耗尽别人的额度（[design-ratelimit](design-ratelimit.md)）。 |
+| 限流 | 按 `Key()` 计数，即发起者；冒充不占用目标的额度，也不能被用来耗尽别人的额度（[design-ratelimit](../design-ratelimit.md)）。 |
 
 ## 错误与失败语义
 
@@ -509,7 +509,7 @@ flowchart TD
 
 ### 本模块不作的保证
 
-下列性质写成非保证，不为它们改动别的模块（[ADR-authn-guarantees-2026-10-10](../../adr/adr-authn-guarantees-2026-10-10.md)）；列表是例举，判据是该性质取决于宿主的配置或别的模块的行为，本模块无从核对。
+下列性质写成非保证，不为它们改动别的模块（[ADR-authn-guarantees-2026-10-10](../../../adr/adr-authn-guarantees-2026-10-10.md)）；列表是例举，判据是该性质取决于宿主的配置或别的模块的行为，本模块无从核对。
 
 - **被冒充者不知情。** authn 没有通知通道，`authn.impersonation.started` 是宿主接通知的钩子。
 - **租户解析豁免的路由。** 准入层所守的端上，租户解析豁免的业务路由没有租户上下文：非冒充身份照常放行，冒充身份在准入层得 404，但在网关一侧仍到得了它们，对它们的拒绝完全落在准入层对「无租户上下文」的判定上。宿主不应在允许冒充的端上对业务路由开租户解析的豁免。
@@ -580,4 +580,4 @@ flowchart TD
 | 不缓存 `Active`（订阅 `authn.impersonation.ended` 清缓存的职责由校验后端承担） | 已实现 | `pkg/authn/impersonation/active.go` `Active` 每次读记录、会话与账户；订阅在 `pkg/authn/session/lifecycle.go`、`pkg/authn/token/subscribe.go` |
 | 守住假设的测试：并发开始、SQLite 文件库上的开始、各成因的失效、强认证与范围限制、装配测试 | 已实现 | `pkg/authn/impersonation/start_test.go` `TestTwoStartsOnOneSessionRaceToOne`、`TestStartWritesTheMandatoryAuditBeforeTheTransaction`、`TestStartRefusesEachStructuralRestriction`；`pkg/authn/impersonation/active_test.go` `TestActiveLapsesForEachReason`；`pkg/authn/impersonation/guard_test.go` `TestGuardRequireRefusesAnImpersonatingIdentity`、`TestAnImpersonatingIdentityIsKeyedByItsActor`（`Identity.Key()` 取冒充发起者）；`pkg/authn/impersonation/get_test.go` `TestListConfinesToTheQueriedTenant`；`pkg/authn/impersonation/assembly_test.go` `TestTheDriveRefusesAGuardedMountEndpoint` |
 
-网关的范围规则、准入层的范围核对、会话与令牌载体的校验各自的实现状态由 [design-authn-gate](design-authn-gate.md)、[design-tenant-admission](design-tenant-admission.md)、[design-authn-session](design-authn-session.md)、[design-authn-token](design-authn-token.md) 承载。
+网关的范围规则、准入层的范围核对、会话与令牌载体的校验各自的实现状态由 [design-authn-gate](design-authn-gate.md)、[design-tenant-admission](../tenant/design-tenant-admission.md)、[design-authn-session](design-authn-session.md)、[design-authn-token](design-authn-token.md) 承载。

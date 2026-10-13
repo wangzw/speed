@@ -21,7 +21,7 @@
 
 **口令表有自己的约束。** `authn.static` 认领 `Basic`（[ADR-authn-credential-dispatch-2026-10-10](adr-authn-credential-dispatch-2026-10-10.md)），表在配置里，是 db 故障时的运维后路。它的主体名（例如 `ops`）与账户的登录名可以重名。它的口令逐请求出示，每个请求都是一次认证，成功与失败都以请求的速率发生。
 
-**入口模块不信任任何代理头，且没有可信代理的配置口**，`ClientIP()` 恒为连接的对端地址（[design-http](../design/modules/design-http.md)）。按来源地址计数的任何层，在代理之后都把全站看作一个来源。
+**入口模块不信任任何代理头，且没有可信代理的配置口**，`ClientIP()` 恒为连接的对端地址（[design-http](../design/modules/http/design-http.md)）。按来源地址计数的任何层，在代理之后都把全站看作一个来源。
 
 ## 考虑过的选项
 
@@ -115,7 +115,7 @@
 
 ## 决策
 
-采纳：认证前的失败退避由 authn 自备，不经 `pkg/ratelimit`；账户后端的退避状态放 db，口令表的退避恒在进程内。算法与表的细节由 [design-authn-login](../design/modules/design-authn-login.md) 与 [design-authn-account](../design/modules/design-authn-account.md) 承载，设置键与取值域由 [design-authn-config](../design/modules/design-authn-config.md) 承载，本记录只定判据。
+采纳：认证前的失败退避由 authn 自备，不经 `pkg/ratelimit`；账户后端的退避状态放 db，口令表的退避恒在进程内。算法与表的细节由 [design-authn-login](../design/modules/authn/design-authn-login.md) 与 [design-authn-account](../design/modules/authn/design-authn-account.md) 承载，设置键与取值域由 [design-authn-config](../design/modules/authn/design-authn-config.md) 承载，本记录只定判据。
 
 **计数的键。** 账户后端的退避按提交内容规范化形式的摘要计数，与账户是否存在无关：未知标识与已知标识走同一条计数路径。成功使计数清零，并发的失败不丢计数；口令表的写法不同，见下。
 
@@ -140,9 +140,9 @@
 - 成功不抵消失败：此前的失败只随时间老化，窗口与退避曲线沿用账户后端的形状。
 - 进程内的表有容量上界，口令表里主体的键不被挤出。
 
-**依赖不可用时的方向。** 账户后端读不到退避状态时，登录路径拒绝、不校验；口令表不受 db 影响（失败语义的全表见 [design-authn-failure](../design/modules/design-authn-failure.md)）。
+**依赖不可用时的方向。** 账户后端读不到退避状态时，登录路径拒绝、不校验；口令表不受 db 影响（失败语义的全表见 [design-authn-failure](../design/modules/authn/design-authn-failure.md)）。
 
-**表行数有界回收。** 退避状态的键与账户是否存在无关，匿名攻击者用随机用户名即可使每个失败请求多出一行；`authn.account` 因此持有有界的后台清扫，回收已衰减、且未处于锁定期内的行，多副本并行运行互不冲突。缓解措施是来源地址前置减负、入口层限流与这一清扫，行数上界写为非保证（[ADR-authn-guarantees-2026-10-10](adr-authn-guarantees-2026-10-10.md)）。清扫的条件与批量见 [design-authn-account](../design/modules/design-authn-account.md)。
+**表行数有界回收。** 退避状态的键与账户是否存在无关，匿名攻击者用随机用户名即可使每个失败请求多出一行；`authn.account` 因此持有有界的后台清扫，回收已衰减、且未处于锁定期内的行，多副本并行运行互不冲突。缓解措施是来源地址前置减负、入口层限流与这一清扫，行数上界写为非保证（[ADR-authn-guarantees-2026-10-10](adr-authn-guarantees-2026-10-10.md)）。清扫的条件与批量见 [design-authn-account](../design/modules/authn/design-authn-account.md)。
 
 ## 后果
 
@@ -151,7 +151,7 @@
 **接受的代价：**
 
 - **自我拒绝服务。** 匿名攻击者对任一已知标识连续失败，可使该账户的口令登录不可用的时长至多为退避上限，上界有限、不是永久锁定。换一种标识拼写不能绕开账户级那一层，所以换拼写不是缓解；运维主体同样受影响（`static.ops` 受口令表自己的进程内退避约束）。受害者仍可用短信、社交、SSO、通行密钥登录。账户级计数正是挡「轮换拼写以放大尝试次数」的那一层，这一代价与枚举防护同源，不可分开取舍。
-- 账户级退避静默，被退避的合法用户看到的是普通的登录失败，不知道原因，只能等候；察觉途径是退避开始时发布的事件、日志与计数器（[design-authn-events](../design/modules/design-authn-events.md)）。
+- 账户级退避静默，被退避的合法用户看到的是普通的登录失败，不知道原因，只能等候；察觉途径是退避开始时发布的事件、日志与计数器（[design-authn-events](../design/modules/authn/design-authn-events.md)）。
 - 没有人机验证；开始登录流程不要求凭据，入口层面的限流是宿主的部署责任。
 - 缺省下没有按来源地址的减负，匿名洪泛只受退避与入口层限流约束；开启它的宿主在代理之后得到全站共用一个桶。
 - 随机标识洪泛使退避状态的行数随失败请求速率增长，到清扫回收之前一直占用存储。

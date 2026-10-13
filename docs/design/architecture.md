@@ -117,7 +117,7 @@ graph TD
 
 图中没有从 `aleaf` 或 `aroot` 指向租户任何包的边，方向是租户指向认证（不变量 17）。租户的解析与准入子包、审计与限流读身份，只经 `pkg/authn` 根包，不 import 认证的任何子包；根包只放接口与数据类型，非测试代码只依赖标准库与自己的内部包，因而被它们 import 不把认证的任何第三方库带进它们的闭包（[ADR-authn-packaging-2026-10-10](../adr/adr-authn-packaging-2026-10-10.md)）。
 
-认证的叶子包各自 import 它取用的功能所在的接口包（图中归为 `pkg/http`、`pkg/audit` 与下层各包）；每个叶子包取用哪些功能、哪些必需哪些可选，由 [authn](modules/design-authn.md) 的模块清单承载。
+认证的叶子包各自 import 它取用的功能所在的接口包（图中归为 `pkg/http`、`pkg/audit` 与下层各包）；每个叶子包取用哪些功能、哪些必需哪些可选，由 [authn](modules/authn/design-authn.md) 的模块清单承载。
 
 授权由 [authz](modules/design-authz.md) 承载，它 import 认证与租户的根包、`pkg/http` 与下层各包，方向是授权指向它们，认证与租户都不 import 它。授权坐在准入层之上（不变量 17）：`authz.guard` 声明授权阶段，以 `After` 指向 `(*tenant.Admission)(nil)`，在同一阶段内排在准入层之后、handler 之外。
 
@@ -150,7 +150,7 @@ graph TD
   iaccount --> authnroot
 ```
 
-箭头表示 import。根包只依赖标准库，因而一个只读语言偏好的模块 import 它不拉进任何第三方库；引擎 `pkg/i18n/catalog` 是唯一用到 `golang.org/x/text/language` 的地方，`i18n.http` 经 `i18n.Negotiator` 取用协商结果而不自己拉这个库。`i18n.http` 取用 `pkg/http` 的登记面在每个端挂两层中间件，并以 `(*authn.Gate)(nil)` 作为它内层中间件的 `After` 锚点，因而 import 认证的根包；`i18n.account` 经认证根包的 `Accounts` 读账户属性、并实现根包的 `Provisioner`，因而同样指向它。**认证的根包不 import `pkg/i18n`**，方向是 i18n 指向认证这一侧：需要同时读身份与语言的子包（如 `pkg/authn/login`）import `pkg/i18n`，而认证根包只依赖标准库与自己的内部包这一点不变（[authn](modules/design-authn.md)、不变量 17 的同向精神）。`pkg/http` 也不 import `pkg/i18n`：它把 `Problem` 交给交付的 `ErrorResponder`，自身不认识语言。
+箭头表示 import。根包只依赖标准库，因而一个只读语言偏好的模块 import 它不拉进任何第三方库；引擎 `pkg/i18n/catalog` 是唯一用到 `golang.org/x/text/language` 的地方，`i18n.http` 经 `i18n.Negotiator` 取用协商结果而不自己拉这个库。`i18n.http` 取用 `pkg/http` 的登记面在每个端挂两层中间件，并以 `(*authn.Gate)(nil)` 作为它内层中间件的 `After` 锚点，因而 import 认证的根包；`i18n.account` 经认证根包的 `Accounts` 读账户属性、并实现根包的 `Provisioner`，因而同样指向它。**认证的根包不 import `pkg/i18n`**，方向是 i18n 指向认证这一侧：需要同时读身份与语言的子包（如 `pkg/authn/login`）import `pkg/i18n`，而认证根包只依赖标准库与自己的内部包这一点不变（[authn](modules/authn/design-authn.md)、不变量 17 的同向精神）。`pkg/http` 也不 import `pkg/i18n`：它把 `Problem` 交给交付的 `ErrorResponder`，自身不认识语言。
 
 ## 逻辑部署架构
 
@@ -193,7 +193,7 @@ graph TD
 
 speed 不引入进程边界。宿主是单一进程，注册表与全部模块实例都在该进程内，模块之间的调用是进程内的直接调用，不经过序列化、网络或服务发现。
 
-图中的箭头不表示 import：`cli` 与 `primary` 指向命令树的执行表示数据在装配开始之前流入，`main` 指向它表示宿主写出命令树并交其执行，`main` 直接指向注册表表示不写命令树的宿主自己预置读取面、再调用 `Run`——两条边是同一个宿主二选一的入口，走 `Run` 那条边时不经过命令树的执行，读取面由宿主自己生成；命令树的执行指向 `cfg` 表示加载产出读取面、指向注册表表示预置读取面并发起驱动，`cfg` 指向注册表表示读取面是预置给 `config` 模块的实例，`registry` 指向各模块表示驱动其生命周期，`cfg` 指向其余模块表示提供配置，`entry` 指向 `chain` 表示请求期入口模块按次序把请求交给链上各层，`chain` 指向 `instances` 表示链内放行后进入 handler 与各模块挂出的路由，虚线表示启动期的方向相反的登记：模块实例把自己的层与路由登记到入口模块，登记不是请求期调用，也不经过 `registry`。链上各层的次序由各层的 `After` 与 `Order` 声明推得，认证相关层的次序与锚点见 [authn](modules/design-authn.md)。
+图中的箭头不表示 import：`cli` 与 `primary` 指向命令树的执行表示数据在装配开始之前流入，`main` 指向它表示宿主写出命令树并交其执行，`main` 直接指向注册表表示不写命令树的宿主自己预置读取面、再调用 `Run`——两条边是同一个宿主二选一的入口，走 `Run` 那条边时不经过命令树的执行，读取面由宿主自己生成；命令树的执行指向 `cfg` 表示加载产出读取面、指向注册表表示预置读取面并发起驱动，`cfg` 指向注册表表示读取面是预置给 `config` 模块的实例，`registry` 指向各模块表示驱动其生命周期，`cfg` 指向其余模块表示提供配置，`entry` 指向 `chain` 表示请求期入口模块按次序把请求交给链上各层，`chain` 指向 `instances` 表示链内放行后进入 handler 与各模块挂出的路由，虚线表示启动期的方向相反的登记：模块实例把自己的层与路由登记到入口模块，登记不是请求期调用，也不经过 `registry`。链上各层的次序由各层的 `After` 与 `Order` 声明推得，认证相关层的次序与锚点见 [authn](modules/authn/design-authn.md)。
 
 命令行、环境变量与主配置源在装配开始之前由命令树的执行读入（[ADR-assembly-bootstrap-2026-09-20](../adr/adr-assembly-bootstrap-2026-09-20.md)）。写出命令树那条入口里，产出的读取面随即指名预置给 `config` 模块，装配开始时它已经在注册表里，`Prepare` 阶段即可取用（[ADR-supplied-instance-2026-10-08](../adr/adr-supplied-instance-2026-10-08.md)）。**发起驱动有两个入口。** 写出命令树的宿主由选中的那条命令发起：宿主把深度与动作写在命令树上，由命令带进驱动，读取面也由它预置。不写命令树的宿主——嵌入式宿主、包外测试——直接调用 `Run`：注册表把全部已登记模块作为参与集，深度钉在 `StageServe`，没有动作。这一类宿主不经命令树，也没有配置加载这一步，读取面因此要由它自己预置：`config` 模块一经登记便在 `Run` 的参与集里，而它没有 `New`，漏掉预置即启动失败——有模块在轮到 `config` 模块构造之前取用读取面时报 `ErrMissingProvider`，否则轮到它构造时报 `ErrUndeliveredCapability`（[ADR-drive-entry-2026-09-21](../adr/adr-drive-entry-2026-09-21.md)）。注册表不认识配置，也不认识命令：它只知道某个已登记模块的实例由宿主预置，以及这一次驱动的参数——运行级纳入连同依赖闭包展开出的名字清单、深度与动作。
 
@@ -223,7 +223,7 @@ speed 不引入进程边界。宿主是单一进程，注册表与全部模块�
 
 **每一层为自己产生的启动期错误给出修复动作。** 原样外传的失败不在此列：`core` 不加工它，也无从知道它的修法。模块被消解禁用而退让时，错误或诊断要给出它退让的原因，而非仅报告某个功能没有提供者。
 
-**用户可见的错误文案由 i18n 的 `ErrorResponder` 渲染。** 错误响应的用户可见部分——`Problem` 的 `Title`——由 [i18n](modules/design-i18n.md) 交付的 `ErrorResponder` 按请求语言渲染，而机器码 `Problem.Type`、状态码 `Problem.Status` 与发生处的 `Problem.Detail` 原样保留、不随语言改变。`pkg/http` 不认识语言，它只把 `Problem` 交给交付的渲染器；没有交付时写出默认的 `application/problem+json` 形状（[http](modules/design-http.md)）。
+**用户可见的错误文案由 i18n 的 `ErrorResponder` 渲染。** 错误响应的用户可见部分——`Problem` 的 `Title`——由 [i18n](modules/design-i18n.md) 交付的 `ErrorResponder` 按请求语言渲染，而机器码 `Problem.Type`、状态码 `Problem.Status` 与发生处的 `Problem.Detail` 原样保留、不随语言改变。`pkg/http` 不认识语言，它只把 `Problem` 交给交付的渲染器；没有交付时写出默认的 `application/problem+json` 形状（[http](modules/http/design-http.md)）。
 
 ### 并发模型
 
@@ -255,27 +255,27 @@ speed 不引入进程边界。宿主是单一进程，注册表与全部模块�
 
 配置定位符会出现在命令行、进程列表与诊断输出中，因而不得承载凭据。
 
-**隔离的覆盖面同样是装配的结果，不是框架的承诺。** 按租户过滤由租户模块声明的一条插件承担，它只装在数据库模块自己构造的句柄上；承担它的模块不被装配时，遗漏过滤不会被任何一层拦下（[ADR-db-scope-2026-09-14](../adr/adr-db-scope-2026-09-14.md)），判据与失效形态见 [tenant](modules/design-tenant.md)。宿主为数据库实现预置的实例不是数据库模块的产物时，数据库模块在 `Migrate` 拒收它，启动失败；拒收之前的取用不经过这道检查，推进不到 `Migrate` 的驱动全程如此，更深的驱动里先于它执行的回调同样如此；拒收只核对来历，出自数据库模块 `New` 的实例，句柄带着那次 `New` 收取的插件，与本次运行的启用集不一定相同（[ADR-db-scope-2026-10-08](../adr/adr-db-scope-2026-10-08.md)、[ADR-supplied-instance-2026-10-08](../adr/adr-supplied-instance-2026-10-08.md)，见 [db](modules/design-db.md)）。
+**隔离的覆盖面同样是装配的结果，不是框架的承诺。** 按租户过滤由租户模块声明的一条插件承担，它只装在数据库模块自己构造的句柄上；承担它的模块不被装配时，遗漏过滤不会被任何一层拦下（[ADR-db-scope-2026-09-14](../adr/adr-db-scope-2026-09-14.md)），判据与失效形态见 [tenant](modules/tenant/design-tenant.md)。宿主为数据库实现预置的实例不是数据库模块的产物时，数据库模块在 `Migrate` 拒收它，启动失败；拒收之前的取用不经过这道检查，推进不到 `Migrate` 的驱动全程如此，更深的驱动里先于它执行的回调同样如此；拒收只核对来历，出自数据库模块 `New` 的实例，句柄带着那次 `New` 收取的插件，与本次运行的启用集不一定相同（[ADR-db-scope-2026-10-08](../adr/adr-db-scope-2026-10-08.md)、[ADR-supplied-instance-2026-10-08](../adr/adr-supplied-instance-2026-10-08.md)，见 [db](modules/design-db.md)）。
 
 **审计的覆盖面同样是装配与配置的结果，不是框架的承诺。** 审计的各条捕获通路分别依赖在场的模块，以及配置里点名的类型与请求模式。一个类型名与一个端名都不点名时，任一条通路缺席都不会被任何一层拦下，也不进启动诊断；点了名而对应的模块取不到，则是启动失败（[audit](modules/design-audit.md)）。
 
-**请求路径的 panic 兜底是这条取向的一处例外：它是入口模块的承诺。** 兜底层由 [http](modules/design-http.md) 内建、每端唯一，不装任何别的模块的进程同样有它。判据是这条能力不需要任何产生于依赖图上层的概念——不要身份、不要租户、不要执行变更的一方，只要接住一次调用并写出一次错误响应（形状由默认的 `application/problem+json` 或已交付的 `ErrorResponder` 决定），这里的“执行变更的一方”泛指发出调用的一方，与[认证](modules/design-authn.md)身份上的实际操作者不是同一个词义，该文术语表有界定。因而按横切归属的判据落在持有拦截点的模块（[ADR-http-recovery-2026-09-22](../adr/adr-http-recovery-2026-09-22.md)、[ADR-http-errors-2026-10-10](../adr/adr-http-errors-2026-10-10.md)）。宿主为入口模块预置的实例不是它的产物时，这份承诺不随之而来，那个实例怎样对外提供服务由预置的一方负责（见 [http](modules/design-http.md)）。
+**请求路径的 panic 兜底是这条取向的一处例外：它是入口模块的承诺。** 兜底层由 [http](modules/http/design-http.md) 内建、每端唯一，不装任何别的模块的进程同样有它。判据是这条能力不需要任何产生于依赖图上层的概念——不要身份、不要租户、不要执行变更的一方，只要接住一次调用并写出一次错误响应（形状由默认的 `application/problem+json` 或已交付的 `ErrorResponder` 决定），这里的“执行变更的一方”泛指发出调用的一方，与[认证](modules/authn/design-authn.md)身份上的实际操作者不是同一个词义，该文术语表有界定。因而按横切归属的判据落在持有拦截点的模块（[ADR-http-recovery-2026-09-22](../adr/adr-http-recovery-2026-09-22.md)、[ADR-http-errors-2026-10-10](../adr/adr-http-errors-2026-10-10.md)）。宿主为入口模块预置的实例不是它的产物时，这份承诺不随之而来，那个实例怎样对外提供服务由预置的一方负责（见 [http](modules/http/design-http.md)）。
 
 ### 认证与授权边界
 
-认证交付身份系统：登录、会话、令牌、多因素、企业 SSO、冒充与账户存储；授权由 [authz](modules/design-authz.md) 承载，接缝只有 `Decider` 一处（[ADR-authn-scope-2026-10-10](../adr/adr-authn-scope-2026-10-10.md)、[ADR-authn-decision-seam-2026-10-10](../adr/adr-authn-decision-seam-2026-10-10.md)、[ADR-authz-decision-seam-2026-10-12](../adr/adr-authz-decision-seam-2026-10-12.md)）。归属认证的判据是判定所需的输入：只需要凭据、账户、标识、会话、令牌、因素、IdP 配置与冒充记录这类认证事实的归认证，还需要资源、动作与策略的归授权。判定接缝 `Decider` 缺席即全拒：认证自己的管理面与冒充的开始都不在它缺席时放行。网关与 `tenant.admission` 不写 403，认证强度不足答 401，非成员与冒充范围不符答 404，403 出现在认证自己的处理器里与 `authz.guard`（[authn](modules/design-authn.md)、[authn-failure](modules/design-authn-failure.md)、[authz](modules/design-authz.md)）。
+认证交付身份系统：登录、会话、令牌、多因素、企业 SSO、冒充与账户存储；授权由 [authz](modules/design-authz.md) 承载，接缝只有 `Decider` 一处（[ADR-authn-scope-2026-10-10](../adr/adr-authn-scope-2026-10-10.md)、[ADR-authn-decision-seam-2026-10-10](../adr/adr-authn-decision-seam-2026-10-10.md)、[ADR-authz-decision-seam-2026-10-12](../adr/adr-authz-decision-seam-2026-10-12.md)）。归属认证的判据是判定所需的输入：只需要凭据、账户、标识、会话、令牌、因素、IdP 配置与冒充记录这类认证事实的归认证，还需要资源、动作与策略的归授权。判定接缝 `Decider` 缺席即全拒：认证自己的管理面与冒充的开始都不在它缺席时放行。网关与 `tenant.admission` 不写 403，认证强度不足答 401，非成员与冒充范围不符答 404，403 出现在认证自己的处理器里与 `authz.guard`（[authn](modules/authn/design-authn.md)、[authn-failure](modules/authn/design-authn-failure.md)、[authz](modules/design-authz.md)）。
 
 **身份由网关盖章。** 校验后端只交出判决，不写请求上下文；网关在出口检查全部成立之后才把身份写进上下文，注入口不导出（[ADR-authn-verdict-2026-10-10](../adr/adr-authn-verdict-2026-10-10.md)）。身份的实际操作者 `Actor()` 是真正动手的账户，冒充时与生效账户 `Account()` 不同；限流、审计与设置的归责一律取责任键 `Key()`，即实际操作者（[ADR-authn-identity-2026-10-10](../adr/adr-authn-identity-2026-10-10.md)）。
 
 **会话与令牌的撤销面只有登录会话。** 登录会话权威存放在 db，撤销以会话行的撤销标记为准；刷新令牌与冒充记录挂在会话上，撤销会话即撤销它们；访问令牌不另设撤销清单，校验时核对它所属的会话与账户的 `valid_after`。账户停用与删除经认证模块自己的事务、`AccountLifecycle` 钩子与事件补偿清理，清理没做完时，`valid_after` 与账户状态兜底，残留的行不能用于认证（[ADR-authn-session-2026-10-10](../adr/adr-authn-session-2026-10-10.md)、[ADR-authn-account-lifecycle-2026-10-10](../adr/adr-authn-account-lifecycle-2026-10-10.md)）。撤销在各副本上的生效有上界，上界取自校验缓存的有效期，属于下文有界放宽的一部分。
 
-**认证在依赖不可用时拒绝，放宽只有一份有界的封闭集。** db、kv、签名密钥、短信发送方与 IdP 不可用时，对应路径答 503，不答 200，也不答 401。放宽限于校验缓存的有效期、`check-session` 的显式放宽、设置变更的传播延迟与 IdP 元数据的证书陈旧窗口，各自带设置与上界，清单与取值见 [authn-failure](modules/design-authn-failure.md)（[ADR-authn-failure-2026-10-10](../adr/adr-authn-failure-2026-10-10.md)）。放宽开关只取主配置源，不放进设置：设置的写入面没有访问控制，持有设置写权限的主体能在运行期放宽它们。设置被改到放宽的方向时，认证不阻止，只写警告并经审计接缝留痕，记录只含键名与方向（[authn-config](modules/design-authn-config.md)、[ADR-authn-settings-and-secrets-2026-10-10](../adr/adr-authn-settings-and-secrets-2026-10-10.md)）。
+**认证在依赖不可用时拒绝，放宽只有一份有界的封闭集。** db、kv、签名密钥、短信发送方与 IdP 不可用时，对应路径答 503，不答 200，也不答 401。放宽限于校验缓存的有效期、`check-session` 的显式放宽、设置变更的传播延迟与 IdP 元数据的证书陈旧窗口，各自带设置与上界，清单与取值见 [authn-failure](modules/authn/design-authn-failure.md)（[ADR-authn-failure-2026-10-10](../adr/adr-authn-failure-2026-10-10.md)）。放宽开关只取主配置源，不放进设置：设置的写入面没有访问控制，持有设置写权限的主体能在运行期放宽它们。设置被改到放宽的方向时，认证不阻止，只写警告并经审计接缝留痕，记录只含键名与方向（[authn-config](modules/authn/design-authn-config.md)、[ADR-authn-settings-and-secrets-2026-10-10](../adr/adr-authn-settings-and-secrets-2026-10-10.md)）。
 
-**秘密只以封闭的几种形态存放。** 认证自己持有的机密只以哈希、数据库加密列与文件这几种形态存放，这是封闭集：口令、令牌、验证码与服务密钥存哈希，因素种子与 IdP 客户端密钥存加密列，JWT 签名私钥与 SAML 私钥存文件。提供方发给宿主的客户端密钥与厂商密钥是启动必须项，存在配置的敏感项里。秘密不进命令行、不进设置，也不进日志、事件、审计与指标；配置的 `Sensitive` 不向日志登记脱敏，持有秘密配置值的模块各自把该值登记为日志的字面量匹配器。签名私钥不放 db，使 db 根密钥这个单点不连带令牌的签名（[authn-config](modules/design-authn-config.md)）。
+**秘密只以封闭的几种形态存放。** 认证自己持有的机密只以哈希、数据库加密列与文件这几种形态存放，这是封闭集：口令、令牌、验证码与服务密钥存哈希，因素种子与 IdP 客户端密钥存加密列，JWT 签名私钥与 SAML 私钥存文件。提供方发给宿主的客户端密钥与厂商密钥是启动必须项，存在配置的敏感项里。秘密不进命令行、不进设置，也不进日志、事件、审计与指标；配置的 `Sensitive` 不向日志登记脱敏，持有秘密配置值的模块各自把该值登记为日志的字面量匹配器。签名私钥不放 db，使 db 根密钥这个单点不连带令牌的签名（[authn-config](modules/authn/design-authn-config.md)）。
 
-**冒充与审计绑定在一起。** 冒充开始之前先写强制档审计，写不成功冒充不开始；`authn.impersonation` 与 `authn.admin` 把审计功能当必需依赖，装配里没有审计即启动失败。冒充期间的请求级与语句级审计行，`actor` 列取发起冒充的管理员，明细带被冒充者、冒充范围与会话。冒充限定在一个租户内，由下列执行点合起来保证：冒充模块在装配期必需租户准入层交付的 `ScopeGuard`，网关只放冒充身份进准入层所守的端与登记为可冒充的路由，准入层核对冒充身份的范围等于请求的租户。缺任何一个执行点，换一个不带租户解析的端就越过了（[ADR-authn-impersonation-2026-10-10](../adr/adr-authn-impersonation-2026-10-10.md)、[authn-impersonation](modules/design-authn-impersonation.md)）。
+**冒充与审计绑定在一起。** 冒充开始之前先写强制档审计，写不成功冒充不开始；`authn.impersonation` 与 `authn.admin` 把审计功能当必需依赖，装配里没有审计即启动失败。冒充期间的请求级与语句级审计行，`actor` 列取发起冒充的管理员，明细带被冒充者、冒充范围与会话。冒充限定在一个租户内，由下列执行点合起来保证：冒充模块在装配期必需租户准入层交付的 `ScopeGuard`，网关只放冒充身份进准入层所守的端与登记为可冒充的路由，准入层核对冒充身份的范围等于请求的租户。缺任何一个执行点，换一个不带租户解析的端就越过了（[ADR-authn-impersonation-2026-10-10](../adr/adr-authn-impersonation-2026-10-10.md)、[authn-impersonation](modules/authn/design-authn-impersonation.md)）。
 
-**成员准入的覆盖面同样是装配的结果，不是认证的承诺。** 账户是全局的、可属多个租户，租户仍取自请求面、不从身份派生；账户是不是租户成员由租户目录里的准入层判定，认证只存成员关系。不装准入层的装配没有任何一层核对成员关系与冒充范围，是开放的越权路径，没有一层会报错（[ADR-tenant-admission-2026-10-10](../adr/adr-tenant-admission-2026-10-10.md)、[tenant-admission](modules/design-tenant-admission.md)）。认证网关的覆盖面也是装配与配置的结果：它默认守入口模块声明的全部端，显式收窄的清单之外的端没有认证层，成因与察觉手段见 [authn](modules/design-authn.md) 的非保证。
+**成员准入的覆盖面同样是装配的结果，不是认证的承诺。** 账户是全局的、可属多个租户，租户仍取自请求面、不从身份派生；账户是不是租户成员由租户目录里的准入层判定，认证只存成员关系。不装准入层的装配没有任何一层核对成员关系与冒充范围，是开放的越权路径，没有一层会报错（[ADR-tenant-admission-2026-10-10](../adr/adr-tenant-admission-2026-10-10.md)、[tenant-admission](modules/tenant/design-tenant-admission.md)）。认证网关的覆盖面也是装配与配置的结果：它默认守入口模块声明的全部端，显式收窄的清单之外的端没有认证层，成因与察觉手段见 [authn](modules/authn/design-authn.md) 的非保证。
 
 ### 性能与容量目标
 
@@ -311,30 +311,13 @@ speed 不引入进程边界。宿主是单一进程，注册表与全部模块�
 | [config](modules/design-config.md) | 已实现 |
 | [log](modules/design-log.md) | 已实现 |
 | [db](modules/design-db.md) | 已实现 |
-| [http](modules/design-http.md) | 已实现 |
-| [http-cors](modules/design-http-cors.md) | 已实现 |
-| [authn](modules/design-authn.md) | 已实现 |
-| [authn-gate](modules/design-authn-gate.md) | 已实现 |
-| [authn-account](modules/design-authn-account.md) | 已实现 |
-| [authn-login](modules/design-authn-login.md) | 已实现 |
-| [authn-sms](modules/design-authn-sms.md) | 已实现 |
-| [authn-mfa](modules/design-authn-mfa.md) | 已实现 |
-| [authn-session](modules/design-authn-session.md) | 已实现 |
-| [authn-token](modules/design-authn-token.md) | 已实现 |
-| [authn-sso](modules/design-authn-sso.md) | 已实现 |
-| [authn-impersonation](modules/design-authn-impersonation.md) | 已实现 |
-| [authn-admin](modules/design-authn-admin.md) | 已实现 |
-| [authn-config](modules/design-authn-config.md) | 已实现 |
-| [authn-events](modules/design-authn-events.md) | 已实现 |
-| [authn-failure](modules/design-authn-failure.md) | 已实现 |
-| [authn-threats](modules/design-authn-threats.md) | 已实现 |
-| [tenant](modules/design-tenant.md) | 已实现 |
-| [tenant-admission](modules/design-tenant-admission.md) | 已实现 |
+| [http](modules/http/design-http.md) | 已实现 |
+| [authn](modules/authn/design-authn.md) | 已实现 |
+| [tenant](modules/tenant/design-tenant.md) | 已实现 |
 | [authz](modules/design-authz.md) | 已实现 |
 | [kv](modules/design-kv.md) | 已实现 |
 | [sms](modules/design-sms.md) | 已实现 |
-| [event](modules/design-event.md) | 已实现 |
-| [outbox](modules/design-outbox.md) | 已实现 |
+| [event](modules/event/design-event.md) | 已实现 |
 | [audit](modules/design-audit.md) | 已实现 |
 | [settings](modules/design-settings.md) | 已实现 |
 | [ratelimit](modules/design-ratelimit.md) | 已实现 |

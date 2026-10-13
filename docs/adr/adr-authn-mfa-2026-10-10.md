@@ -125,9 +125,9 @@ TOTP、短信、WebAuthn 各自挂一组登记路由，自行处理新鲜度检�
   - 因素把事实交给 `MFA` 的通道是拒绝的成因：WebAuthn 的凭据疑似克隆时以 `authn.ErrFactorFlagged` 作 `StepRefused` 的成因，`MFA.Verify` 据它停用该因素行并发布 `authn.factor.changed`（`flagged`）。接缝因此不含因素回写登记簿的方法。
   - 失败退避、审计记录与事件发布是横切行为，在 `MFA` 统一做，因素实现不做。
   - `authn.login` 硬依赖 `MFA`。装配里没有某个因素种类的实现，而账户有该种类的有效因素时，按「该因素不可用」处理，不得当作账户没有因素。
-  - 接缝签名、方法集、表与路由见 [design-authn-mfa](../design/modules/design-authn-mfa.md)。
+  - 接缝签名、方法集、表与路由见 [design-authn-mfa](../design/modules/authn/design-authn-mfa.md)。
 - **因素种类。** 内置的种类是 TOTP、短信码与 WebAuthn，第三方可另行实现。
-  - TOTP 的校验必须有重放防护：命中的计数器须大于已用的最大计数器，并以 db 的条件更新判胜负，不依赖库的布尔校验。校验算法见 [design-authn-mfa](../design/modules/design-authn-mfa.md)。
+  - TOTP 的校验必须有重放防护：命中的计数器须大于已用的最大计数器，并以 db 的条件更新判胜负，不依赖库的布尔校验。校验算法见 [design-authn-mfa](../design/modules/authn/design-authn-mfa.md)。
   - 短信因素复用 `authn.sms` 的验证码引擎（[ADR-authn-sms-2026-10-10](adr-authn-sms-2026-10-10.md)）。
   - WebAuthn 的库类型不出其子包；全局账户对应单一 RP ID。通行密钥可作第一因素，也可作第二因素。
 - **策略只加严，不放宽。**
@@ -135,15 +135,15 @@ TOTP、短信、WebAuthn 各自挂一组登记路由，自行处理新鲜度检�
   - 租户级策略只在请求期由 `tenant.admission` 执行（[ADR-tenant-admission-2026-10-10](adr-tenant-admission-2026-10-10.md)），登录时不判。
   - 第二因素的认证方式不得与第一因素已有的方式相交。账户只有同种类因素时该次登录无法完成，应答 `login-failed`，用户走管理员重置。
   - 不提供记住设备：每次登录都答第二因素。
-  - 各层策略的定义与判定顺序见 [design-authn-mfa](../design/modules/design-authn-mfa.md)，键见 [design-authn-config](../design/modules/design-authn-config.md)。
+  - 各层策略的定义与判定顺序见 [design-authn-mfa](../design/modules/authn/design-authn-mfa.md)，键见 [design-authn-config](../design/modules/authn/design-authn-config.md)。
 - **强度只在一处合成。**
   - 强度只在 `MFA.Assurance` 计算，合成依据是已证明的因素种类。第一因素的方法不报强度；校验后端、请求期准入、`guard.Require` 与冒充发起读登录会话行里已记录的强度，不重新判断。
-  - 强度的非零取值是封闭集：单因素与多因素。合成的输入与判据见 [design-authn-mfa](../design/modules/design-authn-mfa.md)。
+  - 强度的非零取值是封闭集：单因素与多因素。合成的输入与判据见 [design-authn-mfa](../design/modules/authn/design-authn-mfa.md)。
   - 登录会话与令牌的承载见 [ADR-authn-session-2026-10-10](adr-authn-session-2026-10-10.md)、[ADR-authn-token-2026-10-10](adr-authn-token-2026-10-10.md)。
-- **IdP 声明默认不采信。** 采信须同时满足的前提是封闭集，由 [design-authn-mfa](../design/modules/design-authn-mfa.md) 承载；前提中必有提供方行显式开启，且账户没有任何有效因素、没有强制登记。采信抬高的多因素是 IdP 的声明，不是本地验证过的因素：它只在该提供方所属的租户内算数，设了 `Requirement.Local` 的动作不采信它。
+- **IdP 声明默认不采信。** 采信须同时满足的前提是封闭集，由 [design-authn-mfa](../design/modules/authn/design-authn-mfa.md) 承载；前提中必有提供方行显式开启，且账户没有任何有效因素、没有强制登记。采信抬高的多因素是 IdP 的声明，不是本地验证过的因素：它只在该提供方所属的租户内算数，设了 `Requirement.Local` 的动作不采信它。
 - **登录期间登记的因素不计入本次强度。** 会话记单因素；要得到多因素，须下一次登录，或加强认证时通过一个早于该次认证登记的因素。
-- **账户安全类操作要求本地验证过的因素。** 判据是操作能改变账户的凭据或身份绑定、或授予更高权限；删除与重置因素、解绑与关联外部身份、改口令、改手机或邮箱、创建服务密钥、冒充发起是该判据的例举，不是封闭集，逐项名单见 [design-authn-mfa](../design/modules/design-authn-mfa.md)。冒充发起与管理员重置因素另要求发起者名下有启用已满一段时间的非短信因素。短信因素允许登记与使用，在冒充与重置他人因素的强认证里不计。判定接缝见 [ADR-authn-decision-seam-2026-10-10](adr-authn-decision-seam-2026-10-10.md)，冒充的限制见 [ADR-authn-impersonation-2026-10-10](adr-authn-impersonation-2026-10-10.md)。
-- **因素登记只有一个入口。** 登记是登录引擎的 `enroll` 目的，经 `flows` 路由推进，由 `MFA` 驱动各步。账户尚无因素时的首次登记按信任首次使用，不要求带外证明。WebAuthn 的仪式数据放在流程记录的私有字节里。步骤与前置新鲜度要求见 [design-authn-mfa](../design/modules/design-authn-mfa.md)。
+- **账户安全类操作要求本地验证过的因素。** 判据是操作能改变账户的凭据或身份绑定、或授予更高权限；删除与重置因素、解绑与关联外部身份、改口令、改手机或邮箱、创建服务密钥、冒充发起是该判据的例举，不是封闭集，逐项名单见 [design-authn-mfa](../design/modules/authn/design-authn-mfa.md)。冒充发起与管理员重置因素另要求发起者名下有启用已满一段时间的非短信因素。短信因素允许登记与使用，在冒充与重置他人因素的强认证里不计。判定接缝见 [ADR-authn-decision-seam-2026-10-10](adr-authn-decision-seam-2026-10-10.md)，冒充的限制见 [ADR-authn-impersonation-2026-10-10](adr-authn-impersonation-2026-10-10.md)。
+- **因素登记只有一个入口。** 登记是登录引擎的 `enroll` 目的，经 `flows` 路由推进，由 `MFA` 驱动各步。账户尚无因素时的首次登记按信任首次使用，不要求带外证明。WebAuthn 的仪式数据放在流程记录的私有字节里。步骤与前置新鲜度要求见 [design-authn-mfa](../design/modules/authn/design-authn-mfa.md)。
 
 ```mermaid
 flowchart LR

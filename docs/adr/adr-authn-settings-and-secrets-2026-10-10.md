@@ -99,7 +99,7 @@ authn 的各模块在 `Requires` 里对设置写必需，所有退避、时长�
 
 ## 决策
 
-采纳：authn 的取值按下列判据落位；放宽开关只取主配置源；本模块落库或落盘的秘密只以哈希、数据库加密列、文件存放，启动必须项的秘密经配置给出。逐项的键、类型、缺省值与取值域列在 [authn-config](../design/modules/design-authn-config.md)，本记录不复述。
+采纳：authn 的取值按下列判据落位；放宽开关只取主配置源；本模块落库或落盘的秘密只以哈希、数据库加密列、文件存放，启动必须项的秘密经配置给出。逐项的键、类型、缺省值与取值域列在 [authn-config](../design/modules/authn/design-authn-config.md)，本记录不复述。
 
 **划界。**
 
@@ -117,9 +117,9 @@ authn 的各模块在 `Requires` 里对设置写必需，所有退避、时长�
 
 **放宽开关只取主配置源。**
 
-- 放宽开关是取值变化即放宽校验的开关，按这条判据归入，新增的同类开关一并归入。当前的开关集合与各自的放宽值见 [authn-config](../design/modules/design-authn-config.md) 的放宽开关一节。
+- 放宽开关是取值变化即放宽校验的开关，按这条判据归入，新增的同类开关一并归入。当前的开关集合与各自的放宽值见 [authn-config](../design/modules/authn/design-authn-config.md) 的放宽开关一节。
 - 放宽开关的 `Origins` 只取主配置源，环境变量与命令行都改不了，也不放进设置。决定守护面的清单同样只取主配置源。
-- 放宽开关取放宽值时，启动诊断每一项单独写一行 Warn（[authn-config](../design/modules/design-authn-config.md)）。
+- 放宽开关取放宽值时，启动诊断每一项单独写一行 Warn（[authn-config](../design/modules/authn/design-authn-config.md)）。
 
 **其余可运行期改动的安全项。**
 
@@ -134,7 +134,7 @@ authn 的各模块在 `Requires` 里对设置写必需，所有退避、时长�
 - 秘密不进命令行，不进设置。秘密类配置项取 `Origins` 的零值（主配置源加环境变量，不含命令行），标 `Sensitive` 并带 `Description`。
 - 配置里的敏感项只放启动必须项的秘密。
 - 每个持有秘密配置值的模块把该值另登记为日志的字面量匹配器；`Sensitive` 不替它登记。
-- 带加密列的模块在 `Start` 里各做一次加密列往返自检，失败即终止启动，使 `db` 根密钥缺失在启动时报出，不拖到第一条触及加密列的语句（[authn-config](../design/modules/design-authn-config.md)）。
+- 带加密列的模块在 `Start` 里各做一次加密列往返自检，失败即终止启动，使 `db` 根密钥缺失在启动时报出，不拖到第一条触及加密列的语句（[authn-config](../design/modules/authn/design-authn-config.md)）。
 
 [ADR-authn-events-and-audit-2026-10-10](adr-authn-events-and-audit-2026-10-10.md) 载明 `authn.settings.relaxed` 的契约；依赖不可用时的失败方向见 [ADR-authn-failure-2026-10-10](adr-authn-failure-2026-10-10.md)。
 
@@ -161,7 +161,7 @@ flowchart TD
 
 **接受的代价：**
 
-- 每个设置项带取值域，由一份表守住全貌（[authn-config](../design/modules/design-authn-config.md)）；设置快照在每个副本内存里含全部租户的全部行。
+- 每个设置项带取值域，由一份表守住全貌（[authn-config](../design/modules/authn/design-authn-config.md)）；设置快照在每个副本内存里含全部租户的全部行。
 - 设置变更在副本之间最终一致，最坏延迟是刷新间隔；租户刚开启强制策略后，最长数分钟内个别副本仍放行。写非按租户回落的键的租户层不起作用且不报错，设置没有「该键只许全局」的声明。
 - 设置的写入面仍无访问控制，持有写权限的主体可以把退避、预算与前缀名单改到更宽松；authn 只提供事后可见，不提供阻止。阻止依赖宿主的管理面以及 `AGENTS.md` 的硬要求，authn 无法检查宿主是否遵守。
 - 放宽开关、客户端密钥、口令表、签名密钥文件改动后要重启，无重启轮换要求把它放进设置，而那意味着明文存库或放宽路径向写入面敞开，均不接受。

@@ -74,7 +74,7 @@
 
 ## 决策
 
-采纳：租户准入层放在 tenant 目录，模块名 `tenant.admission`，包 `pkg/tenant/admission`；经认证根包的 `Memberships` 读成员关系，依赖方向仍是 tenant 指向 authn。设计见 [design-tenant-admission](../design/modules/design-tenant-admission.md)。
+采纳：租户准入层放在 tenant 目录，模块名 `tenant.admission`，包 `pkg/tenant/admission`；经认证根包的 `Memberships` 读成员关系，依赖方向仍是 tenant 指向 authn。设计见 [design-tenant-admission](../design/modules/tenant/design-tenant-admission.md)。
 
 ```mermaid
 flowchart LR

@@ -2,11 +2,11 @@
 
 ## 职责
 
-企业单点登录由下列登记单元承担：`authn.sso`（包 `pkg/authn/sso`）、`authn.sso.saml`（包 `pkg/authn/sso/saml`）与 `authn.sso.oidc`（包 `pkg/authn/sso/oidc`）。它们持有租户自有身份提供方（IdP）的登记、邮箱域的所有权证明与发现、SAML 断言与企业 OIDC 的 ID 令牌的校验，以及这些校验用到的受限出站客户端。取舍见 [ADR-authn-sso-2026-10-10](../../adr/adr-authn-sso-2026-10-10.md)，包与模块的划分见 [ADR-authn-packaging-2026-10-10](../../adr/adr-authn-packaging-2026-10-10.md)。
+企业单点登录由下列登记单元承担：`authn.sso`（包 `pkg/authn/sso`）、`authn.sso.saml`（包 `pkg/authn/sso/saml`）与 `authn.sso.oidc`（包 `pkg/authn/sso/oidc`）。它们持有租户自有身份提供方（IdP）的登记、邮箱域的所有权证明与发现、SAML 断言与企业 OIDC 的 ID 令牌的校验，以及这些校验用到的受限出站客户端。取舍见 [ADR-authn-sso-2026-10-10](../../../adr/adr-authn-sso-2026-10-10.md)，包与模块的划分见 [ADR-authn-packaging-2026-10-10](../../../adr/adr-authn-packaging-2026-10-10.md)。
 
 本功能包括下列部分（封闭集合，不在其内的事项归非职责一节点名的模块）：
 
-- **提供方登记。** `SSOProviders` 由 `authn.sso` 排他交付，读写 `authn_idps`。提供方是表里的数据，不是模块，不进设置也不进配置：运行期才出现、数量不定、带秘密的配置是数据（[ADR-authn-sso-2026-10-10](../../adr/adr-authn-sso-2026-10-10.md)）。`client_secret` 在加密列里，读取接口不交出它。
+- **提供方登记。** `SSOProviders` 由 `authn.sso` 排他交付，读写 `authn_idps`。提供方是表里的数据，不是模块，不进设置也不进配置：运行期才出现、数量不定、带秘密的配置是数据（[ADR-authn-sso-2026-10-10](../../../adr/adr-authn-sso-2026-10-10.md)）。`client_secret` 在加密列里，读取接口不交出它。
 - **域所有权与发现。** 租户为提供方声明邮箱域，经 DNS TXT 证明所有权；已验证的域全局唯一；`POST B/sso/discover` 按已验证的域返回入口列表。数据在 `authn_idp_domains`。
 - **SAML 登录方式。** `authn.sso.saml` 交付 `LoginMethod`（名 `saml`）：发起、SP 元数据、断言消费与逐项补充校验。断言标识的去重表 `authn_saml_assertions` 由 `authn.sso` 持有。
 - **企业 OIDC 登录方式。** `authn.sso.oidc` 交付 `LoginMethod`（名 `oidc`），与社交登录的 Google 走同一条校验代码路径，差别只在配置来源。
@@ -19,7 +19,7 @@
 - **不运行登录流程。** 流程记录、状态机迁移、比较并交换、账户解析、会话与令牌的发放归登录引擎（[design-authn-login](design-authn-login.md)）；方法只回答「这次回跳证明了什么」，交出 `Proof`。
 - **不决定账户。** 外部身份的绑定键、自动关联、首登开户、预置账户匹配与 JIT 并入的判据归 `authn.account`（[design-authn-account](design-authn-account.md)）。本模块只提供其输入：提供方的 `provisioning`、`merge_existing`、所属租户与邮箱域的验证状态。
 - **不合成保障等级。** 方法只报 `Proof.IDPAsserted` 这一事实，是否采信、等级是多少只在 `authn.mfa` 一处合成（[design-authn-mfa](design-authn-mfa.md)）。
-- **不执行租户级强制 SSO。** `tenant.admission.require-sso` 在请求期由租户准入层执行（[design-tenant-admission](design-tenant-admission.md)）；本模块只回答「这个提供方属于哪个租户」。
+- **不执行租户级强制 SSO。** `tenant.admission.require-sso` 在请求期由租户准入层执行（[design-tenant-admission](../tenant/design-tenant-admission.md)）；本模块只回答「这个提供方属于哪个租户」。
 - **不写管理面路由，不做判定。** 提供方、域与元数据刷新的 HTTP 路由、`Decider` 的判定与强制审计归 `authn.admin`（[design-authn-admin](design-authn-admin.md)）。
 - **不创建会话，不计算会话期限。** `Provider` 非空的会话的期限规则由 `authn.session` 统一计算（[design-authn-session](design-authn-session.md)）。
 - **不映射角色与组。** IdP 的组声明不转成任何角色或属性，角色归授权。`attr.<名>` 只是给宿主读的只读属性。
@@ -39,7 +39,7 @@
 
 `SSOProviders`、`SSOMetadataRefresher` 与 `LoginMethod` 的接口定义在 `pkg/authn` 根包，根包自身不登记模块。每个登记模块的包导出 `ModuleName`，配置命名空间取同一个取值。这些模块的 `Prepare` 只表态 `StateEnabled`，从不表态 `StateAuto`：是否运行是命令树上的决定。
 
-- **排他与并立。** `SSOProviders` 排他：宿主点名 `authn.sso.saml` 或 `authn.sso.oidc` 而漏点名 `authn.sso`，在 `Requires` 消解阶段以 `core.ErrMissingProvider` 失败。`LoginMethod` 与 `SSOMetadataRefresher` 并立，由消费方 `ResolveAll` 取用，从不写进 `Requires`（[ADR-authn-wiring-2026-10-10](../../adr/adr-authn-wiring-2026-10-10.md)）。
+- **排他与并立。** `SSOProviders` 排他：宿主点名 `authn.sso.saml` 或 `authn.sso.oidc` 而漏点名 `authn.sso`，在 `Requires` 消解阶段以 `core.ErrMissingProvider` 失败。`LoginMethod` 与 `SSOMetadataRefresher` 并立，由消费方 `ResolveAll` 取用，从不写进 `Requires`（[ADR-authn-wiring-2026-10-10](../../../adr/adr-authn-wiring-2026-10-10.md)）。
 - **一个模块一个方法名。** `authn.sso.saml` 的 `LoginMethod.Name()` 恒为 `saml`，`authn.sso.oidc` 的恒为 `oidc`；全局重名即 `ErrMethodConflict`。
 - **方法名两两不相交。** `authn.sso.saml` 交付的接口方法名为 `Name`、`Begin`、`Answer` 与 `Protocol`、`Refresh`，互不相交；包内为每个交付的接口加 `var _ authn.X = (*product)(nil)` 编译期断言。
 - **库只在叶子包里。** gosaml2 与 goxmldsig 只被 `authn.sso.saml` import；`authn.sso` 不 import 任何协议库，宿主只纳入 `authn.sso.oidc` 时 gosaml2 不进它的依赖闭包。**在 `authn.sso` 模块内**，go-oidc 只被 `authn.sso.oidc` import，x/oauth2 同样只被它 import；**在 `pkg/authn` 全树内**这两个库另被社交登录方式 import——go-oidc 另被 `authn.login.google` import，x/oauth2 另被 `authn.login.google` 与 `authn.login.github` import——因为它们与 Google 走同一条 OAuth/OIDC 共同事务（见 [design-authn-login](design-authn-login.md) 的「社交登录与企业 OIDC 的共同事务」）。
@@ -165,10 +165,10 @@ type SSOMetadataRefresher interface {
 
 依赖方向满足架构不变量：
 
-- `Requires` 只写排他功能与 `db.Database`；`LoginMethod`、`SSOMetadataRefresher` 并立，由消费方 `ResolveAll`（[ADR-authn-wiring-2026-10-10](../../adr/adr-authn-wiring-2026-10-10.md)）。`authn.login` 与 `authn.admin` 是本功能的消费方，本功能不依赖它们。
+- `Requires` 只写排他功能与 `db.Database`；`LoginMethod`、`SSOMetadataRefresher` 并立，由消费方 `ResolveAll`（[ADR-authn-wiring-2026-10-10](../../../adr/adr-authn-wiring-2026-10-10.md)）。`authn.login` 与 `authn.admin` 是本功能的消费方，本功能不依赖它们。
 - `authn.sso.saml` 与 `authn.sso.oidc` 依赖 `SSOProviders`，反向不成立；`authn.sso` 不 import 任何协议库。
-- 本模块不用 kv：断言标识去重与域所有权丢失会放宽校验，进 db；流程记录归登录引擎（[ADR-authn-state-placement-2026-10-10](../../adr/adr-authn-state-placement-2026-10-10.md)）。
-- 不 import `pkg/tenant`。回调处理器不依赖租户解析：校验后端在租户解析之前运行、看不到租户，是平台的既有约束，提供方标识放进回调路径绕开了它，所以 [ADR-tenant-ordering-2026-09-21](../../adr/adr-tenant-ordering-2026-09-21.md) 的失效条件不被触发。
+- 本模块不用 kv：断言标识去重与域所有权丢失会放宽校验，进 db；流程记录归登录引擎（[ADR-authn-state-placement-2026-10-10](../../../adr/adr-authn-state-placement-2026-10-10.md)）。
+- 不 import `pkg/tenant`。回调处理器不依赖租户解析：校验后端在租户解析之前运行、看不到租户，是平台的既有约束，提供方标识放进回调路径绕开了它，所以 [ADR-tenant-ordering-2026-09-21](../../../adr/adr-tenant-ordering-2026-09-21.md) 的失效条件不被触发。
 - 构造阶段（`New`）不读写自己的表；加密列探针、表存在性探测与清扫协程放在 `Start`。
 
 ## UML 图
@@ -322,7 +322,7 @@ CREATE INDEX authn_saml_assertions_expiry ON authn_saml_assertions (not_on_or_af
 
 - 表之间没有外键：跨表的一致由 `Delete` 的事务与应用层维护，迁移顺序因此不成为隐含契约。
 - `status` 的零值是停用：一行被构造而没有显式启用，读作停用。
-- `authn_idps` 不嵌入 `tenant.Model`：域名发现与回调路由没有租户上下文，租户插件对「没有租户上下文的受约束语句」直接拒绝；取舍理由见 [ADR-authn-sso-2026-10-10](../../adr/adr-authn-sso-2026-10-10.md)；该表的读写不依赖租户上下文。
+- `authn_idps` 不嵌入 `tenant.Model`：域名发现与回调路由没有租户上下文，租户插件对「没有租户上下文的受约束语句」直接拒绝；取舍理由见 [ADR-authn-sso-2026-10-10](../../../adr/adr-authn-sso-2026-10-10.md)；该表的读写不依赖租户上下文。
 - `client_secret` 与 `authn_idps` 的其他列同表，读取接口不选它；它是加密列，必须走模型路径写入，序列化器只对模型字段起作用。审计的语句级明细是否带列值未经核实，见「假设与守住它们的测试」。
 - `authn_idp_domains.tenant_id` 记录声明所属提供方的租户；邮箱「已验证」的判定按它取该租户的已验证域。
 
@@ -475,7 +475,7 @@ Google 与企业 OIDC 走同一条代码路径，差别只在配置来源：Goog
 
 ### 租户强制 SSO 的承接
 
-租户级强制 SSO 只在请求期由 `tenant.admission` 执行（[design-tenant-admission](design-tenant-admission.md)）：租户设置 `require-sso` 为真时，要求该租户内请求所用会话是经**这个租户**的某个提供方登录的。判据是会话上的提供方标识（`Identity.Provider()`），再经 `SSOProviders.Tenant` 核对其租户；不看 `Methods`，因为加强认证会把方式集换成新那次事件的方式集，而提供方标识不随之丢失。不满足则 `401 insufficient_user_authentication`，`acr_values` 取 `sso`。
+租户级强制 SSO 只在请求期由 `tenant.admission` 执行（[design-tenant-admission](../tenant/design-tenant-admission.md)）：租户设置 `require-sso` 为真时，要求该租户内请求所用会话是经**这个租户**的某个提供方登录的。判据是会话上的提供方标识（`Identity.Provider()`），再经 `SSOProviders.Tenant` 核对其租户；不看 `Methods`，因为加强认证会把方式集换成新那次事件的方式集，而提供方标识不随之丢失。不满足则 `401 insufficient_user_authentication`，`acr_values` 取 `sso`。
 
 账户全局，强制只作用于该租户内的请求，账户仍可用口令登录并访问别的租户。`authn_memberships.sso_exempt` 为真的成员可以不经 SSO，该开关的设置、审计与残余风险归 [design-authn-account](design-authn-account.md) 与 [design-authn-admin](design-authn-admin.md)。`authn.sso` 在 `Start` 里若 `core.Registry.Participating("tenant.admission")` 为假，写一行 `Warn`：租户级强制 SSO 无人执行。
 
@@ -532,7 +532,7 @@ SSO 不做单点登出：IdP 一侧的登出与停用都不终止 speed 的会�
 
 ### 非保证
 
-下列是不保证的事项，列表是封闭集，各项的代价与取舍见 [ADR-authn-sso-2026-10-10](../../adr/adr-authn-sso-2026-10-10.md)，威胁与对应的缓解见 [design-authn-threats](design-authn-threats.md)：
+下列是不保证的事项，列表是封闭集，各项的代价与取舍见 [ADR-authn-sso-2026-10-10](../../../adr/adr-authn-sso-2026-10-10.md)，威胁与对应的缓解见 [design-authn-threats](design-authn-threats.md)：
 
 - **IdP 一侧停用不立即生效。** 员工在 IdP 被停用后，其会话要到空闲或绝对期限才失效；`sso-absolute-timeout` 给出上限，只是缓解，不是消除。
 - **IdP 发起登录无法防登录 CSRF。** 开启后攻击者可把自己的断言投给受害者的浏览器；缓解只有断言新鲜度、标识唯一、受众与接收者精确、已签名。

@@ -8,7 +8,7 @@
 
 认证模块产生的事实（账户、会话、令牌、因素、冒充、IdP 登记的变化）经事件、审计、日志与指标被观察。每条通路有各自的承载能力与不能越过的限制，契约要在它们之上同时成立。
 
-**事件总线。** 订阅表在模块 `Init` 之后冻结，没有退订，冻结后的 `Subscribe` 被拒绝；经传输投递的实现每个事件类型占一条流与一条读取连接。总线不承诺投递次数，后端可能重投，同一个事件按 `Event.ID` 去重（[ADR-event-delivery-2026-09-28](adr-event-delivery-2026-09-28.md)、[design-event](../design/modules/design-event.md)）。事件类型因此必须在 `Init` 前静态已知，数量随功能增长、不随租户与 IdP 增长。可观测性把配置点名的事件类型转成短跨度，载荷的顶层字段原样成为跨度属性；审计把它写进明细，而审计的脱敏键名是闭集，逐字比较，嵌套值里的键不比对（[ADR-observability-events-2026-09-22](adr-observability-events-2026-09-22.md)、[ADR-audit-redaction-2026-09-21](adr-audit-redaction-2026-09-21.md)）。载荷里的任何一个顶层字段因此会同时出现在跨度与审计表里，挡在载荷之外是发布方的义务。
+**事件总线。** 订阅表在模块 `Init` 之后冻结，没有退订，冻结后的 `Subscribe` 被拒绝；经传输投递的实现每个事件类型占一条流与一条读取连接。总线不承诺投递次数，后端可能重投，同一个事件按 `Event.ID` 去重（[ADR-event-delivery-2026-09-28](adr-event-delivery-2026-09-28.md)、[design-event](../design/modules/event/design-event.md)）。事件类型因此必须在 `Init` 前静态已知，数量随功能增长、不随租户与 IdP 增长。可观测性把配置点名的事件类型转成短跨度，载荷的顶层字段原样成为跨度属性；审计把它写进明细，而审计的脱敏键名是闭集，逐字比较，嵌套值里的键不比对（[ADR-observability-events-2026-09-22](adr-observability-events-2026-09-22.md)、[ADR-audit-redaction-2026-09-21](adr-audit-redaction-2026-09-21.md)）。载荷里的任何一个顶层字段因此会同时出现在跨度与审计表里，挡在载荷之外是发布方的义务。
 
 **事件与写入的先后。** 账户状态、账户删除、成员关系的变化被授权与别的模块订阅，用来清除角色绑定、会话与缓存；丢失一条意味着残留一条指向已失效账户的绑定。总线的发布独立于事务，发布失败不回滚写入；发件箱在写入的事务里暂存、提交之后由中继发布，承诺至少一次，要求宿主装配中继与总线（[ADR-outbox-scope-2026-09-29](adr-outbox-scope-2026-09-29.md)）。
 
@@ -16,7 +16,7 @@
 
 **日志与指标。** 日志里的身份值是账户标识，而 `subject` 在账户体系里指外部身份绑定的主体（外部标识的第二段），同名字段会让读日志的人把两类标识读混；冒充时实际操作者与生效账户并存，一个字段也无法同时表达两者。配置的 `Sensitive` 只约束配置模块自己的输出面（错误文本、帮助默认值、必须带说明），不向日志模块登记脱敏规则，所以标为 `Sensitive` 的值不会因此被日志遮蔽。指标经 `observability.MeterProvider` 报出，属性的基数由上报方负责；路由与租户已因基数不可控被入口指标否决（[ADR-observability-instruments-2026-09-22](adr-observability-instruments-2026-09-22.md)）。网关的收口计数器 `authn.gate.conclusions` 的名字与取值已被看板引用。
 
-完整的事件类型表、审计动作表、日志字段表、仪器表与各自的取值集在 [design-authn-events](../design/modules/design-authn-events.md)；本记录只裁定这些表遵守的契约。
+完整的事件类型表、审计动作表、日志字段表、仪器表与各自的取值集在 [design-authn-events](../design/modules/authn/design-authn-events.md)；本记录只裁定这些表遵守的契约。
 
 ## 考虑过的选项
 
@@ -88,7 +88,7 @@
 
 ## 决策
 
-采纳：事件、审计、日志与指标按下列契约发出；各自的表与取值集由 [design-authn-events](../design/modules/design-authn-events.md) 承载。
+采纳：事件、审计、日志与指标按下列契约发出；各自的表与取值集由 [design-authn-events](../design/modules/authn/design-authn-events.md) 承载。
 
 **事件是提示，不是权威。** 账户状态、成员关系、会话与撤销的权威在 db；订阅方只能用事件清本地缓存与触发清理，不得把它当唯一依据，也不依赖次序与次数，按 `Event.ID` 去重。
 

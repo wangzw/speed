@@ -93,7 +93,7 @@ SP 的私钥与证书成为按租户的数据，附带生成与轮换流程。
 
 `SSOProviders` 增加一个写入断言标识的方法，或把它拆成一个独立的根包接口、在 `authn.sso` 与 `authn.sso.saml` 之间传递。
 
-**否决**：`SSOProviders` 的方法集是对宿主与协议模块的稳定承诺（[authn-sso](../design/modules/design-authn-sso.md)）；把一条只为 SAML 服务、只为内部去重而存在的写入塞进它，会让每个自写实现的提供方登记都被迫交付一个与登记职责无关的方法。另立一个根包接口则要在根包里新增一个只被一个协议模块用到的能力。做法是：写入由持有表的 `authn.sso` 交付一个 `RememberAssertion`，`authn.sso.saml` 在构造期把它取到的 `SSOProviders` 值断言到这个扩展形状上，断不上即构造失败（fail-closed）；公开方法集不变，这个扩展是登记方必须额外满足的形状。
+**否决**：`SSOProviders` 的方法集是对宿主与协议模块的稳定承诺（[authn-sso](../design/modules/authn/design-authn-sso.md)）；把一条只为 SAML 服务、只为内部去重而存在的写入塞进它，会让每个自写实现的提供方登记都被迫交付一个与登记职责无关的方法。另立一个根包接口则要在根包里新增一个只被一个协议模块用到的能力。做法是：写入由持有表的 `authn.sso` 交付一个 `RememberAssertion`，`authn.sso.saml` 在构造期把它取到的 `SSOProviders` 值断言到这个扩展形状上，断不上即构造失败（fail-closed）；公开方法集不变，这个扩展是登记方必须额外满足的形状。
 
 ### authn 在后台自动刷新 IdP 元数据与周期性复验域
 
@@ -152,7 +152,7 @@ IdP 断言里的组或角色声明，按租户管理员配置的对照表转成�
 
 ## 决策
 
-采纳：企业 IdP 是 authn 自己表里的数据；SAML 用 gosaml2 与 goxmldsig，在库之上补充校验；企业 OIDC 与社交 OIDC 共用 go-oidc 加 x/oauth2 的校验桥；邮箱域发现要求域所有权证明；由外部输入决定目的地的出站请求走受限客户端；开户方式无缺省值，角色与组不映射。各项的条目、表与接口见 [authn-sso](../design/modules/design-authn-sso.md)，本节只写判据。
+采纳：企业 IdP 是 authn 自己表里的数据；SAML 用 gosaml2 与 goxmldsig，在库之上补充校验；企业 OIDC 与社交 OIDC 共用 go-oidc 加 x/oauth2 的校验桥；邮箱域发现要求域所有权证明；由外部输入决定目的地的出站请求走受限客户端；开户方式无缺省值，角色与组不映射。各项的条目、表与接口见 [authn-sso](../design/modules/authn/design-authn-sso.md)，本节只写判据。
 
 ### IdP 是表里的数据
 
@@ -160,7 +160,7 @@ IdP 断言里的组或角色声明，按租户管理员配置的对照表转成�
 
 - 提供方标识是不透明的 UUID，出现在回调路径与 SP 元数据地址里。租户由提供方行得出，不由请求面得出，校验后端因此不需要看到租户，[ADR-tenant-ordering-2026-09-21](adr-tenant-ordering-2026-09-21.md) 的失效条件不被触发。
 - OIDC 的 `client_secret` 存在 `authn_idps` 的加密列里，读取接口与日志里不出现它，应答只带「是否已设置」。IdP 的签名证书是公钥，不加密。SAML 的 SP 私钥与证书是整个部署共用的一组文件，不属于 IdP 行。秘密的存放规则见 [ADR-authn-settings-and-secrets-2026-10-10](adr-authn-settings-and-secrets-2026-10-10.md)。
-- 提供方行带 `version`，变更使各副本缓存的 `Provider` 与 `ServiceProvider` 失效。提供方行的读写接口、表结构与 `config` 的校验规则见 [authn-sso](../design/modules/design-authn-sso.md)。
+- 提供方行带 `version`，变更使各副本缓存的 `Provider` 与 `ServiceProvider` 失效。提供方行的读写接口、表结构与 `config` 的校验规则见 [authn-sso](../design/modules/authn/design-authn-sso.md)。
 
 ### 协议与库
 
@@ -170,7 +170,7 @@ IdP 断言里的组或角色声明，按租户管理员配置的对照表转成�
 
 ### SAML 的补充校验
 
-判据：**库不检查、对空值默认放行、或只置位不报错的项，由 authn 在库调用的前后补上；补充校验的任一失败都拒绝，对外统一为 `login-failed`，成因只进日志与指标。** 背景一节列出的缺口是例举，不是封闭集；补充校验的条目、判定顺序与错误映射见 [authn-sso](../design/modules/design-authn-sso.md)。
+判据：**库不检查、对空值默认放行、或只置位不报错的项，由 authn 在库调用的前后补上；补充校验的任一失败都拒绝，对外统一为 `login-failed`，成因只进日志与指标。** 背景一节列出的缺口是例举，不是封闭集；补充校验的条目、判定顺序与错误映射见 [authn-sso](../design/modules/authn/design-authn-sso.md)。
 
 - 被验签的元素与被使用的元素必须是同一个：验签与取用基于一次解析，使用验过签返回的元素。
 - 时间条件严格判、不设容差，部署要求各副本与 IdP 时间同步。
@@ -198,7 +198,7 @@ IdP 断言里的组或角色声明，按租户管理员配置的对照表转成�
 ### 不做的事与会话上界
 
 - 不做 SLO，不做每租户的 SP 密钥。IdP 发起登录缺省关闭，开启是提供方行上的显式选择，管理应答与启动诊断以警告呈现。
-- IdP 侧的停用与登出没有回传通道，speed 的会话不会因此终止。上界由会话自己的期限给出：由企业 SSO 建立的会话，不论种类，其绝对期限受 SSO 专用的绝对期限限制，规则与计算见 [ADR-authn-session-2026-10-10](adr-authn-session-2026-10-10.md)，缺省值见 [design-authn-config](../design/modules/design-authn-config.md)。
+- IdP 侧的停用与登出没有回传通道，speed 的会话不会因此终止。上界由会话自己的期限给出：由企业 SSO 建立的会话，不论种类，其绝对期限受 SSO 专用的绝对期限限制，规则与计算见 [ADR-authn-session-2026-10-10](adr-authn-session-2026-10-10.md)，缺省值见 [design-authn-config](../design/modules/authn/design-authn-config.md)。
 
 ## 后果
 

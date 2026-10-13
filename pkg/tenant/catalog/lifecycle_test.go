@@ -420,7 +420,7 @@ func TestAPeriodAboveZeroRereadsTheTable(t *testing.T) {
 }
 
 // TestStopEndsTheRefresher holds the refresher's end. The design fixes it, in
-// docs/design/modules/design-tenant.md: the refresh goroutine is cancelled at
+// docs/design/modules/tenant/design-tenant.md: the refresh goroutine is cancelled at
 // Stop. The observable that follows is that the table is not reread afterwards —
 // a tenant written once the roster has been stopped never becomes resolvable.
 //

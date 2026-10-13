@@ -2,7 +2,7 @@
 
 ## 职责
 
-本文承载 `pkg/authn` 整个功能目录的失败语义：哪些失败有名字、请求期依赖不可用时每条路径往哪个方向走、哪些放宽被写明并带着上界、时间如何使用，以及认证检不出而只能写成前提的部署条件。本文不对应一个包，也不注册模块；它描述的是贯穿各 `authn.*` 模块与 `tenant.admission` 的一个方面。取舍与否决的写法见 [ADR-authn-failure-2026-10-10](../../adr/adr-authn-failure-2026-10-10.md)，状态放置的判据见 [ADR-authn-state-placement-2026-10-10](../../adr/adr-authn-state-placement-2026-10-10.md)。
+本文承载 `pkg/authn` 整个功能目录的失败语义：哪些失败有名字、请求期依赖不可用时每条路径往哪个方向走、哪些放宽被写明并带着上界、时间如何使用，以及认证检不出而只能写成前提的部署条件。本文不对应一个包，也不注册模块；它描述的是贯穿各 `authn.*` 模块与 `tenant.admission` 的一个方面。取舍与否决的写法见 [ADR-authn-failure-2026-10-10](../../../adr/adr-authn-failure-2026-10-10.md)，状态放置的判据见 [ADR-authn-state-placement-2026-10-10](../../../adr/adr-authn-state-placement-2026-10-10.md)。
 
 本文承载下列事项（封闭集合，不在其内的事项归非职责一节点名的文档）：
 
@@ -18,9 +18,9 @@
 - **不承载配置键与设置键。** 键名、缺省值与取值域只在 [design-authn-config](design-authn-config.md) 给全；本文提到某个键，写的是它在失败语义里的角色。
 - **不承载各模块的流程与状态机。** 登录引擎、会话校验次序、令牌校验次序各在自己的文档里；本文只汇总它们的哨兵与失败方向，各模块文档里的失败表是本文对应行的细化，不与之相悖。网关的请求期判定顺序、收口表与出口检查在 [design-authn-gate](design-authn-gate.md)。
 - **不承载事件、审计、日志与指标的取值。** 审计的档位、事件名、指标名与属性取值在 [design-authn-events](design-authn-events.md)；本文只写失败时它们的方向。
-- **不承载入口模块的错误形状。** `Problem` 的字段与 `Fail` 的行为在 [design-http](design-http.md) 与 [ADR-http-errors-2026-10-10](../../adr/adr-http-errors-2026-10-10.md)；本文写 authn 取用它时填什么。
+- **不承载入口模块的错误形状。** `Problem` 的字段与 `Fail` 的行为在 [design-http](../http/design-http.md) 与 [ADR-http-errors-2026-10-10](../../../adr/adr-http-errors-2026-10-10.md)；本文写 authn 取用它时填什么。
 - **不承载威胁与残余风险。** 失败被诱发的攻击面与对策在 [design-authn-threats](design-authn-threats.md)。
-- **不规定相邻模块的失败方向。** 限流在计数后端不可达时放行、审计的请求级写失败放行，各在 [design-ratelimit](design-ratelimit.md) 与 [design-audit](design-audit.md)；本文写的是 authn 自己的路径，以及 authn 调用它们时的方向。
+- **不规定相邻模块的失败方向。** 限流在计数后端不可达时放行、审计的请求级写失败放行，各在 [design-ratelimit](../design-ratelimit.md) 与 [design-audit](../design-audit.md)；本文写的是 authn 自己的路径，以及 authn 调用它们时的方向。
 - **不检测时钟偏差，也不检查本机时钟。** 偏差由部署前提处理，不在运行期被检查，也不被读作保证。
 - **不为外部库的错误命名。** 经 authn 返回的库错误原样外传，不在哨兵表内。
 
@@ -41,7 +41,7 @@
 
 - 调用方用 `errors.Is` 判别，包裹一律用 `%w`，使错误链保持完整。
 - `ErrThrottled` 经 `*ThrottledError` 携带 `RetryAfter`，调用方用 `errors.As` 取得它；`ThrottledError` 的 `Is(ErrThrottled)` 为真。
-- 取不到配置读取面时，`core` 的 `ErrMissingProvider` 原样外传，不另立哨兵：补救动作是宿主在驱动开始之前预置读取面（见 [design-core](design-core.md)）。
+- 取不到配置读取面时，`core` 的 `ErrMissingProvider` 原样外传，不另立哨兵：补救动作是宿主在驱动开始之前预置读取面（见 [design-core](../design-core.md)）。
 - 启动诊断每行以 `authn: ` 起头；错误点名缺的那一项，不带秘密，不带口令哈希的任何部分。
 
 ### 对调用方的承诺
@@ -56,7 +56,7 @@
 | 请求期默认拒绝 | 每条请求期依赖外部依赖的路径 | 依赖答不出来时该路径答 503，不答 200，也不答 401 |
 | 放宽只有封闭清单 | 请求期的全部路径 | 放宽只出现在放宽清单所列各项，每项带控制项与上界；新增依赖或路径时，不在清单里的按拒绝 |
 | 对外不区分成因 | 每个对外的 503 应答 | 应答体不携带是哪个依赖不可用；成因只进日志与指标 |
-| 没答与答了拒绝不混 | 网关对校验后端的收口 | 零值判决收口 401、单独计 `unspoken`、记 Error；凭据存在而后端答不了是 503，不是匿名，可选认证的路由上也一样（理由见 [ADR-authn-verdict-2026-10-10](../../adr/adr-authn-verdict-2026-10-10.md)） |
+| 没答与答了拒绝不混 | 网关对校验后端的收口 | 零值判决收口 401、单独计 `unspoken`、记 Error；凭据存在而后端答不了是 503，不是匿名，可选认证的路由上也一样（理由见 [ADR-authn-verdict-2026-10-10](../../../adr/adr-authn-verdict-2026-10-10.md)） |
 | 补充校验不由库覆盖 | 本功能目录在库的校验之外另加的每一项检查 | 库返回成功而补充校验不通过，结果是失败，并记一条 Error |
 | 403 的位置 | 全部 authn 与准入层的拒绝 | 403 只带 `impersonation-restricted`、`forbidden`、`method-disabled`、`account-unavailable` 四个码，且只在 authn 自己的处理器里；`ErrImpersonationRestricted` 与 `ErrImpersonationNeedsSession` 同带 `impersonation-restricted`；网关与 `tenant.admission` 不写 403 |
 | 撤销不依赖时钟 | 会话、刷新令牌与访问令牌的撤销 | 撤销以会话行的 `revoked_at` 为准、不比较时间；时钟偏差不会让撤销失效 |
@@ -75,20 +75,20 @@
 
 ## 依赖
 
-本文不对应代码包，没有自己的 import。失败语义所依赖的相邻模块的约定如下；方向都是 authn 指向下层，不引入新的依赖方向，符合架构不变量（见 [architecture](../architecture.md)）。
+本文不对应代码包，没有自己的 import。失败语义所依赖的相邻模块的约定如下；方向都是 authn 指向下层，不引入新的依赖方向，符合架构不变量（见 [architecture](../../architecture.md)）。
 
 下表列出失败语义用到相邻模块之处（封闭集合）：
 
 | 依赖 | 失败语义用到的约定 | 见 |
 |---|---|---|
-| `core` | `ErrMissingProvider` 原样外传；`Stop` 与 `Close` 收到的上下文去掉了取消；未被推进到的阶段其回调不执行 | [design-core](design-core.md) |
-| `http`（入口模块） | `Problem` 与 `Fail` 的形状；兜底层的 500 与已设 `Set-Cookie` 的带出 | [design-http](design-http.md) |
-| `db` | `gorm.ErrDuplicatedKey` 在两个引擎上同判；加密列的根密钥；迁移集的静态级纳入 | [design-db](design-db.md) |
-| `kv` | 流程记录的存放；Memcached 与 NATS 实现把写入副本的时钟写在值前面；`kv.memory` 只用于单副本 | [design-kv](design-kv.md) |
-| `settings` | 请求期读内存快照，不会失败；变更经事件与周期刷新传播 | [design-settings](design-settings.md) |
-| `event`、`outbox` | 事件发布失败不阻塞业务；发件箱的 `Stage` 失败令该动作失败 | [design-event](design-event.md)、[design-outbox](design-outbox.md) |
-| `audit` | 强制档与尽力档两档的写失败方向 | [design-audit](design-audit.md) |
-| `log`、`observability` | 缺席时脱敏规则与计数的去向；失败信号经日志与指标报出 | [design-log](design-log.md)、[design-observability](design-observability.md) |
+| `core` | `ErrMissingProvider` 原样外传；`Stop` 与 `Close` 收到的上下文去掉了取消；未被推进到的阶段其回调不执行 | [design-core](../design-core.md) |
+| `http`（入口模块） | `Problem` 与 `Fail` 的形状；兜底层的 500 与已设 `Set-Cookie` 的带出 | [design-http](../http/design-http.md) |
+| `db` | `gorm.ErrDuplicatedKey` 在两个引擎上同判；加密列的根密钥；迁移集的静态级纳入 | [design-db](../design-db.md) |
+| `kv` | 流程记录的存放；Memcached 与 NATS 实现把写入副本的时钟写在值前面；`kv.memory` 只用于单副本 | [design-kv](../design-kv.md) |
+| `settings` | 请求期读内存快照，不会失败；变更经事件与周期刷新传播 | [design-settings](../design-settings.md) |
+| `event`、`outbox` | 事件发布失败不阻塞业务；发件箱的 `Stage` 失败令该动作失败 | [design-event](../event/design-event.md)、[design-outbox](../event/design-event-outbox.md) |
+| `audit` | 强制档与尽力档两档的写失败方向 | [design-audit](../design-audit.md) |
+| `log`、`observability` | 缺席时脱敏规则与计数的去向；失败信号经日志与指标报出 | [design-log](../design-log.md)、[design-observability](../design-observability.md) |
 
 ## UML 图
 
@@ -155,7 +155,7 @@ type ThrottledError struct{ RetryAfter time.Duration }
 | 会话的校验缓存 | `authn.session.check-ttl` | 缓存命中按缓存放行；上界是该控制项的取值上限，取最小值时每个请求都读库。撤销、停用与 `valid_after` 在其他副本上最多晚该控制项的当前值生效；缓存命中而 db 不可用，与命中而 db 可用，滞后是同一个上界 | 缓存未命中且 db 不可用时 503 |
 | 成员关系的校验缓存 | `tenant.admission.check-ttl` | 与会话的校验缓存各用一份，数值各自可调；上界同样是该控制项的取值上限 | 同上 |
 | `check-session` 的显式放宽 | `authn.token.check-session`：设为假即放宽，只取主配置源 | 访问令牌校验不核对会话是否有效，撤销最晚到令牌到期才生效；设为假时启动诊断里单独一行 Warn | 只放宽会话有效性这一项：账户状态、`valid_after` 与冒充记录的核对照常执行；冒充令牌不受影响 |
-| 设置变更的传播 | 设置模块的刷新间隔（见 [design-settings](design-settings.md)） | 变更在各副本上的生效最晚到刷新间隔，含租户刚开启强制 MFA 与 SSO 刚开启时 | 凡安全上需要立刻生效的变更不走设置，走 db 的撤销面 |
+| 设置变更的传播 | 设置模块的刷新间隔（见 [design-settings](../design-settings.md)） | 变更在各副本上的生效最晚到刷新间隔，含租户刚开启强制 MFA 与 SSO 刚开启时 | 凡安全上需要立刻生效的变更不走设置，走 db 的撤销面 |
 | IdP 元数据的证书陈旧 | 管理员触发的刷新 | 元数据不自动刷新；刷新失败保留上一份有效配置并记 Warn，被 IdP 撤销的旧证书继续被接受，直到管理员更新成功。上界由管理员的动作而不是时间给出，没有自动到期 | 其余 IdP 与其余检查不受影响 |
 
 **不越过权威状态的缺口另列，各自声明方向，不算放宽。** 下列是缺口的全部情形（封闭集合）：事件发布失败、尽力档动作的审计写失败、kv 上按来源地址的前置减负层不可用。它们在下文的方向表里逐行写出。
@@ -221,7 +221,7 @@ type ThrottledError struct{ RetryAfter time.Duration }
 | `ErrDrainTimeout` | `Close` 等满 `call-budget` 仍有调用停在后端里 | 查那个不在预算内返回的后端；这些调用照常跑完，`Close` 放弃的只是等待 |
 | `static.ErrMalformedHash` | 口令哈希读不了（`internal/password` 与 `static` 共用） | 启动期点名主体、不带哈希的任何部分；运行期按 `ErrInvalidCredentials` 处理（对外 `login-failed`）并记 Error |
 
-**阶段与跳过。** 启动期判定随它所在的阶段一起执行；未被推进到的阶段其回调不执行，深度浅于该阶段的驱动不触发对应的哨兵（见 [design-core](design-core.md)）。
+**阶段与跳过。** 启动期判定随它所在的阶段一起执行；未被推进到的阶段其回调不执行，深度浅于该阶段的驱动不触发对应的哨兵（见 [design-core](../design-core.md)）。
 
 ### 运行期哨兵
 
@@ -287,20 +287,20 @@ type ThrottledError struct{ RetryAfter time.Duration }
 
 ### 没答与答了拒绝
 
-- **零值判决是没答。** 校验后端交回零值判决，网关收口 401，记在后端名下，单独计入 `unspoken`，记 Error，使拒绝那一桶不被缺陷污染（[ADR-authn-verdict-2026-10-10](../../adr/adr-authn-verdict-2026-10-10.md)）。
-- **凭据存在而后端答不了是 503，不是匿名。** 校验后端的 `Unavailable`、超出调用预算、panic 与网关的在飞闸门已满都收口 503；可选认证的路由上也一样，理由见 [ADR-authn-verdict-2026-10-10](../../adr/adr-authn-verdict-2026-10-10.md)。
+- **零值判决是没答。** 校验后端交回零值判决，网关收口 401，记在后端名下，单独计入 `unspoken`，记 Error，使拒绝那一桶不被缺陷污染（[ADR-authn-verdict-2026-10-10](../../../adr/adr-authn-verdict-2026-10-10.md)）。
+- **凭据存在而后端答不了是 503，不是匿名。** 校验后端的 `Unavailable`、超出调用预算、panic 与网关的在飞闸门已满都收口 503；可选认证的路由上也一样，理由见 [ADR-authn-verdict-2026-10-10](../../../adr/adr-authn-verdict-2026-10-10.md)。
 - **库返回成功而补充校验失败，结果是失败**，见「补充校验的优先级」。
 
 ### 会话与 kv 的解耦
 
 - 会话与撤销在 db，所以 kv 不可用时已登录的用户照常使用，只是不能开始或继续登录流程与 WebAuthn 仪式。
 - db 不可用时，缓存未命中的 cookie 与令牌认证、登录、刷新、撤销、因素校验、管理面与冒充都答 503；不依赖 db 的口令表（`authn.static` 的 Basic）不受影响。
-- kv 只存流程记录，丢键的后果是流程失败，不是放宽；判据见 [ADR-authn-state-placement-2026-10-10](../../adr/adr-authn-state-placement-2026-10-10.md)。
+- kv 只存流程记录，丢键的后果是流程失败，不是放宽；判据见 [ADR-authn-state-placement-2026-10-10](../../../adr/adr-authn-state-placement-2026-10-10.md)。
 
 ### 其他失败语义
 
 - **panic。** 登录引擎对每个方法与因素的调用 `recover`，把 panic 当作该方法的故障（503），记 Error 与调用栈。网关沿用 `recover`：网关自己的 panic 收口 500、不进收口计数的桶；后端的 panic 在调用点被接住，收口 503，记在该后端名下并带调用栈。管理面与自助处理器的 panic 落到入口模块的兜底层（500）；兜底层会带出已设的 `Set-Cookie`，所以处理器把 cookie 写在最后。
-- **上下文。** 每个对外调用（db、kv、IdP、短信）都带请求上下文并受预算约束；后台协程自带时限；`Stop` 与 `Close` 的上下文去掉了取消（见 [design-core](design-core.md)）。
+- **上下文。** 每个对外调用（db、kv、IdP、短信）都带请求上下文并受预算约束；后台协程自带时限；`Stop` 与 `Close` 的上下文去掉了取消（见 [design-core](../design-core.md)）。
 - **幂等。** 下列操作幂等（例举，不是封闭集；各模块文档写各自的幂等项）：`Revoke`、`DELETE flows/current`、`POST token/revoke`、`AccountLifecycle` 各方法与在 `ErrCleanupIncomplete` 之后重试同一调用。登录完成靠流程记录的比较并交换保证只成功一次；管理面写入靠唯一约束与条件更新保证幂等与互斥。
 - **启动顺序。** `New` 里不读写自己的表，因为首次启动时表还没建，`Migrate` 在 `New` 之后；需要读表的初始化（自检、清扫协程）放 `Start`。
 - **不盲目重试。** 网关不重试后端调用；`sms.ErrUncertain` 不得盲目重发。
@@ -313,14 +313,14 @@ type ThrottledError struct{ RetryAfter time.Duration }
 |---|---|
 | 各副本使用 NTP 或等价同步，偏差远小于使用的最短期限 | 令牌零星 401；SAML 零星拒掉合法断言；会话、刷新令牌与验证码的期限在副本之间偏移；Memcached 与 NATS 的 kv 下，流程记录在不同副本上提前或延后过期 |
 | 施加迁移的命令静态级纳入全部带表的 authn 模块（`IncludeAllDeclarations`），`db` 配了根密钥 | 带表模块 `Start` 探测不到表，以 `ErrNotMigrated` 终止；根密钥缺失时以 `ErrNoEncryptionKey` 终止 |
-| kv 只存流程记录；`kv.memory` 只用于单副本 | 丢键使进行中的登录流程失败；`kv.memory` 在 `replicas>1` 时启动失败（见 [design-kv](design-kv.md)） |
+| kv 只存流程记录；`kv.memory` 只用于单副本 | 丢键使进行中的登录流程失败；`kv.memory` 在 `replicas>1` 时启动失败（见 [design-kv](../design-kv.md)） |
 | `public-url` 与实际对外地址一致，用 https | `__Host-` cookie、WebAuthn 的 RP、SAML 的 ACS 与 OIDC 的回调这些依赖它的流程失败 |
 | 需要运行期调参或租户层策略的宿主纳入 `settings`（带 `db` 与 `event`） | 全部设置键取声明的默认值，调参与租户层策略不生效 |
 | 入口模块没有可信代理的输入项，`c.ClientIP()` 在代理之后恒为代理地址，所以按来源地址的限流需宿主显式开启、会话列表里的地址仅供展示 | 开启按来源地址的限流会使代理之后的全站共用一个桶 |
 
 ### 本机制不作的保证
 
-下列性质声明不保证，每项写出上界或前提；它们不是缺陷，也不为它们改动别的模块（[ADR-authn-guarantees-2026-10-10](../../adr/adr-authn-guarantees-2026-10-10.md)）。
+下列性质声明不保证，每项写出上界或前提；它们不是缺陷，也不为它们改动别的模块（[ADR-authn-guarantees-2026-10-10](../../../adr/adr-authn-guarantees-2026-10-10.md)）。
 
 - **放宽清单内的各项是写明的放宽。** 校验缓存有效期内、`check-session` 设为假后、设置传播窗口内、管理员更新证书之前，被撤销或被收紧的状态仍有请求通过。
 - **对外不区分成因，排障靠日志与指标。** 日志与指标因此要能按成因检索。
@@ -333,7 +333,7 @@ type ThrottledError struct{ RetryAfter time.Duration }
 
 ### 依赖未核实行为的断言
 
-下列断言依赖的行为没有核实，写成假设，各配一条守住它的测试；测试不通过时对应条目的设计需要重议（取舍见 [ADR-authn-failure-2026-10-10](../../adr/adr-authn-failure-2026-10-10.md) 的失效条件）。
+下列断言依赖的行为没有核实，写成假设，各配一条守住它的测试；测试不通过时对应条目的设计需要重议（取舍见 [ADR-authn-failure-2026-10-10](../../../adr/adr-authn-failure-2026-10-10.md) 的失效条件）。
 
 | 假设 | 守住它的测试 |
 |---|---|

@@ -82,17 +82,17 @@
   - `LoginMethod` 是非排他接缝，经 `core.ResolveAll` 取用。方法只交出「这个人证明了什么」的事实，不判定保障等级；保障等级只在 `authn.mfa` 一处合成（[ADR-authn-mfa-2026-10-10](adr-authn-mfa-2026-10-10.md)）。引擎据事实解析账户，不信任方法对账户存在与否的任何断言。
   - 账户解析、开户与关联、MFA 判定、建会话与发令牌由引擎做。方法不碰 HTTP、gin、会话、令牌，也不读写流程记录，所以能脱离 HTTP 与存储单测。
   - **目的的服务面按方法交出的来源字段定。** 目的是封闭集，方法只服务它能产出证明的其中一部分：产出 `External` 的社交与企业方法服务 `login`、`link` 与 `step-up`（外部绑定经 `link` 建立与解绑），口令与短信方法服务 `login` 与 `step-up`；`enroll` 是登记第二因素，由 `MFA.Enroll` 承担，不经任何第一因素方法（[ADR-authn-mfa-2026-10-10](adr-authn-mfa-2026-10-10.md)）。空目的在读到参数之前被拒。
-  - `Proof` 的字段、方法回答的种类、方法的准入条件与故障收口见 [authn-login](../design/modules/design-authn-login.md)，第三方方法同受约束。
+  - `Proof` 的字段、方法回答的种类、方法的准入条件与故障收口见 [authn-login](../design/modules/authn/design-authn-login.md)，第三方方法同受约束。
 - **流程记录与比较并交换。**
   - 流程记录存 kv，键由流程令牌的哈希导出，有有效期上限。引擎对每次状态迁移做 `CompareAndSwap(旧, 新)`；交换落空说明被并发改动，当前请求按流程失效拒绝，不重试。
   - 回跳类的一步，引擎在调用方法之前先把记录交换成「处理中」：并发的第二次回跳败于这一步，授权码至多换一次，SAML 断言至多处理一次。停在「处理中」的记录，即进程崩溃而方法没有返回的情形，一律按失效处理，用户重新开始。
-  - 被拒绝的一步是否保留流程，按该步是否消耗了一次性凭据区分：submit 类被拒保留流程并设答复次数上限，callback 类被拒作废流程。次数上限与迁移表见 [authn-login](../design/modules/design-authn-login.md)。
+  - 被拒绝的一步是否保留流程，按该步是否消耗了一次性凭据区分：submit 类被拒保留流程并设答复次数上限，callback 类被拒作废流程。次数上限与迁移表见 [authn-login](../design/modules/authn/design-authn-login.md)。
   - kv 不可用时开始与继续流程都答 503；已建立的登录会话在 db，不受影响。
-- **绑定。** 每条流程绑定发起它的浏览器或客户端：流程令牌是随机数，库里只存哈希，回跳与每次答复都比对绑定。载体由开始请求指定，缺省为 cookie，且 cookie 载体不把绑定秘密放进响应体。cookie 的属性、取值理由与请求头载体见 [authn-login](../design/modules/design-authn-login.md)。
-- **按目的的终态动作。** 目的是封闭集：`login`、`link`、`step-up`、`enroll`。`login` 建登录会话或发令牌对；其余三种是在已登录身份上的操作，完成发生在 `Open` 的路由上、网关没有读会话，所以引擎先复核记录里的发起会话仍有效且账户一致，复核通过后才执行各自的动作。完成动作的逐项次序与事件见 [authn-login](../design/modules/design-authn-login.md)。
+- **绑定。** 每条流程绑定发起它的浏览器或客户端：流程令牌是随机数，库里只存哈希，回跳与每次答复都比对绑定。载体由开始请求指定，缺省为 cookie，且 cookie 载体不把绑定秘密放进响应体。cookie 的属性、取值理由与请求头载体见 [authn-login](../design/modules/authn/design-authn-login.md)。
+- **按目的的终态动作。** 目的是封闭集：`login`、`link`、`step-up`、`enroll`。`login` 建登录会话或发令牌对；其余三种是在已登录身份上的操作，完成发生在 `Open` 的路由上、网关没有读会话，所以引擎先复核记录里的发起会话仍有效且账户一致，复核通过后才执行各自的动作。完成动作的逐项次序与事件见 [authn-login](../design/modules/authn/design-authn-login.md)。
 - **IdP 发起的 SAML。** 提供方行允许时，没有流程 cookie 的回跳由引擎当场新建一条登录流程并直接置「处理中」，其余同回跳。方法不创建流程记录。
-- **统一的 `flows` 路由。** 全部目的与方式共用一组 `flows` 路由，加上回跳路由与方式列表；新增方式不新增路由。路由、请求、响应与错误码的全集见 [authn-login](../design/modules/design-authn-login.md)。
-- **authn 自己处理器的 401 不带 `Basic`。** 这些处理器答的 401 只带 `Bearer` 与 `Cookie` 挑战；网关自产的 401 沿用网关为该端建成的挑战（[authn-gate](../design/modules/design-authn-gate.md)）。
+- **统一的 `flows` 路由。** 全部目的与方式共用一组 `flows` 路由，加上回跳路由与方式列表；新增方式不新增路由。路由、请求、响应与错误码的全集见 [authn-login](../design/modules/authn/design-authn-login.md)。
+- **authn 自己处理器的 401 不带 `Basic`。** 这些处理器答的 401 只带 `Bearer` 与 `Cookie` 挑战；网关自产的 401 沿用网关为该端建成的挑战（[authn-gate](../design/modules/authn/design-authn-gate.md)）。
 - **认证前限流自备。** 开始流程与登录前各步的失败退避、枚举防护走 [ADR-authn-throttling-2026-10-10](adr-authn-throttling-2026-10-10.md) 的契约，不经 `pkg/ratelimit`。
 
 ```mermaid

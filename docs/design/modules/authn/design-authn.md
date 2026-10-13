@@ -2,7 +2,7 @@
 
 ## 职责
 
-`pkg/authn` 交付身份系统：认定每个请求的调用方是谁，并提供使这个认定成立的登录、会话、令牌、多因素、企业 SSO、冒充与账户存储。授权另立（[authz](design-authz.md)），本功能目录只为它留接缝（[ADR-authn-scope-2026-10-10](../../adr/adr-authn-scope-2026-10-10.md)）。
+`pkg/authn` 交付身份系统：认定每个请求的调用方是谁，并提供使这个认定成立的登录、会话、令牌、多因素、企业 SSO、冒充与账户存储。授权另立（[authz](../design-authz.md)），本功能目录只为它留接缝（[ADR-authn-scope-2026-10-10](../../../adr/adr-authn-scope-2026-10-10.md)）。
 
 归属本功能目录的判据是判定所需的输入：只需要凭据、账户、标识、会话、令牌、因素、IdP 配置与冒充记录这类认证事实的，归本功能目录；还需要资源、动作与策略的，归授权。下列各项按这条判据例举，不是封闭集：
 
@@ -16,9 +16,9 @@
 - **冒充**：发起、记录、期限与结构性限制。
 - **对授权的接缝与可选的管理面**：判定接缝、成员关系的只读面、账户生命周期钩子与变更事件。
 
-本功能目录由接口包与子包组成。`pkg/authn` 根包定义功能接口与数据类型，**自身不注册模块，也不导出模块名常量**；每个独立交付的功能住在自己的子包，注册一个模块（[ADR-authn-packaging-2026-10-10](../../adr/adr-authn-packaging-2026-10-10.md)、[ADR-module-packaging-2026-09-22](../../adr/adr-module-packaging-2026-09-22.md)）。模块的全集见[依赖](#依赖)。租户准入层 `tenant.admission` 在 tenant 目录，见 [design-tenant-admission](design-tenant-admission.md)。下文的“网关”指网关子包所注册的那个模块的产物。
+本功能目录由接口包与子包组成。`pkg/authn` 根包定义功能接口与数据类型，**自身不注册模块，也不导出模块名常量**；每个独立交付的功能住在自己的子包，注册一个模块（[ADR-authn-packaging-2026-10-10](../../../adr/adr-authn-packaging-2026-10-10.md)、[ADR-module-packaging-2026-09-22](../../../adr/adr-module-packaging-2026-09-22.md)）。模块的全集见[依赖](#依赖)。租户准入层 `tenant.admission` 在 tenant 目录，见 [design-tenant-admission](../tenant/design-tenant-admission.md)。下文的“网关”指网关子包所注册的那个模块的产物。
 
-**根包不导出模块名常量**，判据是导出它没有对应的登记：命令树按名字纳入模块（见 [config](design-config.md)），宿主拿一个无人登记的名字去纳入，得到的是一个不在可用集里的名字，而命令树对未登记名字的处置在 `config` 的哨兵表里没有对应项。
+**根包不导出模块名常量**，判据是导出它没有对应的登记：命令树按名字纳入模块（见 [config](../design-config.md)），宿主拿一个无人登记的名字去纳入，得到的是一个不在可用集里的名字，而命令树对未登记名字的处置在 `config` 的哨兵表里没有对应项。
 
 本功能目录的文档按方面分开，下表是它们的全集，每份只承载自己方面的形状、表、判定顺序与配置键：
 
@@ -45,10 +45,10 @@
 
 以下原则是封闭集，约束本功能目录的全部设计，各方面文档的取舍以它们为准。
 
-- **根包只放接口与数据类型，只依赖标准库**，外加同样只依赖标准库的内部包 `internal/model`、`internal/identity`、`internal/verdict`、`internal/step`；库类型、gin、gorm 不出现在根包签名里（[ADR-authn-packaging-2026-10-10](../../adr/adr-authn-packaging-2026-10-10.md)）。
-- **请求链上的身份只由网关盖章。** 校验后端交出事实，网关校验形状与账户命名空间后盖章；登录会话与令牌只在 authn 树内创建（[ADR-authn-verdict-2026-10-10](../../adr/adr-authn-verdict-2026-10-10.md)）。
+- **根包只放接口与数据类型，只依赖标准库**，外加同样只依赖标准库的内部包 `internal/model`、`internal/identity`、`internal/verdict`、`internal/step`；库类型、gin、gorm 不出现在根包签名里（[ADR-authn-packaging-2026-10-10](../../../adr/adr-authn-packaging-2026-10-10.md)）。
+- **请求链上的身份只由网关盖章。** 校验后端交出事实，网关校验形状与账户命名空间后盖章；登录会话与令牌只在 authn 树内创建（[ADR-authn-verdict-2026-10-10](../../../adr/adr-authn-verdict-2026-10-10.md)）。
 - **默认拒绝。** 网关默认守入口模块的全部端；判定接缝缺席时他人账户与租户级资源的管理面动作、冒充一律拒绝；依赖不可用时答 401 或 503，不答 200（[design-authn-failure](design-authn-failure.md)）。
-- **状态按丢失的方向放置**：丢失会放宽校验的进 db，丢失只会让流程失败的进 kv（[ADR-authn-state-placement-2026-10-10](../../adr/adr-authn-state-placement-2026-10-10.md)）。
+- **状态按丢失的方向放置**：丢失会放宽校验的进 db，丢失只会让流程失败的进 kv（[ADR-authn-state-placement-2026-10-10](../../../adr/adr-authn-state-placement-2026-10-10.md)）。
 - **一次性就是一次性。** 一次性凭据与流程的消费靠原子的条件写：db 的唯一约束与条件更新、kv 的比较并交换；败者一律拒绝。
 - **库没做的校验由 authn 补，库做了的不重做**；库返回成功之后 authn 的补充校验不得省略，补充校验失败按失败处理并记 Error。
 - **每个放宽都是显式开关**，缺省取最严，并在启动诊断里各占一行 Warn。
@@ -59,25 +59,25 @@
 
 下列各条例举本功能目录不承担的事，归属的判据见上文。
 
-- **不做授权判定；做认定的中间件层，即网关，从不写 403。** 本功能目录回答“调用方是谁”，“这个调用方能不能做这件事”归授权（[authz.guard](design-authz.md)），它另立，以中间件或 handler 内的判定接入，取用写进上下文的身份。authn 自己的路由处理器作为它自己资源的所有者，只在转述认证之外的策略的拒绝时写 403，集合封闭：`forbidden`（判定接缝的拒绝）、`method-disabled`（被全局设置关闭的登录方式）、`account-unavailable`（外部登录路径上账户不可用）、`impersonation-restricted`（冒充期间被限制的操作）。其余一切认证强度不足都是 401 加强认证挑战（[ADR-authn-scope-2026-10-10](../../adr/adr-authn-scope-2026-10-10.md)、[design-authn-failure](design-authn-failure.md)）。
-- **不判定请求期的租户成员资格。** 成员关系的事实归本功能目录，请求期的判定在 tenant 目录的 `tenant.admission`（[ADR-tenant-admission-2026-10-10](../../adr/adr-tenant-admission-2026-10-10.md)）。authn 的任何子包都不 import `pkg/tenant`。
+- **不做授权判定；做认定的中间件层，即网关，从不写 403。** 本功能目录回答“调用方是谁”，“这个调用方能不能做这件事”归授权（[authz.guard](../design-authz.md)），它另立，以中间件或 handler 内的判定接入，取用写进上下文的身份。authn 自己的路由处理器作为它自己资源的所有者，只在转述认证之外的策略的拒绝时写 403，集合封闭：`forbidden`（判定接缝的拒绝）、`method-disabled`（被全局设置关闭的登录方式）、`account-unavailable`（外部登录路径上账户不可用）、`impersonation-restricted`（冒充期间被限制的操作）。其余一切认证强度不足都是 401 加强认证挑战（[ADR-authn-scope-2026-10-10](../../../adr/adr-authn-scope-2026-10-10.md)、[design-authn-failure](design-authn-failure.md)）。
+- **不判定请求期的租户成员资格。** 成员关系的事实归本功能目录，请求期的判定在 tenant 目录的 `tenant.admission`（[ADR-tenant-admission-2026-10-10](../../../adr/adr-tenant-admission-2026-10-10.md)）。authn 的任何子包都不 import `pkg/tenant`。
 - **不为身份附加角色、权限与租户。** 身份只回答“谁”；角色按（账户，租户）绑定，归 `authz.policy`（冒充限定的租户范围是唯一例外，它限定的是一次冒充）。
 - **网关不实现、不解释任何凭据。** 口令表、登录会话、访问令牌与服务密钥各是一个校验后端，住在自己的子包里；网关取凭据的原文交给整条认领它的后端，连 `Basic` 也由认领它的后端自己解码；根包不认识其中任何一种。
 - **网关只从 `Authorization` 头与被某个校验后端认领的 cookie 取凭据。** 请求体、查询串与其他请求头不是凭据来源：中间件读一次请求体就把它耗掉了，handler 里的请求体绑定随后读到的是一具已耗尽的请求体，而调用方送出的请求体是完整的。登录与令牌端点的处理器读取自己的请求体，不在这条约束之内。
-- **不定义响应体的形状。** 本功能目录决定拒绝的状态码与必要的响应头，拒绝响应经入口模块的 `Fail` 写出，形状由入口模块的默认形状或交付 `ErrorResponder` 的模块决定（见 [http](design-http.md)）。
-- **不提供配置式的豁免、可选认证与可冒充清单。** 这些登记只来自代码：一条命令行参数不该能改变哪些路径不需要认证、哪些路径可以匿名、哪些路径放行冒充身份（[ADR-authn-exemption-2026-10-10](../../adr/adr-authn-exemption-2026-10-10.md)）。
+- **不定义响应体的形状。** 本功能目录决定拒绝的状态码与必要的响应头，拒绝响应经入口模块的 `Fail` 写出，形状由入口模块的默认形状或交付 `ErrorResponder` 的模块决定（见 [http](../http/design-http.md)）。
+- **不提供配置式的豁免、可选认证与可冒充清单。** 这些登记只来自代码：一条命令行参数不该能改变哪些路径不需要认证、哪些路径可以匿名、哪些路径放行冒充身份（[ADR-authn-exemption-2026-10-10](../../../adr/adr-authn-exemption-2026-10-10.md)）。
 - **不把认证 scheme 名与 cookie 名做成输入项。** 它们由各校验后端在代码里自报；输入项清单按完整集合判冲突，而载体的撞车落不进那份清单的任何一条判据，装配期以 `ErrClaimConflict` 点名双方。
-- **网关不读入口模块的路由表，读它的端名。** 端名经入口模块的 `Router.Endpoints()` 与保留端名 `*` 取得，用来展开 `endpoints` 并校验登记所在的端；登记面不提供路由的枚举，网关无从核对一条登记是否对应一条已登记的路由，请求期只拿 gin 为本次请求报出的 `c.FullPath()` 与登记的方法、路径逐字比对（见 [http](design-http.md)）。
+- **网关不读入口模块的路由表，读它的端名。** 端名经入口模块的 `Router.Endpoints()` 与保留端名 `*` 取得，用来展开 `endpoints` 并校验登记所在的端；登记面不提供路由的枚举，网关无从核对一条登记是否对应一条已登记的路由，请求期只拿 gin 为本次请求报出的 `c.FullPath()` 与登记的方法、路径逐字比对（见 [http](../http/design-http.md)）。
 - **不含邮件通道。** 没有邮箱验证流程、忘记口令流程、冒充与异常登录的邮件通知与邮件链接登录；邮箱标识只能经 IdP 的断言或管理员的断言成为已验证标识（见 [design-authn-account](design-authn-account.md)）。
 - **不做 SAML 单点登出与 OIDC 背向通道登出，不在后台自动刷新 IdP 元数据，不提供每租户的 SP 密钥。** IdP 侧的登出不终止登录会话，会话受自己的空闲期限与绝对期限约束（见 [design-authn-sso](design-authn-sso.md)）。
 - **不提供个人访问令牌、用户名加口令的自助注册与“记住此设备”。**
 - **不承载宿主的资料字段。** 账户表不留自由字段，宿主扩展用户字段的途径见[扩展点](#扩展点)。
 - **不做租户解析、请求级审计与限流。** 它们是别的模块的层，本功能目录只与它们的链上锚点有关（见[链上次序](#链上次序)）。
-- **不代替宿主决定哪条命令纳入认证。** 每个模块的 `Prepare` 只表态 `StateEnabled`，永不 `StateAuto`：是否运行是命令树上的决定，不是配置能推断的结论；这条约束没有任何机制强制，违反它的后果与接受的代价见 [ADR-authn-packaging-2026-10-10](../../adr/adr-authn-packaging-2026-10-10.md)。
+- **不代替宿主决定哪条命令纳入认证。** 每个模块的 `Prepare` 只表态 `StateEnabled`，永不 `StateAuto`：是否运行是命令树上的决定，不是配置能推断的结论；这条约束没有任何机制强制，违反它的后果与接受的代价见 [ADR-authn-packaging-2026-10-10](../../../adr/adr-authn-packaging-2026-10-10.md)。
 
 ## 术语表
 
-以下术语的含义限于本文档、各 `design-authn-*` 文档与认证主题的决策记录；它们不进项目术语表。术语「授权」不属此列：它在项目范围内含义一致，定义见[项目术语表](../../glossary.md)，本表不重复。
+以下术语的含义限于本文档、各 `design-authn-*` 文档与认证主题的决策记录；它们不进项目术语表。术语「授权」不属此列：它在项目范围内含义一致，定义见[项目术语表](../../../glossary.md)，本表不重复。
 
 | 术语 | 英文 | 定义 |
 |---|---|---|
@@ -108,7 +108,7 @@
 
 每个带表的子包与 `tenant/admission` 各带一份 `AGENTS.md`，写它的边界与怎么跑，在该包落地的同一批改动里提供。
 
-每个登记模块的包导出自己的 `ModuleName` 常量，配置与设置的命名空间取同一个取值（形态见 [db](design-db.md) 的实现子包）。名字的每一段只用小写字母、数字与短横线：`Namespace` 按 `.` 切段后适用配置键的字符集规则，违反它会从环境变量名那一头破坏分层（见 [config](design-config.md)）。
+每个登记模块的包导出自己的 `ModuleName` 常量，配置与设置的命名空间取同一个取值（形态见 [db](../design-db.md) 的实现子包）。名字的每一段只用小写字母、数字与短横线：`Namespace` 按 `.` 切段后适用配置键的字符集规则，违反它会从环境变量名那一头破坏分层（见 [config](../design-config.md)）。
 
 **命名空间之间的约束。** 两个模块不得声明同一个输入项路径，也不得一个路径是某模块的叶子而另一个模块的内部节点。判据的推论是：一个模块自己的输入项名不得与以它的模块名为前缀的另一个模块的下一段同名。例如 `authn.login` 的叶子不得叫 `password`、`sms`、`google`、`github`、`wechat-web`、`wechat-mp`，`authn.mfa` 的叶子不得叫 `totp`、`sms`、`webauthn`，`authn.sso` 的叶子不得叫 `saml`、`oidc`（例举，判据是上述推论）；`authn` 本身不得是任何模块的叶子。`authn.mount` 不声明输入项：路由挂载的键与跨源检查的受信来源归 `authn.gate` 声明，`authn.mount` 与需要对外基址的模块在自己的 `Prepare` 里读这几个键，这是已有的跨模块读法，不是重复声明（键表见 [design-authn-config](design-authn-config.md)）。
 
@@ -139,13 +139,13 @@ func (Identity) Satisfies(r Requirement, now time.Time) bool
 func FromContext(ctx context.Context) (Identity, bool) // 无回落
 ```
 
-**身份以账户为中心，不带归属。** 身份的字段集是封闭的：账户、实际操作者、会话、方式集、保障等级、`AssuranceFromIDP`、认证时刻、后端名、挑战方案名、提供方、冒充范围与属性集；后端名与挑战方案名由网关按校验后端与凭据载体盖章，不取自后端交出的任何值（[ADR-authn-identity-2026-10-10](../../adr/adr-authn-identity-2026-10-10.md)）。没有角色，没有租户；属性集对每个校验后端都是可选的，承载宿主与 IdP 映射出的业务属性，不承载上述任何类型化事实，所以租户仍取自请求面、不从身份派生，成员关系是表而不是属性。
+**身份以账户为中心，不带归属。** 身份的字段集是封闭的：账户、实际操作者、会话、方式集、保障等级、`AssuranceFromIDP`、认证时刻、后端名、挑战方案名、提供方、冒充范围与属性集；后端名与挑战方案名由网关按校验后端与凭据载体盖章，不取自后端交出的任何值（[ADR-authn-identity-2026-10-10](../../../adr/adr-authn-identity-2026-10-10.md)）。没有角色，没有租户；属性集对每个校验后端都是可选的，承载宿主与 IdP 映射出的业务属性，不承载上述任何类型化事实，所以租户仍取自请求面、不从身份派生，成员关系是表而不是属性。
 
 **`Account()` 与生效主体是同一个值，不设两个字段**：它是授权与审计把这次请求当作“谁的请求”的账户，冒充时就是被冒充者。`Actor()` 是实际操作者，不冒充时与 `Account()` 相同。身份是单一的，没有第二份“被冒充者身份”：下游每一层读哪一个账户由方法名显式给出。
 
 **责任键 `Key()` 的取值恒为 `string(Actor())`，这条定义只写在这里。** 限流按真正动手的人计数，冒充不占用被冒充者的额度，也借不到许多个账户的许多个桶；审计的行动者列记真正动手的人，归责不落到被冒充者头上。下游（`ratelimit`、`audit/journal`、`settings` 的 `actor` 参数）不透明地使用它，不重复这条定义、也不解析它的内部结构：值不含 `/`，零值身份的责任键是空串。`Subject()` 与 `Owner()` 不存在：后端主体空间里的名字不是身份的一部分。
 
-**`FromContext` 无回落，注入口不导出，写入方是一份封闭名单。** 这一对约定与 [log](design-log.md) 的形态反着来：那里 `WithLogger` 是导出的注入口，`FromContext` 在上下文里没有 logger 时回落到进程根 logger（[ADR-log-context-2026-09-13](../../adr/adr-log-context-2026-09-13.md)）。反过来的理由是两者要承载的东西不同：logger 有默认值而身份没有，回落等于把一个匿名请求读成某个主体；导出注入口等于让链上任何一层改写身份，而认证的全部意义就是这件事只发生一次、只由一个地方决定。
+**`FromContext` 无回落，注入口不导出，写入方是一份封闭名单。** 这一对约定与 [log](../design-log.md) 的形态反着来：那里 `WithLogger` 是导出的注入口，`FromContext` 在上下文里没有 logger 时回落到进程根 logger（[ADR-log-context-2026-09-13](../../../adr/adr-log-context-2026-09-13.md)）。反过来的理由是两者要承载的东西不同：logger 有默认值而身份没有，回落等于把一个匿名请求读成某个主体；导出注入口等于让链上任何一层改写身份，而认证的全部意义就是这件事只发生一次、只由一个地方决定。
 
 **写入方名单。** `internal/identity` 的 `With` 与 `WithAccess` 是仅有的注入口，非测试文件里 import `internal/identity` 的包限于下列几个，名单是封闭的：根包只转出读取面，不转出注入口；`authn/gate` 是请求链上唯一的写入方，写之前先过出口检查；`authn/login` 为登录审计行派生一个携带新认定身份的上下文，只交给那一次 `Audit.Record`，不交给任何处理器或流程的下一步，所以它不进请求链、不被授权读取，也不经出口检查（`pkg/authn/login/identity.go` 的派生点，`pkg/authn/login/engine_test.go` `TestTheLoginAuditIsWrittenUnderADerivedIdentity` 守住它只交给那次 `Record`）；`authn/authntest` 是测试构造口，非测试代码不得 import 它（见下）。`pkg/authn/deps_test.go` 对 `pkg` 模块里每个包断言这份名单：名单之外的包在非测试文件里 import `internal/identity` 即失败，并有一棵违反它的树作反例，名单里已存在的包都要确有 import（`identityWriters`、`TestTheListOfWritersIsHeldToTheCodeBehindIt`）。编译器只拦得住 `pkg/authn` 之外的包，树内的校验后端、会话与登录方法各包由这条断言拦。名单只约束 `internal/identity` 的注入口：`internal/verdict` 与 `internal/step` 的读取函数（`OutcomeOf`、`PrincipalOf`、`CauseOf`，以及 `Step` 的读取函数）不限定 importer，`pkg/authn` 之下的包都可以用，因为它们只读，读取者做不出构造器做不出的判决与步骤；判决与步骤的不可字面构造靠字段不导出与构造器，不靠名单。
 
@@ -194,7 +194,7 @@ func Unavailable(cause error) Verdict
 
 **`Session` 只指库里的登录会话**，值是 UUIDv7 文本。宿主自写、不用库会话的后端把它留空：库的登出路由只结束库里的登录会话，结束宿主自己那种会话是宿主按自己的凭据处理的事，网关没有义务代它识别。冒充身份恒带会话：出口检查要求 `Actor` 非零时 `Session` 非空。
 
-**判决不可字面构造**，判据是零值必须有确定的读法：本形状下零值读作“没答”，网关收口 401 并单独计一次缺陷（桶名 `unspoken`），与拒绝不混桶——故障那一桶要能拿来告警，缺陷那一桶要能拿来发现后端写错。被否决的其他形状与各自的否决理由见 [ADR-authn-verdict-2026-10-10](../../adr/adr-authn-verdict-2026-10-10.md)。`Verdict` 与 `Identity` 内部字段的读取函数（`OutcomeOf`、`PrincipalOf`、`CauseOf`）是包级函数而不是方法：方法会随别名带到任何包，包级函数才留得住“只有 authn 树内能读内部字段”这一边界。`Step` 的读取函数同样是包级函数，见 [design-authn-login](design-authn-login.md)。
+**判决不可字面构造**，判据是零值必须有确定的读法：本形状下零值读作“没答”，网关收口 401 并单独计一次缺陷（桶名 `unspoken`），与拒绝不混桶——故障那一桶要能拿来告警，缺陷那一桶要能拿来发现后端写错。被否决的其他形状与各自的否决理由见 [ADR-authn-verdict-2026-10-10](../../../adr/adr-authn-verdict-2026-10-10.md)。`Verdict` 与 `Identity` 内部字段的读取函数（`OutcomeOf`、`PrincipalOf`、`CauseOf`）是包级函数而不是方法：方法会随别名带到任何包，包级函数才留得住“只有 authn 树内能读内部字段”这一边界。`Step` 的读取函数同样是包级函数，见 [design-authn-login](design-authn-login.md)。
 
 **证明是声明，盖章才是认定。** 通过的判决交出的 `Principal` 只是后端自报的事实；`Backend()` 取自 `Verifier.Name()` 而不经任何后端写的东西，其余字段经 [design-authn-gate](design-authn-gate.md#出口检查) 的出口检查逐项核对后写入身份。网关收口的判定顺序、401、503 与 500 的划分、调用预算、在飞闸门与计数，由 [design-authn-gate](design-authn-gate.md) 承载。
 
@@ -235,16 +235,16 @@ type Requirement struct {
 
 `Identity.Satisfies(r, now)` 在下列条件同时成立时为真：`Assurance` 不低于要求；`MaxAge` 为零，或 `now` 与 `AuthTime` 之差不超过它；`r.Local` 为真时 `AssuranceFromIDP()` 为假。失败方向是拒绝：零值身份对任何要求都为假；`MaxAge` 为负时任何身份都不满足；`MaxAge` 非零而 `now` 为零值（时钟没有设置）或 `AuthTime` 为零值（视作无限久以前）不满足；`AuthTime` 晚于 `now` 时差为负，读作不过期：网关盖章只放过不晚于它自己的时钟加 120 秒的认证时刻，容忍的是这一段时钟偏差，`Satisfies` 不再另判。`Local` 用于账户安全类操作与冒充发起（见 [design-authn-mfa](design-authn-mfa.md)）。令牌里的 `acr` 取保障等级数字的十进制文本。
 
-`Assurance` 由校验后端自报，网关只做形状、界限与账户命名空间的校验，不能独立证明“确实用了两个因素”：信任边界是进程内的代码，宿主选择哪些校验后端就是在选择信任谁来自报（见[错误与失败语义](#错误与失败语义)的非保证）。本功能目录自带的后端都经同一个 `MFA` 能力得出等级，会话与令牌后端读会话行里已记录的等级（[ADR-authn-mfa-2026-10-10](../../adr/adr-authn-mfa-2026-10-10.md)）。
+`Assurance` 由校验后端自报，网关只做形状、界限与账户命名空间的校验，不能独立证明“确实用了两个因素”：信任边界是进程内的代码，宿主选择哪些校验后端就是在选择信任谁来自报（见[错误与失败语义](#错误与失败语义)的非保证）。本功能目录自带的后端都经同一个 `MFA` 能力得出等级，会话与令牌后端读会话行里已记录的等级（[ADR-authn-mfa-2026-10-10](../../../adr/adr-authn-mfa-2026-10-10.md)）。
 
 ### 对宿主的要求
 
 以下各条是宿主在命令树上要做的全部动作。**本功能目录既不能把它们声明出来，也没有检查它们的位置**，漏写不报错。
 
 - **每条需要认证的命令逐个写出所需模块的 `ModuleName`。** 宿主只能精确列举本次要跑的模块：列了它，就必须把它配好——缺配置是启动失败，不是一次静默的缺席。排他功能（网关、账户、会话等）漏点名是在任何实例构造之前报 `core.ErrMissingProvider`，早于迁移。
-- **不要把任何 authn 模块放进根命令。** 根命令纳入的模块对每条子命令都有效（见 [config](design-config.md)）：该模块因此进了施加迁移那条命令的参与集，而那条命令的深度止于 `Migrate`；模块的全部输入项升格为全局参数，出现在每条命令的帮助输出里；带必填项的模块在打印版本这类命令下也要配齐，缺一项就是那条命令启动失败。宿主想表达“凡有 HTTP 入口的命令都该有认证”时，照 `config` 里那份命令树示例把网关放进根命令是能写出的形式，也是要避免的形式。
-- **不要对纳入 authn 的命令用 `IncludeAll()`。** 它让参与集重新成为 import 图的函数，其中可能含有宿主并不知情的模块（[ADR-command-tree-2026-09-20](../../adr/adr-command-tree-2026-09-20.md)）；在认证这条路径上，那意味着一个宿主没有列举过的登录方式可以发出身份。
-- **施加迁移的命令必须静态级纳入全部带表的 authn 模块（`IncludeAllDeclarations`），它们的配置在那条命令下也必须齐备。** 迁移集按声明集取材（见 [db](design-db.md)）：带表模块不在那条命令的声明集里，它的表不建，漏写不报错，表现为带表模块 `Start` 里的存在性探测以 `ErrNotMigrated` 终止启动；带表模块若被那条命令运行级纳入而缺配置，那条命令启动失败，迁移连同表的建立都无从发生。
+- **不要把任何 authn 模块放进根命令。** 根命令纳入的模块对每条子命令都有效（见 [config](../design-config.md)）：该模块因此进了施加迁移那条命令的参与集，而那条命令的深度止于 `Migrate`；模块的全部输入项升格为全局参数，出现在每条命令的帮助输出里；带必填项的模块在打印版本这类命令下也要配齐，缺一项就是那条命令启动失败。宿主想表达“凡有 HTTP 入口的命令都该有认证”时，照 `config` 里那份命令树示例把网关放进根命令是能写出的形式，也是要避免的形式。
+- **不要对纳入 authn 的命令用 `IncludeAll()`。** 它让参与集重新成为 import 图的函数，其中可能含有宿主并不知情的模块（[ADR-command-tree-2026-09-20](../../../adr/adr-command-tree-2026-09-20.md)）；在认证这条路径上，那意味着一个宿主没有列举过的登录方式可以发出身份。
+- **施加迁移的命令必须静态级纳入全部带表的 authn 模块（`IncludeAllDeclarations`），它们的配置在那条命令下也必须齐备。** 迁移集按声明集取材（见 [db](../design-db.md)）：带表模块不在那条命令的声明集里，它的表不建，漏写不报错，表现为带表模块 `Start` 里的存在性探测以 `ErrNotMigrated` 终止启动；带表模块若被那条命令运行级纳入而缺配置，那条命令启动失败，迁移连同表的建立都无从发生。
 - **对外提供服务的装配不为网关预置外来的实例。** 要预置就预置网关模块的 `New` 造出的实例，并核对组装出的链上有代表认证功能的那一层（见[错误与失败语义](#错误与失败语义)的非保证）。
 
 **典型装配**（例举，不是穷举；每行另加入口模块、`kv`、`db`、`settings`、`event` 的实现）：
@@ -265,7 +265,7 @@ type Requirement struct {
 
 - 根包的 `Gate`、`Verifier`、`Accepts`、`Credential`、`Challenger`、`CookieClearer`、`ScopeGuard`、`Verdict` 的构造器、`Principal`、`Identity` 的方法集与 `Access` 的取值；`Key()` 的取值（责任键恒为实际操作者）。
 - 网关层在链上代表的功能标识：中间件的 `Provides` 与描述符里的交付声明同为 `(*Gate)(nil)`，别的模块据它排序，取值与它所属的阶段不变。
-- 判定接缝、成员关系的只读面、账户生命周期钩子与事件名，这些是授权功能目录依赖的面（[authz.guard](design-authz.md) 与 `authz.policy`；见 [design-authn-admin](design-authn-admin.md)、[design-authn-events](design-authn-events.md)）。
+- 判定接缝、成员关系的只读面、账户生命周期钩子与事件名，这些是授权功能目录依赖的面（[authz.guard](../design-authz.md) 与 `authz.policy`；见 [design-authn-admin](design-authn-admin.md)、[design-authn-events](design-authn-events.md)）。
 - 下列根包接缝接口的方法集是稳定面，加方法与改签名对取用它们的模块、实现了它们的宿主即是不兼容变更：`Tokens` 与 `ClaimsContributor`（[design-authn-token](design-authn-token.md)）、`SMSCodes`（[design-authn-sms](design-authn-sms.md)）、`SSOProviders`（[design-authn-sso](design-authn-sso.md)）、`Impersonation`（[design-authn-impersonation](design-authn-impersonation.md)）与 `Decider`（[design-authn-admin](design-authn-admin.md)）；各自的字段、取值集合与取用方式由各自的模块文档承载。
 
 `Gate` 与 `Verifier` 是宿主可以预置自己实现的接口：对它们加方法或改签名，对预置了自己实现的宿主是不兼容变更。`Key()` 的签名不变而取值随责任键的定义而定，编译通过的调用方因此在取值变化时静默得到新值，变化必须带破坏性变更的标注。
@@ -303,11 +303,11 @@ type Requirement struct {
 
 `authn/guard` 与 `authn/authntest` 不登记模块：`guard.Require` 返回加强认证的 gin 处理器，`authntest` 是测试构造口。
 
-租户准入层不在本表：它是 `pkg/tenant` 下的模块 `tenant.admission`，排他交付定序锚点 `tenant.Admission` 与根包的 `ScopeGuard`，方向是它 import 本功能目录的根包（[design-tenant-admission](design-tenant-admission.md)）。登录引擎把两块内容放在 `pkg/authn/login/internal` 下：`resolve` 把 `Proof` 解析成账户（开户、绑定、并入外部身份），`selfservice` 挂账户自助路由；两者不登记模块，只被登录引擎构造与调用（[design-authn-login](design-authn-login.md)）。
+租户准入层不在本表：它是 `pkg/tenant` 下的模块 `tenant.admission`，排他交付定序锚点 `tenant.Admission` 与根包的 `ScopeGuard`，方向是它 import 本功能目录的根包（[design-tenant-admission](../tenant/design-tenant-admission.md)）。登录引擎把两块内容放在 `pkg/authn/login/internal` 下：`resolve` 把 `Proof` 解析成账户（开户、绑定、并入外部身份），`selfservice` 挂账户自助路由；两者不登记模块，只被登录引擎构造与调用（[design-authn-login](design-authn-login.md)）。
 
 **排他与并立。** 排他的是“必须恰有一个”的功能；并立的是可以有零个到多个、由消费方在 `Init` 里 `ResolveAll` 取用的功能。并立功能的集合是封闭的：`Verifier`、`LoginMethod`、`Factor`、`SSOMetadataRefresher`、`AccountLifecycle`、`ClaimsContributor`，各自一个模块，一律不排他、不局部违反；其余功能都排他，包括租户准入层交付的 `ScopeGuard`。判定接缝 `Decider`（排他）与首登开户钩子 `Provisioner`（非排他）由宿主或 `authz.guard` 交付，取用方一律以可选取用对待。
 
-**`Requires` 只写排他功能与 `db.Database`，从不写非排他功能**（[ADR-authn-wiring-2026-10-10](../../adr/adr-authn-wiring-2026-10-10.md)）。排他功能不被依赖闭包展开，宿主漏点名即在任何实例构造之前报 `core.ErrMissingProvider`，早于迁移；非排他功能写进 `Requires` 会让闭包替宿主纳入并强制启动它们，命令树上的逐个列举因此失效。取日志、设置、事件、审计的需求写 `Optional: true`：缺席合法，在场时仍参与构造排序，使脱敏规则能在 `New` 里先于任何 logger 绑定登记。网关的 `Requires` 只有 `log.Logger` 的可选声明；网关不依赖 db，不挂业务路由。
+**`Requires` 只写排他功能与 `db.Database`，从不写非排他功能**（[ADR-authn-wiring-2026-10-10](../../../adr/adr-authn-wiring-2026-10-10.md)）。排他功能不被依赖闭包展开，宿主漏点名即在任何实例构造之前报 `core.ErrMissingProvider`，早于迁移；非排他功能写进 `Requires` 会让闭包替宿主纳入并强制启动它们，命令树上的逐个列举因此失效。取日志、设置、事件、审计的需求写 `Optional: true`：缺席合法，在场时仍参与构造排序，使脱敏规则能在 `New` 里先于任何 logger 绑定登记。网关的 `Requires` 只有 `log.Logger` 的可选声明；网关不依赖 db，不挂业务路由。
 
 **下列必需依赖让缺席成为启动失败，而不是运行期才发现**：
 
@@ -320,13 +320,13 @@ type Requirement struct {
 ### 依赖方向
 
 - **根包**只 import 标准库（含 `net/http` 里的 `*http.Cookie`、`http.ResponseWriter`、`*http.Request`，不含 gin）与 `pkg/authn/internal/{model,identity,verdict,step}`；这些内部包同样只依赖标准库，`identity`、`verdict`、`step` 各自 import `model`，彼此不 import。根包被 `tenant/resolve`、`audit/journal`、`ratelimit` 与 `tenant/admission` import，根包新增的任何 import 会进它们的闭包，所以 `pkg/authn/deps_test.go` 守住：根包的非测试 import 只许标准库与上述内部包，并断言这些内部包只依赖标准库。
-- **库类型只出现在叶子包里**：`go-jose`、`go-oidc`、`x/oauth2`、`gosaml2`、`go-webauthn`、`scs` 各落在使用它的叶子子包，只有 import 该子包的宿主才背负（[ADR-module-packaging-2026-09-22](../../adr/adr-module-packaging-2026-09-22.md)）。短信厂商 SDK 不在此列：随发送能力住在顶层 `pkg/sms` 的载体叶子包下（[ADR-sms-capability-2026-10-13](../../adr/adr-sms-capability-2026-10-13.md)）。
-- **接口包不依赖 `pkg/db`，这是本功能目录的自我约束而不是架构的要求**（架构对跨功能目录依赖的要求是一律指向对方的接口包，见 [architecture](../architecture.md)，指向 `pkg/db` 的接口包并不违反它）。带表的子包把 `db` 依赖、迁移集与模型留在自己的子包里；其他 authn 子包与授权功能目录只经根包的能力接口读写，拿不到 `*gorm.DB`。
-- **authn 的任何子包都不 import `pkg/tenant`。** 方向是 tenant 指向 authn：`tenant/resolve` 排在网关之后，`tenant/admission` 读身份与租户上下文，`tenant/resolve` 与 `tenant/admission` 都 import 根包，准入层经根包的 `ScopeGuard` 向网关说出它守哪些端；授权功能目录位于本功能目录之上（[authz](design-authz.md)）：`authz.guard` 交付 `Decider`，`authz.policy` 交付 `AccountLifecycle`，两者都 import 根包；本功能目录不认识它（[ADR-authn-scope-2026-10-10](../../adr/adr-authn-scope-2026-10-10.md)）。
+- **库类型只出现在叶子包里**：`go-jose`、`go-oidc`、`x/oauth2`、`gosaml2`、`go-webauthn`、`scs` 各落在使用它的叶子子包，只有 import 该子包的宿主才背负（[ADR-module-packaging-2026-09-22](../../../adr/adr-module-packaging-2026-09-22.md)）。短信厂商 SDK 不在此列：随发送能力住在顶层 `pkg/sms` 的载体叶子包下（[ADR-sms-capability-2026-10-13](../../../adr/adr-sms-capability-2026-10-13.md)）。
+- **接口包不依赖 `pkg/db`，这是本功能目录的自我约束而不是架构的要求**（架构对跨功能目录依赖的要求是一律指向对方的接口包，见 [architecture](../../architecture.md)，指向 `pkg/db` 的接口包并不违反它）。带表的子包把 `db` 依赖、迁移集与模型留在自己的子包里；其他 authn 子包与授权功能目录只经根包的能力接口读写，拿不到 `*gorm.DB`。
+- **authn 的任何子包都不 import `pkg/tenant`。** 方向是 tenant 指向 authn：`tenant/resolve` 排在网关之后，`tenant/admission` 读身份与租户上下文，`tenant/resolve` 与 `tenant/admission` 都 import 根包，准入层经根包的 `ScopeGuard` 向网关说出它守哪些端；授权功能目录位于本功能目录之上（[authz](../design-authz.md)）：`authz.guard` 交付 `Decider`，`authz.policy` 交付 `AccountLifecycle`，两者都 import 根包；本功能目录不认识它（[ADR-authn-scope-2026-10-10](../../../adr/adr-authn-scope-2026-10-10.md)）。
 - **网关与别的模块的关系只经链上锚点**：网关交付 `(*authn.Gate)(nil)`，不 import `tenant`、`audit`、`ratelimit` 的任何包（见[链上次序](#链上次序)）。`tenant/admission` 声明授权阶段，该阶段本身就在记录与限流之内，位置由阶段给出；它不为定序 import `pkg/ratelimit` 或 `pkg/audit` 的锚点包。
 - **指标功能不构成依赖，日志功能是 `Optional` 依赖。** 网关在 `Init` 里取 `observability.MeterProvider`，缺席即本次装配没有对应功能，认证行为不变，取用得到缺提供者以外的错误则终止启动；日志功能写 `Optional`：声明它使脱敏规则能在 `New` 里先于任何 logger 绑定登记，缺席合法，规则无处登记（细节见 [design-authn-gate](design-authn-gate.md)）。
 
-方向满足架构不变量（见 [architecture](../architecture.md)）：本功能目录位于 `core`、`config`、`log`、`http`、`observability`、`db`、`kv` 之上，不被其中任何一个 import。
+方向满足架构不变量（见 [architecture](../../architecture.md)）：本功能目录位于 `core`、`config`、`log`、`http`、`observability`、`db`、`kv` 之上，不被其中任何一个 import。
 
 ## UML 图
 
@@ -492,7 +492,7 @@ flowchart LR
 
 ### 值类型的落点
 
-值类型连同它们的方法与构造函数，真身都在 `internal/model`，它不 import 任何一个 authn 包，只依赖标准库；不可字面构造的类型各占一个内部包，`Identity`、`Verdict`、`Step` 的真身分别在 `internal/identity`、`internal/verdict`、`internal/step`，它们 import `internal/model`，所以签名里能引用值类型。判据：被 `Identity`、`Verdict`、`Step` 中不止一个引用的值类型必须落在 `internal/model`，因为各真身包彼此不 import；只被一个引用或不被引用的值类型同样落在 `internal/model`，值类型只有一个落点；带不可字面构造性质的类型落在各自的真身包（[ADR-authn-identity-2026-10-10](../../adr/adr-authn-identity-2026-10-10.md)）。账户与成员关系的值类型不被 `Identity`、`Verdict` 与 `Step` 引用，仍按这条落在 `internal/model`；`AccountStatus` 的零值读作停用，这个读法随类型钉在 `internal/model` 的测试里。
+值类型连同它们的方法与构造函数，真身都在 `internal/model`，它不 import 任何一个 authn 包，只依赖标准库；不可字面构造的类型各占一个内部包，`Identity`、`Verdict`、`Step` 的真身分别在 `internal/identity`、`internal/verdict`、`internal/step`，它们 import `internal/model`，所以签名里能引用值类型。判据：被 `Identity`、`Verdict`、`Step` 中不止一个引用的值类型必须落在 `internal/model`，因为各真身包彼此不 import；只被一个引用或不被引用的值类型同样落在 `internal/model`，值类型只有一个落点；带不可字面构造性质的类型落在各自的真身包（[ADR-authn-identity-2026-10-10](../../../adr/adr-authn-identity-2026-10-10.md)）。账户与成员关系的值类型不被 `Identity`、`Verdict` 与 `Step` 引用，仍按这条落在 `internal/model`；`AccountStatus` 的零值读作停用，这个读法随类型钉在 `internal/model` 的测试里。
 
 根包用类型别名（`type AccountID = model.AccountID`）转出类型，用 `const`、`var` 与薄包装函数转出常量、哨兵与构造函数。别名类型的方法在真身包里定义：在根包里为别名转出的类型声明方法，编译报 `cannot define new methods on non-local type`，所以根包的文档与签名里列出的 `func (Identity) Account() AccountID` 一类写法是别名类型的方法集，不是根包里的函数声明。包外拿不到内部包的 import 权，所以身份与判决不可字面构造、注入口只在 authn 树内可见。
 
@@ -528,7 +528,7 @@ type SessionID string // 登录会话的公开标识（UUIDv7 文本），不是
 
 ### 状态放置
 
-**判据只有一条：这份状态丢失之后，校验会不会比没有它时变宽。** 丢失会放宽校验的状态进 db；丢失只会让流程失败的状态进 kv，并带有界的有效期；丢失只让一次计算或一次读取重做的状态进进程内存，只作缓存、不作依据；方向无法判定的按会放宽处理，进 db。下表是判据的应用结果，名单是例举，不在名单里的状态按判据归位（[ADR-authn-state-placement-2026-10-10](../../adr/adr-authn-state-placement-2026-10-10.md)）。
+**判据只有一条：这份状态丢失之后，校验会不会比没有它时变宽。** 丢失会放宽校验的状态进 db；丢失只会让流程失败的状态进 kv，并带有界的有效期；丢失只让一次计算或一次读取重做的状态进进程内存，只作缓存、不作依据；方向无法判定的按会放宽处理，进 db。下表是判据的应用结果，名单是例举，不在名单里的状态按判据归位（[ADR-authn-state-placement-2026-10-10](../../../adr/adr-authn-state-placement-2026-10-10.md)）。
 
 | 状态 | 存放 | 丢失的后果 |
 |---|---|---|
@@ -551,17 +551,17 @@ type SessionID string // 登录会话的公开标识（UUIDv7 文本），不是
 
 ### 链上次序
 
-每一层在链上的位置由它声明的阶段给出，阶段内的先后由 `After`、`Before` 与 `Position` 决定（见 [http](design-http.md)）；`After` 与 `Before` 只在同一阶段内建约束，与阶段次序同向的跨阶段约束不建边。网关层声明鉴别阶段。下表是网关与它相邻各层的次序，每层所属的阶段由各自的文档承载。
+每一层在链上的位置由它声明的阶段给出，阶段内的先后由 `After`、`Before` 与 `Position` 决定（见 [http](../http/design-http.md)）；`After` 与 `Before` 只在同一阶段内建约束，与阶段次序同向的跨阶段约束不建边。网关层声明鉴别阶段。下表是网关与它相邻各层的次序，每层所属的阶段由各自的文档承载。
 
 | 层 | 所属阶段 | 锚点（`Provides`） | 阶段内的 `After` | 承载文档 |
 |---|---|---|---|---|
-| observability.otel | 观测 | 它自己的功能标识 | 无 | [observability](design-observability.md) |
+| observability.otel | 观测 | 它自己的功能标识 | 无 | [observability](../design-observability.md) |
 | `authn.gate` | 鉴别 | `(*authn.Gate)(nil)` | 无 | 本文 |
-| `tenant.resolve` | 鉴别 | `(*tenant.Resolution)(nil)` | `(*authn.Gate)(nil)` | [tenant](design-tenant.md) |
-| `ratelimit` | 限流 | `(*ratelimit.Limiter)(nil)` | 无 | [ratelimit](design-ratelimit.md) |
-| `audit.journal` | 记录 | `(*audit.Audit)(nil)` | 无 | [audit](design-audit.md) |
-| `tenant.admission` | 授权 | `(*tenant.Admission)(nil)`、`(*authn.ScopeGuard)(nil)` | 无 | [design-tenant-admission](design-tenant-admission.md) |
-| `authz.guard` | 授权 | `(*authz.Gate)(nil)` | `(*tenant.Admission)(nil)` | [design-authz](design-authz.md) |
+| `tenant.resolve` | 鉴别 | `(*tenant.Resolution)(nil)` | `(*authn.Gate)(nil)` | [tenant](../tenant/design-tenant.md) |
+| `ratelimit` | 限流 | `(*ratelimit.Limiter)(nil)` | 无 | [ratelimit](../design-ratelimit.md) |
+| `audit.journal` | 记录 | `(*audit.Audit)(nil)` | 无 | [audit](../design-audit.md) |
+| `tenant.admission` | 授权 | `(*tenant.Admission)(nil)`、`(*authn.ScopeGuard)(nil)` | 无 | [design-tenant-admission](../tenant/design-tenant-admission.md) |
+| `authz.guard` | 授权 | `(*authz.Gate)(nil)` | `(*tenant.Admission)(nil)` | [design-authz](../design-authz.md) |
 
 ```mermaid
 flowchart LR
@@ -574,7 +574,7 @@ flowchart LR
     G --> H[handler]
 ```
 
-由外到内：采集（观测阶段）、网关与租户解析（鉴别阶段）、限流（限流阶段）、审计（记录阶段）、租户准入（`tenant.admission`）与授权层（`authz.guard`）（授权阶段）、handler。`(*authn.Gate)(nil)` 是鉴别阶段内别的层把自己排在认证之内或之外的唯一锚点，取值与阶段不变，是本功能目录对外的稳定契约面。准入层声明授权阶段，不写任何 `After`：记录阶段与限流阶段都在它之外，拒绝因而必然进审计、必然计入限流，非成员的请求被限流计数是阶段次序的硬结果，不靠偏好。约束指向的功能在该端无人代表时被丢弃（`pkg/http` 的既有规则，见 [http](design-http.md)），所以没装 `tenant.admission` 的装配里，`authz.guard` 的 `After` 指向它不产生任何影响。
+由外到内：采集（观测阶段）、网关与租户解析（鉴别阶段）、限流（限流阶段）、审计（记录阶段）、租户准入（`tenant.admission`）与授权层（`authz.guard`）（授权阶段）、handler。`(*authn.Gate)(nil)` 是鉴别阶段内别的层把自己排在认证之内或之外的唯一锚点，取值与阶段不变，是本功能目录对外的稳定契约面。准入层声明授权阶段，不写任何 `After`：记录阶段与限流阶段都在它之外，拒绝因而必然进审计、必然计入限流，非成员的请求被限流计数是阶段次序的硬结果，不靠偏好。约束指向的功能在该端无人代表时被丢弃（`pkg/http` 的既有规则，见 [http](../http/design-http.md)），所以没装 `tenant.admission` 的装配里，`authz.guard` 的 `After` 指向它不产生任何影响。
 
 网关反方向的位置声明不了：兜住 handler panic 的那一层由 `pkg/http` 内建、不在登记面上，没有可指向它的标识；网关因此自备 recover，它接住的是后端调用点上的同步 panic。
 
@@ -593,35 +593,35 @@ flowchart LR
 
 ### 非保证
 
-以下各类性质本功能目录声明为不保证。落在这一侧的判据（[ADR-authn-guarantees-2026-10-10](../../adr/adr-authn-guarantees-2026-10-10.md)）：认证在启动期自己判得出来的确定失败，配哨兵与修复动作，不写成非保证；成立与否取决于本次装配里还有哪些层、它们各自怎么写的性质，写成非保证，每条写清可观察到什么、哪一层不报错。下列条目按判据例举，不是封闭集；符合判据的新情形归入非保证，不为此修订一份列举。补偿手段是启动诊断：网关的实例是网关模块的产物时，成功路径上无条件写出展开后的受守端、冻结后的各类登记、冒充身份可到达的端、实际接上的校验后端名单与放宽项，不是时都不写出（见下文）。它们让这些情形可被人察觉，不让它们被拦住。
+以下各类性质本功能目录声明为不保证。落在这一侧的判据（[ADR-authn-guarantees-2026-10-10](../../../adr/adr-authn-guarantees-2026-10-10.md)）：认证在启动期自己判得出来的确定失败，配哨兵与修复动作，不写成非保证；成立与否取决于本次装配里还有哪些层、它们各自怎么写的性质，写成非保证，每条写清可观察到什么、哪一层不报错。下列条目按判据例举，不是封闭集；符合判据的新情形归入非保证，不为此修订一份列举。补偿手段是启动诊断：网关的实例是网关模块的产物时，成功路径上无条件写出展开后的受守端、冻结后的各类登记、冒充身份可到达的端、实际接上的校验后端名单与放宽项，不是时都不写出（见下文）。它们让这些情形可被人察觉，不让它们被拦住。
 
 **推进到 `StageServe`、网关在参与集里时：**
 
-- **显式收窄的 `endpoints` 清单之外的端上没有任何认证层。** `endpoints` 缺省守入口模块声明的全部端，漏写一个端只会多拒，不会放行；写成显式清单收窄时，清单外的端上全部路由无认证放行，启动期不失败。网关核对清单里的名字存在，比对只报得出差集，分不出漏写与有意收窄（[ADR-http-enumeration-2026-10-10](../../adr/adr-http-enumeration-2026-10-10.md)）。察觉靠启动诊断里展开后的受守端名清单，以及入口模块组装时逐端的链清单里有没有代表认证功能的那一层。
+- **显式收窄的 `endpoints` 清单之外的端上没有任何认证层。** `endpoints` 缺省守入口模块声明的全部端，漏写一个端只会多拒，不会放行；写成显式清单收窄时，清单外的端上全部路由无认证放行，启动期不失败。网关核对清单里的名字存在，比对只报得出差集，分不出漏写与有意收窄（[ADR-http-enumeration-2026-10-10](../../../adr/adr-http-enumeration-2026-10-10.md)）。察觉靠启动诊断里展开后的受守端名清单，以及入口模块组装时逐端的链清单里有没有代表认证功能的那一层。
 - **链上不保证没有能绕过认证的层。** 网关登记的是一层普通中间件，位置由它声明的阶段与阶段内的约束排出。落在网关之外的阶段（观测、防护）的层排在认证之外，它自答的请求从未经过认证；兜底层落在观测阶段之内、其后的各阶段之外，防护阶段及以内的层崩溃时由它写出那一次响应，同样不经过认证；一个层还可以在自己的 `Provides` 里声称代表认证功能，而入口模块不校验这条声称与登记方描述符的一致性。排他交付保证的只是“交付认证功能的模块唯一”，管不到中间件登记面。
 - **登记只按逐字比对生效，不保证命中写它的人想要的那条路由。** `Exempt`、`Optional`、`Impersonable` 的命中判据都是（请求方法，`c.FullPath()`）与登记的（方法，路径）逐字相同；`FullPath` 为空串，即没有匹配的路由时，不命中任何一条。与路由登记时的（方法，路径）逐字不同的登记永不命中，写错不报错，没有一行诊断指向它；方向是拒绝：写错的 `Exempt` 使那条路由照常要求凭据，写错的 `Optional` 使无凭据的请求得 401，写错的 `Impersonable` 使冒充身份在那条路由上被拒。带路径参数或通配的路由，登记写成与路由登记时相同的写法，如 `GET /accounts/:id`、`GET /public/*path`；同一位置上写法不同的另一条路由，其 `FullPath` 是它自己的写法，不被命中。
 - **登记不保证由路由的登记者声明。** 任何模块都能登记任何（方法，路径），包括别人挂的那些路由，登记面拿不到调用方的身份：“谁登记的”这个问题在登记面的形状下答不出来。启动诊断里登记的行因此写什么见 [design-authn-gate](design-authn-gate.md)。
 - **悬空的登记不报错。** 网关读不到路由表，无从核对一条登记是否对应一条挂过的路由；没有对应路由的登记不会失败，任何模块在该端上后挂出方法与路径逐字相同的路由时，那条路由开始按登记的级别处理。
 - **凭据不保证不向内泄漏。** 网关不改写请求：`Authorization` 头与 `Cookie` 头原样传给链内每一层与 handler，会话 cookie、访问令牌（JWT）与头里携带的其他凭据因此对链内各层可见。
 - **缓存不保证不串身份。** 排在认证之内的缓存层或合并层若以路径为键缓存应答，一个主体的应答会被返给另一个主体；身份在上下文里，缓存层不去读它就看不见它。这类层的键必须含账户与会话。
-- **凭据不保证不进日志。** 脱敏规则由持有秘密的模块各自在 `New` 里登记；网关的键名规则与不依赖 scheme 的值形状规则也在 `New` 里登记，只有按 scheme 生成的那一条要到 `Init` 才知道各后端认领了哪些 scheme，在 `Init` 登记，在它之前绑定的属性不受它约束，各模块的 `New` 里不往 logger 绑任何敏感属性。日志模块不在这条命令的参与集里就登记不上，失效形态是脱敏层在而规则为空（见 [architecture](../architecture.md) 的安全边界）。登记上了，值形状规则也只遮蔽已识别的形状：以 auth-param 列表写出的凭据、取值跨了几个词的凭据、不带 scheme 名写出的凭据，都有部分或全部留在明文里（规则见 [design-authn-gate](design-authn-gate.md)）。
-- **入口排空超时之后不保证还能认证。** 网关与各校验后端都不声明 `Serve`，都在每个入口排空结束之后才收到 `Stop`，任何模块又都在全部 `Stop` 之后才收到 `Close`（见 [core](design-core.md)），入口在排空时限之内走完的请求因而照常得到认证。排空时限到期之后仍在途、此后才走到认证层的请求，面对的是已停止接受后端调用的网关，一律收口 503，不因为进程正在关闭而放行。
-- **同一份凭据不保证在同一个二进制的每条命令下都可用。** 到场的校验后端由这条命令纳入了谁、宿主为谁预置了实例决定（见 [config](design-config.md)、[core](design-core.md)），宿主可以在不同命令下列举不同的后端。同一份凭据因此可能在一条命令下认证得上，在另一条命令下落到无人认领并收口 401，两条路径的代码完全相同。
+- **凭据不保证不进日志。** 脱敏规则由持有秘密的模块各自在 `New` 里登记；网关的键名规则与不依赖 scheme 的值形状规则也在 `New` 里登记，只有按 scheme 生成的那一条要到 `Init` 才知道各后端认领了哪些 scheme，在 `Init` 登记，在它之前绑定的属性不受它约束，各模块的 `New` 里不往 logger 绑任何敏感属性。日志模块不在这条命令的参与集里就登记不上，失效形态是脱敏层在而规则为空（见 [architecture](../../architecture.md) 的安全边界）。登记上了，值形状规则也只遮蔽已识别的形状：以 auth-param 列表写出的凭据、取值跨了几个词的凭据、不带 scheme 名写出的凭据，都有部分或全部留在明文里（规则见 [design-authn-gate](design-authn-gate.md)）。
+- **入口排空超时之后不保证还能认证。** 网关与各校验后端都不声明 `Serve`，都在每个入口排空结束之后才收到 `Stop`，任何模块又都在全部 `Stop` 之后才收到 `Close`（见 [core](../design-core.md)），入口在排空时限之内走完的请求因而照常得到认证。排空时限到期之后仍在途、此后才走到认证层的请求，面对的是已停止接受后端调用的网关，一律收口 503，不因为进程正在关闭而放行。
+- **同一份凭据不保证在同一个二进制的每条命令下都可用。** 到场的校验后端由这条命令纳入了谁、宿主为谁预置了实例决定（见 [config](../design-config.md)、[core](../design-core.md)），宿主可以在不同命令下列举不同的后端。同一份凭据因此可能在一条命令下认证得上，在另一条命令下落到无人认领并收口 401，两条路径的代码完全相同。
 - **保障等级不保证被独立证明。** `Assurance` 由校验后端自报，网关只做形状、界限与账户命名空间的校验：宿主选择哪些校验后端，就是在选择信任谁来自报。缓解只在本功能目录自己的后端上成立：它们都经同一个 `MFA` 能力得出等级。
 - **身份的属性集是快照。** 登录会话里记下的 `idp.*` 是该次登录的快照，账户属性经账户快照缓存读取；宿主改了账户属性，要等缓存过期才进身份。
-- **准入层覆盖面之外的冒充拦截不由网关保证。** 准入层所守的端上、被租户解析豁免的路由没有租户上下文：非冒充身份照常放行，冒充身份得 404，这个拒绝完全落在准入层对“无租户上下文”的判定上；网关与 `ScopeGuard` 都不核对宿主有没有在那些端上开解析豁免（[design-tenant-admission](design-tenant-admission.md)）。
+- **准入层覆盖面之外的冒充拦截不由网关保证。** 准入层所守的端上、被租户解析豁免的路由没有租户上下文：非冒充身份照常放行，冒充身份得 404，这个拒绝完全落在准入层对“无租户上下文”的判定上；网关与 `ScopeGuard` 都不核对宿主有没有在那些端上开解析豁免（[design-tenant-admission](../tenant/design-tenant-admission.md)）。
 - **口令表后端自有的非保证**（失败退避在多副本下的总量）由 [design-authn-gate](design-authn-gate.md) 的本机制不作的保证承载，不在本节重复。
 - **链上各层的真实次序未经运行核对**，见[链上次序](#链上次序)的假设。
 
 **驱动深度浅于 `StageServe` 时：** 本节上述各条不适用——没有请求经过本功能目录。但网关与各模块仍被构造、仍连上各自的依赖、仍在驱动结束时被关闭，不是什么都没发生。**`StagePrepare` 是 `Stage` 的零值**：一条忘了写深度的服务命令会“成功”跑完表态就退出，退出码为零，而认证层从未存在过。
 
-**网关未被纳入这条命令、也没有预置实例时：** 链上没有认证层，该端全部路由无认证放行。这是 fail-open，不是 fail-closed：登记随网关一同缺席，不产生任何残留的登记项，但“没有残留”描述的只是登记这一侧，门本身根本不存在。网关不在场时登记方 `core.Resolve[authn.Gate](reg)` 取不到登记面，怎么处置由登记方自己决定，“取不到就跳过”这个默认写法落在全开那一侧。这种情形不产生本功能目录自己的信号：[architecture](../architecture.md) 的可观测性一节写明，诊断不覆盖未被纳入、也没有预置实例的模块，理由是它们起于宿主写在命令树上的决定、不是意外。注册表的启用结果查询与参与结果查询答得出它不在，但要宿主主动去问；中间件约束那一侧只在本端有别的层点名过认证功能时留下一行“该功能在本端无人代表”，分不出成因，本端没有任何层点名过认证功能时一行都不会打印。
+**网关未被纳入这条命令、也没有预置实例时：** 链上没有认证层，该端全部路由无认证放行。这是 fail-open，不是 fail-closed：登记随网关一同缺席，不产生任何残留的登记项，但“没有残留”描述的只是登记这一侧，门本身根本不存在。网关不在场时登记方 `core.Resolve[authn.Gate](reg)` 取不到登记面，怎么处置由登记方自己决定，“取不到就跳过”这个默认写法落在全开那一侧。这种情形不产生本功能目录自己的信号：[architecture](../../architecture.md) 的可观测性一节写明，诊断不覆盖未被纳入、也没有预置实例的模块，理由是它们起于宿主写在命令树上的决定、不是意外。注册表的启用结果查询与参与结果查询答得出它不在，但要宿主主动去问；中间件约束那一侧只在本端有别的层点名过认证功能时留下一行“该功能在本端无人代表”，分不出成因，本端没有任何层点名过认证功能时一行都不会打印。
 
 **宿主为网关预置的实例不是网关模块的产物时：** 链上同样没有认证层，该端全部路由无认证放行；网关的回调对这样的实例从 `Migrate` 到 `Close` 都不做事，登记表与后端名单也不写出，`mount.endpoint` 是否属于受守的端、是否不属于 `ScopeGuard` 所守的端，以及冒充身份的范围核对，都随之缺席，由预置它的宿主自己负责；脱敏规则同样不登记：键名规则与不依赖 scheme 的值形状规则在网关的 `New` 里登记，依赖 scheme 的值形状规则在 `Init` 里登记，预置的实例两者都没有经过，规则全集一条都不在，所以「凭据不保证不进日志」这一条在这样的装配里即使日志模块在场也成立。与未被纳入不同，这时注册表答网关在场：预置了实例的模块在参与集里、表态固定为启用，宿主去问也问不出认证层的缺席。本功能目录认得出实例不是自己的产物，认不出宿主为什么顶替它、链上由谁承担认证，这取决于顶替者与装配里的其余层，因而归入非保证，不配哨兵。宿主自己要做的见[对宿主的要求](#对宿主的要求)。
 
 ## 并发与事务边界
 
-**每个模块只在自己的事务里写自己的表。** `pkg/db` 没有跨模块传递事务句柄的通道，别的模块的表也可能因模块未纳入而不存在；账户停用与删除之后各模块的清理因此不写进账户的事务，走根包的 `AccountLifecycle` 钩子（同步调用）与发件箱事件（补偿），钩子与事件都幂等，整体至少一次、非原子。清理没做完时，残留的行不能用于认证：正确性的底线由账户级 `valid_after` 与账户状态检查承担，不靠清理做完（[ADR-authn-account-lifecycle-2026-10-10](../../adr/adr-authn-account-lifecycle-2026-10-10.md)）。事务内只暂存发件箱事件，不调 `audit.Record` 与 `Bus.Publish`。
+**每个模块只在自己的事务里写自己的表。** `pkg/db` 没有跨模块传递事务句柄的通道，别的模块的表也可能因模块未纳入而不存在；账户停用与删除之后各模块的清理因此不写进账户的事务，走根包的 `AccountLifecycle` 钩子（同步调用）与发件箱事件（补偿），钩子与事件都幂等，整体至少一次、非原子。清理没做完时，残留的行不能用于认证：正确性的底线由账户级 `valid_after` 与账户状态检查承担，不靠清理做完（[ADR-authn-account-lifecycle-2026-10-10](../../../adr/adr-authn-account-lifecycle-2026-10-10.md)）。事务内只暂存发件箱事件，不调 `audit.Record` 与 `Bus.Publish`。
 
 **一次性凭据与流程的消费靠原子的条件写**，败者一律拒绝：db 的唯一约束与条件更新，kv 的比较并交换。进程内缓存只作缓存，不作校验依据；撤销以数据库行的撤销标记为准，不比较时间，所以时钟偏差不会让撤销失效。
 
@@ -641,7 +641,7 @@ flowchart LR
 - 每个模块的 `Prepare` 只表态 `StateEnabled`，永不 `StateAuto`。
 - **同一模块交付的各能力接口，方法名两两不相交。** 一个模块只有一个实例，`core.Resolve[T]` 对它做 `v.(T)`，构造期 `assertDelivered` 逐个核对 `Provides` 里声明的接口，缺一个即 `ErrUndeliveredCapability`；同名而签名不同的方法让一个类型无法同时实现两个接口。每个模块在包内加编译期断言 `var _ authn.X = (*product)(nil)`，并在 `assembly_test` 里用真实注册表跑一遍 `assertDelivered`；新增能力接口时先对同一模块的其他接口查重名。同名同签名的方法一个即可满足两个接口。
 - **一个模块、一个实例、一个登录方式名。** `LoginMethod.Name()` 返回单个全局唯一的字符串，重名即 `ErrMethodConflict`；需要两个入口名的提供方拆成两个模块，每个模块一份配置与必填校验。`Factor` 同理，一个模块一个 `Kind()`，同种即 `ErrFactorConflict`。
-- 挂路由的模块一律经 `authn.mount` 交付的内部接口 `mount.Mounter` 挂路由，它经网关的公开登记面成对登记路由与访问级别（[ADR-authn-exemption-2026-10-10](../../adr/adr-authn-exemption-2026-10-10.md)、[design-authn-gate](design-authn-gate.md)）。
+- 挂路由的模块一律经 `authn.mount` 交付的内部接口 `mount.Mounter` 挂路由，它经网关的公开登记面成对登记路由与访问级别（[ADR-authn-exemption-2026-10-10](../../../adr/adr-authn-exemption-2026-10-10.md)、[design-authn-gate](design-authn-gate.md)）。
 - 校验后端的准入条件由 [design-authn-gate](design-authn-gate.md) 承载。
 
 **宿主扩展用户字段的途径按判据例举，不是封闭集；判据是不改动 authn 的表结构**。各途径的界限与取舍见 [design-authn-account](design-authn-account.md#宿主扩展用户字段)：

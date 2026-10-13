@@ -8,7 +8,7 @@
 
 限流是链上的一层，位置由它声明的功能标识定。认证网关交付 `(*authn.Gate)(nil)` 作为链上的定序锚点，限流用 `After` 指向它，落在认证之内。
 
-认证交付的身份带一把责任键，由 `Identity.Key()` 给出，定义见 [ADR-authn-identity-2026-10-10](adr-authn-identity-2026-10-10.md) 与 [design-authn](../design/modules/design-authn.md)。本层不透明地使用它。
+认证交付的身份带一把责任键，由 `Identity.Key()` 给出，定义见 [ADR-authn-identity-2026-10-10](adr-authn-identity-2026-10-10.md) 与 [design-authn](../design/modules/authn/design-authn.md)。本层不透明地使用它。
 
 认证模块同时声明：豁免路由上带着正确凭据也取不到身份；可选认证的路由上没带凭据的请求取不到身份；链上没有认证层时全部请求都取不到身份，宿主既没有纳入认证模块、也没有为它预置实例，或为网关预置的实例不是网关模块的产物，都是这种装配（[ADR-authn-guarantees-2026-10-10](adr-authn-guarantees-2026-10-10.md)）；下游必须自己处置取不到的那一档。
 
