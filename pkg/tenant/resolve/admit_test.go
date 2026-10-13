@@ -392,7 +392,7 @@ func TestADeliveredErrorResponderDecidesTheShape(t *testing.T) {
 				t.Fatalf("the response body is %q, want the responder's %q", got.body, want)
 			}
 			handed := responder.handed()
-			if len(handed) != 1 || handed[0] != (speedhttp.Problem{Status: c.status}) {
+			if len(handed) != 1 || handed[0].Status != c.status {
 				t.Fatalf("the responder was handed %+v, want one Problem carrying the status %d alone",
 					handed, c.status)
 			}

@@ -3,13 +3,13 @@ package authn
 import "testing"
 
 // TestLocaleOfReadsTheEmptyValueAsTheDefault holds the mapping's one job: an
-// empty value names no language and reads as LocaleZH, and a language the caller
+// empty value names no language and reads as LocaleEN, and a language the caller
 // named is returned as it is.
 func TestLocaleOfReadsTheEmptyValueAsTheDefault(t *testing.T) {
 	for _, c := range []struct{ in, want string }{
-		{"", LocaleZH},
-		{LocaleZH, LocaleZH},
+		{"", LocaleEN},
 		{LocaleEN, LocaleEN},
+		{LocaleZH, LocaleZH},
 	} {
 		if got := LocaleOf(c.in); got != c.want {
 			t.Errorf("LocaleOf(%q) = %q, want %q", c.in, got, c.want)

@@ -62,7 +62,7 @@ type Start struct {
 	Fields    map[string]string // 开始请求的 input，至多 8 个、每个至多 512 字符
 	Client    ClientInfo        // 来源地址与用户代理：供日志与审计，不作判定与绑定依据
 	SendsLeft int               // 本流程还可发的短信条数，见「短信发送的每流程上限」
-	Locale    string            // 引擎对请求 Accept-Language 的封闭集映射；空读作 zh-CN（见「流程记录」的 locale）
+	Locale    string            // 引擎对请求语言解析出的封闭集映射；优先取 i18n 协商结果，空读作 en-US（见「流程记录」的 locale）
 }
 
 // FlowState 是引擎交给方法的、方法不得改写的视图，加上方法私有的字节。
@@ -385,7 +385,7 @@ kv 键是 `authn:flow:<流程令牌的 SHA-256 十六进制>`。kv 不划分命�
 | `merged` | 本次账户解析是否发生了自动并入（A4 的自动关联、A5 的 `merge_existing`），完成时据此执行 A10 |
 | `delivery`、`return_to` | `session` 或 `token`；登录后的回跳，`Begin` 时校验，回跳时只用记录里的值 |
 | `session`、`answers`、`sends` | `session`：`link`、`step-up`、`enroll` 流程发起时的登录会话标识，完成时复核；`answers`：已接受的答复数，至多 8；`sends`：本流程已发的短信数，由引擎把方法与因素经 `Step.WithSends` 报告的条数累加进同一次比较并交换，上限与核对见「短信发送的每流程上限」 |
-| `locale` | `Begin` 时由 `Accept-Language` 按封闭集映射出的语言，原样交给 `SendCode.Locale`，供短信按语言选模板 |
+| `locale` | `Begin` 时解析出的语言：优先取 i18n 协商结果（`localeOf`），取不到读作 `en-US`；原样交给 `SendCode.Locale`，供短信按语言选模板 |
 | `created_at`、`expires_at` | 绝对到期，与键的生存期一致 |
 
 `state` 的取值是封闭集：`first`（第一因素）、`processing`（处理中，仅回跳类）、`second`（第二因素）、`enroll`（登记因素）、`ready`（就绪），以及终态墓碑 `done` 与 `failed`。墓碑与记录同寿，交换不改动过期。
@@ -651,6 +651,7 @@ cookie 的属性是 `Secure; HttpOnly; Path=/`、无 `Domain`、**`SameSite=None
 | `DELETE B/identifiers/:id` | 删本人持有的标识；标识不属本人与不存在同形，都答 400 `bad-request`；不检查最后登录方式（那是解绑外部身份才有的规则），也不撤销会话；`authn.identifier.changed` 由 [authn-account](design-authn-account.md) 在删除时发布 |
 | `DELETE B/links/:id` | 解绑外部身份；账户有因素时，IdP 声明的多因素不算；解绑后账户至少还剩一种可用登录方式，否则 409 `conflict`；成功后撤销其余会话并发 `authn.binding.changed` |
 | `GET B/me` | 读本人的资料、标识与外部绑定 |
+| `PATCH B/me/preferences` | 改本人的语言与时区偏好：请求体带 `locale`（BCP 47 标签）与 `time_zone`（IANA 名称），值经账户属性集的 `i18n.locale`、`i18n.tz` 写入，良构与取值域校验失败即 400 `bad-request`（[authn-account](design-authn-account.md)）；这项改动虽不改变认证事实，仍要求新鲜认证并过 CSRF，冒充中一律拒绝 |
 
 邮箱只经 IdP 断言或管理员断言成为标识，没有自助添加邮箱的路由；用户名只由管理员添加。规则的判据归 [authn-account](design-authn-account.md)。
 
@@ -662,7 +663,7 @@ cookie 的属性是 `Secure; HttpOnly; Path=/`、无 `Domain`、**`SameSite=None
 
 手机号验证不是流程，没有流程记录；验证码与号码的对应关系放在 kv 里，键是 `authn:phone:<发起会话标识的 SHA-256 十六进制>`，一个会话同一时刻至多一条，值是 `{account, phone, challenge_id}`，有效期不长于挑战行的有效期（[authn-sms](design-authn-sms.md)）。客户端不提交挑战标识与号码之外的凭据，也无从选择验证哪个号码。
 
-- **`POST B/phone {phone}`**：规范化号码；`SMSCodes.Send(Purpose = enroll, Account = 身份的账户, Deliver = true)`；写记录，覆盖该会话先前的记录；应答 `{expires_in, resend_after}`，不含挑战标识。这条路由不经流程记录，`SendCode` 不带 `Locale`（空读作 `zh-CN`），短信按 `zh-CN` 模板。号码已被别的账户占用时同样应答并发码，占用情况不外露，冲突在 `verify` 写入标识时以 `ErrAccountExists` 为准。
+- **`POST B/phone {phone}`**：规范化号码；`SMSCodes.Send(Purpose = enroll, Account = 身份的账户, Deliver = true)`；写记录，覆盖该会话先前的记录；应答 `{expires_in, resend_after}`，不含挑战标识。这条路由不经流程记录，`SendCode` 不带 `Locale`（空读作 `en-US`），短信按 `en-US` 模板。号码已被别的账户占用时同样应答并发码，占用情况不外露，冲突在 `verify` 写入标识时以 `ErrAccountExists` 为准。
 - **`POST B/phone/verify {code}`**：读取该会话的记录，账户与身份不一致或记录不存在为 401 `flow-invalid`；先 `Throttle.Check(ScopePhone, 号码摘要)`，再 `SMSCodes.Verify(challenge_id, code)`，被拒 `Throttle.Fail`，通过 `Throttle.Succeed`；通过后以记录里的号码调 `AccountAdmin.AddIdentifier(账户, IdentifierPhone, 号码, sms-code)`（账户已有手机标识时即更换，规则归 [authn-account](design-authn-account.md)），删除记录，撤销其余会话。
 - **kv 不可用**：`POST B/phone` 与 `POST B/phone/verify` 都答 503，不发码、不校验。记录丢失只使验证失败，用户重发。
 

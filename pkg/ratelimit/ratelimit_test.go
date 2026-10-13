@@ -481,7 +481,7 @@ func TestADeliveredErrorResponderDecidesTheShapeOfTheRefusal(t *testing.T) {
 		t.Fatalf("Retry-After is %d, want the 60 seconds left of the window", got)
 	}
 	handed := responder.handed()
-	if len(handed) != 1 || handed[0] != (speedhttp.Problem{Status: nethttp.StatusTooManyRequests}) {
+	if len(handed) != 1 || handed[0].Status != nethttp.StatusTooManyRequests {
 		t.Fatalf("the responder was handed %+v, want one Problem carrying the status 429 alone", handed)
 	}
 }

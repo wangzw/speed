@@ -22,6 +22,14 @@ type Problem struct {
 	Status int
 	// Detail explains this occurrence of the problem.
 	Detail string
+	// Key names the message that renders this problem's title, when the
+	// response is rendered through the i18n capability. It is left empty when
+	// the title is to be derived from Type instead, and it never reaches the
+	// default shape.
+	Key string
+	// Args carries the values a parameterised message interpolates. It is read
+	// only alongside Key, and like it never reaches the default shape.
+	Args map[string]string
 	// Instance identifies this occurrence of the problem.
 	Instance string
 	// Cause is what the problem came from. The default response leaves it

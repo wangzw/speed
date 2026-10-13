@@ -53,7 +53,7 @@ func message(in SendCode, challengeID, code, ttlMinutes string) sms.Message {
 		To:       in.Phone,                    // 已规范化的 E.164
 		Template: purposeTemplate(in.Purpose), // authn.code.login / mfa / enroll
 		Params:   map[string]string{"code": code, "ttl_minutes": ttlMinutes},
-		Locale:   localeOf(in.Locale),         // 空读作 zh-CN，归一在根包 LocaleOf 一处
+		Locale:   localeOf(in.Locale),         // 空读作 en-US，归一在根包 LocaleOf 一处
 		DedupeID: challengeID,
 	}
 }
@@ -72,7 +72,7 @@ type SendCode struct {
 	Purpose string    // login、mfa、enroll
 	Phone   string    // E.164，已规范化
 	Account AccountID // mfa、enroll 必填；login 不填，也不按它计数
-	Locale  string    // zh-CN、en-US，由调用方填入；空读作 zh-CN
+	Locale  string    // zh-CN、en-US，由调用方填入；空读作 en-US
 	Deliver bool      // 为假：只写抑制行并计入全部预算，不入队不发送
 }
 
@@ -91,7 +91,7 @@ type SMSCodes interface {
 
 - **`Send` 的调用方责任。** `Purpose` 取自封闭集，`Phone` 已规范化，`mfa` 与 `enroll` 的 `Account` 非空；违反即调用方缺陷，`Send` 返回普通错误，不属于哨兵集。每流程发送上限由调用方在 `Send` 之前核对。
 - **`Send` 对 `Deliver` 为真与为假的调用走同一条路径。** 应答只有 `challengeID` 一种形状，调用方无法从返回值、状态码或错误形态区分抑制行与真实行（耗时见「非保证」）。
-- **`Locale` 的来源与取值。** 语言取值的封闭集是根包 `pkg/authn` 的 `LocaleZH`（`zh-CN`）与 `LocaleEN`（`en-US`）两个常量，本模块取用它；`pkg/sms` 不声明语言闭集，把语言当作不透明串（[design-sms](design-sms.md)）。本模块不读 HTTP，也不解析 `Accept-Language`：`Accept-Language` 到语言的映射由登录引擎在发起流程的请求上做（取不到或不在闭集内读作 `zh-CN`），存入流程记录，经方法与因素的入参交给调用方，调用方原样填入 `SendCode.Locale`；映射本身归 [design-authn-login](design-authn-login.md)。**空值的归一只有一处**：根包 `LocaleOf` 把空串读作 `LocaleZH`、把非空值原样返回，它只填默认值、不把一种语言替换成另一种，所以一个不在闭集内的值原样透传。两条 fail-closed 路径由此分开：`Send` 的入参校验把非空且不在闭集内的语言按调用方缺陷拒掉，返回普通错误；而直接调用 `sms.Sender`、传入未经归一的 `Locale` 时，`pkg/sms` 把空 `Locale` 读作调用方缺陷、把语言在该模板的编号表里没有也读作调用方缺陷，一律以 `ErrRejected` 拒绝、不调厂商（[design-sms](design-sms.md)）。本模块构造的 `sms.Message.Locale` 取 `SendCode.Locale` 经 `LocaleOf` 归一后的值。
+- **`Locale` 的来源与取值。** 语言取值的封闭集是根包 `pkg/authn` 的 `LocaleZH`（`zh-CN`）与 `LocaleEN`（`en-US`）两个常量，本模块取用它；`pkg/sms` 不声明语言闭集，把语言当作不透明串（[design-sms](design-sms.md)）。本模块不读 HTTP，也不解析 `Accept-Language`：`Accept-Language` 到语言的解析由登录引擎在发起流程的请求上做（优先取 i18n 协商结果，取不到或不在闭集内读作 `en-US`），存入流程记录，经方法与因素的入参交给调用方，调用方原样填入 `SendCode.Locale`；解析本身归 [design-authn-login](design-authn-login.md)。**空值的归一只有一处**：根包 `LocaleOf` 把空串读作 `LocaleEN`、把非空值原样返回，它只填默认值、不把一种语言替换成另一种，所以一个不在闭集内的值原样透传。两条 fail-closed 路径由此分开：`Send` 的入参校验把非空且不在闭集内的语言按调用方缺陷拒掉，返回普通错误；而直接调用 `sms.Sender`、传入未经归一的 `Locale` 时，`pkg/sms` 把空 `Locale` 读作调用方缺陷、把语言在该模板的编号表里没有也读作调用方缺陷，一律以 `ErrRejected` 拒绝、不调厂商（[design-sms](design-sms.md)）。本模块构造的 `sms.Message.Locale` 取 `SendCode.Locale` 经 `LocaleOf` 归一后的值。
 - **`Verify` 不回传号码与账户。** 通过只证明持有该挑战标识的调用方出示了正确的码；码发往哪个号码，由调用方在自己的流程记录里保存，以发起时的号码为准。
 - **`Verify` 对抑制行恒返回 `ErrInvalidCredentials`**，照样计数并做一次诱饵比对。
 - **方法名核对。** 同一模块交付的各能力接口方法名两两不相交的规则见 [design-authn](design-authn.md#扩展点)。`authn.sms` 交付的 `SMSCodes` 的方法（`Send`、`Verify`）与 `AccountLifecycle` 的方法（`AccountDisabled`、`AccountDeleted`、`ServiceSecretRevoked`）互不重名；`sms.Sender` 的 `Send` 与 `SMSCodes` 的 `Send` 同名异签，二者由不同模块交付（`sms.Sender` 由 `pkg/sms` 的载体叶子，`SMSCodes` 由 `authn.sms`），不会落在同一个类型上。

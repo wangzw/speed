@@ -8,6 +8,7 @@ import (
 
 	"github.com/vislake/speed/pkg/authn"
 	"github.com/vislake/speed/pkg/authn/internal/mount"
+	"github.com/vislake/speed/pkg/i18n"
 )
 
 // profile is the answer of GET /me.
@@ -18,6 +19,8 @@ type profile struct {
 	MFARequired bool   `json:"mfa_required"`
 	PasswordSet bool   `json:"password_set"`
 	CreatedAt   string `json:"created_at"`
+	Locale      string `json:"locale"`
+	Timezone    string `json:"time_zone"`
 
 	Identifiers []identifierView `json:"identifiers"`
 	Links       []linkView       `json:"links"`
@@ -75,6 +78,8 @@ func (r *routes) me(c *gin.Context) {
 		MFARequired: account.MFARequired,
 		PasswordSet: account.PasswordSet,
 		CreatedAt:   instant(account.CreatedAt),
+		Locale:      account.Attributes[i18n.LocaleAttributeKey],
+		Timezone:    account.Attributes[i18n.TimeZoneAttributeKey],
 		Identifiers: make([]identifierView, 0, len(identifiers)),
 		Links:       make([]linkView, 0, len(links)),
 	}

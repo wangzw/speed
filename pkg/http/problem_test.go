@@ -6,6 +6,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"maps"
 	nethttp "net/http"
 	"net/http/httptest"
 	"slices"
@@ -16,6 +17,16 @@ import (
 
 	"github.com/gin-gonic/gin"
 )
+
+// equalProblem compares two problems field by field. A Problem carries an
+// attribute map, so it is not comparable with ==; a test that pins the whole of
+// one compares it with this.
+func equalProblem(a, b Problem) bool {
+	return a.Type == b.Type && a.Title == b.Title && a.Status == b.Status &&
+		a.Detail == b.Detail && a.Key == b.Key && a.Instance == b.Instance &&
+		errors.Is(a.Cause, b.Cause) && errors.Is(b.Cause, a.Cause) &&
+		maps.Equal(a.Args, b.Args)
+}
 
 // recordingResponder is an ErrorResponder a test holds. It replaces the whole
 // shape: its own media type, its own body, and the status the Problem asks for.
@@ -511,7 +522,7 @@ func TestADeliveredResponderReplacesTheWholeShape(t *testing.T) {
 	if responder.calls() != 1 {
 		t.Fatalf("the responder was asked %d times, want once", responder.calls())
 	}
-	if got := responder.problem(t, 0); got != given {
+	if got := responder.problem(t, 0); !equalProblem(got, given) {
 		t.Errorf("the responder was handed %+v, want the whole of %+v, Cause included", got, given)
 	}
 	if got := recorder.Header().Get("Content-Type"); got != customMediaType {
@@ -728,10 +739,10 @@ func TestNotFoundAndMethodNotAllowedUseTheDeliveredResponder(t *testing.T) {
 	if responder.calls() != 2 {
 		t.Fatalf("the responder was asked %d times for a 404 and a 405, want twice", responder.calls())
 	}
-	if got := responder.problem(t, 0); got != (Problem{Status: nethttp.StatusNotFound}) {
+	if got := responder.problem(t, 0); !equalProblem(got, Problem{Status: nethttp.StatusNotFound}) {
 		t.Errorf("the 404 reached the responder as %+v", got)
 	}
-	if got := responder.problem(t, 1); got != (Problem{Status: nethttp.StatusMethodNotAllowed}) {
+	if got := responder.problem(t, 1); !equalProblem(got, Problem{Status: nethttp.StatusMethodNotAllowed}) {
 		t.Errorf("the 405 reached the responder as %+v", got)
 	}
 	if got := responder.headerSeen(t, 1).Get("Allow"); got != "GET" {

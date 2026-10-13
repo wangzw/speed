@@ -112,7 +112,7 @@ func checkSendCode(in authn.SendCode) error {
 	}
 	if !validLocale(in.Locale) {
 		return fmt.Errorf("%w: the locale %q is not one of %s and %s",
-			errCallerDefect, in.Locale, localeDefault, localeEnglish)
+			errCallerDefect, in.Locale, localeChinese, localeEnglish)
 	}
 	if in.Purpose != purposeLogin && in.Account == "" {
 		return fmt.Errorf("%w: the purpose %q counts against an account, and none is set",

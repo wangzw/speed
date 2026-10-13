@@ -1,17 +1,20 @@
 package selfservice
 
 import (
+	"context"
 	"crypto/sha256"
 	"encoding/hex"
 	"encoding/json"
 	"errors"
 	"net/http"
 	"regexp"
+	"strings"
 
 	"github.com/gin-gonic/gin"
 
 	"github.com/vislake/speed/pkg/authn"
 	"github.com/vislake/speed/pkg/authn/internal/mount"
+	"github.com/vislake/speed/pkg/i18n"
 )
 
 // phoneKeyPrefix starts the key of a pending phone verification. The key is the
@@ -49,6 +52,26 @@ func phoneKey(session authn.SessionID) string {
 func phoneThrottleKey(phone string) string {
 	sum := sha256.Sum256([]byte(phone))
 	return hex.EncodeToString(sum[:])
+}
+
+// smsLocale names the closed-set language the request's negotiated locale maps
+// to, or the empty string when the request named none of the set, which the SMS
+// module reads as the default. It is the same mapping the login engine applies to
+// a start request; the two call sites are in packages that share no helper, and
+// the closed set belongs to the root package rather than to either of them.
+func smsLocale(ctx context.Context) string {
+	locale, ok := i18n.FromContext(ctx)
+	if !ok {
+		return ""
+	}
+	switch strings.ToLower(strings.SplitN(string(locale), "-", 2)[0]) {
+	case "en":
+		return authn.LocaleEN
+	case "zh":
+		return authn.LocaleZH
+	default:
+		return ""
+	}
 }
 
 // startPhoneRequest is the body of POST /phone.
@@ -103,6 +126,7 @@ func (r *routes) startPhone(c *gin.Context) {
 		Purpose: authn.SMSPurposeEnroll,
 		Phone:   req.Phone,
 		Account: who.account,
+		Locale:  smsLocale(ctx),
 		Deliver: true,
 	})
 	if err != nil {

@@ -201,12 +201,14 @@ type Spec struct {
 ```go
 // Problem 是一次错误响应的内容，字段取自 RFC 9457。
 type Problem struct {
-    Type     string // 缺省为 "about:blank"
-    Title    string // 缺省为状态码的标准说明，没有标准说明的状态码则省略
+    Type     string            // 缺省为 "about:blank"
+    Title    string            // 缺省为状态码的标准说明，没有标准说明的状态码则省略
     Status   int
     Detail   string
     Instance string
-    Cause    error // 不写入默认响应体，供定制的 ErrorResponder 读取
+    Key      string            // 消息键，供本地化的 ErrorResponder 取文案；空则由 Type 推导
+    Args     map[string]string // 消息的插值参数，值填入 Key 所指文案的占位符
+    Cause    error             // 不写入默认响应体，供定制的 ErrorResponder 读取
 }
 
 // ErrorResponder 决定本模块写出的全部错误响应的形状。
@@ -219,6 +221,8 @@ func Fail(c *gin.Context, p Problem)
 ```
 
 没有模块交付 `ErrorResponder` 时用默认形状：以 `Problem.Status` 为状态码，不在 200 至 599 之内时写 500——单独写出的 1xx 是信息性响应，不是最终状态；响应体是 `application/problem+json`，内容为 `Type`、`Title`、`Status`、`Detail` 与 `Instance` 中的非空字段，`Cause` 不写入。默认形状自己写出响应体，调用方在此之前设过的 `Content-Length` 与 `Content-Encoding` 描述的是另一份响应体，它丢弃这两个头，其余响应头保留。兜底层接住 panic 后写默认形状时，另外丢弃描述 handler 原打算写出的那份内容的头：`Content-Disposition`、`ETag`、`Last-Modified`、`Content-Range`、`Accept-Ranges`、`Cache-Control` 与 `Expires`——一条带着 handler 的 `Cache-Control: public` 的 500 会被缓存当作答案留下。交付者替换的是整个形状：它须按 `Problem.Status` 写出状态码，响应体与媒体类型由它决定，响应头一概不由本模块动。
+
+**`Key` 与 `Args` 供本地化的形状读取，不进默认响应体。** `Key` 是本地化错误文本的消息键，`Args` 是它的插值参数；交付 `ErrorResponder` 的 `pkg/i18n/respond` 按请求语言取 `Key` 所指的消息、用 `Args` 插值，渲染出 `Title`，保留 `Type`、`Status` 与 `Detail` 原样，并写 `Content-Language`。`Key` 为空时由 `Type` 推导。没有交付者时两个字段不被读取，`Title`、`Detail` 仍取 `Problem` 上的原样值（[ADR-i18n-error-rendering-2026-10-13](../../adr/adr-i18n-error-rendering-2026-10-13.md)）。
 
 **经这处决定形状的响应**是：`Fail` 写出的；兜底层接住 panic 后写出的，状态码 500，`Cause` 是一个包着 panic 值的错误；无匹配路由的 404；方法不允许的 405。handler 用 gin 自己写出的响应不经它。
 
@@ -304,6 +308,8 @@ classDiagram
         +Status int
         +Detail string
         +Instance string
+        +Key string
+        +Args map
         +Cause error
     }
     class GinEngine {

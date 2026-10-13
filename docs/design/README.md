@@ -41,3 +41,4 @@ speed 是一个配置驱动的模块化应用程序框架，以 Go 库的形式�
 | [settings](modules/design-settings.md) | 设置：模块声明的运行期参数、三级回落、以快照读取、变更事件的发布与订阅 |
 | [ratelimit](modules/design-ratelimit.md) | 限流：租户内按责任键的请求速率限制、以设置读取额度与窗口、经键值原语按窗口计数 |
 | [observability](modules/design-observability.md) | 运行期遥测：上游 SDK 的 provider、请求路径的采集、出站注入、导出后端 |
+| [i18n](modules/design-i18n.md) | 面向用户文本的渲染：消息目录的收集与装载、语言与时区的解析链、Accept-Language 协商、错误响应的本地化、账户偏好的存取 |

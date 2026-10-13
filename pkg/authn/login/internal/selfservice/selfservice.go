@@ -114,6 +114,7 @@ type routes struct {
 func (s *Service) Mount(m mount.Mounter) {
 	r := &routes{Service: s, endpoint: m.Endpoint()}
 	m.Guarded(http.MethodGet, "/me", r.me, mount.Impersonable())
+	m.Guarded(http.MethodPatch, "/me/preferences", r.updatePreferences)
 	m.Guarded(http.MethodPut, "/password", r.changePassword)
 	if s.deps.SMSCodes != nil {
 		m.Guarded(http.MethodPost, "/phone", r.startPhone)

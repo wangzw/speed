@@ -7,7 +7,6 @@ import (
 	"strings"
 	"testing"
 
-	speedhttp "github.com/vislake/speed/pkg/http"
 	"github.com/vislake/speed/pkg/tenant"
 )
 
@@ -63,7 +62,7 @@ func TestAPanicInTheLayerIsAnsweredInTheShapeAResponderDecides(t *testing.T) {
 			got.status, got.header.Get("Content-Type"))
 	}
 	handed := responder.handed()
-	if len(handed) != 1 || handed[0] != (speedhttp.Problem{Status: nethttp.StatusInternalServerError}) {
+	if len(handed) != 1 || handed[0].Status != nethttp.StatusInternalServerError {
 		t.Fatalf("the responder was handed %+v, want one Problem carrying the status 500 alone", handed)
 	}
 }

@@ -671,6 +671,17 @@ import (
 	"github.com/vislake/speed/pkg/tenant/catalog"
 	"github.com/vislake/speed/pkg/tenant/resolve"
 
+	// The i18n capability: the engine collecting the message catalogs modules
+	// declare, the entry point wiring that settles each request's language on
+	// every endpoint, the responder that renders an error in it, and the bridge
+	// to an account's stored language and time zone. Aliased, because the
+	// catalog package shares the roster's name and the account package the
+	// identity system's.
+	i18naccount "github.com/vislake/speed/pkg/i18n/account"
+	i18ncatalog "github.com/vislake/speed/pkg/i18n/catalog"
+	i18nhttp "github.com/vislake/speed/pkg/i18n/http"
+	i18nrespond "github.com/vislake/speed/pkg/i18n/respond"
+
 	_ "github.com/vislake/speed/pkg/config/format/json"
 	_ "github.com/vislake/speed/pkg/config/format/yaml"
 	_ "github.com/vislake/speed/pkg/config/source/file"
@@ -880,6 +891,17 @@ func addStack(root *config.Command, s stack) {
 		journal.ModuleName,
 		ratelimit.ModuleName,
 		settings.ModuleName,
+		// The i18n capability. The engine collects the message catalogs modules
+		// declare and delivers the localizer, the negotiator and the resolver;
+		// the entry point wiring settles each request's language, after the
+		// gateway has stamped identity; the responder renders an error in it;
+		// the account bridge reads a user's stored language and time zone and
+		// seeds them at sign-up. The engine and the responder deliver their
+		// capabilities exclusively, so nothing picks them for the host.
+		i18ncatalog.ModuleName,
+		i18nhttp.ModuleName,
+		i18nrespond.ModuleName,
+		i18naccount.ModuleName,
 		// The authorization layer. The engine carries the policy tables and
 		// the permission catalog; the guard is the enforcement middleware on
 		// the authorizing stage and the decision seam the admission layer, the

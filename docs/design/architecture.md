@@ -121,6 +121,37 @@ graph TD
 
 授权由 [authz](modules/design-authz.md) 承载，它 import 认证与租户的根包、`pkg/http` 与下层各包，方向是授权指向它们，认证与租户都不 import 它。授权坐在准入层之上（不变量 17）：`authz.guard` 声明授权阶段，以 `After` 指向 `(*tenant.Admission)(nil)`，在同一阶段内排在准入层之后、handler 之外。
 
+**i18n 功能目录的依赖方向。** 它同样按功能目录的形态拆分：根包是接口包，只依赖标准库，子包各自 import 根包与 `pkg/core`，并按其用途 import `pkg/http` 或 `pkg/authn` 的根包。
+
+```mermaid
+graph TD
+  subgraph i18n["pkg/i18n"]
+    iroot["根包<br/>接口与数据类型"]
+    engine["catalog<br/>引擎 i18n"]
+    ihttp["http<br/>i18n.http"]
+    respond["respond<br/>i18n.respond"]
+    iaccount["account<br/>i18n.account"]
+  end
+  core["pkg/core"]
+  http["pkg/http"]
+  authnroot["pkg/authn 根包"]
+
+  engine --> iroot
+  ihttp --> iroot
+  respond --> iroot
+  iaccount --> iroot
+  engine --> core
+  ihttp --> core
+  respond --> core
+  iaccount --> core
+  ihttp --> http
+  ihttp --> authnroot
+  respond --> http
+  iaccount --> authnroot
+```
+
+箭头表示 import。根包只依赖标准库，因而一个只读语言偏好的模块 import 它不拉进任何第三方库；引擎 `pkg/i18n/catalog` 是唯一用到 `golang.org/x/text/language` 的地方，`i18n.http` 经 `i18n.Negotiator` 取用协商结果而不自己拉这个库。`i18n.http` 取用 `pkg/http` 的登记面在每个端挂两层中间件，并以 `(*authn.Gate)(nil)` 作为它内层中间件的 `After` 锚点，因而 import 认证的根包；`i18n.account` 经认证根包的 `Accounts` 读账户属性、并实现根包的 `Provisioner`，因而同样指向它。**认证的根包不 import `pkg/i18n`**，方向是 i18n 指向认证这一侧：需要同时读身份与语言的子包（如 `pkg/authn/login`）import `pkg/i18n`，而认证根包只依赖标准库与自己的内部包这一点不变（[authn](modules/design-authn.md)、不变量 17 的同向精神）。`pkg/http` 也不 import `pkg/i18n`：它把 `Problem` 交给交付的 `ErrorResponder`，自身不认识语言。
+
 ## 逻辑部署架构
 
 ```mermaid
@@ -191,6 +222,8 @@ speed 不引入进程边界。宿主是单一进程，注册表与全部模块�
 **包裹错误一律用 `%w`，不用 `%v`。** 哨兵的判别力依赖整条错误链完好，链上任何一层改用 `%v`，其下的哨兵就再也 `errors.Is` 不到，而调用方看到的错误文本与包裹正确时几乎一样——这类缺陷不会在文本上显形，只会在判别时静默失效。配置源把底层错误归类为哨兵（见 [config](modules/design-config.md)）正依赖这一点。`core` 自身定义的哨兵错误清单见 [core](modules/design-core.md)。
 
 **每一层为自己产生的启动期错误给出修复动作。** 原样外传的失败不在此列：`core` 不加工它，也无从知道它的修法。模块被消解禁用而退让时，错误或诊断要给出它退让的原因，而非仅报告某个功能没有提供者。
+
+**用户可见的错误文案由 i18n 的 `ErrorResponder` 渲染。** 错误响应的用户可见部分——`Problem` 的 `Title`——由 [i18n](modules/design-i18n.md) 交付的 `ErrorResponder` 按请求语言渲染，而机器码 `Problem.Type`、状态码 `Problem.Status` 与发生处的 `Problem.Detail` 原样保留、不随语言改变。`pkg/http` 不认识语言，它只把 `Problem` 交给交付的渲染器；没有交付时写出默认的 `application/problem+json` 形状（[http](modules/design-http.md)）。
 
 ### 并发模型
 
@@ -306,3 +339,4 @@ speed 不引入进程边界。宿主是单一进程，注册表与全部模块�
 | [settings](modules/design-settings.md) | 已实现 |
 | [ratelimit](modules/design-ratelimit.md) | 已实现 |
 | [observability](modules/design-observability.md) | 已实现 |
+| [i18n](modules/design-i18n.md) | 已实现 |

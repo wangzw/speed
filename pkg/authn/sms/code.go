@@ -18,7 +18,7 @@ const (
 	purposeMFA    = authn.SMSPurposeMFA
 	purposeEnroll = authn.SMSPurposeEnroll
 
-	localeDefault = authn.LocaleZH
+	localeChinese = authn.LocaleZH
 	localeEnglish = authn.LocaleEN
 )
 
@@ -76,7 +76,7 @@ func validPurpose(p string) bool {
 // languages a message may be written in.
 func validLocale(locale string) bool {
 	switch locale {
-	case "", localeDefault, localeEnglish:
+	case "", localeChinese, localeEnglish:
 		return true
 	}
 	return false

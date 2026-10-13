@@ -30,6 +30,7 @@ func TestTheRoutesAreTheseAndNoOthers(t *testing.T) {
 		"DELETE /identifiers/:id",
 		"DELETE /links/:id",
 		"GET /me",
+		"PATCH /me/preferences",
 		"POST /phone",
 		"POST /phone/verify",
 		"PUT /password",
@@ -61,7 +62,7 @@ func TestEveryRouteIsGuardedAndOnlyTheProfileIsImpersonable(t *testing.T) {
 // to an absent route is the engine's 404, not a handler's answer.
 func TestThePhoneRoutesAreMountedOnlyWithSMSCodes(t *testing.T) {
 	h := newHarness(t, func(c *config) { c.noSMS = true })
-	want := []string{"DELETE /identifiers/:id", "DELETE /links/:id", "GET /me", "PUT /password"}
+	want := []string{"DELETE /identifiers/:id", "DELETE /links/:id", "GET /me", "PATCH /me/preferences", "PUT /password"}
 	if got := registered(h.m); !slices.Equal(got, want) {
 		t.Fatalf("routes without SMSCodes = %v, want %v", got, want)
 	}

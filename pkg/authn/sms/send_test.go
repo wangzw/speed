@@ -330,14 +330,14 @@ func TestAnEnrollSendAndAnEnglishSendGoThrough(t *testing.T) {
 }
 
 // TestTheQueuedMessageCarriesTheLanguageTheCallerNamed holds that the message
-// locale is not lost: an empty input reads as the default zh-CN and an en-US
-// input is carried as it is.
+// locale is not lost: an empty input reads as the default en-US and a named
+// language is carried as it is.
 func TestTheQueuedMessageCarriesTheLanguageTheCallerNamed(t *testing.T) {
 	cases := []struct {
 		locale string
 		want   string
 	}{
-		{"", localeDefault},
+		{"", localeEnglish},
 		{"en-US", "en-US"},
 		{"zh-CN", "zh-CN"},
 	}
