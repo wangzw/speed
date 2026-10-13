@@ -19,7 +19,7 @@
 - **不做 HTTP 机制。** 路由、中间件的排序与阶段归 [http](http/design-http.md)；`i18n.http` 只是使用它的登记面在每个端挂层。
 - **不改机器码与状态码。** 机器码 `Problem.Type`、`Problem.Status` 与 `Problem.Detail` 原样保留，不随语言变化；本功能目录渲染的是消息文本，不决定错误响应的形状（[ADR-i18n-error-rendering-2026-10-13](../../adr/adr-i18n-error-rendering-2026-10-13.md)）。
 - **不替消费方渲染消息。** 一条消息由产生它的模块渲染：那个模块承载自己的目录、取用引擎、把成品文本写出；本功能目录只提供引擎与目录机制，不集中渲染任何模块的文本，也不认识某条消息的插值上下文（[ADR-i18n-rendering-ownership-2026-10-13](../../adr/adr-i18n-rendering-ownership-2026-10-13.md)）。
-- **不做日期与时间格式化。** 一条消息的文本、计数（复数）与数字由引擎按它的语言渲染（见核心算法与流程一节）；日期与时间不在其列：一个时间戳作为类型化的值交给客户端渲染，本功能目录只交出账户的 IANA 时区（`Resolver.TimeZoneOf`、`Resolver.TimeZoneFor`）。一条后端拼出的、内嵌日期的消息是这条边界的失效条件（[ADR-i18n-message-rendering-2026-10-13](../../adr/adr-i18n-message-rendering-2026-10-13.md)）。
+- **不决定返回形态。** 日期与时间的渲染归属由**返回形态**决定：一条消息里出现的日期与时间，与文本、计数（复数）、数字一样由引擎渲染，日期与时间另按账户时区（见核心算法与流程一节）；而**作为独立字段**返回给客户端的日期与时间走标准 ISO 格式、由客户端渲染。后者是模块选择不发复合字符串的场合，不是本功能目录的职责。本功能目录交出账户的 IANA 时区（`Resolver.TimeZoneOf`、`Resolver.TimeZoneFor`）供两者使用（[ADR-i18n-message-rendering-2026-10-13](../../adr/adr-i18n-message-rendering-2026-10-13.md)）。
 - **不做热加载。** 目录有内嵌声明与配置指定的覆盖目录两个来源，两者都在装配期读取，此后只读，运行期没有更换目录或增删消息的接口（[ADR-i18n-catalogs-2026-10-13](../../adr/adr-i18n-catalogs-2026-10-13.md)）。
 - **不发送消息。** 短信与邮件的模板与发送归各自的模块；本功能目录渲染的是本进程写出的文本，不投递给任何外部通道。
 
@@ -33,8 +33,9 @@
 | 目录 | catalog | 一组消息文件，每个文件按它承载的语言命名，正文是键到消息的 JSON 对象。来源有二：一个模块以 `//go:embed` 声明的内嵌目录，以及配置项 `i18n.catalogs-dir` 指定的覆盖目录。两者都在装配期装载，运行期不再读。 |
 | 覆盖目录 | overlay | 配置项 `i18n.catalogs-dir` 指定的目录，与内嵌声明同形。装配期读取并并入同一索引，排在已声明目录之后：同一个键上胜过声明，只被它承载的语言因此进入受支持的语言集。 |
 | 键 | key | 一条消息在目录中的标识，扁平且带模块命名空间，如 `http.404`、`authn.login-failed`。 |
-| 参数 | args | 一条参数化消息插值用的名值对；消息写 `{{name}}` 或一段复数，缺参时该处原样保留。值带类型：字符串原样写入，整数与数字按消息的语言格式化。 |
+| 参数 | args | 一条参数化消息插值用的名值对；消息写 `{{name}}`、一段复数或一段时间，缺参时该处原样保留。值带类型：字符串原样写入，整数与数字按消息的语言格式化，时间按渲染上下文的时区渲染。 |
 | 复数段 | plural segment | 消息里按计数选择分支的一段，写作 `{{name, plural, <category>=<text>, ...}}`；类别是六个 CLDR 类别 `zero`、`one`、`two`、`few`、`many`、`other`，`other` 必填，分支里的 `#` 是格式化后的计数。分支文本是一段字面文本与 `#`，不能再嵌一个占位符。 |
+| 时间段 | time form | 消息里按一个时间取值渲染的一段，写作 `{{name, time, <layout>}}`；`<layout>` 是一个 Go 布局，由消息文本自带，时间按渲染上下文的时区渲染成文本。参数缺失或不是时间时原样保留。 |
 | 计数 | count | 复数段据以选分支的整数值，也是分支里 `#` 展开成的数字。 |
 | 协商 | negotiation | 按请求的 `Accept-Language` 头，在本次支持的受语言集中选出最匹配的一个。 |
 | 回落 | fallback | 请求语言在该键上没有条目时，改取配置的默认语言、再不中则取键本身的次序。 |
@@ -82,14 +83,14 @@ const (
 // Key 标识目录中的一条消息，扁平且按渲染它的模块命名空间化。
 type Key string
 
-// Args 承载一条参数化消息插值用的值：消息写 {{name}} 或一段复数，缺参时该处原样保留。
-// 值带类型，用 String、Int 或 Float 构造：字符串原样写入，整数与数字按消息的语言
-// 格式化，一段复数按整数计数选分支。
+// Args 承载一条参数化消息插值用的值：消息写 {{name}}、一段复数或一段时间，缺参时该处原样保留。
+// 值带类型，用 String、Int、Float 或 Time 构造：字符串原样写入，整数与数字按消息的语言
+// 格式化，一段复数按整数计数选分支，一段时间按渲染上下文的时区渲染。
 type Args map[string]Value
 
-// Value 是消息参数携带的类型化取值。ValueKind 是它的类型；String、Int、Float 构造
-// 三种取值，KindOf、StringOf、IntOf、FloatOf 读回。零值读作空串。
-type Value struct { /* 一个类型标记与三种取值之一 */ }
+// Value 是消息参数携带的类型化取值。ValueKind 是它的类型；String、Int、Float、Time 构造
+// 四种取值，KindOf、StringOf、IntOf、FloatOf、TimeOf 读回。零值读作空串。
+type Value struct { /* 一个类型标记与四种取值之一 */ }
 
 type ValueKind uint8
 
@@ -97,15 +98,18 @@ const (
     KindString ValueKind = iota // 原样写入的文本
     KindInt                     // 按语言格式化、也供复数段选分支的整数
     KindFloat                   // 按语言格式化的数字
+    KindTime                    // 按渲染上下文的时区渲染的时间
 )
 
 func String(s string) Value
 func Int(n int) Value
 func Float(f float64) Value
+func Time(t time.Time) Value
 func KindOf(v Value) ValueKind
 func StringOf(v Value) string
 func IntOf(v Value) int64
 func FloatOf(v Value) float64
+func TimeOf(v Value) time.Time
 
 // Localizer 按语言渲染一条消息。它由引擎排他交付。
 type Localizer interface {
@@ -215,7 +219,7 @@ func ValidTimeZone(name string) bool
 
 ### 稳定性承诺
 
-`Locale`、`ConfigNamespace`、`DefaultLocaleItem`、`Key`、`Args`、`Value`、`ValueKind`、`KindString`／`KindInt`／`KindFloat`、构造与读回函数 `String`／`Int`／`Float`／`KindOf`／`StringOf`／`IntOf`／`FloatOf`、`Localizer`、`Negotiator`、`Resolver`、`Profile`、`Catalog`、`LocaleResolver`、上下文的存取函数、属性键常量与校验函数，以及各模块导出的 `ModuleName`，是本功能目录与其他模块之间的契约：接口的方法集、值类型与资源类型的字段，以及属性键的取值，改一个即破坏每一个实现方与消费方。`Args` 的取值类型由 `map[string]string` 改为 `map[string]Value` 是一次破坏性变更，每一个插值字符串的调用方都改为经 `i18n.String` 构造。消息的语法同样是契约：六个 CLDR 类别、`other` 必填、`#` 与分支边界的含义，是每个目录文件写消息时依据的规则，改它会让既有消息不再按原样渲染。属性键 `i18n.locale` 与 `i18n.tz` 同时是存储契约：账户属性里已经写下的值按这两个键读，改键会让既有偏好读不出来。配置命名空间 `i18n` 与配置项名 `default-locale`、`catalogs-dir` 是配置契约：短信模块按命名空间与 `default-locale` 两个名字读同一个默认语言，改名会让两个能力在无声中各读一份；`catalogs-dir` 是运维写入覆盖目录的入口，改名会让既有配置静默地读作没有额外文案。模块名由各包导出为常量，改名会让命令树上的纳入静默失配。
+`Locale`、`ConfigNamespace`、`DefaultLocaleItem`、`Key`、`Args`、`Value`、`ValueKind`、`KindString`／`KindInt`／`KindFloat`／`KindTime`、构造与读回函数 `String`／`Int`／`Float`／`Time`／`KindOf`／`StringOf`／`IntOf`／`FloatOf`／`TimeOf`、`Localizer`、`Negotiator`、`Resolver`、`Profile`、`Catalog`、`LocaleResolver`、上下文的存取函数、属性键常量与校验函数，以及各模块导出的 `ModuleName`，是本功能目录与其他模块之间的契约：接口的方法集、值类型与资源类型的字段，以及属性键的取值，改一个即破坏每一个实现方与消费方。`Args` 的取值类型由 `map[string]string` 改为 `map[string]Value` 是一次破坏性变更，每一个插值字符串的调用方都改为经 `i18n.String` 构造。消息的语法同样是契约：六个 CLDR 类别、`other` 必填、`#` 与分支边界的含义，以及时间段的关键字与布局，是每个目录文件写消息时依据的规则，改它会让既有消息不再按原样渲染。属性键 `i18n.locale` 与 `i18n.tz` 同时是存储契约：账户属性里已经写下的值按这两个键读，改键会让既有偏好读不出来。配置命名空间 `i18n` 与配置项名 `default-locale`、`catalogs-dir` 是配置契约：短信模块按命名空间与 `default-locale` 两个名字读同一个默认语言，改名会让两个能力在无声中各读一份；`catalogs-dir` 是运维写入覆盖目录的入口，改名会让既有配置静默地读作没有额外文案。模块名由各包导出为常量，改名会让命令树上的纳入静默失配。
 
 ## 依赖
 
@@ -231,7 +235,7 @@ func ValidTimeZone(name string) bool
 
 ## UML 图
 
-下图给出契约面上的类型与模块内部的结构。图中画不出的约束：目录在装配期装载，此后索引只读、无 IO、无热加载；一条消息在装配期解析成结点并校验，渲染只走结点、不再解析、没有失败路径；`Args` 的取值带类型，字符串原样写入、整数与数字按消息的语言格式化，一段复数按整数计数选分支；`Locale` 是字符串，跨边界不携带匹配库；语言解析的回落只发生在 `Resolver` 上；`Catalog` 只由模块以 `//go:embed` 声明，引擎取可用集，配置指定的覆盖目录与它同形、经同一条装载路径并入其后；`LocaleResolver` 无方法，只作一层的排序锚点。
+下图给出契约面上的类型与模块内部的结构。图中画不出的约束：目录在装配期装载，此后索引只读、无热加载；一条消息在装配期解析成结点并校验，渲染只走结点、不再解析、没有失败路径；`Args` 的取值带类型，字符串原样写入、整数与数字按消息的语言格式化，一段复数按整数计数选分支，一段时间按渲染上下文的时区渲染；渲染文本、计数、复数与数字不读文件系统，一段时间段在读路径上读一次时区（见并发与事务边界）；`Locale` 是字符串，跨边界不携带匹配库；语言解析的回落只发生在 `Resolver` 上；`Catalog` 只由模块以 `//go:embed` 声明，引擎取可用集，配置指定的覆盖目录与它同形、经同一条装载路径并入其后；`LocaleResolver` 无方法，只作一层的排序锚点。
 
 ```mermaid
 classDiagram
@@ -320,7 +324,7 @@ sequenceDiagram
 
 ## 核心数据结构
 
-**索引**是全部已声明目录与配置指定的覆盖目录合并出的只读结构，按语言与键两级组织：语言到（键到模板）的映射，外加一份按模块名归类的键归属表，用于冲突点名与诊断。模板是消息在装配期解析出的结点序列——一段字面文本后至多跟一个占位符，占位符是一个 `{{name}}` 或一段复数；解析与校验都在装配期完成，渲染只走结点，不再扫一遍文本。
+**索引**是全部已声明目录与配置指定的覆盖目录合并出的只读结构，按语言与键两级组织：语言到（键到模板）的映射，外加一份按模块名归类的键归属表，用于冲突点名与诊断。模板是消息在装配期解析出的结点序列——一段字面文本后至多跟一个占位符，占位符是一个 `{{name}}`、一段复数或一段时间；解析与校验都在装配期完成，渲染只走结点，不再扫一遍文本。
 
 **匹配器**是 `golang.org/x/text/language` 的 `Matcher`，由索引建立时支持的语言集构造一次，此后只读。协商把 `Accept-Language` 的头值解析成一组带 q 值的偏好，交给匹配器选出一个受支持的语言。
 
@@ -340,7 +344,7 @@ sequenceDiagram
 
 - **每份声明目录指名了文件系统与通配**，通配合法且至少命中一个文件，每个文件按它承载的语言标签命名。
 - **每个声明文件是一个 JSON 对象**，字符串到消息原文的映射。
-- **每条消息是一个合法模板**：一段复数只写六个 CLDR 类别之一、含 `other` 分支、不重复类别；不合格时以 `ErrInvalidMessage` 终止启动并点名该键与它来自的来源。
+- **每条消息是一个合法模板**：一个参数化段只指名 `plural` 与 `time` 之一；一段复数只写六个 CLDR 类别之一、含 `other` 分支、不重复类别；一段时间段带一个非空的布局；不合格时以 `ErrInvalidMessage` 终止启动并点名该键与它来自的来源。
 - **跨模块的同名键不冲突**，冲突时点名该键与两个声明方——键带命名空间，冲突是命名空间被两个模块共用的信号。覆盖目录不参与这一项：它不声明归属，只在同名键上取胜。
 - **配置的默认语言有覆盖**：索引非空时，`i18n.default-locale` 所指的语言至少有一份条目，使一个没有指名的请求与每一条回落都落得到一个目录承载的语言。这一项在并入覆盖目录之后判，因而覆盖目录可以补上默认语言。
 - **覆盖目录里每份文件是一个合法目录**：文件名是一个语言标签，正文是一个字符串到字符串的 JSON 对象，其中每条消息是一个合法模板；文件这一层不合格时以 `ErrInvalidOverlay` 终止启动并点名该目录与该文件，文件里某条消息不合格时以 `ErrInvalidMessage` 点名该键与该目录。
@@ -368,9 +372,9 @@ sequenceDiagram
 引擎在装配期把每条消息解析成结点并校验（见目录的收集与装载），渲染因此只走结点、不再解析，也没有失败路径。渲染一次按下列规则展开（[ADR-i18n-message-rendering-2026-10-13](../../adr/adr-i18n-message-rendering-2026-10-13.md)）：
 
 - **字面文本原样写出。**
-- **一个 `{{name}}` 占位符**按 `Args` 的取值展开：值是字符串时原样写入，值是整数或数字时按消息的语言格式化；名字在 `Args` 里没有条目时，该处连同 `{{}}` 原样保留。
+- **一个 `{{name}}` 占位符**按 `Args` 的取值展开：值是字符串时原样写入，值是整数或数字时按消息的语言格式化；名字在 `Args` 里没有条目时该处连同 `{{}}` 原样保留，值是时间时同样原样保留——一个 `{{name}}` 写不出时间，时间只经时间段渲染。
 - **一段 `{{name, plural, <category>=<text>, ...}}`**：参数必须是整数，缺失或类型不符时整段原样保留；否则取计数在该语言的 CLDR 基数类别，选同名的分支，没有该类别时回落到 `other`；分支文本里的 `#` 展开成按语言格式化后的计数。分支文本是一段字面文本与 `#`，不能再嵌一个占位符——嵌套的占位符在装配期以 `ErrInvalidMessage` 报出。
-- **日期与时间不在此列。** 一条消息不内嵌日期或时间——一个时间戳作为类型化的值交给客户端，本功能目录只交出账户的 IANA 时区。
+- **一段 `{{name, time, <layout>}}`**：参数必须是一个时间，缺失或类型不符时整段原样保留；否则取出该时间，按段里第二个逗号之后的内容——去掉分隔用的首尾空白后的一个 Go 布局（可自带逗号、空格与冒号）——与渲染上下文的时区渲染成文本。布局由消息文本自带，是一个 Go 布局——月份与星期的名字随布局取自 Go 的固定英文，一种语言要用自己的名字就在自己的消息文本里写出它们。时区取自 `i18n.TimeZoneFromContext`，请求路径上由 `i18n.http` 的鉴别层从账户偏好 `i18n.tz` 写入；上下文未指、或指了一个本进程加载不出的时区名时，都读作 UTC。**归属由返回形态决定**：作为独立字段返回的时间戳不在此列，它走标准 ISO 格式、由客户端渲染。
 
 **计数与数字都按消息的语言格式化**，而不是 `fmt` 的默认格式：同一个整数在 en-US 写作 `1,234,567`、在 de-DE 写作 `1.234.567`。复数类别由 `golang.org/x/text/feature/plural` 按语言标签判定，六个类别对应 CLDR 的 `zero`、`one`、`two`、`few`、`many`、`other`。
 
@@ -398,7 +402,7 @@ sequenceDiagram
 | `ErrDuplicateKey` | 一个消息键被多于一个模块声明 | 点名该键与两个声明方；其中一方改键的命名空间 |
 | `ErrNoCatalog` | 索引非空而配置的默认语言没有任何条目 | 点名那个语言；补一份该语言的目录，或改 `i18n.default-locale` |
 | `ErrInvalidOverlay` | 配置的覆盖目录里某份文件不合格：文件名不是一个语言标签，或正文不是一个字符串到字符串的 JSON 对象 | 点名该目录与该文件；修正覆盖文件，或去掉该配置项 |
-| `ErrInvalidMessage` | 一条消息不是一个合法模板：一段复数指名了六个 CLDR 类别之外的类别、缺少 `other` 分支或重复了一个类别 | 点名该键与它来自的来源（声明它的模块，或配置目录）；修正消息文本 |
+| `ErrInvalidMessage` | 一条消息不是一个合法模板：一个参数化段指名了 `plural` 与 `time` 之外的词、一段复数指名了六个 CLDR 类别之外的类别、缺少 `other` 分支或重复了一个类别、或一段时间段带一个空布局 | 点名该键与它来自的来源（声明它的模块，或配置目录）；修正消息文本 |
 
 **渲染期没有失败路径。** 每条消息在装配期解析并校验，渲染只走已解析的结点；`Localize` 按请求语言、配置的默认语言、键本身依次回落，结果永不为空；一个未受支持的语言只是落到配置的默认语言，一个目录里没有的键只是把键写回。缺参（名字不在 `Args` 里）与类型不符（复数段的参数不是整数）都让该处原样保留，不是一次失败。`Translate` 不回落，它把“目录里有没有这个键”以第二个返回值交给调用方，缺键时返回空串而不是错误。
 
@@ -416,12 +420,16 @@ sequenceDiagram
 - **不保证账户偏好的即时生效。** 账户属性经账户快照读取，宿主经管理面改了属性，要等快照缓存过期才进身份与解析链（见 [authn](authn/design-authn.md) 的非保证）。
 - **不保证 `i18n.http` 覆盖到一个端。** 它在遍历 `http.Endpoints` 得到的每个端注册；一个端不在那次遍历里、或那个端由宿主单独装配而不经本模块，就不带本地化，启动期不失败，也没有一行诊断指向它（与 [http](http/design-http.md) 的漏写同源）。
 - **不保证一次拒绝的正文语言与请求语言始终相同。** 解析链给的是上下文里已经定下的语言；一个在认证之前就写出的拒绝没有身份，语言只到协商这一级，渲染它的模块据此取文案。
+- **不保证一个无法加载的时区名会失败或被报告。** 时间段按渲染上下文的时区渲染，一个本进程加载不出的时区名读作 UTC：拼错的名字、或 zoneinfo 里没有的名字，静默地按 UTC 渲染，没有一行诊断。写侧以 `ValidTimeZone` 在写入时判形状，本能力目录不对上下文里既有的名字回头复检。
+- **不保证时间段的月份名与星期名随语言。** 时间段按消息文本自带的 Go 布局渲染，月份与星期的名字取自 Go 的固定英文；一种语言要用自己的名字，须在自己的消息文本里写出它们。
 
 ## 并发与事务边界
 
-**索引在装配之后只读。** 装载发生在生命周期驱动的单协程里，此前没有任何请求路径可达它；装载完成后索引与匹配器不再变化，渲染与协商因此是无锁、零 IO 的内存读。这是本功能目录没有热加载接口的直接结果：内嵌声明与配置指定的覆盖目录都在装配期读取，一个要求运行期更换目录的功能会引入一把读路径上的锁，本功能目录以“装配期读取后只读”免掉了它（[ADR-i18n-catalogs-2026-10-13](../../adr/adr-i18n-catalogs-2026-10-13.md)）。
+**索引在装配之后只读。** 装载发生在生命周期驱动的单协程里，此前没有任何请求路径可达它；装载完成后索引与匹配器不再变化，渲染一段文本、计数、复数与数字，以及协商，因此是无锁、零 IO 的内存读。这是本功能目录没有热加载接口的直接结果：内嵌声明与配置指定的覆盖目录都在装配期读取，一个要求运行期更换目录的功能会引入一把读路径上的锁，本功能目录以“装配期读取后只读”免掉了它（[ADR-i18n-catalogs-2026-10-13](../../adr/adr-i18n-catalogs-2026-10-13.md)）。
 
-**两层中间件不改共享状态。** 它们只把语言与时区写进本次请求的上下文，一次请求一份，请求之间不共享可写状态。引擎交付的那些接口方法的并发调用是安全的：它们只读索引与匹配器。
+**时间段是唯一一处读文件系统的渲染。** 一个 `{{name, time, <layout>}}` 段取渲染上下文的时区，`time.LoadLocation` 每次调用都重读 zoneinfo 文件、标准库不跨调用缓存，引擎为此持一份按名缓存的 `*time.Location`（`engine.location`），置于一把 `sync.RWMutex` 之后。锁只在渲染一条带时间段的消息、且该时区名第一次出现时取用；缓存是懒建的，只渲染文本、计数与数字的运行从不取锁、也从不读文件系统。写入侧的名字先经 `ValidTimeZone` 判形状，一个加载不出的名字读作 UTC 并同样缓存，因而它不会每渲染一次就重读一遍文件系统。
+
+**两层中间件不改共享状态。** 它们只把语言与时区写进本次请求的上下文，一次请求一份，请求之间不共享可写状态。引擎交付的那些接口方法的并发调用是安全的：它们读取索引与匹配器；一份按名缓存的时区另经互斥锁读写，锁由读路径自身持有并由构造期初始化的空缓存接住，方法的并发调用仍然安全。
 
 **本功能目录不发起事务。** 它不写数据库：`i18n.account` 读账户属性经既有账户接口，写偏好的路径（自助面的偏好路由、开户时的写入）落在 [authn](authn/design-authn.md) 的账户模块与它自己的事务里，本功能目录只交出一个字符串给它写。
 
@@ -437,13 +445,15 @@ sequenceDiagram
 
 | 能力 | 状态 | 代码 |
 |---|---|---|
-| 根包的类型与接口 | 已实现 | `pkg/i18n/i18n.go` `Locale`、`ConfigNamespace`、`DefaultLocaleItem`、`Key`、`Args`、`Value`、`ValueKind`、`KindString`、`KindInt`、`KindFloat`、`String`、`Int`、`Float`、`KindOf`、`StringOf`、`IntOf`、`FloatOf`、`Localizer`、`Negotiator`、`Resolver`、`Profile`、`Catalog`、`LocaleResolver` |
+| 根包的类型与接口 | 已实现 | `pkg/i18n/i18n.go` `Locale`、`ConfigNamespace`、`DefaultLocaleItem`、`Key`、`Args`、`Value`、`ValueKind`、`KindString`、`KindInt`、`KindFloat`、`KindTime`、`String`、`Int`、`Float`、`Time`、`KindOf`、`StringOf`、`IntOf`、`FloatOf`、`TimeOf`、`Localizer`、`Negotiator`、`Resolver`、`Profile`、`Catalog`、`LocaleResolver` |
 | 上下文的存取 | 已实现 | `pkg/i18n/context.go` `WithLocale`、`FromContext`、`WithTimeZone`、`TimeZoneFromContext` |
 | 账户属性键与形状校验 | 已实现 | `pkg/i18n/attributes.go` `LocaleAttributeKey`、`TimeZoneAttributeKey`、`ValidLocaleTag`、`ValidTimeZone` |
 | 目录的收集、校验与装载、默认语言的配置项、语言解析与协商 | 已实现 | `pkg/i18n/catalog` `Module`、`ModuleName`；`pkg/i18n/catalog/config.go` `moduleConfig`、`readConfig` |
 | 配置指定的覆盖目录的读取与并入 | 已实现 | `pkg/i18n/catalog/engine.go` `readOverlay`、`newEngine`、`ErrInvalidOverlay` |
 | 参数的类型化取值与按语言格式化 | 已实现 | `pkg/i18n/catalog/engine.go` `renderArg`、`formatInt`、`formatFloat`、`printer` |
-| 复数段的解析、校验与选择渲染 | 已实现 | `pkg/i18n/catalog/engine.go` `parseMessage`、`parsePlural`、`renderPlural`、`pluralForm`、`ErrInvalidMessage` |
+| 参数化段的解析与校验 | 已实现 | `pkg/i18n/catalog/engine.go` `parseMessage`、`parseSegment`、`parseBranches`、`ErrInvalidMessage` |
+| 复数段的选择渲染 | 已实现 | `pkg/i18n/catalog/engine.go` `renderPlural`、`pluralForm` |
+| 时间段的渲染与时区缓存 | 已实现 | `pkg/i18n/catalog/engine.go` `renderTime`、`location`、`timeForm` |
 | 每端两层的语言与时区中间件 | 已实现 | `pkg/i18n/http` `Module`、`ModuleName` |
 | 账户偏好的读桥与开户时写入 | 已实现 | `pkg/i18n/account` `Module`、`ModuleName` |
 | 登录语言的原样传递 | 已实现 | `pkg/authn/login/start.go` `localeOf`；`pkg/authn/login/internal/selfservice/phone.go` `smsLocale` |

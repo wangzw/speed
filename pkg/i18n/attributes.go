@@ -36,10 +36,18 @@ func ValidLocaleTag(name string) bool {
 // empty name is valid and reads as UTC. A fixed offset like "+08:00" and an
 // abbreviation like "CST" are not IANA names and are refused: a fixed offset
 // cannot follow a region's daylight saving rule, and an abbreviation names
-// different zones in different places.
+// different zones in different places. Go's special location name "Local" is
+// refused on the same ground — it is not an IANA name but resolves to whatever
+// zone the host happens to run in, so a stored "Local" would render text in the
+// server's own zone rather than reading as UTC the way an unloadable name does.
+// "UTC" is kept: it is itself an IANA zone identifier, and it resolves to UTC,
+// the same reading the empty and unloadable names get.
 func ValidTimeZone(name string) bool {
 	if name == "" {
 		return true
+	}
+	if name == "Local" {
+		return false
 	}
 	_, err := time.LoadLocation(name)
 	return err == nil

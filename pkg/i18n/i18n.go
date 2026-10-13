@@ -16,6 +16,7 @@ package i18n
 import (
 	"context"
 	"io/fs"
+	"time"
 )
 
 // Locale is the language a message is rendered in, written as a BCP 47 tag. It
@@ -54,10 +55,12 @@ type Key string
 // writes a parameter as {{name}}, and a name with no value in Args is left in
 // the text as written, so a missing parameter is visible rather than silent.
 //
-// A value is typed: a string is written into the text verbatim, and an integer
-// or a number is formatted for the message's language by the engine. The type
-// is a plain value type built with String, Int or Float, so this package stays
-// on the standard library and all formatting lives in the engine.
+// A value is typed: a string is written into the text verbatim, an integer or a
+// number is formatted for the message's language by the engine, and a time is
+// formatted by the layout the message's own time segment carries and in the
+// render context's time zone. The type is a plain value type built with String,
+// Int, Float or Time, so this package stays on the standard library and all
+// formatting lives in the engine.
 type Args map[string]Value
 
 // ValueKind is which type a Value carries.
@@ -72,11 +75,14 @@ const (
 	// KindFloat is a number with a fractional part, formatted for the message's
 	// language.
 	KindFloat
+	// KindTime is an instant, formatted by the message's own layout and in the
+	// render context's time zone.
+	KindTime
 )
 
 // Value is the typed value a message parameter carries. It is built with
-// String, Int or Float; the engine reads it back with the KindOf, StringOf,
-// IntOf and FloatOf functions. A message author only builds one.
+// String, Int, Float or Time; the engine reads it back with the KindOf, StringOf,
+// IntOf, FloatOf and TimeOf functions. A message author only builds one.
 //
 // The zero Value reads as an empty string, the same as String("").
 type Value struct {
@@ -84,6 +90,7 @@ type Value struct {
 	text string
 	num  int64
 	flt  float64
+	tm   time.Time
 }
 
 // String returns a Value carrying s, interpolated into a message verbatim.
@@ -96,6 +103,10 @@ func Int(n int) Value { return Value{kind: KindInt, num: int64(n)} }
 // Float returns a Value carrying f, a number with a fractional part, formatted
 // for the message's language.
 func Float(f float64) Value { return Value{kind: KindFloat, flt: f} }
+
+// Time returns a Value carrying t, an instant, formatted by the message's own
+// layout and in the render context's time zone.
+func Time(t time.Time) Value { return Value{kind: KindTime, tm: t} }
 
 // KindOf reports which type a value carries. The zero Value reports KindString.
 func KindOf(v Value) ValueKind { return v.kind }
@@ -110,6 +121,10 @@ func IntOf(v Value) int64 { return v.num }
 // FloatOf reports the number a KindFloat value carries, and 0 for any other
 // kind.
 func FloatOf(v Value) float64 { return v.flt }
+
+// TimeOf reports the instant a KindTime value carries, and the zero time for any
+// other kind.
+func TimeOf(v Value) time.Time { return v.tm }
 
 // Localizer renders a message in a locale. It is delivered exclusively by the
 // engine.

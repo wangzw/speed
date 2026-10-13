@@ -58,19 +58,23 @@ message.
   and a message the parser cannot read terminates startup under
   `catalog.ErrInvalidMessage`, naming the key and its source.
   The index is read-only, IO-free and never reloaded afterward — the overlay
-  too is read only at assembly — so the request path carries no lock and no IO.
+  too is read only at assembly — so the request path carries no lock and no IO
+  for text, count, plural and number. A time form is the one exception: it reads
+  the render context's zone through a small cache behind a mutex, taken only when
+  such a message is rendered (see the time-form bullet below).
   There is no interface for changing a catalog or a message at runtime, and
   adding one would put a lock on the request path.
-- **A message renders its typed arguments for its own language.** `Args` maps a
-  parameter name to a typed `Value`, built with `i18n.String`, `i18n.Int` or
-  `i18n.Float`. A string is written into the text verbatim; an integer or a
+- **A message renders its typed arguments.** `Args` maps a parameter name to a
+  typed `Value`, built with `i18n.String`, `i18n.Int`, `i18n.Float` or
+  `i18n.Time`. A string is written into the text verbatim. An integer or a
   number is formatted for the message's language by the engine — a
   `message.Printer` on the locale's tag, a decimal `number.Decimal` for a float
   so that a value at or above 1e6 stays `1,000,000` rather than becoming an
   exponent, and not `fmt.Sprintf` — so the same value groups as `1,234,567` in
   en-US and `1.234.567` in de-DE. The syntax keeps
   `{{name}}` and the rule that a name with no value is left as written, and adds
-  one construct: `{{name, plural, <category>=<text>, ...}}`. The plural selects a
+  two constructs: `{{name, plural, <category>=<text>, ...}}` and
+  `{{name, time, <layout>}}`. The plural selects a
   branch by the count's CLDR category for the language — the six categories
   `zero one two few many other` — with `#` in the branch standing for the count,
   formatted for the language; a count whose category the message does not carry
@@ -81,9 +85,36 @@ message.
   under `catalog.ErrInvalidMessage`. A plural branch is literal text and `#` and
   may not contain a nested placeholder; the engine refuses a nested placeholder
   under the same sentinel, rather than reporting it as a missing `other` branch.
-  Date and time formatting is out of scope: a date is a typed value the client
-  renders, and the module carries the time zone (`Resolver.TimeZoneOf`) and
-  nothing more.
+- **A date or time inside a composite message is rendered by the backend.** The
+  responsibility follows the payload shape: a message the backend assembles
+  renders all of it — text, count, plural, number and date/time — while a
+  timestamp returned as its own field travels as a typed value in the standard
+  ISO format for the client to render. The two cases are not decided by the kind
+  of data but by whether it is embedded in a composite string.
+- **A `{{name, time, <layout>}}` segment formats an instant with the message's
+  own layout and in the render context's time zone.** The parameter must carry a time
+  (`i18n.Time`); a missing or wrong-kind value leaves the segment as written, the
+  rule a plural segment follows. The layout is everything after the second comma
+  up to the closing braces — a layout may itself contain commas, spaces and
+  colons, as the Go layout `Mon, 02 Jan 2006 15:04` does, so the segment is split
+  on its first two commas only and never on the commas inside the layout. The
+  instant is formatted with `time.Time.Format` in the zone the context names
+  through `i18n.TimeZoneFromContext`: an unset zone, and a zone name this process
+  cannot load, both read as UTC rather than failing the render. The empty layout
+  is malformed and terminates startup under `catalog.ErrInvalidMessage` naming
+  the key and its source. A layout is a Go layout and that is the accepted cost —
+  a month or weekday name comes out in English, so a locale wanting its own names
+  writes them in its own message text. `Translate` carries no context, so a time
+  form rendered through it reads the zone as unset, which is UTC.
+- **The read path takes no lock and does no IO, with one guarded exception.**
+  The catalog index is read-only, IO-free and never reloaded, and the request
+  path carries no lock for text, count, plural or number. A time form is the one
+  case that reads a zone: `time.LoadLocation` re-reads the zoneinfo files on
+  every call — the standard library keeps no cross-call cache — so the engine
+  holds a small cache of loaded locations behind a mutex. The lock is taken only
+  when a message carrying a time form is rendered, and only until the zone's
+  first lookup; a run that renders no time form never touches it.
+  
 - **`i18n.locale` and `i18n.tz` are preferences, not authorizing facts.** They
   are stored in `Account.Attributes` under `LocaleAttributeKey` and
   `TimeZoneAttributeKey`, read back into a request's context, and used for

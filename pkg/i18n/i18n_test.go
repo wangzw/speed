@@ -3,6 +3,7 @@ package i18n
 import (
 	"context"
 	"testing"
+	"time"
 )
 
 // TestLocaleRoundTripsThroughContext holds the write-then-read pair: the value
@@ -106,6 +107,24 @@ func TestValidTimeZoneRefusesNonIANANames(t *testing.T) {
 	}
 }
 
+// TestValidTimeZoneRefusesTheGoLocalName holds that Go's special location name
+// "Local" is refused. It is not an IANA name: time.LoadLocation resolves it to
+// whatever zone the host happens to run in, not to a zone the name fixes, so a
+// stored "Local" would render user-visible text in the server's own zone rather
+// than reading as UTC the way an unloadable name does. The test pins the reader
+// behaviour that motivates the refusal — the loader accepts the name and returns
+// a location for it — so the refusal is not merely against the literal string.
+// "UTC", by contrast, is an IANA zone identifier that resolves to UTC, and the
+// sibling accept case keeps it valid.
+func TestValidTimeZoneRefusesTheGoLocalName(t *testing.T) {
+	if ValidTimeZone("Local") {
+		t.Error(`ValidTimeZone("Local") = true; want false`)
+	}
+	if _, err := time.LoadLocation("Local"); err != nil {
+		t.Fatalf(`time.LoadLocation("Local") = %v; want the name to load, which is why the refusal is written for it`, err)
+	}
+}
+
 // TestConfigNamesAreStable pins the two names another module reaches for across
 // the package boundary: the SMS module reads the same default-locale item under
 // the same namespace, so a change here silently unfreezes the shared default.
@@ -144,5 +163,22 @@ func TestValueCarriesItsType(t *testing.T) {
 	// Each reader returns the zero of its own kind for a value of another kind.
 	if IntOf(s) != 0 || FloatOf(s) != 0 || StringOf(n) != "" {
 		t.Error("a reader on the wrong kind did not return the zero of that kind")
+	}
+}
+
+// TestTimeValueCarriesItsInstant holds the fourth value kind: the time
+// constructor and reader are the pair, the kind is KindTime, and the reader
+// called on another kind finds the zero time.
+func TestTimeValueCarriesItsInstant(t *testing.T) {
+	want := time.Date(2026, time.January, 2, 15, 4, 5, 0, time.UTC)
+	tv := Time(want)
+	if KindOf(tv) != KindTime {
+		t.Errorf("Time(...) is kind %d; want kind %d", KindOf(tv), KindTime)
+	}
+	if got := TimeOf(tv); !got.Equal(want) {
+		t.Errorf("TimeOf(Time(...)) = %v; want %v", got, want)
+	}
+	if got := TimeOf(String("x")); !got.IsZero() {
+		t.Errorf("TimeOf(a string value) = %v; want the zero time", got)
 	}
 }

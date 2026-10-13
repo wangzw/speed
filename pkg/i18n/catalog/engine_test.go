@@ -7,8 +7,10 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"sync"
 	"testing"
 	"testing/fstest"
+	"time"
 
 	"github.com/vislake/speed/pkg/authn/authntest"
 	"github.com/vislake/speed/pkg/config"
@@ -189,7 +191,7 @@ func TestRender(t *testing.T) {
 			if err != nil {
 				t.Fatalf("parseMessage(%q): %v", tt.message, err)
 			}
-			if got := e.render(m, tt.args, localeEN); got != tt.want {
+			if got := e.render(context.Background(), m, tt.args, localeEN); got != tt.want {
 				t.Errorf("render(%q) = %q, want %q", tt.message, got, tt.want)
 			}
 		})
@@ -383,6 +385,161 @@ func TestLargeFloatRendersAGroupedDecimalNotAnExponent(t *testing.T) {
 			}
 		})
 	}
+}
+
+// TestTimeFormRendersInTheZoneOfTheContext holds that a {{name, time, layout}}
+// segment formats the instant with the layout the message carries, in the zone
+// the context names. The same instant read under two zone names renders
+// differently, so the zone is really applied and not ignored.
+func TestTimeFormRendersInTheZoneOfTheContext(t *testing.T) {
+	catalogs := []core.Resource[i18n.Catalog]{catalogOf("app", map[string]string{
+		"locales/en-US.json": `{"app.when":"At {{at, time, 2006-01-02 15:04:05}}"}`,
+	})}
+	e := mustEngine(t, catalogs, nil)
+	// One instant; its wall clock differs by the zone it is shown in.
+	instant := time.Date(2026, time.January, 2, 15, 4, 5, 0, time.UTC)
+	tests := []struct {
+		name string
+		zone string
+		want string
+	}{
+		{"UTC renders the instant as it stands", "UTC", "At 2026-01-02 15:04:05"},
+		{"Asia/Shanghai shifts it eight hours ahead", "Asia/Shanghai", "At 2026-01-02 23:04:05"},
+		{"America/New_York shifts it five hours behind", "America/New_York", "At 2026-01-02 10:04:05"},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			ctx := i18n.WithTimeZone(context.Background(), tt.zone)
+			if got := e.Localize(ctx, "app.when", i18n.Args{"at": i18n.Time(instant)}); got != tt.want {
+				t.Errorf("Localize(zone=%q) = %q, want %q", tt.zone, got, tt.want)
+			}
+		})
+	}
+}
+
+// TestTimeFormReadsAnUnsetOrUnloadableZoneAsUTC holds the two fallbacks: a
+// context that names no zone, and a zone name this process cannot load, both
+// render the instant as UTC rather than failing the render. The fixture instant
+// is built in a fixed +08:00 zone, so its wall clock there (15:04:05) differs
+// from its UTC wall clock (07:04:05); asserting the UTC clock is what fails if
+// the zone conversion is dropped — a fixture already in UTC would render the
+// same either way and would not discriminate the fallback from a no-op.
+func TestTimeFormReadsAnUnsetOrUnloadableZoneAsUTC(t *testing.T) {
+	catalogs := []core.Resource[i18n.Catalog]{catalogOf("app", map[string]string{
+		"locales/en-US.json": `{"app.when":"{{at, time, 2006-01-02 15:04:05}}"}`,
+	})}
+	e := mustEngine(t, catalogs, nil)
+	// 2026-01-02 15:04:05 in +08:00 is 2026-01-02 07:04:05 in UTC.
+	instant := time.Date(2026, time.January, 2, 15, 4, 5, 0, time.FixedZone("Fake/Zone", 8*60*60))
+	const want = "2026-01-02 07:04:05"
+	if got := e.Localize(context.Background(), "app.when", i18n.Args{"at": i18n.Time(instant)}); got != want {
+		t.Errorf("Localize(no zone) = %q, want %q (UTC)", got, want)
+	}
+	ctx := i18n.WithTimeZone(context.Background(), "Not/AZone")
+	if got := e.Localize(ctx, "app.when", i18n.Args{"at": i18n.Time(instant)}); got != want {
+		t.Errorf("Localize(an unloadable zone) = %q, want %q (UTC)", got, want)
+	}
+}
+
+// TestTimeFormReadsTheGoLocalNameAsUTC holds the read path's own guard. "Local"
+// is one of Go's special location names: time.LoadLocation resolves it to the
+// host's own zone, so a context carrying "Local" would render user-visible text
+// in whatever zone the process happens to run in. The write side refuses the
+// name as a stored preference, but the accessor that writes a zone into a
+// context is exported and takes a value unexamined, so the engine answers UTC
+// rather than resolving it.
+//
+// The engine's own answer is asserted first because it does not depend on the
+// host: a host that runs in UTC would render the same text either way, and the
+// render assertion alone would not discriminate a leak from the guard.
+func TestTimeFormReadsTheGoLocalNameAsUTC(t *testing.T) {
+	catalogs := []core.Resource[i18n.Catalog]{catalogOf("app", map[string]string{
+		"locales/en-US.json": `{"app.when":"{{at, time, 2006-01-02 15:04:05}}"}`,
+	})}
+	e := mustEngine(t, catalogs, nil)
+	if loc := e.location("Local"); loc != time.UTC {
+		t.Errorf("location(%q) = %v, want UTC: the host's own zone must not be reachable from a name in a context",
+			"Local", loc)
+	}
+	// 2026-01-02 15:04:05 in +08:00 is 2026-01-02 07:04:05 in UTC.
+	instant := time.Date(2026, time.January, 2, 15, 4, 5, 0, time.FixedZone("Fake/Zone", 8*60*60))
+	ctx := i18n.WithTimeZone(context.Background(), "Local")
+	if got, want := e.Localize(ctx, "app.when", i18n.Args{"at": i18n.Time(instant)}), "2026-01-02 07:04:05"; got != want {
+		t.Errorf("Localize(a context naming Local) = %q, want %q (UTC)", got, want)
+	}
+}
+
+// TestTimeFormLayoutMayContainAComma holds that the segment is not split on a
+// comma inside its layout: a Go layout like "Mon, 02 Jan 2006 15:04" is taken
+// whole after the second comma, so the weekday and the day-of-month both render.
+func TestTimeFormLayoutMayContainAComma(t *testing.T) {
+	catalogs := []core.Resource[i18n.Catalog]{catalogOf("app", map[string]string{
+		"locales/en-US.json": `{"app.when":"{{at, time, Mon, 02 Jan 2006 15:04}}"}`,
+	})}
+	e := mustEngine(t, catalogs, nil)
+	// 2 January 2026 is a Friday.
+	instant := time.Date(2026, time.January, 2, 15, 4, 0, 0, time.UTC)
+	if got := e.Localize(context.Background(), "app.when", i18n.Args{"at": i18n.Time(instant)}); got != "Fri, 02 Jan 2026 15:04" {
+		t.Errorf("Localize = %q, want %q", got, "Fri, 02 Jan 2026 15:04")
+	}
+}
+
+// TestTimeFormWithANonTimeValueIsLeftAsWritten holds that the time rule follows
+// the missing-parameter rule: a segment whose parameter is absent, or present
+// but not a time, is written back as it stood rather than rendered.
+func TestTimeFormWithANonTimeValueIsLeftAsWritten(t *testing.T) {
+	const raw = "{{at, time, 2006-01-02}}"
+	catalogs := []core.Resource[i18n.Catalog]{catalogOf("app", map[string]string{
+		"locales/en-US.json": `{"app.when":"` + raw + `"}`,
+	})}
+	e := mustEngine(t, catalogs, nil)
+	ctx := context.Background()
+	if got := e.Localize(ctx, "app.when", nil); got != raw {
+		t.Errorf("Localize(no value) = %q, want %q", got, raw)
+	}
+	if got := e.Localize(ctx, "app.when", i18n.Args{"at": i18n.String("x")}); got != raw {
+		t.Errorf("Localize(a non-time value) = %q, want %q", got, raw)
+	}
+}
+
+// TestTimeFormWithAnEmptyLayoutFailsStartup holds that a time segment carrying no
+// layout is a malformed message: startup terminates under ErrInvalidMessage and
+// the failure names the key it came from.
+func TestTimeFormWithAnEmptyLayoutFailsStartup(t *testing.T) {
+	catalogs := []core.Resource[i18n.Catalog]{catalogOf("app", map[string]string{
+		"locales/en-US.json": `{"app.when":"{{at, time, }}"}`,
+	})}
+	_, err := newEngine(catalogs, nil, localeEN, "")
+	if !errors.Is(err, ErrInvalidMessage) {
+		t.Fatalf("newEngine error = %v, want ErrInvalidMessage", err)
+	}
+	if !strings.Contains(err.Error(), "app.when") {
+		t.Errorf("the failure %q does not name the key", err.Error())
+	}
+}
+
+// TestTimeFormRendersConcurrently holds that the zone cache is safe under
+// concurrent renders: many goroutines render a time form naming different zones
+// at once, so the guard on the cache is exercised. Run under -race it is the
+// check that the one field written after construction is written behind a lock.
+func TestTimeFormRendersConcurrently(t *testing.T) {
+	catalogs := []core.Resource[i18n.Catalog]{catalogOf("app", map[string]string{
+		"locales/en-US.json": `{"app.when":"{{at, time, 2006-01-02 15:04:05}}"}`,
+	})}
+	e := mustEngine(t, catalogs, nil)
+	instant := time.Date(2026, time.January, 2, 15, 4, 5, 0, time.UTC)
+	zones := []string{"UTC", "Asia/Shanghai", "America/New_York", "Europe/Paris"}
+	var wg sync.WaitGroup
+	for i := 0; i < 50; i++ {
+		zone := zones[i%len(zones)]
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			ctx := i18n.WithTimeZone(context.Background(), zone)
+			_ = e.Localize(ctx, "app.when", i18n.Args{"at": i18n.Time(instant)})
+		}()
+	}
+	wg.Wait()
 }
 
 // TestMalformedMessageFailsStartup holds that a message the engine cannot parse

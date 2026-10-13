@@ -13,7 +13,9 @@
 // language.Matcher, selects a plural branch with feature/plural, and formats a
 // number for a locale with the message printer and number.Decimal, and the
 // interface package stays on the standard library so that a consumer of a
-// locale carries no matching or formatting library.
+// locale carries no matching or formatting library. It also formats a time for
+// the render context's zone, which uses the standard library's time package and
+// adds no library here.
 package catalog
 
 import (

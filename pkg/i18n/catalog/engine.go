@@ -10,6 +10,8 @@ import (
 	"path"
 	"sort"
 	"strings"
+	"sync"
+	"time"
 
 	"golang.org/x/text/feature/plural"
 	"golang.org/x/text/language"
@@ -39,17 +41,20 @@ var (
 	// body is not a JSON object of string to string. It is distinct from
 	// ErrInvalidCatalog, whose message names a catalog a module declares.
 	ErrInvalidOverlay = errors.New("i18n: a configured catalogs directory holds a file that is not a well-formed catalog")
-	// ErrInvalidMessage reports a message the engine cannot parse: a plural
-	// segment naming a category that is not one of the six CLDR categories, one
-	// whose branches omit "other" or repeat a category. The failure names the key
-	// and the source it came from. It is distinct from the sentinels of the
-	// sources: the message text itself is malformed, not the file that carries it.
+	// ErrInvalidMessage reports a message the engine cannot parse: a segment
+	// naming a keyword other than plural or time, a plural segment naming a
+	// category that is not one of the six CLDR categories, one whose branches
+	// omit "other" or repeat a category, or a time segment carrying an empty
+	// layout. The failure names the key and the source it came from. It is
+	// distinct from the sentinels of the sources: the message text itself is
+	// malformed, not the file that carries it.
 	ErrInvalidMessage = errors.New("i18n: a message is not well formed")
 )
 
-// engine is the merged index. It is built once in New and read afterwards; no
-// field is written after construction, so every method is safe to call from any
-// goroutine.
+// engine is the merged index. It is built once in New and read afterwards. Every
+// field but the zone cache is written only at construction, so every method is
+// safe to call from any goroutine; the zone cache is the one field written after
+// construction, guarded by mu.
 type engine struct {
 	// index is locale to key to parsed message. A locale that a catalog did not
 	// cover has no entry, and a key a locale did not carry has none under it.
@@ -73,6 +78,17 @@ type engine struct {
 	// defaultLocale is the configured locale a request that names none resolves
 	// to, and the fallback for a key a catalog misses.
 	defaultLocale i18n.Locale
+	// mu guards locations, the only field written after construction.
+	mu sync.RWMutex
+	// locations caches a loaded *time.Location by the IANA name it was loaded
+	// under, so a time form renders without a filesystem read after the first
+	// lookup of each name. time.LoadLocation re-reads the zoneinfo files on every
+	// call — the standard library keeps no cross-call cache — so the cache is
+	// held here. A name this process cannot load is cached as UTC too, so a bad
+	// name does not re-read the filesystem on every render. The map has an entry
+	// only once a time form naming it is first rendered, so a run that renders no
+	// time form never touches mu.
+	locations map[string]*time.Location
 }
 
 // newEngine builds the index from the declared catalogs and then the configured
@@ -169,6 +185,7 @@ func newEngine(catalogs []core.Resource[i18n.Catalog], profiles []i18n.Profile, 
 		printers:      printers,
 		profiles:      profiles,
 		defaultLocale: defaultLocale,
+		locations:     map[string]*time.Location{},
 	}, nil
 }
 
@@ -191,8 +208,11 @@ const overlayPattern = "*.json"
 // ships, not a source it depends on. A file that does not load as a catalog
 // fails startup under ErrInvalidOverlay, naming the directory and the file.
 //
-// The directory is read here, once, at assembly. Nothing reads it again, so the
-// request path stays lock-free and IO-free, as it is for the declared catalogs.
+// The directory is read here, once, at assembly. Nothing reads it again, so
+// reading a message costs no IO and takes no lock, exactly as it does for the
+// declared catalogs. Rendering a message that carries a time form is the one
+// exception, and it is the engine's own: a zone name it has not seen before is
+// read from the filesystem once, behind the engine's mutex.
 func readOverlay(dir string) (map[i18n.Locale]map[i18n.Key]string, error) {
 	if dir == "" {
 		return nil, nil
@@ -281,11 +301,11 @@ func read(catalog i18n.Catalog) (map[i18n.Locale]map[i18n.Key]string, error) {
 func (e *engine) Localize(ctx context.Context, key i18n.Key, args i18n.Args) string {
 	locale := e.LocaleOf(ctx)
 	if msg, ok := e.index[locale][key]; ok {
-		return e.render(msg, args, locale)
+		return e.render(ctx, msg, args, locale)
 	}
 	if locale != e.defaultLocale {
 		if msg, ok := e.index[e.defaultLocale][key]; ok {
-			return e.render(msg, args, e.defaultLocale)
+			return e.render(ctx, msg, args, e.defaultLocale)
 		}
 	}
 	return string(key)
@@ -293,13 +313,14 @@ func (e *engine) Localize(ctx context.Context, key i18n.Key, args i18n.Args) str
 
 // Translate renders key in the named locale and reports whether a catalog
 // carried it. It does not fall back: a caller that names a locale gets that
-// locale's message or nothing.
+// locale's message or nothing. It carries no context, so a time form rendered
+// through it reads the zone as unset, which is UTC.
 func (e *engine) Translate(locale i18n.Locale, key i18n.Key, args i18n.Args) (string, bool) {
 	msg, ok := e.index[locale][key]
 	if !ok {
 		return "", false
 	}
-	return e.render(msg, args, locale), true
+	return e.render(context.Background(), msg, args, locale), true
 }
 
 // Negotiate returns the supported locale that best matches an Accept-Language
@@ -381,16 +402,19 @@ type template struct {
 type node struct {
 	// text is the literal text this node writes before its placeholder.
 	text string
-	// raw is the placeholder as written — "{{name}}" or the whole plural segment
-	// — kept so that a placeholder whose value is missing is written back as it
-	// stood, by the same rule a plain {{name}} follows.
+	// raw is the placeholder as written — "{{name}}" or the whole parameterised
+	// segment — kept so that a placeholder whose value is missing is written back
+	// as it stood, by the same rule a plain {{name}} follows.
 	raw string
 	// arg is the parameter a plain {{arg}} placeholder interpolates, "" for a
 	// literal-only node.
 	arg string
 	// group is the parsed body of a {{arg, plural, ...}} placeholder, nil for a
-	// plain or literal-only node.
+	// plain, literal-only or time node.
 	group *pluralGroup
+	// time is the parsed body of a {{arg, time, layout}} placeholder, nil for a
+	// plain, literal-only or plural node.
+	time *timeForm
 }
 
 // pluralGroup is a parsed {{name, plural, ...}} placeholder: the parameter it
@@ -398,6 +422,13 @@ type node struct {
 type pluralGroup struct {
 	arg      string
 	branches map[plural.Form]string
+}
+
+// timeForm is a parsed {{name, time, layout}} placeholder: the parameter it
+// formats and the Go layout it formats with.
+type timeForm struct {
+	arg    string
+	layout string
 }
 
 // categoryNames are the six CLDR plural categories a branch may name, in the
@@ -437,11 +468,9 @@ func parseMessage(raw string) (*template, error) {
 		n := node{text: rest[:open], raw: rest[open : close+2]}
 		inner := rest[open+2 : close]
 		if strings.Contains(inner, ",") {
-			group, err := parsePlural(inner)
-			if err != nil {
+			if err := parseSegment(&n, inner); err != nil {
 				return nil, err
 			}
-			n.group = group
 		} else {
 			n.arg = inner
 		}
@@ -450,32 +479,47 @@ func parseMessage(raw string) (*template, error) {
 	}
 }
 
-// parsePlural parses the body of a {{name, plural, ...}} placeholder, which is
-// " name, plural, branches". The branch list is one or more "category=text"
-// pairs; the category names are validated against the six CLDR categories,
-// "other" must be present, and a category may not repeat.
-func parsePlural(inner string) (*pluralGroup, error) {
+// parseSegment parses the body of a placeholder that carries a comma — " name,
+// keyword, body" — into the node's argument and either a plural group or a time
+// form, decided by the keyword. It is called at assembly, so a malformed segment
+// stops startup rather than failing at request time.
+func parseSegment(n *node, inner string) error {
 	name, rest, _ := strings.Cut(inner, ",")
 	name = strings.TrimSpace(name)
 	if name == "" {
-		return nil, errors.New("a plural segment names no parameter")
+		return errors.New("a parameterised segment names no parameter")
 	}
-	// The message parser cuts a placeholder at its first "}}", so a branch
-	// carrying a nested placeholder truncates the segment before this point. A
-	// brace left in the body is that case, and it is reported as itself rather
-	// than as the missing "other" branch the truncation would otherwise produce.
-	if strings.Contains(inner, "{{") {
-		return nil, errors.New("a plural branch may not contain a nested placeholder")
+	keyword, body, _ := strings.Cut(rest, ",")
+	switch strings.TrimSpace(keyword) {
+	case "plural":
+		// The message parser cuts a placeholder at its first "}}", so a branch
+		// carrying a nested placeholder truncates the segment before this point. A
+		// brace left in the body is that case, and it is reported as itself rather
+		// than as the missing "other" branch the truncation would otherwise produce.
+		if strings.Contains(inner, "{{") {
+			return errors.New("a plural branch may not contain a nested placeholder")
+		}
+		branches, err := parseBranches(body)
+		if err != nil {
+			return err
+		}
+		n.arg = name
+		n.group = &pluralGroup{arg: name, branches: branches}
+		return nil
+	case "time":
+		// The layout is everything after the second comma, holding the
+		// conventional separating spaces aside. It is not split on its commas: a
+		// Go layout may itself carry one, as "Mon, 02 Jan 2006 15:04" does.
+		layout := strings.TrimSpace(body)
+		if layout == "" {
+			return fmt.Errorf("the time segment for %q carries an empty layout", name)
+		}
+		n.arg = name
+		n.time = &timeForm{arg: name, layout: layout}
+		return nil
+	default:
+		return fmt.Errorf("the segment for %q names %q; want \"plural\" or \"time\"", name, strings.TrimSpace(keyword))
 	}
-	keyword, branchText, ok := strings.Cut(rest, ",")
-	if !ok || strings.TrimSpace(keyword) != "plural" {
-		return nil, fmt.Errorf("the segment for %q is not of the form {{name, plural, category=text, ...}}", name)
-	}
-	branches, err := parseBranches(branchText)
-	if err != nil {
-		return nil, err
-	}
-	return &pluralGroup{arg: name, branches: branches}, nil
 }
 
 // parseBranches parses the branch list of a plural segment into a map from
@@ -571,11 +615,12 @@ func beginsBranch(s string) bool {
 // by its value formatted for locale: a string verbatim, a number by the locale's
 // printer. A name with no value is left as written. A plural segment selects its
 // branch by its integer value's CLDR category for locale, and # in the branch
-// stands for the count formatted for locale.
-func (e *engine) render(m *template, args i18n.Args, locale i18n.Locale) string {
+// stands for the count formatted for locale. A time segment formats its instant
+// with its layout in the zone ctx names.
+func (e *engine) render(ctx context.Context, m *template, args i18n.Args, locale i18n.Locale) string {
 	// A message with no placeholder writes back the text it was parsed from, so
 	// nothing below runs for the common case.
-	if len(m.nodes) == 1 && m.nodes[0].arg == "" && m.nodes[0].group == nil {
+	if len(m.nodes) == 1 && m.nodes[0].arg == "" && m.nodes[0].group == nil && m.nodes[0].time == nil {
 		return m.nodes[0].text
 	}
 	var b strings.Builder
@@ -584,6 +629,8 @@ func (e *engine) render(m *template, args i18n.Args, locale i18n.Locale) string 
 		switch {
 		case n.group != nil:
 			b.WriteString(e.renderPlural(n.group, n.raw, args, locale))
+		case n.time != nil:
+			b.WriteString(e.renderTime(ctx, n.time, n.raw, args))
 		case n.arg != "":
 			b.WriteString(e.renderArg(n.arg, n.raw, args, locale))
 		}
@@ -592,7 +639,10 @@ func (e *engine) render(m *template, args i18n.Args, locale i18n.Locale) string 
 }
 
 // renderArg renders one {{name}} placeholder. A name with no value is left as
-// written; a string is written verbatim; a number is formatted for locale.
+// written; a string is written verbatim; a number is formatted for locale. A
+// time has no layout here, so it renders only through a {{name, time, layout}}
+// segment and is left as written in a plain placeholder, like a value of any
+// other kind this form does not carry.
 func (e *engine) renderArg(name, raw string, args i18n.Args, locale i18n.Locale) string {
 	v, ok := args[name]
 	if !ok {
@@ -624,6 +674,60 @@ func (e *engine) renderPlural(g *pluralGroup, raw string, args i18n.Args, locale
 		text = g.branches[plural.Other]
 	}
 	return strings.ReplaceAll(text, "#", e.formatInt(count, locale))
+}
+
+// renderTime renders one {{name, time, layout}} placeholder. The parameter must
+// carry a time; one that is missing or of another kind leaves the segment as
+// written, the rule a plural segment follows for a wrong-kind value. The instant
+// is formatted with the layout the message carries, in the zone ctx names: the
+// zone is the context's IANA name, read as UTC when the context names none or
+// when this process cannot load the name.
+func (e *engine) renderTime(ctx context.Context, tf *timeForm, raw string, args i18n.Args) string {
+	v, ok := args[tf.arg]
+	if !ok || i18n.KindOf(v) != i18n.KindTime {
+		return raw
+	}
+	name, _ := i18n.TimeZoneFromContext(ctx)
+	return i18n.TimeOf(v).In(e.location(name)).Format(tf.layout)
+}
+
+// location is the *time.Location for an IANA name, read as UTC for the empty
+// name, for Go's own special name "Local", and for a name this process cannot
+// load.
+//
+// "Local" is answered here rather than resolved: time.LoadLocation("Local")
+// succeeds and yields the host's own zone, so a "Local" that reached the
+// context would render user-visible text in whatever zone the process happens
+// to run in. The write side refuses the name as a preference too
+// (ValidTimeZone), but the context accessor is exported and takes a value
+// unexamined, so the read path keeps its own guard instead of trusting where
+// the value came from.
+//
+// A loaded location is cached so that a name reads the filesystem once:
+// time.LoadLocation re-reads the zoneinfo files on every call — the standard
+// library keeps no cross-call cache. The cache is guarded by mu, which is taken
+// here and nowhere else, so a message that carries no time form touches neither
+// the lock nor the filesystem.
+func (e *engine) location(name string) *time.Location {
+	if name == "" || name == "Local" {
+		return time.UTC
+	}
+	e.mu.RLock()
+	loc, ok := e.locations[name]
+	e.mu.RUnlock()
+	if ok {
+		return loc
+	}
+	loc, err := time.LoadLocation(name)
+	if err != nil {
+		// A name this process cannot load renders as UTC rather than failing, and
+		// is cached as UTC so it does not re-read the filesystem on every render.
+		loc = time.UTC
+	}
+	e.mu.Lock()
+	e.locations[name] = loc
+	e.mu.Unlock()
+	return loc
 }
 
 // pluralForm is the CLDR cardinal category the count falls in for locale. CLDR
