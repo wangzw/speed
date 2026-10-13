@@ -10,7 +10,7 @@
 
 `golang.org/x/text/language` 提供语言的解析与匹配（`language.Tag`、`MatchStrings`）。它的解析能力要有一处用到，但把它放到接口面上，它的依赖闭包就落到每一个消费方：一个只想读一个语言并把它传给下一层、自己不匹配任何东西的模块，也要承受这个库。
 
-**实测前提：`golang.org/x/text` 已经在 gin 的依赖闭包内。** gin 经 `go-playground/validator/v10` 传递地依赖 `golang.org/x/text`，`gin` 的 `go.mod` 把它列为间接依赖。入口模块的 `pkg/http/deps_test.go` 以「标准库 ∪ 本仓库模块 ∪ `pkg/config` 的当前闭包 ∪ gin 的当前闭包」为预算扫描本模块的包，`x/text/language` 因而已在预算之内，本能力目录引入它不使该预算增长。本能力目录的子包位于 `pkg/i18n/**` 下，不在 `pkg/http/**` 的扫描范围内，也就不参与那次扫描。
+**实测前提：`golang.org/x/text` 已经在 gin 的依赖闭包内。** gin 经 `go-playground/validator/v10` 传递地依赖 `golang.org/x/text`，`gin` 的 `go.mod` 把它列为间接依赖。入口模块的 `pkg/http/deps_test.go` 以「标准库 ∪ 本仓库模块 ∪ `pkg/config` 的当前闭包 ∪ gin 的当前闭包」为预算扫描本模块取用到的包，`x/text/language` 因而已在预算之内，本能力目录引入它不使该预算增长。本能力目录的引擎子包位于 `pkg/i18n/**` 下；`pkg/http` 只 import 本能力目录的根包，取不到引擎，因而不经它拉进 `x/text/language`。
 
 ## 考虑过的选项
 
@@ -44,7 +44,7 @@
 
 跨模块只传字符串，消费方只依赖标准库与本能力目录的根包；匹配集中在一处，各消费点看到的是同一套结果。
 
-`pkg/http` 的依赖预算不因这条决策增长：本能力目录不 import `pkg/http`，`pkg/http` 也不 import 本能力目录，而 `x/text/language` 已因 gin 落在预算内。
+`pkg/http` 的依赖预算不因这条决策增长：本能力目录的根包只依赖标准库，`pkg/http` 取用它（为它自己写出的拒绝渲染文本，见 [ADR-i18n-error-rendering-2026-10-13](adr-i18n-error-rendering-2026-10-13.md)）时拉进的只是这个根包，引擎子包与其中的 `x/text/language` 不经它进来，而 `x/text/language` 已因 gin 落在预算内。
 
 **接受的代价：**
 
@@ -54,6 +54,6 @@
 
 ## 失效条件
 
-本记录依赖「`x/text/language` 在 gin 的闭包内」。若 gin 换掉 `validator` 或 `validator` 去掉对 `x/text` 的依赖，该库便不再因 gin 落在 `pkg/http` 的预算内；此时若 `pkg/http` 仍不 import 本能力目录，预算不受影响，但「本库已在预算内」这条论据本身失效，需要重新核对入口模块的依赖声明。
+本记录依赖「`x/text/language` 在 gin 的闭包内」。若 gin 换掉 `validator` 或 `validator` 去掉对 `x/text` 的依赖，该库便不再因 gin 落在 `pkg/http` 的预算内；`pkg/http` 只 import 本能力目录的根包、取不到引擎，预算是确定的，但「本库已在预算内」这条论据本身失效，需要重新核对入口模块的依赖声明。
 
 若某消费方在边界外就能确定需要语言的等价判断（不只是传递），则字符串类型放不住，边界类型要重新考虑。

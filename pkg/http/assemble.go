@@ -10,6 +10,7 @@ import (
 
 	"github.com/gin-gonic/gin"
 
+	"github.com/vislake/speed/pkg/i18n"
 	"github.com/vislake/speed/pkg/log"
 )
 
@@ -22,19 +23,23 @@ import (
 // injected is the logger to put in each request's context, or nil when no
 // module delivers the Logger capability. logger is where this assembly's own
 // diagnostics go. responder is what decides the shape of the error responses,
-// or nil when no module delivers the ErrorResponder capability.
-func (e *endpoint) assemble(injected, logger *slog.Logger, responder ErrorResponder) (nethttp.Handler, error) {
+// or nil when no module delivers the ErrorResponder capability. localizer
+// renders the text of the refusals this module writes itself, or nil when no
+// module delivers the Localizer capability. resolver names the language of the
+// default problem shape in a Content-Language header, or nil when no module
+// delivers the Resolver capability.
+func (e *endpoint) assemble(injected, logger *slog.Logger, responder ErrorResponder, localizer i18n.Localizer, resolver i18n.Resolver) (nethttp.Handler, error) {
 	ordered, remarks, err := orderLayers(e.settings.name, e.layers)
 	if err != nil {
 		return nil, err
 	}
 
-	engine := newEngine(e.settings)
+	engine := newEngine(e.settings, localizer)
 	// ordered runs from outermost to innermost, and gin runs the handlers
 	// given to Use in the order given. Use goes first: gin combines the
 	// engine's handlers into a route's chain when the route is added, so a
 	// layer registered after the routes would not reach them.
-	if raised := useLayers(engine, ordered, e.settings); raised != nil {
+	if raised := useLayers(engine, ordered, e.settings, localizer); raised != nil {
 		return nil, fmt.Errorf("%w: endpoint %q: gin refused the %d registered layers: %v. A chain "+
 			"holds a limited number of handlers, and the layers, the engine's own and a route's "+
 			"count together; register fewer layers on this endpoint or move some of them to "+
@@ -49,7 +54,7 @@ func (e *endpoint) assemble(injected, logger *slog.Logger, responder ErrorRespon
 		"endpoint", e.settings.name,
 		"routes", len(e.routes),
 		"chain", chainDescription(e.settings.name, ordered))
-	return e.base(engine, injected, responder), nil
+	return e.base(engine, injected, responder, resolver), nil
 }
 
 // useLayers registers this module's built-in layers and the ordered registered
@@ -84,18 +89,18 @@ func (e *endpoint) assemble(injected, logger *slog.Logger, responder ErrorRespon
 // gin refuses a chain longer than it can hold by panicking, and that would
 // otherwise leave Serve as a panic instead of a startup failure, which is why
 // what it raised is caught and handed back.
-func useLayers(engine *gin.Engine, ordered []layer, s endpointSettings) (raised any) {
+func useLayers(engine *gin.Engine, ordered []layer, s endpointSettings, localizer i18n.Localizer) (raised any) {
 	defer func() { raised = recover() }()
 	engine.Use(accessLog(s.name))
 	observe, guard, inner := splitStages(ordered)
 	for _, l := range observe {
 		engine.Use(l.mw.Handler)
 	}
-	engine.Use(recovery(s.name))
+	engine.Use(recovery(s.name, localizer))
 	for _, l := range guard {
 		engine.Use(l.mw.Handler)
 	}
-	engine.Use(bodyLimit(s.name, s.maxBodyBytes))
+	engine.Use(bodyLimit(s.name, s.maxBodyBytes, localizer))
 	for _, l := range inner {
 		engine.Use(l.mw.Handler)
 	}
@@ -171,7 +176,7 @@ func setReleaseMode() {
 // handler on the engine takes the header off and holds it; the handler for a
 // method the path does not allow puts it back once every layer has let the
 // request through.
-func newEngine(s endpointSettings) *gin.Engine {
+func newEngine(s endpointSettings, localizer i18n.Localizer) *gin.Engine {
 	setReleaseMode()
 	engine := gin.New()
 	engine.RedirectTrailingSlash = false
@@ -183,14 +188,22 @@ func newEngine(s endpointSettings) *gin.Engine {
 		engine.RemoteIPHeaders = s.remoteIPHeaders
 	}
 	engine.Use(holdAllow)
-	engine.NoRoute(func(c *gin.Context) { Fail(c, Problem{Status: nethttp.StatusNotFound}) })
+	engine.NoRoute(func(c *gin.Context) {
+		Fail(c, Problem{
+			Status: nethttp.StatusNotFound,
+			Title:  refusalTitle(c.Request.Context(), localizer, nethttp.StatusNotFound),
+		})
+	})
 	engine.NoMethod(func(c *gin.Context) {
 		if allow, held := c.Get(heldAllowKey); held {
 			if methods, isString := allow.(string); isString {
 				c.Header("Allow", methods)
 			}
 		}
-		Fail(c, Problem{Status: nethttp.StatusMethodNotAllowed})
+		Fail(c, Problem{
+			Status: nethttp.StatusMethodNotAllowed,
+			Title:  refusalTitle(c.Request.Context(), localizer, nethttp.StatusMethodNotAllowed),
+		})
 	})
 	return engine
 }
@@ -394,9 +407,10 @@ func (e *endpoint) conflictError(mounted []route, refused route, raised any) err
 // base is the outermost layer of the chain, the one this module puts there
 // itself.
 //
-// It puts the logger and the delivered ErrorResponder into the request context
-// and nothing else. Outside every layer is the only place from which each of
-// them, and the handler, can take them out of the request context. First
+// It puts the logger, the delivered ErrorResponder and the delivered Resolver
+// into the request context and nothing else. Outside every layer is the only
+// place from which each of them, and the handler, can take them out of the
+// request context. First
 // injection belongs to whoever creates the context rather than to a middleware —
 // several middlewares would each believe they are the outermost one, and the
 // loggers they inject carry different module names.
@@ -406,20 +420,22 @@ func (e *endpoint) conflictError(mounted []route, refused route, raised any) err
 // request path's records go to standard output instead of to the configured
 // destinations, without a failure signal. That is the stated cost of the
 // dependency being optional. With no ErrorResponder, Fail writes the default
-// shape.
+// shape. With no Resolver the default shape names no language; the four
+// refusals are still written.
 //
 // The request body limit is not imposed here: it is the body limit layer's, and
 // that layer sits inside the engine, after the route is matched, so a request
 // whose method the path does not allow and one that matches no route are bounded
 // too.
-func (e *endpoint) base(next nethttp.Handler, injected *slog.Logger, responder ErrorResponder) nethttp.Handler {
+func (e *endpoint) base(next nethttp.Handler, injected *slog.Logger, responder ErrorResponder, resolver i18n.Resolver) nethttp.Handler {
 	return nethttp.HandlerFunc(func(w nethttp.ResponseWriter, r *nethttp.Request) {
-		if injected != nil || responder != nil {
+		if injected != nil || responder != nil || resolver != nil {
 			ctx := r.Context()
 			if injected != nil {
 				ctx = log.WithLogger(ctx, injected)
 			}
-			r = r.WithContext(withResponder(ctx, responder))
+			ctx = withResolver(withResponder(ctx, responder), resolver)
+			r = r.WithContext(ctx)
 		}
 		next.ServeHTTP(w, r)
 	})

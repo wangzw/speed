@@ -36,7 +36,7 @@
 
 ## 外部接口契约
 
-本模块交付一个功能，定义一种资源类型供其他模块声明，另有写出错误响应的入口与排空信号供 handler 与各层取用，另有一个供其他模块实现的可选接缝 `ErrorResponder`。
+本模块交付一个功能，定义一种资源类型供其他模块声明，另有写出错误响应的入口与排空信号供 handler 与各层取用，另有一个供其他模块实现的可选接缝 `ErrorResponder`。本模块自己写出的拒绝从它自己声明的消息目录渲染文本，并把 `i18n.Localizer` 与 `i18n.Resolver` 作为可选依赖取用（见错误响应一节）。
 
 **交付的功能**。功能标识的元素类型必须是接口，取用写作 `core.Resolve[http.Router](reg)`：
 
@@ -201,14 +201,12 @@ type Spec struct {
 ```go
 // Problem 是一次错误响应的内容，字段取自 RFC 9457。
 type Problem struct {
-    Type     string            // 缺省为 "about:blank"
-    Title    string            // 缺省为状态码的标准说明，没有标准说明的状态码则省略
+    Type     string // 缺省为 "about:blank"
+    Title    string // 缺省为状态码的标准说明，没有标准说明的状态码则省略
     Status   int
     Detail   string
     Instance string
-    Key      string            // 消息键，供本地化的 ErrorResponder 取文案；空则由 Type 推导
-    Args     map[string]string // 消息的插值参数，值填入 Key 所指文案的占位符
-    Cause    error             // 不写入默认响应体，供定制的 ErrorResponder 读取
+    Cause    error // 不写入默认响应体，供定制的 ErrorResponder 读取
 }
 
 // ErrorResponder 决定本模块写出的全部错误响应的形状。
@@ -222,7 +220,13 @@ func Fail(c *gin.Context, p Problem)
 
 没有模块交付 `ErrorResponder` 时用默认形状：以 `Problem.Status` 为状态码，不在 200 至 599 之内时写 500——单独写出的 1xx 是信息性响应，不是最终状态；响应体是 `application/problem+json`，内容为 `Type`、`Title`、`Status`、`Detail` 与 `Instance` 中的非空字段，`Cause` 不写入。默认形状自己写出响应体，调用方在此之前设过的 `Content-Length` 与 `Content-Encoding` 描述的是另一份响应体，它丢弃这两个头，其余响应头保留。兜底层接住 panic 后写默认形状时，另外丢弃描述 handler 原打算写出的那份内容的头：`Content-Disposition`、`ETag`、`Last-Modified`、`Content-Range`、`Accept-Ranges`、`Cache-Control` 与 `Expires`——一条带着 handler 的 `Cache-Control: public` 的 500 会被缓存当作答案留下。交付者替换的是整个形状：它须按 `Problem.Status` 写出状态码，响应体与媒体类型由它决定，响应头一概不由本模块动。
 
-**`Key` 与 `Args` 供本地化的形状读取，不进默认响应体。** `Key` 是本地化错误文本的消息键，`Args` 是它的插值参数；交付 `ErrorResponder` 的 `pkg/i18n/respond` 按请求语言取 `Key` 所指的消息、用 `Args` 插值，渲染出 `Title`，保留 `Type`、`Status` 与 `Detail` 原样，并写 `Content-Language`。`Key` 为空时由 `Type` 推导。没有交付者时两个字段不被读取，`Title`、`Detail` 仍取 `Problem` 上的原样值（[ADR-i18n-error-rendering-2026-10-13](../../../adr/adr-i18n-error-rendering-2026-10-13.md)）。
+**文本在到达这处接缝之前已经完成。** 一个决定错误响应形状的接缝不承载语言：`Problem.Title` 与 `Problem.Detail` 是被写出的成品文本，本模块不读取任何本地化输入。本模块自己写出的四类拒绝——无匹配路由的 404、方法不允许的 405、请求体超限的 413、接住 panic 的 500——由本模块从它自己声明的消息目录渲染文本（见本模块自己写出的拒绝的渲染一节；[ADR-i18n-error-rendering-2026-10-13](../../../adr/adr-i18n-error-rendering-2026-10-13.md)）。
+
+**本模块自己写出的拒绝的渲染。** 本模块写出的四类拒绝的文本随请求语言变化，一处渲染点就在写它们的地方：本模块按状态码取消息键 `http.<status>`，从它自己声明的消息目录取文案，填进 `Problem.Title`。目录以 `i18n.Catalog` 资源声明，与别的模块的目录同形——一个语言一个 `locales/{tag}.json`，键到消息的 JSON 对象，由本模块的 `embed.FS` 承载；引擎把各模块的目录合并成一个索引，这些文案因而与其余模块的文案一起按请求语言渲染（[ADR-i18n-catalogs-2026-10-13](../../../adr/adr-i18n-catalogs-2026-10-13.md)）。
+
+**本模块取用可选的 `i18n.Localizer`。** 渲染经 `i18n.Localizer` 完成，它是可选依赖：装配里有引擎时，它按请求上下文里的语言取出文案；没有引擎、或某个键没有目录承载时，拒绝回落到 `net/http` 的状态文本，`Title` 永不为空。取用的是本能力目录的根包，它只依赖标准库，因而不使本模块的依赖预算增长（[ADR-i18n-locale-type-2026-10-13](../../../adr/adr-i18n-locale-type-2026-10-13.md)）。一个只发机器字段（`Type`、`Status`）、不带文本的拒绝不在目录里取文案，按状态码回落到标准文本。
+
+**本模块取用可选的 `i18n.Resolver`，用来在响应上写出正文的语言。** 默认形状在 `Content-Language` 头里写出这一次响应的语言，取自 `Resolver.LocaleOf`；没有装配引擎、因而没有解析器时不写这个头。一个客户端请求了一种语言、却因回落拿到另一种时，这个头是它知道拿到的是哪一种的途径。这个头只在默认形状下写：交付了 `ErrorResponder` 的装配里，形状与它的头都是那个实现的。
 
 **经这处决定形状的响应**是：`Fail` 写出的；兜底层接住 panic 后写出的，状态码 500，`Cause` 是一个包着 panic 值的错误；无匹配路由的 404；方法不允许的 405。handler 用 gin 自己写出的响应不经它。
 
@@ -241,7 +245,7 @@ func Draining(ctx context.Context) <-chan struct{}
 
 ## 依赖
 
-`pkg/http` 根包 import `pkg/core`、`pkg/config`、`pkg/log` 与 gin：`core` 提供功能标识的类型与资源、实例的查询，`config` 用于声明输入项，`log` 提供可选依赖的功能标识与上下文存取，gin 提供登记面的 handler 类型与路由、绑定、渲染。接口面上除标准库与本包自己的类型之外，出现 `core` 的功能标识类型与 gin 的 `gin.HandlerFunc`、`*gin.Context`。
+`pkg/http` 根包 import `pkg/core`、`pkg/config`、`pkg/log`、`pkg/i18n` 与 gin：`core` 提供功能标识的类型与资源、实例的查询，`config` 用于声明输入项，`log` 提供可选依赖的功能标识与上下文存取，`i18n` 提供 `Localizer`、`Resolver` 功能标识与 `Catalog` 资源类型，gin 提供登记面的 handler 类型与路由、绑定、渲染。接口面上除标准库与本包自己的类型之外，出现 `core` 的功能标识类型与 gin 的 `gin.HandlerFunc`、`*gin.Context`；本模块把它的消息目录作为 `i18n.Catalog` 资源声明在模块的 `Resources` 上，该资源类型不出现在任何导出签名里，因而不在这一接口面上。
 
 **本模块封装 gin，取用本模块的宿主因而承受 gin 的依赖闭包，另承受 `pkg/config` 的解析工具依赖。** 声明输入项与读取配置都经由 `pkg/config`，它解析配置所用的那些库因而落在本模块的传递闭包里，这是 [ADR-config-parsing-2026-09-20](../../../adr/adr-config-parsing-2026-09-20.md) 记下的代价；gin 与它的传递依赖落在其中，是 [ADR-http-surface-2026-09-14](../../../adr/adr-http-surface-2026-09-14.md) 记下的代价。守住的那一条是本模块不在其上新增：`pkg/http/deps_test.go` 以「标准库 ∪ 本仓库模块 ∪ `pkg/config` 的当前闭包 ∪ gin 的当前闭包」为预算扫描本模块的全部包，预算之外的一个包即失败，OpenAPI 解析库因而仍然进不来。
 
@@ -251,7 +255,9 @@ func Draining(ctx context.Context) <-chan struct{}
 
 本模块另声明对 `ErrorResponder` 功能的可选依赖：有模块交付它时，本模块写出的全部错误响应的形状由它决定；没有时用默认形状。这一项缺席不丢失信息，默认形状带着状态码与标题。多个模块交付它时取用以 `ErrAmbiguousProvider` 失败，启动随之失败。
 
-方向满足架构不变量：本功能目录位于 `core` 与 `config` 之上、全部登记路由的模块之下，不 import 其中任何一个。中间件的相对位置以功能标识声明，标识由声明方给出，本模块因而不 import 任何贡献中间件的模块。
+本模块另声明对 `i18n.Localizer` 与 `i18n.Resolver` 功能的可选依赖，并声明自己的消息目录（`i18n.Catalog` 资源）：有模块交付 `Localizer` 时，本模块自己写出的四类拒绝按请求语言渲染文本；有模块交付 `Resolver` 时，默认形状在 `Content-Language` 里写出所用的语言。没有装配引擎时这些拒绝回落到 `net/http` 的标准状态文本、也不写这个头。这些缺席都不丢失信息，拒绝仍带着状态码与标准说明（见错误响应一节）。
+
+方向满足架构不变量：本功能目录位于 `core` 与 `config` 之上、全部登记路由的模块之下，不 import 其中任何一个。它 import `pkg/i18n` 的根包，但那个根包不是登记路由的模块，只依赖标准库，因而不因此引入任何登记方。中间件的相对位置以功能标识声明，标识由声明方给出，本模块因而不 import 任何贡献中间件的模块。
 
 ## UML 图
 
@@ -308,8 +314,6 @@ classDiagram
         +Status int
         +Detail string
         +Instance string
-        +Key string
-        +Args map
         +Cause error
     }
     class GinEngine {
@@ -576,6 +580,7 @@ gin 的 `*gin.Context` 只在它所属那次请求的处理期间有效：handle
 | 请求路径的 panic 兜底 | 已实现 | `pkg/http/recovery.go` `recovery`、`answerDefect`、`panicError`、`handlerDefect`、`discardRepresentationHeaders`、`stackTrace` |
 | 每请求一条访问记录 | 已实现 | `pkg/http/accesslog.go` `accessLog`、`answeredWith` |
 | 请求体上限 | 已实现 | `pkg/http/bodylimit.go` `bodyLimit`、`limitedBody` |
+| 拒绝文本的本地化渲染与本模块的消息目录 | 已实现 | `pkg/http/messages.go` `localesFS`、`messageCatalog`、`refusalKey`、`refusalTitle`，`pkg/http/locales/*.json`；`pkg/http/module.go` `localizerFor` |
 | 错误响应的形状与写出入口 | 已实现 | `pkg/http/problem.go` `Problem`、`ErrorResponder`、`Fail`、`respondProblem`，`pkg/http/module.go` `errorResponder` |
 | `Spec` 资源、形状校验与查询 | 已实现 | `pkg/http/surface.go` `Spec`、`pkg/http/spec.go` `validateSpecs`、`validateSpec` |
 | 排空信号 | 已实现 | `pkg/http/draining.go` `Draining`、`pkg/http/listener.go` `(*listener).start`、`(*listener).stop` |

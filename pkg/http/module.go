@@ -8,6 +8,7 @@ import (
 
 	"github.com/vislake/speed/pkg/config"
 	"github.com/vislake/speed/pkg/core"
+	"github.com/vislake/speed/pkg/i18n"
 	"github.com/vislake/speed/pkg/log"
 )
 
@@ -36,11 +37,13 @@ func init() { core.ProcessRegistry.Register(Module()) }
 // startup instead of quietly taking the registrations that were meant for this
 // one.
 //
-// Three packages are depended on. core carries the capability tokens, the
+// Four packages are depended on. core carries the capability tokens, the
 // declared resources and the instance lookups; config is where the endpoints
 // are read from, through the reader its module delivers; log supplies the
 // token of the optional dependency below and the context accessors the base
-// layer injects through.
+// layer injects through; i18n supplies the token of the localizer that renders
+// this module's own refusals, its root package being standard-library only so
+// that reading it adds no third-party dependency.
 //
 // That reader is the instance of the config module, which the host supplies
 // before the drive begins. It exists from that call on, so Prepare and New take
@@ -64,7 +67,9 @@ func init() { core.ProcessRegistry.Register(Module()) }
 // is the ordinary case rather than a state only a hand-built registry reaches:
 // which shape an API's error responses take is the business of whichever module
 // owns that API, and most assemblies have none. With no provider the responses
-// take the default shape, a problem details object.
+// take the default shape, a problem details object. A provider decides the
+// shape alone: it carries no language, and the text of a refusal is finished
+// here before it is handed over.
 //
 // The dependency on Logger is declared optional, and that declaration is a
 // statement of contract rather than a branch a host reaches. This package
@@ -74,15 +79,33 @@ func init() { core.ProcessRegistry.Register(Module()) }
 // which is how the tests here reach it: nothing is injected into the request
 // context, and the request path's records reach the process default logger's
 // destination rather than the configured one.
+//
+// The dependency on i18n.Localizer is declared optional, and it is what renders
+// the text of the four refusals this module writes itself. Absence is the
+// ordinary case — an assembly with no i18n engine — and it is no failure: the
+// refusals fall back to net/http's standard text for their status, the text an
+// assembly without this capability has always written. The engine that delivers
+// the localizer is where this module's own catalog is merged, so the
+// //go:embed catalog in Resources is read through it and not here.
+//
+// The dependency on i18n.Resolver is declared optional too, and it is what names
+// the language of the default problem shape in a Content-Language header: the
+// locale it resolves for the request, which is the request's own when one was
+// settled and the run's default otherwise, so a client answered in a language
+// other than the one it asked for is told which it got. Absence is the ordinary
+// case and is no failure: the four refusals are still written, with no such
+// header, which is the state an assembly with no i18n engine has always been in.
 func Module() core.Module {
 	return core.Module{
 		Name: ModuleName,
 		Requires: []core.Requirement{
 			{Token: (*log.Logger)(nil), Optional: true},
 			{Token: (*ErrorResponder)(nil), Optional: true},
+			{Token: (*i18n.Localizer)(nil), Optional: true},
+			{Token: (*i18n.Resolver)(nil), Optional: true},
 		},
 		Provides:  []core.Provision{{Token: (*Router)(nil), Exclusive: true}},
-		Resources: []any{schema()},
+		Resources: []any{schema(), messageCatalog},
 
 		Prepare: func(_ context.Context, reg *core.Registry) (core.Enablement, error) {
 			reader, err := core.Resolve[config.Reader](reg)
@@ -109,7 +132,15 @@ func Module() core.Module {
 			if err != nil {
 				return nil, err
 			}
-			return newModule(reader, injected, responder)
+			localizer, err := localizerFor(reg)
+			if err != nil {
+				return nil, err
+			}
+			resolver, err := resolverFor(reg)
+			if err != nil {
+				return nil, err
+			}
+			return newModule(reader, injected, responder, localizer, resolver)
 		},
 
 		// The gate is opened in Migrate and sealed in Start, the two
@@ -226,7 +257,7 @@ func readSettings(reader config.Reader) ([]endpointSettings, error) {
 
 // newModule builds the product: one endpoint per configured entry, with the
 // gate still shut. Nothing is bound here — the address is bound in Serve.
-func newModule(reader config.Reader, injected *slog.Logger, responder ErrorResponder) (*router, error) {
+func newModule(reader config.Reader, injected *slog.Logger, responder ErrorResponder, localizer i18n.Localizer, resolver i18n.Resolver) (*router, error) {
 	settings, err := readSettings(reader)
 	if err != nil {
 		return nil, err
@@ -234,6 +265,8 @@ func newModule(reader config.Reader, injected *slog.Logger, responder ErrorRespo
 	r := newRouter(settings)
 	r.injected = injected
 	r.responder = responder
+	r.localizer = localizer
+	r.resolver = resolver
 	r.logger = injected
 	if r.logger == nil {
 		// No Logger capability in this assembly, a state reached only by
@@ -283,6 +316,45 @@ func errorResponder(reg *core.Registry) (ErrorResponder, error) {
 	return delivered, nil
 }
 
+// localizerFor takes up the optional Localizer capability and returns what
+// renders this module's own refusals, or nil when no module delivers it.
+//
+// Absence is told apart from a real failure the same way, and for the same
+// reason: an assembly with no i18n engine is the ordinary case, and the
+// refusals then fall back to net/http's standard text. More than one provider
+// is a failure of the lookup itself, so the startup ends rather than one of them
+// being picked.
+func localizerFor(reg *core.Registry) (i18n.Localizer, error) {
+	delivered, err := core.Resolve[i18n.Localizer](reg)
+	if err != nil {
+		if errors.Is(err, core.ErrMissingProvider) {
+			return nil, nil
+		}
+		return nil, fmt.Errorf("http: taking up the localizer that renders the entry point's own "+
+			"refusals: %w", err)
+	}
+	return delivered, nil
+}
+
+// resolverFor takes up the optional Resolver capability and returns what names
+// the language of the default problem shape, or nil when no module delivers it.
+//
+// Absence is told apart from a real failure the same way, and for the same
+// reason: an assembly with no i18n engine is the ordinary case, and the default
+// shape then names no language. More than one provider is a failure of the
+// lookup itself, so the startup ends rather than one of them being picked.
+func resolverFor(reg *core.Registry) (i18n.Resolver, error) {
+	delivered, err := core.Resolve[i18n.Resolver](reg)
+	if err != nil {
+		if errors.Is(err, core.ErrMissingProvider) {
+			return nil, nil
+		}
+		return nil, fmt.Errorf("http: taking up the resolver that names the language of an error "+
+			"response: %w", err)
+	}
+	return delivered, nil
+}
+
 // serve assembles every endpoint's chain and binds its address.
 //
 // Both are synchronous, so a failure of either terminates the startup rather
@@ -293,7 +365,7 @@ func errorResponder(reg *core.Registry) (ErrorResponder, error) {
 func (r *router) serve() error {
 	for _, name := range r.names {
 		e := r.endpoints[name]
-		handler, err := e.assemble(r.injected, r.logger, r.responder)
+		handler, err := e.assemble(r.injected, r.logger, r.responder, r.localizer, r.resolver)
 		if err != nil {
 			return err
 		}

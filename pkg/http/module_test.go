@@ -15,6 +15,7 @@ import (
 
 	"github.com/vislake/speed/pkg/config"
 	"github.com/vislake/speed/pkg/core"
+	"github.com/vislake/speed/pkg/i18n"
 	"github.com/vislake/speed/pkg/log"
 )
 
@@ -23,7 +24,7 @@ import (
 func testProduct(t *testing.T, cfg moduleConfig) *router {
 	t.Helper()
 	logger, _ := newRecordingLogger()
-	r, err := newModule(&stubReader{cfg: cfg}, nil, nil)
+	r, err := newModule(&stubReader{cfg: cfg}, nil, nil, nil, nil)
 	if err != nil {
 		t.Fatalf("building the product: %v", err)
 	}
@@ -129,7 +130,7 @@ func TestPrepareAndNewReadOneSection(t *testing.T) {
 		t.Fatalf("Prepare: %v", err)
 	}
 	product := &stubReader{cfg: oneEndpoint("public")}
-	if _, err := newModule(product, nil, nil); err != nil {
+	if _, err := newModule(product, nil, nil, nil, nil); err != nil {
 		t.Fatalf("New: %v", err)
 	}
 	if stance.path != configPath || product.path != configPath {
@@ -155,10 +156,11 @@ func TestModuleProvidesRouterExclusively(t *testing.T) {
 	}
 }
 
-// TestDeclaredDependenciesAreOptional pins both declared dependencies. Without
-// the Optional flag, a host assembling no module for either would fail to start
-// over a dependency this module states a default behaviour for: the process
-// default logger, and the default shape of an error response.
+// TestDeclaredDependenciesAreOptional pins all four declared dependencies.
+// Without the Optional flag, a host assembling no module for any of them would
+// fail to start over a dependency this module states a default behaviour for:
+// the process default logger, the default shape of an error response, and the
+// standard text of the refusals this module writes itself.
 //
 // The absence of each is asked for here rather than assumed, because a lookup
 // that failed for a reason other than "no provider" has to terminate the
@@ -168,6 +170,8 @@ func TestDeclaredDependenciesAreOptional(t *testing.T) {
 	want := []reflect.Type{
 		reflect.TypeFor[*log.Logger](),
 		reflect.TypeFor[*ErrorResponder](),
+		reflect.TypeFor[*i18n.Localizer](),
+		reflect.TypeFor[*i18n.Resolver](),
 	}
 	if len(requires) != len(want) {
 		t.Fatalf("the module declares %d requirements: %+v", len(requires), requires)
@@ -195,6 +199,22 @@ func TestDeclaredDependenciesAreOptional(t *testing.T) {
 	}
 	if responder != nil {
 		t.Error("an error responder was produced although no module delivers the capability")
+	}
+
+	localizer, err := localizerFor(core.New())
+	if err != nil {
+		t.Fatalf("taking up the localizer from a registry that has none: %v", err)
+	}
+	if localizer != nil {
+		t.Error("a localizer was produced although no module delivers the capability")
+	}
+
+	resolver, err := resolverFor(core.New())
+	if err != nil {
+		t.Fatalf("taking up the resolver from a registry that has none: %v", err)
+	}
+	if resolver != nil {
+		t.Error("a resolver was produced although no module delivers the capability")
 	}
 }
 

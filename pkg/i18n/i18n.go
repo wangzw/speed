@@ -3,14 +3,14 @@
 // It is the interface package of a capability directory: it declares the
 // interfaces, the value types and the resource type, and registers no module.
 // The engine that collects the message catalogs, the entry point wiring that
-// settles a request's locale, the responder that renders an error and the
-// bridge to an account's stored preferences each live in a subpackage and
-// register a module of their own, the way the subpackages of pkg/authn do.
+// settles a request's locale and the bridge to an account's stored preferences
+// each live in a subpackage and register a module of their own, the way the
+// subpackages of pkg/authn do.
 //
 // The root package depends on the standard library only, so a module that only
 // reads a locale can import it without carrying any library the engine binds.
 // The one library the engine needs for language matching, golang.org/x/text,
-// stays inside the engine and the entry point wiring.
+// stays inside the engine.
 package i18n
 
 import (

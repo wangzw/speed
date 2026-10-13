@@ -129,7 +129,6 @@ graph TD
     iroot["根包<br/>接口与数据类型"]
     engine["catalog<br/>引擎 i18n"]
     ihttp["http<br/>i18n.http"]
-    respond["respond<br/>i18n.respond"]
     iaccount["account<br/>i18n.account"]
   end
   core["pkg/core"]
@@ -138,19 +137,17 @@ graph TD
 
   engine --> iroot
   ihttp --> iroot
-  respond --> iroot
   iaccount --> iroot
   engine --> core
   ihttp --> core
-  respond --> core
   iaccount --> core
   ihttp --> http
   ihttp --> authnroot
-  respond --> http
   iaccount --> authnroot
+  http --> iroot
 ```
 
-箭头表示 import。根包只依赖标准库，因而一个只读语言偏好的模块 import 它不拉进任何第三方库；引擎 `pkg/i18n/catalog` 是唯一用到 `golang.org/x/text/language` 的地方，`i18n.http` 经 `i18n.Negotiator` 取用协商结果而不自己拉这个库。`i18n.http` 取用 `pkg/http` 的登记面在每个端挂两层中间件，并以 `(*authn.Gate)(nil)` 作为它内层中间件的 `After` 锚点，因而 import 认证的根包；`i18n.account` 经认证根包的 `Accounts` 读账户属性、并实现根包的 `Provisioner`，因而同样指向它。**认证的根包不 import `pkg/i18n`**，方向是 i18n 指向认证这一侧：需要同时读身份与语言的子包（如 `pkg/authn/login`）import `pkg/i18n`，而认证根包只依赖标准库与自己的内部包这一点不变（[authn](modules/authn/design-authn.md)、不变量 17 的同向精神）。`pkg/http` 也不 import `pkg/i18n`：它把 `Problem` 交给交付的 `ErrorResponder`，自身不认识语言。
+箭头表示 import。根包只依赖标准库，因而一个只读语言偏好的模块 import 它不拉进任何第三方库；引擎 `pkg/i18n/catalog` 是唯一用到 `golang.org/x/text/language` 的地方，`i18n.http` 经 `i18n.Negotiator` 取用协商结果而不自己拉这个库。`i18n.http` 取用 `pkg/http` 的登记面在每个端挂两层中间件，并以 `(*authn.Gate)(nil)` 作为它内层中间件的 `After` 锚点，因而 import 认证的根包；`i18n.account` 经认证根包的 `Accounts` 读账户属性、并实现根包的 `Provisioner`，因而同样指向它。**认证的根包不 import `pkg/i18n`**，方向是 i18n 指向认证这一侧：需要同时读身份与语言的子包（如 `pkg/authn/login`）import `pkg/i18n`，而认证根包只依赖标准库与自己的内部包这一点不变（[authn](modules/authn/design-authn.md)、不变量 17 的同向精神）。**`pkg/http` import `pkg/i18n` 的根包**：它渲染自己写出的四类拒绝（无匹配路由的 404、方法不允许的 405、请求体超限的 413、接住 panic 的 500），把 `i18n.Localizer` 作为可选依赖取用；取用只到根包，根包只依赖标准库，因而不使入口模块的依赖预算增长（[ADR-i18n-error-rendering-2026-10-13](../adr/adr-i18n-error-rendering-2026-10-13.md)、[ADR-i18n-locale-type-2026-10-13](../adr/adr-i18n-locale-type-2026-10-13.md)）。
 
 ## 逻辑部署架构
 
@@ -223,7 +220,7 @@ speed 不引入进程边界。宿主是单一进程，注册表与全部模块�
 
 **每一层为自己产生的启动期错误给出修复动作。** 原样外传的失败不在此列：`core` 不加工它，也无从知道它的修法。模块被消解禁用而退让时，错误或诊断要给出它退让的原因，而非仅报告某个功能没有提供者。
 
-**用户可见的错误文案由 i18n 的 `ErrorResponder` 渲染。** 错误响应的用户可见部分——`Problem` 的 `Title`——由 [i18n](modules/design-i18n.md) 交付的 `ErrorResponder` 按请求语言渲染，而机器码 `Problem.Type`、状态码 `Problem.Status` 与发生处的 `Problem.Detail` 原样保留、不随语言改变。`pkg/http` 不认识语言，它只把 `Problem` 交给交付的渲染器；没有交付时写出默认的 `application/problem+json` 形状（[http](modules/http/design-http.md)）。
+**用户可见的错误文案由产生它的模块渲染。** 一条消息由产生它的模块渲染：入口模块 [http](modules/http/design-http.md) 自己写出的四类拒绝（无匹配路由的 404、方法不允许的 405、请求体超限的 413、接住 panic 的 500）从它自己声明的消息目录渲染 `Problem` 的 `Title`；各领域模块在它们有文本要给出时渲染自己的文本，只发机器字段（`Type`、`Status`）的模块不承载文本（[ADR-i18n-rendering-ownership-2026-10-13](../adr/adr-i18n-rendering-ownership-2026-10-13.md)）。机器码 `Problem.Type` 与状态码 `Problem.Status` 原样保留、不随语言变化；`Problem.Title` 与 `Problem.Detail` 是渲染好的成品文本。决定错误响应形状的接缝 `ErrorResponder` 只决定形状、不承载语言（[ADR-i18n-error-rendering-2026-10-13](../adr/adr-i18n-error-rendering-2026-10-13.md)）。
 
 ### 并发模型
 

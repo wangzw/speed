@@ -15,6 +15,7 @@ import (
 	"github.com/gin-gonic/gin"
 
 	"github.com/vislake/speed/pkg/core"
+	"github.com/vislake/speed/pkg/i18n"
 	"github.com/vislake/speed/pkg/log"
 )
 
@@ -25,20 +26,31 @@ func assembleEndpoint(t *testing.T, s endpointSettings, injected, logger *slog.L
 	register func(Endpoint),
 ) (nethttp.Handler, error) {
 	t.Helper()
-	return assembleEndpointWith(t, s, injected, logger, nil, register)
+	return assembleEndpointWith(t, s, injected, logger, nil, nil, register)
 }
 
-// assembleEndpointWith is assembleEndpoint with the ErrorResponder under the
-// test's control, for the tests whose subject is the shape of an error response.
+// assembleEndpointWith is assembleEndpoint with the ErrorResponder and the
+// Localizer under the test's control, for the tests whose subject is the shape
+// or the language of an error response.
 func assembleEndpointWith(t *testing.T, s endpointSettings, injected, logger *slog.Logger,
-	responder ErrorResponder, register func(Endpoint),
+	responder ErrorResponder, localizer i18n.Localizer, register func(Endpoint),
+) (nethttp.Handler, error) {
+	t.Helper()
+	return assembleEndpointWithResolver(t, s, injected, logger, responder, localizer, nil, register)
+}
+
+// assembleEndpointWithResolver is assembleEndpointWith with the i18n.Resolver
+// under the test's control too, for the tests whose subject is the language a
+// refusal names on the response.
+func assembleEndpointWithResolver(t *testing.T, s endpointSettings, injected, logger *slog.Logger,
+	responder ErrorResponder, localizer i18n.Localizer, resolver i18n.Resolver, register func(Endpoint),
 ) (nethttp.Handler, error) {
 	t.Helper()
 	r := newRouter([]endpointSettings{s})
 	r.open()
 	register(endpointOf(t, r, s.name))
 	r.seal()
-	return r.endpoints[s.name].assemble(injected, logger, responder)
+	return r.endpoints[s.name].assemble(injected, logger, responder, localizer, resolver)
 }
 
 // mustAssemble is assembleEndpoint for the tests whose subject is the chain

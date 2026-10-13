@@ -215,7 +215,7 @@ func checkGinsProcessWideSettings() error {
 	e.Route("POST", "/things", filler)
 	r.seal()
 	logger, _ := newRecordingLogger()
-	if _, err := r.endpoints["public"].assemble(nil, logger, nil); err != nil {
+	if _, err := r.endpoints["public"].assemble(nil, logger, nil, nil, nil); err != nil {
 		return err
 	}
 

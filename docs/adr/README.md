@@ -268,7 +268,8 @@
 | [跨模块边界的语言用 BCP 47 字符串，语言匹配库关在实现子包内](adr-i18n-locale-type-2026-10-13.md) | 2026-10-13 | 已接受 |
 | [请求的语言按 context、账户偏好、默认三级解析，两层中间件分居观测最外与鉴别之内](adr-i18n-locale-resolution-2026-10-13.md) | 2026-10-13 | 已接受 |
 | [各模块以内嵌资源声明消息目录，装配期再并入一个可配置的覆盖目录](adr-i18n-catalogs-2026-10-13.md) | 2026-10-13 | 已接受 |
-| [本地化错误由 respond 子包交付 ErrorResponder，Problem 增 Key 与 Args](adr-i18n-error-rendering-2026-10-13.md) | 2026-10-13 | 已接受 |
+| [渲染责任随载荷形态划分，复合消息由后端渲染、类型化的值交给客户端](adr-i18n-rendering-ownership-2026-10-13.md) | 2026-10-13 | 已接受 |
+| [错误响应只承载成品文本，形状接缝不带语言](adr-i18n-error-rendering-2026-10-13.md) | 2026-10-13 | 已接受 |
 | [语言与时区偏好存账户属性集，不改 authn 表结构](adr-i18n-preferences-storage-2026-10-13.md) | 2026-10-13 | 已接受 |
 | [默认语言是配置项 i18n.default-locale，i18n 与 authn 取同一个](adr-i18n-default-locale-2026-10-13.md) | 2026-10-13 | 已接受 |
 | [受支持语言集由目录派生，默认语言是配置而非常量](adr-i18n-language-set-2026-10-13.md) | 2026-10-13 | 已接受 |

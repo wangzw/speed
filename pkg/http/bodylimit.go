@@ -8,6 +8,7 @@ import (
 
 	"github.com/gin-gonic/gin"
 
+	"github.com/vislake/speed/pkg/i18n"
 	"github.com/vislake/speed/pkg/log"
 )
 
@@ -50,7 +51,7 @@ const bodyLimitName = "http:body-limit"
 //
 // maxBodyBytes at 0 or below is no limit, which is the switch configuration
 // gives.
-func bodyLimit(endpoint string, maxBodyBytes int64) gin.HandlerFunc {
+func bodyLimit(endpoint string, maxBodyBytes int64, localizer i18n.Localizer) gin.HandlerFunc {
 	return func(c *gin.Context) {
 		if maxBodyBytes <= 0 || c.Request.Body == nil {
 			c.Next()
@@ -66,7 +67,11 @@ func bodyLimit(endpoint string, maxBodyBytes int64) gin.HandlerFunc {
 			// The error is recorded for the observability layer to read; its
 			// return is the entry gin appended and nothing here reads it back.
 			_ = c.Error(cause)
-			Fail(c, Problem{Status: nethttp.StatusRequestEntityTooLarge, Cause: cause})
+			Fail(c, Problem{
+				Status: nethttp.StatusRequestEntityTooLarge,
+				Title:  refusalTitle(c.Request.Context(), localizer, nethttp.StatusRequestEntityTooLarge),
+				Cause:  cause,
+			})
 			return
 		}
 		c.Request.Body = &limitedBody{

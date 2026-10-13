@@ -3,11 +3,10 @@
 The user-facing text of the server: the interface package a module reads a
 locale from and renders a message with, the engine that collects every declared
 catalog and matches a request's language, the middleware that settles the locale
-of a request, the responder that renders an error in that locale, and the bridge
-to account preferences. It is a capability directory in the shape `pkg/authn`
-takes: the root package declares the interfaces, the value types and the
-resource type and registers no module, and each subpackage registers a module of
-its own.
+of a request, and the bridge to account preferences. It is a capability
+directory in the shape `pkg/authn` takes: the root package declares the
+interfaces, the value types and the resource type and registers no module, and
+each subpackage registers a module of its own.
 
 - `pkg/i18n/catalog` registers the engine, module name `i18n`: it delivers
   `Localizer`, `Negotiator` and `Resolver` exclusively, collects the declared
@@ -18,8 +17,6 @@ its own.
   and binds two middleware layers on each, one negotiating `Accept-Language`,
   one reading an account's stored language and time zone. It imports `pkg/http`
   and the `pkg/authn` root package.
-- `pkg/i18n/respond` registers `i18n.respond`: it delivers a non-exclusive
-  `http.ErrorResponder` that renders a `Problem` in the request's locale.
 - `pkg/i18n/account` registers `i18n.account`: it delivers a non-exclusive
   `Profile` over `authn.Accounts` and implements `authn.Provisioner`.
 
@@ -109,21 +106,26 @@ message.
   resolution. `Profile` is non-exclusive and optional — the engine takes every
   implementation with `core.ResolveAll`, and none is a legal configuration in
   which the resolution chain falls through to the configured default.
-- **`pkg/http` does not import this package, and neither does the `pkg/authn`
-  root package.** `pkg/http` hands a `Problem` to the delivered
-  `ErrorResponder` and knows nothing about a locale. The `pkg/authn` root package
-  depends on the standard library and its own internal packages alone; the
-  packages that need both an identity and a locale — `pkg/authn/login` among
-  them — import `pkg/i18n`, and the direction is one-way. A dependency test in
-  `pkg/authn` holds that direction; keep it out of the root package.
-- **`pkg/http`'s `Problem` carries the message key and its arguments.** `Key
-  string` and `Args map[string]string` were added to it for this package's
-  responder; the default response leaves them out of the body, so adding them
-  changed nothing a client sees. A handler that renders a localizable error sets
-  `Key` and `Args`; one that does not leaves them empty and the responder derives
-  a key from `Type` (dropping the `urn:speed:` prefix and turning `:` into `.`)
-  or falls back to `net/http`'s `StatusText`. `Type` and `Status` are written
-  unchanged — a machine code does not move with the language.
+- **`pkg/http` imports this package's root only, and the `pkg/authn` root
+  package does not import it at all.** `pkg/http` takes the root package up to
+  render the four refusals it writes itself — the no-route 404, the
+  method-not-allowed 405, the body-too-large 413 and the recovered-panic 500 —
+  through an optional `Localizer`, and declares its own catalog for them. The
+  root package is standard-library only, so this adds nothing to `pkg/http`'s
+  dependency budget and a module that only renders a message carries no
+  matching library. The `pkg/authn` root package depends on the standard library
+  and its own internal packages alone; the packages that need both an identity
+  and a locale — `pkg/authn/login` among them — import `pkg/i18n`, and the
+  direction is one-way. A dependency test in `pkg/authn` holds that direction;
+  keep it out of the root package.
+- **The module that produces a message renders it.** A problem carries finished
+  text in `Title` and `Detail`; the module that raises it renders that text, and
+  the entry point's `ErrorResponder` decides the shape alone and carries no
+  language. `pkg/http` renders its own four refusals from its own catalog under
+  `http.<status>` keys, falling back to `net/http`'s standard text for the
+  status when no localizer is assembled or a catalog misses the key; a module
+  that raises a problem of its own sets the title it wants. `Type` and `Status`
+  are written unchanged — a machine code does not move with the language.
 
 ## Running it
 

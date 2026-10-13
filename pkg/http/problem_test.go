@@ -6,7 +6,6 @@ import (
 	"errors"
 	"fmt"
 	"io"
-	"maps"
 	nethttp "net/http"
 	"net/http/httptest"
 	"slices"
@@ -18,14 +17,13 @@ import (
 	"github.com/gin-gonic/gin"
 )
 
-// equalProblem compares two problems field by field. A Problem carries an
-// attribute map, so it is not comparable with ==; a test that pins the whole of
-// one compares it with this.
+// equalProblem compares two problems field by field. A Problem carries a Cause
+// that is not always comparable with ==, so a test that pins the whole of one
+// compares it with this.
 func equalProblem(a, b Problem) bool {
 	return a.Type == b.Type && a.Title == b.Title && a.Status == b.Status &&
-		a.Detail == b.Detail && a.Key == b.Key && a.Instance == b.Instance &&
-		errors.Is(a.Cause, b.Cause) && errors.Is(b.Cause, a.Cause) &&
-		maps.Equal(a.Args, b.Args)
+		a.Detail == b.Detail && a.Instance == b.Instance &&
+		errors.Is(a.Cause, b.Cause) && errors.Is(b.Cause, a.Cause)
 }
 
 // recordingResponder is an ErrorResponder a test holds. It replaces the whole
@@ -412,7 +410,7 @@ func TestFailKeepsTheHeadersSetBeforeIt(t *testing.T) {
 			if c.responder != nil {
 				responder = c.responder
 			}
-			handler, err := assembleEndpointWith(t, testSettings("public"), nil, logger, responder, func(e Endpoint) {
+			handler, err := assembleEndpointWith(t, testSettings("public"), nil, logger, responder, nil, func(e Endpoint) {
 				e.Route("GET", "/things", refuse)
 			})
 			if err != nil {
@@ -463,7 +461,7 @@ func TestFailWritesNothingOnceTheResponseHasStarted(t *testing.T) {
 			tr := &trace{}
 			responder := &recordingResponder{}
 			logger, _ := newRecordingLogger()
-			handler, err := assembleEndpointWith(t, testSettings("public"), nil, logger, responder, func(e Endpoint) {
+			handler, err := assembleEndpointWith(t, testSettings("public"), nil, logger, responder, nil, func(e Endpoint) {
 				e.Route("GET", "/things",
 					c.start,
 					failWith(Problem{Status: nethttp.StatusConflict, Detail: "too late"}),
@@ -510,7 +508,7 @@ func TestADeliveredResponderReplacesTheWholeShape(t *testing.T) {
 	}
 	responder := &recordingResponder{}
 	logger, _ := newRecordingLogger()
-	handler, err := assembleEndpointWith(t, testSettings("public"), nil, logger, responder, func(e Endpoint) {
+	handler, err := assembleEndpointWith(t, testSettings("public"), nil, logger, responder, nil, func(e Endpoint) {
 		e.Route("GET", "/things", failWith(given))
 	})
 	if err != nil {
@@ -703,12 +701,13 @@ func TestALayerRefusingAMethodNotAllowedRequestDoesNotSendAllow(t *testing.T) {
 // TestNotFoundAndMethodNotAllowedUseTheDeliveredResponder pins that the two
 // answers this module writes on its own are decided in the same place as the
 // ones Fail writes: with an ErrorResponder delivered, both go through it, with
-// the Problem a bare status makes, and the Allow header of the 405 is already on
-// the writer when the responder is asked.
+// the Problem a refusal makes — the status and the finished title, which is
+// net/http's standard text when no localizer is assembled — and the Allow
+// header of the 405 is already on the writer when the responder is asked.
 func TestNotFoundAndMethodNotAllowedUseTheDeliveredResponder(t *testing.T) {
 	responder := &recordingResponder{}
 	logger, _ := newRecordingLogger()
-	handler, err := assembleEndpointWith(t, testSettings("public"), nil, logger, responder, func(e Endpoint) {
+	handler, err := assembleEndpointWith(t, testSettings("public"), nil, logger, responder, nil, func(e Endpoint) {
 		e.Route("GET", "/things", filler)
 	})
 	if err != nil {
@@ -739,10 +738,16 @@ func TestNotFoundAndMethodNotAllowedUseTheDeliveredResponder(t *testing.T) {
 	if responder.calls() != 2 {
 		t.Fatalf("the responder was asked %d times for a 404 and a 405, want twice", responder.calls())
 	}
-	if got := responder.problem(t, 0); !equalProblem(got, Problem{Status: nethttp.StatusNotFound}) {
+	if got := responder.problem(t, 0); !equalProblem(got, Problem{
+		Status: nethttp.StatusNotFound,
+		Title:  nethttp.StatusText(nethttp.StatusNotFound),
+	}) {
 		t.Errorf("the 404 reached the responder as %+v", got)
 	}
-	if got := responder.problem(t, 1); !equalProblem(got, Problem{Status: nethttp.StatusMethodNotAllowed}) {
+	if got := responder.problem(t, 1); !equalProblem(got, Problem{
+		Status: nethttp.StatusMethodNotAllowed,
+		Title:  nethttp.StatusText(nethttp.StatusMethodNotAllowed),
+	}) {
 		t.Errorf("the 405 reached the responder as %+v", got)
 	}
 	if got := responder.headerSeen(t, 1).Get("Allow"); got != "GET" {
@@ -910,7 +915,7 @@ func TestTheDefaultShapeDropsTheHeadersThatDescribeAnotherBody(t *testing.T) {
 func TestADeliveredResponderIsHandedTheHeadersAsTheCallerLeftThem(t *testing.T) {
 	responder := &recordingResponder{}
 	logger, _ := newRecordingLogger()
-	handler, err := assembleEndpointWith(t, testSettings("public"), nil, logger, responder, func(e Endpoint) {
+	handler, err := assembleEndpointWith(t, testSettings("public"), nil, logger, responder, nil, func(e Endpoint) {
 		set := func(c *gin.Context) {
 			c.Header("Content-Length", "1000")
 			c.Header("Content-Encoding", "gzip")

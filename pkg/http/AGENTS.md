@@ -20,15 +20,18 @@ Read `Middleware`'s field comments before adding a seat to a layer.
   them from here is gin's closure and what reading
   configuration costs: the input items are declared to `pkg/config` and the
   endpoints are read through its reader, so config's parsing libraries are in
-  the closure too. `deps_test.go` holds the
-  budget — the standard library, this repository's modules, config's closure and
-  gin's closure, each read as it stands — and the extra closure a subpackage
-  contributes when it bridges a library the root package does not reach. Every
-  such subpackage is named in the test's `subpackagesInBudget`, so one that
-  brings a library is a deliberate edit there rather than something a change
-  slips through; the `./...` scan is what forces it to be named. The test fails
-  on the first package outside the budget. An OpenAPI parsing library is such a
-  package: `Spec` is checked for its shape and nothing else.
+  the closure too. It also imports `pkg/i18n`'s root package — for the optional
+  `Localizer` that renders this module's own refusals and the optional `Resolver`
+  that names the language those responses are written in — which depends on the
+  standard library only, so that too adds nothing of its own. `deps_test.go`
+  holds the budget — the standard library, this repository's modules, config's
+  closure and gin's closure, each read as it stands — and the extra closure a
+  subpackage contributes when it bridges a library the root package does not
+  reach. Every such subpackage is named in the test's `subpackagesInBudget`, so
+  one that brings a library is a deliberate edit there rather than something a
+  change slips through; the `./...` scan is what forces it to be named. The test
+  fails on the first package outside the budget. An OpenAPI parsing library is
+  such a package: `Spec` is checked for its shape and nothing else.
 - **gin is the surface, and nothing wraps it.** A route's handlers and a
   layer's `Handler` are `gin.HandlerFunc`s, and routing, the middleware chain,
   body binding and validation, and rendering are gin's. A helper that decodes a
@@ -59,6 +62,20 @@ Read `Middleware`'s field comments before adding a seat to a layer.
   reject. A response that has begun to go out is left as it is: `Fail` and the
   fallback both read gin's writer (`Context.Writer.Written`), and the fallback
   writes its 500 only when nothing has been committed.
+- **This module renders the refusals it produces itself.** The four refusals it
+  writes on its own — the 404, 405, 413 and 500 — carry their title as finished
+  text, rendered here from this module's own catalog under `http.<status>` keys
+  through the optional `Localizer`. The text is finished before the `Problem`
+  reaches whichever shape writes it, because the module that decides the shape
+  of an error response carries no language. With no localizer assembled, or with
+  a key no catalog carries, the title is `net/http`'s standard text for the
+  status. With a `Resolver` assembled, the default shape also names the language
+  it wrote in a `Content-Language` header; with none it writes no such header.
+  The catalog is an `i18n.Catalog` resource declared in `Module`, in the
+  same `locales/{tag}.json` shape another module declares, and the engine merges
+  it with the rest. A problem this module did not produce — one a layer or a
+  handler raises through `Fail` — is left as its author wrote it: this module
+  renders its own messages and no others.
 - **Paths are in the form gin keeps them.** `Route` refuses, by panicking at
   the call, a path that gin would rewrite (`x`, `/a//b`, `/a/../b`), because a
   layer that compares `Context.FullPath` with the registered path — an

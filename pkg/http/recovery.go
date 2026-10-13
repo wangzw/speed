@@ -8,6 +8,7 @@ import (
 
 	"github.com/gin-gonic/gin"
 
+	"github.com/vislake/speed/pkg/i18n"
 	"github.com/vislake/speed/pkg/log"
 )
 
@@ -39,7 +40,7 @@ const recoveryName = "http:recovery"
 //
 // One goroutine's panic is all it covers. A module that panics in a goroutine of
 // its own takes that process down whatever is wrapped around the request path.
-func recovery(endpoint string) gin.HandlerFunc {
+func recovery(endpoint string, localizer i18n.Localizer) gin.HandlerFunc {
 	return func(c *gin.Context) {
 		returned := false
 		defer func() {
@@ -64,7 +65,7 @@ func recovery(endpoint string) gin.HandlerFunc {
 					"endpoint", endpoint,
 					"stack", stackTrace(),
 				)
-				answerDefect(c, errUnwound)
+				answerDefect(c, errUnwound, localizer)
 				return
 			}
 			// ErrAbortHandler is let past untouched, so the connection is closed
@@ -81,7 +82,7 @@ func recovery(endpoint string) gin.HandlerFunc {
 				"panic", thrown,
 				"stack", stackTrace(),
 			)
-			answerDefect(c, panicError{value: thrown})
+			answerDefect(c, panicError{value: thrown}, localizer)
 		}()
 		c.Next()
 		returned = true
@@ -133,7 +134,7 @@ func (handlerDefect) Error() string { return "the request handler did not return
 // body written now would follow the one already on the wire. The record is
 // written either way, since with the response unchangeable it is the only signal
 // that the request did not finish.
-func answerDefect(c *gin.Context, cause error) {
+func answerDefect(c *gin.Context, cause error, localizer i18n.Localizer) {
 	c.Abort()
 	// A fixed-type error goes into the error list so that the observability
 	// layer marks the span failed and names an error.type; see handlerDefect.
@@ -151,6 +152,7 @@ func answerDefect(c *gin.Context, cause error) {
 	}
 	Fail(c, Problem{
 		Status: nethttp.StatusInternalServerError,
+		Title:  refusalTitle(c.Request.Context(), localizer, nethttp.StatusInternalServerError),
 		Cause:  cause,
 	})
 }

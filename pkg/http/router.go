@@ -9,6 +9,8 @@ import (
 	"sync"
 
 	"github.com/gin-gonic/gin"
+
+	"github.com/vislake/speed/pkg/i18n"
 )
 
 // phase is the state of the registration gate. It is one gate for the whole
@@ -54,6 +56,12 @@ type router struct {
 	// responder is what decides the shape of the error responses this module
 	// writes, nil when no module delivers the ErrorResponder capability.
 	responder ErrorResponder
+	// localizer renders the text of the refusals this module writes itself,
+	// nil when no module delivers the Localizer capability.
+	localizer i18n.Localizer
+	// resolver names the language of the default problem shape, nil when no
+	// module delivers the Resolver capability.
+	resolver i18n.Resolver
 	// logger is where this module's own diagnostics go. Unlike injected it
 	// is never nil: with no Logger capability it is the process default.
 	logger *slog.Logger

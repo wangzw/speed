@@ -6,6 +6,8 @@ import (
 	nethttp "net/http"
 
 	"github.com/gin-gonic/gin"
+
+	"github.com/vislake/speed/pkg/i18n"
 )
 
 // Problem is the content of one error response. Its fields are the ones RFC
@@ -22,14 +24,6 @@ type Problem struct {
 	Status int
 	// Detail explains this occurrence of the problem.
 	Detail string
-	// Key names the message that renders this problem's title, when the
-	// response is rendered through the i18n capability. It is left empty when
-	// the title is to be derived from Type instead, and it never reaches the
-	// default shape.
-	Key string
-	// Args carries the values a parameterised message interpolates. It is read
-	// only alongside Key, and like it never reaches the default shape.
-	Args map[string]string
 	// Instance identifies this occurrence of the problem.
 	Instance string
 	// Cause is what the problem came from. The default response leaves it
@@ -83,7 +77,7 @@ func respondProblem(w nethttp.ResponseWriter, r *nethttp.Request, p Problem, res
 		responder.RespondError(w, r, p)
 		return
 	}
-	writeDefaultProblem(w, p)
+	writeDefaultProblem(w, r, p)
 }
 
 // problemBody is the default response's JSON object. The member names are the
@@ -103,10 +97,22 @@ type problemBody struct {
 // set describes some other body: a handler that announced its own length and
 // then panicked would otherwise leave the client waiting for bytes this
 // response never sends. They are dropped; every other header the caller set
-// stays.
-func writeDefaultProblem(w nethttp.ResponseWriter, p Problem) {
+// stays. The language the body was written in is named in Content-Language when
+// a resolver is assembled; see below.
+func writeDefaultProblem(w nethttp.ResponseWriter, r *nethttp.Request, p Problem) {
 	w.Header().Del("Content-Length")
 	w.Header().Del("Content-Encoding")
+	// Name the language the body is rendered in. The locale is the one resolved
+	// for the request — the request's own when one was settled, the run's
+	// configured default otherwise — so a client that asked for one language and
+	// was answered in another learns which it got. With no resolver assembled
+	// nothing is named, which is the header state an assembly that settles no
+	// language has always written.
+	if resolver := resolverFrom(r.Context()); resolver != nil {
+		if locale := resolver.LocaleOf(r.Context()); locale != "" {
+			w.Header().Set("Content-Language", string(locale))
+		}
+	}
 	// A final status is 200 through 599. A 1xx code written alone is an
 	// informational response that net/http follows with a 200, so a problem
 	// carrying one would say 103 in its body to a client that was answered 200.
@@ -148,4 +154,26 @@ func withResponder(ctx context.Context, responder ErrorResponder) context.Contex
 func responderFrom(ctx context.Context) ErrorResponder {
 	responder, _ := ctx.Value(responderKey{}).(ErrorResponder)
 	return responder
+}
+
+// resolverKey is the context key the base layer puts the delivered
+// i18n.Resolver under, so that the default shape can name the language it wrote
+// the body in.
+type resolverKey struct{}
+
+// withResolver returns ctx carrying resolver, or ctx itself when no module
+// delivers one: with no resolver the default shape writes no Content-Language,
+// which is what an assembly that settles no language has always written.
+func withResolver(ctx context.Context, resolver i18n.Resolver) context.Context {
+	if resolver == nil {
+		return ctx
+	}
+	return context.WithValue(ctx, resolverKey{}, resolver)
+}
+
+// resolverFrom returns the i18n.Resolver the request context carries, or nil
+// when it carries none.
+func resolverFrom(ctx context.Context) i18n.Resolver {
+	resolver, _ := ctx.Value(resolverKey{}).(i18n.Resolver)
+	return resolver
 }

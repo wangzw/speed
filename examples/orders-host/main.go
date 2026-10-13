@@ -158,14 +158,14 @@ import (
 	"github.com/vislake/speed/pkg/tenant/catalog"
 
 	// The i18n capability: the engine that collects the declared message
-	// catalogs, the entry point wiring that settles each request's language, and
-	// the responder that renders an error in it. They are named on the serving
-	// command below. The engine and the responder deliver their capabilities
-	// exclusively, so the dependency closure does not pick them for the host, and
-	// the catalog package shares the name of the roster's, hence the alias.
+	// catalogs and the entry point wiring that settles each request's language.
+	// They are named on the serving command below. The engine delivers its
+	// capabilities exclusively (the localizer among them, which the entry point
+	// takes up to render its own refusals), so the dependency closure does not
+	// pick it for the host, and the catalog package shares the name of the
+	// roster's, hence the alias.
 	i18ncatalog "github.com/vislake/speed/pkg/i18n/catalog"
 	i18nhttp "github.com/vislake/speed/pkg/i18n/http"
-	"github.com/vislake/speed/pkg/i18n/respond"
 
 	// The telemetry assembler is an exclusive provider too, and the backend it
 	// exports through is not: the assembler delivers the two providers and
@@ -293,7 +293,6 @@ func commandTree(reg *core.Registry) *config.App {
 		settings.ModuleName,
 		i18ncatalog.ModuleName,
 		i18nhttp.ModuleName,
-		respond.ModuleName,
 		kvmemory.ModuleName,
 		eventmemory.ModuleName,
 		ordersModuleName,

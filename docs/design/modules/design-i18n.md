@@ -2,13 +2,12 @@
 
 ## 职责
 
-本功能目录交付**面向用户的文本的渲染，以及渲染它所用的语言偏好**：把带模块命名空间的消息键按一次请求的语言渲染成文案，按请求协商语言，按一条解析链定位语言与时区，并把错误响应里的用户可见文案交给一套可替换的渲染。渲染是纯读取，不做授权、不改机器码、不与任何外部通道交互（[ADR-i18n-scope-2026-10-13](../../adr/adr-i18n-scope-2026-10-13.md)）。
+本功能目录交付**面向用户的文本的渲染机制，以及渲染它所用的语言偏好**：它定义消息目录、按一次请求的语言把带模块命名空间的消息键渲染成文案、按请求协商语言、按一条解析链定位语言与时区。一段文本由产生它的模块渲染，本功能目录提供渲染所依据的引擎与偏好，不替消费方集中渲染（[ADR-i18n-scope-2026-10-13](../../adr/adr-i18n-scope-2026-10-13.md)、[ADR-i18n-rendering-ownership-2026-10-13](../../adr/adr-i18n-rendering-ownership-2026-10-13.md)）。渲染是纯读取，不做授权、不改机器码、不与任何外部通道交互。
 
 本功能目录按接口包加实现子包的方式拆分（[ADR-module-packaging-2026-09-22](../../adr/adr-module-packaging-2026-09-22.md)）。根包是接口包：它定义接口、值类型与资源类型，只依赖标准库，不登记任何模块。子包各自登记一个模块：
 
 - `pkg/i18n/catalog/` 登记引擎模块 `i18n`：排他交付 `Localizer`、`Negotiator`、`Resolver`，收集全部已声明目录并并入配置项 `i18n.catalogs-dir` 指定的覆盖目录，从配置项 `i18n.default-locale` 读默认语言，非排他地取用可选的 `Profile`。
 - `pkg/i18n/http/` 登记模块 `i18n.http`：经 `http.Router` 在每个端注册两层中间件，把协商出的语言与账户偏好的语言时区写进请求上下文。
-- `pkg/i18n/respond/` 登记模块 `i18n.respond`：非排他交付 `http.ErrorResponder`，把错误响应渲染成本地化文案。
 - `pkg/i18n/account/` 登记模块 `i18n.account`：非排他交付 `Profile`，并实现 `authn.Provisioner`，在首登开户时把请求语言写进待建账户的属性。
 
 语言是偏好而不是授权事实（[ADR-i18n-locale-type-2026-10-13](../../adr/adr-i18n-locale-type-2026-10-13.md)）：写进与读出上下文的函数因此是导出的，与 `pkg/log` 的 `WithLogger` 同类，不采取 `pkg/authn` 把身份的写侧封进内部包的形态。谁能读到什么仍由 [authz](design-authz.md) 与 [authn](authn/design-authn.md) 判定，本功能目录不参与。
@@ -18,7 +17,8 @@
 - **不做授权判定。** 语言与时区是偏好，任何判定都不以它们为依据；本功能目录不读身份，也不改变一次请求能到达的范围。
 - **不承载账户存储。** 语言与时区存进 `Account.Attributes` 的 `i18n.locale` 与 `i18n.tz`，写账户归 [authn](authn/design-authn.md) 的账户模块，本功能目录只读它，不动认证的表结构（[ADR-i18n-preferences-storage-2026-10-13](../../adr/adr-i18n-preferences-storage-2026-10-13.md)）。
 - **不做 HTTP 机制。** 路由、中间件的排序与阶段归 [http](http/design-http.md)；`i18n.http` 只是使用它的登记面在每个端挂层。
-- **不改机器码与状态码。** 错误响应的 `Problem.Type`、`Problem.Status` 与 `Problem.Detail` 原样保留，渲染只填写用户可见的 `Title`（[ADR-i18n-error-rendering-2026-10-13](../../adr/adr-i18n-error-rendering-2026-10-13.md)）。
+- **不改机器码与状态码。** 机器码 `Problem.Type`、`Problem.Status` 与 `Problem.Detail` 原样保留，不随语言变化；本功能目录渲染的是消息文本，不决定错误响应的形状（[ADR-i18n-error-rendering-2026-10-13](../../adr/adr-i18n-error-rendering-2026-10-13.md)）。
+- **不替消费方渲染消息。** 一条消息由产生它的模块渲染：那个模块承载自己的目录、取用引擎、把成品文本写出；本功能目录只提供引擎与目录机制，不集中渲染任何模块的文本，也不认识某条消息的插值上下文（[ADR-i18n-rendering-ownership-2026-10-13](../../adr/adr-i18n-rendering-ownership-2026-10-13.md)）。
 - **不做复数、数量与日期格式化。** 消息只写 `{{name}}` 插值，值的形态与格式由调用方在交给渲染之前定好。
 - **不做热加载。** 目录有内嵌声明与配置指定的覆盖目录两个来源，两者都在装配期读取，此后只读，运行期没有更换目录或增删消息的接口（[ADR-i18n-catalogs-2026-10-13](../../adr/adr-i18n-catalogs-2026-10-13.md)）。
 - **不发送消息。** 短信与邮件的模板与发送归各自的模块；本功能目录渲染的是本进程写出的文本，不投递给任何外部通道。
@@ -49,7 +49,6 @@
 | 根包 `pkg/i18n` | — | 接口、值类型与资源类型；不登记模块 |
 | `pkg/i18n/catalog` | `i18n` | 排他交付 `Localizer`、`Negotiator`、`Resolver` |
 | `pkg/i18n/http` | `i18n.http` | 在每个端注册两层中间件 |
-| `pkg/i18n/respond` | `i18n.respond` | 非排他交付 `http.ErrorResponder` |
 | `pkg/i18n/account` | `i18n.account` | 非排他交付 `i18n.Profile` 与 `authn.Provisioner` |
 
 每个登记模块的模块名由它的包导出为 `ModuleName` 常量，命令树按这个名字纳入它。根包不登记模块，因而 import 它不把任何模块带进宿主的可用集；这与 [authn](authn/design-authn.md) 根包的处置同一条。
@@ -177,7 +176,6 @@ func ValidTimeZone(name string) bool
 |---|---|---|
 | `i18n` | `Provides: [(*i18n.Localizer)(nil), (*i18n.Negotiator)(nil), (*i18n.Resolver)(nil)]`，均排他；`Requires: [(*i18n.Profile)(nil)]` 标注 `Optional` | `core.Resolve[i18n.Localizer](reg)` 等；`Profile` 用 `core.ResolveAll` |
 | `i18n.http` | 只注册中间件层，不声明功能 | 取用 `http.Router`、`i18n.Negotiator`；以 `(*authn.Gate)(nil)` 为 `After` 锚点 |
-| `i18n.respond` | `Provides: [(*http.ErrorResponder)(nil)]`，非排他 | 取用 `i18n.Localizer`、`i18n.Resolver` |
 | `i18n.account` | `Provides: [(*i18n.Profile)(nil), (*authn.Provisioner)(nil)]`，非排他 | 取用 `authn.Accounts`；语言经 `pkg/i18n` 的上下文存取函数与属性键读写 |
 
 **引擎的这几件能力排他交付，一个进程至多一个语言集。** 语言集是目录承载的集合，两个引擎会各自持有不同的一份，`Resolve` 要求唯一，多于一个即装配期 `ErrExclusiveViolated`。**`Profile` 非排他可选取用**：引擎在 `New` 用 `core.ResolveAll[i18n.Profile]` 取用每一个实现，一个都没有是合法配置，账户语言随之缺失，解析链落到配置的默认语言。
@@ -186,7 +184,7 @@ func ValidTimeZone(name string) bool
 
 以下各条落在既有模块里，本功能目录借用它们的既有接缝，不新增跨目录的机制。
 
-- **`http.Problem` 增加承载消息键与插值参数的字段**，默认写出形状不变：`Key string` 与 `Args map[string]string`。没有键的错误照旧按 `Type` 与 `Status` 写出，加了键的错误由交付的 `ErrorResponder` 渲染（[http](http/design-http.md) 的错误响应一节、[ADR-i18n-error-rendering-2026-10-13](../../adr/adr-i18n-error-rendering-2026-10-13.md)）。
+- **入口模块 `pkg/http` 取用本功能目录的根包，渲染它自己写出的拒绝。** 它把 `i18n.Localizer` 作为可选依赖取用，并从自己声明的目录取 `http.<status>` 文案；交出 `Problem` 时文本已经是成品，`Problem` 不再承载消息键与参数（[http](http/design-http.md) 的错误响应一节、[ADR-i18n-error-rendering-2026-10-13](../../adr/adr-i18n-error-rendering-2026-10-13.md)）。
 - **认证侧不再声明语言闭集，也不再给语言填默认。** 根包 `pkg/authn` 的 `locale.go`（`LocaleEN`、`LocaleZH`、`LocaleOf`）整体删除：一个只读语言的模块 import 认证根包，不再从中拿到一份语言表。登录引擎把 `i18n.FromContext` 定下的语言原样带进流程记录与短信发送（取不到时为 `""`），`authn.sms` 再把请求语言解析到该消息所用模板声明的语言（[ADR-i18n-language-set-2026-10-13](../../adr/adr-i18n-language-set-2026-10-13.md)）。默认语言只由 `i18n.default-locale` 一处给出。
 - **认证自助面新增一条偏好路由** `PATCH B/me/preferences`，写在 [authn-login](authn/design-authn-login.md) 的账户自助面里：它把语言与时区写进账户的 `Account.Attributes`，经账户模块的 `AccountAdmin.SetAttributes` 落库，写前用 `ValidLocaleTag` 与 `ValidTimeZone` 判形状。它是 [authn](authn/design-authn.md) 的子包 `pkg/authn/login` 对 `pkg/i18n` 的取用——`pkg/authn` 根包不 import 它（见依赖）。
 - **语言与时区存进 `Account.Attributes` 的 `i18n.locale` 与 `i18n.tz`**，不改认证的表结构，不新增列（[ADR-i18n-preferences-storage-2026-10-13](../../adr/adr-i18n-preferences-storage-2026-10-13.md)）。
@@ -200,10 +198,10 @@ func ValidTimeZone(name string) bool
 | 依赖 | 用途 |
 |---|---|
 | `pkg/core` | 注册描述符、交付与取用功能、声明与收集资源 |
-| `pkg/http` | `i18n.http` 取用 `Router` 登记层；`i18n.respond` 实现 `ErrorResponder`、读 `Problem` |
+| `pkg/http` | `i18n.http` 取用 `Router` 登记层 |
 | `pkg/authn` | `i18n.http` 以 `(*authn.Gate)(nil)` 为锚点、读请求身份；`i18n.account` 经 `Accounts` 读账户属性、实现 `Provisioner` |
 
-**依赖方向。** 根包 `pkg/i18n` 只依赖标准库，因而一个只读语言的模块 import 它不拉进任何第三方库；这与 [authn](authn/design-authn.md) 根包的位置同一条。子包各自 import 根包与 `pkg/core`，并按其用途 import `pkg/http` 或 `pkg/authn`。**`pkg/authn` 的任何包都不 import `pkg/i18n` 的根包以外的部分，且 `pkg/authn` 根包不 import `pkg/i18n`**（[authn](authn/design-authn.md) 的依赖方向）：认证根包只依赖标准库与自己的内部包，一个语言偏好不改变这一点。需要同时读身份与语言的层要么在 `i18n.http` 里，要么在 `pkg/authn/login` 这类子包里——子包 import `pkg/i18n` 是许可的，本功能目录不 import 认证的任何子包。`pkg/http` 不 import `pkg/i18n`，它不认识语言：错误响应的本地化由交付的 `ErrorResponder` 承担，`pkg/http` 只把 `Problem` 交给它。
+**依赖方向。** 根包 `pkg/i18n` 只依赖标准库，因而一个只读语言的模块 import 它不拉进任何第三方库；这与 [authn](authn/design-authn.md) 根包的位置同一条。子包各自 import 根包与 `pkg/core`，并按其用途 import `pkg/http` 或 `pkg/authn`。**`pkg/authn` 的任何包都不 import `pkg/i18n` 的根包以外的部分，且 `pkg/authn` 根包不 import `pkg/i18n`**（[authn](authn/design-authn.md) 的依赖方向）：认证根包只依赖标准库与自己的内部包，一个语言偏好不改变这一点。需要同时读身份与语言的层要么在 `i18n.http` 里，要么在 `pkg/authn/login` 这类子包里——子包 import `pkg/i18n` 是许可的，本功能目录不 import 认证的任何子包。**`pkg/http` import `pkg/i18n` 的根包**：它渲染自己写出的四类拒绝（无匹配路由的 404、方法不允许的 405、请求体超限的 413、接住 panic 的 500），把 `i18n.Localizer` 作为可选依赖取用（[ADR-i18n-error-rendering-2026-10-13](../../adr/adr-i18n-error-rendering-2026-10-13.md)）。方向是本功能目录的根包被入口模块取用；根包只依赖标准库，因而不使入口模块的依赖预算增长（[ADR-i18n-locale-type-2026-10-13](../../adr/adr-i18n-locale-type-2026-10-13.md)）。
 
 **`golang.org/x/text` 只出现在引擎 `pkg/i18n/catalog`，别处不出现。** 语言匹配需要的 `language` 包只在引擎里出现：它用 `ParseAcceptLanguage` 解析 `Accept-Language` 头值、用 `language.Matcher` 在受支持语言集中匹配。根包与其余子包不拉它，`i18n.http` 经 `i18n.Negotiator` 取用协商结果，一个只读 `Locale` 的模块因而拿不到匹配库。
 
@@ -298,8 +296,6 @@ sequenceDiagram
 
 **匹配器**是 `golang.org/x/text/language` 的 `Matcher`，由索引建立时支持的语言集构造一次，此后只读。协商把 `Accept-Language` 的头值解析成一组带 q 值的偏好，交给匹配器选出一个受支持的语言。
 
-**内置目录**由 `i18n.respond` 自带，承载 `http.<status>` 一类状态码的标准说明，作为它渲染无键错误的回落。它与别的模块的目录同形，只是由本功能目录自己声明。
-
 ## 核心算法与流程
 
 ### 目录的收集与装载
@@ -336,22 +332,12 @@ sequenceDiagram
 
 `Negotiate` 把 `Accept-Language` 的头值交给匹配器，在受支持的语言集中选出最匹配的一个，并报告是否有匹配。**无匹配是 `false`，不是配置的默认语言**：调用方把 `false` 读作“本次不给语言留痕”，与“用配置的默认语言”是两回事，头里一个受支持语言都没有时那两层因而不写上下文，让解析链后面的级去定。
 
-### 错误渲染
-
-`i18n.respond` 交付的 `ErrorResponder` 渲染一次错误响应（[ADR-i18n-error-rendering-2026-10-13](../../adr/adr-i18n-error-rendering-2026-10-13.md)）：
-
-- 取键的次序：`Problem.Key` 优先，带 `Args` 一并插值；`Key` 为空而 `Problem.Title` 非空时按原样采用那个标题；都为空时由 `Problem.Type` 推导——去 `urn:speed:` 前缀，把 `:` 换成 `.`——`Type` 为空或为 RFC 9457 的 `about:blank` 时改取状态码推出的键 `http.<status>`；两种键都拿去查目录。
-- 查到的文案填进 `Title`；`Type`、`Status` 与 `Detail` 按 `Problem` 原样写出，机器码不变。
-- 写出 `Content-Language` 头，标识这一次响应的语言。
-- 保留调用方在 `Fail` 之前设过的响应头，但丢掉描述另一份正文的 `Content-Length` 与 `Content-Encoding`。
-- 键在任何目录里都查不到时，回落到 `net/http` 的状态文本，结果永不为空。
-
 ### 阶段行为
 
 | 阶段 | 行为 |
 |---|---|
 | `Prepare` | 引擎校验已声明的目录与配置指定的覆盖目录；其余模块无动作 |
-| `New` | 引擎建立索引（并入配置指定的覆盖目录）与匹配器、取用 `Profile`；`i18n.respond` 取用 `Localizer` 与 `Resolver`；`i18n.account` 取用 `authn.Accounts`；`i18n.http` 无动作 |
+| `New` | 引擎建立索引（并入配置指定的覆盖目录）与匹配器、取用 `Profile`；`i18n.account` 取用 `authn.Accounts`；`i18n.http` 无动作 |
 | `Init` | `i18n.http` 在每端注册两层中间件；其余模块无动作 |
 | `Start` | 无动作 |
 | `Serve` | 无动作 |
@@ -375,9 +361,7 @@ sequenceDiagram
 
 **协商的无匹配不是失败。** `Negotiate` 报告 `false` 是合法结果，调用方据此不写上下文；把它当成错误会在每个不接受任何受支持语言的请求上写出一次不存在的故障。
 
-**`i18n.respond` 回落不为空。** 一个无 `Key` 的错误由 `Type` 推出的键、或由状态码推出的键 `http.<status>` 去查目录；键在任何目录里都查不到时回落到 `net/http` 的标准状态文本，不写出空 `Title`。
-
-**取不到某个模块声明为构造期依赖的功能时，该模块把 `core` 的 `ErrMissingProvider` 原样外传**，不另立哨兵：`i18n.http` 要 `http.Router` 与 `i18n.Negotiator`，`i18n.respond` 要 `i18n.Localizer` 与 `i18n.Resolver`，`i18n.account` 要 `authn.Accounts`，其中任一缺失都在依赖解析处以它终止启动，补救动作是宿主纳入相应的提供者（见 [core](design-core.md)）。
+**取不到某个模块声明为构造期依赖的功能时，该模块把 `core` 的 `ErrMissingProvider` 原样外传**，不另立哨兵：`i18n.http` 要 `http.Router` 与 `i18n.Negotiator`，`i18n.account` 要 `authn.Accounts`，其中任一缺失都在依赖解析处以它终止启动，补救动作是宿主纳入相应的提供者（见 [core](design-core.md)）。
 
 ### 非保证
 
@@ -388,7 +372,7 @@ sequenceDiagram
 - **不保证协商结果与账户偏好一致。** 协商只看请求头，账户偏好只在上下文尚无语言时补位；一个已带 `Accept-Language` 的已登录请求按头值渲染，不按账户偏好。
 - **不保证账户偏好的即时生效。** 账户属性经账户快照读取，宿主经管理面改了属性，要等快照缓存过期才进身份与解析链（见 [authn](authn/design-authn.md) 的非保证）。
 - **不保证 `i18n.http` 覆盖到一个端。** 它在遍历 `http.Endpoints` 得到的每个端注册；一个端不在那次遍历里、或那个端由宿主单独装配而不经本模块，就不带本地化，启动期不失败，也没有一行诊断指向它（与 [http](http/design-http.md) 的漏写同源）。
-- **不保证错误响应的正文语言与请求语言始终相同。** 渲染发生在 `ErrorResponder` 里，它按 `Problem` 与请求上下文取语言；一个在认证之前就写出的错误没有身份，语言由协商这一级给。
+- **不保证一次拒绝的正文语言与请求语言始终相同。** 解析链给的是上下文里已经定下的语言；一个在认证之前就写出的拒绝没有身份，语言只到协商这一级，渲染它的模块据此取文案。
 
 ## 并发与事务边界
 
@@ -403,7 +387,7 @@ sequenceDiagram
 - **`Profile` 是非排他接缝。** 任何能读到账户语言与时区的模块实现它，引擎用 `core.ResolveAll` 取用每一个，一个都没有是合法配置。`i18n.account` 是内置的一个实现。
 - **`Catalog` 是声明式的接缝。** 任何模块以 `//go:embed` 声明自己的目录，引擎取可用集合并进索引；新增一种语言的覆盖是加一份目录，不是接入一个模块。
 - **配置项 `i18n.catalogs-dir` 指定的覆盖目录是第二个文案来源。** 运维经它不改二进制、不接入模块地覆盖或补一条文案、补一种语言；与声明目录同形，装配期读取并入索引，同名键上胜过声明目录。
-- **`ErrorResponder` 是非排他接缝。** `i18n.respond` 是本地化的一个实现；一个拥有某套 API 错误形状的模块交付自己的实现替换它，替换的是全部形状。没有实现时，[http](http/design-http.md) 写出默认的 `application/problem+json`。
+- **`ErrorResponder` 是非排他接缝，归入口模块。** 一个拥有某套 API 错误形状的模块交付自己的实现替换默认形状；它只决定形状，不承载语言。没有实现时，[http](http/design-http.md) 写出默认的 `application/problem+json`。
 - **`Localizer`、`Negotiator`、`Resolver` 由引擎排他交付，不是可替换的后端。** 语言集是进程级的一份，多于一个引擎即启动失败；换一套语言匹配是改本功能目录的代码，不是接一块实现。
 
 ## 实现状态
@@ -416,8 +400,6 @@ sequenceDiagram
 | 目录的收集、校验与装载、默认语言的配置项、语言解析与协商 | 已实现 | `pkg/i18n/catalog` `Module`、`ModuleName`；`pkg/i18n/catalog/config.go` `moduleConfig`、`readConfig` |
 | 配置指定的覆盖目录的读取与并入 | 已实现 | `pkg/i18n/catalog/engine.go` `readOverlay`、`newEngine`、`ErrInvalidOverlay` |
 | 每端两层的语言与时区中间件 | 已实现 | `pkg/i18n/http` `Module`、`ModuleName` |
-| 错误响应的本地化渲染 | 已实现 | `pkg/i18n/respond` `Module`、`ModuleName` |
 | 账户偏好的读桥与开户时写入 | 已实现 | `pkg/i18n/account` `Module`、`ModuleName` |
-| `Problem` 的消息键与参数 | 已实现 | `pkg/http/problem.go` `Problem` |
 | 登录语言的原样传递 | 已实现 | `pkg/authn/login/start.go` `localeOf`；`pkg/authn/login/internal/selfservice/phone.go` `smsLocale` |
 | 自助面的偏好路由 | 已实现 | `pkg/authn/login` 的账户自助路由 |

@@ -32,7 +32,7 @@ func assembleFallback(t *testing.T, responder ErrorResponder, logger *slog.Logge
 	register func(Endpoint),
 ) nethttp.Handler {
 	t.Helper()
-	handler, err := assembleEndpointWith(t, testSettings("public"), logger, logger, responder, register)
+	handler, err := assembleEndpointWith(t, testSettings("public"), logger, logger, responder, nil, register)
 	if err != nil {
 		t.Fatalf("assembling the endpoint: %v", err)
 	}

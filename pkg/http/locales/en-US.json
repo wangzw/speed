@@ -1,0 +1,6 @@
+{
+  "http.404": "Not Found",
+  "http.405": "Method Not Allowed",
+  "http.413": "Payload Too Large",
+  "http.500": "Internal Server Error"
+}
