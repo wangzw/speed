@@ -280,8 +280,8 @@ speed 不引入进程边界。宿主是单一进程，注册表与全部模块�
 | [db](modules/design-db.md) | 已实现 |
 | [http](modules/design-http.md) | 已实现 |
 | [http-cors](modules/design-http-cors.md) | 已实现 |
-| [authn](modules/design-authn.md) | 部分实现 — 全部模块俱在（网关与校验后端、挂载口、口令表后端、类型化的身份与判决、值类型、账户存储、登录会话、令牌、多因素编排与三种因素、登录引擎与全部登录方式含 Google、GitHub、微信两方式与企业 SSO 的 SAML/OIDC、短信验证码与两家厂商、企业 SSO 与两协议、冒充、管理面、`guard`、判定接缝、`authntest` 与依赖守卫）；网关的脱敏登记、配置的放宽监视、事件与失败的跨模块汇总用例、威胁模型的部分对策仍待补，分项状态见各自的文档 |
-| [authn-gate](modules/design-authn-gate.md) | 部分实现 — 缺各模块为自身秘密键名登记的脱敏规则（短信两家适配与社交登录四方式已登记）；其余已在，含挂载口 `authn.mount` 与 `mount.Mounter`，其中冒充范围核对在装配里没有准入层时只放 `Impersonable` 路由 |
+| [authn](modules/design-authn.md) | 已实现 |
+| [authn-gate](modules/design-authn-gate.md) | 已实现 |
 | [authn-account](modules/design-authn-account.md) | 已实现 |
 | [authn-login](modules/design-authn-login.md) | 已实现 — 引擎、口令、短信、Google、GitHub、微信两方式（wechat-web、wechat-mp）与企业 SSO 的 SAML/OIDC 方法俱在；账户解析与自助路由已在 |
 | [authn-sms](modules/design-authn-sms.md) | 已实现 |
@@ -291,10 +291,10 @@ speed 不引入进程边界。宿主是单一进程，注册表与全部模块�
 | [authn-sso](modules/design-authn-sso.md) | 已实现 — `authn.sso` 的提供方登记、域所有权与校验、发现与清扫，`authn.sso.saml` 与 `authn.sso.oidc` 两个协议模块与受限出站客户端俱在 |
 | [authn-impersonation](modules/design-authn-impersonation.md) | 已实现 — 记录、结构性限制、开始与结束/撤销/列出、Bearer 与 cookie 两种载体的挂接、审计先于动作俱在 |
 | [authn-admin](modules/design-authn-admin.md) | 已实现 — 注册、判定顺序、`Decision` 归属解析与各能力组路由俱在 |
-| [authn-config](modules/design-authn-config.md) | 部分实现 — 缺持有放宽方向设置项的其余模块的放宽变更监视、各模块自己新增键名的脱敏登记与启动诊断的其余常规行；网关、口令表、账户、会话、令牌、多因素（含 TOTP 与 WebAuthn 的配置项）、登录（含社交三方式）、短信、SSO 与准入的配置项与设置已在，账户与短信的放宽变更监视、TOTP、短信与 SSO 的加密列往返自检亦已在 |
-| [authn-events](modules/design-authn-events.md) | 部分实现 — 缺逐模块在 `New` 里登记的字面量与「敏感值不进日志」的测试，以及跨模块的汇总用例；事件类型、发布与订阅、接缝级审计、放宽变更的审计以及登录、因素、会话、令牌、退避、短信、准入、SSO 与冒充的仪器已在 |
-| [authn-failure](modules/design-authn-failure.md) | 部分实现 — 缺出口检查与库结论的优先级、503 的 `Problem.Type` 与跨模块汇总用例；网关的启动期哨兵、收口、可选认证路由上的失败方向、口令表的退避与并发上限、表模块（含令牌、短信、SSO 与因素表）的自检与清扫、全部启动期哨兵的触发方（含 `ErrNoEncryptionKey`）与令牌及 SAML 的时间容差已在 |
-| [authn-threats](modules/design-authn-threats.md) | 部分实现 — 缺日志字面量的脱敏与持有放宽方向设置项的模块的设置变更订阅；网关默认守全部端、出口检查、跨源检查、冒充范围核对、失败即拒绝、判决不可字面构造、受限出站客户端、口令保护、失败退避与 `valid_after`、会话、令牌、短信、企业 SSO、冒充、管理面与准入的对策，以及 go-jose 与 goxmldsig 的版本下限，均已在 |
+| [authn-config](modules/design-authn-config.md) | 已实现 |
+| [authn-events](modules/design-authn-events.md) | 已实现 |
+| [authn-failure](modules/design-authn-failure.md) | 已实现 |
+| [authn-threats](modules/design-authn-threats.md) | 已实现 |
 | [tenant](modules/design-tenant.md) | 已实现 |
 | [tenant-admission](modules/design-tenant-admission.md) | 已实现 |
 | [authz](modules/design-authz.md) | 已实现 — 判定核心与请求期强制面俱在（根包的类型与判定接口、权限常量与 `authn.Action` 的对齐及平台域保留值、`ModelText`、哨兵、`authz.policy` 的模块登记与三张表及按方言迁移、权限目录、`Manager`、账户生命周期清理、平台域启动核对、配置与设置键、薄 `persist.Adapter`、Casbin 快照装载与原子换指针、启动期模型自检与夹具、`authz.guard` 的模块登记与对 `authn.Decider` 的排他交付、动作翻译表与未知动作 fail-closed、翻译扩展点（模块经 `authz.TranslationSpec` 声明的行并入进程翻译、冲突即启动失败）、请求期中间件与授权阶段登记、路由声明登记表 `Gate`、handler 内判定 API `Guard`、403 与 503 的写出及指标 `authz.guard.decisions`、词表对齐守卫与根包依赖守卫、`authztest`、`authz.admin` 的 `/authz/admin/*` 管理面路由与 handler 内平台域判定及强制档审计）；分项状态见文档 |

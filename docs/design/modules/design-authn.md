@@ -665,7 +665,7 @@ type Provisioner interface {
 
 | 能力 | 状态 | 代码 |
 |---|---|---|
-| 网关与校验后端接缝（含路由登记、出口检查、挂路由口、内置口令表后端） | 部分实现 — 分项状态由 [design-authn-gate](design-authn-gate.md) 的实现状态承载 | `pkg/authn/gate/gate.go` `Module` |
+| 网关与校验后端接缝（含路由登记、出口检查、挂路由口、内置口令表后端） | 已实现 | `pkg/authn/gate/gate.go` `Module` |
 | 判决不可字面构造与零值读作没答 | 已实现 | `pkg/authn/internal/verdict/verdict.go` `Verdict`、`OutcomeOf`；`pkg/authn/verdict.go` |
 | 判决携带 `Principal` | 已实现 | `pkg/authn/verdict.go` `Authenticated`；`pkg/authn/internal/verdict/verdict.go` `NewAuthenticated`、`PrincipalOf`；`pkg/authn/internal/model/principal.go` `Principal` |
 | 值类型的落点与根包别名：`AccountID`、`SessionID`、`Method`、`Assurance`、`Access`、`Requirement`、`Principal`，以及登录、因素、标识、外部绑定、账户、成员关系、会话、令牌、冒充、短信与 SSO 提供方的值类型 | 已实现 | `pkg/authn/internal/model`；`pkg/authn/ids.go` |
