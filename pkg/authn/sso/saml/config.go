@@ -99,6 +99,7 @@ func configSchema() config.Schema {
 		Mounts:    []config.Mount{{Value: &configDefaults}},
 		Items: map[string]config.Item{
 			spKeyFileItem: {
+				Sensitive: true,
 				Description: "the path of the service provider's PEM private key, shared by the whole " +
 					"deployment; it is needed only by a provider that signs its AuthnRequests or an IdP " +
 					"that encrypts assertions",
