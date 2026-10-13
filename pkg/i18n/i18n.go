@@ -9,8 +9,8 @@
 //
 // The root package depends on the standard library only, so a module that only
 // reads a locale can import it without carrying any library the engine binds.
-// The one library the engine needs for language matching, golang.org/x/text,
-// stays inside the engine.
+// The one library the engine needs, golang.org/x/text — for language matching,
+// plural selection and number formatting — stays inside the engine.
 package i18n
 
 import (
@@ -53,7 +53,63 @@ type Key string
 // Args carries the values a parameterised message interpolates. A message
 // writes a parameter as {{name}}, and a name with no value in Args is left in
 // the text as written, so a missing parameter is visible rather than silent.
-type Args map[string]string
+//
+// A value is typed: a string is written into the text verbatim, and an integer
+// or a number is formatted for the message's language by the engine. The type
+// is a plain value type built with String, Int or Float, so this package stays
+// on the standard library and all formatting lives in the engine.
+type Args map[string]Value
+
+// ValueKind is which type a Value carries.
+type ValueKind uint8
+
+const (
+	// KindString is text interpolated into a message verbatim.
+	KindString ValueKind = iota
+	// KindInt is a whole number, formatted for the message's language. A plural
+	// segment selects its branch by an integer value.
+	KindInt
+	// KindFloat is a number with a fractional part, formatted for the message's
+	// language.
+	KindFloat
+)
+
+// Value is the typed value a message parameter carries. It is built with
+// String, Int or Float; the engine reads it back with the KindOf, StringOf,
+// IntOf and FloatOf functions. A message author only builds one.
+//
+// The zero Value reads as an empty string, the same as String("").
+type Value struct {
+	kind ValueKind
+	text string
+	num  int64
+	flt  float64
+}
+
+// String returns a Value carrying s, interpolated into a message verbatim.
+func String(s string) Value { return Value{kind: KindString, text: s} }
+
+// Int returns a Value carrying n, a whole number, formatted for the message's
+// language. A plural segment selects its branch by this value.
+func Int(n int) Value { return Value{kind: KindInt, num: int64(n)} }
+
+// Float returns a Value carrying f, a number with a fractional part, formatted
+// for the message's language.
+func Float(f float64) Value { return Value{kind: KindFloat, flt: f} }
+
+// KindOf reports which type a value carries. The zero Value reports KindString.
+func KindOf(v Value) ValueKind { return v.kind }
+
+// StringOf reports the text a KindString value carries, and "" for any other
+// kind.
+func StringOf(v Value) string { return v.text }
+
+// IntOf reports the integer a KindInt value carries, and 0 for any other kind.
+func IntOf(v Value) int64 { return v.num }
+
+// FloatOf reports the number a KindFloat value carries, and 0 for any other
+// kind.
+func FloatOf(v Value) float64 { return v.flt }
 
 // Localizer renders a message in a locale. It is delivered exclusively by the
 // engine.

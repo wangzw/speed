@@ -11,7 +11,10 @@ import (
 	"sort"
 	"strings"
 
+	"golang.org/x/text/feature/plural"
 	"golang.org/x/text/language"
+	"golang.org/x/text/message"
+	"golang.org/x/text/number"
 
 	"github.com/vislake/speed/pkg/core"
 	"github.com/vislake/speed/pkg/i18n"
@@ -36,20 +39,35 @@ var (
 	// body is not a JSON object of string to string. It is distinct from
 	// ErrInvalidCatalog, whose message names a catalog a module declares.
 	ErrInvalidOverlay = errors.New("i18n: a configured catalogs directory holds a file that is not a well-formed catalog")
+	// ErrInvalidMessage reports a message the engine cannot parse: a plural
+	// segment naming a category that is not one of the six CLDR categories, one
+	// whose branches omit "other" or repeat a category. The failure names the key
+	// and the source it came from. It is distinct from the sentinels of the
+	// sources: the message text itself is malformed, not the file that carries it.
+	ErrInvalidMessage = errors.New("i18n: a message is not well formed")
 )
 
 // engine is the merged index. It is built once in New and read afterwards; no
 // field is written after construction, so every method is safe to call from any
 // goroutine.
 type engine struct {
-	// index is locale to key to message. A locale that a catalog did not cover
-	// has no entry, and a key a locale did not carry has none under it.
-	index map[i18n.Locale]map[i18n.Key]string
+	// index is locale to key to parsed message. A locale that a catalog did not
+	// cover has no entry, and a key a locale did not carry has none under it.
+	// Every message is parsed and validated at assembly, so rendering never
+	// parses again and a malformed message stops startup.
+	index map[i18n.Locale]map[i18n.Key]*template
 	// supported is the sorted set of locales a declared catalog or the overlay
 	// carried.
 	supported []i18n.Locale
 	// matcher negotiates a request's language preferences against supported.
 	matcher language.Matcher
+	// localeTags is the parsed tag per supported locale, kept for plural-form
+	// selection, which needs the tag rather than the locale string.
+	localeTags map[i18n.Locale]language.Tag
+	// printers is a locale-aware number formatter per supported locale, built at
+	// assembly so the request path allocates nothing for it. A *message.Printer
+	// is read-only after construction, so sharing one across goroutines is safe.
+	printers map[i18n.Locale]*message.Printer
 	// profiles is every module that delivers i18n.Profile, in module-name order.
 	profiles []i18n.Profile
 	// defaultLocale is the configured locale a request that names none resolves
@@ -64,7 +82,7 @@ type engine struct {
 // catalogs, so it wins on a shared key and adds a locale no declared catalog
 // carries; the default check runs after the merge, so the overlay may supply it.
 func newEngine(catalogs []core.Resource[i18n.Catalog], profiles []i18n.Profile, defaultLocale i18n.Locale, catalogsDir string) (*engine, error) {
-	index := map[i18n.Locale]map[i18n.Key]string{}
+	index := map[i18n.Locale]map[i18n.Key]*template{}
 	// owner records which module declared a key, so a collision names both.
 	owner := map[i18n.Key]string{}
 	for _, catalog := range catalogs {
@@ -75,18 +93,23 @@ func newEngine(catalogs []core.Resource[i18n.Catalog], profiles []i18n.Profile, 
 		for locale, messages := range entries {
 			bucket := index[locale]
 			if bucket == nil {
-				bucket = map[i18n.Key]string{}
+				bucket = map[i18n.Key]*template{}
 				index[locale] = bucket
 			}
-			for key, message := range messages {
+			for key, raw := range messages {
 				// A key is one declaration however many locales a module writes
 				// it in; only a second *module* claiming it is a collision.
 				if first, ok := owner[key]; ok && first != catalog.Module {
 					return nil, fmt.Errorf("%w: key %q is declared by module %q and module %q",
 						ErrDuplicateKey, string(key), first, catalog.Module)
 				}
+				parsed, err := parseMessage(raw)
+				if err != nil {
+					return nil, fmt.Errorf("%w: key %q declared by module %q: %w",
+						ErrInvalidMessage, string(key), catalog.Module, err)
+				}
 				owner[key] = catalog.Module
-				bucket[key] = message
+				bucket[key] = parsed
 			}
 		}
 	}
@@ -100,11 +123,16 @@ func newEngine(catalogs []core.Resource[i18n.Catalog], profiles []i18n.Profile, 
 	for locale, messages := range overlay {
 		bucket := index[locale]
 		if bucket == nil {
-			bucket = map[i18n.Key]string{}
+			bucket = map[i18n.Key]*template{}
 			index[locale] = bucket
 		}
-		for key, message := range messages {
-			bucket[key] = message
+		for key, raw := range messages {
+			parsed, err := parseMessage(raw)
+			if err != nil {
+				return nil, fmt.Errorf("%w: key %q in the configured catalogs directory %q: %w",
+					ErrInvalidMessage, string(key), catalogsDir, err)
+			}
+			bucket[key] = parsed
 		}
 	}
 	if err := checkDefault(index, defaultLocale); err != nil {
@@ -119,17 +147,26 @@ func newEngine(catalogs []core.Resource[i18n.Catalog], profiles []i18n.Profile, 
 	// returns addresses both: Negotiate reads supported[index], and a tags slice
 	// in another order would name a different locale for the same index.
 	tags := make([]language.Tag, 0, len(supported))
+	localeTags := make(map[i18n.Locale]language.Tag, len(supported))
+	printers := make(map[i18n.Locale]*message.Printer, len(supported))
 	for _, locale := range supported {
 		tag, err := language.Parse(string(locale))
 		if err != nil {
 			return nil, fmt.Errorf("%w: %q is not a language tag: %w", ErrInvalidCatalog, string(locale), err)
 		}
 		tags = append(tags, tag)
+		localeTags[locale] = tag
+		// A printer built on the tag formats a number for the locale: the decimal
+		// formatter it holds groups and separates digits by CLDR data. It needs no
+		// catalog — the message text is already in the index — only the tag.
+		printers[locale] = message.NewPrinter(tag)
 	}
 	return &engine{
 		index:         index,
 		supported:     supported,
 		matcher:       language.NewMatcher(tags),
+		localeTags:    localeTags,
+		printers:      printers,
 		profiles:      profiles,
 		defaultLocale: defaultLocale,
 	}, nil
@@ -188,7 +225,7 @@ func readOverlay(dir string) (map[i18n.Locale]map[i18n.Key]string, error) {
 // checkDefault refuses a set of catalogs that carries messages but no entries
 // in the configured default locale: every message a locale does not carry falls
 // back to the default, and a set without it would render keys to every request.
-func checkDefault(index map[i18n.Locale]map[i18n.Key]string, defaultLocale i18n.Locale) error {
+func checkDefault(index map[i18n.Locale]map[i18n.Key]*template, defaultLocale i18n.Locale) error {
 	if len(index) == 0 {
 		return nil
 	}
@@ -243,12 +280,12 @@ func read(catalog i18n.Catalog) (map[i18n.Locale]map[i18n.Key]string, error) {
 // the key, so a caller never receives an empty string it would have to test.
 func (e *engine) Localize(ctx context.Context, key i18n.Key, args i18n.Args) string {
 	locale := e.LocaleOf(ctx)
-	if message, ok := e.index[locale][key]; ok {
-		return interpolate(message, args)
+	if msg, ok := e.index[locale][key]; ok {
+		return e.render(msg, args, locale)
 	}
 	if locale != e.defaultLocale {
-		if message, ok := e.index[e.defaultLocale][key]; ok {
-			return interpolate(message, args)
+		if msg, ok := e.index[e.defaultLocale][key]; ok {
+			return e.render(msg, args, e.defaultLocale)
 		}
 	}
 	return string(key)
@@ -258,11 +295,11 @@ func (e *engine) Localize(ctx context.Context, key i18n.Key, args i18n.Args) str
 // carried it. It does not fall back: a caller that names a locale gets that
 // locale's message or nothing.
 func (e *engine) Translate(locale i18n.Locale, key i18n.Key, args i18n.Args) (string, bool) {
-	message, ok := e.index[locale][key]
+	msg, ok := e.index[locale][key]
 	if !ok {
 		return "", false
 	}
-	return interpolate(message, args), true
+	return e.render(msg, args, locale), true
 }
 
 // Negotiate returns the supported locale that best matches an Accept-Language
@@ -332,15 +369,299 @@ func (e *engine) TimeZoneFor(ctx context.Context, account string) string {
 	return ""
 }
 
-// interpolate replaces each {{name}} in message with args[name]. A name with no
-// value is left as written, so a missing parameter shows in the text rather than
-// disappearing.
-func interpolate(message string, args i18n.Args) string {
-	if len(args) == 0 || !strings.Contains(message, "{{") {
-		return message
+// template is a message parsed into its literal text and its placeholders, in
+// order. It is parsed and validated at assembly, so rendering walks the nodes
+// rather than scanning the text again.
+type template struct {
+	nodes []node
+}
+
+// node is one piece of a parsed message: a literal run of text followed by at
+// most one placeholder.
+type node struct {
+	// text is the literal text this node writes before its placeholder.
+	text string
+	// raw is the placeholder as written — "{{name}}" or the whole plural segment
+	// — kept so that a placeholder whose value is missing is written back as it
+	// stood, by the same rule a plain {{name}} follows.
+	raw string
+	// arg is the parameter a plain {{arg}} placeholder interpolates, "" for a
+	// literal-only node.
+	arg string
+	// group is the parsed body of a {{arg, plural, ...}} placeholder, nil for a
+	// plain or literal-only node.
+	group *pluralGroup
+}
+
+// pluralGroup is a parsed {{name, plural, ...}} placeholder: the parameter it
+// selects by and its branches by category.
+type pluralGroup struct {
+	arg      string
+	branches map[plural.Form]string
+}
+
+// categoryNames are the six CLDR plural categories a branch may name, in the
+// order the error message lists them.
+var categoryNames = []string{"zero", "one", "two", "few", "many", "other"}
+
+// categoryToForm maps a CLDR category name to the library's Form. The library's
+// own name-to-form table is unexported, so the mapping is written here.
+var categoryToForm = map[string]plural.Form{
+	"zero":  plural.Zero,
+	"one":   plural.One,
+	"two":   plural.Two,
+	"few":   plural.Few,
+	"many":  plural.Many,
+	"other": plural.Other,
+}
+
+// parseMessage parses a message into its nodes and validates every plural
+// segment it carries. It is called at assembly, so a malformed message stops
+// startup rather than failing at request time.
+func parseMessage(raw string) (*template, error) {
+	m := &template{}
+	rest := raw
+	for {
+		open := strings.Index(rest, "{{")
+		if open < 0 {
+			m.nodes = append(m.nodes, node{text: rest})
+			return m, nil
+		}
+		close := strings.Index(rest[open:], "}}")
+		if close < 0 {
+			// An opening {{ with no closing }} is literal text, as it always was.
+			m.nodes = append(m.nodes, node{text: rest})
+			return m, nil
+		}
+		close += open
+		n := node{text: rest[:open], raw: rest[open : close+2]}
+		inner := rest[open+2 : close]
+		if strings.Contains(inner, ",") {
+			group, err := parsePlural(inner)
+			if err != nil {
+				return nil, err
+			}
+			n.group = group
+		} else {
+			n.arg = inner
+		}
+		m.nodes = append(m.nodes, n)
+		rest = rest[close+2:]
 	}
-	for name, value := range args {
-		message = strings.ReplaceAll(message, "{{"+name+"}}", value)
+}
+
+// parsePlural parses the body of a {{name, plural, ...}} placeholder, which is
+// " name, plural, branches". The branch list is one or more "category=text"
+// pairs; the category names are validated against the six CLDR categories,
+// "other" must be present, and a category may not repeat.
+func parsePlural(inner string) (*pluralGroup, error) {
+	name, rest, _ := strings.Cut(inner, ",")
+	name = strings.TrimSpace(name)
+	if name == "" {
+		return nil, errors.New("a plural segment names no parameter")
 	}
-	return message
+	// The message parser cuts a placeholder at its first "}}", so a branch
+	// carrying a nested placeholder truncates the segment before this point. A
+	// brace left in the body is that case, and it is reported as itself rather
+	// than as the missing "other" branch the truncation would otherwise produce.
+	if strings.Contains(inner, "{{") {
+		return nil, errors.New("a plural branch may not contain a nested placeholder")
+	}
+	keyword, branchText, ok := strings.Cut(rest, ",")
+	if !ok || strings.TrimSpace(keyword) != "plural" {
+		return nil, fmt.Errorf("the segment for %q is not of the form {{name, plural, category=text, ...}}", name)
+	}
+	branches, err := parseBranches(branchText)
+	if err != nil {
+		return nil, err
+	}
+	return &pluralGroup{arg: name, branches: branches}, nil
+}
+
+// parseBranches parses the branch list of a plural segment into a map from
+// category to branch text, validating the category names, the presence of
+// "other" and the absence of a repeated category.
+func parseBranches(s string) (map[plural.Form]string, error) {
+	branches := map[plural.Form]string{}
+	for _, token := range splitBranches(s) {
+		form, ok := categoryToForm[token.name]
+		if !ok {
+			return nil, fmt.Errorf("%q is not a CLDR plural category (want one of %s)",
+				token.name, strings.Join(categoryNames, ", "))
+		}
+		if _, dup := branches[form]; dup {
+			return nil, fmt.Errorf("the category %q appears more than once", token.name)
+		}
+		branches[form] = token.text
+	}
+	if len(branches) == 0 {
+		return nil, errors.New("a plural segment carries no branch")
+	}
+	if _, ok := branches[plural.Other]; !ok {
+		return nil, errors.New(`a plural segment carries no "other" branch`)
+	}
+	return branches, nil
+}
+
+// branchToken is a category name and its branch text as split off, before the
+// name is validated.
+type branchToken struct {
+	name string
+	text string
+}
+
+// splitBranches splits a branch list into "category=text" tokens. A comma
+// begins a new branch when the text after it (ignoring spaces) is a word
+// immediately followed by "="; a comma anywhere else is part of the branch text,
+// so "other=# items, and more" keeps its comma. The boundary test does not check
+// the word against the CLDR categories — parseBranches does — so a misspelled
+// category name is reported rather than swallowed into the branch before it.
+func splitBranches(s string) []branchToken {
+	var tokens []branchToken
+	s = strings.TrimLeft(s, " \t,")
+	for s != "" {
+		eq := strings.IndexByte(s, '=')
+		if eq < 0 {
+			// No "=": the whole remainder is one token, whose name will not match
+			// a category and is reported as such.
+			tokens = append(tokens, branchToken{name: strings.TrimSpace(s)})
+			break
+		}
+		token := branchToken{name: strings.TrimSpace(s[:eq])}
+		body := s[eq+1:]
+		if cut := nextBranchStart(body); cut >= 0 {
+			token.text = body[:cut]
+			s = body[cut+1:]
+		} else {
+			token.text = body
+			s = ""
+		}
+		tokens = append(tokens, token)
+		s = strings.TrimLeft(s, " \t,")
+	}
+	return tokens
+}
+
+// nextBranchStart returns the index of the comma in body that begins the next
+// branch, or -1 when body holds only the current branch's text.
+func nextBranchStart(body string) int {
+	for i := 0; i < len(body); i++ {
+		if body[i] == ',' && beginsBranch(body[i+1:]) {
+			return i
+		}
+	}
+	return -1
+}
+
+// beginsBranch reports whether s begins (ignoring leading spaces) with a branch
+// boundary: a word — a run of characters up to a space or "=" — followed by "=".
+func beginsBranch(s string) bool {
+	s = strings.TrimLeft(s, " \t")
+	i := 0
+	for i < len(s) && s[i] != ' ' && s[i] != '\t' && s[i] != '=' {
+		i++
+	}
+	if i == 0 {
+		return false
+	}
+	return strings.HasPrefix(strings.TrimLeft(s[i:], " \t"), "=")
+}
+
+// render writes a parsed message with its parameters. Each {{name}} is replaced
+// by its value formatted for locale: a string verbatim, a number by the locale's
+// printer. A name with no value is left as written. A plural segment selects its
+// branch by its integer value's CLDR category for locale, and # in the branch
+// stands for the count formatted for locale.
+func (e *engine) render(m *template, args i18n.Args, locale i18n.Locale) string {
+	// A message with no placeholder writes back the text it was parsed from, so
+	// nothing below runs for the common case.
+	if len(m.nodes) == 1 && m.nodes[0].arg == "" && m.nodes[0].group == nil {
+		return m.nodes[0].text
+	}
+	var b strings.Builder
+	for _, n := range m.nodes {
+		b.WriteString(n.text)
+		switch {
+		case n.group != nil:
+			b.WriteString(e.renderPlural(n.group, n.raw, args, locale))
+		case n.arg != "":
+			b.WriteString(e.renderArg(n.arg, n.raw, args, locale))
+		}
+	}
+	return b.String()
+}
+
+// renderArg renders one {{name}} placeholder. A name with no value is left as
+// written; a string is written verbatim; a number is formatted for locale.
+func (e *engine) renderArg(name, raw string, args i18n.Args, locale i18n.Locale) string {
+	v, ok := args[name]
+	if !ok {
+		return raw
+	}
+	switch i18n.KindOf(v) {
+	case i18n.KindString:
+		return i18n.StringOf(v)
+	case i18n.KindInt:
+		return e.formatInt(i18n.IntOf(v), locale)
+	case i18n.KindFloat:
+		return e.formatFloat(i18n.FloatOf(v), locale)
+	}
+	return raw
+}
+
+// renderPlural renders one {{name, plural, ...}} placeholder. The parameter must
+// be an integer; a parameter that is missing or of another type leaves the
+// segment as written. The branch is the one named for the count's CLDR category
+// in locale, falling back to "other" when the message carries no branch for it.
+func (e *engine) renderPlural(g *pluralGroup, raw string, args i18n.Args, locale i18n.Locale) string {
+	v, ok := args[g.arg]
+	if !ok || i18n.KindOf(v) != i18n.KindInt {
+		return raw
+	}
+	count := i18n.IntOf(v)
+	text, ok := g.branches[e.pluralForm(locale, count)]
+	if !ok {
+		text = g.branches[plural.Other]
+	}
+	return strings.ReplaceAll(text, "#", e.formatInt(count, locale))
+}
+
+// pluralForm is the CLDR cardinal category the count falls in for locale. CLDR
+// defines the operand as the absolute value of the source number, so a negative
+// count selects the same category as its magnitude; the selection is taken on
+// the magnitude while the count itself is printed with its sign, wherever it is
+// printed. The rule engine indexes an inclusion mask by the operand's remainder,
+// which is negative for a negative operand in Go and would index out of range.
+func (e *engine) pluralForm(locale i18n.Locale, count int64) plural.Form {
+	tag, ok := e.localeTags[locale]
+	if !ok {
+		tag = language.Make(string(locale))
+	}
+	if count < 0 {
+		count = -count
+	}
+	return plural.Cardinal.MatchPlural(tag, int(count), 0, 0, 0, 0)
+}
+
+// formatInt renders an integer for locale, groups and separators by CLDR data.
+func (e *engine) formatInt(n int64, locale i18n.Locale) string {
+	return e.printer(locale).Sprintf("%d", n)
+}
+
+// formatFloat renders a number for locale as a plain decimal, grouped and
+// separated by CLDR data. number.Decimal forces the decimal form the criterion
+// asks for, where the printer's %v verb would switch to scientific notation at
+// 1e6 (1000000 renders as "1×10⁰⁶" rather than "1,000,000").
+func (e *engine) formatFloat(f float64, locale i18n.Locale) string {
+	return e.printer(locale).Sprint(number.Decimal(f))
+}
+
+// printer is the locale-aware number formatter for locale. The one built at
+// assembly is read-only and shared; a locale that did not enter the supported
+// set — which a rendered message never names — gets a formatter on demand.
+func (e *engine) printer(locale i18n.Locale) *message.Printer {
+	if p, ok := e.printers[locale]; ok {
+		return p
+	}
+	return message.NewPrinter(language.Make(string(locale)))
 }

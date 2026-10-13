@@ -22,6 +22,8 @@ const (
 	localeEN i18n.Locale = "en-US"
 	localeZH i18n.Locale = "zh-CN"
 	localeJA i18n.Locale = "ja-JP"
+	localeDE i18n.Locale = "de-DE"
+	localeRU i18n.Locale = "ru-RU"
 )
 
 // mapFS builds an in-memory filesystem from file name to contents.
@@ -150,8 +152,8 @@ func TestLocalizeInterpolates(t *testing.T) {
 		args i18n.Args
 		want string
 	}{
-		{"replaces every named placeholder", i18n.Args{"name": "Ada", "count": "3"}, "Hello Ada, you have 3 messages"},
-		{"leaves a missing placeholder as written", i18n.Args{"name": "Ada"}, "Hello Ada, you have {{count}} messages"},
+		{"replaces every named placeholder", i18n.Args{"name": i18n.String("Ada"), "count": i18n.String("3")}, "Hello Ada, you have 3 messages"},
+		{"leaves a missing placeholder as written", i18n.Args{"name": i18n.String("Ada")}, "Hello Ada, you have {{count}} messages"},
 		{"no args leave placeholders as written", nil, "Hello {{name}}, you have {{count}} messages"},
 	}
 	for _, tt := range tests {
@@ -163,25 +165,288 @@ func TestLocalizeInterpolates(t *testing.T) {
 	}
 }
 
-func TestInterpolate(t *testing.T) {
+// TestRender holds the pre-existing placeholder contract at the renderer: a
+// name with a value is interpolated, a name with none is left as written, and a
+// message with no placeholder is returned unchanged. It is the guard on the rule
+// that a missing parameter is visible rather than silent.
+func TestRender(t *testing.T) {
+	e := mustEngine(t, nil, nil)
 	tests := []struct {
 		name    string
 		message string
 		args    i18n.Args
 		want    string
 	}{
-		{"replaces a placeholder", "{{a}}", i18n.Args{"a": "x"}, "x"},
-		{"replaces a repeated placeholder", "{{a}}{{a}}", i18n.Args{"a": "x"}, "xx"},
-		{"leaves a name with no value as written", "{{a}}", i18n.Args{"b": "x"}, "{{a}}"},
-		{"leaves a message without a placeholder unchanged", "plain", i18n.Args{"a": "x"}, "plain"},
+		{"replaces a placeholder", "{{a}}", i18n.Args{"a": i18n.String("x")}, "x"},
+		{"replaces a repeated placeholder", "{{a}}{{a}}", i18n.Args{"a": i18n.String("x")}, "xx"},
+		{"leaves a name with no value as written", "{{a}}", i18n.Args{"b": i18n.String("x")}, "{{a}}"},
+		{"leaves a message without a placeholder unchanged", "plain", i18n.Args{"a": i18n.String("x")}, "plain"},
 		{"no args leave the message unchanged", "{{a}}", nil, "{{a}}"},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			if got := interpolate(tt.message, tt.args); got != tt.want {
-				t.Errorf("interpolate(%q) = %q, want %q", tt.message, got, tt.want)
+			m, err := parseMessage(tt.message)
+			if err != nil {
+				t.Fatalf("parseMessage(%q): %v", tt.message, err)
+			}
+			if got := e.render(m, tt.args, localeEN); got != tt.want {
+				t.Errorf("render(%q) = %q, want %q", tt.message, got, tt.want)
 			}
 		})
+	}
+}
+
+// TestPluralSelectsByCount holds that a plural segment selects its branch by the
+// count's CLDR category: an English message renders "one" for a count of one and
+// "other" for any other count, and # in the branch is the count, grouped for the
+// locale rather than written raw.
+func TestPluralSelectsByCount(t *testing.T) {
+	catalogs := []core.Resource[i18n.Catalog]{catalogOf("app", map[string]string{
+		"locales/en-US.json": `{"app.items":"You have {{count, plural, one=# item, other=# items}}"}`,
+	})}
+	e := mustEngine(t, catalogs, nil)
+	ctx := context.Background()
+	tests := []struct {
+		name  string
+		count int
+		want  string
+	}{
+		{"a count of one selects one", 1, "You have 1 item"},
+		{"a count of several selects other", 5, "You have 5 items"},
+		{"a count of zero selects other", 0, "You have 0 items"},
+		{"# is the count grouped for the locale", 1234567, "You have 1,234,567 items"},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			if got := e.Localize(ctx, "app.items", i18n.Args{"count": i18n.Int(tt.count)}); got != tt.want {
+				t.Errorf("Localize(count=%d) = %q, want %q", tt.count, got, tt.want)
+			}
+		})
+	}
+}
+
+// TestPluralSelectsACategoryBeyondOneAndOther holds that the engine uses the
+// language's own CLDR rules and not an English-shaped one/other split: a Russian
+// message that carries one, few, many and other renders "few" for a count of
+// two and "many" for a count of five.
+func TestPluralSelectsACategoryBeyondOneAndOther(t *testing.T) {
+	catalogs := []core.Resource[i18n.Catalog]{catalogOf("app", map[string]string{
+		"locales/ru-RU.json": `{"app.items":"{{count, plural, one=# товар, few=# товара, many=# товаров, other=# товара}}"}`,
+	})}
+	e := mustEngineWithDefault(t, catalogs, nil, localeRU)
+	tests := []struct {
+		name  string
+		count int
+		want  string
+	}{
+		{"one", 1, "1 товар"},
+		{"few", 2, "2 товара"},
+		{"many", 5, "5 товаров"},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			if got := e.Localize(context.Background(), "app.items", i18n.Args{"count": i18n.Int(tt.count)}); got != tt.want {
+				t.Errorf("Localize(count=%d) = %q, want %q", tt.count, got, tt.want)
+			}
+		})
+	}
+}
+
+// TestPluralFallsBackToOther holds that a count whose language yields a category
+// the message does not carry falls back to the other branch: a Russian message
+// that carries only one and other renders the other branch for a count of two,
+// which is "few" in Russian.
+func TestPluralFallsBackToOther(t *testing.T) {
+	catalogs := []core.Resource[i18n.Catalog]{catalogOf("app", map[string]string{
+		"locales/ru-RU.json": `{"app.items":"{{count, plural, one=# item, other=# items}}"}`,
+	})}
+	e := mustEngineWithDefault(t, catalogs, nil, localeRU)
+	if got := e.Localize(context.Background(), "app.items", i18n.Args{"count": i18n.Int(2)}); got != "2 items" {
+		t.Errorf("Localize(count=2) = %q, want the other branch %q", got, "2 items")
+	}
+}
+
+// TestPluralWithNoIntegerValueIsLeftAsWritten holds that the plural rule follows
+// the missing-parameter rule: a plural segment whose parameter is absent, or
+// present but not an integer, is written back as it stood rather than rendering
+// a branch.
+func TestPluralWithNoIntegerValueIsLeftAsWritten(t *testing.T) {
+	const raw = "{{count, plural, one=# item, other=# items}}"
+	catalogs := []core.Resource[i18n.Catalog]{catalogOf("app", map[string]string{
+		"locales/en-US.json": `{"app.items":"` + raw + `"}`,
+	})}
+	e := mustEngine(t, catalogs, nil)
+	ctx := context.Background()
+	if got := e.Localize(ctx, "app.items", nil); got != raw {
+		t.Errorf("Localize(no count) = %q, want %q", got, raw)
+	}
+	if got := e.Localize(ctx, "app.items", i18n.Args{"count": i18n.String("many")}); got != raw {
+		t.Errorf("Localize(a non-integer count) = %q, want %q", got, raw)
+	}
+}
+
+// TestPluralNegativeCountSelectsByMagnitudeAndPrintsTheSign holds that a
+// negative count is legal input: CLDR defines the operand as the absolute value
+// of the source number, so -1 selects the "one" branch as 1 does while the
+// printed count keeps its sign — in the # token and in a plain interpolation
+// alike. Before the fix the signed count reached the rule engine, whose
+// inclusion-mask index n%modulus is negative in Go, panicking the request path.
+func TestPluralNegativeCountSelectsByMagnitudeAndPrintsTheSign(t *testing.T) {
+	catalogs := []core.Resource[i18n.Catalog]{catalogOf("app", map[string]string{
+		"locales/en-US.json": `{"app.items":"{{count, plural, one=# item, other=# items}}","app.value":"{{value}}"}`,
+	})}
+	e := mustEngine(t, catalogs, nil)
+	ctx := context.Background()
+	tests := []struct {
+		name  string
+		count int
+		want  string
+	}{
+		{"a count of -1 selects one and prints the sign", -1, "-1 item"},
+		{"a count of -5 selects other and prints the sign", -5, "-5 items"},
+		{"a negative count with many digits groups with the sign", -1234567, "-1,234,567 items"},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			if got := e.Localize(ctx, "app.items", i18n.Args{"count": i18n.Int(tt.count)}); got != tt.want {
+				t.Errorf("Localize(count=%d) = %q, want %q", tt.count, got, tt.want)
+			}
+		})
+	}
+	// A negative integer interpolated without a plural segment keeps its sign too.
+	if got := e.Localize(ctx, "app.value", i18n.Args{"value": i18n.Int(-1234567)}); got != "-1,234,567" {
+		t.Errorf("Localize(a negative integer) = %q, want %q", got, "-1,234,567")
+	}
+}
+
+// TestNumberIsFormattedForTheMessageLocale holds that an integer or a number
+// interpolated without a plural segment is formatted for the message's language
+// and not by fmt.Sprintf: the same value groups as 1,234,567 in en-US and
+// 1.234.567 in de-DE, and a decimal separates as 1,234.5 and 1.234,5, so the
+// same template in two locales renders differently.
+func TestNumberIsFormattedForTheMessageLocale(t *testing.T) {
+	catalogs := []core.Resource[i18n.Catalog]{catalogOf("app", map[string]string{
+		"locales/en-US.json": `{"app.total":"Total: {{total}}"}`,
+		"locales/de-DE.json": `{"app.total":"Summe: {{total}}"}`,
+	})}
+	e := mustEngine(t, catalogs, nil)
+	tests := []struct {
+		name   string
+		locale i18n.Locale
+		value  i18n.Value
+		want   string
+	}{
+		{"an integer groups per en-US", localeEN, i18n.Int(1234567), "Total: 1,234,567"},
+		{"the same integer groups per de-DE", localeDE, i18n.Int(1234567), "Summe: 1.234.567"},
+		{"a decimal separates per en-US", localeEN, i18n.Float(1234.5), "Total: 1,234.5"},
+		{"the same decimal separates per de-DE", localeDE, i18n.Float(1234.5), "Summe: 1.234,5"},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			ctx := i18n.WithLocale(context.Background(), tt.locale)
+			if got := e.Localize(ctx, "app.total", i18n.Args{"total": tt.value}); got != tt.want {
+				t.Errorf("Localize = %q, want %q", got, tt.want)
+			}
+		})
+	}
+}
+
+// TestLargeFloatRendersAGroupedDecimalNotAnExponent holds that a whole-valued
+// float at or above 1e6 is rendered as a grouped decimal and not in scientific
+// notation: the message.Printer's %v verb switches to "1×10⁰⁶" (en-US) and
+// "1·10⁰⁶" (de-DE) at 1e6, contradicting the criterion that a number is grouped
+// per the locale. number.Decimal keeps it decimal, asserted in two locales.
+func TestLargeFloatRendersAGroupedDecimalNotAnExponent(t *testing.T) {
+	catalogs := []core.Resource[i18n.Catalog]{catalogOf("app", map[string]string{
+		"locales/en-US.json": `{"app.total":"Total: {{total}}"}`,
+		"locales/de-DE.json": `{"app.total":"Summe: {{total}}"}`,
+	})}
+	e := mustEngine(t, catalogs, nil)
+	tests := []struct {
+		name   string
+		locale i18n.Locale
+		total  float64
+		want   string
+	}{
+		{"en-US groups a million", localeEN, 1000000, "Total: 1,000,000"},
+		{"de-DE groups a million", localeDE, 1000000, "Summe: 1.000.000"},
+		{"en-US groups ten million", localeEN, 10000000, "Total: 10,000,000"},
+		{"de-DE groups ten million", localeDE, 10000000, "Summe: 10.000.000"},
+		{"en-US groups a million and then some", localeEN, 1234567, "Total: 1,234,567"},
+		{"de-DE groups a million and then some", localeDE, 1234567, "Summe: 1.234.567"},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			ctx := i18n.WithLocale(context.Background(), tt.locale)
+			if got := e.Localize(ctx, "app.total", i18n.Args{"total": i18n.Float(tt.total)}); got != tt.want {
+				t.Errorf("Localize = %q, want %q", got, tt.want)
+			}
+		})
+	}
+}
+
+// TestMalformedMessageFailsStartup holds that a message the engine cannot parse
+// terminates startup under ErrInvalidMessage — a sentinel distinct from the
+// source failures — naming the key and the module it came from. The three ways a
+// plural segment is malformed are a category that is not a CLDR category, a
+// missing "other" branch, and a repeated category.
+func TestMalformedMessageFailsStartup(t *testing.T) {
+	tests := []struct {
+		name     string
+		message  string
+		contains []string
+	}{
+		{"an unknown category", `{{count, plural, one=# a, lots=# b, other=# c}}`, []string{"lots"}},
+		{"no other branch", `{{count, plural, one=# a}}`, []string{"other"}},
+		{"a duplicated category", `{{count, plural, one=# a, one=# b, other=# c}}`, []string{"one"}},
+		{"a nested placeholder", `{{count, plural, one={{name}} item, other=# items}}`, []string{"nested placeholder"}},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			catalogs := []core.Resource[i18n.Catalog]{catalogOf("app", map[string]string{
+				"locales/en-US.json": fmt.Sprintf(`{"app.items":%q}`, tt.message),
+			})}
+			_, err := newEngine(catalogs, nil, localeEN, "")
+			if !errors.Is(err, ErrInvalidMessage) {
+				t.Fatalf("newEngine error = %v, want ErrInvalidMessage", err)
+			}
+			if errors.Is(err, ErrInvalidCatalog) {
+				t.Errorf("the message failure must be distinct from ErrInvalidCatalog: %v", err)
+			}
+			if !strings.Contains(err.Error(), "app.items") {
+				t.Errorf("the failure %q does not name the key", err.Error())
+			}
+			if !strings.Contains(err.Error(), `"app"`) {
+				t.Errorf("the failure %q does not name the module", err.Error())
+			}
+			for _, want := range tt.contains {
+				if !strings.Contains(err.Error(), want) {
+					t.Errorf("the failure %q does not name %q", err.Error(), want)
+				}
+			}
+		})
+	}
+}
+
+// TestMalformedOverlayMessageFailsStartup holds that a malformed message in the
+// configured catalogs directory fails startup under ErrInvalidMessage naming the
+// key and the directory, so an operator can find the file.
+func TestMalformedOverlayMessageFailsStartup(t *testing.T) {
+	catalogs := []core.Resource[i18n.Catalog]{catalogOf("app", map[string]string{
+		"locales/en-US.json": `{"app.en":"Hello"}`,
+	})}
+	dir := overlayDir(t, map[string]string{
+		"en-US.json": `{"app.items":"{{count, plural, one=# a}}"}`,
+	})
+	_, err := newEngine(catalogs, nil, localeEN, dir)
+	if !errors.Is(err, ErrInvalidMessage) {
+		t.Fatalf("newEngine error = %v, want ErrInvalidMessage", err)
+	}
+	if !strings.Contains(err.Error(), "app.items") {
+		t.Errorf("the failure %q does not name the key", err.Error())
+	}
+	if !strings.Contains(err.Error(), dir) {
+		t.Errorf("the failure %q does not name the directory %q", err.Error(), dir)
 	}
 }
 

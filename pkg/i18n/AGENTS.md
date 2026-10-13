@@ -12,7 +12,8 @@ each subpackage registers a module of its own.
   `Localizer`, `Negotiator` and `Resolver` exclusively, collects the declared
   catalogs over the available set, reads the default locale from the
   `i18n.default-locale` config item and an optional directory of extra catalogs
-  from `i18n.catalogs-dir`, and takes an optional `Profile`.
+  from `i18n.catalogs-dir`, parses and validates every message at assembly, and
+  takes an optional `Profile`.
 - `pkg/i18n/http` registers `i18n.http`: it walks `http.Router`'s `Endpoints`
   and binds two middleware layers on each, one negotiating `Accept-Language`,
   one reading an account's stored language and time zone. It imports `pkg/http`
@@ -27,12 +28,13 @@ message.
 ## Boundaries
 
 - **The root package depends on the standard library only.**
-  `golang.org/x/text/language` is bound in the engine (`pkg/i18n/catalog`) and
-  nowhere else, so a module that only reads a locale imports this package and
-  carries no language-matching library. `pkg/i18n/http` takes the negotiation
-  result through the `i18n.Negotiator` capability and does not bind the library
-  itself. A dependency added to the root package lands in the dependency list of
-  every module that reads a locale; keep it out.
+  `golang.org/x/text` — its `language`, `feature/plural`, `message` and `number`
+  packages — is bound in the engine (`pkg/i18n/catalog`) and nowhere else in
+  this capability, so a module that only reads a locale imports this package and
+  carries no language-matching or number-formatting library. `pkg/i18n/http` takes the negotiation result
+  through the `i18n.Negotiator` capability and does not bind the library itself.
+  A dependency added to the root package lands in the dependency list of every
+  module that reads a locale; keep it out.
 - **A message key is flat and namespaced by the module that renders it.**
   `authn.login-failed`, `http.404`. Two modules never share a key, and a key
   read off a problem's `Type` is unambiguous. The engine refuses a duplicate key
@@ -52,11 +54,36 @@ message.
   overlay carries enters the supported set and the negotiation matcher. An
   unset item, a path that is not an existing directory, and a directory holding
   no `*.json` file all mean no extras and are legal; a file the loader cannot
-  read terminates startup under `catalog.ErrInvalidOverlay`, naming the file.
+  read terminates startup under `catalog.ErrInvalidOverlay`, naming the file,
+  and a message the parser cannot read terminates startup under
+  `catalog.ErrInvalidMessage`, naming the key and its source.
   The index is read-only, IO-free and never reloaded afterward — the overlay
   too is read only at assembly — so the request path carries no lock and no IO.
   There is no interface for changing a catalog or a message at runtime, and
   adding one would put a lock on the request path.
+- **A message renders its typed arguments for its own language.** `Args` maps a
+  parameter name to a typed `Value`, built with `i18n.String`, `i18n.Int` or
+  `i18n.Float`. A string is written into the text verbatim; an integer or a
+  number is formatted for the message's language by the engine — a
+  `message.Printer` on the locale's tag, a decimal `number.Decimal` for a float
+  so that a value at or above 1e6 stays `1,000,000` rather than becoming an
+  exponent, and not `fmt.Sprintf` — so the same value groups as `1,234,567` in
+  en-US and `1.234.567` in de-DE. The syntax keeps
+  `{{name}}` and the rule that a name with no value is left as written, and adds
+  one construct: `{{name, plural, <category>=<text>, ...}}`. The plural selects a
+  branch by the count's CLDR category for the language — the six categories
+  `zero one two few many other` — with `#` in the branch standing for the count,
+  formatted for the language; a count whose category the message does not carry
+  falls back to `other`. The parameter must be an integer: a missing or
+  non-integer one leaves the segment as written, like any missing parameter. The
+  engine parses each message at assembly and refuses a malformed plural segment —
+  a category that is not one of the six, a missing `other`, a repeated category —
+  under `catalog.ErrInvalidMessage`. A plural branch is literal text and `#` and
+  may not contain a nested placeholder; the engine refuses a nested placeholder
+  under the same sentinel, rather than reporting it as a missing `other` branch.
+  Date and time formatting is out of scope: a date is a typed value the client
+  renders, and the module carries the time zone (`Resolver.TimeZoneOf`) and
+  nothing more.
 - **`i18n.locale` and `i18n.tz` are preferences, not authorizing facts.** They
   are stored in `Account.Attributes` under `LocaleAttributeKey` and
   `TimeZoneAttributeKey`, read back into a request's context, and used for
@@ -154,4 +181,4 @@ built on catalogs constructed in the test, or written into a temporary directory
 the test makes, and the middleware's bring up a registry with an entry point and
 a gateway. `subpackagesInBudget`-style dependency tests, where a subpackage runs
 one, are what hold the standard library-only boundary of the root package and the
-single-importer boundary of `golang.org/x/text`.
+single-importer boundary of `golang.org/x/text` within this capability.

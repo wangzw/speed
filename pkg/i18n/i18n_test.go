@@ -117,3 +117,32 @@ func TestConfigNamesAreStable(t *testing.T) {
 		t.Errorf("DefaultLocaleItem = %q; want %q", DefaultLocaleItem, "default-locale")
 	}
 }
+
+// TestValueCarriesItsType holds the typed-argument value type: each constructor
+// builds a value whose kind and payload read back, the zero Value reads as an
+// empty string, and a reader called on the wrong kind finds the zero of that
+// kind.
+func TestValueCarriesItsType(t *testing.T) {
+	s := String("x")
+	if KindOf(s) != KindString || StringOf(s) != "x" {
+		t.Errorf("String(\"x\") is kind %d, text %q; want kind %d, text %q", KindOf(s), StringOf(s), KindString, "x")
+	}
+	n := Int(-3)
+	if KindOf(n) != KindInt || IntOf(n) != -3 {
+		t.Errorf("Int(-3) is kind %d, value %d; want kind %d, value %d", KindOf(n), IntOf(n), KindInt, -3)
+	}
+	f := Float(1.5)
+	if KindOf(f) != KindFloat || FloatOf(f) != 1.5 {
+		t.Errorf("Float(1.5) is kind %d, value %v; want kind %d, value %v", KindOf(f), FloatOf(f), KindFloat, 1.5)
+	}
+
+	var zero Value
+	if KindOf(zero) != KindString || StringOf(zero) != "" {
+		t.Errorf("the zero Value is kind %d, text %q; want kind %d, text \"\"", KindOf(zero), StringOf(zero), KindString)
+	}
+
+	// Each reader returns the zero of its own kind for a value of another kind.
+	if IntOf(s) != 0 || FloatOf(s) != 0 || StringOf(n) != "" {
+		t.Error("a reader on the wrong kind did not return the zero of that kind")
+	}
+}

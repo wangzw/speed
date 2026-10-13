@@ -8,10 +8,12 @@
 // and its siblings have no provider and a module that requires one fails to
 // start.
 //
-// The engine is the one place that binds golang.org/x/text: it parses language
-// tags and negotiates a request's preferences with language.Matcher, and the
-// interface package stays on the standard library so that a consumer of a locale
-// carries no matching library.
+// The engine is the one place in this capability that binds golang.org/x/text:
+// it parses language tags and negotiates a request's preferences with
+// language.Matcher, selects a plural branch with feature/plural, and formats a
+// number for a locale with the message printer and number.Decimal, and the
+// interface package stays on the standard library so that a consumer of a
+// locale carries no matching or formatting library.
 package catalog
 
 import (
