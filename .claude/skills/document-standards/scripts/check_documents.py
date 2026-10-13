@@ -43,9 +43,14 @@ WHAT IS CHECKED
   Design tree (references/design-documents.md):
     * README.md and architecture.md are present
     * modules/ file names match design-<slug>[-<aspect>], kebab-case
-      ASCII, with no sequence number anywhere
-    * README index covers every file in the tree exactly once, and every
-      index link resolves
+      ASCII, with no sequence number anywhere; a module subdirectory is
+      named for its slug and every file inside carries the slug prefix
+    * a module whose sub-modules have their own documents lives in
+      modules/<slug>/, holding its own design-<slug>.md, the sub-module
+      documents and a README.md index
+    * the tree's README index covers each entry point exactly once; a
+      module subdirectory's README index covers its files exactly once;
+      every index link resolves
     * architecture.md carries its required sections in the fixed order,
       and the module-dependency and logical-deployment sections each
       carry a mermaid diagram
@@ -53,9 +58,10 @@ WHAT IS CHECKED
       order, including the Non-Responsibilities subsection, and carries
       no section outside the standard's set
     * every implementation-status entry uses one of the three canonical
-      values, names what is missing when partial, and carries a code
-      anchor when it claims any implementation
-    * architecture.md's status roll-up is one row per module document
+      values and carries a code anchor when it claims any implementation
+    * architecture.md's status roll-up is one row per top-level module
+      and carries no sub-module row; a module subdirectory's README.md
+      roll-up is one row per sub-module document
 
   ADR tree (references/decision-records.md):
     * file names match adr-<slug>-<ISO date>, with a real calendar date
@@ -192,6 +198,11 @@ OVERVIEW_SECTIONS = [
     ("actors", names("Actors", "参与者"), False),
 ]
 INDEX_SECTION = names("Index", "索引")
+# A module subdirectory's README carries exactly these two H2s.
+SUBINDEX_SECTIONS = [
+    ("index", INDEX_SECTION, True),
+    ("status", names("Implementation Status", "实现状态"), True),
+]
 
 # Status vocabularies.
 DESIGN_STATUS = {
@@ -539,14 +550,33 @@ def check_filename_sequence(rel_path: str) -> list[Finding]:
 
 
 def check_index(readme_path: str, rel_readme: str, tree: str, root: str,
-                language: str, label: str) -> list[Finding]:
-    """Every file of the tree appears in the README index exactly once, and
-    every index link resolves."""
+                language: str, label: str, expected: list[str] | None = None,
+                require_index: bool = False) -> list[Finding]:
+    """Every expected file appears in the README index exactly once, and
+    every index link resolves.
+
+    `expected` is the set of files the index must cover, as absolute
+    paths; None means every markdown file of the tree. A tree's own
+    README covers the whole tree; a module subdirectory's README covers
+    that subdirectory, so its `tree` is still the design tree (links may
+    point within it) while `expected` lists only the subdirectory."""
     found: list[Finding] = []
     text = strip_comments(read(readme_path))
     sections = parse_sections(text)
+    lines = scan_lines(text)
+    index_section = next(
+        (s for s in sections if s.level == 2
+         and match_section(s.title, [("index", INDEX_SECTION, True)], language)[0]),
+        None)
+    if index_section is None:
+        region = lines
+    else:
+        start = index_section.line
+        end = next((s.line for s in sections
+                    if s.level <= 2 and s.line > start), len(lines) + 1)
+        region = [line for line in lines if start <= line[0] < end]
     linked: dict[str, list[int]] = {}
-    for n, raw, in_fence, _ in scan_lines(text):
+    for n, raw, in_fence, _ in region:
         if in_fence:
             continue
         for target in LINK_RE.findall(raw):
@@ -568,7 +598,7 @@ def check_index(readme_path: str, rel_readme: str, tree: str, root: str,
         if len(occurrences) > 1:
             found.append(Finding(rel_readme, occurrences[1],
                                  f"{rel} appears in the index more than once"))
-    for path in markdown_files(tree):
+    for path in (expected if expected is not None else markdown_files(tree)):
         rel = os.path.relpath(path, root)
         if os.path.abspath(path) == os.path.abspath(readme_path):
             continue
@@ -576,8 +606,9 @@ def check_index(readme_path: str, rel_readme: str, tree: str, root: str,
             found.append(Finding(rel, 0,
                                  f"absent from the {label} index ({rel_readme}); an orphan "
                                  f"is an error"))
-    if not any(match_section(s.title, [("index", INDEX_SECTION, True)], language)[0]
-               for s in sections if s.level == 2) and label == "design":
+    if require_index and not any(
+            match_section(s.title, [("index", INDEX_SECTION, True)], language)[0]
+            for s in sections if s.level == 2):
         found.append(Finding(rel_readme, 0,
                              f"no {canonical(INDEX_SECTION, language)!r} section"))
     return found
@@ -648,16 +679,27 @@ def check_design_status(rel_path: str, sections: list[Section], language: str,
                     found.append(Finding(rel_path, n,
                                          "roll-up row does not link to the module document"))
                 continue
-            if keys[0] == "partial":
-                remainder = row.replace(canonical(DESIGN_STATUS["partial"], language), "")
-                cells = [c.strip() for c in remainder.strip("|").split("|")]
-                if len(cells) < 2 or not cells[1].strip(" —-"):
-                    found.append(Finding(rel_path, n,
-                                         "partial status names nothing that is missing"))
             if keys[0] in ("implemented", "partial") and not CODE_ANCHOR_RE.search(row):
                 found.append(Finding(rel_path, n,
                                      "status entry claims implementation with no code anchor "
                                      "(path plus symbol name)"))
+    return found
+
+
+def check_module_document(rel: str, text: str, language: str) -> list[Finding]:
+    """The fixed section set a module document obeys, wherever it lives --
+    flat under modules/ or inside a module subdirectory."""
+    found: list[Finding] = []
+    found += check_heading_language(rel, text, language, MODULE_SECTIONS)
+    found += check_section_order(rel, text, language, MODULE_SECTIONS)
+    found += check_design_status(rel, parse_sections(text), language, roll_up=False)
+    responsibilities = [s for s in parse_sections(text) if s.level == 3
+                        and normalize_heading(s.title)
+                        == normalize_heading(canonical(NON_RESPONSIBILITIES, language))]
+    if not responsibilities:
+        found.append(Finding(rel, 0,
+                             f"no {canonical(NON_RESPONSIBILITIES, language)!r} subsection; what a "
+                             f"module does not own is written down"))
     return found
 
 
@@ -672,15 +714,40 @@ def check_design_tree(tree: str, root: str, language: str) -> list[Finding]:
                                  "required design document is missing"))
     modules_dir = os.path.join(tree, "modules")
 
+    top_entries: list[str] = []        # what the tree's README index must cover
+    roll_up_docs: list[str] = []       # module documents architecture.md must roll up
+    subdir_files: dict[str, list[str]] = {}   # module subdirectory -> its design-*.md files
+    subdir_readmes: dict[str, str] = {}       # module subdirectory -> its README.md
+    submodule_docs: dict[str, list[str]] = {}  # module subdirectory -> its sub-module documents
+
     for path in markdown_files(tree):
         rel = os.path.relpath(path, root)
-        text = strip_comments(read(path))
         name = os.path.basename(path)
-        is_module = os.path.dirname(path) == modules_dir
+        text = strip_comments(read(path))
         found += check_common(rel, text, language)
-        if name not in ("README.md", "architecture.md"):
+        parent = os.path.dirname(path)
+        if parent == tree:
+            if name == "architecture.md":
+                sections = parse_sections(text)
+                found += check_heading_language(rel, text, language, ARCHITECTURE_SECTIONS)
+                found += check_section_order(rel, text, language, ARCHITECTURE_SECTIONS)
+                found += check_design_status(rel, sections, language, roll_up=True)
+                for key in ("module-dependency-graph", "logical-deployment"):
+                    targets = [s for s in sections if s.level == 2
+                               and match_section(s.title, ARCHITECTURE_SECTIONS, language)[0] == key]
+                    for section in targets:
+                        if not any(f[1].lower() == "mermaid" for f in section.fences()):
+                            found.append(Finding(rel, section.line,
+                                                 f"section {section.title!r} carries no mermaid "
+                                                 f"diagram; this diagram is mandatory"))
+                top_entries.append(path)
+            elif name != "README.md":
+                found.append(Finding(rel, 0,
+                                     f"unexpected document at the design tree root; a module "
+                                     f"document lives in {rel_tree}/modules/"))
+            continue
+        if parent == modules_dir:
             found += check_filename_sequence(rel)
-        if is_module:
             if not name.startswith("design-"):
                 found.append(Finding(rel, 0,
                                      "module document name does not match design-<slug>"))
@@ -689,43 +756,75 @@ def check_design_tree(tree: str, root: str, language: str) -> list[Finding]:
                 if not SLUG_RE.match(slug):
                     found.append(Finding(rel, 0,
                                          f"slug {slug!r} is not lowercase kebab-case ASCII"))
-            found += check_heading_language(rel, text, language, MODULE_SECTIONS)
-            found += check_section_order(rel, text, language, MODULE_SECTIONS)
-            found += check_design_status(rel, parse_sections(text), language, roll_up=False)
-            responsibilities = [s for s in parse_sections(text) if s.level == 3
-                                and normalize_heading(s.title)
-                                == normalize_heading(canonical(NON_RESPONSIBILITIES, language))]
-            if not responsibilities:
+            found += check_module_document(rel, text, language)
+            top_entries.append(path)
+            roll_up_docs.append(path)
+            continue
+        if os.path.dirname(parent) == modules_dir:
+            slug = os.path.basename(parent)
+            if not SLUG_RE.match(slug):
                 found.append(Finding(rel, 0,
-                                     f"no {canonical(NON_RESPONSIBILITIES, language)!r} subsection; what a "
-                                     f"module does not own is written down"))
-        elif name == "architecture.md":
-            sections = parse_sections(text)
-            found += check_heading_language(rel, text, language, ARCHITECTURE_SECTIONS)
-            found += check_section_order(rel, text, language, ARCHITECTURE_SECTIONS)
-            found += check_design_status(rel, sections, language, roll_up=True)
-            for key in ("module-dependency-graph", "logical-deployment"):
-                target = [s for s in sections if s.level == 2
-                          and match_section(s.title, ARCHITECTURE_SECTIONS, language)[0] == key]
-                for section in target:
-                    if not any(f[1].lower() == "mermaid" for f in section.fences()):
-                        found.append(Finding(rel, section.line,
-                                             f"section {section.title!r} carries no mermaid "
-                                             f"diagram; this diagram is mandatory"))
-        elif name != "README.md" and os.path.dirname(path) == tree:
-            found.append(Finding(rel, 0,
-                                 f"unexpected document at the design tree root; a module "
-                                 f"document lives in {rel_tree}/modules/"))
-        if os.path.dirname(path) not in (tree, modules_dir):
-            found.append(Finding(rel, 0, "design tree has no directory below modules/"))
+                                     f"module subdirectory {slug!r} is not lowercase kebab-case ASCII"))
+            if name == "README.md":
+                subdir_readmes[parent] = path
+                top_entries.append(path)
+                continue
+            stem = re.fullmatch(re.escape("design-" + slug) + r"(?:-(.+))?\.md", name)
+            if stem is None or (stem.group(1) is not None and not SLUG_RE.match(stem.group(1))):
+                found.append(Finding(rel, 0,
+                                     f"document in module subdirectory {slug!r} does not match "
+                                     f"design-{slug}[-<sub>]"))
+                continue
+            found += check_filename_sequence(rel)
+            found += check_module_document(rel, text, language)
+            subdir_files.setdefault(parent, []).append(path)
+            if stem.group(1) is None:
+                roll_up_docs.append(path)
+            else:
+                submodule_docs.setdefault(parent, []).append(path)
+            continue
+        found.append(Finding(rel, 0, "design tree has no directory below modules/<slug>/"))
+
+    for parent in sorted(subdir_files):
+        slug = os.path.basename(parent)
+        if not os.path.isfile(os.path.join(parent, "design-" + slug + ".md")):
+            found.append(Finding(os.path.relpath(parent, root), 0,
+                                 f"module subdirectory has no design-{slug}.md; the module's "
+                                 f"own document belongs there"))
+        if parent not in subdir_readmes:
+            found.append(Finding(os.path.relpath(parent, root), 0,
+                                 "module subdirectory has no README.md index"))
 
     if os.path.isfile(readme):
         found += check_index(readme, os.path.relpath(readme, root), tree, root,
-                             language, "design")
-        if os.path.isdir(modules_dir):
-            documented = set()
-            for path in markdown_files(modules_dir):
-                documented.add(os.path.relpath(path, os.path.dirname(readme)))
+                             language, "design", expected=top_entries, require_index=True)
+    for parent, index_path in sorted(subdir_readmes.items()):
+        rel_index = os.path.relpath(index_path, root)
+        index_text = strip_comments(read(index_path))
+        found += check_index(index_path, rel_index, tree, root, language,
+                             "module", expected=subdir_files.get(parent, []),
+                             require_index=True)
+        sections = parse_sections(index_text)
+        found += check_heading_language(rel_index, index_text, language, SUBINDEX_SECTIONS)
+        found += check_design_status(rel_index, sections, language, roll_up=True)
+        referenced: set[str] = set()
+        for section in sections:
+            if section.level == 2 and match_section(
+                    section.title, MODULE_SECTIONS, language)[0] == "status":
+                for _, row in status_entries(section):
+                    for target in LINK_RE.findall(row):
+                        referenced.add(os.path.normpath(os.path.join(parent, target.split("#")[0])))
+        for doc in submodule_docs.get(parent, []):
+            if os.path.normpath(doc) not in referenced:
+                found.append(Finding(rel_index, 0,
+                                     f"sub-module status has no row for "
+                                     f"{os.path.relpath(doc, root)}"))
+        own_doc = os.path.normpath(
+            os.path.join(parent, "design-" + os.path.basename(parent) + ".md"))
+        if own_doc in referenced:
+            found.append(Finding(rel_index, 0,
+                                 "sub-module status carries a row for the module's own document; "
+                                 "architecture.md already carries it"))
     if os.path.isfile(architecture):
         text = strip_comments(read(architecture))
         rolled: set[str] = set()
@@ -736,12 +835,17 @@ def check_design_tree(tree: str, root: str, language: str) -> list[Finding]:
                     for target in LINK_RE.findall(row):
                         rolled.add(os.path.normpath(
                             os.path.join(os.path.dirname(architecture), target.split("#")[0])))
-        if os.path.isdir(modules_dir):
-            for path in markdown_files(modules_dir):
-                if os.path.normpath(path) not in rolled:
-                    found.append(Finding(os.path.relpath(architecture, root), 0,
-                                         f"implementation status has no row for "
-                                         f"{os.path.relpath(path, root)}"))
+        for doc in roll_up_docs:
+            if os.path.normpath(doc) not in rolled:
+                found.append(Finding(os.path.relpath(architecture, root), 0,
+                                     f"implementation status has no row for "
+                                     f"{os.path.relpath(doc, root)}"))
+        for doc in (d for docs in submodule_docs.values() for d in docs):
+            if os.path.normpath(doc) in rolled:
+                found.append(Finding(os.path.relpath(architecture, root), 0,
+                                     f"implementation status carries a sub-module row for "
+                                     f"{os.path.relpath(doc, root)}; only the top-level module "
+                                     f"appears here, the sub-module in the module subdirectory"))
     return found
 
 

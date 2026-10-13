@@ -90,12 +90,13 @@ not required for procedural flows.
 
 <!--
 Status is one of Implemented / Partially implemented / Not implemented.
-Partially implemented must name what is missing. Every entry carries a code
-anchor: path plus symbol name, never a line number.
+State the status and nothing more -- no explanation, no list of what is
+missing. Every entry that claims implementation carries a code anchor:
+path plus symbol name, never a line number.
 -->
 
 | Capability | Status | Code |
 |---|---|---|
 | <capability> | Implemented | `path/to/file.go` `SymbolName` |
-| <capability> | Partially implemented — <what is missing> | `path/to/file.go` `SymbolName` |
+| <capability> | Partially implemented | `path/to/file.go` `SymbolName` |
 | <capability> | Not implemented | — |

@@ -70,11 +70,16 @@ against, so each one is stated so that a violation is recognizable.>
 ## Implementation Status
 
 <!--
-One line per module, linking to that module's document. Roll-up only: the
-module document is authoritative and holds the detail. Status is one of
+One line per top-level module, linking to that module's own document.
+Roll-up only: the module document is authoritative and holds the detail,
+and a module whose sub-modules have their own documents rolls them up in
+its subdirectory's README.md. A sub-module never gets a row here.
+
+State the status and nothing more. Status is one of
 Implemented / Partially implemented / Not implemented.
 -->
 
 | Module | Status |
 |---|---|
 | [<module-name>](modules/design-<slug>.md) | Implemented |
+| [<module-name>](modules/<slug>/design-<slug>.md) | Implemented |

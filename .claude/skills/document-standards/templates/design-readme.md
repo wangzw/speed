@@ -6,8 +6,11 @@ The introduction says what the system is and what it is for. It does NOT
 summarize the architecture -- architecture.md does that, and two summaries
 drift apart.
 
-The index covers every file in the tree, each appearing exactly once. A file
-missing from the index is an orphan, and an orphan is an error.
+The index covers each entry point exactly once: architecture.md, every
+module document directly under modules/, and the README.md of every module
+subdirectory. A missing entry is an orphan, and an orphan is an error. A
+glossary link is conventional. A module subdirectory's own README.md
+indexes that module's files and carries the sub-module status roll-up.
 
 Implementation status does NOT belong here. The roll-up lives in
 architecture.md, the detail in each module document.
@@ -27,3 +30,4 @@ architecture.md, the detail in each module document.
 | Module | Document |
 |---|---|
 | `<module-name>` | [<module-name>](modules/design-<slug>.md) |
+| `<module-name>` | [<module-name>](modules/<slug>/README.md) |

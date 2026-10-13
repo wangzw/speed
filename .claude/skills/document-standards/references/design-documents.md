@@ -10,12 +10,18 @@ Read together with `SKILL.md`, whose common rules apply in full and are not repe
 
 ```
 docs/design/                        # relocatable via CLAUDE.md
-├── README.md                       # entry point: brief introduction + complete index
+├── README.md                       # entry point: brief introduction + index of entry points
 ├── architecture.md                 # high-level overview
 └── modules/
-    ├── design-<slug>.md
-    └── design-<slug>-<aspect>.md   # only when a module document grows unwieldy
+    ├── design-<slug>.md            # a module with a single document
+    ├── design-<slug>-<aspect>.md   # only when a module document grows unwieldy
+    └── <slug>/                      # a module whose sub-modules have their own documents
+        ├── README.md               # the module's index and sub-module status roll-up
+        ├── design-<slug>.md        # the module's own document
+        └── design-<slug>-<sub>.md  # one document per sub-module
 ```
+
+The two forms mix freely in one tree; a tree does not pick one. A module that fits in a single document stays flat beside `design-<slug>.md`; a module whose sub-modules each carry their own document is placed in a subdirectory, so its sub-modules are not read as siblings of unrelated modules.
 
 The glossary is **not** part of this tree. The project has one glossary, shared by every document type, at the configured `glossary` path, and it holds only terms that hold project-wide. A term bounded by one module is registered in that module's own document, not there.
 
@@ -25,18 +31,23 @@ The glossary is **not** part of this tree. The project has one glossary, shared 
 - A slug is lowercase kebab-case, ASCII only, and **matches the module's directory or package name in the code**, so the document-to-code mapping is mechanical.
 - **A slug is permanent.** Renaming breaks every link that points at it.
 - One document per real module boundary in the code. A unit with no external interface contract of its own is folded into its parent module's document, not given a file.
-- An oversized module document may split by aspect into `design-<slug>-<aspect>.md`, still with no sequence number. The parent slug stays the prefix.
+- An oversized module document may split by aspect into `design-<slug>-<aspect>.md`, still with no sequence number. The parent slug stays the prefix. **An aspect split is not a sub-module**: it stays flat beside `design-<slug>.md`, and a module subdirectory holds sub-modules. The two use the same `design-<slug>-<x>.md` shape, so the position is what tells them apart.
+- **A module subdirectory is named for the module's slug, is permanent like the slug, and holds the module's own document `design-<slug>.md` plus one `design-<slug>-<sub>.md` per sub-module that has its own document.** The parent slug is the prefix of every file inside. **A module subdirectory carries a `README.md`** — the module's index and its sub-module status roll-up (section 2).
 
 ## 2. `README.md`
 
-A brief introduction to the system, then the index.
+The design tree has two kinds of index: the tree's own `README.md`, and the `README.md` of each module subdirectory. Both are a brief introduction followed by the index.
 
-**Required:**
-- **The index covers every file in the tree, each appearing exactly once.** A file absent from the index is an orphan, and an orphan is an error.
+**The tree's `README.md`** — the entry point:
+- **The index covers each entry point exactly once**: `architecture.md`, every module document directly under `modules/`, and the `README.md` of every module subdirectory. A file of the tree's own level absent from the index is an orphan, and an orphan is an error. A glossary link is conventional — the glossary sits outside the tree and is not part of the covered set.
 - The introduction states what the system is and what it is for. It does not summarize the architecture — `architecture.md` does that, and two summaries drift.
 - Implementation status does not appear here. The roll-up belongs to `architecture.md`.
 
-Template: `templates/design-readme.md`.
+**A module subdirectory's `README.md`** — the module's index, the entry the tree's index links to:
+- **The index covers every file in the subdirectory but itself, each appearing exactly once.**
+- It carries the sub-module **Implementation Status** roll-up (section 6): one row per sub-module document, linking to it. The module's own status does not repeat here — `architecture.md` already carries it.
+
+Templates: `templates/design-readme.md` and `templates/design-module-index.md`.
 
 ## 3. `architecture.md`
 
@@ -48,7 +59,7 @@ The high-level view of the whole system.
 - **Logical deployment architecture** — mandatory diagram.
 - **Cross-cutting design** — the concerns no single module owns: error model, authentication and authorization boundaries, data consistency and transaction boundaries, concurrency model, failure and degradation behaviour, observability, performance and capacity targets, security boundaries. **The criterion is the phrase before the list, not the list.** A concern no single module owns earns a heading whether or not it is named above; a named one that genuinely does not exist in the system is omitted. These are the concerns most systems have, not a set to be satisfied.
 - **Architecture invariants** — the rules the system must not violate, for example a strictly bottom-up dependency direction. These are what a review can actually adjudicate against, so each is stated so that a violation is recognizable.
-- **Implementation status** — one line per module, linking to that module's document. Roll-up only; detail lives in the module document.
+- **Implementation status** — one line per top-level module, linking to that module's own document (`modules/design-<slug>.md`, or `modules/<slug>/design-<slug>.md`). Roll-up only; the detail lives in the module document, and a module's sub-modules in its subdirectory's `README.md`. **A sub-module never appears here** — listing one here duplicates the roll-up its subdirectory already carries.
 
 **Conditional sections** — include when the trigger holds, delete outright otherwise:
 - **Physical deployment architecture** — when the system runs as more than one process or replica.
@@ -73,6 +84,8 @@ Fixed section order, so modules can be read against each other and checked mecha
 10. **Extension points** — when applicable.
 11. **Implementation status**.
 
+The fixed order binds every module document, whether it sits flat under `modules/` or inside a module subdirectory. A sub-module document is a module document like any other and carries the whole order. The `README.md` of a module subdirectory is an index, not a module document, and follows section 2 instead.
+
 Template: `templates/design-module.md`.
 
 ## 5. Diagrams
@@ -89,9 +102,9 @@ The fastest-rotting content in any design document, and therefore the most tight
 
 **Required:**
 - The value is one of exactly `Implemented`, `Partially implemented`, `Not implemented`, rendered in the document's language with consistent wording. **DO NOT** write vague states such as `mostly complete` or `basically working`.
-- **`Partially implemented` must name what is missing.** Without that, the entry carries no information.
-- Every entry carries a **code anchor: path plus symbol name, no line number**. A status is an assertion falsifiable against the code, not an impression.
-- **The module document is authoritative for its own module**; `architecture.md` carries one roll-up line per module. The same fact written out in detail twice will drift.
+- **An entry states the status and nothing else.** It does not explain the state, name what is missing, list what remains, or say where the rest has landed — one status word per entry, no trailing clause. An explanation is a second assertion about the code, and it rots on its own schedule: correcting the status edits one word, while an explanation written beside it survives the correction and is read as fact long after it stopped being one.
+- Every entry that claims implementation carries a **code anchor: path plus symbol name, no line number**. A status is an assertion falsifiable against the code, not an impression.
+- **Each document is authoritative for its own status, and the roll-up above it links down.** A module document rolls up no sub-module; `architecture.md` carries one line per top-level module; a module whose sub-modules have their own documents carries their roll-up in that module subdirectory's `README.md` (section 1). Detail appears once, in the document it belongs to; the same fact written twice will drift.
 
 `Partially implemented` exists here and **does not exist in a requirements document**. The two document types look at the system from different places: a design document is the implementation view, where partial implementation is a real and informative state; a requirements document is the outside view, where it is not.
 
@@ -110,6 +123,7 @@ The fastest-rotting content in any design document, and therefore the most tight
 The common checklist in `SKILL.md` applies as well.
 
 - [ ] File name matches `design-<slug>`, with no sequence number; the slug matches the module's name in the code
+- [ ] A module whose sub-modules have their own documents lives in a `modules/<slug>/` subdirectory, with its own `design-<slug>.md` and a `README.md`
 - [ ] No alternatives or rationale — ADR referenced by id instead
 - [ ] Every diagram is Mermaid and carries prose
 - [ ] No diagram drawn to fill a template slot
@@ -117,7 +131,7 @@ The common checklist in `SKILL.md` applies as well.
 - [ ] Module document follows the fixed section order, including non-responsibilities
 - [ ] External interface contract states what is callable and what stability is promised
 - [ ] Complexity analysis present for every performance-sensitive algorithm
-- [ ] Every implementation-status entry has a code anchor and, if partial, names what is missing
-- [ ] Status detail appears only in the module document; `architecture.md` carries one line per module
-- [ ] Every file appears in the README index exactly once
+- [ ] Every implementation-status entry that claims implementation has a code anchor, and the entry states the status and no explanation
+- [ ] Status detail appears only in the document it belongs to; `architecture.md` carries one line per top-level module, a module subdirectory's `README.md` one line per sub-module
+- [ ] Every entry point appears in the tree's README index exactly once; every file appears in its module subdirectory's README index exactly once
 - [ ] `scripts/check_documents.py` was run and exits 0

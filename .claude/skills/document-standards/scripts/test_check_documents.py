@@ -286,6 +286,12 @@ class DesignTreeTests(CheckerCase):
                          DESIGN_README + "| [core again](modules/design-core.md) | again |\n"},
                         "more than once")
 
+    def test_tree_index_missing_the_architecture_row(self):
+        self.assert_red({"docs/design/README.md":
+                         DESIGN_README.replace(
+                             "| [Architecture](architecture.md) | shape and invariants |\n", "")},
+                        "absent from the design index")
+
     def test_sequence_number_in_file_name(self):
         self.assert_red({"docs/design/modules/design-core.md": None,
                          "docs/design/modules/design-01-core.md": MODULE,
@@ -354,22 +360,120 @@ class DesignTreeTests(CheckerCase):
                                 "| registration | Implemented | — |")
         self.assert_red({"docs/design/modules/design-core.md": broken}, "no code anchor")
 
-    def test_partial_without_naming_what_is_missing(self):
-        broken = MODULE.replace(
-            "| registration | Not implemented | — |",
-            "| registration | Partially implemented | `registry.go` `Register` |")
-        self.assert_red({"docs/design/modules/design-core.md": broken},
-                        "names nothing that is missing")
-
-    def test_partial_naming_what_is_missing_passes(self):
+    def test_partial_status_with_a_code_anchor_passes(self):
         self.assert_green({"docs/design/modules/design-core.md": MODULE.replace(
             "| registration | Not implemented | — |",
-            "| registration | Partially implemented — no removal path | "
-            "`registry.go` `Register` |")})
+            "| registration | Partially implemented | `registry.go` `Register` |")})
 
     def test_roll_up_missing_a_module(self):
         broken = ARCHITECTURE.replace("| [core](modules/design-core.md) | Not implemented |\n", "")
         self.assert_red({"docs/design/architecture.md": broken}, "has no row for")
+
+
+SUBDIR_FILES = dict(BASELINE)
+SUBDIR_FILES["docs/design/README.md"] = """# Widget System
+
+A system that does one thing.
+
+## Index
+
+| Document | Content |
+|---|---|
+| [Architecture](architecture.md) | shape and invariants |
+| [core](modules/design-core.md) | registration and lifecycle |
+| [api](modules/api/README.md) | the api module and its sub-modules |
+"""
+SUBDIR_FILES["docs/design/architecture.md"] = ARCHITECTURE.replace(
+    "| [core](modules/design-core.md) | Not implemented |",
+    "| [core](modules/design-core.md) | Not implemented |\n"
+    "| [api](modules/api/design-api.md) | Not implemented |")
+SUBDIR_FILES["docs/design/modules/api/README.md"] = """# api
+
+The api module.
+
+## Index
+
+| Document | Content |
+|---|---|
+| [api](design-api.md) | the module itself |
+| [api-gate](design-api-gate.md) | the gate sub-module |
+
+## Implementation Status
+
+| Sub-module | Status |
+|---|---|
+| [api-gate](design-api-gate.md) | Not implemented |
+"""
+SUBDIR_FILES["docs/design/modules/api/design-api.md"] = MODULE.replace("# core", "# api")
+SUBDIR_FILES["docs/design/modules/api/design-api-gate.md"] = MODULE.replace("# core", "# api-gate")
+
+
+class ModuleSubdirectoryTests(CheckerCase):
+    def test_conforming_subdirectory_tree_passes(self):
+        self.assert_green(base=SUBDIR_FILES)
+
+    def test_architecture_row_for_a_sub_module(self):
+        broken = SUBDIR_FILES["docs/design/architecture.md"].replace(
+            "| [api](modules/api/design-api.md) | Not implemented |",
+            "| [api](modules/api/design-api.md) | Not implemented |\n"
+            "| [api-gate](modules/api/design-api-gate.md) | Not implemented |")
+        self.assert_red({"docs/design/architecture.md": broken},
+                        "carries a sub-module row", base=SUBDIR_FILES)
+
+    def test_missing_sub_module_status_row(self):
+        broken = SUBDIR_FILES["docs/design/modules/api/README.md"].replace(
+            "| [api-gate](design-api-gate.md) | Not implemented |\n", "")
+        self.assert_red({"docs/design/modules/api/README.md": broken},
+                        "sub-module status has no row for", base=SUBDIR_FILES)
+
+    def test_module_subdirectory_index_without_an_index_section(self):
+        broken = SUBDIR_FILES["docs/design/modules/api/README.md"].replace("## Index", "## Contents")
+        self.assert_red({"docs/design/modules/api/README.md": broken},
+                        "no 'Index' section", base=SUBDIR_FILES)
+
+    def test_document_without_the_module_slug_prefix(self):
+        files = dict(SUBDIR_FILES)
+        files["docs/design/modules/api/design-gate.md"] = MODULE.replace("# core", "# gate")
+        files["docs/design/modules/api/design-api-gate.md"] = None
+        files["docs/design/modules/api/README.md"] = (
+            SUBDIR_FILES["docs/design/modules/api/README.md"]
+            .replace("design-api-gate.md", "design-gate.md"))
+        self.assert_red(files, "does not match design-api")
+
+    def test_module_subdirectory_without_its_own_document(self):
+        files = dict(SUBDIR_FILES)
+        files["docs/design/modules/api/design-api.md"] = None
+        files["docs/design/modules/api/README.md"] = (
+            SUBDIR_FILES["docs/design/modules/api/README.md"]
+            .replace("| [api](design-api.md) | the module itself |\n", ""))
+        files["docs/design/architecture.md"] = ARCHITECTURE.replace(
+            "| [core](modules/design-core.md) | Not implemented |",
+            "| [core](modules/design-core.md) | Not implemented |\n"
+            "| [api](modules/api/design-api.md) | Not implemented |")
+        self.assert_red(files, "has no design-api.md")
+
+    def test_orphan_inside_a_module_subdirectory(self):
+        files = dict(SUBDIR_FILES)
+        files["docs/design/modules/api/design-api-extra.md"] = MODULE.replace("# core", "# extra")
+        self.assert_red(files, "absent from the module index")
+
+    def test_document_name_beyond_the_slug_prefix(self):
+        files = dict(SUBDIR_FILES)
+        files["docs/design/modules/api/design-apix.md"] = MODULE.replace("# core", "# apix")
+        self.assert_red(files, "does not match design-api")
+
+    def test_sub_module_status_row_for_the_module_itself(self):
+        broken = SUBDIR_FILES["docs/design/modules/api/README.md"].replace(
+            "| [api-gate](design-api-gate.md) | Not implemented |",
+            "| [api-gate](design-api-gate.md) | Not implemented |\n"
+            "| [api](design-api.md) | Not implemented |")
+        self.assert_red({"docs/design/modules/api/README.md": broken},
+                        "module's own document", base=SUBDIR_FILES)
+
+    def test_module_index_heading_in_the_other_language(self):
+        broken = SUBDIR_FILES["docs/design/modules/api/README.md"].replace("## Index", "## 索引")
+        self.assert_red({"docs/design/modules/api/README.md": broken},
+                        "is written in zh-CN", base=SUBDIR_FILES)
 
 
 class AdrTreeTests(CheckerCase):

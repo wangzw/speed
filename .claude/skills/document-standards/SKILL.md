@@ -145,7 +145,8 @@ whether a non-functional number is sourced, whether a rejected option's reason i
 real, whether a requirement is testable, whether a word deserves a glossary entry
 at all and whether it belongs to the project glossary or to a local one, whether a
 normative sentence's literal scope is the one intended, whether a list is meant as
-a criterion or as an exhaustive set, and
+a criterion or as an exhaustive set, whether a status entry carries an explanation
+it should not, and
 whether a document still matches the code it asserts things about. It also does not render diagrams: it checks that a
 mermaid block has a type and a body, while the rendering rule in section 2 stays a
 step performed during the edit.
