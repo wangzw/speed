@@ -31,6 +31,7 @@ import (
 
 	"gorm.io/gorm"
 
+	"github.com/vislake/speed/pkg/audit"
 	"github.com/vislake/speed/pkg/authn"
 	"github.com/vislake/speed/pkg/authn/internal/clock"
 	"github.com/vislake/speed/pkg/authn/internal/mount"
@@ -39,6 +40,7 @@ import (
 	"github.com/vislake/speed/pkg/db"
 	"github.com/vislake/speed/pkg/event"
 	"github.com/vislake/speed/pkg/log"
+	"github.com/vislake/speed/pkg/settings"
 )
 
 // ModuleName is this module's name in the registry. A host writes it into the
@@ -95,8 +97,11 @@ var _ authn.SSOProviders = (*product)(nil)
 //
 // The database and the mounter are required, and each is delivered exclusively
 // by another module, so a command that names this one without them fails in
-// resolution. The event bus and the logging capability are taken up in Init,
-// each with a stated behaviour for its absence, so neither is declared.
+// resolution. The settings store is required as optional only so that it is
+// initialised before this one and its snapshot is loaded when Init subscribes to
+// the settings change event; the event bus, the audit capability and the logging
+// capability are taken up in Init, each with a stated behaviour for its absence,
+// which is a legal assembly.
 //
 // SSOProviders is delivered exclusively and the stance is StateEnabled and never
 // StateAuto: an exclusive provider that states StateAuto is the cell resolution
@@ -107,6 +112,7 @@ func Module() core.Module {
 		Requires: []core.Requirement{
 			{Token: (*db.Database)(nil)},
 			{Token: (*mount.Mounter)(nil)},
+			{Token: (*settings.Store)(nil), Optional: true},
 		},
 		Provides: []core.Provision{
 			{Token: (*authn.SSOProviders)(nil), Exclusive: true},
@@ -193,7 +199,9 @@ type product struct {
 	reader config.Reader
 
 	// What Init takes up. They are read-only after Init.
+	store  settings.Store
 	bus    event.Bus
+	audit  audit.Audit
 	logger *slog.Logger
 
 	// lookup resolves the TXT records of a name. It defaults to the system
@@ -263,17 +271,24 @@ func systemLookup(ctx context.Context, name string) ([]string, error) {
 }
 
 // wire runs in Init, where every instance exists: it takes up the optional
-// capabilities, writes the startup diagnostics and registers the discovery
-// route.
+// capabilities, subscribes to the settings change event when both the event bus
+// and the settings store are present, writes the startup diagnostics and
+// registers the discovery route.
 func (p *product) wire(reg *core.Registry) error {
 	if delivered, err := core.Resolve[log.Logger](reg); err == nil {
 		p.logger = delivered.Named(ModuleName)
 	}
-	bus, err := optional[event.Bus](reg, "the event bus")
-	if err != nil {
+	var err error
+	if p.store, err = optional[settings.Store](reg, "the settings store"); err != nil {
 		return err
 	}
-	p.bus = bus
+	if p.bus, err = optional[event.Bus](reg, "the event bus"); err != nil {
+		return err
+	}
+	if p.audit, err = optional[audit.Audit](reg, "the audit capability"); err != nil {
+		return err
+	}
+	p.subscribe()
 
 	p.diagnose()
 	p.mountRoutes()

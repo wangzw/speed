@@ -68,6 +68,12 @@ The API is the package's godoc.
   The claim names, the `typ` value, the routes, the two token prefixes and the
   JWKS content type are written down by a reader outside the module; a change to
   one is a breaking change.
+- **A setting moved toward more lenient is visible after the fact, never
+  blocked.** The subscription to `settings.changed` writes a `Warn` and a
+  best-effort `authn.settings.relaxed` audit row naming the key and the
+  direction and no value; the settings it watches are `access-ttl`, `leeway`,
+  `refresh-idle-ttl` and `refresh-grace`, each relaxing in the `increase`
+  direction (`relax.go`, `TestEachWatchedSettingThatRelaxesWritesAWarnAndAnAuditRow`).
 
 ## Running it
 

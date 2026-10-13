@@ -7,6 +7,7 @@ import (
 	"github.com/vislake/speed/pkg/authn"
 	"github.com/vislake/speed/pkg/core"
 	"github.com/vislake/speed/pkg/event"
+	"github.com/vislake/speed/pkg/settings"
 )
 
 // TestAnEventIsActedOnOnce holds the deduplication the events design requires: a
@@ -39,8 +40,10 @@ func TestAnEventIsActedOnOnce(t *testing.T) {
 // TestWireRegistersTheCacheClearingSubscriptions holds the module wiring: Init
 // (wire) subscribes the handlers that drop the verifying backend's caches, so a
 // revocation a replica hears of clears the entry at once instead of at the end of
-// check-ttl. Without the call from wire the bus carries no handler and the caches
-// only ever lapse.
+// check-ttl, and the handler that makes a relaxing settings change visible. It
+// subscribes the settings watch because the rig carries both a bus and a store.
+// Without the call from wire the bus carries no handler and the caches only ever
+// lapse.
 func TestWireRegistersTheCacheClearingSubscriptions(t *testing.T) {
 	r := newRig(t)
 	if err := r.p.wire(core.New()); err != nil {
@@ -55,6 +58,7 @@ func TestWireRegistersTheCacheClearingSubscriptions(t *testing.T) {
 		authn.EventAccountStatusChanged,
 		authn.EventAccountDeleted,
 		authn.EventImpersonationEnded,
+		settings.ChangedEventType,
 	}
 	if len(got) != len(want) {
 		t.Errorf("wire registered %d subscriptions, want %d", len(got), len(want))

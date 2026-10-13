@@ -10,6 +10,7 @@ import (
 
 	"github.com/vislake/speed/pkg/authn"
 	"github.com/vislake/speed/pkg/event"
+	"github.com/vislake/speed/pkg/settings"
 )
 
 func TestAccountDeletedHasEveryFactorCleanItsDataAndRemovesTheRows(t *testing.T) {
@@ -108,8 +109,8 @@ func deleted(id string, account authn.AccountID) event.Event {
 func TestTheDeletionEventCompensatesAndIsDeduplicatedByItsID(t *testing.T) {
 	onEachDialect(t, []authn.FactorKind{authn.FactorTOTP}, func(t *testing.T, r *rig) {
 		ctx := context.Background()
-		if types := r.bus.subscribedTypes(); !slices.Equal(types, []string{authn.EventAccountDeleted}) {
-			t.Fatalf("the module subscribed to %v, want the account deletion alone", types)
+		if types := r.bus.subscribedTypes(); !slices.Contains(types, authn.EventAccountDeleted) || !slices.Contains(types, settings.ChangedEventType) {
+			t.Fatalf("the module subscribed to %v, want the account deletion and the settings change", types)
 		}
 		first := r.activeFactor(acct, authn.FactorTOTP, time.Hour)
 		if err := r.bus.deliver(ctx, deleted("evt-1", acct)); err != nil {

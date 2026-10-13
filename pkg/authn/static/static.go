@@ -30,11 +30,13 @@ import (
 	"sync"
 	"time"
 
+	"github.com/vislake/speed/pkg/audit"
 	"github.com/vislake/speed/pkg/authn"
 	"github.com/vislake/speed/pkg/authn/internal/clock"
 	"github.com/vislake/speed/pkg/authn/internal/password"
 	"github.com/vislake/speed/pkg/config"
 	"github.com/vislake/speed/pkg/core"
+	"github.com/vislake/speed/pkg/event"
 	"github.com/vislake/speed/pkg/log"
 	"github.com/vislake/speed/pkg/settings"
 )
@@ -83,6 +85,14 @@ type backend struct {
 	// every setting reads as its declared default. It is taken up in Init and
 	// read-only afterwards.
 	store settings.Store
+	// bus is the event bus, nil when the assembly has none, in which case a
+	// setting moved to a more permissive value is not watched. It is taken up in
+	// Init and read-only afterwards.
+	bus event.Bus
+	// audit is the audit seam, nil when the assembly has none, in which case a
+	// relaxed setting is a Warn and only that. It is taken up in Init and
+	// read-only afterwards.
+	audit audit.Audit
 	// logger is where the diagnostics go.
 	logger *slog.Logger
 
@@ -118,13 +128,21 @@ func init() { core.ProcessRegistry.Register(Module()) }
 // missing section is still a startup failure but one construction later, after
 // the modules ordered before this one have already been built.
 //
-// The settings store and the logging capability are taken up in Init, where every
-// instance already exists, and neither is required: without the store the four
-// settings read as their declared defaults, and without logging the diagnostics
-// go to the process default logger.
+// The settings store, the logging capability, the event bus and the audit
+// capability are taken up in Init, where every instance already exists, and none
+// is required: without the store the four settings read as their declared
+// defaults, without logging the diagnostics go to the process default logger,
+// and without the bus or the audit a setting moved to a more permissive value is
+// not reported. The event bus and the audit are declared as optional
+// requirements so that a command naming a provider of either initialises it
+// before this backend; an optional requirement nothing delivers adds nothing.
 func Module() core.Module {
 	return core.Module{
-		Name:      ModuleName,
+		Name: ModuleName,
+		Requires: []core.Requirement{
+			{Token: (*event.Bus)(nil), Optional: true},
+			{Token: (*audit.Audit)(nil), Optional: true},
+		},
 		Provides:  []core.Provision{{Token: (*authn.Verifier)(nil)}},
 		Resources: []any{schema(), settingsSchema()},
 
@@ -234,9 +252,11 @@ func newBackend(cfg resolved) *backend {
 }
 
 // wire takes up what is optional and writes the startup diagnostics: the
-// settings store, the logger, a line for each entry the table holds that is
-// written the old way or below what OWASP recommends, and a line for each set of
-// names that share one back-off.
+// settings store, the event bus, the audit seam, the logger, a line for each
+// entry the table holds that is written the old way or below what OWASP
+// recommends, and a line for each set of names that share one back-off. It also
+// subscribes to the settings change event when both the bus and the store are
+// present.
 func (b *backend) wire(reg *core.Registry) error {
 	store, err := core.Resolve[settings.Store](reg)
 	switch {
@@ -247,6 +267,25 @@ func (b *backend) wire(reg *core.Registry) error {
 		// declared defaults.
 	default:
 		return fmt.Errorf("%s: taking up the settings store: %w", ModuleName, err)
+	}
+	bus, err := core.Resolve[event.Bus](reg)
+	switch {
+	case err == nil:
+		b.bus = bus
+	case errors.Is(err, core.ErrMissingProvider):
+		// No bus in this assembly: a setting moved to a more permissive value
+		// is not watched.
+	default:
+		return fmt.Errorf("%s: taking up the event bus: %w", ModuleName, err)
+	}
+	seam, err := core.Resolve[audit.Audit](reg)
+	switch {
+	case err == nil:
+		b.audit = seam
+	case errors.Is(err, core.ErrMissingProvider):
+		// No audit in this assembly: a relaxed setting is a Warn and only that.
+	default:
+		return fmt.Errorf("%s: taking up the audit capability: %w", ModuleName, err)
 	}
 	if delivered, err := core.Resolve[log.Logger](reg); err == nil {
 		b.logger = delivered.Named(ModuleName)
@@ -279,6 +318,12 @@ func (b *backend) wire(reg *core.Registry) error {
 			"so failed attempts against one of them hold the others back too. The table is read "+
 			"as it is",
 			slog.String("entries", strings.Join(group, ",")))
+	}
+	// A change to one of this module's settings is watched only when both the
+	// bus that carries the event and the store the change is about are present:
+	// without either there is nothing to hear, or nothing this backend reads.
+	if b.bus != nil && b.store != nil {
+		b.bus.Subscribe(settings.ChangedEventType, b.onSettingsChanged)
 	}
 	return nil
 }

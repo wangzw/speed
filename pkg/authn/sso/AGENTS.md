@@ -75,6 +75,12 @@ The API is the package's godoc. Read the `SSOProviders` comments in
   `authn.idp.changed` after the commit, and a domain verification, withdrawal or
   removal publishes its own change; a publication that fails is a `Warn` and never
   fails the write (`publishChange`, `TestPutAndDeletePublishTheChange`).
+- **A setting moved toward more lenient is visible after the fact, never
+  blocked.** The subscription to `settings.changed` writes a `Warn` and a
+  best-effort `authn.settings.relaxed` audit row naming the key and the
+  direction and no value; the one setting it watches is `assertion-max-age`,
+  relaxing in the `increase` direction (`relax.go`,
+  `TestARelaxingChangeWritesAWarnAndAnAuditRow`).
 
 ## Running it
 

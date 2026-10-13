@@ -76,6 +76,13 @@ does.
   `authn.gate.mount.base-path` on the endpoint `authn.gate.mount.endpoint`; the
   flow cookie is `SameSite=None` so that a SAML POST navigation still carries it,
   and the `__Host-` prefix is dropped only under `allow-insecure`.
+- **A setting moved toward more lenient is visible after the fact, never
+  blocked.** The subscription to `settings.changed` writes a `Warn` and a
+  best-effort `authn.settings.relaxed` audit row naming the key and the
+  direction and no value; the settings it watches are `flow-ttl` in the
+  `increase` direction, `disabled-methods` in `remove-member`, `delivery-modes`
+  in `add-member` and `ip-limit` in `to-zero` (`relax.go`,
+  `TestARelaxingChangeWritesAWarnAndAnAuditRow`).
 
 ## How to run it
 

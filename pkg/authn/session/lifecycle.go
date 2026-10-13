@@ -13,6 +13,7 @@ import (
 
 	"github.com/vislake/speed/pkg/authn"
 	"github.com/vislake/speed/pkg/event"
+	"github.com/vislake/speed/pkg/settings"
 )
 
 // recentEventsCapacity is how many event identifiers are remembered to tell a
@@ -88,7 +89,8 @@ func (p *product) count(ctx context.Context, operation string) {
 		metric.WithAttributes(attribute.String(operationAttribute, operation)))
 }
 
-// subscribe registers the handlers of the four events this module reads. The
+// subscribe registers the handlers of the four events this module reads, and the
+// settings change it watches when the assembly carries a settings store. The
 // subscriptions are made in Init and their types are static. A handler clears
 // caches and repeats a cleanup that is idempotent, so a second delivery, an
 // earlier one that was lost and a different order all leave the same state.
@@ -100,6 +102,12 @@ func (p *product) subscribe() {
 	p.bus.Subscribe(authn.EventImpersonationEnded, p.once(p.onImpersonationEnded))
 	p.bus.Subscribe(authn.EventAccountStatusChanged, p.once(p.onAccountStatusChanged))
 	p.bus.Subscribe(authn.EventAccountDeleted, p.once(p.onAccountDeleted))
+	// A settings change is watched only when there is a settings store to have
+	// published it: without one every setting reads as its declared default and
+	// there is no change to see.
+	if p.settings.store != nil {
+		p.bus.Subscribe(settings.ChangedEventType, p.onSettingsChanged)
+	}
 }
 
 // once wraps a handler so that an event is acted on once: the identifier is

@@ -9,6 +9,7 @@ import (
 
 	"github.com/vislake/speed/pkg/authn"
 	"github.com/vislake/speed/pkg/event"
+	"github.com/vislake/speed/pkg/settings"
 )
 
 // seenCapacity is how many event identifiers the compensation remembers. The bus
@@ -54,12 +55,19 @@ func (s *seenEvents) mark(id string) {
 	}
 }
 
-// subscribe registers the compensation for the account deletion: the event that
-// follows a deletion has this module clean the account's factors again, which
-// finishes what a hook that failed left. It runs in Init, where the bus accepts
-// subscriptions.
+// subscribe registers the compensation for the account deletion and the
+// relaxation monitor: the event that follows a deletion has this module clean
+// the account's factors again, which finishes what a hook that failed left, and
+// a settings change that moves a watched setting to a more permissive value is
+// made visible after the fact. It runs in Init, where the bus accepts
+// subscriptions. The settings subscription is made only when the assembly also
+// has a settings store: without one no setting changes, so there is nothing to
+// watch and the handler is not wired.
 func (m *product) subscribe(bus event.Bus) {
 	bus.Subscribe(authn.EventAccountDeleted, m.onAccountDeleted)
+	if m.settings.store != nil {
+		bus.Subscribe(settings.ChangedEventType, m.onSettingsChanged)
+	}
 }
 
 // onAccountDeleted is the handler of the compensation. It cleans the account in

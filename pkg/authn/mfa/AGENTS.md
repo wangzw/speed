@@ -178,6 +178,12 @@ dashboard or an audit query written against it.
 - **The callbacks act on this module's own product and on nothing else.**
   `productOf` recognises the one type this package builds; an instance a host
   supplied for the module is left alone (`productOf`).
+- **A setting moved toward more lenient is visible after the fact, never
+  blocked.** The subscription to `settings.changed` writes a `Warn` and a
+  best-effort `authn.settings.relaxed` audit row naming the key and the
+  direction and no value; the settings it watches are `global-required` in the
+  `to-false` direction, `recent-window` in `increase` and `sensitive-min-age` in
+  `decrease` (`relax.go`, `TestARelaxingChangeWritesAWarnAndAnAuditRow`).
 
 ## Running it
 

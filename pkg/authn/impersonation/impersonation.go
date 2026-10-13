@@ -254,6 +254,8 @@ func (m *product) wire(reg *core.Registry) error {
 		}
 	}
 
+	m.subscribeSettings(m.bus)
+
 	m.mountRoutes()
 	return nil
 }

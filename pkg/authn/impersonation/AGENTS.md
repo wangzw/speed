@@ -74,6 +74,12 @@ The API is the package's godoc.
 - **A new end reason, a new carrier, or another writer of the table** belongs
   in this module only as a deliberate change, because the closed set of end
   reasons is a promise to the session and token modules and to the host.
+- **A setting moved toward more lenient is visible after the fact, never
+  blocked.** The subscription to `settings.changed` writes a `Warn` and a
+  best-effort `authn.settings.relaxed` audit row naming the key and the
+  direction and no value; the settings it watches are `max-ttl` and
+  `max-auth-age`, each relaxing in the `increase` direction (`relax.go`,
+  `TestARelaxingChangeWritesAWarnAndAnAuditRow`).
 
 ## Running it
 

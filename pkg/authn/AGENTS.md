@@ -276,6 +276,14 @@ field comments before writing a backend.
   derivation goes in beside the two under an algorithm name of its own.
   `TestTheStoredFormatIsTheOneTheDesignStates` holds the format in literals, and
   a change that has to edit those literals is the shape to reject.
+- **The static backend reports a setting moved toward lenient, after the fact.**
+  `pkg/authn/static/relax.go` subscribes to `settings.changed` only when both
+  the event bus and the settings store are present, and a change of
+  `free-attempts` upward, `fail-window` downward or `max-backoff` downward
+  writes one `Warn` carrying the setting key and the direction and one
+  best-effort `authn.settings.relaxed` audit row, never a value; with either
+  absent the subscription is silent. The same shape is in every module that
+  holds such a setting. `TestARelaxingChangeWritesAWarnAndAnAuditRow` holds it.
 - **`authntest` is for tests.** Its exported surface is `Context` and `Anonymous`,
   which build the context a gateway would have left, with the options that name
   the fields of the identity and the access level (`WithChallenge` among them),

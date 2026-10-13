@@ -4,6 +4,7 @@ import (
 	"context"
 	"testing"
 
+	"github.com/vislake/speed/pkg/audit"
 	"github.com/vislake/speed/pkg/authn"
 	"github.com/vislake/speed/pkg/authn/authntest"
 	"github.com/vislake/speed/pkg/authn/gate"
@@ -101,20 +102,27 @@ func TestTheModuleDeliversItsThreeCapabilities(t *testing.T) {
 	}
 }
 
-// The descriptor states what the design states: three required capabilities, three
-// provisions with the session store exclusive, and the enabled stance.
+// The descriptor states what the design states: three required capabilities and
+// one optional (the audit seam, taken up in Init), three provisions with the
+// session store exclusive, and the enabled stance.
 func TestTheDescriptorStatesWhatTheDesignStates(t *testing.T) {
 	m := Module()
 	if m.Name != ModuleName || ModuleName != "authn.session" {
 		t.Errorf("the module is named %q (constant %q), want authn.session", m.Name, ModuleName)
 	}
-	wantRequires := []core.Token{(*db.Database)(nil), (*mount.Mounter)(nil), (*authn.Accounts)(nil)}
-	if len(m.Requires) != len(wantRequires) {
-		t.Fatalf("Requires = %+v, want three", m.Requires)
+	wantRequired := []core.Token{(*db.Database)(nil), (*mount.Mounter)(nil), (*authn.Accounts)(nil)}
+	wantOptional := []core.Token{(*audit.Audit)(nil)}
+	if len(m.Requires) != len(wantRequired)+len(wantOptional) {
+		t.Fatalf("Requires = %+v, want three required and one optional", m.Requires)
 	}
-	for i, want := range wantRequires {
+	for i, want := range wantRequired {
 		if m.Requires[i].Token != want || m.Requires[i].Optional {
 			t.Errorf("Requires[%d] = %+v, want %v not optional", i, m.Requires[i], want)
+		}
+	}
+	for i, want := range wantOptional {
+		if got := m.Requires[len(wantRequired)+i]; got.Token != want || !got.Optional {
+			t.Errorf("Requires[%d] = %+v, want %v optional", len(wantRequired)+i, got, want)
 		}
 	}
 	wantProvides := []struct {

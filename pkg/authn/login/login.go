@@ -228,6 +228,7 @@ func (p *product) wire(reg *core.Registry) error {
 		return err
 	}
 	p.settings = newReader(p.store, p.logger)
+	p.subscribe()
 
 	if err = p.takeMethods(core.ResolveAll[authn.LoginMethod](reg)); err != nil {
 		return err

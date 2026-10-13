@@ -30,6 +30,8 @@ const (
 
 	disabledMethodsPath = ModuleName + "." + disabledMethodsKey
 	deliveryModesPath   = ModuleName + "." + deliveryModesKey
+	flowTTLPath         = ModuleName + "." + flowTTLKey
+	ipLimitPath         = ModuleName + "." + ipLimitKey
 )
 
 // The domains of the settings this module declares.

@@ -8,6 +8,7 @@ import (
 
 	"github.com/vislake/speed/pkg/authn"
 	"github.com/vislake/speed/pkg/event"
+	"github.com/vislake/speed/pkg/settings"
 )
 
 // seenCapacity is how many event identifiers the subscriptions remember. The bus
@@ -72,6 +73,12 @@ func (p *product) subscribe() {
 	p.bus.Subscribe(authn.EventAccountStatusChanged, p.once(p.onAccountStatusChanged))
 	p.bus.Subscribe(authn.EventAccountDeleted, p.once(p.onAccountDeleted))
 	p.bus.Subscribe(authn.EventImpersonationEnded, p.once(p.onImpersonationEnded))
+	// Watching a relaxing change needs both the bus to hear it and the store the
+	// settings live in: with no store every setting reads as its declared
+	// default and there is no change to watch.
+	if p.settings.store != nil {
+		p.bus.Subscribe(settings.ChangedEventType, p.onSettingsChanged)
+	}
 }
 
 // once wraps a handler so an event is acted on once: the identifier is

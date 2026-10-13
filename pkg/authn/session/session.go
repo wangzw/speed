@@ -35,6 +35,7 @@ import (
 	"go.opentelemetry.io/otel/metric"
 	"gorm.io/gorm"
 
+	"github.com/vislake/speed/pkg/audit"
 	"github.com/vislake/speed/pkg/authn"
 	"github.com/vislake/speed/pkg/authn/internal/clock"
 	"github.com/vislake/speed/pkg/authn/internal/mount"
@@ -89,10 +90,11 @@ type product struct {
 	logger   *slog.Logger
 	settings *settingReader
 
-	// impersonation, bus and operations are taken up in Init and nil when the
-	// assembly has none of them.
+	// impersonation, bus, audit and operations are taken up in Init and nil when
+	// the assembly has none of them.
 	impersonation authn.Impersonation
 	bus           event.Bus
+	audit         audit.Audit
 	operations    metric.Int64Counter
 
 	// cookieCtx is a context carrying an empty library session, which the
@@ -128,7 +130,10 @@ func init() { core.ProcessRegistry.Register(Module()) }
 // session is judged against. A command that takes this module in without one of
 // them fails at resolution, naming it. The impersonation capability, the settings
 // store, the event bus, the logger and the meter are taken up in Init: each has a
-// stated behaviour for its absence, so none is declared.
+// stated behaviour for its absence, so none is declared. The audit capability is
+// taken up in Init too, and is declared as an optional requirement only so that a
+// command carrying one initialises it before this module; its absence stays a
+// legal assembly, in which a relaxed setting writes the Warn alone and no record.
 //
 // Sessions is delivered exclusively, and the stance is StateEnabled and never
 // StateAuto: an exclusive provider that states StateAuto is the cell resolution
@@ -142,6 +147,7 @@ func Module() core.Module {
 			{Token: (*db.Database)(nil)},
 			{Token: (*mount.Mounter)(nil)},
 			{Token: (*authn.Accounts)(nil)},
+			{Token: (*audit.Audit)(nil), Optional: true},
 		},
 		Provides: []core.Provision{
 			{Token: (*authn.Sessions)(nil), Exclusive: true},
@@ -306,6 +312,11 @@ func (p *product) wire(reg *core.Registry) error {
 		p.bus = bus
 	} else if !errors.Is(err, core.ErrMissingProvider) {
 		return fmt.Errorf("%s%s: taking up the event bus: %w", diagnosticPrefix, ModuleName, err)
+	}
+	if auditor, err := core.Resolve[audit.Audit](reg); err == nil {
+		p.audit = auditor
+	} else if !errors.Is(err, core.ErrMissingProvider) {
+		return fmt.Errorf("%s%s: taking up the audit capability: %w", diagnosticPrefix, ModuleName, err)
 	}
 	if err := p.takeMeter(reg); err != nil {
 		return err

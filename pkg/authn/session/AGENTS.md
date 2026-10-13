@@ -71,6 +71,13 @@ The API is the package's godoc.
   reader of the table** belongs in this module only as a deliberate change,
   because the periods, the validity judgement and the revocation surface are
   settled here.
+- **A setting moved toward more lenient is visible after the fact, never
+  blocked.** The subscription to `settings.changed` writes a `Warn` and a
+  best-effort `authn.settings.relaxed` audit row naming the key and the
+  direction and no value; the settings it watches are `idle-timeout`,
+  `absolute-timeout`, `token-absolute-timeout`, `sso-absolute-timeout` and
+  `check-ttl`, each relaxing in the `increase` direction (`relax.go`,
+  `TestARelaxingChangeWritesAWarnAndAnAuditRow`).
 
 ## Running it
 
