@@ -99,8 +99,11 @@ message.
   colons, as the Go layout `Mon, 02 Jan 2006 15:04` does, so the segment is split
   on its first two commas only and never on the commas inside the layout. The
   instant is formatted with `time.Time.Format` in the zone the context names
-  through `i18n.TimeZoneFromContext`: an unset zone, and a zone name this process
-  cannot load, both read as UTC rather than failing the render. The empty layout
+  through `i18n.TimeZoneFromContext`: an unset zone, a zone name this process
+  cannot load, and Go's special name `"Local"` all read as UTC rather than
+  failing the render. `"Local"` is refused on the write side too
+  (`ValidTimeZone`): it resolves to the host's own zone, which must not reach
+  user-visible text. The empty layout
   is malformed and terminates startup under `catalog.ErrInvalidMessage` naming
   the key and its source. A layout is a Go layout and that is the accepted cost —
   a month or weekday name comes out in English, so a locale wanting its own names
@@ -111,9 +114,10 @@ message.
   path carries no lock for text, count, plural or number. A time form is the one
   case that reads a zone: `time.LoadLocation` re-reads the zoneinfo files on
   every call — the standard library keeps no cross-call cache — so the engine
-  holds a small cache of loaded locations behind a mutex. The lock is taken only
-  when a message carrying a time form is rendered, and only until the zone's
-  first lookup; a run that renders no time form never touches it.
+  holds a small cache of loaded locations behind a mutex. The write lock is
+  taken only when a message carrying a time form renders a zone name the cache
+  does not hold yet; every later render of that name still takes the read lock.
+  A run that renders no time form takes neither.
   
 - **`i18n.locale` and `i18n.tz` are preferences, not authorizing facts.** They
   are stored in `Account.Attributes` under `LocaleAttributeKey` and
