@@ -1,0 +1,51 @@
+# The postgres stack: PostgreSQL for the database, the key-value store and the
+# event bus all at once. One server carries every backend, which is the
+# smallest deployment that needs no in-process store. Bring it up with the
+# compose file beside this one:
+#
+#   docker compose -f starters/demo/compose.yaml up -d postgres
+#   go -C starters/demo run . --config testdata/postgres.yaml postgres migrate
+#   go -C starters/demo run . --config testdata/postgres.yaml postgres serve
+#
+# The endpoints and the two surfaces are the same as in sqlite-memory.yaml;
+# only the backend section below differs between the five stack files.
+
+http:
+  endpoints:
+    api:
+      address: "127.0.0.1:8080"
+    account:
+      address: "127.0.0.1:8081"
+    admin:
+      address: "127.0.0.1:8082"
+    ops:
+      address: "127.0.0.1:8083"
+    web:
+      address: "127.0.0.1:8084"
+
+ops:
+  endpoint: ops
+  title: demo
+  version: 0.1.0
+
+webui:
+  endpoint: web
+
+log:
+  level: info
+
+observability:
+  otel:
+    service-name: demo
+
+db:
+  postgres:
+    dsn: "postgres://speed:speed@127.0.0.1:5432/speed?sslmode=disable"
+
+kv:
+  postgres:
+    dsn: "postgres://speed:speed@127.0.0.1:5432/speed?sslmode=disable"
+
+event:
+  postgres:
+    dsn: "postgres://speed:speed@127.0.0.1:5432/speed?sslmode=disable"

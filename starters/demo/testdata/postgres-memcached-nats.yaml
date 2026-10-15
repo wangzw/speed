@@ -1,0 +1,49 @@
+# The postgres-memcached-nats stack: PostgreSQL for the database, memcached for
+# the key-value store and NATS for the event bus. Memcached holds no state
+# across a restart, so it is the key-value backend a deployment picks when the
+# store is a pure cache:
+#
+#   docker compose -f starters/demo/compose.yaml up -d postgres memcached nats
+#   go -C starters/demo run . --config testdata/postgres-memcached-nats.yaml postgres-memcached-nats migrate
+#   go -C starters/demo run . --config testdata/postgres-memcached-nats.yaml postgres-memcached-nats serve
+
+http:
+  endpoints:
+    api:
+      address: "127.0.0.1:8080"
+    account:
+      address: "127.0.0.1:8081"
+    admin:
+      address: "127.0.0.1:8082"
+    ops:
+      address: "127.0.0.1:8083"
+    web:
+      address: "127.0.0.1:8084"
+
+ops:
+  endpoint: ops
+  title: demo
+  version: 0.1.0
+
+webui:
+  endpoint: web
+
+log:
+  level: info
+
+observability:
+  otel:
+    service-name: demo
+
+db:
+  postgres:
+    dsn: "postgres://speed:speed@127.0.0.1:5432/speed?sslmode=disable"
+
+kv:
+  memcached:
+    servers:
+      - "127.0.0.1:11211"
+
+event:
+  nats:
+    url: "nats://127.0.0.1:4222"

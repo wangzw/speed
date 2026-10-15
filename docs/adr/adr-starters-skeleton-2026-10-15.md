@@ -42,7 +42,7 @@
 
 - **它是产品起点，不是评估宿主。** `examples/` 为评估模块而建，`starters/` 为承载业务而建；示范的业务目录是空位，使用者拷走后按自己的业务域改名。
 - **形态归脚手架，不归 `core`。** 这承接 [ADR-core-scope-2026-09-13](adr-core-scope-2026-09-13.md) 失效条件段所指的那部分责任。
-- **依赖来自制品库。** 示范的 `go.mod` 以 `require github.com/vislake/speed/pkg <版本>` 取 `pkg`，前端对 `@speed/*` 包按 registry 版本范围声明；**不含 `replace` 到本机 clone 的写法**，否则验收会把「本机有这份仓库」当作前提，掩盖真正的失败。
+- **依赖来自制品库，仓库内以 `replace` 过渡。** 示范的 `go.mod` 以 `require github.com/vislake/speed/pkg <版本>` 取 `pkg`，前端对 `@speed/*` 包按 registry 版本范围声明。`pkg` 尚无发布版本时它带一条 `replace` 指向兄弟检出——仓库自己的 `GOWORK=off` 腿（standalone 构建与 `tidy-check`）需要它——拷贝出去的树删掉这一条。**验收不得借助这条 `replace`**：否则会把「本机有这份仓库」当作前提，构建通过只证明本机检出可用、不证明消费者能取到发布版本。
 
 ## 后果
 

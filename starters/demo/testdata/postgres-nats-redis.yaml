@@ -1,0 +1,48 @@
+# The postgres-nats-redis stack: PostgreSQL for the database, NATS for the
+# key-value store and Redis for the event bus. The two backends are the other
+# way round from postgres-redis-nats, which is the only thing that tells the two
+# stacks apart:
+#
+#   docker compose -f starters/demo/compose.yaml up -d postgres redis nats
+#   go -C starters/demo run . --config testdata/postgres-nats-redis.yaml postgres-nats-redis migrate
+#   go -C starters/demo run . --config testdata/postgres-nats-redis.yaml postgres-nats-redis serve
+
+http:
+  endpoints:
+    api:
+      address: "127.0.0.1:8080"
+    account:
+      address: "127.0.0.1:8081"
+    admin:
+      address: "127.0.0.1:8082"
+    ops:
+      address: "127.0.0.1:8083"
+    web:
+      address: "127.0.0.1:8084"
+
+ops:
+  endpoint: ops
+  title: demo
+  version: 0.1.0
+
+webui:
+  endpoint: web
+
+log:
+  level: info
+
+observability:
+  otel:
+    service-name: demo
+
+db:
+  postgres:
+    dsn: "postgres://speed:speed@127.0.0.1:5432/speed?sslmode=disable"
+
+kv:
+  nats:
+    url: "nats://127.0.0.1:4222"
+
+event:
+  redis:
+    addr: "127.0.0.1:6379"

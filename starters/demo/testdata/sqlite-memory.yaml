@@ -1,0 +1,59 @@
+# The sqlite-memory stack: an in-memory SQLite database, an in-memory
+# key-value store and an in-memory event bus. Nothing here reaches a network,
+# so this configuration runs the whole program with no external service up.
+#
+# Run it from the repository root:
+#
+#   go -C starters/demo run . --config testdata/sqlite-memory.yaml sqlite-memory migrate
+#   go -C starters/demo run . --config testdata/sqlite-memory.yaml sqlite-memory serve
+#
+# The five endpoints listen on fixed ports so the file is usable as it stands.
+# The operations endpoint answers GET /health, GET /ready and GET
+# /openapi.json; the web endpoint serves the frontend bundle.
+
+http:
+  endpoints:
+    api:
+      address: "127.0.0.1:8080"
+    account:
+      address: "127.0.0.1:8081"
+    admin:
+      address: "127.0.0.1:8082"
+    ops:
+      address: "127.0.0.1:8083"
+    web:
+      address: "127.0.0.1:8084"
+
+# The operations surface. Its routes are mounted on the endpoint named here,
+# which has to be one of the endpoints above.
+ops:
+  endpoint: ops
+  title: demo
+  version: 0.1.0
+
+# The frontend bundle's route covers this endpoint's whole path space, and it
+# has to carry no other route.
+webui:
+  endpoint: web
+
+log:
+  level: info
+
+observability:
+  otel:
+    service-name: demo
+
+# The engine. ":memory:" is the process's own database, held to one connection.
+db:
+  sqlite:
+    dsn: ":memory:"
+
+# Both in-process backends take one replica; a count above one is a deployment
+# they cannot serve and fails the startup.
+kv:
+  memory:
+    replicas: 1
+
+event:
+  memory:
+    replicas: 1

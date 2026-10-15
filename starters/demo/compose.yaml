@@ -1,0 +1,42 @@
+# The four external backends the non-memory stacks run on: PostgreSQL, Redis,
+# NATS and memcached. The sqlite-memory stack needs none of them; each of the
+# other four names a subset, and the stack files under testdata/ say which.
+#
+#   docker compose -f starters/demo/compose.yaml up -d
+#
+# The ports are the ones the testdata/ stack files point at, so a service
+# brought up here is reachable at the address its configuration already names.
+# The images are the ones this repository's own test fixtures pin, so a local
+# stack and a test container run the same software.
+services:
+  postgres:
+    image: postgres:17-alpine
+    environment:
+      POSTGRES_USER: speed
+      POSTGRES_PASSWORD: speed
+      POSTGRES_DB: speed
+    ports:
+      - "127.0.0.1:5432:5432"
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U speed -d speed"]
+      interval: 2s
+      timeout: 5s
+      retries: 30
+
+  redis:
+    image: redis:7-alpine
+    ports:
+      - "127.0.0.1:6379:6379"
+
+  # JetStream is on: both the NATS key-value store and the NATS event bus are
+  # built on it, and a server started without -js answers neither.
+  nats:
+    image: nats:2-alpine
+    command: ["-js"]
+    ports:
+      - "127.0.0.1:4222:4222"
+
+  memcached:
+    image: memcached:1.6-alpine
+    ports:
+      - "127.0.0.1:11211:11211"

@@ -70,9 +70,9 @@ starters/demo/
 
 **Go 侧**取 `pkg` 模块：`go.mod` 以 `require github.com/vislake/speed/pkg <版本>` 取它。**前端侧**取 `@speed/*` 包：`package.json` 按 registry 版本范围声明（`^x.y.z`），不用 `workspace:*`。
 
-**验收不得含 `replace` 到本机 clone 的写法。** 一个 `replace github.com/vislake/speed/pkg => ../../pkg` 会把「本机恰好有这份仓库」这一前提带进验收——构建通过只证明本机检出可用，不证明一个真正的消费者能取到发布的版本。`examples/` 的宿主以 `replace` 指向兄弟检出，因为它们是本仓库内的评估宿主；示范不这样做（[ADR-starters-skeleton-2026-10-15](../../adr/adr-starters-skeleton-2026-10-15.md)）。
+**示范的 `go.mod` 在 `pkg` 有发布版本之前带一条 `replace` 指向兄弟检出**，与 `examples/` 的两个宿主同形、同一条注释、同一个理由：仓库自己的两条腿——`build` 的 standalone 段与 `tidy-check`——以 `GOWORK=off` 运行，没有 `replace` 时它们解析不到一个尚未发布的模块。**拷贝出去的树删掉这一条**，`require` 的那一行成为 `pkg` 的唯一来源；这正是那行注释写明的事。
 
-示范的 `go.mod` 不带 `replace`。在本仓库内，工作区（`go.work`）把 `pkg` 解析到本地检出，示范因而可以就地构建；拷贝出去的树在仓库之外，`require` 的那一行就是 `pkg` 的唯一来源。
+**「拷贝即用」的验收不得借助这条 `replace`。** 拷到仓库之外、把 module 路径与 `replace` 一并改掉、按发布版本构建，才算验到它——`replace` 留在验收里会把「本机恰好有这份仓库」当作前提，构建通过只证明本机检出可用，不证明一个真正的消费者能取到发布的版本。**这一步要等 `pkg` 有发布版本**，此前它跑不起来（[ADR-starters-skeleton-2026-10-15](../../adr/adr-starters-skeleton-2026-10-15.md)）。
 
 **前端应用住在 `starters/demo/web/`，不住在包库 `web/` 里。** 先例是 `examples/reference-app/web`：它自述 living outside `web/` exactly where a delivered consumer project lives，并作为外部成员加入 `web/` 的 pnpm workspace（`web/pnpm-workspace.yaml`）。`starters/demo/web` 照此形态——一个住在 `web/` 之外、但能被 `web/` 的工作区工具链安装、检查与构建的前端包。**它与 `examples/reference-app/web` 的区别在依赖的声明方式**：后者是仓库内的成员，对 `@speed/*` 用 `workspace:*`；示范是拷出去的产品起点，按 registry 版本范围声明。
 
@@ -122,7 +122,8 @@ graph TD
 
 | 能力 | 状态 | 代码 |
 |---|---|---|
-| 目录骨架与 `go.mod` | 未实现 | — |
-| 命令树与部署栈 | 未实现 | — |
-| `gen` 命令 | 未实现 | — |
-| 前端应用与打包 | 未实现 | — |
+| 目录骨架与 `go.mod` | 已实现 | `starters/demo/go.mod`、`starters/demo/AGENTS.md` |
+| 命令树与部署栈 | 已实现 | `starters/demo/main.go` `commandTree`、`addStack`；`starters/demo/host.go` `hostModule`、`servedEndpoints` |
+| `gen` 命令 | 已实现 | `starters/demo/main.go` `genModule`、`genDocument` |
+| 前端产物的内嵌与托管（合一拓扑的 Go 侧） | 已实现 | `starters/demo/main.go` `webBundle`（`//go:embed web/dist`）、`webuiModuleName` |
+| 前端应用本身（`web/` 的源码与构建） | 未实现 | — |

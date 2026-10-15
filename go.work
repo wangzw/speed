@@ -4,6 +4,7 @@ use (
 	./examples/crm-host
 	./examples/orders-host
 	./pkg
+	./starters/demo
 )
 
 // github.com/tjfoc/gmsm, reached through the Aliyun SMS SDK's credential

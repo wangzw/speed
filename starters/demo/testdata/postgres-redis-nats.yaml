@@ -1,0 +1,54 @@
+# The postgres-redis-nats stack: PostgreSQL for the database, Redis for the
+# key-value store and NATS for the event bus. It is the one stack that exports
+# telemetry through OTLP rather than standard output:
+#
+#   docker compose -f starters/demo/compose.yaml up -d postgres redis nats
+#   go -C starters/demo run . --config testdata/postgres-redis-nats.yaml postgres-redis-nats migrate
+#   go -C starters/demo run . --config testdata/postgres-redis-nats.yaml postgres-redis-nats serve
+#
+# The OTLP export backend needs a collector at the endpoint below. It is not
+# brought up by the compose file, and it is not a startup failure when nothing
+# listens there: the exporters connect lazily, so the stack runs without one and
+# simply exports nothing.
+
+http:
+  endpoints:
+    api:
+      address: "127.0.0.1:8080"
+    account:
+      address: "127.0.0.1:8081"
+    admin:
+      address: "127.0.0.1:8082"
+    ops:
+      address: "127.0.0.1:8083"
+    web:
+      address: "127.0.0.1:8084"
+
+ops:
+  endpoint: ops
+  title: demo
+  version: 0.1.0
+
+webui:
+  endpoint: web
+
+log:
+  level: info
+
+observability:
+  otel:
+    service-name: demo
+  otlp:
+    endpoint: "127.0.0.1:4317"
+
+db:
+  postgres:
+    dsn: "postgres://speed:speed@127.0.0.1:5432/speed?sslmode=disable"
+
+kv:
+  redis:
+    addr: "127.0.0.1:6379"
+
+event:
+  nats:
+    url: "nats://127.0.0.1:4222"
