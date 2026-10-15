@@ -196,9 +196,9 @@ type chain struct {
 	admissionEndpoints string
 	// noAdmission leaves the admission layer out.
 	noAdmission bool
-	// lateOrders makes the audit and rate-limiting stand-ins prefer the inner
-	// edge of their own stage, so that where they land relative to admission is
-	// the stage order's doing rather than a preference.
+	// lateOrders makes the audit and rate-limiting stand-ins carry an Order
+	// that prefers the inner edge of their own stage, so that where they land
+	// relative to admission is the stage order's doing rather than an Order.
 	lateOrders bool
 }
 
@@ -277,22 +277,22 @@ func (c chain) run(t *testing.T, use func(s *served)) error {
 			return namedLogger{logger: slog.New(logs)}, nil
 		},
 	})
-	auditPosition, limiterPosition := speedhttp.PositionDefault, speedhttp.PositionDefault
+	auditOrder, limiterOrder := 0, 0
 	if c.lateOrders {
-		auditPosition, limiterPosition = speedhttp.PositionLast, speedhttp.PositionLast
+		auditOrder, limiterOrder = 100, 100
 	}
 	if !c.noAudit {
 		reg.Register(layerModule("audit", "public", speedhttp.Middleware{
 			Provides: []core.Token{(*audit.Audit)(nil)},
 			Stage:    speedhttp.StageRecord,
-			Position: auditPosition,
+			Order:    auditOrder,
 		}))
 	}
 	if !c.noLimiter {
 		reg.Register(layerModule("ratelimit", "public", speedhttp.Middleware{
 			Provides: []core.Token{(*ratelimit.Limiter)(nil)},
 			Stage:    speedhttp.StageThrottle,
-			Position: limiterPosition,
+			Order:    limiterOrder,
 		}))
 	}
 	// The authorization layer of the design: it shares admission's stage and

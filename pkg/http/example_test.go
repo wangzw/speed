@@ -336,12 +336,12 @@ func ExampleEndpoint_Use() {
 			return err
 		}
 		// trace stands for tracing and belongs inside the span layer. Its
-		// Position asks for the front of its stage; the After constraint is
+		// Order asks for the front of its stage; the After constraint is
 		// what overrides that.
 		endpoint.Use(speedhttp.Middleware{
 			Name:     "trace",
 			Stage:    speedhttp.StageObserve,
-			Position: speedhttp.PositionFirst,
+			Order:    -100,
 			Provides: []core.Token{(*tracing)(nil)},
 			After:    []core.Token{(*spans)(nil)},
 			Handler:  func(c *gin.Context) { c.Next() },

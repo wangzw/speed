@@ -8,9 +8,12 @@
 // module of its own: a host takes it into a command by name, and it registers
 // through the entry point's Middleware surface like any other layer.
 //
-// The layer belongs to the guard stage and sits at the outside of it. Both are
-// load-bearing rather than a preference. A CORS layer inside a layer that
-// refuses a request leaves the refusal without the CORS headers, so a browser
+// The layer belongs to the guard stage and asks for the outside of it with
+// OrderOutermost. The stage is the framework's guarantee; the outside is a
+// preference, because another layer taking the same sentinel ties with this one
+// and registration order settles the tie with nothing reported. The position is
+// not a style choice: a CORS layer inside a layer that refuses a request leaves
+// the refusal without the CORS headers, so a browser
 // reports a network error instead of the status it was sent; and a preflight
 // inside an identifying layer is refused before it is answered, so the browser
 // never sends the request the preflight was for. At the outside of the guard

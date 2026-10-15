@@ -308,11 +308,6 @@ func (e *endpoint) Use(mw Middleware) {
 			"zero value is not one: write StageObserve, StageGuard, StageIdentify, StageThrottle, "+
 			"StageRecord or StageAuthorize on the registration", e.settings.name, mw.Name, mw.Stage))
 	}
-	if !validPosition(mw.Position) {
-		panic(fmt.Sprintf("http: endpoint %q: Use registered middleware %q with Position %d, "+
-			"which is not a declared position. Write PositionDefault, PositionFirst or "+
-			"PositionLast", e.settings.name, mw.Name, mw.Position))
-	}
 	for j, token := range mw.Provides {
 		capabilityKey(token, declarationSite(e.settings.name, mw.Name, "Provides", j))
 	}

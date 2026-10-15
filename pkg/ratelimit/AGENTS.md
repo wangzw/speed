@@ -107,10 +107,11 @@ The API is the package's godoc.
   available is the client's address. It carries no `Provides`: nothing places
   itself relative to the shield, and the quota layer's `(*Limiter)(nil)` must not
   be read as standing for it.
-- **Neither layer states a `Position`.** The quota layer has no preference within
-  its stage; the shield keeps the default so that a layer in its own stage asking
-  for the outside — the cross-origin layer — stays outside it, which is what lets
-  a 429 carry that layer's headers.
+- **Neither layer states an `Order`.** The quota layer has no preference within
+  its stage; the shield keeps the zero value so that a layer in its own stage
+  asking for the outside — the cross-origin layer, which carries
+  `OrderOutermost` — stays outside it, which is what lets a 429 carry that
+  layer's headers.
 - **A refusal sets `Retry-After` first and then goes through `speedhttp.Fail`,
   with the status as the only member of the `Problem`.** The shape of the body
   is the entry point's — `application/problem+json` unless a module delivers an

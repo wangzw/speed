@@ -498,12 +498,12 @@ func TestMiddlewareCycleFailsARealAssembly(t *testing.T) {
 // a constraint that does land decides the order, and a preference does not get
 // to overrule it.
 //
-// The two layers are given Position values pointing the other way — each asks
+// The two layers are given Order values pointing the other way — each asks
 // for the edge of its stage the other one wants — so a chain built from the
-// preferences alone comes out reversed. That is what an assembly whose
-// registration surface cannot say what a layer stands for falls back to, and it
-// is the failure this pins against. Which of the two probes registers first does
-// not enter into it: the constraint fixes the order either way, which is why no
+// Orders alone comes out reversed. That is what an assembly whose registration
+// surface cannot say what a layer stands for falls back to, and it is the
+// failure this pins against. Which of the two probes registers first does not
+// enter into it: the constraint fixes the order either way, which is why no
 // dependency is declared between them.
 func TestConstraintLandsOnItsProviderInARealAssembly(t *testing.T) {
 	tr := &trace{}
@@ -524,10 +524,10 @@ func TestConstraintLandsOnItsProviderInARealAssembly(t *testing.T) {
 				Name:     "outer-by-constraint",
 				Stage:    StageAuthorize,
 				Provides: []core.Token{(*capA)(nil)},
-				// PositionLast asks for the innermost position, which the
+				// A large Order asks for the innermost place, which the
 				// constraint denies it.
-				Position: PositionLast,
-				Handler:  noteLayer(tr, "outer-by-constraint"),
+				Order:   100,
+				Handler: noteLayer(tr, "outer-by-constraint"),
 			}),
 		),
 	}
@@ -541,9 +541,9 @@ func TestConstraintLandsOnItsProviderInARealAssembly(t *testing.T) {
 			Stage:    StageAuthorize,
 			Provides: []core.Token{(*capB)(nil)},
 			After:    []core.Token{(*capA)(nil)},
-			// PositionFirst asks for the outermost position.
-			Position: PositionFirst,
-			Handler:  noteLayer(tr, "inner-by-constraint"),
+			// A small Order asks for the outermost place.
+			Order:   -100,
+			Handler: noteLayer(tr, "inner-by-constraint"),
 		}),
 		onServe: func(reg *core.Registry) error {
 			r, err := routerFrom(reg)

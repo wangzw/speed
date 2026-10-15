@@ -51,7 +51,7 @@ func (p *providers) attach(ep http.Endpoint, endpoint string) {
 // this module's product is the one the registry delivered. The server name is
 // empty, which the upstream reads as "take it from the request's host".
 //
-// It sits in the observing stage at PositionFirst, so it is the outermost
+// It sits in the observing stage at OrderOutermost, so it is the outermost
 // layer of that stage: every other observing layer runs inside it and the time
 // they spend is in the span. The stage places every observing layer outside
 // every layer that can refuse a request, which is what lets the span carry the
@@ -63,8 +63,8 @@ func (p *providers) instrumentation() http.Middleware {
 			(*observability.TracerProvider)(nil),
 			(*observability.MeterProvider)(nil),
 		},
-		Stage:    http.StageObserve,
-		Position: http.PositionFirst,
+		Stage: http.StageObserve,
+		Order: http.OrderOutermost,
 		Handler: otelgin.Middleware("",
 			otelgin.WithTracerProvider(p.tp),
 			otelgin.WithMeterProvider(p.mp),

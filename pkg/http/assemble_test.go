@@ -256,11 +256,11 @@ func TestALayerReadsTheOutcomeAfterNext(t *testing.T) {
 // declared the only way a registrant can declare one — through Use — reaches
 // the layer it points at.
 //
-// The two positions are deliberately the wrong way round: left to Position
-// alone the chain is "tenant" then "auth", and that is exactly what an
-// implementation whose provider index stays empty produces, whatever anyone
-// registers. Provides is what the After resolves against, so the constraint
-// wins and "auth" comes out first.
+// The two Orders are deliberately the wrong way round: left to Order alone the
+// chain is "tenant" then "auth", and that is exactly what an implementation
+// whose provider index stays empty produces, whatever anyone registers.
+// Provides is what the After resolves against, so the constraint wins and
+// "auth" comes out first.
 func TestConstraintThroughUseOrdersAgainstItsProvider(t *testing.T) {
 	tr := &trace{}
 	logger, _ := newRecordingLogger()
@@ -268,16 +268,16 @@ func TestConstraintThroughUseOrdersAgainstItsProvider(t *testing.T) {
 		e.Use(Middleware{
 			Name:     "auth",
 			Stage:    StageIdentify,
-			Position: PositionLast,
+			Order:    100,
 			Provides: []core.Token{(*capAuth)(nil)},
 			Handler:  noteLayer(tr, "auth"),
 		})
 		e.Use(Middleware{
-			Name:     "tenant",
-			Stage:    StageIdentify,
-			Position: PositionFirst,
-			After:    []core.Token{(*capAuth)(nil)},
-			Handler:  noteLayer(tr, "tenant"),
+			Name:    "tenant",
+			Stage:   StageIdentify,
+			Order:   -100,
+			After:   []core.Token{(*capAuth)(nil)},
+			Handler: noteLayer(tr, "tenant"),
 		})
 		e.Route("GET", "/things", filler)
 	})
@@ -286,7 +286,7 @@ func TestConstraintThroughUseOrdersAgainstItsProvider(t *testing.T) {
 
 	want := []string{"auth", "tenant"}
 	if got := tr.seen(); !slices.Equal(got, want) {
-		t.Errorf("the chain ran in the order %v, want %v: After outranks Position, and %v is what "+
+		t.Errorf("the chain ran in the order %v, want %v: After outranks Order, and %v is what "+
 			"comes out when the constraint finds nothing to bind to", got, want,
 			[]string{"tenant", "auth"})
 	}
@@ -409,23 +409,18 @@ func TestUnlandedConstraintIsReported(t *testing.T) {
 			"the declaration is what is wrong")
 }
 
-// TestOrderingRemarksAreWrittenAtTheirOwnLevels pins that each cause reaches the
-// log with its own words at its own level: a cross-stage constraint the stage
-// order already satisfies is ordinary and written at Debug, and a preference two
-// layers of one stage both claimed is written at Info with both layers named.
-// Written with one message and one level for every cause, the stage-satisfied
-// remark would read as a constraint that landed on no layer — which it did not —
-// and the tied preference would be a warning with no constraint behind it.
+// TestOrderingRemarksAreWrittenAtTheirOwnLevels pins that a remark reaches the
+// log with the words and the level its cause calls for: a cross-stage constraint
+// the stage order already satisfies is ordinary — the boundary places the layer
+// whatever the constraint says — and is written at Debug. Written with the words
+// of a constraint that landed on no layer, it would send the reader after an
+// absent provider that is not absent.
 func TestOrderingRemarksAreWrittenAtTheirOwnLevels(t *testing.T) {
 	logger, records := newRecordingLogger()
 	_, err := assembleEndpoint(t, testSettings("public"), nil, logger, func(e Endpoint) {
-		// Two guard layers both ask for the outside of their stage: PositionFirst
-		// twice is the shared edge the design gives a line of its own.
-		e.Use(Middleware{Name: "edge", Stage: StageGuard, Position: PositionFirst, Handler: passThrough})
-		e.Use(Middleware{Name: "also-edge", Stage: StageGuard, Position: PositionFirst, Handler: passThrough})
 		// A constraint that crosses stages in the direction the stages already
 		// give: throttle sits inside identify, so this After repeats the boundary
-		// rather than asking for a position the boundary does not already give.
+		// rather than asking for a place the boundary does not already give.
 		e.Use(Middleware{
 			Name:     "gate",
 			Stage:    StageIdentify,
@@ -453,20 +448,6 @@ func TestOrderingRemarksAreWrittenAtTheirOwnLevels(t *testing.T) {
 		"the words of a constraint the boundary already satisfies, not the words of one that landed "+
 			"on no layer")
 	mustContain(t, satisfied, "cause="+string(causeStageSatisfied), "the cause of the remark")
-
-	tied := lineFor(records.at(slog.LevelInfo), "middleware=edge, also-edge")
-	if tied == "" {
-		t.Fatalf("the shared preference was not written at Info naming both layers; Info carries\n%s",
-			strings.Join(records.at(slog.LevelInfo), "\n"))
-	}
-	mustContain(t, tied, "registration order decided",
-		"the words of a shared preference, where a statement about a constraint would be wrong: two "+
-			"layers claiming one edge of a stage state no constraint")
-	mustContain(t, tied, "cause="+string(causeTiedPreference), "the cause of the remark")
-	if strings.Contains(tied, "capability=") {
-		t.Errorf("the tied-preference line carries a capability attribute, and the tie names no "+
-			"capability: %s", tied)
-	}
 }
 
 // TestALegalAssemblyStartsWithoutAWarning pins the shape a host with an
@@ -578,12 +559,12 @@ func TestChainOrderIsOutermostFirst(t *testing.T) {
 	tr := &trace{}
 	logger, _ := newRecordingLogger()
 	handler := mustAssemble(t, testSettings("public"), nil, logger, func(e Endpoint) {
-		// Registered innermost-first and with the preferences deciding, so
-		// an implementation running them in registration order gets the
-		// opposite of the right answer.
-		e.Use(Middleware{Name: "inner", Stage: StageObserve, Position: PositionLast, Handler: noteLayer(tr, "inner")})
+		// Registered innermost-first and with the Orders deciding, so an
+		// implementation running them in registration order gets the opposite of
+		// the right answer.
+		e.Use(Middleware{Name: "inner", Stage: StageObserve, Order: 100, Handler: noteLayer(tr, "inner")})
 		e.Use(Middleware{Name: "middle", Stage: StageObserve, Handler: noteLayer(tr, "middle")})
-		e.Use(Middleware{Name: "outer", Stage: StageObserve, Position: PositionFirst, Handler: noteLayer(tr, "outer")})
+		e.Use(Middleware{Name: "outer", Stage: StageObserve, Order: -100, Handler: noteLayer(tr, "outer")})
 		e.Route("GET", "/things", noteHandler(tr, "handler"))
 	})
 
@@ -669,12 +650,12 @@ func TestGuardStageIsOutsideTheBodyLimit(t *testing.T) {
 
 	var corsRan, limitRan bool
 	handler := mustAssemble(t, s, nil, logger, func(e Endpoint) {
-		e.Use(Middleware{Name: "cors", Stage: StageGuard, Position: PositionFirst, Handler: func(c *gin.Context) {
+		e.Use(Middleware{Name: "cors", Stage: StageGuard, Order: OrderOutermost, Handler: func(c *gin.Context) {
 			corsRan = true
 			c.Header("Access-Control-Allow-Origin", "https://example.test")
 			c.Next()
 		}})
-		e.Use(Middleware{Name: "address-limit", Stage: StageGuard, Position: PositionLast, Handler: func(c *gin.Context) {
+		e.Use(Middleware{Name: "address-limit", Stage: StageGuard, Order: OrderInnermost, Handler: func(c *gin.Context) {
 			limitRan = true
 			if c.Request.URL.Path == "/limited" {
 				Fail(c, Problem{Status: nethttp.StatusTooManyRequests})
@@ -859,7 +840,7 @@ func TestAssembledChainIsListed(t *testing.T) {
 		e.Use(Middleware{
 			Name:     "outer",
 			Stage:    StageObserve,
-			Position: PositionFirst,
+			Order:    -100,
 			Provides: []core.Token{(*capAuth)(nil), (*capTenant)(nil)},
 			Handler:  passThrough,
 		})

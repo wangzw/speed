@@ -200,7 +200,7 @@ func TestProfileLayerLeavesAContextWithoutAnIdentityAlone(t *testing.T) {
 	}
 }
 
-// TestDeclaredLayers pins the stage, position, anchor and capability each layer
+// TestDeclaredLayers pins the stage, Order, anchor and capability each layer
 // puts on the chain, which is what the entry point orders them by and what
 // another module points at with After or Before.
 func TestDeclaredLayers(t *testing.T) {
@@ -215,8 +215,8 @@ func TestDeclaredLayers(t *testing.T) {
 	if neg.Stage != speedhttp.StageObserve {
 		t.Errorf("negotiation Stage = %v, want StageObserve", neg.Stage)
 	}
-	if neg.Position != speedhttp.PositionFirst {
-		t.Errorf("negotiation Position = %v, want PositionFirst", neg.Position)
+	if neg.Order != -100 {
+		t.Errorf("negotiation Order = %v, want -100", neg.Order)
 	}
 	if len(neg.Provides) != 1 || neg.Provides[0] != core.Token((*i18n.LocaleResolver)(nil)) {
 		t.Errorf("negotiation Provides = %v, want the (*i18n.LocaleResolver)(nil) token", neg.Provides)

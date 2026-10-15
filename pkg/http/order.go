@@ -39,10 +39,9 @@ var declaredStages = [...]Stage{
 
 // orderingRemark is one thing the ordering noticed about an endpoint's
 // declarations that it reports rather than acts on: a constraint that drew no
-// edge, a constraint the stage order already satisfies, or a preference two
-// layers of one stage both claimed. None of them is a failure — the assembly
-// carries on — but none of them is observable anywhere else either, so they
-// come back for the caller to write out.
+// edge, or a constraint the stage order already satisfies. Neither is a failure
+// — the assembly carries on — but neither is observable anywhere else either,
+// so they come back for the caller to write out.
 //
 // The ways of arriving here share one shape in the graph — nothing moved, and
 // without the report nothing is written at all — which is why one type carries
@@ -53,19 +52,15 @@ type orderingRemark struct {
 	// endpoint says which endpoint the declaration was made on; with layer it
 	// locates the declaration.
 	endpoint string
-	// layer is what the line is about. For a constraint it is the layer that
-	// declared it; for a tied preference the layers sharing the edge of the
-	// stage are written here joined by ", ", because the tie is between them
-	// and naming one alone would say nothing.
+	// layer is what the line is about: the layer that declared the constraint.
 	layer string
 	// field is "After" or "Before" and at is the position in it, which is
-	// what locates the one declaration among several on the same layer. They
-	// are empty for a tied preference, which names no capability.
+	// what locates the one declaration among several on the same layer.
 	field string
 	at    int
 	// capability is the type the token designates, rendered with its
 	// package path, so the reader can go and look at who was meant to
-	// stand for it. It is empty for a tied preference.
+	// stand for it.
 	capability string
 	// cause is why the line is there.
 	cause remarkCause
@@ -75,8 +70,7 @@ type orderingRemark struct {
 // the fixing action differs, so a report that does not name the cause sends
 // half its readers after the wrong thing. The level and the words travel with
 // the cause too, because they differ the same way: a redundant cross-stage
-// constraint and a lost preference are neither of them the failure an unplaced
-// constraint may be.
+// constraint is not the failure an unplaced constraint may be.
 type remarkCause string
 
 const (
@@ -100,14 +94,6 @@ const (
 	// reported at Debug — it is not a position the layer failed to get, and
 	// nothing about the assembly needs changing.
 	causeStageSatisfied remarkCause = "the constraint is already given by the stage order"
-	// causeTiedPreference is a preference two layers of one stage both
-	// claimed, either PositionFirst or PositionLast. The ordering does not
-	// treat it as a contradiction: Position is a preference, so the two are
-	// separated by the registration order and both run, the second-registered
-	// one yielding. It is reported because the layer that yields has no other
-	// way to learn that its claim was shared and that the order between the
-	// two came from registration rather than from what it asked for.
-	causeTiedPreference remarkCause = "two layers of one stage claim the same edge of the stage"
 )
 
 // orderLayers returns an endpoint's middleware from outermost to innermost,
@@ -132,13 +118,12 @@ const (
 // stands beside places the layer; one that does not places nothing, and comes
 // back in the report for the caller to write out with the reason.
 //
-// Position decides only within the ready set — among the layers whose
-// constraints are already satisfied at that point — so it can never select a
-// position a constraint forbids, and the two ways of declaring a position
-// cannot contradict each other. PositionFirst comes out before PositionDefault
-// before PositionLast, and equal Position falls back to registration order,
-// which makes (Position, registration) a total order within a stage and the
-// result unique.
+// Order decides only within the ready set — among the layers whose constraints
+// are already satisfied at that point — so it can never select a place a
+// constraint forbids, and a setting and a constraint cannot contradict each
+// other. A smaller Order comes out before a larger one, and equal Order falls
+// back to registration order, which makes (Order, registration) a total order
+// within a stage and the result unique.
 //
 // The graph is built per endpoint, per assembly, and thrown away with the
 // call. It costs O(V+E) in the number of layers and the constraints that hold
@@ -251,8 +236,8 @@ func orderLayers(endpoint string, layers []layer) ([]layer, []orderingRemark, er
 	// none — so a bucket's indegree counts only its own members, and the loop
 	// below is the same Kahn run the ordering has always done, over one stage
 	// at a time. The ready set is re-sorted each round rather than kept as a
-	// heap: it is sorted by (Position, registration) on every round anyway,
-	// and the round count is the number of layers in one stage.
+	// heap: it is sorted by (Order, registration) on every round anyway, and
+	// the round count is the number of layers in one stage.
 	buckets := make(map[Stage][]int, len(declaredStages))
 	for i := range layers {
 		buckets[layers[i].mw.Stage] = append(buckets[layers[i].mw.Stage], i)
@@ -264,8 +249,6 @@ func orderLayers(endpoint string, layers []layer) ([]layer, []orderingRemark, er
 		if len(members) == 0 {
 			continue
 		}
-		reported = append(reported, tiedPreferences(endpoint, layers, members)...)
-
 		ready := make([]int, 0, len(members))
 		for _, m := range members {
 			if indegree[m] == 0 {
@@ -274,7 +257,7 @@ func orderLayers(endpoint string, layers []layer) ([]layer, []orderingRemark, er
 		}
 		for len(ready) > 0 {
 			slices.SortFunc(ready, func(a, b int) int {
-				if c := cmp.Compare(positionRank(layers[a].mw.Position), positionRank(layers[b].mw.Position)); c != 0 {
+				if c := cmp.Compare(layers[a].mw.Order, layers[b].mw.Order); c != 0 {
 					return c
 				}
 				return cmp.Compare(a, b)
@@ -302,40 +285,6 @@ func orderLayers(endpoint string, layers []layer) ([]layer, []orderingRemark, er
 		out = append(out, layers[at])
 	}
 	return out, reported, nil
-}
-
-// tiedPreferences reports, per stage, the layers that all asked for the same
-// edge of the stage with PositionFirst or PositionLast. Position is a
-// preference, so the ordering does not treat the tie as a contradiction: the
-// layers keep their registration order, and the one that registered later is
-// the one that yields. The line is here because that outcome may not be either
-// layer's intent, and neither layer has another way to learn that its claim was
-// shared. PositionDefault is exempt: many layers leaving the choice open is the
-// ordinary case and not a tie anyone needs to hear about.
-func tiedPreferences(endpoint string, layers []layer, members []int) []orderingRemark {
-	byPosition := make(map[Position][]int, 2)
-	for _, m := range members {
-		if p := layers[m].mw.Position; p != PositionDefault {
-			byPosition[p] = append(byPosition[p], m)
-		}
-	}
-	var out []orderingRemark
-	for _, p := range [...]Position{PositionFirst, PositionLast} {
-		tied := byPosition[p]
-		if len(tied) < 2 {
-			continue
-		}
-		names := make([]string, 0, len(tied))
-		for _, m := range tied {
-			names = append(names, layers[m].mw.Name)
-		}
-		out = append(out, orderingRemark{
-			endpoint: endpoint,
-			layer:    strings.Join(names, ", "),
-			cause:    causeTiedPreference,
-		})
-	}
-	return out
 }
 
 // stageConflict builds the failure for a constraint whose provider is in
@@ -468,9 +417,8 @@ func cycleError(endpoint string, layers []layer, ordered []int, edges []map[int]
 	described = append(described, fmt.Sprintf("%q", layers[cycle[0]].mw.Name))
 
 	return fmt.Errorf("%w: endpoint %q: %s. After and Before are hard constraints, so they have "+
-		"to form an acyclic graph: drop one of the constraints on this cycle, or state the "+
-		"position with Position — PositionFirst or PositionLast only pick among the positions "+
-		"the remaining constraints already allow",
+		"to form an acyclic graph: drop one of the constraints on this cycle, or state an "+
+		"Order — it only picks among the places the remaining constraints already allow",
 		ErrMiddlewareCycle, endpoint, strings.Join(described, " -> "))
 }
 

@@ -22,9 +22,8 @@ import (
 // exported option for it would fail this test the moment it appeared.
 var exportedSurface = []string{
 	"const ModuleName",
-	"const PositionDefault",
-	"const PositionFirst",
-	"const PositionLast",
+	"const OrderInnermost",
+	"const OrderOutermost",
 	"const StageAuthorize",
 	"const StageGuard",
 	"const StageIdentify",
@@ -35,7 +34,7 @@ var exportedSurface = []string{
 	"field Middleware.Before",
 	"field Middleware.Handler",
 	"field Middleware.Name",
-	"field Middleware.Position",
+	"field Middleware.Order",
 	"field Middleware.Provides",
 	"field Middleware.Stage",
 	"field Problem.Cause",
@@ -58,7 +57,6 @@ var exportedSurface = []string{
 	"type Endpoint",
 	"type ErrorResponder",
 	"type Middleware",
-	"type Position",
 	"type Problem",
 	"type Router",
 	"type Spec",

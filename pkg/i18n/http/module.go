@@ -79,16 +79,19 @@ func register(router speedhttp.Router, negotiator i18n.Negotiator) error {
 
 // negotiationLayer settles the request's locale from its language preferences.
 //
-// It is an observing layer, the outside of that stage, so that a refusal by any
-// later layer — a guard's 429, the identify stage's 401 — is already rendered
-// in the language the request asked for. It stands for i18n.LocaleResolver on
-// the chain, so another module may order a layer against it with After or
+// It is an observing layer at Order -100, outside the layers that leave Order
+// at its zero value, so that a refusal by any later layer — a guard's 429, the
+// identify stage's 401 — is already rendered in the language the request asked
+// for. Every layer that refuses sits in a stage inside the observing one, so
+// this layer does not need to be the outermost of its stage; the
+// instrumentation takes OrderOutermost there. It stands for i18n.LocaleResolver
+// on the chain, so another module may order a layer against it with After or
 // Before.
 func negotiationLayer(negotiator i18n.Negotiator) speedhttp.Middleware {
 	return speedhttp.Middleware{
 		Name:     "i18n:accept-language",
 		Stage:    speedhttp.StageObserve,
-		Position: speedhttp.PositionFirst,
+		Order:    -100,
 		Provides: []core.Token{(*i18n.LocaleResolver)(nil)},
 		Handler: func(c *gin.Context) {
 			// A locale already in the context — one a host wrote before the

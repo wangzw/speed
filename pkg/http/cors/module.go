@@ -108,10 +108,10 @@ func (b *bridge) wire(reg *core.Registry) error {
 			return fmt.Errorf("%s: endpoint %q: %w", ModuleName, l.name, err)
 		}
 		endpoint.Use(speedhttp.Middleware{
-			Name:     ModuleName,
-			Stage:    speedhttp.StageGuard,
-			Position: speedhttp.PositionFirst,
-			Handler:  l.handler,
+			Name:    ModuleName,
+			Stage:   speedhttp.StageGuard,
+			Order:   speedhttp.OrderOutermost,
+			Handler: l.handler,
 		})
 	}
 	return nil

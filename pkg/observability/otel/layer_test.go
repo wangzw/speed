@@ -998,11 +998,11 @@ func TestTheLayerStandsForExactlyTheTwoProvidersThisModuleDelivers(t *testing.T)
 	}
 }
 
-// TestALayerStatingNoPositionRunsInsideTheInstrumentation pins the position the
-// instrumentation is registered with. It is at PositionFirst in the observing
-// stage, so a layer that states no position runs inside it and the time it
-// spends is in the span.
-func TestALayerStatingNoPositionRunsInsideTheInstrumentation(t *testing.T) {
+// TestALayerStatingNoOrderRunsInsideTheInstrumentation pins the Order the
+// instrumentation is registered with. It is at OrderOutermost in the observing
+// stage, so a layer that leaves Order at its zero value runs inside it and the
+// time it spends is in the span.
+func TestALayerStatingNoOrderRunsInsideTheInstrumentation(t *testing.T) {
 	p, _, _ := layerUnderTest(t)
 	var inside atomic.Bool
 	serve(t, p, func(ep speedhttp.Endpoint) {
@@ -1020,7 +1020,7 @@ func TestALayerStatingNoPositionRunsInsideTheInstrumentation(t *testing.T) {
 	})
 
 	if !inside.Load() {
-		t.Error("a layer stating no position ran outside the instrumentation layer: the time it spends is not in the span")
+		t.Error("a layer stating no Order ran outside the instrumentation layer: the time it spends is not in the span")
 	}
 }
 
@@ -1153,9 +1153,9 @@ func TestTheGuardStandsInsideTheInstrumentationAndStandsForNothing(t *testing.T)
 	}
 }
 
-// TestALayerStatingNoPositionRunsInsideTheGuard pins where the guard stands
-// among the layers other modules register. A layer that states no position is
-// inside the guard, and the guard is the layer that binds the trace and span
+// TestALayerStatingNoOrderRunsInsideTheGuard pins where the guard stands
+// among the layers other modules register. A layer that leaves Order at its
+// zero value is inside the guard, and the guard is the layer that binds the trace and span
 // identifiers into the request context: a record the layer writes carries them,
 // and the span the instrumentation ends for the layer's request names the
 // endpoint the guard put on it. A guard placed further in would leave the layer
@@ -1167,7 +1167,7 @@ func TestTheGuardStandsInsideTheInstrumentationAndStandsForNothing(t *testing.T)
 // on the way out carries whatever it records for a chain that did not return.
 // The record the layer wrote before it panicked still carries the trace, which
 // is what places the layer inside the guard.
-func TestALayerStatingNoPositionRunsInsideTheGuard(t *testing.T) {
+func TestALayerStatingNoOrderRunsInsideTheGuard(t *testing.T) {
 	p, rec, _ := layerUnderTest(t)
 	var logs *syncBuffer
 	serve(t, p, func(ep speedhttp.Endpoint) {

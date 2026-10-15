@@ -75,7 +75,7 @@ type ScopeGuard interface {
 
 ### 链上的位置
 
-中间件在 `endpoints` 的每个端上登记一层，描述符的 `Provides` 是 `(*tenant.Admission)(nil)`，`Stage` 声明授权阶段（`StageAuthorize`），不带 `After`：跨阶段的位置由阶段顺序给出，不由锚点或数值表达（[ADR-http-stages-2026-10-11](../../../adr/adr-http-stages-2026-10-11.md)）。阶段由外到内是观测、防护、鉴别、限流、记录、授权，网关与租户解析在鉴别阶段、限流在限流阶段、审计在记录阶段，准入层所在的授权阶段在它们之内；整条链的阶段与别的层的声明由各自的文档承载（[design-authn](../authn/design-authn.md)）。
+中间件在 `endpoints` 的每个端上登记一层，描述符的 `Provides` 是 `(*tenant.Admission)(nil)`，`Stage` 声明授权阶段（`StageAuthorize`），不带 `After`：跨阶段的位置由阶段顺序给出，不由锚点或 `Order` 表达（[ADR-http-stages-2026-10-11](../../../adr/adr-http-stages-2026-10-11.md)）。阶段由外到内是观测、防护、鉴别、限流、记录、授权，网关与租户解析在鉴别阶段、限流在限流阶段、审计在记录阶段，准入层所在的授权阶段在它们之内；整条链的阶段与别的层的声明由各自的文档承载（[design-authn](../authn/design-authn.md)）。
 
 非成员的拒绝因此必然进审计、必然计入限流：准入层所在的授权阶段在记录与限流两个阶段之内，位置由阶段顺序给出（[ADR-ratelimit-dimension-2026-09-22](../../../adr/adr-ratelimit-dimension-2026-09-22.md)）。审计或限流不在这次装配里时，记录或限流阶段上没有层，非成员的拒绝既不进审计也不计入限流。
 

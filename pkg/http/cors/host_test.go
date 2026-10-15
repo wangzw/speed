@@ -48,8 +48,8 @@ type host struct {
 }
 
 // refusingGuardLayer is a stand-in for a layer that refuses a request, in the
-// same stage as the CORS layer and at its default position, so the ordering puts
-// it inside CORS. It refuses every request it sees, which is what lets a case
+// same stage as the CORS layer and leaving its Order at the zero value, so the
+// ordering puts it inside CORS. It refuses every request it sees, which is what lets a case
 // show that a refusal carries the CORS headers and that a preflight never reaches
 // it.
 func refusingGuardLayer() speedhttp.Middleware {

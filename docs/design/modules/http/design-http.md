@@ -33,6 +33,7 @@
 | 术语 | 英文 | 含义 |
 |---|---|---|
 | 监听端 | endpoint | 本模块配置中具名的一个监听地址，连同它自己的中间件链与路由表。本文档中这个词指一个监听的套接字，不指一条 API 路径。 |
+| 次序 | `Order` | 一层中间件在它所属阶段之内的定位，以整数表达：越小越靠外，零值表示无偏好；只在同一阶段内比较，跨阶段的数值不可比。 |
 
 ## 外部接口契约
 
@@ -61,7 +62,7 @@ type Endpoint interface {
 
 `nethttp` 是 `net/http` 在本包内的别名——本包自身叫 `http`，引用标准库时要区分开；`gin` 是 `github.com/gin-gonic/gin`。
 
-`Endpoint` 在端名未声明时返回错误，因为端的集合来自配置这份数据。`Endpoints` 不返回错误：它读的是同一份已声明的集合。`Route` 与 `Use` 不返回错误：登记不上的只有调用点的编程错误，它们当场 panic，与 `core` 对非法功能标识、对重名登记的处理同类（见 [core](../design-core.md)）。`Handler` 为 `nil`、`Stage` 为零值或不是已声明的阶段、`Position` 不是已声明的取值、`Route` 没有 handler 或其中有 `nil`、`Provides`、`After` 与 `Before` 中出现非法的功能标识、不是 gin 规整后写法的路径、以及 gin 判为非法的方法或路径，都属于这一类——方法与路径是代码里写死的字符串，写错它们与数据无关。gin 接受 `nil` 的 handler 而要到请求到来时才崩，本模块因而在登记点拦下。登记时用一台独占的 gin 引擎单独试挂即可把非法的路径与冲突分开。
+`Endpoint` 在端名未声明时返回错误，因为端的集合来自配置这份数据。`Endpoints` 不返回错误：它读的是同一份已声明的集合。`Route` 与 `Use` 不返回错误：登记不上的只有调用点的编程错误，它们当场 panic，与 `core` 对非法功能标识、对重名登记的处理同类（见 [core](../design-core.md)）。`Handler` 为 `nil`、`Stage` 为零值或不是已声明的阶段、`Route` 没有 handler 或其中有 `nil`、`Provides`、`After` 与 `Before` 中出现非法的功能标识、不是 gin 规整后写法的路径、以及 gin 判为非法的方法或路径，都属于这一类——方法与路径是代码里写死的字符串，写错它们与数据无关。gin 接受 `nil` 的 handler 而要到请求到来时才崩，本模块因而在登记点拦下。登记时用一台独占的 gin 引擎单独试挂即可把非法的路径与冲突分开。
 
 **路径须已是 gin 规整后的写法**：以 `/` 起头，不含多余的斜杠与 `.`、`..` 段，末尾的斜杠按原样保留。gin 把路径接到引擎的根上时会规整它，`c.FullPath()` 报出的是规整后的结果；登记的路径与它逐字相同，按（方法，`c.FullPath()`）与登记写法比对的层（认证网关的豁免、可选认证与可冒充登记，审计的匹配）才不会因为写法不同而永不命中。
 
@@ -102,19 +103,17 @@ const (
     StageAuthorize                  // 对已定的身份裁决，拒绝由它之内各层记录
 )
 
-// Position 是本层在本阶段内的偏好，让位于本阶段的 After 与 Before。
-type Position uint8
-
+// OrderOutermost 与 OrderInnermost 是 Order 的两个公开哨兵，取 int 的极值，
+// 用于"不被任何普通值超越"的诉求：前者不被更小的值超越，后者不被更大的值超越。
 const (
-    PositionDefault Position = iota // 交给约束与登记先后
-    PositionFirst                   // 本阶段无约束各层中最外
-    PositionLast                    // 本阶段无约束各层中最内
+    OrderOutermost = math.MinInt // 本阶段没有比它更小的普通值
+    OrderInnermost = math.MaxInt // 本阶段没有比它更大的普通值
 )
 
 type Middleware struct {
     Name     string          // 只用于诊断：panic 文本与启动时列出的链
     Stage    Stage           // 本层所属的类别，必填：零值与未定义值在登记时 panic
-    Position Position        // 本阶段内的偏好；不越过本阶段的 After 与 Before
+    Order    int             // 本阶段内的定位：越小越靠外，零值表示无偏好，只在同一阶段内比较
     Provides []core.Token    // 本层在链上代表哪些功能，供他人指向
     After    []core.Token    // 本层位于这些功能的中间件之内，限本阶段
     Before   []core.Token    // 本层位于这些功能的中间件之外，限本阶段
@@ -122,9 +121,9 @@ type Middleware struct {
 }
 ```
 
-**`Stage` 必填，没有默认值。** 登记时对零值与任何不是已声明阶段的值 panic：一个没说自己在哪个类别的层，本模块给不出位置；而一个默认值会让漏填的层落进没人选择的类别，对一个职责是拒绝请求的层，错误猜测选中的类别不是安全的那个（[ADR-http-stages-2026-10-11](../../../adr/adr-http-stages-2026-10-11.md)）。阶段之间的先后由本模块给出，与装配了哪些模块无关——这是它相对一个全局数值偏好的判据。
+**`Stage` 必填，没有默认值。** 登记时对零值与任何不是已声明阶段的值 panic：一个没说自己在哪个类别的层，本模块给不出位置；而一个默认值会让漏填的层落进没人选择的类别，对一个职责是拒绝请求的层，错误猜测选中的类别不是安全的那个（[ADR-http-stages-2026-10-11](../../../adr/adr-http-stages-2026-10-11.md)）。阶段之间的先后由本模块给出，与装配了哪些模块无关——这是它相对一个全局数值偏好的判据。**`Order` 没有必填一说。** 它的零值表示"无偏好"，落在本阶段已表态的各层之间，不区分"没写"与"写了 0"——排序里两者相同；`Stage` 必填的判据是"猜错类别不安全"，`Order` 没有对应的论证，因而不设必填。
 
-**`After` 与 `Before` 限本层所属阶段，是硬约束；`Position` 只在阶段内取舍。** 阶段内的图按 `After` 与 `Before` 的边做拓扑排序，成环即启动失败；`Position` 只在就绪集合里选择，因而让位于阶段内的约束，两层声明同一边缘时由登记先后决定。**跨阶段的 `After` 或 `Before` 是冗余的**：与阶段顺序同向时已被阶段满足、不建边，记一条 Debug 诊断；反向时启动失败，返回 `ErrStageConflict`，因为那条约束要的是阶段顺序的反面（[ADR-http-middleware-2026-09-14](../../../adr/adr-http-middleware-2026-09-14.md)、[ADR-http-stages-2026-10-11](../../../adr/adr-http-stages-2026-10-11.md)）。每个阶段规定进入它的层可以依赖什么，见中间件的排序一节。
+**`After` 与 `Before` 限本层所属阶段，是硬约束；`Order` 只在阶段内取舍。** 阶段内的图按 `After` 与 `Before` 的边做拓扑排序，成环即启动失败；`Order` 只在就绪集合里选择，因而让位于阶段内的约束，两层取同一个值时由登记先后决定，同值不报诊断、也不构成失败。**跨阶段的 `After` 或 `Before` 是冗余的**：与阶段顺序同向时已被阶段满足、不建边，记一条 Debug 诊断；反向时启动失败，返回 `ErrStageConflict`，因为那条约束要的是阶段顺序的反面（[ADR-http-middleware-2026-09-14](../../../adr/adr-http-middleware-2026-09-14.md)、[ADR-http-stages-2026-10-11](../../../adr/adr-http-stages-2026-10-11.md)）。每个阶段规定进入它的层可以依赖什么，见中间件的排序一节。
 
 **替换写出者的层要把它携带的可选接口转发出去。** gin 的链上，一层读响应的状态、是否已写出与已写出的字节数，用 `c.Writer` 的 `Status`、`Written` 与 `Size`，不必包装写出者；gin 的写出者本身按底层支持暴露 `Pusher`，并携带 `Flusher`、`Hijacker` 与 `Unwrap`，`http.NewResponseController` 经它可用。替换 `c.Writer` 的登记层要把原来那个写出者携带的可选接口转发出去，或用 `Unwrap` 把它暴露出来，否则一个对这些接口做类型断言的处理器在该端点上静默失效——流式响应与协议升级随之失效，且不报错。链的组装在这里，任何一层替换写出者都受它约束；本模块的内建层不替换写出者，因而不受影响。
 
@@ -135,11 +134,11 @@ type Middleware struct {
 声明写成：
 
 ```go
-// 遥测模块：本层属于观测阶段，排在本阶段无约束各层的最外，不指向任何别的功能
+// 遥测模块：本层属于观测阶段，取哨兵 OrderOutermost 排在本阶段最外，不指向任何别的功能
 ep.Use(http.Middleware{
     Name:     "observability",
     Stage:    http.StageObserve,
-    Position: http.PositionFirst,
+    Order:    http.OrderOutermost,
     Provides: []core.Token{(*observability.TracerProvider)(nil), (*observability.MeterProvider)(nil)},
     Handler:  instrument,
 })
@@ -279,7 +278,7 @@ classDiagram
     class Middleware {
         +Name string
         +Stage Stage
-        +Position Position
+        +Order int
         +Provides []Token
         +After []Token
         +Before []Token
@@ -293,12 +292,6 @@ classDiagram
         Throttle
         Record
         Authorize
-    }
-    class Position {
-        <<enumeration>>
-        Default
-        First
-        Last
     }
     class Spec {
         +Endpoint string
@@ -330,7 +323,6 @@ classDiagram
     Router "1" --> "*" Endpoint : 按端名取得
     Endpoint "1" --> "*" Middleware : 登记
     Middleware --> Stage : 属于
-    Middleware --> Position : 取舍于
     Endpoint "1" --> "1" listener : 组装进
     Endpoint "1" --> "1" GinEngine : 路由与登记层挂到
     listener "1" --> "1" GinEngine : 请求分发交给
@@ -338,7 +330,7 @@ classDiagram
     ErrorResponder ..> Problem : 接收
 ```
 
-`Spec` 与 `Endpoint` 之间是虚线：`Spec` 只按端名指向一个监听端，不参与该端的组装。一层 `Middleware` 声明自己所属的 `Stage` 与在本阶段内的 `Position`，链按前者给出的阶段顺序、后者在阶段内的取舍，以及阶段内的 `After` 与 `Before` 排出。`listener` 未导出，`Serve` 阶段由它持有服务器、套接字、开始排空信号与排空结束信号，以及在途 handler 的计数，组装好的 handler 挂在服务器上；`GinEngine` 是该端的 gin 引擎，同样未导出，`Serve` 阶段路由与登记层挂到它上面。`ErrorResponder` 由其他模块交付，`Problem` 是它接收的内容。
+`Spec` 与 `Endpoint` 之间是虚线：`Spec` 只按端名指向一个监听端，不参与该端的组装。一层 `Middleware` 声明自己所属的 `Stage` 与在本阶段内的 `Order`，链按阶段顺序、阶段内的 `Order` 取舍，以及阶段内的 `After` 与 `Before` 排出。`listener` 未导出，`Serve` 阶段由它持有服务器、套接字、开始排空信号与排空结束信号，以及在途 handler 的计数，组装好的 handler 挂在服务器上；`GinEngine` 是该端的 gin 引擎，同样未导出，`Serve` 阶段路由与登记层挂到它上面。`ErrorResponder` 由其他模块交付，`Problem` 是它接收的内容。
 
 一次装配中跨模块的交互：
 
@@ -408,7 +400,7 @@ stateDiagram-v2
 
 **先按 `Stage` 分桶，桶内再用 `After` 与 `Before` 建图。** 阶段之间的先后由阶段顺序给出：各桶按声明顺序拼接，外层阶段的每一层都排在任一内层阶段的层之外，这与本模块认不认识那些层无关。`After` 与 `Before` 只在同一阶段内建边——一条 `After` 边把本层排在提供该功能的那些中间件之内，`Before` 边反之；提供者在别的阶段时，同向的约束已被阶段满足、不建边，反向的约束启动失败。引用的功能在该端上没有提供者时，该边不存在，约束自动满足；提供它的模块在进程里却不守这个端，也是这一档。
 
-**桶内的图按拓扑序展开，就绪集合中取出的次序由 `Position` 决定。** `PositionFirst` 先出、`PositionLast` 后出，`PositionDefault` 在两者之间，相同时按登记先后，因而 `(Position, 登记先后)` 是阶段内的全序，结果唯一且可复现。`Position` 只在就绪集合内选择，因而选不出违反约束的位置。
+**桶内的图按拓扑序展开，就绪集合中取出的次序由 `Order` 决定。** 数值小的先出，相等则按登记先后，不过后者只为让结果确定、可复现，不承载语义。`(Order, 登记先后)` 因而仍是阶段内的全序，结果唯一且可复现。`Order` 只在就绪集合内选择，因而选不出违反约束的位置。**`Order` 只在同一阶段内比较**，跨阶段的数值不可比：阶段的先后由阶段顺序给出，与数值无关。取普通数值时建议用十的倍数，留出插入的余量。
 
 复杂度为 O(V+E)，V 是该端的中间件数，E 是它们之间成立的约束数；各桶各自求解再拼接。这是启动期各端一次性的开销。
 
@@ -420,7 +412,7 @@ stateDiagram-v2
 
 **诊断要分清两种原因，它们的修法不同。** 一种是该功能在本端无人代表：装配里缺了那个模块，或者它在进程里却不守这个端，或者它的层在这个端上却漏写了 `Provides`。另一种是该功能只由声明这条约束的那一层自己代表——自指的边按跳过自身丢掉，约束因而什么也没约束到，而这是声明本身写错了，不是谁不在场。**本层之外还有别的层代表该功能时不属于此列**：自指那部分被跳过，其余照常生效。
 
-**诊断的级别随原因而定，判据是这次装配照原样能不能是对的。** 该功能在本端无人代表时，这一行记 Info：模块不在进程里、在进程里却不守这个端，都是合法配置，一个只在部分端上解析租户的宿主每次启动都会产生这样的行。把它记成警告，合法装配就带着一条永远消不掉的警告运行，运维学会跳过它之后，真正需要处理的那一条也随之被跳过。自指的那一种记 Warn：这条声明在任何装配下都摆放不了任何东西，没有哪种配置能让它成立。**代价**：漏写 `Provides` 在图上与模块缺席同形，登记面又不知道哪一层是谁登记的，它因而同样只记 Info，没有警告指向它（[ADR-http-middleware-2026-09-14](../../../adr/adr-http-middleware-2026-09-14.md)）。**同一阶段内两层声明同一边缘时记 Info**，点名两者：`Position` 只是偏好，最终的先后由登记先后决定，可能不是任何一方的本意，而落败的一方没有别的途径得知它的声明被人共享（[ADR-http-stages-2026-10-11](../../../adr/adr-http-stages-2026-10-11.md)）。约束成环与阶段冲突不在此列，它们是启动失败。
+**诊断的级别随原因而定，判据是这次装配照原样能不能是对的。** 该功能在本端无人代表时，这一行记 Info：模块不在进程里、在进程里却不守这个端，都是合法配置，一个只在部分端上解析租户的宿主每次启动都会产生这样的行。把它记成警告，合法装配就带着一条永远消不掉的警告运行，运维学会跳过它之后，真正需要处理的那一条也随之被跳过。自指的那一种记 Warn：这条声明在任何装配下都摆放不了任何东西，没有哪种配置能让它成立。**代价**：漏写 `Provides` 在图上与模块缺席同形，登记面又不知道哪一层是谁登记的，它因而同样只记 Info，没有警告指向它（[ADR-http-middleware-2026-09-14](../../../adr/adr-http-middleware-2026-09-14.md)）。约束成环与阶段冲突不在此列，它们是启动失败。
 
 ### 各阶段的契约
 
@@ -573,8 +565,8 @@ gin 的 `*gin.Context` 只在它所属那次请求的处理期间有效：handle
 | 端名的列出与保留端名 | 已实现 | `pkg/http/router.go` `(*router).Endpoints`，`pkg/http/config.go` `reservedEndpointName`、`endpointConfig.resolve` |
 | 入口模块的登记 | 已实现 | `pkg/http/module.go` `ModuleName`、`Module` |
 | gin 引擎的建立与设定 | 已实现 | `pkg/http/assemble.go` `newEngine`、`holdAllow`、`setReleaseMode` |
-| 中间件按阶段排序与链组装 | 已实现 | `pkg/http/order.go` `orderLayers`、`stageConflict`、`tiedPreferences`、`unplacedCause`，`pkg/http/assemble.go` `(*endpoint).assemble`、`useLayers`、`splitStages`、`(*endpoint).mount`、`(*endpoint).conflictError`、`reportRemarks`、`remarkCause.level` |
-| 阶段与位置的定义、取值与链清单 | 已实现 | `pkg/http/surface.go` `Stage`、`Position`、`validStage`、`validPosition`、`positionRank`、`stageName`，`pkg/http/assemble.go` `chainDescription`、`chainStage`、`chainLayer` |
+| 中间件按阶段排序与链组装 | 已实现 | `pkg/http/order.go` `orderLayers`、`stageConflict`、`unplacedCause`，`pkg/http/assemble.go` `(*endpoint).assemble`、`useLayers`、`splitStages`、`(*endpoint).mount`、`(*endpoint).conflictError`、`reportRemarks`、`remarkCause.level` |
+| 阶段与次序的定义、取值与链清单 | 已实现 | `pkg/http/surface.go` `Stage`、`Order`、`OrderOutermost`、`OrderInnermost`、`validStage`、`stageName`，`pkg/http/assemble.go` `chainDescription`、`chainStage`、`chainLayer` |
 | 监听端的绑定与停机排空 | 已实现 | `pkg/http/listener.go` `(*listener).start`、`(*listener).stop`、`(*listener).close`、`(*listener).track`、`inFlight`、`pkg/http/module.go` `(*router).stop` |
 | 请求上下文的建立 | 已实现 | `pkg/http/assemble.go` `(*endpoint).base`，`pkg/http/problem.go` `withResponder` |
 | 请求路径的 panic 兜底 | 已实现 | `pkg/http/recovery.go` `recovery`、`answerDefect`、`panicError`、`handlerDefect`、`discardRepresentationHeaders`、`stackTrace` |

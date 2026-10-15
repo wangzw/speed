@@ -120,11 +120,15 @@ The stages, and what each lets the layers inside it rely on:
 - `StageAuthorize` decides on a settled identity; its refusals are seen by the
   recording layers inside it.
 
-Within a stage, `After` and `Before` are hard constraints and `Position` is a
-preference that only picks among the positions they leave open. A cross-stage
-`After` or `Before` holds only when it agrees with the stage order; one that
-points against it fails the startup (`ErrStageConflict`), so the boundary cannot
-be moved by an edge.
+Within a stage, `After` and `Before` are hard constraints and `Order` is an
+integer that only picks among the places they leave open: a smaller value comes
+out further out, the zero value is no preference, and a value is compared only
+among the layers of one stage. Two layers sharing a value carry no order between
+them and are separated by registration order, with nothing reported or failing.
+`OrderOutermost` and `OrderInnermost` are the extreme values, for a layer that
+must not be overtaken by an ordinary one. A cross-stage `After` or `Before`
+holds only when it agrees with the stage order; one that points against it fails
+the startup (`ErrStageConflict`), so the boundary cannot be moved by an edge.
 
 ## Shape of a module
 

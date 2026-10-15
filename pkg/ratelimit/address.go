@@ -178,12 +178,12 @@ func (g *addressGuard) evict(now time.Time) {
 
 // addressMiddleware is the shield, as it is registered on an endpoint.
 //
-// It sits in the guard stage and carries no Position, so it stays inside a
-// layer that declares PositionFirst there — which is where CORS belongs, so
-// that a 429 this layer writes still carries the CORS headers a browser needs
-// to read it. It carries no Provides: nothing places itself relative to the
-// shield, and the Limiter token belongs to the quota layer and to that layer
-// alone.
+// It sits in the guard stage and leaves Order at its zero value, so it stays
+// inside a layer that carries OrderOutermost there — which is where CORS
+// belongs, so that a 429 this layer writes still carries the CORS headers a
+// browser needs to read it. It carries no Provides: nothing places itself
+// relative to the shield, and the Limiter token belongs to the quota layer and
+// to that layer alone.
 func (l *limiter) addressMiddleware() speedhttp.Middleware {
 	return speedhttp.Middleware{
 		Name:    addressLayerName,

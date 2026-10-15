@@ -2,6 +2,7 @@ package http
 
 import (
 	"fmt"
+	"math"
 
 	"github.com/gin-gonic/gin"
 
@@ -113,53 +114,39 @@ const (
 	StageAuthorize
 )
 
-// Position is a layer's preference within its stage, below the stage's After
-// and Before. It only picks among the positions those constraints already
-// leave open, so it can never contradict one, and it is a preference and not a
-// guarantee: two layers claiming the same edge of a stage are separated by
-// registration order.
+// Order values are compared only within one stage, so a number in one stage
+// says nothing about a layer in another; the boundary between stages is
+// Stage's, and no value moves a layer across it. Smaller numbers come out
+// further out, so a layer that leaves Order at its zero value falls between the
+// layers that asked for the outside of the stage and the ones that asked for
+// the inside.
 //
-// What it is for is the few places where a layer asks for the outside of its
-// own category without naming any other layer — CORS has to sit outside the
+// Order is the fine setting below Stage's coarse one, and the two cannot
+// contradict each other: Stage fixes the category and where the category sits
+// in the chain, and Order only moves a layer among the layers whose stage is
+// already settled. It is for the few places where a layer asks for the outside
+// of its own stage without naming any other layer — CORS has to sit outside the
 // address limit in the same stage, so that a 429 carries its headers.
-type Position uint8
-
+//
+// Equal values carry no order between them: two layers that share one are
+// separated by registration order, which is stable within a single assembly but
+// is not something a layer may rely on, and nothing is reported or fails when
+// they are equal. The extreme values have names below, so a layer that must not
+// be overtaken takes one without inventing a number.
 const (
-	// PositionDefault leaves the layer to its constraints and the registration
-	// order, which is what most layers want.
-	PositionDefault Position = iota
-	// PositionFirst puts the layer at the outside of its stage's unconstrained
-	// layers.
-	PositionFirst
-	// PositionLast puts the layer at the inside of its stage's unconstrained
-	// layers.
-	PositionLast
+	// OrderOutermost is math.MinInt: no ordinary Order is smaller, so a layer
+	// carrying it comes out at the outside of its stage. More than one layer may
+	// take it, and two that do are then separated by registration order like any
+	// equal values. It is not a guarantee of being the outermost layer — the
+	// stage boundary and the constraints still decide that.
+	OrderOutermost = math.MinInt
+	// OrderInnermost is math.MaxInt, the inside counterpart of OrderOutermost.
+	OrderInnermost = math.MaxInt
 )
 
 // validStage reports whether a registration named one of the declared stages.
 // The zero value is not one of them: it says the registrant did not choose.
 func validStage(s Stage) bool { return s >= StageObserve && s <= StageAuthorize }
-
-// validPosition reports whether a registration named one of the declared
-// positions.
-func validPosition(p Position) bool { return p <= PositionLast }
-
-// positionRank is the order the ready set sorts by: PositionFirst comes out
-// first, PositionLast last, and PositionDefault between them, so a layer that
-// states no preference yields to one that asks for the outside and comes out
-// ahead of one that asks for the inside. The declaration order on Position is
-// not that ranking — PositionFirst sorts after PositionDefault by its value —
-// which is why the ordering reads this and not the constant.
-func positionRank(p Position) uint8 {
-	switch p {
-	case PositionFirst:
-		return 0
-	case PositionDefault:
-		return 1
-	default:
-		return 2
-	}
-}
 
 // stageName renders a stage for a diagnostic — the ordering's failure text and
 // the chain listing — so the reader meets the category by the name it is
@@ -191,11 +178,11 @@ func stageName(s Stage) string {
 // categories in their declared order; the stage boundary is the framework's, so
 // it holds for layers registered by modules this one has never seen. After and
 // Before are hard constraints within a stage and decide the order there, and
-// Position is a preference that only picks among the positions those
-// constraints leave open. A cross-stage After or Before therefore holds only
-// when it agrees with the stage order: the boundary is not something an edge
-// can move, and one that points against it is refused at startup rather than
-// letting the layer slip to the wrong side in silence.
+// Order is a setting that only picks among the places those constraints leave
+// open. A cross-stage After or Before therefore holds only when it agrees with
+// the stage order: the boundary is not something an edge can move, and one that
+// points against it is refused at startup rather than letting the layer slip to
+// the wrong side in silence.
 //
 // Provides is what makes those constraints land: After and Before name
 // capabilities, and which layer on the chain stands for a capability can only
@@ -216,11 +203,19 @@ type Middleware struct {
 	// category nobody chose, and for a layer whose job is to refuse a request
 	// the safe answer is not the one a wrong guess would pick.
 	Stage Stage
-	// Position puts the layer at the outside or the inside of its stage's
-	// unconstrained layers; PositionDefault leaves it to the constraints and
-	// the registration order. It never overrides After or Before, which are
-	// hard constraints within the stage.
-	Position Position
+	// Order places the layer within its stage, below After and Before, which
+	// are hard constraints there. Smaller numbers come out further out and the
+	// zero value means no preference — the layer falls between the ones that
+	// asked for the outside of the stage and the ones that asked for the inside.
+	// It is compared only among the layers of one stage; a value in one stage
+	// says nothing about a layer in another. Equal values carry no order between
+	// them and are separated by registration order, and nothing is reported or
+	// fails when two layers share one. OrderOutermost and OrderInnermost are the
+	// extreme values, for a layer that must not be overtaken by an ordinary one.
+	// An ordinary value is best spaced out — tens apart, say — so a later layer
+	// can slot between two of them without reusing a value, since a reused value
+	// carries no order.
+	Order int
 	// Provides names the capabilities this layer stands for on the chain, so
 	// that another layer's After or Before can point at it. Leaving it empty
 	// is legal, at the cost that nobody can point at this layer.

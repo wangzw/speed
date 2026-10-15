@@ -16,7 +16,7 @@ import (
 
 // assemble builds this endpoint's final handler, once, from the inside out: a
 // gin engine is made, the layers are handed to its Use in the order the stages,
-// the constraints and the preferences give — with the built-in access log, panic
+// the constraints and the Orders give — with the built-in access log, panic
 // recovery and body limit placed between the stages they belong between — the
 // routes are mounted on it, and the base sits outside all of it.
 //
@@ -244,57 +244,40 @@ const unlandedMsg = "an HTTP middleware constraint landed on no layer"
 // the boundary, which is why the record is Debug and not one of the two below.
 const stageSatisfiedMsg = "an HTTP middleware constraint is already given by the stage order"
 
-// tiedPreferenceMsg is the message of the record reporting two layers of one
-// stage that claimed the same edge with PositionFirst or PositionLast. There is
-// no constraint in this record at all; the layers are the point, and the
-// middleware attribute names both of them.
-const tiedPreferenceMsg = "two HTTP middleware layers claim the same edge of their stage, and the registration order decided"
-
 // reportRemarks writes out what the ordering noticed and did not act on, one
 // record each, at the level and in the words its cause calls for.
 //
 // This is the whole of their observability. The assembly carries on — a
 // capability absent from the process is a legal configuration — so the layer
-// that declared itself inside authentication runs anyway, in the position its
-// stage and preference happen to give it. The cause is written with each line
+// that declared itself inside authentication runs anyway, in the place its
+// stage and Order happen to give it. The cause is written with each line
 // because the causes are answered by different edits: a capability nobody
 // stands for sends the reader looking for the module that should have been on
 // the endpoint; a capability only the declaring layer stands for is that layer
 // correcting what it said about itself; a constraint the stage order already
-// satisfies needs nothing done at all; and a lost preference sends the reader
-// to the two layers that both asked for the same edge.
-//
-// The declaration and the capability are written only where there is one. A
-// tied preference names no capability and states no After or Before, so those
-// two attributes are left off rather than written empty, which would read as a
-// declaration at an empty position.
+// satisfies needs nothing done at all.
 //
 // It goes to this module's own logger because core does not export a startup
 // diagnostics surface. The level is the cause's; see remarkCause.level.
 func reportRemarks(logger *slog.Logger, remarks []orderingRemark) {
 	for _, u := range remarks {
-		attrs := []any{"endpoint", u.endpoint, "middleware", u.layer}
-		if u.cause != causeTiedPreference {
-			attrs = append(attrs,
-				"declaration", fmt.Sprintf("%s[%d]", u.field, u.at),
-				"capability", u.capability)
-		}
-		attrs = append(attrs, "cause", string(u.cause))
-		logger.Log(context.Background(), u.cause.level(), u.cause.message(), attrs...)
+		logger.Log(context.Background(), u.cause.level(), u.cause.message(),
+			"endpoint", u.endpoint,
+			"middleware", u.layer,
+			"declaration", fmt.Sprintf("%s[%d]", u.field, u.at),
+			"capability", u.capability,
+			"cause", string(u.cause))
 	}
 }
 
 // message is the text a remark is written with. Each cause reads differently
 // because each sends its reader somewhere else: the two unplaced causes to the
-// absent module or the wrong declaration, the stage-satisfied one to the stage
-// boundary that already holds, and the tied preference to the two layers whose
-// registration order decided.
+// absent module or the wrong declaration, and the stage-satisfied one to the
+// stage boundary that already holds.
 func (c remarkCause) message() string {
 	switch c {
 	case causeStageSatisfied:
 		return stageSatisfiedMsg
-	case causeTiedPreference:
-		return tiedPreferenceMsg
 	default:
 		return unlandedMsg
 	}
@@ -311,9 +294,7 @@ func (c remarkCause) message() string {
 // the ones that mean something along with it. The price is that the one wrong
 // declaration of that shape — a module on the endpoint that left its Provides
 // empty — is written at Info too: the graph cannot tell it from an absent
-// module, and nothing here knows who registered which layer. A tied preference
-// is written at Info as well: both layers run and the ordering is legitimate,
-// and the line is a note that the loser's claim was shared, not a fault.
+// module, and nothing here knows who registered which layer.
 //
 // A layer that is the only one standing for the capability it names has a
 // declaration that places nothing in every assembly, which no configuration
@@ -329,7 +310,7 @@ func (c remarkCause) level() slog.Level {
 	switch c {
 	case causeStageSatisfied:
 		return slog.LevelDebug
-	case causeNoProvider, causeTiedPreference:
+	case causeNoProvider:
 		return slog.LevelInfo
 	default:
 		return slog.LevelWarn

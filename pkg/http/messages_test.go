@@ -67,9 +67,9 @@ var _ i18n.Localizer = stubLocalizer{}
 // refusals this module writes see the locale it set.
 func acceptLanguageLayer() Middleware {
 	return Middleware{
-		Name:     "test:accept-language",
-		Stage:    StageObserve,
-		Position: PositionFirst,
+		Name:  "test:accept-language",
+		Stage: StageObserve,
+		Order: -100,
 		Handler: func(c *gin.Context) {
 			if tag := c.GetHeader("Accept-Language"); tag != "" {
 				c.Request = c.Request.WithContext(i18n.WithLocale(c.Request.Context(), i18n.Locale(tag)))

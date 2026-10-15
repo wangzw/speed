@@ -175,7 +175,7 @@ assembly-time diagnostics architecture.
   code. This is accepted as a non-guarantee.
 - **The two layers sit in the observe stage, and the guard's place inside the
   outer layer is a within-stage constraint.** The outer layer is the
-  instrumentation at `StageObserve` with `PositionFirst`, the outermost layer of
+  instrumentation at `StageObserve` with `OrderOutermost`, the outermost layer of
   the stage; the guard is at `StageObserve` with `After` the tracer-provider
   capability and provides nothing, so no other layer's `After` or `Before` finds
   a second provider of the two to point at

@@ -110,11 +110,11 @@ func TestRefusalOutcomeChargesOnlyTheAttackerStatuses(t *testing.T) {
 
 // --- the layer's metadata --------------------------------------------------
 
-// The shield is a guard layer: it runs before identity is settled. It carries
-// no Position, so it stays inside a PositionFirst layer there — where CORS
-// belongs, so a 429 it writes still carries the CORS headers a browser needs.
-// It carries no Provides, so nothing places itself against it, and the Limiter
-// token stays the quota layer's alone.
+// The shield is a guard layer: it runs before identity is settled. It leaves
+// Order at its zero value, so it stays inside a layer that carries
+// OrderOutermost there — where CORS belongs, so a 429 it writes still carries
+// the CORS headers a browser needs. It carries no Provides, so nothing places
+// itself against it, and the Limiter token stays the quota layer's alone.
 func TestAddressMiddlewareCarriesItsStageAndNoToken(t *testing.T) {
 	mw := newLimiter(nil).addressMiddleware()
 
@@ -124,8 +124,8 @@ func TestAddressMiddlewareCarriesItsStageAndNoToken(t *testing.T) {
 	if mw.Stage != speedhttp.StageGuard {
 		t.Fatalf("Stage = %v, want the guard stage", mw.Stage)
 	}
-	if mw.Position != speedhttp.PositionDefault {
-		t.Fatalf("Position = %v, want the default: CORS declares PositionFirst and has to stay outside", mw.Position)
+	if mw.Order != 0 {
+		t.Fatalf("Order = %v, want the zero value: CORS carries OrderOutermost and has to stay outside", mw.Order)
 	}
 	if len(mw.Provides) != 0 || len(mw.After) != 0 || len(mw.Before) != 0 {
 		t.Fatalf("the shield declares constraints (%v/%v/%v), want none: nothing places itself against it",
