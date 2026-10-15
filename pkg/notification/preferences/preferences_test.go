@@ -133,7 +133,7 @@ func TestTheModuleDeclaresItsMessageCatalog(t *testing.T) {
 	// detail in both catalogs.
 	for _, code := range []string{badRequestCode, notUnsubscribableCode} {
 		for _, suffix := range []string{titleSuffix, detailSuffix} {
-			key := "notification." + code + suffix
+			key := "notification.preferences." + code + suffix
 			if _, ok := en[key]; !ok {
 				t.Errorf("the English catalog carries no %q", key)
 			}

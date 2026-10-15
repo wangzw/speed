@@ -61,12 +61,12 @@ func (s *inboxStore) refuse(c *gin.Context, status int, code string) {
 	ctx := c.Request.Context()
 	problem := speedhttp.Problem{Status: status}
 	if code == "" {
-		problem.Title = s.text(ctx, i18n.Key("notification.unavailable"+titleSuffix), "Service Unavailable")
+		problem.Title = s.text(ctx, i18n.Key("notification.inbox.unavailable"+titleSuffix), "Service Unavailable")
 		speedhttp.Fail(c, problem)
 		return
 	}
 	problem.Type = typePrefix + code
-	problem.Title = s.text(ctx, i18n.Key("notification."+code+titleSuffix), englishTitles[code])
-	problem.Detail = s.text(ctx, i18n.Key("notification."+code+detailSuffix), englishDetails[code])
+	problem.Title = s.text(ctx, i18n.Key("notification.inbox."+code+titleSuffix), englishTitles[code])
+	problem.Detail = s.text(ctx, i18n.Key("notification.inbox."+code+detailSuffix), englishDetails[code])
 	speedhttp.Fail(c, problem)
 }
