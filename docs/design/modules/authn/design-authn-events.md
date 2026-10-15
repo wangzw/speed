@@ -151,6 +151,8 @@
 | `authn.token.refresh-reuse` | 会话标识 | `detected` | 尽力 |
 | `authn.sso.reject` | IdP 标识 | `signature`、`audience`、`time`、`replay`、`in-response-to`、`issuer`、`destination`、`other` | 尽力 |
 
+**`authn.session.revoke` 的适用面是「撤销本身即那次动作」的路径**：管理员撤销他人的会话，以及自助面的登出与撤销会话。账户级动作（改口令、重置因素、停用账户、自助改凭据）与超限淘汰都会让会话结束，但那是它们的**副作用**而不是它们宣告的事实——它们各自写自己的动作行，不另写本动作。一次批量撤销命中多个对象时，准许行与失败行都逐对象各写一行。
+
 **强制档的适用面。** 强制档只对 HTTP 管理面与冒充成立：`authn.admin` 与 `authn.impersonation` 把 `audit.Audit` 当必需依赖，装配里没有审计即启动失败。经 Go 接口的直接调用（宿主自己的命令）不受强制档约束，没有审计的装配里只写 Warn。
 
 **语句级采集。** 语句级审计行对认证自己的表照常产生，只记表、动作与受影响行数，不记值，经模型路径的写才有；登录路径上的 `Touch`、`Throttle` 与计数推进走原生 SQL，不留行。这些行没有业务语义，业务语义由接缝级的行给出。
