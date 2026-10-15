@@ -24,11 +24,13 @@ starters/demo/
   go.mod            # 独立 Go module：github.com/vislake/speed/starters/demo
   main.go           # 命令树与 run()，只剩业务决定
   host.go           # envPrefix、HostIdentity、端点常量
+  signingkey.go     # 签名密钥的路径与首次运行生成
   modules/          # 业务模块的空位
   web/              # 前端应用
-  testdata/         # 配置样例、夹具与开发用签发密钥
+  testdata/         # 配置样例与夹具
+  var/              # 运行时产物：对象存储的本地根目录与生成的签名密钥
   compose.yaml      # 部署栈外部后端的本地编排
-  .gitignore        # 把对象存储的本地根目录挡在树外
+  .gitignore        # 把 var/ 挡在树外
   AGENTS.md         # 示范自己的契约
 ```
 
@@ -58,7 +60,7 @@ starters/demo/
 
 `serve` 起 HTTP 入口，纳入全部带路由或中间件的模块；`worker` 纳入既不路由也不经网关就能启动的后台模块。栈的数据库引擎、键值后端、事件后端与导出后端仍点在各命令上，不在栈节点。
 
-`testdata/` 的每份配置为基线里需要配置的模块写全必需项，并随骨架带一组开发用值（签发密钥、口令表、库加密根键），由 `AGENTS.md` 点名、要求拷走后替换。示范的 `AGENTS.md` 是这组值与该基线的契约面。
+`testdata/` 的每份配置为基线里需要配置的模块写全必需项，并随骨架带一组开发用值（口令表、库加密根键），由 `AGENTS.md` 点名、要求拷走后替换。签名密钥不由 `testdata/` 交付：`authn.token.signing-key-file` 指向工作目录下的 `var/token-signing-key.pem`，`run()` 在驱动生命周期之前发现该路径无文件时用 `pkg/authn/token` 的 `GenerateKey` 生成一份写入，已有文件则沿用；该路径由 `.gitignore` 挡在树外，生产部署换成自己的密钥材料。示范的 `AGENTS.md` 是这组值与该基线的契约面。
 
 ### `gen` 命令
 
@@ -119,7 +121,9 @@ graph TD
 
 ## 核心算法与流程
 
-**启动**：`run()` 建命令树 → `config.App` 解析命令行与环境变量、加载主配置源、把读取面预置给 `config` 模块 → 选中的命令发起驱动，沿命令路径纳入的模块经依赖闭包展开进入参与集 → 生命周期逐阶段推进到该命令的深度 → 长跑命令等在 `ctx` 上 → 取消后入口先停、其余模块逆序释放。
+**启动**：`run()` 先确保签名密钥就位、再建命令树 → `config.App` 解析命令行与环境变量、加载主配置源、把读取面预置给 `config` 模块 → 选中的命令发起驱动，沿命令路径纳入的模块经依赖闭包展开进入参与集 → 生命周期逐阶段推进到该命令的深度 → 长跑命令等在 `ctx` 上 → 取消后入口先停、其余模块逆序释放。
+
+**签名密钥**：`run()` 在驱动生命周期之前检查 `var/token-signing-key.pem`，缺则用 `pkg/authn/token` 的 `GenerateKey` 以 ES256 生成一份、以独占创建写入并限定属主读写，已有文件则原样沿用；写入面只落这条路径，密钥不进树。
 
 **构建**：先前端后 Go。前端构建出 `web/dist`，Go 构建把它嵌进二进制；同一个 `web/dist` 另作为静态包交付。
 
@@ -137,6 +141,7 @@ graph TD
 |---|---|---|
 | 目录骨架与 `go.mod` | 已实现 | `starters/demo/go.mod`、`starters/demo/AGENTS.md` |
 | 命令树与部署栈 | 已实现 | `starters/demo/main.go` `commandTree`、`addStack`；`starters/demo/host.go` `hostModule`、`servedEndpoints` |
+| 签名密钥的首次运行生成 | 已实现 | `starters/demo/signingkey.go` `ensureSigningKey`、`signingKeyPath`；`starters/demo/main.go` `run` |
 | 平台基线（`serve`/`worker` 的点名集与配置样例） | 已实现 | `starters/demo/main.go` `baselineServe`、`baselineWorker`；`starters/demo/testdata/` |
 | `gen` 命令 | 已实现 | `starters/demo/main.go` `genModule`、`genDocument` |
 | 前端产物的内嵌与托管（合一拓扑的 Go 侧） | 已实现 | `starters/demo/main.go` `webBundle`（`//go:embed web/dist`）、`webuiModuleName` |

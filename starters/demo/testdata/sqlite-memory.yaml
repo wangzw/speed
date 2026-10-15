@@ -72,13 +72,14 @@ authn:
   static:
     subjects:
       operator: "$argon2id$v=19$m=19456,t=2,p=1$xeAjr/xEt4mML0QaEhw8pw$Khjd7856RU6MatFxmOtE0YFZJLsC05yxX5HwJhpBXno"
-  # DEV: the token signing key is the dev-token-signing-key.pem shipped beside
-  # this file. Mint your own with the token package's GenerateKey ("ES256") and
-  # replace the file. The issuer and audience default to the gateway's public
-  # URL.
+  # DEV: the token signing key. The program generates one at
+  # var/token-signing-key.pem, relative to the working directory, on the first
+  # run and keeps it afterwards. Replace it with your own key material before a
+  # deployment serves real traffic. The issuer and audience default to the
+  # gateway's public URL.
   token:
     algorithm: ES256
-    signing-key-file: testdata/dev-token-signing-key.pem
+    signing-key-file: var/token-signing-key.pem
   mfa:
     totp:
       issuer: demo

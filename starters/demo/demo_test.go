@@ -215,15 +215,15 @@ func freePorts(t *testing.T, n int) []int {
 // writeConfig writes the sqlite-memory configuration with the given endpoints
 // and returns the locator that names it. The locator is a file URL, because the
 // config locator is a URI and its scheme is what selects the transport. The
-// token signing key is the one shipped under testdata/, named by an absolute
-// path so the child resolves it whatever its working directory; the object
-// store's root is a directory of the case's own, so a run writes no bytes into
-// the source tree.
+// token signing key is minted for the case in a directory of its own, named by
+// an absolute path so the child resolves it whatever its working directory; the
+// object store's root is a directory of the case's own too, so a run writes no
+// bytes into the source tree.
 func writeConfig(t *testing.T, ports []int) string {
 	t.Helper()
-	key, err := filepath.Abs(filepath.Join("testdata", "dev-token-signing-key.pem"))
-	if err != nil {
-		t.Fatalf("resolving the dev token signing key: %v", err)
+	key := filepath.Join(t.TempDir(), "token-signing-key.pem")
+	if err := ensureSigningKey(key); err != nil {
+		t.Fatalf("minting the case's token signing key: %v", err)
 	}
 	objects := filepath.Join(t.TempDir(), "objects")
 	body := fmt.Sprintf(demoConfig, ports[0], ports[1], ports[2], ports[3], ports[4], key, objects)

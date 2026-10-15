@@ -310,9 +310,19 @@ func main() { os.Exit(run()) }
 // run builds the command tree, runs it, and turns its outcome into an exit
 // status. It is a function of its own so that the deferred stop runs before the
 // process leaves: os.Exit skips deferred calls.
+//
+// The token signing key is put in place before the command tree drives the
+// lifecycle, because the token module reads the key its configuration names as a
+// module starts and a fresh copy of this skeleton has none yet. What the program
+// then runs on is the key already on disk; see ensureSigningKey.
 func run() int {
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer stop()
+
+	if err := ensureSigningKey(signingKeyPath); err != nil {
+		fmt.Fprintln(os.Stderr, hostName+":", err)
+		return 1
+	}
 
 	if err := commandTree(core.ProcessRegistry).Execute(ctx); err != nil {
 		// A failure has already been written to standard error by the time it

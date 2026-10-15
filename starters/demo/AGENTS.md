@@ -50,6 +50,16 @@ matrix, so it stays out with it. The baseline names the inbox and the live
 stream (`notification.stream`), which mount on the endpoints their own
 configuration names and leave `web` alone.
 
+### The token signing key
+
+`authn.token.signing-key-file` names `var/token-signing-key.pem`, a path relative
+to the working directory. The program generates an ES256 key there on its first
+run and keeps it afterwards: a key regenerated on every start would invalidate
+every token already issued. The path is under `var/`, which `.gitignore` keeps out
+of the tree, so a generated key is never committed. A deployment replaces the file
+with its own key material — the token package's `GenerateKey("ES256")` mints one
+to start from, and the token module itself neither generates nor rotates a key.
+
 ### Replace before serving real traffic
 
 The configuration under `testdata/` ships development values so a copy starts as
@@ -60,10 +70,6 @@ them all before a deployment serves real traffic:
   hash of the password `operator-dev-secret` for the subject `operator` (the
   account `static.operator`). Write your own entry with the static package's
   `Hash` and replace it.
-- **The token signing key** (`authn.token.signing-key-file`) is
-  `testdata/dev-token-signing-key.pem`, an ES256 key shipped beside the
-  configuration. Mint your own with the token package's `GenerateKey("ES256")`
-  and replace the file.
 - **The database encryption key** (`db.<engine>.encryption-key`) seals the
   columns a module encrypts at rest. Replace the `dev-only-change-me-…` value.
 
@@ -73,11 +79,12 @@ them all before a deployment serves real traffic:
 |---|---|
 | `main.go` | The command tree, the deployment-stack table, the baseline inclusion lists, the `gen` command, the placeholder command group, and `run()` |
 | `host.go` | The environment prefix, the host's own module (the `config.HostIdentity` resource), and the endpoint constants |
+| `signingkey.go` | The token signing key's path, and the first-run generation that puts a key there |
 | `modules/` | The slot for this product's business modules |
 | `web/` | The frontend application; a placeholder today, built into `web/dist` and embedded by the Go program |
-| `testdata/` | One configuration per deployment stack, and the development token signing key |
+| `testdata/` | One configuration per deployment stack |
 | `compose.yaml` | The four external backends the non-memory stacks run on |
-| `.gitignore` | Keeps the object store's local root out of the tree |
+| `.gitignore` | Keeps `var/` — the object store's local root and the generated token signing key — out of the tree |
 
 ## Running it
 

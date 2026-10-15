@@ -1,4 +1,5 @@
-# The object store's local root (objectstore.fs), created at the path the
-# configuration names when the first object is written. A copy's uploaded bytes
-# belong to a deployment and not to the source tree.
+# Runtime state a copy produces: the object store's local root (objectstore.fs),
+# created at the path the configuration names when the first object is written,
+# and the token signing key the program generates on its first run. Both belong
+# to a deployment and not to the source tree.
 /var/
