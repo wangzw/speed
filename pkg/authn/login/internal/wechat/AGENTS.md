@@ -7,9 +7,15 @@ entry (`authn/login/wechatweb`) and the official-account entry
 (`authn/login/wechatmp`) each hold only their own credentials, scope and
 authorization endpoint.
 
-It binds no WeChat SDK. The reasons it is written here rather than bridged are in
-the WeChat ADR; they are specific to this one provider and are not a precedent
-for another.
+It binds no WeChat SDK. The libraries that cover WeChat are written for it as a
+platform rather than for the one step this package needs, and between them they
+depart from what that step requires: they ask for `client_id` and `client_secret`
+where WeChat wants `appid` and `secret`; they read a failed exchange as a missing
+access token and drop the `errcode`, so an expired code, a reused code and a
+wrong application secret cannot be told apart; they lose `unionid`, so one person
+gets two subjects across the two entries; and they carry the application secret
+in a URL, which the boundary below forbids. Those reasons are specific to this
+one provider and are not a precedent for another.
 
 The API is the package's godoc.
 
