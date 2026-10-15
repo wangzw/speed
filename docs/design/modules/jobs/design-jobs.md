@@ -341,6 +341,6 @@ stateDiagram-v2
 
 | 能力 | 状态 | 代码 |
 |---|---|---|
-| 接缝与根包类型（`Queue`、`Handlers`、`Handler`、`Task`、`Job`、`JobID`、`Status`、`Priority`、`Result`、`ProgressFn`、`Schedule`、`EnqueueOption`、`NewEnqueueOptions` 与 `With*` 构造函数、常量与哨兵） | 未实现 | — |
-| 作业队列与登记面 `jobs.db` | 未实现 | — |
-| 周期调度 `jobs.scheduler` | 未实现 | — |
+| 接缝与根包类型（`Queue`、`Handlers`、`Handler`、`Task`、`Job`、`JobID`、`Status`、`Priority`、`Result`、`ProgressFn`、`Schedule`、`EnqueueOption`、`NewEnqueueOptions` 与 `With*` 构造函数、常量与哨兵） | 已实现 | `pkg/jobs/jobs.go` `Queue`、`Handlers`、`Handler`、`Task`、`Job`、`JobID`、`Status`、`Priority`、`Result`、`ProgressFn`、`EnqueueOption`、`NewEnqueueOptions`、`WithPriority`、`WithDelay`、`WithScheduledAt`、`WithMaxRetries`、`WithTimeout` 及哨兵；`pkg/jobs/schedule.go` `Schedule` |
+| 作业队列与登记面 `jobs.db` | 已实现 | `pkg/jobs/db/jobs.go` `Module`、`ModuleName`、`Register`、`Registered`；`pkg/jobs/db/store.go` `Enqueue`、`Get`、`Cancel`；`pkg/jobs/db/loop.go` `pass`、`claim`、`execute`、`settle`；`pkg/jobs/db/config.go` `schema`、`readSettings`、`retryAfter`；`pkg/jobs/db/migrations` |
+| 周期调度 `jobs.scheduler` | 已实现 | `pkg/jobs/scheduler/scheduler.go` `Module`、`ModuleName`、`collectSchedules`、`validate`、`tickOnce`、`windowStart`、`windowKey`；`pkg/jobs/scheduler/config.go` `schema`、`readSettings` |

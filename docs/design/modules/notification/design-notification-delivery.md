@@ -111,6 +111,8 @@ idempotency_key = hex(sha256(canonicalJSON{
 
 消息的文本由本模块在后端渲染，不交给客户端：一条 `notification.Message` 的 `Title` 与 `Body`、一封邮件的主题与正文、一条短信的参数，都按**收件人的语言**（`Dispatch.Locale`）与该**类型的声明**（`TypeSpec` 的键与 `RecipientVisibleParams`）渲染而成。渲染经 i18n 引擎（`i18n.Localizer`），目录键按通知命名空间与类型键拼出；`RecipientVisibleParams` 白名单之外的参数进不了渲染上下文，也进不了载荷（[ADR-notification-delivery-2026-10-15](../../../adr/adr-notification-delivery-2026-10-15.md)）。渲染是纯读取，不触达厂商。
 
+**两个部件只在目录里有条目时才写。** 站内信的 `link` 与邮件的 `body_html` 是客户端会直接呈现的字段，目录里没有对应条目时留空，不把键串写进一个客户端当作链接或标记来处理的字段；其余部件按引擎的回落照常渲染——键串是文本，缺一条目录不是本模块可拒的事。
+
 ### 稳定性承诺
 
 - `notification.Dispatcher` 的方法集，以及本模块对 `notification.Dispatch` 字段语义的依赖，是与其他模块之间的契约；本模块的包导出的 `ModuleName` 同样是契约。
@@ -125,7 +127,7 @@ idempotency_key = hex(sha256(canonicalJSON{
 | `pkg/db` | `notification_sends` 表与迁移 |
 | `pkg/tenant` | 租户上下文、`tenant.Model`、语句的租户过滤 |
 | `pkg/notification` | 根包的类型、哨兵与接缝（`Dispatcher`、`Dispatch`、`Preferences`、`Inbox`、`Channel`） |
-| `pkg/mail` | 可选：`email` 渠道的发送接缝 `mail.Sender`。该能力尚未合入 main、位于同批在途的能力，引用按「路径 + 符号」写 |
+| `pkg/mail` | 可选：`email` 渠道的发送接缝 `mail.Sender`（`Send`、`Message`、`Receipt` 与哨兵 `ErrThrottled`、`ErrRejected`、`ErrUncertain`、`ErrInvalidConfig`）。本模块只引用这条接缝，不设计它的内部 |
 | `pkg/sms` | 可选：`sms` 渠道的 `sms.Registry`（解模板）与 `sms.Sender`（发送） |
 | `pkg/i18n` | 把消息渲染成收件人语言的文本（`i18n.Localizer`，必需依赖） |
 
@@ -220,14 +222,14 @@ classDiagram
 **逐渠道发送的次序与判据**：
 
 - **`in_app`**：渲染 `notification.Message`，经 `Inbox.Write` 写一行，落 `succeeded`。
-- **`email`**：`mail.Sender` 缺席即落 `skipped`；在场则渲染主题与正文，经 `mail.Sender.Send` 发一次，把结果归入 `succeeded` 或 `failed`。
+- **`email`**：`mail.Sender` 缺席即落 `skipped`；在场则取派发参数里的目的地、渲染主题与正文（纯文本与 HTML），经 `mail.Sender.Send` 发一次，把结果归入 `succeeded` 或 `failed`，厂商回执标识落 `provider_receipt_id`。
 - **`sms`**：`sms.Registry` 或 `sms.Sender` 缺席即落 `skipped`；在场则取派发参数里的目的地、字符串化参数（见下），经 `sms.Registry.Resolve` 解出模板，再经 `sms.Sender.Send` 发一次，落账。
 
 **每个渠道发送前先按去重键查账**：命中 `succeeded` 或 `skipped` 行即用那一行的结果、不重复发送；命中 `failed` 行即这一次重新发送（见「去重键与幂等落账」）。
 
-### 短信目的地与参数的字符串化
+### 外部渠道的目的地与短信参数的字符串化
 
-**短信的目的地从派发参数 `to` 取。** 收件人是一个账户标识，本模块不达任何账户库，因而 E.164 号码由调用方在 `Dispatch.Params` 里以参数名 `to` 给出——它是调用方给出的参数之一，本模块不从账户推出它，缺它也使不了别的来源。`Dispatch.Params` 里没有 `to`、或它的值字符串化不出一个非空文本，都使该渠道落 `failed`（`ErrInvalidRequest`），不触达厂商。
+**外部渠道的目的地从派发参数 `to` 取。** 收件人是一个账户标识，本模块不达任何账户库，因而目的地由调用方在 `Dispatch.Params` 里以参数名 `to` 给出：`sms` 取 E.164 号码，`email` 取 RFC 5322 地址。它是调用方给出的参数之一，本模块不从账户推出它，缺它也使不了别的来源。`Dispatch.Params` 里没有 `to`、或它的值字符串化不出一个非空文本，都使该渠道落 `failed`（`ErrInvalidRequest`），不触达厂商。
 
 **`to` 同时是模板参数之一。** 它与其余参数一同进 `sms.Registry.Resolve` 的参数表，模板没有声明的参数会被拒，因此声明该类型的业务模块要在自己的短信模板参数表里列出 `to`；目的地取值与模板参数取的是同一个值。
 
@@ -296,10 +298,10 @@ classDiagram
 
 | 能力 | 状态 | 代码 |
 |---|---|---|
-| 提交面 `Dispatcher` 与作业类型 | 未实现 | — |
-| `Dispatch`（形状校验、分类法校验、入队） | 未实现 | — |
-| 处理器与逐渠道发送 | 未实现 | — |
-| 渠道可用性判定与 `skipped` | 未实现 | — |
-| 去重键与 `notification_sends` 幂等落账 | 未实现 | — |
-| 短信参数的字符串化 | 未实现 | — |
-| `notification_sends` 表与迁移 | 未实现 | — |
+| 提交面 `Dispatcher` 与作业类型 | 已实现 | `pkg/notification/notification.go` `Dispatcher`；`pkg/notification/delivery/delivery.go` `Module`、`ModuleName`、`JobType` |
+| `Dispatch`（形状校验、分类法校验、入队） | 已实现 | `pkg/notification/delivery/dispatch.go` `Dispatch`、`decodeDispatch`；`pkg/notification/delivery/taxonomy.go` `collectTaxonomy`、`validate` |
+| 处理器与逐渠道发送 | 已实现 | `pkg/notification/delivery/handler.go` `Type`、`Handle`、`deliver`、`send`、`sendInApp`、`sendEmail`、`sendSMS` |
+| 渠道可用性判定与 `skipped` | 已实现 | `pkg/notification/delivery/delivery.go` `channelSeams`、`emailReady`、`smsReady`；`pkg/notification/delivery/handler.go` `sendEmail`、`sendSMS` |
+| 去重键与 `notification_sends` 幂等落账 | 已实现 | `pkg/notification/delivery/keys.go` `channelKey`、`dispatchKey`、`deriveKey`；`pkg/notification/delivery/store.go` `ledger`、`lookup`、`record` |
+| 外部渠道的目的地与短信参数的字符串化 | 已实现 | `pkg/notification/delivery/render.go` `destination`、`destinationParam`、`stringifyParams`、`stringify`、`renderValue` |
+| `notification_sends` 表与迁移 | 已实现 | `pkg/notification/delivery/store.go` `sendRow`、`tableName`；`pkg/notification/delivery/migrations` |

@@ -336,9 +336,9 @@ speed 不引入进程边界。宿主是单一进程，注册表与全部模块�
 | [ratelimit](modules/design-ratelimit.md) | 已实现 |
 | [observability](modules/design-observability.md) | 部分实现 |
 | [i18n](modules/design-i18n.md) | 已实现 |
-| [jobs](modules/jobs/design-jobs.md) | 未实现 |
-| [notification](modules/notification/design-notification.md) | 未实现 |
-| [objectstore](modules/design-objectstore.md) | 未实现 |
+| [jobs](modules/jobs/design-jobs.md) | 已实现 |
+| [notification](modules/notification/design-notification.md) | 已实现 |
+| [objectstore](modules/design-objectstore.md) | 已实现 |
 | [ops](modules/design-ops.md) | 已实现 |
 | [web](modules/web/design-web.md) | 部分实现 |
 | [webui](modules/design-webui.md) | 已实现 |

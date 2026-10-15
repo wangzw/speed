@@ -278,8 +278,8 @@ classDiagram
 
 | 能力 | 状态 | 代码 |
 |---|---|---|
-| 接缝 `Preferences` 与分类法资源 `TypeSpec` | 未实现 | — |
-| 分类法的收集、校验与只读视图 | 未实现 | — |
-| `notification_preferences` 表与迁移 | 未实现 | — |
-| 有效集的计算 | 未实现 | — |
-| 偏好路由与 PUT 的判定顺序 | 未实现 | — |
+| 接缝 `Preferences` 与分类法资源 `TypeSpec` | 已实现 | `pkg/notification/notification.go` `Preferences`、`TypeSpec`、`ValidateTypeSpec`；`pkg/notification/preferences/preferences.go` `Module`、`ModuleName`、`product` |
+| 分类法的收集、校验与只读视图 | 已实现 | `pkg/notification/preferences/taxonomy.go` `buildTaxonomy`、`Types`、`Type`；`pkg/notification/preferences/views.go` `typeView`、`typeViewOf` |
+| `notification_preferences` 表与迁移 | 已实现 | `pkg/notification/preferences/preferences.go` `Module`、`ModuleName`、`tableName`；`pkg/notification/preferences/store.go` `preferenceRow`；`pkg/notification/preferences/migrations` |
+| 有效集的计算 | 已实现 | `pkg/notification/preferences/store.go` `Effective`、`canonicalChannels`；`pkg/notification/preferences/routes.go` `effectiveChannels` |
+| 偏好路由与 PUT 的判定顺序 | 已实现 | `pkg/notification/preferences/preferences.go` `routes`、`mount`；`pkg/notification/preferences/routes.go` `handleTypes`、`handlePreferences`、`handleSetPreference`；`pkg/notification/preferences/store.go` `Set` |

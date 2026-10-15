@@ -231,9 +231,9 @@ classDiagram
 
 | 能力 | 状态 | 代码 |
 |---|---|---|
-| 功能接口、消息视图与查询类型 | 未实现 | — |
-| 模块描述符与迁移集 | 未实现 | — |
-| 写入口与去重键幂等 | 未实现 | — |
-| 路由与判定顺序 | 未实现 | — |
-| 事件发布 | 未实现 | — |
-| 列出、计数与标记已读 | 未实现 | — |
+| 功能接口、消息视图与查询类型 | 已实现 | `pkg/notification/notification.go` `Message`、`ListQuery`、`MessagePage`、`Inbox`；`pkg/notification/inbox/views.go` `messageView`、`messageViewOf` |
+| 模块描述符与迁移集 | 已实现 | `pkg/notification/inbox/inbox.go` `Module`、`ModuleName`、`migrationsFS`；`pkg/notification/inbox/migrations` |
+| 写入口与去重键幂等 | 已实现 | `pkg/notification/inbox/store.go` `Write`、`byDedupeKey` |
+| 路由与判定顺序 | 已实现 | `pkg/notification/inbox/routes.go` `routes`、`mount`；`pkg/notification/inbox/handlers.go` `caller`、`handleList`、`handleUnreadCount`、`handleReadAll`、`handleMessageRead` |
+| 事件发布 | 已实现 | `pkg/notification/inbox/inbox.go` `EventInboxCreated`、`Created`；`pkg/notification/inbox/store.go` `publishCreated` |
+| 列出、计数与标记已读 | 已实现 | `pkg/notification/inbox/store.go` `List`、`UnreadCount`、`MarkRead`、`ReadAll` |

@@ -214,7 +214,7 @@ type Message struct {
 | `pkg/db` | 各模块的表与迁移集 |
 | `pkg/tenant` | 租户进入与语句过滤；每个模块的表内嵌租户模型，推送模块的路由经 `tenant.FromContext` 取请求的租户 |
 | `pkg/i18n` | 投递时按 `<type_key>.<channel>.<part>` 渲染标题、正文与主题；收件箱与偏好各自经 `i18n.Localizer` 按协商语言渲染自己写出的 `Problem` 的标题与正文 |
-| `pkg/mail` | `email` 渠道的发送接缝 `Sender`（`Send`、`Message`、`Receipt` 与哨兵 `ErrThrottled`、`ErrRejected`、`ErrUncertain`、`ErrInvalidConfig`）。**该能力尚未合入 main，与本能力同批在途**；本设计只引用这条接缝，不设计它的内部 |
+| `pkg/mail` | `email` 渠道的发送接缝 `Sender`（`Send`、`Message`、`Receipt` 与哨兵 `ErrThrottled`、`ErrRejected`、`ErrUncertain`、`ErrInvalidConfig`）。本设计只引用这条接缝，不设计它的内部 |
 | `pkg/sms` | `sms` 渠道的模板注册表 `Registry` 与发送接缝 `Sender` |
 | `pkg/event` | 收件箱创建事件 `notification.inbox.created`：收件箱发布、推送订阅。可选 |
 | `pkg/http` | 路由登记面。可选 |
@@ -393,7 +393,7 @@ idempotency_key = hex(sha256(canonicalJSON{
 5. **逐渠道投递。** 对每个生效渠道：
    1. **渠道可用性**：`in_app` 恒可用；`email` 需 `mail.Sender` 在场；`sms` 需 `sms.Registry` 与 `sms.Sender` 都在场。任一缺席即记一行 `skipped`（`duration_ms` 为零），进下一个渠道。
    2. **去重**：按去重键查 `notification_sends`；命中 `succeeded` 行即跳过该渠道；命中 `failed` 行则重试。
-   3. **渲染**：经 `i18n.Localizer` 按收件人语言渲染 `<type_key>.<channel>.<part>`：站内信渲染 `title` 与 `body`，邮件渲染 `subject` 与 `body_text`，短信取模板标识而非自由文本。引擎对不受支持的语言回落默认语言、再回落键本身。
+   3. **渲染**：经 `i18n.Localizer` 按收件人语言渲染 `<type_key>.<channel>.<part>`：站内信渲染 `title` 与 `body`，邮件渲染 `subject` 与 `body_text`、目录里另有 `body_html` 时一并渲染出 HTML 正文，短信取模板标识而非自由文本。引擎对不受支持的语言回落默认语言、再回落键本身。
    4. **发送**：站内信经 `Inbox.Write`（`dedupeKey` 取去重键在 `channel = in_app` 下的值），写行本身不发布事件——`notification.inbox.created` 由收件箱在提交那一行之后发布，本模块不发布；邮件经 `mail.Sender.Send`；短信先经 `sms.Registry.Resolve` 解出模板与参数、再经 `sms.Sender.Send`。
    5. **落账**：按该渠道的结果写一行 `notification_sends`——`succeeded` 带回执标识与耗时，`failed` 带原因与耗时。
 6. **作业的终态。** 全部渠道处理完，若无渠道以失败告终，作业成功；有任一渠道失败则 handler 返回错误，作业按 `jobs.db` 的退避与重试规则重跑——重跑时已成功的渠道因去重键命中 `succeeded` 行而跳过，只补发失败的渠道。重试用尽即进死信（`dead_letter`），投递账上保留每次失败的原因。
@@ -453,9 +453,9 @@ idempotency_key = hex(sha256(canonicalJSON{
 
 | 能力 | 状态 | 代码 |
 |---|---|---|
-| 根包类型、接缝与哨兵 | 未实现 | — |
-| 提交面 `Dispatcher` | 未实现 | — |
-| 站内信收件箱 `notification.inbox` | 未实现 | — |
-| 渠道偏好与类型分类法 `notification.preferences` | 未实现 | — |
-| 出站投递流水线 `notification.delivery` | 未实现 | — |
-| SSE 推送 `notification.stream` | 未实现 | — |
+| 根包类型、接缝与哨兵 | 已实现 | `pkg/notification/notification.go` `Channel`、`KnownChannel`、`TypeSpec`、`ValidateTypeSpec`、`RecipientClass`、`Recipient`、`Dispatch`、`Preference`、`Message`、`ListQuery`、`MessagePage`、`Inbox`、`Preferences` 及哨兵 |
+| 提交面 `Dispatcher` | 已实现 | `pkg/notification/notification.go` `Dispatcher`；`pkg/notification/delivery/dispatch.go` `Dispatch` |
+| 站内信收件箱 `notification.inbox` | 已实现 | `pkg/notification/inbox/inbox.go` `Module`、`ModuleName`、`Created`；`pkg/notification/inbox/store.go` `Write`、`List`、`UnreadCount`、`MarkRead`、`ReadAll`；`pkg/notification/inbox/routes.go` `routes`、`mount`；`pkg/notification/inbox/migrations` |
+| 渠道偏好与类型分类法 `notification.preferences` | 已实现 | `pkg/notification/preferences/preferences.go` `Module`、`ModuleName`、`routes`、`mount`；`pkg/notification/preferences/store.go` `Effective`、`Set`；`pkg/notification/preferences/taxonomy.go` `buildTaxonomy`；`pkg/notification/preferences/migrations` |
+| 出站投递流水线 `notification.delivery` | 已实现 | `pkg/notification/delivery/delivery.go` `Module`、`ModuleName`、`JobType`、`channelSeams`；`pkg/notification/delivery/dispatch.go` `Dispatch`；`pkg/notification/delivery/handler.go` `Type`、`Handle`、`deliver`、`send`、`sendInApp`、`sendEmail`、`sendSMS`；`pkg/notification/delivery/store.go` `ledger`；`pkg/notification/delivery/migrations` |
+| SSE 推送 `notification.stream` | 已实现 | `pkg/notification/stream/stream.go` `Module`、`ModuleName`、`subscribe`；`pkg/notification/stream/hub.go` `Hub`、`Subscribe`、`Publish`、`Close`；`pkg/notification/stream/routes.go` `routes`、`mount`、`handleStream` |

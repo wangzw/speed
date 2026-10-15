@@ -16,7 +16,7 @@
 
 | 子模块 | 状态 |
 |---|---|
-| [notification-inbox](design-notification-inbox.md) | 未实现 |
-| [notification-preferences](design-notification-preferences.md) | 未实现 |
-| [notification-delivery](design-notification-delivery.md) | 未实现 |
-| [notification-stream](design-notification-stream.md) | 未实现 |
+| [notification-inbox](design-notification-inbox.md) | 已实现 |
+| [notification-preferences](design-notification-preferences.md) | 已实现 |
+| [notification-delivery](design-notification-delivery.md) | 已实现 |
+| [notification-stream](design-notification-stream.md) | 已实现 |

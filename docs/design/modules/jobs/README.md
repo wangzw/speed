@@ -14,5 +14,5 @@
 
 | 子模块 | 状态 |
 |---|---|
-| [jobs.db](design-jobs-db.md) | 未实现 |
-| [jobs.scheduler](design-jobs-scheduler.md) | 未实现 |
+| [jobs.db](design-jobs-db.md) | 已实现 |
+| [jobs.scheduler](design-jobs-scheduler.md) | 已实现 |

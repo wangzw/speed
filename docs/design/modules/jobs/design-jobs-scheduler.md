@@ -192,9 +192,9 @@ sequenceDiagram
 
 | 能力 | 状态 | 代码 |
 |---|---|---|
-| 模块描述符与 `tick` 配置读取 | 未实现 | — |
-| 周期声明的收集与取材域过滤 | 未实现 | — |
-| 声明形状校验 | 未实现 | — |
-| ticker 与窗口计算、幂等键 | 未实现 | — |
-| 按名册逐租户展开 | 未实现 | — |
-| 启动期声明类型校验 | 未实现 | — |
+| 模块描述符与 `tick` 配置读取 | 已实现 | `pkg/jobs/scheduler/scheduler.go` `Module`、`ModuleName`；`pkg/jobs/scheduler/config.go` `schema`、`readSettings` |
+| 周期声明的收集与取材域过滤 | 已实现 | `pkg/jobs/scheduler/scheduler.go` `collectSchedules`、`inForce` |
+| 声明形状校验 | 已实现 | `pkg/jobs/scheduler/scheduler.go` `validate` |
+| ticker 与窗口计算、幂等键 | 已实现 | `pkg/jobs/scheduler/scheduler.go` `start`、`tickOnce`、`windowStart`、`windowKey` |
+| 按名册逐租户展开 | 已实现 | `pkg/jobs/scheduler/scheduler.go` `enqueueSchedule`、`enqueueOne` |
+| 启动期声明类型校验 | 已实现 | `pkg/jobs/scheduler/scheduler.go` `checkHandlers` |

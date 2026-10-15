@@ -329,10 +329,10 @@ handler 返回错误、或执行上下文到期，都是本次执行失败：`at
 
 | 能力 | 状态 | 代码 |
 |---|---|---|
-| `Queue` 实现（`Enqueue`、`Get`、`Cancel`） | 未实现 | — |
-| `Handlers` 登记面与 handler 集 | 未实现 | — |
-| 作业表、迁移集与幂等唯一索引 | 未实现 | — |
-| 一轮认领、执行、结清 | 未实现 | — |
-| 退避、死信与取消 | 未实现 | — |
-| 终态事件、发布义务与补发 | 未实现 | — |
-| 各方言的认领语句 | 未实现 | — |
+| `Queue` 实现（`Enqueue`、`Get`、`Cancel`） | 已实现 | `pkg/jobs/db/store.go` `Enqueue`、`Get`、`Cancel` |
+| `Handlers` 登记面与 handler 集 | 已实现 | `pkg/jobs/db/jobs.go` `Register`、`Registered`、`handlerOf` |
+| 作业表、迁移集与幂等唯一索引 | 已实现 | `pkg/jobs/db/statements.go` `tableName`、`build`；`pkg/jobs/db/migrations` |
+| 一轮认领、执行、结清 | 已实现 | `pkg/jobs/db/loop.go` `pass`、`claim`、`execute`、`settle` |
+| 退避、死信与取消 | 已实现 | `pkg/jobs/db/config.go` `retryAfter`；`pkg/jobs/db/loop.go` `settleFailure`、`cancelCheck` |
+| 终态事件、发布义务与补发 | 已实现 | `pkg/jobs/db/loop.go` `publishTerminal`、`terminalEventType`、`republish`、`owing` |
+| 各方言的认领语句 | 已实现 | `pkg/jobs/db/statements.go` `statementsFor`、`build` |

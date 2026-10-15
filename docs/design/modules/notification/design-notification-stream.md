@@ -190,7 +190,7 @@ classDiagram
 
 | 能力 | 状态 | 代码 |
 |---|---|---|
-| 模块描述符与订阅 | 未实现 | — |
-| Hub 与连接 | 未实现 | — |
-| `GET /stream` 路由与帧写出 | 未实现 | — |
-| 停机与注销 | 未实现 | — |
+| 模块描述符与订阅 | 已实现 | `pkg/notification/stream/stream.go` `Module`、`ModuleName`、`subscribe` |
+| Hub 与连接 | 已实现 | `pkg/notification/stream/hub.go` `Hub`、`Subscribe`、`Publish`、`connection` |
+| `GET /stream` 路由与帧写出 | 已实现 | `pkg/notification/stream/routes.go` `routes`、`mount`、`handleStream`、`writeFrame` |
+| 停机与注销 | 已实现 | `pkg/notification/stream/stream.go` `Module`；`pkg/notification/stream/hub.go` `Close`、`closeAll`、`remove` |
