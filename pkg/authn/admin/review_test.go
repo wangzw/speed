@@ -681,8 +681,8 @@ func TestTheAuditRowsCarryTheContract(t *testing.T) {
 // revocation names the session it revoked, so revoking an account's sessions
 // writes one mandatory row per session, read before the action — and, when the
 // action fails, one failed row per session, with every row of the action linked
-// by the one action identifier. With nothing to name the action is not carried
-// out at all, so no revocation happens without a row to account for it.
+// by the one action identifier. With nothing to name, nothing is revoked and the
+// answer says so.
 //
 // The action, the outcomes and the detail key are asserted as the literals the
 // capability's closed tables state, so the case does not move with a production
@@ -727,8 +727,12 @@ func TestABulkRevocationNamesEverySessionItRevokes(t *testing.T) {
 	// carrying the one action identifier.
 	done := newRig(t)
 	seed(done, sessionA, second)
-	if rec := done.do(http.MethodPost, path, nil, fresh()...); rec.Code != http.StatusOK {
-		t.Fatalf("the bulk revocation answered %d, want 200: %s", rec.Code, rec.Body.String())
+	answer := done.do(http.MethodPost, path, nil, fresh()...)
+	if answer.Code != http.StatusOK {
+		t.Fatalf("the bulk revocation answered %d, want 200: %s", answer.Code, answer.Body.String())
+	}
+	if got := strings.TrimSpace(answer.Body.String()); got != `{"revoked":2}` {
+		t.Errorf("the answer is %s, want the two sessions the rows name", got)
 	}
 	rows := done.audit.entries()
 	if len(rows) != 2 {
@@ -746,7 +750,7 @@ func TestABulkRevocationNamesEverySessionItRevokes(t *testing.T) {
 	// same identifier, one per session, naming the same sessions.
 	failed := newRig(t)
 	seed(failed, sessionA, second)
-	failed.sessions.err = errors.New("the revocation failed")
+	failed.sessions.revokeErr = errors.New("the revocation failed")
 	if rec := failed.do(http.MethodPost, path, nil, fresh()...); rec.Code != http.StatusServiceUnavailable {
 		t.Fatalf("the failed bulk revocation answered %d, want 503: %s", rec.Code, rec.Body.String())
 	}
@@ -765,19 +769,35 @@ func TestABulkRevocationNamesEverySessionItRevokes(t *testing.T) {
 		t.Errorf("the rows carry the action identifiers %v, want one shared identifier", got)
 	}
 
-	// Nothing live to name: the account holds no session a caller could point
-	// at, so the action is not carried out and no row is written.
+	// No revocable session: nothing is named, nothing is revoked, and the answer
+	// says so rather than reporting a revocation no row accounts for.
 	empty := newRig(t)
 	seed(empty)
 	rec := empty.do(http.MethodPost, path, nil, fresh()...)
 	if rec.Code != http.StatusOK {
-		t.Fatalf("the bulk revocation with no session to name answered %d, want 200: %s", rec.Code, rec.Body.String())
+		t.Fatalf("the bulk revocation with no revocable session answered %d, want 200: %s", rec.Code, rec.Body.String())
+	}
+	if got := strings.TrimSpace(rec.Body.String()); got != `{"revoked":0}` {
+		t.Errorf("the answer is %s, want no session revoked", got)
 	}
 	if rows := empty.audit.entries(); len(rows) != 0 {
 		t.Errorf("the audit holds %v, want no row: no session was revoked", rows)
 	}
-	if empty.sessions.revokedAcct != 0 {
-		t.Error("the bulk revocation ran with nothing to name, so a revocation happened with no row to account for it")
+
+	// The set cannot be read: no row could name what the action would end, so
+	// the action is not carried out and the answer is the outage.
+	unreadable := newRig(t)
+	seed(unreadable, sessionA, second)
+	unreadable.sessions.err = errors.New("the store is unreachable")
+	rec = unreadable.do(http.MethodPost, path, nil, fresh()...)
+	if rec.Code != http.StatusServiceUnavailable {
+		t.Fatalf("the bulk revocation whose set could not be read answered %d, want 503: %s", rec.Code, rec.Body.String())
+	}
+	if rows := unreadable.audit.entries(); len(rows) != 0 {
+		t.Errorf("the audit holds %v, want no row: the action was not carried out", rows)
+	}
+	if unreadable.sessions.revokedAcct != 0 {
+		t.Error("a revocation ran although the set it would end could not be read")
 	}
 }
 

@@ -33,6 +33,12 @@ type Sessions interface {
 	// List lists the account's live browser and token sessions. Service sessions
 	// are not listed.
 	List(ctx context.Context, account AccountID) ([]SessionInfo, error)
+	// RevocableSessions lists the identifiers of the account's unrevoked browser
+	// and token sessions — the set RevokeAccount ends. A session past its deadline
+	// is among them: that statement ends it all the same, and a caller that writes
+	// one audit row per revocation has to name it. Service sessions are not among
+	// them.
+	RevocableSessions(ctx context.Context, account AccountID) ([]SessionID, error)
 	// Revoke revokes a session, idempotently. A service session is revoked as
 	// well, after which ForCredential for its secret is ErrSessionRevoked. reason
 	// is one of the Reason constants that ValidPayloadReasonClass accepts, and
@@ -40,9 +46,9 @@ type Sessions interface {
 	Revoke(ctx context.Context, id SessionID, reason string) error
 	// RevokeAccount revokes the account's browser and token sessions in one
 	// statement, keeping the one named by except when it is not empty, and returns
-	// how many it revoked. Service sessions are not among them. reason is read as
-	// Revoke reads it.
-	RevokeAccount(ctx context.Context, account AccountID, except SessionID, reason string) (int, error)
+	// the identifiers it revoked. Service sessions are not among them. reason is
+	// read as Revoke reads it.
+	RevokeAccount(ctx context.Context, account AccountID, except SessionID, reason string) ([]SessionID, error)
 	// Rotate gives a browser session a new token and keeps its identifier, level
 	// and expiry. It has nothing to do for the other kinds.
 	Rotate(ctx context.Context, id SessionID) (Issued, error)

@@ -67,12 +67,11 @@ func (m *product) handleAccountSessions(c *gin.Context) {
 }
 
 // handleRevokeAccountSessions answers POST
-// /admin/accounts/:id/revoke-sessions: it revokes the account's browser and
-// token sessions, writing one audit row per live session before the action. A
-// session past its deadline is ended by the same statement and named by no row
-// of its own; with no live session to name the action is not carried out at all,
-// so no revocation happens without a row to account for it. The action is
-// session.revoke.
+// /admin/accounts/:id/revoke-sessions: it revokes the account's unrevoked
+// browser and token sessions, writing one audit row per session before the
+// action. The set is read under the statement's own condition, so a session past
+// its deadline is named like any other and no revocation happens without a row
+// to account for it. The action is session.revoke.
 func (m *product) handleRevokeAccountSessions(c *gin.Context) {
 	id, ok := m.caller(c)
 	if !ok || !m.admit(c, id) {
@@ -90,38 +89,31 @@ func (m *product) handleRevokeAccountSessions(c *gin.Context) {
 		return
 	}
 	ctx := c.Request.Context()
-	// The audit row of a revocation names the session it revoked, so a bulk
-	// revocation writes one row per session and the set is read before the
-	// action. The set is the live one, and the bulk statement ends every
-	// unrevoked browser and token row: a row past its deadline goes with it and
-	// is named by no row of its own.
-	targets, err := m.sessions.List(ctx, accountID)
+	// The audit row of a revocation names the session it revoked, and the row is
+	// written before the action, so the set is read first — under the condition
+	// the statement itself uses, so the rows and the revocation name one set. An
+	// account with nothing in that set has nothing revoked and nothing written.
+	targets, err := m.sessions.RevocableSessions(ctx, accountID)
 	if err != nil {
-		m.cause(c, "listing an account's sessions", err)
-		return
-	}
-	// With nothing to name there is nothing to revoke: the statement would end
-	// only rows past their deadline, with no row to account for ending them.
-	if len(targets) == 0 {
-		c.JSON(200, gin.H{"revoked": 0})
+		m.cause(c, "listing an account's revocable sessions", err)
 		return
 	}
 	actionID := newActionID()
-	for _, s := range targets {
-		if !m.auditRequired(c, mandatory(actionSessionRevoke, string(s.ID),
+	for _, target := range targets {
+		if !m.auditRequired(c, mandatory(actionSessionRevoke, string(target),
 			map[string]string{detailActionID: actionID})) {
 			return
 		}
 	}
-	n, err := m.sessions.RevokeAccount(ctx, accountID, "", authn.ReasonAdmin)
+	revoked, err := m.sessions.RevokeAccount(ctx, accountID, "", authn.ReasonAdmin)
 	if err != nil {
-		for _, s := range targets {
-			m.auditBestEffort(ctx, failedAudit(actionSessionRevoke, string(s.ID), actionID))
+		for _, target := range targets {
+			m.auditBestEffort(ctx, failedAudit(actionSessionRevoke, string(target), actionID))
 		}
 		m.answer(c, "revoking an account's sessions", err)
 		return
 	}
-	c.JSON(200, gin.H{"revoked": n})
+	c.JSON(200, gin.H{"revoked": len(revoked)})
 }
 
 // handleSessionRevoke answers DELETE /admin/sessions/:id: it reads the session

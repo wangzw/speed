@@ -94,6 +94,20 @@ func (p *product) exec(ctx context.Context, op, statement string, args ...any) (
 	return res.RowsAffected, nil
 }
 
+// returnedIDs runs one statement that returns the identifiers it selected or
+// changed, in a RETURNING clause — syntax SQLite and PostgreSQL share.
+func (p *product) returnedIDs(ctx context.Context, op, statement string, args ...any) ([]authn.SessionID, error) {
+	var rows []struct{ ID string }
+	if err := p.handle.WithContext(ctx).Raw(statement, args...).Scan(&rows).Error; err != nil {
+		return nil, unavailable(op, err)
+	}
+	out := make([]authn.SessionID, len(rows))
+	for i, r := range rows {
+		out[i] = authn.SessionID(r.ID)
+	}
+	return out, nil
+}
+
 // rows runs one query and returns the rows it selected.
 func (p *product) rows(ctx context.Context, op, statement string, args ...any) ([]sessionRow, error) {
 	var out []sessionRow
@@ -211,6 +225,12 @@ func (p *product) revokeRow(ctx context.Context, id authn.SessionID, reason stri
 // rows of an account that can still authenticate. now binds twice.
 const liveCondition = "account_id = ? AND kind IN ('browser', 'token') AND revoked_at IS NULL " +
 	"AND expires_at > ? AND (kind = 'token' OR idle_expires_at > ?)"
+
+// revocableCondition selects the rows RevokeAccount ends, so that the set a
+// caller reads to name them and the set that statement changes are one set. A
+// row past its deadline is among them: the statement ends it, and a caller
+// writing one audit row per revocation has to name it.
+const revocableCondition = "account_id = ? AND kind IN ('browser', 'token') AND revoked_at IS NULL"
 
 // liveRows lists the account's live browser and token rows, the least recently
 // used first.

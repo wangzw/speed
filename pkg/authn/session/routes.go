@@ -34,25 +34,6 @@ const (
 	outcomeSuccess      = "success"
 )
 
-// revocationTargets lists the live sessions a bulk revocation of the account
-// ends, the current one excepted. The audit row of a revocation names the
-// session it revoked, so the set is read before the action rather than counted
-// after it.
-func (p *product) revocationTargets(ctx context.Context, account authn.AccountID, except authn.SessionID) ([]authn.SessionID, error) {
-	rows, err := p.liveRows(ctx, account, p.now(), "created_at DESC, id DESC")
-	if err != nil {
-		return nil, err
-	}
-	out := make([]authn.SessionID, 0, len(rows))
-	for _, row := range rows {
-		if row.ID == string(except) {
-			continue
-		}
-		out = append(out, authn.SessionID(row.ID))
-	}
-	return out, nil
-}
-
 // recordAudit writes one best-effort seam-level audit row. A failure is an
 // Error and never changes the outcome of the route, and an assembly with no
 // audit capability writes nothing.
@@ -200,35 +181,22 @@ func (p *product) handleRevokeOthers(c *gin.Context) {
 		return
 	}
 	ctx := c.Request.Context()
-	// The audit row of a revocation names the session it revoked, so a bulk
-	// revocation writes one row per session and the set is read before the
-	// action. The set is the live one, and the bulk statement ends every
-	// unrevoked browser and token row: a row past its deadline goes with it and
-	// is named by no row of its own.
-	targets, err := p.revocationTargets(ctx, id.Account(), id.Session())
-	if err != nil {
-		p.routeFailure(c, "listing the sessions to revoke", err)
-		return
-	}
-	// With nothing to name there is nothing to revoke: the statement would end
-	// only rows past their deadline, with no row to account for ending them.
-	if len(targets) == 0 {
-		c.JSON(http.StatusOK, gin.H{"revoked": 0})
-		return
-	}
-	n, err := p.RevokeAccount(ctx, id.Account(), id.Session(), authn.ReasonSelf)
+	// The audit row of a revocation names the session it revoked, and the
+	// statement reports the identifiers it ended, so the rows and the revocation
+	// name one set rather than two readings of the table.
+	revoked, err := p.RevokeAccount(ctx, id.Account(), id.Session(), authn.ReasonSelf)
 	if err != nil {
 		p.routeFailure(c, "revoking the other sessions", err)
 		return
 	}
-	for _, target := range targets {
+	for _, target := range revoked {
 		p.recordAudit(ctx, audit.Entry{
 			Action:  actionSessionRevoke,
 			Object:  string(target),
 			Outcome: outcomeSuccess,
 		})
 	}
-	c.JSON(http.StatusOK, gin.H{"revoked": n})
+	c.JSON(http.StatusOK, gin.H{"revoked": len(revoked)})
 }
 
 // handleRevokeOne revokes one of the caller's own sessions. A session that is

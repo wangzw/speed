@@ -285,11 +285,11 @@ func (s *fakeSessions) Revoke(_ context.Context, id authn.SessionID, _ string) e
 	return nil
 }
 
-func (s *fakeSessions) RevokeAccount(_ context.Context, _ authn.AccountID, except authn.SessionID, _ string) (int, error) {
+func (s *fakeSessions) RevokeAccount(_ context.Context, _ authn.AccountID, except authn.SessionID, _ string) ([]authn.SessionID, error) {
 	s.rec.add("revoke:" + string(except))
 	s.revokedAll++
 	s.except = except
-	return 1, nil
+	return nil, nil
 }
 
 func (s *fakeSessions) StatusFresh(context.Context, authn.SessionID) (authn.SessionStatus, error) {

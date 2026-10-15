@@ -303,29 +303,38 @@ func (p *product) Revoke(ctx context.Context, id authn.SessionID, reason string)
 	return nil
 }
 
+// RevocableSessions lists the identifiers RevokeAccount ends: the account's
+// unrevoked browser and token rows, in the order the rows come back.
+func (p *product) RevocableSessions(ctx context.Context, account authn.AccountID) ([]authn.SessionID, error) {
+	return p.returnedIDs(ctx, "listing an account's revocable sessions",
+		"SELECT id FROM "+tableName+" WHERE "+revocableCondition, string(account))
+}
+
 // RevokeAccount revokes the account's browser and token sessions in one
-// statement, keeping the one named by except.
-func (p *product) RevokeAccount(ctx context.Context, account authn.AccountID, except authn.SessionID, reason string) (int, error) {
+// statement, keeping the one named by except, and reports the identifiers it
+// revoked. The statement returns them itself, so what a caller is told and what
+// the statement changed are one set rather than two readings of the table.
+func (p *product) RevokeAccount(ctx context.Context, account authn.AccountID, except authn.SessionID, reason string) ([]authn.SessionID, error) {
 	if !authn.ValidPayloadReasonClass(reason) {
-		return 0, fmt.Errorf("%w: the reason is not one of the closed classes", authn.ErrInvalidArgument)
+		return nil, fmt.Errorf("%w: the reason is not one of the closed classes", authn.ErrInvalidArgument)
 	}
 	statement := "UPDATE " + tableName + " SET revoked_at = ?, revoke_reason = ? " +
-		"WHERE account_id = ? AND kind IN ('browser', 'token') AND revoked_at IS NULL"
+		"WHERE " + revocableCondition
 	args := []any{clock.UTC(p.now()), reason, string(account)}
 	if except != "" {
 		statement += " AND id <> ?"
 		args = append(args, string(except))
 	}
-	n, err := p.exec(ctx, "revoking an account's sessions", statement, args...)
+	revoked, err := p.returnedIDs(ctx, "revoking an account's sessions", statement+" RETURNING id", args...)
 	if err != nil {
-		return 0, err
+		return nil, err
 	}
 	p.caches().forgetAccount(account)
-	if n > 0 {
+	if len(revoked) > 0 {
 		p.count(ctx, opRevokedAll)
 		p.publishRevoked(ctx, authn.SessionRevoked{AccountID: string(account), Scope: "all", ReasonClass: reason})
 	}
-	return int(n), nil
+	return revoked, nil
 }
 
 // Rotate gives a browser session a new token. The other kinds have no token to

@@ -53,8 +53,9 @@ type Sessions interface {
 	Create(ctx context.Context, in NewSession) (Issued, error)
 	Get(ctx context.Context, id SessionID) (SessionInfo, error)                 // ErrSessionNotFound
 	List(ctx context.Context, account AccountID) ([]SessionInfo, error)         // 只含活的 browser 与 token 种
+	RevocableSessions(ctx context.Context, account AccountID) ([]SessionID, error) // RevokeAccount 会结束的那一组
 	Revoke(ctx context.Context, id SessionID, reason string) error              // 幂等
-	RevokeAccount(ctx context.Context, account AccountID, except SessionID, reason string) (int, error)
+	RevokeAccount(ctx context.Context, account AccountID, except SessionID, reason string) ([]SessionID, error)
 	Rotate(ctx context.Context, id SessionID) (Issued, error)
 	Elevate(ctx context.Context, id SessionID, e Elevation) (Issued, error)
 	SetImpersonation(ctx context.Context, id SessionID, grantID string) (Issued, error)
@@ -78,8 +79,9 @@ type Sessions interface {
 | `Create` | 建一个 `browser` 或 `token` 种会话；`service` 种被拒绝，只经 `ForCredential` 建。`Issued.Token` 是秘密，只此一次交出：`browser` 种是 cookie 的值，其余种类为空。期限由 `Create` 统一计算（见「期限的计算」）。属性集越过根包规定的界限，或载荷超过 8 KiB，拒绝写入。账户的 `browser` 与 `token` 种会话数超过 `max-per-account` 时，撤销该账户最久未使用的会话。 |
 | `Get` | 按公开标识读一行，含已撤销与已过期的行；没有则 `ErrSessionNotFound`。 |
 | `List` | 只含该账户活的 `browser` 与 `token` 种；`service` 种不列出。 |
+| `RevocableSessions` | 交出该账户未撤销的 `browser` 与 `token` 行，条件是 `RevokeAccount` 的那一条。`except` 为空时读到的集合就是那条语句改动的集合，管理面的批量撤销读它正是为此；`except` 非空时它不扣掉那一个，读到的大于被改动的。已过期而未撤销的行在其中：那条语句会结束它，按行写审计的调用方因此得点名它。`service` 种不在其内。 |
 | `Revoke` | 幂等。置 `revoked_at` 与 `revoke_reason`，清本副本缓存，发布 `authn.session.revoked`。刷新令牌随之失效：刷新每次都核对会话行，本方法不级联写刷新令牌表。对 `service` 种的行同样置 `revoked_at`，之后 `ForCredential` 对该密钥返回 `ErrSessionRevoked`；访问令牌的撤销接口对 `service` 种是无操作，持有访问令牌的人走不到这一路径。 |
-| `RevokeAccount` | 对该账户的 `browser` 与 `token` 种做一条 `UPDATE`；`except` 非空则保留那一个会话，为空则全撤；返回撤销的行数。`service` 种不在其内。 |
+| `RevokeAccount` | 对该账户的 `browser` 与 `token` 种做一条 `UPDATE`；`except` 非空则保留那一个会话，为空则全撤；交出撤销的标识。`service` 种不在其内。 |
 | `Rotate` | 为当前会话换令牌，保留标识、等级与期限；只对 `browser` 种有内容，其余种类无事可做。它与 `RevokeAccount` 是两个动作：前者换当前会话的令牌，后者撤销其余会话。 |
 | `Elevate` | 加强认证完成后更新等级、认证时刻、方式集与 `IDPAssured`，并对 `browser` 种换令牌；保留标识与绝对期限，不建新会话。 |
 | `SetImpersonation` | 写入冒充记录标识，空串表示结束，并对 `browser` 种换令牌；保留标识与期限。 |
@@ -157,7 +159,7 @@ authn 树内取用 `Sessions` 的模块如下（宿主自写的取用者不在�
 | `authn.token` | `Status`、`StatusFresh`、`ForCredential`、`Revoke` |
 | `authn.mfa` | `RevokeAccount`（删除因素与重置因素之后） |
 | `authn.impersonation` | `SetImpersonation`、`SetCookie`、`Status` |
-| `authn.admin` | `Get`、`List`、`Revoke`、`RevokeAccount` |
+| `authn.admin` | `Get`、`List`、`Revoke`、`RevocableSessions`（批量撤销在动作前读它要结束的那一组，好逐会话写审计行）、`RevokeAccount` |
 | `authn.gate` | 经 `Verifier` 与 `CookieClearer`，不直接取 `Sessions` |
 
 ## UML 图
@@ -171,8 +173,9 @@ classDiagram
         +Create(NewSession) Issued
         +Status(SessionID) SessionStatus
         +StatusFresh(SessionID) SessionStatus
+        +RevocableSessions(AccountID) []SessionID
         +Revoke(SessionID, reason)
-        +RevokeAccount(AccountID, except, reason) int
+        +RevokeAccount(AccountID, except, reason) []SessionID
         +Rotate(SessionID) Issued
         +Elevate(SessionID, Elevation) Issued
         +SetImpersonation(SessionID, grantID) Issued
@@ -639,7 +642,7 @@ stateDiagram-v2
 | 模块 `authn.session` 的登记与阶段行为（`Prepare`、`New`、`Migrate`、`Init`、`Start`、`Stop`），含 `var _` 编译期断言与 `assembly_test` | 已实现 | `pkg/authn/session/session.go` `Module`、`(*product)` 的编译期断言；`pkg/authn/session/assembly_test.go` |
 | 表 `authn_sessions` 与按方言的迁移集 | 已实现 | `pkg/authn/session/store.go`；`pkg/authn/session/migrations/postgres`、`pkg/authn/session/migrations/sqlite` |
 | scs 的适配：存储适配器、JSON 编码器与适配规则 | 已实现 | `pkg/authn/session/adapter.go` `storeAdapter`；`pkg/authn/session/payload.go` `jsonCodec` |
-| 会话的创建、读取、列出、撤销与按账户批量撤销 | 已实现 | `pkg/authn/session/sessions.go` `Create`、`Get`、`List`、`Revoke`、`RevokeAccount` |
+| 会话的创建、读取、列出、撤销与按账户批量撤销 | 已实现 | `pkg/authn/session/sessions.go` `Create`、`Get`、`List`、`RevocableSessions`、`Revoke`、`RevokeAccount` |
 | 令牌轮换、提权与冒充挂接 | 已实现 | `pkg/authn/session/sessions.go` `Rotate`、`Elevate`、`SetImpersonation` |
 | cookie 的写出、清除、读取与启动校验 | 已实现 | `pkg/authn/session/sessions.go` `SetCookie`、`ClearCookie`；`pkg/authn/session/config.go` |
 | `Verifier`：cookie 校验、会话校验缓存、账户核对与冒充记录缓存 | 已实现 | `pkg/authn/session/verify.go` `Verify`、`Accepts`、`Name`；`pkg/authn/session/cache.go` |

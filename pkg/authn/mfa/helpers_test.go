@@ -222,14 +222,14 @@ type fakeSessions struct {
 	onRevoke func()
 }
 
-func (s *fakeSessions) RevokeAccount(_ context.Context, account authn.AccountID, except authn.SessionID, reason string) (int, error) {
+func (s *fakeSessions) RevokeAccount(_ context.Context, account authn.AccountID, except authn.SessionID, reason string) ([]authn.SessionID, error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	s.revoked = append(s.revoked, fmt.Sprintf("revoke-account:%s:except=%q:%s", account, except, reason))
 	if s.onRevoke != nil {
 		s.onRevoke()
 	}
-	return 0, s.err
+	return nil, s.err
 }
 
 // recordingBus is a bus that keeps what was published and delivers it to the

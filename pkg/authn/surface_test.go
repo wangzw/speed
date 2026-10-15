@@ -585,6 +585,7 @@ var exportedSurface = []string{
 	"method Sessions.ForCredential",
 	"method Sessions.Get",
 	"method Sessions.List",
+	"method Sessions.RevocableSessions",
 	"method Sessions.Revoke",
 	"method Sessions.RevokeAccount",
 	"method Sessions.RevokeCredential",

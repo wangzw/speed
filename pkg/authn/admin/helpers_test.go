@@ -8,6 +8,7 @@ import (
 	"log/slog"
 	"net/http/httptest"
 	"reflect"
+	"slices"
 	"sync"
 	"testing"
 	"time"
@@ -344,6 +345,9 @@ type fakeSessions struct {
 	revokedAcct int
 	listCalls   int
 	err         error
+	// revokeErr fails the revocation alone, so a case can drive an action that
+	// fails after the set it is about to end has been read.
+	revokeErr error
 }
 
 func newSessions() *fakeSessions {
@@ -392,14 +396,41 @@ func (s *fakeSessions) Revoke(_ context.Context, _ authn.SessionID, _ string) er
 	return nil
 }
 
-func (s *fakeSessions) RevokeAccount(_ context.Context, _ authn.AccountID, _ authn.SessionID, _ string) (int, error) {
+// revocable is the account's browser and token identifiers, the set the real
+// RevocableSessions hands out and RevokeAccount ends. Service sessions are not
+// in it, and neither read nor write looks at a row's deadline: the statement
+// selects on revoked_at alone.
+func (s *fakeSessions) revocable(account authn.AccountID) []authn.SessionID {
+	var out []authn.SessionID
+	for _, info := range s.infos {
+		if info.Account == account && info.Kind != authn.SessionService {
+			out = append(out, info.ID)
+		}
+	}
+	slices.Sort(out)
+	return out
+}
+
+func (s *fakeSessions) RevocableSessions(_ context.Context, account authn.AccountID) ([]authn.SessionID, error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	if s.err != nil {
-		return 0, s.err
+		return nil, s.err
+	}
+	return s.revocable(account), nil
+}
+
+func (s *fakeSessions) RevokeAccount(_ context.Context, account authn.AccountID, _ authn.SessionID, _ string) ([]authn.SessionID, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if s.err != nil {
+		return nil, s.err
+	}
+	if s.revokeErr != nil {
+		return nil, s.revokeErr
 	}
 	s.revokedAcct++
-	return 1, nil
+	return s.revocable(account), nil
 }
 
 // fakeMFA is the multi-factor composition.

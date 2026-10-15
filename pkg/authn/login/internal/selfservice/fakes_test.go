@@ -175,10 +175,10 @@ func (f *fakeSessions) Rotate(_ context.Context, id authn.SessionID) (authn.Issu
 	return f.issued, f.rotateErr
 }
 
-func (f *fakeSessions) RevokeAccount(_ context.Context, account authn.AccountID, except authn.SessionID, reason string) (int, error) {
+func (f *fakeSessions) RevokeAccount(_ context.Context, account authn.AccountID, except authn.SessionID, reason string) ([]authn.SessionID, error) {
 	f.log.add("sessions.RevokeAccount %s", reason)
 	f.revoked = append(f.revoked, revokeCall{account, except, reason})
-	return 1, f.revokeErr
+	return nil, f.revokeErr
 }
 
 func (f *fakeSessions) SetCookie(w http.ResponseWriter, in authn.Issued) {

@@ -3,6 +3,7 @@ package session
 import (
 	"context"
 	"errors"
+	"slices"
 	"strings"
 	"sync"
 	"testing"
@@ -396,10 +397,15 @@ func TestRevokeAccountKeepsTheExceptionAndLeavesServiceSessions(t *testing.T) {
 		noErr(t, err)
 		bobs := f.create(newBrowser(bob))
 
-		n, err := f.p.RevokeAccount(ctx, alice, keep.ID, authn.ReasonPasswordChange)
+		// The statement reports the identifiers it revoked, so the set it names
+		// and the set it changed are checked as one.
+		want := []authn.SessionID{other.ID, tok.ID}
+		slices.Sort(want)
+		revoked, err := f.p.RevokeAccount(ctx, alice, keep.ID, authn.ReasonPasswordChange)
 		noErr(t, err)
-		if n != 2 {
-			t.Errorf("RevokeAccount revoked %d, want 2 (one browser and one token session)", n)
+		slices.Sort(revoked)
+		if !slices.Equal(revoked, want) {
+			t.Errorf("RevokeAccount revoked %v, want %v (one browser and one token session)", revoked, want)
 		}
 		for id, wantRevoked := range map[authn.SessionID]bool{keep.ID: false, other.ID: true, tok.ID: true, svc: false, bobs.ID: false} {
 			if got := f.row(id).RevokedAt.Valid; got != wantRevoked {
@@ -419,18 +425,71 @@ func TestRevokeAccountKeepsTheExceptionAndLeavesServiceSessions(t *testing.T) {
 			t.Errorf("payload = %+v", payload)
 		}
 
-		n, err = f.p.RevokeAccount(ctx, alice, "", authn.ReasonAdmin)
+		revoked, err = f.p.RevokeAccount(ctx, alice, "", authn.ReasonAdmin)
 		noErr(t, err)
-		if n != 1 {
-			t.Errorf("revoking all the rest revoked %d, want 1", n)
+		if !slices.Equal(revoked, []authn.SessionID{keep.ID}) {
+			t.Errorf("revoking all the rest revoked %v, want the one session %v", revoked, keep.ID)
 		}
-		n, err = f.p.RevokeAccount(ctx, alice, "", authn.ReasonAdmin)
+		revoked, err = f.p.RevokeAccount(ctx, alice, "", authn.ReasonAdmin)
 		noErr(t, err)
-		if n != 0 {
-			t.Errorf("revoking again revoked %d, want 0", n)
+		if len(revoked) != 0 {
+			t.Errorf("revoking again revoked %v, want nothing", revoked)
 		}
 		if _, err := f.p.RevokeAccount(ctx, alice, "", authn.ReasonThrottled); !errors.Is(err, authn.ErrInvalidArgument) {
 			t.Errorf("a reason that is only for a log line was accepted: %v", err)
+		}
+	})
+}
+
+// TestRevocableSessionsIsTheSetRevokeAccountEnds holds the two halves of one
+// contract: the identifiers a caller reads to name the sessions and the
+// identifiers the statement reports having ended are one set. A session past its
+// deadline is in it — the statement ends it, which is why a caller writing one
+// audit row per revocation has to know it — while a service session and one
+// already revoked are out.
+func TestRevocableSessionsIsTheSetRevokeAccountEnds(t *testing.T) {
+	forEachDialect(t, func(t *testing.T, d dialectCase) {
+		f := newFixture(t, d)
+		f.accounts.add(alice, nil)
+		f.accounts.add(bob, nil)
+		ctx := context.Background()
+
+		live := f.create(newBrowser(alice))
+		expired := f.create(newBrowser(alice))
+		f.exec("UPDATE "+tableName+" SET expires_at = ? WHERE id = ?",
+			f.clock.Now().Add(-time.Second).UTC(), string(expired.ID))
+		alreadyRevoked := f.create(newBrowser(alice))
+		noErr(t, f.p.Revoke(ctx, alreadyRevoked.ID, authn.ReasonSelf))
+		svc, err := f.p.ForCredential(ctx, alice, "cred-ra", nil)
+		noErr(t, err)
+		bobs := f.create(newBrowser(bob))
+
+		want := []authn.SessionID{live.ID, expired.ID}
+		slices.Sort(want)
+
+		read, err := f.p.RevocableSessions(ctx, alice)
+		noErr(t, err)
+		slices.Sort(read)
+		if !slices.Equal(read, want) {
+			t.Errorf("RevocableSessions named %v, want %v: the unrevoked browser rows, "+
+				"the one past its deadline among them", read, want)
+		}
+
+		ended, err := f.p.RevokeAccount(ctx, alice, "", authn.ReasonAdmin)
+		noErr(t, err)
+		slices.Sort(ended)
+		if !slices.Equal(ended, read) {
+			t.Errorf("RevokeAccount reported ending %v and the set read was %v: one set, not two", ended, read)
+		}
+		for _, id := range want {
+			if !f.row(id).RevokedAt.Valid {
+				t.Errorf("session %s was named as ended and is not revoked", id)
+			}
+		}
+		for _, id := range []authn.SessionID{svc, bobs.ID} {
+			if f.row(id).RevokedAt.Valid {
+				t.Errorf("session %s was revoked by another account's bulk revocation, or though it is a service session", id)
+			}
 		}
 	})
 }
