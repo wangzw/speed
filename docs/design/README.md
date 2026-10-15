@@ -19,6 +19,7 @@ speed 是一个配置驱动的模块化应用程序框架，以 Go 库的形式�
 | [authz](modules/design-authz.md) | 授权：职责边界、模块清单与依赖、判定引擎与策略存储、中间件与路由声明、管理面、承接的权限点 |
 | [kv](modules/design-kv.md) | 键值原语：不透明字节的存取与过期、原子自增与比较并交换、按最弱后端设计的接口面 |
 | [sms](modules/design-sms.md) | 短信发送与模板：发送接缝、模板注册表、运行期管理面与厂商适配 |
+| [mail](modules/design-mail.md) | 邮件发送：发出一条已渲染的邮件、载体接缝、SMTP 载体、附件与去重 |
 | [event](modules/event/README.md) | 事件总线：按类型发布与订阅、载荷的结构化读取、投递承诺的下界；事务发件箱为其子模块 |
 | [audit](modules/audit/README.md) | 审计：语句、事件、请求与记录接缝的捕获通路、审计表、明细的脱敏；检索面为其子模块 |
 | [settings](modules/settings/README.md) | 设置：模块声明的运行期参数、三级回落、以快照读取、变更事件的发布与订阅；管理面为其子模块 |

@@ -486,7 +486,11 @@ of the handler, past the gateway's.
 The SMS family (`authn.sms`, `sms.aliyun`, `sms.tencent`, `authn.login.sms`,
 `authn.mfa.sms`) is not taken in. A provider adapter needs real credentials and
 outbound egress, so each module is covered by its own tests over a fake sender,
-and the host configures nothing for them. The social and enterprise methods are
+and the host configures nothing for them. The mail family (`mail.smtp`) is not
+taken in either, for the same reason: a carrier needs real credentials and
+outbound egress, and SMTP additionally needs a reachable relay, so `mail.smtp` is
+covered by its own tests over a fake server and the host configures nothing for
+it. The social and enterprise methods are
 taken in, by contrast: they need placeholder provider credentials, which the
 configuration carries, and each is covered by its own tests over a simulated
 provider, so a run of this host exercises the assembly and the routes rather
