@@ -35,7 +35,7 @@
 
 本模块的包导出 `ModuleName` 常量，命令树按这个名字纳入它。它取用 `(*notification.Preferences)(nil)` 这一功能标识的消费方写作 `core.Resolve[notification.Preferences](reg)`。
 
-**本模块不声明配置命名空间，不读任何输入项。** 路由挂到哪些端不由本模块的配置给出：`Init` 遍历入口模块登记面报出的端名，在**每一个**端上挂本模块的路由；入口模块缺席时不挂。因此本模块没有可缺的启动项，它的路由也就没有一份该写而未写的端名清单。
+**本模块声明配置命名空间 `notification.preferences`，读端名清单 `notification.preferences.endpoints`。** 端名清单在路由能力在场时必填：`Init` 见到 `(*http.Router)(nil)` 在场而这一项为空即启动失败，以完整路径 `notification.preferences.endpoints` 点名这一项；`(*http.Router)(nil)` 缺席时本模块不挂路由，这一项不被读取，空清单合法。清单是一组具体端名（封闭判据）：保留端名 `*`、空名与写了两遍的端名都被拒绝并点名这一项。
 
 ### 交付的功能
 
@@ -64,13 +64,15 @@ type Preferences interface {
 
 ### 路由
 
-路由挂在通知基路径 `/api/v1/notifications` 下、挂在入口模块声明的每一个端上，全部不带本模块自己的权限闸；`recipient_user_id` 由宿主侧的授权与身份给出，作请求上下文里的一个取值传入 handler。下表是路由的全集（封闭集）。
+路由挂在通知基路径 `/api/v1/notifications` 下，端取自配置项 `notification.preferences.endpoints` 点名的那些端，全部不带本模块自己的权限闸；`recipient_user_id` 由宿主侧的授权与身份给出，作请求上下文里的一个取值传入 handler。下表是路由的全集（封闭集）。
 
 | 方法 路径 | 应答 | `Vary: Accept-Language` |
 |---|---|---|
 | `GET /api/v1/notifications/types` | 200，分类法视图 | 是 |
 | `GET /api/v1/notifications/preferences` | 200，调用方的偏好矩阵 | 是 |
 | `PUT /api/v1/notifications/preferences/:typeKey/:channel` | 200，该类型的有效集 | 否 |
+
+**端名清单必填，因为本模块的路由不能落在每一个端上。** 一个已被通配路由（gin 的 `/*path`）独占路径空间的端不能再承载具体路由：路由引擎在同一方法树上拒绝这一对，入口模块在组装链时以路由冲突终止启动。**前端与 API 同进程**是既定拓扑之一，而前端模块正是在它拿到的那个端上挂通配路由，所以两种路由必须分端；本模块的路由落在 `notification.preferences.endpoints` 点名的那些端上。取舍见 [ADR-notification-endpoints-2026-10-15](../../../adr/adr-notification-endpoints-2026-10-15.md)。
 
 **`GET /types` 与 `GET /preferences` 的应答带 `Vary: Accept-Language`。** 应答体不随语言变化，但这条端点的表示按协商语言分键，使共享缓存不把一种语言下算出的表示当作另一种的：本模块为这些路由写出的错误应答按协商语言渲染，端点因此把语言计入缓存键。
 
@@ -126,7 +128,7 @@ flowchart TD
 ### 稳定性承诺
 
 - `notification.Preferences` 的方法集，以及 `notification.TypeSpec`、`notification.Preference`、`notification.Channel`、`notification.KnownChannel` 的字段与取值，是本模块与其他模块之间的契约；本模块的包导出的 `ModuleName` 同样是契约，改名会让命令树上的纳入静默失配。
-- **宿主可见面是承诺**：模块名 `notification.preferences`，路由 `GET /api/v1/notifications/types`、`GET /api/v1/notifications/preferences`、`PUT /api/v1/notifications/preferences/:typeKey/:channel`，`Problem.Type` 前缀 `urn:speed:notification:` 及其下的码。改动它们是宿主可见的破坏性变更。
+- **宿主可见面是承诺**：模块名 `notification.preferences`，配置键 `notification.preferences.endpoints`，路由 `GET /api/v1/notifications/types`、`GET /api/v1/notifications/preferences`、`PUT /api/v1/notifications/preferences/:typeKey/:channel`，`Problem.Type` 前缀 `urn:speed:notification:` 及其下的码。改动它们是宿主可见的破坏性变更。
 - 表 `notification_preferences` 属于本模块，宿主不读写它；它的列供运维查看，不是契约面。
 
 ### 哨兵错误
@@ -145,13 +147,14 @@ flowchart TD
 | 依赖 | 用途 |
 |---|---|
 | `pkg/core` | 登记描述符、交付功能；取用 `notification.Preferences`；收集 `notification.TypeSpec` 资源 |
+| `pkg/config` | 声明输入项：配置命名空间与端名清单 |
 | `pkg/db` | `notification_preferences` 表与迁移 |
 | `pkg/tenant` | 租户上下文、`tenant.Model`、语句的租户过滤 |
 | `pkg/http` | 经登记面挂路由（可选依赖） |
 | `pkg/log` | 可选：启动诊断 |
 | `pkg/i18n` | 可选：`i18n.Localizer` 按请求的协商语言渲染本模块写出的 `Problem` 的标题与正文；缺席时用本模块内嵌的英文文案 |
 
-**依赖方向。** 本模块 import 数据库、租户、`pkg/i18n`、`pkg/http` 与 `pkg/core`，不 import 通知能力目录内的其他实现子包：它不 import `pkg/notification/delivery` 或 `pkg/notification/inbox`，与它们只经 `pkg/notification` 根包的类型相认。它也不 import `pkg/authn` 与 `pkg/authz`——授权在宿主侧，本模块不参与判定。除 `pkg/http` 外，这些依赖都在本模块之前构造、之后停止。
+**依赖方向。** 本模块 import 数据库、租户、`pkg/config`、`pkg/i18n`、`pkg/http` 与 `pkg/core`，不 import 通知能力目录内的其他实现子包：它不 import `pkg/notification/delivery` 或 `pkg/notification/inbox`，与它们只经 `pkg/notification` 根包的类型相认。它也不 import `pkg/authn` 与 `pkg/authz`——授权在宿主侧，本模块不参与判定。除 `pkg/http` 外，这些依赖都在本模块之前构造、之后停止。
 
 **根包 `pkg/notification` 不 import 本模块。** 根包依赖标准库与 `pkg/jobs` 这一个接口包（`Dispatcher.Dispatch` 的返回类型是 `jobs.JobID`），因而一个只读 `notification.Channel` 或 `notification.TypeSpec` 的业务模块 import 它，拉进来的是作业的标识类型，不是数据库、租户或本模块。
 
@@ -238,9 +241,9 @@ classDiagram
 | 阶段 | 行为 |
 |---|---|
 | `Prepare` | 无动作 |
-| `New` | 取用数据库与租户名册，收齐并校验分类法 |
+| `New` | 取用数据库、租户名册与配置读取面，读本模块的端名清单，收齐并校验分类法 |
 | `Migrate` | 数据库模块施加本模块声明的迁移集，建立 `notification_preferences` 表 |
-| `Init` | 遍历入口模块登记面报出的端名，在每一个端上挂本模块的路由；`http.Router` 缺席时不挂 |
+| `Init` | 取入口模块登记面；在 `notification.preferences.endpoints` 点名的端上挂本模块的路由；`http.Router` 缺席时不挂，端名清单也不被读取 |
 | `Start`、`Serve` | 无动作 |
 | `Stop`、`Close` | 无动作 |
 
@@ -258,6 +261,9 @@ classDiagram
 | 两个模块声明同一个类型键、或一份声明不自洽 | `ErrInvalidConfig`，`New` 阶段终止启动，点名该键与声明方 |
 | 读/写表失败（库不可用、表不在） | 503，不带 `Problem.Type`，成因只进日志 |
 | `ctx` 无租户 | 以租户的错误拒绝，不触达存储 |
+| 路由能力在场而 `notification.preferences.endpoints` 为空 | 终止启动，以完整路径点名这一项 |
+| 端名清单含 `*`、空名或写了两遍的端名 | 终止启动，以完整路径点名这一项 |
+| 端名清单点名了入口模块没有声明的端 | 终止启动，点名这一项与该端 |
 
 **`GET /types` 与 `GET /preferences` 不产生本模块自己的拒绝。** 它们的形状由请求上下文给出，一个读不出偏好的失败是 503 类，不是 4xx。
 
@@ -283,3 +289,5 @@ classDiagram
 | `notification_preferences` 表与迁移 | 已实现 | `pkg/notification/preferences/preferences.go` `Module`、`ModuleName`、`tableName`；`pkg/notification/preferences/store.go` `preferenceRow`；`pkg/notification/preferences/migrations` |
 | 有效集的计算 | 已实现 | `pkg/notification/preferences/store.go` `Effective`、`canonicalChannels`；`pkg/notification/preferences/routes.go` `effectiveChannels` |
 | 偏好路由与 PUT 的判定顺序 | 已实现 | `pkg/notification/preferences/preferences.go` `routes`、`mount`；`pkg/notification/preferences/routes.go` `handleTypes`、`handlePreferences`、`handleSetPreference`；`pkg/notification/preferences/store.go` `Set` |
+| 配置命名空间与端名清单 | 已实现 | `pkg/notification/preferences/config.go` `ConfigNamespace`、`schema`、`validateEndpoints`、`readConfig`；`pkg/notification/preferences/preferences.go` `readerOf`、`mount` |
+| OpenAPI 片段声明 | 已实现 | `pkg/notification/preferences/openapi/preferences.json`；`pkg/notification/preferences/preferences.go` `preferencesFragment`、`defaultEndpoint`、`Module` |

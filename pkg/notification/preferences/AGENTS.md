@@ -15,10 +15,11 @@ startup. It requires, non-optionally, `(*db.Database)(nil)` and
 installs — the filter that scopes, fills and checks the tenant column of every
 statement this module issues — and the database for the table. The HTTP entry
 point (`(*http.Router)(nil)`) and the logging capability (`(*log.Logger)(nil)`)
-are optional: with no entry point the routes are simply not mounted, and a run
-without logging still gets a working matrix whose failures reach the process
-default logger. The message localizer is taken up in `Init` when one is
-assembled; with none, a refusal carries this module's English text.
+are optional: with no entry point the routes are simply not mounted and the
+endpoint list is not read, and a run without logging still gets a working matrix
+whose failures reach the process default logger. The message localizer is taken
+up in `Init` when one is assembled; with none, a refusal carries this module's
+English text.
 
 The seam is `notification.Preferences`:
 
@@ -104,6 +105,25 @@ The recipient a route acts for is not resolved here — this module holds no
 identity — but is read from the request context, where the host's identity and
 authorization side put it with `preferences.WithRecipient`. A `PUT` reached with
 no recipient is refused, because a write names a recipient.
+
+### Where the routes are mounted
+
+The module declares the configuration namespace `notification.preferences` and
+reads `notification.preferences.endpoints`: the listening endpoints its routes
+are mounted on, by the entry point's own names. The item is read only when the
+HTTP entry point is present, and then it is **required** — an empty list with the
+entry point present ends the startup with `notification.ErrInvalidConfig`, naming
+the key. The names are concrete: `*`, an empty name and a name written twice are
+each refused, naming the key, and a name the entry point does not declare ends
+the startup naming the key and the endpoint.
+
+Naming the endpoints is what keeps the routes out of a frontend bundle's path
+space. An endpoint that already carries a catch-all route — the shape the
+frontend module leaves on the endpoint it is served from — cannot take a
+concrete route beside it: gin refuses the pair on one method tree, and the entry
+point reports the refusal as a route conflict. A host that serves a frontend and
+an API from one process therefore puts them on different endpoints, and this
+module's routes go on the API one.
 
 ### The PUT decision order
 

@@ -64,13 +64,25 @@ func TestTheDescriptorRequiresItsDependencies(t *testing.T) {
 	}
 }
 
-// TestTheDescriptorDeclaresNoConfigNamespace holds that this module declares no
-// configuration schema of its own: it reads no input item, so it needs none.
-func TestTheDescriptorDeclaresNoConfigNamespace(t *testing.T) {
+// TestTheDescriptorDeclaresItsConfigNamespace holds that this module declares a
+// configuration schema of its own under its own name: it reads the endpoint list
+// its routes are mounted by, so it needs one.
+func TestTheDescriptorDeclaresItsConfigNamespace(t *testing.T) {
+	var declared config.Schema
+	found := false
 	for _, res := range Module().Resources {
-		if _, isSchema := res.(config.Schema); isSchema {
-			t.Errorf("the descriptor carries a config schema resource: %T", res)
+		if s, isSchema := res.(config.Schema); isSchema {
+			declared, found = s, true
 		}
+	}
+	if !found {
+		t.Fatal("the descriptor carries no config schema resource")
+	}
+	if declared.Namespace != ConfigNamespace {
+		t.Errorf("the schema is mounted under %q, want %q", declared.Namespace, ConfigNamespace)
+	}
+	if _, ok := declared.Items[endpointsItem]; !ok {
+		t.Errorf("the schema declares no %q item", endpointsItem)
 	}
 }
 

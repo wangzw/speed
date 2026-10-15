@@ -61,8 +61,8 @@ func forEachEngine(t *testing.T, run func(t *testing.T, e engine)) {
 }
 
 // harness is one assembled run of this module: the engine it sits on, the
-// modules that declare notification types, the entry point a case supplies and
-// the stage the run reaches.
+// modules that declare notification types, the entry point a case supplies, the
+// endpoint list the module is told to mount on, and the stage the run reaches.
 type harness struct {
 	engine engine
 	dsn    string
@@ -71,8 +71,11 @@ type harness struct {
 	// registered holds modules that are registered but left out of the
 	// participating set, the shape a module a command does not drive has.
 	registered []core.Module
+	// endpoints is the notification.preferences.endpoints list. Nil leaves the
+	// item unset, the shape a configuration that names none has.
+	endpoints  []string
 	withRouter bool
-	router     *stubRouter
+	router     speedhttp.Router
 	depth      core.Stage
 }
 
@@ -89,8 +92,9 @@ func (e engine) on(t *testing.T, h harness) harness {
 // the run's depth, and runs action there. A drive failure is fatal; a case that
 // expects one calls run instead.
 //
-// The preferences module declares no configuration of its own, so the only
-// sections are the database's and the logging capability's.
+// The sections are the database's, the logging capability's, and this module's
+// own when a case names endpoints; the loader refuses a key no module declares,
+// so a case that leaves the endpoint list unset carries no section for it.
 func (h harness) drive(t *testing.T, action func(ctx context.Context, reg *core.Registry) error) {
 	t.Helper()
 	if err := h.run(t, action); err != nil {
@@ -114,6 +118,11 @@ func (h harness) run(t *testing.T, action func(ctx context.Context, reg *core.Re
 			map[string]any{"to": "file", "format": "json", "path": filepath.Join(dir, "log.json")},
 		}},
 	}
+	if h.endpoints != nil {
+		document["notification"] = map[string]any{
+			"preferences": map[string]any{"endpoints": h.endpoints},
+		}
+	}
 	body, err := json.Marshal(document)
 	if err != nil {
 		t.Fatalf("encoding the configuration: %v", err)
@@ -131,7 +140,6 @@ func (h harness) run(t *testing.T, action func(ctx context.Context, reg *core.Re
 		}
 		modules = append(modules, standIn("stand-in.router", router, (*speedhttp.Router)(nil)))
 	}
-
 	loading := core.New()
 	loading.Register(jsonformat.Module())
 	loading.Register(filesource.Module())

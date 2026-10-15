@@ -26,10 +26,13 @@
 // authorization: who may read or change a recipient's preferences is the host's,
 // so its routes carry no permission gate of their own.
 //
-// The routes are mounted under /api/v1/notifications. The recipient a route acts
-// for is not resolved here — this module holds no identity — but is read from
-// the request context, where the host's identity and authorization side put it
-// with WithRecipient.
+// The routes are mounted under /api/v1/notifications on the listening endpoints
+// the module is told to (notification.preferences.endpoints), and on no others:
+// a frontend bundle covers the whole path space of the endpoint it is given
+// with a catch-all route, so an endpoint that serves a frontend cannot also
+// carry these. The recipient a route acts for is not resolved here — this module
+// holds no identity — but is read from the request context, where the host's
+// identity and authorization side put it with WithRecipient.
 package preferences
 
 import (
@@ -45,6 +48,7 @@ import (
 
 	"github.com/gin-gonic/gin"
 
+	"github.com/vislake/speed/pkg/config"
 	"github.com/vislake/speed/pkg/core"
 	"github.com/vislake/speed/pkg/db"
 	speedhttp "github.com/vislake/speed/pkg/http"
@@ -54,9 +58,22 @@ import (
 	"github.com/vislake/speed/pkg/tenant"
 )
 
-// ModuleName is this module's name in the registry. A host writes it into the
-// command that assembles the notification capability.
+// ModuleName is this module's name in the registry. It is also the configuration
+// namespace its input items hang from. A host writes it into the command that
+// assembles the notification capability.
 const ModuleName = "notification.preferences"
+
+// ConfigNamespace is where this module's input items are mounted, which is the
+// module name.
+const ConfigNamespace = ModuleName
+
+// defaultEndpoint is the listening endpoint this module declares its OpenAPI
+// fragment for. The endpoint's name belongs to the host's HTTP configuration, and
+// a resource is a static declaration written before any configuration is read, so
+// the fragment carries this conventional name rather than an endpoint a run
+// happens to configure; the routes a run actually mounts follow the endpoints the
+// module is told to (notification.preferences.endpoints).
+const defaultEndpoint = "api"
 
 // tableName is the preference table. It is written here rather than derived from
 // a Go type because the model names it and each dialect's migration names it in
@@ -65,6 +82,9 @@ const tableName = "notification_preferences"
 
 //go:embed migrations
 var migrationRoot embed.FS
+
+//go:embed openapi/preferences.json
+var preferencesFragment []byte
 
 // migrationsFS is migrationRoot with the wrapping directory removed, so the tree
 // the database module sees has one directory per dialect at its root, which is
@@ -95,11 +115,15 @@ var _ notification.Preferences = (*product)(nil)
 // tenant filter on the handle every scoped statement runs through, and declaring
 // the dependency is what runs that module first. The HTTP entry point and the
 // logging capability are optional: with no entry point the routes are simply not
-// mounted, and a host without logging still gets a working matrix whose failures
-// reach the process default logger.
+// mounted and the endpoint list is not read, and a host without logging still
+// gets a working matrix whose failures reach the process default logger.
 //
 // The capability is delivered exclusively: one process has exactly one
 // preference matrix, so a second provider fails the startup.
+//
+// The descriptor also declares this module's own http.Spec, carrying the OpenAPI
+// fragment that describes the preference surface under /api/v1/notifications; the
+// operations module merges it into the document a process serves.
 func Module() core.Module {
 	return core.Module{
 		Name: ModuleName,
@@ -111,22 +135,25 @@ func Module() core.Module {
 		},
 		Provides: []core.Provision{{Token: (*notification.Preferences)(nil), Exclusive: true}},
 		Resources: []any{
+			schema(),
 			db.Migrations{FS: migrationsFS},
 			messageCatalog,
+			speedhttp.Spec{Endpoint: defaultEndpoint, Document: preferencesFragment},
 		},
 
-		// New builds the product, takes up the database and collects and
-		// validates the taxonomy. It reads no table of its own: this stage runs
-		// before the migrations are applied, so on a first start the preference
-		// table is not there yet, and the taxonomy comes from the module
-		// descriptors rather than from any table.
+		// New builds the product, takes up the database and the configuration
+		// reader, reads the endpoint list, and collects and validates the taxonomy.
+		// It reads no table of its own: this stage runs before the migrations are
+		// applied, so on a first start the preference table is not there yet, and
+		// the taxonomy comes from the module descriptors rather than from any
+		// table.
 		New: func(ctx context.Context, reg *core.Registry) (any, error) {
 			return newProduct(ctx, reg)
 		},
 
-		// Init mounts the routes, when an entry point is present. The entries are
-		// registered, not served: no request reaches them until the entry point
-		// serves.
+		// Init mounts the routes, when an entry point is present, on the endpoints
+		// the module was told to. The entries are registered, not served: no
+		// request reaches them until the entry point serves.
 		Init: func(_ context.Context, reg *core.Registry, instance any) error {
 			p, ok := productOf(instance)
 			if !ok {
@@ -146,13 +173,26 @@ func productOf(instance any) (*product, bool) {
 }
 
 // product is the module's instance: the table it reads and writes, the taxonomy
-// it collected once in New, and the optional surfaces it wires up in Init.
+// it collected once in New, the endpoint list its routes are mounted by, and the
+// optional surfaces it wires up in Init.
 type product struct {
 	handle   *gorm.DB
 	taxonomy taxonomy
+	cfg      resolved
 
 	logger    *slog.Logger
 	localizer i18n.Localizer
+}
+
+// readerOf takes up the configuration reader. A reader that is not there means
+// the host never supplied one as the instance of the config module, which is the
+// host's omission rather than something to read as "nothing was configured".
+func readerOf(reg *core.Registry) (config.Reader, error) {
+	reader, err := core.Resolve[config.Reader](reg)
+	if err != nil {
+		return nil, fmt.Errorf("%s: taking up the configuration reader: %w", ModuleName, err)
+	}
+	return reader, nil
 }
 
 // newProduct takes up what the descriptor requires and collects the taxonomy.
@@ -166,6 +206,14 @@ func newProduct(_ context.Context, reg *core.Registry) (*product, error) {
 	if err != nil {
 		return nil, fmt.Errorf("%s: taking up the database: %w", ModuleName, err)
 	}
+	reader, err := readerOf(reg)
+	if err != nil {
+		return nil, err
+	}
+	cfg, err := readConfig(reader)
+	if err != nil {
+		return nil, err
+	}
 	tax, err := buildTaxonomy(core.Resources[notification.TypeSpec](reg))
 	if err != nil {
 		return nil, err
@@ -173,6 +221,7 @@ func newProduct(_ context.Context, reg *core.Registry) (*product, error) {
 	return &product{
 		handle:   database.DB(),
 		taxonomy: tax,
+		cfg:      cfg,
 		logger:   log.Default(),
 	}, nil
 }
@@ -195,13 +244,14 @@ func optional[T any](reg *core.Registry, what string) (T, bool, error) {
 
 // wire runs in Init, where every instance exists. It takes up the optional
 // logging capability, the message localizer and the entry point, and mounts the
-// routes on every endpoint the entry point declares.
+// routes on the endpoints the module is told to.
 //
 // The entry point is optional: a command that resolves the preference matrix and
-// has no gateway still delivers it, and its routes are simply not mounted. Every
-// endpoint is mounted because this module declares no endpoint list: the
-// notification routes are a product API, and they are served wherever the entry
-// point listens.
+// has no gateway still delivers it, and its routes are simply not mounted. When
+// the entry point is present the endpoint list is required — a list that mounted
+// the routes nowhere would silently drop them — and every name in it is looked up
+// before any route is registered, so a name the entry point does not declare
+// fails the startup naming that endpoint.
 func (p *product) wire(reg *core.Registry) error {
 	if delivered, err := core.Resolve[log.Logger](reg); err == nil {
 		p.logger = delivered.Named(ModuleName)
@@ -216,27 +266,44 @@ func (p *product) wire(reg *core.Registry) error {
 		return err
 	}
 	if !found {
+		// The endpoint list is not read when the route capability is absent.
 		return nil
+	}
+	if len(p.cfg.endpoints) == 0 {
+		return fmt.Errorf("%s: %w: %s is empty and the HTTP entry point is present, so the routes would "+
+			"be mounted on nothing; list the endpoints that should carry them, or leave the entry point "+
+			"out of the command", ModuleName, notification.ErrInvalidConfig, endpointsKey)
+	}
+	if err := validateEndpoints(p.cfg.endpoints); err != nil {
+		return fmt.Errorf("%s: %w", ModuleName, err)
 	}
 	if err := p.mount(router); err != nil {
 		return err
 	}
-	p.diagnose(router)
+	p.diagnose()
 	return nil
 }
 
-// mount registers the routes on every endpoint the entry point declares. A name
-// the endpoint lookup refuses fails the startup, though the name came from the
-// entry point's own listing: an endpoint it declares but cannot hand out is a
-// defect in that entry point rather than a route left silently unmounted.
+// mount registers the routes on the endpoints the module is told to. Every name
+// is looked up before any route is registered, so a name the entry point does not
+// declare fails the startup naming that endpoint rather than leaving a partial
+// mounting behind.
 func (p *product) mount(router speedhttp.Router) error {
-	for _, name := range router.Endpoints() {
+	type target struct {
+		name     string
+		endpoint speedhttp.Endpoint
+	}
+	targets := make([]target, 0, len(p.cfg.endpoints))
+	for _, name := range p.cfg.endpoints {
 		endpoint, err := router.Endpoint(name)
 		if err != nil {
-			return fmt.Errorf("%s: the endpoint %q is declared but not accessible: %w", ModuleName, name, err)
+			return fmt.Errorf("%s: an undeclared endpoint in %s: %q: %w", ModuleName, endpointsKey, name, err)
 		}
+		targets = append(targets, target{name: name, endpoint: endpoint})
+	}
+	for _, tgt := range targets {
 		for _, r := range p.routes() {
-			endpoint.Route(r.method, r.path, r.handler)
+			tgt.endpoint.Route(r.method, r.path, r.handler)
 		}
 	}
 	return nil
@@ -245,8 +312,8 @@ func (p *product) mount(router speedhttp.Router) error {
 // diagnose writes the start diagnostic: the endpoints the preference routes were
 // mounted on. The line is the module's own, so a reader finds what the module
 // mounted without scanning a chain listing.
-func (p *product) diagnose(router speedhttp.Router) {
-	p.logger.Info(ModuleName+": the preference routes are mounted", "endpoints", router.Endpoints())
+func (p *product) diagnose() {
+	p.logger.Info(ModuleName+": the preference routes are mounted", "endpoints", p.cfg.endpoints)
 }
 
 // route is one route: the method and path it answers and the handler that serves

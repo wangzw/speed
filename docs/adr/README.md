@@ -327,6 +327,7 @@
 | [渠道是封闭的平台词汇，可用性由装配决定，接缝缺席时跳过而不失败](adr-notification-channels-2026-10-15.md) | 2026-10-15 | 已接受 |
 | [出站投递经持久队列异步进行，逐渠道一个去重键，notification_sends 是幂等与结果账](adr-notification-delivery-2026-10-15.md) | 2026-10-15 | 已接受 |
 | [实时推送每副本一个 Hub，行先提交、事件后发，Hub 只值延迟](adr-notification-stream-2026-10-15.md) | 2026-10-15 | 已接受 |
+| [通知偏好路由按端名清单挂载，不挂在入口模块声明的每一个端上](adr-notification-endpoints-2026-10-15.md) | 2026-10-15 | 已接受 |
 
 ## 对象存储
 

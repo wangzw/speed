@@ -19,11 +19,12 @@ var wantRoutes = map[mountedRoute]bool{
 	{http.MethodPut, "/api/v1/notifications/preferences/:typeKey/:channel"}: true,
 }
 
-// TestTheModuleMountsItsWholeRouteSet holds that every route is mounted on every
-// endpoint the entry point declares.
+// TestTheModuleMountsItsWholeRouteSet holds that every route in the closed set is
+// mounted on an endpoint the module is told to carry them, and that the entry
+// point's other endpoints are left alone.
 func TestTheModuleMountsItsWholeRouteSet(t *testing.T) {
-	router := newStubRouter("public")
-	h := engines[0].on(t, harness{withRouter: true, router: router})
+	router := newStubRouter("public", "admin")
+	h := engines[0].on(t, harness{withRouter: true, router: router, endpoints: []string{"public"}})
 	h.drive(t, func(_ context.Context, _ *core.Registry) error {
 		got := router.endpoint("public").registered()
 		if len(got) != len(wantRoutes) {
@@ -33,6 +34,9 @@ func TestTheModuleMountsItsWholeRouteSet(t *testing.T) {
 			if !wantRoutes[r] {
 				t.Errorf("unexpected route %s %s", r.method, r.path)
 			}
+		}
+		if elsewhere := router.endpoint("admin").registered(); len(elsewhere) != 0 {
+			t.Errorf("the unnamed endpoint carries %v, want none", elsewhere)
 		}
 		return nil
 	})
