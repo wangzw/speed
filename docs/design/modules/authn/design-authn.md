@@ -294,7 +294,7 @@ type Requirement struct {
 | `authn/mfa/totp` | `authn.mfa.totp` | `Factor` | 否 | `db.Database`、`MFA` | 无 | `authn_totp_secrets` |
 | `authn/mfa/sms` | `authn.mfa.sms` | `Factor` | 否 | `SMSCodes`、`Accounts` | 无 | 无 |
 | `authn/mfa/webauthn` | `authn.mfa.webauthn` | `Factor`、`LoginMethod`（通行密钥） | 否 | `db.Database`、`MFA`、`Accounts` | 无 | `authn_webauthn_users`、`authn_webauthn_credentials` |
-| `authn/sms` | `authn.sms` | `SMSCodes`；`AccountLifecycle` | 是 | `db.Database`、`sms.Sender` | `settings.Store` ○、`event.Bus` ○、`audit.Audit` ○ | `authn_challenges` |
+| `authn/sms` | `authn.sms` | `SMSCodes`；`AccountLifecycle` | 是 | `db.Database`、`sms.Registry`、`sms.Sender` | `settings.Store` ○、`event.Bus` ○、`audit.Audit` ○ | `authn_challenges` |
 | `authn/sso` | `authn.sso` | `SSOProviders` | 是 | `db.Database`、`mount.Mounter` | `settings.Store` ○、`event.Bus` ○ | `authn_idps`、`authn_idp_domains`、`authn_saml_assertions` |
 | `authn/sso/saml` | `authn.sso.saml` | `LoginMethod`、`SSOMetadataRefresher` | 否 | `SSOProviders`、`mount.Mounter` | `settings.Store` ○、`event.Bus` ○、`audit.Audit` ○ | 无 |
 | `authn/sso/oidc` | `authn.sso.oidc` | `LoginMethod` | 否 | `SSOProviders` | `settings.Store` ○、`event.Bus` ○、`audit.Audit` ○ | 无 |

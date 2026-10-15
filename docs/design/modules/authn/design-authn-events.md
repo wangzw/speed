@@ -224,7 +224,7 @@
 | `authn.session.operations` | `{operation}` | `operation`：`created`、`elevated`、`revoked`、`revoked-all`、`purged` |
 | `authn.token.operations` | `{operation}` | `operation`：`issued`、`refreshed`、`revoked`、`client-credentials`；`outcome`：`ok`、`invalid`、`reuse-detected`、`unavailable` |
 | `authn.throttle.engagements` | `{engagement}` | `scope`：`identifier`、`account`、`factor`、`phone`、`client` |
-| `authn.sms.sends` | `{message}` | `outcome`：`sent`、`uncertain`、`throttled`、`rejected`、`unsupported-region`、`budget-exhausted`、`suppressed`（号码未登记且注册关闭，未发）、`dropped`（队列满） |
+| `authn.sms.sends` | `{message}` | `outcome`：`sent`、`uncertain`、`throttled`、`rejected`、`not-sendable`（模板被禁用或审核未过，未发）、`unsupported-region`、`budget-exhausted`、`suppressed`（号码未登记且注册关闭，未发）、`dropped`（队列满） |
 | `authn.sso.assertions` | `{assertion}` | `protocol`：`saml`、`oidc`；`outcome`：`accepted`、`signature`、`audience`、`time`、`replay`、`in-response-to`、`issuer`、`destination`、`other` |
 | `authn.impersonation.sessions` | `{session}` | `outcome`：`started`、`denied`、`ended` |
 | `authn.audit.write-failures` | `{failure}` | `mandatory`：`true`、`false` |

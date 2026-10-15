@@ -7,7 +7,7 @@
 本功能包括下列部分：
 
 - **`SMSCodes`**：由 `authn.sms` 排他交付，挑战状态机的唯一入口。验证码明文从不离开本模块：不写库、不写日志、不进事件与指标，只存在于入队项与交给发送方的调用参数里。
-- **发送**：经顶层发送能力 `pkg/sms` 的 `Sender` 把每条挑战发出去。本模块不认识厂商，只按自己所需的模板键构造一条 `sms.Message` 交给载体；模板声明、厂商编号与参数次序归 `pkg/sms`（[design-sms](../design-sms.md)、[ADR-sms-capability-2026-10-13](../../../adr/adr-sms-capability-2026-10-13.md)）。
+- **发送**：经顶层发送能力 `pkg/sms` 的 `Registry` 与 `Sender` 把每条挑战发出去。本模块不认识厂商，只按自己所需的模板键构造一条 `sms.Message` 交给注册表解出 `sms.Resolved`，再把解出的形状交给载体；模板声明、厂商编号与参数次序归 `pkg/sms`（[design-sms](../design-sms.md)、[ADR-sms-capability-2026-10-13](../../../adr/adr-sms-capability-2026-10-13.md)）。
 - **账户清理**：`authn.sms` 实现 `AccountLifecycle`，账户删除之后抹除该账户的挑战行，并按周期清扫过了预算统计窗口的挑战行。
 
 ### 非职责
@@ -37,15 +37,15 @@
 
 | 包 | 模块名 | 交付 | 排他 | 构造期依赖 | 其余取用（缺席合法） | 表 |
 |---|---|---|---|---|---|---|
-| `pkg/authn/sms` | `authn.sms` | `SMSCodes`；`AccountLifecycle` | `SMSCodes` 排他 | `db.Database`、`sms.Sender` | `settings.Store`、`event.Bus`、`audit.Audit`、`log.Logger` | `authn_challenges` |
+| `pkg/authn/sms` | `authn.sms` | `SMSCodes`；`AccountLifecycle` | `SMSCodes` 排他 | `db.Database`、`sms.Registry`、`sms.Sender` | `settings.Store`、`event.Bus`、`audit.Audit`、`log.Logger` | `authn_challenges` |
 
-`SMSCodes` 的接口定义在 `pkg/authn` 根包，根包自身不登记模块。`sms.Sender` 的接口定义在 `pkg/sms` 根包（形状见 [design-sms](../design-sms.md)）。每个登记模块的包导出 `ModuleName`，配置命名空间取同一个取值。发送方由顶层发送能力交付，本模块经 `sms.Sender` 取用，宿主在命令树上选定一个载体；两个载体（`sms.aliyun`、`sms.tencent`）同时纳入在消解阶段以排他冲突失败。
+`SMSCodes` 的接口定义在 `pkg/authn` 根包，根包自身不登记模块。`sms.Registry` 与 `sms.Sender` 的接口定义在 `pkg/sms` 根包（形状见 [design-sms](../design-sms.md)）。每个登记模块的包导出 `ModuleName`，配置命名空间取同一个取值。模板注册表与发送方各由顶层发送能力的一个登记模块交付，本模块经 `sms.Registry` 与 `sms.Sender` 取用，宿主在命令树上各自选定一个；两个载体（`sms.aliyun`、`sms.tencent`）同时纳入在消解阶段以排他冲突失败。
 
-### 发送方的接取：经 sms.Sender
+### 发送方的接取：经 sms.Registry 与 sms.Sender
 
-发送接缝是顶层发送能力 `pkg/sms` 的 `Sender`（形状见 [design-sms](../design-sms.md)）。本模块把它当作排他的构造期依赖取用（`Requires` 记 `(*sms.Sender)(nil)`），宿主在命令树上选定一个载体；两个载体（`sms.aliyun`、`sms.tencent`）同时纳入在消解阶段失败。本模块不 import 任何厂商适配叶子包。
+模板注册表与发送接缝各是顶层发送能力 `pkg/sms` 的一个接缝（形状见 [design-sms](../design-sms.md)）。本模块把两者都当作排他的构造期依赖取用（`Requires` 记 `(*sms.Registry)(nil)` 与 `(*sms.Sender)(nil)`），宿主在命令树上各选定一个；同一接缝的两个实现同时纳入在消解阶段失败。本模块先取注册表，因为覆盖核对读的是注册表的声明、发送时解出的形状也来自注册表，再取载体。本模块不 import 任何厂商适配叶子包。
 
-本模块把每条挑战构造成一条 `sms.Message`：
+本模块把每条挑战构造成一条 `sms.Message`，交给注册表的 `Resolve` 解出 `sms.Resolved`，再把解出的形状交给载体：
 
 ```go
 func message(in SendCode, challengeID, code, ttlMinutes string) sms.Message {
@@ -53,17 +53,17 @@ func message(in SendCode, challengeID, code, ttlMinutes string) sms.Message {
 		To:       in.Phone,                    // 已规范化的 E.164
 		Template: purposeTemplate(in.Purpose), // authn.code.login / mfa / enroll
 		Params:   map[string]string{"code": code, "ttl_minutes": ttlMinutes},
-		Locale:   resolveLocale(in.Locale, defaultLocale, declared), // 解析到载体声明的语言，缺省落配置的默认语言
+		Locale:   resolveLocale(in.Locale, defaultLocale, declared), // 解析到注册表声明的语言，缺省落配置的默认语言
 		DedupeID: challengeID,
 	}
 }
 ```
 
-模板键是 `authn.code.login`、`authn.code.mfa`、`authn.code.enroll`，按用途映射；参数名固定为 `code` 与 `ttl_minutes`。这几个模板名、参数名与配置的默认语言是与载体的配置契约：载体的 `templates` 声明里必须写这几个模板名、恰好这两个参数，每个模板至少一种语言，且每个模板覆盖配置的默认语言——多声明一个本模块不发送的参数，该模板就没有任何消息能满足。**一条消息的语言集是它所属模板声明的语言集**：本模块不声明任何语言表，一条消息能发出去的语言是它用途映射到的那个模板声明的语言；不同用途的模板可以声明不同的语言集，每个模板各自覆盖配置的默认语言。
+模板键是 `authn.code.login`、`authn.code.mfa`、`authn.code.enroll`，按用途映射；参数名固定为 `code` 与 `ttl_minutes`。这几个模板名、参数名与配置的默认语言是与注册表的配置契约：注册表持有的 `templates` 里必须写这几个模板名、恰好这两个参数，每个模板至少一种语言，且每个模板覆盖配置的默认语言——多声明一个本模块不发送的参数，该模板就没有任何消息能满足。**一条消息的语言集是它所属模板声明的语言集**：本模块不声明任何语言表，一条消息能发出去的语言是它用途映射到的那个模板声明的语言；不同用途的模板可以声明不同的语言集，每个模板各自覆盖配置的默认语言。
 
-**覆盖由本模块在 `New` 核对。** `pkg/sms` 只让载体报告自己声明了什么，覆盖哪些组合由消费方核对，所以本模块在 `newProduct` 取到 `sms.Sender` 后立即调 `sender.Declared()`，逐项核对自己所需的（模板，参数）契约——每个必需模板的名字都要在、每个模板至少声明一种语言、每个模板都要覆盖配置的默认语言、参数名表须恰为本模块所发的两个（少一个或多一个都即 `ErrInvalidConfig` 并点名那个参数）；`New` 返回错误同样终止启动，早于服务。`Prepare` 早于 `New`、拿不到实例，核对因此落在 `New`。配置的默认语言用 `reader.Decode(i18n.ConfigNamespace, &cfg)` 读，`cfg` 的字段带 `config:"default-locale"` 且预置为 `en-US`，因而一个没有纳入 i18n 引擎、也就没有该命名空间的装配，读到的仍是英文，与那个引擎自己会读的默认一致。
+**覆盖由本模块在 `New` 核对。** `pkg/sms` 只让注册表报告自己持有什么，覆盖哪些组合由消费方核对，所以本模块在 `newProduct` 取到 `sms.Registry` 后立即调 `registry.Declared()`，逐项核对自己所需的（模板，参数）契约——每个必需模板的名字都要在、每个模板至少声明一种语言、每个模板都要覆盖配置的默认语言、参数名表须恰为本模块所发的两个（少一个或多一个都即 `ErrInvalidConfig` 并点名那个参数）；`New` 返回错误同样终止启动，早于服务。`Prepare` 早于 `New`、拿不到实例，核对因此落在 `New`。配置的默认语言用 `reader.Decode(i18n.ConfigNamespace, &cfg)` 读，`cfg` 的字段带 `config:"default-locale"` 且预置为 `en-US`，因而一个没有纳入 i18n 引擎、也就没有该命名空间的装配，读到的仍是英文，与那个引擎自己会读的默认一致。
 
-`sms.Sender.Send` 返回的错误取自封闭集 `sms.ErrThrottled`、`sms.ErrRejected`、`sms.ErrUncertain`；本模块的工作池归类它们、只记指标与日志，不外露（见「发送工作池与失败归类」）。空 `Locale` 或载体的编号表里没有的（模板，语言）组合在 `pkg/sms` 一侧以 `ErrRejected` 拒绝、不调厂商。
+`sms.Registry.Resolve` 把 `sms.Message` 解成载体直接可用于构造请求的形状；一条注册表解不出的消息以 `ErrRejected` 拒绝，一条模板被禁用或审核未过的消息以 `ErrNotSendable` 拒绝，两者都在请求路径上只记指标与日志、不外露。`sms.Sender.Send` 返回的错误取自封闭集 `sms.ErrThrottled`、`sms.ErrRejected`、`sms.ErrUncertain`；本模块的工作池归类它们、只记指标与日志，不外露（见「发送工作池与失败归类」）。空 `Locale` 或注册表里没有的（模板，语言）组合在 `pkg/sms` 一侧以 `ErrRejected` 拒绝、不调厂商。
 
 ### SMSCodes：挑战状态机
 
@@ -72,7 +72,7 @@ type SendCode struct {
 	Purpose string    // login、mfa、enroll
 	Phone   string    // E.164，已规范化
 	Account AccountID // mfa、enroll 必填；login 不填，也不按它计数
-	Locale  string    // 调用方填入的请求语言；空读作配置的默认语言，非空时解析到载体声明的语言
+	Locale  string    // 调用方填入的请求语言；空读作配置的默认语言，非空时解析到注册表声明的语言
 	Deliver bool      // 为假：只写抑制行并计入全部预算，不入队不发送
 }
 
@@ -91,7 +91,7 @@ type SMSCodes interface {
 
 - **`Send` 的调用方责任。** `Purpose` 取自封闭集，`Phone` 已规范化，`mfa` 与 `enroll` 的 `Account` 非空；违反即调用方缺陷，`Send` 返回普通错误，不属于哨兵集。每流程发送上限由调用方在 `Send` 之前核对。
 - **`Send` 对 `Deliver` 为真与为假的调用走同一条路径。** 应答只有 `challengeID` 一种形状，调用方无法从返回值、状态码或错误形态区分抑制行与真实行（耗时见「非保证」）。
-- **`Locale` 的来源与取值。** 本模块不声明任何语言表：它的受支持语言集是载体声明的语言集（`sender.Declared()`），按用途模板逐条持有、由本模块在 `New` 派生一次，一条消息的可用语言是它 `Template` 指向的那个模板声明的语言，不是各模板的并集（[ADR-i18n-language-set-2026-10-13](../../../adr/adr-i18n-language-set-2026-10-13.md)）。`pkg/sms` 不声明语言闭集，把语言当作不透明串（[design-sms](../design-sms.md)）。本模块不读 HTTP，也不解析 `Accept-Language`：那次解析由登录引擎在发起流程的请求上做（优先取 i18n 协商结果，取不到时为空串），存入流程记录，经方法与因素的入参交给调用方，调用方原样填入 `SendCode.Locale`；解析本身归 [design-authn-login](design-authn-login.md)。**请求语言由本模块解析到该用途模板声明的语言**：`SendCode.Locale` 为空时读作配置的默认语言；非空时取该模板声明的语言中主子标签与它相等的那一个（比较不分大小写）；没有相等的则落到配置的默认语言。**一个不受支持的请求语言因此不是被拒，而是落到默认语言**——语言是调用方的偏好，该模板声明的集合才是这条消息实际能发出去的语言。这与直接调用 `sms.Sender` 不同：那时空 `Locale` 与编号表里没有的语言都被 `pkg/sms` 读作调用方缺陷、以 `ErrRejected` 拒绝、不调厂商（[design-sms](../design-sms.md)）。本模块构造的 `sms.Message.Locale` 取 `resolveLocale(SendCode.Locale, 配置的默认语言, 该用途模板声明的语言)`。
+- **`Locale` 的来源与取值。** 本模块不声明任何语言表：它的受支持语言集是注册表声明的语言集（`registry.Declared()`），按用途模板逐条持有、由本模块在 `New` 派生一次，一条消息的可用语言是它 `Template` 指向的那个模板声明的语言，不是各模板的并集（[ADR-i18n-language-set-2026-10-13](../../../adr/adr-i18n-language-set-2026-10-13.md)）。`pkg/sms` 不声明语言闭集，把语言当作不透明串（[design-sms](../design-sms.md)）。本模块不读 HTTP，也不解析 `Accept-Language`：那次解析由登录引擎在发起流程的请求上做（优先取 i18n 协商结果，取不到时为空串），存入流程记录，经方法与因素的入参交给调用方，调用方原样填入 `SendCode.Locale`；解析本身归 [design-authn-login](design-authn-login.md)。**请求语言由本模块解析到该用途模板声明的语言**：`SendCode.Locale` 为空时读作配置的默认语言；非空时取该模板声明的语言中主子标签与它相等的那一个（比较不分大小写）；没有相等的则落到配置的默认语言。**一个不受支持的请求语言因此不是被拒，而是落到默认语言**——语言是调用方的偏好，该模板声明的集合才是这条消息实际能发出去的语言。这与直接调用 `sms.Registry.Resolve` 不同：那时空 `Locale` 与编号表里没有的语言都被 `pkg/sms` 读作调用方缺陷、以 `ErrRejected` 拒绝、不调厂商（[design-sms](../design-sms.md)）。本模块构造的 `sms.Message.Locale` 取 `resolveLocale(SendCode.Locale, 配置的默认语言, 该用途模板声明的语言)`。
 - **`Verify` 不回传号码与账户。** 通过只证明持有该挑战标识的调用方出示了正确的码；码发往哪个号码，由调用方在自己的流程记录里保存，以发起时的号码为准。
 - **`Verify` 对抑制行恒返回 `ErrInvalidCredentials`**，照样计数并做一次诱饵比对。
 - **方法名核对。** 同一模块交付的各能力接口方法名两两不相交的规则见 [design-authn](design-authn.md#扩展点)。`authn.sms` 交付的 `SMSCodes` 的方法（`Send`、`Verify`）与 `AccountLifecycle` 的方法（`AccountDisabled`、`AccountDeleted`、`ServiceSecretRevoked`）互不重名；`sms.Sender` 的 `Send` 与 `SMSCodes` 的 `Send` 同名异签，二者由不同模块交付（`sms.Sender` 由 `pkg/sms` 的载体叶子，`SMSCodes` 由 `authn.sms`），不会落在同一个类型上。
@@ -126,13 +126,14 @@ type SMSCodes interface {
 | 依赖 | 方式 | 用途 | 缺席时 |
 |---|---|---|---|
 | `db.Database` | `Requires` | 挑战表的读写；`BlindIndex` 计算带密钥摘要；迁移集 | 构造失败 |
+| `sms.Registry` | `Requires`（排他功能） | 取得模板注册表；核对模板覆盖、解出可发送的形状；缺失或多个同时纳入在消解阶段失败 | 构造失败 |
 | `sms.Sender` | `Requires`（排他功能） | 取得发送方；缺失或多个同时纳入在消解阶段失败 | 构造失败 |
 | `settings.Store` | 取用，缺席合法 | 放行表、预算与验证码参数 | 各项取声明的缺省值；放行表缺省为空，所以没有设置模块的装配里短信一律不发 |
 | `event.Bus` | 取用，缺席合法 | 订阅 `authn.account.deleted` 与 `settings.changed` | 只剩同步钩子，没有事件补偿；不影响正确性底线 |
 | `audit.Audit` | 取用，缺席合法 | 放宽设置的尽力档审计 | 只写 `Warn` |
 | `log.Logger` | 取用，缺席合法 | 脱敏规则登记、日志 | 无日志 |
 
-厂商适配住在顶层 `pkg/sms` 下（`pkg/sms/aliyun`、`pkg/sms/tencent`），只绑定各自的厂商 SDK，所以 SDK 只进 import 了该叶子包的宿主的依赖闭包（[ADR-authn-packaging-2026-10-10](../../../adr/adr-authn-packaging-2026-10-10.md)、[ADR-sms-capability-2026-10-13](../../../adr/adr-sms-capability-2026-10-13.md)）。两家 SDK 的封边与钉版由 `pkg/sms/deps_test.go` 的守卫守住，版本与阿里云 SDK 的 genproto 备注见 [design-sms](../design-sms.md)。本模块只经 `sms.Sender` 取用发送方，不 import 任何载体叶子包。
+厂商适配住在顶层 `pkg/sms` 下（`pkg/sms/aliyun`、`pkg/sms/tencent`），只绑定各自的厂商 SDK，所以 SDK 只进 import 了该叶子包的宿主的依赖闭包（[ADR-authn-packaging-2026-10-10](../../../adr/adr-authn-packaging-2026-10-10.md)、[ADR-sms-capability-2026-10-13](../../../adr/adr-sms-capability-2026-10-13.md)）。两家 SDK 的封边与钉版由 `pkg/sms/deps_test.go` 的守卫守住，版本与阿里云 SDK 的 genproto 备注见 [design-sms](../design-sms.md)。本模块只经 `sms.Registry` 与 `sms.Sender` 取用模板与发送方，不 import 任何载体叶子包。
 
 依赖方向满足架构不变量：
 
@@ -145,7 +146,7 @@ type SMSCodes interface {
 
 ### 结构
 
-类图固定能力与使用方的关系：`SmsEngine` 是 `authn.sms` 的产物，同时实现 `SMSCodes` 与 `AccountLifecycle`，并以构造期依赖持有顶层发送能力的 `Sender`（图中记作 `Sender`，其实现是 `pkg/sms` 下的载体，见 [design-sms](../design-sms.md)）；使用方只认 `SMSCodes`。
+类图固定能力与使用方的关系：`SmsEngine` 是 `authn.sms` 的产物，同时实现 `SMSCodes` 与 `AccountLifecycle`，并以构造期依赖持有顶层发送能力的 `Registry` 与 `Sender`（图中各记作 `Registry` 与 `Sender`，其实现是 `pkg/sms` 下的注册表模块与载体模块，见 [design-sms](../design-sms.md)）；使用方只认 `SMSCodes`。
 
 ```mermaid
 classDiagram
@@ -160,11 +161,15 @@ classDiagram
         +AccountDeleted(ctx, id) error
         +ServiceSecretRevoked(ctx, id, credentialID) error
     }
+    class Registry {
+        <<interface>>
+        +Declared() []Template
+        +Resolve(m) Resolved
+    }
     class Sender {
         <<interface>>
         +Name() string
-        +Send(ctx, m) Receipt
-        +Declared() []Template
+        +Send(ctx, r) Receipt
     }
     class SendCode {
         +Purpose string
@@ -178,6 +183,7 @@ classDiagram
     class MfaSms
     SmsEngine ..|> SMSCodes
     SmsEngine ..|> AccountLifecycle
+    SmsEngine ..> Registry : Requires
     SmsEngine ..> Sender : Requires
     LoginSms ..> SMSCodes : purpose login
     MfaSms ..> SMSCodes : purpose mfa and enroll
@@ -186,13 +192,14 @@ classDiagram
 
 ### 发送的交互
 
-时序图固定一次发送涉及的模块与同步边界：写挑战行与应答在请求内完成，厂商调用在工作池里异步完成，应答不等它。
+时序图固定一次发送涉及的模块与同步边界：写挑战行、向注册表解出可发送的形状与应答都在请求内完成，厂商调用在工作池里异步完成，应答不等它。
 
 ```mermaid
 sequenceDiagram
     participant C as 调用方 login 或 mfa
     participant S as authn.sms
     participant D as db.Database
+    participant R as sms.Registry
     participant P as 工作池
     participant V as sms.Sender
     C->>S: Send(SendCode)
@@ -200,12 +207,14 @@ sequenceDiagram
     S->>D: 统计预算
     S->>D: 作废旧行并写新行
     alt Deliver 为真
-        S->>P: 入队 sms.Message
+        S->>R: Resolve(sms.Message)
+        R-->>S: sms.Resolved 或 ErrRejected / ErrNotSendable
+        S->>P: 入队 sms.Resolved
     else Deliver 为假
         Note over S,P: 抑制行不入队
     end
     S-->>C: challengeID
-    P->>V: Send(sms.Message)
+    P->>V: Send(sms.Resolved)
     V-->>P: Receipt 或哨兵错误
     Note over P: 结果只记指标与日志，不回写请求
 ```
@@ -264,7 +273,7 @@ stateDiagram-v2
 
 ### 入队项
 
-发送工作池的队列元素是一条完整的 `sms.Message`，其 `Params` 带验证码明文。队列在进程内，容量有界，元素不落库；这是明文唯一的停留处，进程退出即丢失。
+发送工作池的队列元素是一条已解出的 `sms.Resolved`，其 `Params` 与 `Ordered` 带验证码明文。队列在进程内，容量有界，元素不落库；这是明文唯一的停留处，进程退出即丢失。
 
 ## 核心算法与流程
 
@@ -285,9 +294,12 @@ flowchart TD
     C -- 是 --> G["生成验证码与挑战标识 计算 phone_mac 与 code_mac"]
     G --> H["事务 作废旧行并写新行"]
     H --> I{"Deliver"}
-    I -- 真 --> J["非阻塞入队"]
+    I -- 真 --> RS["注册表 Resolve 解出 sms.Resolved"]
+    RS -- ErrRejected 或 ErrNotSendable --> RN["记指标与 Warn 不入队"]
+    RS -- 成功 --> J["非阻塞入队"]
     I -- 假 --> K["suppressed 为真 不入队"]
     J --> R["返回 challengeID"]
+    RN --> R
     K --> R
 ```
 
@@ -295,7 +307,8 @@ flowchart TD
 2. **队列容量。** 队列已满，返回 `ErrUnavailable`，不写行、不作废旧行。这一步对真实行与抑制行同样执行，使「队列满」不成为区分已登记与未登记号码的观察点。
 3. **预算。** 依据 `authn_challenges` 的行数统计，见下表；统计包含抑制行、已消费行与已作废行，只有清扫才使行退出统计。被拒绝的请求不写行。
 4. **生成与写入。** 生成验证码与挑战标识，计算 `phone_mac` 与 `code_mac`；在一个事务里把同（`phone_mac`，用途）下尚未消费且未过期的旧行作废（条件更新 `consumed_at`），再写新行，`suppressed` 取 `Deliver` 的反。
-5. **入队。** `Deliver` 为真时非阻塞入队；`Deliver` 为假时不入队。事务提交与入队之间队列恰被填满时，该发送被丢弃并计入 `dropped`（见「结果与指标」），`Send` 仍返回 `challengeID`，用户走重发。
+5. **解出可发送的形状。** `Deliver` 为真时，把构造的 `sms.Message` 交给注册表的 `Resolve` 解出 `sms.Resolved`；注册表以 `ErrRejected`（消息形状）或 `ErrNotSendable`（模板被禁用或审核未过）拒绝时，记指标与 `Warn`、不入队，`Send` 仍返回 `challengeID`（行已写、预算已计），用户走重发。`Deliver` 为假时不解出。
+6. **入队。** 解出成功后非阻塞入队；`Deliver` 为假时不入队。事务提交与入队之间队列恰被填满时，该发送被丢弃并计入 `dropped`（见「结果与指标」），`Send` 仍返回 `challengeID`，用户走重发。
 
 ### 预算维度
 
@@ -346,7 +359,7 @@ flowchart TD
 
 ### 发送工作池与失败归类
 
-工作池在 `Start` 起固定个数的协程，从有界队列取 `sms.Message` 调 `sms.Sender.Send`。`Send` 立即返回，响应时间与厂商延迟无关。厂商调用的结果只记指标与日志，不回写请求，也不改挑战行：
+工作池在 `Start` 起固定个数的协程，从有界队列取 `sms.Resolved` 调 `sms.Sender.Send`。`Send` 立即返回，响应时间与厂商延迟无关。厂商调用的结果只记指标与日志，不回写请求，也不改挑战行：
 
 | 结果 | 处置 |
 |---|---|
@@ -358,7 +371,7 @@ flowchart TD
 
 ### 结果与指标
 
-指标 `authn.sms.sends` 的属性 `outcome` 取值的全表在 [design-authn-events](design-authn-events.md)；本节写本模块的每种结果记哪个取值。每次 `Send` 调用至多记一次：被拒绝与丢弃的在调用内记，入队成功的由工作池在厂商调用返回后记。
+指标 `authn.sms.sends` 的属性 `outcome` 取值的全表在 [design-authn-events](design-authn-events.md)；本节写本模块的每种结果记哪个取值。每次 `Send` 调用至多记一次：被拒绝、丢弃与注册表拒解出的在调用内记，入队成功的由工作池在厂商调用返回后记。
 
 | 结果 | `outcome` | 说明 |
 |---|---|---|
@@ -367,13 +380,15 @@ flowchart TD
 | 全局预算耗尽 | `budget-exhausted` | `ErrUnavailable`，不写行 |
 | 重发间隔、每号码、每账户任一维度超限 | `budget-exhausted` | `ErrThrottled`，不写行 |
 | `Deliver` 为假，写抑制行 | `suppressed` | 返回 `challengeID`，不入队 |
+| 注册表解不出消息（`ErrRejected`） | `rejected` | 返回 `challengeID`，行已写且计入预算，不入队 |
+| 注册表拒发（`ErrNotSendable`） | `not-sendable` | 返回 `challengeID`，行已写且计入预算，不入队 |
 | 事务提交与入队之间队列被填满 | `dropped` | 返回 `challengeID`，行已写且计入预算，发送被丢弃 |
 | 厂商调用成功 | `sent` | 工作池记 |
 | `sms.ErrUncertain` | `uncertain` | 工作池记 |
 | `sms.ErrThrottled` | `throttled` | 工作池记 |
 | `sms.ErrRejected` | `rejected` | 工作池记 |
 
-`dropped` 只表示本进程的队列没有容量，不分预检与提交之后；`throttled` 与 `rejected` 只表示厂商的答复，号码与账户维度的超限归 `budget-exhausted`。`Stop` 排空超时丢弃的与进程退出时丢失的发送不记指标，进程已无法记录。
+`dropped` 只表示本进程的队列没有容量，不分预检与提交之后；`throttled` 只表示厂商的答复，`rejected` 表示发送侧不接受这条消息（厂商拒绝，或注册表解不出），号码与账户维度的超限归 `budget-exhausted`；`not-sendable` 表示模板被禁用或审核未过，与这条消息无关。`Stop` 排空超时丢弃的与进程退出时丢失的发送不记指标，进程已无法记录。
 
 ### 厂商适配
 
@@ -400,17 +415,18 @@ flowchart TD
 | `ErrUnavailable` | `Send`、`Verify` | 队列已满、该用途的全局预算耗尽、db 不可用 | 503 |
 | `ErrInvalidCredentials` | `Verify` | 码不对、已过期、已消费、已作废、尝试次数用尽、抑制行；不区分成因 | 统一 `login-failed` |
 | `sms.ErrThrottled` | `sms.Sender.Send` | 发送方限流 | 不外露，只记指标与日志 |
-| `sms.ErrRejected` | `sms.Sender.Send` | 模板、签名或号码被厂商拒绝 | 不外露，只记指标与日志 |
+| `sms.ErrRejected` | `sms.Registry.Resolve`、`sms.Sender.Send` | 注册表解不出消息，或模板、签名、号码被厂商拒绝 | 不外露，只记指标与日志 |
+| `sms.ErrNotSendable` | `sms.Registry.Resolve` | 模板被禁用或厂商审核未过，消息不得发出 | 不外露，只记指标与日志 |
 | `sms.ErrUncertain` | `sms.Sender.Send` | 发送后超时，不知是否送达；不得盲目重发 | 视为已发送 |
-| `ErrInvalidConfig` | 构造 | 载体未声明某个必需模板、某个模板没有任何语言、某个模板未覆盖配置的默认语言，或参数名表与所发不等 | 启动失败，点名缺的那一项 |
+| `ErrInvalidConfig` | 构造 | 注册表未声明某个必需模板、某个模板没有任何语言、某个模板未覆盖配置的默认语言，或参数名表与所发不等 | 启动失败，点名缺的那一项 |
 | `ErrNoEncryptionKey` | `Start` | db 没有根密钥 | 启动失败 |
 
-`sms.ErrThrottled`、`sms.ErrRejected`、`sms.ErrUncertain` 是 `sms.Sender` 可返回错误的封闭集。厂商的错误在工作池里已脱离请求，所以它们不会改变触发这次发送的那个请求的应答。
+`sms.ErrThrottled`、`sms.ErrRejected`、`sms.ErrUncertain` 是 `sms.Sender` 可返回错误的封闭集，`sms.ErrRejected` 与 `sms.ErrNotSendable` 是 `sms.Registry.Resolve` 可返回错误的封闭集。厂商的错误在工作池里已脱离请求，所以它们不会改变触发这次发送的那个请求的应答；注册表的拒绝在请求内记指标与日志，同样不外露。
 
 ### 失败方向
 
 - **依赖不可用时拒绝。** db 不可用时，`Send` 与 `Verify` 返回 `ErrUnavailable`，不发送、不放行，也不以 401 应答。
-- **发送方不可用。** 工作池记 `Warn` 与指标，用户收不到码；入队时队列满则 `Send` 返回 `ErrUnavailable`。
+- **发送侧不可用或拒发。** 工作池记 `Warn` 与指标，用户收不到码；注册表拒解出时在请求内记 `Warn` 与指标；入队时队列满则 `Send` 返回 `ErrUnavailable`。
 - **缺省拒绝。** 放行表为空时一律拒绝，缺根密钥时启动失败。
 
 ### 幂等
@@ -454,12 +470,12 @@ flowchart TD
 
 ## 实现状态
 
-`pkg/authn/sms` 交付验证码状态机、队列、预算、指标与生命周期；发送能力与两个厂商适配在顶层 `pkg/sms`（见 [design-sms](../design-sms.md)）。
+`pkg/authn/sms` 交付验证码状态机、队列、预算、指标与生命周期；模板注册表、发送接缝与两个厂商适配在顶层 `pkg/sms`（见 [design-sms](../design-sms.md)）。
 
 | 能力 | 状态 | 代码 |
 |---|---|---|
 | 根包接口：`SMSCodes`、`SendCode` 与短信哨兵 | 已实现 | `pkg/authn/sms.go` `SMSCodes`；`pkg/authn/internal/model/sms.go` `SendCode`；`pkg/authn/errors.go` `ErrUnsupportedRegion` |
-| 模板覆盖核对：模板键到用途的映射，启动期经 `sender.Declared()` 核对所需模板、参数与配置的默认语言；请求语言解析到该用途模板声明的语言 | 已实现 | `pkg/authn/sms/templates.go` `templateLocales`、`resolveLocale`、`checkSender`；`pkg/authn/sms/config.go` `readDefaultLocale`；`pkg/authn/sms/module.go` `newProduct` |
+| 模板覆盖核对：模板键到用途的映射，启动期经 `registry.Declared()` 核对所需模板、参数与配置的默认语言；请求语言解析到该用途模板声明的语言 | 已实现 | `pkg/authn/sms/templates.go` `templateLocales`、`resolveLocale`、`checkSender`；`pkg/authn/sms/config.go` `readDefaultLocale`；`pkg/authn/sms/module.go` `newProduct` |
 | `authn.sms` 引擎：挑战状态机、预算、抑制行 | 已实现 | `pkg/authn/sms/send.go`、`verify.go`、`register.go`、`config.go`、`module.go` |
 | `authn_challenges` 迁移集 | 已实现 | `pkg/authn/sms/migrations/postgres/0001_authn_challenges.sql`、`migrations/sqlite/0001_authn_challenges.sql` |
 | 发送工作池 | 已实现 | `pkg/authn/sms/pool.go` |
