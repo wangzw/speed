@@ -292,7 +292,7 @@ func (s *sink) module() core.Module {
 			if err != nil {
 				return err
 			}
-			bus.Subscribe(EventInboxCreated, func(_ context.Context, evt event.Event) error {
+			bus.Subscribe(EventInboxCreated, "notification.inbox.test", func(_ context.Context, evt event.Event) error {
 				s.mu.Lock()
 				s.received = append(s.received, evt)
 				s.mu.Unlock()

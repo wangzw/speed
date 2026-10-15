@@ -38,7 +38,7 @@ Hub 在内存里，每个副本一个，只装本副本的连接。**Hub 唯一�
 
 **订阅的事件类型名是 `notification.inbox.created`**（[收件箱](design-notification-inbox.md)在其包里声明的常量 `EventInboxCreated` 的取值）。订阅按字面类型名进行：事件总线按类型名精确比较路由，不解释通配与前缀，本模块也就按一个写死的字符串订阅，不 import 发布方的包。
 
-**订阅只有两个输入。** `pkg/event` 的 `Bus.Subscribe(eventType string, h Handler)` 取一个事件类型名与一个处理器，没有订阅者名一类的第三项；本模块因此以一个处理器订阅 `notification.inbox.created` 这一个类型名，不向总线登记自己的名字。
+**订阅带一个订阅者名，本模块用它自己的模块名。** `pkg/event` 的 `Bus.Subscribe(eventType string, name string, h Handler)` 取一个事件类型名、一个订阅者名与一个处理器；订阅者名是订阅方自己的身份，不是它订阅的类型，留空即 panic。本模块以 `notification.stream` 这一个名字订阅 `notification.inbox.created` 这一个类型名。
 
 **事件载荷的字段是封闭集**：`message_id`、`tenant_id`、`recipient_user_id`、`type_key`。订阅端按字段名读取，不做类型断言；在进程内投递下它读到的是发布方的具体值，经传输投递下它读到的是传输解出来的结构，都按同一组字段名读。缺了 `tenant_id` 或 `recipient_user_id` 的事件无法归入任何连接的作用域，被丢弃。
 

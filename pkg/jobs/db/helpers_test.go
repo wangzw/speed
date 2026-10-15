@@ -211,7 +211,7 @@ func (s *sink) module() core.Module {
 				return err
 			}
 			for _, typ := range []string{SucceededEventType, DeadLetterEventType, CancelledEventType} {
-				bus.Subscribe(typ, func(_ context.Context, evt event.Event) error {
+				bus.Subscribe(typ, "jobs.test", func(_ context.Context, evt event.Event) error {
 					s.mu.Lock()
 					s.received = append(s.received, evt)
 					s.mu.Unlock()

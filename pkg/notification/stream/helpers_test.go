@@ -28,7 +28,7 @@ func newStubBus() *stubBus {
 	return &stubBus{handlers: make(map[string][]event.Handler)}
 }
 
-func (b *stubBus) Subscribe(eventType string, h event.Handler) {
+func (b *stubBus) Subscribe(eventType string, _ string, h event.Handler) {
 	b.mu.Lock()
 	defer b.mu.Unlock()
 	b.handlers[eventType] = append(b.handlers[eventType], h)

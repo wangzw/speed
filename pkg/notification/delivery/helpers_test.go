@@ -311,7 +311,7 @@ func (b *stubBus) Publish(_ context.Context, evt event.Event) error {
 	return nil
 }
 
-func (b *stubBus) Subscribe(string, event.Handler) {}
+func (b *stubBus) Subscribe(string, string, event.Handler) {}
 
 func (b *stubBus) events() []event.Event {
 	b.mu.Lock()

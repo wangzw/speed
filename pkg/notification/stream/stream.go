@@ -237,7 +237,7 @@ func (p *product) wire(reg *core.Registry) error {
 // handler drops what it cannot read: the Hub's Publish never reports an error,
 // so there is nothing to hand back to the bus.
 func (p *product) subscribe() {
-	p.bus.Subscribe(eventInboxCreated, func(_ context.Context, evt event.Event) error {
+	p.bus.Subscribe(eventInboxCreated, ModuleName, func(_ context.Context, evt event.Event) error {
 		p.hub.Publish(evt)
 		return nil
 	})
