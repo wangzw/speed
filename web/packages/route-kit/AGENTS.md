@@ -88,12 +88,11 @@ the provider (`RouteProvider.test.tsx`), where the throw is the assertion.
 so the documented composition cannot drift from the API; when that
 composition changes, this file changes with it.
 
-## Deferrals (recorded, do not re-open silently)
+## Consumers
 
-- **No console-ui / second-shell consumer yet.** `console-ui` is designed to
-  reuse this same registration surface with a different shell; it is not
-  implemented, so this package currently ships with no in-tree consumer
-  beyond its own tests and the README's example.
-- **The demo host is not wired yet.** `starters/demo/web` is a placeholder;
-  the product that consumes this package end-to-end lands with the frontend
-  build of the starter, not here.
+`starters/demo/web` is this package's in-tree consumer: it composes the
+business slot and the console area's declarations into one `RouteTable` and
+installs it with `RouteProvider`. `console-ui` -- the second shell -- mirrors
+the declaration, context and table shapes structurally and imports nothing
+from here, so the two packages share the registration surface without a type
+edge between them.

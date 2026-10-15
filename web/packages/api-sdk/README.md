@@ -96,10 +96,10 @@ runs over that merged document, so a platform fragment only reaches this
 package by entering the merge, and every platform module with an HTTP
 fragment is a merge member. A consuming app's own fragments are
 deliberately not members: they are the app's own API, and the app
-generates its own app-owned SDK over them (its own orval.config.ts under
-`starters/demo/web`), which the app's web host imports for its own
-surfaces -- the consumer-shaped generation flow that is the seed of the
-productized app-owned generation. Platform
+generates its own SDK over them through a second orval configuration that
+lives with the app. The starter carries no such configuration, because it
+declares no API of its own: that leg arrives with the app's first fragment.
+Platform
 membership, in the same per-operation shape:
 
 - `useAuthnLoginWithPassword` -- `useMutation` hook;
@@ -128,8 +128,8 @@ creates one.
 
 ## Consumption status
 
-Compile consumption is live in-workspace; no runtime host sits in the
-tree.
+Compile consumption is live in-workspace, and `starters/demo/web` binds
+this surface at runtime.
 
 - **Compile-consumed in-workspace.** `@speed/auth-core` type-checks
   against the generated authn surface, and its unit suite drives the
@@ -140,11 +140,11 @@ tree.
   `@speed/console-ui` consumes the generated admin operations. The
   merged document is covered by the same
   regeneration-and-comparison step.
-- **Runtime consumption.** No host in the tree binds this surface at
-  runtime: `starters/demo/web`, the placeholder where the consumer shell
-  lands, carries no application yet. A host binds one real
-  `@speed/api-client` through this package's `bindRequestFn` seam and
-  drives the generated operations through the composed tree. Release-time
+- **Runtime consumption.** `starters/demo/web` binds this surface at
+  runtime: its app-entry assembly (`@speed/product-shell/bootstrap`'s
+  `bootstrapSpeedApp`) binds one real `@speed/api-client` client through
+  this package's `bindRequestFn` seam, and the app's console area drives
+  the generated operations through the composed tree. Release-time
   packaging of the published SDK (generated from the merged `api.json`,
   versioned alongside the doc site) is not shipped -- release-machinery
   work.

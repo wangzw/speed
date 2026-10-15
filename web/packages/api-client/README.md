@@ -328,14 +328,14 @@ function useAppChrome(clientApi: RequestFn): AppChrome {
   in-workspace (its session layer imports this package's
   `AccessTokenStore` seam and calls the generated authn operations
   through the bound request function). `usePublicConfig`/`useFeature`
-  live at `@speed/api-client/react` (Config hooks section above). No
-  host in the tree binds this client at runtime: a host binds one real
-  `createClient` over the environment's own fetch into the api-sdk
-  seam, and reads the server's effective Public values and feature flags
-  through `usePublicConfig`/`useFeature` on that same bound client --
-  the shape a `requiredFeature`-style consumer needs. There is no browser
-  tier here: `starters/demo/web` is the placeholder where a consumer
-  shell lands.
+  live at `@speed/api-client/react` (Config hooks section above).
+  `starters/demo/web` binds this client at runtime: its app-entry
+  assembly (`@speed/product-shell/bootstrap`'s `bootstrapSpeedApp`)
+  binds one real `createClient` over the environment's own fetch into the
+  api-sdk seam, and reads the server's effective Public values and
+  feature flags through `usePublicConfig`/`useFeature` on that same bound
+  client -- the shape a `requiredFeature`-style consumer needs. The
+  package still ships no browser tier of its own.
 - **i18n resources** -- error codes map to bilingual text in the
   consuming package's catalogs; nothing here emits user-facing text.
 

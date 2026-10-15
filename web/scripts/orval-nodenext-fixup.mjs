@@ -19,13 +19,14 @@
  *
  *   node web/scripts/orval-nodenext-fixup.mjs
  *
- * The same one script serves the app-owned generation leg: the
- * demo host's own SDK runs the identical rewrite over its own
- * generated entry and seam by passing both paths:
+ * The same one script serves an app-owned generation leg: an app's own
+ * SDK runs the identical rewrite over its own generated entry and seam by
+ * passing both paths. The starter declares no API of its own, so it has no
+ * such leg yet; a product points the script at its own:
  *
- *   node web/scripts/orval-nodenext-fixup.mjs \
- *     starters/demo/web/src/app-api/index.ts \
- *     starters/demo/web/src/app-api/runtime.ts
+ *   node <repo>/web/scripts/orval-nodenext-fixup.mjs \
+ *     <app>/src/app-api/index.ts \
+ *     <app>/src/app-api/runtime.ts
  *
  * The script is idempotent: an already-fixed file (every mutator
  * import already carrying the '.js' extension) exits 0 with the

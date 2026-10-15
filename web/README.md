@@ -39,7 +39,12 @@ This is also why the demo starter's web host joins as an **external member**
 (`../starters/demo/web`) rather than being folded into `web/`: it lives
 exactly where a delivered consumer project lives, outside the workspace
 root, and still installs, lints, typechecks, tests and builds under the same
-one-lockfile workspace over `workspace:*` deps on the `@speed` packages.
+one-lockfile workspace. Unlike the packages, it declares its `@speed`
+dependencies by registry version range (`^0.0.1`) rather than the workspace
+protocol: `linkWorkspacePackages` in `pnpm-workspace.yaml` links a member
+when the requested range is satisfied locally, so the in-repo build resolves
+them to the sibling source while the same manifest, copied out of the
+repository, installs them from the registry unchanged.
 
 Tooling treats the boundary the same way: Go checks run from module
 directories, npm checks run from `web/`.

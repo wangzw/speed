@@ -587,10 +587,11 @@ namespace discipline over `src/` the same way it does in every package.
 
 ## Deferrals and recorded decisions
 
-- **Consumer**: no host in the tree renders this family. A host renders
-  the family's sign-in view inside product-shell's three-branch view
-  machine, over the session the shell's bootstrap binds to one real
-  `@speed/api-client`. The package-level proof is the in-form leg --
+- **Consumer**: `starters/demo/web` renders this family through
+  product-shell: the app passes the family's sign-in view into the shell's
+  `signIn` slot and its sign-out action into the `userMenu` slot, over the
+  session the shell's bootstrap binds to one real `@speed/api-client`. The
+  package-level proof is the in-form leg --
   `src/usage-example.test.tsx` drives the composed family over a real
   `@speed/api-client` bound through the same seam a host binds, with a
   scripted fetch answering genuine `Response` objects.

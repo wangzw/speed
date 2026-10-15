@@ -1,18 +1,26 @@
 # @speed/test-utils
 
 The workspace's shared frontend test-support package: the single home of
-the DOM-test scaffolding the `@speed/*` packages and the demo host
-would otherwise each carry a copy of.
+the DOM-test scaffolding the `@speed/*` packages would otherwise each
+carry a copy of.
 
 It is **private and never published** — a workspace member consumed by
-the packages' and the app's tests, not a deliverable library. It lives
-beside `packages/` rather than inside it because `web/packages/*` is the
+the packages' tests, not a deliverable library. It lives beside
+`packages/` rather than inside it because `web/packages/*` is the
 release pipeline's deliverable set (`tools/release/lockstep-release.py`
 derives the npm publish order from exactly that directory, without a
 private-package filter and under one uniform version), and a private
 member inside that set would enter the release plan and the publish
-loop. The demo starter's web host — the workspace's other private member
-— lives outside `web/packages/*` for the same reason.
+loop.
+
+The demo starter's web host — the workspace's other private member —
+lives outside `web/packages/*` for the same reason, and it does **not**
+consume this package. A copyable application has to declare every
+`@speed` dependency by registry version range so its manifest installs
+unchanged after a copy-out, and a never-published package has no registry
+version to name. The demo host therefore carries its own equivalent
+under `starters/demo/web/src/test-utils/` — its vitest setup and its
+`DemoApp` render harness — instead of importing this one.
 
 ## Resolution
 
@@ -20,11 +28,16 @@ Consumers reach the package through the workspace's single package map
 (`web/scripts/speed-aliases.mjs`): the specifiers `@speed/test-utils/<module>`
 alias onto this package's live `src/<module>.ts(x)` in every vitest/vite
 config (the map's `speedAliases()` derivation), and each consuming
-package's tsconfig `paths` section pins the same targets for `tsc` (the
-alias-manifest suite in the demo host proves both). Each consuming
-package declares the dependency in its `devDependencies`. There is no
-`dist`: the package is consumed as source, the same way the map resolves
-every workspace sibling, so `build` is the standalone compile check.
+package's tsconfig `paths` section pins the same targets for `tsc`. Each
+consuming package declares the dependency in its `devDependencies`.
+There is no `dist`: the package is consumed as source, the same way the
+map resolves every workspace sibling, so `build` is the standalone
+compile check.
+
+The map is workspace-wide, so the demo host's tsconfig mirrors this
+package's specifiers too — its alias-manifest suite pins the whole map
+into that tsconfig, which is why the entries appear there — even though
+the app imports none of them.
 
 This package's own `@speed` imports (the session harness drives
 `@speed/auth-core` sessions over `@speed/api-client` and the

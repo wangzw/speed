@@ -26,7 +26,8 @@
  * the fragments and does not rot from being uncalled. The consuming app's
  * own fragments are deliberately not members -- the platform SDK covers the
  * platform, and the app's own API generates into the app's own SDK through
- * the app-owned flow (its own orval.config.ts under starters/demo/web).
+ * a second configuration the app carries. The starter has none: it declares
+ * no API of its own yet, so that leg arrives with its first fragment.
  * Output covers types AND TanStack Query hooks (client: react-query),
  * written to src/index.ts; generated files carry the DO-NOT-EDIT header
  * below.

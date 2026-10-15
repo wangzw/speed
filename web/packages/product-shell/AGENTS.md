@@ -321,8 +321,8 @@ bind one explicitly before rendering.
   staff, is not shipped; this package stays free of anything
   platform-shaped so the two shells can share their foundations.
 - **Browser automation.** No browser-driving host ships in the tree:
-  `starters/demo/web` is the placeholder where the consumer shell lands,
-  and it carries no application yet. The package's own suite
+  `starters/demo/web` is the in-tree application, but nothing drives it in
+  a real browser, so the package's own suite
   (`src/usage-example.test.tsx`) stays the in-form consumer proof.
 - **Storybook.** No preview harness exists; components are covered by
   jsdom tests + axe, and color-contrast verification is done nowhere —

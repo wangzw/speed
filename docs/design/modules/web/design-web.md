@@ -223,13 +223,13 @@ graph TD
 | 与认证无关的框架与门禁 | 已实现 | `web/packages/layout-kit/src/index.ts` `AppShell`、`RouteGuard` |
 | 契约无关的传输运行时 | 已实现 | `web/packages/api-client/src/index.ts` `createClient`、`ApiError`；`web/packages/api-client/src/react.ts` `usePublicConfig`、`useFeature` |
 | 生成的契约面 | 已实现 | `web/packages/api-sdk/src/runtime.ts` `bindRequestFn`、`speedRequest`、`speedRequestCredentialless`；生成面见 `web/packages/api-sdk/src/index.ts` |
-| 浏览器会话状态机与 hooks | 未实现 | — |
-| 登录组件族 | 未实现 | — |
-| 账户管理组件族 | 未实现 | — |
+| 浏览器会话状态机与 hooks | 已实现 | `web/packages/auth-core/src/session.ts` `createAuthSession`；`web/packages/auth-core/src/hooks.ts` `attachSession`、`useAuthState`、`usePermission` |
+| 登录组件族 | 已实现 | `web/packages/auth-ui/src/SignInScreen.tsx` `SignInScreen`；`web/packages/auth-ui/src/SignOutButton.tsx` `SignOutButton`；`web/packages/auth-ui/src/SessionEndedScreen.tsx` `SessionEndedScreen` |
+| 账户管理组件族 | 已实现 | `web/packages/account-ui/src/index.ts` `PreferencesSection`、`SessionsSection`、`SocialBindingsSection`、`MfaSection` |
 | 租户切换控件 | 已实现 | `web/packages/tenancy-ui/src/index.ts` `TenantSwitcher`、`TenantOption`、`TenantSwitcherProps`；`web/packages/tenancy-ui/src/resources.ts` `TENANCY_UI_NAMESPACE`、`tenancyUiResources` |
 | 组装壳与装配入口 | 已实现 | `web/packages/product-shell/src/index.ts` `ProductShell`；`web/packages/product-shell/src/bootstrap.tsx` `bootstrapSpeedApp` |
 | 路由与导航独立层 | 已实现 | `web/packages/route-kit/src/index.ts` `RouteProvider`、`RouteView`、`RouteLink`、`useNavItems`、`useNavigate` |
 | 控制台面组件族 | 已实现 | `web/packages/console-ui/src/index.ts` `ConsoleShell`、`TenantRosterPage`、`SettingsPage`、`AuditPage` |
 | 声明式注册面 | 已实现 | `web/packages/route-kit/src/types.ts` `RouteDeclaration`、`RouteTable`；`web/packages/console-ui/src/route.ts` `ConsoleRoute` |
 | 租户作用域的查询键工厂与逐出助手 | 已实现 | `web/packages/auth-core/src/query-key.ts` `tenantQueryKey`、`useTenantQueryKey`、`evictTenantQueries` |
-| 运行期的 API origin 注入 | 未实现 | — |
+| 运行期的 API origin 注入 | 已实现 | `starters/demo/web/src/runtime-config.ts` `loadRuntimeConfig`；`starters/demo/web/src/main.tsx` `bootstrapDemoApp` |

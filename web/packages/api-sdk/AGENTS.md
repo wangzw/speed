@@ -90,12 +90,14 @@ through `bindRequestFn` -- the same binding a host's real client binds --
 so a spec change whose regenerated surface outgrows auth-core's calls
 fails that package's typecheck.
 
-No runtime host binds this package in the tree, so the browser tier has
-no suite here: this package's own unit tests bind a fake request function
+`starters/demo/web` binds this surface at runtime: its app-entry assembly
+(`@speed/product-shell/bootstrap`'s `bootstrapSpeedApp`) binds one real
+`@speed/api-client` client through `bindRequestFn`, and the app's console
+area drives the generated operations over it. The package still ships no
+browser-tier suite of its own: its unit tests bind a fake request function
 and never touch a network, and the in-workspace consumers
 (`@speed/auth-core`, `@speed/account-ui`, `@speed/console-ui`) reach the
-generated surface at compile time. `starters/demo/web` is the placeholder
-where the consumer shell lands. Tenant query-key namespacing stays a
+generated surface at compile time. Tenant query-key namespacing stays a
 consumer-shell discipline by contract.
 
 Deferred with reasons:

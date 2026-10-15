@@ -176,11 +176,13 @@ orval-generated typed surface, calls into this runtime through its
 (its session layer imports this package's `AccessTokenStore` interface,
 calls the generated authn operations through the bound request function,
 and fills the `refreshAccessToken` hook with `() => session.refresh()`).
-No host in the tree binds this client at runtime, so the browser tier has
-no suite here: a host binds one real `createClient` over the environment's
-own fetch and reads the server's effective Public values and feature
-flags through `usePublicConfig`/`useFeature` on that same bound client,
-the shape a `requiredFeature`-style consumer needs.
+`starters/demo/web` binds this client at runtime: its app-entry assembly
+(`@speed/product-shell/bootstrap`'s `bootstrapSpeedApp`) binds one real
+`createClient` over the environment's own fetch and reads the server's
+effective Public values and feature flags through
+`usePublicConfig`/`useFeature` on that same bound client, the shape a
+`requiredFeature`-style consumer needs. The package ships no browser-tier
+suite of its own.
 
 Deferred with reasons:
 

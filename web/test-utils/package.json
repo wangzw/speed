@@ -2,7 +2,7 @@
   "name": "@speed/test-utils",
   "version": "0.0.0",
   "private": true,
-  "description": "The workspace's shared frontend test-support package: the single home of the DOM-test scaffolding the @speed packages and the demo host would otherwise each carry a copy of -- the axe-core assertion harness (two rule tiers), the render-primitive layer, the vitest setup, the MediaQueryList stub, the emotion CSS probe, the scripted session harness and the real-client network rig",
+  "description": "The workspace's shared frontend test-support package: the single home of the DOM-test scaffolding the @speed packages would otherwise each carry a copy of -- the axe-core assertion harness (two rule tiers), the render-primitive layer, the vitest setup, the MediaQueryList stub, the emotion CSS probe, the scripted session harness and the real-client network rig",
   "type": "module",
   "scripts": {
     "lint": "eslint .",
