@@ -1,0 +1,7 @@
+{
+  "notification.bad-request.title": "请求无效",
+  "notification.bad-request.detail": "无法读取该请求。",
+  "notification.not-unsubscribable.title": "不可退订",
+  "notification.not-unsubscribable.detail": "该通知类型不可退订。",
+  "notification.unavailable.title": "服务不可用"
+}

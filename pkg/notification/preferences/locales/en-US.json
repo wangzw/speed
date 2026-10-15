@@ -1,0 +1,7 @@
+{
+  "notification.bad-request.title": "Bad Request",
+  "notification.bad-request.detail": "The request could not be read.",
+  "notification.not-unsubscribable.title": "Not Unsubscribable",
+  "notification.not-unsubscribable.detail": "The notification type cannot be unsubscribed.",
+  "notification.unavailable.title": "Service Unavailable"
+}

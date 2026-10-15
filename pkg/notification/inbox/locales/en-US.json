@@ -1,0 +1,7 @@
+{
+  "notification.bad-request.title": "Bad Request",
+  "notification.bad-request.detail": "The request could not be read.",
+  "notification.message-not-found.title": "Not Found",
+  "notification.message-not-found.detail": "The message is not one this recipient can see.",
+  "notification.unavailable.title": "Service Unavailable"
+}

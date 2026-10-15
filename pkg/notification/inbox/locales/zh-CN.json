@@ -1,0 +1,7 @@
+{
+  "notification.bad-request.title": "请求无法读取",
+  "notification.bad-request.detail": "请求的形状无法读取。",
+  "notification.message-not-found.title": "未找到",
+  "notification.message-not-found.detail": "该消息不在本收件人可见范围内。",
+  "notification.unavailable.title": "服务不可用"
+}
