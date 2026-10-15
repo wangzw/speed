@@ -58,11 +58,13 @@ type Message struct {
 // no error to show for it.
 type Attachment struct {
 	// Name is the file name the recipient sees. It has to be non-empty and hold no
-	// carriage return and no line feed.
+	// control character: it is written into the attachment's own header block, so
+	// a carriage return or a line feed there would write the block and any other
+	// control character would leave a line no parser reads.
 	Name string
 	// ContentType is the media type. An empty ContentType means
-	// application/octet-stream, and a value that holds a carriage return or a line
-	// feed is refused: it is written into the attachment's own header block.
+	// application/octet-stream. It is written into the attachment's own header
+	// block as it stands, so it too has to hold no control character.
 	ContentType string
 	// Data is the file content. It has to be non-nil, and Send reads it to the
 	// end.

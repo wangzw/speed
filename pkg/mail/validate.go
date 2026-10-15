@@ -14,9 +14,10 @@ import (
 //
 // Every refusal wraps ErrRejected and names the field at fault, never the value
 // in it: an address, a subject or a body the caller wrote must not reach an error
-// text. The carriage-return and line-feed refusals are the reason the rule
-// exists: a value that can write a line is a value that can write the header
-// block.
+// text. The control-byte refusals are the reason the rule exists: a carriage
+// return or a line feed in a value that becomes a header line lets the rest of
+// the value write the header block, and any other control character leaves a
+// line no parser reads.
 func (m Message) Validate() error {
 	if len(m.To)+len(m.Cc)+len(m.Bcc) == 0 {
 		return fmt.Errorf("%w: no recipient: To, Cc and Bcc are all empty", ErrRejected)
@@ -49,13 +50,13 @@ func (m Message) Validate() error {
 		if att.Name == "" {
 			return fmt.Errorf("%w: attachment %d has an empty Name", ErrRejected, i)
 		}
-		if strings.ContainsAny(att.Name, "\r\n") {
-			return fmt.Errorf("%w: attachment %d holds a Name with a carriage return or a line feed",
-				ErrRejected, i)
+		if bad, control := controlByte(att.Name); control {
+			return fmt.Errorf("%w: attachment %d holds a Name with the control byte %#02x",
+				ErrRejected, i, bad)
 		}
-		if strings.ContainsAny(att.ContentType, "\r\n") {
-			return fmt.Errorf("%w: attachment %d holds a ContentType with a carriage return or a line feed",
-				ErrRejected, i)
+		if bad, control := controlByte(att.ContentType); control {
+			return fmt.Errorf("%w: attachment %d holds a ContentType with the control byte %#02x",
+				ErrRejected, i, bad)
 		}
 		if att.Data == nil {
 			return fmt.Errorf("%w: attachment %d has nil Data", ErrRejected, i)
@@ -77,4 +78,22 @@ func validateAddrs(field string, addrs []string) error {
 		}
 	}
 	return nil
+}
+
+// controlByte reports the first control character in s, and whether it found
+// one. It judges the fields whose value becomes a header line as the caller
+// wrote it — an attachment's Name and ContentType. A carriage return or a line
+// feed there ends the line and lets the rest of the value write the header
+// block; any other control character, NUL and DEL included, leaves a line a
+// parser refuses to read, which truncates the message at that part. A subject
+// and an address are not judged by this: the carrier's library encodes the first
+// into an RFC 2047 word and net/mail reads the second, so a control character in
+// either produces a message that still parses.
+func controlByte(s string) (byte, bool) {
+	for i := 0; i < len(s); i++ {
+		if b := s[i]; b < 0x20 || b == 0x7f {
+			return b, true
+		}
+	}
+	return 0, false
 }

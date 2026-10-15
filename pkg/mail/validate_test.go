@@ -92,9 +92,26 @@ func TestValidateJudgesEachRuleBothDirections(t *testing.T) {
 				Name: "f.txt", ContentType: "text/plain\rX-Injected: x", Data: strings.NewReader("x"),
 			}}
 		}), mentions: "ContentType"},
+		{name: "an attachment ContentType with a NUL", m: edit(func(m *Message) {
+			m.Attachments = []Attachment{{
+				Name: "f.txt", ContentType: "text/plain\x00evil", Data: strings.NewReader("x"),
+			}}
+		}), mentions: "ContentType"},
+		{name: "an attachment name with a NUL", m: edit(func(m *Message) {
+			m.Attachments = []Attachment{{Name: "f\x00.txt", Data: strings.NewReader("x")}}
+		}), mentions: "Name"},
 		{name: "an attachment with nil Data", m: edit(func(m *Message) {
 			m.Attachments = []Attachment{{Name: "f.txt"}}
 		}), mentions: "Data"},
+
+		// A control character in the subject is accepted on purpose: the carrier
+		// encodes the subject into an RFC 2047 word, so it never reaches a header
+		// line as the caller wrote it and the message still parses. A carriage
+		// return or a line feed is still refused above, because that is the shape
+		// that breaks the line before the encoder sees it.
+		{name: "a subject with a NUL is accepted", m: edit(func(m *Message) {
+			m.Subject = "hi\x00there"
+		}), accepted: true},
 	}
 
 	for _, c := range cases {
