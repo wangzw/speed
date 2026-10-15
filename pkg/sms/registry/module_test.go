@@ -13,6 +13,7 @@ import (
 	"github.com/vislake/speed/pkg/db"
 	"github.com/vislake/speed/pkg/event"
 	"github.com/vislake/speed/pkg/internal/dbtest"
+	"github.com/vislake/speed/pkg/log"
 	"github.com/vislake/speed/pkg/sms"
 )
 
@@ -134,6 +135,32 @@ func TestTheModuleDeliversAndManages(t *testing.T) {
 	}
 	if bus.subscribed(ChangedEventType) == 0 {
 		t.Errorf("the module did not subscribe to %q", ChangedEventType)
+	}
+}
+
+// TestTheDescriptorDeclaresTheLoggingCapability holds that the descriptor
+// declares the logging capability the module resolves in Init. The declaration
+// is what orders this module after the logging module, so the records reach the
+// logger the assembly configured; without it the module is ordered by name
+// alone, may be constructed first, and falls back to the process default logger
+// — silently writing around the configured destination and redaction.
+func TestTheDescriptorDeclaresTheLoggingCapability(t *testing.T) {
+	loggerToken := core.Token((*log.Logger)(nil))
+	declared := false
+	for _, r := range Module().Requires {
+		if r.Token != loggerToken {
+			continue
+		}
+		declared = true
+		if !r.Optional {
+			t.Errorf("the logging requirement is not optional; a host that assembles no logging " +
+				"still has to build this module, so the declaration must not make the logging " +
+				"module a hard dependency of the commands that name this one")
+		}
+	}
+	if !declared {
+		t.Errorf("Requires = %+v, want an optional (*log.Logger)(nil) requirement beside the "+
+			"provider and the database", Module().Requires)
 	}
 }
 

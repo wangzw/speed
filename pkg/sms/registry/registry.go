@@ -99,9 +99,11 @@ var _ sms.Registry = (*registryStore)(nil)
 // The event bus and the logging capability are taken up in Init and are both
 // optional: the ticker converges the replicas without an event, and a host with
 // no logging still gets a working registry whose failures reach the process
-// default logger. The configuration reader is not declared here — the host
-// supplies it before the drive begins, the way every module that reads its own
-// section takes it up.
+// default logger. Logging is declared, optionally, so that an assembly that has
+// it orders this module after the logging module and the records reach the
+// configured logger rather than the process default. The configuration reader is
+// not declared here — the host supplies it before the drive begins, the way
+// every module that reads its own section takes it up.
 //
 // The capability is delivered exclusively: the set in force is one
 // process-wide surface, and two registries would be two answers to which
@@ -112,6 +114,11 @@ func Module() core.Module {
 		Requires: []core.Requirement{
 			{Token: (*sms.Provider)(nil)},
 			{Token: (*db.Database)(nil)},
+			// Optional, because a host that assembles no logging still gets a working
+			// registry; declared, because a declared requirement orders this module after
+			// the logging module, so an assembly that has one builds this module after it
+			// and its records reach the configured logger instead of the process default.
+			{Token: (*log.Logger)(nil), Optional: true},
 		},
 		Provides:  []core.Provision{{Token: (*sms.Registry)(nil), Exclusive: true}},
 		Resources: []any{schema(), db.Migrations{FS: migrationsFS}},
