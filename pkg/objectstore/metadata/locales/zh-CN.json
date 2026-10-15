@@ -1,0 +1,11 @@
+{
+  "objectstore.bad-request.title": "请求无法读取",
+  "objectstore.bad-request.detail": "请求的形状无法读取。",
+  "objectstore.not-found.title": "未找到",
+  "objectstore.not-found.detail": "该对象不可见。",
+  "objectstore.conflict.title": "状态冲突",
+  "objectstore.conflict.detail": "对象当前状态不允许该操作。",
+  "objectstore.unavailable.title": "服务不可用",
+  "objectstore.permission.object-read": "读取对象",
+  "objectstore.permission.object-write": "写入对象"
+}

@@ -1,0 +1,11 @@
+{
+  "objectstore.bad-request.title": "Bad Request",
+  "objectstore.bad-request.detail": "The request could not be read.",
+  "objectstore.not-found.title": "Not Found",
+  "objectstore.not-found.detail": "The object is not available.",
+  "objectstore.conflict.title": "Conflict",
+  "objectstore.conflict.detail": "The object's state does not allow this action.",
+  "objectstore.unavailable.title": "Service Unavailable",
+  "objectstore.permission.object-read": "Read objects",
+  "objectstore.permission.object-write": "Write objects"
+}
