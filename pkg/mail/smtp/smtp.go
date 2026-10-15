@@ -104,9 +104,9 @@ type carrier interface {
 	DialAndSendWithContext(ctx context.Context, msgs ...*gomail.Msg) error
 }
 
-// newClient builds the vendor client for one connection posture. The library's
-// own retry is not configured anywhere: the SMTP transaction is not idempotent
-// and a second one would deliver and bill a second message.
+// newClient builds the vendor client for one connection posture. No retry is
+// configured: the SMTP transaction is not idempotent and a second one would
+// deliver and bill a second message.
 func newClient(conf resolved) (*gomail.Client, error) {
 	tlsConfig := &tls.Config{
 		ServerName: conf.host,

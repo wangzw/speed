@@ -29,9 +29,9 @@ sending sentinels in `pkg/mail`.
 - **One send is one connection.** Each `Send` opens its own connection through
   the library's dial-and-send call; nothing is pooled or reused across calls.
 - **Nothing is retried.** The SMTP transaction is not idempotent — a second one
-  delivers and bills a second message — so no retry is configured on the library
-  and a message whose `DedupeID` was seen before is answered with the earlier
-  call's outcome instead of being sent again. The memory is bounded, lives in
+  delivers and bills a second message — so no retry is configured anywhere, and a
+  message whose `DedupeID` was seen before is answered with the earlier call's
+  outcome instead of being sent again. The memory is bounded, lives in
   this process alone, and is shared with the other carriers through
   `pkg/internal/dedupe`.
 - **Every failure is classified by the server's reply code and its class.** A
