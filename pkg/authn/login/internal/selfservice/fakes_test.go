@@ -362,7 +362,7 @@ func (f *fakeBus) Publish(_ context.Context, e event.Event) error {
 	return f.err
 }
 
-func (f *fakeBus) Subscribe(string, event.Handler) {}
+func (f *fakeBus) Subscribe(string, string, event.Handler) {}
 
 func (f *fakeBus) published() []event.Event {
 	f.mu.Lock()

@@ -38,6 +38,7 @@ import (
 	"github.com/vislake/speed/pkg/db"
 	"github.com/vislake/speed/pkg/event"
 	"github.com/vislake/speed/pkg/event/internal/dispatch"
+	"github.com/vislake/speed/pkg/event/internal/tracing"
 	"github.com/vislake/speed/pkg/event/outbox"
 	"github.com/vislake/speed/pkg/log"
 )
@@ -235,11 +236,17 @@ func (r *relay) Stage(tx *gorm.DB, evt event.Event) error {
 		return fmt.Errorf("outbox: event %q carries a payload that cannot be serialized: %w", evt.Type, err)
 	}
 	evt = dispatch.Stamp(evt)
+	// The tracing context is fixed here, in the caller's transaction, so the
+	// subscriber's span is a child of the span this write was in rather than of
+	// the relay's later publish. An event that already carries one keeps it; the
+	// rule is shared with the bus, through dispatch.StampTraceContext.
+	evt.TraceContext = dispatch.StampTraceContext(evt.TraceContext, tx.Statement.Context, tracing.Propagator())
 	// A session of its own on the caller's connection: NewDB drops whatever
 	// conditions the caller left on tx, and the transaction underneath is not
 	// one of them.
 	session := tx.Session(&gorm.Session{NewDB: true, Context: tx.Statement.Context})
-	if err := session.Exec(r.sql.stage, evt.ID, evt.Type, evt.TenantID, string(payload)).Error; err != nil {
+	if err := session.Exec(r.sql.stage, evt.ID, evt.Type, evt.TenantID, string(payload),
+		dispatch.EncodeTraceContext(evt.TraceContext)).Error; err != nil {
 		return fmt.Errorf("outbox: staging event %q: %w", evt.Type, err)
 	}
 	r.nudge()

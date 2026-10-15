@@ -87,7 +87,7 @@ func inventoryModule() core.Module {
 			// freezes its subscription table when it starts, so a subscriber
 			// that arrived later would miss every event published before it
 			// and nothing would report the gap.
-			bus.Subscribe(placedEventType, countPlacement(store, product.log))
+			bus.Subscribe(placedEventType, inventoryModuleName, countPlacement(store, product.log))
 			public.Route(nethttp.MethodGet, inventoryPath, reportCount(store))
 			return nil
 		},

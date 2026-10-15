@@ -31,7 +31,7 @@ func TestAPublishTheCutLinkRefusesIsNotStoredLater(t *testing.T) {
 	bus := openBus(t, "nats://"+proxy.Addr(), "")
 	eventType := nextType()
 	delivered := make(chan event.Event, 8)
-	bus.Subscribe(eventType, func(_ context.Context, evt event.Event) error {
+	bus.Subscribe(eventType, "test", func(_ context.Context, evt event.Event) error {
 		delivered <- evt
 		return nil
 	})

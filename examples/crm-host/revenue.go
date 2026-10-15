@@ -240,7 +240,7 @@ func revenueModule() core.Module {
 			if err != nil {
 				return err
 			}
-			bus.Subscribe(dealWonEvent, product.countWin)
+			bus.Subscribe(dealWonEvent, revenueModuleName, product.countWin)
 			return nil
 		},
 

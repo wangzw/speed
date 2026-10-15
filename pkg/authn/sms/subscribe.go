@@ -15,8 +15,8 @@ import (
 // relaxing one visible after the fact. It runs in Init, where the bus accepts
 // subscriptions.
 func (p *product) subscribe(bus event.Bus) {
-	bus.Subscribe(authn.EventAccountDeleted, p.onAccountDeleted)
-	bus.Subscribe(settings.ChangedEventType, p.onSettingsChanged)
+	bus.Subscribe(authn.EventAccountDeleted, ModuleName, p.onAccountDeleted)
+	bus.Subscribe(settings.ChangedEventType, ModuleName, p.onSettingsChanged)
 }
 
 // onAccountDeleted is the handler of the compensation. It cleans the account's

@@ -6,15 +6,33 @@ import (
 	"errors"
 	"io"
 	"log/slog"
+	"slices"
+	"sync"
 	"sync/atomic"
 	"testing"
 	"time"
 
+	"go.opentelemetry.io/otel/propagation"
+	"go.opentelemetry.io/otel/trace"
+
 	"github.com/vislake/speed/pkg/event"
 )
 
+// noopTracer is a tracer provider that records nothing, so a case can build a
+// table without standing up telemetry. It starts a span that ends doing nothing.
+type noopTracer struct{}
+
+func (noopTracer) Start(ctx context.Context, _ string, _ map[string]string) (context.Context, event.Span) {
+	return ctx, noopSpan{}
+}
+
+type noopSpan struct{}
+
+func (noopSpan) End(error) {}
+
 func newTable() *Table {
-	return New("event/test", slog.New(slog.NewTextHandler(io.Discard, nil)))
+	return New("event/test", "test", slog.New(slog.NewTextHandler(io.Discard, nil)),
+		noopTracer{}, propagation.TraceContext{})
 }
 
 // TestAStopWhoseGraceRunsOutCancelsTheSubscribers pins the bound on the stop
@@ -25,7 +43,7 @@ func TestAStopWhoseGraceRunsOutCancelsTheSubscribers(t *testing.T) {
 	tbl := newTable()
 	tbl.grace = 100 * time.Millisecond
 	sawCancel := make(chan error, 1)
-	tbl.Subscribe("t", func(ctx context.Context, _ event.Event) error {
+	tbl.Subscribe("t", "test", func(ctx context.Context, _ event.Event) error {
 		<-ctx.Done()
 		sawCancel <- ctx.Err()
 		return nil
@@ -145,5 +163,81 @@ func TestPayloadRefusesDataAfterItsValue(t *testing.T) {
 	}
 	if _, err := Payload([]byte(" null \n")); err != nil {
 		t.Fatalf("a payload of null with surrounding whitespace: %v", err)
+	}
+}
+
+// nameRecordingTracer keeps the name every span the dispatch layer starts was
+// recorded under, in the order they were started, so a case can hold the
+// per-subscriber spans a delivery starts to the design without standing up an
+// exporter.
+type nameRecordingTracer struct {
+	mu    sync.Mutex
+	names []string
+}
+
+func (r *nameRecordingTracer) Start(ctx context.Context, name string, _ map[string]string) (context.Context, event.Span) {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	r.names = append(r.names, name)
+	return ctx, noopSpan{}
+}
+
+func (r *nameRecordingTracer) started() []string {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	return slices.Clone(r.names)
+}
+
+// TestEverySubscriberOfOneEventGetsItsOwnNamedSpan pins the per-subscriber span
+// the design fixes at the dispatch layer: a delivery starts one span per
+// subscriber, each named after that subscriber, in subscription order — not one
+// span shared by the event type, and not the first subscriber's name reused for
+// the rest. The delivery is what tells "did this subscriber handle the event,
+// and did it succeed" apart per subscriber, so the count and the names are what
+// the signal carries.
+func TestEverySubscriberOfOneEventGetsItsOwnNamedSpan(t *testing.T) {
+	rec := &nameRecordingTracer{}
+	tbl := New("event/test", "test", slog.New(slog.NewTextHandler(io.Discard, nil)), rec, propagation.TraceContext{})
+	subscribers := []string{"audit.journal", "webhooks.dispatcher", "case.third"}
+	var ran atomic.Int32
+	for _, name := range subscribers {
+		tbl.Subscribe("t", name, func(context.Context, event.Event) error {
+			ran.Add(1)
+			return nil
+		})
+	}
+	tbl.Freeze(context.Background())
+	tbl.Deliver(context.Background(), event.Event{Type: "t", ID: "e1"})
+	if n := ran.Load(); n != int32(len(subscribers)) {
+		t.Fatalf("one delivery ran %d subscribers, want %d", n, len(subscribers))
+	}
+	if got := rec.started(); !slices.Equal(got, subscribers) {
+		t.Fatalf("one delivery to %d subscribers started the spans %v, want one span per subscriber named %v, "+
+			"in subscription order", len(subscribers), got, subscribers)
+	}
+}
+
+// TestStampCarriesANonEmptyTracingContext pins the "carried as it is" half of
+// what the bus writes into an event's tracing context: an event that already
+// carries one keeps it, whatever span the publisher's own context happens to be
+// in. A publisher that sets it — a relay republishing an event it staged while
+// the fact was produced — must not have it overwritten with the span it publishes
+// from, or the trace that reaches the subscriber is the relay's, not the one the
+// fact belongs to.
+func TestStampCarriesANonEmptyTracingContext(t *testing.T) {
+	tbl := newTable()
+	publisher := trace.ContextWithSpanContext(context.Background(), trace.NewSpanContext(trace.SpanContextConfig{
+		TraceID:    trace.TraceID{1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16},
+		SpanID:     trace.SpanID{1, 2, 3, 4, 5, 6, 7, 8},
+		TraceFlags: trace.FlagsSampled,
+	}))
+	carried := map[string]string{
+		"traceparent": "00-4bf92f3577b34da6a3ce929d0e0e4736-00f067aa0ba902b7-01",
+	}
+	got := tbl.Stamp(publisher, event.Event{Type: "t", TraceContext: carried})
+	if got.TraceContext["traceparent"] != carried["traceparent"] {
+		t.Fatalf("Stamp wrote the tracing context %v into an event that already carried %v: a "+
+			"publisher's own tracing context is carried as it is, not overwritten with the span the "+
+			"publisher happens to be in", got.TraceContext, carried)
 	}
 }

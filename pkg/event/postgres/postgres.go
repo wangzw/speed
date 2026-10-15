@@ -42,6 +42,7 @@ import (
 	"github.com/vislake/speed/pkg/event"
 	"github.com/vislake/speed/pkg/event/internal/dispatch"
 	"github.com/vislake/speed/pkg/event/internal/replica"
+	"github.com/vislake/speed/pkg/event/internal/tracing"
 	"github.com/vislake/speed/pkg/internal/pgpool"
 )
 
@@ -50,6 +51,9 @@ const (
 	ModuleName = "event.postgres"
 	// ConfigNamespace is where this implementation's input items are mounted.
 	ConfigNamespace = ModuleName
+	// systemName is this implementation's backend as it appears in the
+	// messaging.system attribute of a delivery's span.
+	systemName = "postgres"
 	// table is this implementation's own outbox.
 	table = "event_outbox"
 	// channel is the NOTIFY channel. It is a fixed name rather than one per
@@ -96,13 +100,14 @@ const (
 	// replica's subscribers receive; id is this table's row key and orders the
 	// reads.
 	createOutbox = `CREATE TABLE IF NOT EXISTS ` + table + ` (
-		id         BIGSERIAL PRIMARY KEY,
-		type       TEXT NOT NULL,
-		tenant     TEXT NOT NULL DEFAULT '',
-		payload    TEXT NOT NULL,
-		created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
-		xact       xid8 NOT NULL DEFAULT pg_current_xact_id(),
-		identifier TEXT NOT NULL DEFAULT ''
+		id            BIGSERIAL PRIMARY KEY,
+		type          TEXT NOT NULL,
+		tenant        TEXT NOT NULL DEFAULT '',
+		payload       TEXT NOT NULL,
+		created_at    TIMESTAMPTZ NOT NULL DEFAULT now(),
+		xact          xid8 NOT NULL DEFAULT pg_current_xact_id(),
+		identifier    TEXT NOT NULL DEFAULT '',
+		trace_context TEXT NOT NULL DEFAULT ''
 	)`
 	// createDelivered runs only when the delivered table is missing.
 	createDelivered = `CREATE TABLE IF NOT EXISTS ` + deliveredTable + ` (
@@ -138,12 +143,13 @@ func init() { core.ProcessRegistry.Register(Module()) }
 // Module is this module's descriptor.
 func Module() core.Module {
 	defaults := pgpool.Defaults()
-	return event.NewModule(event.Spec[pgpool.Config]{
+	m := event.NewModule(event.Spec[pgpool.Config]{
 		ModuleName:      ModuleName,
 		ConfigNamespace: ConfigNamespace,
 		Config:          &defaults,
 		Items:           pgpool.Items(),
 		Stance:          stance,
+		Trace:           tracing.Provider,
 		Open:            open,
 		Start:           start,
 		// The connection string carries credentials; it has no shape to match,
@@ -151,6 +157,10 @@ func Module() core.Module {
 		// before this module reaches the server.
 		Secrets: func(cfg *pgpool.Config) []string { return []string{cfg.DSN} },
 	})
+	// The optional tracer requirement is appended here rather than declared by
+	// the root package, which cannot name the telemetry provider's type.
+	m.Requires = append(m.Requires, tracing.Requirement())
+	return m
 }
 
 // stance states this implementation's stance, or reports what it cannot start
@@ -173,7 +183,7 @@ func stance(cfg *pgpool.Config) (core.Enablement, error) {
 
 // open builds the pool, makes sure the outbox is there, and takes the listening
 // connection.
-func open(ctx context.Context, cfg *pgpool.Config, logger *slog.Logger) (event.Bus, error) {
+func open(ctx context.Context, cfg *pgpool.Config, logger *slog.Logger, tracer event.TracerProvider) (event.Bus, error) {
 	pool, err := pgpool.Connect(ctx, ModuleName, *cfg)
 	if err != nil {
 		return nil, err
@@ -217,7 +227,7 @@ func open(ctx context.Context, cfg *pgpool.Config, logger *slog.Logger) (event.B
 		logger:  logger,
 		replica: replica.Name(),
 		origin:  origin,
-		table:   dispatch.New("event/postgres", logger),
+		table:   dispatch.New("event/postgres", systemName, logger, tracer, tracing.Propagator()),
 	}, nil
 }
 
@@ -282,6 +292,7 @@ func createTables(ctx context.Context, pool *pgxpool.Pool) error {
 var addedColumns = []struct{ name, definition string }{
 	{"xact", "xid8 NOT NULL DEFAULT pg_current_xact_id()"},
 	{"identifier", "TEXT NOT NULL DEFAULT ''"},
+	{"trace_context", "TEXT NOT NULL DEFAULT ''"},
 }
 
 // addMissingColumns adds each of addedColumns the outbox lacks.
@@ -356,10 +367,12 @@ type bus struct {
 	lastRetire time.Time
 }
 
-// Subscribe registers a handler for one event type. It panics once the reader
-// has started at the start stage: a subscription registered later would miss
-// everything already delivered.
-func (b *bus) Subscribe(eventType string, h event.Handler) { b.table.Subscribe(eventType, h) }
+// Subscribe registers a handler for one event type, under the name its
+// delivery's span is recorded under. It panics once the reader has started at
+// the start stage, or when the name is empty.
+func (b *bus) Subscribe(eventType string, name string, h event.Handler) {
+	b.table.Subscribe(eventType, name, h)
+}
 
 // Publish writes the event to the outbox and announces it.
 //
@@ -376,7 +389,7 @@ func (b *bus) Publish(ctx context.Context, evt event.Event) error {
 	if stageErr := b.table.Accepting(); stageErr != nil {
 		return stageErr
 	}
-	evt = dispatch.Stamp(evt)
+	evt = b.table.Stamp(ctx, evt)
 	tx, err := b.pool.Begin(ctx)
 	if err != nil {
 		return err
@@ -384,8 +397,10 @@ func (b *bus) Publish(ctx context.Context, evt event.Event) error {
 	defer func() { _ = tx.Rollback(ctx) }()
 	var id int64
 	if err := tx.QueryRow(ctx,
-		`INSERT INTO `+table+` (identifier, type, tenant, payload) VALUES ($1, $2, $3, $4) RETURNING id`,
-		evt.ID, evt.Type, evt.TenantID, string(payload)).Scan(&id); err != nil {
+		`INSERT INTO `+table+` (identifier, type, tenant, payload, trace_context) `+
+			`VALUES ($1, $2, $3, $4, $5) RETURNING id`,
+		evt.ID, evt.Type, evt.TenantID, string(payload),
+		dispatch.EncodeTraceContext(evt.TraceContext)).Scan(&id); err != nil {
 		return err
 	}
 	if _, err := tx.Exec(ctx, `SELECT pg_notify($1, $2)`, channel, fmt.Sprint(id)); err != nil {
@@ -528,7 +543,7 @@ func (b *bus) drain(reading, handling context.Context) error {
 	// missing rather than by where a cursor stands is what makes a commit that
 	// lands late just another entry.
 	rows, err := b.pool.Query(reading,
-		`SELECT o.id, o.identifier, o.type, o.tenant, o.payload FROM `+table+` o
+		`SELECT o.id, o.identifier, o.type, o.tenant, o.payload, o.trace_context FROM `+table+` o
 		 WHERE o.type = ANY($2)
 		   AND NOT pg_visible_in_snapshot(o.xact, $4::pg_snapshot)
 		   AND NOT EXISTS (SELECT 1 FROM `+deliveredTable+` d
@@ -542,11 +557,15 @@ func (b *bus) drain(reading, handling context.Context) error {
 		id      int64
 		evt     event.Event
 		payload string
+		// trace is the entry's stored tracing context, the text form
+		// dispatch keeps it in; an entry written before the column existed
+		// holds the empty string and decodes to an empty carrier.
+		trace string
 	}
 	var batch []row
 	for rows.Next() {
 		var r row
-		if err := rows.Scan(&r.id, &r.evt.ID, &r.evt.Type, &r.evt.TenantID, &r.payload); err != nil {
+		if err := rows.Scan(&r.id, &r.evt.ID, &r.evt.Type, &r.evt.TenantID, &r.payload, &r.trace); err != nil {
 			rows.Close()
 			return err
 		}
@@ -567,6 +586,9 @@ func (b *bus) drain(reading, handling context.Context) error {
 		if payload, err := dispatch.Payload([]byte(r.payload)); err == nil {
 			r.evt.Payload = payload
 		}
+		// The tracing context the publisher's span was in, restored onto the
+		// event so the delivery's span continues that trace.
+		r.evt.TraceContext = dispatch.DecodeTraceContext(r.trace)
 		b.table.Deliver(handling, r.evt)
 		// Marked even for a type whose handlers failed: the entry has been
 		// handed over, and unmarking would redeliver it forever with nobody

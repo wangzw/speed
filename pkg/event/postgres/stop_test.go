@@ -11,6 +11,7 @@ import (
 	"github.com/jackc/pgx/v5"
 
 	"github.com/vislake/speed/pkg/event"
+	"github.com/vislake/speed/pkg/event/internal/tracing"
 	"github.com/vislake/speed/pkg/internal/pgpool"
 	"github.com/vislake/speed/pkg/internal/pgpool/pgtest"
 )
@@ -27,7 +28,7 @@ func TestAnEntryDeliveredWhileStoppingIsMarked(t *testing.T) {
 	b := openBus(t, dsn)
 	entered := make(chan struct{})
 	release := make(chan struct{})
-	b.Subscribe("slow", func(context.Context, event.Event) error {
+	b.Subscribe("slow", "test", func(context.Context, event.Event) error {
 		close(entered)
 		<-release
 		return nil
@@ -72,7 +73,7 @@ func TestAStopDuringTheRetentionPassReportsNothing(t *testing.T) {
 	ctx := context.Background()
 	records := &recorder{}
 	for round := range 40 {
-		opened, err := open(ctx, &pgpool.Config{DSN: dsn, MaxConns: 2}, slog.New(records))
+		opened, err := open(ctx, &pgpool.Config{DSN: dsn, MaxConns: 2}, slog.New(records), tracing.Noop())
 		if err != nil {
 			t.Fatalf("open: %v", err)
 		}

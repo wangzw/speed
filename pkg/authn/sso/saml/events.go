@@ -14,7 +14,7 @@ func (p *product) subscribe() {
 	if p.bus == nil {
 		return
 	}
-	p.bus.Subscribe(authn.EventIDPChanged, p.onIDPChanged)
+	p.bus.Subscribe(authn.EventIDPChanged, ModuleName, p.onIDPChanged)
 }
 
 // onIDPChanged drops the cached service provider of the provider the event

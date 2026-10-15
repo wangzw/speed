@@ -38,6 +38,7 @@ import (
 	"github.com/vislake/speed/pkg/event"
 	"github.com/vislake/speed/pkg/event/internal/dispatch"
 	"github.com/vislake/speed/pkg/event/internal/replica"
+	"github.com/vislake/speed/pkg/event/internal/tracing"
 )
 
 const (
@@ -45,6 +46,9 @@ const (
 	ModuleName = "event.nats"
 	// ConfigNamespace is where this implementation's input items are mounted.
 	ConfigNamespace = ModuleName
+	// systemName is this implementation's backend as it appears in the
+	// messaging.system attribute of a delivery's span.
+	systemName = "nats"
 	// namespaceKey is the input item that separates one assembly from another.
 	namespaceKey = "namespace"
 	// defaultNamespace is what that item takes when the configuration names
@@ -125,7 +129,7 @@ func init() { core.ProcessRegistry.Register(Module()) }
 
 // Module is this module's descriptor.
 func Module() core.Module {
-	return event.NewModule(event.Spec[Config]{
+	m := event.NewModule(event.Spec[Config]{
 		ModuleName:      ModuleName,
 		ConfigNamespace: ConfigNamespace,
 		Config:          &Config{Timeout: defaultTimeout},
@@ -160,6 +164,7 @@ func Module() core.Module {
 			},
 		},
 		Stance: stance,
+		Trace:  tracing.Provider,
 		Open:   open,
 		Start:  start,
 		// The URL carries the credentials to connect with in its authority, and
@@ -167,6 +172,10 @@ func Module() core.Module {
 		// a literal redaction rule before this module reaches the server.
 		Secrets: func(cfg *Config) []string { return []string{cfg.URL} },
 	})
+	// The optional tracer requirement is appended here rather than declared by
+	// the root package, which cannot name the telemetry provider's type.
+	m.Requires = append(m.Requires, tracing.Requirement())
+	return m
 }
 
 // stance states this implementation's stance, or reports what it cannot start
@@ -199,7 +208,7 @@ func stance(cfg *Config) (core.Enablement, error) {
 const durableNameForbidden = ".*> /\\\t\r\n"
 
 // open connects.
-func open(ctx context.Context, cfg *Config, logger *slog.Logger) (event.Bus, error) {
+func open(ctx context.Context, cfg *Config, logger *slog.Logger, tracer event.TracerProvider) (event.Bus, error) {
 	// A timeout that is not positive is a configuration gone wrong: the
 	// library reads zero on the connect as no bound at all, and refuses it for
 	// a request. Folding it back onto the default keeps a typo from removing
@@ -274,7 +283,7 @@ func open(ctx context.Context, cfg *Config, logger *slog.Logger) (event.Bus, err
 		timeout:     timeout,
 		maxEntries:  maxEntries,
 		namespace:   namespace,
-		table:       dispatch.New("event/nats", logger),
+		table:       dispatch.New("event/nats", systemName, logger, tracer, tracing.Propagator()),
 		streams:     make(map[string]bool),
 	}, nil
 }
@@ -359,10 +368,12 @@ func (b *bus) ensureStream(ctx context.Context, eventType string) error {
 	return nil
 }
 
-// Subscribe registers a handler for one event type. It panics once the readers
-// have started at the start stage: a subscription registered later would miss
-// everything already delivered.
-func (b *bus) Subscribe(eventType string, h event.Handler) { b.table.Subscribe(eventType, h) }
+// Subscribe registers a handler for one event type, under the name its
+// delivery's span is recorded under. It panics once the readers have started at
+// the start stage, or when the name is empty.
+func (b *bus) Subscribe(eventType string, name string, h event.Handler) {
+	b.table.Subscribe(eventType, name, h)
+}
 
 // Publish writes the event to its stream.
 //
@@ -390,10 +401,8 @@ func (b *bus) Publish(ctx context.Context, evt event.Event) error {
 	if streamErr := b.ensureStream(ctx, evt.Type); streamErr != nil {
 		return streamErr
 	}
-	evt = dispatch.Stamp(evt)
-	body, err := json.Marshal(envelope{
-		ID: evt.ID, Type: evt.Type, TenantID: evt.TenantID, Payload: json.RawMessage(payload),
-	})
+	evt = b.table.Stamp(ctx, evt)
+	body, err := json.Marshal(envelopeFor(evt, payload))
 	if err != nil {
 		return fmt.Errorf("%s: encoding event %q: %w", ModuleName, evt.Type, err)
 	}
@@ -636,6 +645,19 @@ type envelope struct {
 	Type     string          `json:"type"`
 	TenantID string          `json:"tenant"`
 	Payload  json.RawMessage `json:"payload"`
+	// TraceContext is the event's tracing context, its keys the upstream
+	// propagation format's. It rides beside the payload so every replica's
+	// subscriber recovers the same parent for its delivery's span; an entry
+	// written before this field existed decodes to an empty one.
+	TraceContext map[string]string `json:"trace"`
+}
+
+// envelopeFor is what a publish puts on the wire for evt.
+func envelopeFor(evt event.Event, payload []byte) envelope {
+	return envelope{
+		ID: evt.ID, Type: evt.Type, TenantID: evt.TenantID,
+		TraceContext: evt.TraceContext, Payload: payload,
+	}
 }
 
 // decode turns a message back into an event. The payload's numbers keep their
@@ -646,6 +668,7 @@ func decode(eventType string, data []byte) event.Event {
 	if err := json.Unmarshal(data, &env); err == nil {
 		evt.ID = env.ID
 		evt.TenantID = env.TenantID
+		evt.TraceContext = env.TraceContext
 		if len(env.Payload) > 0 {
 			if payload, err := dispatch.Payload(env.Payload); err == nil {
 				evt.Payload = payload

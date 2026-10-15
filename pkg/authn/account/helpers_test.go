@@ -178,7 +178,7 @@ func (b *recordingBus) Publish(_ context.Context, evt event.Event) error {
 	return nil
 }
 
-func (b *recordingBus) Subscribe(eventType string, h event.Handler) {
+func (b *recordingBus) Subscribe(eventType string, _ string, h event.Handler) {
 	b.mu.Lock()
 	defer b.mu.Unlock()
 	if b.handlers == nil {

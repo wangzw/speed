@@ -21,7 +21,7 @@ func TestAnEntryDeliveredWhileStoppingIsAcknowledged(t *testing.T) {
 	b := openBus(t, addr, db, "")
 	entered := make(chan struct{})
 	release := make(chan struct{})
-	b.Subscribe("slow", func(context.Context, event.Event) error {
+	b.Subscribe("slow", "test", func(context.Context, event.Event) error {
 		close(entered)
 		<-release
 		return nil

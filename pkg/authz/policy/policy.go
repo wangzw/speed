@@ -226,7 +226,7 @@ func (p *product) wire(reg *core.Registry) error {
 		// The subscription belongs to Init: a bus freezes its subscription table
 		// when it starts, so a subscriber that arrived later would miss every
 		// event published before it.
-		bus.Subscribe(policyChangedEventType, p.onChanged)
+		bus.Subscribe(policyChangedEventType, ModuleName, p.onChanged)
 	}
 	return nil
 }

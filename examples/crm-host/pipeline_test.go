@@ -100,8 +100,8 @@ func (sliceEndpoint) Accepting() bool                          { return true }
 // embedded nil interface would panic.
 type sliceBus struct{}
 
-func (sliceBus) Publish(context.Context, event.Event) error { return nil }
-func (sliceBus) Subscribe(string, event.Handler)            {}
+func (sliceBus) Publish(context.Context, event.Event) error               { return nil }
+func (sliceBus) Subscribe(eventType string, name string, h event.Handler) {}
 
 // sliceLogger is a stand-in for the logging capability. Its redaction accepts
 // every rule and does nothing, so a module that registers redaction keys at

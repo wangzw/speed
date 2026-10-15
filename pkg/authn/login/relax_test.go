@@ -83,7 +83,7 @@ type subscribeBus struct {
 	types []string
 }
 
-func (b *subscribeBus) Subscribe(eventType string, _ event.Handler) {
+func (b *subscribeBus) Subscribe(eventType string, _ string, _ event.Handler) {
 	b.mu.Lock()
 	defer b.mu.Unlock()
 	b.types = append(b.types, eventType)

@@ -84,7 +84,7 @@ func (m *ordersModule) module() core.Module {
 			if err != nil {
 				return err
 			}
-			bus.Subscribe("order.placed", func(_ context.Context, evt event.Event) error {
+			bus.Subscribe("order.placed", "test", func(_ context.Context, evt event.Event) error {
 				m.mu.Lock()
 				m.received = append(m.received, evt)
 				m.mu.Unlock()

@@ -210,4 +210,4 @@ func (discardingLogger) Redaction() log.Redaction  { return nil }
 type acceptingBus struct{}
 
 func (acceptingBus) Publish(context.Context, event.Event) error { return nil }
-func (acceptingBus) Subscribe(string, event.Handler)            {}
+func (acceptingBus) Subscribe(string, string, event.Handler)    {}

@@ -27,7 +27,7 @@ func TestALostListeningConnectionIsTakenAgain(t *testing.T) {
 	b := openBus(t, dsn)
 	publisher := openBus(t, dsn)
 	arrived := make(chan time.Time, 16)
-	b.Subscribe("listen", func(context.Context, event.Event) error {
+	b.Subscribe("listen", "test", func(context.Context, event.Event) error {
 		arrived <- time.Now()
 		return nil
 	})

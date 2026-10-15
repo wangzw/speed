@@ -187,7 +187,7 @@ func (s *settingsStore) takeLogger(reg *core.Registry) {
 // snapshot. That is safe to do whenever it runs, because a replica's own
 // events come back to it and the replacement is idempotent.
 func (s *settingsStore) subscribe() {
-	s.bus.Subscribe(ChangedEventType, func(ctx context.Context, _ event.Event) error {
+	s.bus.Subscribe(ChangedEventType, ModuleName, func(ctx context.Context, _ event.Event) error {
 		s.reload(ctx)
 		return nil
 	})

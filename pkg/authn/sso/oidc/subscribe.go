@@ -12,7 +12,7 @@ import (
 // module publishes that an identity provider changed. It runs in Init, where
 // the bus accepts subscriptions.
 func (p *product) subscribe(bus event.Bus) {
-	bus.Subscribe(authn.EventIDPChanged, p.onIDPChanged)
+	bus.Subscribe(authn.EventIDPChanged, ModuleName, p.onIDPChanged)
 }
 
 // onIDPChanged drops the cached provider and OAuth client of the identity

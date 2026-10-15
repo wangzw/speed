@@ -53,7 +53,7 @@ func TestEntriesPublishedBeforeAReplicaOpenedAreNotDelivered(t *testing.T) {
 	}
 	late := openBus(t, dsn)
 	var got atomic.Int32
-	late.Subscribe("t", func(context.Context, event.Event) error {
+	late.Subscribe("t", "test", func(context.Context, event.Event) error {
 		got.Add(1)
 		return nil
 	})
@@ -96,7 +96,7 @@ func TestAnEntryThatCommitsAfterAReplicaOpenedIsDelivered(t *testing.T) {
 
 	late := openBus(t, dsn)
 	var got atomic.Int32
-	late.Subscribe("late", func(context.Context, event.Event) error {
+	late.Subscribe("late", "test", func(context.Context, event.Event) error {
 		got.Add(1)
 		return nil
 	})
@@ -135,7 +135,7 @@ func TestAnOutboxFromBeforeTheCurrentColumnsIsBroughtUpToDate(t *testing.T) {
 	b := openBus(t, dsn)
 	var got atomic.Int32
 	var id atomic.Value
-	b.Subscribe("t", func(_ context.Context, evt event.Event) error {
+	b.Subscribe("t", "test", func(_ context.Context, evt event.Event) error {
 		got.Add(1)
 		id.Store(evt.ID)
 		return nil

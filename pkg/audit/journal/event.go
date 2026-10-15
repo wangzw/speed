@@ -18,7 +18,7 @@ import (
 // misses those events.
 func (j *journal) subscribe(bus event.Bus) {
 	for _, typeName := range unique(j.settings.events) {
-		bus.Subscribe(typeName, j.handlerFor(typeName))
+		bus.Subscribe(typeName, ModuleName, j.handlerFor(typeName))
 	}
 }
 

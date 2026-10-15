@@ -64,9 +64,9 @@ func (s *seenEvents) mark(id string) {
 // has a settings store: without one no setting changes, so there is nothing to
 // watch and the handler is not wired.
 func (m *product) subscribe(bus event.Bus) {
-	bus.Subscribe(authn.EventAccountDeleted, m.onAccountDeleted)
+	bus.Subscribe(authn.EventAccountDeleted, ModuleName, m.onAccountDeleted)
 	if m.settings.store != nil {
-		bus.Subscribe(settings.ChangedEventType, m.onSettingsChanged)
+		bus.Subscribe(settings.ChangedEventType, ModuleName, m.onSettingsChanged)
 	}
 }
 

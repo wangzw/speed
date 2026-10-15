@@ -56,7 +56,7 @@ func TestClosingRemovesTheProcesssOwnConsumer(t *testing.T) {
 	url := natstest.URL(t)
 	eventType := nextType()
 	b := openBus(t, url, "")
-	b.Subscribe(eventType, func(context.Context, event.Event) error { return nil })
+	b.Subscribe(eventType, "test", func(context.Context, event.Event) error { return nil })
 	if err := b.begin(context.Background()); err != nil {
 		t.Fatalf("begin: %v", err)
 	}
@@ -86,7 +86,7 @@ func TestClosingKeepsAConfiguredConsumer(t *testing.T) {
 	eventType := nextType()
 	name := "configured_" + runToken
 	b := openBus(t, url, name)
-	b.Subscribe(eventType, func(context.Context, event.Event) error { return nil })
+	b.Subscribe(eventType, "test", func(context.Context, event.Event) error { return nil })
 	if err := b.begin(context.Background()); err != nil {
 		t.Fatalf("begin: %v", err)
 	}
@@ -118,7 +118,7 @@ func TestReadRecoversWhenTheConsumerIsGone(t *testing.T) {
 	eventType := nextType()
 	b := openBus(t, url, "")
 	var seen atomic.Int32
-	b.Subscribe(eventType, func(context.Context, event.Event) error {
+	b.Subscribe(eventType, "test", func(context.Context, event.Event) error {
 		seen.Add(1)
 		return nil
 	})
@@ -179,7 +179,7 @@ func TestAReaderCreatesAGoneStreamAgain(t *testing.T) {
 	eventType := nextType()
 	b := openBus(t, url, "")
 	var seen atomic.Int32
-	b.Subscribe(eventType, func(context.Context, event.Event) error {
+	b.Subscribe(eventType, "test", func(context.Context, event.Event) error {
 		seen.Add(1)
 		return nil
 	})

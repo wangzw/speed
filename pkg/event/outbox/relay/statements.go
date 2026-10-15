@@ -30,7 +30,7 @@ type statements struct {
 	// now is the engine's clock, in milliseconds since the Unix epoch.
 	now string
 	// stage writes one row, due at once. Arguments: event identifier, type,
-	// tenant, payload.
+	// tenant, payload, tracing context.
 	stage string
 	// nextDue answers how many milliseconds remain until the earliest row falls
 	// due, negative or zero when one is due now, and NULL when none is staged.
@@ -80,12 +80,12 @@ func build(now, lock string) statements {
 	r := strings.NewReplacer("{table}", tableName, "{now}", now, "{lock}", lock)
 	return statements{
 		now: now,
-		stage: r.Replace(`INSERT INTO {table} (event_id, type, tenant_id, payload, staged_at, available_at) ` +
-			`VALUES (?, ?, ?, ?, {now}, {now})`),
+		stage: r.Replace(`INSERT INTO {table} (event_id, type, tenant_id, payload, trace_context, ` +
+			`staged_at, available_at) VALUES (?, ?, ?, ?, ?, {now}, {now})`),
 		nextDue: r.Replace(`SELECT MIN(available_at) - {now} FROM {table}`),
 		claim: r.Replace(`UPDATE {table} SET claimed_by = ?, available_at = {now} + ? ` +
 			`WHERE id IN (SELECT id FROM {table} WHERE available_at <= {now} ORDER BY id LIMIT ?{lock}) ` +
-			`RETURNING id, event_id, type, tenant_id, payload, attempts`),
+			`RETURNING id, event_id, type, tenant_id, payload, trace_context, attempts`),
 		remove: r.Replace(`DELETE FROM {table} WHERE id = ?`),
 		refuse: r.Replace(`UPDATE {table} SET claimed_by = NULL, attempts = attempts + 1, last_error = ?, ` +
 			`available_at = {now} + ? WHERE id = ? AND claimed_by = ?`),

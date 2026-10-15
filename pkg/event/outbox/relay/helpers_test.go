@@ -234,7 +234,7 @@ func newRecordingBus(name string, l *ledger) *recordingBus {
 	return &recordingBus{name: name, ledger: l}
 }
 
-func (b *recordingBus) Subscribe(string, event.Handler) {}
+func (b *recordingBus) Subscribe(string, string, event.Handler) {}
 
 func (b *recordingBus) Publish(ctx context.Context, evt event.Event) error {
 	if b.delay > 0 {

@@ -251,7 +251,7 @@ func flowModule() core.Module {
 			if err != nil {
 				return err
 			}
-			bus.Subscribe(dealStageChangedEvent, product.countMove)
+			bus.Subscribe(dealStageChangedEvent, flowModuleName, product.countMove)
 			router, err := core.Resolve[speedhttp.Router](reg)
 			if err != nil {
 				return err

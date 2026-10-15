@@ -98,15 +98,15 @@ func (p *product) subscribe() {
 	if p.bus == nil {
 		return
 	}
-	p.bus.Subscribe(authn.EventSessionRevoked, p.once(p.onSessionRevoked))
-	p.bus.Subscribe(authn.EventImpersonationEnded, p.once(p.onImpersonationEnded))
-	p.bus.Subscribe(authn.EventAccountStatusChanged, p.once(p.onAccountStatusChanged))
-	p.bus.Subscribe(authn.EventAccountDeleted, p.once(p.onAccountDeleted))
+	p.bus.Subscribe(authn.EventSessionRevoked, ModuleName, p.once(p.onSessionRevoked))
+	p.bus.Subscribe(authn.EventImpersonationEnded, ModuleName, p.once(p.onImpersonationEnded))
+	p.bus.Subscribe(authn.EventAccountStatusChanged, ModuleName, p.once(p.onAccountStatusChanged))
+	p.bus.Subscribe(authn.EventAccountDeleted, ModuleName, p.once(p.onAccountDeleted))
 	// A settings change is watched only when there is a settings store to have
 	// published it: without one every setting reads as its declared default and
 	// there is no change to see.
 	if p.settings.store != nil {
-		p.bus.Subscribe(settings.ChangedEventType, p.onSettingsChanged)
+		p.bus.Subscribe(settings.ChangedEventType, ModuleName, p.onSettingsChanged)
 	}
 }
 

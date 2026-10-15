@@ -25,7 +25,7 @@ type hostBus struct {
 	calls []string
 }
 
-func (*hostBus) Subscribe(string, event.Handler)            {}
+func (*hostBus) Subscribe(string, string, event.Handler)    {}
 func (*hostBus) Publish(context.Context, event.Event) error { return nil }
 
 func (b *hostBus) Stop(context.Context) error  { b.record("stop"); return nil }
@@ -46,7 +46,7 @@ func (b *hostBus) asked() []string {
 // bareHostBus is a bus the host built with no stop stage and nothing to close.
 type bareHostBus struct{}
 
-func (bareHostBus) Subscribe(string, event.Handler)            {}
+func (bareHostBus) Subscribe(string, string, event.Handler)    {}
 func (bareHostBus) Publish(context.Context, event.Event) error { return nil }
 
 // implementations are the modules that deliver the event capability. Each has a

@@ -330,7 +330,7 @@ speed 不引入进程边界。宿主是单一进程，注册表与全部模块�
 | [kv](modules/design-kv.md) | 部分实现 |
 | [sms](modules/design-sms.md) | 已实现 |
 | [mail](modules/design-mail.md) | 已实现 |
-| [event](modules/event/design-event.md) | 部分实现 |
+| [event](modules/event/design-event.md) | 已实现 |
 | [audit](modules/audit/design-audit.md) | 部分实现 |
 | [settings](modules/settings/design-settings.md) | 部分实现 |
 | [ratelimit](modules/design-ratelimit.md) | 已实现 |

@@ -7,6 +7,7 @@ import (
 	"time"
 
 	"github.com/vislake/speed/pkg/event"
+	"github.com/vislake/speed/pkg/event/internal/tracing"
 	"github.com/vislake/speed/pkg/internal/natstest"
 	"github.com/vislake/speed/pkg/log"
 )
@@ -30,7 +31,7 @@ func TestTheConnectionNeverStopsReconnecting(t *testing.T) {
 // besides the connect.
 func TestTheTimeoutBoundsEveryOperation(t *testing.T) {
 	const timeout = 1234 * time.Millisecond
-	opened, err := open(context.Background(), &Config{URL: natstest.URL(t), Timeout: timeout}, log.Default())
+	opened, err := open(context.Background(), &Config{URL: natstest.URL(t), Timeout: timeout}, log.Default(), tracing.Noop())
 	if err != nil {
 		t.Fatalf("open: %v", err)
 	}
@@ -49,7 +50,7 @@ func TestTheTimeoutBoundsEveryOperation(t *testing.T) {
 // request, so either way the configured bound would be gone.
 func TestATimeoutThatIsNotPositiveTakesTheDefault(t *testing.T) {
 	for _, configured := range []time.Duration{0, -time.Second} {
-		opened, err := open(context.Background(), &Config{URL: natstest.URL(t), Timeout: configured}, log.Default())
+		opened, err := open(context.Background(), &Config{URL: natstest.URL(t), Timeout: configured}, log.Default(), tracing.Noop())
 		if err != nil {
 			t.Fatalf("open with the timeout %v: %v", configured, err)
 		}
@@ -72,7 +73,7 @@ func TestAConsumerNameTheServerRefusesIsRefusedNamingTheItem(t *testing.T) {
 	for _, name := range []string{"crm.prod", "crm prod", "crm*", "crm>", "crm/prod", `crm\prod`, "crm\tprod"} {
 		// The premise: the durable really cannot be created under this name.
 		b := openBus(t, url, name)
-		b.Subscribe(nextType(), func(context.Context, event.Event) error { return nil })
+		b.Subscribe(nextType(), "test", func(context.Context, event.Event) error { return nil })
 		if err := b.begin(context.Background()); err == nil {
 			t.Errorf("a durable named %q was created, so refusing the name would refuse a usable one", name)
 			continue

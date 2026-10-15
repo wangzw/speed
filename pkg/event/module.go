@@ -62,6 +62,24 @@ type Spec[C any] struct {
 	// pointed at a backend states StateEnabled, so that two of them being
 	// pointed at once fails the startup.
 	Stance func(cfg *C) (core.Enablement, error)
+	// Trace takes up the optional tracing capability: the implementation adapts
+	// the telemetry module's tracer provider into this package's TracerProvider
+	// here, and hands back the implementation that exports nothing when the
+	// assembly carries no telemetry.
+	//
+	// It is what keeps the telemetry interface package out of the root
+	// package's dependency face: the root package defines the narrow face below
+	// and never names the telemetry module's type. The provider it returns is
+	// what Open is handed, and what the dispatch layer records a delivery's
+	// span on.
+	//
+	// An implementation also appends the optional tracer requirement to the
+	// descriptor NewModule hands back, since the root package cannot name
+	// (*observability.TracerProvider)(nil) without importing that interface
+	// package. That edge is what orders the assembly ahead of the bus; without
+	// it, this function finds no provider and returns one that exports nothing,
+	// and the bus runs with no span exported and nothing to say so.
+	Trace func(reg *core.Registry) (TracerProvider, error)
 	// Open builds this implementation from the decoded configuration.
 	//
 	// logger is where the implementation writes what it has to report on its
@@ -70,7 +88,12 @@ type Spec[C any] struct {
 	// this module when the assembly delivers the logging capability, and the
 	// logging module's process default otherwise, so the records obey the
 	// configured destinations, format and redaction whenever there are any.
-	Open func(ctx context.Context, cfg *C, logger *slog.Logger) (Bus, error)
+	//
+	// tracer is what Trace resolved, and is handed to dispatch.New together with
+	// the propagator so the subscription table holds what it records a
+	// delivery's span with. See the package documentation for the narrow face it
+	// satisfies.
+	Open func(ctx context.Context, cfg *C, logger *slog.Logger, tracer TracerProvider) (Bus, error)
 	// Start is called when the drive reaches the start stage, and is where an
 	// implementation freezes what has to be fixed before the first publish and
 	// opens itself to publishing.
@@ -102,6 +125,27 @@ type Spec[C any] struct {
 	// nil. A value that is empty contributes nothing and is not registered.
 	Secrets func(cfg *C) []string
 }
+
+// TracerProvider is the smallest face this package takes up from the tracing
+// capability: starting one span.
+//
+// It is defined here rather than aliased from the telemetry module, so that a
+// module which only publishes events does not carry the telemetry interface
+// package's upstream closure — the tracing API, the metrics API and the two
+// SDK exporter packages — in its dependency face, whether or not the assembly
+// runs telemetry. An implementation adapts the telemetry provider into this
+// face in its own Trace.
+type TracerProvider interface {
+	// Start begins a span as a child of whatever span ctx carries, named name
+	// and carrying attrs, and hands back a context with the span in it and the
+	// span itself. The face carries no span kind: a delivery is neither a
+	// client nor a server span.
+	Start(ctx context.Context, name string, attrs map[string]string) (context.Context, Span)
+}
+
+// Span is one span this package started. End closes the span, marking it
+// failed when err is non-nil.
+type Span interface{ End(err error) }
 
 // NewModule builds an implementation's module descriptor.
 //
@@ -146,7 +190,11 @@ func NewModule[C any](spec Spec[C]) core.Module {
 			if err != nil {
 				return nil, err
 			}
-			return spec.Open(ctx, cfg, logger)
+			tracer, err := spec.Trace(reg)
+			if err != nil {
+				return nil, err
+			}
+			return spec.Open(ctx, cfg, logger, tracer)
 		},
 		Stop: func(ctx context.Context, _ *core.Registry, instance any) error {
 			return stop(ctx, instance)
@@ -189,6 +237,10 @@ func (s Spec[C]) check() {
 			"or how its exclusive claim gives way", s.ModuleName))
 	case s.Open == nil:
 		panic(fmt.Sprintf("event: module %q gives no constructor, so nothing reaches its backend", s.ModuleName))
+	case s.Trace == nil:
+		panic(fmt.Sprintf("event: module %q gives no tracer resolution, and Open has to be handed the "+
+			"narrow provider it returns: an implementation with no telemetry of its own still hands "+
+			"back the one that exports nothing", s.ModuleName))
 	}
 }
 

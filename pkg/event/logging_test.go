@@ -111,7 +111,7 @@ func failingSubscriber() core.Module {
 			if err != nil {
 				return err
 			}
-			bus.Subscribe("case.logged", func(context.Context, event.Event) error {
+			bus.Subscribe("case.logged", "test", func(context.Context, event.Event) error {
 				return errors.New("this subscriber fails on purpose")
 			})
 			return nil

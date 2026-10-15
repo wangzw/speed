@@ -11,6 +11,7 @@ import (
 	"github.com/vislake/speed/pkg/core"
 	"github.com/vislake/speed/pkg/event"
 	"github.com/vislake/speed/pkg/event/internal/bussuite"
+	"github.com/vislake/speed/pkg/event/internal/tracing"
 	"github.com/vislake/speed/pkg/internal/pgpool"
 	"github.com/vislake/speed/pkg/internal/pgpool/pgtest"
 	"github.com/vislake/speed/pkg/log"
@@ -19,7 +20,7 @@ import (
 // openBus builds a bus over the given database.
 func openBus(t *testing.T, dsn string) *bus {
 	t.Helper()
-	opened, err := open(context.Background(), &pgpool.Config{DSN: dsn, MaxConns: 4}, log.Default())
+	opened, err := open(context.Background(), &pgpool.Config{DSN: dsn, MaxConns: 4}, log.Default(), tracing.Noop())
 	if err != nil {
 		t.Fatalf("open: %v", err)
 	}
@@ -84,11 +85,11 @@ func TestEveryReplicaReceivesEveryEvent(t *testing.T) {
 	second := openBus(t, dsn)
 
 	var gotFirst, gotSecond atomic.Int32
-	first.Subscribe("order.placed", func(context.Context, event.Event) error {
+	first.Subscribe("order.placed", "test", func(context.Context, event.Event) error {
 		gotFirst.Add(1)
 		return nil
 	})
-	second.Subscribe("order.placed", func(context.Context, event.Event) error {
+	second.Subscribe("order.placed", "test", func(context.Context, event.Event) error {
 		gotSecond.Add(1)
 		return nil
 	})
@@ -120,7 +121,7 @@ func TestAnEventPublishedWhileNothingWasListeningIsStillDelivered(t *testing.T) 
 	late := openBus(t, dsn)
 
 	var got atomic.Int32
-	late.Subscribe("t", func(context.Context, event.Event) error {
+	late.Subscribe("t", "test", func(context.Context, event.Event) error {
 		got.Add(1)
 		return nil
 	})

@@ -23,7 +23,7 @@ func TestPublishDoesNotWaitOnBlockedReaders(t *testing.T) {
 	b := openBus(t, addr, db, "")
 	types := speedredis.Defaults().PoolSize + 6
 	for i := range types {
-		b.Subscribe(fmt.Sprintf("pool.t%d", i), func(context.Context, event.Event) error { return nil })
+		b.Subscribe(fmt.Sprintf("pool.t%d", i), "test", func(context.Context, event.Event) error { return nil })
 	}
 	if err := b.begin(ctx); err != nil {
 		t.Fatalf("begin: %v", err)

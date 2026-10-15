@@ -624,7 +624,7 @@ func webhooksModule() core.Module {
 			if err != nil {
 				return err
 			}
-			bus.Subscribe(dealWonEvent, product.deliver)
+			bus.Subscribe(dealWonEvent, webhooksModuleName, product.deliver)
 			return nil
 		},
 

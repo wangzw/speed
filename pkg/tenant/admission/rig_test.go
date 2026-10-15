@@ -490,7 +490,7 @@ type busStub struct {
 
 func newBusStub() *busStub { return &busStub{handlers: map[string][]event.Handler{}} }
 
-func (b *busStub) Subscribe(eventType string, h event.Handler) {
+func (b *busStub) Subscribe(eventType string, _ string, h event.Handler) {
 	b.mu.Lock()
 	defer b.mu.Unlock()
 	b.handlers[eventType] = append(b.handlers[eventType], h)

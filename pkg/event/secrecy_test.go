@@ -7,6 +7,7 @@ import (
 
 	"github.com/vislake/speed/pkg/core"
 	"github.com/vislake/speed/pkg/event"
+	"github.com/vislake/speed/pkg/event/internal/tracing"
 	"github.com/vislake/speed/pkg/log"
 )
 
@@ -26,7 +27,8 @@ func TestTheModuleRequiresTheLogCapabilityOptionally(t *testing.T) {
 		ConfigNamespace: "event.secrecy",
 		Config:          &cfg,
 		Stance:          func(*struct{}) (core.Enablement, error) { return core.Enablement{}, nil },
-		Open: func(context.Context, *struct{}, *slog.Logger) (event.Bus, error) {
+		Trace:           func(*core.Registry) (event.TracerProvider, error) { return tracing.Noop(), nil },
+		Open: func(context.Context, *struct{}, *slog.Logger, event.TracerProvider) (event.Bus, error) {
 			return nil, nil
 		},
 	})

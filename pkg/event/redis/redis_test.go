@@ -11,6 +11,7 @@ import (
 	"github.com/vislake/speed/pkg/core"
 	"github.com/vislake/speed/pkg/event"
 	"github.com/vislake/speed/pkg/event/internal/bussuite"
+	"github.com/vislake/speed/pkg/event/internal/tracing"
 	speedredis "github.com/vislake/speed/pkg/internal/redis"
 	"github.com/vislake/speed/pkg/internal/redis/redistest"
 	"github.com/vislake/speed/pkg/log"
@@ -22,7 +23,7 @@ func openBus(t *testing.T, addr string, db int, group string) *bus {
 	t.Helper()
 	proto := Config{Config: speedredis.Defaults()}
 	proto.Addr, proto.DB, proto.ConsumerGroup = addr, db, group
-	opened, err := open(context.Background(), &proto, log.Default())
+	opened, err := open(context.Background(), &proto, log.Default(), tracing.Noop())
 	if err != nil {
 		t.Fatalf("open: %v", err)
 	}
@@ -92,11 +93,11 @@ func TestEveryReplicaReceivesEveryEvent(t *testing.T) {
 	second := openBus(t, addr, db, "")
 
 	var gotFirst, gotSecond atomic.Int32
-	first.Subscribe("order.placed", func(context.Context, event.Event) error {
+	first.Subscribe("order.placed", "test", func(context.Context, event.Event) error {
 		gotFirst.Add(1)
 		return nil
 	})
-	second.Subscribe("order.placed", func(context.Context, event.Event) error {
+	second.Subscribe("order.placed", "test", func(context.Context, event.Event) error {
 		gotSecond.Add(1)
 		return nil
 	})
@@ -130,7 +131,7 @@ func TestTwoInstancesSharingAGroupSplitTheEvents(t *testing.T) {
 
 	var total atomic.Int32
 	for _, b := range []*bus{first, second} {
-		b.Subscribe("t", func(context.Context, event.Event) error {
+		b.Subscribe("t", "test", func(context.Context, event.Event) error {
 			total.Add(1)
 			return nil
 		})
@@ -203,7 +204,7 @@ func TestReadRecoversWhenTheGroupIsGone(t *testing.T) {
 	ctx := context.Background()
 	b := openBus(t, addr, db, "")
 	var seen atomic.Int32
-	b.Subscribe("t", func(context.Context, event.Event) error {
+	b.Subscribe("t", "test", func(context.Context, event.Event) error {
 		seen.Add(1)
 		return nil
 	})

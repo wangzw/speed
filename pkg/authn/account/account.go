@@ -278,7 +278,7 @@ func (p *product) wire(reg *core.Registry) error {
 		}
 	}
 	if p.bus != nil && p.store != nil {
-		p.bus.Subscribe(settings.ChangedEventType, p.onSettingsChanged)
+		p.bus.Subscribe(settings.ChangedEventType, ModuleName, p.onSettingsChanged)
 	}
 	return nil
 }

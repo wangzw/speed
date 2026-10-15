@@ -24,6 +24,9 @@ import (
 	"sync"
 	"time"
 
+	"go.opentelemetry.io/otel/propagation"
+	"go.opentelemetry.io/otel/trace"
+
 	"github.com/vislake/speed/pkg/event"
 )
 
@@ -57,8 +60,18 @@ type Table struct {
 	logger *slog.Logger
 	grace  time.Duration
 
+	// system is this implementation's backend, recorded as messaging.system on
+	// every delivery's span. It is the backend that carried the event, not the
+	// module that produced it.
+	system string
+	// tracer starts the span of every delivery, and prop extracts the event's
+	// tracing context into the parent of that span and injects the publisher's
+	// context into an event leaving a publish.
+	tracer event.TracerProvider
+	prop   propagation.TextMapPropagator
+
 	mu       sync.Mutex
-	handlers map[string][]event.Handler
+	handlers map[string][]subscription
 	stage    stage
 
 	// reading is what a reader reads the backend under. The stop stage
@@ -79,25 +92,53 @@ type Table struct {
 	stopErr  error
 }
 
-// New builds an empty table. name is the prefix of everything the table
-// writes, and logger is where it writes a subscriber's failure.
-func New(name string, logger *slog.Logger) *Table {
+// subscription is one registered subscriber: the name its delivery's span is
+// recorded under, and the handler that runs inside it.
+type subscription struct {
+	name    string
+	handler event.Handler
+}
+
+// New builds an empty table. name is the prefix of everything the table writes,
+// system is this implementation's backend — recorded as messaging.system on
+// every delivery's span — and logger is where it writes a subscriber's failure.
+//
+// tracer and prop are what the table records a delivery's span with and reads
+// the event's tracing context through. They come from the implementation, which
+// takes them up from the telemetry capability and adapts the provider; an
+// assembly with no telemetry hands a provider that exports nothing, and prop is
+// the propagator either way so the two ends of a link agree on the format.
+func New(name, system string, logger *slog.Logger, tracer event.TracerProvider, prop propagation.TextMapPropagator) *Table {
 	return &Table{
 		name:     name,
 		logger:   logger,
 		grace:    Grace,
-		handlers: make(map[string][]event.Handler),
+		system:   system,
+		tracer:   tracer,
+		prop:     prop,
+		handlers: make(map[string][]subscription),
 	}
 }
 
-// Subscribe registers h for events whose type is eventType.
+// Subscribe registers h for events whose type is eventType, under the name the
+// span of every delivery to it is recorded.
 //
 // It panics once the table is frozen. The promise a subscription makes is that
 // the handler sees every event of its type published after it, and one
 // arriving after the bus opened to publishing cannot keep that promise for
 // anything published in between — while nothing at the call site would show
 // it. Refusing at the call site is the only place the mistake is visible.
-func (t *Table) Subscribe(eventType string, h event.Handler) {
+//
+// A name left empty panics here too. It is required, and an omitted one would
+// otherwise leave the delivery's span unnamed with nothing to say so; a
+// subscriber's own identity is a name every caller already holds.
+func (t *Table) Subscribe(eventType string, name string, h event.Handler) {
+	if name == "" {
+		panic(fmt.Sprintf("%s: Subscribe(%q) was given no subscriber name. The name is what the span "+
+			"of every delivery to this subscriber is recorded under, and it is required: the "+
+			"subscriber already holds its own identity — its module name, or a component within it",
+			t.name, eventType))
+	}
 	t.mu.Lock()
 	defer t.mu.Unlock()
 	if t.stage != collecting {
@@ -106,7 +147,7 @@ func (t *Table) Subscribe(eventType string, h event.Handler) {
 			"stage; a subscription registered later would miss everything published before it and "+
 			"nothing would say so", t.name, eventType))
 	}
-	t.handlers[eventType] = append(t.handlers[eventType], h)
+	t.handlers[eventType] = append(t.handlers[eventType], subscription{name: name, handler: h})
 }
 
 // Freeze closes the subscription table and opens the bus to publishing. It
@@ -179,6 +220,89 @@ func Stamp(evt event.Event) event.Event {
 	return evt
 }
 
+// Stamp gives the event the identifier Publish assigns and the tracing context
+// of the span ctx is in, and returns it. A non-empty identifier and a non-empty
+// tracing context are each carried as they are.
+//
+// Every implementation calls this as the event leaves the publisher's call, so
+// the one identifier and the one tracing context are what every subscriber on
+// every replica receives. The tracing context comes from StampTraceContext, so
+// the publisher's span is the parent the delivery's span is later recorded
+// under; a publisher outside any span injects nothing, and the delivery's span
+// is then a trace of its own.
+func (t *Table) Stamp(ctx context.Context, evt event.Event) event.Event {
+	evt = Stamp(evt)
+	evt.TraceContext = StampTraceContext(evt.TraceContext, ctx, t.prop)
+	return evt
+}
+
+// StampTraceContext is the tracing context to record for an event: what the
+// event already carries, or the span ctx is in when it carries none.
+//
+// A non-empty carried context is kept as it is, not overwritten with the span
+// the write happens to be in: a producer that fixed the context already — a
+// relay staging an event whose trace began where the fact was produced — would
+// otherwise have its trace replaced by this one under the subscriber. When the
+// event carries none, prop injects ctx's span into the carrier; a ctx in no span
+// injects nothing, and the empty carrier is returned, which a delivery reads as
+// no parent.
+//
+// Table.Stamp and the outbox relay both write an event's tracing context through
+// this, so the "carried as it is" rule has one implementation rather than a copy
+// per writer that could drift apart.
+func StampTraceContext(carried map[string]string, ctx context.Context, prop propagation.TextMapPropagator) map[string]string {
+	if len(carried) > 0 {
+		return carried
+	}
+	carrier := propagation.MapCarrier{}
+	prop.Inject(ctx, carrier)
+	if len(carrier) == 0 {
+		return nil
+	}
+	return map[string]string(carrier)
+}
+
+// EncodeTraceContext renders a tracing carrier as the single text value a
+// backend whose entry values are strings — a Redis stream field, a table column
+// — holds it in.
+//
+// The carrier is a small map of the upstream propagation format's keys to their
+// values, the W3C traceparent and a tracestate when one is present, so JSON is
+// what keeps it whole in one value: it round-trips every key and value and needs
+// no escaping of its own. A nil or empty carrier encodes to the empty string,
+// which is what an event published outside any span carries.
+func EncodeTraceContext(carrier map[string]string) string {
+	if len(carrier) == 0 {
+		return ""
+	}
+	raw, err := json.Marshal(carrier)
+	if err != nil {
+		// The map's keys and values are strings, which JSON always encodes.
+		return ""
+	}
+	return string(raw)
+}
+
+// DecodeTraceContext reads a carrier back from the text form EncodeTraceContext
+// writes. An empty text is an empty carrier — an event published outside any
+// span, a row written before the column existed — and the delivery's span is
+// then a trace of its own. A text that is not the encoded form reads as empty
+// too, rather than failing the delivery: a tracing context that cannot be read
+// must not keep the event from a subscriber.
+func DecodeTraceContext(text string) map[string]string {
+	if text == "" {
+		return nil
+	}
+	var carrier map[string]string
+	if err := json.Unmarshal([]byte(text), &carrier); err != nil {
+		return nil
+	}
+	if len(carrier) == 0 {
+		return nil
+	}
+	return carrier
+}
+
 // Payload turns the serialized payload a transport carried back into the shape
 // a subscriber reads: the ordinary decoded structure, with every number kept as
 // a json.Number — its decimal text — rather than a float64.
@@ -203,19 +327,67 @@ func Payload(raw []byte) (any, error) {
 	return payload, nil
 }
 
+// The attributes every delivery's span carries. The event type, the event
+// identifier and the backend are attributes rather than part of the span name,
+// which is the subscriber's own low-cardinality name: the identifier takes one
+// value per event, so it belongs where the cardinality is expected to vary. The
+// tenant is not among them — its values are as many as there are tenants, which
+// is the reason a request's own instruments leave it out.
+const (
+	attrDestinationName = "messaging.destination.name"
+	attrMessageID       = "messaging.message.id"
+	attrOperation       = "messaging.operation"
+	attrSystem          = "messaging.system"
+	// operationProcess is the value of messaging.operation: a subscriber
+	// processing an event, whatever the backend carried it.
+	operationProcess = "process"
+)
+
 // Deliver runs every handler subscribed to evt's type, in subscription order,
 // on ctx. Each is isolated from the others: a returned error or a panic is
 // logged and the next handler still runs, and neither reaches the caller.
+//
+// Each runs inside a span of its own, named after the subscriber. The span is a
+// child of the span the event's tracing context names — taken from the event,
+// not from ctx, so the trace that produced the fact continues into the
+// subscriber under any implementation — and is a trace of its own when the
+// event carries none. A handler that returns an error or panics ends its span
+// marked failed; the remaining handlers are unaffected.
 func (t *Table) Deliver(ctx context.Context, evt event.Event) {
 	t.mu.Lock()
 	handlers := slices.Clone(t.handlers[evt.Type])
 	t.mu.Unlock()
-	for i, h := range handlers {
-		if err := run(ctx, h, evt); err != nil {
+	for i, sub := range handlers {
+		spanCtx, span := t.startSpan(ctx, sub.name, evt)
+		err := run(spanCtx, sub.handler, evt)
+		span.End(err)
+		if err != nil {
 			t.logger.Error(t.name+": a subscriber failed; the publisher is not told",
-				"event", evt.Type, "handler", i, "err", err)
+				"event", evt.Type, "handler", i, "name", sub.name, "err", err)
 		}
 	}
+}
+
+// startSpan begins the span one delivery to the named subscriber runs under, and
+// returns it with a context carrying it.
+//
+// The parent is the span the event's tracing context names, extracted with the
+// propagator the implementation handed New. ctx's own span is dropped first, so
+// that an event carrying no tracing context leaves the delivery's span a root
+// rather than a child of whatever span the implementation happened to call the
+// handler under — the in-process bus hands the publisher's context, and its
+// span is not the parent the contract names.
+func (t *Table) startSpan(ctx context.Context, name string, evt event.Event) (context.Context, event.Span) {
+	parent := trace.ContextWithSpanContext(ctx, trace.SpanContext{})
+	if len(evt.TraceContext) > 0 {
+		parent = t.prop.Extract(parent, propagation.MapCarrier(evt.TraceContext))
+	}
+	return t.tracer.Start(parent, name, map[string]string{
+		attrDestinationName: evt.Type,
+		attrMessageID:       evt.ID,
+		attrOperation:       operationProcess,
+		attrSystem:          t.system,
+	})
 }
 
 // run isolates one handler from the goroutine that runs it and from the

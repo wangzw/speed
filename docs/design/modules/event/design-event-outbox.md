@@ -240,7 +240,7 @@ stateDiagram-v2
 | 功能接口与哨兵错误 | 已实现 | `pkg/event/outbox/outbox.go` `Outbox`、`ErrNoTransaction`、`ErrOtherDatabase` |
 | 模块描述符与迁移集 | 已实现 | `pkg/event/outbox/relay/relay.go` `Module`、`migrationsFS` |
 | 暂存与会话的判断 | 已实现 | `pkg/event/outbox/relay/relay.go` `(*relay).Stage`、`(*relay).judge` |
-| 追踪上下文的暂存与还原 | 未实现 | — |
+| 追踪上下文的暂存与还原 | 已实现 | `pkg/event/internal/dispatch/dispatch.go` `StampTraceContext`、`EncodeTraceContext`、`DecodeTraceContext`（暂存在 `pkg/event/outbox/relay/relay.go` `(*relay).Stage` 里调用，还原在 `pkg/event/outbox/relay/loop.go` `(*relay).publish` 里）；列由 `pkg/event/outbox/relay/migrations/{postgres,sqlite}/0002_event_staged_trace_context.sql` 加上 |
 | 中继的循环、读表与认领 | 已实现 | `pkg/event/outbox/relay/loop.go` `(*relay).run`、`(*relay).pass`、`(*relay).claim`、`(*relay).relayBatch` |
 | 发布与结清 | 已实现 | `pkg/event/outbox/relay/loop.go` `(*relay).relayOne`、`(*relay).publish`、`timing.retryAfter` |
 | 各方言的语句 | 已实现 | `pkg/event/outbox/relay/statements.go` `statementsFor`、`build` |

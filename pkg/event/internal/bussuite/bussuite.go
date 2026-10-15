@@ -17,6 +17,7 @@ package bussuite
 import (
 	"context"
 	"errors"
+	"maps"
 	"sync/atomic"
 	"testing"
 	"time"
@@ -108,11 +109,11 @@ func AssertReplicated(t *testing.T, newBus Factory) {
 		publisher, startPublisher := newBus(t)
 		other, startOther := newBus(t)
 		here, there := make(chan string, 2), make(chan string, 2)
-		publisher.Subscribe("t", func(_ context.Context, evt event.Event) error {
+		publisher.Subscribe("t", "suite", func(_ context.Context, evt event.Event) error {
 			here <- evt.ID
 			return nil
 		})
-		other.Subscribe("t", func(_ context.Context, evt event.Event) error {
+		other.Subscribe("t", "suite", func(_ context.Context, evt event.Event) error {
 			there <- evt.ID
 			return nil
 		})
@@ -136,11 +137,41 @@ func AssertReplicated(t *testing.T, newBus Factory) {
 		}
 	})
 
+	t.Run("every replica receives the one tracing context", func(t *testing.T) {
+		publisher, startPublisher := newBus(t)
+		other, startOther := newBus(t)
+		here, there := make(chan map[string]string, 2), make(chan map[string]string, 2)
+		publisher.Subscribe("t", "suite", func(_ context.Context, evt event.Event) error {
+			here <- evt.TraceContext
+			return nil
+		})
+		other.Subscribe("t", "suite", func(_ context.Context, evt event.Event) error {
+			there <- evt.TraceContext
+			return nil
+		})
+		startPublisher(context.Background())
+		startOther(context.Background())
+		// The tracing context is one value for one event, like the identifier: a
+		// carrier the publisher fixed — a relay staging an event whose trace began
+		// where the fact was produced — has to reach every replica's subscriber as
+		// it was, or the trace that began at the fact breaks at whichever replica
+		// dropped or rewrote it.
+		carried := map[string]string{"traceparent": "00-4bf92f3577b34da6a3ce929d0e0e4736-00f067aa0ba902b7-01"}
+		if err := publisher.Publish(context.Background(), event.Event{Type: "t", TraceContext: carried}); err != nil {
+			t.Fatalf("Publish: %v", err)
+		}
+		a, b := receive(t, here), receive(t, there)
+		if !maps.Equal(a, carried) || !maps.Equal(b, carried) {
+			t.Fatalf("the replicas received the tracing contexts %v and %v, want the %v its publisher set",
+				a, b, carried)
+		}
+	})
+
 	t.Run("an event published as soon as a replica starts reaches it", func(t *testing.T) {
 		publisher, startPublisher := newBus(t)
 		late, startLate := newBus(t)
 		var got atomic.Int32
-		late.Subscribe("t", func(context.Context, event.Event) error {
+		late.Subscribe("t", "suite", func(context.Context, event.Event) error {
 			got.Add(1)
 			return nil
 		})
@@ -163,7 +194,7 @@ func AssertConforms(t *testing.T, newBus Factory) {
 	t.Run("a subscriber receives a published event", func(t *testing.T) {
 		b, start := newBus(t)
 		var seen atomic.Int32
-		b.Subscribe("order.placed", func(context.Context, event.Event) error {
+		b.Subscribe("order.placed", "suite", func(context.Context, event.Event) error {
 			seen.Add(1)
 			return nil
 		})
@@ -177,7 +208,7 @@ func AssertConforms(t *testing.T, newBus Factory) {
 	t.Run("matching is by exact type name", func(t *testing.T) {
 		b, start := newBus(t)
 		var wrong atomic.Int32
-		b.Subscribe("order.placed", func(context.Context, event.Event) error {
+		b.Subscribe("order.placed", "suite", func(context.Context, event.Event) error {
 			wrong.Add(1)
 			return nil
 		})
@@ -199,7 +230,7 @@ func AssertConforms(t *testing.T, newBus Factory) {
 		const subscribers = 3
 		var seen atomic.Int32
 		for i := 0; i < subscribers; i++ {
-			b.Subscribe("t", func(context.Context, event.Event) error {
+			b.Subscribe("t", "suite", func(context.Context, event.Event) error {
 				seen.Add(1)
 				return nil
 			})
@@ -223,7 +254,7 @@ func AssertConforms(t *testing.T, newBus Factory) {
 		b, start := newBus(t)
 		want := event.Event{Type: "t", TenantID: "acme", Payload: map[string]any{"k": "carried"}}
 		got := make(chan event.Event, 1)
-		b.Subscribe("t", func(_ context.Context, evt event.Event) error {
+		b.Subscribe("t", "suite", func(_ context.Context, evt event.Event) error {
 			got <- evt
 			return nil
 		})
@@ -248,6 +279,28 @@ func AssertConforms(t *testing.T, newBus Factory) {
 		}
 	})
 
+	t.Run("the event's tracing context arrives as it was published", func(t *testing.T) {
+		b, start := newBus(t)
+		// The tracing context a publisher fixed — a relay republishing an event
+		// whose trace began where the fact was produced — is carried through the
+		// backend and reaches the subscriber unchanged. A dropped carrier and one
+		// overwritten with the delivery's own span are the two ways it goes wrong.
+		carried := map[string]string{"traceparent": "00-4bf92f3577b34da6a3ce929d0e0e4736-00f067aa0ba902b7-01"}
+		got := make(chan map[string]string, 1)
+		b.Subscribe("t", "suite", func(_ context.Context, evt event.Event) error {
+			got <- evt.TraceContext
+			return nil
+		})
+		start(context.Background())
+		if err := b.Publish(context.Background(), event.Event{Type: "t", TraceContext: carried}); err != nil {
+			t.Fatalf("Publish: %v", err)
+		}
+		if got := receive(t, got); !maps.Equal(got, carried) {
+			t.Fatalf("the event arrived carrying the tracing context %v, want the %v its publisher set",
+				got, carried)
+		}
+	})
+
 	t.Run("an integer past the exact range of a float64 arrives exact", func(t *testing.T) {
 		type deal struct {
 			AmountCents int64 `json:"amount_cents"`
@@ -262,7 +315,7 @@ func AssertConforms(t *testing.T, newBus Factory) {
 		b, start := newBus(t)
 		got := make(chan won, 1)
 		failed := make(chan error, 1)
-		b.Subscribe("t", func(_ context.Context, evt event.Event) error {
+		b.Subscribe("t", "suite", func(_ context.Context, evt event.Event) error {
 			var w won
 			if err := event.DecodePayload(evt.Payload, &w); err != nil {
 				failed <- err
@@ -293,7 +346,7 @@ func AssertConforms(t *testing.T, newBus Factory) {
 	t.Run("an event published without a payload decodes as missing", func(t *testing.T) {
 		b, start := newBus(t)
 		got := make(chan error, 1)
-		b.Subscribe("t", func(_ context.Context, evt event.Event) error {
+		b.Subscribe("t", "suite", func(_ context.Context, evt event.Event) error {
 			var v struct {
 				ID string `json:"id"`
 			}
@@ -316,11 +369,11 @@ func AssertConforms(t *testing.T, newBus Factory) {
 	t.Run("every subscriber receives the identifier the bus assigned", func(t *testing.T) {
 		b, start := newBus(t)
 		first, second := make(chan string, 2), make(chan string, 2)
-		b.Subscribe("t", func(_ context.Context, evt event.Event) error {
+		b.Subscribe("t", "suite", func(_ context.Context, evt event.Event) error {
 			first <- evt.ID
 			return nil
 		})
-		b.Subscribe("t", func(_ context.Context, evt event.Event) error {
+		b.Subscribe("t", "suite", func(_ context.Context, evt event.Event) error {
 			second <- evt.ID
 			return nil
 		})
@@ -352,7 +405,7 @@ func AssertConforms(t *testing.T, newBus Factory) {
 	t.Run("an identifier the publisher set arrives unchanged", func(t *testing.T) {
 		b, start := newBus(t)
 		got := make(chan string, 1)
-		b.Subscribe("t", func(_ context.Context, evt event.Event) error {
+		b.Subscribe("t", "suite", func(_ context.Context, evt event.Event) error {
 			got <- evt.ID
 			return nil
 		})
@@ -369,7 +422,7 @@ func AssertConforms(t *testing.T, newBus Factory) {
 	t.Run("a subscriber's failure does not reach the publisher", func(t *testing.T) {
 		b, start := newBus(t)
 		var ran atomic.Int32
-		b.Subscribe("t", func(context.Context, event.Event) error {
+		b.Subscribe("t", "suite", func(context.Context, event.Event) error {
 			ran.Add(1)
 			return errors.New("this handler failed on purpose")
 		})
@@ -388,10 +441,10 @@ func AssertConforms(t *testing.T, newBus Factory) {
 	t.Run("one subscriber's failure does not stop the others", func(t *testing.T) {
 		b, start := newBus(t)
 		var after atomic.Int32
-		b.Subscribe("t", func(context.Context, event.Event) error {
+		b.Subscribe("t", "suite", func(context.Context, event.Event) error {
 			return errors.New("this handler fails on purpose")
 		})
-		b.Subscribe("t", func(context.Context, event.Event) error {
+		b.Subscribe("t", "suite", func(context.Context, event.Event) error {
 			after.Add(1)
 			return nil
 		})
@@ -406,10 +459,10 @@ func AssertConforms(t *testing.T, newBus Factory) {
 	t.Run("a subscriber's panic reaches neither the publisher nor the others", func(t *testing.T) {
 		b, start := newBus(t)
 		var after atomic.Int32
-		b.Subscribe("t", func(context.Context, event.Event) error {
+		b.Subscribe("t", "suite", func(context.Context, event.Event) error {
 			panic("this handler panics on purpose")
 		})
-		b.Subscribe("t", func(context.Context, event.Event) error {
+		b.Subscribe("t", "suite", func(context.Context, event.Event) error {
 			after.Add(1)
 			return nil
 		})
@@ -434,7 +487,7 @@ func AssertConforms(t *testing.T, newBus Factory) {
 	t.Run("a cancelled context is honoured", func(t *testing.T) {
 		b, start := newBus(t)
 		var ran atomic.Int32
-		b.Subscribe("t", func(context.Context, event.Event) error {
+		b.Subscribe("t", "suite", func(context.Context, event.Event) error {
 			ran.Add(1)
 			return nil
 		})
@@ -453,7 +506,7 @@ func AssertConforms(t *testing.T, newBus Factory) {
 	t.Run("a publish before the start stage is refused", func(t *testing.T) {
 		b, start := newBus(t)
 		var ran atomic.Int32
-		b.Subscribe("t", func(context.Context, event.Event) error {
+		b.Subscribe("t", "suite", func(context.Context, event.Event) error {
 			ran.Add(1)
 			return nil
 		})
@@ -473,7 +526,7 @@ func AssertConforms(t *testing.T, newBus Factory) {
 	t.Run("delivery outlives the drive's context until the stop stage", func(t *testing.T) {
 		b, start := newBus(t)
 		var ran atomic.Int32
-		b.Subscribe("t", func(context.Context, event.Event) error {
+		b.Subscribe("t", "suite", func(context.Context, event.Event) error {
 			ran.Add(1)
 			return nil
 		})
@@ -495,7 +548,7 @@ func AssertConforms(t *testing.T, newBus Factory) {
 	t.Run("a publish from the stop stage on is refused", func(t *testing.T) {
 		b, start := newBus(t)
 		var ran atomic.Int32
-		b.Subscribe("t", func(context.Context, event.Event) error {
+		b.Subscribe("t", "suite", func(context.Context, event.Event) error {
 			ran.Add(1)
 			return nil
 		})
@@ -517,7 +570,7 @@ func AssertConforms(t *testing.T, newBus Factory) {
 	t.Run("a payload that cannot be serialized is refused", func(t *testing.T) {
 		b, start := newBus(t)
 		var ran atomic.Int32
-		b.Subscribe("t", func(context.Context, event.Event) error {
+		b.Subscribe("t", "suite", func(context.Context, event.Event) error {
 			ran.Add(1)
 			return nil
 		})
@@ -545,7 +598,7 @@ func AssertConforms(t *testing.T, newBus Factory) {
 				t.Fatal("Subscribe after the start stage was accepted")
 			}
 		}()
-		b.Subscribe("t", func(context.Context, event.Event) error { return nil })
+		b.Subscribe("t", "suite", func(context.Context, event.Event) error { return nil })
 	})
 
 	t.Run("a publish after the bus is closed is refused", func(t *testing.T) {
@@ -568,7 +621,7 @@ func AssertConforms(t *testing.T, newBus Factory) {
 		entered := make(chan struct{})
 		release := make(chan struct{})
 		finished := make(chan error, 1)
-		b.Subscribe("t", func(ctx context.Context, _ event.Event) error {
+		b.Subscribe("t", "suite", func(ctx context.Context, _ event.Event) error {
 			close(entered)
 			<-release
 			// What the subscriber would do next — write what it handled —

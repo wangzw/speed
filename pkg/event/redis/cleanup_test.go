@@ -48,7 +48,7 @@ func startReading(t *testing.T, b *bus, eventType string) {
 	t.Helper()
 	ctx := context.Background()
 	got := make(chan struct{}, 1)
-	b.Subscribe(eventType, func(context.Context, event.Event) error {
+	b.Subscribe(eventType, "test", func(context.Context, event.Event) error {
 		got <- struct{}{}
 		return nil
 	})

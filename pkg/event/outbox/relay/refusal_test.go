@@ -15,7 +15,7 @@ type funcBus struct {
 	publish func(ctx context.Context, evt event.Event) error
 }
 
-func (b funcBus) Subscribe(string, event.Handler) {}
+func (b funcBus) Subscribe(string, string, event.Handler) {}
 
 func (b funcBus) Publish(ctx context.Context, evt event.Event) error { return b.publish(ctx, evt) }
 

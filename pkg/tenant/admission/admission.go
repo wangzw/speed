@@ -311,11 +311,11 @@ func (l *layer) wire(reg *core.Registry) error {
 		l.bus = bus
 	}
 	if l.bus != nil {
-		l.bus.Subscribe(authn.EventMembershipChanged, l.onMembershipChanged)
+		l.bus.Subscribe(authn.EventMembershipChanged, ModuleName, l.onMembershipChanged)
 		// A relaxation is only watchable where the settings are in hand: with no
 		// store there is no setting and no change event to follow.
 		if l.store != nil {
-			l.bus.Subscribe(settings.ChangedEventType, l.onSettingsChanged)
+			l.bus.Subscribe(settings.ChangedEventType, ModuleName, l.onSettingsChanged)
 		}
 	}
 	if err := l.takeMeter(reg); err != nil {

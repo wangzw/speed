@@ -47,6 +47,7 @@ import (
 	"github.com/vislake/speed/pkg/event"
 	"github.com/vislake/speed/pkg/event/internal/dispatch"
 	"github.com/vislake/speed/pkg/event/internal/replica"
+	"github.com/vislake/speed/pkg/event/internal/tracing"
 	"github.com/vislake/speed/pkg/internal/redis"
 )
 
@@ -55,6 +56,9 @@ const (
 	ModuleName = "event.redis"
 	// ConfigNamespace is where this implementation's input items are mounted.
 	ConfigNamespace = ModuleName
+	// systemName is this implementation's backend as it appears in the
+	// messaging.system attribute of a delivery's span.
+	systemName = "redis"
 	// streamPrefix namespaces the streams this implementation creates, so an
 	// assembly sharing a Redis server with anything else does not read or
 	// overwrite keys that are not its own.
@@ -107,12 +111,13 @@ func init() { core.ProcessRegistry.Register(Module()) }
 // inherit the process-level registrations.
 func Module() core.Module {
 	proto := Config{Config: redis.Defaults()}
-	return event.NewModule(event.Spec[Config]{
+	m := event.NewModule(event.Spec[Config]{
 		ModuleName:      ModuleName,
 		ConfigNamespace: ConfigNamespace,
 		Config:          &proto,
 		Items:           items(),
 		Stance:          stance,
+		Trace:           tracing.Provider,
 		Open:            open,
 		Start:           start,
 		// The password is the credential this backend holds; it has no shape to
@@ -120,6 +125,10 @@ func Module() core.Module {
 		// redaction rule before this module reaches the server.
 		Secrets: func(cfg *Config) []string { return []string{cfg.Password} },
 	})
+	// The optional tracer requirement is appended here rather than declared by
+	// the root package, which cannot name the telemetry provider's type.
+	m.Requires = append(m.Requires, tracing.Requirement())
+	return m
 }
 
 // items is the shared connection declaration plus this implementation's own
@@ -165,7 +174,7 @@ func stance(cfg *Config) (core.Enablement, error) {
 }
 
 // open builds the bus.
-func open(ctx context.Context, cfg *Config, logger *slog.Logger) (event.Bus, error) {
+func open(ctx context.Context, cfg *Config, logger *slog.Logger, tracer event.TracerProvider) (event.Bus, error) {
 	client, err := redis.Connect(ctx, cfg.Config)
 	if err != nil {
 		return nil, fmt.Errorf("%s: %w", ModuleName, err)
@@ -188,7 +197,7 @@ func open(ctx context.Context, cfg *Config, logger *slog.Logger) (event.Bus, err
 		ownGroup:   cfg.ConsumerGroup == "",
 		consumer:   defaultConsumerName(),
 		maxEntries: maxEntries,
-		table:      dispatch.New("event/redis", logger),
+		table:      dispatch.New("event/redis", systemName, logger, tracer, tracing.Propagator()),
 	}, nil
 }
 
@@ -234,10 +243,12 @@ type bus struct {
 	table *dispatch.Table
 }
 
-// Subscribe registers a handler for one event type. It panics once the
-// readers have started at the start stage: a subscription registered later
-// would miss everything already delivered.
-func (b *bus) Subscribe(eventType string, h event.Handler) { b.table.Subscribe(eventType, h) }
+// Subscribe registers a handler for one event type, under the name its
+// delivery's span is recorded under. It panics once the readers have started at
+// the start stage, or when the name is empty.
+func (b *bus) Subscribe(eventType string, name string, h event.Handler) {
+	b.table.Subscribe(eventType, name, h)
+}
 
 // Publish appends the event to its stream, which every replica's group reads.
 //
@@ -253,17 +264,12 @@ func (b *bus) Publish(ctx context.Context, evt event.Event) error {
 	if stageErr := b.table.Accepting(); stageErr != nil {
 		return stageErr
 	}
-	evt = dispatch.Stamp(evt)
+	evt = b.table.Stamp(ctx, evt)
 	return b.client.XAdd(ctx, &goredis.XAddArgs{
 		Stream: streamKey(evt.Type),
 		MaxLen: b.maxEntries,
 		Approx: true,
-		Values: map[string]any{
-			fieldID:       evt.ID,
-			fieldType:     evt.Type,
-			fieldTenantID: evt.TenantID,
-			fieldPayload:  string(payload),
-		},
+		Values: entryValues(evt, payload),
 	}).Err()
 }
 
@@ -438,7 +444,23 @@ const (
 	fieldType     = "type"
 	fieldTenantID = "tenant"
 	fieldPayload  = "payload"
+	fieldTrace    = "trace"
 )
+
+// entryValues is what a publish writes into the stream entry for evt.
+//
+// A Redis stream entry holds strings only, so the tracing context — a map — is
+// carried as one field in the encoded form dispatch keeps it in rather than as
+// a field per key. Every value here is already a string.
+func entryValues(evt event.Event, payload []byte) map[string]any {
+	return map[string]any{
+		fieldID:       evt.ID,
+		fieldType:     evt.Type,
+		fieldTenantID: evt.TenantID,
+		fieldPayload:  string(payload),
+		fieldTrace:    dispatch.EncodeTraceContext(evt.TraceContext),
+	}
+}
 
 // decode turns a stream entry back into an event.
 //
@@ -453,6 +475,9 @@ func decode(eventType string, values map[string]any) event.Event {
 	}
 	if v, ok := values[fieldTenantID].(string); ok {
 		evt.TenantID = v
+	}
+	if raw, ok := values[fieldTrace].(string); ok {
+		evt.TraceContext = dispatch.DecodeTraceContext(raw)
 	}
 	if raw, ok := values[fieldPayload].(string); ok {
 		if payload, err := dispatch.Payload([]byte(raw)); err == nil {

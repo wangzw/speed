@@ -24,7 +24,7 @@ type relaxBus struct {
 
 func newRelaxBus() *relaxBus { return &relaxBus{handlers: map[string][]event.Handler{}} }
 
-func (b *relaxBus) Subscribe(eventType string, h event.Handler) {
+func (b *relaxBus) Subscribe(eventType string, _ string, h event.Handler) {
 	b.mu.Lock()
 	defer b.mu.Unlock()
 	b.handlers[eventType] = append(b.handlers[eventType], h)
@@ -89,7 +89,7 @@ func newRelaxRig(t *testing.T) *relaxRig {
 	b.audit = rec
 	bus := newRelaxBus()
 	b.bus = bus
-	bus.Subscribe(settings.ChangedEventType, b.onSettingsChanged)
+	bus.Subscribe(settings.ChangedEventType, "test", b.onSettingsChanged)
 	return &relaxRig{b: b, bus: bus, audit: rec, out: out}
 }
 

@@ -12,6 +12,7 @@ import (
 
 	"github.com/vislake/speed/pkg/event"
 	"github.com/vislake/speed/pkg/event/internal/bussuite"
+	"github.com/vislake/speed/pkg/event/internal/tracing"
 	"github.com/vislake/speed/pkg/internal/pgpool"
 	"github.com/vislake/speed/pkg/internal/pgpool/pgtest"
 	"github.com/vislake/speed/pkg/log"
@@ -27,7 +28,7 @@ import (
 func TestTheListeningConnectionGoesWhereThePoolGoes(t *testing.T) {
 	dsn := pgtest.Acquire(t)
 	for _, given := range []string{dsn + "\n", "  " + dsn, "\t" + dsn + " \r\n"} {
-		opened, err := open(context.Background(), &pgpool.Config{DSN: given, MaxConns: 2}, log.Default())
+		opened, err := open(context.Background(), &pgpool.Config{DSN: given, MaxConns: 2}, log.Default(), tracing.Noop())
 		if err != nil {
 			t.Errorf("open with the connection string %q: %v", given, err)
 			continue
@@ -59,14 +60,14 @@ func TestTheListeningConnectionGoesWhereThePoolGoes(t *testing.T) {
 func TestARoleThatMayOnlyWriteRowsStartsOnAPreparedDatabase(t *testing.T) {
 	dsn := pgtest.Acquire(t)
 	ctx := context.Background()
-	prepared, err := open(ctx, &pgpool.Config{DSN: dsn, MaxConns: 1}, log.Default())
+	prepared, err := open(ctx, &pgpool.Config{DSN: dsn, MaxConns: 1}, log.Default(), tracing.Noop())
 	if err != nil {
 		t.Fatalf("preparing the tables as their owner: %v", err)
 	}
 	_ = prepared.(*bus).Close(ctx)
 
 	roleDSN := pgtest.DMLRole(t, dsn)
-	opened, err := open(ctx, &pgpool.Config{DSN: roleDSN, MaxConns: 2}, log.Default())
+	opened, err := open(ctx, &pgpool.Config{DSN: roleDSN, MaxConns: 2}, log.Default(), tracing.Noop())
 	if err != nil {
 		t.Fatalf("a role that may read and write rows could not start on a database whose tables are "+
 			"already there: %v", err)
@@ -75,7 +76,7 @@ func TestARoleThatMayOnlyWriteRowsStartsOnAPreparedDatabase(t *testing.T) {
 	t.Cleanup(func() { _ = b.Close(ctx) })
 
 	var delivered atomic.Int32
-	b.Subscribe("t", func(context.Context, event.Event) error {
+	b.Subscribe("t", "test", func(context.Context, event.Event) error {
 		delivered.Add(1)
 		return nil
 	})
@@ -99,7 +100,7 @@ func TestARoleThatMayOnlyWriteRowsStartsOnAPreparedDatabase(t *testing.T) {
 func TestARoleThatMayOnlyWriteRowsIsToldWhatIsMissing(t *testing.T) {
 	dsn := pgtest.Acquire(t)
 	roleDSN := pgtest.DMLRole(t, dsn)
-	opened, err := open(context.Background(), &pgpool.Config{DSN: roleDSN, MaxConns: 1}, log.Default())
+	opened, err := open(context.Background(), &pgpool.Config{DSN: roleDSN, MaxConns: 1}, log.Default(), tracing.Noop())
 	if err == nil {
 		_ = opened.(*bus).Close(context.Background())
 		t.Fatal("a role that may create nothing started on a database without the tables")
@@ -132,7 +133,7 @@ func TestReplicasStartingTogetherOnANewDatabaseAllStart(t *testing.T) {
 		errs := make([]error, replicas)
 		for i := range errs {
 			wg.Go(func() {
-				opened, err := open(context.Background(), &pgpool.Config{DSN: dsn, MaxConns: 2}, log.Default())
+				opened, err := open(context.Background(), &pgpool.Config{DSN: dsn, MaxConns: 2}, log.Default(), tracing.Noop())
 				if err != nil {
 					errs[i] = err
 					return

@@ -106,6 +106,22 @@ type Event struct {
 	// with no tenant in it, so only the field reads the same on every bus.
 	TenantID string
 
+	// TraceContext carries the tracing context of the span the publisher was
+	// in, keyed by the upstream propagation format's own keys (a traceparent
+	// and, when there is one, a tracestate).
+	//
+	// The dispatch layer takes the span a delivery runs under as this event's
+	// child, so one trace carries the fact from where it was produced into
+	// every subscriber, on every replica and over every backend. Publish writes
+	// it from the publisher's context when the publisher left it empty, and
+	// carries a non-empty one as it is; every subscriber, on every replica,
+	// receives the same value.
+	//
+	// A publisher outside any span, and one in a process with no telemetry,
+	// leaves this empty, and the delivery's span is then a trace of its own. An
+	// assembly with no telemetry never fills it.
+	TraceContext map[string]string
+
 	// Payload carries the event data. Subscribers read it structurally, by
 	// field name, rather than asserting a type; see the package documentation.
 	Payload any
@@ -162,7 +178,16 @@ type Bus interface {
 	Publish(ctx context.Context, evt Event) error
 
 	// Subscribe registers h for events whose Type equals eventType exactly.
-	Subscribe(eventType string, h Handler)
+	//
+	// name identifies the subscriber and is required: it is the name the span
+	// every delivery to this subscriber is recorded under. It is the
+	// subscriber's own identity — its module name, or a component within it —
+	// rather than what it subscribes to, so it stays low-cardinality and
+	// stable. Two subscribers of one event type may share a name; their spans
+	// are then told apart by the event type they carry as an attribute, and,
+	// sharing that too, are not told apart at all. A name left empty panics at
+	// the call site.
+	Subscribe(eventType string, name string, h Handler)
 }
 
 // PayloadFields decodes an event payload of any of the shapes it arrives in

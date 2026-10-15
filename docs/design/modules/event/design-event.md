@@ -338,7 +338,7 @@ sequenceDiagram
 |---|---|---|
 | 接口与根包 | 已实现 | `pkg/event/event.go` `Bus`、`Event`、`ErrNotStarted`、`ErrClosed`、`ErrNoPayload`、载荷读取辅助；`pkg/event/id.go` `NewID`；`pkg/event/module.go` `Spec`、`NewModule` |
 | 订阅表、阶段与标识的赋予 | 已实现 | `pkg/event/internal/dispatch/dispatch.go` `Table`、`Grace`、`Stamp` |
-| 分发层的追踪与事件所携的追踪上下文 | 未实现 | — |
+| 分发层的追踪与事件所携的追踪上下文 | 已实现 | `pkg/event/internal/dispatch/dispatch.go` `(*Table).Deliver`、`(*Table).Stamp`、`EncodeTraceContext`、`DecodeTraceContext`；`pkg/event/internal/tracing/tracing.go` `Provider`、`Propagator`、`Requirement`；`pkg/event/nats/nats.go` `envelope`、`pkg/event/redis/redis.go` `entryValues`、`pkg/event/postgres/postgres.go` `createOutbox` |
 | 内存实现 | 已实现 | `pkg/event/memory/memory.go` `Module`、`stance`、`start` |
 | 一致性套件 | 已实现 | `pkg/event/internal/bussuite/bussuite.go` `AssertConforms`、`AssertReplicated` |
 | Redis 实现 | 已实现 | `pkg/event/redis/redis.go` `Module`、`bus`、`readerClient` |

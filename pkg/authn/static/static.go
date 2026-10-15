@@ -356,7 +356,7 @@ func (b *backend) wire(reg *core.Registry) error {
 	// bus that carries the event and the store the change is about are present:
 	// without either there is nothing to hear, or nothing this backend reads.
 	if b.bus != nil && b.store != nil {
-		b.bus.Subscribe(settings.ChangedEventType, b.onSettingsChanged)
+		b.bus.Subscribe(settings.ChangedEventType, ModuleName, b.onSettingsChanged)
 	}
 	return nil
 }

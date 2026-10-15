@@ -14,6 +14,7 @@ import (
 	"github.com/vislake/speed/pkg/core"
 	"github.com/vislake/speed/pkg/event"
 	"github.com/vislake/speed/pkg/event/internal/bussuite"
+	"github.com/vislake/speed/pkg/event/internal/tracing"
 	"github.com/vislake/speed/pkg/internal/natstest"
 	"github.com/vislake/speed/pkg/log"
 )
@@ -50,7 +51,7 @@ func openBusIn(t *testing.T, url string, name string, namespace string) *bus {
 	t.Helper()
 	opened, err := open(context.Background(), &Config{
 		URL: url, ConsumerName: name, Namespace: namespace, Timeout: 10 * time.Second,
-	}, log.Default())
+	}, log.Default(), tracing.Noop())
 	if err != nil {
 		t.Fatalf("open: %v", err)
 	}
@@ -71,11 +72,11 @@ func TestTwoAssembliesOnOneServerDoNotSeeEachOther(t *testing.T) {
 	second := openBusIn(t, url, "", "assembly_two")
 
 	var gotFirst, gotSecond atomic.Int32
-	first.Subscribe(eventType, func(context.Context, event.Event) error {
+	first.Subscribe(eventType, "test", func(context.Context, event.Event) error {
 		gotFirst.Add(1)
 		return nil
 	})
-	second.Subscribe(eventType, func(context.Context, event.Event) error {
+	second.Subscribe(eventType, "test", func(context.Context, event.Event) error {
 		gotSecond.Add(1)
 		return nil
 	})
@@ -198,11 +199,11 @@ func TestEveryReplicaReceivesEveryEvent(t *testing.T) {
 	second := openBus(t, url, "")
 
 	var gotFirst, gotSecond atomic.Int32
-	first.Subscribe(eventType, func(context.Context, event.Event) error {
+	first.Subscribe(eventType, "test", func(context.Context, event.Event) error {
 		gotFirst.Add(1)
 		return nil
 	})
-	second.Subscribe(eventType, func(context.Context, event.Event) error {
+	second.Subscribe(eventType, "test", func(context.Context, event.Event) error {
 		gotSecond.Add(1)
 		return nil
 	})
@@ -233,7 +234,7 @@ func TestTwoInstancesSharingAConsumerSplitTheEvents(t *testing.T) {
 
 	var total atomic.Int32
 	for _, b := range []*bus{first, second} {
-		b.Subscribe(eventType, func(context.Context, event.Event) error {
+		b.Subscribe(eventType, "test", func(context.Context, event.Event) error {
 			total.Add(1)
 			return nil
 		})
@@ -293,7 +294,7 @@ func TestAReaderOpensWhatIsMissing(t *testing.T) {
 	eventType := nextType()
 	b := openBus(t, url, "")
 	var seen atomic.Int32
-	b.Subscribe(eventType, func(context.Context, event.Event) error {
+	b.Subscribe(eventType, "test", func(context.Context, event.Event) error {
 		seen.Add(1)
 		return nil
 	})

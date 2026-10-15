@@ -38,6 +38,7 @@ import (
 	"github.com/vislake/speed/pkg/core"
 	"github.com/vislake/speed/pkg/event"
 	"github.com/vislake/speed/pkg/event/internal/dispatch"
+	"github.com/vislake/speed/pkg/event/internal/tracing"
 )
 
 const (
@@ -45,6 +46,10 @@ const (
 	ModuleName = "event.memory"
 	// ConfigNamespace is where this implementation's input items are mounted.
 	ConfigNamespace = ModuleName
+	// systemName is this implementation's backend as it appears in the
+	// messaging.system attribute of a delivery's span. This backend is the
+	// process's own memory.
+	systemName = "memory"
 	// replicasKey is the input item stating how many replicas share this
 	// assembly's state.
 	replicasKey = "replicas"
@@ -71,7 +76,7 @@ func init() { core.ProcessRegistry.Register(Module()) }
 // Module is this module's descriptor, exported for the registries that do not
 // inherit the process-level registrations.
 func Module() core.Module {
-	return event.NewModule(event.Spec[Config]{
+	m := event.NewModule(event.Spec[Config]{
 		ModuleName:      ModuleName,
 		ConfigNamespace: ConfigNamespace,
 		Config:          &Config{Replicas: 1},
@@ -82,9 +87,16 @@ func Module() core.Module {
 			},
 		},
 		Stance: stance,
+		Trace:  tracing.Provider,
 		Open:   open,
 		Start:  start,
 	})
+	// The optional tracer requirement is appended here rather than declared by
+	// the root package, which cannot name the telemetry provider's type. It is
+	// what orders the assembly ahead of the bus, so Trace finds a provider
+	// instead of falling back to one that exports nothing.
+	m.Requires = append(m.Requires, tracing.Requirement())
+	return m
 }
 
 // stance states this implementation's stance, or reports the deployment it
@@ -116,8 +128,8 @@ func stance(cfg *Config) (core.Enablement, error) {
 }
 
 // open builds the bus.
-func open(_ context.Context, _ *Config, logger *slog.Logger) (event.Bus, error) {
-	return &bus{table: dispatch.New("event/memory", logger)}, nil
+func open(_ context.Context, _ *Config, logger *slog.Logger, tracer event.TracerProvider) (event.Bus, error) {
+	return &bus{table: dispatch.New("event/memory", systemName, logger, tracer, tracing.Propagator())}, nil
 }
 
 // start freezes the subscription table and opens the bus to publishing.
@@ -145,9 +157,12 @@ type bus struct {
 	table *dispatch.Table
 }
 
-// Subscribe adds a handler for one event type. It panics once the table is
-// frozen at the start stage.
-func (b *bus) Subscribe(eventType string, h event.Handler) { b.table.Subscribe(eventType, h) }
+// Subscribe adds a handler for one event type, under the name its delivery's
+// span is recorded under. It panics once the table is frozen at the start
+// stage, or when the name is empty.
+func (b *bus) Subscribe(eventType string, name string, h event.Handler) {
+	b.table.Subscribe(eventType, name, h)
+}
 
 // Publish delivers to every handler of this event type, on the caller's own
 // goroutine.
@@ -177,8 +192,10 @@ func (b *bus) Publish(ctx context.Context, evt event.Event) error {
 	// The handlers run on the publisher's goroutine and context, with no lock
 	// of this bus held: a handler that publishes again would otherwise
 	// deadlock against this call. Each receives a copy of the one stamped
-	// event, so they all see the same identifier.
-	b.table.Deliver(ctx, dispatch.Stamp(evt))
+	// event, so they all see the same identifier, and the copy carries the
+	// tracing context of the span ctx is in, which is the parent each
+	// delivery's span is recorded under.
+	b.table.Deliver(ctx, b.table.Stamp(ctx, evt))
 	return nil
 }
 

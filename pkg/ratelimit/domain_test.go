@@ -272,4 +272,4 @@ func (b *acceptingBus) Publish(context.Context, event.Event) error {
 	return nil
 }
 
-func (b *acceptingBus) Subscribe(string, event.Handler) {}
+func (b *acceptingBus) Subscribe(string, string, event.Handler) {}

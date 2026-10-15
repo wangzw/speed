@@ -554,7 +554,7 @@ func (s *registryStore) subscribe() {
 	if s.bus == nil {
 		return
 	}
-	s.bus.Subscribe(ChangedEventType, func(ctx context.Context, _ event.Event) error {
+	s.bus.Subscribe(ChangedEventType, ModuleName, func(ctx context.Context, _ event.Event) error {
 		s.reload(ctx)
 		return nil
 	})

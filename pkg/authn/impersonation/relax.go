@@ -41,7 +41,7 @@ func (m *product) subscribeSettings(bus event.Bus) {
 	if bus == nil || m.settings.store == nil {
 		return
 	}
-	bus.Subscribe(settings.ChangedEventType, m.onSettingsChanged)
+	bus.Subscribe(settings.ChangedEventType, ModuleName, m.onSettingsChanged)
 }
 
 // onSettingsChanged is the subscriber of the settings module's change event. A

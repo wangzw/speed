@@ -550,7 +550,7 @@ func reportsModule() core.Module {
 			mount(api, revenueRoute, product.revenue)
 			mount(api, deliveriesRoute, product.deliveries)
 			for _, eventType := range dealEventTypes {
-				bus.Subscribe(eventType, product.dropPipeline)
+				bus.Subscribe(eventType, reportsModuleName, product.dropPipeline)
 			}
 			return declareReportRoutes(reg)
 		},

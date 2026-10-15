@@ -80,6 +80,10 @@ type staged struct {
 	tenant   string
 	payload  string
 	attempts int
+	// traceContext is the tracing context the row carried when it was staged,
+	// in the text form dispatch keeps it in; the empty string for a row written
+	// before the column existed.
+	traceContext string
 }
 
 // lastErrorLimit bounds the refusal text a row keeps, in bytes.
@@ -203,7 +207,7 @@ func (r *relay) claim() ([]staged, error) {
 	var claimed []staged
 	for rows.Next() {
 		var s staged
-		if err := rows.Scan(&s.id, &s.eventID, &s.typ, &s.tenant, &s.payload, &s.attempts); err != nil {
+		if err := rows.Scan(&s.id, &s.eventID, &s.typ, &s.tenant, &s.payload, &s.traceContext, &s.attempts); err != nil {
 			return nil, fmt.Errorf("reading a claimed staged event: %w", err)
 		}
 		claimed = append(claimed, s)
@@ -285,7 +289,14 @@ func (r *relay) publish(row staged) (err error) {
 			err = fmt.Errorf("the bus panicked: %v", recovered)
 		}
 	}()
-	return r.bus.Publish(ctx, event.Event{ID: row.eventID, Type: row.typ, TenantID: row.tenant, Payload: payload})
+	// The tracing context was fixed at staging: restoring it onto the event
+	// makes the subscriber's span a child of the span the write was in, not of
+	// any span this relay's publish runs under. The context here carries no
+	// span, so a bus that stamps an event left without one injects nothing.
+	return r.bus.Publish(ctx, event.Event{
+		ID: row.eventID, Type: row.typ, TenantID: row.tenant,
+		TraceContext: dispatch.DecodeTraceContext(row.traceContext), Payload: payload,
+	})
 }
 
 // exec runs one statement of the loop's own, within the statement bound.

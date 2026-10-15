@@ -69,15 +69,15 @@ func (p *product) subscribe() {
 	if p.bus == nil {
 		return
 	}
-	p.bus.Subscribe(authn.EventSessionRevoked, p.once(p.onSessionRevoked))
-	p.bus.Subscribe(authn.EventAccountStatusChanged, p.once(p.onAccountStatusChanged))
-	p.bus.Subscribe(authn.EventAccountDeleted, p.once(p.onAccountDeleted))
-	p.bus.Subscribe(authn.EventImpersonationEnded, p.once(p.onImpersonationEnded))
+	p.bus.Subscribe(authn.EventSessionRevoked, ModuleName, p.once(p.onSessionRevoked))
+	p.bus.Subscribe(authn.EventAccountStatusChanged, ModuleName, p.once(p.onAccountStatusChanged))
+	p.bus.Subscribe(authn.EventAccountDeleted, ModuleName, p.once(p.onAccountDeleted))
+	p.bus.Subscribe(authn.EventImpersonationEnded, ModuleName, p.once(p.onImpersonationEnded))
 	// Watching a relaxing change needs both the bus to hear it and the store the
 	// settings live in: with no store every setting reads as its declared
 	// default and there is no change to watch.
 	if p.settings.store != nil {
-		p.bus.Subscribe(settings.ChangedEventType, p.onSettingsChanged)
+		p.bus.Subscribe(settings.ChangedEventType, ModuleName, p.onSettingsChanged)
 	}
 }
 
