@@ -92,6 +92,7 @@ func Module() core.Module {
 			{Token: (*authn.Sessions)(nil)},
 			{Token: (*authn.MFA)(nil)},
 			{Token: (*settings.Store)(nil), Optional: true},
+			{Token: (*log.Logger)(nil), Optional: true},
 		},
 		Resources: []any{settingsSchema()},
 

@@ -15,6 +15,7 @@ import (
 	"github.com/vislake/speed/pkg/authn/internal/mount/mounttest"
 	"github.com/vislake/speed/pkg/config"
 	"github.com/vislake/speed/pkg/core"
+	"github.com/vislake/speed/pkg/log"
 )
 
 // handler is a handler no case calls; the registrations here are about what is
@@ -64,8 +65,11 @@ func TestTheDescriptorStatesWhatTheDesignStates(t *testing.T) {
 	if m.Name != ModuleName || ModuleName != "authn.mount" {
 		t.Errorf("the module is named %q (constant %q), want authn.mount", m.Name, ModuleName)
 	}
-	if len(m.Requires) != 1 || m.Requires[0].Token != core.Token((*authn.Gate)(nil)) || m.Requires[0].Optional {
-		t.Errorf("Requires is %+v, want the gateway, not optional, and nothing else", m.Requires)
+	if len(m.Requires) != 2 || m.Requires[0].Token != core.Token((*authn.Gate)(nil)) || m.Requires[0].Optional {
+		t.Errorf("Requires is %+v, want the gateway required and the logging capability optional", m.Requires)
+	}
+	if last := m.Requires[len(m.Requires)-1]; last.Token != core.Token((*log.Logger)(nil)) || !last.Optional {
+		t.Errorf("Requires = %+v, want the logging capability as the optional dependency", m.Requires)
 	}
 	if len(m.Provides) != 1 || m.Provides[0].Token != core.Token((*mount.Mounter)(nil)) || !m.Provides[0].Exclusive {
 		t.Errorf("Provides is %+v, want the route-mounting capability delivered exclusively", m.Provides)

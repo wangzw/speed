@@ -148,6 +148,7 @@ func Module() core.Module {
 			{Token: (*mount.Mounter)(nil)},
 			{Token: (*authn.Accounts)(nil)},
 			{Token: (*audit.Audit)(nil), Optional: true},
+			{Token: (*log.Logger)(nil), Optional: true},
 		},
 		Provides: []core.Provision{
 			{Token: (*authn.Sessions)(nil), Exclusive: true},

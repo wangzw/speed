@@ -25,6 +25,7 @@ import (
 	"github.com/vislake/speed/pkg/config"
 	"github.com/vislake/speed/pkg/core"
 	"github.com/vislake/speed/pkg/db"
+	"github.com/vislake/speed/pkg/log"
 	"github.com/vislake/speed/pkg/tenant"
 )
 
@@ -82,8 +83,11 @@ func init() { core.ProcessRegistry.Register(Module()) }
 // gets a roster, and a command that does not want one leaves it out.
 func Module() core.Module {
 	return core.Module{
-		Name:      ModuleName,
-		Requires:  []core.Requirement{{Token: (*db.Database)(nil)}},
+		Name: ModuleName,
+		Requires: []core.Requirement{
+			{Token: (*db.Database)(nil)},
+			{Token: (*log.Logger)(nil), Optional: true},
+		},
 		Provides:  []core.Provision{{Token: (*tenant.Catalog)(nil), Exclusive: true}},
 		Resources: []any{schema(), db.Migrations{FS: migrationsFS}, db.Plugin{Plugin: newFilter()}},
 

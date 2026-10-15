@@ -113,6 +113,7 @@ func Module() core.Module {
 			{Token: (*db.Database)(nil)},
 			{Token: (*mount.Mounter)(nil)},
 			{Token: (*settings.Store)(nil), Optional: true},
+			{Token: (*log.Logger)(nil), Optional: true},
 		},
 		Provides: []core.Provision{
 			{Token: (*authn.SSOProviders)(nil), Exclusive: true},

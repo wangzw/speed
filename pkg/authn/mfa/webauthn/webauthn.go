@@ -103,6 +103,7 @@ func Module() core.Module {
 			{Token: (*db.Database)(nil)},
 			{Token: (*authn.MFA)(nil)},
 			{Token: (*authn.Accounts)(nil)},
+			{Token: (*log.Logger)(nil), Optional: true},
 		},
 		Provides: []core.Provision{
 			{Token: (*authn.Factor)(nil)},

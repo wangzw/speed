@@ -13,6 +13,7 @@ import (
 	"github.com/vislake/speed/pkg/config"
 	"github.com/vislake/speed/pkg/core"
 	"github.com/vislake/speed/pkg/db"
+	"github.com/vislake/speed/pkg/log"
 )
 
 // The names of the stand-in modules that provide what this module requires.
@@ -111,9 +112,9 @@ func TestTheDescriptorStatesWhatTheDesignStates(t *testing.T) {
 		t.Errorf("the module is named %q (constant %q), want authn.session", m.Name, ModuleName)
 	}
 	wantRequired := []core.Token{(*db.Database)(nil), (*mount.Mounter)(nil), (*authn.Accounts)(nil)}
-	wantOptional := []core.Token{(*audit.Audit)(nil)}
+	wantOptional := []core.Token{(*audit.Audit)(nil), (*log.Logger)(nil)}
 	if len(m.Requires) != len(wantRequired)+len(wantOptional) {
-		t.Fatalf("Requires = %+v, want three required and one optional", m.Requires)
+		t.Fatalf("Requires = %+v, want three required and two optional", m.Requires)
 	}
 	for i, want := range wantRequired {
 		if m.Requires[i].Token != want || m.Requires[i].Optional {

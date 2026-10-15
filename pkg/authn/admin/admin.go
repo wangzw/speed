@@ -87,6 +87,7 @@ func Module() core.Module {
 			{Token: (*authn.Memberships)(nil)},
 			{Token: (*audit.Audit)(nil)},
 			{Token: (*settings.Store)(nil), Optional: true},
+			{Token: (*log.Logger)(nil), Optional: true},
 		},
 
 		Prepare: func(context.Context, *core.Registry) (core.Enablement, error) {

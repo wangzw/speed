@@ -116,6 +116,7 @@ func Module() core.Module {
 			{Token: (*sms.Registry)(nil)},
 			{Token: (*sms.Sender)(nil)},
 			{Token: (*settings.Store)(nil), Optional: true},
+			{Token: (*log.Logger)(nil), Optional: true},
 		},
 		Provides: []core.Provision{
 			{Token: (*authn.SMSCodes)(nil), Exclusive: true},

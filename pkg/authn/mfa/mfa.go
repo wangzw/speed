@@ -101,6 +101,7 @@ func Module() core.Module {
 			{Token: (*authn.AccountAdmin)(nil)},
 			{Token: (*authn.Throttle)(nil)},
 			{Token: (*settings.Store)(nil), Optional: true},
+			{Token: (*log.Logger)(nil), Optional: true},
 		},
 		Provides: []core.Provision{
 			{Token: (*authn.MFA)(nil), Exclusive: true},

@@ -11,6 +11,7 @@ import (
 	"github.com/vislake/speed/pkg/authn"
 	"github.com/vislake/speed/pkg/core"
 	speedhttp "github.com/vislake/speed/pkg/http"
+	"github.com/vislake/speed/pkg/log"
 	"github.com/vislake/speed/pkg/ratelimit"
 	"github.com/vislake/speed/pkg/settings"
 	"github.com/vislake/speed/pkg/tenant"
@@ -28,9 +29,10 @@ func TestTheDescriptorIsWhatTheDesignSays(t *testing.T) {
 		{Token: (*authn.Memberships)(nil)},
 		{Token: (*tenant.Resolution)(nil)},
 		{Token: (*audit.Audit)(nil), Optional: true},
+		{Token: (*log.Logger)(nil), Optional: true},
 	}
 	if !slices.Equal(m.Requires, wantRequires) {
-		t.Fatalf("the module requires %+v, want the memberships and the resolution required and the audit capability optional", m.Requires)
+		t.Fatalf("the module requires %+v, want the memberships and the resolution required and the audit and logging capabilities optional", m.Requires)
 	}
 	wantProvides := []core.Provision{
 		{Token: (*tenant.Admission)(nil), Exclusive: true},

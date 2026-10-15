@@ -29,6 +29,7 @@ import (
 	"github.com/vislake/speed/pkg/config"
 	"github.com/vislake/speed/pkg/core"
 	"github.com/vislake/speed/pkg/db"
+	"github.com/vislake/speed/pkg/log"
 )
 
 // ModuleName is this module's name in the registry. A host writes it into the
@@ -99,6 +100,7 @@ func Module() core.Module {
 			{Token: (*authn.Sessions)(nil)},
 			{Token: (*authn.Passwords)(nil)},
 			{Token: (*authn.Throttle)(nil)},
+			{Token: (*log.Logger)(nil), Optional: true},
 		},
 		Provides: []core.Provision{
 			{Token: (*authn.Tokens)(nil), Exclusive: true},

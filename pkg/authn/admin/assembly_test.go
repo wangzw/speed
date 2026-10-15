@@ -58,8 +58,8 @@ func TestTheDescriptorNamesWhatItRequiresAndDelivers(t *testing.T) {
 			t.Errorf("Required[%d] = %v, want %v", i, required[i], tk)
 		}
 	}
-	if len(m.Requires) != len(wantRequired)+1 || !m.Requires[len(m.Requires)-1].Optional {
-		t.Errorf("Requires = %+v, want the settings store as the one optional dependency", m.Requires)
+	if len(m.Requires) != len(wantRequired)+2 || !m.Requires[len(m.Requires)-2].Optional || !m.Requires[len(m.Requires)-1].Optional {
+		t.Errorf("Requires = %+v, want the settings store and the logging capability as the optional dependencies", m.Requires)
 	}
 }
 

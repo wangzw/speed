@@ -101,8 +101,11 @@ func init() { core.ProcessRegistry.Register(Module()) }
 // product is left alone, and what it holds is released by whoever supplied it.
 func Module() core.Module {
 	return core.Module{
-		Name:     ModuleName,
-		Requires: []core.Requirement{{Token: (*authn.Gate)(nil)}},
+		Name: ModuleName,
+		Requires: []core.Requirement{
+			{Token: (*authn.Gate)(nil)},
+			{Token: (*log.Logger)(nil), Optional: true},
+		},
 		Provides: []core.Provision{{Token: (*mount.Mounter)(nil), Exclusive: true}},
 
 		Prepare: func(_ context.Context, reg *core.Registry) (core.Enablement, error) {

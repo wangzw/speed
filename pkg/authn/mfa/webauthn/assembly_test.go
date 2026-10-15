@@ -22,6 +22,7 @@ import (
 	"github.com/vislake/speed/pkg/core"
 	"github.com/vislake/speed/pkg/db"
 	"github.com/vislake/speed/pkg/internal/dbtest"
+	"github.com/vislake/speed/pkg/log"
 )
 
 // The stand-in modules an assembly drives: the capabilities another module
@@ -181,13 +182,16 @@ func TestTheDescriptorNamesWhatItDeliversAndRequires(t *testing.T) {
 	}
 
 	wantRequired := []core.Token{(*db.Database)(nil), (*authn.MFA)(nil), (*authn.Accounts)(nil)}
-	if len(m.Requires) != len(wantRequired) {
-		t.Fatalf("Requires = %+v, want %v", m.Requires, wantRequired)
+	if len(m.Requires) != len(wantRequired)+1 {
+		t.Fatalf("Requires = %+v, want the three required capabilities and the logging capability optional", m.Requires)
 	}
 	for i, tk := range wantRequired {
 		if m.Requires[i].Token != tk || m.Requires[i].Optional {
 			t.Errorf("Requires[%d] = %+v, want %v required", i, m.Requires[i], tk)
 		}
+	}
+	if last := m.Requires[len(m.Requires)-1]; last.Token != core.Token((*log.Logger)(nil)) || !last.Optional {
+		t.Errorf("Requires[%d] = %+v, want the logging capability optional", len(m.Requires)-1, last)
 	}
 }
 

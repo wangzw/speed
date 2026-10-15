@@ -59,6 +59,7 @@ func Module() core.Module {
 		Requires: []core.Requirement{
 			{Token: (*db.Database)(nil)},
 			{Token: (*event.Bus)(nil)},
+			{Token: (*log.Logger)(nil), Optional: true},
 		},
 		Provides:  []core.Provision{{Token: (*Store)(nil), Exclusive: true}},
 		Resources: []any{schema(), db.Migrations{FS: migrationsFS}},

@@ -107,8 +107,11 @@ func init() { core.ProcessRegistry.Register(Module()) }
 // runs.
 func Module() core.Module {
 	return core.Module{
-		Name:     ModuleName,
-		Requires: []core.Requirement{{Token: (*db.Database)(nil)}},
+		Name: ModuleName,
+		Requires: []core.Requirement{
+			{Token: (*db.Database)(nil)},
+			{Token: (*log.Logger)(nil), Optional: true},
+		},
 		Provides: []core.Provision{
 			{Token: (*authn.Accounts)(nil), Exclusive: true},
 			{Token: (*authn.AccountAdmin)(nil), Exclusive: true},

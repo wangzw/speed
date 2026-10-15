@@ -86,8 +86,11 @@ func init() { core.ProcessRegistry.Register(Module()) }
 // go into the command together.
 func Module() core.Module {
 	return core.Module{
-		Name:      ModuleName,
-		Requires:  []core.Requirement{{Token: (*tenant.Catalog)(nil)}},
+		Name: ModuleName,
+		Requires: []core.Requirement{
+			{Token: (*tenant.Catalog)(nil)},
+			{Token: (*log.Logger)(nil), Optional: true},
+		},
 		Provides:  []core.Provision{{Token: (*tenant.Resolution)(nil), Exclusive: true}},
 		Resources: []any{schema()},
 

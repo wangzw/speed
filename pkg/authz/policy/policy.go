@@ -82,8 +82,11 @@ func init() { core.ProcessRegistry.Register(Module()) }
 // logger writes through the process default.
 func Module() core.Module {
 	return core.Module{
-		Name:     ModuleName,
-		Requires: []core.Requirement{{Token: (*db.Database)(nil)}},
+		Name: ModuleName,
+		Requires: []core.Requirement{
+			{Token: (*db.Database)(nil)},
+			{Token: (*log.Logger)(nil), Optional: true},
+		},
 		Provides: []core.Provision{
 			{Token: (*authz.Enforcer)(nil), Exclusive: true},
 			{Token: (*authz.Catalog)(nil), Exclusive: true},

@@ -10,6 +10,7 @@ import (
 	"github.com/vislake/speed/pkg/config"
 	"github.com/vislake/speed/pkg/core"
 	"github.com/vislake/speed/pkg/db"
+	"github.com/vislake/speed/pkg/log"
 )
 
 // The descriptor states what the design states: the database is required and is
@@ -21,8 +22,11 @@ func TestTheDescriptorStatesWhatTheDesignStates(t *testing.T) {
 	if m.Name != ModuleName || ModuleName != "authn.account" {
 		t.Errorf("the module is named %q (constant %q), want authn.account", m.Name, ModuleName)
 	}
-	if len(m.Requires) != 1 || m.Requires[0].Token != core.Token((*db.Database)(nil)) || m.Requires[0].Optional {
-		t.Errorf("Requires is %+v, want the database alone and not optional", m.Requires)
+	if len(m.Requires) != 2 || m.Requires[0].Token != core.Token((*db.Database)(nil)) || m.Requires[0].Optional {
+		t.Errorf("Requires is %+v, want the database required and the logging capability optional", m.Requires)
+	}
+	if last := m.Requires[len(m.Requires)-1]; last.Token != core.Token((*log.Logger)(nil)) || !last.Optional {
+		t.Errorf("Requires = %+v, want the logging capability as the optional dependency", m.Requires)
 	}
 	want := []core.Token{
 		core.Token((*authn.Accounts)(nil)),

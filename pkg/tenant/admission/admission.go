@@ -114,6 +114,7 @@ func Module() core.Module {
 			{Token: (*authn.Memberships)(nil)},
 			{Token: (*tenant.Resolution)(nil)},
 			{Token: (*audit.Audit)(nil), Optional: true},
+			{Token: (*log.Logger)(nil), Optional: true},
 		},
 		Provides: []core.Provision{
 			{Token: (*tenant.Admission)(nil), Exclusive: true},

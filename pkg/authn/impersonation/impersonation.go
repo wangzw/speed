@@ -98,6 +98,7 @@ func Module() core.Module {
 			{Token: (*audit.Audit)(nil)},
 			{Token: (*authn.ScopeGuard)(nil)},
 			{Token: (*settings.Store)(nil), Optional: true},
+			{Token: (*log.Logger)(nil), Optional: true},
 		},
 		Provides: []core.Provision{
 			{Token: (*authn.Impersonation)(nil), Exclusive: true},
