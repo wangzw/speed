@@ -242,6 +242,7 @@ func (r *routes) completeLink(c *gin.Context, rec record) {
 			"cause", err.Error())
 	}
 	r.publishBinding(ctx, account, ext.Provider)
+	r.auditBindingLink(c, account, ext.Provider)
 	c.JSON(http.StatusOK, gin.H{"state": "linked"})
 }
 

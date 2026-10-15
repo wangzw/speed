@@ -10,6 +10,7 @@ import (
 
 	"github.com/gin-gonic/gin"
 
+	"github.com/vislake/speed/pkg/authn"
 	"github.com/vislake/speed/pkg/authn/authntest"
 	"github.com/vislake/speed/pkg/authn/internal/mount"
 	"github.com/vislake/speed/pkg/authn/internal/mount/mounttest"
@@ -120,6 +121,71 @@ func TestLogoutRevokesTheCallersSession(t *testing.T) {
 	}
 	if got := cookiesOf(rec.Header()); len(got) != 1 || got[0].MaxAge >= 0 {
 		t.Errorf("logout wrote %+v, want one clearing cookie", got)
+	}
+}
+
+// Every self-service revocation route writes the seam-level audit row of the
+// action it performed. The capability's action table puts logout and session
+// revocation in the best-effort tier, and the object is the session for the
+// routes that name one and the account for the route that revokes the others —
+// the same split the management surface uses for the same action.
+func TestTheSelfServiceRevocationRoutesWriteTheirAuditRows(t *testing.T) {
+	cases := []struct {
+		name   string
+		method string
+		// path is the route, with the session identifier the case acts on.
+		path   func(current, other authn.SessionID) string
+		action string
+		object func(current, other authn.SessionID) string
+	}{
+		{
+			name:   "logout",
+			method: http.MethodPost,
+			path:   func(authn.SessionID, authn.SessionID) string { return "/auth/logout" },
+			action: "authn.logout",
+			object: func(current, _ authn.SessionID) string { return string(current) },
+		},
+		{
+			name:   "revoking the other sessions",
+			method: http.MethodDelete,
+			path:   func(authn.SessionID, authn.SessionID) string { return "/auth/sessions" },
+			action: "authn.session.revoke",
+			object: func(authn.SessionID, authn.SessionID) string { return string(alice) },
+		},
+		{
+			name:   "revoking one session by identifier",
+			method: http.MethodDelete,
+			path:   func(_, other authn.SessionID) string { return "/auth/sessions/" + string(other) },
+			action: "authn.session.revoke",
+			object: func(_, other authn.SessionID) string { return string(other) },
+		},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			f := newFixture(t, dialects[0])
+			f.accounts.add(alice, nil)
+			current := f.create(newBrowser(alice))
+			other := f.create(newBrowser(alice))
+			f.mounter.As(authntest.WithAccount(alice), authntest.WithSession(current.ID))
+			sink := f.withAudit()
+
+			rec := send(t, f, tc.method, tc.path(current.ID, other.ID))
+			if rec.Code != http.StatusNoContent && rec.Code != http.StatusOK {
+				t.Fatalf("status = %d, want 204 or 200", rec.Code)
+			}
+			rows := sink.entries()
+			if len(rows) != 1 {
+				t.Fatalf("the audit holds %d rows, want 1: %+v", len(rows), rows)
+			}
+			// The action, the object and the outcome are asserted as the literals
+			// the capability's closed tables state, so the case does not move with
+			// a production constant.
+			wantObject := tc.object(current.ID, other.ID)
+			if rows[0].Action != tc.action || rows[0].Object != wantObject || rows[0].Outcome != "success" {
+				t.Errorf("the audit row = %+v, want action %q, object %q, outcome %q",
+					rows[0], tc.action, wantObject, "success")
+			}
+		})
 	}
 }
 

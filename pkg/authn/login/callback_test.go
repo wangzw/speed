@@ -13,6 +13,7 @@ import (
 
 	"github.com/gin-gonic/gin"
 
+	"github.com/vislake/speed/pkg/audit"
 	"github.com/vislake/speed/pkg/authn"
 )
 
@@ -158,6 +159,60 @@ func TestACallbackOfAnyPurposeIsAccepted(t *testing.T) {
 	}
 	if k := decode(t, cb.Body.String())["next"].(map[string]any)["kind"]; k != "complete" {
 		t.Errorf("the link callback answered next kind %v, want complete", k)
+	}
+}
+
+// TestACompletedLinkWritesItsAuditRow holds the best-effort audit row of a
+// completed link. The capability's action table lists authn.binding.link, the
+// object is the account the identity was bound to, and the detail names the
+// provider class — the shape the unlink path records its own row in.
+//
+// The flow's routes are public, so no identity is on the request: the row's
+// actor can only come from a context the engine derives for this one record.
+func TestACompletedLinkWritesItsAuditRow(t *testing.T) {
+	m := &redirectMethod{}
+	m.answer = func(authn.FlowState, authn.StepInput) (authn.Step, error) {
+		return authn.StepProven(authn.Proof{External: &authn.External{
+			Provider: "google", Subject: "g1", Email: "ann@x.org", EmailVerified: true,
+		}}), nil
+	}
+	r := newRigMethod(t, m)
+	r.loginAsAuthenticated("acct1", "sid")
+	r.allow("acct1")
+	sink := &relaxAudit{}
+	r.p.audit = sink
+
+	start := r.send(http.MethodPost, "/auth/flows/authenticated", `{"purpose":"link","method":"password"}`)
+	if start.Code != http.StatusOK {
+		t.Fatalf("POST flows/authenticated answered %d: %s", start.Code, start.Body.String())
+	}
+	cookie := flowCookie(t, start)
+	cb := r.send(http.MethodGet, "/auth/callback/password", "", "Cookie", cookie)
+	if cb.Code != http.StatusOK {
+		t.Fatalf("the link callback answered %d, want 200: %s", cb.Code, cb.Body.String())
+	}
+	done := r.send(http.MethodPost, "/auth/flows/answer", `{"seq":1,"step":"complete"}`, "Cookie", cookie)
+	if done.Code != http.StatusOK {
+		t.Fatalf("the completing answer answered %d, want 200: %s", done.Code, done.Body.String())
+	}
+
+	// The action, the object and the outcome are asserted as the literals the
+	// capability's closed tables state, so the case does not move with a
+	// production constant.
+	var linkRows []audit.Entry
+	for _, row := range sink.rows() {
+		if row.Action == "authn.binding.link" {
+			linkRows = append(linkRows, row)
+		}
+	}
+	if len(linkRows) != 1 {
+		t.Fatalf("the audit holds %d rows of authn.binding.link, want 1: %+v", len(linkRows), sink.rows())
+	}
+	if linkRows[0].Object != "acct1" || linkRows[0].Outcome != "success" {
+		t.Errorf("the audit row = %+v, want object acct1 and outcome success", linkRows[0])
+	}
+	if got := linkRows[0].Detail["provider"]; got != "google" {
+		t.Errorf("the row's provider detail = %q, want google", got)
 	}
 }
 

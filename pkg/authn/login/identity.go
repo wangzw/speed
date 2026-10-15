@@ -131,11 +131,49 @@ func (r *routes) publishLogin(ctx context.Context, account authn.AccountID, sess
 	}
 }
 
+// The audit action of a completed link, from the capability's closed action
+// table. It is in the best-effort tier beside the unlink path's own action.
+const actionBindingLink = "authn.binding.link"
+
+// auditBindingLink writes the best-effort audit row of a completed link: a
+// failure is an Error and never fails the link. The object is the account the
+// identity was bound to and the detail names the provider class, which is the
+// shape the unlink path records its own row in.
+//
+// The row's actor is the account the link was made for. The flow's routes are
+// public, so the request carries no identity and the row would otherwise be
+// written with an empty actor; the context it is written under is derived for
+// this one call, exactly as auditLogin derives its own. It is handed to no
+// handler and never becomes the request's context.
+func (r *routes) auditBindingLink(c *gin.Context, account authn.AccountID, provider string) {
+	if r.audit == nil {
+		return
+	}
+	base := c.Request.Context()
+	id := identity.New(authn.Principal{
+		Account:  account,
+		AuthTime: r.clock.Now(),
+	}, "", "")
+	detail := map[string]string{}
+	if class, known := bindingProviderClass(provider); known {
+		detail["provider"] = class
+	}
+	err := r.audit.Record(identity.With(base, id), audit.Entry{
+		Action:  actionBindingLink,
+		Object:  string(account),
+		Outcome: outcomeSuccess,
+		Detail:  detail,
+	})
+	if err != nil {
+		log.FromContext(base).Error(ModuleName+": an audit row of a completed link could not be written",
+			slog.String("cause", err.Error()))
+	}
+}
+
 // publishBinding publishes authn.binding.changed for a completed link. The
 // provider class is the closed set the payload carries; a provider written in
 // none of the classes publishes no event rather than one with a value outside
-// the set, exactly as the unlink path does, and the caller's audit row still
-// records the link.
+// the set, exactly as the unlink path does.
 func (r *routes) publishBinding(ctx context.Context, account authn.AccountID, provider string) {
 	if r.bus == nil {
 		return

@@ -1,6 +1,7 @@
 package session
 
 import (
+	"context"
 	"errors"
 	"log/slog"
 	"net/http"
@@ -8,6 +9,7 @@ import (
 
 	"github.com/gin-gonic/gin"
 
+	"github.com/vislake/speed/pkg/audit"
 	"github.com/vislake/speed/pkg/authn"
 	"github.com/vislake/speed/pkg/authn/internal/mount"
 )
@@ -19,6 +21,31 @@ const (
 	sessionsPath = "/sessions"
 	sessionByID  = "/sessions/:id"
 )
+
+// The seam-level audit actions and outcome of the self-service revocation
+// routes, taken from the capability's closed action table. Both actions are in
+// the best-effort tier: a row that cannot be written is an Error and never
+// changes the route's outcome. The object is the session for the routes that
+// name one and the account for the route that revokes the others, which is the
+// same split the management surface uses for the same action.
+const (
+	actionLogout        = "authn.logout"
+	actionSessionRevoke = "authn.session.revoke"
+	outcomeSuccess      = "success"
+)
+
+// recordAudit writes one best-effort seam-level audit row. A failure is an
+// Error and never changes the outcome of the route, and an assembly with no
+// audit capability writes nothing.
+func (p *product) recordAudit(ctx context.Context, e audit.Entry) {
+	if p.audit == nil {
+		return
+	}
+	if err := p.audit.Record(ctx, e); err != nil {
+		p.logger.Error(ModuleName+": an audit row of a self-service session change could not be written",
+			slog.String("action", e.Action), slog.String("cause", err.Error()))
+	}
+}
 
 // mountRoutes registers the five self-service routes through the mounter. The
 // route and the access level the gateway applies to it are registered in one
@@ -104,6 +131,11 @@ func (p *product) handleLogout(c *gin.Context) {
 		p.routeFailure(c, "logout", err)
 		return
 	}
+	p.recordAudit(c.Request.Context(), audit.Entry{
+		Action:  actionLogout,
+		Object:  string(id.Session()),
+		Outcome: outcomeSuccess,
+	})
 	p.ClearCookie(c.Writer)
 	c.Status(http.StatusNoContent)
 }
@@ -153,6 +185,11 @@ func (p *product) handleRevokeOthers(c *gin.Context) {
 		p.routeFailure(c, "revoking the other sessions", err)
 		return
 	}
+	p.recordAudit(c.Request.Context(), audit.Entry{
+		Action:  actionSessionRevoke,
+		Object:  string(id.Account()),
+		Outcome: outcomeSuccess,
+	})
 	c.JSON(http.StatusOK, gin.H{"revoked": n})
 }
 
@@ -181,6 +218,11 @@ func (p *product) handleRevokeOne(c *gin.Context) {
 		p.routeFailure(c, "revoking a session", err)
 		return
 	}
+	p.recordAudit(c.Request.Context(), audit.Entry{
+		Action:  actionSessionRevoke,
+		Object:  string(target),
+		Outcome: outcomeSuccess,
+	})
 	if target == id.Session() {
 		p.ClearCookie(c.Writer)
 	}
