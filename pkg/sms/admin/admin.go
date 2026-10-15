@@ -92,7 +92,7 @@ func Module() core.Module {
 			{Token: (*audit.Audit)(nil)},
 			{Token: (*log.Logger)(nil), Optional: true},
 		},
-		Resources: []any{schema(), permissionSpec(), translationSpec()},
+		Resources: []any{schema(), permissionSpec(), translationSpec(), messageCatalog},
 
 		Prepare: func(_ context.Context, reg *core.Registry) (core.Enablement, error) {
 			reader, err := core.Resolve[config.Reader](reg)
