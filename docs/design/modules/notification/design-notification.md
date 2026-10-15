@@ -221,7 +221,7 @@ type Message struct {
 | `pkg/authn` | 请求上下文中的已认定身份：handler 经 `authn.FromContext` 取身份，以其账户为收件人 |
 | `pkg/log` | 可选诊断 |
 
-**依赖方向。** 各模块都 import `pkg/core` 与根包；`notification.delivery` import `pkg/jobs`、`pkg/db`、`pkg/tenant` 的根包，以及 `pkg/i18n`、`pkg/mail`、`pkg/sms` 的根包；`notification.inbox` import `pkg/db`、`pkg/tenant`、`pkg/event`、`pkg/i18n` 与 `pkg/authn`；`notification.stream` import `pkg/event`、`pkg/tenant`、`pkg/http` 与 `pkg/authn`；`notification.preferences` import `pkg/db`、`pkg/tenant` 与 `pkg/i18n`。本能力**不 import 任何上层功能目录**，也不 import 任何业务模块：它位于底层，任何要发消息的模块引入它，不必背上对方。
+**依赖方向。** 各模块都 import `pkg/core` 与根包；`notification.delivery` import `pkg/jobs`、`pkg/db`、`pkg/tenant` 的根包，以及 `pkg/i18n`、`pkg/mail`、`pkg/sms` 的根包；`notification.inbox` import `pkg/db`、`pkg/tenant`、`pkg/event`、`pkg/i18n` 与 `pkg/authn`；`notification.stream` import `pkg/event`、`pkg/tenant`、`pkg/http` 与 `pkg/authn`；`notification.preferences` import `pkg/db`、`pkg/tenant`、`pkg/i18n` 与 `pkg/config`。本能力**不 import 任何上层功能目录**，也不 import 任何业务模块：它位于底层，任何要发消息的模块引入它，不必背上对方。
 
 **渲染经由 i18n 引擎，文案目录归声明它的业务模块。** 一条文案的键形如 `<type_key>.<channel>.<part>`，由**声明该类型的业务模块**以 i18n 目录承载，装配期并入引擎；`notification.delivery` 在投递时按收件人语言经 `(*i18n.Localizer)(nil)` 渲染标题、正文与主题，引擎回落默认语言、再回落键本身，结果永不为空。渲染缝是投递模块的构造期必需依赖。文案的归属与 i18n 的「由产生消息的模块渲染」不冲突：目录归声明方，渲染发生在把文本写出的投递流水线（[design-i18n](../design-i18n.md)）。
 

@@ -38,17 +38,27 @@ scheduler, and the outbox relay. The stack's engine, key-value backend, event
 backend and export provider are named on the commands rather than on the stack
 node, so `migrate` still runs the engine and the declarations alone.
 
-One capability is left out of the baseline for a different reason. The
-preference matrix (`notification.preferences`) declares no endpoint list of its
-own: its `Init` mounts its routes on every endpoint the entry point reports, so
-it reaches the `web` endpoint as well. That endpoint carries the frontend host's
-catch-all route, and two routes that clash on one endpoint fail the startup with
-`http.ErrRouteConflict` — so on a program that serves a frontend and a product
-API from one entry point, the preference matrix cannot be assembled at all. The
-outbound delivery pipeline (`notification.delivery`) requires the preference
-matrix, so it stays out with it. The baseline names the inbox and the live
-stream (`notification.stream`), which mount on the endpoints their own
-configuration names and leave `web` alone.
+### What a run names and what the imports reach
+
+Naming a module in the command tree and importing its package answer two
+different questions, and the baseline depends on both:
+
+- **The command tree decides what a process runs.** A module an `Include` list
+  names takes its place in that run; a module nothing names is never
+  assembled and never started.
+- **The binary's imports decide what the contract document covers.** `gen` and
+  `/openapi.json` merge the `http.Spec` fragments of every module the imports
+  reach — the available set — whether or not a command names that module for a
+  run.
+
+So every platform module that declares an HTTP fragment is imported, including
+the ones the credential criterion keeps out of every run (`sms.admin`,
+`authn.sso.saml`): their fragments still describe the platform's API surface.
+Leaving one unimported would drop its operations from the merged document with
+no error — the document would simply be smaller than the platform contract.
+`main.go` carries these as blank imports beside a comment saying why; the
+declarations of a module reached this way are collected by the stack node's
+`IncludeAllDeclarations`, and no `Include` names it.
 
 ### The token signing key
 

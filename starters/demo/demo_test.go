@@ -16,6 +16,9 @@ import (
 	"syscall"
 	"testing"
 	"time"
+
+	"github.com/vislake/speed/pkg/core"
+	speedhttp "github.com/vislake/speed/pkg/http"
 )
 
 // The cases run the program as a real child process and reach it over sockets:
@@ -172,6 +175,8 @@ notification:
   inbox:
     endpoints: [api]
   stream:
+    endpoints: [api]
+  preferences:
     endpoints: [api]
 objectstore:
   fs:
@@ -455,6 +460,16 @@ func TestServeAnswersTheProbes(t *testing.T) {
 			t.Errorf("GET %s on the account endpoint answered %d, want 200:\n%s", path, res.status, res.body)
 		}
 	}
+
+	// The preference matrix is assembled and not merely declared. It reports the
+	// endpoints it mounted its routes on once it has taken up its required seams
+	// — the database and the roster — so the line is written only by a run that
+	// assembled it, and only after it mounted. The outbound delivery pipeline
+	// requires the matrix, the queue and its registration face, and the same
+	// run reaching ready is what says its requirements were all satisfied.
+	if out := serve.output(); !strings.Contains(out, "notification.preferences: the preference routes are mounted") {
+		t.Errorf("serve reported no preference mount, so the preference matrix was not assembled:\n%s", out)
+	}
 }
 
 // TestGenWritesTheMergedDocument runs gen and reads what it wrote: a document a
@@ -507,6 +522,44 @@ func TestGenWritesTheMergedDocument(t *testing.T) {
 		}
 		if !named {
 			t.Errorf("the document's x-fragments names no ops fragment: %+v", doc.Fragments)
+		}
+
+		// Every module the binary's imports reach and that declares a fragment
+		// is in the document, whether or not a command names it for a run. The
+		// available set is what the imports reach, and gen merges the whole of
+		// it; a platform module left unimported drops its fragment from the
+		// contract silently, so the declaring set the process registry holds is
+		// what the document is held against.
+		declared := map[string]int{}
+		for _, spec := range core.Resources[speedhttp.Spec](core.ProcessRegistry) {
+			declared[spec.Module]++
+		}
+		merged := map[string]int{}
+		for _, fragment := range doc.Fragments {
+			merged[fragment.Module]++
+		}
+		if len(merged) != len(declared) {
+			t.Errorf("the document names %d fragments, the binary declares %d:\ndocument: %v\ndeclared: %v",
+				len(merged), len(declared), merged, declared)
+		}
+		for module := range declared {
+			if merged[module] == 0 {
+				t.Errorf("the document names no fragment for %s, which declares one", module)
+			}
+		}
+
+		// The platform modules whose fragment belongs to the contract whether
+		// or not a command names them for a run: the SMS management surface and
+		// the SAML provider are held out of every run by the credential
+		// criterion, and the preference matrix mounts on the endpoints its own
+		// configuration names, but all three still declare a fragment. Each has
+		// to be in the document, and a case that reads only the registry would
+		// miss it — a module left unimported shrinks both sides together.
+		for _, module := range []string{"sms.admin", "authn.sso.saml", "notification.preferences"} {
+			if merged[module] == 0 {
+				t.Errorf("the document names no fragment for %s: it declares one, and no command has "+
+					"to name it for the contract to carry it", module)
+			}
 		}
 	}
 

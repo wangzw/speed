@@ -112,6 +112,8 @@ notification:
     endpoints: [api]
   stream:
     endpoints: [api]
+  preferences:
+    endpoints: [api]
 
 objectstore:
   fs:

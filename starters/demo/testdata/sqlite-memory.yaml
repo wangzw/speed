@@ -126,11 +126,15 @@ settings:
   admin:
     endpoints: [admin]
 
-# The notification inbox and the live stream mount on the API endpoint.
+# The notification inbox, the live stream and the preference matrix mount on the
+# API endpoint. None of them names the web endpoint: the frontend bundle's
+# catch-all route covers that endpoint's whole path space.
 notification:
   inbox:
     endpoints: [api]
   stream:
+    endpoints: [api]
+  preferences:
     endpoints: [api]
 
 # The object store's bytes are kept under this directory (created on startup),

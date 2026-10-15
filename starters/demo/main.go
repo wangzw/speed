@@ -23,7 +23,10 @@
 // Importing a module's package is what puts it in the available set: each
 // registers itself in init, so the import is the whole of the wiring. What each
 // run is made of is the command tree below, and a module the tree names takes
-// its place in it.
+// its place in it. The available set is also what the merged contract document
+// covers, so a platform module with an HTTP fragment is imported even when no
+// command names it; naming a module for a run and importing it for its contract
+// are two different questions. See AGENTS.md.
 //
 // The program runs on five deployment stacks. A stack is one level of the
 // command tree: inclusion is inherited down the command path, so the stack node
@@ -79,7 +82,9 @@ import (
 	i18nhttp "github.com/vislake/speed/pkg/i18n/http"
 	jobsdb "github.com/vislake/speed/pkg/jobs/db"
 	jobsscheduler "github.com/vislake/speed/pkg/jobs/scheduler"
+	notificationdelivery "github.com/vislake/speed/pkg/notification/delivery"
 	notificationinbox "github.com/vislake/speed/pkg/notification/inbox"
+	notificationpreferences "github.com/vislake/speed/pkg/notification/preferences"
 	notificationstream "github.com/vislake/speed/pkg/notification/stream"
 	objectstorefs "github.com/vislake/speed/pkg/objectstore/fs"
 	objectstoremeta "github.com/vislake/speed/pkg/objectstore/metadata"
@@ -90,6 +95,19 @@ import (
 	"github.com/vislake/speed/pkg/tenant/admission"
 	tenantcatalog "github.com/vislake/speed/pkg/tenant/catalog"
 	"github.com/vislake/speed/pkg/tenant/resolve"
+
+	// The platform modules whose HTTP fragments belong to the merged contract
+	// even though no command names them for a run. The credential criterion
+	// keeps sms.admin (an SMS vendor's account) and authn.sso.saml (an
+	// enterprise provider's credentials and metadata) out of the baseline, so
+	// no Include lists them; their fragments still describe the platform's API
+	// surface, and what gen and /openapi.json merge is the fragments of the
+	// modules the binary's imports reach, not the modules a run names. The
+	// import is what puts them in the available set, and no Include runs them.
+	// Naming a module for a run and importing it for its contract are two
+	// different questions; see AGENTS.md.
+	_ "github.com/vislake/speed/pkg/authn/sso/saml"
+	_ "github.com/vislake/speed/pkg/sms/admin"
 
 	_ "github.com/vislake/speed/pkg/config/format/yaml"
 	_ "github.com/vislake/speed/pkg/config/source/file"
@@ -263,19 +281,24 @@ var (
 		i18nhttp.ModuleName,
 		i18naccount.ModuleName,
 
-		// Jobs, notifications, the object store and the outbox relay. The
-		// notification inbox and the live stream are named; the preferences
-		// matrix and the outbound delivery pipeline are not, and what keeps them
-		// out is the frontend endpoint rather than a credential: the preferences
-		// module mounts its routes on every endpoint the entry point declares,
-		// the web endpoint carries the frontend host's catch-all route, and two
-		// routes that clash on one endpoint fail the startup. The preferences
-		// matrix therefore cannot be assembled on this command at all, and the
-		// delivery pipeline requires it. See AGENTS.md.
+		// Jobs, notifications, the object store and the outbox relay. All four
+		// notification modules are named: the inbox, the live stream, the
+		// preference matrix and the outbound delivery pipeline. Each of them
+		// mounts its routes on the endpoints its own configuration names —
+		// notification.inbox.endpoints, notification.stream.endpoints,
+		// notification.preferences.endpoints — so none of them reaches the web
+		// endpoint, whose whole path space the frontend host's catch-all route
+		// covers. The delivery pipeline requires the preference matrix, the
+		// queue and its registration face, the database, the roster and the
+		// message localizer, all of which the baseline names; its mail and sms
+		// seams are optional, so a deployment without them starts and simply
+		// carries no email or sms channel.
 		jobsdb.ModuleName,
 		jobsscheduler.ModuleName,
 		notificationinbox.ModuleName,
 		notificationstream.ModuleName,
+		notificationpreferences.ModuleName,
+		notificationdelivery.ModuleName,
 		objectstorefs.ModuleName,
 		objectstoremeta.ModuleName,
 		outboxrelay.ModuleName,
