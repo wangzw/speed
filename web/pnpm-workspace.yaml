@@ -5,13 +5,21 @@ packages:
   - packages/*
   # The workspace's shared test-support package: a private member beside
   # packages/ -- deliberately outside the deliverable set the release
-  # pipeline derives from web/packages/* -- consumed by the packages' and
-  # the demo host's test suites through the workspace alias map
-  # (web/test-utils/README.md).
+  # pipeline derives from web/packages/* -- consumed by the packages' test
+  # suites through the workspace alias map. The demo host carries its own
+  # equivalent instead (web/test-utils/README.md).
   - test-utils
   # The demo starter's web host lives outside web/ -- exactly where a
   # delivered consumer project lives -- and joins the workspace as an
   # external member so it installs, lints, typechecks, tests and builds
-  # under the same one-lockfile workspace, over workspace:* deps on the
-  # @speed packages (starters/demo/web/package.json).
+  # under the same one-lockfile workspace (starters/demo/web/package.json).
   - ../starters/demo/web
+
+# A member's dependency on a workspace sibling is resolved to that sibling when
+# the requested version range is satisfied locally, so a plain registry range
+# links in-repo exactly as a published install resolves from the registry --
+# the reason the demo host declares the @speed packages by version range
+# (`^0.0.1`) instead of the workspace protocol: a copy of the skeleton, dropped
+# outside this repository, installs them from the registry unchanged
+# (starters/demo/web/README.md).
+linkWorkspacePackages: true

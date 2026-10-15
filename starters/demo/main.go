@@ -316,10 +316,10 @@ var (
 //go:embed web/dist
 var webBundle embed.FS
 
-// init registers the frontend host module. The bundle it serves is the
-// placeholder under web/dist; a real frontend replaces its contents in the
-// round that builds it, and the module is unchanged either way — it serves
-// whatever the embed.FS carries.
+// init registers the frontend host module. The bundle it serves is whatever
+// web/dist holds: the built frontend after `pnpm build` in web/, or the
+// committed stand-in when the frontend has not been built in this checkout.
+// The module is the same either way — it serves whatever the embed.FS carries.
 func init() {
 	sub, err := fs.Sub(webBundle, "web/dist")
 	if err != nil {

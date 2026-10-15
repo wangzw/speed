@@ -91,7 +91,7 @@ them all before a deployment serves real traffic:
 | `host.go` | The environment prefix, the host's own module (the `config.HostIdentity` resource), and the endpoint constants |
 | `signingkey.go` | The token signing key's path, and the first-run generation that puts a key there |
 | `modules/` | The slot for this product's business modules |
-| `web/` | The frontend application; a placeholder today, built into `web/dist` and embedded by the Go program |
+| `web/` | The frontend application, built into `web/dist` and embedded by the Go program |
 | `testdata/` | One configuration per deployment stack |
 | `compose.yaml` | The four external backends the non-memory stacks run on |
 | `.gitignore` | Keeps `var/` — the object store's local root and the generated token signing key — out of the tree |

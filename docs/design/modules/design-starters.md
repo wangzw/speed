@@ -145,4 +145,4 @@ graph TD
 | 平台基线（`serve`/`worker` 的点名集与配置样例） | 已实现 | `starters/demo/main.go` `baselineServe`、`baselineWorker`；`starters/demo/testdata/` |
 | `gen` 命令 | 已实现 | `starters/demo/main.go` `genModule`、`genDocument` |
 | 前端产物的内嵌与托管（合一拓扑的 Go 侧） | 已实现 | `starters/demo/main.go` `webBundle`（`//go:embed web/dist`）、`webuiModuleName` |
-| 前端应用本身（`web/` 的源码与构建） | 未实现 | — |
+| 前端应用本身（`web/` 的源码与构建） | 已实现 | `starters/demo/web/src/main.tsx` `bootstrapDemoApp`、`starters/demo/web/src/app.tsx` `DemoApp`、`starters/demo/web/src/routes.tsx` `routes`、`starters/demo/web/src/runtime-config.ts` `loadRuntimeConfig`；构建见 `starters/demo/web/vite.config.ts` |

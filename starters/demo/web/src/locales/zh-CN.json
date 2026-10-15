@@ -1,0 +1,16 @@
+{
+  "app": {
+    "title": "Speed 示范"
+  },
+  "nav": {
+    "home": "首页"
+  },
+  "home": {
+    "heading": "业务页面从这里开始",
+    "body": "这个骨架不带业务域。产品把自己的页面放在 src/pages 下，并在 src/routes.tsx 的路由表这一处点名，导航与渲染的视图都由它喂给。"
+  },
+  "notFound": {
+    "heading": "页面不存在",
+    "body": "没有为 {{path}} 注册页面。"
+  }
+}

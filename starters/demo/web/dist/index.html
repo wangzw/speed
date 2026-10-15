@@ -7,14 +7,19 @@
   </head>
   <body>
     <!--
-      This is a placeholder. The build embeds whatever this directory holds, so
-      the binary boots with a page to serve before a real frontend exists; the
-      round that builds the frontend replaces the contents of web/dist and the
-      Go side is unchanged.
+      The committed stand-in for the frontend build. The Go program embeds
+      web/dist with go:embed, and go:embed refuses to compile a directory with
+      no files in it, so a checkout carries this one even though web/dist is a
+      build output (starters/demo/.gitignore). It is tracked despite that rule,
+      so a change to it is committed with `git add -f`.
+
+      Building the frontend (pnpm build in this directory) replaces this file
+      and its siblings in place with the real bundle; the Go side is unchanged
+      either way, it serves whatever the directory holds.
     -->
     <main>
       <h1>demo</h1>
-      <p>The frontend bundle has not been built yet. This page is a placeholder.</p>
+      <p>Build the frontend (pnpm build in web/) to replace this stand-in.</p>
     </main>
   </body>
 </html>

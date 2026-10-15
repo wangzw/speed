@@ -3,3 +3,12 @@
 # and the token signing key the program generates on its first run. Both belong
 # to a deployment and not to the source tree.
 /var/
+
+# The frontend's build outputs, which no checkout commits: the installed
+# dependency tree and the built bundle. web/dist is a build output but has to
+# hold at least one file for go:embed to compile (the Go program embeds
+# web/dist), so web/dist/index.html is committed as a placeholder -- tracked
+# despite this rule, kept in step by force-adding it when it changes. A real
+# build replaces its contents in place. See web/README.md.
+/web/node_modules/
+/web/dist/

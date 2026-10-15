@@ -1,0 +1,20 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>demo</title>
+  </head>
+  <body>
+    <!-- The one DOM root the app's bootstrap mounts into. main.tsx's
+         bootstrapDemoApp takes a caller-supplied container and runs no
+         module-scope side effects, so this page is the caller: it imports
+         the bootstrap and mounts it exactly once. -->
+    <div id="root"></div>
+    <script type="module">
+      import { bootstrapDemoApp } from '/src/main.tsx'
+      const root = document.getElementById('root')
+      if (root) void bootstrapDemoApp(root)
+    </script>
+  </body>
+</html>

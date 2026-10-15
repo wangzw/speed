@@ -1,0 +1,16 @@
+{
+  "app": {
+    "title": "Speed demo"
+  },
+  "nav": {
+    "home": "Home"
+  },
+  "home": {
+    "heading": "Your business pages start here",
+    "body": "This skeleton ships no business domain. A product puts its pages under src/pages and names them in one place, the route table in src/routes.tsx, which feeds both the navigation and the rendered view."
+  },
+  "notFound": {
+    "heading": "Page not found",
+    "body": "No page is registered for {{path}}."
+  }
+}
