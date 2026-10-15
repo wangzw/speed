@@ -138,6 +138,14 @@ type Catalog interface {
 	// SetStatus changes one tenant's state. Disabling goes through here and
 	// only here; there is no delete.
 	SetStatus(ctx context.Context, id ID, s Status) error
+	// SetAlias changes one tenant's alias and nothing else. It is how a rename
+	// is written, and Put is not: Put takes the whole row's new values and
+	// writes alias and status back together, so a rename through it carries
+	// the status this process last read, and a tenant another replica disabled
+	// in that window is served again. Only the alias column is written here,
+	// and the status is read from nowhere. An alias another tenant holds is
+	// refused as Put refuses it, as ErrAliasConflict naming the holder.
+	SetAlias(ctx context.Context, id ID, alias string) error
 	// List returns every tenant the roster holds, ordered by identifier, as a
 	// copy: a caller sorting or trimming what it was handed does not disturb
 	// what the next caller sees.

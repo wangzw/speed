@@ -286,6 +286,7 @@ func (rosterStub) Create(context.Context, tenant.Tenant) error { return nil }
 func (rosterStub) SetStatus(context.Context, tenant.ID, tenant.Status) error {
 	return nil
 }
+func (rosterStub) SetAlias(context.Context, tenant.ID, string) error         { return nil }
 func (rosterStub) List(context.Context) ([]tenant.Tenant, error)             { return nil, nil }
 func (rosterStub) Enter(context.Context, tenant.ID) (context.Context, error) { return nil, nil }
 func (rosterStub) EnterRegistered(context.Context, tenant.ID) (context.Context, error) {

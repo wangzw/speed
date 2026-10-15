@@ -715,15 +715,24 @@ func answered(err error) bool {
 // The read runs on the write's session outside the failed transaction, which a
 // PostgreSQL transaction that met a constraint no longer accepts statements in.
 func failedPut(session *gorm.DB, t tenant.Tenant, err error) error {
+	return failedAlias(session, t.ID, t.Alias, err)
+}
+
+// failedAlias names the conflict a failed write on one tenant's alias ran into —
+// Put, and SetAlias — when the alias turns out to be held by another tenant, and
+// returns the failure as it stands otherwise. A write that meets the alias
+// column's unique index in a race reaches the same conflict the check inside the
+// write reports, and the caller is owed the same answer for it.
+func failedAlias(session *gorm.DB, id tenant.ID, alias string, err error) error {
 	if errors.Is(err, tenant.ErrAliasConflict) {
 		return err
 	}
-	held, lookErr := lookUp(session, "alias", t.Alias)
-	if lookErr != nil || len(held) == 0 || held[0].ID == string(t.ID) {
+	held, lookErr := lookUp(session, "alias", alias)
+	if lookErr != nil || len(held) == 0 || held[0].ID == string(id) {
 		return err
 	}
 	return fmt.Errorf("%w: alias %q is held by tenant %q, which took it while this write was "+
-		"in flight: %w", tenant.ErrAliasConflict, t.Alias, held[0].ID, err)
+		"in flight: %w", tenant.ErrAliasConflict, alias, held[0].ID, err)
 }
 
 // Create implements tenant.Catalog.
@@ -819,6 +828,47 @@ func (r *roster) SetStatus(ctx context.Context, id tenant.ID, s tenant.Status) e
 		return tx.Model(&row{}).Where("id = ?", string(id)).
 			Update("status", int(s)).Error
 	}, nil)
+}
+
+// SetAlias implements tenant.Catalog, and is the only way to rename a tenant.
+//
+// Only the alias column is written; the status is left as the row holds it.
+// That is the whole difference between this and Put: Put takes the whole row's
+// new values, so a rename through it writes back the status its caller read,
+// and a tenant another replica disabled between that read and this write would
+// be served again. This method reads no status and writes none.
+//
+// Existence is checked with its own read rather than inferred from the update's
+// affected-row count, as SetStatus checks it, so that a driver reporting zero
+// rows for a value written as it already was cannot turn an existing tenant
+// into one that is not there. The alias is checked and its race answered as Put
+// answers it, on the write's one connection (write).
+func (r *roster) SetAlias(ctx context.Context, id tenant.ID, alias string) error {
+	if err := checkField("identifier", string(id)); err != nil {
+		return err
+	}
+	if err := checkField("alias", alias); err != nil {
+		return err
+	}
+	return r.write(ctx, func(tx *gorm.DB) error {
+		held, err := lookUp(tx, "id", string(id))
+		if err != nil {
+			return err
+		}
+		if len(held) == 0 {
+			return fmt.Errorf("%w: no tenant has identifier %q", tenant.ErrInvalidTenant, id)
+		}
+		holder, err := lookUp(tx, "alias", alias)
+		if err != nil {
+			return err
+		}
+		if len(holder) > 0 && holder[0].ID != string(id) {
+			return fmt.Errorf("%w: alias %q is held by tenant %q",
+				tenant.ErrAliasConflict, alias, holder[0].ID)
+		}
+		return tx.Model(&row{}).Where("id = ?", string(id)).
+			Update("alias", alias).Error
+	}, func(session *gorm.DB, err error) error { return failedAlias(session, id, alias, err) })
 }
 
 // lookUp reads the row, if any, whose unique column holds this value.

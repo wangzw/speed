@@ -730,7 +730,7 @@ flowchart TD
 | 解析模块、名册模块与各自的排他交付 | 已实现 | `pkg/tenant/resolve/resolve.go` `Module`、`pkg/tenant/catalog/catalog.go` `Module` |
 | 准入子包 `tenant.admission`、排他交付与定序锚点 `tenant.Admission` | 已实现 | `pkg/tenant/admission/admission.go` `Module`；`pkg/tenant/capabilities.go` `Admission` |
 | 名册表与它的迁移集 | 已实现 | `pkg/tenant/catalog/migrations/`；`catalog.go` `migrationsFS` |
-| 名册的读写面与两个索引的快照 | 部分实现 | `pkg/tenant/catalog/roster.go` `Get`、`ByAlias`、`Put`、`Create`、`SetStatus`、`List`、`afterWrite`；`snapshot.go` `buildSnapshot` |
+| 名册的读写面与两个索引的快照 | 已实现 | `pkg/tenant/catalog/roster.go` `Get`、`ByAlias`、`Put`、`Create`、`SetStatus`、`SetAlias`、`List`、`afterWrite`；`snapshot.go` `buildSnapshot` |
 | 名册的语句经 `Connection` 取交付连接，表不在、取不到连接与其余失败分开作答，PostgreSQL 上在搜索路径列出的模式里读系统目录 | 已实现 | `pkg/tenant/catalog/roster.go` `onConnection`、`connectionWait`、`failedStatement`、`tableAbsent`、`namedSchemas`、`searchPath`、`quotedName`、`answered`、`lookUp`；`pkg/tenant/errors.go` `ErrNoConnection`、`ErrRosterMissing` |
 | 快照的周期刷新与 `Stop` 取消，整表读一次一个、按读的先后发布 | 已实现 | `pkg/tenant/catalog/roster.go` `start`、`stop`、`refreshOnce`、`read`、`acquire` |
 | 内建取法 `header`、`subdomain`、`path` | 已实现 | `pkg/tenant/resolve/extract.go` `headerExtractor`、`subdomainExtractor`、`pathExtractor` |
