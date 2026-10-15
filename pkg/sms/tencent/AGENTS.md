@@ -62,7 +62,7 @@ sending sentinels and the `sms.Provider` seam in `pkg/sms`.
   second call for one with that outcome instead of calling again. A resend builds
   a new challenge and so a new identifier, which is never held back. The memory is
   bounded, lives in this process alone, and is shared with the other carrier
-  through `pkg/sms/internal/dedupe`.
+  through `pkg/internal/dedupe`.
 - **The credentials and the message code reach no log, no error text and no
   metric.** The secret and the credential identifier are registered as literal
   redaction rules by the factory, from the `Secrets` hook, through

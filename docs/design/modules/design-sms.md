@@ -454,7 +454,7 @@ type Spec[C any] struct {
 ## 并发与事务边界
 
 - 载体必须可被多个协程并发使用。
-- 去重表（`pkg/sms/internal/dedupe`）按键有界，可被并发读写；同进程内共享，不跨副本。
+- 去重表（`pkg/internal/dedupe`）按键有界，可被并发读写；同进程内共享，不跨副本。
 - **注册表的快照整体替换、替换串行。** `registryStore` 的快照是原子指针，`reloadMu` 把「读表 + 换指针」的整段（`swap`）串起来。重装有多条来路——一次写、一次订阅回调、轮询——若不加这把锁，一次读回较旧状态的重装可能在一次读回较新状态的重装之后换指针，把较旧的快照装回去，静默撤掉一个本副本已经报成功的写。
 - **运行期的写是条件写、以版本自报落地。** `Register` 与 `Offer` 都经同一条合并路径 `upsert`：读行、并入、写回在同一个事务里，写以读到的版本为条件（`WHERE name = ? AND version = ?`），一个名字不持有的语言是插入（`ON CONFLICT (name) DO NOTHING RETURNING version`，两个并发插入同名留一行）、已持有则是合并（**已在那里的语言原样不动，含它们的审核状态**）；写匹配不到行意味着行被另一个写者改过，合并在一个有界的次数内重试，而不是覆盖。`SetEnabled` 以 `enabled <> ?` 为条件，目标态与现状相同的调用匹配不到行、成功而**不**升版本、不发事件；`Remove` 把删到零行的删除读作 `ErrNoTemplate`。
 - **每次成功写重装本副本的快照并发一条变更事件。** 重装是本副本读它刚写的东西，事件（`sms.registry.changed`）叫别的副本重装，两者任一失败都不撤销这次写。事件是加速、不是正确性依赖：轮询的 ticker 收敛一个事件没到达的副本。
@@ -478,7 +478,7 @@ type Spec[C any] struct {
 |---|---|---|
 | 接缝与根包类型、工厂 | 已实现 | `pkg/sms/sms.go` `Sender`、`Provider`、`Message`、`Receipt`、`Submission`、`Approval`、`ApprovalState`、`Source`、`Kind`、`Record`、`Registry` 及哨兵；`pkg/sms/template.go` `TemplateSpec`、`Template`、`Declaration`、`Resolved`；`pkg/sms/module.go` `Product`、`Spec`、`NewModule` |
 | 归类助手（精确码表加缺省 `ErrUncertain`） | 已实现 | `pkg/sms/classify.go` |
-| 去重表 | 已实现 | `pkg/sms/internal/dedupe` |
+| 去重表 | 已实现 | `pkg/internal/dedupe` |
 | 模板注册表 `sms.registry`（来源与可变权限、运行期状态、DB 表与迁移、后台轮询） | 已实现 | `pkg/sms/registry/registry.go` `Module`、`ModuleName`；`pkg/sms/registry/store.go` `registryStore`、`Resolve`、`Declared`、`List`、`Register`、`Offer`、`SetEnabled`、`Remove`、`upsert`；`pkg/sms/registry/snapshot.go` `snapshot`、`loadSnapshot`；`pkg/sms/registry/poll.go` `startPoll`、`pollOnce`、`pollTemplate`；`pkg/sms/registry/config.go` `schema`、`readSettings`；`pkg/sms/registry/migrations` |
 | 管理面 `sms.admin`（路由、判定、审计、回绝映射） | 已实现 | `pkg/sms/admin/admin.go` `Module`、`ModuleName`、`wire`；`pkg/sms/admin/routes.go` `routes`、`mount`、`declareOpen`；`pkg/sms/admin/templates.go` `handleTemplateList`、`handleTemplateRegister`、`handleTemplateOffer`、`handleTemplateSetEnabled`、`handleTemplateRemove`；`pkg/sms/admin/permissions.go` `PermissionTemplateRead`、`PermissionTemplateManage`、`permissionSpec`、`translationSpec`；`pkg/sms/admin/audit.go`、`pkg/sms/admin/pipeline.go` `require`、`answer`；`pkg/sms/admin/views.go` `templateView` |
 | 阿里云载体 `sms.aliyun`（`Sender` + `Provider`） | 已实现 | `pkg/sms/aliyun/aliyun.go` `sender`、`Send`、`Offer`、`Approval`、`Retire`；`pkg/sms/aliyun/config.go` `items` |

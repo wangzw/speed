@@ -112,7 +112,7 @@ func Module() core.Module {
 `Open` answers a `Product`, one value that satisfies both `Sender` and `Provider`
 over one vendor client: the carrier implements `Name` and `Send` for the sending
 seam, and `Name`, `Offer`, `Approval` and `Retire` for the management seam, and
-holds a dedupe table from `internal/dedupe`.
+holds a dedupe table from `pkg/internal/dedupe`.
 
 ## Running it
 

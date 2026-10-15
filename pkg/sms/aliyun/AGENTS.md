@@ -61,7 +61,7 @@ and `sms.Approval` types and the sending sentinels in `pkg/sms`.
   message twice and bill it twice — or create a second template nobody approved. A
   message whose `DedupeID` was seen before is answered with the earlier call's
   outcome instead of calling again; the memory is bounded, lives in this process
-  alone, and is shared with the other carrier through `pkg/sms/internal/dedupe`.
+  alone, and is shared with the other carrier through `pkg/internal/dedupe`.
   The vendor SDK's own retry is switched off for the same reason, on every call.
 - **The call carries the caller's context, so a context that ends cancels the
   in-flight request.** The SDK's `*WithContext` methods take the context and cancel

@@ -29,8 +29,8 @@ import (
 	"github.com/alibabacloud-go/tea/dara"
 
 	"github.com/vislake/speed/pkg/core"
+	"github.com/vislake/speed/pkg/internal/dedupe"
 	"github.com/vislake/speed/pkg/sms"
-	"github.com/vislake/speed/pkg/sms/internal/dedupe"
 )
 
 // ModuleName is this module's name in the registry.

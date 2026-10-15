@@ -30,8 +30,8 @@ import (
 	tc "github.com/tencentcloud/tencentcloud-sdk-go/tencentcloud/sms/v20210111"
 
 	"github.com/vislake/speed/pkg/core"
+	"github.com/vislake/speed/pkg/internal/dedupe"
 	"github.com/vislake/speed/pkg/sms"
-	"github.com/vislake/speed/pkg/sms/internal/dedupe"
 )
 
 // ModuleName is this module's name in the registry, and the name its

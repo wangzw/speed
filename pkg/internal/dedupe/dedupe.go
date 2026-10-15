@@ -1,23 +1,24 @@
 // Package dedupe remembers the outcome of what a carrier has already been
 // asked to do, keyed by a stable identifier, so that the same identifier
 // reaches the carrier at most once. A carrier is not idempotent — a second
-// send delivers and bills a second message — so the SMS carrier modules hold
-// one of these and take a message's DedupeID through it before calling the
-// vendor.
+// send delivers and bills a second message — so the sending capabilities'
+// carriers hold one of these and take a message's DedupeID through it before
+// calling the vendor.
 //
 // A caller begins with the identifier: the first caller owns the operation and
 // settles it, and any caller that finds the identifier taken waits for the
 // first to settle and is answered with the same outcome. The memory is in one
-// process, which is the adapter's own; across replicas each keeps its own, and
-// the engine that writes each challenge once is what keeps the vendor to a
-// single call.
+// process, which is the adapter's own; across replicas each keeps its own, so
+// holding a vendor to a single call across replicas is the caller's, not this
+// table's.
 package dedupe
 
 import "sync"
 
 // DefaultCapacity is how many of the most recent identifiers a Table remembers
-// when its caller names no capacity. Challenges are bounded by the SMS budgets,
-// so this many identifiers is far more than any window's worth, while a cap
+// when its caller names no capacity. Challenges are bounded by the sending
+// capabilities' budgets, so this many identifiers is far more than any window's
+// worth, while a cap
 // keeps a long-running process from holding every identifier it has ever seen.
 const DefaultCapacity = 4096
 
