@@ -16,10 +16,10 @@ package dedupe
 import "sync"
 
 // DefaultCapacity is how many of the most recent identifiers a Table remembers
-// when its caller names no capacity. Challenges are bounded by the sending
-// capabilities' budgets, so this many identifiers is far more than any window's
-// worth, while a cap
-// keeps a long-running process from holding every identifier it has ever seen.
+// when its caller names no capacity. What a caller identifies is bounded by a
+// window of its own, so this many identifiers is far more than any one window's
+// worth, while a cap keeps a long-running process from holding every identifier
+// it has ever seen.
 const DefaultCapacity = 4096
 
 // Entry is one in-flight or settled operation. Wait blocks until the owner has
