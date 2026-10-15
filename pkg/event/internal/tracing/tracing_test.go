@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"io"
 	"log/slog"
+	"reflect"
 	"testing"
 
 	"go.opentelemetry.io/otel/attribute"
@@ -305,5 +306,110 @@ func TestTheHandlerContextCarriesTheDeliverySpan(t *testing.T) {
 		t.Fatalf("the context handed to the subscriber carries the span %s/%s, want the delivery's "+
 			"span %s/%s — the one End is called on",
 			got.TraceID(), got.SpanID(), want.TraceID(), want.SpanID())
+	}
+}
+
+// TestADeliverySpanCarriesNoSpanKindCategory pins the clause the narrow Start
+// leaves out: the face carries no span kind, so the adapter leaves the kind at
+// the SDK's default and a delivery's exported span is of the default category —
+// Internal — rather than a client or a server one. A delivery is a subscriber
+// running, not one end of a remote call, so a span that named itself a client
+// or a server would misdescribe it.
+//
+// The kind is not among what the other cases observe: they hold the name, the
+// attributes and the status, all of which stay correct if the adapter tags the
+// span Client or Server, so an adapter that added the kind would leave every
+// one of them green.
+func TestADeliverySpanCarriesNoSpanKindCategory(t *testing.T) {
+	tbl, exp := deliveryTable(t)
+	tbl.Subscribe("t", "tracing.subscriber", func(context.Context, event.Event) error { return nil })
+	tbl.Freeze(context.Background())
+	tbl.Deliver(context.Background(), event.Event{Type: "t", ID: "e1"})
+	spans := exp.GetSpans()
+	if len(spans) != 1 {
+		t.Fatalf("one delivery recorded %d spans, want 1", len(spans))
+	}
+	// The SDK records SpanKindInternal for a span started with no kind among
+	// its options: ValidateSpanKind maps the zero value to Internal, so this is
+	// the value a delivery's span carries exactly when the adapter marked none.
+	if got := spans[0].SpanKind; got != trace.SpanKindInternal {
+		t.Fatalf("a delivery's exported span is of kind %v, want SpanKindInternal: the narrow Start "+
+			"carries no span kind, so a delivery is neither a client nor a server span of a remote "+
+			"call", got)
+	}
+}
+
+// TestThePropagatorIsTheTelemetryModulesOne pins the single definition of the
+// propagation format: this module's Propagator hands back the telemetry
+// module's own propagator, not a second construction that happens to speak the
+// same format today. The two ends of a process boundary have to agree, and the
+// way they are kept in step is that there is one value rather than two.
+//
+// What is held is the value's identity with the telemetry module's — the same
+// dynamic type and the same value — which a self-made propagator of another
+// type fails however faithfully it carries W3C trace context. A second
+// construction of the very same type is the identical value and no assertion
+// could tell it apart, and there is no difference to tell: it is the one
+// format, built twice for no reason.
+func TestThePropagatorIsTheTelemetryModulesOne(t *testing.T) {
+	got, want := Propagator(), observability.Propagator()
+	if got == nil {
+		t.Fatal("Propagator handed back nothing, so the publisher's injection and the dispatch " +
+			"layer's extraction have no format to share")
+	}
+	if reflect.TypeOf(got) != reflect.TypeOf(want) {
+		t.Fatalf("Propagator is a %T, want the telemetry module's %T: a propagator of another "+
+			"type is a second definition of the propagation format", got, want)
+	}
+	// Kept for the day the propagator stops being a zero-size value: with this
+	// type, equal dynamic type already means equal value, so this cannot fire
+	// today and the check above is the whole of what pins the identity.
+	if got != want {
+		t.Fatalf("Propagator is %v, want the telemetry module's own value %v: the format is defined "+
+			"once and taken up from there, not built again here", got, want)
+	}
+}
+
+// TestAFailedSubscriberLeavesTheOtherSubscribersSpansClean pins the clause that
+// a subscriber's failure is handled in isolation: an error (or panic) marks
+// that delivery's span failed, and the spans of the other subscribers of the
+// same event are untouched. The failure is one delivery's, not the event's.
+//
+// The other cases cannot show it: the multi-subscriber case's handlers all
+// return nil, and the failing-delivery case has a single subscriber, so an
+// implementation that carried one delivery's failure into the spans started
+// after it — the same event, the next subscriber — would leave both green.
+func TestAFailedSubscriberLeavesTheOtherSubscribersSpansClean(t *testing.T) {
+	tbl, exp := deliveryTable(t)
+	failure := &deliveryFailure{reason: "the payload carried a secret value"}
+	tbl.Subscribe("t", "before.subscriber", func(context.Context, event.Event) error { return nil })
+	tbl.Subscribe("t", "failing.subscriber", func(context.Context, event.Event) error { return failure })
+	tbl.Subscribe("t", "after.subscriber", func(context.Context, event.Event) error { return nil })
+	tbl.Freeze(context.Background())
+	tbl.Deliver(context.Background(), event.Event{Type: "t", ID: "e1"})
+	spans := exp.GetSpans()
+	if len(spans) != 3 {
+		t.Fatalf("one delivery to three subscribers exported %d spans, want 3", len(spans))
+	}
+	// Keyed by name rather than read in order: what tells the three apart is
+	// the subscriber each is named after, not the order they happen to be
+	// exported in.
+	code := map[string]codes.Code{}
+	for _, span := range spans {
+		code[span.Name] = span.Status.Code
+	}
+	for _, name := range []string{"before.subscriber", "after.subscriber"} {
+		got, ok := code[name]
+		if !ok {
+			t.Fatalf("the delivery to %q exported no span, so its span was not observed at all", name)
+		}
+		if got == codes.Error {
+			t.Fatalf("the span of %q is marked failed though its handler returned nil: a subscriber's "+
+				"failure ends that delivery's span alone and does not reach the other subscribers'", name)
+		}
+	}
+	if got := code["failing.subscriber"]; got != codes.Error {
+		t.Fatalf("the failing subscriber's span is %v, want Error: the delivery that failed is the "+
+			"one whose span is marked", got)
 	}
 }

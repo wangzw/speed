@@ -11,6 +11,7 @@ import (
 	"go.opentelemetry.io/otel/trace"
 
 	"github.com/vislake/speed/pkg/event"
+	"github.com/vislake/speed/pkg/event/internal/dispatch"
 	"github.com/vislake/speed/pkg/event/internal/tracing"
 	"github.com/vislake/speed/pkg/internal/natstest"
 	"github.com/vislake/speed/pkg/log"
@@ -142,5 +143,62 @@ func TestDeliveryContinuesThePublishersTrace(t *testing.T) {
 	}
 	if v := got.attrs["messaging.system"]; v != "nats" {
 		t.Fatalf("messaging.system is %q, want the backend name nats", v)
+	}
+}
+
+// TestARedeliveryOfTheSameEntryCarriesTheTracingContext pins the design's clause
+// that a redelivery of a backend entry carries the same tracing context: the
+// context rides in the entry the stream holds, so the entry handed over a
+// second time — the durable's ack-wait redelivery, the one duplicate source
+// this backend has — recovers the same parent for the subscriber's span rather
+// than a trace of its own. The cross-replica cases do not cover it: they hold
+// one publish reaching each replica once, not one stored entry arriving twice.
+//
+// A real ack-wait redelivery needs the server's acknowledgement wait to elapse.
+// This implementation sets no AckWait on its durable, so it is JetStream's
+// default of thirty seconds, and a case that waited it out would be slow and
+// race the reader the suite leaves running. What is held here instead is the
+// same property without the wait: the bytes a publish stores are read back and
+// delivered twice, and both deliveries have to be parented on the publisher's
+// span. An implementation that recovered the context from anything but the
+// entry — a per-process record written at publish, the decoding of the first
+// arrival — loses it on the second.
+func TestEveryDeliveryOfOneStoredEntryCarriesTheTracingContext(t *testing.T) {
+	const evtType = "redelivery"
+	traceID := trace.TraceID{1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16}
+	spanID := trace.SpanID{1, 2, 3, 4, 5, 6, 7, 8}
+	carrier := propagation.MapCarrier{}
+	tracing.Propagator().Inject(
+		trace.ContextWithSpanContext(context.Background(), spanContext(traceID, spanID)), carrier)
+
+	// The bytes the stream holds: what a publish of this event writes, and what
+	// a redelivery hands the reader a second time.
+	entry, err := json.Marshal(envelopeFor(event.Event{
+		ID: "e1", Type: evtType, TraceContext: map[string]string(carrier),
+	}, []byte(`{"k":"v"}`)))
+	if err != nil {
+		t.Fatalf("encoding the entry the stream holds: %v", err)
+	}
+
+	rec := &recordingTracer{}
+	b := &bus{table: dispatch.New("event/nats", "nats", log.Default(), rec, tracing.Propagator())}
+	b.Subscribe(evtType, "nats.subscriber", func(context.Context, event.Event) error { return nil })
+	b.table.Freeze(context.Background())
+
+	// The first arrival, then the redelivery of the same stored entry, each
+	// decoded from the entry afresh as the reader decodes the backend's bytes.
+	b.table.Deliver(context.Background(), decode(evtType, entry))
+	b.table.Deliver(context.Background(), decode(evtType, entry))
+
+	deliveries := rec.deliveriesOf("nats.subscriber")
+	if len(deliveries) != 2 {
+		t.Fatalf("the same entry delivered twice started %d spans, want 2", len(deliveries))
+	}
+	for i, d := range deliveries {
+		if d.parent.TraceID() != traceID || d.parent.SpanID() != spanID {
+			t.Fatalf("delivery %d is parented on %s/%s, want the publisher's span %s/%s: the tracing "+
+				"context did not survive the redelivery of the same entry", i+1,
+				d.parent.TraceID(), d.parent.SpanID(), traceID, spanID)
+		}
 	}
 }
