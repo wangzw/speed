@@ -185,7 +185,7 @@ type Spec[C any] struct {
 | `Prepare` | `Decode` 自己那份配置；读出配置后调 `Stance`，与自身性质不符即启动失败，错误点名缺的是哪一项 |
 | `New` | `Decode` 配置 → 调 `Secrets` 并经 `literal.Register` 登记字面量脱敏匹配器 → 调 `Open` 建立载体 |
 
-**次序固定：先登记脱敏字面量，再绑定任何带属性的 logger，最后 `Open`。** 日志脱敏规则只对它注册之后写出的记录起作用，所以凭据的登记必须发生在载体把任何属性绑到 logger 之前。`Secrets` 钩子把「凭据先登记」这一步收进工厂，载体因此不 import `literal`，只交出凭据字符串。
+**次序固定：先登记脱敏字面量，再绑定任何带属性的 logger，最后 `Open`。** 日志脱敏规则只对它注册之后写出的记录起作用，所以凭据的登记必须发生在载体把任何属性绑到 logger 之前（[ADR-log-redaction-2026-10-15](../../adr/adr-log-redaction-2026-10-15.md)）。`Secrets` 钩子把「凭据先登记」这一步收进工厂，载体因此不 import `literal`，只交出凭据字符串。
 
 **工厂在装配期校验 `Spec`。** 一份缺模块名、缺配置命名空间、缺配置原型、缺表态或缺打开函数的 `Spec` 让 `NewModule` panic：载体在 `init` 里填这份 `Spec`，缺陷因此在本仓库自己的代码里，在任何 import 它的宿主的第一次运行上确定性地现形，不留给宿主处理。
 
