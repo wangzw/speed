@@ -104,13 +104,27 @@ func TestValidateJudgesEachRuleBothDirections(t *testing.T) {
 			m.Attachments = []Attachment{{Name: "f.txt"}}
 		}), mentions: "Data"},
 
-		// A control character in the subject is accepted on purpose: the carrier
-		// encodes the subject into an RFC 2047 word, so it never reaches a header
-		// line as the caller wrote it and the message still parses. A carriage
-		// return or a line feed is still refused above, because that is the shape
-		// that breaks the line before the encoder sees it.
-		{name: "a subject with a NUL is accepted", m: edit(func(m *Message) {
+		{name: "a subject with a NUL", m: edit(func(m *Message) {
 			m.Subject = "hi\x00there"
+		}), mentions: "Subject"},
+		{name: "an attachment ContentType with DEL", m: edit(func(m *Message) {
+			m.Attachments = []Attachment{{
+				Name: "f.txt", ContentType: "text/plain\x7f", Data: strings.NewReader("x"),
+			}}
+		}), mentions: "ContentType"},
+		{name: "an attachment name with DEL", m: edit(func(m *Message) {
+			m.Attachments = []Attachment{{Name: "f\x7f.txt", Data: strings.NewReader("x")}}
+		}), mentions: "Name"},
+
+		// A tab is the one control character allowed in a field that becomes a
+		// header line: it is ordinary whitespace there and cannot end a line.
+		{name: "a subject with a tab is accepted", m: edit(func(m *Message) {
+			m.Subject = "hi\tthere"
+		}), accepted: true},
+		{name: "an attachment ContentType with a tab is accepted", m: edit(func(m *Message) {
+			m.Attachments = []Attachment{{
+				Name: "f.txt", ContentType: "text/plain;\tcharset=utf-8", Data: strings.NewReader("x"),
+			}}
 		}), accepted: true},
 	}
 

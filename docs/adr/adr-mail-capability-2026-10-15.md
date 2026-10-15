@@ -14,7 +14,7 @@
 - **发送接口不幂等。** SMTP 事务重复一次会投递并计费第二封，超时之后调用方无从知道邮件是否已发出，重试会重复投递。
 - **`net/smtp` 已被冻结，且不带上下文。** 走它就得自己实现 MIME 组装：多部分正文、附件编码、非 ASCII 头的编码字与点填充。
 - **两家国内厂商的 OpenAPI 都够不着这封邮件的全部字段。** 腾讯云 SES 的 OpenAPI 默认只能发模板邮件，它的自由文本参数 `Simple` 已被文档标记为 `Abandoned`，错误码是 `FailedOperation.WithOutPermission`；阿里云 DirectMail 的 OpenAPI 没有抄送与密送。两家都提供覆盖全部信封字段的 SMTP 端点。
-- **发送能力的形态在短信上已经定下**：根包接口与工厂、载体叶子排他交付、四个哨兵、无队列无重试（[ADR-sms-capability-2026-10-13](adr-sms-capability-2026-10-13.md)）。
+- **发送能力的形态在短信上已经定下**：根包接口与工厂、载体叶子排他交付、哨兵 `ErrThrottled`/`ErrRejected`/`ErrUncertain`/`ErrInvalidConfig`、无队列无重试（[ADR-sms-capability-2026-10-13](adr-sms-capability-2026-10-13.md)）。
 - **共享单元必须能被两个功能目录取用。** `pkg/sms` 下的包不能 import `pkg/mail` 的 `internal` 包，`pkg/internal/dedupe` 与 `pkg/internal/configtest` 已被两个功能目录的载体取用。
 
 ## 考虑过的选项

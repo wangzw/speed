@@ -35,7 +35,8 @@ type Message struct {
 	Bcc []string
 	// ReplyTo is the reply-to list, in the same form as To.
 	ReplyTo []string
-	// Subject is the header subject. It may be empty.
+	// Subject is the header subject. It may be empty. It carries no control
+	// character beyond a tab, which Validate refuses.
 	Subject string
 	// Text is the plain-text body. At least one of Text and HTML has to be
 	// non-empty.
@@ -57,14 +58,12 @@ type Message struct {
 // fresh DedupeID has to rebuild the reader, or it sends an empty attachment with
 // no error to show for it.
 type Attachment struct {
-	// Name is the file name the recipient sees. It has to be non-empty and hold no
-	// control character: it is written into the attachment's own header block, so
-	// a carriage return or a line feed there would write the block and any other
-	// control character would leave a line no parser reads.
+	// Name is the file name the recipient sees. It has to be non-empty, and it
+	// carries no control character beyond a tab, which Validate refuses.
 	Name string
 	// ContentType is the media type. An empty ContentType means
-	// application/octet-stream. It is written into the attachment's own header
-	// block as it stands, so it too has to hold no control character.
+	// application/octet-stream. It carries no control character beyond a tab,
+	// which Validate refuses.
 	ContentType string
 	// Data is the file content. It has to be non-nil, and Send reads it to the
 	// end.
