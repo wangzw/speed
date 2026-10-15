@@ -314,7 +314,7 @@ speed 不引入进程边界。宿主是单一进程，注册表与全部模块�
 | [authz](modules/design-authz.md) | 已实现 |
 | [kv](modules/design-kv.md) | 部分实现 |
 | [sms](modules/design-sms.md) | 已实现 |
-| [event](modules/event/design-event.md) | 已实现 |
+| [event](modules/event/design-event.md) | 部分实现 |
 | [audit](modules/design-audit.md) | 已实现 |
 | [settings](modules/design-settings.md) | 已实现 |
 | [ratelimit](modules/design-ratelimit.md) | 已实现 |

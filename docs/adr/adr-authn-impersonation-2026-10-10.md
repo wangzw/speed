@@ -137,7 +137,7 @@ flowchart LR
 - 判据：审计接缝的写入另占一条连接、不加入调用方的事务，所以强制档审计必须在记录事务之外、在动作之前写，绝不在开着的事务里调用它与事件发布。步骤顺序与每一步失败的处置见 [design-authn-impersonation](../design/modules/authn/design-authn-impersonation.md) 的「开始的顺序」与「开始失败的处置」。
 - 强制档审计写失败（含审计不接收写入）即 503，冒充不开始。
 - 结束不受审计失败阻止：结束是向安全方向的动作，失败写 Error 日志。
-- 冒充的理由只进审计与记录本身，不进事件：事件载荷的顶层字段会被可观测性写成跨度属性。同一顺序适用于全部管理面写操作（[ADR-authn-decision-seam-2026-10-10](adr-authn-decision-seam-2026-10-10.md)、[ADR-authn-events-and-audit-2026-10-10](adr-authn-events-and-audit-2026-10-10.md)）。
+- 冒充的理由只进审计与记录本身，不进事件：事件载荷的顶层字段会被审计写进明细。同一顺序适用于全部管理面写操作（[ADR-authn-decision-seam-2026-10-10](adr-authn-decision-seam-2026-10-10.md)、[ADR-authn-events-and-audit-2026-10-10](adr-authn-events-and-audit-2026-10-10.md)）。
 
 **到期与失效惰性落库。**
 

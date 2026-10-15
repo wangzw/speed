@@ -55,6 +55,8 @@ var ErrOtherDatabase error // 事务不在交付的连接池上
 
 **标识与载荷在暂存时定下。** `ID` 为空时，`Stage` 以 `event.NewID` 的形式赋予一个；非空时原样携带。每个订阅者收到的都是这个标识，重发时也不变；要把它与自己的写入记在一起的调用方先设好它。载荷在暂存时序列化，不可序列化的载荷与 `Publish` 一样被拒绝。
 
+**追踪上下文也在暂存时定下。** 实现子包 `pkg/event/outbox/relay` 取用遥测模块的传播器（`observability.Propagator()`），`Stage` 用它从 `tx` 的上下文取出当时的跨度上下文，写进 `evt` 的行；中继发布时把它还原到事件上，`Publish` 因而不改动它。订阅者的跨度以那次写入所在跨度为父，不是以中继的跨度为父——宣告与写入挂在同一条追踪上，即使发布晚于提交若干秒（[ADR-event-tracing-2026-10-15](../../../adr/adr-event-tracing-2026-10-15.md)）。
+
 **写行失败时返回的错误包着数据库的错误。** 表不在、权限不够、事务已经失败，都由数据库的错误报出，错误链完好；PostgreSQL 上这之后事务提交不了，调用方回滚，写入与宣告都不发生。
 
 ### 发布的承诺
@@ -65,6 +67,7 @@ var ErrOtherDatabase error // 事务不在交付的连接池上
 - **同一个事件可能被发布不止一次。** 总线接受之后、删除那一行之前中继中断，删除那一行失败，或认领到期被另一个中继接管，都让它再被发布一次；每一次带着同一个标识。
 - **订阅者收到的载荷是传输的形状**：解码出来的结构，每个数保留为十进制文本（`json.Number`），在任何一种总线实现下都如此，进程内实现也不例外；整数无论多大都精确（见 [event](design-event.md) 的载荷的读取）。
 - **订阅者的调用上下文不是发布方的。** 进程内总线在中继的协程与上下文上调用订阅者：那个上下文带着本模块 `Start` 阶段收到的上下文里的值，不带发布方的请求上下文，也不带租户，每次发布至多 1 分钟。订阅方照 [event](design-event.md) 的规矩按事件的 `TenantID` 进入租户。
+- **订阅者的跨度以暂存方的跨度为父。** 追踪上下文在暂存时定下（见交付的功能），中继发布时的事件带着它；订阅者的跨度因而挂在写入所在的跨度之下，不是挂在中继协程所在的跨度下（[ADR-event-tracing-2026-10-15](../../../adr/adr-event-tracing-2026-10-15.md)）。
 
 ### 对宿主的要求
 
@@ -87,6 +90,7 @@ var ErrOtherDatabase error // 事务不在交付的连接池上
 | `pkg/event` | 总线功能、事件类型、标识的形式 |
 | `pkg/event/internal/dispatch` | 标识的赋予、载荷解码成传输形状，与各总线实现共用一处 |
 | `pkg/log` | 可选依赖。中继要报告的事——总线拒收、读表失败——写进装配的日志；装配里没有日志功能时，写日志模块的进程默认记录器 |
+| `pkg/observability` | 传播器：实现子包在 `Stage` 里用它把写入事务所在跨度的追踪上下文写进暂存行（`observability.Propagator()`） |
 | `pkg/core` | 注册描述符、交付功能 |
 | GORM | 接口面上的 `*gorm.DB` |
 
@@ -140,6 +144,7 @@ stateDiagram-v2
 |---|---|
 | `id` | 暂存的先后，自增，不复用 |
 | `event_id`、`type`、`tenant_id` | 事件的标识、类型与租户 |
+| `trace_context` | 暂存时事件所在跨度的追踪上下文，序列化后保存；中继发布时还原到事件上。此前建成的表没有这一列，迁移补上它，旧行取默认的空值 |
 | `payload` | 序列化之后的载荷，原文保存 |
 | `staged_at` | 暂存的时刻 |
 | `available_at` | 这一行下一次可被认领的时刻：暂存时即为当时，认领后为认领到期之时，拒收后为延迟期满之时 |
@@ -235,6 +240,7 @@ stateDiagram-v2
 | 功能接口与哨兵错误 | 已实现 | `pkg/event/outbox/outbox.go` `Outbox`、`ErrNoTransaction`、`ErrOtherDatabase` |
 | 模块描述符与迁移集 | 已实现 | `pkg/event/outbox/relay/relay.go` `Module`、`migrationsFS` |
 | 暂存与会话的判断 | 已实现 | `pkg/event/outbox/relay/relay.go` `(*relay).Stage`、`(*relay).judge` |
+| 追踪上下文的暂存与还原 | 未实现 | — |
 | 中继的循环、读表与认领 | 已实现 | `pkg/event/outbox/relay/loop.go` `(*relay).run`、`(*relay).pass`、`(*relay).claim`、`(*relay).relayBatch` |
 | 发布与结清 | 已实现 | `pkg/event/outbox/relay/loop.go` `(*relay).relayOne`、`(*relay).publish`、`timing.retryAfter` |
 | 各方言的语句 | 已实现 | `pkg/event/outbox/relay/statements.go` `statementsFor`、`build` |

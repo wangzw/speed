@@ -10,7 +10,7 @@
 
 总线的投递承诺是各实现都能满足的下界：`Publish` 返回成功只表示事件已被总线接受，不表示任何订阅者收到；总线不承诺投递次数与顺序，「某条事件丢了」不可判定（[ADR-event-delivery-2026-09-21](adr-event-delivery-2026-09-21.md)）。
 
-`pkg/event` 的 `Event` 字段是 `ID`、`Type`、`TenantID` 与 `Payload`，没有时间戳。`ID` 由发布方设好，或在发布方留空时由 `Publish` 赋予；同一个事件的每个订阅者——每个副本上、每种实现下——收到同一个值，重投的条目也带着它（[ADR-event-delivery-2026-09-28](adr-event-delivery-2026-09-28.md)）。`Bus.Subscribe` 的匹配是精确字符串比较，无通配与前缀。
+`pkg/event` 的 `Event` 字段是 `ID`、`Type`、`TenantID`、`TraceContext` 与 `Payload`，没有时间戳。`ID` 由发布方设好，或在发布方留空时由 `Publish` 赋予；`TraceContext` 同样是发布方留空时由 `Publish` 写入、非空时原样携带（[ADR-event-tracing-2026-10-15](adr-event-tracing-2026-10-15.md)）；同一个事件的每个订阅者——每个副本上、每种实现下——收到同一个值，重投的条目也带着它（[ADR-event-delivery-2026-09-28](adr-event-delivery-2026-09-28.md)）。`Bus.Subscribe` 按类型名精确匹配（精确字符串比较，无通配与前缀），并带上订阅者名，它用作那个订阅者跨度的名称（[ADR-event-tracing-2026-10-15](adr-event-tracing-2026-10-15.md)）。
 
 总线把一个事件交给它的每一个订阅者，各订阅回调彼此独立：一个订阅回调被调用，只说明它自己收到了这个事件，说明不了同一事件的别的订阅者收到了没有、处理用了多久、成功与否。
 

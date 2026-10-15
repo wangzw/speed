@@ -13,4 +13,4 @@
 
 | 子模块 | 状态 |
 |---|---|
-| [outbox](design-event-outbox.md) | 已实现 |
+| [outbox](design-event-outbox.md) | 部分实现 |

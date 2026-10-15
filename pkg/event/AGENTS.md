@@ -45,12 +45,15 @@ The API is the package's godoc, the root package's and each subpackage's. Read
   into an entry's detail, masking only a closed set of key names — while the
   bus neither inspects nor strips a payload. A credential in a top-level
   scalar field under any other key reaches those records.
-- **The context a handler receives is the implementation's, and a subscriber's
-  span parentage follows from it.** The process-local bus calls a handler on the
-  publisher's own context, so a span started there joins the trace that produced
-  the fact; a transport-backed bus calls it on a context of its own, leaving the
-  span a root. Which shape a subscriber sees is a property of the deployed
-  backend, not of this interface.
+- **A delivery's span belongs to the bus, and the event's tracing context is its
+  parent.** The dispatch layer starts one span per subscriber per delivery and
+  runs the handler inside it. The parent comes from the context the event
+  carries, not from the context the implementation hands the handler, so the
+  trace that produced the fact continues into every subscriber under a
+  process-local and a transport-backed bus alike. An event carrying no tracing
+  context — published outside any span, or from a process with no telemetry —
+  leaves the delivery's span a root. The context a handler receives still
+  belongs to the implementation, and no other parentage follows from it.
 - **An implementation reports through the logger `Spec.Open` hands it, and
   through nothing else.** That logger is the assembly's, named after the module,
   when the assembly delivers logging; the log module never replaces the process
@@ -65,6 +68,15 @@ The API is the package's godoc, the root package's and each subpackage's. Read
   time — an implementation subpackage and the root package are one module — and
   the gate that stands in for it is `TestRootPackageImportsNoBackendClient` in
   `deps_test.go`.
+- **The optional tracer dependency is declared by the implementation subpackage,
+  not by the root package.** `NewModule` hands back a descriptor whose `Requires`
+  holds only the logging capability: the root package cannot name
+  `(*observability.TracerProvider)(nil)` without importing the telemetry
+  interface package, which the gate above forbids. A subpackage appends that
+  requirement to the descriptor it gets back. The edge is what orders the
+  assembly ahead of the bus; without it the two are ordered by module name alone,
+  `Trace` finds no provider and falls back to one that exports nothing, and the
+  bus runs on exporting no span, with nothing to say so.
 - **A publish stays apart from any transaction.** Tying an event to a write is
   the outbox's, whose interface package takes the GORM session. The root package
   gains no method or helper that takes one: every publisher imports it, and GORM
@@ -145,7 +157,9 @@ func Module() core.Module {
 		Config:          &prototype,   // the prototype, carrying the defaults
 		Items:           items,        // the declared input items
 		Stance:          stance,       // can it start? how does its claim give way?
-		Open:            open,         // the client, and the only place it appears
+		Trace:           trace,        // the optional tracer, adapted to TracerProvider
+		Open:            open,         // the client, and the only place it appears;
+		                               // takes the logger and the adapted tracer
 		Start:           start,        // freeze the subscription table
 	})
 }
