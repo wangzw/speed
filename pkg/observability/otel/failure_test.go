@@ -73,7 +73,20 @@ func (unreachableMetrics) Shutdown(context.Context) error   { return nil }
 // this module installs none — that handler prints a line to standard error per
 // failed batch, outside the log chain and its redaction. A wrapper that passed
 // the error on would therefore let a destination that is down write a line on
-// every batch timeout and every metric interval.
+// every batch timeout and every metric interval. What the case holds is that the
+// failed export itself — the error the exporter answers every export with —
+// reaches that handler nowhere, not that nothing is ever written there.
+//
+// Nothing being written there is not the property. The upstream also judges
+// internal errors of its own — while building a processor, a reader or an
+// instrument — and hands those to the same handler, which this module leaves at
+// the upstream default (ADR-observability-provider-2026-09-22). One of them
+// surfaces here under load: at the stop the periodic reader cancels the context
+// its collection loop runs on, and a collection already in flight comes back
+// with context.Canceled, which the handler prints as "context canceled". That
+// line is the upstream reporting its own shutdown race, not the export failure
+// this case guards, and the ADR exempts that internal-error class from the
+// wrapper's absorption — the absorption covers the export failure alone.
 //
 // The run's own end is part of the same contract: an export that fails at the
 // final flush is reported the same way and is not a failure of Close.
@@ -136,9 +149,13 @@ func TestAnExportFailureIsReportedOnlyByTheWrapper(t *testing.T) {
 		t.Errorf("the stop failed over a destination that was unreachable: %v; an export failure is "+
 			"reported by the wrapper's line, not by Close", err)
 	}
-	if upstream.Len() != 0 {
-		t.Errorf("the upstream error handler wrote to standard error:\n%s\nwant nothing: the wrapper is "+
-			"the one report of an export failure", upstream.String())
+	// The upstream's own internal errors are allowed here; only the failed
+	// export is not. So the check is for this failure's error text, not for the
+	// buffer being empty.
+	if failure := errUnreachable.Error(); strings.Contains(upstream.String(), failure) {
+		t.Errorf("the upstream error handler reported the failed export to standard error:\n%s\n"+
+			"want the failing exporter's error (%q) to reach it nowhere: the wrapper absorbs the export "+
+			"failure, so a destination that is down cannot write a line here", upstream.String(), failure)
 	}
 	if got := strings.Count(module.String(), "telemetry export failed"); got != 2 {
 		t.Errorf("the module logged %d first-failure lines, want 2, one for each wrapper:\n%s",
