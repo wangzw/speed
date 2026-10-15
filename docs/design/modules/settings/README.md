@@ -13,4 +13,4 @@
 
 | 子模块 | 状态 |
 |---|---|
-| [settings-admin](design-settings-admin.md) | 未实现 |
+| [settings-admin](design-settings-admin.md) | 已实现 |

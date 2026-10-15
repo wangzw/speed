@@ -1,0 +1,114 @@
+package admin
+
+import (
+	"reflect"
+	"testing"
+	"time"
+
+	"github.com/vislake/speed/pkg/settings"
+)
+
+// A resolved value is written in the declared type's own text form, the form the
+// settings module stores a row in, so a view's value reads the same way its
+// written and default do: a duration reads "5m0s" rather than a count of
+// nanoseconds, a float its shortest round-tripping text.
+func TestRenderValueWritesTheDeclaredTypesOwnTextForm(t *testing.T) {
+	at := time.Date(2026, 1, 2, 3, 4, 5, 0, time.UTC)
+	cases := []struct {
+		name  string
+		typ   reflect.Type
+		value any
+		want  string
+	}{
+		{"string", reflect.TypeFor[string](), "auto", "auto"},
+		{"bool", reflect.TypeFor[bool](), true, "true"},
+		{"int", reflect.TypeFor[int](), 42, "42"},
+		{"uint", reflect.TypeFor[uint](), uint(7), "7"},
+		{"float", reflect.TypeFor[float64](), 1.5, "1.5"},
+		{"float keeps its value", reflect.TypeFor[float64](), 0.1, "0.1"},
+		{"duration", reflect.TypeFor[time.Duration](), 5 * time.Minute, "5m0s"},
+		{"a type that carries its own text form", reflect.TypeFor[time.Time](), at, at.Format(time.RFC3339Nano)},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			got, err := renderValue(tc.typ, tc.value)
+			if err != nil {
+				t.Fatalf("rendering: %v", err)
+			}
+			if got != tc.want {
+				t.Errorf("rendered %q, want %q", got, tc.want)
+			}
+		})
+	}
+}
+
+// A value the declared type cannot hold is a failure, not a silent empty string.
+func TestRenderValueRefusesAValueOfTheWrongType(t *testing.T) {
+	if _, err := renderValue(reflect.TypeFor[time.Duration](), "5m"); err == nil {
+		t.Error("rendering a string as a duration returned nil, want a failure")
+	}
+	if _, err := renderValue(reflect.TypeFor[int](), "nope"); err == nil {
+		t.Error("rendering a string as an int returned nil, want a failure")
+	}
+}
+
+// The view of an ordinary item carries the declaration's metadata and the two
+// texts it was built from.
+func TestViewOfBuildsAnOrdinaryItem(t *testing.T) {
+	item := settings.DeclaredItem{
+		Key:     "app.mode",
+		Module:  "app",
+		Type:    reflect.TypeFor[string](),
+		Default: "auto",
+		Item: settings.Item{
+			Description: "how the application runs",
+			Domain:      settings.DomainOf("one of auto or manual", func(v string) bool { return v == "auto" || v == "manual" }),
+		},
+	}
+	v := viewOf(item, "manual", "manual")
+	if v.Key != "app.mode" || v.Namespace != "app" || v.Type != "string" {
+		t.Errorf("the view is %+v", v)
+	}
+	if v.Description != "how the application runs" || v.Domain != "one of auto or manual" {
+		t.Errorf("the metadata is %+v", v)
+	}
+	if v.Sensitive || v.Default != "auto" || v.Written != "manual" || v.Value != "manual" {
+		t.Errorf("the values are %+v", v)
+	}
+}
+
+// A sensitive item's view carries no value: the default is empty and both the
+// written and the resolved text are the mask.
+func TestViewOfMasksASensitiveItem(t *testing.T) {
+	item := settings.DeclaredItem{
+		Key:     "authn.sms.secret",
+		Module:  "authn.sms",
+		Type:    reflect.TypeFor[string](),
+		Default: "",
+		Item:    settings.Item{Sensitive: true},
+	}
+	v := viewOf(item, "hunter2", "hunter2")
+	if !v.Sensitive {
+		t.Error("the view is not marked sensitive")
+	}
+	if v.Default != "" {
+		t.Errorf("the default is %q, want empty", v.Default)
+	}
+	if v.Written != maskedValue || v.Value != maskedValue {
+		t.Errorf("written/value are %q/%q, want the mask", v.Written, v.Value)
+	}
+}
+
+// A type that carries its own text form is classified as one; the scalar kinds
+// are not.
+func TestDecodesFromText(t *testing.T) {
+	if !decodesFromText(reflect.TypeFor[time.Time]()) {
+		t.Error("time.Time is not classified as carrying its own text form")
+	}
+	if decodesFromText(reflect.TypeFor[string]()) {
+		t.Error("a string is classified as carrying its own text form")
+	}
+	if decodesFromText(reflect.TypeFor[time.Duration]()) {
+		t.Error("a duration is classified as carrying its own text form")
+	}
+}

@@ -168,20 +168,20 @@ sequenceDiagram
 
 ### 按层判定与域的选取
 
-层由查询串 `layer` 点名，域由层定出：`layer=global` 取 `authz.PlatformDomain`，`layer=tenant` 取 `authz.Domain(tenant)`。判定的主体是调用方的账户，对象与动作由权限经进程翻译给出（`settings.read` → `(settings, read)`，`settings.write` → `(settings, write)`），域是层选指名的那个。全局层的写因此要平台域的授予——若按请求解析出的租户判定，一个在某租户获授权的调用方就能靠请求头触到全局层。租户层的写落到那个租户：一个在该租户获 `settings.write` 的调用方可以改那个租户的层。
+层由查询串 `layer` 点名，域由层定出：`layer=global` 取 `authz.PlatformDomain`，`layer=tenant` 取 `authz.Domain(tenant)`。判定的主体是调用方的责任键 `Identity.Key()`，对象与动作由权限经进程翻译给出（`settings.read` → `(settings, read)`，`settings.write` → `(settings, write)`），域是层选指名的那个。全局层的写因此要平台域的授予——若按请求解析出的租户判定，一个在某租户获授权的调用方就能靠请求头触到全局层。租户层的写落到那个租户：一个在该租户获 `settings.write` 的调用方可以改那个租户的层。
 
 ### 写一项设置
 
 1. 形状检查：查询串的层选合取值域、`:namespace` 与 `:key` 拼出的全键已声明、正文可读，否则 400；全键不在 `Declared()` 里即 404。
 2. 落强制档审计（动作 `settings.set`，明细带键、层、租户与动作标识；敏感项的值不写明）。
-3. `settings.Store.Set(ctx, Write{Layer: 层选, Key: 全键, Value: 正文的值, Actor: 调用方的账户})`——设置模块把值按声明类型编码、按取值域判定，再写表。
+3. `settings.Store.Set(ctx, Write{Layer: 层选, Key: 全键, Value: 正文的值, Actor: 调用方的责任键 Identity.Key()})`——设置模块把值按声明类型编码、按取值域判定，再写表。
 4. `ErrTypeMismatch`／`ErrInvalidValue` → 422；`ErrUnknownKey` → 404；其余 → 503。落地 → 204。
 
 ### 删一项设置
 
 1. 形状检查：查询串的层选合取值域、全键已声明，否则 400；全键不在 `Declared()` 里即 404。
 2. 落强制档审计（动作 `settings.delete`，明细带键、层、租户与动作标识）。
-3. `settings.Store.Delete(ctx, 层选, 全键, 调用方的账户)`；删一行不在的表行不是错误。
+3. `settings.Store.Delete(ctx, 层选, 全键, 调用方的责任键 Identity.Key())`；删一行不在的表行不是错误。
 4. 其余失败 → 503。落地 → 204。
 
 ### 一层的一次列举
@@ -223,4 +223,4 @@ sequenceDiagram
 
 | 能力 | 状态 | 代码 |
 |---|---|---|
-| 管理面 `settings.admin`（路由、按层判定、审计、敏感遮蔽、回绝映射） | 未实现 | — |
+| 管理面 `settings.admin`（路由、按层判定、审计、敏感遮蔽、回绝映射） | 已实现 | `pkg/settings/admin/admin.go` `Module`；`pkg/settings/admin/routes.go` `routes`、`mount`；`pkg/settings/admin/handlers.go` `handleList`、`handleListNamespace`、`handleSet`、`handleRemove`；`pkg/settings/admin/pipeline.go` `selectLayer`、`require`、`auditRequired`；`pkg/settings/admin/views.go` `maskedValue`、`viewOf` |
