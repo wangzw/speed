@@ -587,14 +587,13 @@ namespace discipline over `src/` the same way it does in every package.
 
 ## Deferrals and recorded decisions
 
-- **Reference-app consumer**: consumed by the reference app's consumer
-  shell: its sign-in view renders this
-  family inside product-shell's three-branch view machine, over the
-  session the shell's bootstrap binds to one real `@speed/api-client`.
-  The package-level proof is the in-form leg -- `src/usage-example.test.tsx`
-  drives the composed family over a real `@speed/api-client` bound through
-  the same seam a host binds, with a scripted fetch answering genuine
-  `Response` objects.
+- **Consumer**: no host in the tree renders this family. A host renders
+  the family's sign-in view inside product-shell's three-branch view
+  machine, over the session the shell's bootstrap binds to one real
+  `@speed/api-client`. The package-level proof is the in-form leg --
+  `src/usage-example.test.tsx` drives the composed family over a real
+  `@speed/api-client` bound through the same seam a host binds, with a
+  scripted fetch answering genuine `Response` objects.
 - **Auth-core hooks stay host-side by design.** Components in this family
   take the session as a prop and fire callbacks; the host observes session
   transitions with `useAuthState` and friends. A component that needed the

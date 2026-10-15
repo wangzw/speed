@@ -128,36 +128,26 @@ creates one.
 
 ## Consumption status
 
-Compile consumption is live, and runtime end-to-end consumption has
-its real host: the consumer shell.
+Compile consumption is live in-workspace; no runtime host sits in the
+tree.
 
 - **Compile-consumed in-workspace.** `@speed/auth-core` type-checks
   against the generated authn surface, and its unit suite drives the
   session operations through a scripted `RequestFn` bound with
   `bindRequestFn` -- the same seam a host's real client binds.
   `@speed/account-ui` is the second in-workspace compile consumer and
-  the first to render generated hooks into a component tree. The
+  the first to render generated hooks into a component tree, and
+  `@speed/console-ui` consumes the generated admin operations. The
   merged document is covered by the same
   regeneration-and-comparison step.
-- **Runtime-consumed by the reference app's consumer shell.** The shell
-  is the mandatory first consumer: its
-  bootstrap binds one real `@speed/api-client` through this package's
-  `bindRequestFn` seam, and its surfaces drive the generated
-  operations through the composed tree -- the platform operations
-  (authn through the auth-core session and the auth-ui / account-ui /
-  tenancy-ui component families, billing through the billing-ui
-  family) through this package, and the app's own notes/cases/smilesim
-  operations through the app-owned SDK (`src/app-api`), which rides
-  this same seam and QueryClient. Its vitest suites run
-  that composition over a scripted demo-server double whose mirrored
-  facts the Go-side suites pin against the real composed server, and
-  the browser-page leg is a browser driving the real server: the
-  app's e2e suite drives the
-  composed shell against a real, freshly booted server, its
-  `@deployment` gates additionally against a deployed, server-served
-  page via `E2E_BASE_URL`. Release-time packaging of the published SDK
-  (generated from the merged `api.json`, versioned alongside the doc
-  site) is not shipped -- release-machinery work.
+- **Runtime consumption.** No host in the tree binds this surface at
+  runtime: `starters/demo/web`, the placeholder where the consumer shell
+  lands, carries no application yet. A host binds one real
+  `@speed/api-client` through this package's `bindRequestFn` seam and
+  drives the generated operations through the composed tree. Release-time
+  packaging of the published SDK (generated from the merged `api.json`,
+  versioned alongside the doc site) is not shipped -- release-machinery
+  work.
 
 ## Development
 

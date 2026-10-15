@@ -69,17 +69,18 @@ the mutations go through the same bound client, and no page builds a
 query client of its own or writes a query key — the keys live inside the
 hooks the host binds.
 
-Why a bound object and not a direct `@speed/api-sdk` import: the console
-surface's generated operations (`/tenant/admin`, `/settings/admin`,
-`/audit/admin`) **are not in `@speed/api-sdk` yet**. The SDK in the tree
-is generated from the earlier implementation's merged contract
-(`contracts/speed.yaml`), which carries none of the three surfaces, and
-the contract-phase regeneration that produces them is a later step.
-`@speed/api-sdk` is declared a regular dependency (the design's edge) and
-becomes a real import when those operations land; until then the bundle
-is the single seam the pages read through, and the contract phase binds
-the generated hooks to its members at the app entry — a one-line wiring
-that changes no page code.
+Why the pages read through a bundle and not a direct `@speed/api-sdk`
+call each: the bundle is the substitution point. The shipped
+`consoleOperations` is a thin adapter over the generated `@speed/api-sdk`
+operations of the three admin surfaces (`/tenant/admin`,
+`/settings/admin`, `/audit/admin`): the reads run the generated query
+options through `useQuery` with a `select` that flattens the page
+envelope to the view rows, and the writes call the generated mutation
+functions and invalidate the list through the generated key factories.
+`@speed/api-sdk` is generated from the platform's merged contract
+(`contracts/api.json`), which carries all three surfaces, so the adapter
+imports real generated operations. The provider seam stays because a host
+may mount its own bundle and a suite does so to script one (see Testing).
 
 What the pages reach through the bundle, one member per route of the
 three modules:
@@ -166,16 +167,15 @@ test-utils).
 
 ## Deferrals (recorded, do not re-open silently)
 
-- **The generated admin operations.** The three surfaces' generated
-  `@speed/api-sdk` operations do not exist yet; `@speed/api-sdk` is a
-  declared dependency the contract phase makes a real import (see "The
-  operations seam"). Until then a host binds its own operations bundle,
-  and the SDK dependency is unused by `src/`. The exact wire shape of a
-  refusal (the module answers RFC 9457 problem details with a `type`
-  URN; the frontend `code` the api-client derives from it) is that
-  phase's to fix — the error-text whitelist's colon-free codes
+- **The refusal-code mapping.** The shipped bundle reads the generated
+  `@speed/api-sdk` admin operations, so those are wired (see "The
+  operations seam"). Still open is the wire shape of a refusal: the
+  module answers RFC 9457 problem details with a `type` URN, and how
+  that `type` becomes the frontend `code` the api-client derives is not
+  settled — the error-text whitelist's colon-free codes
   (`tenant.conflict`, `settings.invalid_value`) are this package's
-  reading of the modules' error surfaces and move with the contract.
+  reading of the modules' error surfaces and move when the mapping is
+  fixed.
 - **Responsive frame.** The frame is a persistent sidebar (stacked on
   narrow viewports), not a drawer: no `matchMedia`-driven responsive
   behaviour is shipped. A drawer is additive and belongs to the frame if

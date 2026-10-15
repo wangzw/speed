@@ -90,16 +90,13 @@ through `bindRequestFn` -- the same binding a host's real client binds --
 so a spec change whose regenerated surface outgrows auth-core's calls
 fails that package's typecheck.
 
-The browser page is a real consumer at its own tier: the reference
-app's e2e suite drives the composed
-shell -- every platform operation through this package's generated
-surface over the bound client -- in a real browser against a real,
-freshly booted server, and its `@deployment` gates drive a deployed,
-server-served page via `E2E_BASE_URL`. Below that tier the consumer
-shell's vitest suites drive the composed operations through the real
-client over a scripted server double, and this package's own unit
-tests bind a fake request function and never touch a network. Tenant
-query-key namespacing stays a consumer-shell discipline by contract.
+No runtime host binds this package in the tree, so the browser tier has
+no suite here: this package's own unit tests bind a fake request function
+and never touch a network, and the in-workspace consumers
+(`@speed/auth-core`, `@speed/account-ui`, `@speed/console-ui`) reach the
+generated surface at compile time. `starters/demo/web` is the placeholder
+where the consumer shell lands. Tenant query-key namespacing stays a
+consumer-shell discipline by contract.
 
 Deferred with reasons:
 

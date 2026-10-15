@@ -239,19 +239,9 @@ package -- see the AGENTS.md non-negotiable rules.
   inside the shell's children and feeding it a status it computes
   from the role lists it attached, exactly the host-injected-status
   contract this package's rules require.
-- **Reference-app consumer**: the reference app's consumer shell
-  composes both exports as host
-  composition -- product-shell's `ProductShell` renders `AppShell` as
-  its authenticated frame, and the shell's notes view mounts
-  `RouteGuard` with a status the host derives from the served
-  notes-list query (the server's rbac layer answers a caller without
-  `notes:read` with 403, failing the gate closed to `denied`) -- the
-  exact host-injected shape this package's rules require; the
-  package-level proof (`src/usage-example.test.tsx`) is the in-form
-  leg, and the browser-driving leg ships in the reference app's e2e
-  suite, which drives
-  the composed frame's gate to its real 403 refusal against a real,
-  freshly booted server.
+- **Browser-driving leg**: none ships in the tree. The package-level
+  proof (`src/usage-example.test.tsx`) is the in-form leg; no suite
+  drives the composed frame in a real browser against a real server.
 - **Storybook / browser-side visual verification**: no preview
   harness exists, the same deferral `ui-kit` carries; `color-contrast`
   stays axe-disabled for the same jsdom reason.

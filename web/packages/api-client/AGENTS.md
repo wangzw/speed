@@ -133,9 +133,8 @@ typing the hooks expose cannot come from generation. A generated
 operation must agree with the two constants here on the paths. Neither
 function accepts a tenant argument -- the endpoints carry no tenant on the
 wire: which tenant (if any) the request maps to is the server host's own
-wiring, through go/config's host-injected request-to-tenant resolver (the
-reference app satisfies it with `tenancy.NewDomainResolver` over its host
-map), with platform defaults when nothing matches.
+wiring, through go/config's host-injected request-to-tenant resolver, with
+platform defaults when nothing matches.
 
 `usePublicConfig` / `useFeature` live in `src/react.ts`, exported from
 the isolated `./react` subpath. The manifest declares `react` as a
@@ -171,23 +170,17 @@ error could only fake -- and `useFeature` null-guards
 render-time throw), because the response shape is this
 hand-maintained contract and a payload violating it must fail softly.
 
-The browser page leg is real and consumed: the reference app's
-consumer shell binds one real `createClient`
-over the environment's own fetch into the api-sdk binding --
-`@speed/api-sdk`, the orval-generated typed surface, calls into this
-runtime through its `src/runtime.ts` binding, and `@speed/auth-core`
-compile-consumes both in-workspace (its session layer imports this
-package's `AccessTokenStore` interface, calls the generated authn
-operations through the bound request function, and fills the
-`refreshAccessToken` hook with `() => session.refresh()`). The
-shell's home view reads the server's effective Public values and
-feature flags through `usePublicConfig`/`useFeature` on that same
-bound client, the shape a `requiredFeature`-style consumer needs.
-Browser automation drives that composition for real: the app's e2e
-suite drives the composed shell in
-a real browser against a real, freshly booted server, its
-`@deployment` gates additionally against a deployed, server-served
-page via `E2E_BASE_URL`.
+The runtime leg is real in-workspace: `@speed/api-sdk`, the
+orval-generated typed surface, calls into this runtime through its
+`src/runtime.ts` binding, and `@speed/auth-core` compile-consumes both
+(its session layer imports this package's `AccessTokenStore` interface,
+calls the generated authn operations through the bound request function,
+and fills the `refreshAccessToken` hook with `() => session.refresh()`).
+No host in the tree binds this client at runtime, so the browser tier has
+no suite here: a host binds one real `createClient` over the environment's
+own fetch and reads the server's effective Public values and feature
+flags through `usePublicConfig`/`useFeature` on that same bound client,
+the shape a `requiredFeature`-style consumer needs.
 
 Deferred with reasons:
 

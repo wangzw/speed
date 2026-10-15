@@ -82,9 +82,9 @@ cache, because every row was fetched under the departing principal's
 access token and identity-domain rows live under bare keys no
 tenant-scoped removal reaches. A declared `sessionEnded` replaces the
 default action and receives `evictAllQueries()` in its context to
-compose it (the reference app composes it with its notes-draft
-clearing). Edges that only rotate the principal (a tenant switch) and
-sessions that were never authenticated fire nothing.
+compose it (a host composes it with its own draft clearing). Edges that
+only rotate the principal (a tenant switch) and sessions that were never
+authenticated fire nothing.
 
 Why a subpath and not the main entry: the main entry's import graph
 stays exactly what the dependency rules below promise (auth-core,
@@ -320,21 +320,9 @@ bind one explicitly before rendering.
 - **Platform-facing shell.** `admin-shell`, the same tier for platform
   staff, is not shipped; this package stays free of anything
   platform-shaped so the two shells can share their foundations.
-- **Browser automation.** The reference app's consumer shell
-  is a real composed consumer of this
-  package: `main.tsx` hands its declarative definition to this
-  package's `bootstrapSpeedApp` (the `./bootstrap` subpath), which
-  registers the family four — `PRODUCT_SHELL_NAMESPACE` among them —
-  plus the app's declared three and renders `ProductShell` as the app's
-  view machine over the real session and client composition, and
-  the server serves the production build from disk under `APP_WEB_DIST`.
-  Browser automation drives that composition from the host's side: the
-  app's e2e suite
-  drives the composed app in a real browser against a real,
-  freshly booted server — the default and `@budget` tiers over the
-  dev-server page, and the `@deployment` gates
-  (`deployment-serves-the-app.spec.ts` among them) against a deployed,
-  server-served page via `E2E_BASE_URL`. The package's own suite
+- **Browser automation.** No browser-driving host ships in the tree:
+  `starters/demo/web` is the placeholder where the consumer shell lands,
+  and it carries no application yet. The package's own suite
   (`src/usage-example.test.tsx`) stays the in-form consumer proof.
 - **Storybook.** No preview harness exists; components are covered by
   jsdom tests + axe, and color-contrast verification is done nowhere —

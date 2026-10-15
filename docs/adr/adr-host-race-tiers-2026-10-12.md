@@ -4,6 +4,8 @@
 
 已接受
 
+本记录针对的示例宿主与它读取的开关变量 `SPEED_CRM_HOST_ALL_STACKS` 已随 `examples/` 退役，`Makefile` 的 `test` 腿与 `test-race` 腿不再设置该开关，该分层机制在树内已无适用对象。
+
 ## 背景
 
 `make check` 调用示例宿主的 race 腿，这也是改一处 CRM 业务代码后本地唯一能验证装配层行为的入口。这条腿把真实 host 拉起为子进程，`-race` 下子进程本身也编入 race 检测器，于是一个用例要付一次进程启动加一次完整模块装配；该宿主用同一批端到端用例驱动全部部署栈，`forEachStack`、`forEachSharedStack` 与 `forEachLinkedStack` 各自按栈展开子测试。这条腿的墙钟有三个来源：三处由产品钉死的等待（`authn` 会话空闲超时的域下限、`ratelimit` 的恢复静默期、NATS 服务端的 `ack_wait`），每个用例自己的进程启动与迁移，以及承载全部 PostgreSQL 栈的那一个共享容器——容器把栈级并发压在约一倍半，提高 `-parallel` 不再缩短墙钟。改一处代码后本地等待过久，迭代被这条腿卡住。
@@ -40,7 +42,7 @@
 
 采纳：示例宿主的端到端 race 腿默认铺在一个轻量栈矩阵上，全部部署栈在 CI 或显式开关下展开。
 
-轻量矩阵是 `sqlite-memory` 与 `postgres-redis-nats`：一个纯进程内栈，以及一个覆盖 PostgreSQL、Redis 与 NATS 三个后端的栈。未设开关且未设 `CI` 时，`forEach*` 助手只在这两个栈上铺用例；设置 `SPEED_CRM_HOST_ALL_STACKS` 或 `CI` 时，展开全部栈。被跳过的栈由运行在输出里点名，并给出取回全量的方式，不做静默缩覆盖。CI、`Makefile` 的 `test` 腿与 `test-race` 腿走全量，覆盖面不因本地默认而减少。
+轻量矩阵是 `sqlite-memory` 与 `postgres-redis-nats`：一个纯进程内栈，以及一个覆盖 PostgreSQL、Redis 与 NATS 三个后端的栈。未设开关且未设 `CI` 时，`forEach*` 助手只在这两个栈上铺用例；设置 `SPEED_CRM_HOST_ALL_STACKS` 或 `CI` 时，展开全部栈。被跳过的栈由运行在输出里点名，并给出取回全量的方式，不做静默缩覆盖。当时 CI、`Makefile` 的 `test` 腿与 `test-race` 腿走全量，覆盖面不因本地默认而减少。
 
 ## 后果
 
@@ -51,7 +53,7 @@
 - **本地不再端到端覆盖依赖 Docker 的其余栈变体。** 本地只跑 `postgres-redis-nats` 这一种后端组合，`kv-postgres`、`kv-memcached`、`event-postgres`、`event-redis` 这些组合要到 CI 才端到端跑。一处只在那些组合上暴露的装配缺陷，可以到 CI 才被看见。
 - **本地默认不会自己回到全量。** 开发者可能长期只跑轻量矩阵。缓解是运行点名跳过的栈与取回方式，且 CI 永远全量；但本地默认路径不会自行扩大。
 - **没有 Docker 的机器上，本地默认实际落到单栈。** `postgres-redis-nats` 依赖 Docker，与既有行为一致地在该机器上跳过（除非 `CI` 设置，此时它失败），于是轻量矩阵只剩 `sqlite-memory`。
-- **覆盖面的分级是一条隐式的门禁变更。** 以 `Makefile` 的 `test` 或 `test-race` 腿为门禁的流程不受影响，两条腿都设了开关；以裸跑这条 race 腿当门禁的用法会看到较小的矩阵，需要显式设 `SPEED_CRM_HOST_ALL_STACKS` 才能取回全量。
+- **覆盖面的分级是一条隐式的门禁变更。** 以 `Makefile` 的 `test` 或 `test-race` 腿为门禁的流程不受影响，两条腿当时都设了开关；以裸跑这条 race 腿当门禁的用法会看到较小的矩阵，需要显式设 `SPEED_CRM_HOST_ALL_STACKS` 才能取回全量。
 - **并发的上限由 Redis 的库数定，不由 `-parallel` 定。** Redis 服务端提供十六个库，harness 留一个做租约，于是同时最多十五个用例各持一个；并行度超过它的运行会等租约，等过两分钟的那个用例失败。十六核以上的机器上，`-parallel` 的默认值会越过这条线。
 
 ## 失效条件

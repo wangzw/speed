@@ -269,6 +269,15 @@ before reading a miss as a bug:
   structured code only, boot-time refusals) have no entry here and keep
   resolving through each package's own fallback text.
 
+**Known coverage gap: bundle membership is unasserted.** Every bundled
+key was once pinned against the platform's apperr census, the generated
+index `docs/error-codes.json`. That index and its generator
+(`tools/gen_error_code_index.py`) are no longer in the tree, so nothing
+asserts that the bundle ships only real error codes -- the membership
+property has no test on the web side. Closing the gap means building a
+census from the `pkg/` modules and pinning the bundle against it; no tool
+in the tree does that today.
+
 Regenerate after any backend catalog or apperr code change:
 `python3 tools/gen_platform_error_bundle.py`; `--check` fails when the
 committed bundle is stale. Run the generator's own suite next to it.

@@ -186,19 +186,9 @@ at all (see the Storybook deferral below).
   composes the gate inside the shell's children, fed a status the
   fixture host computes from the role lists it attached, the exact
   host-injected shape this package's non-negotiable rules require.
-- **Reference-app consumer**: consumed by the reference app's consumer
-  shell in host composition --
-  product-shell's `ProductShell` renders `AppShell` as its
-  authenticated frame, and the shell's notes view mounts `RouteGuard`
-  with a status the host derives from the served notes-list query (the
-  server's rbac layer answers a caller without `notes:read` with 403,
-  failing the gate closed to `denied`), the exact host-injected shape
-  this package's rules require. The package-level proof
-  (`src/usage-example.test.tsx`) is the in-form leg; the
-  browser-driving leg ships in the reference app's e2e suite,
-  which drives the
-  composed frame's gate to its real 403 refusal against a real,
-  freshly booted server.
+- **Browser-driving leg**: none ships in the tree. The package-level
+  proof (`src/usage-example.test.tsx`) is the in-form leg; no suite
+  drives the composed frame in a real browser against a real server.
 - **Storybook**: no preview harness exists; components are covered by
   jsdom tests + axe, and color-contrast verification is not
   implemented, same as `ui-kit`.
