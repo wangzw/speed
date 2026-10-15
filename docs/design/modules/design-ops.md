@@ -43,7 +43,9 @@ core.Module{
 
 **`Requires` 约束的主体是把本模块纳入命令的每个宿主。** `(*speedhttp.Router)(nil)` 必需：本模块挂路由、读端名都经它。[http](http/design-http.md) 排他交付 `Router`，纳入本模块因而也把 `http` 拉进装配。`(*log.Logger)(nil)` 与 `(*db.Database)(nil)` 可选：有数据库时就绪探针一并探它一次，没有数据库时 `/ready` 只报各端可服务。
 
-**`Resources` 里是本模块自己的 `Spec`。** `Endpoint` 是配置点名的端（缺省 `ops`），`Document` 是本模块以 `//go:embed` 读进来的 `openapi/ops.json`。它是本模块对外的声明面，供别的读取方按类型收集——`pkg/http` 交出的片段、别的消费者读到的输入，都在同一份可用集里。
+**`Resources` 里是本模块自己的 `Spec`。** `Document` 是本模块以 `//go:embed` 读进来的 `openapi/ops.json`；它是本模块对外的声明面，供别的读取方按类型收集——`pkg/http` 交出的片段、别的消费者读到的输入，都在同一份可用集里。
+
+**这份声明里的 `Endpoint` 是缺省端，不是配置点名的那个。** 资源是 `init` 期的静态声明，那一刻配置还没读，**声明里写不进一个当时还不存在的值**——这条约束来自 [core](design-core.md) 的资源模型，不是本模块的选择。配置点名的端在 `Init` 里取到：本模块在那时把**自己这份片段**的 `Endpoint` 改写成配置端，再交给 `Merge`，使合并文档把本模块三条 operation 的 `x-endpoint` 标成它真正服务的端。**声明资源上的那个字段因此停在缺省值**，读它的一方（例如一个只遍历资源、不跑生命周期的消费者）看到的是 `ops`。本模块自身的 `Requires` 与构造都不依赖它，运行时行为不受影响。
 
 ### 导出包 `pkg/ops/openapi`
 
@@ -222,5 +224,5 @@ sequenceDiagram
 
 | 能力 | 状态 | 代码 |
 |---|---|---|
-| `ops` 模块（探针路由、OpenAPI 合并、就绪判定） | 未实现 | — |
-| `pkg/ops/openapi` 的 `Merge`（供模块与 `gen` 命令共用的纯函数） | 未实现 | — |
+| `ops` 模块（探针路由、OpenAPI 合并、就绪判定） | 已实现 | `pkg/ops/ops.go` `Module` |
+| `pkg/ops/openapi` 的 `Merge`（供模块与 `gen` 命令共用的纯函数） | 已实现 | `pkg/ops/openapi/openapi.go` `Merge` |

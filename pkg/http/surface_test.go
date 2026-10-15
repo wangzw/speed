@@ -45,6 +45,7 @@ var exportedSurface = []string{
 	"field Problem.Type",
 	"field Spec.Document",
 	"field Spec.Endpoint",
+	"func BindJSON",
 	"func Draining",
 	"func Fail",
 	"func Module",

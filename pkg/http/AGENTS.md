@@ -32,12 +32,15 @@ Read `Middleware`'s field comments before adding a seat to a layer.
   change slips through; the `./...` scan is what forces it to be named. The test
   fails on the first package outside the budget. An OpenAPI parsing library is
   such a package: `Spec` is checked for its shape and nothing else.
-- **gin is the surface, and nothing wraps it.** A route's handlers and a
-  layer's `Handler` are `gin.HandlerFunc`s, and routing, the middleware chain,
-  body binding and validation, and rendering are gin's. A helper that decodes a
-  body, validates one or renders a response is the shape to reject, and so is an
-  exported setting that changes how gin binds. The engine is internal: a
-  registrant goes through `Endpoint` and never holds it.
+- **gin is the surface.** A route's handlers and a layer's `Handler` are
+  `gin.HandlerFunc`s, and routing, the middleware chain and rendering are gin's.
+  `BindJSON` is the one body-binding entry point this module adds: it binds
+  through gin's own binder and turns the binder's failures — and a `dst`'s own
+  `Validate` — into the entry point's error shape (413, 400 or 422), so the
+  classification is one place rather than one per handler. Beyond it, a helper
+  that decodes a body, validates one or renders a response is the shape to
+  reject, and so is an exported setting that changes how gin binds. The engine is
+  internal: a registrant goes through `Endpoint` and never holds it.
 - **gin's process-wide state is the host's, apart from the mode.** This module
   puts gin in release mode, because gin's debug mode prints for every route
   registered and those lines would bypass the logging module. It does not touch

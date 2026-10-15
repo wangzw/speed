@@ -321,9 +321,9 @@ speed 不引入进程边界。宿主是单一进程，注册表与全部模块�
 |---|---|
 | [core](modules/design-core.md) | 已实现 |
 | [config](modules/design-config.md) | 已实现 |
-| [log](modules/design-log.md) | 部分实现 |
+| [log](modules/design-log.md) | 已实现 |
 | [db](modules/design-db.md) | 部分实现 |
-| [http](modules/http/design-http.md) | 部分实现 |
+| [http](modules/http/design-http.md) | 已实现 |
 | [authn](modules/authn/design-authn.md) | 部分实现 |
 | [tenant](modules/tenant/design-tenant.md) | 部分实现 |
 | [authz](modules/design-authz.md) | 已实现 |
@@ -338,7 +338,7 @@ speed 不引入进程边界。宿主是单一进程，注册表与全部模块�
 | [jobs](modules/jobs/design-jobs.md) | 未实现 |
 | [notification](modules/notification/design-notification.md) | 未实现 |
 | [objectstore](modules/design-objectstore.md) | 未实现 |
-| [ops](modules/design-ops.md) | 未实现 |
+| [ops](modules/design-ops.md) | 已实现 |
 | [web](modules/web/design-web.md) | 部分实现 |
-| [webui](modules/design-webui.md) | 未实现 |
+| [webui](modules/design-webui.md) | 已实现 |
 | [starters](modules/design-starters.md) | 未实现 |

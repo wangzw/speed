@@ -1,0 +1,27 @@
+{
+  "openapi": "3.1.0",
+  "info": {"title": "operations", "version": "1.0.0"},
+  "paths": {
+    "/health": {
+      "get": {
+        "summary": "The process is alive",
+        "responses": {"200": {"description": "Alive"}}
+      }
+    },
+    "/ready": {
+      "get": {
+        "summary": "Every declared endpoint accepts requests and the database answers",
+        "responses": {
+          "200": {"description": "Ready"},
+          "503": {"description": "Not ready, naming each part that failed"}
+        }
+      }
+    },
+    "/openapi.json": {
+      "get": {
+        "summary": "The API document, merged from every module's fragment",
+        "responses": {"200": {"description": "The merged document"}}
+      }
+    }
+  }
+}

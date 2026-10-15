@@ -204,6 +204,8 @@ func BindJSON(c *gin.Context, dst any) bool
 
 `ShouldBindJSON` 失败时，`*nethttp.MaxBytesError` 归 413、其余归 400；绑定成功而 `dst` 实现 `interface{ Validate() error }` 并报错时归 422。请求体的大小上限由该端配置的 `max-body-bytes` 施加，落在一个内建层上（见请求体上限一节）：对该端的每个 handler 一律生效，无论谁以哪种方式读 body。声明了 `Content-Length` 且超限的请求，在该层就被写出一次 413；长度未知的请求被包住，读到超限时以 `*nethttp.MaxBytesError` 结束，调用方用 `errors.As` 判别。
 
+**`BindJSON` 写出的拒绝不带本地化的标题，`Detail` 是底层错误的文本。** 本模块自己写出的四类拒绝（无匹配路由、方法不允许、请求体超限、接住 panic）从本模块的消息目录渲染 `Title`；`BindJSON` 做不到——它是一个包级函数，取不到装配好的本地化器，那是本模块各拒绝点的闭包变量，不在请求上下文里。**同一个状态码因而有两处标题来源**：`Content-Length` 已声明且超限的那条 413 由内建层写出、带本地化标题，经 `BindJSON` 读到超限的那条 413 不带。要让它也本地化，得给它一条到达本地化器的途径（例如把它放进请求上下文），那比一个薄入口的面要大（[ADR-http-bind-and-error-shape-2026-10-15](../../../adr/adr-http-bind-and-error-shape-2026-10-15.md)）。
+
 **错误响应**。本模块写出的错误响应有一个默认形状，可由一个可选接缝整体替换；供各层与 handler 写出错误响应的入口与它们共用同一处决定形状（[ADR-http-errors-2026-10-10](../../../adr/adr-http-errors-2026-10-10.md)）：
 
 ```go
@@ -581,7 +583,7 @@ gin 的 `*gin.Context` 只在它所属那次请求的处理期间有效：handle
 | 请求路径的 panic 兜底 | 已实现 | `pkg/http/recovery.go` `recovery`、`answerDefect`、`panicError`、`handlerDefect`、`discardRepresentationHeaders`、`stackTrace` |
 | 每请求一条访问记录 | 已实现 | `pkg/http/accesslog.go` `accessLog`、`answeredWith` |
 | 请求体上限 | 已实现 | `pkg/http/bodylimit.go` `bodyLimit`、`limitedBody` |
-| 请求体绑定入口 `BindJSON` | 未实现 | — |
+| 请求体绑定入口 `BindJSON` | 已实现 | `pkg/http/bind.go` `BindJSON` |
 | 拒绝文本的本地化渲染与本模块的消息目录 | 已实现 | `pkg/http/messages.go` `localesFS`、`messageCatalog`、`refusalKey`、`refusalTitle`，`pkg/http/locales/*.json`；`pkg/http/module.go` `localizerFor` |
 | 错误响应的形状与写出入口 | 已实现 | `pkg/http/problem.go` `Problem`、`ErrorResponder`、`Fail`、`respondProblem`，`pkg/http/module.go` `errorResponder` |
 | `Spec` 资源、形状校验与查询 | 已实现 | `pkg/http/surface.go` `Spec`、`pkg/http/spec.go` `validateSpecs`、`validateSpec` |

@@ -622,7 +622,7 @@ log:
 | 功能 | 状态 | 代码 |
 |---|---|---|
 | 日志功能与按名取用 | 已实现 | `pkg/log/log.go` `Logger`、`pkg/log/module.go` `logger` |
-| 取用 logger 的便捷入口 `NamedFor` | 未实现 | — |
+| 取用 logger 的便捷入口 `NamedFor` | 已实现 | `pkg/log/named.go` `NamedFor` |
 | 脱敏规则的登记 | 已实现 | `pkg/log/log.go` `Redaction`、`pkg/log/rules.go` `ruleSet`、`AddKeys`、`AddPattern` |
 | 上下文存取，按键替换与撤下 | 已实现 | `pkg/log/context.go` `FromContext`、`WithLogger`、`WithAttrs`、`WithoutAttrs` |
 | 进程根 logger 与引导链 | 已实现 | `pkg/log/bootstrap.go` `Default`、`newBootstrapChain` |
