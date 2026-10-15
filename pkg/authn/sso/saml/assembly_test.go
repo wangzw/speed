@@ -9,6 +9,7 @@ import (
 	"github.com/vislake/speed/pkg/authn/internal/mount/mounttest"
 	"github.com/vislake/speed/pkg/config"
 	"github.com/vislake/speed/pkg/core"
+	"github.com/vislake/speed/pkg/log"
 )
 
 // The stand-in modules a driven registry is built from, each delivering one of
@@ -78,18 +79,23 @@ func participants() []string {
 	return []string{ModuleName, providersModule, accountsModule, mounterModule, configModule}
 }
 
-func TestTheDescriptorRequiresTheThreeAndDeliversBoth(t *testing.T) {
+func TestTheDescriptorRequiresTheCapabilitiesAndDeliversBoth(t *testing.T) {
 	m := Module()
 	if m.Name != ModuleName || ModuleName != "authn.sso.saml" {
 		t.Errorf("module name = %q, want authn.sso.saml", m.Name)
 	}
-	wantReq := []core.Token{(*authn.SSOProviders)(nil), (*authn.Accounts)(nil), (*mount.Mounter)(nil)}
+	wantReq := []core.Requirement{
+		{Token: (*authn.SSOProviders)(nil)},
+		{Token: (*authn.Accounts)(nil)},
+		{Token: (*mount.Mounter)(nil)},
+		{Token: (*log.Logger)(nil), Optional: true},
+	}
 	if len(m.Requires) != len(wantReq) {
-		t.Fatalf("Requires = %+v, want the register, account and mounter capabilities", m.Requires)
+		t.Fatalf("Requires = %+v, want the register, account, mounter and logging capabilities", m.Requires)
 	}
 	for i, r := range m.Requires {
-		if r.Token != wantReq[i] || r.Optional {
-			t.Errorf("Requires[%d] = %+v, want %v, not optional", i, r, wantReq[i])
+		if r.Token != wantReq[i].Token || r.Optional != wantReq[i].Optional {
+			t.Errorf("Requires[%d] = %+v, want %+v", i, r, wantReq[i])
 		}
 	}
 	wantProv := []core.Token{(*authn.LoginMethod)(nil), (*authn.SSOMetadataRefresher)(nil)}

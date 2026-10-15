@@ -27,6 +27,7 @@ import (
 	"github.com/vislake/speed/pkg/authn"
 	"github.com/vislake/speed/pkg/authn/internal/egress"
 	"github.com/vislake/speed/pkg/authn/internal/step"
+	"github.com/vislake/speed/pkg/observability"
 )
 
 // The client credentials every case configures a provider with.
@@ -366,6 +367,10 @@ func newRig(t *testing.T, mocks ...*mockIDP) *rig {
 		pool.AddCert(m.cert())
 	}
 	client := egress.New(egress.Options{AllowLoopback: true, RootCAs: pool})
+	// The product wraps its client's transport from outside so an outbound call
+	// carries the span of the context it was made for; the rig builds the client
+	// the same way, so a case can hold the trace across the hop.
+	client.Transport = observability.Transport(client.Transport)
 	providers := newFakeProviders()
 	reader := sdkmetric.NewManualReader()
 	settings := newReader(nil, slog.Default())

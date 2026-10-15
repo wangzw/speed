@@ -184,6 +184,10 @@ func newProduct(reg *core.Registry) (*product, error) {
 		return nil, err
 	}
 	client := egress.New(egress.Options{AllowLoopback: cfg.allowPrivateEgress})
+	// The restricted client is wrapped from outside, so a discovery, key-set or
+	// token request carries the span of the call's context across the hop to the
+	// identity provider; internal/egress offers no constructor of its own for it.
+	client.Transport = observability.Transport(client.Transport)
 	settings := newReader(store, log.Default())
 	return build(cfg, sso, client, settings), nil
 }

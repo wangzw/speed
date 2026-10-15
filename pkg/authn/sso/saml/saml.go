@@ -79,10 +79,13 @@ func init() { core.ProcessRegistry.Register(Module()) }
 // The enterprise provider register, the account reads and the route mounter are
 // required, and each is delivered exclusively by another module, so a command
 // that names this one without them fails in resolution. The settings store, the
-// event bus, the audit capability, the metric capability and the logging
-// capability are taken up in Init, each with a stated behaviour for its absence,
-// so none is declared; the key and certificate paths are read from configuration
-// in New, which is why the configuration reader is resolved where it is used.
+// event bus, the audit capability and the metric capability are taken up in
+// Init, each with a stated behaviour for its absence, so none is declared. The
+// logging capability is declared as an optional requirement: the declaration
+// is what orders this module's construction after the logging capability's,
+// which is what lets the logger taken up in Init be the configured one. The key
+// and certificate paths are read from configuration in New, which is why the
+// configuration reader is resolved where it is used.
 //
 // The login method and the metadata refresher are delivered without being
 // claimed, which is what lets several methods and refreshers stand side by side.
@@ -95,6 +98,7 @@ func Module() core.Module {
 			{Token: (*authn.SSOProviders)(nil)},
 			{Token: (*authn.Accounts)(nil)},
 			{Token: (*mount.Mounter)(nil)},
+			{Token: (*log.Logger)(nil), Optional: true},
 		},
 		Provides: []core.Provision{
 			{Token: (*authn.LoginMethod)(nil)},
@@ -191,11 +195,16 @@ func newProduct(reg *core.Registry) (*product, error) {
 	if err != nil {
 		return nil, err
 	}
+	client := egress.New(egress.Options{AllowLoopback: allowLoopback})
+	// The restricted client is wrapped from outside, so the metadata refresh and
+	// every other outbound request carries the span of the call's context across
+	// the hop; internal/egress offers no constructor of its own for it.
+	client.Transport = observability.Transport(client.Transport)
 	return &product{
 		providers:  providers,
 		accounts:   accounts,
 		mounter:    mounter,
-		client:     egress.New(egress.Options{AllowLoopback: allowLoopback}),
+		client:     client,
 		sp:         sp,
 		assertions: logs,
 		logger:     log.Default(),

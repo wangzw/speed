@@ -37,6 +37,7 @@ import (
 	"github.com/vislake/speed/pkg/core"
 	"github.com/vislake/speed/pkg/internal/literal"
 	"github.com/vislake/speed/pkg/log"
+	"github.com/vislake/speed/pkg/observability"
 )
 
 // ModuleName is this module's name in the registry.
@@ -132,7 +133,12 @@ func newProduct(reg *core.Registry) (*product, error) {
 	if err := registerSecret(reg, cfg.clientSecret); err != nil {
 		return nil, err
 	}
-	return newMethod(cfg, egress.New(egress.Options{})), nil
+	client := egress.New(egress.Options{})
+	// The restricted client is wrapped from outside, so a discovery, key-set or
+	// token request carries the span of the call's context across the hop to the
+	// provider; internal/egress offers no constructor of its own for it.
+	client.Transport = observability.Transport(client.Transport)
+	return newMethod(cfg, client), nil
 }
 
 // registerSecret registers the client secret as a literal redaction rule, so it

@@ -45,6 +45,7 @@ import (
 	"github.com/vislake/speed/pkg/core"
 	"github.com/vislake/speed/pkg/internal/literal"
 	"github.com/vislake/speed/pkg/log"
+	"github.com/vislake/speed/pkg/observability"
 )
 
 // ModuleName is this module's name in the registry.
@@ -158,7 +159,13 @@ func Module() core.Module {
 			if err := registerSecret(reg, cfg.clientSecret); err != nil {
 				return nil, err
 			}
-			return newMethod(cfg, egress.New(egress.Options{})), nil
+			client := egress.New(egress.Options{})
+			// The restricted client is wrapped from outside, so the token
+			// exchange and the two API reads carry the span of the call's context
+			// across the hop; internal/egress offers no constructor of its own
+			// for it.
+			client.Transport = observability.Transport(client.Transport)
+			return newMethod(cfg, client), nil
 		},
 	}
 }
