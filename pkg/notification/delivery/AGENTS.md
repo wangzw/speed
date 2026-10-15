@@ -141,13 +141,13 @@ missing, empty or cannot be stringified fails the channel with
 `notification.ErrInvalidRequest` — no empty string and no placeholder goes onto
 the wire.
 
-**An external channel's destination is a dispatch parameter.** The design fixes
-no source for it, and this module reaches no account store: a recipient is an
-account identifier, not a phone number and not an address. The destination
-therefore travels in the dispatch's parameters under `destinationParam` — the
-constant `"to"`, declared in `render.go` — as an E.164 number for `sms` and an
-RFC 5322 address for `email`. A dispatch whose parameters name no `to`, or whose
-`to` cannot be stringified, **fails that channel** with
+**An external channel's destination is a dispatch parameter.** This module
+reaches no account store and takes the destination from nowhere else: a recipient
+is an account identifier to it, not a phone number and not an address. The
+destination therefore travels in the dispatch's parameters under
+`destinationParam` — the constant `"to"`, declared in `render.go` — as an E.164
+number for `sms` and an RFC 5322 address for `email`. A dispatch whose parameters
+name no `to`, or whose `to` cannot be stringified, **fails that channel** with
 `notification.ErrInvalidRequest`, recorded as a `failed` row with this module's
 own reason, and the message never reaches the vendor. `to` is not exempt from
 the type's `RecipientVisibleParams` whitelist: a type that declares one and does
