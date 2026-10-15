@@ -11,13 +11,25 @@ import (
 	"github.com/vislake/speed/pkg/log"
 )
 
+// Product is what a carrier module delivers: the two seams a carrier answers
+// through, over one vendor client.
+//
+// The sending seam and the template-management seam are one value and not two
+// because they reach the same vendor account through the same client, and the
+// module constructs its instance once. A carrier module delivers both,
+// exclusively, so a command still names exactly one carrier.
+type Product interface {
+	Sender
+	Provider
+}
+
 // Spec is what a carrier subpackage hands this package to become a module.
 //
 // It is the whole of what a carrier contributes. Everything else — the exclusive
-// delivery of the Sender, mounting the input-item declaration under a namespace
+// delivery of both seams, mounting the input-item declaration under a namespace
 // of the carrier's own, resolving the optional logging capability, registering
 // the carrier's credentials as literal redaction rules and releasing nothing,
-// since a sender holds only an in-process dedupe table — is this package's,
+// since a carrier holds only an in-process dedupe table — is this package's,
 // shared by every carrier.
 //
 // The type parameter is the carrier's own configuration carrier. Each carrier
@@ -43,8 +55,9 @@ type Spec[C any] struct {
 	// start without. A carrier taken in at run level has to start, so the state
 	// it returns is StateEnabled: two carriers enabled at once fail the startup
 	// instead of one silently winning. Everything it cannot start without — a
-	// required item, a template set that is not self-consistent — is an error
-	// naming what is wrong, and the startup fails with it ahead of any message.
+	// value the loader's required-item declaration does not already enforce — is
+	// an error naming what is wrong, and the startup fails with it ahead of any
+	// message.
 	Stance func(cfg *C) (core.Enablement, error)
 	// Secrets returns the values this carrier holds that have to be registered as
 	// literal redaction rules, so a credential that turns up in any log line of
@@ -53,8 +66,11 @@ type Spec[C any] struct {
 	//
 	// It is optional; a carrier with no credential of its own leaves it nil.
 	Secrets func(cfg *C) []string
-	// Open builds this carrier from the decoded configuration.
-	Open func(ctx context.Context, cfg *C) (Sender, error)
+	// Open builds this carrier from the decoded configuration. It returns the
+	// one product that answers both seams, so a carrier returns whatever type
+	// implements them; the factory declares the seams from the product's
+	// capabilities.
+	Open func(ctx context.Context, cfg *C) (Product, error)
 }
 
 // NewModule builds a carrier's module descriptor.
@@ -72,11 +88,15 @@ func NewModule[C any](spec Spec[C]) core.Module {
 		// literal redaction rule and an assembly with logging has to have it built
 		// first.
 		Requires: []core.Requirement{{Token: (*log.Logger)(nil), Optional: true}},
-		// Exclusive, because two carriers behind one capability is not a
-		// configuration this package could serve: a consumer would hand its
-		// messages to whichever one resolution happened to leave standing, and two
-		// at once therefore fail the startup instead.
-		Provides:  []core.Provision{{Token: (*Sender)(nil), Exclusive: true}},
+		// Both seams are delivered, both exclusively: a consumer would otherwise
+		// hand its messages to whichever carrier resolution happened to leave
+		// standing, and two at once therefore fail the startup. One instance
+		// answers both, so the carrier a command sends through is the one whose
+		// management seam that command reaches.
+		Provides: []core.Provision{
+			{Token: (*Sender)(nil), Exclusive: true},
+			{Token: (*Provider)(nil), Exclusive: true},
+		},
 		Resources: []any{spec.schema()},
 		Prepare: func(_ context.Context, reg *core.Registry) (core.Enablement, error) {
 			cfg, err := spec.read(reg)

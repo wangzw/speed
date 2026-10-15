@@ -1,16 +1,14 @@
 package aliyun
 
 import (
-	"fmt"
-
 	"github.com/vislake/speed/pkg/config"
-	"github.com/vislake/speed/pkg/sms"
 )
 
-// The keys this module accepts, relative to its namespace. All five are
+// The keys this module accepts, relative to its namespace. All four are
 // configuration, read once at startup: the two credentials and the endpoint
-// build the client, and the signature and the template map are fixed for the
-// life of the process.
+// build the client, and the signature every message is sent under is fixed for
+// the life of the process. The templates are not here: the set a message is
+// resolved against belongs to the template registry, and this carrier holds none.
 const (
 	accessKeyIDItem = "access-key-id"
 	// accessKeyValueItem is the access key's value, the input item the
@@ -19,7 +17,6 @@ const (
 	accessKeyValueItem = "access-key-secret"
 	endpointItem       = "endpoint"
 	signNameItem       = "sign-name"
-	templatesItem      = "templates"
 )
 
 // defaultEndpoint is the carrier's public access point, used when the host does
@@ -28,9 +25,8 @@ const (
 const defaultEndpoint = "dysmsapi.aliyuncs.com"
 
 // configDefaults is what this module is worth without a configuration file. Only
-// the endpoint has one: there is no default credential, no default signature and
-// no default template, because a message sent under a guessed signature or
-// template is a message nobody approved.
+// the endpoint has one: there is no default credential and no default signature,
+// because a message sent under a guessed signature is a message nobody approved.
 var configDefaults = moduleConfig{
 	Endpoint: defaultEndpoint,
 }
@@ -44,12 +40,9 @@ type moduleConfig struct {
 	AccessKeySecret string `config:"access-key-secret"`
 	// Endpoint is the access point the client is built against.
 	Endpoint string `config:"endpoint"`
-	// SignName is the approved signature every message is sent under.
+	// SignName is the approved signature every message is sent under, and the
+	// signature a template is offered under.
 	SignName string `config:"sign-name"`
-	// Templates declares each template this side sends under: its ordered
-	// parameter names and its carrier code for each language. A message names a
-	// template by this key, and the declaration turns it into a code.
-	Templates map[string]sms.TemplateSpec `config:"templates"`
 }
 
 // resolved is the configuration this module actually runs on.
@@ -58,25 +51,19 @@ type resolved struct {
 	accessKeySecret string
 	endpoint        string
 	signName        string
-	decl            sms.Declaration
 }
 
-// resolve turns decoded configuration into what the module runs on, freezing the
-// declared templates. A template set that is not self-consistent is a startup
-// failure naming the template, rather than a message the carrier refuses only
-// when a code is first sent for it.
-func (c moduleConfig) resolve() (resolved, error) {
-	decl, err := sms.NewDeclaration(c.Templates)
-	if err != nil {
-		return resolved{}, fmt.Errorf("%s.%s: %w", ConfigNamespace, templatesItem, err)
-	}
+// resolve turns decoded configuration into what the module runs on. There is
+// nothing to check here: the items the module cannot run without are declared
+// required, and the loader refuses a section that omits one before this is
+// reached.
+func (c moduleConfig) resolve() resolved {
 	return resolved{
 		accessKeyID:     c.AccessKeyID,
 		accessKeySecret: c.AccessKeySecret,
 		endpoint:        c.Endpoint,
 		signName:        c.SignName,
-		decl:            decl,
-	}, nil
+	}
 }
 
 // items declares this module's input items. The module descriptor mounts them
@@ -98,15 +85,6 @@ func items() map[string]config.Item {
 		signNameItem: {
 			Required:    true,
 			Description: "the approved SMS signature every message is sent under",
-		},
-		templatesItem: {
-			// A container leaf: a map takes its origin set from the primary
-			// source alone.
-			Origins:  config.OriginPrimary,
-			Required: true,
-			Description: "the declared templates, keyed by the template name the caller sends " +
-				"under; each holds the ordered parameter names the approved template substitutes and " +
-				"the carrier code for each language",
 		},
 	}
 }

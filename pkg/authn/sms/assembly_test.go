@@ -25,8 +25,9 @@ import (
 // delivers exclusively in a real command, each supplied to a module of its own
 // here because the modules that deliver them are not ones these cases bring in.
 const (
-	dbModule     = "stand-in.db"
-	senderModule = "stand-in.sender"
+	dbModule       = "stand-in.db"
+	registryModule = "stand-in.registry"
+	senderModule   = "stand-in.sender"
 )
 
 // standIn is a module that declares the tokens names, exclusively when told to,
@@ -50,6 +51,9 @@ func standIn(name string, instance any, exclusive bool, tokens ...core.Token) co
 type assembly struct {
 	// sender, when non-nil, is supplied to a stand-in for the carrier module.
 	sender sms.Sender
+	// registry, when non-nil, is supplied to a stand-in for the template registry
+	// module.
+	registry sms.Registry
 	// secondSender adds a second carrier stand-in, for the exclusive-conflict
 	// case.
 	secondSender bool
@@ -100,6 +104,10 @@ func (a assembly) drive(t *testing.T, action func(ctx context.Context, reg *core
 	reg.Register(standIn(dbModule, database, true, (*db.Database)(nil)))
 	names = append(names, dbModule)
 
+	if a.registry != nil {
+		reg.Register(standIn(registryModule, a.registry, true, (*sms.Registry)(nil)))
+		names = append(names, registryModule)
+	}
 	if a.sender != nil {
 		reg.Register(standIn(senderModule, a.sender, true, (*sms.Sender)(nil)))
 		names = append(names, senderModule)
@@ -122,9 +130,9 @@ func (a assembly) drive(t *testing.T, action func(ctx context.Context, reg *core
 
 // TestTheDescriptorNamesWhatItDeliversAndRequires holds the descriptor's shape:
 // the SMS capability is claimed exclusively, the account lifecycle hook travels
-// with it without being claimed, and the database and the sending seam are
-// required — both delivered exclusively by another module, so the closure does
-// not pull them in.
+// with it without being claimed, and the database, the template registry and the
+// sending seam are required — each delivered exclusively by another module, so
+// the closure does not pull them in.
 func TestTheDescriptorNamesWhatItDeliversAndRequires(t *testing.T) {
 	m := Module()
 	if m.Name != ModuleName || ModuleName != "authn.sms" {
@@ -146,7 +154,7 @@ func TestTheDescriptorNamesWhatItDeliversAndRequires(t *testing.T) {
 			required = append(required, r.Token)
 		}
 	}
-	want := []core.Token{(*db.Database)(nil), (*sms.Sender)(nil)}
+	want := []core.Token{(*db.Database)(nil), (*sms.Registry)(nil), (*sms.Sender)(nil)}
 	if len(required) != len(want) {
 		t.Fatalf("Requires = %+v, want %v", m.Requires, want)
 	}
@@ -210,9 +218,10 @@ func TestARealRegistryDeliversSMSCodesAndTheHook(t *testing.T) {
 	var codes authn.SMSCodes
 	var hook authn.AccountLifecycle
 	err := assembly{
-		sender:  newSender(),
-		store:   newStore(),
-		migrate: true,
+		sender:   newSender(),
+		registry: newRegistry(),
+		store:    newStore(),
+		migrate:  true,
 	}.drive(t, func(_ context.Context, reg *core.Registry) error {
 		var err error
 		if codes, err = core.Resolve[authn.SMSCodes](reg); err != nil {
@@ -235,12 +244,29 @@ func TestARealRegistryDeliversSMSCodesAndTheHook(t *testing.T) {
 // TestTheDriveFailsWithoutASender holds the required exclusive dependency: a
 // command that names this module and no carrier fails in resolution.
 func TestTheDriveFailsWithoutASender(t *testing.T) {
-	err := assembly{migrate: true}.drive(t, func(context.Context, *core.Registry) error {
+	err := assembly{registry: newRegistry(), migrate: true}.drive(t, func(context.Context, *core.Registry) error {
 		t.Error("the drive reached its action with no sending seam")
 		return nil
 	})
 	if err == nil {
 		t.Fatal("the drive succeeded with no sending seam, want a resolution failure")
+	}
+	if !errors.Is(err, core.ErrMissingProvider) {
+		t.Errorf("the drive returned %v, want a missing-provider failure", err)
+	}
+}
+
+// TestTheDriveFailsWithoutARegistry holds the second required exclusive
+// dependency: a command that names this module and no template registry fails in
+// resolution, because the module has no declaration to check its templates
+// against and no registry to resolve a message through.
+func TestTheDriveFailsWithoutARegistry(t *testing.T) {
+	err := assembly{sender: newSender(), migrate: true}.drive(t, func(context.Context, *core.Registry) error {
+		t.Error("the drive reached its action with no template registry")
+		return nil
+	})
+	if err == nil {
+		t.Fatal("the drive succeeded with no template registry, want a resolution failure")
 	}
 	if !errors.Is(err, core.ErrMissingProvider) {
 		t.Errorf("the drive returned %v, want a missing-provider failure", err)
@@ -253,6 +279,7 @@ func TestTwoSendersFailInResolution(t *testing.T) {
 	err := assembly{
 		sender:       newSender(),
 		secondSender: true,
+		registry:     newRegistry(),
 		migrate:      true,
 	}.drive(t, func(context.Context, *core.Registry) error {
 		t.Error("the drive reached its action with two carriers")
@@ -266,7 +293,7 @@ func TestTwoSendersFailInResolution(t *testing.T) {
 // TestStartRefusesWhenTheTableIsMissingThroughTheDrive holds ErrNotMigrated from
 // Start, naming the migration command.
 func TestStartRefusesWhenTheTableIsMissingThroughTheDrive(t *testing.T) {
-	err := assembly{sender: newSender()}.drive(t, func(context.Context, *core.Registry) error {
+	err := assembly{sender: newSender(), registry: newRegistry()}.drive(t, func(context.Context, *core.Registry) error {
 		t.Error("the drive reached its action with the table missing")
 		return nil
 	})
@@ -278,7 +305,7 @@ func TestStartRefusesWhenTheTableIsMissingThroughTheDrive(t *testing.T) {
 // TestStartRefusesWithoutARootKeyThroughTheDrive holds ErrNoEncryptionKey from
 // Start.
 func TestStartRefusesWithoutARootKeyThroughTheDrive(t *testing.T) {
-	err := assembly{sender: newSender(), keyless: true, migrate: true}.drive(t, func(context.Context, *core.Registry) error {
+	err := assembly{sender: newSender(), registry: newRegistry(), keyless: true, migrate: true}.drive(t, func(context.Context, *core.Registry) error {
 		t.Error("the drive reached its action with no root key")
 		return nil
 	})
@@ -287,15 +314,15 @@ func TestStartRefusesWithoutARootKeyThroughTheDrive(t *testing.T) {
 	}
 }
 
-// TestTheDriveRefusesACarrierWhoseDeclarationDoesNotMatchWhatTheModuleNeeds
+// TestTheDriveRefusesARegistryWhoseDeclarationDoesNotMatchWhatTheModuleNeeds
 // holds the consumer-side check: this module sends under three templates, each
-// with two languages and exactly the two parameters it builds, and a carrier
+// with two languages and exactly the two parameters it builds, and a registry
 // whose declaration does not match — a missing template, a missing language, a
 // missing parameter, or a parameter the module never sends — stops the startup
 // at New with ErrInvalidConfig naming the combination it is about, ahead of any
-// code. It is the property the carrier-side check used to give: a mismatch is
-// named at startup rather than at the first send that needs it.
-func TestTheDriveRefusesACarrierWhoseDeclarationDoesNotMatchWhatTheModuleNeeds(t *testing.T) {
+// code. A mismatch is named at startup rather than at the first send that needs
+// it.
+func TestTheDriveRefusesARegistryWhoseDeclarationDoesNotMatchWhatTheModuleNeeds(t *testing.T) {
 	cases := []struct {
 		name string
 		drop func(declared []sms.Template) []sms.Template
@@ -344,10 +371,10 @@ func TestTheDriveRefusesACarrierWhoseDeclarationDoesNotMatchWhatTheModuleNeeds(t
 	}
 	for _, c := range cases {
 		t.Run(c.name, func(t *testing.T) {
-			sender := newSender()
-			sender.declared = c.drop(sender.declared)
-			err := assembly{sender: sender, migrate: true}.drive(t, func(context.Context, *core.Registry) error {
-				t.Error("the drive reached its action with a carrier that does not cover the module's templates")
+			registry := newRegistry()
+			registry.setDeclared(c.drop(registry.Declared()))
+			err := assembly{registry: registry, sender: newSender(), migrate: true}.drive(t, func(context.Context, *core.Registry) error {
+				t.Error("the drive reached its action with a registry that does not cover the module's templates")
 				return nil
 			})
 			if !errors.Is(err, authn.ErrInvalidConfig) {
@@ -385,24 +412,26 @@ func i18nStubModule() core.Module {
 	}
 }
 
-// TestStartupRefusesACarrierMissingTheConfiguredDefaultLanguage holds the new
+// TestStartupRefusesARegistryMissingTheConfiguredDefaultLanguage holds the new
 // startup check: the default language is configuration, not a constant, so a
-// carrier whose templates do not cover it cannot send a message the module falls
-// back to, and the drive stops with ErrInvalidConfig naming the missing pair.
+// registry whose templates do not cover it cannot send a message the module
+// falls back to, and the drive stops with ErrInvalidConfig naming the missing
+// pair.
 //
 // On the pre-change code this drive succeeds: it read no configured default and
-// required only the two hardcoded languages, which this carrier declares, so the
-// action ran rather than failing at startup.
-func TestStartupRefusesACarrierMissingTheConfiguredDefaultLanguage(t *testing.T) {
-	sender := newSender() // declares zh-CN and en-US only
+// required only the two hardcoded languages, which this registry declares, so
+// the action ran rather than failing at startup.
+func TestStartupRefusesARegistryMissingTheConfiguredDefaultLanguage(t *testing.T) {
+	registry := newRegistry() // declares zh-CN and en-US only
 	err := assembly{
-		sender:        sender,
+		sender:        newSender(),
+		registry:      registry,
 		store:         newStore(),
 		migrate:       true,
 		body:          `{"i18n":{"default-locale":"ja-JP"}}`,
 		readerModules: []core.Module{i18nStubModule()},
 	}.drive(t, func(context.Context, *core.Registry) error {
-		t.Error("the drive reached its action with a carrier that misses the configured default language")
+		t.Error("the drive reached its action with a registry that misses the configured default language")
 		return nil
 	})
 	if !errors.Is(err, authn.ErrInvalidConfig) {
@@ -413,21 +442,21 @@ func TestStartupRefusesACarrierMissingTheConfiguredDefaultLanguage(t *testing.T)
 	}
 }
 
-// TestACarrierSendsInALanguageItDeclaresBesidesChineseAndEnglish holds that the
-// set of languages is the carrier's, not a hardcoded pair: a carrier declaring
-// en-US and ja-JP satisfies the startup check, and a ja-JP request goes out in
-// ja-JP.
+// TestASendGoesOutInALanguageTheRegistryDeclaresBesidesChineseAndEnglish holds
+// that the set of languages is the registry's, not a hardcoded pair: a registry
+// declaring en-US and ja-JP satisfies the startup check, and a ja-JP request
+// goes out in ja-JP.
 //
 // On the pre-change code a "ja-JP" send is refused as a caller defect before it
-// reaches the carrier, and the carrier would not satisfy the hardcoded check in
-// the first place.
-func TestACarrierSendsInALanguageItDeclaresBesidesChineseAndEnglish(t *testing.T) {
-	sender := newSender()
-	sender.declared = declaredTemplatesFor([]string{"en-US", "ja-JP"})
-	if err := checkSender(sender.Declared(), testDefaultLocale); err != nil {
-		t.Fatalf("a carrier declaring en-US and ja-JP was refused: %v", err)
+// reaches the carrier, and the declared set would not satisfy the hardcoded
+// check in the first place.
+func TestASendGoesOutInALanguageTheRegistryDeclaresBesidesChineseAndEnglish(t *testing.T) {
+	registry := newRegistry()
+	registry.setDeclared(declaredTemplatesFor([]string{"en-US", "ja-JP"}))
+	if err := checkSender(registry.Declared(), testDefaultLocale); err != nil {
+		t.Fatalf("a registry declaring en-US and ja-JP was refused: %v", err)
 	}
-	r := newRig(t, openSQLite(t), sender)
+	r := newRigOver(t, openSQLite(t), registry, newSender(), testDefaultLocale)
 	r.allow()
 	if _, err := r.p.Send(context.Background(), authn.SendCode{
 		Purpose: authn.SMSPurposeLogin, Phone: phone, Locale: "ja-JP", Deliver: true,
@@ -445,15 +474,17 @@ func TestACarrierSendsInALanguageItDeclaresBesidesChineseAndEnglish(t *testing.T
 // send whose caller names no language goes out in it.
 //
 // On the pre-change code the default is the en-US constant, so this send goes
-// out in en-US and the assertion fails; the pre-change carrier check also refuses
-// a carrier declaring ja-JP.
+// out in en-US and the assertion fails; the pre-change check also refuses a
+// declaration of ja-JP.
 func TestASendWithNoNamedLocaleGoesOutInTheConfiguredDefault(t *testing.T) {
 	sender := newSender()
-	sender.declared = declaredTemplatesFor([]string{"en-US", "ja-JP"})
+	registry := newRegistry()
+	registry.setDeclared(declaredTemplatesFor([]string{"en-US", "ja-JP"}))
 	store := newStore()
 	store.set(allowedPrefixesPath, `["+86"]`)
 	err := assembly{
 		sender:        sender,
+		registry:      registry,
 		store:         store,
 		migrate:       true,
 		body:          `{"i18n":{"default-locale":"ja-JP"}}`,

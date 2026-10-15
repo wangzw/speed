@@ -21,9 +21,11 @@ var errPoolWait = errors.New("the sending pool did not drain in time")
 
 // pool is the bounded worker pool that sends queued messages off the request
 // path. The queue is in this process and its elements are never stored; the
-// plaintext code lives in them and nowhere else while it waits.
+// plaintext code lives in them and nowhere else while it waits. An element is a
+// resolved message: the request path resolves a message against the registry and
+// queues what the carrier is handed.
 type pool struct {
-	queue   chan sms.Message
+	queue   chan sms.Resolved
 	workers int
 
 	parent   context.Context
@@ -38,7 +40,7 @@ type pool struct {
 // workers start in Start.
 func newPool(workers, queueSize int) *pool {
 	return &pool{
-		queue:   make(chan sms.Message, queueSize),
+		queue:   make(chan sms.Resolved, queueSize),
 		workers: workers,
 		stop:    make(chan struct{}),
 		done:    make(chan struct{}),
@@ -52,11 +54,11 @@ func (p *product) poolFull() bool {
 	return len(q) >= cap(q)
 }
 
-// enqueue hands a message to the pool without blocking. It reports false when
-// the queue is full, which the caller records as a drop.
-func (p *product) enqueue(m sms.Message) bool {
+// enqueue hands a resolved message to the pool without blocking. It reports
+// false when the queue is full, which the caller records as a drop.
+func (p *product) enqueue(r sms.Resolved) bool {
 	select {
-	case p.pool.queue <- m:
+	case p.pool.queue <- r:
 		return true
 	default:
 		return false
@@ -145,33 +147,35 @@ func (p *product) stopPool() error {
 // deliverOne calls the carrier for one queued message and records how the send
 // ended. The result never reaches the request that triggered the send: the
 // carrier's answer is a metric and a log line and nothing else.
-func (p *product) deliverOne(ctx context.Context, m sms.Message) {
-	_, err := p.sender.Send(ctx, m)
+func (p *product) deliverOne(ctx context.Context, r sms.Resolved) {
+	_, err := p.sender.Send(ctx, r)
 	switch {
 	case err == nil:
 		p.meters.sent(ctx, outcomeSent)
 	case errors.Is(err, sms.ErrUncertain):
 		p.meters.sent(ctx, outcomeUncertain)
-		p.warnCarrier(ctx, outcomeUncertain, err)
+		p.warnNotSent(ctx, outcomeUncertain, err)
 	case errors.Is(err, sms.ErrThrottled):
 		p.meters.sent(ctx, outcomeThrottled)
-		p.warnCarrier(ctx, outcomeThrottled, err)
+		p.warnNotSent(ctx, outcomeThrottled, err)
 	case errors.Is(err, sms.ErrRejected):
 		p.meters.sent(ctx, outcomeRejected)
-		p.warnCarrier(ctx, outcomeRejected, err)
+		p.warnNotSent(ctx, outcomeRejected, err)
 	default:
 		// An error outside the closed set is a defect of the carrier. It is read
 		// as uncertain — never as a delivery and never as a retry — which is the
 		// direction that cannot do harm if the message did go out.
 		p.meters.sent(ctx, outcomeUncertain)
-		p.warnCarrier(ctx, outcomeUncertain, err)
+		p.warnNotSent(ctx, outcomeUncertain, err)
 	}
 }
 
-// warnCarrier writes the line for a send the carrier did not accept. The line
-// carries the outcome and the carrier's own error text, which the carrier must
-// keep free of the code and its credentials.
-func (p *product) warnCarrier(ctx context.Context, outcome string, err error) {
-	p.logger.WarnContext(ctx, ModuleName+": a verification code was not accepted by the carrier",
+// warnNotSent writes the line for a code that did not go out, whatever stopped
+// it — a carrier that refused the send, a registry that would not resolve the
+// message, or a carrier that failed outside the sentinels. The line carries the
+// outcome and the cause's own error text, which the carrier keeps free of the
+// code and its credentials.
+func (p *product) warnNotSent(ctx context.Context, outcome string, err error) {
+	p.logger.WarnContext(ctx, ModuleName+": a verification code was not sent",
 		slog.String("outcome", outcome), slog.String("cause", err.Error()))
 }

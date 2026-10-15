@@ -72,7 +72,7 @@ func (p *product) Send(ctx context.Context, in authn.SendCode) (string, error) {
 		CreatedAt:   now,
 		ExpiresAt:   now.Add(ttl),
 	}
-	if err := p.register.insert(ctx, row); err != nil {
+	if err = p.register.insert(ctx, row); err != nil {
 		return "", p.unavailable(err)
 	}
 
@@ -80,14 +80,28 @@ func (p *product) Send(ctx context.Context, in authn.SendCode) (string, error) {
 		p.meters.sent(ctx, outcomeSuppressed)
 		return id, nil
 	}
-	msg := sms.Message{
+	template := purposeTemplate(in.Purpose)
+	// The message is resolved against the registry before it is queued: which
+	// template a message goes out under is the registry's decision, and the
+	// worker is handed the resolved form. A registry that will not build one —
+	// the template is disabled, or its vendor review is not back — answers
+	// ErrNotSendable, and the send records it under its own outcome. The row is
+	// already written, so the answer to the caller is the same shape as a send
+	// the carrier later refuses.
+	resolved, err := p.registry.Resolve(sms.Message{
 		To:       in.Phone,
-		Template: purposeTemplate(in.Purpose),
+		Template: template,
 		Params:   map[string]string{"code": code, "ttl_minutes": ttlMinutes(ttl)},
-		Locale:   resolveLocale(in.Locale, p.defaultLocale, p.localesByTemplate[purposeTemplate(in.Purpose)]),
+		Locale:   resolveLocale(in.Locale, p.defaultLocale, p.localesByTemplate[template]),
 		DedupeID: id,
+	})
+	if err != nil {
+		outcome := resolveOutcome(err)
+		p.meters.sent(ctx, outcome)
+		p.warnNotSent(ctx, outcome, err)
+		return id, nil
 	}
-	if p.enqueue(msg) {
+	if p.enqueue(resolved) {
 		// The outcome is recorded by the worker once the carrier answers.
 		return id, nil
 	}
@@ -96,6 +110,19 @@ func (p *product) Send(ctx context.Context, in authn.SendCode) (string, error) {
 	// user resends.
 	p.meters.sent(ctx, outcomeDropped)
 	return id, nil
+}
+
+// resolveOutcome reads the outcome a registry refusal is recorded under. A
+// template the registry will not send under — disabled, or not yet approved — is
+// its own outcome, because the remedy is the template's state and not the
+// message; a message the registry otherwise refuses has a shape the sending side
+// will not take, and reads as rejected, the direction that records nothing as
+// sent.
+func resolveOutcome(err error) string {
+	if errors.Is(err, sms.ErrNotSendable) {
+		return outcomeNotSendable
+	}
+	return outcomeRejected
 }
 
 // checkSendCode holds the input to the caller's contract. The purpose is one of

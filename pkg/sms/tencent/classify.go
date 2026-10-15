@@ -28,13 +28,14 @@ const (
 	okCode = "Ok"
 )
 
-// classify turns a failed SendSms call into one of the sending sentinels.
+// classify turns a failed carrier call into one of the sentinels, for the
+// sending seam and the template-management seam alike.
 //
 // A carrier error carries a code; the two codes the table names become
 // ErrThrottled and ErrRejected, and every other code becomes ErrUncertain. A
 // failure that is not a carrier error at all — a timeout, a network error, an
-// ended context — also becomes ErrUncertain, because the carrier's send call is
-// not idempotent and whether the message went out is unknown.
+// ended context — also becomes ErrUncertain, because none of the carrier's calls
+// is idempotent and whether one landed is unknown.
 func classify(err error) error {
 	var sdk *tcerr.TencentCloudSDKError
 	if errors.As(err, &sdk) {

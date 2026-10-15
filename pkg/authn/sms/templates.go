@@ -48,10 +48,10 @@ func purposeTemplate(purpose string) string {
 
 // templateLocales returns, for each template name this module sends under, the
 // languages that template declares, in declared order. A message goes out in a
-// language of the template its purpose maps to, not of the carrier's whole set:
-// a carrier whose templates declare different languages is valid, and the
+// language of the template its purpose maps to, not of the registry's whole set:
+// a registry whose templates declare different languages is valid, and the
 // languages a message may be sent in are the ones of the template it carries.
-// checkSender runs first and refuses a carrier that leaves any required template
+// checkSender runs first and refuses a registry that leaves any required template
 // with no languages or without the configured default, so every entry read here
 // is a set a message can actually go out in.
 func templateLocales(declared []sms.Template) map[string][]string {
@@ -93,10 +93,10 @@ func primarySubtag(tag string) string {
 	return strings.ToLower(first)
 }
 
-// checkSender verifies that a carrier declares every template this module sends
-// under, exactly the parameters it sends, and the configured default language,
-// and returns the first combination it gets wrong, naming it. Every failure
-// wraps authn.ErrInvalidConfig.
+// checkSender verifies that the registry declares every template this module
+// sends under, exactly the parameters it sends, and the configured default
+// language, and returns the first combination it gets wrong, naming it. Every
+// failure wraps authn.ErrInvalidConfig.
 //
 // The parameter names are compared for equality, not containment. Resolve
 // requires every parameter a template declares, and this module's messages carry
@@ -105,16 +105,16 @@ func primarySubtag(tag string) string {
 // reject every send at runtime, where the failure is a metric and a warn line and
 // reaches no operator. Equality names that template at startup instead.
 //
-// The languages are not a set this module holds: they are the carrier's, taken
+// The languages are not a set this module holds: they are the registry's, taken
 // from what it declares. What the module does require is that every template
 // carry the configured default language, because every fallback — an empty
 // request, and a request no declared language matches — resolves to it, and a
 // template without it could not send a message the module falls back to.
 //
-// The check runs where the need is known: a carrier reports what it holds
-// through Sender.Declared and knows nothing of which consumer needs what, so the
-// coverage of this module's contract is this module's to check, in New, once the
-// sender is taken up. A mismatch is a startup failure, not a message first
+// The check runs where the need is known: the registry reports what it holds
+// through Registry.Declared and knows nothing of which consumer needs what, so
+// the coverage of this module's contract is this module's to check, in New, once
+// the registry is taken up. A mismatch is a startup failure, not a message first
 // refused when a code is sent under it.
 func checkSender(declared []sms.Template, defaultLocale string) error {
 	held := make(map[string]sms.Template, len(declared))

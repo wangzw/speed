@@ -6,8 +6,8 @@ import (
 	"strings"
 )
 
-// TemplateSpec is one template in a carrier's configuration: the ordered
-// parameter names it substitutes and the carrier's code for each language.
+// TemplateSpec is one template in a set: the ordered parameter names it
+// substitutes and the vendor's code for each language.
 //
 // The shape is nested, not one flat map mixing languages and parameters,
 // because it is what the configuration decoder types: the templates item is a
@@ -26,8 +26,8 @@ type TemplateSpec struct {
 
 // Template is the read-only view of one declared template: its name, the ordered
 // parameter names it substitutes and the languages it has a code for. It carries
-// no carrier code, so a consumer sees what a carrier declares without learning
-// the carrier's numbering, and the order of Params is the layout a positional
+// no vendor code, so a consumer sees what a set holds without learning the
+// vendor's numbering, and the order of Params is the layout a positional
 // carrier uses.
 type Template struct {
 	Name    string
@@ -35,7 +35,7 @@ type Template struct {
 	Locales []string
 }
 
-// Declaration is a carrier's frozen, self-consistent set of templates.
+// Declaration is a frozen, self-consistent set of templates.
 type Declaration struct {
 	byName map[string]declaredTemplate
 }
@@ -49,17 +49,16 @@ type declaredTemplate struct {
 	locales []string
 }
 
-// NewDeclaration checks a carrier's template set for self-consistency and
-// freezes it.
+// NewDeclaration checks a template set for self-consistency and freezes it.
 //
 // Each template needs at least one parameter, no repeated parameter name and at
 // least one language with a non-empty code. A set that fails is ErrInvalidConfig
-// naming the template: a section a carrier could not send under is a startup
+// naming the template: a template no message could be sent under is a startup
 // failure, not a surprise when a message is first built. Whether the templates
 // cover what a consumer needs is the consumer's check, made against Declared.
 func NewDeclaration(specs map[string]TemplateSpec) (Declaration, error) {
 	if len(specs) == 0 {
-		return Declaration{}, fmt.Errorf("%w: the carrier declares no template", ErrInvalidConfig)
+		return Declaration{}, fmt.Errorf("%w: the set holds no template", ErrInvalidConfig)
 	}
 	names := make([]string, 0, len(specs))
 	for name := range specs {
@@ -70,7 +69,7 @@ func NewDeclaration(specs map[string]TemplateSpec) (Declaration, error) {
 	byName := make(map[string]declaredTemplate, len(specs))
 	for _, name := range names {
 		if strings.TrimSpace(name) == "" {
-			return Declaration{}, fmt.Errorf("%w: the carrier declares a template with no name", ErrInvalidConfig)
+			return Declaration{}, fmt.Errorf("%w: a template is declared with no name", ErrInvalidConfig)
 		}
 		declared, err := declare(name, specs[name])
 		if err != nil {
@@ -146,13 +145,32 @@ func (d Declaration) Declared() []Template {
 	return out
 }
 
-// Resolved is one message resolved against a declaration: the carrier code for
-// the template and language, the parameters as a map, and the same parameters
-// ordered as the template declared them for a positional carrier to lay out.
+// Resolved is one message resolved against a template set: everything a carrier
+// needs to build one vendor request, and nothing more.
+//
+// It carries the destination and the dedupe identifier as well as the vendor
+// code, because a carrier is handed this and not the Message: the decision of
+// which template a message goes out under belongs to the template registry, and
+// a carrier that had to look one up would be holding a template set of its own.
+// Params is the keyed view, for a carrier that takes a JSON object; Ordered is
+// the same values laid out in the declared order, for a positional carrier.
 type Resolved struct {
-	Code    string
-	Params  map[string]string
+	// To is the destination, in E.164.
+	To string
+	// Template is the logical template name this message was resolved under, kept
+	// for diagnostics.
+	Template string
+	// Locale is the language it resolved in.
+	Locale string
+	// Code is the vendor's identifier for the template.
+	Code string
+	// Params carries the substitutions, keyed by the declared parameter name.
+	Params map[string]string
+	// Ordered carries the same values in the order the template declared, which
+	// is the order a positional vendor was approved with.
 	Ordered []string
+	// DedupeID is the stable identifier a carrier sends at most once per.
+	DedupeID string
 }
 
 // Resolve turns a message into what a carrier request needs.
@@ -163,6 +181,11 @@ type Resolved struct {
 // a parameter the message carries that the template never declared. Each failure
 // is ErrRejected and names the template, the language or the parameter it is
 // about — none reached the carrier, so none is uncertain.
+//
+// It answers for one declaration alone. Whether a template is disabled, or
+// whether its vendor review has come back, is not a property of a declaration
+// and is not decided here; the registry that holds the declaration decides it
+// before reaching this.
 func (d Declaration) Resolve(m Message) (Resolved, error) {
 	if strings.TrimSpace(m.Locale) == "" {
 		return Resolved{}, fmt.Errorf("%w: the message for the template %q names no language, and the "+
@@ -170,7 +193,7 @@ func (d Declaration) Resolve(m Message) (Resolved, error) {
 	}
 	t, ok := d.byName[m.Template]
 	if !ok {
-		return Resolved{}, fmt.Errorf("%w: this carrier declares no template %q", ErrRejected, m.Template)
+		return Resolved{}, fmt.Errorf("%w: this set holds no template %q", ErrRejected, m.Template)
 	}
 	code, ok := t.codes[m.Locale]
 	if !ok {
@@ -201,7 +224,15 @@ func (d Declaration) Resolve(m Message) (Resolved, error) {
 		return Resolved{}, fmt.Errorf("%w: the message carries the parameter %q, which the template %q does "+
 			"not declare", ErrRejected, extra[0], m.Template)
 	}
-	return Resolved{Code: code, Params: params, Ordered: ordered}, nil
+	return Resolved{
+		To:       m.To,
+		Template: m.Template,
+		Locale:   m.Locale,
+		Code:     code,
+		Params:   params,
+		Ordered:  ordered,
+		DedupeID: m.DedupeID,
+	}, nil
 }
 
 // hasParam reports whether the template declares the parameter name.

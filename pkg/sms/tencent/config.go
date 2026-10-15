@@ -1,14 +1,11 @@
 package tencent
 
 import (
-	"fmt"
-
 	"github.com/vislake/speed/pkg/config"
-	"github.com/vislake/speed/pkg/sms"
 )
 
 // The keys this module accepts, relative to its namespace. All of them are
-// configuration: a carrier's credentials, application identity and templates
+// configuration: a carrier's credentials, application identity and signature
 // have to be in hand before a message can be built, so there is no setting here.
 const (
 	secretIDItem  = "secret-id"
@@ -16,12 +13,11 @@ const (
 	sdkAppIDItem  = "sdk-app-id"
 	regionItem    = "region"
 	signNameItem  = "sign-name"
-	templatesItem = "templates"
 )
 
-// moduleConfig is the set of input items this module accepts. Every scalar item
-// is required: a carrier adapter with no credential or no template cannot send,
-// and whether this module is taken in at all is the command tree's decision.
+// moduleConfig is the set of input items this module accepts. Every item is
+// required: a carrier adapter with no credential cannot send, and whether this
+// module is taken in at all is the command tree's decision.
 type moduleConfig struct {
 	// SecretID is the credential's identifier.
 	SecretID string `config:"secret-id"`
@@ -35,43 +31,27 @@ type moduleConfig struct {
 	Region string `config:"region"`
 	// SignName is the approved signature a message is sent under.
 	SignName string `config:"sign-name"`
-	// Templates declares each template this side sends under: its ordered
-	// parameter names and its carrier number for each language. A message names a
-	// template by this key, and the declaration turns it into a number.
-	Templates map[string]sms.TemplateSpec `config:"templates"`
 }
 
-// resolved is the configuration this module runs on: the credentials and the
-// frozen declaration, with the template set already checked for self-consistency.
+// resolved is the configuration this module runs on: the credentials, the
+// application identity and the signature.
 type resolved struct {
 	secretID  string
 	secretKey string
 	sdkAppID  string
 	region    string
 	signName  string
-	decl      sms.Declaration
 }
 
-// resolve validates the decoded configuration and turns it into what the module
-// runs on.
-//
-// The declaration needs every template to substitute at least one parameter and
-// to have a non-empty carrier code for at least one language; a set that fails is
-// a startup failure naming the template. Whether the templates cover what a
-// consumer needs is checked by the consumer against Sender.Declared.
-func (c moduleConfig) resolve() (resolved, error) {
-	decl, err := sms.NewDeclaration(c.Templates)
-	if err != nil {
-		return resolved{}, fmt.Errorf("%s.%s: %w", ConfigNamespace, templatesItem, err)
-	}
+// resolve turns the decoded configuration into what the module runs on.
+func (c moduleConfig) resolve() resolved {
 	return resolved{
 		secretID:  c.SecretID,
 		secretKey: c.SecretKey,
 		sdkAppID:  c.SDKAppID,
 		region:    c.Region,
 		signName:  c.SignName,
-		decl:      decl,
-	}, nil
+	}
 }
 
 // items declares this module's input items. The module descriptor mounts them
@@ -98,13 +78,6 @@ func items() map[string]config.Item {
 		signNameItem: {
 			Required:    true,
 			Description: "the approved signature the messages are sent under",
-		},
-		templatesItem: {
-			Origins:  config.OriginPrimary,
-			Required: true,
-			Description: "the declared templates, keyed by the template name the caller sends " +
-				"under; each holds the ordered parameter names the approved template substitutes and " +
-				"the carrier number for each language",
 		},
 	}
 }

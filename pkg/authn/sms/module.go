@@ -11,10 +11,12 @@
 //
 // The module delivers authn.SMSCodes exclusively and the authn.AccountLifecycle
 // hook beside it, as the module that holds data keyed by an account. It takes
-// the sending seam sms.Sender as an exclusive requirement: a command tree names
-// one carrier, and two at once fail in resolution. A carrier module does the
-// constructing, calling and error classification alone, and this module checks
-// the templates it needs against what the carrier declares before it starts.
+// the sending seam sms.Sender and the template registry sms.Registry as
+// exclusive requirements: a command tree names one of each, and two at once fail
+// in resolution. The registry decides which template a message goes out under; a
+// carrier module does the constructing, calling and error classification alone;
+// and this module checks the templates it needs against what the registry
+// declares before it starts.
 //
 // The plaintext code never leaves the module: it is written to no table, no
 // log, no event and no metric, and lives only in the queued message and the
@@ -88,11 +90,14 @@ var (
 
 // Module is the descriptor a host registers.
 //
-// The database and the sending seam are required, and each is delivered
-// exclusively by another module, so the closure of a command that names this one
-// does not pull them in: the host writes them down. The sending seam is a
-// functional, exclusive requirement: a command that names no carrier delivering
-// it fails in resolution, and two carriers at once conflict.
+// The database, the template registry and the sending seam are required, and
+// each is delivered exclusively by another module, so the closure of a command
+// that names this one does not pull them in: the host writes them down. The
+// registry and the sending seam are functional, exclusive requirements: a
+// command that names no provider delivering one fails in resolution, and two at
+// once conflict. The registry is taken up before the sending seam, because this
+// module checks its templates against what the registry declares and hands the
+// carrier only what the registry resolved.
 //
 // The settings store is required as optional only so that it is initialised
 // before this one and its snapshot is loaded when Init reads the settings; the
@@ -108,6 +113,7 @@ func Module() core.Module {
 		Name: ModuleName,
 		Requires: []core.Requirement{
 			{Token: (*db.Database)(nil)},
+			{Token: (*sms.Registry)(nil)},
 			{Token: (*sms.Sender)(nil)},
 			{Token: (*settings.Store)(nil), Optional: true},
 		},
@@ -188,6 +194,7 @@ func readerOf(reg *core.Registry) (config.Reader, error) {
 type product struct {
 	database db.Database
 	handle   *gorm.DB
+	registry sms.Registry
 	sender   sms.Sender
 
 	// defaultLocale is the language a request that names none resolves to, read
@@ -218,9 +225,9 @@ type product struct {
 
 // newProduct takes up what the descriptor requires and assembles the product.
 // The worker pool is sized here, from configuration, which is why the reader is
-// required; the default language and the carrier's languages are read here too,
-// because the carrier's declaration is available only once the sender is taken
-// up.
+// required; the default language and the templates' languages are read here too,
+// because the registry's declaration is available only once the registry is
+// taken up.
 func newProduct(reg *core.Registry) (*product, error) {
 	reader, err := readerOf(reg)
 	if err != nil {
@@ -234,6 +241,10 @@ func newProduct(reg *core.Registry) (*product, error) {
 	if err != nil {
 		return nil, fmt.Errorf("%s%s: taking up the database: %w", diagnosticPrefix, ModuleName, err)
 	}
+	registry, err := core.Resolve[sms.Registry](reg)
+	if err != nil {
+		return nil, fmt.Errorf("%s%s: taking up the template registry: %w", diagnosticPrefix, ModuleName, err)
+	}
 	sender, err := core.Resolve[sms.Sender](reg)
 	if err != nil {
 		return nil, fmt.Errorf("%s%s: taking up the sending seam: %w", diagnosticPrefix, ModuleName, err)
@@ -245,25 +256,26 @@ func newProduct(reg *core.Registry) (*product, error) {
 	if err != nil {
 		return nil, fmt.Errorf("%s%s: reading the default language: %w", diagnosticPrefix, ModuleName, err)
 	}
-	// The carrier is taken up here, so its declared templates are checked here:
-	// Prepare runs earlier and holds no instance. A carrier that does not cover
+	// The registry is taken up here, so the templates in force are checked here:
+	// Prepare runs earlier and holds no instance. A registry that does not cover
 	// the templates this module sends under, or the configured default language,
 	// stops the startup, before any code.
-	declared := sender.Declared()
+	declared := registry.Declared()
 	if err := checkSender(declared, defaultLocale); err != nil {
 		return nil, fmt.Errorf("%s%s: %w", diagnosticPrefix, ModuleName, err)
 	}
-	return build(database, sender, cfg, defaultLocale, templateLocales(declared)), nil
+	return build(database, registry, sender, cfg, defaultLocale, templateLocales(declared)), nil
 }
 
 // build assembles a product from its parts. The optional parts start absent and
 // the logger starts as the process's, so that a product that has not been through
 // Init is still one that does not panic.
-func build(database db.Database, sender sms.Sender, cfg resolved, defaultLocale string, localesByTemplate map[string][]string) *product {
+func build(database db.Database, registry sms.Registry, sender sms.Sender, cfg resolved, defaultLocale string, localesByTemplate map[string][]string) *product {
 	logger := log.Default()
 	return &product{
 		database:          database,
 		handle:            database.DB(),
+		registry:          registry,
 		sender:            sender,
 		defaultLocale:     defaultLocale,
 		localesByTemplate: localesByTemplate,

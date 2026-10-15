@@ -10,10 +10,12 @@ A purpose is one of the closed set `login`, `mfa` and `enroll`. The state of a
 challenge is one table whatever the purpose, so the code is held once and its
 consumers — the SMS login method, the SMS factor and the phone routes of the
 login engine — hold none of it. The module takes the top-level `pkg/sms`
-capability's `Sender` as an exclusive requirement: a command tree names one
-carrier, and two at once fail in resolution. A carrier module (one of
-`sms.aliyun`, `sms.tencent`, or a third party's, under `pkg/sms`) is the one
-that constructs, calls and classifies.
+capability's `Sender` and `Registry` as requirements, each delivered exclusively
+by its provider: a command tree names one of each, and two at once fail in
+resolution. The registry holds the templates in force and decides which one a
+message goes out under; a carrier module (one of `sms.aliyun`, `sms.tencent`, or
+a third party's, under `pkg/sms`) constructs, calls and classifies, and is handed
+only what the registry resolved.
 
 The API is the package's godoc. Read `Send`'s and `Verify`'s comments before
 changing either.
@@ -54,13 +56,14 @@ compatibility break for a dashboard written against it.
   `TestVerifyAcceptsTheRightCodeOnce`, `TestVerifyRefusesAfterTheAttemptLimit`,
   `TestConcurrentSubmitsOfOneCorrectCodeHaveOneWinner`).
 - **The failure direction is closed.** A database that cannot be read is
-  `ErrUnavailable` in `Send` and `Verify`; a carrier that cannot send is a `Warn`,
-  a metric and a dropped message the user resends. An error from the carrier that
-  is none of the three sentinels is read as uncertain, never as a delivery
-  (`deliverOne`, `send.go`).
-- **The worker pool is bounded and its outcomes are a closed set.** `Send` writes
-  the row and returns without waiting for the carrier; the pool sends off the
-  request path and records one of the eight outcomes. `Stop` drains the queue
+  `ErrUnavailable` in `Send` and `Verify`; a carrier that cannot send, and a
+  registry that will not resolve a message, are a `Warn`, a metric and a dropped
+  message the user resends. An error from the carrier that is none of the three
+  sentinels is read as uncertain, never as a delivery (`deliverOne`, `send.go`).
+- **The worker pool is bounded and its outcomes are a closed set.** `Send`
+  resolves the message against the registry, writes the row and returns without
+  waiting for the carrier; the pool sends the resolved message off the request
+  path and records one of the nine outcomes. `Stop` drains the queue
   within its own bound (`pool`, `TestTheWorkersDrainQueuedMessagesOffTheRequestPath`,
   `TestStopDrainsTheQueueWithinItsBound`, `TestEveryOutcomeIsRecorded`). The one
   `dropped` path that is reached after the row is written — the queue filling
@@ -84,22 +87,22 @@ compatibility break for a dashboard written against it.
 - **The module knows no tenant and no carrier.** No package here imports
   `pkg/tenant`; the carrier is taken only as `pkg/sms`'s `Sender`, and no
   carrier subpackage is imported (`Module`).
-- **The templates and the languages are the carrier's, held to its declaration
+- **The templates and the languages are the registry's, held to its declaration
   in `New`.** The top-level `pkg/sms` capability carries the first-class template
   declaration and does not know what a consumer needs; this module maps each
   purpose to a template key (`authn.code.login`, `authn.code.mfa`,
-  `authn.code.enroll`), and checks against `Sender.Declared()` after the sender is
-  resolved in `newProduct` that every template is present, carries exactly the
-  `code` and `ttl_minutes` parameters, has at least one language, and covers the
-  configured default language. The parameter names are compared for equality, not
-  containment. A mismatch — a missing template, a stray parameter, or a template
-  without the default language — stops the startup with `ErrInvalidConfig` naming
-  it, ahead of any code. `Prepare` runs before `New` and has no instance, so the
-  check lives in `New` (`templates.go`, `newProduct`).
+  `authn.code.enroll`), and checks against `Registry.Declared()` after the
+  registry is resolved in `newProduct` that every template is present, carries
+  exactly the `code` and `ttl_minutes` parameters, has at least one language, and
+  covers the configured default language. The parameter names are compared for
+  equality, not containment. A mismatch — a missing template, a stray parameter,
+  or a template without the default language — stops the startup with
+  `ErrInvalidConfig` naming it, ahead of any code. `Prepare` runs before `New` and
+  has no instance, so the check lives in `New` (`templates.go`, `newProduct`).
 - **The set of languages is derived, and a requested language is resolved, never
   refused.** The languages a message may be sent in are the ones the template its
-  purpose maps to declares, taken from the carrier's declaration, not a set
-  enumerated in code; two templates of one carrier may declare different sets. A
+  purpose maps to declares, taken from the registry's declaration, not a set
+  enumerated in code; two templates of one registry may declare different sets. A
   language a caller names is matched by primary subtag against that template's set
   — `en-GB` goes out under the template's `en-US` — and an empty request, or one
   that template's set does not match, resolves to the configured default. The

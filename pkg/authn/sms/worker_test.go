@@ -30,7 +30,7 @@ func TestTheWorkerRecordsEachCarrierOutcome(t *testing.T) {
 		t.Run(c.name, func(t *testing.T) {
 			r := newRigSQLite(t)
 			r.sender.setResult(c.result)
-			r.p.deliverOne(context.Background(), sms.Message{To: phone, Params: map[string]string{"code": "123456"}})
+			r.p.deliverOne(context.Background(), sms.Resolved{To: phone, Params: map[string]string{"code": "123456"}})
 			if got := r.counter(sendsName, attribute.String(outcomeAttribute, c.outcome)); got != 1 {
 				t.Errorf("outcome %s = %d, want 1", c.outcome, got)
 			}
@@ -44,7 +44,7 @@ func TestTheWorkerRecordsEachCarrierOutcome(t *testing.T) {
 func TestACarrierErrorOutsideTheClosedSetIsUncertain(t *testing.T) {
 	r := newRigSQLite(t)
 	r.sender.setResult(errors.New("a carrier defect"))
-	r.p.deliverOne(context.Background(), sms.Message{To: phone})
+	r.p.deliverOne(context.Background(), sms.Resolved{To: phone})
 	if got := r.counter(sendsName, attribute.String(outcomeAttribute, outcomeUncertain)); got != 1 {
 		t.Errorf("an unrecognised carrier error recorded outcome uncertain %d times, want 1", got)
 	}
@@ -72,7 +72,7 @@ func TestEveryOutcomeIsRecorded(t *testing.T) {
 
 	// dropped: the queue is full.
 	for range cap(r.p.pool.queue) {
-		r.p.pool.queue <- sms.Message{To: phone}
+		r.p.pool.queue <- sms.Resolved{To: phone}
 	}
 	if _, err := r.sendLogin(); !errors.Is(err, authn.ErrUnavailable) {
 		t.Fatalf("the full-queue send returned %v", err)
@@ -81,6 +81,17 @@ func TestEveryOutcomeIsRecorded(t *testing.T) {
 		<-r.p.pool.queue
 	}
 	// Move on so the rows written above are past every counting window.
+	r.clock.advance(2 * time.Hour)
+
+	// not-sendable: the registry holds a template it will not send a message
+	// under, so the request path resolves a message and the registry refuses it.
+	r.registry.setResolveErr(sms.ErrNotSendable)
+	if _, err := r.loginTo("+8613800138012"); err != nil {
+		t.Fatalf("a not-sendable send returned %v", err)
+	}
+	r.registry.setResolveErr(nil)
+	// That send wrote a login row; move past the window so it is not what the
+	// budget block below counts.
 	r.clock.advance(2 * time.Hour)
 
 	// budget-exhausted: the global login budget is spent. A second number is used
@@ -96,11 +107,11 @@ func TestEveryOutcomeIsRecorded(t *testing.T) {
 	// The four carrier outcomes, driven directly.
 	for _, res := range []error{nil, sms.ErrUncertain, sms.ErrThrottled, sms.ErrRejected} {
 		r.sender.setResult(res)
-		r.p.deliverOne(ctx, sms.Message{To: phone})
+		r.p.deliverOne(ctx, sms.Resolved{To: phone})
 	}
 
 	for _, outcome := range []string{
-		outcomeSent, outcomeUncertain, outcomeThrottled, outcomeRejected,
+		outcomeSent, outcomeUncertain, outcomeThrottled, outcomeRejected, outcomeNotSendable,
 		outcomeUnsupportedRegion, outcomeBudgetExhausted, outcomeSuppressed, outcomeDropped,
 	} {
 		if got := r.counter(sendsName, attribute.String(outcomeAttribute, outcome)); got < 1 {
@@ -115,7 +126,7 @@ func TestTheWorkersDrainQueuedMessagesOffTheRequestPath(t *testing.T) {
 	r := newRigSQLite(t)
 	r.allow()
 	delivered := make(chan struct{}, 1)
-	r.sender.onSend = func(sms.Message) {
+	r.sender.onSend = func(sms.Resolved) {
 		select {
 		case delivered <- struct{}{}:
 		default:
@@ -161,7 +172,7 @@ func TestStopDrainsTheQueueWithinItsBound(t *testing.T) {
 	// message when Stop is called.
 	block := make(chan struct{})
 	first := make(chan struct{}, 1)
-	r.sender.onSend = func(sms.Message) {
+	r.sender.onSend = func(sms.Resolved) {
 		select {
 		case first <- struct{}{}:
 			<-block

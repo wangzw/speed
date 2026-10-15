@@ -96,38 +96,27 @@ func (b *logBuffer) lines(substrings ...string) []string {
 	return out
 }
 
-// fakeSender is the carrier a case scripts. It records every message it is
-// handed, answers with the result it was told to, and reports the templates it
-// holds as the full set this module needs until a case says otherwise.
+// fakeSender is the carrier a case scripts. It records every resolved message it
+// is handed and answers with the result it was told to.
 type fakeSender struct {
-	mu       sync.Mutex
-	sent     []sms.Message
-	result   error
-	onSend   func(sms.Message)
-	declared []sms.Template
+	mu     sync.Mutex
+	sent   []sms.Resolved
+	result error
+	onSend func(sms.Resolved)
 }
 
-func newSender() *fakeSender { return &fakeSender{declared: declaredTemplates()} }
+func newSender() *fakeSender { return &fakeSender{} }
 
 func (f *fakeSender) Name() string { return "fake" }
 
-// Declared reports the templates this carrier holds. It starts as the full set
-// this module needs, so an assembly drives to Start; a case that drives the
-// consumer-side check replaces it with a set missing a combination.
-func (f *fakeSender) Declared() []sms.Template {
+func (f *fakeSender) Send(_ context.Context, r sms.Resolved) (sms.Receipt, error) {
 	f.mu.Lock()
-	defer f.mu.Unlock()
-	return f.declared
-}
-
-func (f *fakeSender) Send(_ context.Context, m sms.Message) (sms.Receipt, error) {
-	f.mu.Lock()
-	f.sent = append(f.sent, m)
+	f.sent = append(f.sent, r)
 	res := f.result
 	cb := f.onSend
 	f.mu.Unlock()
 	if cb != nil {
-		cb(m)
+		cb(r)
 	}
 	return sms.Receipt{ProviderID: "provider-1"}, res
 }
@@ -140,11 +129,11 @@ func (f *fakeSender) count() int {
 
 // last returns the most recent message the carrier was handed, and whether it
 // was handed one at all.
-func (f *fakeSender) last() (sms.Message, bool) {
+func (f *fakeSender) last() (sms.Resolved, bool) {
 	f.mu.Lock()
 	defer f.mu.Unlock()
 	if len(f.sent) == 0 {
-		return sms.Message{}, false
+		return sms.Resolved{}, false
 	}
 	return f.sent[len(f.sent)-1], true
 }
@@ -155,13 +144,102 @@ func (f *fakeSender) setResult(err error) {
 	f.result = err
 }
 
-// declaredTemplates is the set of templates this module needs, as a carrier that
+// fakeRegistry is the template registry a case scripts. It reports the templates
+// it holds, resolves a message against them the way a registry backed by the
+// configuration does, and answers a scripted error for a message a case wants
+// the registry to refuse.
+type fakeRegistry struct {
+	mu         sync.Mutex
+	declared   []sms.Template
+	resolveErr error
+}
+
+func newRegistry() *fakeRegistry { return &fakeRegistry{declared: declaredTemplates()} }
+
+// Declared reports the templates the registry holds. It starts as the full set
+// this module needs, so an assembly drives to Start; a case that drives the
+// consumer-side check replaces it with a set missing a combination.
+func (f *fakeRegistry) Declared() []sms.Template {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	return f.declared
+}
+
+// setDeclared replaces the templates the registry holds.
+func (f *fakeRegistry) setDeclared(declared []sms.Template) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	f.declared = declared
+}
+
+// setResolveErr makes Resolve answer err, for a case that drives a message the
+// registry will not build.
+func (f *fakeRegistry) setResolveErr(err error) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	f.resolveErr = err
+}
+
+// Resolve resolves a message against the declared templates, or answers the
+// scripted error.
+func (f *fakeRegistry) Resolve(m sms.Message) (sms.Resolved, error) {
+	f.mu.Lock()
+	err := f.resolveErr
+	declared := append([]sms.Template(nil), f.declared...)
+	f.mu.Unlock()
+	if err != nil {
+		return sms.Resolved{}, err
+	}
+	d, derr := declarationFrom(declared)
+	if derr != nil {
+		return sms.Resolved{}, derr
+	}
+	return d.Resolve(m)
+}
+
+// The management surface is the consumer's not to call; a stand-in that reaches
+// it fails loudly rather than answer a plausible zero value.
+func (f *fakeRegistry) List(context.Context) ([]sms.Record, error) {
+	return nil, errUnusedRegistry
+}
+
+func (f *fakeRegistry) Register(context.Context, string, sms.TemplateSpec) (sms.Record, error) {
+	return sms.Record{}, errUnusedRegistry
+}
+
+func (f *fakeRegistry) Offer(context.Context, sms.Submission) (sms.Record, error) {
+	return sms.Record{}, errUnusedRegistry
+}
+
+func (f *fakeRegistry) SetEnabled(context.Context, string, bool) error { return errUnusedRegistry }
+
+func (f *fakeRegistry) Remove(context.Context, string) error { return errUnusedRegistry }
+
+// errUnusedRegistry is what the fake registry's management methods answer: this
+// module is a consumer of templates and never manages one.
+var errUnusedRegistry = errors.New("fakeRegistry: the management surface is not used by this module")
+
+// declarationFrom builds a real Declaration from a reported template set, so the
+// fake resolves a message the way a registry backed by the configuration does.
+func declarationFrom(declared []sms.Template) (sms.Declaration, error) {
+	specs := make(map[string]sms.TemplateSpec, len(declared))
+	for _, t := range declared {
+		codes := make(map[string]string, len(t.Locales))
+		for _, locale := range t.Locales {
+			codes[locale] = t.Name + "/" + locale
+		}
+		specs[t.Name] = sms.TemplateSpec{Params: append([]string(nil), t.Params...), Codes: codes}
+	}
+	return sms.NewDeclaration(specs)
+}
+
+// declaredTemplates is the set of templates this module needs, as a registry that
 // covers them would report it: the three template names, each with the two
 // parameters and the two languages.
 func declaredTemplates() []sms.Template { return declaredTemplatesFor(testLocales) }
 
-// declaredTemplatesFor is declaredTemplates over a carrier's own language set, so
-// a case can drive a carrier that declares languages other than the two the
+// declaredTemplatesFor is declaredTemplates over a registry's own language set, so
+// a case can drive a registry that declares languages other than the two the
 // module used to hardcode.
 func declaredTemplatesFor(locales []string) []sms.Template {
 	out := make([]sms.Template, 0, len(requiredTemplates))
@@ -325,6 +403,7 @@ type rig struct {
 	p        *product
 	h        *gorm.DB
 	database db.Database
+	registry *fakeRegistry
 	sender   *fakeSender
 	bus      *recordingBus
 	audit    *recordingAudit
@@ -341,18 +420,19 @@ type rig struct {
 // Send alone leaves the queue untouched.
 func newRig(t *testing.T, database db.Database, sender *fakeSender) *rig {
 	t.Helper()
-	return newRigLocale(t, database, sender, testDefaultLocale)
+	return newRigOver(t, database, newRegistry(), sender, testDefaultLocale)
 }
 
-// newRigLocale is newRig over a chosen default language, so a case can drive the
-// module's read of a configured default. The carrier's languages are derived from
-// what it declares, the way newProduct derives them.
-func newRigLocale(t *testing.T, database db.Database, sender *fakeSender, defaultLocale string) *rig {
+// newRigOver is newRig over a chosen registry and default language, so a case can
+// drive the module's read of a configured default and a registry that declares a
+// set the module has to check. The templates' languages are derived from what the
+// registry declares, the way newProduct derives them.
+func newRigOver(t *testing.T, database db.Database, registry *fakeRegistry, sender *fakeSender, defaultLocale string) *rig {
 	t.Helper()
 	cfg := resolved{Workers: 1, QueueSize: 64}
-	p := build(database, sender, cfg, defaultLocale, templateLocales(sender.Declared()))
+	p := build(database, registry, sender, cfg, defaultLocale, templateLocales(registry.Declared()))
 	r := &rig{
-		t: t, p: p, h: database.DB(), database: database, sender: sender,
+		t: t, p: p, h: database.DB(), database: database, registry: registry, sender: sender,
 		bus: newBus(), audit: &recordingAudit{}, store: newStore(),
 		logs: &logBuffer{}, clock: newClock(base),
 	}

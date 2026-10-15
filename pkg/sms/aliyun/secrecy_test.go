@@ -2,39 +2,46 @@ package aliyun
 
 import (
 	"errors"
+	"net/http/httptest"
 	"strings"
 	"testing"
 
 	"github.com/vislake/speed/pkg/sms"
 )
 
-// TestAConfigurationErrorNeverRepeatsTheAccessKeySecret holds the discipline that
-// a module holding a secret configuration value keeps it out of the text of every
-// failure on the way to a runnable configuration. The value is registered as a
-// literal redaction rule for logs; this is the other half: the failure a startup
-// prints must not carry it, whichever item the failure actually names.
-func TestAConfigurationErrorNeverRepeatsTheAccessKeySecret(t *testing.T) {
-	const secret = "s3cr3t-aliyun-access-key-sentinel-9f8e7d6c"
-	for name, edit := range map[string]func(*moduleConfig){
-		"a template with no parameter": func(c *moduleConfig) {
-			c.Templates["authn.code.login"] = sms.TemplateSpec{Codes: map[string]string{"zh-CN": "SMS_X"}}
+// TestAProviderErrorNeverRepeatsTheAccessKeySecret holds that a module holding a
+// secret configuration value keeps it out of the text of every failure its
+// management seam returns, even when the carrier echoes the value back in its own
+// answer. The value is registered as a literal redaction rule for logs; this is
+// the other half: what the seam returns must not carry it either, so the module
+// reports the carrier's status code and never its message text.
+func TestAProviderErrorNeverRepeatsTheAccessKeySecret(t *testing.T) {
+	echoed := `{"Code":"isv.SMS_TEMPLATE_ILLEGAL","Message":"the key ` + testAccessKeySecret + ` was rejected"}`
+
+	calls := map[string]func(*sender) error{
+		"offer": func(s *sender) error {
+			_, err := s.Offer(t.Context(), oneSubmission())
+			return err
 		},
-		"a template with a blank code": func(c *moduleConfig) {
-			c.Templates["authn.code.enroll"] = sms.TemplateSpec{
-				Params: []string{"code", "ttl_minutes"},
-				Codes:  map[string]string{"zh-CN": "SMS_X", "en-US": "   "},
-			}
+		"approval": func(s *sender) error {
+			_, err := s.Approval(t.Context(), "SMS_1")
+			return err
 		},
-	} {
+		"retire": func(s *sender) error {
+			return s.Retire(t.Context(), "SMS_1")
+		},
+	}
+	for name, call := range calls {
 		t.Run(name, func(t *testing.T) {
-			cfg := completeConfig()
-			cfg.AccessKeySecret = secret
-			edit(&cfg)
-			_, err := cfg.resolve()
-			if !errors.Is(err, sms.ErrInvalidConfig) {
-				t.Fatalf("resolve = %v, want one wrapping ErrInvalidConfig", err)
+			server := httptest.NewServer(jsonReply(echoed))
+			defer server.Close()
+
+			s := senderOver(t, server.Listener.Addr().String(), "http")
+			err := call(s)
+			if !errors.Is(err, sms.ErrUncertain) {
+				t.Fatalf("%s answered %v, want the uncertain sentinel", name, err)
 			}
-			if strings.Contains(err.Error(), secret) {
+			if strings.Contains(err.Error(), testAccessKeySecret) {
 				t.Errorf("the failure %q repeats the access-key secret", err)
 			}
 		})

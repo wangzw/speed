@@ -20,18 +20,8 @@ import (
 	"github.com/vislake/speed/pkg/sms"
 )
 
-// mustDeclaration freezes the case templates into the declaration a sender runs
-// on.
-func mustDeclaration() sms.Declaration {
-	decl, err := sms.NewDeclaration(validTemplates())
-	if err != nil {
-		panic(err)
-	}
-	return decl
-}
-
-// testConfig is the configuration the fake-endpoint cases run on: credentials
-// that sign a request, and the full declared template set.
+// testConfig is the configuration the fake-endpoint cases run on: the
+// credentials that sign a request and the approved signature.
 func testConfig() resolved {
 	return resolved{
 		secretID:  "AKIDexample",
@@ -39,17 +29,19 @@ func testConfig() resolved {
 		sdkAppID:  "1400006666",
 		region:    "ap-guangzhou",
 		signName:  "Speed",
-		decl:      mustDeclaration(),
 	}
 }
 
-// message is one SendSms the cases hand the sender.
-func message(id string) sms.Message {
-	return sms.Message{
+// resolvedMessage is one SendSms the cases hand the sender: the login template's
+// zh-CN number with its two values in the declared order.
+func resolvedMessage(id string) sms.Resolved {
+	return sms.Resolved{
 		To:       "+8613800138000",
 		Template: "authn.code.login",
-		Params:   map[string]string{"code": "123456", "ttl_minutes": "5"},
 		Locale:   "zh-CN",
+		Code:     "1001",
+		Params:   map[string]string{"code": "123456", "ttl_minutes": "5"},
+		Ordered:  []string{"123456", "5"},
 		DedupeID: id,
 	}
 }
@@ -120,9 +112,9 @@ type wireRequest struct {
 	TemplateParamSet []string
 }
 
-// Send builds the carrier request out of the message: the destination, the
-// signature and application, the template the (template, locale) pair selects,
-// and the parameters in the order the approved template expects.
+// Send builds the carrier request out of the resolved message: the destination,
+// the signature and application, the resolved vendor number, and the values in
+// the order the approved template expects.
 func TestSendBuildsTheRequestFromTheMessage(t *testing.T) {
 	var got wireRequest
 	var calls int32
@@ -139,14 +131,16 @@ func TestSendBuildsTheRequestFromTheMessage(t *testing.T) {
 		_, _ = io.WriteString(w, okBody())
 	})
 	s := newTestSender(t, host)
-	m := sms.Message{
+	r := sms.Resolved{
 		To:       "+8613800138000",
 		Template: "authn.code.mfa",
-		Params:   map[string]string{"code": "123456", "ttl_minutes": "5"},
 		Locale:   "en-US",
+		Code:     "1004",
+		Params:   map[string]string{"code": "123456", "ttl_minutes": "5"},
+		Ordered:  []string{"123456", "5"},
 		DedupeID: "chal-shape",
 	}
-	receipt, err := s.Send(context.Background(), m)
+	receipt, err := s.Send(context.Background(), r)
 	if err != nil {
 		t.Fatalf("sending: %v", err)
 	}
@@ -173,27 +167,6 @@ func TestSendBuildsTheRequestFromTheMessage(t *testing.T) {
 	}
 }
 
-// An empty language is the caller's defect: this package refuses it before the
-// carrier is reached rather than reading it as a default.
-func TestAnEmptyLocaleIsRefused(t *testing.T) {
-	var calls int32
-	host := fakeServer(t, func(w http.ResponseWriter, _ *http.Request) {
-		atomic.AddInt32(&calls, 1)
-		w.Header().Set("Content-Type", "application/json")
-		_, _ = io.WriteString(w, okBody())
-	})
-	s := newTestSender(t, host)
-	m := message("chal-locale")
-	m.Locale = ""
-	_, err := s.Send(context.Background(), m)
-	if !errors.Is(err, sms.ErrRejected) {
-		t.Fatalf("an empty language gave %v, want ErrRejected", err)
-	}
-	if n := atomic.LoadInt32(&calls); n != 0 {
-		t.Errorf("the carrier was called %d times for a message with no language, want 0", n)
-	}
-}
-
 // The carrier's answer is sorted into the sentinels: its rate-limit codes are
 // throttles, a parameter mismatch is a rejection, and every other code is
 // uncertain. The codes arrive both as a per-number status and as a top-level
@@ -216,7 +189,7 @@ func TestSendClassifiesTheCarrierAnswer(t *testing.T) {
 	for _, c := range cases {
 		t.Run(c.name, func(t *testing.T) {
 			s := newTestSender(t, answerServer(t, c.body))
-			_, err := s.Send(context.Background(), message("chal-"+c.name))
+			_, err := s.Send(context.Background(), resolvedMessage("chal-"+c.name))
 			if !errors.Is(err, c.want) {
 				t.Fatalf("the answer gave %v, want %v", err, c.want)
 			}
@@ -248,7 +221,7 @@ func TestEveryRateLimitCodeIsThrottled(t *testing.T) {
 		t.Run(code, func(t *testing.T) {
 			for _, body := range []string{statusBody(code), errBody(code)} {
 				s := newTestSender(t, answerServer(t, body))
-				if _, err := s.Send(context.Background(), message("chal-"+code)); !errors.Is(err, sms.ErrThrottled) {
+				if _, err := s.Send(context.Background(), resolvedMessage("chal-"+code)); !errors.Is(err, sms.ErrThrottled) {
 					t.Fatalf("the code %s gave %v, want ErrThrottled", code, err)
 				}
 			}
@@ -262,31 +235,9 @@ func TestTheParameterMismatchCodeIsARejection(t *testing.T) {
 	code := tc.FAILEDOPERATION_TEMPLATEPARAMSETNOTMATCHAPPROVEDTEMPLATE
 	for _, body := range []string{statusBody(code), errBody(code)} {
 		s := newTestSender(t, answerServer(t, body))
-		if _, err := s.Send(context.Background(), message("chal-mismatch")); !errors.Is(err, sms.ErrRejected) {
+		if _, err := s.Send(context.Background(), resolvedMessage("chal-mismatch")); !errors.Is(err, sms.ErrRejected) {
 			t.Fatalf("the mismatch code gave %v, want ErrRejected", err)
 		}
-	}
-}
-
-// A (template, locale) pair the declaration does not cover never reaches the
-// carrier: nothing is composed, so the send is a definite rejection and not an
-// uncertain one, and the endpoint is never called.
-func TestAnUncoveredTemplateIsRefusedWithoutCallingTheCarrier(t *testing.T) {
-	var calls int32
-	host := fakeServer(t, func(w http.ResponseWriter, _ *http.Request) {
-		atomic.AddInt32(&calls, 1)
-		w.Header().Set("Content-Type", "application/json")
-		_, _ = io.WriteString(w, okBody())
-	})
-	s := newTestSender(t, host)
-	m := message("chal-uncovered")
-	m.Locale = "fr-FR" // a language no declared template has a code for
-	_, err := s.Send(context.Background(), m)
-	if !errors.Is(err, sms.ErrRejected) {
-		t.Fatalf("an uncovered template gave %v, want ErrRejected", err)
-	}
-	if n := atomic.LoadInt32(&calls); n != 0 {
-		t.Errorf("the carrier was called %d times for a message with no template, want 0", n)
 	}
 }
 
@@ -301,7 +252,7 @@ func TestATimedOutSendIsUncertain(t *testing.T) {
 	s := newTestSender(t, host)
 	ctx, cancel := context.WithTimeout(context.Background(), 50*time.Millisecond)
 	defer cancel()
-	_, err := s.Send(ctx, message("chal-timeout"))
+	_, err := s.Send(ctx, resolvedMessage("chal-timeout"))
 	// Let the server handler return, so its server can close, before asserting.
 	close(release)
 	if !errors.Is(err, sms.ErrUncertain) {
@@ -325,8 +276,9 @@ func TestNeitherTheCodeNorTheCredentialReachesTheErrorText(t *testing.T) {
 		_, _ = io.WriteString(w, errBody("InternalError.UnknownError"))
 	}))
 
-	m := message("chal-leak")
+	m := resolvedMessage("chal-leak")
 	m.Params = map[string]string{"code": code, "ttl_minutes": "5"}
+	m.Ordered = []string{code, "5"}
 	_, err := s.Send(context.Background(), m)
 	if err == nil {
 		t.Fatal("an answer carrying an error code gave no error")
@@ -353,7 +305,7 @@ func TestOneIdentifierReachesTheCarrierOnce(t *testing.T) {
 		_, _ = io.WriteString(w, okBody())
 	})
 	s := newTestSender(t, host)
-	m := message("chal-same")
+	m := resolvedMessage("chal-same")
 
 	firstReceipt, firstErr := s.Send(context.Background(), m)
 	secondReceipt, secondErr := s.Send(context.Background(), m)
@@ -380,7 +332,7 @@ func TestDistinctIdentifiersEachReachTheCarrier(t *testing.T) {
 	})
 	s := newTestSender(t, host)
 	for _, id := range []string{"chal-a", "chal-b", "chal-c"} {
-		if _, err := s.Send(context.Background(), message(id)); err != nil {
+		if _, err := s.Send(context.Background(), resolvedMessage(id)); err != nil {
 			t.Fatalf("sending %s: %v", id, err)
 		}
 	}
@@ -405,7 +357,7 @@ func TestConcurrentCallsForOneIdentifierReachTheCarrierOnce(t *testing.T) {
 		wg.Add(1)
 		go func() {
 			defer wg.Done()
-			if _, err := s.Send(context.Background(), message("chal-race")); err != nil {
+			if _, err := s.Send(context.Background(), resolvedMessage("chal-race")); err != nil {
 				t.Errorf("sending: %v", err)
 			}
 		}()

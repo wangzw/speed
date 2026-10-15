@@ -47,7 +47,7 @@ func driveSender(t *testing.T, document string) *sender {
 // The module registers under its name and delivers a sender that reports the
 // carrier it is.
 func TestTheModuleDeliversTheSenderNamedTencent(t *testing.T) {
-	s := driveSender(t, body(t, section(validTemplates(), nil)))
+	s := driveSender(t, body(t, section(nil)))
 	if got := s.Name(); got != "tencent" {
 		t.Errorf("the sender reports %q, want tencent", got)
 	}
@@ -56,10 +56,48 @@ func TestTheModuleDeliversTheSenderNamedTencent(t *testing.T) {
 	}
 }
 
+// The module delivers both seams over one product: a consumer that resolves the
+// sending seam and one that resolves the template-management seam reach the same
+// carrier.
+func TestTheModuleDeliversBothSeamsOverOneProduct(t *testing.T) {
+	reader := configtest.Reader(t, body(t, section(nil)), Module())
+	reg := core.New()
+	reg.Register(config.Module())
+	reg.Supply(reader, config.ModuleName)
+	reg.Register(Module())
+	var sending, managing *sender
+	err := reg.Drive(context.Background(), core.Drive{
+		Depth:        core.StageInit,
+		Participants: []string{ModuleName},
+		Action: func(_ context.Context, reg *core.Registry) error {
+			v, err := core.Resolve[sms.Sender](reg)
+			if err != nil {
+				return err
+			}
+			sending, _ = v.(*sender)
+			p, err := core.Resolve[sms.Provider](reg)
+			if err != nil {
+				return err
+			}
+			managing, _ = p.(*sender)
+			return nil
+		},
+	})
+	if err != nil {
+		t.Fatalf("driving the module: %v", err)
+	}
+	if sending == nil || managing == nil {
+		t.Fatalf("the module delivered sender %v and provider %v, want both", sending, managing)
+	}
+	if sending != managing {
+		t.Error("the two seams resolved to different products, want the same one")
+	}
+}
+
 // The claim is exclusive: a run that also holds another carrier fails the
 // resolution rather than letting two senders stand.
 func TestASecondExclusiveCarrierFailsTheResolution(t *testing.T) {
-	reader := configtest.Reader(t, body(t, section(validTemplates(), nil)), Module())
+	reader := configtest.Reader(t, body(t, section(nil)), Module())
 	reg := core.New()
 	reg.Register(config.Module())
 	reg.Supply(reader, config.ModuleName)
@@ -86,11 +124,9 @@ type otherCarrier struct{}
 
 func (otherCarrier) Name() string { return "other" }
 
-func (otherCarrier) Send(context.Context, sms.Message) (sms.Receipt, error) {
+func (otherCarrier) Send(context.Context, sms.Resolved) (sms.Receipt, error) {
 	return sms.Receipt{}, nil
 }
-
-func (otherCarrier) Declared() []sms.Template { return nil }
 
 // capturingRedaction records the rules registered with it.
 type capturingRedaction struct {
@@ -128,7 +164,7 @@ func TestTheCredentialsAreRegisteredAsRedactionRules(t *testing.T) {
 	red := &capturingRedaction{}
 	reg := core.New()
 	reg.Register(config.Module())
-	reg.Supply(configtest.Reader(t, body(t, section(validTemplates(), nil)), Module()), config.ModuleName)
+	reg.Supply(configtest.Reader(t, body(t, section(nil)), Module()), config.ModuleName)
 	reg.Register(providingLoggerModule(red))
 	reg.Register(Module())
 
@@ -156,7 +192,7 @@ func TestTheCredentialsAreRegisteredAsRedactionRules(t *testing.T) {
 func TestWithoutLoggingTheRegistrationIsSkipped(t *testing.T) {
 	reg := core.New()
 	reg.Register(config.Module())
-	reg.Supply(configtest.Reader(t, body(t, section(validTemplates(), nil)), Module()), config.ModuleName)
+	reg.Supply(configtest.Reader(t, body(t, section(nil)), Module()), config.ModuleName)
 	reg.Register(Module())
 	err := reg.Drive(context.Background(), core.Drive{
 		Depth:        core.StageInit,

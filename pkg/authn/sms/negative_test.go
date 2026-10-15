@@ -120,7 +120,7 @@ func TestTheMetricNamesAndAttributesAreTheDesignsLiterals(t *testing.T) {
 	r.allow()
 	// A delivered success records outcome=sent on the sends counter.
 	r.sender.setResult(nil)
-	r.p.deliverOne(context.Background(), sms.Message{To: phone})
+	r.p.deliverOne(context.Background(), sms.Resolved{To: phone})
 	// A failed audit write records on the audit-failures counter.
 	r.audit.err = errors.New("the audit is down")
 	r.deliverChange(settings.Change{Key: codeTTLPath, Old: "5m0s", New: "8m0s"})

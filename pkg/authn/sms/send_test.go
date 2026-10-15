@@ -257,7 +257,7 @@ func TestAQuedMessageIsDroppedWhenTheQueueIsFull(t *testing.T) {
 	r.allow()
 	// Fill the queue without starting the pool, so nothing drains it.
 	for range cap(r.p.pool.queue) {
-		r.p.pool.queue <- sms.Message{To: phone}
+		r.p.pool.queue <- sms.Resolved{To: phone}
 	}
 	_, err := r.sendLogin()
 	if !errors.Is(err, authn.ErrUnavailable) {
@@ -379,9 +379,9 @@ func TestAnUndeclaredRequestedLocaleResolvesToTheDefault(t *testing.T) {
 	}
 }
 
-// TestTheMessageLanguageIsTheTemplatesOwnNotTheCarriersUnion holds that the
+// TestTheMessageLanguageIsTheTemplatesOwnNotTheWholeSet holds that the
 // languages a message may go out in are those of the template its purpose maps
-// to, not the union of every template the carrier declares. A carrier whose
+// to, not the union of every template the registry declares. A registry whose
 // login template declares en-US and ja-JP and whose mfa template declares en-US
 // and fr-FR starts up — every template covers the configured default — a login
 // request in ja-JP goes out in ja-JP, and an mfa request in ja-JP resolves to
@@ -389,20 +389,20 @@ func TestAnUndeclaredRequestedLocaleResolvesToTheDefault(t *testing.T) {
 //
 // On the union code this case fails: ja-JP is in the union, taken from the login
 // template, so the mfa message would go out in ja-JP — a language its own
-// template does not hold. The carrier accepts the startup and then refuses every
-// mfa message at send time, which is the shape the startup check exists to
+// template does not hold. The registry accepts the startup and then refuses
+// every mfa message at send time, which is the shape the startup check exists to
 // prevent.
-func TestTheMessageLanguageIsTheTemplatesOwnNotTheCarriersUnion(t *testing.T) {
-	sender := newSender()
-	sender.declared = []sms.Template{
+func TestTheMessageLanguageIsTheTemplatesOwnNotTheWholeSet(t *testing.T) {
+	registry := newRegistry()
+	registry.setDeclared([]sms.Template{
 		{Name: templateLogin, Params: append([]string(nil), templateParams...), Locales: []string{"en-US", "ja-JP"}},
 		{Name: templateMFA, Params: append([]string(nil), templateParams...), Locales: []string{"en-US", "fr-FR"}},
 		{Name: templateEnroll, Params: append([]string(nil), templateParams...), Locales: []string{"en-US"}},
+	})
+	if err := checkSender(registry.Declared(), testDefaultLocale); err != nil {
+		t.Fatalf("a registry whose templates declare different languages was refused at startup: %v", err)
 	}
-	if err := checkSender(sender.Declared(), testDefaultLocale); err != nil {
-		t.Fatalf("a carrier whose templates declare different languages was refused at startup: %v", err)
-	}
-	r := newRig(t, openSQLite(t), sender)
+	r := newRigOver(t, openSQLite(t), registry, newSender(), testDefaultLocale)
 	r.allow()
 
 	// A login send requested in ja-JP goes out in ja-JP: its template declares it.
@@ -444,6 +444,41 @@ func TestANormalEnqueueIsNotRecordedAsADrop(t *testing.T) {
 	}
 	if got := len(r.p.pool.queue); got != 1 {
 		t.Errorf("the queue holds %d messages, want 1", got)
+	}
+}
+
+// TestATemplateTheRegistryWontSendUnderIsNotSendable holds the registry-refusal
+// path: the request path resolves the message and the registry refuses it
+// because the template is disabled or its vendor review is not back, so the send
+// records the refusal under its own outcome — not sent, not rejected — queues
+// nothing, and returns the challenge identifier like a send a carrier would
+// later refuse, because the row is already written.
+func TestATemplateTheRegistryWontSendUnderIsNotSendable(t *testing.T) {
+	r := newRigSQLite(t)
+	r.allow()
+	r.registry.setResolveErr(sms.ErrNotSendable)
+
+	id, err := r.sendLogin()
+	if err != nil {
+		t.Fatalf("a not-sendable send returned %v, want the challenge identifier", err)
+	}
+	if id == "" {
+		t.Error("a not-sendable send returned an empty challenge identifier")
+	}
+	if got := len(r.p.pool.queue); got != 0 {
+		t.Errorf("a not-sendable send queued %d messages, want none", got)
+	}
+	if got := r.rowCount(); got != 1 {
+		t.Errorf("a not-sendable send wrote %d rows, want 1", got)
+	}
+	if got := r.counter(sendsName, attribute.String(outcomeAttribute, outcomeNotSendable)); got != 1 {
+		t.Errorf("outcome not-sendable = %d, want 1", got)
+	}
+	if got := r.counter(sendsName, attribute.String(outcomeAttribute, outcomeRejected)); got != 0 {
+		t.Errorf("a not-sendable send recorded outcome rejected %d times, want 0", got)
+	}
+	if got := r.counter(sendsName, attribute.String(outcomeAttribute, outcomeSent)); got != 0 {
+		t.Errorf("a not-sendable send recorded outcome sent %d times, want 0", got)
 	}
 }
 

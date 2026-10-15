@@ -28,35 +28,6 @@ import (
 // everything the module produces.
 const testAccessKeySecret = "test-access-key-secret-9f3a2c"
 
-// validTemplates declares every template the cases send under.
-func validTemplates() map[string]sms.TemplateSpec {
-	return map[string]sms.TemplateSpec{
-		"authn.code.login": {
-			Params: []string{"code", "ttl_minutes"},
-			Codes:  map[string]string{"zh-CN": "SMS_LOGIN_ZH", "en-US": "SMS_LOGIN_EN"},
-		},
-		"authn.code.mfa": {
-			Params: []string{"code", "ttl_minutes"},
-			Codes:  map[string]string{"zh-CN": "SMS_MFA_ZH", "en-US": "SMS_MFA_EN"},
-		},
-		"authn.code.enroll": {
-			Params: []string{"code", "ttl_minutes"},
-			Codes:  map[string]string{"zh-CN": "SMS_ENROLL_ZH", "en-US": "SMS_ENROLL_EN"},
-		},
-	}
-}
-
-// testDeclaration freezes the case templates into the declaration a sender runs
-// on.
-func testDeclaration(t *testing.T) sms.Declaration {
-	t.Helper()
-	decl, err := sms.NewDeclaration(validTemplates())
-	if err != nil {
-		t.Fatalf("building the declaration: %v", err)
-	}
-	return decl
-}
-
 // senderOver builds a sender whose client points at the given endpoint and
 // protocol, which is how a case reaches the vendor SDK with a loopback server.
 func senderOver(t *testing.T, endpoint, protocol string) *sender {
@@ -70,7 +41,7 @@ func senderOver(t *testing.T, endpoint, protocol string) *sender {
 	if err != nil {
 		t.Fatalf("building the carrier client against the loopback endpoint: %v", err)
 	}
-	return newSender(resolved{signName: "Speed", decl: testDeclaration(t)}, client)
+	return newSender(resolved{signName: "Speed"}, client)
 }
 
 // jsonReply answers every request with one body.
@@ -81,19 +52,23 @@ func jsonReply(body string) http.HandlerFunc {
 	}
 }
 
-// oneMessage is a send the cases drive.
-func oneMessage() sms.Message {
-	return sms.Message{
+// oneResolved is the send the cases drive: a message the registry has already
+// resolved to a vendor code and the parameters the approved template
+// substitutes.
+func oneResolved() sms.Resolved {
+	return sms.Resolved{
 		To:       "+8613800000000",
 		Template: "authn.code.login",
-		Params:   map[string]string{"code": "123456", "ttl_minutes": "5"},
 		Locale:   "zh-CN",
+		Code:     "SMS_LOGIN_ZH",
+		Params:   map[string]string{"code": "123456", "ttl_minutes": "5"},
+		Ordered:  []string{"123456", "5"},
 		DedupeID: "challenge-1",
 	}
 }
 
 func TestTheSenderReportsTheCarrierName(t *testing.T) {
-	s := newSender(resolved{signName: "Speed", decl: testDeclaration(t)}, nil)
+	s := newSender(resolved{signName: "Speed"}, nil)
 	if got := s.Name(); got != "aliyun" {
 		t.Errorf("Name() = %q, want aliyun", got)
 	}
@@ -103,15 +78,16 @@ func TestTheSenderReportsTheCarrierName(t *testing.T) {
 }
 
 // TestTheRequestCarriesTheSignatureTemplateAndParameters holds the request shape
-// the vendor interface takes: the approved signature, the template code the
-// (template, locale) pair maps to, and the message parameters as a JSON string.
+// the vendor interface takes: the approved signature, the resolved destination
+// and template code, and the parameters as a JSON object keyed by name.
 func TestTheRequestCarriesTheSignatureTemplateAndParameters(t *testing.T) {
 	var got struct {
-		method, signName, templateCode, templateParam string
+		method, phoneNumbers, signName, templateCode, templateParam string
 	}
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		_ = r.ParseForm()
 		got.method = r.Method
+		got.phoneNumbers = r.FormValue("PhoneNumbers")
 		got.signName = r.FormValue("SignName")
 		got.templateCode = r.FormValue("TemplateCode")
 		got.templateParam = r.FormValue("TemplateParam")
@@ -121,18 +97,21 @@ func TestTheRequestCarriesTheSignatureTemplateAndParameters(t *testing.T) {
 	defer server.Close()
 
 	s := senderOver(t, server.Listener.Addr().String(), "http")
-	receipt, err := s.Send(t.Context(), oneMessage())
+	receipt, err := s.Send(t.Context(), oneResolved())
 	if err != nil {
 		t.Fatalf("Send: %v", err)
 	}
 	if got.method != http.MethodPost {
 		t.Errorf("the carrier was called with %s, want POST", got.method)
 	}
+	if got.phoneNumbers != "+8613800000000" {
+		t.Errorf("PhoneNumbers = %q, want the resolved destination +8613800000000", got.phoneNumbers)
+	}
 	if got.signName != "Speed" {
 		t.Errorf("SignName = %q, want the configured signature Speed", got.signName)
 	}
 	if got.templateCode != "SMS_LOGIN_ZH" {
-		t.Errorf("TemplateCode = %q, want the authn.code.login/zh-CN template SMS_LOGIN_ZH", got.templateCode)
+		t.Errorf("TemplateCode = %q, want the resolved code SMS_LOGIN_ZH", got.templateCode)
 	}
 	var params map[string]string
 	if err := json.Unmarshal([]byte(got.templateParam), &params); err != nil {
@@ -143,40 +122,6 @@ func TestTheRequestCarriesTheSignatureTemplateAndParameters(t *testing.T) {
 	}
 	if receipt.ProviderID != "biz-42" {
 		t.Errorf("ProviderID = %q, want the carrier's BizId biz-42", receipt.ProviderID)
-	}
-}
-
-// TestTheTemplateFollowsTheNameAndLocale holds that the (template, locale) pair,
-// and not a fixed template, decides the carrier template code.
-func TestTheTemplateFollowsTheNameAndLocale(t *testing.T) {
-	var seen []string
-	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		_ = r.ParseForm()
-		seen = append(seen, r.FormValue("TemplateCode"))
-		w.Header().Set("Content-Type", "application/json")
-		_, _ = io.WriteString(w, `{"Code":"OK","BizId":"b"}`)
-	}))
-	defer server.Close()
-
-	s := senderOver(t, server.Listener.Addr().String(), "http")
-	for _, c := range []struct {
-		template, locale, want string
-	}{
-		{"authn.code.login", "en-US", "SMS_LOGIN_EN"},
-		{"authn.code.mfa", "zh-CN", "SMS_MFA_ZH"},
-		{"authn.code.enroll", "en-US", "SMS_ENROLL_EN"},
-	} {
-		m := oneMessage()
-		m.Template, m.Locale = c.template, c.locale
-		// Each case is a distinct send, and a distinct send carries its own
-		// identifier, as a fresh challenge would.
-		m.DedupeID = c.want
-		if _, err := s.Send(t.Context(), m); err != nil {
-			t.Fatalf("Send(%s/%q): %v", c.template, c.locale, err)
-		}
-		if last := seen[len(seen)-1]; last != c.want {
-			t.Errorf("TemplateCode for %s/%q = %q, want %q", c.template, c.locale, last, c.want)
-		}
 	}
 }
 
@@ -203,7 +148,7 @@ func TestTheStatusCodesFallToUncertain(t *testing.T) {
 			server := httptest.NewServer(jsonReply(`{"Code":` + mustJSON(code) + `,"Message":"no"}`))
 			defer server.Close()
 			s := senderOver(t, server.Listener.Addr().String(), "http")
-			_, err := s.Send(t.Context(), oneMessage())
+			_, err := s.Send(t.Context(), oneResolved())
 			if !errors.Is(err, sms.ErrUncertain) {
 				t.Fatalf("send answered %v, want the uncertain sentinel for the status %q", err, code)
 			}
@@ -220,7 +165,7 @@ func TestTheStatusCodesFallToUncertain(t *testing.T) {
 		server := httptest.NewServer(jsonReply(`{"Code":"OK","BizId":"biz-1"}`))
 		defer server.Close()
 		s := senderOver(t, server.Listener.Addr().String(), "http")
-		if _, err := s.Send(t.Context(), oneMessage()); err != nil {
+		if _, err := s.Send(t.Context(), oneResolved()); err != nil {
 			t.Fatalf("send answered %v, want success for the status OK", err)
 		}
 	})
@@ -233,7 +178,7 @@ func TestATransportFailureIsUncertain(t *testing.T) {
 	t.Run("a network error", func(t *testing.T) {
 		// A port nothing listens on: the dial fails inside the SDK.
 		s := senderOver(t, "127.0.0.1:1", "http")
-		_, err := s.Send(t.Context(), oneMessage())
+		_, err := s.Send(t.Context(), oneResolved())
 		if !errors.Is(err, sms.ErrUncertain) {
 			t.Fatalf("send answered %v, want the uncertain sentinel", err)
 		}
@@ -252,7 +197,7 @@ func TestATransportFailureIsUncertain(t *testing.T) {
 		s := senderOver(t, server.Listener.Addr().String(), "http")
 		ctx, cancel := context.WithTimeout(t.Context(), 20*time.Millisecond)
 		defer cancel()
-		_, err := s.Send(ctx, oneMessage())
+		_, err := s.Send(ctx, oneResolved())
 		if !errors.Is(err, sms.ErrUncertain) {
 			t.Fatalf("send answered %v, want the uncertain sentinel for a call the context ended", err)
 		}
@@ -275,60 +220,12 @@ func TestACancelledContextDoesNotReachTheCarrier(t *testing.T) {
 	s := senderOver(t, server.Listener.Addr().String(), "http")
 	ctx, cancel := context.WithCancel(t.Context())
 	cancel()
-	_, err := s.Send(ctx, oneMessage())
+	_, err := s.Send(ctx, oneResolved())
 	if !errors.Is(err, sms.ErrUncertain) {
 		t.Fatalf("a cancelled send answered %v, want the uncertain sentinel", err)
 	}
 	if n := atomic.LoadInt32(&calls); n != 0 {
 		t.Errorf("the carrier was called %d times for a cancelled send, want 0", n)
-	}
-}
-
-// TestAnUncoveredTemplateIsRefusedWithoutSending holds that a (template, locale)
-// pair the declaration does not cover never reaches the carrier: no message is
-// composed, so the send is a definite refusal and not an uncertain one.
-func TestAnUncoveredTemplateIsRefusedWithoutSending(t *testing.T) {
-	called := false
-	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
-		called = true
-		w.Header().Set("Content-Type", "application/json")
-		_, _ = io.WriteString(w, `{"Code":"OK"}`)
-	}))
-	defer server.Close()
-
-	s := senderOver(t, server.Listener.Addr().String(), "http")
-	m := oneMessage()
-	m.Locale = "fr-FR" // a language no declared template has a code for
-	_, err := s.Send(t.Context(), m)
-	if !errors.Is(err, sms.ErrRejected) {
-		t.Fatalf("send answered %v, want the rejected sentinel", err)
-	}
-	if called {
-		t.Error("the carrier was called for a message with no configured template")
-	}
-}
-
-// TestAnEmptyLocaleIsRefusedWithoutSending holds that the language is the
-// caller's to set: this package treats an empty locale as a caller defect and
-// refuses it before the carrier is reached.
-func TestAnEmptyLocaleIsRefusedWithoutSending(t *testing.T) {
-	called := false
-	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
-		called = true
-		w.Header().Set("Content-Type", "application/json")
-		_, _ = io.WriteString(w, `{"Code":"OK"}`)
-	}))
-	defer server.Close()
-
-	s := senderOver(t, server.Listener.Addr().String(), "http")
-	m := oneMessage()
-	m.Locale = ""
-	_, err := s.Send(t.Context(), m)
-	if !errors.Is(err, sms.ErrRejected) {
-		t.Fatalf("send answered %v, want the rejected sentinel for an empty language", err)
-	}
-	if called {
-		t.Error("the carrier was called for a message with no language")
 	}
 }
 
@@ -369,7 +266,7 @@ func TestTheCodeAndTheCredentialsReachNoErrorOrLog(t *testing.T) {
 			defer server.Close()
 
 			s := senderOver(t, server.Listener.Addr().String(), "http")
-			m := oneMessage()
+			m := oneResolved()
 			m.Params = map[string]string{"code": code, "ttl_minutes": "5"}
 			_, err := s.Send(t.Context(), m)
 			if err == nil {
@@ -404,7 +301,7 @@ func TestTheCarrierIsCalledExactlyOnceEvenWhenItFails(t *testing.T) {
 	defer server.Close()
 
 	s := senderOver(t, server.Listener.Addr().String(), "http")
-	if _, err := s.Send(t.Context(), oneMessage()); !errors.Is(err, sms.ErrUncertain) {
+	if _, err := s.Send(t.Context(), oneResolved()); !errors.Is(err, sms.ErrUncertain) {
 		t.Fatalf("send answered %v, want the uncertain sentinel", err)
 	}
 	if calls != 1 {
@@ -562,7 +459,7 @@ func TestOneIdentifierReachesTheCarrierOnce(t *testing.T) {
 	defer server.Close()
 
 	s := senderOver(t, server.Listener.Addr().String(), "http")
-	m := oneMessage()
+	m := oneResolved()
 
 	firstReceipt, firstErr := s.Send(t.Context(), m)
 	secondReceipt, secondErr := s.Send(t.Context(), m)
@@ -591,7 +488,7 @@ func TestDistinctIdentifiersEachReachTheCarrier(t *testing.T) {
 
 	s := senderOver(t, server.Listener.Addr().String(), "http")
 	for _, id := range []string{"chal-a", "chal-b", "chal-c"} {
-		m := oneMessage()
+		m := oneResolved()
 		m.DedupeID = id
 		if _, err := s.Send(t.Context(), m); err != nil {
 			t.Fatalf("sending %s: %v", id, err)
@@ -619,7 +516,7 @@ func TestConcurrentCallsForOneIdentifierReachTheCarrierOnce(t *testing.T) {
 		wg.Add(1)
 		go func() {
 			defer wg.Done()
-			if _, err := s.Send(t.Context(), oneMessage()); err != nil {
+			if _, err := s.Send(t.Context(), oneResolved()); err != nil {
 				t.Errorf("sending: %v", err)
 			}
 		}()
