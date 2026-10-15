@@ -599,5 +599,6 @@ service 种访问令牌的撤销是无操作：该会话行由同一密钥签出
 | 刷新令牌表的清扫协程 | 已实现 | `pkg/authn/token/sweep.go`（`startSweep`、`sweepOnce`） |
 | 指标 `authn.token.operations`、事件 `authn.token.reuse-detected`、审计 `authn.token.refresh-reuse` | 已实现 | `pkg/authn/token/product.go`（`takeMeter`）、`pkg/authn/token/issue.go`（`recordOperation`）、`pkg/authn/token/refresh.go`（`revokeFamily` 发 `authn.token.reuse-detected`、写审计 `authn.token.refresh-reuse`） |
 | `pkg/go.mod` 对 `go-jose` 的下限要求与 `UnsafeClaimsWithoutVerification` 的静态检查 | 已实现 | `pkg/go.mod`（`github.com/go-jose/go-jose/v4` v4.1.5）；`pkg/authn/deps_test.go`（`TestTheTokenBridgeIsTheOnlyGoJoseUserAndTheFloorIsHeld`） |
+| 本模块提供的 API 的 OpenAPI 片段 | 已实现 | `pkg/authn/token/openapi/token.json`；`pkg/authn/token/module.go` `Module`、`defaultEndpoint`、`tokenFragment` |
 
 指标、事件与审计的名字、属性与档位由 [design-authn-events](design-authn-events.md) 承载；配置键与设置键的取值域由 [design-authn-config](design-authn-config.md) 承载。

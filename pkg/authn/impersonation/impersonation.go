@@ -36,6 +36,7 @@ import (
 	"github.com/vislake/speed/pkg/core"
 	"github.com/vislake/speed/pkg/db"
 	"github.com/vislake/speed/pkg/event"
+	speedhttp "github.com/vislake/speed/pkg/http"
 	"github.com/vislake/speed/pkg/log"
 	"github.com/vislake/speed/pkg/observability"
 	"github.com/vislake/speed/pkg/settings"
@@ -44,6 +45,18 @@ import (
 // ModuleName is this module's name in the registry. A host writes it into the
 // command that takes impersonation in.
 const ModuleName = "authn.impersonation"
+
+// defaultEndpoint is the endpoint this module's own OpenAPI fragment declares its
+// routes for. The endpoint the routes are actually mounted on is the one the
+// mounter resolves; the fragment is a static declaration written before that is
+// known, so it carries the conventional name.
+const defaultEndpoint = "account"
+
+// impersonationFragment is this module's OpenAPI fragment, describing the three
+// routes of the impersonation self-service.
+//
+//go:embed openapi/impersonation.json
+var impersonationFragment []byte
 
 // diagnosticPrefix starts every line this module writes to the startup
 // diagnostics, which have several writers.
@@ -103,7 +116,11 @@ func Module() core.Module {
 		Provides: []core.Provision{
 			{Token: (*authn.Impersonation)(nil), Exclusive: true},
 		},
-		Resources: []any{settingsSchema(), db.Migrations{FS: migrationsFS}},
+		Resources: []any{
+			settingsSchema(),
+			db.Migrations{FS: migrationsFS},
+			speedhttp.Spec{Endpoint: defaultEndpoint, Document: impersonationFragment},
+		},
 
 		Prepare: func(context.Context, *core.Registry) (core.Enablement, error) {
 			return core.Enablement{State: core.StateEnabled}, nil

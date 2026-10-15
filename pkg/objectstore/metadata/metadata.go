@@ -58,8 +58,19 @@ const ModuleName = "objectstore.metadata"
 // ConfigNamespace is where this module's input items are mounted.
 const ConfigNamespace = ModuleName
 
+// defaultEndpoint is the listening endpoint this module declares its OpenAPI
+// fragment for. The endpoint's name belongs to the host's HTTP configuration, and
+// a resource is a static declaration written before any configuration is read, so
+// the fragment carries this conventional name rather than an endpoint a run
+// happens to configure; the routes a run actually mounts follow the endpoints the
+// module is told to (objectstore.metadata.endpoints).
+const defaultEndpoint = "api"
+
 //go:embed migrations
 var migrationRoot embed.FS
+
+//go:embed openapi/metadata.json
+var metadataFragment []byte
 
 // migrationsFS is migrationRoot with the wrapping directory removed, so the
 // tree the database module sees has one directory per dialect at its root,
@@ -97,6 +108,10 @@ var _ objectstore.Objects = (*product)(nil)
 // the endpoint list, which says where the routes go, is not read. The capability
 // is delivered exclusively: one process has exactly one metadata surface, so a
 // second provider fails the startup.
+//
+// The descriptor also declares this module's own http.Spec, carrying the OpenAPI
+// fragment that describes the /api/v1/objects surface; the operations module
+// merges it into the document a process serves.
 func Module() core.Module {
 	return core.Module{
 		Name: ModuleName,
@@ -114,6 +129,7 @@ func Module() core.Module {
 			permissionSpec(),
 			translationSpec(),
 			messageCatalog,
+			speedhttp.Spec{Endpoint: defaultEndpoint, Document: metadataFragment},
 		},
 
 		Prepare: func(_ context.Context, reg *core.Registry) (core.Enablement, error) {

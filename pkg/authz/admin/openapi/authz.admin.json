@@ -1,0 +1,249 @@
+{
+  "openapi": "3.1.0",
+  "info": {"title": "authz.admin", "version": "1.0.0"},
+  "paths": {
+    "/authz/admin/permissions": {
+      "get": {
+        "operationId": "authz.admin.permissions.list",
+        "summary": "List every permission the catalog declares",
+        "responses": {
+          "200": {
+            "description": "Every declared permission",
+            "content": {"application/json": {"schema": {"type": "object", "required": ["permissions"], "properties": {"permissions": {"type": "array", "items": {"$ref": "#/components/schemas/AuthzAdminPermissionView"}}}}}}
+          },
+          "401": {"description": "The request carries no identity"},
+          "403": {"description": "The caller holds no role.read in the platform domain"},
+          "503": {"description": "A dependency could not answer"}
+        }
+      }
+    },
+    "/authz/admin/tenants/{tenant}/roles": {
+      "get": {
+        "operationId": "authz.admin.roles.list",
+        "summary": "List a tenant's roles",
+        "parameters": [{"$ref": "#/components/parameters/AuthzAdminTenant"}],
+        "responses": {
+          "200": {
+            "description": "Every role of the tenant",
+            "content": {"application/json": {"schema": {"type": "object", "required": ["roles"], "properties": {"roles": {"type": "array", "items": {"$ref": "#/components/schemas/AuthzAdminRoleView"}}}}}}
+          },
+          "401": {"description": "The request carries no identity"},
+          "403": {"description": "The caller holds no role.read in the platform domain"},
+          "503": {"description": "A dependency could not answer"}
+        }
+      }
+    },
+    "/authz/admin/tenants/{tenant}/roles/{role}": {
+      "put": {
+        "operationId": "authz.admin.roles.put",
+        "summary": "Create or rewrite a role",
+        "parameters": [
+          {"$ref": "#/components/parameters/AuthzAdminTenant"},
+          {"$ref": "#/components/parameters/AuthzAdminRole"}
+        ],
+        "requestBody": {"required": true, "content": {"application/json": {"schema": {"$ref": "#/components/schemas/AuthzAdminRoleWrite"}}}},
+        "responses": {
+          "204": {"description": "The role was written"},
+          "400": {"description": "The body is not one object"},
+          "401": {"description": "The request carries no identity"},
+          "403": {"description": "The caller holds no role.manage in the platform domain"},
+          "409": {"description": "The role is builtin and cannot be changed"},
+          "503": {"description": "A dependency could not answer"}
+        }
+      },
+      "delete": {
+        "operationId": "authz.admin.roles.delete",
+        "summary": "Remove a role, revoking its grants and bindings with it",
+        "parameters": [
+          {"$ref": "#/components/parameters/AuthzAdminTenant"},
+          {"$ref": "#/components/parameters/AuthzAdminRole"}
+        ],
+        "responses": {
+          "204": {"description": "The role was removed"},
+          "400": {"description": "No such role, or the named role belongs to another tenant"},
+          "401": {"description": "The request carries no identity"},
+          "403": {"description": "The caller holds no role.manage in the platform domain"},
+          "409": {"description": "The role is builtin and cannot be removed"},
+          "503": {"description": "A dependency could not answer"}
+        }
+      }
+    },
+    "/authz/admin/tenants/{tenant}/roles/{role}/grants": {
+      "get": {
+        "operationId": "authz.admin.grants.list",
+        "summary": "List every permission grant a role holds",
+        "parameters": [
+          {"$ref": "#/components/parameters/AuthzAdminTenant"},
+          {"$ref": "#/components/parameters/AuthzAdminRole"}
+        ],
+        "responses": {
+          "200": {
+            "description": "The role's grants",
+            "content": {"application/json": {"schema": {"type": "object", "required": ["grants"], "properties": {"grants": {"type": "array", "items": {"$ref": "#/components/schemas/AuthzAdminGrantView"}}}}}}
+          },
+          "401": {"description": "The request carries no identity"},
+          "403": {"description": "The caller holds no role.read in the platform domain"},
+          "503": {"description": "A dependency could not answer"}
+        }
+      }
+    },
+    "/authz/admin/tenants/{tenant}/roles/{role}/grants/{permission}": {
+      "put": {
+        "operationId": "authz.admin.grants.put",
+        "summary": "Grant a permission to a role",
+        "parameters": [
+          {"$ref": "#/components/parameters/AuthzAdminTenant"},
+          {"$ref": "#/components/parameters/AuthzAdminRole"},
+          {"$ref": "#/components/parameters/AuthzAdminPermission"}
+        ],
+        "responses": {
+          "204": {"description": "The permission was granted"},
+          "400": {"description": "The named permission is not in the catalog, or the translation has no row for it, or the named role belongs to another tenant"},
+          "401": {"description": "The request carries no identity"},
+          "403": {"description": "The caller holds no role.manage in the platform domain"},
+          "503": {"description": "A dependency could not answer"}
+        }
+      },
+      "delete": {
+        "operationId": "authz.admin.grants.delete",
+        "summary": "Revoke a permission from a role",
+        "parameters": [
+          {"$ref": "#/components/parameters/AuthzAdminTenant"},
+          {"$ref": "#/components/parameters/AuthzAdminRole"},
+          {"$ref": "#/components/parameters/AuthzAdminPermission"}
+        ],
+        "responses": {
+          "204": {"description": "The permission was revoked"},
+          "400": {"description": "The translation has no row for the named permission, or the named role belongs to another tenant"},
+          "401": {"description": "The request carries no identity"},
+          "403": {"description": "The caller holds no role.manage in the platform domain"},
+          "503": {"description": "A dependency could not answer"}
+        }
+      }
+    },
+    "/authz/admin/tenants/{tenant}/bindings": {
+      "get": {
+        "operationId": "authz.admin.bindings.list",
+        "summary": "List every role binding of a tenant",
+        "parameters": [{"$ref": "#/components/parameters/AuthzAdminTenant"}],
+        "responses": {
+          "200": {
+            "description": "The tenant's bindings",
+            "content": {"application/json": {"schema": {"type": "object", "required": ["bindings"], "properties": {"bindings": {"type": "array", "items": {"$ref": "#/components/schemas/AuthzAdminBindingView"}}}}}}
+          },
+          "401": {"description": "The request carries no identity"},
+          "403": {"description": "The caller holds no role.read in the platform domain"},
+          "503": {"description": "A dependency could not answer"}
+        }
+      }
+    },
+    "/authz/admin/tenants/{tenant}/bindings/{account}": {
+      "get": {
+        "operationId": "authz.admin.bindings.of",
+        "summary": "List every binding an account holds within a tenant",
+        "parameters": [
+          {"$ref": "#/components/parameters/AuthzAdminTenant"},
+          {"$ref": "#/components/parameters/AuthzAdminAccount"}
+        ],
+        "responses": {
+          "200": {
+            "description": "The account's bindings within the tenant",
+            "content": {"application/json": {"schema": {"type": "object", "required": ["bindings"], "properties": {"bindings": {"type": "array", "items": {"$ref": "#/components/schemas/AuthzAdminBindingView"}}}}}}
+          },
+          "401": {"description": "The request carries no identity"},
+          "403": {"description": "The caller holds no role.read in the platform domain"},
+          "503": {"description": "A dependency could not answer"}
+        }
+      }
+    },
+    "/authz/admin/tenants/{tenant}/bindings/{account}/{role}": {
+      "put": {
+        "operationId": "authz.admin.bindings.put",
+        "summary": "Bind a role to an account within a tenant",
+        "parameters": [
+          {"$ref": "#/components/parameters/AuthzAdminTenant"},
+          {"$ref": "#/components/parameters/AuthzAdminAccount"},
+          {"$ref": "#/components/parameters/AuthzAdminRole"}
+        ],
+        "responses": {
+          "204": {"description": "The role was bound"},
+          "400": {"description": "The account is empty, no such role, or the named role belongs to another tenant"},
+          "401": {"description": "The request carries no identity"},
+          "403": {"description": "The caller holds no role.manage in the platform domain"},
+          "503": {"description": "A dependency could not answer"}
+        }
+      },
+      "delete": {
+        "operationId": "authz.admin.bindings.delete",
+        "summary": "Remove an account's binding to a role within a tenant",
+        "parameters": [
+          {"$ref": "#/components/parameters/AuthzAdminTenant"},
+          {"$ref": "#/components/parameters/AuthzAdminAccount"},
+          {"$ref": "#/components/parameters/AuthzAdminRole"}
+        ],
+        "responses": {
+          "204": {"description": "The binding was removed"},
+          "400": {"description": "The account is empty, or the named role belongs to another tenant"},
+          "401": {"description": "The request carries no identity"},
+          "403": {"description": "The caller holds no role.manage in the platform domain"},
+          "503": {"description": "A dependency could not answer"}
+        }
+      }
+    }
+  },
+  "components": {
+    "parameters": {
+      "AuthzAdminTenant": {"name": "tenant", "in": "path", "required": true, "schema": {"type": "string"}, "description": "The tenant identifier, taken as the policy domain"},
+      "AuthzAdminRole": {"name": "role", "in": "path", "required": true, "schema": {"type": "string"}},
+      "AuthzAdminPermission": {"name": "permission", "in": "path", "required": true, "schema": {"type": "string"}},
+      "AuthzAdminAccount": {"name": "account", "in": "path", "required": true, "schema": {"type": "string"}}
+    },
+    "schemas": {
+      "AuthzAdminPermissionView": {
+        "type": "object",
+        "required": ["permission"],
+        "properties": {"permission": {"type": "string"}}
+      },
+      "AuthzAdminRoleView": {
+        "type": "object",
+        "required": ["tenant", "role", "builtin", "description_key", "created_at"],
+        "properties": {
+          "tenant": {"type": "string"},
+          "role": {"type": "string"},
+          "builtin": {"type": "boolean"},
+          "description_key": {"type": "string"},
+          "created_at": {"type": "string", "format": "date-time"}
+        }
+      },
+      "AuthzAdminRoleWrite": {
+        "type": "object",
+        "required": ["builtin", "description_key"],
+        "properties": {
+          "builtin": {"type": "boolean"},
+          "description_key": {"type": "string"}
+        }
+      },
+      "AuthzAdminGrantView": {
+        "type": "object",
+        "required": ["tenant", "role", "resource", "action", "created_at"],
+        "properties": {
+          "tenant": {"type": "string"},
+          "role": {"type": "string"},
+          "resource": {"type": "string"},
+          "action": {"type": "string"},
+          "created_at": {"type": "string", "format": "date-time"}
+        }
+      },
+      "AuthzAdminBindingView": {
+        "type": "object",
+        "required": ["tenant", "account", "role", "granted_at"],
+        "properties": {
+          "tenant": {"type": "string"},
+          "account": {"type": "string"},
+          "role": {"type": "string"},
+          "granted_at": {"type": "string", "format": "date-time"}
+        }
+      }
+    }
+  }
+}

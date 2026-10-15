@@ -43,6 +43,7 @@ import (
 	"github.com/vislake/speed/pkg/core"
 	"github.com/vislake/speed/pkg/db"
 	"github.com/vislake/speed/pkg/event"
+	speedhttp "github.com/vislake/speed/pkg/http"
 	"github.com/vislake/speed/pkg/log"
 	"github.com/vislake/speed/pkg/observability"
 	"github.com/vislake/speed/pkg/settings"
@@ -51,6 +52,18 @@ import (
 // ModuleName is this module's name in the registry. A host writes it into the
 // commands whose users log in.
 const ModuleName = "authn.session"
+
+// defaultEndpoint is the endpoint this module's own OpenAPI fragment declares its
+// routes for. The endpoint the routes are actually mounted on is the one the
+// mounter resolves; the fragment is a static declaration written before that is
+// known, so it carries the conventional name.
+const defaultEndpoint = "account"
+
+// sessionFragment is this module's OpenAPI fragment, describing the five routes
+// it mounts.
+//
+//go:embed openapi/session.json
+var sessionFragment []byte
 
 // ConfigNamespace is where this module's input items and settings are mounted.
 const ConfigNamespace = ModuleName
@@ -155,7 +168,11 @@ func Module() core.Module {
 			{Token: (*authn.Verifier)(nil)},
 			{Token: (*authn.AccountLifecycle)(nil)},
 		},
-		Resources: []any{schema(), settingsSchema(), db.Migrations{FS: migrationsFS}},
+		Resources: []any{
+			schema(), settingsSchema(),
+			db.Migrations{FS: migrationsFS},
+			speedhttp.Spec{Endpoint: defaultEndpoint, Document: sessionFragment},
+		},
 
 		Prepare: func(_ context.Context, reg *core.Registry) (core.Enablement, error) {
 			reader, err := readerOf(reg)

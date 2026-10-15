@@ -1,0 +1,109 @@
+{
+  "openapi": "3.1.0",
+  "info": {"title": "tenant.admin", "version": "1.0.0"},
+  "paths": {
+    "/tenant/admin/tenants": {
+      "get": {
+        "operationId": "tenant.admin.tenants.list",
+        "summary": "List every tenant the roster holds",
+        "responses": {
+          "200": {
+            "description": "Every tenant, in the roster's order by identifier",
+            "content": {"application/json": {"schema": {"type": "object", "required": ["tenants"], "properties": {"tenants": {"type": "array", "items": {"$ref": "#/components/schemas/TenantAdminTenant"}}}}}}
+          },
+          "401": {"description": "The request carries no identity"},
+          "403": {"description": "The caller holds no tenant.read in the platform domain"},
+          "503": {"description": "A dependency could not answer"}
+        }
+      },
+      "post": {
+        "operationId": "tenant.admin.tenants.create",
+        "summary": "Register an active tenant",
+        "requestBody": {"required": true, "content": {"application/json": {"schema": {"$ref": "#/components/schemas/TenantAdminTenantRegistration"}}}},
+        "responses": {
+          "201": {
+            "description": "The registered tenant",
+            "content": {"application/json": {"schema": {"type": "object", "required": ["tenant"], "properties": {"tenant": {"$ref": "#/components/schemas/TenantAdminTenant"}}}}}
+          },
+          "400": {"description": "The identifier or the alias is outside the identifier domain"},
+          "401": {"description": "The request carries no identity"},
+          "403": {"description": "The caller holds no tenant.manage in the platform domain"},
+          "409": {"description": "The identifier or the alias is already taken"},
+          "503": {"description": "A dependency could not answer"}
+        }
+      }
+    },
+    "/tenant/admin/tenants/{id}": {
+      "get": {
+        "operationId": "tenant.admin.tenants.get",
+        "summary": "Read one tenant the roster holds",
+        "parameters": [{"$ref": "#/components/parameters/TenantAdminTenantID"}],
+        "responses": {
+          "200": {
+            "description": "The tenant",
+            "content": {"application/json": {"schema": {"type": "object", "required": ["tenant"], "properties": {"tenant": {"$ref": "#/components/schemas/TenantAdminTenant"}}}}}
+          },
+          "401": {"description": "The request carries no identity"},
+          "403": {"description": "The caller holds no tenant.read in the platform domain"},
+          "404": {"description": "No tenant carries the identifier"},
+          "503": {"description": "A dependency could not answer"}
+        }
+      },
+      "patch": {
+        "operationId": "tenant.admin.tenants.setAlias",
+        "summary": "Change one tenant's alias",
+        "parameters": [{"$ref": "#/components/parameters/TenantAdminTenantID"}],
+        "requestBody": {"required": true, "content": {"application/json": {"schema": {"type": "object", "required": ["alias"], "properties": {"alias": {"type": "string"}}}}}},
+        "responses": {
+          "204": {"description": "The alias was changed"},
+          "400": {"description": "The identifier or the alias is outside the identifier domain"},
+          "401": {"description": "The request carries no identity"},
+          "403": {"description": "The caller holds no tenant.manage in the platform domain"},
+          "404": {"description": "No tenant carries the identifier"},
+          "409": {"description": "The alias is already taken"},
+          "503": {"description": "A dependency could not answer"}
+        }
+      }
+    },
+    "/tenant/admin/tenants/{id}/status": {
+      "post": {
+        "operationId": "tenant.admin.tenants.setStatus",
+        "summary": "Change one tenant's state",
+        "parameters": [{"$ref": "#/components/parameters/TenantAdminTenantID"}],
+        "requestBody": {"required": true, "content": {"application/json": {"schema": {"type": "object", "required": ["status"], "properties": {"status": {"type": "string", "enum": ["active", "disabled"]}}}}}},
+        "responses": {
+          "204": {"description": "The state was changed"},
+          "400": {"description": "The identifier is outside the identifier domain or the status is outside the closed set active/disabled"},
+          "401": {"description": "The request carries no identity"},
+          "403": {"description": "The caller holds no tenant.manage in the platform domain"},
+          "404": {"description": "No tenant carries the identifier"},
+          "503": {"description": "A dependency could not answer"}
+        }
+      }
+    }
+  },
+  "components": {
+    "parameters": {
+      "TenantAdminTenantID": {"name": "id", "in": "path", "required": true, "schema": {"type": "string"}}
+    },
+    "schemas": {
+      "TenantAdminTenant": {
+        "type": "object",
+        "required": ["id", "alias", "status"],
+        "properties": {
+          "id": {"type": "string"},
+          "alias": {"type": "string"},
+          "status": {"type": "string", "enum": ["active", "disabled"]}
+        }
+      },
+      "TenantAdminTenantRegistration": {
+        "type": "object",
+        "required": ["id", "alias"],
+        "properties": {
+          "id": {"type": "string"},
+          "alias": {"type": "string"}
+        }
+      }
+    }
+  }
+}

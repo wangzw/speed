@@ -39,6 +39,7 @@ import (
 	"github.com/vislake/speed/pkg/core"
 	"github.com/vislake/speed/pkg/db"
 	"github.com/vislake/speed/pkg/event"
+	speedhttp "github.com/vislake/speed/pkg/http"
 	"github.com/vislake/speed/pkg/log"
 	"github.com/vislake/speed/pkg/settings"
 )
@@ -66,6 +67,18 @@ const admissionModule = "tenant.admission"
 // diagnosticPrefix starts every line this module writes to the startup
 // diagnostics, which have several writers.
 const diagnosticPrefix = "authn: "
+
+// defaultEndpoint is the endpoint this module's fragment is declared on: the
+// account endpoint under the gateway's base path, which is where the reference
+// assembly mounts the authentication capability's own routes. A resource is a
+// static declaration fixed before configuration is read, so the field carries
+// this default; the merged document takes it as the endpoint of these
+// operations. A deployment that mounts the routes elsewhere is drift, which the
+// fragment is allowed to have and which produces no failure signal (see pkg/ops).
+const defaultEndpoint = "account"
+
+//go:embed openapi/sso.json
+var ssoFragment []byte
 
 // dnsTimeout bounds one TXT lookup. It is the deadline a domain verification and
 // a re-verification each take.
@@ -118,7 +131,12 @@ func Module() core.Module {
 		Provides: []core.Provision{
 			{Token: (*authn.SSOProviders)(nil), Exclusive: true},
 		},
-		Resources: []any{configSchema(), settingsSchema(), db.Migrations{FS: migrationsFS}},
+		Resources: []any{
+			configSchema(),
+			settingsSchema(),
+			db.Migrations{FS: migrationsFS},
+			speedhttp.Spec{Endpoint: defaultEndpoint, Document: ssoFragment},
+		},
 
 		Prepare: func(_ context.Context, reg *core.Registry) (core.Enablement, error) {
 			reader, err := readerOf(reg)

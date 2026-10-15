@@ -35,6 +35,7 @@ package profile
 
 import (
 	"context"
+	_ "embed"
 	"errors"
 	"fmt"
 	"log/slog"
@@ -43,6 +44,7 @@ import (
 	"github.com/vislake/speed/pkg/authn"
 	"github.com/vislake/speed/pkg/authn/internal/mount"
 	"github.com/vislake/speed/pkg/core"
+	speedhttp "github.com/vislake/speed/pkg/http"
 	"github.com/vislake/speed/pkg/log"
 	"github.com/vislake/speed/pkg/settings"
 )
@@ -50,6 +52,18 @@ import (
 // ModuleName is this module's name in the registry. A host writes it into the
 // command that mounts the profile routes.
 const ModuleName = "authn.profile"
+
+// defaultEndpoint is the endpoint this module's own OpenAPI fragment declares its
+// routes for. The endpoint the routes are actually mounted on is the one the
+// mounter resolves; the fragment is a static declaration written before that is
+// known, so it carries the conventional name.
+const defaultEndpoint = "account"
+
+// profileFragment is this module's OpenAPI fragment, describing the two routes it
+// mounts.
+//
+//go:embed openapi/profile.json
+var profileFragment []byte
 
 // diagnosticPrefix starts every line this module writes to the startup
 // diagnostics, which have several writers; it is the gateway's, so that a reader
@@ -87,6 +101,9 @@ func Module() core.Module {
 			{Token: (*settings.Store)(nil), Optional: true},
 			{Token: (*audit.Audit)(nil), Optional: true},
 			{Token: (*log.Logger)(nil), Optional: true},
+		},
+		Resources: []any{
+			speedhttp.Spec{Endpoint: defaultEndpoint, Document: profileFragment},
 		},
 
 		Prepare: func(context.Context, *core.Registry) (core.Enablement, error) {

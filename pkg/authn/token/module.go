@@ -29,6 +29,7 @@ import (
 	"github.com/vislake/speed/pkg/config"
 	"github.com/vislake/speed/pkg/core"
 	"github.com/vislake/speed/pkg/db"
+	speedhttp "github.com/vislake/speed/pkg/http"
 	"github.com/vislake/speed/pkg/log"
 )
 
@@ -38,6 +39,18 @@ const ModuleName = "authn.token"
 
 // ConfigNamespace is where this module's input items and settings are mounted.
 const ConfigNamespace = ModuleName
+
+// defaultEndpoint is the endpoint this module's own OpenAPI fragment declares its
+// routes for. The endpoint the routes are actually mounted on is the one the
+// mounter resolves; the fragment is a static declaration written before that is
+// known, so it carries the conventional name.
+const defaultEndpoint = "account"
+
+// tokenFragment is this module's OpenAPI fragment, describing the key set, the
+// token endpoint and the revocation endpoint.
+//
+//go:embed openapi/token.json
+var tokenFragment []byte
 
 // backendName is the name this backend reports. It is a constant of the code and
 // not an input: the gateway stamps it on every identity this backend vouches for.
@@ -106,7 +119,11 @@ func Module() core.Module {
 			{Token: (*authn.Tokens)(nil), Exclusive: true},
 			{Token: (*authn.Verifier)(nil)},
 		},
-		Resources: []any{schema(), settingsSchema(), db.Migrations{FS: migrationsFS}},
+		Resources: []any{
+			schema(), settingsSchema(),
+			db.Migrations{FS: migrationsFS},
+			speedhttp.Spec{Endpoint: defaultEndpoint, Document: tokenFragment},
+		},
 
 		Prepare: func(_ context.Context, reg *core.Registry) (core.Enablement, error) {
 			reader, err := readerOf(reg)

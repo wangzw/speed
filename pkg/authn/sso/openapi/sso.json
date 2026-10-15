@@ -1,0 +1,30 @@
+{
+  "openapi": "3.1.0",
+  "info": {"title": "authn sso", "version": "1.0.0"},
+  "paths": {
+    "/auth/sso/discover": {
+      "post": {
+        "operationId": "authn.sso.discover",
+        "summary": "The sign-in entries that exist for an email address's domain",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "email": {"type": "string"}
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {"description": "The providers that have verified the domain, an empty list when none match"},
+          "400": {"description": "The body could not be read, or it names no domain"},
+          "503": {"description": "The provider register could not be reached"}
+        }
+      }
+    }
+  }
+}

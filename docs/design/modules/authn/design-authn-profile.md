@@ -193,3 +193,4 @@ classDiagram
 | 能力 | 状态 | 代码 |
 |---|---|---|
 | 用户档案自服务面（`GET B/me`、`PATCH B/me`） | 已实现 | `pkg/authn/profile/profile.go` `Module`；`pkg/authn/profile/routes.go` `mountRoutes`；`pkg/authn/profile/read.go` `handleGetMe`；`pkg/authn/profile/write.go` `handlePatchMe` |
+| 本模块提供的 API 的 OpenAPI 片段 | 已实现 | `pkg/authn/profile/openapi/profile.json`；`pkg/authn/profile/profile.go` `Module`、`defaultEndpoint`、`profileFragment` |

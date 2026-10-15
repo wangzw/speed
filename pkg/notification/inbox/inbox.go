@@ -50,6 +50,14 @@ const ModuleName = "notification.inbox"
 // module name.
 const ConfigNamespace = ModuleName
 
+// defaultEndpoint is the listening endpoint this module declares its OpenAPI
+// fragment for. The endpoint's name belongs to the host's HTTP configuration, and
+// a resource is a static declaration written before any configuration is read, so
+// the fragment carries this conventional name rather than an endpoint a run
+// happens to configure; the routes a run actually mounts follow the endpoints the
+// module is told to (notification.inbox.endpoints).
+const defaultEndpoint = "api"
+
 // EventInboxCreated is the type name of the event this module publishes after
 // every in-app message row is committed. The push module subscribes to it; it
 // is a host-visible surface and changing it is a breaking one.
@@ -71,6 +79,9 @@ type Created struct {
 
 //go:embed migrations
 var migrationRoot embed.FS
+
+//go:embed openapi/inbox.json
+var inboxFragment []byte
 
 // migrationsFS is migrationRoot with the wrapping directory removed, so the
 // tree the database module sees has one directory per dialect at its root,
@@ -104,6 +115,10 @@ var _ notification.Inbox = (*inboxStore)(nil)
 // not mounted and the endpoint list is not read. The capability is delivered
 // exclusively: one process has exactly one inbox, so a second provider fails
 // the startup.
+//
+// The descriptor also declares this module's own http.Spec, carrying the OpenAPI
+// fragment that describes the inbox surface under /api/v1/notifications; the
+// operations module merges it into the document a process serves.
 func Module() core.Module {
 	return core.Module{
 		Name: ModuleName,
@@ -114,8 +129,13 @@ func Module() core.Module {
 			{Token: (*log.Logger)(nil), Optional: true},
 			{Token: (*speedhttp.Router)(nil), Optional: true},
 		},
-		Provides:  []core.Provision{{Token: (*notification.Inbox)(nil), Exclusive: true}},
-		Resources: []any{schema(), db.Migrations{FS: migrationsFS}, messageCatalog},
+		Provides: []core.Provision{{Token: (*notification.Inbox)(nil), Exclusive: true}},
+		Resources: []any{
+			schema(),
+			db.Migrations{FS: migrationsFS},
+			messageCatalog,
+			speedhttp.Spec{Endpoint: defaultEndpoint, Document: inboxFragment},
+		},
 
 		Prepare: func(_ context.Context, reg *core.Registry) (core.Enablement, error) {
 			reader, err := readerOf(reg)

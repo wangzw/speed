@@ -32,6 +32,7 @@ package login
 
 import (
 	"context"
+	_ "embed"
 	"errors"
 	"fmt"
 	"log/slog"
@@ -47,6 +48,7 @@ import (
 	"github.com/vislake/speed/pkg/config"
 	"github.com/vislake/speed/pkg/core"
 	"github.com/vislake/speed/pkg/event"
+	speedhttp "github.com/vislake/speed/pkg/http"
 	"github.com/vislake/speed/pkg/kv"
 	"github.com/vislake/speed/pkg/log"
 	"github.com/vislake/speed/pkg/observability"
@@ -61,6 +63,18 @@ const ModuleName = "authn.login"
 // diagnostics, which have several writers; it is the gateway's, so that a reader
 // scanning for what authentication did finds both.
 const diagnosticPrefix = "authn: "
+
+// defaultEndpoint is the endpoint this module's fragment is declared on: the
+// account endpoint under the gateway's base path, which is where the reference
+// assembly mounts the authentication capability's own routes. A resource is a
+// static declaration fixed before configuration is read, so the field carries
+// this default; the merged document takes it as the endpoint of these
+// operations. A deployment that mounts the routes elsewhere is drift, which the
+// fragment is allowed to have and which produces no failure signal (see pkg/ops).
+const defaultEndpoint = "account"
+
+//go:embed openapi/login.json
+var loginFragment []byte
 
 // init registers this module with the process registry.
 func init() { core.ProcessRegistry.Register(Module()) }
@@ -94,7 +108,10 @@ func Module() core.Module {
 			{Token: (*settings.Store)(nil), Optional: true},
 			{Token: (*log.Logger)(nil), Optional: true},
 		},
-		Resources: []any{settingsSchema()},
+		Resources: []any{
+			settingsSchema(),
+			speedhttp.Spec{Endpoint: defaultEndpoint, Document: loginFragment},
+		},
 
 		Prepare: func(_ context.Context, reg *core.Registry) (core.Enablement, error) {
 			reader, err := readerOf(reg)

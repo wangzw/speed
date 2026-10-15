@@ -1,0 +1,91 @@
+{
+  "openapi": "3.1.0",
+  "info": {"title": "notification inbox", "version": "1.0.0"},
+  "paths": {
+    "/api/v1/notifications/messages": {
+      "get": {
+        "operationId": "notification.inbox.listMessages",
+        "summary": "One page of the caller's messages",
+        "parameters": [
+          {"name": "group", "in": "query", "required": false, "description": "Filter by group; absent or empty means every group", "schema": {"type": "string"}},
+          {"name": "limit", "in": "query", "required": false, "description": "Page size; absent or zero is the default page, and a value outside the accepted range is refused whole rather than clamped", "schema": {"type": "integer"}},
+          {"name": "offset", "in": "query", "required": false, "description": "Number of items to skip; negative is refused", "schema": {"type": "integer"}}
+        ],
+        "responses": {
+          "200": {
+            "description": "A page of messages and the total the query matches",
+            "content": {"application/json": {"schema": {"type": "object", "required": ["messages", "total"], "properties": {"messages": {"type": "array", "items": {"$ref": "#/components/schemas/NotificationMessage"}}, "total": {"type": "integer"}}}}}
+          },
+          "400": {"description": "The group, limit or offset is not readable", "content": {"application/json": {"schema": {"$ref": "#/components/schemas/Problem"}}}},
+          "401": {"description": "The request carries no identity, so there is no inbox to read", "content": {"application/json": {"schema": {"$ref": "#/components/schemas/Problem"}}}},
+          "503": {"description": "The inbox could not answer", "content": {"application/json": {"schema": {"$ref": "#/components/schemas/Problem"}}}}
+        }
+      }
+    },
+    "/api/v1/notifications/messages/unread-count": {
+      "get": {
+        "operationId": "notification.inbox.getUnreadCount",
+        "summary": "The number of the caller's unread, unexpired messages",
+        "responses": {
+          "200": {"description": "The unread count", "content": {"application/json": {"schema": {"type": "object", "required": ["unread"], "properties": {"unread": {"type": "integer"}}}}}},
+          "401": {"description": "The request carries no identity, so there is no inbox to read", "content": {"application/json": {"schema": {"$ref": "#/components/schemas/Problem"}}}},
+          "503": {"description": "The inbox could not answer", "content": {"application/json": {"schema": {"$ref": "#/components/schemas/Problem"}}}}
+        }
+      }
+    },
+    "/api/v1/notifications/messages/read-all": {
+      "post": {
+        "operationId": "notification.inbox.markAllMessagesRead",
+        "summary": "Mark every unread message of the caller read",
+        "responses": {
+          "200": {"description": "How many messages were marked read; a repeat matches nothing and answers zero", "content": {"application/json": {"schema": {"type": "object", "required": ["read_count"], "properties": {"read_count": {"type": "integer"}}}}}},
+          "401": {"description": "The request carries no identity, so there is no inbox to act on", "content": {"application/json": {"schema": {"$ref": "#/components/schemas/Problem"}}}},
+          "503": {"description": "The inbox could not answer", "content": {"application/json": {"schema": {"$ref": "#/components/schemas/Problem"}}}}
+        }
+      }
+    },
+    "/api/v1/notifications/messages/{messageId}/read": {
+      "post": {
+        "operationId": "notification.inbox.markMessageRead",
+        "summary": "Mark one message read",
+        "parameters": [{"name": "messageId", "in": "path", "required": true, "schema": {"type": "string"}}],
+        "responses": {
+          "204": {"description": "The message was marked read"},
+          "401": {"description": "The request carries no identity, so there is no inbox to act on", "content": {"application/json": {"schema": {"$ref": "#/components/schemas/Problem"}}}},
+          "404": {"description": "The message is not one this recipient can see", "content": {"application/json": {"schema": {"$ref": "#/components/schemas/Problem"}}}},
+          "503": {"description": "The inbox could not answer", "content": {"application/json": {"schema": {"$ref": "#/components/schemas/Problem"}}}}
+        }
+      }
+    }
+  },
+  "components": {
+    "schemas": {
+      "NotificationMessage": {
+        "type": "object",
+        "required": ["id", "type_key", "group", "title", "body", "params", "link", "created_at"],
+        "properties": {
+          "id": {"type": "string"},
+          "type_key": {"type": "string"},
+          "group": {"type": "string"},
+          "title": {"type": "string"},
+          "body": {"type": "string"},
+          "params": {"type": ["object", "null"], "additionalProperties": true},
+          "link": {"type": "string"},
+          "read_at": {"type": "string", "format": "date-time"},
+          "created_at": {"type": "string", "format": "date-time"}
+        }
+      },
+      "Problem": {
+        "type": "object",
+        "required": ["type", "status"],
+        "properties": {
+          "type": {"type": "string"},
+          "title": {"type": "string"},
+          "status": {"type": "integer"},
+          "detail": {"type": "string"},
+          "instance": {"type": "string"}
+        }
+      }
+    }
+  }
+}

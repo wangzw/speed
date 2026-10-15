@@ -369,3 +369,4 @@ CREATE UNIQUE INDEX authn_invitations_one_pending ON authn_invitations (tenant_i
 | 接受面路由（无身份、凭令牌） | 已实现 | `pkg/authn/invite/routes.go` `mountRoutes`；`pkg/authn/invite/accept_http.go` `handleAcceptView`、`handleAccept`、`viewToken` |
 | 接受的账户创建与来源为 `invite` 的成员行 | 已实现 | `pkg/authn/invite/accept.go` `createAccount`、`putMembership`；`pkg/authn/invite/token.go` `SourceInvite` |
 | 地址验证渠道 `invite`（`pkg/authn/internal/model` `Verification` 的扩展） | 已实现 | `pkg/authn/internal/model/directory.go` `VerifiedViaInvite`、`Verification.Valid` |
+| 本模块提供的 API 的 OpenAPI 片段 | 已实现 | `pkg/authn/invite/openapi/invite.json`；`pkg/authn/invite/invite.go` `Module`、`defaultEndpoint`、`inviteFragment` |

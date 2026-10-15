@@ -1,0 +1,35 @@
+{
+  "openapi": "3.1.0",
+  "info": {"title": "notification stream", "version": "1.0.0"},
+  "paths": {
+    "/api/v1/notifications/stream": {
+      "get": {
+        "operationId": "notification.stream.subscribe",
+        "summary": "Subscribe to the caller's in-app notifications as a server-sent event stream",
+        "responses": {
+          "200": {
+            "description": "One text/event-stream for the life of the connection; each event is named message and its data is the published event payload as JSON",
+            "content": {"text/event-stream": {"schema": {"type": "string"}}}
+          },
+          "401": {"description": "The request carries no identity, so there is no recipient to scope the connection to", "content": {"application/json": {"schema": {"$ref": "#/components/schemas/Problem"}}}},
+          "500": {"description": "The response writer cannot flush a stream", "content": {"application/json": {"schema": {"$ref": "#/components/schemas/Problem"}}}}
+        }
+      }
+    }
+  },
+  "components": {
+    "schemas": {
+      "Problem": {
+        "type": "object",
+        "required": ["type", "status"],
+        "properties": {
+          "type": {"type": "string"},
+          "title": {"type": "string"},
+          "status": {"type": "integer"},
+          "detail": {"type": "string"},
+          "instance": {"type": "string"}
+        }
+      }
+    }
+  }
+}

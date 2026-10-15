@@ -194,3 +194,4 @@ classDiagram
 | Hub 与连接 | 已实现 | `pkg/notification/stream/hub.go` `Hub`、`Subscribe`、`Publish`、`connection` |
 | `GET /stream` 路由与帧写出 | 已实现 | `pkg/notification/stream/routes.go` `routes`、`mount`、`handleStream`、`writeFrame` |
 | 停机与注销 | 已实现 | `pkg/notification/stream/stream.go` `Module`；`pkg/notification/stream/hub.go` `Close`、`closeAll`、`remove` |
+| OpenAPI 片段声明 | 已实现 | `pkg/notification/stream/openapi/stream.json`；`pkg/notification/stream/stream.go` `streamFragment`、`defaultEndpoint`、`Module` |

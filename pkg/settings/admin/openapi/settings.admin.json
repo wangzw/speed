@@ -1,0 +1,113 @@
+{
+  "openapi": "3.1.0",
+  "info": {"title": "settings.admin", "version": "1.0.0"},
+  "paths": {
+    "/settings/admin/settings": {
+      "get": {
+        "operationId": "settings.admin.settings.list",
+        "summary": "List every declared setting with its value on the selected layer",
+        "parameters": [
+          {"$ref": "#/components/parameters/SettingsAdminLayer"},
+          {"$ref": "#/components/parameters/SettingsAdminTenant"}
+        ],
+        "responses": {
+          "200": {
+            "description": "Every declared item",
+            "content": {"application/json": {"schema": {"type": "array", "items": {"$ref": "#/components/schemas/SettingsAdminSetting"}}}}
+          },
+          "400": {"description": "The layer selection is unreadable, or the tenant identifier is outside its value domain"},
+          "401": {"description": "The request carries no identity"},
+          "403": {"description": "The caller holds no settings.read in the layer's domain"},
+          "503": {"description": "A dependency could not answer"}
+        }
+      }
+    },
+    "/settings/admin/settings/{namespace}": {
+      "get": {
+        "operationId": "settings.admin.settings.listNamespace",
+        "summary": "List the declared settings one namespace declares",
+        "parameters": [
+          {"$ref": "#/components/parameters/SettingsAdminLayer"},
+          {"$ref": "#/components/parameters/SettingsAdminTenant"},
+          {"$ref": "#/components/parameters/SettingsAdminNamespace"}
+        ],
+        "responses": {
+          "200": {
+            "description": "The namespace's declared items",
+            "content": {"application/json": {"schema": {"type": "array", "items": {"$ref": "#/components/schemas/SettingsAdminSetting"}}}}
+          },
+          "400": {"description": "The layer selection is unreadable, or the tenant identifier is outside its value domain"},
+          "401": {"description": "The request carries no identity"},
+          "403": {"description": "The caller holds no settings.read in the layer's domain"},
+          "404": {"description": "No declared item belongs to the namespace"},
+          "503": {"description": "A dependency could not answer"}
+        }
+      }
+    },
+    "/settings/admin/settings/{namespace}/{key}": {
+      "put": {
+        "operationId": "settings.admin.settings.set",
+        "summary": "Write one setting row on the selected layer",
+        "parameters": [
+          {"$ref": "#/components/parameters/SettingsAdminLayer"},
+          {"$ref": "#/components/parameters/SettingsAdminTenant"},
+          {"$ref": "#/components/parameters/SettingsAdminNamespace"},
+          {"$ref": "#/components/parameters/SettingsAdminKey"}
+        ],
+        "requestBody": {"required": true, "content": {"application/json": {"schema": {"type": "object", "required": ["value"], "properties": {"value": {}}}}}},
+        "responses": {
+          "204": {"description": "The row was written"},
+          "400": {"description": "The layer selection is unreadable, the tenant identifier is outside its value domain, or the body is not one object"},
+          "401": {"description": "The request carries no identity"},
+          "403": {"description": "The caller holds no settings.write in the layer's domain"},
+          "404": {"description": "The full key has no declaration"},
+          "422": {"description": "The value cannot be encoded under the declared type or lies outside its declared domain"},
+          "503": {"description": "A dependency could not answer"}
+        }
+      },
+      "delete": {
+        "operationId": "settings.admin.settings.remove",
+        "summary": "Drop the selected layer's explicit row for one setting",
+        "parameters": [
+          {"$ref": "#/components/parameters/SettingsAdminLayer"},
+          {"$ref": "#/components/parameters/SettingsAdminTenant"},
+          {"$ref": "#/components/parameters/SettingsAdminNamespace"},
+          {"$ref": "#/components/parameters/SettingsAdminKey"}
+        ],
+        "responses": {
+          "204": {"description": "The row was dropped"},
+          "400": {"description": "The layer selection is unreadable, or the tenant identifier is outside its value domain"},
+          "401": {"description": "The request carries no identity"},
+          "403": {"description": "The caller holds no settings.write in the layer's domain"},
+          "404": {"description": "The full key has no declaration"},
+          "503": {"description": "A dependency could not answer"}
+        }
+      }
+    }
+  },
+  "components": {
+    "parameters": {
+      "SettingsAdminLayer": {"name": "layer", "in": "query", "required": true, "schema": {"type": "string", "enum": ["global", "tenant"]}, "description": "The layer the values are read or written at; there is no default"},
+      "SettingsAdminTenant": {"name": "tenant", "in": "query", "required": false, "schema": {"type": "string"}, "description": "The tenant identifier; required for the tenant layer and refused for the global one"},
+      "SettingsAdminNamespace": {"name": "namespace", "in": "path", "required": true, "schema": {"type": "string"}},
+      "SettingsAdminKey": {"name": "key", "in": "path", "required": true, "schema": {"type": "string"}}
+    },
+    "schemas": {
+      "SettingsAdminSetting": {
+        "type": "object",
+        "required": ["key", "namespace", "type", "description", "domain", "sensitive", "default", "written", "value"],
+        "properties": {
+          "key": {"type": "string"},
+          "namespace": {"type": "string", "description": "The module that declared the item"},
+          "type": {"type": "string"},
+          "description": {"type": "string"},
+          "domain": {"type": "string", "description": "The declared rule over the item's values, empty when every value of the type is admitted"},
+          "sensitive": {"type": "boolean"},
+          "default": {"type": "string", "description": "The declared default in the declared type's text form, empty for a sensitive item"},
+          "written": {"type": "string", "description": "The text the selected layer holds, the mask string for a sensitive item"},
+          "value": {"type": "string", "description": "The text the item resolves to after the three-level fallback, the mask string for a sensitive item"}
+        }
+      }
+    }
+  }
+}

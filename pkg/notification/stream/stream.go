@@ -17,6 +17,7 @@ package stream
 
 import (
 	"context"
+	_ "embed"
 	"errors"
 	"fmt"
 	"log/slog"
@@ -38,6 +39,17 @@ const ModuleName = "notification.stream"
 // ConfigNamespace is where this module's input items are mounted. It is this
 // module's own name, as it is for every registering module.
 const ConfigNamespace = ModuleName
+
+// defaultEndpoint is the listening endpoint this module declares its OpenAPI
+// fragment for. The endpoint's name belongs to the host's HTTP configuration, and
+// a resource is a static declaration written before any configuration is read, so
+// the fragment carries this conventional name rather than an endpoint a run
+// happens to configure; the routes a run actually mounts follow the endpoints the
+// module is told to (notification.stream.endpoints).
+const defaultEndpoint = "api"
+
+//go:embed openapi/stream.json
+var streamFragment []byte
 
 // eventInboxCreated is the type name this module subscribes to. It is the value
 // of the inbox module's EventInboxCreated constant, spelled out here because a
@@ -80,6 +92,10 @@ func init() { core.ProcessRegistry.Register(Module()) }
 // it a question, so it leaves only GET /stream behind. Its stance is
 // StateEnabled and never StateAuto — whether to serve the stream route is a
 // decision on the command tree, not a conclusion a configuration infers.
+//
+// The descriptor also declares this module's own http.Spec, carrying the OpenAPI
+// fragment that describes GET /api/v1/notifications/stream; the operations module
+// merges it into the document a process serves.
 func Module() core.Module {
 	return core.Module{
 		Name: ModuleName,
@@ -88,7 +104,7 @@ func Module() core.Module {
 			{Token: (*speedhttp.Router)(nil), Optional: true},
 			{Token: (*log.Logger)(nil), Optional: true},
 		},
-		Resources: []any{schema()},
+		Resources: []any{schema(), speedhttp.Spec{Endpoint: defaultEndpoint, Document: streamFragment}},
 
 		Prepare: func(_ context.Context, reg *core.Registry) (core.Enablement, error) {
 			reader, err := readerOf(reg)

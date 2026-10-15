@@ -1,0 +1,561 @@
+{
+  "openapi": "3.1.0",
+  "info": {"title": "authn admin", "version": "1.0.0"},
+  "paths": {
+    "/auth/admin/accounts": {
+      "get": {
+        "operationId": "authn.admin.accounts.list",
+        "summary": "List accounts, one page at a time",
+        "parameters": [
+          {"name": "status", "in": "query", "required": false, "schema": {"type": "string"}},
+          {"name": "identifier", "in": "query", "required": false, "schema": {"type": "string"}},
+          {"name": "limit", "in": "query", "required": false, "schema": {"type": "integer"}},
+          {"name": "cursor", "in": "query", "required": false, "schema": {"type": "string"}}
+        ],
+        "responses": {
+          "200": {"description": "The page of accounts and the next cursor"},
+          "400": {"description": "The list's query could not be read"},
+          "401": {"description": "No usable credential"},
+          "403": {"description": "The caller is impersonating or may not read accounts"},
+          "503": {"description": "A dependency could not answer"}
+        }
+      },
+      "post": {
+        "operationId": "authn.admin.accounts.create",
+        "summary": "Create an account",
+        "responses": {
+          "201": {"description": "The created account"},
+          "400": {"description": "The body could not be read, or an argument is invalid"},
+          "401": {"description": "No usable credential"},
+          "403": {"description": "The caller is impersonating or may not create accounts"},
+          "409": {"description": "An account with that identifier already exists"},
+          "503": {"description": "A dependency could not answer"}
+        }
+      }
+    },
+    "/auth/admin/accounts/{id}": {
+      "get": {
+        "operationId": "authn.admin.accounts.get",
+        "summary": "Read one account",
+        "parameters": [
+          {"name": "id", "in": "path", "required": true, "schema": {"type": "string"}}
+        ],
+        "responses": {
+          "200": {"description": "The account"},
+          "401": {"description": "No usable credential"},
+          "403": {"description": "The caller is impersonating or may not read the account"},
+          "404": {"description": "No such account"},
+          "503": {"description": "A dependency could not answer"}
+        }
+      },
+      "patch": {
+        "operationId": "authn.admin.accounts.patch",
+        "summary": "Update an account",
+        "parameters": [
+          {"name": "id", "in": "path", "required": true, "schema": {"type": "string"}}
+        ],
+        "responses": {
+          "200": {"description": "The updated account"},
+          "400": {"description": "The body could not be read, or an argument is invalid"},
+          "401": {"description": "No usable credential"},
+          "403": {"description": "The caller is impersonating or may not update the account"},
+          "404": {"description": "No such account"},
+          "409": {"description": "A binding conflict, or the last login method"},
+          "503": {"description": "A dependency could not answer"}
+        }
+      },
+      "delete": {
+        "operationId": "authn.admin.accounts.delete",
+        "summary": "Delete an account",
+        "parameters": [
+          {"name": "id", "in": "path", "required": true, "schema": {"type": "string"}}
+        ],
+        "responses": {
+          "204": {"description": "The account was deleted"},
+          "401": {"description": "No usable credential"},
+          "403": {"description": "The caller is impersonating or may not delete the account"},
+          "404": {"description": "No such account"},
+          "409": {"description": "The account is the last login method of something that needs it"},
+          "503": {"description": "A dependency could not answer"}
+        }
+      }
+    },
+    "/auth/admin/accounts/{id}/status": {
+      "post": {
+        "operationId": "authn.admin.accounts.status",
+        "summary": "Change an account's status",
+        "parameters": [
+          {"name": "id", "in": "path", "required": true, "schema": {"type": "string"}}
+        ],
+        "responses": {
+          "200": {"description": "The account at its new status"},
+          "400": {"description": "The body could not be read, or names no known status"},
+          "401": {"description": "No usable credential"},
+          "403": {"description": "The caller is impersonating or may not change the status"},
+          "404": {"description": "No such account"},
+          "503": {"description": "A dependency could not answer"}
+        }
+      }
+    },
+    "/auth/admin/accounts/{id}/identifiers": {
+      "post": {
+        "operationId": "authn.admin.accounts.addIdentifier",
+        "summary": "Add an identifier to an account",
+        "parameters": [
+          {"name": "id", "in": "path", "required": true, "schema": {"type": "string"}}
+        ],
+        "responses": {
+          "204": {"description": "The identifier was added"},
+          "400": {"description": "The body could not be read, or the identifier is malformed"},
+          "401": {"description": "No usable credential"},
+          "403": {"description": "The caller is impersonating or may not add the identifier"},
+          "404": {"description": "No such account"},
+          "409": {"description": "The identifier is bound elsewhere"},
+          "503": {"description": "A dependency could not answer"}
+        }
+      }
+    },
+    "/auth/admin/accounts/{id}/identifiers/{identifier}": {
+      "delete": {
+        "operationId": "authn.admin.accounts.removeIdentifier",
+        "summary": "Remove an identifier from an account",
+        "parameters": [
+          {"name": "id", "in": "path", "required": true, "schema": {"type": "string"}},
+          {"name": "identifier", "in": "path", "required": true, "schema": {"type": "string"}}
+        ],
+        "responses": {
+          "204": {"description": "The identifier was removed"},
+          "401": {"description": "No usable credential"},
+          "403": {"description": "The caller is impersonating or may not remove the identifier"},
+          "404": {"description": "No such account or identifier"},
+          "503": {"description": "A dependency could not answer"}
+        }
+      }
+    },
+    "/auth/admin/accounts/{id}/password": {
+      "post": {
+        "operationId": "authn.admin.accounts.resetPassword",
+        "summary": "Reset an account's password",
+        "parameters": [
+          {"name": "id", "in": "path", "required": true, "schema": {"type": "string"}}
+        ],
+        "responses": {
+          "204": {"description": "The password was set"},
+          "400": {"description": "The body could not be read, or the password fails the policy"},
+          "401": {"description": "No usable credential, or a step-up is required"},
+          "403": {"description": "The caller is impersonating or may not reset the password"},
+          "404": {"description": "No such account"},
+          "503": {"description": "A dependency could not answer"}
+        }
+      }
+    },
+    "/auth/admin/accounts/{id}/factors": {
+      "get": {
+        "operationId": "authn.admin.accounts.factors",
+        "summary": "List an account's registered factors",
+        "parameters": [
+          {"name": "id", "in": "path", "required": true, "schema": {"type": "string"}}
+        ],
+        "responses": {
+          "200": {"description": "The account's factors"},
+          "401": {"description": "No usable credential"},
+          "403": {"description": "The caller is impersonating or may not read the factors"},
+          "404": {"description": "No such account"},
+          "503": {"description": "A dependency could not answer"}
+        }
+      }
+    },
+    "/auth/admin/accounts/{id}/mfa-required": {
+      "post": {
+        "operationId": "authn.admin.accounts.setMFARequired",
+        "summary": "Set whether an account must register a factor",
+        "parameters": [
+          {"name": "id", "in": "path", "required": true, "schema": {"type": "string"}}
+        ],
+        "responses": {
+          "204": {"description": "The flag was written"},
+          "400": {"description": "The body could not be read"},
+          "401": {"description": "No usable credential"},
+          "403": {"description": "The caller is impersonating or may not change the flag"},
+          "404": {"description": "No such account"},
+          "503": {"description": "A dependency could not answer"}
+        }
+      }
+    },
+    "/auth/admin/accounts/{id}/mfa-reset": {
+      "post": {
+        "operationId": "authn.admin.accounts.resetMFA",
+        "summary": "Remove an account's registered factors",
+        "parameters": [
+          {"name": "id", "in": "path", "required": true, "schema": {"type": "string"}}
+        ],
+        "responses": {
+          "200": {"description": "The number of factors removed"},
+          "401": {"description": "No usable credential, or a step-up is required"},
+          "403": {"description": "The caller is impersonating or may not reset the factors"},
+          "404": {"description": "No such account"},
+          "503": {"description": "A dependency could not answer"}
+        }
+      }
+    },
+    "/auth/admin/accounts/{id}/sessions": {
+      "get": {
+        "operationId": "authn.admin.accounts.sessions",
+        "summary": "List an account's sessions",
+        "parameters": [
+          {"name": "id", "in": "path", "required": true, "schema": {"type": "string"}}
+        ],
+        "responses": {
+          "200": {"description": "The account's sessions"},
+          "401": {"description": "No usable credential"},
+          "403": {"description": "The caller is impersonating or may not read the sessions"},
+          "404": {"description": "No such account"},
+          "503": {"description": "A dependency could not answer"}
+        }
+      }
+    },
+    "/auth/admin/accounts/{id}/revoke-sessions": {
+      "post": {
+        "operationId": "authn.admin.accounts.revokeSessions",
+        "summary": "Revoke every session of an account",
+        "parameters": [
+          {"name": "id", "in": "path", "required": true, "schema": {"type": "string"}}
+        ],
+        "responses": {
+          "200": {"description": "The number of sessions revoked"},
+          "401": {"description": "No usable credential"},
+          "403": {"description": "The caller is impersonating or may not revoke the sessions"},
+          "404": {"description": "No such account"},
+          "503": {"description": "A dependency could not answer"}
+        }
+      }
+    },
+    "/auth/admin/sessions/{id}": {
+      "delete": {
+        "operationId": "authn.admin.sessions.revoke",
+        "summary": "Revoke one session by its identifier",
+        "parameters": [
+          {"name": "id", "in": "path", "required": true, "schema": {"type": "string"}}
+        ],
+        "responses": {
+          "204": {"description": "The session was revoked"},
+          "401": {"description": "No usable credential"},
+          "403": {"description": "The caller is impersonating or may not revoke the session"},
+          "404": {"description": "No such session"},
+          "503": {"description": "A dependency could not answer"}
+        }
+      }
+    },
+    "/auth/admin/accounts/{id}/secrets": {
+      "get": {
+        "operationId": "authn.admin.accounts.secrets.list",
+        "summary": "List an account's service secrets",
+        "parameters": [
+          {"name": "id", "in": "path", "required": true, "schema": {"type": "string"}}
+        ],
+        "responses": {
+          "200": {"description": "The account's service secrets"},
+          "401": {"description": "No usable credential"},
+          "403": {"description": "The caller is impersonating or may not read the secrets"},
+          "404": {"description": "No such account"},
+          "503": {"description": "A dependency could not answer"}
+        }
+      },
+      "post": {
+        "operationId": "authn.admin.accounts.secrets.create",
+        "summary": "Create a service secret for an account",
+        "parameters": [
+          {"name": "id", "in": "path", "required": true, "schema": {"type": "string"}}
+        ],
+        "responses": {
+          "201": {"description": "The secret's identifier, label, one-time secret and expiry"},
+          "400": {"description": "The body could not be read"},
+          "401": {"description": "No usable credential"},
+          "403": {"description": "The caller is impersonating or may not create the secret"},
+          "404": {"description": "No such account"},
+          "503": {"description": "A dependency could not answer"}
+        }
+      }
+    },
+    "/auth/admin/accounts/{id}/secrets/{secret}": {
+      "delete": {
+        "operationId": "authn.admin.accounts.secrets.revoke",
+        "summary": "Revoke a service secret",
+        "parameters": [
+          {"name": "id", "in": "path", "required": true, "schema": {"type": "string"}},
+          {"name": "secret", "in": "path", "required": true, "schema": {"type": "string"}}
+        ],
+        "responses": {
+          "204": {"description": "The secret was revoked"},
+          "401": {"description": "No usable credential"},
+          "403": {"description": "The caller is impersonating or may not revoke the secret"},
+          "404": {"description": "No such account or secret"},
+          "503": {"description": "A dependency could not answer"}
+        }
+      }
+    },
+    "/auth/admin/tenants/{tenant}/members": {
+      "get": {
+        "operationId": "authn.admin.members.list",
+        "summary": "List a tenant's members",
+        "parameters": [
+          {"name": "tenant", "in": "path", "required": true, "schema": {"type": "string"}},
+          {"name": "limit", "in": "query", "required": false, "schema": {"type": "integer"}},
+          {"name": "cursor", "in": "query", "required": false, "schema": {"type": "string"}}
+        ],
+        "responses": {
+          "200": {"description": "The tenant's members"},
+          "400": {"description": "The page query could not be read"},
+          "401": {"description": "No usable credential"},
+          "403": {"description": "The caller is impersonating or may not read memberships"},
+          "503": {"description": "A dependency could not answer"}
+        }
+      }
+    },
+    "/auth/admin/tenants/{tenant}/members/{account}": {
+      "put": {
+        "operationId": "authn.admin.members.put",
+        "summary": "Write an account's membership in a tenant",
+        "parameters": [
+          {"name": "tenant", "in": "path", "required": true, "schema": {"type": "string"}},
+          {"name": "account", "in": "path", "required": true, "schema": {"type": "string"}}
+        ],
+        "responses": {
+          "204": {"description": "The membership was written"},
+          "400": {"description": "The body could not be read, or the role is unknown"},
+          "401": {"description": "No usable credential"},
+          "403": {"description": "The caller is impersonating or may not write memberships"},
+          "404": {"description": "No such account"},
+          "503": {"description": "A dependency could not answer"}
+        }
+      },
+      "delete": {
+        "operationId": "authn.admin.members.remove",
+        "summary": "Remove an account's membership from a tenant",
+        "parameters": [
+          {"name": "tenant", "in": "path", "required": true, "schema": {"type": "string"}},
+          {"name": "account", "in": "path", "required": true, "schema": {"type": "string"}}
+        ],
+        "responses": {
+          "204": {"description": "The membership was removed"},
+          "401": {"description": "No usable credential"},
+          "403": {"description": "The caller is impersonating or may not remove memberships"},
+          "404": {"description": "No such membership"},
+          "503": {"description": "A dependency could not answer"}
+        }
+      }
+    },
+    "/auth/admin/tenants/{tenant}/members/{account}/sso-exempt": {
+      "put": {
+        "operationId": "authn.admin.members.ssoExempt",
+        "summary": "Set an account's exemption from a tenant's SSO requirement",
+        "parameters": [
+          {"name": "tenant", "in": "path", "required": true, "schema": {"type": "string"}},
+          {"name": "account", "in": "path", "required": true, "schema": {"type": "string"}}
+        ],
+        "responses": {
+          "204": {"description": "The exemption was written"},
+          "400": {"description": "The body could not be read"},
+          "401": {"description": "No usable credential"},
+          "403": {"description": "The caller is impersonating or may not write the exemption"},
+          "404": {"description": "No such membership"},
+          "503": {"description": "A dependency could not answer"}
+        }
+      }
+    },
+    "/auth/admin/tenants/{tenant}/sso/providers": {
+      "get": {
+        "operationId": "authn.admin.sso.providers.list",
+        "summary": "List a tenant's SSO providers",
+        "parameters": [
+          {"name": "tenant", "in": "path", "required": true, "schema": {"type": "string"}}
+        ],
+        "responses": {
+          "200": {"description": "The tenant's providers"},
+          "401": {"description": "No usable credential"},
+          "403": {"description": "The caller is impersonating or may not read providers"},
+          "503": {"description": "A dependency could not answer"}
+        }
+      },
+      "post": {
+        "operationId": "authn.admin.sso.providers.create",
+        "summary": "Create an SSO provider in a tenant",
+        "parameters": [
+          {"name": "tenant", "in": "path", "required": true, "schema": {"type": "string"}}
+        ],
+        "responses": {
+          "201": {"description": "The created provider"},
+          "400": {"description": "The body could not be read, or an argument is invalid"},
+          "401": {"description": "No usable credential"},
+          "403": {"description": "The caller is impersonating or may not create providers"},
+          "409": {"description": "A domain is already claimed"},
+          "503": {"description": "A dependency could not answer"}
+        }
+      }
+    },
+    "/auth/admin/sso/providers/{id}": {
+      "get": {
+        "operationId": "authn.admin.sso.providers.get",
+        "summary": "Read one SSO provider",
+        "parameters": [
+          {"name": "id", "in": "path", "required": true, "schema": {"type": "string"}}
+        ],
+        "responses": {
+          "200": {"description": "The provider"},
+          "401": {"description": "No usable credential"},
+          "403": {"description": "The caller is impersonating or may not read the provider"},
+          "404": {"description": "No such provider"},
+          "503": {"description": "A dependency could not answer"}
+        }
+      },
+      "put": {
+        "operationId": "authn.admin.sso.providers.update",
+        "summary": "Update an SSO provider",
+        "parameters": [
+          {"name": "id", "in": "path", "required": true, "schema": {"type": "string"}}
+        ],
+        "responses": {
+          "200": {"description": "The updated provider"},
+          "400": {"description": "The body could not be read, or an argument is invalid"},
+          "401": {"description": "No usable credential"},
+          "403": {"description": "The caller is impersonating or may not update the provider"},
+          "404": {"description": "No such provider"},
+          "409": {"description": "A domain is already claimed"},
+          "503": {"description": "A dependency could not answer"}
+        }
+      },
+      "delete": {
+        "operationId": "authn.admin.sso.providers.delete",
+        "summary": "Delete an SSO provider",
+        "parameters": [
+          {"name": "id", "in": "path", "required": true, "schema": {"type": "string"}}
+        ],
+        "responses": {
+          "204": {"description": "The provider was deleted"},
+          "401": {"description": "No usable credential"},
+          "403": {"description": "The caller is impersonating or may not delete the provider"},
+          "404": {"description": "No such provider"},
+          "503": {"description": "A dependency could not answer"}
+        }
+      }
+    },
+    "/auth/admin/sso/providers/{id}/domains": {
+      "post": {
+        "operationId": "authn.admin.sso.providers.claimDomain",
+        "summary": "Claim a domain for an SSO provider",
+        "parameters": [
+          {"name": "id", "in": "path", "required": true, "schema": {"type": "string"}}
+        ],
+        "responses": {
+          "200": {"description": "The verification token to publish"},
+          "400": {"description": "The body could not be read, or the domain is malformed"},
+          "401": {"description": "No usable credential"},
+          "403": {"description": "The caller is impersonating or may not claim domains"},
+          "404": {"description": "No such provider"},
+          "409": {"description": "The domain is already claimed"},
+          "503": {"description": "A dependency could not answer"}
+        }
+      }
+    },
+    "/auth/admin/sso/providers/{id}/domains/{domain}": {
+      "delete": {
+        "operationId": "authn.admin.sso.providers.removeDomain",
+        "summary": "Remove a domain from an SSO provider",
+        "parameters": [
+          {"name": "id", "in": "path", "required": true, "schema": {"type": "string"}},
+          {"name": "domain", "in": "path", "required": true, "schema": {"type": "string"}}
+        ],
+        "responses": {
+          "204": {"description": "The domain was removed"},
+          "401": {"description": "No usable credential"},
+          "403": {"description": "The caller is impersonating or may not write domains"},
+          "404": {"description": "No such provider or domain"},
+          "503": {"description": "A dependency could not answer"}
+        }
+      }
+    },
+    "/auth/admin/sso/providers/{id}/domains/{domain}/verify": {
+      "post": {
+        "operationId": "authn.admin.sso.providers.verifyDomain",
+        "summary": "Verify a claimed domain of an SSO provider",
+        "parameters": [
+          {"name": "id", "in": "path", "required": true, "schema": {"type": "string"}},
+          {"name": "domain", "in": "path", "required": true, "schema": {"type": "string"}}
+        ],
+        "responses": {
+          "204": {"description": "The domain was verified"},
+          "401": {"description": "No usable credential"},
+          "403": {"description": "The caller is impersonating or may not write domains"},
+          "404": {"description": "No such provider or domain"},
+          "503": {"description": "A dependency could not answer"}
+        }
+      }
+    },
+    "/auth/admin/sso/providers/{id}/reverify-domains": {
+      "post": {
+        "operationId": "authn.admin.sso.providers.reverifyDomains",
+        "summary": "Re-verify every claimed domain of an SSO provider",
+        "parameters": [
+          {"name": "id", "in": "path", "required": true, "schema": {"type": "string"}}
+        ],
+        "responses": {
+          "204": {"description": "The re-verification ran"},
+          "401": {"description": "No usable credential"},
+          "403": {"description": "The caller is impersonating or may not write domains"},
+          "404": {"description": "No such provider"},
+          "503": {"description": "A dependency could not answer"}
+        }
+      }
+    },
+    "/auth/admin/sso/providers/{id}/metadata/refresh": {
+      "post": {
+        "operationId": "authn.admin.sso.providers.refreshMetadata",
+        "summary": "Refresh an SSO provider's metadata",
+        "parameters": [
+          {"name": "id", "in": "path", "required": true, "schema": {"type": "string"}}
+        ],
+        "responses": {
+          "200": {"description": "The refreshed provider"},
+          "400": {"description": "The body could not be read"},
+          "401": {"description": "No usable credential"},
+          "403": {"description": "The caller is impersonating or may not refresh metadata"},
+          "404": {"description": "No such provider"},
+          "503": {"description": "A dependency could not answer"}
+        }
+      }
+    },
+    "/auth/admin/impersonations": {
+      "get": {
+        "operationId": "authn.admin.impersonations.list",
+        "summary": "List impersonation records, one page at a time",
+        "parameters": [
+          {"name": "limit", "in": "query", "required": false, "schema": {"type": "integer"}},
+          {"name": "cursor", "in": "query", "required": false, "schema": {"type": "string"}}
+        ],
+        "responses": {
+          "200": {"description": "The page of records and the next cursor"},
+          "400": {"description": "The page query could not be read"},
+          "401": {"description": "No usable credential"},
+          "403": {"description": "The caller is impersonating or may not read records"},
+          "503": {"description": "A dependency could not answer"}
+        }
+      }
+    },
+    "/auth/admin/impersonations/{id}": {
+      "delete": {
+        "operationId": "authn.admin.impersonations.revoke",
+        "summary": "Revoke an impersonation record",
+        "parameters": [
+          {"name": "id", "in": "path", "required": true, "schema": {"type": "string"}}
+        ],
+        "responses": {
+          "204": {"description": "The record was revoked"},
+          "401": {"description": "No usable credential"},
+          "403": {"description": "The caller is impersonating or may not revoke records"},
+          "404": {"description": "No such record"},
+          "503": {"description": "A dependency could not answer"}
+        }
+      }
+    }
+  }
+}

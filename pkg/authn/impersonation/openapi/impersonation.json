@@ -1,0 +1,57 @@
+{
+  "openapi": "3.1.0",
+  "info": {"title": "authn impersonation", "version": "1.0.0"},
+  "paths": {
+    "/auth/impersonation": {
+      "post": {
+        "operationId": "authn.impersonation.start",
+        "summary": "Start impersonating another account",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "required": ["account"],
+                "properties": {
+                  "account": {"type": "string"},
+                  "tenant": {"type": "string"},
+                  "reason": {"type": "string"},
+                  "ttl_seconds": {"type": "integer", "format": "int64"}
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {"description": "The started record, and an access token under a bearer credential"},
+          "400": {"description": "The body could not be read"},
+          "401": {"description": "No usable credential, or a step-up is required"},
+          "403": {"description": "Impersonation is refused for this caller or target"},
+          "409": {"description": "An impersonation is already in force"},
+          "503": {"description": "A dependency could not answer"}
+        }
+      },
+      "get": {
+        "operationId": "authn.impersonation.status",
+        "summary": "The impersonation in force on the caller's session",
+        "responses": {
+          "200": {"description": "The record still valid on the session"},
+          "401": {"description": "No usable credential"},
+          "404": {"description": "No impersonation is in force"},
+          "503": {"description": "The record could not be read"}
+        }
+      },
+      "delete": {
+        "operationId": "authn.impersonation.end",
+        "summary": "End the impersonation on the caller's session",
+        "responses": {
+          "204": {"description": "The impersonation ended"},
+          "401": {"description": "No usable credential"},
+          "404": {"description": "The caller is not impersonating"},
+          "503": {"description": "The record could not be ended"}
+        }
+      }
+    }
+  }
+}

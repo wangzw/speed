@@ -1,0 +1,20 @@
+{
+  "openapi": "3.1.0",
+  "info": {"title": "authn sso saml", "version": "1.0.0"},
+  "paths": {
+    "/auth/sso/saml/{provider}/metadata": {
+      "get": {
+        "operationId": "authn.sso.saml.metadata",
+        "summary": "The service provider metadata for one SAML provider",
+        "parameters": [
+          {"name": "provider", "in": "path", "required": true, "schema": {"type": "string"}}
+        ],
+        "responses": {
+          "200": {"description": "The entity descriptor, as application/samlmetadata+xml"},
+          "404": {"description": "No enabled SAML provider has this identifier"},
+          "503": {"description": "The provider register could not be reached"}
+        }
+      }
+    }
+  }
+}

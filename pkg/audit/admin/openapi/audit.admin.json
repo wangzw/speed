@@ -1,0 +1,77 @@
+{
+  "openapi": "3.1.0",
+  "info": {"title": "audit.admin", "version": "1.0.0"},
+  "paths": {
+    "/audit/admin/records": {
+      "get": {
+        "operationId": "audit.admin.records.list",
+        "summary": "Page through the audit records, newest first",
+        "parameters": [
+          {"name": "since", "in": "query", "required": false, "schema": {"type": "string", "format": "date-time"}, "description": "Read rows at or after this instant, RFC 3339"},
+          {"name": "until", "in": "query", "required": false, "schema": {"type": "string", "format": "date-time"}, "description": "Read rows at or before this instant, RFC 3339"},
+          {"name": "action", "in": "query", "required": false, "schema": {"type": "array", "items": {"type": "string"}}, "style": "form", "explode": true, "description": "Narrow to rows carrying one of these actions"},
+          {"name": "cursor", "in": "query", "required": false, "schema": {"type": "string"}, "description": "Continue after the row this cursor names"},
+          {"name": "limit", "in": "query", "required": false, "schema": {"type": "integer", "minimum": 0}, "description": "The page's maximum size; the read surface caps it"}
+        ],
+        "responses": {
+          "200": {
+            "description": "One page of records and the cursor of the next, empty on the last page",
+            "content": {"application/json": {"schema": {"$ref": "#/components/schemas/AuditAdminRecordPage"}}}
+          },
+          "400": {"description": "A query parameter the route does not accept, a time bound that is not RFC 3339, an empty action, a limit that is not a non-negative integer, or a cursor the read surface did not hand out"},
+          "401": {"description": "The request carries no identity"},
+          "403": {"description": "The caller holds no audit.read in the platform domain"},
+          "503": {"description": "A dependency could not answer"}
+        }
+      }
+    },
+    "/audit/admin/records/{id}": {
+      "get": {
+        "operationId": "audit.admin.records.get",
+        "summary": "Read one audit record by its row identifier",
+        "parameters": [
+          {"name": "id", "in": "path", "required": true, "schema": {"type": "string"}, "description": "The row identifier, a non-negative decimal integer"}
+        ],
+        "responses": {
+          "200": {
+            "description": "The record",
+            "content": {"application/json": {"schema": {"$ref": "#/components/schemas/AuditAdminRecord"}}}
+          },
+          "400": {"description": "The path parameter is not a row identifier, or a query parameter is present that the route does not accept"},
+          "401": {"description": "The request carries no identity"},
+          "403": {"description": "The caller holds no audit.read in the platform domain"},
+          "404": {"description": "The table holds no record with the identifier"},
+          "503": {"description": "A dependency could not answer"}
+        }
+      }
+    }
+  },
+  "components": {
+    "schemas": {
+      "AuditAdminRecord": {
+        "type": "object",
+        "required": ["id", "tenant", "occurred_at", "actor", "source", "action", "object", "outcome", "purpose", "detail"],
+        "properties": {
+          "id": {"type": "string", "description": "The row identifier, rendered as text"},
+          "tenant": {"type": "string", "description": "Empty when the row belongs to no tenant"},
+          "occurred_at": {"type": "string", "format": "date-time"},
+          "actor": {"type": "string"},
+          "source": {"type": "string"},
+          "action": {"type": "string"},
+          "object": {"type": "string"},
+          "outcome": {"type": "string"},
+          "purpose": {"type": "string"},
+          "detail": {"type": "object", "additionalProperties": {"type": "string"}, "description": "Empty object when the row carries no detail"}
+        }
+      },
+      "AuditAdminRecordPage": {
+        "type": "object",
+        "required": ["entries", "next"],
+        "properties": {
+          "entries": {"type": "array", "items": {"$ref": "#/components/schemas/AuditAdminRecord"}},
+          "next": {"type": "string", "description": "The cursor of the next page, empty on the last page"}
+        }
+      }
+    }
+  }
+}

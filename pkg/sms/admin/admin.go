@@ -22,6 +22,7 @@ package admin
 
 import (
 	"context"
+	_ "embed"
 	"errors"
 	"fmt"
 	"log/slog"
@@ -57,6 +58,27 @@ const (
 // them.
 const allEndpoints = "*"
 
+// defaultEndpoint is the endpoint name this module's OpenAPI fragment is
+// declared against. The management routes are mounted on every endpoint
+// sms.admin.endpoints lists — data read only at start, which may name several —
+// and a resource is a static declaration fixed before configuration is read, so
+// the fragment carries this conventional name for the management surface rather
+// than the configured ones. A declared endpoint name that no endpoint carries
+// is not an error: the declaration and the mounting are separately maintained
+// facts, in the same way as the declared paths and the registered routes
+// (pkg/http's Spec).
+//
+// Unlike the ops module, this module does not rewrite the endpoint in Init:
+// ops is the merger and hands its own slice to the merge, while a declaring
+// module's resources are read back as copies, so a rewrite here would not reach
+// the merged document.
+const defaultEndpoint = "admin"
+
+// openAPIFragment is this module's OpenAPI fragment, read at build time.
+//
+//go:embed openapi/sms.admin.json
+var openAPIFragment []byte
+
 // init registers this module with the process registry. Registration travels
 // with the import, which is what makes "does this command mount the management
 // routes" a question the host answers by importing this package and writing
@@ -80,6 +102,11 @@ func init() { core.ProcessRegistry.Register(Module()) }
 // legal — with no gate the routes carry no declaration and a guarded endpoint
 // answers them as undeclared.
 //
+// The outward declaration carries a speedhttp.Spec resource beside the schema
+// and the two authorization specs: it holds this module's OpenAPI fragment,
+// which describes the management routes, for a reader that merges the fragments
+// into one document (the run's ops module, or a build's gen command).
+//
 // The stance is StateEnabled and never StateAuto: whether to mount the
 // management routes is a decision on the command tree, not a conclusion a
 // configuration can infer.
@@ -92,7 +119,10 @@ func Module() core.Module {
 			{Token: (*audit.Audit)(nil)},
 			{Token: (*log.Logger)(nil), Optional: true},
 		},
-		Resources: []any{schema(), permissionSpec(), translationSpec(), messageCatalog},
+		Resources: []any{
+			schema(), permissionSpec(), translationSpec(), messageCatalog,
+			speedhttp.Spec{Endpoint: defaultEndpoint, Document: openAPIFragment},
+		},
 
 		Prepare: func(_ context.Context, reg *core.Registry) (core.Enablement, error) {
 			reader, err := core.Resolve[config.Reader](reg)

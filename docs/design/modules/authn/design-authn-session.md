@@ -653,5 +653,6 @@ stateDiagram-v2
 | 自助路由 `B/session`、`B/logout`、`B/sessions` | 已实现 | `pkg/authn/session/routes.go` |
 | 到期行的清扫协程 | 已实现 | `pkg/authn/session/sweep.go` |
 | `authn.session.revoked` 事件的发布与订阅、`authn.impersonation.ended` 的订阅、`authn.session.operations` 指标 | 已实现 | `pkg/authn/session/lifecycle.go`；`pkg/authn/session/status.go` |
+| 本模块提供的 API 的 OpenAPI 片段 | 已实现 | `pkg/authn/session/openapi/session.json`；`pkg/authn/session/session.go` `Module`、`defaultEndpoint`、`sessionFragment` |
 
 浏览器自行附带的凭据下的跨源检查由网关执行，它的实现状态由 [design-authn-gate](design-authn-gate.md) 承载。

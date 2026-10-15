@@ -1,0 +1,34 @@
+{
+  "openapi": "3.1.0",
+  "info": {"title": "authn mfa", "version": "1.0.0"},
+  "paths": {
+    "/auth/factors": {
+      "get": {
+        "operationId": "authn.mfa.factors",
+        "summary": "List the caller's own registered factors",
+        "responses": {
+          "200": {"description": "The caller's factors, without any seed, key or other secret of a kind's own"},
+          "401": {"description": "No usable credential"},
+          "503": {"description": "The factor register could not be reached"}
+        }
+      }
+    },
+    "/auth/factors/{id}": {
+      "delete": {
+        "operationId": "authn.mfa.removeFactor",
+        "summary": "Remove one of the caller's own factors",
+        "parameters": [
+          {"name": "id", "in": "path", "required": true, "schema": {"type": "string"}}
+        ],
+        "responses": {
+          "204": {"description": "The factor was removed, or is not the caller's and reads as already gone"},
+          "400": {"description": "The factor identifier is malformed"},
+          "401": {"description": "No usable credential, or a fresh multi-factor authentication is required"},
+          "403": {"description": "The identity is impersonating, which the route refuses"},
+          "409": {"description": "The factor is the account's last one"},
+          "503": {"description": "The factor register could not be reached"}
+        }
+      }
+    }
+  }
+}

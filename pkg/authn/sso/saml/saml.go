@@ -27,6 +27,7 @@ package saml
 
 import (
 	"context"
+	_ "embed"
 	"errors"
 	"fmt"
 	"log/slog"
@@ -40,6 +41,7 @@ import (
 	"github.com/vislake/speed/pkg/config"
 	"github.com/vislake/speed/pkg/core"
 	"github.com/vislake/speed/pkg/event"
+	speedhttp "github.com/vislake/speed/pkg/http"
 	"github.com/vislake/speed/pkg/log"
 	"github.com/vislake/speed/pkg/observability"
 	"github.com/vislake/speed/pkg/settings"
@@ -64,6 +66,18 @@ const providerProtocol = "saml"
 // diagnosticPrefix starts every line the authentication capability writes to the
 // startup diagnostics, which have several writers.
 const diagnosticPrefix = "authn: "
+
+// defaultEndpoint is the endpoint this module's fragment is declared on: the
+// account endpoint under the gateway's base path, which is where the reference
+// assembly mounts the authentication capability's own routes. A resource is a
+// static declaration fixed before configuration is read, so the field carries
+// this default; the merged document takes it as the endpoint of these
+// operations. A deployment that mounts the routes elsewhere is drift, which the
+// fragment is allowed to have and which produces no failure signal (see pkg/ops).
+const defaultEndpoint = "account"
+
+//go:embed openapi/saml.json
+var samlFragment []byte
 
 // product must satisfy the capabilities it delivers.
 var (
@@ -104,7 +118,10 @@ func Module() core.Module {
 			{Token: (*authn.LoginMethod)(nil)},
 			{Token: (*authn.SSOMetadataRefresher)(nil)},
 		},
-		Resources: []any{configSchema()},
+		Resources: []any{
+			configSchema(),
+			speedhttp.Spec{Endpoint: defaultEndpoint, Document: samlFragment},
+		},
 
 		// Prepare states the stance alone. The service provider's key comes from
 		// configuration and is read in New: this module is taken in at run level

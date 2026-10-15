@@ -35,6 +35,7 @@ import (
 	"github.com/vislake/speed/pkg/core"
 	"github.com/vislake/speed/pkg/db"
 	"github.com/vislake/speed/pkg/event"
+	speedhttp "github.com/vislake/speed/pkg/http"
 	"github.com/vislake/speed/pkg/log"
 	"github.com/vislake/speed/pkg/observability"
 	"github.com/vislake/speed/pkg/settings"
@@ -52,6 +53,18 @@ const diagnosticPrefix = "authn: "
 // of multi-factor at request time. It is a string and not an import: the
 // authentication directory does not import the tenant directory.
 const admissionModule = "tenant.admission"
+
+// defaultEndpoint is the endpoint this module's fragment is declared on: the
+// account endpoint under the gateway's base path, which is where the reference
+// assembly mounts the authentication capability's own routes. A resource is a
+// static declaration fixed before configuration is read, so the field carries
+// this default; the merged document takes it as the endpoint of these
+// operations. A deployment that mounts the routes elsewhere is drift, which the
+// fragment is allowed to have and which produces no failure signal (see pkg/ops).
+const defaultEndpoint = "account"
+
+//go:embed openapi/mfa.json
+var mfaFragment []byte
 
 //go:embed migrations
 var migrationRoot embed.FS
@@ -107,7 +120,11 @@ func Module() core.Module {
 			{Token: (*authn.MFA)(nil), Exclusive: true},
 			{Token: (*authn.AccountLifecycle)(nil)},
 		},
-		Resources: []any{settingsSchema(), db.Migrations{FS: migrationsFS}},
+		Resources: []any{
+			settingsSchema(),
+			db.Migrations{FS: migrationsFS},
+			speedhttp.Spec{Endpoint: defaultEndpoint, Document: mfaFragment},
+		},
 
 		Prepare: func(context.Context, *core.Registry) (core.Enablement, error) {
 			return core.Enablement{State: core.StateEnabled}, nil

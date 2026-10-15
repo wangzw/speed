@@ -1,0 +1,134 @@
+{
+  "openapi": "3.1.0",
+  "info": {"title": "objectstore metadata", "version": "1.0.0"},
+  "paths": {
+    "/api/v1/objects": {
+      "get": {
+        "operationId": "objectstore.metadata.listObjects",
+        "summary": "One page of the tenant's undeleted objects",
+        "parameters": [
+          {"name": "cursor", "in": "query", "required": false, "description": "Continue after the last row of the previous page; absent or empty starts at the first page", "schema": {"type": "string"}},
+          {"name": "limit", "in": "query", "required": false, "description": "Cap on the page size; the metadata module applies a default and an upper bound", "schema": {"type": "integer"}}
+        ],
+        "responses": {
+          "200": {
+            "description": "A page of objects and the cursor of the page's last row",
+            "content": {"application/json": {"schema": {"type": "object", "required": ["objects", "next_cursor"], "properties": {"objects": {"type": "array", "items": {"$ref": "#/components/schemas/ObjectstoreObject"}}, "next_cursor": {"type": "string"}}}}}
+          },
+          "400": {"description": "The cursor or limit is not readable", "content": {"application/json": {"schema": {"$ref": "#/components/schemas/Problem"}}}},
+          "503": {"description": "The object store could not answer", "content": {"application/json": {"schema": {"$ref": "#/components/schemas/Problem"}}}}
+        }
+      },
+      "post": {
+        "operationId": "objectstore.metadata.createObject",
+        "summary": "Declare an object and open its upload window",
+        "requestBody": {"required": true, "content": {"application/json": {"schema": {"$ref": "#/components/schemas/ObjectstoreDeclaration"}}}},
+        "responses": {
+          "201": {"description": "The declared object", "content": {"application/json": {"schema": {"type": "object", "required": ["object"], "properties": {"object": {"$ref": "#/components/schemas/ObjectstoreObject"}}}}}},
+          "400": {"description": "The body is not a JSON object or the declaration is not readable", "content": {"application/json": {"schema": {"$ref": "#/components/schemas/Problem"}}}},
+          "503": {"description": "The object store could not answer", "content": {"application/json": {"schema": {"$ref": "#/components/schemas/Problem"}}}}
+        }
+      }
+    },
+    "/api/v1/objects/{id}": {
+      "get": {
+        "operationId": "objectstore.metadata.getObject",
+        "summary": "One object's metadata",
+        "parameters": [{"name": "id", "in": "path", "required": true, "schema": {"type": "string"}}],
+        "responses": {
+          "200": {"description": "The object", "content": {"application/json": {"schema": {"type": "object", "required": ["object"], "properties": {"object": {"$ref": "#/components/schemas/ObjectstoreObject"}}}}}},
+          "404": {"description": "No object this tenant can see carries that id", "content": {"application/json": {"schema": {"$ref": "#/components/schemas/Problem"}}}},
+          "503": {"description": "The object store could not answer", "content": {"application/json": {"schema": {"$ref": "#/components/schemas/Problem"}}}}
+        }
+      },
+      "delete": {
+        "operationId": "objectstore.metadata.deleteObject",
+        "summary": "Remove an object's bytes and tombstone its row",
+        "parameters": [{"name": "id", "in": "path", "required": true, "schema": {"type": "string"}}],
+        "responses": {
+          "204": {"description": "The object was deleted, or was already deleted"},
+          "404": {"description": "No object this tenant can see carries that id", "content": {"application/json": {"schema": {"$ref": "#/components/schemas/Problem"}}}},
+          "503": {"description": "The object store could not answer", "content": {"application/json": {"schema": {"$ref": "#/components/schemas/Problem"}}}}
+        }
+      }
+    },
+    "/api/v1/objects/{id}/content": {
+      "put": {
+        "operationId": "objectstore.metadata.uploadObjectContent",
+        "summary": "Store the request body as the object's bytes",
+        "parameters": [{"name": "id", "in": "path", "required": true, "schema": {"type": "string"}}],
+        "requestBody": {"required": true, "content": {"application/octet-stream": {"schema": {"type": "string", "format": "binary"}}}},
+        "responses": {
+          "204": {"description": "The bytes were stored"},
+          "400": {"description": "The request carries no content length, or the byte count does not match the declaration", "content": {"application/json": {"schema": {"$ref": "#/components/schemas/Problem"}}}},
+          "404": {"description": "No object this tenant can see carries that id", "content": {"application/json": {"schema": {"$ref": "#/components/schemas/Problem"}}}},
+          "409": {"description": "The object's state does not allow the action, or its upload window has closed", "content": {"application/json": {"schema": {"$ref": "#/components/schemas/Problem"}}}},
+          "503": {"description": "The object store could not answer", "content": {"application/json": {"schema": {"$ref": "#/components/schemas/Problem"}}}}
+        }
+      },
+      "get": {
+        "operationId": "objectstore.metadata.getObjectContent",
+        "summary": "The object's bytes, with the content type taken from its recorded MIME",
+        "parameters": [{"name": "id", "in": "path", "required": true, "schema": {"type": "string"}}],
+        "responses": {
+          "200": {"description": "The object's bytes", "content": {"application/octet-stream": {"schema": {"type": "string", "format": "binary"}}}},
+          "404": {"description": "No object this tenant can see carries that id, or it has no content", "content": {"application/json": {"schema": {"$ref": "#/components/schemas/Problem"}}}},
+          "409": {"description": "The object is not completed", "content": {"application/json": {"schema": {"$ref": "#/components/schemas/Problem"}}}},
+          "503": {"description": "The object store could not answer", "content": {"application/json": {"schema": {"$ref": "#/components/schemas/Problem"}}}}
+        }
+      }
+    },
+    "/api/v1/objects/{id}/complete": {
+      "post": {
+        "operationId": "objectstore.metadata.completeObject",
+        "summary": "Move an object to completed",
+        "parameters": [{"name": "id", "in": "path", "required": true, "schema": {"type": "string"}}],
+        "responses": {
+          "200": {"description": "The completed object", "content": {"application/json": {"schema": {"type": "object", "required": ["object"], "properties": {"object": {"$ref": "#/components/schemas/ObjectstoreObject"}}}}}},
+          "404": {"description": "No object this tenant can see carries that id", "content": {"application/json": {"schema": {"$ref": "#/components/schemas/Problem"}}}},
+          "409": {"description": "The object's state does not allow the action", "content": {"application/json": {"schema": {"$ref": "#/components/schemas/Problem"}}}},
+          "503": {"description": "The object store could not answer", "content": {"application/json": {"schema": {"$ref": "#/components/schemas/Problem"}}}}
+        }
+      }
+    }
+  },
+  "components": {
+    "schemas": {
+      "ObjectstoreObject": {
+        "type": "object",
+        "required": ["id", "state", "size", "mime", "checksum_sha256", "created_at", "updated_at"],
+        "properties": {
+          "id": {"type": "string"},
+          "state": {"type": "string", "enum": ["pending", "uploaded", "completed", "deleted"]},
+          "size": {"type": "integer"},
+          "mime": {"type": "string"},
+          "checksum_sha256": {"type": "string"},
+          "expires_at": {"type": "string", "format": "date-time"},
+          "created_at": {"type": "string", "format": "date-time"},
+          "updated_at": {"type": "string", "format": "date-time"}
+        }
+      },
+      "ObjectstoreDeclaration": {
+        "type": "object",
+        "required": ["name", "size", "content_type"],
+        "properties": {
+          "name": {"type": "string"},
+          "size": {"type": "integer"},
+          "content_type": {"type": "string"},
+          "checksum_sha256": {"type": "string", "description": "The declared SHA-256 as 64 hex digits; empty declares no checksum"}
+        }
+      },
+      "Problem": {
+        "type": "object",
+        "required": ["type", "status"],
+        "properties": {
+          "type": {"type": "string"},
+          "title": {"type": "string"},
+          "status": {"type": "integer"},
+          "detail": {"type": "string"},
+          "instance": {"type": "string"}
+        }
+      }
+    }
+  }
+}

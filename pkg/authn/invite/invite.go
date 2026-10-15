@@ -38,6 +38,7 @@ import (
 	"github.com/vislake/speed/pkg/config"
 	"github.com/vislake/speed/pkg/core"
 	"github.com/vislake/speed/pkg/db"
+	speedhttp "github.com/vislake/speed/pkg/http"
 	"github.com/vislake/speed/pkg/log"
 )
 
@@ -48,6 +49,18 @@ const ModuleName = "authn.invite"
 // ConfigNamespace is where this module's input items are mounted. It is this
 // module's own name, as a registering module's namespace always is.
 const ConfigNamespace = ModuleName
+
+// defaultEndpoint is the endpoint this module's own OpenAPI fragment declares its
+// routes for. The endpoint the routes are actually mounted on is the one the
+// mounter resolves; the fragment is a static declaration written before that is
+// known, so it carries the conventional name.
+const defaultEndpoint = "account"
+
+// inviteFragment is this module's OpenAPI fragment, describing the management
+// and acceptance routes.
+//
+//go:embed openapi/invite.json
+var inviteFragment []byte
 
 //go:embed migrations
 var migrationRoot embed.FS
@@ -99,8 +112,12 @@ func Module() core.Module {
 			{Token: (*audit.Audit)(nil)},
 			{Token: (*log.Logger)(nil), Optional: true},
 		},
-		Provides:  []core.Provision{{Token: (*Invites)(nil), Exclusive: true}},
-		Resources: []any{schema(), db.Migrations{FS: migrationsFS}},
+		Provides: []core.Provision{{Token: (*Invites)(nil), Exclusive: true}},
+		Resources: []any{
+			schema(),
+			db.Migrations{FS: migrationsFS},
+			speedhttp.Spec{Endpoint: defaultEndpoint, Document: inviteFragment},
+		},
 
 		Prepare: func(_ context.Context, reg *core.Registry) (core.Enablement, error) {
 			reader, err := readerOf(reg)

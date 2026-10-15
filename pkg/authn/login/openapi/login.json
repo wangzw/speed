@@ -1,0 +1,294 @@
+{
+  "openapi": "3.1.0",
+  "info": {"title": "authn login", "version": "1.0.0"},
+  "paths": {
+    "/auth/methods": {
+      "get": {
+        "operationId": "authn.login.methods",
+        "summary": "List the login methods this deployment offers",
+        "responses": {
+          "200": {"description": "The names of the enabled methods"},
+          "503": {"description": "The settings that turn methods off could not be read"}
+        }
+      }
+    },
+    "/auth/flows": {
+      "post": {
+        "operationId": "authn.login.start",
+        "summary": "Start a login flow for one method",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "method": {"type": "string"},
+                  "purpose": {"type": "string"},
+                  "delivery": {"type": "string"},
+                  "return_to": {"type": "string"},
+                  "binding": {"type": "string"},
+                  "input": {"type": "object", "additionalProperties": {"type": "string"}}
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {"description": "The flow, advanced to its first step"},
+          "400": {"description": "The body could not be read, or a value is outside its domain"},
+          "401": {"description": "The credential did not hold"},
+          "403": {"description": "The method or the account is unavailable"},
+          "409": {"description": "The request conflicts with the account's state"},
+          "415": {"description": "The request body is not application/json"},
+          "429": {"description": "Too many attempts; retry after the stated delay"},
+          "503": {"description": "A dependency could not answer"}
+        }
+      }
+    },
+    "/auth/flows/authenticated": {
+      "post": {
+        "operationId": "authn.login.startAuthenticated",
+        "summary": "Start a flow on the identity already signed in",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "method": {"type": "string"},
+                  "purpose": {"type": "string"},
+                  "delivery": {"type": "string"},
+                  "return_to": {"type": "string"},
+                  "binding": {"type": "string"},
+                  "input": {"type": "object", "additionalProperties": {"type": "string"}}
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {"description": "The flow, advanced to its first step"},
+          "400": {"description": "The body could not be read, or a value is outside its domain"},
+          "401": {"description": "No usable credential"},
+          "403": {"description": "The method or the account is unavailable"},
+          "409": {"description": "The request conflicts with the account's state"},
+          "415": {"description": "The request body is not application/json"},
+          "429": {"description": "Too many attempts; retry after the stated delay"},
+          "503": {"description": "A dependency could not answer"}
+        }
+      }
+    },
+    "/auth/flows/answer": {
+      "post": {
+        "operationId": "authn.login.answer",
+        "summary": "Answer the current step of the flow the request is bound to",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "seq": {"type": "integer"},
+                  "step": {"type": "string"},
+                  "input": {"type": "object", "additionalProperties": {"type": "string"}}
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {"description": "The flow advanced, or completed with a session or a token pair"},
+          "400": {"description": "The body could not be read, or a value is outside its domain"},
+          "401": {"description": "The credential did not hold, or the flow binding is missing or wrong"},
+          "403": {"description": "The method or the account is unavailable"},
+          "409": {"description": "The step is out of order, or the request conflicts with the account's state"},
+          "415": {"description": "The request body is not application/json"},
+          "429": {"description": "Too many attempts; retry after the stated delay"},
+          "503": {"description": "A dependency could not answer"}
+        }
+      }
+    },
+    "/auth/flows/current": {
+      "get": {
+        "operationId": "authn.login.current",
+        "summary": "The state of the flow the request is bound to",
+        "responses": {
+          "200": {"description": "The flow's current step, so a page refresh can resume"},
+          "401": {"description": "The flow binding is missing or wrong, or the flow is done or gone"},
+          "429": {"description": "Too many attempts; retry after the stated delay"},
+          "503": {"description": "The flow store could not be reached"}
+        }
+      },
+      "delete": {
+        "operationId": "authn.login.abandon",
+        "summary": "Abandon the flow the request is bound to",
+        "responses": {
+          "204": {"description": "The flow was removed"},
+          "401": {"description": "The flow binding is missing or wrong, or the flow is gone"},
+          "429": {"description": "Too many attempts; retry after the stated delay"},
+          "503": {"description": "The flow store could not be reached"}
+        }
+      }
+    },
+    "/auth/callback/{provider}": {
+      "get": {
+        "operationId": "authn.login.callbackGet",
+        "summary": "Handle a provider's callback as a browser navigation",
+        "parameters": [
+          {"name": "provider", "in": "path", "required": true, "schema": {"type": "string"}}
+        ],
+        "responses": {
+          "200": {"description": "The flow, advanced by the callback"},
+          "400": {"description": "The callback is malformed"},
+          "401": {"description": "The flow binding is missing or wrong"},
+          "403": {"description": "The method or the account is unavailable"},
+          "429": {"description": "Too many attempts; retry after the stated delay"},
+          "503": {"description": "A dependency could not answer"}
+        }
+      },
+      "post": {
+        "operationId": "authn.login.callbackPost",
+        "summary": "Handle a provider's callback as a cross-site form post",
+        "parameters": [
+          {"name": "provider", "in": "path", "required": true, "schema": {"type": "string"}}
+        ],
+        "responses": {
+          "200": {"description": "The flow, advanced by the callback"},
+          "400": {"description": "The callback is malformed"},
+          "401": {"description": "The flow binding is missing or wrong"},
+          "403": {"description": "The method or the account is unavailable"},
+          "429": {"description": "Too many attempts; retry after the stated delay"},
+          "503": {"description": "A dependency could not answer"}
+        }
+      }
+    },
+    "/auth/password": {
+      "put": {
+        "operationId": "authn.login.changePassword",
+        "summary": "Change the caller's password",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "current_password": {"type": "string"},
+                  "new_password": {"type": "string"}
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "204": {"description": "The password was changed"},
+          "400": {"description": "The new password is outside the policy"},
+          "401": {"description": "No usable credential, or the current password did not hold"},
+          "403": {"description": "The identity is impersonating, which the route refuses"},
+          "409": {"description": "The request conflicts with the account's state"},
+          "415": {"description": "The request body is not application/json"},
+          "429": {"description": "Too many attempts; retry after the stated delay"},
+          "503": {"description": "A dependency could not answer"}
+        }
+      }
+    },
+    "/auth/phone": {
+      "post": {
+        "operationId": "authn.login.startPhone",
+        "summary": "Send a code to a phone number being added to the account",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "phone": {"type": "string"},
+                  "challenge_id": {"type": "string"}
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {"description": "The challenge, and when the code may be resent"},
+          "400": {"description": "The body could not be read, or the number is outside its domain"},
+          "401": {"description": "No usable credential"},
+          "403": {"description": "The identity is impersonating, which the route refuses"},
+          "409": {"description": "The number belongs to another account"},
+          "415": {"description": "The request body is not application/json"},
+          "429": {"description": "Too many attempts; retry after the stated delay"},
+          "503": {"description": "A dependency could not answer"}
+        }
+      }
+    },
+    "/auth/phone/verify": {
+      "post": {
+        "operationId": "authn.login.verifyPhone",
+        "summary": "Verify the code sent to a phone number",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "code": {"type": "string"}
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "204": {"description": "The number was verified and added to the account"},
+          "400": {"description": "The body could not be read, or the code is wrong"},
+          "401": {"description": "No usable credential"},
+          "403": {"description": "The identity is impersonating, which the route refuses"},
+          "409": {"description": "The number belongs to another account"},
+          "415": {"description": "The request body is not application/json"},
+          "429": {"description": "Too many attempts; retry after the stated delay"},
+          "503": {"description": "A dependency could not answer"}
+        }
+      }
+    },
+    "/auth/identifiers/{id}": {
+      "delete": {
+        "operationId": "authn.login.removeIdentifier",
+        "summary": "Remove one of the caller's own identifiers",
+        "parameters": [
+          {"name": "id", "in": "path", "required": true, "schema": {"type": "string"}}
+        ],
+        "responses": {
+          "204": {"description": "The identifier was removed"},
+          "400": {"description": "The identifier cannot be removed"},
+          "401": {"description": "No usable credential"},
+          "403": {"description": "The identity is impersonating, which the route refuses"},
+          "409": {"description": "The identifier is the account's last way in"},
+          "429": {"description": "Too many attempts; retry after the stated delay"},
+          "503": {"description": "A dependency could not answer"}
+        }
+      }
+    },
+    "/auth/links/{id}": {
+      "delete": {
+        "operationId": "authn.login.unlink",
+        "summary": "Unbind one of the caller's own external identities",
+        "parameters": [
+          {"name": "id", "in": "path", "required": true, "schema": {"type": "string"}}
+        ],
+        "responses": {
+          "204": {"description": "The external identity was unbound"},
+          "400": {"description": "The binding cannot be removed"},
+          "401": {"description": "No usable credential"},
+          "403": {"description": "The identity is impersonating, which the route refuses"},
+          "409": {"description": "The binding is the account's last way in"},
+          "429": {"description": "Too many attempts; retry after the stated delay"},
+          "503": {"description": "A dependency could not answer"}
+        }
+      }
+    }
+  }
+}
