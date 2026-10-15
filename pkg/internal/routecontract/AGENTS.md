@@ -63,8 +63,8 @@ func TestTheDeclaredOperationsAreTheRoutesTheModuleRegisters(t *testing.T) {
 	routecontract.Check(t, routecontract.Case{
 		Module:    Module(),
 		Endpoints: []string{"api"},
-		Stubs:     []core.Module{...},
-		Config:    routecontract.Config(...),
+		Stubs:     []core.Module{ /* one stand-in per capability the module requires */ },
+		Config:    routecontract.Config(),
 	})
 }
 ```
