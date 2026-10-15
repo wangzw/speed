@@ -20,7 +20,7 @@
 - **不承载事件、审计、日志与指标的取值。** 审计的档位、事件名、指标名与属性取值在 [design-authn-events](design-authn-events.md)；本文只写失败时它们的方向。
 - **不承载入口模块的错误形状。** `Problem` 的字段与 `Fail` 的行为在 [design-http](../http/design-http.md) 与 [ADR-http-errors-2026-10-10](../../../adr/adr-http-errors-2026-10-10.md)；本文写 authn 取用它时填什么。
 - **不承载威胁与残余风险。** 失败被诱发的攻击面与对策在 [design-authn-threats](design-authn-threats.md)。
-- **不规定相邻模块的失败方向。** 限流在计数后端不可达时放行、审计的请求级写失败放行，各在 [design-ratelimit](../design-ratelimit.md) 与 [design-audit](../design-audit.md)；本文写的是 authn 自己的路径，以及 authn 调用它们时的方向。
+- **不规定相邻模块的失败方向。** 限流在计数后端不可达时放行、审计的请求级写失败放行，各在 [design-ratelimit](../design-ratelimit.md) 与 [design-audit](../audit/design-audit.md)；本文写的是 authn 自己的路径，以及 authn 调用它们时的方向。
 - **不检测时钟偏差，也不检查本机时钟。** 偏差由部署前提处理，不在运行期被检查，也不被读作保证。
 - **不为外部库的错误命名。** 经 authn 返回的库错误原样外传，不在哨兵表内。
 
@@ -85,9 +85,9 @@
 | `http`（入口模块） | `Problem` 与 `Fail` 的形状；兜底层的 500 与已设 `Set-Cookie` 的带出 | [design-http](../http/design-http.md) |
 | `db` | `gorm.ErrDuplicatedKey` 在两个引擎上同判；加密列的根密钥；迁移集的静态级纳入 | [design-db](../design-db.md) |
 | `kv` | 流程记录的存放；Memcached 与 NATS 实现把写入副本的时钟写在值前面；`kv.memory` 只用于单副本 | [design-kv](../design-kv.md) |
-| `settings` | 请求期读内存快照，不会失败；变更经事件与周期刷新传播 | [design-settings](../design-settings.md) |
+| `settings` | 请求期读内存快照，不会失败；变更经事件与周期刷新传播 | [design-settings](../settings/design-settings.md) |
 | `event`、`outbox` | 事件发布失败不阻塞业务；发件箱的 `Stage` 失败令该动作失败 | [design-event](../event/design-event.md)、[design-outbox](../event/design-event-outbox.md) |
-| `audit` | 强制档与尽力档两档的写失败方向 | [design-audit](../design-audit.md) |
+| `audit` | 强制档与尽力档两档的写失败方向 | [design-audit](../audit/design-audit.md) |
 | `log`、`observability` | 缺席时脱敏规则与计数的去向；失败信号经日志与指标报出 | [design-log](../design-log.md)、[design-observability](../design-observability.md) |
 
 ## UML 图
@@ -155,7 +155,7 @@ type ThrottledError struct{ RetryAfter time.Duration }
 | 会话的校验缓存 | `authn.session.check-ttl` | 缓存命中按缓存放行；上界是该控制项的取值上限，取最小值时每个请求都读库。撤销、停用与 `valid_after` 在其他副本上最多晚该控制项的当前值生效；缓存命中而 db 不可用，与命中而 db 可用，滞后是同一个上界 | 缓存未命中且 db 不可用时 503 |
 | 成员关系的校验缓存 | `tenant.admission.check-ttl` | 与会话的校验缓存各用一份，数值各自可调；上界同样是该控制项的取值上限 | 同上 |
 | `check-session` 的显式放宽 | `authn.token.check-session`：设为假即放宽，只取主配置源 | 访问令牌校验不核对会话是否有效，撤销最晚到令牌到期才生效；设为假时启动诊断里单独一行 Warn | 只放宽会话有效性这一项：账户状态、`valid_after` 与冒充记录的核对照常执行；冒充令牌不受影响 |
-| 设置变更的传播 | 设置模块的刷新间隔（见 [design-settings](../design-settings.md)） | 变更在各副本上的生效最晚到刷新间隔，含租户刚开启强制 MFA 与 SSO 刚开启时 | 凡安全上需要立刻生效的变更不走设置，走 db 的撤销面 |
+| 设置变更的传播 | 设置模块的刷新间隔（见 [design-settings](../settings/design-settings.md)） | 变更在各副本上的生效最晚到刷新间隔，含租户刚开启强制 MFA 与 SSO 刚开启时 | 凡安全上需要立刻生效的变更不走设置，走 db 的撤销面 |
 | IdP 元数据的证书陈旧 | 管理员触发的刷新 | 元数据不自动刷新；刷新失败保留上一份有效配置并记 Warn，被 IdP 撤销的旧证书继续被接受，直到管理员更新成功。上界由管理员的动作而不是时间给出，没有自动到期 | 其余 IdP 与其余检查不受影响 |
 
 **不越过权威状态的缺口另列，各自声明方向，不算放宽。** 下列是缺口的全部情形（封闭集合）：事件发布失败、尽力档动作的审计写失败、kv 上按来源地址的前置减负层不可用。它们在下文的方向表里逐行写出。

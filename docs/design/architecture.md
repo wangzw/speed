@@ -39,12 +39,14 @@ graph TD
   source["传输与格式子包<br/>pkg/config/source/*<br/>pkg/config/format/*"]
   iface["功能模块接口包<br/>pkg/*"]
   impl["功能实现子包<br/>pkg/*/*"]
+  ops["pkg/ops<br/>运行面模块"]
 
   host --> core
   host --> config
   host --> source
   host --> iface
   host --> impl
+  host --> ops
 
   config --> core
   iface --> core
@@ -54,9 +56,13 @@ graph TD
   source --> core
   impl --> iface
   impl --> core
+  ops --> iface
+  ops --> core
 ```
 
 箭头表示 import。依赖方向自上而下收敛于 `pkg/core`，`core` 不 import 任何模块。
+
+运行面 `ops`（[ops](modules/design-ops.md)）是 `pkg` 里的一支实现：它不 `Provides` 任何功能，靠生命周期回调与一份 `speedhttp.Spec` 资源登记为一个模块。它 import `pkg/core` 与 `pkg/http` 的接口包，以及可选的 `pkg/log`、`pkg/db`，方向与其余实现子包一致，不 import 任何更上层的能力目录。
 
 图中编码了以下约束。
 
@@ -254,7 +260,7 @@ speed 不引入进程边界。宿主是单一进程，注册表与全部模块�
 
 **隔离的覆盖面同样是装配的结果，不是框架的承诺。** 按租户过滤由租户模块声明的一条插件承担，它只装在数据库模块自己构造的句柄上；承担它的模块不被装配时，遗漏过滤不会被任何一层拦下（[ADR-db-scope-2026-09-14](../adr/adr-db-scope-2026-09-14.md)），判据与失效形态见 [tenant](modules/tenant/design-tenant.md)。宿主为数据库实现预置的实例不是数据库模块的产物时，数据库模块在 `Migrate` 拒收它，启动失败；拒收之前的取用不经过这道检查，推进不到 `Migrate` 的驱动全程如此，更深的驱动里先于它执行的回调同样如此；拒收只核对来历，出自数据库模块 `New` 的实例，句柄带着那次 `New` 收取的插件，与本次运行的启用集不一定相同（[ADR-db-scope-2026-10-08](../adr/adr-db-scope-2026-10-08.md)、[ADR-supplied-instance-2026-10-08](../adr/adr-supplied-instance-2026-10-08.md)，见 [db](modules/design-db.md)）。
 
-**审计的覆盖面同样是装配与配置的结果，不是框架的承诺。** 审计的各条捕获通路分别依赖在场的模块，以及配置里点名的类型与请求模式。一个类型名与一个端名都不点名时，任一条通路缺席都不会被任何一层拦下，也不进启动诊断；点了名而对应的模块取不到，则是启动失败（[audit](modules/design-audit.md)）。
+**审计的覆盖面同样是装配与配置的结果，不是框架的承诺。** 审计的各条捕获通路分别依赖在场的模块，以及配置里点名的类型与请求模式。一个类型名与一个端名都不点名时，任一条通路缺席都不会被任何一层拦下，也不进启动诊断；点了名而对应的模块取不到，则是启动失败（[audit](modules/audit/design-audit.md)）。
 
 **请求路径的 panic 兜底是这条取向的一处例外：它是入口模块的承诺。** 兜底层由 [http](modules/http/design-http.md) 内建、每端唯一，不装任何别的模块的进程同样有它。判据是这条能力不需要任何产生于依赖图上层的概念——不要身份、不要租户、不要执行变更的一方，只要接住一次调用并写出一次错误响应（形状由默认的 `application/problem+json` 或已交付的 `ErrorResponder` 决定），这里的“执行变更的一方”泛指发出调用的一方，与[认证](modules/authn/design-authn.md)身份上的实际操作者不是同一个词义，该文术语表有界定。因而按横切归属的判据落在持有拦截点的模块（[ADR-http-recovery-2026-09-22](../adr/adr-http-recovery-2026-09-22.md)、[ADR-http-errors-2026-10-10](../adr/adr-http-errors-2026-10-10.md)）。宿主为入口模块预置的实例不是它的产物时，这份承诺不随之而来，那个实例怎样对外提供服务由预置的一方负责（见 [http](modules/http/design-http.md)）。
 
@@ -277,6 +283,15 @@ speed 不引入进程边界。宿主是单一进程，注册表与全部模块�
 ### 性能与容量目标
 
 生命周期驱动是启动时的一次性开销，与请求处理无关。依赖解析在构造之前完成，规模是启用集及其依赖边数。
+
+### 前端
+
+前端应用是交付面的一部分：脚手架 [starters](modules/design-starters.md) 带一棵前端应用，它的构建产物由 [webui](modules/design-webui.md) 按 HTTP 交出。下面这些关切不为任何一个 `pkg/` 模块所有，由统一的口径承载。
+
+- **客户端错误模型与 `ApiError` 归一。** 服务端写出的错误响应都是 RFC 9457 的问题文档，形状由入口模块 [http](modules/http/design-http.md) 定义、经 `ErrorResponder` 接缝可定制。客户端把响应体归一到单一的 `ApiError`：机器码 `Type` 与状态码 `Status` 原样保留、不随语言变化，`Title` 与 `Detail` 是后端渲染好的成品文本。界面据 `Type` 分类、据文本呈现，不依赖任何未进稳定性承诺的字段。
+- **认证与租户边界。** 身份的取得与刷新经认证模块交出的路由（[authn](modules/authn/design-authn.md) 的会话与令牌）；租户由请求面解析（[tenant](modules/tenant/design-tenant.md)），不由客户端在请求体里指定。客户端不缓存跨租户的响应。
+- **缓存与租户切换的逐出。** 客户端缓存以租户为键的一部分；租户切换时逐出上一个租户的缓存，不从缓存里读出不属于当前租户的数据。
+- **并发与竞态。** 离开界面时发出的请求随上下文取消，晚到的响应按发起它的上下文丢弃；并发写入以服务端能判定的方式收口，不由客户端据先后顺序猜定。
 
 ## 架构不变量
 
@@ -306,17 +321,21 @@ speed 不引入进程边界。宿主是单一进程，注册表与全部模块�
 |---|---|
 | [core](modules/design-core.md) | 已实现 |
 | [config](modules/design-config.md) | 已实现 |
-| [log](modules/design-log.md) | 已实现 |
+| [log](modules/design-log.md) | 部分实现 |
 | [db](modules/design-db.md) | 部分实现 |
-| [http](modules/http/design-http.md) | 已实现 |
-| [authn](modules/authn/design-authn.md) | 已实现 |
-| [tenant](modules/tenant/design-tenant.md) | 已实现 |
+| [http](modules/http/design-http.md) | 部分实现 |
+| [authn](modules/authn/design-authn.md) | 部分实现 |
+| [tenant](modules/tenant/design-tenant.md) | 部分实现 |
 | [authz](modules/design-authz.md) | 已实现 |
 | [kv](modules/design-kv.md) | 部分实现 |
 | [sms](modules/design-sms.md) | 已实现 |
 | [event](modules/event/design-event.md) | 部分实现 |
-| [audit](modules/design-audit.md) | 已实现 |
-| [settings](modules/design-settings.md) | 已实现 |
+| [audit](modules/audit/design-audit.md) | 部分实现 |
+| [settings](modules/settings/design-settings.md) | 部分实现 |
 | [ratelimit](modules/design-ratelimit.md) | 已实现 |
 | [observability](modules/design-observability.md) | 部分实现 |
 | [i18n](modules/design-i18n.md) | 已实现 |
+| [ops](modules/design-ops.md) | 未实现 |
+| [web](modules/web/design-web.md) | 部分实现 |
+| [webui](modules/design-webui.md) | 未实现 |
+| [starters](modules/design-starters.md) | 未实现 |

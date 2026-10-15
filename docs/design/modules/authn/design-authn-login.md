@@ -151,10 +151,9 @@ type Proof struct {
 | `POST B/flows/answer` | Open | 答复当前步，body `{seq, step, input}`；`step` 取 `answer`、`factor`、`enroll`、`complete`；要求流程绑定 |
 | `GET B/flows/current`、`DELETE B/flows/current` | Open | 读当前流程状态，供界面刷新后续接；放弃流程，幂等；要求绑定 |
 | `GET\|POST B/callback/:provider` | Open | OAuth 与企业 OIDC 的回跳、SAML 的 ACS；`:provider` 对社交类方法是方法名，对企业 SSO 是 IdP 标识；`POST` 登记跨源检查旁路；SAML 回跳的体上限见 [authn-sso](design-authn-sso.md) |
-| `GET B/me` | Required | 本人的资料、标识与外部绑定 |
 | `PUT B/password`、`POST B/phone`、`POST B/phone/verify`、`DELETE B/identifiers/:id`、`DELETE B/links/:id` | Required | 账户自助：改口令、添加或更换手机、删标识、解绑外部身份；改动认证事实的都要新鲜认证并过 CSRF，冒充中一律拒绝；`POST B/phone` 与 `POST B/phone/verify` 只在 `SMSCodes` 在场时挂 |
 
-`GET B/me` 列出的外部绑定是 `ExternalBinding`：标识、提供方、展示用邮箱、创建与最近登录时刻，不含 `Subject` 原文；解绑用 `ExternalBinding.ID`。
+`B/me` 的两条路由——本人的资料视图与它的写——归 [authn-profile](design-authn-profile.md)，本模块不挂。
 
 该端不得被 `tenant.resolve` 所守：全局账户的登录请求不带租户名，被守时拿到的是解析层的 404。装配期对此做核对，核不了（读不出 `tenant.resolve.endpoints` 的解码形状）时写一行 `Warn`，不终止启动。
 
@@ -650,8 +649,6 @@ cookie 的属性是 `Secure; HttpOnly; Path=/`、无 `Domain`、**`SameSite=None
 | `POST B/phone`、`POST B/phone/verify` | 添加或更换手机，经短信验证新号码（`verified_via = sms-code`）；成功后撤销其余会话；服务端状态与步骤见「手机号验证」 |
 | `DELETE B/identifiers/:id` | 删本人持有的标识；标识不属本人与不存在同形，都答 400 `bad-request`；不检查最后登录方式（那是解绑外部身份才有的规则），也不撤销会话；`authn.identifier.changed` 由 [authn-account](design-authn-account.md) 在删除时发布 |
 | `DELETE B/links/:id` | 解绑外部身份；账户有因素时，IdP 声明的多因素不算；解绑后账户至少还剩一种可用登录方式，否则 409 `conflict`；成功后撤销其余会话并发 `authn.binding.changed` |
-| `GET B/me` | 读本人的资料、标识与外部绑定 |
-| `PATCH B/me/preferences` | 改本人的语言与时区偏好：请求体带 `locale`（BCP 47 标签）与 `time_zone`（IANA 名称），值经账户属性集的 `i18n.locale`、`i18n.tz` 写入，良构与取值域校验失败即 400 `bad-request`（[authn-account](design-authn-account.md)）；这项改动虽不改变认证事实，仍要求新鲜认证并过 CSRF，冒充中一律拒绝 |
 
 邮箱只经 IdP 断言或管理员断言成为标识，没有自助添加邮箱的路由；用户名只由管理员添加。规则的判据归 [authn-account](design-authn-account.md)。
 
@@ -740,7 +737,7 @@ cookie 的属性是 `Secure; HttpOnly; Path=/`、无 `Domain`、**`SameSite=None
 
 ## 实现状态
 
-`pkg/authn` 目前含网关、口令表后端、身份与判决的类型、值类型、登录方法与因素的根包接缝、`Step`、路由共用部件 `internal/mount`、登录引擎 `authn.login`、口令方法 `authn.login.password`、短信方法 `authn.login.sms`，以及社交与微信登录方式 `authn.login.google`、`authn.login.github`、`authn.login.wechat-web`、`authn.login.wechat-mp`（微信两方式共用 `login/internal/wechat` 薄客户端）。引擎把两块内容放在内部包里：`login/internal/resolve` 把 `Proof` 解析成账户（开户、绑定、并入外部身份，交回一个 `Result`），`login/internal/selfservice` 挂账户自助路由（`GET me`、改口令、手机号、删标识、解绑）；两个包都只被引擎构造与调用，别的模块够不到。
+`pkg/authn` 目前含网关、口令表后端、身份与判决的类型、值类型、登录方法与因素的根包接缝、`Step`、路由共用部件 `internal/mount`、登录引擎 `authn.login`、口令方法 `authn.login.password`、短信方法 `authn.login.sms`，以及社交与微信登录方式 `authn.login.google`、`authn.login.github`、`authn.login.wechat-web`、`authn.login.wechat-mp`（微信两方式共用 `login/internal/wechat` 薄客户端）。引擎把两块内容放在内部包里：`login/internal/resolve` 把 `Proof` 解析成账户（开户、绑定、并入外部身份，交回一个 `Result`），`login/internal/selfservice` 挂账户凭据自助路由（改口令、手机号、删标识、解绑）；两个包都只被引擎构造与调用，别的模块够不到。
 
 | 能力 | 状态 | 代码 |
 |---|---|---|
@@ -753,7 +750,7 @@ cookie 的属性是 `Secure; HttpOnly; Path=/`、无 `Domain`、**`SameSite=None
 | 短信发送的每流程上限（`SendsLeft`、`Step.WithSends`） | 已实现 | `pkg/authn/login/engine.go`；`pkg/authn/internal/step/step.go` `(Step).WithSends`、`SendsOf`；`pkg/authn/internal/model/flow.go` `Start`、`FlowState` |
 | IdP 发起的 SAML 的流程创建 | 已实现 | `pkg/authn/login/callback.go` `callbackIDPInitiated`；`pkg/authn/login/flow.go` `flowProvider`（社交方法的记录取方法名、企业 SSO 的记录取 `input.provider`；`FlowState.Provider` 同源交给方法） |
 | 路由、请求与应答的形状、问题码 | 已实现 | `pkg/authn/login/routes.go`、`pkg/authn/login/respond.go`；`pkg/authn/login/answer.go`；`pkg/authn/internal/mount/problem.go` |
-| 账户自助路由与手机号验证 | 已实现 | `pkg/authn/login/internal/selfservice` `Service`、`Deps`；`pkg/authn/login/routes.go` |
+| 账户凭据自助路由与手机号验证 | 已实现 | `pkg/authn/login/internal/selfservice` `Service`、`Deps`；`pkg/authn/login/routes.go` |
 | 失败退避的流程侧、枚举防护与来源地址前置减负 | 已实现 | `pkg/authn/login/engine.go`、`pkg/authn/login/answer.go` |
 | 口令方法 `authn.login.password` | 已实现 | `pkg/authn/login/password/password.go` `Module`、`(method).Begin`、`(method).Answer`、`(method).Name` |
 | 短信方法 `authn.login.sms` | 已实现 | `pkg/authn/login/sms/sms.go` `Module` |

@@ -248,7 +248,7 @@ var ErrMalformedHash error
 
 依赖方向的约束，包括网关不 import `pkg/tenant` 的理由、准入层经 `ScopeGuard` 与网关衔接的方式与对架构不变量的满足，见 [design-authn](design-authn.md#依赖方向)。
 
-被依赖方向：`tenant/resolve` 的请求期层与网关同处鉴别阶段，以 `After` 指向 `(*authn.Gate)(nil)`；`ratelimit` 与 `audit` 按限流、记录两个阶段落在认证之内，不指向这条锚点；租户准入交付 `ScopeGuard` 并读身份（见 [design-tenant](../tenant/design-tenant.md)、[design-ratelimit](../design-ratelimit.md)、[design-audit](../design-audit.md)）。
+被依赖方向：`tenant/resolve` 的请求期层与网关同处鉴别阶段，以 `After` 指向 `(*authn.Gate)(nil)`；`ratelimit` 与 `audit` 按限流、记录两个阶段落在认证之内，不指向这条锚点；租户准入交付 `ScopeGuard` 并读身份（见 [design-tenant](../tenant/design-tenant.md)、[design-ratelimit](../design-ratelimit.md)、[design-audit](../audit/design-audit.md)）。
 
 ## UML 图
 

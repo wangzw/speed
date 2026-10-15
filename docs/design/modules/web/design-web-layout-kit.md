@@ -1,0 +1,173 @@
+# layout-kit
+
+## 职责
+
+与认证无关的应用外壳，包 `web/packages/layout-kit`。交付 `AppShell` 与 `RouteGuard`，以及它们渲染自身文字所用的双语命名空间。
+
+- `AppShell` 交付一块响应式应用外壳：一个固定的顶部栏（`header`/banner 地标）、一个随视口变化的导航抽屉（`nav` 地标，`md` 断点及以上常驻、以下为临时覆盖式），以及一个 `main` 内容区。它把宿主交来的导航项、头部内容与子节点原样摆进这些地标，自身不做任何路由判定。
+- `RouteGuard` 按宿主算好的一个状态值（`RouteGuardStatus`）决定是否放行子节点。三态互斥——放行、等待、拒绝——等待态与拒绝态各有一个缺省占位，可由宿主整体替换。
+- 两者都不认识任何具体的认证或路由机制。`RouteGuard` 的判决是一个由宿主计算并传入的普通值，不是一个它去调用的回调；`AppShell` 的导航项（含哪一项选中）完全由宿主算好。这层「宿主注入一切」的形状，使租户侧装配壳与平台侧外壳能共用同一个包而各自接上不同的授权来源：授权来源一变，本包不变。
+
+### 非职责
+
+- **不导入任何具体认证或路由包。** `RouteGuard` 不得 import `@speed/auth-core`、任何路由器，或任何假设了某种认证机制的包；授权判决以 `status` 值传入。`AppShell` 不做路径匹配——不同宿主用不同路由器，本包对它们一视同仁，`selected` 由宿主算。
+- **不发任何 HTTP 请求。** 本包是外壳与门，取数归宿主与其数据层。
+- **不持业务与租户语义。** 导航项标签、头部、用户菜单、子节点都是宿主内容，本包不发明它们，也不认识「租户」这个概念。
+- **不做认证机制本身。** 登录、登出、会话读取与权限求值都不在本包内；`RouteGuard` 只按传入的判决渲染。把某个授权来源接上 `RouteGuard` 是宿主的组装工作。
+- **不发明新的宿主可见行为来应付窄视口。** 窄视口防护是纯附加样式，不新增也不改动任何 prop；AppShell 只渲染宿主交来的内容，没有自动收起的溢出菜单这类隐式行为。
+
+## 外部接口契约
+
+宿主与同级包从 `web/packages/layout-kit/src/index.ts` 取用以下符号；其余实现细节留在 `src/internal/`，不导出。
+
+### AppShell
+
+```ts
+export interface AppShellNavItem {
+  readonly id: string                              // React key，不渲染
+  readonly label: ReactNode                        // 宿主内容，已翻译
+  readonly icon?: ReactNode
+  readonly href?: string                           // 有则渲染成链接
+  readonly onClick?: MouseEventHandler<HTMLElement> // 有无 href 都触发
+  readonly selected?: boolean                      // 宿主计算
+}
+
+export interface AppShellProps {
+  readonly navItems: readonly AppShellNavItem[]
+  readonly header?: ReactNode
+  readonly headerActions?: ReactNode
+  readonly userMenu?: ReactNode
+  readonly children: ReactNode
+  readonly mobileOpen?: boolean                    // 与下一项成对，控制态
+  readonly onMobileOpenChange?: (open: boolean) => void
+  readonly sidebarWidth?: number                   // 缺省 280
+  readonly sx?: SxProps<Theme>
+}
+
+export function AppShell(props: AppShellProps): ReactElement
+```
+
+- **槽位原样渲染。** `header`、`headerActions`、`userMenu`、`children` 渲染宿主交来的内容本身；某个槽缺席就什么都不渲染，不代以占位。
+- **移动抽屉的开合是唯一的交互局部状态。** `mobileOpen` 与 `onMobileOpenChange` 成对给出时是受控的；都省略时由 AppShell 内部管理（非受控）。从临时抽屉越到常驻抽屉（视口从 `md` 以下越到 `md` 及以上）时，移动抽屉的开合被复位为关，经同一个 `onMobileOpenChange` 通道报出。
+- **`selected` 由宿主算。** AppShell 不做路径匹配，`aria-current` 与选中样式都取自这个值。
+
+### RouteGuard
+
+```ts
+export type RouteGuardStatus = 'allowed' | 'denied' | 'pending'
+
+export interface RouteGuardProps {
+  readonly status: RouteGuardStatus
+  readonly children?: ReactNode
+  readonly pendingFallback?: ReactNode
+  readonly deniedFallback?: ReactNode
+  readonly headingLevel?: EmptyStateProps['headingLevel']  // 只作用于缺省拒绝态，缺省 'h1'
+  readonly onDenied?: () => void
+}
+
+export function RouteGuard(props: RouteGuardProps): ReactElement
+```
+
+- **判决是值，不是回调。** `status` 是宿主计算并随之重渲染的普通值，RouteGuard 从不调用宿主来获知判决，也不持有任何认证状态。
+- **缺省占位。** 等待态的缺省是一个居中的、带无障碍标签的 MUI `CircularProgress`；拒绝态的缺省是 `@speed/ui-kit` 的 `EmptyState variant="noPermission"`，按 `headingLevel` 渲染标题层级。`deniedFallback` 或 `pendingFallback` 给出时整体替换缺省占位。
+- **`onDenied` 每次进入拒绝态触发一次。** 它从一个按 `status` 键控的副作用中触发，只在从非拒绝态转入拒绝态的那一次沿上触发，一次「一直停在拒绝态」的重渲染不再触发。
+- **`headingLevel` 只作用于缺省拒绝态。** 拒绝态的缺省占位替换它所守住的那页内容，其标题即该页自身标题，故缺省为 `h1`；宿主自带标题时传入续接的层级。宿主以 `deniedFallback` 整体替换时不咨询这一项。
+
+### 命名空间
+
+```ts
+export const LAYOUT_KIT_NAMESPACE = 'layout-kit'
+export const layoutKitResources: Readonly<Record<string, ResourceBundle>>
+```
+
+宿主在 `createI18n` 之后用 `registerNamespace` 恰好注册一次（重复注册抛错，故不得发生在组件或 provider 内）。本包渲染自身文字经 `useLayoutKitTranslation`，从 `src/locales/zh-CN.json` 与 `en-US.json` 这对叶子键集相同的双语文件读取。
+
+**稳定性承诺。** `AppShell`、`AppShellProps`、`AppShellNavItem`、`RouteGuard`、`RouteGuardProps`、`RouteGuardStatus` 的字段与方法集，`LAYOUT_KIT_NAMESPACE`、`layoutKitResources`，以及 `sidebarWidth` 缺省值 `280`、缺省拒绝态与等待态的形状，是宿主可见面。加导出、改签名或改 prop 名是以下游消费者的不兼容变更。
+
+## 依赖
+
+| 依赖 | 类型 | 用途 |
+|---|---|---|
+| `react`、`react-dom` | peer（必需） | 宿主持有 React 树 |
+| `@mui/material` | peer（必需） | `AppBar`、`Drawer`、`CircularProgress` 与经 `useTheme()` 读取的环境主题（断点、z-index） |
+| `@emotion/react`、`@emotion/styled` | peer（必需） | MUI 的运行时要求 |
+| `@speed/i18n` | dependency | 命名空间注册与翻译 hook |
+| `@speed/ui-kit` | dependency | `RouteGuard` 缺省拒绝态的 `EmptyState`，本包唯一的具体兄弟耦合 |
+
+**方向是自下而上。** 本包位于 `@speed/i18n` 与 `@speed/ui-kit` 之上，被 `@speed/product-shell` 取用。**本包不 import `@speed/auth-core`、`@speed/api-client`、`@speed/api-sdk`**，也不 import 任何具体认证或路由包；`web/eslint.config.mjs` 的 `speed/no-direct-http` 规则（白名单只有 `api-client`）使本包无处可发起请求。**不直接依赖 `@speed/tokens`**：`AppShell` 经环境 MUI 主题读 `breakpoints.values` 与 `zIndex.values`，与 `ui-kit` 自家组件一致，二者都已是 MUI 同值缺省。
+
+## UML 图
+
+`RouteGuard` 只依赖一个普通的三值状态，不依赖任何包；这是本包存在的理由——同一块外壳与同一道门，供授权来源不同的宿主共用。图里画不出的约束：`status` 由宿主计算并重渲染，RouteGuard 从不调用宿主；`AppShell` 的 `selected` 同样由宿主算，本包不做路径匹配；两层都不 import 认证或路由包。
+
+```mermaid
+classDiagram
+    class AppShell {
+        +AppShellNavItem[] navItems
+        +ReactNode header
+        +ReactNode children
+    }
+    class AppShellNavItem {
+        +string id
+        +ReactNode label
+        +boolean selected
+    }
+    class RouteGuard {
+        +RouteGuardStatus status
+        +ReactNode children
+    }
+    class RouteGuardStatus {
+        <<enumeration>>
+        allowed
+        denied
+        pending
+    }
+    AppShell --> AppShellNavItem
+    RouteGuard --> RouteGuardStatus
+```
+
+## 核心数据结构
+
+| 概念 | 类型 | 说明 |
+|---|---|---|
+| 导航项 | `AppShellNavItem` | 稳定 `id`、已翻译 `label`、可选 `icon`/`href`/`onClick`、宿主算出的 `selected` |
+| 外壳 prop | `AppShellProps` | 槽位加抽屉控制加 `sidebarWidth`/`sx` |
+| 门状态 | `RouteGuardStatus` | `allowed` / `denied` / `pending` 的闭集，互斥 |
+| 门 prop | `RouteGuardProps` | 状态、子节点、两种占位替换、`headingLevel`、`onDenied` |
+| 命名空间 | `LAYOUT_KIT_NAMESPACE` / `layoutKitResources` | 双语字符串对，宿主注册一次 |
+
+## 核心算法与流程
+
+### AppShell 的响应式与地标
+
+1. 以 `useMediaQuery(theme.breakpoints.up('md'))` 得到桌面/移动的布尔值，不引入新断点。抽屉的两态由此布尔值在 JS 中选择（桌面 `permanent`、移动 `temporary`），而非经 CSS 断点 sx 切换，使「桌面抽屉是否在显示」只有一个确定答案，避免两个 DOM 节点在绘制上竞争。
+2. 顶部栏是 `header`/banner 地标，导航抽屉是带无障碍名（`appShell.navLabel`）的 `nav` 地标，内容区是 `main` 地标。
+3. 跳转链接（`appShell.skipToContent`）是外壳里第一个可聚焦元素，激活时以编程方式把焦点移到 `main` 地标，而不是导航到一个片段：片段导航会改写 `location.hash`，在以 hash 路由的宿主里那个片段就是路由本身，导航会顶掉当前路由。
+4. 顶部栏一行可换行，其渲染高度由 `ResizeObserver` 测量；`main` 与抽屉纸内的三处偏移占位由此测量取值，使换行的顶部栏不遮住其下内容。无 `ResizeObserver` 时（jsdom）占位退回主题的单行工具条高度。
+
+### AppShell 的抽屉交互
+
+- **非受控时抽屉自持开合。** 导航项激活后，临时抽屉自行关闭；激活先跑宿主自己的 `onClick`，再关闭。
+- **受控时不关闭。** 宿主自行观察导航并经自己的下一次渲染关闭，本包此时不报也不关。
+- **越断点复位。** 从移动越到桌面（临时越到常驻）时，移动抽屉的开合被复位为关——一个在竖屏打开的抽屉不能在视口变宽回落时又被打开——经 `onMobileOpenChange` 报出。
+
+### RouteGuard 的三态渲染与单次触发
+
+1. `status` 为 `allowed` 时渲染 `children`。
+2. `status` 为 `pending` 时渲染 `pendingFallback`，或缺省的居中 spinner。
+3. `status` 为 `denied` 时渲染 `deniedFallback`，或缺省的 `ui-kit` 无权限 `EmptyState`。
+4. 一个 ref 记住「本次拒绝是否已触发过 `onDenied`」：第一个拒绝态渲染置位并触发，`status` 离开拒绝态时复位，故后一次「再次进入拒绝」会再触发一次，而连续两次都停在拒绝态不会重复触发。
+
+## 扩展点
+
+- **授权来源经 `status` 接入。** 宿主按所用机制（真认证包背后的 hook、认证包落地前的 `useState` 桩、测试里的静态值）算出一个 `RouteGuardStatus` 传入即可，本包不改。
+- **占位与文案经 prop 与命名空间替换。** 等待态与拒绝态各可由 `pendingFallback` / `deniedFallback` 整体替换；宿主亦可经再次 `registerNamespace` 把 `LAYOUT_KIT_NAMESPACE` 下的文案改成自己的，而不是改组件里的字面量。
+- **槽位即扩展点。** 顶部栏、头部动作、用户菜单、导航项与内容区都是宿主内容，本包不发明。
+
+## 实现状态
+
+| 能力 | 状态 | 代码 |
+|---|---|---|
+| `AppShell`（响应式头部、导航抽屉、内容区与地标） | 已实现 | `web/packages/layout-kit/src/components/AppShell.tsx` `AppShell`、`AppShellProps`、`AppShellNavItem` |
+| `RouteGuard`（按注入状态放行的三态门） | 已实现 | `web/packages/layout-kit/src/components/RouteGuard.tsx` `RouteGuard`、`RouteGuardProps`、`RouteGuardStatus` |
+| 双语命名空间资源 | 已实现 | `web/packages/layout-kit/src/resources.ts` `LAYOUT_KIT_NAMESPACE`、`layoutKitResources` |

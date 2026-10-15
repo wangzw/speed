@@ -145,7 +145,7 @@
 | 跨租户访问：持合法凭据的调用方指名另一个租户 | `tenant.admission` 默认拒绝，非成员的应答与不存在的租户同形（404） | [design-tenant-admission](../tenant/design-tenant-admission.md) | 准入层的拒绝落在审计与限流之内：准入层在授权阶段，该阶段在记录与限流之内；装配后的真实次序未经运行核对（见[依赖未核实行为的假设](#依赖未核实行为的假设)） |
 | 监听端漏守、配置错误 | 默认守全部端，漏写的端同样被守；启动诊断列出展开后的清单与被开出的口子；放宽项各写一行 Warn；缺省值取最严 | [design-authn-gate](design-authn-gate.md)、[design-authn-config](design-authn-config.md) | 链上仍可有层绕过认证（非保证）：声明在鉴别阶段之外各阶段的层、阶段内被 `After`、`Before` 或 `Order` 排到网关之外的层，以及入口模块内建的请求上下文、访问日志与兜底层，都在网关之前；宿主仍可显式放宽 |
 | 管理面被远程滥用 | 默认不可用：`authn.admin` 要宿主纳入并交付 `Decider` 与审计；强制审计 | [design-authn-admin](design-authn-admin.md) | 宿主交付的 `Decider` 有缺陷，则管理面有缺陷 |
-| 设置写权限被滥用来放宽安全项 | 放宽方向的开关（`signup`、`auto-link`、`check-session`）只取主配置源；其余可在运行期修改的安全项，由 authn 订阅 `settings.changed`，改到更宽松的取值时写 Warn 并记一条尽力档审计；`pkg/authn/AGENTS.md` 写明「`authn.*` 与 `tenant.admission.*` 设置不得对租户或普通管理员开放写权限」 | [design-authn-config](design-authn-config.md)、[design-settings](../design-settings.md) | 事后可见、不能事前阻止；拿到设置写权限的主体仍能把 `throttle-*` 与短信预算调松。**接受** |
+| 设置写权限被滥用来放宽安全项 | 放宽方向的开关（`signup`、`auto-link`、`check-session`）只取主配置源；其余可在运行期修改的安全项，由 authn 订阅 `settings.changed`，改到更宽松的取值时写 Warn 并记一条尽力档审计；`pkg/authn/AGENTS.md` 写明「`authn.*` 与 `tenant.admission.*` 设置不得对租户或普通管理员开放写权限」 | [design-authn-config](design-authn-config.md)、[design-settings](../settings/design-settings.md) | 事后可见、不能事前阻止；拿到设置写权限的主体仍能把 `throttle-*` 与短信预算调松。**接受** |
 | 预认证请求使表无界增长 | 每张会增长的表有持有者与清扫协程；`authn_throttles` 的行数上界是失败请求速率乘 `throttle-decay` | [design-authn-account](design-authn-account.md) | 匿名洪泛期间表会变大；缓解是来源地址层的前置减负（缺省关）与入口层限流。**接受** |
 | 供应链：依赖库的漏洞 | 固定版本；go-jose 与 goxmldsig 设版本下限；每个库隔在叶子包；升级走专门的变更 | [design-authn-token](design-authn-token.md)、[design-authn-sso](design-authn-sso.md) | 新漏洞出现到升级之间的窗口 |
 | 时钟偏差 | 容差有界且可调；撤销不依赖时钟 | [design-authn-failure](design-authn-failure.md) | 偏差超过容差时零星拒绝 |
@@ -218,8 +218,8 @@
 | `pkg/db`（[design-db](../design-db.md)） | 加密列与根密钥；唯一约束与条件更新作原子仲裁 | 根密钥与库一起失守，加密列全失；仲裁失效则一次性凭据可被重复消费 |
 | `pkg/kv`（[design-kv](../design-kv.md)） | `CompareAndSwap` 只在当前值等于旧值时写入 | 流程记录的比较并交换失效，授权码可能被换多次 |
 | `pkg/ratelimit`（[design-ratelimit](../design-ratelimit.md)） | 入口层限流按责任键计 | 预认证洪泛的前置减负缺席 |
-| `pkg/audit`（[design-audit](../design-audit.md)） | 强制档审计由调用方在事务之外、动作之前写；尽力档写失败不令动作失败 | 强制档缺席则冒充与管理面动作不开始；尽力档缺失只丢审计行 |
-| `pkg/settings`（[design-settings](../design-settings.md)） | 变更事件 `settings.changed` 可订阅 | 放宽的设置变更没有 Warn 与审计 |
+| `pkg/audit`（[design-audit](../audit/design-audit.md)） | 强制档审计由调用方在事务之外、动作之前写；尽力档写失败不令动作失败 | 强制档缺席则冒充与管理面动作不开始；尽力档缺失只丢审计行 |
+| `pkg/settings`（[design-settings](../settings/design-settings.md)） | 变更事件 `settings.changed` 可订阅 | 放宽的设置变更没有 Warn 与审计 |
 | `pkg/http`（[design-http](../http/design-http.md)） | `Router.Endpoints()` 与保留端名 `*`；中间件链按阶段与阶段内的 `After`、`Before`、`Order` 组装 | 默认守全部端无从展开；链上次序不成立则准入层与限流的次序保证不成立 |
 | `pkg/tenant` 的 `tenant.admission`（[design-tenant-admission](../tenant/design-tenant-admission.md)） | 非成员与范围不符的冒充身份得 404 | 跨租户访问与冒充越界的拦截缺席 |
 | go-jose/v4 | `pkg/go.mod` 的版本下限，对应畸形令牌触发 panic 的缺陷；数值见 [design-authn-token](design-authn-token.md) | 删去该要求会使依赖图把版本带回受影响的版本 |

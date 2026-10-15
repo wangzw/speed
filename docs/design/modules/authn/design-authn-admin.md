@@ -183,7 +183,7 @@ type ScopeGuard interface {
 - 发起者未在冒充。
 - 满足多因素的新鲜度要求（[ADR-authn-mfa-2026-10-10](../../../adr/adr-authn-mfa-2026-10-10.md)、[authn-mfa](design-authn-mfa.md)）。
 
-自助动作的授权依据是「发起者就是这个账户」，这是 authn 自己可以核对的事实，不需要策略。没有 `Decider` 的装配里，用户仍能改自己的口令。自助路由由 `authn.login`、`authn.session`、`authn.mfa` 挂，本模块不挂。
+自助动作的授权依据是「发起者就是这个账户」，这是 authn 自己可以核对的事实，不需要策略。没有 `Decider` 的装配里，用户仍能改自己的口令。自助路由由 `authn.login`、`authn.session`、`authn.mfa`、`authn.profile` 挂，本模块不挂。
 
 ### 稳定性承诺
 

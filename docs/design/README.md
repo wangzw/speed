@@ -20,8 +20,12 @@ speed 是一个配置驱动的模块化应用程序框架，以 Go 库的形式�
 | [kv](modules/design-kv.md) | 键值原语：不透明字节的存取与过期、原子自增与比较并交换、按最弱后端设计的接口面 |
 | [sms](modules/design-sms.md) | 短信发送与模板：发送接缝、模板注册表、运行期管理面与厂商适配 |
 | [event](modules/event/README.md) | 事件总线：按类型发布与订阅、载荷的结构化读取、投递承诺的下界；事务发件箱为其子模块 |
-| [audit](modules/design-audit.md) | 审计：语句、事件、请求与记录接缝的捕获通路、审计表、明细的脱敏 |
-| [settings](modules/design-settings.md) | 设置：模块声明的运行期参数、三级回落、以快照读取、变更事件的发布与订阅 |
+| [audit](modules/audit/README.md) | 审计：语句、事件、请求与记录接缝的捕获通路、审计表、明细的脱敏；检索面为其子模块 |
+| [settings](modules/settings/README.md) | 设置：模块声明的运行期参数、三级回落、以快照读取、变更事件的发布与订阅；管理面为其子模块 |
 | [ratelimit](modules/design-ratelimit.md) | 限流：租户内按责任键的请求速率限制、以设置读取额度与窗口、经键值原语按窗口计数 |
 | [observability](modules/design-observability.md) | 运行期遥测：上游 SDK 的 provider、请求路径的采集、出站注入、导出后端 |
 | [i18n](modules/design-i18n.md) | 面向用户文本的渲染机制：消息目录的收集与装载、语言与时区的解析链、Accept-Language 协商、账户偏好的存取 |
+| [ops](modules/design-ops.md) | 运行面：探针路由与合并后的 API 规格，读取各模块声明的 OpenAPI 片段 |
+| [web](modules/web/README.md) | 前端：包的分层与判据、契约边界、装配与内容分离、装配入口与稳定性承诺；设计令牌、i18n、组件族、传输运行时、生成的契约面、路由、会话与各能力 UI 包为其子模块 |
+| [webui](modules/design-webui.md) | 前端产物交付：静态应答、客户端路由回退、缓存口径 |
+| [starters](modules/design-starters.md) | 脚手架 starters/demo：可运行的示范骨架，命令树、部署栈、前端应用与打包约定 |

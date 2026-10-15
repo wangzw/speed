@@ -10,7 +10,7 @@
 
 **既有的划界判据。** 一个值属于配置，当且仅当它在数据库可用之前就被需要；按租户或按运行时场景取不同值的值落在设置一侧，这是该判据的推论（[ADR-config-scope-2026-09-13](adr-config-scope-2026-09-13.md)）。判据把设置缺席时的降级交给使用方，使用方各自定义。
 
-**设置的既有性质**（[design-settings](../design/modules/design-settings.md)）：
+**设置的既有性质**（[design-settings](../design/modules/settings/design-settings.md)）：
 
 - 值以文本明文存库。`Sensitive` 只遮蔽变更事件的载荷与 `Declared` 的默认值，`Get` 与 `List` 照常交出敏感项的值。
 - 写入面不判权限，访问控制由宿主负责（[ADR-settings-scope-2026-09-21](adr-settings-scope-2026-09-21.md)）。写入时判取值域，读取不判。

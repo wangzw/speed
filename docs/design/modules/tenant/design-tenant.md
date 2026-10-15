@@ -13,7 +13,7 @@
 
 本功能目录由接口包与各实现子包组成。`pkg/tenant` 根包定义功能接口、数据类型、模型约定与准入层的定序锚点，**自身不注册模块，也不导出模块名常量**；解析住在自己的子包并注册一个模块，名册住在自己的子包并注册一个模块，两者各自排他交付（[ADR-tenant-packaging-2026-09-21](../../../adr/adr-tenant-packaging-2026-09-21.md)、[ADR-module-packaging-2026-09-14](../../../adr/adr-module-packaging-2026-09-14.md)）。准入层同样住在自己的子包并注册一个模块，全文见 [design-tenant-admission](design-tenant-admission.md)。下文的"解析模块"与"名册模块"分别指解析子包与名册子包所注册的模块，本文不写准入层的内部。
 
-租户的认定、名册的维护与语句的过滤同属本功能目录，请求期的成员准入由本功能目录的准入层承担，按租户取值的参数归[设置模块](../design-settings.md)，按租户的授权判定归授权（[ADR-tenant-scope-2026-09-21](../../../adr/adr-tenant-scope-2026-09-21.md)）。
+租户的认定、名册的维护与语句的过滤同属本功能目录，请求期的成员准入由本功能目录的准入层承担，按租户取值的参数归[设置模块](../settings/design-settings.md)，按租户的授权判定归授权，名册的管理面由 [tenant.admin](design-tenant-admin.md) 承担（[ADR-tenant-scope-2026-09-21](../../../adr/adr-tenant-scope-2026-09-21.md)）。
 
 **根包不导出模块名常量**，判据与认证的同一条：导出它没有对应的登记，宿主拿一个无人登记的名字去纳入，得到的是一个不在可用集里的名字，而命令树对未登记名字的处置在配置模块的哨兵表里没有对应项（见 [config](../design-config.md)）。
 
@@ -30,7 +30,7 @@
 - **不保证隔离。** 按租户过滤在框架层没有机制保证（[ADR-db-scope-2026-09-14](../../../adr/adr-db-scope-2026-09-14.md)），本模块把这一条承接为对外口径，逐条写在非保证一节（[ADR-tenant-guarantees-2026-09-21](../../../adr/adr-tenant-guarantees-2026-09-21.md)）。
 - **不提供租户的数据导出、删除与搬迁。** 它们要读受约束表里每个租户的数据量，那是应用自己的领域动作。
 - **不为租户建立独立的库、schema 或连接。** 经模块机制交付的库只有一个，配置给出的或宿主预置的（[ADR-db-multiplicity-2026-09-14](../../../adr/adr-db-multiplicity-2026-09-14.md)）。
-- **不记录谁在何时改了名册。** 留痕由[审计模块](../design-audit.md)经数据库模块的插件扩展点承担（见 [db](../design-db.md)）。
+- **不记录谁在何时改了名册。** 留痕由[审计模块](../audit/design-audit.md)经数据库模块的插件扩展点承担（见 [db](../design-db.md)）。
 
 ## 术语表
 
@@ -84,6 +84,8 @@ type Catalog interface {
     Create(ctx context.Context, t Tenant) error
     // SetStatus 改一个租户的状态。停用只走这一条，不删数据。
     SetStatus(ctx context.Context, id ID, s Status) error
+    // SetAlias 只改一个租户的别名，不动它的状态。
+    SetAlias(ctx context.Context, id ID, alias string) error
     // List 列出全部租户，按标识排序。
     List(ctx context.Context) ([]Tenant, error)
     // Enter 返回一个属于这个租户的上下文，供不经请求面的路径使用。
@@ -173,6 +175,8 @@ type Extractor interface {
 
 `SetStatus` 是停用的唯一途径。名册没有删除动作：删掉一行不会删掉受约束表里那个租户的数据，留下一批无主行，而"无主"在库里看不出来（[ADR-tenant-directory-2026-09-21](../../../adr/adr-tenant-directory-2026-09-21.md)）。
 
+`SetAlias` 只写别名一列。要改名的调用方用它，不用 `Put`：`Put` 取整行新值，一次改名会把它读到、此后可能已经过期的状态一并写回去——快照与表之间的窗口里另一个副本停用的那个租户，会因此被重新启用。别名的冲突处置与 `Put` 相同：撞上唯一约束以 `ErrAliasConflict` 作答并点名占有者。
+
 **名册的读与写都不经隔离插件。** 名册表自己不内嵌受租户约束的模型约定，读写它的语句走的是与任何全局表相同的路径，既不要求上下文里有租户，也不因缺租户而失败。这一点与跨租户的途径无关：`CrossTenant` 是为受约束模型的语句设的，名册的语句本来就不在它的管界之内。
 
 ### 受租户约束的模型
@@ -199,7 +203,7 @@ type Model struct {
 - **迁移里的键要与这个类型声明的键一致**，那一列的类型与长度也要与标识的形状一致，且带非空约束。非空约束挡的是 NULL；插件缺席时插入之所以失败而不是写下一个空串，靠的是标识拒绝以空值被绑定（见租户与请求上下文），不是这条约束。
 - **受约束表的其余索引以租户列打头**，否则单租户的查询扫全表。主键那一部分由约定本身给出。
 
-**只读别处一张表的模型不承担这两条义务。** 一张表由声明它的模块建立、由那个模块写入；另一个模块或宿主要按租户读它——审计表即是一例，审计模块不提供查询面（见 [audit](../design-audit.md)）——就在一个只读的模型里内嵌约定，由插件给它的每一条读加租户条件（[ADR-tenant-isolation-2026-09-21](../../../adr/adr-tenant-isolation-2026-09-21.md)）。上面两条义务约束的是建表并写入的一方：键以租户列打头，挡的是一次写经冲突改写另一个租户的行；非空约束挡的是写下一行不属于任何租户的数据。只读模型不发写语句，那张表的键与可空的租户列因而不在它的义务之内。它的读有以下性质：
+**只读别处一张表的模型不承担这两条义务。** 一张表由声明它的模块建立、由那个模块写入；另一个模块或宿主要按租户读它——审计表即是一例，审计模块不提供查询面（见 [audit](../audit/design-audit.md)）——就在一个只读的模型里内嵌约定，由插件给它的每一条读加租户条件（[ADR-tenant-isolation-2026-09-21](../../../adr/adr-tenant-isolation-2026-09-21.md)）。上面两条义务约束的是建表并写入的一方：键以租户列打头，挡的是一次写经冲突改写另一个租户的行；非空约束挡的是写下一行不属于任何租户的数据。只读模型不发写语句，那张表的键与可空的租户列因而不在它的义务之内。它的读有以下性质：
 
 - 租户列为 NULL 的行不属于任何租户，任何一个租户下的读都读不到它，`tenant_id = ?` 不匹配 NULL。
 - 跨租户的读读得到这些行。经约定的字段读出时，那一列是空标识，不报错：GORM 把 NULL 扫成字段的零值，一行不属于任何租户的数据与一行租户列写成空串的数据在这个类型上分不出来。跨租户读这类表又要分出这些行，用一个租户字段接得住 NULL 的类型，例如指针：一个不内嵌约定的类型，或者在只读模型上另声明一个指针字段取代约定的字段（见上文），后者在租户之下的读照样带租户条件。
@@ -240,7 +244,7 @@ func CrossTenant(ctx context.Context) context.Context
 
 **这是跨租户的唯一途径**（[ADR-tenant-scoping-2026-09-21](../../../adr/adr-tenant-scoping-2026-09-21.md)）。它是上下文事实而非语句事实，因而可以在一个函数的入口处建立，此后的每一条语句都落在它之下。
 
-**带标记的上下文不属于任何租户。** 建立标记的那一步同时交出上下文里的标识：在它里面 `FromContext` 第二个返回值为假，一个从请求上下文里建立标记的调用点把它那条请求的租户一并交出。跨租户的语句本就不受任何租户约束，把这样的上下文读成某个租户的，会让一条不受约束的语句在别处读起来像一条受约束的语句，审计行写下的租户列即是一例（见 [audit](../design-audit.md) 的审计行的补全）。**logger 上的 `tenant_id` 随之撤下**，日志记录因而不把跨租户做的事记在某个租户名下。根包不 import 日志模块（见依赖），撤下这个字段的办法由写进标识的那一方随标识一起留在上下文里：解析层与 `Enter` 绑上字段时，把日志模块按键解除的函数一并存进上下文，`CrossTenant` 找到它就调用；一个没有经过这两个写入者的上下文，logger 上也没有本模块绑的字段可撤。
+**带标记的上下文不属于任何租户。** 建立标记的那一步同时交出上下文里的标识：在它里面 `FromContext` 第二个返回值为假，一个从请求上下文里建立标记的调用点把它那条请求的租户一并交出。跨租户的语句本就不受任何租户约束，把这样的上下文读成某个租户的，会让一条不受约束的语句在别处读起来像一条受约束的语句，审计行写下的租户列即是一例（见 [audit](../audit/design-audit.md) 的审计行的补全）。**logger 上的 `tenant_id` 随之撤下**，日志记录因而不把跨租户做的事记在某个租户名下。根包不 import 日志模块（见依赖），撤下这个字段的办法由写进标识的那一方随标识一起留在上下文里：解析层与 `Enter` 绑上字段时，把日志模块按键解除的函数一并存进上下文，`CrossTenant` 找到它就调用；一个没有经过这两个写入者的上下文，logger 上也没有本模块绑的字段可撤。
 
 **跨租户解除的是条件与填列，不是那一列。** 跨租户写下的行照样要属于某个租户：带标记的插入，行里没写租户列的拒绝；带标记的写把租户列写成空串或 NULL 的，以 `ErrNoTenantInContext` 拒绝，写成含空白或控制字符的字面值的，以 `ErrInvalidTenant` 拒绝。那样的行不属于任何租户，此后没有一条受约束的语句够得着它。租户列写成调用方自己给出的表达式不在此列，跨租户本就允许调用方说明那一列变成什么；赋值目标是一段认不出是哪一列的原样 SQL 的，跨租户同样拒绝，因为说不出它写的是不是租户列、写成了什么（见插件在语句上的判定）。
 
@@ -334,7 +338,7 @@ func CrossTenant(ctx context.Context) context.Context
 
 `Resolution`、`Catalog`、`Extractor`、`Tenant`、`ID`、`IsIdentifier`、`Status`、`Model` 与 `CrossTenant`、`FromContext` 是本模块与其他模块之间的契约。中间件在链上代表的那个功能标识与描述符里的交付标识同为 `(*Resolution)(nil)`，别的模块据它排序，取值不变。约定里那一列的名字 `tenant_id`、它的非空约束与它在主键里的位置同样在这个面上：迁移文件由声明方写，改名或改键都是一次全库迁移。准入层的定序锚点 `Admission` 与它交付的守卫的稳定性写在 [design-tenant-admission](design-tenant-admission.md) 的稳定性承诺里。
 
-**标识的取值域也在契约面上**：非空，且不含空白与控制字符，根包的 `IsIdentifier` 是本模块对这一条的唯一陈述，名册的字段判定（`pkg/tenant/catalog/roster.go` 的 `checkField`）也走它——空值在那次调用之前先判一档，只为挑出两种文本，取值域本身仍只有 `IsIdentifier` 一条陈述。按租户取值的模块各自复述这条判据——设置模块的 `ForTenant` 即一处——而不以 import 本模块的方式取用它（[settings](../design-settings.md) 记有那条依赖为何不存在）。两处是否仍是同一条，由消费方自己的测试包 `pkg/settings/settings_test.go` 的 `TestForTenantAgreesWithTheTenantIdentifierDomain` 拿同一张标识形状表逐形状驱动双方守住。
+**标识的取值域也在契约面上**：非空，且不含空白与控制字符，根包的 `IsIdentifier` 是本模块对这一条的唯一陈述，名册的字段判定（`pkg/tenant/catalog/roster.go` 的 `checkField`）也走它——空值在那次调用之前先判一档，只为挑出两种文本，取值域本身仍只有 `IsIdentifier` 一条陈述。按租户取值的模块各自复述这条判据——设置模块的 `ForTenant` 即一处——而不以 import 本模块的方式取用它（[settings](../settings/design-settings.md) 记有那条依赖为何不存在）。两处是否仍是同一条，由消费方自己的测试包 `pkg/settings/settings_test.go` 的 `TestForTenantAgreesWithTheTenantIdentifierDomain` 拿同一张标识形状表逐形状驱动双方守住。
 
 ## 依赖
 
@@ -371,6 +375,7 @@ classDiagram
         +Put(t Tenant) error
         +Create(t Tenant) error
         +SetStatus(id ID, s Status) error
+        +SetAlias(id ID, alias string) error
         +List() []Tenant, error
         +Enter(id ID) Context, error
         +EnterRegistered(id ID) Context, error
@@ -648,7 +653,7 @@ flowchart TD
 - **每一条请求多两次映射查找，每一条语句多走一遍模型的字段。** 解析层的开销是每请求两次映射查找，都是常数时间；插件的开销是每语句把模型的字段走一遍找约定的字段、把 schema 上的关系走一遍看它是不是连接表，经全局模型的语句也不例外，受约束模型另加一次映射查找、一遍条件与一遍它声明的多对多关联，schema 里没有约定字段的模型另走一遍类型上的内嵌，以结构体承载的插入与更新另加一遍与模型列数成正比的查找（见核心算法与流程）。
 - **快照与库之间有一个窗口，且这个窗口只出现在别的副本上。** 写入方自己的副本在写成功之后立刻重载并发布，因而当即看到它；其余副本要等各自的下一次刷新，在这之前一个刚写入的租户在它们的请求面上不可见、一个刚被停用的租户在它们那里继续被服务。进入方法的拒绝读表，不在这个窗口里。
 - **约定期望声明方遵守的两条本模块验不了**：那一列的类型与长度，以及迁移里的键与模型声明的是同一个。类型与长度漏了的形态由非空约束兜住一半；键漏了的形态是 upsert 能把别的租户的行改写过来，而它不报错、也不落在任何一条判据里。
-- **名册的写入是本模块唯一的运维面动作，而它没有配套的管理界面。** 改一个租户的状态要宿主自己写一条命令或在别处调用 `SetStatus`。
+- **名册的写入是本模块唯一的运维面动作，本模块不带管理面。** 名册的管理面由 [tenant.admin](design-tenant-admin.md) 承担；一个不纳入它的宿主改一个租户的状态要自己写一条命令或在别处调用 `SetStatus`。
 
 ### 非保证
 
@@ -700,7 +705,7 @@ flowchart TD
 
 插件不开启任何事务，也不改变调用方开启的事务。名册的写入各自在名册自己的句柄上开一个事务，把别名与标识的核对和写入包在里面，不加入调用方的事务——名册功能拿到的只有上下文，上下文里没有调用方的事务可加入；`Put`、`Create` 与 `SetStatus` 各自的写入因而是原子的，而一次名册写入与应用自己的写入合不进同一个事务。
 
-**名册自己的每一次读写经数据库模块的 `Connection` 取交付连接池里的一条连接，取连接的界为五秒**（[ADR-tenant-directory-2026-09-29](../../../adr/adr-tenant-directory-2026-09-29.md)、[ADR-db-waits-2026-09-29](../../../adr/adr-db-waits-2026-09-29.md)）：整张名册的读、进入方法按标识的那一读、写入与写入里的核对读都是。调用方占着的连接，名册等多久都等不到——只开一条连接的库上，调用方在交付句柄上开着的事务占着那条连接，要到它自己的调用返回之后才放开——而一条语句分不出这种占用与别的调用方的短暂占用，因而给等待设界，而不是去识别它。五秒与审计模块自己写的行取同一个界（见 [audit](../design-audit.md) 的写入的等待）。五秒之内取不到连接以 `ErrNoConnection` 作答，什么也没做；调用方的上下文先于这个界结束时，以上下文的错误作答。**界只管取连接**：每一条语句等别的连接占着的锁照引擎自己的设置等（见 [db](../design-db.md) 的有界的连接），SQLite 上至多一个忙等时限，已经开始的这段等待不随调用方的上下文结束；PostgreSQL 上随上下文，或由 `lock_timeout`、`statement_timeout` 结束。引擎放弃等锁时，那条语句以引擎自己的错误失败，不带哨兵。语句本身照调用方的上下文执行，一次写取到的那条连接承载它的整个事务与失败之后的核对读，并在写之后的那次重读之前放回，重读另取一条。
+**名册自己的每一次读写经数据库模块的 `Connection` 取交付连接池里的一条连接，取连接的界为五秒**（[ADR-tenant-directory-2026-09-29](../../../adr/adr-tenant-directory-2026-09-29.md)、[ADR-db-waits-2026-09-29](../../../adr/adr-db-waits-2026-09-29.md)）：整张名册的读、进入方法按标识的那一读、写入与写入里的核对读都是。调用方占着的连接，名册等多久都等不到——只开一条连接的库上，调用方在交付句柄上开着的事务占着那条连接，要到它自己的调用返回之后才放开——而一条语句分不出这种占用与别的调用方的短暂占用，因而给等待设界，而不是去识别它。五秒与审计模块自己写的行取同一个界（见 [audit](../audit/design-audit.md) 的写入的等待）。五秒之内取不到连接以 `ErrNoConnection` 作答，什么也没做；调用方的上下文先于这个界结束时，以上下文的错误作答。**界只管取连接**：每一条语句等别的连接占着的锁照引擎自己的设置等（见 [db](../design-db.md) 的有界的连接），SQLite 上至多一个忙等时限，已经开始的这段等待不随调用方的上下文结束；PostgreSQL 上随上下文，或由 `lock_timeout`、`statement_timeout` 结束。引擎放弃等锁时，那条语句以引擎自己的错误失败，不带哨兵。语句本身照调用方的上下文执行，一次写取到的那条连接承载它的整个事务与失败之后的核对读，并在写之后的那次重读之前放回，重读另取一条。
 
 **一条语句失败之后，名册在同一条连接上、事务之外问库里有没有名册表**：SQLite 上看 GORM 迁移器列出的主库的表；PostgreSQL 上读系统目录，看会话的搜索路径列出的模式里有没有这个名字的关系，那是那条语句找表的地方，本模块的迁移也把表建在那里（[ADR-tenant-directory-2026-09-29](../../../adr/adr-tenant-directory-2026-09-29.md)）。搜索路径按 PostgreSQL 切分标识符列表的规则读出，`$user` 换成会话当前的角色；角色没有 USAGE 的模式照样算，PostgreSQL 不经列出也搜索的系统目录与会话的临时模式一并算上。读系统目录不看对表与模式的权限：信息模式只列出角色有权限的表，按语句的路径解析名字又会跳过角色没有 USAGE 的模式——PostgreSQL 把这样的模式从生效的路径里去掉——两者都会把一张在的表当成不在，把一次权限不足答成要迁移。没有名册表时以 `ErrRosterMissing` 作答；有、或这一问本身失败时，那条语句的失败原样交出。这一问放在事务之外，因为 PostgreSQL 上一条语句失败的事务不再接受任何语句；它同样照引擎的规矩等锁，SQLite 上整个库被占着时再等一个忙等时限。整表读一次只有一个在进行，等槽位的一方等到占着它的读结束：那次读至多等五秒取连接，再照引擎的时限等锁。
 
@@ -725,7 +730,7 @@ flowchart TD
 | 解析模块、名册模块与各自的排他交付 | 已实现 | `pkg/tenant/resolve/resolve.go` `Module`、`pkg/tenant/catalog/catalog.go` `Module` |
 | 准入子包 `tenant.admission`、排他交付与定序锚点 `tenant.Admission` | 已实现 | `pkg/tenant/admission/admission.go` `Module`；`pkg/tenant/capabilities.go` `Admission` |
 | 名册表与它的迁移集 | 已实现 | `pkg/tenant/catalog/migrations/`；`catalog.go` `migrationsFS` |
-| 名册的读写面与两个索引的快照 | 已实现 | `pkg/tenant/catalog/roster.go` `Get`、`ByAlias`、`Put`、`Create`、`SetStatus`、`List`、`afterWrite`；`snapshot.go` `buildSnapshot` |
+| 名册的读写面与两个索引的快照 | 部分实现 | `pkg/tenant/catalog/roster.go` `Get`、`ByAlias`、`Put`、`Create`、`SetStatus`、`List`、`afterWrite`；`snapshot.go` `buildSnapshot` |
 | 名册的语句经 `Connection` 取交付连接，表不在、取不到连接与其余失败分开作答，PostgreSQL 上在搜索路径列出的模式里读系统目录 | 已实现 | `pkg/tenant/catalog/roster.go` `onConnection`、`connectionWait`、`failedStatement`、`tableAbsent`、`namedSchemas`、`searchPath`、`quotedName`、`answered`、`lookUp`；`pkg/tenant/errors.go` `ErrNoConnection`、`ErrRosterMissing` |
 | 快照的周期刷新与 `Stop` 取消，整表读一次一个、按读的先后发布 | 已实现 | `pkg/tenant/catalog/roster.go` `start`、`stop`、`refreshOnce`、`read`、`acquire` |
 | 内建取法 `header`、`subdomain`、`path` | 已实现 | `pkg/tenant/resolve/extract.go` `headerExtractor`、`subdomainExtractor`、`pathExtractor` |

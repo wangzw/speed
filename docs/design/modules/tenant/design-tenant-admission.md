@@ -105,7 +105,7 @@ type ScopeGuard interface {
 
 - **把 `tenant.admission`、`authn.account`、`tenant.resolve` 与 `tenant.catalog` 的模块名一并写进命令。** 命令缺其一，依赖解析终止启动。
 - **`endpoints` 写成业务端，与 `tenant.resolve.endpoints` 一致。** 准入层所守的端上，租户解析豁免的路由没有租户上下文：非冒充身份照常放行，冒充身份得 404。宿主不应在允许冒充的端上对业务路由开租户解析的豁免。
-- **对租户与普通管理员不开放 `tenant.admission.*` 设置的写权限。** 设置的写入面没有访问控制，由宿主自己鉴权（[design-settings](../design-settings.md)）。
+- **对租户与普通管理员不开放 `tenant.admission.*` 设置的写权限。** 设置的写入面没有访问控制，由宿主自己鉴权（[design-settings](../settings/design-settings.md)）。
 - **需要运营账号读租户数据时，经 `authn.tenant.access` 放行，或自写 handler。** 静态口令表主体不是任何租户的成员。
 - **装配里要有授权或宿主自己的角色判定。** 准入层之后的权限判定不在本层。
 
@@ -290,7 +290,7 @@ flowchart TD
 成员结果、豁免结果与放行结果缓存在进程内，键是（账户，租户），时长取设置 `tenant.admission.check-ttl`，0 关闭缓存。出错不缓存。放宽只来自缓存与设置快照的刷新周期：
 
 - 成员被移除或暂停后，其他副本最多在 `check-ttl` 内仍放行；`authn.membership.changed` 事件（载荷含 `account_id`，信封带租户）使各副本丢弃该账户在该租户的缓存项，缩短这个窗口；事件总线缺席或事件丢失时，窗口仍以 `check-ttl` 为界。事件是提示，不是权威。
-- 租户设置刚开启 `require-mfa` 或 `require-sso` 之后，设置的刷新周期内个别副本仍放行。准入判定读设置读的是内存快照，不做 IO，变更经 `settings.changed` 事件与周期刷新传播（[design-settings](../design-settings.md)）。
+- 租户设置刚开启 `require-mfa` 或 `require-sso` 之后，设置的刷新周期内个别副本仍放行。准入判定读设置读的是内存快照，不做 IO，变更经 `settings.changed` 事件与周期刷新传播（[design-settings](../settings/design-settings.md)）。
 - 准入层对 `Decider` 答复的 TTL 缓存是撤销生效延迟的上界之一：放行结果在缓存里保留至 `check-ttl` 过期，一个主体的平台级角色被撤销之后，其他副本最多在这个窗口内仍放行。见 [design-authz](../design-authz.md) 的非保证。
 
 订阅在 `Init` 里登记，类型静态，处理函数幂等，只做「丢本地缓存」。

@@ -300,10 +300,12 @@ type Requirement struct {
 | `authn/sso/oidc` | `authn.sso.oidc` | `LoginMethod` | 否 | `SSOProviders` | `settings.Store` ○、`event.Bus` ○、`audit.Audit` ○ | 无 |
 | `authn/impersonation` | `authn.impersonation` | `Impersonation` | 是 | `db.Database`、`mount.Mounter`、`Sessions`、`Accounts`、`Memberships`、`MFA`、`audit.Audit`、`ScopeGuard` | `Decider` ○（缺席即全拒）、`Tokens` ○、`settings.Store` ○、`event.Bus` ○ | `authn_impersonations` |
 | `authn/admin` | `authn.admin` | 无（只挂 `/auth/admin/*` 下的路由） | — | `mount.Mounter`、`Accounts`、`AccountAdmin`、`Memberships`、`audit.Audit` | `Sessions` ○、`MFA` ○、`SSOProviders` ○、全部 `SSOMetadataRefresher`、`Impersonation` ○、`Tokens` ○、`Decider` ○（缺席即全拒）；每组路由随对应能力在场才挂 | 无 |
+| `authn/profile` | `authn.profile` | 无（只挂 `B/me` 的两条路由） | — | `mount.Mounter`、`Accounts`、`AccountAdmin`、`MFA` | `settings.Store` ○、`audit.Audit` ○ | 无 |
+| `authn/invite` | `authn.invite` | 无（只挂邀请的签发面与接受面） | — | `db.Database`、`mount.Mounter`、`Accounts`、`AccountAdmin`、`Memberships`、`audit.Audit` | `Decider` ○（缺席即全拒）、`Throttle` ○、`settings.Store` ○、`event.Bus` ○、`outbox.Outbox` ○ | `authn_invitations` |
 
 `authn/guard` 与 `authn/authntest` 不登记模块：`guard.Require` 返回加强认证的 gin 处理器，`authntest` 是测试构造口。
 
-租户准入层不在本表：它是 `pkg/tenant` 下的模块 `tenant.admission`，排他交付定序锚点 `tenant.Admission` 与根包的 `ScopeGuard`，方向是它 import 本功能目录的根包（[design-tenant-admission](../tenant/design-tenant-admission.md)）。登录引擎把两块内容放在 `pkg/authn/login/internal` 下：`resolve` 把 `Proof` 解析成账户（开户、绑定、并入外部身份），`selfservice` 挂账户自助路由；两者不登记模块，只被登录引擎构造与调用（[design-authn-login](design-authn-login.md)）。
+租户准入层不在本表：它是 `pkg/tenant` 下的模块 `tenant.admission`，排他交付定序锚点 `tenant.Admission` 与根包的 `ScopeGuard`，方向是它 import 本功能目录的根包（[design-tenant-admission](../tenant/design-tenant-admission.md)）。登录引擎把两块内容放在 `pkg/authn/login/internal` 下：`resolve` 把 `Proof` 解析成账户（开户、绑定、并入外部身份），`selfservice` 挂账户凭据自助路由；两者不登记模块，只被登录引擎构造与调用（[design-authn-login](design-authn-login.md)）。
 
 **排他与并立。** 排他的是“必须恰有一个”的功能；并立的是可以有零个到多个、由消费方在 `Init` 里 `ResolveAll` 取用的功能。并立功能的集合是封闭的：`Verifier`、`LoginMethod`、`Factor`、`SSOMetadataRefresher`、`AccountLifecycle`、`ClaimsContributor`，各自一个模块，一律不排他、不局部违反；其余功能都排他，包括租户准入层交付的 `ScopeGuard`。判定接缝 `Decider`（排他）与首登开户钩子 `Provisioner`（非排他）由宿主或 `authz.guard` 交付，取用方一律以可选取用对待。
 
@@ -559,7 +561,7 @@ type SessionID string // 登录会话的公开标识（UUIDv7 文本），不是
 | `authn.gate` | 鉴别 | `(*authn.Gate)(nil)` | 无 | 本文 |
 | `tenant.resolve` | 鉴别 | `(*tenant.Resolution)(nil)` | `(*authn.Gate)(nil)` | [tenant](../tenant/design-tenant.md) |
 | `ratelimit` | 限流 | `(*ratelimit.Limiter)(nil)` | 无 | [ratelimit](../design-ratelimit.md) |
-| `audit.journal` | 记录 | `(*audit.Audit)(nil)` | 无 | [audit](../design-audit.md) |
+| `audit.journal` | 记录 | `(*audit.Audit)(nil)` | 无 | [audit](../audit/design-audit.md) |
 | `tenant.admission` | 授权 | `(*tenant.Admission)(nil)`、`(*authn.ScopeGuard)(nil)` | 无 | [design-tenant-admission](../tenant/design-tenant-admission.md) |
 | `authz.guard` | 授权 | `(*authz.Gate)(nil)` | `(*tenant.Admission)(nil)` | [design-authz](../design-authz.md) |
 

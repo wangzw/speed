@@ -52,7 +52,7 @@
 
 消费方声明对设置的构造期依赖，这是一次普通的模块依赖（[ADR-config-scope-2026-09-13](adr-config-scope-2026-09-13.md)）。
 
-依赖方向随之确定：按租户取值的模块依赖设置，设置不依赖它们。取用写法与依赖图位置见 [设置](../design/modules/design-settings.md)。
+依赖方向随之确定：按租户取值的模块依赖设置，设置不依赖它们。取用写法与依赖图位置见 [设置](../design/modules/settings/design-settings.md)。
 
 **接受的代价：**
 

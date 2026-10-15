@@ -436,7 +436,7 @@ WHERE id = ? AND ended_at IS NULL
 | 再次开始冒充 | `POST B/impersonation` |
 | 管理面 | 全部 `B/admin/*` |
 
-**冒充期间允许的路由**（封闭集合，登记为 `Impersonable`）：`DELETE B/impersonation`、`GET B/impersonation`、`POST B/logout`、`GET B/session`、`GET B/me`。`DELETE B/impersonation` 与 `GET B/impersonation` 由本模块登记；`POST B/logout` 与 `GET B/session` 由 [design-authn-session](design-authn-session.md) 经 `mount.Impersonable()` 登记，`GET B/me` 由 [design-authn-login](design-authn-login.md) 经 `mount.Impersonable()` 登记，路由的访问级别以各自的路由表为准。`POST B/logout` 登出的是发起者自己的会话，冒充随之结束：会话撤销使绑定的会话失效，`Active` 为假。
+**冒充期间允许的路由**（封闭集合，登记为 `Impersonable`）：`DELETE B/impersonation`、`GET B/impersonation`、`POST B/logout`、`GET B/session`、`GET B/me`。`DELETE B/impersonation` 与 `GET B/impersonation` 由本模块登记；`POST B/logout` 与 `GET B/session` 由 [design-authn-session](design-authn-session.md) 经 `mount.Impersonable()` 登记，`GET B/me` 由 [design-authn-profile](design-authn-profile.md) 经 `mount.Impersonable()` 登记，路由的访问级别以各自的路由表为准。`POST B/logout` 登出的是发起者自己的会话，冒充随之结束：会话撤销使绑定的会话失效，`Active` 为假。
 
 **分层拒绝。** 不在允许集合内的 authn 路由，冒充身份先被网关挡下：authn 的挂载端不被准入层守，网关对冒充身份只放进准入层所守的端与登记为 `Impersonable` 的路由，其余 401。处理器对 `Impersonating()` 再自检一次，答 403 `impersonation-restricted`，作为路由登记出错时的后备防线；网关与准入层从不写 403（[design-authn-gate](design-authn-gate.md)）。
 

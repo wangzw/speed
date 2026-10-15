@@ -13,13 +13,13 @@
 
 ### 非职责
 
-- **不实现通路本身。** 事件总线与发件箱、审计的写入与脱敏、日志的脱敏层、指标的提供者归 [design-event](../event/design-event.md)、[design-outbox](../event/design-event-outbox.md)、[design-audit](../design-audit.md)、[design-log](../design-log.md)、[design-observability](../design-observability.md)；本文只写认证在这些通路上的用法与承诺。
+- **不实现通路本身。** 事件总线与发件箱、审计的写入与脱敏、日志的脱敏层、指标的提供者归 [design-event](../event/design-event.md)、[design-outbox](../event/design-event-outbox.md)、[design-audit](../audit/design-audit.md)、[design-log](../design-log.md)、[design-observability](../design-observability.md)；本文只写认证在这些通路上的用法与承诺。
 - **不承载日志脱敏的登记内容。** 键名、值形状与字面量的登记全集，以及永不记录项的例举，归 [design-authn-gate](design-authn-gate.md) 的脱敏规则一节；本文只写永不记录的判据。
 - **不承载配置键与设置键，包括放宽开关。** 归 [design-authn-config](design-authn-config.md)。
 - **不承载哨兵错误与依赖不可用时各条路径的方向。** 归 [design-authn-failure](design-authn-failure.md)；本文只写各通路自身的失败方向。
 - **不承载 `tenant.admission.decisions` 的属性与取值。** 该仪器归 tenant 目录，见 [design-tenant-admission](../tenant/design-tenant-admission.md)。
 - **不规定事件、审计行与指标的消费方如何处理。** 授权、审计、宿主、看板的行为归它们自己；本文固定它们可以引用的名字、载荷与取值，以及投递语义的缺口。
-- **不规定审计表的结构与审计的敏感键闭集。** 归 [design-audit](../design-audit.md)；认证的明细键名不依赖那个闭集。
+- **不规定审计表的结构与审计的敏感键闭集。** 归 [design-audit](../audit/design-audit.md)；认证的明细键名不依赖那个闭集。
 - **不承载威胁与对策。** 归 [design-authn-threats](design-authn-threats.md)。
 
 ## 术语表
@@ -112,7 +112,7 @@
 | `tenant.admission` | `authn.membership.changed` | 清成员关系缓存；处理见 [design-tenant-admission](../tenant/design-tenant-admission.md) |
 | 持有可在运行期改动的安全设置的模块（`authn.sms` 在其中） | `settings.changed` | 取值改到更宽松时写 Warn 并记尽力档审计 |
 
-上表之外的订阅方由各自文档承载，授权、审计与宿主是例举，判据是以事件为输入而不在上表之内的消费方。审计只订阅 `audit.journal` 配置里点名的类型；可观测性不订阅总线（[ADR-observability-events-2026-09-22](../../../adr/adr-observability-events-2026-09-22.md)）。「发件箱」列为「是」的类型在发件箱在场时经中继发布，到达订阅方的上下文是中继的，不带发布方的身份：审计订阅这些类型得到的行没有主体，也没有 `on_behalf_of`、`impersonation_scope` 与 `session`（规则见 [design-audit](../design-audit.md) 的非保证）。
+上表之外的订阅方由各自文档承载，授权、审计与宿主是例举，判据是以事件为输入而不在上表之内的消费方。审计只订阅 `audit.journal` 配置里点名的类型；可观测性不订阅总线（[ADR-observability-events-2026-09-22](../../../adr/adr-observability-events-2026-09-22.md)）。「发件箱」列为「是」的类型在发件箱在场时经中继发布，到达订阅方的上下文是中继的，不带发布方的身份：审计订阅这些类型得到的行没有主体，也没有 `on_behalf_of`、`impersonation_scope` 与 `session`（规则见 [design-audit](../audit/design-audit.md) 的非保证）。
 
 ### 审计
 
@@ -121,11 +121,11 @@
 **`actor` 与生效账户。** 审计同时记实际操作者与生效账户：
 
 - `actor` 列恒取实际操作者的责任键 `Key()`。
-- 冒充时，生效账户进 `Detail` 的 `on_behalf_of`，冒充范围进 `impersonation_scope`，会话进 `session`。这些键只由 `audit/journal` 在冒充行上写入，覆盖、剥掉与不改动调用方映射的规则只在 [design-audit](../design-audit.md) 的审计行的补全一节。认证自己的接缝级行因此不得写这些名字，记会话标识用 `sid`。审计表的结构不变。
+- 冒充时，生效账户进 `Detail` 的 `on_behalf_of`，冒充范围进 `impersonation_scope`，会话进 `session`。这些键只由 `audit/journal` 在冒充行上写入，覆盖、剥掉与不改动调用方映射的规则只在 [design-audit](../audit/design-audit.md) 的审计行的补全一节。认证自己的接缝级行因此不得写这些名字，记会话标识用 `sid`。审计表的结构不变。
 - 已认证路由上，`Record` 取上下文里的身份。登录引擎记登录审计行时用新认定的身份派生上下文（`internal/identity` 的 `With`，只在 authn 树内可见，登录引擎在 [design-authn](design-authn.md) 的写入方名单里，由依赖测试断言；派生的上下文只用于这一次 `Record`、不流回请求链），使 `actor` 是登录的账户而不是空串。
 - 登录失败时 `actor` 为空，用 `identifier_mac` 关联同一标识的多次失败。
 
-**明细键名**是下列封闭集合：`method`、`delivery`、`reason_class`、`sid`、`peer`、`identifier_mac`、`factor_id`、`kind`、`scope`、`by`、`tenant`、`change`、`provider`、`ttl_seconds`、`parent_sid`、`secret_id`、`source`、`on_behalf_of`、`impersonation_scope`、`session`、`grant_id`、`action_id`。明细键名不得取的名字有两部分：[design-audit](../design-audit.md) 的审计敏感闭集，以及下列禁用名的封闭集合：`code`、`otp`、`refresh_token`、`id_token`、`assertion`、`state`。值只放标识、枚举、计数与密钥摘要的前缀：
+**明细键名**是下列封闭集合：`method`、`delivery`、`reason_class`、`sid`、`peer`、`identifier_mac`、`factor_id`、`kind`、`scope`、`by`、`tenant`、`change`、`provider`、`ttl_seconds`、`parent_sid`、`secret_id`、`source`、`on_behalf_of`、`impersonation_scope`、`session`、`grant_id`、`action_id`。明细键名不得取的名字有两部分：[design-audit](../audit/design-audit.md) 的审计敏感闭集，以及下列禁用名的封闭集合：`code`、`otp`、`refresh_token`、`id_token`、`assertion`、`state`。值只放标识、枚举、计数与密钥摘要的前缀：
 
 - `identifier_mac` 是带密钥的摘要的前 16 个十六进制字符，用来关联同一标识的多次失败而不存标识。
 - `grant_id` 是冒充开始的动作标识，在 `Decide` 通过之后、审计写入之前预先生成。

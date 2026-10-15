@@ -12,7 +12,7 @@
 
 **事件与写入的先后。** 账户状态、账户删除、成员关系的变化被授权与别的模块订阅，用来清除角色绑定、会话与缓存；丢失一条意味着残留一条指向已失效账户的绑定。总线的发布独立于事务，发布失败不回滚写入；发件箱在写入的事务里暂存、提交之后由中继发布，承诺至少一次，要求宿主装配中继与总线（[ADR-outbox-scope-2026-09-29](adr-outbox-scope-2026-09-29.md)）。
 
-**审计。** 请求级采集在没有身份的豁免路由上取不到行动者；登录与 SSO 回调恰在这类路由上发生。接缝级的 `Audit.Record` 由调用方主动交出一行，在 `Start` 之前返回 `ErrNotAccepting`，在 `Start` 之后可能因写表失败返回 `ErrWriteFailed`。接缝写入另占一条连接，在调用方的事务里调用它会在单写者引擎上等锁而失败（[design-audit](../design/modules/design-audit.md)）。审计表的列是对读它的宿主的承诺，只有明细里的键可以自由增减（[ADR-audit-sink-2026-09-29](adr-audit-sink-2026-09-29.md)）。身份分实际操作者与生效账户，冒充期间两者不同（[ADR-authn-identity-2026-10-10](adr-authn-identity-2026-10-10.md)、[ADR-authn-impersonation-2026-10-10](adr-authn-impersonation-2026-10-10.md)）。
+**审计。** 请求级采集在没有身份的豁免路由上取不到行动者；登录与 SSO 回调恰在这类路由上发生。接缝级的 `Audit.Record` 由调用方主动交出一行，在 `Start` 之前返回 `ErrNotAccepting`，在 `Start` 之后可能因写表失败返回 `ErrWriteFailed`。接缝写入另占一条连接，在调用方的事务里调用它会在单写者引擎上等锁而失败（[design-audit](../design/modules/audit/design-audit.md)）。审计表的列是对读它的宿主的承诺，只有明细里的键可以自由增减（[ADR-audit-sink-2026-09-29](adr-audit-sink-2026-09-29.md)）。身份分实际操作者与生效账户，冒充期间两者不同（[ADR-authn-identity-2026-10-10](adr-authn-identity-2026-10-10.md)、[ADR-authn-impersonation-2026-10-10](adr-authn-impersonation-2026-10-10.md)）。
 
 **日志与指标。** 日志里的身份值是账户标识，而 `subject` 在账户体系里指外部身份绑定的主体（外部标识的第二段），同名字段会让读日志的人把两类标识读混；冒充时实际操作者与生效账户并存，一个字段也无法同时表达两者。配置的 `Sensitive` 只约束配置模块自己的输出面（错误文本、帮助默认值、必须带说明），不向日志模块登记脱敏规则，所以标为 `Sensitive` 的值不会因此被日志遮蔽。指标经 `observability.MeterProvider` 报出，属性的基数由上报方负责；路由与租户已因基数不可控被入口指标否决（[ADR-observability-instruments-2026-09-22](adr-observability-instruments-2026-09-22.md)）。网关的收口计数器 `authn.gate.conclusions` 的名字与取值已被看板引用。
 

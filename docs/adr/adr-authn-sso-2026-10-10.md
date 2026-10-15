@@ -8,7 +8,7 @@
 
 企业租户要用自己的 IdP 登录，协议为 SAML 2.0 或 OIDC。这件事带来以下彼此牵连的约束。
 
-**IdP 的配置是运行期才出现、数量不定、带秘密的数据。** 每个租户有自己的 IdP，租户管理员在运行期创建、修改与删除；OIDC 的 `client_secret` 属于它。设置的键必须在启动前静态声明，类型封闭、没有容器，值明文落库，读取接口照常交出敏感项（[settings](../design/modules/design-settings.md)）；配置的容器叶子只能来自主配置源，整体替换，键不进清单（[config](../design/modules/design-config.md)）。两者都不是为这种数据设计的。
+**IdP 的配置是运行期才出现、数量不定、带秘密的数据。** 每个租户有自己的 IdP，租户管理员在运行期创建、修改与删除；OIDC 的 `client_secret` 属于它。设置的键必须在启动前静态声明，类型封闭、没有容器，值明文落库，读取接口照常交出敏感项（[settings](../design/modules/settings/design-settings.md)）；配置的容器叶子只能来自主配置源，整体替换，键不进清单（[config](../design/modules/design-config.md)）。两者都不是为这种数据设计的。
 
 **回调到达时没有租户上下文。** 校验后端在租户解析之前运行，看不到租户（[ADR-tenant-ordering-2026-09-21](adr-tenant-ordering-2026-09-21.md)）。IdP 把浏览器送回回调地址时，处理器要知道这次登录属于哪一个 IdP，而请求面上没有租户可读。租户插件对「没有租户上下文的受约束语句」直接拒绝，IdP 表要在没有租户上下文的路径上被读取。
 

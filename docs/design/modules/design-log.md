@@ -61,6 +61,8 @@ type Span struct {
 
 本模块排他地交付 `(*Logger)(nil)`。`Named` 返回的 logger 带 `ModuleAttrKey` 这个属性（值为模块名），其处理链是共享的。模块在 `New` 中取得它并长期持有，用于没有请求上下文的日志。
 
+本模块另交付一个取用 logger 的便捷入口 `NamedFor`：它取 `(*Logger)(nil)` 能力的实例，返回以给定名字命名的 logger，等价于对那份实例调用 `Named`。宿主原先把「解析日志能力并以模块名命名」这段写在自己的代码里，`NamedFor` 把它收进本模块，使「模块的 logger 以模块名命名」成为框架层面的一处约定（[ADR-shared-helper-scope-2026-10-15](../../adr/adr-shared-helper-scope-2026-10-15.md)）。
+
 模块名导出为常量：
 
 ```go
@@ -620,6 +622,7 @@ log:
 | 功能 | 状态 | 代码 |
 |---|---|---|
 | 日志功能与按名取用 | 已实现 | `pkg/log/log.go` `Logger`、`pkg/log/module.go` `logger` |
+| 取用 logger 的便捷入口 `NamedFor` | 未实现 | — |
 | 脱敏规则的登记 | 已实现 | `pkg/log/log.go` `Redaction`、`pkg/log/rules.go` `ruleSet`、`AddKeys`、`AddPattern` |
 | 上下文存取，按键替换与撤下 | 已实现 | `pkg/log/context.go` `FromContext`、`WithLogger`、`WithAttrs`、`WithoutAttrs` |
 | 进程根 logger 与引导链 | 已实现 | `pkg/log/bootstrap.go` `Default`、`newBootstrapChain` |

@@ -13,12 +13,13 @@
 - 报告各监听端是否仍在接受请求。
 - 定义资源类型 `Spec`，供模块声明自己的 OpenAPI 文档片段，并在启动时校验其形状。
 - 定义默认的错误响应形状，经可选接缝接受定制，并提供写出它的入口，供各层与 handler 取用（[ADR-http-errors-2026-10-10](../../../adr/adr-http-errors-2026-10-10.md)）。
+- 提供一个请求体绑定的入口 `BindJSON`，把绑定与校验的失败归成 413、400 或 422，并经写出入口答出（[ADR-http-bind-and-error-shape-2026-10-15](../../../adr/adr-http-bind-and-error-shape-2026-10-15.md)）。
 
 登记面用 gin 的类型表达：路由的 handler 与中间件的 `Handler` 都是 `gin.HandlerFunc`。**本模块是 gin 的封装**（[ADR-http-surface-2026-09-14](../../../adr/adr-http-surface-2026-09-14.md)、[ADR-module-packaging-2026-09-14](../../../adr/adr-module-packaging-2026-09-14.md)）：路由匹配与路径的语法、中间件的调度、请求体的绑定与校验、响应的渲染都由 gin 提供，本模块不在其上另设一层，也不包装它们；它承担的是装配。取用本模块的宿主因而承受 gin 的依赖闭包。
 
 ### 非职责
 
-- **不提供请求体绑定、校验与响应渲染。** 它们是 gin 的，handler 直接用 `gin.Context` 的方法；本模块不包装它们，也不提供替代品。
+- **不替代 gin 的绑定与校验器。** 请求体绑定与校验可经本模块的薄入口 `BindJSON`（见外部接口契约），它走 gin 的绑定能力，不是另写一套绑定语；响应渲染仍直接用 `gin.Context` 的方法，本模块不为 handler 自己写出的响应包装。
 - **不改动 gin 绑定与校验器的进程级设置。** 那些设置对同一进程里的全部 gin 引擎生效，归宿主决定。
 - **不认识任何具体功能。** 认证（[authn](../authn/design-authn.md)）、租户、限流是各自模块的事，本模块只按它们声明的约束排序，不知道任何一层做什么（[ADR-http-middleware-2026-09-14](../../../adr/adr-http-middleware-2026-09-14.md)）。
 - **不为 handler 自己写出的响应定形状。** 默认的错误响应形状只覆盖本模块写出的响应与经写出入口写出的响应（见外部接口契约）；handler 用 gin 自己写出的响应，本模块不拦截。
@@ -175,7 +176,7 @@ type Spec struct {
 
 `Document` 是片段而非完整的规格：它描述声明它的那个模块提供的 API，一个进程的完整规格由读取方把各片段合并得出。模块通常以 `//go:embed` 把自己的 `openapi.json` 读进来。
 
-`Spec` 不参与路由。它供文档合并、网关配置与权限清单这些发生在装配之外的用途读取，与实际登记是两份各自维护的事实（[ADR-http-routing-2026-09-14](../../../adr/adr-http-routing-2026-09-14.md)）。读取方用 `core.Resources[http.Spec](reg)` 取得全部片段，每一份都带着声明它的模块名，合并冲突因而能点到来源。
+`Spec` 不参与路由。它供文档合并、网关配置与权限清单这些发生在装配之外的用途读取，与实际登记是两份各自维护的事实（[ADR-http-routing-2026-09-14](../../../adr/adr-http-routing-2026-09-14.md)）。读取方用 `core.Resources[http.Spec](reg)` 取得全部片段，每一份都带着声明它的模块名，合并冲突因而能点到来源。**本模块交付的片段由运行面 [ops](../design-ops.md) 合并并发布，它取可用集、不做减法**（见 [ops](../design-ops.md) 的取材域与 [ADR-ops-spec-reader-2026-10-15](../../../adr/adr-ops-spec-reader-2026-10-15.md)）。
 
 **取材域**（架构不变量 15）。本模块自己的形状校验取**可用集**：它只校验声明而不让声明生效，而畸形与否是静态事实，让一条声明因为本次没被纳入而漏检，会使同一个二进制在两条命令下给出不同的启动结论。它跑在 `Prepare` 里，此时启用结果尚未消解出来，只有启用集不可取（声明集与参与集在这之前就已确定，见 [core](../design-core.md)）。**这个消费点不做减法**：形状校验只读声明、不让它生效，一个本次不运行的模块，其 `Spec` 的畸形仍是这个二进制的一份静态事实。**读取方的取材域由读取方自己裁定**：问"这个二进制提供哪些 API"取可用集，问"此刻这个进程在服务哪些 API"取启用集。本模块交出全部片段，不替读取方过滤——那是它对读取方的承诺，不是对取材域的规定。
 
@@ -193,7 +194,15 @@ type Spec struct {
 
 **时长项的零值不统一，判据是关掉它的后果由谁承担。** 多数时长项显式 0 表示关闭该项，后果限于配置者自己那个端。两项例外，显式 0 一律拒绝并给出理由：读取请求头的时限关掉之后，一个不发完头部的连接可以无限占住资源；排空时限关掉之后 `Stop` 会无限等一个卡不动的在途请求，而此时 context 已被剥掉取消、注册表也不施加停机超时，宿主阻塞在驱动里再无可打断的途径——排空时限正是 [ADR-http-shutdown-2026-09-14](../../../adr/adr-http-shutdown-2026-09-14.md) 指定用来满足「回调必须有界」的那一项。
 
-**请求体与响应**。handler 里的请求体绑定、校验与响应渲染直接用 `gin.Context` 的方法，本模块不包装它们。请求体的大小上限由该端配置的 `max-body-bytes` 施加，落在一个内建层上（见请求体上限一节）：对该端的每个 handler 一律生效，无论谁以哪种方式读 body。声明了 `Content-Length` 且超限的请求，在该层就被写出一次 413；长度未知的请求被包住，读到超限时以 `*nethttp.MaxBytesError` 结束，调用方用 `errors.As` 判别。
+**请求体与响应**。handler 的请求体绑定与校验可经本模块的 `BindJSON`，也可直接用 `gin.Context` 的方法；响应渲染仍直接用 `gin.Context` 的方法。
+
+```go
+// BindJSON 把请求体绑定到 dst，把绑定与校验的失败归成 413、400 或 422，
+// 经 Fail 写出 Problem 并返回 false；成功返回 true。
+func BindJSON(c *gin.Context, dst any) bool
+```
+
+`ShouldBindJSON` 失败时，`*nethttp.MaxBytesError` 归 413、其余归 400；绑定成功而 `dst` 实现 `interface{ Validate() error }` 并报错时归 422。请求体的大小上限由该端配置的 `max-body-bytes` 施加，落在一个内建层上（见请求体上限一节）：对该端的每个 handler 一律生效，无论谁以哪种方式读 body。声明了 `Content-Length` 且超限的请求，在该层就被写出一次 413；长度未知的请求被包住，读到超限时以 `*nethttp.MaxBytesError` 结束，调用方用 `errors.As` 判别。
 
 **错误响应**。本模块写出的错误响应有一个默认形状，可由一个可选接缝整体替换；供各层与 handler 写出错误响应的入口与它们共用同一处决定形状（[ADR-http-errors-2026-10-10](../../../adr/adr-http-errors-2026-10-10.md)）：
 
@@ -572,6 +581,7 @@ gin 的 `*gin.Context` 只在它所属那次请求的处理期间有效：handle
 | 请求路径的 panic 兜底 | 已实现 | `pkg/http/recovery.go` `recovery`、`answerDefect`、`panicError`、`handlerDefect`、`discardRepresentationHeaders`、`stackTrace` |
 | 每请求一条访问记录 | 已实现 | `pkg/http/accesslog.go` `accessLog`、`answeredWith` |
 | 请求体上限 | 已实现 | `pkg/http/bodylimit.go` `bodyLimit`、`limitedBody` |
+| 请求体绑定入口 `BindJSON` | 未实现 | — |
 | 拒绝文本的本地化渲染与本模块的消息目录 | 已实现 | `pkg/http/messages.go` `localesFS`、`messageCatalog`、`refusalKey`、`refusalTitle`，`pkg/http/locales/*.json`；`pkg/http/module.go` `localizerFor` |
 | 错误响应的形状与写出入口 | 已实现 | `pkg/http/problem.go` `Problem`、`ErrorResponder`、`Fail`、`respondProblem`，`pkg/http/module.go` `errorResponder` |
 | `Spec` 资源、形状校验与查询 | 已实现 | `pkg/http/surface.go` `Spec`、`pkg/http/spec.go` `validateSpecs`、`validateSpec` |

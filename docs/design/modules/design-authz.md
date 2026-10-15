@@ -24,7 +24,7 @@
 - **不管理成员关系。** 「账户是不是租户的成员」是认证的表 `authn_memberships` 的事实，归 `authn.account`；本模块只按（账户，租户）绑定角色，不读、不写成员关系，也不核对它。
 - **不做租户解析，不读租户名册解释请求面的租户。** 请求属于哪个租户由 `tenant.resolve` 认定，本模块读 `tenant.FromContext` 的标识（[tenant](tenant/design-tenant.md)）。平台域的保留值只用于策略裁决，不构成一次租户解析。
 - **不把角色放进令牌，也不把它们放进任何凭据。** 访问令牌不带角色（[authn-token](authn/design-authn-token.md)）；角色在请求期由本模块按生效账户实时查自己的绑定，令牌有效期内改绑定即时生效的方向与认证的取态一致。
-- **不做审计的存储与脱敏。** 判定与拒绝路径经请求级捕获进入审计，审计行的补全、脱敏与存放归 [audit](design-audit.md)；这些路径不调 `Audit.Record`，不写审计表，也不决定明细里遮蔽哪些键。**管理面是唯一例外**：`authz.admin` 的每次写在动作之前经强制档审计调用一次 `Audit.Record`（见[管理面](#管理面)），它只落这一笔强制行、失败时另补一行 `failed`；遮蔽哪些键仍归 audit。
+- **不做审计的存储与脱敏。** 判定与拒绝路径经请求级捕获进入审计，审计行的补全、脱敏与存放归 [audit](audit/design-audit.md)；这些路径不调 `Audit.Record`，不写审计表，也不决定明细里遮蔽哪些键。**管理面是唯一例外**：`authz.admin` 的每次写在动作之前经强制档审计调用一次 `Audit.Record`（见[管理面](#管理面)），它只落这一笔强制行、失败时另补一行 `failed`；遮蔽哪些键仍归 audit。
 - **不定义响应体的形状。** 本模块决定拒绝的状态码、`Problem.Type` 与必要的响应头；响应体经入口模块的 `Fail` 写出，形状由入口模块的默认形状或交付 `ErrorResponder` 的模块决定（[http](http/design-http.md)）。
 - **写出缺身份时的 401，且它与准入层的无身份 401 同形。** 这条不推翻「不做认证」：它是「路由需要认证而没有身份」的拒绝，与准入层写出的那个 401 是同一个判定，形状也保持相同——同为 `Problem{Status: 401}`（不带 `Type`），头按准入层无身份 401 的同一规则组装（[authn-gate](authn/design-authn-gate.md)）。它出现在这里，因为授权阶段也在网关之内：网关缺席或没守这个端时，授权层是链上唯一还能拒绝匿名请求的层，而准入层只在它自己所守的端上运行；两处写出同一个形状，调用方就不必按「谁拒的」分辨它们的读法（[tenant-admission](tenant/design-tenant-admission.md)、[authn](authn/design-authn.md)）。
 - **不实现管理面的访问控制之外的任何业务动作。** `authz.admin` 只把权限目录、角色、权限授予与角色绑定的读写暴露成 HTTP 路由，动作本身是 `policy` 的表操作。
@@ -214,8 +214,8 @@ const (
 
 下列各条即本模块承接的全部权限点，由本模块以权限常量与策略行的形状落地；策略数据由宿主经 `Manager` 写入，本模块不在迁移里种任何角色或绑定。
 
-- **审计的检索与导出**：权限 `audit.read` 与 `audit.export`。审计不提供查询面（[audit](design-audit.md)），检索与导出的端点由宿主或审计的检索单元挂出，它们的授权经本模块的 `Gate` 或 handler 内 API 落到 `audit.read` 与 `audit.export` 上。
-- **设置的写入面**：权限 `settings.read` 与 `settings.write`。设置的写入面没有访问控制，由宿主经本模块鉴权（[settings](design-settings.md)）。
+- **审计的检索与导出**：权限 `audit.read` 与 `audit.export`。审计不提供查询面（[audit](audit/design-audit.md)），检索与导出的端点由宿主或审计的检索单元挂出，它们的授权经本模块的 `Gate` 或 handler 内 API 落到 `audit.read` 与 `audit.export` 上。
+- **设置的写入面**：权限 `settings.read` 与 `settings.write`。设置的写入面没有访问控制，由宿主经本模块鉴权（[settings](settings/design-settings.md)）。
 - **口令表主体（`static.*`）的角色**：本模块只提供形状——保留的平台域 `system`、内置的运营角色、以及绑定表；口令表主体的平台角色由宿主写入，不在迁移里种。`Identity.Account().IsStatic()` 的主体读不到任何成员关系，其权限只来自平台域上的绑定。
 - **谁有权冒充谁**：权限 `authn.impersonation.start`、`authn.impersonation.read`、`authn.impersonation.revoke`，在租户域上判定。冒充的结构性限制（发起者、目标、参数、并发）由 `authn.impersonation` 核对，本模块在其之上收紧「谁能冒充谁」（[authn-impersonation](authn/design-authn-impersonation.md)）。
 

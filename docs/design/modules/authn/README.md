@@ -1,6 +1,6 @@
 # 认证
 
-认证功能的文档索引。主文档给出职责边界、模块清单与依赖、身份与判决的形状、状态放置与链上次序；网关、账户、登录、会话、令牌、多因素、短信、企业 SSO、冒充、管理面及各项横切主题各一份子模块文档。
+认证功能的文档索引。主文档给出职责边界、模块清单与依赖、身份与判决的形状、状态放置与链上次序；网关、账户、登录、会话、令牌、多因素、短信、企业 SSO、冒充、管理面、邀请、用户档案及各项横切主题各一份子模块文档。
 
 ## 索引
 
@@ -17,6 +17,8 @@
 | [authn-sso](design-authn-sso.md) | 企业单点登录：租户自有身份提供方的登记、邮箱域所有权与发现、SAML 与企业 OIDC 的校验 |
 | [authn-impersonation](design-authn-impersonation.md) | 冒充：有期限的冒充记录、结构性限制、有效性判定、审计先于动作 |
 | [authn-admin](design-authn-admin.md) | 对授权的承诺：判定接缝、管理面模块、自助范围的判据、403 的收窄 |
+| [authn-invite](design-authn-invite.md) | 邀请：自持状态机与不透明令牌、接受即兑现的账户与成员关系创建 |
+| [authn-profile](design-authn-profile.md) | 用户档案自服务面：身份取自上下文、路径不带账户标识的读改路由 |
 | [authn-config](design-authn-config.md) | 认证的配置键、设置键与秘密的存放、放宽开关、启动期自检 |
 | [authn-events](design-authn-events.md) | 认证的事件、审计、日志与指标：名字、载荷与属性的全集 |
 | [authn-failure](design-authn-failure.md) | 认证的错误与失败语义：哨兵表、依赖不可用时每条路径的方向、有界放宽、时间的使用 |
@@ -40,3 +42,5 @@
 | [authn-events](design-authn-events.md) | 已实现 |
 | [authn-failure](design-authn-failure.md) | 已实现 |
 | [authn-threats](design-authn-threats.md) | 已实现 |
+| [authn-invite](design-authn-invite.md) | 未实现 |
+| [authn-profile](design-authn-profile.md) | 未实现 |
