@@ -25,14 +25,33 @@ const (
 // The seam-level audit actions and outcome of the self-service revocation
 // routes, taken from the capability's closed action table. Both actions are in
 // the best-effort tier: a row that cannot be written is an Error and never
-// changes the route's outcome. The object is the session for the routes that
-// name one and the account for the route that revokes the others, which is the
-// same split the management surface uses for the same action.
+// changes the route's outcome. The object is the session the row is about, and a
+// route that revokes several sessions writes one row per session, which is what
+// the management surface does for the same action.
 const (
 	actionLogout        = "authn.logout"
 	actionSessionRevoke = "authn.session.revoke"
 	outcomeSuccess      = "success"
 )
+
+// revocationTargets lists the live sessions a bulk revocation of the account
+// ends, the current one excepted. The audit row of a revocation names the
+// session it revoked, so the set is read before the action rather than counted
+// after it.
+func (p *product) revocationTargets(ctx context.Context, account authn.AccountID, except authn.SessionID) ([]authn.SessionID, error) {
+	rows, err := p.liveRows(ctx, account, p.now(), "created_at DESC, id DESC")
+	if err != nil {
+		return nil, err
+	}
+	out := make([]authn.SessionID, 0, len(rows))
+	for _, row := range rows {
+		if row.ID == string(except) {
+			continue
+		}
+		out = append(out, authn.SessionID(row.ID))
+	}
+	return out, nil
+}
 
 // recordAudit writes one best-effort seam-level audit row. A failure is an
 // Error and never changes the outcome of the route, and an assembly with no
@@ -180,16 +199,35 @@ func (p *product) handleRevokeOthers(c *gin.Context) {
 	if !ok {
 		return
 	}
-	n, err := p.RevokeAccount(c.Request.Context(), id.Account(), id.Session(), authn.ReasonSelf)
+	ctx := c.Request.Context()
+	// The audit row of a revocation names the session it revoked, so a bulk
+	// revocation writes one row per session and the set is read before the
+	// action. The set is the live one, and the bulk statement ends every
+	// unrevoked browser and token row: a row past its deadline goes with it and
+	// is named by no row of its own.
+	targets, err := p.revocationTargets(ctx, id.Account(), id.Session())
+	if err != nil {
+		p.routeFailure(c, "listing the sessions to revoke", err)
+		return
+	}
+	// With nothing to name there is nothing to revoke: the statement would end
+	// only rows past their deadline, with no row to account for ending them.
+	if len(targets) == 0 {
+		c.JSON(http.StatusOK, gin.H{"revoked": 0})
+		return
+	}
+	n, err := p.RevokeAccount(ctx, id.Account(), id.Session(), authn.ReasonSelf)
 	if err != nil {
 		p.routeFailure(c, "revoking the other sessions", err)
 		return
 	}
-	p.recordAudit(c.Request.Context(), audit.Entry{
-		Action:  actionSessionRevoke,
-		Object:  string(id.Account()),
-		Outcome: outcomeSuccess,
-	})
+	for _, target := range targets {
+		p.recordAudit(ctx, audit.Entry{
+			Action:  actionSessionRevoke,
+			Object:  string(target),
+			Outcome: outcomeSuccess,
+		})
+	}
 	c.JSON(http.StatusOK, gin.H{"revoked": n})
 }
 

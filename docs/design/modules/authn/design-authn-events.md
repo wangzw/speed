@@ -137,7 +137,7 @@
 | 动作 | 对象 | 结果 | 档 |
 |---|---|---|---|
 | `authn.login` | 账户标识（失败时空） | `success`、`failure`、`throttled`、`refused` | 尽力 |
-| `authn.logout`、`authn.session.revoke` | 会话标识 | `success` | 尽力；管理员撤销他人会话时强制 |
+| `authn.logout`、`authn.session.revoke` | 会话标识（批量撤销时逐个会话各占一行） | `success` | 尽力；管理员撤销他人会话时强制 |
 | `authn.password.change`、`authn.factor.enroll`、`authn.factor.remove`、`authn.binding.link`、`authn.binding.unlink` | 账户标识 | `success`、`denied` | 尽力 |
 | `authn.mfa.reset` | 账户标识 | `success` | 强制 |
 | `authn.account.password` | 账户标识 | `success`、`denied` | 强制（管理员重置口令） |
@@ -339,6 +339,8 @@ audit.Entry{
 5. 动作成功：提交之后发布不经发件箱的事件。
 
 冒充开始的动作标识 `grant_id` 在判定通过之后、审计写入之前生成；其余强制档动作的 `action_id` 同样在审计写入之前生成。
+
+**一次动作命中多个对象时，准许行与失败行都逐对象各写一行。** 批量撤销一个账户的会话是这种动作：它在动作之前把**在用的**目标会话逐个读出，为每个会话写一行准许行，这些行共用同一个动作标识；动作失败时逐会话补写失败行，仍带那个标识。动作本身结束的是该账户全部未撤销的 browser 与 token 行，所以已过期而未撤销的行被它一并结束、却不占一行。目标集合为空时动作不执行、应答里的条数为零：审计写成功是动作执行的前提，而没有目标可指名时一行也写不出。准许行逐对象写，其中一行写失败与动作失败一样留下没有收口的行；审计与动作之间没有原子性，核实动作是否发生读动作自己的表。
 
 ### 尽力档
 

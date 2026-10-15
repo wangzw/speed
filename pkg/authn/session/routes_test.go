@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
+	"slices"
 	"strings"
 	"testing"
 
@@ -126,38 +127,43 @@ func TestLogoutRevokesTheCallersSession(t *testing.T) {
 
 // Every self-service revocation route writes the seam-level audit row of the
 // action it performed. The capability's action table puts logout and session
-// revocation in the best-effort tier, and the object is the session for the
-// routes that name one and the account for the route that revokes the others —
-// the same split the management surface uses for the same action.
+// revocation in the best-effort tier, and the object of a row is the session it
+// is about: a route that revokes several sessions writes one row per session,
+// which is what the management surface does for the same action.
 func TestTheSelfServiceRevocationRoutesWriteTheirAuditRows(t *testing.T) {
 	cases := []struct {
 		name   string
 		method string
 		// path is the route, with the session identifier the case acts on.
-		path   func(current, other authn.SessionID) string
-		action string
-		object func(current, other authn.SessionID) string
+		path    func(current, first, second authn.SessionID) string
+		action  string
+		objects func(current, first, second authn.SessionID) []string
 	}{
 		{
-			name:   "logout",
-			method: http.MethodPost,
-			path:   func(authn.SessionID, authn.SessionID) string { return "/auth/logout" },
-			action: "authn.logout",
-			object: func(current, _ authn.SessionID) string { return string(current) },
+			name:    "logout",
+			method:  http.MethodPost,
+			path:    func(authn.SessionID, authn.SessionID, authn.SessionID) string { return "/auth/logout" },
+			action:  "authn.logout",
+			objects: func(current, _, _ authn.SessionID) []string { return []string{string(current)} },
 		},
 		{
+			// The row names the session it revoked, so revoking the others writes
+			// one row per session revoked — and none for the current one, which
+			// the route keeps.
 			name:   "revoking the other sessions",
 			method: http.MethodDelete,
-			path:   func(authn.SessionID, authn.SessionID) string { return "/auth/sessions" },
+			path:   func(authn.SessionID, authn.SessionID, authn.SessionID) string { return "/auth/sessions" },
 			action: "authn.session.revoke",
-			object: func(authn.SessionID, authn.SessionID) string { return string(alice) },
+			objects: func(_, first, second authn.SessionID) []string {
+				return []string{string(first), string(second)}
+			},
 		},
 		{
-			name:   "revoking one session by identifier",
-			method: http.MethodDelete,
-			path:   func(_, other authn.SessionID) string { return "/auth/sessions/" + string(other) },
-			action: "authn.session.revoke",
-			object: func(_, other authn.SessionID) string { return string(other) },
+			name:    "revoking one session by identifier",
+			method:  http.MethodDelete,
+			path:    func(_, first, _ authn.SessionID) string { return "/auth/sessions/" + string(first) },
+			action:  "authn.session.revoke",
+			objects: func(_, first, _ authn.SessionID) []string { return []string{string(first)} },
 		},
 	}
 	for _, tc := range cases {
@@ -165,27 +171,59 @@ func TestTheSelfServiceRevocationRoutesWriteTheirAuditRows(t *testing.T) {
 			f := newFixture(t, dialects[0])
 			f.accounts.add(alice, nil)
 			current := f.create(newBrowser(alice))
-			other := f.create(newBrowser(alice))
+			first := f.create(newBrowser(alice))
+			second := f.create(newBrowser(alice))
 			f.mounter.As(authntest.WithAccount(alice), authntest.WithSession(current.ID))
 			sink := f.withAudit()
 
-			rec := send(t, f, tc.method, tc.path(current.ID, other.ID))
+			rec := send(t, f, tc.method, tc.path(current.ID, first.ID, second.ID))
 			if rec.Code != http.StatusNoContent && rec.Code != http.StatusOK {
 				t.Fatalf("status = %d, want 204 or 200", rec.Code)
 			}
-			rows := sink.entries()
-			if len(rows) != 1 {
-				t.Fatalf("the audit holds %d rows, want 1: %+v", len(rows), rows)
-			}
-			// The action, the object and the outcome are asserted as the literals
+			// The action, the objects and the outcome are asserted as the literals
 			// the capability's closed tables state, so the case does not move with
 			// a production constant.
-			wantObject := tc.object(current.ID, other.ID)
-			if rows[0].Action != tc.action || rows[0].Object != wantObject || rows[0].Outcome != "success" {
-				t.Errorf("the audit row = %+v, want action %q, object %q, outcome %q",
-					rows[0], tc.action, wantObject, "success")
+			var got []string
+			for _, row := range sink.entries() {
+				if row.Action != tc.action || row.Outcome != "success" {
+					t.Errorf("the audit row = %+v, want action %q and outcome success", row, tc.action)
+					continue
+				}
+				got = append(got, row.Object)
+			}
+			want := tc.objects(current.ID, first.ID, second.ID)
+			slices.Sort(got)
+			slices.Sort(want)
+			if !slices.Equal(got, want) {
+				t.Errorf("the audit names the sessions %v, want %v", got, want)
 			}
 		})
+	}
+}
+
+// A bulk revocation with nothing to name revokes nothing and writes no row. The
+// audit row names the session it revoked, so a revocation carried out with no
+// row to account for it is what the tier exists to prevent — and the session the
+// route keeps is not among the sessions to end.
+func TestRevokingTheOtherSessionsWithNoneToNameRevokesNothing(t *testing.T) {
+	f := newFixture(t, dialects[0])
+	f.accounts.add(alice, nil)
+	current := f.create(newBrowser(alice))
+	f.mounter.As(authntest.WithAccount(alice), authntest.WithSession(current.ID))
+	sink := f.withAudit()
+
+	rec := send(t, f, http.MethodDelete, "/auth/sessions")
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status = %d, want 200", rec.Code)
+	}
+	if got := strings.TrimSpace(rec.Body.String()); got != `{"revoked":0}` {
+		t.Errorf("the answer is %s, want no session revoked", got)
+	}
+	if rows := sink.entries(); len(rows) != 0 {
+		t.Errorf("the audit holds %v, want no row: no session was revoked", rows)
+	}
+	if f.row(current.ID).RevokedAt.Valid {
+		t.Error("the session the route keeps was revoked")
 	}
 }
 

@@ -4,10 +4,12 @@ import (
 	"encoding/json"
 	"errors"
 	"net/http"
+	"slices"
 	"strings"
 	"testing"
 	"time"
 
+	"github.com/vislake/speed/pkg/audit"
 	"github.com/vislake/speed/pkg/authn"
 	"github.com/vislake/speed/pkg/authn/authntest"
 	"github.com/vislake/speed/pkg/authn/internal/mount"
@@ -23,6 +25,16 @@ func auditHas(t *testing.T, r *rig, action, outcome string) bool {
 		}
 	}
 	return false
+}
+
+// identifiersIn collects the distinct values the rows carry under key, so a case
+// can tell rows linked by one identifier from rows carrying several.
+func identifiersIn(rows []audit.Entry, key string) map[string]bool {
+	out := map[string]bool{}
+	for _, row := range rows {
+		out[row.Detail[key]] = true
+	}
+	return out
 }
 
 // problemCode returns the machine-readable code of a problem response, the part
@@ -662,6 +674,110 @@ func TestTheAuditRowsCarryTheContract(t *testing.T) {
 	sess.do(http.MethodPost, "/auth/admin/accounts/"+string(userID)+"/revoke-sessions", nil, fresh()...)
 	if !auditHas(t, sess, actionSessionRevoke, outcomeSuccess) {
 		t.Error("the session revocation wrote no row named authn.session.revoke")
+	}
+}
+
+// TestABulkRevocationNamesEverySessionItRevokes holds that the audit row of a
+// revocation names the session it revoked, so revoking an account's sessions
+// writes one mandatory row per session, read before the action — and, when the
+// action fails, one failed row per session, with every row of the action linked
+// by the one action identifier. With nothing to name the action is not carried
+// out at all, so no revocation happens without a row to account for it.
+//
+// The action, the outcomes and the detail key are asserted as the literals the
+// capability's closed tables state, so the case does not move with a production
+// constant.
+func TestABulkRevocationNamesEverySessionItRevokes(t *testing.T) {
+	const (
+		revokeAction = "authn.session.revoke"
+		actionIDKey  = "action_id"
+		path         = "/auth/admin/accounts/" + string(userID) + "/revoke-sessions"
+	)
+	second := authn.SessionID("0190a6f2-3b6c-7c2e-8a4d-5e6f7a8b9c0e")
+	seed := func(r *rig, sessions ...authn.SessionID) {
+		r.accounts.put(userID, authn.Account{Kind: authn.KindUser, Status: authn.StatusActive})
+		for _, id := range sessions {
+			r.sessions.put(authn.SessionInfo{ID: id, Account: userID, Kind: authn.SessionBrowser})
+		}
+	}
+	want := []string{string(sessionA), string(second)}
+	slices.Sort(want)
+	// namedWith is the sessions the rows of one outcome name, sorted. Every row
+	// is held to the one action by the caller.
+	namedWith := func(rows []audit.Entry, outcome string) []string {
+		var named []string
+		for _, row := range rows {
+			if row.Outcome == outcome {
+				named = append(named, row.Object)
+			}
+		}
+		slices.Sort(named)
+		return named
+	}
+	onlyAction := func(t *testing.T, rows []audit.Entry) {
+		t.Helper()
+		for _, row := range rows {
+			if row.Action != revokeAction {
+				t.Errorf("the row = %+v, want the action %s", row, revokeAction)
+			}
+		}
+	}
+
+	// The action goes through: one permitted row per session, all of them
+	// carrying the one action identifier.
+	done := newRig(t)
+	seed(done, sessionA, second)
+	if rec := done.do(http.MethodPost, path, nil, fresh()...); rec.Code != http.StatusOK {
+		t.Fatalf("the bulk revocation answered %d, want 200: %s", rec.Code, rec.Body.String())
+	}
+	rows := done.audit.entries()
+	if len(rows) != 2 {
+		t.Fatalf("the audit holds %d rows, want one per session revoked: %+v", len(rows), rows)
+	}
+	onlyAction(t, rows)
+	if named := namedWith(rows, "success"); !slices.Equal(named, want) {
+		t.Errorf("the audit names %v, want the sessions revoked %v", named, want)
+	}
+	if got := identifiersIn(rows, actionIDKey); len(got) != 1 || got[""] {
+		t.Errorf("the rows carry the action identifiers %v, want one shared identifier", got)
+	}
+
+	// The action fails: the permitted rows are closed by failed rows under the
+	// same identifier, one per session, naming the same sessions.
+	failed := newRig(t)
+	seed(failed, sessionA, second)
+	failed.sessions.err = errors.New("the revocation failed")
+	if rec := failed.do(http.MethodPost, path, nil, fresh()...); rec.Code != http.StatusServiceUnavailable {
+		t.Fatalf("the failed bulk revocation answered %d, want 503: %s", rec.Code, rec.Body.String())
+	}
+	rows = failed.audit.entries()
+	if len(rows) != 4 {
+		t.Fatalf("the audit holds %d rows, want the two permitted and the two failed: %+v", len(rows), rows)
+	}
+	onlyAction(t, rows)
+	if named := namedWith(rows, "success"); !slices.Equal(named, want) {
+		t.Errorf("the permitted rows name %v, want the sessions revoked %v", named, want)
+	}
+	if named := namedWith(rows, "failed"); !slices.Equal(named, want) {
+		t.Errorf("the failed rows name %v, want the sessions the permitted rows name %v", named, want)
+	}
+	if got := identifiersIn(rows, actionIDKey); len(got) != 1 || got[""] {
+		t.Errorf("the rows carry the action identifiers %v, want one shared identifier", got)
+	}
+
+	// Nothing live to name: the account holds no session a caller could point
+	// at, so the action is not carried out and no row is written.
+	empty := newRig(t)
+	seed(empty)
+	rec := empty.do(http.MethodPost, path, nil, fresh()...)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("the bulk revocation with no session to name answered %d, want 200: %s", rec.Code, rec.Body.String())
+	}
+	if rows := empty.audit.entries(); len(rows) != 0 {
+		t.Errorf("the audit holds %v, want no row: no session was revoked", rows)
+	}
+	if empty.sessions.revokedAcct != 0 {
+		t.Error("the bulk revocation ran with nothing to name, so a revocation happened with no row to account for it")
 	}
 }
 
