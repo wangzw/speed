@@ -5,7 +5,7 @@
 - **持有邀请的状态机。** 一张 `authn_invitations` 表持有从「待接受」到终态的每一次迁移；签发、列表、撤销与接受都经它。邀请是一次**待兑现的成员关系授予**：它点名一个地址与一个租户，在被接受之前没有任何账户或成员行存在。
 - **接受即兑现。** 一次接受消费一个令牌，把一个地址变成一个账户（该地址还没有账户时）与一条成员关系，成员行的来源写 `invite`——这是 `Membership.Source` 早已声明的取值之一（`pkg/authn/internal/model/directory.go` `Membership.Source`）。接受的账户创建经 `AccountAdmin.Create`，账户规则仍归 `authn.account`。
 - **令牌是唯一凭据，只以摘要留存。** 接受不需要身份：持有令牌即持有加入该租户的能力。令牌明文只在签发应答里交出一次，落表的是它的 SHA-256；撤销因此是改状态，不是撤销一个签名。
-- **登记为模块 `authn.invite`**，排他交付根包接口 `Invites`；根包只放接口与数据类型，本子包注册模块（[design-authn](design-authn.md)）。
+- **登记为模块 `authn.invite`**，排他交付接口 `Invites`；接口与数据类型随它同处本子包（[design-authn](design-authn.md)）。
 
 ### 非职责
 
@@ -31,7 +31,7 @@
 
 ### 交付的功能
 
-本模块排他交付根包接口 `Invites`，由本模块回答。接口与值类型定义在根包 `pkg/authn`，与其余认证接缝同处（[design-authn](design-authn.md)）。
+本模块排他交付接口 `Invites`，由本模块回答。接口、值类型与哨兵一并定义在 `pkg/authn/invite`，不随其余认证接缝放进根包 `pkg/authn`（[design-authn](design-authn.md)；理由见 [ADR-authn-invitation-2026-10-15](../../../adr/adr-authn-invitation-2026-10-15.md)）。
 
 ```go
 // 邀请接缝：持有邀请的状态机，决定一条邀请能不能签发、能不能被一个令牌兑现。
@@ -104,14 +104,13 @@ func (s InvitationStatus) Valid() bool { return s <= InvitationRevoked }
 - **成员行的来源写 `invite`**：本模块落下的每一条成员行，`Membership.Source` 都取 `invite`。`Memberships.Put` 的成员关系变更事件（`authn.membership.changed`）随带该来源，订阅方据此分清邀请加入与管理员直加（[design-authn-events](design-authn-events.md)）。
 - **接受不受 `signup` 设置约束**：邀请接受是一次由租户管理员发起的显式授予，不是自助首次登录；`authn.account.signup` 只约束经社交或短信首次登录的开户。
 
-**接受的地址验证来源需要一个值。** 接受把被邀请的地址交给 `AccountAdmin.Create` 时，地址的验证渠道是「邀请送达该地址并被兑现」，与 `sms-code` 同类（一个送达地址的载荷被持有者出示）。认证账户模型的 `Verification` 封闭集当前只有 `sms-code`、`idp:<提供方标识>`、`admin`、`import-unverified`，本条要求补入邀请一值（`pkg/authn/internal/model/directory.go` `Verification`、`VerifiedViaSMSCode`）。它属于证据一类（`Verification.Proves` 为真），与 `admin`、`import-unverified` 这类未证明渠道分开。
+**接受的地址验证来源是 `invite`。** 接受把被邀请的地址交给 `AccountAdmin.Create` 时，地址的验证渠道是「邀请送达该地址并被兑现」，与 `sms-code` 同类（一个送达地址的载荷被持有者出示）。认证账户模型的 `Verification` 封闭集是 `sms-code`、`invite`、`idp:<提供方标识>`、`admin`、`import-unverified`（`pkg/authn/internal/model/directory.go` `Verification`、`VerifiedViaInvite`）。它属于证据一类（`Verification.Proves` 为真），与 `admin`、`import-unverified` 这类未证明渠道分开。
 
 ### 登记单元与名字
 
 | 包 | 模块名 | 交付 | 排他 |
 |---|---|---|---|
-| `pkg/authn`（根包） | 不登记 | `Invites` 接口与 `Invitation`、`InvitationStatus`、`Issued`、`IssueInvite`、`AcceptInvite` 及哨兵 | — |
-| `pkg/authn/invite` | `authn.invite` | `Invites` | 排他 |
+| `pkg/authn/invite` | `authn.invite` | `Invites`，以及 `Invitation`、`InvitationStatus`、`Issued`、`IssueInvite`、`AcceptInvite` 与哨兵 | 排他 |
 
 模块名照顶层能力：嵌套子包取 `authn.<功能>`，本模块取 `authn.invite`（[design-authn](design-authn.md)）。配置命名空间取同一取值。
 
@@ -156,12 +155,12 @@ func (s InvitationStatus) Valid() bool { return s <= InvitationRevoked }
 
 | 哨兵 | 定义处 | 含义 |
 |---|---|---|
-| `ErrInvitationNotFound` | `pkg/authn` | 令牌或邀请标识不指向任何一条邀请 |
-| `ErrInvitationExpired` | `pkg/authn` | 令牌属于一条已过期的待接受邀请 |
-| `ErrInvitationRevoked` | `pkg/authn` | 令牌属于一条已撤销的邀请 |
-| `ErrInvitationAlreadyAccepted` | `pkg/authn` | 令牌属于一条已接受的邀请，或撤销一条已接受的邀请 |
-| `ErrInvitationPending` | `pkg/authn` | 该（租户，地址）已有一条待接受邀请，签发的取代竞态输掉时报告 |
-| `ErrInvalidEmail` | `pkg/authn` | 被邀请的地址不成形 |
+| `ErrInvitationNotFound` | `pkg/authn/invite` | 令牌或邀请标识不指向任何一条邀请 |
+| `ErrInvitationExpired` | `pkg/authn/invite` | 令牌属于一条已过期的待接受邀请 |
+| `ErrInvitationRevoked` | `pkg/authn/invite` | 令牌属于一条已撤销的邀请 |
+| `ErrInvitationAlreadyAccepted` | `pkg/authn/invite` | 令牌属于一条已接受的邀请，或撤销一条已接受的邀请 |
+| `ErrInvitationPending` | `pkg/authn/invite` | 该（租户，地址）已有一条待接受邀请，签发的取代竞态输掉时报告 |
+| `ErrInvalidEmail` | `pkg/authn/invite` | 被邀请的地址不成形 |
 | `ErrInvite` | `pkg/authn/invite` | 本模块自己的构造错误（令牌熵源失败一类），归 503 |
 
 调用方以 `errors.Is` 判别，包裹一律用 `%w`。错误文本不携带地址或令牌。
@@ -173,7 +172,7 @@ func (s InvitationStatus) Valid() bool { return s <= InvitationRevoked }
 | `pkg/core` | 模块描述符与交付功能 |
 | `pkg/config` | 声明 `authn.invite.ttl` |
 | `pkg/db` | `authn_invitations` 表与迁移 |
-| `pkg/authn`（根包） | `Invites` 与值类型、`Membership`、`AccountID` |
+| `pkg/authn`（根包） | `Membership`、`AccountID`；`Invites` 与值类型取自本子包 |
 | `AccountAdmin`（根包声明，由 `authn.account` 交付） | 接受时建账户 |
 | `Memberships`（根包声明，由 `authn.account` 交付） | 读地址所属账户、写来源为 `invite` 的成员行 |
 | `Accounts`（根包声明，由 `authn.account` 交付） | 接受时按标识查地址是否已有账户 |
@@ -205,7 +204,7 @@ stateDiagram-v2
 
 ### 类型与接缝
 
-下图固定本模块交付什么、取用什么。`Invites` 定义在根包，`inviteProduct` 是 `pkg/authn/invite` 的产物，排他实现它；接受面按令牌兑现，管理面经 `Decider` 判定。图上看不出的是：同一（租户，地址）下最多一条待接受邀请，由部分唯一索引与签发的取代路径共同保证。
+下图固定本模块交付什么、取用什么。`Invites` 与 `inviteProduct` 同处 `pkg/authn/invite`，后者排他实现前者；接受面按令牌兑现，管理面经 `Decider` 判定。图上看不出的是：同一（租户，地址）下最多一条待接受邀请，由部分唯一索引与签发的取代路径共同保证。
 
 ```mermaid
 classDiagram
@@ -364,9 +363,9 @@ CREATE UNIQUE INDEX authn_invitations_one_pending ON authn_invitations (tenant_i
 
 | 能力 | 状态 | 代码 |
 |---|---|---|
-| 根包 `Invites`、值类型与哨兵 | 未实现 | — |
-| `authn.invite` 模块、`authn_invitations` 表与迁移、状态机、签发／列表／撤销／接受 | 未实现 | — |
-| 管理面路由（判定顺序、强制审计、回绝映射） | 未实现 | — |
-| 接受面路由（无身份、凭令牌） | 未实现 | — |
-| 接受的账户创建与来源为 `invite` 的成员行 | 未实现 | — |
-| 地址验证渠道 `invite`（`pkg/authn/internal/model` `Verification` 的扩展） | 未实现 | — |
+| `Invites` 接缝、值类型与哨兵 | 已实现 | `pkg/authn/invite/seam.go` `Invites`、`IssueInvite`、`Issued`、`Invitation`、`AcceptInvite`、`InvitationStatus`、`ErrInvitationNotFound`、`ErrInvitationExpired`、`ErrInvitationRevoked`、`ErrInvitationAlreadyAccepted`、`ErrInvitationPending`、`ErrInvalidEmail`、`ErrInvite` |
+| `authn.invite` 模块、`authn_invitations` 表与迁移、状态机、签发／列表／撤销／接受 | 已实现 | `pkg/authn/invite/invite.go` `Module`；`pkg/authn/invite/store.go` `tableInvitations`；`pkg/authn/invite/migrations/postgres/0001_authn_invitations.sql`、`pkg/authn/invite/migrations/sqlite/0001_authn_invitations.sql`；`pkg/authn/invite/issue.go` `Issue`；`pkg/authn/invite/query.go` `List`、`Revoke`；`pkg/authn/invite/accept.go` `Accept` |
+| 管理面路由（判定顺序、强制审计、回绝映射） | 已实现 | `pkg/authn/invite/routes.go` `mountRoutes`；`pkg/authn/invite/admin.go` `handleIssue`、`handleList`、`handleRevoke`；`pkg/authn/invite/pipeline.go` `admit`、`asks`、`callDecider`、`auditRequired`、`auditBestEffort`、`answer` |
+| 接受面路由（无身份、凭令牌） | 已实现 | `pkg/authn/invite/routes.go` `mountRoutes`；`pkg/authn/invite/accept_http.go` `handleAcceptView`、`handleAccept`、`viewToken` |
+| 接受的账户创建与来源为 `invite` 的成员行 | 已实现 | `pkg/authn/invite/accept.go` `createAccount`、`putMembership`；`pkg/authn/invite/token.go` `SourceInvite` |
+| 地址验证渠道 `invite`（`pkg/authn/internal/model` `Verification` 的扩展） | 已实现 | `pkg/authn/internal/model/directory.go` `VerifiedViaInvite`、`Verification.Valid` |

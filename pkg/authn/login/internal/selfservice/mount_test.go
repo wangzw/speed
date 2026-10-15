@@ -24,13 +24,12 @@ func registered(m *mounttest.Mounter) []string {
 
 // TestTheRoutesAreTheseAndNoOthers holds the set of routes: there is no route
 // that adds an email address or a username by itself, and no route for a flow.
+// The account's own profile is not among them; it is the profile module's.
 func TestTheRoutesAreTheseAndNoOthers(t *testing.T) {
 	h := newHarness(t)
 	want := []string{
 		"DELETE /identifiers/:id",
 		"DELETE /links/:id",
-		"GET /me",
-		"PATCH /me/preferences",
 		"POST /phone",
 		"POST /phone/verify",
 		"PUT /password",
@@ -40,19 +39,20 @@ func TestTheRoutesAreTheseAndNoOthers(t *testing.T) {
 	}
 }
 
-// TestEveryRouteIsGuardedAndOnlyTheProfileIsImpersonable holds the access level
-// of each registration. A route registered as public or optional would be
-// reachable with no identity, and one registered as impersonable would let the
-// gateway pass an impersonating identity to a handler that changes the account.
-func TestEveryRouteIsGuardedAndOnlyTheProfileIsImpersonable(t *testing.T) {
+// TestEveryRouteIsGuardedAndNoneIsImpersonable holds the access level of each
+// registration. A route registered as public or optional would be reachable with
+// no identity, and one registered as impersonable would let the gateway pass an
+// impersonating identity to a handler that changes the account. None of these
+// routes is impersonable: the profile, which an impersonating identity may read,
+// is the profile module's route.
+func TestEveryRouteIsGuardedAndNoneIsImpersonable(t *testing.T) {
 	h := newHarness(t)
 	for _, r := range h.m.Registrations() {
 		if r.Kind != mounttest.Guarded {
 			t.Errorf("%v %s is %s, want guarded", r.Methods, r.Path, r.Kind)
 		}
-		wantImpersonable := r.Path == basePath+"/me"
-		if r.Impersonable != wantImpersonable {
-			t.Errorf("%v %s impersonable = %v, want %v", r.Methods, r.Path, r.Impersonable, wantImpersonable)
+		if r.Impersonable {
+			t.Errorf("%v %s is impersonable, and none of these routes is", r.Methods, r.Path)
 		}
 	}
 }
@@ -62,7 +62,7 @@ func TestEveryRouteIsGuardedAndOnlyTheProfileIsImpersonable(t *testing.T) {
 // to an absent route is the engine's 404, not a handler's answer.
 func TestThePhoneRoutesAreMountedOnlyWithSMSCodes(t *testing.T) {
 	h := newHarness(t, func(c *config) { c.noSMS = true })
-	want := []string{"DELETE /identifiers/:id", "DELETE /links/:id", "GET /me", "PATCH /me/preferences", "PUT /password"}
+	want := []string{"DELETE /identifiers/:id", "DELETE /links/:id", "PUT /password"}
 	if got := registered(h.m); !slices.Equal(got, want) {
 		t.Fatalf("routes without SMSCodes = %v, want %v", got, want)
 	}
@@ -138,8 +138,9 @@ func TestACrossSiteRequestIsRefusedBeforeAnyCall(t *testing.T) {
 // of them, on a success and on a refusal.
 func TestEveryAnswerIsNotCached(t *testing.T) {
 	h := newHarness(t)
-	if got := h.get("/me").Header().Get("Cache-Control"); got != "no-store" {
-		t.Errorf("GET /me Cache-Control = %q, want no-store", got)
+	h.richAccount()
+	if got := h.delete("/links/link-1").Header().Get("Cache-Control"); got != "no-store" {
+		t.Errorf("DELETE /links/:id Cache-Control = %q, want no-store", got)
 	}
 	if got := h.put("/password", `{}`).Header().Get("Cache-Control"); got != "no-store" {
 		t.Errorf("a refused PUT /password Cache-Control = %q, want no-store", got)

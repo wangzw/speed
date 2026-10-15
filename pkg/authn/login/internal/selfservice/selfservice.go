@@ -1,7 +1,8 @@
 // Package selfservice is the account self-service routes of the login module:
-// the account's own profile, the change of its password, the addition or
-// replacement of its phone, the removal of one of its identifiers and the
-// unlinking of an external identity.
+// the change of the account's password, the addition or replacement of its
+// phone, the removal of one of its identifiers and the unlinking of an external
+// identity. The account's own profile reads and writes are the profile module's
+// routes, not these.
 //
 // Every route runs on the identity the gateway authenticated. A route that
 // changes how the account is proven asks for a fresh authentication first (a
@@ -10,8 +11,7 @@
 // whenever the identity is an impersonation: the gateway already answers 401
 // for such a request because none of these routes is registered as
 // impersonable, and the handler answers 403 again as the fallback for a
-// registration that was made wrongly. The profile is the one route an
-// impersonating identity may read.
+// registration that was made wrongly.
 //
 // The package depends on the root package's interfaces, on the route
 // components in internal/mount and on kv.KV. It knows nothing of the login
@@ -106,15 +106,13 @@ type routes struct {
 	endpoint string
 }
 
-// Mount registers the routes. GET /me is the one registered as impersonable.
-// The two phone routes are registered only when the service has SMSCodes.
+// Mount registers the routes. The two phone routes are registered only when the
+// service has SMSCodes.
 //
 // Every route is guarded: the gateway authenticates it, and a request without a
 // credential never reaches a handler.
 func (s *Service) Mount(m mount.Mounter) {
 	r := &routes{Service: s, endpoint: m.Endpoint()}
-	m.Guarded(http.MethodGet, "/me", r.me, mount.Impersonable())
-	m.Guarded(http.MethodPatch, "/me/preferences", r.updatePreferences)
 	m.Guarded(http.MethodPut, "/password", r.changePassword)
 	if s.deps.SMSCodes != nil {
 		m.Guarded(http.MethodPost, "/phone", r.startPhone)

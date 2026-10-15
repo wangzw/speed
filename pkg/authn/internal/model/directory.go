@@ -71,14 +71,15 @@ func (a Account) Clone() Account {
 }
 
 // The ways an identifier's ownership was established, as Verification.Via and
-// Identifier.VerifiedVia write them. SMS-code and idp:<provider> are proofs:
-// the phone received a code, the provider declared the address verified. Admin
-// and import-unverified only record a fact an administrator or an import
-// asserted; they are never grounds for automatic linking or an enterprise
-// merge.
+// Identifier.VerifiedVia write them. SMS-code, invite and idp:<provider> are
+// proofs: the phone received a code, the invited address's link was delivered
+// and presented, the provider declared the address verified. Admin and
+// import-unverified only record a fact an administrator or an import asserted;
+// they are never grounds for automatic linking or an enterprise merge.
 const (
 	VerifiedViaSMSCode          = "sms-code"
 	VerifiedViaIDPPrefix        = "idp:" // followed by the provider's identifier
+	VerifiedViaInvite           = "invite"
 	VerifiedViaAdmin            = "admin"
 	VerifiedViaImportUnverified = "import-unverified"
 )
@@ -90,12 +91,12 @@ type Verification struct {
 	Via string // written to verified_via
 }
 
-// Valid reports whether Via is one of sms-code, admin and import-unverified, or
-// idp: followed by a provider identifier of 1 to 64 bytes drawn from
-// [A-Za-z0-9._-].
+// Valid reports whether Via is one of sms-code, invite, admin and
+// import-unverified, or idp: followed by a provider identifier of 1 to 64 bytes
+// drawn from [A-Za-z0-9._-].
 func (v Verification) Valid() bool {
 	switch v.Via {
-	case VerifiedViaSMSCode, VerifiedViaAdmin, VerifiedViaImportUnverified:
+	case VerifiedViaSMSCode, VerifiedViaInvite, VerifiedViaAdmin, VerifiedViaImportUnverified:
 		return true
 	}
 	id, ok := strings.CutPrefix(v.Via, VerifiedViaIDPPrefix)
@@ -107,8 +108,8 @@ func (v Verification) Valid() bool {
 }
 
 // Proves reports whether the verification is a proof of ownership, which is
-// sms-code and idp:<provider>. The unproven channels, admin and import-unverified,
-// and a value that is not valid at all, read false.
+// sms-code, invite and idp:<provider>. The unproven channels, admin and
+// import-unverified, and a value that is not valid at all, read false.
 func (v Verification) Proves() bool {
 	return v.Valid() && v.Via != VerifiedViaAdmin && v.Via != VerifiedViaImportUnverified
 }

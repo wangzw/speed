@@ -73,8 +73,12 @@ func TestEnterpriseDomainIsRefusedByDefaultWhenTheRegisterFails(t *testing.T) {
 	}
 }
 
+// A preprovisioned provider matches an account an administrator prepared for the
+// address, whatever channel the address carries except an import's unproven
+// record: an administrator's assertion, a provider's, and an invitation's all
+// count.
 func TestEnterprisePreprovisionedMatchesAnAdministratorsAccount(t *testing.T) {
-	for _, via := range []string{authn.VerifiedViaAdmin, "idp:google"} {
+	for _, via := range []string{authn.VerifiedViaAdmin, authn.VerifiedViaInvite, "idp:google"} {
 		t.Run(via, func(t *testing.T) {
 			e := newEnv(t, withProvider(authn.ProvisioningPreprovisioned, false))
 			id := e.s.seed(t, seed{id: "a1", status: authn.StatusActive, email: "ann@acme.com", emailVia: via, password: true, tenants: []string{tenantAcme}})

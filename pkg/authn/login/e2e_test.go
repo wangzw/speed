@@ -342,7 +342,9 @@ func (h *harness) loginFlow(username, pw string) reply {
 // TestPasswordLoginTwoStepsDeliversASessionCookie holds the whole login: a
 // password flow begun and completed over the real routes makes a session, the
 // cookie authenticates a guarded route, the session route reports it, and a
-// logout refuses the same cookie afterwards.
+// logout refuses the same cookie afterwards. The guarded route the cookie
+// authenticates is this module's own POST /auth/flows/authenticated, which the
+// gateway refuses without a credential before any handler runs.
 func TestPasswordLoginTwoStepsDeliversASessionCookie(t *testing.T) {
 	assemble(t, func(h *harness) {
 		h.createAccount("alice", "alice-password")
@@ -366,9 +368,9 @@ func TestPasswordLoginTwoStepsDeliversASessionCookie(t *testing.T) {
 		if !h.selfStatus() {
 			t.Errorf("GET /auth/session did not report the new session as authenticated")
 		}
-		me := h.get("/auth/me")
-		if me.status != http.StatusOK {
-			t.Errorf("GET /auth/me with the session cookie answered %d: %s", me.status, me.body)
+		start := h.post("/auth/flows/authenticated", map[string]any{"purpose": "step-up", "method": "password"})
+		if start.status != http.StatusOK {
+			t.Errorf("POST /auth/flows/authenticated with the session cookie answered %d: %s", start.status, start.body)
 		}
 
 		out := h.post("/auth/logout", nil)

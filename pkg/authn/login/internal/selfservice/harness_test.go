@@ -190,10 +190,6 @@ func (h *harness) post(path, body string) *httptest.ResponseRecorder {
 	return h.do(request{method: http.MethodPost, path: path, body: body})
 }
 
-func (h *harness) get(path string) *httptest.ResponseRecorder {
-	return h.do(request{method: http.MethodGet, path: path})
-}
-
 func (h *harness) delete(path string) *httptest.ResponseRecorder {
 	return h.do(request{method: http.MethodDelete, path: path})
 }
@@ -250,4 +246,21 @@ var mutating = []struct {
 	{"POST /phone/verify", request{method: http.MethodPost, path: "/phone/verify", body: `{"code":"123456"}`}},
 	{"DELETE /identifiers/:id", request{method: http.MethodDelete, path: "/identifiers/ident-1"}},
 	{"DELETE /links/:id", request{method: http.MethodDelete, path: "/links/link-1"}},
+}
+
+// secretSubject is a binding's provider-side subject, which no answer may carry.
+const secretSubject = "subject-9f3a-never-shown"
+
+// richAccount gives the account two identifiers and two external bindings, one
+// of each carrying values a test reads back.
+func (h *harness) richAccount() {
+	h.accounts.account.MFARequired = true
+	h.accounts.identifiers = []authn.Identifier{
+		{ID: "ident-1", Kind: authn.IdentifierUsername, Value: "ada", VerifiedAt: now.Add(-time.Hour), VerifiedVia: authn.VerifiedViaAdmin},
+		{ID: "ident-2", Kind: authn.IdentifierPhone, Value: "+8613800000000", VerifiedAt: now.Add(-time.Minute), VerifiedVia: authn.VerifiedViaSMSCode},
+	}
+	h.accounts.externals = []authn.ExternalBinding{
+		{ID: "link-1", Provider: "oidc:corp", Subject: secretSubject, Email: "ada@corp.example", EmailVerified: true, CreatedAt: now.Add(-24 * time.Hour), LastLoginAt: now.Add(-time.Hour)},
+		{ID: "link-2", Provider: "github", Subject: "12345678", CreatedAt: now.Add(-48 * time.Hour)},
+	}
 }

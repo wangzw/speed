@@ -84,6 +84,7 @@ func TestTheWireValuesOfTheNewConstantsAreFrozen(t *testing.T) {
 		{ProvisioningPreprovisioned, "preprovisioned"},
 		{VerifiedViaSMSCode, "sms-code"},
 		{VerifiedViaIDPPrefix, "idp:"},
+		{VerifiedViaInvite, "invite"},
 		{VerifiedViaAdmin, "admin"},
 		{VerifiedViaImportUnverified, "import-unverified"},
 		{EndExplicit, "explicit"},

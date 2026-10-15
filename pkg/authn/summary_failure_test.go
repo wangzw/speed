@@ -709,8 +709,8 @@ func TestADatabaseFaultAnswers503Never200Or401(t *testing.T) {
 		// Baseline: with the database answering, the protected route refuses the
 		// unknown cookie as a 401 and the token endpoint refuses the bogus grant
 		// with its own failure code, never a 503.
-		if got := h.getWithCookie("/auth/me", bogus); got.status != http.StatusUnauthorized {
-			t.Fatalf("GET /auth/me with an unknown cookie answered %d, want 401: %s", got.status, got.body)
+		if got := h.getWithCookie("/auth/sessions", bogus); got.status != http.StatusUnauthorized {
+			t.Fatalf("GET /auth/sessions with an unknown cookie answered %d, want 401: %s", got.status, got.body)
 		}
 		if got := h.tokenRefresh("spd_rt_summary_bogus"); got.status != http.StatusBadRequest {
 			t.Fatalf("POST /auth/token with a bogus grant answered %d, want 400: %s", got.status, got.body)
@@ -718,11 +718,11 @@ func TestADatabaseFaultAnswers503Never200Or401(t *testing.T) {
 
 		h.closeDatabase()
 
-		me := h.getWithCookie("/auth/me", bogus)
-		if me.status != http.StatusServiceUnavailable {
-			t.Errorf("GET /auth/me under a database fault answered %d, want 503: %s", me.status, me.body)
+		guarded := h.getWithCookie("/auth/sessions", bogus)
+		if guarded.status != http.StatusServiceUnavailable {
+			t.Errorf("GET /auth/sessions under a database fault answered %d, want 503: %s", guarded.status, guarded.body)
 		}
-		assertNoDependencyName(t, me.body)
+		assertNoDependencyName(t, guarded.body)
 
 		tok := h.tokenRefresh("spd_rt_summary_bogus")
 		if tok.status != http.StatusServiceUnavailable {

@@ -72,7 +72,7 @@ func plain(s string, max int) bool {
 // the closed set.
 func viaOf(v authn.Verification) (string, error) {
 	if !v.Valid() {
-		return "", invalid("the way the identifier was verified is not one of sms-code, idp:<provider>, admin " +
+		return "", invalid("the way the identifier was verified is not one of sms-code, invite, idp:<provider>, admin " +
 			"and import-unverified")
 	}
 	return v.Via, nil

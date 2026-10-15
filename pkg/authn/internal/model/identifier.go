@@ -17,5 +17,5 @@ type Identifier struct {
 	Kind        IdentifierKind
 	Value       string    // normalized
 	VerifiedAt  time.Time // non-zero
-	VerifiedVia string    // sms-code, idp:<provider id> (proofs); admin, import-unverified (assertions, never grounds for merging)
+	VerifiedVia string    // sms-code, invite, idp:<provider id> (proofs); admin, import-unverified (assertions, never grounds for merging)
 }

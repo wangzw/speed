@@ -254,13 +254,14 @@ type Account = model.Account
 // ownership.
 type Verification = model.Verification
 
-// The ways an identifier's ownership was established. VerifiedViaSMSCode and
-// VerifiedViaIDPPrefix followed by a provider identifier are proofs; the other
-// two only record a fact an administrator or an import asserted, and are never
-// grounds for automatic linking or an enterprise merge.
+// The ways an identifier's ownership was established. VerifiedViaSMSCode,
+// VerifiedViaInvite and VerifiedViaIDPPrefix followed by a provider identifier
+// are proofs; the other two only record a fact an administrator or an import
+// asserted, and are never grounds for automatic linking or an enterprise merge.
 const (
 	VerifiedViaSMSCode          = model.VerifiedViaSMSCode
 	VerifiedViaIDPPrefix        = model.VerifiedViaIDPPrefix
+	VerifiedViaInvite           = model.VerifiedViaInvite
 	VerifiedViaAdmin            = model.VerifiedViaAdmin
 	VerifiedViaImportUnverified = model.VerifiedViaImportUnverified
 )

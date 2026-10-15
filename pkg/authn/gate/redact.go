@@ -105,9 +105,10 @@ var sessionCookieKeys = map[string]struct{}{
 // word characters before an '=' is never lower-cased only to be found absent.
 const longestPairKey = 16
 
-// tokenPrefixes begin the opaque tokens this capability issues, which are secrets
-// wherever they are written.
-var tokenPrefixes = []string{"spd_rt_", "spd_cs_"}
+// tokenPrefixes begin the opaque tokens the authn modules issue, which are
+// secrets wherever they are written: the refresh token, the service secret and
+// the invitation's acceptance token.
+var tokenPrefixes = []string{"spd_rt_", "spd_cs_", "spd_inv_"}
 
 // shapeMatcher masks the values whose shape says they are secrets whatever they
 // were logged under: a JWT, a token with one of this capability's prefixes, an

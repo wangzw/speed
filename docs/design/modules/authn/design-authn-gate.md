@@ -555,7 +555,7 @@ sequenceDiagram
 | 类别 | 内容 |
 |---|---|
 | 键名（精确匹配；每个名字登记原写法、全小写与首字母大写，去重） | `Authorization`、`Cookie`、`Set-Cookie`、`Credential`、`password`、`new_password`、`current_password`、`code`、`otp`、`secret`、`client_secret`、`refresh_token`、`access_token`、`id_token`、`token`、`assertion`、`SAMLResponse`、`state`、`code_verifier`、`flow_token`、`credential` |
-| 值的形状 | 各后端认领的 scheme 加空白加一个词（`schemeProse` 词表的放行判据，完整的一份在 `pkg/authn/gate/redact.go`）；JWT 形状（`eyJ` 起头的三段 base64url）；`spd_rt_`、`spd_cs_` 前缀的令牌；`otpauth://` 地址；查询串里的机密对（键名为 `secret`、`code`、`access_token`、`refresh_token`、`id_token`、`client_secret`、`samlresponse`、`assertion`、`password` 之一的 `键=值`）；会话 cookie 的 `sid=…` 对 |
+| 值的形状 | 各后端认领的 scheme 加空白加一个词（`schemeProse` 词表的放行判据，完整的一份在 `pkg/authn/gate/redact.go`）；JWT 形状（`eyJ` 起头的三段 base64url）；`spd_rt_`、`spd_cs_`、`spd_inv_` 前缀的令牌；`otpauth://` 地址；查询串里的机密对（键名为 `secret`、`code`、`access_token`、`refresh_token`、`id_token`、`client_secret`、`samlresponse`、`assertion`、`password` 之一的 `键=值`）；会话 cookie 的 `sid=…` 对 |
 | 字面量 | 配置里的客户端密钥、微信 `app-secret`、短信厂商密钥的值本身（精确子串匹配器） |
 
 - **scheme 名后面紧跟一张固定公开词表里的词时不遮蔽**：scheme 名本身也是英文词，谈论凭据的文字在它后面写的是普通词，遮掉它会让拒绝成因读不懂。放行按词表而不按形状，判据是放行不泄露任何东西：词表公开，恰好等于表中某个词的凭据，读过词表的人都叫得出来。词表之外的词跟在 scheme 名后面时照样被遮蔽，这是登记过宽的一面，由登记方承担。

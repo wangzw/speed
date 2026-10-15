@@ -58,10 +58,10 @@ func TestTheImpersonationCheckComesBeforeTheFreshnessOne(t *testing.T) {
 	}
 }
 
-// TestTheGatewayRefusesAnImpersonatingIdentityOnEveryRouteButTheProfile holds the
-// layering with the routes registered as they are: none of the five is
-// impersonable, so the gateway's 401 answers before a handler is called.
-func TestTheGatewayRefusesAnImpersonatingIdentityOnEveryRouteButTheProfile(t *testing.T) {
+// TestTheGatewayRefusesAnImpersonatingIdentityOnEveryRoute holds the layering
+// with the routes registered as they are: none of the five is impersonable, so
+// the gateway's 401 answers before a handler is called.
+func TestTheGatewayRefusesAnImpersonatingIdentityOnEveryRoute(t *testing.T) {
 	for _, tc := range mutating {
 		t.Run(tc.name, func(t *testing.T) {
 			h := newHarness(t)

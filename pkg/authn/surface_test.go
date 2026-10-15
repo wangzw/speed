@@ -151,6 +151,7 @@ var exportedSurface = []string{
 	"const VerifiedViaAdmin",
 	"const VerifiedViaIDPPrefix",
 	"const VerifiedViaImportUnverified",
+	"const VerifiedViaInvite",
 	"const VerifiedViaSMSCode",
 	"field Accepts.Accounts",
 	"field Accepts.Cookies",

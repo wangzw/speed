@@ -42,5 +42,5 @@
 | [authn-events](design-authn-events.md) | 已实现 |
 | [authn-failure](design-authn-failure.md) | 已实现 |
 | [authn-threats](design-authn-threats.md) | 已实现 |
-| [authn-invite](design-authn-invite.md) | 未实现 |
-| [authn-profile](design-authn-profile.md) | 未实现 |
+| [authn-invite](design-authn-invite.md) | 已实现 |
+| [authn-profile](design-authn-profile.md) | 已实现 |

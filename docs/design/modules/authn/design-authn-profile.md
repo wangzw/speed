@@ -192,4 +192,4 @@ classDiagram
 
 | 能力 | 状态 | 代码 |
 |---|---|---|
-| 用户档案自服务面（`GET B/me`、`PATCH B/me`） | 未实现 | — |
+| 用户档案自服务面（`GET B/me`、`PATCH B/me`） | 已实现 | `pkg/authn/profile/profile.go` `Module`；`pkg/authn/profile/routes.go` `mountRoutes`；`pkg/authn/profile/read.go` `handleGetMe`；`pkg/authn/profile/write.go` `handlePatchMe` |

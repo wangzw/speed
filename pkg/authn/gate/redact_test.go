@@ -228,6 +228,7 @@ const (
 	jwtToken     = "eyJhbGciOiJFUzI1NiJ9.eyJzdWIiOiJhbGljZSJ9.c2lnbmF0dXJl"
 	refreshToken = "spd_rt_4fK9xQ2mVb7LzP0aRtYw"
 	clientSecret = "spd_cs_Zk3QpL8vN1cXyWe2"
+	inviteToken  = "spd_inv_Qm4Nc8vT2pXkR7dLwZs1"
 )
 
 // TestEveryShapeOfSecretIsMaskedWhereverItIsWritten holds one value of each shape
@@ -246,6 +247,7 @@ func TestEveryShapeOfSecretIsMaskedWhereverItIsWritten(t *testing.T) {
 		{"a JWT inside quotes", `header="` + jwtToken + `" end`, jwtToken, "end"},
 		{"a refresh token", "rotating " + refreshToken + " now", refreshToken, "rotating"},
 		{"a client secret", "key " + clientSecret + ", rest", clientSecret, "rest"},
+		{"an invite token", "accepting " + inviteToken + " now", inviteToken, "accepting"},
 		{"an otpauth address", "enrolled otpauth://totp/Speed:alice?secret=JBSWY3DPEHPK3PXP&issuer=Speed ok", "JBSWY3DPEHPK3PXP", "ok"},
 		{"an otpauth address in another case", "OTPAUTH://totp/Speed:alice?secret=JBSWY3DPEHPK3PXP", "JBSWY3DPEHPK3PXP", ""},
 		{"a secret in a query string", "GET /cb?secret=hunter2&x=1", "hunter2", "x=1"},
@@ -299,7 +301,7 @@ func TestAWordThatOnlyResemblesASecretShapeIsLeftAlone(t *testing.T) {
 		{"four dotted segments", "eyJhbGciOiJFUzI1NiJ9.eyJzdWIiOiJhbGljZSJ9.c2ln.bmF0"},
 		{"eyJ in the middle of a longer token", "ZXlKeyJhbGciOiJFUzI1NiJ9.e30.c2ln"},
 		{"an empty segment", "eyJhbGciOiJFUzI1NiJ9..c2ln"},
-		{"a token prefix with nothing after it", "the spd_rt_ prefix and the spd_cs_ prefix"},
+		{"a token prefix with nothing after it", "the spd_rt_, spd_cs_ and spd_inv_ prefixes"},
 		{"the otpauth scheme with no address", "an otpauth:// address"},
 	} {
 		t.Run(c.name, func(t *testing.T) {

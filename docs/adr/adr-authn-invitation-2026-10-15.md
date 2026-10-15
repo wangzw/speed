@@ -38,6 +38,8 @@
 
 邀请以一张自持状态与期限的表 `authn_invitations` 成立，接受凭一枚只以摘要留存的不透明一次性令牌兑现；待接受态不落账户表。管理面的签发、列表与撤销与 account 面的接受分处两个信任级；接受落下的成员行，`Membership.Source` 取 `invite`。
 
+接缝 `Invites` 与它的值类型、哨兵定义在 `pkg/authn/invite`，不随根包里其余认证接缝放进 `pkg/authn`：根包已以 `Issued` 命名会话签发的结果，邀请签发的结果占不住同一个名字；`pkg/authn/invite` 与根包同属一个 Go module，取用者的依赖闭包不因此变化。
+
 ## 后果
 
 - 邀请的状态机与期限由本能力持有，与账户的生命周期解耦；`AccountAdmin.Create` 的验证前提不被绕过，账户表不新增行态。
@@ -46,7 +48,7 @@
 
 **接受的代价：**
 
-- **认证账户模型要补一个验证渠道。** 接受把被邀请的地址当作一条已验证标识交给 `AccountAdmin.Create`，其渠道是「链接送达地址并被兑现」，与 `sms-code` 同类；`Verification` 的封闭集当前只有 `sms-code`、`idp:<提供方标识>`、`admin`、`import-unverified`，须补入邀请一值（`pkg/authn/internal/model/directory.go` `Verification`）。
+- **认证账户模型要补一个验证渠道。** 接受把被邀请的地址当作一条已验证标识交给 `AccountAdmin.Create`，其渠道是「链接送达地址并被兑现」，与 `sms-code` 同类；`Verification` 的封闭集**因此多出一个取值**（`pkg/authn/internal/model/directory.go` `VerifiedViaInvite`）。该值属证据一类，于是 `preprovisioned` 的 SSO 预置匹配把经邀请验证的邮箱一并算作合法渠道。
 - **接受按不透明令牌做一次不带租户谓词的查找。** 接受者还没有租户归属，这一步是邀请模块唯一不按租户过滤的查询。
 - **本能力不投递，链接由签发者送出。** 令牌只交出一次，落表的是摘要；一条链接送出与否，本能力无从知道。
 - **令牌是能力语义。** 转发链接即转让加入能力，这是持有即可加入的代价。
