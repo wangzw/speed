@@ -65,7 +65,7 @@ type Config struct {
 |---|---|
 | `pkg/core` | 模块描述符、`Requires`、`Resolve` |
 | `pkg/config` | 声明并读取本模块的输入项 |
-| `pkg/http` | `Router` 与 `Endpoint` 功能标识、`Route` 登记方法 |
+| `pkg/http` | 取用的功能标识是 `Router`（`(*Router)(nil)`）；`Router.Endpoint` 返回的 `Endpoint` 与它的 `Route` 方法用于登记路由，两者都不是功能标识 |
 | gin | 一条路由的 handler 是 `gin.HandlerFunc`；已在 `pkg/http` 的依赖闭包里，不为宿主另增依赖 |
 | `io/fs`、`net/http`（标准库） | `fs.FS` 类型与 `fs.ValidPath`；`net/http` 的 `ServeContent` 做条件请求、`Range` 与 `Content-Type` 的推定 |
 
