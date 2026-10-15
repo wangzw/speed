@@ -5,7 +5,7 @@ import (
 	"testing"
 
 	"github.com/vislake/speed/pkg/config"
-	"github.com/vislake/speed/pkg/sms/internal/configtest"
+	"github.com/vislake/speed/pkg/internal/configtest"
 )
 
 // completeConfig is a moduleConfig every required item is present in.

@@ -6,9 +6,9 @@ import (
 
 	"github.com/vislake/speed/pkg/config"
 	"github.com/vislake/speed/pkg/core"
+	"github.com/vislake/speed/pkg/internal/configtest"
 	"github.com/vislake/speed/pkg/log"
 	"github.com/vislake/speed/pkg/sms"
-	"github.com/vislake/speed/pkg/sms/internal/configtest"
 )
 
 // registryWithReader builds a registry with a real configuration reader over a

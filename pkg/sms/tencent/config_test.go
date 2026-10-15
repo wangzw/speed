@@ -6,7 +6,7 @@ import (
 	"testing"
 
 	"github.com/vislake/speed/pkg/config"
-	"github.com/vislake/speed/pkg/sms/internal/configtest"
+	"github.com/vislake/speed/pkg/internal/configtest"
 )
 
 // section renders this module's section out of the given override of the items.

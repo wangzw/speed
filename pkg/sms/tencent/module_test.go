@@ -8,9 +8,9 @@ import (
 
 	"github.com/vislake/speed/pkg/config"
 	"github.com/vislake/speed/pkg/core"
+	"github.com/vislake/speed/pkg/internal/configtest"
 	"github.com/vislake/speed/pkg/log"
 	"github.com/vislake/speed/pkg/sms"
-	"github.com/vislake/speed/pkg/sms/internal/configtest"
 )
 
 // driveSender assembles the module the way a host does, with the real

@@ -2,9 +2,9 @@
 // module under test.
 //
 // It is the authentication capability's authntest reader without the authn
-// dependency: the carriers under pkg/sms read their own sections and must not
-// pull the authentication capability into their tests, so a local reader is
-// what keeps pkg/sms free of it.
+// dependency: the sending capabilities' carriers read their own sections and
+// must not pull the authentication capability into their tests, so a local
+// reader is what keeps the sending capabilities free of it.
 package configtest
 
 import (
