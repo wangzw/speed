@@ -22,6 +22,7 @@ python3 tools/check_toolchain.py
 python3 tools/check_markdown_examples.py
 python3 tools/check_workflow_refs.py
 python3 tools/check_conflict_markers.py
+python3 tools/check_observability_readiness.py
 ```
 
 Their own test suites run together, from the repository root:
@@ -90,4 +91,30 @@ with nothing to maintain here. Exit codes: 0 clean (every guarded file
 reported by name), 1 a relative reference found, 2 infrastructure error
 (no `.github/workflows/` directory, no guarded file to check, or a file
 that cannot be read).
+
+`check_observability_readiness.py` — fails when a package under `pkg/`
+breaks one of the observability obligations that three Go tests guard, each
+with a hand-written list of the modules it covers so that a module absent
+from the list passes silently: a package that resolves the logging
+capability must declare the requirement, a package that declares a
+`Sensitive` config item must register its value as a redaction rule (checked
+per item: a value is attributed to the items only when the registration that
+hands it over carries a module-prefixed label, and the `Secrets` hook is read
+in its `[]string`-returning shapes, not as any field merely named
+`Secrets`), and a package that opens an egress client must wrap its
+transport. A fourth check is the reverse assertion, that `pkg/` must call
+none of the package-level entries of the upstream otel global. The scan
+derives the call sites from the source rather than restating the tests'
+lists, and the presence patterns read the code with comments and the
+contents of string and rune literals masked out, so a call named only in a
+comment or quoted in a string is not a call site. Each check carries a
+positive control and treats an empty subject as an infrastructure error. The
+checks are text heuristics, not a type analysis: a deliberately constructed
+spelling can defeat the shape a registration is drawn in, so a clean run
+here is a backstop, not a guarantee — the type-level guarantee lives in the
+Go tests this gate backstops (`pkg/internal/logdeps` and the per-package
+`secrecy_test.go`). Exit codes: 0 clean, 1 a finding (each with file, line
+and what is missing), 2 infrastructure error (the root is not a directory,
+`pkg/` is missing, no Go file was read, or a positive control saw an empty
+set).
 
