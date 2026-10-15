@@ -45,8 +45,8 @@
 采纳：**实时推送每副本一个 Hub，靠订阅收件箱创建事件驱动；收件箱行先提交、事件后发；Hub 只值延迟。**
 
 - **每副本一个 Hub。** 没有跨副本的 Hub，没有 Pub/Sub 接缝；每个副本各自持有一个进程内的 Hub，服务落在本副本上的连接。
-- **订阅收件箱创建事件。** Hub 订阅 `notification.inbox.created`，载荷含 `message_id`、`tenant_id`、`recipient_user_id`、`type_key`。投递流水线是发布方，收件箱是这条事件的唯一来源。
-- **行先提交、事件后发。** 收件箱行先落库，投递流水线在每次成功的写行之后才发事件。因此一次送不到任何人的通告什么都不丢——消费方可以回读那一行；Hub 唯一的价值是延迟。
+- **订阅收件箱创建事件。** Hub 订阅 `notification.inbox.created`，载荷含 `message_id`、`tenant_id`、`recipient_user_id`、`type_key`。收件箱是这条事件的唯一发布方：写这一行的 `Write` 发布它，投递流水线不发布。
+- **行先提交、事件后发。** 收件箱行先落库并提交，收件箱在写行提交之后才发事件。因此一次送不到任何人的通告什么都不丢——消费方可以回读那一行；Hub 唯一的价值是延迟。
 - **`Publish` 永不阻塞、永不报错。** 每连接一个深度 64 的缓冲，慢消费者丢自己的帧、不拖累其他连接；匹配在进缓冲之前做，使整个平台的流量挤不掉某个合法客户端自己的缓冲。
 - **消息 channel 永不 close。** `Close` 只置一个 per-connection 的 done 并注销订阅，因为一次与 close 竞争的发送会把并发 Hub 打 panic。
 - **路由 `GET /stream`。** 用 `http.Flusher`（沿 `Unwrap()` 逐层找），设 `Content-Type: text/event-stream`，按（租户，收件人）作用域订阅 Hub，事件帧形如 `event: message\ndata: {…}\n\n`。

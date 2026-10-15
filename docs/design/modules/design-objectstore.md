@@ -97,7 +97,7 @@ var (
 
 - `Create` 校验 `Declaration`（`Size` 大于零、`ContentType` 非空、`ChecksumSHA256` 为空或 64 位十六进制），生成对象标识与内部键，落一行 `pending`，写 `declared_size`、`declared_type`、`declared_checksum` 与 `upload_expires_at = now + upload-window`，返回该行的视图。校验不过即 `ErrInvalidRequest`，不落行。
 - `Upload` 取该行，要求状态为 `pending` 或 `uploaded`、上传窗口未关、`size` 参数等于 `declared_size`；字节经 `Store.Put(内部键, r, size)` 存下，同时以流式读出实际字节数与 SHA-256；写 `size`、`checksum_sha256`、`mime`（取 `declared_type`），状态转 `uploaded`。前置不符答 `ErrStateConflict`（状态不符或窗口已关）或 `ErrInvalidRequest`（字节数与声明不符），均在写字节之前拦下。
-- `Complete` 取该行，条件 `WHERE id = ? AND state IN ('uploaded','completed')`：`uploaded` 直接转 `completed`，`expires_at` 在 `object-ttl` 大于零时取 `now + object-ttl`、否则为空，返回视图；`completed` 原样返回该行、不改状态；`pending`／`deleted` 答 `ErrStateConflict`。
+- `Complete` 取该行，条件 `WHERE id = ? AND state IN ('uploaded','completed')`：`uploaded` 直接转 `completed`，`expires_at` 在 `object-ttl` 大于零时取 `now + object-ttl`、否则为空，返回视图；`completed` 原样返回该行、不改状态；`pending` 答 `ErrStateConflict`，`deleted` 答 `ErrObjectNotFound`。
 - `Get` 返回该行的视图；`deleted` 与不存在同形，答 `ErrObjectNotFound`。
 - `OpenContent` 只对 `completed` 开放（`pending`／`uploaded` 答 `ErrStateConflict`，`deleted` 答 `ErrObjectNotFound`），经 `Store.Open(内部键)` 返回字节的只读流，读取方负责关闭它；`Store` 里找不到该行的字节即 `ErrContentMissing`。
 - `List` 返回本租户**未删除**的对象，按 `(created_at, id)` 升序，取 `Limit` 行，游标见「列表的键集游标」。
@@ -114,7 +114,7 @@ var (
 
 模块名照顶层能力：裸名 `objectstore`，叶子 `objectstore.<名>`，配置命名空间取同一取值（对照 `sms`/`sms.registry`、`kv`/`kv.redis`）。每个登记模块的包导出自己的 `ModuleName` 常量。
 
-**`fs` 不 import 任何对象存储 SDK。** 它的依赖只有标准库与根包，因此一个只用本地目录的装配不背任何 SDK。**`s3` 绑它自己的 SDK**（`github.com/aws/aws-sdk-go-v2` 及其 `service/s3`、`credentials`、`config` 子包），**不装 `s3` 的装配不背那个 SDK**：SDK 只被 `pkg/objectstore/s3` 这一个实现子包 import，不进根包、不进 `fs`，也不进 `metadata`。
+**`fs` 不 import 任何对象存储 SDK。** 它的依赖只有标准库与根包，因此一个只用本地目录的装配不背任何 SDK。**`s3` 绑它自己的 SDK**（`github.com/minio/minio-go/v7` v7.3.0 及其 `pkg/credentials` 子包，照各载体把 SDK 版本钉在 `pkg/go.mod` 里的形态），**不装 `s3` 的装配不背那个 SDK**：SDK 只被 `pkg/objectstore/s3` 这一个实现子包 import，不进根包、不进 `fs`，也不进 `metadata`。
 
 `fs` 与 `s3` 都排他：一个进程里恰好一个 `Store` 生效，多于一个表态启用即在消解阶段以排他冲突失败，宿主在命令树上点名其一。`metadata` 排他交付 `Objects`，它对 `Store` 的依赖是**必需**的——一个 `Store` 都没纳入的装配里，该功能缺提供者、启动失败。
 
@@ -175,14 +175,14 @@ const (
 
 **对象视图逐字段从根包的 `Object` 构造，不带 `Key`。** 视图字段：`id`、`state`、`size`、`mime`、`checksum_sha256`、`expires_at`、`created_at`、`updated_at`，时间按 UTC 写出。内部键是模块的私有记账，从不进应答、也不进错误文本。`GET /api/v1/objects/:id/content` 只对 `completed` 的对象返回字节，正文的 `Content-Type` 取 `mime`。`POST /api/v1/objects` 命中 `metadata` 的 `upload-window` 打开上传窗口；`PUT .../content` 只接受 `pending` 或 `uploaded` 的对象。
 
-**回绝映射是封闭的、fail-closed 的。** 400（`Problem.Type` 为 `urn:speed:objectstore:bad-request`）：`ErrInvalidRequest`——声明形状不可读，或一次上传的字节数与声明不符。403：路由声明的权限判定未通过，由 guard 写出。404（`urn:speed:objectstore:not-found`）：`ErrObjectNotFound`——未知 id、他人租户、已删除三合同形，不做泄露存在性的区分。409（`urn:speed:objectstore:conflict`）：`ErrStateConflict`。503（无 `Problem.Type`）：`ErrStoreUnavailable`、`ErrContentMissing` 与其余失败，成因只进日志。`Title` 与 `Detail` 是渲染好的成品文本，由本模块从自己的消息目录渲染。
+**回绝映射是封闭的、fail-closed 的。** 400（`Problem.Type` 为 `urn:speed:objectstore:bad-request`）：`ErrInvalidRequest`——声明形状不可读，或一次上传的字节数与声明不符。403：路由声明的权限判定未通过，由 guard 写出。404（`urn:speed:objectstore:not-found`）：`ErrObjectNotFound`——未知 id、他人租户、已删除三合同形，不做泄露存在性的区分；**已删除的行在除 `Delete` 之外的每个操作上都答这个码**，它已经不在了、不是状态冲突，而 `Delete` 对已删除的行幂等成功。409（`urn:speed:objectstore:conflict`）：`ErrStateConflict`。503（无 `Problem.Type`）：`ErrStoreUnavailable`、`ErrContentMissing` 与其余失败，成因只进日志。`Title` 与 `Detail` 是渲染好的成品文本，由本模块从自己的消息目录渲染。
 
 ### 宿主可见面
 
 以下是宿主写进配置文件、或在命令树上点名的面。
 
 - **模块名**：`objectstore.metadata`、`objectstore.fs`、`objectstore.s3`。宿主的命令树点模块名纳入，配置命名空间取同一取值；`fs` 与 `s3` 二选一纳入（都排他）。
-- **配置命名空间与输入项**：`objectstore.metadata` 下的 `endpoints`（字符串列表，必填，只收具体端名、不收 `*`，取主配置源）、`upload-window`（时长，缺省 `15m`，取主配置源）、`object-ttl`（时长，缺省 `0` 即完成后的对象不过期，取主配置源）、`sweep-interval`（时长，缺省 `1m`，`≤0` 即关闭清扫，取主配置源）；`objectstore.fs` 下的 `root`（字符串，必填，本地目录，取主配置源）；`objectstore.s3` 下的 `endpoint`、`region`、`bucket`、`access-key`、`secret-key`、`use-path-style`（布尔）。
+- **配置命名空间与输入项**：`objectstore.metadata` 下的 `endpoints`（字符串列表，只收具体端名、不收 `*`，取主配置源；**路由能力在场时必填**——`Init` 见到路由能力在场而这份清单为空即以启动失败拒绝，不静默不挂路由；**路由能力缺席时这份清单不被读取**）、`upload-window`（时长，缺省 `15m`，取主配置源）、`object-ttl`（时长，缺省 `0` 即完成后的对象不过期，取主配置源）、`sweep-interval`（时长，缺省 `1m`，`≤0` 即关闭清扫，取主配置源）；`objectstore.fs` 下的 `root`（字符串，必填，本地目录，取主配置源）；`objectstore.s3` 下的 `endpoint`、`region`、`bucket`、`access-key`、`secret-key`、`use-path-style`（布尔）。
 - **路由与权限**：基路径 `/api/v1/objects` 下的路由（见「路由全表」），读路由要 `objectstore.object.read`、写路由要 `objectstore.object.write`。
 - **审计动作的类型名**：`objectstore.object.created`、`objectstore.object.completed`、`objectstore.object.deleted`，由宿主发上总线、由审计模块的 `events` 配置项点名。
 - **装配约束**：`metadata` 对 `(*objectstore.Store)(nil)` 的依赖是必需的，装配里恰好一个 `Store` 实现。
@@ -384,7 +384,7 @@ type Spec[C any] struct {
 
 **`fs` 落在本地目录。** 根路径来自 `objectstore.fs.root`。`Put` 把内部键当相对路径拼到根下，缺父目录即建、以流写字节；`Open` 打开该路径只读并返回它的正文流；`Delete` 删除该路径。`Name()` 报告实现名，供诊断。字节按内部键存取，键的语法（分段、路径分隔）是本模块自己的约定，本实现把它当文件路径拼到根下，映射细节不进接口。`fs` 不 import 任何对象存储 SDK，它的依赖只有标准库的 `os`、`io`。
 
-**`s3` 绑 S3 兼容的对象存储。** 配置项：`endpoint`、`region`、`bucket`、`access-key`、`secret-key`、`use-path-style`。SDK 是 `github.com/aws/aws-sdk-go-v2` 及其 `service/s3`、`credentials`、`config` 子包，只被这个实现子包 import。`Put` 以内部键为对象键调用 S3 的 `PutObject`，`Open` 用 `GetObject` 返回对象正文的只读流，`Delete` 用 `DeleteObject`。`endpoint` 与 `use-path-style` 一起把客户端指向自建或云上的 S3 兼容服务，`region` 由 SDK 用于签名。`access-key` 与 `secret-key` 是凭据，由 `Secrets` 钩子交出、在 `New` 里先于 logger 绑定登记为日志的字面量脱敏匹配器（见「工厂的构造次序」）。字节同样按内部键存取，**键不出 API**。
+**`s3` 绑 S3 兼容的对象存储。** 配置项：`endpoint`、`region`、`bucket`、`access-key`、`secret-key`、`use-path-style`。SDK 是 `github.com/minio/minio-go/v7` v7.3.0 及其 `pkg/credentials` 子包，只被这个实现子包 import。`Put` 以内部键为对象键调用 `PutObject`，`Open` 用 `GetObject` 返回对象正文的只读流，`Delete` 用 `RemoveObject`（S3 的 `DeleteObject`）。`endpoint` 与 `use-path-style` 一起把客户端指向自建或云上的 S3 兼容服务，`region` 由 SDK 用于签名。`access-key` 与 `secret-key` 是凭据，由 `Secrets` 钩子交出、在 `New` 里先于 logger 绑定登记为日志的字面量脱敏匹配器（见「工厂的构造次序」）。字节同样按内部键存取，**键不出 API**。
 
 ## 错误与失败语义
 
@@ -394,10 +394,12 @@ type Spec[C any] struct {
 | 一次上传的字节数不等于声明的 `declared_size` | `ErrInvalidRequest`，不写字节、不推进状态 |
 | 上传窗口已过，或对象状态不允许该操作（未上传就完成、未完成就读取） | `ErrStateConflict`，未写字节前拦下 |
 | 点名了本租户看不见的对象（未知 id、他人租户、已删除） | `ErrObjectNotFound`，三合同形 |
+| 对一个已删除的行调用除 `Delete` 之外的任何操作 | `ErrObjectNotFound`，与未知 id 同形；`Delete` 对已删除的行幂等成功 |
 | 行已完成、字节却不在后端 | `ErrContentMissing` |
 | 字节接缝缺席或后端不可达、一次字节操作失败 | `ErrStoreUnavailable`（后端自家的错误原样包裹其中）；`metadata` 收口成 503 |
 | 清扫时删字节失败 | 记 `Warn`，行不动，下一个 pass 重试 |
 | 缺配置项（`fs.root`、`s3.bucket` 等）、配置跑不起来 | `ErrInvalidConfig`，`Prepare` 或 `New` 阶段失败即启动失败，错误点名缺的是哪一项 |
+| 路由能力在场而端名清单为空 | `ErrInvalidConfig`，`Init` 阶段失败即启动失败，错误点名 `objectstore.metadata.endpoints` |
 
 **本模块不重试、不降级。** 后端不可达即那次调用失败，不回落到本地、不返回上一份字节；是否重试归调用方。
 
@@ -412,7 +414,7 @@ type Spec[C any] struct {
 
 - `Objects` 与 `Store` 都必须可被多个协程并发使用；实现不得持有调用方传入的 `io.Reader`，也不得把自己持有的切片交出去。
 - **一次上传的字节操作与状态推进不在同一个事务里。** `Store.Put` 在数据库事务之外发出，行状态的推进是一条条件语句（`WHERE id = ? AND state IN ('pending','uploaded')`）；两个并发上传同一对象时，两次 `Store.Put` 都写到同一个内部键，最后落库的那次决定 `size` 与 `checksum_sha256`。
-- `Complete` 与 `Delete` 各是一条条件语句：`Complete` 的条件是 `WHERE id = ? AND state IN ('uploaded','completed')`，`Delete` 的条件是 `WHERE id = ? AND state <> 'deleted'`。`uploaded` 上 `Complete` 推进状态、`completed` 上重复 `Complete` 原样返回，`pending`／`deleted` 上 `Complete` 匹配不到行、答 `ErrStateConflict`；任何未删除状态上 `Delete` 删字节并置 `deleted`，`deleted` 上重复 `Delete` 匹配不到行、幂等成功。
+- `Complete` 与 `Delete` 各是一条条件语句：`Complete` 的条件是 `WHERE id = ? AND state IN ('uploaded','completed')`，`Delete` 的条件是 `WHERE id = ? AND state <> 'deleted'`。`uploaded` 上 `Complete` 推进状态、`completed` 上重复 `Complete` 原样返回，`pending` 上 `Complete` 答 `ErrStateConflict`、`deleted` 上答 `ErrObjectNotFound`；任何未删除状态上 `Delete` 删字节并置 `deleted`，`deleted` 上重复 `Delete` 匹配不到行、幂等成功。
 - 清扫 pass 与并发写以行的状态为条件，同一行上的两次清扫、清扫与并发的 `Delete` 都幂等。
 - `metadata` 不开跨后端的事务：数据库的写与后端的字节操作各自成事，其间没有事务把它们绑在一起；这一点是「上传三步」把字节与状态分开的直接结果。
 

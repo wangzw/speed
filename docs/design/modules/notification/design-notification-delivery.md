@@ -24,9 +24,9 @@
 
 | 登记单元 | 模块名 | 交付 | 构造期依赖 |
 |---|---|---|---|
-| `pkg/notification/delivery` | `notification.delivery` | 排他交付 `(*notification.Dispatcher)(nil)`；向 `jobs.Handlers` 登记处理器 | 必需 `(*jobs.Queue)(nil)`、`(*jobs.Handlers)(nil)`、`(*db.Database)(nil)`、`(*tenant.Catalog)(nil)`、`(*notification.Preferences)(nil)`、`(*notification.Inbox)(nil)`、`(*i18n.Localizer)(nil)`；可选 `(*mail.Sender)(nil)`、`(*sms.Registry)(nil)`、`(*sms.Sender)(nil)`、`(*event.Bus)(nil)`、`(*http.Endpoint)(nil)` |
+| `pkg/notification/delivery` | `notification.delivery` | 排他交付 `(*notification.Dispatcher)(nil)`；向 `jobs.Handlers` 登记处理器 | 必需 `(*jobs.Queue)(nil)`、`(*jobs.Handlers)(nil)`、`(*db.Database)(nil)`、`(*tenant.Catalog)(nil)`、`(*notification.Preferences)(nil)`、`(*notification.Inbox)(nil)`、`(*i18n.Localizer)(nil)`；可选 `(*mail.Sender)(nil)`、`(*sms.Registry)(nil)`、`(*sms.Sender)(nil)` |
 
-可选依赖的缺席都不使本模块启动失败：`mail.Sender` 缺席则 `email` 渠道不可用，`sms.Registry` 或 `sms.Sender` 缺席则 `sms` 渠道不可用，`event.Bus` 缺席则不发事件。**提交面 `notification.Dispatcher` 是本模块交付的功能**，本模块排他交付它（[ADR-notification-delivery-2026-10-15](../../../adr/adr-notification-delivery-2026-10-15.md)）。
+可选依赖的缺席都不使本模块启动失败：`mail.Sender` 缺席则 `email` 渠道不可用，`sms.Registry` 或 `sms.Sender` 缺席则 `sms` 渠道不可用。**提交面 `notification.Dispatcher` 是本模块交付的功能**，本模块排他交付它（[ADR-notification-delivery-2026-10-15](../../../adr/adr-notification-delivery-2026-10-15.md)）。
 
 ### 交付的功能
 
@@ -105,7 +105,7 @@ idempotency_key = hex(sha256(canonicalJSON{
 
 `canonicalJSON` 把对象按键排序、把值规范化成稳定的文本，使同一份载荷每次算出同一个键。租户取自 `ctx`，其余取自 `Dispatch` 与该渠道的取值。**逐渠道各一个**：同一事件走几个渠道即几个键。
 
-`notification_sends` 上 `(tenant_id, idempotency_key)` 唯一，落账即幂等：一个渠道发送前先按去重键查这一行，**已存在即返回既有结果、不重复发送**；不存在才发送、才写行。这使一次作业的重试只补没成功的渠道，也使一次崩溃后的重放不重复投递已成功的渠道。
+`notification_sends` 上 `(tenant_id, idempotency_key)` 唯一，落账即幂等：一个渠道发送前先按去重键查这一行，**命中 `succeeded` 或 `skipped` 行即用那一行的结果、不重复发送**，命中 `failed` 行或查不到行才发送、才写行。这使一次作业的重试只补没成功的渠道，也使一次崩溃后的重放不重复投递已成功的渠道。
 
 ### 渲染按收件人的语言与类型声明
 
@@ -127,12 +127,11 @@ idempotency_key = hex(sha256(canonicalJSON{
 | `pkg/notification` | 根包的类型、哨兵与接缝（`Dispatcher`、`Dispatch`、`Preferences`、`Inbox`、`Channel`） |
 | `pkg/mail` | 可选：`email` 渠道的发送接缝 `mail.Sender`。该能力尚未合入 main、位于同批在途的能力，引用按「路径 + 符号」写 |
 | `pkg/sms` | 可选：`sms` 渠道的 `sms.Registry`（解模板）与 `sms.Sender`（发送） |
-| `pkg/event` | 可选：每次成功写行后的事件 `notification.inbox.created`（供 SSE 转发） |
 | `pkg/i18n` | 把消息渲染成收件人语言的文本（`i18n.Localizer`，必需依赖） |
 
 **偏好、收件箱与渲染都在构造期依赖表里。** 本模块在 `New` 里用 `core.Resolve[notification.Preferences](reg)` 取偏好接缝、`core.Resolve[notification.Inbox](reg)` 取收件箱接缝、`core.Resolve[i18n.Localizer](reg)` 取渲染接缝，三者都是必需依赖，列在「登记单元与名字」的依赖列里。
 
-**依赖方向。** 本模块 import `pkg/jobs`、`pkg/db`、`pkg/tenant`、`pkg/i18n` 与 `pkg/notification` 根包，并可选 import `pkg/mail`、`pkg/sms`、`pkg/event` 的根包，不 import 通知能力目录内的其他实现子包，也不 import `pkg/authn` 与 `pkg/authz`。它不 import 任何厂商 SDK：`mail` 与 `sms` 的载体叶子绑定各自的库，本模块只经它们的接口包触达。这些依赖都在本模块之前构造、之后停止。
+**依赖方向。** 本模块 import `pkg/jobs`、`pkg/db`、`pkg/tenant`、`pkg/i18n` 与 `pkg/notification` 根包，并可选 import `pkg/mail` 与 `pkg/sms` 的根包，不 import 通知能力目录内的其他实现子包，也不 import `pkg/authn` 与 `pkg/authz`。它不 import 任何厂商 SDK：`mail` 与 `sms` 的载体叶子绑定各自的库，本模块只经它们的接口包触达。这些依赖都在本模块之前构造、之后停止。
 
 **本模块不声明配置命名空间，不读任何输入项。** 一次发送的作业参数（超时、重试次数、优先级）在入队时由本模块给出确定取值，不来自配置；这是本模块没有可缺的启动项的直接结果（与 [event.outbox.relay](../event/design-event-outbox.md) 同形）。
 
@@ -212,7 +211,7 @@ classDiagram
 
 ### 提交（Dispatch）
 
-操作序固定：形状校验 → 分类法校验 → 入队。形状校验的每一处落空都是 `ErrInvalidRequest`（`Recipient.Class` 不为 `user`——`external` 一律拒、`Recipient.UserID` 空、`Locale` 空、缺必填项）；`TypeKey` 不在分类法里是 `ErrUnknownType`；`Params` 带白名单外的键是 `ErrParamsNotAllowed`。分类法在 `New` 里经 `core.Resources[notification.TypeSpec](reg)` 收齐，本模块是**消费点之一**，取材域取**可用集**、不做减法，与 [notification.preferences](design-notification-preferences.md) 同一份裁定（两处各自收齐）。入队时本模块给出作业类型的名字、超时与重试次数；一次派发入队为**一条**作业，逐渠道展开在消费端；幂等键使同一租户内同一收件人的同一逻辑事件收敛成一条作业。
+操作序固定：形状校验 → 分类法校验 → 入队。形状校验的每一处落空都是 `ErrInvalidRequest`（`Recipient.Class` 不为 `user`——`external` 一律拒、`Recipient.UserID` 空、`Locale` 空、缺必填项）；`TypeKey` 不在分类法里是 `ErrUnknownType`；`Params` 带白名单外的键是 `ErrParamsNotAllowed`。分类法在 `New` 里经 `core.Resources[notification.TypeSpec](reg)` 收齐，本模块是**消费点之一**，取材域取**可用集**、不做减法，与 [notification.preferences](design-notification-preferences.md) 同一份裁定（两处各自收齐）。收齐时逐份校验，判据与偏好模块逐条相同：一个 `TypeSpec` 声明不自洽（`Key` 为空、`DefaultChannels` 为空、`DefaultChannels` 含未知渠道、`DefaultChannels` 内有重复、`RecipientVisibleParams` 内有重复），或两个模块声明同一个 `Key`，都是 `ErrInvalidConfig`，`New` 终止启动并点名那个键与声明方。入队时本模块给出作业类型的名字、超时与重试次数；一次派发入队为**一条**作业，逐渠道展开在消费端；幂等键使同一租户内同一收件人的同一逻辑事件收敛成一条作业。
 
 ### 消费与发送
 
@@ -222,11 +221,15 @@ classDiagram
 
 - **`in_app`**：渲染 `notification.Message`，经 `Inbox.Write` 写一行，落 `succeeded`。
 - **`email`**：`mail.Sender` 缺席即落 `skipped`；在场则渲染主题与正文，经 `mail.Sender.Send` 发一次，把结果归入 `succeeded` 或 `failed`。
-- **`sms`**：`sms.Registry` 或 `sms.Sender` 缺席即落 `skipped`；在场则字符串化参数（见下），经 `sms.Registry.Resolve` 解出模板，再经 `sms.Sender.Send` 发一次，落账。
+- **`sms`**：`sms.Registry` 或 `sms.Sender` 缺席即落 `skipped`；在场则取派发参数里的目的地、字符串化参数（见下），经 `sms.Registry.Resolve` 解出模板，再经 `sms.Sender.Send` 发一次，落账。
 
-**每个渠道发送前先按去重键查账**：命中一行即用那一行的结果（已成功的跳过、已失败的跳过、已跳过的跳过），不重复发送。
+**每个渠道发送前先按去重键查账**：命中 `succeeded` 或 `skipped` 行即用那一行的结果、不重复发送；命中 `failed` 行即这一次重新发送（见「去重键与幂等落账」）。
 
-### 短信参数的字符串化
+### 短信目的地与参数的字符串化
+
+**短信的目的地从派发参数 `to` 取。** 收件人是一个账户标识，本模块不达任何账户库，因而 E.164 号码由调用方在 `Dispatch.Params` 里以参数名 `to` 给出——它是调用方给出的参数之一，本模块不从账户推出它，缺它也使不了别的来源。`Dispatch.Params` 里没有 `to`、或它的值字符串化不出一个非空文本，都使该渠道落 `failed`（`ErrInvalidRequest`），不触达厂商。
+
+**`to` 同时是模板参数之一。** 它与其余参数一同进 `sms.Registry.Resolve` 的参数表，模板没有声明的参数会被拒，因此声明该类型的业务模块要在自己的短信模板参数表里列出 `to`；目的地取值与模板参数取的是同一个值。
 
 `sms.Message` 的参数是 `map[string]string`，而 `Dispatch.Params` 是 `map[string]any`。字符串化的判据是**只把有意义的值送上线路**：每个送进模板的参数都必须能字符串化成一个非空、稳定的文本——字符串原样、整数与布尔按十进制或小写文本、时间按约定的 RFC 3339 文本；**参数缺失、值为空、或值无法字符串化，一律使该渠道失败**（`ErrInvalidRequest`），不把空串或占位值送上线路。字符串化后的参数经 `sms.Registry.Resolve` 校验是否与模板声明的参数名表相等，缺项或多出都使该渠道失败。渲染与字符串化都在发送之前完成，任何一处失败都不触达厂商。
 
@@ -256,6 +259,7 @@ classDiagram
 | 有效集里出现闭集之外的渠道 | 不可能：类型的 `DefaultChannels` 含未知渠道在分类法收齐处即拒，存储行由 PUT 按闭集校验 |
 | 渠道的接缝不在本次装配里 | 该渠道落 `skipped`，不是错误，不进 `errors.Join` |
 | 短信参数缺失、为空或无法字符串化 | 该渠道落 `failed`（`ErrInvalidRequest`），不触达厂商 |
+| 派发参数里没有名为 `to` 的目的地 | 该渠道落 `failed`（`ErrInvalidRequest`），不触达厂商 |
 | 厂商限流（`mail.ErrThrottled`、`sms.ErrThrottled`） | 该渠道落 `failed`，进合并错误，作业按退避重试 |
 | 厂商拒绝（`ErrRejected`） | 该渠道落 `failed`，进合并错误；重试不会改变结果，但本模块不特判为终态 |
 | 厂商超时、网络错误、`ErrUncertain` | 该渠道落 `failed`，进合并错误；本模块不盲目重发那一次调用，重试由作业承担（去重键使已成功的渠道不再发） |

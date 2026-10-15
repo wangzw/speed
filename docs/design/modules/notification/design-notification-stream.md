@@ -26,7 +26,9 @@ Hub 在内存里，每个副本一个，只装本副本的连接。**Hub 唯一�
 |---|---|---|---|
 | `pkg/notification/stream` | `notification.stream` | 不交付功能接口，只挂 `/stream` 路由 | — |
 
-配置命名空间取模块名 `notification.stream`。构造期依赖：必需 `(*event.Bus)(nil)`；可选 `(*http.Endpoint)(nil)`、`(*authn.Gate)(nil)`。
+配置命名空间取模块名 `notification.stream`。构造期依赖：必需 `(*event.Bus)(nil)`；可选 `(*http.Router)(nil)`、`(*log.Logger)(nil)`。
+
+**端名清单 `notification.stream.endpoints` 在路由能力在场时必填。** `Init` 见到 `(*http.Router)(nil)` 在场而这一项为空即启动失败，以完整路径 `notification.stream.endpoints` 点名这一项；`(*http.Router)(nil)` 缺席时本模块不挂路由，这一项不被读取，空清单合法。
 
 ### 不交付功能接口
 
@@ -36,13 +38,13 @@ Hub 在内存里，每个副本一个，只装本副本的连接。**Hub 唯一�
 
 **订阅的事件类型名是 `notification.inbox.created`**（[收件箱](design-notification-inbox.md)在其包里声明的常量 `EventInboxCreated` 的取值）。订阅按字面类型名进行：事件总线按类型名精确比较路由，不解释通配与前缀，本模块也就按一个写死的字符串订阅，不 import 发布方的包。
 
-**订阅者的名字必填**，它是订阅者在分发层所起的跨度名称；本模块用自己的模块名 `notification.stream` 作订阅者名。
+**订阅只有两个输入。** `pkg/event` 的 `Bus.Subscribe(eventType string, h Handler)` 取一个事件类型名与一个处理器，没有订阅者名一类的第三项；本模块因此以一个处理器订阅 `notification.inbox.created` 这一个类型名，不向总线登记自己的名字。
 
 **事件载荷的字段是封闭集**：`message_id`、`tenant_id`、`recipient_user_id`、`type_key`。订阅端按字段名读取，不做类型断言；在进程内投递下它读到的是发布方的具体值，经传输投递下它读到的是传输解出来的结构，都按同一组字段名读。缺了 `tenant_id` 或 `recipient_user_id` 的事件无法归入任何连接的作用域，被丢弃。
 
 ### 路由
 
-`GET /stream` 由本模块在 `Init` 里挂在入口模块的登记面上，基路径 `/api/v1/notifications`（全路径 `/api/v1/notifications/stream`）。它是一条**长连接**路由，应答是一次流式的 `text/event-stream`。下表是它的判定顺序（封闭集）。
+`GET /stream` 由本模块在 `Init` 里挂在入口模块的登记面上，端取自配置项 `notification.stream.endpoints` 点名的那些端，基路径 `/api/v1/notifications`（全路径 `/api/v1/notifications/stream`）。它是一条**长连接**路由，应答是一次流式的 `text/event-stream`。下表是它的判定顺序（封闭集）。
 
 | 步骤 | 行为 |
 |---|---|
@@ -71,11 +73,13 @@ Hub 在内存里，每个副本一个，只装本副本的连接。**Hub 唯一�
 | `pkg/config` | 声明输入项 |
 | `pkg/event` | 订阅 `notification.inbox.created` |
 | `pkg/http` | 可选：把自己挂到入口模块的登记面上；沿 `Unwrap` 取 `http.Flusher` |
-| `pkg/authn` | 从请求上下文取调用方身份，作为订阅作用域的收件人；可选声明 `(*authn.Gate)(nil)` |
+| `pkg/tenant` | 路由从请求上下文取租户（`tenant.FromContext`），作为订阅作用域的一半 |
+| `pkg/authn` | 从请求上下文取调用方身份，作为订阅作用域的收件人 |
+| `pkg/log` | 可选：启动诊断 |
 
-**`pkg/event` 是必需依赖，其余是可选。** 没有总线就没有可订阅的事件，本模块无从起效，因此事件功能是必需依赖（`core.Requirement`，非 `Optional`）。入口模块只在本模块挂路由时需要，认证只在请求路径上需要，两者都声明为可选：一个只做装配校验、不服务请求的驱动可以不带它们构造本模块。
+**`pkg/event` 是必需依赖，入口模块与日志是可选。** 没有总线就没有可订阅的事件，本模块无从起效，因此事件功能是必需依赖（`core.Requirement`，非 `Optional`）。入口模块只在本模块挂路由时需要，日志只在启动诊断上需要，两者都声明为可选：一个只做装配校验、不服务请求的驱动可以不带它们构造本模块。
 
-**`authn.Gate` 是可选构造期依赖。** 请求路径上的身份由网关写入，网关是那条路径上唯一的写入方；本模块声明它为可选依赖，一个带着网关的装配因此把 `/stream` 路由排到网关之后。读身份本身经 `pkg/authn` 的包级存取函数，不经模块实例，方向满足架构不变量。
+**读身份与读租户都不经模块实例。** 身份经 `pkg/authn` 的包级存取函数读取，租户经 `pkg/tenant` 的 `FromContext` 读取，两者都是请求上下文里的值，本模块不把它们声明成构造期依赖；网关与 `/stream` 路由的先后由宿主的装配决定，本模块不为此声明任何依赖。方向满足架构不变量：本模块 import 认证与租户的根包，认证与租户不认识本模块。
 
 ## UML 图
 
@@ -167,7 +171,8 @@ classDiagram
 | 慢消费者缓冲满 | 该连接自己的一个帧被丢弃，`Publish` 不阻塞、不报错 |
 | 事件缺 `tenant_id` 或 `recipient_user_id` | 该事件归不入任何作用域，被丢弃 |
 | 装配里没有事件功能 | 构造期即失败（必需依赖缺失） |
-| 装配里没有入口模块 | 本模块仍构造，但不挂路由，`/stream` 不对外提供 |
+| 路由能力在场而 `notification.stream.endpoints` 为空 | 终止启动，以完整路径点名这一项 |
+| 装配里没有入口模块 | 端名清单不被读取，空清单合法；本模块仍构造，但不挂路由，`/stream` 不对外提供 |
 | 写入发生在别的副本上 | 连在本副本的客户端收不到那条事件的帧（每副本一个 Hub）；不补发，客户端回读才看得到 |
 
 **本模块不重试、不重连、不补发。** 一次丢帧即丢帧，一条断开的连接即断开；要拿到确定内容的客户端回读[收件箱](design-notification-inbox.md)。

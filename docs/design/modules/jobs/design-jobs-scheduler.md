@@ -37,7 +37,7 @@
 
 本模块 `Requires` `(*jobs.Queue)(nil)` 与 `(*jobs.Handlers)(nil)`（都必需，由 `jobs.db` 排他交付）、`(*tenant.Catalog)(nil)`（必需，用于按名册逐租户展开），可选 `(*log.Logger)(nil)`。它消费 `jobs.Schedule`：其它业务模块把周期声明放进自己的 `Resources`，本模块在 `New` 里经 `core.Resources[jobs.Schedule](reg)` 收齐，按取材域过滤后冻结成一份声明集。声明在登记期已定，进程存活期不变，本模块不重读、不轮询。
 
-`tenant.Catalog` 在构造期必需：`New` 时名册不在场即启动失败；每条声明的展开都经它列出在册租户并逐个进入。
+`tenant.Catalog` 在构造期必需：`New` 时名册不在场即启动失败；展开时每次 tick 读一次名册，本轮的每条声明与每个窗口共用这一份在册租户，逐个 `Enter` 后各入队一条。
 
 ### 取材域裁定
 
@@ -64,6 +64,16 @@ jobs:
 - **宿主可见面是承诺**：模块名 `jobs.scheduler` 与配置键 `jobs.scheduler.tick`。改动它们是宿主可见的破坏性变更，须随发布对账。
 - **入队效果的承诺**：在有 ticker 运行的一次运行里，每个窗口起点至少对应一次入队尝试；同一窗口、同一租户的多次入队收敛成一条作业。
 
+### 哨兵错误
+
+| 哨兵 | 定义处 | 含义 |
+|---|---|---|
+| `ErrInvalidSchedule` | `pkg/jobs/scheduler` | 一条周期声明的形状不合法（`Key` 为空、`Type` 为空、`Interval` 非正）；`New` 拒绝并点名那条声明 |
+| `ErrDuplicateSchedule` | `pkg/jobs/scheduler` | 参与集里两条声明共用同一个 `Key`；`New` 拒绝并点名冲突双方 |
+| `ErrMissingHandler` | `pkg/jobs/scheduler` | 一条声明的 `Type` 没有已登记的 handler；`Start` 拒绝启动并点名那条声明 |
+
+这些哨兵都由本模块判定，调用方以 `errors.Is` 判别，包裹一律用 `%w`。`tick` ≤0 不是失败，因此没有对应的哨兵。
+
 ## 依赖
 
 | 依赖 | 用途 |
@@ -78,18 +88,20 @@ jobs:
 
 ## UML 图
 
-一次 tick 的路径。图里看不出的约束：声明集在 `New` 时一次收集、按取材域过滤并冻结，每次 tick 不再过滤；每条声明都按名册逐租户展开，`tenant.Catalog.List` 给出在册租户、`tenant.Catalog.Enter` 逐个进入后各入队一条；每次 `Enqueue` 各自独立，一次失败不影响同一轮里其余声明与窗口；同一窗口的多次入队收敛成一条作业由队列的 `(tenant_id, idempotency_key)` 唯一约束做出，不靠本模块记住发过没有。
+一次 tick 的路径。图里看不出的约束：声明集在 `New` 时一次收集、按取材域过滤并冻结，每次 tick 不再过滤；在册租户在每次 tick 里读一次，本轮的每条声明与每个窗口共用这一份，读取失败即本轮不展开；每条声明都按名册逐租户展开，`tenant.Catalog.Enter` 逐个进入后各入队一条；每次 `Enqueue` 各自独立，一次失败不影响同一轮里其余声明与窗口；同一窗口的多次入队收敛成一条作业由队列的 `(tenant_id, idempotency_key)` 唯一约束做出，不靠本模块记住发过没有。
 
 ```mermaid
 sequenceDiagram
     participant TK as ticker
     participant CT as tenant.Catalog
     participant Q as jobs.Queue
+    TK->>CT: List 读一次在册租户
     loop 冻结声明集里的每一条声明
-        TK->>CT: List 列出在册租户
-        loop 每个在册租户
-            TK->>CT: Enter 进入该租户
-            TK->>Q: Enqueue（幂等键取自窗口）
+        loop 本轮覆盖的每一个窗口
+            loop 在册租户里的每一个租户
+                TK->>CT: Enter 进入该租户
+                TK->>Q: Enqueue（幂等键取自窗口）
+            end
         end
     end
 ```
@@ -115,7 +127,7 @@ sequenceDiagram
 | `New` | 取用 `jobs.Queue`、`jobs.Handlers`、`tenant.Catalog` 与可选的 `log.Logger`；经 `core.Resources[jobs.Schedule](reg)` 收齐声明、按取材域过滤、冻结；校验每条声明的形状 |
 | `Migrate` | 无：本模块没有表，不声明迁移集 |
 | `Init` | 无：本模块不读表，也没有别的启动期装载 |
-| `Start` | 经 `jobs.Handlers.Registered` 校验每一条启用声明的 `Type` 都已登记，缺一个即启动失败；再起 ticker，不晚于一个 `tick` 间隔先跑一次 tick，此后每 `tick` 一次。`tick` ≤0 时不起 ticker |
+| `Start` | 经 `jobs.Handlers.Registered` 校验每一条启用声明的 `Type` 都已登记，缺一个即启动失败；再起 ticker：立即跑一次 tick（不等一个 `tick`），这一次额外覆盖启动时刻所在的那个窗口，此后每 `tick` 一次、每次只覆盖 `(now - tick, now]` 内的窗口。`tick` ≤0 时不起 ticker |
 | `Stop` | 停掉 ticker；正在跑的那一次 tick 等它返回后才入队结束，此后本模块不再入队 |
 | `Close` | 未经 `Stop` 时先执行它；本模块不持需要释放的资源 |
 
@@ -123,9 +135,9 @@ sequenceDiagram
 
 ### 窗口与窗口起点
 
-一条周期为 `Interval` 的声明，窗口长度即 `Interval`。窗口起点是对齐到 `Interval` 的整数倍的时刻，以 Unix 纪元为原点：`W(t) = floor(t / Interval) * Interval`。落在同一个 `[W, W+Interval)` 区间里的时刻属于同一个窗口。
+一条周期为 `Interval` 的声明，窗口长度即 `Interval`。窗口起点是对齐到 `Interval` 的整数倍的时刻，以 Unix 纪元为原点：`W(t) = floor(t / Interval) * Interval`。对齐以纳秒计数计算（`pkg/jobs/scheduler` 的 `windowStart`），除法向下取整，纪元之前的时刻因而落在它所属窗口的起点而不是下一个窗口。落在同一个 `[W, W+Interval)` 区间里的时刻属于同一个窗口。
 
-**一次 tick 处理自上一次 tick 以来已经开始的每一个窗口**：把窗口起点落在 `(now - tick, now]` 区间里的每一个窗口各入队一次。回溯下界取一个 `tick` 周期，使入队集合只由当前时刻与 `tick`、`Interval` 推出，多个副本各自算出的集合一致，不依赖任何已调度记录。首次 tick 在 `Start` 后不晚于一个 `tick` 间隔发生，因而当前窗口在启动后即被覆盖。相邻两次 tick 之间跨过几个窗口，这次 tick 就为这几条各入队一次。由此：
+**一次 tick 覆盖窗口起点落在 `(now - tick, now]` 里的每一个窗口**，每条声明各入队一次。回溯下界取一个 `tick` 周期，使入队集合只由当前时刻与 `tick`、`Interval` 推出，多个副本各自算出的集合一致，不依赖任何已调度记录。**`Start` 里那次 tick 在此之上额外覆盖启动时刻所在的那个窗口**，即含 `now` 的那个窗口；此后每一次 tick 只覆盖 `(now - tick, now]` 内的窗口。启动时刻所在窗口的起点早于 `now - tick` 时（`Interval` 大于 `tick`，且启动时刻距该窗口起点超过一个 `tick`），这一次额外覆盖才纳入回溯区间之外的窗口；否则它本就在回溯区间内，两次覆盖的是同一批窗口。**比一个 `Interval` 更早的窗口不补跑。** 那次额外覆盖按同一个窗口键入队，该窗口已由别的副本或本副本更早的 tick 入过队时，重复入队由队列收敛成一条既有作业。相邻两次 tick 之间跨过几个窗口，这次 tick 就为这几条各入队一次。由此：
 
 - **`tick` 比 `Interval` 密时（tick 间隔小于窗口长度）不重复入队。** 一个窗口内发生多次 tick，或不同副本的 tick 落在同一个窗口里，每次算出同一个窗口起点、同一个幂等键，重复入队由队列的唯一约束收敛成一条作业。
 - **`tick` 比 `Interval` 疏时（tick 间隔大于窗口长度）不漏窗口。** 两次 tick 之间跨过多个窗口，一次 tick 把它们各入队一条，没有窗口被跳过。
@@ -134,11 +146,12 @@ sequenceDiagram
 
 ### 一次 tick
 
-1. 冻结的声明集为空即本轮结束。
-2. 按窗口算出本轮要入队的（声明，窗口起点）对：窗口起点落在 `(now - tick, now]` 里的每一个窗口，对每一条声明各一对。
-3. 对每一对算出幂等键 `hex(sha256(声明.Key + 窗口起点))`，作为 `Task.IdempotencyKey`。
-4. 经 `tenant.Catalog.List` 列出在册租户，对每个租户 `tenant.Catalog.Enter(ctx, 租户)` 得到那个租户的上下文，再在该上下文上入队一条。作业行的租户列由队列侧的模型内嵌 `tenant.Model` 落下。
-5. 每次 `Enqueue` 失败只记一条警告日志、继续下一对：一条声明、一个窗口入队失败不影响同轮里其余的对，下一个 tick 按同一个窗口起点重来，幂等键不变。
+1. 冻结的声明集为空即本轮结束，不读名册。
+2. 经 `tenant.Catalog.List` 读一次在册租户。**一次 tick 只读一次名册**，本轮的每一条声明、每一个窗口共用这一份在册租户；读失败即本轮一条都不展开，记一条警告，下一个 tick 重来。
+3. 按窗口算出本轮要入队的（声明，窗口起点）对：窗口起点落在 `(now - tick, now]` 里的每一个窗口，对每一条声明各一对；`Start` 里那次 tick 额外把启动时刻所在的那个窗口算进来。
+4. 对每一对算出幂等键 `hex(sha256(声明.Key + 窗口起点的十进制 UnixNano))`（`pkg/jobs/scheduler` 的 `windowKey`），作为 `Task.IdempotencyKey`。
+5. 对每一对里的每个在册租户，`tenant.Catalog.Enter(ctx, 租户)` 得到那个租户的上下文，再在该上下文上入队一条。作业行的租户列由队列侧的模型内嵌 `tenant.Model` 落下。
+6. 每次 `Enqueue` 失败只记一条警告日志、继续下一对：一条声明、一个窗口入队失败不影响同轮里其余的对，下一个 tick 按同一个窗口起点重来，幂等键不变。
 
 ### 按租户展开
 
@@ -150,10 +163,10 @@ sequenceDiagram
 
 | 情形 | 表现 |
 |---|---|
-| 声明形状不合格（`Key` 为空、`Type` 为空、`Interval ≤ 0`） | `New` 失败，点名出问题的声明 |
-| 参与集里两条声明共用同一个 `Key` | `New` 失败，点名冲突双方（同一窗口、同一租户下两条声明会算出同一个幂等键，一条会被另一条吞掉） |
+| 声明形状不合格（`Key` 为空、`Type` 为空、`Interval ≤ 0`） | `New` 以 `ErrInvalidSchedule` 失败，点名出问题的声明 |
+| 参与集里两条声明共用同一个 `Key` | `New` 以 `ErrDuplicateSchedule` 失败，点名冲突双方（同一窗口、同一租户下两条声明会算出同一个幂等键，一条会被另一条吞掉） |
 | `tenant.Catalog` 不在场 | `New` 失败（按名册逐租户展开必需它） |
-| 启用声明的 `Type` 没有已登记的 handler | `Start` 失败，点名那条声明（`Handlers.Registered` 里没有它的 `Type`） |
+| 启用声明的 `Type` 没有已登记的 handler | `Start` 以 `ErrMissingHandler` 失败，点名那条声明（`Handlers.Registered` 里没有它的 `Type`） |
 | 一次 `Enqueue` 失败（队列未运行 `ErrNotRunning`、租户拒绝、队列答出的其它错误） | 记一条警告日志，点名声明键、作业类型与窗口起点；本轮继续处理其余的对 |
 | `tenant.Catalog.List` 失败 | 本轮不展开，记一条警告；下一个 tick 重来 |
 | `tenant.Catalog.Enter` 失败 | `ErrTenantDisabled` 的租户本轮跳过（那个停用租户本窗口的工作不做），记一条警告；`ErrInvalidTenant` 不该出现（名册刚列出的租户）；其余在册租户照常 |
@@ -165,7 +178,7 @@ sequenceDiagram
 ### 非保证
 
 - **停机与启动之间的窗口不补。** 本模块不记已调度到哪个窗口；进程在两次运行之间跨过的窗口，不由它补入队。要补一段错过的窗口，由宿主机外的手段做，不在本模块。
-- **一次 tick 的入队次数没有上界，只与声明集、跨过的窗口数与在册租户数有关。** 一段长时间的 tick 中断后，下一次 tick 只回溯一个 `tick` 周期，更早的窗口不再被这次 tick 覆盖，与「不补跑」一致。
+- **一次 tick 的入队次数没有上界，只与声明集、跨过的窗口数与在册租户数有关。** 一段长时间的 tick 中断后，下一次 tick 只回溯一个 `tick` 周期，更早的窗口不再被覆盖，与「不补跑」一致；启动那一次也只额外覆盖启动时刻所在的那一个窗口。
 - **入队失败不影响队列里已有的作业。** 本模块只发起入队，队列是否接受、作业跑不跑由队列那一侧决定。
 
 ## 并发与事务边界

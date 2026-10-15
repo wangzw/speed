@@ -62,8 +62,8 @@ type Handler interface {
 `Handlers` 的契约，约束的主体是本模块交付的这一个 `Handlers`：
 
 - **登记在执行开始之前完成。** 消费模块在自己的 `Init` 里登记自己的 handler；`Init` 早于 `Start`，作业开始执行时 handler 集已定。
-- **同一 `Type` 只登记一个 handler。** 重复登记同一个 `Type`、登记一个 `Type()` 为空的 handler、或登记 `nil`，都以错误拒绝。
-- **`Start` 之后登记以错误拒绝。** 执行期间的 handler 集不再变化。
+- **同一 `Type` 只登记一个 handler。** 重复登记同一个 `Type` 以 `ErrDuplicateHandler` 拒绝；登记一个 `Type()` 为空的 handler 或登记 `nil` 以 `ErrInvalidHandler` 拒绝。
+- **`Start` 之后登记以 `ErrHandlerSetFrozen` 拒绝。** 执行期间的 handler 集不再变化。
 - **`Registered` 列出已登记的类型名。** 它返回一份只读的类型名切片，供消费方在 `Start` 校验自己的声明类型已登记。
 
 `Job`、`Task`、`Result`、`JobID`、`Status`、`Priority`、`ProgressFn` 与 `EnqueueOption` 的形状由 [design-jobs](design-jobs.md) 的接口契约给出；本模块交付的实现按它们的语义填值。
@@ -97,6 +97,10 @@ type Handler interface {
 | `ErrInvalidTask` | `pkg/jobs` | `Task` 的形状不合法（`Type` 为空） |
 | `ErrNoHandler` | `pkg/jobs` | `Enqueue` 遇一个没有已登记 handler 的 `Type`，拒绝且不写行 |
 | `ErrNotRunning` | `pkg/jobs` | 队列未在运行：`Start` 之前或 `Stop` 之后 |
+| `ErrInvalidConfig` | `pkg/jobs/db` | 本模块的某个输入项取值超出队列可运行的范围，`Prepare` 拒绝并点名那一项 |
+| `ErrInvalidHandler` | `pkg/jobs/db` | `Register` 收到 `nil` 或 `Type()` 为空的 handler |
+| `ErrDuplicateHandler` | `pkg/jobs/db` | `Register` 遇一个已被别的 handler 登记的类型 |
+| `ErrHandlerSetFrozen` | `pkg/jobs/db` | `Register` 在队列 `Start` 之后到来，handler 集已冻结 |
 | `ErrNoTenantInContext` | `pkg/tenant` | 上下文里没有租户；`Enqueue` 据此拒绝 |
 
 调用方以 `errors.Is` 判别，包裹一律用 `%w`。
@@ -177,11 +181,13 @@ stateDiagram-v2
 
 **`Status` 是作业状态的闭集**：`pending`、`running`、`retrying`、`succeeded`、`dead_letter`、`cancelled`。`Status.Terminal()` 对 `succeeded`、`dead_letter`、`cancelled` 为真，对 `pending`、`running`、`retrying` 为假；终态是稳定的，作业不再从终态转出。**`Priority` 是取值闭集**：`PriorityLow`（`0`）、`PriorityNormal`（`5`）、`PriorityHigh`（`10`）；它是认领的首要排序键。
 
-**作业表 `jobs`**，一行一条作业。时刻以数据库的时钟为准，多副本的执行协程按同一个时钟判断到期与认领。租户列由内嵌的 `tenant.Model` 提供，约定列名 `tenant_id`。
+**作业表 `jobs`**，一行一条作业。**行模型由本模块持有**（未导出的 `job`），它内嵌 `tenant.Model`：租户列 `tenant_id` 由此落下，本模块的模型语句据它填列与过滤。根包的 `Job` 是这张表的一行在调用方一侧的**只读视图**，不带租户字段。
+
+**全部时刻列是 epoch 毫秒的整数**（PostgreSQL `BIGINT`、SQLite `INTEGER`）：认领、结清与租约到期都是原生 SQL 算术，两个方言对时间戳字面量的拼写不同而整数同形，整数因而是在两个方言上一条语句判定「到点」与「持有到何时」的形态（形态照 `pkg/event/outbox/relay` 的迁移）。认领循环的每条语句读数据库自己的时钟（`pkg/jobs/db/statements.go` 的 `statements.now`），多副本的执行协程因此按同一个时钟判断到期与认领；`Enqueue` 写行时读提交方进程的时钟（`pkg/jobs/db/store.go` 的 `Enqueue` 里的 `time.Now`），那是经模型的一次单行写入。
 
 | 列 | 含义 |
 |---|---|
-| `id` | 主键，应用在入队时生成的 UUID |
+| `id` | 应用在入队时生成的 UUID；与 `tenant_id` 合成主键 |
 | `tenant_id` | 作业所属租户，由内嵌的 `tenant.Model` 从入队上下文的租户落下；是 `(tenant_id, idempotency_key)` 唯一索引的一半 |
 | `type` | 作业类型，对应一个已登记 `Handler` 的 `Type()` |
 | `status` | `Status` 闭集之一 |
@@ -194,15 +200,17 @@ stateDiagram-v2
 | `timeout_ms` | 一次执行的时限，毫秒（取自 `Job.Timeout`） |
 | `progress_pct`、`progress_msg` | `Handler` 最近一次经 `ProgressFn` 报的进度 |
 | `idempotency_key` | 非空时使 `Enqueue` 幂等；未给时写作 NULL，参与 `(tenant_id, idempotency_key)` 唯一索引 |
-| `scheduled_at` | 提交方要求执行的时刻（`WithDelay`／`WithScheduledAt` 定下）；仅记录到期依据，不改认领 |
-| `available_at` | 这一行下一次可被认领的时刻：入队时等于 `scheduled_at`，认领后等于认领到期时刻，失败退回后等于退回时刻，交还时置为当时 |
-| `started_at` | 最近一次执行开始的时刻 |
-| `completed_at` | 进入终态的时刻 |
+| `scheduled_at` | 提交方要求执行的时刻（`WithDelay`／`WithScheduledAt` 定下）；仅记录到期依据，不改认领；epoch 毫秒 |
+| `available_at` | 这一行下一次可被认领的时刻：入队时等于 `scheduled_at`，认领后等于认领到期时刻，失败退回后等于退回时刻，交还时置为当时；epoch 毫秒 |
+| `started_at` | 最近一次执行开始的时刻；epoch 毫秒 |
+| `completed_at` | 进入终态的时刻；epoch 毫秒 |
 | `claimed_by` | 持有认领的执行者标识，空即无人持有 |
-| `claim_expires_at` | 认领到期的时刻；到期之后别的副本可接手 |
+| `claim_expires_at` | 认领到期的时刻；到期之后别的副本可接手；epoch 毫秒 |
 | `cancel_requested` | 是否已被请求取消；认领与执行之间查它 |
-| `terminal_published_at` | 终态事件已发布的时刻；为空即发布义务未结 |
-| `created_at`、`updated_at` | 行的创建与最近更新时刻 |
+| `terminal_published_at` | 终态事件已发布的时刻；为空即发布义务未结；epoch 毫秒 |
+| `created_at`、`updated_at` | 行的创建与最近更新时刻；epoch 毫秒 |
+
+**主键是 `(tenant_id, id)` 复合键，租户列领衔。** 受租户约束的写表以 `tenant_id` 领衔主键：一条不领衔租户列的键会让一个租户的写入经 upsert 够到另一个租户的行——插入在别人的键上冲突，把那一行改写成写入方的租户（先例：`pkg/authz`、`pkg/settings`、`pkg/tenant/catalog` 的表，约定见 `pkg/tenant` 的 `Model`）。`Enqueue` 的单行写入带 `OnConflict` 子句，这条键是它的判据所在。两个方言的迁移各自声明这条键。
 
 索引：`available_at` 上有索引，认领按它取到期的行，读表按它算下一次到期；`(tenant_id, idempotency_key)` 唯一，使幂等键再次提交收敛到既有行。幂等键为空的行在该列上写作 NULL，SQL 的唯一索引不把多个 NULL 判为冲突，无键的作业因而可以多条并存。
 
@@ -212,7 +220,7 @@ stateDiagram-v2
 
 | 阶段 | 行为 |
 |---|---|
-| `Prepare` | 解读本模块的配置；不读表 |
+| `Prepare` | 解读本模块的配置；取值超出可运行范围即以 `ErrInvalidConfig` 拒绝；不读表 |
 | `New` | 取用交付的库、租户名册与可选的日志、总线；方言没有写好的语句时启动失败 |
 | `Migrate` | 数据库模块施加本模块声明的迁移集，建立 `jobs` 表；`New` 里表还不存在 |
 | `Init` | 表已就绪；消费模块在这一阶段经 `Handlers.Register` 登记自己的 handler |
@@ -275,7 +283,10 @@ handler 返回错误、或执行上下文到期，都是本次执行失败：`at
 | 幂等键已被占用 | 返回既有作业的 `JobID`，不新建、不报错 |
 | `Get`／`Cancel` 点名未知 id、他人的 id、不可见的行 | `ErrJobNotFound`（同形，不泄露存在性） |
 | 队列未在运行 | `ErrNotRunning` |
-| `Register` 重复 `Type`、`Type()` 为空、`nil`，或 `Start` 之后登记 | 登记以错误拒绝，handler 集不变 |
+| 本模块的输入项取值超出可运行范围（间隔、计数或时长非正，退避上限低于起点） | `Prepare` 以 `ErrInvalidConfig` 拒绝，点名那一项与取值 |
+| `Register` 重复 `Type` | `ErrDuplicateHandler`，handler 集不变 |
+| `Register` 收到 `nil` 或 `Type()` 为空的 handler | `ErrInvalidHandler`，handler 集不变 |
+| `Start` 之后 `Register` | `ErrHandlerSetFrozen`，handler 集不变 |
 | handler 返回错误 | `attempts` 加一，退避后重试；超过 `max_retries` 进 `dead_letter` |
 | 执行上下文到期（作业 `timeout_ms` 到） | 同一次失败，退避后重试 |
 | `tenant.Catalog.Enter` 失败（不在册、已停用） | 本次执行失败，退避后重试，不交 handler |

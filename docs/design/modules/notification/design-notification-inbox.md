@@ -26,7 +26,9 @@
 | `pkg/notification` | 不登记 | `Inbox` 接口、消息视图与它的输入输出类型、本模块用到的哨兵 | — |
 | `pkg/notification/inbox` | `notification.inbox` | `Inbox` 功能（`(*notification.Inbox)(nil)`） | 排他 |
 
-配置命名空间取模块名 `notification.inbox`。构造期依赖：必需 `(*db.Database)(nil)`、`(*tenant.Catalog)(nil)`；可选 `(*event.Bus)(nil)`、`(*log.Logger)(nil)`、`(*http.Endpoint)(nil)`。取用写作 `core.Resolve[notification.Inbox](reg)`，依赖声明写作 `core.Requirement{Token: (*notification.Inbox)(nil)}`。
+配置命名空间取模块名 `notification.inbox`。构造期依赖：必需 `(*db.Database)(nil)`、`(*tenant.Catalog)(nil)`；可选 `(*event.Bus)(nil)`、`(*log.Logger)(nil)`、`(*http.Router)(nil)`、`(*i18n.Localizer)(nil)`。取用写作 `core.Resolve[notification.Inbox](reg)`，依赖声明写作 `core.Requirement{Token: (*notification.Inbox)(nil)}`。
+
+**端名清单 `notification.inbox.endpoints` 在路由能力在场时必填。** `Init` 见到 `(*http.Router)(nil)` 在场而这一项为空即启动失败，以完整路径 `notification.inbox.endpoints` 点名这一项；`(*http.Router)(nil)` 缺席时本模块不挂路由，这一项不被读取，空清单合法。
 
 ### 交付的功能
 
@@ -65,11 +67,11 @@ type Inbox interface {
 | `ErrMessageNotFound` | `pkg/notification` | 收件箱点名了本收件人看不见的消息：未知 id、他人、他租户一律同形 |
 | `ErrInvalidRequest` | `pkg/notification` | 请求形状不可读：空收件人、空去重键、分页越界 |
 
-调用方以 `errors.Is` 判别，包裹一律用 `%w`。本能力其余的哨兵（`ErrUnknownType`、`ErrUnknownChannel`、`ErrNotUnsubscribable`、`ErrParamsNotAllowed`、`ErrDeliveryQueue`、`ErrChannelUnavailable`、`ErrInvalidConfig`）由根包定义、由别的模块使用，不在本模块的路由上出现。
+调用方以 `errors.Is` 判别，包裹一律用 `%w`。本能力其余的哨兵（`ErrUnknownType`、`ErrUnknownChannel`、`ErrNotUnsubscribable`、`ErrParamsNotAllowed`、`ErrInvalidConfig`）由根包定义、由别的模块使用，不在本模块的路由上出现。
 
 ### 路由
 
-基路径 `/api/v1/notifications`，本模块在 `Init` 里把路由挂在入口模块的登记面上，路径取 gin 写法。每条路由点名一个路径参数 `:messageId` 或不分页参数，**不带自有权限闸**：路由本身的访问控制由宿主侧的授权决定。下表是路由的全集（封闭集），列出方法、路径与成功应答。
+基路径 `/api/v1/notifications`，本模块在 `Init` 里把路由挂在入口模块的登记面上，端取自配置项 `notification.inbox.endpoints` 点名的那些端，路径取 gin 写法。每条路由点名一个路径参数 `:messageId` 或不分页参数，**不带自有权限闸**：路由本身的访问控制由宿主侧的授权决定。下表是路由的全集（封闭集），列出方法、路径与成功应答。
 
 | 方法 路径 | 成功应答 |
 |---|---|
@@ -97,6 +99,7 @@ type Inbox interface {
 | `pkg/event` | 可选：发布 `notification.inbox.created` |
 | `pkg/authn` | 从请求上下文取调用方身份，作为读与标记已读的收件人 |
 | `pkg/log` | 可选：记诊断 |
+| `pkg/i18n` | 可选：`i18n.Localizer` 按请求的协商语言渲染本模块写出的 `Problem` 的标题与正文；缺席时用本模块内嵌的英文文案 |
 
 **`pkg/authn` 是上下文存取，不是构造期依赖。** 路由读调用方身份经 `pkg/authn` 的包级存取函数（`FromContext`），身份是请求上下文里的一个值、不来自任何模块实例，因此本模块不把它声明为 `core.Requirement`。方向满足架构不变量：本模块 import 认证根包，认证不认识本模块。
 
@@ -187,7 +190,7 @@ classDiagram
 
 `Write` 在交付的库上做一次插入，按 `dedupe_key` 幂等：插入命中唯一索引即返回既有行的视图，不新建、不发事件。去重键由投递流水线按逐渠道的公式算出——`idempotency_key = hex(sha256(canonicalJSON{tenant, type_key, recipient_class, user_id, channel, locale, occurrence_id, params}))`，站内信渠道的取值固定为 `in_app`——本模块收下这个键，不重算它（[ADR-notification-delivery-2026-10-15](../../../adr/adr-notification-delivery-2026-10-15.md)）。
 
-**行先提交、事件后发。** `Write` 先把行插入并在自己的事务里提交，提交成功之后才发布 `notification.inbox.created`。装配里有总线时事件照发，发布失败不回滚那一行、也不向调用方报错；装配里没有总线时事件不发，行照常落库。这一条使“一次送不到任何人的通告什么都不丢”——消费方回读那一行即可，事件只决定它多快得到提示（[ADR-notification-stream-2026-10-15](../../../adr/adr-notification-stream-2026-10-15.md)）。
+**行先提交、事件后发。** `Write` 先把行插入并在自己的事务里提交，提交成功之后才发布 `notification.inbox.created`。本模块是这条事件的唯一发布方：写这一行的是 `Write`，发事件的也是它，调用它的[投递流水线](design-notification-delivery.md)不发布。装配里有总线时事件照发，发布失败不回滚那一行、也不向调用方报错；装配里没有总线时事件不发，行照常落库。这一条使“一次送不到任何人的通告什么都不丢”——消费方回读那一行即可，事件只决定它多快得到提示（[ADR-notification-stream-2026-10-15](../../../adr/adr-notification-stream-2026-10-15.md)）。
 
 **事件载荷是封闭集**：`{message_id, tenant_id, recipient_user_id, type_key}`。事件的类型名常量 `EventInboxCreated` 由本模块在自己的包里声明；事件的标识由 `event.NewID` 赋予，发布方不预设它。审计动作不在此列——本模块不发审计事件，谁审计由宿主在配置里点名。
 
@@ -209,6 +212,7 @@ classDiagram
 | `GET /messages` 的 `limit<0`、`limit>200` 或 `offset<0` | 400，`Problem.Type` 为 `urn:speed:notification:bad-request`，整页拒绝 |
 | `POST /messages/:messageId/read` 点名未知 id、他人或他租户的行 | 404，`Problem.Type` 为 `urn:speed:notification:message-not-found`，一律同形 |
 | `Write` 的 `dedupeKey` 或 `recipient` 为空 | 调用方缺陷，`Write` 返回 `ErrInvalidRequest`，不写行 |
+| 路由能力在场而 `notification.inbox.endpoints` 为空 | 终止启动，以完整路径点名这一项 |
 | 装配里没有总线 | `Write` 不发布事件，行照常落库，不报错 |
 | 发布事件失败 | 事件不发，行已经在表里；写一条警告日志，行不被回滚 |
 | `List`、`UnreadCount`、`MarkRead`、`ReadAll` 撞上数据库故障 | 语句本身的错误外传，路由答 503，不带 `Problem.Type`，成因只进日志 |

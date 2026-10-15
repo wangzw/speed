@@ -31,9 +31,11 @@
 
 | 登记单元 | 模块名 | 交付 | 构造期依赖 |
 |---|---|---|---|
-| `pkg/notification/preferences` | `notification.preferences` | 排他交付 `(*notification.Preferences)(nil)` | 必需 `(*db.Database)(nil)`、`(*tenant.Catalog)(nil)`；可选 `(*http.Endpoint)(nil)`（挂路由） |
+| `pkg/notification/preferences` | `notification.preferences` | 排他交付 `(*notification.Preferences)(nil)` | 必需 `(*db.Database)(nil)`、`(*tenant.Catalog)(nil)`；可选 `(*http.Router)(nil)`（挂路由）、`(*log.Logger)(nil)`、`(*i18n.Localizer)(nil)` |
 
 本模块的包导出 `ModuleName` 常量，命令树按这个名字纳入它。它取用 `(*notification.Preferences)(nil)` 这一功能标识的消费方写作 `core.Resolve[notification.Preferences](reg)`。
+
+**本模块不声明配置命名空间，不读任何输入项。** 路由挂到哪些端不由本模块的配置给出：`Init` 遍历入口模块登记面报出的端名，在**每一个**端上挂本模块的路由；入口模块缺席时不挂。因此本模块没有可缺的启动项，它的路由也就没有一份该写而未写的端名清单。
 
 ### 交付的功能
 
@@ -58,11 +60,11 @@ type Preferences interface {
 
 **不引入任何运行期可变的注册表。** 模块描述符在驱动开始前已冻结，全部声明在 `New` 那一刻都已在注册表里，「业务模块可以在 notification 之后才声明类型」因此平凡成立，不需要任何进程级的登记座。被否决的选项与各自的否决理由见 [ADR-notification-taxonomy-2026-10-15](../../../adr/adr-notification-taxonomy-2026-10-15.md)。
 
-**声明冲突在 `New` 报出。** 一个 `TypeSpec` 声明不自洽（类型键为空、`DefaultChannels` 含未知渠道、`DefaultChannels` 为空、参数白名单重复、`Unsubscribable` 为假而 `DefaultChannels` 含 `in_app` 之外的值），或两个模块声明同一个类型键，都是 `ErrInvalidConfig`，在 `New` 终止启动并点名那个类型键与声明方；不等到一次请求才发现分类法读不起来。
+**声明冲突在 `New` 报出。** 一个 `TypeSpec` 声明不自洽（`Key` 为空、`DefaultChannels` 为空、`DefaultChannels` 含未知渠道、`DefaultChannels` 内有重复、`RecipientVisibleParams` 内有重复），或两个模块声明同一个 `Key`，都是 `ErrInvalidConfig`，在 `New` 终止启动并点名那个类型键与声明方；不等到一次请求才发现分类法读不起来。
 
 ### 路由
 
-路由挂在通知基路径 `/api/v1/notifications` 下，全部不带本模块自己的权限闸；`recipient_user_id` 由宿主侧的授权与身份给出，作请求上下文里的一个取值传入 handler。下表是路由的全集（封闭集）。
+路由挂在通知基路径 `/api/v1/notifications` 下、挂在入口模块声明的每一个端上，全部不带本模块自己的权限闸；`recipient_user_id` 由宿主侧的授权与身份给出，作请求上下文里的一个取值传入 handler。下表是路由的全集（封闭集）。
 
 | 方法 路径 | 应答 | `Vary: Accept-Language` |
 |---|---|---|
@@ -146,10 +148,12 @@ flowchart TD
 | `pkg/db` | `notification_preferences` 表与迁移 |
 | `pkg/tenant` | 租户上下文、`tenant.Model`、语句的租户过滤 |
 | `pkg/http` | 经登记面挂路由（可选依赖） |
+| `pkg/log` | 可选：启动诊断 |
+| `pkg/i18n` | 可选：`i18n.Localizer` 按请求的协商语言渲染本模块写出的 `Problem` 的标题与正文；缺席时用本模块内嵌的英文文案 |
 
-**依赖方向。** 本模块 import 数据库、租户、`pkg/http` 与 `pkg/core`，不 import 通知能力目录内的其他实现子包：它不 import `pkg/notification/delivery` 或 `pkg/notification/inbox`，与它们只经 `pkg/notification` 根包的类型相认。它也不 import `pkg/authn` 与 `pkg/authz`——授权在宿主侧，本模块不参与判定。除 `pkg/http` 外，这些依赖都在本模块之前构造、之后停止。
+**依赖方向。** 本模块 import 数据库、租户、`pkg/i18n`、`pkg/http` 与 `pkg/core`，不 import 通知能力目录内的其他实现子包：它不 import `pkg/notification/delivery` 或 `pkg/notification/inbox`，与它们只经 `pkg/notification` 根包的类型相认。它也不 import `pkg/authn` 与 `pkg/authz`——授权在宿主侧，本模块不参与判定。除 `pkg/http` 外，这些依赖都在本模块之前构造、之后停止。
 
-**根包 `pkg/notification` 不 import 本模块。** 根包只依赖标准库，因而一个只读 `notification.Channel` 或 `notification.TypeSpec` 的业务模块 import 它不拉进数据库或租户。
+**根包 `pkg/notification` 不 import 本模块。** 根包依赖标准库与 `pkg/jobs` 这一个接口包（`Dispatcher.Dispatch` 的返回类型是 `jobs.JobID`），因而一个只读 `notification.Channel` 或 `notification.TypeSpec` 的业务模块 import 它，拉进来的是作业的标识类型，不是数据库、租户或本模块。
 
 ## UML 图
 
@@ -211,7 +215,7 @@ classDiagram
 
 ### 分类法的收集
 
-`New` 里 `core.Resources[notification.TypeSpec](reg)` 收齐全部声明，逐份校验：一个 `TypeSpec` 声明不自洽（类型键为空、`DefaultChannels` 含未知渠道、`DefaultChannels` 为空、参数白名单重复、`Unsubscribable` 为假而 `DefaultChannels` 含 `in_app` 之外的值），或两个模块声明同一个类型键，都是 `ErrInvalidConfig`，终止启动并点名那个键与声明方；校验通过的声明按类型键去重并排序，构成分类法。取值域是可用集，不做减法（见「类型分类法是资源消费点」）。
+`New` 里 `core.Resources[notification.TypeSpec](reg)` 收齐全部声明，逐份校验：一个 `TypeSpec` 声明不自洽（`Key` 为空、`DefaultChannels` 为空、`DefaultChannels` 含未知渠道、`DefaultChannels` 内有重复、`RecipientVisibleParams` 内有重复），或两个模块声明同一个 `Key`，都是 `ErrInvalidConfig`，终止启动并点名那个键与声明方；校验通过的声明按类型键去重并排序，构成分类法。取值域是可用集，不做减法（见「类型分类法是资源消费点」）。
 
 **分类法在 `New` 里定下，不读表。** `New` 早于 `Migrate`，本模块的表那时还不存在；分类法来自 `Resources`、不来自表。本模块的 `Init` 不读表——偏好矩阵按请求读，不持进程内快照。
 
@@ -236,7 +240,7 @@ classDiagram
 | `Prepare` | 无动作 |
 | `New` | 取用数据库与租户名册，收齐并校验分类法 |
 | `Migrate` | 数据库模块施加本模块声明的迁移集，建立 `notification_preferences` 表 |
-| `Init` | 经入口模块的登记面把路由挂到端上；`http.Endpoint` 缺席时不挂 |
+| `Init` | 遍历入口模块登记面报出的端名，在每一个端上挂本模块的路由；`http.Router` 缺席时不挂 |
 | `Start`、`Serve` | 无动作 |
 | `Stop`、`Close` | 无动作 |
 

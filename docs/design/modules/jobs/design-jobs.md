@@ -67,7 +67,7 @@ type Job struct {
     CompletedAt *time.Time
     CreatedAt   time.Time
     UpdatedAt   time.Time
-    // 租户列由内嵌的 tenant.Model 提供。
+    // 视图不带租户字段：落租户列的行模型由 jobs.db 持有，它内嵌 tenant.Model。
 }
 
 type ProgressFn func(pct int, msg string)
@@ -91,6 +91,7 @@ type Handlers interface {
 }
 
 type EnqueueOption func(*enqueueOptions)
+func NewEnqueueOptions() *enqueueOptions // 应用选项的起点；enqueueOptions 不导出
 func WithPriority(Priority) EnqueueOption
 func WithDelay(time.Duration) EnqueueOption
 func WithScheduledAt(time.Time) EnqueueOption
@@ -125,9 +126,11 @@ var (
 
 `Handlers` 约束的主体是每个调用它的业务模块：`Register` 以 `Type()` 标识一个 `Handler`，同一类型只登记一次后由消费者按类型分派；`Registered` 列出已登记的类型名。`Queue.Enqueue` 遇一个没有已登记 handler 的 `Type` 时即以 `ErrNoHandler` 拒绝，不写行。
 
-`Job` 是作业的只读视图。`Status` 的取值是闭集；`Status.Terminal()` 对 `StatusSucceeded`、`StatusDeadLetter`、`StatusCancelled` 为真，对其余值为假。`Priority` 的取值是闭集 `{PriorityLow, PriorityNormal, PriorityHigh}`，认领按它降序。`Result` 与 `Error` 都是执行结果的表述，`Result` 只在成功时有值。
+`Job` 是作业的只读视图，**不带租户字段**：持久化用的行模型由 `jobs.db` 持有，它内嵌 `tenant.Model` 并据此落租户列。`Status` 的取值是闭集；`Status.Terminal()` 对 `StatusSucceeded`、`StatusDeadLetter`、`StatusCancelled` 为真，对其余值为假。`Priority` 的取值是闭集 `{PriorityLow, PriorityNormal, PriorityHigh}`，认领按它降序。`Result` 与 `Error` 都是执行结果的表述，`Result` 只在成功时有值。
 
 `EnqueueOption` 的各构造函数各自设定一个入队参数：`WithPriority` 设定 `Job.Priority`（缺省 `PriorityNormal`，不是 `Priority` 的类型零值 `PriorityLow`——只有调用方显式传 `Priority(0)` 时才是它）、`WithDelay` 设定从现在起延迟多久可被认领、`WithScheduledAt` 设定一个绝对时刻之后才可被认领、`WithMaxRetries` 设定 `Job.MaxRetries`（缺省 `DefaultMaxRetries`）、`WithTimeout` 设定单次执行的时限（缺省 `DefaultTimeout`）。`WithDelay` 与 `WithScheduledAt` 互斥，后传入者胜。
+
+`enqueueOptions` 不导出；`NewEnqueueOptions` 是**跨包取得一份初始参数集的唯一入口**——队列模块（`jobs.db` 与提交方不在同一个包）先向它要一份起点：`PriorityNormal`、`DefaultMaxRetries`、`DefaultTimeout`、没有定时时刻；再按调用方传入的次序逐个应用选项。它本身不是调用方使用的符号，调用方只构造 `EnqueueOption`。
 
 `Schedule` 是业务模块在 `Resources` 里声明的周期任务，由 `jobs.scheduler` 消费；字段语义见下一节的取材域裁定与 [jobs.scheduler](design-jobs-scheduler.md)。
 
@@ -135,7 +138,7 @@ var (
 
 | 包 | 模块名 | 交付 | 排他 |
 |---|---|---|---|
-| `pkg/jobs` | 不登记 | `Queue`、`Handlers`、`Handler`、`Task`、`Job`、`JobID`、`Status`、`Priority`、`Result`、`ProgressFn`、`Schedule`、`EnqueueOption` 与 `With*` 构造函数、常量与哨兵 | — |
+| `pkg/jobs` | 不登记 | `Queue`、`Handlers`、`Handler`、`Task`、`Job`、`JobID`、`Status`、`Priority`、`Result`、`ProgressFn`、`Schedule`、`EnqueueOption`、`NewEnqueueOptions` 与 `With*` 构造函数、常量与哨兵 | — |
 | `pkg/jobs/db` | `jobs.db` | `(*jobs.Queue)(nil)`、`(*jobs.Handlers)(nil)` | 两者都排他 |
 | `pkg/jobs/scheduler` | `jobs.scheduler` | 不交付功能接口，只 tick 并入队 | — |
 
@@ -149,7 +152,7 @@ var (
 
 ### 稳定性承诺
 
-- `Queue`、`Handlers`、`Handler`、`Task`、`Job`、`JobID`、`Status` 及其闭集与 `Terminal`、`Priority`、`Result`、`ProgressFn`、`Schedule`、`EnqueueOption` 与 `With*` 构造函数的字段与方法集，以及本能力的全部哨兵，是对调用方的契约。加方法、改签名或改字段名对实现了接缝的队列模块与取用它们的调用方都是不兼容变更。
+- `Queue`、`Handlers`、`Handler`、`Task`、`Job`、`JobID`、`Status` 及其闭集与 `Terminal`、`Priority`、`Result`、`ProgressFn`、`Schedule`、`EnqueueOption` 与 `NewEnqueueOptions` 及 `With*` 构造函数的字段与方法集，以及本能力的全部哨兵，是对调用方的契约。加方法、改签名或改字段名对实现了接缝的队列模块与取用它们的调用方都是不兼容变更。
 - `Task` 的字段语义是承诺：`Type` 对应某个已登记 `Handler` 的 `Type()`，`Payload` 对 `pkg/jobs` 不透明，`IdempotencyKey` 非空时使 `Enqueue` 幂等。`Job` 的字段语义、`Status` 的闭集与 `Terminal` 的判定同属承诺。
 - **`Schedule` 的形状是承诺**：`Key` 全局唯一、`Type` 必须与某个已登记 handler 的 `Type()` 相同、`Interval > 0`；改这些字段使既有声明成为坏声明。
 - **宿主可见面是承诺**：模块名 `jobs.db`、`jobs.scheduler`，配置命名空间 `jobs.db`、`jobs.scheduler` 及其输入项，表名 `jobs`。改动它们是宿主可见的破坏性变更，须随发布对账。
@@ -262,12 +265,12 @@ stateDiagram-v2
 | 作业状态 | `Status` | `pending`／`running`／`retrying`／`succeeded`／`dead_letter`／`cancelled` 的闭集，`Terminal` 判定终态 |
 | 优先级 | `Priority` | `{0, 5, 10}` 的闭集，认领按它降序 |
 | 作业请求 | `Task` | 提交方一次交活：类型、载荷、幂等键；不带租户字段，租户取自 `ctx` |
-| 作业视图 | `Job` | 作业的只读视图：标识、状态、优先级、载荷、结果、错误、次数与重试上限、时限、进度、各时刻 |
+| 作业视图 | `Job` | 作业的只读视图：标识、状态、优先级、载荷、结果、错误、次数与重试上限、时限、进度、各时刻；不带租户字段 |
 | 结果 | `Result` | 执行方交回的字节；本能力只存、只报 |
 | 进度回调 | `ProgressFn` | 执行方在 `Handle` 里报告整数百分比与文本 |
 | 周期声明 | `Schedule` | 业务模块对外声明的周期任务：键、类型、周期、载荷 |
 
-**作业的持久形态是一张表 `jobs`，属于 `jobs.db`**，一行一个作业；表结构、列与索引见 [jobs.db](design-jobs-db.md)。本能力只把 `Job` 当作视图，`Status` 的持久取值与它逐字一致。
+**作业的持久形态是一张表 `jobs`，属于 `jobs.db`**，一行一个作业；表结构、列与索引见 [jobs.db](design-jobs-db.md)。本能力只把 `Job` 当作视图，它不带租户字段；持行模型、内嵌 `tenant.Model` 并据此落租户列的是 `jobs.db`。`Status` 的持久取值与 `Job.Status` 逐字一致。
 
 **`Status` 的闭集有生命周期含义，不是自由字符串。** `pending`、`running`、`retrying` 是非终态，`succeeded`、`dead_letter`、`cancelled` 是终态；`Terminal` 只对终态为真。**`Priority` 的取值是闭集**：`PriorityLow`、`PriorityNormal`、`PriorityHigh`，认领的排序按它降序。
 
@@ -277,7 +280,7 @@ stateDiagram-v2
 
 **认领与执行。** 消费者在自己的协程上按 `poll-interval` 读作业表，用一条语句认领至多 `claim-batch` 行到期的作业，写下认领者与到期时刻，然后逐个执行：先经 `tenant.Catalog.Enter(ctx, id)` 进入作业所属租户，再把作业交给按 `Type` 找出的 `Handler`，在 `Timeout` 之内跑 `Handle`。执行成功进终态 `succeeded` 并记下 `Result`；失败则按退避重排或进 `dead_letter`（细则见 [jobs.db](design-jobs-db.md)）。
 
-**周期入队。** `jobs.scheduler` 按 `tick` 读全部 `jobs.Schedule` 声明，对每个到期的周期以窗口幂等键入队一条：键是 `sha256(schedule_key + 窗口起点)`（不含租户），作为 `IdempotencyKey`，同一窗口的多次 tick 因此在唯一索引上收敛成一个作业。每条声明都经 `tenant.Catalog.List` 列出在册租户，逐个 `Enter` 后各入队一条（细则见 [jobs.scheduler](design-jobs-scheduler.md)）。
+**周期入队。** `jobs.scheduler` 按 `tick` 读全部 `jobs.Schedule` 声明，对每个到期的周期以窗口幂等键入队一条：键是 `sha256(声明键 + 窗口起点的十进制 UnixNano)` 的十六进制（不含租户），作为 `IdempotencyKey`，同一窗口的多次 tick 因此在唯一索引上收敛成一个作业。在册租户在每次 tick 里读一次（`tenant.Catalog.List`），本轮的每条声明与每个窗口共用这一份，逐个 `Enter` 后各入队一条（细则见 [jobs.scheduler](design-jobs-scheduler.md)）。
 
 **终态与发布义务。** 一条作业进入任一终态时向总线发一条事件；发布义务记在作业行自己身上（`terminal_published_at` 为空即补发），因此对 `pkg/event` 是可选依赖——总线缺席时作业照跑、只是不发事件。
 
@@ -291,14 +294,14 @@ stateDiagram-v2
 | 认领与租约 | [jobs.db](design-jobs-db.md) | 一条语句取至多 `claim-batch` 行到期作业，按优先级降序、`available_at` 升序、跨租户轮转取，写下认领者与到期时刻；行锁裁定并发认领 |
 | 至少一次与消费方幂等 | [jobs.db](design-jobs-db.md) | 作业至少执行一次；重复执行不重放结果，由消费方按 `IdempotencyKey` 自行幂等 |
 | 崩溃恢复 | [jobs.db](design-jobs-db.md) | 认领到期后由别的副本接手，遗留的 `running` 行照此处置 |
-| 多副本周期调度 | [jobs.scheduler](design-jobs-scheduler.md) | 窗口幂等键 `sha256(schedule_key + 窗口起点)` 作为 `IdempotencyKey`，同一窗口的多次 tick 收敛成一个作业，不需要选主 |
+| 多副本周期调度 | [jobs.scheduler](design-jobs-scheduler.md) | 窗口幂等键 `sha256(声明键 + 窗口起点的十进制 UnixNano)` 的十六进制作为 `IdempotencyKey`，同一窗口的多次 tick 收敛成一个作业，不需要选主 |
 | 公平性 | [jobs.db](design-jobs-db.md) | 跨租户轮转，一个租户不得饿死其他租户（认领语句的排序里含租户维度） |
 | 停机宽限 | [jobs.db](design-jobs-db.md) | `Stop` 不再认领；在飞作业跑完 `shutdown-grace`；持有的行全部交还 |
 | 延迟作业 | [jobs.db](design-jobs-db.md) | `available_at = ScheduledAt`，到期即可被认领 |
 | 单次超时与退避 | [jobs.db](design-jobs-db.md) | 每作业 `Timeout`（默认 `DefaultTimeout`）；失败后退避自 `retry-base` 起翻倍至多 `retry-max`；`Attempts` 超过 `MaxRetries` 时进 `dead_letter` |
 | 终态发事件 | [jobs.db](design-jobs-db.md) | 进入终态时向总线发事件；发布义务记在作业行自己身上（`terminal_published_at` 为空即补发），对 `pkg/event` 是可选依赖 |
 | 租户作用域 | [jobs.db](design-jobs-db.md) | 作业行内嵌 `tenant.Model`；执行时先 `tenant.Catalog.Enter(ctx, id)` 再交 handler |
-| 周期声明按租户展开 | [jobs.scheduler](design-jobs-scheduler.md) | 每条声明经 `tenant.Catalog.List` 列出在册租户，逐个 `Enter` 后各入队一条 |
+| 周期声明按租户展开 | [jobs.scheduler](design-jobs-scheduler.md) | 每次 tick 读一次在册租户（`tenant.Catalog.List`），本轮的每条声明与每个窗口共用这一份，逐个 `Enter` 后各入队一条 |
 | 周期声明的取材域 | [jobs.scheduler](design-jobs-scheduler.md) | 取参与集；判据见本文「周期声明与取材域」 |
 
 ## 错误与失败语义
@@ -338,6 +341,6 @@ stateDiagram-v2
 
 | 能力 | 状态 | 代码 |
 |---|---|---|
-| 接缝与根包类型（`Queue`、`Handlers`、`Handler`、`Task`、`Job`、`JobID`、`Status`、`Priority`、`Result`、`ProgressFn`、`Schedule`、`EnqueueOption` 与 `With*` 构造函数、常量与哨兵） | 未实现 | — |
+| 接缝与根包类型（`Queue`、`Handlers`、`Handler`、`Task`、`Job`、`JobID`、`Status`、`Priority`、`Result`、`ProgressFn`、`Schedule`、`EnqueueOption`、`NewEnqueueOptions` 与 `With*` 构造函数、常量与哨兵） | 未实现 | — |
 | 作业队列与登记面 `jobs.db` | 未实现 | — |
 | 周期调度 `jobs.scheduler` | 未实现 | — |

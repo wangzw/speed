@@ -45,7 +45,7 @@
 采纳：**根包 `pkg/objectstore` 声明字节接缝与公共类型、不登记模块；`objectstore.metadata` 排他交付元数据与生命周期面并挂 HTTP 面；`fs` 与 `s3` 各为一个排他的实现子包。**
 
 - **根包不登记模块。** `pkg/objectstore` 是接口包与公共类型：`Store`（字节接缝）、`Objects`（元数据与生命周期接缝）、`Object`、`State`、`Declaration`、`ListQuery` 与哨兵。它不 import 任何对象存储 SDK。
-- **`objectstore.metadata` 排他交付元数据与生命周期面。** `pkg/objectstore/metadata` 的 `Provides` 里排他声明 `(*objectstore.Objects)(nil)`，构造期必需 `(*db.Database)(nil)`、`(*tenant.Catalog)(nil)` 与 `(*objectstore.Store)(nil)`；它在自己的 `Init` 里把 `/api/v1/objects` 下的路由挂到入口模块的登记面上，`http.Endpoint` 可选（缺席即不挂路由）。
+- **`objectstore.metadata` 排他交付元数据与生命周期面。** `pkg/objectstore/metadata` 的 `Provides` 里排他声明 `(*objectstore.Objects)(nil)`，构造期必需 `(*db.Database)(nil)`、`(*tenant.Catalog)(nil)` 与 `(*objectstore.Store)(nil)`；它在自己的 `Init` 里把 `/api/v1/objects` 下的路由挂到入口模块的登记面上，`http.Router` 可选（缺席即不挂路由）。
 - **`fs` 与 `s3` 各为一个排他的实现子包。** `pkg/objectstore/fs` 登记 `objectstore.fs`，排他交付 `(*objectstore.Store)(nil)`，无构造期依赖，配置驱动；`pkg/objectstore/s3` 登记 `objectstore.s3`，同样排他交付 `(*objectstore.Store)(nil)`，绑它自己的对象存储 SDK。两者都是排他的：`Store` 的一个进程里恰好一个生效（照 `pkg/sms` 的载体形态），同时纳入即在消解阶段以排他冲突失败。`fs` 不 import 任何对象存储 SDK；不装 `s3` 的装配不背那个 SDK（`s3` 是本轮唯一引入新第三方依赖的地方，实现子包绑库是不变量 11 的正常形态）。
 
 ## 后果
