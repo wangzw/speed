@@ -17,11 +17,11 @@
  *     auth-core's usePermission over the lists it attached with
  *     session.setPermissionSet (never fetched or evaluated here);
  *   - the host's own role load: the fixture simulates the /me re-fetch a
- *     real host runs after a tenant switch commits, resolving it at the
- *     moment each journey wants the gate to lift (auth-core has already
- *     dropped the previous tenant's list by then -- the survival rules --
- *     so the route falls back to the pending gate and stays closed until
- *     the fresh list arrives);
+ *     real host runs after it switches tenants (the tenant is the host's
+ *     own state, mounted on auth-core's TenantProvider), resolving it at
+ *     the moment each journey wants the gate to lift -- each tenant's
+ *     list is attached only once its load lands, so the route falls back
+ *     to the pending gate and stays closed until then;
  *   - a "Refresh roles" re-fetch that keeps the attached list while it
  *     is in flight, so the denied gate re-renders without re-entering
  *     (RouteGuard fires onDenied once per transition INTO denied, never
@@ -29,22 +29,20 @@
  *
  * Journey 1 drives the gating across the tenancy-switch journey: an
  * allowed destination for one tenant's lists becomes pending the moment
- * a switch commits (the old list is gone), resolves to allowed or denied
- * when the new tenant's list arrives, refuses a switch to a tenant the
- * user is no member of (the error renders, the snapshot and the gate do
- * not move), and fires onDenied exactly once per denied spell, two
- * renders within one spell included. Journey 2 drives a server-side
- * session death to the same convergence the other suites prove: a
- * refused /me whose refresh is also refused signs the session out
- * locally, ProductShell replaces the frame with its session-ended
- * screen, and signing in again returns to the frame.
+ * the host switches tenants (the new tenant's list has not arrived yet),
+ * resolves to allowed or denied when the new tenant's list lands, and
+ * fires onDenied exactly once per denied spell, two renders within one
+ * spell included. Journey 2 drives a server-side session death to the
+ * same convergence the other suites prove: a refused /me whose refresh is
+ * also refused signs the session out locally, ProductShell replaces the
+ * frame with its session-ended screen, and signing in again returns to
+ * the frame.
  *
  * Both journeys run over the real-client rig (the same bound client and
- * genuine Response objects the usage example uses), pinning every
- * request in order -- the switch requests' bodies and bearers included.
- * The fixture host renders English host content (nav labels, view text,
- * tenant names, its own buttons) -- test-file data standing in for a
- * host's own content, exempt from the no-literal-text rule -- while
+ * genuine Response objects the usage example uses), pinning the requests
+ * in order. The fixture host renders English host content (nav labels,
+ * view text, tenant names, its own buttons) -- test-file data standing in
+ * for a host's own content, exempt from the no-literal-text rule -- while
  * every assertion on built-in strings imports the shipped sibling locale
  * bundles, never inline translations.
  */
@@ -65,13 +63,17 @@ import {
   TenantSwitcher,
 } from '@speed/tenancy-ui'
 import type { TenantOption } from '@speed/tenancy-ui'
-import { attachSession, useCurrentTenant, usePermission } from '@speed/auth-core'
+import {
+  attachSession,
+  TenantProvider,
+  useCurrentTenant,
+  usePermission,
+} from '@speed/auth-core'
 import type { AuthSession } from '@speed/auth-core'
 import { SignInScreen } from '@speed/auth-ui'
-import { authnGetMe } from '@speed/api-sdk'
+import { authnProfileGet } from '@speed/api-sdk'
 import authUiZhCN from '../../auth-ui/src/locales/zh-CN.json' with { type: 'json' }
 import layoutKitZhCN from '../../layout-kit/src/locales/zh-CN.json' with { type: 'json' }
-import tenancyUiZhCN from '../../tenancy-ui/src/locales/zh-CN.json' with { type: 'json' }
 import uiKitZhCN from '../../ui-kit/src/locales/zh-CN.json' with { type: 'json' }
 import { expectNoAxeViolations } from '../test-utils/axe.js'
 import {
@@ -79,33 +81,33 @@ import {
   renderWithProviders,
 } from '../test-utils/render.js'
 import {
+  authenticatedCompletion,
   errorResponse,
   jsonResponse,
-  makePair,
   makeRealClientRig,
+  openFlow,
+  principal,
 } from '../test-utils/real-client.js'
 import { ProductShell } from './components/ProductShell.js'
 
-const LOGIN_PASSWORD = 'POST /api/v1/authn/login/password'
-const SWITCH_TENANT = 'POST /api/v1/authn/tenant/switch'
-const ME = 'GET /api/v1/authn/me'
-const REFRESH = 'POST /api/v1/authn/token/refresh'
+const FLOWS_START = 'POST /auth/flows'
+const FLOWS_ANSWER = 'POST /auth/flows/answer'
+const PROFILE = 'GET /auth/me'
+const TOKEN = 'POST /auth/token'
 const IDENTIFIER = 'alice@example.com'
 const PASSWORD = 'password-1'
 
 /** The host's tenant roster -- host data, the same fixture the
- * tenancy-ui README demo uses. tenant-3 is a tenant the user is not a
- * member of: the switcher's switch to it is refused by the server. */
+ * tenancy-ui README demo uses. */
 const TENANTS: readonly TenantOption[] = [
   { id: 'tenant-1', name: 'Sunshine Dental' },
   { id: 'tenant-2', name: 'Bright Smile Clinic' },
-  { id: 'tenant-3', name: 'Harbor View Orthodontics' },
 ]
 
 /** Host data: the permission list each tenant's membership implies, the
- * list the fixture host re-attaches after a switch (auth-core drops the
- * tenant-domain list on switch -- the survival rules). tenant-1 can read
- * notes and manage members; tenant-2 can only read notes. */
+ * list the fixture host attaches once that tenant's role load lands.
+ * tenant-1 can read notes and manage members; tenant-2 can only read
+ * notes. */
 const TENANT_ROLES = {
   'tenant-1': ['notes:read', 'members:manage'],
   'tenant-2': ['notes:read'],
@@ -119,41 +121,38 @@ const VIEWS: readonly { readonly id: ViewId; readonly label: string }[] = [
   { id: 'members', label: 'Members' },
 ]
 
-interface GatedTenantAppProps {
+interface GatedContentProps {
   readonly session: AuthSession
-  /** The switcher's roster; host data. */
-  readonly tenants: readonly TenantOption[]
   /**
    * The host's role-load queue: every load the fixture host starts (on
-   * reaching an unsettled tenant, or on an explicit refresh) registers
-   * its resolver here under the tenant id, so each journey resolves the
-   * loads at the moment it wants the gate to lift. A real host would
-   * fetch /me instead; this map is the seam the journey drives.
+   * reaching a tenant whose list has not landed, or on an explicit
+   * refresh) registers its resolver here under the tenant id, so each
+   * journey resolves the loads at the moment it wants the gate to lift.
+   * A real host would fetch /me instead; this map is the seam the journey
+   * drives.
    */
   readonly roleLoads: Map<string, (permissions: readonly string[]) => void>
-  /** The switcher's onSwitched; the fixture host's record of the event. */
-  readonly onSwitched: (tenantId: string) => void
+  /** The switcher's onSelect; the fixture host's record of the event. */
+  readonly onSelect: (tenantId: string) => void
   /** Every RouteGuard's onDenied; the fixture host's record. */
   readonly onDenied: () => void
 }
 
 /**
- * The fixture host: the whole host side of the gating composition the
- * README documents, rendered inside ProductShell's authenticated frame.
- *
- * The host reads the session's hooks unconditionally (they fail closed
- * before any sign-in), derives each destination's RouteGuardStatus on
- * every render from usePermission over the lists it attached, and
- * re-attaches the lists itself when a role load completes -- the
- * setPermissionSet host duty, played here for real.
+ * The fixture host's content: the tenant switcher in the userMenu and one
+ * gated destination per capability. The current tenant flows from
+ * auth-core's TenantProvider (the host mounted it); the host derives each
+ * destination's RouteGuardStatus on every render from usePermission over
+ * the lists it attached, and re-attaches a tenant's list itself when its
+ * role load completes -- the setPermissionSet host duty, played here for
+ * real.
  */
-function GatedTenantApp({
+function GatedContent({
   session,
-  tenants,
   roleLoads,
-  onSwitched,
+  onSelect,
   onDenied,
-}: GatedTenantAppProps) {
+}: GatedContentProps) {
   const current = useCurrentTenant()
   const tenantId = current?.tenantId ?? null
   const canReadNotes = usePermission('tenant', 'notes:read')
@@ -168,23 +167,21 @@ function GatedTenantApp({
   const [refreshing, setRefreshing] = useState(false)
 
   // The tenant a role-load resolution must attach for: a switch that
-  // commits while the previous tenant's list is still in flight must
-  // not attach it to the wrong tenant. Read at resolution time, synced
-  // from the committed principal after every commit.
+  // commits while the previous tenant's list is still in flight must not
+  // attach it to the wrong tenant. Read at resolution time, synced from
+  // the current tenant after every render.
   const tenantRef = useRef<string | null>(null)
   useEffect(() => {
     tenantRef.current = tenantId
   }, [tenantId])
 
-  // Reaching an unsettled tenant starts its role load (the effect runs
-  // once per principal commit: after the first login, and after each
-  // switch, whose commit already dropped the previous tenant's list).
+  // Reaching a tenant whose list has not landed starts its role load.
   useEffect(() => {
     if (tenantId === null || settled.has(tenantId)) {
       return
     }
     // The tenant this load attaches for, frozen at start: the
-    // resolution runs later, when the principal may have moved on.
+    // resolution runs later, when the current tenant may have moved on.
     const tenant = tenantId
     const load = new Promise<readonly string[]>((resolve) => {
       roleLoads.set(tenant, resolve)
@@ -227,7 +224,7 @@ function GatedTenantApp({
   // replaces this whole view -- nothing to render here.
   async function checkSession(): Promise<void> {
     try {
-      await authnGetMe()
+      await authnProfileGet()
     } catch {
       // The session layer already converged; see the module comment.
     }
@@ -251,9 +248,7 @@ function GatedTenantApp({
   // The denied fallback this host composes is the migrated shape the
   // layout-kit suite prescribes: the page carries a real h1, so the
   // fallback EmptyState declares the headingLevel that continues the
-  // page order (h2, under the page h1) instead of RouteGuard's stock
-  // h6 default -- whose skip under a real page heading the layout-kit
-  // suite pins and declares out of scope for its own scans.
+  // page order (h2, under the page h1).
   const deniedFallback = <EmptyState variant="noPermission" headingLevel="h2" />
   let content: ReactNode
   if (view === 'home') {
@@ -288,10 +283,9 @@ function GatedTenantApp({
       userMenu={
         <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
           <TenantSwitcher
-            session={session}
-            tenants={tenants}
+            tenants={TENANTS}
             currentTenantId={tenantId}
-            onSwitched={onSwitched}
+            onSelect={onSelect}
           />
         </Box>
       }
@@ -311,6 +305,34 @@ function GatedTenantApp({
       <h1>My app</h1>
       {content}
     </ProductShell>
+  )
+}
+
+/**
+ * The fixture host: it holds the current tenant (its route stand-in
+ * here), mounts it on auth-core's TenantProvider, and treats a switch as
+ * a change of that state -- exactly the host duty the tenancy-ui README
+ * documents.
+ */
+function GatedTenantApp({
+  session,
+  roleLoads,
+  onSelect,
+  onDenied,
+}: GatedContentProps) {
+  const [tenantId, setTenantId] = useState<string>('tenant-1')
+  return (
+    <TenantProvider tenantId={tenantId}>
+      <GatedContent
+        session={session}
+        roleLoads={roleLoads}
+        onSelect={(id) => {
+          onSelect(id)
+          setTenantId(id)
+        }}
+        onDenied={onDenied}
+      />
+    </TenantProvider>
   )
 }
 
@@ -340,42 +362,27 @@ async function signIn(user: ReturnType<typeof userEvent.setup>) {
 }
 
 describe('host-side gating composition', () => {
-  it('gates every destination from the session lists across a switch, a denial spell and a refused switch', async () => {
+  it('gates every destination from the session lists across a tenant switch, a denial spell and a role refresh', async () => {
     const user = userEvent.setup()
     const roleLoads = new Map<
       string,
       (permissions: readonly string[]) => void
     >()
-    const onSwitched = vi.fn<(tenantId: string) => void>()
+    const onSelect = vi.fn<(tenantId: string) => void>()
     const onDenied = vi.fn()
     const rig = makeRealClientRig((call) => {
       const key = `${call.method} ${call.path}`
-      if (key === LOGIN_PASSWORD) {
-        return jsonResponse(200, makePair())
+      if (key === FLOWS_START) {
+        return jsonResponse(
+          200,
+          openFlow({ state: 'ready', next: { kind: 'complete' } }),
+        )
       }
-      if (key === SWITCH_TENANT) {
-        const body = JSON.parse(call.body ?? 'null') as {
-          readonly tenant_id?: string
-        }
-        if (body.tenant_id === 'tenant-2') {
-          // The switch mints an access token and no refresh token.
-          return jsonResponse(
-            200,
-            makePair({
-              access_token: 'access-2',
-              refresh_token: undefined,
-              principal: {
-                user_id: 'user-1',
-                tenant_id: 'tenant-2',
-                session_id: 'session-1',
-              },
-            }),
-          )
-        }
-        if (body.tenant_id === 'tenant-3') {
-          return errorResponse(403, 'authn.tenant_membership_required')
-        }
-        throw new Error(`unexpected switch target: ${call.body}`)
+      if (key === FLOWS_ANSWER) {
+        return jsonResponse(200, authenticatedCompletion())
+      }
+      if (key === PROFILE) {
+        return jsonResponse(200, principal())
       }
       throw new Error(`unexpected request: ${key}`)
     })
@@ -383,17 +390,16 @@ describe('host-side gating composition', () => {
     renderWithProviders(
       <GatedTenantApp
         session={rig.session}
-        tenants={TENANTS}
         roleLoads={roleLoads}
-        onSwitched={onSwitched}
+        onSelect={onSelect}
         onDenied={onDenied}
       />,
       { i18n: createGatedI18n() },
     )
 
     // Sign in through the host's sign-in surface: the frame appears
-    // with the tenant switcher showing the signed-in tenant, and the
-    // first tenant's role load is already in flight (home is exempt
+    // with the tenant switcher showing the host's current tenant, and
+    // the first tenant's role load is already in flight (home is exempt
     // from gating, so the frame is usable while it loads).
     await signIn(user)
     expect(
@@ -440,11 +446,9 @@ describe('host-side gating composition', () => {
     ).toBeInTheDocument()
     await expectNoAxeViolations()
 
-    // The switch commits: auth-core's survival rules dropped the
-    // tenant-domain list the moment tenant-2's principal landed, and
-    // tenant-2's list has not arrived yet -- so the Members gate falls
-    // back to pending and the previously allowed content is gone. The
-    // store carries the new access token and the switcher relabels.
+    // The host switches tenants (its own route change): tenant-2's list
+    // has not landed yet, so the Members gate falls back to pending and
+    // the previously allowed content is gone -- the switcher relabels.
     await user.click(screen.getByRole('button', { name: 'Sunshine Dental' }))
     await user.click(
       await screen.findByRole('menuitem', { name: 'Bright Smile Clinic' }),
@@ -457,15 +461,14 @@ describe('host-side gating composition', () => {
     expect(
       screen.queryByRole('heading', { name: 'Members' }),
     ).not.toBeInTheDocument()
-    expect(rig.store.get()).toBe('access-2')
-    expect(onSwitched).toHaveBeenCalledTimes(1)
-    expect(onSwitched).toHaveBeenCalledWith('tenant-2')
+    expect(onSelect).toHaveBeenCalledTimes(1)
+    expect(onSelect).toHaveBeenCalledWith('tenant-2')
     expect(
       screen.getByRole('button', { name: 'Bright Smile Clinic' }),
     ).toBeEnabled()
     expect(onDenied).not.toHaveBeenCalled()
 
-    // The host's re-fetch for tenant-2 lands with only notes:read --
+    // The host's role load for tenant-2 lands with only notes:read --
     // Members is now denied, behind ui-kit's own noPermission
     // EmptyState, and onDenied fired exactly once for the transition.
     await act(async () => {
@@ -530,54 +533,14 @@ describe('host-side gating composition', () => {
       await screen.findByRole('heading', { name: 'Notes' }),
     ).toBeInTheDocument()
 
-    // A refused switch to a tenant the user is not a member of: the
-    // tenancy-ui error renders the code's text, and nothing moves --
-    // the store still carries tenant-2's token, the switcher stays on
-    // Bright Smile Clinic and stays enabled, the gate and onDenied are
-    // untouched.
-    await user.click(
-      screen.getByRole('button', { name: 'Bright Smile Clinic' }),
-    )
-    await user.click(
-      await screen.findByRole('menuitem', { name: 'Harbor View Orthodontics' }),
-    )
-    expect(
-      await screen.findByRole('alert'),
-    ).toHaveTextContent(tenancyUiZhCN.errors.authn.tenant_membership_required)
-    expect(rig.store.get()).toBe('access-2')
-    expect(onSwitched).toHaveBeenCalledTimes(1)
-    expect(
-      screen.getByRole('button', { name: 'Bright Smile Clinic' }),
-    ).toBeEnabled()
-    expect(screen.getByRole('heading', { name: 'Notes' })).toBeInTheDocument()
-    expect(onDenied).toHaveBeenCalledTimes(2)
-
-    // The switcher is retryable: the menu opens again with the full
-    // roster.
-    await user.click(screen.getByRole('button', { name: 'Bright Smile Clinic' }))
-    expect(
-      await screen.findByRole('menuitem', { name: 'Harbor View Orthodontics' }),
-    ).toBeInTheDocument()
-    expect(
-      screen.getByRole('menuitem', { name: 'Sunshine Dental' }),
-    ).toBeInTheDocument()
-
-    // Every request the journey made, pinned in order: the login, the
-    // accepted switch to tenant-2 and the refused switch to tenant-3,
-    // each with the bearer it travelled with and the body it sent.
+    // Every request the journey made, pinned in order: the login's flow
+    // start, its completion answer and the profile it read. The tenant
+    // switch is the host's own state change and sends nothing.
     expect(rig.calls.map((call) => `${call.method} ${call.path}`)).toEqual([
-      LOGIN_PASSWORD,
-      SWITCH_TENANT,
-      SWITCH_TENANT,
+      FLOWS_START,
+      FLOWS_ANSWER,
+      PROFILE,
     ])
-    expect(rig.calls[1]?.authorization).toBe('Bearer access-1')
-    expect(JSON.parse(rig.calls[1]?.body ?? 'null')).toEqual({
-      tenant_id: 'tenant-2',
-    })
-    expect(rig.calls[2]?.authorization).toBe('Bearer access-2')
-    expect(JSON.parse(rig.calls[2]?.body ?? 'null')).toEqual({
-      tenant_id: 'tenant-3',
-    })
   })
 
   it('converges a server-side session death to the session-ended screen and back into the frame', async () => {
@@ -588,17 +551,30 @@ describe('host-side gating composition', () => {
         string,
         (permissions: readonly string[]) => void
       >()
-      const onSwitched = vi.fn<(tenantId: string) => void>()
+      const onSelect = vi.fn<(tenantId: string) => void>()
       const onDenied = vi.fn()
+      // The profile read is the login completion's and the probe's: the
+      // first (the login) answers, the second (the probe) is refused, and
+      // the third (the fresh login) answers again.
+      let profileCalls = 0
       const rig = makeRealClientRig((call) => {
         const key = `${call.method} ${call.path}`
-        if (key === LOGIN_PASSWORD) {
-          return jsonResponse(200, makePair())
+        if (key === FLOWS_START) {
+          return jsonResponse(
+            200,
+            openFlow({ state: 'ready', next: { kind: 'complete' } }),
+          )
         }
-        if (key === ME) {
-          return errorResponse(401, 'authn.session_revoked')
+        if (key === FLOWS_ANSWER) {
+          return jsonResponse(200, authenticatedCompletion())
         }
-        if (key === REFRESH) {
+        if (key === PROFILE) {
+          profileCalls += 1
+          return profileCalls === 2
+            ? errorResponse(401, 'authn.session_revoked')
+            : jsonResponse(200, principal())
+        }
+        if (key === TOKEN) {
           return errorResponse(401, 'authn.refresh_token_invalid')
         }
         throw new Error(`unexpected request: ${key}`)
@@ -607,9 +583,8 @@ describe('host-side gating composition', () => {
       renderWithProviders(
         <GatedTenantApp
           session={rig.session}
-          tenants={TENANTS}
           roleLoads={roleLoads}
-          onSwitched={onSwitched}
+          onSelect={onSelect}
           onDenied={onDenied}
         />,
         { i18n: createGatedI18n() },
@@ -665,17 +640,20 @@ describe('host-side gating composition', () => {
       ).toBeInTheDocument()
       expect(rig.store.get()).toBe('access-1')
 
-      // Every request the journey made, pinned in order -- the refused
-      // /me travelled with the session's own access token, and the
-      // refresh leg travelled credential-less by declaration.
+      // Every request the journey made, pinned in order: the first
+      // login's flow start, answer and profile; the probe's refused
+      // profile and the credential-less refresh it triggered; then the
+      // fresh login's flow start, answer and profile.
       expect(rig.calls.map((call) => `${call.method} ${call.path}`)).toEqual([
-        LOGIN_PASSWORD,
-        ME,
-        REFRESH,
-        LOGIN_PASSWORD,
+        FLOWS_START,
+        FLOWS_ANSWER,
+        PROFILE,
+        PROFILE,
+        TOKEN,
+        FLOWS_START,
+        FLOWS_ANSWER,
+        PROFILE,
       ])
-      expect(rig.calls[1]?.authorization).toBe('Bearer access-1')
-      expect(rig.calls[2]?.authorization).toBeNull()
     } finally {
       warn.mockRestore()
     }

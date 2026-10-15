@@ -1,8 +1,8 @@
 # @speed/test-utils
 
 The workspace's shared frontend test-support package: the single home of
-the DOM-test scaffolding the `@speed/*` packages and the reference-app
-web host would otherwise each carry a copy of.
+the DOM-test scaffolding the `@speed/*` packages and the demo host
+would otherwise each carry a copy of.
 
 It is **private and never published** — a workspace member consumed by
 the packages' and the app's tests, not a deliverable library. It lives
@@ -11,7 +11,7 @@ release pipeline's deliverable set (`tools/release/lockstep-release.py`
 derives the npm publish order from exactly that directory, without a
 private-package filter and under one uniform version), and a private
 member inside that set would enter the release plan and the publish
-loop. The reference-app web host — the workspace's other private member
+loop. The demo starter's web host — the workspace's other private member
 — lives outside `web/packages/*` for the same reason.
 
 ## Resolution
@@ -21,7 +21,7 @@ Consumers reach the package through the workspace's single package map
 alias onto this package's live `src/<module>.ts(x)` in every vitest/vite
 config (the map's `speedAliases()` derivation), and each consuming
 package's tsconfig `paths` section pins the same targets for `tsc` (the
-alias-manifest suite in the reference app proves both). Each consuming
+alias-manifest suite in the demo host proves both). Each consuming
 package declares the dependency in its `devDependencies`. There is no
 `dist`: the package is consumed as source, the same way the map resolves
 every workspace sibling, so `build` is the standalone compile check.
@@ -69,7 +69,7 @@ through `node_modules` rather than the map.
   script, optionally over the session's own refresh seam; each
   consuming package projects the observed request into its own recorded
   call shape. Also the shared `jsonResponse` / `errorResponse` /
-  `makePair` / `signInWithPassword` answer helpers.
+  `signInWithPassword` answer helpers.
 
 ## Testing
 

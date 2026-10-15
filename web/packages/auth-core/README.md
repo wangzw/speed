@@ -1,31 +1,40 @@
 # @speed/auth-core
 
 The browser session lifecycle as a headless, memory-only state machine
-over the generated authn surface of `@speed/api-sdk`. `createAuthSession`
-wires the generated operations -- password and SMS login, logout, tenant
-switch, step-up, refresh, plus the sms-code request, register and social
-operations that feed the sign-up and social sign-in flows -- to one
-observable session with a single in-memory access-token store as the
-bridge into `@speed/api-client`: a host that built its client with this
-same store and `refreshAccessToken: () => session.refresh()` gets silent
-refresh for free -- an expired-token 401 on any request runs one refresh,
-and the retried request carries the fresh token.
+over the generated authn flow surface of `@speed/api-sdk`.
+`createAuthSession` wires the generated operations -- the login flow
+(start, answer, current, abandon), the authenticated-purpose start for
+`link`, `step-up` and `enroll`, the methods listing, logout and the
+token endpoint a refresh uses -- to one observable session with a
+single in-memory access-token store as the bridge into
+`@speed/api-client`: a host that built its client with this same store
+and `refreshAccessToken: () => session.refresh()` gets silent refresh
+for free -- an expired-token 401 on any request runs one refresh, and
+the retried request carries the fresh token.
 
-No UI and no storage writes. The access token lives in the
-caller-supplied store (in memory by design -- no storage API exists
-here; see Known limitations); the refresh token lives only inside the
-session closure and is never written anywhere; there is no `restore`
-(see Known limitations). React hooks (`useAuthState`,
-`useCurrentTenant`, `usePermission`) read one session the host attaches
-with `attachSession`; react is a peer dependency, so only a host that
-already renders React carries it.
+Login is a server-side flow the client advances, not one request: the
+session starts a flow, hands each step back to the view, and commits
+only when a step settles a token issuance. No UI and no storage writes:
+the access token lives in the caller-supplied store (in memory by
+design -- no storage API exists here; see Known limitations); the
+refresh token lives only inside the session closure and is never
+written anywhere; there is no `restore` (see Known limitations). React
+hooks (`useAuthState`, `useCurrentTenant`, `usePermission`) read one
+session the host attaches with `attachSession`; react is a peer
+dependency, so only a host that already renders React carries it.
+
+The generated authn fragments declare no response schema, so orval types
+every return as `void`. This package hand-writes the response models and
+guards each body at runtime, refusing a contract-violating 2xx as a
+`client.protocol` error -- see "The response models and their guards".
 
 ## What ships
 
 | File | Exports |
 |---|---|
-| `session.ts` | `createAuthSession(store)`, `AuthSession`, `AuthSnapshot`, `AuthSessionListener`, `AuthDomain`, `AuthPermissionSets` |
-| `hooks.ts` | `attachSession(session)`, `useAuthState()`, `useCurrentTenant()`, `usePermission(domain, permission)` |
+| `session.ts` | `createAuthSession(store)`, `AuthSession`, `AuthSnapshot`, `AuthSessionListener`, `AuthDomain`, `AuthPermissionSets`, `AuthnPrincipal`, `AuthnFlowState`, `AuthnStep`, `AuthnField`, `AuthnFactorOption`, `AuthnMethodList`, `AuthnIdentifier`, `AuthnLink`, `OperationSupersededError`, `isOperationSuperseded` |
+| `hooks.ts` | `attachSession(session)`, `useAuthState()`, `usePermission(domain, permission)`, `TenantProvider`, `useCurrentTenant()` |
+| `query-key.ts` | `tenantQueryKey(tenantId, ...tail)`, `useTenantQueryKey(bareKey)`, `TenantQueryKey`, `evictTenantQueries(queryClient, tenantId)` |
 
 `src/index.ts` re-exports these; everything else is internal.
 
@@ -51,28 +60,92 @@ bindRequestFn(
 session.subscribe((snapshot) => render(snapshot))
 
 // render paths read the current snapshot:
-const snapshot = session.getSnapshot() // { state: 'anonymous', principal: null }
+const snapshot = session.getSnapshot() // { state: 'anonymous', principal: null, ... }
+```
 
-// React hosts bind the hooks to the session once, at bootstrap:
+## Driving a login flow
+
+A password (or SMS, or social) sign-in is a server-side flow the view
+drives step by step. `startFlow` begins it and returns the first step;
+the view dispatches on `next.kind`; `answerFlow` advances it and returns
+the next step. When the flow reaches a completion that issued tokens
+(`state: 'authenticated'` for a login, `state: 'elevated'` for a
+step-up) the session commits -- writes the store, reads `GET /auth/me`
+for a login's principal, and notifies subscribers. Every other step
+(live steps, `link`, `enroll`) changes nothing.
+
+```ts
+// Start a login flow for one method; the reply is the flow's first step.
+const step = await session.startFlow({ method: 'password', purpose: 'login' })
+
+// Answer the current step with the fields it asked for. A challenge
+// step names its fields; a completion commits the session.
+if (step.next.kind === 'challenge') {
+  const done = await session.answerFlow({
+    seq: 1,
+    step: 'answer',
+    input: { identifier: 'ada@example.com', password: 'pw' },
+  })
+  // done.state === 'authenticated' -> the session is signed in.
+}
+
+// After a page refresh, resume the flow the request is bound to:
+const current = await session.readFlow() // null when there is no flow
+// Abandon it (idempotent):
+await session.abandonFlow()
+
+// End the session:
+await session.logout()
+```
+
+On the identity already signed in, `startAuthenticatedFlow` starts a
+flow for `purpose: 'link'`, `'step-up'` or `'enroll'` on the same
+machine; a step-up completion re-mints the access token with the
+principal unchanged, and `link`/`enroll` completions leave the login
+state alone:
+
+```ts
+// Enroll a second factor: start with purpose 'enroll', drive the steps.
+const enrollment = await session.startAuthenticatedFlow({ purpose: 'enroll' })
+```
+
+## React hooks
+
+```ts
 import {
   attachSession,
+  TenantProvider,
   useAuthState,
   useCurrentTenant,
   usePermission,
 } from '@speed/auth-core'
 
-attachSession(session)
+attachSession(session) // once, at bootstrap (last bind wins)
 
 // in a component (all re-render on every session transition):
 const snapshot = useAuthState()
-const currentTenant = useCurrentTenant() // { tenantId } -- null while anonymous
+const currentTenant = useCurrentTenant() // { tenantId } -- null without a provider
 const canCreateNotes = usePermission('tenant', 'notes:write')
 ```
 
-Before any session is attached -- and after a logout -- every hook
-fails closed: the anonymous snapshot, a null tenant, `false` for every
+Before any session is attached -- and after a logout -- every hook fails
+closed: the anonymous snapshot, a null tenant, `false` for every
 permission. Attaching another session later rebinds (last bind wins);
 the previous session's transitions stop reaching the hooks.
+
+**The tenant is the host's, not the session's.** The server resolves the
+tenant per request (from the request host, a subdomain or a path) as a
+routing fact; the principal carries no tenant. So the host mounts its
+own current tenant and the hook reads it back:
+
+```tsx
+<TenantProvider tenantId={routeTenantId}>
+  <App />
+</TenantProvider>
+```
+
+`useCurrentTenant` returns the host-supplied `{ tenantId }`, or null
+when no provider is mounted or the host passed null.
 
 This session-and-hooks flow is compiled and executed by the package
 suite (`src/usage-example.test.tsx`), so the documented usage cannot
@@ -81,171 +154,161 @@ request seam bound with the same `bindRequestFn` a host's real client
 uses; the real-client composition itself (`createClient` over a live
 fetch, silent-401 refresh included) is exercised in `session.test.ts`.
 
-## Registration and social flows
-
-The session also wraps the pre-session authn operations the sign-up and
-social sign-in flows need. None of them changes the session on success
--- a registration is not a login -- except `completeSocialLogin`, which
-is a login operation like any other:
-
-```ts
-// Registering an account never changes the session: the response is
-// the created user, and the host follows up with a login when the new
-// account signs in.
-const user = await session.register({
-  email: 'ada@example.com',
-  password: 'pw',
-  display_name: 'Ada',
-  locale: 'zh-CN',
-})
-
-// A social channel's authorization URL is a pure request. The session
-// never navigates: an auth-ui component hands the URL upward and the
-// host's own navigation layer decides what happens next.
-const authorizeUrl = await session.socialAuthorizeUrl('google', {
-  redirect_uri: 'https://app.example.com/social/callback/google',
-})
-
-// Back from the provider with the code and state it redirected to, the
-// host completes the sign-in -- the full login contract applies: the
-// token pair is validated, both permission domains clear, the store is
-// written and subscribers are notified.
-const snapshot = await session.completeSocialLogin('google', {
-  code: '4/0AX4Xf...',
-  state: '...',
-})
-
-// One-time SMS codes are requested separately from the login that
-// consumes them. The request always answers 202 -- whether or not the
-// phone number belongs to an account -- and changes nothing.
-await session.requestSMSCode({ phone: '+8613800138000' })
-const snapshot = await session.loginWithSMSCode({
-  phone: '+8613800138000',
-  code: '123456',
-})
-```
-
-This flow is compiled and executed by the package suite alongside the
-quick start (`src/usage-example.test.tsx`).
-
 ## Permission checks are set lookup only
 
 `usePermission(domain, permission)` answers "is this string in the
 host-attached list for that domain" -- the `tenant` domain for the
-permissions the principal holds inside its current tenant, `system`
-for platform-staff permissions that are tenant-independent. The host
-attaches the lists through the session; nothing here fetches or
-evaluates them, and a domain whose list is absent reads `false`.
+permissions the principal holds inside its current tenant, `system` for
+platform-staff permissions that are tenant-independent. The host attaches
+the lists through the session; nothing here fetches or evaluates them,
+and a domain whose list is absent reads `false`.
 
 ```ts
 session.setPermissionSet('tenant', ['notes:read', 'notes:write']) // after a /me fetch
-session.setPermissionSet('system', ['users:manage'])              // platform staff
-session.setPermissionSet('tenant', null)                          // clears a domain
+session.setPermissionSet('system', ['users:manage'])             // platform staff
+session.setPermissionSet('tenant', null)                         // clears a domain
 ```
 
 The session applies the survival rules when a principal change commits:
-a silent refresh or a step-up keeps both lists, a tenant switch drops
-the tenant list and keeps the system one, and a login -- even by the
-same user in the same tenant -- or an anonymous transition clears both.
-These checks are a UX affordance, never a security boundary -- the
-server authorizes. Refetch a domain's lists after a login or a tenant
-switch: the session clears what must not survive, but it never knows
-whether a list you attach still describes the principal it was fetched
-under.
+a silent refresh or a step-up keeps both lists, `link` and `enroll`
+keep them, and a login -- even by the same account -- or an anonymous
+transition clears both. These checks are a UX affordance, never a
+security boundary -- the server authorizes. Refetch a domain's lists
+after a login: the session clears what must not survive, but it never
+knows whether a list you attach still describes the principal it was
+fetched under.
+
+## Tenant-scoped query keys
+
+A cached row a signed-in principal reads is keyed under the tenant that
+principal is acting in, so a tenant change can never serve the previous
+tenant's rows. `tenantQueryKey` prepends the tenant id as the key's
+outermost segment (one prefix per tenant, shared by all of that
+tenant's reads); `useTenantQueryKey` derives the key and the value the
+read gates `enabled` on from one hook call; `evictTenantQueries`
+removes the departing tenant's whole subtree once a change commits. No
+surface builds this convention itself -- it lives here, in one place,
+because the tenant is this package's own fact (`@speed/api-client`
+never carries a tenant, and `@speed/api-sdk`'s generated keys are
+tenant-less bare spec paths).
+
+```ts
+import { useQuery } from '@tanstack/react-query'
+import {
+  evictTenantQueries,
+  tenantQueryKey,
+  useTenantQueryKey,
+} from '@speed/auth-core'
+
+// In a read: one hook call gives the key and the enablement operand.
+// A null tenant (no route tenant, or no provider) still yields a key;
+// `enabled` keeps the read from fetching it.
+const { tenantId, queryKey } = useTenantQueryKey(['notes'])
+useQuery({
+  queryKey,
+  queryFn: () => fetchNotes(),
+  enabled: tenantId !== null,
+})
+
+// A key for a surface that builds its own tail, from the current
+// tenant id (the factory only shapes the key -- it fetches nothing):
+const membersKey = tenantQueryKey(tenantId, 'members', 'page-1')
+
+// When the route tenant changes, evict the departing tenant's whole
+// subtree. Pass the id read *before* the change -- the new id names
+// nothing:
+const departingTenantId = tenantId // captured before the route changes
+evictTenantQueries(queryClient, departingTenantId)
+```
+
+Tenant-scoped eviction reaches only the tenant segment; identity-domain
+rows cached under bare keys carry no tenant segment and are out of its
+reach -- clearing those is the whole-cache eviction at session end
+(`@speed/product-shell`'s shipped default). This flow is compiled and
+executed by the package suite (`src/usage-example.test.tsx`).
+
+## The response models and their guards
+
+The authn fragments declare no success schema, so orval generates
+`void` return types. This package therefore hand-writes the response
+models -- `AuthnFlowState`, `AuthnStep`, `AuthnField`,
+`AuthnFactorOption`, `AuthnPrincipal`, `AuthnMethodList` -- and guards
+every body-carrying 2xx at runtime: the guard checks that the body is an
+object and that it carries the required fields, and refuses anything
+else as a `status: 200`, `code: client.protocol` ApiError. A
+contract-violating 2xx is never a successful login, and the guard runs
+before any state change (and before the first property access, so an
+empty 2xx never escapes as a native `TypeError`). These models are the
+consuming side's hand-written contract: once a fragment declares a
+schema, they converge with the generated surface.
 
 ## The failure contract
 
-- Every operation rejects with the raw `ApiError` from the request
+- Every request that fails rejects the raw `ApiError` from the request
   (tell it apart with `isApiError` from `@speed/api-client`), and a
-  failed operation changes nothing: the store, the held refresh token
-  and the snapshot are exactly what they were before the attempt.
-  That covers the logins (`loginWithPassword`, `loginWithSMSCode`,
-  `completeSocialLogin`), the session-management operations (`logout`,
-  `switchTenant`, `verifyStepUp`) and the pre-session operations
-  (`requestSMSCode`, `register`, `socialAuthorizeUrl`) -- the last
-  three never change state even on success, since a registration is
-  not a session.
-- The five token-issuing operations above have one rejection that is
-  not an `ApiError`: when a concurrent sibling operation (a second
-  login, a switch, a step-up) committed to the session while this
-  request was in flight, the request's own 2xx was genuine but its
-  answer no longer describes the session -- nothing of it was applied
-  -- and the operation rejects with `OperationSupersededError`
-  instead of resolving with the winner's snapshot. Tell it apart with
-  `isOperationSuperseded` (exported from this package; `isApiError`
-  is false for it). This is not a failure of the request and not a
-  broken session: the session is authenticated under the winner's
-  tokens, which are not necessarily this caller's. Treat the answer
-  accordingly: no one-shot side effect (a tenant switch's
-  `onSwitched`, a sign-in's post-login redirect) may fire for a
-  tenant or identity the session is not actually running under. The
-  error's `snapshot` field carries the session's current (winning)
-  state for a caller that wants to compare it against its own
-  request.
-- A token-issuing 2xx that violates the contract (missing tokens or
-  principal, malformed fields) is a protocol violation, never a
-  successful login: it rejects with an `ApiError` of
+  failed operation changes nothing -- **except `logout`**: a logout
+  whose own request is refused still clears the local session and goes
+  anonymous (a session it could not revoke is no longer trustworthy
+  here either) and then rejects the raw `ApiError`.
+- A token-issuing commit -- a login completion or a step-up completion
+  -- has one rejection that is not an `ApiError`: when a concurrent
+  commit landed while this one was in flight, the request's own 2xx was
+  genuine but its answer no longer describes the session -- nothing of
+  it was applied -- and the operation rejects with
+  `OperationSupersededError` instead of resolving with the winner's
+  snapshot. Tell it apart with `isOperationSuperseded` (exported from
+  this package; `isApiError` is false for it). Treat the answer
+  accordingly: no one-shot side effect (a post-login redirect) may fire
+  for an identity the session is not actually running under. A
+  superseded step-up carries an extra cost: its completion rotated the
+  tokens and consumed, server-side, the challenge it verified, so the
+  caller must never re-offer that same second factor -- only a fresh
+  flow can retry. The error's `snapshot` field carries the session's
+  current (winning) state.
+- A body-carrying 2xx that violates the contract (missing tokens or
+  required fields, malformed fields) rejects with an `ApiError` of
   `status: 200` and code `client.protocol`, again changing nothing.
-  The same fail-closed answer guards the two non-login 2xx responses
-  that must carry a payload: a `completeSocialLogin` answered with a
-  binding-shaped response (identity bound, no tokens -- the server's
-  answer to an already-authenticated caller) is refused before any
-  state change, and a `socialAuthorizeUrl` answered without an
-  `authorize_url` is refused outright.
-- `refresh()` is the silent path. It resolves `true` when a fresh pair
-  was stored, `false` when there is nothing to refresh or the server
-  refused the held token (the session is over and signs out locally --
-  the server has already terminated the token family) -- and `false`
-  too when a tenant switch won the race while the refresh was in
-  flight (the rotated token is still adopted; see below, but the
-  request whose 401 started the refresh spoke for the old tenant and
-  must fail rather than replay under the new one, whose answer could
-  be cached under the old tenant's key). A transport failure or
-  server-side error rethrows the raw `ApiError` with the store and
-  the held tokens untouched (a refresh never clears them).
-- Concurrent `refresh()` calls presenting the same held refresh token
-  share a single in-flight request: the authn server treats parallel
-  presentations of one token as theft and rotates the whole family,
-  so the session serialises them itself -- and a call made after a
-  tenant switch or step-up presents the same held token, so it still
-  shares the flight.
-- A completed `logout` wins over a refresh that resolves after it, and
-  a committed login/switch/step-up wins over a stale refresh: the
-  losing pair's access token and snapshot are never applied over the
-  winner's -- with one exception, the rotated refresh token itself,
-  adopted into the held slot when the winning operation kept the held
-  token (a tenant switch or step-up mints no new one, and the server
-  has already consumed the held token for that refresh). The
-  resolution still reflects who won: a step-up kept the same
-  principal, so the refresh resolves `true` -- a retry speaks for the
-  identity the refused request spoke for; a tenant switch changed the
-  principal, so it resolves `false`, and the original request fails
-  instead of replaying under a principal it never asked.
+- `readFlow()` resolves `null` for a 401 (no flow binding, or the flow
+  is done or gone) and rethrows anything else. `abandonFlow()` resolves
+  for a 401 (the flow is already gone -- the delete is idempotent) and
+  rethrows anything else.
+- `refresh()` is the silent path. It resolves `true` when the store
+  holds a fresh token afterwards, `false` when there is nothing to
+  refresh, the held token was refused (the session is over and signs
+  out locally), or a concurrent commit replaced the session -- and a
+  transport or server-side failure rethrows the raw `ApiError` with the
+  store and the held tokens untouched (a refresh never clears them on
+  the way out). Concurrent calls presenting the same held refresh token
+  share a single in-flight request.
+- A completed `logout` wins over a refresh that resolves after it, and a
+  committed login/step-up wins over a stale refresh: the losing pair's
+  access token and snapshot are never applied over the winner's -- with
+  one exception, the rotated refresh token itself, adopted into the
+  held slot when the winning commit kept the held token (a step-up
+  mints no new one, and the server has already consumed the held token
+  for that refresh).
 
 ## Known limitations
 
 - **No persistence across page loads.** The session is memory-only and
   there is deliberately no `restore`: reloading the page starts
-  anonymous. The authn API returns the refresh token in the login
-  response body and sets no refresh cookie, so nothing outside the
-  session closure outlives the page -- a reload cannot re-establish
-  the session, and the user signs in again.
-- **The refresh token is JavaScript-visible in memory.** The authn API
-  sets no refresh cookie to hide it in, so the session must hold the
-  token its refresh endpoint takes in the request body. The access
-  token is likewise readable by any script running in the page; no
-  storage API exists here on purpose.
-- The two token-issuing operations that mint no refresh token -- tenant
-  switch and step-up -- keep rotating the caller's existing one, per
-  the authn spec. A `switchTenant` to a tenant the principal has no
-  membership in is refused by the server and changes nothing locally.
-- **Binding flows do not live on this session surface.** The authn
-  callback endpoint does double duty for an already-authenticated
-  caller -- its answer then carries the bound identity and no tokens
-  -- and `completeSocialLogin` deliberately refuses that shape with
-  `client.protocol`: this package's callback surface is a sign-in
-  surface. Binding is not a login, and the callback exchange itself is
-  a plain generated call on the caller's own access token, never a
-  session operation -- which is exactly how `@speed/account-ui`'s
-  `BindingCallbackHandler` completes a binding at the host's callback
-  route (its `SocialBindingsSection` add area starts the flow).
+  anonymous. The authn token responses carry the refresh token in the
+  body (the browser path delivers `delivery: 'token'`; no refresh cookie
+  exists), so nothing outside the session closure outlives the page --
+  a reload cannot re-establish the session, and the user signs in again.
+- **The refresh token is JavaScript-visible in memory.** No refresh
+  cookie hides it, so the session must hold the token its refresh
+  request takes in the body. The access token is likewise readable by
+  any script running in the page; no storage API exists here on purpose.
+- **`delivery: 'session'` is not modeled.** The browser path delivers a
+  token pair; a completion answered with a session document instead (a
+  cookie-delivered login) is refused by the guard as `client.protocol`,
+  because this session holds tokens, not a cookie session.
+- **The refresh request's credential-less declaration depends on the
+  generated artifact.** The design has the refresh travel without an
+  Authorization header (`speedRequestCredentialless`). The
+  `web/orval.config.ts` per-operation override now names the current
+  operation id (`authn.token.issue`); a generated `api-sdk/src/index.ts`
+  produced before that fixup routes the token operation through the
+  bearer mutator instead. Regenerating the surface applies the
+  declaration.

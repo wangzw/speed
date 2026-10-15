@@ -6,13 +6,15 @@
     // automatic runtime (react-jsx), same as ui-kit, layout-kit and
     // auth-ui.
     //
-    // src/ renders over an @speed/auth-core session and reads @speed/i18n
-    // translations; test-utils/ drives sessions through the
-    // api-client/api-sdk seam (@speed/api-sdk's runtime subpath before its
-    // prefix), renders under the ui-kit theme providers -- whose own
-    // sources import @speed/tokens and @speed/i18n/mui-locale, which this
-    // program pulls into its graph, so those two resolve to their sources
-    // as well. The siblings' published "types" point into their dist/,
+    // src/ renders MUI primitives (the tenant switcher) and reads
+    // @speed/i18n translations; test-utils/ renders under the ui-kit theme
+    // providers -- whose own sources import @speed/tokens and
+    // @speed/i18n/mui-locale, which this program pulls into its graph, so
+    // those two resolve to their sources as well -- and the tests compose
+    // the host over @speed/auth-core's tenant context, whose sources
+    // import @speed/api-client and @speed/api-sdk (@speed/api-sdk's
+    // runtime subpath before its prefix), pulling those in too. The
+    // siblings' published "types" point into their dist/,
     // which is never committed and not yet built in a fresh checkout, so
     // type resolution maps every workspace specifier straight onto the
     // sibling's source -- same pattern ui-kit, auth-core and auth-ui use.

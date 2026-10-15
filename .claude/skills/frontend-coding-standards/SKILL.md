@@ -1,6 +1,6 @@
 ---
 name: frontend-coding-standards
-description: speed Frontend Coding Standards — Mandatory package boundaries, component, state, theming, i18n, accessibility and API-client rules for the React/TypeScript code under web/, an earlier implementation that the Makefile and CI do not build or check. Nothing here applies to the Go modules under pkg/, which follow CLAUDE.md and docs/design.
+description: speed Frontend Coding Standards — Mandatory package boundaries, component, state, theming, i18n, accessibility and API-client rules for the React/TypeScript packages under web/, the platform's frontend package library. The coding rules live here; the design conclusions live in docs/design/modules/web/ (Chinese). Nothing here applies to the Go modules under pkg/, which follow CLAUDE.md and docs/design.
 triggers:
   - writing frontend code
   - editing frontend code
@@ -22,7 +22,9 @@ globs:
 
 # speed Frontend Coding Standards
 
-**Scope: the `web/` tree.** That tree is an earlier implementation — the root `Makefile` and CI neither build nor check it, and its design rationale lives in the repository's internal design documents (Chinese, internal design discussion). **Inside `web/`, this document tells you how to write the code.**
+**Scope: the `web/` tree** — the platform's frontend package library: a pnpm workspace whose `packages/*` publish as `@speed/*` into business projects. The frontend's own gates run from `web/` through `pnpm` (`pnpm -r lint | typecheck | test | build`, or `pnpm --filter @speed/<name> <script>`). (The earlier npm implementation is kept whole under `web-legacy/` as history; it is not built or checked, and this handbook does not govern it.)
+
+**Coding rules here, design conclusions in `docs/design/modules/web/`.** The design documents (Chinese) are the authority for the shape — package layering and its criteria, the contract boundary, the assembly/content split, the extension points, the stability promises. This handbook is the authority for how the code is written. It does not restate a design conclusion: where it needs one it names the document. When the two disagree, fix whichever is stale — do not let them drift into two accounts of the same thing.
 
 **The premise that overrides everything else**: these packages are installed into business projects via `npm install` — they are not an application. A component's props are public API, and changing a required prop breaks every delivered project. Every dependency bundled here ends up in someone else's build output.
 
@@ -34,7 +36,7 @@ Independent npm packages, each with its own `package.json`, developed together t
 
 ```
 tokens / i18n -> ui-kit -> layout-kit
-api-client -> api-sdk -> auth-core -> auth-ui / account-ui / billing-ui / tenancy-ui
+api-client -> api-sdk -> auth-core -> auth-ui / account-ui / tenancy-ui
 the layers above -> product-shell (the composition root)
 ```
 
@@ -42,13 +44,13 @@ The diagram is a coarse ordering, not the edge list: each package's own `package
 
 **Required:**
 - The pure UI layer (`ui-kit`) carries **no business, tenant or permission semantics**. Components are controlled and props-driven so they survive a different auth scheme.
-- Headless packages expose state and hooks, never UI (`auth-core` is the one shipped today: session, permission and feature-flag hooks); UI packages consume only the data structures from them.
+- Headless packages expose state and hooks, never UI (`auth-core` is the one shipped today: the session, current-tenant and permission hooks); UI packages consume only the data structures from them.
 - `react`, `react-dom`, `@mui/material` and `@emotion/*` are declared as `peerDependencies`. Shipping them as regular dependencies gives consumers duplicate React/MUI instances.
 - Every package carries its own `locales/{zh-CN,en-US}.json` under a namespace named after the package.
 
 **Prohibited:**
-- **DO NOT** let same-layer packages depend on each other (`auth-ui` must not depend on `billing-ui`).
-- **DO NOT** use barrel files (an `index.ts` re-exporting everything) — it breaks tree shaking. Import from the specific file.
+- **DO NOT** let same-layer packages depend on each other (`auth-ui` must not depend on `account-ui`).
+- **The package entry is its public surface.** Every package exposes exactly one entry, `src/index.ts`, plus any documented subpath its `exports` map adds (e.g. `@speed/product-shell/bootstrap`, `@speed/api-sdk/runtime`). Consumers import `@speed/<name>`, so the entry re-exports what the package publishes — that is the package's API, not an avoidable convenience. Inside `src/`, import from the specific module; do not stack further re-export layers below the entry.
 - **DO NOT** bundle brand assets (logos, font files) inside a package — reference the consuming project's `public/` through tokens.
 
 ## 2. API Calls: Generated Code Only
@@ -60,18 +62,18 @@ The diagram is a coarse ordering, not the edge list: each package's own `package
 import { useBillingListPlans } from '@speed/api-sdk';
 const { data, isLoading } = useBillingListPlans();
 
-// Wrong — rejected in review and by CI
+// Wrong — rejected in review, and by the workspace's speed/no-direct-http rule
 fetch('/api/v1/billing/plans')
 axios.get('/api/v1/billing/plans')
 const myRequest = (url) => fetch(...)     // a homegrown wrapper is equally wrong
 ```
 
 - **DO NOT** hand-write any backend call. `fetch` / `axios` are permitted only inside `@speed/api-client`, enforced by an ESLint rule.
-- **DO NOT** hand-write endpoint paths or response types — they come from `api/openapi.yaml` through the SDK generator.
+- **DO NOT** hand-write endpoint paths or response types — they come from the merged platform document `contracts/api.yaml` (the backend modules' OpenAPI fragments, merged and committed by the demo host's `gen` command) through the SDK generator (`web/orval.config.ts`).
 - **DO NOT** edit any file in `@speed/api-sdk` — it is generated and overwritten wholesale on every release.
 - When an endpoint does not fit your need, change the spec, not the frontend. The order is fixed: edit the spec first, regenerate, fix whatever the regenerated interfaces break, then consume — never the reverse.
 
-**Exceptions** (not expressible in OpenAPI, and each must be confined to exactly one place): none ship in the workspace packages today. Uploads need no exception — they are server-relayed through spec-described endpoints (`go/storage/api/openapi.yaml`, whose operations are in the merged document as `/api/v1/storage/...`), and ui-kit's `FileUploader` renders the queue the host owns as `rows` props while the upload call itself stays the host's own code.
+**Exceptions** (not expressible in OpenAPI, and each must be confined to exactly one place): none ship in the workspace packages today. Uploads need no exception — they are server-relayed through spec-described endpoints (the merged document's `/api/v1/storage/...` operations), and ui-kit's `FileUploader` renders the queue the host owns as `rows` props while the upload call itself stays the host's own code.
 
 ## 3. Components
 
@@ -103,7 +105,7 @@ export function PlanCard({ plan, selected = false, onSelect }: PlanCardProps) {
 
 ## 4. State Management
 
-**Dual track**: server state through TanStack Query (the hooks generated into api-sdk), client state through Zustand. Redux is not used.
+**Server state** goes through TanStack Query — the hooks generated into `api-sdk`. **Client and session state** stay with the package that owns them, exposed as headless hooks: `auth-core` ships the browser session as a memory-only state machine (no storage writes; see its `README`) plus the React hooks that read the one host-attached session. **No global state library is imposed on the workspace** — do not pull a store library into a presentational package, and do not reach for one where a headless hook over the owner's own state already fits. Redux is not used.
 
 ### Query keys must be tenant-namespaced
 
@@ -117,7 +119,7 @@ After `switchTenant` succeeds, explicitly call `queryClient.removeQueries({ quer
 ### The tenant ID is not a request header
 
 - **DO NOT** put `tenantId` into request headers. Tenant context travels in the access token, and the server trusts only the token.
-- The local `currentTenantId` in Zustand is used for exactly three things: query key namespacing, UI display, and as the argument when calling the switch-tenant endpoint.
+- The session's current tenant (read from the owner's hook, `auth-core`'s `useCurrentTenant`) is used for exactly three things: query key namespacing, UI display, and as the argument to the switch-tenant call. It is not copied into a global store.
 
 ### Token storage
 
@@ -139,8 +141,8 @@ const { t } = useTranslation('auth');
 <Button aria-label={t('login.submit')}>{t('login.submit')}</Button>
 ```
 
-- **DO NOT** leave literal user-facing text in a package, in any language — CI scans for bare text nodes in JSX.
-- New keys must be added to both `zh-CN` and `en-US`; CI verifies the key sets match.
+- **DO NOT** leave literal user-facing text in a package, in any language — the workspace's `speed/no-literal-text` ESLint rule (see `web/eslint-rules/`) rejects text written inline in a package's `src`.
+- New keys must be added to both `zh-CN` and `en-US` in the same change, with identical nested structure; the runtime registration guard rejects a namespace whose languages drift.
 - Dates, numbers and currency always go through `Intl.DateTimeFormat` / `Intl.NumberFormat`. **DO NOT** format by hand — CNY and USD differ in symbol placement and decimal digits.
 - Error text is resolved from the error code. **DO NOT** display the `message` field returned by the API — it is an English fallback meant for log triage.
 - Layouts must not depend on fixed widths to fit text: English runs 30–50% longer than Chinese — check every component's rendering in both languages.
@@ -174,8 +176,10 @@ const billingEnabled = useFeature('billing');        // api-client
 
 ## 10. Forms
 
-- react-hook-form with zod.
-- Derive zod schemas from the api-sdk types where possible. **DO NOT** maintain separate validation rules on each side.
+The form family is react-hook-form — the host owns the `useForm` instance, `FormLayout` supplies the skeleton and context, `FormField` adapts one field — with validation derived from a **zod** schema.
+
+- Wire the schema in as the form's resolver through `zodFormResolver` from `@speed/ui-kit`: it validates the whole form and emits `ui-kit`-namespace messages (`form.required`, `form.invalid`), which `FormField` renders translated under the validation-error contract. **DO NOT** hand-roll a resolver or emit raw zod text.
+- Derive the zod schema from the `api-sdk` types where a field maps to one. **DO NOT** maintain a second rule set beside the contract — the schema is the one rule set, derived from the generated types.
 - Validation errors render through `FormField`. **DO NOT** lay out error text per form.
 
 ## 11. Diagnostics and Logging
@@ -201,7 +205,7 @@ console.log('checkout failed for plan ' + planId);
 | Tier | Tooling | Scope |
 |---|---|---|
 | Unit / component | Vitest + Testing Library | hook logic, component behaviour |
-| End-to-end | Playwright | the reference-app journeys |
+| End-to-end | Playwright | the host application's journeys (the host lives outside `web/`, as a delivered consumer project does) |
 
 **File and directory layout — not optional:**
 - **What a unit test is, is a tier — not a file mapping.** A unit test is a same-package, no-external-dependency test the plain unit run executes (the app's own scripted-fetch rig, never a live server). Unit tests alone sit next to the code they test, one file per target — `PlanCard.tsx` is tested by the one `PlanCard.test.tsx`. That includes behaviour suites that span sources rather than mapping 1:1 to one file: they stay beside the sources they exercise, named for the behaviour they verify, never a generic word (`misc.test.ts`, `extra.test.ts`). The backend rule that relocates no-single-target unit suites into a module-level `unittest/` directory is **Go-centric and does not apply here**: it exists because Go's package boundary (internal vs external test packages) is where white-box access lives, so a relocated Go suite must be black-box. TypeScript has no such boundary — a TS suite with no single target stays co-located or in its purpose-named place, with no forced TS analogue.
@@ -216,7 +220,7 @@ console.log('checkout failed for plan ' + planId);
 
 ## 13. Language
 
-All code comments, TSDoc and package `README`s are written in **English**. Only `docs/internal/` is in Chinese.
+All code comments, TSDoc and package `README`s are written in **English**. The design and decision documents under `docs/design/modules/web/` (and `docs/adr/`) are in Chinese.
 
 Comments and TSDoc describe the code's **current state only**: no history or change records, no implementation-round or finding references, no internal doc-filename citations as authority, no TODO or future promises, no restating what the code says, no counts that go stale as the code evolves. External normative references (RFC, W3C, language specs) and cross-references to code itself are allowed.
 

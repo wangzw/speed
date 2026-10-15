@@ -1,0 +1,165 @@
+# web/ — the frontend workspace
+
+The repo's npm side. Every deliverable npm package of the platform lives
+under `web/packages/*` as a **pnpm workspace** rooted here.
+
+## Why web/ is its own workspace root
+
+The repo root is a Go workspace (`go.work` + one module per directory under
+`go/`) and must stay one. The frontend deliberately does **not** share the
+root:
+
+- `go work` and other Go tooling walk module roots; a root-level
+  `package.json` or `pnpm-workspace.yaml` would sit in that walk and invite
+  cross-tool confusion.
+- pnpm's workspace protocol (`workspace:*`) and its single lockfile want a
+  root of their own; the go.work file and pnpm's artifacts have nothing in
+  common.
+- Nothing Go-side ever needs to resolve an npm package, and nothing npm-side
+  ever needs a Go module. Two roots, one repo, zero overlap.
+
+Tooling treats the boundary the same way: Go checks run from module
+directories, npm checks run from `web/`.
+
+## Node and pnpm versions: single sources
+
+| What | Single source of truth | Consumers |
+|---|---|---|
+| Node version | `web/.nvmrc` (content: `24`) | any `node-version-file` consumer; local `nvm`/`mise` if you use one |
+| pnpm version | `"packageManager": "pnpm@11.1.2"` in `web/package.json` | `corepack` installs exactly that version |
+
+The Node major is pinned to 24;
+`web/package.json`'s `engines` accepts `>=24` so local development on newer
+Node (e.g. 26) keeps working. Never add a second version source; when either
+version moves, update the source row above and the CI action stays in sync
+by construction.
+
+## Layout
+
+```
+web/
+  package.json          private root; scripts and shared devDependencies only
+  pnpm-workspace.yaml   packages: [packages/*]
+  pnpm-lock.yaml        committed; installs run with --frozen-lockfile
+  tsconfig.base.json    strict base every package extends
+  eslint.config.mjs     one flat config for the whole workspace
+  packages/
+    tokens/             @speed/tokens      -- design tokens, zero dependencies
+    i18n/               @speed/i18n        -- react-i18next wrapper + namespace registry
+    ui-kit/             @speed/ui-kit      -- theme factory + controlled components + shared state primitives
+    api-client/         @speed/api-client  -- hand-written HTTP runtime; fetch, retry, ApiError
+    api-sdk/            @speed/api-sdk    -- generated API surface (orval output from the
+                                             merged platform document); calls api-client through a seam
+    layout-kit/         @speed/layout-kit -- AppShell/RouteGuard chrome, no auth opinion
+    auth-core/          @speed/auth-core  -- headless session layer over the generated authn
+                                             surface; memory-only, no UI, no storage writes
+    auth-ui/            @speed/auth-ui    -- the sign-in family over an auth-core session:
+                                             password/SMS/register channels plus the social
+                                             pair, sign-out and session-ended; controlled
+    tenancy-ui/         @speed/tenancy-ui -- the tenant-switch affordance: one controlled
+                                             TenantSwitcher fed the current tenant by the
+                                             host, reporting each commit through onSwitched
+    product-shell/      @speed/product-shell -- the tenant-facing assembly shell: ProductShell
+                                             composes the AppShell frame, the sign-in family
+                                             and the session hooks into one three-branch view
+                                             machine, and renders one string of its own:
+                                             the session-ended announcement under
+                                             announcements.sessionEnded, from its own
+                                             bilingual product-shell namespace (a zh-CN
+                                             twin under the same key); its ./bootstrap
+                                             subpath ships the app-entry assembly
+                                             (bootstrapSpeedApp), which wires the whole page
+                                             composition from one declarative definition
+    account-ui/         @speed/account-ui    -- the signed-in account-management family:
+                                             sessions, sign-in history, social bindings and
+                                             step-up-gated two-factor setup over the
+                                             generated authn operations
+    billing-ui/         @speed/billing-ui    -- the billing-documents read surface: the
+                                             newest-first invoice list with per-row
+                                             document detail over the generated billing
+                                             read operations, bilingual billing-ui
+                                             namespace
+```
+
+Root `package.json` holds only what every package shares (typescript,
+vitest, eslint, typescript-eslint) plus the workspace scripts; a package's
+own `package.json` holds its dependencies, peers and its `exports` map.
+There is deliberately **no React, no MUI, no DOM/component test framework**
+at the root — vitest itself is shared (every package unit-tests with it),
+but nothing DOM-shaped such as jsdom or Testing Library, and no component
+rendering, lives there; each package declares what it actually uses, so
+`pnpm -r` never installs a framework a package does not need.
+
+The `api-sdk/` entry is different by design: it ships **generated**
+source. `src/index.ts` is orval output from the merged document —
+`contracts/speed.yaml`, the eleven platform-module fragments joined by the
+Taskfile `api:merge` leg — stamped with a DO-NOT-EDIT header carrying
+the pinned orval version, regenerated by `task api:gen` from `web/`
+(pinned `pnpm dlx orval@8.17.0` plus `scripts/orval-nodenext-fixup.mjs`;
+orval itself is never a workspace dependency, so it never enters the
+lockfile) and never hand-edited. Its only hand-written source is the
+seam `src/runtime.ts`, kept out of orval's way by an exports-map
+`./runtime` subpath; the package's AGENTS.md documents the seam and the
+fixup's why. `@speed/auth-core` sits directly above it — the generated
+authn surface's first in-workspace compile consumer, whose suite binds
+the same `./runtime` seam a host's real client binds.
+
+## Commands (run from web/)
+
+```
+pnpm install --frozen-lockfile   # reproduce CI's install exactly
+pnpm -r lint                     # eslint over every package (flat config)
+pnpm -r typecheck                # tsc --noEmit over every package
+pnpm -r test                     # vitest run over every package
+pnpm -r build                    # emit dist/ (ESM .js + .d.ts) per package
+```
+
+Single-package runs work from the package directory (`pnpm test`, `pnpm
+build`, ...) or with `pnpm --filter @speed/<name> <script>` from `web/`.
+
+## Package shape (all packages follow it)
+
+- `"type": "module"`; **ESM-only** publish: `exports` maps point `types` and
+  `import` at `dist/` `.d.ts`/`.js` pairs. NodeNext consumers import
+  normally; no CJS twin ships in M0.
+- `"files": ["dist", "README.md", "AGENTS.md"]` — the dist/ tree plus the
+  docs travel with the package.
+- `tsconfig.json` (typecheck) extends `../../tsconfig.base.json` with
+  `noEmit`; `tsconfig.build.json` emits declarations into `dist/` with
+  `rootDir: src` so tests and `test-utils/` never leak into the artifact.
+- The build runs under `module`/`moduleResolution: nodenext`, which emits
+  relative imports verbatim: **sources write explicit `.js` extensions on
+  every relative import** (TS2835 otherwise), so the shipped `dist/` is
+  loadable by Node ESM and typecheckable by NodeNext consumers as-is.
+- Sources: one domain per file, tests colocated (`x.ts` -> `x.test.ts`),
+  shared test helpers under the package's `test-utils/`, never duplicated.
+- Repository language rule: everything here is English; CJK-bearing
+  fixtures live only under a `locales/`-named directory (the repo's CI CJK
+  scanner exempts those) and `.ts` sources assert against imported fixtures
+  rather than embedding language literals.
+
+## What is not here yet
+
+Storybook and Playwright are planned, and so is the app that hosts
+these packages — the reference app's consumer shell (web frontend) and
+the platform-staff admin-shell; see the repo roadmap
+(`docs/internal/15-roadmap.md`) and the CI workflow headers for what
+each round delivers. The shell packages themselves are here:
+layout-kit's frame, auth-ui's sign-in family and, since this round,
+tenancy-ui's switcher and product-shell's three-branch assembly all
+ship in the layout above, their composed sign-in/switch/sign-out
+journey discharged in form by the packages' own usage examples. (The
+generated sdk is here too — it ships in the layout above; its tenant
+query-key namespacing is not.)
+
+The lockstep release machinery exists in its M0, offline-verification
+form: the changesets bootstrap at `.changeset/` (the fixed version group
+over the twelve packages, `config.json` — no changesets entries or
+bump runs yet) and the release coordinator in `tools/release/`, which checks
+from the repository root that the fixed group covers exactly the
+packages that exist, that package versions are uniform, and that the Go
+half of the same one-version plan is consistent (`task release:plan
+VERSION=v1.2.0`; the `release` CI workflow runs the same verification on
+a manually dispatched version). Real publishing — changesets installed
+in `web/` with version and publish runs, npm packages actually released —
+is scheduled for the v1.0 release at M4.

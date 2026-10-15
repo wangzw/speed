@@ -30,6 +30,7 @@ string lives in the bilingual `ui-kit` namespace registered through
 | `components/FileUploader.tsx` | `FileUploader`, `FileUploaderProps`, `FileUploaderRow`, `FileUploaderRowStatus` |
 | `components/FormField.tsx` | `FormField`, `FormFieldProps`, `FormFieldRenderState`, `REQUIRED_ERROR_KEY` |
 | `components/FormLayout.tsx` | `FormLayout`, `FormLayoutProps`, `FormLayoutColumns` |
+| `zod-form-resolver.ts` | `zodFormResolver`, `INVALID_ERROR_KEY` |
 | `components/DataTable.tsx` | `DataTable`, `DataTableColumn`, `DataTableColumnPriority`, `DataTableSort`, `DataTableSortDirection`, `DataTableFilter`, `DataTablePagination`, `DataTableProps` |
 | `components/InlineError.tsx` | `InlineError`, `InlineErrorProps`, `errorCodeOf` |
 | `components/ListSkeleton.tsx` | `ListSkeleton`, `ListSkeletonProps` |
@@ -422,8 +423,11 @@ naturally); buttons fall back to namespace defaults.
 
 The form family's shape: screens own a react-hook-form `useForm`
 instance, `FormLayout` supplies the skeleton and context, `FormField`
-adapts one field. Validation derived from generated types is not
-implemented (see Deferrals); rules are RHF's.
+adapts one field. Validation runs through a zod schema wired in as the
+form's resolver by `zodFormResolver` (below); a screen with no zod
+schema can still pass RHF `rules` to `FormField` directly. Automatic
+derivation of a schema from the generated types is not implemented (see
+Deferrals).
 
 **FormLayout** -- the skeleton: installs the `FormProvider` context (so
 `FormField` children need no `control` prop), renders the `<form>` with
@@ -508,6 +512,31 @@ MUI's own controls already render label + helper text with the aria
 wiring, so the family deliberately ships no second label/error
 renderer: the "uniform error display" is this state contract plus
 FormLayout's spacing skeleton.
+
+**zodFormResolver** -- the zod bridge: `zodFormResolver(schema)` returns
+the react-hook-form resolver for a zod schema, so the whole form
+validates through one schema instead of per-field rules:
+
+```tsx
+import { useForm } from 'react-hook-form'
+import { z } from 'zod'
+import { zodFormResolver } from '@speed/ui-kit'
+
+const schema = z.object({ email: z.string().email() })
+const form = useForm<z.infer<typeof schema>>({
+  resolver: zodFormResolver(schema),
+})
+```
+
+The bridge emits ui-kit-namespace keys, never zod's own English text: a
+value that is missing (zod reports `invalid_type` with no input) becomes
+`form.required`; any other failure becomes `form.invalid`. Both render
+through `FormField` in the active language, like any other namespace
+key. Issues fold into react-hook-form's nested error object by their
+zod path, so a nested field (`address.city`) surfaces on that field.
+`INVALID_ERROR_KEY` exports the non-required key. zod is a peer (see
+Dependencies): the host builds the schema, so the schema instance and
+the package's `ZodType` are one class.
 
 ### DataTable
 
@@ -797,6 +826,7 @@ same rationale documented here.
 | `@mui/material` | peer (required, ^9) | theme and components; two MUI copies would split the theme context. devDependency 9.4.0 is the tested point |
 | `@emotion/react`, `@emotion/styled` | peer (required, ^11) | MUI's own runtime requirements -- the emotion context must be shared with the host |
 | `react-hook-form` | peer (required, ^7) | the form family's `FormProvider`/`Controller` identity needs one RHF in the tree, and `FormLayout`'s `UseFormReturn` must be the host's own type. devDependency 7.87.0 is the tested point (the peer range is the ^7 API family) |
+| `zod` | peer (required, ^4) | the host builds the schema `zodFormResolver` consumes, so the schema instance and this package's `ZodType` must be one class -- one zod in the tree, exactly like `react-hook-form`. devDependency 4.6.7 is the tested point |
 | `@speed/tokens`, `@speed/i18n` | dependencies | the token tree this package maps, and the i18n instance/bindings every component renders through |
 
 ## Deferrals and recorded decisions
@@ -807,10 +837,11 @@ same rationale documented here.
   columns first as the viewport narrows through the shared breakpoint
   scale, alongside the unaffected horizontal-scroll fallback for
   columns that don't opt in.
-- **Validation from generated types**: zod-style validation derived
-  from the API-generated types is not implemented here. The
-  validation-error contract is the seam: a resolver layer can emit any
-  message and the form family renders it correctly.
+- **Validation from generated types**: a zod resolver ships
+  (`zodFormResolver`), and the validation-error contract is the seam it
+  plugs into -- the resolver emits ui-kit keys, the family renders them.
+  Automatic *derivation* of a zod schema from the API-generated types is
+  still not implemented; hosts author the schema.
 - **Error-code mapping**: backend error codes render verbatim unless
   they happen to be ui-kit keys. A code-to-text resolver (which
   namespace owns which codes) is not implemented; the form family

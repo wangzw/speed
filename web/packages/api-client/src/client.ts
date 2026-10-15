@@ -100,7 +100,7 @@ export type HttpMethod =
 
 /**
  * Per-request options. Paths and response types come from the spec
- * (`task api:gen` -> @speed/api-sdk); this layer stays spec-agnostic.
+ * (the merged platform document -> @speed/api-sdk); this layer stays spec-agnostic.
  */
 export interface RequestOptions {
   /** HTTP method; GET when omitted. */

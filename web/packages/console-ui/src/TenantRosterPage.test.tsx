@@ -1,0 +1,169 @@
+/**
+ * TenantRosterPage: the roster-administration page.
+ *
+ * Its read renders the settled list (with the roster's own status
+ * spelling, a value outside the closed set falling to the generic label),
+ * and its writes drive the operations bundle -- a successful create
+ * invalidates the list and the new row appears, and a refused write
+ * renders the answer's code text (a roster collision reading the conflict
+ * text), never a raw key.
+ */
+
+import { describe, expect, it } from 'vitest'
+import { screen } from '@testing-library/react'
+import userEvent from '@testing-library/user-event'
+import { TenantRosterPage } from './TenantRosterPage.js'
+import type { ConsoleTenant } from './operations.js'
+import { renderWithProviders } from '../test-utils/render.js'
+import {
+  createConsoleOperations,
+  makeConsoleBackend,
+} from '../test-utils/operations.js'
+import { expectNoAxeViolations } from '../test-utils/axe.js'
+
+describe('TenantRosterPage', () => {
+  it('renders the settled empty state when the roster answers no tenants', async () => {
+    const operations = createConsoleOperations(makeConsoleBackend())
+    renderWithProviders(<TenantRosterPage />, { operations })
+    expect(await screen.findByText('暂无租户')).toBeInTheDocument()
+  })
+
+  it('lists tenants with the roster status spelling', async () => {
+    const tenants: ConsoleTenant[] = [
+      { id: 'acme', alias: 'Acme', status: 'active' },
+      { id: 'old', alias: 'Old Co', status: 'disabled' },
+    ]
+    const operations = createConsoleOperations(
+      makeConsoleBackend({ listTenants: () => Promise.resolve(tenants) }),
+    )
+    renderWithProviders(<TenantRosterPage />, { operations })
+    expect(await screen.findByText('Acme')).toBeInTheDocument()
+    expect(screen.getByText('已启用')).toBeInTheDocument()
+    expect(screen.getByText('已停用')).toBeInTheDocument()
+  })
+
+  it('renders the generic label for a status outside the roster set', async () => {
+    const tenants: ConsoleTenant[] = [
+      { id: 'future', alias: 'Future', status: 'suspended' },
+    ]
+    const operations = createConsoleOperations(
+      makeConsoleBackend({ listTenants: () => Promise.resolve(tenants) }),
+    )
+    renderWithProviders(<TenantRosterPage />, { operations })
+    expect(await screen.findByText('Future')).toBeInTheDocument()
+    expect(screen.getByText('未知')).toBeInTheDocument()
+    expect(screen.queryByText('suspended')).not.toBeInTheDocument()
+  })
+
+  it('registers a tenant and reflects the invalidated list', async () => {
+    const user = userEvent.setup()
+    const store: ConsoleTenant[] = []
+    const operations = createConsoleOperations(
+      makeConsoleBackend({
+        listTenants: () => Promise.resolve([...store]),
+        createTenant: (input) => {
+          const tenant: ConsoleTenant = {
+            id: input.id,
+            alias: input.alias,
+            status: 'active',
+          }
+          store.push(tenant)
+          return Promise.resolve(tenant)
+        },
+      }),
+    )
+    renderWithProviders(<TenantRosterPage />, { operations })
+    await screen.findByText('暂无租户')
+
+    await user.type(screen.getByLabelText('标识'), 'acme')
+    await user.type(screen.getByLabelText('别名'), 'Acme Inc')
+    await user.click(screen.getByRole('button', { name: '登记' }))
+
+    expect(await screen.findByText('Acme Inc')).toBeInTheDocument()
+  })
+
+  it('renders the conflict text when a registration is refused', async () => {
+    const user = userEvent.setup()
+    const operations = createConsoleOperations(
+      makeConsoleBackend({
+        createTenant: () => Promise.reject({ code: 'tenant.conflict' }),
+      }),
+    )
+    renderWithProviders(<TenantRosterPage />, { operations })
+    await screen.findByText('暂无租户')
+
+    await user.type(screen.getByLabelText('标识'), 'acme')
+    await user.type(screen.getByLabelText('别名'), 'Acme')
+    await user.click(screen.getByRole('button', { name: '登记' }))
+
+    expect(
+      await screen.findByText('该标识或别名已被其他租户占用。'),
+    ).toBeInTheDocument()
+  })
+
+  it('disables a tenant through the row control', async () => {
+    const user = userEvent.setup()
+    const calls: string[] = []
+    const tenants: ConsoleTenant[] = [
+      { id: 'acme', alias: 'Acme', status: 'active' },
+    ]
+    const operations = createConsoleOperations(
+      makeConsoleBackend({
+        listTenants: () => Promise.resolve(tenants),
+        setTenantStatus: (input) => {
+          calls.push(`${input.id}:${input.status}`)
+          return Promise.resolve()
+        },
+      }),
+    )
+    renderWithProviders(<TenantRosterPage />, { operations })
+    await screen.findByText('Acme')
+    await user.click(screen.getByRole('button', { name: '停用' }))
+    expect(calls).toEqual(['acme:disabled'])
+  })
+
+  it('renames a tenant through the row control', async () => {
+    const user = userEvent.setup()
+    const calls: string[] = []
+    const tenants: ConsoleTenant[] = [
+      { id: 'acme', alias: 'Acme', status: 'active' },
+    ]
+    const operations = createConsoleOperations(
+      makeConsoleBackend({
+        listTenants: () => Promise.resolve(tenants),
+        setTenantAlias: (input) => {
+          calls.push(`${input.id}:${input.alias}`)
+          return Promise.resolve()
+        },
+      }),
+    )
+    renderWithProviders(<TenantRosterPage />, { operations })
+    await screen.findByText('Acme')
+    await user.type(screen.getByLabelText('新别名'), 'Acme Inc')
+    await user.click(screen.getByRole('button', { name: '改名' }))
+    expect(calls).toEqual(['acme:Acme Inc'])
+  })
+
+  it('renders the retryable error placeholder when the read fails', async () => {
+    const operations = createConsoleOperations(
+      makeConsoleBackend({
+        listTenants: () => Promise.reject(new Error('boom')),
+      }),
+    )
+    renderWithProviders(<TenantRosterPage />, { operations })
+    expect(await screen.findByText('租户加载失败')).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: '重试' })).toBeInTheDocument()
+  })
+
+  it('has no axe violations', async () => {
+    const operations = createConsoleOperations(
+      makeConsoleBackend({
+        listTenants: () =>
+          Promise.resolve([{ id: 'acme', alias: 'Acme', status: 'active' }]),
+      }),
+    )
+    renderWithProviders(<TenantRosterPage />, { operations })
+    await screen.findByText('Acme')
+    await expectNoAxeViolations()
+  })
+})

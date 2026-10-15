@@ -6,7 +6,7 @@
     // otherwise) -- the emitted dist/ is then loadable by Node ESM and
     // typecheckable by NodeNext consumers as-is.
     //
-    // The workspace siblings (@speed/auth-core, @speed/i18n) are resolved
+    // The workspace siblings (@speed/ui-kit, @speed/i18n) are resolved
     // here exactly like a consumer resolves them: through the package
     // exports map to the siblings' emitted dist/ declarations (no paths
     // mapping). tsconfig.json (the noEmit typecheck, tests included) maps

@@ -42,6 +42,9 @@ export interface RealCall {
   /** The authorization header value, or null for a credential-less
    * request (the refresh leg travels credential-less by declaration). */
   readonly authorization: string | null
+  /** The serialized JSON request body, or null when the request carried
+   * none (a journey pins the flow's start body through it). */
+  readonly rawBody: string | null
 }
 
 /** One scripted endpoint: answer with a genuine Response, immediately
@@ -66,6 +69,7 @@ function projectCall(request: ObservedRequest): RealCall {
     method: request.method,
     path: request.path,
     authorization: request.authorization,
+    rawBody: request.rawBody,
   }
 }
 

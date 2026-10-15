@@ -17,11 +17,11 @@
  * The projection below is this package's recorded call shape: the
  * request leg plus the serialized body -- the gated-journey suite pins
  * what a tenant switch sent, and a journey test must be able to assert
- * the request it just made. makePair is re-exported here rather than
- * living with the session harness (auth-ui's home for it): the
- * product-shell journeys drive only the happy paths -- a token-issuing
- * login and a 204 logout -- so the pair is the only answer shape the
- * suite scripts, and one rig file keeps them together.
+ * the request it just made. The sign-in response builders (openFlow,
+ * authenticatedCompletion, principal, tokenResponse) are re-exported
+ * from @speed/test-utils/session-harness -- the flow model's one builder
+ * source -- so the product-shell journeys script a login's legs and its
+ * refresh from one import site.
  */
 
 import type { AccessTokenStore } from '@speed/api-client'
@@ -34,8 +34,13 @@ import type { ObservedRequest } from '@speed/test-utils/real-client'
 export {
   errorResponse,
   jsonResponse,
-  makePair,
 } from '@speed/test-utils/real-client'
+export {
+  authenticatedCompletion,
+  openFlow,
+  principal,
+  tokenResponse,
+} from '@speed/test-utils/session-harness'
 
 /** A request as the fetch stand-in observed it. */
 export interface RealCall {

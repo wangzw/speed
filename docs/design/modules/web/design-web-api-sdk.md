@@ -7,13 +7,13 @@
 - **整份生成。** `src/` 除一个文件外全是 orval 输出。`src/index.ts` 是生成产物，带 `web/orval.config.ts` 注入的 DO-NOT-EDIT 头，头里锚着生成器的版本，故生成器与已提交产物之间的漂移表现为头本身的一次 diff。
 - **唯一的源码接手点。** `src/runtime.ts` 是本包唯一的源码文件，作为 `./runtime` 子路径导出。它存在，是因为生成的代码不能知道宿主如何接上 HTTP 传输。
 - **生成面与传输无关。** 生成的调用把一个 axios 形状的选项对象交给一个 mutator；mutator 把它适配成 [`api-client`](design-web-api-client.md) 的请求函数形状并转发。生成的代码里没有 `fetch`、没有 `axios`、没有租户头，也没有租户查询键。
-- **生成面与租户无关。** 生成的查询键是裸的 spec 路径，不带租户维度；租户上下文只经访问令牌传递（[ADR-web-tenant-query-key-2026-10-15](../../../adr/adr-web-tenant-query-key-2026-10-15.md)）。
-- **契约从模块片段流入。** orval 的输入是各平台模块 HTTP 片段经 redocly `join` 合并出的一份文档；一个有 HTTP 片段的平台模块即合并文档的成员，因而进入本包的生成面。每个片段的端点路径与操作经 [api-client](design-web-api-client.md) 发出。
+- **生成面与租户无关。** 生成的查询键是裸的 spec 路径，不带租户维度；租户由服务端在请求期按端解析，生成面既不传也不收租户（[ADR-web-tenant-query-key-2026-10-15](../../../adr/adr-web-tenant-query-key-2026-10-15.md)）。
+- **契约从模块片段流入。** orval 的输入是各平台模块 HTTP 片段经示范宿主的 `gen` 命令合并出的一份文档（落 `contracts/api.yaml`）；一个有 HTTP 片段的平台模块即合并文档的成员，因而进入本包的生成面。每个片段的端点路径与操作经 [api-client](design-web-api-client.md) 发出。
 
 ### 非职责
 
 - **不做 HTTP。** 生成的代码不做网络调用；每次调用经 mutator 转发给宿主绑定的 `@speed/api-client` 的请求函数。工作区里除 `api-client` 外没有一处手写 `fetch`/`axios`（`speed/no-direct-http` 规则，白名单只有 `api-client`）；本包的 `src/` 每次重生成后都必须仍通过该规则。
-- **不认识租户。** 生成面里没有租户头、没有租户查询键。`tenant_id` 只在认证片段的类型中出现——登录、短信与社交回调操作的可选请求体字段、`AuthnPrincipal` 的响应字段、以及必填的 `AuthnSwitchTenantRequest` 体字段——片段把这些字段记为声明或服务端核实的请求，而不是数据作用域。租户查询键的分段是消费方壳的纪律。
+- **不认识租户。** 生成面里没有租户头、没有租户查询键，认证片段也不带任何租户字段：认证的请求与应答里没有 `tenant_id`，租户在请求期由服务端的解析层按端解析。租户查询键的分段是消费方壳的纪律（[auth-core](design-web-auth-core.md)）。
 - **不含用户可见文本，不带 i18n 资源。** 错误以 spec 的 `{code, params}` 信封形状类型化；码由消费包的文案目录译成双语文本。
 - **不构造 QueryClient。** `react` 与 `@tanstack/react-query` 是 peer，宿主共享一个 QueryClient/Provider；本包从不构造。
 - **不接受手工编辑。** `src/index.ts` 从不手改，也不在 `src/` 里另加一个源码文件来补生成的缺口：工具的问题归工具（见「核心算法与流程」的生成一节）。
@@ -35,7 +35,7 @@ export function speedRequestCredentialless<T>(call: OrvalCall): Promise<T>
 
 **`speedRequest`** 是每个生成操作函数默认调用的 mutator：把一个 axios 形状的 `OrvalCall`（`url`、`method`，按需带 `headers`/`params`/`data`/`signal`）适配为 `api-client` 的 `RequestOptions` 并转发。
 
-**`speedRequestCredentialless`** 是另一个 mutator，由 `web/orval.config.ts` 为会话刷新操作（`authn_refreshToken`）选定：它以 `omitAccessToken` 声明该请求凭据为空、从不设普通 mutator 的形状。刷新操作以请求体里的刷新令牌认证、绝不呈现访问令牌，且其 401 必须是终态的——否则会重新进入 `api-client` 的刷新路径，await 它自己所处的刷新（[api-client](design-web-api-client.md) 的 bearer-only 规则）。
+**`speedRequestCredentialless`** 是另一个 mutator，由 `web/orval.config.ts` 为换令牌操作（`authn.token.issue`）选定：它以 `omitAccessToken` 声明该请求凭据为空、从不设普通 mutator 的形状。换令牌操作以请求体里的凭据（刷新令牌或客户端凭据）认证、绝不呈现访问令牌，且其 401 必须是终态的——否则会重新进入 `api-client` 的刷新路径，await 它自己所处的刷新（[api-client](design-web-api-client.md) 的 bearer-only 规则）。
 
 ### 转发的形状
 
@@ -75,7 +75,7 @@ interface OrvalCall {
 
 ## UML 图
 
-一次生成的调用从钩子到传输的转发。图里画不出的约束：生成面与传输无关（mutator 是唯一接缝），而 mutator 与宿主客户端之间是一次可变绑定（`bindRequestFn`，最后绑定者胜）；凭据为空是**按操作**选择的，只有会话刷新操作走这条；生成的钩子跑在宿主拥有的 QueryClient 上，本包不构造它。
+一次生成的调用从钩子到传输的转发。图里画不出的约束：生成面与传输无关（mutator 是唯一接缝），而 mutator 与宿主客户端之间是一次可变绑定（`bindRequestFn`，最后绑定者胜）；凭据为空是**按操作**选择的，只有换令牌操作走这条；生成的钩子跑在宿主拥有的 QueryClient 上，本包不构造它。
 
 ```mermaid
 sequenceDiagram
@@ -86,7 +86,7 @@ sequenceDiagram
 
     Hook->>Mut: OrvalCall(url, method, params, data, signal)
     Mut->>Mut: 映射为 RequestOptions(query=params, body=data)
-    alt 会话刷新操作
+    alt 换令牌操作
         Mut->>Mut: 附 omitAccessToken（speedRequestCredentialless）
     end
     Mut->>Bind: 取已绑定的请求函数
@@ -113,15 +113,15 @@ sequenceDiagram
 
 ### 生成
 
-1. 输入是合并的平台文档——各平台模块 HTTP 片段经 redocly `join` 合并出的那份（当前落 `contracts/speed.yaml`）。一个有 HTTP 片段的平台模块是成员。一个片段只有进入合并才到达本包。
+1. 输入是合并的平台文档——各平台模块 HTTP 片段经示范宿主的 `gen` 命令合并出的那份（落 `contracts/api.yaml`）。一个有 HTTP 片段的平台模块是成员。一个片段只有进入合并才到达本包。
 2. `web/orval.config.ts` 定下 `client: 'react-query'`（生成 TanStack Query 钩子）与 `httpClient: 'axios'`；`httpClient` 使生成的调用是 axios 形状的选项对象，路由到 `src/runtime.ts` 导出的 `speedRequest`。`mode: 'single'` 使全部输出落进单个 `src/index.ts`。
-3. 一个操作改走另一个 mutator：`authn_refreshToken` 在配置里被覆写为 `speedRequestCredentialless`（见「转发的形状」的凭据为空一档）。
+3. 一个操作改走另一个 mutator：`authn.token.issue` 在配置里被覆写为 `speedRequestCredentialless`（见「转发的形状」的凭据为空一档）。
 4. orval 的若干行为在配置与后处理里被规避：它把每个 mutator 的 import 写得没有文件扩展名（在 nodenext 构建下报错），`web/scripts/orval-nodenext-fixup.mjs` 在每次生成后确定性地把它们改写为显式 `./runtime.js`，并覆盖按操作覆写能产出的每一个 mutator 名；一次已修好的文件（import 已带 `.js`）退出 0，因而 fixup 可自由重跑。生成的 `src/index.ts` 与 fixup 后的形状是提交进仓库的产物。
 5. DO-NOT-EDIT 头锚着生成器版本（当前 `8.17.0`），故生成器与产物之间的漂移在头的 diff 里可见。
 
 ### 一次生成调用的转发
 
-1. 生成的钩子或函数以 `speedRequest`（或会话刷新的 `speedRequestCredentialless`）调用一个 `OrvalCall`。
+1. 生成的钩子或函数以 `speedRequest`（或换令牌操作的 `speedRequestCredentialless`）调用一个 `OrvalCall`。
 2. `forward` 取当前绑定的请求函数；未绑定即抛一个 `[speed-api-sdk]` 前缀的程序员错误。
 3. `forward` 把 `OrvalCall` 映射为 `RequestOptions`（`params` 到 `query`、`data` 到 `body`、`headers`/`signal` 照传），仅在凭据为空时附 `omitAccessToken`。
 4. 请求函数执行整条生命周期（令牌、幂等重试、超时、`ApiError` 归一），结果或 `ApiError`/原生 `AbortError` 回到生成的调用点。

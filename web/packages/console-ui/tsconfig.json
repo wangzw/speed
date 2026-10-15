@@ -1,0 +1,43 @@
+{
+  "extends": "../../tsconfig.base.json",
+  "include": ["src", "test-utils"],
+  "compilerOptions": {
+    // console-ui is a DOM-rendering package: JSX compiles through the
+    // automatic runtime (react-jsx), same as ui-kit, auth-ui and
+    // account-ui.
+    //
+    // The package renders the platform-staff console over the three
+    // backend administration surfaces, reads @speed/i18n translations
+    // and composes @speed/ui-kit components. src/ reaches those two
+    // through the sibling-source paths below, and reaches the generated
+    // surface of @speed/api-sdk (the shipped console operations bundle);
+    // test-utils/ additionally binds a scripted request function into
+    // api-sdk's runtime seam over @speed/api-client's RequestFn, and
+    // renders under the ui-kit theme providers -- ui-kit's own sources
+    // import @speed/tokens and @speed/i18n/mui-locale, which this
+    // program pulls into its graph, so those two resolve to their
+    // sources as well. The siblings' published "types" point into their
+    // dist/, which is never committed and not yet built in a fresh
+    // checkout, so type resolution maps every workspace specifier
+    // straight onto the sibling's source -- same pattern ui-kit,
+    // auth-core and account-ui use. Emitted dist/ keeps the bare
+    // specifiers, which consumers resolve against the real published
+    // packages. Keep this in lockstep with what src/ and test-utils/
+    // import (the workspace alias map, web/scripts/speed-aliases.mjs).
+    // List order matters: "@speed/i18n/mui-locale" must be tried before
+    // its "@speed/i18n" prefix (first match wins in paths).
+    "jsx": "react-jsx",
+    "paths": {
+      "@speed/api-sdk/runtime": ["../api-sdk/src/runtime.ts"],
+      "@speed/api-sdk": ["../api-sdk/src/index.ts"],
+      "@speed/api-client": ["../api-client/src/index.ts"],
+      "@speed/i18n/mui-locale": ["../i18n/src/mui-locale.ts"],
+      "@speed/i18n": ["../i18n/src/index.ts"],
+      "@speed/tokens": ["../tokens/src/index.ts"],
+      "@speed/ui-kit": ["../ui-kit/src/index.ts"],
+      "@speed/test-utils/axe": ["../../test-utils/src/axe.ts"],
+      "@speed/test-utils/render": ["../../test-utils/src/render.tsx"],
+      "@speed/test-utils/setup": ["../../test-utils/src/setup.ts"]
+    }
+  }
+}

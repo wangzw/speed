@@ -1,0 +1,363 @@
+# @speed/api-client
+
+The hand-written HTTP runtime of the speed frontend: one `createClient`
+call wires injectable fetch, a memory-only access-token store, a silent
+single-flight 401 refresh, a timeout, a conservative retry policy and a
+structured reporter into a single typed request function. It is the
+HTTP layer the generated `@speed/api-sdk` surface (the orval output of
+`task api:gen`) calls into; other packages never hand-write HTTP
+requests -- the `speed/no-direct-http` ESLint rule enforces that, and
+this package is its single whitelist.
+
+The package ships no UI, no i18n resources and no storage API: error
+`code`s map to user-facing text in the consuming package's own
+catalogs, and the access token lives in memory only (see below).
+
+## Quick start
+
+```ts
+import {
+  createClient,
+  createMemoryAccessTokenStore,
+  isApiError,
+} from '@speed/api-client'
+
+/** A note as the API returns it. */
+interface Note {
+  id: string
+  title: string
+}
+
+/** Loads the current session's notes through the API client. */
+export async function loadNotes(): Promise<Note[]> {
+  const api = createClient({
+    // Scheme + host + optional prefix, or a same-origin '/api/...'
+    // path in development. The fetch implementation is injectable
+    // (tests pass a deterministic stand-in); when omitted, the
+    // environment's global fetch is captured at construction time.
+    baseUrl: '/api/v1',
+    // The bearer token store starts empty: auth fills it in memory,
+    // never in storage (an access token in localStorage is a
+    // credential an XSS walks away with). With no token, requests go
+    // out without Authorization.
+    accessTokenStore: createMemoryAccessTokenStore(),
+    // Silent 401 refresh: @speed/auth-core supplies the real hook --
+    // `refreshAccessToken: () => session.refresh()` -- against the
+    // session-refresh operation of the generated authn surface (the
+    // held refresh token lives in the session closure, never in this
+    // store). It fires only for a refused request that carried a
+    // bearer token -- with the store empty there is no session to
+    // refresh, so the 401 rejects an ApiError with auth: true and
+    // hosts route it to sign-in.
+    refreshAccessToken: async () => false,
+    // Abort requests slower than 10s. Transient retries follow
+    // DEFAULT_RETRY_POLICY: idempotent methods only (GET/HEAD/OPTIONS),
+    // up to 3 attempts, 200ms doubling backoff capped at 4s.
+    timeoutMs: 10_000,
+  })
+
+  try {
+    return await api<Note[]>('/notes', { query: { page: 1 } })
+  } catch (error) {
+    if (isApiError(error)) {
+      // error.code is the envelope's module code ('notes.…') or a
+      // reserved client.* code when the API layer itself failed; map
+      // codes to user-facing text through the i18n catalog, never here.
+      console.error('loading notes failed', {
+        code: error.code,
+        trace_id: error.traceId,
+      })
+    }
+    throw error
+  }
+}
+```
+
+## Config hooks (`@speed/api-client/react`)
+
+`usePublicConfig` and `useFeature` read go/config's two pre-auth
+endpoints -- `/api/v1/config/public` and `/api/v1/config/features` -- behind
+the isolated `./react` subpath, so the main entry above stays free of
+a React dependency. Build `api` once (a module-scope singleton, or a
+value memoized for the app's lifetime) and pass that same reference
+everywhere: the hooks below share one cache keyed by `api`'s identity,
+so calling both in the same tree costs one fetch, not two.
+
+Both endpoints always write a JSON document, so `fetchPublicConfig` /
+`fetchSystemFeatures` refuse an **empty** 2xx body (the RequestFn's
+own legitimate 204-style empty-success shape) as a coded
+`client.protocol` error instead of resolving `undefined` -- an empty
+answer stays distinguishable from real data, and a hook consumer never
+reads fields off a value that is not there. The refusal is raised by
+the request itself (each fetcher passes `requireJsonBody: true`), so
+it carries the exchange's real HTTP status and attempt count -- a
+503/503/empty-200 exchange surfaces as `attempts: 3, status: 200`,
+never a synthesized `attempts: 1, status: 0`.
+
+```ts
+import { createClient } from '@speed/api-client'
+import type { ApiError, RequestFn } from '@speed/api-client'
+import { useFeature, usePublicConfig } from '@speed/api-client/react'
+
+// Construct once, at bootstrap. usePublicConfig/useFeature key their
+// shared cache off this reference -- a fresh createClient() call on
+// every render would defeat the sharing and refetch every time.
+const api = createClient({ baseUrl: '/api/v1' })
+
+/** What a host's app shell needs to render its chrome: the effective
+ * brand name and whether billing is enabled for the tenant the
+ * request host resolves to. */
+interface AppChrome {
+  readonly brandName: string | undefined
+  readonly billingEnabled: boolean
+  readonly isLoading: boolean
+  readonly error: ApiError | undefined
+}
+
+/**
+ * Reads the tenant's public config and the `billing` feature flag
+ * through one shared cache. `api` must be the same RequestFn reference
+ * every caller uses -- that is what lets usePublicConfig and
+ * useFeature below compose into a single request instead of two.
+ */
+function useAppChrome(clientApi: RequestFn): AppChrome {
+  const { data, isLoading, error } = usePublicConfig(clientApi)
+  const billingEnabled = useFeature(clientApi, 'billing')
+
+  return {
+    // Both fields default to "not yet known" rather than a guessed
+    // value: brandName stays undefined and billingEnabled stays false
+    // until the shared fetch settles.
+    brandName:
+      typeof data?.config.brand_name === 'string' ? data.config.brand_name : undefined,
+    billingEnabled,
+    isLoading,
+    error,
+  }
+}
+```
+
+- **`usePublicConfig(api)`** returns `{ data, error, isLoading, refresh }`.
+  `data.config` is `Record<string, unknown>` -- the schema is
+  dynamically extensible per-module, so entries such as available
+  payment channels or selectable languages only appear once the owning
+  module registers them; there is no closed TypeScript type for it.
+  `data.features` is always a sorted array, never `null`, even when
+  empty. `error` surfaces the rejected `ApiError` verbatim -- map
+  `error.code` to bilingual text through your own i18n catalog, never
+  in this package. `refresh()` forces a refetch and republishes to
+  every component sharing this `api`, keeping the previous `data`
+  (stale-while-revalidate) while the refetch is in flight; there is no
+  polling or window-focus refetch (see the package `AGENTS.md`). A
+  load that settles on an error is never the shared answer: the next
+  component that subscribes to this `api` starts a fresh fetch
+  automatically, so a mount after a transient failure (a reconnect, a
+  route change, a retry) recovers without calling `refresh()`.
+- **`useFeature(api, key)`** returns a plain `boolean`, composed on
+  `usePublicConfig`'s cache rather than a second request to
+  `/api/v1/config/features` -- `false` while loading and on error, never
+  throwing, so a consumer such as a `NavItem`'s `requiredFeature` field
+  stays hidden until the flag is confirmed on rather than flashing.
+  The `features` access is null-guarded defensively: the response
+  shape is a hand-maintained seam, so a payload whose `features` is
+  absent or `null` reads as "nothing enabled" rather than throwing
+  during render. go/config ships an OpenAPI fragment declaring both
+  endpoints, and the generated operations it produces
+  (`@speed/api-sdk`'s `useConfigGetPublicConfig` /
+  `useConfigGetSystemFeatures`) are the primary call surface; this hook
+  (and the fetchers under it) stay as the per-key layer: a generated
+  type for the public-config body can only be a record of dynamic keys,
+  so the flag lookup the hook performs cannot come from generation.
+  `fetchSystemFeatures` (above) remains the direct route to that
+  endpoint for a caller that genuinely wants it standalone.
+- Neither hook accepts or infers a tenant -- both endpoints resolve
+  tenant from the request's **host**, not from the access token, so a
+  logged-in user's tenant switch has no bearing on this cache.
+
+## What it does
+
+- **One error type.** Every failed request rejects an `ApiError`.
+  Responses carrying the API's envelope (`{ code, traceId?, params?,
+  message?, details? }`) surface the envelope's fields verbatim. `code`
+  is the only required wire field -- `traceId` is optional and surfaced
+  for correlation when a backend sends one; the backend sends
+  `{code, params}` only, so requiring anything beyond `code` would
+  discard every real module code into the `client.` fallback. Responses
+  without a valid envelope (a proxy error page, a 500 from an upstream
+  that is not JSON with a `code`, a timeout, a dead network) get a
+  synthesized code in the reserved `client.` namespace:
+  `client.network`, `client.timeout`, `client.protocol` (a 2xx whose
+  body is not a JSON object or array -- or an empty 2xx when the
+  request declared `requireJsonBody` -- or a request body that cannot
+  be JSON-serialized, such as a circular structure or a top-level
+  function/symbol, which rejects before anything is sent),
+  `client.http.<status>`. `error.attempts` reports how many HTTP
+  attempts were made. The namespace is reserved by mechanism, not just
+  by convention: server codes are module-scoped (`authn.*`, `notes.*`)
+  and `client` is no module's domain, so an envelope whose `code`
+  starts with `client.` is refused at parse time and surfaces as the
+  honest `client.http.<status>` instead -- a misbehaving backend or
+  intermediary cannot make a session error read as "the request timed
+  out". `isTransportFailure(error)` is the exported predicate that
+  answers whether an error is genuinely this client's own transport
+  failure (request never reached a usable response): its `status` is
+  0, the one status no HTTP response can carry, so the answer is not
+  forgeable by anything a server answers with.
+- **Bearer auth without a storage API.** The token store is a plain
+  two-method interface (`get(): string | null`, `set(token: string |
+  null): void`); the memory implementation is the only one the package
+  ships. The token is re-read before every attempt, so a retry after a
+  refresh carries the fresh token. A request can declare
+  `omitAccessToken` to skip the store entirely even while it holds a
+  token -- the session-refresh operation is generated to do exactly
+  that (see `@speed/api-sdk`); the request then carries only its own
+  headers, so without a caller-supplied `authorization` it travels
+  credential-less, and a caller-supplied one is the caller's own,
+  untouched by the store. No tenant header exists anywhere: tenant
+  context travels inside the access token.
+- **Silent 401 refresh, once per request -- bearer-only.** When a
+  request that *presented a bearer token* answers 401 and a
+  `refreshAccessToken` hook is configured, the client runs one refresh
+  -- concurrent 401s share a single in-flight refresh promise, so a
+  burst of expired-session requests triggers exactly one refresh --
+  and retries the original request exactly once, any method, outside
+  the transient-retry budget. Refresh failure rejects the original 401
+  as an auth `ApiError` and reports `access token refresh failed`
+  through the reporter. A 401 on a credential-less request means the
+  endpoint demands authentication, which refreshing cannot provide, so
+  it surfaces untouched -- and that rule is load-bearing for the
+  session wiring: a session's own refresh request travels
+  credential-less by declaration (`omitAccessToken`, set on the
+  generated refresh operation by `@speed/api-sdk`), so a refused
+  refresh token surfaces instead of re-entering the refresh path and
+  awaiting itself -- and the store is never cleared to make it so, so
+  concurrent requests keep presenting the token they hold throughout.
+  The refresh token itself is the host's business: a session layer
+  (@speed/auth-core) holds it in its closure -- the authn API returns
+  it in the response body and sets no refresh cookie -- and drives the
+  refresh operation; this package only defines the seam. The refresh
+  round is a separate exchange: `timeoutMs` bounds each HTTP exchange,
+  never the time spent in the refresh hook, so a refresh that outlives
+  the timeout cannot degrade the refused 401's own envelope (its code
+  and trace id) into a synthetic `client.http.401`.
+- **Transient retry, conservatively.** Only idempotent methods
+  (GET/HEAD/OPTIONS) are retried, only on 429 (honouring `Retry-After`,
+  capped at `maxDelayMs`), 502/503/504, network failures and timeouts.
+  Delays are exponential full jitter (`retryDelayMs`), and the budget
+  defaults to `DEFAULT_RETRY_POLICY` = 3 attempts / 200ms initial /
+  4s ceiling. The budget bounds transient retries; the silent-401
+  refresh round performs no transient retry and never consumes one
+  (the "retry ... outside the transient-retry budget" wording in the
+  refresh bullet above is literal). A response being discarded for a
+  retry -- a retryable status, or a refused 401 whose refresh
+  succeeded -- has its body cancelled first, so the connection is
+  released instead of staying held by an unread response until
+  garbage collection. Caller cancellation is never retried and never
+  wrapped: aborting your `signal` rejects the raw `AbortError`, so
+  query layers (TanStack Query) keep standard cancellation semantics.
+  Cancellation and the timeout cover the whole attempt, the response
+  body included: the per-attempt timer keeps running and your signal
+  keeps aborting until the body has settled, so a server that answers
+  headers and then stalls its body rejects with `client.timeout` (or
+  the raw `AbortError`) instead of hanging the request on a half-open
+  response. An abort during the retry backoff rejects just as
+  promptly: the backoff sleep itself races the caller's signal, so a
+  cancelled request never sits out its remaining delay.
+- **Structured reporting.** The reporter sink receives a constant
+  English message plus snake_case attributes. The default sink writes
+  to `console.error`/`console.warn` -- the browser has no structured
+  log backend, so reports reach whatever sink hosts install; hosts
+  replace it through `ClientOptions.reporter`.
+- **Language announcement (a transport channel, not a preference).**
+  `ClientOptions.languageProvider` supplies the language every request
+  announces as `accept-language`:
+
+  ```ts
+  const api = createClient({
+    baseUrl: '/api/v1',
+    // product-shell's bootstrap passes exactly this: the frontend
+    // negotiation chain's resolved value, read per attempt.
+    languageProvider: () => i18n.language,
+  })
+  ```
+
+  The provider is read on EVERY attempt, so a request retried after a
+  language switch announces the language the user is now looking at --
+  the same per-attempt discipline the bearer-token read observes. It
+  never overwrites a caller-supplied `accept-language` header, and a
+  null/empty answer leaves the header absent. What the header is FOR is
+  decided backend-side: the requester-language tiers of content chains
+  (an SMS code's language, a contact verification message). API
+  responses themselves are never localized -- they stay code+params for
+  the client to translate.
+
+## Public surface
+
+| Export | Kind | Purpose |
+| --- | --- | --- |
+| `createClient(options)` | function | Builds the request function. Construction validates configuration (baseUrl, fetch availability, retry policy, timeout) and fails fast on mistakes. |
+| `RequestFn` | type | `<T>(path, options?) => Promise<T>` -- the returned function; call it as `api<T,>(path)` in TSX files. |
+| `ApiError` | class | The one error type. `status` (0 when no response arrived), `code`, `traceId?`, `params?`, `details?`, `attempts`, `auth` (true exactly for HTTP 401), `message` (envelope message or an English diagnostic). |
+| `isApiError(value)` | function | Type guard; accepts `instanceof` and structurally identical errors (a second copy of the library). |
+| `isTransportFailure(value)` | function | Answers whether an error is genuinely this client's own transport-layer failure (`client.network`/`client.timeout` with `status` 0 -- the one status no HTTP response can carry). Consumer whitelists distinguishing "the request never completed" from server-answered errors should consult this, never a bare code match. |
+| `ERROR_CODE_NETWORK` / `ERROR_CODE_TIMEOUT` / `ERROR_CODE_PROTOCOL` | const | Reserved `client.` codes; an envelope that borrows the prefix is refused at parse time. |
+| `httpErrorCode(status)` | function | Shapes a bare non-2xx status into `client.http.<status>`. |
+| `FieldError` | type | `{ field, code, params? }` -- one field-level validation failure in `details`. |
+| `AccessTokenStore` | type | The sync `get`/`set` seam hosts implement (or use the memory store). |
+| `createMemoryAccessTokenStore()` | function | The memory-only implementation. |
+| `RetryPolicy` / `DEFAULT_RETRY_POLICY` | type / const | `{ maxAttempts, initialDelayMs, maxDelayMs }`; default `{ 3, 200, 4000 }`. |
+| `retryDelayMs(attempt, policy, random?)` | function | Pure full-jitter backoff maths (test-friendly: inject `random`). |
+| `retryAfterDelayMs(header, now?)` | function | Pure `Retry-After` parser: delta-seconds or HTTP-date, ms delay or null. |
+| `Reporter` / `createConsoleReporter()` | type / function | The diagnostics seam and its console-backed default. |
+| `fetchPublicConfig(api, options?)` | function | GETs `CONFIG_PUBLIC_PATH` (go/config's `PathPublic`); resolves `PublicConfigResponse`. |
+| `fetchSystemFeatures(api, options?)` | function | GETs `SYSTEM_FEATURES_PATH` (go/config's `PathSystemFeatures`); resolves `SystemFeaturesResponse`. |
+| `CONFIG_PUBLIC_PATH` / `SYSTEM_FEATURES_PATH` | const | The two path strings (`/api/v1/config/public`, `/api/v1/config/features`), hand-kept in sync with go/config and with its OpenAPI fragment (generated into `@speed/api-sdk`'s `useConfigGetPublicConfig` / `useConfigGetSystemFeatures`). |
+| `PublicConfigResponse` / `SystemFeaturesResponse` / `ConfigFetchOptions` | type | Wire shapes for the two fetchers above; no tenant field anywhere -- both endpoints resolve tenant server-side from the request host. |
+| `usePublicConfig(api)` *(`@speed/api-client/react`)* | hook | Fetches once per `api` identity and shares the result -- loading/error/data plus a `refresh()` -- with every other instance backed by the same `api`. See "Config hooks" above and the package `AGENTS.md` for the caching contract. |
+| `useFeature(api, key)` *(`@speed/api-client/react`)* | hook | `boolean`, composed on `usePublicConfig`'s cache -- `false` while loading and on error, never throws. |
+| `UsePublicConfigResult` *(`@speed/api-client/react`)* | type | `{ data, error, isLoading, refresh }` -- `usePublicConfig`'s return shape. |
+
+## What is deliberately not here
+
+- **Uploads, SSE and raw-byte responses** -- not shipped (the
+  transport reads and writes JSON text only; a binary body or
+  response never travels this client).
+- **A consumer is not packaged here** -- `@speed/api-sdk`, the
+  orval-generated typed surface, calls into this package through its
+  `src/runtime.ts` seam, and `@speed/auth-core` compile-consumes both
+  in-workspace (its session layer imports this package's
+  `AccessTokenStore` seam and calls the generated authn operations
+  through the bound request function). `usePublicConfig`/`useFeature`
+  live at `@speed/api-client/react` (Config hooks section above). The
+  runtime first consumer is real and lives in the reference app's
+  consumer shell (`examples/reference-app/web`, an external member of
+  the web workspace, never versioned): its bootstrap binds one real
+  `createClient` over the environment's own fetch into the api-sdk
+  seam, and its home view reads the server's effective Public values
+  and feature flags through `usePublicConfig`/`useFeature` on that same
+  bound client -- the shape a `requiredFeature`-style consumer needs.
+  The browser page leg ships too: the app's e2e suite
+  (`examples/reference-app/web/e2e`) drives that composed shell in a
+  real browser against a real, freshly booted server (its
+  `@deployment` gates additionally against a deployed, server-served
+  page via `E2E_BASE_URL`).
+- **i18n resources** -- error codes map to bilingual text in the
+  consuming package's catalogs; nothing here emits user-facing text.
+
+## Development
+
+From `web/packages/api-client/` (the whole web workspace installs and
+tests it too):
+
+```sh
+pnpm lint
+pnpm typecheck
+pnpm test
+pnpm build
+```
+
+Tests never touch a network: every request goes through a scripted
+fetch stand-in (`test-utils/fetch-standin.ts`), and the README Quick
+start above is executed verbatim by `src/usage-example.test.ts`; the
+Config hooks quick start is executed the same way by
+`src/react-usage-example.test.ts`.

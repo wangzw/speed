@@ -20,13 +20,12 @@
  *   node web/scripts/orval-nodenext-fixup.mjs
  *
  * The same one script serves the app-owned generation leg: the
- * reference app's own SDK (Taskfile's api:gen:app task) runs the
- * identical rewrite over its own generated entry and seam by passing
- * both paths:
+ * demo host's own SDK runs the identical rewrite over its own
+ * generated entry and seam by passing both paths:
  *
  *   node web/scripts/orval-nodenext-fixup.mjs \
- *     examples/reference-app/web/src/app-api/index.ts \
- *     examples/reference-app/web/src/app-api/runtime.ts
+ *     starters/demo/web/src/app-api/index.ts \
+ *     starters/demo/web/src/app-api/runtime.ts
  *
  * The script is idempotent: an already-fixed file (every mutator
  * import already carrying the '.js' extension) exits 0 with the

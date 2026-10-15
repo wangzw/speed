@@ -1,0 +1,183 @@
+{
+  "errors": {
+    "authn": {
+      "session_not_found": "The session does not exist. Please sign in again.",
+      "session_revoked": "The session was revoked. Please sign in again.",
+      "token_expired": "Your sign-in has expired. Please sign in again.",
+      "refresh_token_invalid": "Your sign-in is no longer valid. Please sign in again.",
+      "refresh_token_reused": "Suspicious activity was detected. Please sign in again.",
+      "rate_limited": "Too many attempts. Please try again later.",
+      "channel_disabled": "This sign-in method is turned off. Choose another one to link.",
+      "identity_already_bound": "This social account is already linked to your account.",
+      "identity_requires_binding": "This social account is linked to another account. Sign in to that account first to link it.",
+      "identity_not_found": "This sign-in method was not found. It may have been removed.",
+      "last_login_method": "You must keep at least one sign-in method.",
+      "oauth_state_invalid": "The binding state has expired. Please start again.",
+      "social_exchange_failed": "The social account binding failed. Please try again.",
+      "provider_unknown": "This social account provider is not supported.",
+      "redirect_uri_not_allowed": "The callback address is not allowed.",
+      "step_up_required": "This action requires you to verify your identity again.",
+      "mfa_not_enrolled": "Two-step verification is not enabled.",
+      "mfa_already_enrolled": "Two-step verification is already enabled.",
+      "mfa_invalid_code": "The code is incorrect or has expired. Try again.",
+      "mfa_code_used": "That code has already been used. Enter the latest code from your authenticator app, or an unused recovery code.",
+      "invalid_locale": "That language is not available; choose one of the offered languages.",
+      "invalid_timezone": "That timezone is not available; choose one of the offered timezones."
+    },
+    "client": {
+      "network": "No network connection. Check your connection and try again.",
+      "timeout": "The request timed out. Please try again later.",
+      "protocol": "The service returned an unexpected response. Please try again later."
+    },
+    "unknown": "Something went wrong. Please try again later."
+  },
+  "sessions": {
+    "title": "Sessions",
+    "loading": "Loading sessions",
+    "current": "Current session",
+    "status": {
+      "revoked": "Signed out",
+      "expired": "Expired"
+    },
+    "deviceUnknown": "Unknown device",
+    "revokeAriaWithDevice": "Sign out this session: {{device}}",
+    "signedIn": "Signed in {{time}}",
+    "lastSeen": "Last active {{time}}",
+    "revokeOthers": {
+      "label": "Sign out other devices",
+      "confirmTitle": "Sign out other devices?",
+      "confirmMessage": "This signs the account out on every other device. Only this device stays signed in, and the other devices will need to sign in again to continue.",
+      "confirmLabel": "Sign out",
+      "done_one": "Signed out {{count}} other device.",
+      "done_other": "Signed out {{count}} other devices."
+    },
+    "empty": {
+      "title": "No sessions yet",
+      "description": "Devices you sign in from will appear here."
+    },
+    "error": {
+      "title": "Could not load sessions",
+      "description": "Something went wrong while loading your sessions. Please try again."
+    },
+    "retry": "Retry"
+  },
+  "history": {
+    "title": "Sign-in history",
+    "loading": "Loading sign-in history",
+    "method": {
+      "password": "Password",
+      "sms": "SMS code",
+      "social": "Social account",
+      "oidc": "Enterprise SSO",
+      "other": "Other"
+    },
+    "result": {
+      "success": "Success"
+    },
+    "reason": {
+      "unknown_user": "No account was found with these details",
+      "bad_password": "Wrong password",
+      "no_password": "No password is set on this account",
+      "bad_code": "Wrong verification code",
+      "suspended": "This account is suspended",
+      "no_membership": "This account is not part of the organization you chose",
+      "requires_binding": "This social account must be linked first",
+      "other": "Sign-in failed"
+    },
+    "empty": {
+      "title": "No sign-in history yet",
+      "description": "Sign-in attempts for this account will appear here."
+    },
+    "error": {
+      "title": "Could not load sign-in history",
+      "description": "Something went wrong while loading your sign-in history. Please try again."
+    },
+    "retry": "Retry"
+  },
+  "bindings": {
+    "title": "Linked social accounts",
+    "loading": "Loading linked accounts",
+    "provider": {
+      "google": "Google",
+      "github": "GitHub",
+      "wechat": "WeChat",
+      "dingtalk": "DingTalk",
+      "feishu": "Feishu",
+      "oidc": "Enterprise SSO",
+      "other": "Other"
+    },
+    "unbind": "Unlink",
+    "unbindAriaWithProvider": "Unlink this account: {{provider}}",
+    "confirmTitle": "Unlink this social account?",
+    "confirmMessage": "You will no longer be able to sign in with this social account. It can be linked again later.",
+    "confirmLabel": "Unlink",
+    "addSectionTitle": "Link another account",
+    "empty": {
+      "title": "No linked social accounts yet",
+      "description": "Social accounts you link will appear here."
+    },
+    "error": {
+      "title": "Could not load linked accounts",
+      "description": "Something went wrong while loading your linked accounts. Please try again."
+    },
+    "retry": "Retry"
+  },
+  "bindingCallback": {
+    "pending": "Completing the link…",
+    "retry": "Retry",
+    "signedInElsewhere": {
+      "title": "You signed in on another session",
+      "description": "The social account is not linked yet. Sign in to the account you want to link it to, then complete the link from that account's security settings."
+    }
+  },
+  "mfa": {
+    "title": "Two-step verification",
+    "authenticator": {
+      "title": "Authenticator app",
+      "description": "Set an authenticator app (TOTP) as a second verification method. Once set up, security-sensitive operations ask you to verify your identity again.",
+      "enrollButton": "Set up authenticator",
+      "replacingNotice": "Two-step verification is already on for this account. Confirming replaces the current authenticator, and the current recovery codes stop working.",
+      "enrollDescription": "Add the content below to your authenticator app, then enter the 6-digit code the app shows.",
+      "secretLabel": "Secret",
+      "uriLabel": "Setup link",
+      "codeLabel": "6-digit code",
+      "confirmLabel": "Confirm",
+      "cancelLabel": "Cancel"
+    },
+    "recoveryCodes": {
+      "title": "Recovery codes",
+      "description": "A recovery code stands in for the 6-digit code when you cannot use your authenticator app. Regenerating discards the current set.",
+      "regenerateButton": "Regenerate recovery codes",
+      "showOnceTitle": "Save these recovery codes",
+      "showOnceDescription": "These codes are shown exactly once — save them now. Each code can be used once.",
+      "savedLabel": "I have saved them"
+    },
+    "stepUp": {
+      "title": "Verify your identity",
+      "description": "This action requires you to verify your identity again. Enter a 6-digit code from your authenticator app, or one recovery code.",
+      "codeLabel": "Code",
+      "confirmLabel": "Verify",
+      "cancelLabel": "Cancel"
+    }
+  },
+  "preferences": {
+    "title": "Preferences",
+    "loading": "Loading preferences",
+    "saveFailed": "Your change could not be saved to your account.",
+    "language": {
+      "label": "Language",
+      "notChosen": "Not chosen (use your device's language)",
+      "helper": "The language for emails and other messages we send you."
+    },
+    "timezone": {
+      "label": "Time zone",
+      "notChosen": "Not chosen (use your device's time zone)",
+      "helper": "Times shown in your account use this time zone."
+    },
+    "error": {
+      "title": "Could not load preferences",
+      "description": "Something went wrong while loading your preferences. Please try again."
+    },
+    "retry": "Retry"
+  }
+}

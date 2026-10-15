@@ -1,0 +1,164 @@
+# AGENTS.md — @speed/api-sdk
+
+Guidance for AI tooling working in or against this package. The public
+surface, generation mechanics and deferred items are documented in the
+package `README.md`; this file records the invariants that keep the
+package safe.
+
+## What this module is
+
+The generated, spec-first typed surface of speed APIs for the
+frontend: orval output from each module's openapi fragment, calling the
+`@speed/api-client` runtime through one hand-written binding
+(`src/runtime.ts`). Generated code never performs HTTP itself; the
+`speed/no-direct-http` ESLint rule whitelists only `@speed/api-client`,
+and `src/` must keep passing it on every regeneration.
+
+## Invariants (code review enforces; do not weaken)
+
+- **`src/index.ts` is generated; never hand-edit it.** It is stamped
+  with a DO-NOT-EDIT header from `web/orval.config.ts` that carries the
+  pinned orval version -- tool drift manifests as a header diff. Change
+  the generator config and regenerate; never patch the artifact.
+- **`src/runtime.ts` is the only hand-written source file.** Never add
+  a second hand-written file inside `src/` to bridge a generation gap.
+  Tooling gaps are fixed in tooling: the extensionless-mutator-import
+  problem is solved by `web/scripts/orval-nodenext-fixup.mjs`, a
+  deterministic post-generation rewrite of every `'./runtime'` mutator
+  import (one per mutator -- plain `speedRequest` plus one line per
+  per-operation override such as `speedRequestCredentialless`) that is
+  idempotent -- an already-fixed file (the imports already carrying
+  `'.js'`) exits 0, so the fixup can be re-run freely -- and exits
+  non-zero only when a regeneration ships no mutator import in either
+  the bare or the explicit form, and by the tsconfig pair (`bundler`
+  resolution for typecheck, `nodenext` for build), not by shipped
+  source.
+- **The mutator surface is a binding, not an import.** `speedRequest`
+  adapts orval's axios-shaped call to the request function a host bound
+  with `bindRequestFn(createClient(...))`, attaching the bearer token
+  from the host's api-client store. `speedRequestCredentialless` is
+  the second mutator, selected per operation by `web/orval.config.ts`
+  for requests that must go out without a bearer token (the authn
+  session-refresh operation, which authenticates with the refresh
+  token in its body and whose 401 must stay terminal -- see
+  `@speed/api-client`'s bearer-only rule): it forwards the call with
+  `omitAccessToken` declared and never sets the plain mutator's shape.
+  Calls made through either mutator while unbound throw a programmer
+  error (`[speed-api-sdk] no request function bound: ...`); rebinding
+  replaces the previous function, last bind wins, no once-guard (tests
+  and hot reload rebind).
+- **No tenant header and no tenant query key exist in generated
+  code.** Tenant context travels inside the access token -- never in
+  a header -- and query keys are bare spec paths. `tenant_id` does
+  appear in the authn fragment's types, where the identity API
+  genuinely needs it: the optional request-body field on the login,
+  SMS and social-callback operations, the response field on
+  `AuthnPrincipal`, and the required `AuthnSwitchTenantRequest`
+  body field. The fragment documents those fields as claims or
+  server-verified requests, never as a data scope; every other
+  fragment's types carry no `tenant_id` at all. Tenant query-key
+  namespacing is a consumer-shell discipline, recorded in
+  `web/orval.config.ts` and the README.
+- **orval stays out of the lockfile.** Every runner -- the Taskfile
+  `api:gen` frontend leg above all --
+  invokes `pnpm dlx orval@8.17.0 --config orval.config.ts` from `web/`
+  followed by the fixup script. A version bump lands in both
+  places (config comment, Taskfile) at once.
+- **No user-facing text, no i18n resources.** Errors are typed as the
+  spec's `{code, params}` envelope; codes map to bilingual text in
+  consumer catalogs. The runtime binding's programmer errors are constant
+  English strings.
+- **The peer family is the QueryClient contract.** `react` and
+  `@tanstack/react-query` v5 are peers so hosts share one
+  QueryClient/Provider; the package never constructs one. Its own
+  hooks are exercised in tests with a `QueryClientProvider` around
+  `renderHook`.
+
+## What ships vs. what is deferred
+
+The generated surface over the merged document (`src/index.ts` --
+orval input is `contracts/speed.yaml`, the redocly `join` of the eleven
+platform-module fragments: admin, ai-gateway, authn, billing, config,
+integration, notification, org, pki, sharing and storage -- every
+platform module with an HTTP fragment is a merge member; the
+reference app's own notes, cases and smilesim fragments are NOT
+members, by design: the app's own API is generated into the app's own
+SDK through the app-owned flow, documented in docs/internal/
+21-api-contract.md), the runtime binding, the regeneration
+tooling (config + fixup script) and the CI wiring that regenerates and
+diffs the artifact. `@speed/auth-core` compile-consumes the authn
+surface in-workspace: its unit suite binds a scripted request function
+through `bindRequestFn` -- the same binding a host's real client binds --
+so a spec change whose regenerated surface outgrows auth-core's calls
+fails that package's typecheck.
+
+The browser page is a real consumer at its own tier: the reference
+app's e2e suite (`examples/reference-app/web/e2e`) drives the composed
+shell -- every platform operation through this package's generated
+surface over the bound client -- in a real browser against a real,
+freshly booted server, and its `@deployment` gates drive a deployed,
+server-served page via `E2E_BASE_URL`. Below that tier the consumer
+shell's vitest suites drive the composed operations through the real
+client over a scripted server double, and this package's own unit
+tests bind a fake request function and never touch a network. Tenant
+query-key namespacing stays a consumer-shell discipline by contract.
+
+Deferred with reasons:
+
+- The oasdiff breaking-change gate -- not implemented: a
+  breaking-change gate needs a release baseline to diff against. The
+  first baseline is derivable -- v0.0.1's publish commit (fbaaaf98) is
+  in this repository's history and its tree carries the complete merged
+  document and every fragment; the module proxy's cache covers only 17
+  of the 21 modules -- but nothing is wired yet.
+- Raw-byte transport -- not shipped: the spec's byte-carrying
+  operations (sharing's access-content route, storage's
+  object-content read) generate typed operations with orval's
+  `responseType: 'blob'` shape, but the bound api-client transport
+  reads and writes JSON text only, so the binding reads that option
+  for type-completeness and never forwards it (runtime.ts's
+  forward()). A host that must move bytes uses its own mechanism --
+  browser navigation for a share link, a byte-capable client of its
+  own -- never this JSON transport.
+- Release-time packaging of the merged spec into the published SDK --
+  not implemented (release machinery); do not claim it lives here.
+
+## Public surface
+
+Two entry points:
+
+- `.` (generated `src/index.ts`) -- the operation functions, hooks and
+  response models orval derives from the merged document. The shape
+  is orval's, not ours: expect it to change only through the generator.
+- `./runtime` (`src/runtime.ts`) -- `bindRequestFn`, the `speedRequest`
+  mutator and the per-operation `speedRequestCredentialless` mutator
+  (selected by `web/orval.config.ts`), the stable hand-written binding
+  hosts bind.
+
+`src/runtime.test.ts` pins the binding's behaviour; `src/index.test.ts`
+pins the generated surface's observable behaviour (hooks issue the
+expected calls through the mutator with the expected query keys).
+Extend `runtime.ts` deliberately; the generated file only via
+`web/orval.config.ts`.
+
+## Development
+
+From this directory (`web/packages/api-sdk/`), or workspace-wide from
+`web/` with `pnpm -r`:
+
+```sh
+pnpm lint        # eslint; generated src/ must pass, incl. speed/no-direct-http
+pnpm typecheck   # strict; bundler resolution maps sibling sources via tsconfig paths
+pnpm test        # vitest (jsdom); colocated unit tests, no network
+pnpm build       # nodenext tsc build to dist/ (gitignored); pre-builds @speed/api-client
+```
+
+Regenerate (from `web/`):
+
+```sh
+pnpm dlx orval@8.17.0 --config orval.config.ts
+node scripts/orval-nodenext-fixup.mjs
+```
+
+The committed artifact is the post-fixup file; CI reproduces both steps
+and diffs.

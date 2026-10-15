@@ -14,9 +14,9 @@
 | [api-client](design-web-api-client.md) | 契约无关的手写传输运行时：请求函数、`ApiError` 归一、令牌存储、刷新、重试、上报、配置钩子 |
 | [api-sdk](design-web-api-sdk.md) | 生成的契约面：orval 产物、运行时接缝与 mutator、生成配置 |
 | [route-kit](design-web-route-kit.md) | 路由与导航独立层：声明式注册面、路径匹配、链接构造、导航选中态与未命中回退 |
-| [auth-core](design-web-auth-core.md) | 浏览器会话状态机：登录、登出、切租户、快照、React hook 与租户作用域查询键 |
-| [auth-ui](design-web-auth-ui.md) | 登录组件族：口令、短信、注册、社交渠道与会话面 |
-| [account-ui](design-web-account-ui.md) | 账户管理组件族：偏好、会话、登录历史、社交绑定、两步验证 |
+| [auth-core](design-web-auth-core.md) | 浏览器会话状态机：登录流程、登出、快照、React hook、租户上下文与租户作用域查询键 |
+| [auth-ui](design-web-auth-ui.md) | 登录组件族：口令、短信、社交渠道与会话面 |
+| [account-ui](design-web-account-ui.md) | 账户管理组件族：偏好、会话、社交绑定、两步验证 |
 | [tenancy-ui](design-web-tenancy-ui.md) | 租户切换控件 |
 | [product-shell](design-web-product-shell.md) | 租户侧装配壳与装配入口 `bootstrapSpeedApp` |
 | [console-ui](design-web-console-ui.md) | 平台侧控制台面组件族：租户、设置与审计三个管理面 |
@@ -31,10 +31,10 @@
 | [layout-kit](design-web-layout-kit.md) | 已实现 |
 | [api-client](design-web-api-client.md) | 已实现 |
 | [api-sdk](design-web-api-sdk.md) | 已实现 |
-| [route-kit](design-web-route-kit.md) | 未实现 |
-| [auth-core](design-web-auth-core.md) | 部分实现 |
-| [auth-ui](design-web-auth-ui.md) | 已实现 |
-| [account-ui](design-web-account-ui.md) | 已实现 |
-| [tenancy-ui](design-web-tenancy-ui.md) | 已实现 |
+| [route-kit](design-web-route-kit.md) | 已实现 |
+| [auth-core](design-web-auth-core.md) | 未实现 |
+| [auth-ui](design-web-auth-ui.md) | 未实现 |
+| [account-ui](design-web-account-ui.md) | 未实现 |
+| [tenancy-ui](design-web-tenancy-ui.md) | 未实现 |
 | [product-shell](design-web-product-shell.md) | 已实现 |
-| [console-ui](design-web-console-ui.md) | 未实现 |
+| [console-ui](design-web-console-ui.md) | 已实现 |

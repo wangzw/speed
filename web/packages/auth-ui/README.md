@@ -1,24 +1,28 @@
 # @speed/auth-ui
 
-The sign-in component family of a frontend built on speed: the
-password, SMS-code and registration channels, the social sign-in
-section and the callback handler that completes its exchange, plus the
-sign-out action and the session-ended placeholder -- assembled in
-`SignInScreen` behind a channel tab strip. Every piece is a controlled
-component over an `@speed/auth-core` session passed in as a prop, at
-the same tier as `ui-kit` and `layout-kit`: components never consume
-the auth-core hooks, never read session state, never attach or
-persist a session, never navigate, and never touch the network
-directly -- a successful sign-in fires the host's `onSignedIn`
-callback once, and everything that happens next is the host's. Every
-host callback runs only after the operation's verdict settled, and a
-throwing callback is contained: it is not a failure
-of the operation it follows -- no error banner, no re-classified
-outcome, no unhandled rejection -- because the commit already
-happened. Every built-in string renders from the bilingual `auth-ui`
-namespace registered through `@speed/i18n`, and the form fields render
-through `ui-kit`'s `FormField`/`FormLayout`, the same discipline the
-other packages established.
+The sign-in component family of a frontend built on speed: the password
+and SMS-code channels, the social sign-in section and the callback handler
+that resumes its flow, plus the sign-out action and the session-ended
+placeholder -- assembled in `SignInScreen` behind a channel tab strip.
+Every piece is a controlled component over an `@speed/auth-core` session
+passed in as a prop, at the same tier as `ui-kit` and `layout-kit`:
+components never consume the auth-core hooks, never read session state,
+never attach or persist a session, never navigate, and never touch the
+network directly -- a successful sign-in fires the host's `onSignedIn`
+callback once, and everything that happens next is the host's. Every host
+callback runs only after the operation's verdict settled, and a throwing
+callback is contained: it is not a failure of the operation it follows --
+no error banner, no re-classified outcome, no unhandled rejection --
+because the commit already happened. Every built-in string renders from
+the bilingual `auth-ui` namespace registered through `@speed/i18n`, and
+the form fields render through `ui-kit`'s `FormField`/`FormLayout`, the
+same discipline the other packages established.
+
+There is no registration form. An account has no signup endpoint of its
+own: it is created inside a login flow's account-resolution step (under the
+deployment's signup setting), or by an invitation, or by an administrator.
+A "registration" is therefore a login flow's outcome, not a form this
+package ships.
 
 ## What ships
 
@@ -27,26 +31,26 @@ other packages established.
 | `SignInScreen.tsx` | `SignInScreen`, `SignInScreenProps`, `SignInChannel`, `SocialSignInOptions` |
 | `PasswordSignInForm.tsx` | `PasswordSignInForm`, `PasswordSignInFormProps` |
 | `SMSSignInForm.tsx` | `SMSSignInForm`, `SMSSignInFormProps` |
-| `RegisterForm.tsx` | `RegisterForm`, `RegisterFormProps` |
 | `SocialSignInSection.tsx` | `SocialSignInSection`, `SocialSignInSectionProps`, `SocialProvider`, `SocialProviderConfig` |
 | `SocialCallbackHandler.tsx` | `SocialCallbackHandler`, `SocialCallbackHandlerProps` |
 | `SignOutButton.tsx` | `SignOutButton`, `SignOutButtonProps` |
 | `SessionEndedScreen.tsx` | `SessionEndedScreen`, `SessionEndedScreenProps` |
 | `resources.ts` | `AUTH_UI_NAMESPACE`, `authUiResources` |
 
-Everything else (`src/internal/`) is shared plumbing -- the
-code-to-text error resolver, the whole-attempt failure banner, the
-translation hook -- and is deliberately not exported.
+Everything else (`src/internal/`) is shared plumbing -- the flow-stepping
+driver, the step renderer, the code-to-text error resolver, the
+whole-attempt failure banner, the translation hook -- and is deliberately
+not exported.
 
 ## Quick start
 
 A host composes the family over the session-and-client wiring
-`@speed/auth-core`'s README documents. The bootstrap has four parts:
-the bilingual i18n instance with both namespaces a rendered form can
-read, the client and session over one memory access-token store, the
-session attached to the hooks, and the host gate that switches between
-the sign-in surface, the app and the session-ended placeholder on the
-`useAuthState` snapshot.
+`@speed/auth-core`'s README documents. The bootstrap has four parts: the
+bilingual i18n instance with both namespaces a rendered form can read, the
+client and session over one memory access-token store, the session
+attached to the hooks, and the host gate that switches between the sign-in
+surface, the app and the session-ended placeholder on the `useAuthState`
+snapshot.
 
 ```tsx
 import { useEffect, useState } from 'react'
@@ -55,7 +59,7 @@ import {
   createMemoryAccessTokenStore,
 } from '@speed/api-client'
 import { bindRequestFn } from '@speed/api-sdk/runtime'
-import { authnGetMe } from '@speed/api-sdk'
+import { authnProfileGet } from '@speed/api-sdk'
 import {
   createAuthSession,
   attachSession,
@@ -127,17 +131,21 @@ function AppGate() {
   return <SignInScreen session={session} />
 }
 
-// The host's app view: protected content that reads the caller's identity
-// through the generated /me operation, routed through the bound client.
+// The host's app view: protected content that reads the caller's own
+// profile through the generated /me operation, routed through the bound
+// client.
 function ProtectedArea() {
-  const [userId, setUserId] = useState<string | undefined>(undefined)
+  const [reachable, setReachable] = useState<boolean | null>(null)
   return (
     <div>
       <p>Signed in</p>
-      <button type="button" onClick={() => void authnGetMe().then((me) => setUserId(me.user_id))}>
+      <button
+        type="button"
+        onClick={() => void authnProfileGet().then(() => setReachable(true))}
+      >
         Check session
       </button>
-      {userId !== undefined ? <p>Session ok for {userId}</p> : null}
+      {reachable === true ? <p>Session ok</p> : null}
     </div>
   )
 }
@@ -154,48 +162,78 @@ export function App() {
 ```
 
 `registerNamespace` validates before it mutates (identical leaf key
-sets across both languages) and must run exactly once per instance,
-same as every other speed namespace. This exact composition is
-compiled and executed by the package suite (`src/usage-example.test.tsx`)
-over a real `@speed/api-client`: its fetch stand-in answers with
-genuine `Response` objects, and the journey drives a password sign-in
-(the store holds the issued access token), a protected request refused
-with `authn.token_expired` that the client silently refreshes (the
-refresh travels credential-less by declaration, the retried request
-carries the fresh token), and a server-side session death whose own
-refused refresh converges the snapshot to anonymous -- the gate's
-anonymous snapshot at the app view is the session-ended screen.
-Signing in again returns to the form, and a `switchLanguage` leg
-re-renders the same surface in the other supported language. The
-documented usage cannot drift from the API.
+sets across both languages) and must run exactly once per instance, same
+as every other speed namespace. This exact composition is compiled and
+executed by the package suite (`src/usage-example.test.tsx`) over a real
+`@speed/api-client`: its fetch stand-in answers with genuine `Response`
+objects, and the journey drives a password sign-in (a login flow started
+and taken to its ready step's result, the store then holding the issued
+access token), a protected request refused with `authn.token_expired` that
+the client silently refreshes, and a later refusal that converges the
+snapshot to anonymous -- the gate's anonymous snapshot at the app view is
+the session-ended screen. Signing in again returns to the form, and a
+`switchLanguage` leg re-renders the same surface in the other supported
+language. The documented usage cannot drift from the API.
+
+## How a sign-in is driven
+
+A login is a server-side flow, not one request. Every channel form begins
+one with `session.startFlow` and advances it with `session.answerFlow`
+until it settles; only auth-core commits the session (a token-issuing
+completion), so no component here holds login state.
+
+A step that does not complete immediately -- a forced password change, a
+required second factor, a factor to register -- is rendered by the shared
+step renderer (`src/internal/flow-step.tsx`): a `challenge` step renders
+one input per field the server asks for, a `factor` step renders one
+button per offered second factor, an `enroll` step one button per
+registerable kind, and a `ready` step (whose `next.kind` is `complete`) is
+taken automatically with `step: 'complete'`. A `webauthn` or `redirect`
+step this surface cannot finish renders an unavailable notice. The answer
+step name is a function of the record's live state (`answer` in `first`,
+`factor` in `second`, `enroll` in `enroll`, `complete` in `ready`), never
+of the rendered kind, so a factor's own challenge is still answered with
+`factor` -- the driver carries the chosen factor id (and an enroll's
+`kind`) into that answer.
+
+A submit whose own completion lost a concurrent race is not a failure:
+auth-core rejects it with `OperationSupersededError` and the session is
+authenticated under the *winner's* identity, so the driver stays silent --
+no error banner, no `onSignedIn`, no retry of a one-shot side effect for
+an identity the session is not running under. The host observes the
+winner's session through its own auth-core hooks.
+
+A step the server answers `authn.flow_invalid` (the flow expired, was
+consumed by a concurrent submit, or is bound to another browser) cannot be
+answered any more: the form returns to its channel's first step to start a
+fresh flow, with the code's text in the banner.
 
 ## SignInScreen
 
 The assembled sign-in surface: the channel tab strip the host declares
 through `channels` (password or SMS code, labels from the bundle,
-password first) switches the form below it, and when `social` is given
-the social section renders under the form with its divider title
-between them. Switching channels unmounts the previous form, so its
-half-typed state and whole-attempt error are gone with it -- a
-deliberate reset: channel errors must not leak across surfaces. A
-successful sign-in on any channel fires `onSignedIn` once. The screen
-renders no heading of its own: the page above (branding, the heading,
-the register link) is host content.
+password first) switches the form below it, and when `social` is given the
+social section renders under the form with its divider title between them.
+Switching channels unmounts the previous form, so its half-typed state and
+whole-attempt error are gone with it -- a deliberate reset: channel errors
+must not leak across surfaces. A successful sign-in on any channel fires
+`onSignedIn` once. The screen renders no heading of its own: the page
+above (branding, the heading, the sign-up link) is host content.
 
 The channels offered are the host's to declare -- both are offered when
 `channels` is omitted. A deployment must not offer a channel it cannot
-finish: offering SMS sign-in while nothing can deliver a code is a
-promise no phone will ever keep, so a host whose SMS seam resolves to
-the console sender declares `['password']` rather than captioned
-entrance nobody can walk through. One declared channel renders its
-form directly, with no tab strip at all: a tablist with nothing to
-switch between is not a choice, and its ARIA wiring would dangle.
+finish: offering SMS sign-in while nothing can deliver a code is a promise
+no phone will ever keep, so a host whose SMS seam resolves to the console
+sender declares `['password']` rather than a captioned entrance nobody can
+walk through. One declared channel renders its form directly, with no tab
+strip at all: a tablist with nothing to switch between is not a choice, and
+its ARIA wiring would dangle.
 
 The tab strip is wired to the mounted channel panel the ARIA tabs way:
-each `Tab` carries an id and `aria-controls` naming its own panel, and
-the mounted channel renders as the `role="tabpanel"` with that id and
-the tab as its `aria-labelledby` -- only the active panel exists in
-the DOM, since switching unmounts the previous form.
+each `Tab` carries an id and `aria-controls` naming its own panel, and the
+mounted channel renders as the `role="tabpanel"` with that id and the tab
+as its `aria-labelledby` -- only the active panel exists in the DOM, since
+switching unmounts the previous form.
 
 | Prop | Type | Notes |
 |---|---|---|
@@ -220,29 +258,22 @@ export interface SocialSignInOptions {
 
 ## The channel forms
 
-Each form is a controlled react-hook-form flow over one slice of the
-session contract, rendered through `ui-kit`'s `FormLayout`/`FormField`
-(the skeleton owns the `<form>`, validation-error rendering and the
-actions row; the component owns the submission, the busy state and the
+Each form is a controlled react-hook-form flow over one method of the
+login surface, rendered through `ui-kit`'s `FormLayout`/`FormField` (the
+skeleton owns the `<form>`, validation-error rendering and the actions
+row; the component owns the submission, the busy state and the
 whole-attempt failure banner). Fields carry channel-appropriate
-`autoComplete` values. A failed submit changes nothing on the session
-and renders one `role="alert"` banner resolving the answer's error
-code to current-language text (see Text and i18n below); a successful
-one fires `onSignedIn` once and the host navigates. None of them reads
-the session snapshot or renders a title.
-
-A password submit that lost a concurrent sign-in race -- another
-channel's login, or a second instance of this form, committed to the
-session while this submit was in flight -- is answered by auth-core
-with `OperationSupersededError`, which the form treats as the lost
-race it is: no error banner, no `onSignedIn` (the winning call fires
-its own exactly once), and the session being authenticated now is the
-host's own snapshot to observe through its auth-core hooks.
+`autoComplete` values. A failed submit renders one `role="alert"` banner
+resolving the answer's error code to current-language text (see Text and
+i18n below); a successful one fires `onSignedIn` once and the host
+navigates. None of them reads the session snapshot or renders a title.
 
 ### PasswordSignInForm
 
-One identifier field -- email or phone, the backend decides which --
-and a password field, over `session.loginWithPassword`.
+One identifier field -- email or phone, the backend decides which -- and a
+password field, sent as a `method: 'password'` flow's first step. A
+forced password change or a second factor the flow then parks on is
+rendered by the shared step renderer in place of these fields.
 
 | Prop | Type | Notes |
 |---|---|---|
@@ -251,89 +282,57 @@ and a password field, over `session.loginWithPassword`.
 
 ### SMSSignInForm
 
-A two-step flow: the phone step requests a code
-(`session.requestSMSCode`) -- whose 202 acceptance, and the
-account-existence ambiguity the endpoint answers with, is the phone
-step's terminal state -- then the code step completes the sign-in with
-`session.loginWithSMSCode`. The sent notice announces the receiving
-number (`role="status"`); resend repeats the request against the same
-number; changing the phone returns to the first step. A fresh code
-starts the code field empty: a successful request (the first send, a
-resend, or a request for a changed phone) resets any code typed
-against the one it invalidates, so a stale code can never ride along
-to a new code session. The request
-step renders the code the server answers: `authn.invalid_phone` when
-the number has no E.164 form (no leading '+' and country code) and
-`authn.rate_limited` when the attempt trips the send policy, each
-through the one banner.
+A two-step flow over `method: 'sms'`: the phone step begins it (the
+method sends the code and answers with a challenge asking for it), then
+the code step answers that challenge. The `challenge` step is what tells
+the form a code was issued, so the two steps are this form's own UI and
+the sent notice announces the receiving number (`role="status"`); resend
+begins the flow again against the same number; changing the phone returns
+to the first step. A fresh code starts the code field empty: a successful
+send (the first, a resend, or a request for a changed phone) resets any
+code typed against the one it invalidates, so a stale code can never ride
+along to a new code session. A wrong or expired code is refused as
+`authn.login_failed` (a spent login code reads exactly like a wrong one,
+deliberately).
 
-A code-step submit whose login lost a concurrent sign-in race --
-another channel's login, or a second instance of a sign-in form,
-committed to the session while this submit was in flight -- is
-answered by auth-core with `OperationSupersededError`, and no
-`onSignedIn` fires (the winning call fires its own exactly once). The
-SMS channel must also hear what a lost race cost it: a phone-login
-code is single-use server-side, so the losing submit spent the very
-code its own answer verified. The form renders the used-code notice
-(`smsSignIn.codeUsed`), clears the code field, and refuses a
-re-submission of that exact code locally -- the server would only
-answer the spent code with the same `authn.verification_code_invalid`
-it answers every dead code with, and the form knows better. Only a
-fresh code (resend, or a request for a changed phone) can sign in.
+A code answer whose login lost a concurrent race answers
+`OperationSupersededError`; the code it verified is single-use
+server-side, so the losing submit spent it. The form renders the used-code
+notice (`smsSignIn.codeUsed`), clears the code field, and refuses a
+re-submission of that exact code locally -- the server would only answer
+the spent code with the same collapsed refusal, and the form knows better.
+Only a fresh code (a resend, or a request for a changed phone) can sign in.
 
 | Prop | Type | Notes |
 |---|---|---|
 | `session` | `AuthSession` (required) | the session the SMS sign-in drives |
 | `onSignedIn` | `() => void` | fired once after an SMS-code login commits |
 
-### RegisterForm
-
-Registration never signs in -- `register` is not a session operation.
-One identifier field accepts an email or a phone number: the `'@'`
-heuristic decides which slot the request carries, honouring the spec's
-separated email/phone shape rather than a single ambiguous identifier.
-The optional display name is trimmed and omitted when blank; the
-locale the request declares is the session's current UI language, read
-at submit time so a mid-flight language switch is honoured, and the
-timezone is the browser's own report (`Intl.DateTimeFormat`), read the
-same moment -- both the first tiers of the backend's registration
-initial-value chains. The timezone read is guarded and its absence is
-never a submit failure: the backend validates the field leniently (an
-unusable or missing value is stored empty, the platform default UTC
-applying, and the registration still succeeds), so an environment whose
-`Intl` cannot answer registers without a timezone rather than refusing
-to submit. Password
-policy and identifier canonical form live on the backend, whose
-code-level answers (`authn.password_too_short` and friends, and the
-identifier-format refusals `authn.invalid_email` / `authn.invalid_phone`)
-render through the one banner. The created user goes to `onRegistered` -- with a callback the
-form stays quiet and the host navigates to its sign-in screen -- or,
-without one, renders as a success panel in place of the form.
-
-| Prop | Type | Notes |
-|---|---|---|
-| `session` | `AuthSession` (required) | the session the registration drives |
-| `onRegistered` | `(user: AuthnUser) => void` | receives the created user once; the callback's type is the generated `AuthnUser` of `@speed/api-sdk` |
-
 ## Social sign-in
 
 ### SocialSignInSection
 
-One outlined button per configured provider, each answering the
-bundle's name for it (`social.provider.<provider>`). Clicking a
-provider asks the session for that channel's authorization URL -- a
-pure request, never a navigation: the URL is reported upward through
-`onAuthorizeUrl` and the host decides what it is for (a redirect in
-the host's router, a popup, a new tab). Each flight is tracked per
-provider: while one request is in flight its own button disables and
-the others stay live, and an earlier attempt's return can never
-re-enable a later provider's button mid-flight. A failed answer
-(`authn.provider_unknown`, `authn.redirect_uri_not_allowed`) renders
-through the one banner -- but the banner belongs to the newest attempt
-only (attempts are numbered at start; a failure writes its code only
-while it is still the newest attempt, and each new attempt clears the
-banner), so an earlier attempt's failure can never paint over a newer
-attempt's success or linger past it.
+One outlined button per configured provider, each answering the bundle's
+name for it (`social.provider.<provider>`). Clicking a provider begins
+that method's login flow (`session.startFlow`, the provider as the flow's
+`method`); the flow's first step for a social method is a `redirect` step
+carrying the provider's authorization URL, reported upward through
+`onAuthorizeUrl` and the host decides what it is for (a redirect in the
+host's router, a popup, a new tab). Each flight is tracked per provider:
+while one request is in flight its own button disables and the others stay
+live, and an earlier attempt's return can never re-enable a later
+provider's button mid-flight. A refused start (an unknown or disabled
+method, an account-unavailable answer) renders through the one banner --
+but the banner belongs to the newest attempt only (attempts are numbered
+at start; a failure writes its code only while it is still the newest
+attempt, and each new attempt clears the banner), so an earlier attempt's
+failure can never paint over a newer attempt's success or linger past it.
+
+The provider's own redirect address is the server's: the method builds
+`redirect_uri` from the deployment's public URL, so the client sends no
+redirect_uri. What the config's `redirectUri` names is the host's own
+callback route, and it is sent as the flow's `return_to` so the provider's
+round trip lands the browser back on it.
 
 ```ts
 export type SocialProvider =
@@ -351,58 +350,49 @@ export interface SocialProviderConfig {
 
 | Prop | Type | Notes |
 |---|---|---|
-| `session` | `AuthSession` (required) | the session that builds authorization URLs |
+| `session` | `AuthSession` (required) | the session that begins each channel's flow |
 | `providers` | `readonly SocialProviderConfig[]` (required) | the channels to render, in the order the host wants |
-| `onAuthorizeUrl` | `(provider, authorizeUrl) => void` | receives each channel's authorization URL once built; the host navigates |
+| `onAuthorizeUrl` | `(provider, authorizeUrl) => void` | receives the channel's authorization URL once the flow hands it over; the host navigates |
 
 ### SocialCallbackHandler
 
-Completes a social sign-in at the host's callback route. The host
-renders it with the provider and the `code`/`state` the provider
-redirected back; an effect -- ref-keyed on the `(code, state)` pair,
-so the double effect invocation of StrictMode development starts
-exactly one exchange -- completes the login through
-`session.completeSocialLogin` and fires `onSignedIn` once. A mount
-that finds the session already authenticated is a re-entry to the
-callback URL after a completed exchange: the single-use code is
-consumed, so no second exchange is started -- the handler fires
-`onSignedIn` again and keeps the pending notice up until the host
-reacts. Without either an `onSignedIn` handler or a gate on the
-authenticated snapshot the pending notice stays up by design: the
-handler never paints the success itself, and the commit of an
-exchange is observable through the auth-core hooks the host attaches.
-While the exchange is in flight the handler shows the pending notice
-(`role="status"`); a failed exchange (`authn.oauth_state_invalid`,
-`authn.social_exchange_failed`, `authn.identity_requires_binding`)
-renders its code text in the banner under a retry button that re-runs
-the exchange for the same pair. The props come from the host's own
-route; nothing here navigates.
+Resumes a social sign-in at the host's callback route. The server handed
+the provider's redirect and answered it, so the browser lands back on the
+flow's `return_to`; on mount the handler reads the flow back
+(`session.readFlow`). A flow that is ready (`next.kind = complete`) is
+taken with `step: 'complete'`, the login lands, and the handler fires
+`onSignedIn` once; a flow still parked on a step (a required second
+factor) is rendered by the shared step renderer and advanced in place. A
+mount that finds no flow -- the binding is gone, the flow is done or
+expired -- renders the failure banner with a retry button that reads once
+more. A mount that finds the session already authenticated is a re-entry
+to the callback route after a completed login: no read is started and the
+handler fires `onSignedIn` again so the host bounces the viewer onward.
+While the read is in flight the handler shows the pending notice
+(`role="status"`). The callback route is the host's own; nothing here
+navigates.
 
 | Prop | Type | Notes |
 |---|---|---|
-| `session` | `AuthSession` (required) | the session that completes the exchange |
-| `provider` | `SocialProvider` (required) | the channel the redirect came back on, threaded through to the exchange verbatim |
-| `code` | `string` (required) | the authorization response the provider redirected back |
-| `state` | `string` (required) | the state the authorize URL carried; the server validates it |
-| `onSignedIn` | `() => void` | fired once after the exchange commits -- and once more on a later mount that finds the session already signed in (the re-entry case starts no exchange), so the host bounces the viewer onward |
+| `session` | `AuthSession` (required) | the session that resumes the flow |
+| `onSignedIn` | `() => void` | fired once after the login lands -- and again on a later mount that finds the session already authenticated |
 
 ## SignOutButton
 
-The sign-out action over `session.logout()`. A click drives the
-logout; while the request is in flight the button disables and shows
-the busy label; a failed logout renders the answer's code text
-(session-lifecycle codes like `authn.session_revoked` included) in one
-banner and leaves the button ready to retry. A successful logout is
-deliberately quiet: it clears the session and flips the snapshot to
-anonymous, and the host's own auth-core hooks observe that flip -- the
-component never navigates and fires no completion callback. It renders
-whether or not the snapshot is authenticated; the host mounts it where
-a sign-out action belongs (typically app chrome). The button renders
-with `color="inherit"`: mounted inside a coloured AppBar (whose
-background is the primary colour and whose own text is its
-contrastText), an inherited colour stays legible where a
-primary-coloured default would read primary-on-primary on the very
-surface the control usually sits on.
+The sign-out action over `session.logout()`. A click drives the logout;
+while the request is in flight the button disables and shows the busy
+label; a refused logout renders the answer's code text in one banner.
+Logout is terminal either way: auth-core clears the local session and
+flips the snapshot to anonymous whether or not the server's revocation
+answered (a session it could not revoke is no longer trustworthy
+locally), so the host's own auth-core hooks observe the same flip on both
+paths -- the component never navigates and fires no completion callback.
+It renders whether or not the snapshot is authenticated; the host mounts
+it where a sign-out action belongs (typically app chrome). The button
+renders with `color="inherit"`: mounted inside a coloured AppBar (whose
+background is the primary colour and whose own text is its contrastText),
+an inherited colour stays legible where a primary-coloured default would
+read primary-on-primary on the very surface the control usually sits on.
 
 | Prop | Type | Notes |
 |---|---|---|
@@ -410,29 +400,29 @@ surface the control usually sits on.
 
 ## SessionEndedScreen
 
-The pure placeholder a host renders once protected content is gone --
-the view's authenticated snapshot just turned anonymous. The session
-lifecycle is observable, not imperative: there is no
-recovery and no refresh cookie, so a page reload starts anonymous, and
-a server-side session death converges through the api-client refresh
-leg -- `refresh()` resolving `false` flips the snapshot to anonymous.
-The host watches its own auth-core hooks and, at any view that just
-lost its authenticated snapshot, mounts this screen; its action hands
-the host back to its sign-in surface.
+The pure placeholder a host renders once protected content is gone -- the
+view's authenticated snapshot just turned anonymous. The session lifecycle
+is observable, not imperative: there is no recovery and no refresh cookie,
+so a page reload starts anonymous, and a server-side session death
+converges through the api-client refresh leg -- `refresh()` resolving
+`false` flips the snapshot to anonymous. The host watches its own
+auth-core hooks and, at any view that just lost its authenticated
+snapshot, mounts this screen; its action hands the host back to its
+sign-in surface.
 
-The screen is pure presentation: no session prop, no hooks, no
-network. It renders `ui-kit`'s `EmptyState` in the `noPermission`
-variant -- the lock icon, because the content is gated again until the
-user signs in -- with every text slot overridden from the auth-ui
-namespace, so nothing of `ui-kit`'s built-in texts can leak through.
+The screen is pure presentation: no session prop, no hooks, no network.
+It renders `ui-kit`'s `EmptyState` in the `noPermission` variant -- the
+lock icon, because the content is gated again until the user signs in --
+with every text slot overridden from the auth-ui namespace, so nothing of
+`ui-kit`'s built-in texts can leak through.
 
-The screen replaces the whole authenticated page (product-shell's
-ended branch mounts it with no frame and no ancestor heading), so its
-title is the page's own heading: `ui-kit`'s `EmptyState` heading level
-is forwarded through `headingLevel`, defaulting to `h1` -- the level
-that continues nothing, which is what a whole-page placeholder needs
--- and a host embedding the screen under a heading of its own passes
-the level that continues the page's order.
+The screen replaces the whole authenticated page (product-shell's ended
+branch mounts it with no frame and no ancestor heading), so its title is
+the page's own heading: `ui-kit`'s `EmptyState` heading level is forwarded
+through `headingLevel`, defaulting to `h1` -- the level that continues
+nothing, which is what a whole-page placeholder needs -- and a host
+embedding the screen under a heading of its own passes the level that
+continues the page's order.
 
 | Prop | Type | Notes |
 |---|---|---|
@@ -443,112 +433,111 @@ the level that continues the page's order.
 
 All built-in strings live in the bilingual `auth-ui` namespace
 (`src/locales/zh-CN.json` and `en-US.json`, identical leaf key sets,
-enforced by registration and by `tools/check_i18n_keys.py` in CI):
+enforced by registration):
 
 | Section | Purpose |
 |---|---|
-| `passwordSignIn.*` | the password channel: title, field labels, submit |
+| `passwordSignIn.*` | the password channel: title, field labels (identifier, password, new password), submit |
 | `smsSignIn.*` | the SMS channel: title, phone/code labels, send/resubmit/change-phone actions, the sent notice, the used-code notice |
-| `register.*` | the registration channel: labels, submit, the no-callback success panel |
+| `signInFlow.*` | the step renderer: the continue action, the factor/enroll titles, the factor-kind names (a guarded closed set plus an "other" label), the unavailable-step notice |
 | `social.*` | the social section: the divider title and one name per provider (`social.provider.<provider>`) |
 | `socialCallback.*` | the callback handler: the pending notice, the retry action |
 | `signOut.*` | the sign-out button: label and busy state |
 | `sessionEnded.*` | the session-ended screen: title, description, sign-in-again action |
 | `errors.*` | code-to-text answers (see below) |
 
-Hosts reword the kit by registering their own identical-key bundle
-pair under `AUTH_UI_NAMESPACE` at bootstrap -- never by editing
-component text. `MUI` components themselves carry no speed text.
+Hosts reword the kit by registering their own identical-key bundle pair
+under `AUTH_UI_NAMESPACE` at bootstrap -- never by editing component text.
+`MUI` components themselves carry no speed text.
 
 ### Error text: the reachable-code whitelist
 
-Every submit path of the family resolves its failure to one error
-code and renders it through the same whole-attempt `role="alert"`
-banner (`InlineError`), never per-field error prose. The resolver
-maps exactly these codes to their `errors.*` keys -- the reachable
-answers of the authn surface this family drives, plus the transport
-codes of the `@speed/api-client` contract:
+Every submit path of the family resolves its failure to one error code and
+renders it through the same whole-attempt `role="alert"` banner
+(`InlineError`), never per-field error prose. The resolver maps exactly
+these codes to their `errors.*` keys -- the login-flow problem set the
+login-flow endpoints answer with, plus the transport codes of the
+`@speed/api-client` contract:
 
 | Area | Codes with dedicated text |
 |---|---|
-| Sign-in and register (identifier, canonical-format, credential, policy, attempt and membership answers) | `authn.invalid_credentials`, `authn.tenant_membership_required`, `authn.tenant_membership_unavailable`, `authn.account_locked`, `authn.rate_limited`, `authn.verification_code_invalid`, `authn.email_already_registered`, `authn.phone_already_registered`, `authn.identifier_required`, `authn.invalid_email`, `authn.invalid_phone`, `authn.password_too_short`, `authn.password_too_long`, `authn.password_too_weak`, `authn.display_name_too_long` |
-| Social endpoints and channel gates | `authn.channel_disabled`, `authn.provider_unknown`, `authn.redirect_uri_not_allowed`, `authn.oauth_state_invalid`, `authn.social_exchange_failed`, `authn.social_identity_incomplete`, `authn.identity_requires_binding`, `authn.identity_already_bound` |
-| Session lifecycle (a sign-out call can answer with these; a host renders them for its own protected operations too) | `authn.session_not_found`, `authn.session_revoked`, `authn.refresh_token_invalid`, `authn.refresh_token_reused`, `authn.token_expired` |
+| Login flow (a refused credential, an expired or consumed flow, a disabled method, an unavailable account, a conflict, a throttle, an unavailable dependency, an unsupported phone region, a malformed body) | `authn.login_failed`, `authn.flow_invalid`, `authn.link_required`, `authn.method_disabled`, `authn.account_unavailable`, `authn.conflict`, `authn.throttled`, `authn.unavailable`, `authn.unsupported_region`, `authn.bad_request` |
 | Transport (the api-client contract) | `client.network`, `client.timeout`, `client.protocol` |
 
 Anything outside the whitelist -- a future authn code, a
 `client.http.<status>` answer, a non-`ApiError` throw -- renders the
-`errors.unknown` fallback, so the bundle can never show a raw key,
-and a missing translation never leaks another language's text or an
-English fallback. The family's classifier (`errorCodeOf`) collapses
-non-`ApiError`-shaped throws to `client.unknown`, a code deliberately
-not whitelisted, so the fallback is where they land: a submit that
-throws at all always has a code to show.
+`errors.unknown` fallback, so the bundle can never show a raw key, and a
+missing translation never leaks another language's text or an English
+fallback. The family's classifier (`errorCodeOf`) collapses non-`ApiError`
+shaped throws to `client.unknown`, a code deliberately not whitelisted, so
+the fallback is where they land: a submit that throws at all always has a
+code to show. The SMS channel's used-code notice is a bundle key of its
+own, never a server code: the server cannot tell a spent login code apart
+from a wrong one without becoming an oracle, so the honest "used" verdict
+lives only in the form's own memory.
 
 ## Accessibility
 
 Component tests run axe over the rendered document and fail on any
-violation, with two recorded exceptions shared with `ui-kit`: `color-
-contrast` is disabled because jsdom computes no layout or color (a
-contrast result there is neither trustworthy nor actionable -- the
-theme owns contrast and is verified browser-side), and `region` is
-disabled because the units under test are components, not full app
-pages. The interaction semantics are asserted by the tests rather than
-left to axe: sent notices and the social-callback pending state
-announce through `role="status"` containers (the pending spinner is
-`aria-hidden`, so the notice is not read twice), every failure renders
-in one `role="alert"`, buttons disable while their request is in
-flight, the channel strip is MUI `Tabs` (arrow-key navigation, labelled
-by the channel titles) whose tabs each carry an `id` and the
-`aria-controls` of their own panel -- the mounted channel renders as
-the `role="tabpanel"` with that id and the tab as its
-`aria-labelledby`, so the tabs never point at nothing -- and each
-field carries the `autoComplete` value
-matching its channel (`username`, `current-password`,
-`new-password`, `tel`, `one-time-code`) plus `inputMode="numeric"`
+violation, with two recorded exceptions shared with `ui-kit`:
+`color-contrast` is disabled because jsdom computes no layout or color (a
+contrast result there is neither trustworthy nor actionable -- the theme
+owns contrast and is verified browser-side), and `region` is disabled
+because the units under test are components, not full app pages. The
+interaction semantics are asserted by the tests rather than left to axe:
+sent notices and the social-callback pending state announce through
+`role="status"` containers (the pending spinner is `aria-hidden`, so the
+notice is not read twice), every failure renders in one `role="alert"`,
+buttons disable while their request is in flight, the channel strip is MUI
+`Tabs` (arrow-key navigation, labelled by the channel titles) whose tabs
+each carry an `id` and the `aria-controls` of their own panel -- the
+mounted channel renders as the `role="tabpanel"` with that id and the tab
+as its `aria-labelledby`, so the tabs never point at nothing -- and each
+field carries the `autoComplete` value matching its channel (`username`,
+`current-password`, `tel`, `one-time-code`) plus `inputMode="numeric"`
 for the SMS code.
 
 ## Testing
 
 Unit tests are vitest + jsdom, one file per source file under `src/`,
 shared helpers only in `test-utils/`. The vitest config aliases the
-`@speed/*` specifiers onto the sibling packages' `src` entries, so
-tests run against live sources -- no test file imports another
-package's `dist/`. Three layers of helpers, mirroring `@speed/auth-core`'s:
+`@speed/*` specifiers onto the sibling packages' `src` entries, so tests
+run against live sources -- no test file imports another package's
+`dist/`. Three layers of helpers, mirroring `@speed/auth-core`'s:
 
 - `render.tsx` -- `renderWithProviders` mounts a unit under the tree a
-  real host builds (`I18nextProvider` around `AppThemeProvider`), with
-  a fresh bilingual instance per call (the double-registration guard
-  never fires across tests) and both namespaces a rendered form can
-  read registered; `createAuthUiI18n` is the shared instance factory.
-  Bilingual assertions import the shipped bundles
-  (`../locales/zh-CN.json`, `en-US.json`), never inline a language
-  literal.
-- `@speed/test-utils/session-harness` -- `makeHarness` drives component tests'
-  sessions: a scripted fake `RequestFn` bound through the same
-  `bindRequestFn` seam a host's real client binds, a real session over
-  a fresh memory store, and assertions on observable state only (store
-  tokens, request bodies, raw `ApiError`s). The endpoint constants are
-  the same literal keys auth-core's harness uses.
+  real host builds (`I18nextProvider` around `AppThemeProvider`), with a
+  fresh bilingual instance per call (the double-registration guard never
+  fires across tests) and both namespaces a rendered form can read
+  registered; `createAuthUiI18n` is the shared instance factory. Bilingual
+  assertions import the shipped bundles (`../locales/zh-CN.json`,
+  `en-US.json`), never inline a language literal.
+- `@speed/test-utils/session-harness` -- `makeHarness` drives component
+  tests' sessions: a scripted fake `RequestFn` bound through the same
+  `bindRequestFn` seam a host's real client binds, a real session over a
+  fresh memory store, and assertions on observable state only (store
+  tokens, request bodies, raw `ApiError`s). Its endpoint constants and
+  reply builders (`openFlow`, `completeFlow`, `authenticatedCompletion`,
+  `principal`, ...) are the flow model's own.
 - `real-client.ts` + `session-gate.tsx` -- the journey rig:
-  `makeRealClientRig` builds a real `@speed/api-client`
-  `createClient` whose fetch stand-in answers from a script with
-  genuine `Response` objects, recording every request's method, path
-  and authorization header; because the transport is real api-client
-  machinery, the 401-refresh leg is exercised by the client itself
-  rather than scripted around. `SessionGate` is the host's router in
-  miniature, reading the snapshot of the attached session and
-  switching between host-provided app content, the sign-in surface and
-  the session-ended screen.
+  `makeRealClientRig` builds a real `@speed/api-client` `createClient`
+  whose fetch stand-in answers from a script with genuine `Response`
+  objects, recording every request's method, path, authorization header
+  and raw body; because the transport is real api-client machinery, the
+  401-refresh leg is exercised by the client itself rather than scripted
+  around. `SessionGate` is the host's router in miniature, reading the
+  snapshot of the attached session and switching between host-provided app
+  content, the sign-in surface and the session-ended screen.
 
 `src/usage-example.test.tsx` compiles and executes the Quick start
 composition above end to end over the real-client rig (the requests
-pinned in order: the password sign-in, a refused and refreshed
-protected call, a refused refresh converging to the session-ended
-screen, and the sign-in-again turn), and `src/session-journey.test.tsx`
-drives the journeys beyond the example -- the SMS channel, an explicit
-sign-out and the social callback route -- over the same rig and gate.
-Every component test asserts axe and the bilingual text of its states.
+pinned in order: the password flow's start, its ready step's result, the
+profile read, a refused and refreshed protected call, a refused refresh
+converging to the session-ended screen, and the sign-in-again turn), and
+`src/session-journey.test.tsx` drives the journeys beyond the example --
+the SMS channel, an explicit sign-out and the social callback route --
+over the same rig and gate. Every component test asserts axe and the
+bilingual text of its states.
 
 ## Dependencies
 
@@ -558,99 +547,73 @@ Every component test asserts axe and the bilingual text of its states.
 | `@mui/material` | peer (required, ^9) | the `TextField`/`Button`/`Tabs`/`Alert` primitives and the ambient theme |
 | `@emotion/react`, `@emotion/styled` | peer (required, ^11) | MUI's own runtime requirements |
 | `react-hook-form` | peer (required, ^7) | every form is a controlled react-hook-form flow; RHF is the host's single instance |
-| `@speed/auth-core` | dependency | the session every component drives, and the hooks the host observes through |
+| `@speed/auth-core` | dependency | the session every component drives, its flow operations, and the hand-written flow response models it re-exports |
 | `@speed/i18n` | dependency | the namespace registration and translation hook every component renders through |
 | `@speed/ui-kit` | dependency | the `FormLayout`/`FormField` form skeleton and `EmptyState` (the session-ended screen) |
-| `@speed/api-sdk` | dependency (type-only) | `RegisterForm`'s public callback carries the generated `AuthnUser`, so a consumer resolving the published `.d.ts` needs the specifier declared as a dependency, never a dev one -- the same rule `auth-core` applies to the packages its public types reference |
 
-`@speed/api-client` stays a devDependency: only the suite binds a real
-client, and no public type of this package references it. No direct
-HTTP exists anywhere in `src/` -- every request goes through the
-session's generated operations over the shared seam, and the
-workspace's `speed/no-direct-http` rule enforces that (this package is
-simply absent from the rule's one whitelist, `packages/api-client`);
-the `speed/no-literal-text` rule enforces the namespace discipline over
-`src/` the same way it does in every package.
+`@speed/api-sdk` and `@speed/api-client` are devDependencies: no public
+type of this package references them, and only the README's quick start
+(executed by `src/usage-example.test.tsx`) binds a real client through the
+api-sdk runtime seam. No direct HTTP exists anywhere in `src/` -- every
+request goes through the session's generated operations over the shared
+seam, and the workspace's `speed/no-direct-http` rule enforces that (this
+package is simply absent from the rule's one whitelist,
+`packages/api-client`); the `speed/no-literal-text` rule enforces the
+namespace discipline over `src/` the same way it does in every package.
 
 ## Known limitations
 
-- **A registration is not a login.** `RegisterForm` never signs in --
-  `register` is not a session operation, by spec and by auth-core's
-  contract -- so after a successful registration the new account signs
-  in through the sign-in surface the host navigates to (or, without an
-  `onRegistered` callback, the form's success panel says so
-  explicitly).
-- **Account binding and step-up surfaces live in `@speed/account-ui`,
-  not here.** This family is the sign-in surface: `SocialCallbackHandler`
-  handles the callback of a sign-in exchange, and one answering with
-  the bound-identity shape and no tokens -- the server's answer to an
-  already-authenticated caller -- is refused with `client.protocol`,
-  per auth-core's `completeSocialLogin` contract. The authenticated
-  half of that answer is account management's own, and it shipped: an
-  already-signed-in caller linking another channel to the account
-  walks the add area of `@speed/account-ui`'s `SocialBindingsSection`
-  (the authorize URL reported upward, the provider redirect completed
-  by the package's `BindingCallbackHandler` at the host's callback
-  route), and step-up-gated actions (`RequireStepUp` on the server)
-  drive the challenge inside the package's `MfaSection`. Enterprise
-  OIDC/SSO has no section in either family -- its discovery is
-  per-tenant configuration.
-- **No channel discovery.** The server exposes no endpoint answering
-  "which sign-in channels may this tenant's users use", so the family
-  renders exactly the channels the host composes: `SignInScreen`
-  without the `social` prop renders no social block, and the register
-  link that sits above a real sign-in page is host content, not a
-  package export.
-- **Session state does not survive a page load, and the refresh token
-  is JavaScript-visible in memory** -- auth-core's own known
-  limitations, inherited by any host of this family: reloading starts
-  anonymous and the user signs in again. See `@speed/auth-core`'s
-  README for the full account.
+- **No registration form.** An account has no signup endpoint of its own
+  and is created inside a login flow's account-resolution step (or by an
+  invite, or by an administrator), so a "registration" is a login flow's
+  outcome under the deployment's signup setting. A host that wants a
+  sign-up affordance composes it from the same sign-in surface.
+- **Account binding, step-up and factor enrollment are not this
+  package's.** This family drives the login purpose; the authenticated
+  purposes (`link`, `step-up`, `enroll`) and their screens live in
+  `@speed/account-ui` (`SocialBindingsSection` + `BindingCallbackHandler`,
+  `MfaSection`). A passkey (`webauthn`) step that a login flow parks on
+  renders an unavailable notice here rather than running the ceremony.
+- **No channel discovery beyond the methods listing.** The login methods
+  endpoint names what the deployment offers, but this family still renders
+  exactly the channels the host composes: `SignInScreen` without the
+  `social` prop renders no social block, and any sign-up link above a real
+  sign-in page is host content, not a package export.
+- **Session state does not survive a page load, and the refresh token is
+  JavaScript-visible in memory** -- auth-core's own known limitations,
+  inherited by any host of this family: reloading starts anonymous and the
+  user signs in again. See `@speed/auth-core`'s README for the full
+  account.
 
 ## Deferrals and recorded decisions
 
 - **Reference-app consumer**: consumed by the reference app's consumer
   shell (`examples/reference-app/web`): its sign-in view renders this
   family inside product-shell's three-branch view machine, over the
-  session the shell's bootstrap binds to one real `@speed/api-client`
-  (the shell suites drive that composed tree against the demo-server
-  double). The shell is also where generated TanStack Query hooks and
-  tenant query-key namespacing first appear, and where `RouteGuard` --
-  its host-composition shape proven in form by `product-shell`'s
-  gated-journey suite, which mounts the gate inside the shell's
-  children and feeds it a status the fixture host computes from the
-  role lists it attached -- first wires behind real permission answers
-  and a router (the shell's notes view derives its gate status from
-  the served notes-list query, 403 being the server's permission
-  answer). The package-level proof remains the in-form leg --
-  `src/usage-example.test.tsx` drives the composed family over a real
-  `@speed/api-client` bound through the same seam a host binds, with a
-  scripted fetch answering genuine `Response` objects. The
-  browser-driving leg ships in the reference app's e2e suite
-  (`examples/reference-app/web/e2e` -- `password-sign-in.spec.ts` and
-  `registration.spec.ts` drive this family against a real, freshly
-  booted server); the in-form leg and the consumer shell's
-  composed-tree suites remain the in-package evidence.
-- **Auth-core hooks stay host-side by design.** Components in this
-  family take the session as a prop and fire callbacks; the host
-  observes session transitions with `useAuthState` and friends. A
-  component that needed the hooks would have to be mounted under the
-  host's `attachSession` anyway -- this family is the reason the host
-  gate exists, not a consumer of it.
-- **Storybook / browser-side visual verification**: no preview
-  harness exists (the same deferral `ui-kit` and `layout-kit` carry);
+  session the shell's bootstrap binds to one real `@speed/api-client`.
+  The package-level proof is the in-form leg -- `src/usage-example.test.tsx`
+  drives the composed family over a real `@speed/api-client` bound through
+  the same seam a host binds, with a scripted fetch answering genuine
+  `Response` objects.
+- **Auth-core hooks stay host-side by design.** Components in this family
+  take the session as a prop and fire callbacks; the host observes session
+  transitions with `useAuthState` and friends. A component that needed the
+  hooks would have to be mounted under the host's `attachSession` anyway --
+  this family is the reason the host gate exists, not a consumer of it.
+- **Storybook / browser-side visual verification**: no preview harness
+  exists (the same deferral `ui-kit` and `layout-kit` carry);
   `color-contrast` stays axe-disabled for the same jsdom reason, and
   contrast is asserted at the theme-value level in this package's
-  component suites.
+  component suites (see `SignOutButton`'s suite).
 
 ## Development
 
-From `web/packages/auth-ui`: `pnpm lint`, `pnpm typecheck`, `pnpm
-test`, `pnpm build`. The build compiles `@speed/auth-core` and
-`@speed/ui-kit` first (their sources are what the aliases and the
-published `.d.ts` files reference) and then emits this package's
-`dist/`; `pnpm build` from the `web/` root does the same for every
-package. Shared test helpers live in `test-utils/`, bilingual fixtures
-are the shipped locale files under `src/locales/`, and
-`src/usage-example.test.tsx` compiles and executes the Quick start
-composition above, so the documented usage cannot drift from the API.
+From `web/packages/auth-ui`: `pnpm lint`, `pnpm typecheck`, `pnpm test`,
+`pnpm build`. The build compiles `@speed/auth-core` and `@speed/ui-kit`
+first (their sources are what the aliases and the published `.d.ts` files
+reference) and then emits this package's `dist/`; `pnpm build` from the
+`web/` root does the same for every package. Shared test helpers live in
+`test-utils/`, bilingual fixtures are the shipped locale files under
+`src/locales/`, and `src/usage-example.test.tsx` compiles and executes the
+Quick start composition above, so the documented usage cannot drift from
+the API.

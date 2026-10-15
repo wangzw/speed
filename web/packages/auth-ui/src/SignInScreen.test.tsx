@@ -1,6 +1,6 @@
 /**
- * SignInScreen behaviour: the password channel is selected by default
- * and a successful password login fires onSignedIn once; the tab strip
+ * SignInScreen behaviour: the password channel is selected by default and
+ * a successful password login fires onSignedIn once; the tab strip
  * switches to the SMS channel whose two-step flow then drives its own
  * requests, and switching channels unmounts the previous form -- its
  * half-typed state is gone on return. The social block renders only when
@@ -17,12 +17,14 @@ import { SignInScreen } from './SignInScreen.js'
 import type { SocialProviderConfig } from './SocialSignInSection.js'
 import { renderWithProviders } from '../test-utils/render.js'
 import {
-  LOGIN_PASSWORD,
-  LOGIN_SMS,
-  REQUEST_SMS_CODE,
-  SOCIAL_AUTHORIZE,
+  LOGIN_ANSWER,
+  LOGIN_START,
+  PROFILE_GET,
+  authenticatedCompletion,
+  completeFlow,
   makeHarness,
-  makePair,
+  openFlow,
+  principal,
 } from '@speed/test-utils/session-harness'
 import { expectNoAxeViolations } from '../test-utils/axe.js'
 import zhCN from './locales/zh-CN.json' with { type: 'json' }
@@ -31,12 +33,39 @@ import enUS from './locales/en-US.json' with { type: 'json' }
 const PHONE = '+8613800138000'
 
 const SOCIAL_PROVIDERS: readonly SocialProviderConfig[] = [
-  { provider: 'google', redirectUri: 'https://app.example.com/auth/callback' },
+  { provider: 'google', redirectUri: '/auth/social/callback' },
 ]
+
+/** A harness that completes a password flow and drives the SMS channel's
+ * two steps, dispatching on the request method and step. */
+function makeSignInHarness() {
+  return makeHarness({
+    [LOGIN_START]: (call) => {
+      const method = (call.options?.body as { method?: string }).method
+      return method === 'sms'
+        ? openFlow({
+            seq: 1,
+            state: 'first',
+            next: {
+              kind: 'challenge',
+              fields: [
+                { name: 'code', kind: 'code', required: true, secret: true },
+              ],
+            },
+          })
+        : completeFlow(1)
+    },
+    [LOGIN_ANSWER]: (call) => {
+      const step = (call.options?.body as { step?: string }).step
+      return step === 'complete' ? authenticatedCompletion() : completeFlow(2)
+    },
+    [PROFILE_GET]: () => principal(),
+  })
+}
 
 describe('SignInScreen', () => {
   it('show the password channel first and fire onSignedIn from its login', async () => {
-    const harness = makeHarness({ [LOGIN_PASSWORD]: () => makePair() })
+    const harness = makeSignInHarness()
     const onSignedIn = vi.fn()
     renderWithProviders(
       <SignInScreen session={harness.session} onSignedIn={onSignedIn} />,
@@ -66,11 +95,7 @@ describe('SignInScreen', () => {
   })
 
   it('switch to the SMS channel, whose flow drives its own requests', async () => {
-    const harness = makeHarness({
-      [LOGIN_PASSWORD]: () => makePair(),
-      [REQUEST_SMS_CODE]: () => undefined,
-      [LOGIN_SMS]: () => makePair(),
-    })
+    const harness = makeSignInHarness()
     const onSignedIn = vi.fn()
     renderWithProviders(
       <SignInScreen session={harness.session} onSignedIn={onSignedIn} />,
@@ -84,26 +109,25 @@ describe('SignInScreen', () => {
       screen.getByRole('button', { name: zhCN.smsSignIn.sendCode }),
     )
     await waitFor(() =>
-      expect(screen.getByRole('status')).toBeInTheDocument(),
+      expect(screen.getByLabelText(zhCN.smsSignIn.codeLabel)).toBeInTheDocument(),
     )
     await user.type(screen.getByLabelText(zhCN.smsSignIn.codeLabel), '123456')
     await user.click(
       screen.getByRole('button', { name: zhCN.smsSignIn.submit }),
     )
     await waitFor(() => expect(onSignedIn).toHaveBeenCalledTimes(1))
-    expect(harness.calls).toHaveLength(2)
-    expect(harness.calls[0]?.path).toBe('/api/v1/authn/login/sms/request')
-    expect(harness.calls[1]?.path).toBe('/api/v1/authn/login/sms')
-    // The password channel never fired.
-    expect(
-      harness.calls.every((call) => call.path !== '/api/v1/authn/login/password'),
-    ).toBe(true)
+    // The sms start, the code answer and the result-taking complete.
+    expect(harness.calls.map((call) => `${call.method} ${call.path}`)).toEqual([
+      'POST /auth/flows',
+      'POST /auth/flows/answer',
+      'POST /auth/flows/answer',
+      'GET /auth/me',
+    ])
+    expect(harness.calls[0]?.options?.body).toMatchObject({ method: 'sms' })
   })
 
   it('reset a half-typed channel when switching away and back', async () => {
-    const harness = makeHarness({
-      [LOGIN_PASSWORD]: () => makePair(),
-    })
+    const harness = makeSignInHarness()
     renderWithProviders(<SignInScreen session={harness.session} />)
     const user = userEvent.setup()
     const identifier = screen.getByLabelText(zhCN.passwordSignIn.identifierLabel)
@@ -123,10 +147,14 @@ describe('SignInScreen', () => {
 
   it('render the social block under the form when options are given', async () => {
     const harness = makeHarness({
-      [LOGIN_PASSWORD]: () => makePair(),
-      [SOCIAL_AUTHORIZE]: () => ({
-        authorize_url: 'https://accounts.google.com/o/oauth2/v2/auth',
-      }),
+      [LOGIN_START]: () =>
+        openFlow({
+          next: {
+            kind: 'redirect',
+            url: 'https://accounts.google.com/o/oauth2/v2/auth',
+            method: 'GET',
+          },
+        }),
     })
     const onAuthorizeUrl = vi.fn()
     renderWithProviders(
@@ -144,9 +172,7 @@ describe('SignInScreen', () => {
   })
 
   it('open on the SMS channel when defaultChannel says so', async () => {
-    const harness = makeHarness({
-      [REQUEST_SMS_CODE]: () => undefined,
-    })
+    const harness = makeSignInHarness()
     renderWithProviders(
       <SignInScreen session={harness.session} defaultChannel="sms" />,
     )
@@ -162,7 +188,7 @@ describe('SignInScreen', () => {
   })
 
   it('render the en-US bundle on an English-starting instance', async () => {
-    const harness = makeHarness({ [LOGIN_PASSWORD]: () => makePair() })
+    const harness = makeSignInHarness()
     renderWithProviders(
       <SignInScreen
         session={harness.session}
@@ -183,7 +209,7 @@ describe('SignInScreen', () => {
   })
 
   it('pass axe with no violations', async () => {
-    const harness = makeHarness({ [LOGIN_PASSWORD]: () => makePair() })
+    const harness = makeSignInHarness()
     // Rendered under the page h1 a real host page supplies: the screen
     // renders no heading of its own (branding and the page heading are
     // host content above it), and page-has-heading-one is determinate
@@ -199,7 +225,7 @@ describe('SignInScreen', () => {
   })
 
   it('wire each channel tab to its own panel by id and aria-controls', async () => {
-    const harness = makeHarness({ [LOGIN_PASSWORD]: () => makePair() })
+    const harness = makeSignInHarness()
     renderWithProviders(<SignInScreen session={harness.session} />)
     const passwordTab = screen.getByRole('tab', {
       name: zhCN.passwordSignIn.title,
@@ -232,10 +258,7 @@ describe('SignInScreen', () => {
   })
 
   it('offer only the channels the host declares: an undeclared channel is not offered at all', async () => {
-    const harness = makeHarness({
-      [LOGIN_PASSWORD]: () => makePair(),
-      [REQUEST_SMS_CODE]: () => undefined,
-    })
+    const harness = makeSignInHarness()
     const onSignedIn = vi.fn()
     renderWithProviders(
       <SignInScreen
@@ -272,12 +295,18 @@ describe('SignInScreen', () => {
       screen.getByRole('button', { name: zhCN.passwordSignIn.submit }),
     )
     await waitFor(() => expect(onSignedIn).toHaveBeenCalledTimes(1))
-    expect(harness.calls).toHaveLength(1)
-    expect(harness.calls[0]?.path).toBe('/api/v1/authn/login/password')
+    // The password flow: the start, the ready step's result, and the
+    // profile read a login completion makes.
+    expect(harness.calls[0]?.options?.body).toMatchObject({ method: 'password' })
+    expect(harness.calls.map((call) => `${call.method} ${call.path}`)).toEqual([
+      'POST /auth/flows',
+      'POST /auth/flows/answer',
+      'GET /auth/me',
+    ])
   })
 
   it('fall back to the first offered channel when defaultChannel is not offered', async () => {
-    const harness = makeHarness({ [REQUEST_SMS_CODE]: () => undefined })
+    const harness = makeSignInHarness()
     renderWithProviders(
       <SignInScreen session={harness.session} defaultChannel="sms" channels={['password']} />,
     )

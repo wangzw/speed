@@ -4,15 +4,15 @@
  *
  * The README's Quick start wires the session over a host-built
  * @speed/api-client transport (createClient + bindRequestFn). A unit
- * suite cannot run that composition -- no network -- so this file
- * drives the identical session API through the scripted request seam
- * the package's own tests use (@speed/test-utils/session-harness, bound
- * through the same bindRequestFn seam a host's real client binds), and
- * a probe component renders the README's hook reads -- useAuthState,
- * useCurrentTenant, usePermission -- with login and logout called from
- * event handlers, exactly as the hooks' rules prescribe. The second
- * journey below executes the README's registration-and-social code
- * block verbatim. The real-client composition itself (silent-401
+ * suite cannot run that composition -- no network -- so this file drives
+ * the identical session API through the scripted request seam the
+ * package's own tests use (@speed/test-utils/session-harness, bound
+ * through the same bindRequestFn seam a host's real client binds), and a
+ * probe component renders the README's hook reads -- useAuthState,
+ * useCurrentTenant (over a host-mounted TenantProvider), usePermission
+ * -- with the flow driven from event handlers, exactly as the hooks'
+ * rules prescribe. The tenant-scoped query-key flow below executes the
+ * README's tenant block. The real-client composition itself (silent-401
  * refresh through createClient) is proven separately in session.test.ts.
  *
  * All strings are English fixtures standing in for a host's own
@@ -20,40 +20,51 @@
  * rule), never rendered product text.
  */
 
-import {
-  act,
-  cleanup,
-  fireEvent,
-  render,
-} from '@testing-library/react'
+import { act, cleanup, fireEvent, render } from '@testing-library/react'
 import { afterEach, describe, expect, it } from 'vitest'
+import { useState } from 'react'
+import type { ReactNode } from 'react'
+import { QueryClient } from '@tanstack/react-query'
 import type { AuthSession } from './session'
 import {
   attachSession,
+  TenantProvider,
   useAuthState,
   useCurrentTenant,
   usePermission,
 } from './hooks'
 import {
-  LOGIN_PASSWORD,
-  LOGIN_SMS,
+  evictTenantQueries,
+  tenantQueryKey,
+  useTenantQueryKey,
+} from './query-key'
+import {
+  authenticatedCompletion,
+  completeFlow,
+  LOGIN_ANSWER,
+  LOGIN_START,
   LOGOUT,
   makeHarness,
-  makePair,
-  REGISTER,
-  REQUEST_SMS_CODE,
+  principal,
+  PROFILE_GET,
   snapshotLog,
-  SOCIAL_AUTHORIZE,
-  SOCIAL_CALLBACK,
+  TOKEN_ISSUE,
+  tokenResponse,
 } from '@speed/test-utils/session-harness'
 
 afterEach(() => {
   cleanup()
 })
 
-const credentials = {
-  identifier: 'ada@example.com',
-  password: 'pw',
+/** The README's sign-in: start a login flow and answer it to completion
+ * (a password sign-in is a flow the view drives step by step). */
+async function signInWithPassword(session: AuthSession): Promise<void> {
+  await session.startFlow({ method: 'password', purpose: 'login' })
+  await session.answerFlow({
+    seq: 2,
+    step: 'complete',
+    input: { identifier: 'ada@example.com', password: 'pw' },
+  })
 }
 
 /**
@@ -72,10 +83,7 @@ function SessionPanel({ session }: { readonly session: AuthSession }) {
       <p data-testid="tenant">{tenant === null ? 'none' : tenant.tenantId}</p>
       <p data-testid="notes-write">{String(canCreateNotes)}</p>
       <p data-testid="users-manage">{String(canManageUsers)}</p>
-      <button
-        type="button"
-        onClick={() => void session.loginWithPassword(credentials)}
-      >
+      <button type="button" onClick={() => void signInWithPassword(session)}>
         Sign in
       </button>
       <button type="button" onClick={() => void session.logout()}>
@@ -85,15 +93,29 @@ function SessionPanel({ session }: { readonly session: AuthSession }) {
   )
 }
 
+/** Mounts the panel under a host-supplied tenant, the way a host's route
+ * provides one. */
+function TenantHost({ children }: { children: ReactNode }) {
+  const [tenantId] = useState<string | null>('tenant-1')
+  return <TenantProvider tenantId={tenantId}>{children}</TenantProvider>
+}
+
+const scripts = {
+  [LOGIN_START]: () => completeFlow(),
+  [LOGIN_ANSWER]: () => authenticatedCompletion(),
+  [PROFILE_GET]: () => principal(),
+}
+
 describe('README usage example', () => {
   it('runs the quick-start journey: login, host-attached sets, logout', async () => {
-    const harness = makeHarness({
-      [LOGIN_PASSWORD]: () => makePair(),
-      [LOGOUT]: () => undefined,
-    })
+    const harness = makeHarness({ ...scripts, [LOGOUT]: () => undefined })
     attachSession(harness.session)
     const transitions = snapshotLog(harness.session)
-    const utils = render(<SessionPanel session={harness.session} />)
+    const utils = render(
+      <TenantHost>
+        <SessionPanel session={harness.session} />
+      </TenantHost>,
+    )
     const reads = () => ({
       state: utils.getByTestId('state').textContent,
       tenant: utils.getByTestId('tenant').textContent,
@@ -101,16 +123,16 @@ describe('README usage example', () => {
       usersManage: utils.getByTestId('users-manage').textContent,
     })
 
-    // Anonymous: every hook fails closed.
+    // Anonymous: every hook fails closed; the tenant is the host's.
     expect(reads()).toEqual({
       state: 'anonymous',
-      tenant: 'none',
+      tenant: 'tenant-1',
       notesWrite: 'false',
       usersManage: 'false',
     })
 
-    // The host's sign-in button drives the session; the store then
-    // holds the access token the host's client reads on every send.
+    // The host's sign-in button drives the flow; the store then holds
+    // the access token the host's client reads on every send.
     await act(async () => {
       fireEvent.click(utils.getByRole('button', { name: 'Sign in' }))
     })
@@ -137,23 +159,18 @@ describe('README usage example', () => {
       usersManage: 'true',
     })
 
-    // Sign out: the server call first, then the store empties and
-    // every hook fails closed again -- a completed logout cannot be
-    // resurrected by anything still in flight.
+    // Sign out: the server call first, then the store empties and every
+    // hook fails closed again.
     await act(async () => {
       fireEvent.click(utils.getByRole('button', { name: 'Sign out' }))
     })
     expect(harness.store.get()).toBeNull()
     expect(reads()).toEqual({
       state: 'anonymous',
-      tenant: 'none',
+      tenant: 'tenant-1',
       notesWrite: 'false',
       usersManage: 'false',
     })
-    // The subscriber view of the same journey: one notification per
-    // committed transition -- login, the two set attaches, logout
-    // (subscribe never pushes the current snapshot, so the initial
-    // anonymous state is read through getSnapshot, not notified).
     expect(transitions.map((snapshot) => snapshot.state)).toEqual([
       'authenticated',
       'authenticated',
@@ -162,58 +179,87 @@ describe('README usage example', () => {
     ])
   })
 
-  it('runs the README registration-and-social flow', async () => {
+  it('runs the README tenant-scoped query-key flow', async () => {
     const harness = makeHarness({
-      [REGISTER]: () => ({
-        id: 'user-9',
-        email: 'ada@example.com',
-        display_name: 'Ada',
-      }),
-      [SOCIAL_AUTHORIZE]: () => ({
-        authorize_url: 'https://accounts.google.com/o/oauth2/v2/auth',
-      }),
-      [SOCIAL_CALLBACK]: () => ({ tokens: makePair() }),
-      [REQUEST_SMS_CODE]: () => undefined,
-      [LOGIN_SMS]: () => makePair({ access_token: 'access-2' }),
+      ...scripts,
+      [TOKEN_ISSUE]: () => tokenResponse({ access_token: 'access-2' }),
     })
+    attachSession(harness.session)
+    const queryClient = new QueryClient()
+    queryClient.setQueryData(tenantQueryKey('tenant-1', 'notes'), { rows: 1 })
+    queryClient.setQueryData(tenantQueryKey('tenant-2', 'notes'), { rows: 2 })
+
+    let setTenant!: (tenantId: string | null) => void
+    function KeyHost({ children }: { children: ReactNode }) {
+      const [tenantId, set] = useState<string | null>(null)
+      setTenant = set
+      return <TenantProvider tenantId={tenantId}>{children}</TenantProvider>
+    }
+    function NotesKeyProbe() {
+      const { tenantId, queryKey } = useTenantQueryKey(['notes'])
+      return <p data-testid="key">{JSON.stringify([tenantId, queryKey])}</p>
+    }
+    const utils = render(
+      <KeyHost>
+        <NotesKeyProbe />
+      </KeyHost>,
+    )
+    // The route has no tenant yet: a key with a null tenant, and the
+    // null operand the read gates `enabled` on.
+    expect(utils.getByTestId('key').textContent).toBe(
+      JSON.stringify([null, [null, 'notes']]),
+    )
+
+    act(() => {
+      setTenant('tenant-1')
+    })
+    expect(utils.getByTestId('key').textContent).toBe(
+      JSON.stringify(['tenant-1', ['tenant-1', 'notes']]),
+    )
+
+    // The README's switch turn: capture the departing id before the
+    // route tenant changes, evict its subtree once the new tenant is in.
+    const departingTenantId = 'tenant-1'
+    act(() => {
+      setTenant('tenant-2')
+    })
+    expect(utils.getByTestId('key').textContent).toBe(
+      JSON.stringify(['tenant-2', ['tenant-2', 'notes']]),
+    )
+    evictTenantQueries(queryClient, departingTenantId)
+    expect(
+      queryClient.getQueryData(tenantQueryKey('tenant-1', 'notes')),
+    ).toBeUndefined()
+    expect(queryClient.getQueryData(tenantQueryKey('tenant-2', 'notes'))).toEqual(
+      { rows: 2 },
+    )
+  })
+
+  it('runs the README login-flow journey: start, answer, commit', async () => {
+    const harness = makeHarness(scripts)
     const transitions = snapshotLog(harness.session)
 
-    // Registering changes nothing: the response is the created user,
-    // and the host follows up with a login.
-    const user = await harness.session.register({
-      email: 'ada@example.com',
-      password: 'pw',
-      display_name: 'Ada',
-      locale: 'zh-CN',
+    // Starting a flow is not a session: the first step comes back and
+    // nothing about the session moved.
+    const first = await harness.session.startFlow({
+      method: 'password',
+      purpose: 'login',
     })
-    expect(user.id).toBe('user-9')
+    expect(first).toMatchObject({ state: 'ready', next: { kind: 'complete' } })
     expect(harness.store.get()).toBeNull()
     expect(harness.session.getSnapshot().state).toBe('anonymous')
 
-    // The authorize URL is a pure request; the session never navigates.
-    const authorizeUrl = await harness.session.socialAuthorizeUrl('google', {
-      redirect_uri: 'https://app.example.com/social/callback/google',
+    // Answering it to completion opens the session: store, snapshot and
+    // notify.
+    const completion = await harness.session.answerFlow({
+      seq: 2,
+      step: 'complete',
+      input: { identifier: 'ada@example.com', password: 'pw' },
     })
-    expect(authorizeUrl).toContain('accounts.google.com')
-
-    // Completing the flow is a full login: store, snapshot, notify.
-    const socialSnapshot = await harness.session.completeSocialLogin(
-      'google',
-      { code: '4/0AX4Xf...', state: 'state-1' },
-    )
-    expect(socialSnapshot.state).toBe('authenticated')
+    expect(completion.state).toBe('authenticated')
     expect(harness.store.get()).toBe('access-1')
-
-    // The SMS leg: request the code (202, no change), then sign in
-    // with it -- a second full login.
-    await harness.session.requestSMSCode({ phone: '+8613800138000' })
-    await harness.session.loginWithSMSCode({
-      phone: '+8613800138000',
-      code: '123456',
-    })
-    expect(harness.store.get()).toBe('access-2')
+    expect(harness.session.getSnapshot().state).toBe('authenticated')
     expect(transitions.map((snapshot) => snapshot.state)).toEqual([
-      'authenticated',
       'authenticated',
     ])
   })

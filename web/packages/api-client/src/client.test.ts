@@ -286,7 +286,7 @@ describe('request shape', () => {
       fetch: standin.fetch,
       accessTokenStore: store,
     })
-    await api<{ ok: boolean }>('/api/v1/authn/token/refresh', {
+    await api<{ ok: boolean }>('/auth/token', {
       method: 'POST',
       omitAccessToken: true,
     })
@@ -902,7 +902,7 @@ describe('401 and the refresh hook', () => {
         // the refresh token rides in the body, never in an
         // Authorization header, and the store is never cleared for it.
         try {
-          await api('/api/v1/authn/token/refresh', {
+          await api('/auth/token', {
             method: 'POST',
             body: { refresh_token: 'stale' },
             omitAccessToken: true,
@@ -962,7 +962,7 @@ describe('401 and the refresh hook', () => {
       refreshAccessToken: async () => {
         refreshCalls += 1
         try {
-          await api('/api/v1/authn/token/refresh', {
+          await api('/auth/token', {
             method: 'POST',
             body: { refresh_token: 'stale' },
             // omitAccessToken deliberately omitted: the host bug.
@@ -1031,7 +1031,7 @@ describe('401 and the refresh hook', () => {
       },
     })
     const error = await expectApiError(
-      api<{ ok: boolean }>('/api/v1/authn/token/refresh', {
+      api<{ ok: boolean }>('/auth/token', {
         method: 'POST',
         body: { refresh_token: 'stale' },
         omitAccessToken: true,

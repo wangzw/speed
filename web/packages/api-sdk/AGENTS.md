@@ -49,21 +49,20 @@ and `src/` must keep passing it on every regeneration.
   and hot reload rebind).
 - **No tenant header and no tenant query key exist in generated
   code.** Tenant context travels inside the access token -- never in
-  a header -- and query keys are bare spec paths. `tenant_id` does
-  appear in the authn fragment's types, where the identity API
-  genuinely needs it: the optional request-body field on the login,
-  SMS and social-callback operations, the response field on
-  `AuthnPrincipal`, and the required `AuthnSwitchTenantRequest`
-  body field. The fragment documents those fields as claims or
-  server-verified requests, never as a data scope; every other
-  fragment's types carry no `tenant_id` at all. Tenant query-key
+  a header -- and query keys are bare spec paths. No `tenant_id` field
+  appears in the generated types either: the tenant a request acts in is
+  a server-resolved routing fact, not a body or response field, so no
+  fragment carries a `tenant_id` -- the identity surface's login, SMS and
+  social-callback bodies and the profile response alike. Where `tenant`
+  does appear it is an ordinary path parameter on the admin- and
+  authorization-scoped routes (`/auth/admin/tenants/{tenant}/...`),
+  naming the route's subject, never a data scope. Tenant query-key
   namespacing is a consumer-shell discipline, recorded in
   `web/orval.config.ts` and the README.
-- **orval stays out of the lockfile.** Every runner -- the Taskfile
-  `api:gen` frontend leg above all --
+- **orval stays out of the lockfile.** Every runner
   invokes `pnpm dlx orval@8.17.0 --config orval.config.ts` from `web/`
   followed by the fixup script. A version bump lands in both
-  places (config comment, Taskfile) at once.
+  places (config comment, every caller's command) at once.
 - **No user-facing text, no i18n resources.** Errors are typed as the
   spec's `{code, params}` envelope; codes map to bilingual text in
   consumer catalogs. The runtime binding's programmer errors are constant
@@ -77,14 +76,13 @@ and `src/` must keep passing it on every regeneration.
 ## What ships vs. what is deferred
 
 The generated surface over the merged document (`src/index.ts` --
-orval input is `contracts/speed.yaml`, the redocly `join` of the eleven
-platform-module fragments: admin, ai-gateway, authn, billing, config,
-integration, notification, org, pki, sharing and storage -- every
-platform module with an HTTP fragment is a merge member; the
-reference app's own notes, cases and smilesim fragments are NOT
-members, by design: the app's own API is generated into the app's own
-SDK through the app-owned flow, documented in docs/internal/
-21-api-contract.md), the runtime binding, the regeneration
+orval input is `contracts/api.yaml`, the demo host's `gen` command
+merging the OpenAPI fragments the platform modules declare -- each
+module's `http.Spec` resource, through `pkg/ops/openapi.Merge` -- every
+platform module with an HTTP fragment is a merge member; a consuming
+app's own fragments are NOT members, by design: the app's own API is
+generated into the app's own SDK through the app-owned flow), the
+runtime binding, the regeneration
 tooling (config + fixup script) and the CI wiring that regenerates and
 diffs the artifact. `@speed/auth-core` compile-consumes the authn
 surface in-workspace: its unit suite binds a scripted request function

@@ -10,9 +10,10 @@
  * Every user-facing string any account-ui component renders by itself
  * lives here, in zh-CN and en-US with identical leaf key sets
  * (registration enforces that): the errors section, the code-level text
- * the error resolver and InlineError render; the sessions-section
- * surface keys; and the bindings, bindingCallback and mfa surface keys of
- * the social-binding and step-up-gated two-factor component families. The
+ * the error resolver and InlineError render; the preferences, sessions
+ * and bindings surface keys; the bindingCallback keys; the mfa surface
+ * keys (the factor list, the enrollment wizard and the step-up dialog);
+ * and the flowStep keys the shared step renderer reads. The
  * two language files are imported with the JSON import attribute so the
  * NodeNext build keeps working; tsc copies them into dist/ and the
  * published package ships them through the "." entry, never as separate

@@ -1,0 +1,34 @@
+{
+  "extends": "../../tsconfig.base.json",
+  "include": ["src", "test-utils"],
+  "compilerOptions": {
+    // auth-core is TypeScript with exactly one TSX file: the README
+    // usage example (src/usage-example.test.tsx) renders a probe
+    // component to prove the documented hook flow, so JSX compiles
+    // through the automatic runtime (same as ui-kit and layout-kit);
+    // nothing else in src/ renders DOM -- so the base config stands
+    // with only the JSX switch and the sibling paths added. The
+    // package calls the generated authn operation functions
+    // (@speed/api-sdk) and the api-client error vocabulary
+    // (@speed/api-client); its tests bind a fake request function
+    // through the @speed/api-sdk/runtime seam, so that subpath resolves
+    // too. test-utils/ (the shared session-scripting harness) sits
+    // outside src/ so the build's rootDir never emits it. The published
+    // "types" of all three point into dist/, which is never committed
+    // and not yet built in a fresh checkout, so type resolution maps
+    // every workspace specifier straight onto the sibling's source --
+    // same pattern layout-kit uses. Emitted dist/ keeps the bare
+    // specifiers, which consumers resolve against the real published
+    // packages. Keep this in lockstep with what src/ imports (the workspace alias suite pins this section against the shared package map). List
+    // order matters: "@speed/api-sdk/runtime" must be tried before its
+    // "@speed/api-sdk" prefix (first match wins in paths).
+    "jsx": "react-jsx",
+    "paths": {
+      "@speed/api-sdk/runtime": ["../api-sdk/src/runtime.ts"],
+      "@speed/api-sdk": ["../api-sdk/src/index.ts"],
+      "@speed/api-client": ["../api-client/src/index.ts"],
+      "@speed/auth-core": ["./src/index.ts"],
+      "@speed/test-utils/session-harness": ["../../test-utils/src/session-harness.ts"]
+    }
+  }
+}

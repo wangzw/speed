@@ -1,13 +1,14 @@
 /**
- * hooks.ts -- the React bindings over the @speed/auth-core session.
+ * hooks.ts -- the React bindings over the @speed/auth-core session,
+ * plus the tenant context the host mounts its current tenant on.
  *
- * The hooks read one session that the host attaches once, at
- * bootstrap: attachSession(session) is the module-level seam, last
- * bind wins (the same discipline as the bindRequestFn seam in
- * @speed/api-sdk). Before any session is attached -- and after a
- * logout -- every hook fails closed: useAuthState reports the
- * anonymous snapshot, useCurrentTenant returns null and usePermission
- * returns false. No hook ever throws because no session is attached.
+ * The session hooks read one session the host attaches once, at
+ * bootstrap: attachSession(session) is the module-level seam, last bind
+ * wins (the same discipline as the bindRequestFn seam in
+ * @speed/api-sdk). Before any session is attached -- and after a logout
+ * -- every hook fails closed: useAuthState reports the anonymous
+ * snapshot and usePermission returns false. No hook ever throws because
+ * no session is attached.
  *
  * The snapshot is the single subscribable store: attachSession
  * forwards the attached session's notifications to every subscribed
@@ -16,16 +17,30 @@
  * is a snapshot change like any other).
  *
  * Permission checks are pure set lookup, never evaluation: the host
- * attaches the /me-derived lists through session.setPermissionSet,
- * the session's survival rules decide which lists a switch or a
- * refresh keeps, and usePermission answers "is this string in that
- * domain's list" only -- a domain whose set is absent is false, and a
- * 'tenant' check never consults the 'system' list or vice versa.
- * These checks are a UX affordance, not a security boundary: the
- * server authorizes.
+ * attaches /me-derived lists through session.setPermissionSet, the
+ * session's survival rules decide which lists a refresh or a step-up
+ * keeps, and usePermission answers "is this string in that domain's
+ * list" only -- a domain whose set is absent is false, and a 'tenant'
+ * check never consults the 'system' list or vice versa. These checks
+ * are a UX affordance, not a security boundary: the server authorizes.
+ *
+ * The tenant is not the session's: the server resolves it per request
+ * (from the request host, a subdomain or a path) as a routing fact, and
+ * the principal carries no tenant. So the host, which knows its own
+ * route, supplies the current tenant through TenantProvider, and
+ * useCurrentTenant reads it back -- one host-supplied value, never
+ * derived from the principal and never remembered locally. The value
+ * feeds the tenant-scoped query-key convention (query-key.ts).
  */
 
-import { useMemo, useSyncExternalStore } from 'react'
+import {
+  createContext,
+  createElement,
+  useContext,
+  useMemo,
+  useSyncExternalStore,
+} from 'react'
+import type { ReactElement, ReactNode } from 'react'
 import type {
   AuthDomain,
   AuthSession,
@@ -75,9 +90,9 @@ function subscribe(listener: () => void): () => void {
  * Attaches the session the hooks read. Last bind wins: attaching a new
  * session unsubscribes the bridge on the previous one (its later
  * transitions no longer reach the components) and wakes every
- * subscribed component so it re-reads -- a swap may change the
- * snapshot identity. Attaching the session already attached is a
- * no-op. The hooks fail closed before the first call.
+ * subscribed component so it re-reads -- a swap may change the snapshot
+ * identity. Attaching the session already attached is a no-op. The
+ * hooks fail closed before the first call.
  */
 export function attachSession(session: AuthSession): void {
   if (session === attachedSession) {
@@ -100,10 +115,10 @@ export function attachSession(session: AuthSession): void {
 }
 
 /** The snapshot rendered on the server. Server rendering has no
- * session -- attachSession runs in browser bootstrap code, never
- * during a server render -- so the anonymous snapshot is the only
- * answer that cannot mismatch the hydrated client's first paint. The
- * module constant is referentially stable, which useSyncExternalStore
+ * session -- attachSession runs in browser bootstrap code, never during
+ * a server render -- so the anonymous snapshot is the only answer that
+ * cannot mismatch the hydrated client's first paint. The module
+ * constant is referentially stable, which useSyncExternalStore
  * requires of the server snapshot across calls. */
 function getServerSnapshot(): AuthSnapshot {
   return NO_SESSION_SNAPSHOT
@@ -116,35 +131,11 @@ export function useAuthState(): AuthSnapshot {
   return useSyncExternalStore(subscribe, getSnapshot, getServerSnapshot)
 }
 
-/** The tenant the principal is currently signed into, or null while
- * anonymous and when the principal carries no tenant_id (a
- * system-domain principal, for example).
- *
- * The returned { tenantId } object is referentially stable for a given
- * tenant: it changes identity only when the tenant_id itself changes
- * (a switch), not on re-renders, refreshes or step-ups. A hook that
- * embeds the result in a query key or an effect dependency therefore
- * sees one stable key for the whole stay in a tenant, instead of a
- * fresh object every render defeating the memoization -- the identity
- * a host's tenant-namespaced cache key is built from. */
-export function useCurrentTenant(): { tenantId: string } | null {
-  const snapshot = useAuthState()
-  const tenantId = snapshot.principal?.tenant_id
-  return useMemo(
-    () =>
-      typeof tenantId === 'string' && tenantId !== ''
-        ? { tenantId }
-        : null,
-    [tenantId],
-  )
-}
-
 /** Whether the principal holds the permission in the domain's
  * host-attached set. Pure set lookup that fails closed: false while
  * anonymous, when the domain's set is absent (null), and when the
- * permission is not in it. The 'tenant' set never satisfies a
- * 'system' check and vice versa. A UX affordance only -- the server
- * authorizes. */
+ * permission is not in it. The 'tenant' set never satisfies a 'system'
+ * check and vice versa. A UX affordance only -- the server authorizes. */
 export function usePermission(
   domain: AuthDomain,
   permission: string,
@@ -155,4 +146,46 @@ export function usePermission(
   }
   const set = snapshot.permissionSets[domain]
   return set !== null && set.includes(permission)
+}
+
+/** The tenant context. `undefined` means no provider is mounted (the
+ * fail-closed default); any other value -- including null -- is the
+ * host-supplied current tenant. */
+const TenantContext = createContext<string | null | undefined>(undefined)
+
+/**
+ * Mounts the host's current tenant for the hooks and the query-key
+ * convention to read. The host derives the value from its own route
+ * (the server resolves the tenant per request, the principal does not
+ * carry one) and passes it here; this package neither derives it nor
+ * remembers a previous value. A null tenant (no tenant in the route)
+ * reads back as the fail-closed null from useCurrentTenant.
+ */
+export function TenantProvider(props: {
+  tenantId: string | null
+  children: ReactNode
+}): ReactElement {
+  const { tenantId, children } = props
+  return createElement(TenantContext.Provider, { value: tenantId }, children)
+}
+
+/** The tenant the host says the principal is acting in, or null when no
+ * provider is mounted, the host passed null, or the value is empty.
+ *
+ * The returned { tenantId } object is referentially stable for a given
+ * tenant: it changes identity only when the tenant itself changes, not
+ * on re-renders. A hook that embeds the result in a query key or an
+ * effect dependency therefore sees one stable key for the whole stay in
+ * a tenant, instead of a fresh object every render defeating the
+ * memoization -- the identity a host's tenant-namespaced cache key is
+ * built from. */
+export function useCurrentTenant(): { tenantId: string } | null {
+  const tenantId = useContext(TenantContext)
+  return useMemo(
+    () =>
+      typeof tenantId === 'string' && tenantId !== ''
+        ? { tenantId }
+        : null,
+    [tenantId],
+  )
 }

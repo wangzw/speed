@@ -10,167 +10,227 @@ browser package.
 The session lifecycle of a browser client: `createAuthSession(store)`
 in `src/session.ts` turns the generated authn operations of
 `@speed/api-sdk` into one observable memory-only state machine -- the
-session operations (password/SMS login, logout, tenant switch,
-step-up, refresh), the social callback login (`completeSocialLogin`)
-and the pre-session operations the sign-up and social flows need
-(`requestSMSCode`, `register`, `socialAuthorizeUrl`). The pre-session
-operations never change session state, on success or failure: an SMS
-code request is an acceptance, a built authorize URL has nothing to
-commit, and a registration returns the created `AuthnUser` --
-registering is not signing in, and the host follows up with a login.
-`completeSocialLogin` carries the full login contract, plus one extra
-refusal: a sign-in flow answered with the binding-shaped response
-(user and identity, no tokens) is a `client.protocol` violation,
-rejected before any state change. It is headless: no UI, no DOM. The
-React hooks in `src/hooks.ts` (`useAuthState`, `useCurrentTenant`,
-`usePermission`, plus the `attachSession` call that binds them to one
-session, last bind wins) live on the same layer -- react is a peer
-dependency, never a regular one. The package sits directly above
+login flow (start, answer, current, abandon), the authenticated-purpose
+start for `link`, `step-up` and `enroll`, the methods listing, logout
+and the token endpoint a refresh uses. A login is a server-side flow the
+view drives step by step; the flow operations never change the session,
+and only `answerFlow` commits, and only when a step settles a token
+issuance: a login completion (`state: 'authenticated'`) opens the
+session (writes the store, reads `GET /auth/me` for the principal), a
+step-up completion (`state: 'elevated'`) re-mints the access token with
+the principal unchanged, and a `link`/`enroll` completion
+(`state: 'linked'`/`'enrolled'`) leaves the login state alone.
+
+The generated authn fragments declare no success schema, so orval types
+every return as `void`. This package therefore hand-writes the response
+models (`AuthnFlowState`, `AuthnStep`, `AuthnField`,
+`AuthnFactorOption`, `AuthnPrincipal`, `AuthnMethodList`) and guards
+each body at runtime (see the rules below).
+
+It is headless: no UI, no DOM. The React hooks in `src/hooks.ts`
+(`useAuthState`, `usePermission`, plus the `attachSession` call that
+binds them to one session, last bind wins) live on the same layer --
+react is a peer dependency, never a regular one. The tenant is not the
+session's: the server resolves it per request and the principal carries
+none, so the host mounts its own current tenant on `TenantProvider` and
+`useCurrentTenant` reads it back. The tenant-scoped query-key convention
+in `src/query-key.ts` (`tenantQueryKey`, `useTenantQueryKey`,
+`evictTenantQueries`) sits on the same layer too: it reads the tenant
+through `useCurrentTenant` and shapes a TanStack Query key from it, with
+`@tanstack/react-query` as a peer (the factory calls `removeQueries`,
+never constructs a `QueryClient`). The package sits directly above
 `@speed/api-client` (the access-token store it receives is the same
 store that package reads on every send) and `@speed/api-sdk` (the
-generated operations it calls). Never import either of those from
-below this layer.
+generated operations it calls). Never import either of those from below
+this layer.
 
 ## Rules that are load-bearing here
 
 - **Never hand-write a backend call in this package.** Every request
   goes through a generated operation of `@speed/api-sdk`, which routes
   through the single `bindRequestFn` binding. No `fetch`, no endpoint
-  paths as strings, no response types of our own.
+  paths as strings. The one thing this package does hand-write is the
+  *response* side: the models and the guards, because the generated
+  surface declares no schema.
+- **Every body-carrying 2xx is guarded, fail-closed, before any state
+  change.** The generated seam sets no `requireJsonBody`, so an empty
+  2xx resolves as undefined through it; a guard must refuse it (and any
+  malformed body) as a `status: 200`, `code: client.protocol` ApiError
+  *before* the first property access -- a native `TypeError` is not an
+  ApiError and would escape the whole error contract. `parseFlowState`,
+  `parseStep`, `parsePrincipal`, `parseIssuedTokens` and
+  `parseMethodList` are the guards; every one of their refusal branches
+  is pinned by a test.
 - **The session never writes storage, and the refresh token never
   enters the store.** The access token is a memory credential by
   design; the refresh token is closure-only. Any persistence a host
   adds layers on top of this API; it does not reach into it.
-- **User operations reject raw and change nothing on failure.** Do not
-  wrap, translate or pre-commit. `ApiError` from `@speed/api-client`
-  is the one error type a caller must tell apart (`isApiError`), and
-  `client.protocol` is reserved for contract-violating 2xx from
-  token-issuing endpoints — that check lives in `parseIssued` and
-  never moves. One rejection is deliberately not an `ApiError`: a
-  token-issuing operation that lost a concurrent race rejects with
-  `OperationSupersededError`, told apart with the package's own
-  `isOperationSuperseded` guard. Consumers of the token-issuing
-  operations (`loginWithPassword`, `loginWithSMSCode`,
-  `completeSocialLogin`, `switchTenant`, `verifyStepUp`) must handle
-  it as the lost race it is — no failure UI, and never a one-shot
-  side effect (a redirect, an `onSwitched`) for a tenant or identity
-  the session is not actually running under; the winning call fires
-  its own. `verifyStepUp`'s supersession carries a cost its caller
-  must hear: a step-up code is single-use server-side, so a
-  verification that lost the race spent the very code its own 2xx
-  verified — the caller must never offer that same code again, only a
-  fresh one (the server answers the spent code with
-  `authn.mfa_code_used`, never with success).
+- **A failed request rejects raw and changes nothing -- except
+  `logout`.** `ApiError` from `@speed/api-client` is the one error type
+  a caller must tell apart (`isApiError`), and `client.protocol` is
+  reserved for contract-violating 2xx. `logout` is the deliberate
+  exception: a logout whose own request is refused still clears locally
+  and goes anonymous (a session it could not revoke is no longer
+  trustworthy here either) and then rejects raw.
+- **A token-issuing commit that lost a concurrent race rejects with
+  `OperationSupersededError`.** A login completion or a step-up
+  completion that lost the generation race retains the package's own
+  `isOperationSuperseded` guard (its `snapshot` carries the winner's
+  state). Consumers must handle it as the lost race it is -- no failure
+  UI, and never a one-shot side effect (a redirect) for an identity the
+  session is not actually running under; the winning call fires its own.
+  A superseded step-up carries a cost its caller must hear: its
+  completion consumed, server-side, the challenge it verified, so the
+  caller must never offer that same second factor again -- only a fresh
+  flow.
 - **`refresh()` is the silent path.** It resolves `false` (never
-  rejects) for an invalid/expired/refused refresh token and signs the
-  session out locally; it rethrows raw only for transport/server
-  failures, with the store and the held tokens untouched.
-- **The generation guard is the concurrency invariant.** User
-  operations capture the generation at entry and bump it only on
-  commit; refresh never bumps, and a stale refresh response applies
-  nothing over the winner's state — one adoption excepted: the
-  rotated refresh token still lands in the held slot when the winning
-  operation kept the held token (a tenant switch or step-up mints no
-  new one, and the server has already consumed the held token for
-  that refresh). The adopted refresh's resolution reflects who won: a
-  same-principal winner (a step-up) resolves `true`, a tenant switch
-  (the principal changed) resolves `false`, so the api-client
-  silent-401 hook never replays the refused request under the new
-  tenant's token. Do not "simplify" this into bump-on-entry or
-  compare-free writes — the regression tests around concurrent
-  login/refresh/logout pin the current semantics. The local clears
-  are asymmetric on purpose: only logout bumps after its clear (a
-  refresh that resolves later must not resurrect the ended session),
-  while the refresh-side clears never bump — the server's refusal is
-  the session's death, but a user operation that started before the
-  refusal and settles after it is the session's legitimate successor
-  and must still commit.
+  rejects) when there is nothing to refresh, when the held token was
+  refused (the session signs out locally), or when a concurrent commit
+  replaced the session; it rethrows raw only for transport/server
+  failures, with the store and the held tokens untouched. Refusal
+  detection keys on a 4xx (`400` invalid_grant / `401` invalid_client)
+  or a contract-violating 2xx -- the token endpoint answers an unusable
+  grant as `400`, not `401`.
+- **The generation guard is the concurrency invariant.** A token-issuing
+  commit captures the generation at entry and bumps it only on commit;
+  `refresh` never bumps, and a stale refresh response applies nothing
+  over the winner's state -- one adoption excepted: the rotated refresh
+  token still lands in the held slot when the winning commit kept the
+  held token (a step-up mints no new one, and the server has already
+  consumed the held token for that refresh). The adopted refresh's
+  resolution reflects who won: a same-principal winner (a step-up)
+  resolves `true`, so the api-client silent-401 hook retries safely. Do
+  not "simplify" this into bump-on-entry or compare-free writes. The
+  local clears are asymmetric on purpose: only logout bumps after its
+  clear (a refresh that resolves later must not resurrect the ended
+  session), while the refresh-side clears never bump -- the server's
+  refusal is the session's death, but a commit that started before the
+  refusal and settles after it is the session's legitimate successor and
+  must still commit. Logout's own pre-emption is handled too: a commit
+  that replaced the held token (a different login) is a session the
+  revocation never touched and stands, while a commit that kept it (a
+  step-up) continues the revoked session and the local state converges
+  to signed-out.
 - **The permission sets are host-attached data with survival rules,
   never evaluation.** The session only carries the per-domain lists
-  (`setPermissionSet`) and applies the rules in its header when a
-  principal change commits (a silent refresh or a step-up keeps both
-  lists, a tenant switch drops the tenant list and keeps the system
-  one, a login — even by the same user in the same tenant — or an
-  anonymous transition clears both, a failed operation changes
-  nothing). Set membership is decided by the hooks and the shells,
-  never here — and never fetched from a server here either: the
-  /me-derived lists belong to the host to attach. Because a login and
-  a tenant switch clear what must not survive, the host discipline is
-  to refetch a domain's lists after those commits instead of reusing
-  lists fetched under an earlier principal: the session never
-  correlates a list with the principal it was fetched under, so
-  attaching a stale list is a host bug it cannot detect.
+  (`setPermissionSet`) and applies the rules in its header: a silent
+  refresh or a step-up keeps both lists, `link`/`enroll` keep them (they
+  do not change the login state), and a login -- even by the same
+  account -- or an anonymous transition clears both, and a failed
+  operation changes nothing. Set membership is decided by the hooks and
+  the shells, never here -- and never fetched from a server here either:
+  the /me-derived lists belong to the host to attach. Because a login
+  clears what must not survive, the host discipline is to refetch a
+  domain's lists after a login instead of reusing lists fetched under an
+  earlier session: the session never correlates a list with the
+  principal it was fetched under, so attaching a stale list is a host
+  bug it cannot detect.
 - **The hooks read the attached session and never drive it.** A
-  component that must log in calls `session.loginWithPassword` from an
-  event handler; hooks never mutate state, never fetch, and fail
-  closed (anonymous snapshot, null tenant, `false` permissions) before
-  `attachSession` has been called.
-- **Refresh is single-flight per held refresh token.** Presentations
-  of the same held token share one in-flight request; a second
-  parallel presentation of it reads as token theft to the authn
-  server, so the session serialises them itself. A call made after a
-  tenant switch or step-up presents the same held token and still
-  shares that flight.
+  component that must sign in calls `session.startFlow` /
+  `session.answerFlow` from an event handler; hooks never mutate state,
+  never fetch, and fail closed (anonymous snapshot, `false` permissions)
+  before `attachSession` has been called.
+- **The tenant comes from the host, read back through
+  `TenantProvider`.** `useCurrentTenant` never derives a tenant from the
+  principal (the principal has none) and never remembers a previous one;
+  a null tenant reads back as null, and a read built on it passes
+  `enabled: tenantId !== null` to fail closed rather than invent one.
+- **The tenant-scoped query-key convention lives here, once.**
+  `tenantQueryKey(tenantId, ...tail)` prepends the tenant id as a key's
+  outermost segment, `useTenantQueryKey` derives the key and its
+  `enabled` operand from one hook call, and `evictTenantQueries` removes
+  a departing tenant's whole subtree -- called with the tenant id read
+  *before* the change, since the new id names nothing. Do not build the
+  key shape or the eviction anywhere else: a second copy is exactly the
+  repetition this convention removes (ADR-web-tenant-query-key-2026-10-15),
+  and getting it wrong -- treating a key as cross-tenant stable, or
+  missing a prefix -- leaves one tenant's rows under another's. The
+  factory only shapes a key: it fetches nothing, evaluates nothing,
+  decides nothing. `@speed/api-sdk`'s generated keys stay tenant-less and
+  `@speed/api-client` stays tenant-ignorant; `@tanstack/react-query` is a
+  peer here -- the factory calls `removeQueries`, never constructs a
+  `QueryClient`.
+- **Refresh is single-flight per held refresh token.** Presentations of
+  the same held token share one in-flight request; a second parallel
+  presentation of it reads as token theft to the authn server, so the
+  session serialises them itself. A call made after a step-up presents
+  the same held token and still shares that flight.
 - **The refresh request travels credential-less by declaration.** The
-  generated mutator's `omitAccessToken` keeps the request free of the
-  Authorization header, and `runRefresh` never reads, clears or
-  restores the token store — there is nothing to restore on a
+  generated token operation is selected to carry `omitAccessToken` (the
+  `web/orval.config.ts` per-operation override names the current
+  operation id, `authn.token.issue`), and `runRefresh` never reads,
+  clears or restores the token store -- there is nothing to restore on a
   rethrowable failure. Keep it that way: a clear-and-restore ordering
   would re-arm the api-client bearer-only refresh rule against the
-  session's own refresh request.
-- **Response validation is fail-closed and happens before any state
-  change** — even when the operation's generation is stale, a
-  contract-violating 2xx still rejects (the caller deserves to know its
-  own request failed) before the stale-result drop applies.
+  session's own refresh request. Note that the checked-in generated
+  surface must be regenerated for the override to take effect.
 
 ## Public surface
 
-`src/index.ts` exports `createAuthSession`, the session types
-(`AuthSession`, `AuthSnapshot`, `AuthSessionListener`, plus
-`AuthDomain` and `AuthPermissionSets`, the two names that parameterise
-the host-attached permission lists), the supersession rejection pair
-(`OperationSupersededError` and its `isOperationSuperseded` guard —
-the one non-`ApiError` rejection of the token-issuing operations, see
-the rules above) and the hooks (`attachSession`, `useAuthState`,
-`useCurrentTenant`, `usePermission`). Anything else that grows here
-stays unexported until a consumer proves it needs to be public.
+`src/index.ts` exports `createAuthSession`; the session types
+(`AuthSession`, `AuthSnapshot`, `AuthSessionListener`, plus `AuthDomain`
+and `AuthPermissionSets`, the two names that parameterise the
+host-attached permission lists); the response models (`AuthnPrincipal`,
+`AuthnFlowState`, `AuthnStep`, `AuthnField`, `AuthnFactorOption`,
+`AuthnMethodList`, `AuthnIdentifier`, `AuthnLink`); the supersession
+rejection pair (`OperationSupersededError` and its
+`isOperationSuperseded` guard -- the one non-`ApiError` rejection of the
+token-issuing commits); the hooks (`attachSession`, `useAuthState`,
+`usePermission`, `TenantProvider`, `useCurrentTenant`); and the
+tenant-scoped query-key convention (`tenantQueryKey`,
+`useTenantQueryKey`, `TenantQueryKey`, `evictTenantQueries`). Anything
+else that grows here stays unexported until a consumer proves it needs
+to be public.
 
 ## Testing
 
 - `src/session.test.ts` (the state machine, plain node environment, no
-  DOM) and `src/hooks.test.ts` (the React bindings, per-file jsdom
-  pragma, explicit `afterEach(cleanup)` — vitest runs without globals
-  here, which disables @testing-library/react's auto-cleanup) are the
-  behaviour tests, run with vitest. `src/usage-example.test.tsx`
-  compiles and runs the README Quick start's session-and-hooks flow
-  through the same scripted harness (the real createClient composition
+  DOM), `src/hooks.test.ts` (the React bindings and the tenant context,
+  per-file jsdom pragma, explicit `afterEach(cleanup)` -- vitest runs
+  without globals here, which disables @testing-library/react's
+  auto-cleanup) and `src/query-key.test.tsx` (the tenant-scoped key
+  factory, the switch-time eviction over a real QueryClient -- a client
+  holds two tenants' subtrees plus an identity row, and after the
+  departing tenant's eviction exactly that subtree is gone -- and the
+  hook's key-and-enablement over a host-mounted TenantProvider) are the
+  behaviour suites. `src/usage-example.test.tsx` compiles and runs the
+  README's session-and-hooks flow and its tenant-scoped query-key flow
+  through the same scripted harness (the real `createClient` composition
   is proven in session.test.ts), so the documented usage cannot drift
   from the API. All of them drive sessions through the shared scripted
-  harness in `@speed/test-utils/session-harness` — tests never touch a
-  real server and never mock package internals; they drive the
-  exported API and assert observable state (store contents,
-  snapshots, notification order, request bodies).
-- The failure contract, protocol violations, the generation guard
-  (failed login leaves an in-flight refresh intact; logout cannot be
-  resurrected; a newer login is never overwritten), single-flight
-  refresh, the store-untouched-while-refreshing guarantee and the
-  real-client composition
-  (silent-401 refresh through `createClient`) each have dedicated
-  tests. The hooks' fail-closed reads before attach, the
-  tenant/permission selectors over a scripted session, domain
-  separation, the permission-set survival rules and the attach
-  rebinding semantics have theirs in both files. A change to any of
-  those behaviours must come with a test that pins the new behaviour
-  and fails on the old.
+  harness in `@speed/test-utils/session-harness` -- tests never touch a
+  real server and never mock package internals; they drive the exported
+  API and assert observable state (store contents, snapshots,
+  notification order, request bodies).
+- The failure contract, the response guards (every refusal branch of
+  every parser), the generation guard (a failed completion leaves an
+  in-flight refresh intact; a logout cannot be resurrected by a refresh;
+  a newer login is never overwritten; a pre-empted logout converges or
+  stands aside), single-flight refresh, the refresh refusal detection
+  and the real-client composition (silent-401 refresh through
+  `createClient`) each have dedicated tests. The hooks' fail-closed reads
+  before attach, the tenant read-back from `TenantProvider`, the
+  permission selectors over a scripted session, domain separation, the
+  permission-set survival rules and the attach rebinding semantics have
+  theirs in the hooks and query-key suites. A change to any of those
+  behaviours must come with a test that pins the new behaviour and fails
+  on the old.
 - No test file may import from another package's `dist/`; the vitest
   aliases map the `@speed/*` specifiers onto sibling sources.
 
 ## Known limitations
 
 - No persistence across page loads and no `restore`: reloading starts
-  anonymous, by design -- nothing in this package writes storage (see
-  the session-storage rule above).
-- Token-issuing responses are validated structurally (presence and
-  types of `access_token`, `refresh_token`, `principal`) — the access
-  token's signature and claims are the server's domain, out of scope
-  here.
+  anonymous, by design -- nothing in this package writes storage (see the
+  session-storage rule above).
+- `delivery: 'token'` is the modeled browser path; a completion answered
+  with a session document instead (a cookie-delivered login) is refused
+  as `client.protocol`, since this session holds tokens, not a cookie
+  session.
+- The refresh token is JavaScript-visible in memory: the authn token
+  responses set no refresh cookie to hide it in.
+- The refresh request's credential-less declaration lives in the
+  generated surface: the `web/orval.config.ts` override has been
+  corrected to the current operation id, but a checked-in generated
+  `api-sdk/src/index.ts` produced before that fixup still routes the
+  token operation through the bearer mutator. Regenerating applies it.

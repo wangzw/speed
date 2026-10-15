@@ -1,36 +1,30 @@
 /**
  * SessionsSection: the sessions-and-devices surface of the account page.
  *
- * Renders every session the authn module holds for the signed-in account,
- * the session the request's own token belongs to marked as the current
- * one, through the generated list hook. Rows show what the server
- * answers, shaped for the eye that has to tell them apart: a row names
- * the client-supplied device string when the sign-in carried one, else
- * the readable browser/OS summary its user agent parses to ("Chrome ·
- * macOS" -- never the raw UA string, which would make two sign-ins from
- * one browser read as two identical, truncated walls of text), else the
- * unknown-device label; the IP and AMR values render raw (AMR tokens are
- * opaque authentication-method references -- server vocabulary, not text
- * to translate -- so they render as-is in chips), created/last-seen
- * times, and a status badge telling an active session from a revoked or
- * an expired one. Expiry is checked at use time and never written back
- * to the row, so the server answers only active/revoked -- a row whose
- * stored expires_at lies in the past is a dead session, rendered
- * expired (greyed, with no revoke affordance) rather than a live device
- * that stays individually revocable and arms "sign out other devices"
- * forever.
+ * Renders every live session the authn module holds for the signed-in
+ * account (GET /auth/sessions), the session the request's own token
+ * belongs to marked as the current one, through the generated list hook.
+ * The server's listing carries only live sessions -- a revoked or expired
+ * one is gone from the answer, never a greyed row -- so a row is either
+ * the current one (no revoke affordance: there is no such route for it)
+ * or a live device the account can sign out. Rows show what the server
+ * answers, shaped for the eye that has to tell them apart: the readable
+ * browser/OS summary the row's user agent parses to ("Chrome · macOS" --
+ * never the raw UA string, which would make two sign-ins from one browser
+ * read as two identical, truncated walls of text), else the unknown-device
+ * label; the client IP, the session kind, and the created/last-seen times.
  *
- * Actions: a session that is neither current nor revoked carries a
- * row-end sign-out button that revokes exactly that session, without a
- * second confirmation -- a signed-out session is low-loss (its owner can
- * simply sign in again) and the row itself is never the current one. The
- * section-top action, "sign out other devices", revokes every other
- * session at once and is the heavier gesture: it sits behind the
- * ui-kit danger ConfirmDialog with double confirm. The server itself
- * skips the current session; the answer's revoked_count is surfaced in a
- * success notice. After every successful revoke the list query is
- * invalidated, so the rows converge on the server's answer (revoked
- * sessions stay listed, greyed out).
+ * Actions: a row that is not the current one carries a row-end sign-out
+ * button that revokes exactly that session (DELETE /auth/sessions/{id}),
+ * without a second confirmation -- a signed-out session is low-loss (its
+ * owner can simply sign in again) and the row itself is never the current
+ * one. The section-top action, "sign out other devices", revokes every
+ * other session at once (DELETE /auth/sessions) and is the heavier
+ * gesture: it sits behind the ui-kit danger ConfirmDialog with double
+ * confirm. The server itself skips the current session; the answer's
+ * revoked count is surfaced in a success notice. After every successful
+ * revoke the list query is invalidated, so the rows converge on the
+ * server's answer (a revoked session drops off the listing).
  *
  * The section takes no props: whose sessions these are, and the right to
  * revoke them, come from the caller's bound client and its access token;
@@ -59,11 +53,9 @@ import Skeleton from '@mui/material/Skeleton'
 import Typography from '@mui/material/Typography'
 import { useQueryClient } from '@tanstack/react-query'
 import {
-  getAuthnListSessionsQueryKey,
-  useAuthnGetPreferences,
-  useAuthnListSessions,
-  useAuthnRevokeOtherSessions,
-  useAuthnRevokeSession,
+  getAuthnSessionListQueryKey,
+  useAuthnSessionRevokeOne,
+  useAuthnSessionRevokeOthers,
 } from '@speed/api-sdk'
 import {
   AsyncSection,
@@ -73,9 +65,19 @@ import {
   visuallyHiddenSx,
 } from '@speed/ui-kit'
 import { InlineError } from './internal/inline-error.js'
+import { useProfileQuery, useSessionsQuery } from './internal/queries.js'
 import { resolveTimeZone } from './internal/time-format.js'
 import { useAccountUiTranslation } from './internal/translation.js'
 import { summarizeUserAgent } from './internal/ua-summary.js'
+
+/**
+ * The session kinds the authn session module records (pkg/authn/session's
+ * `kind` values), one bundle key each under sessions.kind. t() is only
+ * ever called with a value on this list -- a value outside it (a future
+ * kind, a kind a policy adds) renders the generic "other" label, never a
+ * raw value.
+ */
+const KNOWN_SESSION_KINDS = new Set<string>(['browser', 'token', 'service'])
 
 /** The transient outcome of a revoke action, rendered above the list. */
 type Notice =
@@ -116,16 +118,6 @@ function parseDate(iso: string | undefined): Date | null {
   return Number.isNaN(date.getTime()) ? null : date
 }
 
-/** Whether the row's stored expiry has passed. Server-side expiry is
- * checked at use time and never written back to the row, so an active
- * session whose expires_at lies in the past is a dead session, never a
- * live device. A row without expires_at (an answer that does not carry
- * the field) is never declared expired. */
-function isExpired(expiresAtIso: string | undefined, now = Date.now()): boolean {
-  const expiresAt = parseDate(expiresAtIso)
-  return expiresAt !== null && expiresAt.getTime() <= now
-}
-
 /** The pending-state placeholder: rows shaped like the content rows, read
  * aloud as one loading announcement, never a fake heading. */
 function SessionListSkeleton({ label }: { readonly label: string }) {
@@ -160,9 +152,9 @@ function SessionListSkeleton({ label }: { readonly label: string }) {
 export function SessionsSection() {
   const { t, i18n } = useAccountUiTranslation()
   const queryClient = useQueryClient()
-  const { data, isPending, refetch } = useAuthnListSessions()
-  const revokeSessionMutation = useAuthnRevokeSession()
-  const revokeOthersMutation = useAuthnRevokeOtherSessions()
+  const { data, isPending, refetch } = useSessionsQuery()
+  const revokeOneMutation = useAuthnSessionRevokeOne()
+  const revokeOthersMutation = useAuthnSessionRevokeOthers()
 
   const [othersConfirmOpen, setOthersConfirmOpen] = useState(false)
   const [notice, setNotice] = useState<Notice>(null)
@@ -173,15 +165,15 @@ export function SessionsSection() {
   // machine happens to run the client. The formatter always receives an
   // explicit timeZone -- resolveTimeZone has validated it, so the
   // constructor cannot throw on a stale stored value.
-  const { data: preferences } = useAuthnGetPreferences()
+  const { data: profile } = useProfileQuery()
   const formatTime = useMemo(
     () =>
       new Intl.DateTimeFormat(i18n.language, {
         dateStyle: 'medium',
         timeStyle: 'short',
-        timeZone: resolveTimeZone(preferences?.timezone),
+        timeZone: resolveTimeZone(profile?.time_zone),
       }),
-    [i18n.language, preferences?.timezone],
+    [i18n.language, profile?.time_zone],
   )
 
   const sessions = data?.sessions
@@ -196,20 +188,13 @@ export function SessionsSection() {
   // parked states.
   const pending = isPending && sessions === undefined
   const hasSessions = sessions !== undefined && sessions.length > 0
-  const busy =
-    revokeSessionMutation.isPending || revokeOthersMutation.isPending
+  const busy = revokeOneMutation.isPending || revokeOthersMutation.isPending
 
-  // An expired session is as dead as a revoked one: it never arms the
-  // section-top bulk action, which exists to sign out live devices.
+  // The server lists only live sessions, so every non-current row is a
+  // live device the section-top bulk action exists to sign out.
   const hasRevocableOther =
     sessions !== undefined &&
-    sessions.some(
-      (session) =>
-        session.id != null &&
-        session.is_current !== true &&
-        session.status !== 'revoked' &&
-        !isExpired(session.expires_at),
-    )
+    sessions.some((session) => session.id != null && session.current !== true)
 
   async function handleRevokeSession(sessionId: string): Promise<void> {
     if (busy || sessionId === revokingId) {
@@ -218,9 +203,9 @@ export function SessionsSection() {
     setNotice(null)
     setRevokingId(sessionId)
     try {
-      await revokeSessionMutation.mutateAsync({ sessionId })
+      await revokeOneMutation.mutateAsync({ id: sessionId })
       await queryClient.invalidateQueries({
-        queryKey: getAuthnListSessionsQueryKey(),
+        queryKey: getAuthnSessionListQueryKey(),
       })
     } catch (error) {
       setNotice({ kind: 'revoke-failed', code: errorCodeOf(error) })
@@ -232,14 +217,16 @@ export function SessionsSection() {
   async function handleRevokeOthers(): Promise<void> {
     setNotice(null)
     try {
-      const result = await revokeOthersMutation.mutateAsync()
+      const result = (await revokeOthersMutation.mutateAsync()) as
+        | { readonly revoked?: number }
+        | undefined
       setOthersConfirmOpen(false)
       setNotice({
         kind: 'others-done',
-        count: result?.revoked_count ?? 0,
+        count: result?.revoked ?? 0,
       })
       await queryClient.invalidateQueries({
-        queryKey: getAuthnListSessionsQueryKey(),
+        queryKey: getAuthnSessionListQueryKey(),
       })
     } catch (error) {
       setOthersConfirmOpen(false)
@@ -332,42 +319,36 @@ export function SessionsSection() {
             <Box component="ul" role="list" sx={{ m: 0, p: 0, listStyle: 'none' }}>
               {settledSessions.map((session, index) => {
                 const id = session.id ?? null
-                const revoked = session.status === 'revoked'
-                // The server answers only active/revoked (expiry is
-                // checked at use time, never written back), so a row
-                // whose stored expires_at lies in the past is a dead
-                // session: render it expired, never as a live device.
-                const expired = !revoked && isExpired(session.expires_at)
-                const current = session.is_current === true
-                const revocable = id !== null && !current && !revoked && !expired
-                const dead = revoked || expired
-                const metaColor = dead ? 'text.disabled' : 'text.secondary'
-                // Line 1 carries the friendliest label the answer offers:
-                // the client-named device string when the sign-in carried
-                // one, else the readable summary the user agent parses to
-                // ("Chrome · macOS", never the raw UA -- the raw string is
-                // the defect this surface exists to spare its reader). The
-                // summary repeats as a muted detail line only under a row
-                // line 1 already names with a device string.
-                const device =
-                  session.device != null && session.device !== ''
-                    ? session.device
-                    : null
+                const current = session.current === true
+                const revocable = id !== null && !current
+                // Line 1 carries the readable summary the user agent
+                // parses to ("Chrome · macOS"), never the raw UA -- the
+                // raw string is the defect this surface exists to spare
+                // its reader -- else the unknown-device label.
                 const agent =
                   session.user_agent != null && session.user_agent !== ''
                     ? session.user_agent
                     : null
                 const summary =
                   agent !== null ? summarizeUserAgent(agent) : null
-                const deviceLabel =
-                  device ?? summary ?? t('sessions.deviceUnknown')
-                const agentLine =
-                  device !== null && summary !== null ? summary : null
+                const deviceLabel = summary ?? t('sessions.deviceUnknown')
+                const kind =
+                  session.kind != null && session.kind !== ''
+                    ? session.kind
+                    : null
+                const kindLabel =
+                  kind !== null
+                    ? KNOWN_SESSION_KINDS.has(kind)
+                      ? t(`sessions.kind.${kind}`)
+                      : t('sessions.kind.other')
+                    : null
                 const created = parseDate(session.created_at)
                 const lastSeen = parseDate(session.last_seen_at)
                 const showLastSeen =
                   lastSeen !== null &&
                   session.last_seen_at !== session.created_at
+                const hasMeta =
+                  session.client_ip != null || created !== null || showLastSeen
                 return (
                   <Box
                     component="li"
@@ -390,11 +371,7 @@ export function SessionsSection() {
                       <Typography
                         variant="body1"
                         noWrap
-                        sx={{
-                          minWidth: 0,
-                          fontWeight: 500,
-                          color: dead ? 'text.disabled' : 'text.primary',
-                        }}
+                        sx={{ minWidth: 0, fontWeight: 500 }}
                       >
                         {deviceLabel}
                       </Typography>
@@ -412,22 +389,6 @@ export function SessionsSection() {
                             color="primary"
                             variant="outlined"
                             label={t('sessions.current')}
-                          />
-                        )}
-                        {revoked && (
-                          <Chip
-                            size="small"
-                            variant="outlined"
-                            label={t('sessions.status.revoked')}
-                            sx={{ color: 'text.disabled' }}
-                          />
-                        )}
-                        {expired && (
-                          <Chip
-                            size="small"
-                            variant="outlined"
-                            label={t('sessions.status.expired')}
-                            sx={{ color: 'text.disabled' }}
                           />
                         )}
                         {revocable && (
@@ -464,41 +425,7 @@ export function SessionsSection() {
                       </Box>
                     </Box>
 
-                    {agentLine !== null && (
-                      <Typography
-                        variant="body2"
-                        noWrap
-                        color={metaColor}
-                        sx={{ minWidth: 0 }}
-                      >
-                        {agentLine}
-                      </Typography>
-                    )}
-
-                    {session.amr != null && session.amr.length > 0 && (
-                      <Box
-                        sx={{
-                          display: 'flex',
-                          flexWrap: 'wrap',
-                          gap: 0.75,
-                          mt: 0.5,
-                        }}
-                      >
-                        {session.amr.map((amr) => (
-                          <Chip
-                            key={amr}
-                            size="small"
-                            variant="outlined"
-                            label={amr}
-                            sx={dead ? { color: 'text.disabled' } : undefined}
-                          />
-                        ))}
-                      </Box>
-                    )}
-
-                    {(session.ip != null ||
-                      created !== null ||
-                      showLastSeen) && (
+                    {hasMeta && (
                       <Box
                         sx={{
                           display: 'flex',
@@ -508,20 +435,25 @@ export function SessionsSection() {
                           mt: 0.5,
                         }}
                       >
-                        {session.ip != null && (
-                          <Typography variant="body2" color={metaColor}>
-                            {session.ip}
+                        {kindLabel !== null && (
+                          <Typography variant="body2" color="text.secondary">
+                            {kindLabel}
+                          </Typography>
+                        )}
+                        {session.client_ip != null && (
+                          <Typography variant="body2" color="text.secondary">
+                            {session.client_ip}
                           </Typography>
                         )}
                         {created !== null && (
-                          <Typography variant="body2" color={metaColor}>
+                          <Typography variant="body2" color="text.secondary">
                             {t('sessions.signedIn', {
                               time: formatTime.format(created),
                             })}
                           </Typography>
                         )}
                         {showLastSeen && lastSeen !== null && (
-                          <Typography variant="body2" color={metaColor}>
+                          <Typography variant="body2" color="text.secondary">
                             {t('sessions.lastSeen', {
                               time: formatTime.format(lastSeen),
                             })}

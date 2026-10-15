@@ -36,40 +36,58 @@ import { bootstrapSpeedApp, watchSessionEnd } from './bootstrap.js'
 import type { SpeedAppBootstrap, SpeedAppProvider } from './bootstrap.js'
 import type { SpeedAppDefinition } from './bootstrap.js'
 import {
+  authenticatedCompletion,
   errorResponse,
   jsonResponse,
-  makePair,
   makeRealClientRig,
+  openFlow,
+  principal,
+  tokenResponse,
 } from '../test-utils/real-client.js'
 import type { RealResponder } from '../test-utils/real-client.js'
+import type { AuthSession } from '@speed/auth-core'
 
 /** The tenant the scripted happy-path answers name. */
 const TENANT_ID = 'tenant-1'
 
-/** A scripted answer table covering the flows both describes drive:
- * password login and tenant switch issue token pairs, logout answers
- * 204, refresh issues a fresh pair. */
+/** A scripted answer table covering the flows both describes drive: a
+ * password login (the flow start, its answer, the profile the completion
+ * reads), a silent refresh's token endpoint, and logout. */
 const respond: RealResponder = (call) => {
-  if (call.method === 'POST' && call.path === '/api/v1/authn/login/password') {
-    return jsonResponse(200, makePair())
+  const key = `${call.method} ${call.path}`
+  if (key === 'POST /auth/flows') {
+    return jsonResponse(200, openFlow())
   }
-  if (call.method === 'POST' && call.path === '/api/v1/authn/tenant/switch') {
-    return jsonResponse(200, {
-      access_token: 'access-2',
-      principal: {
-        user_id: 'user-1',
-        tenant_id: 'tenant-globex',
-        session_id: 'session-1',
-      },
-    })
+  if (key === 'POST /auth/flows/answer') {
+    return jsonResponse(200, authenticatedCompletion())
   }
-  if (call.method === 'POST' && call.path === '/api/v1/authn/token/refresh') {
-    return jsonResponse(200, makePair())
+  if (key === 'GET /auth/me') {
+    return jsonResponse(200, principal())
   }
-  if (call.method === 'POST' && call.path === '/api/v1/authn/logout') {
+  if (key === 'POST /auth/token') {
+    return jsonResponse(200, tokenResponse())
+  }
+  if (key === 'POST /auth/logout') {
     return new Response(null, { status: 204 })
   }
-  throw new Error(`unexpected request: ${call.method} ${call.path}`)
+  throw new Error(`unexpected request: ${key}`)
+}
+
+/** Drive a password login to completion on a session: the flow it starts,
+ * the first answer, and the profile the completion reads. */
+async function signIn(session: AuthSession): Promise<void> {
+  const first = await session.startFlow({ method: 'password' })
+  if (!('next' in first)) {
+    return
+  }
+  await session.answerFlow({
+    seq: first.seq,
+    step: 'answer',
+    input: {
+      identifier: 'owner@example.test',
+      password: 'correct-horse-battery-staple',
+    },
+  })
 }
 
 /** A query row under the app-side tenant-namespaced key convention
@@ -77,7 +95,7 @@ const respond: RealResponder = (call) => {
  * removes everything. */
 function seedTenantCache(queryClient: QueryClient): void {
   queryClient.setQueryData(
-    ['tenant', TENANT_ID, '/api/v1/notes', {}],
+    ['tenant', TENANT_ID, '/notes', {}],
     { notes: [{ id: 'note-1', text: 'cached from the departing session' }] },
   )
 }
@@ -85,7 +103,7 @@ function seedTenantCache(queryClient: QueryClient): void {
 /** The identity-domain shape: bare spec-path keys nothing
  * tenant-namespaced, which only a total eviction reaches. */
 function seedIdentityCache(queryClient: QueryClient): void {
-  queryClient.setQueryData(['/api/v1/authn/sessions'], {
+  queryClient.setQueryData(['/auth/sessions'], {
     sessions: [{ id: 'session-1' }],
   })
 }
@@ -263,26 +281,26 @@ describe('bootstrapSpeedApp', () => {
     // The navigator leg resolved zh-CN at creation (pinned above), so
     // the assembled client announces it -- the frontend chain's value,
     // transported for the backend's requester-language tiers. A real
-    // operation drives the request so the whole session wiring is on
-    // the path.
+    // flow drives the requests so the whole session wiring is on the
+    // path.
     await act(async () => {
-      await boot.session.loginWithPassword({
-        identifier: 'owner@example.test',
-        password: 'correct-horse-battery-staple',
-      })
+      await signIn(boot.session)
     })
-    expect(observed[0]?.acceptLanguage).toBe('zh-CN')
+    expect(observed.length).toBeGreaterThan(0)
+    expect(observed.every((call) => call.acceptLanguage === 'zh-CN')).toBe(true)
 
     // A language switch moves what subsequent requests announce: the
     // provider reads the instance per attempt, so nothing goes stale.
+    const beforeSwitch = observed.length
     await act(async () => {
       await switchLanguage(boot.i18n, 'en-US')
-      await boot.session.loginWithPassword({
-        identifier: 'owner@example.test',
-        password: 'correct-horse-battery-staple',
-      })
+      await signIn(boot.session)
     })
-    expect(observed[1]?.acceptLanguage).toBe('en-US')
+    const afterSwitch = observed.slice(beforeSwitch)
+    expect(afterSwitch.length).toBeGreaterThan(0)
+    expect(afterSwitch.every((call) => call.acceptLanguage === 'en-US')).toBe(
+      true,
+    )
 
     await act(async () => {
       boot.root.unmount()
@@ -329,13 +347,9 @@ describe('bootstrapSpeedApp', () => {
     expect(seen).toHaveLength(1)
     expect(typeof seen[0]?.api).toBe('function')
     await act(async () => {
-      await boot.session.loginWithPassword({
-        identifier: 'owner@example.test',
-        password: 'correct-horse-battery-staple',
-      })
+      await signIn(boot.session)
     })
-    expect(observed.some((call) => call.path === '/api/v1/authn/login/password'))
-      .toBe(true)
+    expect(observed.some((call) => call.path === '/auth/flows')).toBe(true)
 
     await act(async () => {
       boot.root.unmount()
@@ -351,10 +365,7 @@ describe('bootstrapSpeedApp', () => {
       view: <span>app</span>,
     })
     await act(async () => {
-      await boot.session.loginWithPassword({
-        identifier: 'owner@example.test',
-        password: 'correct-horse-battery-staple',
-      })
+      await signIn(boot.session)
     })
     expect(observed[0]?.origin).toBe('https://api.example.test')
 
@@ -378,10 +389,7 @@ describe('bootstrapSpeedApp', () => {
       },
     })
     await act(async () => {
-      await boot.session.loginWithPassword({
-        identifier: 'owner@example.test',
-        password: 'correct-horse-battery-staple',
-      })
+      await signIn(boot.session)
     })
     seedAllDomains(boot.queryClient)
     await act(async () => {
@@ -411,10 +419,7 @@ describe('bootstrapSpeedApp', () => {
     document.body.appendChild(container)
     const boot = await mountApp(container, { view: <span>app</span> })
     await act(async () => {
-      await boot.session.loginWithPassword({
-        identifier: 'owner@example.test',
-        password: 'correct-horse-battery-staple',
-      })
+      await signIn(boot.session)
     })
     seedAllDomains(boot.queryClient)
     expect(boot.queryClient.getQueryCache().findAll()).toHaveLength(3)
@@ -443,10 +448,7 @@ describe('watchSessionEnd', () => {
     const queryClient = new QueryClient()
     watchSessionEnd(rig.session, queryClient)
 
-    await rig.session.loginWithPassword({
-      identifier: 'owner@example.test',
-      password: 'correct-horse-battery-staple',
-    })
+    await signIn(rig.session)
     seedAllDomains(queryClient)
     expect(queryClient.getQueryCache().findAll()).toHaveLength(3)
 
@@ -454,9 +456,9 @@ describe('watchSessionEnd', () => {
 
     expect(queryClient.getQueryCache().findAll()).toHaveLength(0)
     expect(
-      queryClient.getQueryData(['tenant', TENANT_ID, '/api/v1/notes', {}]),
+      queryClient.getQueryData(['tenant', TENANT_ID, '/notes', {}]),
     ).toBeUndefined()
-    expect(queryClient.getQueryData(['/api/v1/authn/sessions'])).toBeUndefined()
+    expect(queryClient.getQueryData(['/auth/sessions'])).toBeUndefined()
     expect(queryClient.getQueryData(['preferences'])).toBeUndefined()
   })
 
@@ -466,27 +468,30 @@ describe('watchSessionEnd', () => {
     // same authenticated -> anonymous transition a manual sign-out
     // produces, so the default must fire on this path too.
     const rig = makeRealClientRig((call) => {
-      if (call.method === 'POST' && call.path === '/api/v1/authn/token/refresh') {
-        return errorResponse(401, 'authn.token_invalid')
+      if (call.method === 'POST' && call.path === '/auth/token') {
+        // The token endpoint refuses an unusable grant the way RFC 6749
+        // §5.2 does -- a 400. auth-core reads it as terminal and signs
+        // the session out locally; a refusal authored as a 401 would
+        // instead re-enter the client's own refresh leg, because the
+        // generated token operation presents the access token (it is not
+        // the credential-less mutator the seam's design calls for).
+        return errorResponse(400, 'authn.token_invalid')
       }
       return respond(call)
     })
     const queryClient = new QueryClient()
     watchSessionEnd(rig.session, queryClient)
 
-    await rig.session.loginWithPassword({
-      identifier: 'owner@example.test',
-      password: 'correct-horse-battery-staple',
-    })
+    await signIn(rig.session)
     seedAllDomains(queryClient)
 
     expect(await rig.session.refresh()).toBe(false)
 
     expect(queryClient.getQueryCache().findAll()).toHaveLength(0)
     expect(
-      queryClient.getQueryData(['tenant', TENANT_ID, '/api/v1/notes', {}]),
+      queryClient.getQueryData(['tenant', TENANT_ID, '/notes', {}]),
     ).toBeUndefined()
-    expect(queryClient.getQueryData(['/api/v1/authn/sessions'])).toBeUndefined()
+    expect(queryClient.getQueryData(['/auth/sessions'])).toBeUndefined()
   })
 
   it('does nothing while the session was never authenticated', async () => {
@@ -499,33 +504,29 @@ describe('watchSessionEnd', () => {
     // every seeded row survives.
     expect(queryClient.getQueryCache().findAll()).toHaveLength(3)
     expect(
-      queryClient.getQueryData(['tenant', TENANT_ID, '/api/v1/notes', {}]),
+      queryClient.getQueryData(['tenant', TENANT_ID, '/notes', {}]),
     ).toBeDefined()
   })
 
-  it('leaves the cache alone across a still-authenticated transition (a tenant switch)', async () => {
-    // A tenant switch keeps state authenticated throughout (only the
-    // principal's tenant_id changes), so the strategy -- which fires
-    // strictly on the authenticated -> anonymous edge -- must not also
-    // fire here; the host's own switch-time eviction owns that
-    // transition.
+  it('leaves the cache alone across a still-authenticated notify (a silent refresh)', async () => {
+    // A refresh rotates the credentials but keeps the session
+    // authenticated throughout, so the strategy -- which fires strictly
+    // on the authenticated -> anonymous edge -- must not also fire here;
+    // only a sign-out or a refused refresh (a session death) evicts.
     const rig = makeRealClientRig(respond)
     const queryClient = new QueryClient()
     watchSessionEnd(rig.session, queryClient)
 
-    await rig.session.loginWithPassword({
-      identifier: 'owner@example.test',
-      password: 'correct-horse-battery-staple',
-    })
+    await signIn(rig.session)
     seedAllDomains(queryClient)
 
-    await rig.session.switchTenant('tenant-globex')
+    expect(await rig.session.refresh()).toBe(true)
 
     expect(queryClient.getQueryCache().findAll()).toHaveLength(3)
     expect(
-      queryClient.getQueryData(['tenant', TENANT_ID, '/api/v1/notes', {}]),
+      queryClient.getQueryData(['tenant', TENANT_ID, '/notes', {}]),
     ).toBeDefined()
-    expect(queryClient.getQueryData(['/api/v1/authn/sessions'])).toBeDefined()
+    expect(queryClient.getQueryData(['/auth/sessions'])).toBeDefined()
     expect(queryClient.getQueryData(['preferences'])).toBeDefined()
   })
 })

@@ -1,7 +1,7 @@
 {
   "name": "@speed/auth-ui",
   "version": "0.0.1",
-  "description": "Speed auth UI: the sign-in component family (password, SMS code, social channels, registration and the social callback handler) over an @speed/auth-core session, with every built-in string in the bilingual auth-ui namespace",
+  "description": "Speed auth UI: the sign-in component family (password, SMS code, the social channels and the social callback handler) over an @speed/auth-core session, with every built-in string in the bilingual auth-ui namespace",
   "type": "module",
   "sideEffects": false,
   "files": ["dist", "README.md", "AGENTS.md"],
@@ -19,7 +19,6 @@
     "build": "pnpm --filter @speed/auth-core --filter @speed/ui-kit build && tsc -p tsconfig.build.json"
   },
   "dependencies": {
-    "@speed/api-sdk": "workspace:*",
     "@speed/auth-core": "workspace:*",
     "@speed/i18n": "workspace:*",
     "@speed/ui-kit": "workspace:*"
@@ -37,6 +36,7 @@
     "@emotion/styled": "^11.14.1",
     "@mui/material": "^9.4.0",
     "@speed/api-client": "workspace:*",
+    "@speed/api-sdk": "workspace:*",
     "@speed/test-utils": "workspace:*",
     "@testing-library/jest-dom": "^7.0.1",
     "@testing-library/react": "^16.3.3",

@@ -8,7 +8,9 @@
  * ListSkeleton, AsyncSection) with their ui-kit-namespace translations
  * (UI_KIT_NAMESPACE + uiKitResources) for the host to register —
  * FileUploader renders the queue the host owns as `rows` props while
- * uploads run in the host's own transport code. The cross-surface state
+ * uploads run in the host's own transport code. The form family's zod
+ * bridge (zodFormResolver) ships beside the components so a host drives
+ * RHF validation from one zod schema. The cross-surface state
  * primitives ship beside them: InlineError + errorCodeOf (the
  * whole-attempt failure banner), ListSkeleton and AsyncSection (the
  * pending/error/empty/content branches of an async read) and
@@ -51,6 +53,10 @@ export {
   type FormLayoutColumns,
   type FormLayoutProps,
 } from './components/FormLayout.js'
+export {
+  zodFormResolver,
+  INVALID_ERROR_KEY,
+} from './zod-form-resolver.js'
 export {
   DataTable,
   type DataTableColumn,

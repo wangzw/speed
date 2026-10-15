@@ -3,19 +3,15 @@
  *
  * A click drives session.logout(); while the request is in flight the
  * button is disabled and shows the signOut.busy label; a failed logout
- * renders the answer's code text (session-lifecycle codes like
- * authn.session_revoked included) in one InlineError and leaves the
- * button ready to retry. A successful logout is deliberately quiet: it
- * clears the session store and flips the snapshot to anonymous, and the
- * host's own auth-core hooks observe that flip -- the component never
- * navigates and fires no completion callback.
- *
- * The auth-core contract behind the retry story: a failed logout leaves
- * the local session exactly as it was (a raw ApiError rejection, zero
- * state change), so a transport failure needs a manual retry while a
- * server-side session death converges through the refresh leg --
- * refresh() resolving false signs the session out locally. Neither is a
- * gap this component can close.
+ * renders the answer's code text in one InlineError and leaves the button
+ * ready for another click. Logout is deliberately quiet and terminal
+ * either way: auth-core clears the local session and flips the snapshot to
+ * anonymous whether or not the server's revocation answered -- a session
+ * it could not revoke is no longer trustworthy locally -- so the host's
+ * own auth-core hooks observe the same flip on both paths, and the
+ * component never navigates and fires no completion callback. The banner
+ * is what a refused logout still owes the viewer: the code of the refusal,
+ * shown against a button that is already signed out.
  *
  * Nothing here reads the session state: the button renders whether the
  * snapshot is authenticated or not, and the host mounts it where a
@@ -59,6 +55,9 @@ export function SignOutButton({ session }: SignOutButtonProps) {
       // below re-enables it for the next click (logout is idempotent
       // server-side -- a second call answers 204 too).
     } catch (error) {
+      // A refused logout still cleared the local session (auth-core
+      // clears unconditionally and rejects); the banner carries the
+      // refusal's code against an already signed-out button.
       setErrorCode(errorCodeOf(error))
     } finally {
       setPending(false)

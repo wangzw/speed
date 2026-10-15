@@ -1,36 +1,35 @@
 /**
  * Generation configuration for the frontend-contract half of the API
- * pipeline (docs/internal/21-api-contract.md): the @speed/api-sdk
- * package's src/ is orval output from each module's openapi fragment.
+ * pipeline: the @speed/api-sdk package's src/ is orval output from the
+ * merged platform document.
  *
  * orval version pinned: 8.17.0. Every runner invokes the same command
- * from this directory -- the Taskfile `api:gen` frontend leg runs
- * `pnpm dlx orval@8.17.0 --config orval.config.ts` -- so no two callers
+ * from this directory -- `pnpm dlx orval@8.17.0 --config orval.config.ts`,
+ * followed by web/scripts/orval-nodenext-fixup.mjs -- so no two callers
  * can drift. orval itself is never a workspace dependency: pnpm dlx fetches
  * it on demand and it stays out of pnpm-lock.yaml. A version bump must
- * land in the Taskfile and this comment together, and
+ * land in this comment and every caller's command together, and
  * shows up as a diff in the regenerated header (which stamps the
  * version).
  *
- * Input is the committed merged document, contracts/speed.yaml,
- * produced by redocly's `join` of the module fragments (Taskfile's
- * api:merge task -- `task api:gen` depends on it, so a fragment edit can
- * never regenerate from a stale committed merge). The merge joins the
- * eleven platform-module fragments -- admin, ai-gateway, authn, billing,
- * config, integration, notification, org, pki, sharing and storage: every
- * platform module with an HTTP fragment belongs to the merged document
- * and this generated surface, which is regenerated wholesale from the
- * fragments and does not rot from being uncalled
- * (docs/internal/21-api-contract.md's module-driven inclusion policy).
- * The reference app's own notes, cases and smilesim fragments are
- * deliberately not members -- the platform SDK covers the platform,
- * and the app's own API generates into the app's own SDK through the
- * app-owned flow (its own orval.config.ts under examples/reference-app/
- * web, driven by Taskfile's api:gen:app task).
- * Output
- * covers types AND TanStack Query
- * hooks (client: react-query), written to src/index.ts; generated
- * files carry the DO-NOT-EDIT header below.
+ * Input is the committed merged document, contracts/api.yaml, produced by
+ * the demo host's `gen` command from starters/demo:
+ *
+ *   go -C starters/demo run . \
+ *       --config file://$PWD/starters/demo/testdata/<stack>.yaml \
+ *       <stack> gen --title speed -o contracts/api.yaml
+ *
+ * `gen` merges the OpenAPI fragments the platform modules declare into one
+ * document (pkg/ops/openapi.Merge over every module's http.Spec resource),
+ * so every platform module with an HTTP fragment is a member of the merged
+ * document and this generated surface, which is regenerated wholesale from
+ * the fragments and does not rot from being uncalled. The consuming app's
+ * own fragments are deliberately not members -- the platform SDK covers the
+ * platform, and the app's own API generates into the app's own SDK through
+ * the app-owned flow (its own orval.config.ts under starters/demo/web).
+ * Output covers types AND TanStack Query hooks (client: react-query),
+ * written to src/index.ts; generated files carry the DO-NOT-EDIT header
+ * below.
  *
  * HTTP transport: httpClient 'axios' selects the axios-shaped mutator
  * call -- one options object `{url, method, headers, params, data,
@@ -39,11 +38,12 @@
  * hand-written file) forwards every call to the request function the
  * host binds from @speed/api-client, so no generated file and no bridge
  * file performs HTTP itself. One operation overrides the mutator:
- * `authn_refreshToken`, the session-refresh operation, routes through
- * `speedRequestCredentialless` instead, which declares the request
- * credential-less (`omitAccessToken` on @speed/api-client's
- * RequestOptions). A session's refresh authenticates with the refresh
- * token in its body and must never present an access token; declaring
+ * `authn.token.issue` (the token-issuing operation a session refresh
+ * uses) routes through `speedRequestCredentialless` instead, which
+ * declares the request credential-less (`omitAccessToken` on
+ * @speed/api-client's RequestOptions). A session's refresh
+ * authenticates with the refresh token in its body and must never
+ * present an access token; declaring
  * that per request beats clearing the host's token store for the
  * refresh's duration, which would leave concurrent requests
  * momentarily token-less and turn their bearer-valid 401s into
@@ -64,7 +64,7 @@
 export default {
   speed: {
     input: {
-      target: '../contracts/speed.yaml',
+      target: '../contracts/api.yaml',
     },
     output: {
       target: './packages/api-sdk/src/index.ts',
@@ -91,7 +91,7 @@ export default {
           // per request (`speedRequestCredentialless` sets
           // omitAccessToken) so the host's token store is never cleared
           // for it (rationale above and in runtime.ts).
-          authn_refreshToken: {
+          'authn.token.issue': {
             mutator: {
               path: './packages/api-sdk/src/runtime.ts',
               name: 'speedRequestCredentialless',

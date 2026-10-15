@@ -1,39 +1,44 @@
 // @vitest-environment jsdom
 /**
- * hooks.test.ts -- useAuthState / useCurrentTenant / usePermission /
- * attachSession (hooks.ts): the fail-closed reads before any session
- * is attached, the tenant and permission values over a scripted
- * session, the re-renders on set changes, domain separation and the
- * last-bind-wins attach semantics. Everything flows through the real
- * session driven by the shared @speed/test-utils/session-harness -- no
- * mocks of hooks.ts internals.
+ * hooks.test.ts -- useAuthState / usePermission / attachSession and the
+ * tenant context (TenantProvider + useCurrentTenant): the fail-closed
+ * reads before any session is attached, the permission values over a
+ * scripted session, the re-renders on set changes, domain separation,
+ * the last-bind-wins attach semantics and the tenant read back from the
+ * host-supplied provider. Everything flows through the real session
+ * driven by the shared @speed/test-utils/session-harness -- no mocks of
+ * hooks.ts internals.
  *
  * The hooks' module-level attach state is pristine only until this
  * file's first attachSession call, so the no-session describe runs
  * first (vitest executes tests within a file in declaration order).
  *
- * The @vitest-environment pragma is per-file: the session state
- * machine tests run in the plain node environment, these hooks need a
- * DOM. Rendering leaves components mounted across tests, so cleanup
- * runs explicitly after each (vitest runs without globals, which
- * disables @testing-library/react's auto-cleanup).
+ * The @vitest-environment pragma is per-file: the session state machine
+ * tests run in the plain node environment, these hooks need a DOM.
+ * Rendering leaves components mounted across tests, so cleanup runs
+ * explicitly after each (vitest runs without globals, which disables
+ * @testing-library/react's auto-cleanup).
  */
 
 import { act, cleanup, renderHook } from '@testing-library/react'
-import { createElement } from 'react'
+import { createElement, useState } from 'react'
+import type { ReactNode } from 'react'
 import { renderToString } from 'react-dom/server'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import {
-  LOGIN_PASSWORD,
+  authenticatedCompletion,
+  completeFlow,
+  LOGIN_ANSWER,
+  LOGIN_START,
   LOGOUT,
   makeHarness,
-  makePair,
   principal,
-  REFRESH,
-  SWITCH_TENANT,
+  PROFILE_GET,
 } from '@speed/test-utils/session-harness'
+import type { Harness } from '@speed/test-utils/session-harness'
 import {
   attachSession,
+  TenantProvider,
   useAuthState,
   useCurrentTenant,
   usePermission,
@@ -43,9 +48,15 @@ afterEach(() => {
   cleanup()
 })
 
-const credentials = {
-  identifier: 'ada@example.com',
-  password: 'pw',
+const scripts = {
+  [LOGIN_START]: () => completeFlow(),
+  [LOGIN_ANSWER]: () => authenticatedCompletion(),
+  [PROFILE_GET]: () => principal(),
+}
+
+async function signIn(harness: Harness): Promise<void> {
+  await harness.session.startFlow({ method: 'password' })
+  await harness.session.answerFlow({ seq: 2, step: 'complete' })
 }
 
 describe('before any session is attached', () => {
@@ -63,152 +74,105 @@ describe('before any session is attached', () => {
     expect(result.current).toBe(first)
   })
 
-  it('useCurrentTenant and usePermission fail closed', () => {
-    const { result: tenant } = renderHook(() => useCurrentTenant())
+  it('usePermission fails closed', () => {
     const { result: tenantPerm } = renderHook(() =>
       usePermission('tenant', 'notes:read'),
     )
     const { result: systemPerm } = renderHook(() =>
       usePermission('system', 'users:manage'),
     )
-    expect(tenant.current).toBeNull()
     expect(tenantPerm.current).toBe(false)
     expect(systemPerm.current).toBe(false)
   })
+
+  it('useCurrentTenant fails closed without a TenantProvider', () => {
+    const { result } = renderHook(() => useCurrentTenant())
+    expect(result.current).toBeNull()
+  })
 })
 
-describe('attached to a scripted session', () => {
-  it('useCurrentTenant tracks anonymous -> login -> tenant switch', async () => {
-    const harness = makeHarness({
-      [LOGIN_PASSWORD]: () => makePair(),
-      [SWITCH_TENANT]: () =>
-        makePair({
-          access_token: 'access-2',
-          principal: principal('user-1', 'tenant-2'),
-        }),
-    })
-    attachSession(harness.session)
-    const { result } = renderHook(() => useCurrentTenant())
-    // Attached but not signed in: still null.
-    expect(result.current).toBeNull()
+describe('the tenant context', () => {
+  /** Mounts a TenantProvider whose tenant the test can change, so the
+   * hook is exercised across a tenant change the way a route change
+   * would drive it. */
+  let setTenant: (tenantId: string | null) => void
+  function TenantRoot({ children }: { children: ReactNode }) {
+    const [tenantId, set] = useState<string | null>('tenant-1')
+    setTenant = set
+    return createElement(TenantProvider, { tenantId, children })
+  }
 
-    await act(async () => {
-      await harness.session.loginWithPassword(credentials)
+  it('reads the host-supplied tenant and tracks its change', () => {
+    const { result } = renderHook(() => useCurrentTenant(), {
+      wrapper: TenantRoot,
     })
     expect(result.current).toEqual({ tenantId: 'tenant-1' })
-
-    await act(async () => {
-      await harness.session.switchTenant('tenant-2')
+    act(() => {
+      setTenant('tenant-2')
     })
     expect(result.current).toEqual({ tenantId: 'tenant-2' })
   })
 
-  it('keeps one referentially stable tenant object for the whole stay in a tenant', async () => {
-    // The returned object is referentially stable for a tenant: it
-    // changes identity only when the tenant_id itself changes, never
-    // on re-renders. A host builds its tenant-namespaced cache keys
-    // from this identity, so a fresh object per render would defeat
-    // the memoization silently.
-    const harness = makeHarness({
-      [LOGIN_PASSWORD]: () => makePair(),
-      [REFRESH]: () => makePair({ access_token: 'access-3' }),
-      [SWITCH_TENANT]: () =>
-        makePair({
-          access_token: 'access-2',
-          principal: principal('user-1', 'tenant-2'),
-        }),
+  it('reads null when the host passes null (no tenant in the route)', () => {
+    const { result } = renderHook(() => useCurrentTenant(), {
+      wrapper: TenantRoot,
     })
-    attachSession(harness.session)
-    const { result } = renderHook(() => useCurrentTenant())
-    await act(async () => {
-      await harness.session.loginWithPassword(credentials)
+    act(() => {
+      setTenant(null)
+    })
+    expect(result.current).toBeNull()
+  })
+
+  it('keeps one referentially stable tenant object for the whole stay in a tenant', () => {
+    const { result, rerender } = renderHook(() => useCurrentTenant(), {
+      wrapper: TenantRoot,
     })
     const first = result.current
     expect(first).toEqual({ tenantId: 'tenant-1' })
-    // A same-tenant re-login and a silent refresh -- transitions that
-    // keep the tenant -- hand back the same object.
-    await act(async () => {
-      await harness.session.loginWithPassword(credentials)
-    })
-    expect(result.current).toBe(first)
-    await act(async () => {
-      await harness.session.refresh()
-    })
+    // A re-render with the same tenant does not churn the identity a
+    // host keys its tenant-namespaced cache on.
+    rerender()
     expect(result.current).toBe(first)
     // The identity changes exactly when the tenant does.
-    await act(async () => {
-      await harness.session.switchTenant('tenant-2')
+    act(() => {
+      setTenant('tenant-2')
     })
     expect(result.current).not.toBe(first)
     expect(result.current).toEqual({ tenantId: 'tenant-2' })
   })
+})
 
-  it('useCurrentTenant reads null for a principal without a tenant_id', async () => {
-    const harness = makeHarness({
-      [LOGIN_PASSWORD]: () => makePair(),
-      // A system-domain principal: no tenant_id in the token claims.
-      [SWITCH_TENANT]: () =>
-        makePair({
-          access_token: 'access-2',
-          principal: { user_id: 'user-1', session_id: 'session-1' },
-        }),
-    })
+describe('attached to a scripted session', () => {
+  it('useAuthState tracks anonymous -> login -> logout', async () => {
+    const harness = makeHarness({ ...scripts, [LOGOUT]: () => undefined })
     attachSession(harness.session)
-    const { result } = renderHook(() => useCurrentTenant())
+    const { result } = renderHook(() => useAuthState())
+    expect(result.current.state).toBe('anonymous')
     await act(async () => {
-      await harness.session.loginWithPassword(credentials)
+      await signIn(harness)
     })
-    expect(result.current).toEqual({ tenantId: 'tenant-1' })
+    expect(result.current.state).toBe('authenticated')
+    expect(result.current.principal?.account_id).toBe('user-1')
     await act(async () => {
-      await harness.session.switchTenant('tenant-2')
+      await harness.session.logout()
     })
-    expect(result.current).toBeNull()
-  })
-
-  it('an unmounted component unsubscribes; live ones keep receiving updates', async () => {
-    const harness = makeHarness({
-      [LOGIN_PASSWORD]: () => makePair(),
-      [SWITCH_TENANT]: () =>
-        makePair({
-          access_token: 'access-2',
-          principal: principal('user-1', 'tenant-2'),
-        }),
-    })
-    attachSession(harness.session)
-    const gone = renderHook(() => useCurrentTenant())
-    const live = renderHook(() => useCurrentTenant())
-    await act(async () => {
-      await harness.session.loginWithPassword(credentials)
-    })
-    expect(gone.result.current).toEqual({ tenantId: 'tenant-1' })
-    expect(live.result.current).toEqual({ tenantId: 'tenant-1' })
-
-    gone.unmount()
-    // A later transition reaches the remaining subscriber and does not
-    // throw for the unmounted one.
-    await act(async () => {
-      await harness.session.switchTenant('tenant-2')
-    })
-    expect(live.result.current).toEqual({ tenantId: 'tenant-2' })
+    expect(result.current.state).toBe('anonymous')
+    expect(result.current.principal).toBeNull()
   })
 
   it('usePermission fails closed until the domain set holds the permission', async () => {
-    const harness = makeHarness({
-      [LOGIN_PASSWORD]: () => makePair(),
-    })
+    const harness = makeHarness(scripts)
     attachSession(harness.session)
     const { result } = renderHook(() => usePermission('tenant', 'notes:read'))
-    // Anonymous: false.
     expect(result.current).toBe(false)
     await act(async () => {
-      await harness.session.loginWithPassword(credentials)
+      await signIn(harness)
     })
     // Authenticated, but no set attached yet: false.
     expect(result.current).toBe(false)
     act(() => {
       harness.session.setPermissionSet('tenant', ['notes:write'])
     })
-    // A set is attached, but the permission is not in it: false.
     expect(result.current).toBe(false)
     act(() => {
       harness.session.setPermissionSet('tenant', ['notes:read'])
@@ -217,12 +181,10 @@ describe('attached to a scripted session', () => {
   })
 
   it("a domain's set never satisfies a check in the other domain", async () => {
-    const harness = makeHarness({
-      [LOGIN_PASSWORD]: () => makePair(),
-    })
+    const harness = makeHarness(scripts)
     attachSession(harness.session)
     await act(async () => {
-      await harness.session.loginWithPassword(credentials)
+      await signIn(harness)
     })
     const { result: tenantRead } = renderHook(() =>
       usePermission('tenant', 'notes:read'),
@@ -236,35 +198,25 @@ describe('attached to a scripted session', () => {
     expect(tenantRead.current).toBe(true)
     // The system domain has no set: the tenant set is not consulted.
     expect(systemRead.current).toBe(false)
-
     act(() => {
       harness.session.setPermissionSet('system', ['users:manage'])
     })
-    // Still false: 'notes:read' is not in the system set either.
     expect(systemRead.current).toBe(false)
-
-    const { result: tenantUsers } = renderHook(() =>
-      usePermission('tenant', 'users:manage'),
-    )
-    expect(tenantUsers.current).toBe(false)
   })
 
   it('set changes re-render the selectors through the shared snapshot', async () => {
-    const harness = makeHarness({
-      [LOGIN_PASSWORD]: () => makePair(),
-      [LOGOUT]: () => undefined,
-    })
+    const harness = makeHarness({ ...scripts, [LOGOUT]: () => undefined })
     attachSession(harness.session)
     await act(async () => {
-      await harness.session.loginWithPassword(credentials)
+      await signIn(harness)
     })
     const { result: state } = renderHook(() => useAuthState())
-    const { result: can } = renderHook(() => usePermission('tenant', 'notes:read'))
+    const { result: can } = renderHook(() =>
+      usePermission('tenant', 'notes:read'),
+    )
     act(() => {
       harness.session.setPermissionSet('tenant', ['notes:read'])
     })
-    // The sets ride inside the snapshot; the hooks recompute on the
-    // bump without any extra wiring.
     expect(state.current.permissionSets).toEqual({
       tenant: ['notes:read'],
       system: null,
@@ -278,8 +230,6 @@ describe('attached to a scripted session', () => {
       system: null,
     })
     expect(can.current).toBe(false)
-    // A logout clears the sets and drops every read to its
-    // fail-closed default.
     await act(async () => {
       await harness.session.logout()
     })
@@ -288,43 +238,33 @@ describe('attached to a scripted session', () => {
   })
 
   it('attachSession rebinds: the previous session stops reaching the hooks', async () => {
-    const first = makeHarness({
-      [LOGIN_PASSWORD]: () => makePair(),
-    })
-    const second = makeHarness({
-      [LOGIN_PASSWORD]: () => makePair(),
-    })
+    const first = makeHarness(scripts)
+    const second = makeHarness(scripts)
     attachSession(first.session)
     await act(async () => {
-      await first.session.loginWithPassword(credentials)
+      await signIn(first)
     })
-    const { result } = renderHook(() => useCurrentTenant())
-    expect(result.current).toEqual({ tenantId: 'tenant-1' })
+    const { result } = renderHook(() => useAuthState())
+    expect(result.current.state).toBe('authenticated')
 
-    // Rebinding to a fresh, still-anonymous session: last bind wins,
-    // and the swap wakes the subscribers to re-read.
+    // Rebinding to a fresh, still-anonymous session: last bind wins, and
+    // the swap wakes the subscribers to re-read.
     act(() => {
       attachSession(second.session)
     })
-    expect(result.current).toBeNull()
+    expect(result.current.state).toBe('anonymous')
 
     // The first session's later transitions no longer reach the hooks.
     await act(async () => {
-      await first.session.loginWithPassword(credentials)
+      await signIn(first)
     })
-    expect(result.current).toBeNull()
-
-    // Re-attaching the same session is a no-op.
-    act(() => {
-      attachSession(second.session)
-    })
-    expect(result.current).toBeNull()
+    expect(result.current.state).toBe('anonymous')
 
     // The newly attached session's own transitions do reach the hooks.
     await act(async () => {
-      await second.session.loginWithPassword(credentials)
+      await signIn(second)
     })
-    expect(result.current).toEqual({ tenantId: 'tenant-1' })
+    expect(result.current.state).toBe('authenticated')
   })
 })
 
@@ -337,19 +277,10 @@ describe('server rendering', () => {
   }
 
   it('renders the anonymous snapshot on the server, even with an authenticated session attached', async () => {
-    // Server rendering has no session -- attachSession runs in browser
-    // bootstrap code -- so the server answer must be the stable
-    // anonymous snapshot, never the attached session's (the
-    // getServerSnapshot useSyncExternalStore asks for). To prove the
-    // server path really is the one used, this renders with an
-    // authenticated session attached and asserts the server still
-    // renders anonymous, without a React warning.
-    const harness = makeHarness({
-      [LOGIN_PASSWORD]: () => makePair(),
-    })
+    const harness = makeHarness(scripts)
     attachSession(harness.session)
     await act(async () => {
-      await harness.session.loginWithPassword(credentials)
+      await signIn(harness)
     })
     expect(harness.session.getSnapshot().state).toBe('authenticated')
     const errorSpy = vi.spyOn(console, 'error').mockImplementation(() => {})

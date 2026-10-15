@@ -1,22 +1,45 @@
-# web/ — the frontend workspace
+# web/ — the frontend package library
 
 The repo's npm side. Every deliverable npm package of the platform lives
-under `web/packages/*` as a **pnpm workspace** rooted here.
+under `web/packages/*` as a **pnpm workspace** rooted here. The workspace
+also carries two private members: the shared test-support package
+`web/test-utils/` and the demo starter's web host `starters/demo/web/`
+(see `web/pnpm-workspace.yaml`).
+
+## web-legacy/ — the earlier implementation
+
+`web-legacy/` is the **earlier** frontend implementation. It is kept
+whole and permanently, under version control, as a complete backup of the
+npm side as it stood before this package library was rebuilt — the same
+standing that `go/`, `docs/internal/` and `docs/site/` hold for the Go
+half. It is a sibling of `web/`, not an ancestor of it: the new library
+was seeded from `web-legacy/packages/` but the two are independent trees
+from here on (the workspace root files were rewritten, not inherited).
+
+Nothing in the repo's checks builds or verifies `web-legacy/`; like the
+other legacy trees, it is read-only history — do not edit it, and do not
+treat it as a second opinion on anything `docs/design` settles.
 
 ## Why web/ is its own workspace root
 
 The repo root is a Go workspace (`go.work` + one module per directory under
-`go/`) and must stay one. The frontend deliberately does **not** share the
+`pkg/`) and must stay one. The frontend deliberately does **not** share the
 root:
 
 - `go work` and other Go tooling walk module roots; a root-level
   `package.json` or `pnpm-workspace.yaml` would sit in that walk and invite
   cross-tool confusion.
 - pnpm's workspace protocol (`workspace:*`) and its single lockfile want a
-  root of their own; the go.work file and pnpm's artifacts have nothing in
+  root of their own; the `go.work` file and pnpm's artifacts have nothing in
   common.
 - Nothing Go-side ever needs to resolve an npm package, and nothing npm-side
   ever needs a Go module. Two roots, one repo, zero overlap.
+
+This is also why the demo starter's web host joins as an **external member**
+(`../starters/demo/web`) rather than being folded into `web/`: it lives
+exactly where a delivered consumer project lives, outside the workspace
+root, and still installs, lints, typechecks, tests and builds under the same
+one-lockfile workspace over `workspace:*` deps on the `@speed` packages.
 
 Tooling treats the boundary the same way: Go checks run from module
 directories, npm checks run from `web/`.
@@ -31,15 +54,14 @@ directories, npm checks run from `web/`.
 The Node major is pinned to 24;
 `web/package.json`'s `engines` accepts `>=24` so local development on newer
 Node (e.g. 26) keeps working. Never add a second version source; when either
-version moves, update the source row above and the CI action stays in sync
-by construction.
+version moves, update the source row above together with every consumer.
 
 ## Layout
 
 ```
 web/
   package.json          private root; scripts and shared devDependencies only
-  pnpm-workspace.yaml   packages: [packages/*]
+  pnpm-workspace.yaml   the workspace's members (packages/*, test-utils, the demo host)
   pnpm-lock.yaml        committed; installs run with --frozen-lockfile
   tsconfig.base.json    strict base every package extends
   eslint.config.mjs     one flat config for the whole workspace
@@ -51,10 +73,16 @@ web/
     api-sdk/            @speed/api-sdk    -- generated API surface (orval output from the
                                              merged platform document); calls api-client through a seam
     layout-kit/         @speed/layout-kit -- AppShell/RouteGuard chrome, no auth opinion
+    route-kit/          @speed/route-kit -- routing and navigation as one declarative
+                                             registration surface: a RouteTable of
+                                             path/view/label/permission declarations that
+                                             RouteProvider installs over react-router-dom, with
+                                             RouteView, useNavItems, RouteLink and useNavigate;
+                                             no sibling package dependency
     auth-core/          @speed/auth-core  -- headless session layer over the generated authn
                                              surface; memory-only, no UI, no storage writes
     auth-ui/            @speed/auth-ui    -- the sign-in family over an auth-core session:
-                                             password/SMS/register channels plus the social
+                                             password and SMS channels plus the social
                                              pair, sign-out and session-ended; controlled
     tenancy-ui/         @speed/tenancy-ui -- the tenant-switch affordance: one controlled
                                              TenantSwitcher fed the current tenant by the
@@ -74,11 +102,13 @@ web/
                                              sessions, sign-in history, social bindings and
                                              step-up-gated two-factor setup over the
                                              generated authn operations
-    billing-ui/         @speed/billing-ui    -- the billing-documents read surface: the
-                                             newest-first invoice list with per-row
-                                             document detail over the generated billing
-                                             read operations, bilingual billing-ui
-                                             namespace
+    console-ui/         @speed/console-ui  -- the platform-staff console, the second shell:
+                                             the tenant roster, settings and audit
+                                             administration surfaces as one frame with three
+                                             pages, each a path/view/label/permission
+                                             declaration; no tenant switcher and no
+                                             tenant-scoped key, since its endpoints do not
+                                             resolve a tenant
 ```
 
 Root `package.json` holds only what every package shares (typescript,
@@ -91,18 +121,18 @@ rendering, lives there; each package declares what it actually uses, so
 `pnpm -r` never installs a framework a package does not need.
 
 The `api-sdk/` entry is different by design: it ships **generated**
-source. `src/index.ts` is orval output from the merged document —
-`contracts/speed.yaml`, the eleven platform-module fragments joined by the
-Taskfile `api:merge` leg — stamped with a DO-NOT-EDIT header carrying
-the pinned orval version, regenerated by `task api:gen` from `web/`
-(pinned `pnpm dlx orval@8.17.0` plus `scripts/orval-nodenext-fixup.mjs`;
-orval itself is never a workspace dependency, so it never enters the
-lockfile) and never hand-edited. Its only hand-written source is the
-seam `src/runtime.ts`, kept out of orval's way by an exports-map
-`./runtime` subpath; the package's AGENTS.md documents the seam and the
-fixup's why. `@speed/auth-core` sits directly above it — the generated
-authn surface's first in-workspace compile consumer, whose suite binds
-the same `./runtime` seam a host's real client binds.
+source. `src/index.ts` is orval output from the merged platform document —
+the OpenAPI fragments the platform modules declare, merged by the demo host's
+`gen` command — stamped with a
+DO-NOT-EDIT header carrying the pinned orval version, regenerated from
+`web/` (pinned `pnpm dlx orval@8.17.0` plus
+`scripts/orval-nodenext-fixup.mjs`; orval itself is never a workspace
+dependency, so it never enters the lockfile) and never hand-edited. Its only
+hand-written source is the seam `src/runtime.ts`, kept out of orval's way by
+an exports-map `./runtime` subpath; the package's AGENTS.md documents the
+seam and the fixup's why. `@speed/auth-core` sits directly above it — the
+generated authn surface's first in-workspace compile consumer, whose suite
+binds the same `./runtime` seam a host's real client binds.
 
 ## Commands (run from web/)
 
@@ -121,7 +151,7 @@ build`, ...) or with `pnpm --filter @speed/<name> <script>` from `web/`.
 
 - `"type": "module"`; **ESM-only** publish: `exports` maps point `types` and
   `import` at `dist/` `.d.ts`/`.js` pairs. NodeNext consumers import
-  normally; no CJS twin ships in M0.
+  normally; no CJS twin ships.
 - `"files": ["dist", "README.md", "AGENTS.md"]` — the dist/ tree plus the
   docs travel with the package.
 - `tsconfig.json` (typecheck) extends `../../tsconfig.base.json` with
@@ -134,32 +164,20 @@ build`, ...) or with `pnpm --filter @speed/<name> <script>` from `web/`.
 - Sources: one domain per file, tests colocated (`x.ts` -> `x.test.ts`),
   shared test helpers under the package's `test-utils/`, never duplicated.
 - Repository language rule: everything here is English; CJK-bearing
-  fixtures live only under a `locales/`-named directory (the repo's CI CJK
-  scanner exempts those) and `.ts` sources assert against imported fixtures
-  rather than embedding language literals.
+  fixtures live only under a `locales/`-named directory and `.ts` sources
+  assert against imported fixtures rather than embedding language literals.
 
-## What is not here yet
+## Status
 
-Storybook and Playwright are planned, and so is the app that hosts
-these packages — the reference app's consumer shell (web frontend) and
-the platform-staff admin-shell; see the repo roadmap
-(`docs/internal/15-roadmap.md`) and the CI workflow headers for what
-each round delivers. The shell packages themselves are here:
-layout-kit's frame, auth-ui's sign-in family and, since this round,
-tenancy-ui's switcher and product-shell's three-branch assembly all
-ship in the layout above, their composed sign-in/switch/sign-out
-journey discharged in form by the packages' own usage examples. (The
-generated sdk is here too — it ships in the layout above; its tenant
-query-key namespacing is not.)
+The release machinery is the lockstep plan shared with the Go half: the
+changesets bootstrap at `.changeset/` (a fixed version group over every
+deliverable package in `web/packages/`, `config.json`) and the release
+coordinator in `tools/release/`, which checks from the repository root that
+the fixed group covers exactly the packages that exist, that package
+versions are uniform, and that the Go half of the same one-version plan is
+consistent. Real publishing — changesets installed in `web/` with version
+and publish runs — comes with the v1.0 release.
 
-The lockstep release machinery exists in its M0, offline-verification
-form: the changesets bootstrap at `.changeset/` (the fixed version group
-over the twelve packages, `config.json` — no changesets entries or
-bump runs yet) and the release coordinator in `tools/release/`, which checks
-from the repository root that the fixed group covers exactly the
-packages that exist, that package versions are uniform, and that the Go
-half of the same one-version plan is consistent (`task release:plan
-VERSION=v1.2.0`; the `release` CI workflow runs the same verification on
-a manually dispatched version). Real publishing — changesets installed
-in `web/` with version and publish runs, npm packages actually released —
-is scheduled for the v1.0 release at M4.
+The lockfile is **not** carried over from the earlier implementation: the
+workspace's members changed when this tree was rebuilt, so `pnpm-lock.yaml`
+is regenerated by the install leg, never copied.

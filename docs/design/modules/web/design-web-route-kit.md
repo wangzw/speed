@@ -19,7 +19,7 @@
 
 ## 外部接口契约
 
-本包尚未实现，下面是它的设计形状。
+宿主从 `web/packages/route-kit/src/index.ts` 取用以下符号。
 
 ### 声明面
 
@@ -171,7 +171,7 @@ classDiagram
 
 ## 错误与失败语义
 
-本包未实现，下面是设计的失败面。
+本包的失败面如下。
 
 | 情形 | 表现 |
 |---|---|
@@ -193,7 +193,7 @@ classDiagram
 
 | 能力 | 状态 | 代码 |
 |---|---|---|
-| 声明面（`RouteDeclaration`、`RouteTable`、`RouteContext`） | 未实现 | — |
-| 接线与渲染（`RouteProvider`、`RouteView`、未命中回退） | 未实现 | — |
-| 导航收集与选中态（`useNavItems`） | 未实现 | — |
-| 链接构造与命令式导航（`RouteLink`、`useNavigate`） | 未实现 | — |
+| 声明面（`RouteDeclaration`、`RouteTable`、`RouteContext`） | 已实现 | `web/packages/route-kit/src/types.ts` `RouteDeclaration`、`RouteTable`、`RouteContext`、`RouteParams` |
+| 接线与渲染（`RouteProvider`、`RouteView`、未命中回退） | 已实现 | `web/packages/route-kit/src/RouteProvider.tsx` `RouteProvider`；`web/packages/route-kit/src/RouteView.tsx` `RouteView` |
+| 导航收集与选中态（`useNavItems`） | 已实现 | `web/packages/route-kit/src/hooks.ts` `useNavItems`；`web/packages/route-kit/src/nav.ts` `deriveNavItems` |
+| 链接构造与命令式导航（`RouteLink`、`useNavigate`） | 已实现 | `web/packages/route-kit/src/RouteLink.tsx` `RouteLink`；`web/packages/route-kit/src/hooks.ts` `useNavigate` |

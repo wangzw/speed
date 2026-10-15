@@ -2,27 +2,16 @@
 
 The tenant-switch affordance of a frontend built on speed: one
 controlled component, `TenantSwitcher`, that renders the host's current
-tenant as a trigger and the host's tenant list as a menu, and switches
-the session to the picked tenant through `session.switchTenant`. The
-component sits at the same tier as `ui-kit` and `auth-ui` -- it is
-deliberately auth-aware (it drives an `@speed/auth-core` session passed
-in as a prop) but entirely controlled: it never consumes the auth-core
-hooks, never reads session state beyond the single operation it drives,
-never attaches or persists a session, never navigates and never touches
-the network directly -- every request is the session's own generated
-operation over the host-bound client. A successful switch announces
-itself through a `role="status"` live region (a context change that
-silently alters which rows a host shows must say so out loud) and fires
-the host's `onSwitched` callback exactly once, after the commit;
-everything that happens next -- refetching the tenant's data, cleaning
-the previous tenant's query cache, re-attaching `/me`-derived
-permission lists -- is the host's. The trigger renders with
-`color="inherit"`, so its text follows the ambient surface colour: on
-the coloured AppBar hosts usually mount it in (whose background is the
-primary colour and whose own text is its contrastText), an inherited
-colour stays legible where a primary-coloured default would read
-primary-on-primary. Every built-in string renders from
-the bilingual `tenancy-ui` namespace registered through `@speed/i18n`.
+tenant as a trigger and the host's tenant list as a menu, and reports the
+user's pick through `onSelect`. The tenant is a request's routing fact --
+the server resolves the current tenant per request from the host, a
+subdomain or a path, and authentication carries no tenant -- so switching
+tenants is a HOST ROUTE CHANGE, not an operation on a session. The
+component sits at the same tier as `ui-kit` and `auth-ui` and is entirely
+controlled: it knows no session, consumes none of the auth-core hooks,
+never navigates and never touches the network. Every built-in string
+renders from the bilingual `tenancy-ui` namespace registered through
+`@speed/i18n`.
 
 ## What ships
 
@@ -31,70 +20,41 @@ the bilingual `tenancy-ui` namespace registered through `@speed/i18n`.
 | `TenantSwitcher.tsx` | `TenantSwitcher`, `TenantSwitcherProps`, `TenantOption` |
 | `resources.ts` | `TENANCY_UI_NAMESPACE`, `tenancyUiResources` |
 
-Everything else (`src/internal/`) is shared plumbing -- the
-code-to-text error resolver, the failure banner, the translation hook
--- and is deliberately not exported.
+Everything else (`src/internal/`) is shared plumbing -- the translation
+hook -- and is deliberately not exported.
 
 ## Quick start
 
-A host composes the switcher over the session-and-client wiring
-`@speed/auth-core`'s README documents. The bootstrap has four parts:
-the bilingual i18n instance with both namespaces a rendered component
-can read, the client and session over one memory access-token store,
-the session attached to the hooks, and the host gate that renders the
-sign-in affordance while anonymous and the app -- with the switcher in
-its header -- once authenticated. This package is the auth-agnostic
-neighbour of `auth-ui` at the same tier, never its importer, so the
-sign-in affordance below is host content; the same-tier rule that keeps
-`auth-ui` from depending on `billing-ui` keeps this package's consumer
-off `auth-ui`'s catalog.
+A host holds the current tenant (derived from its own route), mounts it on
+`@speed/auth-core`'s `TenantProvider`, and renders the switcher where the
+current tenant belongs. Selecting a tenant calls `onSelect`, and the host
+does all of the work there: it switches its route, updates the tenant
+context it hands back as `currentTenantId` (so the trigger converges),
+evicts the departing tenant's query cache, and re-attaches `/me`-derived
+permission lists. This package is the auth-agnostic neighbour of `auth-ui`
+at the same tier, never its importer.
 
 ```tsx
-import {
-  createClient,
-  createMemoryAccessTokenStore,
-} from '@speed/api-client'
-import { bindRequestFn } from '@speed/api-sdk/runtime'
-import {
-  createAuthSession,
-  attachSession,
-  useAuthState,
-  useCurrentTenant,
-} from '@speed/auth-core'
+import { useState } from 'react'
 import { createI18n, I18nextProvider, registerNamespace } from '@speed/i18n'
 import {
   AppThemeProvider,
   UI_KIT_NAMESPACE,
   uiKitResources,
 } from '@speed/ui-kit'
-import { TENANCY_UI_NAMESPACE, tenancyUiResources, TenantSwitcher } from '@speed/tenancy-ui'
+import { TenantProvider, useCurrentTenant } from '@speed/auth-core'
+import {
+  TENANCY_UI_NAMESPACE,
+  tenancyUiResources,
+  TenantSwitcher,
+} from '@speed/tenancy-ui'
 import type { TenantOption } from '@speed/tenancy-ui'
 
-// 1. The session and the client share one memory access-token store.
-//    refreshAccessToken is the session's silent refresh: an expired-token
-//    401 on any request runs it once and retries with the fresh token.
-const store = createMemoryAccessTokenStore()
-const session = createAuthSession(store)
-bindRequestFn(
-  createClient({
-    baseUrl: 'https://api.example.com',
-    fetch: fetchImpl, // the host's fetch implementation
-    accessTokenStore: store,
-    refreshAccessToken: () => session.refresh(),
-  }),
-)
-
-// 2. The hooks read the attached session (last bind wins).
-attachSession(session)
-
-// 3. The bilingual instance, both namespaces registered exactly once.
-//    The switcher renders no ui-kit chrome itself -- its strings and
-//    its inline error banner are plain MUI elements under the
-//    tenancy-ui namespace. The ui-kit namespace is registered because
-//    a host app composes under ui-kit (the AppThemeProvider below) and
-//    renders ui-kit chrome, which reads that namespace.
-//    registerNamespace validates identical leaf key sets before it
-//    mutates.
+// The bilingual instance, both namespaces registered exactly once. The
+// ui-kit namespace is registered because a host app composes under
+// ui-kit (the AppThemeProvider below) and renders ui-kit chrome, which
+// reads that namespace. registerNamespace validates identical leaf key
+// sets before it mutates.
 const i18n = createI18n({
   supportedLanguages: ['zh-CN', 'en-US'],
   defaultLanguage: 'zh-CN',
@@ -105,46 +65,45 @@ const i18n = createI18n({
 registerNamespace(i18n, TENANCY_UI_NAMESPACE, tenancyUiResources)
 registerNamespace(i18n, UI_KIT_NAMESPACE, uiKitResources)
 
-// 4. The host's tenant list -- which tenants the signed-in user may
-//    switch between is the host's data, fetched through its own
-//    generated operations. The switcher renders it verbatim.
+// The host's tenant list -- which tenants the signed-in user may switch
+// between is the host's data, fetched through its own generated
+// operations. The switcher renders it verbatim.
 const tenants: TenantOption[] = [
   { id: 'tenant-1', name: 'Sunshine Dental' },
   { id: 'tenant-2', name: 'Bright Smile Clinic' },
-  { id: 'tenant-3', name: 'Harbor View Orthodontics' },
 ]
 
-// The host gate: anonymous viewers see the host's sign-in affordance;
-// authenticated viewers see the app with the switcher in the header,
-// currentTenantId flowing from the hook that reads the session snapshot,
-// so a committed switch re-renders the trigger onto the new tenant.
-function App() {
-  const auth = useAuthState()
-  const currentTenant = useCurrentTenant()
-  if (auth.state === 'anonymous') {
-    return <button type="button" onClick={() => void session.loginWithPassword({
-      identifier: 'alice@example.com', password: 's3cret-pass',
-    })}>Sign in</button>
-  }
+// The host's app chrome: currentTenantId flows from useCurrentTenant, so
+// a committed switch re-renders the trigger onto the new tenant.
+function Header({ onSwitch }: { onSwitch: (id: string) => void }) {
+  const current = useCurrentTenant()
   return (
-    <div>
-      <header>
-        <TenantSwitcher
-          session={session}
-          tenants={tenants}
-          currentTenantId={currentTenant?.tenantId ?? null}
-          onSwitched={(tenantId) => {
-            // The host's own post-switch work: refetch the tenant's
-            // data and remove the previous tenant's cache, so repeated
-            // switches do not accumulate per-tenant entries:
-            //   queryClient.removeQueries({ queryKey: ['tenant', oldId] })
-            // Permission lists are re-attached the same way (a switch
-            // commit drops the tenant-domain set by auth-core design).
-          }}
-        />
-      </header>
-      <main>{/* the current tenant's workspace */}</main>
-    </div>
+    <header>
+      <TenantSwitcher
+        tenants={tenants}
+        currentTenantId={current?.tenantId ?? null}
+        onSelect={(tenantId) => {
+          // The host's own post-selection work, all of it the host's:
+          //   - evict the departing tenant's cache with the id read
+          //     before the switch:
+          //       evictTenantQueries(queryClient, current!.tenantId)
+          //   - re-attach the /me-derived permission lists;
+          //   - then switch the route:
+          onSwitch(tenantId)
+        }}
+      />
+    </header>
+  )
+}
+
+// The host's route: this state stands in for the tenant the route
+// resolves to, and switching it is the host's own navigation.
+function App() {
+  const [tenantId, setTenantId] = useState<string>('tenant-1')
+  return (
+    <TenantProvider tenantId={tenantId}>
+      <Header onSwitch={setTenantId} />
+    </TenantProvider>
   )
 }
 
@@ -160,16 +119,11 @@ export function Root() {
 ```
 
 This exact composition is compiled and executed by the package suite
-(`src/usage-example.test.tsx`) over a real `@speed/api-client`: its
-fetch stand-in answers with genuine `Response` objects, and the journey
-signs in, switches to a second tenant (the trigger label flips because
-the host hook re-reads the committed snapshot), has the switch back
-refused with `authn.tenant_membership_required` (the alert renders the
-answer's code text and nothing changes -- the store keeps its token and
-the trigger stays ready), and retries the same switch into the first
-tenant again. The whole exchange -- one login and three switch attempts
--- is pinned in order, including each switch's bearer token and request
-body. The documented usage cannot drift from the API.
+(`src/usage-example.test.tsx`): it shows the trigger on the current
+tenant, opens the list, picks a second tenant — `onSelect` fires once
+with its id, the host switches its state, the trigger converges onto the
+new tenant and the switch is announced — then switches back. The
+documented usage cannot drift from the API.
 
 ## TenantSwitcher
 
@@ -177,10 +131,9 @@ body. The documented usage cannot drift from the API.
 
 | Prop | Type | Notes |
 |---|---|---|
-| `session` | `AuthSession` (required) | the live session whose `switchTenant` the menu drives |
 | `tenants` | `readonly TenantOption[]` (required) | the host-supplied list; `TenantOption` is `{ id: string; name: string }`, both readonly |
-| `currentTenantId` | `string \| null` (required) | the tenant the principal is signed into, per the host's data source (typically `useCurrentTenant()`) |
-| `onSwitched` | `(tenantId: string) => void` (optional) | fired exactly once after a switch commits; the host's data-reload hook |
+| `currentTenantId` | `string \| null` (required) | the tenant the host's route resolves to, from the host's own data source (typically `useCurrentTenant()`) |
+| `onSelect` | `(tenantId: string) => void` (required) | fired exactly once when the user picks a non-current row; the host's route-change hook |
 
 Behaviour, all of it controlled and test-pinned:
 
@@ -189,134 +142,50 @@ Behaviour, all of it controlled and test-pinned:
   translated. With no matching row, or with `currentTenantId` null, the
   trigger is disabled and shows the `tenantSwitcher.noCurrentTenant`
   text.
-- **Opening the list shows every tenant; the current row is disabled
-  and can never re-trigger a switch.** Its `onClick` guard returns
-  before the session operation could start, so even a synthetic click
-  on the disabled row changes nothing.
-- **Picking another row calls `session.switchTenant(id)`.** The request
-  is the generated operation over the host-bound client; the tenant
-  travels in the switch request body, never in a header (tenant context
-  travels in the access token).
-- **While the switch is in flight the trigger is inert and one
-  `role="status"` notice names the destination -- the
-  `tenantSwitcher.switchingTo` text with the picked tenant's name --
-  then, once the switch commits, becomes the
-  `tenantSwitcher.switchedTo` confirmation naming the tenant the
-  session now runs under**, so the affordance never queues a second
-  switch behind the first and a completed context change is never
-  silent. The confirmation stays until the next switch begins (no
+- **Opening the list shows every tenant; the current row is disabled and
+  can never re-trigger a selection.** Its `onClick` guard returns before
+  `onSelect` can be called, so even a synthetic click on the disabled row
+  changes nothing.
+- **Picking another row calls `onSelect(id)` once.** The selection is a
+  synchronous hand-off: the menu closes, `onSelect` fires exactly once
+  with the picked tenant's id, and the component announces the
+  switched-to tenant. The host switches its route in the callback -- the
+  component itself never navigates, never fetches, and knows no session.
+- **A selection is announced, never silent.** One `role="status"` live
+  region reports the `tenantSwitcher.switchedTo` text naming the picked
+  tenant -- a context change that silently alters which rows the host
+  shows must say so out loud, and it belongs in a live region because a
+  person using a screen reader cannot glance at the chrome to check. The
+  confirmation stays until the next selection replaces it (no
   auto-dismiss timer), so its lifetime never races a screen reader's
-  processing of it.
-  Inert means `aria-disabled` plus a refused open handler, never the
-  native `disabled` attribute: the menu closes onto the trigger at the
-  moment the flight starts, and the focus MUI restores to the trigger
-  on close can only land if the trigger stays focusable -- a
-  native-disabled control cannot take focus in a browser, and the
-  round trip would strand focus on `document.body`, leaving a failed
-  switch unreachable from where the keyboard user is.
-- **A successful switch is announced, never noisy**: the list closes,
-  the trigger re-enables, no alert renders (nothing failed), and the
-  in-flight notice above becomes the `switchedTo` confirmation in the
-  same live region. `onSwitched` fires exactly once per committed
-  switch, after the commit -- never for a failed one.
-- **A switch that loses a race on the same session stays lost.** Two
-  `TenantSwitcher` instances (chrome plus a drawer copy) racing
-  `switchTenant` to different tenants both succeed server-side, and
-  auth-core rejects whichever request answers after a sibling committed
-  -- supersession is decided by response settlement order, never send
-  order -- with `OperationSupersededError`. The superseded call is a
-  lost race, not a failure: nothing renders, no re-issue fires, no
-  `onSwitched` fires (the winning operation's own commit fired its own
-  exactly once, for the tenant the session genuinely runs under), and
-  the trigger converges to that same tenant through the host's
-  `currentTenantId`. Re-issuing the lost request would be actively
-  wrong: when the earlier-sent request settles last, a re-issue would
-  re-commit the tenant the user already abandoned. The recorded
-  residual: when responses settle in send order, the superseded request
-  is the later-sent one, so the server row keeps its tenant and the
-  next silent refresh (which mints for the server-stored current
-  tenant) converges the session there through the session's own refresh
-  path, announced by no `onSwitched`. The host's `onSwitched` fires
-  exactly once per committed switch and never for a lost race; a
-  handler that refetches for whatever tenant it is told ends consistent
-  with the session.
-- **A refused switch renders the answer's code text in one
-  `role="alert"` banner and changes nothing locally**: the store keeps
-  its token, the trigger stays enabled on the same current tenant, and
-  the next pick retries -- a retry clears the previous alert. Non-2xx
-  API errors, and the `client.*` transport failures, all land here; a
-  code outside the whitelist below renders the `errors.unknown`
-  fallback, never a raw key.
-- **The switcher never knows the current tenant on its own.** The
-  `currentTenantId` prop is the host's data; the component exists to
-  change it and reports the change through `onSwitched`. It never reads
-  session state beyond the switch call and never re-attaches permission
-  sets -- those survival rules are auth-core's, the re-attach itself
-  the host's.
+  processing of it. The component renders no error surface: the switch
+  itself is the host's, and its failures belong to the host's route and
+  data layer.
+- **The component is controlled and never changes its own display.** The
+  trigger keeps showing the host-supplied `currentTenantId`'s row until
+  the host hands back a new id; it never derives the current tenant and
+  never remembers a previous one.
+- **A throwing `onSelect` is contained.** It is not a selection failure:
+  the component renders no error, the throw does not escape the
+  fire-and-forget row handler as an unhandled rejection, and the
+  selection is still announced.
 
 ## Text and i18n
 
 Every built-in string ships in the bilingual `tenancy-ui` namespace,
-identical leaf sets per language under two sections:
+identical leaf sets per language under one section:
 
 - `tenantSwitcher` -- the two component states: `noCurrentTenant` and
-  `switching`.
-- `errors` -- the code-to-text table of the tenant-switch surface,
-  nested per source: `errors.authn.*` (the endpoint's membership and
-  account-status answers, the token-verification answers of authn's
-  per-operation and per-route guards, the session-lifecycle answers a
-  switch can draw), `errors.client.*` (transport failures) and the
-  `errors.unknown` fallback.
+  `switchedTo`.
 
 `registerNamespace` enforces the standing discipline -- canonical
-language keys, full coverage, identical leaf key sets across languages
--- before it mutates, so a key added to one language file and forgotten
-in the other fails registration. The suite pins the bilingual values by
-importing the shipped JSON bundles, never by inlining language.
-
-### Error text: the reachable-code whitelist
-
-The switch surface resolves a failure to text only for the codes it can
-actually draw:
-
-| Code | When |
-|---|---|
-| `authn.tenant_membership_required` | the switch was refused: the principal is not a member of the target tenant |
-| `authn.tenant_membership_unavailable` | membership could not be established at all -- an unwired `MembershipReader` fails closed |
-| `authn.invalid_credentials` | the switch was refused: the account is not active (the endpoint's user-status check -- never a wrong password on this surface) |
-| `authn.authentication_required` | the switch request presented no credential |
-| `authn.token_invalid` | the presented access token did not verify |
-| `authn.session_not_found` | the session the switch travelled on no longer exists server-side |
-| `authn.session_revoked` | the session was revoked |
-| `authn.refresh_token_invalid` | a refresh was refused -- the session is over |
-| `authn.refresh_token_reused` | the held token was replayed -- the session is over |
-| `authn.token_expired` | the presented access token expired |
-| `client.network` | no connection |
-| `client.timeout` | the request timed out |
-| `client.protocol` | the service answered outside the contract |
-
-Everything else -- any other `authn.*`, any `authn.http.<status>`, any
-unknown string -- renders the `errors.unknown` fallback, so a raw code
-can never appear on screen. The whitelist is pinned in both directions
-against the bundles by the internal error-text suite: a code added to
-the whitelist without its two bundle keys, or a bundle key added
-without its whitelist code, fails the suite.
-
-Where the switch answer and the sign-in answer share one meaning, the
-`errors.authn.*` and `errors.client.*` texts are deliberate, verbatim
-copies of the `auth-ui` error texts for the same codes: same-tier
-packages cannot import one another's catalogs, and two versions of one
-server code's text must not drift apart in the product. Three codes
-are not copies: `authn.invalid_credentials`, whose switch-surface
-meaning (account not active) is not the sign-in surface's (wrong
-password), and the two token-verification codes
-`authn.authentication_required` / `authn.token_invalid`, which the
-pre-auth sign-in surface cannot be answered with and auth-ui therefore
-carries no text for -- those three texts are authored here, each
-recorded in the error-text suite's `SWITCH_AUTHORED_TEXTS`. The copy
-is noted in `resources.ts`, and the error-text suite imports the
-auth-ui bundles themselves as test data, so a divergence from the
-auth-ui bundle is a translation bug that fails that suite.
+language keys, full coverage, identical leaf key sets across languages --
+before it mutates, so a key added to one language file and forgotten in
+the other fails registration. The suite pins the bilingual values by
+importing the shipped JSON bundles, never by inlining language. The
+trigger label and the list rows are host text (`TenantOption.name`),
+rendered verbatim and never translated; the built-in strings cover only
+the component's own states.
 
 ## Accessibility
 
@@ -324,53 +193,35 @@ The trigger is a `Button` with `aria-haspopup="menu"`, `aria-expanded`
 and `aria-controls` on the open list; the menu renders MUI's menu
 semantics, with the current-tenant row `disabled` -- announced and
 skipped by assistive tech, and inert even to synthetic clicks. The
-in-flight trigger carries `aria-disabled` (inert, announced, and
-focusable -- never the native attribute, which would strand the
-menu-close focus restore), the in-flight notice is a `role="status"`
-live region (announced without interrupting), the failure banner a
-`role="alert"`. The component suite runs axe over the open list on
-every relevant state. As in `ui-kit`
-and `auth-ui`, `color-contrast` stays axe-disabled in jsdom (no real
-paint); contrast is asserted at the theme-value level in this
-package's component suites.
+switched-to confirmation is a `role="status"` live region (announced
+without interrupting). The component suite runs axe over the open list.
+As in `ui-kit` and `auth-ui`, `color-contrast` stays axe-disabled in
+jsdom (no real paint); contrast is asserted at the theme-value level in
+the component suite.
 
 ## Testing
 
 Unit tests are vitest + jsdom, one file per source file under `src/`,
 shared helpers only in `test-utils/`. The vitest config aliases the
-`@speed/*` specifiers onto the sibling packages' `src` entries, so
-tests run against live sources -- no test file imports another
-package's `dist/`. Three layers of helpers, mirroring
-`@speed/auth-core`'s and `auth-ui`'s:
+`@speed/*` specifiers onto the sibling packages' `src` entries, so tests
+run against live sources -- no test file imports another package's
+`dist/`:
 
 - `render.tsx` -- `renderWithProviders` mounts a unit under the tree a
-  real host builds (`I18nextProvider` around `AppThemeProvider`), with
-  a fresh bilingual instance per call and both namespaces a rendered
-  component can read registered. Bilingual assertions import the
-  shipped bundles (`../locales/zh-CN.json`, `en-US.json`), never inline
-  a language literal.
-- `@speed/test-utils/session-harness` -- `makeHarness` drives component tests'
-  sessions: a scripted fake `RequestFn` bound through the same
-  `bindRequestFn` seam a host's real client binds, a real session over
-  a fresh memory store, and assertions on observable state only (store
-  tokens, request bodies, raw `ApiError`s). The endpoint constants are
-  the same literal keys auth-core's harness uses.
-- `real-client.ts` -- the journey rig: `makeRealClientRig` builds a
-  real `@speed/api-client` `createClient` whose fetch stand-in answers
-  from a script with genuine `Response` objects, recording every
-  request's method, path, authorization header and serialized body.
+  real host builds (`I18nextProvider` around `AppThemeProvider`), with a
+  fresh bilingual instance per call and both namespaces a rendered
+  component can read registered. Bilingual assertions import the shipped
+  bundles (`../locales/zh-CN.json`, `en-US.json`), never inline a
+  language literal.
+- `axe.ts` -- the widget-tier axe assertion (shared with `auth-ui`).
 
-`src/resources.test.ts` pins the bundle discipline, the internal
-`error-text` suite pins the whitelist pairing in both directions and
-the verbatim copy against auth-ui's own bundles (imported as test
-data), and `src/TenantSwitcher.test.tsx` pins the component behaviour
-above -- every text expectation reads the bundle values.
-`src/usage-example.test.tsx`
-compiles and executes the Quick start composition end to end over the
-real-client rig (the requests pinned in order: the password sign-in
-and the three switch attempts, with each switch's bearer token and
-`{ tenant_id }` body asserted), discharging in form the runtime
-consumption of the switch endpoint.
+The component sends no request, so there is no network rig to script:
+`src/TenantSwitcher.test.tsx` drives the component through
+`renderWithProviders` and asserts what the user sees (trigger label, list
+rows and their disabled state, the `role="status"` announcement) and what
+the host receives (`onSelect` calls); `src/usage-example.test.tsx`
+compiles and executes the Quick start composition, composing the host
+over auth-core's `TenantProvider` / `useCurrentTenant`.
 
 ## Dependencies
 
@@ -379,92 +230,63 @@ consumption of the switch endpoint.
 | `react`, `react-dom` | peer (required, ^18 or ^19) | the host owns the React tree |
 | `@mui/material` | peer (required, ^9) | the `Button`/`Menu`/`MenuItem` primitives and the ambient theme |
 | `@emotion/react`, `@emotion/styled` | peer (required, ^11) | MUI's own runtime requirements |
-| `@speed/auth-core` | dependency | `TenantSwitcherProps.session` is the `AuthSession` type and `src/TenantSwitcher.tsx` imports the runtime helper `isOperationSuperseded` -- the guard that tells a switch answer superseded by a sibling session operation (a lost race, never re-issued and never an error, the winner's own commit having already announced its tenant) from a genuine failure -- so the specifier is a runtime import, not a type-only one |
 | `@speed/i18n` | dependency | the namespace registration and the translation hook every string renders through |
-| `@speed/ui-kit` | dependency | the shared failure-banner pair `src/` renders whole-attempt failures through: `InlineError`, bound to this namespace's own text resolver, and the `errorCodeOf` classifier |
+| `@speed/ui-kit` | dependency | the MUI theme layer the host composes under and the `ui-kit` namespace a host app registers |
 
-`@speed/api-client` and `@speed/api-sdk` stay devDependencies: no
-`src/` code references them and no public type of this package does
-either. `ui-kit`'s theme provider is likewise test-only -- it appears
-only in `test-utils/`, never in `src/`, because the test tree must
-render under a real host composition. No direct HTTP exists anywhere
-in `src/` -- every request is the session's generated switch operation
-over the shared seam, and the
-workspace's `speed/no-direct-http` rule enforces that (this package is
-simply absent from the rule's one whitelist, `packages/api-client`);
-the `speed/no-literal-text` rule enforces the namespace discipline over
-`src/` the same way it does in every package.
+`@speed/auth-core`, `@speed/api-client` and `@speed/api-sdk` are
+devDependencies: no `src/` code references them and no public type of
+this package does either -- the test suite composes a host over
+auth-core's tenant context, but the shipped component does not. `ui-kit`'s
+theme provider is likewise test-only -- it appears only in `test-utils/`,
+never in `src/`, because the test tree must render under a real host
+composition. No direct HTTP exists anywhere in `src/` -- the component
+sends no request at all -- and the workspace's `speed/no-direct-http`
+rule enforces that (this package is simply absent from the rule's one
+whitelist, `packages/api-client`); the `speed/no-literal-text` rule
+enforces the namespace discipline over `src/` the same way it does in
+every package.
 
 ## Known limitations
 
 - **The trigger label and list entries are host text.** The switcher
-  renders the `tenants` rows verbatim; tenant names are the host's
-  data, translated by nobody. The built-in strings cover only the
-  component's own states.
+  renders the `tenants` rows verbatim; tenant names are the host's data,
+  translated by nobody. The built-in strings cover only the component's
+  own states.
 - **The current tenant is the host's fact.** `TenantSwitcher` shows
-  `currentTenantId`'s row and reports a change through `onSwitched`; a
-  host that never updates the prop after a switch shows a stale
+  `currentTenantId`'s row and reports a selection through `onSelect`; a
+  host that never updates the prop after a selection shows a stale
   trigger. The quick start's `useCurrentTenant` flow is the intended
   shape.
-- **Permission sets and query caches are the host's to move.** A switch
-  commit drops the tenant-domain permission set by auth-core design
-  (the survival rules in its README), and tenant-namespaced query
-  caches accumulate unless the host removes the previous tenant's --
-  both are documented in the quick start's `onSwitched`, never done
-  here.
-- **Session state does not survive a page load** -- auth-core's own
-  known limitation, inherited by any host of this component: reloading
-  starts anonymous and the user signs in again. See `@speed/auth-core`'s
-  README for the full account.
+- **The switch itself is the host's.** The component does not switch a
+  route, fetch data, re-attach permission lists or evict caches -- the
+  host does all of that in `onSelect`, and every failure of the switch
+  (no membership, a failed token check, an unreachable route) is the
+  host's to surface in its own data layer. This package carries no error
+  table.
 
 ## Deferrals and recorded decisions
 
-- **Reference-app consumer**: consumed by the reference app's consumer
-  shell (`examples/reference-app/web`): the shell's user menu renders
-  `TenantSwitcher` inside product-shell's frame over the demo's two
-  seeded tenants (the shell's own static roster -- there is no roster
-  endpoint, so host data by contract, exactly as this package's rules
-  require), a switch committing through the session on the bound
-  client, with the shell suites driving the journey against the
-  demo-server double. The package-level proof remains the in-form leg
-  -- `src/usage-example.test.tsx` drives the composed switcher over a
-  real `@speed/api-client` bound through the same seam a host binds,
-  with a scripted fetch answering genuine `Response` objects. The
-  browser-driving leg ships in the reference app's e2e suite
-  (`examples/reference-app/web/e2e/current-clinic-is-visible.spec.ts`
-  commits a switch through the composed switcher against a real,
-  freshly booted server); the in-form leg and the consumer shell's
-  composed-tree suites remain the in-package evidence.
 - **The tenant list has no in-package source.** No endpoint answers
   "which tenants may this principal switch between" in the shipped
   surface, so the list is host data by contract.
-- **Auth-core hooks stay host-side by design.** The switcher takes the
-  session and the current tenant as props and reports through
-  callbacks; the host observes transitions with `useAuthState` and
-  `useCurrentTenant`. A component that consumed the hooks would have to
-  be mounted under the host's `attachSession` anyway.
-- **Error texts deliberately duplicate auth-ui's.** Same-tier packages
-  cannot import one another's catalogs; the verbatim copy and its
-  drift risk are recorded in `resources.ts`, the error-text suite pins
-  the pairing within this package's own bundles, and it pins every
-  copied leaf against the auth-ui bundles imported as test data, so a
-  drift between the packages fails the suite.
+- **Auth-core stays host-side by design.** The switcher takes the tenant
+  list and the current tenant as props and reports through a callback;
+  the host derives the current tenant (typically through auth-core's
+  `useCurrentTenant`) and observes transitions with `useAuthState`. A
+  component that consumed the hooks would have to be mounted under the
+  host's `attachSession` anyway.
 - **Storybook / browser-side visual verification**: no preview harness
-  exists (the same deferral `ui-kit`, `layout-kit` and `auth-ui`
-  carry); `color-contrast` stays axe-disabled for the same jsdom
-  reason, and contrast is asserted at the theme-value level in this
-  package's component suites.
+  exists (the same deferral `ui-kit`, `layout-kit` and `auth-ui` carry);
+  `color-contrast` stays axe-disabled for the same jsdom reason, and
+  contrast is asserted at the theme-value level in the component suite.
 
 ## Development
 
 From `web/packages/tenancy-ui`: `pnpm lint`, `pnpm typecheck`, `pnpm
-test`, `pnpm build`. The build compiles `@speed/auth-core`,
-`@speed/ui-kit` and `@speed/i18n` first -- the sibling declarations the
-build type-checks against, the published `.d.ts` files referencing
-`auth-core`'s and `i18n`'s -- and then emits this package's `dist/`;
-`pnpm build` from the `web/` root does the same for every package.
-Shared test
-helpers live in `test-utils/`, bilingual fixtures are the shipped
-locale files under `src/locales/`, and `src/usage-example.test.tsx`
-compiles and executes the Quick start composition above, so the
-documented usage cannot drift from the API.
+test`, `pnpm build`. The build compiles `@speed/ui-kit` and `@speed/i18n`
+first -- the sibling declarations this package resolves to -- and then
+emits this package's `dist/`; `pnpm build` from the `web/` root does the
+same for every package. Shared test helpers live in `test-utils/`,
+bilingual fixtures are the shipped locale files under `src/locales/`, and
+`src/usage-example.test.tsx` compiles and executes the Quick start
+composition above, so the documented usage cannot drift from the API.

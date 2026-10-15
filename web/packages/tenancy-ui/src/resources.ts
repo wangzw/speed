@@ -14,26 +14,13 @@
  * dist/ and the published package ships them through the "." entry, never
  * as separate locale subpaths.
  *
- * The errors section holds the code-to-text table of the switch
- * surface's reachable answers: the membership and account-status codes
- * the switch endpoint answers (authn.tenant_membership_required,
- * authn.tenant_membership_unavailable, authn.invalid_credentials), the
- * two token-verification codes of authn's per-operation and per-route
- * guards (authn.authentication_required, authn.token_invalid), the
- * five session-lifecycle codes, the three
- * transport-level client.* codes, and errors.unknown. Where the switch
- * answer and the sign-in answer share one meaning, the texts are
- * deliberate duplicates of @speed/auth-ui's own, kept verbatim; where
- * they diverge -- the token-verification codes the pre-auth sign-in
- * surface cannot draw, and invalid_credentials' account-status meaning
- * on the switch surface -- the texts are authored here (the error-text
- * suite's
- * SWITCH_AUTHORED_TEXTS records each). Same-tier packages cannot import
- * one another's catalogs; the error-text suite beside inline-error.tsx
- * imports the auth-ui bundles themselves as test data and pins every
- * copied leaf to its source, so a divergence between the two packages'
- * copies is a translation bug that fails there, to fix in both, never a
- * reason to introduce a dependency edge.
+ * The bundle covers only the control's own states -- the trigger's
+ * noCurrentTenant label and the switchedTo announcement -- because the
+ * switch itself is the host's: the host's route change carries every
+ * failure (no membership, a failed token check, an unreachable route) and
+ * renders it in the host's own data layer, so this package carries no
+ * error table. The trigger label and the list rows are host text
+ * (TenantOption.name), rendered verbatim and never translated.
  */
 
 import type { ResourceBundle } from '@speed/i18n'

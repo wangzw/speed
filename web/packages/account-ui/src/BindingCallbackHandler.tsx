@@ -2,171 +2,223 @@
  * BindingCallbackHandler: completes a social-account binding at the
  * host's callback route.
  *
- * The host renders this handler with the provider and the code/state the
- * provider redirected back after its authorize step; an effect -- a
- * keyed exchange over the (code, state) pair, the same mechanism
- * auth-ui's sign-in callback uses, so the double effect invocation of
- * StrictMode development starts exactly one exchange -- posts the pair
- * to the callback endpoint of the authn spec's social surface (the same
- * operation the add area's authorize URLs feed). The exchange is a
- * plain generated call, never a session operation: binding adds an
- * identity to the caller's own account, it does not sign anyone in.
+ * The host mounts this handler on the route its provider redirect sends
+ * the browser back to. In the flow model the provider's callback is
+ * handled server-side first (the authn module's own /auth/callback route
+ * advances the flow bound by its cookie and redirects the browser on),
+ * so the handler holds no code or state of its own: it reads the
+ * `purpose: 'link'` flow back with session.readFlow() and drives it to
+ * its terminal step.
  *
- * The answer shape dispatches the outcome. A binding-shaped answer (no
- * tokens) invalidates the identities list query -- the bound row
- * appears for any observer of that cache -- and fires onBound, the
- * host's cue to navigate back to the account surface. A login-shaped
- * answer (tokens present: the caller's sign-in had died and the
- * exchange turned into a login, signing some account in) renders the
- * dedicated signed-elsewhere panel and fires nothing: the code is
- * consumed, the other account is signed in, and this handler must not
- * tell the account surface anything happened. A failed exchange
- * (authn.oauth_state_invalid, authn.social_exchange_failed,
- * authn.identity_requires_binding) renders its code text in the
- * InlineError banner under a retry button that re-runs the exchange for
- * the same pair. Nothing here navigates: the props come from the host's
- * own route and the callbacks are the host's.
+ * A ready flow (next.kind = 'complete') is taken with `step: 'complete'`;
+ * a `link` completion (state 'linked') invalidates the profile read --
+ * the bound row appears for any observer of that cache -- and fires
+ * onBound, the host's cue to navigate back to the account surface. A
+ * flow still parked on a step renders that step's continuation (FlowStep)
+ * and answers it through session.answerFlow, so a link flow that needs
+ * another answer is finished where it stands. A read that failed, and a
+ * completion whose state is not 'linked', render their code text in the
+ * InlineError banner under a retry. The `link` flow never signs anyone in
+ * (a binding is not a login), so there is no signed-elsewhere outcome.
+ * Nothing here navigates: the callbacks are the host's.
  */
 
-import { useEffect, useRef, useState } from 'react'
+import { useCallback, useEffect, useRef, useState } from 'react'
 import Box from '@mui/material/Box'
 import Button from '@mui/material/Button'
 import CircularProgress from '@mui/material/CircularProgress'
 import Typography from '@mui/material/Typography'
 import { useQueryClient } from '@tanstack/react-query'
-import {
-  authnSocialCallback,
-  getAuthnListIdentitiesQueryKey,
-} from '@speed/api-sdk'
-import { useAccountUiTranslation } from './internal/translation.js'
+import { getAuthnProfileGetQueryKey } from '@speed/api-sdk'
+import type { AuthSession, AuthnFlowState, AuthnStep } from '@speed/auth-core'
 import { errorCodeOf } from '@speed/ui-kit'
+import { FlowStep } from './internal/flow-step.js'
+import type { FlowStepAnswer } from './internal/flow-step.js'
 import { InlineError } from './internal/inline-error.js'
-import type { SocialProvider } from './SocialBindingsSection.js'
+import { useAccountUiTranslation } from './internal/translation.js'
 
 export interface BindingCallbackHandlerProps {
+  /** The session whose link flow the handler reads back and completes. */
+  readonly session: AuthSession
   /**
-   * The channel the redirect came back on, a path segment of the
-   * callback endpoint, threaded through to the exchange verbatim: the
-   * spec's callback endpoint is per-provider segments, so the exchange
-   * cannot recover the provider from the URL and the channel must
-   * travel as a prop.
-   */
-  readonly provider: SocialProvider
-  /** The authorization response the provider redirected back. */
-  readonly code: string
-  /** The state the authorize URL carried; the server validates it. */
-  readonly state: string
-  /**
-   * Fired once after a binding-shaped answer commits (and the
-   * identities list refetched); the host navigates back to the account
-   * surface. A handler without one still completes the exchange and
-   * refetches the list -- the bound row lands for any observer -- and
-   * stays on the pending notice until the host reacts.
+   * Fired once after a `link` completion commits (and the profile read
+   * refetched); the host navigates back to the account surface. A
+   * handler without one still completes the flow and refetches the
+   * profile -- the bound row lands for any observer -- and rests on the
+   * pending notice until the host reacts.
    */
   readonly onBound?: () => void
 }
 
 /**
- * The handler's local outcomes: pending (the notice the exchange is
- * running -- and, on a completed exchange whose host has not reacted
- * yet, the state it rests in), failed (code text under a same-pair
- * retry) and signed-elsewhere (the exchange signed a session in; the
- * dedicated panel).
+ * The handler's local phases: reading (the flow is being read), step
+ * (the flow is parked on a step the handler renders and answers), failed
+ * (a read or an answer failed, under a retry) and done (a `link`
+ * completion committed and the host was cued).
  */
-type Status = 'pending' | 'failed' | 'signed-elsewhere'
+type Phase = 'reading' | 'step' | 'failed' | 'done'
+
+/** The answer step a challenge step's input travels under, by the flow's
+ * own state: `answer` in the first factor, `factor` in the second,
+ * `enroll` while registering. */
+function challengeStepOf(state: string): string {
+  if (state === 'second') {
+    return 'factor'
+  }
+  if (state === 'enroll') {
+    return 'enroll'
+  }
+  return 'answer'
+}
 
 export function BindingCallbackHandler({
-  provider,
-  code,
-  state,
+  session,
   onBound,
 }: BindingCallbackHandlerProps) {
   const { t } = useAccountUiTranslation()
   const queryClient = useQueryClient()
-  // One exchange per (code, state) pair: the ref survives the
-  // mount/unmount/mount cycle of StrictMode's double effect invocation,
-  // so the second run sees the pair already handled and starts nothing.
-  const handledPairRef = useRef<string | null>(null)
-  const [status, setStatus] = useState<Status>('pending')
+  const [phase, setPhase] = useState<Phase>('reading')
+  const [step, setStep] = useState<AuthnStep | null>(null)
+  const [seq, setSeq] = useState<number | null>(null)
+  const [challengeStep, setChallengeStep] = useState('answer')
   const [attempt, setAttempt] = useState(0)
   const [errorCode, setErrorCode] = useState<string | null>(null)
+  const [answering, setAnswering] = useState(false)
 
-  // The NUL joins the two values so a (code, state) split cannot
-  // collide with another pair's concatenation.
-  const pair = `${code}\u0000${state}`
+  // A running read is not cancelled on cleanup: StrictMode's
+  // mount/effect/cleanup/effect cycle would leave one start, so the first
+  // must be allowed to finish. Each start takes a run token and a
+  // resolving read only acts when its token is still current. The attempt
+  // counter re-arms the effect for a retry.
+  const runRef = useRef(0)
 
-  // A running exchange is not cancelled on cleanup: StrictMode's
-  // mount/effect/cleanup/effect cycle would cancel the only exchange
-  // (the ref guard skips the second start), so the first exchange must
-  // be allowed to finish. Instead each start takes a run token and a
-  // resolving exchange only acts when its token is still current -- a
-  // stale exchange from a superseded pair cannot paint over the active
-  // one. The attempt counter re-arms the effect for a retry after the
-  // ref guard is lifted.
+  /** Commits a settled answer: a `link` completion refetches the profile
+   * and cues the host; a further step is rendered; anything else is a
+   * failure. */
+  const applySettled = useCallback(
+    async (settled: AuthnFlowState, run: number): Promise<void> => {
+      if ('next' in settled) {
+        setStep(settled.next)
+        setSeq(settled.seq)
+        setChallengeStep(challengeStepOf(settled.state))
+        setPhase('step')
+        return
+      }
+      if (settled.state !== 'linked') {
+        setErrorCode('client.unknown')
+        setPhase('failed')
+        return
+      }
+      await queryClient.invalidateQueries({
+        queryKey: getAuthnProfileGetQueryKey(),
+      })
+      if (run === runRef.current) {
+        setPhase('done')
+        onBound?.()
+      }
+    },
+    [queryClient, onBound],
+  )
+
+  /** Applies a flow state read off the callback route: a ready flow is
+   * taken, a parked one rendered, a settled non-link state a failure. */
+  const applyState = useCallback(
+    async (state: AuthnFlowState | null, run: number): Promise<void> => {
+      if (state === null || !('next' in state)) {
+        // No binding (the flow is done or gone), or a settled state
+        // reached without the complete step: not a link outcome.
+        setErrorCode('client.unknown')
+        setPhase('failed')
+        return
+      }
+      if (state.next.kind !== 'complete') {
+        // Parked on a step: render its continuation.
+        setStep(state.next)
+        setSeq(state.seq)
+        setChallengeStep(challengeStepOf(state.state))
+        setPhase('step')
+        return
+      }
+      const settled = await session.answerFlow({
+        seq: state.seq,
+        step: 'complete',
+      })
+      if (run !== runRef.current) {
+        return
+      }
+      await applySettled(settled, run)
+    },
+    [session, applySettled],
+  )
+
   // The pending live region must never mount together with its text: a
   // role="status" region announces only content changes that follow its
   // own insertion, so the pending text born in the same commit as the
-  // region -- the initial mount, or a retry's re-entry into the pending
-  // branch -- would be silent. The text below is therefore gated on
-  // `pendingCommitted`, which lags the pending phase by one commit (the
-  // effect after the phase's first commit arms it, leaving the phase
-  // disarms it): the region's first committed frame is empty whatever
-  // transition entered the phase, and the text fills an existing region
-  // a commit later, which is what makes the announcement fire. The same
-  // node survives the transition, so the later text change is an
-  // announcement rather than another mount.
-  const pending = status === 'pending'
+  // region would be silent. The text is gated on `pendingCommitted`,
+  // which lags the reading phase by one commit.
+  const reading = phase === 'reading'
   const [pendingCommitted, setPendingCommitted] = useState(false)
   useEffect(() => {
-    setPendingCommitted(pending)
-  }, [pending])
-  const runRef = useRef(0)
+    setPendingCommitted(reading)
+  }, [reading])
+
   useEffect(() => {
-    if (handledPairRef.current === pair) {
-      return
-    }
-    handledPairRef.current = pair
     const run = ++runRef.current
-    setStatus('pending')
+    setPhase('reading')
     setErrorCode(null)
+    setStep(null)
+    setSeq(null)
     void (async () => {
       try {
-        const answer = await authnSocialCallback(provider, { code, state })
+        const state = await session.readFlow()
         if (run !== runRef.current) {
           return
         }
-        if (answer.tokens !== undefined) {
-          // A login-shaped answer: the caller's sign-in had died and
-          // the exchange signed the provider's account in. The binding
-          // did not happen and onBound must not fire.
-          setStatus('signed-elsewhere')
-          return
-        }
-        // A binding-shaped answer: the identity is bound to the
-        // caller's account. Refetch the identities list so the bound
-        // row lands, then cue the host.
-        await queryClient.invalidateQueries({
-          queryKey: getAuthnListIdentitiesQueryKey(),
-        })
-        if (run === runRef.current) {
-          onBound?.()
-        }
+        await applyState(state, run)
       } catch (error) {
         if (run === runRef.current) {
           setErrorCode(errorCodeOf(error))
-          setStatus('failed')
+          setPhase('failed')
         }
       }
     })()
-  }, [pair, code, state, provider, attempt, queryClient, onBound])
+  }, [attempt, session, applyState])
+
+  const handleAnswer = useCallback(
+    async (answer: FlowStepAnswer): Promise<void> => {
+      if (seq === null) {
+        return
+      }
+      setAnswering(true)
+      setErrorCode(null)
+      const run = runRef.current
+      try {
+        const settled = await session.answerFlow({
+          seq,
+          step: answer.step,
+          input: answer.input,
+        })
+        if (run !== runRef.current) {
+          return
+        }
+        await applySettled(settled, run)
+      } catch (error) {
+        if (run === runRef.current) {
+          setErrorCode(errorCodeOf(error))
+          setPhase('failed')
+        }
+      } finally {
+        setAnswering(false)
+      }
+    },
+    [seq, session, applySettled],
+  )
 
   const retry = (): void => {
-    handledPairRef.current = null
-    setStatus('pending')
     setAttempt((value) => value + 1)
   }
 
-  if (status === 'failed') {
+  if (phase === 'failed') {
     return (
       <Box
         sx={{
@@ -185,23 +237,20 @@ export function BindingCallbackHandler({
     )
   }
 
-  if (status === 'signed-elsewhere') {
+  if (phase === 'step' && step !== null) {
     return (
-      <Box
-        sx={{
-          display: 'flex',
-          flexDirection: 'column',
-          alignItems: 'flex-start',
-          gap: 1,
-          width: '100%',
-        }}
-      >
-        <Typography variant="body1" sx={{ fontWeight: 500 }}>
-          {t('bindingCallback.signedInElsewhere.title')}
-        </Typography>
+      <Box sx={{ width: '100%' }}>
         <Typography variant="body2" color="text.secondary">
-          {t('bindingCallback.signedInElsewhere.description')}
+          {t('bindingCallback.pending')}
         </Typography>
+        <FlowStep
+          key={`${seq ?? 0}-${step.kind}`}
+          step={step}
+          busy={answering}
+          challengeStep={challengeStep}
+          submitLabel={t('bindingCallback.continueLabel')}
+          onSubmit={(answer) => void handleAnswer(answer)}
+        />
       </Box>
     )
   }
@@ -214,8 +263,7 @@ export function BindingCallbackHandler({
       {/* Decorative: the pending text on its own announces the state from
           the role=status container; naming the spinner too would read the
           notice twice. The text renders only once `pendingCommitted`
-          arms it, one commit after this region mounts (see the comment
-          on the state above). */}
+          arms it, one commit after this region mounts. */}
       <CircularProgress size={18} aria-hidden={true} />
       <Typography>
         {pendingCommitted ? t('bindingCallback.pending') : ''}

@@ -9,15 +9,15 @@
  * beside auth-ui's SignOutButton, and whose frame wraps the host's own
  * app content. This file renders that exact composition and drives one
  * minimal journey through it -- a password sign-in, the frame appearing,
- * a tenant switch through the userMenu (the committed principal flips
- * the trigger; the switch mints an access token and no refresh token, so
- * no refresh leg ever appears), a sign-out through the same menu, the
- * default session-ended screen, and a return to the sign-in view -- over
- * the real-client rig (a genuine @speed/api-client bound through the
- * same bindRequestFn seam a host's real client binds), pinning every
- * request in order -- bodies included -- so the documented usage cannot
- * drift from the API. This example stays ungated by design; the host's
- * permission-gating composition over the same frame is the
+ * a tenant switch through the userMenu (the tenant is the host's own
+ * state, mounted on auth-core's TenantProvider; selecting a row reports
+ * the pick to the host, which switches the tenant it renders), a sign-out
+ * through the same menu, the default session-ended screen, and a return
+ * to the sign-in view -- over the real-client rig (a genuine
+ * @speed/api-client bound through the same bindRequestFn seam a host's
+ * real client binds), pinning every request in order so the documented
+ * usage cannot drift from the API. This example stays ungated by design;
+ * the host's permission-gating composition over the same frame is the
  * gated-journey suite's (gated-journey.test.tsx). Host-content strings
  * (nav labels, the app title and content, tenant names) are English
  * fixtures on purpose: they stand in for a host's own content and are
@@ -27,6 +27,7 @@
  */
 
 import userEvent from '@testing-library/user-event'
+import { useState } from 'react'
 import { describe, expect, it, vi } from 'vitest'
 import { screen } from '@testing-library/react'
 import { Box } from '@mui/material'
@@ -48,8 +49,11 @@ import {
   TenantSwitcher,
 } from '@speed/tenancy-ui'
 import type { TenantOption } from '@speed/tenancy-ui'
-import { attachSession, useCurrentTenant } from '@speed/auth-core'
-import type { AuthSession } from '@speed/auth-core'
+import {
+  attachSession,
+  TenantProvider,
+  useCurrentTenant,
+} from '@speed/auth-core'
 import authUiZhCN from '../../auth-ui/src/locales/zh-CN.json' with { type: 'json' }
 import layoutKitZhCN from '../../layout-kit/src/locales/zh-CN.json' with { type: 'json' }
 import {
@@ -58,15 +62,18 @@ import {
 } from './resources.js'
 import { renderWithProviders } from '../test-utils/render.js'
 import {
+  authenticatedCompletion,
   jsonResponse,
-  makePair,
   makeRealClientRig,
+  openFlow,
+  principal,
 } from '../test-utils/real-client.js'
 import { ProductShell } from './components/ProductShell.js'
 
-const LOGIN_PASSWORD = 'POST /api/v1/authn/login/password'
-const SWITCH_TENANT = 'POST /api/v1/authn/tenant/switch'
-const LOGOUT = 'POST /api/v1/authn/logout'
+const FLOWS_START = 'POST /auth/flows'
+const FLOWS_ANSWER = 'POST /auth/flows/answer'
+const PROFILE = 'GET /auth/me'
+const LOGOUT = 'POST /auth/logout'
 const IDENTIFIER = 'alice@example.com'
 const PASSWORD = 'password-1'
 
@@ -78,38 +85,24 @@ const TENANTS: readonly TenantOption[] = [
   { id: 'tenant-3', name: 'Harbor View Orthodontics' },
 ]
 
-// The host's switch callback, wired into the userMenu. A real host
-// re-attaches the tenant-domain permission lists (auth-core drops them
-// on switch) and drops the previous tenant's query cache here. This
-// example attaches no permission lists -- it gates nothing, by design;
-// the gated-journey suite is where that host duty is played for real --
-// so the callback only records the event for the journey to pin.
-const onSwitched = vi.fn<(tenantId: string) => void>()
-
 // The rig of the quick start: one session over one real client, whose
-// script covers exactly the three requests the journey makes -- a
-// token-issuing password login, a tenant switch answering with a new
-// access token and no refresh token (the shape the authn API returns),
-// and a 204 logout -- and fails loudly on anything else, so an unpinned
-// request fails the test.
+// script covers exactly the requests the journey makes -- a password
+// login (the flow start carrying the credentials, its completion answer,
+// and the /me profile a login completion reads), plus a 204 logout -- and
+// fails loudly on anything else, so an unpinned request fails the test.
+// A password login settles in the flow's start (the server validates the
+// credentials the start carried and answers a ready step), so the answer
+// the driver sends is the step:'complete' that takes the tokens.
 const rig = makeRealClientRig((call) => {
   const key = `${call.method} ${call.path}`
-  if (key === LOGIN_PASSWORD) {
-    return jsonResponse(200, makePair())
+  if (key === FLOWS_START) {
+    return jsonResponse(200, openFlow({ state: 'ready', next: { kind: 'complete' } }))
   }
-  if (key === SWITCH_TENANT) {
-    return jsonResponse(
-      200,
-      makePair({
-        access_token: 'access-2',
-        refresh_token: undefined,
-        principal: {
-          user_id: 'user-1',
-          tenant_id: 'tenant-2',
-          session_id: 'session-1',
-        },
-      }),
-    )
+  if (key === FLOWS_ANSWER) {
+    return jsonResponse(200, authenticatedCompletion())
+  }
+  if (key === PROFILE) {
+    return jsonResponse(200, principal())
   }
   if (key === LOGOUT) {
     return new Response(null, { status: 204 })
@@ -142,56 +135,54 @@ attachSession(rig.session)
 /** The README multi-tenant section's userMenu: the host's own menu bar
  * (host content) -- the current tenant read through auth-core's
  * useCurrentTenant feeds tenancy-ui's switcher, with auth-ui's sign-out
- * button beside it. */
-function UserMenu({
-  session,
-  onSwitched,
-}: {
-  readonly session: AuthSession
-  readonly onSwitched: (tenantId: string) => void
-}) {
+ * button beside it. The switcher never knows a session and never
+ * navigates: selecting a row reports the pick to the host. */
+function UserMenu({ onSelect }: { readonly onSelect: (id: string) => void }) {
   const current = useCurrentTenant()
   return (
     <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
       <TenantSwitcher
-        session={session}
         tenants={TENANTS}
         currentTenantId={current?.tenantId ?? null}
-        onSwitched={onSwitched}
+        onSelect={onSelect}
       />
-      <SignOutButton session={session} />
+      <SignOutButton session={rig.session} />
     </Box>
   )
 }
 
-/** The README's example tenant app, rendered under the provider tree
- * renderWithProviders builds around the shared instance above. */
-function TenantApp({
-  session,
-  onSwitched,
-}: {
-  readonly session: AuthSession
-  readonly onSwitched: (tenantId: string) => void
-}) {
+/** The README's example tenant app: the host holds the current tenant
+ * (its route stand-in here), mounts it on auth-core's TenantProvider so
+ * the switcher's currentTenantId flows from useCurrentTenant, and treats
+ * a pick as the moment to switch that state. */
+function TenantApp({ onSelect }: { readonly onSelect: (id: string) => void }) {
+  const [tenantId, setTenantId] = useState<string>('tenant-1')
   return (
-    <ProductShell
-      navItems={[{ id: 'home', label: 'Home', href: '/', selected: true }]}
-      header="My App"
-      signIn={<SignInScreen session={session} />}
-      userMenu={<UserMenu session={session} onSwitched={onSwitched} />}
-    >
-      <p>App content</p>
-    </ProductShell>
+    <TenantProvider tenantId={tenantId}>
+      <ProductShell
+        navItems={[{ id: 'home', label: 'Home', href: '/', selected: true }]}
+        header="My App"
+        signIn={<SignInScreen session={rig.session} />}
+        userMenu={
+          <UserMenu
+            onSelect={(id) => {
+              onSelect(id)
+              setTenantId(id)
+            }}
+          />
+        }
+      >
+        <p>App content</p>
+      </ProductShell>
+    </TenantProvider>
   )
 }
 
 describe('README usage example', () => {
   it('drives the documented journey: sign in, frame, tenant switch, sign out, session ended, sign in again', async () => {
     const user = userEvent.setup()
-    renderWithProviders(
-      <TenantApp session={rig.session} onSwitched={onSwitched} />,
-      { i18n },
-    )
+    const onSelect = vi.fn<(tenantId: string) => void>()
+    renderWithProviders(<TenantApp onSelect={onSelect} />, { i18n })
 
     // The anonymous start: the host's sign-in surface, password channel
     // first by default -- and no app frame anywhere.
@@ -214,7 +205,8 @@ describe('README usage example', () => {
 
     // The sign-in committed: the frame appears around the app content,
     // with the host's chrome and the userMenu controls -- the tenant
-    // switcher showing the signed-in tenant, and the sign-out button.
+    // switcher showing the host's current tenant, and the sign-out
+    // button.
     const main = await screen.findByRole('main')
     expect(main).toBeInTheDocument()
     expect(screen.getByRole('banner')).toBeInTheDocument()
@@ -237,14 +229,10 @@ describe('README usage example', () => {
     ).not.toBeInTheDocument()
 
     // The multi-tenant turn: the userMenu's switcher shows the host's
-    // roster, and switching to Bright Smile Clinic commits the new
-    // tenant's principal -- the access-token store flips, the host's
-    // onSwitched fires with the tenant id, and the trigger relabels
-    // itself with the new tenant's name. The switch mints an access
-    // token and no refresh token, so no refresh leg ever appears; the
-    // frame itself does not change (nothing tenant-dependent is in the
-    // quick start's content -- permission gating is the gated-journey
-    // suite's business).
+    // roster, and selecting Bright Smile Clinic reports the pick to the
+    // host exactly once, which switches the tenant it renders -- the
+    // TenantProvider context flips and the trigger relabels itself. The
+    // switcher sends no request of its own, so no switch leg appears.
     await user.click(screen.getByRole('button', { name: 'Sunshine Dental' }))
     await user.click(
       await screen.findByRole('menuitem', { name: 'Bright Smile Clinic' }),
@@ -252,9 +240,8 @@ describe('README usage example', () => {
     expect(
       await screen.findByRole('button', { name: 'Bright Smile Clinic' }),
     ).toBeEnabled()
-    expect(rig.store.get()).toBe('access-2')
-    expect(onSwitched).toHaveBeenCalledTimes(1)
-    expect(onSwitched).toHaveBeenCalledWith('tenant-2')
+    expect(onSelect).toHaveBeenCalledTimes(1)
+    expect(onSelect).toHaveBeenCalledWith('tenant-2')
 
     // Sign out through the userMenu slot: the frame is gone and the
     // default session-ended screen stands in its place (the machine
@@ -280,19 +267,15 @@ describe('README usage example', () => {
     )
     await screen.findByLabelText(authUiZhCN.passwordSignIn.identifierLabel)
 
-    // Every request the journey made, pinned in order -- the switch's
-    // body, and the bearer each leg travelled with: the switch carried
-    // the original tenant's token, and the logout carried the
-    // switched-to tenant's.
+    // Every request the journey made, pinned in order: the login's flow
+    // start, its completion answer, the profile the completion read, and
+    // the logout. The tenant switch is the host's own state change and
+    // sends nothing.
     expect(rig.calls.map((call) => `${call.method} ${call.path}`)).toEqual([
-      LOGIN_PASSWORD,
-      SWITCH_TENANT,
+      FLOWS_START,
+      FLOWS_ANSWER,
+      PROFILE,
       LOGOUT,
     ])
-    expect(rig.calls[1]?.authorization).toBe('Bearer access-1')
-    expect(JSON.parse(rig.calls[1]?.body ?? 'null')).toEqual({
-      tenant_id: 'tenant-2',
-    })
-    expect(rig.calls[2]?.authorization).toBe('Bearer access-2')
   })
 })

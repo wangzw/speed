@@ -14,7 +14,7 @@
 
 ### 非职责
 
-- **不管理「当前租户」。** 切换当前会话所在的租户是租户侧的动作，归 [tenancy-ui](design-web-tenancy-ui.md)；管理名册（开租户、改名、停用）是运维侧的动作，归本包。切换改的是会话，管理改的是名册，两者不共用控件、不共用查询键。
+- **不管理「当前租户」。** 切换当前租户是租户侧的动作，归 [tenancy-ui](design-web-tenancy-ui.md)；管理名册（开租户、改名、停用）是运维侧的动作，归本包。切换改的是宿主的路由，管理改的是名册，两者不共用控件、不共用查询键。
 - **不做导航、不解析 URL。** 页面的路径匹配、链接构造、深链接解析与未命中回退归 `route-kit` 的收集方；本包只提供页面与它们的声明，不做路径匹配。
 - **不做判定。** 名册、设置与审计的授权判定都在服务端的平台域（设置的租户层在那个租户的域）做出，本包只渲染应答；路由级的授权是宿主的组合（经 [layout-kit](design-web-layout-kit.md) 的路由守卫与 [auth-core](design-web-auth-core.md) 的权限读数），不在本包内。
 - **不遮蔽敏感值。** 敏感设置项的值由 [settings.admin](../settings/design-settings-admin.md) 在应答里遮蔽；本包照渲染应答，不做第二处遮蔽。
@@ -23,21 +23,25 @@
 
 ## 外部接口契约
 
-本包尚未实现，下面是它的设计形状。
+本包的公开面由 `web/packages/console-ui/src/index.ts` 导出：三个管理面各自的页面声明集与页面组件、控制台壳、以及页面读写的操作束。页面声明的形状与壳的入参如下。
 
 ```tsx
 // 一份页面声明：形状即 route-kit 的 `RouteDeclaration`——路径 pattern、视图回调、
 // 可选导航标签、可选权限码。本包不 import `route-kit`，导出满足该结构的值。
 interface ConsoleRoute {
   readonly path: string
-  readonly view: (context: RouteContext) => ReactNode
+  readonly view: (context: ConsoleRouteContext) => ReactNode
   readonly label?: ReactNode
   readonly permission?: string
 }
 
-// 控制台壳：渲染平台导航与页面。
+// 控制台壳：由带标签的声明派生平台导航，渲染宿主的路由内容。
 interface ConsoleShellProps {
   readonly routes: readonly ConsoleRoute[]
+  readonly children: ReactNode
+  readonly title?: ReactNode
+  readonly headerActions?: ReactNode
+  readonly sx?: SxProps<Theme>
 }
 ```
 
@@ -96,11 +100,11 @@ graph TD
 
 ### 与租户侧的分工
 
-租户这个概念在两处是两类动作：**切换当前租户**（改变会话所在上下文）在租户侧，归 [tenancy-ui](design-web-tenancy-ui.md)；**管理租户名册**（开租户、改名、停用）在运维侧，归本包。切换改的是会话，管理改的是名册，两者不共用控件、不共用查询键。
+租户这个概念在两处是两类动作：**切换当前租户**（改变宿主路由解析出的租户）在租户侧，归 [tenancy-ui](design-web-tenancy-ui.md)；**管理租户名册**（开租户、改名、停用）在运维侧，归本包。切换改的是宿主的路由，管理改的是名册，两者不共用控件、不共用查询键。
 
 ## 错误与失败语义
 
-本包未实现，下面是设计的失败面。
+本包的失败面如下。
 
 | 情形 | 表现 |
 |---|---|
@@ -115,7 +119,7 @@ graph TD
 
 | 能力 | 状态 | 代码 |
 |---|---|---|
-| 控制台壳与声明面接入 | 未实现 | — |
-| 租户管理页 | 未实现 | — |
-| 设置读写页 | 未实现 | — |
-| 审计查询页 | 未实现 | — |
+| 控制台壳与声明面接入 | 已实现 | `web/packages/console-ui/src/ConsoleShell.tsx` `ConsoleShell`、`ConsoleShellProps`；`web/packages/console-ui/src/route.ts` `ConsoleRoute`、`ConsoleRouteTable` |
+| 租户管理页 | 已实现 | `web/packages/console-ui/src/TenantRosterPage.tsx` `TenantRosterPage`；`web/packages/console-ui/src/routes.tsx` `tenantAdminRoutes` |
+| 设置读写页 | 已实现 | `web/packages/console-ui/src/SettingsPage.tsx` `SettingsPage`；`web/packages/console-ui/src/routes.tsx` `settingsAdminRoutes` |
+| 审计查询页 | 已实现 | `web/packages/console-ui/src/AuditPage.tsx` `AuditPage`；`web/packages/console-ui/src/routes.tsx` `auditAdminRoutes` |

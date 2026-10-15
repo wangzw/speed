@@ -3,41 +3,41 @@
  * account page.
  *
  * Lists every external identity the authn module holds bound to the
- * signed-in account, through the generated list hook. Each row names the
- * provider (mapped through bindings.provider.<provider> for the five
- * social providers the spec hosts and through the bindings.provider.oidc
- * family label for the enterprise-SSO channel, whose live provider
- * values are the dynamic per-tenant names "oidc:<tenant>" -- the raw
- * value renders as the row's reference line so one tenant's binding
- * never reads as another's; a value outside both sets, a future
- * channel, renders the generic "other" label, never a raw value) and
- * the provider account's email when the answer carries one. A row whose
- * identity carries an id has a row-end "unlink" action that sits behind
- * the ui-kit danger ConfirmDialog: unbinding is irreversible (the
- * binding is re-established only by walking the provider's OAuth flow
- * again), so the row asks once before the DELETE goes out. After a
- * successful unbind the list query is invalidated, so the rows converge
- * on the server's answer; a refused unbind renders its code text above
- * the list -- authn.last_login_method when the account would be left
- * with no sign-in method (the server decides by its own login-method
- * count, never computable client-side), authn.identity_not_found when
- * the row was already unbound elsewhere (a race; the list refetches so
- * the stale row disappears), anything else through the whitelist.
+ * signed-in account. The bound identities are the profile's `links`
+ * (GET /auth/me), which carries each binding's own identifier -- there is
+ * no separate list endpoint, so the section reads the same profile query
+ * the preferences and sessions surfaces read. Each row names the provider
+ * (mapped through bindings.provider.<provider> for the five social
+ * providers the spec hosts and through the bindings.provider.oidc family
+ * label for the enterprise-SSO channel, whose live provider values are
+ * the dynamic per-tenant names "oidc:<tenant>" -- the raw value renders
+ * as the row's reference line so one tenant's binding never reads as
+ * another's; a value outside both sets, a future channel, renders the
+ * generic "other" label, never a raw value) and the provider account's
+ * email when the answer carries one. A row whose link carries an id has a
+ * row-end "unlink" action that sits behind the ui-kit danger
+ * ConfirmDialog: unbinding is irreversible (the binding is re-established
+ * only by walking the provider's flow again), so the row asks once before
+ * the DELETE goes out. After a successful unbind the profile query is
+ * invalidated, so the rows converge on the server's answer; a refused
+ * unbind renders its code text above the list -- authn.conflict
+ * when the account would be left with no sign-in method (the server
+ * decides by its own login-method count, never computable client-side),
+ * anything else through the whitelist.
  *
  * The add area renders one button per configured provider that is not
- * already bound; clicking asks the session for that channel's
- * authorization URL -- a pure request reported upward through
- * onAuthorizeUrl, never a navigation the package performs -- and the
- * host completes the flow at its callback route with
- * BindingCallbackHandler. A refused authorize request renders its code
- * text above the add area (the same InlineError banner the unbind
- * refusal uses) -- authn.channel_disabled when a deployment turned the
- * offered channel off, anything else through the whitelist -- and the
- * provider button re-arms for another attempt. One bind flow at a
- * time: while a channel's URL is being built every provider button is
- * disabled, so a second authorize request -- any channel's -- cannot
- * start before the first answers. When every configured provider is
- * already bound the add area does not render.
+ * already bound; clicking starts a `purpose: 'link'` flow on the session
+ * (session.startAuthenticatedFlow) whose first step is a `redirect` step
+ * -- the provider's authorization URL, a pure request reported upward
+ * through onAuthorizeUrl, never a navigation the package performs -- and
+ * the host completes the flow at its callback route with
+ * BindingCallbackHandler. A refused start renders its code text above the
+ * add area (the same InlineError banner the unbind refusal uses) and the
+ * provider button re-arms for another attempt. One bind flow at a time:
+ * while a channel's flow is being started every provider button is
+ * disabled, so a second start -- any channel's -- cannot begin before the
+ * first answers. When every configured provider is already bound the add
+ * area does not render.
  *
  * The provider vocabulary is deliberately not imported from @speed/auth-ui
  * (same-layer packages never import each other): SocialProvider and
@@ -52,8 +52,8 @@
  * block must never silently vanish while the answer has not arrived.
  * Settled states render one ui-kit EmptyState with the section header
  * hidden, so the heading order never skips a level: an answer listing
- * zero identities renders the empty variant, while a load that failed
- * -- and a successful answer that omits the optional identities key, as
+ * zero bindings renders the empty variant, while a load that failed --
+ * and a successful answer that omits the optional links key, as
  * unreadable as an error and never grounds for a "no linked accounts"
  * claim or an add area -- render the error variant with a retry button.
  * The one exception is a first-run account with an unbound configured
@@ -68,10 +68,10 @@ import Skeleton from '@mui/material/Skeleton'
 import Typography from '@mui/material/Typography'
 import { useQueryClient } from '@tanstack/react-query'
 import {
-  getAuthnListIdentitiesQueryKey,
-  useAuthnListIdentities,
-  useAuthnUnbindIdentity,
+  authnLoginUnlink,
+  getAuthnProfileGetQueryKey,
 } from '@speed/api-sdk'
+import { useMutation } from '@tanstack/react-query'
 import type { AuthSession } from '@speed/auth-core'
 import {
   AsyncSection,
@@ -80,6 +80,7 @@ import {
   ListSkeleton,
 } from '@speed/ui-kit'
 import { InlineError } from './internal/inline-error.js'
+import { useProfileQuery } from './internal/queries.js'
 import { useAccountUiTranslation } from './internal/translation.js'
 
 /**
@@ -105,13 +106,13 @@ export interface SocialProviderConfig {
 }
 
 export interface SocialBindingsSectionProps {
-  /** The session that builds authorization URLs for the add area. */
+  /** The session that starts the `link` flow for the add area. */
   readonly session: AuthSession
   /** The channels the host offers for binding, in the order wanted. */
   readonly providers: readonly SocialProviderConfig[]
   /**
-   * Receives the authorization URL for one channel once it is built;
-   * the host navigates. Omit to run the section without a follow-up
+   * Receives the authorization URL from the started `link` flow's first
+   * step; the host navigates. Omit to run the section without a follow-up
    * (a caller that only exercises the request path).
    */
   readonly onAuthorizeUrl?: (url: string) => void
@@ -184,15 +185,17 @@ export function SocialBindingsSection({
 }: SocialBindingsSectionProps) {
   const { t } = useAccountUiTranslation()
   const queryClient = useQueryClient()
-  const { data, isPending, refetch } = useAuthnListIdentities()
-  const unbindMutation = useAuthnUnbindIdentity()
+  const { data, isPending, refetch } = useProfileQuery()
+  const unbindMutation = useMutation({
+    mutationFn: (id: string) => authnLoginUnlink(id),
+  })
 
   const [unbindTarget, setUnbindTarget] = useState<string | null>(null)
   const [busyProvider, setBusyProvider] = useState<SocialProvider | null>(null)
   const [notice, setNotice] = useState<Notice>(null)
   const [authorizeError, setAuthorizeError] = useState<string | null>(null)
 
-  const identities = data?.identities
+  const links = data?.links
   // The answer is unresolved whenever there is no data yet: the first
   // load in flight, or parked by react-query's default networkMode
   // 'online' while the device is offline -- such a fetch sits at
@@ -201,16 +204,15 @@ export function SocialBindingsSection({
   // false too, so a pending test derived from isLoading would miss
   // every branch and the block would silently vanish. isPending alone
   // tracks "no answer yet" across the in-flight and the parked states.
-  const pending = isPending && identities === undefined
-  const rows =
-    !pending && identities !== undefined ? identities : undefined
+  const pending = isPending && data === undefined
+  const rows = !pending && links !== undefined ? links : undefined
 
   const boundProviders =
     rows === undefined
       ? new Set<string>()
       : new Set(
           rows
-            .map((identity) => identity.provider)
+            .map((link) => link.provider)
             .filter((provider): provider is string => provider != null),
         )
   const available = providers.filter(
@@ -225,34 +227,24 @@ export function SocialBindingsSection({
   const showHeader =
     pending || (rows !== undefined && (rows.length > 0 || hasAddArea))
 
-  async function handleUnbind(identityId: string): Promise<void> {
+  async function handleUnbind(linkId: string): Promise<void> {
     setNotice(null)
     try {
-      await unbindMutation.mutateAsync({ identityId })
+      await unbindMutation.mutateAsync(linkId)
       setUnbindTarget(null)
       await queryClient.invalidateQueries({
-        queryKey: getAuthnListIdentitiesQueryKey(),
+        queryKey: getAuthnProfileGetQueryKey(),
       })
     } catch (error) {
-      const code = errorCodeOf(error)
       setUnbindTarget(null)
-      setNotice({ kind: 'unbind-failed', code })
-      // The row was already unbound elsewhere: refetch so the stale
-      // row disappears and the list converges on the server's answer,
-      // then clear the banner -- the race it announced is over.
-      if (code === 'authn.identity_not_found') {
-        await queryClient.invalidateQueries({
-          queryKey: getAuthnListIdentitiesQueryKey(),
-        })
-        setNotice(null)
-      }
+      setNotice({ kind: 'unbind-failed', code: errorCodeOf(error) })
     }
   }
 
   async function handleAuthorize(config: SocialProviderConfig): Promise<void> {
     // One bind flow at a time, across every provider: the busy slot is
-    // provider-wide, so a second authorize click while a URL is being
-    // built -- this channel's or any other's -- is refused outright
+    // provider-wide, so a second authorize click while a flow is being
+    // started -- this channel's or any other's -- is refused outright
     // instead of racing the in-flight request.
     if (busyProvider !== null) {
       return
@@ -260,10 +252,14 @@ export function SocialBindingsSection({
     setAuthorizeError(null)
     setBusyProvider(config.provider)
     try {
-      const authorizeUrl = await session.socialAuthorizeUrl(config.provider, {
-        redirect_uri: config.redirectUri,
+      const state = await session.startAuthenticatedFlow({
+        purpose: 'link',
+        method: config.provider,
+        input: { redirect_uri: config.redirectUri },
       })
-      onAuthorizeUrl?.(authorizeUrl)
+      if ('next' in state && state.next.kind === 'redirect') {
+        onAuthorizeUrl?.(state.next.url)
+      }
     } catch (error) {
       setAuthorizeError(errorCodeOf(error))
     } finally {
@@ -271,8 +267,7 @@ export function SocialBindingsSection({
     }
   }
 
-  const unbindBusy =
-    unbindTarget !== null && unbindMutation.isPending
+  const unbindBusy = unbindTarget !== null && unbindMutation.isPending
 
   return (
     <Box>
@@ -303,16 +298,16 @@ export function SocialBindingsSection({
         {(settledRows) => (
           <Box>
             {notice?.kind === 'unbind-failed' && <InlineError code={notice.code} />}
-            {/* The identity rows are one real list, as the sessions rows
+            {/* The binding rows are one real list, as the sessions rows
                 are: a screen-reader user hears each binding as one item
                 of a numbered set. The notice above and the add area
                 below are page-level content and stay outside the list.
                 role="list" keeps the list semantics under WebKit, which
                 strips them from a list-style-none ul. */}
             <Box component="ul" role="list" sx={{ m: 0, p: 0, listStyle: 'none' }}>
-              {settledRows.map((identity, index) => {
-                const id = identity.id ?? null
-                const provider = identity.provider ?? null
+              {settledRows.map((link, index) => {
+                const id = link.id ?? null
+                const provider = link.provider ?? null
                 // Enterprise-SSO bindings arrive under the dynamic
                 // per-tenant provider name "oidc:<tenant>": the family
                 // label renders for the prefix, and the raw value stays
@@ -335,9 +330,7 @@ export function SocialBindingsSection({
                 // is a shared family label, the label itself otherwise.
                 const unbindIdentity = oidcProvider ?? providerLabel
                 const email =
-                  identity.email != null && identity.email !== ''
-                    ? identity.email
-                    : null
+                  link.email != null && link.email !== '' ? link.email : null
                 return (
                   <Box
                     component="li"
@@ -445,8 +438,8 @@ export function SocialBindingsSection({
 /** The add area: one button per unbound configured provider, plus the
  * authorize-path failure banner. Rendered only when the list has
  * loaded and at least one configured provider is unbound. While a bind
- * flow is building every button is disabled together -- the busy flag
- * is provider-wide, never one channel's alone. */
+ * flow is being started every button is disabled together -- the busy
+ * flag is provider-wide, never one channel's alone. */
 function AddArea({
   available,
   busy,
@@ -456,7 +449,7 @@ function AddArea({
   onAuthorize,
 }: {
   readonly available: readonly SocialProviderConfig[]
-  /** True while any channel's authorization URL is being built. */
+  /** True while any channel's link flow is being started. */
   readonly busy: boolean
   readonly authorizeError: string | null
   readonly sectionLabel: string

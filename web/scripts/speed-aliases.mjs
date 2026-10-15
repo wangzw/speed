@@ -10,7 +10,7 @@
  * them from here. A hand-copied list drifts silently (a new sibling
  * resolves only where someone remembered to add it), while a derived
  * one cannot: every consumer that imports this module sees the same
- * map, and the reference app's suite additionally pins its tsconfig
+ * map, and the demo host's suite additionally pins its tsconfig
  * `paths` against `speedTsconfigPaths()` (tsconfig cannot import, so
  * that leg is checked rather than derived).
  *
@@ -25,7 +25,7 @@
  * Entry paths are workspace-root-relative (`packages/<name>/src/...`,
  * `test-utils/src/...`) so one manifest serves every consumer depth:
  * the packages under web/packages/, the shared test-support package
- * beside packages/, and the reference app, which lives outside web/
+ * beside packages/, and the demo host, which lives outside web/
  * exactly where a delivered consumer project lives.
  */
 import { dirname, join, relative, sep } from 'node:path'
@@ -57,9 +57,9 @@ export const SPEED_PACKAGE_MAP = Object.freeze([
   { specifier: '@speed/api-client', entry: 'packages/api-client/src/index.ts' },
   { specifier: '@speed/auth-core', entry: 'packages/auth-core/src/index.ts' },
   { specifier: '@speed/auth-ui', entry: 'packages/auth-ui/src/index.ts' },
-  { specifier: '@speed/billing-ui', entry: 'packages/billing-ui/src/index.ts' },
   { specifier: '@speed/tenancy-ui', entry: 'packages/tenancy-ui/src/index.ts' },
   { specifier: '@speed/account-ui', entry: 'packages/account-ui/src/index.ts' },
+  { specifier: '@speed/console-ui', entry: 'packages/console-ui/src/index.ts' },
   {
     specifier: '@speed/product-shell/bootstrap',
     entry: 'packages/product-shell/src/bootstrap.tsx',
@@ -69,6 +69,7 @@ export const SPEED_PACKAGE_MAP = Object.freeze([
     entry: 'packages/product-shell/src/index.ts',
   },
   { specifier: '@speed/layout-kit', entry: 'packages/layout-kit/src/index.ts' },
+  { specifier: '@speed/route-kit', entry: 'packages/route-kit/src/index.ts' },
   {
     specifier: '@speed/i18n/mui-locale',
     entry: 'packages/i18n/src/mui-locale.ts',

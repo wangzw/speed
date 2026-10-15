@@ -1,7 +1,7 @@
 {
   "name": "@speed/auth-core",
   "version": "0.0.1",
-  "description": "Speed auth core: the browser session lifecycle (password and SMS login, logout, tenant switch, step-up and silent refresh) as a memory-only state machine over the generated authn surface of @speed/api-sdk, with the in-memory access-token store as the bridge into @speed/api-client, plus React hooks (useAuthState, useCurrentTenant, usePermission) reading one host-attached session",
+  "description": "Speed auth core: the browser session lifecycle (the login flow's start/answer/current/abandon, the link, step-up and enroll flows, logout and silent refresh) as a memory-only state machine over the generated authn surface of @speed/api-sdk, with the in-memory access-token store as the bridge into @speed/api-client, hand-written response models with runtime guards, plus React hooks (useAuthState, useCurrentTenant, usePermission) reading one host-attached session and the tenant-scoped query-key convention",
   "type": "module",
   "sideEffects": false,
   "files": ["dist", "README.md", "AGENTS.md"],
@@ -23,10 +23,12 @@
     "@speed/api-sdk": "workspace:*"
   },
   "peerDependencies": {
+    "@tanstack/react-query": "^5.0.0",
     "react": "^18.0.0 || ^19.0.0"
   },
   "devDependencies": {
     "@speed/test-utils": "workspace:*",
+    "@tanstack/react-query": "^5.62.0",
     "@testing-library/react": "^16.3.3",
     "@types/react": "^19.2.18",
     "@types/react-dom": "^19.2.5",

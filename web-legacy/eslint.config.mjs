@@ -1,0 +1,86 @@
+/**
+ * Flat-config ESLint setup for the whole web/ workspace.
+ *
+ * The single config site: every package runs "eslint ." from its own
+ * directory and ESLint discovers this file by walking up, so a new package
+ * needs no config of its own -- and a rule change lands in one place.
+ *
+ * Deliberately minimal (see AGENTS.md's deferral notes):
+ * typescript-eslint's recommended rules plus an explicit
+ * no-explicit-any error, and the no-literal-text rule (web/eslint-rules/
+ * no-literal-text.js, tested in web/eslint-rules/no-literal-text.test.mjs)
+ * enforcing that package UI text comes from the i18n namespace. It applies
+ * to every package's src but deliberately not to test files and test
+ * utilities: fixture strings are data, not rendered product text. The
+ * no-direct-http rule (web/eslint-rules/no-direct-http.js, tested in
+ * web/eslint-rules/no-direct-http.test.mjs) enforces the other half of the
+ * API-contract discipline: hand-written HTTP happens only inside
+ * @speed/api-client, which the rule's sole config-level whitelist
+ * exempts -- the no-literal-text rule still applies inside api-client,
+ * whitelisting HTTP does not whitelist text. The react-hooks plugin
+ * stays out: no stateful component exists outside ui-kit's controlled
+ * set -- state belongs to the host and every interaction reports up
+ * through callbacks, the FileUploader queue rendering from host-owned
+ * rows props with the upload transport as host code -- and staying out
+ * keeps this config dependency-free.
+ */
+import tseslint from 'typescript-eslint'
+import { noDirectHttpRule } from './eslint-rules/no-direct-http.js'
+import { noLiteralTextRule } from './eslint-rules/no-literal-text.js'
+
+/**
+ * Inline plugin holding the workspace's own rules. Flat config has no
+ * "local rule" slot -- every rule must live behind a plugin namespace,
+ * hence the bare 'speed' prefix used by the rules below.
+ */
+const localPlugin = {
+  plugins: {
+    speed: {
+      rules: {
+        'no-direct-http': noDirectHttpRule,
+        'no-literal-text': noLiteralTextRule,
+      },
+    },
+  },
+}
+
+/** Package runtime code: src minus tests and test utilities. */
+const PACKAGE_RUNTIME_SRC = {
+  files: ['packages/*/src/**/*.{ts,tsx}'],
+  ignores: [
+    '**/*.test.{ts,tsx}',
+    '**/*.spec.{ts,tsx}',
+    '**/test-utils/**',
+  ],
+}
+
+export default tseslint.config(
+  {
+    ignores: ['**/node_modules/**', '**/dist/**'],
+  },
+  ...tseslint.configs.recommended,
+  localPlugin,
+  {
+    rules: {
+      '@typescript-eslint/no-explicit-any': 'error',
+    },
+  },
+  {
+    ...PACKAGE_RUNTIME_SRC,
+    rules: {
+      'speed/no-literal-text': 'error',
+    },
+  },
+  {
+    ...PACKAGE_RUNTIME_SRC,
+    // The single whitelist: api-client is the one package where
+    // hand-written HTTP happens, by design (its createClient wires the
+    // injectable fetch, timeout, retry and silent refresh). Extending
+    // this whitelist is an architecture change -- see the rule file
+    // and docs/internal/21-api-contract.md.
+    ignores: [...PACKAGE_RUNTIME_SRC.ignores, 'packages/api-client/**'],
+    rules: {
+      'speed/no-direct-http': 'error',
+    },
+  },
+)

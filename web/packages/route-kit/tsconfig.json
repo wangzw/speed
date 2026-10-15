@@ -1,0 +1,23 @@
+{
+  "extends": "../../tsconfig.base.json",
+  "include": ["src", "test-utils"],
+  "compilerOptions": {
+    // route-kit renders through React and its host's router: JSX compiles
+    // through the automatic runtime (react-jsx), same as every
+    // DOM-rendering package.
+    //
+    // src/ imports no @speed sibling -- this package is deliberately
+    // independent of every other frontend package (see the package
+    // AGENTS.md's "no sibling dependency" rule); the one workspace
+    // specifier in the type-checked set is the shared vitest setup that
+    // test-utils/setup.ts pulls in, whose published entry is
+    // test-utils/src/setup.ts. react-router-dom is a real peer resolved
+    // from node_modules, not aliased. Emitted dist/ keeps the bare
+    // specifiers, which consumers resolve against the real published
+    // packages.
+    "jsx": "react-jsx",
+    "paths": {
+      "@speed/test-utils/setup": ["../../test-utils/src/setup.ts"]
+    }
+  }
+}

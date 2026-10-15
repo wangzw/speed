@@ -1,0 +1,113 @@
+{
+  "errors": {
+    "authn": {
+      "session_not_found": "Your session no longer exists. Sign in again.",
+      "session_revoked": "Your session was revoked. Sign in again.",
+      "token_expired": "Your sign-in expired. Sign in again.",
+      "refresh_token_invalid": "Your sign-in is no longer valid. Sign in again.",
+      "refresh_token_reused": "Unusual activity was detected. Sign in again."
+    },
+    "client": {
+      "network": "The network is unavailable. Check your connection and try again.",
+      "timeout": "The request timed out. Try again shortly.",
+      "protocol": "The server returned an unexpected response. Try again shortly."
+    },
+    "tenant": {
+      "conflict": "That identifier or alias is already taken by another tenant."
+    },
+    "settings": {
+      "invalid_value": "That value is outside this setting's declared range."
+    },
+    "unknown": "Something went wrong. Try again shortly."
+  },
+  "shell": {
+    "skipToContent": "Skip to content",
+    "navLabel": "Console navigation"
+  },
+  "tenants": {
+    "title": "Tenants",
+    "loading": "Loading tenants",
+    "empty": {
+      "title": "No tenants",
+      "description": "No tenant is registered yet."
+    },
+    "error": {
+      "title": "Tenants could not be loaded",
+      "description": "The roster did not answer."
+    },
+    "retry": "Retry",
+    "column": {
+      "id": "Identifier",
+      "alias": "Alias",
+      "status": "Status",
+      "actions": "Actions"
+    },
+    "status": {
+      "active": "Active",
+      "disabled": "Disabled",
+      "other": "Unknown"
+    },
+    "create": {
+      "title": "Register a tenant",
+      "idLabel": "Identifier",
+      "aliasLabel": "Alias",
+      "submit": "Register"
+    },
+    "rename": {
+      "label": "New alias",
+      "submit": "Rename"
+    },
+    "enable": "Enable",
+    "disable": "Disable"
+  },
+  "settings": {
+    "title": "Settings",
+    "loading": "Loading settings",
+    "empty": {
+      "title": "No settings",
+      "description": "No setting is declared for this selection."
+    },
+    "error": {
+      "title": "Settings could not be loaded",
+      "description": "The settings surface did not answer."
+    },
+    "retry": "Retry",
+    "namespace": {
+      "label": "Namespace",
+      "placeholder": "All namespaces",
+      "apply": "Load"
+    },
+    "column": {
+      "key": "Key",
+      "value": "Value",
+      "sensitive": "Sensitive",
+      "actions": "Actions"
+    },
+    "value": {
+      "label": "New value",
+      "save": "Save"
+    },
+    "remove": "Remove",
+    "sensitive": "Yes"
+  },
+  "audit": {
+    "title": "Audit records",
+    "loading": "Loading audit records",
+    "empty": {
+      "title": "No audit records",
+      "description": "No record matches the query."
+    },
+    "error": {
+      "title": "Audit records could not be loaded",
+      "description": "The audit surface did not answer."
+    },
+    "retry": "Retry",
+    "column": {
+      "time": "Time",
+      "actor": "Actor",
+      "action": "Action",
+      "object": "Object",
+      "outcome": "Outcome"
+    }
+  }
+}

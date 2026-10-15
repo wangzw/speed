@@ -42,15 +42,19 @@ import productShellZhCN from '../locales/zh-CN.json' with { type: 'json' }
 import { renderWithProviders } from '../../test-utils/render.js'
 import { expectNoAxeViolations } from '../../test-utils/axe.js'
 import {
+  authenticatedCompletion,
   jsonResponse,
-  makePair,
   makeRealClientRig,
+  openFlow,
+  principal,
   type RealClientRig,
 } from '../../test-utils/real-client.js'
 import { ProductShell } from './ProductShell.js'
 
-const LOGIN_PASSWORD = 'POST /api/v1/authn/login/password'
-const LOGOUT = 'POST /api/v1/authn/logout'
+const FLOWS_START = 'POST /auth/flows'
+const FLOWS_ANSWER = 'POST /auth/flows/answer'
+const PROFILE = 'GET /auth/me'
+const LOGOUT = 'POST /auth/logout'
 
 /** The navItems fixture: host data in host order, with the selected
  * item pre-computed (AppShell never path-matches). */
@@ -59,13 +63,20 @@ const NAV_ITEMS = [
 ] as const
 
 /** A rig whose script covers the two happy paths the machine journeys
- * drive -- a token-issuing login and a 204 logout -- and fails loudly
+ * drive -- a token-issuing login (the flow start, its answer, and the
+ * profile a login completion reads) and a 204 logout -- and fails loudly
  * on anything else, so an unpinned request fails the test. */
 function makeJourneyRig(): RealClientRig {
   return makeRealClientRig((call) => {
     const key = `${call.method} ${call.path}`
-    if (key === LOGIN_PASSWORD) {
-      return jsonResponse(200, makePair())
+    if (key === FLOWS_START) {
+      return jsonResponse(200, openFlow())
+    }
+    if (key === FLOWS_ANSWER) {
+      return jsonResponse(200, authenticatedCompletion())
+    }
+    if (key === PROFILE) {
+      return jsonResponse(200, principal())
     }
     if (key === LOGOUT) {
       return new Response(null, { status: 204 })
@@ -74,14 +85,21 @@ function makeJourneyRig(): RealClientRig {
   })
 }
 
-/** Drive a password login to completion on a rig session. The session
- * operations are called from test code, never from a component, so the
- * state flips they notify are wrapped in act explicitly. */
+/** Drive a password login to completion on a rig session: the flow the
+ * session starts, its first answer, and the profile the completion reads.
+ * The session operations are called from test code, never from a
+ * component, so the state flips they notify are wrapped in act
+ * explicitly. */
 async function signInTo(session: AuthSession): Promise<void> {
   await act(async () => {
-    await session.loginWithPassword({
-      identifier: 'alice@example.com',
-      password: 'password-1',
+    const first = await session.startFlow({ method: 'password' })
+    if (!('next' in first)) {
+      return
+    }
+    await session.answerFlow({
+      seq: first.seq,
+      step: 'answer',
+      input: { identifier: 'alice@example.com', password: 'password-1' },
     })
   })
 }

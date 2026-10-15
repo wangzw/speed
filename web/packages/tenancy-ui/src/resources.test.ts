@@ -43,7 +43,7 @@ describe('tenancy-ui resources', () => {
 
   it('document the shipped sections (one per component family with built-in text)', () => {
     const sections = Object.keys(tenancyUiResources['zh-CN']!).sort()
-    expect(sections).toEqual(['errors', 'tenantSwitcher'])
+    expect(sections).toEqual(['tenantSwitcher'])
   })
 
   it('render the zh-CN bundle verbatim through the registered namespace', () => {
@@ -52,12 +52,6 @@ describe('tenancy-ui resources', () => {
     expect(
       i18n.t('tenantSwitcher.noCurrentTenant', { ns: TENANCY_UI_NAMESPACE }),
     ).toBe(zhCN.tenantSwitcher.noCurrentTenant)
-    expect(
-      i18n.t('tenantSwitcher.switchingTo', {
-        ns: TENANCY_UI_NAMESPACE,
-        tenant: 'Bright Smile Clinic',
-      }),
-    ).toBe(zhCN.tenantSwitcher.switchingTo.replace('{{tenant}}', 'Bright Smile Clinic'))
     expect(
       i18n.t('tenantSwitcher.switchedTo', {
         ns: TENANCY_UI_NAMESPACE,
@@ -74,41 +68,11 @@ describe('tenancy-ui resources', () => {
       i18n.t('tenantSwitcher.noCurrentTenant', { ns: TENANCY_UI_NAMESPACE }),
     ).toBe(enUS.tenantSwitcher.noCurrentTenant)
     expect(
-      i18n.t('tenantSwitcher.switchingTo', {
-        ns: TENANCY_UI_NAMESPACE,
-        tenant: 'Bright Smile Clinic',
-      }),
-    ).toBe(enUS.tenantSwitcher.switchingTo.replace('{{tenant}}', 'Bright Smile Clinic'))
-    expect(
       i18n.t('tenantSwitcher.switchedTo', {
         ns: TENANCY_UI_NAMESPACE,
         tenant: 'Bright Smile Clinic',
       }),
     ).toBe(enUS.tenantSwitcher.switchedTo.replace('{{tenant}}', 'Bright Smile Clinic'))
-  })
-
-  it('resolve nested errors-section keys to dedicated text, never the fallback', () => {
-    const i18n = newInstance()
-    registerNamespace(i18n, TENANCY_UI_NAMESPACE, tenancyUiResources)
-    const fallback = i18n.t('errors.unknown', { ns: TENANCY_UI_NAMESPACE })
-    // The errors section is nested per source (errors.authn.*,
-    // errors.client.*); each branch must resolve through the registered
-    // namespace to its own text. Which codes the switch surface maps to
-    // these keys -- and the unknown-code fallback rule -- is the
-    // error-text resolver's own test, alongside its source file.
-    for (const key of [
-      'errors.authn.tenant_membership_required',
-      'errors.authn.session_not_found',
-      'errors.authn.session_revoked',
-      'errors.authn.refresh_token_invalid',
-      'errors.authn.refresh_token_reused',
-      'errors.authn.token_expired',
-      'errors.client.network',
-      'errors.client.timeout',
-      'errors.client.protocol',
-    ]) {
-      expect(i18n.t(key, { ns: TENANCY_UI_NAMESPACE })).not.toBe(fallback)
-    }
   })
 
   it('refuse double registration on the same instance (host registers once)', () => {

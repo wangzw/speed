@@ -7,8 +7,8 @@
  * Generated operation functions and hooks (src/index.ts) call the
  * configured mutator -- `speedRequest`, or the credential-less
  * `speedRequestCredentialless` where web/orval.config.ts overrides it
- * per operation (the session-refresh operation) -- with one
- * axios-shaped options object. The mutator adapts that call to the
+ * per operation (the token-issuing operation a session refresh uses) --
+ * with one axios-shaped options object. The mutator adapts that call to
  * @speed/api-client request-function shape and forwards it to the
  * function a host bound once at bootstrap with
  * `bindRequestFn(createClient({...}))`. The transport (base URL, token
@@ -45,8 +45,26 @@ interface OrvalCall {
   url: string
   method: HttpMethod
   headers?: Readonly<Record<string, string>>
+  /**
+   * Query parameters, mirroring @speed/api-client's RequestOptions.query
+   * -- one scalar per entry, or a scalar array for a repeated parameter
+   * (`style: form, explode: true` in the spec; `action: ['login.create',
+   * 'login.failed']` becomes `?action=...&action=...`). A spec may
+   * declare a query parameter as a repeated one, and orval then emits an
+   * array-typed field on that operation's params type; the seam must
+   * accept what the generated surface hands it, so its value type is the
+   * same union the transport already accepts, arrays included.
+   */
   params?: Readonly<
-    Record<string, string | number | boolean | null | undefined>
+    Record<
+      string,
+      | string
+      | number
+      | boolean
+      | ReadonlyArray<string | number | boolean>
+      | null
+      | undefined
+    >
   >
   data?: unknown
   /** Raw-byte responses (spec-level axios shape); the seam's
@@ -135,10 +153,10 @@ export function speedRequest<T>(call: OrvalCall): Promise<T> {
 
 /**
  * The credential-less mutator, selected per operation by
- * web/orval.config.ts for the session-refresh operation
- * (authn_refreshToken): that operation authenticates with the refresh
+ * web/orval.config.ts for the token-issuing operation a session refresh
+ * uses (authnTokenIssue): that operation authenticates with the refresh
  * token in its request body, must never present an access token, and
- * its 401 must stay terminal -- a refused refresh surfaces to the
+ * its refusal must stay terminal -- a refused refresh surfaces to the
  * session instead of re-entering the client's own refresh path, which
  * would await the very refresh it is part of (the api-client
  * bearer-only rule). Declaring the omission on the request also keeps

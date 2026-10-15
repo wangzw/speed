@@ -160,8 +160,9 @@ the branch unchanged.
   the main entry's deps, so the floor a sibling reuses — and every
   consumer's install — is unchanged by them (see the assembly
   section). Test-only needs go in
-  `devDependencies` — the suites' `@speed/tenancy-ui` is exactly that: a
-  composition partner of journey code, never of the package's own
+  `devDependencies` — the suites' `@speed/tenancy-ui` (the switcher)
+  and `@speed/route-kit` (the routing registry) are exactly that:
+  composition partners of journey code, never of the package's own
   imports.
 - **All chrome props pass through to `AppShell` untouched.** The shell
   must not reinterpret, reorder or path-match `navItems` — their
@@ -219,7 +220,7 @@ must) — and
 responsive drawer needs. Bilingual assertions import the shipped sibling
 bundles relatively (`../../auth-ui/src/locales/zh-CN.json`, the
 layout-kit and tenancy-ui equivalents, and this package's own
-`../locales/zh-CN.json`) — never an inline translation. Five suites:
+`../locales/zh-CN.json`) — never an inline translation. Six suites:
 
 - `src/components/ProductShell.test.tsx` — the view machine. It drives
   real sessions over the real-client rig (a genuine `@speed/api-client`
@@ -262,6 +263,18 @@ layout-kit and tenancy-ui equivalents, and this package's own
   switch to a non-member tenant (tenancy-ui's error text, snapshot
   unchanged, retryable) and a server-side session death converging to
   the session-ended screen.
+- `src/routed-journey.test.tsx` — the host-side routing composition
+  over the same frame, as packaged evidence. Its fixture host declares
+  its pages in one `RouteTable` and composes `@speed/route-kit` over the
+  shell: `RouteProvider` installs the table, `useNavItems()` feeds the
+  shell's `navItems` slot — its `NavItem` is structurally the frame's
+  `AppShellNavItem`, so the two need no shared type — and `RouteView`
+  renders the matched page as the shell's `children`. The suite asserts
+  the frame renders the registry's nav (labels from the declarations;
+  the parent entry selected while a child route is open), the matched
+  view inside the main landmark, the fallback for an unmatched deep link
+  with nothing selected, and that the shell leaves the URL to the
+  router.
 - `src/bootstrap.test.tsx` — the app-entry assembly. jsdom mounts of
   `bootstrapSpeedApp` over the environment fetch the client captures
   (the family four registered automatically, the declared namespaces on
@@ -280,7 +293,9 @@ path and `authorization`, which the switch-turn pins need. `makePair`
 rides along, with the token-issuing overrides a multi-tenant journey
 scripts (a switch answers with an access token and no refresh token —
 the authn API's shape). The journey suites compose tenancy-ui's
-switcher, so tenancy-ui sits in `devDependencies`, aliased to its
+switcher and route-kit's registry, so both sit in `devDependencies`
+(composition partners of journey code, never imports of the package's
+own code), aliased to their
 sources by the workspace's single package map
 (`web/scripts/speed-aliases.mjs`, the source `vitest.config.ts` derives
 its alias list from) and `tsconfig.json`'s `paths`; package code never

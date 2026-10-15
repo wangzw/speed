@@ -1,7 +1,7 @@
 /**
  * Type declarations for speed-aliases.mjs. The manifest stays plain JS
  * so vite/vitest configs load it directly; this twin gives its
- * TypeScript consumers (the reference app's alias-manifest drift test)
+ * TypeScript consumers (the demo host's alias-manifest drift test)
  * their types.
  */
 

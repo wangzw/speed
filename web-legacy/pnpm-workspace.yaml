@@ -1,0 +1,17 @@
+# pnpm workspace of the speed frontend packages. The repo root is a Go
+# workspace and stays one; web/ is deliberately its own pnpm workspace root
+# (see web/README.md "Why web/ is its own workspace root").
+packages:
+  - packages/*
+  # The workspace's shared test-support package: a private member beside
+  # packages/ -- deliberately outside the deliverable set the release
+  # pipeline derives from web/packages/* -- consumed by the packages' and
+  # the reference app's test suites through the workspace alias map
+  # (web/test-utils/README.md).
+  - test-utils
+  # The reference app's web host lives outside web/ -- exactly where a
+  # delivered consumer project lives -- and joins the workspace as an
+  # external member so it installs, lints, typechecks, tests and builds
+  # under the same one-lockfile workspace, over workspace:* deps on the
+  # @speed packages (examples/reference-app/web/package.json).
+  - ../examples/reference-app/web

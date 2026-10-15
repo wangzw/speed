@@ -6,10 +6,10 @@
  * logout renders the answer's code text in one alert and changes nothing
  * locally -- the store keeps its token and the button stays ready to
  * retry, and a retry after a transport failure clears the alert and
- * succeeds. The session-lifecycle codes resolve to their own texts in
- * the current language (asserted zh, then en after a language switch);
- * an unlisted code renders the unknown fallback. Text expectations read
- * the bundle values, never inline language.
+ * succeeds. A whitelisted code resolves to its own text in the current
+ * language (asserted zh, then en after a language switch); an unlisted
+ * code renders the unknown fallback. Text expectations read the bundle
+ * values, never inline language.
  */
 
 import { describe, expect, it } from 'vitest'
@@ -20,11 +20,13 @@ import { createAppTheme } from '@speed/ui-kit'
 import { SignOutButton } from './SignOutButton.js'
 import { renderWithProviders } from '../test-utils/render.js'
 import {
-  LOGIN_PASSWORD,
+  LOGIN_ANSWER,
   LOGOUT,
+  PROFILE_GET,
   apiError,
+  authenticatedCompletion,
   makeHarness,
-  makePair,
+  principal,
   type Harness,
 } from '@speed/test-utils/session-harness'
 import { expectNoAxeViolations } from '../test-utils/axe.js'
@@ -35,12 +37,22 @@ const LABEL_ZH = zhCN.signOut.label
 const BUSY_ZH = zhCN.signOut.busy
 const LABEL_EN = enUS.signOut.label
 
-/** Signs the harness session in through the real login operation. */
-async function signIn(harness: Harness): Promise<void> {
-  await harness.session.loginWithPassword({
-    identifier: 'alice@example.com',
-    password: 's3cret-pass',
+/** A harness whose script carries the extra endpoints on top of the
+ * login completion a sign-in needs. */
+function makeScriptedHarness(
+  extra: Parameters<typeof makeHarness>[0] = {},
+): Harness {
+  return makeHarness({
+    [LOGIN_ANSWER]: () => authenticatedCompletion(),
+    [PROFILE_GET]: () => principal(),
+    ...extra,
   })
+}
+
+/** Signs the harness session in through the real session operation: a
+ * login completion taken from the flow's ready step. */
+async function signIn(harness: Harness): Promise<void> {
+  await harness.session.answerFlow({ seq: 1, step: 'complete', input: {} })
 }
 
 /** The WCAG 2.1 contrast ratio between two hex colours. */
@@ -68,7 +80,7 @@ describe('SignOutButton', () => {
     // the primary color. color="inherit" makes the text follow the
     // ambient color: the AppBar's own contrastText there, the
     // surrounding text color on a plain surface.
-    const harness = makeHarness({ [LOGIN_PASSWORD]: () => makePair() })
+    const harness = makeScriptedHarness()
     await signIn(harness)
     renderWithProviders(<SignOutButton session={harness.session} />)
     const button = screen.getByRole('button', { name: LABEL_ZH })
@@ -90,20 +102,17 @@ describe('SignOutButton', () => {
   })
 
   it('sign out on click, clearing the session token', async () => {
-    const harness = makeHarness({
-      [LOGIN_PASSWORD]: () => makePair(),
-      [LOGOUT]: () => undefined,
-    })
+    const harness = makeScriptedHarness({ [LOGOUT]: () => undefined })
     await signIn(harness)
     expect(harness.store.get()).toBe('access-1')
     renderWithProviders(<SignOutButton session={harness.session} />)
     const user = userEvent.setup()
     await user.click(screen.getByRole('button', { name: LABEL_ZH }))
     await waitFor(() => expect(harness.store.get()).toBeNull())
-    expect(harness.calls).toHaveLength(2)
-    expect(harness.calls[1]?.method).toBe('POST')
-    expect(harness.calls[1]?.path).toBe('/api/v1/authn/logout')
-    expect(harness.calls[1]?.options?.body).toBeUndefined()
+    expect(harness.calls).toHaveLength(3)
+    expect(harness.calls[2]?.method).toBe('POST')
+    expect(harness.calls[2]?.path).toBe('/auth/logout')
+    expect(harness.calls[2]?.options?.body).toBeUndefined()
     // Success is the host's to observe; the button itself returns to
     // its idle label, ready for the next (idempotent) click.
     await waitFor(() =>
@@ -113,8 +122,7 @@ describe('SignOutButton', () => {
 
   it('disable the button with the busy label while the logout is in flight', async () => {
     let resolveLogout: (value: unknown) => void = () => {}
-    const harness = makeHarness({
-      [LOGIN_PASSWORD]: () => makePair(),
+    const harness = makeScriptedHarness({
       [LOGOUT]: () =>
         new Promise((resolve) => {
           resolveLogout = resolve
@@ -126,7 +134,7 @@ describe('SignOutButton', () => {
     await user.click(screen.getByRole('button', { name: LABEL_ZH }))
     const busy = await screen.findByRole('button', { name: BUSY_ZH })
     expect(busy).toBeDisabled()
-    expect(harness.calls).toHaveLength(2)
+    expect(harness.calls).toHaveLength(3)
     await act(async () => {
       resolveLogout(undefined)
     })
@@ -135,11 +143,15 @@ describe('SignOutButton', () => {
     )
   })
 
-  it('render a revoked-session answer in one alert and change nothing locally', async () => {
-    const harness = makeHarness({
-      [LOGIN_PASSWORD]: () => makePair(),
+  it('render a refused logout in one alert: the local session still ends', async () => {
+    // auth-core clears the local session and rejects the raw ApiError
+    // when the server's revocation is refused (a session it could not
+    // revoke is no longer trustworthy locally), so the viewer is signed
+    // out either way and the banner is what the refusal still owes: the
+    // answer's code text, against a button that is already signed out.
+    const harness = makeScriptedHarness({
       [LOGOUT]: () => {
-        throw apiError(401, 'authn.session_revoked')
+        throw apiError(503, 'authn.unavailable')
       },
     })
     await signIn(harness)
@@ -148,49 +160,34 @@ describe('SignOutButton', () => {
     await user.click(screen.getByRole('button', { name: LABEL_ZH }))
     await waitFor(() =>
       expect(screen.getByRole('alert')).toHaveTextContent(
-        zhCN.errors.authn.session_revoked,
+        zhCN.errors.authn.unavailable,
       ),
     )
-    // The auth-core failure contract: the rejection changed nothing, so
-    // the local session still holds its token and the button retries.
-    expect(harness.store.get()).toBe('access-1')
-    expect(harness.calls).toHaveLength(2)
+    expect(harness.store.get()).toBeNull()
+    expect(harness.calls).toHaveLength(3)
     expect(screen.getByRole('button', { name: LABEL_ZH })).toBeEnabled()
   })
 
-  it('retry a failed logout: the second attempt clears the alert and succeeds', async () => {
-    let attempts = 0
-    const harness = makeHarness({
-      [LOGIN_PASSWORD]: () => makePair(),
-      [LOGOUT]: () => {
-        attempts += 1
-        if (attempts === 1) {
-          throw apiError(0, 'client.network')
-        }
-        return undefined
-      },
-    })
+  it('clear the alert and drive another (idempotent) logout on a second click', async () => {
+    const harness = makeScriptedHarness({ [LOGOUT]: () => undefined })
     await signIn(harness)
     renderWithProviders(<SignOutButton session={harness.session} />)
     const user = userEvent.setup()
     await user.click(screen.getByRole('button', { name: LABEL_ZH }))
-    await waitFor(() =>
-      expect(screen.getByRole('alert')).toHaveTextContent(
-        zhCN.errors.client.network,
-      ),
-    )
-    expect(harness.store.get()).toBe('access-1')
-    await user.click(screen.getByRole('button', { name: LABEL_ZH }))
     await waitFor(() => expect(harness.store.get()).toBeNull())
-    expect(harness.calls).toHaveLength(3)
+    await user.click(screen.getByRole('button', { name: LABEL_ZH }))
+    await waitFor(() =>
+      expect(
+        harness.calls.filter((call) => call.path === '/auth/logout'),
+      ).toHaveLength(2),
+    )
     expect(screen.queryByRole('alert')).not.toBeInTheDocument()
   })
 
-  it('re-render a session-code failure text in the switched language', async () => {
-    const harness = makeHarness({
-      [LOGIN_PASSWORD]: () => makePair(),
+  it('re-render a failure text in the switched language', async () => {
+    const harness = makeScriptedHarness({
       [LOGOUT]: () => {
-        throw apiError(401, 'authn.token_expired')
+        throw apiError(503, 'authn.unavailable')
       },
     })
     await signIn(harness)
@@ -201,14 +198,14 @@ describe('SignOutButton', () => {
     await user.click(screen.getByRole('button', { name: LABEL_ZH }))
     await waitFor(() =>
       expect(screen.getByRole('alert')).toHaveTextContent(
-        zhCN.errors.authn.token_expired,
+        zhCN.errors.authn.unavailable,
       ),
     )
     await act(async () => {
       await switchLanguage(i18n, 'en-US')
     })
     expect(screen.getByRole('alert')).toHaveTextContent(
-      enUS.errors.authn.token_expired,
+      enUS.errors.authn.unavailable,
     )
     expect(
       screen.getByRole('button', { name: LABEL_EN }),
@@ -216,10 +213,7 @@ describe('SignOutButton', () => {
   })
 
   it('render the en-US bundle on an English-starting instance', async () => {
-    const harness = makeHarness({
-      [LOGIN_PASSWORD]: () => makePair(),
-      [LOGOUT]: () => undefined,
-    })
+    const harness = makeScriptedHarness({ [LOGOUT]: () => undefined })
     await signIn(harness)
     renderWithProviders(<SignOutButton session={harness.session} />, {
       language: 'en-US',
@@ -230,8 +224,7 @@ describe('SignOutButton', () => {
   })
 
   it('render the unknown fallback for a code outside the whitelist', async () => {
-    const harness = makeHarness({
-      [LOGIN_PASSWORD]: () => makePair(),
+    const harness = makeScriptedHarness({
       [LOGOUT]: () => {
         throw apiError(500, 'authn.internal_error')
       },
@@ -246,10 +239,9 @@ describe('SignOutButton', () => {
   })
 
   it('pass axe with no violations after a failed logout', async () => {
-    const harness = makeHarness({
-      [LOGIN_PASSWORD]: () => makePair(),
+    const harness = makeScriptedHarness({
       [LOGOUT]: () => {
-        throw apiError(404, 'authn.session_not_found')
+        throw apiError(400, 'authn.bad_request')
       },
     })
     await signIn(harness)
@@ -266,7 +258,7 @@ describe('SignOutButton', () => {
     await user.click(screen.getByRole('button', { name: LABEL_ZH }))
     await waitFor(() =>
       expect(screen.getByRole('alert')).toHaveTextContent(
-        zhCN.errors.authn.session_not_found,
+        zhCN.errors.authn.bad_request,
       ),
     )
     await expectNoAxeViolations()

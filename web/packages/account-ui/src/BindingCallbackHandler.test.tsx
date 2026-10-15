@@ -1,298 +1,158 @@
 /**
- * BindingCallbackHandler behaviour, driven over the real-client rig: the
- * handler posts the (code, state) pair it was given to the callback
- * endpoint of the provider named in its props -- a plain generated call
- * (the binding adds an identity to the caller's account, it signs nobody
- * in) -- exactly once per pair, guarded against StrictMode's double
- * effect invocation. The suite pins the shape dispatch: a binding-shaped
- * answer (no tokens) invalidates the identities list -- the probe
- * observes its refetch -- and fires onBound once; a login-shaped answer
- * (tokens present, the exchange turned into a sign-in) renders the
- * dedicated signed-elsewhere panel and fires nothing; a failed exchange
- * renders its code text under a retry that re-runs the same pair until
- * it lands. Every scenario ends with an axe pass.
+ * BindingCallbackHandler behaviour: the link flow read back from the
+ * callback route (GET /auth/flows/current) and completed (POST
+ * /auth/flows/answer).
+ *
+ * What this suite pins: a ready flow is taken with `step: 'complete'`,
+ * the `link` completion (state 'linked') fires onBound exactly once and
+ * never signs anyone in; a flow still parked on a step holds the pending
+ * notice (the handler waits for the provider's callback to land); and a
+ * read that failed renders its code text under a retry that re-reads the
+ * flow.
  */
 
-import { StrictMode } from 'react'
-import { flushSync } from 'react-dom'
-import { describe, expect, it } from 'vitest'
-import { act, screen, waitFor } from '@testing-library/react'
+import { describe, expect, it, vi } from 'vitest'
+import { screen, waitFor } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
-import { useAuthnListIdentities } from '@speed/api-sdk'
 import zhCN from './locales/zh-CN.json' with { type: 'json' }
 import {
   errorResponse,
   jsonResponse,
   makeRealClientRig,
+  type RealCall,
+  type RealResponder,
 } from '../test-utils/real-client.js'
 import { renderWithProviders } from '../test-utils/render.js'
-import { expectNoAxeViolations } from '../test-utils/axe.js'
 import { BindingCallbackHandler } from './BindingCallbackHandler.js'
 
-const CALLBACK_PATH = '/api/v1/authn/social/google/callback'
-const IDENTITIES_PATH = '/api/v1/authn/identities'
-
-/** Renders the identities list length so a test can observe the
- * handler's invalidate (a refetch lands as one more GET on the rig).
- * -1 while the list has not loaded. */
-function IdentitiesProbe() {
-  const { data } = useAuthnListIdentities()
-  return <div>{data?.identities ? data.identities.length : -1}</div>
-}
+const FLOW_CURRENT = '/auth/flows/current'
+const FLOW_ANSWER = '/auth/flows/answer'
 
 describe('BindingCallbackHandler', () => {
-  it('exchange the pair exactly once under StrictMode and fire onBound once on a binding-shaped answer', async () => {
-    // The exchange is gated so the probe's initial identities fetch
-    // settles first: an invalidate that lands on an in-flight identical
-    // fetch merges into it (react-query dedupe), which would make the
-    // refetch unobservable.
-    let releaseExchange: () => void = () => undefined
-    const exchangeGate = new Promise<void>((resolve) => {
-      releaseExchange = resolve
-    })
-    let callbackCount = 0
-    let identitiesCount = 0
-    makeRealClientRig(async (call) => {
-      if (call.method === 'POST' && call.path === CALLBACK_PATH) {
-        callbackCount += 1
-        await exchangeGate
+  it('takes a ready flow, commits the link and fires onBound once', async () => {
+    const respond: RealResponder = (call: RealCall) => {
+      if (call.method === 'GET' && call.path === FLOW_CURRENT) {
         return jsonResponse(200, {
-          bound: true,
-          identity: { id: 'google-1', provider: 'google' },
+          seq: 2,
+          state: 'ready',
+          next: { kind: 'complete' },
         })
       }
-      if (call.method === 'GET' && call.path === IDENTITIES_PATH) {
-        identitiesCount += 1
-        return jsonResponse(200, { identities: [{ id: 'google-1' }] })
+      if (call.method === 'POST' && call.path === FLOW_ANSWER) {
+        return jsonResponse(200, { state: 'linked' })
       }
-      return errorResponse(500, 'internal')
-    })
-    let boundCount = 0
+      throw new Error(`unexpected ${call.method} ${call.path}`)
+    }
+    const rig = makeRealClientRig(respond)
+    rig.store.set('access-1')
+    const onBound = vi.fn()
     renderWithProviders(
-      <StrictMode>
-        <BindingCallbackHandler
-          provider="google"
-          code="code-1"
-          state="state-1"
-          onBound={() => {
-            boundCount += 1
-          }}
-        />
-        <IdentitiesProbe />
-      </StrictMode>,
+      <BindingCallbackHandler session={rig.session} onBound={onBound} />,
     )
 
-    // StrictMode's double effect invocation starts one exchange.
-    await waitFor(() => expect(callbackCount).toBe(1))
-    // The probe's list settled; the exchange still sits on the gate.
-    expect(await screen.findByText('1')).toBeTruthy()
-    const loadsBeforeInvalidate = identitiesCount
-    releaseExchange()
-    await waitFor(() =>
-      expect(identitiesCount).toBe(loadsBeforeInvalidate + 1),
+    await waitFor(() => expect(onBound).toHaveBeenCalledTimes(1))
+    const answer = rig.calls.find(
+      (call) => call.method === 'POST' && call.path === FLOW_ANSWER,
     )
-    expect(boundCount).toBe(1)
-    // The pending notice stays up for the host to react.
-    expect(screen.getByRole('status')).toBeTruthy()
-    expect(screen.queryByRole('alert')).toBeNull()
-
-    await expectNoAxeViolations()
+    // The ready flow is taken with the sequence number the server sent.
+    expect(answer?.body).toEqual({ seq: 2, step: 'complete' })
   })
 
-  it('fire onBound once and let the identities list refetch on a binding-shaped answer', async () => {
-    let releaseExchange: () => void = () => undefined
-    const exchangeGate = new Promise<void>((resolve) => {
-      releaseExchange = resolve
-    })
-    let identitiesCount = 0
-    const rig = makeRealClientRig(async (call) => {
-      if (call.method === 'POST' && call.path === CALLBACK_PATH) {
-        await exchangeGate
+  it('holds the pending notice while the flow is still on a step', async () => {
+    const respond: RealResponder = (call: RealCall) => {
+      if (call.method === 'GET' && call.path === FLOW_CURRENT) {
         return jsonResponse(200, {
-          identity: { id: 'google-1', provider: 'google' },
+          seq: 1,
+          state: 'first',
+          next: { kind: 'challenge', fields: [{ name: 'code', kind: 'text' }] },
         })
       }
-      if (call.method === 'GET' && call.path === IDENTITIES_PATH) {
-        identitiesCount += 1
-        return jsonResponse(200, { identities: [{ id: 'google-1' }] })
-      }
-      return errorResponse(500, 'internal')
-    })
-    let boundCount = 0
+      throw new Error(`unexpected ${call.method} ${call.path}`)
+    }
+    const rig = makeRealClientRig(respond)
+    rig.store.set('access-1')
+    const onBound = vi.fn()
     renderWithProviders(
-      <>
-        <BindingCallbackHandler
-          provider="google"
-          code="code-1"
-          state="state-1"
-          onBound={() => {
-            boundCount += 1
-          }}
-        />
-        <IdentitiesProbe />
-      </>,
+      <BindingCallbackHandler session={rig.session} onBound={onBound} />,
     )
 
-    expect(await screen.findByText('1')).toBeTruthy()
-    const loadsBeforeInvalidate = identitiesCount
-    releaseExchange()
-    await waitFor(() =>
-      expect(identitiesCount).toBe(loadsBeforeInvalidate + 1),
-    )
-    expect(boundCount).toBe(1)
-    // One exchange, no retry surface.
-    expect(
-      rig.calls.filter((call) => call.method === 'POST' && call.path === CALLBACK_PATH),
-    ).toHaveLength(1)
-    expect(screen.queryByRole('button')).toBeNull()
-
-    await expectNoAxeViolations()
+    expect(await screen.findByText(zhCN.bindingCallback.pending)).toBeTruthy()
+    expect(onBound).not.toHaveBeenCalled()
   })
 
-  it('render the signed-elsewhere panel for a login-shaped answer and fire nothing', async () => {
-    makeRealClientRig(async (call) => {
-      if (call.method === 'POST' && call.path === CALLBACK_PATH) {
+  it('renders a parked step and completes the link when it is answered', async () => {
+    const respond: RealResponder = (call: RealCall) => {
+      if (call.method === 'GET' && call.path === FLOW_CURRENT) {
         return jsonResponse(200, {
-          user: { id: 'other-user', email: 'other@example.test' },
-          tokens: {
-            access_token: 'access-other',
-            refresh_token: 'refresh-other',
-            principal: {
-              user_id: 'other-user',
-              tenant_id: 'tenant-1',
-              session_id: 'session-other',
-            },
-          },
-          created: false,
+          seq: 1,
+          state: 'first',
+          next: { kind: 'challenge', fields: [{ name: 'code', kind: 'text' }] },
         })
       }
-      return errorResponse(500, 'internal')
-    })
-    let boundCount = 0
+      if (call.method === 'POST' && call.path === FLOW_ANSWER) {
+        return jsonResponse(200, { state: 'linked' })
+      }
+      throw new Error(`unexpected ${call.method} ${call.path}`)
+    }
+    const rig = makeRealClientRig(respond)
+    rig.store.set('access-1')
+    const onBound = vi.fn()
     renderWithProviders(
-      <BindingCallbackHandler
-        provider="google"
-        code="code-1"
-        state="state-1"
-        onBound={() => {
-          boundCount += 1
-        }}
-      />,
+      <BindingCallbackHandler session={rig.session} onBound={onBound} />,
+    )
+    const user = userEvent.setup()
+
+    // The parked challenge step is rendered and answered under the
+    // flow's own first-factor answer step.
+    await user.type(await screen.findByLabelText('code'), '123456')
+    await user.click(
+      screen.getByRole('button', { name: zhCN.bindingCallback.continueLabel }),
     )
 
-    expect(
-      await screen.findByText(zhCN.bindingCallback.signedInElsewhere.title),
-    ).toBeTruthy()
-    expect(
-      screen.getByText(zhCN.bindingCallback.signedInElsewhere.description),
-    ).toBeTruthy()
-    expect(boundCount).toBe(0)
-    // No retry: the code is consumed, the panel is terminal.
-    expect(screen.queryByRole('button')).toBeNull()
-    expect(screen.queryByRole('alert')).toBeNull()
-
-    await expectNoAxeViolations()
+    await waitFor(() => expect(onBound).toHaveBeenCalledTimes(1))
+    const answer = rig.calls.find(
+      (call) => call.method === 'POST' && call.path === FLOW_ANSWER,
+    )
+    expect(answer?.body).toEqual({
+      seq: 1,
+      step: 'answer',
+      input: { code: '123456' },
+    })
   })
 
-  it('render the code text of a failed exchange and retry the same pair', async () => {
-    let attempts = 0
-    const rig = makeRealClientRig(async (call) => {
-      if (call.method === 'POST' && call.path === CALLBACK_PATH) {
-        attempts += 1
-        if (attempts === 1) {
-          // The external identity's verified email already belongs to
-          // another account whose auto-link conditions were not met.
-          return errorResponse(409, 'authn.identity_requires_binding')
+  it('renders a failed read as code text under a retry that re-reads', async () => {
+    let fail = true
+    const respond: RealResponder = (call: RealCall) => {
+      if (call.method === 'GET' && call.path === FLOW_CURRENT) {
+        if (fail) {
+          return errorResponse(503, 'authn.unavailable')
         }
-        return jsonResponse(200, { bound: true })
+        return jsonResponse(200, {
+          seq: 2,
+          state: 'ready',
+          next: { kind: 'complete' },
+        })
       }
-      return errorResponse(500, 'internal')
-    })
-    let boundCount = 0
+      if (call.method === 'POST' && call.path === FLOW_ANSWER) {
+        return jsonResponse(200, { state: 'linked' })
+      }
+      throw new Error(`unexpected ${call.method} ${call.path}`)
+    }
+    const rig = makeRealClientRig(respond)
+    rig.store.set('access-1')
+    const onBound = vi.fn()
     renderWithProviders(
-      <BindingCallbackHandler
-        provider="google"
-        code="code-1"
-        state="state-1"
-        onBound={() => {
-          boundCount += 1
-        }}
-      />,
+      <BindingCallbackHandler session={rig.session} onBound={onBound} />,
     )
+    const user = userEvent.setup()
 
     const alert = await screen.findByRole('alert')
-    expect(alert.textContent).toBe(zhCN.errors.authn.identity_requires_binding)
-    expect(boundCount).toBe(0)
+    expect(alert).toHaveTextContent(zhCN.errors.authn.unavailable)
 
-    await userEvent.click(
+    fail = false
+    await user.click(
       screen.getByRole('button', { name: zhCN.bindingCallback.retry }),
     )
-    await waitFor(() => expect(boundCount).toBe(1))
-    expect(attempts).toBe(2)
-    // The same pair went out both times.
-    expect(
-      rig.calls.filter((call) => call.method === 'POST' && call.path === CALLBACK_PATH),
-    ).toHaveLength(2)
-    expect(screen.queryByRole('alert')).toBeNull()
-
-    await expectNoAxeViolations()
-  })
-
-  it('mount the pending live region empty on a retry re-entry, then fill it (mount-with-text regression)', async () => {
-    // The pending notice's role="status" region mounts empty on every
-    // entry into the pending state -- the initial mount and a retry's
-    // re-entry alike -- because a live region announces content changes
-    // that follow its own existence, never text that mounts with it.
-    // The text is gated behind a one-commit lag armed by an effect
-    // after the pending phase's first commit, so the region's first
-    // committed frame is empty whatever transition entered the phase,
-    // and the text fills an existing region a commit later. The
-    // assertion between the two commits below is what distinguishes
-    // the shapes: the region's text content must still be empty the
-    // moment the node re-appears on the retry. flushSync lands the
-    // retry's one commit synchronously, and the act scope holds back
-    // the post-commit effect that fills the region until this assertion
-    // has seen the birth frame.
-    let attempts = 0
-    makeRealClientRig(async (call) => {
-      if (call.method === 'POST' && call.path === CALLBACK_PATH) {
-        attempts += 1
-        if (attempts === 1) {
-          // The external identity's verified email already belongs to
-          // another account whose auto-link conditions were not met.
-          return errorResponse(409, 'authn.identity_requires_binding')
-        }
-        return jsonResponse(200, { bound: true })
-      }
-      return errorResponse(500, 'internal')
-    })
-    let boundCount = 0
-    renderWithProviders(
-      <BindingCallbackHandler
-        provider="google"
-        code="code-1"
-        state="state-1"
-        onBound={() => {
-          boundCount += 1
-        }}
-      />,
-    )
-
-    await screen.findByRole('alert')
-    // The failed state carries no live region: nothing to announce.
-    expect(screen.queryByRole('status')).toBeNull()
-    act(() => {
-      flushSync(() => {
-        screen.getByRole('button', { name: zhCN.bindingCallback.retry }).click()
-      })
-      const region = screen.getByRole('status')
-      expect(region.textContent).toBe('')
-    })
-    await waitFor(() =>
-      expect(screen.getByRole('status')).toHaveTextContent(
-        zhCN.bindingCallback.pending,
-      ),
-    )
-    await waitFor(() => expect(boundCount).toBe(1))
+    await waitFor(() => expect(onBound).toHaveBeenCalledTimes(1))
   })
 })

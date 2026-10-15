@@ -1,86 +1,63 @@
 /**
  * StepUpChallenge: the re-verification dialog of the step-up-gated
- * surfaces (MfaSection opens it when an operation answers 403
+ * surfaces (MfaSection opens it when an operation answers 401
  * authn.step_up_required).
  *
  * The dialog is controlled -- {open, session, onSuccess, onCancel} -- and
- * asks one thing: a single code that verifies the caller is themselves
- * right now. The field accepts either a six-digit TOTP code or one
- * recovery code; the authn module's step-up operation shape-dispatches
- * between them, so the component validates nothing about the value
- * client-side. Submitting drives session.verifyStepUp(code), the session
- * operation that owns the token lifecycle: a successful verification
- * settles a fresh access token whose amr carries the just-verified factor
- * and calls onSuccess (nothing about the token is the dialog's business;
- * it never promises that verification will not be asked again, because
- * the elevation lives only in that access token's lifetime).
+ * drives one `purpose: 'step-up'` flow on the session
+ * (session.startAuthenticatedFlow, session.answerFlow). On opening it
+ * starts the flow; the reply's next step is rendered (FlowStep) and each
+ * answer advances the flow. An account with a usable factor enters at
+ * the `factor` step and chooses one -- a six-digit TOTP or a passkey --
+ * where the flow then asks for its proof; an account with none would
+ * fall back to the first factor, which this dialog does not reach (its
+ * callers gate an action the server already refused for want of a fresh
+ * factor). Whatever the step asks for, the dialog validates nothing
+ * client-side: the shape of the answer is the flow's business.
  *
- * Failure answers resolve through the code whitelist. The server splits
- * spent codes from wrong ones: a code that was never valid
- * (authn.mfa_invalid_code -- a wrong TOTP code, or a recovery code no
- * issued row matches) renders as a field-level error and stays
- * retryable; a code that WAS valid but is consumed (authn.mfa_code_used
- * -- the replay guard already advanced past its step, or its
- * recovery-code row is marked used) renders its code text above the
- * field through the InlineError banner, the field is cleared, and the
- * dialog asks for a fresh code -- the spent code itself is never
- * retryable, and never called invalid. Every other reachable code --
- * authn.rate_limited, the session-lifecycle family, authn.mfa_not_enrolled,
- * the client.* transport codes -- renders its code text above the field
- * through the InlineError banner too, never a raw key and never an API
- * message. The dialog never signs in and never navigates: a dead session
- * shows its code text and the host's session gate converges.
+ * Completion settles the elevation on the session: a `step-up`
+ * completion (state 'elevated' for a token-delivered session, and the
+ * login-shaped 'authenticated' body for a cookie-delivered one) has
+ * re-minted the access token, and onSuccess fires so the caller re-runs
+ * the gated action. Failure answers resolve through the code whitelist
+ * and render as one banner; the flow stays open and a fresh answer is
+ * retryable. The dialog never signs in and never navigates: a dead
+ * session shows its code text and the host's session gate converges.
  *
- * While a verification is in flight the field, the verify button and the
- * cancel affordance (button, Escape, backdrop) are all disabled, so an
- * in-flight answer cannot be double-submitted or abandoned mid-rotation.
- * Re-opening the dialog resets every piece of per-attempt state.
- *
- * A verification that lost a concurrent-operation race (a sibling
- * step-up -- or a tenant switch -- committed to the session while this
- * code was in flight) answers with auth-core's
- * OperationSupersededError: the submitted code genuinely verified
- * server-side -- which is exactly why it is now SPENT, its single-use
- * guard consumed by this very 2xx -- but the elevation never landed:
- * the winner's session stands without it, and the losing pair was never
- * applied. No onSuccess fires (re-running the gated operation under an
- * elevation that does not exist would only draw a fresh 403 from the
- * server). The dialog renders the same used-code text a re-submitted
- * consumed code draws and clears the field: the attempt is NOT
- * retryable with the same code -- the next submit can only verify with
- * a fresh one. A dialog that stayed silent on this race would tell the
- * caller the code was intact and retryable when it is in fact
- * consumed, and the ensuing re-submit would draw the used-code refusal
- * forever.
+ * While an answer is in flight every control is disabled, so an in-flight
+ * answer cannot be double-submitted or abandoned mid-rotation.
+ * Re-opening the dialog resets its state and starts a fresh flow.
  */
 
-import { useEffect, useId, useState } from 'react'
-import type { FormEvent } from 'react'
+import { useEffect, useId, useRef, useState } from 'react'
 import Box from '@mui/material/Box'
 import Button from '@mui/material/Button'
 import Dialog from '@mui/material/Dialog'
 import DialogActions from '@mui/material/DialogActions'
 import DialogContent from '@mui/material/DialogContent'
 import DialogTitle from '@mui/material/DialogTitle'
-import TextField from '@mui/material/TextField'
 import Typography from '@mui/material/Typography'
-import type { AuthSession } from '@speed/auth-core'
-import { isOperationSuperseded } from '@speed/auth-core'
+import type { AuthSession, AuthnStep } from '@speed/auth-core'
 import { errorCodeOf } from '@speed/ui-kit'
-import { useAccountUiErrorText } from './error-text.js'
 import { InlineError } from './inline-error.js'
+import { FlowStep } from './flow-step.js'
+import type { FlowStepAnswer } from './flow-step.js'
 import { useAccountUiTranslation } from './translation.js'
 
 export interface StepUpChallengeProps {
   /** Whether the dialog is showing. Opening resets its per-attempt state. */
   readonly open: boolean
-  /** The session whose verifyStepUp drives the verification. */
+  /** The session whose step-up flow the dialog drives. */
   readonly session: AuthSession
-  /** Fired once when a submitted code verifies. The host closes the dialog. */
+  /** Fired once when the flow settles the elevation. The host closes the dialog. */
   readonly onSuccess: () => void
   /** Fired on cancel while nothing is in flight. The host does not retry. */
   readonly onCancel: () => void
 }
+
+/** The dialog's local phase: the flow is starting, is parked on a step,
+ * or the last answer failed. */
+type Phase = 'starting' | 'step' | 'failed'
 
 export function StepUpChallenge({
   open,
@@ -89,81 +66,97 @@ export function StepUpChallenge({
   onCancel,
 }: StepUpChallengeProps) {
   const { t } = useAccountUiTranslation()
-  const resolve = useAccountUiErrorText()
   const titleId = useId()
-  // The submit action sits outside the form -- the MUI dialog layout
-  // keeps the actions below the content -- and reaches it through this
-  // id, so a plain submit button still drives the form's submit path.
-  // The id is useId-derived, never hand-written, like titleId above:
-  // two challenge dialogs on one page (tests, or a host rendering two
-  // surfaces) can never collide on a shared document id.
-  const formId = useId()
 
-  const [code, setCode] = useState('')
+  const [phase, setPhase] = useState<Phase>('starting')
+  const [step, setStep] = useState<AuthnStep | null>(null)
+  const [seq, setSeq] = useState<number | null>(null)
   const [submitting, setSubmitting] = useState(false)
-  // The wrong-code answer renders under the field; any other failure
-  // renders as the banner above it.
-  const [fieldError, setFieldError] = useState<string | null>(null)
-  const [banner, setBanner] = useState<string | null>(null)
+  const [errorCode, setErrorCode] = useState<string | null>(null)
+  // A started flow is not cancelled on cleanup: StrictMode's
+  // mount/effect/cleanup/effect cycle would leave one start, so the
+  // first must be allowed to finish. Each opening takes a run token and
+  // a resolving start only acts when its token is still current.
+  const runRef = useRef(0)
 
-  // Each opening starts a clean attempt: the previous run's code, errors
-  // and in-flight state must never leak into the next challenge.
   useEffect(() => {
-    if (open) {
-      setCode('')
-      setSubmitting(false)
-      setFieldError(null)
-      setBanner(null)
+    if (!open) {
+      return
     }
-  }, [open])
+    const run = ++runRef.current
+    setPhase('starting')
+    setStep(null)
+    setSeq(null)
+    setSubmitting(false)
+    setErrorCode(null)
+    void (async () => {
+      try {
+        const state = await session.startAuthenticatedFlow({
+          purpose: 'step-up',
+        })
+        if (run !== runRef.current) {
+          return
+        }
+        if ('next' in state) {
+          setStep(state.next)
+          setSeq(state.seq)
+          setPhase('step')
+          return
+        }
+        if (state.state === 'elevated' || state.state === 'authenticated') {
+          onSuccess()
+          return
+        }
+        // 'linked' / 'enrolled': not a step-up outcome; the flow settled
+        // without elevating.
+        setErrorCode('client.unknown')
+        setPhase('failed')
+      } catch (error) {
+        if (run === runRef.current) {
+          setErrorCode(errorCodeOf(error))
+          setPhase('failed')
+        }
+      }
+    })()
+  }, [open, session, onSuccess])
 
   if (!open) {
     return null
   }
 
-  async function handleSubmit(event: FormEvent): Promise<void> {
-    event.preventDefault()
-    if (submitting) {
-      return
-    }
-    const value = code.trim()
-    if (value === '') {
+  async function handleAnswer(answer: FlowStepAnswer): Promise<void> {
+    if (submitting || seq === null) {
       return
     }
     setSubmitting(true)
-    setFieldError(null)
-    setBanner(null)
+    setErrorCode(null)
+    const run = runRef.current
     try {
-      await session.verifyStepUp(value)
-      onSuccess()
-    } catch (error) {
-      if (isOperationSuperseded(error)) {
-        // This verification lost a concurrent-operation race (see the
-        // file header): the code verified server-side -- and is
-        // therefore spent -- but the elevation never landed. The code
-        // is never retryable: render the used-code answer, clear the
-        // field and ask for a fresh code. No onSuccess: re-running the
-        // gated operation under an elevation that does not exist would
-        // only draw a fresh 403 from the server.
-        setCode('')
-        setBanner('authn.mfa_code_used')
+      const state = await session.answerFlow({
+        seq,
+        step: answer.step,
+        input: answer.input,
+      })
+      if (run !== runRef.current) {
         return
       }
-      const failure = errorCodeOf(error)
-      if (failure === 'authn.mfa_invalid_code') {
-        // A never-valid code: wrong, or no issued row matches. The
-        // attempt is retryable with a fresh code -- the field error
-        // stays, the typed code stays for editing.
-        setFieldError(failure)
-      } else if (failure === 'authn.mfa_code_used') {
-        // A code that was valid and is spent: its single-use guard
-        // already consumed it, so it can never verify again. Clear the
-        // field and render the used-code answer -- never "invalid",
-        // never retryable-with-this-code.
-        setCode('')
-        setBanner(failure)
-      } else {
-        setBanner(failure)
+      if ('next' in state) {
+        setStep(state.next)
+        setSeq(state.seq)
+        setPhase('step')
+        return
+      }
+      if (state.state === 'elevated' || state.state === 'authenticated') {
+        onSuccess()
+        return
+      }
+      // 'linked' / 'enrolled': not a step-up outcome.
+      setErrorCode('client.unknown')
+      setPhase('failed')
+    } catch (error) {
+      if (run === runRef.current) {
+        setErrorCode(errorCodeOf(error))
+        setPhase('failed')
       }
     } finally {
       setSubmitting(false)
@@ -174,7 +167,7 @@ export function StepUpChallenge({
     <Dialog
       open={open}
       // Any close request (Escape, backdrop) is a cancel while nothing
-      // is in flight; an in-flight verification cannot be abandoned.
+      // is in flight; an in-flight answer cannot be abandoned.
       onClose={() => {
         if (!submitting) {
           onCancel()
@@ -189,39 +182,32 @@ export function StepUpChallenge({
         <Typography variant="body2" color="text.secondary">
           {t('mfa.stepUp.description')}
         </Typography>
-        <Box
-          component="form"
-          id={formId}
-          onSubmit={handleSubmit}
-          sx={{ mt: 2 }}
-        >
-          <TextField
-            label={t('mfa.stepUp.codeLabel')}
-            value={code}
-            onChange={(event) => setCode(event.target.value)}
-            error={fieldError !== null}
-            helperText={
-              fieldError !== null ? resolve(fieldError) : undefined
-            }
-            disabled={submitting}
-            autoComplete="one-time-code"
-            fullWidth
-            autoFocus
-          />
-          <InlineError code={banner} />
-        </Box>
+        <InlineError code={errorCode} />
+        {phase === 'starting' && (
+          <Typography variant="body2" sx={{ mt: 2 }}>
+            {t('mfa.stepUp.starting')}
+          </Typography>
+        )}
+        {phase !== 'starting' && (
+          <Box sx={{ mt: 1 }}>
+            {step !== null ? (
+              <FlowStep
+                // A fresh step resets the fields: keying the renderer on
+                // the step identity clears its per-answer state.
+                key={`${seq ?? 0}-${step.kind}`}
+                step={step}
+                busy={submitting}
+                challengeStep="factor"
+                submitLabel={t('mfa.stepUp.confirmLabel')}
+                onSubmit={(answer) => void handleAnswer(answer)}
+              />
+            ) : null}
+          </Box>
+        )}
       </DialogContent>
       <DialogActions>
         <Button onClick={onCancel} disabled={submitting}>
           {t('mfa.stepUp.cancelLabel')}
-        </Button>
-        <Button
-          type="submit"
-          form={formId}
-          variant="contained"
-          disabled={submitting || code.trim() === ''}
-        >
-          {t('mfa.stepUp.confirmLabel')}
         </Button>
       </DialogActions>
     </Dialog>

@@ -8,7 +8,8 @@ maps the merged token tree onto an MUI v9 theme, `AppThemeProvider`
 components (`PageHeader`, `EmptyState`, `ConfirmDialog`, `FormField`,
 `FormLayout`, `DataTable`, `FileUploader`, `InlineError`,
 `ListSkeleton`, `AsyncSection`) that render only the state hosts give
-them, plus the shared state primitives (`errorCodeOf`, the
+them, plus the form family's zod validation bridge (`zodFormResolver`)
+and the shared state primitives (`errorCodeOf`, the
 `visuallyHiddenSx` clip recipe). `FileUploader` is no carve-out: the queue renders from
 host-owned `rows` props, every pick, cancel, retry and remove reports up
 through a callback (`onSelectFiles` / `onCancel` / `onRetry` /
@@ -80,12 +81,14 @@ plumbing and deliberately not exported.
   renderer. When a control is missing from MUI's v9 surface, build on
   its primitives — do not fork them.
 - **Framework peers stay peers.** `react`, `react-dom`, `@mui/material`,
-  `@emotion/*` and `react-hook-form` are peer (required) dependencies —
-  single copies in the host tree are what make theme/context/type
-  identity work; the package never depends on them directly. New
-  dependencies on framework-adjacent packages need the single-copy
-  argument stated in the same commit. `@speed/tokens` and `@speed/i18n`
-  are regular dependencies; a new @speed consumer joins them.
+  `@emotion/*`, `react-hook-form` and `zod` are peer (required)
+  dependencies — single copies in the host tree are what make
+  theme/context/type identity work, and a host-built zod schema is only
+  the same class as the package's `ZodType` when one zod is in the tree;
+  the package never depends on them directly. New dependencies on
+  framework-adjacent packages need the single-copy argument stated in
+  the same commit. `@speed/tokens` and `@speed/i18n` are regular
+  dependencies; a new @speed consumer joins them.
 - **Accessibility is asserted, with recorded exceptions.** Component
   tests run axe through `test-utils/axe.ts`; `color-contrast` and
   `region` are disabled with the rationale recorded there (jsdom cannot
@@ -189,5 +192,5 @@ that a real viewport actually hides or shows the column.
   upload code can pair with `FileUploader`; no reference-app page does
   so yet, and this package ships no transport either way. The wire
   contract's authority is `go/storage/api/openapi.yaml` itself; the
-  gap is recorded in `go/storage/AGENTS.md` and the Taskfile `api:gen`
-  header comment as well, so no single doc owns the claim.
+  gap is recorded in `go/storage/AGENTS.md` and the generation
+  config's header comment as well, so no single doc owns the claim.

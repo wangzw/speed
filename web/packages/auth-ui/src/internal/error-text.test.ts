@@ -91,9 +91,14 @@ describe('error-text whitelist', () => {
     }
   })
 
-  it('cover the identifier-format answers of the register and SMS request paths', () => {
+  it('cover the login-flow problem set the flow endpoints answer with', () => {
     expect(ERROR_TEXT_CODES).toEqual(
-      expect.arrayContaining(['authn.invalid_email', 'authn.invalid_phone']),
+      expect.arrayContaining([
+        'authn.login_failed',
+        'authn.flow_invalid',
+        'authn.unsupported_region',
+        'authn.method_disabled',
+      ]),
     )
   })
 })

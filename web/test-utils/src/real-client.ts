@@ -27,12 +27,11 @@
  * lets a test script a dead-session code and see the surface's own
  * banner for it.
  *
- * The answer helpers (`jsonResponse`, `errorResponse`, `makePair`,
+ * The answer helpers (`jsonResponse`, `errorResponse`,
  * `signInWithPassword`) are the scripted-answer vocabulary every
  * journey shares: a genuine Response carrying the API's envelope
- * shape, the 401-style error envelope, a token-issuing sign-in answer
- * in the shape auth-core parses, and the shared first leg of a
- * signed-in journey.
+ * shape, the 401-style error envelope, and the shared first leg of a
+ * signed-in journey (the flow-model sign-in).
  */
 
 import {
@@ -41,7 +40,6 @@ import {
 } from '@speed/api-client'
 import type { AccessTokenStore, RequestFn } from '@speed/api-client'
 import { bindRequestFn } from '@speed/api-sdk/runtime'
-import type { AuthnTokenPair } from '@speed/api-sdk'
 import { createAuthSession } from '@speed/auth-core'
 import type { AuthSession } from '@speed/auth-core'
 
@@ -157,35 +155,31 @@ export function errorResponse(
   return jsonResponse(status, { code, traceId, message: code })
 }
 
-/** A token pair for a scripted sign-in; overrides replace a top-level
- * field or the whole principal wholesale. */
-export function makePair(
-  overrides: Partial<AuthnTokenPair> = {},
-): AuthnTokenPair {
-  return {
-    access_token: 'access-1',
-    refresh_token: 'refresh-1',
-    principal: {
-      user_id: 'user-1',
-      tenant_id: 'tenant-1',
-      session_id: 'session-1',
-    },
-    ...overrides,
-  }
-}
-
 /**
- * The shared first leg of a signed-in journey: the responder must answer
- * POST /api/v1/authn/login/password with jsonResponse(200, makePair()).
- * The rig's session has no seed path by contract -- a reload starts
+ * The shared first leg of a signed-in journey, in the flow model: the
+ * session starts a `purpose: 'login'` flow and answers its first step.
+ * The responder must answer POST /auth/flows with an open flow whose
+ * next step is a first-factor challenge (see
+ * @speed/test-utils/session-harness's openFlow), POST /auth/flows/answer
+ * with a token-issuing completion (authenticatedCompletion), and GET
+ * /auth/me with the profile the session reads for the principal. The
+ * rig's session has no seed path by contract -- a reload starts
  * anonymous -- so a journey signs in through the real session operation,
  * which is also what plants the access token in the shared store.
  */
 export async function signInWithPassword(rig: {
   readonly session: AuthSession
 }): Promise<void> {
-  await rig.session.loginWithPassword({
-    identifier: 'owner@example.test',
-    password: 'correct-horse-battery-staple',
+  const first = await rig.session.startFlow({ method: 'password' })
+  if (!('next' in first)) {
+    return
+  }
+  await rig.session.answerFlow({
+    seq: first.seq,
+    step: 'answer',
+    input: {
+      identifier: 'owner@example.test',
+      password: 'correct-horse-battery-staple',
+    },
   })
 }

@@ -1,9 +1,9 @@
 /**
  * PreferencesSection behaviour: the language and timezone selects over
- * GET/PATCH /api/v1/authn/me/preferences.
+ * the profile self-write surface, GET/PATCH /auth/me.
  *
- * What this suite pins, per story: the stored values render into the
- * controls (including a stored timezone the engine's own list omits,
+ * What this suite pins, per story: the stored profile values render into
+ * the controls (including a stored timezone the engine's own list omits,
  * which must be added as its own option rather than silently displaying
  * the wrong one); a language change PATCHes the account FIRST and only a
  * confirmed write switches the instance (the manual slot and the account
@@ -13,7 +13,7 @@
  * the two-line failure alert (save line plus the server's code text)
  * with the instance left on the old language; a timezone change and a
  * timezone CLEAR (the "not chosen" choice, whose value is the empty
- * string) PATCH the field; and a settled load that delivered no data
+ * string) PATCH the `time_zone` field; and a settled load that failed
  * renders the EmptyState error variant with a retry that refetches.
  * Every write's request body is pinned, so the PATCH contract (partial
  * update, empty string clears) is asserted from the wire up.
@@ -27,9 +27,7 @@ import enUS from './locales/en-US.json' with { type: 'json' }
 import {
   errorResponse,
   jsonResponse,
-  makePair,
-  makeRealClientRig,
-  signInWithPassword,
+  makeRealClientRigWithoutSession,
   type RealCall,
   type RealResponder,
 } from '../test-utils/real-client.js'
@@ -37,8 +35,7 @@ import { renderWithProviders } from '../test-utils/render.js'
 import { expectNoAxeViolations } from '../test-utils/axe.js'
 import { PreferencesSection } from './PreferencesSection.js'
 
-const LOGIN_PATH = '/api/v1/authn/login/password'
-const PREFERENCES_PATH = '/api/v1/authn/me/preferences'
+const PROFILE_PATH = '/auth/me'
 
 /** The language label the component computes for `tag` under `ui`, using
  * the same Intl.DisplayNames call (with the same raw-tag fallback), so
@@ -51,40 +48,47 @@ function languageLabel(tag: string, ui: string): string {
   }
 }
 
-/** A stateful preferences responder: GET answers the current pair, PATCH
- * merges the partial body into it (absent field unchanged, empty string
- * clears -- the endpoint's contract) and answers the stored pair. */
-function makePreferencesResponder(initial: {
-  locale?: string
-  timezone?: string
-}) {
-  const stored: { locale?: string; timezone?: string } = { ...initial }
+/** A profile with the fields the two selects read. */
+function profileBody(locale = '', timeZone = ''): Record<string, unknown> {
+  return {
+    account_id: 'user-1',
+    kind: 'person',
+    display_name: 'Ada',
+    mfa_required: false,
+    password_set: true,
+    created_at: '2026-01-01T00:00:00Z',
+    attributes: {},
+    locale,
+    time_zone: timeZone,
+    identifiers: [],
+    links: [],
+  }
+}
+
+/** A stateful profile responder: GET answers the stored pair, PATCH merges
+ * the partial body into it (absent field unchanged, empty string clears
+ * -- the endpoint's contract) and answers 200. */
+function makeProfileResponder(initial: { locale?: string; time_zone?: string }) {
+  const stored: { locale?: string; time_zone?: string } = { ...initial }
   const respond: RealResponder = async (call: RealCall) => {
-    if (call.method === 'POST' && call.path === LOGIN_PATH) {
-      return jsonResponse(200, makePair())
-    }
-    if (call.path !== PREFERENCES_PATH) {
+    if (call.path !== PROFILE_PATH) {
       throw new Error(`unexpected ${call.method} ${call.path}`)
     }
     if (call.method === 'GET') {
-      const body: Record<string, string> = {}
-      if (stored.locale !== undefined && stored.locale !== '') {
-        body.locale = stored.locale
-      }
-      if (stored.timezone !== undefined && stored.timezone !== '') {
-        body.timezone = stored.timezone
-      }
-      return jsonResponse(200, body)
+      return jsonResponse(
+        200,
+        profileBody(stored.locale ?? '', stored.time_zone ?? ''),
+      )
     }
     if (call.method === 'PATCH') {
-      const patch = call.body as { locale?: string; timezone?: string }
+      const patch = call.body as { locale?: string; time_zone?: string }
       if (patch.locale !== undefined) {
         stored.locale = patch.locale
       }
-      if (patch.timezone !== undefined) {
-        stored.timezone = patch.timezone
+      if (patch.time_zone !== undefined) {
+        stored.time_zone = patch.time_zone
       }
-      return jsonResponse(200, stored)
+      return jsonResponse(200, {})
     }
     throw new Error(`unexpected ${call.method} ${call.path}`)
   }
@@ -92,30 +96,30 @@ function makePreferencesResponder(initial: {
 }
 
 /** Opens a MUI select and picks the option whose accessible name is
- * `optionName`, through the dispatched events the component's own
- * DataTable-pattern suites use (mousedown opens the menu, the click on
- * the rendered option commits the choice). */
+ * `optionName`, through the dispatched events the DataTable-pattern
+ * suites use (mousedown opens the menu, the click on the rendered option
+ * commits the choice). */
 function chooseOption(combobox: HTMLElement, optionName: string): void {
   fireEvent.mouseDown(combobox)
   fireEvent.click(screen.getByRole('option', { name: optionName }))
 }
 
-/** Mounts the section over a rig whose login and preferences operations
- * answer from `respond`. */
-async function mountSection(respond: RealResponder) {
-  const rig = makeRealClientRig(respond)
-  await signInWithPassword(rig)
+/** Mounts the section over a session-free rig that plants the bearer the
+ * profile read rides. */
+function mountSection(respond: RealResponder) {
+  const rig = makeRealClientRigWithoutSession(respond)
+  rig.store.set('access-1')
   const rendered = renderWithProviders(<PreferencesSection />)
   return { rig, ...rendered }
 }
 
 describe('PreferencesSection', () => {
-  it('renders the stored preferences into the controls and passes axe', async () => {
-    const { respond } = makePreferencesResponder({
+  it('renders the stored profile values into the controls and passes axe', async () => {
+    const { respond } = makeProfileResponder({
       locale: 'en-US',
-      timezone: 'Asia/Tokyo',
+      time_zone: 'Asia/Tokyo',
     })
-    const { rig } = await mountSection(respond)
+    const { rig } = mountSection(respond)
 
     expect(
       await screen.findByRole('heading', { name: zhCN.preferences.title }),
@@ -130,17 +134,17 @@ describe('PreferencesSection', () => {
     })
     expect(timezone).toHaveTextContent('Asia/Tokyo')
 
-    // Both controls' values come from the one preferences read.
+    // Both controls' values come from the one profile read.
     expect(
-      rig.calls.filter((call) => call.path === PREFERENCES_PATH),
+      rig.calls.filter((call) => call.path === PROFILE_PATH),
     ).toHaveLength(1)
 
     await expectNoAxeViolations()
   })
 
   it('PATCHes the language first, then switches the instance (manual slot and account move together)', async () => {
-    const { respond, stored } = makePreferencesResponder({})
-    const { rig, i18n } = await mountSection(respond)
+    const { respond, stored } = makeProfileResponder({})
+    const { rig, i18n } = mountSection(respond)
 
     const language = await screen.findByRole('combobox', {
       name: zhCN.preferences.language.label,
@@ -153,11 +157,11 @@ describe('PreferencesSection', () => {
     await waitFor(() => expect(i18n.language).toBe('en-US'))
     expect(stored.locale).toBe('en-US')
     const patch = rig.calls.find(
-      (call) => call.method === 'PATCH' && call.path === PREFERENCES_PATH,
+      (call) => call.method === 'PATCH' && call.path === PROFILE_PATH,
     )
     expect(patch).toBeDefined()
     // The body is the partial update the endpoint documents: only the
-    // changed field.
+    // changed field, under its wire name.
     expect(patch?.body).toEqual({ locale: 'en-US' })
     // The UI switched with the account: the heading now speaks en-US.
     expect(
@@ -166,8 +170,8 @@ describe('PreferencesSection', () => {
   })
 
   it('clears the language preference without switching the device language', async () => {
-    const { respond, stored } = makePreferencesResponder({ locale: 'en-US' })
-    const { rig, i18n } = await mountSection(respond)
+    const { respond, stored } = makeProfileResponder({ locale: 'en-US' })
+    const { rig, i18n } = mountSection(respond)
 
     const language = await screen.findByRole('combobox', {
       name: zhCN.preferences.language.label,
@@ -177,16 +181,16 @@ describe('PreferencesSection', () => {
     chooseOption(language, zhCN.preferences.language.notChosen)
 
     // The clear reaches the account as the empty string, and the
-    // confirmed write still refetches the stored pair.
+    // confirmed write still refetches the stored profile.
     await waitFor(() => expect(stored.locale).toBe(''))
     const patch = rig.calls.find(
-      (call) => call.method === 'PATCH' && call.path === PREFERENCES_PATH,
+      (call) => call.method === 'PATCH' && call.path === PROFILE_PATH,
     )
     expect(patch?.body).toEqual({ locale: '' })
     await waitFor(() =>
       expect(
         rig.calls.filter(
-          (call) => call.method === 'GET' && call.path === PREFERENCES_PATH,
+          (call) => call.method === 'GET' && call.path === PROFILE_PATH,
         ),
       ).toHaveLength(2),
     )
@@ -203,18 +207,15 @@ describe('PreferencesSection', () => {
 
   it('renders the two-line failure alert and does not switch when the language write is refused', async () => {
     const respond: RealResponder = async (call) => {
-      if (call.method === 'POST' && call.path === LOGIN_PATH) {
-        return jsonResponse(200, makePair())
+      if (call.method === 'GET' && call.path === PROFILE_PATH) {
+        return jsonResponse(200, profileBody('', ''))
       }
-      if (call.method === 'GET' && call.path === PREFERENCES_PATH) {
-        return jsonResponse(200, {})
-      }
-      if (call.method === 'PATCH' && call.path === PREFERENCES_PATH) {
-        return errorResponse(400, 'authn.invalid_locale')
+      if (call.method === 'PATCH' && call.path === PROFILE_PATH) {
+        return errorResponse(400, 'authn.bad_request')
       }
       throw new Error(`unexpected ${call.method} ${call.path}`)
     }
-    const { i18n } = await mountSection(respond)
+    const { i18n } = mountSection(respond)
 
     const language = await screen.findByRole('combobox', {
       name: zhCN.preferences.language.label,
@@ -224,40 +225,33 @@ describe('PreferencesSection', () => {
     const alert = await screen.findByRole('alert')
     // Line one says what happened; line two is the server's own code text.
     expect(alert).toHaveTextContent(zhCN.preferences.saveFailed)
-    expect(alert).toHaveTextContent(zhCN.errors.authn.invalid_locale)
+    expect(alert).toHaveTextContent(zhCN.errors.authn.bad_request)
     // A refused write must not move the device language.
     expect(i18n.language).toBe('zh-CN')
   })
 
   // This test's cost is the engine's own timezone list: ~418 zones
-  // rendered into the open select menu twice (the pick and the clear)
-  // and two option queries by accessible name over the whole list --
-  // ~1.2s on a quiet machine under the coverage gate, and past the
-  // default 5s budget on loaded shared runners. The explicit 20s budget
-  // (the same bound the usage-example journey carries for this package's
-  // render-heavy class) covers that loaded-runner cost with headroom; a
-  // genuinely stuck write still fails at this bound.
-  it('PATCHes a timezone choice and the cleared empty string', async () => {
-    const { respond, stored } = makePreferencesResponder({
-      timezone: 'Asia/Tokyo',
+  // rendered into the open select menu twice (the pick and the clear) and
+  // two option queries by accessible name over the whole list; the
+  // explicit 20s budget covers the loaded-runner cost of that
+  // render-heavy class with headroom.
+  it('PATCHes a timezone choice and the cleared empty string under time_zone', async () => {
+    const { respond, stored } = makeProfileResponder({
+      time_zone: 'Asia/Tokyo',
     })
-    const { rig } = await mountSection(respond)
+    const { rig } = mountSection(respond)
 
     const timezone = await screen.findByRole('combobox', {
       name: zhCN.preferences.timezone.label,
     })
     expect(timezone).toHaveTextContent('Asia/Tokyo')
 
-    // A new zone: the PATCH carries it alone. (The engine's own list
-    // omits 'UTC' by specification, so a real city zone is the choice
-    // here; the stored-value guard's UTC coverage lives in the omitted-
-    // value test below.)
+    // A new zone: the PATCH carries it alone, under the profile's own
+    // field name.
     chooseOption(timezone, 'Europe/Berlin')
-    await waitFor(() => expect(stored.timezone).toBe('Europe/Berlin'))
+    await waitFor(() => expect(stored.time_zone).toBe('Europe/Berlin'))
     let patches = rig.calls.filter((call) => call.method === 'PATCH')
-    expect(patches[0]?.body).toEqual({
-      timezone: 'Europe/Berlin',
-    })
+    expect(patches[0]?.body).toEqual({ time_zone: 'Europe/Berlin' })
 
     // Back to "not chosen": the clearing value is the empty string.
     chooseOption(
@@ -266,11 +260,9 @@ describe('PreferencesSection', () => {
       }),
       zhCN.preferences.timezone.notChosen,
     )
-    await waitFor(() => expect(stored.timezone).toBe(''))
+    await waitFor(() => expect(stored.time_zone).toBe(''))
     patches = rig.calls.filter((call) => call.method === 'PATCH')
-    expect(patches[1]?.body).toEqual({
-      timezone: '',
-    })
+    expect(patches[1]?.body).toEqual({ time_zone: '' })
   }, 20000)
 
   it('adds a stored timezone the engine list omits as its own option', async () => {
@@ -282,10 +274,8 @@ describe('PreferencesSection', () => {
       .spyOn(Intl, 'supportedValuesOf')
       .mockReturnValue(['UTC'])
     try {
-      const { respond } = makePreferencesResponder({
-        timezone: 'Legacy/Zone',
-      })
-      await mountSection(respond)
+      const { respond } = makeProfileResponder({ time_zone: 'Legacy/Zone' })
+      mountSection(respond)
 
       const timezone = await screen.findByRole('combobox', {
         name: zhCN.preferences.timezone.label,
@@ -304,18 +294,15 @@ describe('PreferencesSection', () => {
     const user = userEvent.setup()
     let failLoad = true
     const respond: RealResponder = async (call) => {
-      if (call.method === 'POST' && call.path === LOGIN_PATH) {
-        return jsonResponse(200, makePair())
-      }
-      if (call.method === 'GET' && call.path === PREFERENCES_PATH) {
+      if (call.method === 'GET' && call.path === PROFILE_PATH) {
         if (failLoad) {
-          return errorResponse(500, 'authn.internal_error')
+          return errorResponse(503, 'client.network')
         }
-        return jsonResponse(200, { timezone: 'Asia/Tokyo' })
+        return jsonResponse(200, profileBody('', 'Asia/Tokyo'))
       }
       throw new Error(`unexpected ${call.method} ${call.path}`)
     }
-    await mountSection(respond)
+    mountSection(respond)
 
     expect(
       await screen.findByText(zhCN.preferences.error.title),

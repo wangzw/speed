@@ -1,0 +1,24 @@
+{
+  "extends": "../../tsconfig.base.json",
+  "compilerOptions": {
+    // ESM authoring rules: NodeNext mode makes tsc emit relative imports
+    // verbatim, so sources must write explicit .js extensions (TS2835
+    // otherwise) -- the emitted dist/ is then loadable by Node ESM and
+    // typecheckable by NodeNext consumers as-is.
+    //
+    // route-kit has no @speed dependency, so nothing here resolves
+    // through a sibling's exports map; react-router-dom, react and
+    // react-dom are the host's peers and stay bare specifiers in the
+    // emitted dist/. tsconfig.json (the noEmit typecheck, tests included)
+    // maps the one workspace specifier its tests need onto source.
+    "module": "nodenext",
+    "moduleResolution": "nodenext",
+    "jsx": "react-jsx",
+    "noEmit": false,
+    "declaration": true,
+    "outDir": "dist",
+    "rootDir": "src"
+  },
+  "include": ["src"],
+  "exclude": ["src/**/*.test.ts", "src/**/*.test.tsx"]
+}

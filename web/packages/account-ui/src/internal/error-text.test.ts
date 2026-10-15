@@ -5,8 +5,8 @@
  * each language file must name exactly the same codes -- errors.unknown
  * is the one errors-section key with no code, the fallback itself. A
  * code added to the whitelist without its two bundle keys, or a bundle
- * key added without its whitelist code, fails the equality pin here;
- * key parity between the two language files is enforced earlier, by
+ * key added without its whitelist code, fails the equality pin here; key
+ * parity between the two language files is enforced earlier, by
  * registerNamespace, so a key missing from one language fails
  * registration before any component can ship it.
  *
@@ -17,18 +17,20 @@
  * given code) lives in the component suites beside each failure path;
  * this file pins the whole-list pairing that the banner depends on.
  *
- * The wording policy of error-text.ts adds a third pin: the eight codes
- * whose failure context is identical to the sign-in surface's (the
- * session-lifecycle family, authn.rate_limited, authn.identity_already_bound
- * and authn.identity_requires_binding) must stay verbatim copies of the
- * auth-ui texts for the same codes, in both languages, so the same server
- * answer reads the same on the account page and the sign-in surface.
- * The pin must live in this package's own suite: another package's
- * whitelist sharing some of these codes covers them only as a side
- * effect of its own whitelist, never as this package's protection --
- * that package can narrow its whitelist for its own reasons and
- * silently drop the coverage. The eight are pinned here, against the
- * auth-ui bundles imported below as test data.
+ * The wording policy of error-text.ts adds a third pin: the codes whose
+ * failure context is identical to the sign-in surface's must stay
+ * verbatim copies of the auth-ui texts for the same codes, in both
+ * languages, so the same server answer reads the same on the account
+ * page and the sign-in surface. The pin must live in this package's own
+ * suite: another package's whitelist sharing some of these codes covers
+ * them only as a side effect of its own whitelist, never as this
+ * package's protection -- that package can narrow its whitelist for its
+ * own reasons and silently drop the coverage. The shared codes are
+ * pinned here, against the auth-ui bundles imported below as test data.
+ * The account-only codes (insufficient_user_authentication,
+ * impersonation_restricted, forbidden, login_identifier_required,
+ * unsupported_media_type) carry account-authored texts and carry no copy
+ * claim to pin.
  */
 
 import { describe, expect, it } from 'vitest'
@@ -49,7 +51,7 @@ import { ERROR_TEXT_CODES } from './error-text.js'
  * data) satisfy the helpers below. */
 type Bundle = { errors: unknown }
 
-/** The code leaf keys of the errors section, e.g. 'authn.session_revoked'. */
+/** The code leaf keys of the errors section, e.g. 'authn.bad_request'. */
 function errorLeafKeys(bundle: Bundle): string[] {
   const leaves: string[] = []
   for (const [source, codes] of Object.entries(
@@ -88,35 +90,24 @@ function newInstance(): ReturnType<typeof createI18n> {
 
 /**
  * The whitelisted codes whose account-ui text is a verbatim copy of the
- * auth-ui text for the same code -- the eight codes error-text.ts's
- * wording policy names (the session-lifecycle family, authn.rate_limited,
- * authn.identity_already_bound and authn.identity_requires_binding). Codes
- * outside this list are outside the verbatim claim even where a
- * same-named auth-ui leaf exists: five of them (authn.channel_disabled,
- * authn.oauth_state_invalid, authn.social_exchange_failed,
- * authn.provider_unknown, authn.redirect_uri_not_allowed) already carry
- * account-authored texts of their own, different from the sign-in
- * bundle's, so no copy claim exists for them to pin -- the pin asserts
- * exactly the eight codes the wording policy claims.
+ * auth-ui text for the same code -- the codes error-text.ts's wording
+ * policy names, restricted to the ones the auth-ui bundle actually
+ * carries. The account-only codes and the client-transport family are
+ * outside the claim: no auth-ui leaf exists for them.
  */
 const VERBATIM_CODES: readonly string[] = [
-  // authn: session lifecycle -- the session list's revoke operation and
-  // the login-history surface can answer with these, and a host renders
-  // them for its own protected operations; a refused refresh surfaces as
-  // one of them through the silent-refresh leg. A dead or refused
-  // session reads the same on the account page and the sign-in surface.
-  'authn.session_not_found',
-  'authn.session_revoked',
-  'authn.token_expired',
-  'authn.refresh_token_invalid',
-  'authn.refresh_token_reused',
-  // authn: the shared rate limiter -- any operation behind it.
-  'authn.rate_limited',
-  // authn: social bindings -- the callback exchange answers these on the
-  // same identity gates a sign-in authorize passes, so the sign-in
-  // surface's wording is the account surface's.
-  'authn.identity_already_bound',
-  'authn.identity_requires_binding',
+  // authn: the problem codes both surfaces render for the same server
+  // answer -- the account page and the sign-in surface read them alike.
+  'authn.bad_request',
+  'authn.unsupported_region',
+  'authn.login_failed',
+  'authn.flow_invalid',
+  'authn.link_required',
+  'authn.method_disabled',
+  'authn.account_unavailable',
+  'authn.conflict',
+  'authn.throttled',
+  'authn.unavailable',
 ]
 
 describe('error-text whitelist', () => {
@@ -164,7 +155,7 @@ describe('error-text whitelist', () => {
     // The pin list must not drift into dead copy of its own: a code the
     // whitelist no longer draws is a code the pin should stop claiming,
     // not one it quietly stops enforcing -- the wording policy of
-    // error-text.ts names the same eight, and the pairing test above
+    // error-text.ts names the same set, and the pairing test above
     // already tied each whitelisted code to its two bundle leaves.
     for (const code of VERBATIM_CODES) {
       expect(

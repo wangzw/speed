@@ -46,8 +46,8 @@ describe('auth-ui resources', () => {
     expect(sections).toEqual([
       'errors',
       'passwordSignIn',
-      'register',
       'sessionEnded',
+      'signInFlow',
       'signOut',
       'smsSignIn',
       'social',
@@ -74,8 +74,8 @@ describe('auth-ui resources', () => {
       i18n.t('passwordSignIn.identifierLabel', { ns: AUTH_UI_NAMESPACE }),
     ).toBe(enUS.passwordSignIn.identifierLabel)
     expect(
-      i18n.t('register.successMessage', { ns: AUTH_UI_NAMESPACE }),
-    ).toBe(enUS.register.successMessage)
+      i18n.t('signInFlow.submit', { ns: AUTH_UI_NAMESPACE }),
+    ).toBe(enUS.signInFlow.submit)
   })
 
   it('interpolate the SMS sent notice from each bundle template', async () => {
@@ -101,13 +101,12 @@ describe('auth-ui resources', () => {
     // these keys -- and the unknown-code fallback rule -- is the
     // error-text resolver's own test, alongside its source file.
     for (const key of [
-      'errors.authn.invalid_credentials',
-      'errors.authn.email_already_registered',
-      'errors.authn.invalid_email',
-      'errors.authn.invalid_phone',
-      'errors.authn.identity_already_bound',
-      'errors.authn.session_revoked',
-      'errors.authn.token_expired',
+      'errors.authn.login_failed',
+      'errors.authn.flow_invalid',
+      'errors.authn.method_disabled',
+      'errors.authn.throttled',
+      'errors.authn.unsupported_region',
+      'errors.authn.unavailable',
       'errors.client.network',
     ]) {
       expect(i18n.t(key, { ns: AUTH_UI_NAMESPACE })).not.toBe(fallback)

@@ -2,10 +2,10 @@
  * Display-timezone resolution for the account surfaces.
  *
  * The chain, highest tier first: the account's stored timezone preference
- * (GET /api/v1/authn/me/preferences -- empty means "not chosen"), the
- * device's own timezone, then UTC as the terminal fallback. This is the
- * same shape every locale chain in the stack observes: a stored choice
- * outranks the environment's guess, and a platform default closes the
+ * (the profile's `time_zone`, read from GET /auth/me -- empty means "not
+ * chosen"), the device's own timezone, then UTC as the terminal fallback.
+ * This is the same shape every locale chain in the stack observes: a stored
+ * choice outranks the environment's guess, and a platform default closes the
  * chain so a renderer ALWAYS has an explicit zone -- never the engine's
  * silent process-local default, which would make the same account render
  * differently depending on which machine ran the code.

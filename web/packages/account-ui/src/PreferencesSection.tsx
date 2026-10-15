@@ -3,7 +3,8 @@
  * page.
  *
  * Two selects, both editing the account's own stored preferences through
- * GET/PATCH /api/v1/authn/me/preferences:
+ * the self-service profile route -- GET /auth/me for the stored values
+ * and PATCH /auth/me for a write (pkg/authn/profile):
  *
  *  - Language: the options are the i18n instance's OWN supported set
  *    (readSupportedLanguages), so a host whose instance speaks a wider or
@@ -21,9 +22,7 @@
  *  - Timezone: the options are the engine's IANA list
  *    (Intl.supportedValuesOf('timeZone'), guarded) plus an explicit
  *    "not chosen" choice whose value is the empty string -- the stored
- *    clearing value, rendered per this module's API contract (an empty
- *    field IS "not chosen yet", so a 200 without fields is a valid state,
- *    not an error). The stored value is guaranteed present in the option
+ *    clearing value. The stored value is guaranteed present in the option
  *    list: a value the engine's list omits (a zone removed from newer
  *    tzdata, a value written by another engine) is added as its own
  *    option, because a select whose value matches no option would silently
@@ -33,9 +32,8 @@
  * server is asked before anything moves locally, so a refused write
  * leaves the controls reading the stored values -- the natural revert --
  * and renders the two-line failure alert: the save line plus the
- * resolved code text (authn.invalid_locale / authn.invalid_timezone when
- * the server refuses a value, the transport codes when the request never
- * landed). Both selects are disabled while a write is in flight, so a
+ * resolved code text (authn.bad_request when the server refuses a
+ * value, the transport codes when the request never landed). Both selects are disabled while a write is in flight, so a
  * change can never race its own predecessor.
  *
  * The section takes no props -- whose preferences these are comes from
@@ -43,9 +41,9 @@
  * account surfaces' settled-state paradigm: an unresolved load keeps a
  * loading placeholder (one announceable status row), a settled load with
  * no data renders the ui-kit EmptyState error variant with a retry, and
- * the settled-with-data state always renders both controls (both fields
- * absent means both are "not chosen", which each control displays as
- * such).
+ * the settled-with-data state always renders both controls (a profile
+ * answer with no stored locale or time zone renders both as "not
+ * chosen").
  */
 
 import { useMemo, useState } from 'react'
@@ -57,14 +55,13 @@ import TextField from '@mui/material/TextField'
 import Typography from '@mui/material/Typography'
 import { useQueryClient } from '@tanstack/react-query'
 import {
-  getAuthnGetPreferencesQueryKey,
-  useAuthnGetPreferences,
-  useAuthnUpdatePreferences,
+  getAuthnProfileGetQueryKey,
+  useAuthnProfilePatch,
 } from '@speed/api-sdk'
 import { readSupportedLanguages, switchLanguage } from '@speed/i18n'
 import { AsyncSection, errorCodeOf } from '@speed/ui-kit'
 import { useAccountUiErrorText } from './internal/error-text.js'
-
+import { useProfileQuery } from './internal/queries.js'
 import { useAccountUiTranslation } from './internal/translation.js'
 
 /** The language name to show for a tag, in the current UI language; the
@@ -99,8 +96,8 @@ export function PreferencesSection() {
   const { t, i18n } = useAccountUiTranslation()
   const errorText = useAccountUiErrorText()
   const queryClient = useQueryClient()
-  const { data, isPending, refetch } = useAuthnGetPreferences()
-  const updatePreferences = useAuthnUpdatePreferences()
+  const { data, isPending, refetch } = useProfileQuery()
+  const patchProfile = useAuthnProfilePatch()
   const [failureCode, setFailureCode] = useState<string | null>(null)
 
   const languageOptions = useMemo(
@@ -110,10 +107,10 @@ export function PreferencesSection() {
   const timeZoneOptions = useMemo(() => supportedTimeZones(), [])
 
   const pending = isPending && data === undefined
-  const saving = updatePreferences.isPending
+  const saving = patchProfile.isPending
 
   const storedLocale = data?.locale ?? ''
-  const storedTimezone = data?.timezone ?? ''
+  const storedTimezone = data?.time_zone ?? ''
 
   // The stored timezone is always selectable, even when the engine's list
   // omits it (see the header): the option list is the engine's, plus the
@@ -131,7 +128,7 @@ export function PreferencesSection() {
   async function saveLocale(locale: string): Promise<void> {
     setFailureCode(null)
     try {
-      await updatePreferences.mutateAsync({ data: { locale } })
+      await patchProfile.mutateAsync({ data: { locale } })
       // The empty string IS the clearing value, not a language: a
       // successful clear leaves the device on its current language, so
       // only a real choice is switched to (switchLanguage refuses the
@@ -144,7 +141,7 @@ export function PreferencesSection() {
         await switchLanguage(i18n, locale)
       }
       await queryClient.invalidateQueries({
-        queryKey: getAuthnGetPreferencesQueryKey(),
+        queryKey: getAuthnProfileGetQueryKey(),
       })
     } catch (error) {
       setFailureCode(errorCodeOf(error))
@@ -154,9 +151,9 @@ export function PreferencesSection() {
   async function saveTimezone(timezone: string): Promise<void> {
     setFailureCode(null)
     try {
-      await updatePreferences.mutateAsync({ data: { timezone } })
+      await patchProfile.mutateAsync({ data: { time_zone: timezone } })
       await queryClient.invalidateQueries({
-        queryKey: getAuthnGetPreferencesQueryKey(),
+        queryKey: getAuthnProfileGetQueryKey(),
       })
     } catch (error) {
       setFailureCode(errorCodeOf(error))
@@ -196,8 +193,8 @@ export function PreferencesSection() {
               <Alert severity="error">
                 {/* The two-line failure alert: what happened, then the
                     server's own code text (the whitelist resolves
-                    authn.invalid_locale / authn.invalid_timezone and the
-                    transport codes; anything else reads the generic line). */}
+                    authn.bad_request and the transport codes; anything else
+                    reads the generic line). */}
                 <Typography variant="body2">
                   {t('preferences.saveFailed')}
                 </Typography>

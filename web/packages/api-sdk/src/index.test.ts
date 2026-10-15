@@ -5,19 +5,24 @@ import { renderHook, waitFor } from '@testing-library/react'
 import type { RequestFn, RequestOptions } from '@speed/api-client'
 import { bindRequestFn } from './runtime'
 import {
-  getAuthnListSessionsQueryKey,
-  useAuthnListSessions,
-  useAuthnRegister,
+  auditAdminRecordsList,
+  getAuthnProfileGetQueryKey,
+  getAuthnSessionListQueryKey,
+  useAuthnLoginStart,
+  useAuthnProfileGet,
+  useAuthnSessionList,
 } from './index'
 
 /**
  * Exercises the generated surface (orval output, DO-NOT-EDIT) against a
- * bound fake request function: what is under test is that the hooks
- * issue exactly the calls the spec implies, with the query keys the
- * generated code stamps -- never a network, never a real client. The
- * authn operations stand in for any generated group: every platform
- * fragment's operations share the identical generated shape, so this
- * pair pins the surface mechanics the whole package relies on.
+ * bound fake request function: what is under test is that the generated
+ * hooks and operation functions issue exactly the calls the spec
+ * implies, with the query keys the generated code stamps -- never a
+ * network, never a real client. The authn and audit operations stand in
+ * for any generated group: every platform fragment's operations share
+ * the identical generated shape, so this set pins the surface mechanics
+ * the whole package relies on -- a query hook, a mutation hook, a
+ * repeated (array) query parameter, and the generated query keys.
  */
 interface RecordedCall {
   path: string
@@ -26,11 +31,8 @@ interface RecordedCall {
 const calls: RecordedCall[] = []
 /** The payloads the endpoints would return, keyed by method + path. */
 const responses: Record<string, unknown> = {
-  'GET /api/v1/authn/sessions': { sessions: [] },
-  'POST /api/v1/authn/register': {
-    id: 'user-1',
-    email: 'a@example.test',
-  },
+  'GET /auth/sessions': { sessions: [] },
+  'GET /auth/me': { account_id: 'user-1' },
 }
 const fakeRequestFn: RequestFn = (async <T>(
   path: string,
@@ -54,9 +56,9 @@ beforeEach(() => {
   bindRequestFn(fakeRequestFn)
 })
 
-describe('useAuthnListSessions', () => {
+describe('useAuthnSessionList', () => {
   it('issues a GET for the sessions path through the bound request function', async () => {
-    const { result } = renderHook(() => useAuthnListSessions(), { wrapper })
+    const { result } = renderHook(() => useAuthnSessionList(), { wrapper })
     await waitFor(() => {
       expect(result.current.isSuccess).toBe(true)
     })
@@ -65,35 +67,69 @@ describe('useAuthnListSessions', () => {
     // the recorded options carry a live signal -- assert the wire
     // slice, not structural equality over the whole options object.
     expect(calls).toMatchObject([
-      { path: '/api/v1/authn/sessions', options: { method: 'GET' } },
+      { path: '/auth/sessions', options: { method: 'GET' } },
     ])
   })
 
   it('stamps the spec path as the query key, with no tenant prefix', () => {
     // Query-key tenant namespacing is a consumer-shell discipline; the
     // generated key is the bare spec path.
-    expect(getAuthnListSessionsQueryKey()).toEqual(['/api/v1/authn/sessions'])
+    expect(getAuthnSessionListQueryKey()).toEqual(['/auth/sessions'])
   })
 })
 
-describe('useAuthnRegister', () => {
-  it('issues a POST carrying the request body through the bound request function', async () => {
-    const { result } = renderHook(() => useAuthnRegister(), { wrapper })
+describe('useAuthnProfileGet', () => {
+  it('reads the caller profile through the bound request function', async () => {
+    const { result } = renderHook(() => useAuthnProfileGet(), { wrapper })
+    await waitFor(() => {
+      expect(result.current.isSuccess).toBe(true)
+    })
+    expect(result.current.data).toEqual({ account_id: 'user-1' })
+    expect(calls).toMatchObject([
+      { path: '/auth/me', options: { method: 'GET' } },
+    ])
+  })
+
+  it('stamps the profile path as the query key', () => {
+    expect(getAuthnProfileGetQueryKey()).toEqual(['/auth/me'])
+  })
+})
+
+describe('useAuthnLoginStart', () => {
+  it('issues a POST carrying the start body through the bound request function', async () => {
+    const { result } = renderHook(() => useAuthnLoginStart(), { wrapper })
     act(() => {
-      result.current.mutate({
-        data: { password: 'secret', email: 'a@example.test' },
-      })
+      result.current.mutate({ data: { method: 'password' } })
     })
     await waitFor(() => {
       expect(result.current.isSuccess).toBe(true)
     })
     expect(calls).toMatchObject([
       {
-        path: '/api/v1/authn/register',
+        path: '/auth/flows',
         options: {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
-          body: { password: 'secret', email: 'a@example.test' },
+          body: { method: 'password' },
+        },
+      },
+    ])
+  })
+})
+
+describe('auditAdminRecordsList', () => {
+  it('passes a repeated (array) query parameter through the bound request function', async () => {
+    // The `action` parameter is declared `style: form, explode: true`
+    // in the spec, so orval types it as an array; the call must reach
+    // the transport with the array intact for it to expand into
+    // repeated query parameters.
+    await auditAdminRecordsList({ action: ['login.create', 'login.failed'] })
+    expect(calls).toMatchObject([
+      {
+        path: '/audit/admin/records',
+        options: {
+          method: 'GET',
+          query: { action: ['login.create', 'login.failed'] },
         },
       },
     ])

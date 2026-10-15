@@ -3,23 +3,31 @@
  *
  * One outlined button per configured provider, each answering the
  * bundle's name for it; the divider title above is the section's only
- * non-interactive text. Clicking a provider asks the session for that
- * channel's authorization URL -- a pure request, never a navigation:
- * the URL is reported upward through onAuthorizeUrl and the host decides
- * what it is for (a redirect in the host's router, a popup, a new tab).
- * While one request is in flight its own button disables and the others
- * stay live, each flight tracked per provider: an earlier attempt's
- * return can never re-enable a later provider's button mid-flight. A
- * failed answer (authn.provider_unknown, authn.redirect_uri_not_allowed)
- * renders through the one InlineError banner -- but the banner belongs
- * to the newest attempt only: attempts are numbered at start, a failure
- * writes its code only when it is still the newest attempt, and each
- * new attempt clears the banner, so an earlier attempt's failure can
- * never paint over a newer attempt's success or linger past it. The
- * authorize-URL report to the host runs only after the request verdict
- * settled, and a throwing onAuthorizeUrl is contained: it is not an
- * authorization failure, never renders an error and never escapes as
- * an unhandled rejection.
+ * non-interactive text. Clicking a provider begins that method's login
+ * flow (`session.startFlow`); the flow's first step for a social method is
+ * a `redirect` step carrying the provider's authorization URL -- a pure
+ * request, never a navigation: the URL is reported upward through
+ * `onAuthorizeUrl` and the host decides what it is for (a redirect in the
+ * host's router, a popup, a new tab). While one request is in flight its
+ * own button disables and the others stay live, each flight tracked per
+ * provider: an earlier attempt's return can never re-enable a later
+ * provider's button mid-flight. A failed answer (an unknown or disabled
+ * method, an account-unavailable refusal) renders through the one
+ * InlineError banner -- but the banner belongs to the newest attempt only:
+ * attempts are numbered at start, a failure writes its code only when it
+ * is still the newest attempt, and each new attempt clears the banner, so
+ * an earlier attempt's failure can never paint over a newer attempt's
+ * success or linger past it. The authorize-URL report to the host runs
+ * only after the request verdict settled, and a throwing onAuthorizeUrl is
+ * contained: it is not an authorization failure, never renders an error
+ * and never escapes as an unhandled rejection.
+ *
+ * The provider's own redirect address is the server's: the method builds
+ * `redirect_uri` from the deployment's public URL, so the client sends no
+ * redirect_uri. What the config's `redirectUri` names is the host's own
+ * callback route -- where the provider's round trip lands the browser
+ * after the server handled it -- and it is sent as the flow's `return_to`
+ * so the callback comes back to it.
  */
 
 import { useRef, useState } from 'react'
@@ -30,6 +38,7 @@ import type { AuthSession } from '@speed/auth-core'
 import { useAuthUiTranslation } from './internal/translation.js'
 import { errorCodeOf } from '@speed/ui-kit'
 import { InlineError } from './internal/inline-error.js'
+import { isOpenFlow } from './internal/flow.js'
 
 /** The social sign-in channels the authn spec hosts. */
 export type SocialProvider =
@@ -39,25 +48,30 @@ export type SocialProvider =
   | 'dingtalk'
   | 'feishu'
 
-/** One configured channel: which provider, and the redirect URI the
- * host's callback route listens on. */
+/** One configured channel: which provider, and the host callback route
+ * the flow returns to once the server has handled the provider's round
+ * trip. */
 export interface SocialProviderConfig {
   readonly provider: SocialProvider
   readonly redirectUri: string
 }
 
 export interface SocialSignInSectionProps {
-  /** The session that builds authorization URLs. */
+  /** The session that begins each channel's login flow. */
   readonly session: AuthSession
   /** The channels to render, in the order the host wants. */
   readonly providers: readonly SocialProviderConfig[]
   /**
-   * Receives the authorization URL for one channel once it is built;
-   * the host navigates. Omit to run the section without a follow-up
+   * Receives the authorization URL for one channel once the flow hands it
+   * over; the host navigates. Omit to run the section without a follow-up
    * (a caller that only exercises the request path).
    */
   readonly onAuthorizeUrl?: (provider: SocialProvider, authorizeUrl: string) => void
 }
+
+/** The protocol code an answer that is not the expected redirect step
+ * renders (a contract-violating 2xx is not a successful start). */
+const UNEXPECTED_ANSWER = 'client.protocol'
 
 export function SocialSignInSection({
   session,
@@ -87,17 +101,26 @@ export function SocialSignInSection({
     setErrorCode(null)
     setBusyProviders((previous) => new Set(previous).add(provider))
     let authorizeUrl: string | null = null
+    let failure: string | null = null
     try {
-      authorizeUrl = await session.socialAuthorizeUrl(provider, {
-        redirect_uri: config.redirectUri,
+      const reply = await session.startFlow({
+        method: provider,
+        delivery: 'token',
+        binding: 'cookie',
+        return_to: config.redirectUri,
       })
-    } catch (error) {
-      // A failure renders only while its own attempt is still the
-      // newest one: an older attempt settling after a newer attempt
-      // started must not paint over the newer attempt's outcome.
-      if (attempt === attemptsRef.current) {
-        setErrorCode(errorCodeOf(error))
+      authorizeUrl =
+        isOpenFlow(reply) && reply.next.kind === 'redirect'
+          ? reply.next.url
+          : null
+      if (authorizeUrl === null) {
+        // A social method's first step is always the redirect carrying
+        // the provider's authorization URL; anything else is a
+        // contract-violating 2xx, not a successful start.
+        failure = UNEXPECTED_ANSWER
       }
+    } catch (error) {
+      failure = errorCodeOf(error)
     } finally {
       setBusyProviders((previous) => {
         const next = new Set(previous)
@@ -105,14 +128,23 @@ export function SocialSignInSection({
         return next
       })
     }
+    // A failure renders only while its own attempt is still the newest
+    // one: an older attempt settling after a newer attempt started must
+    // not paint over the newer attempt's outcome.
+    if (failure !== null) {
+      if (attempt === attemptsRef.current) {
+        setErrorCode(failure)
+      }
+      return
+    }
     if (authorizeUrl !== null) {
       try {
         onAuthorizeUrl?.(provider, authorizeUrl)
       } catch {
         // A throwing host callback is not an authorization failure: the
         // URL was built, nothing here renders the host's error, and the
-        // containment keeps the throw out of this fire-and-forget
-        // click handler.
+        // containment keeps the throw out of this fire-and-forget click
+        // handler.
       }
     }
   }

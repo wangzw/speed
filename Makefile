@@ -30,7 +30,7 @@ PYTHON ?= python3
 each = for it in $(1); do echo "==> $(2) $$it"; $(3) || failed="$${failed:+$$failed; }$(2) $$it"; done
 each-end = if [ -n "$$failed" ]; then echo "failed: $$failed" >&2; exit 1; fi
 
-.PHONY: help modules build test test-race fmt lint tidy tidy-check repo-check tools-test check python-version modules-present
+.PHONY: help modules build test test-race fmt lint tidy tidy-check repo-check tools-test check python-version modules-present web-check
 
 help: ## List the entry points
 	@awk 'BEGIN{FS=":.*## "} /^[a-z][a-z-]*:.*## /{printf "  %-11s %s\n", $$1, $$2}' $(MAKEFILE_LIST)
@@ -99,6 +99,19 @@ python-version:
 	  echo "Install the version .mise.toml pins, or pass PYTHON=<interpreter>." >&2; \
 	  exit 1; \
 	}
+
+# The frontend is its own pnpm workspace under web/ (see web/README.md for
+# why it is a separate root). This leg is deliberately not part of `check`:
+# `check`'s toolchain (.mise.toml) pins no Node or pnpm, so CI could not run
+# it, and folding it into `check` would break the single entry point the Go
+# legs rely on. It is the frontend's own entry point, run where Node and
+# pnpm are installed.
+web-check: ## Run the frontend checks (pnpm install + lint, typecheck, test, build)
+	@pnpm -C web install --frozen-lockfile
+	@pnpm -C web -r lint
+	@pnpm -C web -r typecheck
+	@pnpm -C web -r test
+	@pnpm -C web -r build
 
 check: ## Run everything CI runs
 	@$(MAKE) build

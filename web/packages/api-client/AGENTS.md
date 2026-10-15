@@ -11,7 +11,7 @@ The one place in the web workspace where hand-written HTTP happens: a
 typed request function built by `createClient`, with injectable fetch,
 a memory-only access-token store, silent single-flight 401 refresh,
 timeout, conservative idempotent retry, and a structured reporter. The
-generated `@speed/api-sdk` (orval output of `task api:gen`) calls into
+generated `@speed/api-sdk` (orval output of `web/orval.config.ts`) calls into
 this runtime through its `src/runtime.ts` binding; no package other than
 this one may issue HTTP requests itself.
 

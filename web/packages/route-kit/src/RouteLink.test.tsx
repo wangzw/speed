@@ -1,0 +1,43 @@
+/**
+ * RouteLink.tsx -- a link that navigates in-place. The href proves the
+ * target is carried through; the click proves it pushes history (no full
+ * reload) and that RouteView re-renders from the new URL.
+ */
+
+import { fireEvent, screen } from '@testing-library/react'
+import { describe, expect, it } from 'vitest'
+import { renderRouteTable } from '../test-utils/render.js'
+import { RouteLink } from './RouteLink.js'
+import { RouteView } from './RouteView.js'
+import type { RouteTable } from './types.js'
+
+describe('RouteLink', () => {
+  it('renders an anchor whose href is the target path', () => {
+    const table: RouteTable = [{ path: '/', view: () => null }]
+    renderRouteTable(table, <RouteLink to="/cases">Cases</RouteLink>)
+    expect(screen.getByRole('link', { name: 'Cases' })).toHaveAttribute(
+      'href',
+      '/cases',
+    )
+  })
+
+  it('navigates on click without reloading the page', async () => {
+    const table: RouteTable = [
+      { path: '/', view: () => <span>home view</span> },
+      { path: '/cases', view: () => <span>case list</span> },
+    ]
+    renderRouteTable(
+      table,
+      <>
+        <RouteLink to="/cases">Cases</RouteLink>
+        <RouteView />
+      </>,
+    )
+    expect(screen.getByText('home view')).toBeInTheDocument()
+
+    fireEvent.click(screen.getByRole('link', { name: 'Cases' }))
+
+    expect(await screen.findByText('case list')).toBeInTheDocument()
+    expect(window.location.pathname).toBe('/cases')
+  })
+})

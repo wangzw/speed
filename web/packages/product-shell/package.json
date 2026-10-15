@@ -46,6 +46,7 @@
     "@mui/material": "^9.4.0",
     "@speed/api-client": "workspace:*",
     "@speed/api-sdk": "workspace:*",
+    "@speed/route-kit": "workspace:*",
     "@speed/tenancy-ui": "workspace:*",
     "@speed/test-utils": "workspace:*",
     "@speed/ui-kit": "workspace:*",

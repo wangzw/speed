@@ -3,6 +3,7 @@
     "title": "Password",
     "identifierLabel": "Email or phone number",
     "passwordLabel": "Password",
+    "newPasswordLabel": "New password",
     "submit": "Sign in"
   },
   "smsSignIn": {
@@ -16,13 +17,17 @@
     "resendCode": "Resend code",
     "editPhone": "Change phone number"
   },
-  "register": {
-    "identifierLabel": "Email or phone number",
-    "passwordLabel": "Password",
-    "displayNameLabel": "Display name (optional)",
-    "submit": "Create account",
-    "successTitle": "Account created",
-    "successMessage": "Your account has been created. You can sign in now."
+  "signInFlow": {
+    "submit": "Continue",
+    "factorTitle": "Choose how to verify",
+    "enrollTitle": "Choose a factor to register",
+    "unsupportedStep": "This step cannot be completed on this page.",
+    "factorKind": {
+      "totp": "Authenticator app",
+      "sms": "SMS code",
+      "webauthn": "Passkey",
+      "other": "Other"
+    }
   },
   "social": {
     "title": "or continue with a social account",
@@ -49,34 +54,16 @@
   },
   "errors": {
     "authn": {
-      "invalid_credentials": "Email, phone number or password is incorrect.",
-      "tenant_membership_required": "Your account is not a member of this organization.",
-      "tenant_membership_unavailable": "Your membership could not be verified. Contact an administrator for help.",
-      "account_locked": "The account is locked. Please try again later.",
-      "rate_limited": "Too many attempts. Please try again later.",
-      "verification_code_invalid": "The code is incorrect or has expired. Request a new one.",
-      "email_already_registered": "This email is already registered.",
-      "phone_already_registered": "This phone number is already registered.",
-      "identifier_required": "Enter an email or phone number.",
-      "invalid_email": "The email address is not valid.",
-      "invalid_phone": "The phone number is not valid. Include the country code with a leading '+', e.g. +8613800138000.",
-      "password_too_short": "The password is too short.",
-      "password_too_long": "The password is too long.",
-      "password_too_weak": "The password is too weak. Use a stronger one.",
-      "display_name_too_long": "The display name is too long.",
-      "channel_disabled": "This sign-in method is turned off. Choose another one.",
-      "provider_unknown": "This social sign-in provider is not supported.",
-      "redirect_uri_not_allowed": "The sign-in redirect address is not allowed.",
-      "oauth_state_invalid": "The sign-in state has expired. Please start again.",
-      "social_exchange_failed": "The social sign-in failed. Please try again.",
-      "social_identity_incomplete": "The social sign-in could not identify an account, so it cannot be completed.",
-      "identity_requires_binding": "This social account is linked to another account. Sign in to that account first to link it.",
-      "identity_already_bound": "This social account is already linked to your account.",
-      "session_not_found": "The session does not exist. Please sign in again.",
-      "session_revoked": "The session was revoked. Please sign in again.",
-      "refresh_token_invalid": "Your sign-in is no longer valid. Please sign in again.",
-      "refresh_token_reused": "Suspicious activity was detected. Please sign in again.",
-      "token_expired": "Your sign-in has expired. Please sign in again."
+      "bad_request": "The request could not be accepted. Please check it and try again.",
+      "unsupported_region": "Sign-in is not available for this phone number's region.",
+      "login_failed": "Email, phone number or password is incorrect, or the code is wrong.",
+      "flow_invalid": "Your sign-in attempt is no longer valid. Please start again.",
+      "link_required": "This social account is linked to another account. Sign in to that account first to link it.",
+      "method_disabled": "This sign-in method is turned off. Choose another one.",
+      "account_unavailable": "This account is unavailable. Contact an administrator for help.",
+      "conflict": "The request conflicts with the account's current state. Refresh and try again.",
+      "throttled": "Too many attempts. Please try again later.",
+      "unavailable": "The service is temporarily unavailable. Please try again later."
     },
     "client": {
       "network": "No network connection. Check your connection and try again.",

@@ -221,31 +221,28 @@ real QueryClient, so the assembly cannot drift from this section.
 ## Multi-tenant userMenu
 
 ProductShell has no tenant-switching code of its own; switching tenants is a
-session operation, and the shell's `userMenu` slot is where the composed
-control belongs. The composition shown above is the packaged evidence of it:
+host route change, not a session operation, and the shell's `userMenu` slot is
+where the composed control belongs. The composition shown above is the packaged
+evidence of it:
 
-- `useCurrentTenant` (auth-core) reads the current tenant from the attached
-  session; its value feeds the switcher's `currentTenantId`. Before any
-  sign-in the hooks fail closed, the switcher shows the `noCurrentTenant`
-  text and is disabled — there is nothing to switch from.
-- Picking a row that is not the current tenant drives
-  `session.switchTenant(id)`. Success is deliberately quiet: the commit
-  flips the principal (the store holds the fresh access token), the host
-  observes it through its own hooks, and `onSwitched` fires exactly once,
-  afterwards. A refused switch (say, to a tenant the user no longer
-  belongs to) renders the answer's code text under the control and changes
-  nothing — the switcher stays retryable.
-- The switch mints an access token and no refresh token, so no refresh leg
-  ever appears mid-switch.
-- `onSwitched` is the host's moment to move its own tenant-scoped state.
-  Auth-core's survival rules drop the tenant-domain permission lists the
-  instant the switch commits, so the host re-attaches both lists (from
-  /me) and drops the previous tenant's query caches there. Route-level
-  authorization over those lists is likewise host composition — layout-kit
-  ships the `RouteGuard` to hang in `children`, fed a status the host
-  derives from `usePermission` — and the fixture host of the gated-journey
-  suite plays that whole duty (re-attach included) over this shell's
-  frame; see Development.
+- `useCurrentTenant` (auth-core) reads the current tenant from the
+  `TenantProvider` the host mounts — the tenant its route resolves. Its value
+  feeds the switcher's `currentTenantId`. Until the host supplies one the hook
+  returns null, the switcher shows the `noCurrentTenant` text and is disabled —
+  there is nothing to switch from.
+- Picking a row that is not the current tenant calls the switcher's
+  `onSelect(id)` once, and the switcher stops there: it knows no session, sends
+  no request and navigates nowhere. The host switches its own route, hands the
+  new id back as `currentTenantId`, updates the tenant context it mounts on
+  `TenantProvider`, and evicts the departing tenant's query cache
+  (`evictTenantQueries`, called with the id read before the switch). A tenant
+  is a request's routing fact, so `AuthSession` carries none and auth-core
+  exposes no switch operation.
+- Route-level authorization over the tenant-scoped permission lists is
+  likewise host composition — layout-kit ships the `RouteGuard` to hang in
+  `children`, fed a status the host derives from `usePermission` — and the
+  fixture host of the gated-journey suite plays that whole duty over this
+  shell's frame; see Development.
 
 Composing the switcher requires registering tenancy-ui's namespace on the
 host's one i18n instance (the fifth registration above), like every other
@@ -347,8 +344,15 @@ libraries stay out — your `children` bring their own.
   `userMenu` slot (see the multi-tenant section above) and move their own
   tenant-scoped state in `onSwitched`. The quick start's journey and the
   gated-journey suite are the packaged evidence of that composition.
-- **No route matching.** Navigation selection is host-computed in
-  `navItems`; product-shell never inspects the URL.
+- **No route matching of its own.** Navigation selection is host-computed
+  in `navItems`; product-shell never inspects the URL. Routing is
+  `@speed/route-kit`'s layer — a separate package the shell neither
+  imports nor is imported by — which a host composes *around* the shell:
+  `RouteProvider` installs the page table, `useNavItems()` feeds it into
+  the `navItems` slot (its `NavItem` is structurally the frame's
+  `AppShellNavItem`, so no shared type is needed) and `RouteView` renders
+  the matched page as the `children`. The routed-journey suite is that
+  composition's packaged evidence (see Development).
 - **No network of its own, and no session operations in the machine.**
   Every request the composed views make is a session operation through
   your bound api-client; the `./bootstrap` entry creates and attaches
@@ -381,3 +385,9 @@ played for real) — journeys a switch that drops and reloads the tenant
 lists, a denial spell whose refresh keeps the guard settled so `onDenied`
 fires exactly once, a refused switch answered by tenancy-ui's error text,
 and a server-side session death converging to the session-ended screen.
+The routing composition over the same frame is `src/routed-journey.test.tsx`:
+its fixture host declares its pages in one `RouteTable`, composes
+`@speed/route-kit` over the shell (`RouteProvider` installing the table,
+`useNavItems()` feeding `navItems`, `RouteView` rendering the matched page
+as the `children`), and pins that the frame renders the registry's nav and
+the deep-linked view while the shell leaves the URL to the router.

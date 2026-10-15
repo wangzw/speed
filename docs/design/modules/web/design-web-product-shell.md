@@ -13,11 +13,11 @@
 
 ### 非职责
 
-- **不做任何会话操作。** 视图机不调用登录、登出、刷新、切租户；这些是宿主交来的视图（`auth-ui` 的表单、登出按钮）在事件处理器里的动作。`bootstrapSpeedApp` 会创建并接上会话、把刷新交给客户端作 401 腿、订阅会话结束策略——那是入口装配的职责，与视图机分开。
+- **不做任何会话操作。** 视图机不调用登录、登出；这些是宿主交来的视图（`auth-ui` 的表单、登出按钮）在事件处理器里的动作。`bootstrapSpeedApp` 会创建并接上会话、把 401 交给会话作会话之死的信号、订阅会话结束策略——那是入口装配的职责，与视图机分开。
 - **不导航。** 本包不检查 URL，也不改 `location`；导航选择在 `navItems` 里由宿主算好。
 - **不发任何请求。** 组合视图发出的每一个请求都是经宿主绑定的 `api-client` 进行的会话操作；`bootstrapSpeedApp` 构造那个客户端，但自身不发请求。
 - **不做权限门。** 视图机从不消费 layout-kit 的 `RouteGuard`，从不调 `usePermission`，从不 `setPermissionSet`；路由级授权是宿主在 `children` 里的组装——把门挂在 `children` 内，喂给它一个由宿主自己附上的权限表算出的 `status`。
-- **不持租户切换器。** 切换租户是会话操作，切换控件属于 `userMenu` 槽的宿主组装；本包代码里不出现切换器。
+- **不持租户切换器。** 切换当前租户是宿主的路由变更（[tenancy-ui](design-web-tenancy-ui.md) 的控件把选择报给宿主），切换控件属于 `userMenu` 槽的宿主组装；本包代码里不出现切换器。
 - **不提供缺省登录界面。** 渠道组合（口令、短信、社交、注册）是产品决策，`signIn` 槽缺席时未登录分支什么都不渲染。
 - **不持租户作用域的 query key 约定。** key 工厂与逐租户逐出助手归 [auth-core](design-web-auth-core.md)（见该文档「职责」与「核心算法与流程」），本包不在两处都写。
 
@@ -131,7 +131,7 @@ export const productShellResources: Readonly<Record<string, ResourceBundle>>
 | `@speed/auth-ui` | 缺省的会话结束屏 `SessionEndedScreen` |
 | `@speed/auth-core` | 视图机读取的会话 hook；`./bootstrap` 创建并接上的会话 |
 | `@speed/i18n` | 读本包自身命名空间的翻译 hook |
-| `@speed/api-client` | 仅 `./bootstrap`：凭据存储与 HTTP 客户端 |
+| `@speed/api-client` | 仅 `./bootstrap`：凭据存储与 HTTP 客户端（含 401 刷新腿） |
 | `@speed/api-sdk` | 仅 `./bootstrap`：绑定每个生成调用经过的运行时接缝（`./runtime`） |
 | `@speed/ui-kit` | 仅 `./bootstrap`：主题 provider；主入口只经 layout-kit 间接用到它 |
 
@@ -192,7 +192,7 @@ stateDiagram-v2
 
 ### 会话结束策略
 
-`watchSessionEnd` 只看一个沿——已认证转匿名（登出或静默刷新被拒，auth-core 把两者归成同一个翻转）——在那个沿上跑定义的 `sessionEnded`，或缺省的 `evictAllQueries()`。只轮换主体的沿（切租户保持已认证）不触发；从未认证过的会话不触发（首个快照是内存的基线，不是翻转）；未认证转已认证的沿只把内存前移。
+`watchSessionEnd` 只看一个沿——已认证转匿名（登出或静默刷新被拒，auth-core 把两者归成同一个翻转）——在那个沿上跑定义的 `sessionEnded`，或缺省的 `evictAllQueries()`。从未认证过的会话不触发（首个快照是内存的基线，不是翻转）；未认证转已认证的沿只把内存前移。
 
 **出厂缺省是整体逐出缓存。** 缓存里的每一行都是在离任主体的访问令牌下取的，而身份域的行（裸 spec 路径键——会话、登录历史、已绑身份，`@speed/api-sdk` 里没有任何键带租户段）没有租户段可供按租户逐出触达；只有整体逐出能阻止此后登录的另一个账户从共享的 query client 内存里继承先前账户的行。
 

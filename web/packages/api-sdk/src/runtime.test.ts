@@ -70,6 +70,24 @@ describe('bindRequestFn / speedRequest', () => {
     expect(calls[0]?.options?.query).toEqual({ page: 1, tag: null })
   })
 
+  it('carries a repeated (array) query parameter through to the transport unchanged', async () => {
+    // A spec parameter declared `style: form, explode: true` -- audit's
+    // `action` on GET /audit/admin/records -- makes orval emit an
+    // array-typed field on that operation's params type. The seam's
+    // params type admits scalar arrays precisely so this call
+    // type-checks, and forward() must pass the array through untouched
+    // (the @speed/api-client transport expands it into repeated query
+    // parameters) rather than stringifying or dropping it.
+    await speedRequest<unknown>({
+      url: '/audit/admin/records',
+      method: 'GET',
+      params: { action: ['login.create', 'login.failed'] },
+    })
+    expect(calls[0]?.options?.query).toEqual({
+      action: ['login.create', 'login.failed'],
+    })
+  })
+
   it('never sets the omitAccessToken key on an ordinary speedRequest call', async () => {
     // Exact-shape assertion: the flag is only ever present when a
     // credential-less operation declared it, so hosts can rely on its
@@ -87,14 +105,14 @@ describe('bindRequestFn / speedRequest', () => {
   it('declares the credential-less flag on speedRequestCredentialless calls', async () => {
     const body = { refresh_token: 'stale' }
     await speedRequestCredentialless<unknown>({
-      url: '/api/v1/authn/token/refresh',
+      url: '/auth/token',
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       data: body,
     })
     expect(calls).toEqual([
       {
-        path: '/api/v1/authn/token/refresh',
+        path: '/auth/token',
         options: {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
@@ -134,7 +152,7 @@ describe('bindRequestFn / speedRequest', () => {
     // operation is no less a programmer error when nothing is bound.
     expect(() =>
       fresh.speedRequestCredentialless({
-        url: '/api/v1/authn/token/refresh',
+        url: '/auth/token',
         method: 'POST',
       }),
     ).toThrow(

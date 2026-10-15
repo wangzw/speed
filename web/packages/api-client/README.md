@@ -5,7 +5,7 @@ call wires injectable fetch, a memory-only access-token store, a silent
 single-flight 401 refresh, a timeout, a conservative retry policy and a
 structured reporter into a single typed request function. It is the
 HTTP layer the generated `@speed/api-sdk` surface (the orval output of
-`task api:gen`) calls into; other packages never hand-write HTTP
+the merged platform document) calls into; other packages never hand-write HTTP
 requests -- the `speed/no-direct-http` ESLint rule enforces that, and
 this package is its single whitelist.
 

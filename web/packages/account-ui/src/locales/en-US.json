@@ -1,28 +1,21 @@
 {
   "errors": {
     "authn": {
-      "session_not_found": "The session does not exist. Please sign in again.",
-      "session_revoked": "The session was revoked. Please sign in again.",
-      "token_expired": "Your sign-in has expired. Please sign in again.",
-      "refresh_token_invalid": "Your sign-in is no longer valid. Please sign in again.",
-      "refresh_token_reused": "Suspicious activity was detected. Please sign in again.",
-      "rate_limited": "Too many attempts. Please try again later.",
-      "channel_disabled": "This sign-in method is turned off. Choose another one to link.",
-      "identity_already_bound": "This social account is already linked to your account.",
-      "identity_requires_binding": "This social account is linked to another account. Sign in to that account first to link it.",
-      "identity_not_found": "This sign-in method was not found. It may have been removed.",
-      "last_login_method": "You must keep at least one sign-in method.",
-      "oauth_state_invalid": "The binding state has expired. Please start again.",
-      "social_exchange_failed": "The social account binding failed. Please try again.",
-      "provider_unknown": "This social account provider is not supported.",
-      "redirect_uri_not_allowed": "The callback address is not allowed.",
-      "step_up_required": "This action requires you to verify your identity again.",
-      "mfa_not_enrolled": "Two-step verification is not enabled.",
-      "mfa_already_enrolled": "Two-step verification is already enabled.",
-      "mfa_invalid_code": "The code is incorrect or has expired. Try again.",
-      "mfa_code_used": "That code has already been used. Enter the latest code from your authenticator app, or an unused recovery code.",
-      "invalid_locale": "That language is not available; choose one of the offered languages.",
-      "invalid_timezone": "That timezone is not available; choose one of the offered timezones."
+      "bad_request": "The request could not be accepted. Please check it and try again.",
+      "unsupported_region": "Sign-in is not available for this phone number's region.",
+      "login_failed": "Email, phone number or password is incorrect, or the code is wrong.",
+      "flow_invalid": "Your sign-in attempt is no longer valid. Please start again.",
+      "link_required": "This social account is linked to another account. Sign in to that account first to link it.",
+      "insufficient_user_authentication": "This action requires you to verify your identity again.",
+      "method_disabled": "This sign-in method is turned off. Choose another one.",
+      "account_unavailable": "This account is unavailable. Contact an administrator for help.",
+      "impersonation_restricted": "This action is not available while you are viewing as another account.",
+      "forbidden": "You do not have permission to do that.",
+      "conflict": "The request conflicts with the account's current state. Refresh and try again.",
+      "login_identifier_required": "An email address is required for this account.",
+      "unsupported_media_type": "The request could not be read.",
+      "throttled": "Too many attempts. Please try again later.",
+      "unavailable": "The service is temporarily unavailable. Please try again later."
     },
     "client": {
       "network": "No network connection. Check your connection and try again.",
@@ -35,9 +28,11 @@
     "title": "Sessions",
     "loading": "Loading sessions",
     "current": "Current session",
-    "status": {
-      "revoked": "Signed out",
-      "expired": "Expired"
+    "kind": {
+      "browser": "Browser",
+      "token": "App",
+      "service": "Service",
+      "other": "Other"
     },
     "deviceUnknown": "Unknown device",
     "revokeAriaWithDevice": "Sign out this session: {{device}}",
@@ -58,39 +53,6 @@
     "error": {
       "title": "Could not load sessions",
       "description": "Something went wrong while loading your sessions. Please try again."
-    },
-    "retry": "Retry"
-  },
-  "history": {
-    "title": "Sign-in history",
-    "loading": "Loading sign-in history",
-    "method": {
-      "password": "Password",
-      "sms": "SMS code",
-      "social": "Social account",
-      "oidc": "Enterprise SSO",
-      "other": "Other"
-    },
-    "result": {
-      "success": "Success"
-    },
-    "reason": {
-      "unknown_user": "No account was found with these details",
-      "bad_password": "Wrong password",
-      "no_password": "No password is set on this account",
-      "bad_code": "Wrong verification code",
-      "suspended": "This account is suspended",
-      "no_membership": "This account is not part of the organization you chose",
-      "requires_binding": "This social account must be linked first",
-      "other": "Sign-in failed"
-    },
-    "empty": {
-      "title": "No sign-in history yet",
-      "description": "Sign-in attempts for this account will appear here."
-    },
-    "error": {
-      "title": "Could not load sign-in history",
-      "description": "Something went wrong while loading your sign-in history. Please try again."
     },
     "retry": "Retry"
   },
@@ -124,41 +86,61 @@
   },
   "bindingCallback": {
     "pending": "Completing the link…",
-    "retry": "Retry",
-    "signedInElsewhere": {
-      "title": "You signed in on another session",
-      "description": "The social account is not linked yet. Sign in to the account you want to link it to, then complete the link from that account's security settings."
-    }
+    "continueLabel": "Continue",
+    "retry": "Retry"
   },
   "mfa": {
     "title": "Two-step verification",
-    "authenticator": {
-      "title": "Authenticator app",
-      "description": "Set an authenticator app (TOTP) as a second verification method. Once set up, security-sensitive operations ask you to verify your identity again.",
-      "enrollButton": "Set up authenticator",
-      "replacingNotice": "Two-step verification is already on for this account. Confirming replaces the current authenticator, and the current recovery codes stop working.",
-      "enrollDescription": "Add the content below to your authenticator app, then enter the 6-digit code the app shows.",
-      "secretLabel": "Secret",
-      "uriLabel": "Setup link",
-      "codeLabel": "6-digit code",
+    "loading": "Loading two-step verification",
+    "empty": "No two-step verification method is set up yet.",
+    "remove": "Remove",
+    "removeAria": "Remove this two-step verification method: {{factor}}",
+    "removeConfirm": {
+      "title": "Remove this two-step verification method?",
+      "message": "Removing it means you will no longer be asked for it. An account must keep at least one sign-in method.",
+      "confirmLabel": "Remove"
+    },
+    "factor": {
+      "kind": {
+        "totp": "Authenticator app",
+        "webauthn": "Passkey",
+        "sms": "Text message",
+        "other": "Other"
+      },
+      "status": {
+        "active": "Active",
+        "pending": "Pending",
+        "disabled": "Disabled"
+      }
+    },
+    "enroll": {
+      "title": "Set up a verification method",
+      "sectionTitle": "Add a verification method",
+      "totp": "Set up an authenticator app",
+      "webauthn": "Add a passkey",
       "confirmLabel": "Confirm",
       "cancelLabel": "Cancel"
     },
-    "recoveryCodes": {
-      "title": "Recovery codes",
-      "description": "A recovery code stands in for the 6-digit code when you cannot use your authenticator app. Regenerating discards the current set.",
-      "regenerateButton": "Regenerate recovery codes",
-      "showOnceTitle": "Save these recovery codes",
-      "showOnceDescription": "These codes are shown exactly once — save them now. Each code can be used once.",
-      "savedLabel": "I have saved them"
-    },
     "stepUp": {
       "title": "Verify your identity",
-      "description": "This action requires you to verify your identity again. Enter a 6-digit code from your authenticator app, or one recovery code.",
-      "codeLabel": "Code",
+      "description": "This action requires you to verify your identity again.",
+      "starting": "Starting verification…",
       "confirmLabel": "Verify",
       "cancelLabel": "Cancel"
-    }
+    },
+    "error": {
+      "title": "Could not load two-step verification",
+      "description": "Something went wrong while loading your two-step verification methods. Please try again."
+    },
+    "retry": "Retry"
+  },
+  "flowStep": {
+    "redirectNotice": "Continue in the window that opens to finish this step.",
+    "continueLabel": "Continue",
+    "enrollTotpHelp": "Add the content below to your authenticator app, then enter the 6-digit code the app shows.",
+    "enrollPasskeyHelp": "Follow the instructions the browser shows to register this passkey.",
+    "codeLabel": "6-digit code",
+    "credentialLabel": "Passkey response"
   },
   "preferences": {
     "title": "Preferences",

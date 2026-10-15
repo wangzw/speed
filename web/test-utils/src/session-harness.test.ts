@@ -27,7 +27,7 @@ import { makeHarness } from './session-harness'
 describe('session-harness script dispatch', () => {
   it('refuses a request whose method names a prototype-chain function', async () => {
     // The harness looks its handler up at `${method} ${path}`, so
-    // this request derives the key 'constructor /api/v1/authn/login/password'.
+    // this request derives the key 'constructor /auth/flows'.
     // A script built over a prototype that carries a callable under
     // exactly that derived key must not be dispatched onto: the request
     // answers with the same missing-handler error an unknown key
@@ -38,7 +38,7 @@ describe('session-harness script dispatch', () => {
     const inheritedRuns: string[] = []
     makeHarness(
       Object.create({
-        'constructor /api/v1/authn/login/password': () => {
+        'constructor /auth/flows': () => {
           inheritedRuns.push('dispatched')
           return undefined
         },
@@ -47,7 +47,7 @@ describe('session-harness script dispatch', () => {
     let error: unknown
     try {
       await speedRequest({
-        url: '/api/v1/authn/login/password',
+        url: '/auth/flows',
         method: 'constructor' as HttpMethod,
       })
     } catch (caught) {
@@ -56,7 +56,7 @@ describe('session-harness script dispatch', () => {
     expect(inheritedRuns).toEqual([])
     expect(error).toBeInstanceOf(Error)
     expect((error as Error).message).toBe(
-      'no scripted handler for constructor /api/v1/authn/login/password',
+      'no scripted handler for constructor /auth/flows',
     )
   })
 })
