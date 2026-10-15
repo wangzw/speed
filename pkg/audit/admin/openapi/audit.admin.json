@@ -18,10 +18,10 @@
             "description": "One page of records and the cursor of the next, empty on the last page",
             "content": {"application/json": {"schema": {"$ref": "#/components/schemas/AuditAdminRecordPage"}}}
           },
-          "400": {"description": "A query parameter the route does not accept, a time bound that is not RFC 3339, an empty action, a limit that is not a non-negative integer, or a cursor the read surface did not hand out"},
-          "401": {"description": "The request carries no identity"},
-          "403": {"description": "The caller holds no audit.read in the platform domain"},
-          "503": {"description": "A dependency could not answer"}
+          "400": {"description": "A query parameter the route does not accept, a time bound that is not RFC 3339, an empty action, a limit that is not a non-negative integer, or a cursor the read surface did not hand out", "content": {"application/json": {"schema": {"$ref": "#/components/schemas/Problem"}}}},
+          "401": {"description": "The request carries no identity", "content": {"application/json": {"schema": {"$ref": "#/components/schemas/Problem"}}}},
+          "403": {"description": "The caller holds no audit.read in the platform domain", "content": {"application/json": {"schema": {"$ref": "#/components/schemas/Problem"}}}},
+          "503": {"description": "A dependency could not answer", "content": {"application/json": {"schema": {"$ref": "#/components/schemas/Problem"}}}}
         }
       }
     },
@@ -37,11 +37,11 @@
             "description": "The record",
             "content": {"application/json": {"schema": {"$ref": "#/components/schemas/AuditAdminRecord"}}}
           },
-          "400": {"description": "The path parameter is not a row identifier, or a query parameter is present that the route does not accept"},
-          "401": {"description": "The request carries no identity"},
-          "403": {"description": "The caller holds no audit.read in the platform domain"},
-          "404": {"description": "The table holds no record with the identifier"},
-          "503": {"description": "A dependency could not answer"}
+          "400": {"description": "The path parameter is not a row identifier, or a query parameter is present that the route does not accept", "content": {"application/json": {"schema": {"$ref": "#/components/schemas/Problem"}}}},
+          "401": {"description": "The request carries no identity", "content": {"application/json": {"schema": {"$ref": "#/components/schemas/Problem"}}}},
+          "403": {"description": "The caller holds no audit.read in the platform domain", "content": {"application/json": {"schema": {"$ref": "#/components/schemas/Problem"}}}},
+          "404": {"description": "The table holds no record with the identifier", "content": {"application/json": {"schema": {"$ref": "#/components/schemas/Problem"}}}},
+          "503": {"description": "A dependency could not answer", "content": {"application/json": {"schema": {"$ref": "#/components/schemas/Problem"}}}}
         }
       }
     }
@@ -70,6 +70,17 @@
         "properties": {
           "entries": {"type": "array", "items": {"$ref": "#/components/schemas/AuditAdminRecord"}},
           "next": {"type": "string", "description": "The cursor of the next page, empty on the last page"}
+        }
+      },
+      "Problem": {
+        "type": "object",
+        "required": ["type", "status"],
+        "properties": {
+          "type": {"type": "string"},
+          "title": {"type": "string"},
+          "status": {"type": "integer"},
+          "detail": {"type": "string"},
+          "instance": {"type": "string"}
         }
       }
     }

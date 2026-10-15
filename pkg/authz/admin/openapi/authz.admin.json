@@ -11,9 +11,9 @@
             "description": "Every declared permission",
             "content": {"application/json": {"schema": {"type": "object", "required": ["permissions"], "properties": {"permissions": {"type": "array", "items": {"$ref": "#/components/schemas/AuthzAdminPermissionView"}}}}}}
           },
-          "401": {"description": "The request carries no identity"},
-          "403": {"description": "The caller holds no role.read in the platform domain"},
-          "503": {"description": "A dependency could not answer"}
+          "401": {"description": "The request carries no identity", "content": {"application/json": {"schema": {"$ref": "#/components/schemas/Problem"}}}},
+          "403": {"description": "The caller holds no role.read in the platform domain", "content": {"application/json": {"schema": {"$ref": "#/components/schemas/Problem"}}}},
+          "503": {"description": "A dependency could not answer", "content": {"application/json": {"schema": {"$ref": "#/components/schemas/Problem"}}}}
         }
       }
     },
@@ -27,9 +27,9 @@
             "description": "Every role of the tenant",
             "content": {"application/json": {"schema": {"type": "object", "required": ["roles"], "properties": {"roles": {"type": "array", "items": {"$ref": "#/components/schemas/AuthzAdminRoleView"}}}}}}
           },
-          "401": {"description": "The request carries no identity"},
-          "403": {"description": "The caller holds no role.read in the platform domain"},
-          "503": {"description": "A dependency could not answer"}
+          "401": {"description": "The request carries no identity", "content": {"application/json": {"schema": {"$ref": "#/components/schemas/Problem"}}}},
+          "403": {"description": "The caller holds no role.read in the platform domain", "content": {"application/json": {"schema": {"$ref": "#/components/schemas/Problem"}}}},
+          "503": {"description": "A dependency could not answer", "content": {"application/json": {"schema": {"$ref": "#/components/schemas/Problem"}}}}
         }
       }
     },
@@ -44,11 +44,11 @@
         "requestBody": {"required": true, "content": {"application/json": {"schema": {"$ref": "#/components/schemas/AuthzAdminRoleWrite"}}}},
         "responses": {
           "204": {"description": "The role was written"},
-          "400": {"description": "The body is not one object"},
-          "401": {"description": "The request carries no identity"},
-          "403": {"description": "The caller holds no role.manage in the platform domain"},
-          "409": {"description": "The role is builtin and cannot be changed"},
-          "503": {"description": "A dependency could not answer"}
+          "400": {"description": "The body is not one object", "content": {"application/json": {"schema": {"$ref": "#/components/schemas/Problem"}}}},
+          "401": {"description": "The request carries no identity", "content": {"application/json": {"schema": {"$ref": "#/components/schemas/Problem"}}}},
+          "403": {"description": "The caller holds no role.manage in the platform domain", "content": {"application/json": {"schema": {"$ref": "#/components/schemas/Problem"}}}},
+          "409": {"description": "The role is builtin and cannot be changed", "content": {"application/json": {"schema": {"$ref": "#/components/schemas/Problem"}}}},
+          "503": {"description": "A dependency could not answer", "content": {"application/json": {"schema": {"$ref": "#/components/schemas/Problem"}}}}
         }
       },
       "delete": {
@@ -60,11 +60,11 @@
         ],
         "responses": {
           "204": {"description": "The role was removed"},
-          "400": {"description": "No such role, or the named role belongs to another tenant"},
-          "401": {"description": "The request carries no identity"},
-          "403": {"description": "The caller holds no role.manage in the platform domain"},
-          "409": {"description": "The role is builtin and cannot be removed"},
-          "503": {"description": "A dependency could not answer"}
+          "400": {"description": "No such role, or the named role belongs to another tenant", "content": {"application/json": {"schema": {"$ref": "#/components/schemas/Problem"}}}},
+          "401": {"description": "The request carries no identity", "content": {"application/json": {"schema": {"$ref": "#/components/schemas/Problem"}}}},
+          "403": {"description": "The caller holds no role.manage in the platform domain", "content": {"application/json": {"schema": {"$ref": "#/components/schemas/Problem"}}}},
+          "409": {"description": "The role is builtin and cannot be removed", "content": {"application/json": {"schema": {"$ref": "#/components/schemas/Problem"}}}},
+          "503": {"description": "A dependency could not answer", "content": {"application/json": {"schema": {"$ref": "#/components/schemas/Problem"}}}}
         }
       }
     },
@@ -81,9 +81,9 @@
             "description": "The role's grants",
             "content": {"application/json": {"schema": {"type": "object", "required": ["grants"], "properties": {"grants": {"type": "array", "items": {"$ref": "#/components/schemas/AuthzAdminGrantView"}}}}}}
           },
-          "401": {"description": "The request carries no identity"},
-          "403": {"description": "The caller holds no role.read in the platform domain"},
-          "503": {"description": "A dependency could not answer"}
+          "401": {"description": "The request carries no identity", "content": {"application/json": {"schema": {"$ref": "#/components/schemas/Problem"}}}},
+          "403": {"description": "The caller holds no role.read in the platform domain", "content": {"application/json": {"schema": {"$ref": "#/components/schemas/Problem"}}}},
+          "503": {"description": "A dependency could not answer", "content": {"application/json": {"schema": {"$ref": "#/components/schemas/Problem"}}}}
         }
       }
     },
@@ -98,10 +98,10 @@
         ],
         "responses": {
           "204": {"description": "The permission was granted"},
-          "400": {"description": "The named permission is not in the catalog, or the translation has no row for it, or the named role belongs to another tenant"},
-          "401": {"description": "The request carries no identity"},
-          "403": {"description": "The caller holds no role.manage in the platform domain"},
-          "503": {"description": "A dependency could not answer"}
+          "400": {"description": "The named permission is not in the catalog, or the translation has no row for it, or the named role belongs to another tenant", "content": {"application/json": {"schema": {"$ref": "#/components/schemas/Problem"}}}},
+          "401": {"description": "The request carries no identity", "content": {"application/json": {"schema": {"$ref": "#/components/schemas/Problem"}}}},
+          "403": {"description": "The caller holds no role.manage in the platform domain", "content": {"application/json": {"schema": {"$ref": "#/components/schemas/Problem"}}}},
+          "503": {"description": "A dependency could not answer", "content": {"application/json": {"schema": {"$ref": "#/components/schemas/Problem"}}}}
         }
       },
       "delete": {
@@ -114,10 +114,10 @@
         ],
         "responses": {
           "204": {"description": "The permission was revoked"},
-          "400": {"description": "The translation has no row for the named permission, or the named role belongs to another tenant"},
-          "401": {"description": "The request carries no identity"},
-          "403": {"description": "The caller holds no role.manage in the platform domain"},
-          "503": {"description": "A dependency could not answer"}
+          "400": {"description": "The translation has no row for the named permission, or the named role belongs to another tenant", "content": {"application/json": {"schema": {"$ref": "#/components/schemas/Problem"}}}},
+          "401": {"description": "The request carries no identity", "content": {"application/json": {"schema": {"$ref": "#/components/schemas/Problem"}}}},
+          "403": {"description": "The caller holds no role.manage in the platform domain", "content": {"application/json": {"schema": {"$ref": "#/components/schemas/Problem"}}}},
+          "503": {"description": "A dependency could not answer", "content": {"application/json": {"schema": {"$ref": "#/components/schemas/Problem"}}}}
         }
       }
     },
@@ -131,9 +131,9 @@
             "description": "The tenant's bindings",
             "content": {"application/json": {"schema": {"type": "object", "required": ["bindings"], "properties": {"bindings": {"type": "array", "items": {"$ref": "#/components/schemas/AuthzAdminBindingView"}}}}}}
           },
-          "401": {"description": "The request carries no identity"},
-          "403": {"description": "The caller holds no role.read in the platform domain"},
-          "503": {"description": "A dependency could not answer"}
+          "401": {"description": "The request carries no identity", "content": {"application/json": {"schema": {"$ref": "#/components/schemas/Problem"}}}},
+          "403": {"description": "The caller holds no role.read in the platform domain", "content": {"application/json": {"schema": {"$ref": "#/components/schemas/Problem"}}}},
+          "503": {"description": "A dependency could not answer", "content": {"application/json": {"schema": {"$ref": "#/components/schemas/Problem"}}}}
         }
       }
     },
@@ -150,9 +150,9 @@
             "description": "The account's bindings within the tenant",
             "content": {"application/json": {"schema": {"type": "object", "required": ["bindings"], "properties": {"bindings": {"type": "array", "items": {"$ref": "#/components/schemas/AuthzAdminBindingView"}}}}}}
           },
-          "401": {"description": "The request carries no identity"},
-          "403": {"description": "The caller holds no role.read in the platform domain"},
-          "503": {"description": "A dependency could not answer"}
+          "401": {"description": "The request carries no identity", "content": {"application/json": {"schema": {"$ref": "#/components/schemas/Problem"}}}},
+          "403": {"description": "The caller holds no role.read in the platform domain", "content": {"application/json": {"schema": {"$ref": "#/components/schemas/Problem"}}}},
+          "503": {"description": "A dependency could not answer", "content": {"application/json": {"schema": {"$ref": "#/components/schemas/Problem"}}}}
         }
       }
     },
@@ -167,10 +167,10 @@
         ],
         "responses": {
           "204": {"description": "The role was bound"},
-          "400": {"description": "The account is empty, no such role, or the named role belongs to another tenant"},
-          "401": {"description": "The request carries no identity"},
-          "403": {"description": "The caller holds no role.manage in the platform domain"},
-          "503": {"description": "A dependency could not answer"}
+          "400": {"description": "The account is empty, no such role, or the named role belongs to another tenant", "content": {"application/json": {"schema": {"$ref": "#/components/schemas/Problem"}}}},
+          "401": {"description": "The request carries no identity", "content": {"application/json": {"schema": {"$ref": "#/components/schemas/Problem"}}}},
+          "403": {"description": "The caller holds no role.manage in the platform domain", "content": {"application/json": {"schema": {"$ref": "#/components/schemas/Problem"}}}},
+          "503": {"description": "A dependency could not answer", "content": {"application/json": {"schema": {"$ref": "#/components/schemas/Problem"}}}}
         }
       },
       "delete": {
@@ -183,10 +183,10 @@
         ],
         "responses": {
           "204": {"description": "The binding was removed"},
-          "400": {"description": "The account is empty, or the named role belongs to another tenant"},
-          "401": {"description": "The request carries no identity"},
-          "403": {"description": "The caller holds no role.manage in the platform domain"},
-          "503": {"description": "A dependency could not answer"}
+          "400": {"description": "The account is empty, or the named role belongs to another tenant", "content": {"application/json": {"schema": {"$ref": "#/components/schemas/Problem"}}}},
+          "401": {"description": "The request carries no identity", "content": {"application/json": {"schema": {"$ref": "#/components/schemas/Problem"}}}},
+          "403": {"description": "The caller holds no role.manage in the platform domain", "content": {"application/json": {"schema": {"$ref": "#/components/schemas/Problem"}}}},
+          "503": {"description": "A dependency could not answer", "content": {"application/json": {"schema": {"$ref": "#/components/schemas/Problem"}}}}
         }
       }
     }
@@ -242,6 +242,17 @@
           "account": {"type": "string"},
           "role": {"type": "string"},
           "granted_at": {"type": "string", "format": "date-time"}
+        }
+      },
+      "Problem": {
+        "type": "object",
+        "required": ["type", "status"],
+        "properties": {
+          "type": {"type": "string"},
+          "title": {"type": "string"},
+          "status": {"type": "integer"},
+          "detail": {"type": "string"},
+          "instance": {"type": "string"}
         }
       }
     }

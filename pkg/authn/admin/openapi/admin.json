@@ -13,7 +13,10 @@
           {"name": "cursor", "in": "query", "required": false, "schema": {"type": "string"}}
         ],
         "responses": {
-          "200": {"description": "The page of accounts and the next cursor"},
+          "200": {
+            "description": "The page of accounts and the next cursor",
+            "content": {"application/json": {"schema": {"$ref": "#/components/schemas/AuthnAdminAccountList"}}}
+          },
           "400": {"description": "The list's query could not be read"},
           "401": {"description": "No usable credential"},
           "403": {"description": "The caller is impersonating or may not read accounts"},
@@ -24,7 +27,10 @@
         "operationId": "authn.admin.accounts.create",
         "summary": "Create an account",
         "responses": {
-          "201": {"description": "The created account"},
+          "201": {
+            "description": "The created account",
+            "content": {"application/json": {"schema": {"$ref": "#/components/schemas/AuthnAdminAccountEnvelope"}}}
+          },
           "400": {"description": "The body could not be read, or an argument is invalid"},
           "401": {"description": "No usable credential"},
           "403": {"description": "The caller is impersonating or may not create accounts"},
@@ -41,7 +47,10 @@
           {"name": "id", "in": "path", "required": true, "schema": {"type": "string"}}
         ],
         "responses": {
-          "200": {"description": "The account"},
+          "200": {
+            "description": "The account",
+            "content": {"application/json": {"schema": {"$ref": "#/components/schemas/AuthnAdminAccountEnvelope"}}}
+          },
           "401": {"description": "No usable credential"},
           "403": {"description": "The caller is impersonating or may not read the account"},
           "404": {"description": "No such account"},
@@ -55,7 +64,10 @@
           {"name": "id", "in": "path", "required": true, "schema": {"type": "string"}}
         ],
         "responses": {
-          "200": {"description": "The updated account"},
+          "200": {
+            "description": "The updated account",
+            "content": {"application/json": {"schema": {"$ref": "#/components/schemas/AuthnAdminAccountEnvelope"}}}
+          },
           "400": {"description": "The body could not be read, or an argument is invalid"},
           "401": {"description": "No usable credential"},
           "403": {"description": "The caller is impersonating or may not update the account"},
@@ -88,7 +100,10 @@
           {"name": "id", "in": "path", "required": true, "schema": {"type": "string"}}
         ],
         "responses": {
-          "200": {"description": "The account at its new status"},
+          "200": {
+            "description": "The account at its new status",
+            "content": {"application/json": {"schema": {"$ref": "#/components/schemas/AuthnAdminAccountEnvelope"}}}
+          },
           "400": {"description": "The body could not be read, or names no known status"},
           "401": {"description": "No usable credential"},
           "403": {"description": "The caller is impersonating or may not change the status"},
@@ -157,7 +172,10 @@
           {"name": "id", "in": "path", "required": true, "schema": {"type": "string"}}
         ],
         "responses": {
-          "200": {"description": "The account's factors"},
+          "200": {
+            "description": "The account's factors",
+            "content": {"application/json": {"schema": {"$ref": "#/components/schemas/AuthnAdminFactorList"}}}
+          },
           "401": {"description": "No usable credential"},
           "403": {"description": "The caller is impersonating or may not read the factors"},
           "404": {"description": "No such account"},
@@ -190,7 +208,10 @@
           {"name": "id", "in": "path", "required": true, "schema": {"type": "string"}}
         ],
         "responses": {
-          "200": {"description": "The number of factors removed"},
+          "200": {
+            "description": "The number of factors removed",
+            "content": {"application/json": {"schema": {"$ref": "#/components/schemas/AuthnAdminRemoved"}}}
+          },
           "401": {"description": "No usable credential, or a step-up is required"},
           "403": {"description": "The caller is impersonating or may not reset the factors"},
           "404": {"description": "No such account"},
@@ -206,7 +227,10 @@
           {"name": "id", "in": "path", "required": true, "schema": {"type": "string"}}
         ],
         "responses": {
-          "200": {"description": "The account's sessions"},
+          "200": {
+            "description": "The account's sessions",
+            "content": {"application/json": {"schema": {"$ref": "#/components/schemas/AuthnAdminSessionList"}}}
+          },
           "401": {"description": "No usable credential"},
           "403": {"description": "The caller is impersonating or may not read the sessions"},
           "404": {"description": "No such account"},
@@ -222,7 +246,10 @@
           {"name": "id", "in": "path", "required": true, "schema": {"type": "string"}}
         ],
         "responses": {
-          "200": {"description": "The number of sessions revoked"},
+          "200": {
+            "description": "The number of sessions revoked",
+            "content": {"application/json": {"schema": {"$ref": "#/components/schemas/AuthnAdminRevoked"}}}
+          },
           "401": {"description": "No usable credential"},
           "403": {"description": "The caller is impersonating or may not revoke the sessions"},
           "404": {"description": "No such account"},
@@ -254,7 +281,10 @@
           {"name": "id", "in": "path", "required": true, "schema": {"type": "string"}}
         ],
         "responses": {
-          "200": {"description": "The account's service secrets"},
+          "200": {
+            "description": "The account's service secrets",
+            "content": {"application/json": {"schema": {"$ref": "#/components/schemas/AuthnAdminSecretList"}}}
+          },
           "401": {"description": "No usable credential"},
           "403": {"description": "The caller is impersonating or may not read the secrets"},
           "404": {"description": "No such account"},
@@ -268,7 +298,10 @@
           {"name": "id", "in": "path", "required": true, "schema": {"type": "string"}}
         ],
         "responses": {
-          "201": {"description": "The secret's identifier, label, one-time secret and expiry"},
+          "201": {
+            "description": "The secret's identifier, label, one-time secret and expiry",
+            "content": {"application/json": {"schema": {"$ref": "#/components/schemas/AuthnAdminSecretCreated"}}}
+          },
           "400": {"description": "The body could not be read"},
           "401": {"description": "No usable credential"},
           "403": {"description": "The caller is impersonating or may not create the secret"},
@@ -304,7 +337,10 @@
           {"name": "cursor", "in": "query", "required": false, "schema": {"type": "string"}}
         ],
         "responses": {
-          "200": {"description": "The tenant's members"},
+          "200": {
+            "description": "The tenant's members",
+            "content": {"application/json": {"schema": {"$ref": "#/components/schemas/AuthnAdminMemberList"}}}
+          },
           "400": {"description": "The page query could not be read"},
           "401": {"description": "No usable credential"},
           "403": {"description": "The caller is impersonating or may not read memberships"},
@@ -371,7 +407,10 @@
           {"name": "tenant", "in": "path", "required": true, "schema": {"type": "string"}}
         ],
         "responses": {
-          "200": {"description": "The tenant's providers"},
+          "200": {
+            "description": "The tenant's providers",
+            "content": {"application/json": {"schema": {"$ref": "#/components/schemas/AuthnAdminProviderList"}}}
+          },
           "401": {"description": "No usable credential"},
           "403": {"description": "The caller is impersonating or may not read providers"},
           "503": {"description": "A dependency could not answer"}
@@ -384,7 +423,10 @@
           {"name": "tenant", "in": "path", "required": true, "schema": {"type": "string"}}
         ],
         "responses": {
-          "201": {"description": "The created provider"},
+          "201": {
+            "description": "The created provider",
+            "content": {"application/json": {"schema": {"$ref": "#/components/schemas/AuthnAdminProviderEnvelope"}}}
+          },
           "400": {"description": "The body could not be read, or an argument is invalid"},
           "401": {"description": "No usable credential"},
           "403": {"description": "The caller is impersonating or may not create providers"},
@@ -401,7 +443,10 @@
           {"name": "id", "in": "path", "required": true, "schema": {"type": "string"}}
         ],
         "responses": {
-          "200": {"description": "The provider"},
+          "200": {
+            "description": "The provider",
+            "content": {"application/json": {"schema": {"$ref": "#/components/schemas/AuthnAdminProviderEnvelope"}}}
+          },
           "401": {"description": "No usable credential"},
           "403": {"description": "The caller is impersonating or may not read the provider"},
           "404": {"description": "No such provider"},
@@ -415,7 +460,10 @@
           {"name": "id", "in": "path", "required": true, "schema": {"type": "string"}}
         ],
         "responses": {
-          "200": {"description": "The updated provider"},
+          "200": {
+            "description": "The updated provider",
+            "content": {"application/json": {"schema": {"$ref": "#/components/schemas/AuthnAdminProviderEnvelope"}}}
+          },
           "400": {"description": "The body could not be read, or an argument is invalid"},
           "401": {"description": "No usable credential"},
           "403": {"description": "The caller is impersonating or may not update the provider"},
@@ -447,7 +495,10 @@
           {"name": "id", "in": "path", "required": true, "schema": {"type": "string"}}
         ],
         "responses": {
-          "200": {"description": "The verification token to publish"},
+          "200": {
+            "description": "The verification token to publish",
+            "content": {"application/json": {"schema": {"$ref": "#/components/schemas/AuthnAdminVerifyToken"}}}
+          },
           "400": {"description": "The body could not be read, or the domain is malformed"},
           "401": {"description": "No usable credential"},
           "403": {"description": "The caller is impersonating or may not claim domains"},
@@ -515,7 +566,10 @@
           {"name": "id", "in": "path", "required": true, "schema": {"type": "string"}}
         ],
         "responses": {
-          "200": {"description": "The refreshed provider"},
+          "200": {
+            "description": "The refreshed provider",
+            "content": {"application/json": {"schema": {"$ref": "#/components/schemas/AuthnAdminProviderEnvelope"}}}
+          },
           "400": {"description": "The body could not be read"},
           "401": {"description": "No usable credential"},
           "403": {"description": "The caller is impersonating or may not refresh metadata"},
@@ -533,7 +587,10 @@
           {"name": "cursor", "in": "query", "required": false, "schema": {"type": "string"}}
         ],
         "responses": {
-          "200": {"description": "The page of records and the next cursor"},
+          "200": {
+            "description": "The page of records and the next cursor",
+            "content": {"application/json": {"schema": {"$ref": "#/components/schemas/AuthnAdminImpersonationList"}}}
+          },
           "400": {"description": "The page query could not be read"},
           "401": {"description": "No usable credential"},
           "403": {"description": "The caller is impersonating or may not read records"},
@@ -554,6 +611,180 @@
           "403": {"description": "The caller is impersonating or may not revoke records"},
           "404": {"description": "No such record"},
           "503": {"description": "A dependency could not answer"}
+        }
+      }
+    }
+  },
+  "components": {
+    "schemas": {
+      "AuthnAdminAccount": {
+        "type": "object",
+        "required": ["id", "kind", "status", "display_name", "mfa_required", "protected", "password_set", "created_at"],
+        "properties": {
+          "id": {"type": "string"},
+          "kind": {"type": "string", "enum": ["user", "service"]},
+          "status": {"type": "string", "enum": ["disabled", "active", "deleted"]},
+          "display_name": {"type": "string"},
+          "mfa_required": {"type": "boolean"},
+          "protected": {"type": "boolean"},
+          "password_set": {"type": "boolean"},
+          "attributes": {"type": "object", "additionalProperties": {"type": "string"}, "description": "Absent when the account carries no attribute set"},
+          "created_at": {"type": "string", "format": "date-time"}
+        }
+      },
+      "AuthnAdminAccountEnvelope": {
+        "type": "object",
+        "required": ["account"],
+        "properties": {"account": {"$ref": "#/components/schemas/AuthnAdminAccount"}}
+      },
+      "AuthnAdminAccountList": {
+        "type": "object",
+        "required": ["accounts", "next_cursor"],
+        "properties": {
+          "accounts": {"type": "array", "items": {"$ref": "#/components/schemas/AuthnAdminAccount"}},
+          "next_cursor": {"type": "string", "description": "The cursor of the next page, empty on the last page"}
+        }
+      },
+      "AuthnAdminFactor": {
+        "type": "object",
+        "required": ["kind", "label", "status"],
+        "properties": {
+          "kind": {"type": "string"},
+          "label": {"type": "string"},
+          "status": {"type": "string", "enum": ["pending", "active", "disabled"]}
+        }
+      },
+      "AuthnAdminFactorList": {
+        "type": "object",
+        "required": ["factors"],
+        "properties": {"factors": {"type": "array", "items": {"$ref": "#/components/schemas/AuthnAdminFactor"}}}
+      },
+      "AuthnAdminRemoved": {
+        "type": "object",
+        "required": ["removed"],
+        "properties": {"removed": {"type": "integer", "description": "The number of factors removed"}}
+      },
+      "AuthnAdminSession": {
+        "type": "object",
+        "required": ["id", "kind", "assurance", "auth_time", "created_at", "last_seen_at", "expires_at", "revoked"],
+        "properties": {
+          "id": {"type": "string"},
+          "kind": {"type": "string"},
+          "assurance": {"type": "integer", "description": "0 none, 1 single factor, 2 multi-factor"},
+          "auth_time": {"type": "string", "format": "date-time"},
+          "impersonation_id": {"type": "string", "description": "Absent unless the session carries an impersonation"},
+          "created_at": {"type": "string", "format": "date-time"},
+          "last_seen_at": {"type": "string", "format": "date-time"},
+          "expires_at": {"type": "string", "format": "date-time"},
+          "revoked": {"type": "boolean"}
+        }
+      },
+      "AuthnAdminSessionList": {
+        "type": "object",
+        "required": ["sessions"],
+        "properties": {"sessions": {"type": "array", "items": {"$ref": "#/components/schemas/AuthnAdminSession"}}}
+      },
+      "AuthnAdminRevoked": {
+        "type": "object",
+        "required": ["revoked"],
+        "properties": {"revoked": {"type": "integer", "description": "The number of sessions revoked"}}
+      },
+      "AuthnAdminSecret": {
+        "type": "object",
+        "required": ["id", "label", "expires_at", "revoked"],
+        "properties": {
+          "id": {"type": "string"},
+          "label": {"type": "string"},
+          "expires_at": {"type": "string", "format": "date-time"},
+          "revoked": {"type": "boolean"}
+        }
+      },
+      "AuthnAdminSecretList": {
+        "type": "object",
+        "required": ["secrets"],
+        "properties": {"secrets": {"type": "array", "items": {"$ref": "#/components/schemas/AuthnAdminSecret"}}}
+      },
+      "AuthnAdminSecretCreated": {
+        "type": "object",
+        "required": ["id", "label", "secret", "expires_at"],
+        "properties": {
+          "id": {"type": "string"},
+          "label": {"type": "string"},
+          "secret": {"type": "string", "description": "The secret itself, handed out once and never again"},
+          "expires_at": {"type": "string", "format": "date-time", "description": "The zero instant 0001-01-01T00:00:00Z when the request named no expiry"}
+        }
+      },
+      "AuthnAdminMember": {
+        "type": "object",
+        "required": ["account", "tenant", "active", "sso_exempt", "source"],
+        "properties": {
+          "account": {"type": "string"},
+          "tenant": {"type": "string"},
+          "active": {"type": "boolean"},
+          "sso_exempt": {"type": "boolean"},
+          "source": {"type": "string"}
+        }
+      },
+      "AuthnAdminMemberList": {
+        "type": "object",
+        "required": ["members"],
+        "properties": {"members": {"type": "array", "items": {"$ref": "#/components/schemas/AuthnAdminMember"}}}
+      },
+      "AuthnAdminProvider": {
+        "type": "object",
+        "required": ["id", "tenant", "protocol", "name", "enabled", "provisioning", "trust_idp_mfa", "allow_idp_initiated", "allow_sha1", "merge_existing", "version"],
+        "properties": {
+          "id": {"type": "string"},
+          "tenant": {"type": "string"},
+          "protocol": {"type": "string"},
+          "name": {"type": "string"},
+          "enabled": {"type": "boolean"},
+          "provisioning": {"type": "string"},
+          "trust_idp_mfa": {"type": "boolean"},
+          "allow_idp_initiated": {"type": "boolean"},
+          "allow_sha1": {"type": "boolean"},
+          "merge_existing": {"type": "boolean"},
+          "config": {"description": "The protocol's own configuration; absent when the provider carries none"},
+          "version": {"type": "integer"},
+          "warnings": {"type": "array", "items": {"type": "string"}, "description": "Absent when no setting loosens a default"}
+        }
+      },
+      "AuthnAdminProviderEnvelope": {
+        "type": "object",
+        "required": ["provider"],
+        "properties": {"provider": {"$ref": "#/components/schemas/AuthnAdminProvider"}}
+      },
+      "AuthnAdminProviderList": {
+        "type": "object",
+        "required": ["providers"],
+        "properties": {"providers": {"type": "array", "items": {"$ref": "#/components/schemas/AuthnAdminProvider"}}}
+      },
+      "AuthnAdminVerifyToken": {
+        "type": "object",
+        "required": ["verify_token"],
+        "properties": {"verify_token": {"type": "string", "description": "The token to publish in DNS"}}
+      },
+      "AuthnAdminImpersonation": {
+        "type": "object",
+        "required": ["id", "actor", "target", "tenant", "session_id", "started_at", "ends_at", "ended_at"],
+        "properties": {
+          "id": {"type": "string"},
+          "actor": {"type": "string"},
+          "target": {"type": "string"},
+          "tenant": {"type": "string"},
+          "session_id": {"type": "string"},
+          "started_at": {"type": "string", "format": "date-time"},
+          "ends_at": {"type": "string", "format": "date-time"},
+          "ended_at": {"type": "string", "format": "date-time", "description": "The zero instant 0001-01-01T00:00:00Z while the record is still in force"},
+          "end_reason": {"type": "string", "description": "Absent while the record is still in force"}
+        }
+      },
+      "AuthnAdminImpersonationList": {
+        "type": "object",
+        "required": ["impersonations", "next_cursor"],
+        "properties": {
+          "impersonations": {"type": "array", "items": {"$ref": "#/components/schemas/AuthnAdminImpersonation"}},
+          "next_cursor": {"type": "string", "description": "The cursor of the next page, empty on the last page"}
         }
       }
     }

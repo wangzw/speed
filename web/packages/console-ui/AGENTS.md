@@ -95,9 +95,12 @@ three modules:
 | `useRemoveSetting` | `DELETE /settings/admin/settings/:namespace/:key` |
 | `useAuditRecords` | `GET /audit/admin/records` |
 
-The view shapes (`ConsoleTenant`, `ConsoleSetting`, `ConsoleAuditRecord`)
-mirror each module's own view, built field by field from the module's
-record.
+The view types (`ConsoleTenant`, `ConsoleSetting`,
+`ConsoleAuditRecord`) are the generated response rows of each module's
+admin surface (`TenantAdminTenant`, `SettingsAdminSetting`,
+`AuditAdminRecord`), named for the console's own pages; only the write
+inputs stay hand-written, because they carry route parameters beside the
+body.
 
 One address detail the bundle encodes: the settings route addresses an
 item by its namespace and **the rest of the key under it** (`:key`), the

@@ -32,12 +32,13 @@
  *                   DELETE /settings/:namespace/:key
  *   /audit/admin    GET /records
  *
- * The view shapes below mirror each module's view, built field by field
- * from the module's own record (pkg/tenant/admin's tenantView,
- * pkg/settings/admin's settingView, pkg/audit/admin's recordView); the
- * generated response rows (TenantAdminTenant, SettingsAdminSetting,
- * AuditAdminRecord) are structurally those views, so the adapters hand
- * them straight through.
+ * The view types below are the generated response rows themselves
+ * (TenantAdminTenant, SettingsAdminSetting, AuditAdminRecord): the
+ * modules' OpenAPI fragments declare their 2xx bodies, so orval emits the
+ * row shapes and the console names each for its own surface rather than
+ * hand-writing a parallel model. Only the write *inputs* stay hand-written
+ * -- they carry route parameters beside the body, which no single
+ * generated type covers.
  *
  * The settings reads and writes target the global layer: the console is
  * the platform-staff surface, and the global layer is the platform's --
@@ -62,71 +63,34 @@ import {
   tenantAdminTenantsSetAlias,
   tenantAdminTenantsSetStatus,
 } from '@speed/api-sdk'
+import type {
+  AuditAdminRecord,
+  SettingsAdminSetting,
+  TenantAdminTenant,
+  TenantAdminTenantStatus,
+} from '@speed/api-sdk'
 
 /** The settings layer the console operates on: the global (platform)
  * layer, whose rows only platform staff may read and write. */
 const GLOBAL_LAYER = { layer: 'global' } as const
 
-/** One tenant as /tenant/admin shows it (pkg/tenant/admin's tenantView). */
-export interface ConsoleTenant {
-  /** The tenant's identifier. */
-  readonly id: string
-  /** The alias the roster addresses it by. */
-  readonly alias: string
-  /** The tenant's state, spelled the way the roster spells it: active or disabled. */
-  readonly status: string
-}
+/** One tenant as /tenant/admin shows it -- the generated row of
+ * GET /tenant/admin/tenants, named for the console's own view. */
+export type ConsoleTenant = TenantAdminTenant
 
 /** The roster's closed status set: the only values a status write may
  * carry (the read side stays open -- an answer outside the set renders
- * the generic label rather than a raw value). */
-export type ConsoleTenantStatus = 'active' | 'disabled'
+ * the generic label rather than a raw value). The generated
+ * TenantAdminTenantStatus enum. */
+export type ConsoleTenantStatus = TenantAdminTenantStatus
 
-/** One setting as /settings/admin shows it (pkg/settings/admin's settingView). */
-export interface ConsoleSetting {
-  /** The setting's full key. */
-  readonly key: string
-  /** The module that declared it -- the key's prefix segment. */
-  readonly namespace: string
-  /** The declared type's text form. */
-  readonly type: string
-  /** The declaration's description. */
-  readonly description: string
-  /** The rule the declaration states; empty for an item admitting every value. */
-  readonly domain: string
-  /** Whether the server masks this item's written and resolved value. */
-  readonly sensitive: boolean
-  /** The declared default in the declared type's text form (empty when sensitive). */
-  readonly default: string
-  /** The text the selected layer holds (the mask string when sensitive). */
-  readonly written: string
-  /** The text the item resolves to after the fallback (the mask string when sensitive). */
-  readonly value: string
-}
+/** One setting as /settings/admin shows it -- the generated row of
+ * GET /settings/admin/settings. */
+export type ConsoleSetting = SettingsAdminSetting
 
-/** One audit record as /audit/admin shows it (pkg/audit/admin's recordView). */
-export interface ConsoleAuditRecord {
-  /** The record's identifier, as text. */
-  readonly id: string
-  /** The owning tenant; empty for a platform or system-level record. */
-  readonly tenant: string
-  /** When it occurred, in UTC, as an ISO timestamp. */
-  readonly occurred_at: string
-  /** Who performed the action. */
-  readonly actor: string
-  /** Where the action came from. */
-  readonly source: string
-  /** The action's name. */
-  readonly action: string
-  /** The object the action touched. */
-  readonly object: string
-  /** The recorded outcome. */
-  readonly outcome: string
-  /** The recorded purpose. */
-  readonly purpose: string
-  /** The record's detail as a key-value table (empty, never null). */
-  readonly detail: Readonly<Record<string, string>>
-}
+/** One audit record as /audit/admin shows it -- the generated row of
+ * GET /audit/admin/records. */
+export type ConsoleAuditRecord = AuditAdminRecord
 
 /** POST /tenant/admin/tenants body: a tenant not registered yet. */
 export interface ConsoleCreateTenantInput {

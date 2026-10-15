@@ -2,108 +2,56 @@
  * The wire shapes the account surfaces render, and the narrowing the
  * generated queries select through.
  *
- * The authn OpenAPI fragments declare no response schema, so orval types
- * every generated return as `void` (see @speed/api-sdk's runtime.ts doc:
- * the seam erases the response type and document existence is the
- * consumer's business). This package therefore owns the shapes it
- * renders, field by field against the server's own views
- * (`pkg/authn/profile/views.go`, `pkg/authn/session/routes.go`,
- * `pkg/authn/mfa/routes.go`), and selects each generated read through
- * the matching narrowing below.
+ * The authn OpenAPI fragments now declare their 2xx response schemas, so
+ * orval emits the response models and this package no longer owns them:
+ * each name below is an alias to the generated type of the operation the
+ * surface reads (GET /auth/me, GET /auth/sessions, GET /auth/factors).
  *
- * Every field is optional on purpose. A narrowing is a shape assertion,
- * not a guard: it maps an absent body to an empty object, so a 2xx whose
- * body omitted a collection reads as `undefined` -- the caller's error
- * variant -- and never as an empty list ("no sessions" is only ever
- * claimed for an answer that genuinely listed none). The consumers test
- * each field for presence where the server may omit it; nothing here
- * throws, because this package does not depend on @speed/api-client and
- * cannot mint its `client.protocol` ApiError (an unreadable answer
- * surfaces as the error variant, whose text is the errors.unknown
- * fallback for a non-ApiError).
+ * The narrowing functions stay because they carry runtime behaviour the
+ * generated surface cannot: a narrowing maps an absent body to an empty
+ * object, so a 2xx whose body omitted a collection reads as `undefined`
+ * -- the caller's error variant -- and never as an empty list ("no
+ * sessions" is only ever claimed for an answer that genuinely listed
+ * none). They are shape assertions, not guards: nothing here throws,
+ * because this package does not depend on @speed/api-client and cannot
+ * mint its `client.protocol` ApiError (an unreadable answer surfaces as
+ * the error variant, whose text is the errors.unknown fallback for a
+ * non-ApiError).
  */
 
-/** One verified identifier of an account (email, phone). */
-export interface AccountIdentifier {
-  readonly id?: string
-  /** The identifier kind (email, phone, ...). */
-  readonly kind?: string
-  /** The identifier value. */
-  readonly value?: string
-  /** When it was verified, RFC 3339. */
-  readonly verified_at?: string
-  /** How it was verified. */
-  readonly verified_via?: string
-}
+import type {
+  AuthnMfaFactor,
+  AuthnMfaFactors200,
+  AuthnProfileIdentifier,
+  AuthnProfileLink,
+  AuthnProfileProfile,
+  AuthnSessionItem,
+  AuthnSessionList,
+} from '@speed/api-sdk'
 
-/** One external binding of an account (a social or enterprise provider). */
-export interface AccountLink {
-  readonly id?: string
-  /** The provider name. */
-  readonly provider?: string
-  /** The email the provider asserted, when it did. */
-  readonly email?: string
-  /** When the binding was created, RFC 3339. */
-  readonly created_at?: string
-  /** When the binding was last used to sign in, RFC 3339. */
-  readonly last_login_at?: string
-}
+/** One verified identifier of an account (email, phone): the generated
+ * identifier row of GET /auth/me. */
+export type AccountIdentifier = AuthnProfileIdentifier
+
+/** One external binding of an account (a social or enterprise provider):
+ * the generated link row of GET /auth/me. */
+export type AccountLink = AuthnProfileLink
 
 /** The caller's own profile, the body of GET /auth/me. */
-export interface AccountProfile {
-  readonly account_id?: string
-  readonly kind?: string
-  readonly display_name?: string
-  readonly mfa_required?: boolean
-  readonly password_set?: boolean
-  readonly created_at?: string
-  readonly attributes?: Readonly<Record<string, string>>
-  /** The account's preferred locale; empty means "not chosen". */
-  readonly locale?: string
-  /** The account's preferred time zone; empty means "not chosen". */
-  readonly time_zone?: string
-  readonly identifiers?: readonly AccountIdentifier[]
-  readonly links?: readonly AccountLink[]
-}
+export type AccountProfile = AuthnProfileProfile
 
 /** One session in GET /auth/sessions. The listing carries only live
  * sessions, so a row is never revoked or expired. */
-export interface AccountSession {
-  readonly id?: string
-  /** The session kind (browser, token, service). */
-  readonly kind?: string
-  readonly created_at?: string
-  readonly last_seen_at?: string
-  readonly expires_at?: string
-  readonly client_ip?: string
-  readonly user_agent?: string
-  /** Whether this row is the session the request's own token belongs to. */
-  readonly current?: boolean
-}
+export type AccountSession = AuthnSessionItem
 
 /** The body of GET /auth/sessions. */
-export interface SessionList {
-  readonly sessions?: readonly AccountSession[]
-}
+export type SessionList = AuthnSessionList
 
 /** One registered factor in GET /auth/factors. */
-export interface AccountFactor {
-  readonly id?: string
-  /** The factor kind (totp, webauthn, sms). */
-  readonly kind?: string
-  /** A display label the server supplies. */
-  readonly label?: string
-  /** The factor status (active, pending, disabled). */
-  readonly status?: string
-  readonly created_at?: string
-  readonly activated_at?: string
-  readonly last_used_at?: string
-}
+export type AccountFactor = AuthnMfaFactor
 
 /** The body of GET /auth/factors. */
-export interface FactorList {
-  readonly factors?: readonly AccountFactor[]
-}
+export type FactorList = AuthnMfaFactors200
 
 /** Narrows a profile read to its shape; an absent body reads as empty. */
 export function asProfile(raw: unknown): AccountProfile {

@@ -7,7 +7,10 @@
         "operationId": "authn.profile.get",
         "summary": "The caller's own profile",
         "responses": {
-          "200": {"description": "The account, its identifiers and its external bindings"},
+          "200": {
+            "description": "The account, its identifiers and its external bindings",
+            "content": {"application/json": {"schema": {"$ref": "#/components/schemas/AuthnProfileProfile"}}}
+          },
           "401": {"description": "No usable credential, or the identity's own account is gone"},
           "503": {"description": "The account store could not be reached"}
         }
@@ -32,11 +35,67 @@
           }
         },
         "responses": {
-          "200": {"description": "The display name and attribute set as written"},
+          "200": {
+            "description": "The display name and attribute set as written",
+            "content": {"application/json": {"schema": {"$ref": "#/components/schemas/AuthnProfilePatch"}}}
+          },
           "400": {"description": "The body could not be read, or a value is outside its domain"},
           "401": {"description": "No usable credential, or a step-up is required"},
           "403": {"description": "The identity is impersonating, which the route refuses"},
           "503": {"description": "A dependency could not answer"}
+        }
+      }
+    }
+  },
+  "components": {
+    "schemas": {
+      "AuthnProfileProfile": {
+        "type": "object",
+        "required": ["account_id", "kind", "display_name", "mfa_required", "password_set", "created_at", "attributes", "locale", "time_zone", "identifiers", "links"],
+        "properties": {
+          "account_id": {"type": "string"},
+          "kind": {"type": "string"},
+          "display_name": {"type": "string"},
+          "mfa_required": {"type": "boolean"},
+          "password_set": {"type": "boolean"},
+          "created_at": {"type": "string", "description": "RFC 3339 in UTC, empty when the account carries no creation instant"},
+          "attributes": {"type": "object", "additionalProperties": {"type": "string"}, "description": "Never null; the empty object when the account carries none"},
+          "locale": {"type": "string", "description": "Read out of the attribute set, empty when it carries none"},
+          "time_zone": {"type": "string", "description": "Read out of the attribute set, empty when it carries none"},
+          "identifiers": {"type": "array", "items": {"$ref": "#/components/schemas/AuthnProfileIdentifier"}},
+          "links": {"type": "array", "items": {"$ref": "#/components/schemas/AuthnProfileLink"}}
+        }
+      },
+      "AuthnProfileIdentifier": {
+        "type": "object",
+        "required": ["id", "kind", "value", "verified_at", "verified_via"],
+        "properties": {
+          "id": {"type": "string"},
+          "kind": {"type": "string"},
+          "value": {"type": "string"},
+          "verified_at": {"type": "string", "description": "RFC 3339 in UTC, empty when the identifier is unverified"},
+          "verified_via": {"type": "string", "description": "Empty when the identifier is unverified"}
+        }
+      },
+      "AuthnProfileLink": {
+        "type": "object",
+        "required": ["id", "provider", "created_at"],
+        "properties": {
+          "id": {"type": "string"},
+          "provider": {"type": "string"},
+          "email": {"type": "string", "description": "Absent when the provider gave no address"},
+          "created_at": {"type": "string", "description": "RFC 3339 in UTC, empty when the binding carries no creation instant"},
+          "last_login_at": {"type": "string", "description": "Absent when the binding has never been used to sign in"}
+        }
+      },
+      "AuthnProfilePatch": {
+        "type": "object",
+        "required": ["display_name", "attributes", "locale", "time_zone"],
+        "properties": {
+          "display_name": {"type": "string"},
+          "attributes": {"type": "object", "additionalProperties": {"type": "string"}, "description": "The whole attribute set as it stands, never null"},
+          "locale": {"type": "string", "description": "Read out of the attribute set, empty when it carries none"},
+          "time_zone": {"type": "string", "description": "Read out of the attribute set, empty when it carries none"}
         }
       }
     }

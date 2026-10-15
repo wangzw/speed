@@ -7,8 +7,14 @@
         "operationId": "authn.login.methods",
         "summary": "List the login methods this deployment offers",
         "responses": {
-          "200": {"description": "The names of the enabled methods"},
-          "503": {"description": "The settings that turn methods off could not be read"}
+          "200": {
+            "description": "The names of the enabled methods",
+            "content": {"application/json": {"schema": {"$ref": "#/components/schemas/AuthnLoginMethods"}}}
+          },
+          "503": {
+            "description": "The settings that turn methods off could not be read",
+            "content": {"application/json": {"schema": {"$ref": "#/components/schemas/Problem"}}}
+          }
         }
       }
     },
@@ -35,14 +41,38 @@
           }
         },
         "responses": {
-          "200": {"description": "The flow, advanced to its first step"},
-          "400": {"description": "The body could not be read, or a value is outside its domain"},
-          "401": {"description": "The credential did not hold"},
-          "403": {"description": "The method or the account is unavailable"},
-          "409": {"description": "The request conflicts with the account's state"},
-          "415": {"description": "The request body is not application/json"},
-          "429": {"description": "Too many attempts; retry after the stated delay"},
-          "503": {"description": "A dependency could not answer"}
+          "200": {
+            "description": "The flow, advanced to its first step",
+            "content": {"application/json": {"schema": {"$ref": "#/components/schemas/AuthnLoginFlow"}}}
+          },
+          "400": {
+            "description": "The body could not be read, or a value is outside its domain",
+            "content": {"application/json": {"schema": {"$ref": "#/components/schemas/Problem"}}}
+          },
+          "401": {
+            "description": "The credential did not hold",
+            "content": {"application/json": {"schema": {"$ref": "#/components/schemas/Problem"}}}
+          },
+          "403": {
+            "description": "The method or the account is unavailable",
+            "content": {"application/json": {"schema": {"$ref": "#/components/schemas/Problem"}}}
+          },
+          "409": {
+            "description": "The request conflicts with the account's state",
+            "content": {"application/json": {"schema": {"$ref": "#/components/schemas/Problem"}}}
+          },
+          "415": {
+            "description": "The request body is not application/json",
+            "content": {"application/json": {"schema": {"$ref": "#/components/schemas/Problem"}}}
+          },
+          "429": {
+            "description": "Too many attempts; retry after the stated delay",
+            "content": {"application/json": {"schema": {"$ref": "#/components/schemas/Problem"}}}
+          },
+          "503": {
+            "description": "A dependency could not answer",
+            "content": {"application/json": {"schema": {"$ref": "#/components/schemas/Problem"}}}
+          }
         }
       }
     },
@@ -69,14 +99,38 @@
           }
         },
         "responses": {
-          "200": {"description": "The flow, advanced to its first step"},
-          "400": {"description": "The body could not be read, or a value is outside its domain"},
-          "401": {"description": "No usable credential"},
-          "403": {"description": "The method or the account is unavailable"},
-          "409": {"description": "The request conflicts with the account's state"},
-          "415": {"description": "The request body is not application/json"},
-          "429": {"description": "Too many attempts; retry after the stated delay"},
-          "503": {"description": "A dependency could not answer"}
+          "200": {
+            "description": "The flow, advanced to its first step",
+            "content": {"application/json": {"schema": {"$ref": "#/components/schemas/AuthnLoginFlow"}}}
+          },
+          "400": {
+            "description": "The body could not be read, or a value is outside its domain",
+            "content": {"application/json": {"schema": {"$ref": "#/components/schemas/Problem"}}}
+          },
+          "401": {
+            "description": "No usable credential",
+            "content": {"application/json": {"schema": {"$ref": "#/components/schemas/Problem"}}}
+          },
+          "403": {
+            "description": "The method or the account is unavailable",
+            "content": {"application/json": {"schema": {"$ref": "#/components/schemas/Problem"}}}
+          },
+          "409": {
+            "description": "The request conflicts with the account's state",
+            "content": {"application/json": {"schema": {"$ref": "#/components/schemas/Problem"}}}
+          },
+          "415": {
+            "description": "The request body is not application/json",
+            "content": {"application/json": {"schema": {"$ref": "#/components/schemas/Problem"}}}
+          },
+          "429": {
+            "description": "Too many attempts; retry after the stated delay",
+            "content": {"application/json": {"schema": {"$ref": "#/components/schemas/Problem"}}}
+          },
+          "503": {
+            "description": "A dependency could not answer",
+            "content": {"application/json": {"schema": {"$ref": "#/components/schemas/Problem"}}}
+          }
         }
       }
     },
@@ -100,14 +154,49 @@
           }
         },
         "responses": {
-          "200": {"description": "The flow advanced, or completed with a session or a token pair"},
-          "400": {"description": "The body could not be read, or a value is outside its domain"},
-          "401": {"description": "The credential did not hold, or the flow binding is missing or wrong"},
-          "403": {"description": "The method or the account is unavailable"},
-          "409": {"description": "The step is out of order, or the request conflicts with the account's state"},
-          "415": {"description": "The request body is not application/json"},
-          "429": {"description": "Too many attempts; retry after the stated delay"},
-          "503": {"description": "A dependency could not answer"}
+          "200": {
+            "description": "The flow advanced, or completed with a session or a token pair",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "oneOf": [
+                    {"$ref": "#/components/schemas/AuthnLoginFlow"},
+                    {"$ref": "#/components/schemas/AuthnLoginSession"},
+                    {"$ref": "#/components/schemas/AuthnLoginToken"},
+                    {"$ref": "#/components/schemas/AuthnLoginActionResult"}
+                  ]
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "The body could not be read, or a value is outside its domain",
+            "content": {"application/json": {"schema": {"$ref": "#/components/schemas/Problem"}}}
+          },
+          "401": {
+            "description": "The credential did not hold, or the flow binding is missing or wrong",
+            "content": {"application/json": {"schema": {"$ref": "#/components/schemas/Problem"}}}
+          },
+          "403": {
+            "description": "The method or the account is unavailable",
+            "content": {"application/json": {"schema": {"$ref": "#/components/schemas/Problem"}}}
+          },
+          "409": {
+            "description": "The step is out of order, or the request conflicts with the account's state",
+            "content": {"application/json": {"schema": {"$ref": "#/components/schemas/Problem"}}}
+          },
+          "415": {
+            "description": "The request body is not application/json",
+            "content": {"application/json": {"schema": {"$ref": "#/components/schemas/Problem"}}}
+          },
+          "429": {
+            "description": "Too many attempts; retry after the stated delay",
+            "content": {"application/json": {"schema": {"$ref": "#/components/schemas/Problem"}}}
+          },
+          "503": {
+            "description": "A dependency could not answer",
+            "content": {"application/json": {"schema": {"$ref": "#/components/schemas/Problem"}}}
+          }
         }
       }
     },
@@ -116,10 +205,22 @@
         "operationId": "authn.login.current",
         "summary": "The state of the flow the request is bound to",
         "responses": {
-          "200": {"description": "The flow's current step, so a page refresh can resume"},
-          "401": {"description": "The flow binding is missing or wrong, or the flow is done or gone"},
-          "429": {"description": "Too many attempts; retry after the stated delay"},
-          "503": {"description": "The flow store could not be reached"}
+          "200": {
+            "description": "The flow's current step, so a page refresh can resume",
+            "content": {"application/json": {"schema": {"$ref": "#/components/schemas/AuthnLoginFlow"}}}
+          },
+          "401": {
+            "description": "The flow binding is missing or wrong, or the flow is done or gone",
+            "content": {"application/json": {"schema": {"$ref": "#/components/schemas/Problem"}}}
+          },
+          "429": {
+            "description": "Too many attempts; retry after the stated delay",
+            "content": {"application/json": {"schema": {"$ref": "#/components/schemas/Problem"}}}
+          },
+          "503": {
+            "description": "The flow store could not be reached",
+            "content": {"application/json": {"schema": {"$ref": "#/components/schemas/Problem"}}}
+          }
         }
       },
       "delete": {
@@ -127,9 +228,18 @@
         "summary": "Abandon the flow the request is bound to",
         "responses": {
           "204": {"description": "The flow was removed"},
-          "401": {"description": "The flow binding is missing or wrong, or the flow is gone"},
-          "429": {"description": "Too many attempts; retry after the stated delay"},
-          "503": {"description": "The flow store could not be reached"}
+          "401": {
+            "description": "The flow binding is missing or wrong, or the flow is gone",
+            "content": {"application/json": {"schema": {"$ref": "#/components/schemas/Problem"}}}
+          },
+          "429": {
+            "description": "Too many attempts; retry after the stated delay",
+            "content": {"application/json": {"schema": {"$ref": "#/components/schemas/Problem"}}}
+          },
+          "503": {
+            "description": "The flow store could not be reached",
+            "content": {"application/json": {"schema": {"$ref": "#/components/schemas/Problem"}}}
+          }
         }
       }
     },
@@ -141,12 +251,30 @@
           {"name": "provider", "in": "path", "required": true, "schema": {"type": "string"}}
         ],
         "responses": {
-          "200": {"description": "The flow, advanced by the callback"},
-          "400": {"description": "The callback is malformed"},
-          "401": {"description": "The flow binding is missing or wrong"},
-          "403": {"description": "The method or the account is unavailable"},
-          "429": {"description": "Too many attempts; retry after the stated delay"},
-          "503": {"description": "A dependency could not answer"}
+          "200": {
+            "description": "The flow, advanced by the callback",
+            "content": {"application/json": {"schema": {"$ref": "#/components/schemas/AuthnLoginFlow"}}}
+          },
+          "400": {
+            "description": "The callback is malformed",
+            "content": {"application/json": {"schema": {"$ref": "#/components/schemas/Problem"}}}
+          },
+          "401": {
+            "description": "The flow binding is missing or wrong",
+            "content": {"application/json": {"schema": {"$ref": "#/components/schemas/Problem"}}}
+          },
+          "403": {
+            "description": "The method or the account is unavailable",
+            "content": {"application/json": {"schema": {"$ref": "#/components/schemas/Problem"}}}
+          },
+          "429": {
+            "description": "Too many attempts; retry after the stated delay",
+            "content": {"application/json": {"schema": {"$ref": "#/components/schemas/Problem"}}}
+          },
+          "503": {
+            "description": "A dependency could not answer",
+            "content": {"application/json": {"schema": {"$ref": "#/components/schemas/Problem"}}}
+          }
         }
       },
       "post": {
@@ -156,12 +284,30 @@
           {"name": "provider", "in": "path", "required": true, "schema": {"type": "string"}}
         ],
         "responses": {
-          "200": {"description": "The flow, advanced by the callback"},
-          "400": {"description": "The callback is malformed"},
-          "401": {"description": "The flow binding is missing or wrong"},
-          "403": {"description": "The method or the account is unavailable"},
-          "429": {"description": "Too many attempts; retry after the stated delay"},
-          "503": {"description": "A dependency could not answer"}
+          "200": {
+            "description": "The flow, advanced by the callback",
+            "content": {"application/json": {"schema": {"$ref": "#/components/schemas/AuthnLoginFlow"}}}
+          },
+          "400": {
+            "description": "The callback is malformed",
+            "content": {"application/json": {"schema": {"$ref": "#/components/schemas/Problem"}}}
+          },
+          "401": {
+            "description": "The flow binding is missing or wrong",
+            "content": {"application/json": {"schema": {"$ref": "#/components/schemas/Problem"}}}
+          },
+          "403": {
+            "description": "The method or the account is unavailable",
+            "content": {"application/json": {"schema": {"$ref": "#/components/schemas/Problem"}}}
+          },
+          "429": {
+            "description": "Too many attempts; retry after the stated delay",
+            "content": {"application/json": {"schema": {"$ref": "#/components/schemas/Problem"}}}
+          },
+          "503": {
+            "description": "A dependency could not answer",
+            "content": {"application/json": {"schema": {"$ref": "#/components/schemas/Problem"}}}
+          }
         }
       }
     },
@@ -185,13 +331,34 @@
         },
         "responses": {
           "204": {"description": "The password was changed"},
-          "400": {"description": "The new password is outside the policy"},
-          "401": {"description": "No usable credential, or the current password did not hold"},
-          "403": {"description": "The identity is impersonating, which the route refuses"},
-          "409": {"description": "The request conflicts with the account's state"},
-          "415": {"description": "The request body is not application/json"},
-          "429": {"description": "Too many attempts; retry after the stated delay"},
-          "503": {"description": "A dependency could not answer"}
+          "400": {
+            "description": "The new password is outside the policy",
+            "content": {"application/json": {"schema": {"$ref": "#/components/schemas/Problem"}}}
+          },
+          "401": {
+            "description": "No usable credential, or the current password did not hold",
+            "content": {"application/json": {"schema": {"$ref": "#/components/schemas/Problem"}}}
+          },
+          "403": {
+            "description": "The identity is impersonating, which the route refuses",
+            "content": {"application/json": {"schema": {"$ref": "#/components/schemas/Problem"}}}
+          },
+          "409": {
+            "description": "The request conflicts with the account's state",
+            "content": {"application/json": {"schema": {"$ref": "#/components/schemas/Problem"}}}
+          },
+          "415": {
+            "description": "The request body is not application/json",
+            "content": {"application/json": {"schema": {"$ref": "#/components/schemas/Problem"}}}
+          },
+          "429": {
+            "description": "Too many attempts; retry after the stated delay",
+            "content": {"application/json": {"schema": {"$ref": "#/components/schemas/Problem"}}}
+          },
+          "503": {
+            "description": "A dependency could not answer",
+            "content": {"application/json": {"schema": {"$ref": "#/components/schemas/Problem"}}}
+          }
         }
       }
     },
@@ -214,14 +381,38 @@
           }
         },
         "responses": {
-          "200": {"description": "The challenge, and when the code may be resent"},
-          "400": {"description": "The body could not be read, or the number is outside its domain"},
-          "401": {"description": "No usable credential"},
-          "403": {"description": "The identity is impersonating, which the route refuses"},
-          "409": {"description": "The number belongs to another account"},
-          "415": {"description": "The request body is not application/json"},
-          "429": {"description": "Too many attempts; retry after the stated delay"},
-          "503": {"description": "A dependency could not answer"}
+          "200": {
+            "description": "The challenge, and when the code may be resent",
+            "content": {"application/json": {"schema": {"$ref": "#/components/schemas/AuthnLoginPhoneChallenge"}}}
+          },
+          "400": {
+            "description": "The body could not be read, or the number is outside its domain",
+            "content": {"application/json": {"schema": {"$ref": "#/components/schemas/Problem"}}}
+          },
+          "401": {
+            "description": "No usable credential",
+            "content": {"application/json": {"schema": {"$ref": "#/components/schemas/Problem"}}}
+          },
+          "403": {
+            "description": "The identity is impersonating, which the route refuses",
+            "content": {"application/json": {"schema": {"$ref": "#/components/schemas/Problem"}}}
+          },
+          "409": {
+            "description": "The number belongs to another account",
+            "content": {"application/json": {"schema": {"$ref": "#/components/schemas/Problem"}}}
+          },
+          "415": {
+            "description": "The request body is not application/json",
+            "content": {"application/json": {"schema": {"$ref": "#/components/schemas/Problem"}}}
+          },
+          "429": {
+            "description": "Too many attempts; retry after the stated delay",
+            "content": {"application/json": {"schema": {"$ref": "#/components/schemas/Problem"}}}
+          },
+          "503": {
+            "description": "A dependency could not answer",
+            "content": {"application/json": {"schema": {"$ref": "#/components/schemas/Problem"}}}
+          }
         }
       }
     },
@@ -244,13 +435,34 @@
         },
         "responses": {
           "204": {"description": "The number was verified and added to the account"},
-          "400": {"description": "The body could not be read, or the code is wrong"},
-          "401": {"description": "No usable credential"},
-          "403": {"description": "The identity is impersonating, which the route refuses"},
-          "409": {"description": "The number belongs to another account"},
-          "415": {"description": "The request body is not application/json"},
-          "429": {"description": "Too many attempts; retry after the stated delay"},
-          "503": {"description": "A dependency could not answer"}
+          "400": {
+            "description": "The body could not be read, or the code is wrong",
+            "content": {"application/json": {"schema": {"$ref": "#/components/schemas/Problem"}}}
+          },
+          "401": {
+            "description": "No usable credential",
+            "content": {"application/json": {"schema": {"$ref": "#/components/schemas/Problem"}}}
+          },
+          "403": {
+            "description": "The identity is impersonating, which the route refuses",
+            "content": {"application/json": {"schema": {"$ref": "#/components/schemas/Problem"}}}
+          },
+          "409": {
+            "description": "The number belongs to another account",
+            "content": {"application/json": {"schema": {"$ref": "#/components/schemas/Problem"}}}
+          },
+          "415": {
+            "description": "The request body is not application/json",
+            "content": {"application/json": {"schema": {"$ref": "#/components/schemas/Problem"}}}
+          },
+          "429": {
+            "description": "Too many attempts; retry after the stated delay",
+            "content": {"application/json": {"schema": {"$ref": "#/components/schemas/Problem"}}}
+          },
+          "503": {
+            "description": "A dependency could not answer",
+            "content": {"application/json": {"schema": {"$ref": "#/components/schemas/Problem"}}}
+          }
         }
       }
     },
@@ -263,12 +475,30 @@
         ],
         "responses": {
           "204": {"description": "The identifier was removed"},
-          "400": {"description": "The identifier cannot be removed"},
-          "401": {"description": "No usable credential"},
-          "403": {"description": "The identity is impersonating, which the route refuses"},
-          "409": {"description": "The identifier is the account's last way in"},
-          "429": {"description": "Too many attempts; retry after the stated delay"},
-          "503": {"description": "A dependency could not answer"}
+          "400": {
+            "description": "The identifier cannot be removed",
+            "content": {"application/json": {"schema": {"$ref": "#/components/schemas/Problem"}}}
+          },
+          "401": {
+            "description": "No usable credential",
+            "content": {"application/json": {"schema": {"$ref": "#/components/schemas/Problem"}}}
+          },
+          "403": {
+            "description": "The identity is impersonating, which the route refuses",
+            "content": {"application/json": {"schema": {"$ref": "#/components/schemas/Problem"}}}
+          },
+          "409": {
+            "description": "The identifier is the account's last way in",
+            "content": {"application/json": {"schema": {"$ref": "#/components/schemas/Problem"}}}
+          },
+          "429": {
+            "description": "Too many attempts; retry after the stated delay",
+            "content": {"application/json": {"schema": {"$ref": "#/components/schemas/Problem"}}}
+          },
+          "503": {
+            "description": "A dependency could not answer",
+            "content": {"application/json": {"schema": {"$ref": "#/components/schemas/Problem"}}}
+          }
         }
       }
     },
@@ -281,12 +511,138 @@
         ],
         "responses": {
           "204": {"description": "The external identity was unbound"},
-          "400": {"description": "The binding cannot be removed"},
-          "401": {"description": "No usable credential"},
-          "403": {"description": "The identity is impersonating, which the route refuses"},
-          "409": {"description": "The binding is the account's last way in"},
-          "429": {"description": "Too many attempts; retry after the stated delay"},
-          "503": {"description": "A dependency could not answer"}
+          "400": {
+            "description": "The binding cannot be removed",
+            "content": {"application/json": {"schema": {"$ref": "#/components/schemas/Problem"}}}
+          },
+          "401": {
+            "description": "No usable credential",
+            "content": {"application/json": {"schema": {"$ref": "#/components/schemas/Problem"}}}
+          },
+          "403": {
+            "description": "The identity is impersonating, which the route refuses",
+            "content": {"application/json": {"schema": {"$ref": "#/components/schemas/Problem"}}}
+          },
+          "409": {
+            "description": "The binding is the account's last way in",
+            "content": {"application/json": {"schema": {"$ref": "#/components/schemas/Problem"}}}
+          },
+          "429": {
+            "description": "Too many attempts; retry after the stated delay",
+            "content": {"application/json": {"schema": {"$ref": "#/components/schemas/Problem"}}}
+          },
+          "503": {
+            "description": "A dependency could not answer",
+            "content": {"application/json": {"schema": {"$ref": "#/components/schemas/Problem"}}}
+          }
+        }
+      }
+    }
+  },
+  "components": {
+    "schemas": {
+      "AuthnLoginMethods": {
+        "type": "object",
+        "required": ["methods"],
+        "properties": {
+          "methods": {"type": "array", "items": {"type": "string"}, "description": "The names of the login methods taking part that are not turned off, sorted"}
+        }
+      },
+      "AuthnLoginFlow": {
+        "type": "object",
+        "required": ["seq", "state", "next"],
+        "properties": {
+          "seq": {"type": "integer", "description": "The step number the next answer must echo"},
+          "state": {"type": "string", "description": "The flow's state: first, second, enroll, ready, processing, done or failed"},
+          "flow_token": {"type": "string", "description": "The flow token, set only when the flow is bound by the Authn-Flow header"},
+          "next": {"$ref": "#/components/schemas/AuthnLoginStep"}
+        }
+      },
+      "AuthnLoginStep": {
+        "type": "object",
+        "required": ["kind"],
+        "properties": {
+          "kind": {"type": "string", "description": "What the client does next: challenge, redirect, factor, enroll, complete or webauthn"},
+          "fields": {"type": "array", "items": {"$ref": "#/components/schemas/AuthnLoginField"}, "description": "The inputs a challenge step asks for"},
+          "expires_in": {"type": "integer", "description": "How long a challenge lives, in seconds"},
+          "resend_after": {"type": "integer", "description": "How soon a challenge may be asked for again, in seconds"},
+          "url": {"type": "string", "description": "Where a redirect step sends the user agent"},
+          "method": {"type": "string", "description": "The HTTP method the redirect uses"},
+          "factors": {"type": "array", "items": {"$ref": "#/components/schemas/AuthnLoginFactor"}, "description": "The factors a second-factor step offers"},
+          "kinds": {"type": "array", "items": {"type": "string"}, "description": "The factor kinds an enroll step takes in"},
+          "options": {"description": "The public-key options a webauthn step carries"}
+        }
+      },
+      "AuthnLoginField": {
+        "type": "object",
+        "required": ["name", "kind"],
+        "properties": {
+          "name": {"type": "string"},
+          "kind": {"type": "string"},
+          "required": {"type": "boolean"},
+          "secret": {"type": "boolean"}
+        }
+      },
+      "AuthnLoginFactor": {
+        "type": "object",
+        "required": ["id", "kind"],
+        "properties": {
+          "id": {"type": "string"},
+          "kind": {"type": "string"},
+          "label": {"type": "string"}
+        }
+      },
+      "AuthnLoginSession": {
+        "type": "object",
+        "required": ["state", "session"],
+        "properties": {
+          "state": {"type": "string", "enum": ["authenticated"]},
+          "session": {"$ref": "#/components/schemas/AuthnLoginSessionView"}
+        }
+      },
+      "AuthnLoginSessionView": {
+        "type": "object",
+        "required": ["id", "expires_at"],
+        "properties": {
+          "id": {"type": "string"},
+          "expires_at": {"type": "string", "description": "The session's expiry as an RFC 3339 instant, or empty"}
+        }
+      },
+      "AuthnLoginToken": {
+        "type": "object",
+        "required": ["state", "token_type", "access_token", "expires_in", "refresh_token"],
+        "properties": {
+          "state": {"type": "string", "enum": ["authenticated", "elevated"], "description": "authenticated for a login; elevated for a step-up, which issues no refresh token and carries it empty"},
+          "token_type": {"type": "string", "enum": ["Bearer"]},
+          "access_token": {"type": "string"},
+          "expires_in": {"type": "integer", "description": "The access token's lifetime in seconds"},
+          "refresh_token": {"type": "string", "description": "Empty on a step-up, which issues no refresh token"}
+        }
+      },
+      "AuthnLoginActionResult": {
+        "type": "object",
+        "required": ["state"],
+        "properties": {
+          "state": {"type": "string", "enum": ["linked", "enrolled"], "description": "linked when the flow bound an external identity; enrolled when it registered a factor"}
+        }
+      },
+      "AuthnLoginPhoneChallenge": {
+        "type": "object",
+        "required": ["expires_in", "resend_after"],
+        "properties": {
+          "expires_in": {"type": "integer", "description": "How long the code lives, in seconds"},
+          "resend_after": {"type": "integer", "description": "How soon another code may be asked for, in seconds"}
+        }
+      },
+      "Problem": {
+        "type": "object",
+        "required": ["type", "status"],
+        "properties": {
+          "type": {"type": "string"},
+          "title": {"type": "string"},
+          "status": {"type": "integer"},
+          "detail": {"type": "string"},
+          "instance": {"type": "string"}
         }
       }
     }

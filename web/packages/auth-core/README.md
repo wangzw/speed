@@ -23,10 +23,11 @@ hooks (`useAuthState`, `useCurrentTenant`, `usePermission`) read one
 session the host attaches with `attachSession`; react is a peer
 dependency, so only a host that already renders React carries it.
 
-The generated authn fragments declare no response schema, so orval types
-every return as `void`. This package hand-writes the response models and
-guards each body at runtime, refusing a contract-violating 2xx as a
-`client.protocol` error -- see "The response models and their guards".
+The generated authn fragments declare their 2xx response schemas, so
+orval emits the response models. This package re-exports those generated
+types and guards each body at runtime, refusing a contract-violating 2xx
+as a `client.protocol` error -- see "The response models and their
+guards".
 
 ## What ships
 
@@ -229,18 +230,20 @@ executed by the package suite (`src/usage-example.test.tsx`).
 
 ## The response models and their guards
 
-The authn fragments declare no success schema, so orval generates
-`void` return types. This package therefore hand-writes the response
-models -- `AuthnFlowState`, `AuthnStep`, `AuthnField`,
-`AuthnFactorOption`, `AuthnPrincipal`, `AuthnMethodList` -- and guards
-every body-carrying 2xx at runtime: the guard checks that the body is an
-object and that it carries the required fields, and refuses anything
-else as a `status: 200`, `code: client.protocol` ApiError. A
-contract-violating 2xx is never a successful login, and the guard runs
-before any state change (and before the first property access, so an
-empty 2xx never escapes as a native `TypeError`). These models are the
-consuming side's hand-written contract: once a fragment declares a
-schema, they converge with the generated surface.
+The authn fragments declare their 2xx response schemas, so orval emits
+the response models. This package re-exports them --
+`AuthnFlowState`, `AuthnStep`, `AuthnField`, `AuthnFactorOption`,
+`AuthnPrincipal`, `AuthnMethodList` -- rather than hand-writing a
+parallel copy, and guards every body-carrying 2xx at runtime: the guard
+checks that the body is an object and that it carries the required
+fields, and refuses anything else as a `status: 200`, `code:
+client.protocol` ApiError. A contract-violating 2xx is never a
+successful login, and the guard runs before any state change (and before
+the first property access, so an empty 2xx never escapes as a native
+`TypeError`). `AuthnField`, `AuthnFactorOption`, `AuthnPrincipal` and
+`AuthnMethodList` are the generated types outright; the generated step
+is flat, so `AuthnStep` and `AuthnFlowState` narrow it by `kind`/`state`
+into the discriminated view a form renders.
 
 ## The failure contract
 

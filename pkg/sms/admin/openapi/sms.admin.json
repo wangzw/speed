@@ -15,10 +15,10 @@
             "description": "One page of templates, ordered by name, and the cursor of the next, empty on the last page",
             "content": {"application/json": {"schema": {"type": "object", "required": ["templates", "next_cursor"], "properties": {"templates": {"type": "array", "items": {"$ref": "#/components/schemas/SmsAdminTemplate"}}, "next_cursor": {"type": "string"}}}}}
           },
-          "400": {"description": "The limit is not a non-negative integer"},
-          "401": {"description": "The request carries no identity"},
-          "403": {"description": "The caller holds no sms.template.read in the platform domain"},
-          "503": {"description": "A dependency could not answer"}
+          "400": {"description": "The limit is not a non-negative integer", "content": {"application/json": {"schema": {"$ref": "#/components/schemas/Problem"}}}},
+          "401": {"description": "The request carries no identity", "content": {"application/json": {"schema": {"$ref": "#/components/schemas/Problem"}}}},
+          "403": {"description": "The caller holds no sms.template.read in the platform domain", "content": {"application/json": {"schema": {"$ref": "#/components/schemas/Problem"}}}},
+          "503": {"description": "A dependency could not answer", "content": {"application/json": {"schema": {"$ref": "#/components/schemas/Problem"}}}}
         }
       },
       "post": {
@@ -30,11 +30,11 @@
             "description": "The registered template",
             "content": {"application/json": {"schema": {"type": "object", "required": ["template"], "properties": {"template": {"$ref": "#/components/schemas/SmsAdminTemplate"}}}}}
           },
-          "400": {"description": "The name is empty, the body is not one object, or the template set is one the registry cannot run on"},
-          "401": {"description": "The request carries no identity"},
-          "403": {"description": "The caller holds no sms.template.manage in the platform domain"},
-          "409": {"description": "The registry already holds the name"},
-          "503": {"description": "A dependency could not answer"}
+          "400": {"description": "The name is empty, the body is not one object, or the template set is one the registry cannot run on", "content": {"application/json": {"schema": {"$ref": "#/components/schemas/Problem"}}}},
+          "401": {"description": "The request carries no identity", "content": {"application/json": {"schema": {"$ref": "#/components/schemas/Problem"}}}},
+          "403": {"description": "The caller holds no sms.template.manage in the platform domain", "content": {"application/json": {"schema": {"$ref": "#/components/schemas/Problem"}}}},
+          "409": {"description": "The registry already holds the name", "content": {"application/json": {"schema": {"$ref": "#/components/schemas/Problem"}}}},
+          "503": {"description": "A dependency could not answer", "content": {"application/json": {"schema": {"$ref": "#/components/schemas/Problem"}}}}
         }
       }
     },
@@ -48,11 +48,11 @@
             "description": "The template the submission created",
             "content": {"application/json": {"schema": {"type": "object", "required": ["template"], "properties": {"template": {"$ref": "#/components/schemas/SmsAdminTemplate"}}}}}
           },
-          "400": {"description": "The name is empty, the body is not one object, or the vendor or the registry refused the submission"},
-          "401": {"description": "The request carries no identity"},
-          "403": {"description": "The caller holds no sms.template.manage in the platform domain"},
-          "409": {"description": "The registry already holds the name"},
-          "503": {"description": "A dependency could not answer"}
+          "400": {"description": "The name is empty, the body is not one object, or the vendor or the registry refused the submission", "content": {"application/json": {"schema": {"$ref": "#/components/schemas/Problem"}}}},
+          "401": {"description": "The request carries no identity", "content": {"application/json": {"schema": {"$ref": "#/components/schemas/Problem"}}}},
+          "403": {"description": "The caller holds no sms.template.manage in the platform domain", "content": {"application/json": {"schema": {"$ref": "#/components/schemas/Problem"}}}},
+          "409": {"description": "The registry already holds the name", "content": {"application/json": {"schema": {"$ref": "#/components/schemas/Problem"}}}},
+          "503": {"description": "A dependency could not answer", "content": {"application/json": {"schema": {"$ref": "#/components/schemas/Problem"}}}}
         }
       }
     },
@@ -63,11 +63,11 @@
         "parameters": [{"$ref": "#/components/parameters/SmsAdminName"}],
         "responses": {
           "204": {"description": "The template was removed"},
-          "401": {"description": "The request carries no identity"},
-          "403": {"description": "The caller holds no sms.template.manage in the platform domain"},
-          "404": {"description": "The registry holds no template by the name"},
-          "409": {"description": "The template came from the configuration and is immutable at runtime"},
-          "503": {"description": "A dependency could not answer"}
+          "401": {"description": "The request carries no identity", "content": {"application/json": {"schema": {"$ref": "#/components/schemas/Problem"}}}},
+          "403": {"description": "The caller holds no sms.template.manage in the platform domain", "content": {"application/json": {"schema": {"$ref": "#/components/schemas/Problem"}}}},
+          "404": {"description": "The registry holds no template by the name", "content": {"application/json": {"schema": {"$ref": "#/components/schemas/Problem"}}}},
+          "409": {"description": "The template came from the configuration and is immutable at runtime", "content": {"application/json": {"schema": {"$ref": "#/components/schemas/Problem"}}}},
+          "503": {"description": "A dependency could not answer", "content": {"application/json": {"schema": {"$ref": "#/components/schemas/Problem"}}}}
         }
       }
     },
@@ -79,12 +79,12 @@
         "requestBody": {"required": true, "content": {"application/json": {"schema": {"type": "object", "required": ["enabled"], "properties": {"enabled": {"type": "boolean"}}}}}},
         "responses": {
           "204": {"description": "The state was changed"},
-          "400": {"description": "The body names no state, or is not one object"},
-          "401": {"description": "The request carries no identity"},
-          "403": {"description": "The caller holds no sms.template.manage in the platform domain"},
-          "404": {"description": "The registry holds no template by the name"},
-          "409": {"description": "The template came from the configuration and is immutable at runtime"},
-          "503": {"description": "A dependency could not answer"}
+          "400": {"description": "The body names no state, or is not one object", "content": {"application/json": {"schema": {"$ref": "#/components/schemas/Problem"}}}},
+          "401": {"description": "The request carries no identity", "content": {"application/json": {"schema": {"$ref": "#/components/schemas/Problem"}}}},
+          "403": {"description": "The caller holds no sms.template.manage in the platform domain", "content": {"application/json": {"schema": {"$ref": "#/components/schemas/Problem"}}}},
+          "404": {"description": "The registry holds no template by the name", "content": {"application/json": {"schema": {"$ref": "#/components/schemas/Problem"}}}},
+          "409": {"description": "The template came from the configuration and is immutable at runtime", "content": {"application/json": {"schema": {"$ref": "#/components/schemas/Problem"}}}},
+          "503": {"description": "A dependency could not answer", "content": {"application/json": {"schema": {"$ref": "#/components/schemas/Problem"}}}}
         }
       }
     }
@@ -136,6 +136,17 @@
           "locale": {"type": "string"},
           "params": {"type": "array", "items": {"type": "string"}},
           "remark": {"type": "string"}
+        }
+      },
+      "Problem": {
+        "type": "object",
+        "required": ["type", "status"],
+        "properties": {
+          "type": {"type": "string"},
+          "title": {"type": "string"},
+          "status": {"type": "integer"},
+          "detail": {"type": "string"},
+          "instance": {"type": "string"}
         }
       }
     }

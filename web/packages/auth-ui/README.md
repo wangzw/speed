@@ -547,7 +547,7 @@ bilingual text of its states.
 | `@mui/material` | peer (required, ^9) | the `TextField`/`Button`/`Tabs`/`Alert` primitives and the ambient theme |
 | `@emotion/react`, `@emotion/styled` | peer (required, ^11) | MUI's own runtime requirements |
 | `react-hook-form` | peer (required, ^7) | every form is a controlled react-hook-form flow; RHF is the host's single instance |
-| `@speed/auth-core` | dependency | the session every component drives, its flow operations, and the hand-written flow response models it re-exports |
+| `@speed/auth-core` | dependency | the session every component drives, its flow operations, and the flow response models it re-exports from the generated surface |
 | `@speed/i18n` | dependency | the namespace registration and translation hook every component renders through |
 | `@speed/ui-kit` | dependency | the `FormLayout`/`FormField` form skeleton and `EmptyState` (the session-ended screen) |
 

@@ -30,19 +30,20 @@
  * `link`/`enroll` completion (state 'linked'/'enrolled') does not touch
  * the login state.
  *
- * The response shapes are not in the generated surface: every authn
- * fragment declares its 2xx without a schema, so orval types the
- * return as `void`. This package therefore hand-writes the response
- * models (`AuthnFlowState`, `AuthnStep`, `AuthnField`,
- * `AuthnFactorOption`, `AuthnPrincipal`, `AuthnMethodList`) and guards
- * every body-carrying 2xx at runtime: a body that is not an object, or
- * that is missing a required field, is refused as a
- * `status: 200`, `code: client.protocol` ApiError -- a contract
- * violating 2xx is never a successful login. The generated seam sets no
- * `requireJsonBody` (see the @speed/api-sdk runtime.ts doc), so an
- * empty 2xx resolves as undefined through it and the guard must catch
- * that too, before the first property access (a native TypeError is
- * not an ApiError and would escape the whole error contract).
+ * The response shapes now come from the generated surface: the authn
+ * fragments declare their 2xx schemas, so the response models below
+ * (`AuthnFlowState`, `AuthnStep`, `AuthnField`, `AuthnFactorOption`,
+ * `AuthnPrincipal`, `AuthnMethodList`) are the generated types (or a
+ * client-side narrowing of them), not hand-written copies. The package
+ * still guards every body-carrying 2xx at runtime, because the generated
+ * types erase at the seam: a body that is not an object, or that is
+ * missing a required field, is refused as a `status: 200`, `code:
+ * client.protocol` ApiError -- a contract violating 2xx is never a
+ * successful login. The generated seam sets no `requireJsonBody` (see the
+ * @speed/api-sdk runtime.ts doc), so an empty 2xx resolves as undefined
+ * through it and the guard must catch that too, before the first property
+ * access (a native TypeError is not an ApiError and would escape the
+ * whole error contract).
  *
  * The failure contract: a request that fails rejects the raw ApiError
  * (distinguishable with isApiError) and changes nothing. A token-
@@ -89,9 +90,19 @@ import {
   authnTokenIssue,
 } from '@speed/api-sdk'
 import type {
+  AuthnLoginActionResult,
   AuthnLoginAnswerBody,
+  AuthnLoginFactor,
+  AuthnLoginField,
+  AuthnLoginFlow,
+  AuthnLoginMethods,
   AuthnLoginStartAuthenticatedBody,
   AuthnLoginStartBody,
+  AuthnLoginStep,
+  AuthnLoginToken,
+  AuthnProfileIdentifier,
+  AuthnProfileLink,
+  AuthnProfileProfile,
 } from '@speed/api-sdk'
 
 /** The permission domain a host-attached permission set belongs to.
@@ -110,144 +121,70 @@ export interface AuthPermissionSets {
   system: readonly string[] | null
 }
 
-/** The authenticated principal: the fields of GET /auth/me. A
- * hand-written model over the profile fragment (whose 2xx declares no
- * schema); it converges with the generated surface once that fragment
- * declares one. `account_id` is the account's identity; `identifiers`
- * and `links` are its verified identifiers and its external bindings,
- * each with its own identifier. */
-export interface AuthnPrincipal {
-  /** The account's identifier. */
-  account_id: string
-  /** The account kind (a person, a service, ...). */
-  kind: string
-  /** The display name. */
-  display_name: string
-  /** Whether the account requires a second factor. */
-  mfa_required: boolean
-  /** Whether the account has a password set. */
-  password_set: boolean
-  /** Creation instant, RFC 3339. */
-  created_at: string
-  /** The account's free-form attribute set. */
-  attributes: Readonly<Record<string, string>>
-  /** The account's preferred locale. */
-  locale: string
-  /** The account's preferred time zone. */
-  time_zone: string
-  /** The account's verified identifiers. */
-  identifiers: readonly AuthnIdentifier[]
-  /** The account's external bindings. */
-  links: readonly AuthnLink[]
-}
+/** The authenticated principal: the fields of GET /auth/me. The
+ * generated response model of the profile fragment (AuthnProfileProfile).
+ * `account_id` is the account's identity; `identifiers` and `links` are
+ * its verified identifiers and its external bindings, each with its own
+ * identifier. */
+export type AuthnPrincipal = AuthnProfileProfile
 
-/** One verified identifier of an account (phone, email, ...). */
-export interface AuthnIdentifier {
-  id: string
-  /** The identifier kind (email, phone, ...). */
-  kind: string
-  /** The identifier value. */
-  value: string
-  /** When it was verified, RFC 3339. */
-  verified_at: string
-  /** How it was verified. */
-  verified_via: string
-}
+/** One verified identifier of an account (phone, email, ...): the
+ * generated identifier row of GET /auth/me. */
+export type AuthnIdentifier = AuthnProfileIdentifier
 
 /** One external binding of an account (a social or enterprise
- * provider). */
-export interface AuthnLink {
-  id: string
-  /** The provider name. */
-  provider: string
-  /** The email the provider asserted, when it did. */
-  email?: string
-  /** When the binding was created, RFC 3339. */
-  created_at: string
-  /** When the binding was last used to sign in, RFC 3339. */
-  last_login_at?: string
-}
+ * provider): the generated link row of GET /auth/me. */
+export type AuthnLink = AuthnProfileLink
 
-/** One input a challenge step asks the client for. */
-export interface AuthnField {
-  /** The field name the answer must carry. */
-  name: string
-  /** The field kind (text, password, ...). */
-  kind: string
-  /** Whether the answer must supply it. */
-  required?: boolean
-  /** Whether the value is a secret (masked on input). */
-  secret?: boolean
-}
+/** One input a challenge step asks the client for: the generated field
+ * row of a login step. */
+export type AuthnField = AuthnLoginField
 
-/** One second-factor option a factor step offers. */
-export interface AuthnFactorOption {
-  /** The factor's identifier. */
-  id: string
-  /** The factor kind (totp, webauthn, ...). */
-  kind: string
-  /** A display label, when the server supplies one. */
-  label?: string
-}
+/** One second-factor option a factor step offers: the generated factor
+ * row of a login step. */
+export type AuthnFactorOption = AuthnLoginFactor
 
-/** The next step of an open flow -- what the client does next. */
+/** The next step of an open flow -- what the client does next. The wire
+ * carries one flat step (the generated `AuthnLoginStep`, whose `kind`
+ * names which fields apply); the client narrows it by `kind` into a
+ * discriminated union, so a view reads only the fields its own step
+ * carries. */
 export type AuthnStep =
-  | {
-      kind: 'challenge'
-      fields: readonly AuthnField[]
-      /** How long the challenge stays valid, in seconds. */
-      expires_in?: number
-      /** How long before the client may resend, in seconds. */
-      resend_after?: number
-    }
-  | { kind: 'redirect'; url: string; method: string }
-  | { kind: 'factor'; factors: readonly AuthnFactorOption[] }
-  | { kind: 'enroll'; kinds: readonly string[] }
-  | { kind: 'complete' }
-  | { kind: 'webauthn'; options: unknown }
+  | (AuthnLoginStep & { kind: 'challenge'; fields: AuthnLoginField[] })
+  | (AuthnLoginStep & { kind: 'redirect'; url: string; method: string })
+  | (AuthnLoginStep & { kind: 'factor'; factors: AuthnLoginFactor[] })
+  | (AuthnLoginStep & { kind: 'enroll'; kinds: string[] })
+  | (AuthnLoginStep & { kind: 'complete' })
+  | (AuthnLoginStep & { kind: 'webauthn'; options: unknown })
 
-/** The state of a flow as the wire carries it. An open flow (the
- * server is awaiting the next answer) carries a sequence number and
- * the next step; a settled flow carries its outcome. A completion that
- * issued tokens -- `authenticated` for a login, `elevated` for a
- * step-up -- carries the access token (and, for a login, the refresh
- * token); `linked` and `enrolled` settle a link or enroll flow without
- * touching the login state.
+/** The state of a flow as the wire carries it. Each member is the
+ * generated reply of the login answer narrowed to one outcome: an open
+ * flow (the server is awaiting the next answer) is the generated
+ * `AuthnLoginFlow` carrying a sequence number and the next step; a
+ * completion that issued tokens is the generated `AuthnLoginToken` --
+ * `authenticated` for a login, carrying the refresh token, and
+ * `elevated` for a step-up, which mints no refresh token and the client
+ * therefore does not keep; `AuthnLoginActionResult` settles a link or
+ * enroll flow without touching the login state.
  *
  * The open-flow `state` is the record's live state (pkg/authn/login
- * flow.go): 'first', 'processing', 'second', 'enroll' or 'ready'. The
- * design's own enumeration listed only the three the client renders a
- * prompt for; 'ready' is reachable too (a submit step that reached the
- * ready state answers `next.kind: 'complete'` while still carrying
+ * flow.go), the set `OPEN_FLOW_STATES` holds. The design's own
+ * enumeration listed only the three the client renders a prompt for;
+ * 'ready' is reachable too (a submit step that reached the ready state
+ * answers `next.kind: 'complete'` while still carrying
  * `state: 'ready'`), so it is part of the set rather than a protocol
  * violation. */
 export type AuthnFlowState =
-  | {
-      seq: number
-      state: 'first' | 'second' | 'enroll' | 'ready' | 'processing'
-      next: AuthnStep
-    }
-  | {
-      state: 'authenticated'
-      token_type: 'Bearer'
-      access_token: string
-      expires_in: number
-      refresh_token: string
-    }
-  | {
-      state: 'elevated'
-      token_type: 'Bearer'
-      access_token: string
-      expires_in: number
-    }
-  | { state: 'linked' | 'enrolled' }
+  | (AuthnLoginFlow & { state: OpenFlowState; next: AuthnStep })
+  | (AuthnLoginToken & { state: 'authenticated' })
+  | (Omit<AuthnLoginToken, 'refresh_token'> & { state: 'elevated' })
+  | AuthnLoginActionResult
 
-/** The login methods this deployment offers (GET /auth/methods). The
- * list varies with the deployment's settings and the modules in the
- * assembly, so the frontend renders it rather than hard-coding a set. */
-export interface AuthnMethodList {
-  methods: readonly string[]
-}
+/** The login methods this deployment offers (GET /auth/methods): the
+ * generated response model. The list varies with the deployment's
+ * settings and the modules in the assembly, so the frontend renders it
+ * rather than hard-coding a set. */
+export type AuthnMethodList = AuthnLoginMethods
 
 /** The observable session state. Immutable by convention: hosts read
  * it, they never mutate it. */
@@ -488,9 +425,9 @@ function parseStringMap(value: unknown): Readonly<Record<string, string>> {
   return out
 }
 
-/** Validates the GET /auth/me body into the hand-written principal
- * model. `account_id` is the required field; the rest are carried as
- * the wire sends them. */
+/** Validates the GET /auth/me body into the generated principal model.
+ * `account_id` is the required field; the rest are carried as the wire
+ * sends them. */
 function parsePrincipal(body: unknown): AuthnPrincipal {
   const rec = asObject(body, 'profile 2xx carries no body document')
   const identifiers = rec.identifiers
@@ -542,9 +479,9 @@ function parseFactor(value: unknown): AuthnFactorOption {
   return factor
 }
 
-/** Validates one step of an open flow into the hand-written step
- * union. `kind` is the discriminator; an unknown kind is a protocol
- * violation. */
+/** Validates one step of an open flow into the client's step union
+ * (the generated flat step narrowed by `kind`). `kind` is the
+ * discriminator; an unknown kind is a protocol violation. */
 function parseStep(body: unknown): AuthnStep {
   const rec = asObject(body, 'flow step carries no object')
   const kind = requireString(rec.kind, 'flow step carries no kind')
@@ -612,11 +549,12 @@ function isOpenFlowState(state: string): state is OpenFlowState {
   return (OPEN_FLOW_STATES as readonly string[]).includes(state)
 }
 
-/** Validates a flow reply into the hand-written flow-state union. The
- * open-flow shape is a number `seq` plus a `next` step; a settled
- * completion carries its outcome (and, for a token issuance, the
- * tokens). A body whose `state` is none of these -- or an empty 2xx --
- * is a protocol violation, before any state change. */
+/** Validates a flow reply into the client's flow-state union (the
+ * generated reply types narrowed to one outcome each). The open-flow
+ * shape is a number `seq` plus a `next` step; a settled completion
+ * carries its outcome (and, for a token issuance, the tokens). A body
+ * whose `state` is none of these -- or an empty 2xx -- is a protocol
+ * violation, before any state change. */
 function parseFlowState(body: unknown): AuthnFlowState {
   const rec = asObject(body, 'flow reply carries no body document')
   const state = requireString(rec.state, 'flow reply carries no state')

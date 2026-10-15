@@ -24,7 +24,10 @@
           }
         },
         "responses": {
-          "200": {"description": "The started record, and an access token under a bearer credential"},
+          "200": {
+            "description": "The started record, and an access token under a bearer credential",
+            "content": {"application/json": {"schema": {"$ref": "#/components/schemas/AuthnImpersonationStart"}}}
+          },
           "400": {"description": "The body could not be read"},
           "401": {"description": "No usable credential, or a step-up is required"},
           "403": {"description": "Impersonation is refused for this caller or target"},
@@ -36,7 +39,10 @@
         "operationId": "authn.impersonation.status",
         "summary": "The impersonation in force on the caller's session",
         "responses": {
-          "200": {"description": "The record still valid on the session"},
+          "200": {
+            "description": "The record still valid on the session",
+            "content": {"application/json": {"schema": {"$ref": "#/components/schemas/AuthnImpersonationGrantEnvelope"}}}
+          },
           "401": {"description": "No usable credential"},
           "404": {"description": "No impersonation is in force"},
           "503": {"description": "The record could not be read"}
@@ -50,6 +56,38 @@
           "401": {"description": "No usable credential"},
           "404": {"description": "The caller is not impersonating"},
           "503": {"description": "The record could not be ended"}
+        }
+      }
+    }
+  },
+  "components": {
+    "schemas": {
+      "AuthnImpersonationGrant": {
+        "type": "object",
+        "required": ["id", "target", "tenant", "ends_at"],
+        "properties": {
+          "id": {"type": "string"},
+          "target": {"type": "string", "description": "The impersonated account"},
+          "tenant": {"type": "string", "description": "The tenant the impersonation is confined to"},
+          "started_at": {"type": "string", "format": "date-time", "description": "Absent on the answer to a start, present on a record in force"},
+          "ends_at": {"type": "string", "format": "date-time"}
+        }
+      },
+      "AuthnImpersonationGrantEnvelope": {
+        "type": "object",
+        "required": ["grant"],
+        "properties": {
+          "grant": {"$ref": "#/components/schemas/AuthnImpersonationGrant"}
+        }
+      },
+      "AuthnImpersonationStart": {
+        "type": "object",
+        "required": ["grant"],
+        "properties": {
+          "grant": {"$ref": "#/components/schemas/AuthnImpersonationGrant"},
+          "access_token": {"type": "string", "description": "Present on a bearer start; absent on a cookie start, whose carrier is the session cookie"},
+          "token_type": {"type": "string", "description": "Present with access_token; always Bearer"},
+          "expires_in": {"type": "integer", "format": "int64", "description": "Present with access_token; the access token's lifetime in whole seconds"}
         }
       }
     }

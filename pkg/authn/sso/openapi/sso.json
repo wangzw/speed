@@ -20,9 +20,42 @@
           }
         },
         "responses": {
-          "200": {"description": "The providers that have verified the domain, an empty list when none match"},
-          "400": {"description": "The body could not be read, or it names no domain"},
-          "503": {"description": "The provider register could not be reached"}
+          "200": {
+            "description": "The providers that have verified the domain, an empty list when none match",
+            "content": {"application/json": {"schema": {"type": "object", "required": ["providers"], "properties": {"providers": {"type": "array", "items": {"$ref": "#/components/schemas/AuthnSsoProvider"}}}}}}
+          },
+          "400": {
+            "description": "The body could not be read, or it names no domain",
+            "content": {"application/json": {"schema": {"$ref": "#/components/schemas/Problem"}}}
+          },
+          "503": {
+            "description": "The provider register could not be reached",
+            "content": {"application/json": {"schema": {"$ref": "#/components/schemas/Problem"}}}
+          }
+        }
+      }
+    }
+  },
+  "components": {
+    "schemas": {
+      "AuthnSsoProvider": {
+        "type": "object",
+        "required": ["id", "name", "protocol"],
+        "properties": {
+          "id": {"type": "string"},
+          "name": {"type": "string"},
+          "protocol": {"type": "string", "enum": ["oidc", "saml"], "description": "The protocol the provider's sign-in entry uses"}
+        }
+      },
+      "Problem": {
+        "type": "object",
+        "required": ["type", "status"],
+        "properties": {
+          "type": {"type": "string"},
+          "title": {"type": "string"},
+          "status": {"type": "integer"},
+          "detail": {"type": "string"},
+          "instance": {"type": "string"}
         }
       }
     }

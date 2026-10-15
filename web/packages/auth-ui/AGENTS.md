@@ -52,9 +52,9 @@ account-resolution step (or by invite, or by an administrator), so a
 - **Headless logic lives in `@speed/auth-core`.** `startFlow`,
   `answerFlow`, `startAuthenticatedFlow`, `readFlow`, `abandonFlow`,
   `listMethods`, `logout`, `refresh` -- the session contract this family
-  renders -- are auth-core's, along with the hand-written flow response
-  models (`AuthnFlowState`, `AuthnStep`, `AuthnField`, ...) it
-  re-exports. If an operation does not exist on the session, the right
+  renders -- are auth-core's, along with the flow response models
+  (`AuthnFlowState`, `AuthnStep`, `AuthnField`, ...) it re-exports from
+  the generated surface. If an operation does not exist on the session, the right
   home for it is auth-core's contract, not a fetch in this package.
 - **Every built-in string is bilingual and bundled.** All text renders
   from the `auth-ui` namespace (`AUTH_UI_NAMESPACE`, one `zh-CN.json` and

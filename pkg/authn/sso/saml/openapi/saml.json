@@ -10,7 +10,10 @@
           {"name": "provider", "in": "path", "required": true, "schema": {"type": "string"}}
         ],
         "responses": {
-          "200": {"description": "The entity descriptor, as application/samlmetadata+xml"},
+          "200": {
+            "description": "The entity descriptor, as application/samlmetadata+xml",
+            "content": {"application/samlmetadata+xml": {"schema": {"type": "string"}}}
+          },
           "404": {"description": "No enabled SAML provider has this identifier"},
           "503": {"description": "The provider register could not be reached"}
         }

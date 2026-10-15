@@ -7,9 +7,18 @@
         "operationId": "authn.mfa.factors",
         "summary": "List the caller's own registered factors",
         "responses": {
-          "200": {"description": "The caller's factors, without any seed, key or other secret of a kind's own"},
-          "401": {"description": "No usable credential"},
-          "503": {"description": "The factor register could not be reached"}
+          "200": {
+            "description": "The caller's factors, without any seed, key or other secret of a kind's own",
+            "content": {"application/json": {"schema": {"type": "object", "required": ["factors"], "properties": {"factors": {"type": "array", "items": {"$ref": "#/components/schemas/AuthnMfaFactor"}}}}}}
+          },
+          "401": {
+            "description": "No usable credential",
+            "content": {"application/json": {"schema": {"$ref": "#/components/schemas/Problem"}}}
+          },
+          "503": {
+            "description": "The factor register could not be reached",
+            "content": {"application/json": {"schema": {"$ref": "#/components/schemas/Problem"}}}
+          }
         }
       }
     },
@@ -22,11 +31,54 @@
         ],
         "responses": {
           "204": {"description": "The factor was removed, or is not the caller's and reads as already gone"},
-          "400": {"description": "The factor identifier is malformed"},
-          "401": {"description": "No usable credential, or a fresh multi-factor authentication is required"},
-          "403": {"description": "The identity is impersonating, which the route refuses"},
-          "409": {"description": "The factor is the account's last one"},
-          "503": {"description": "The factor register could not be reached"}
+          "400": {
+            "description": "The factor identifier is malformed",
+            "content": {"application/json": {"schema": {"$ref": "#/components/schemas/Problem"}}}
+          },
+          "401": {
+            "description": "No usable credential, or a fresh multi-factor authentication is required",
+            "content": {"application/json": {"schema": {"$ref": "#/components/schemas/Problem"}}}
+          },
+          "403": {
+            "description": "The identity is impersonating, which the route refuses",
+            "content": {"application/json": {"schema": {"$ref": "#/components/schemas/Problem"}}}
+          },
+          "409": {
+            "description": "The factor is the account's last one",
+            "content": {"application/json": {"schema": {"$ref": "#/components/schemas/Problem"}}}
+          },
+          "503": {
+            "description": "The factor register could not be reached",
+            "content": {"application/json": {"schema": {"$ref": "#/components/schemas/Problem"}}}
+          }
+        }
+      }
+    }
+  },
+  "components": {
+    "schemas": {
+      "AuthnMfaFactor": {
+        "type": "object",
+        "required": ["id", "kind", "label", "status", "created_at"],
+        "properties": {
+          "id": {"type": "string"},
+          "kind": {"type": "string"},
+          "label": {"type": "string"},
+          "status": {"type": "string", "enum": ["pending", "active", "disabled"]},
+          "created_at": {"type": "string", "description": "When the factor row was created, as an RFC 3339 instant"},
+          "activated_at": {"type": "string", "description": "When the factor became active, as an RFC 3339 instant; absent until it is"},
+          "last_used_at": {"type": "string", "description": "When the factor last held, as an RFC 3339 instant; absent until it does"}
+        }
+      },
+      "Problem": {
+        "type": "object",
+        "required": ["type", "status"],
+        "properties": {
+          "type": {"type": "string"},
+          "title": {"type": "string"},
+          "status": {"type": "integer"},
+          "detail": {"type": "string"},
+          "instance": {"type": "string"}
         }
       }
     }

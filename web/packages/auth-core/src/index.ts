@@ -21,12 +21,11 @@
  * isOperationSuperseded) rather than silently resolving with the
  * winner's snapshot -- see session.ts.
  *
- * The generated authn fragments declare no response schema, so orval
- * types every return as void; this package hand-writes the response
- * models (AuthnFlowState, AuthnStep, AuthnField, AuthnFactorOption,
- * AuthnPrincipal, AuthnMethodList) and guards each body at runtime,
- * refusing a contract-violating 2xx as client.protocol before any
- * state change.
+ * The authn fragments declare their 2xx response schemas, so the
+ * response models (AuthnFlowState, AuthnStep, AuthnField,
+ * AuthnFactorOption, AuthnPrincipal, AuthnMethodList) are the generated
+ * types; this package guards each body at runtime all the same, refusing
+ * a contract-violating 2xx as client.protocol before any state change.
  *
  * The hooks (hooks.ts) read one host-attached session: attachSession
  * binds it once at bootstrap (last bind wins), useAuthState exposes the

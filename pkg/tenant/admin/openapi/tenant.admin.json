@@ -11,9 +11,9 @@
             "description": "Every tenant, in the roster's order by identifier",
             "content": {"application/json": {"schema": {"type": "object", "required": ["tenants"], "properties": {"tenants": {"type": "array", "items": {"$ref": "#/components/schemas/TenantAdminTenant"}}}}}}
           },
-          "401": {"description": "The request carries no identity"},
-          "403": {"description": "The caller holds no tenant.read in the platform domain"},
-          "503": {"description": "A dependency could not answer"}
+          "401": {"description": "The request carries no identity", "content": {"application/json": {"schema": {"$ref": "#/components/schemas/Problem"}}}},
+          "403": {"description": "The caller holds no tenant.read in the platform domain", "content": {"application/json": {"schema": {"$ref": "#/components/schemas/Problem"}}}},
+          "503": {"description": "A dependency could not answer", "content": {"application/json": {"schema": {"$ref": "#/components/schemas/Problem"}}}}
         }
       },
       "post": {
@@ -25,11 +25,11 @@
             "description": "The registered tenant",
             "content": {"application/json": {"schema": {"type": "object", "required": ["tenant"], "properties": {"tenant": {"$ref": "#/components/schemas/TenantAdminTenant"}}}}}
           },
-          "400": {"description": "The identifier or the alias is outside the identifier domain"},
-          "401": {"description": "The request carries no identity"},
-          "403": {"description": "The caller holds no tenant.manage in the platform domain"},
-          "409": {"description": "The identifier or the alias is already taken"},
-          "503": {"description": "A dependency could not answer"}
+          "400": {"description": "The identifier or the alias is outside the identifier domain", "content": {"application/json": {"schema": {"$ref": "#/components/schemas/Problem"}}}},
+          "401": {"description": "The request carries no identity", "content": {"application/json": {"schema": {"$ref": "#/components/schemas/Problem"}}}},
+          "403": {"description": "The caller holds no tenant.manage in the platform domain", "content": {"application/json": {"schema": {"$ref": "#/components/schemas/Problem"}}}},
+          "409": {"description": "The identifier or the alias is already taken", "content": {"application/json": {"schema": {"$ref": "#/components/schemas/Problem"}}}},
+          "503": {"description": "A dependency could not answer", "content": {"application/json": {"schema": {"$ref": "#/components/schemas/Problem"}}}}
         }
       }
     },
@@ -43,10 +43,10 @@
             "description": "The tenant",
             "content": {"application/json": {"schema": {"type": "object", "required": ["tenant"], "properties": {"tenant": {"$ref": "#/components/schemas/TenantAdminTenant"}}}}}
           },
-          "401": {"description": "The request carries no identity"},
-          "403": {"description": "The caller holds no tenant.read in the platform domain"},
-          "404": {"description": "No tenant carries the identifier"},
-          "503": {"description": "A dependency could not answer"}
+          "401": {"description": "The request carries no identity", "content": {"application/json": {"schema": {"$ref": "#/components/schemas/Problem"}}}},
+          "403": {"description": "The caller holds no tenant.read in the platform domain", "content": {"application/json": {"schema": {"$ref": "#/components/schemas/Problem"}}}},
+          "404": {"description": "No tenant carries the identifier", "content": {"application/json": {"schema": {"$ref": "#/components/schemas/Problem"}}}},
+          "503": {"description": "A dependency could not answer", "content": {"application/json": {"schema": {"$ref": "#/components/schemas/Problem"}}}}
         }
       },
       "patch": {
@@ -56,12 +56,12 @@
         "requestBody": {"required": true, "content": {"application/json": {"schema": {"type": "object", "required": ["alias"], "properties": {"alias": {"type": "string"}}}}}},
         "responses": {
           "204": {"description": "The alias was changed"},
-          "400": {"description": "The identifier or the alias is outside the identifier domain"},
-          "401": {"description": "The request carries no identity"},
-          "403": {"description": "The caller holds no tenant.manage in the platform domain"},
-          "404": {"description": "No tenant carries the identifier"},
-          "409": {"description": "The alias is already taken"},
-          "503": {"description": "A dependency could not answer"}
+          "400": {"description": "The identifier or the alias is outside the identifier domain", "content": {"application/json": {"schema": {"$ref": "#/components/schemas/Problem"}}}},
+          "401": {"description": "The request carries no identity", "content": {"application/json": {"schema": {"$ref": "#/components/schemas/Problem"}}}},
+          "403": {"description": "The caller holds no tenant.manage in the platform domain", "content": {"application/json": {"schema": {"$ref": "#/components/schemas/Problem"}}}},
+          "404": {"description": "No tenant carries the identifier", "content": {"application/json": {"schema": {"$ref": "#/components/schemas/Problem"}}}},
+          "409": {"description": "The alias is already taken", "content": {"application/json": {"schema": {"$ref": "#/components/schemas/Problem"}}}},
+          "503": {"description": "A dependency could not answer", "content": {"application/json": {"schema": {"$ref": "#/components/schemas/Problem"}}}}
         }
       }
     },
@@ -73,11 +73,11 @@
         "requestBody": {"required": true, "content": {"application/json": {"schema": {"type": "object", "required": ["status"], "properties": {"status": {"type": "string", "enum": ["active", "disabled"]}}}}}},
         "responses": {
           "204": {"description": "The state was changed"},
-          "400": {"description": "The identifier is outside the identifier domain or the status is outside the closed set active/disabled"},
-          "401": {"description": "The request carries no identity"},
-          "403": {"description": "The caller holds no tenant.manage in the platform domain"},
-          "404": {"description": "No tenant carries the identifier"},
-          "503": {"description": "A dependency could not answer"}
+          "400": {"description": "The identifier is outside the identifier domain or the status is outside the closed set active/disabled", "content": {"application/json": {"schema": {"$ref": "#/components/schemas/Problem"}}}},
+          "401": {"description": "The request carries no identity", "content": {"application/json": {"schema": {"$ref": "#/components/schemas/Problem"}}}},
+          "403": {"description": "The caller holds no tenant.manage in the platform domain", "content": {"application/json": {"schema": {"$ref": "#/components/schemas/Problem"}}}},
+          "404": {"description": "No tenant carries the identifier", "content": {"application/json": {"schema": {"$ref": "#/components/schemas/Problem"}}}},
+          "503": {"description": "A dependency could not answer", "content": {"application/json": {"schema": {"$ref": "#/components/schemas/Problem"}}}}
         }
       }
     }
@@ -102,6 +102,17 @@
         "properties": {
           "id": {"type": "string"},
           "alias": {"type": "string"}
+        }
+      },
+      "Problem": {
+        "type": "object",
+        "required": ["type", "status"],
+        "properties": {
+          "type": {"type": "string"},
+          "title": {"type": "string"},
+          "status": {"type": "integer"},
+          "detail": {"type": "string"},
+          "instance": {"type": "string"}
         }
       }
     }

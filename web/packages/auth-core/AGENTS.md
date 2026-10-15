@@ -21,11 +21,11 @@ step-up completion (`state: 'elevated'`) re-mints the access token with
 the principal unchanged, and a `link`/`enroll` completion
 (`state: 'linked'`/`'enrolled'`) leaves the login state alone.
 
-The generated authn fragments declare no success schema, so orval types
-every return as `void`. This package therefore hand-writes the response
-models (`AuthnFlowState`, `AuthnStep`, `AuthnField`,
-`AuthnFactorOption`, `AuthnPrincipal`, `AuthnMethodList`) and guards
-each body at runtime (see the rules below).
+The generated authn fragments declare their 2xx response schemas, so
+orval emits the response models. This package's `AuthnFlowState`,
+`AuthnStep`, `AuthnField`, `AuthnFactorOption`, `AuthnPrincipal` and
+`AuthnMethodList` are those generated types (or a client-side narrowing
+of them), and it guards each body at runtime (see the rules below).
 
 It is headless: no UI, no DOM. The React hooks in `src/hooks.ts`
 (`useAuthState`, `usePermission`, plus the `attachSession` call that
@@ -49,9 +49,11 @@ this layer.
 - **Never hand-write a backend call in this package.** Every request
   goes through a generated operation of `@speed/api-sdk`, which routes
   through the single `bindRequestFn` binding. No `fetch`, no endpoint
-  paths as strings. The one thing this package does hand-write is the
-  *response* side: the models and the guards, because the generated
-  surface declares no schema.
+  paths as strings. Response shapes are not hand-written either: the
+  fragments declare them, the generated surface emits them, and this
+  package re-exports the generated types rather than a parallel copy.
+  The one client-side derivation is the flow union: the generated step
+  is flat, so `AuthnStep`/`AuthnFlowState` narrow it by `kind`/`state`.
 - **Every body-carrying 2xx is guarded, fail-closed, before any state
   change.** The generated seam sets no `requireJsonBody`, so an empty
   2xx resolves as undefined through it; a guard must refuse it (and any

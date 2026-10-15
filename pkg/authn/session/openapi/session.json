@@ -7,7 +7,10 @@
         "operationId": "authn.session.get",
         "summary": "Who is signed in on this session",
         "responses": {
-          "200": {"description": "The identity on the request, or that nobody is signed in"},
+          "200": {
+            "description": "The identity on the request, or that nobody is signed in",
+            "content": {"application/json": {"schema": {"$ref": "#/components/schemas/AuthnSessionView"}}}
+          },
           "401": {"description": "A credential was presented and does not hold"}
         }
       }
@@ -29,7 +32,10 @@
         "operationId": "authn.session.list",
         "summary": "List the caller's own live sessions",
         "responses": {
-          "200": {"description": "The page of the caller's sessions"},
+          "200": {
+            "description": "The page of the caller's sessions",
+            "content": {"application/json": {"schema": {"$ref": "#/components/schemas/AuthnSessionList"}}}
+          },
           "401": {"description": "No usable credential"},
           "403": {"description": "The identity is impersonating, which the route refuses"},
           "503": {"description": "The session store could not be reached"}
@@ -39,7 +45,10 @@
         "operationId": "authn.session.revokeOthers",
         "summary": "Revoke every session of the caller's but the current one",
         "responses": {
-          "200": {"description": "The number of sessions revoked"},
+          "200": {
+            "description": "The number of sessions revoked",
+            "content": {"application/json": {"schema": {"$ref": "#/components/schemas/AuthnSessionRevoked"}}}
+          },
           "401": {"description": "No usable credential"},
           "403": {"description": "The identity is impersonating, which the route refuses"},
           "503": {"description": "The session store could not be reached"}
@@ -58,6 +67,53 @@
           "401": {"description": "No usable credential"},
           "403": {"description": "The session is not the caller's, does not exist, or the identity is impersonating"},
           "503": {"description": "The session store could not be reached"}
+        }
+      }
+    }
+  },
+  "components": {
+    "schemas": {
+      "AuthnSessionView": {
+        "type": "object",
+        "required": ["authenticated"],
+        "properties": {
+          "authenticated": {"type": "boolean", "description": "False when nobody is signed in; every other field is then absent"},
+          "session_id": {"type": "string"},
+          "account_id": {"type": "string", "description": "The account the request is taken to be from; the impersonated account while impersonating"},
+          "actor_id": {"type": "string", "description": "The account whose hands are on the request; present only while impersonating"},
+          "impersonating": {"type": "boolean"},
+          "methods": {"type": "array", "items": {"type": "string", "enum": ["pwd", "sms", "otp", "webauthn", "oauth", "oidc", "saml", "static", "client-secret"]}},
+          "assurance": {"type": "string", "enum": ["none", "single", "multi"]},
+          "auth_time": {"type": "string", "format": "date-time", "description": "The instant of the last interactive authentication, absent when the identity carries none"},
+          "provider": {"type": "string", "description": "The backend that verified the credential"}
+        }
+      },
+      "AuthnSessionItem": {
+        "type": "object",
+        "required": ["id", "kind", "created_at", "last_seen_at", "expires_at", "client_ip", "user_agent", "current"],
+        "properties": {
+          "id": {"type": "string"},
+          "kind": {"type": "string"},
+          "created_at": {"type": "string", "format": "date-time"},
+          "last_seen_at": {"type": "string", "format": "date-time"},
+          "expires_at": {"type": "string", "format": "date-time"},
+          "client_ip": {"type": "string", "description": "Empty when the session carries none"},
+          "user_agent": {"type": "string", "description": "Empty when the session carries none"},
+          "current": {"type": "boolean", "description": "Whether this is the session the request came with"}
+        }
+      },
+      "AuthnSessionList": {
+        "type": "object",
+        "required": ["sessions"],
+        "properties": {
+          "sessions": {"type": "array", "items": {"$ref": "#/components/schemas/AuthnSessionItem"}}
+        }
+      },
+      "AuthnSessionRevoked": {
+        "type": "object",
+        "required": ["revoked"],
+        "properties": {
+          "revoked": {"type": "integer", "description": "The number of sessions revoked"}
         }
       }
     }

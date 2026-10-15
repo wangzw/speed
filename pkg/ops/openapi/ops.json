@@ -5,22 +5,46 @@
     "/health": {
       "get": {
         "summary": "The process is alive",
-        "responses": {"200": {"description": "Alive"}}
+        "responses": {"200": {"description": "Alive", "content": {"application/json": {"schema": {"$ref": "#/components/schemas/OpsHealth"}}}}}
       }
     },
     "/ready": {
       "get": {
         "summary": "Every declared endpoint accepts requests and the database answers",
         "responses": {
-          "200": {"description": "Ready"},
-          "503": {"description": "Not ready, naming each part that failed"}
+          "200": {"description": "Ready", "content": {"application/json": {"schema": {"$ref": "#/components/schemas/OpsReadiness"}}}},
+          "503": {"description": "Not ready, naming each part that failed", "content": {"application/json": {"schema": {"$ref": "#/components/schemas/OpsReadiness"}}}}
         }
       }
     },
     "/openapi.json": {
       "get": {
         "summary": "The API document, merged from every module's fragment",
-        "responses": {"200": {"description": "The merged document"}}
+        "responses": {"200": {"description": "The merged document", "content": {"application/json": {"schema": {"$ref": "#/components/schemas/OpsDocument"}}}}}
+      }
+    }
+  },
+  "components": {
+    "schemas": {
+      "OpsHealth": {
+        "type": "object",
+        "required": ["status"],
+        "properties": {
+          "status": {"type": "string", "enum": ["ok"], "description": "The literal the liveness route writes; a live process always answers ok"}
+        }
+      },
+      "OpsReadiness": {
+        "type": "object",
+        "required": ["status"],
+        "properties": {
+          "status": {"type": "string", "enum": ["ready", "unavailable"], "description": "ready when every part answered, unavailable otherwise"},
+          "failures": {"type": "array", "items": {"type": "string"}, "description": "One line per part that failed; absent when the verdict is ready"}
+        }
+      },
+      "OpsDocument": {
+        "type": "object",
+        "additionalProperties": true,
+        "description": "The merged OpenAPI document: the version it declares, its info section, every merged path, the components its fragments declared, and x-fragments naming each source"
       }
     }
   }

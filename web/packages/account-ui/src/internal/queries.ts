@@ -2,12 +2,14 @@
  * The account surfaces' reads, one hook each over the generated
  * react-query hooks of @speed/api-sdk.
  *
- * The generated fragment declares no response schema, so orval types
- * every read as `void`; each hook selects its generated query through the
- * matching narrowing in models.ts, which retypes the answer to the shape
- * the surface renders without minting a QueryClient of its own -- the
- * query still runs on the host's client, under the generated query key,
- * so a caller can invalidate it with the same constructor the hook used.
+ * The generated operations carry their response types (the fragments
+ * declare the 2xx bodies), so the types the surface renders come from
+ * @speed/api-sdk; each hook selects its generated query through the
+ * matching narrowing in models.ts, which carries the one runtime rule the
+ * generated surface cannot (an absent body reads as an empty object, not
+ * an empty collection) -- the query still runs on the host's client,
+ * under the generated query key, so a caller can invalidate it with the
+ * same constructor the hook used.
  *
  * The `queryKey` passed beside `select` is the generated constructor, not
  * a hand-written key: orval's option type requires it next to `select`,

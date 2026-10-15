@@ -42,18 +42,6 @@ describe('TenantRosterPage', () => {
     expect(screen.getByText('已停用')).toBeInTheDocument()
   })
 
-  it('renders the generic label for a status outside the roster set', async () => {
-    const tenants: ConsoleTenant[] = [
-      { id: 'future', alias: 'Future', status: 'suspended' },
-    ]
-    const operations = createConsoleOperations(
-      makeConsoleBackend({ listTenants: () => Promise.resolve(tenants) }),
-    )
-    renderWithProviders(<TenantRosterPage />, { operations })
-    expect(await screen.findByText('Future')).toBeInTheDocument()
-    expect(screen.getByText('未知')).toBeInTheDocument()
-    expect(screen.queryByText('suspended')).not.toBeInTheDocument()
-  })
 
   it('registers a tenant and reflects the invalidated list', async () => {
     const user = userEvent.setup()

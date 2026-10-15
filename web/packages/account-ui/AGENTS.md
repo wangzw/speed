@@ -37,13 +37,14 @@ session as a required prop; the read-only ones take no props.
   QueryClientProvider) exists. Invalidations use the exported query-key
   builders (`getAuthnProfileGetQueryKey`, `getAuthnSessionListQueryKey`,
   `getAuthnMfaFactorsQueryKey`), never hand-written query keys.
-- **The authn fragments declare no response schema.** orval types every
-  generated return as `void`; this package owns the shapes it renders
-  (`src/internal/models.ts`) and selects each generated read through the
-  matching narrowing. A narrowing is a shape assertion, not a guard: an
-  answer that omitted a collection reads as `undefined` — the caller's
-  error variant — and never as an empty list, so "no sessions" is only
-  ever claimed for an answer that genuinely listed none.
+- **The authn fragments declare their 2xx response schemas.** orval
+  emits the response models; this package aliases them in
+  `src/internal/models.ts` rather than own a parallel copy, and selects
+  each generated read through a narrowing. A narrowing is a shape
+  assertion, not a guard: an answer that omitted a collection reads as
+  `undefined` — the caller's error variant — and never as an empty list,
+  so "no sessions" is only ever claimed for an answer that genuinely
+  listed none.
 - **Display times carry the account's timezone chain, explicitly.**
   Every timestamp a surface renders is formatted with an explicit
   `timeZone` resolved through `resolveTimeZone` (internal/time-format:

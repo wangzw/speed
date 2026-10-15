@@ -15,10 +15,10 @@
             "description": "Every declared item",
             "content": {"application/json": {"schema": {"type": "array", "items": {"$ref": "#/components/schemas/SettingsAdminSetting"}}}}
           },
-          "400": {"description": "The layer selection is unreadable, or the tenant identifier is outside its value domain"},
-          "401": {"description": "The request carries no identity"},
-          "403": {"description": "The caller holds no settings.read in the layer's domain"},
-          "503": {"description": "A dependency could not answer"}
+          "400": {"description": "The layer selection is unreadable, or the tenant identifier is outside its value domain", "content": {"application/json": {"schema": {"$ref": "#/components/schemas/Problem"}}}},
+          "401": {"description": "The request carries no identity", "content": {"application/json": {"schema": {"$ref": "#/components/schemas/Problem"}}}},
+          "403": {"description": "The caller holds no settings.read in the layer's domain", "content": {"application/json": {"schema": {"$ref": "#/components/schemas/Problem"}}}},
+          "503": {"description": "A dependency could not answer", "content": {"application/json": {"schema": {"$ref": "#/components/schemas/Problem"}}}}
         }
       }
     },
@@ -36,11 +36,11 @@
             "description": "The namespace's declared items",
             "content": {"application/json": {"schema": {"type": "array", "items": {"$ref": "#/components/schemas/SettingsAdminSetting"}}}}
           },
-          "400": {"description": "The layer selection is unreadable, or the tenant identifier is outside its value domain"},
-          "401": {"description": "The request carries no identity"},
-          "403": {"description": "The caller holds no settings.read in the layer's domain"},
-          "404": {"description": "No declared item belongs to the namespace"},
-          "503": {"description": "A dependency could not answer"}
+          "400": {"description": "The layer selection is unreadable, or the tenant identifier is outside its value domain", "content": {"application/json": {"schema": {"$ref": "#/components/schemas/Problem"}}}},
+          "401": {"description": "The request carries no identity", "content": {"application/json": {"schema": {"$ref": "#/components/schemas/Problem"}}}},
+          "403": {"description": "The caller holds no settings.read in the layer's domain", "content": {"application/json": {"schema": {"$ref": "#/components/schemas/Problem"}}}},
+          "404": {"description": "No declared item belongs to the namespace", "content": {"application/json": {"schema": {"$ref": "#/components/schemas/Problem"}}}},
+          "503": {"description": "A dependency could not answer", "content": {"application/json": {"schema": {"$ref": "#/components/schemas/Problem"}}}}
         }
       }
     },
@@ -57,12 +57,12 @@
         "requestBody": {"required": true, "content": {"application/json": {"schema": {"type": "object", "required": ["value"], "properties": {"value": {}}}}}},
         "responses": {
           "204": {"description": "The row was written"},
-          "400": {"description": "The layer selection is unreadable, the tenant identifier is outside its value domain, or the body is not one object"},
-          "401": {"description": "The request carries no identity"},
-          "403": {"description": "The caller holds no settings.write in the layer's domain"},
-          "404": {"description": "The full key has no declaration"},
-          "422": {"description": "The value cannot be encoded under the declared type or lies outside its declared domain"},
-          "503": {"description": "A dependency could not answer"}
+          "400": {"description": "The layer selection is unreadable, the tenant identifier is outside its value domain, or the body is not one object", "content": {"application/json": {"schema": {"$ref": "#/components/schemas/Problem"}}}},
+          "401": {"description": "The request carries no identity", "content": {"application/json": {"schema": {"$ref": "#/components/schemas/Problem"}}}},
+          "403": {"description": "The caller holds no settings.write in the layer's domain", "content": {"application/json": {"schema": {"$ref": "#/components/schemas/Problem"}}}},
+          "404": {"description": "The full key has no declaration", "content": {"application/json": {"schema": {"$ref": "#/components/schemas/Problem"}}}},
+          "422": {"description": "The value cannot be encoded under the declared type or lies outside its declared domain", "content": {"application/json": {"schema": {"$ref": "#/components/schemas/Problem"}}}},
+          "503": {"description": "A dependency could not answer", "content": {"application/json": {"schema": {"$ref": "#/components/schemas/Problem"}}}}
         }
       },
       "delete": {
@@ -76,11 +76,11 @@
         ],
         "responses": {
           "204": {"description": "The row was dropped"},
-          "400": {"description": "The layer selection is unreadable, or the tenant identifier is outside its value domain"},
-          "401": {"description": "The request carries no identity"},
-          "403": {"description": "The caller holds no settings.write in the layer's domain"},
-          "404": {"description": "The full key has no declaration"},
-          "503": {"description": "A dependency could not answer"}
+          "400": {"description": "The layer selection is unreadable, or the tenant identifier is outside its value domain", "content": {"application/json": {"schema": {"$ref": "#/components/schemas/Problem"}}}},
+          "401": {"description": "The request carries no identity", "content": {"application/json": {"schema": {"$ref": "#/components/schemas/Problem"}}}},
+          "403": {"description": "The caller holds no settings.write in the layer's domain", "content": {"application/json": {"schema": {"$ref": "#/components/schemas/Problem"}}}},
+          "404": {"description": "The full key has no declaration", "content": {"application/json": {"schema": {"$ref": "#/components/schemas/Problem"}}}},
+          "503": {"description": "A dependency could not answer", "content": {"application/json": {"schema": {"$ref": "#/components/schemas/Problem"}}}}
         }
       }
     }
@@ -106,6 +106,17 @@
           "default": {"type": "string", "description": "The declared default in the declared type's text form, empty for a sensitive item"},
           "written": {"type": "string", "description": "The text the selected layer holds, the mask string for a sensitive item"},
           "value": {"type": "string", "description": "The text the item resolves to after the three-level fallback, the mask string for a sensitive item"}
+        }
+      },
+      "Problem": {
+        "type": "object",
+        "required": ["type", "status"],
+        "properties": {
+          "type": {"type": "string"},
+          "title": {"type": "string"},
+          "status": {"type": "integer"},
+          "detail": {"type": "string"},
+          "instance": {"type": "string"}
         }
       }
     }
