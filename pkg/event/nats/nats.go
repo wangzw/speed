@@ -75,7 +75,8 @@ const (
 type Config struct {
 	// URL is the server to connect to. This implementation is pointed at a
 	// backend by it, and a deployment that takes the implementation in without
-	// setting it fails the startup rather than reaching the first publish.
+	// setting it fails the startup rather than reaching the first publish. Marked
+	// sensitive: it carries the credentials to connect with.
 	URL string `config:"url"`
 	// ConsumerName names this instance's durable consumer. It defaults to a
 	// name unique to this process, which is what makes the delivery a
@@ -130,8 +131,13 @@ func Module() core.Module {
 		Config:          &Config{Timeout: defaultTimeout},
 		Items: map[string]config.Item{
 			urlKey: {
-				Description: "the NATS server to connect to; this implementation has to be pointed " +
-					"at one, so leaving it out fails the startup when the implementation is taken in",
+				// A NATS URL carries the credentials to connect with — a user
+				// and password or a token in its authority — so it must not
+				// reach logs, diagnostics or the help output.
+				Sensitive: true,
+				Description: "the NATS server to connect to, with any credentials in the URL; " +
+					"this implementation has to be pointed at one, so leaving it out fails the " +
+					"startup when the implementation is taken in",
 			},
 			consumerNameKey: {
 				Description: "the name of this replica's durable consumer; leaving it out gives " +
@@ -156,6 +162,10 @@ func Module() core.Module {
 		Stance: stance,
 		Open:   open,
 		Start:  start,
+		// The URL carries the credentials to connect with in its authority, and
+		// there is no shape to match them by, so the whole value is registered as
+		// a literal redaction rule before this module reaches the server.
+		Secrets: func(cfg *Config) []string { return []string{cfg.URL} },
 	})
 }
 

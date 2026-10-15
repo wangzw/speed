@@ -13,6 +13,7 @@ import (
 
 	"github.com/vislake/speed/pkg/config"
 	"github.com/vislake/speed/pkg/core"
+	"github.com/vislake/speed/pkg/internal/literal"
 	"github.com/vislake/speed/pkg/log"
 )
 
@@ -160,7 +161,11 @@ func NewModule(spec Spec) core.Module {
 			if err != nil {
 				return nil, err
 			}
-			logger, err := spec.logger(reg)
+			cfg, err := spec.read(reader)
+			if err != nil {
+				return nil, err
+			}
+			logger, err := spec.logger(reg, cfg.Config)
 			if err != nil {
 				return nil, err
 			}
@@ -231,7 +236,9 @@ func (s Spec) reader(reg *core.Registry, what string) (config.Reader, error) {
 
 // logger takes up the logger the statements of this implementation's handles
 // are written through: the logging capability's, named after this module, when
-// the assembly delivers one, and the process default logger otherwise.
+// the assembly delivers one, and the process default logger otherwise. Before
+// the delivered logger is named, the credentials the section carries are
+// registered with it as literal redaction rules.
 //
 // The absence of the capability is a legal assembly and is told apart from a
 // failed lookup by the sentinel: anything other than "no provider" is the
@@ -242,8 +249,11 @@ func (s Spec) reader(reg *core.Registry, what string) (config.Reader, error) {
 // The fallback carries the module attribute Named would have bound. The
 // records this module writes — "statement", "slow statement", "gorm warning" —
 // are common words that name no writer on their own, so a record that reached
-// the process default without the attribute would be anonymous.
-func (s Spec) logger(reg *core.Registry) (*slog.Logger, error) {
+// the process default without the attribute would be anonymous. There is
+// nothing to register with the fallback: the process root logger takes the
+// process-wide rules the logging capability's product holds, and this module
+// registers into that set only through a delivered capability.
+func (s Spec) logger(reg *core.Registry, cfg Config) (*slog.Logger, error) {
 	delivered, err := core.Resolve[log.Logger](reg)
 	if err != nil {
 		if errors.Is(err, core.ErrMissingProvider) {
@@ -252,12 +262,25 @@ func (s Spec) logger(reg *core.Registry) (*slog.Logger, error) {
 		return nil, fmt.Errorf("%s: taking up the logger the statements of this implementation's handles "+
 			"are written through: %w", s.ModuleName, err)
 	}
+	// Registered before Named, whose result binds the module attribute: a rule
+	// governs what is bound after it is registered and not what came before.
+	literal.Register(delivered.Redaction(), s.ModuleName+".credentials", secretValues(cfg)...)
 	named := delivered.Named(s.ModuleName)
 	if named == nil {
 		return nil, fmt.Errorf("%s: the provider of the log capability gave no logger when asked to name one for "+
 			"this module, and the statements of this implementation's handles have nowhere to be written", s.ModuleName)
 	}
 	return named, nil
+}
+
+// secretValues are the values a section carries that are registered as literal
+// redaction rules: the connection locator, which carries credentials, and the
+// root key of the field encryption with the retired keys that still decrypt
+// what they wrote.
+func secretValues(cfg Config) []string {
+	values := make([]string, 0, 2+len(cfg.EncryptionRetiredKeys))
+	values = append(values, cfg.DSN, cfg.EncryptionKey)
+	return append(values, cfg.EncryptionRetiredKeys...)
 }
 
 // prepare states this implementation's stance, or reports what it cannot start

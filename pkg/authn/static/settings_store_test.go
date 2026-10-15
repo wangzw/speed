@@ -176,7 +176,7 @@ func (decodesNothing) Decode(string, any) error { return nil }
 type discardingLogger struct{}
 
 func (discardingLogger) Named(string) *slog.Logger { return slog.New(slog.DiscardHandler) }
-func (discardingLogger) Redaction() log.Redaction  { return nil }
+func (discardingLogger) Redaction() log.Redaction  { return noopRedaction{} }
 
 // acceptingBus takes every event and delivers none: the store publishes a change
 // after each write, and nothing here subscribes to it.

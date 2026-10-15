@@ -146,6 +146,10 @@ func Module() core.Module {
 		Stance:          stance,
 		Open:            open,
 		Start:           start,
+		// The connection string carries credentials; it has no shape to match,
+		// so the factory registers the value itself as a literal redaction rule
+		// before this module reaches the server.
+		Secrets: func(cfg *pgpool.Config) []string { return []string{cfg.DSN} },
 	})
 }
 

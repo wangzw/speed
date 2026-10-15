@@ -289,7 +289,18 @@ func (s stubLogger) Named(name string) *slog.Logger {
 	*s.names = append(*s.names, name)
 	return s.lg
 }
-func (s stubLogger) Redaction() log.Redaction { return nil }
+
+// Redaction hands back a face that takes a rule and keeps nothing: New registers
+// the header values through it, so a face that can take a rule is all this stub
+// has to be. What the registration does is asserted end to end in
+// TestTheHeaderValuesAreRegisteredAsRedactionRules, not through this stub.
+func (s stubLogger) Redaction() log.Redaction { return noopRedaction{} }
+
+// noopRedaction takes a rule and keeps nothing.
+type noopRedaction struct{}
+
+func (noopRedaction) AddKeys(...string)              {}
+func (noopRedaction) AddPattern(string, log.Matcher) {}
 
 // The header a case configures to tell whether a line repeats it: a key and a
 // value nothing else in a line would contain.

@@ -112,6 +112,11 @@ type resolved struct {
 	subjects    map[string]password.Entry
 	cacheSize   int
 	concurrency int
+	// secrets are the raw encoded entries of the subject table, in no fixed
+	// order. They are what New registers as literal redaction rules: the parsed
+	// entries hold no string a rule could match, and the encoded form is the
+	// one a leak would carry.
+	secrets []string
 }
 
 // resolve turns decoded configuration into what the module runs on.
@@ -147,6 +152,7 @@ func (c moduleConfig) resolve() (resolved, error) {
 				"subject %q: %w", authn.ErrInvalidClaim, ConfigNamespace, subjectsItem, subject, err)
 		}
 		r.subjects[subject] = entry
+		r.secrets = append(r.secrets, encoded)
 	}
 	return r, nil
 }

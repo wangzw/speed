@@ -8,6 +8,7 @@ import (
 
 	"github.com/vislake/speed/pkg/config"
 	"github.com/vislake/speed/pkg/core"
+	"github.com/vislake/speed/pkg/internal/literal"
 	"github.com/vislake/speed/pkg/log"
 )
 
@@ -91,6 +92,15 @@ type Spec[C any] struct {
 	//
 	// A nil one leaves this implementation without that stage.
 	Start func(ctx context.Context, bus Bus) error
+	// Secrets returns the values this implementation holds as configuration
+	// that have to be registered as literal redaction rules, so a credential
+	// that turns up in any log line of the process is masked. It is how an
+	// implementation names a credential without importing the literal package:
+	// the factory registers what it returns.
+	//
+	// It is optional; an implementation with no credential of its own leaves it
+	// nil. A value that is empty contributes nothing and is not registered.
+	Secrets func(cfg *C) []string
 }
 
 // NewModule builds an implementation's module descriptor.
@@ -124,6 +134,12 @@ func NewModule[C any](spec Spec[C]) core.Module {
 		New: func(ctx context.Context, reg *core.Registry) (any, error) {
 			cfg, err := spec.read(reg)
 			if err != nil {
+				return nil, err
+			}
+			// The credentials are registered before the logger is taken up:
+			// Named binds the module attribute, and a rule only governs what is
+			// bound after it is registered.
+			if err = spec.registerSecrets(reg, cfg); err != nil {
 				return nil, err
 			}
 			logger, err := spec.logger(reg)
@@ -206,6 +222,36 @@ func (s Spec[C]) read(reg *core.Registry) (*C, error) {
 		return nil, err
 	}
 	return cfg, nil
+}
+
+// registerSecrets registers the values this implementation names as literal
+// redaction rules with the logging capability, when it names any and the
+// assembly carries one.
+//
+// It runs in New, before the logger is taken up so that a rule governs the
+// module attribute Named binds. A credential has no shape to match, so the only
+// thing known about it is the value; without a rule it would be masked only
+// where the code remembered to, and a failure would carry it into a log line.
+// With no logging capability there is no log to protect, and the absence is
+// told apart from a failed lookup by the sentinel.
+func (s Spec[C]) registerSecrets(reg *core.Registry, cfg *C) error {
+	if s.Secrets == nil {
+		return nil
+	}
+	values := s.Secrets(cfg)
+	if len(values) == 0 {
+		return nil
+	}
+	delivered, err := core.Resolve[log.Logger](reg)
+	switch {
+	case errors.Is(err, core.ErrMissingProvider):
+		return nil
+	case err != nil:
+		return fmt.Errorf("%s: taking up the logging capability to register its credentials: %w",
+			s.ModuleName, err)
+	}
+	literal.Register(delivered.Redaction(), s.ModuleName+".credentials", values...)
+	return nil
 }
 
 // logger takes up the logging capability when the assembly delivers one.

@@ -115,6 +115,10 @@ func Module() core.Module {
 		Stance:          stance,
 		Open:            open,
 		Start:           start,
+		// The password is the credential this backend holds; it has no shape to
+		// match, so the factory registers the value itself as a literal
+		// redaction rule before this module reaches the server.
+		Secrets: func(cfg *Config) []string { return []string{cfg.Password} },
 	})
 }
 

@@ -35,7 +35,15 @@ func (l *recordingLogger) Named(name string) *slog.Logger {
 	return slog.New(&recordingHandler{into: l}).With(log.ModuleAttrKey, name)
 }
 
-func (l *recordingLogger) Redaction() log.Redaction { return nil }
+func (l *recordingLogger) Redaction() log.Redaction { return noopRedaction{} }
+
+// noopRedaction is a logging capability's registration face that keeps no rule.
+// A backend registers its connection credentials through it, and a stand-in
+// whose records nobody reads has nothing to mask.
+type noopRedaction struct{}
+
+func (noopRedaction) AddKeys(...string)              {}
+func (noopRedaction) AddPattern(string, log.Matcher) {}
 
 func (l *recordingLogger) written() string {
 	l.mu.Lock()

@@ -18,6 +18,7 @@ import (
 	"google.golang.org/grpc/credentials/insecure"
 
 	"github.com/vislake/speed/pkg/core"
+	"github.com/vislake/speed/pkg/internal/literal"
 	"github.com/vislake/speed/pkg/log"
 	"github.com/vislake/speed/pkg/observability"
 )
@@ -43,6 +44,10 @@ func newExporters(ctx context.Context, reg *core.Registry) (any, error) {
 	if err != nil {
 		return nil, err
 	}
+	// The values are registered before the two warnings, which name a logger,
+	// because Named binds the module attribute and a redaction rule governs only
+	// what is bound after it.
+	registerHeaderSecrets(reg, headers)
 	warnPlaintextHeaders(reg, cfg, headers)
 	warnIgnoredVariables(reg, os.LookupEnv)
 	if cfg.ProbeAtStartup {
@@ -56,6 +61,34 @@ func newExporters(ctx context.Context, reg *core.Registry) (any, error) {
 		return nil, err
 	}
 	return &observability.Exporters{Span: span, Metric: metric}, nil
+}
+
+// registerHeaderSecrets registers each header value as a literal redaction rule
+// with the logging capability, when the assembly carries one and any header has
+// a value.
+//
+// A header value is a collector's credential, and it has no shape to match, so
+// the value itself is what is registered: one that turns up in any log line of
+// the process is masked. The registration runs in New, before the two warnings
+// name a logger.
+//
+// The logger is an optional dependency. Without one the values are not
+// registered, rather than registered with a logger reached some other way: the
+// process root logger does not hold this module's rules, and a header value
+// registered nowhere is the gap the design states.
+func registerHeaderSecrets(reg *core.Registry, headers map[string]string) {
+	if len(headers) == 0 {
+		return
+	}
+	delivered, err := core.Resolve[log.Logger](reg)
+	if err != nil {
+		return
+	}
+	values := make([]string, 0, len(headers))
+	for _, value := range headers {
+		values = append(values, value)
+	}
+	literal.Register(delivered.Redaction(), ModuleName+".headers", values...)
 }
 
 // warnPlaintextHeaders writes one line when the headers would cross a network

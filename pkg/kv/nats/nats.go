@@ -105,6 +105,10 @@ func Module() core.Module {
 		},
 		Stance: stance,
 		Open:   open,
+		// The URL carries the credentials to connect with in its authority, and
+		// there is no shape to match them by, so the whole value is registered as
+		// a literal redaction rule before this module reaches the server.
+		Secrets: func(cfg *Config) []string { return []string{cfg.URL} },
 	})
 }
 

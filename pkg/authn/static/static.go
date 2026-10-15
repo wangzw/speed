@@ -37,6 +37,7 @@ import (
 	"github.com/vislake/speed/pkg/config"
 	"github.com/vislake/speed/pkg/core"
 	"github.com/vislake/speed/pkg/event"
+	"github.com/vislake/speed/pkg/internal/literal"
 	"github.com/vislake/speed/pkg/log"
 	"github.com/vislake/speed/pkg/settings"
 )
@@ -142,6 +143,11 @@ func Module() core.Module {
 		Requires: []core.Requirement{
 			{Token: (*event.Bus)(nil), Optional: true},
 			{Token: (*audit.Audit)(nil), Optional: true},
+			// Optional, because this backend has to work in an assembly that
+			// never took logging in; declared, because an assembly that did has
+			// to have it constructed first, so that New can register the subject
+			// table as a literal redaction rule before Init names a logger.
+			{Token: (*log.Logger)(nil), Optional: true},
 		},
 		Provides:  []core.Provision{{Token: (*authn.Verifier)(nil)}},
 		Resources: []any{schema(), settingsSchema()},
@@ -163,6 +169,9 @@ func Module() core.Module {
 			if err != nil {
 				return nil, err
 			}
+			if err := registerSecrets(reg, cfg.secrets); err != nil {
+				return nil, err
+			}
 			return newBackend(cfg), nil
 		},
 
@@ -174,6 +183,30 @@ func Module() core.Module {
 			return b.wire(reg)
 		},
 	}
+}
+
+// registerSecrets registers the subject table's stored entries as literal
+// redaction rules with the logging capability, when the assembly carries one.
+//
+// Each entry is a password hash, and the table is a secret as a whole: an entry
+// that turns up in any log line of the process is masked. The registration runs
+// in New, before Init names a logger, which is the timing a redaction rule
+// needs — Named binds the module attribute, and a rule governs only what is
+// bound after it. With no logging capability there is no log to protect, and the
+// absence is told apart from a failed lookup by the sentinel.
+func registerSecrets(reg *core.Registry, values []string) error {
+	if len(values) == 0 {
+		return nil
+	}
+	delivered, err := core.Resolve[log.Logger](reg)
+	switch {
+	case errors.Is(err, core.ErrMissingProvider):
+		return nil
+	case err != nil:
+		return fmt.Errorf("%s: taking up the logging capability to register the subject table: %w", ModuleName, err)
+	}
+	literal.Register(delivered.Redaction(), ModuleName+".subjects", values...)
+	return nil
 }
 
 // readerOf takes up the configuration reader.
