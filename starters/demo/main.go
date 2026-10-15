@@ -317,9 +317,11 @@ var (
 var webBundle embed.FS
 
 // init registers the frontend host module. The bundle it serves is whatever
-// web/dist holds: the built frontend after `pnpm build` in web/, or the
-// committed stand-in when the frontend has not been built in this checkout.
-// The module is the same either way — it serves whatever the embed.FS carries.
+// web/dist holds, which is the built frontend once `pnpm build` has run in
+// web/ and nothing servable before that: a checkout that has not built the
+// frontend answers 404 on the endpoint, which is the host module's designed
+// answer for a bundle with no entry document. The module is the same either
+// way — it serves whatever the embed.FS carries.
 func init() {
 	sub, err := fs.Sub(webBundle, "web/dist")
 	if err != nil {

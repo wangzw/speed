@@ -42,9 +42,12 @@ the combined deployment, and it does not change when the bundle changes.
 
 `dist/` is a build output and is git-ignored, but `go:embed` refuses to compile
 a directory with no files in it, so a checkout carries one committed stand-in
-there, `dist/index.html`. It is tracked despite the ignore rule (committed with
-`git add -f`), and a real build overwrites it in place; the next change to it
-needs the same `git add -f`.
+there, `dist/placeholder.txt`. The build neither writes nor clears it (`vite`
+would empty the outDir by default; `vite.config.ts` turns that off), and
+everything the build does write under `dist/` is ignored, so building leaves
+the working tree clean. Until the frontend is built the directory holds no
+entry document, and `pkg/webui` answers 404 to every request rather than
+failing to start.
 
 ## Where the dependencies come from
 

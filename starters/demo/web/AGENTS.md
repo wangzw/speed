@@ -19,10 +19,15 @@ See `README.md` for the layout and the commands.
   are the place a product's own pages land; the skeleton ships one placeholder.
 - **The build order is frontend first, Go second.** The Go program embeds
   `web/dist`, so `dist/` must exist and hold a file before the Go build runs --
-  which is why a checkout commits the stand-in `dist/index.html` there.
-- **`dist/` is a build output.** It is git-ignored; only the stand-in
-  `dist/index.html` is tracked (committed with `git add -f`), and a build
-  overwrites it in place.
+  which is why a checkout commits the stand-in `dist/placeholder.txt` there.
+  The build writes nothing to that name and does not clear the directory
+  (`vite.config.ts` disables vite's default outDir emptying), so the stand-in
+  survives every build.
+- **`dist/` is a build output.** It is git-ignored; the only tracked file in it
+  is the stand-in `dist/placeholder.txt` (committed with `git add -f`).
+  Everything a build writes there is ignored, so building leaves the working
+  tree clean. `pkg/webui` answers 404 to every request until the frontend is
+  built, rather than failing to start.
 
 ## Rules
 

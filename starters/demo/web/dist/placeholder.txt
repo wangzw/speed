@@ -1,0 +1,12 @@
+This file exists so that `go:embed web/dist` compiles. go:embed refuses to
+embed a directory that holds no files, and web/dist is a build output that a
+checkout does not commit, so this one non-dot file is kept here to satisfy it.
+
+The real frontend is written into this directory by `pnpm build` (see
+web/README.md). web/dist is git-ignored, so nothing the build writes is
+tracked and a build leaves the working tree clean.
+
+Until the frontend is built, the embedded directory carries no entry
+document, and the web host answers 404 to every request -- the design
+behaviour of pkg/webui when its bundle has no index.html: it declines the
+request rather than failing to start.

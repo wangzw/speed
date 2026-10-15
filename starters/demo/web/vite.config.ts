@@ -43,6 +43,16 @@ export default defineConfig({
     alias: speedAliases(),
   },
   build: {
+    // dist/ is not emptied before the build. It is the directory the Go
+    // program embeds, and it carries a committed stand-in file
+    // (dist/placeholder.txt) so that go:embed has something to embed: go:embed
+    // refuses a directory with no files. vite empties the outDir by default,
+    // which would delete that stand-in and leave the checkout modified after
+    // every build -- a check that dirties the tree. Keeping the stand-in means
+    // the only cost is that a content-addressed bundle from an earlier build
+    // can linger under dist/assets/; everything there is git-ignored, so it is
+    // dead weight in a long-lived local checkout and nothing in the tree.
+    emptyOutDir: false,
     // Without grouping the whole app lands in one 774 kB entry chunk
     // (247 kB gzip) and vite prints its "chunks larger than 500 kB"
     // warning: the app eagerly composes the entire platform shell, so

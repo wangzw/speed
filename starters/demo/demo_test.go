@@ -440,10 +440,15 @@ func TestServeAnswersTheProbes(t *testing.T) {
 		t.Errorf("the served document holds no paths:\n%s", document.body)
 	}
 
-	// The web endpoint serves the embedded frontend bundle.
+	// The web endpoint answers for the bundle the binary embeds. A checkout
+	// that has not built the frontend embeds no entry document, and the host
+	// module's answer for that is 404 — an endpoint with nothing to serve
+	// rather than a process that will not start. The committed stand-in in
+	// web/dist keeps the embed compilable and is not a page, so 404 is what
+	// this asserts; a build that has run changes it to 200.
 	web := get(t, fmt.Sprintf("http://127.0.0.1:%d/", ports[4]))
-	if web.status != http.StatusOK {
-		t.Errorf("GET / on the web endpoint answered %d, want 200", web.status)
+	if web.status != http.StatusNotFound {
+		t.Errorf("GET / on the web endpoint answered %d, want 404: the frontend has not been built in this checkout, so there is no entry document to serve", web.status)
 	}
 
 	// The platform baseline is assembled, and not merely the infrastructure the
