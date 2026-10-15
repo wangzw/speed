@@ -49,7 +49,9 @@ The API is the package's godoc, the root package's and each subpackage's. Read
   cannot carry is the shape to reject: the caller is told a message went out that
   did not hold what it wrote. `Message.Validate` catches the shape the package can
   judge on its own, and each carrier catches the rest its own relay refuses; both
-  answer `ErrRejected`.
+  answer `ErrRejected`. This is about a field being dropped, not about an
+  attachment's Name surviving byte for byte: a carrier's library sanitizes a file
+  name it writes, and what it makes of one is the library's, not this package's.
 - **The root package registers no module and imports no third-party library.**
   Each carrier's subpackage does both: it binds its own carrier library and
   registers the module the factory builds. `deps_test.go` holds the root

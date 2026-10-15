@@ -77,22 +77,19 @@ func validateAddrs(field string, addrs []string) error {
 	return nil
 }
 
-// headerControl reports the first character in s that a header line may not
-// carry, and whether it found one. It judges every field whose value becomes a
-// header line as the caller wrote it: the subject, and an attachment's Name and
-// ContentType.
+// headerControl reports the first character in s that a header-bound value may
+// not carry, and whether it found one. It judges every field whose value becomes
+// a header line: the subject, and an attachment's Name and ContentType.
 //
-// A tab is not one of them. It is ordinary whitespace inside a header value and
-// cannot end a line. The rest are refused: a carriage return or a line feed ends
-// the line and lets the remainder of the value write the header block, which is
-// the injection this exists for, and any other control character leaves a line a
-// parser stops at, which loses everything after it.
+// A tab is not one of them. It is ordinary whitespace inside a header value.
 //
-// What a carrier's library does with such a value is not what settles it. One
-// library writes the value as it stands and breaks the header; another rewrites
-// it and delivers something the caller did not write. Validate judges the
-// message and not the carrier, so it refuses the character here rather than
-// trusting whichever library sits behind the seam.
+// What the rest would do is not one thing, and that is the reason for refusing
+// them here rather than leaving it to the carrier. A library that writes the
+// value as it stands lets a carriage return or a line feed write the header
+// block; one that rewrites it delivers a value the caller did not write; one
+// that encodes it turns the value into something else again. Validate judges the
+// message and not the carrier, so it refuses the character instead of modelling
+// which library sits behind the seam.
 func headerControl(s string) (byte, bool) {
 	for i := 0; i < len(s); i++ {
 		if b := s[i]; (b < 0x20 && b != '\t') || b == 0x7f {

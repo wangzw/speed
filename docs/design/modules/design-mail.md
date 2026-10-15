@@ -37,7 +37,7 @@ type Message struct {
     Cc          []string
     Bcc         []string     // 只作信封收件人，不写进任何头
     ReplyTo     []string
-    Subject     string       // 可为空
+    Subject     string       // 可为空；不含控制字符（制表符除外）
     Text        string       // 纯文本正文；与 HTML 至少一项非空
     HTML        string       // HTML 正文；与 Text 至少一项非空
     Attachments []Attachment
@@ -45,8 +45,8 @@ type Message struct {
 }
 
 type Attachment struct {
-    Name        string     // 非空，且不含控制字符
-    ContentType string     // 空值取 application/octet-stream；不含控制字符
+    Name        string     // 非空；不含控制字符（制表符除外）
+    ContentType string     // 空值取 application/octet-stream；不含控制字符（制表符除外）
     Data        io.Reader  // 非 nil；Send 把它读到结尾
 }
 
@@ -69,9 +69,9 @@ type Receipt struct{ ProviderID string }
 
 「至少一个收件人」按 `To`、`Cc`、`Bcc` 三项之并计，只有密送的邮件合法；空的 `From` 与空的 `Subject` 合法。
 
-`Subject`、`Name` 与 `ContentType` 的值都会成为头行，所以三者按同一条规则判：不含控制字符，制表符除外——它是头值里合法的空白，断不了行。回车与换行会写到头块里去；其余控制字符让解析器停在该行，把它后面的内容一起丢掉。
+`Subject`、`Name` 与 `ContentType` 的值都会成为头行，所以三者按同一条规则判：不含控制字符，制表符除外——它是头值里合法的空白。
 
-这条规则不按某个载体库的行为定。不同的库对这类值处理不一：有的照原样写进头行、把它写坏，有的改写它、交付出调用方没写过的东西。`Validate` 判的是消息而不是载体，所以它在这里拒绝，不把这件事交给接缝后面的某一家库。
+这条规则不按某个载体库的行为定，因为那正是不一的地方：有的库把值照原样写进头行，一个回车或换行就写出了头块；有的改写它，交付出调用方没写过的东西；有的把它编码成另一种形式。`Validate` 判的是消息而不是载体，所以它在这里拒绝，不把这件事交给接缝后面的某一家库。
 
 ### 发送契约
 
@@ -113,7 +113,7 @@ type Receipt struct{ ProviderID string }
 | `pkg/internal/dedupe` | 与短信的载体共用的有界去重表 |
 | SMTP 库 `github.com/wneessen/go-mail` | 只被 SMTP 载体叶子包 `pkg/mail/smtp` import |
 
-**本模块不 import 任何上层功能目录，也不 import `pkg/authn`。** 判据是发送无关用途：`pkg/mail` 位于依赖图的底层之一，与 `pkg/kv`、`pkg/event`、`pkg/sms` 同级，任何要发通知的模块都能单独引入它，不必背上整套认证。
+**本模块不 import 任何上层功能目录，也不 import `pkg/authn`。** 判据是发送无关用途：`pkg/mail` 位于依赖图的底层之一，与 `pkg/kv`、`pkg/event`、`pkg/sms` 同级，任何要发通知的模块都能单独引入它（[ADR-mail-capability-2026-10-15](../../adr/adr-mail-capability-2026-10-15.md)）。
 
 **根包不 import 任何厂商库。** SMTP 库落在绑定它的载体叶子包 `pkg/mail/smtp` 里，只有 import 该子包的宿主的 `go.mod` 才背负它。这一条没有编译期强制（同一 `pkg` 模块内每个客户端都在一份依赖清单里），顶上它的是 `pkg/mail/deps_test.go` 的守卫：根包的传递闭包只含 `pkg/config`、`pkg/core`、`pkg/internal/literal`、`pkg/log`，不含任何厂商库，也不含 `pkg/authn` 或其他功能目录。SMTP 库在 `pkg/go.mod` 里精确钉版 `v0.8.1`，同样由该守卫守住。
 
@@ -241,7 +241,8 @@ SMTP 事务同样不幂等：重复一次会投递并计费第二封，所以适
 
 - **不保证一个 `Message` 值能被发送两次。** 附件的 `Data` 是一个 `io.Reader`，`Send` 把它读到结尾；`DedupeID` 命中时不再读一次这个读取器，所以重试用一个新的 `DedupeID` 时要重建读取器，否则发出去的是一份空附件、且没有错误可看。这一条是「附件以 `io.Reader` 交出」这一决定的代价。
 - **不保证厂商专有特性可达。** 载体集合只有 SMTP；SMTP 之外的厂商专有特性（例如只存在于某家 OpenAPI 的功能）没有通道。
-- **不设头字段的长度上界。** 主题、附件名与附件媒体类型的长度都不度量。一个很长的取值会成为一条很长的头行，超出 SMTP 的 998 字节行限，怎么处置由中继决定；要控制它的长度是调用方的事。
+- **不设头字段的长度上界。** 主题、附件名与附件媒体类型的长度都不度量。载体库按空白把长值折成多行，所以带空白的取值会散成几个短行；不带空白的取值则成为一整条长行，可能超出 SMTP 的 998 字节行限，怎么处置由中继决定。要控制它的长度是调用方的事。
+- **不保证附件名按原样到达收件人。** 载体库对文件名做校验，把控制字符与 `/ : < > ? \\ |` 一类字符换成下划线，非 ASCII 的名字另编成编码字。本模块拒绝的是调用方缺陷信号（控制字符），不代为规定库把它写成什么。
 
 ## 并发与事务边界
 
