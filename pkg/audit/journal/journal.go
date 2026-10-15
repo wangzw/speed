@@ -68,10 +68,13 @@ func init() { core.ProcessRegistry.Register(Module()) }
 
 // Module is the descriptor a host registers.
 //
-// The capability is delivered exclusively. Two journals in one assembly are two
-// tables an entry could go to, and which one a capture path reached is not a
-// fact anything could resolve — so the pair is deliberately unrepresentable and
-// a second one fails the startup instead.
+// The capability and the read surface are both delivered exclusively, and for
+// the same reason: two journals in one assembly are two tables an entry could go
+// to, and which one a capture path reached, or a read landed on, is not a fact
+// anything could resolve — so each is deliberately unrepresentable and a second
+// one fails the startup instead. The reader is delivered here rather than by a
+// module of its own because the table is one: the read surface reads exactly
+// what the capture paths write.
 //
 // Both construction-time dependencies are hard, and neither is decoration. The
 // table is built on the handle the database module delivers, and the detail
@@ -103,7 +106,10 @@ func Module() core.Module {
 			{Token: (*db.Database)(nil)},
 			{Token: (*log.Logger)(nil)},
 		},
-		Provides:  []core.Provision{{Token: (*audit.Audit)(nil), Exclusive: true}},
+		Provides: []core.Provision{
+			{Token: (*audit.Audit)(nil), Exclusive: true},
+			{Token: (*Reader)(nil), Exclusive: true},
+		},
 		Resources: []any{schema(), db.Migrations{FS: migrationsFS}, db.Plugin{Plugin: newCapture()}},
 
 		Prepare: func(_ context.Context, reg *core.Registry) (core.Enablement, error) {

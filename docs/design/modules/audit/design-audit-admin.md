@@ -204,7 +204,7 @@ sequenceDiagram
 
 ### 判定在平台域做出
 
-一次检索是平台操作，handler 经 `RequirePermissionIn` 显式指定 `authz.PlatformDomain`。判定的主体是调用方的账户、域是平台域、资源与动作由权限经进程翻译给出（`audit.read` → `(audit, read)`）。不按请求解析出的租户判定：否则一个在某租户获授权的调用方靠一个请求头就能读到别的租户的行。
+一次检索是平台操作，handler 经 `RequirePermissionIn` 显式指定 `authz.PlatformDomain`。判定的主体是调用方的责任键 `Identity.Key()`、域是平台域、资源与动作由权限经进程翻译给出（`audit.read` → `(audit, read)`）。不按请求解析出的租户判定：否则一个在某租户获授权的调用方靠一个请求头就能读到别的租户的行。
 
 ### 读面在一个跨租户标记下被调用
 
@@ -240,5 +240,5 @@ sequenceDiagram
 
 | 能力 | 状态 | 代码 |
 |---|---|---|
-| 管理面 `audit.admin`（路由、判定、日志、回绝映射） | 未实现 | — |
-| 审计实现子包的读面 `journal.Reader`、`journal.Query`、`journal.Row` | 未实现 | — |
+| 管理面 `audit.admin`（路由、判定、日志、回绝映射） | 已实现 | `pkg/audit/admin/admin.go` `Module`；`pkg/audit/admin/routes.go` `routes`、`mount`；`pkg/audit/admin/handlers.go` `handleRecordList`、`handleRecordGet`、`listQuery`、`logRead`；`pkg/audit/admin/pipeline.go` `require`、`answer`、`bad`、`notFound`、`unavailable` |
+| 审计实现子包的读面 `journal.Reader`、`journal.Query`、`journal.Row` | 已实现 | `pkg/audit/journal/read.go` `Reader`、`Query`、`Row`；`pkg/audit/journal/journal.go` `Module` |

@@ -13,4 +13,4 @@
 
 | 子模块 | 状态 |
 |---|---|
-| [audit-admin](design-audit-admin.md) | 未实现 |
+| [audit-admin](design-audit-admin.md) | 已实现 |
