@@ -197,7 +197,7 @@ type Plugin struct {
 
 **SQLite 实现拒绝把连接放进共享缓存模式的定位符**（[ADR-db-waits-2026-09-29](../../adr/adr-db-waits-2026-09-29.md)）：按定位符的读法，最后一个 `cache` 参数为 `shared` 的 `file:` URI，内存库（`file::memory:?cache=shared`）、`memdb` 库与文件都在其内，写在 `#` 之后的参数不算；临时库不进共享缓存，不在其内；不是 `file:` URI 的定位符，参数由驱动截掉，不进共享缓存。交付的库与 `Open` 自建的连接一样，都以 `ErrConnectFailed` 失败，错误点明共享缓存模式而不回显定位符。共享缓存里，一条连接等缓存里另一条连接占着的表锁，驱动经 `sqlite3_unlock_notify` 一直等到那条连接的事务结束，忙等时限与上下文都结束不了这段等待，任何界在那里都不成立：替调用方发出的语句在调用方的事务之外取了另一条连接，就会一直等调用方。只属于进程自己的内存库写 `:memory:`，本模块只为它开一条连接；多条连接共用的库用文件。
 
-`dsn` 不写入日志，帮助输出也不回显——它承载凭据。各方言的 `dsn` 形态本就不同，服务器地址与文件路径不是一回事，键名随实现分开与此一致。
+`dsn` 不写入日志，帮助输出也不回显——它承载凭据。本模块另把它登记为日志的字面量匹配器，见日志一节的凭据的登记。各方言的 `dsn` 形态本就不同，服务器地址与文件路径不是一回事，键名随实现分开与此一致。
 
 `encryption-key` 未提供时序列化器照常注册，此后任何一次加解密都失败。本模块无从在启动时判断这是不是缺陷：哪些模型带加密字段，GORM 要到第一次用到那个模型才解析，而那发生在启动之后。
 
@@ -214,6 +214,8 @@ type Plugin struct {
 **日志**。本模块构造的句柄与从它自建的连接都携带本模块装上的 GORM logger（宿主预置的实例不是本模块构造的，则不在此列，见本模块自身的阶段行为）：语句的记录经日志模块的 `*slog.Logger` 写出，写出的内容里没有语句绑定的或读出的值，每个引擎上相同（[ADR-db-logging-2026-10-10](../../adr/adr-db-logging-2026-10-10.md)）。
 
 **logger 的来历。** 本模块对 `Logger` 功能声明可选依赖，`New` 在打开连接之前取用它，产物持有取到的那一个。日志模块交付了该功能时，取它按本模块名交出的 `Named` logger，它绑着一个 `module` 属性，取值是本模块名，`db.postgres` 或 `db.sqlite`；装配没有交付它时，取进程根 logger 并盖上同一个属性。每条记录因而都带着它。查找以缺提供者之外的错误失败时启动终止，提供者交不出 logger 时也是（见错误与失败语义）。`Open` 自建的连接不另取 logger，沿用产物持有的那一个：移到别的库上的语句写在交付句柄的语句所在的地方，署同一个模块名。依赖、构造顺序与回落的代价见依赖一节。
+
+**凭据的登记。** 本模块在 `New` 里把配置里承载凭据的值登记为日志的字面量匹配器：`dsn`，以及 `encryption-key` 与 `encryption-retired-keys` 的每一项。登记发生在取得日志功能之后、`Named` 之前，照 [log](design-log.md) 的取用顺序——先取日志功能、再登记、最后 `Named`——`Named` 绑定的模块名属性才会被这条规则约束（[ADR-log-redaction-2026-10-15](../../adr/adr-log-redaction-2026-10-15.md)）。登记落在根包的 `New` 里，两个方言相同。`dsn` 不写入本模块自己写出的记录是一条纪律，登记是另一件事：进程内别处写出的记录里出现的 `dsn` 也被遮蔽。标记 `Sensitive` 不代为登记——`config` 只约束它自己的输出面（[config](design-config.md)）——本模块漏登记则这些值在日志里以明文出现而不报错。
 
 **去向与级别。** 记录写到哪里、从哪一级写、什么格式，是这个 logger 的配置；遮蔽什么，取决于各模块向日志模块登记的脱敏规则。本模块不为它们设配置项：装配带着日志模块时，日志配置的 `outputs` 为空表，这些记录不写到任何地方；装配没有日志模块时，记录写进程根 logger 的标准输出，日志配置的 `outputs` 不改变它。GORM 的 Info、Warn、Error 与 slog 的同名级别一一对应：失败的语句是 Error 记录，慢于 200ms 的语句是 Warn 记录，`LogMode(logger.Info)` 派生的会话——`Debug` 即是——里其余的每一条语句是 Info 记录。`Debug` 会话的语句因而在日志配置的默认级别下看得见，级别高于 info 时持有的 logger 不写它们，高于 warn 时慢语句也不写。持有的 logger 判为不写的记录，语句的文本不渲染；`DB.Scan` 除外：它让方言在询问 logger 之前就把语句连同值渲染成文本，不论记录写不写，随后把文本丢掉，值只在这一刻存在于内存里，不写到任何地方。
 
@@ -305,6 +307,7 @@ sequenceDiagram
     D->>D: 无 dsn 则报故障，否则表态启用
     R->>D: New
     D->>R: 取用 Logger（可选），取不到则回落到进程根 logger
+    D->>D: 把 dsn 与根密钥登记为日志的字面量匹配器
     D->>G: 建立连接并校验连通
     D->>D: 注册加密序列化器
     D->>R: 查询 Plugin 资源与启用结果
@@ -338,7 +341,7 @@ sequenceDiagram
 
 `Prepare` 表态：自己命名空间下的 `dsn` 已提供则表态启用，没有则报故障并点名该键，启动终止。
 
-`New` 先取用日志，再建立连接，随后注册加密序列化器并安装插件，都在本阶段内完成。取用日志是可选的：日志模块交付了功能就取它按本模块名交出的 logger，没有就取进程根 logger 并盖上本模块名；查找以缺提供者之外的错误失败、或提供者交不出 logger 时启动终止，那时连接还没有开（见日志一节）。`Prepare` 不取用日志：那时驱动构造的实例都还不存在。本阶段只建立连接，不读写数据：其余模块的构造仍可能失败，而失败的启动不该已经改动过库结构。连接的建立与连通性校验绑定到本阶段收到的 `ctx`，宿主要给它设时限就设在发起驱动时传入的那个 `ctx` 上；本模块不另立一个连接超时的输入项，驱动自己的超时参数写在 `dsn` 里。GORM 打开时自带一次不接受 `ctx` 的连通性检查，碰上一个接受了连接却一直不回话的服务器，它会一直等下去；本模块关掉那次检查。PostgreSQL 的驱动打开时不建立连接，第一次触及连接的因此就是绑定 `ctx` 的那一次。SQLite 的驱动打开时自己查一次库的版本，那一次不带 `ctx`，打开的是本地文件，不在网络上等待。`Open` 在运行期建立的连接同样绑定调用方传入的 `ctx`。
+`New` 取用日志、登记配置里承载凭据的值，再建立连接，随后注册加密序列化器并安装插件，都在本阶段内完成。取用日志是可选的：日志模块交付了功能就取它按本模块名交出的 logger，没有就取进程根 logger 并盖上本模块名；查找以缺提供者之外的错误失败、或提供者交不出 logger 时启动终止，那时连接还没有开（见日志一节）。`Prepare` 不取用日志：那时驱动构造的实例都还不存在。本阶段只建立连接，不读写数据：其余模块的构造仍可能失败，而失败的启动不该已经改动过库结构。连接的建立与连通性校验绑定到本阶段收到的 `ctx`，宿主要给它设时限就设在发起驱动时传入的那个 `ctx` 上；本模块不另立一个连接超时的输入项，驱动自己的超时参数写在 `dsn` 里。GORM 打开时自带一次不接受 `ctx` 的连通性检查，碰上一个接受了连接却一直不回话的服务器，它会一直等下去；本模块关掉那次检查。PostgreSQL 的驱动打开时不建立连接，第一次触及连接的因此就是绑定 `ctx` 的那一次。SQLite 的驱动打开时自己查一次库的版本，那一次不带 `ctx`，打开的是本地文件，不在网络上等待。`Open` 在运行期建立的连接同样绑定调用方传入的 `ctx`。
 
 `Migrate` 核对实例出自本模块的 `New`，再应用迁移集。
 
@@ -488,6 +491,7 @@ sequenceDiagram
 | 约束拒绝的识别 | 已实现 | `pkg/db/constraints.go` `classifyingDialector`、`installRowClassification`、`pkg/db/sqlite/sqlite.go` `constraintViolation`、`pkg/db/postgres/postgres.go` `constraintViolation` |
 | SQLite 事务的开启方式 | 已实现 | `pkg/db/sqlite/transactions.go` `transactionConn.BeginTx`、`transactionConn.queryOnly`、`pkg/db/sqlite/locator.go` `beginStatement` |
 | 经日志模块写出的不带值的语句日志 | 已实现 | `pkg/db/logger.go` `statementLogger`、`failureClasses`、`pkg/db/module.go` `Spec.logger`、`pkg/db/handle.go` `database`、`pkg/db/open.go` `openHandle` |
+| 凭据的脱敏登记 | 未实现 | — |
 | SQLite 被拒提交的回滚 | 已实现 | `pkg/db/sqlite/transactions.go` `transaction.Commit` |
 | 插件的安装 | 已实现 | `pkg/db/plugins.go` `collectPlugins`、`installPlugins`、`pkg/db/handle.go` `newDatabase` |
 | 预置实例的拒收与 `ErrForeignInstance` | 已实现 | `pkg/db/module.go` `NewModule`、`Spec.ownProduct`、`closeInstance`、`deliveredHandle`、`pkg/db/errors.go` `ErrForeignInstance` |

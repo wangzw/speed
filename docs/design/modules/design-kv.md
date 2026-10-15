@@ -69,11 +69,19 @@ type KV interface {
 |---|---|
 | `pkg/core` | 注册描述符、交付功能、声明资源 |
 | `pkg/config` | 声明本模块的输入项 |
+| `pkg/log` | 可选：工厂在 `New` 里把配置里承载凭据的值登记为日志的字面量匹配器 |
+| `pkg/internal/literal` | 构造并登记字面量匹配器（见下） |
 | 共享单元（见下） | Redis 实现与 PostgreSQL 实现各自的使用：客户端的类型与连接构造、连接池的构造 |
 
-**不依赖任何其他功能模块。** 本模块位于依赖图的底层：它不认识租户、不认识日志、不认识请求上下文。[db](design-db.md) 同样不认识租户，但它对日志功能声明了可选依赖，语句的记录经日志模块写出；本模块没有这条依赖。
+**运行期不依赖任何其他功能模块，也不写日志。** 本模块位于依赖图的底层：它不认识租户、不认识请求上下文，也不在任何回调里记录一行日志。日志功能是一条只为登记凭据而存在的可选依赖，取用只发生在构造期（见下）。[db](design-db.md) 同样不认识租户，但它对日志功能声明可选依赖，语句的记录经日志模块写出；本模块对日志功能的唯一取用是构造期的那一次登记。
+
+**凭据在构造期登记为字面量匹配器。** 本模块的配置里有承载凭据的值：`kv.nats` 的 `url`（连接地址的 authority 里带凭据），以及经共享单元挂载的 `kv.redis` 的 `password` 与 `kv.postgres` 的 `dsn`。按 [architecture](../architecture.md) 的安全边界，这些值由持有它的模块登记为日志的字面量匹配器（[ADR-log-redaction-2026-10-15](../../adr/adr-log-redaction-2026-10-15.md)）。工厂在自己的 `New` 里照 [log](design-log.md) 的取用顺序做这件事：先取日志功能，再登记，最后才 `Named`——`Named` 返回的 logger 绑着模块名属性，那已经是一次绑定，规则只对此后的绑定生效。实现交出自己那份承载凭据的配置值（与 [sms](design-sms.md) 的 `Secrets` 钩子同形），工厂经 `pkg/internal/literal` 登记，实现因而不 import 它。登记之后本模块不再取用日志功能，也不持有 logger；日志模块不在参与集里时登记不发生，本模块照常启动。
+
+**标记 `Sensitive` 不代为登记。** `config` 的 `Sensitive` 只约束它自己的输出面——错误文本不复述值、帮助输出不回显默认值、必须带说明——不向日志登记脱敏规则（[config](design-config.md)）。本模块漏掉登记时不报错：启动照常成功，记录照常写出，那个值在日志里以明文出现。察觉途径是把值以字符串形态写进一条记录，断言目的地上出现 `MaskedText`（[log](design-log.md) 的可观察字面量）——只断言原值不出现不算数，值可能根本没有到达记录。
 
 Redis 实现与事件模块的 Redis 实现共用一个封装该客户端的共享单元，PostgreSQL 实现与事件模块的 PostgreSQL 实现共用一个封装连接池构造的共享单元。`pkg/internal/redis` 与 `pkg/internal/pgpool` 都不登记模块、不交付功能、不参与生命周期（[ADR-shared-backend-unit-2026-09-21](../../adr/adr-shared-backend-unit-2026-09-21.md)）。
+
+**共享单元的凭据在挂载它的实现里登记。** 共享单元不登记模块，因而没有可以登记的地方：它们的配置由挂载它们的实现挂在自己的命名空间下，凭据也就在挂载处登记——`kv.redis` 登记 `password`，`kv.postgres` 登记 `dsn`。同一个共享单元在别的挂载模块里的凭据由那一侧登记（`event.redis`、`event.postgres`，见 [event](event/design-event.md)）。
 
 各实现子包的集成用例跑在真服务器上。与其他模块共用同一种服务器的夹具同属共享单元，落在 `pkg/internal/` 下：PostgreSQL 用 `pkg/internal/pgpool/pgtest`，NATS 用 `pkg/internal/natstest`，Redis 用 `pkg/internal/redis/redistest`；夹具的共享理由写在同一条记录里——两份副本会各自演进到行为不同的服务器上，而失配最难归因。Memcached 的夹具只服务本模块的 Memcached 实现，没有第二个引用方，因而不是共享单元，落在本模块自己的 `pkg/kv/internal/memcachetest` 下。
 
@@ -139,7 +147,7 @@ classDiagram
 | 阶段 | 行为 |
 |---|---|
 | `Prepare` | 各实现 `Decode` 自己那份配置；读出部署前提输入项，与自身性质不符即启动失败，错误点名缺的是哪一项（见下） |
-| `New` | 建立与后端的连接。构造失败即启动失败 |
+| `New` | 取可选的日志功能并把配置里承载凭据的值登记为字面量匹配器，再建立与后端的连接。构造失败即启动失败 |
 | `Close` | 关闭连接。由本模块持有的连接由本模块关闭 |
 
 宿主为某个实现预置了实例时，该实现的 `Prepare` 与 `New` 不执行；`Close` 照常对预置实例执行：实例实现了 `Close(ctx)` 的由它关闭，没有实现的不做任何事，它持有而 `Close(ctx)` 不释放的资源由预置的一方释放（[ADR-supplied-instance-2026-10-08](../../adr/adr-supplied-instance-2026-10-08.md)）。
@@ -235,12 +243,14 @@ Memcached 与 NATS 的后端不提供能按键保持过期时刻的服务端时�
 - 必须挂在 `kv.<后端>` 专属的配置命名空间下——两个实现在同一个命名空间下声明输入项，只要都被 import 就是冲突，进程起不来（[ADR-config-parsing-2026-09-20](../../adr/adr-config-parsing-2026-09-20.md)）。
 - 必须通过共享的一致性套件。套件覆盖接口的每一条语义，包括并发下的不丢更新，以及比较并交换与不存在则写入的恰好一个赢家；恰好一个赢家对从未写过的键成立，对已过期却仍留存在后端里的键同样成立——自己判定过期的后端在这里走的是替换既有条目而非新建的路径。套件不把慢当作错：要求键在 ttl 之内被操作的用例按这一次往返的实测时长判定，往返超出 ttl 的一次尝试不下结论，换一个键、以加倍的 ttl 重来。
 - 必须声明自己的部署前提。一个不持久、不跨副本的实现不得省略前提输入项。
+- 必须经工厂交出自己那份承载凭据的配置值，使它在构造期先于任何 logger 绑定被登记为日志的字面量匹配器；不承载凭据的实现交回空。
 
 ## 实现状态
 
 | 能力 | 状态 | 代码 |
 |---|---|---|
 | 接口与根包 | 已实现 | `pkg/kv/kv.go` `KV`；`pkg/kv/module.go` `Spec`、`NewModule` |
+| 凭据的脱敏登记 | 未实现 | — |
 | 内存实现 | 已实现 | `pkg/kv/memory/memory.go` `Module`、`stance` |
 | 一致性套件 | 已实现 | `pkg/kv/internal/kvsuite/kvsuite.go` `AssertConforms`、`AssertUnderLatency` |
 | Redis 实现 | 已实现 | `pkg/kv/redis/redis.go` `Module`、`store` |

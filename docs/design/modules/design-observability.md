@@ -22,9 +22,9 @@
 - **不提供查询面、看板与告警。** 本模块只产生信号。
 - **不定义信号的语义本体。** 跨度、属性、仪表、采样器与传播格式由上游库定义，本模块不包装、不另造等价抽象（[ADR-observability-library-2026-09-22](../../adr/adr-observability-library-2026-09-22.md)）。
 - **不提供指标目录与命名词表。** 业务指标归产生该信号的模块自己上报；请求计量的仪器与属性由上游采集库定义，本模块不持有一份自己的。
-- **不登记脱敏规则。** 请求计量与服务端跨度的属性取自上游采集库，含请求的路径、`Host` 头给出的主机、客户端地址与 `User-Agent`，不含查询串与其余请求头；请求带有错误时跨度状态描述是错误列表的文本。跨度与指标属性都不经日志的处理链，本来就在脱敏层的判定面之外。
+- **不为自己的信号属性登记脱敏规则。** 请求计量与服务端跨度的属性取自上游采集库，含请求的路径、`Host` 头给出的主机、客户端地址与 `User-Agent`，不含查询串与其余请求头；请求带有错误时跨度状态描述是错误列表的文本。跨度与指标属性都不经日志的处理链，本来就在脱敏层的判定面之外。**导出后端持有的凭据不在此列**：`observability.otlp` 的 `headers` 承载导出后端的凭据，由它在自己的 `New` 里登记为日志的字面量匹配器（见[核心数据结构](#核心数据结构)里导出后端的配置）。
 - **不提供数据库语句级跨度。**
-- **不订阅事件总线。** 本模块不把领域事件转成跨度，不取总线的功能；订阅者是否收到并处理了一条事件，不由本模块回答（[ADR-observability-events-2026-09-22](../../adr/adr-observability-events-2026-09-22.md)）。
+- **不订阅事件总线。** 本模块不把领域事件转成跨度，不取总线的功能；订阅者是否收到并处理了一条事件由[事件模块](event/design-event.md)在分发层记下，不由本模块回答（[ADR-observability-events-2026-09-22](../../adr/adr-observability-events-2026-09-22.md)、[ADR-event-tracing-2026-10-15](../../adr/adr-event-tracing-2026-10-15.md)）。
 
 ## 术语表
 
@@ -107,11 +107,11 @@ const ModuleName = "observability.stdout"   // pkg/observability/stdout
 
 根包只 import 上游的追踪 API、指标 API、两个 SDK 导出接口所在的包。它不 import 本仓库的任何模块：类型别名不需要 `core`，两条工具函数不收也不交任何模块产物（功能标识由写 `Provides` 的那一方构造，`(*TracerProvider)(nil)` 指向的就是别名本身）。它同样不 import `pkg/config`（不声明配置）与 `pkg/log`（只给出字段名常量，不取 logger、不写记录）。
 
-各实现子包 import `pkg/core`（`init` 中登记）、`pkg/config`（声明并读取自己的配置）、根包，以及自己所绑的后端。`otlp` 另 import `pkg/log`（取 logger 用于明文头部的告警与被忽略的标准变量的告警）。装配器另 import `pkg/log`（取 logger 用于导出失败的日志行）、`pkg/http`（在监听端上登记采集层）、gin 与上游采集库（外层与守护层都是 `gin.HandlerFunc`，外层的中间件由上游采集库给出）。gin 已在 `pkg/http` 的依赖闭包里；上游采集库的闭包不在，随装配器进入宿主，它对 OpenTelemetry 各模块给出最低版本，宿主的 `go.mod` 按此对齐（[ADR-observability-request-layer-2026-10-11](../../adr/adr-observability-request-layer-2026-10-11.md)）。
+各实现子包 import `pkg/core`（`init` 中登记）、`pkg/config`（声明并读取自己的配置）、根包，以及自己所绑的后端。`otlp` 另 import `pkg/log` 与 `pkg/internal/literal`（取 logger 用于明文头部与被忽略的标准变量的告警，并在 `New` 里把 `headers` 的每个值登记为日志的字面量匹配器）。装配器另 import `pkg/log`（取 logger 用于导出失败的日志行）、`pkg/http`（在监听端上登记采集层）、gin 与上游采集库（外层与守护层都是 `gin.HandlerFunc`，外层的中间件由上游采集库给出）。gin 已在 `pkg/http` 的依赖闭包里；上游采集库的闭包不在，随装配器进入宿主，它对 OpenTelemetry 各模块给出最低版本，宿主的 `go.mod` 按此对齐（[ADR-observability-request-layer-2026-10-11](../../adr/adr-observability-request-layer-2026-10-11.md)）。
 
 **装配器对日志功能的依赖是必需的。** 日志模块排他交付它的功能，而排他交付的提供者不被依赖闭包展开，因此运行级纳入装配器的命令都必须在命令树上点名日志模块或为它预置实例，否则启动以缺提供者失败。代价是命令树上多一行；换来的是一条能定位的启动失败，而不是日志静默落到进程根 logger 那条只写标准输出的链上。
 
-**`otlp` 后端对日志功能的依赖是可选的。** 它只为明文头部的告警与被忽略的标准变量的告警取 logger，导出不需要它。声明这条依赖，是为了日志模块在场时排在本后端之前构造；标注 `Optional`，是因为日志模块缺席是合法的配置：纳入本后端而没有日志模块的命令照常装配，不以缺提供者失败。取不到 logger 时这些告警都不写，不回退到进程根 logger，理由同装配器对日志功能的必需依赖：进程根 logger 那条链只写标准输出。装配器对日志功能的依赖是必需的，运行级纳入装配器的命令里日志功能因而总在场；只纳入导出后端而不纳入装配器的命令没有任何一方驱动导出器，告警缺席不改变它送出的东西。
+**`otlp` 后端对日志功能的依赖是可选的。** 它为明文头部的告警、被忽略的标准变量的告警，以及把 `headers` 的每个值登记为字面量匹配器取 logger，导出不需要它。声明这条依赖，是为了日志模块在场时排在本后端之前构造；标注 `Optional`，是因为日志模块缺席是合法的配置：纳入本后端而没有日志模块的命令照常装配，不以缺提供者失败。取不到 logger 时这些登记与告警都不做，不回退到进程根 logger，理由同装配器对日志功能的必需依赖：进程根 logger 那条链只写标准输出。装配器对日志功能的依赖是必需的，运行级纳入装配器的命令里日志功能因而总在场；只纳入导出后端而不纳入装配器的命令没有任何一方驱动导出器，登记与告警的缺席不改变它送出的东西。
 
 **依赖预算按包分档判定，按包级 import 清单比对。** 根包的预算是标准库、本仓库的模块，加上上游追踪 API、指标 API 与 SDK 导出接口所在的包；实现子包的预算另加自己所绑的库，装配器另含 gin 与上游采集库的当前闭包。判定不区分别名与普通使用——那不是依赖扫描能判的性质。分档与[打包](#打包)一节所列的目录结构一致。
 
@@ -265,6 +265,8 @@ type Config struct {
 ```
 
 `headers` 的元素承载凭据，因此它只接受主配置源与环境变量两个来源，不进命令行——命令行参数会出现在进程列表里。这一条适用于配置里承载凭据的每一项（[ADR-observability-config-2026-09-22](../../adr/adr-observability-config-2026-09-22.md)）。
+
+**`headers` 的每个值在构造期登记为日志的字面量匹配器。** 元素按 `k=v` 拆开后，取值一侧是凭据。头部没有可识别的值形状，可登记的只有值本身。登记发生在导出后端的 `New` 里，取到日志功能之后、`Named` 之前（[ADR-log-redaction-2026-10-15](../../adr/adr-log-redaction-2026-10-15.md)）：先取日志功能、再登记、最后 `Named`——`Named` 绑定的模块名属性是一次绑定，规则只对此后的绑定生效（[log](design-log.md) 的取用顺序）。标记 `Sensitive` 不代为登记：`config` 只约束它自己的输出面（[config](design-config.md)），漏登记则这些值在日志里以明文出现而不报错。
 
 **`endpoint` 写成主机加可选端口**，即 `host:port`，IPv6 地址写成方括号形式（`[::1]:4317`）。gRPC 导出器把它原样交给客户端作为连接目标：写成 `http://` 或 `https://` 开头的 URL 时，客户端没有对应这个 scheme 的解析器，回退到默认解析器把整个 URL 当主机名查找，导出器构造得出，却永远投递不出；http 导出器由带 scheme 或路径的写法拼出的 URL 解析不了，构造在 `New` 里以上游自己的文本失败，那段文本既不点名输入项，也不给写法。`Prepare` 因而拒绝空串、含 `://`、含斜杠、含空白的写法，以 `ErrInvalidEndpoint` 失败，错误点名 `observability.otlp.endpoint`，说明不接受 scheme 与路径，并给出正确写法 `host:port`；错误文本不复述取值，写成 URL 的端点可能带着用户信息。代价是 gRPC 自己的连接目标写法（`dns:///`、`passthrough:///`、经 unix 套接字的 `unix://`）上游能投递，本模块一并拒绝：同一个输入项在两种协议下只认一种写法。端口不强制：省略时上游取 443，明文的 http 取 80；TLS 下省略端口即连到 443，负载均衡之后的采集端可以这样写。采集端默认在 4317 上收 gRPC、在 4318 上收 http，端口要与 `protocol` 成对。输入项的说明与占位符写明这一点，但本模块的输入项不声明命令行来源，说明与占位符因而不进任何帮助输出；错误文本只给出一个 gRPC 端口的示例 `collector.example:4317` 并要求端口与 `protocol` 成对，操作者看得到的输出里只有这个示例，完整的配对关系写在本文与输入项的说明里。
 
@@ -450,7 +452,7 @@ type Config struct {
 | 阶段 | 行为 |
 |---|---|
 | `Prepare` | 取配置读取面，解码自己的命名空间，校验端点的形态、协议名、头部元素的形状与证书项的文件，表态 `StateEnabled` |
-| `New` | 头部经明文发往非回环的主机时写一行告警；设置了不起作用的标准变量时写一行告警；按协议构造两个导出器并交出；`probe-at-startup` 为真时先做一次有界连通性探测 |
+| `New` | 把 `headers` 的每个值登记为日志的字面量匹配器；头部经明文发往非回环的主机时写一行告警；设置了不起作用的标准变量时写一行告警；按协议构造两个导出器并交出；`probe-at-startup` 为真时先做一次有界连通性探测 |
 | `Init`、`Start`、`Serve`、`Stop` | 无动作 |
 | `Close` | 无动作 |
 
@@ -554,6 +556,7 @@ type Config struct {
 | 请求计量 | 已实现 | 由上游采集库产出，`pkg/observability/otel/layer.go` `(*providers).instrumentation` 交给它 tracer provider、meter provider 与传播器；名称、单位与桶边界的钉住见 `pkg/observability/otel/layer_test.go` `TestTheRequestDurationBucketsAreInSeconds`、`TestTheRequestDurationInstrumentKeepsItsNameUnitAndSeconds` |
 | 配置声明与解读 | 已实现 | `pkg/observability/otel/config.go` `Config`、`schema`、`pkg/observability/otlp/otlp.go` `Config`、`read`、`validateEndpoint`、`headerMap`、`loadTLS`、`tlsMaterial`、`pkg/observability/stdout/stdout.go` `Config` |
 | OTLP 导出后端 | 已实现 | `pkg/observability/otlp/exporters.go` `newExporters`、`warnPlaintextHeaders`、`loopbackHost`、`build`、`clientTLS`、`probe`、`dialAddress` |
+| `otlp` 的 `headers` 脱敏登记 | 未实现 | — |
 | 标准输出导出后端 | 已实现 | `pkg/observability/stdout/exporters.go` `newExporters` |
 | 哨兵错误 | 已实现 | `pkg/observability/otel/errors.go`、`pkg/observability/otlp/otlp.go` `ErrInvalidEndpoint`、`ErrUnknownProtocol`、`ErrInvalidHeader`、`ErrUnreadableCertificate`、`ErrUnpairedClientCertificate`、`ErrCertificateOverPlaintext`、`ErrExporterUnreachable`、`ErrInvalidDuration` |
 | 依赖预算的判定 | 已实现 | `pkg/observability/deps_test.go` `TestTheInterfacePackageReachesNoBackendLibrary`、`TestTheAssemblerStaysInsideItsDependencyBudget`、`TestTheAssemblerReachesNoBackendTransport` |
