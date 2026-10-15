@@ -312,7 +312,7 @@ speed 不引入进程边界。宿主是单一进程，注册表与全部模块�
 13. **`core` 不认识配置，也不按名称识别任何模块。** 注册表里没有针对哪个具体模块名的分支，也没有模块享有隐含的被依赖关系。配置在装配开始之前由宿主加载，产出的读取面是 `config` 模块的预置实例：命令树的执行预置它时指名 `config` 模块，名字由 `pkg/config` 给出，注册表按名字找到登记项的做法对任何模块都相同；注册表只知道某个已登记模块的实例由宿主预置，不知道那是配置。任何已登记模块都可被预置：宿主给出模块名时以名字为准，否则按实例认领；`config` 模块不享有特殊处理，注册表中也没有独立于模块机制的预置通道（[ADR-assembly-bootstrap-2026-09-20](../adr/adr-assembly-bootstrap-2026-09-20.md)、[ADR-supplied-instance-2026-10-08](../adr/adr-supplied-instance-2026-10-08.md)）。
 14. **配置只承载启动必须项。** 判据为该值是否在数据库可用之前就被需要（[ADR-config-scope-2026-09-13](../adr/adr-config-scope-2026-09-13.md)）。
 15. **每一处按类型收集资源的消费点自行裁定取材域，并把它写在该消费点所属模块的设计文档里。** 取材域在可用集、声明集、参与集与启用集之间选定：只校验声明而不让它生效的消费点取可用集；让声明生效的，判据是这份声明所描述之物的生命周期跟着这个二进制、跟着这次命令还是跟着这次运行，其中跟着这次命令的，按只被静态级纳入的模块是否同样携带该声明分取声明集与参与集。**减法只属于这样的消费点：这份声明所描述之物由这次运行产生或改写**：取材域之内，消解落选的模块其声明退出——那是本次装配给出的否定；只被静态级纳入的模块没有表态，不因此退出。**取可用集的消费点不做减法**：它读的是这个二进制的一份静态事实（形状，或一份与命令树无关的清单），减法会让同一个声明在一条命令下合法、在另一条下非法，而声明本身没变。未被本次命令纳入、也没有预置实例的模块由取材域决定去留，不在减法这一步表达：取声明集的消费点它不进来，取可用集的消费点它照常进来。同一种资源在不同消费点上可以有不同的取材域。`core` 不代任何消费点过滤：`Resources` 遍历全部已登记模块，它不解释资源，也就无从知道某一种该按哪个集合裁断（不变量 2）。未写明取材域的消费点，以及与所写不符的实现，都是缺陷（[ADR-module-resources-2026-09-21](../adr/adr-module-resources-2026-09-21.md)）。**宿主可以越过这一裁定**：命令树上带 `AllResources` 的静态级纳入，令所列模块的全部声明当作在册处理，消费点读到它时越过自己那个取材域。这一覆盖只对不在参与集里的静态级纳入模块生效：同时被运行级纳入的与预置了实例的都在参与集里，一律不生效；它不改写取材域，与消费点自己那份裁定并存。
-16. **凡丢失之后会使身份认定或准入校验比没有它时更宽的状态，一律放在 `pkg/db`。** 丢失只会让一次流程失败的状态才可放 `pkg/kv`，并带有界有效期；丢失只让一次计算或一次读取重做的状态只放进程内存，只作缓存、不作依据；方向无法判定的按会放宽处理，放进 `pkg/db`。本条约束的是身份认定与准入所依赖的状态——撤销标记、失败退避计数、验证码尝试计数与断言标识去重集属于它；不属于身份认定与准入的防滥用计数不在此列，放置与失败方向由各自模块的设计文档承载（[ratelimit](modules/design-ratelimit.md)）。判据落在丢失的方向，不落在存活期的长短（[ADR-authn-state-placement-2026-10-10](../adr/adr-authn-state-placement-2026-10-10.md)）。
+16. **凡丢失之后会使身份认定或准入校验比没有它时更宽的状态，一律放在 `pkg/db`。** 丢失只会让一次流程失败的状态才可放 `pkg/kv`，并带有界有效期；丢失只让一次计算或一次读取重做的状态只放进程内存，只作缓存、不作依据；方向无法判定的按会放宽处理，放进 `pkg/db`。本条约束的是身份认定与准入所依赖的状态——撤销标记、失败退避计数、验证码尝试计数与断言标识去重集属于它；不属于身份认定与准入的防滥用计数不在此列，放置与失败方向由各自模块的设计文档承载（[ratelimit](modules/design-ratelimit.md)）。口令表后端 `authn.static` 不接数据库，它的失败退避计数因此留在进程内，见 [design-authn-failure](modules/authn/design-authn-failure.md) 与 [design-authn-account](modules/authn/design-authn-account.md)。判据落在丢失的方向，不落在存活期的长短（[ADR-authn-state-placement-2026-10-10](../adr/adr-authn-state-placement-2026-10-10.md)）。
 17. **`pkg/authn` 的任何子包都不 import `pkg/tenant`，方向是租户指向认证。** 认证根包只依赖标准库与自己的内部包；租户的解析与准入子包 import 认证根包，不 import 认证的任何子包；授权位于准入层之上，认证不 import 授权。需要同时读身份与租户上下文的层放在租户目录，不放进认证目录（[ADR-authn-scope-2026-10-10](../adr/adr-authn-scope-2026-10-10.md)、[ADR-tenant-admission-2026-10-10](../adr/adr-tenant-admission-2026-10-10.md)）。
 
 ## 实现状态
@@ -322,19 +322,19 @@ speed 不引入进程边界。宿主是单一进程，注册表与全部模块�
 | [core](modules/design-core.md) | 已实现 |
 | [config](modules/design-config.md) | 已实现 |
 | [log](modules/design-log.md) | 已实现 |
-| [db](modules/design-db.md) | 部分实现 |
+| [db](modules/design-db.md) | 已实现 |
 | [http](modules/http/design-http.md) | 已实现 |
 | [authn](modules/authn/design-authn.md) | 已实现 |
 | [tenant](modules/tenant/design-tenant.md) | 已实现 |
 | [authz](modules/design-authz.md) | 已实现 |
-| [kv](modules/design-kv.md) | 部分实现 |
+| [kv](modules/design-kv.md) | 已实现 |
 | [sms](modules/design-sms.md) | 已实现 |
 | [mail](modules/design-mail.md) | 已实现 |
 | [event](modules/event/design-event.md) | 已实现 |
 | [audit](modules/audit/design-audit.md) | 已实现 |
 | [settings](modules/settings/design-settings.md) | 已实现 |
 | [ratelimit](modules/design-ratelimit.md) | 已实现 |
-| [observability](modules/design-observability.md) | 部分实现 |
+| [observability](modules/design-observability.md) | 已实现 |
 | [i18n](modules/design-i18n.md) | 已实现 |
 | [jobs](modules/jobs/design-jobs.md) | 已实现 |
 | [notification](modules/notification/design-notification.md) | 已实现 |

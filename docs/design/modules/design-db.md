@@ -491,7 +491,7 @@ sequenceDiagram
 | 约束拒绝的识别 | 已实现 | `pkg/db/constraints.go` `classifyingDialector`、`installRowClassification`、`pkg/db/sqlite/sqlite.go` `constraintViolation`、`pkg/db/postgres/postgres.go` `constraintViolation` |
 | SQLite 事务的开启方式 | 已实现 | `pkg/db/sqlite/transactions.go` `transactionConn.BeginTx`、`transactionConn.queryOnly`、`pkg/db/sqlite/locator.go` `beginStatement` |
 | 经日志模块写出的不带值的语句日志 | 已实现 | `pkg/db/logger.go` `statementLogger`、`failureClasses`、`pkg/db/module.go` `Spec.logger`、`pkg/db/handle.go` `database`、`pkg/db/open.go` `openHandle` |
-| 凭据的脱敏登记 | 未实现 | — |
+| 凭据的脱敏登记 | 已实现 | `pkg/db/module.go` `(Spec).logger`；`pkg/db/secrecy_test.go` |
 | SQLite 被拒提交的回滚 | 已实现 | `pkg/db/sqlite/transactions.go` `transaction.Commit` |
 | 插件的安装 | 已实现 | `pkg/db/plugins.go` `collectPlugins`、`installPlugins`、`pkg/db/handle.go` `newDatabase` |
 | 预置实例的拒收与 `ErrForeignInstance` | 已实现 | `pkg/db/module.go` `NewModule`、`Spec.ownProduct`、`closeInstance`、`deliveredHandle`、`pkg/db/errors.go` `ErrForeignInstance` |

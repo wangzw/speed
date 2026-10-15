@@ -250,7 +250,7 @@ Memcached 与 NATS 的后端不提供能按键保持过期时刻的服务端时�
 | 能力 | 状态 | 代码 |
 |---|---|---|
 | 接口与根包 | 已实现 | `pkg/kv/kv.go` `KV`；`pkg/kv/module.go` `Spec`、`NewModule` |
-| 凭据的脱敏登记 | 未实现 | — |
+| 凭据的脱敏登记 | 已实现 | `pkg/kv/module.go` `(Spec).registerSecrets`；各实现的 `Secrets` 钩子与各自的 `secrecy_test.go` |
 | 内存实现 | 已实现 | `pkg/kv/memory/memory.go` `Module`、`stance` |
 | 一致性套件 | 已实现 | `pkg/kv/internal/kvsuite/kvsuite.go` `AssertConforms`、`AssertUnderLatency` |
 | Redis 实现 | 已实现 | `pkg/kv/redis/redis.go` `Module`、`store` |
