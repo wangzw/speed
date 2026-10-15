@@ -2,25 +2,82 @@
 
 A runnable, copyable skeleton of a speed product. Copy this directory, rename
 it, and grow a business on it. It assembles this repository's modules into one
-program — an HTTP entry point and its endpoints, a database engine, a key-value
-and an event backend, the logging and telemetry providers, the operations
-surface and the frontend host — and writes the command tree that says what each
-run may be.
+program — an HTTP entry point and its endpoints, the platform baseline below,
+the logging and telemetry providers, the operations surface and the frontend
+host — and writes the command tree that says what each run may be.
 
 It is a starting point, not an evaluation host. The modules under `pkg/` deliver
 the seams; this program shows one way to put them together. It ships no business
 domain: `modules/` is the empty slot a product's own modules land in.
 
+## The platform baseline
+
+The program names the platform baseline: every platform capability that starts
+without a credential, an external account or a service outside the deployment
+stack. What that leaves out is the capability that needs one of those, and a
+product adds it once it holds the dependency:
+
+| Left out | Why |
+|---|---|
+| `authn.login.google`, `authn.login.github`, `authn.login.wechat-web`, `authn.login.wechat-mp` | a social provider's client credentials |
+| `authn.sso.oidc`, `authn.sso.saml` | an enterprise provider's client credentials and metadata |
+| `sms.*`, `authn.login.sms`, `authn.mfa.sms`, `authn.sms` | an SMS vendor's account |
+| `mail.smtp` | an SMTP account |
+| `objectstore.s3` | an S3 account and bucket |
+| `authn.mfa.webauthn` | a relying party bound to a real origin |
+
+The test of a doubtful module is the module's own contract: if its required
+configuration items cannot be given a value that starts, it does not belong
+here.
+
+The baseline is written twice in `main.go`, as `baselineServe` and
+`baselineWorker`. `serve` stands the HTTP entry point up and names every module
+with a route or a middleware; `worker` names the background modules that need
+neither a router nor a gateway — the roster, settings, the job queue and its
+scheduler, and the outbox relay. The stack's engine, key-value backend, event
+backend and export provider are named on the commands rather than on the stack
+node, so `migrate` still runs the engine and the declarations alone.
+
+One capability is left out of the baseline for a different reason. The
+preference matrix (`notification.preferences`) declares no endpoint list of its
+own: its `Init` mounts its routes on every endpoint the entry point reports, so
+it reaches the `web` endpoint as well. That endpoint carries the frontend host's
+catch-all route, and two routes that clash on one endpoint fail the startup with
+`http.ErrRouteConflict` — so on a program that serves a frontend and a product
+API from one entry point, the preference matrix cannot be assembled at all. The
+outbound delivery pipeline (`notification.delivery`) requires the preference
+matrix, so it stays out with it. The baseline names the inbox and the live
+stream (`notification.stream`), which mount on the endpoints their own
+configuration names and leave `web` alone.
+
+### Replace before serving real traffic
+
+The configuration under `testdata/` ships development values so a copy starts as
+it stands. Every one of them is marked `DEV` in the file it appears in; replace
+them all before a deployment serves real traffic:
+
+- **The operators' password table** (`authn.static.subjects`) holds an Argon2id
+  hash of the password `operator-dev-secret` for the subject `operator` (the
+  account `static.operator`). Write your own entry with the static package's
+  `Hash` and replace it.
+- **The token signing key** (`authn.token.signing-key-file`) is
+  `testdata/dev-token-signing-key.pem`, an ES256 key shipped beside the
+  configuration. Mint your own with the token package's `GenerateKey("ES256")`
+  and replace the file.
+- **The database encryption key** (`db.<engine>.encryption-key`) seals the
+  columns a module encrypts at rest. Replace the `dev-only-change-me-…` value.
+
 ## Layout
 
 | Path | What it is |
 |---|---|
-| `main.go` | The command tree, the deployment-stack table, the `gen` command, the placeholder command group, and `run()` |
+| `main.go` | The command tree, the deployment-stack table, the baseline inclusion lists, the `gen` command, the placeholder command group, and `run()` |
 | `host.go` | The environment prefix, the host's own module (the `config.HostIdentity` resource), and the endpoint constants |
 | `modules/` | The slot for this product's business modules |
 | `web/` | The frontend application; a placeholder today, built into `web/dist` and embedded by the Go program |
-| `testdata/` | One configuration per deployment stack |
+| `testdata/` | One configuration per deployment stack, and the development token signing key |
 | `compose.yaml` | The four external backends the non-memory stacks run on |
+| `.gitignore` | Keeps the object store's local root out of the tree |
 
 ## Running it
 
@@ -34,15 +91,25 @@ selects the transport, so a local file is written `file:///path/to/config.yaml`
 after the command or before it, or through the environment variable
 `DEMO_CONFIG`.
 
-Build once, then run the two commands that stand a served deployment up — the
-`sqlite-memory` stack needs nothing installed, so it is the one to start with:
+Two of the configuration's values are paths relative to the working directory —
+the token signing key and the object store's root — so run the program from
+`starters/demo`. The `sqlite-memory` stack needs nothing installed, so it is the
+one to start with:
 
 ```
-# from the repository root
-go -C starters/demo build -o /tmp/demo .
+# from the repository root; -C runs the program with starters/demo as its working directory
+go -C starters/demo run . --config file:testdata/sqlite-memory.yaml sqlite-memory migrate
+go -C starters/demo run . --config file:testdata/sqlite-memory.yaml sqlite-memory serve
+```
 
-/tmp/demo --config "file://$PWD/starters/demo/testdata/sqlite-memory.yaml" sqlite-memory migrate
-/tmp/demo --config "file://$PWD/starters/demo/testdata/sqlite-memory.yaml" sqlite-memory serve
+Or build once and run the binary from inside `starters/demo`, so the same
+relative paths resolve:
+
+```
+go -C starters/demo build -o ./demo .
+# then, with starters/demo as the working directory:
+./demo --config file:testdata/sqlite-memory.yaml sqlite-memory migrate
+./demo --config file:testdata/sqlite-memory.yaml sqlite-memory serve
 ```
 
 `migrate` runs the stack's database engine alone and applies every module's
@@ -55,7 +122,7 @@ with SIGINT or SIGTERM; it drains in-flight requests first.
 `version` answers with the program's version and assembles nothing:
 
 ```
-/tmp/demo version
+go -C starters/demo run . version
 ```
 
 `gen` writes the merged API document. Like every command under a stack it reads
@@ -63,7 +130,7 @@ that stack's configuration, so it is pointed at one too; it binds no port and
 constructs no module, so the configuration it reads is never connected to:
 
 ```
-/tmp/demo --config "file://$PWD/starters/demo/testdata/sqlite-memory.yaml" \
+go -C starters/demo run . --config file:testdata/sqlite-memory.yaml \
     sqlite-memory gen --title demo-api --version 1.2.3 -o /tmp/openapi.json
 ```
 
@@ -73,8 +140,8 @@ brings those backends up:
 
 ```
 docker compose -f starters/demo/compose.yaml up -d
-/tmp/demo --config "file://$PWD/starters/demo/testdata/postgres.yaml" postgres migrate
-/tmp/demo --config "file://$PWD/starters/demo/testdata/postgres.yaml" postgres serve
+go -C starters/demo run . --config file:testdata/postgres.yaml postgres migrate
+go -C starters/demo run . --config file:testdata/postgres.yaml postgres serve
 ```
 
 ## Endpoints and guards
@@ -90,13 +157,31 @@ which class of traffic belongs where:
 | `ops` | probes and documents; `GET /health`, `GET /ready`, `GET /openapi.json` |
 | `web` | the frontend bundle; its catch-all route covers the endpoint's whole path space and it carries no other route |
 
-Which guards each endpoint carries is configuration, and this skeleton ships no
-guard module yet: every endpoint is assembled unguarded. A product adds the
-modules that carry its guards — authentication, tenant resolution, the journal,
-the rate limiter — to the commands it wants them on, exactly as the backend
-modules are named today. `pkg/http` is where the endpoints and their chains are
-declared and configured; the operations surface is `pkg/ops`, which mounts its
-three routes on the endpoint `ops.endpoint` names and expects no guard there.
+The baseline now ships the guards each endpoint carries, and the configuration
+under `testdata/` names them:
+
+- The gateway (`authn.gate`) guards `api`, `account` and `admin`. Its own
+  routes — login, session, registration, profile, the account-management routes,
+  invitations, impersonation and the enterprise provider register — mount on the
+  `account` endpoint under `authn.gate.mount.base-path` (`/auth` by default).
+- Tenant resolution (`tenant.resolve`) and admission (`tenant.admission`) guard
+  `api`; the authorization guard (`authz.guard`) enforces `api`; the rate limiter
+  (`ratelimit`) limits `api`.
+- The platform's management surfaces mount on `admin`: the roster
+  (`tenant.admin`), the authorization catalog (`authz.admin`), the settings
+  surface (`settings.admin`) and the journal's query routes (`audit.admin`).
+- The journal (`audit.journal`) records the requests its `requests` list names
+  on the endpoints its `endpoints` list names.
+- `ops` and `web` carry no gateway: the operations surface serves probes and the
+  document, and the frontend bundle is static.
+
+Which guards each endpoint carries is configuration, and where a module mounts
+its routes — the two endpoint lists on the tenant layers, the guard's list, the
+journal's requests — is a decision to revisit as a product's own routes grow.
+`pkg/http` is where the endpoints and their chains are declared and configured;
+the operations surface is `pkg/ops`, which mounts its three routes on the
+endpoint `ops.endpoint` names and expects no guard there.
+
 
 ## The five stacks
 
@@ -125,9 +210,14 @@ pre-deployment job has no use for.
 
 Under every stack:
 
-- **`serve`** runs the whole lifecycle and accepts traffic.
-- **`worker`** runs the background modules — the two backends and the telemetry
-  providers — with no HTTP entry point.
+- **`serve`** runs the whole lifecycle and accepts traffic: the entry point, the
+  platform baseline (`baselineServe` in `main.go`), the stack's two backends and
+  the telemetry providers.
+- **`worker`** runs the background capabilities — the roster, settings, the job
+  queue and its scheduler, and the outbox relay, beside the two backends and the
+  telemetry providers — with no HTTP entry point (`baselineWorker` in `main.go`).
+  A module whose routes or request lists are read wherever it runs belongs to
+  `serve`, which stands the entry point up.
 - **`migrate`** runs the engine alone and reaches every module's declarations to
   build every table.
 - **`gen`** merges the OpenAPI fragments the modules declare into one document
@@ -146,6 +236,10 @@ Under every stack:
 - **A new business module**: write it under `modules/` the way every module in
   this repository is written — a descriptor registered from an `init` — and name
   it on the commands in `main.go` that run it. The import is the wiring.
+- **The platform baseline**: `baselineServe` and `baselineWorker` in `main.go`
+  are the two lists a product grows from. A module dropped from them is a
+  capability the deployment does not carry; a module added is one it does, once
+  its required configuration items are written into `testdata/`.
 - **A new endpoint, guard or backend on an endpoint**: the endpoint is a
   constant in `host.go` and an entry under `http.endpoints` in the configuration;
   which modules guard it is the `Include` list of the command in `main.go`.
@@ -174,12 +268,21 @@ Under every stack:
 
 ```
 go -C starters/demo build ./...
+GOWORK=off go -C starters/demo build ./...
 go -C starters/demo test ./...
 go -C starters/demo test -race ./...
+env -C starters/demo golangci-lint run ./...
 ```
 
+The `GOWORK=off` build is the standalone one: a copy dropped outside this
+repository resolves `pkg` from its released version, so its `go.mod` and `go.sum`
+have to carry every dependency the imports reach. Run the linter from inside the
+module directory: a trailing absolute path is matched against the module root of
+the working directory and can report zero issues without loading the package.
+
 The tests build the program once and run it as a real child process: they run
-`migrate` and `serve` on the `sqlite-memory` stack and read the probes, and they
-run `gen` and read the document it writes. The `sqlite-memory` stack needs
-nothing installed; the other four need the backends `compose.yaml` brings up and
-are not exercised by the suite.
+`migrate` and `serve` on the `sqlite-memory` stack, read the probes and the
+merged document, and read two of the identity system's own routes to hold that
+the baseline is assembled and not only the infrastructure it began with. The
+`sqlite-memory` stack needs nothing installed; the other four need the backends
+`compose.yaml` brings up and are not exercised by the suite.

@@ -89,9 +89,14 @@ func childEnv() []string {
 	return env
 }
 
-// demoConfig is the sqlite-memory configuration a case writes, with the given
-// ports. It is the file testdata/sqlite-memory.yaml holds with the ports filled
-// in, so a case exercises the same config a person runs by hand.
+// demoConfig is the sqlite-memory configuration a case writes: the five
+// endpoint addresses, the token signing key, and the object store's root, with
+// the ports filled in. It is the file testdata/sqlite-memory.yaml holds with
+// the ports and the two paths filled in, so a case exercises the same config a
+// person runs by hand. The platform sections are the baseline every stack
+// carries; the case that reads the platform's own routes holds that they are
+// assembled, and the case that reads an undeclared route on a guarded endpoint
+// holds that it is not.
 const demoConfig = `http:
   endpoints:
     api:
@@ -104,6 +109,11 @@ const demoConfig = `http:
       address: "127.0.0.1:%d"
     web:
       address: "127.0.0.1:%d"
+  cors:
+    endpoints:
+      api:
+        allow-origins:
+          - "https://app.demo.test"
 ops:
   endpoint: ops
   title: demo
@@ -115,9 +125,63 @@ log:
 observability:
   otel:
     service-name: demo
+authn:
+  gate:
+    endpoints: [api, account, admin]
+    mount:
+      endpoint: account
+      public-url: "https://demo.test"
+  static:
+    subjects:
+      operator: "$argon2id$v=19$m=19456,t=2,p=1$xeAjr/xEt4mML0QaEhw8pw$Khjd7856RU6MatFxmOtE0YFZJLsC05yxX5HwJhpBXno"
+  token:
+    algorithm: ES256
+    signing-key-file: "%s"
+  mfa:
+    totp:
+      issuer: demo
+tenant:
+  resolve:
+    endpoints: [api]
+    extractor: header
+    header-name: X-Tenant
+  admission:
+    endpoints: [api]
+  admin:
+    endpoints: [admin]
+authz:
+  guard:
+    endpoints: [api]
+    undeclared: closed
+  admin:
+    endpoints: [admin]
+audit:
+  journal:
+    endpoints: [api, account, admin]
+    requests:
+      - "GET /auth/me"
+      - "POST /auth/admin/accounts"
+  admin:
+    endpoints: [admin]
+ratelimit:
+  endpoints: [api]
+settings:
+  admin:
+    endpoints: [admin]
+notification:
+  inbox:
+    endpoints: [api]
+  stream:
+    endpoints: [api]
+objectstore:
+  fs:
+    root: "%s"
+  metadata:
+    endpoints: [api]
 db:
   sqlite:
     dsn: ":memory:"
+    encryption-key: "dev-only-change-me-0123456789abcdef"
 kv:
   memory:
     replicas: 1
@@ -150,10 +214,19 @@ func freePorts(t *testing.T, n int) []int {
 
 // writeConfig writes the sqlite-memory configuration with the given endpoints
 // and returns the locator that names it. The locator is a file URL, because the
-// config locator is a URI and its scheme is what selects the transport.
+// config locator is a URI and its scheme is what selects the transport. The
+// token signing key is the one shipped under testdata/, named by an absolute
+// path so the child resolves it whatever its working directory; the object
+// store's root is a directory of the case's own, so a run writes no bytes into
+// the source tree.
 func writeConfig(t *testing.T, ports []int) string {
 	t.Helper()
-	body := fmt.Sprintf(demoConfig, ports[0], ports[1], ports[2], ports[3], ports[4])
+	key, err := filepath.Abs(filepath.Join("testdata", "dev-token-signing-key.pem"))
+	if err != nil {
+		t.Fatalf("resolving the dev token signing key: %v", err)
+	}
+	objects := filepath.Join(t.TempDir(), "objects")
+	body := fmt.Sprintf(demoConfig, ports[0], ports[1], ports[2], ports[3], ports[4], key, objects)
 	path := filepath.Join(t.TempDir(), "demo.yaml")
 	if err := os.WriteFile(path, []byte(body), 0o600); err != nil {
 		t.Fatalf("writing the configuration: %v", err)
@@ -366,6 +439,21 @@ func TestServeAnswersTheProbes(t *testing.T) {
 	web := get(t, fmt.Sprintf("http://127.0.0.1:%d/", ports[4]))
 	if web.status != http.StatusOK {
 		t.Errorf("GET / on the web endpoint answered %d, want 200", web.status)
+	}
+
+	// The platform baseline is assembled, and not merely the infrastructure the
+	// skeleton began with. Two routes only the identity system mounts answer on
+	// the account endpoint: the exempt list of login methods, and the token
+	// module's published verification keys — the latter only because the signing
+	// key the configuration names was read. A module missing from the assembly
+	// leaves the path undeclared, which the gateway refuses with 401 rather than
+	// 200, so each status distinguishes "assembled" from "not".
+	accountBase := fmt.Sprintf("http://127.0.0.1:%d", ports[1])
+	for _, path := range []string{"/auth/methods", "/auth/jwks.json"} {
+		res := get(t, accountBase+path)
+		if res.status != http.StatusOK {
+			t.Errorf("GET %s on the account endpoint answered %d, want 200:\n%s", path, res.status, res.body)
+		}
 	}
 }
 

@@ -4,8 +4,13 @@
 # store is a pure cache:
 #
 #   docker compose -f starters/demo/compose.yaml up -d postgres memcached nats
-#   go -C starters/demo run . --config testdata/postgres-memcached-nats.yaml postgres-memcached-nats migrate
-#   go -C starters/demo run . --config testdata/postgres-memcached-nats.yaml postgres-memcached-nats serve
+#   go -C starters/demo run . --config file:testdata/postgres-memcached-nats.yaml postgres-memcached-nats migrate
+#   go -C starters/demo run . --config file:testdata/postgres-memcached-nats.yaml postgres-memcached-nats serve
+#
+# The platform baseline above the backend section is the same as in
+# sqlite-memory.yaml; only the backend section below differs between the five
+# stack files. The values marked DEV are development defaults a copy must
+# replace before serving real traffic (AGENTS.md lists them together).
 
 http:
   endpoints:
@@ -19,6 +24,11 @@ http:
       address: "127.0.0.1:8083"
     web:
       address: "127.0.0.1:8084"
+  cors:
+    endpoints:
+      api:
+        allow-origins:
+          - "https://app.demo.test"
 
 ops:
   endpoint: ops
@@ -35,9 +45,75 @@ observability:
   otel:
     service-name: demo
 
+authn:
+  gate:
+    endpoints: [api, account, admin]
+    mount:
+      endpoint: account
+      public-url: "https://demo.test"
+  # DEV: the operators' password table; the entry is an Argon2id hash of
+  # "operator-dev-secret" for the subject "operator".
+  static:
+    subjects:
+      operator: "$argon2id$v=19$m=19456,t=2,p=1$xeAjr/xEt4mML0QaEhw8pw$Khjd7856RU6MatFxmOtE0YFZJLsC05yxX5HwJhpBXno"
+  # DEV: the signing key is the dev-token-signing-key.pem shipped beside this file.
+  token:
+    algorithm: ES256
+    signing-key-file: testdata/dev-token-signing-key.pem
+  mfa:
+    totp:
+      issuer: demo
+
+tenant:
+  resolve:
+    endpoints: [api]
+    extractor: header
+    header-name: X-Tenant
+  admission:
+    endpoints: [api]
+  admin:
+    endpoints: [admin]
+
+authz:
+  guard:
+    endpoints: [api]
+    undeclared: closed
+  admin:
+    endpoints: [admin]
+
+audit:
+  journal:
+    endpoints: [api, account, admin]
+    requests:
+      - "GET /auth/me"
+      - "POST /auth/admin/accounts"
+  admin:
+    endpoints: [admin]
+
+ratelimit:
+  endpoints: [api]
+
+settings:
+  admin:
+    endpoints: [admin]
+
+notification:
+  inbox:
+    endpoints: [api]
+  stream:
+    endpoints: [api]
+
+objectstore:
+  fs:
+    root: "./var/objects"
+  metadata:
+    endpoints: [api]
+
+# DEV: the database encryption key seals the columns a module encrypts at rest.
 db:
   postgres:
     dsn: "postgres://speed:speed@127.0.0.1:5432/speed?sslmode=disable"
+    encryption-key: "dev-only-change-me-0123456789abcdef"
 
 kv:
   memcached:

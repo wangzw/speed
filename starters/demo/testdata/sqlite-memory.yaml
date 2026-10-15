@@ -1,15 +1,19 @@
 # The sqlite-memory stack: an in-memory SQLite database, an in-memory
 # key-value store and an in-memory event bus. Nothing here reaches a network,
-# so this configuration runs the whole program with no external service up.
+# so this configuration runs the whole baseline with no external service up.
 #
-# Run it from the repository root:
+# Run it from the starters/demo directory, so that every relative path in this
+# file — the token signing key, the object store's root — resolves:
 #
-#   go -C starters/demo run . --config testdata/sqlite-memory.yaml sqlite-memory migrate
-#   go -C starters/demo run . --config testdata/sqlite-memory.yaml sqlite-memory serve
+#   go -C starters/demo run . --config file:testdata/sqlite-memory.yaml sqlite-memory migrate
+#   go -C starters/demo run . --config file:testdata/sqlite-memory.yaml sqlite-memory serve
 #
-# The five endpoints listen on fixed ports so the file is usable as it stands.
-# The operations endpoint answers GET /health, GET /ready and GET
-# /openapi.json; the web endpoint serves the frontend bundle.
+# The sections above the backend ones are the platform baseline and are the same
+# in all five stack files; only the backend section at the bottom differs.
+#
+# The values marked DEV in a comment are a development default this skeleton
+# ships so a copy starts as it stands. Replace every one of them before a
+# deployment serves real traffic; AGENTS.md lists them together.
 
 http:
   endpoints:
@@ -23,6 +27,14 @@ http:
       address: "127.0.0.1:8083"
     web:
       address: "127.0.0.1:8084"
+  # The CORS layer guards the API endpoint: a separately deployed frontend
+  # reaches it from an origin of its own. Point allow-origins at the origins
+  # the product is served from.
+  cors:
+    endpoints:
+      api:
+        allow-origins:
+          - "https://app.demo.test"
 
 # The operations surface. Its routes are mounted on the endpoint named here,
 # which has to be one of the endpoints above.
@@ -43,10 +55,98 @@ observability:
   otel:
     service-name: demo
 
+# The identity system. The gateway guards the API, account and admin endpoints;
+# the capability's own routes — login, session, registration, profile, the
+# management routes — mount on the account endpoint, which the tenant layers do
+# not cover.
+authn:
+  gate:
+    endpoints: [api, account, admin]
+    mount:
+      endpoint: account
+      public-url: "https://demo.test"
+  # DEV: the operators' password table. The entry is an Argon2id hash of the
+  # password "operator-dev-secret" for the subject "operator" (the account
+  # "static.operator"). Write your own with the static package's Hash and
+  # replace this entry before anything is exposed.
+  static:
+    subjects:
+      operator: "$argon2id$v=19$m=19456,t=2,p=1$xeAjr/xEt4mML0QaEhw8pw$Khjd7856RU6MatFxmOtE0YFZJLsC05yxX5HwJhpBXno"
+  # DEV: the token signing key is the dev-token-signing-key.pem shipped beside
+  # this file. Mint your own with the token package's GenerateKey ("ES256") and
+  # replace the file. The issuer and audience default to the gateway's public
+  # URL.
+  token:
+    algorithm: ES256
+    signing-key-file: testdata/dev-token-signing-key.pem
+  mfa:
+    totp:
+      issuer: demo
+
+# Tenant resolution and admission. Both guard the API endpoint and never the
+# account endpoint the authentication routes mount on.
+tenant:
+  resolve:
+    endpoints: [api]
+    extractor: header
+    header-name: X-Tenant
+  admission:
+    endpoints: [api]
+  admin:
+    endpoints: [admin]
+
+# The authorization layer. The guard enforces the API endpoint; the management
+# routes mount on the admin endpoint.
+authz:
+  guard:
+    endpoints: [api]
+    undeclared: closed
+  admin:
+    endpoints: [admin]
+
+# The journal records the requests named below on the guarded endpoints, and
+# writes the audit trail the admin surface reads. Its route list is the routes
+# to capture, each a method and the path as the route was registered; the
+# platform's own profile and account-management routes stand in for a product's
+# business routes here.
+audit:
+  journal:
+    endpoints: [api, account, admin]
+    requests:
+      - "GET /auth/me"
+      - "POST /auth/admin/accounts"
+  admin:
+    endpoints: [admin]
+
+ratelimit:
+  endpoints: [api]
+
+settings:
+  admin:
+    endpoints: [admin]
+
+# The notification inbox and the live stream mount on the API endpoint.
+notification:
+  inbox:
+    endpoints: [api]
+  stream:
+    endpoints: [api]
+
+# The object store's bytes are kept under this directory (created on startup),
+# and its management routes mount on the API endpoint.
+objectstore:
+  fs:
+    root: "./var/objects"
+  metadata:
+    endpoints: [api]
+
 # The engine. ":memory:" is the process's own database, held to one connection.
+# The encryption key seals the columns a module encrypts at rest (a TOTP seed
+# among them); it is a DEV value and must be replaced.
 db:
   sqlite:
     dsn: ":memory:"
+    encryption-key: "dev-only-change-me-0123456789abcdef"
 
 # Both in-process backends take one replica; a count above one is a deployment
 # they cannot serve and fails the startup.

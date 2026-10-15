@@ -1,14 +1,24 @@
 // Command demo is a runnable, copyable skeleton of a speed product. It
 // assembles this repository's modules into one program: an HTTP entry point and
-// its five listening endpoints, a database engine, a key-value and an event
-// backend, the logging and telemetry providers, the operations surface, and the
-// frontend bundle's host. Copy this directory, rename it, and grow a business on
-// it.
+// its five listening endpoints, the identity system, tenant resolution and
+// admission, the authorization layer, the audit journal, rate limiting,
+// settings, jobs, notifications and the object store, a database engine, a
+// key-value and an event backend, the logging and telemetry providers, the
+// operations surface, and the frontend bundle's host. Copy this directory,
+// rename it, and grow a business on it.
 //
 // It is a starting point rather than an evaluation host: the modules under pkg/
 // deliver the seams, and this program shows one way to put them together. Its
 // business modules are an empty slot under modules/, and it ships no business
 // domain of its own.
+//
+// What the program names is the platform baseline: every platform capability
+// that starts without a credential, an external account or a service outside the
+// deployment stack. A capability that needs one of those — a social or
+// enterprise identity provider, the SMS family, mail over SMTP, object storage
+// on S3, WebAuthn bound to a real origin — is left for a product to add once it
+// holds the dependency; the criterion is written down in AGENTS.md beside the
+// lists below.
 //
 // Importing a module's package is what puts it in the available set: each
 // registers itself in init, so the import is the whole of the wiring. What each
@@ -39,6 +49,48 @@ import (
 	"github.com/vislake/speed/pkg/ops/openapi"
 	"github.com/vislake/speed/pkg/webui"
 
+	// The platform capabilities the baseline names. Several packages share a
+	// name — five register a module under an "admin" package, two under
+	// "catalog", two under "account" — so they are aliased to the capability
+	// directory they sit in. The alias is what the Include lists below read.
+	auditadmin "github.com/vislake/speed/pkg/audit/admin"
+	auditjournal "github.com/vislake/speed/pkg/audit/journal"
+	authnaccount "github.com/vislake/speed/pkg/authn/account"
+	authnadmin "github.com/vislake/speed/pkg/authn/admin"
+	"github.com/vislake/speed/pkg/authn/gate"
+	"github.com/vislake/speed/pkg/authn/impersonation"
+	"github.com/vislake/speed/pkg/authn/invite"
+	"github.com/vislake/speed/pkg/authn/login"
+	loginpassword "github.com/vislake/speed/pkg/authn/login/password"
+	"github.com/vislake/speed/pkg/authn/mfa"
+	"github.com/vislake/speed/pkg/authn/mfa/totp"
+	authnmount "github.com/vislake/speed/pkg/authn/mount"
+	"github.com/vislake/speed/pkg/authn/profile"
+	"github.com/vislake/speed/pkg/authn/session"
+	"github.com/vislake/speed/pkg/authn/sso"
+	"github.com/vislake/speed/pkg/authn/static"
+	"github.com/vislake/speed/pkg/authn/token"
+	authzadmin "github.com/vislake/speed/pkg/authz/admin"
+	authzguard "github.com/vislake/speed/pkg/authz/guard"
+	authzpolicy "github.com/vislake/speed/pkg/authz/policy"
+	"github.com/vislake/speed/pkg/http/cors"
+	i18naccount "github.com/vislake/speed/pkg/i18n/account"
+	i18ncatalog "github.com/vislake/speed/pkg/i18n/catalog"
+	i18nhttp "github.com/vislake/speed/pkg/i18n/http"
+	jobsdb "github.com/vislake/speed/pkg/jobs/db"
+	jobsscheduler "github.com/vislake/speed/pkg/jobs/scheduler"
+	notificationinbox "github.com/vislake/speed/pkg/notification/inbox"
+	notificationstream "github.com/vislake/speed/pkg/notification/stream"
+	objectstorefs "github.com/vislake/speed/pkg/objectstore/fs"
+	objectstoremeta "github.com/vislake/speed/pkg/objectstore/metadata"
+	"github.com/vislake/speed/pkg/ratelimit"
+	"github.com/vislake/speed/pkg/settings"
+	settingsadmin "github.com/vislake/speed/pkg/settings/admin"
+	tenantadmin "github.com/vislake/speed/pkg/tenant/admin"
+	"github.com/vislake/speed/pkg/tenant/admission"
+	tenantcatalog "github.com/vislake/speed/pkg/tenant/catalog"
+	"github.com/vislake/speed/pkg/tenant/resolve"
+
 	_ "github.com/vislake/speed/pkg/config/format/yaml"
 	_ "github.com/vislake/speed/pkg/config/source/file"
 
@@ -52,6 +104,7 @@ import (
 	"github.com/vislake/speed/pkg/db/sqlite"
 	eventmemory "github.com/vislake/speed/pkg/event/memory"
 	eventnats "github.com/vislake/speed/pkg/event/nats"
+	outboxrelay "github.com/vislake/speed/pkg/event/outbox/relay"
 	eventpostgres "github.com/vislake/speed/pkg/event/postgres"
 	eventredis "github.com/vislake/speed/pkg/event/redis"
 	kvmemcached "github.com/vislake/speed/pkg/kv/memcached"
@@ -136,12 +189,109 @@ var stacks = []stack{
 	},
 }
 
-//go:embed web/dist
-var webBundle embed.FS
-
 // webuiModuleName is the name the frontend host module is registered under. It
 // is webui.ModuleName, spelled once here so nothing else writes the literal.
 const webuiModuleName = webui.ModuleName
+
+// baselineServe and baselineWorker are the platform baseline: the capability set
+// a copy of this skeleton carries before it holds any dependency of its own.
+//
+// The criterion is one sentence: the baseline names every platform capability
+// that starts without a credential, an external account or a service outside the
+// deployment stack. A capability that needs one of those is left for a product to
+// add once it holds the dependency — a social or enterprise identity provider
+// (authn.login.google/github/wechat-web/wechat-mp, authn.sso.oidc/saml), the SMS
+// family (sms.*, authn.login.sms, authn.mfa.sms, authn.sms), mail over SMTP
+// (mail.smtp), object storage on S3 (objectstore.s3), and WebAuthn, whose
+// relying party is bound to a real origin (authn.mfa.webauthn). The test of a
+// doubtful one is the module's own: if its required configuration items cannot
+// be given a value that starts, it does not belong here.
+//
+// What differs between the two lists is the entry point. serve stands up the
+// HTTP entry point and names every module with a route or a middleware; worker
+// names the background modules that need neither a router nor a gateway — the
+// roster, settings, the job queue and its scheduler, and the outbox relay. The
+// stack's engine, key-value backend, event backend and export provider are named
+// on the commands themselves, not here, and not on the stack node: migrate runs
+// the engine alone (see addStack).
+var (
+	baselineServe = []string{
+		// The entry point and the surfaces it carries.
+		speedhttp.ModuleName,
+		ops.ModuleName,
+		webuiModuleName,
+		cors.ModuleName,
+
+		// The identity system: the gateway, its route mounter, the operator
+		// password table, the account store, the management routes, the session
+		// cookie, the login flow with its password method, the multi-factor
+		// register with the TOTP factor, access tokens, impersonation records,
+		// invitations, the profile surface, and the enterprise provider register.
+		authnmount.ModuleName,
+		gate.ModuleName,
+		static.ModuleName,
+		authnaccount.ModuleName,
+		authnadmin.ModuleName,
+		session.ModuleName,
+		login.ModuleName,
+		loginpassword.ModuleName,
+		mfa.ModuleName,
+		totp.ModuleName,
+		token.ModuleName,
+		impersonation.ModuleName,
+		invite.ModuleName,
+		profile.ModuleName,
+		sso.ModuleName,
+
+		// Tenancy, the journal, the authorization layer, the limiter and settings.
+		resolve.ModuleName,
+		admission.ModuleName,
+		tenantcatalog.ModuleName,
+		tenantadmin.ModuleName,
+		auditjournal.ModuleName,
+		auditadmin.ModuleName,
+		authzpolicy.ModuleName,
+		authzguard.ModuleName,
+		authzadmin.ModuleName,
+		ratelimit.ModuleName,
+		settings.ModuleName,
+		settingsadmin.ModuleName,
+
+		// The i18n capability: the catalog engine, the entry-point wiring and the
+		// account bridge.
+		i18ncatalog.ModuleName,
+		i18nhttp.ModuleName,
+		i18naccount.ModuleName,
+
+		// Jobs, notifications, the object store and the outbox relay. The
+		// notification inbox and the live stream are named; the preferences
+		// matrix and the outbound delivery pipeline are not, and what keeps them
+		// out is the frontend endpoint rather than a credential: the preferences
+		// module mounts its routes on every endpoint the entry point declares,
+		// the web endpoint carries the frontend host's catch-all route, and two
+		// routes that clash on one endpoint fail the startup. The preferences
+		// matrix therefore cannot be assembled on this command at all, and the
+		// delivery pipeline requires it. See AGENTS.md.
+		jobsdb.ModuleName,
+		jobsscheduler.ModuleName,
+		notificationinbox.ModuleName,
+		notificationstream.ModuleName,
+		objectstorefs.ModuleName,
+		objectstoremeta.ModuleName,
+		outboxrelay.ModuleName,
+	}
+
+	baselineWorker = []string{
+		tenantcatalog.ModuleName,
+		settings.ModuleName,
+		jobsdb.ModuleName,
+		jobsscheduler.ModuleName,
+		outboxrelay.ModuleName,
+	}
+)
+
+//go:embed web/dist
+var webBundle embed.FS
 
 // init registers the frontend host module. The bundle it serves is the
 // placeholder under web/dist; a real frontend replaces its contents in the
@@ -217,33 +367,28 @@ func addStack(root *config.Command, s stack) {
 	node.Include(s.engine)
 	node.IncludeAllDeclarations()
 
-	// serve runs the whole lifecycle: the entry point, the operations surface
-	// on its own endpoint, the frontend bundle on the web endpoint, the two
-	// backends, and the logging and telemetry providers.
+	// serve runs the whole lifecycle: the entry point and its listening
+	// endpoints, the operations surface, the frontend bundle's host, and the
+	// platform baseline below — the identity system, tenancy, the authorization
+	// layer, the journal, the limiter, settings, jobs, notifications and the
+	// object store — together with the stack's two backends and the logging,
+	// telemetry and export providers.
 	serve := node.Sub(serveCommand)
-	serve.Include(
-		speedhttp.ModuleName,
-		ops.ModuleName,
-		webuiModuleName,
-		s.kv,
-		s.event,
-		log.ModuleName,
-		otel.ModuleName,
-		s.exporter,
-	)
+	serve.Include(baselineServe...)
+	serve.Include(s.kv, s.event, log.ModuleName, otel.ModuleName, s.exporter)
 	serve.Do(core.StageServe, untilCancelled(serveCommand))
 
-	// worker runs the background modules and no HTTP entry point: the two
-	// backends and the telemetry providers, without the module that binds a
-	// port.
+	// worker runs the background capabilities and no HTTP entry point. It names
+	// the modules that need neither a router nor a gateway to start: the roster,
+	// settings, the job queue and its scheduler, the outbox relay, the stack's
+	// two backends and the telemetry providers. A module whose routes or request
+	// lists are read wherever it runs — the journal, the inbox, the outbox's
+	// consumers behind a router — belongs to serve, which stands the entry point
+	// up; a worker on this process-wide configuration would fail their
+	// resolution for want of one.
 	worker := node.Sub(workerCommand)
-	worker.Include(
-		s.kv,
-		s.event,
-		log.ModuleName,
-		otel.ModuleName,
-		s.exporter,
-	)
+	worker.Include(baselineWorker...)
+	worker.Include(s.kv, s.event, log.ModuleName, otel.ModuleName, s.exporter)
 	worker.Do(core.StageServe, untilCancelled(workerCommand))
 
 	// migrate runs the engine the stack node names and nothing else, and reaches

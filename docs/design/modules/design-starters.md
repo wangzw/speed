@@ -26,8 +26,9 @@ starters/demo/
   host.go           # envPrefix、HostIdentity、端点常量
   modules/          # 业务模块的空位
   web/              # 前端应用
-  testdata/         # 配置样例与夹具
+  testdata/         # 配置样例、夹具与开发用签发密钥
   compose.yaml      # 部署栈外部后端的本地编排
+  .gitignore        # 把对象存储的本地根目录挡在树外
   AGENTS.md         # 示范自己的契约
 ```
 
@@ -47,13 +48,25 @@ starters/demo/
 
 **命令组**是把一次性运维动作分组的节点：每个组是一个词，组下的叶子各是一个一次性命令，每个叶子声明它驱动到哪个深度——只读的到 `Init`，写的到 `Start`。示范提供这套机制与一个占位的组骨架，使用者按业务填叶子的动作。
 
+### 平台基线
+
+`serve` 与 `worker` 各自点名纳入的那组平台能力是**平台基线**，写在 `main.go` 的 `baselineServe` 与 `baselineWorker` 两个列表里。基线的判据是一句话：**一条平台能力若能不要凭据、不要外部账号、不要部署栈之外的外部服务就启动，它就在基线里**；其余留给产品在拿到该依赖时自行加入。模块自己的契约是这个判据的落点——一项必需配置项给不出一个能启动的值，它就不属于基线。
+
+判据的两侧各有一组例证。落在基线里的，是只用进程内实现或栈内后端就起得来的平台能力——入站的身份系统（`authn.gate` 网关、`authn.login.password`、`authn.mfa.totp`、`authn.session`、`authn.account`）、租户的 `tenant.resolve` 与 `tenant.admission`、`authz.guard` 授权层、`audit.journal` 审计、`ratelimit` 限流、`settings` 设置，以及任务（`jobs.db`、`jobs.scheduler`）、通知的收件箱与推送（`notification.inbox`、`notification.stream`）与对象存储的文件系统后端（`objectstore.fs`）。被判据排除在外的，是一启动就要一份外部凭据或一份栈外服务的：社交与企业身份提供方（`authn.login.google`、`authn.login.github`、`authn.login.wechat-web`、`authn.login.wechat-mp`、`authn.sso.oidc`、`authn.sso.saml`）、短信家族（`sms.*`、`authn.login.sms`、`authn.mfa.sms`、`authn.sms`）、SMTP 邮件（`mail.smtp`）、S3 对象存储（`objectstore.s3`），以及与真实来源绑定的 WebAuthn（`authn.mfa.webauthn`）；它们在产品拿到对应依赖后自行加入。
+
+判据之外还有一类排除：`notification.preferences` 与 `notification.delivery` 不在基线里，理由不是凭据而是**路由挂载面的互斥**。偏好矩阵按自己的设计不声明配置命名空间，`Init` 在入口模块报出的**每一个**端上挂它的路由（[notification](notification/design-notification-preferences.md)），因而也挂到 `web` 端上；该端由前端宿主的一条覆盖全路径空间的通配路由独占，同一个端上两条路由相冲即以路由冲突拒绝该装配（[webui](design-webui.md)）。于是偏好矩阵在这个以 `web` 端服务前端的骨架上装不起来，取用它的 `notification.delivery` 也随之进不来。基线取 `notification.inbox` 与 `notification.stream`，两者都按配置点名的端名清单挂路由，不碰 `web` 端。
+
+`serve` 起 HTTP 入口，纳入全部带路由或中间件的模块；`worker` 纳入既不路由也不经网关就能启动的后台模块。栈的数据库引擎、键值后端、事件后端与导出后端仍点在各命令上，不在栈节点。
+
+`testdata/` 的每份配置为基线里需要配置的模块写全必需项，并随骨架带一组开发用值（签发密钥、口令表、库加密根键），由 `AGENTS.md` 点名、要求拷走后替换。示范的 `AGENTS.md` 是这组值与该基线的契约面。
+
 ### `gen` 命令
 
 `gen` 把二进制里各模块声明的 OpenAPI 片段合并成一份文档并写出。它调 [ops](design-ops.md) 的导出包 `pkg/ops/openapi` 里的 `Merge`——**一个纯函数**，模块在 `Init` 里合并、`/openapi.json` 交出的是它的结果，`gen` 写出制品的也是它。**不驱动生命周期、不绑端口、不构造任何模块**：合并读的是各模块的静态声明，不需要把任何模块跑起来，也不需要入口模块的登记面。这与 `ops` 模块在 `Init` 里合并、在运行面经 `/openapi.json` 交出是同一份合并逻辑的两种消费——运行面服务于一个活着的进程，`gen` 服务于构建与发布，把这份文档写进制品，供前端据它生成自己的 API 面。
 
 ### 端点集合
 
-端点是产品自己划的流量边界：`api`、`account`、`admin`、`ops`、`web`。哪个端装哪些层是配置，示范在这里说的是哪类流量属于哪个端。分离部署下拉起前端的那条通配路由独占 `web` 端（[webui](design-webui.md)）。
+端点是产品自己划的流量边界：`api`、`account`、`admin`、`ops`、`web`。哪个端装哪些层是配置，示范在这里说的是哪类流量属于哪个端。基线在这些端上装好网关、租户解析与准入、鉴权、限流、审计与平台管理面，逐端的装法写在 `testdata/` 的配置里。分离部署下拉起前端的那条通配路由独占 `web` 端（[webui](design-webui.md)）。
 
 ### `main.go` 的保留内容
 
@@ -124,6 +137,7 @@ graph TD
 |---|---|---|
 | 目录骨架与 `go.mod` | 已实现 | `starters/demo/go.mod`、`starters/demo/AGENTS.md` |
 | 命令树与部署栈 | 已实现 | `starters/demo/main.go` `commandTree`、`addStack`；`starters/demo/host.go` `hostModule`、`servedEndpoints` |
+| 平台基线（`serve`/`worker` 的点名集与配置样例） | 已实现 | `starters/demo/main.go` `baselineServe`、`baselineWorker`；`starters/demo/testdata/` |
 | `gen` 命令 | 已实现 | `starters/demo/main.go` `genModule`、`genDocument` |
 | 前端产物的内嵌与托管（合一拓扑的 Go 侧） | 已实现 | `starters/demo/main.go` `webBundle`（`//go:embed web/dist`）、`webuiModuleName` |
 | 前端应用本身（`web/` 的源码与构建） | 未实现 | — |
