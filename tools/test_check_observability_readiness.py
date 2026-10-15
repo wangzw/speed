@@ -273,6 +273,53 @@ class TestSensitiveRedaction(GateCase):
         self.assertEqual(code, 1)
         self.assertIn("'secret-key'", out)
 
+    def test_a_response_struct_flag_is_not_a_config_item(self) -> None:
+        # A package that declares no schema of its own can still write
+        # `Sensitive: true`: a response view that masks a field does exactly
+        # that. The flag marks a field of a view, not an item of a schema, so
+        # the package declares no Sensitive item and owes the redaction
+        # registry nothing. This is the shape pkg/settings/admin's viewOf
+        # writes -- `settingView{... Sensitive: true ...}` with the value
+        # replaced by a mask -- and reporting it is the false positive the
+        # narrowing removes.
+        self.seed_anchors()
+        self.write(
+            "pkg/acme/views.go",
+            "package acme\n\n"
+            "func viewOf(item settings.Item, value string) settingView {\n"
+            "\tif item.Sensitive {\n"
+            "\t\treturn settingView{\n"
+            "\t\t\tKey:       item.Key,\n"
+            "\t\t\tSensitive: true,\n"
+            "\t\t\tValue:     maskedValue,\n"
+            "\t\t}\n"
+            "\t}\n"
+            "\treturn settingView{Key: item.Key, Value: value}\n"
+            "}\n",
+        )
+        code, out, _ = self.run_gate()
+        self.assertEqual(code, 0, out)
+
+    def test_an_item_written_as_a_typed_literal_is_a_config_item(self) -> None:
+        # An item is not only a keyed entry inside the schema map: the tree
+        # also adds one as `items[key] = config.Item{...}` (pkg/db/config.go
+        # adds its migration-lock item that way). Its key sits in the index
+        # assignment and not before the brace, so the type is what marks the
+        # literal as an item; the item still has no rule and is reported.
+        self.seed_anchors()
+        self.write(
+            "pkg/acme/schema.go",
+            "package acme\n\nvar items = map[string]config.Item{}\n\n"
+            "func add(key string) {\n"
+            "\titems[key] = config.Item{\n"
+            "\t\tSensitive: true,\n"
+            "\t}\n"
+            "}\n",
+        )
+        code, out, _ = self.run_gate()
+        self.assertEqual(code, 1)
+        self.assertIn("pkg/acme", out)
+
     def test_a_named_path_item_is_exempt(self) -> None:
         # The value is a filesystem path, not the secret. The exemption names
         # the package and the key, so the item in its own package is exempt.

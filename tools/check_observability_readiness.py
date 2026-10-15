@@ -29,7 +29,13 @@ The four checks, each anchored on a pattern that occurs in the tree:
      process default logger.
 
   2. Redaction. A `config.Item{Sensitive: true}` whose value is the secret
-     itself must have that value registered as a logging redaction rule. A
+     itself must have that value registered as a logging redaction rule. Only
+     a flag that marks a configuration item is read: a keyed entry of a schema
+     map (`KEY: { ... }`) or a literal of the item type (`config.Item{ ... }`),
+     the two shapes the tree declares an item in. A `Sensitive: true` on any
+     other struct is a field of that struct, not an item -- a view that
+     reports or masks the sensitivity of a value writes exactly that and
+     declares no schema -- so such a package owes no registration. A
      package registers one either directly (`literal.Register(...)`) or by
      handing the value to the `Secrets` hook of a Spec (`Secrets func(cfg)
      []string`, `Secrets: func(cfg) []string {...}`, `Secrets: <ref>`), which
@@ -135,8 +141,36 @@ LOGGER_ANCHORS = ("pkg/settings", "pkg/db", "pkg/http", "pkg/authn/login")
 
 # -- check 2 -----------------------------------------------------------------
 
-# One sensitive item of the configuration schema.
+# One sensitive item of the configuration schema. The flag is read as an item
+# only where the composite literal it opens is one of the two the tree declares
+# an item in; see ITEM_KEY_ENTRY and ITEM_TYPED_LITERAL below.
 SENSITIVE_ITEM = re.compile(r"\bSensitive:\s*true\b")
+
+# The two shapes a configuration item is written in, read off the text just
+# before the brace of its composite literal.
+#
+# A schema declares its items as the keyed entries of a map: `KEY: { ... }`,
+# with the key written before the brace, either as a quoted string or as the
+# package constant that names it. That is the shape every item in this tree has
+# -- `dsnKey: { Sensitive: true, ... }` inside `map[string]config.Item{...}`.
+# The key is read from the file as written and not from the masked code,
+# because a quoted key is a string literal and the masking blanks its contents.
+#
+# An item is also written as a literal of the item type -- `config.Item{...}`,
+# `settings.Item{...}`, or a bare `Item{...}` -- which is how the tree adds an
+# item by index assignment (`items[key] = config.Item{...}`, pkg/db/config.go).
+# Its key sits in the assignment rather than before the brace, so the type is
+# what marks the literal as an item.
+#
+# A `Sensitive: true` inside a composite literal of any other type is a field
+# of some other struct and not a configuration item. A response view that
+# masks a sensitive value writes exactly that: pkg/settings/admin's `viewOf`
+# returns `settingView{... Sensitive: true, Value: maskedValue}` to hide the
+# value. It declares no schema and holds no item, so it owes the redaction
+# registry nothing, and reading its flag as an unkeyed item is the false
+# positive this narrowing removes.
+ITEM_KEY_ENTRY = re.compile(r'("[^"]+"|[A-Za-z_]\w*)\s*:\s*\Z')
+ITEM_TYPED_LITERAL = re.compile(r"(?:[A-Za-z_]\w*\.)?Item\s*\Z")
 
 # A string constant, which is how a schema names its item keys. The single
 # line form and the entry of a `const (...)` block are both matched.
@@ -415,37 +449,69 @@ def check_logging_dependency(sources: list[Source]) -> list[str]:
     return findings
 
 
-def _item_key(source: Source, offset: int, consts: dict[str, str]) -> str:
-    """The config key a `Sensitive: true` flag at `offset` belongs to.
+def _item_brace(source: Source, offset: int) -> int:
+    """The index of the brace opening the composite literal that holds `offset`.
 
-    The flag sits inside the item's brace, `KEY: { ... }`. Walk back over the
-    masked text to the brace that opens the item -- a brace written inside a
-    string or comment is blanked and does not count -- then read the key
-    written just before that brace, from the original text so a quoted key
-    keeps its spelling. The key resolves through the package's string
-    constants, so the key compares as its operator-facing value and matches
-    the allow-list entries, which are written the operator-facing way, rather
-    than as the Go identifier. Reading backward from the flag rather than
-    upward line by line also handles a flag written on the same line as its
-    entry, or an entry whose key and brace are split across two lines. An item
-    that has no key at all -- a positional struct value -- yields the empty
-    string, which the report renders as an unkeyed item.
+    Walk back over the masked text to the first brace that opens a composite
+    literal; a brace written inside a string or comment is blanked and does
+    not count. Reading backward from the flag rather than upward line by line
+    also handles a flag written on the same line as its entry, or an entry
+    whose key and brace are split across two lines. Returns -1 where no brace
+    precedes the flag, which means the flag is in no composite literal at all.
     """
     masked = source.code
     depth = 0
-    open_index = -1
     for index in range(offset - 1, -1, -1):
         char = masked[index]
         if char == "}":
             depth += 1
         elif char == "{":
             if depth == 0:
-                open_index = index
-                break
+                return index
             depth -= 1
+    return -1
+
+
+def _item_literal(source: Source, offset: int) -> bool:
+    """Whether the `Sensitive: true` flag at `offset` marks a config item.
+
+    An item is declared either as a keyed entry of a schema map (`KEY: { ... }`)
+    or as a literal of the item type (`config.Item{ ... }`), so the flag marks
+    an item only where the composite literal it sits in is written in one of
+    those two shapes -- see ITEM_KEY_ENTRY and ITEM_TYPED_LITERAL. Anywhere
+    else the flag is a field of some other struct: a view that reports whether
+    a value is sensitive, or masks one, writes `Sensitive: true` without
+    declaring an item, and a package whose only such flag is one of those
+    declares no schema and owes the redaction registry nothing.
+
+    The key probe reads the file as written, because a quoted key is a string
+    literal whose contents the masking blanks; the type probe reads the masked
+    code, because a type name is code and never prose.
+    """
+    open_index = _item_brace(source, offset)
+    if open_index < 0:
+        return False
+    if ITEM_KEY_ENTRY.search(source.text[:open_index]) is not None:
+        return True
+    return ITEM_TYPED_LITERAL.search(source.code[:open_index]) is not None
+
+
+def _item_key(source: Source, offset: int, consts: dict[str, str]) -> str:
+    """The config key a `Sensitive: true` flag at `offset` belongs to.
+
+    Read the key written just before the brace that opens the item, from the
+    original text so a quoted key keeps its spelling. The key resolves through
+    the package's string constants, so the key compares as its operator-facing
+    value and matches the allow-list entries, which are written the
+    operator-facing way, rather than as the Go identifier. An item that carries
+    no key before its brace -- one added as `items[key] = config.Item{...}`,
+    whose key sits in the index assignment -- yields the empty string, which
+    the report renders as an unkeyed item.
+    """
+    open_index = _item_brace(source, offset)
     if open_index < 0:
         return ""
-    entry = re.search(r'("[^"]+"|[A-Za-z_]\w*)\s*:\s*\Z', source.text[:open_index])
+    entry = ITEM_KEY_ENTRY.search(source.text[:open_index])
     if entry is None:
         return ""
     raw = entry.group(1).strip('"')
@@ -579,6 +645,13 @@ def check_sensitive_redaction(sources: list[Source]) -> list[str]:
     trade-off is that the count is exact even where the identity of the
     covered item is not, so the reported items are the excess by declaration
     order and not a proven miss.
+
+    The items counted are the flags that mark a configuration item -- a keyed
+    entry of a schema map or a literal of the item type, the two shapes
+    `_item_literal` reads. A `Sensitive: true` on a struct of any other type
+    is a field of that struct and not an item: a package that only reports or
+    masks the sensitivity of a value it was handed declares no schema, so it
+    neither owes a registration nor is measured against one.
     """
     grouped = _pkgdirs(sources, include_tests=False)
     items: dict[str, list[tuple[str, int, str]]] = {}
@@ -587,6 +660,8 @@ def check_sensitive_redaction(sources: list[Source]) -> list[str]:
             continue
         consts = _package_consts(grouped.get(source.pkgdir, []))
         for match in SENSITIVE_ITEM.finditer(source.code):
+            if not _item_literal(source, match.start()):
+                continue
             key = _item_key(source, match.start(), consts)
             items.setdefault(source.pkgdir, []).append(
                 (source.rel, _line_of(source.code, match), key)
