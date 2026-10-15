@@ -3,8 +3,11 @@ package delivery
 import (
 	"context"
 	"errors"
+	"fmt"
+	"slices"
 	"testing"
 
+	"github.com/vislake/speed/pkg/mail"
 	"github.com/vislake/speed/pkg/notification"
 	"github.com/vislake/speed/pkg/sms"
 	"github.com/vislake/speed/pkg/tenant"
@@ -90,9 +93,9 @@ func TestRepeatedConsumptionDoesNotDeliverTwice(t *testing.T) {
 	}
 }
 
-// The email channel is always skipped: this release references no mail seam, so
-// the channel is unavailable exactly as an absent seam would be, and that is not
-// a failure.
+// The email channel is skipped when the mail seam is absent from the assembly:
+// the channel is unavailable exactly as an absent seam is, and that is not a
+// failure.
 func TestTheEmailChannelIsSkipped(t *testing.T) {
 	r := newRig(t, nil)
 	ctx := r.tenantCtx("t1")
@@ -104,6 +107,185 @@ func TestTheEmailChannelIsSkipped(t *testing.T) {
 	rows := r.rows("t1")
 	if len(rows) != 1 || rows[0].channel != "email" || rows[0].status != statusSkipped {
 		t.Fatalf("the ledger holds %+v, want one skipped email row", rows)
+	}
+}
+
+// The email channel renders the subject and both bodies from the type's own
+// catalog keys and hands them to the mail seam, once. The message is the
+// module's own to shape: the sender is left to the carrier's configured default,
+// the destination travels in the dispatch's parameters, the dedupe key is the
+// channel's own, and no attachment is carried — so nothing in it is a reader a
+// second send would find spent.
+func TestTheEmailChannelRendersAndSendsTheMessage(t *testing.T) {
+	r := newRig(t, func(h *host) {
+		h.mail = true
+		h.specs = map[string]notification.TypeSpec{"test.declarer": {
+			Key:             typeName,
+			Group:           "billing",
+			DefaultChannels: []notification.Channel{notification.ChannelEmail},
+			Unsubscribable:  true,
+		}}
+	})
+	ctx := r.tenantCtx("t1")
+	r.setChannels(notification.ChannelEmail)
+	r.local.set(typeName+".email.subject", "Invoice inv-1 is paid")
+	r.local.set(typeName+".email.body_text", "Invoice inv-1 is paid in full.")
+	r.local.set(typeName+".email.body_html", "<p>Invoice inv-1 is paid in full.</p>")
+
+	params := map[string]any{"to": "alice@acme.test", "amount": 100}
+	if _, err := r.p.Handle(ctx, jobOf(t, dispatch("u1", "occ-1", params)), nil); err != nil {
+		t.Fatalf("the delivery failed: %v", err)
+	}
+	sent := r.mailSender.messages()
+	if len(sent) != 1 {
+		t.Fatalf("the carrier accepted %d messages, want 1", len(sent))
+	}
+	msg := sent[0]
+	if msg.From != "" {
+		t.Errorf("Message.From is %q, want it empty: the carrier's own configured default sender is the sender",
+			msg.From)
+	}
+	if !slices.Equal(msg.To, []string{"alice@acme.test"}) {
+		t.Errorf("Message.To is %v, want the dispatch's destination", msg.To)
+	}
+	if msg.Subject != "Invoice inv-1 is paid" {
+		t.Errorf("Message.Subject is %q, want the rendered subject", msg.Subject)
+	}
+	if msg.Text != "Invoice inv-1 is paid in full." {
+		t.Errorf("Message.Text is %q, want the rendered plain-text body", msg.Text)
+	}
+	if msg.HTML != "<p>Invoice inv-1 is paid in full.</p>" {
+		t.Errorf("Message.HTML is %q, want the rendered HTML body", msg.HTML)
+	}
+	if len(msg.Attachments) != 0 {
+		t.Errorf("the message carries %d attachments, want none", len(msg.Attachments))
+	}
+	if !r.local.asked(typeName + ".email.subject") {
+		t.Error("the subject was not rendered from the type's catalog key")
+	}
+	rows := r.rows("t1")
+	if len(rows) != 1 || rows[0].channel != "email" || rows[0].status != statusSucceeded {
+		t.Fatalf("the ledger holds %+v, want one succeeded email row", rows)
+	}
+	if msg.DedupeID != rows[0].key {
+		t.Errorf("Message.DedupeID is %q, want the channel's idempotency key %q", msg.DedupeID, rows[0].key)
+	}
+	if rows[0].receipt != "receipt-1" {
+		t.Errorf("the ledger carries the receipt %q, want the carrier's own", rows[0].receipt)
+	}
+}
+
+// A catalog that carries no HTML body leaves the field empty rather than putting
+// the key itself into markup a client would render.
+func TestTheEmailChannelOmitsAnAbsentHTMLBody(t *testing.T) {
+	r := newRig(t, func(h *host) {
+		h.mail = true
+		h.specs = map[string]notification.TypeSpec{"test.declarer": {
+			Key:             typeName,
+			Group:           "billing",
+			DefaultChannels: []notification.Channel{notification.ChannelEmail},
+			Unsubscribable:  true,
+		}}
+	})
+	ctx := r.tenantCtx("t1")
+	r.setChannels(notification.ChannelEmail)
+	r.local.set(typeName+".email.subject", "Invoice inv-1 is paid")
+	r.local.set(typeName+".email.body_text", "Invoice inv-1 is paid in full.")
+
+	params := map[string]any{"to": "alice@acme.test", "amount": 100}
+	if _, err := r.p.Handle(ctx, jobOf(t, dispatch("u1", "occ-1", params)), nil); err != nil {
+		t.Fatalf("the delivery failed: %v", err)
+	}
+	sent := r.mailSender.messages()
+	if len(sent) != 1 {
+		t.Fatalf("the carrier accepted %d messages, want 1", len(sent))
+	}
+	if sent[0].HTML != "" {
+		t.Errorf("Message.HTML is %q, want it empty: the key is not the body", sent[0].HTML)
+	}
+	if sent[0].Text == "" {
+		t.Error("the message carries no body at all")
+	}
+}
+
+// A carrier that answers an uncertain outcome fails the email channel and does
+// not starve the others: the carrier's own text is what the ledger holds, and the
+// joined error is what makes the job retry. This module retries no send itself.
+func TestAnEmailFailureDoesNotStarveTheOthers(t *testing.T) {
+	r := newRig(t, func(h *host) {
+		h.mail = true
+		h.specs = map[string]notification.TypeSpec{"test.declarer": {
+			Key:             typeName,
+			Group:           "billing",
+			DefaultChannels: []notification.Channel{notification.ChannelInApp, notification.ChannelEmail},
+			Unsubscribable:  true,
+		}}
+	})
+	ctx := r.tenantCtx("t1")
+	r.setChannels(notification.ChannelInApp, notification.ChannelEmail)
+	r.mailSender.failWith(fmt.Errorf("the carrier did not answer: %w", mail.ErrUncertain))
+
+	params := map[string]any{"to": "alice@acme.test", "amount": 100}
+	_, err := r.p.Handle(ctx, jobOf(t, dispatch("u1", "occ-1", params)), nil)
+	if err == nil {
+		t.Fatal("a failed channel did not fail the delivery")
+	}
+	if !errors.Is(err, mail.ErrUncertain) {
+		t.Errorf("the joined error is %v, want the mail failure", err)
+	}
+	if got := r.inbox.writeCount(); got != 1 {
+		t.Errorf("the in-app channel was written %d times, want 1 despite the email failure", got)
+	}
+	if got := r.mailSender.sendCount(); got != 1 {
+		t.Errorf("the carrier was reached %d times, want 1: this module does not resend on its own", got)
+	}
+	rows := r.rows("t1")
+	byChannel := map[string]ledgerRow{}
+	for _, row := range rows {
+		byChannel[row.channel] = row
+	}
+	if len(rows) != 2 {
+		t.Fatalf("the ledger holds %+v, want two rows", rows)
+	}
+	if byChannel["email"].status != statusFailed {
+		t.Errorf("the email row is %q, want failed", byChannel["email"].status)
+	}
+	if byChannel["email"].err == "" {
+		t.Error("the failed email row carries no reason")
+	}
+	if byChannel["in_app"].status != statusSucceeded {
+		t.Errorf("the in_app row is %q, want succeeded", byChannel["in_app"].status)
+	}
+}
+
+// A dispatch that names no destination fails the email channel with this
+// module's own reason, and the carrier is never reached.
+func TestAnEmailDispatchWithoutADestinationFailsTheChannel(t *testing.T) {
+	r := newRig(t, func(h *host) {
+		h.mail = true
+		h.specs = map[string]notification.TypeSpec{"test.declarer": {
+			Key:             typeName,
+			Group:           "billing",
+			DefaultChannels: []notification.Channel{notification.ChannelEmail},
+			Unsubscribable:  true,
+		}}
+	})
+	ctx := r.tenantCtx("t1")
+	r.setChannels(notification.ChannelEmail)
+
+	_, err := r.p.Handle(ctx, jobOf(t, dispatch("u1", "occ-1", validParams())), nil)
+	if err == nil {
+		t.Fatal("a channel with no destination did not fail the delivery")
+	}
+	if !errors.Is(err, notification.ErrInvalidRequest) {
+		t.Errorf("the joined error is %v, want notification.ErrInvalidRequest", err)
+	}
+	if got := r.mailSender.sendCount(); got != 0 {
+		t.Errorf("the carrier was reached %d times, want 0", got)
+	}
+	rows := r.rows("t1")
+	if len(rows) != 1 || rows[0].status != statusFailed || rows[0].err == "" {
+		t.Fatalf("the ledger holds %+v, want one failed email row carrying a reason", rows)
 	}
 }
 

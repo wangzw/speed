@@ -85,10 +85,9 @@ and `TypeSpec`'s comments before adding a module or a consumer.
   channel goes through a seam: email through the mail capability's sender, sms
   through the sms capability's registry and sender. This capability chooses a
   template, renders text and builds a request; the actual delivery and vendor
-  interaction belong to those capabilities. Email is not implemented in this
-  release — the mail capability is not in the tree yet — so the `email` channel
-  is always unavailable, exactly as an absent seam would be, and records a
-  `skipped` row.
+  interaction belong to those capabilities. Which channels a run can send on is
+  a matter of assembly: a channel whose seam this run did not deliver records a
+  `skipped` row, exactly as an absent seam is, and is not a failure.
 - **This capability does not aggregate or rate-limit.** One dispatch writes one
   message and sends once; merging several messages of one type into one, and
   capping sends per recipient, are not this capability's. A host that needs a

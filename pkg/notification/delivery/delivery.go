@@ -11,14 +11,11 @@
 // its tenant and hands it over, and the handler does the per-channel work.
 //
 // A channel's availability is a matter of assembly. in_app is always available —
-// the inbox is a required dependency — while email needs a mail sender seam and
-// sms needs both the sms registry and the sms sender. Email is not implemented
-// in this release: pkg/mail is not in the tree, so this module references no mail
-// seam and the email channel is always unavailable, exactly as an absent seam
-// would be. A channel whose seam is absent is skipped and recorded as one
-// `skipped` row, which is not a failure and does not enter the joined error; it
-// tells "this assembly has no such channel" apart from "the vendor refused the
-// send".
+// the inbox is a required dependency — while email needs a mail sender and sms
+// needs both the sms registry and the sms sender. A channel whose seam is absent
+// is skipped and recorded as one `skipped` row, which is not a failure and does
+// not enter the joined error; it tells "this assembly has no such channel" apart
+// from "the vendor refused the send".
 //
 // The delivery is at-least-once. Every channel attempt derives an idempotency
 // key, and the (tenant_id, idempotency_key) uniqueness on notification_sends is
@@ -42,6 +39,7 @@ import (
 	"github.com/vislake/speed/pkg/db"
 	"github.com/vislake/speed/pkg/i18n"
 	"github.com/vislake/speed/pkg/jobs"
+	"github.com/vislake/speed/pkg/mail"
 	"github.com/vislake/speed/pkg/notification"
 	"github.com/vislake/speed/pkg/sms"
 	"github.com/vislake/speed/pkg/tenant"
@@ -108,9 +106,9 @@ var (
 // render one.
 //
 // The mail sender, the sms registry and the sms sender are optional, and none of
-// their absences fails the startup. Mail is not referenced at all in this release
-// — the capability is not in the tree — so the email channel is always
-// unavailable. Sms is available only when both its seams are present.
+// their absences fails the startup: a channel is available exactly when the seams
+// it sends through are present — email on the mail sender, sms on both the
+// registry and the sender.
 //
 // The submission seam is delivered exclusively: one process has exactly one
 // outbound pipeline, so a second provider fails the startup rather than one of
@@ -126,6 +124,7 @@ func Module() core.Module {
 			{Token: (*notification.Preferences)(nil)},
 			{Token: (*notification.Inbox)(nil)},
 			{Token: (*i18n.Localizer)(nil)},
+			{Token: (*mail.Sender)(nil), Optional: true},
 			{Token: (*sms.Registry)(nil), Optional: true},
 			{Token: (*sms.Sender)(nil), Optional: true},
 		},
@@ -172,11 +171,16 @@ func productOf(instance any) (*pipeline, bool) {
 // is an absent one, and a channel with an absent seam is skipped rather than
 // failed.
 type channelSeams struct {
+	// mailer hands a rendered email to the carrier.
+	mailer mail.Sender
 	// registry resolves an sms message against the templates in force.
 	registry sms.Registry
 	// sender hands a resolved sms message to the vendor.
 	sender sms.Sender
 }
+
+// emailReady reports whether the email channel can send in this assembly.
+func (s channelSeams) emailReady() bool { return s.mailer != nil }
 
 // smsReady reports whether the sms channel can send in this assembly: both the
 // registry and the sender seam have to be present.
@@ -236,6 +240,10 @@ func newPipeline(reg *core.Registry) (*pipeline, error) {
 	if err != nil {
 		return nil, err
 	}
+	mailer, err := optional[mail.Sender](reg, "the mail sender seam")
+	if err != nil {
+		return nil, err
+	}
 	registry, err := optional[sms.Registry](reg, "the sms registry seam")
 	if err != nil {
 		return nil, err
@@ -252,7 +260,7 @@ func newPipeline(reg *core.Registry) (*pipeline, error) {
 		localizer: localizer,
 		ledger:    &ledger{handle: database.DB()},
 		taxonomy:  types,
-		seams:     channelSeams{registry: registry, sender: sender},
+		seams:     channelSeams{mailer: mailer, registry: registry, sender: sender},
 	}, nil
 }
 

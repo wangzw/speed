@@ -20,6 +20,7 @@ import (
 	"github.com/vislake/speed/pkg/i18n"
 	"github.com/vislake/speed/pkg/jobs"
 	"github.com/vislake/speed/pkg/log"
+	"github.com/vislake/speed/pkg/mail"
 	"github.com/vislake/speed/pkg/notification"
 	"github.com/vislake/speed/pkg/notification/preferences"
 	"github.com/vislake/speed/pkg/sms"
@@ -36,6 +37,7 @@ var (
 	_ notification.Inbox       = (*stubInbox)(nil)
 	_ i18n.Localizer           = (*stubLocalizer)(nil)
 	_ event.Bus                = (*stubBus)(nil)
+	_ mail.Sender              = (*stubMailSender)(nil)
 )
 
 // stubQueue is a stand-in submission and registration face. It records every
@@ -251,6 +253,51 @@ func (l *stubLocalizer) asked(key string) bool {
 	return false
 }
 
+// stubMailSender is a stand-in mail seam. It records every message it was
+// handed, so a case can hold what reached the carrier: which fields the module
+// filled, which it deliberately left empty, and how many sends one delivery made.
+type stubMailSender struct {
+	mu      sync.Mutex
+	sends   int
+	sendErr error
+	sent    []mail.Message
+}
+
+func (s *stubMailSender) Name() string { return "stub" }
+
+func (s *stubMailSender) Send(_ context.Context, m mail.Message) (mail.Receipt, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.sends++
+	if s.sendErr != nil {
+		return mail.Receipt{}, s.sendErr
+	}
+	s.sent = append(s.sent, m)
+	return mail.Receipt{ProviderID: "receipt-1"}, nil
+}
+
+// failWith makes every later send answer the given error.
+func (s *stubMailSender) failWith(err error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.sendErr = err
+}
+
+// messages lists the messages the carrier accepted, in order.
+func (s *stubMailSender) messages() []mail.Message {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	return append([]mail.Message(nil), s.sent...)
+}
+
+// sendCount is how many times a case reached the carrier, including the calls
+// that failed.
+func (s *stubMailSender) sendCount() int {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	return s.sends
+}
+
 // stubBus is a stand-in event bus that records what was published.
 type stubBus struct {
 	mu        sync.Mutex
@@ -317,6 +364,8 @@ func defaultSpec() notification.TypeSpec {
 type host struct {
 	// specs are extra type declarations, each by its own module.
 	specs map[string]notification.TypeSpec
+	// mail adds the mail seam when set.
+	mail bool
 	// sms adds the two sms seams when set.
 	sms bool
 	// noInbox and noLocalizer drop a required seam, which fails resolution.
@@ -370,6 +419,9 @@ func (h host) drive(t *testing.T, action func(ctx context.Context, reg *core.Reg
 	}
 	if !h.noLocalizer {
 		modules = append(modules, standIn("stand-in.localizer", newStubLocalizer(), (*i18n.Localizer)(nil)))
+	}
+	if h.mail {
+		modules = append(modules, standIn("stand-in.mail", &stubMailSender{}, (*mail.Sender)(nil)))
 	}
 	if h.sms {
 		modules = append(modules,
@@ -429,6 +481,9 @@ type rig struct {
 	local   *stubLocalizer
 	bus     *stubBus
 	catalog tenant.Catalog
+	// mailSender is the mail seam stub, nil when the run did not take the email
+	// channel in.
+	mailSender *stubMailSender
 	// smsRegistry and smsSender are the sms seam stubs, nil when the run did not
 	// take the sms channel in.
 	smsRegistry *stubRegistry
@@ -484,6 +539,11 @@ func newRig(t *testing.T, configure func(*host)) *rig {
 		standIn("stand-in.localizer", local, (*i18n.Localizer)(nil)),
 		standIn("stand-in.bus", bus, (*event.Bus)(nil)),
 	)
+	var mailSender *stubMailSender
+	if h.mail {
+		mailSender = &stubMailSender{}
+		modules = append(modules, standIn("stand-in.mail", mailSender, (*mail.Sender)(nil)))
+	}
 	var smsRegistry *stubRegistry
 	var smsSender *stubSender
 	if h.sms {
@@ -526,7 +586,7 @@ func newRig(t *testing.T, configure func(*host)) *rig {
 
 	r := &rig{
 		t: t, queue: queue, prefs: prefs, inbox: inbox, local: local, bus: bus,
-		smsRegistry: smsRegistry, smsSender: smsSender,
+		mailSender: mailSender, smsRegistry: smsRegistry, smsSender: smsSender,
 	}
 
 	// The drive is held open for the whole case: the database module closes the

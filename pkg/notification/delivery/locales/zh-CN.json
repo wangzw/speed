@@ -1,4 +1,5 @@
 {
+  "notification.delivery.email-destination": "该派发未给出邮件收件地址。",
   "notification.delivery.sms-template": "该通知类型未声明短信模板。",
   "notification.delivery.sms-params": "短信参数缺失或无法字符串化。",
   "notification.delivery.sms-destination": "该派发未给出短信接收号码。"

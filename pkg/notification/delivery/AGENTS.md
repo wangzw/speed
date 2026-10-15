@@ -26,21 +26,37 @@ The dependencies the descriptor requires, non-optionally, are:
 | `(*notification.Inbox)(nil)` | the in-app channel writes through it. |
 | `(*i18n.Localizer)(nil)` | the message text is rendered through it. |
 
-The optional dependencies are `(*sms.Registry)(nil)` and `(*sms.Sender)(nil)`.
-Neither absence fails the startup, and sms is available only when **both** seams
-are present; a missing seam records a `skipped` row rather than a failure.
+The optional dependencies are `(*mail.Sender)(nil)`, `(*sms.Registry)(nil)` and
+`(*sms.Sender)(nil)`. No absence fails the startup: a channel is available
+exactly when the seams it sends through are present — email on the mail sender,
+sms only when **both** its seams are there — and a missing seam records a
+`skipped` row rather than a failure.
 
 The descriptor declares nothing else. It names no HTTP entry point — this module
 mounts no route, so declaring one would only carry `pkg/http` into a host's
 closure — and no event bus: the in-app row is announced by the module that wrote
 it, so this module publishes nothing on a bus and has none to reach.
 
-## Email is not available in this release
+## Email
 
-The mail capability is not in the tree yet, so this module references no mail
-sender seam at all: the `email` channel is always unavailable, exactly as an
-absent seam would be, and a delivery to it records a `skipped` row. The rest of
-the pipeline treats it like any other channel whose seam is missing.
+The `email` channel is delivered through `pkg/mail`'s `Sender`: the module
+renders the subject and the two bodies, assembles one `mail.Message` and hands it
+to `Send` once. Whether the channel can send is a matter of assembly, like every
+other seam: an assembly that delivered a carrier has it, and one that did not
+records a `skipped` row rather than a failure.
+
+**`Message.From` is left empty**, which takes the carrier's own configured
+default sender — this module names no sender and has nowhere to get one. **Each
+attempt builds its own `mail.Message` value**: a message carries its attachments
+as `io.Reader` values, so one value can be sent only once. This module attaches no
+file, so nothing here is spent, and the value is never carried across attempts
+either.
+
+**The email destination is a dispatch parameter**, the same `to` the sms channel
+reads: a recipient is an account identifier, and this module reaches no account
+store. A dispatch whose parameters name no `to`, or whose `to` cannot be
+stringified, fails that channel with `notification.ErrInvalidRequest` and this
+module's own reason, and the carrier is never reached.
 
 ## The two halves
 
@@ -104,13 +120,20 @@ settled channel twice, and only the channels that are not settled are made up.
 
 The message text is rendered in the backend, in the recipient's language
 (`Dispatch.Locale`), through `i18n.Localizer`. A part is keyed
-`<type_key>.<channel>.<part>` — `title` and `body` for `in_app`, `subject` and
-`body_text` for `email`, and a template identifier for `sms` — and belongs to the
-business module that **declares** the type, not to this module. This module owns
-only its own text: the reasons it writes into the ledger for the channels it
-judged itself, under `locales/`, one file per locale with the same key set. The
-parameter whitelist has already been enforced by the time text is rendered, so
-only the visible parameters enter the rendering context.
+`<type_key>.<channel>.<part>` — `title` and `body` for `in_app`; `subject`,
+`body_text` and an optional `body_html` for `email`; and a template identifier for
+`sms` — and belongs to the business module that **declares** the type, not to this
+module. This module owns only its own text: the reasons it writes into the ledger
+for the channels it judged itself, under `locales/`, one file per locale with the
+same key set. The parameter whitelist has already been enforced by the time text
+is rendered, so only the visible parameters enter the rendering context.
+
+A part the engine falls back to the key for is written out like any other: the
+key is text, and a missing catalog entry is not this module's to refuse. The two
+parts a client would not survive as a key are the exception, and they are written
+only when the catalog carries them — `link` for `in_app`, and `body_html` for
+`email`, which would otherwise put a key string into markup a mail client
+renders.
 
 Sms parameters are stringified before the vendor is reached: a string as it is,
 an integer or a boolean in its text, a time in RFC 3339. A parameter that is
@@ -118,12 +141,13 @@ missing, empty or cannot be stringified fails the channel with
 `notification.ErrInvalidRequest` — no empty string and no placeholder goes onto
 the wire.
 
-**The sms destination is a dispatch parameter.** The design fixes no source for
-`sms.Message.To`, and this module reaches no account store: a recipient is an
-account identifier, not a phone number. The number therefore travels in the
-dispatch's parameters under `destinationParam` — the constant `"to"`, declared
-in `render.go` — as an E.164 number. A dispatch whose parameters name no `to`, or
-whose `to` cannot be stringified, **fails that channel** with
+**An external channel's destination is a dispatch parameter.** The design fixes
+no source for it, and this module reaches no account store: a recipient is an
+account identifier, not a phone number and not an address. The destination
+therefore travels in the dispatch's parameters under `destinationParam` — the
+constant `"to"`, declared in `render.go` — as an E.164 number for `sms` and an
+RFC 5322 address for `email`. A dispatch whose parameters name no `to`, or whose
+`to` cannot be stringified, **fails that channel** with
 `notification.ErrInvalidRequest`, recorded as a `failed` row with this module's
 own reason, and the message never reaches the vendor. `to` is not exempt from
 the type's `RecipientVisibleParams` whitelist: a type that declares one and does
@@ -131,8 +155,8 @@ not list `to` refuses the dispatch before the channel is reached.
 
 ## Sentinels
 
-Every refusal uses a sentinel of the `pkg/notification` root package, and callers
-tell them apart with `errors.Is`:
+Every refusal this module makes uses a sentinel of the `pkg/notification` root
+package, and callers tell them apart with `errors.Is`:
 
 | Sentinel | When |
 |---|---|
@@ -143,6 +167,12 @@ tell them apart with `errors.Is`:
 
 A channel whose seam is absent is **not** an error: it records `skipped` and does
 not enter the joined error.
+
+A vendor's own failure is not one of the sentinels above. It reaches the joined
+error as its own package wrote it — `mail.ErrThrottled`, `mail.ErrRejected` and
+`mail.ErrUncertain` from `pkg/mail`, the sms sentinels from `pkg/sms` — and every
+one of them lands the channel at `failed`. The retry a `failed` row invites is the
+job's, not this module's: one handler call reaches each channel once.
 
 ## Configuration
 

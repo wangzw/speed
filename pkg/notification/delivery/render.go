@@ -8,6 +8,7 @@ import (
 	"time"
 
 	"github.com/vislake/speed/pkg/i18n"
+	"github.com/vislake/speed/pkg/mail"
 	"github.com/vislake/speed/pkg/notification"
 )
 
@@ -20,16 +21,17 @@ const (
 	partBody     = "body"
 	partSubject  = "subject"
 	partBodyText = "body_text"
+	partBodyHTML = "body_html"
 	partLink     = "link"
 	partTemplate = "template"
 )
 
-// destinationParam is the parameter a dispatch carries the sms destination in,
-// as an E.164 phone number. The design does not say where the destination comes
-// from — a recipient is an account identifier, and this module reaches no
-// account store — so the number travels in the dispatch's parameters under this
-// name; a dispatch that names none fails its sms channel without reaching the
-// vendor.
+// destinationParam is the parameter a dispatch carries an external channel's
+// destination in: an E.164 phone number for sms, an RFC 5322 address for email.
+// Where the destination comes from is not the design's to say — a recipient is an
+// account identifier, and this module reaches no account store — so it travels in
+// the dispatch's parameters under this name; a dispatch that names none fails
+// that channel without reaching the vendor.
 const destinationParam = "to"
 
 // contentKey builds the catalog key one part of one channel's text is carried
@@ -55,6 +57,34 @@ func (p *pipeline) message(ctx context.Context, d notification.Dispatch, spec no
 	}
 	if link := p.localizer.Localize(rctx, linkKey, args); link != string(linkKey) {
 		msg.Link = link
+	}
+	return msg
+}
+
+// emailMessage renders one email for a dispatch, in the recipient's language.
+// The subject and the plain-text body are rendered from the declaring module's
+// catalog; the HTML body is written only when the catalog carries one, so an
+// absent entry leaves the message with its plain-text body rather than putting a
+// key string into a field a client renders as markup.
+//
+// From is left empty: an empty Message.From takes the carrier's own configured
+// default sender, and this module names no sender of its own. Each attempt builds
+// its own value — a mail.Message can be sent only once, because its attachments
+// are readers — and this module attaches no file, so nothing here is spent.
+func (p *pipeline) emailMessage(ctx context.Context, d notification.Dispatch, spec notification.TypeSpec, to, dedupeID string) mail.Message {
+	rctx := i18n.WithLocale(ctx, i18n.Locale(d.Locale))
+	args := renderArgs(d.Params)
+	htmlKey := contentKey(spec.Key, notification.ChannelEmail, partBodyHTML)
+	msg := mail.Message{
+		To: []string{to},
+		Subject: p.localizer.Localize(rctx,
+			contentKey(spec.Key, notification.ChannelEmail, partSubject), args),
+		Text: p.localizer.Localize(rctx,
+			contentKey(spec.Key, notification.ChannelEmail, partBodyText), args),
+		DedupeID: dedupeID,
+	}
+	if html := p.localizer.Localize(rctx, htmlKey, args); html != string(htmlKey) {
+		msg.HTML = html
 	}
 	return msg
 }
@@ -179,16 +209,17 @@ func stringify(v any) (string, error) {
 	}
 }
 
-// destination reads the sms destination out of a dispatch's parameters.
+// destination reads an external channel's destination out of a dispatch's
+// parameters.
 func destination(params map[string]any) (string, error) {
 	value, ok := params[destinationParam]
 	if !ok {
-		return "", fmt.Errorf("%w: the dispatch names no sms destination under %q",
+		return "", fmt.Errorf("%w: the dispatch names no destination under %q",
 			notification.ErrInvalidRequest, destinationParam)
 	}
 	to, err := stringify(value)
 	if err != nil {
-		return "", fmt.Errorf("%w: the sms destination: %w", notification.ErrInvalidRequest, err)
+		return "", fmt.Errorf("%w: the destination: %w", notification.ErrInvalidRequest, err)
 	}
 	return to, nil
 }

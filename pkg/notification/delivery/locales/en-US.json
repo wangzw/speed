@@ -1,4 +1,5 @@
 {
+  "notification.delivery.email-destination": "The dispatch names no email destination.",
   "notification.delivery.sms-template": "The notification type declares no sms template.",
   "notification.delivery.sms-params": "The sms parameters are missing or cannot be stringified.",
   "notification.delivery.sms-destination": "The dispatch names no sms destination."

@@ -104,11 +104,7 @@ func (p *pipeline) send(ctx context.Context, d notification.Dispatch, spec notif
 	case notification.ChannelInApp:
 		return p.sendInApp(ctx, d, spec, row)
 	case notification.ChannelEmail:
-		// The mail capability is not in the tree this release, so this module
-		// references no mail seam and the email channel is always unavailable —
-		// the same shape as an assembly that simply did not deliver one.
-		row.Status = statusSkipped
-		return row, nil
+		return p.sendEmail(ctx, d, spec, row)
 	case notification.ChannelSMS:
 		return p.sendSMS(ctx, d, spec, row)
 	default:
@@ -131,6 +127,35 @@ func (p *pipeline) sendInApp(ctx context.Context, d notification.Dispatch, spec 
 		return row, fmt.Errorf("%s: writing the in-app message of %q: %w", ModuleName, d.TypeKey, err)
 	}
 	row.Status = statusSucceeded
+	return row, nil
+}
+
+// sendEmail sends one email when the mail seam is present. A missing seam skips
+// the channel; a dispatch that names no destination is this module's own failure,
+// recorded with this module's own reason and never reaching the carrier.
+//
+// Every error a carrier answers with is one terminal failure of the channel: the
+// mail sentinels tell a throttled call, a refusal and an uncertain outcome apart,
+// and all three are the same thing here — this module retries none of them
+// itself, and the retry is the job's.
+func (p *pipeline) sendEmail(ctx context.Context, d notification.Dispatch, spec notification.TypeSpec, row sendRow) (sendRow, error) {
+	if !p.seams.emailReady() {
+		row.Status = statusSkipped
+		return row, nil
+	}
+	to, err := destination(d.Params)
+	if err != nil {
+		return p.localFailure(ctx, row, "notification.delivery.email-destination", err)
+	}
+	msg := p.emailMessage(ctx, d, spec, to, row.IdempotencyKey)
+	receipt, err := p.seams.mailer.Send(ctx, msg)
+	if err != nil {
+		row.Status = statusFailed
+		row.Error = textPtr(err.Error())
+		return row, fmt.Errorf("%s: sending the email of %q: %w", ModuleName, d.TypeKey, err)
+	}
+	row.Status = statusSucceeded
+	row.ProviderReceiptID = textPtr(receipt.ProviderID)
 	return row, nil
 }
 
