@@ -55,7 +55,7 @@ var ErrOtherDatabase error // 事务不在交付的连接池上
 
 **标识与载荷在暂存时定下。** `ID` 为空时，`Stage` 以 `event.NewID` 的形式赋予一个；非空时原样携带。每个订阅者收到的都是这个标识，重发时也不变；要把它与自己的写入记在一起的调用方先设好它。载荷在暂存时序列化，不可序列化的载荷与 `Publish` 一样被拒绝。
 
-**追踪上下文也在暂存时定下。** 实现子包 `pkg/event/outbox/relay` 取用遥测模块的传播器（`observability.Propagator()`），`Stage` 用它从 `tx` 的上下文取出当时的跨度上下文，写进 `evt` 的行；中继发布时把它还原到事件上，`Publish` 因而不改动它。订阅者的跨度以那次写入所在跨度为父，不是以中继的跨度为父——宣告与写入挂在同一条追踪上，即使发布晚于提交若干秒（[ADR-event-tracing-2026-10-15](../../../adr/adr-event-tracing-2026-10-15.md)）。
+**追踪上下文也在暂存时定下。** 实现子包 `pkg/event/outbox/relay` 经本模块内部的 `pkg/event/internal/tracing` 取用遥测模块的传播器（`observability.Propagator()`），`Stage` 用它从 `tx` 的上下文取出当时的跨度上下文，写进 `evt` 的行；中继发布时把它还原到事件上，`Publish` 因而不改动它。订阅者的跨度以那次写入所在跨度为父，不是以中继的跨度为父——宣告与写入挂在同一条追踪上，即使发布晚于提交若干秒（[ADR-event-tracing-2026-10-15](../../../adr/adr-event-tracing-2026-10-15.md)）。
 
 **写行失败时返回的错误包着数据库的错误。** 表不在、权限不够、事务已经失败，都由数据库的错误报出，错误链完好；PostgreSQL 上这之后事务提交不了，调用方回滚，写入与宣告都不发生。
 
@@ -90,7 +90,8 @@ var ErrOtherDatabase error // 事务不在交付的连接池上
 | `pkg/event` | 总线功能、事件类型、标识的形式 |
 | `pkg/event/internal/dispatch` | 标识的赋予、载荷解码成传输形状，与各总线实现共用一处 |
 | `pkg/log` | 可选依赖。中继要报告的事——总线拒收、读表失败——写进装配的日志；装配里没有日志功能时，写日志模块的进程默认记录器 |
-| `pkg/observability` | 传播器：实现子包在 `Stage` 里用它把写入事务所在跨度的追踪上下文写进暂存行（`observability.Propagator()`） |
+| `pkg/event/internal/tracing` | 本模块触及遥测类型的唯一之处：实现子包从它取传播器，span 也经它起 |
+| `pkg/observability` | 传播器与 tracer provider 的来源（`observability.Propagator()`）：经 `pkg/event/internal/tracing` 取用，实现子包在 `Stage` 里用传播器把写入事务所在跨度的追踪上下文写进暂存行 |
 | `pkg/core` | 注册描述符、交付功能 |
 | GORM | 接口面上的 `*gorm.DB` |
 

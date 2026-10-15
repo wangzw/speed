@@ -388,7 +388,7 @@ flowchart LR
 | 标识级与账户级失败退避、`valid_after`、账户停用的跨模块清理 | 已实现 | `pkg/authn/account/throttle.go`；`pkg/authn/account/lifecycle.go`；`pkg/authn/session/lifecycle.go`；`pkg/authn/mfa/manage.go` |
 | 登录会话、cookie 与 CSRF 的对策 | 已实现 | `pkg/authn/session/sessions.go`、`pkg/authn/session/verify.go`；`pkg/authn/session/config.go`；`pkg/authn/internal/mount/wrap.go` `Wrap` |
 | 访问令牌、刷新令牌轮换与重用检测、签名密钥轮换 | 已实现 | `pkg/authn/token/verify.go` `Verify`、`Accepts`；`pkg/authn/token/refresh.go` `Refresh`、`rotate`、`revokeFamily`；`pkg/authn/token/keys.go` `loadKeySet`、`GenerateKey`；`pkg/authn/token/jwks.go` `JWKS` |
-| 登录流程绑定、`state`、PKCE、`nonce`、`return_to` 校验 | 已实现 | `pkg/authn/login/flow.go`、`pkg/authn/login/engine.go`、`pkg/authn/login/callback.go`；`pkg/authn/login/google`、`github`、`internal/wechat`；`pkg/authn/sso/oidc` 各自的 `state.go` |
+| 登录流程绑定、`state`、PKCE、`nonce`、`return_to` 校验 | 已实现 | `pkg/authn/login/flow.go`、`pkg/authn/login/engine.go`、`pkg/authn/login/callback.go`；`pkg/authn/login/google/method.go` 与 `pkg/authn/login/github/github.go` 各自的 state 与 PKCE 编解码；`pkg/authn/login/internal/wechat`、`pkg/authn/sso/oidc` 各自的 `state.go` |
 | 多因素的保障等级合成与账户安全类操作的因素门槛 | 已实现 | `pkg/authn/mfa/policy.go` `Assurance`、`Require`；`pkg/authn/mfa/routes.go`；`pkg/authn/mfa/totp`、`pkg/authn/mfa/sms`、`pkg/authn/mfa/webauthn`；`pkg/authn/guard/guard.go` |
 | 短信的预算、抑制行与号码前缀白名单 | 已实现 | `pkg/authn/sms/send.go`、`verify.go`、`register.go`；`pkg/authn/sms/settings.go` |
 | 企业 SSO 的断言补充校验、SHA-1 预扫描与受限出站客户端 | 已实现 | `pkg/authn/sso/saml/assertion.go`、`pkg/authn/sso/saml/sha1.go`；`pkg/authn/internal/egress/egress.go` `New` |
