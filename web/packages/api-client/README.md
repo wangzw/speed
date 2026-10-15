@@ -330,14 +330,13 @@ function useAppChrome(clientApi: RequestFn): AppChrome {
   through the bound request function). `usePublicConfig`/`useFeature`
   live at `@speed/api-client/react` (Config hooks section above). The
   runtime first consumer is real and lives in the reference app's
-  consumer shell (`examples/reference-app/web`, an external member of
-  the web workspace, never versioned): its bootstrap binds one real
+  consumer shell: its bootstrap binds one real
   `createClient` over the environment's own fetch into the api-sdk
   seam, and its home view reads the server's effective Public values
   and feature flags through `usePublicConfig`/`useFeature` on that same
   bound client -- the shape a `requiredFeature`-style consumer needs.
   The browser page leg ships too: the app's e2e suite
-  (`examples/reference-app/web/e2e`) drives that composed shell in a
+  drives that composed shell in a
   real browser against a real, freshly booted server (its
   `@deployment` gates additionally against a deployed, server-served
   page via `E2E_BASE_URL`).

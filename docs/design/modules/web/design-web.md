@@ -73,7 +73,7 @@ interface SpeedAppDefinition {
 
 ### 契约生成的两级形态
 
-平台契约生成发布的 `@speed/api-sdk`：它由后端模块的 OpenAPI 片段合并后经 orval 生成（`web/orval.config.ts`），被多个包 import，因此只含平台端点。应用自己的契约在应用内另生成一份（先例 `examples/reference-app/web/src/app-api/`）：应用自己的合并契约经第二份 orval 配置生成到应用内（[ADR-web-two-build-artifacts-2026-10-15](../../../adr/adr-web-two-build-artifacts-2026-10-15.md)）。两级都经 `api-sdk` 的 runtime 接缝发请求，没有一处生成码或桥接码自己做 HTTP。
+平台契约生成发布的 `@speed/api-sdk`：它由后端模块的 OpenAPI 片段合并后经 orval 生成（`web/orval.config.ts`），被多个包 import，因此只含平台端点。应用自己的契约在应用内另生成一份：应用自己的合并契约经第二份 orval 配置生成到应用内（[ADR-web-two-build-artifacts-2026-10-15](../../../adr/adr-web-two-build-artifacts-2026-10-15.md)）。两级都经 `api-sdk` 的 runtime 接缝发请求，没有一处生成码或桥接码自己做 HTTP。
 
 ### 运行期的 API origin 注入
 

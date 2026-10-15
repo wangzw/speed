@@ -111,7 +111,7 @@ flowchart LR
 - 网关与路由挂载分属 `authn.gate` 与 `authn.mount`，各自成模块；`authn.mount` 交付内部的 `mount.Mounter`，经网关的公开登记面成对登记路由与访问级别。预置自己 `Gate` 替身的宿主因此只需实现 `Gate`。
 - 挂路由的模块一律经 `mount.Mounter` 挂路由，不自行向入口登记。
 
-**排他与并立。** 判据是该功能是否「必须恰有一个」：必须恰有一个的功能由提供方声明排他，由消解保证唯一；可以多个并存的功能一律非排他，每个提供方各为一个模块，`Exclusive` 一律留空。哪些功能属于哪一类、每个模块交付什么，由 [design-authn](../design/modules/authn/design-authn.md) 的模块清单承载。
+**排他与并立。** 判据是该功能是否「必须恰有一个」：必须恰有一个的功能由提供方声明排他，由消解保证唯一；可以多个并存的功能一律非排他，每个提供方各为一个模块，`Exclusive` 一律留空。哪些功能属于哪一类、每个模块交付什么，由 design-authn 的模块清单承载。
 
 - 每个模块必须声明 `Prepare`，且只表态 `StateEnabled`，不得为 `StateAuto`：是否运行是命令树上的决定，不是配置能推断的结论。
 - 每个模块的配置与设置命名空间取模块名；两个模块不声明同一输入项路径，也不让一个路径同时是某模块的叶子与另一个模块的内部节点。
@@ -125,7 +125,7 @@ flowchart LR
 
 **表的归属。**
 
-- 表归声明它的模块，各表的归属见 [design-authn](../design/modules/authn/design-authn.md) 的模块清单。账户存储住 `authn/account`，经 `pkg/db` 读写；其他 authn 子包与授权模块只经根包的能力接口读写账户，拿不到 `*gorm.DB`。
+- 表归声明它的模块，各表的归属见 design-authn 的模块清单。账户存储住 `authn/account`，经 `pkg/db` 读写；其他 authn 子包与授权模块只经根包的能力接口读写账户，拿不到 `*gorm.DB`。
 - 每个模块只在自己的事务里写自己的表。账户停用与删除之后别的模块的清理不写进账户的事务（[ADR-authn-account-lifecycle-2026-10-10](adr-authn-account-lifecycle-2026-10-10.md)）。
 - 带表的模块各带自己的迁移集；施加迁移的命令要把它们静态级纳入。
 

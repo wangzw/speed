@@ -2,7 +2,7 @@
 
 ## 职责
 
-`ops` 是进程的运行面：把探针路由与一份合并后的 API 规格挂到配置点名的监听端上。它不交付任何功能——描述符里没有 `Provides`，它成为一个模块靠的是生命周期回调与它自己声明的 `speedhttp.Spec` 资源（照 `examples/crm-host/ops.go` 的 `opsModule`）。
+`ops` 是进程的运行面：把探针路由与一份合并后的 API 规格挂到配置点名的监听端上。它不交付任何功能——描述符里没有 `Provides`，它成为一个模块靠的是生命周期回调与它自己声明的 `speedhttp.Spec` 资源。
 
 路由是 `GET /health`、`GET /ready`、`GET /openapi.json`：`/health` 答进程存活，`/ready` 答进程可否服务，`/openapi.json` 答这个二进制提供哪些 API。它们挂在**不设防的端**上——探针不带凭据、不指名租户，因而不经过认证、租户解析或授权层，本模块也不在 handler 内判定权限。
 
@@ -23,7 +23,7 @@
 本模块不 `Provides` 任何功能。它登记为一个模块，靠的是描述符里的名称与各阶段回调，以及它自己声明的 `speedhttp.Spec` 资源；描述符的形状由 [core](design-core.md) 定义。
 
 ```go
-// 描述符形状，照 examples/crm-host/ops.go 的 opsModule。
+// 描述符形状。
 core.Module{
     Name: "ops",
     Requires: []core.Requirement{
@@ -183,7 +183,7 @@ sequenceDiagram
 
 ### 合并与冲突
 
-合并逐份读片段：一份 `Spec.Document` 解成 `fragment`，它声明的每个 `path` 与 `method` 并进文档，`components` 按段与名字并进文档。语义自 `examples/crm-host/ops.go` 的 `mergeSpecs` 迁移。
+合并逐份读片段：一份 `Spec.Document` 解成 `fragment`，它声明的每个 `path` 与 `method` 并进文档，`components` 按段与名字并进文档。
 
 **冲突即启动失败，点名的对象是来源**（[ADR-ops-spec-reader-2026-10-15](../../adr/adr-ops-spec-reader-2026-10-15.md)）：
 

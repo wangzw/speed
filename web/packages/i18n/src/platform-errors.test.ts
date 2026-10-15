@@ -1,17 +1,10 @@
 /**
  * Platform error bundle tests: registration and its refusals, the
- * fallback-namespace wiring, and the two properties the bundle exists to
- * hold -- every bundled key is an apperr code the census contains, and
- * backend-only content (an invitation email, a notification template, an
- * SMS body) is unreachable as error copy. The census side is read from
- * the committed machine-readable index (docs/error-codes.json), the
- * generator's own twin, so the membership assertion runs on every web
- * PR rather than only in the docs pipeline.
+ * fallback-namespace wiring, and the property the bundle exists to hold
+ * -- backend-only content (an invitation email, a notification template,
+ * an SMS body) is unreachable as error copy.
  */
 
-import { readFileSync } from 'node:fs'
-import { dirname, join } from 'node:path'
-import { fileURLToPath } from 'node:url'
 import { createInstance } from 'i18next'
 import { describe, expect, it, vi } from 'vitest'
 import { createI18n, type MissingKeyDetails } from './index'
@@ -20,8 +13,6 @@ import { MemoryStorage } from '../test-utils/memory-storage'
 import { registerWelcome } from '../test-utils/welcome'
 import bundleZh from './platform-errors/locales/zh-CN.json' with { type: 'json' }
 import bundleEn from './platform-errors/locales/en-US.json' with { type: 'json' }
-
-const REPO_ROOT = join(dirname(fileURLToPath(import.meta.url)), '..', '..', '..', '..')
 
 type Bundle = { readonly errors: Record<string, string> }
 const zhBundle = bundleZh as unknown as Bundle
@@ -113,16 +104,6 @@ describe('the bundle contents', () => {
       expect(instance.t(`welcome:errors.${id}`)).toBe(`errors.${id}`)
     }
     expect(onMissingKey).toHaveBeenCalledTimes(contentIds.length)
-  })
-
-  it('ships only codes the apperr census contains', () => {
-    const census = JSON.parse(
-      readFileSync(join(REPO_ROOT, 'docs', 'error-codes.json'), 'utf8'),
-    ) as { rows: { code: string }[] }
-    const censusCodes = new Set(census.rows.map((row) => row.code))
-    for (const code of Object.keys(enBundle.errors)) {
-      expect(censusCodes.has(code), code).toBe(true)
-    }
   })
 
   it('carries i18next placeholders, with no Go template syntax left over', () => {

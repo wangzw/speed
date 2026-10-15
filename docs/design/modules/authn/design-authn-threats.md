@@ -397,4 +397,4 @@ flowchart LR
 | 租户准入层 `tenant.admission` | 已实现 | `pkg/tenant/admission/admission.go` `Module`；`pkg/tenant/admission/decide.go` `decide`；`pkg/tenant/capabilities.go` `Admission` |
 | 放宽方向的设置变更订阅与 `authn.*` 设置写权限的硬要求 | 已实现 | `pkg/authn/account/relax.go`；`pkg/authn/{sms,session,token,static,login,mfa,sso,impersonation}/relax.go`；`pkg/tenant/admission/relax.go`；`pkg/authn/AGENTS.md` |
 | `pkg/go.mod` 对 go-jose 与 goxmldsig 的版本下限 | 已实现 | `pkg/go.mod` `github.com/go-jose/go-jose/v4` v4.1.5、`github.com/russellhaering/goxmldsig` v1.6.1；`pkg/authn/deps_test.go` `goJoseFloor`、`goxmldsigFloor` |
-| 链上次序的装配测试 | 已实现 | `pkg/tenant/admission/assembly_test.go`；`pkg/tenant/admission/live_test.go`；`examples/crm-host/e2e_test.go` `TestTheAdmissionLayerSitsInsideTheJournalAndTheLimiter` |
+| 链上次序的装配测试 | 已实现 | `pkg/tenant/admission/assembly_test.go`；`pkg/tenant/admission/live_test.go` |

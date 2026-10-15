@@ -2,11 +2,13 @@
 """Toolchain drift gate for the root .mise.toml.
 
 The developer toolchain is pinned with mise; the root .mise.toml carries
-the versions. One of those versions is a MIRROR of an authoritative
+the versions. Some of those versions are MIRRORS of an authoritative
 source elsewhere in the repository -- the file a tool of its own already
-reads -- and this gate fails when the mirror drifts from its source:
+reads -- and this gate fails when a mirror drifts from its source:
 
   go            go.work's `go` directive
+  node          web/.nvmrc
+  pnpm          web/package.json's `packageManager`
 
 The other tools .mise.toml pins are pinned there and nowhere else, so
 they have no source to drift from and this gate does not check them.
@@ -24,6 +26,7 @@ report are relative to --root.
 from __future__ import annotations
 
 import argparse
+import json
 import os
 import re
 import sys
@@ -71,10 +74,47 @@ def _read_go_version(root: str) -> str:
     return m.group(1)
 
 
+def _read_nvmrc_node_version(root: str) -> str:
+    path = os.path.join(root, "web", ".nvmrc")
+    try:
+        with open(path, encoding="utf-8") as fh:
+            text = fh.read()
+    except FileNotFoundError:
+        _infra(f"error: {path} is missing -- the source of the node pin")
+    # .nvmrc holds a bare version, with or without a leading `v`; mise's pin
+    # carries neither, so trim the surrounding whitespace and that prefix.
+    version = text.strip().removeprefix("v")
+    if not version:
+        _infra(f"error: {path} is empty -- the source of the node pin")
+    return version
+
+
+def _read_package_manager_pnpm_version(root: str) -> str:
+    path = os.path.join(root, "web", "package.json")
+    try:
+        with open(path, encoding="utf-8") as fh:
+            data = json.load(fh)
+    except FileNotFoundError:
+        _infra(f"error: {path} is missing -- the source of the pnpm pin")
+    except json.JSONDecodeError as exc:
+        _infra(f"error: {path} is not parsable JSON: {exc}")
+    manager = data.get("packageManager")
+    if not isinstance(manager, str) or not manager:
+        _infra(f"error: no 'packageManager' field in {path}")
+    name, _, version = manager.partition("@")
+    if name != "pnpm" or not version:
+        _infra(f"error: {path}'s packageManager is {manager!r}, not 'pnpm@<version>'")
+    # corepack allows a trailing `+<hash>` on the version; the pin carries
+    # the plain version only.
+    return version.split("+", 1)[0]
+
+
 # Tools .mise.toml mirrors, with the authoritative source each one mirrors
 # and the name the report calls that source.
 SOURCES = [
     ("go", _read_go_version, "go.work's go directive"),
+    ("node", _read_nvmrc_node_version, "web/.nvmrc"),
+    ("pnpm", _read_package_manager_pnpm_version, "web/package.json's packageManager"),
 ]
 
 
@@ -82,7 +122,8 @@ def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(
         description=(
             "Fail when a version pinned in the root .mise.toml no longer "
-            "mirrors its authoritative source (go.work)."
+            "mirrors its authoritative source (go.work, web/.nvmrc, "
+            "web/package.json)."
         )
     )
     parser.add_argument(

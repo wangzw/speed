@@ -19,8 +19,7 @@ import { describe, expect, it } from 'vitest'
 import { summarizeUserAgent } from './ua-summary.js'
 
 /** Substrings that only ever appear in a raw User-Agent string -- the
- * e2e gate's own vocabulary (examples/reference-app/web/e2e/
- * sessions-are-distinguishable.spec.ts), mirrored here so the unit tier
+ * e2e gate's own vocabulary, mirrored here so the unit tier
  * holds the same line as the browser tier. */
 const MACHINE_STRINGS = ['Mozilla/', 'AppleWebKit', 'Gecko', 'curl/', 'Safari/']
 

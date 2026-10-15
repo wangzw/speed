@@ -66,7 +66,7 @@ authn 只提供冗余因素，其余一律由运维处理。
 
 ## 决策
 
-采纳多条找回途径，不含恢复码，不提供短信或邮箱找回。判据如下。具体路由、动作名、请求与响应形状、发起者要求、审计写失败时的行为写在设计文档 [design-authn-mfa](../design/modules/authn/design-authn-mfa.md) 与 [design-authn-admin](../design/modules/authn/design-authn-admin.md)，发起者要求的判据见 [ADR-authn-mfa-2026-10-10](adr-authn-mfa-2026-10-10.md)。
+采纳多条找回途径，不含恢复码，不提供短信或邮箱找回。判据如下。具体路由、动作名、请求与响应形状、发起者要求、审计写失败时的行为写在设计文档 design-authn-mfa 与 design-authn-admin，发起者要求的判据见 [ADR-authn-mfa-2026-10-10](adr-authn-mfa-2026-10-10.md)。
 
 **找回途径是封闭集：多因素冗余、管理员重置因素、管理员重置口令、运维接口。** 各条依赖的外部判断不同。
 

@@ -76,7 +76,7 @@ and `src/` must keep passing it on every regeneration.
 ## What ships vs. what is deferred
 
 The generated surface over the merged document (`src/index.ts` --
-orval input is `contracts/api.yaml`, the demo host's `gen` command
+orval input is `contracts/api.json`, the demo host's `gen` command
 merging the OpenAPI fragments the platform modules declare -- each
 module's `http.Spec` resource, through `pkg/ops/openapi.Merge` -- every
 platform module with an HTTP fragment is a merge member; a consuming
@@ -91,7 +91,7 @@ so a spec change whose regenerated surface outgrows auth-core's calls
 fails that package's typecheck.
 
 The browser page is a real consumer at its own tier: the reference
-app's e2e suite (`examples/reference-app/web/e2e`) drives the composed
+app's e2e suite drives the composed
 shell -- every platform operation through this package's generated
 surface over the bound client -- in a real browser against a real,
 freshly booted server, and its `@deployment` gates drive a deployed,

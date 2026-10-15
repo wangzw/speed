@@ -43,19 +43,21 @@ toolchain they need comes from `mise install`, which reads `.mise.toml`.
 |---|---|
 | `go.work` | The module roster. Adding a module here registers it everywhere. |
 | `pkg/` | The implementation: one Go module. Each top-level directory under it is a capability directory, and each carries its own `AGENTS.md`. The shared units and their test fixtures live under `pkg/internal/`, each shared unit with an `AGENTS.md` of its own. |
-| `examples/` | Hosts that assemble the modules into a running program. |
+| `starters/` | Runnable, copyable product skeletons that assemble the modules into a running program; `starters/demo` is the starting point. |
+| `web/` | The frontend package library: the platform's deliverable npm packages, a pnpm workspace of its own. |
+| `web-legacy/` | The earlier implementation's frontend package library, kept whole as read-only history. |
 | `docs/design`, `docs/adr`, `docs/glossary.md` | The design authority. Chinese, per the language rule above. |
 | `tools/` | Repository self-checks. `tools/README.md` says what each one does. |
 | `Makefile`, `.mise.toml`, `.golangci.yml`, `.github/workflows/` | The engineering machinery: entry points, toolchain pins, lint configuration, CI. |
 | `.claude/skills/` | How the work is done. Each handbook's own description says what it covers; the ones that apply here are at the bottom of this file. |
-| `go/`, `web/`, `examples/reference-app`, `docs/internal/`, `docs/site/` | An earlier implementation and its documentation. Nothing `make check` runs builds or checks them: every leg of it is scoped to the modules `go.work` lists. |
+| `go/`, `docs/internal/`, `docs/site/` | An earlier implementation and its documentation. Nothing `make check` runs builds or checks them: every leg of it is scoped to the modules `go.work` lists. |
 
-**`go/`, `docs/internal/` and `docs/site/` are legacy and out of scope by default.** They belong to the earlier implementation this repository is superseding — do not read, edit or reason about them for ordinary work here, and do not extend the language rule, the boundaries below, or `docs/design`/`docs/adr` authority to them. `docs/site/` was generated from that implementation and describes an assembly API this repository no longer has, so it is not a second opinion on anything `docs/design` settles. A task explicitly scoped to `go/` follows `backend-coding-standards` instead of this file; one scoped to `docs/internal/` or `docs/site/` follows whatever that legacy tree's own convention is, not `document-standards`. `web/` and `examples/reference-app` are the same earlier implementation but keep their own skill (`frontend-coding-standards`) rather than being called out again here.
+**`go/`, `web-legacy/`, `docs/internal/` and `docs/site/` are legacy and out of scope by default.** They belong to the earlier implementation this repository is superseding — do not read, edit or reason about them for ordinary work here, and do not extend the language rule, the boundaries below, or `docs/design`/`docs/adr` authority to them. `docs/site/` was generated from that implementation and describes an assembly API this repository no longer has, so it is not a second opinion on anything `docs/design` settles. A task explicitly scoped to `go/` follows `backend-coding-standards` instead of this file; one scoped to `docs/internal/` or `docs/site/` follows whatever that legacy tree's own convention is, not `document-standards`; `web-legacy/` is the earlier implementation's frontend and keeps its own skill (`frontend-coding-standards`) rather than being called out again here.
 
 ## Boundaries
 
 - **New code goes under `pkg/`; a program that assembles modules goes
-  under `examples/`.** The `pkg` module owns its `go.mod`; each
+  under `starters/`.** The `pkg` module owns its `go.mod`; each
   capability directory owns its `AGENTS.md` and its tests, and each
   shared unit under `pkg/internal/` owns its `AGENTS.md`.
 - **Read the design before changing a public signature.** The design
@@ -83,4 +85,4 @@ toolchain they need comes from `mise install`, which reads `.mise.toml`.
 | `docs/adr` | Why it is that way: one decision per file, alternatives included. |
 | `docs/glossary.md` | The shared vocabulary. A term used in a design document means what this file says it means. |
 | `<module>/AGENTS.md` | The module's own contract: its boundaries and how to run it. |
-| `.claude/skills/` | For work under `pkg/` and `examples/`: `document-standards` before writing under the documentation paths, `commit-convention` for the commit message. |
+| `.claude/skills/` | For work under `pkg/` and `starters/`: `document-standards` before writing under the documentation paths, `commit-convention` for the commit message. |

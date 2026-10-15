@@ -74,17 +74,17 @@ SMSCodes 排他持有挑战状态机，`sms.Sender` 作排他的可插拔发送�
 采纳：短信验证码的全部状态归 `authn.sms` 引擎，发送归可插拔的厂商适配模块；所有预算按同一条计数路径得出，已登记与未登记号码不可区分。
 
 - **能力归属。** `SMSCodes` 由 `authn.sms` 排他交付，持有挑战的全部状态机：写挑战行、预算、尝试次数、消费、入队与发送；验证码明文从不离开引擎。`login.sms` 与 `mfa.sms` 是 `SMSCodes` 的使用方，不持有挑战状态。`sms.Sender` 由 `pkg/sms` 下的载体叶子包（`sms.aliyun`、`sms.tencent`）排他交付，宿主在命令树上选定一个。
-- **验证码的存放与校验。** 挑战行只存带密钥摘要，摘要的密钥由 db 根密钥派生；缺根密钥时启动失败，不降级为无密钥摘要。校验以尝试次数的条件递增与一次性消费为准，失败统一返回 `ErrInvalidCredentials`，不区分成因。计算与校验的步骤见 [design-authn-sms](../design/modules/authn/design-authn-sms.md)。
+- **验证码的存放与校验。** 挑战行只存带密钥摘要，摘要的密钥由 db 根密钥派生；缺根密钥时启动失败，不降级为无密钥摘要。校验以尝试次数的条件递增与一次性消费为准，失败统一返回 `ErrInvalidCredentials`，不区分成因。计算与校验的步骤见 design-authn-sms。
 - **重发。** 重发写新挑战行并作废旧行，**不清零失败计数**；手机号维度（`ScopePhone`）的退避键与登录共用同一套退避，不因重发重置。
-- **发送语义。** 发送交给有界工作池，`Send` 立即返回，响应时间与厂商延迟无关。`sms.Sender` 的失败只归入 [design-authn-failure](../design/modules/authn/design-authn-failure.md) 登记的发送哨兵。发送后不知是否送达的哨兵当作已发送，**不盲目重发**，用户重新请求时才再发，且计入预算。适配器从不自行重试。
-- **预算的判据。** 预算全由 `authn_challenges` 的行数得出，已登记与未登记的号码走同一条计数路径。预算维度、取值与配置键由 [design-authn-sms](../design/modules/authn/design-authn-sms.md) 与 [design-authn-config](../design/modules/authn/design-authn-config.md) 给全，本记录不复述。判据如下：
+- **发送语义。** 发送交给有界工作池，`Send` 立即返回，响应时间与厂商延迟无关。`sms.Sender` 的失败只归入 design-authn-failure 登记的发送哨兵。发送后不知是否送达的哨兵当作已发送，**不盲目重发**，用户重新请求时才再发，且计入预算。适配器从不自行重试。
+- **预算的判据。** 预算全由 `authn_challenges` 的行数得出，已登记与未登记的号码走同一条计数路径。预算维度、取值与配置键由 design-authn-sms 与 design-authn-config 给全，本记录不复述。判据如下：
   - 全局预算**按用途分设**：匿名登录流量耗尽自己的预算，不挤占已通过口令的第二因素与登记的发送。
   - 按账户计的上限**只对 `mfa` 与 `enroll` 计**，判据是账户不得由手机号推出。
   - 号码前缀必须在放行表里，**放行表缺省为空，空即一律拒绝**；判据是不明确放行就不发。
 - **抑制行。** 号码未登记且注册关闭时，照样写一行 `suppressed` 的挑战行：不入队、不发送，但计入全部预算；对外应答与「已发送」同形，随后的答复一律按 `login-failed` 失败，并经一次诱饵比对。号码已验证且账户启用、或注册开放，才真正入队。判据是真实发送与否是已登记与未登记号码之间唯一的差别，且不可从应答观察到。
-- **模板与语言。** 模板按（模板，语言）映射到厂商模板编号，缺任何一个组合即 `ErrInvalidConfig`；语言是模板的维度，语言的取得与映射见 [design-authn-sms](../design/modules/authn/design-authn-sms.md)。模板由顶层发送能力 **`pkg/sms`** 做成一等声明，认证所需的模板键是 `authn.code.login`、`authn.code.mfa`、`authn.code.enroll`，覆盖由认证在启动期核对自己所需。
-- **厂商适配。** 发送能力抽为顶层能力模块 **`pkg/sms`**，厂商适配是其下的叶子包（`pkg/sms/aliyun`、`pkg/sms/tencent`），各自一个模块；认证经 `pkg/sms` 根包的 `Sender` 发送，不再持有发送方接缝。适配只做构造请求、调用、把响应与错误归入发送哨兵；整个叶子包可以撤掉而不影响其他模块。适配层没有真实凭据无法在线验证，只用 `httptest` 起假端点验请求形状。具体厂商与包路径见 [design-sms](../design/modules/design-sms.md)（[ADR-sms-capability-2026-10-13](adr-sms-capability-2026-10-13.md)）。
-- **排他性。** `sms.Sender` 排他交付，多个厂商适配同时纳入在消解阶段失败；排他的消解规则见 [design-core](../design/modules/design-core.md)，该处的通知功能举例是虚构的，与 `sms.Sender` 无关。
+- **模板与语言。** 模板按（模板，语言）映射到厂商模板编号，缺任何一个组合即 `ErrInvalidConfig`；语言是模板的维度，语言的取得与映射见 design-authn-sms。模板由顶层发送能力 **`pkg/sms`** 做成一等声明，认证所需的模板键是 `authn.code.login`、`authn.code.mfa`、`authn.code.enroll`，覆盖由认证在启动期核对自己所需。
+- **厂商适配。** 发送能力抽为顶层能力模块 **`pkg/sms`**，厂商适配是其下的叶子包（`pkg/sms/aliyun`、`pkg/sms/tencent`），各自一个模块；认证经 `pkg/sms` 根包的 `Sender` 发送，不再持有发送方接缝。适配只做构造请求、调用、把响应与错误归入发送哨兵；整个叶子包可以撤掉而不影响其他模块。适配层没有真实凭据无法在线验证，只用 `httptest` 起假端点验请求形状。具体厂商与包路径见 design-sms（[ADR-sms-capability-2026-10-13](adr-sms-capability-2026-10-13.md)）。
+- **排他性。** `sms.Sender` 排他交付，多个厂商适配同时纳入在消解阶段失败；排他的消解规则见 design-core，该处的通知功能举例是虚构的，与 `sms.Sender` 无关。
 
 ## 后果
 

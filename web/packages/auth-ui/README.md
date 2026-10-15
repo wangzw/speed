@@ -588,7 +588,7 @@ namespace discipline over `src/` the same way it does in every package.
 ## Deferrals and recorded decisions
 
 - **Reference-app consumer**: consumed by the reference app's consumer
-  shell (`examples/reference-app/web`): its sign-in view renders this
+  shell: its sign-in view renders this
   family inside product-shell's three-branch view machine, over the
   session the shell's bootstrap binds to one real `@speed/api-client`.
   The package-level proof is the in-form leg -- `src/usage-example.test.tsx`

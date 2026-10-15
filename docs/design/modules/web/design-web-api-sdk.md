@@ -8,7 +8,7 @@
 - **唯一的源码接手点。** `src/runtime.ts` 是本包唯一的源码文件，作为 `./runtime` 子路径导出。它存在，是因为生成的代码不能知道宿主如何接上 HTTP 传输。
 - **生成面与传输无关。** 生成的调用把一个 axios 形状的选项对象交给一个 mutator；mutator 把它适配成 [`api-client`](design-web-api-client.md) 的请求函数形状并转发。生成的代码里没有 `fetch`、没有 `axios`、没有租户头，也没有租户查询键。
 - **生成面与租户无关。** 生成的查询键是裸的 spec 路径，不带租户维度；租户由服务端在请求期按端解析，生成面既不传也不收租户（[ADR-web-tenant-query-key-2026-10-15](../../../adr/adr-web-tenant-query-key-2026-10-15.md)）。
-- **契约从模块片段流入。** orval 的输入是各平台模块 HTTP 片段经示范宿主的 `gen` 命令合并出的一份文档（落 `contracts/api.yaml`）；一个有 HTTP 片段的平台模块即合并文档的成员，因而进入本包的生成面。每个片段的端点路径与操作经 [api-client](design-web-api-client.md) 发出。
+- **契约从模块片段流入。** orval 的输入是各平台模块 HTTP 片段经示范宿主的 `gen` 命令合并出的一份文档（落 `contracts/api.json`）；一个有 HTTP 片段的平台模块即合并文档的成员，因而进入本包的生成面。每个片段的端点路径与操作经 [api-client](design-web-api-client.md) 发出。
 
 ### 非职责
 
@@ -113,7 +113,7 @@ sequenceDiagram
 
 ### 生成
 
-1. 输入是合并的平台文档——各平台模块 HTTP 片段经示范宿主的 `gen` 命令合并出的那份（落 `contracts/api.yaml`）。一个有 HTTP 片段的平台模块是成员。一个片段只有进入合并才到达本包。
+1. 输入是合并的平台文档——各平台模块 HTTP 片段经示范宿主的 `gen` 命令合并出的那份（落 `contracts/api.json`）。一个有 HTTP 片段的平台模块是成员。一个片段只有进入合并才到达本包。
 2. `web/orval.config.ts` 定下 `client: 'react-query'`（生成 TanStack Query 钩子）与 `httpClient: 'axios'`；`httpClient` 使生成的调用是 axios 形状的选项对象，路由到 `src/runtime.ts` 导出的 `speedRequest`。`mode: 'single'` 使全部输出落进单个 `src/index.ts`。
 3. 一个操作改走另一个 mutator：`authn.token.issue` 在配置里被覆写为 `speedRequestCredentialless`（见「转发的形状」的凭据为空一档）。
 4. orval 的若干行为在配置与后处理里被规避：它把每个 mutator 的 import 写得没有文件扩展名（在 nodenext 构建下报错），`web/scripts/orval-nodenext-fixup.mjs` 在每次生成后确定性地把它们改写为显式 `./runtime.js`，并覆盖按操作覆写能产出的每一个 mutator 名；一次已修好的文件（import 已带 `.js`）退出 0，因而 fixup 可自由重跑。生成的 `src/index.ts` 与 fixup 后的形状是提交进仓库的产物。

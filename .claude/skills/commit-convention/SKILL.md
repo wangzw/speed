@@ -56,11 +56,11 @@ The scope is the capability directory under `pkg/` the change belongs to: `pkg/c
 
 ### Frontend npm packages (`web/packages/<scope>/`)
 
-Same rule: the scope is the package directory name under `web/packages/`, and `web/pnpm-workspace.yaml` is the membership authority. The reference app's web host is an external workspace member (`examples/reference-app/web`) and commits under the `reference-app` scope.
+Same rule: the scope is the package directory name under `web/packages/`, and `web/pnpm-workspace.yaml` is the membership authority. The demo starter's web host is an external workspace member (`starters/demo/web`) and commits under the `starters` scope.
 
 ### Cross-cutting
 
-`deps`, `ci`, `reference-app`, `adr`
+`deps`, `ci`, `starters`, `adr`
 
 Repository-level:
 - `internal` — design documents under `docs/internal/`, belonging to the earlier implementation

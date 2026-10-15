@@ -100,15 +100,15 @@ authn 只询问接缝，不自己核对任何条件，包括认证强度、目�
 
 ## 决策
 
-采纳：冒充是 `authn_impersonations` 里一条有期限、有理由、限定一个租户的记录，由 `authn.impersonation` 排他交付；authn 自己强制一组不依赖 `Decider` 的结构性限制，租户范围由网关、准入层与必需依赖联合执行，强制档审计在事务之外、动作之前写，到期与失效在读时判定、惰性落库。表的形状、限制的逐条条件、开始的步骤顺序与失败处置、各结束原因的写入点、被拒操作清单与审计字段由 [design-authn-impersonation](../design/modules/authn/design-authn-impersonation.md) 承载，本记录只定判据。
+采纳：冒充是 `authn_impersonations` 里一条有期限、有理由、限定一个租户的记录，由 `authn.impersonation` 排他交付；authn 自己强制一组不依赖 `Decider` 的结构性限制，租户范围由网关、准入层与必需依赖联合执行，强制档审计在事务之外、动作之前写，到期与失效在读时判定、惰性落库。表的形状、限制的逐条条件、开始的步骤顺序与失败处置、各结束原因的写入点、被拒操作清单与审计字段由 design-authn-impersonation 承载，本记录只定判据。
 
 **载体与身份。**
 
 - 冒充是一条记录，不是一枚新的凭据，也不是身份上的开关。
-- 浏览器端，管理员自己会话的行指向这条记录；API 端，体现为一枚短命的冒充访问令牌，不改管理员的会话，且不发刷新令牌。会话与令牌每个请求都查同一个判断 `Impersonation.Active`，记录一失效，它们一致失效（会话与令牌的承载细节见 [design-authn-session](../design/modules/authn/design-authn-session.md)、[design-authn-token](../design/modules/authn/design-authn-token.md)）。
+- 浏览器端，管理员自己会话的行指向这条记录；API 端，体现为一枚短命的冒充访问令牌，不改管理员的会话，且不发刷新令牌。会话与令牌每个请求都查同一个判断 `Impersonation.Active`，记录一失效，它们一致失效（会话与令牌的承载细节见 design-authn-session、design-authn-token）。
 - 冒充中的 `Identity`：`Account()` 是被冒充者，`Actor()` 与 `Key()` 始终是管理员，`Scope()` 是该租户，`Impersonating()` 为真，`Assurance()` 封顶单因素，因此任何要求多因素的路由对冒充身份天然不满足。
 
-**结构性限制的判据：身份层面的事实由 authn 强制，「谁有权」交 `Decider`。** `Decider` 只能在这些限制之上进一步收紧，不能放宽。限制分为下列四组，分组是封闭集；各组的条件与检查次序见 [design-authn-impersonation](../design/modules/authn/design-authn-impersonation.md) 的「结构性限制」：
+**结构性限制的判据：身份层面的事实由 authn 强制，「谁有权」交 `Decider`。** `Decider` 只能在这些限制之上进一步收紧，不能放宽。限制分为下列四组，分组是封闭集；各组的条件与检查次序见 design-authn-impersonation 的「结构性限制」：
 
 - 发起者：覆盖发起者的认证事实，包括身份是否已处于冒充中、认证是否由本模块本地验证、强度与新鲜度、认证方式与因素的成熟度，以及账户的种类与状态。
 - 目标：覆盖目标账户的存在、状态、种类、受保护标记，以及目标在该租户内的成员关系；成员关系读库，不经缓存。`protected` 是宿主打在要保护的账户上的人工标记，authn 不认识超级管理员。
@@ -121,7 +121,7 @@ authn 只询问接缝，不自己核对任何条件，包括认证强度、目�
 
 - `authn.impersonation` 把准入层交付的 `ScopeGuard` 当必需依赖，没有准入层的装配在启动时失败（取用与构造序见 [ADR-authn-wiring-2026-10-10](adr-authn-wiring-2026-10-10.md)）。
 - 网关对冒充身份只放进准入层所守的端，以及登记为 `Impersonable` 的路由，其余答 401（登记语义见 [ADR-authn-exemption-2026-10-10](adr-authn-exemption-2026-10-10.md)）。
-- `tenant.admission` 核对冒充身份的 `Scope()`：与请求的租户不符，或请求没有租户上下文，一律答 404，与「非成员」同形，不写 403（[design-tenant-admission](../design/modules/tenant/design-tenant-admission.md)）。
+- `tenant.admission` 核对冒充身份的 `Scope()`：与请求的租户不符，或请求没有租户上下文，一律答 404，与「非成员」同形，不写 403（design-tenant-admission）。
 
 三个执行点各挡一种越界：缺少必需依赖，没有准入层的部署仍能开始冒充；缺少网关的端限制，准入层不守的端上冒充身份与被冒充者本人无异；缺少准入层的范围核对，同一个端上租户 A 的冒充身份可以访问租户 B。「限定一个租户」只有这些执行点合起来才是结构性的。
 
@@ -134,7 +134,7 @@ flowchart LR
 
 **审计先于动作，强制档写在事务之外。**
 
-- 判据：审计接缝的写入另占一条连接、不加入调用方的事务，所以强制档审计必须在记录事务之外、在动作之前写，绝不在开着的事务里调用它与事件发布。步骤顺序与每一步失败的处置见 [design-authn-impersonation](../design/modules/authn/design-authn-impersonation.md) 的「开始的顺序」与「开始失败的处置」。
+- 判据：审计接缝的写入另占一条连接、不加入调用方的事务，所以强制档审计必须在记录事务之外、在动作之前写，绝不在开着的事务里调用它与事件发布。步骤顺序与每一步失败的处置见 design-authn-impersonation 的「开始的顺序」与「开始失败的处置」。
 - 强制档审计写失败（含审计不接收写入）即 503，冒充不开始。
 - 结束不受审计失败阻止：结束是向安全方向的动作，失败写 Error 日志。
 - 冒充的理由只进审计与记录本身，不进事件：事件载荷的顶层字段会被审计写进明细。同一顺序适用于全部管理面写操作（[ADR-authn-decision-seam-2026-10-10](adr-authn-decision-seam-2026-10-10.md)、[ADR-authn-events-and-audit-2026-10-10](adr-authn-events-and-audit-2026-10-10.md)）。

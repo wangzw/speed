@@ -240,7 +240,7 @@ package -- see the AGENTS.md non-negotiable rules.
   from the role lists it attached, exactly the host-injected-status
   contract this package's rules require.
 - **Reference-app consumer**: the reference app's consumer shell
-  (`examples/reference-app/web`) composes both exports as host
+  composes both exports as host
   composition -- product-shell's `ProductShell` renders `AppShell` as
   its authenticated frame, and the shell's notes view mounts
   `RouteGuard` with a status the host derives from the served
@@ -249,9 +249,9 @@ package -- see the AGENTS.md non-negotiable rules.
   exact host-injected shape this package's rules require; the
   package-level proof (`src/usage-example.test.tsx`) is the in-form
   leg, and the browser-driving leg ships in the reference app's e2e
-  suite (`examples/reference-app/web/e2e/authorization.spec.ts` drives
+  suite, which drives
   the composed frame's gate to its real 403 refusal against a real,
-  freshly booted server).
+  freshly booted server.
 - **Storybook / browser-side visual verification**: no preview
   harness exists, the same deferral `ui-kit` carries; `color-contrast`
   stays axe-disabled for the same jsdom reason.

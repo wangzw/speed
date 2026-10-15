@@ -12,12 +12,12 @@
  * shows up as a diff in the regenerated header (which stamps the
  * version).
  *
- * Input is the committed merged document, contracts/api.yaml, produced by
+ * Input is the committed merged document, contracts/api.json, produced by
  * the demo host's `gen` command from starters/demo:
  *
  *   go -C starters/demo run . \
  *       --config file://$PWD/starters/demo/testdata/<stack>.yaml \
- *       <stack> gen --title speed -o contracts/api.yaml
+ *       <stack> gen --title speed -o contracts/api.json
  *
  * `gen` merges the OpenAPI fragments the platform modules declare into one
  * document (pkg/ops/openapi.Merge over every module's http.Spec resource),
@@ -64,7 +64,7 @@
 export default {
   speed: {
     input: {
-      target: '../contracts/api.yaml',
+      target: '../contracts/api.json',
     },
     output: {
       target: './packages/api-sdk/src/index.ts',

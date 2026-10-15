@@ -30,37 +30,35 @@ Build, test and check everything in the workspace:
 make check
 ```
 
-Ask a command what it takes. The arguments it prints are the ones its modules
-declared as flags; the rest reaches them through the configuration file and the
+`starters/demo` is the copyable product skeleton: a runnable program that
+assembles this repository's modules on five deployment stacks. Ask a command
+what it takes. The arguments it prints are the ones its modules declared as
+flags; the rest reaches them through the configuration file and the
 environment:
 
 ```
-go -C examples/orders-host run . serve --help
+go -C starters/demo run . sqlite-memory serve --help
 ```
 
 Run it for real — every module in this repository, one process, no external
-service:
+service. A run has to be pointed at a configuration: the locator is a URI, so a
+local file is written `file:testdata/…`, and the environment variable
+`DEMO_CONFIG` carries it in place of `--config`:
 
 ```
-ORDERSHOST_CONFIG=file:testdata/local.yaml go -C examples/orders-host run . migrate
-ORDERSHOST_CONFIG=file:testdata/local.yaml go -C examples/orders-host run . serve
+go -C starters/demo run . --config file:testdata/sqlite-memory.yaml sqlite-memory migrate
+go -C starters/demo run . --config file:testdata/sqlite-memory.yaml sqlite-memory serve
 ```
 
-It migrates, seeds four tenants (one of them disabled) and orders for three of
-them, serves and waits. Ctrl-C stops the HTTP entry point first, letting the
-requests it admitted finish within its drain timeout, then stops the other
-modules in reverse dependency order; once every stop has returned, every module
-is closed in reverse dependency order. The account it serves is `alice` with
-the password `s3cret`.
-
-`examples/crm-host` is the larger host: a multi-tenant CRM that assembles the
-whole module set on five deployment stacks — in-memory SQLite, and four
-combinations of PostgreSQL, Redis, NATS and Memcached — and drives the same
-end-to-end cases against each, so every implementation of the database,
-key-value, event and telemetry capabilities runs the same product-shaped
-traffic. It exists to evaluate the modules, and a defect it runs into is fixed
-in the module rather than worked around; its `AGENTS.md` says what it needs to
-run (`examples/crm-host/AGENTS.md`).
+The `sqlite-memory` stack needs nothing installed, so it is the one to start
+with; the stack is one level of the command tree — `demo <stack> <command>` —
+and the other four add PostgreSQL, Redis, NATS and Memcached, whose backends
+`starters/demo/compose.yaml` brings up. Ctrl-C stops the HTTP entry point
+first, letting the requests it admitted finish within its drain timeout, then
+stops the other modules in reverse dependency order; once every stop has
+returned, every module is closed in reverse dependency order. Copy the
+directory, rename it and grow a product on it; `starters/demo/AGENTS.md` says
+what the program carries.
 
 `make help` lists the other entry points. The toolchain versions the
 checks need are pinned in `.mise.toml`.
@@ -70,7 +68,7 @@ checks need are pinned in `.mise.toml`.
 | Path | What it is |
 |---|---|
 | `pkg/` | The modules: one capability directory each, in a single Go module. |
-| `examples/` | Hosts that assemble modules into running programs. |
+| `starters/` | Runnable, copyable product skeletons; `starters/demo` assembles the modules into one program. |
 | `docs/` | The design documents and decision records. |
 | `tools/` | Repository self-checks. |
 | `go.work` | The module roster every command derives its module set from. |

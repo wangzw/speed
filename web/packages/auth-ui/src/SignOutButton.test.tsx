@@ -90,8 +90,8 @@ describe('SignOutButton', () => {
     // because jsdom resolves no cascaded styles: while an AppBar keeps
     // painting primary.main, its own contrastText must stay at WCAG AA
     // distance from it, or an inherited control is legible nowhere.
-    // The composed real-browser proof is the reference-app
-    // visible-controls e2e gate.
+    // The composed real-browser proof is an e2e gate over the
+    // visible controls.
     const { theme } = createAppTheme()
     const ratio = contrastRatio(
       theme.palette.primary.main,

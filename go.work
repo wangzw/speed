@@ -1,8 +1,6 @@
 go 1.26.8
 
 use (
-	./examples/crm-host
-	./examples/orders-host
 	./pkg
 	./starters/demo
 )

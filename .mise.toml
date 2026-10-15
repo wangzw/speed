@@ -1,10 +1,16 @@
 # Toolchain versions for local development, pinned by mise (https://mise.jdx.dev).
 # `mise install` from the repository root sets up everything `make check` needs.
 #
-# The `go` version MIRRORS go.work's `go` directive, because the Go toolchain
-# reads go.work and never this file. Two files stating one version drift unless
-# something checks them, which is what tools/check_toolchain.py does: bump the
-# directive and this mirror together.
+# Some versions MIRROR an authoritative source elsewhere in the repository --
+# the file a tool of its own already reads -- and tools/check_toolchain.py
+# fails when a mirror drifts from its source:
+#
+#   go     go.work's `go` directive
+#   node   web/.nvmrc
+#   pnpm   web/package.json's `packageManager`
+#
+# Bump the mirror and its source together; they are separate files and drift
+# unless something checks them, which is what tools/check_toolchain.py does.
 #
 # The remaining tools are pinned here and nowhere else, so they have no mirror
 # to drift from and the gate does not check them.
@@ -12,6 +18,10 @@
 [tools]
 # Mirror of go.work's `go` directive.
 go = "1.26.8"
+# Mirror of web/.nvmrc; the frontend leg of `make check` runs on this Node.
+node = "24"
+# Mirror of web/package.json's packageManager; `make web-check` runs on this pnpm.
+pnpm = "11.1.2"
 # Pinned here only; .golangci.yml carries the configuration, not the version.
 golangci-lint = "2.11.4"
 # Pinned here only; `make tools-test` needs 3.11 or newer, for tomllib.

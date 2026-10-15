@@ -8,9 +8,9 @@
 
 入口模块 `pkg/http` 已定义错误响应的内容与形状：`Problem` 取 RFC 9457 的字段，`Fail` 是写出入口，`ErrorResponder` 是整体替换形状的可选接缝（`pkg/http/problem.go`；[ADR-http-errors-2026-10-10](adr-http-errors-2026-10-10.md)）。`Problem` 的 `Title` 与 `Detail` 是已经渲染完成的成品文本，形状接缝不承载语言；`Type` 与 `Status` 是机器码，不随语言变（[ADR-i18n-error-rendering-2026-10-13](adr-i18n-error-rendering-2026-10-13.md)）。
 
-宿主各自处理请求体绑定。`examples/crm-host/application.go` 的 `bindBody` 读 body、按 `*nethttp.MaxBytesError` 把失败分 413 与 400、再调 `dst` 自带的 `Validate` 分 422。`examples/orders-host/orders.go` 的 `bindFailureStatus` 重复了同一套 413 与 400 的判定。
+宿主各自处理请求体绑定。示例宿主的 `bindBody` 读 body、按 `*nethttp.MaxBytesError` 把失败分 413 与 400、再调 `dst` 自带的 `Validate` 分 422。第二个宿主的 `bindFailureStatus` 重复了同一套 413 与 400 的判定。
 
-宿主也各自决定错误体的形状。`examples/crm-host/application.go` 自造 `{error: string}`（`apiError` 与 `writeError`），handler 的拒绝经它写出。HTTP 模块的错误面不覆盖 handler 自己写出的响应（[ADR-http-errors-2026-10-10](adr-http-errors-2026-10-10.md) 的后果一节）。
+宿主也各自决定错误体的形状。一个示例宿主自造 `{error: string}`（`apiError` 与 `writeError`），handler 的拒绝经它写出。HTTP 模块的错误面不覆盖 handler 自己写出的响应（[ADR-http-errors-2026-10-10](adr-http-errors-2026-10-10.md) 的后果一节）。
 
 ## 考虑过的选项
 
@@ -36,9 +36,9 @@
 
 采纳：**入口模块交付请求体绑定入口 `BindJSON`，宿主的 handler 错误体统一到本模块的 RFC 9457 形状。**
 
-- 新增 `func BindJSON(c *gin.Context, dst any) bool`（`pkg/http`）。语义自 `examples/crm-host/application.go` 的 `bindBody` 迁移：`ShouldBindJSON` 失败 → 413（`*nethttp.MaxBytesError`）否则 400；成功且 `dst` 实现 `interface{ Validate() error }` 而它报错 → 422。这些失败都经既有的 `Fail` 写出 `Problem`，并返回 false。
-- 第二宿主检验通过：`examples/orders-host/orders.go` 也重复了同一套 `ShouldBindJSON` 与 `*nethttp.MaxBytesError` → 413 的判定。
-- 宿主自造的错误体删除：`examples/crm-host/application.go` 的 `apiError` 与 `writeError` 撤掉，业务 handler 改调 `speedhttp.Fail`。响应体从 `{"error":"…"}` 变成 RFC 9457 的 problem 对象。
+- 新增 `func BindJSON(c *gin.Context, dst any) bool`（`pkg/http`）。语义自宿主的 `bindBody` 迁移：`ShouldBindJSON` 失败 → 413（`*nethttp.MaxBytesError`）否则 400；成功且 `dst` 实现 `interface{ Validate() error }` 而它报错 → 422。这些失败都经既有的 `Fail` 写出 `Problem`，并返回 false。
+- 第二宿主检验通过：第二个宿主也重复了同一套 `ShouldBindJSON` 与 `*nethttp.MaxBytesError` → 413 的判定。
+- 宿主自造的错误体删除：`apiError` 与 `writeError` 撤掉，业务 handler 改调 `speedhttp.Fail`。响应体从 `{"error":"…"}` 变成 RFC 9457 的 problem 对象。
 - 错误体的内容与形状仍由 `Problem` 与 `ErrorResponder` 决定（[ADR-http-errors-2026-10-10](adr-http-errors-2026-10-10.md)），文本仍是渲染完成的成品文本（[ADR-i18n-error-rendering-2026-10-13](adr-i18n-error-rendering-2026-10-13.md)）。
 
 ## 后果

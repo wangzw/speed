@@ -69,7 +69,7 @@ const myRequest = (url) => fetch(...)     // a homegrown wrapper is equally wron
 ```
 
 - **DO NOT** hand-write any backend call. `fetch` / `axios` are permitted only inside `@speed/api-client`, enforced by an ESLint rule.
-- **DO NOT** hand-write endpoint paths or response types — they come from the merged platform document `contracts/api.yaml` (the backend modules' OpenAPI fragments, merged and committed by the demo host's `gen` command) through the SDK generator (`web/orval.config.ts`).
+- **DO NOT** hand-write endpoint paths or response types — they come from the merged platform document `contracts/api.json` (the backend modules' OpenAPI fragments, merged and committed by the demo host's `gen` command) through the SDK generator (`web/orval.config.ts`).
 - **DO NOT** edit any file in `@speed/api-sdk` — it is generated and overwritten wholesale on every release.
 - When an endpoint does not fit your need, change the spec, not the frontend. The order is fixed: edit the spec first, regenerate, fix whatever the regenerated interfaces break, then consume — never the reverse.
 

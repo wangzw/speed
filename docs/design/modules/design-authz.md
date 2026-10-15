@@ -514,7 +514,7 @@ m = g(r.sub, p.sub, r.dom) && r.dom == p.dom && r.obj == p.obj && r.act == p.act
 
 ### 表与迁移
 
-策略表都归 `authz.policy`，迁移在 `pkg/authz/policy/migrations/{sqlite,postgres}/0001_authz_policy.sql`。每张表都以 `tenant_id` 领衔主键，都带 `CHECK (tenant_id <> '')`，都不用方言专有类型与函数；`TIMESTAMPTZ`（Postgres）与 `DATETIME`（SQLite）的对照照行 `examples/crm-host/migrations/members`。
+策略表都归 `authz.policy`，迁移在 `pkg/authz/policy/migrations/{sqlite,postgres}/0001_authz_policy.sql`。每张表都以 `tenant_id` 领衔主键，都带 `CHECK (tenant_id <> '')`，都不用方言专有类型与函数；`TIMESTAMPTZ`（Postgres）与 `DATETIME`（SQLite）的对照照行本模块自己的建表语句。
 
 - **`authz_roles(tenant_id, role, builtin, description_key, created_at)`**，主键 `(tenant_id, role)`。`builtin` 标记内置角色（不可删除、不可改权限），`description_key` 是说明文案的 i18n 键。
 

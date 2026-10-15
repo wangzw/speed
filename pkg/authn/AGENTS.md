@@ -315,13 +315,12 @@ field comments before writing a backend.
   that imports it outside a test file. The same test holds `mounttest` to the
   rule: a package that imports it outside a test file registers routes that no
   gateway guards. That
-  guard covers the `pkg` module only: the example hosts are separate modules in
-  `go.work`, so every module there that imports `authn` carries its own copy of
-  the check (`examples/orders-host/authntest_test.go` and
-  `examples/crm-host/authntest_test.go`), which reads every non-test file with
-  `go/parser` whatever its build constraints say, because `go list` sees only
-  the files that build for the platform and tags of the run. A new host module
-  added without one is not covered.
+  guard covers the `pkg` module only: a host is a separate module in `go.work`,
+  so the check does not reach it. A host that wants the same defence carries its
+  own copy — one that reads every non-test file with `go/parser` whatever its
+  build constraints say, because `go list` sees only the files that build for
+  the platform and tags of the run. A host module added without one is not
+  covered.
 
 ## The seams
 
@@ -462,7 +461,6 @@ sends it real requests: which route a request is matched to, what an exemption
 covers, which layer answers a request that matches no route, and the shape of a
 refusal are all decided by the entry point, so a case about any of them stays on
 that harness — a router written for the test answers what the test decided.
-`examples/orders-host` holds the whole assembly from outside the process: it
-starts a real binary, reaches it over a socket and checks the status codes, the
-`Basic` challenge and the back-off of a name that keeps presenting a wrong
-password.
+`starters/demo` holds the whole assembly from outside the process: it starts a
+real binary, reaches it over a socket and checks the statuses of the routes the
+gateway guards.

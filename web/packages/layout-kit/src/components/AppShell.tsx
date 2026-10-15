@@ -39,7 +39,7 @@
  * the host keeps the drawer uncontrolled. First, the skip link focuses
  * the `main` landmark programmatically instead of navigating to a
  * fragment: fragment navigation rewrites `location.hash`, which in a
- * hash-routed host (the reference app routes exactly that way) replaces
+ * hash-routed host replaces
  * the app route with the generated target id and loses the route.
  * Second, activating a nav item in the temporary drawer closes it --
  * the drawer owns its open state in uncontrolled mode, so it owns the
@@ -312,8 +312,8 @@ export function AppShell({
             as page content outside a landmark. Activating it focuses the
             main landmark directly instead of navigating to the fragment:
             fragment navigation rewrites location.hash, and in a
-            hash-routed host the fragment IS the route (the reference app
-            routes exactly that way) -- a skip link that navigates would
+            hash-routed host the fragment IS the route -- a skip link
+            that navigates would
             replace the app route with the generated target id. The
             keyboard path is unchanged: Tab reaches the link, Enter
             activates it, and the focus visibly moves into main (browsers

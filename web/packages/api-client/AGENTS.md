@@ -172,8 +172,7 @@ render-time throw), because the response shape is this
 hand-maintained contract and a payload violating it must fail softly.
 
 The browser page leg is real and consumed: the reference app's
-consumer shell (`examples/reference-app/web`, an external member of
-the web workspace, never versioned) binds one real `createClient`
+consumer shell binds one real `createClient`
 over the environment's own fetch into the api-sdk binding --
 `@speed/api-sdk`, the orval-generated typed surface, calls into this
 runtime through its `src/runtime.ts` binding, and `@speed/auth-core`
@@ -185,7 +184,7 @@ shell's home view reads the server's effective Public values and
 feature flags through `usePublicConfig`/`useFeature` on that same
 bound client, the shape a `requiredFeature`-style consumer needs.
 Browser automation drives that composition for real: the app's e2e
-suite (`examples/reference-app/web/e2e`) drives the composed shell in
+suite drives the composed shell in
 a real browser against a real, freshly booted server, its
 `@deployment` gates additionally against a deployed, server-served
 page via `E2E_BASE_URL`.

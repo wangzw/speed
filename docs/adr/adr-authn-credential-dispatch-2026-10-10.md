@@ -116,7 +116,7 @@ cookie 与一份名单里的 `Authorization` scheme 过检查，名单列出浏�
 
 ## 决策
 
-采纳：校验后端按 `Authorization` scheme 与 cookie 名整条认领凭据；归属退役，后端在 `Accepts` 里声明可交出的账户命名空间与能力，网关盖章前核对。接缝的形状、分派的判定顺序与出口检查的全部条目由设计文档 [design-authn-gate](../design/modules/authn/design-authn-gate.md) 承载，本记录只定判据。
+采纳：校验后端按 `Authorization` scheme 与 cookie 名整条认领凭据；归属退役，后端在 `Accepts` 里声明可交出的账户命名空间与能力，网关盖章前核对。接缝的形状、分派的判定顺序与出口检查的全部条目由设计文档 design-authn-gate 承载，本记录只定判据。
 
 **载体即路由键。**
 
@@ -141,7 +141,7 @@ cookie 与一份名单里的 `Authorization` scheme 过检查，名单列出浏�
 
 - 后端只能交出自己声明的命名空间之内的标识，也只能交出自己声明的能力所允许的身份成分。网关在盖章前核对，不符按出口检查失败处置：网关自产 401，记在网关名下。
 - `static.` 前缀是信任根：只有口令表后端交得出这个命名空间的标识，管理权限的判据 `static.<运营主体>` 才可信。它只属于口令表后端。声明之间的冲突在装配期失败并点名双方。
-- 条目的封闭集与核对的细节见 [design-authn-gate](../design/modules/authn/design-authn-gate.md) 的出口检查一节。
+- 条目的封闭集与核对的细节见 design-authn-gate 的出口检查一节。
 
 **对「主体与后端名仍由网关定」的读法。**
 

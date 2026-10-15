@@ -41,11 +41,12 @@ it needs `make` and nothing else.
 
 `check_toolchain.py` — fails when a version pinned in the root
 `.mise.toml` no longer mirrors the authoritative source that a tool
-actually reads. Today that is one pin, `go` against `go.work`'s `go`
-directive; the file's own header says which pins have no mirror and are
-therefore not checked. Exit codes: 0 clean, 1 drift, 2 infrastructure
-error (a source missing or unparsable, a mirrored tool absent from
-`.mise.toml`).
+actually reads. Three pins are mirrors: `go` against `go.work`'s `go`
+directive, `node` against `web/.nvmrc`, and `pnpm` against
+`web/package.json`'s `packageManager`; the file's own header says which
+pins have no mirror and are therefore not checked. Exit codes: 0 clean,
+1 drift, 2 infrastructure error (a source missing or unparsable, a
+mirrored tool absent from `.mise.toml`).
 
 `check_markdown_examples.py` — compiles or parse-checks the fenced Go code
 blocks in markdown prose, which no other harness covers (godoc `Example`

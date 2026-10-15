@@ -435,8 +435,8 @@ describe('AppShell', () => {
     it('activates the skip link without touching the host hash and moves focus into main', async () => {
       // The skip link is not a plain `href="#target"` anchor: activating
       // such an anchor runs real fragment navigation, which REWRITES
-      // location.hash. For a host that routes through the fragment (the
-      // reference app's own router parses location.hash into its
+      // location.hash. For a host that routes through the fragment (its
+      // own router parses location.hash into its
       // surfaces), that would replace the app route with the generated
       // target id and the route would be lost. The harness below mimics
       // such a host: the hash carries an app route, and the skip link

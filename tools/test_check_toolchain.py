@@ -1,5 +1,6 @@
 #!/usr/bin/env python3
-"""Unit tests for check_toolchain.py's exit-code contract and go.work read.
+"""Unit tests for check_toolchain.py's exit-code contract and its mirror
+reads (go.work, web/.nvmrc, web/package.json).
 
 Stdlib-only (unittest + tempfile), matching this directory's own "plain
 executables with no third-party dependencies" convention (tools/README.md's
@@ -34,6 +35,8 @@ import check_toolchain as m  # noqa: E402
 MISE = """\
 [tools]
 go = "1.26.8"
+node = "24"
+pnpm = "11.1.2"
 golangci-lint = "2.11.4"
 python = "3.14.7"
 """
@@ -43,6 +46,12 @@ def write_fixture(root: pathlib.Path) -> None:
     """Write the fully-consistent fixture tree under root."""
     (root / ".mise.toml").write_text(MISE, encoding="utf-8")
     (root / "go.work").write_text("go 1.26.8\n", encoding="utf-8")
+    web = root / "web"
+    web.mkdir()
+    (web / ".nvmrc").write_text("24\n", encoding="utf-8")
+    (web / "package.json").write_text(
+        '{"packageManager": "pnpm@11.1.2"}\n', encoding="utf-8"
+    )
 
 
 class ToolchainGateTests(unittest.TestCase):
@@ -69,6 +78,8 @@ class ToolchainGateTests(unittest.TestCase):
         code, out = self._run()
         self.assertEqual(code, 0)
         self.assertIn("toolchain: ok          go:", out)
+        self.assertIn("toolchain: ok          node:", out)
+        self.assertIn("toolchain: ok          pnpm:", out)
 
     def test_unmirrored_tools_are_not_checked(self) -> None:
         # Only the tools in SOURCES are mirrors. Everything else
@@ -92,11 +103,61 @@ class ToolchainGateTests(unittest.TestCase):
         self.assertEqual(code, 1)
         self.assertIn("MISMATCH", out)
 
+    def test_node_drift_exits_1(self) -> None:
+        # node mirrors web/.nvmrc; a pin that no longer matches it drifts.
+        (self.root / ".mise.toml").write_text(
+            MISE.replace('node = "24"', 'node = "9.9.9"'), encoding="utf-8"
+        )
+        code, out = self._run()
+        self.assertEqual(code, 1)
+        self.assertIn("node", out)
+        self.assertIn("MISMATCH", out)
+
+    def test_pnpm_drift_exits_1(self) -> None:
+        # pnpm mirrors web/package.json's packageManager.
+        (self.root / ".mise.toml").write_text(
+            MISE.replace('pnpm = "11.1.2"', 'pnpm = "9.9.9"'), encoding="utf-8"
+        )
+        code, out = self._run()
+        self.assertEqual(code, 1)
+        self.assertIn("pnpm", out)
+        self.assertIn("MISMATCH", out)
+
+    def test_nvmrc_leading_v_is_normalised(self) -> None:
+        # .nvmrc may carry a leading `v`; it still names the same version.
+        (self.root / "web" / ".nvmrc").write_text("v24\n", encoding="utf-8")
+        code, out = self._run()
+        self.assertEqual(code, 0)
+        self.assertIn("toolchain: ok          node:", out)
+
+    def test_package_manager_may_carry_a_hash(self) -> None:
+        # corepack allows `+<hash>` after the version; the pin is plain.
+        (self.root / "web" / "package.json").write_text(
+            '{"packageManager": "pnpm@11.1.2+sha512.deadbeef"}\n', encoding="utf-8"
+        )
+        code, out = self._run()
+        self.assertEqual(code, 0)
+        self.assertIn("toolchain: ok          pnpm:", out)
+
     def test_missing_source_file_exits_2(self) -> None:
         # A missing source file is an infrastructure error: exit 2 (the
         # module docstring's contract). The reader must not fall through
         # sys.exit("error: ..."), which exits 1 like drift.
         (self.root / "go.work").unlink()
+        exc = self._run_expect_system_exit()
+        self.assertEqual(exc.code, 2)
+
+    def test_missing_nvmrc_exits_2(self) -> None:
+        (self.root / "web" / ".nvmrc").unlink()
+        exc = self._run_expect_system_exit()
+        self.assertEqual(exc.code, 2)
+
+    def test_package_manager_not_pnpm_exits_2(self) -> None:
+        # A packageManager naming another manager is an unparsable source
+        # for the pnpm pin -- infrastructure, not drift.
+        (self.root / "web" / "package.json").write_text(
+            '{"packageManager": "yarn@4.0.0"}\n', encoding="utf-8"
+        )
         exc = self._run_expect_system_exit()
         self.assertEqual(exc.code, 2)
 

@@ -43,19 +43,14 @@ build: modules-present ## Build every module, both in the workspace and standalo
 	  $(call each,$(MODULES),build standalone,GOWORK=off go -C $$it build ./...); $(each-end)
 
 # A test binary's own deadline bounds how long one module's suite may run; go
-# test's default is ten minutes, which the example hosts' end-to-end legs
-# exceed under the race detector on a loaded machine. The bound is generous on
-# purpose: it is there to end a hung run, not to pace a slow one.
-#
-# An example host lays its cases out on a light set of stacks unless asked for
-# the whole roster, so that a developer's own `go test` comes back sooner. These
-# two legs are the gate, and a gate runs the whole matrix; naming the variable
-# for every module costs the ones that do not read it nothing.
+# test's default is ten minutes, which a suite that drives a whole program end
+# to end exceeds under the race detector on a loaded machine. The bound is
+# generous on purpose: it is there to end a hung run, not to pace a slow one.
 test: modules-present ## Test every module
-	@failed=; $(call each,$(MODULES),test,SPEED_CRM_HOST_ALL_STACKS=1 go -C $$it test -timeout 30m ./...); $(each-end)
+	@failed=; $(call each,$(MODULES),test,go -C $$it test -timeout 30m ./...); $(each-end)
 
 test-race: modules-present ## Test every module under the race detector
-	@failed=; $(call each,$(MODULES),test -race,SPEED_CRM_HOST_ALL_STACKS=1 go -C $$it test -race -timeout 60m ./...); $(each-end)
+	@failed=; $(call each,$(MODULES),test -race,go -C $$it test -race -timeout 60m ./...); $(each-end)
 
 fmt: modules-present ## Format every module in place
 	@failed=; $(call each,$(MODULES),fmt,env -C $$it golangci-lint fmt ./...); $(each-end)
@@ -101,11 +96,9 @@ python-version:
 	}
 
 # The frontend is its own pnpm workspace under web/ (see web/README.md for
-# why it is a separate root). This leg is deliberately not part of `check`:
-# `check`'s toolchain (.mise.toml) pins no Node or pnpm, so CI could not run
-# it, and folding it into `check` would break the single entry point the Go
-# legs rely on. It is the frontend's own entry point, run where Node and
-# pnpm are installed.
+# why it is a separate root). `check` runs it like every other leg: the root
+# .mise.toml pins the Node and pnpm it needs, so `mise install` provides the
+# toolchain and both halves of the tree share one entry point.
 web-check: ## Run the frontend checks (pnpm install + lint, typecheck, test, build)
 	@pnpm -C web install --frozen-lockfile
 	@pnpm -C web -r lint
@@ -121,3 +114,4 @@ check: ## Run everything CI runs
 	@$(MAKE) tidy-check
 	@$(MAKE) repo-check
 	@$(MAKE) tools-test
+	@$(MAKE) web-check

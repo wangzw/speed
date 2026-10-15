@@ -321,7 +321,7 @@ bind one explicitly before rendering.
   staff, is not shipped; this package stays free of anything
   platform-shaped so the two shells can share their foundations.
 - **Browser automation.** The reference app's consumer shell
-  (`examples/reference-app/web`) is a real composed consumer of this
+  is a real composed consumer of this
   package: `main.tsx` hands its declarative definition to this
   package's `bootstrapSpeedApp` (the `./bootstrap` subpath), which
   registers the family four — `PRODUCT_SHELL_NAMESPACE` among them —
@@ -329,7 +329,7 @@ bind one explicitly before rendering.
   view machine over the real session and client composition, and
   the server serves the production build from disk under `APP_WEB_DIST`.
   Browser automation drives that composition from the host's side: the
-  app's e2e suite (`examples/reference-app/web/e2e`)
+  app's e2e suite
   drives the composed app in a real browser against a real,
   freshly booted server — the default and `@budget` tiers over the
   dev-server page, and the `@deployment` gates

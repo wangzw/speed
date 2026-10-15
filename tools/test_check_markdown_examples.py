@@ -51,7 +51,7 @@ import check_markdown_examples as m  # noqa: E402
 
 # A roster of the shape go.work carries: module directories relative to
 # the repository root.
-ROSTER = frozenset({"pkg/core", "pkg/config", "examples/orders-host"})
+ROSTER = frozenset({"pkg/core", "pkg/config", "starters/demo"})
 
 
 def write_workspace(root: pathlib.Path, dirs, inline: bool = False) -> None:
@@ -71,7 +71,7 @@ class InScopeTests(unittest.TestCase):
     def test_module_prose_is_in_scope(self):
         self.assertTrue(m._in_scope("pkg/core/AGENTS.md", ROSTER))
         self.assertTrue(m._in_scope("pkg/core/README.md", ROSTER))
-        self.assertTrue(m._in_scope("examples/orders-host/AGENTS.md", ROSTER))
+        self.assertTrue(m._in_scope("starters/demo/AGENTS.md", ROSTER))
 
     def test_prose_below_a_module_is_in_scope(self):
         # A subpackage's own prose belongs to the module that holds it.
@@ -84,7 +84,7 @@ class InScopeTests(unittest.TestCase):
         self.assertFalse(m._in_scope("go/dbkit/AGENTS.md", ROSTER))
         self.assertFalse(m._in_scope("go/dbkit/README.md", ROSTER))
         self.assertFalse(m._in_scope("web/packages/ui-kit/README.md", ROSTER))
-        self.assertFalse(m._in_scope("examples/reference-app/README.md", ROSTER))
+        self.assertFalse(m._in_scope("starters/other-app/README.md", ROSTER))
 
     def test_scope_follows_the_roster_rather_than_a_denylist(self):
         # The same path is in scope once the workspace lists the module it
@@ -262,9 +262,9 @@ class ModuleDirsForBlockTests(unittest.TestCase):
         )
 
     def test_example_host_import(self):
-        body = 'import "github.com/vislake/speed/examples/orders-host"\n'
+        body = 'import "github.com/vislake/speed/starters/demo"\n'
         self.assertEqual(
-            m._module_dirs_for_block(body, ROSTER), ({"examples/orders-host"}, set())
+            m._module_dirs_for_block(body, ROSTER), ({"starters/demo"}, set())
         )
 
     def test_import_outside_the_workspace_is_unresolved(self):

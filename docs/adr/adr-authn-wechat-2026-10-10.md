@@ -6,7 +6,7 @@
 
 ## 背景
 
-微信的浏览器端授权入口是网站应用扫码登录（授权范围 `snsapi_login`）与公众号网页授权（授权范围 `snsapi_userinfo`），入口集合以这两项为限。两个入口的授权地址、授权范围与应用凭据各自独立，宿主可以只用其中一个。登录方式的总体取舍见 [ADR-authn-login-flow-2026-10-10](adr-authn-login-flow-2026-10-10.md)，流程与配置键见 [design-authn-login](../design/modules/authn/design-authn-login.md) 与 [design-authn-config](../design/modules/authn/design-authn-config.md)，本记录只决定微信一侧的实现来源与模块切分。
+微信的浏览器端授权入口是网站应用扫码登录（授权范围 `snsapi_login`）与公众号网页授权（授权范围 `snsapi_userinfo`），入口集合以这两项为限。两个入口的授权地址、授权范围与应用凭据各自独立，宿主可以只用其中一个。登录方式的总体取舍见 [ADR-authn-login-flow-2026-10-10](adr-authn-login-flow-2026-10-10.md)，流程与配置键见 design-authn-login 与 design-authn-config，本记录只决定微信一侧的实现来源与模块切分。
 
 下列事实限定了可选范围。
 
@@ -73,10 +73,10 @@
 采纳：微信登录自写薄客户端，不引任何微信 SDK 与 `goth`；网站应用与公众号拆成两个模块，共用同一个内部客户端包。
 
 - **自造的判据。** `x/oauth2` 与各整套 SDK 在参数名、错误形状、HTTP 客户端的注入与错误文本的净化上，没有一项能不经绕开而直接承担；桥接方案要补的部分与自写相当，补完之后留给库的只剩一次 `GET` 与响应体解码。以上是本项目破例自写而不取桥的理由，适用范围限于微信这一个提供方，不推广到其他提供方。
-- **两个模块。** 网站应用与公众号各是一个模块，分别交付登录方式名 `wechat.web` 与 `wechat.mp`。每个模块有自己的一份配置与必填校验，缺必填项即以配置不合法失败，两个模块之间没有联合判定。宿主在命令树上点名哪个模块，哪个入口就存在、哪份配置就必填。模块名、配置键与哨兵由 [design-authn-config](../design/modules/authn/design-authn-config.md) 与 [design-authn-failure](../design/modules/authn/design-authn-failure.md) 承载。
-- **共用客户端。** 两个模块共用登录目录内部的同一个微信客户端包。换令牌的请求、`errcode` 判定、错误净化与主体选取只在这一个包里有一份实现。HTTP 200 加非零 `errcode` 一律按失败。身份只取 `unionid` 或 `openid` 命名空间的键，不合成邮箱，昵称与头像不是授权依据。流程细节见 [design-authn-login](../design/modules/authn/design-authn-login.md)。
-- **`secret` 的处置。** 判据是：携带 `secret` 的 URL 不得以任何形式离开客户端包。客户端的出站错误在返回前剥去 URL。客户端不套 `observability.Transport`。配置里的应用密钥值登记为日志脱敏的字面量匹配器，登记发生在模块的 `New` 里、先于日志器绑定。登记与「永不记录」的范围见 [design-authn-events](../design/modules/authn/design-authn-events.md) 与 [ADR-authn-events-and-audit-2026-10-10](adr-authn-events-and-audit-2026-10-10.md)，应用密钥作为敏感配置项的存放见 [ADR-authn-settings-and-secrets-2026-10-10](adr-authn-settings-and-secrets-2026-10-10.md)。
-- **CSRF 的残余风险。** 协议没有 PKCE 与 `nonce`，微信入口的回跳防线只有 `state` 与流程绑定。该风险写入威胁模型的残余风险栏并接受，不为它在客户端之外另造一层防线（[design-authn-threats](../design/modules/authn/design-authn-threats.md)）。
+- **两个模块。** 网站应用与公众号各是一个模块，分别交付登录方式名 `wechat.web` 与 `wechat.mp`。每个模块有自己的一份配置与必填校验，缺必填项即以配置不合法失败，两个模块之间没有联合判定。宿主在命令树上点名哪个模块，哪个入口就存在、哪份配置就必填。模块名、配置键与哨兵由 design-authn-config 与 design-authn-failure 承载。
+- **共用客户端。** 两个模块共用登录目录内部的同一个微信客户端包。换令牌的请求、`errcode` 判定、错误净化与主体选取只在这一个包里有一份实现。HTTP 200 加非零 `errcode` 一律按失败。身份只取 `unionid` 或 `openid` 命名空间的键，不合成邮箱，昵称与头像不是授权依据。流程细节见 design-authn-login。
+- **`secret` 的处置。** 判据是：携带 `secret` 的 URL 不得以任何形式离开客户端包。客户端的出站错误在返回前剥去 URL。客户端不套 `observability.Transport`。配置里的应用密钥值登记为日志脱敏的字面量匹配器，登记发生在模块的 `New` 里、先于日志器绑定。登记与「永不记录」的范围见 design-authn-events 与 [ADR-authn-events-and-audit-2026-10-10](adr-authn-events-and-audit-2026-10-10.md)，应用密钥作为敏感配置项的存放见 [ADR-authn-settings-and-secrets-2026-10-10](adr-authn-settings-and-secrets-2026-10-10.md)。
+- **CSRF 的残余风险。** 协议没有 PKCE 与 `nonce`，微信入口的回跳防线只有 `state` 与流程绑定。该风险写入威胁模型的残余风险栏并接受，不为它在客户端之外另造一层防线（design-authn-threats）。
 
 ## 后果
 

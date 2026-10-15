@@ -116,15 +116,15 @@ flowchart LR
     S5 --> O2
 ```
 
-图只标明各环节归属，校验次序以 [design-authn-login](../design/modules/authn/design-authn-login.md) 为准。
+图只标明各环节归属，校验次序以 design-authn-login 为准。
 
 - **分工。**
   - x/oauth2 承担授权地址、换码与 PKCE 校验串的生成与携带；go-oidc 承担发现、签名校验与 `iss`、`aud`、`exp` 的核对，对 Google 的无 scheme `iss` 特例也由它处理。
   - speed 承担库明说或实际不做的环节。判据是这一句，下列各项是已核对的例举，不是封闭集：`state`、PKCE 校验串、`nonce` 的生成、保存与一次性消费，`state` 与 `nonce` 的比对，多受众时 `azp` 等于 `client_id` 的核对，出站客户端的注入。`state` 由桥自己生成，不接受请求指定；PKCE 一律 S256。
   - 记录的存放、原子性与授权码至多换一次由登录引擎的比较并交换保证，桥不另做（[ADR-authn-login-flow-2026-10-10](adr-authn-login-flow-2026-10-10.md)）。
 - **userinfo。** 桥的校验路径只读 ID 令牌里的声明，不调用 userinfo。go-oidc 的 `UserInfo` 不核对 userinfo 的 `sub` 与 ID 令牌的 `sub`，桥不让这一缺口进入校验路径；任何将来引入的 userinfo 读取先比对 `sub`，是它进入桥的前提。
-- **出站客户端。** 桥的全部出站请求以 `oidc.ClientContext` 注入的受限客户端发出，注入一次对 go-oidc 与 x/oauth2 同时生效；库在未注入时使用无超时的默认客户端，因此「未经注入的出站调用」本身是缺陷。受限客户端的约束见 [design-authn-sso](../design/modules/authn/design-authn-sso.md)。
-- **三条提供方路径。** Google 与企业 OIDC 共用同一条 OIDC 路径；GitHub 走 OAuth 2.0 分支，自写对 `/user` 与 `/user/emails` 的读取，不引入 go-github。`redirect_uri` 的构造与回跳 `iss` 的比对、GitHub 的邮箱取法、`email_verified` 的处理、Google 的 `hd` 检查、企业 OIDC 提供方对象的缓存与失败语义，都是这些路径的实现细节，见 [design-authn-login](../design/modules/authn/design-authn-login.md) 与 [design-authn-sso](../design/modules/authn/design-authn-sso.md)；企业 OIDC 与按租户的 IdP 登记的关系见 [ADR-authn-sso-2026-10-10](adr-authn-sso-2026-10-10.md)。
+- **出站客户端。** 桥的全部出站请求以 `oidc.ClientContext` 注入的受限客户端发出，注入一次对 go-oidc 与 x/oauth2 同时生效；库在未注入时使用无超时的默认客户端，因此「未经注入的出站调用」本身是缺陷。受限客户端的约束见 design-authn-sso。
+- **三条提供方路径。** Google 与企业 OIDC 共用同一条 OIDC 路径；GitHub 走 OAuth 2.0 分支，自写对 `/user` 与 `/user/emails` 的读取，不引入 go-github。`redirect_uri` 的构造与回跳 `iss` 的比对、GitHub 的邮箱取法、`email_verified` 的处理、Google 的 `hd` 检查、企业 OIDC 提供方对象的缓存与失败语义，都是这些路径的实现细节，见 design-authn-login 与 design-authn-sso；企业 OIDC 与按租户的 IdP 登记的关系见 [ADR-authn-sso-2026-10-10](adr-authn-sso-2026-10-10.md)。
 - **库类型不出根包。** `oauth2.Config`、`oidc.IDToken` 等库类型只出现在登录方式与企业 SSO 所在的叶子包里；桥交给引擎的是 speed 自己的外部身份类型。
 - **微信不在这座桥上。** 微信没有 PKCE、没有 `nonce`、没有 ID 令牌，其客户端与理由见 [ADR-authn-wechat-2026-10-10](adr-authn-wechat-2026-10-10.md)。
 

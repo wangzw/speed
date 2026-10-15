@@ -167,7 +167,7 @@ func AccessFromContext(ctx context.Context) Access // 无回落；零值读作 A
 
 **对授权的约定用法**：`AccessOpen` 放行；`AccessOptional` 且无身份按授权自己的匿名规则判；`AccessRequired` 而无身份、或 `AccessUnknown`，说明该端不在网关所守之列或网关缺席，授权拒绝：认证缺席时的失败方向是拒绝。
 
-**测试构造口。** `pkg/authn/authntest` 的 `Context(t testing.TB, ctx context.Context, opts ...Option)` 返回携带一个真实 `Identity` 与访问级别的上下文，等价于网关盖章的结果，选项覆盖身份的每个类型化字段与 `Access`：重新认证的挑战方案名由 `WithChallenge` 设，取值是网关写法的方案名（`Cookie`、`Basic`、`Bearer` 一类），缺省 `Bearer`。`Context` 拒绝 `AccessOpen` 与 `AccessUnknown` 配身份，因为网关不产出这样的配对；`Anonymous(t, ctx, access)` 返回只带访问级别、不带身份的上下文，只接受 `AccessOpen` 与 `AccessOptional`，对应豁免路由与无凭据的可选路由。同一个包还导出 `ConfigReader` 与 `ConfigReaderAll`，在真实的配置加载器上，以 JSON 主配置源构造被测模块读取的 `config.Reader`；读取器不是替身，因为必填项被拒绝这类行为出自声明本身。`Context` 复述网关出口检查对形状与界限的要求，所以用它造出的身份是网关盖得出的那一种；这些形状与界限是出口检查那一份的第二份拷贝，两处的数值必须一致，属性集的界限表只在 [design-authn-gate](design-authn-gate.md#出口检查) 写一份，两份拷贝是否分叉由网关包里的对拍测试断言。出口检查里需要网关时钟或后端声明才判得了的几项，它不复述：认证时刻相对网关时钟的 120 秒偏移、`static.` 以外的账户命名空间、`Accepts` 里声明的能力、保留的属性前缀。签名里的 `testing.TB` 不是屏障：非测试代码同样可以传入一个实现了该接口的值，类型层面没有防线，防线只有依赖测试。它位于 `pkg/authn/**` 之下，所以能 import `internal/identity` 与 `internal/model`；编译器拦不住生产代码 import 它，所以 `pkg/authn/deps_test.go` 对 `pkg` 模块里每个包断言：任何非测试代码 import `authntest` 即失败。`examples` 下各宿主是 `go.work` 里的独立模块，不在那条断言的范围内，各自带一条同样的断言。
+**测试构造口。** `pkg/authn/authntest` 的 `Context(t testing.TB, ctx context.Context, opts ...Option)` 返回携带一个真实 `Identity` 与访问级别的上下文，等价于网关盖章的结果，选项覆盖身份的每个类型化字段与 `Access`：重新认证的挑战方案名由 `WithChallenge` 设，取值是网关写法的方案名（`Cookie`、`Basic`、`Bearer` 一类），缺省 `Bearer`。`Context` 拒绝 `AccessOpen` 与 `AccessUnknown` 配身份，因为网关不产出这样的配对；`Anonymous(t, ctx, access)` 返回只带访问级别、不带身份的上下文，只接受 `AccessOpen` 与 `AccessOptional`，对应豁免路由与无凭据的可选路由。同一个包还导出 `ConfigReader` 与 `ConfigReaderAll`，在真实的配置加载器上，以 JSON 主配置源构造被测模块读取的 `config.Reader`；读取器不是替身，因为必填项被拒绝这类行为出自声明本身。`Context` 复述网关出口检查对形状与界限的要求，所以用它造出的身份是网关盖得出的那一种；这些形状与界限是出口检查那一份的第二份拷贝，两处的数值必须一致，属性集的界限表只在 [design-authn-gate](design-authn-gate.md#出口检查) 写一份，两份拷贝是否分叉由网关包里的对拍测试断言。出口检查里需要网关时钟或后端声明才判得了的几项，它不复述：认证时刻相对网关时钟的 120 秒偏移、`static.` 以外的账户命名空间、`Accepts` 里声明的能力、保留的属性前缀。签名里的 `testing.TB` 不是屏障：非测试代码同样可以传入一个实现了该接口的值，类型层面没有防线，防线只有依赖测试。它位于 `pkg/authn/**` 之下，所以能 import `internal/identity` 与 `internal/model`；编译器拦不住生产代码 import 它，所以 `pkg/authn/deps_test.go` 对 `pkg` 模块里每个包断言：任何非测试代码 import `authntest` 即失败。宿主是 `go.work` 里的独立模块，不在那条断言的范围内。
 
 ### 判决与证明
 
@@ -678,7 +678,7 @@ type Provisioner interface {
 | 访问级别 `Access` 的承载与 `AccessFromContext` | 已实现 | `pkg/authn/internal/identity/identity.go` `WithAccess`、`AccessFrom`；`pkg/authn/identity.go` `AccessFromContext`；`pkg/authn/gate/serve.go` `admit` |
 | 根包依赖守卫 `deps_test.go` | 已实现 | `pkg/authn/deps_test.go`；`pkg/authn/internal/model/deps_test.go` |
 | 根包导出面清单 | 已实现 | `pkg/authn/surface_test.go` `exportedSurface`、`TestExportedSurfaceIsPinned`、`TestTheSurfaceHoldsNoNameOfTheOwnershipModel` |
-| 测试构造口 `authntest` | 已实现 | `pkg/authn/authntest`；`pkg/authn/deps_test.go`；`pkg/authn/gate/exitcheck_parity_test.go` `TestAuthntestAndTheExitCheckAgreeOnEveryShapeAndBound`；`examples/orders-host/authntest_test.go`；`examples/crm-host/authntest_test.go` |
+| 测试构造口 `authntest` | 已实现 | `pkg/authn/authntest`；`pkg/authn/deps_test.go`；`pkg/authn/gate/exitcheck_parity_test.go` `TestAuthntestAndTheExitCheckAgreeOnEveryShapeAndBound` |
 | 挂路由口 `authn.mount` 与 `mount.Mounter` | 已实现 | `pkg/authn/mount/mount.go` `Module`；`pkg/authn/internal/mount/mount.go` `Mounter`；`pkg/authn/internal/mount/mounttest/mounttest.go` |
 | 账户存储 `authn.account` | 已实现 | `pkg/authn/account/account.go` `Module` |
 | 登录会话 `authn.session` | 已实现 | `pkg/authn/session/session.go` `Module` |
@@ -691,4 +691,4 @@ type Provisioner interface {
 | 判定接缝与管理面 `authn.admin` | 已实现 | `pkg/authn/decide.go` `Decider`、`Decision`、`Action`；`pkg/authn/admin/admin.go` `Module` |
 | 加强认证处理器 `authn/guard` | 已实现 | `pkg/authn/guard/guard.go` `Require` |
 | 租户准入层 `tenant.admission` | 已实现 | `pkg/tenant/admission/admission.go` `Module`；`pkg/tenant/capabilities.go` `Admission` |
-| 链上次序的装配测试 | 已实现 | `pkg/tenant/admission/assembly_test.go`；`pkg/tenant/admission/live_test.go`；`examples/crm-host/e2e_test.go` `TestTheAdmissionLayerSitsInsideTheJournalAndTheLimiter` |
+| 链上次序的装配测试 | 已实现 | `pkg/tenant/admission/assembly_test.go`；`pkg/tenant/admission/live_test.go` |

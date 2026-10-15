@@ -10,7 +10,7 @@
 
 生成面刻意与租户无关。`@speed/api-sdk` 是 orval 生成的（`web/packages/api-sdk/src/index.ts`），它的 query key 是裸的 spec 路径，不带租户维度；`web/packages/api-sdk/AGENTS.md` 记下这条——生成代码里没有租户头、没有租户 query key，租户上下文只经访问令牌传递，`tenant_id` 只在认证片段的类型里出现。
 
-今天的租户分域是消费者壳的纪律，不是框架能力：`web/packages/tenancy-ui/README.md` 把 `queryClient.removeQueries({ queryKey: ['tenant', oldId] })` 写成宿主在 `TenantSwitcher` 的 `onSwitched` 里的工作，`examples/reference-app/web/src/tenant-query-key.ts` 是宿主自己写的一份键形状加逐出。键形状与逐出时机因而会按宿主数各写一遍。
+今天的租户分域是消费者壳的纪律，不是框架能力：`web/packages/tenancy-ui/README.md` 把 `queryClient.removeQueries({ queryKey: ['tenant', oldId] })` 写成宿主在 `TenantSwitcher` 的 `onSwitched` 里的工作，参考应用里是宿主自己写的一份键形状加逐出。键形状与逐出时机因而会按宿主数各写一遍。
 
 ## 考虑过的选项
 

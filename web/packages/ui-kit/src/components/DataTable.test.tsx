@@ -948,8 +948,8 @@ describe('DataTable', () => {
     // actually empty: a case rendered with loading: true never shows
     // the stock EmptyState placeholder at all -- and a component-level
     // render has no ancestor heading anyway -- so the real surface's
-    // h1 -> h6 skip would stay invisible to the package suite. The
-    // reference-app notes surface is exactly that real shape: a page
+    // h1 -> h6 skip would stay invisible to the package suite. A real
+    // page surface is exactly that shape: a page
     // h1 above an empty table whose stock placeholder defaults to the
     // h6 heading level. These two cases supply the h1 themselves (the
     // same mechanism EmptyState.test.tsx uses) so the skip is

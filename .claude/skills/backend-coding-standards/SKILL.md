@@ -22,7 +22,7 @@ globs:
 
 # speed Backend Coding Standards
 
-**Scope: the `go/` tree.** That tree is an earlier implementation — the root `Makefile` and CI neither build nor check it, and its design rationale lives in `docs/internal/` (written in Chinese, for internal design discussion). Code under `pkg/` and `examples/` follows the root `CLAUDE.md`, the design under `docs/design` and each module's own `AGENTS.md`; nothing below applies to it. **Inside `go/`, this document tells you how to write the code.**
+**Scope: the `go/` tree.** That tree is an earlier implementation — the root `Makefile` and CI neither build nor check it, and its design rationale lives in `docs/internal/` (written in Chinese, for internal design discussion). Code under `pkg/` and `starters/` follows the root `CLAUDE.md`, the design under `docs/design` and each module's own `AGENTS.md`; nothing below applies to it. **Inside `go/`, this document tells you how to write the code.**
 
 **The premise that overrides everything else**: speed is not an application — it is a set of libraries that business projects pull in via `go get`. Every exported signature change propagates to every delivered project; every extra dependency lands in someone else's `go.sum`. This premise outranks any stylistic preference below.
 
@@ -47,7 +47,7 @@ Independent Go modules, each with its own `go.mod`, developed together through `
 
 ## 2. Module Wiring
 
-Every module carries the module contract (`Name`/`DependsOn`/`Migrations`/`Locales`/`OpenAPISpec` plus a `Register` body) and registers routes, config schema, feature flags, permissions, job handlers, notification types, events and audit actions through a single `Register(reg *pkgcore.ComponentRegistry)` call. The illustration below is shape only — **the authority for every seat's methods and for the stage at which a declaration is accepted is `go/pkgcore/component_registry.go` itself, and `examples/reference-app/internal/notes/module.go` is the worked example.**
+Every module carries the module contract (`Name`/`DependsOn`/`Migrations`/`Locales`/`OpenAPISpec` plus a `Register` body) and registers routes, config schema, feature flags, permissions, job handlers, notification types, events and audit actions through a single `Register(reg *pkgcore.ComponentRegistry)` call. The illustration below is shape only — **the authority for every seat's methods and for the stage at which a declaration is accepted is `go/pkgcore/component_registry.go` itself.**
 
 ```go
 func (m *Module) Register(reg *pkgcore.ComponentRegistry) error {
@@ -225,8 +225,6 @@ A chain that provisions a tenant of its own across several modules on one upstre
    - keep **dependency order** (a role before the grant naming it) and, for independent hops, the order the other path provisioning the same shape uses, so both paths land identical rows;
    - **return the error** on failure — **DO NOT** swallow a hop failure;
    - claim **no atomicity**: the chain converges, or it dead-letters and names the account; per-hop idempotence is the compensation, never a cross-module rollback.
-
-`examples/reference-app/internal/app/self_service.go` is the worked example of all of the above.
 
 ## 8. Events and Notifications
 
