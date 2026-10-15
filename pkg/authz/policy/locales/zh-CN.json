@@ -1,0 +1,23 @@
+{
+  "authz.permission.audit-export": "导出审计",
+  "authz.permission.audit-read": "检索审计",
+  "authz.permission.authn-account-create": "创建账户",
+  "authz.permission.authn-account-delete": "删除账户",
+  "authz.permission.authn-account-disable": "停用账户",
+  "authz.permission.authn-account-read": "读取账户",
+  "authz.permission.authn-account-update": "修改账户",
+  "authz.permission.authn-client-manage": "管理服务账户密钥",
+  "authz.permission.authn-idp-manage": "管理身份提供方",
+  "authz.permission.authn-impersonation-read": "读取冒充记录",
+  "authz.permission.authn-impersonation-revoke": "撤销冒充",
+  "authz.permission.authn-impersonation-start": "发起冒充",
+  "authz.permission.authn-membership-manage": "管理成员关系",
+  "authz.permission.authn-mfa-reset": "重置多因素",
+  "authz.permission.authn-session-read": "读取他人会话",
+  "authz.permission.authn-session-revoke": "撤销他人会话",
+  "authz.permission.authn-tenant-access": "进入非成员租户",
+  "authz.permission.authz-role-manage": "管理角色",
+  "authz.permission.authz-role-read": "读取角色",
+  "authz.permission.settings-read": "读取设置",
+  "authz.permission.settings-write": "写入设置"
+}

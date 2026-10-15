@@ -1,0 +1,23 @@
+{
+  "authz.permission.audit-export": "Export the audit log",
+  "authz.permission.audit-read": "Search the audit log",
+  "authz.permission.authn-account-create": "Create accounts",
+  "authz.permission.authn-account-delete": "Delete accounts",
+  "authz.permission.authn-account-disable": "Disable accounts",
+  "authz.permission.authn-account-read": "Read accounts",
+  "authz.permission.authn-account-update": "Update accounts",
+  "authz.permission.authn-client-manage": "Manage service-account secrets",
+  "authz.permission.authn-idp-manage": "Manage identity providers",
+  "authz.permission.authn-impersonation-read": "Read impersonation records",
+  "authz.permission.authn-impersonation-revoke": "Revoke an impersonation",
+  "authz.permission.authn-impersonation-start": "Start an impersonation",
+  "authz.permission.authn-membership-manage": "Manage memberships",
+  "authz.permission.authn-mfa-reset": "Reset multi-factor authentication",
+  "authz.permission.authn-session-read": "Read another account's sessions",
+  "authz.permission.authn-session-revoke": "Revoke another account's sessions",
+  "authz.permission.authn-tenant-access": "Enter a tenant the caller is not a member of",
+  "authz.permission.authz-role-manage": "Manage roles",
+  "authz.permission.authz-role-read": "Read roles",
+  "authz.permission.settings-read": "Read settings",
+  "authz.permission.settings-write": "Write settings"
+}
