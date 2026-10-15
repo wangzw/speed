@@ -342,4 +342,4 @@ speed 不引入进程边界。宿主是单一进程，注册表与全部模块�
 | [ops](modules/design-ops.md) | 已实现 |
 | [web](modules/web/design-web.md) | 部分实现 |
 | [webui](modules/design-webui.md) | 已实现 |
-| [starters](modules/design-starters.md) | 未实现 |
+| [starters](modules/design-starters.md) | 部分实现 |
