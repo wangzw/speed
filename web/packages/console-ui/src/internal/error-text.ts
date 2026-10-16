@@ -26,7 +26,11 @@
  * be answered with -- the session-lifecycle and client-transport codes
  * exported by @speed/i18n -- with the console's own codes; the key
  * construction and the unknown fallback are the shared resolver's (see
- * @speed/i18n's error-text module).
+ * @speed/i18n's error-text module). Beside the fixed whitelist, the
+ * api-client's bare-HTTP answers (client.http.<status>) resolve through
+ * one parameterized leaf carrying the status, so the status-bearing
+ * refusals the console can be answered with stay distinguishable instead
+ * of collapsing into the single unknown line.
  */
 
 import {
@@ -35,6 +39,14 @@ import {
   createErrorTextResolver,
 } from '@speed/i18n'
 import { useConsoleUiTranslation } from './translation.js'
+
+/**
+ * The bare-HTTP answer the api-client synthesizes for a non-2xx with no
+ * readable envelope: client.http.<status>. It is a family rather than a
+ * fixed code (the status varies), so it resolves through its own
+ * parameterized leaf instead of the fixed whitelist below.
+ */
+const HTTP_ERROR_CODE = /^client\.http\.(\d{3})$/
 
 /**
  * Every code with a dedicated errors-section text. Exported so the suite
@@ -59,13 +71,22 @@ export const ERROR_TEXT_CODES = [
 ] as const
 
 /**
- * The console-ui error-text resolver over the whitelist above: a listed
- * code resolves to its own errors-section leaf, anything else to the
- * shared unknown fallback. Reads the current language reactively (the
- * returned function is recreated when the language changes).
+ * The console-ui error-text resolver over the whitelist above, plus the
+ * bare-HTTP family: a listed code resolves to its own errors-section leaf,
+ * a client.http.<status> answer to the parameterized errors.client.http
+ * leaf (so a 405, 401 and 500 render distinct, status-carrying lines
+ * rather than one generic fallback), and anything else to the shared
+ * unknown fallback. Reads the current language reactively (the returned
+ * function is recreated when the language changes).
  */
 export function useConsoleUiErrorText(): (code: string) => string {
   const { t } = useConsoleUiTranslation()
   const known = new Set<string>(ERROR_TEXT_CODES)
-  return createErrorTextResolver(t, known)
+  const resolve = createErrorTextResolver(t, known)
+  return (code) => {
+    const http = HTTP_ERROR_CODE.exec(code)
+    return http === null
+      ? resolve(code)
+      : t('errors.client.http', { status: http[1] ?? '' })
+  }
 }

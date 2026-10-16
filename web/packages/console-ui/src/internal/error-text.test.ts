@@ -9,9 +9,12 @@
  */
 
 import { describe, expect, it } from 'vitest'
-import { createErrorTextResolver } from '@speed/i18n'
+import { createElement, type ReactNode } from 'react'
+import { renderHook } from '@testing-library/react'
+import { createErrorTextResolver, I18nextProvider } from '@speed/i18n'
 import { consoleUiResources } from '../resources.js'
-import { ERROR_TEXT_CODES } from './error-text.js'
+import { createConsoleUiI18n } from '../../test-utils/render.js'
+import { ERROR_TEXT_CODES, useConsoleUiErrorText } from './error-text.js'
 
 /** The flat 'errors.*' dotted keys of one language bundle. */
 function errorKeys(language: string): ReadonlySet<string> {
@@ -50,6 +53,10 @@ describe('console-ui error text', () => {
     const whitelisted = new Set<string>([
       ...ERROR_TEXT_CODES.map((code) => `errors.${code}`),
       'errors.unknown',
+      // The bare-HTTP family's single parameterized leaf: the resolver maps
+      // the whole client.http.<status> family onto it (see the http-family
+      // test below), so it has no single whitelisted code.
+      'errors.client.http',
     ])
     for (const key of errorKeys('en-US')) {
       expect(whitelisted, `${key} has no whitelisted code`).toContain(key)
@@ -67,5 +74,27 @@ describe('console-ui error text', () => {
     )
     expect(resolve('tenant.conflict')).toBe('CONFLICT')
     expect(resolve('client.whatever')).toBe('UNKNOWN')
+  })
+
+  it('renders each bare-HTTP status distinctly, carrying its status code', () => {
+    const i18n = createConsoleUiI18n('en-US')
+    const { result } = renderHook(() => useConsoleUiErrorText(), {
+      wrapper: ({ children }: { readonly children: ReactNode }) =>
+        createElement(I18nextProvider, { i18n }, children),
+    })
+    const notAllowed = result.current('client.http.405')
+    const unauthorized = result.current('client.http.401')
+    const serverError = result.current('client.http.500')
+    // Each status keeps its own number: no longer one generic line, and
+    // never the raw code or the unknown fallback.
+    expect(notAllowed).toContain('405')
+    expect(unauthorized).toContain('401')
+    expect(serverError).toContain('500')
+    expect(new Set([notAllowed, unauthorized, serverError]).size).toBe(3)
+    expect(notAllowed).not.toContain('client.http.405')
+    expect(notAllowed).not.toBe(
+      (consoleUiResources['en-US'] as { errors: { unknown: string } }).errors
+        .unknown,
+    )
   })
 })

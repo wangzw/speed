@@ -9,11 +9,13 @@
  * region, a malformed body), plus the transport-level client.network /
  * client.timeout / client.protocol codes of the @speed/api-client contract
  * -- maps, one bundle key per code, under the errors section
- * ('errors.authn.login_failed' and so on). Codes outside the whitelist -- a
- * future authn code, a client.http.<status> answer, a non-ApiError throw --
- * resolve to 'errors.unknown', so the bundle can never render a raw key and
- * a missing translation never leaks another language's text or an English
- * fallback.
+ * ('errors.authn.login_failed' and so on). A client.http.<status> answer --
+ * the bare non-2xx the client synthesizes -- resolves through its own
+ * parameterized leaf, carrying the status so a 405, 401 and 500 stay
+ * distinguishable. Everything else outside the whitelist -- a future authn
+ * code, a non-ApiError throw -- resolves to 'errors.unknown', so the bundle
+ * can never render a raw key and a missing translation never leaks another
+ * language's text or an English fallback.
  *
  * Codes deliberately not whitelisted are the surface's own local notices
  * (the SMS channel's used-code text is a bundle key of its own, never a
@@ -50,11 +52,26 @@ export const ERROR_TEXT_CODES = [
 const KNOWN_CODES = new Set<string>(ERROR_TEXT_CODES)
 
 /**
+ * The bare non-2xx the api-client synthesizes as client.http.<status> (a
+ * response with no readable envelope). A family rather than a fixed code,
+ * so it resolves through its own parameterized leaf -- the status kept in
+ * the text -- instead of collapsing, with every other unlisted code, onto
+ * the single unknown line.
+ */
+const HTTP_ERROR_CODE = /^client\.http\.(\d{3})$/
+
+/**
  * The code-to-text resolver hook: call with an ApiError code and get the
- * current-language text ('errors.unknown' for anything unlisted).
+ * current-language text. A client.http.<status> answer resolves to the
+ * parameterized errors.client.http leaf (its status carried through);
+ * anything else unlisted resolves to 'errors.unknown'.
  */
 export function useAuthUiErrorText(): (code: string) => string {
   const { t } = useAuthUiTranslation()
-  return (code: string) =>
-    t(KNOWN_CODES.has(code) ? `errors.${code}` : 'errors.unknown')
+  return (code: string) => {
+    const http = HTTP_ERROR_CODE.exec(code)
+    return http === null
+      ? t(KNOWN_CODES.has(code) ? `errors.${code}` : 'errors.unknown')
+      : t('errors.client.http', { status: http[1] ?? '' })
+  }
 }

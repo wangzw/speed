@@ -68,7 +68,8 @@
     "client": {
       "network": "No network connection. Check your connection and try again.",
       "timeout": "The request timed out. Please try again later.",
-      "protocol": "The service returned an unexpected response. Please try again later."
+      "protocol": "The service returned an unexpected response. Please try again later.",
+      "http": "The service answered HTTP {{status}}. Please try again later."
     },
     "unknown": "Something went wrong. Please try again later."
   }

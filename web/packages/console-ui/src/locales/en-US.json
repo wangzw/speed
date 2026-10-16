@@ -10,7 +10,8 @@
     "client": {
       "network": "The network is unavailable. Check your connection and try again.",
       "timeout": "The request timed out. Try again shortly.",
-      "protocol": "The server returned an unexpected response. Try again shortly."
+      "protocol": "The server returned an unexpected response. Try again shortly.",
+      "http": "The server answered HTTP {{status}}. Try again shortly."
     },
     "tenant": {
       "conflict": "That identifier or alias is already taken by another tenant."
