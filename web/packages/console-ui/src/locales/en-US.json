@@ -83,7 +83,6 @@
       "key": "Key",
       "type": "Type",
       "value": "Current value",
-      "sensitive": "Sensitive",
       "actions": "Actions"
     },
     "value": {
