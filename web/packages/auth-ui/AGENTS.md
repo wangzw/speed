@@ -54,11 +54,12 @@ for, not a form it ships.
   steps (a forced password change, a second factor, a factor to register,
   a passkey ceremony) render through the shared step renderer
   (`src/internal/flow-step.tsx`) and the shared stepping driver
-  (`src/internal/use-flow-driver.ts`); the `webauthn` step renders its
-  public-key request options as text with one free-text answer field (this
-  package ships no WebAuthn dependency), while a `redirect` step reaching
-  the renderer renders an unavailable notice. A step the server answers
-  `authn.flow_invalid` returns the form to its channel's first step.
+  (`src/internal/use-flow-driver.ts`); the `webauthn` step drives the
+  browser's WebAuthn ceremony (`src/internal/webauthn.ts`) from its
+  public-key options and reports the credential it returns, while a
+  `redirect` step reaching the renderer renders an unavailable notice. A
+  step the server answers `authn.flow_invalid` returns the form to its
+  channel's first step.
 - **Headless logic lives in `@speed/auth-core`.** `startFlow`,
   `answerFlow`, `startAuthenticatedFlow`, `readFlow`, `abandonFlow`,
   `listMethods`, `discoverSso`, `logout`, `refresh` -- the session

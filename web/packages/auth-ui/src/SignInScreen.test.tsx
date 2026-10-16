@@ -249,7 +249,7 @@ describe('SignInScreen', () => {
     expect(startFlow.mock.calls[0]?.[0]?.delivery).not.toBe('token')
   })
 
-  it('render the passkey button and drive its ceremony step to a sign-in', async () => {
+  it('drive the passkey ceremony from its options to a sign-in', async () => {
     const harness = makeHarness({
       [LOGIN_START]: () =>
         openFlow({
@@ -265,30 +265,112 @@ describe('SignInScreen', () => {
     })
     const onSignedIn = vi.fn()
     const startFlow = vi.spyOn(harness.session, 'startFlow')
-    renderWithProviders(
-      <SignInScreen
-        session={harness.session}
-        discovery={methodList([
-          { name: 'password', kind: 'form' },
-          { name: 'passkey', kind: 'webauthn', label: 'Passkey' },
-        ])}
-        onSignedIn={onSignedIn}
-      />,
+    // The ceremony is the browser's own API: stub the one method an
+    // assertion step reaches and hand back a credential shaped as
+    // navigator.credentials.get returns one.
+    const credential = {
+      id: 'AQID',
+      rawId: new Uint8Array([1, 2, 3]).buffer,
+      type: 'public-key',
+      response: {
+        clientDataJSON: new Uint8Array([4]).buffer,
+        authenticatorData: new Uint8Array([5]).buffer,
+        signature: new Uint8Array([6]).buffer,
+        userHandle: null,
+      },
+      getClientExtensionResults: () => ({}),
+      authenticatorAttachment: 'platform',
+    } as unknown as PublicKeyCredential
+    const get = vi.fn().mockResolvedValue(credential)
+    const original = Object.getOwnPropertyDescriptor(window.navigator, 'credentials')
+    Object.defineProperty(window.navigator, 'credentials', {
+      value: { get, create: vi.fn() },
+      configurable: true,
+    })
+    try {
+      renderWithProviders(
+        <SignInScreen
+          session={harness.session}
+          discovery={methodList([
+            { name: 'password', kind: 'form' },
+            { name: 'passkey', kind: 'webauthn', label: 'Passkey' },
+          ])}
+          onSignedIn={onSignedIn}
+        />,
+      )
+      const user = userEvent.setup()
+      await user.click(screen.getByRole('button', { name: 'Passkey' }))
+      // The ceremony step drives navigator.credentials.get against the
+      // step's options and reports the credential it returns.
+      await user.click(
+        screen.getByRole('button', { name: zhCN.signInFlow.submit }),
+      )
+      await waitFor(() => expect(onSignedIn).toHaveBeenCalledTimes(1))
+    } finally {
+      if (original === undefined) {
+        delete (window.navigator as { credentials?: unknown }).credentials
+      } else {
+        Object.defineProperty(window.navigator, 'credentials', original)
+      }
+    }
+    expect(get).toHaveBeenCalledTimes(1)
+    // The answer carries the serialized credential under the flow's
+    // first-factor step, not a pasted free-text value.
+    const answered = harness.calls.find(
+      (call) =>
+        call.path === '/auth/flows/answer' &&
+        (call.options?.body as { step?: string }).step === 'answer',
     )
-    const user = userEvent.setup()
-    await user.click(screen.getByRole('button', { name: 'Passkey' }))
-    // The ceremony step renders its own answer field.
-    const credential = await screen.findByLabelText(zhCN.signInFlow.credentialLabel)
-    await user.type(credential, 'attestation-response')
-    await user.click(
-      screen.getByRole('button', { name: zhCN.signInFlow.submit }),
-    )
-    await waitFor(() => expect(onSignedIn).toHaveBeenCalledTimes(1))
+    expect(answered?.options?.body).toMatchObject({
+      step: 'answer',
+      input: { credential: expect.stringContaining('AQID') },
+    })
     expect(harness.store.get()).toBe('access-1')
     expect(harness.calls[0]?.options?.body).toMatchObject({ method: 'passkey' })
     // The passkey button names no token delivery of its own: auth-core
     // forces the cookie session.
     expect(startFlow.mock.calls[0]?.[0]?.delivery).not.toBe('token')
+  })
+
+  it('render the passkey ceremony message when the browser has no WebAuthn', async () => {
+    const harness = makeHarness({
+      [LOGIN_START]: () =>
+        openFlow({
+          seq: 1,
+          state: 'first',
+          next: { kind: 'webauthn', options: { challenge: 'abc', rpId: 'x' } },
+        }),
+      [LOGIN_ANSWER]: () => completeFlow(2),
+    })
+    const original = Object.getOwnPropertyDescriptor(window.navigator, 'credentials')
+    // A browser without WebAuthn: the property is absent, as it is on a
+    // page the credential API does not reach.
+    delete (window.navigator as { credentials?: unknown }).credentials
+    try {
+      renderWithProviders(
+        <SignInScreen
+          session={harness.session}
+          discovery={methodList([{ name: 'passkey', kind: 'webauthn', label: 'Passkey' }])}
+          onSignedIn={vi.fn()}
+        />,
+      )
+      const user = userEvent.setup()
+      await user.click(screen.getByRole('button', { name: 'Passkey' }))
+      await user.click(
+        screen.getByRole('button', { name: zhCN.signInFlow.submit }),
+      )
+      expect(
+        await screen.findByText(zhCN.signInFlow.passkeyUnsupported),
+      ).toBeInTheDocument()
+    } finally {
+      if (original !== undefined) {
+        Object.defineProperty(window.navigator, 'credentials', original)
+      }
+    }
+    // No answer travelled: the browser could not run the ceremony.
+    expect(
+      harness.calls.find((call) => call.path === '/auth/flows/answer'),
+    ).toBeUndefined()
   })
 
   it('present the register entry only where a first login may open an account', async () => {

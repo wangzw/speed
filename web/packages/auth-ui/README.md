@@ -189,9 +189,9 @@ required second factor, a factor to register, a passkey ceremony -- is
 rendered by the shared step renderer (`src/internal/flow-step.tsx`): a
 `challenge` step renders one input per field the server asks for, a
 `factor` step renders one button per offered second factor, an `enroll`
-step one button per registerable kind, a `webauthn` step renders its
-public-key request options as text with one free-text answer field (this
-package ships no WebAuthn dependency), and a `ready` step (whose
+step one button per registerable kind, a `webauthn` step drives the
+browser's WebAuthn ceremony (`src/internal/webauthn.ts`) from its
+public-key options and reports the credential it returns, and a `ready` step (whose
 `next.kind` is `complete`) is
 taken automatically with `step: 'complete'`. A `redirect` step reaching the
 renderer (a callback route opened before the provider answered) renders an
@@ -456,7 +456,7 @@ enforced by registration):
 |---|---|
 | `passwordSignIn.*` | the password channel: title, field labels (identifier, password, new password), submit |
 | `smsSignIn.*` | the SMS channel: title, phone/code labels, send/resubmit/change-phone actions, the sent notice, the used-code notice |
-| `signInFlow.*` | the step renderer: the continue action, the factor/enroll titles, the factor-kind names (a guarded closed set plus an "other" label), the passkey help and answer labels, the unavailable-step notice |
+| `signInFlow.*` | the step renderer: the continue action, the factor/enroll titles, the factor-kind names (a guarded closed set plus an "other" label), the passkey prompt and its unsupported/cancelled/failed messages, the unavailable-step notice |
 | `discovery.*` | the sign-in surface: the loading notice and the retry action |
 | `mode.*` | the sign-in surface: the register / sign-in entries and the register hint |
 | `enterprise.*` | the enterprise entry: the email label, the continue action, the provider-picker title and the no-match notice |
@@ -595,8 +595,8 @@ namespace discipline over `src/` the same way it does in every package.
   package's.** This family drives the login purpose; the authenticated
   purposes (`link`, `step-up`, `enroll`) and their screens live in
   `@speed/account-ui` (`SocialBindingsSection` + `BindingCallbackHandler`,
-  `MfaSection`). A passkey (`webauthn`) step a login flow parks on renders
-  its ceremony here (the request options as text plus an answer field);
+  `MfaSection`). A passkey (`webauthn`) step a login flow parks on drives
+  its ceremony here (`src/internal/webauthn.ts`);
   the authenticated passes render it in `@speed/account-ui`.
 - **The channels are the deployment's, not the host's.** `SignInScreen`
   reads the discovery document (`session.listMethods`) and renders the

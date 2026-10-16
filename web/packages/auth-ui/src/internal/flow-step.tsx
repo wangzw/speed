@@ -17,13 +17,12 @@
  *  - `factor`     -> one button per offered second factor; choosing one
  *    sends its id and opens the factor's own challenge.
  *  - `enroll`     -> one button per registerable factor kind.
- *  - `webauthn`   -> the factor's own JSON (a passkey's public-key
- *    request options, TOTP's otpauth_uri), rendered as text -- this
- *    package ships no WebAuthn dependency -- plus one free-text field for
- *    the answer. The answer field's key follows the options: an
- *    `otpauth_uri` option means a code (`code`), anything else a
- *    credential (`credential`). The same surface renders a passkey
- *    login's first step.
+ *  - `webauthn`   -> the factor's own JSON. TOTP's otpauth_uri is
+ *    rendered as text beside a code field. A passkey's public-key options
+ *    are driven by the WebAuthn ceremony (./webauthn) -- the browser's own
+ *    API, no dependency -- whose credential is reported under the answer
+ *    step the record's state names. The same surface renders a passkey
+ *    login's first step and a passkey enrollment.
  *  - `complete`   -> nothing: the driver takes a ready step's result.
  *  - `redirect`   -> the host owns navigation; a redirect step that
  *    reaches this renderer (a callback route opened before the provider
@@ -50,6 +49,7 @@ import type { AuthnField } from '@speed/auth-core'
 import { FormField, FormLayout } from '@speed/ui-kit'
 import { useAuthUiTranslation } from './translation.js'
 import { fieldLabel } from './labels.js'
+import { WebauthnError, runWebauthn, webauthnStepOf } from './webauthn.js'
 import type { OpenFlowState } from './flow.js'
 
 /** The factor/enroll kinds the family has wording for. */
@@ -117,8 +117,15 @@ export function FlowStepFields({
         />
       )
     case 'webauthn':
-      return (
-        <WebauthnFields
+      return webauthnStepOf(step.next.options) === 'totp' ? (
+        <TotpFields
+          options={step.next.options}
+          busy={busy}
+          submit={t('signInFlow.submit')}
+          onAnswer={onAnswer}
+        />
+      ) : (
+        <PasskeyFields
           options={step.next.options}
           busy={busy}
           submit={t('signInFlow.submit')}
@@ -140,10 +147,9 @@ export function FlowStepFields({
   }
 }
 
-/** The passkey ceremony step: the request options the server answered,
- * rendered as text, plus one free-text field for the client's answer.
- * The answer key follows the options (see the file header). */
-function WebauthnFields({
+/** The TOTP enrollment step: the otpauth_uri to add to an authenticator
+ * app, rendered as text, plus a code field for the six-digit answer. */
+function TotpFields({
   options,
   busy,
   submit,
@@ -156,15 +162,10 @@ function WebauthnFields({
 }) {
   const { t } = useAuthUiTranslation()
   const [value, setValue] = useState('')
-  const isTotp =
-    typeof options === 'object' &&
-    options !== null &&
-    'otpauth_uri' in options
-  const payloadKey = isTotp ? 'code' : 'credential'
   return (
     <Box sx={{ display: 'flex', flexDirection: 'column', gap: 1.5, width: '100%' }}>
       <Typography variant="body2" color="text.secondary">
-        {isTotp ? t('signInFlow.enrollTotpHelp') : t('signInFlow.passkeyHelp')}
+        {t('signInFlow.enrollTotpHelp')}
       </Typography>
       <Typography
         variant="body2"
@@ -179,7 +180,7 @@ function WebauthnFields({
         {safeJson(options)}
       </Typography>
       <TextField
-        label={isTotp ? t('signInFlow.codeLabel') : t('signInFlow.credentialLabel')}
+        label={t('signInFlow.codeLabel')}
         value={value}
         onChange={(event) => setValue(event.target.value)}
         disabled={busy}
@@ -190,12 +191,80 @@ function WebauthnFields({
         type="button"
         variant="contained"
         disabled={busy || value.trim() === ''}
-        onClick={() => onAnswer({ [payloadKey]: value.trim() })}
+        onClick={() => onAnswer({ code: value.trim() })}
       >
         {submit}
       </Button>
     </Box>
   )
+}
+
+/** The passkey ceremony step: one button that drives the browser's WebAuthn
+ * ceremony against the step's options and reports the credential it returns.
+ * A browser without WebAuthn, a dismissed prompt and a failed ceremony each
+ * render their own message rather than a silent no-op. */
+function PasskeyFields({
+  options,
+  busy,
+  submit,
+  onAnswer,
+}: {
+  readonly options: unknown
+  readonly busy: boolean
+  readonly submit: string
+  readonly onAnswer: (input: Record<string, string>) => void
+}) {
+  const { t } = useAuthUiTranslation()
+  const [working, setWorking] = useState(false)
+  const [errorKey, setErrorKey] = useState<string | null>(null)
+
+  async function run(): Promise<void> {
+    setWorking(true)
+    setErrorKey(null)
+    try {
+      onAnswer({ credential: await runWebauthn(options) })
+    } catch (failure) {
+      setErrorKey(webauthnErrorKey(failure))
+    } finally {
+      setWorking(false)
+    }
+  }
+
+  return (
+    <Box sx={{ display: 'flex', flexDirection: 'column', gap: 1.5, width: '100%' }}>
+      <Typography variant="body2" color="text.secondary">
+        {t('signInFlow.passkeyPrompt')}
+      </Typography>
+      {errorKey !== null && (
+        <Alert severity="error" role="alert">
+          {t(errorKey)}
+        </Alert>
+      )}
+      <Button
+        type="button"
+        variant="contained"
+        disabled={busy || working}
+        onClick={() => void run()}
+      >
+        {submit}
+      </Button>
+    </Box>
+  )
+}
+
+/** The bundle key of the message a failed ceremony renders. */
+function webauthnErrorKey(failure: unknown): string {
+  if (failure instanceof WebauthnError) {
+    switch (failure.reason) {
+      case 'unsupported':
+        return 'signInFlow.passkeyUnsupported'
+      case 'cancelled':
+        return 'signInFlow.passkeyCancelled'
+      default:
+        return 'signInFlow.passkeyFailed'
+    }
+  }
+  return 'signInFlow.passkeyFailed'
 }
 
 /** JSON for display; a value JSON cannot carry renders as its string form

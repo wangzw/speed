@@ -195,7 +195,7 @@ sequenceDiagram
 
 ### 通行密钥登录
 
-通行密钥入口是一个按钮（名字取自描述符的 `label`），点击以方法名起一条流程；流程的首步是 `webauthn` 仪式步，由步进渲染器渲染（本包不携带 WebAuthn 依赖，故渲染请求选项为文本加一个自由文本答复字段，答复键按选项取 `credential` 或 `code`），答复后流程推进到完成。**仪式渲染在本包内实现**，不下沉到更低共享包，也不 import 同层的 account-ui——同层之间不互 import。
+通行密钥入口是一个按钮（名字取自描述符的 `label`），点击以方法名起一条流程；流程的首步是 `webauthn` 仪式步，由步进渲染器渲染：本包的 `internal/webauthn.ts` 把该步的请求选项解码后驱动 `navigator.credentials.get`，再把返回的凭据按后端解的 JSON 形状序列化成答复键 `credential`；登记步的 `otpauth_uri` 仍渲染为文本加一个 `code` 字段。答复后流程推进到完成。**仪式渲染在本包内实现**，不下沉到更低共享包，也不 import 同层的 account-ui——同层之间不互 import。
 
 ### 邀请受理
 
