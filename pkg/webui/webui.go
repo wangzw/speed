@@ -4,9 +4,10 @@
 // baked into the binary, os.DirFS(dir) for one served from disk — and this
 // package answers GET and HEAD requests for it on one listening endpoint. It
 // reads paths out of that filesystem, answers the file a path names together
-// with a cache header, and falls back to the entry document index.html for a
-// path the bundle does not carry, which is how a client-side router's deep
-// links reach the single page that renders them.
+// with a cache header, and for a path the bundle does not carry falls back to
+// the entry document index.html when the path names a client-side route, which
+// is how a client-side router's deep links reach the single page that renders
+// them, and answers 404 when it names a static resource.
 //
 // # What it does and does not do
 //
@@ -22,8 +23,8 @@
 // It knows no application and no frontend framework. The bundle it serves is
 // whatever bytes it was handed; the module can tell neither which application
 // nor which tool produced them. It does not parse a client-side route table —
-// the fallback is unconditional — and it does not render templates or a page on
-// the server.
+// the fallback keys off the path's shape alone — and it does not render
+// templates or a page on the server.
 //
 // It authenticates nothing, resolves no tenant and limits no traffic. Those are
 // the jobs of the layers a host registers around it; which layers sit on the
@@ -48,12 +49,25 @@
 // asset-prefix input item, "assets" by default — is served with a long,
 // immutable cache lifetime, since a file under it never changes under its name.
 // The entry document and every other file are served with no-cache, so a
-// browser revalidates them. A path the bundle does not carry falls back to the
-// entry document, except under the content-addressed subtree, where a miss is
-// answered as a 404 and never with index.html: a missing hashed file means a
-// stale index.html is pointing at a package this bundle does not ship, and
-// answering a script request with an HTML document would hide that behind a
-// 200.
+// browser revalidates them. A path the bundle does not carry is answered by the
+// entry document when it names a client-side route, a path with no file
+// extension like /console/tenants, and as a 404 when it names a static
+// resource: a file under the content-addressed subtree, a path whose final
+// segment carries a file extension like /runtime-config.json, or a path under a
+// configured resource prefix — /.well-known by default — where an
+// extensionless resource such as an ACME challenge token lives. A missing
+// hashed file means a stale index.html points at a package this bundle does not
+// ship, and a missing runtime resource is a deployment gap; answering either
+// with an HTML document would hide it behind a 200 — a browser would run the
+// document as a script, or a JSON parser would fail with no signal that the
+// file is what is absent.
+//
+// An extensionless resource at an arbitrary path — a root CNAME, a bare
+// /favicon — carries nothing in its shape to tell it from a client-side route,
+// which is a path with no extension too. It falls on the fallback side, and a
+// deployment that serves one places it under a resource prefix or gives it a
+// file extension; the resource-prefixes input item adds namespaces for exactly
+// that.
 package webui
 
 import (
@@ -79,14 +93,21 @@ const ConfigNamespace = ModuleName
 // The full path is the namespace, a dot, then the item key; it is what a
 // missing-required failure names.
 const (
-	endpointKey    = "endpoint"
-	assetPrefixKey = "asset-prefix"
-	endpointPath   = ConfigNamespace + "." + endpointKey
+	endpointKey         = "endpoint"
+	assetPrefixKey      = "asset-prefix"
+	resourcePrefixesKey = "resource-prefixes"
+	endpointPath        = ConfigNamespace + "." + endpointKey
 )
 
 // defaultAssetPrefix is the directory under which a build tool collects its
 // content-addressed files, used when configuration names none.
 const defaultAssetPrefix = "assets"
+
+// defaultResourcePrefix is the one reserved path prefix answered as a static
+// resource namespace when configuration names none: RFC 8615's well-known URI
+// space, which no client-side router owns and under which extensionless
+// resources such as an ACME HTTP-01 challenge token are served.
+const defaultResourcePrefix = ".well-known"
 
 // Config is the set of input items this module accepts.
 type Config struct {
@@ -98,11 +119,22 @@ type Config struct {
 	// subtree: the files under it are answered with a long, immutable cache
 	// lifetime, everything else with no-cache. It defaults to "assets".
 	AssetPrefix string `config:"asset-prefix"`
+	// ResourcePrefixes are path prefixes, in the bundle, of static-resource
+	// namespaces beyond the content-addressed subtree: a path the bundle does
+	// not carry that falls under one of them is answered 404 and never the entry
+	// document, whatever its final segment looks like. It is how an
+	// extensionless resource is refused rather than answered with HTML, since a
+	// path like /CNAME or /favicon carries no extension to tell it apart from a
+	// client-side route. It defaults to [".well-known"].
+	ResourcePrefixes []string `config:"resource-prefixes"`
 }
 
 // defaults is the carrier prototype configuration is read against: its field
 // values are the declared defaults. It is never given a run's values.
-var defaults = Config{AssetPrefix: defaultAssetPrefix}
+var defaults = Config{
+	AssetPrefix:      defaultAssetPrefix,
+	ResourcePrefixes: []string{defaultResourcePrefix},
+}
 
 // schema declares this module's input items.
 func schema() config.Schema {
@@ -119,6 +151,11 @@ func schema() config.Schema {
 				Description: "the directory name, in the bundle, of the content-addressed " +
 					"files answered with a long, immutable cache lifetime; every other file " +
 					"is answered with no-cache, and the default is " + defaultAssetPrefix,
+			},
+			resourcePrefixesKey: {
+				Description: "path prefixes, in the bundle, of static-resource namespaces: " +
+					"a path the bundle does not carry that falls under one is answered 404 " +
+					"and never the entry document; the default is " + defaultResourcePrefix,
 			},
 		},
 	}

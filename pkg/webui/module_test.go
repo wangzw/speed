@@ -69,6 +69,33 @@ func TestTheModuleServesTheFrontendOnTheConfiguredEndpoint(t *testing.T) {
 		}
 	})
 
+	t.Run("a missing static resource is refused and does not fall back", func(t *testing.T) {
+		got := h.get(t, "/runtime-config.json")
+		if got.status != nethttp.StatusNotFound {
+			t.Fatalf("GET a missing static resource answered %d, want 404 (no fallback)", got.status)
+		}
+		if ct := got.header.Get("Content-Type"); ct != "application/problem+json" {
+			t.Fatalf("GET a missing static resource answered media type %q, want a problem document", ct)
+		}
+		if got.body == entryDoc {
+			t.Fatalf("GET a missing static resource answered the entry document; " +
+				"a static-resource miss must not fall back")
+		}
+	})
+
+	t.Run("a missing resource under a reserved prefix is refused and does not fall back", func(t *testing.T) {
+		got := h.get(t, "/.well-known/acme-challenge/sometoken")
+		if got.status != nethttp.StatusNotFound {
+			t.Fatalf("GET a reserved-prefix resource answered %d, want 404 (no fallback)", got.status)
+		}
+		if ct := got.header.Get("Content-Type"); ct != "application/problem+json" {
+			t.Fatalf("GET a reserved-prefix resource answered media type %q, want a problem document", ct)
+		}
+		if got.body == entryDoc {
+			t.Fatalf("GET a reserved-prefix resource answered the entry document; it must not fall back")
+		}
+	})
+
 	t.Run("HEAD answers the headers and no body", func(t *testing.T) {
 		got := h.send(t, nethttp.MethodHead, "/"+assetName)
 		if got.status != nethttp.StatusOK {
@@ -156,7 +183,7 @@ func TestNewRefusesANilFilesystem(t *testing.T) {
 
 // TestTheDescriptorIsALeafRequiringTheRouter pins the module's declared shape:
 // its name, its one non-optional requirement of the entry point's registration
-// surface, no delivered capability, and the schema resource carrying the two
+// surface, no delivered capability, and the schema resource carrying the three
 // input items.
 func TestTheDescriptorIsALeafRequiringTheRouter(t *testing.T) {
 	m := New(fstest.MapFS{})
@@ -195,5 +222,8 @@ func TestTheDescriptorIsALeafRequiringTheRouter(t *testing.T) {
 	}
 	if _, declared := decl.Items[assetPrefixKey]; !declared {
 		t.Fatalf("the schema does not declare %q", assetPrefixKey)
+	}
+	if _, declared := decl.Items[resourcePrefixesKey]; !declared {
+		t.Fatalf("the schema does not declare %q", resourcePrefixesKey)
 	}
 }

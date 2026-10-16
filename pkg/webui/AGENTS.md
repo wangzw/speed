@@ -13,11 +13,12 @@ reg.Register(webui.New(fsys))
 
 The module reads paths out of that filesystem and answers them:
 `GET` and `HEAD` requests are answered with the file the path names, together
-with a cache header, and a path the bundle does not carry falls back to the
-entry document `index.html`. The root package is the whole implementation: it
+with a cache header; a path the bundle does not carry that names a client-side
+route falls back to the entry document `index.html`, and one that names a static
+resource is answered 404. The root package is the whole implementation: it
 registers the module `webui`, delivers no capability (it is a leaf), and declares
-two configuration items under the `webui` namespace. The root package's godoc is
-the API.
+three configuration items under the `webui` namespace. The root package's godoc
+is the API.
 
 ## What it does
 
@@ -26,10 +27,24 @@ the API.
   catch-all route (`/*path`) for each of the two methods, covering the whole
   path space, the root included. Every other method matches no route on that
   endpoint and the entry point's engine answers 405 with an `Allow` header.
-- **Falls back to the entry document.** A path the bundle does not carry is
-  answered with `index.html`, so a client-side router's deep link reaches the
-  single page that renders it. The fallback is unconditional: the module does not
-  distinguish a client-side route from a mistyped static path.
+- **Falls back to the entry document for a client-side route.** A path the bundle
+  does not carry whose final segment has no file extension -- a bare segment like
+  `console/tenants` -- and that falls under no resource prefix is answered with
+  `index.html`, so a client-side router's deep link reaches the single page that
+  renders it. The module keys this off the path's shape alone: it parses no route
+  table and does not know which routes the application declares.
+- **Refuses a path that names a static resource.** A path the bundle does not
+  carry that names a static resource -- a file under the content-addressed
+  subtree, a path whose final segment has a file extension like
+  `runtime-config.json`, or a path under a resource prefix (the
+  `resource-prefixes` item, `/.well-known` by default) -- is answered 404 and
+  never with `index.html`. A missing hashed file is the signature of a bundle that
+  does not match the entry document that references it, and a missing runtime
+  resource is a deployment gap; answering either with HTML would hide it behind a
+  200. The resource prefixes are how an extensionless resource is refused -- an
+  ACME HTTP-01 challenge token under `/.well-known/acme-challenge`, a root
+  `CNAME`: with no extension in its final segment such a path is shape-identical
+  to a client-side route, so its namespace, not its own shape, decides.
 - **Caches by subtree.** A file under the content-addressed subtree — the
   directory named by the `asset-prefix` item, `assets` by default — is answered
   with `public, max-age=31536000, immutable`, because a file's name changes with
@@ -63,8 +78,12 @@ the API.
 - **It does not open a directory or read an environment variable of its own.**
   The bundle comes in as an `fs.FS`; whether it is embedded or on disk is the
   host's decision at construction, not the module's.
-- **It does not negotiate the media type against the request's `Accept`.** An
-  unknown path asking for JSON still gets `index.html`.
+- **It does not negotiate the media type against the request's `Accept`, and it
+  parses no route table.** Whether a path the bundle does not carry falls back or
+  is refused is decided by the path's shape alone -- its final segment's file
+  extension, and whether it falls under the content-addressed subtree or a
+  resource prefix; a path on the resource side is refused regardless of what the
+  request accepts.
 
 ## The endpoint is the module's alone
 
@@ -79,12 +98,13 @@ around.
 
 ## Configuration
 
-Both items are mounted under the `webui` namespace.
+All three items are mounted under the `webui` namespace.
 
 | Item | Required | Default | Meaning |
 |---|---|---|---|
 | `endpoint` | yes | — | the name of the listening endpoint the frontend is served on, by the name the entry point's configuration gives it |
 | `asset-prefix` | no | `assets` | the directory, in the bundle, of the content-addressed subtree answered with the long cache lifetime |
+| `resource-prefixes` | no | `.well-known` | the path prefixes, in the bundle, of static-resource namespaces: a path the bundle does not carry that falls under one is answered 404, never the entry document |
 
 A missing `endpoint` fails the startup with `config.ErrMissingRequired`, naming
 the full key `webui.endpoint`. An `endpoint` that names no declared endpoint
@@ -111,13 +131,23 @@ treating "the bundle is in place" as a construction premise would make that
 deployment impossible. A `nil` filesystem is the one exception: it is a host
 error, and `Prepare` refuses it.
 
-## Two ways a request is answered without a file
+## How a request the bundle does not carry is answered
 
-- A key under the content-addressed subtree that the bundle does not carry is
-  answered 404, **never** with `index.html`. A missing hashed file is the
-  signature of a bundle that does not match the entry document that references
-  it, and answering a script request with HTML would let a browser run a
-  document as a script behind a 200.
+- A key that names a **static resource** is answered 404, never with
+  `index.html`: a file under the content-addressed subtree, a path whose final
+  segment carries a file extension, or a path under a resource prefix (the
+  `resource-prefixes` item, `/.well-known` by default). A missing hashed file is
+  the signature of a bundle that does not match the entry document that references
+  it, and a missing runtime resource is a deployment gap; answering a script or
+  JSON request with HTML would let a browser run a document as a script, or hand a
+  JSON parser an HTML body, behind a 200 with nothing reporting the absence. The
+  resource prefixes are how an extensionless resource -- an ACME HTTP-01 challenge
+  token, a root `CNAME` -- is refused: with no extension in its final segment it is
+  shape-identical to a client-side route, so its namespace decides.
+- A key that names a **client-side route** -- no file extension in its final
+  segment and under no resource prefix -- is answered with the entry document
+  `index.html`. When the bundle carries no entry document either, that is a 404 as
+  well.
 - A read of the bundle that fails for a reason other than a plain absence is
   answered 500, through the entry point's error writer. The bundle is read-only,
   so the module neither retries nor degrades.

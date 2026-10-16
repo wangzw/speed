@@ -126,6 +126,93 @@ func TestAMissUnderTheContentAddressedSubtreeDoesNotFallBack(t *testing.T) {
 	}
 }
 
+func TestAMissingStaticResourceDoesNotFallBack(t *testing.T) {
+	engine := testEngine(bundle(), defaultConfig())
+
+	// A path the bundle does not carry and that is shaped like a static
+	// resource — its final segment carries a file extension — is a miss, not a
+	// client-side route. Answering it with the entry document would let the
+	// browser parse an HTML document where JSON or a script was expected,
+	// behind a 200 that reports no absence.
+	for _, target := range []string{
+		"/runtime-config.json",
+		"/favicon-missing.ico",
+		"/sub/missing.js",
+		"/.well-known/appspecific.json",
+	} {
+		rec := ask(t, engine, nethttp.MethodGet, target)
+		if rec.Code != nethttp.StatusNotFound {
+			t.Fatalf("GET %s answered %d, want 404 (a missing static resource does not fall back)",
+				target, rec.Code)
+		}
+		if ct := rec.Header().Get("Content-Type"); ct != "application/problem+json" {
+			t.Fatalf("GET %s answered media type %q, want a problem document", target, ct)
+		}
+		if body := rec.Body.String(); body == entryDoc {
+			t.Fatalf("GET %s answered the entry document; a missing static resource must not fall back",
+				target)
+		}
+	}
+}
+
+func TestAMissingResourceUnderAReservedPrefixDoesNotFallBack(t *testing.T) {
+	// A resource whose final segment carries no file extension cannot be told
+	// from a client-side route by its shape alone, so it is refused through a
+	// resource namespace instead: RFC 8615's well-known space, which no
+	// client-side router owns, is one by default. An ACME HTTP-01 challenge
+	// token is the case that matters — it is extensionless by definition, and
+	// answering it with the entry document would break certificate issuance
+	// behind a 200 that reports nothing.
+	engine := testEngine(bundle(), defaultConfig())
+
+	for _, target := range []string{
+		"/.well-known/acme-challenge/sometoken",
+		"/.well-known/apple-app-site-association",
+	} {
+		rec := ask(t, engine, nethttp.MethodGet, target)
+		if rec.Code != nethttp.StatusNotFound {
+			t.Fatalf("GET %s answered %d, want 404 (a resource under a reserved prefix does not fall back)",
+				target, rec.Code)
+		}
+		if ct := rec.Header().Get("Content-Type"); ct != "application/problem+json" {
+			t.Fatalf("GET %s answered media type %q, want a problem document", target, ct)
+		}
+		if body := rec.Body.String(); body == entryDoc {
+			t.Fatalf("GET %s answered the entry document; a resource miss must not fall back", target)
+		}
+	}
+}
+
+func TestAConfiguredResourcePrefixDoesNotFallBack(t *testing.T) {
+	// An extensionless resource at an arbitrary path — a root CNAME, a bare
+	// runtime-config — carries nothing in its shape to place it on the resource
+	// side, so a deployment names its namespace in resource-prefixes. Outside
+	// every such prefix a bare path is still a client-side route and falls back.
+	cfg := defaultConfig()
+	cfg.ResourcePrefixes = []string{"CNAME", "runtime-config"}
+	engine := testEngine(bundle(), cfg)
+
+	for _, target := range []string{"/CNAME", "/runtime-config", "/CNAME/nested"} {
+		rec := ask(t, engine, nethttp.MethodGet, target)
+		if rec.Code != nethttp.StatusNotFound {
+			t.Fatalf("GET %s answered %d, want 404 (a configured resource prefix does not fall back)",
+				target, rec.Code)
+		}
+		if body := rec.Body.String(); body == entryDoc {
+			t.Fatalf("GET %s answered the entry document; a resource miss must not fall back", target)
+		}
+	}
+
+	// A bare path outside every resource prefix is indistinguishable from a
+	// client-side route, so it falls back: the documented boundary, not an
+	// oversight.
+	rec := ask(t, engine, nethttp.MethodGet, "/favicon")
+	if rec.Code != nethttp.StatusOK || rec.Body.String() != entryDoc {
+		t.Fatalf("GET /favicon answered %d %q, want the entry document: an extensionless path "+
+			"outside every resource prefix is a client-side route", rec.Code, rec.Body.String())
+	}
+}
+
 func TestADirectoryIsTreatedAsAMissAndFallsBack(t *testing.T) {
 	engine := testEngine(bundle(), defaultConfig())
 
