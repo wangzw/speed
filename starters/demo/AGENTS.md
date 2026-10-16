@@ -31,11 +31,23 @@ product adds it once it holds the dependency:
 | `sms.*`, `authn.login.sms`, `authn.mfa.sms`, `authn.sms` | an SMS vendor's account |
 | `mail.smtp` | an SMTP account |
 | `objectstore.s3` | an S3 account and bucket |
-| `authn.mfa.webauthn` | a relying party bound to a real origin |
 
 The test of a doubtful module is the module's own contract: if its required
 configuration items cannot be given a value that starts, it does not belong
 here.
+
+**The baseline carries WebAuthn (`authn.mfa.webauthn`), and it is the one
+capability the criterion admits that a copy still has to be given
+deliberately.** Its relying party is bound to the origin the deployment is
+reached at — an item `testdata/` carries, not a credential or a service — so it
+starts with nothing external and passes the test above. It is named here so the
+skeleton can show what the platform's management surface is for: a step-up asks
+for a factor kind the session has not already proved, and with TOTP as the only
+kind a session that signed in with TOTP has nothing left to raise it, so no
+step-up-gated write can ever complete (see "Re-authentication and impersonation
+on a fresh copy" below). TOTP beside WebAuthn is what turns the step-up, the
+elevation it grants and the write it unblocks into something a copy can
+demonstrate.
 
 The baseline is written twice in `main.go`, as `baselineServe` and
 `baselineWorker`. `serve` stands the HTTP entry point up and names every module
@@ -277,15 +289,27 @@ endpoint `ops.endpoint` names and expects no guard there.
 
 ### Re-authentication and impersonation on a fresh copy
 
-The baseline names one factor kind, TOTP, and the operator signs in with it. A
-step-up (`purpose: 'step-up'`) asks for a factor whose authentication methods
-are disjoint from the session's, so a session that already proved TOTP at
-sign-in has no factor that may raise it: the step-up start is answered 401
-(`insufficient_user_authentication`). A step-up-gated operator write -- an
-account-status or factor write, an impersonation start -- is therefore
-satisfied on this copy by a fresh multi-factor sign-in, not by the console's
-step-up dialog; the dialog says the session must be re-established when its
-start is refused, rather than offering a retry.
+The baseline names two factor kinds, TOTP and WebAuthn, and the second one is
+here for the step-up. A step-up (`purpose: 'step-up'`) asks for a factor whose
+authentication methods are disjoint from the session's, so an operator who
+signed in with password and TOTP carries a session that proved `otp` and cannot
+raise itself with another TOTP. WebAuthn's method (`webauthn`) is disjoint from
+it, so the step-up start answers a `factor` step offering the passkey, its
+completion elevates the session (`Sessions.Elevate`), and the step-up-gated
+write the operator tried re-runs against the raised session. A step-up-gated
+operator write -- an account-status or factor write, an impersonation start --
+is completed on this copy by a step-up dialog rather than by a fresh sign-in.
+
+Two things order a hand-run demonstration. The passkey has to be enrolled
+*before* the session that raises itself: a step-up accepts only a factor enabled
+before the session's authentication time, so a passkey enrolled under a session
+is not offered to that same session. And the write has to be attempted with a
+session that is no longer fresh: the gate is a fresh local multi-factor, its
+window is the setting `authn.mfa.recent-window` (ten minutes by default), and a
+just-completed multi-factor sign-in satisfies it directly, so the dialog appears
+only once the window has passed. Enroll TOTP and the passkey, sign out and back
+in with TOTP, and a step-up-gated write after that window is what shows the
+sequence.
 
 Impersonation carries one gate of its own: its actor must hold an active
 non-SMS factor activated at least `authn.mfa.sensitive-min-age` (24 hours by

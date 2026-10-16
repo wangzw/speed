@@ -75,7 +75,12 @@ authn:
     endpoints: [api, account, admin]
     mount:
       endpoint: account
-      public-url: "https://demo.test"
+      # The origin this deployment is reached at from outside: the origin a
+      # browser signs in from, and the one the WebAuthn relying party is bound
+      # to. It is the address the backend listener serves (http.listeners),
+      # written by host name — a relying party id has to be a domain, so the
+      # loopback address is localhost.
+      public-url: "http://localhost:8080"
   # DEV: the operators' password table. The entry is an Argon2id hash of the
   # password "operator-dev-secret" for the subject "operator" (the account
   # "static.operator"). Write your own with the static package's Hash and
@@ -94,6 +99,16 @@ authn:
   mfa:
     totp:
       issuer: demo
+    # WebAuthn. The relying party is bound to the origin the deployment is
+    # reached at (authn.gate.mount.public-url above); naming it here makes the
+    # binding visible and is where a copy points it at its own domain. The id
+    # has to be a domain, so it is localhost and not the loopback address the
+    # listener names.
+    webauthn:
+      rp-id: localhost
+      rp-name: demo
+      origins:
+        - "http://localhost:8080"
 
 # Tenant resolution and admission. Both guard the API endpoint and never the
 # account endpoint the authentication routes mount on.

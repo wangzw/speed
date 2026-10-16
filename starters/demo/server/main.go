@@ -16,9 +16,13 @@
 // that starts without a credential, an external account or a service outside the
 // deployment stack. A capability that needs one of those — a social or
 // enterprise identity provider, the SMS family, mail over SMTP, object storage
-// on S3, WebAuthn bound to a real origin — is left for a product to add once it
-// holds the dependency; the criterion is written down in AGENTS.md beside the
-// lists below.
+// on S3 — is left for a product to add once it holds the dependency. The
+// baseline carries WebAuthn as well: it is the one capability the criterion
+// admits that a copy of this skeleton once left out, because a deploying product
+// binds the relying party to the origin it is reached at rather than to a
+// credential or a service, and the platform's management surface cannot
+// demonstrate a step-up without a second factor kind beside TOTP. The criterion,
+// and that exception, are written down in AGENTS.md beside the lists below.
 //
 // Importing a module's package is what puts it in the available set: each
 // registers itself in init, so the import is the whole of the wiring. What each
@@ -67,6 +71,7 @@ import (
 	loginpassword "github.com/vislake/speed/pkg/authn/login/password"
 	"github.com/vislake/speed/pkg/authn/mfa"
 	"github.com/vislake/speed/pkg/authn/mfa/totp"
+	"github.com/vislake/speed/pkg/authn/mfa/webauthn"
 	authnmount "github.com/vislake/speed/pkg/authn/mount"
 	"github.com/vislake/speed/pkg/authn/profile"
 	"github.com/vislake/speed/pkg/authn/session"
@@ -233,10 +238,18 @@ const webuiModuleName = webui.ModuleName
 // add once it holds the dependency — a social or enterprise identity provider
 // (authn.login.google/github/wechat-web/wechat-mp, authn.sso.oidc/saml), the SMS
 // family (sms.*, authn.login.sms, authn.mfa.sms, authn.sms), mail over SMTP
-// (mail.smtp), object storage on S3 (objectstore.s3), and WebAuthn, whose
-// relying party is bound to a real origin (authn.mfa.webauthn). The test of a
-// doubtful one is the module's own: if its required configuration items cannot
-// be given a value that starts, it does not belong here.
+// (mail.smtp) and object storage on S3 (objectstore.s3). The test of a doubtful
+// one is the module's own: if its required configuration items cannot be given a
+// value that starts, it does not belong here.
+//
+// WebAuthn (authn.mfa.webauthn) is the one capability the criterion admits that
+// this list once left out. Its relying party is bound to the origin the
+// deployment is reached at — a value this file's configuration carries, not a
+// credential or a service — so it starts with nothing external. It is named here
+// because the platform's management surface cannot demonstrate a step-up on a
+// single factor kind: a step-up asks for a kind the session has not proved, TOTP
+// alone leaves none, and the second kind is what lets a copy show the step-up,
+// the elevation it grants and the write it unblocks.
 //
 // What differs between the two lists is the entry point. serve stands up the
 // HTTP entry point and names every module with a route or a middleware; worker
@@ -256,7 +269,8 @@ var (
 		// The identity system: the gateway, its route mounter, the operator
 		// password table, the account store, the management routes, the session
 		// cookie, the login flow with its password method, the multi-factor
-		// register with the TOTP factor, access tokens, impersonation records,
+		// register with its two factor kinds — the TOTP authenticator and the
+		// WebAuthn relying party — access tokens, impersonation records,
 		// invitations, the profile surface, and the enterprise provider register.
 		authnmount.ModuleName,
 		gate.ModuleName,
@@ -268,6 +282,7 @@ var (
 		loginpassword.ModuleName,
 		mfa.ModuleName,
 		totp.ModuleName,
+		webauthn.ModuleName,
 		token.ModuleName,
 		impersonation.ModuleName,
 		invite.ModuleName,

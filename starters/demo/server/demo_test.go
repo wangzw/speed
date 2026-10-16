@@ -13,6 +13,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"slices"
 	"strings"
 	"sync"
 	"syscall"
@@ -625,6 +626,29 @@ func TestServeAnswersTheProbes(t *testing.T) {
 		if res.status != http.StatusOK {
 			t.Errorf("GET %s on the account endpoint answered %d, want 200:\n%s", path, res.status, res.body)
 		}
+	}
+
+	// The deployment assembles two factor kinds, and the second one is what
+	// makes a step-up completable -- which is why it is here rather than left
+	// for a copy to add. A step-up asks for a factor kind the session has not
+	// already proved, so a TOTP-only deployment leaves a session that signed in
+	// with TOTP nothing to raise itself with and refuses the step-up start. The
+	// listing the login engine mounts publishes the kinds the assembly takes
+	// in, so it is where "a second kind is here" is read: the signing-in copy
+	// carries TOTP and WebAuthn, and both are listed.
+	discovery := get(t, accountBase+"/auth/methods")
+	var listed struct {
+		MFA struct {
+			Factors []string `json:"factors"`
+		} `json:"mfa"`
+	}
+	if err := json.Unmarshal(discovery.body, &listed); err != nil {
+		t.Fatalf("GET /auth/methods is not JSON: %v\n%s", err, discovery.body)
+	}
+	if !slices.Contains(listed.MFA.Factors, "totp") || !slices.Contains(listed.MFA.Factors, "webauthn") {
+		t.Errorf("the deployment lists factor kinds %v, want both totp and webauthn: a step-up needs a "+
+			"kind the sign-in kind is not, so a single-kind deployment cannot complete one",
+			listed.MFA.Factors)
 	}
 
 	// The preference matrix is assembled and not merely declared. It reports the
