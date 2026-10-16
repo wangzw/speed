@@ -9,7 +9,7 @@
 #   go -C starters/demo/server run . --config file:testdata/sqlite-memory.yaml sqlite-memory serve
 #
 # The sections above the backend ones are the platform baseline and are the same
-# in all five stack files; only the backend section at the bottom differs.
+# in all six stack files; only the backend section at the bottom differs.
 #
 # The values marked DEV in a comment are a development default this skeleton
 # ships so a copy starts as it stands. Replace every one of them before a
@@ -144,6 +144,25 @@ objectstore:
     root: "./var/objects"
   metadata:
     endpoints: [api]
+
+# The first account and the platform role a copy starts with. The seed command
+# is idempotent: an account, a role, a grant or a binding already there is left
+# as it stands.
+#
+# This stack holds its database inside the process that opened it, so what the
+# seed writes is gone as soon as it exits, before a serve of this same stack
+# starts: seed the sqlite stack instead, which is this one with a database in a
+# file. This section is kept here so that every stack file carries the same
+# platform sections.
+seed:
+  # DEV: the initial operator's login name and password, and whether it
+  # administers the platform. Replace both before a deployment serves real
+  # traffic.
+  accounts:
+    - identifier: operator@demo.test
+      password: operator-dev-secret
+      display-name: Demo Operator
+      platform-admin: true
 
 # The engine. ":memory:" is the process's own database, held to one connection.
 # The encryption key seals the columns a module encrypts at rest (a TOTP seed

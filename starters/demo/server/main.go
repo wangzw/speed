@@ -28,7 +28,7 @@
 // command names it; naming a module for a run and importing it for its contract
 // are two different questions. See AGENTS.md.
 //
-// The program runs on five deployment stacks. A stack is one level of the
+// The program runs on six deployment stacks. A stack is one level of the
 // command tree: inclusion is inherited down the command path, so the stack node
 // names its database engine once and every command under it runs on it. What
 // differs between two stacks is the engine, the key-value backend, the event
@@ -153,6 +153,7 @@ const (
 	serveCommand   = "serve"
 	workerCommand  = "worker"
 	migrateCommand = "migrate"
+	seedCommand    = "seed"
 	genCommand     = "gen"
 )
 
@@ -179,7 +180,19 @@ type stack struct {
 
 // stacks is every stack this program runs on. Each is built by the same
 // function, so what differs between two of them is this table and nothing else.
+//
+// Two of the rows name the same modules: sqlite and sqlite-memory differ in the
+// database their configuration points at and in nothing else. They are still two
+// stacks, because that difference is the one a product chooses between — the
+// database sqlite names keeps what it is given, and sqlite-memory's is gone with
+// the process that opened it, which is what makes one of them able to hold the
+// account a run signs in with and the other not.
 var stacks = []stack{
+	{
+		name:   "sqlite",
+		engine: sqlite.ModuleName, kv: kvmemory.ModuleName, event: eventmemory.ModuleName,
+		exporter: stdout.ModuleName,
+	},
 	{
 		name:   "sqlite-memory",
 		engine: sqlite.ModuleName, kv: kvmemory.ModuleName, event: eventmemory.ModuleName,
@@ -378,7 +391,7 @@ func commandTree(reg *core.Registry) *config.App {
 }
 
 // addStack writes one stack's subtree. Every stack goes through here, which is
-// what keeps the five from drifting apart.
+// what keeps the six from drifting apart.
 //
 // The stack node takes in two things, and every command under it inherits both.
 // The engine at run level, because every one of those commands runs it. And
@@ -386,7 +399,7 @@ func commandTree(reg *core.Registry) *config.App {
 // table, and each of the other commands drives past Migrate, so it applies
 // migrations too — a command carrying a smaller static inclusion would apply a
 // smaller migration set. Putting the declaration inclusion on the stack node
-// makes that the same inclusion by construction rather than by keeping five
+// makes that the same inclusion by construction rather than by keeping six
 // copies alike. It is also what lets gen read every declared fragment without
 // naming a single module.
 //
@@ -429,6 +442,35 @@ func addStack(root *config.Command, s stack) {
 	// migrate runs the engine the stack node names and nothing else, and reaches
 	// every other module through the declarations the node carries.
 	node.Sub(migrateCommand).Do(core.StageMigrate, nil)
+
+	// seed writes the accounts the configuration names, and the platform
+	// administrator role the ones marked with it hold. It drives to StageStart,
+	// which carries it past the migrations and past the wiring, so a copy seeds a
+	// database that has never been migrated in one command.
+	//
+	// It names the policy module because that is where the permission-to-(resource,
+	// action) translation is resolved: the grant table holds the pair and not the
+	// permission, so writing a grant in a permission's name takes the translation,
+	// and this command reads it off the catalog that module delivers. The
+	// enforcement module is deliberately left out — it would demand an HTTP entry
+	// point, which a command that never serves has no use for.
+	//
+	// It names its own configuration module so that the items under seed. are
+	// judged: a required item binds only for the modules a run takes in at run
+	// level, so without this the section could be missing or misspelled and the
+	// command would do nothing and say nothing.
+	//
+	// It takes the stack's event backend in because an account the account store
+	// writes announces itself on the bus — the creation event is published after
+	// the commit and does not go through the outbox. The outbox comes with it
+	// because the account store's other events (a status change, a deletion, a
+	// membership) are staged into it, and because an account module with a bus
+	// and no outbox says so at startup. The key-value backend is left out —
+	// nothing this command runs reaches for one.
+	seed := node.Sub(seedCommand)
+	seed.Include(seedModuleName, authnaccount.ModuleName, authzpolicy.ModuleName,
+		outboxrelay.ModuleName, s.event, log.ModuleName)
+	seed.Do(core.StageStart, seedDatabase)
 
 	// gen merges the fragments the modules declare into one document and writes
 	// it out. It drives to StagePrepare, so it binds no port and constructs no

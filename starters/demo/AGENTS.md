@@ -86,7 +86,14 @@ in; replace them all before a deployment serves real traffic:
 - **The operators' password table** (`authn.static.subjects`) holds an Argon2id
   hash of the password `operator-dev-secret` for the subject `operator` (the
   account `static.operator`). Write your own entry with the static package's
-  `Hash` and replace it.
+  `Hash` and replace it. It is the credential the API endpoints accept over
+  HTTP basic; it is not a login for the frontend, which the seed's account is.
+- **The initial operators** (`seed.accounts`) are the accounts the `seed`
+  command writes. Replace every one of them before a deployment serves real
+  traffic. The sample configurations give each a plaintext password, which is
+  the one development value here written in the clear; a deployment that will
+  not carry that gives a `password-hash` instead — the entry the static
+  package's `Hash` writes, the same form the password table above holds.
 - **The database encryption key** (`db.<engine>.encryption-key`) seals the
   columns a module encrypts at rest. Replace the `dev-only-change-me-…` value.
 
@@ -107,7 +114,7 @@ in; replace them all before a deployment serves real traffic:
 
 ## Running it
 
-The binary is one program on five stacks. The stack is a level of the command
+The binary is one program on six stacks. The stack is a level of the command
 tree, and everything below a stack runs on it, so every command is written
 `demo <stack> <command>`.
 
@@ -117,15 +124,16 @@ selects the transport, so a local file is written `file:///path/to/config.yaml`
 after the command or before it, or through the environment variable
 `DEMO_CONFIG`.
 
-Two of the configuration's values are paths relative to the working directory —
-the token signing key and the object store's root — so run the program from its
-module directory, `starters/demo/server`. The `sqlite-memory` stack needs
-nothing installed, so it is the one to start with:
+Some of the configuration's values are paths relative to the working directory —
+the token signing key, the object store's root, the sqlite stack's database — so
+run the program from its module directory, `starters/demo/server`. The `sqlite`
+stack needs nothing installed and keeps what it is given, so it is the one to
+start with: seed the operator it ships with, then serve.
 
 ```
 # from the repository root; -C runs the program with its module directory as the working directory
-go -C starters/demo/server run . --config file:testdata/sqlite-memory.yaml sqlite-memory migrate
-go -C starters/demo/server run . --config file:testdata/sqlite-memory.yaml sqlite-memory serve
+go -C starters/demo/server run . --config file:testdata/sqlite.yaml sqlite seed
+go -C starters/demo/server run . --config file:testdata/sqlite.yaml sqlite serve
 ```
 
 Or build once and run the binary from inside `starters/demo/server`, so the same
@@ -134,8 +142,8 @@ relative paths resolve:
 ```
 go -C starters/demo/server build -o ./demo .
 # then, with starters/demo/server as the working directory:
-./demo --config file:testdata/sqlite-memory.yaml sqlite-memory migrate
-./demo --config file:testdata/sqlite-memory.yaml sqlite-memory serve
+./demo --config file:testdata/sqlite.yaml sqlite seed
+./demo --config file:testdata/sqlite.yaml sqlite serve
 ```
 
 `migrate` runs the stack's database engine alone and applies every module's
@@ -144,6 +152,17 @@ writes a `ready` record on standard output once every module has started and a
 `stopped` record as it leaves, so a supervisor (or a test) that needs to know the
 process is up waits for the record and not for a listening socket. Stop a run
 with SIGINT or SIGTERM; it drains in-flight requests first.
+
+`seed` writes the initial operators `seed.accounts` names, and the
+platform-administrator role the ones marked with it hold. It carries the
+migrations with it, so it is the whole of what a fresh copy does to a database
+before serving from it; running it again writes nothing and says so.
+
+Seeding is a step of its own rather than something `serve` does on its way up,
+because a deployment nobody may administer until somebody says so is the posture
+this skeleton ships. On `sqlite-memory` the step achieves nothing — that stack's
+database is gone with the process that opened it, and seed and serve are two
+processes — which is why the stack to sign in on is `sqlite`.
 
 `version` answers with the program's version and assembles nothing:
 
@@ -160,9 +179,9 @@ go -C starters/demo/server run . --config file:testdata/sqlite-memory.yaml \
     sqlite-memory gen --title demo-api --version 1.2.3 -o /tmp/openapi.json
 ```
 
-The `serve` command's configuration is the sample under `server/testdata/`; the other
-four stacks differ from it only in the backend section, and `compose.yaml`
-brings those backends up:
+The `serve` command's configuration is the sample under `server/testdata/`. The
+four `postgres` stacks differ from the two `sqlite` ones in the backend section
+alone, and `compose.yaml` brings those backends up:
 
 ```
 docker compose -f starters/demo/compose.yaml up -d
@@ -209,7 +228,7 @@ the operations surface is `pkg/ops`, which mounts its three routes on the
 endpoint `ops.endpoint` names and expects no guard there.
 
 
-## The five stacks
+## The stacks
 
 A stack names a database engine, a key-value backend, an event backend and a
 telemetry export backend. They are built by one function (`addStack`), so what
@@ -217,11 +236,20 @@ tells two of them apart is the table in `main.go` and nothing else:
 
 | Stack | Engine | Key-value | Event | Export |
 |---|---|---|---|---|
+| `sqlite` | `db.sqlite` | `kv.memory` | `event.memory` | `observability.stdout` |
 | `sqlite-memory` | `db.sqlite` | `kv.memory` | `event.memory` | `observability.stdout` |
 | `postgres` | `db.postgres` | `kv.postgres` | `event.postgres` | `observability.stdout` |
 | `postgres-redis-nats` | `db.postgres` | `kv.redis` | `event.nats` | `observability.otlp` |
 | `postgres-nats-redis` | `db.postgres` | `kv.nats` | `event.redis` | `observability.stdout` |
 | `postgres-memcached-nats` | `db.postgres` | `kv.memcached` | `event.nats` | `observability.stdout` |
+
+`sqlite` and `sqlite-memory` name the same modules and are still two stacks: the
+database the first's configuration points at is a file under `var/`, and the
+second's is the process's own, gone with the run that opened it. The table does
+not show that difference and the configuration does — it is the one pair of rows
+here whose distinction lives in `testdata/` alone. Sign in on `sqlite`; use
+`sqlite-memory` to exercise the assembly and the probes, where nothing written is
+meant to outlive the process.
 
 The set is closed: a stack a product adds is a row in the `stacks` table, and a
 configuration under `server/testdata/` to go with it.
@@ -246,6 +274,17 @@ Under every stack:
   `serve`, which stands the entry point up.
 - **`migrate`** runs the engine alone and reaches every module's declarations to
   build every table.
+- **`seed`** writes the accounts under `seed.accounts`, each with the credential
+  it is given — a plaintext `password` or a `password-hash` — and the
+  platform-administrator role the ones marked with it hold, carrying every
+  permission the process declares. It is idempotent — an account, a role, a
+  grant or a binding already there is left as it stands and reported as skipped
+  — so it is safe to run at every deployment. Nothing else is touched, and an
+  account the configuration no longer names is neither disabled nor deleted. It
+  drives to `StageStart`, past the migrations, so a database that was never
+  migrated is one it can seed in a single command. A role and a binding come
+  from here because no migration writes one: who a deployment's administrators
+  are is the host's answer, and this command is where this host gives it.
 - **`gen`** merges the OpenAPI fragments the modules declare into one document
   and writes it out, either to the file `-o` names or to standard output; the
   document's title and version come from `--title` and `--version`, defaulting to

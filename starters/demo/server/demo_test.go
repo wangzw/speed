@@ -2,12 +2,14 @@ package main
 
 import (
 	"bufio"
+	"bytes"
 	"context"
 	"encoding/json"
 	"fmt"
 	"io"
 	"net"
 	"net/http"
+	"net/http/cookiejar"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -92,14 +94,32 @@ func childEnv() []string {
 	return env
 }
 
+// demoSeedSection is the seed section of the configuration template, kept apart
+// so that a case can take it out whole: a configuration whose seed section is
+// missing is one the command has to refuse, and a case cannot say that by
+// editing a line of it. Its second account carries a hash rather than a
+// plaintext password, so one case covers both credential forms.
+const demoSeedSection = `seed:
+  accounts:
+    - identifier: "operator@demo.test"
+      password: "operator-dev-secret"
+      display-name: "Demo Operator"
+      platform-admin: true
+    - identifier: "ops@demo.test"
+      password-hash: "$argon2id$v=19$m=19456,t=2,p=1$xeAjr/xEt4mML0QaEhw8pw$Khjd7856RU6MatFxmOtE0YFZJLsC05yxX5HwJhpBXno"
+      display-name: "Demo Ops"`
+
 // demoConfig is the sqlite-memory configuration a case writes: the five
-// endpoint addresses, the token signing key, and the object store's root, with
-// the ports filled in. It is the file testdata/sqlite-memory.yaml holds with
-// the ports and the two paths filled in, so a case exercises the same config a
-// person runs by hand. The platform sections are the baseline every stack
-// carries; the case that reads the platform's own routes holds that they are
-// assembled, and the case that reads an undeclared route on a guarded endpoint
-// holds that it is not.
+// endpoint addresses, the token signing key, the object store's root and the
+// database locator, with the ports filled in. It is the file
+// testdata/sqlite-memory.yaml holds, with those filled in, so a case exercises
+// the same config a person runs by hand — and one account more: the case that
+// seeds signs in with two, one given a plaintext password and one given a hash,
+// and the sample files carry only the first shape so that a copy starts with one
+// operator to replace rather than two. The platform sections are the baseline
+// every stack carries; the case that reads the platform's own routes holds that
+// they are assembled, and the case that reads an undeclared route on a guarded
+// endpoint holds that it is not.
 const demoConfig = `http:
   endpoints:
     api:
@@ -183,9 +203,10 @@ objectstore:
     root: "%s"
   metadata:
     endpoints: [api]
+%s
 db:
   sqlite:
-    dsn: ":memory:"
+    dsn: "%s"
     encryption-key: "dev-only-change-me-0123456789abcdef"
 kv:
   memory:
@@ -226,12 +247,59 @@ func freePorts(t *testing.T, n int) []int {
 // bytes into the source tree.
 func writeConfig(t *testing.T, ports []int) string {
 	t.Helper()
+	// The database is the stack's own: it lives in the process, which is enough
+	// for a case that runs one command.
+	return writeConfigWith(t, ports, ":memory:")
+}
+
+// writeConfigWith is writeConfig with the database locator chosen by the caller.
+//
+// A database in a file is what two commands of this tree can share. The
+// sqlite-memory stack's own locator names a database held inside the process
+// that opened it, and a case that runs the command that seeds and then the one
+// that serves is two processes: what the first wrote is gone before the second
+// starts, and the second finds the tables and none of the rows.
+func writeConfigWith(t *testing.T, ports []int, dsn string) string {
+	t.Helper()
+	return writeConfigFile(t, configBody(t, ports, dsn))
+}
+
+// writeConfigReplacing is writeConfigWith with one edit applied to the
+// configuration it writes. A case that holds what a run does with a
+// configuration a copy could get wrong needs one, and a needle that is not
+// there is the case failing rather than a run over the wrong file.
+func writeConfigReplacing(t *testing.T, ports []int, dsn, old, new string) string {
+	t.Helper()
+	body := configBody(t, ports, dsn)
+	replaced := strings.Replace(body, old, new, 1)
+	if replaced == body {
+		t.Fatalf("the configuration holds no %q to replace", old)
+	}
+	return writeConfigFile(t, replaced)
+}
+
+// configBody is the configuration a case runs over: the template with the
+// case's ports, its token signing key, its object store root and its database
+// locator filled in. The key is minted for the case in a directory of its own,
+// named by an absolute path so the child resolves it whatever its working
+// directory, and the object store's root is a directory of the case's own, so a
+// run writes no bytes into the source tree.
+func configBody(t *testing.T, ports []int, dsn string) string {
+	t.Helper()
 	key := filepath.Join(t.TempDir(), "token-signing-key.pem")
 	if err := ensureSigningKey(key); err != nil {
 		t.Fatalf("minting the case's token signing key: %v", err)
 	}
 	objects := filepath.Join(t.TempDir(), "objects")
-	body := fmt.Sprintf(demoConfig, ports[0], ports[1], ports[2], ports[3], ports[4], key, objects)
+	return fmt.Sprintf(demoConfig, ports[0], ports[1], ports[2], ports[3], ports[4], key, objects,
+		demoSeedSection, dsn)
+}
+
+// writeConfigFile writes a configuration body and answers with the locator that
+// names it. The locator is a file URL, because the config locator is a URI and
+// its scheme is what selects the transport.
+func writeConfigFile(t *testing.T, body string) string {
+	t.Helper()
 	path := filepath.Join(t.TempDir(), "demo.yaml")
 	if err := os.WriteFile(path, []byte(body), 0o600); err != nil {
 		t.Fatalf("writing the configuration: %v", err)
@@ -380,20 +448,86 @@ type response struct {
 	body   []byte
 }
 
-// get makes one request of an address and reads the whole answer.
+// get makes one unauthenticated request of an address and reads the whole
+// answer.
 func get(t *testing.T, url string) response {
 	t.Helper()
-	client := &http.Client{Timeout: 10 * time.Second}
-	res, err := client.Get(url)
+	return send(t, &http.Client{Timeout: 10 * time.Second}, http.MethodGet, url, nil, nil)
+}
+
+// send makes one request and reads the whole answer. A non-nil body is encoded
+// as JSON and the content type is set for it; the headers are set as given.
+func send(t *testing.T, client *http.Client, method, url string, body any,
+	headers map[string]string,
+) response {
+	t.Helper()
+	var reader io.Reader
+	if body != nil {
+		encoded, err := json.Marshal(body)
+		if err != nil {
+			t.Fatalf("encoding the body of %s %s: %v", method, url, err)
+		}
+		reader = bytes.NewReader(encoded)
+	}
+	req, err := http.NewRequest(method, url, reader)
 	if err != nil {
-		t.Fatalf("GET %s: %v", url, err)
+		t.Fatalf("building %s %s: %v", method, url, err)
+	}
+	if body != nil {
+		req.Header.Set("Content-Type", "application/json")
+	}
+	for name, value := range headers {
+		req.Header.Set(name, value)
+	}
+	res, err := client.Do(req)
+	if err != nil {
+		t.Fatalf("%s %s: %v", method, url, err)
 	}
 	defer func() { _ = res.Body.Close() }()
-	body, err := io.ReadAll(res.Body)
+	answer, err := io.ReadAll(res.Body)
 	if err != nil {
-		t.Fatalf("reading the body of GET %s: %v", url, err)
+		t.Fatalf("reading the body of %s %s: %v", method, url, err)
 	}
-	return response{status: res.StatusCode, body: body}
+	return response{status: res.StatusCode, body: answer}
+}
+
+// signIn runs a password login to the end and answers with the access token it
+// hands out.
+//
+// The flow takes two calls: the first carries the credentials and leaves the
+// flow ready, and the second takes the result with the complete step. Both need
+// the flow cookie, which is why the client keeps a jar.
+func signIn(t *testing.T, accountBase, identifier, password string) string {
+	t.Helper()
+	jar, err := cookiejar.New(nil)
+	if err != nil {
+		t.Fatalf("building a cookie jar: %v", err)
+	}
+	client := &http.Client{Timeout: 10 * time.Second, Jar: jar}
+	credentials := map[string]any{
+		"method":   "password",
+		"delivery": "token",
+		"binding":  "cookie",
+		"input":    map[string]string{"identifier": identifier, "password": password},
+	}
+	if res := send(t, client, http.MethodPost, accountBase+"/auth/flows", credentials, nil); res.status != http.StatusOK {
+		t.Fatalf("starting the login flow answered %d: %s", res.status, res.body)
+	}
+	answer := send(t, client, http.MethodPost, accountBase+"/auth/flows/answer",
+		map[string]string{"step": "complete"}, nil)
+	if answer.status != http.StatusOK {
+		t.Fatalf("completing the login flow answered %d: %s", answer.status, answer.body)
+	}
+	var token struct {
+		AccessToken string `json:"access_token"`
+	}
+	if err = json.Unmarshal(answer.body, &token); err != nil {
+		t.Fatalf("reading the login's answer: %v\n%s", err, answer.body)
+	}
+	if token.AccessToken == "" {
+		t.Fatalf("the login answered no access token: %s", answer.body)
+	}
+	return token.AccessToken
 }
 
 // TestServeAnswersTheProbes runs migrate and then serve on the sqlite-memory
@@ -600,4 +734,145 @@ func TestGenWritesTheMergedDocument(t *testing.T) {
 		}
 		check(t, []byte(res.stdout))
 	})
+}
+
+// The credentials the seed writes and this case signs in with.
+const (
+	seedIdentifier = "operator@demo.test"
+	seedPassword   = "operator-dev-secret"
+	// hashIdentifier is the account the configuration gives as a hash instead
+	// of as a plaintext password. It signs in with the same password, because
+	// the entry the configuration carries is that password's — the same entry
+	// the static credential table holds.
+	hashIdentifier = "ops@demo.test"
+)
+
+// TestSeedBootstrapsTheConsole runs the seed command against a database that no
+// other command has touched, runs it a second time, and then holds what it is
+// for: an account it writes signs in, and one it marks as a platform
+// administrator reaches the platform's management surface, which refuses a
+// caller that holds no permission.
+//
+// It runs on the sqlite stack, whose database is a file, because the command
+// that seeds and the command that serves are two processes and sqlite-memory's
+// database belongs to one of them. The seed carries the migrations with it — it
+// drives past them — so it is run on a database that was never migrated.
+func TestSeedBootstrapsTheConsole(t *testing.T) {
+	ports := freePorts(t, len(servedEndpoints))
+	config := writeConfigWith(t, ports, filepath.Join(t.TempDir(), "demo.db"))
+
+	first := runCommand(t, config, "sqlite", seedCommand)
+	if first.err != nil {
+		t.Fatalf("seed failed: %v\n%s", first.err, first.combined())
+	}
+	for _, want := range []string{
+		"seeded: account " + seedIdentifier,
+		"seeded: account " + hashIdentifier,
+		"seeded: role system/" + string(platformAdminRole),
+		"seeded: binding ",
+	} {
+		if !strings.Contains(first.stdout, want) {
+			t.Errorf("the seed wrote nothing holding %q:\n%s", want, first.combined())
+		}
+	}
+
+	second := runCommand(t, config, "sqlite", seedCommand)
+	if second.err != nil {
+		t.Fatalf("the second seed failed: %v\n%s", second.err, second.combined())
+	}
+	if strings.Contains(second.stdout, "seeded:") {
+		t.Errorf("the second seed wrote something, so it is not idempotent:\n%s", second.combined())
+	}
+	for _, want := range []string{
+		"skipped: account " + seedIdentifier,
+		"skipped: role system/" + string(platformAdminRole),
+		"skipped: grants on system/" + string(platformAdminRole),
+		"skipped: binding ",
+	} {
+		if !strings.Contains(second.stdout, want) {
+			t.Errorf("the second seed reported nothing holding %q:\n%s", want, second.combined())
+		}
+	}
+
+	serve := start(t, config, "sqlite", serveCommand)
+	serve.waitReady(t)
+
+	accountBase := fmt.Sprintf("http://127.0.0.1:%d", ports[1])
+	adminBase := fmt.Sprintf("http://127.0.0.1:%d", ports[2])
+	roster := func(t *testing.T, identifier string) response {
+		t.Helper()
+		token := signIn(t, accountBase, identifier, seedPassword)
+		return send(t, &http.Client{Timeout: 10 * time.Second}, http.MethodGet,
+			adminBase+"/tenant/admin/tenants", nil,
+			map[string]string{"Authorization": "Bearer " + token})
+	}
+
+	// The account the seed marks is an administrator: the roster answers, and it
+	// is empty, because the seed writes no tenant.
+	allowed := roster(t, seedIdentifier)
+	if allowed.status != http.StatusOK {
+		t.Fatalf("the seeded administrator was refused the tenant roster with %d: %s",
+			allowed.status, allowed.body)
+	}
+	var listed struct {
+		Tenants []json.RawMessage `json:"tenants"`
+	}
+	if err := json.Unmarshal(allowed.body, &listed); err != nil {
+		t.Fatalf("reading the roster: %v\n%s", err, allowed.body)
+	}
+	if len(listed.Tenants) != 0 {
+		t.Errorf("the roster holds %d tenant(s), and the seed writes none", len(listed.Tenants))
+	}
+
+	// The account the seed marks nothing for signs in — which is what an entry
+	// given as a hash rather than as a plaintext has to produce — and reaches
+	// nothing that asks for a permission.
+	if refused := roster(t, hashIdentifier); refused.status != http.StatusForbidden {
+		t.Errorf("the account holding no role reached the roster with %d, want %d: %s",
+			refused.status, http.StatusForbidden, refused.body)
+	}
+}
+
+// TestTheSeedRefusesAConfigurationItCannotWrite holds the two ways a seed whose
+// configuration is wrong used to pass for success: an account list that is not
+// there, and an account whose credential key is misspelled. Either one used to
+// leave the operator with no way to sign in while the command reported seeded —
+// and the second leaves the account in the database with no credential at all,
+// which is the state a later run cannot repair and cannot report.
+func TestTheSeedRefusesAConfigurationItCannotWrite(t *testing.T) {
+	cases := []struct {
+		name string
+		old  string
+		new  string
+		want string
+	}{
+		{
+			"a seed section that holds no account list",
+			demoSeedSection, "seed: {}",
+			"seed.accounts",
+		},
+		{
+			"a credential key that is misspelled",
+			"      password: ", "      passwrd: ",
+			"neither a password nor a password-hash",
+		},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			ports := freePorts(t, len(servedEndpoints))
+			config := writeConfigReplacing(t, ports, filepath.Join(t.TempDir(), "demo.db"), tc.old, tc.new)
+
+			res := runCommand(t, config, "sqlite", seedCommand)
+			if res.err == nil {
+				t.Fatalf("the seed accepted a configuration it cannot write:\n%s", res.combined())
+			}
+			if strings.Contains(res.stdout, "seeded:") {
+				t.Errorf("the seed reported work it did not do:\n%s", res.combined())
+			}
+			if !strings.Contains(res.stderr, tc.want) {
+				t.Errorf("the seed's failure does not say what is wrong with the configuration (%q):\n%s",
+					tc.want, res.combined())
+			}
+		})
+	}
 }

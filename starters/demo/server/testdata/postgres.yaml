@@ -8,7 +8,7 @@
 #   go -C starters/demo/server run . --config file:testdata/postgres.yaml postgres serve
 #
 # The platform baseline above the backend section is the same as in
-# sqlite-memory.yaml; only the backend section below differs between the five
+# sqlite-memory.yaml; only the backend section below differs between the six
 # stack files. The values marked DEV are development defaults a copy must
 # replace before serving real traffic (AGENTS.md lists them together).
 
@@ -114,6 +114,19 @@ objectstore:
     root: "./var/objects"
   metadata:
     endpoints: [api]
+
+# The first account and the platform role a copy starts with. The seed command
+# is idempotent: an account, a role, a grant or a binding already there is left
+# as it stands.
+seed:
+  # DEV: the initial operator's login name and password, and whether it
+  # administers the platform. Replace both before a deployment serves real
+  # traffic.
+  accounts:
+    - identifier: operator@demo.test
+      password: operator-dev-secret
+      display-name: Demo Operator
+      platform-admin: true
 
 # DEV: the database encryption key seals the columns a module encrypts at rest.
 db:

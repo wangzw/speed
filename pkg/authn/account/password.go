@@ -54,9 +54,16 @@ func unreadable(cause error) error {
 	return errUnreadableEntry
 }
 
-// loginName reads the identifier of a password login: one containing an @ is an
-// email address and any other a username, and a phone number is no login name.
-func loginName(identifier string) (authn.IdentifierKind, string, error) {
+// LoginName reads the identifier of an identifier-and-password credential: one
+// containing an @ is an email address and any other a username, and a phone
+// number is no login name. The second result is the normalized form, which is
+// the form the identifier is stored and looked up in.
+//
+// It is exported because whoever *writes* an account that is to be signed into
+// by a password has to read its identifier the way the password surface reads
+// it: a host command that seeds the first operator is the caller this exists
+// for, and a second copy of the rule there would be one that drifts.
+func LoginName(identifier string) (authn.IdentifierKind, string, error) {
 	kind := authn.IdentifierUsername
 	if strings.Contains(identifier, "@") {
 		kind = authn.IdentifierEmail
@@ -123,7 +130,7 @@ func derivationFailed(err error) error {
 // account exists. A success clears both, unless the account-level one was
 // holding.
 func (p *product) Verify(ctx context.Context, identifier, plaintext string) (authn.AccountID, authn.VerifyResult, error) {
-	kind, name, nameErr := loginName(identifier)
+	kind, name, nameErr := LoginName(identifier)
 	var key string
 	if nameErr == nil {
 		key = identifierKey(kind, name)

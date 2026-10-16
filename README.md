@@ -42,7 +42,7 @@ make deps-down
 ```
 
 `starters/demo` is the copyable product skeleton: a runnable program that
-assembles this repository's modules on five deployment stacks. Ask a command
+assembles this repository's modules on six deployment stacks. Ask a command
 what it takes. The arguments it prints are the ones its modules declared as
 flags; the rest reaches them through the configuration file and the
 environment:
