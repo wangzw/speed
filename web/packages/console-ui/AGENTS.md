@@ -107,10 +107,10 @@ What the pages reach through the bundle, grouped by surface:
 |---|---|
 | `useTenants`, `useCreateTenant`, `useSetTenantAlias`, `useSetTenantStatus` | `/tenant/admin/tenants` (list / create / alias / status) |
 | `usePermissions`, `useRoles`, `useWriteRole`, `useRemoveRole`, `useGrants`, `useGrantPermission`, `useRevokePermission`, `useBindings`, `useAccountBindings`, `useBindRole`, `useUnbindRole` | `/authz/admin/permissions`, `/authz/admin/tenants/:tenant/roles[/:role[/grants[/:permission]]]`, `/authz/admin/tenants/:tenant/bindings[/:account[/:role]]` |
-| `useAccounts`, `useAccount`, `useAccountFactors`, `useAccountSecrets`, `useAccountSessions`, `useDeleteAccount`, `useRemoveIdentifier`, `useResetMFA`, `useRevokeAccountSessions`, `useRevokeSecret`, `useRevokeSession` | `/auth/admin/accounts[/:id[/factors|/secrets[/:secret]|/sessions|/identifiers/:identifier|/mfa-reset|/revoke-sessions]]`, `/auth/admin/sessions/:id` |
+| `useAccounts`, `useAccount`, `useAccountFactors`, `useAccountSecrets`, `useAccountSessions`, `useCreateAccount`, `usePatchAccount`, `useSetAccountStatus`, `useSetMFARequired`, `useResetPassword`, `useAddIdentifier`, `useCreateSecret`, `useDeleteAccount`, `useRemoveIdentifier`, `useResetMFA`, `useRevokeAccountSessions`, `useRevokeSecret`, `useRevokeSession` | `/auth/admin/accounts[/:id[/factors|/secrets[/:secret]|/sessions|/identifiers/:identifier|/mfa-reset|/revoke-sessions|/status|/mfa-required|/password|/identifiers]]`, `/auth/admin/sessions/:id` |
 | `useImpersonations`, `useRevokeImpersonation` | `/auth/admin/impersonations[/:id]` |
-| `useInvitations`, `useIssueInvitation`, `useRevokeInvitation`, `useMembers`, `useRemoveMember` | `/auth/admin/tenants/:tenant/invitations[/:id]`, `/auth/admin/tenants/:tenant/members[/:account]` |
-| `useSsoProviders`, `useSsoProvider`, `useDeleteSsoProvider`, `useRemoveSsoDomain`, `useVerifySsoDomain`, `useRefreshSsoMetadata`, `useReverifySsoDomains` | `/auth/admin/tenants/:tenant/sso/providers`, `/auth/admin/sso/providers/:id[/domains/:domain[/verify]|/metadata/refresh|/reverify-domains]` |
+| `useInvitations`, `useIssueInvitation`, `useRevokeInvitation`, `useMembers`, `useWriteMember`, `useSetMemberSsoExempt`, `useRemoveMember` | `/auth/admin/tenants/:tenant/invitations[/:id]`, `/auth/admin/tenants/:tenant/members[/:account[/sso-exempt]]` |
+| `useSsoProviders`, `useSsoProvider`, `useCreateSsoProvider`, `useUpdateSsoProvider`, `useClaimSsoDomain`, `useDeleteSsoProvider`, `useRemoveSsoDomain`, `useVerifySsoDomain`, `useRefreshSsoMetadata`, `useReverifySsoDomains` | `/auth/admin/tenants/:tenant/sso/providers`, `/auth/admin/sso/providers/:id[/domains[/:domain[/verify]]|/metadata/refresh|/reverify-domains]` |
 | `useSettings`, `useSetSetting`, `useRemoveSetting` | `/settings/admin/settings[/:namespace[/:key]]` |
 | `useSmsTemplates`, `useRegisterSmsTemplate`, `useOfferSmsTemplate`, `useSetSmsTemplateEnabled`, `useRemoveSmsTemplate` | `/sms/admin/templates[/submissions|/:name[/enabled]]` |
 | `useAuditRecords` | `/audit/admin/records` |
@@ -125,17 +125,18 @@ a module name may itself contain a dot (`authn.session`), so the rest
 cannot be derived by splitting on the first dot. `settingKeyRest(fullKey,
 namespace)` computes the rest.
 
-### Writes whose request body the contract does not declare
+### The write request bodies are declared by the platform fragment
 
 A write's request body comes from the platform OpenAPI fragment's
 `requestBody` for that endpoint. The account surface's create, patch,
 status, MFA-requirement, password-reset, identifier-add and secret-create
 writes, the SSO provider create/update and domain-claim, and the member
-write and SSO exemption have **no `requestBody` in the platform's
-fragment**, so the generated client sends no body for them and the pages
-render no control for those writes. The endpoints' handlers still decode
-a body; the fragment is what is missing. Adding those bodies belongs to
-the fragment, not to this package — the frontend never hand-writes a
+write and SSO exemption all **declare a `requestBody` in the platform's
+fragment**, so the generated client sends a body for each and the pages
+render a control for each. The fragment's body matches the structure the
+handler decodes with `mount.Decode`; `pkg/authn/admin/requestbody_test.go`
+holds the two together — a handler that decodes a body the fragment does
+not declare fails that check. The frontend still never hand-writes a
 request body.
 
 ## Non-negotiable rules
@@ -219,9 +220,6 @@ composition, with the operations bundle substituted from test-utils).
   package's reading of the modules' error surfaces and move when the
   mapping is fixed. A refusal outside the whitelist renders the generic
   failure text.
-- **The missing fragment bodies.** The writes listed under "Writes whose
-  request body the contract does not declare" have no control until the
-  platform's OpenAPI fragment declares their `requestBody`.
 - **Responsive frame.** The frame is a persistent sidebar (stacked on
   narrow viewports), not a drawer: no `matchMedia`-driven responsive
   behaviour is shipped.

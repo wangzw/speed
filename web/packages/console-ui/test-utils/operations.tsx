@@ -32,13 +32,27 @@ import type {
   ConsoleAccountQuery,
   ConsoleAccountRef,
   ConsoleAccountSecret,
+  ConsoleAccountSecretCreated,
   ConsoleAccountSession,
+  ConsoleAddIdentifierInput,
   ConsoleAuditPage,
   ConsoleAuditRecord,
   ConsoleBinding,
   ConsoleBindingRef,
+  ConsoleClaimSsoDomainInput,
+  ConsoleCreateAccountInput,
+  ConsoleCreateSecretInput,
+  ConsoleCreateSsoProviderInput,
   ConsoleCreateTenantInput,
   ConsoleGrant,
+  ConsolePatchAccountInput,
+  ConsoleResetPasswordInput,
+  ConsoleSetAccountStatusInput,
+  ConsoleSetMFARequiredInput,
+  ConsoleSetMemberSSOExemptInput,
+  ConsoleSsoVerifyToken,
+  ConsoleWriteMemberInput,
+  ConsoleWriteSsoProviderInput,
   ConsoleGrantRef,
   ConsoleImpersonation,
   ConsoleInvitationPage,
@@ -113,6 +127,15 @@ export interface ConsoleBackend {
   revokeAccountSessions: (input: ConsoleAccountRef) => Promise<void>
   revokeSecret: (input: ConsoleRevokeSecretInput) => Promise<void>
   revokeSession: (input: ConsoleRevokeSessionInput) => Promise<void>
+  createAccount: (input: ConsoleCreateAccountInput) => Promise<ConsoleAccount>
+  patchAccount: (input: ConsolePatchAccountInput) => Promise<ConsoleAccount>
+  setAccountStatus: (input: ConsoleSetAccountStatusInput) => Promise<ConsoleAccount>
+  setMFARequired: (input: ConsoleSetMFARequiredInput) => Promise<void>
+  resetPassword: (input: ConsoleResetPasswordInput) => Promise<void>
+  addIdentifier: (input: ConsoleAddIdentifierInput) => Promise<void>
+  createSecret: (
+    input: ConsoleCreateSecretInput,
+  ) => Promise<ConsoleAccountSecretCreated>
 
   // Impersonation surface.
   listImpersonations: (
@@ -126,6 +149,8 @@ export interface ConsoleBackend {
   revokeInvitation: (input: ConsoleInvitationRef) => Promise<void>
   listMembers: (tenant: string) => Promise<readonly ConsoleMember[]>
   removeMember: (input: ConsoleMemberRef) => Promise<void>
+  writeMember: (input: ConsoleWriteMemberInput) => Promise<void>
+  setMemberSsoExempt: (input: ConsoleSetMemberSSOExemptInput) => Promise<void>
 
   // SSO surface.
   listSsoProviders: (tenant: string) => Promise<readonly ConsoleSsoProvider[]>
@@ -135,6 +160,9 @@ export interface ConsoleBackend {
   verifySsoDomain: (input: ConsoleSsoDomainRef) => Promise<void>
   refreshSsoMetadata: (input: ConsoleSsoProviderRef) => Promise<void>
   reverifySsoDomains: (input: ConsoleSsoProviderRef) => Promise<void>
+  createSsoProvider: (input: ConsoleCreateSsoProviderInput) => Promise<ConsoleSsoProvider>
+  updateSsoProvider: (input: ConsoleWriteSsoProviderInput) => Promise<ConsoleSsoProvider>
+  claimSsoDomain: (input: ConsoleClaimSsoDomainInput) => Promise<ConsoleSsoVerifyToken>
 
   // SMS template surface.
   listSmsTemplates: () => Promise<ConsoleSmsTemplatePage>
@@ -191,6 +219,19 @@ export function makeConsoleBackend(
     revokeAccountSessions: () => Promise.resolve(),
     revokeSecret: () => Promise.resolve(),
     revokeSession: () => Promise.resolve(),
+    createAccount: () => Promise.resolve(accountFixture()),
+    patchAccount: () => Promise.resolve(accountFixture()),
+    setAccountStatus: () => Promise.resolve(accountFixture()),
+    setMFARequired: () => Promise.resolve(),
+    resetPassword: () => Promise.resolve(),
+    addIdentifier: () => Promise.resolve(),
+    createSecret: () =>
+      Promise.resolve({
+        id: 'secret-1',
+        label: 'label',
+        secret: 'one-time',
+        expires_at: '0001-01-01T00:00:00Z',
+      }),
 
     listImpersonations: () => Promise.resolve([]),
     revokeImpersonation: () => Promise.resolve(),
@@ -200,6 +241,8 @@ export function makeConsoleBackend(
     revokeInvitation: () => Promise.resolve(),
     listMembers: () => Promise.resolve([]),
     removeMember: () => Promise.resolve(),
+    writeMember: () => Promise.resolve(),
+    setMemberSsoExempt: () => Promise.resolve(),
 
     listSsoProviders: () => Promise.resolve([]),
     getSsoProvider: () => Promise.resolve(providerFixture()),
@@ -208,6 +251,9 @@ export function makeConsoleBackend(
     verifySsoDomain: () => Promise.resolve(),
     refreshSsoMetadata: () => Promise.resolve(),
     reverifySsoDomains: () => Promise.resolve(),
+    createSsoProvider: () => Promise.resolve(providerFixture()),
+    updateSsoProvider: () => Promise.resolve(providerFixture()),
+    claimSsoDomain: () => Promise.resolve({ verify_token: 'token' }),
 
     listSmsTemplates: () => Promise.resolve({ templates: [], next_cursor: '' }),
     registerSmsTemplate: () => Promise.resolve(),
@@ -556,6 +602,78 @@ export function createConsoleOperations(
         },
       })
     },
+    useCreateAccount: () => {
+      const client = useQueryClient()
+      return useMutation({
+        mutationFn: (input: ConsoleCreateAccountInput) =>
+          backend.createAccount(input),
+        onSuccess: () => {
+          void client.invalidateQueries({ queryKey: ACCOUNTS_KEY })
+        },
+      })
+    },
+    usePatchAccount: () => {
+      const client = useQueryClient()
+      return useMutation({
+        mutationFn: (input: ConsolePatchAccountInput) =>
+          backend.patchAccount(input),
+        onSuccess: (_answer, input) => {
+          void client.invalidateQueries({ queryKey: ACCOUNTS_KEY })
+          void client.invalidateQueries({ queryKey: accountKey(input.id) })
+        },
+      })
+    },
+    useSetAccountStatus: () => {
+      const client = useQueryClient()
+      return useMutation({
+        mutationFn: (input: ConsoleSetAccountStatusInput) =>
+          backend.setAccountStatus(input),
+        onSuccess: (_answer, input) => {
+          void client.invalidateQueries({ queryKey: ACCOUNTS_KEY })
+          void client.invalidateQueries({ queryKey: accountKey(input.id) })
+        },
+      })
+    },
+    useSetMFARequired: () => {
+      const client = useQueryClient()
+      return useMutation({
+        mutationFn: (input: ConsoleSetMFARequiredInput) =>
+          backend.setMFARequired(input),
+        onSuccess: (_answer, input) => {
+          void client.invalidateQueries({ queryKey: accountKey(input.id) })
+        },
+      })
+    },
+    useResetPassword: () => {
+      const client = useQueryClient()
+      return useMutation({
+        mutationFn: (input: ConsoleResetPasswordInput) =>
+          backend.resetPassword(input),
+        onSuccess: (_answer, input) => {
+          void client.invalidateQueries({ queryKey: sessionsKey(input.id) })
+        },
+      })
+    },
+    useAddIdentifier: () => {
+      const client = useQueryClient()
+      return useMutation({
+        mutationFn: (input: ConsoleAddIdentifierInput) =>
+          backend.addIdentifier(input),
+        onSuccess: (_answer, input) => {
+          void client.invalidateQueries({ queryKey: accountKey(input.id) })
+        },
+      })
+    },
+    useCreateSecret: () => {
+      const client = useQueryClient()
+      return useMutation({
+        mutationFn: (input: ConsoleCreateSecretInput) =>
+          backend.createSecret(input),
+        onSuccess: (_answer, input) => {
+          void client.invalidateQueries({ queryKey: secretsKey(input.id) })
+        },
+      })
+    },
 
     useImpersonations: (params) =>
       useQuery({
@@ -611,6 +729,25 @@ export function createConsoleOperations(
       const client = useQueryClient()
       return useMutation({
         mutationFn: (input: ConsoleMemberRef) => backend.removeMember(input),
+        onSuccess: (_answer, input) => {
+          void client.invalidateQueries({ queryKey: membersKey(input.tenant) })
+        },
+      })
+    },
+    useWriteMember: () => {
+      const client = useQueryClient()
+      return useMutation({
+        mutationFn: (input: ConsoleWriteMemberInput) => backend.writeMember(input),
+        onSuccess: (_answer, input) => {
+          void client.invalidateQueries({ queryKey: membersKey(input.tenant) })
+        },
+      })
+    },
+    useSetMemberSsoExempt: () => {
+      const client = useQueryClient()
+      return useMutation({
+        mutationFn: (input: ConsoleSetMemberSSOExemptInput) =>
+          backend.setMemberSsoExempt(input),
         onSuccess: (_answer, input) => {
           void client.invalidateQueries({ queryKey: membersKey(input.tenant) })
         },
@@ -677,6 +814,41 @@ export function createConsoleOperations(
       const client = useQueryClient()
       return useMutation({
         mutationFn: (input: ConsoleSsoProviderRef) => backend.reverifySsoDomains(input),
+        onSuccess: (_answer, input) => {
+          void client.invalidateQueries({ queryKey: ssoProviderKey(input.id) })
+        },
+      })
+    },
+    useCreateSsoProvider: () => {
+      const client = useQueryClient()
+      return useMutation({
+        mutationFn: (input: ConsoleCreateSsoProviderInput) =>
+          backend.createSsoProvider(input),
+        onSuccess: (_answer, input) => {
+          void client.invalidateQueries({
+            queryKey: ssoProvidersKey(input.tenant),
+          })
+        },
+      })
+    },
+    useUpdateSsoProvider: () => {
+      const client = useQueryClient()
+      return useMutation({
+        mutationFn: (input: ConsoleWriteSsoProviderInput) =>
+          backend.updateSsoProvider(input),
+        onSuccess: (_answer, input) => {
+          void client.invalidateQueries({ queryKey: ssoProviderKey(input.id) })
+          void client.invalidateQueries({
+            queryKey: ssoProvidersKey(input.tenant),
+          })
+        },
+      })
+    },
+    useClaimSsoDomain: () => {
+      const client = useQueryClient()
+      return useMutation({
+        mutationFn: (input: ConsoleClaimSsoDomainInput) =>
+          backend.claimSsoDomain(input),
         onSuccess: (_answer, input) => {
           void client.invalidateQueries({ queryKey: ssoProviderKey(input.id) })
         },

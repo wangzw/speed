@@ -274,10 +274,68 @@
     "deleteTitle": "删除账户",
     "deleteMessage": "删除账户「{{id}}」会一并移除其全部标识、密钥与会话。",
     "status": {
+      "label": "状态",
+      "submit": "保存状态",
       "active": "已启用",
       "disabled": "已停用",
       "deleted": "已删除",
       "other": "未知"
+    },
+    "mfa": {
+      "label": "MFA 要求",
+      "required": "必须",
+      "notRequired": "不要求",
+      "submit": "保存要求"
+    },
+    "create": {
+      "title": "新建账户",
+      "kindLabel": "账户类型",
+      "kind": {"user": "用户", "service": "服务"},
+      "displayNameLabel": "显示名",
+      "usernameLabel": "用户名",
+      "emailLabel": "邮箱",
+      "emailViaLabel": "邮箱验证方式",
+      "phoneLabel": "手机号",
+      "phoneViaLabel": "手机号验证方式",
+      "passwordLabel": "口令",
+      "mfaLabel": "强制 MFA",
+      "attributesLabel": "属性（JSON）",
+      "attributesHelper": "一个字符串取值的 JSON 对象，或留空",
+      "via": {
+        "none": "未声明",
+        "admin": "管理员断言",
+        "importUnverified": "导入，未验证"
+      },
+      "submit": "新建"
+    },
+    "writes": {"title": "账户写入"},
+    "patch": {
+      "displayNameLabel": "新显示名",
+      "attributesLabel": "新属性（JSON）",
+      "attributesHelper": "一个字符串取值的 JSON 对象，或留空",
+      "protectedLabel": "受保护",
+      "protected": {
+        "unchanged": "保持不变",
+        "true": "受保护",
+        "false": "不受保护"
+      },
+      "submit": "保存改动"
+    },
+    "password": {
+      "label": "临时口令",
+      "submit": "重置口令"
+    },
+    "addIdentifier": {
+      "kindLabel": "新增标识类型",
+      "valueLabel": "取值",
+      "submit": "新增标识"
+    },
+    "createSecret": {
+      "labelLabel": "标签",
+      "expiresLabel": "过期时间",
+      "expiresHelper": "RFC 3339 时刻，或留空表示不过期",
+      "submit": "新建密钥",
+      "handedOver": "密钥（仅显示这一次）：{{secret}}"
     },
     "detail": {
       "title": "账户「{{id}}」",
@@ -502,6 +560,15 @@
     "activeNo": "否",
     "ssoExemptYes": "是",
     "ssoExemptNo": "否",
+    "ssoExemptSet": "豁免 SSO",
+    "ssoExemptClear": "取消 SSO 豁免",
+    "write": {
+      "accountLabel": "账户",
+      "sourceLabel": "来源",
+      "activeLabel": "在册",
+      "ssoExemptLabel": "SSO 豁免",
+      "submit": "写入成员关系"
+    },
     "remove": "移除",
     "removeTitle": "移除成员",
     "removeMessage": "从该租户移除成员「{{account}}」。"
@@ -542,9 +609,30 @@
       "providerLabel": "提供方",
       "domainLabel": "域名",
       "verify": "验证",
+      "claim": "认领",
+      "claimToken": "请在 DNS 中发布该令牌：{{token}}",
       "remove": "移除",
       "removeTitle": "移除域名",
       "removeMessage": "从该提供方移除域名「{{domain}}」。"
+    },
+    "provider": {
+      "title": "提供方写入",
+      "editLabel": "选择提供方",
+      "newOption": "新建提供方",
+      "protocolLabel": "协议",
+      "nameLabel": "名称",
+      "provisioningLabel": "开通方式",
+      "enabledLabel": "已启用",
+      "trustIdpMfaLabel": "信任 IdP 的 MFA",
+      "allowIdpInitiatedLabel": "允许 IdP 发起",
+      "allowSha1Label": "允许 SHA-1",
+      "mergeExistingLabel": "合并既有账户",
+      "configLabel": "配置（JSON）",
+      "configHelper": "一个 JSON 对象，或留空",
+      "clientSecretLabel": "客户端密钥",
+      "createSubmit": "新建提供方",
+      "updateSubmit": "保存提供方",
+      "tri": {"unchanged": "保持不变", "true": "是", "false": "否"}
     }
   },
   "sms": {

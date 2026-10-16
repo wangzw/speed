@@ -45,18 +45,30 @@ import type { ReactNode } from 'react'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import type { UseMutationResult, UseQueryResult } from '@tanstack/react-query'
 import {
+  authnAdminAccountsAddIdentifier,
+  authnAdminAccountsCreate,
   authnAdminAccountsDelete,
+  authnAdminAccountsPatch,
   authnAdminAccountsRemoveIdentifier,
   authnAdminAccountsResetMFA,
+  authnAdminAccountsResetPassword,
   authnAdminAccountsRevokeSessions,
+  authnAdminAccountsSecretsCreate,
   authnAdminAccountsSecretsRevoke,
+  authnAdminAccountsSetMFARequired,
+  authnAdminAccountsStatus,
   authnAdminImpersonationsRevoke,
+  authnAdminMembersPut,
   authnAdminMembersRemove,
+  authnAdminMembersSsoExempt,
   authnAdminSessionsRevoke,
+  authnAdminSsoProvidersClaimDomain,
+  authnAdminSsoProvidersCreate,
   authnAdminSsoProvidersDelete,
   authnAdminSsoProvidersRefreshMetadata,
   authnAdminSsoProvidersRemoveDomain,
   authnAdminSsoProvidersReverifyDomains,
+  authnAdminSsoProvidersUpdate,
   authnAdminSsoProvidersVerifyDomain,
   authnInviteIssue,
   authnInviteRevoke,
@@ -119,16 +131,29 @@ import type {
   AuditAdminRecordPage,
   AuditAdminRecordsListParams,
   AuthnAdminAccount,
+  AuthnAdminAccountCreate,
   AuthnAdminAccountList,
+  AuthnAdminAccountPatch,
+  AuthnAdminAccountStatus,
   AuthnAdminAccountsListParams,
+  AuthnAdminDomainClaim,
   AuthnAdminFactor,
+  AuthnAdminIdentifierWrite,
   AuthnAdminImpersonation,
   AuthnAdminImpersonationsListParams,
   AuthnAdminMember,
+  AuthnAdminMemberSSOExempt,
+  AuthnAdminMemberWrite,
   AuthnAdminMembersListParams,
+  AuthnAdminMFARequired,
+  AuthnAdminPasswordReset,
   AuthnAdminProvider,
+  AuthnAdminProviderWrite,
   AuthnAdminSecret,
+  AuthnAdminSecretCreate,
+  AuthnAdminSecretCreated,
   AuthnAdminSession,
+  AuthnAdminVerifyToken,
   AuthnInviteInvitation,
   AuthnInviteListParams,
   AuthnInvitePage,
@@ -295,6 +320,9 @@ export type ConsoleAccountFactor = AuthnAdminFactor
 /** One service secret of an account (GET .../accounts/:id/secrets). */
 export type ConsoleAccountSecret = AuthnAdminSecret
 
+/** The one-time handover a secret creation answers with (POST .../secrets). */
+export type ConsoleAccountSecretCreated = AuthnAdminSecretCreated
+
 /** One session of an account (GET .../accounts/:id/sessions). */
 export type ConsoleAccountSession = AuthnAdminSession
 
@@ -322,6 +350,44 @@ export interface ConsoleRemoveIdentifierInput {
 export interface ConsoleRevokeSecretInput {
   readonly id: string
   readonly secret: string
+}
+
+/**
+ * POST /auth/admin/accounts body: the fields a create names. It is the
+ * generated request shape itself, so a field the module's fragment adds
+ * reaches the page through this type with no parallel model to keep in
+ * step.
+ */
+export type ConsoleCreateAccountInput = AuthnAdminAccountCreate
+
+/** PATCH /auth/admin/accounts/:id: the account id beside the fields to change. */
+export type ConsolePatchAccountInput = AuthnAdminAccountPatch & {
+  readonly id: string
+}
+
+/** POST .../accounts/:id/status: the account id beside its new state. */
+export type ConsoleSetAccountStatusInput = AuthnAdminAccountStatus & {
+  readonly id: string
+}
+
+/** POST .../accounts/:id/mfa-required: the account id beside the required flag. */
+export type ConsoleSetMFARequiredInput = AuthnAdminMFARequired & {
+  readonly id: string
+}
+
+/** POST .../accounts/:id/password: the account id beside the temporary password. */
+export type ConsoleResetPasswordInput = AuthnAdminPasswordReset & {
+  readonly id: string
+}
+
+/** POST .../accounts/:id/identifiers: the account id beside the identifier to add. */
+export type ConsoleAddIdentifierInput = AuthnAdminIdentifierWrite & {
+  readonly id: string
+}
+
+/** POST .../accounts/:id/secrets: the account id beside the secret's label and expiry. */
+export type ConsoleCreateSecretInput = AuthnAdminSecretCreate & {
+  readonly id: string
 }
 
 // --- Invitation and membership surface (tenant-scoped) ------------------
@@ -352,6 +418,18 @@ export interface ConsoleMemberRef {
   readonly account: string
 }
 
+/** PUT .../members/:account body: the membership to write, with its target. */
+export type ConsoleWriteMemberInput = AuthnAdminMemberWrite & {
+  readonly tenant: string
+  readonly account: string
+}
+
+/** PUT .../members/:account/sso-exempt body: the exemption flag, with its target. */
+export type ConsoleSetMemberSSOExemptInput = AuthnAdminMemberSSOExempt & {
+  readonly tenant: string
+  readonly account: string
+}
+
 // --- SSO surface (/auth/admin/sso) --------------------------------------
 
 /** One SSO provider (GET .../tenants/:tenant/sso/providers, or .../providers/:id). */
@@ -378,6 +456,26 @@ export interface ConsoleSsoDomainRef {
   readonly id: string
   readonly tenant: string
   readonly domain: string
+}
+
+/** The token a domain claim answers with, to publish in DNS. */
+export type ConsoleSsoVerifyToken = AuthnAdminVerifyToken
+
+/** POST .../tenants/:tenant/sso/providers body: the provider to create. */
+export type ConsoleCreateSsoProviderInput = AuthnAdminProviderWrite & {
+  readonly tenant: string
+}
+
+/** PUT /auth/admin/sso/providers/:id body: the provider to rewrite, with its tenant. */
+export type ConsoleWriteSsoProviderInput = AuthnAdminProviderWrite & {
+  readonly id: string
+  readonly tenant: string
+}
+
+/** POST .../sso/providers/:id/domains body: the domain to claim, with its provider. */
+export type ConsoleClaimSsoDomainInput = AuthnAdminDomainClaim & {
+  readonly id: string
+  readonly tenant: string
 }
 
 /** Revoking one session: the session's id beside the account it belongs to,
@@ -565,6 +663,48 @@ export interface ConsoleOperations {
     unknown,
     ConsoleRevokeSessionInput
   >
+  /** POST /auth/admin/accounts -- create an account. */
+  readonly useCreateAccount: () => UseMutationResult<
+    ConsoleAccount,
+    unknown,
+    ConsoleCreateAccountInput
+  >
+  /** PATCH /auth/admin/accounts/:id -- change a display name, an attribute set or the protected flag. */
+  readonly usePatchAccount: () => UseMutationResult<
+    ConsoleAccount,
+    unknown,
+    ConsolePatchAccountInput
+  >
+  /** POST .../accounts/:id/status -- enable or disable an account. */
+  readonly useSetAccountStatus: () => UseMutationResult<
+    ConsoleAccount,
+    unknown,
+    ConsoleSetAccountStatusInput
+  >
+  /** POST .../accounts/:id/mfa-required -- set whether a factor must be registered. */
+  readonly useSetMFARequired: () => UseMutationResult<
+    void,
+    unknown,
+    ConsoleSetMFARequiredInput
+  >
+  /** POST .../accounts/:id/password -- set a temporary password that must be changed at next login. */
+  readonly useResetPassword: () => UseMutationResult<
+    void,
+    unknown,
+    ConsoleResetPasswordInput
+  >
+  /** POST .../accounts/:id/identifiers -- add a login name or email an administrator asserts. */
+  readonly useAddIdentifier: () => UseMutationResult<
+    void,
+    unknown,
+    ConsoleAddIdentifierInput
+  >
+  /** POST .../accounts/:id/secrets -- mint a service secret, handed over once. */
+  readonly useCreateSecret: () => UseMutationResult<
+    ConsoleAccountSecretCreated,
+    unknown,
+    ConsoleCreateSecretInput
+  >
 
   // --- Impersonation surface (/auth/admin) ------------------------------
 
@@ -612,6 +752,18 @@ export interface ConsoleOperations {
   ) => UseQueryResult<readonly ConsoleMember[], unknown>
   /** DELETE .../tenants/:tenant/members/:account -- remove a membership. */
   readonly useRemoveMember: () => UseMutationResult<void, unknown, ConsoleMemberRef>
+  /** PUT .../tenants/:tenant/members/:account -- add, suspend or resume a membership. */
+  readonly useWriteMember: () => UseMutationResult<
+    void,
+    unknown,
+    ConsoleWriteMemberInput
+  >
+  /** PUT .../members/:account/sso-exempt -- set or clear the SSO exemption. */
+  readonly useSetMemberSsoExempt: () => UseMutationResult<
+    void,
+    unknown,
+    ConsoleSetMemberSSOExemptInput
+  >
 
   // --- SSO surface (/auth/admin/sso) ------------------------------------
 
@@ -652,6 +804,24 @@ export interface ConsoleOperations {
     void,
     unknown,
     ConsoleSsoProviderRef
+  >
+  /** POST .../tenants/:tenant/sso/providers -- create a provider in a tenant. */
+  readonly useCreateSsoProvider: () => UseMutationResult<
+    ConsoleSsoProvider,
+    unknown,
+    ConsoleCreateSsoProviderInput
+  >
+  /** PUT /auth/admin/sso/providers/:id -- rewrite a provider. */
+  readonly useUpdateSsoProvider: () => UseMutationResult<
+    ConsoleSsoProvider,
+    unknown,
+    ConsoleWriteSsoProviderInput
+  >
+  /** POST .../providers/:id/domains -- claim a domain, returning the token to publish. */
+  readonly useClaimSsoDomain: () => UseMutationResult<
+    ConsoleSsoVerifyToken,
+    unknown,
+    ConsoleClaimSsoDomainInput
   >
 
   // --- SMS template surface (/sms/admin) --------------------------------
@@ -1030,6 +1200,120 @@ export const consoleOperations: ConsoleOperations = {
     })
   },
 
+  useCreateAccount: () => {
+    const queryClient = useQueryClient()
+    return useMutation({
+      mutationFn: (input: ConsoleCreateAccountInput) =>
+        authnAdminAccountsCreate(input).then((answer) => answer.account),
+      onSuccess: () => {
+        invalidateAccountLists(queryClient)
+      },
+    })
+  },
+
+  usePatchAccount: () => {
+    const queryClient = useQueryClient()
+    return useMutation({
+      mutationFn: (input: ConsolePatchAccountInput) => {
+        const { id, ...patch } = input
+        return authnAdminAccountsPatch(id, patch).then(
+          (answer) => answer.account,
+        )
+      },
+      onSuccess: (_answer, input) => {
+        invalidateAccountLists(queryClient)
+        void queryClient.invalidateQueries({
+          queryKey: getAuthnAdminAccountsGetQueryKey(input.id),
+        })
+      },
+    })
+  },
+
+  useSetAccountStatus: () => {
+    const queryClient = useQueryClient()
+    return useMutation({
+      mutationFn: (input: ConsoleSetAccountStatusInput) => {
+        const { id, ...body } = input
+        return authnAdminAccountsStatus(id, body).then(
+          (answer) => answer.account,
+        )
+      },
+      onSuccess: (_answer, input) => {
+        invalidateAccountLists(queryClient)
+        void queryClient.invalidateQueries({
+          queryKey: getAuthnAdminAccountsGetQueryKey(input.id),
+        })
+      },
+    })
+  },
+
+  useSetMFARequired: () => {
+    const queryClient = useQueryClient()
+    return useMutation({
+      mutationFn: (input: ConsoleSetMFARequiredInput) => {
+        const { id, ...body } = input
+        return authnAdminAccountsSetMFARequired(id, body)
+      },
+      onSuccess: (_answer, input) => {
+        void queryClient.invalidateQueries({
+          queryKey: getAuthnAdminAccountsGetQueryKey(input.id),
+        })
+        void queryClient.invalidateQueries({
+          queryKey: getAuthnAdminAccountsListQueryKey(),
+        })
+      },
+    })
+  },
+
+  useResetPassword: () => {
+    const queryClient = useQueryClient()
+    return useMutation({
+      mutationFn: (input: ConsoleResetPasswordInput) => {
+        const { id, ...body } = input
+        return authnAdminAccountsResetPassword(id, body)
+      },
+      onSuccess: (_answer, input) => {
+        // The module revokes every session of the account on a reset.
+        void queryClient.invalidateQueries({
+          queryKey: getAuthnAdminAccountsSessionsQueryKey(input.id),
+        })
+      },
+    })
+  },
+
+  useAddIdentifier: () => {
+    const queryClient = useQueryClient()
+    return useMutation({
+      mutationFn: (input: ConsoleAddIdentifierInput) => {
+        const { id, ...body } = input
+        return authnAdminAccountsAddIdentifier(id, body)
+      },
+      onSuccess: (_answer, input) => {
+        void queryClient.invalidateQueries({
+          queryKey: getAuthnAdminAccountsGetQueryKey(input.id),
+        })
+        void queryClient.invalidateQueries({
+          queryKey: getAuthnAdminAccountsListQueryKey(),
+        })
+      },
+    })
+  },
+
+  useCreateSecret: () => {
+    const queryClient = useQueryClient()
+    return useMutation({
+      mutationFn: (input: ConsoleCreateSecretInput) => {
+        const { id, ...body } = input
+        return authnAdminAccountsSecretsCreate(id, body)
+      },
+      onSuccess: (_answer, input) => {
+        void queryClient.invalidateQueries({
+          queryKey: getAuthnAdminAccountsSecretsListQueryKey(input.id),
+        })
+      },
+    })
+  },
+
   // --- Impersonation surface (/auth/admin) ------------------------------
 
   useImpersonations: (params) =>
@@ -1117,6 +1401,36 @@ export const consoleOperations: ConsoleOperations = {
     })
   },
 
+  useWriteMember: () => {
+    const queryClient = useQueryClient()
+    return useMutation({
+      mutationFn: (input: ConsoleWriteMemberInput) => {
+        const { tenant, account, ...body } = input
+        return authnAdminMembersPut(tenant, account, body)
+      },
+      onSuccess: (_answer, input) => {
+        void queryClient.invalidateQueries({
+          queryKey: getAuthnAdminMembersListQueryKey(input.tenant),
+        })
+      },
+    })
+  },
+
+  useSetMemberSsoExempt: () => {
+    const queryClient = useQueryClient()
+    return useMutation({
+      mutationFn: (input: ConsoleSetMemberSSOExemptInput) => {
+        const { tenant, account, ...body } = input
+        return authnAdminMembersSsoExempt(tenant, account, body)
+      },
+      onSuccess: (_answer, input) => {
+        void queryClient.invalidateQueries({
+          queryKey: getAuthnAdminMembersListQueryKey(input.tenant),
+        })
+      },
+    })
+  },
+
   // --- SSO surface (/auth/admin/sso) ------------------------------------
 
   useSsoProviders: (tenant) =>
@@ -1187,6 +1501,51 @@ export const consoleOperations: ConsoleOperations = {
     return useMutation({
       mutationFn: (input: ConsoleSsoProviderRef) =>
         authnAdminSsoProvidersReverifyDomains(input.id),
+      onSuccess: (_answer, input) => {
+        invalidateSsoProvider(queryClient, input.id, input.tenant)
+      },
+    })
+  },
+
+  useCreateSsoProvider: () => {
+    const queryClient = useQueryClient()
+    return useMutation({
+      mutationFn: (input: ConsoleCreateSsoProviderInput) => {
+        const { tenant, ...body } = input
+        return authnAdminSsoProvidersCreate(tenant, body).then(
+          (answer) => answer.provider,
+        )
+      },
+      onSuccess: (_answer, input) => {
+        void queryClient.invalidateQueries({
+          queryKey: getAuthnAdminSsoProvidersListQueryKey(input.tenant),
+        })
+      },
+    })
+  },
+
+  useUpdateSsoProvider: () => {
+    const queryClient = useQueryClient()
+    return useMutation({
+      mutationFn: (input: ConsoleWriteSsoProviderInput) => {
+        const { id, ...body } = input
+        return authnAdminSsoProvidersUpdate(id, body).then(
+          (answer) => answer.provider,
+        )
+      },
+      onSuccess: (_answer, input) => {
+        invalidateSsoProvider(queryClient, input.id, input.tenant)
+      },
+    })
+  },
+
+  useClaimSsoDomain: () => {
+    const queryClient = useQueryClient()
+    return useMutation({
+      mutationFn: (input: ConsoleClaimSsoDomainInput) =>
+        authnAdminSsoProvidersClaimDomain(input.id, {
+          domain: input.domain,
+        }),
       onSuccess: (_answer, input) => {
         invalidateSsoProvider(queryClient, input.id, input.tenant)
       },

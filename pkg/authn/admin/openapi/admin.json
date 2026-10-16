@@ -28,6 +28,7 @@
       "post": {
         "operationId": "authn.admin.accounts.create",
         "summary": "Create an account",
+        "requestBody": {"required": true, "content": {"application/json": {"schema": {"$ref": "#/components/schemas/AuthnAdminAccountCreate"}}}},
         "responses": {
           "201": {
             "description": "The created account",
@@ -62,6 +63,7 @@
       "patch": {
         "operationId": "authn.admin.accounts.patch",
         "summary": "Update an account",
+        "requestBody": {"required": true, "content": {"application/json": {"schema": {"$ref": "#/components/schemas/AuthnAdminAccountPatch"}}}},
         "parameters": [
           {"name": "id", "in": "path", "required": true, "schema": {"type": "string"}}
         ],
@@ -98,6 +100,7 @@
       "post": {
         "operationId": "authn.admin.accounts.status",
         "summary": "Change an account's status",
+        "requestBody": {"required": true, "content": {"application/json": {"schema": {"$ref": "#/components/schemas/AuthnAdminAccountStatus"}}}},
         "parameters": [
           {"name": "id", "in": "path", "required": true, "schema": {"type": "string"}}
         ],
@@ -118,6 +121,7 @@
       "post": {
         "operationId": "authn.admin.accounts.addIdentifier",
         "summary": "Add an identifier to an account",
+        "requestBody": {"required": true, "content": {"application/json": {"schema": {"$ref": "#/components/schemas/AuthnAdminIdentifierWrite"}}}},
         "parameters": [
           {"name": "id", "in": "path", "required": true, "schema": {"type": "string"}}
         ],
@@ -153,6 +157,7 @@
       "post": {
         "operationId": "authn.admin.accounts.resetPassword",
         "summary": "Reset an account's password",
+        "requestBody": {"required": true, "content": {"application/json": {"schema": {"$ref": "#/components/schemas/AuthnAdminPasswordReset"}}}},
         "parameters": [
           {"name": "id", "in": "path", "required": true, "schema": {"type": "string"}}
         ],
@@ -189,6 +194,7 @@
       "post": {
         "operationId": "authn.admin.accounts.setMFARequired",
         "summary": "Set whether an account must register a factor",
+        "requestBody": {"required": true, "content": {"application/json": {"schema": {"$ref": "#/components/schemas/AuthnAdminMFARequired"}}}},
         "parameters": [
           {"name": "id", "in": "path", "required": true, "schema": {"type": "string"}}
         ],
@@ -296,6 +302,7 @@
       "post": {
         "operationId": "authn.admin.accounts.secrets.create",
         "summary": "Create a service secret for an account",
+        "requestBody": {"required": true, "content": {"application/json": {"schema": {"$ref": "#/components/schemas/AuthnAdminSecretCreate"}}}},
         "parameters": [
           {"name": "id", "in": "path", "required": true, "schema": {"type": "string"}}
         ],
@@ -354,6 +361,7 @@
       "put": {
         "operationId": "authn.admin.members.put",
         "summary": "Write an account's membership in a tenant",
+        "requestBody": {"required": true, "content": {"application/json": {"schema": {"$ref": "#/components/schemas/AuthnAdminMemberWrite"}}}},
         "parameters": [
           {"name": "tenant", "in": "path", "required": true, "schema": {"type": "string"}},
           {"name": "account", "in": "path", "required": true, "schema": {"type": "string"}}
@@ -387,6 +395,7 @@
       "put": {
         "operationId": "authn.admin.members.ssoExempt",
         "summary": "Set an account's exemption from a tenant's SSO requirement",
+        "requestBody": {"required": true, "content": {"application/json": {"schema": {"$ref": "#/components/schemas/AuthnAdminMemberSSOExempt"}}}},
         "parameters": [
           {"name": "tenant", "in": "path", "required": true, "schema": {"type": "string"}},
           {"name": "account", "in": "path", "required": true, "schema": {"type": "string"}}
@@ -421,6 +430,7 @@
       "post": {
         "operationId": "authn.admin.sso.providers.create",
         "summary": "Create an SSO provider in a tenant",
+        "requestBody": {"required": true, "content": {"application/json": {"schema": {"$ref": "#/components/schemas/AuthnAdminProviderWrite"}}}},
         "parameters": [
           {"name": "tenant", "in": "path", "required": true, "schema": {"type": "string"}}
         ],
@@ -458,6 +468,7 @@
       "put": {
         "operationId": "authn.admin.sso.providers.update",
         "summary": "Update an SSO provider",
+        "requestBody": {"required": true, "content": {"application/json": {"schema": {"$ref": "#/components/schemas/AuthnAdminProviderWrite"}}}},
         "parameters": [
           {"name": "id", "in": "path", "required": true, "schema": {"type": "string"}}
         ],
@@ -493,6 +504,7 @@
       "post": {
         "operationId": "authn.admin.sso.providers.claimDomain",
         "summary": "Claim a domain for an SSO provider",
+        "requestBody": {"required": true, "content": {"application/json": {"schema": {"$ref": "#/components/schemas/AuthnAdminDomainClaim"}}}},
         "parameters": [
           {"name": "id", "in": "path", "required": true, "schema": {"type": "string"}}
         ],
@@ -788,6 +800,107 @@
         "properties": {
           "impersonations": {"type": "array", "items": {"$ref": "#/components/schemas/AuthnAdminImpersonation"}},
           "next_cursor": {"type": "string", "description": "The cursor of the next page, empty on the last page"}
+        }
+      },
+      "AuthnAdminAccountCreate": {
+        "type": "object",
+        "required": ["kind"],
+        "properties": {
+          "kind": {"type": "string", "enum": ["user", "service"]},
+          "display_name": {"type": "string"},
+          "username": {"type": "string"},
+          "email": {"type": "string"},
+          "email_verified_via": {"type": "string", "enum": ["", "admin", "import-unverified"], "description": "How the administrator states the email came to be verified; empty or absent writes it unverified"},
+          "phone": {"type": "string"},
+          "phone_verified_via": {"type": "string", "enum": ["", "admin", "import-unverified"], "description": "How the administrator states the phone came to be verified; empty or absent writes it unverified"},
+          "password": {"type": "string"},
+          "attributes": {"type": "object", "additionalProperties": {"type": "string"}, "description": "Absent writes no attribute set"},
+          "mfa_required": {"type": "boolean"}
+        }
+      },
+      "AuthnAdminAccountPatch": {
+        "type": "object",
+        "properties": {
+          "display_name": {"type": "string", "description": "Absent leaves the display name as it is"},
+          "attributes": {"type": "object", "additionalProperties": {"type": "string"}, "description": "Absent leaves the attribute set as it is"},
+          "protected": {"type": "boolean", "description": "Absent leaves the protected flag as it is"}
+        }
+      },
+      "AuthnAdminAccountStatus": {
+        "type": "object",
+        "required": ["status"],
+        "properties": {
+          "status": {"type": "string", "enum": ["active", "disabled"], "description": "The deleted state is reached only through the delete route"}
+        }
+      },
+      "AuthnAdminIdentifierWrite": {
+        "type": "object",
+        "required": ["kind", "value"],
+        "properties": {
+          "kind": {"type": "string", "enum": ["username", "email"], "description": "A phone number is added or changed only through an SMS code and is refused here"},
+          "value": {"type": "string"},
+          "verified_via": {"type": "string", "enum": ["", "admin"], "description": "How the administrator states the identifier came to be verified"}
+        }
+      },
+      "AuthnAdminMFARequired": {
+        "type": "object",
+        "required": ["required"],
+        "properties": {
+          "required": {"type": "boolean"}
+        }
+      },
+      "AuthnAdminPasswordReset": {
+        "type": "object",
+        "required": ["password"],
+        "properties": {
+          "password": {"type": "string", "description": "The temporary password, handed out once and never echoed, logged or audited"}
+        }
+      },
+      "AuthnAdminSecretCreate": {
+        "type": "object",
+        "required": ["label"],
+        "properties": {
+          "label": {"type": "string"},
+          "expires_at": {"type": "string", "format": "date-time", "description": "Absent mints a secret with no expiry"}
+        }
+      },
+      "AuthnAdminMemberWrite": {
+        "type": "object",
+        "properties": {
+          "active": {"type": "boolean"},
+          "source": {"type": "string", "description": "Absent records the change as an administrator's"},
+          "sso_exempt": {"type": "boolean"}
+        }
+      },
+      "AuthnAdminMemberSSOExempt": {
+        "type": "object",
+        "required": ["sso_exempt"],
+        "properties": {
+          "sso_exempt": {"type": "boolean"}
+        }
+      },
+      "AuthnAdminProviderWrite": {
+        "type": "object",
+        "required": ["protocol", "name", "provisioning"],
+        "properties": {
+          "tenant": {"type": "string", "description": "Absent on a create takes the path's tenant; a value that names another is refused"},
+          "protocol": {"type": "string"},
+          "name": {"type": "string"},
+          "enabled": {"type": "boolean", "description": "Absent leaves the enabled flag as it is (false on a create)"},
+          "provisioning": {"type": "string"},
+          "trust_idp_mfa": {"type": "boolean", "description": "Absent leaves the flag as it is (false on a create)"},
+          "allow_idp_initiated": {"type": "boolean", "description": "Absent leaves the flag as it is (false on a create)"},
+          "allow_sha1": {"type": "boolean", "description": "Absent leaves the flag as it is (false on a create)"},
+          "merge_existing": {"type": "boolean", "description": "Absent leaves the flag as it is (false on a create)"},
+          "config": {"type": "object", "additionalProperties": true, "description": "The protocol's own configuration"},
+          "client_secret": {"type": "string", "description": "Absent writes no client secret"}
+        }
+      },
+      "AuthnAdminDomainClaim": {
+        "type": "object",
+        "required": ["domain"],
+        "properties": {
+          "domain": {"type": "string"}
         }
       }
     }

@@ -54,10 +54,10 @@ export const AuthnAdminAccountKind = {
   service: 'service',
 } as const;
 
-export type AuthnAdminAccountStatus = typeof AuthnAdminAccountStatus[keyof typeof AuthnAdminAccountStatus];
+export type AuthnAdminAccountStatusProperty = typeof AuthnAdminAccountStatusProperty[keyof typeof AuthnAdminAccountStatusProperty];
 
 
-export const AuthnAdminAccountStatus = {
+export const AuthnAdminAccountStatusProperty = {
   disabled: 'disabled',
   active: 'active',
   deleted: 'deleted',
@@ -71,7 +71,7 @@ export type AuthnAdminAccountAttributes = {[key: string]: string};
 export interface AuthnAdminAccount {
   id: string;
   kind: AuthnAdminAccountKind;
-  status: AuthnAdminAccountStatus;
+  status: AuthnAdminAccountStatusProperty;
   display_name: string;
   mfa_required: boolean;
   protected: boolean;
@@ -79,6 +79,59 @@ export interface AuthnAdminAccount {
   /** Absent when the account carries no attribute set */
   attributes?: AuthnAdminAccountAttributes;
   created_at: string;
+}
+
+export type AuthnAdminAccountCreateKind = typeof AuthnAdminAccountCreateKind[keyof typeof AuthnAdminAccountCreateKind];
+
+
+export const AuthnAdminAccountCreateKind = {
+  user: 'user',
+  service: 'service',
+} as const;
+
+/**
+ * How the administrator states the email came to be verified; empty or absent writes it unverified
+ */
+export type AuthnAdminAccountCreateEmailVerifiedVia = typeof AuthnAdminAccountCreateEmailVerifiedVia[keyof typeof AuthnAdminAccountCreateEmailVerifiedVia];
+
+
+export const AuthnAdminAccountCreateEmailVerifiedVia = {
+  '': '',
+  admin: 'admin',
+  'import-unverified': 'import-unverified',
+} as const;
+
+/**
+ * How the administrator states the phone came to be verified; empty or absent writes it unverified
+ */
+export type AuthnAdminAccountCreatePhoneVerifiedVia = typeof AuthnAdminAccountCreatePhoneVerifiedVia[keyof typeof AuthnAdminAccountCreatePhoneVerifiedVia];
+
+
+export const AuthnAdminAccountCreatePhoneVerifiedVia = {
+  '': '',
+  admin: 'admin',
+  'import-unverified': 'import-unverified',
+} as const;
+
+/**
+ * Absent writes no attribute set
+ */
+export type AuthnAdminAccountCreateAttributes = {[key: string]: string};
+
+export interface AuthnAdminAccountCreate {
+  kind: AuthnAdminAccountCreateKind;
+  display_name?: string;
+  username?: string;
+  email?: string;
+  /** How the administrator states the email came to be verified; empty or absent writes it unverified */
+  email_verified_via?: AuthnAdminAccountCreateEmailVerifiedVia;
+  phone?: string;
+  /** How the administrator states the phone came to be verified; empty or absent writes it unverified */
+  phone_verified_via?: AuthnAdminAccountCreatePhoneVerifiedVia;
+  password?: string;
+  /** Absent writes no attribute set */
+  attributes?: AuthnAdminAccountCreateAttributes;
+  mfa_required?: boolean;
 }
 
 export interface AuthnAdminAccountEnvelope {
@@ -89,6 +142,40 @@ export interface AuthnAdminAccountList {
   accounts: AuthnAdminAccount[];
   /** The cursor of the next page, empty on the last page */
   next_cursor: string;
+}
+
+/**
+ * Absent leaves the attribute set as it is
+ */
+export type AuthnAdminAccountPatchAttributes = {[key: string]: string};
+
+export interface AuthnAdminAccountPatch {
+  /** Absent leaves the display name as it is */
+  display_name?: string;
+  /** Absent leaves the attribute set as it is */
+  attributes?: AuthnAdminAccountPatchAttributes;
+  /** Absent leaves the protected flag as it is */
+  protected?: boolean;
+}
+
+/**
+ * The deleted state is reached only through the delete route
+ */
+export type AuthnAdminAccountStatusStatus = typeof AuthnAdminAccountStatusStatus[keyof typeof AuthnAdminAccountStatusStatus];
+
+
+export const AuthnAdminAccountStatusStatus = {
+  active: 'active',
+  disabled: 'disabled',
+} as const;
+
+export interface AuthnAdminAccountStatus {
+  /** The deleted state is reached only through the delete route */
+  status: AuthnAdminAccountStatusStatus;
+}
+
+export interface AuthnAdminDomainClaim {
+  domain: string;
 }
 
 export type AuthnAdminFactorStatus = typeof AuthnAdminFactorStatus[keyof typeof AuthnAdminFactorStatus];
@@ -108,6 +195,36 @@ export interface AuthnAdminFactor {
 
 export interface AuthnAdminFactorList {
   factors: AuthnAdminFactor[];
+}
+
+/**
+ * A phone number is added or changed only through an SMS code and is refused here
+ */
+export type AuthnAdminIdentifierWriteKind = typeof AuthnAdminIdentifierWriteKind[keyof typeof AuthnAdminIdentifierWriteKind];
+
+
+export const AuthnAdminIdentifierWriteKind = {
+  username: 'username',
+  email: 'email',
+} as const;
+
+/**
+ * How the administrator states the identifier came to be verified
+ */
+export type AuthnAdminIdentifierWriteVerifiedVia = typeof AuthnAdminIdentifierWriteVerifiedVia[keyof typeof AuthnAdminIdentifierWriteVerifiedVia];
+
+
+export const AuthnAdminIdentifierWriteVerifiedVia = {
+  '': '',
+  admin: 'admin',
+} as const;
+
+export interface AuthnAdminIdentifierWrite {
+  /** A phone number is added or changed only through an SMS code and is refused here */
+  kind: AuthnAdminIdentifierWriteKind;
+  value: string;
+  /** How the administrator states the identifier came to be verified */
+  verified_via?: AuthnAdminIdentifierWriteVerifiedVia;
 }
 
 export interface AuthnAdminImpersonation {
@@ -130,6 +247,10 @@ export interface AuthnAdminImpersonationList {
   next_cursor: string;
 }
 
+export interface AuthnAdminMFARequired {
+  required: boolean;
+}
+
 export interface AuthnAdminMember {
   account: string;
   tenant: string;
@@ -140,6 +261,22 @@ export interface AuthnAdminMember {
 
 export interface AuthnAdminMemberList {
   members: AuthnAdminMember[];
+}
+
+export interface AuthnAdminMemberSSOExempt {
+  sso_exempt: boolean;
+}
+
+export interface AuthnAdminMemberWrite {
+  active?: boolean;
+  /** Absent records the change as an administrator's */
+  source?: string;
+  sso_exempt?: boolean;
+}
+
+export interface AuthnAdminPasswordReset {
+  /** The temporary password, handed out once and never echoed, logged or audited */
+  password: string;
 }
 
 export interface AuthnAdminProvider {
@@ -168,6 +305,33 @@ export interface AuthnAdminProviderList {
   providers: AuthnAdminProvider[];
 }
 
+/**
+ * The protocol's own configuration
+ */
+export type AuthnAdminProviderWriteConfig = { [key: string]: unknown };
+
+export interface AuthnAdminProviderWrite {
+  /** Absent on a create takes the path's tenant; a value that names another is refused */
+  tenant?: string;
+  protocol: string;
+  name: string;
+  /** Absent leaves the enabled flag as it is (false on a create) */
+  enabled?: boolean;
+  provisioning: string;
+  /** Absent leaves the flag as it is (false on a create) */
+  trust_idp_mfa?: boolean;
+  /** Absent leaves the flag as it is (false on a create) */
+  allow_idp_initiated?: boolean;
+  /** Absent leaves the flag as it is (false on a create) */
+  allow_sha1?: boolean;
+  /** Absent leaves the flag as it is (false on a create) */
+  merge_existing?: boolean;
+  /** The protocol's own configuration */
+  config?: AuthnAdminProviderWriteConfig;
+  /** Absent writes no client secret */
+  client_secret?: string;
+}
+
 export interface AuthnAdminRemoved {
   /** The number of factors removed */
   removed: number;
@@ -183,6 +347,12 @@ export interface AuthnAdminSecret {
   label: string;
   expires_at: string;
   revoked: boolean;
+}
+
+export interface AuthnAdminSecretCreate {
+  label: string;
+  /** Absent mints a secret with no expiry */
+  expires_at?: string;
 }
 
 export interface AuthnAdminSecretCreated {
@@ -2436,13 +2606,15 @@ export function useAuthnAdminAccountsList<TData = Awaited<ReturnType<typeof auth
  * @summary Create an account
  */
 export const authnAdminAccountsCreate = (
-
+    authnAdminAccountCreate: AuthnAdminAccountCreate,
  signal?: AbortSignal
 ) => {
 
 
       return speedRequest<AuthnAdminAccountEnvelope>(
-      {url: `/auth/admin/accounts`, method: 'POST', signal
+      {url: `/auth/admin/accounts`, method: 'POST',
+      headers: {'Content-Type': 'application/json', },
+      data: authnAdminAccountCreate, signal
     },
       );
     }
@@ -2450,8 +2622,8 @@ export const authnAdminAccountsCreate = (
 
 
 export const getAuthnAdminAccountsCreateMutationOptions = <TError = void,
-    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof authnAdminAccountsCreate>>, TError,void, TContext>, }
-): UseMutationOptions<Awaited<ReturnType<typeof authnAdminAccountsCreate>>, TError,void, TContext> => {
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof authnAdminAccountsCreate>>, TError,{data: AuthnAdminAccountCreate}, TContext>, }
+): UseMutationOptions<Awaited<ReturnType<typeof authnAdminAccountsCreate>>, TError,{data: AuthnAdminAccountCreate}, TContext> => {
 
 const mutationKey = ['authnAdminAccountsCreate'];
 const {mutation: mutationOptions} = options ?
@@ -2463,10 +2635,10 @@ const {mutation: mutationOptions} = options ?
 
 
 
-      const mutationFn: MutationFunction<Awaited<ReturnType<typeof authnAdminAccountsCreate>>, void> = () => {
+      const mutationFn: MutationFunction<Awaited<ReturnType<typeof authnAdminAccountsCreate>>, {data: AuthnAdminAccountCreate}> = (props) => {
+          const {data} = props ?? {};
 
-
-          return  authnAdminAccountsCreate()
+          return  authnAdminAccountsCreate(data,)
         }
 
 
@@ -2477,18 +2649,18 @@ const {mutation: mutationOptions} = options ?
   return  { mutationFn, ...mutationOptions }}
 
     export type AuthnAdminAccountsCreateMutationResult = NonNullable<Awaited<ReturnType<typeof authnAdminAccountsCreate>>>
-
+    export type AuthnAdminAccountsCreateMutationBody = AuthnAdminAccountCreate
     export type AuthnAdminAccountsCreateMutationError = void
 
     /**
  * @summary Create an account
  */
 export const useAuthnAdminAccountsCreate = <TError = void,
-    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof authnAdminAccountsCreate>>, TError,void, TContext>, }
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof authnAdminAccountsCreate>>, TError,{data: AuthnAdminAccountCreate}, TContext>, }
  ): UseMutationResult<
         Awaited<ReturnType<typeof authnAdminAccountsCreate>>,
         TError,
-        void,
+        {data: AuthnAdminAccountCreate},
         TContext
       > => {
       return useMutation(getAuthnAdminAccountsCreateMutationOptions(options));
@@ -2630,12 +2802,15 @@ export function useAuthnAdminAccountsGet<TData = Awaited<ReturnType<typeof authn
  */
 export const authnAdminAccountsPatch = (
     id: string,
+    authnAdminAccountPatch: AuthnAdminAccountPatch,
  signal?: AbortSignal
 ) => {
 
 
       return speedRequest<AuthnAdminAccountEnvelope>(
-      {url: `/auth/admin/accounts/${id}`, method: 'PATCH', signal
+      {url: `/auth/admin/accounts/${id}`, method: 'PATCH',
+      headers: {'Content-Type': 'application/json', },
+      data: authnAdminAccountPatch, signal
     },
       );
     }
@@ -2643,8 +2818,8 @@ export const authnAdminAccountsPatch = (
 
 
 export const getAuthnAdminAccountsPatchMutationOptions = <TError = void,
-    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof authnAdminAccountsPatch>>, TError,{id: string}, TContext>, }
-): UseMutationOptions<Awaited<ReturnType<typeof authnAdminAccountsPatch>>, TError,{id: string}, TContext> => {
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof authnAdminAccountsPatch>>, TError,{id: string;data: AuthnAdminAccountPatch}, TContext>, }
+): UseMutationOptions<Awaited<ReturnType<typeof authnAdminAccountsPatch>>, TError,{id: string;data: AuthnAdminAccountPatch}, TContext> => {
 
 const mutationKey = ['authnAdminAccountsPatch'];
 const {mutation: mutationOptions} = options ?
@@ -2656,10 +2831,10 @@ const {mutation: mutationOptions} = options ?
 
 
 
-      const mutationFn: MutationFunction<Awaited<ReturnType<typeof authnAdminAccountsPatch>>, {id: string}> = (props) => {
-          const {id} = props ?? {};
+      const mutationFn: MutationFunction<Awaited<ReturnType<typeof authnAdminAccountsPatch>>, {id: string;data: AuthnAdminAccountPatch}> = (props) => {
+          const {id,data} = props ?? {};
 
-          return  authnAdminAccountsPatch(id,)
+          return  authnAdminAccountsPatch(id,data,)
         }
 
 
@@ -2670,18 +2845,18 @@ const {mutation: mutationOptions} = options ?
   return  { mutationFn, ...mutationOptions }}
 
     export type AuthnAdminAccountsPatchMutationResult = NonNullable<Awaited<ReturnType<typeof authnAdminAccountsPatch>>>
-
+    export type AuthnAdminAccountsPatchMutationBody = AuthnAdminAccountPatch
     export type AuthnAdminAccountsPatchMutationError = void
 
     /**
  * @summary Update an account
  */
 export const useAuthnAdminAccountsPatch = <TError = void,
-    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof authnAdminAccountsPatch>>, TError,{id: string}, TContext>, }
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof authnAdminAccountsPatch>>, TError,{id: string;data: AuthnAdminAccountPatch}, TContext>, }
  ): UseMutationResult<
         Awaited<ReturnType<typeof authnAdminAccountsPatch>>,
         TError,
-        {id: string},
+        {id: string;data: AuthnAdminAccountPatch},
         TContext
       > => {
       return useMutation(getAuthnAdminAccountsPatchMutationOptions(options));
@@ -2761,12 +2936,15 @@ export function useAuthnAdminAccountsFactors<TData = Awaited<ReturnType<typeof a
  */
 export const authnAdminAccountsAddIdentifier = (
     id: string,
+    authnAdminIdentifierWrite: AuthnAdminIdentifierWrite,
  signal?: AbortSignal
 ) => {
 
 
       return speedRequest<void>(
-      {url: `/auth/admin/accounts/${id}/identifiers`, method: 'POST', signal
+      {url: `/auth/admin/accounts/${id}/identifiers`, method: 'POST',
+      headers: {'Content-Type': 'application/json', },
+      data: authnAdminIdentifierWrite, signal
     },
       );
     }
@@ -2774,8 +2952,8 @@ export const authnAdminAccountsAddIdentifier = (
 
 
 export const getAuthnAdminAccountsAddIdentifierMutationOptions = <TError = void,
-    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof authnAdminAccountsAddIdentifier>>, TError,{id: string}, TContext>, }
-): UseMutationOptions<Awaited<ReturnType<typeof authnAdminAccountsAddIdentifier>>, TError,{id: string}, TContext> => {
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof authnAdminAccountsAddIdentifier>>, TError,{id: string;data: AuthnAdminIdentifierWrite}, TContext>, }
+): UseMutationOptions<Awaited<ReturnType<typeof authnAdminAccountsAddIdentifier>>, TError,{id: string;data: AuthnAdminIdentifierWrite}, TContext> => {
 
 const mutationKey = ['authnAdminAccountsAddIdentifier'];
 const {mutation: mutationOptions} = options ?
@@ -2787,10 +2965,10 @@ const {mutation: mutationOptions} = options ?
 
 
 
-      const mutationFn: MutationFunction<Awaited<ReturnType<typeof authnAdminAccountsAddIdentifier>>, {id: string}> = (props) => {
-          const {id} = props ?? {};
+      const mutationFn: MutationFunction<Awaited<ReturnType<typeof authnAdminAccountsAddIdentifier>>, {id: string;data: AuthnAdminIdentifierWrite}> = (props) => {
+          const {id,data} = props ?? {};
 
-          return  authnAdminAccountsAddIdentifier(id,)
+          return  authnAdminAccountsAddIdentifier(id,data,)
         }
 
 
@@ -2801,18 +2979,18 @@ const {mutation: mutationOptions} = options ?
   return  { mutationFn, ...mutationOptions }}
 
     export type AuthnAdminAccountsAddIdentifierMutationResult = NonNullable<Awaited<ReturnType<typeof authnAdminAccountsAddIdentifier>>>
-
+    export type AuthnAdminAccountsAddIdentifierMutationBody = AuthnAdminIdentifierWrite
     export type AuthnAdminAccountsAddIdentifierMutationError = void
 
     /**
  * @summary Add an identifier to an account
  */
 export const useAuthnAdminAccountsAddIdentifier = <TError = void,
-    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof authnAdminAccountsAddIdentifier>>, TError,{id: string}, TContext>, }
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof authnAdminAccountsAddIdentifier>>, TError,{id: string;data: AuthnAdminIdentifierWrite}, TContext>, }
  ): UseMutationResult<
         Awaited<ReturnType<typeof authnAdminAccountsAddIdentifier>>,
         TError,
-        {id: string},
+        {id: string;data: AuthnAdminIdentifierWrite},
         TContext
       > => {
       return useMutation(getAuthnAdminAccountsAddIdentifierMutationOptions(options));
@@ -2886,12 +3064,15 @@ export const useAuthnAdminAccountsRemoveIdentifier = <TError = void,
  */
 export const authnAdminAccountsSetMFARequired = (
     id: string,
+    authnAdminMFARequired: AuthnAdminMFARequired,
  signal?: AbortSignal
 ) => {
 
 
       return speedRequest<void>(
-      {url: `/auth/admin/accounts/${id}/mfa-required`, method: 'POST', signal
+      {url: `/auth/admin/accounts/${id}/mfa-required`, method: 'POST',
+      headers: {'Content-Type': 'application/json', },
+      data: authnAdminMFARequired, signal
     },
       );
     }
@@ -2899,8 +3080,8 @@ export const authnAdminAccountsSetMFARequired = (
 
 
 export const getAuthnAdminAccountsSetMFARequiredMutationOptions = <TError = void,
-    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof authnAdminAccountsSetMFARequired>>, TError,{id: string}, TContext>, }
-): UseMutationOptions<Awaited<ReturnType<typeof authnAdminAccountsSetMFARequired>>, TError,{id: string}, TContext> => {
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof authnAdminAccountsSetMFARequired>>, TError,{id: string;data: AuthnAdminMFARequired}, TContext>, }
+): UseMutationOptions<Awaited<ReturnType<typeof authnAdminAccountsSetMFARequired>>, TError,{id: string;data: AuthnAdminMFARequired}, TContext> => {
 
 const mutationKey = ['authnAdminAccountsSetMFARequired'];
 const {mutation: mutationOptions} = options ?
@@ -2912,10 +3093,10 @@ const {mutation: mutationOptions} = options ?
 
 
 
-      const mutationFn: MutationFunction<Awaited<ReturnType<typeof authnAdminAccountsSetMFARequired>>, {id: string}> = (props) => {
-          const {id} = props ?? {};
+      const mutationFn: MutationFunction<Awaited<ReturnType<typeof authnAdminAccountsSetMFARequired>>, {id: string;data: AuthnAdminMFARequired}> = (props) => {
+          const {id,data} = props ?? {};
 
-          return  authnAdminAccountsSetMFARequired(id,)
+          return  authnAdminAccountsSetMFARequired(id,data,)
         }
 
 
@@ -2926,18 +3107,18 @@ const {mutation: mutationOptions} = options ?
   return  { mutationFn, ...mutationOptions }}
 
     export type AuthnAdminAccountsSetMFARequiredMutationResult = NonNullable<Awaited<ReturnType<typeof authnAdminAccountsSetMFARequired>>>
-
+    export type AuthnAdminAccountsSetMFARequiredMutationBody = AuthnAdminMFARequired
     export type AuthnAdminAccountsSetMFARequiredMutationError = void
 
     /**
  * @summary Set whether an account must register a factor
  */
 export const useAuthnAdminAccountsSetMFARequired = <TError = void,
-    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof authnAdminAccountsSetMFARequired>>, TError,{id: string}, TContext>, }
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof authnAdminAccountsSetMFARequired>>, TError,{id: string;data: AuthnAdminMFARequired}, TContext>, }
  ): UseMutationResult<
         Awaited<ReturnType<typeof authnAdminAccountsSetMFARequired>>,
         TError,
-        {id: string},
+        {id: string;data: AuthnAdminMFARequired},
         TContext
       > => {
       return useMutation(getAuthnAdminAccountsSetMFARequiredMutationOptions(options));
@@ -3010,12 +3191,15 @@ export const useAuthnAdminAccountsResetMFA = <TError = void,
  */
 export const authnAdminAccountsResetPassword = (
     id: string,
+    authnAdminPasswordReset: AuthnAdminPasswordReset,
  signal?: AbortSignal
 ) => {
 
 
       return speedRequest<void>(
-      {url: `/auth/admin/accounts/${id}/password`, method: 'POST', signal
+      {url: `/auth/admin/accounts/${id}/password`, method: 'POST',
+      headers: {'Content-Type': 'application/json', },
+      data: authnAdminPasswordReset, signal
     },
       );
     }
@@ -3023,8 +3207,8 @@ export const authnAdminAccountsResetPassword = (
 
 
 export const getAuthnAdminAccountsResetPasswordMutationOptions = <TError = void,
-    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof authnAdminAccountsResetPassword>>, TError,{id: string}, TContext>, }
-): UseMutationOptions<Awaited<ReturnType<typeof authnAdminAccountsResetPassword>>, TError,{id: string}, TContext> => {
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof authnAdminAccountsResetPassword>>, TError,{id: string;data: AuthnAdminPasswordReset}, TContext>, }
+): UseMutationOptions<Awaited<ReturnType<typeof authnAdminAccountsResetPassword>>, TError,{id: string;data: AuthnAdminPasswordReset}, TContext> => {
 
 const mutationKey = ['authnAdminAccountsResetPassword'];
 const {mutation: mutationOptions} = options ?
@@ -3036,10 +3220,10 @@ const {mutation: mutationOptions} = options ?
 
 
 
-      const mutationFn: MutationFunction<Awaited<ReturnType<typeof authnAdminAccountsResetPassword>>, {id: string}> = (props) => {
-          const {id} = props ?? {};
+      const mutationFn: MutationFunction<Awaited<ReturnType<typeof authnAdminAccountsResetPassword>>, {id: string;data: AuthnAdminPasswordReset}> = (props) => {
+          const {id,data} = props ?? {};
 
-          return  authnAdminAccountsResetPassword(id,)
+          return  authnAdminAccountsResetPassword(id,data,)
         }
 
 
@@ -3050,18 +3234,18 @@ const {mutation: mutationOptions} = options ?
   return  { mutationFn, ...mutationOptions }}
 
     export type AuthnAdminAccountsResetPasswordMutationResult = NonNullable<Awaited<ReturnType<typeof authnAdminAccountsResetPassword>>>
-
+    export type AuthnAdminAccountsResetPasswordMutationBody = AuthnAdminPasswordReset
     export type AuthnAdminAccountsResetPasswordMutationError = void
 
     /**
  * @summary Reset an account's password
  */
 export const useAuthnAdminAccountsResetPassword = <TError = void,
-    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof authnAdminAccountsResetPassword>>, TError,{id: string}, TContext>, }
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof authnAdminAccountsResetPassword>>, TError,{id: string;data: AuthnAdminPasswordReset}, TContext>, }
  ): UseMutationResult<
         Awaited<ReturnType<typeof authnAdminAccountsResetPassword>>,
         TError,
-        {id: string},
+        {id: string;data: AuthnAdminPasswordReset},
         TContext
       > => {
       return useMutation(getAuthnAdminAccountsResetPasswordMutationOptions(options));
@@ -3203,12 +3387,15 @@ export function useAuthnAdminAccountsSecretsList<TData = Awaited<ReturnType<type
  */
 export const authnAdminAccountsSecretsCreate = (
     id: string,
+    authnAdminSecretCreate: AuthnAdminSecretCreate,
  signal?: AbortSignal
 ) => {
 
 
       return speedRequest<AuthnAdminSecretCreated>(
-      {url: `/auth/admin/accounts/${id}/secrets`, method: 'POST', signal
+      {url: `/auth/admin/accounts/${id}/secrets`, method: 'POST',
+      headers: {'Content-Type': 'application/json', },
+      data: authnAdminSecretCreate, signal
     },
       );
     }
@@ -3216,8 +3403,8 @@ export const authnAdminAccountsSecretsCreate = (
 
 
 export const getAuthnAdminAccountsSecretsCreateMutationOptions = <TError = void,
-    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof authnAdminAccountsSecretsCreate>>, TError,{id: string}, TContext>, }
-): UseMutationOptions<Awaited<ReturnType<typeof authnAdminAccountsSecretsCreate>>, TError,{id: string}, TContext> => {
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof authnAdminAccountsSecretsCreate>>, TError,{id: string;data: AuthnAdminSecretCreate}, TContext>, }
+): UseMutationOptions<Awaited<ReturnType<typeof authnAdminAccountsSecretsCreate>>, TError,{id: string;data: AuthnAdminSecretCreate}, TContext> => {
 
 const mutationKey = ['authnAdminAccountsSecretsCreate'];
 const {mutation: mutationOptions} = options ?
@@ -3229,10 +3416,10 @@ const {mutation: mutationOptions} = options ?
 
 
 
-      const mutationFn: MutationFunction<Awaited<ReturnType<typeof authnAdminAccountsSecretsCreate>>, {id: string}> = (props) => {
-          const {id} = props ?? {};
+      const mutationFn: MutationFunction<Awaited<ReturnType<typeof authnAdminAccountsSecretsCreate>>, {id: string;data: AuthnAdminSecretCreate}> = (props) => {
+          const {id,data} = props ?? {};
 
-          return  authnAdminAccountsSecretsCreate(id,)
+          return  authnAdminAccountsSecretsCreate(id,data,)
         }
 
 
@@ -3243,18 +3430,18 @@ const {mutation: mutationOptions} = options ?
   return  { mutationFn, ...mutationOptions }}
 
     export type AuthnAdminAccountsSecretsCreateMutationResult = NonNullable<Awaited<ReturnType<typeof authnAdminAccountsSecretsCreate>>>
-
+    export type AuthnAdminAccountsSecretsCreateMutationBody = AuthnAdminSecretCreate
     export type AuthnAdminAccountsSecretsCreateMutationError = void
 
     /**
  * @summary Create a service secret for an account
  */
 export const useAuthnAdminAccountsSecretsCreate = <TError = void,
-    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof authnAdminAccountsSecretsCreate>>, TError,{id: string}, TContext>, }
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof authnAdminAccountsSecretsCreate>>, TError,{id: string;data: AuthnAdminSecretCreate}, TContext>, }
  ): UseMutationResult<
         Awaited<ReturnType<typeof authnAdminAccountsSecretsCreate>>,
         TError,
-        {id: string},
+        {id: string;data: AuthnAdminSecretCreate},
         TContext
       > => {
       return useMutation(getAuthnAdminAccountsSecretsCreateMutationOptions(options));
@@ -3397,12 +3584,15 @@ export function useAuthnAdminAccountsSessions<TData = Awaited<ReturnType<typeof 
  */
 export const authnAdminAccountsStatus = (
     id: string,
+    authnAdminAccountStatus: AuthnAdminAccountStatus,
  signal?: AbortSignal
 ) => {
 
 
       return speedRequest<AuthnAdminAccountEnvelope>(
-      {url: `/auth/admin/accounts/${id}/status`, method: 'POST', signal
+      {url: `/auth/admin/accounts/${id}/status`, method: 'POST',
+      headers: {'Content-Type': 'application/json', },
+      data: authnAdminAccountStatus, signal
     },
       );
     }
@@ -3410,8 +3600,8 @@ export const authnAdminAccountsStatus = (
 
 
 export const getAuthnAdminAccountsStatusMutationOptions = <TError = void,
-    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof authnAdminAccountsStatus>>, TError,{id: string}, TContext>, }
-): UseMutationOptions<Awaited<ReturnType<typeof authnAdminAccountsStatus>>, TError,{id: string}, TContext> => {
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof authnAdminAccountsStatus>>, TError,{id: string;data: AuthnAdminAccountStatus}, TContext>, }
+): UseMutationOptions<Awaited<ReturnType<typeof authnAdminAccountsStatus>>, TError,{id: string;data: AuthnAdminAccountStatus}, TContext> => {
 
 const mutationKey = ['authnAdminAccountsStatus'];
 const {mutation: mutationOptions} = options ?
@@ -3423,10 +3613,10 @@ const {mutation: mutationOptions} = options ?
 
 
 
-      const mutationFn: MutationFunction<Awaited<ReturnType<typeof authnAdminAccountsStatus>>, {id: string}> = (props) => {
-          const {id} = props ?? {};
+      const mutationFn: MutationFunction<Awaited<ReturnType<typeof authnAdminAccountsStatus>>, {id: string;data: AuthnAdminAccountStatus}> = (props) => {
+          const {id,data} = props ?? {};
 
-          return  authnAdminAccountsStatus(id,)
+          return  authnAdminAccountsStatus(id,data,)
         }
 
 
@@ -3437,18 +3627,18 @@ const {mutation: mutationOptions} = options ?
   return  { mutationFn, ...mutationOptions }}
 
     export type AuthnAdminAccountsStatusMutationResult = NonNullable<Awaited<ReturnType<typeof authnAdminAccountsStatus>>>
-
+    export type AuthnAdminAccountsStatusMutationBody = AuthnAdminAccountStatus
     export type AuthnAdminAccountsStatusMutationError = void
 
     /**
  * @summary Change an account's status
  */
 export const useAuthnAdminAccountsStatus = <TError = void,
-    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof authnAdminAccountsStatus>>, TError,{id: string}, TContext>, }
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof authnAdminAccountsStatus>>, TError,{id: string;data: AuthnAdminAccountStatus}, TContext>, }
  ): UseMutationResult<
         Awaited<ReturnType<typeof authnAdminAccountsStatus>>,
         TError,
-        {id: string},
+        {id: string;data: AuthnAdminAccountStatus},
         TContext
       > => {
       return useMutation(getAuthnAdminAccountsStatusMutationOptions(options));
@@ -3784,12 +3974,15 @@ export function useAuthnAdminSsoProvidersGet<TData = Awaited<ReturnType<typeof a
  */
 export const authnAdminSsoProvidersUpdate = (
     id: string,
+    authnAdminProviderWrite: AuthnAdminProviderWrite,
  signal?: AbortSignal
 ) => {
 
 
       return speedRequest<AuthnAdminProviderEnvelope>(
-      {url: `/auth/admin/sso/providers/${id}`, method: 'PUT', signal
+      {url: `/auth/admin/sso/providers/${id}`, method: 'PUT',
+      headers: {'Content-Type': 'application/json', },
+      data: authnAdminProviderWrite, signal
     },
       );
     }
@@ -3797,8 +3990,8 @@ export const authnAdminSsoProvidersUpdate = (
 
 
 export const getAuthnAdminSsoProvidersUpdateMutationOptions = <TError = void,
-    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof authnAdminSsoProvidersUpdate>>, TError,{id: string}, TContext>, }
-): UseMutationOptions<Awaited<ReturnType<typeof authnAdminSsoProvidersUpdate>>, TError,{id: string}, TContext> => {
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof authnAdminSsoProvidersUpdate>>, TError,{id: string;data: AuthnAdminProviderWrite}, TContext>, }
+): UseMutationOptions<Awaited<ReturnType<typeof authnAdminSsoProvidersUpdate>>, TError,{id: string;data: AuthnAdminProviderWrite}, TContext> => {
 
 const mutationKey = ['authnAdminSsoProvidersUpdate'];
 const {mutation: mutationOptions} = options ?
@@ -3810,10 +4003,10 @@ const {mutation: mutationOptions} = options ?
 
 
 
-      const mutationFn: MutationFunction<Awaited<ReturnType<typeof authnAdminSsoProvidersUpdate>>, {id: string}> = (props) => {
-          const {id} = props ?? {};
+      const mutationFn: MutationFunction<Awaited<ReturnType<typeof authnAdminSsoProvidersUpdate>>, {id: string;data: AuthnAdminProviderWrite}> = (props) => {
+          const {id,data} = props ?? {};
 
-          return  authnAdminSsoProvidersUpdate(id,)
+          return  authnAdminSsoProvidersUpdate(id,data,)
         }
 
 
@@ -3824,18 +4017,18 @@ const {mutation: mutationOptions} = options ?
   return  { mutationFn, ...mutationOptions }}
 
     export type AuthnAdminSsoProvidersUpdateMutationResult = NonNullable<Awaited<ReturnType<typeof authnAdminSsoProvidersUpdate>>>
-
+    export type AuthnAdminSsoProvidersUpdateMutationBody = AuthnAdminProviderWrite
     export type AuthnAdminSsoProvidersUpdateMutationError = void
 
     /**
  * @summary Update an SSO provider
  */
 export const useAuthnAdminSsoProvidersUpdate = <TError = void,
-    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof authnAdminSsoProvidersUpdate>>, TError,{id: string}, TContext>, }
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof authnAdminSsoProvidersUpdate>>, TError,{id: string;data: AuthnAdminProviderWrite}, TContext>, }
  ): UseMutationResult<
         Awaited<ReturnType<typeof authnAdminSsoProvidersUpdate>>,
         TError,
-        {id: string},
+        {id: string;data: AuthnAdminProviderWrite},
         TContext
       > => {
       return useMutation(getAuthnAdminSsoProvidersUpdateMutationOptions(options));
@@ -3846,12 +4039,15 @@ export const useAuthnAdminSsoProvidersUpdate = <TError = void,
  */
 export const authnAdminSsoProvidersClaimDomain = (
     id: string,
+    authnAdminDomainClaim: AuthnAdminDomainClaim,
  signal?: AbortSignal
 ) => {
 
 
       return speedRequest<AuthnAdminVerifyToken>(
-      {url: `/auth/admin/sso/providers/${id}/domains`, method: 'POST', signal
+      {url: `/auth/admin/sso/providers/${id}/domains`, method: 'POST',
+      headers: {'Content-Type': 'application/json', },
+      data: authnAdminDomainClaim, signal
     },
       );
     }
@@ -3859,8 +4055,8 @@ export const authnAdminSsoProvidersClaimDomain = (
 
 
 export const getAuthnAdminSsoProvidersClaimDomainMutationOptions = <TError = void,
-    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof authnAdminSsoProvidersClaimDomain>>, TError,{id: string}, TContext>, }
-): UseMutationOptions<Awaited<ReturnType<typeof authnAdminSsoProvidersClaimDomain>>, TError,{id: string}, TContext> => {
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof authnAdminSsoProvidersClaimDomain>>, TError,{id: string;data: AuthnAdminDomainClaim}, TContext>, }
+): UseMutationOptions<Awaited<ReturnType<typeof authnAdminSsoProvidersClaimDomain>>, TError,{id: string;data: AuthnAdminDomainClaim}, TContext> => {
 
 const mutationKey = ['authnAdminSsoProvidersClaimDomain'];
 const {mutation: mutationOptions} = options ?
@@ -3872,10 +4068,10 @@ const {mutation: mutationOptions} = options ?
 
 
 
-      const mutationFn: MutationFunction<Awaited<ReturnType<typeof authnAdminSsoProvidersClaimDomain>>, {id: string}> = (props) => {
-          const {id} = props ?? {};
+      const mutationFn: MutationFunction<Awaited<ReturnType<typeof authnAdminSsoProvidersClaimDomain>>, {id: string;data: AuthnAdminDomainClaim}> = (props) => {
+          const {id,data} = props ?? {};
 
-          return  authnAdminSsoProvidersClaimDomain(id,)
+          return  authnAdminSsoProvidersClaimDomain(id,data,)
         }
 
 
@@ -3886,18 +4082,18 @@ const {mutation: mutationOptions} = options ?
   return  { mutationFn, ...mutationOptions }}
 
     export type AuthnAdminSsoProvidersClaimDomainMutationResult = NonNullable<Awaited<ReturnType<typeof authnAdminSsoProvidersClaimDomain>>>
-
+    export type AuthnAdminSsoProvidersClaimDomainMutationBody = AuthnAdminDomainClaim
     export type AuthnAdminSsoProvidersClaimDomainMutationError = void
 
     /**
  * @summary Claim a domain for an SSO provider
  */
 export const useAuthnAdminSsoProvidersClaimDomain = <TError = void,
-    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof authnAdminSsoProvidersClaimDomain>>, TError,{id: string}, TContext>, }
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof authnAdminSsoProvidersClaimDomain>>, TError,{id: string;data: AuthnAdminDomainClaim}, TContext>, }
  ): UseMutationResult<
         Awaited<ReturnType<typeof authnAdminSsoProvidersClaimDomain>>,
         TError,
-        {id: string},
+        {id: string;data: AuthnAdminDomainClaim},
         TContext
       > => {
       return useMutation(getAuthnAdminSsoProvidersClaimDomainMutationOptions(options));
@@ -4498,12 +4694,15 @@ export const useAuthnAdminMembersRemove = <TError = void,
 export const authnAdminMembersPut = (
     tenant: string,
     account: string,
+    authnAdminMemberWrite: AuthnAdminMemberWrite,
  signal?: AbortSignal
 ) => {
 
 
       return speedRequest<void>(
-      {url: `/auth/admin/tenants/${tenant}/members/${account}`, method: 'PUT', signal
+      {url: `/auth/admin/tenants/${tenant}/members/${account}`, method: 'PUT',
+      headers: {'Content-Type': 'application/json', },
+      data: authnAdminMemberWrite, signal
     },
       );
     }
@@ -4511,8 +4710,8 @@ export const authnAdminMembersPut = (
 
 
 export const getAuthnAdminMembersPutMutationOptions = <TError = void,
-    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof authnAdminMembersPut>>, TError,{tenant: string;account: string}, TContext>, }
-): UseMutationOptions<Awaited<ReturnType<typeof authnAdminMembersPut>>, TError,{tenant: string;account: string}, TContext> => {
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof authnAdminMembersPut>>, TError,{tenant: string;account: string;data: AuthnAdminMemberWrite}, TContext>, }
+): UseMutationOptions<Awaited<ReturnType<typeof authnAdminMembersPut>>, TError,{tenant: string;account: string;data: AuthnAdminMemberWrite}, TContext> => {
 
 const mutationKey = ['authnAdminMembersPut'];
 const {mutation: mutationOptions} = options ?
@@ -4524,10 +4723,10 @@ const {mutation: mutationOptions} = options ?
 
 
 
-      const mutationFn: MutationFunction<Awaited<ReturnType<typeof authnAdminMembersPut>>, {tenant: string;account: string}> = (props) => {
-          const {tenant,account} = props ?? {};
+      const mutationFn: MutationFunction<Awaited<ReturnType<typeof authnAdminMembersPut>>, {tenant: string;account: string;data: AuthnAdminMemberWrite}> = (props) => {
+          const {tenant,account,data} = props ?? {};
 
-          return  authnAdminMembersPut(tenant,account,)
+          return  authnAdminMembersPut(tenant,account,data,)
         }
 
 
@@ -4538,18 +4737,18 @@ const {mutation: mutationOptions} = options ?
   return  { mutationFn, ...mutationOptions }}
 
     export type AuthnAdminMembersPutMutationResult = NonNullable<Awaited<ReturnType<typeof authnAdminMembersPut>>>
-
+    export type AuthnAdminMembersPutMutationBody = AuthnAdminMemberWrite
     export type AuthnAdminMembersPutMutationError = void
 
     /**
  * @summary Write an account's membership in a tenant
  */
 export const useAuthnAdminMembersPut = <TError = void,
-    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof authnAdminMembersPut>>, TError,{tenant: string;account: string}, TContext>, }
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof authnAdminMembersPut>>, TError,{tenant: string;account: string;data: AuthnAdminMemberWrite}, TContext>, }
  ): UseMutationResult<
         Awaited<ReturnType<typeof authnAdminMembersPut>>,
         TError,
-        {tenant: string;account: string},
+        {tenant: string;account: string;data: AuthnAdminMemberWrite},
         TContext
       > => {
       return useMutation(getAuthnAdminMembersPutMutationOptions(options));
@@ -4561,12 +4760,15 @@ export const useAuthnAdminMembersPut = <TError = void,
 export const authnAdminMembersSsoExempt = (
     tenant: string,
     account: string,
+    authnAdminMemberSSOExempt: AuthnAdminMemberSSOExempt,
  signal?: AbortSignal
 ) => {
 
 
       return speedRequest<void>(
-      {url: `/auth/admin/tenants/${tenant}/members/${account}/sso-exempt`, method: 'PUT', signal
+      {url: `/auth/admin/tenants/${tenant}/members/${account}/sso-exempt`, method: 'PUT',
+      headers: {'Content-Type': 'application/json', },
+      data: authnAdminMemberSSOExempt, signal
     },
       );
     }
@@ -4574,8 +4776,8 @@ export const authnAdminMembersSsoExempt = (
 
 
 export const getAuthnAdminMembersSsoExemptMutationOptions = <TError = void,
-    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof authnAdminMembersSsoExempt>>, TError,{tenant: string;account: string}, TContext>, }
-): UseMutationOptions<Awaited<ReturnType<typeof authnAdminMembersSsoExempt>>, TError,{tenant: string;account: string}, TContext> => {
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof authnAdminMembersSsoExempt>>, TError,{tenant: string;account: string;data: AuthnAdminMemberSSOExempt}, TContext>, }
+): UseMutationOptions<Awaited<ReturnType<typeof authnAdminMembersSsoExempt>>, TError,{tenant: string;account: string;data: AuthnAdminMemberSSOExempt}, TContext> => {
 
 const mutationKey = ['authnAdminMembersSsoExempt'];
 const {mutation: mutationOptions} = options ?
@@ -4587,10 +4789,10 @@ const {mutation: mutationOptions} = options ?
 
 
 
-      const mutationFn: MutationFunction<Awaited<ReturnType<typeof authnAdminMembersSsoExempt>>, {tenant: string;account: string}> = (props) => {
-          const {tenant,account} = props ?? {};
+      const mutationFn: MutationFunction<Awaited<ReturnType<typeof authnAdminMembersSsoExempt>>, {tenant: string;account: string;data: AuthnAdminMemberSSOExempt}> = (props) => {
+          const {tenant,account,data} = props ?? {};
 
-          return  authnAdminMembersSsoExempt(tenant,account,)
+          return  authnAdminMembersSsoExempt(tenant,account,data,)
         }
 
 
@@ -4601,18 +4803,18 @@ const {mutation: mutationOptions} = options ?
   return  { mutationFn, ...mutationOptions }}
 
     export type AuthnAdminMembersSsoExemptMutationResult = NonNullable<Awaited<ReturnType<typeof authnAdminMembersSsoExempt>>>
-
+    export type AuthnAdminMembersSsoExemptMutationBody = AuthnAdminMemberSSOExempt
     export type AuthnAdminMembersSsoExemptMutationError = void
 
     /**
  * @summary Set an account's exemption from a tenant's SSO requirement
  */
 export const useAuthnAdminMembersSsoExempt = <TError = void,
-    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof authnAdminMembersSsoExempt>>, TError,{tenant: string;account: string}, TContext>, }
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof authnAdminMembersSsoExempt>>, TError,{tenant: string;account: string;data: AuthnAdminMemberSSOExempt}, TContext>, }
  ): UseMutationResult<
         Awaited<ReturnType<typeof authnAdminMembersSsoExempt>>,
         TError,
-        {tenant: string;account: string},
+        {tenant: string;account: string;data: AuthnAdminMemberSSOExempt},
         TContext
       > => {
       return useMutation(getAuthnAdminMembersSsoExemptMutationOptions(options));
@@ -4692,12 +4894,15 @@ export function useAuthnAdminSsoProvidersList<TData = Awaited<ReturnType<typeof 
  */
 export const authnAdminSsoProvidersCreate = (
     tenant: string,
+    authnAdminProviderWrite: AuthnAdminProviderWrite,
  signal?: AbortSignal
 ) => {
 
 
       return speedRequest<AuthnAdminProviderEnvelope>(
-      {url: `/auth/admin/tenants/${tenant}/sso/providers`, method: 'POST', signal
+      {url: `/auth/admin/tenants/${tenant}/sso/providers`, method: 'POST',
+      headers: {'Content-Type': 'application/json', },
+      data: authnAdminProviderWrite, signal
     },
       );
     }
@@ -4705,8 +4910,8 @@ export const authnAdminSsoProvidersCreate = (
 
 
 export const getAuthnAdminSsoProvidersCreateMutationOptions = <TError = void,
-    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof authnAdminSsoProvidersCreate>>, TError,{tenant: string}, TContext>, }
-): UseMutationOptions<Awaited<ReturnType<typeof authnAdminSsoProvidersCreate>>, TError,{tenant: string}, TContext> => {
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof authnAdminSsoProvidersCreate>>, TError,{tenant: string;data: AuthnAdminProviderWrite}, TContext>, }
+): UseMutationOptions<Awaited<ReturnType<typeof authnAdminSsoProvidersCreate>>, TError,{tenant: string;data: AuthnAdminProviderWrite}, TContext> => {
 
 const mutationKey = ['authnAdminSsoProvidersCreate'];
 const {mutation: mutationOptions} = options ?
@@ -4718,10 +4923,10 @@ const {mutation: mutationOptions} = options ?
 
 
 
-      const mutationFn: MutationFunction<Awaited<ReturnType<typeof authnAdminSsoProvidersCreate>>, {tenant: string}> = (props) => {
-          const {tenant} = props ?? {};
+      const mutationFn: MutationFunction<Awaited<ReturnType<typeof authnAdminSsoProvidersCreate>>, {tenant: string;data: AuthnAdminProviderWrite}> = (props) => {
+          const {tenant,data} = props ?? {};
 
-          return  authnAdminSsoProvidersCreate(tenant,)
+          return  authnAdminSsoProvidersCreate(tenant,data,)
         }
 
 
@@ -4732,18 +4937,18 @@ const {mutation: mutationOptions} = options ?
   return  { mutationFn, ...mutationOptions }}
 
     export type AuthnAdminSsoProvidersCreateMutationResult = NonNullable<Awaited<ReturnType<typeof authnAdminSsoProvidersCreate>>>
-
+    export type AuthnAdminSsoProvidersCreateMutationBody = AuthnAdminProviderWrite
     export type AuthnAdminSsoProvidersCreateMutationError = void
 
     /**
  * @summary Create an SSO provider in a tenant
  */
 export const useAuthnAdminSsoProvidersCreate = <TError = void,
-    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof authnAdminSsoProvidersCreate>>, TError,{tenant: string}, TContext>, }
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof authnAdminSsoProvidersCreate>>, TError,{tenant: string;data: AuthnAdminProviderWrite}, TContext>, }
  ): UseMutationResult<
         Awaited<ReturnType<typeof authnAdminSsoProvidersCreate>>,
         TError,
-        {tenant: string},
+        {tenant: string;data: AuthnAdminProviderWrite},
         TContext
       > => {
       return useMutation(getAuthnAdminSsoProvidersCreateMutationOptions(options));

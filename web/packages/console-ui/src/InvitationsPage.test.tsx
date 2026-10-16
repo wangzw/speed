@@ -3,7 +3,8 @@
  *
  * It prompts for a tenant until one is chosen (the selector is fed by the
  * roster read), then lists the tenant's invitations and members and drives
- * the issue / revoke / remove writes through the bundle.
+ * the issue / revoke / remove writes, the membership write and the SSO
+ * exemption toggle through the bundle.
  */
 
 import { describe, expect, it, vi } from 'vitest'
@@ -13,6 +14,8 @@ import { InvitationsPage } from './InvitationsPage.js'
 import type {
   ConsoleInvitation,
   ConsoleMember,
+  ConsoleSetMemberSSOExemptInput,
+  ConsoleWriteMemberInput,
 } from './operations.js'
 import { renderWithProviders } from '../test-utils/render.js'
 import {
@@ -144,6 +147,47 @@ describe('InvitationsPage', () => {
     await user.click(within(dialog).getByRole('button', { name: '确认' }))
     await vi.waitFor(() => {
       expect(removed).toEqual(['acc-1'])
+    })
+  })
+
+  it('writes a membership through the bundle', async () => {
+    const user = userEvent.setup()
+    const written: ConsoleWriteMemberInput[] = []
+    const operations = withTenant({
+      writeMember: (input) => {
+        written.push(input)
+        return Promise.resolve()
+      },
+    })
+    renderWithProviders(<InvitationsPage />, { operations })
+    await pickTenant(user)
+    await user.type(await screen.findByLabelText('账户'), 'acc-2')
+    await user.click(screen.getByRole('button', { name: '写入成员关系' }))
+    await vi.waitFor(() => {
+      expect(written).toEqual([
+        { tenant: 'acme', account: 'acc-2', active: true, sso_exempt: false },
+      ])
+    })
+  })
+
+  it('toggles a member SSO exemption through the bundle', async () => {
+    const user = userEvent.setup()
+    const toggled: ConsoleSetMemberSSOExemptInput[] = []
+    const operations = withTenant({
+      listMembers: () => Promise.resolve([member({ sso_exempt: false })]),
+      setMemberSsoExempt: (input) => {
+        toggled.push(input)
+        return Promise.resolve()
+      },
+    })
+    renderWithProviders(<InvitationsPage />, { operations })
+    await pickTenant(user)
+    await screen.findByText('acc-1')
+    await user.click(screen.getByRole('button', { name: '豁免 SSO' }))
+    await vi.waitFor(() => {
+      expect(toggled).toEqual([
+        { tenant: 'acme', account: 'acc-1', sso_exempt: true },
+      ])
     })
   })
 

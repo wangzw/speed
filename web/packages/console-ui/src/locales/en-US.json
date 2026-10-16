@@ -274,10 +274,68 @@
     "deleteTitle": "Delete account",
     "deleteMessage": "Deleting account \"{{id}}\" also removes its identifiers, secrets and sessions.",
     "status": {
+      "label": "Status",
+      "submit": "Save status",
       "active": "Active",
       "disabled": "Disabled",
       "deleted": "Deleted",
       "other": "Unknown"
+    },
+    "mfa": {
+      "label": "MFA requirement",
+      "required": "Required",
+      "notRequired": "Not required",
+      "submit": "Save requirement"
+    },
+    "create": {
+      "title": "Create an account",
+      "kindLabel": "Account kind",
+      "kind": {"user": "User", "service": "Service"},
+      "displayNameLabel": "Display name",
+      "usernameLabel": "Username",
+      "emailLabel": "Email",
+      "emailViaLabel": "Email verified via",
+      "phoneLabel": "Phone",
+      "phoneViaLabel": "Phone verified via",
+      "passwordLabel": "Password",
+      "mfaLabel": "MFA required",
+      "attributesLabel": "Attributes (JSON)",
+      "attributesHelper": "A JSON object of string values, or empty",
+      "via": {
+        "none": "Not stated",
+        "admin": "Administrator assertion",
+        "importUnverified": "Imported, unverified"
+      },
+      "submit": "Create"
+    },
+    "writes": {"title": "Account writes"},
+    "patch": {
+      "displayNameLabel": "New display name",
+      "attributesLabel": "New attributes (JSON)",
+      "attributesHelper": "A JSON object of string values, or empty",
+      "protectedLabel": "Protected",
+      "protected": {
+        "unchanged": "Unchanged",
+        "true": "Protected",
+        "false": "Not protected"
+      },
+      "submit": "Save changes"
+    },
+    "password": {
+      "label": "Temporary password",
+      "submit": "Reset password"
+    },
+    "addIdentifier": {
+      "kindLabel": "New identifier kind",
+      "valueLabel": "Value",
+      "submit": "Add identifier"
+    },
+    "createSecret": {
+      "labelLabel": "Label",
+      "expiresLabel": "Expires",
+      "expiresHelper": "RFC 3339 instant, or empty for no expiry",
+      "submit": "Create secret",
+      "handedOver": "The secret, shown once: {{secret}}"
     },
     "detail": {
       "title": "Account \"{{id}}\"",
@@ -502,6 +560,15 @@
     "activeNo": "No",
     "ssoExemptYes": "Yes",
     "ssoExemptNo": "No",
+    "ssoExemptSet": "Exempt from SSO",
+    "ssoExemptClear": "Clear SSO exemption",
+    "write": {
+      "accountLabel": "Account",
+      "sourceLabel": "Source",
+      "activeLabel": "Active",
+      "ssoExemptLabel": "SSO exempt",
+      "submit": "Write membership"
+    },
     "remove": "Remove",
     "removeTitle": "Remove member",
     "removeMessage": "Remove the member \"{{account}}\" from this tenant."
@@ -542,9 +609,30 @@
       "providerLabel": "Provider",
       "domainLabel": "Domain",
       "verify": "Verify",
+      "claim": "Claim",
+      "claimToken": "Publish this token in DNS: {{token}}",
       "remove": "Remove",
       "removeTitle": "Remove domain",
       "removeMessage": "Remove the domain \"{{domain}}\" from this provider."
+    },
+    "provider": {
+      "title": "Provider write",
+      "editLabel": "Select a provider",
+      "newOption": "New provider",
+      "protocolLabel": "Protocol",
+      "nameLabel": "Name",
+      "provisioningLabel": "Provisioning",
+      "enabledLabel": "Enabled",
+      "trustIdpMfaLabel": "Trust IdP MFA",
+      "allowIdpInitiatedLabel": "Allow IdP-initiated",
+      "allowSha1Label": "Allow SHA-1",
+      "mergeExistingLabel": "Merge existing",
+      "configLabel": "Configuration (JSON)",
+      "configHelper": "A JSON object, or empty",
+      "clientSecretLabel": "Client secret",
+      "createSubmit": "Create provider",
+      "updateSubmit": "Save provider",
+      "tri": {"unchanged": "Unchanged", "true": "Yes", "false": "No"}
     }
   },
   "sms": {

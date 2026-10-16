@@ -3,9 +3,11 @@
  *
  * It lists accounts (narrowed by an identifier prefix and its kind),
  * opens one account's detail (its fields, factors, secrets and sessions),
- * and drives the body-free writes -- delete, reset MFA, revoke sessions,
- * revoke a secret, revoke a session and remove a named identifier --
- * through the bundle, each destructive one behind a confirmation.
+ * creates an account, and drives the detail writes -- status, MFA
+ * requirement, patch, password reset, identifier add, secret create,
+ * delete, reset MFA, revoke sessions, revoke a secret, revoke a session
+ * and remove a named identifier -- through the bundle, each destructive
+ * one behind a confirmation.
  */
 
 import { describe, expect, it, vi } from 'vitest'
@@ -13,6 +15,15 @@ import { screen, waitFor, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { AccountsPage } from './AccountsPage.js'
 import { consoleOperations } from './operations.js'
+import type {
+  ConsoleAddIdentifierInput,
+  ConsoleCreateAccountInput,
+  ConsoleCreateSecretInput,
+  ConsolePatchAccountInput,
+  ConsoleResetPasswordInput,
+  ConsoleSetAccountStatusInput,
+  ConsoleSetMFARequiredInput,
+} from './operations.js'
 import { renderWithProviders } from '../test-utils/render.js'
 import { bindConsoleRequest } from '../test-utils/request-rig.js'
 import {
@@ -258,6 +269,142 @@ describe('AccountsPage', () => {
     await vi.waitFor(() => {
       expect(removed).toEqual(['ada@example.com'])
     })
+  })
+
+  it('creates an account through the bundle', async () => {
+    const user = userEvent.setup()
+    const created: ConsoleCreateAccountInput[] = []
+    const operations = withAccounts({
+      createAccount: (input) => {
+        created.push(input)
+        return Promise.resolve(accountFixture())
+      },
+    })
+    renderWithProviders(<AccountsPage />, { operations })
+    await user.type(screen.getByLabelText('显示名'), 'Grace')
+    await user.type(screen.getByLabelText('用户名'), 'grace')
+    await user.click(screen.getByRole('button', { name: '新建' }))
+    await vi.waitFor(() => {
+      expect(created).toEqual([
+        { kind: 'user', display_name: 'Grace', username: 'grace' },
+      ])
+    })
+  })
+
+  it('changes an account status through the bundle', async () => {
+    const user = userEvent.setup()
+    const calls: ConsoleSetAccountStatusInput[] = []
+    const operations = withAccounts({
+      setAccountStatus: (input) => {
+        calls.push(input)
+        return Promise.resolve(accountFixture())
+      },
+    })
+    renderWithProviders(<AccountsPage />, { operations })
+    await openDetail(user)
+    await user.click(await screen.findByRole('button', { name: '保存状态' }))
+    await vi.waitFor(() => {
+      expect(calls).toEqual([{ id: 'acc-1', status: 'disabled' }])
+    })
+  })
+
+  it('sets the MFA requirement through the bundle', async () => {
+    const user = userEvent.setup()
+    const calls: ConsoleSetMFARequiredInput[] = []
+    const operations = withAccounts({
+      setMFARequired: (input) => {
+        calls.push(input)
+        return Promise.resolve()
+      },
+    })
+    renderWithProviders(<AccountsPage />, { operations })
+    await openDetail(user)
+    await user.click(await screen.findByRole('button', { name: '保存要求' }))
+    await vi.waitFor(() => {
+      expect(calls).toEqual([{ id: 'acc-1', required: true }])
+    })
+  })
+
+  it('patches an account through the bundle', async () => {
+    const user = userEvent.setup()
+    const calls: ConsolePatchAccountInput[] = []
+    const operations = withAccounts({
+      patchAccount: (input) => {
+        calls.push(input)
+        return Promise.resolve(accountFixture())
+      },
+    })
+    renderWithProviders(<AccountsPage />, { operations })
+    await openDetail(user)
+    await user.type(await screen.findByLabelText('新显示名'), 'Ada II')
+    await user.click(screen.getByRole('button', { name: '保存改动' }))
+    await vi.waitFor(() => {
+      expect(calls).toEqual([{ id: 'acc-1', display_name: 'Ada II' }])
+    })
+  })
+
+  it('resets a password through the bundle', async () => {
+    const user = userEvent.setup()
+    const calls: ConsoleResetPasswordInput[] = []
+    const operations = withAccounts({
+      resetPassword: (input) => {
+        calls.push(input)
+        return Promise.resolve()
+      },
+    })
+    renderWithProviders(<AccountsPage />, { operations })
+    await openDetail(user)
+    await user.type(await screen.findByLabelText('临时口令'), 'secret123')
+    await user.click(screen.getByRole('button', { name: '重置口令' }))
+    await vi.waitFor(() => {
+      expect(calls).toEqual([{ id: 'acc-1', password: 'secret123' }])
+    })
+  })
+
+  it('adds an identifier through the bundle', async () => {
+    const user = userEvent.setup()
+    const calls: ConsoleAddIdentifierInput[] = []
+    const operations = withAccounts({
+      addIdentifier: (input) => {
+        calls.push(input)
+        return Promise.resolve()
+      },
+    })
+    renderWithProviders(<AccountsPage />, { operations })
+    await openDetail(user)
+    await user.type(await screen.findByLabelText('取值'), 'ada@example.com')
+    await user.click(screen.getByRole('button', { name: '新增标识' }))
+    await vi.waitFor(() => {
+      expect(calls).toEqual([
+        { id: 'acc-1', kind: 'username', value: 'ada@example.com' },
+      ])
+    })
+  })
+
+  it('creates a service secret and shows the one-time value', async () => {
+    const user = userEvent.setup()
+    const calls: ConsoleCreateSecretInput[] = []
+    const operations = withAccounts({
+      createSecret: (input) => {
+        calls.push(input)
+        return Promise.resolve({
+          id: 'secret-9',
+          label: input.label,
+          secret: 'one-time-value',
+          expires_at: '0001-01-01T00:00:00Z',
+        })
+      },
+    })
+    renderWithProviders(<AccountsPage />, { operations })
+    await openDetail(user)
+    await user.type(await screen.findByLabelText('标签'), 'ci')
+    await user.click(screen.getByRole('button', { name: '新建密钥' }))
+    await vi.waitFor(() => {
+      expect(calls).toEqual([{ id: 'acc-1', label: 'ci' }])
+    })
+    expect(
+      await screen.findByText('密钥（仅显示这一次）：one-time-value'),
+    ).toBeInTheDocument()
   })
 
   it('renders the retryable error placeholder when the list read fails', async () => {

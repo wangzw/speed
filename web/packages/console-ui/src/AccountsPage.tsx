@@ -2,11 +2,14 @@
  * AccountsPage: the account-administration page of the console.
  *
  * It lists accounts (GET /auth/admin/accounts, narrowed by an identifier
- * prefix of one identifier kind) and opens one account's detail: its
- * read-only fields, its registered factors, its service secrets and its
- * sessions, with the write controls the platform's contract declares a
- * body-free route for -- delete the account, reset its factors, revoke
- * its sessions, revoke a secret, revoke a session, and remove a login
+ * prefix of one identifier kind), creates an account, and opens one
+ * account's detail: its read-only fields, its registered factors, its
+ * service secrets and its sessions, with the write controls the platform
+ * declares a request body for -- create an account; change its status,
+ * MFA requirement, display name, attributes and protected flag; reset its
+ * password; add a login name or email; create a service secret; and the
+ * body-free writes delete the account, reset its factors, revoke its
+ * sessions, revoke a secret, revoke a session and remove a login
  * identifier named by hand.
  *
  * The list read takes the identifier prefix with its kind, because the
@@ -20,13 +23,10 @@
  * retryable-error states rather than settling a failed read into a
  * silently empty table.
  *
- * Several of the module's writes are held to a request body the
- * platform's OpenAPI fragment does not yet declare (create an account,
- * patch it, change its status, require MFA, reset its password, add an
- * identifier, create a secret), so those controls are not rendered; see
- * the package's design note on the missing fragment bodies. The account
- * view also carries no identifier list (the module exposes identifier
- * add/remove but no identifier read), so identifier removal names the
+ * Each write request body is the shape the module's OpenAPI fragment
+ * declares for its endpoint, which the handler decodes; the account view
+ * carries no identifier list (the module exposes identifier add/remove
+ * but no identifier read), so identifier removal and add name the
  * identifier by hand.
  *
  * Every destructive write is confirmed through ui-kit's danger
@@ -40,6 +40,8 @@
 import { useState } from 'react'
 import Box from '@mui/material/Box'
 import Button from '@mui/material/Button'
+import Checkbox from '@mui/material/Checkbox'
+import FormControlLabel from '@mui/material/FormControlLabel'
 import MenuItem from '@mui/material/MenuItem'
 import Skeleton from '@mui/material/Skeleton'
 import TextField from '@mui/material/TextField'
@@ -338,6 +340,8 @@ export function AccountsPage() {
         sx={{ mb: 2 }}
       />
 
+      <AccountCreateForm />
+
       <Box
         component="section"
         sx={{
@@ -495,7 +499,11 @@ export function AccountsPage() {
             </Button>
           </Box>
 
-          <Typography variant="subtitle1" sx={{ mb: 1 }}>
+          {account.data !== undefined && (
+            <AccountDetailWrites key={selectedId} account={account.data} />
+          )}
+
+          <Typography component="h3" variant="subtitle1" sx={{ mb: 1 }}>
             {t('accounts.factors.title')}
           </Typography>
           <AsyncSection
@@ -529,7 +537,7 @@ export function AccountsPage() {
             )}
           </AsyncSection>
 
-          <Typography variant="subtitle1" sx={{ mt: 2, mb: 1 }}>
+          <Typography component="h3" variant="subtitle1" sx={{ mt: 2, mb: 1 }}>
             {t('accounts.secrets.title')}
           </Typography>
           <AsyncSection
@@ -563,7 +571,7 @@ export function AccountsPage() {
             )}
           </AsyncSection>
 
-          <Typography variant="subtitle1" sx={{ mt: 2, mb: 1 }}>
+          <Typography component="h3" variant="subtitle1" sx={{ mt: 2, mb: 1 }}>
             {t('accounts.sessions.title')}
           </Typography>
           <AsyncSection
@@ -656,4 +664,502 @@ function firstErrorCode(errors: readonly unknown[]): string | null {
     }
   }
   return null
+}
+
+/** The ways an administrator may state an identifier's verification. */
+type VerifiedVia = '' | 'admin' | 'import-unverified'
+
+/**
+ * Parses an optional attribute map the operator typed as a JSON object with
+ * string values. Returns null when the text is not such an object, so a form
+ * can mark the field and keep the submit disabled.
+ */
+function parseStringMap(text: string): Record<string, string> | null {
+  try {
+    const parsed: unknown = JSON.parse(text)
+    if (parsed === null || typeof parsed !== 'object' || Array.isArray(parsed)) {
+      return null
+    }
+    const out: Record<string, string> = {}
+    for (const [key, value] of Object.entries(parsed)) {
+      if (typeof value !== 'string') {
+        return null
+      }
+      out[key] = value
+    }
+    return out
+  } catch {
+    return null
+  }
+}
+
+/**
+ * AccountCreateForm: the account-creation control (POST /auth/admin/accounts).
+ * It names the fields the handler decodes into its create request; each is
+ * optional but the kind, and a field left blank is not sent. The attribute
+ * set is typed as a JSON object and marks the form when it does not parse.
+ * A landed create clears the form; a refused one keeps it to correct.
+ */
+function AccountCreateForm() {
+  const { t } = useConsoleUiTranslation()
+  const operations = useConsoleOperations()
+  const createAccount = operations.useCreateAccount()
+
+  const [kind, setKind] = useState<'user' | 'service'>('user')
+  const [displayName, setDisplayName] = useState('')
+  const [username, setUsername] = useState('')
+  const [email, setEmail] = useState('')
+  const [emailVia, setEmailVia] = useState<VerifiedVia>('')
+  const [phone, setPhone] = useState('')
+  const [phoneVia, setPhoneVia] = useState<VerifiedVia>('')
+  const [password, setPassword] = useState('')
+  const [mfaRequired, setMfaRequired] = useState(false)
+  const [attributes, setAttributes] = useState('')
+
+  const attributesInvalid =
+    attributes.trim() !== '' && parseStringMap(attributes) === null
+
+  const viaOptions = (
+    <>
+      <MenuItem value="">{t('accounts.create.via.none')}</MenuItem>
+      <MenuItem value="admin">{t('accounts.create.via.admin')}</MenuItem>
+      <MenuItem value="import-unverified">
+        {t('accounts.create.via.importUnverified')}
+      </MenuItem>
+    </>
+  )
+
+  return (
+    <Box component="section" sx={{ mb: 3 }}>
+      <Typography variant="h2" sx={{ fontSize: '1.25rem', mb: 1 }}>
+        {t('accounts.create.title')}
+      </Typography>
+      <Box
+        sx={{
+          display: 'flex',
+          flexWrap: 'wrap',
+          alignItems: 'flex-start',
+          columnGap: 2,
+          rowGap: 1,
+        }}
+      >
+        <TextField
+          select
+          size="small"
+          value={kind}
+          onChange={(event) => setKind(event.target.value as 'user' | 'service')}
+          label={t('accounts.create.kindLabel')}
+          sx={{ minWidth: 140 }}
+        >
+          <MenuItem value="user">{t('accounts.create.kind.user')}</MenuItem>
+          <MenuItem value="service">{t('accounts.create.kind.service')}</MenuItem>
+        </TextField>
+        <TextField
+          size="small"
+          value={displayName}
+          onChange={(event) => setDisplayName(event.target.value)}
+          label={t('accounts.create.displayNameLabel')}
+        />
+        <TextField
+          size="small"
+          value={username}
+          onChange={(event) => setUsername(event.target.value)}
+          label={t('accounts.create.usernameLabel')}
+        />
+        <TextField
+          size="small"
+          value={email}
+          onChange={(event) => setEmail(event.target.value)}
+          label={t('accounts.create.emailLabel')}
+        />
+        <TextField
+          select
+          size="small"
+          value={emailVia}
+          onChange={(event) => setEmailVia(event.target.value as VerifiedVia)}
+          label={t('accounts.create.emailViaLabel')}
+          sx={{ minWidth: 180 }}
+        >
+          {viaOptions}
+        </TextField>
+        <TextField
+          size="small"
+          value={phone}
+          onChange={(event) => setPhone(event.target.value)}
+          label={t('accounts.create.phoneLabel')}
+        />
+        <TextField
+          select
+          size="small"
+          value={phoneVia}
+          onChange={(event) => setPhoneVia(event.target.value as VerifiedVia)}
+          label={t('accounts.create.phoneViaLabel')}
+          sx={{ minWidth: 180 }}
+        >
+          {viaOptions}
+        </TextField>
+        <TextField
+          size="small"
+          type="password"
+          value={password}
+          onChange={(event) => setPassword(event.target.value)}
+          label={t('accounts.create.passwordLabel')}
+        />
+        <FormControlLabel
+          control={
+            <Checkbox
+              checked={mfaRequired}
+              onChange={(event) => setMfaRequired(event.target.checked)}
+            />
+          }
+          label={t('accounts.create.mfaLabel')}
+        />
+        <TextField
+          size="small"
+          value={attributes}
+          onChange={(event) => setAttributes(event.target.value)}
+          label={t('accounts.create.attributesLabel')}
+          error={attributesInvalid}
+          helperText={t('accounts.create.attributesHelper')}
+          multiline
+          minRows={1}
+          sx={{ minWidth: 260 }}
+        />
+        <Button
+          type="button"
+          variant="contained"
+          disabled={createAccount.isPending || attributesInvalid}
+          onClick={() => {
+            const parsed = attributes.trim() === '' ? null : parseStringMap(attributes)
+            createAccount.mutate(
+              {
+                kind,
+                ...(displayName === '' ? {} : { display_name: displayName }),
+                ...(username === '' ? {} : { username }),
+                ...(email === '' ? {} : { email }),
+                ...(emailVia === '' ? {} : { email_verified_via: emailVia }),
+                ...(phone === '' ? {} : { phone }),
+                ...(phoneVia === '' ? {} : { phone_verified_via: phoneVia }),
+                ...(password === '' ? {} : { password }),
+                ...(parsed === null ? {} : { attributes: parsed }),
+                ...(mfaRequired ? { mfa_required: true } : {}),
+              },
+              {
+                onSuccess: () => {
+                  setDisplayName('')
+                  setUsername('')
+                  setEmail('')
+                  setEmailVia('')
+                  setPhone('')
+                  setPhoneVia('')
+                  setPassword('')
+                  setMfaRequired(false)
+                  setAttributes('')
+                },
+              },
+            )
+          }}
+        >
+          {t('accounts.create.submit')}
+        </Button>
+      </Box>
+      <Box sx={{ mt: 1 }}>
+        <InlineError
+          code={createAccount.isError ? errorCodeOf(createAccount.error) : null}
+        />
+      </Box>
+    </Box>
+  )
+}
+
+/**
+ * AccountDetailWrites: the account-level write controls the platform contract
+ * now declares a body for -- the status change, the MFA requirement, the patch
+ * (display name / attributes / protected), the password reset, the identifier
+ * add and the service-secret creation. Each renders as one field group beside
+ * its own failure banner; the page's delete, factor-reset, session-revoke and
+ * identifier-remove controls stay with the detail above. The account is passed
+ * settled, and the component is keyed by the account id at its call site so a
+ * newly selected account starts from its own values.
+ */
+function AccountDetailWrites({ account }: { readonly account: ConsoleAccount }) {
+  const { t } = useConsoleUiTranslation()
+  const operations = useConsoleOperations()
+  const patchAccount = operations.usePatchAccount()
+  const setStatus = operations.useSetAccountStatus()
+  const setMfaRequired = operations.useSetMFARequired()
+  const resetPassword = operations.useResetPassword()
+  const addIdentifier = operations.useAddIdentifier()
+  const createSecret = operations.useCreateSecret()
+
+  const id = account.id
+  const [displayName, setDisplayName] = useState('')
+  const [attributes, setAttributes] = useState('')
+  const [protectedDraft, setProtectedDraft] = useState<'unchanged' | 'true' | 'false'>(
+    'unchanged',
+  )
+  const [statusDraft, setStatusDraft] = useState<'active' | 'disabled'>(
+    account.status === 'disabled' ? 'active' : 'disabled',
+  )
+  const [mfaDraft, setMfaDraft] = useState<'true' | 'false'>(
+    account.mfa_required ? 'false' : 'true',
+  )
+  const [tempPassword, setTempPassword] = useState('')
+  const [identifierKind, setIdentifierKind] = useState<'username' | 'email'>('username')
+  const [identifierValue, setIdentifierValue] = useState('')
+  const [secretLabel, setSecretLabel] = useState('')
+  const [secretExpires, setSecretExpires] = useState('')
+  const [createdSecret, setCreatedSecret] = useState<string | null>(null)
+
+  const attributesInvalid =
+    attributes.trim() !== '' && parseStringMap(attributes) === null
+
+  const rowSx = {
+    display: 'flex',
+    flexWrap: 'wrap',
+    alignItems: 'flex-end',
+    columnGap: 2,
+    rowGap: 1,
+    mb: 2,
+  } as const
+
+  return (
+    <>
+      <Typography component="h3" variant="subtitle1" sx={{ mb: 1 }}>
+        {t('accounts.writes.title')}
+      </Typography>
+
+      <Box sx={rowSx}>
+        <TextField
+          select
+          size="small"
+          value={statusDraft}
+          onChange={(event) =>
+            setStatusDraft(event.target.value as 'active' | 'disabled')
+          }
+          label={t('accounts.status.label')}
+          sx={{ minWidth: 160 }}
+        >
+          <MenuItem value="active">{t('accounts.status.active')}</MenuItem>
+          <MenuItem value="disabled">{t('accounts.status.disabled')}</MenuItem>
+        </TextField>
+        <Button
+          type="button"
+          variant="outlined"
+          disabled={setStatus.isPending}
+          onClick={() => setStatus.mutate({ id, status: statusDraft })}
+        >
+          {t('accounts.status.submit')}
+        </Button>
+        <InlineError
+          code={setStatus.isError ? errorCodeOf(setStatus.error) : null}
+        />
+      </Box>
+
+      <Box sx={rowSx}>
+        <TextField
+          select
+          size="small"
+          value={mfaDraft}
+          onChange={(event) => setMfaDraft(event.target.value as 'true' | 'false')}
+          label={t('accounts.mfa.label')}
+          sx={{ minWidth: 160 }}
+        >
+          <MenuItem value="true">{t('accounts.mfa.required')}</MenuItem>
+          <MenuItem value="false">{t('accounts.mfa.notRequired')}</MenuItem>
+        </TextField>
+        <Button
+          type="button"
+          variant="outlined"
+          disabled={setMfaRequired.isPending}
+          onClick={() => setMfaRequired.mutate({ id, required: mfaDraft === 'true' })}
+        >
+          {t('accounts.mfa.submit')}
+        </Button>
+        <InlineError
+          code={setMfaRequired.isError ? errorCodeOf(setMfaRequired.error) : null}
+        />
+      </Box>
+
+      <Box sx={rowSx}>
+        <TextField
+          size="small"
+          value={displayName}
+          onChange={(event) => setDisplayName(event.target.value)}
+          label={t('accounts.patch.displayNameLabel')}
+        />
+        <TextField
+          size="small"
+          value={attributes}
+          onChange={(event) => setAttributes(event.target.value)}
+          label={t('accounts.patch.attributesLabel')}
+          error={attributesInvalid}
+          helperText={t('accounts.patch.attributesHelper')}
+          multiline
+          minRows={1}
+          sx={{ minWidth: 240 }}
+        />
+        <TextField
+          select
+          size="small"
+          value={protectedDraft}
+          onChange={(event) =>
+            setProtectedDraft(event.target.value as 'unchanged' | 'true' | 'false')
+          }
+          label={t('accounts.patch.protectedLabel')}
+          sx={{ minWidth: 180 }}
+        >
+          <MenuItem value="unchanged">
+            {t('accounts.patch.protected.unchanged')}
+          </MenuItem>
+          <MenuItem value="true">{t('accounts.patch.protected.true')}</MenuItem>
+          <MenuItem value="false">{t('accounts.patch.protected.false')}</MenuItem>
+        </TextField>
+        <Button
+          type="button"
+          variant="outlined"
+          disabled={patchAccount.isPending || attributesInvalid}
+          onClick={() => {
+            const parsed = attributes.trim() === '' ? null : parseStringMap(attributes)
+            patchAccount.mutate(
+              {
+                id,
+                ...(displayName === '' ? {} : { display_name: displayName }),
+                ...(parsed === null ? {} : { attributes: parsed }),
+                ...(protectedDraft === 'unchanged'
+                  ? {}
+                  : { protected: protectedDraft === 'true' }),
+              },
+              {
+                onSuccess: () => {
+                  setDisplayName('')
+                  setAttributes('')
+                  setProtectedDraft('unchanged')
+                },
+              },
+            )
+          }}
+        >
+          {t('accounts.patch.submit')}
+        </Button>
+        <InlineError
+          code={patchAccount.isError ? errorCodeOf(patchAccount.error) : null}
+        />
+      </Box>
+
+      <Box sx={rowSx}>
+        <TextField
+          size="small"
+          type="password"
+          value={tempPassword}
+          onChange={(event) => setTempPassword(event.target.value)}
+          label={t('accounts.password.label')}
+        />
+        <Button
+          type="button"
+          variant="outlined"
+          disabled={resetPassword.isPending || tempPassword === ''}
+          onClick={() =>
+            resetPassword.mutate(
+              { id, password: tempPassword },
+              { onSuccess: () => setTempPassword('') },
+            )
+          }
+        >
+          {t('accounts.password.submit')}
+        </Button>
+        <InlineError
+          code={resetPassword.isError ? errorCodeOf(resetPassword.error) : null}
+        />
+      </Box>
+
+      <Box sx={rowSx}>
+        <TextField
+          select
+          size="small"
+          value={identifierKind}
+          onChange={(event) =>
+            setIdentifierKind(event.target.value as 'username' | 'email')
+          }
+          label={t('accounts.addIdentifier.kindLabel')}
+          sx={{ minWidth: 140 }}
+        >
+          <MenuItem value="username">
+            {t('accounts.identifierKind.username')}
+          </MenuItem>
+          <MenuItem value="email">{t('accounts.identifierKind.email')}</MenuItem>
+        </TextField>
+        <TextField
+          size="small"
+          value={identifierValue}
+          onChange={(event) => setIdentifierValue(event.target.value)}
+          label={t('accounts.addIdentifier.valueLabel')}
+        />
+        <Button
+          type="button"
+          variant="outlined"
+          disabled={addIdentifier.isPending || identifierValue === ''}
+          onClick={() =>
+            addIdentifier.mutate(
+              { id, kind: identifierKind, value: identifierValue },
+              { onSuccess: () => setIdentifierValue('') },
+            )
+          }
+        >
+          {t('accounts.addIdentifier.submit')}
+        </Button>
+        <InlineError
+          code={addIdentifier.isError ? errorCodeOf(addIdentifier.error) : null}
+        />
+      </Box>
+
+      <Box sx={rowSx}>
+        <TextField
+          size="small"
+          value={secretLabel}
+          onChange={(event) => setSecretLabel(event.target.value)}
+          label={t('accounts.createSecret.labelLabel')}
+        />
+        <TextField
+          size="small"
+          value={secretExpires}
+          onChange={(event) => setSecretExpires(event.target.value)}
+          label={t('accounts.createSecret.expiresLabel')}
+          helperText={t('accounts.createSecret.expiresHelper')}
+        />
+        <Button
+          type="button"
+          variant="outlined"
+          disabled={createSecret.isPending || secretLabel === ''}
+          onClick={() =>
+            createSecret.mutate(
+              {
+                id,
+                label: secretLabel,
+                ...(secretExpires === '' ? {} : { expires_at: secretExpires }),
+              },
+              {
+                onSuccess: (answer) => {
+                  setCreatedSecret(answer.secret)
+                  setSecretLabel('')
+                  setSecretExpires('')
+                },
+              },
+            )
+          }
+        >
+          {t('accounts.createSecret.submit')}
+        </Button>
+        <InlineError
+          code={createSecret.isError ? errorCodeOf(createSecret.error) : null}
+        />
+      </Box>
+
+      {createdSecret !== null && (
+        <Typography variant="body2" sx={{ wordBreak: 'break-all', mb: 2 }}>
+          {t('accounts.createSecret.handedOver', { secret: createdSecret })}
+        </Typography>
+      )}
+    </>
+  )
 }

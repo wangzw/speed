@@ -21,6 +21,8 @@
 import { useState } from 'react'
 import Box from '@mui/material/Box'
 import Button from '@mui/material/Button'
+import Checkbox from '@mui/material/Checkbox'
+import FormControlLabel from '@mui/material/FormControlLabel'
 import Skeleton from '@mui/material/Skeleton'
 import TextField from '@mui/material/TextField'
 import Typography from '@mui/material/Typography'
@@ -64,6 +66,7 @@ export function InvitationsPage() {
   const issueInvitation = operations.useIssueInvitation()
   const revokeInvitation = operations.useRevokeInvitation()
   const removeMember = operations.useRemoveMember()
+  const setMemberSsoExempt = operations.useSetMemberSsoExempt()
 
   const invitationColumns: DataTableColumn<ConsoleInvitation>[] = [
     {
@@ -142,23 +145,42 @@ export function InvitationsPage() {
       id: 'actions',
       header: t('members.column.actions'),
       cell: (member) => (
-        <Button
-          type="button"
-          size="small"
-          variant="outlined"
-          color="error"
-          disabled={removeMember.isPending}
-          onClick={() =>
-            confirm.ask({
-              title: t('members.removeTitle'),
-              message: t('members.removeMessage', { account: member.account }),
-              confirmLabel: t('common.confirm'),
-              run: () => removeMember.mutate({ tenant, account: member.account }),
-            })
-          }
-        >
-          {t('members.remove')}
-        </Button>
+        <Box sx={{ display: 'flex', flexWrap: 'wrap', columnGap: 1, rowGap: 1 }}>
+          <Button
+            type="button"
+            size="small"
+            variant="outlined"
+            disabled={setMemberSsoExempt.isPending}
+            onClick={() =>
+              setMemberSsoExempt.mutate({
+                tenant,
+                account: member.account,
+                sso_exempt: !member.sso_exempt,
+              })
+            }
+          >
+            {member.sso_exempt
+              ? t('members.ssoExemptClear')
+              : t('members.ssoExemptSet')}
+          </Button>
+          <Button
+            type="button"
+            size="small"
+            variant="outlined"
+            color="error"
+            disabled={removeMember.isPending}
+            onClick={() =>
+              confirm.ask({
+                title: t('members.removeTitle'),
+                message: t('members.removeMessage', { account: member.account }),
+                confirmLabel: t('common.confirm'),
+                run: () => removeMember.mutate({ tenant, account: member.account }),
+              })
+            }
+          >
+            {t('members.remove')}
+          </Button>
+        </Box>
       ),
     },
   ]
@@ -172,6 +194,7 @@ export function InvitationsPage() {
     issueInvitation.error,
     revokeInvitation.error,
     removeMember.error,
+    setMemberSsoExempt.error,
   ])
 
   return (
@@ -298,6 +321,7 @@ export function InvitationsPage() {
             >
               {t('members.title')}
             </Typography>
+            <MemberWriteForm tenant={tenant} />
             <AsyncSection
               pending={membersPending}
               payload={memberRows}
@@ -347,4 +371,98 @@ function firstErrorCode(errors: readonly unknown[]): string | null {
     }
   }
   return null
+}
+
+/**
+ * MemberWriteForm: the membership-write control (PUT
+ * /auth/admin/tenants/:tenant/members/:account) -- it adds, suspends or
+ * resumes a membership, naming the account, its active state, an optional
+ * source and the SSO exemption. A landed write clears the account and source
+ * and resets the flags; a refused one keeps them to correct.
+ */
+function MemberWriteForm({ tenant }: { readonly tenant: string }) {
+  const { t } = useConsoleUiTranslation()
+  const operations = useConsoleOperations()
+  const writeMember = operations.useWriteMember()
+
+  const [account, setAccount] = useState('')
+  const [source, setSource] = useState('')
+  const [active, setActive] = useState(true)
+  const [ssoExempt, setSsoExempt] = useState(false)
+
+  return (
+    <Box sx={{ mb: 2 }}>
+      <Box
+        sx={{
+          display: 'flex',
+          flexWrap: 'wrap',
+          alignItems: 'center',
+          columnGap: 2,
+          rowGap: 1,
+        }}
+      >
+        <TextField
+          size="small"
+          value={account}
+          onChange={(event) => setAccount(event.target.value)}
+          label={t('members.write.accountLabel')}
+        />
+        <TextField
+          size="small"
+          value={source}
+          onChange={(event) => setSource(event.target.value)}
+          label={t('members.write.sourceLabel')}
+        />
+        <FormControlLabel
+          control={
+            <Checkbox
+              checked={active}
+              onChange={(event) => setActive(event.target.checked)}
+            />
+          }
+          label={t('members.write.activeLabel')}
+        />
+        <FormControlLabel
+          control={
+            <Checkbox
+              checked={ssoExempt}
+              onChange={(event) => setSsoExempt(event.target.checked)}
+            />
+          }
+          label={t('members.write.ssoExemptLabel')}
+        />
+        <Button
+          type="button"
+          variant="contained"
+          disabled={writeMember.isPending || account === ''}
+          onClick={() =>
+            writeMember.mutate(
+              {
+                tenant,
+                account,
+                active,
+                ...(source === '' ? {} : { source }),
+                sso_exempt: ssoExempt,
+              },
+              {
+                onSuccess: () => {
+                  setAccount('')
+                  setSource('')
+                  setActive(true)
+                  setSsoExempt(false)
+                },
+              },
+            )
+          }
+        >
+          {t('members.write.submit')}
+        </Button>
+      </Box>
+      <Box sx={{ mt: 1 }}>
+        <InlineError
+          code={writeMember.isError ? errorCodeOf(writeMember.error) : null}
+        />
+      </Box>
+    </Box>
+  )
 }

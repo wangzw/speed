@@ -179,9 +179,10 @@ read that instead.
   query client, through the generated @speed/api-sdk operations the
   shipped `consoleOperations` bundle binds (or the bundle the host mounts
   instead).
-- **Only the writes the contract declares.** A write whose request body
-  the platform's OpenAPI fragment does not declare has no generated body
-  to send, so the page does not render its control. The account surface's
-  create/patch/status/MFA-requirement/password/identifier-add/secret-create
-  writes, the SSO provider create/update and domain claim, and the member
-  write and SSO exemption are held out for that reason.
+- **Only the writes the contract declares.** A write's request body is
+  the one the platform's OpenAPI fragment declares for its endpoint, so
+  the generated client sends it and the page renders its control. The
+  account surface's create/patch/status/MFA-requirement/password/
+  identifier-add/secret-create writes, the SSO provider create/update and
+  domain claim, and the member write and SSO exemption all declare a
+  request body and all render a control.

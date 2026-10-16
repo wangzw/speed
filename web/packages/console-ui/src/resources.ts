@@ -7,8 +7,8 @@
  *
  *   registerNamespace(i18n, CONSOLE_UI_NAMESPACE, consoleUiResources)
  *
- * Every user-facing string the console shell and the three administration
- * pages render by themselves lives here, in zh-CN and en-US with
+ * Every user-facing string the console shell and the administration pages
+ * render by themselves lives here, in zh-CN and en-US with
  * identical leaf key sets (registration enforces that): the shell's
  * landmark labels and skip link; the tenant roster surface (its list,
  * its create and rename controls, its status labels); the settings
