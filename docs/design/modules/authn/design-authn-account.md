@@ -74,7 +74,7 @@ type Accounts interface {
 | 全部 | 账户不存在（含墓碑）返回 `ErrAccountNotFound`。 |
 | `Lookup` | `value` 先规范化；规范化失败返回 `ErrInvalidIdentifier`；按 `authn_identifiers` 的 `(kind, value)` 唯一索引查找。 |
 | `ByExternal` | 以（提供方，主体）为键，不以邮箱为键。 |
-| `List` | 返回下一页游标，空串表示没有下一页。墓碑默认不返回，要看须显式给 `StatusDeleted`。无标识过滤时 `WHERE id > ? ORDER BY id LIMIT n`，走 `authn_accounts` 主键，次序近似创建次序；有标识过滤时先在 `authn_identifiers` 的 `(kind, value)` 唯一索引上取 `value >= 前缀 AND value < 前缀的上界`（范围比较，PostgreSQL 与 SQLite 通用，不用 `LIKE`），再回表按 `id` 排序分页。标识前缀已规范化、至少 3 个字符，防止全表扫描；`Limit` 缺省 100、上限 1000。 |
+| `List` | 返回下一页游标，空串表示没有下一页。墓碑默认不返回，要看须显式给 `StatusDeleted`。无标识过滤时 `WHERE id > ? ORDER BY id LIMIT n`，走 `authn_accounts` 主键，次序近似创建次序；有标识过滤时先在 `authn_identifiers` 的 `(kind, value)` 唯一索引上取 `value >= 前缀 AND value < 前缀的上界`（范围比较，PostgreSQL 与 SQLite 通用，不用 `LIKE`），再回表按 `id` 排序分页。标识前缀已规范化、至少 3 个字符，防止全表扫描；有显示名前缀过滤时按 `display_name >= 前缀 AND display_name < 前缀的上界` 的范围比较取（同样不用 `LIKE`），前缀是存储值的字节前缀、大小写敏感、不设最短长度，而 `authn_accounts` 上没有覆盖 `display_name` 的索引，这条过滤因此扫全表（见[非保证](#非保证)）；`Limit` 缺省 100、上限 1000。 |
 | `ListServiceSecrets` | 只交回标识、标签、期限与撤销状态，从不含密钥。 |
 
 `Accounts` 没有批量读：按一组标识取多个账户要逐个 `Get`。需要一次取多个账户的展示信息（成员页、联系人属主）的调用方自己组织这些读取，本接口不提供 `GetMany` 一类方法。
@@ -424,12 +424,13 @@ type CreateAccount struct {
 type Verification struct{ Via string } // 写进 verified_via
 
 type AccountQuery struct {
-	Status           *AccountStatus // 空表示不过滤
-	Kind             AccountKind    // 空表示不过滤
-	IdentifierKind   IdentifierKind // 与 IdentifierPrefix 同时给出时按标识前缀过滤
-	IdentifierPrefix string
-	After            string // 上一页返回的 next
-	Limit            int    // 缺省 100，上限 1000
+	Status            *AccountStatus // 空表示不过滤
+	Kind              AccountKind    // 空表示不过滤
+	IdentifierKind    IdentifierKind // 与 IdentifierPrefix 同时给出时按标识前缀过滤
+	IdentifierPrefix  string
+	DisplayNamePrefix string // 显示名的字节前缀，按存储值原样比对，不规范化
+	After             string // 上一页返回的 next
+	Limit             int    // 缺省 100，上限 1000
 }
 
 type ServiceSecretInfo struct {
@@ -800,6 +801,7 @@ flowchart TD
 - **哈希参数变更后的计时差。** 已知账户的哈希参数弱于当前设置、尚未随登录升级时，派生比诱饵快；这一差别存在于设置变更之后到该账户下次登录之前，上界是新旧参数之差。改参数是受控变更。
 - **预置账户匹配信任管理员登记的邮箱。** `preprovisioned` 的匹配里 `admin` 与 `invite` 来源的邮箱被采信，管理员写错邮箱即错配；迁移导入的邮箱不经验证，由导入方负责标成 `import-unverified`。
 - **邮箱、手机号、显示名在库里是明文**（规范化后），库转储即泄露；机密不是明文：口令哈希是 PHC，服务密钥只存摘要，因素种子与 IdP 密钥走加密列。
+- **按显示名前缀的列表过滤扫全表。** `authn_accounts` 上没有覆盖 `display_name` 的索引，这个条件无法走索引；过滤本身收缩的是返回集，不是读的成本，成本随表里账户数线性增长，上界是整张 `authn_accounts`。缓解是分页上限与把这一读留在平台运营面（`authn.admin`），普通租户面不提供它。
 - **没有外键。** 孤儿行靠写入方在自己的事务里清理、跨模块靠钩子与事件补偿避免，数据库不替它兜底。
 - **账户模块自身不带任何邮件通道，也没有「忘记口令」流程。** 自助添加邮箱走登录模块的自助路由，其验证码经宿主提供的 `EmailCodeSender` 投递，账户模块不经手发送（[design-authn-login](design-authn-login.md)）。找回口令的路径是经短信、社交或 SSO 登录后在账户设置里改口令，登录时同样过第二因素；管理员也可重置口令。
 - **自动关联缺省关闭。** 先用别的方式注册过的用户，第一次社交登录会被当作新用户或被开户策略拒绝，要用绑定流程手工关联。

@@ -117,10 +117,21 @@ type fakeAccounts struct {
 	secretErr   error
 	listCalls   int
 	secretCalls int
+	// lastQuery is the query the most recent List was handed, so a case can hold
+	// what the handler parsed out of the request.
+	lastQuery authn.AccountQuery
 }
 
 func newAccounts() *fakeAccounts {
 	return &fakeAccounts{accounts: map[authn.AccountID]authn.Account{}, secrets: map[authn.AccountID][]authn.ServiceSecretInfo{}}
+}
+
+// lastList is the query the most recent List was handed, taken under the lock so
+// a case reads it without racing the handler.
+func (a *fakeAccounts) lastList() authn.AccountQuery {
+	a.mu.Lock()
+	defer a.mu.Unlock()
+	return a.lastQuery
 }
 
 func (a *fakeAccounts) put(id authn.AccountID, acct authn.Account) {
@@ -141,10 +152,11 @@ func (a *fakeAccounts) Get(_ context.Context, id authn.AccountID) (authn.Account
 	return acct, nil
 }
 
-func (a *fakeAccounts) List(_ context.Context, _ authn.AccountQuery) ([]authn.Account, string, error) {
+func (a *fakeAccounts) List(_ context.Context, q authn.AccountQuery) ([]authn.Account, string, error) {
 	a.mu.Lock()
 	defer a.mu.Unlock()
 	a.listCalls++
+	a.lastQuery = q
 	if a.listErr != nil {
 		return nil, "", a.listErr
 	}

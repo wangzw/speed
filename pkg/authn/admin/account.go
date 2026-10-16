@@ -98,6 +98,7 @@ func (m *product) accountQuery(c *gin.Context) (authn.AccountQuery, bool) {
 		}
 		q.IdentifierKind, q.IdentifierPrefix = ik, prefix
 	}
+	q.DisplayNamePrefix = c.Query("display_name_prefix")
 	q.After = c.Query("after")
 	if s := c.Query("limit"); s != "" {
 		n, err := strconv.Atoi(s)

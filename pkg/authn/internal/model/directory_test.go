@@ -262,7 +262,7 @@ func fullCreateAccount() CreateAccount {
 
 func fullQuery() AccountQuery {
 	s := StatusActive
-	return AccountQuery{Status: &s, Kind: KindUser, IdentifierKind: IdentifierEmail, IdentifierPrefix: "abc", After: "x", Limit: 5}
+	return AccountQuery{Status: &s, Kind: KindUser, IdentifierKind: IdentifierEmail, IdentifierPrefix: "abc", DisplayNamePrefix: "Al", After: "x", Limit: 5}
 }
 
 func fullNewSession() NewSession {

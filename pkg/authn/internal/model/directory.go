@@ -149,12 +149,13 @@ func (c CreateAccount) Clone() CreateAccount {
 // AccountQuery selects accounts for Accounts.List. Its zero value asks for
 // every account that is not deleted, the first page of the default size.
 type AccountQuery struct {
-	Status           *AccountStatus // nil: no filter on status, and a deleted account is left out
-	Kind             AccountKind    // empty: no filter
-	IdentifierKind   IdentifierKind // given with IdentifierPrefix, filters by an identifier prefix
-	IdentifierPrefix string         // normalized, at least 3 characters
-	After            string         // the next cursor of the previous page
-	Limit            int            // see Page.EffectiveLimit
+	Status            *AccountStatus // nil: no filter on status, and a deleted account is left out
+	Kind              AccountKind    // empty: no filter
+	IdentifierKind    IdentifierKind // given with IdentifierPrefix, filters by an identifier prefix
+	IdentifierPrefix  string         // normalized, at least 3 characters
+	DisplayNamePrefix string         // the beginning of the display name, as written, not normalized
+	After             string         // the next cursor of the previous page
+	Limit             int            // see Page.EffectiveLimit
 }
 
 // Clone returns a copy that shares no pointer with q.

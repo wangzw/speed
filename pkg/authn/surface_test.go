@@ -184,6 +184,7 @@ var exportedSurface = []string{
 	"field AccountCreated.Via",
 	"field AccountDeleted.AccountID",
 	"field AccountQuery.After",
+	"field AccountQuery.DisplayNamePrefix",
 	"field AccountQuery.IdentifierKind",
 	"field AccountQuery.IdentifierPrefix",
 	"field AccountQuery.Kind",

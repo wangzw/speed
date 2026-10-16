@@ -230,7 +230,9 @@ func (p *product) ListServiceSecrets(ctx context.Context, id authn.AccountID) ([
 // the key and not by an offset, so that a page costs the same however deep it
 // is. A deleted account is left out unless the query asks for the status. A
 // listing by an identifier prefix reads a range of the identifier index, which
-// every engine does the same way, and never matches by pattern.
+// every engine does the same way, and never matches by pattern. A listing by a
+// display-name prefix compares the display name as written — no index covers the
+// column, so it scans the table rather than reading an index range.
 func (p *product) List(ctx context.Context, q authn.AccountQuery) ([]authn.Account, string, error) {
 	limit := q.EffectiveLimit()
 	tx := p.conn(ctx).Model(&accountRow{})
@@ -260,6 +262,13 @@ func (p *product) List(ctx context.Context, q authn.AccountQuery) ([]authn.Accou
 		tx = tx.Where("id IN (SELECT account_id FROM "+tableIdentifiers+" WHERE kind = ? AND value >= ? AND value < ?)",
 			string(q.IdentifierKind), prefix, prefixBound(prefix))
 	}
+	if q.DisplayNamePrefix != "" {
+		// The display name is stored as written and is compared the same way, so
+		// the prefix is a byte prefix of the stored name and its case matters.
+		// No index covers the column, so this scans the table.
+		tx = tx.Where("display_name >= ? AND display_name < ?",
+			q.DisplayNamePrefix, displayNameBound(q.DisplayNamePrefix))
+	}
 	if q.After != "" {
 		tx = tx.Where("id > ?", q.After)
 	}
@@ -285,6 +294,22 @@ func (p *product) List(ctx context.Context, q authn.AccountQuery) ([]authn.Accou
 		return nil, "", err
 	}
 	return out, next, nil
+}
+
+// displayNameBound is the least string above every string that begins with
+// prefix, which is the prefix with its last byte raised by one. A display name
+// is stored as written and may be any UTF-8 text, so unlike an identifier prefix
+// the last byte is not known to be ASCII; a last byte of 0xFF — which no valid
+// UTF-8 sequence ends in, so the read matches nothing there — is dropped and the
+// raise carried to the byte before it instead, and a prefix that is every byte
+// 0xFF bounds below nothing.
+func displayNameBound(prefix string) string {
+	for i := len(prefix) - 1; i >= 0; i-- {
+		if prefix[i] < 0xff {
+			return prefix[:i] + string(prefix[i]+1)
+		}
+	}
+	return ""
 }
 
 // markPasswords sets PasswordSet on a page of accounts with one query for the

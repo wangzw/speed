@@ -438,6 +438,24 @@ func TestTheAccountListQueryPairsPrefixAndKind(t *testing.T) {
 	}
 }
 
+// TestTheAccountListParsesTheDisplayNamePrefix holds that the display-name
+// prefix reaches the account surface as written, beside the identifier prefix,
+// status and kind the list already narrows by.
+func TestTheAccountListParsesTheDisplayNamePrefix(t *testing.T) {
+	r := newRig(t)
+	rec := r.do(http.MethodGet, "/auth/admin/accounts?display_name_prefix=Ali&status=active&kind=user", nil, fresh()...)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status = %d, want 200: %s", rec.Code, rec.Body.String())
+	}
+	q := r.accounts.lastList()
+	if q.DisplayNamePrefix != "Ali" {
+		t.Errorf("display name prefix = %q, want the one given", q.DisplayNamePrefix)
+	}
+	if q.Kind != authn.KindUser || q.Status == nil || *q.Status != authn.StatusActive {
+		t.Errorf("the other filters read kind=%q status=%v, want user and active", q.Kind, q.Status)
+	}
+}
+
 // TestPagedRoutesRefuseANegativeLimit holds that a negative limit is a 400 on
 // every paged route and that zero is accepted: zero asks for no explicit bound,
 // which the capability reads as its default page size.

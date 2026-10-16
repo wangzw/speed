@@ -499,6 +499,81 @@ func TestListByIdentifierPrefixReadsARangeAndMatchesNoPattern(t *testing.T) {
 	})
 }
 
+// A listing by a display-name prefix matches the beginning of the stored name,
+// as written. The display name is not normalized, so the match is
+// case-sensitive; it is a prefix and never a substring; and it has no minimum
+// length, so a single character is honored. No index covers the column, so the
+// read strips the table by a range comparison and never by a pattern.
+func TestListByDisplayNamePrefixMatchesTheStoredName(t *testing.T) {
+	forEachDialect(t, func(t *testing.T, h *harness) {
+		ctx := context.Background()
+		create := func(display, username string) authn.AccountID {
+			t.Helper()
+			a, err := h.p.Create(ctx, authn.CreateAccount{DisplayName: display, Username: username, Via: "admin"})
+			if err != nil {
+				t.Fatalf("creating %q: %v", display, err)
+			}
+			return a.ID
+		}
+		alice := create("Alice Armstrong", "alice-arm")
+		alicia := create("Alicia Brown", "alicia-br")
+		bob := create("Bob Carter", "bob-cart")
+		nameless := create("", "no-name")
+
+		names := func(prefix string) []string {
+			t.Helper()
+			page, _, err := h.p.List(ctx, authn.AccountQuery{DisplayNamePrefix: prefix})
+			if err != nil {
+				t.Fatalf("listing display_name_prefix=%q: %v", prefix, err)
+			}
+			out := make([]string, 0, len(page))
+			for _, a := range page {
+				out = append(out, a.ID.String())
+			}
+			slices.Sort(out)
+			return out
+		}
+		both := []string{alice.String(), alicia.String()}
+		slices.Sort(both)
+		for prefix, want := range map[string][]string{
+			"A":       both, // no minimum length: one character is honored
+			"Ali":     both, // a hit spanning two accounts
+			"Alic":    both,
+			"Alice":   {alice.String()},
+			"Bob":     {bob.String()},
+			"bob":     {}, // case-sensitive: the name is stored as "Bob"
+			"Brown":   {}, // a prefix, not a substring: "Brown" is inside, not at the start
+			"mstrong": {},
+			"Zed":     {}, // a value no name begins with
+		} {
+			if got := names(prefix); !slices.Equal(got, want) {
+				t.Errorf("the display-name prefix %q lists %v, want %v", prefix, got, want)
+			}
+		}
+		// An empty prefix is no filter: every account is listed.
+		all := []string{alice.String(), alicia.String(), bob.String(), nameless.String()}
+		slices.Sort(all)
+		if got := names(""); !slices.Equal(got, all) {
+			t.Errorf("an empty display-name prefix lists %v, want every account %v", got, all)
+		}
+		// The name is stored as written: a byte prefix of it matches, and the
+		// empty-name account is selected only by the empty (no-filter) prefix.
+		if got := names("Alice Armstrong"); !slices.Equal(got, []string{alice.String()}) {
+			t.Errorf("the full stored name as a prefix lists %v, want only %s", got, alice)
+		}
+
+		rec := h.recordSQL()
+		if _, _, err := h.p.List(ctx, authn.AccountQuery{DisplayNamePrefix: "Ali"}); err != nil {
+			t.Fatalf("listing by display name: %v", err)
+		}
+		for _, s := range rec.take() {
+			if strings.Contains(strings.ToUpper(s), "LIKE") {
+				t.Errorf("a listing by display name used a pattern match: %s", s)
+			}
+		}
+	})
+}
+
 func TestAccountFieldsAreWrittenOnTheAccountThatIsThere(t *testing.T) {
 	forEachDialect(t, func(t *testing.T, h *harness) {
 		ctx := context.Background()
