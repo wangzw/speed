@@ -13,6 +13,7 @@ import (
 	"github.com/vislake/speed/pkg/authz"
 	"github.com/vislake/speed/pkg/config"
 	"github.com/vislake/speed/pkg/core"
+	"github.com/vislake/speed/pkg/tenant"
 )
 
 // seedModuleName is the name the seed command's configuration module is
@@ -25,9 +26,14 @@ const seedNamespace = "seed"
 // accountsItem is the one item the seed declares.
 const accountsItem = "accounts"
 
+// tenantsItem is the item the seed reads the deployment's tenants from.
+const tenantsItem = "tenants"
+
 // platformAdminRole is the role the seed gives the accounts its configuration
-// marks. It holds every permission the process declares, and it lives in the
-// platform domain, which is where a role that reaches across tenants belongs.
+// marks. It holds every permission the process declares, and it is written into
+// the platform domain and into each tenant the deployment serves. A role is a
+// per-domain row, so the platform domain's copy does not reach a tenant's, and
+// the seed writes one in each domain the administrator acts in.
 const platformAdminRole = authz.Role("platform-admin")
 
 // platformAdminDescriptionKey is the description key written with the role. It
@@ -39,6 +45,11 @@ const platformAdminDescriptionKey = "authz.role.platformAdmin"
 type seedInput struct {
 	// Accounts are the accounts a copy starts with.
 	Accounts []seedAccount `config:"accounts"`
+	// Tenants are the tenants this deployment serves. Each is registered in the
+	// roster, and the accounts marked as platform administrators hold the
+	// platform-administrator role within each one, so the console's
+	// tenant-addressed administration pages answer for a tenant the seed wrote.
+	Tenants []string `config:"tenants"`
 }
 
 // seedAccount is one account the seed writes.
@@ -107,6 +118,12 @@ func seedSchema() config.Schema {
 					"credential as a plaintext password or as a hash, and whether it holds " +
 					"the platform-administrator role",
 			},
+			tenantsItem: {
+				Origins: config.OriginPrimary,
+				Description: "the tenants this deployment serves, each registered in the roster " +
+					"and each holding the platform-administrator role for the accounts marked " +
+					"with it",
+			},
 		},
 	}
 }
@@ -123,19 +140,29 @@ func seedModule() core.Module {
 	}
 }
 
-// seedDatabase writes the accounts the configuration names, and the
-// platform-administrator role the ones marked with it hold.
+// seedDatabase writes the accounts the configuration names, the tenants this
+// deployment serves, and the platform-administrator role the accounts marked
+// with it hold.
 //
-// It is idempotent: an account, a role, a grant or a binding already there is
-// left as it stands and reported as skipped, so the command is safe to run at
-// every deployment. Nothing else is touched — an account the configuration no
-// longer names is not disabled or deleted.
+// It is idempotent: an account, a tenant, a role, a grant or a binding already
+// there is left as it stands and reported as skipped, so the command is safe to
+// run at every deployment. Nothing else is touched — an account or a tenant the
+// configuration no longer names is not disabled or deleted.
 //
-// The role and its bindings live in the platform domain, and this command is
-// where they come from: no migration seeds a role or a binding, because who a
-// deployment's administrators are is the host's answer and not the library's.
-// The permissions the role holds are the ones the process declares, read from
-// the catalog, so a module that adds a permission and its translation row is
+// The role is written into two kinds of domain. The platform domain carries it
+// so the platform's own management surface answers; each tenant the
+// configuration names carries it too, so the console's tenant-addressed pages —
+// members, invitations and SSO providers — are complete out of the box. A
+// platform-domain binding does not reach a tenant domain, so a deployment whose
+// administrator held the role in the platform domain alone would be refused
+// those pages. The role is a per-domain row: writing the binding in a tenant
+// takes the role and its grants in that tenant, not only the binding.
+//
+// This command is where the role, its grants and its bindings come from: no
+// migration seeds a role or a binding, because who a deployment's
+// administrators are is the host's answer and not the library's. The
+// permissions the role holds are the ones the process declares, read from the
+// catalog, so a module that adds a permission and its translation row is
 // covered by the next run without an edit here.
 func seedDatabase(ctx context.Context, reg *core.Registry) error {
 	reader, err := core.Resolve[config.Reader](reg)
@@ -162,6 +189,10 @@ func seedDatabase(ctx context.Context, reg *core.Registry) error {
 	if err != nil {
 		return err
 	}
+	roster, err := core.Resolve[tenant.Catalog](reg)
+	if err != nil {
+		return err
+	}
 	// The accounts first, and the identifiers of the ones the configuration
 	// marks as administrators.
 	var administrators []authn.AccountID
@@ -177,22 +208,64 @@ func seedDatabase(ctx context.Context, reg *core.Registry) error {
 			administrators = append(administrators, id)
 		}
 	}
+
+	// Then the tenants, which the console's tenant-addressed pages read from the
+	// roster: a page selects a tenant from it, and a tenant that is not there is
+	// one no page can name.
+	for _, t := range in.Tenants {
+		if err := seedTenant(ctx, roster, t); err != nil {
+			return err
+		}
+	}
+
 	if len(administrators) == 0 {
 		return nil
 	}
 
-	// Then the role and its grants, which belong to the platform domain and not
-	// to an account: they are written once however many administrators the
-	// configuration names, and before the bindings, which name a role that has
-	// to exist.
-	if err := seedAdministration(ctx, manager, catalog); err != nil {
-		return err
-	}
-	for _, id := range administrators {
-		if err := seedBinding(ctx, manager, string(authz.PlatformDomain), id); err != nil {
+	// Then the role and its grants, one set per domain the administrator's role
+	// is held in: the platform domain, and each tenant the configuration names.
+	// They are written before the bindings, which name a role that has to exist
+	// in that domain.
+	domains := append([]string{string(authz.PlatformDomain)}, in.Tenants...)
+	for _, domain := range domains {
+		if err := seedAdministration(ctx, manager, catalog, domain); err != nil {
 			return err
 		}
 	}
+	for _, id := range administrators {
+		for _, domain := range domains {
+			if err := seedBinding(ctx, manager, domain, id); err != nil {
+				return err
+			}
+		}
+	}
+	return nil
+}
+
+// seedTenant registers one tenant the configuration names unless the roster
+// already holds it. The alias is the identifier, so a request carrying the
+// tenant's name on its surface resolves to it.
+func seedTenant(ctx context.Context, roster tenant.Catalog, id string) error {
+	_, found, err := roster.Get(ctx, tenant.ID(id))
+	if err != nil {
+		return fmt.Errorf("seed: reading the tenant %s: %w", id, err)
+	}
+	if found {
+		fmt.Printf("skipped: tenant %s (exists)\n", id)
+		return nil
+	}
+	record := tenant.Tenant{ID: tenant.ID(id), Alias: id, Status: tenant.StatusActive}
+	if err := roster.Create(ctx, record); err != nil {
+		if errors.Is(err, tenant.ErrTenantExists) || errors.Is(err, tenant.ErrAliasConflict) {
+			// Another run took the identifier or the alias between the read and
+			// the write. The tenant is there, which is what this command is for,
+			// so the race is the answer and not a failure.
+			fmt.Printf("skipped: tenant %s (exists)\n", id)
+			return nil
+		}
+		return fmt.Errorf("seed: registering the tenant %s: %w", id, err)
+	}
+	fmt.Printf("seeded: tenant %s\n", id)
 	return nil
 }
 
@@ -266,17 +339,18 @@ func seedLoginName(identifier string) (authn.IdentifierKind, string, error) {
 	return kind, normalized, nil
 }
 
-// seedAdministration writes what platform administration is made of: the role,
-// and every declared permission on it. Each is written only when it is not
-// already there.
+// seedAdministration writes what platform administration is made of in one
+// domain: the role, and every declared permission on it. Each is written only
+// when it is not already there. The caller runs it once per domain the role is
+// held in — the platform domain, and each tenant the deployment serves — because
+// a role and its grants are per-domain rows and one domain's do not answer for
+// another's.
 //
 // It names no account, because neither does: the role and its grants belong to
-// the platform domain, so one write serves every administrator the
-// configuration names.
-func seedAdministration(ctx context.Context, manager authz.Manager, catalog authz.Catalog) error {
-	// The platform domain is the reserved one, and it is a domain and not a
-	// tenant: no tenant may carry its identifier.
-	domain := string(authz.PlatformDomain)
+// the domain, so one write serves every administrator the configuration names.
+func seedAdministration(ctx context.Context, manager authz.Manager, catalog authz.Catalog,
+	domain string,
+) error {
 	now := time.Now().UTC()
 	if err := seedRole(ctx, manager, domain, now); err != nil {
 		return err
@@ -367,9 +441,9 @@ func seedGrants(ctx context.Context, manager authz.Manager, catalog authz.Catalo
 	return nil
 }
 
-// seedBinding binds the account to the administrator role unless it already
-// holds it. The role has to be there already: a binding names a role, and one
-// that names nothing is refused.
+// seedBinding binds the account to the administrator role in one domain unless
+// it already holds it there. The role has to be there already: a binding names
+// a role that exists in its domain, and one that names nothing is refused.
 func seedBinding(ctx context.Context, manager authz.Manager, domain string,
 	id authn.AccountID,
 ) error {
@@ -378,7 +452,7 @@ func seedBinding(ctx context.Context, manager authz.Manager, domain string,
 		return fmt.Errorf("seed: reading the bindings of %s in %s: %w", id, domain, err)
 	}
 	if slices.ContainsFunc(bindings, func(b authz.Binding) bool { return b.Role == platformAdminRole }) {
-		fmt.Printf("skipped: binding %s -> %s (exists)\n", id, platformAdminRole)
+		fmt.Printf("skipped: binding %s -> %s in %s (exists)\n", id, platformAdminRole, domain)
 		return nil
 	}
 	record := authz.Binding{
@@ -388,8 +462,8 @@ func seedBinding(ctx context.Context, manager authz.Manager, domain string,
 		GrantedAt: time.Now().UTC(),
 	}
 	if err := manager.PutBinding(ctx, record); err != nil {
-		return fmt.Errorf("seed: binding %s to %s: %w", id, platformAdminRole, err)
+		return fmt.Errorf("seed: binding %s to %s in %s: %w", id, platformAdminRole, domain, err)
 	}
-	fmt.Printf("seeded: binding %s -> %s\n", id, platformAdminRole)
+	fmt.Printf("seeded: binding %s -> %s in %s\n", id, platformAdminRole, domain)
 	return nil
 }

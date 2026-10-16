@@ -153,10 +153,11 @@ writes a `ready` record on standard output once every module has started and a
 process is up waits for the record and not for a listening socket. Stop a run
 with SIGINT or SIGTERM; it drains in-flight requests first.
 
-`seed` writes the initial operators `seed.accounts` names, and the
-platform-administrator role the ones marked with it hold. It carries the
-migrations with it, so it is the whole of what a fresh copy does to a database
-before serving from it; running it again writes nothing and says so.
+`seed` writes the initial operators `seed.accounts` names, the tenants
+`seed.tenants` names, and the platform-administrator role the ones marked with
+it hold. It carries the migrations with it, so it is the whole of what a fresh
+copy does to a database before serving from it; running it again writes nothing
+and says so.
 
 Seeding is a step of its own rather than something `serve` does on its way up,
 because a deployment nobody may administer until somebody says so is the posture
@@ -293,12 +294,17 @@ Under every stack:
 - **`migrate`** runs the engine alone and reaches every module's declarations to
   build every table.
 - **`seed`** writes the accounts under `seed.accounts`, each with the credential
-  it is given — a plaintext `password` or a `password-hash` — and the
-  platform-administrator role the ones marked with it hold, carrying every
-  permission the process declares. It is idempotent — an account, a role, a
-  grant or a binding already there is left as it stands and reported as skipped
-  — so it is safe to run at every deployment. Nothing else is touched, and an
-  account the configuration no longer names is neither disabled nor deleted. It
+  it is given — a plaintext `password` or a `password-hash` — the tenants under
+  `seed.tenants`, and the platform-administrator role the ones marked with it
+  hold, carrying every permission the process declares. The role and its grants
+  are written into two kinds of domain: the platform domain, which the
+  platform's own management surface reads, and each tenant under `seed.tenants`,
+  so the console's tenant-addressed pages — members, invitations and SSO
+  providers — answer out of the box; a platform-domain binding does not reach a
+  tenant domain. It is idempotent — an account, a tenant, a role, a grant or a
+  binding already there is left as it stands and reported as skipped — so it is
+  safe to run at every deployment. Nothing else is touched, and an account or a
+  tenant the configuration no longer names is neither disabled nor deleted. It
   drives to `StageStart`, past the migrations, so a database that was never
   migrated is one it can seed in a single command. A role and a binding come
   from here because no migration writes one: who a deployment's administrators

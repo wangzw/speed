@@ -443,10 +443,11 @@ func addStack(root *config.Command, s stack) {
 	// every other module through the declarations the node carries.
 	node.Sub(migrateCommand).Do(core.StageMigrate, nil)
 
-	// seed writes the accounts the configuration names, and the platform
-	// administrator role the ones marked with it hold. It drives to StageStart,
-	// which carries it past the migrations and past the wiring, so a copy seeds a
-	// database that has never been migrated in one command.
+	// seed writes the accounts the configuration names, the tenants this
+	// deployment serves, and the platform administrator role the accounts marked
+	// with it hold. It drives to StageStart, which carries it past the migrations
+	// and past the wiring, so a copy seeds a database that has never been migrated
+	// in one command.
 	//
 	// It names the policy module because that is where the permission-to-(resource,
 	// action) translation is resolved: the grant table holds the pair and not the
@@ -454,6 +455,11 @@ func addStack(root *config.Command, s stack) {
 	// and this command reads it off the catalog that module delivers. The
 	// enforcement module is deliberately left out — it would demand an HTTP entry
 	// point, which a command that never serves has no use for.
+	//
+	// It names the roster because the tenants it registers are rows of that table,
+	// and the console's tenant-addressed pages read them from the roster's
+	// snapshot: the roster loads in Init, which this command reaches, so the
+	// registration runs against a table its own callback has already read.
 	//
 	// It names its own configuration module so that the items under seed. are
 	// judged: a required item binds only for the modules a run takes in at run
@@ -469,7 +475,7 @@ func addStack(root *config.Command, s stack) {
 	// nothing this command runs reaches for one.
 	seed := node.Sub(seedCommand)
 	seed.Include(seedModuleName, authnaccount.ModuleName, authzpolicy.ModuleName,
-		outboxrelay.ModuleName, s.event, log.ModuleName)
+		tenantcatalog.ModuleName, outboxrelay.ModuleName, s.event, log.ModuleName)
 	seed.Do(core.StageStart, seedDatabase)
 
 	// gen merges the fragments the modules declare into one document and writes

@@ -50,7 +50,7 @@ starters/demo/
 - **`serve`** 起 HTTP 入口并接受流量。
 - **`worker`** 跑后台模块，不起 HTTP 入口。
 - **`migrate`** 只跑数据库引擎，经静态级纳入取得各模块的声明、把全部表建起来。
-- **`seed`** 写出配置 `seed.accounts` 点名的初始账户（凭据按项给明文口令或 PHC 条目），以及其中标记为平台管理员的那些账户所持有的运营角色——角色带上本进程声明的全部权限。它驱动到 `Start`，因此把迁移一并带上，一个从未迁移过的库一条命令即可就绪；重复执行不写任何东西，逐项报「跳过」，配置里删去的账户既不失效也不删除。角色与绑定只由它写入：迁移不种策略数据，谁是部署的管理员是宿主的回答（[authz](design-authz.md) 对宿主的要求、[authn.admin](authn/design-authn-admin.md) 的引导）。
+- **`seed`** 写出配置 `seed.accounts` 点名的初始账户（凭据按项给明文口令或 PHC 条目）、配置 `seed.tenants` 点名的租户（登记进名册），以及其中标记为平台管理员的那些账户所持有的运营角色——角色带上本进程声明的全部权限。角色与它的授权写进两类域：平台域（平台自己的管理面读它），以及 `seed.tenants` 的每个租户域（控制台按租户寻址的页面——成员、邀请、SSO 提供方——因此开箱即答；平台域的绑定不覆盖租户域，所以租户域里绑得上，得先在租户域把角色与授权写出来）。它驱动到 `Start`，因此把迁移一并带上，一个从未迁移过的库一条命令即可就绪；重复执行不写任何东西，逐项报「跳过」，配置里删去的账户与租户既不失效也不删除。角色与绑定只由它写入：迁移不种策略数据，谁是部署的管理员是宿主的回答（[authz](design-authz.md) 对宿主的要求、[authn.admin](authn/design-authn-admin.md) 的引导）。
 - **`gen`** 合并并写出 API 规格，见「`gen` 命令」。
 - **命令组** 承载一次性运维动作。
 
@@ -154,7 +154,7 @@ graph TD
 | 命令树与部署栈 | 已实现 | `starters/demo/server/main.go` `commandTree`、`addStack`；`starters/demo/server/host.go` `hostModule`、`servedEndpoints` |
 | 签名密钥的首次运行生成 | 已实现 | `starters/demo/server/signingkey.go` `ensureSigningKey`、`signingKeyPath`；`starters/demo/server/main.go` `run` |
 | 平台基线（`serve`/`worker` 的点名集与配置样例） | 已实现 | `starters/demo/server/main.go` `baselineServe`、`baselineWorker`；`starters/demo/server/testdata/` |
-| `seed` 命令 | 已实现 | `starters/demo/server/seed.go` `seedModule`、`seedSchema`、`seedDatabase`、`allowPlatformAdministration`；命令见 `starters/demo/server/main.go` `addStack` |
+| `seed` 命令 | 已实现 | `starters/demo/server/seed.go` `seedModule`、`seedSchema`、`seedDatabase`、`seedTenant`、`seedAdministration`、`seedBinding`；命令见 `starters/demo/server/main.go` `addStack` |
 | `gen` 命令 | 已实现 | `starters/demo/server/main.go` `genModule`、`genDocument` |
 | 前端产物的内嵌与托管（合一拓扑的 Go 侧） | 已实现 | `starters/demo/server/main.go` `webBundle`（`//go:embed dist`）、`webuiModuleName` |
 | 前端应用本身（`web/` 的源码与构建） | 已实现 | `starters/demo/web/src/main.tsx` `bootstrapDemoApp`、`starters/demo/web/src/app.tsx` `DemoApp`、`starters/demo/web/src/routes.tsx` `routes`、`starters/demo/web/src/runtime-config.ts` `loadRuntimeConfig`；构建见 `starters/demo/web/vite.config.ts` |

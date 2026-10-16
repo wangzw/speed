@@ -153,9 +153,9 @@ objectstore:
   metadata:
     endpoints: [api]
 
-# The first account and the platform role a copy starts with. The seed command
-# is idempotent: an account, a role, a grant or a binding already there is left
-# as it stands.
+# The first account, the tenants this deployment serves, and the platform role
+# a copy starts with. The seed command is idempotent: an account, a tenant, a
+# role, a grant or a binding already there is left as it stands.
 #
 # This stack holds its database inside the process that opened it, so what the
 # seed writes is gone as soon as it exits, before a serve of this same stack
@@ -171,6 +171,12 @@ seed:
       password: operator-dev-secret
       display-name: Demo Operator
       platform-admin: true
+  # The tenants the deployment serves. Each is registered in the roster, and
+  # the operator above holds the platform-administrator role within each, so
+  # the console's tenant-addressed pages answer for them out of the box.
+  # DEV: replace with the tenants this deployment actually serves.
+  tenants:
+    - acme
 
 # The engine. ":memory:" is the process's own database, held to one connection.
 # The encryption key seals the columns a module encrypts at rest (a TOTP seed

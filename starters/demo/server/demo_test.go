@@ -107,7 +107,9 @@ const demoSeedSection = `seed:
       platform-admin: true
     - identifier: "ops@demo.test"
       password-hash: "$argon2id$v=19$m=19456,t=2,p=1$xeAjr/xEt4mML0QaEhw8pw$Khjd7856RU6MatFxmOtE0YFZJLsC05yxX5HwJhpBXno"
-      display-name: "Demo Ops"`
+      display-name: "Demo Ops"
+  tenants:
+    - demo`
 
 // demoConfig is the sqlite-memory configuration a case writes: the two listener
 // addresses, the token signing key, the object store's root and the database
@@ -759,6 +761,9 @@ const (
 	// the entry the configuration carries is that password's — the same entry
 	// the static credential table holds.
 	hashIdentifier = "ops@demo.test"
+	// demoTenant is the tenant the configuration under test names, the one the
+	// seed registers and binds the administrator in.
+	demoTenant = "demo"
 )
 
 // TestSeedBootstrapsTheConsole runs the seed command against a database that no
@@ -782,7 +787,9 @@ func TestSeedBootstrapsTheConsole(t *testing.T) {
 	for _, want := range []string{
 		"seeded: account " + seedIdentifier,
 		"seeded: account " + hashIdentifier,
+		"seeded: tenant " + demoTenant,
 		"seeded: role system/" + string(platformAdminRole),
+		"seeded: role " + demoTenant + "/" + string(platformAdminRole),
 		"seeded: binding ",
 	} {
 		if !strings.Contains(first.stdout, want) {
@@ -799,8 +806,11 @@ func TestSeedBootstrapsTheConsole(t *testing.T) {
 	}
 	for _, want := range []string{
 		"skipped: account " + seedIdentifier,
+		"skipped: tenant " + demoTenant,
 		"skipped: role system/" + string(platformAdminRole),
+		"skipped: role " + demoTenant + "/" + string(platformAdminRole),
 		"skipped: grants on system/" + string(platformAdminRole),
+		"skipped: grants on " + demoTenant + "/" + string(platformAdminRole),
 		"skipped: binding ",
 	} {
 		if !strings.Contains(second.stdout, want) {
@@ -813,17 +823,19 @@ func TestSeedBootstrapsTheConsole(t *testing.T) {
 
 	accountBase := fmt.Sprintf("http://127.0.0.1:%d", ports[backendListener])
 	adminBase := fmt.Sprintf("http://127.0.0.1:%d", ports[backendListener])
-	roster := func(t *testing.T, identifier string) response {
+	// adminGet signs in with the seeded credential and reads one administration
+	// route, which the gateway guards and the authorization layer decides on.
+	adminGet := func(t *testing.T, identifier, path string) response {
 		t.Helper()
 		token := signIn(t, accountBase, identifier, seedPassword)
 		return send(t, &http.Client{Timeout: 10 * time.Second}, http.MethodGet,
-			adminBase+"/tenant/admin/tenants", nil,
+			adminBase+path, nil,
 			map[string]string{"Authorization": "Bearer " + token})
 	}
 
-	// The account the seed marks is an administrator: the roster answers, and it
-	// is empty, because the seed writes no tenant.
-	allowed := roster(t, seedIdentifier)
+	// The account the seed marks is an administrator: the platform roster
+	// answers, and it holds the tenant the seed registered.
+	allowed := adminGet(t, seedIdentifier, "/tenant/admin/tenants")
 	if allowed.status != http.StatusOK {
 		t.Fatalf("the seeded administrator was refused the tenant roster with %d: %s",
 			allowed.status, allowed.body)
@@ -834,14 +846,32 @@ func TestSeedBootstrapsTheConsole(t *testing.T) {
 	if err := json.Unmarshal(allowed.body, &listed); err != nil {
 		t.Fatalf("reading the roster: %v\n%s", err, allowed.body)
 	}
-	if len(listed.Tenants) != 0 {
-		t.Errorf("the roster holds %d tenant(s), and the seed writes none", len(listed.Tenants))
+	if len(listed.Tenants) != 1 {
+		t.Errorf("the roster holds %d tenant(s), want the one the seed registered", len(listed.Tenants))
+	}
+
+	// The administrator reaches the console's tenant-addressed pages for the
+	// tenant the seed registered. A binding in the platform domain alone does
+	// not answer for a tenant — the role is a per-domain row — so the seed
+	// writes the role and its grants into the tenant's domain too. Each of
+	// these reads answered 403 before that, which is what this case holds
+	// against.
+	for _, path := range []string{
+		"/auth/admin/tenants/" + demoTenant + "/members",
+		"/auth/admin/tenants/" + demoTenant + "/invitations",
+		"/auth/admin/tenants/" + demoTenant + "/sso/providers",
+	} {
+		got := adminGet(t, seedIdentifier, path)
+		if got.status != http.StatusOK {
+			t.Errorf("the seeded administrator was refused %s with %d: %s",
+				path, got.status, got.body)
+		}
 	}
 
 	// The account the seed marks nothing for signs in — which is what an entry
 	// given as a hash rather than as a plaintext has to produce — and reaches
 	// nothing that asks for a permission.
-	if refused := roster(t, hashIdentifier); refused.status != http.StatusForbidden {
+	if refused := adminGet(t, hashIdentifier, "/tenant/admin/tenants"); refused.status != http.StatusForbidden {
 		t.Errorf("the account holding no role reached the roster with %d, want %d: %s",
 			refused.status, http.StatusForbidden, refused.body)
 	}
